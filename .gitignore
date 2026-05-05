@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Foundry build output
+broadcast/
+cache/
+out/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Foundry local config
+foundry-local.toml
+
+# Frontend build
+frontend/dist/
+
+# Editor
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
