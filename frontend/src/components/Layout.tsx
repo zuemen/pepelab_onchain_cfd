@@ -14,7 +14,6 @@ const NAV = [
   { to: '/admin/oracle', label: 'Admin'      },
 ]
 
-const SUPPORTED_CHAINS = [31337, 11155111]
 
 interface Props {
   wallet:   WalletAPI
@@ -32,7 +31,6 @@ export default function Layout({ wallet, children }: Props) {
     if (dismissed) sessionStorage.setItem('disclaimer-dismissed', '1')
   }, [dismissed])
 
-  const isKnownChain  = wallet.chainId !== null && SUPPORTED_CHAINS.includes(wallet.chainId)
   const chainLabel    = wallet.chainId !== null ? (CHAIN_NAMES[wallet.chainId] ?? `Chain ${wallet.chainId}`) : null
   const chainBadgeColor = wallet.chainId === 31337
     ? 'bg-emerald-900 text-emerald-300 border-emerald-700'
