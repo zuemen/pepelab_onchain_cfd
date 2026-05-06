@@ -45,10 +45,7 @@ export default function Layout({ wallet, children }: Props) {
     if (!eth) return
     setSwitching(true)
     try {
-      await eth.request({
-        method: 'wallet_switchEthereumChain',
-        params: [{ chainId: '0x7a69' }],  // 31337
-      })
+      await eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x7a69' }] })
     } catch (err: any) {
       if (err.code === 4902) {
         try {
@@ -62,6 +59,32 @@ export default function Layout({ wallet, children }: Props) {
             }],
           })
         } catch { /* user rejected — ignore */ }
+      }
+    } finally {
+      setSwitching(false)
+    }
+  }
+
+  const switchToSepolia = async () => {
+    const eth = (window as unknown as { ethereum?: { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> } }).ethereum
+    if (!eth) return
+    setSwitching(true)
+    try {
+      await eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0xaa36a7' }] })
+    } catch (err: any) {
+      if (err.code === 4902) {
+        try {
+          await eth.request({
+            method: 'wallet_addEthereumChain',
+            params: [{
+              chainId: '0xaa36a7',
+              chainName: 'Sepolia Testnet',
+              rpcUrls: ['https://sepolia.infura.io/v3/'],
+              nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+              blockExplorerUrls: ['https://sepolia.etherscan.io'],
+            }],
+          })
+        } catch { /* user rejected */ }
       }
     } finally {
       setSwitching(false)
@@ -115,15 +138,28 @@ export default function Layout({ wallet, children }: Props) {
             </span>
           )}
 
-          {/* Switch network button — shown when on unsupported chain */}
-          {wallet.isConnected && !isKnownChain && (
-            <button
-              onClick={() => void switchToAnvil()}
-              disabled={switching}
-              className="px-3 py-1 rounded-lg bg-red-800 hover:bg-red-700 disabled:opacity-50 text-white text-xs font-semibold transition-colors"
-            >
-              {switching ? 'Switching…' : 'Switch to Anvil'}
-            </button>
+          {/* Network Switchers */}
+          {wallet.isConnected && (
+            <div className="hidden sm:flex gap-2">
+              {wallet.chainId !== 11155111 && (
+                <button
+                  onClick={() => void switchToSepolia()}
+                  disabled={switching}
+                  className="px-3 py-1 rounded-lg bg-indigo-900 hover:bg-indigo-800 disabled:opacity-50 text-indigo-200 text-xs font-semibold transition-colors border border-indigo-700"
+                >
+                  {switching ? '…' : 'Switch to Sepolia'}
+                </button>
+              )}
+              {wallet.chainId !== 31337 && (
+                <button
+                  onClick={() => void switchToAnvil()}
+                  disabled={switching}
+                  className="px-3 py-1 rounded-lg bg-emerald-900 hover:bg-emerald-800 disabled:opacity-50 text-emerald-200 text-xs font-semibold transition-colors border border-emerald-700"
+                >
+                  {switching ? '…' : 'Switch to Anvil'}
+                </button>
+              )}
+            </div>
           )}
 
           <WalletButton wallet={wallet} />
