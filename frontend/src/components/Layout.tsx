@@ -1,0 +1,128 @@
+import { useState, useEffect } from 'react'
+import type { ReactNode } from 'react'
+import { Link, useLocation } from 'react-router-dom'
+import type { WalletAPI } from '../hooks/useWallet'
+import WalletButton from './WalletButton'
+import { CHAIN_NAMES } from '../contracts/addresses'
+
+const NAV = [
+  { to: '/',            label: 'Home'        },
+  { to: '/exchange',    label: 'Exchange'    },
+  { to: '/trader',      label: 'Trader'      },
+  { to: '/marketplace', label: 'Marketplace' },
+  { to: '/portfolio',   label: 'Portfolio'   },
+  { to: '/admin/oracle', label: 'Admin'      },
+]
+
+const SUPPORTED_CHAINS = [31337, 11155111]
+
+interface Props {
+  wallet:   WalletAPI
+  children: ReactNode
+}
+
+export default function Layout({ wallet, children }: Props) {
+  const { pathname } = useLocation()
+  const [dismissed, setDismissed] = useState(
+    () => sessionStorage.getItem('disclaimer-dismissed') === '1'
+  )
+  const [switching, setSwitching] = useState(false)
+
+  useEffect(() => {
+    if (dismissed) sessionStorage.setItem('disclaimer-dismissed', '1')
+  }, [dismissed])
+
+  const isKnownChain  = wallet.chainId !== null && SUPPORTED_CHAINS.includes(wallet.chainId)
+  const chainLabel    = wallet.chainId !== null ? (CHAIN_NAMES[wallet.chainId] ?? `Chain ${wallet.chainId}`) : null
+  const chainBadgeColor = wallet.chainId === 31337
+    ? 'bg-emerald-900 text-emerald-300 border-emerald-700'
+    : wallet.chainId === 11155111
+      ? 'bg-yellow-900 text-yellow-300 border-yellow-700'
+      : 'bg-red-900 text-red-300 border-red-700'
+
+  const switchToAnvil = async () => {
+    const eth = (window as unknown as { ethereum?: { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> } }).ethereum
+    if (!eth) return
+    setSwitching(true)
+    try {
+      await eth.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: '0x7a69' }],  // 31337
+      })
+    } catch {
+      // user rejected or chain not added yet — ignore
+    } finally {
+      setSwitching(false)
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col">
+      {/* Disclaimer banner */}
+      {!dismissed && (
+        <div className="bg-yellow-900/60 border-b border-yellow-700 px-6 py-2 flex items-center justify-between text-xs text-yellow-300">
+          <span>
+            Research prototype · NCCU Capstone 2026 · No real assets · 僅供學術展示，非投資建議
+          </span>
+          <button
+            onClick={() => setDismissed(true)}
+            className="ml-4 text-yellow-500 hover:text-yellow-200 transition-colors shrink-0"
+            aria-label="Dismiss"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      <header className="border-b border-gray-800 px-6 py-4 flex items-center gap-6">
+        <span className="font-bold text-lg tracking-tight text-emerald-400 shrink-0">
+          PepeLab CFD
+        </span>
+        <nav className="flex gap-5 flex-1 flex-wrap">
+          {NAV.map(n => (
+            <Link
+              key={n.to}
+              to={n.to}
+              className={`text-sm font-medium transition-colors ${
+                pathname === n.to || (n.to !== '/' && pathname.startsWith(n.to))
+                  ? 'text-white'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              {n.label}
+            </Link>
+          ))}
+        </nav>
+
+        <div className="flex items-center gap-3 shrink-0">
+          {/* Network badge */}
+          {wallet.isConnected && chainLabel && (
+            <span className={`hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${chainBadgeColor}`}>
+              <span className="w-1.5 h-1.5 rounded-full bg-current opacity-80" />
+              {chainLabel}
+            </span>
+          )}
+
+          {/* Switch network button — shown when on unsupported chain */}
+          {wallet.isConnected && !isKnownChain && (
+            <button
+              onClick={() => void switchToAnvil()}
+              disabled={switching}
+              className="px-3 py-1 rounded-lg bg-red-800 hover:bg-red-700 disabled:opacity-50 text-white text-xs font-semibold transition-colors"
+            >
+              {switching ? 'Switching…' : 'Switch to Anvil'}
+            </button>
+          )}
+
+          <WalletButton wallet={wallet} />
+        </div>
+      </header>
+
+      <main className="flex-1">{children}</main>
+
+      <footer className="border-t border-gray-800 px-6 py-3 text-center text-xs text-gray-600">
+        Research prototype · Anvil local / Sepolia testnet · No real assets
+      </footer>
+    </div>
+  )
+}

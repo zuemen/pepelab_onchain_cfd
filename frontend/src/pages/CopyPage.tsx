@@ -1,0 +1,326 @@
+import { useState, useEffect } from 'react'
+import { useParams, useNavigate, Link } from 'react-router-dom'
+import { parseEther } from 'ethers'
+import type { WalletAPI } from '../hooks/useWallet'
+import { useContracts } from '../hooks/useContracts'
+import { ASSET_IDS } from '../contracts/addresses'
+
+// ── Config ──────────────────────────────────────────────────────────────────
+const ASSET_LABEL: Record<string, string> = {
+  [ASSET_IDS.sBTC]:  'sBTC',
+  [ASSET_IDS.sETH]:  'sETH',
+  [ASSET_IDS.sAAPL]: 'sAAPL',
+  [ASSET_IDS.sTSLA]: 'sTSLA',
+}
+
+// ── Types ────────────────────────────────────────────────────────────────────
+interface AllocWithPrice {
+  asset:      string
+  weight:     bigint   // bps (100 = 1%)
+  isLong:     boolean
+  leverage:   bigint
+  entryPrice: bigint   // 18-dec, current oracle price
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+const tryParse = (s: string): bigint | null => {
+  if (!s) return null
+  try { return parseEther(s) } catch { return null }
+}
+
+const f18   = (v: bigint, d = 2) => (Number(v) / 1e18).toFixed(d)
+const fUsd  = (v: bigint) =>
+  '$' + (Number(v) / 1e18).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+
+type Waitable = { wait(): Promise<unknown> }
+const waitTx = (tx: unknown) => (tx as Waitable).wait()
+
+// ── Component ────────────────────────────────────────────────────────────────
+interface Props { wallet: WalletAPI }
+
+export default function CopyPage({ wallet }: Props) {
+  const { traderAddress } = useParams<{ traderAddress: string }>()
+  const navigate = useNavigate()
+  const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId)
+
+  const [traderName,   setTraderName]   = useState('')
+  const [stratAllocs,  setStratAllocs]  = useState<AllocWithPrice[]>([])
+  const [totalMargin,  setTotalMargin]  = useState('1000')
+  const [approved,     setApproved]     = useState(false)
+  const [busy,         setBusy]         = useState<Record<string, boolean>>({})
+  const [toast,        setToast]        = useState<{ msg: string; ok: boolean } | null>(null)
+
+  const setLoad = (k: string, v: boolean) => setBusy(p => ({ ...p, [k]: v }))
+  const notify  = (msg: string, ok: boolean) => {
+    setToast({ msg, ok })
+    setTimeout(() => setToast(null), 4000)
+  }
+
+  // Fetch trader info + strategy + oracle prices once
+  useEffect(() => {
+    if (!contracts || !traderAddress) return
+    const go = async () => {
+      try {
+        const [traderRaw, stratRaw] = await Promise.all([
+          contracts.registry.traders(traderAddress),
+          contracts.registry.getLatestStrategy(traderAddress),
+        ])
+        const tRaw = traderRaw as unknown as [boolean, string, bigint]
+        setTraderName(tRaw[1])
+
+        const sRaw   = stratRaw as unknown as [unknown[], bigint]
+        const allocs = sRaw[0] as unknown as Array<{
+          asset: string; weight: bigint; isLong: boolean; leverage: bigint
+        }>
+
+        const withPrices = await Promise.all(
+          allocs.map(async a => {
+            const pr = (await contracts.oracle.getPrice(a.asset)) as unknown as [bigint, bigint]
+            return {
+              asset:      a.asset,
+              weight:     a.weight,
+              isLong:     a.isLong,
+              leverage:   a.leverage,
+              entryPrice: pr[0] * 10n ** 10n,
+            } satisfies AllocWithPrice
+          }),
+        )
+        setStratAllocs(withPrices)
+      } catch { /* ignore */ }
+    }
+    void go()
+  }, [contracts, traderAddress])
+
+  // Reset approval when amount changes
+  useEffect(() => { setApproved(false) }, [totalMargin])
+
+  // ── Computed preview ───────────────────────────────────────────────────────
+  const totalBig = tryParse(totalMargin) ?? 0n
+  const preview  = stratAllocs.map(a => ({
+    ...a,
+    margin:   totalBig * a.weight / 10_000n,
+    notional: totalBig * a.weight / 10_000n * a.leverage,
+  }))
+
+  // ── Transactions ────────────────────────────────────────────────────────────
+  const doApprove = async () => {
+    if (!contracts) return
+    const amt = tryParse(totalMargin)
+    if (!amt) { notify('Enter a valid amount', false); return }
+    setLoad('approve', true)
+    try {
+      await waitTx(
+        await contracts.usdc.approve(String(contracts.copyTracker.target), amt),
+      )
+      notify('mUSDC approved ✓', true)
+      setApproved(true)
+    } catch (e) {
+      notify(e instanceof Error ? e.message.slice(0, 100) : 'Approve failed', false)
+    } finally { setLoad('approve', false) }
+  }
+
+  const doFollow = async () => {
+    if (!contracts || !traderAddress) return
+    const amt = tryParse(totalMargin)
+    if (!amt) { notify('Enter a valid amount', false); return }
+    setLoad('follow', true)
+    try {
+      await waitTx(
+        await contracts.copyTracker.followTrader(traderAddress, amt),
+      )
+      notify('Following trader ✓', true)
+      navigate('/portfolio')
+    } catch (e) {
+      notify(e instanceof Error ? e.message.slice(0, 100) : 'Follow failed', false)
+    } finally { setLoad('follow', false) }
+  }
+
+  // ── Guard ─────────────────────────────────────────────────────────────────
+  if (!traderAddress) {
+    return <div className="p-8 text-gray-400">Invalid trader address.</div>
+  }
+
+  if (!wallet.isConnected) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh] text-gray-400">
+        Connect wallet to copy a trader.
+      </div>
+    )
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  return (
+    <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
+
+      {/* Toast */}
+      {toast && (
+        <div
+          className={`fixed top-4 right-4 z-50 rounded-lg px-5 py-3 text-sm font-medium shadow-xl ${
+            toast.ok ? 'bg-emerald-800 text-emerald-100' : 'bg-red-900 text-red-100'
+          }`}
+        >
+          {toast.msg}
+        </div>
+      )}
+
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-2 text-sm text-gray-500">
+        <Link to="/marketplace" className="hover:text-white transition-colors">
+          Marketplace
+        </Link>
+        <span>/</span>
+        <span className="text-gray-300">
+          {traderName || `${traderAddress.slice(0, 6)}…${traderAddress.slice(-4)}`}
+        </span>
+      </div>
+
+      {/* Header */}
+      <div className="rounded-xl border border-gray-700 bg-gray-900 p-5 space-y-1">
+        <h1 className="text-xl font-bold text-white">
+          {traderName || 'Unknown Trader'}
+        </h1>
+        <p className="text-xs font-mono text-gray-500">{traderAddress}</p>
+      </div>
+
+      {/* Strategy allocations */}
+      <div className="rounded-xl border border-gray-700 bg-gray-900 p-5 space-y-4">
+        <h2 className="text-base font-bold text-white">Latest Strategy</h2>
+
+        {stratAllocs.length === 0 ? (
+          <p className="text-sm text-gray-600">No strategy published yet.</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {stratAllocs.map((a, i) => (
+              <span
+                key={i}
+                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium border ${
+                  a.isLong
+                    ? 'bg-green-950 border-green-800 text-green-300'
+                    : 'bg-red-950  border-red-800  text-red-300'
+                }`}
+              >
+                {a.isLong ? '↑' : '↓'}
+                {ASSET_LABEL[a.asset] ?? '?'}
+                <span className="text-xs opacity-70">
+                  {(Number(a.weight) / 100).toFixed(0)}% · {String(a.leverage)}×
+                </span>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Total margin input */}
+      <div className="rounded-xl border border-gray-700 bg-gray-900 p-5 space-y-3">
+        <h2 className="text-base font-bold text-white">Copy Amount</h2>
+        <div className="flex gap-3 items-center">
+          <input
+            type="number"
+            min="0"
+            placeholder="1000"
+            value={totalMargin}
+            onChange={e => setTotalMargin(e.target.value)}
+            className="w-48 rounded-lg bg-gray-800 border border-gray-600 px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500"
+          />
+          <span className="text-sm text-gray-400">mUSDC total margin</span>
+        </div>
+
+        {/* Allocation preview table */}
+        {preview.length > 0 && totalBig > 0n && (
+          <div className="overflow-x-auto mt-2">
+            <table className="w-full text-sm text-left">
+              <thead>
+                <tr className="text-xs text-gray-500 uppercase border-b border-gray-700">
+                  <th className="py-2 pr-4 font-medium">Asset</th>
+                  <th className="py-2 pr-4 font-medium">Side</th>
+                  <th className="py-2 pr-4 font-medium">Lev</th>
+                  <th className="py-2 pr-4 font-medium">Weight</th>
+                  <th className="py-2 pr-4 font-medium text-right">Margin</th>
+                  <th className="py-2 pr-4 font-medium text-right">Notional</th>
+                  <th className="py-2 font-medium text-right">Est. Entry</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-800">
+                {preview.map((row, i) => (
+                  <tr key={i} className="text-gray-300">
+                    <td className="py-2.5 pr-4 font-mono text-white font-medium">
+                      {ASSET_LABEL[row.asset] ?? '?'}
+                    </td>
+                    <td className={`py-2.5 pr-4 font-bold text-xs ${row.isLong ? 'text-green-400' : 'text-red-400'}`}>
+                      {row.isLong ? 'LONG ↑' : 'SHORT ↓'}
+                    </td>
+                    <td className="py-2.5 pr-4 font-mono">{String(row.leverage)}×</td>
+                    <td className="py-2.5 pr-4 font-mono">
+                      {(Number(row.weight) / 100).toFixed(0)}%
+                    </td>
+                    <td className="py-2.5 pr-4 font-mono text-right">
+                      {f18(row.margin)}
+                    </td>
+                    <td className="py-2.5 pr-4 font-mono text-right">
+                      {f18(row.notional)}
+                    </td>
+                    <td className="py-2.5 font-mono text-right">
+                      {fUsd(row.entryPrice)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Two-stage action */}
+      <div className="rounded-xl border border-gray-700 bg-gray-900 p-5 space-y-4">
+        <h2 className="text-base font-bold text-white">Confirm Copy</h2>
+
+        <div className="flex items-center gap-1 text-xs text-gray-500 mb-2">
+          <span className={`w-5 h-5 rounded-full flex items-center justify-center text-white font-bold text-xs ${
+            approved ? 'bg-emerald-700' : 'bg-gray-700'
+          }`}>
+            {approved ? '✓' : '1'}
+          </span>
+          <span className={approved ? 'text-emerald-400' : 'text-gray-400'}>
+            Approve mUSDC to CopyTracker
+          </span>
+          <span className="mx-2 text-gray-700">→</span>
+          <span className={`w-5 h-5 rounded-full flex items-center justify-center text-white font-bold text-xs ${
+            approved ? 'bg-gray-600' : 'bg-gray-800'
+          }`}>
+            2
+          </span>
+          <span className="text-gray-400">Follow Trader</span>
+        </div>
+
+        <div className="flex gap-3">
+          <button
+            onClick={() => void doApprove()}
+            disabled={approved || busy['approve'] || !totalMargin}
+            className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-colors ${
+              approved
+                ? 'bg-emerald-900 text-emerald-400 opacity-60 cursor-default'
+                : 'bg-gray-700 hover:bg-gray-600 disabled:opacity-40 text-white'
+            }`}
+          >
+            {busy['approve'] ? 'Approving…' : approved ? '✓ Approved' : 'Step 1 · Approve'}
+          </button>
+
+          <button
+            onClick={() => void doFollow()}
+            disabled={!approved || busy['follow'] || stratAllocs.length === 0}
+            className="flex-1 py-2.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 disabled:opacity-40 text-white text-sm font-bold transition-colors"
+          >
+            {busy['follow'] ? 'Following…' : 'Step 2 · Follow Trader'}
+          </button>
+        </div>
+
+        <p className="text-xs text-gray-600 text-center">
+          Your margin will be automatically split and deposited into positions according to the strategy above.
+        </p>
+      </div>
+    </div>
+  )
+}
