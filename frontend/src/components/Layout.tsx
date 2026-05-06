@@ -49,8 +49,20 @@ export default function Layout({ wallet, children }: Props) {
         method: 'wallet_switchEthereumChain',
         params: [{ chainId: '0x7a69' }],  // 31337
       })
-    } catch {
-      // user rejected or chain not added yet — ignore
+    } catch (err: any) {
+      if (err.code === 4902) {
+        try {
+          await eth.request({
+            method: 'wallet_addEthereumChain',
+            params: [{
+              chainId: '0x7a69',
+              chainName: 'Anvil Local',
+              rpcUrls: ['http://localhost:8545'],
+              nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+            }],
+          })
+        } catch { /* user rejected — ignore */ }
+      }
     } finally {
       setSwitching(false)
     }

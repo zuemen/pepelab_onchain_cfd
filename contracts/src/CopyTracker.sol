@@ -2,10 +2,11 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./PerpetualExchange.sol";
 import "./StrategyRegistry.sol";
 
-contract CopyTracker {
+contract CopyTracker is ReentrancyGuard {
     // ── Immutables ───────────────────────────────────────────────────────────
 
     IERC20            public immutable usdc;
@@ -58,7 +59,7 @@ contract CopyTracker {
 
     // ── Core functions ───────────────────────────────────────────────────────
 
-    function followTrader(address trader, uint256 totalMargin) external {
+    function followTrader(address trader, uint256 totalMargin) external nonReentrant {
         // 1. Fetch latest published strategy
         (StrategyRegistry.Allocation[] memory allocations, uint256 versionId) =
             registry.getLatestStrategy(trader);
@@ -104,7 +105,7 @@ contract CopyTracker {
         emit TraderFollowed(msg.sender, trader, versionId, totalMargin);
     }
 
-    function unfollowAndCloseAll(uint256 recordIdx) external {
+    function unfollowAndCloseAll(uint256 recordIdx) external nonReentrant {
         CopyRecord[] storage records = copyRecords[msg.sender];
         if (recordIdx >= records.length) revert InvalidRecordIndex();
 

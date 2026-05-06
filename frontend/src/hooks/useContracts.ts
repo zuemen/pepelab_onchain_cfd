@@ -17,6 +17,7 @@ export function useContracts(
     const runner = signer ?? provider
     if (!runner) return null
     const addr = getAddresses(chainId)
+    if (!addr) return null
     return {
       usdc:        new Contract(addr.MockUSDC,          MockUSDCABI,          runner),
       oracle:      new Contract(addr.MockOracle,        MockOracleABI,        runner),

@@ -32,18 +32,14 @@ const CHAIN_MAP: Record<number, ChainAddresses> = {
   11155111: SEPOLIA,
 }
 
-export const getAddresses = (chainId: number | null): ChainAddresses =>
-  CHAIN_MAP[chainId ?? 31337] ?? ANVIL
+export const getAddresses = (chainId: number | null): ChainAddresses | null =>
+  chainId === null ? null : (CHAIN_MAP[chainId] ?? null)
 
 export const CHAIN_NAMES: Record<number, string> = {
   31337:    'Anvil Local',
   11155111: 'Sepolia',
 }
 
-// Backward-compat: pages that import CONTRACT_ADDRESSES directly still work on Anvil
-export const CONTRACT_ADDRESSES = ANVIL
-
-export const CHAIN_ID = 31337
 
 // keccak256 of symbol string — matches Deploy.s.sol and on-chain IDs
 export const ASSET_IDS = {
