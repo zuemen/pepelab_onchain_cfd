@@ -468,8 +468,8 @@ export default function PortfolioPage({ wallet }: Props) {
                   fontSize: '12px',
                 }}
                 labelStyle={{ color: '#e5e7eb' }}
-                formatter={(value: number) => [
-                  `$${value.toFixed(2)}`,
+                formatter={(value) => [
+                  `$${Number(value ?? 0).toFixed(2)}`,
                   'Portfolio Value',
                 ]}
               />
