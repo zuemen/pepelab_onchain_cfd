@@ -20,11 +20,11 @@ const ANVIL: ChainAddresses = {
 
 // ── Sepolia testnet (chainId 11155111) ────────────────────────────────────────
 const SEPOLIA: ChainAddresses = {
-  MockUSDC:          "0x0000000000000000000000000000000000000000",
-  MockOracle:        "0x0000000000000000000000000000000000000000",
-  PerpetualExchange: "0x0000000000000000000000000000000000000000",
-  StrategyRegistry:  "0x0000000000000000000000000000000000000000",
-  CopyTracker:       "0x0000000000000000000000000000000000000000",
+  MockUSDC:          "0x7A7D35106B79919A48494BD5c827350bC179ACcF",
+  MockOracle:        "0x18c35cb3D3DdC522D0b7996e01d4a5C8b9cf16f4",
+  PerpetualExchange: "0x00f6cf0113399a7A451c7f85fe094a28092d3e0c",
+  StrategyRegistry:  "0xEf75ECA6514cE96B18382E921aC6190a0cF8c072",
+  CopyTracker:       "0x54e8C43f9Eb151Bb8DD6e61d16a969C4D0e73915",
 }
 
 const CHAIN_MAP: Record<number, ChainAddresses> = {
