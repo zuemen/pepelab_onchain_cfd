@@ -34,6 +34,7 @@ addr() { jq -r --arg n "$1" \
 
 USDC_ADDR=$(addr "MockUSDC")
 ORACLE_ADDR=$(addr "MockOracle")
+FEEROUTER_ADDR=$(addr "FeeRouter")
 EXCHANGE_ADDR=$(addr "PerpetualExchange")
 REGISTRY_ADDR=$(addr "StrategyRegistry")
 TRACKER_ADDR=$(addr "CopyTracker")
@@ -42,6 +43,7 @@ echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 printf "  %-22s %s\n" "MockUSDC:"          "$USDC_ADDR"
 printf "  %-22s %s\n" "MockOracle:"        "$ORACLE_ADDR"
+printf "  %-22s %s\n" "FeeRouter:"         "$FEEROUTER_ADDR"
 printf "  %-22s %s\n" "PerpetualExchange:" "$EXCHANGE_ADDR"
 printf "  %-22s %s\n" "StrategyRegistry:"  "$REGISTRY_ADDR"
 printf "  %-22s %s\n" "CopyTracker:"       "$TRACKER_ADDR"
@@ -52,7 +54,7 @@ echo "[4/4] Exporting to frontend..."
 mkdir -p "$FRONTEND_CONTRACTS/abi"
 cd "$REPO_ROOT"
 
-for name in MockUSDC MockOracle PerpetualExchange StrategyRegistry CopyTracker; do
+for name in MockUSDC MockOracle FeeRouter PerpetualExchange StrategyRegistry CopyTracker; do
     jq '.abi' "contracts/out/$name.sol/$name.json" \
         > "$FRONTEND_CONTRACTS/abi/$name.json"
 done
@@ -70,6 +72,7 @@ cat > "$FRONTEND_CONTRACTS/addresses.ts" <<TSEOF
 export interface ChainAddresses {
   MockUSDC:          string
   MockOracle:        string
+  FeeRouter:         string
   PerpetualExchange: string
   StrategyRegistry:  string
   CopyTracker:       string
@@ -79,6 +82,7 @@ export interface ChainAddresses {
 const ANVIL: ChainAddresses = {
   MockUSDC:          "$USDC_ADDR",
   MockOracle:        "$ORACLE_ADDR",
+  FeeRouter:         "$FEEROUTER_ADDR",
   PerpetualExchange: "$EXCHANGE_ADDR",
   StrategyRegistry:  "$REGISTRY_ADDR",
   CopyTracker:       "$TRACKER_ADDR",
@@ -86,11 +90,12 @@ const ANVIL: ChainAddresses = {
 
 // ── Sepolia testnet (chainId 11155111) ────────────────────────────────────────
 const SEPOLIA: ChainAddresses = {
-  MockUSDC:          "0x7A7D35106B79919A48494BD5c827350bC179ACcF",
-  MockOracle:        "0x18c35cb3D3DdC522D0b7996e01d4a5C8b9cf16f4",
-  PerpetualExchange: "0x00f6cf0113399a7A451c7f85fe094a28092d3e0c",
-  StrategyRegistry:  "0xEf75ECA6514cE96B18382E921aC6190a0cF8c072",
-  CopyTracker:       "0x54e8C43f9Eb151Bb8DD6e61d16a969C4D0e73915",
+  MockUSDC:          "0x0000000000000000000000000000000000000000",
+  MockOracle:        "0x0000000000000000000000000000000000000000",
+  FeeRouter:         "0x0000000000000000000000000000000000000000",
+  PerpetualExchange: "0x0000000000000000000000000000000000000000",
+  StrategyRegistry:  "0x0000000000000000000000000000000000000000",
+  CopyTracker:       "0x0000000000000000000000000000000000000000",
 }
 
 const CHAIN_MAP: Record<number, ChainAddresses> = {

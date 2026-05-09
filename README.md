@@ -65,22 +65,39 @@ pepelab_onchain_cfd/
 
 ## 快速啟動
 
-### 合約（本地測試網）
+### Anvil（本地測試）
+
+```bash
+# Terminal 1
+anvil
+
+# Terminal 2
+bash deploy-anvil.sh          # 部署合約 + 自動寫 frontend/src/contracts/addresses.ts
+bash seed-anvil.sh            # 建立 Demo Alpha + Demo Beta 兩個示範交易員
+
+# Terminal 3
+cd frontend && npm install && npm run dev   # http://localhost:5173
+```
+
+### Sepolia testnet
+
+```bash
+# 確認 contracts/.env 已填入：
+#   PRIVATE_KEY=0x...
+#   SEPOLIA_RPC_URL=https://...
+#   ETHERSCAN_API_KEY=...（選填，用於 verify）
+
+bash deploy-sepolia.sh        # 部署 + 自動更新 addresses.ts SEPOLIA 區塊
+bash seed-sepolia.sh          # 建立 Demo Alpha（deployer），可設 TRADER2_PK 加 Demo Beta
+git push                      # Vercel 自動 redeploy
+```
+
+### 合約測試
 
 ```bash
 cd contracts
 forge build
 forge test
-anvil                          # 啟動本地節點
-forge script script/Deploy.s.sol --rpc-url http://localhost:8545 --broadcast
-```
-
-### 前端
-
-```bash
-cd frontend
-npm install
-npm run dev                    # 啟動開發伺服器 http://localhost:5173
 ```
 
 ---

@@ -57,7 +57,7 @@ addrs = {
     if tx.get("transactionType") == "CREATE" and tx.get("contractName")
 }
 
-names = ["MockUSDC", "MockOracle", "PerpetualExchange", "StrategyRegistry", "CopyTracker"]
+names = ["MockUSDC", "MockOracle", "FeeRouter", "PerpetualExchange", "StrategyRegistry", "CopyTracker"]
 
 print()
 print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -74,6 +74,7 @@ block = (
     "const SEPOLIA: ChainAddresses = {\n"
     + '  MockUSDC:          "' + addrs.get("MockUSDC",          "0x0000000000000000000000000000000000000000") + '",\n'
     + '  MockOracle:        "' + addrs.get("MockOracle",        "0x0000000000000000000000000000000000000000") + '",\n'
+    + '  FeeRouter:         "' + addrs.get("FeeRouter",         "0x0000000000000000000000000000000000000000") + '",\n'
     + '  PerpetualExchange: "' + addrs.get("PerpetualExchange", "0x0000000000000000000000000000000000000000") + '",\n'
     + '  StrategyRegistry:  "' + addrs.get("StrategyRegistry",  "0x0000000000000000000000000000000000000000") + '",\n'
     + '  CopyTracker:       "' + addrs.get("CopyTracker",       "0x0000000000000000000000000000000000000000") + '",\n'
@@ -96,7 +97,7 @@ PYEOF
 # ── 4. Export ABIs ─────────────────────────────────────────────────────────────
 echo "[4/4] Exporting ABIs..."
 mkdir -p "$FRONTEND_CONTRACTS/abi"
-for name in MockUSDC MockOracle PerpetualExchange StrategyRegistry CopyTracker; do
+for name in MockUSDC MockOracle FeeRouter PerpetualExchange StrategyRegistry CopyTracker; do
   python3 -c "
 import json, sys
 d = json.load(open('$CONTRACTS_DIR/out/$name.sol/$name.json'))

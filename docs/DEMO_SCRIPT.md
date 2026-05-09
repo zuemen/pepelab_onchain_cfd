@@ -3,12 +3,14 @@
 
 > **Prerequisites 前置條件**
 > - Anvil running: `anvil` (terminal 1)
-> - Deploy: `bash deploy-anvil.sh` (terminal 2)
+> - Deploy + Seed: `bash deploy-anvil.sh && bash seed-anvil.sh` (terminal 2)
 > - Frontend: `cd frontend && npm run dev` (terminal 3)
 > - MetaMask: import **two** Anvil accounts
->   - Account A (Trader): `0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80`
+>   - Account A (Trader / oracle owner): `0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80`
 >   - Account B (Follower): `0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d`
 > - MetaMask network: Anvil Local (chainId 31337, RPC http://localhost:8545)
+>
+> **Note:** `seed-anvil.sh` pre-creates **Demo Alpha** (Account A) and **Demo Beta** (Account B) with strategies already published — you can skip Steps 1–4 and jump straight to Step 2 to experience copy-trading immediately.
 
 ---
 
@@ -124,8 +126,15 @@
 
 ## Sepolia Demo (if deployed)
 
-Replace step 1–6 with Sepolia network in MetaMask.  
-All addresses are updated in `frontend/src/contracts/addresses.ts` after `bash deploy-sepolia.sh`.
+Replace step 1–6 with Sepolia network in MetaMask.
+
+```bash
+bash deploy-sepolia.sh   # deploys + writes addresses.ts SEPOLIA block
+bash seed-sepolia.sh     # creates Demo Alpha trader on Sepolia
+git push                 # Vercel redeploys automatically
+```
+
+All contract addresses are written to `frontend/src/contracts/addresses.ts` by the deploy script.
 
 ---
 
