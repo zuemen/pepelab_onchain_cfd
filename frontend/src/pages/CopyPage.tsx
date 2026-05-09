@@ -16,7 +16,7 @@ const ASSET_LABEL: Record<string, string> = {
 // ── Types ────────────────────────────────────────────────────────────────────
 interface AllocWithPrice {
   asset:      string
-  weight:     bigint   // bps (100 = 1%)
+  weight:     bigint
   isLong:     boolean
   leverage:   bigint
   entryPrice: bigint   // 18-dec, current oracle price
@@ -28,15 +28,15 @@ const tryParse = (s: string): bigint | null => {
   try { return parseEther(s) } catch { return null }
 }
 
-const f18   = (v: bigint, d = 2) => (Number(v) / 1e18).toFixed(d)
-const fUsd  = (v: bigint) =>
+const f18  = (v: bigint, d = 2) => (Number(v) / 1e18).toFixed(d)
+const fUsd = (v: bigint) =>
   '$' + (Number(v) / 1e18).toLocaleString('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })
 
-type Waitable = { wait(): Promise<unknown> }
-const waitTx = (tx: unknown) => (tx as Waitable).wait()
+type TxResp = { wait(): Promise<unknown>; hash: string }
+const asTx = (tx: unknown): TxResp => tx as TxResp
 
 // ── Component ────────────────────────────────────────────────────────────────
 interface Props { wallet: WalletAPI }
@@ -46,33 +46,42 @@ export default function CopyPage({ wallet }: Props) {
   const navigate = useNavigate()
   const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId)
 
-  const [traderName,   setTraderName]   = useState('')
-  const [stratAllocs,  setStratAllocs]  = useState<AllocWithPrice[]>([])
-  const [totalMargin,  setTotalMargin]  = useState('1000')
-  const [approved,     setApproved]     = useState(false)
-  const [busy,         setBusy]         = useState<Record<string, boolean>>({})
-  const [toast,        setToast]        = useState<{ msg: string; ok: boolean } | null>(null)
+  const [traderName,       setTraderName]       = useState('')
+  const [traderRegistered, setTraderRegistered] = useState(false)
+  const [hasStrategy,      setHasStrategy]      = useState(false)
+  const [loadError,        setLoadError]        = useState<string | null>(null)
+  const [stratAllocs,      setStratAllocs]      = useState<AllocWithPrice[]>([])
+  const [totalMargin,      setTotalMargin]      = useState('1000')
+  const [approved,         setApproved]         = useState(false)
+  const [busy,             setBusy]             = useState<Record<string, boolean>>({})
+  const [toast,            setToast]            = useState<{ msg: string; ok: boolean; hash?: string } | null>(null)
 
   const setLoad = (k: string, v: boolean) => setBusy(p => ({ ...p, [k]: v }))
-  const notify  = (msg: string, ok: boolean) => {
-    setToast({ msg, ok })
-    setTimeout(() => setToast(null), 4000)
+  const notify  = (msg: string, ok: boolean, hash?: string) => {
+    setToast({ msg, ok, hash })
+    setTimeout(() => setToast(null), 6000)
   }
 
-  // Fetch trader info + strategy + oracle prices once
+  // Fetch trader name and strategy independently — strategy may revert if none published
   useEffect(() => {
     if (!contracts || !traderAddress) return
+    setLoadError(null)
     const go = async () => {
+      // trader info — failure means RPC error, abort the whole load
       try {
-        const [traderRaw, stratRaw] = await Promise.all([
-          contracts.registry.traders(traderAddress),
-          contracts.registry.getLatestStrategy(traderAddress),
-        ])
-        const tRaw = traderRaw as unknown as [boolean, string, bigint]
-        setTraderName(tRaw[1])
+        const traderRaw = (await contracts.registry.traders(traderAddress)) as unknown as [boolean, string, bigint]
+        setTraderName(traderRaw[1])
+        setTraderRegistered(traderRaw[0] as boolean)
+      } catch (e) {
+        console.error('[CopyPage] trader fetch error', e)
+        setLoadError(e instanceof Error ? e.message.slice(0, 120) : 'Could not load trader info — check network')
+        return
+      }
 
-        const sRaw   = stratRaw as unknown as [unknown[], bigint]
-        const allocs = sRaw[0] as unknown as Array<{
+      // strategy — revert is expected when trader has not published yet
+      try {
+        const stratRaw = (await contracts.registry.getLatestStrategy(traderAddress)) as unknown as [unknown[], bigint]
+        const allocs = stratRaw[0] as unknown as Array<{
           asset: string; weight: bigint; isLong: boolean; leverage: bigint
         }>
 
@@ -89,7 +98,11 @@ export default function CopyPage({ wallet }: Props) {
           }),
         )
         setStratAllocs(withPrices)
-      } catch { /* ignore */ }
+        setHasStrategy(true)
+      } catch {
+        setStratAllocs([])
+        setHasStrategy(false)
+      }
     }
     void go()
   }, [contracts, traderAddress])
@@ -98,11 +111,14 @@ export default function CopyPage({ wallet }: Props) {
   useEffect(() => { setApproved(false) }, [totalMargin])
 
   // ── Computed preview ───────────────────────────────────────────────────────
-  const totalBig = tryParse(totalMargin) ?? 0n
-  const preview  = stratAllocs.map(a => ({
+  const COPY_FEE_BPS = 30n
+  const totalBig  = tryParse(totalMargin) ?? 0n
+  const feeBig    = totalBig * COPY_FEE_BPS / 10_000n
+  const netBig    = totalBig - feeBig
+  const preview   = stratAllocs.map(a => ({
     ...a,
-    margin:   totalBig * a.weight / 10_000n,
-    notional: totalBig * a.weight / 10_000n * a.leverage,
+    margin:   netBig * a.weight / 10_000n,
+    notional: netBig * a.weight / 10_000n * a.leverage,
   }))
 
   // ── Transactions ────────────────────────────────────────────────────────────
@@ -112,10 +128,9 @@ export default function CopyPage({ wallet }: Props) {
     if (!amt) { notify('Enter a valid amount', false); return }
     setLoad('approve', true)
     try {
-      await waitTx(
-        await contracts.usdc.approve(String(contracts.copyTracker.target), amt),
-      )
-      notify('mUSDC approved ✓', true)
+      const tx = asTx(await contracts.usdc.approve(String(contracts.copyTracker.target), amt))
+      await tx.wait()
+      notify('mUSDC approved ✓', true, tx.hash)
       setApproved(true)
     } catch (e) {
       notify(e instanceof Error ? e.message.slice(0, 100) : 'Approve failed', false)
@@ -128,10 +143,9 @@ export default function CopyPage({ wallet }: Props) {
     if (!amt) { notify('Enter a valid amount', false); return }
     setLoad('follow', true)
     try {
-      await waitTx(
-        await contracts.copyTracker.followTrader(traderAddress, amt),
-      )
-      notify('Following trader ✓', true)
+      const tx = asTx(await contracts.copyTracker.followTrader(traderAddress, amt))
+      await tx.wait()
+      notify('Following trader ✓', true, tx.hash)
       navigate('/portfolio')
     } catch (e) {
       notify(e instanceof Error ? e.message.slice(0, 100) : 'Follow failed', false)
@@ -163,14 +177,29 @@ export default function CopyPage({ wallet }: Props) {
           }`}
         >
           {toast.msg}
+          {toast.hash && wallet.chainId === 11155111 && (
+            <a
+              href={`https://sepolia.etherscan.io/tx/${toast.hash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block mt-1 text-xs underline opacity-80 hover:opacity-100"
+            >
+              View on Etherscan ↗
+            </a>
+          )}
+        </div>
+      )}
+
+      {/* Load error banner */}
+      {loadError && (
+        <div className="rounded-lg border border-red-800 bg-red-950/40 px-4 py-3 text-sm text-red-400">
+          <strong>Failed to load trader:</strong> {loadError}
         </div>
       )}
 
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-gray-500">
-        <Link to="/marketplace" className="hover:text-white transition-colors">
-          Marketplace
-        </Link>
+        <Link to="/marketplace" className="hover:text-white transition-colors">Marketplace</Link>
         <span>/</span>
         <span className="text-gray-300">
           {traderName || `${traderAddress.slice(0, 6)}…${traderAddress.slice(-4)}`}
@@ -179,10 +208,13 @@ export default function CopyPage({ wallet }: Props) {
 
       {/* Header */}
       <div className="rounded-xl border border-gray-700 bg-gray-900 p-5 space-y-1">
-        <h1 className="text-xl font-bold text-white">
-          {traderName || 'Unknown Trader'}
-        </h1>
+        <h1 className="text-xl font-bold text-white">{traderName || 'Unknown Trader'}</h1>
         <p className="text-xs font-mono text-gray-500">{traderAddress}</p>
+        {!loadError && traderName !== '' && !traderRegistered && (
+          <p className="mt-2 text-xs text-yellow-400 font-medium">
+            ⚠ This address is not registered as a trader.
+          </p>
+        )}
       </div>
 
       {/* Strategy allocations */}
@@ -222,13 +254,16 @@ export default function CopyPage({ wallet }: Props) {
             min="0"
             placeholder="1000"
             value={totalMargin}
+            disabled={!hasStrategy}
             onChange={e => setTotalMargin(e.target.value)}
-            className="w-48 rounded-lg bg-gray-800 border border-gray-600 px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500"
+            className="w-48 rounded-lg bg-gray-800 border border-gray-600 px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed"
           />
           <span className="text-sm text-gray-400">mUSDC total margin</span>
+          {!hasStrategy && (
+            <span className="text-xs text-gray-600 italic">disabled — no strategy</span>
+          )}
         </div>
 
-        {/* Allocation preview table */}
         {preview.length > 0 && totalBig > 0n && (
           <div className="overflow-x-auto mt-2">
             <table className="w-full text-sm text-left">
@@ -253,18 +288,10 @@ export default function CopyPage({ wallet }: Props) {
                       {row.isLong ? 'LONG ↑' : 'SHORT ↓'}
                     </td>
                     <td className="py-2.5 pr-4 font-mono">{String(row.leverage)}×</td>
-                    <td className="py-2.5 pr-4 font-mono">
-                      {(Number(row.weight) / 100).toFixed(0)}%
-                    </td>
-                    <td className="py-2.5 pr-4 font-mono text-right">
-                      {f18(row.margin)}
-                    </td>
-                    <td className="py-2.5 pr-4 font-mono text-right">
-                      {f18(row.notional)}
-                    </td>
-                    <td className="py-2.5 font-mono text-right">
-                      {fUsd(row.entryPrice)}
-                    </td>
+                    <td className="py-2.5 pr-4 font-mono">{(Number(row.weight) / 100).toFixed(0)}%</td>
+                    <td className="py-2.5 pr-4 font-mono text-right">{f18(row.margin)}</td>
+                    <td className="py-2.5 pr-4 font-mono text-right">{f18(row.notional)}</td>
+                    <td className="py-2.5 font-mono text-right">{fUsd(row.entryPrice)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -272,6 +299,24 @@ export default function CopyPage({ wallet }: Props) {
           </div>
         )}
       </div>
+
+      {/* Fee preview */}
+      {totalBig > 0n && (
+        <div className="rounded-xl border border-yellow-900/50 bg-yellow-950/20 p-4 space-y-1 text-sm">
+          <p className="text-yellow-400 font-semibold text-xs uppercase tracking-wide">Fee Preview</p>
+          <div className="flex justify-between text-gray-300">
+            <span>Copy fee (0.3%)</span>
+            <span className="font-mono">−{f18(feeBig, 4)} mUSDC</span>
+          </div>
+          <div className="flex justify-between text-gray-300">
+            <span>Net margin deposited</span>
+            <span className="font-mono font-semibold text-white">{f18(netBig)} mUSDC</span>
+          </div>
+          <p className="text-xs text-gray-600 pt-1">
+            Copy fee is split 70 % → trader · 20 % → platform · 10 % → slash pool
+          </p>
+        </div>
+      )}
 
       {/* Two-stage action */}
       <div className="rounded-xl border border-gray-700 bg-gray-900 p-5 space-y-4">
@@ -298,7 +343,7 @@ export default function CopyPage({ wallet }: Props) {
         <div className="flex gap-3">
           <button
             onClick={() => void doApprove()}
-            disabled={approved || busy['approve'] || !totalMargin}
+            disabled={approved || busy['approve'] || !totalMargin || !hasStrategy}
             className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-colors ${
               approved
                 ? 'bg-emerald-900 text-emerald-400 opacity-60 cursor-default'
@@ -310,12 +355,18 @@ export default function CopyPage({ wallet }: Props) {
 
           <button
             onClick={() => void doFollow()}
-            disabled={!approved || busy['follow'] || stratAllocs.length === 0}
+            disabled={!approved || busy['follow'] || stratAllocs.length === 0 || !hasStrategy}
             className="flex-1 py-2.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 disabled:opacity-40 text-white text-sm font-bold transition-colors"
           >
             {busy['follow'] ? 'Following…' : 'Step 2 · Follow Trader'}
           </button>
         </div>
+
+        {!hasStrategy && (
+          <p className="text-xs text-yellow-500 text-center font-medium">
+            ⚠ Trader has no published strategy. Copy is disabled.
+          </p>
+        )}
 
         <p className="text-xs text-gray-600 text-center">
           Your margin will be automatically split and deposited into positions according to the strategy above.

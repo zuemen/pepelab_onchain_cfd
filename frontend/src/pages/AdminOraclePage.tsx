@@ -17,9 +17,9 @@ const ASSETS: { label: string; id: AssetId }[] = [
 interface AssetRow {
   id:        AssetId
   label:     string
-  price8:    bigint    // 8-decimal oracle price
-  updatedAt: bigint    // unix timestamp
-  input:     string    // USD value input
+  price8:    bigint
+  updatedAt: bigint
+  input:     string
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -37,7 +37,6 @@ const fDate = (ts: bigint) =>
         timeStyle: 'short',
       })
 
-// ±50% guard: |diff| / current ≤ 50%
 const inRange = (current8: bigint, newUsd: string): boolean => {
   const n = parseFloat(newUsd)
   if (!isFinite(n) || n <= 0 || current8 === 0n) return false
@@ -52,8 +51,8 @@ const allowedRange = (price8: bigint): string => {
        + `$${(p * 1.5).toLocaleString('en-US', { maximumFractionDigits: 2 })}`
 }
 
-type Waitable = { wait(): Promise<unknown> }
-const waitTx = (tx: unknown) => (tx as Waitable).wait()
+type TxResp = { wait(): Promise<unknown>; hash: string }
+const asTx = (tx: unknown): TxResp => tx as TxResp
 
 // ── Component ─────────────────────────────────────────────────────────────────
 interface Props { wallet: WalletAPI }
@@ -61,19 +60,26 @@ interface Props { wallet: WalletAPI }
 export default function AdminOraclePage({ wallet }: Props) {
   const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId)
 
-  const [assets, setAssets] = useState<AssetRow[]>(
+  const [assets,         setAssets]         = useState<AssetRow[]>(
     ASSETS.map(a => ({ ...a, price8: 0n, updatedAt: 0n, input: '' })),
   )
-  const [busy,  setBusy]  = useState<Record<string, boolean>>({})
-  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
+  const [oracleOwner,    setOracleOwner]    = useState<string | null>(null)
+  const [ownerCheckError, setOwnerCheckError] = useState<string | null>(null)
+  const [busy,           setBusy]           = useState<Record<string, boolean>>({})
+  const [toast,          setToast]          = useState<{ msg: string; ok: boolean; hash?: string } | null>(null)
+
+  const isOwner =
+    oracleOwner !== null &&
+    wallet.address !== null &&
+    oracleOwner.toLowerCase() === wallet.address.toLowerCase()
 
   const setLoad = (k: string, v: boolean) => setBusy(p => ({ ...p, [k]: v }))
-  const notify  = (msg: string, ok: boolean) => {
-    setToast({ msg, ok })
-    setTimeout(() => setToast(null), 4000)
+  const notify  = (msg: string, ok: boolean, hash?: string) => {
+    setToast({ msg, ok, hash })
+    setTimeout(() => setToast(null), 6000)
   }
 
-  // ── Fetch ─────────────────────────────────────────────────────────────────
+  // ── Fetch prices ──────────────────────────────────────────────────────────
   const fetchPrices = useCallback(async () => {
     if (!contracts) return
     try {
@@ -90,7 +96,28 @@ export default function AdminOraclePage({ wallet }: Props) {
         }),
       )
       setAssets(rows)
-    } catch { /* ignore */ }
+    } catch (e) {
+      console.error('[oracle fetch]', e)
+      notify(e instanceof Error ? e.message.slice(0, 120) : 'Network error — check your wallet network', false)
+    }
+  }, [contracts])
+
+  // ── Check oracle ownership (cancellation flag avoids unmount race) ────────
+  useEffect(() => {
+    if (!contracts) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const owner = (await contracts.oracle.owner()) as string
+        if (!cancelled) { setOracleOwner(owner); setOwnerCheckError(null) }
+      } catch (e) {
+        if (!cancelled) {
+          setOracleOwner(null)
+          setOwnerCheckError(e instanceof Error ? e.message.slice(0, 120) : 'Failed to read owner')
+        }
+      }
+    })()
+    return () => { cancelled = true }
   }, [contracts])
 
   useEffect(() => { void fetchPrices() }, [fetchPrices])
@@ -98,6 +125,10 @@ export default function AdminOraclePage({ wallet }: Props) {
   // ── Update price ──────────────────────────────────────────────────────────
   const updatePrice = async (id: AssetId, inputStr: string, current8: bigint) => {
     if (!contracts) return
+    if (!isOwner) {
+      notify('Connected wallet is not the oracle owner', false)
+      return
+    }
     if (!inRange(current8, inputStr)) {
       notify('Price change exceeds ±50% limit', false)
       return
@@ -105,8 +136,9 @@ export default function AdminOraclePage({ wallet }: Props) {
     const new8 = BigInt(Math.round(parseFloat(inputStr) * 1e8))
     setLoad(id, true)
     try {
-      await waitTx(await contracts.oracle.updatePrice(id, new8))
-      notify(`Price updated ✓`, true)
+      const tx = asTx(await contracts.oracle.updatePrice(id, new8))
+      await tx.wait()
+      notify('Price updated ✓', true, tx.hash)
       await fetchPrices()
     } catch (e) {
       notify(e instanceof Error ? e.message.slice(0, 100) : 'Update failed', false)
@@ -137,6 +169,16 @@ export default function AdminOraclePage({ wallet }: Props) {
           }`}
         >
           {toast.msg}
+          {toast.hash && wallet.chainId === 11155111 && (
+            <a
+              href={`https://sepolia.etherscan.io/tx/${toast.hash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block mt-1 text-xs underline opacity-80 hover:opacity-100"
+            >
+              View on Etherscan ↗
+            </a>
+          )}
         </div>
       )}
 
@@ -148,7 +190,28 @@ export default function AdminOraclePage({ wallet }: Props) {
         </p>
       </div>
 
-      {/* Warning */}
+      {/* Owner status banner */}
+      {ownerCheckError ? (
+        <div className="rounded-lg border border-red-800 bg-red-950/40 px-4 py-3 text-xs text-red-400">
+          <strong>Failed to read oracle owner:</strong> {ownerCheckError}
+        </div>
+      ) : oracleOwner === null ? (
+        <div className="rounded-lg border border-gray-700 bg-gray-800/60 px-4 py-3 text-xs text-gray-400">
+          Checking owner permissions…
+        </div>
+      ) : !isOwner ? (
+        <div className="rounded-lg border border-red-800 bg-red-950/40 px-4 py-3 text-xs text-red-400 space-y-1">
+          <p><strong>Read-only mode:</strong> connected wallet is not the oracle owner. Updates will revert.</p>
+          <p className="font-mono">Owner: {oracleOwner.slice(0, 10)}…{oracleOwner.slice(-6)}</p>
+          <p className="font-mono">You:&nbsp;&nbsp;&nbsp;{wallet.address?.slice(0, 10)}…{wallet.address?.slice(-6)}</p>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-emerald-800 bg-emerald-950/40 px-4 py-3 text-xs text-emerald-400">
+          Owner verified ✓
+        </div>
+      )}
+
+      {/* General warning */}
       <div className="rounded-lg border border-yellow-800 bg-yellow-950/40 px-4 py-3 text-xs text-yellow-400">
         <strong>Note:</strong> MockOracle price changes immediately affect all open position PnL.
         In production, oracle prices would come from trusted off-chain data feeds (e.g. Chainlink).
@@ -172,7 +235,6 @@ export default function AdminOraclePage({ wallet }: Props) {
             const hasVal = row.input !== '' && !isNaN(parseFloat(row.input))
             return (
               <div key={row.id} className="px-5 py-4 space-y-3">
-                {/* Asset info row */}
                 <div className="flex items-start justify-between gap-4">
                   <div className="space-y-0.5">
                     <div className="flex items-center gap-2">
@@ -195,7 +257,6 @@ export default function AdminOraclePage({ wallet }: Props) {
                   </div>
                 </div>
 
-                {/* Update row */}
                 <div className="flex gap-2 items-center">
                   <div className="relative flex-1 max-w-xs">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
@@ -203,10 +264,11 @@ export default function AdminOraclePage({ wallet }: Props) {
                       type="number"
                       min="0"
                       step="0.01"
+                      disabled={!isOwner}
                       placeholder={row.price8 > 0n ? (Number(row.price8) / 1e8).toFixed(2) : '0.00'}
                       value={row.input}
                       onChange={e => updateInput(row.id, e.target.value)}
-                      className={`w-full pl-7 pr-3 py-2 rounded-lg bg-gray-800 border text-sm text-white focus:outline-none ${
+                      className={`w-full pl-7 pr-3 py-2 rounded-lg bg-gray-800 border text-sm text-white focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed ${
                         hasVal
                           ? ok
                             ? 'border-emerald-600 focus:border-emerald-500'
@@ -217,15 +279,13 @@ export default function AdminOraclePage({ wallet }: Props) {
                   </div>
                   <button
                     onClick={() => void updatePrice(row.id, row.input, row.price8)}
-                    disabled={busy[row.id] || !hasVal || !ok}
-                    className="px-4 py-2 rounded-lg bg-orange-700 hover:bg-orange-600 disabled:opacity-40 text-white text-sm font-semibold transition-colors whitespace-nowrap"
+                    disabled={busy[row.id] || !hasVal || !ok || !isOwner}
+                    className="px-4 py-2 rounded-lg bg-orange-700 hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors whitespace-nowrap"
                   >
                     {busy[row.id] ? 'Updating…' : 'Update Price'}
                   </button>
                   {hasVal && !ok && (
-                    <span className="text-xs text-red-400 whitespace-nowrap">
-                      exceeds ±50%
-                    </span>
+                    <span className="text-xs text-red-400 whitespace-nowrap">exceeds ±50%</span>
                   )}
                 </div>
               </div>
@@ -234,7 +294,7 @@ export default function AdminOraclePage({ wallet }: Props) {
         </div>
       </div>
 
-      {/* Oracle raw values */}
+      {/* Raw values */}
       <details className="text-xs text-gray-700">
         <summary className="cursor-pointer hover:text-gray-500 w-fit">
           Raw 8-decimal prices (for cast commands)

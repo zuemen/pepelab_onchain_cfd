@@ -25,6 +25,7 @@ interface TraderCard {
   displayName:   string
   allocs:        RawAlloc[]
   followerCount: bigint
+  hasStrategy:   boolean
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -50,35 +51,54 @@ interface Props { wallet: WalletAPI }
 export default function MarketplacePage({ wallet }: Props) {
   const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId)
 
-  const [traders,   setTraders]   = useState<TraderCard[]>([])
-  const [isLoading, setIsLoading] = useState(false)
+  const [traders,    setTraders]    = useState<TraderCard[]>([])
+  const [isLoading,  setIsLoading]  = useState(false)
+  const [fetchError, setFetchError] = useState<string | null>(null)
+  const [toast,      setToast]      = useState<{ msg: string; ok: boolean } | null>(null)
+
+  const notify = (msg: string, ok: boolean) => {
+    setToast({ msg, ok })
+    setTimeout(() => setToast(null), 6000)
+  }
 
   const fetchAll = useCallback(async () => {
     if (!contracts) return
     setIsLoading(true)
+    setFetchError(null)
     try {
       const addresses = (await contracts.registry.getAllTraders()) as string[]
 
       const cards = await Promise.all(
         addresses.map(async (addr): Promise<TraderCard> => {
-          const [traderRaw, stratRaw, fc] = await Promise.all([
+          const [traderRaw, fc] = await Promise.all([
             contracts.registry.traders(addr),
-            contracts.registry.getLatestStrategy(addr),
             contracts.copyTracker.getFollowerCount(addr),
           ])
           const tRaw = traderRaw as unknown as [boolean, string, bigint]
-          const sRaw = stratRaw  as unknown as [unknown[], bigint]
+
+          // getLatestStrategy reverts when trader has no strategy yet — guard it
+          let allocs: RawAlloc[] = []
+          let hasStrategy = false
+          try {
+            const stratRaw = (await contracts.registry.getLatestStrategy(addr)) as unknown as [unknown[], bigint]
+            allocs = parseAllocs(stratRaw[0] as unknown[])
+            hasStrategy = allocs.length > 0
+          } catch { /* trader registered but has not published a strategy yet */ }
+
           return {
             address:       addr,
             displayName:   tRaw[1],
-            allocs:        parseAllocs(sRaw[0] as unknown[]),
+            allocs,
             followerCount: fc as bigint,
+            hasStrategy,
           }
         }),
       )
       setTraders(cards)
-    } catch { /* ignore */ }
-    finally { setIsLoading(false) }
+    } catch (e) {
+      console.error('[marketplace fetch]', e)
+      setFetchError(e instanceof Error ? e.message.slice(0, 140) : 'Network error — check your wallet network')
+    } finally { setIsLoading(false) }
   }, [contracts])
 
   useEffect(() => { void fetchAll() }, [fetchAll])
@@ -95,6 +115,18 @@ export default function MarketplacePage({ wallet }: Props) {
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
+
+      {/* Toast */}
+      {toast && (
+        <div
+          className={`fixed top-4 right-4 z-50 rounded-lg px-5 py-3 text-sm font-medium shadow-xl ${
+            toast.ok ? 'bg-emerald-800 text-emerald-100' : 'bg-red-900 text-red-100'
+          }`}
+        >
+          {toast.msg}
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-white">Strategy Marketplace</h1>
@@ -107,6 +139,13 @@ export default function MarketplacePage({ wallet }: Props) {
           ↺ Refresh
         </button>
       </div>
+
+      {/* Fetch error banner */}
+      {fetchError && (
+        <div className="rounded-lg border border-red-800 bg-red-950/40 px-4 py-3 text-sm text-red-400">
+          <strong>Failed to load marketplace:</strong> {fetchError}
+        </div>
+      )}
 
       {isLoading ? (
         <div className="rounded-xl border border-gray-700 bg-gray-900 p-12 text-center text-gray-500">
@@ -134,20 +173,16 @@ export default function MarketplacePage({ wallet }: Props) {
             <tbody className="divide-y divide-gray-800">
               {traders.map(t => (
                 <tr key={t.address} className="hover:bg-gray-800/40 transition-colors">
-                  {/* Trader identity */}
                   <td className="px-5 py-4">
-                    <div className="font-semibold text-white">
-                      {t.displayName || '—'}
-                    </div>
-                    <div className="font-mono text-xs text-gray-500 mt-0.5">
-                      {shortAddr(t.address)}
-                    </div>
+                    <div className="font-semibold text-white">{t.displayName || '—'}</div>
+                    <div className="font-mono text-xs text-gray-500 mt-0.5">{shortAddr(t.address)}</div>
                   </td>
 
-                  {/* Strategy summary */}
                   <td className="px-5 py-4 max-w-xs">
-                    {t.allocs.length === 0 ? (
-                      <span className="text-gray-600 italic text-xs">No strategy</span>
+                    {!t.hasStrategy ? (
+                      <span className="inline-flex items-center rounded-full border border-gray-700 bg-gray-800 px-2.5 py-0.5 text-xs text-gray-500">
+                        No strategy yet
+                      </span>
                     ) : (
                       <div className="flex flex-wrap gap-1.5">
                         {t.allocs.map((a, i) => (
@@ -169,14 +204,12 @@ export default function MarketplacePage({ wallet }: Props) {
                     )}
                   </td>
 
-                  {/* Follower count */}
                   <td className="px-5 py-4 text-center">
                     <span className="font-mono text-white font-semibold">
                       {String(t.followerCount)}
                     </span>
                   </td>
 
-                  {/* Actions */}
                   <td className="px-5 py-4">
                     <div className="flex gap-2 justify-end">
                       <Link
@@ -185,7 +218,7 @@ export default function MarketplacePage({ wallet }: Props) {
                       >
                         View
                       </Link>
-                      {t.allocs.length > 0 && (
+                      {t.hasStrategy && (
                         <Link
                           to={`/copy/${t.address}`}
                           className="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-semibold transition-colors"
@@ -200,22 +233,16 @@ export default function MarketplacePage({ wallet }: Props) {
             </tbody>
           </table>
 
-          {/* Summary bar */}
           <div className="border-t border-gray-800 px-5 py-2.5 flex justify-between text-xs text-gray-600">
             <span>{traders.length} trader{traders.length !== 1 ? 's' : ''} listed</span>
-            <span>
-              {traders.reduce((s, t) => s + Number(t.followerCount), 0)} total followers
-            </span>
+            <span>{traders.reduce((s, t) => s + Number(t.followerCount), 0)} total followers</span>
           </div>
         </div>
       )}
 
-      {/* Hidden: generate text summary for quick copy (useful for demo) */}
       {traders.length > 0 && (
         <details className="text-xs text-gray-700">
-          <summary className="cursor-pointer hover:text-gray-500 w-fit">
-            Raw strategy text
-          </summary>
+          <summary className="cursor-pointer hover:text-gray-500 w-fit">Raw strategy text</summary>
           <pre className="mt-2 p-3 rounded bg-gray-900 border border-gray-800 overflow-x-auto text-gray-500">
             {traders.map(t => `${t.displayName}: ${summarize(t.allocs)}`).join('\n')}
           </pre>
