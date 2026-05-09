@@ -45,7 +45,9 @@ export default function Layout({ wallet, children }: Props) {
     try {
       await eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x7a69' }] })
     } catch (err: any) {
-      if (err.code === 4902) {
+      if (err.code === -32002) {
+        /* MetaMask already has a pending switch request — ignore */
+      } else if (err.code === 4902) {
         try {
           await eth.request({
             method: 'wallet_addEthereumChain',
@@ -70,7 +72,9 @@ export default function Layout({ wallet, children }: Props) {
     try {
       await eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0xaa36a7' }] })
     } catch (err: any) {
-      if (err.code === 4902) {
+      if (err.code === -32002) {
+        /* MetaMask already has a pending switch request — ignore */
+      } else if (err.code === 4902) {
         try {
           await eth.request({
             method: 'wallet_addEthereumChain',
