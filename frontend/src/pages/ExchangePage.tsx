@@ -129,14 +129,24 @@ export default function ExchangePage({ wallet }: Props) {
   // ── Transactions ────────────────────────────────────────────────────────────
   const mintFaucet = async () => {
     if (!contracts || !wallet.address) return
+    const key = `faucet:${wallet.address.toLowerCase()}:${wallet.chainId}`
+    const last = parseInt(localStorage.getItem(key) ?? '0', 10)
+    const now = Date.now()
+    const COOLDOWN_MS = 24 * 60 * 60 * 1000
+    if (now - last < COOLDOWN_MS) {
+      const next = new Date(last + COOLDOWN_MS)
+      notify(`Faucet on cooldown — next available at ${next.toLocaleTimeString()}`, false)
+      return
+    }
     setLoad('faucet', true)
     try {
-      const tx = asTx(await contracts.usdc.faucet())
+      const tx = asTx(await contracts.usdc.mint(wallet.address, parseEther('1000')))
       await tx.wait()
-      notify('1 000 mUSDC minted ✓', true, tx.hash)
+      localStorage.setItem(key, String(now))
+      notify('1000 mUSDC minted ✓ (next available in 24h)', true, tx.hash)
       await fetchAll()
     } catch (e) {
-      notify(e instanceof Error ? e.message.slice(0, 100) : 'Faucet failed', false)
+      notify(e instanceof Error ? e.message.slice(0, 100) : 'Mint failed', false)
     } finally { setLoad('faucet', false) }
   }
 

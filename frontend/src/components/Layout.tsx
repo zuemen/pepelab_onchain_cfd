@@ -152,13 +152,14 @@ export default function Layout({ wallet, children }: Props) {
                   {switching ? '…' : 'Switch to Sepolia'}
                 </button>
               )}
-              {wallet.chainId !== 31337 && (
+              {import.meta.env.DEV && wallet.chainId !== 31337 && (
                 <button
                   onClick={() => void switchToAnvil()}
                   disabled={switching}
                   className="px-3 py-1 rounded-lg bg-emerald-900 hover:bg-emerald-800 disabled:opacity-50 text-emerald-200 text-xs font-semibold transition-colors border border-emerald-700"
+                  title="Local development only"
                 >
-                  {switching ? '…' : 'Switch to Anvil'}
+                  {switching ? '…' : 'Switch to Anvil (dev)'}
                 </button>
               )}
             </div>

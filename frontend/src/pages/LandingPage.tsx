@@ -28,6 +28,23 @@ export default function LandingPage({ wallet }: Props) {
         </p>
       </div>
 
+      {/* How to try */}
+      <div className="max-w-2xl rounded-xl border border-emerald-800 bg-emerald-950/30 px-5 py-4 text-left text-sm space-y-2">
+        <p className="font-semibold text-emerald-300">How to try this demo:</p>
+        <ol className="list-decimal list-inside space-y-1 text-gray-300 text-xs leading-relaxed">
+          <li>Connect MetaMask and switch to <strong className="text-white">Sepolia testnet</strong></li>
+          <li>Get free Sepolia ETH from{' '}
+            <a href="https://sepolia-faucet.pk910.de/" target="_blank" rel="noopener" className="text-emerald-400 hover:underline">sepolia-faucet.pk910.de</a>
+          </li>
+          <li>Visit <code className="bg-gray-800 px-1.5 rounded">/exchange</code> and click "Get 1000 mUSDC" to fund your account</li>
+          <li>Browse <code className="bg-gray-800 px-1.5 rounded">/marketplace</code> to copy <strong className="text-white">Demo Alpha</strong> trader, or open positions yourself</li>
+          <li>Optional: register as a trader on <code className="bg-gray-800 px-1.5 rounded">/trader</code> and publish your own strategy</li>
+        </ol>
+        <p className="text-xs text-emerald-400/70 pt-1">
+          ⚠ Oracle prices are controlled by the deployer (admin). During live demos the deployer will update prices to show PnL changes.
+        </p>
+      </div>
+
       {/* CTA */}
       {wallet.isConnected ? (
         <div className="flex flex-col items-center gap-2">
