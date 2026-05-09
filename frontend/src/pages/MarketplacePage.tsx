@@ -54,12 +54,6 @@ export default function MarketplacePage({ wallet }: Props) {
   const [traders,    setTraders]    = useState<TraderCard[]>([])
   const [isLoading,  setIsLoading]  = useState(false)
   const [fetchError, setFetchError] = useState<string | null>(null)
-  const [toast,      setToast]      = useState<{ msg: string; ok: boolean } | null>(null)
-
-  const notify = (msg: string, ok: boolean) => {
-    setToast({ msg, ok })
-    setTimeout(() => setToast(null), 6000)
-  }
 
   const fetchAll = useCallback(async () => {
     if (!contracts) return
@@ -115,17 +109,6 @@ export default function MarketplacePage({ wallet }: Props) {
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
-
-      {/* Toast */}
-      {toast && (
-        <div
-          className={`fixed top-4 right-4 z-50 rounded-lg px-5 py-3 text-sm font-medium shadow-xl ${
-            toast.ok ? 'bg-emerald-800 text-emerald-100' : 'bg-red-900 text-red-100'
-          }`}
-        >
-          {toast.msg}
-        </div>
-      )}
 
       <div className="flex items-center justify-between">
         <div>
