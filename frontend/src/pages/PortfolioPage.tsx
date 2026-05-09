@@ -29,12 +29,13 @@ interface RawCopyRecord {
 }
 
 interface RawPos {
-  asset:      string
-  isLong:     boolean
-  isOpen:     boolean
-  entryPrice: bigint
-  margin:     bigint
-  leverage:   bigint
+  asset:       string
+  isLong:      boolean
+  isOpen:      boolean
+  entryPrice:  bigint
+  margin:      bigint
+  leverage:    bigint
+  copiedFrom:  string
 }
 
 interface CopyRec {
@@ -56,6 +57,7 @@ interface PosRow {
   leverage:      bigint
   unrealizedPnL: bigint    // signed 18-dec
   currentValue:  bigint    // 18-dec ≥ 0
+  copiedFrom:    string    // address(0) for self-opened
 }
 
 // ── Formatting ────────────────────────────────────────────────────────────────
@@ -80,8 +82,8 @@ const returnPct = (initial: bigint, current: bigint): string => {
 const returnColor = (initial: bigint, current: bigint) =>
   current >= initial ? 'text-green-400' : 'text-red-400'
 
-type Waitable = { wait(): Promise<unknown> }
-const waitTx = (tx: unknown) => (tx as Waitable).wait()
+type TxResp = { wait(): Promise<unknown>; hash: string }
+const asTx = (tx: unknown): TxResp => tx as TxResp
 
 const tryParse = (s: string): bigint | null => {
   if (!s) return null
@@ -100,12 +102,12 @@ export default function PortfolioPage({ wallet }: Props) {
   const [withdrawAmt, setWithdrawAmt] = useState('')
 
   const [busy,  setBusy]  = useState<Record<string, boolean>>({})
-  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
+  const [toast, setToast] = useState<{ msg: string; ok: boolean; hash?: string } | null>(null)
 
   const setLoad = (k: string, v: boolean) => setBusy(p => ({ ...p, [k]: v }))
-  const notify  = useCallback((msg: string, ok: boolean) => {
-    setToast({ msg, ok })
-    setTimeout(() => setToast(null), 4000)
+  const notify  = useCallback((msg: string, ok: boolean, hash?: string) => {
+    setToast({ msg, ok, hash })
+    setTimeout(() => setToast(null), 6000)
   }, [])
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
@@ -175,6 +177,7 @@ export default function PortfolioPage({ wallet }: Props) {
               leverage:      raw.leverage,
               unrealizedPnL: pnl as bigint,
               currentValue:  val as bigint,
+              copiedFrom:    raw.copiedFrom,
             }
           } catch { return null }
         }),
@@ -184,8 +187,11 @@ export default function PortfolioPage({ wallet }: Props) {
       // ── C: Free margin ────────────────────────────────────────────────────
       setFreeMargin((await contracts.exchange.freeMargin(addr)) as bigint)
 
-    } catch { /* ignore network errors */ }
-  }, [contracts, wallet.address])
+    } catch (e) {
+      console.error('[portfolio fetch]', e)
+      notify(e instanceof Error ? e.message.slice(0, 120) : 'Network error — check your wallet network', false)
+    }
+  }, [contracts, wallet.address, notify])
 
   // Initial fetch + auto-refresh every 30 s
   useEffect(() => {
@@ -200,8 +206,9 @@ export default function PortfolioPage({ wallet }: Props) {
     const key = `unfollow_${index}`
     setLoad(key, true)
     try {
-      await waitTx(await contracts.copyTracker.unfollowAndCloseAll(BigInt(index)))
-      notify('Unfollowed and all positions closed ✓', true)
+      const tx = asTx(await contracts.copyTracker.unfollowAndCloseAll(BigInt(index)))
+      await tx.wait()
+      notify('Unfollowed and all positions closed ✓', true, tx.hash)
       await fetchAll()
     } catch (e) {
       notify(e instanceof Error ? e.message.slice(0, 100) : 'Unfollow failed', false)
@@ -214,8 +221,9 @@ export default function PortfolioPage({ wallet }: Props) {
     if (!amt) { notify('Enter a valid amount', false); return }
     setLoad('withdraw', true)
     try {
-      await waitTx(await contracts.exchange.withdrawMargin(amt))
-      notify(`Withdrew ${withdrawAmt} mUSDC ✓`, true)
+      const tx = asTx(await contracts.exchange.withdrawMargin(amt))
+      await tx.wait()
+      notify(`Withdrew ${withdrawAmt} mUSDC ✓`, true, tx.hash)
       setWithdrawAmt('')
       await fetchAll()
     } catch (e) {
@@ -258,6 +266,16 @@ export default function PortfolioPage({ wallet }: Props) {
           }`}
         >
           {toast.msg}
+          {toast.hash && wallet.chainId === 11155111 && (
+            <a
+              href={`https://sepolia.etherscan.io/tx/${toast.hash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block mt-1 text-xs underline opacity-80 hover:opacity-100"
+            >
+              View on Etherscan ↗
+            </a>
+          )}
         </div>
       )}
 
@@ -352,7 +370,7 @@ export default function PortfolioPage({ wallet }: Props) {
             <table className="w-full text-sm text-left">
               <thead>
                 <tr className="text-xs text-gray-500 uppercase tracking-wide border-b border-gray-700">
-                  {['Asset','Side','Entry','Current','Margin','Lev','Unr. PnL','Value'].map(h => (
+                  {['Asset','Side','Entry','Current','Margin','Lev','Copied From','Unr. PnL','Value'].map(h => (
                     <th key={h} className="px-4 py-3 font-medium whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -380,6 +398,12 @@ export default function PortfolioPage({ wallet }: Props) {
                     <td className="px-4 py-3 text-gray-300">
                       {String(row.leverage)}×
                     </td>
+                    <td className="px-4 py-3 font-mono text-xs text-gray-500 whitespace-nowrap">
+                      {row.copiedFrom === '0x0000000000000000000000000000000000000000'
+                        ? <span className="text-gray-700">—</span>
+                        : SHORT_ADDR(row.copiedFrom)
+                      }
+                    </td>
                     <td className={`px-4 py-3 font-mono font-semibold whitespace-nowrap ${pnlColor(row.unrealizedPnL)}`}>
                       {fPnL(row.unrealizedPnL)}
                     </td>
@@ -391,7 +415,7 @@ export default function PortfolioPage({ wallet }: Props) {
               </tbody>
               <tfoot>
                 <tr className="border-t border-gray-700 text-xs text-gray-500">
-                  <td colSpan={6} className="px-4 py-2">Total</td>
+                  <td colSpan={7} className="px-4 py-2">Total</td>
                   <td className={`px-4 py-2 font-mono font-semibold ${
                     pnlColor(positions.reduce((s, p) => s + p.unrealizedPnL, 0n))
                   }`}>

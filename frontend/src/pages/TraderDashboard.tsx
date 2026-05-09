@@ -21,13 +21,13 @@ interface AllocRow {
   uid:      number
   asset:    AssetId
   isLong:   boolean
-  leverage: number    // 1 | 2 | 5
-  weight:   string    // % as string, e.g. "50"
+  leverage: number
+  weight:   string
 }
 
 interface RawAlloc {
   asset:    string
-  weight:   bigint   // bps
+  weight:   bigint
   isLong:   boolean
   leverage: bigint
 }
@@ -58,8 +58,8 @@ const fmtDate = (ts: bigint) =>
 
 const fmtPct = (bps: bigint) => (Number(bps) / 100).toFixed(0) + '%'
 
-type Waitable = { wait(): Promise<unknown> }
-const waitTx = (tx: unknown) => (tx as Waitable).wait()
+type TxResp = { wait(): Promise<unknown>; hash: string }
+const asTx = (tx: unknown): TxResp => tx as TxResp
 
 // ── Component ──────────────────────────────────────────────────────────────
 interface Props { wallet: WalletAPI }
@@ -67,26 +67,22 @@ interface Props { wallet: WalletAPI }
 export default function TraderDashboard({ wallet }: Props) {
   const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId)
 
-  // A — trader registration
   const [traderInfo, setTraderInfo] = useState<TraderInfo | null>(null)
   const [nameInput,  setNameInput]  = useState('')
 
-  // B — strategy builder
   const uidRef = useRef(0)
   const [rows, setRows] = useState<AllocRow[]>([])
 
-  // C — strategy history
-  const [history, setHistory] = useState<HistVer[]>([])
+  const [history,  setHistory]  = useState<HistVer[]>([])
+  const [earnings, setEarnings] = useState<bigint | null>(null)
 
-  // UI
   const [busy,  setBusy]  = useState<Record<string, boolean>>({})
-  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
+  const [toast, setToast] = useState<{ msg: string; ok: boolean; hash?: string } | null>(null)
 
   const setLoad = (k: string, v: boolean) => setBusy(p => ({ ...p, [k]: v }))
-
-  const notify = useCallback((msg: string, ok: boolean) => {
-    setToast({ msg, ok })
-    setTimeout(() => setToast(null), 4000)
+  const notify  = useCallback((msg: string, ok: boolean, hash?: string) => {
+    setToast({ msg, ok, hash })
+    setTimeout(() => setToast(null), 6000)
   }, [])
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
@@ -95,14 +91,17 @@ export default function TraderDashboard({ wallet }: Props) {
     try {
       const raw = (await contracts.registry.traders(wallet.address)) as unknown as [boolean, string, bigint]
       setTraderInfo({ isRegistered: raw[0], displayName: raw[1] })
-    } catch { /* ignore */ }
-  }, [contracts, wallet.address])
+    } catch (e) {
+      console.error('[trader fetch]', e)
+      notify(e instanceof Error ? e.message.slice(0, 120) : 'Network error — check your wallet network', false)
+    }
+  }, [contracts, wallet.address, notify])
 
   const fetchHistory = useCallback(async () => {
     if (!contracts || !wallet.address) return
     try {
       const count = Number((await contracts.registry.getStrategyCount(wallet.address)) as bigint)
-      const addr  = wallet.address           // captured for async closure
+      const addr  = wallet.address
       const vers  = await Promise.all(
         Array.from({ length: count }, (_, i) => i).map(async (i): Promise<HistVer> => {
           const res = (await contracts.registry.getStrategyVersion(
@@ -116,14 +115,28 @@ export default function TraderDashboard({ wallet }: Props) {
           }
         }),
       )
-      setHistory([...vers].reverse())  // newest first
-    } catch { /* ignore */ }
+      setHistory([...vers].reverse())
+    } catch (e) {
+      console.error('[history fetch]', e)
+      notify(e instanceof Error ? e.message.slice(0, 120) : 'Network error — check your wallet network', false)
+    }
+  }, [contracts, wallet.address, notify])
+
+  const fetchEarnings = useCallback(async () => {
+    if (!contracts || !wallet.address) return
+    try {
+      const raw = (await contracts.feeRouter.traderEarnings(wallet.address)) as bigint
+      setEarnings(raw)
+    } catch (e) {
+      console.error('[earnings fetch]', e)
+    }
   }, [contracts, wallet.address])
 
   useEffect(() => {
     void fetchTrader()
     void fetchHistory()
-  }, [fetchTrader, fetchHistory])
+    void fetchEarnings()
+  }, [fetchTrader, fetchHistory, fetchEarnings])
 
   // ── Row management ────────────────────────────────────────────────────────
   const addRow = () => {
@@ -146,16 +159,32 @@ export default function TraderDashboard({ wallet }: Props) {
     return sum + (isNaN(pct) ? 0 : Math.round(pct * 100))
   }, 0)
 
-  const weightOk   = totalBps === 10_000
-  const canPublish = weightOk && rows.length > 0 && traderInfo?.isRegistered === true
+  const hasDup    = new Set(rows.map(r => r.asset)).size !== rows.length
+  const weightOk  = totalBps === 10_000
+  const canPublish = weightOk && !hasDup && rows.length > 0 && traderInfo?.isRegistered === true
+
+  // Auto-fix: distribute remainder to last row
+  const autoFix = () => {
+    if (rows.length === 0) return
+    const others = rows.slice(0, -1).reduce((s, r) => {
+      const pct = parseFloat(r.weight || '0')
+      return s + (isNaN(pct) ? 0 : Math.round(pct * 100))
+    }, 0)
+    const target = (10_000 - others) / 100
+    if (target > 0 && target <= 100) {
+      const last = rows[rows.length - 1]
+      updateRow(last.uid, { weight: target.toFixed(2) })
+    }
+  }
 
   // ── Transactions ──────────────────────────────────────────────────────────
   const doRegister = async () => {
     if (!contracts || !nameInput.trim()) return
     setLoad('register', true)
     try {
-      await waitTx(await contracts.registry.registerTrader(nameInput.trim()))
-      notify('Registered as trader ✓', true)
+      const tx = asTx(await contracts.registry.registerTrader(nameInput.trim()))
+      await tx.wait()
+      notify('Registered as trader ✓', true, tx.hash)
       setNameInput('')
       await fetchTrader()
     } catch (e) {
@@ -173,8 +202,9 @@ export default function TraderDashboard({ wallet }: Props) {
     }))
     setLoad('publish', true)
     try {
-      await waitTx(await contracts.registry.publishStrategy(allocs))
-      notify('Strategy published ✓', true)
+      const tx = asTx(await contracts.registry.publishStrategy(allocs))
+      await tx.wait()
+      notify('Strategy published ✓', true, tx.hash)
       setRows([])
       await fetchHistory()
     } catch (e) {
@@ -182,11 +212,22 @@ export default function TraderDashboard({ wallet }: Props) {
     } finally { setLoad('publish', false) }
   }
 
+  const doClaim = async () => {
+    if (!contracts) return
+    setLoad('claim', true)
+    try {
+      const tx = asTx(await contracts.feeRouter.withdrawTraderEarnings())
+      await tx.wait()
+      notify('Earnings claimed ✓', true, tx.hash)
+      await fetchEarnings()
+    } catch (e) {
+      notify(e instanceof Error ? e.message.slice(0, 100) : 'Claim failed', false)
+    } finally { setLoad('claim', false) }
+  }
+
   const toggleExpand = (versionId: number) =>
     setHistory(prev =>
-      prev.map(v =>
-        v.versionId === versionId ? { ...v, expanded: !v.expanded } : v,
-      ),
+      prev.map(v => v.versionId === versionId ? { ...v, expanded: !v.expanded } : v),
     )
 
   // ── Guard ─────────────────────────────────────────────────────────────────
@@ -210,10 +251,20 @@ export default function TraderDashboard({ wallet }: Props) {
           }`}
         >
           {toast.msg}
+          {toast.hash && wallet.chainId === 11155111 && (
+            <a
+              href={`https://sepolia.etherscan.io/tx/${toast.hash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block mt-1 text-xs underline opacity-80 hover:opacity-100"
+            >
+              View on Etherscan ↗
+            </a>
+          )}
         </div>
       )}
 
-      {/* ─── A. Register Trader ─────────────────────────────────────────── */}
+      {/* ─── A. Register ────────────────────────────────────────────────── */}
       <div className="rounded-xl border border-gray-700 bg-gray-900 p-5 space-y-4">
         <h2 className="text-base font-bold text-white">Register Trader</h2>
 
@@ -245,25 +296,19 @@ export default function TraderDashboard({ wallet }: Props) {
         )}
       </div>
 
-      {/* ─── B. Publish Strategy ────────────────────────────────────────── */}
+      {/* ─── B. Publish Strategy ──────────────────────────────────────── */}
       <div className="rounded-xl border border-gray-700 bg-gray-900 p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-bold text-white">Publish Strategy</h2>
-          <button
-            onClick={addRow}
-            className="text-sm font-medium text-emerald-400 hover:text-emerald-300 transition-colors"
-          >
+          <button onClick={addRow} className="text-sm font-medium text-emerald-400 hover:text-emerald-300 transition-colors">
             + Add Asset
           </button>
         </div>
 
         {rows.length === 0 ? (
-          <p className="text-sm text-gray-600 py-1">
-            Click "+ Add Asset" to define allocations.
-          </p>
+          <p className="text-sm text-gray-600 py-1">Click "+ Add Asset" to define allocations.</p>
         ) : (
           <>
-            {/* Column headers */}
             <div className="grid grid-cols-[1fr_130px_110px_80px_36px] gap-2 text-xs text-gray-500 uppercase tracking-wide px-1">
               <span>Asset</span>
               <span>Direction</span>
@@ -273,102 +318,102 @@ export default function TraderDashboard({ wallet }: Props) {
             </div>
 
             <div className="space-y-2">
-              {rows.map(row => (
-                <div
-                  key={row.uid}
-                  className="grid grid-cols-[1fr_130px_110px_80px_36px] gap-2 items-center"
-                >
-                  {/* Asset */}
-                  <select
-                    value={row.asset}
-                    onChange={e => updateRow(row.uid, { asset: e.target.value as AssetId })}
-                    className="rounded-lg bg-gray-800 border border-gray-600 px-3 py-2 text-sm text-white focus:outline-none"
+              {rows.map(row => {
+                const isDup = rows.filter(r => r.asset === row.asset).length > 1
+                return (
+                  <div
+                    key={row.uid}
+                    className={`grid grid-cols-[1fr_130px_110px_80px_36px] gap-2 items-center ${isDup ? 'opacity-80' : ''}`}
                   >
-                    {ASSETS.map(a => (
-                      <option key={a.id} value={a.id}>{a.label}</option>
-                    ))}
-                  </select>
+                    <select
+                      value={row.asset}
+                      onChange={e => updateRow(row.uid, { asset: e.target.value as AssetId })}
+                      className={`rounded-lg bg-gray-800 border px-3 py-2 text-sm text-white focus:outline-none ${
+                        isDup ? 'border-red-600' : 'border-gray-600'
+                      }`}
+                    >
+                      {ASSETS.map(a => (
+                        <option key={a.id} value={a.id}>{a.label}</option>
+                      ))}
+                    </select>
 
-                  {/* Direction */}
-                  <div className="flex rounded-lg overflow-hidden border border-gray-600 h-[38px]">
-                    <button
-                      onClick={() => updateRow(row.uid, { isLong: true })}
-                      className={`flex-1 text-xs font-bold transition-colors ${
-                        row.isLong
-                          ? 'bg-green-700 text-white'
-                          : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-                      }`}
+                    <div className="flex rounded-lg overflow-hidden border border-gray-600 h-[38px]">
+                      <button
+                        onClick={() => updateRow(row.uid, { isLong: true })}
+                        className={`flex-1 text-xs font-bold transition-colors ${
+                          row.isLong ? 'bg-green-700 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                        }`}
+                      >Long ↑</button>
+                      <button
+                        onClick={() => updateRow(row.uid, { isLong: false })}
+                        className={`flex-1 text-xs font-bold transition-colors ${
+                          !row.isLong ? 'bg-red-700 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                        }`}
+                      >Short ↓</button>
+                    </div>
+
+                    <select
+                      value={row.leverage}
+                      onChange={e => updateRow(row.uid, { leverage: Number(e.target.value) })}
+                      className="rounded-lg bg-gray-800 border border-gray-600 px-3 py-2 text-sm text-white focus:outline-none"
                     >
-                      Long ↑
-                    </button>
+                      {[1, 2, 5].map(lv => (
+                        <option key={lv} value={lv}>{lv}×</option>
+                      ))}
+                    </select>
+
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      placeholder="0"
+                      value={row.weight}
+                      onChange={e => updateRow(row.uid, { weight: e.target.value })}
+                      className="rounded-lg bg-gray-800 border border-gray-600 px-2 py-2 text-sm text-white text-right focus:outline-none focus:border-yellow-500"
+                    />
+
                     <button
-                      onClick={() => updateRow(row.uid, { isLong: false })}
-                      className={`flex-1 text-xs font-bold transition-colors ${
-                        !row.isLong
-                          ? 'bg-red-700 text-white'
-                          : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-                      }`}
-                    >
-                      Short ↓
-                    </button>
+                      onClick={() => removeRow(row.uid)}
+                      aria-label="Remove row"
+                      className="h-[38px] w-9 rounded-lg bg-gray-800 hover:bg-red-900 text-gray-400 hover:text-red-300 text-xl transition-colors flex items-center justify-center leading-none"
+                    >×</button>
                   </div>
-
-                  {/* Leverage */}
-                  <select
-                    value={row.leverage}
-                    onChange={e => updateRow(row.uid, { leverage: Number(e.target.value) })}
-                    className="rounded-lg bg-gray-800 border border-gray-600 px-3 py-2 text-sm text-white focus:outline-none"
-                  >
-                    {[1, 2, 5].map(lv => (
-                      <option key={lv} value={lv}>{lv}×</option>
-                    ))}
-                  </select>
-
-                  {/* Weight % */}
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.01"
-                    placeholder="0"
-                    value={row.weight}
-                    onChange={e => updateRow(row.uid, { weight: e.target.value })}
-                    className="rounded-lg bg-gray-800 border border-gray-600 px-2 py-2 text-sm text-white text-right focus:outline-none focus:border-yellow-500"
-                  />
-
-                  {/* Remove */}
-                  <button
-                    onClick={() => removeRow(row.uid)}
-                    aria-label="Remove row"
-                    className="h-[38px] w-9 rounded-lg bg-gray-800 hover:bg-red-900 text-gray-400 hover:text-red-300 text-xl transition-colors flex items-center justify-center leading-none"
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
+                )
+              })}
             </div>
+
+            {/* Duplicate asset warning */}
+            {hasDup && (
+              <p className="text-xs text-red-400">
+                Each asset can only appear once per strategy. Remove the duplicate.
+              </p>
+            )}
 
             {/* Weight progress bar */}
             <div className="flex items-center gap-3 pt-1">
               <div className="flex-1 h-2 rounded-full bg-gray-800 overflow-hidden">
                 <div
-                  className={`h-full rounded-full transition-all duration-300 ${
-                    weightOk ? 'bg-emerald-500' : 'bg-yellow-500'
-                  }`}
+                  className={`h-full rounded-full transition-all duration-300 ${weightOk ? 'bg-emerald-500' : 'bg-yellow-500'}`}
                   style={{ width: `${Math.min(totalBps / 100, 100)}%` }}
                 />
               </div>
-              <span
-                className={`text-sm font-mono font-semibold tabular-nums w-16 text-right ${
-                  weightOk ? 'text-emerald-400' : 'text-yellow-400'
-                }`}
-              >
+              <span className={`text-sm font-mono font-semibold tabular-nums w-16 text-right ${weightOk ? 'text-emerald-400' : 'text-yellow-400'}`}>
                 {(totalBps / 100).toFixed(2)}%
               </span>
               {!weightOk && (
                 <span className="text-xs text-gray-500 whitespace-nowrap">
                   {totalBps > 10_000 ? 'exceeds' : 'must reach'} 100%
                 </span>
+              )}
+              {/* Auto-fix button — shown when close but not exact */}
+              {!weightOk && rows.length > 0 && totalBps > 9_000 && totalBps < 11_000 && (
+                <button
+                  onClick={autoFix}
+                  className="text-xs text-emerald-400 hover:text-emerald-300 underline whitespace-nowrap"
+                >
+                  Auto-fix to 100%
+                </button>
               )}
             </div>
           </>
@@ -389,7 +434,38 @@ export default function TraderDashboard({ wallet }: Props) {
         )}
       </div>
 
-      {/* ─── C. Strategy History ────────────────────────────────────────── */}
+      {/* ─── C. Fee Earnings ─────────────────────────────────────────── */}
+      <div className="rounded-xl border border-gray-700 bg-gray-900 p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-bold text-white">Fee Earnings</h2>
+          <button onClick={() => void fetchEarnings()} className="text-xs text-gray-500 hover:text-white transition-colors">
+            ↺ Refresh
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between bg-gray-800 rounded-lg px-4 py-3">
+          <div>
+            <p className="text-xs text-gray-500">Claimable (copy + perf fees)</p>
+            <p className="text-2xl font-mono font-bold text-emerald-400">
+              {earnings === null ? '…' : (Number(earnings) / 1e18).toFixed(4)}
+              <span className="text-sm font-normal text-gray-500 ml-1">mUSDC</span>
+            </p>
+          </div>
+          <button
+            onClick={() => void doClaim()}
+            disabled={busy['claim'] || !earnings || earnings === 0n}
+            className="px-5 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-600 disabled:opacity-40 text-white text-sm font-semibold transition-colors"
+          >
+            {busy['claim'] ? 'Claiming…' : 'Claim All'}
+          </button>
+        </div>
+
+        <p className="text-xs text-gray-600">
+          Earnings accrue when followers pay the 0.3% copy fee or close copied positions in profit (10% performance fee). Your share is 70% of each fee.
+        </p>
+      </div>
+
+      {/* ─── D. Strategy History ──────────────────────────────────────── */}
       <div className="rounded-xl border border-gray-700 bg-gray-900 p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-bold text-white">Strategy History</h2>
@@ -402,31 +478,21 @@ export default function TraderDashboard({ wallet }: Props) {
         </div>
 
         {history.length === 0 ? (
-          <p className="text-sm text-gray-600 py-4 text-center">
-            No strategies published yet.
-          </p>
+          <p className="text-sm text-gray-600 py-4 text-center">No strategies published yet.</p>
         ) : (
           <div className="space-y-2">
             {history.map(ver => (
-              <div
-                key={ver.versionId}
-                className="rounded-lg border border-gray-700 overflow-hidden"
-              >
-                {/* Version row (clickable header) */}
+              <div key={ver.versionId} className="rounded-lg border border-gray-700 overflow-hidden">
                 <button
                   onClick={() => toggleExpand(ver.versionId)}
                   className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-800 transition-colors text-left"
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <span className="text-xs font-mono text-gray-500 shrink-0">
-                      v{ver.versionId}
-                    </span>
+                    <span className="text-xs font-mono text-gray-500 shrink-0">v{ver.versionId}</span>
                     <span className="text-sm text-white truncate">
-                      {ver.allocs
-                        .map(a =>
-                          `${ASSET_LABEL[a.asset] ?? a.asset.slice(0, 6)} ${a.isLong ? 'L' : 'S'} ${String(a.leverage)}×`,
-                        )
-                        .join('  ·  ')}
+                      {ver.allocs.map(a =>
+                        `${ASSET_LABEL[a.asset] ?? a.asset.slice(0, 6)} ${a.isLong ? 'L' : 'S'} ${String(a.leverage)}×`,
+                      ).join('  ·  ')}
                     </span>
                   </div>
                   <div className="flex items-center gap-3 shrink-0 ml-4">
@@ -435,7 +501,6 @@ export default function TraderDashboard({ wallet }: Props) {
                   </div>
                 </button>
 
-                {/* Expanded allocations table */}
                 {ver.expanded && (
                   <div className="border-t border-gray-700 bg-gray-950 px-4 py-3">
                     <table className="w-full text-sm">
@@ -453,11 +518,7 @@ export default function TraderDashboard({ wallet }: Props) {
                             <td className="py-2 pr-4 font-mono text-white font-medium">
                               {ASSET_LABEL[a.asset] ?? a.asset.slice(0, 8)}
                             </td>
-                            <td
-                              className={`py-2 pr-4 font-bold text-xs uppercase tracking-wide ${
-                                a.isLong ? 'text-green-400' : 'text-red-400'
-                              }`}
-                            >
+                            <td className={`py-2 pr-4 font-bold text-xs uppercase tracking-wide ${a.isLong ? 'text-green-400' : 'text-red-400'}`}>
                               {a.isLong ? 'Long ↑' : 'Short ↓'}
                             </td>
                             <td className="py-2 pr-4 font-mono">{String(a.leverage)}×</td>

@@ -43,6 +43,19 @@
   },
   {
     "type": "function",
+    "name": "PERFORMANCE_FEE_BPS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "closePosition",
     "inputs": [
       {
@@ -115,6 +128,19 @@
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "feeRouter",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IFeeRouterPerp"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -205,6 +231,11 @@
             "name": "isOpen",
             "type": "bool",
             "internalType": "bool"
+          },
+          {
+            "name": "copiedFrom",
+            "type": "address",
+            "internalType": "address"
           }
         ]
       }
@@ -343,6 +374,11 @@
         "name": "leverage",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "copiedFrom",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [
@@ -445,6 +481,11 @@
         "name": "isOpen",
         "type": "bool",
         "internalType": "bool"
+      },
+      {
+        "name": "copiedFrom",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "view"
@@ -462,6 +503,19 @@
     "inputs": [
       {
         "name": "_copyTracker",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setFeeRouter",
+    "inputs": [
+      {
+        "name": "_feeRouter",
         "type": "address",
         "internalType": "address"
       }
@@ -585,6 +639,31 @@
         "type": "address",
         "indexed": true,
         "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PerformanceFeePaid",
+    "inputs": [
+      {
+        "name": "positionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "copiedFrom",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "fee",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
       }
     ],
     "anonymous": false

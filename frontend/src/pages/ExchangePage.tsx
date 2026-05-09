@@ -22,11 +22,11 @@ interface PositionRow {
   id:            bigint
   asset:         string
   isLong:        boolean
-  entryPrice:    bigint   // 18-dec
-  margin:        bigint   // 18-dec
+  entryPrice:    bigint
+  margin:        bigint
   leverage:      bigint
-  unrealizedPnL: bigint   // signed 18-dec
-  currentPrice:  bigint   // 18-dec
+  unrealizedPnL: bigint
+  currentPrice:  bigint
 }
 
 interface RawPos {
@@ -35,24 +35,24 @@ interface RawPos {
 }
 
 // ── Formatting ────────────────────────────────────────────────────────────────
-const f18 = (v: bigint, d = 2) => (Number(v) / 1e18).toFixed(d)
-const fUsd = (v: bigint) =>
+const f18    = (v: bigint, d = 2) => (Number(v) / 1e18).toFixed(d)
+const fUsd   = (v: bigint) =>
   '$' + (Number(v) / 1e18).toLocaleString('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })
-const fPnL = (v: bigint) => {
+const fPnL   = (v: bigint) => {
   const n = Number(v) / 1e18
   return (n >= 0 ? '+' : '') + n.toFixed(4) + ' USDC'
 }
-const pnlColor = (v: bigint) => (Number(v) >= 0 ? 'text-green-400' : 'text-red-400')
+const pnlColor = (v: bigint) => Number(v) >= 0 ? 'text-green-400' : 'text-red-400'
 const tryParse = (s: string): bigint | null => {
   try { return s ? parseEther(s) : null } catch { return null }
 }
 
-// ── Helper: wait for tx ───────────────────────────────────────────────────────
-type Waitable = { wait(): Promise<unknown> }
-const wait = (tx: unknown) => (tx as Waitable).wait()
+// ── TX helper ─────────────────────────────────────────────────────────────────
+type TxResp = { wait(): Promise<unknown>; hash: string }
+const asTx = (tx: unknown): TxResp => tx as TxResp
 
 // ── Component ─────────────────────────────────────────────────────────────────
 interface Props { wallet: WalletAPI }
@@ -60,35 +60,28 @@ interface Props { wallet: WalletAPI }
 export default function ExchangePage({ wallet }: Props) {
   const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId)
 
-  // Data
   const [usdcBal,   setUsdcBal]   = useState(0n)
   const [freeMgn,   setFreeMgn]   = useState(0n)
   const [positions, setPositions] = useState<PositionRow[]>([])
   const [curPrice,  setCurPrice]  = useState(0n)
 
-  // Form — margin
   const [depositAmt,  setDepositAmt]  = useState('')
   const [withdrawAmt, setWithdrawAmt] = useState('')
+  const [selAsset,    setSelAsset]    = useState<AssetId>(ASSET_IDS.sBTC)
+  const [isLong,      setIsLong]      = useState(true)
+  const [leverage,    setLeverage]    = useState(1)
+  const [openMgn,     setOpenMgn]     = useState('')
 
-  // Form — open position
-  const [selAsset, setSelAsset] = useState<AssetId>(ASSET_IDS.sBTC)
-  const [isLong,   setIsLong]   = useState(true)
-  const [leverage, setLeverage] = useState(1)
-  const [openMgn,  setOpenMgn]  = useState('')
-
-  // UI
   const [busy,  setBusy]  = useState<Record<string, boolean>>({})
-  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
+  const [toast, setToast] = useState<{ msg: string; ok: boolean; hash?: string } | null>(null)
 
-  const setLoad = (k: string, v: boolean) =>
-    setBusy(p => ({ ...p, [k]: v }))
-
-  const notify = useCallback((msg: string, ok: boolean) => {
-    setToast({ msg, ok })
-    setTimeout(() => setToast(null), 4000)
+  const setLoad = (k: string, v: boolean) => setBusy(p => ({ ...p, [k]: v }))
+  const notify  = useCallback((msg: string, ok: boolean, hash?: string) => {
+    setToast({ msg, ok, hash })
+    setTimeout(() => setToast(null), 6000)
   }, [])
 
-  // ── Fetch all on-chain data ─────────────────────────────────────────────────
+  // ── Fetch ─────────────────────────────────────────────────────────────────
   const fetchAll = useCallback(async () => {
     if (!contracts || !wallet.address) return
     try {
@@ -100,7 +93,6 @@ export default function ExchangePage({ wallet }: Props) {
       setFreeMgn(mgn as bigint)
 
       const ids = (await contracts.exchange.getUserPositions(wallet.address)) as bigint[]
-
       const maybeRows = await Promise.all(
         ids.map(async (id): Promise<PositionRow | null> => {
           const raw = (await contracts.exchange.getPosition(id)) as unknown as RawPos
@@ -108,31 +100,28 @@ export default function ExchangePage({ wallet }: Props) {
           const pnl = (await contracts.exchange.getUnrealizedPnL(id)) as bigint
           const pr  = (await contracts.oracle.getPrice(raw.asset)) as unknown as [bigint, bigint]
           return {
-            id,
-            asset:         raw.asset,
-            isLong:        raw.isLong,
-            entryPrice:    raw.entryPrice,
-            margin:        raw.margin,
-            leverage:      raw.leverage,
-            unrealizedPnL: pnl,
-            currentPrice:  pr[0] * 10n ** 10n,
+            id, asset: raw.asset, isLong: raw.isLong,
+            entryPrice: raw.entryPrice, margin: raw.margin, leverage: raw.leverage,
+            unrealizedPnL: pnl, currentPrice: pr[0] * 10n ** 10n,
           }
         }),
       )
       setPositions(maybeRows.filter((r): r is PositionRow => r !== null))
-    } catch { /* swallow: user may not be on right network */ }
-  }, [contracts, wallet.address])
+    } catch (e) {
+      console.error('[exchange fetch]', e)
+      notify(e instanceof Error ? e.message.slice(0, 120) : 'Network error — check your wallet network', false)
+    }
+  }, [contracts, wallet.address, notify])
 
   // Refresh price when selected asset changes
   useEffect(() => {
     if (!contracts) return
-    const go = async () => {
+    void (async () => {
       try {
         const pr = (await contracts.oracle.getPrice(selAsset)) as unknown as [bigint, bigint]
         setCurPrice(pr[0] * 10n ** 10n)
-      } catch { /* ignore */ }
-    }
-    void go()
+      } catch (e) { console.error('[price fetch]', e) }
+    })()
   }, [contracts, selAsset])
 
   useEffect(() => { void fetchAll() }, [fetchAll])
@@ -142,11 +131,12 @@ export default function ExchangePage({ wallet }: Props) {
     if (!contracts || !wallet.address) return
     setLoad('faucet', true)
     try {
-      await wait(await contracts.usdc.mint(wallet.address, parseEther('1000')))
-      notify('1000 mUSDC minted ✓', true)
+      const tx = asTx(await contracts.usdc.faucet())
+      await tx.wait()
+      notify('1 000 mUSDC minted ✓', true, tx.hash)
       await fetchAll()
     } catch (e) {
-      notify(e instanceof Error ? e.message.slice(0, 100) : 'Mint failed', false)
+      notify(e instanceof Error ? e.message.slice(0, 100) : 'Faucet failed', false)
     } finally { setLoad('faucet', false) }
   }
 
@@ -156,9 +146,11 @@ export default function ExchangePage({ wallet }: Props) {
     if (!amt) { notify('Enter a valid amount', false); return }
     setLoad('deposit', true)
     try {
-      await wait(await contracts.usdc.approve(String(contracts.exchange.target), amt))
-      await wait(await contracts.exchange.depositMargin(amt))
-      notify(`Deposited ${depositAmt} mUSDC ✓`, true)
+      const approveTx = asTx(await contracts.usdc.approve(String(contracts.exchange.target), amt))
+      await approveTx.wait()
+      const depositTx = asTx(await contracts.exchange.depositMargin(amt))
+      await depositTx.wait()
+      notify(`Deposited ${depositAmt} mUSDC ✓`, true, depositTx.hash)
       setDepositAmt('')
       await fetchAll()
     } catch (e) {
@@ -172,8 +164,9 @@ export default function ExchangePage({ wallet }: Props) {
     if (!amt) { notify('Enter a valid amount', false); return }
     setLoad('withdraw', true)
     try {
-      await wait(await contracts.exchange.withdrawMargin(amt))
-      notify(`Withdrew ${withdrawAmt} mUSDC ✓`, true)
+      const tx = asTx(await contracts.exchange.withdrawMargin(amt))
+      await tx.wait()
+      notify(`Withdrew ${withdrawAmt} mUSDC ✓`, true, tx.hash)
       setWithdrawAmt('')
       await fetchAll()
     } catch (e) {
@@ -187,8 +180,9 @@ export default function ExchangePage({ wallet }: Props) {
     if (!amt) { notify('Enter a valid margin', false); return }
     setLoad('open', true)
     try {
-      await wait(await contracts.exchange.openPosition(selAsset, isLong, amt, BigInt(leverage)))
-      notify(`${isLong ? 'Long' : 'Short'} ${ASSET_LABEL[selAsset] ?? selAsset} opened ✓`, true)
+      const tx = asTx(await contracts.exchange.openPosition(selAsset, isLong, amt, BigInt(leverage)))
+      await tx.wait()
+      notify(`${isLong ? 'Long' : 'Short'} ${ASSET_LABEL[selAsset] ?? selAsset} opened ✓`, true, tx.hash)
       setOpenMgn('')
       await fetchAll()
     } catch (e) {
@@ -201,8 +195,9 @@ export default function ExchangePage({ wallet }: Props) {
     const key = `close_${id}`
     setLoad(key, true)
     try {
-      await wait(await contracts.exchange.closePosition(id))
-      notify('Position closed ✓', true)
+      const tx = asTx(await contracts.exchange.closePosition(id))
+      await tx.wait()
+      notify('Position closed ✓', true, tx.hash)
       await fetchAll()
     } catch (e) {
       notify(e instanceof Error ? e.message.slice(0, 100) : 'Close failed', false)
@@ -213,7 +208,6 @@ export default function ExchangePage({ wallet }: Props) {
   const openMgnBig = tryParse(openMgn)
   const notional   = openMgnBig !== null ? openMgnBig * BigInt(leverage) : 0n
 
-  // ── Guard: wallet not connected ──────────────────────────────────────────
   if (!wallet.isConnected) {
     return (
       <div className="flex items-center justify-center min-h-[60vh] text-gray-400">
@@ -230,16 +224,24 @@ export default function ExchangePage({ wallet }: Props) {
       {toast && (
         <div
           className={`fixed top-4 right-4 z-50 rounded-lg px-5 py-3 text-sm font-medium shadow-xl transition-all ${
-            toast.ok
-              ? 'bg-emerald-800 text-emerald-100'
-              : 'bg-red-900   text-red-100'
+            toast.ok ? 'bg-emerald-800 text-emerald-100' : 'bg-red-900 text-red-100'
           }`}
         >
           {toast.msg}
+          {toast.hash && wallet.chainId === 11155111 && (
+            <a
+              href={`https://sepolia.etherscan.io/tx/${toast.hash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block mt-1 text-xs underline opacity-80 hover:opacity-100"
+            >
+              View on Etherscan ↗
+            </a>
+          )}
         </div>
       )}
 
-      {/* A & B — Faucet + Margin in a 2-col grid */}
+      {/* A & B — Faucet + Margin */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
         {/* A. Faucet */}
@@ -249,12 +251,13 @@ export default function ExchangePage({ wallet }: Props) {
             mUSDC balance:{' '}
             <span className="font-mono text-white">{f18(usdcBal)} mUSDC</span>
           </p>
+          <p className="text-xs text-gray-600">One call per 24 h · 1 000 mUSDC per claim</p>
           <button
             onClick={() => void mintFaucet()}
             disabled={busy['faucet']}
             className="w-full py-2 rounded-lg bg-blue-700 hover:bg-blue-600 disabled:opacity-50 text-white text-sm font-semibold transition-colors"
           >
-            {busy['faucet'] ? 'Minting…' : 'Get 1 000 mUSDC'}
+            {busy['faucet'] ? 'Claiming…' : 'Get 1 000 mUSDC'}
           </button>
         </div>
 
@@ -266,7 +269,6 @@ export default function ExchangePage({ wallet }: Props) {
             <span className="font-mono text-white">{f18(freeMgn)} mUSDC</span>
           </p>
 
-          {/* Deposit */}
           <div className="flex gap-2">
             <input
               type="number" min="0" placeholder="Amount to deposit"
@@ -283,7 +285,6 @@ export default function ExchangePage({ wallet }: Props) {
             </button>
           </div>
 
-          {/* Withdraw */}
           <div className="flex gap-2">
             <input
               type="number" min="0" placeholder="Amount to withdraw"
@@ -307,8 +308,6 @@ export default function ExchangePage({ wallet }: Props) {
         <h2 className="text-base font-bold text-white">Open Position</h2>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-
-          {/* Asset picker */}
           <div className="space-y-1">
             <label className="text-xs text-gray-400 uppercase tracking-wide">Asset</label>
             <select
@@ -322,34 +321,20 @@ export default function ExchangePage({ wallet }: Props) {
             </select>
           </div>
 
-          {/* Long / Short toggle */}
           <div className="space-y-1">
             <label className="text-xs text-gray-400 uppercase tracking-wide">Direction</label>
             <div className="flex rounded-lg overflow-hidden border border-gray-600 h-[38px]">
               <button
                 onClick={() => setIsLong(true)}
-                className={`flex-1 text-sm font-bold transition-colors ${
-                  isLong
-                    ? 'bg-green-700 text-white'
-                    : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-                }`}
-              >
-                LONG ↑
-              </button>
+                className={`flex-1 text-sm font-bold transition-colors ${isLong ? 'bg-green-700 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}
+              >LONG ↑</button>
               <button
                 onClick={() => setIsLong(false)}
-                className={`flex-1 text-sm font-bold transition-colors ${
-                  !isLong
-                    ? 'bg-red-700 text-white'
-                    : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-                }`}
-              >
-                SHORT ↓
-              </button>
+                className={`flex-1 text-sm font-bold transition-colors ${!isLong ? 'bg-red-700 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}
+              >SHORT ↓</button>
             </div>
           </div>
 
-          {/* Leverage */}
           <div className="space-y-1">
             <label className="text-xs text-gray-400 uppercase tracking-wide">Leverage</label>
             <div className="flex rounded-lg overflow-hidden border border-gray-600 h-[38px]">
@@ -357,11 +342,7 @@ export default function ExchangePage({ wallet }: Props) {
                 <button
                   key={lv}
                   onClick={() => setLeverage(lv)}
-                  className={`flex-1 text-sm font-bold transition-colors ${
-                    leverage === lv
-                      ? 'bg-yellow-700 text-white'
-                      : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-                  }`}
+                  className={`flex-1 text-sm font-bold transition-colors ${leverage === lv ? 'bg-yellow-700 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}
                 >
                   {lv}×
                 </button>
@@ -369,7 +350,6 @@ export default function ExchangePage({ wallet }: Props) {
             </div>
           </div>
 
-          {/* Margin input */}
           <div className="space-y-1">
             <label className="text-xs text-gray-400 uppercase tracking-wide">Margin (mUSDC)</label>
             <input
@@ -381,41 +361,25 @@ export default function ExchangePage({ wallet }: Props) {
           </div>
         </div>
 
-        {/* Info bar */}
         <div className="flex flex-wrap gap-6 text-sm text-gray-400">
-          <span>
-            Entry price:{' '}
-            <span className="font-mono text-white">{fUsd(curPrice)}</span>
-          </span>
-          <span>
-            Notional:{' '}
-            <span className="font-mono text-white">{f18(notional)} mUSDC</span>
-          </span>
+          <span>Entry price: <span className="font-mono text-white">{fUsd(curPrice)}</span></span>
+          <span>Notional: <span className="font-mono text-white">{f18(notional)} mUSDC</span></span>
         </div>
 
         <button
           onClick={() => void openPosition()}
           disabled={busy['open'] || !openMgn}
-          className={`px-8 py-2.5 rounded-lg text-white text-sm font-bold disabled:opacity-50 transition-colors ${
-            isLong
-              ? 'bg-green-700 hover:bg-green-600'
-              : 'bg-red-700   hover:bg-red-600'
-          }`}
+          className={`px-8 py-2.5 rounded-lg text-white text-sm font-bold disabled:opacity-50 transition-colors ${isLong ? 'bg-green-700 hover:bg-green-600' : 'bg-red-700 hover:bg-red-600'}`}
         >
-          {busy['open']
-            ? 'Opening…'
-            : `Open ${isLong ? 'Long' : 'Short'} ${ASSET_LABEL[selAsset] ?? ''}`}
+          {busy['open'] ? 'Opening…' : `Open ${isLong ? 'Long' : 'Short'} ${ASSET_LABEL[selAsset] ?? ''}`}
         </button>
       </div>
 
-      {/* D. Open Positions Table */}
+      {/* D. Open Positions */}
       <div className="rounded-xl border border-gray-700 bg-gray-900 p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-bold text-white">Open Positions</h2>
-          <button
-            onClick={() => void fetchAll()}
-            className="text-xs text-gray-500 hover:text-white transition-colors"
-          >
+          <button onClick={() => void fetchAll()} className="text-xs text-gray-500 hover:text-white transition-colors">
             ↺ Refresh
           </button>
         </div>
@@ -434,7 +398,7 @@ export default function ExchangePage({ wallet }: Props) {
               </thead>
               <tbody className="divide-y divide-gray-800">
                 {positions.map(row => {
-                  const size    = row.entryPrice > 0n
+                  const size     = row.entryPrice > 0n
                     ? (row.margin * row.leverage * 10n ** 18n) / row.entryPrice
                     : 0n
                   const closeKey = `close_${row.id}`

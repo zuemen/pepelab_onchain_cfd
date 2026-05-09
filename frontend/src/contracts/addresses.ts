@@ -4,6 +4,7 @@
 export interface ChainAddresses {
   MockUSDC:          string
   MockOracle:        string
+  FeeRouter:         string
   PerpetualExchange: string
   StrategyRegistry:  string
   CopyTracker:       string
@@ -13,6 +14,7 @@ export interface ChainAddresses {
 const ANVIL: ChainAddresses = {
   MockUSDC:          "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
   MockOracle:        "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e",
+  FeeRouter:         "0x0000000000000000000000000000000000000000", // update after re-deploy
   PerpetualExchange: "0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1",
   StrategyRegistry:  "0x9A9f2CCfdE556A7E9Ff0848998Aa4a0CFD8863AE",
   CopyTracker:       "0x68B1D87F95878fE05B998F19b66F4baba5De1aed",
@@ -22,6 +24,7 @@ const ANVIL: ChainAddresses = {
 const SEPOLIA: ChainAddresses = {
   MockUSDC:          "0x7A7D35106B79919A48494BD5c827350bC179ACcF",
   MockOracle:        "0x18c35cb3D3DdC522D0b7996e01d4a5C8b9cf16f4",
+  FeeRouter:         "0x0000000000000000000000000000000000000000", // update after re-deploy
   PerpetualExchange: "0x00f6cf0113399a7A451c7f85fe094a28092d3e0c",
   StrategyRegistry:  "0xEf75ECA6514cE96B18382E921aC6190a0cF8c072",
   CopyTracker:       "0x54e8C43f9Eb151Bb8DD6e61d16a969C4D0e73915",

@@ -23,12 +23,12 @@ interface Props {
 export default function Layout({ wallet, children }: Props) {
   const { pathname } = useLocation()
   const [dismissed, setDismissed] = useState(
-    () => sessionStorage.getItem('disclaimer-dismissed') === '1'
+    () => localStorage.getItem('disclaimer-dismissed') === '1'
   )
   const [switching, setSwitching] = useState(false)
 
   useEffect(() => {
-    if (dismissed) sessionStorage.setItem('disclaimer-dismissed', '1')
+    if (dismissed) localStorage.setItem('disclaimer-dismissed', '1')
   }, [dismissed])
 
   const chainLabel    = wallet.chainId !== null ? (CHAIN_NAMES[wallet.chainId] ?? `Chain ${wallet.chainId}`) : null

@@ -5,6 +5,7 @@ import "forge-std/Script.sol";
 import "forge-std/console.sol";
 import "../src/MockUSDC.sol";
 import "../src/MockOracle.sol";
+import "../src/FeeRouter.sol";
 import "../src/PerpetualExchange.sol";
 import "../src/StrategyRegistry.sol";
 import "../src/CopyTracker.sol";
@@ -17,6 +18,7 @@ contract Deploy is Script {
     bytes32 constant STSLA = keccak256("sTSLA");
 
     function run() external {
+        address deployer = msg.sender;
         vm.startBroadcast();
 
         // 1. MockUSDC
@@ -32,17 +34,28 @@ contract Deploy is Script {
         oracle.addAsset(SAAPL,     200e8);   // $   200
         oracle.addAsset(STSLA,     250e8);   // $   250
 
-        // 4. PerpetualExchange
+        // 4. FeeRouter (platformTreasury = deployer; slashPool = deployer for now)
+        FeeRouter feeRouter = new FeeRouter(address(usdc), deployer, deployer);
+
+        // 5. PerpetualExchange
         PerpetualExchange exchange = new PerpetualExchange(address(usdc), address(oracle));
 
-        // 5. StrategyRegistry
+        // 6. StrategyRegistry
         StrategyRegistry registry = new StrategyRegistry();
 
-        // 6. CopyTracker
-        CopyTracker ct = new CopyTracker(address(usdc), address(exchange), address(registry));
+        // 7. CopyTracker
+        CopyTracker ct = new CopyTracker(
+            address(usdc),
+            address(exchange),
+            address(registry),
+            address(feeRouter)
+        );
 
-        // 7. Wire CopyTracker into exchange
+        // 8. Wire contracts
         exchange.setCopyTracker(address(ct));
+        exchange.setFeeRouter(address(feeRouter));
+        feeRouter.setCopyTracker(address(ct));
+        feeRouter.setExchange(address(exchange));
 
         vm.stopBroadcast();
 
@@ -50,6 +63,7 @@ contract Deploy is Script {
         console.log("=== Deployed Contract Addresses ===");
         console.log("MockUSDC         :", address(usdc));
         console.log("MockOracle       :", address(oracle));
+        console.log("FeeRouter        :", address(feeRouter));
         console.log("PerpetualExchange:", address(exchange));
         console.log("StrategyRegistry :", address(registry));
         console.log("CopyTracker      :", address(ct));

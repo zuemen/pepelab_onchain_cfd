@@ -236,7 +236,7 @@ contract PerpetualExchangeTest is Test {
         _deposit(alice, 500e18);
         vm.prank(tracker);
         vm.expectRevert(PerpetualExchange.CopyTrackerNotSet.selector);
-        exchange.openPositionFor(alice, BTC, true, 100e18, 1);
+        exchange.openPositionFor(alice, BTC, true, 100e18, 1, address(0));
     }
 
     function test_openPositionFor_revertsForNonTracker() public {
@@ -244,7 +244,7 @@ contract PerpetualExchangeTest is Test {
         _deposit(alice, 500e18);
         vm.prank(alice);   // alice is not the copyTracker
         vm.expectRevert(PerpetualExchange.NotCopyTracker.selector);
-        exchange.openPositionFor(alice, BTC, true, 100e18, 1);
+        exchange.openPositionFor(alice, BTC, true, 100e18, 1, address(0));
     }
 
     function test_openPositionFor_success() public {
@@ -252,7 +252,7 @@ contract PerpetualExchangeTest is Test {
         _deposit(alice, 500e18);
 
         vm.prank(tracker);
-        uint256 pid = exchange.openPositionFor(alice, BTC, true, 100e18, 1);
+        uint256 pid = exchange.openPositionFor(alice, BTC, true, 100e18, 1, address(0));
 
         PerpetualExchange.Position memory pos = exchange.getPosition(pid);
         assertEq(pos.owner, alice);

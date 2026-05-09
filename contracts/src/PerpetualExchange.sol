@@ -8,11 +8,16 @@ interface IOracle {
     function getPrice(bytes32 assetId) external view returns (uint256 price, uint256 updatedAt);
 }
 
+interface IFeeRouterPerp {
+    function receivePerformanceFee(address trader, uint256 fee) external;
+}
+
 contract PerpetualExchange is Ownable {
     // ── Constants ────────────────────────────────────────────────────────────
 
-    uint256 public constant MAX_LEVERAGE = 5;
-    uint256 public constant MIN_MARGIN   = 10e18;
+    uint256 public constant MAX_LEVERAGE        = 5;
+    uint256 public constant MIN_MARGIN          = 10e18;
+    uint256 public constant PERFORMANCE_FEE_BPS = 1000;  // 10 % of profit on copied positions
 
     // ── Immutables ───────────────────────────────────────────────────────────
 
@@ -33,6 +38,7 @@ contract PerpetualExchange is Ownable {
         uint256 closedAt;
         int256  realizedPnL;
         bool    isOpen;
+        address copiedFrom;   // address(0) for self-opened positions
     }
 
     // ── State ────────────────────────────────────────────────────────────────
@@ -42,6 +48,7 @@ contract PerpetualExchange is Ownable {
     mapping(address => uint256)       public freeMargin;
     uint256                           public nextPositionId;
     address                           public copyTracker;
+    IFeeRouterPerp                    public feeRouter;
 
     // ── Events ───────────────────────────────────────────────────────────────
 
@@ -62,6 +69,11 @@ contract PerpetualExchange is Ownable {
     );
     event MarginDeposited(address indexed user, uint256 amount);
     event MarginWithdrawn(address indexed user, uint256 amount);
+    event PerformanceFeePaid(
+        uint256 indexed positionId,
+        address indexed copiedFrom,
+        uint256 fee
+    );
 
     // ── Errors ───────────────────────────────────────────────────────────────
 
@@ -86,6 +98,10 @@ contract PerpetualExchange is Ownable {
         copyTracker = _copyTracker;
     }
 
+    function setFeeRouter(address _feeRouter) external onlyOwner {
+        feeRouter = IFeeRouterPerp(_feeRouter);
+    }
+
     // ── Margin management ────────────────────────────────────────────────────
 
     function depositMargin(uint256 amount) external {
@@ -94,7 +110,7 @@ contract PerpetualExchange is Ownable {
         emit MarginDeposited(msg.sender, amount);
     }
 
-    /// @dev copyTracker pulls USDC from itself, credits freeMargin to `user`
+    /// @dev CopyTracker pulls USDC from itself, credits freeMargin to `user`.
     function depositMarginFor(address user, uint256 amount) external {
         if (msg.sender != copyTracker) revert NotCopyTracker();
         usdc.transferFrom(msg.sender, address(this), amount);
@@ -117,7 +133,7 @@ contract PerpetualExchange is Ownable {
         uint256 margin,
         uint256 leverage
     ) external returns (uint256 positionId) {
-        return _openPosition(msg.sender, asset, isLong, margin, leverage);
+        return _openPosition(msg.sender, asset, isLong, margin, leverage, address(0));
     }
 
     function openPositionFor(
@@ -125,18 +141,19 @@ contract PerpetualExchange is Ownable {
         bytes32 asset,
         bool    isLong,
         uint256 margin,
-        uint256 leverage
+        uint256 leverage,
+        address copiedFrom
     ) external returns (uint256 positionId) {
         if (copyTracker == address(0)) revert CopyTrackerNotSet();
         if (msg.sender != copyTracker) revert NotCopyTracker();
-        return _openPosition(user, asset, isLong, margin, leverage);
+        return _openPosition(user, asset, isLong, margin, leverage, copiedFrom);
     }
 
     function closePosition(uint256 positionId) external {
         _closePosition(msg.sender, positionId);
     }
 
-    /// @dev Lets copyTracker close a position on behalf of its owner (e.g. unfollow flow)
+    /// @dev Lets copyTracker close a position on behalf of its owner (e.g. unfollow flow).
     function closePositionFor(address owner, uint256 positionId) external {
         if (msg.sender != copyTracker) revert NotCopyTracker();
         _closePosition(owner, positionId);
@@ -172,7 +189,8 @@ contract PerpetualExchange is Ownable {
         bytes32 asset,
         bool    isLong,
         uint256 margin,
-        uint256 leverage
+        uint256 leverage,
+        address copiedFrom
     ) internal returns (uint256 positionId) {
         if (margin < MIN_MARGIN)                       revert MarginTooLow();
         if (leverage == 0 || leverage > MAX_LEVERAGE)  revert InvalidLeverage();
@@ -196,7 +214,8 @@ contract PerpetualExchange is Ownable {
             openedAt:    block.timestamp,
             closedAt:    0,
             realizedPnL: 0,
-            isOpen:      true
+            isOpen:      true,
+            copiedFrom:  copiedFrom
         });
         userPositions[owner].push(positionId);
 
@@ -212,11 +231,24 @@ contract PerpetualExchange is Ownable {
         int256 closeAmount = int256(pos.margin) + pnl;
         if (closeAmount < 0) closeAmount = 0;
 
+        // Performance fee: 10 % of profit on copied positions when feeRouter is set
+        uint256 perfFee = 0;
+        if (pos.copiedFrom != address(0) && pnl > 0 && address(feeRouter) != address(0)) {
+            perfFee     = uint256(pnl) * PERFORMANCE_FEE_BPS / 10_000;
+            closeAmount -= int256(perfFee);
+        }
+
         pos.isOpen      = false;
         pos.closedAt    = block.timestamp;
         pos.realizedPnL = pnl;
 
         freeMargin[pos.owner] += uint256(closeAmount);
+
+        if (perfFee > 0) {
+            usdc.transfer(address(feeRouter), perfFee);
+            feeRouter.receivePerformanceFee(pos.copiedFrom, perfFee);
+            emit PerformanceFeePaid(positionId, pos.copiedFrom, perfFee);
+        }
 
         emit PositionClosed(positionId, pos.owner, pnl, uint256(closeAmount));
     }

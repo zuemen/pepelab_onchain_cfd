@@ -43,4 +43,42 @@ contract MockUSDCTest is Test {
         assertEq(usdc.balanceOf(alice), 60e18);
         assertEq(usdc.balanceOf(bob), 40e18);
     }
+
+    // ── Faucet tests ──────────────────────────────────────────────────────────
+
+    function test_faucetMintsCorrectAmount() public {
+        vm.prank(alice);
+        usdc.faucet();
+        assertEq(usdc.balanceOf(alice), usdc.FAUCET_AMOUNT());
+    }
+
+    function test_faucetCooldown() public {
+        vm.startPrank(alice);
+        usdc.faucet();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                MockUSDC.FaucetCooldown.selector,
+                block.timestamp + usdc.FAUCET_COOLDOWN()
+            )
+        );
+        usdc.faucet();
+        vm.stopPrank();
+    }
+
+    function test_faucetCanCallAfterCooldown() public {
+        vm.startPrank(alice);
+        usdc.faucet();
+        vm.warp(block.timestamp + usdc.FAUCET_COOLDOWN() + 1);
+        usdc.faucet();
+        vm.stopPrank();
+        assertEq(usdc.balanceOf(alice), 2 * usdc.FAUCET_AMOUNT());
+    }
+
+    function test_faucetIndependentPerAddress() public {
+        vm.prank(alice);
+        usdc.faucet();
+        vm.prank(bob);
+        usdc.faucet();   // bob has no cooldown yet — should not revert
+        assertEq(usdc.balanceOf(bob), usdc.FAUCET_AMOUNT());
+    }
 }

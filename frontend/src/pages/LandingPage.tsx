@@ -44,16 +44,6 @@ export default function LandingPage({ wallet }: Props) {
         <p className="text-red-400 text-sm">{wallet.error}</p>
       )}
 
-      {/* Disclaimer */}
-      <div className="max-w-xl rounded-lg border border-yellow-800 bg-yellow-950/40 px-5 py-4 text-left text-xs text-yellow-300 space-y-1">
-        <p className="font-semibold uppercase tracking-wide">Disclaimer</p>
-        <p>
-          This is a <strong>research prototype</strong> deployed on a local testnet. No real assets are involved. Smart contracts have not been audited. Do not use with real funds on any public network.
-        </p>
-        <p>
-          本系統為學術研究雛型，僅部署於本地測試節點，不涉及任何真實資產或法定貨幣。
-        </p>
-      </div>
     </div>
   )
 }

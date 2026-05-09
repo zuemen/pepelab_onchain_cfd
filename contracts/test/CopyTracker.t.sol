@@ -39,7 +39,7 @@ contract CopyTrackerTest is Test {
         oracle   = new MockOracle();
         registry = new StrategyRegistry();
         exchange = new PerpetualExchange(address(usdc), address(oracle));
-        ct       = new CopyTracker(address(usdc), address(exchange), address(registry));
+        ct       = new CopyTracker(address(usdc), address(exchange), address(registry), address(0));
 
         // CRITICAL: authorise CopyTracker on exchange
         exchange.setCopyTracker(address(ct));
