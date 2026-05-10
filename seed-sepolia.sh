@@ -24,13 +24,15 @@ fi
 
 USDC=$(jq -r '.transactions[] | select(.contractName=="MockUSDC") | .contractAddress' "$BROADCAST")
 REG=$(jq -r '.transactions[] | select(.contractName=="StrategyRegistry") | .contractAddress' "$BROADCAST")
+CT=$(jq -r '.transactions[] | select(.contractName=="CopyTracker") | .contractAddress' "$BROADCAST")
 
-echo "Using USDC=$USDC, Registry=$REG"
+echo "Using USDC=$USDC, Registry=$REG, CopyTracker=$CT"
 echo ""
 
 cd "$CONTRACTS_DIR"
-USDC_ADDR="$USDC" REGISTRY_ADDR="$REG" \
+USDC_ADDR="$USDC" REGISTRY_ADDR="$REG" TRACKER_ADDR="$CT" \
 TRADER2_PK="${TRADER2_PK:-0}" \
+TRADER3_PK="${TRADER3_PK:-0}" \
   forge script script/Seed.s.sol \
   --rpc-url "$SEPOLIA_RPC_URL" \
   --private-key "$PRIVATE_KEY" \
@@ -38,5 +40,5 @@ TRADER2_PK="${TRADER2_PK:-0}" \
   -vvv
 
 echo ""
-echo "Seed complete. Vercel frontend will show Demo Alpha trader on /marketplace."
-echo "(To add Demo Beta on Sepolia: set TRADER2_PK in contracts/.env to a separate funded wallet)"
+echo "Seed complete. Vercel frontend will show demo traders on /marketplace."
+echo "(To add Demo Beta / Gamma on Sepolia: set TRADER2_PK / TRADER3_PK in contracts/.env)"

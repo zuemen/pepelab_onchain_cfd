@@ -135,12 +135,18 @@ export default function MarketplacePage({ wallet }: Props) {
           Loading traders…
         </div>
       ) : traders.length === 0 ? (
-        <div className="rounded-card border border-surface-border bg-surface shadow-card p-12 text-center text-gray-600">
-          No traders registered yet. Be the first on{' '}
-          <Link to="/trader" className="text-brand-100 hover:underline">
-            Trader Dashboard
+        <div className="rounded-card border border-surface-border bg-surface shadow-card p-12 text-center space-y-4">
+          <div className="text-4xl">🎯</div>
+          <h3 className="text-lg font-semibold text-white">Strategy Marketplace is empty</h3>
+          <p className="text-sm text-gray-400 max-w-md mx-auto">
+            No traders have registered on this network yet. Be the first to publish a trading strategy and start building your follower base.
+          </p>
+          <Link
+            to="/trader"
+            className="inline-block px-6 py-2.5 rounded-lg bg-brand-200 hover:bg-brand-300 text-white text-sm font-semibold transition-colors"
+          >
+            Become a Trader →
           </Link>
-          .
         </div>
       ) : (
         <>

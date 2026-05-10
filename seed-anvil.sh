@@ -19,12 +19,13 @@ fi
 
 USDC=$(jq -r '.transactions[] | select(.contractName=="MockUSDC") | .contractAddress' "$BROADCAST")
 REG=$(jq -r '.transactions[] | select(.contractName=="StrategyRegistry") | .contractAddress' "$BROADCAST")
+CT=$(jq -r '.transactions[] | select(.contractName=="CopyTracker") | .contractAddress' "$BROADCAST")
 
-echo "Using USDC=$USDC, Registry=$REG"
+echo "Using USDC=$USDC, Registry=$REG, CopyTracker=$CT"
 echo ""
 
 cd "$CONTRACTS_DIR"
-USDC_ADDR="$USDC" REGISTRY_ADDR="$REG" \
+USDC_ADDR="$USDC" REGISTRY_ADDR="$REG" TRACKER_ADDR="$CT" \
   forge script script/Seed.s.sol \
   --rpc-url "$RPC_URL" \
   --private-key "$PRIVATE_KEY" \
@@ -32,4 +33,4 @@ USDC_ADDR="$USDC" REGISTRY_ADDR="$REG" \
   -v
 
 echo ""
-echo "Seed complete. Open http://localhost:5173/marketplace to see Demo Alpha + Demo Beta."
+echo "Seed complete. Open http://localhost:5173/marketplace to see Demo Alpha + Demo Beta + Demo Gamma."

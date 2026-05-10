@@ -67,6 +67,8 @@ export default function AdminOraclePage({ wallet }: Props) {
   const [ownerCheckError, setOwnerCheckError] = useState<string | null>(null)
   const [busy,           setBusy]           = useState<Record<string, boolean>>({})
   const [toast,          setToast]          = useState<{ msg: string; ok: boolean; hash?: string } | null>(null)
+  const [syncBusy,       setSyncBusy]       = useState(false)
+  const [syncMsg,        setSyncMsg]        = useState<string | null>(null)
 
   const isOwner =
     oracleOwner !== null &&
@@ -148,6 +150,55 @@ export default function AdminOraclePage({ wallet }: Props) {
   const updateInput = (id: AssetId, value: string) =>
     setAssets(prev => prev.map(a => a.id === id ? { ...a, input: value } : a))
 
+  const syncFromCoinGecko = async () => {
+    if (!contracts || !isOwner) return
+    setSyncBusy(true)
+    setSyncMsg(null)
+    try {
+      const res = await fetch(
+        'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd',
+      )
+      if (!res.ok) throw new Error(`CoinGecko API error ${res.status}`)
+      const data = await res.json() as { bitcoin: { usd: number }; ethereum: { usd: number } }
+
+      const currentAAPL = Number(assets.find(a => a.id === ASSET_IDS.sAAPL)?.price8 ?? 0n) / 1e8
+      const currentTSLA = Number(assets.find(a => a.id === ASSET_IDS.sTSLA)?.price8 ?? 0n) / 1e8
+      const wiggle = () => 1 + (Math.random() - 0.5) * 0.06
+      const newAAPL = currentAAPL > 0 ? currentAAPL * wiggle() : 200
+      const newTSLA = currentTSLA > 0 ? currentTSLA * wiggle() : 250
+
+      const targets: Array<[AssetId, number, string]> = [
+        [ASSET_IDS.sBTC,  data.bitcoin.usd,  'BTC'],
+        [ASSET_IDS.sETH,  data.ethereum.usd, 'ETH'],
+        [ASSET_IDS.sAAPL, newAAPL,           'AAPL'],
+        [ASSET_IDS.sTSLA, newTSLA,           'TSLA'],
+      ]
+
+      const updates: string[] = []
+      for (const [id, usdPrice, label] of targets) {
+        const row = assets.find(a => a.id === id)
+        if (!row || row.price8 === 0n) continue
+        const new8 = BigInt(Math.round(usdPrice * 1e8))
+        const cur  = row.price8
+        const diff = new8 > cur ? new8 - cur : cur - new8
+        if (diff * 10_000n > cur * 5_000n) {
+          updates.push(`${label}: skipped (>±50%)`)
+          continue
+        }
+        const tx = asTx(await contracts.oracle.updatePrice(id, new8))
+        await tx.wait()
+        updates.push(`${label}: $${(Number(new8) / 1e8).toFixed(2)}`)
+      }
+
+      setSyncMsg('✓ ' + updates.join(' · '))
+      await fetchPrices()
+    } catch (e) {
+      setSyncMsg('Sync failed: ' + (e instanceof Error ? e.message.slice(0, 80) : 'unknown'))
+    } finally {
+      setSyncBusy(false)
+    }
+  }
+
   // ── Guard ─────────────────────────────────────────────────────────────────
   if (!wallet.isConnected) {
     return (
@@ -188,6 +239,26 @@ export default function AdminOraclePage({ wallet }: Props) {
         <p className="text-sm text-gray-400 mt-0.5">
           Only the oracle owner wallet can update prices. Max ±50% per update.
         </p>
+      </div>
+
+      {/* Live Price Sync */}
+      <div className="rounded-card border border-brand-200/30 bg-brand-200/5 p-5 space-y-3">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h3 className="text-sm font-semibold text-brand-100">Live Price Sync</h3>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Pull real-time BTC/ETH from CoinGecko, simulate stock prices for AAPL/TSLA.
+            </p>
+          </div>
+          <button
+            onClick={() => void syncFromCoinGecko()}
+            disabled={!isOwner || syncBusy}
+            className="px-4 py-2 rounded-lg bg-brand-200 hover:bg-brand-300 disabled:opacity-40 text-white text-sm font-semibold transition-colors whitespace-nowrap"
+          >
+            {syncBusy ? 'Syncing…' : '↺ Sync from CoinGecko'}
+          </button>
+        </div>
+        {syncMsg && <p className="text-xs text-gray-400">{syncMsg}</p>}
       </div>
 
       {/* Owner status banner */}
