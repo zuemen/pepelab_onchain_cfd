@@ -22,7 +22,7 @@ export default function App() {
           <Route path="/exchange"               element={<ExchangePage      wallet={wallet} />} />
           <Route path="/trader"                 element={<TraderDashboard   wallet={wallet} />} />
           <Route path="/stake"                  element={<TraderStakePage   wallet={wallet} />} />
-          <Route path="/profile/:address"       element={<TraderProfilePage wallet={wallet} />} />
+          <Route path="/trader/:address"        element={<TraderProfilePage wallet={wallet} />} />
           <Route path="/marketplace"            element={<MarketplacePage   wallet={wallet} />} />
           <Route path="/copy/:traderAddress"    element={<CopyPage          wallet={wallet} />} />
           <Route path="/portfolio"              element={<PortfolioPage     wallet={wallet} />} />

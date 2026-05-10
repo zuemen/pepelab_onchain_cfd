@@ -12,16 +12,25 @@ const ASSET_LABEL: Record<string, string> = {
 }
 
 interface StakeInfo {
-  stakedAmount:  bigint
-  totalSlashed:  bigint
-  slashCount:    bigint
+  amount:             bigint
+  totalSlashed:       bigint
+  unstakeRequestedAt: bigint
+  unstakeAmount:      bigint
 }
 
 interface RawAlloc {
   asset: string; weight: bigint; isLong: boolean; leverage: bigint
 }
 
+interface SlashEvent {
+  trader:    string
+  amount:    bigint
+  recipient: string
+  txHash:    string
+}
+
 const f18 = (v: bigint, d = 2) => (Number(v) / 1e18).toFixed(d)
+const shortAddr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 
 interface Props { wallet: WalletAPI }
 
@@ -32,11 +41,13 @@ export default function TraderProfilePage({ wallet }: Props) {
   const [name,          setName]          = useState('')
   const [registered,    setRegistered]    = useState(false)
   const [followers,     setFollowers]     = useState<bigint>(0n)
+  const [followerList,  setFollowerList]  = useState<string[]>([])
   const [allocs,        setAllocs]        = useState<RawAlloc[]>([])
   const [hasStrategy,   setHasStrategy]   = useState(false)
   const [stakeInfo,     setStakeInfo]     = useState<StakeInfo | null>(null)
   const [repScore,      setRepScore]      = useState<bigint | null>(null)
   const [eligible,      setEligible]      = useState<boolean | null>(null)
+  const [slashHistory,  setSlashHistory]  = useState<SlashEvent[]>([])
   const [loading,       setLoading]       = useState(true)
   const [error,         setError]         = useState<string | null>(null)
 
@@ -60,6 +71,19 @@ export default function TraderProfilePage({ wallet }: Props) {
         return
       }
 
+      // followersByTrader (first 10)
+      try {
+        const list: string[] = []
+        for (let i = 0; i < 10; i++) {
+          try {
+            const addr = await contracts.copyTracker.followersByTrader(traderAddr, BigInt(i))
+            list.push(addr as string)
+          } catch { break }
+        }
+        setFollowerList(list)
+      } catch { /* no followers */ }
+
+      // strategy
       try {
         const stratRaw = (await contracts.registry.getLatestStrategy(traderAddr)) as unknown as [unknown[], bigint]
         setAllocs((stratRaw[0] as unknown[]).map(a => {
@@ -69,17 +93,32 @@ export default function TraderProfilePage({ wallet }: Props) {
         setHasStrategy(true)
       } catch { setHasStrategy(false) }
 
+      // stake + reputation
       try {
         const [si, score, elig] = await Promise.all([
           contracts.traderStake.getStake(traderAddr),
           contracts.traderStake.reputationScore(traderAddr),
           contracts.traderStake.isEligible(traderAddr),
         ])
-        const s = si as unknown as StakeInfo
-        setStakeInfo(s)
+        setStakeInfo(si as unknown as StakeInfo)
         setRepScore(score as bigint)
         setEligible(elig as boolean)
-      } catch { /* TraderStake not deployed yet */ }
+      } catch { /* TraderStake not deployed */ }
+
+      // slash history from Slashed events
+      try {
+        const filter = contracts.traderStake.filters['Slashed'](traderAddr, null)
+        const events = await contracts.traderStake.queryFilter(filter, -10000)
+        setSlashHistory(events.map((e: unknown) => {
+          const ev = e as { args: { trader: string; amount: bigint; recipient: string }; transactionHash: string }
+          return {
+            trader:    ev.args.trader,
+            amount:    ev.args.amount,
+            recipient: ev.args.recipient,
+            txHash:    ev.transactionHash,
+          }
+        }))
+      } catch { /* events not available */ }
 
       setLoading(false)
     }
@@ -100,6 +139,11 @@ export default function TraderProfilePage({ wallet }: Props) {
     : repScore >= 80n ? 'text-emerald-400'
     : repScore >= 50n ? 'text-yellow-400'
     : 'text-red-400'
+
+  const repBadge = repScore === null ? ''
+    : repScore >= 80n ? 'bg-emerald-900 border-emerald-700 text-emerald-300'
+    : repScore >= 50n ? 'bg-yellow-900/60 border-yellow-700 text-yellow-300'
+    : 'bg-red-900/60 border-red-800 text-red-300'
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-8 space-y-6">
@@ -122,7 +166,7 @@ export default function TraderProfilePage({ wallet }: Props) {
         </div>
       ) : (
         <>
-          {/* ─── Identity ──────────────────────────────────────────── */}
+          {/* ─── A. Header ────────────────────────────────────────── */}
           <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-3">
             <div className="flex items-start justify-between">
               <div>
@@ -130,10 +174,9 @@ export default function TraderProfilePage({ wallet }: Props) {
                 <p className="text-xs font-mono text-gray-500 mt-0.5">{traderAddr}</p>
               </div>
               {repScore !== null && (
-                <div className="text-right">
-                  <p className="text-xs text-gray-500 uppercase tracking-wide">Reputation</p>
-                  <p className={`text-2xl font-bold font-mono ${repColor}`}>{String(repScore)}</p>
-                </div>
+                <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-bold border ${repBadge}`}>
+                  ◆ {String(repScore)}
+                </span>
               )}
             </div>
 
@@ -157,16 +200,23 @@ export default function TraderProfilePage({ wallet }: Props) {
                 </span>
               )}
             </div>
+
+            <Link
+              to={`/copy/${traderAddr}`}
+              className="block w-full py-2.5 text-center rounded-lg bg-brand-200 hover:bg-brand-300 text-white text-sm font-semibold transition-colors"
+            >
+              Copy This Trader →
+            </Link>
           </div>
 
-          {/* ─── Stake info ─────────────────────────────────────────── */}
+          {/* ─── B. Stake Status ───────────────────────────────────── */}
           {stakeInfo && (
             <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-3">
               <h2 className="text-base font-bold text-white">Skin-in-the-Game</h2>
               <div className="grid grid-cols-3 gap-3">
                 <div className="bg-surface-elev rounded-lg p-3 text-center">
                   <p className="text-xs text-gray-500">Staked</p>
-                  <p className="text-base font-bold font-mono text-white">{f18(stakeInfo.stakedAmount)}</p>
+                  <p className="text-base font-bold font-mono text-white">{f18(stakeInfo.amount)}</p>
                   <p className="text-xs text-gray-600">mUSDC</p>
                 </div>
                 <div className="bg-surface-elev rounded-lg p-3 text-center">
@@ -177,17 +227,17 @@ export default function TraderProfilePage({ wallet }: Props) {
                   <p className="text-xs text-gray-600">mUSDC</p>
                 </div>
                 <div className="bg-surface-elev rounded-lg p-3 text-center">
-                  <p className="text-xs text-gray-500">Slash Events</p>
-                  <p className={`text-base font-bold font-mono ${stakeInfo.slashCount > 0n ? 'text-danger' : 'text-white'}`}>
-                    {String(stakeInfo.slashCount)}
+                  <p className="text-xs text-gray-500">Reputation</p>
+                  <p className={`text-base font-bold font-mono ${repColor}`}>
+                    {repScore !== null ? String(repScore) : '—'}
                   </p>
-                  <p className="text-xs text-gray-600">times</p>
+                  <p className="text-xs text-gray-600">/ 100</p>
                 </div>
               </div>
             </div>
           )}
 
-          {/* ─── Strategy ───────────────────────────────────────────── */}
+          {/* ─── C. Strategy History ───────────────────────────────── */}
           <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-3">
             <h2 className="text-base font-bold text-white">Latest Strategy</h2>
             {!hasStrategy ? (
@@ -211,14 +261,56 @@ export default function TraderProfilePage({ wallet }: Props) {
             )}
           </div>
 
-          {/* ─── Actions ────────────────────────────────────────────── */}
+          {/* ─── D. Followers ──────────────────────────────────────── */}
+          {followerList.length > 0 && (
+            <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-3">
+              <h2 className="text-base font-bold text-white">
+                Followers
+                <span className="ml-2 text-xs font-normal text-gray-500">(first {followerList.length})</span>
+              </h2>
+              <div className="space-y-1">
+                {followerList.map((addr, i) => (
+                  <div key={i} className="flex items-center justify-between text-xs py-1 border-b border-surface-border last:border-0">
+                    <span className="font-mono text-gray-300">{shortAddr(addr)}</span>
+                    <span className="text-gray-600">#{i + 1}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ─── E. Slash History ──────────────────────────────────── */}
+          {slashHistory.length > 0 && (
+            <div className="rounded-card border border-red-900/40 bg-red-950/10 shadow-card p-5 space-y-3">
+              <h2 className="text-base font-bold text-red-300">
+                Slash History
+                <span className="ml-2 text-xs font-normal text-gray-500">({slashHistory.length} event{slashHistory.length !== 1 ? 's' : ''})</span>
+              </h2>
+              <div className="space-y-2">
+                {slashHistory.map((ev, i) => (
+                  <div key={i} className="flex items-center justify-between text-xs py-2 border-b border-surface-border last:border-0">
+                    <div>
+                      <p className="text-danger font-mono font-semibold">−{f18(ev.amount)} mUSDC</p>
+                      <p className="text-gray-500 mt-0.5">→ {shortAddr(ev.recipient)}</p>
+                    </div>
+                    {wallet.chainId === 11155111 && (
+                      <a
+                        href={`https://sepolia.etherscan.io/tx/${ev.txHash}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-info hover:underline text-xs"
+                      >
+                        Etherscan ↗
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Actions */}
           <div className="flex gap-3">
-            <Link
-              to={`/copy/${traderAddr}`}
-              className="flex-1 py-2.5 text-center rounded-lg bg-brand-200 hover:bg-brand-300 text-white text-sm font-semibold transition-colors"
-            >
-              Copy This Trader →
-            </Link>
             <Link
               to="/marketplace"
               className="px-4 py-2.5 rounded-lg border border-surface-border text-gray-300 text-sm font-medium hover:border-gray-400 hover:text-white transition-colors"

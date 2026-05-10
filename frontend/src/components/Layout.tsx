@@ -49,8 +49,8 @@ export default function Layout({ wallet, children }: Props) {
       : 'bg-red-900/60 text-red-300 border-red-700'
 
   const pageTitle = PAGE_TITLES[pathname]
-    ?? (pathname.startsWith('/profile/') ? 'Trader Profile'
-      : pathname.startsWith('/copy/')    ? 'Copy Trader'
+    ?? (pathname.startsWith('/trader/') ? 'Trader Profile'
+      : pathname.startsWith('/copy/')   ? 'Copy Trader'
       : 'PepeLab CFD')
 
   const switchToAnvil = async () => {

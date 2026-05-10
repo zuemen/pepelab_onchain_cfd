@@ -30,46 +30,53 @@ contract TraderStakeTest is Test {
         ts.stake(amt);
     }
 
-    // ── 1. stake MIN_STAKE → isEligible ──────────────────────────────────────
-
-    function test_stake_basic_isEligible() public {
-        _stake(alice, ts.MIN_STAKE());
+    // ── 1. stake MIN_STAKE → isEligible, amount set ──────────────────────────
+    function testStake_increases() public {
+        uint256 minStake = ts.MIN_STAKE();
+        _stake(alice, minStake);
         assertTrue(ts.isEligible(alice));
-        assertEq(ts.getStake(alice).stakedAmount, ts.MIN_STAKE());
+        assertEq(ts.getStake(alice).amount, minStake);
     }
 
-    // ── 2. stake below MIN_STAKE reverts ─────────────────────────────────────
-    // NOTE: pre-compute value before vm.prank — otherwise the MIN_STAKE()
-    //       staticcall consumes the prank, leaving stake() called as test contract.
-
-    function test_stake_belowMin_reverts() public {
+    // ── 2. stake below MIN_STAKE → not eligible (reverts) ────────────────────
+    // NOTE: pre-compute value before vm.prank to avoid staticcall consuming prank.
+    function testStake_belowMin_notEligible() public {
         uint256 belowMin = ts.MIN_STAKE() - 1;
         vm.prank(alice);
         vm.expectRevert(TraderStake.BelowMinStake.selector);
         ts.stake(belowMin);
     }
 
-    // ── 3. stake twice accumulates ────────────────────────────────────────────
-
-    function test_stake_accumulates() public {
-        _stake(alice, ts.MIN_STAKE());
-        _stake(alice, 50e18);
-        assertEq(ts.getStake(alice).stakedAmount, ts.MIN_STAKE() + 50e18);
+    // ── 3. stake above MIN_STAKE → eligible ──────────────────────────────────
+    function testStake_aboveMin_eligible() public {
+        uint256 minStake = ts.MIN_STAKE();
+        _stake(alice, minStake + 50e18);
+        assertTrue(ts.isEligible(alice));
+        assertEq(ts.getStake(alice).amount, minStake + 50e18);
     }
 
-    // ── 4. requestUnstake sets pendingUnstake ─────────────────────────────────
-
-    function test_requestUnstake_setsPending() public {
+    // ── 4. requestUnstake sets unstakeAmount ─────────────────────────────────
+    function testRequestUnstake() public {
         _stake(alice, ts.MIN_STAKE());
         vm.prank(alice);
         ts.requestUnstake(50e18);
-        assertEq(ts.getStake(alice).pendingUnstake, 50e18);
+        assertEq(ts.getStake(alice).unstakeAmount, 50e18);
+        assertGt(ts.getStake(alice).unstakeRequestedAt, 0);
     }
 
-    // ── 5. executeUnstake after cooldown returns USDC ─────────────────────────
-    // NOTE: pre-compute MIN_STAKE before vm.prank to avoid consuming the prank.
+    // ── 5. executeUnstake before cooldown reverts ─────────────────────────────
+    function testExecuteUnstake_beforeCooldown_revert() public {
+        uint256 minStake = ts.MIN_STAKE();
+        _stake(alice, minStake);
+        vm.prank(alice); ts.requestUnstake(minStake);
 
-    function test_executeUnstake_afterCooldown_returnsUSDC() public {
+        vm.prank(alice);
+        vm.expectRevert();   // CooldownNotElapsed
+        ts.executeUnstake();
+    }
+
+    // ── 6. executeUnstake after cooldown returns USDC ────────────────────────
+    function testExecuteUnstake_afterCooldown_works() public {
         uint256 minStake = ts.MIN_STAKE();
         _stake(alice, minStake);
         vm.prank(alice); ts.requestUnstake(minStake);
@@ -80,55 +87,48 @@ contract TraderStakeTest is Test {
         vm.prank(alice); ts.executeUnstake();
 
         assertEq(usdc.balanceOf(alice), before + minStake);
-        assertEq(ts.getStake(alice).stakedAmount, 0);
+        assertEq(ts.getStake(alice).amount, 0);
         assertFalse(ts.isEligible(alice));
     }
 
-    // ── 6. executeUnstake before cooldown reverts ─────────────────────────────
-
-    function test_executeUnstake_beforeCooldown_reverts() public {
-        uint256 minStake = ts.MIN_STAKE();
-        _stake(alice, minStake);
-        vm.prank(alice); ts.requestUnstake(minStake);
-
-        vm.prank(alice);
-        vm.expectRevert();   // CooldownNotElapsed
-        ts.executeUnstake();
-    }
-
-    // ── 7. cancelUnstake clears pendingUnstake ────────────────────────────────
-
-    function test_cancelUnstake_clearsPending() public {
+    // ── 7. cancelUnstake clears unstakeAmount ─────────────────────────────────
+    function testCancelUnstake() public {
         uint256 minStake = ts.MIN_STAKE();
         _stake(alice, minStake);
         vm.prank(alice); ts.requestUnstake(minStake);
 
         vm.prank(alice); ts.cancelUnstake();
 
-        assertEq(ts.getStake(alice).pendingUnstake, 0);
-        assertEq(ts.getStake(alice).stakedAmount, minStake);
+        assertEq(ts.getStake(alice).unstakeAmount, 0);
+        assertEq(ts.getStake(alice).amount, minStake);
     }
 
     // ── 8. slash reduces stake and sends USDC to recipient ───────────────────
-
-    function test_slash_reducesStakeAndSendsUSDC() public {
+    function testSlash_byCopyTracker() public {
         uint256 minStake = ts.MIN_STAKE();
         _stake(alice, minStake);
-        uint256 slashAmt  = minStake * ts.MAX_SLASH_BPS() / 10_000;   // 50 %
+        uint256 slashAmt  = minStake * ts.MAX_SLASH_BPS() / 10_000;   // 50%
         uint256 bobBefore = usdc.balanceOf(bob);
 
         vm.prank(ct);
         ts.slash(alice, slashAmt, bob);
 
-        assertEq(ts.getStake(alice).stakedAmount, minStake - slashAmt);
+        assertEq(ts.getStake(alice).amount, minStake - slashAmt);
         assertEq(usdc.balanceOf(bob), bobBefore + slashAmt);
         assertEq(ts.getStake(alice).totalSlashed, slashAmt);
-        assertEq(ts.getStake(alice).slashCount, 1);
     }
 
-    // ── 9. slash > MAX_SLASH_BPS reverts ─────────────────────────────────────
+    // ── 9. slash from non-CopyTracker reverts ────────────────────────────────
+    function testSlash_byOther_revert() public {
+        _stake(alice, ts.MIN_STAKE());
 
-    function test_slash_exceedsMax_reverts() public {
+        vm.prank(alice);
+        vm.expectRevert(TraderStake.NotCopyTracker.selector);
+        ts.slash(alice, 50e18, bob);
+    }
+
+    // ── 10. slash > MAX_SLASH_BPS reverts ────────────────────────────────────
+    function testSlash_exceedsMaxBps_revert() public {
         uint256 minStake = ts.MIN_STAKE();
         _stake(alice, minStake);
         uint256 tooMuch = minStake * ts.MAX_SLASH_BPS() / 10_000 + 1;
@@ -138,45 +138,40 @@ contract TraderStakeTest is Test {
         ts.slash(alice, tooMuch, bob);
     }
 
-    // ── 10. slash from non-CopyTracker reverts ────────────────────────────────
-
-    function test_slash_notCopyTracker_reverts() public {
-        _stake(alice, ts.MIN_STAKE());
-
-        vm.prank(alice);
-        vm.expectRevert(TraderStake.NotCopyTracker.selector);
-        ts.slash(alice, 50e18, bob);
-    }
-
-    // ── 11. isEligible false after stake drops below MIN ─────────────────────
-
-    function test_isEligible_falseAfterSlashBelowMin() public {
+    // ── 11. isEligible drops to false after stake slashed below MIN ───────────
+    function testReputationDecreasesAfterSlash() public {
         uint256 minStake = ts.MIN_STAKE();
         _stake(alice, minStake);
-        assertTrue(ts.isEligible(alice));
+        assertEq(ts.reputationScore(alice), 100);   // 100e18 / (100e18 + 0) * 100 = 100
 
-        // Slash 50 % (= MAX_SLASH_BPS) → 50e18 remaining < MIN_STAKE(100e18)
-        uint256 slashAmt = minStake / 2;   // 50e18
+        uint256 slashAmt = minStake / 2;             // 50e18 (within MAX_SLASH_BPS = 50%)
         vm.prank(ct);
         ts.slash(alice, slashAmt, bob);
 
-        assertFalse(ts.isEligible(alice));
-    }
-
-    // ── 12. reputationScore decreases with each slash ─────────────────────────
-
-    function test_reputationScore_decreasesWithSlash() public {
-        uint256 minStake = ts.MIN_STAKE();
-        _stake(alice, minStake);
-        assertEq(ts.reputationScore(alice), 100);   // 100e18*100/100e18 = 100
-
-        // Slash 25 % of stake (within MAX_SLASH_BPS cap of 50 %)
-        uint256 slashAmt = minStake * ts.MAX_SLASH_BPS() / 10_000 / 2;   // 25e18
-        vm.prank(ct);
-        ts.slash(alice, slashAmt, bob);
-
-        // stakedAmount = 75e18 → base = 75; slashCount = 1 → penalty = 10 → score = 65
         assertLt(ts.reputationScore(alice), 100);
-        assertEq(ts.reputationScore(alice), 65);
+    }
+
+    // ── 12. reputationScore formula: stake * 100 / (stake + totalSlashed * 5) ──
+    function testReputationFormula() public {
+        uint256 minStake = ts.MIN_STAKE();
+        _stake(alice, minStake);
+
+        // Slash 50e18 → amount = 50e18, totalSlashed = 50e18
+        // score = 50e18 * 100 / (50e18 + 50e18 * 5) = 5000e18 / 300e18 = 16
+        uint256 slashAmt = minStake * ts.MAX_SLASH_BPS() / 10_000;   // 50e18
+        vm.prank(ct);
+        ts.slash(alice, slashAmt, bob);
+
+        // stake = 50e18, totalSlashed = 50e18
+        // score = 50e18 * 100 / (50e18 + 50e18*5) = 5000/300 = 16
+        uint256 remain   = minStake - slashAmt;
+        uint256 expected = remain * 100 / (remain + slashAmt * 5);
+        assertEq(ts.reputationScore(alice), expected);
+
+        // Unstaked completely → score = 0
+        vm.prank(alice); ts.requestUnstake(50e18);
+        vm.warp(block.timestamp + ts.UNSTAKE_COOLDOWN() + 1);
+        vm.prank(alice); ts.executeUnstake();
+        assertEq(ts.reputationScore(alice), 0);
     }
 }

@@ -18,21 +18,21 @@ contract TraderStake is Ownable, ReentrancyGuard {
     address public copyTracker;
 
     struct StakeInfo {
-        uint256 stakedAmount;
-        uint256 unstakeRequestedAt;   // 0 if no pending unstake
-        uint256 pendingUnstake;
+        uint256 amount;
         uint256 totalSlashed;
-        uint256 slashCount;
+        uint256 unstakeRequestedAt;   // 0 if no pending unstake
+        uint256 unstakeAmount;
     }
 
-    mapping(address => StakeInfo) private _stakes;
+    mapping(address => StakeInfo) public stakes;
 
     // ── Events ───────────────────────────────────────────────────────────────
     event Staked(address indexed trader, uint256 amount);
     event UnstakeRequested(address indexed trader, uint256 amount, uint256 availableAt);
-    event UnstakeExecuted(address indexed trader, uint256 amount);
+    event Unstaked(address indexed trader, uint256 amount);
     event UnstakeCancelled(address indexed trader);
     event Slashed(address indexed trader, uint256 amount, address indexed recipient);
+    event ReputationUpdated(address indexed trader, uint256 newScore);
     event CopyTrackerSet(address indexed ct);
 
     // ── Errors ───────────────────────────────────────────────────────────────
@@ -58,73 +58,75 @@ contract TraderStake is Ownable, ReentrancyGuard {
     // ── Staking ──────────────────────────────────────────────────────────────
     function stake(uint256 amount) external nonReentrant {
         if (amount == 0) revert ZeroAmount();
-        _stakes[msg.sender].stakedAmount += amount;
-        if (_stakes[msg.sender].stakedAmount < MIN_STAKE) revert BelowMinStake();
+        stakes[msg.sender].amount += amount;
+        if (stakes[msg.sender].amount < MIN_STAKE) revert BelowMinStake();
         usdc.transferFrom(msg.sender, address(this), amount);
         emit Staked(msg.sender, amount);
     }
 
     function requestUnstake(uint256 amount) external {
         if (amount == 0) revert ZeroAmount();
-        StakeInfo storage s = _stakes[msg.sender];
-        if (amount > s.stakedAmount) revert InsufficientStake();
-        s.pendingUnstake     = amount;
+        StakeInfo storage s = stakes[msg.sender];
+        if (amount > s.amount) revert InsufficientStake();
+        s.unstakeAmount      = amount;
         s.unstakeRequestedAt = block.timestamp;
         emit UnstakeRequested(msg.sender, amount, block.timestamp + UNSTAKE_COOLDOWN);
     }
 
     function executeUnstake() external nonReentrant {
-        StakeInfo storage s = _stakes[msg.sender];
-        if (s.pendingUnstake == 0) revert NoPendingUnstake();
+        StakeInfo storage s = stakes[msg.sender];
+        if (s.unstakeAmount == 0) revert NoPendingUnstake();
         uint256 availableAt = s.unstakeRequestedAt + UNSTAKE_COOLDOWN;
         if (block.timestamp < availableAt) revert CooldownNotElapsed(availableAt);
-        uint256 amount       = s.pendingUnstake;
-        s.pendingUnstake     = 0;
+        uint256 amt          = s.unstakeAmount;
+        s.unstakeAmount      = 0;
         s.unstakeRequestedAt = 0;
-        s.stakedAmount      -= amount;
-        usdc.transfer(msg.sender, amount);
-        emit UnstakeExecuted(msg.sender, amount);
+        s.amount            -= amt;
+        usdc.transfer(msg.sender, amt);
+        emit Unstaked(msg.sender, amt);
     }
 
     function cancelUnstake() external {
-        StakeInfo storage s = _stakes[msg.sender];
-        if (s.pendingUnstake == 0) revert NoPendingUnstake();
-        s.pendingUnstake     = 0;
+        StakeInfo storage s = stakes[msg.sender];
+        if (s.unstakeAmount == 0) revert NoPendingUnstake();
+        s.unstakeAmount      = 0;
         s.unstakeRequestedAt = 0;
         emit UnstakeCancelled(msg.sender);
     }
 
-    // ── Slash (called by CopyTracker) ────────────────────────────────────────
+    // ── Slash (called by CopyTracker only) ───────────────────────────────────
     function slash(address trader, uint256 amount, address recipient) external nonReentrant {
         if (msg.sender != copyTracker) revert NotCopyTracker();
-        StakeInfo storage s = _stakes[trader];
-        uint256 maxSlash = s.stakedAmount * MAX_SLASH_BPS / 10_000;
+        StakeInfo storage s = stakes[trader];
+        uint256 maxSlash = s.amount * MAX_SLASH_BPS / 10_000;
         if (amount > maxSlash) revert SlashExceedsMax();
-        if (amount > s.stakedAmount) revert InsufficientStake();
-        s.stakedAmount -= amount;
+        if (amount > s.amount) revert InsufficientStake();
+        s.amount       -= amount;
         s.totalSlashed += amount;
-        s.slashCount   += 1;
         usdc.transfer(recipient, amount);
         emit Slashed(trader, amount, recipient);
+        emit ReputationUpdated(trader, reputationScore(trader));
     }
 
     // ── Views ────────────────────────────────────────────────────────────────
     function isEligible(address trader) external view returns (bool) {
-        return _stakes[trader].stakedAmount >= MIN_STAKE;
+        return stakes[trader].amount >= MIN_STAKE;
     }
 
     function getStake(address trader) external view returns (StakeInfo memory) {
-        return _stakes[trader];
+        return stakes[trader];
     }
 
+    // Keep named helper for CopyTracker interface
     function stakedAmount(address trader) external view returns (uint256) {
-        return _stakes[trader].stakedAmount;
+        return stakes[trader].amount;
     }
 
-    function reputationScore(address trader) external view returns (uint256) {
-        StakeInfo memory s = _stakes[trader];
-        uint256 base    = s.stakedAmount * 100 / MIN_STAKE;
-        uint256 penalty = s.slashCount * 10;
-        return base > penalty ? base - penalty : 0;
+    function reputationScore(address trader) public view returns (uint256) {
+        StakeInfo memory s = stakes[trader];
+        if (s.amount == 0) return 0;
+        // score = stake * 100 / (stake + totalSlashed * 5)
+        uint256 denom = s.amount + s.totalSlashed * 5;
+        return s.amount * 100 / denom;
     }
 }

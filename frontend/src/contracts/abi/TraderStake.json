@@ -85,8 +85,8 @@
     "type": "function",
     "name": "slash",
     "inputs": [
-      { "name": "trader", "type": "address", "internalType": "address" },
-      { "name": "amount", "type": "uint256", "internalType": "uint256" },
+      { "name": "trader",    "type": "address", "internalType": "address" },
+      { "name": "amount",    "type": "uint256", "internalType": "uint256" },
       { "name": "recipient", "type": "address", "internalType": "address" }
     ],
     "outputs": [],
@@ -109,13 +109,24 @@
         "type": "tuple",
         "internalType": "struct TraderStake.StakeInfo",
         "components": [
-          { "name": "stakedAmount",       "type": "uint256", "internalType": "uint256" },
-          { "name": "unstakeRequestedAt", "type": "uint256", "internalType": "uint256" },
-          { "name": "pendingUnstake",     "type": "uint256", "internalType": "uint256" },
-          { "name": "totalSlashed",       "type": "uint256", "internalType": "uint256" },
-          { "name": "slashCount",         "type": "uint256", "internalType": "uint256" }
+          { "name": "amount",              "type": "uint256", "internalType": "uint256" },
+          { "name": "totalSlashed",        "type": "uint256", "internalType": "uint256" },
+          { "name": "unstakeRequestedAt",  "type": "uint256", "internalType": "uint256" },
+          { "name": "unstakeAmount",       "type": "uint256", "internalType": "uint256" }
         ]
       }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "stakes",
+    "inputs": [{ "name": "trader", "type": "address", "internalType": "address" }],
+    "outputs": [
+      { "name": "amount",             "type": "uint256", "internalType": "uint256" },
+      { "name": "totalSlashed",       "type": "uint256", "internalType": "uint256" },
+      { "name": "unstakeRequestedAt", "type": "uint256", "internalType": "uint256" },
+      { "name": "unstakeAmount",      "type": "uint256", "internalType": "uint256" }
     ],
     "stateMutability": "view"
   },
@@ -137,7 +148,7 @@
     "type": "event",
     "name": "Staked",
     "inputs": [
-      { "name": "trader", "type": "address", "indexed": true, "internalType": "address" },
+      { "name": "trader", "type": "address", "indexed": true,  "internalType": "address" },
       { "name": "amount", "type": "uint256", "indexed": false, "internalType": "uint256" }
     ]
   },
@@ -152,7 +163,7 @@
   },
   {
     "type": "event",
-    "name": "UnstakeExecuted",
+    "name": "Unstaked",
     "inputs": [
       { "name": "trader", "type": "address", "indexed": true,  "internalType": "address" },
       { "name": "amount", "type": "uint256", "indexed": false, "internalType": "uint256" }
@@ -176,6 +187,14 @@
   },
   {
     "type": "event",
+    "name": "ReputationUpdated",
+    "inputs": [
+      { "name": "trader",   "type": "address", "indexed": true,  "internalType": "address" },
+      { "name": "newScore", "type": "uint256", "indexed": false, "internalType": "uint256" }
+    ]
+  },
+  {
+    "type": "event",
     "name": "CopyTrackerSet",
     "inputs": [
       { "name": "ct", "type": "address", "indexed": true, "internalType": "address" }
@@ -189,12 +208,12 @@
       { "name": "newOwner",      "type": "address", "indexed": true, "internalType": "address" }
     ]
   },
-  { "type": "error", "name": "BelowMinStake",      "inputs": [] },
-  { "type": "error", "name": "NoPendingUnstake",   "inputs": [] },
-  { "type": "error", "name": "InsufficientStake",  "inputs": [] },
-  { "type": "error", "name": "SlashExceedsMax",    "inputs": [] },
-  { "type": "error", "name": "NotCopyTracker",     "inputs": [] },
-  { "type": "error", "name": "ZeroAmount",         "inputs": [] },
+  { "type": "error", "name": "BelowMinStake",     "inputs": [] },
+  { "type": "error", "name": "NoPendingUnstake",  "inputs": [] },
+  { "type": "error", "name": "InsufficientStake", "inputs": [] },
+  { "type": "error", "name": "SlashExceedsMax",   "inputs": [] },
+  { "type": "error", "name": "NotCopyTracker",    "inputs": [] },
+  { "type": "error", "name": "ZeroAmount",        "inputs": [] },
   {
     "type": "error",
     "name": "CooldownNotElapsed",

@@ -6,9 +6,9 @@ import { useContracts } from '../hooks/useContracts'
 import { ASSET_IDS } from '../contracts/addresses'
 
 interface TraderStakeData {
-  staked:     bigint
-  slashCount: bigint
-  reputation: bigint
+  stake:        bigint
+  totalSlashed: bigint
+  reputation:   bigint
 }
 
 // ── Config ──────────────────────────────────────────────────────────────────
@@ -117,8 +117,8 @@ export default function CopyPage({ wallet }: Props) {
           contracts.traderStake.getStake(traderAddress),
           contracts.traderStake.reputationScore(traderAddress),
         ])
-        const s = si as unknown as { stakedAmount: bigint; slashCount: bigint }
-        setStakeData({ staked: s.stakedAmount, slashCount: s.slashCount, reputation: score as bigint })
+        const s = si as unknown as { amount: bigint; totalSlashed: bigint }
+        setStakeData({ stake: s.amount, totalSlashed: s.totalSlashed, reputation: score as bigint })
       } catch { /* not deployed */ }
     }
     void go()
@@ -224,11 +224,29 @@ export default function CopyPage({ wallet }: Props) {
       </div>
 
       {/* Header */}
-      <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-1">
-        <h1 className="text-xl font-bold text-white">{traderName || 'Unknown Trader'}</h1>
-        <p className="text-xs font-mono text-gray-500">{traderAddress}</p>
+      <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h1 className="text-xl font-bold text-white">{traderName || 'Unknown Trader'}</h1>
+            <p className="text-xs font-mono text-gray-500 mt-0.5">{traderAddress}</p>
+          </div>
+          {stakeData && (
+            <div className="flex flex-col items-end gap-1 shrink-0">
+              <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold border ${
+                stakeData.reputation >= 80n ? 'bg-emerald-900 border-emerald-700 text-emerald-300'
+                : stakeData.reputation >= 60n ? 'bg-yellow-900/60 border-yellow-700 text-yellow-300'
+                : 'bg-red-900/60 border-red-800 text-red-300'
+              }`}>
+                ◆ {String(stakeData.reputation)} rep
+              </span>
+              <span className="text-xs text-gray-500 font-mono">
+                {(Number(stakeData.stake) / 1e18).toFixed(0)} mUSDC staked
+              </span>
+            </div>
+          )}
+        </div>
         {!loadError && traderName !== '' && !traderRegistered && (
-          <p className="mt-2 text-xs text-yellow-400 font-medium">
+          <p className="text-xs text-yellow-400 font-medium">
             ⚠ This address is not registered as a trader.
           </p>
         )}
@@ -338,7 +356,7 @@ export default function CopyPage({ wallet }: Props) {
       {/* Trader stake / risk summary */}
       {stakeData && (
         <div className={`rounded-xl border p-4 space-y-3 text-sm ${
-          stakeData.slashCount > 0n
+          stakeData.totalSlashed > 0n
             ? 'border-red-800/60 bg-red-950/20'
             : 'border-surface-border bg-surface-elev/40'
         }`}>
@@ -349,7 +367,7 @@ export default function CopyPage({ wallet }: Props) {
             <div>
               <span className="text-xs text-gray-500 block">Staked</span>
               <span className="font-mono font-semibold text-white">
-                {(Number(stakeData.staked) / 1e18).toFixed(0)}
+                {(Number(stakeData.stake) / 1e18).toFixed(0)}
               </span>
               <span className="text-xs text-gray-500 ml-1">mUSDC</span>
             </div>
@@ -357,30 +375,31 @@ export default function CopyPage({ wallet }: Props) {
               <span className="text-xs text-gray-500 block">Reputation</span>
               <span className={`font-mono font-semibold ${
                 stakeData.reputation >= 80n ? 'text-emerald-400'
-                : stakeData.reputation >= 50n ? 'text-yellow-400'
+                : stakeData.reputation >= 60n ? 'text-yellow-400'
                 : 'text-red-400'
               }`}>{String(stakeData.reputation)}</span>
               <span className="text-xs text-gray-500 ml-1">pts</span>
             </div>
             <div>
-              <span className="text-xs text-gray-500 block">Slash Events</span>
-              <span className={`font-mono font-semibold ${stakeData.slashCount > 0n ? 'text-danger' : 'text-white'}`}>
-                {String(stakeData.slashCount)}
+              <span className="text-xs text-gray-500 block">Total Slashed</span>
+              <span className={`font-mono font-semibold ${stakeData.totalSlashed > 0n ? 'text-danger' : 'text-white'}`}>
+                {(Number(stakeData.totalSlashed) / 1e18).toFixed(0)}
               </span>
+              <span className="text-xs text-gray-500 ml-1">mUSDC</span>
             </div>
           </div>
-          {stakeData.slashCount > 0n && (
+          {stakeData.totalSlashed > 0n && (
             <p className="text-xs text-red-400 font-medium">
-              ⚠ This trader has been slashed {String(stakeData.slashCount)} time{stakeData.slashCount !== 1n ? 's' : ''} for causing excessive losses to followers. Proceed with caution.
+              ⚠ This trader has had {(Number(stakeData.totalSlashed) / 1e18).toFixed(0)} mUSDC slashed for causing excessive losses to followers. Proceed with caution.
             </p>
           )}
-          {stakeData.staked === 0n && (
+          {stakeData.stake === 0n && (
             <p className="text-xs text-yellow-400 font-medium">
               ⚠ This trader has no stake — they have no skin-in-the-game. You cannot trigger slashing if they cause losses.
             </p>
           )}
           <p className="text-xs text-gray-600">
-            If your copied positions lose &gt; 30%, you may trigger on-chain slashing — 50% of the trader's stake is sent directly to you.
+            ⚠ If your loss exceeds 30%, this trader's stake will be slashed (50% of loss, capped at 50% of stake) and transferred to you as compensation.
           </p>
         </div>
       )}

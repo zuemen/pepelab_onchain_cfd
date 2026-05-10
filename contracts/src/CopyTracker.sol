@@ -20,7 +20,8 @@ contract CopyTracker is ReentrancyGuard {
 
     uint256 public constant COPY_FEE_BPS      = 30;    // 0.3 % of totalMargin
     uint256 public constant SLASH_TRIGGER_BPS  = 3000;  // 30 % loss triggers slash
-    uint256 public constant SLASH_RATIO_BPS    = 5000;  // slash 50 % of trader's stake
+    uint256 public constant SLASH_RATIO_BPS    = 5000;  // slash 50 % of loss
+    uint256 public constant MAX_SLASH_BPS      = 5000;  // cap: max 50 % of trader stake
 
     // ── Immutables ───────────────────────────────────────────────────────────
 
@@ -162,13 +163,16 @@ contract CopyTracker is ReentrancyGuard {
 
         // Slash logic: if traderStake configured and loss ≥ SLASH_TRIGGER_BPS
         if (address(traderStake) != address(0)) {
-            uint256 finalAmount = marginAfter - marginBefore;
+            uint256 finalAmount = marginAfter >= marginBefore ? marginAfter - marginBefore : 0;
             if (finalAmount < rec.initialAmount) {
                 uint256 loss    = rec.initialAmount - finalAmount;
                 uint256 lossBps = loss * 10_000 / rec.initialAmount;
                 if (lossBps >= SLASH_TRIGGER_BPS) {
                     uint256 staked   = traderStake.stakedAmount(rec.trader);
-                    uint256 slashAmt = staked * SLASH_RATIO_BPS / 10_000;
+                    // slash = 50% of loss, capped at MAX_SLASH_BPS of stake
+                    uint256 slashAmt = loss * SLASH_RATIO_BPS / 10_000;
+                    uint256 cap      = staked * MAX_SLASH_BPS / 10_000;
+                    if (slashAmt > cap) slashAmt = cap;
                     if (slashAmt > 0) {
                         try traderStake.slash(rec.trader, slashAmt, msg.sender) {
                             emit TraderSlashed(rec.trader, msg.sender, slashAmt);
