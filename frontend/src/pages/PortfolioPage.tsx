@@ -7,6 +7,7 @@ import {
 import type { WalletAPI } from '../hooks/useWallet'
 import { useContracts } from '../hooks/useContracts'
 import { ASSET_IDS } from '../contracts/addresses'
+import StatCard from '../components/StatCard'
 
 // ── Config ──────────────────────────────────────────────────────────────────
 const ASSET_LABEL: Record<string, string> = {
@@ -289,9 +290,35 @@ export default function PortfolioPage({ wallet }: Props) {
         </button>
       </div>
 
+      {/* Stat cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard
+          title="Free Margin"
+          value={f18(freeMargin)}
+          sub="mUSDC available"
+          valueClass="text-brand-100"
+        />
+        <StatCard
+          title="Active Copies"
+          value={String(copyRecs.length)}
+          sub={copyRecs.length === 1 ? 'trader followed' : 'traders followed'}
+        />
+        <StatCard
+          title="Open Positions"
+          value={String(positions.length)}
+          sub="manual + copied"
+        />
+        <StatCard
+          title="Total Copy PnL"
+          value={totalInitial > 0n ? returnPct(totalInitial, totalCopyCur) : '—'}
+          sub={totalInitial > 0n ? `${f18(totalCopyCur)} / ${f18(totalInitial)} mUSDC` : 'no copy positions'}
+          valueClass={totalInitial > 0n ? returnColor(totalInitial, totalCopyCur) : 'text-gray-500'}
+        />
+      </div>
+
       {/* ─── A. Copy Records ────────────────────────────────────────────── */}
-      <div className="rounded-xl border border-gray-700 bg-gray-900 overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-700">
+      <div className="rounded-card border border-surface-border bg-surface shadow-card overflow-hidden">
+        <div className="px-5 py-4 border-b border-surface-border">
           <h2 className="text-base font-bold text-white">Copy Positions</h2>
         </div>
 
@@ -302,7 +329,7 @@ export default function PortfolioPage({ wallet }: Props) {
         ) : (
           <table className="w-full text-sm text-left">
             <thead>
-              <tr className="text-xs text-gray-500 uppercase tracking-wide border-b border-gray-700">
+              <tr className="text-xs text-gray-500 uppercase tracking-wide border-b border-surface-border">
                 <th className="px-5 py-3 font-medium">Trader</th>
                 <th className="px-5 py-3 font-medium">Copied At</th>
                 <th className="px-5 py-3 font-medium text-right">Initial</th>
@@ -311,11 +338,11 @@ export default function PortfolioPage({ wallet }: Props) {
                 <th className="px-5 py-3 font-medium text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-800">
+            <tbody className="divide-y divide-surface-border">
               {copyRecs.map(rec => {
                 const unfKey = `unfollow_${rec.index}`
                 return (
-                  <tr key={rec.index} className="hover:bg-gray-800/40 transition-colors">
+                  <tr key={rec.index} className="hover:bg-surface-elev/60 transition-colors">
                     <td className="px-5 py-3.5">
                       <div className="font-semibold text-white text-sm">
                         {rec.traderName || SHORT_ADDR(rec.trader)}
@@ -356,8 +383,8 @@ export default function PortfolioPage({ wallet }: Props) {
       </div>
 
       {/* ─── B. Open Positions ──────────────────────────────────────────── */}
-      <div className="rounded-xl border border-gray-700 bg-gray-900 overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-700">
+      <div className="rounded-card border border-surface-border bg-surface shadow-card overflow-hidden">
+        <div className="px-5 py-4 border-b border-surface-border">
           <h2 className="text-base font-bold text-white">Open Positions</h2>
         </div>
 
@@ -369,15 +396,15 @@ export default function PortfolioPage({ wallet }: Props) {
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
               <thead>
-                <tr className="text-xs text-gray-500 uppercase tracking-wide border-b border-gray-700">
+                <tr className="text-xs text-gray-500 uppercase tracking-wide border-b border-surface-border">
                   {['Asset','Side','Entry','Current','Margin','Lev','Copied From','Unr. PnL','Value'].map(h => (
                     <th key={h} className="px-4 py-3 font-medium whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-800">
+              <tbody className="divide-y divide-surface-border">
                 {positions.map(row => (
-                  <tr key={String(row.id)} className="hover:bg-gray-800/40 transition-colors">
+                  <tr key={String(row.id)} className="hover:bg-surface-elev/60 transition-colors">
                     <td className="px-4 py-3 font-mono text-white font-medium">
                       {ASSET_LABEL[row.asset] ?? row.asset.slice(0, 8)}
                     </td>
@@ -414,7 +441,7 @@ export default function PortfolioPage({ wallet }: Props) {
                 ))}
               </tbody>
               <tfoot>
-                <tr className="border-t border-gray-700 text-xs text-gray-500">
+                <tr className="border-t border-surface-border text-xs text-gray-500">
                   <td colSpan={7} className="px-4 py-2">Total</td>
                   <td className={`px-4 py-2 font-mono font-semibold ${
                     pnlColor(positions.reduce((s, p) => s + p.unrealizedPnL, 0n))
@@ -435,7 +462,7 @@ export default function PortfolioPage({ wallet }: Props) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
         {/* C. Free Margin */}
-        <div className="rounded-xl border border-gray-700 bg-gray-900 p-5 space-y-4">
+        <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-4">
           <h2 className="text-base font-bold text-white">Free Margin</h2>
           <p className="text-2xl font-bold font-mono text-emerald-400">
             {f18(freeMargin)} <span className="text-base text-gray-500 font-normal">mUSDC</span>
@@ -460,7 +487,7 @@ export default function PortfolioPage({ wallet }: Props) {
         </div>
 
         {/* D. Performance Chart */}
-        <div className="rounded-xl border border-gray-700 bg-gray-900 p-5 space-y-3">
+        <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-base font-bold text-white">Performance</h2>
             {totalInitial > 0n && (

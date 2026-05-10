@@ -255,7 +255,7 @@ export default function ExchangePage({ wallet }: Props) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
         {/* A. Faucet */}
-        <div className="rounded-xl border border-gray-700 bg-gray-900 p-5 space-y-4">
+        <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-4">
           <h2 className="text-base font-bold text-white">Faucet</h2>
           <p className="text-sm text-gray-400">
             mUSDC balance:{' '}
@@ -272,7 +272,7 @@ export default function ExchangePage({ wallet }: Props) {
         </div>
 
         {/* B. Margin */}
-        <div className="rounded-xl border border-gray-700 bg-gray-900 p-5 space-y-4">
+        <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-4">
           <h2 className="text-base font-bold text-white">Margin Account</h2>
           <p className="text-sm text-gray-400">
             Free margin:{' '}
@@ -289,7 +289,7 @@ export default function ExchangePage({ wallet }: Props) {
             <button
               onClick={() => void approveDeposit()}
               disabled={busy['deposit']}
-              className="px-3 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white text-xs font-semibold whitespace-nowrap transition-colors"
+              className="px-3 py-2 rounded-lg bg-brand-200 hover:bg-brand-300 disabled:opacity-50 text-white text-xs font-semibold whitespace-nowrap transition-colors"
             >
               {busy['deposit'] ? '…' : 'Approve & Deposit'}
             </button>
@@ -314,7 +314,7 @@ export default function ExchangePage({ wallet }: Props) {
       </div>
 
       {/* C. Open Position */}
-      <div className="rounded-xl border border-gray-700 bg-gray-900 p-5 space-y-5">
+      <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-5">
         <h2 className="text-base font-bold text-white">Open Position</h2>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -386,7 +386,7 @@ export default function ExchangePage({ wallet }: Props) {
       </div>
 
       {/* D. Open Positions */}
-      <div className="rounded-xl border border-gray-700 bg-gray-900 p-5 space-y-4">
+      <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-bold text-white">Open Positions</h2>
           <button onClick={() => void fetchAll()} className="text-xs text-gray-500 hover:text-white transition-colors">
@@ -400,20 +400,20 @@ export default function ExchangePage({ wallet }: Props) {
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
               <thead>
-                <tr className="text-xs text-gray-500 uppercase border-b border-gray-700">
+                <tr className="text-xs text-gray-500 uppercase border-b border-surface-border">
                   {['Asset','Side','Entry','Current','Size','Margin','Lev','PnL',''].map(h => (
                     <th key={h} className="py-2 pr-4 font-medium">{h}</th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-800">
+              <tbody className="divide-y divide-surface-border">
                 {positions.map(row => {
                   const size     = row.entryPrice > 0n
                     ? (row.margin * row.leverage * 10n ** 18n) / row.entryPrice
                     : 0n
                   const closeKey = `close_${row.id}`
                   return (
-                    <tr key={String(row.id)} className="hover:bg-gray-800/40 transition-colors">
+                    <tr key={String(row.id)} className="hover:bg-surface-elev/60 transition-colors">
                       <td className="py-2.5 pr-4 font-mono text-white">
                         {ASSET_LABEL[row.asset] ?? row.asset.slice(0, 8)}
                       </td>

@@ -207,7 +207,7 @@ export default function CopyPage({ wallet }: Props) {
       </div>
 
       {/* Header */}
-      <div className="rounded-xl border border-gray-700 bg-gray-900 p-5 space-y-1">
+      <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-1">
         <h1 className="text-xl font-bold text-white">{traderName || 'Unknown Trader'}</h1>
         <p className="text-xs font-mono text-gray-500">{traderAddress}</p>
         {!loadError && traderName !== '' && !traderRegistered && (
@@ -218,7 +218,7 @@ export default function CopyPage({ wallet }: Props) {
       </div>
 
       {/* Strategy allocations */}
-      <div className="rounded-xl border border-gray-700 bg-gray-900 p-5 space-y-4">
+      <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-4">
         <h2 className="text-base font-bold text-white">Latest Strategy</h2>
 
         {stratAllocs.length === 0 ? (
@@ -246,7 +246,7 @@ export default function CopyPage({ wallet }: Props) {
       </div>
 
       {/* Total margin input */}
-      <div className="rounded-xl border border-gray-700 bg-gray-900 p-5 space-y-3">
+      <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-3">
         <h2 className="text-base font-bold text-white">Copy Amount</h2>
         <div className="flex gap-3 items-center">
           <input
@@ -268,7 +268,7 @@ export default function CopyPage({ wallet }: Props) {
           <div className="overflow-x-auto mt-2">
             <table className="w-full text-sm text-left">
               <thead>
-                <tr className="text-xs text-gray-500 uppercase border-b border-gray-700">
+                <tr className="text-xs text-gray-500 uppercase border-b border-surface-border">
                   <th className="py-2 pr-4 font-medium">Asset</th>
                   <th className="py-2 pr-4 font-medium">Side</th>
                   <th className="py-2 pr-4 font-medium">Lev</th>
@@ -278,7 +278,7 @@ export default function CopyPage({ wallet }: Props) {
                   <th className="py-2 font-medium text-right">Est. Entry</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-800">
+              <tbody className="divide-y divide-surface-border">
                 {preview.map((row, i) => (
                   <tr key={i} className="text-gray-300">
                     <td className="py-2.5 pr-4 font-mono text-white font-medium">
@@ -319,7 +319,7 @@ export default function CopyPage({ wallet }: Props) {
       )}
 
       {/* Two-stage action */}
-      <div className="rounded-xl border border-gray-700 bg-gray-900 p-5 space-y-4">
+      <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-4">
         <h2 className="text-base font-bold text-white">Confirm Copy</h2>
 
         <div className="flex items-center gap-1 text-xs text-gray-500 mb-2">
@@ -356,7 +356,7 @@ export default function CopyPage({ wallet }: Props) {
           <button
             onClick={() => void doFollow()}
             disabled={!approved || busy['follow'] || stratAllocs.length === 0 || !hasStrategy}
-            className="flex-1 py-2.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 disabled:opacity-40 text-white text-sm font-bold transition-colors"
+            className="flex-1 py-2.5 rounded-lg bg-brand-200 hover:bg-brand-300 disabled:opacity-40 text-white text-sm font-bold transition-colors"
           >
             {busy['follow'] ? 'Following…' : 'Step 2 · Follow Trader'}
           </button>

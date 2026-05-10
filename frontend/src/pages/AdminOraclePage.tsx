@@ -218,8 +218,8 @@ export default function AdminOraclePage({ wallet }: Props) {
       </div>
 
       {/* Price table */}
-      <div className="rounded-xl border border-gray-700 bg-gray-900 overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-700 flex items-center justify-between">
+      <div className="rounded-card border border-surface-border bg-surface shadow-card overflow-hidden">
+        <div className="px-5 py-4 border-b border-surface-border flex items-center justify-between">
           <h2 className="text-base font-bold text-white">Asset Prices (8-decimal)</h2>
           <button
             onClick={() => void fetchPrices()}
@@ -229,7 +229,7 @@ export default function AdminOraclePage({ wallet }: Props) {
           </button>
         </div>
 
-        <div className="divide-y divide-gray-800">
+        <div className="divide-y divide-surface-border">
           {assets.map(row => {
             const ok     = inRange(row.price8, row.input)
             const hasVal = row.input !== '' && !isNaN(parseFloat(row.input))
@@ -299,7 +299,7 @@ export default function AdminOraclePage({ wallet }: Props) {
         <summary className="cursor-pointer hover:text-gray-500 w-fit">
           Raw 8-decimal prices (for cast commands)
         </summary>
-        <div className="mt-2 space-y-1 p-3 rounded-lg bg-gray-900 border border-gray-800 font-mono text-gray-500">
+        <div className="mt-2 space-y-1 p-3 rounded-lg bg-surface border border-surface-border font-mono text-gray-500">
           {assets.map(a => (
             <div key={a.id}>
               {a.label}: {String(a.price8)} (= ${(Number(a.price8)/1e8).toFixed(2)})

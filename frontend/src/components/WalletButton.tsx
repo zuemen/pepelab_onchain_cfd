@@ -42,16 +42,16 @@ export default function WalletButton({ wallet }: Props) {
           {short} ▾
         </button>
         {open && (
-          <div className="absolute right-0 mt-1 w-44 rounded-lg bg-gray-800 border border-gray-700 shadow-xl z-50 overflow-hidden">
+          <div className="absolute right-0 mt-1 w-44 rounded-lg bg-surface-elev border border-surface-border shadow-xl z-50 overflow-hidden">
             <button
               onClick={() => { setOpen(false); void switchAccount() }}
-              className="w-full text-left px-4 py-2.5 text-sm text-gray-200 hover:bg-gray-700 transition-colors"
+              className="w-full text-left px-4 py-2.5 text-sm text-gray-200 hover:bg-surface-border transition-colors"
             >
               Switch Account
             </button>
             <button
               onClick={() => { setOpen(false); disconnect() }}
-              className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-gray-700 transition-colors"
+              className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-surface-border transition-colors"
             >
               Disconnect
             </button>
@@ -64,7 +64,7 @@ export default function WalletButton({ wallet }: Props) {
   return (
     <button
       onClick={() => void connect()}
-      className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-500 transition-colors"
+      className="px-4 py-2 rounded-lg bg-brand-200 text-white text-sm font-semibold hover:bg-brand-300 transition-colors"
     >
       Connect Wallet
     </button>

@@ -131,96 +131,90 @@ export default function MarketplacePage({ wallet }: Props) {
       )}
 
       {isLoading ? (
-        <div className="rounded-xl border border-gray-700 bg-gray-900 p-12 text-center text-gray-500">
+        <div className="rounded-card border border-surface-border bg-surface shadow-card p-12 text-center text-gray-500">
           Loading traders…
         </div>
       ) : traders.length === 0 ? (
-        <div className="rounded-xl border border-gray-700 bg-gray-900 p-12 text-center text-gray-600">
+        <div className="rounded-card border border-surface-border bg-surface shadow-card p-12 text-center text-gray-600">
           No traders registered yet. Be the first on{' '}
-          <Link to="/trader" className="text-emerald-400 hover:underline">
+          <Link to="/trader" className="text-brand-100 hover:underline">
             Trader Dashboard
           </Link>
           .
         </div>
       ) : (
-        <div className="rounded-xl border border-gray-700 bg-gray-900 overflow-hidden">
-          <table className="w-full text-sm text-left">
-            <thead className="border-b border-gray-700">
-              <tr className="text-xs text-gray-500 uppercase tracking-wide">
-                <th className="px-5 py-3 font-medium">Trader</th>
-                <th className="px-5 py-3 font-medium">Latest Strategy</th>
-                <th className="px-5 py-3 font-medium text-center">Followers</th>
-                <th className="px-5 py-3 font-medium text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-800">
-              {traders.map(t => (
-                <tr key={t.address} className="hover:bg-gray-800/40 transition-colors">
-                  <td className="px-5 py-4">
-                    <div className="font-semibold text-white">{t.displayName || '—'}</div>
-                    <div className="font-mono text-xs text-gray-500 mt-0.5">{shortAddr(t.address)}</div>
-                  </td>
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {traders.map(t => (
+              <div
+                key={t.address}
+                className="rounded-card border border-surface-border bg-surface shadow-card hover:shadow-card-hover transition-shadow flex flex-col gap-4 p-5"
+              >
+                {/* Trader identity */}
+                <div>
+                  <div className="font-bold text-white text-base leading-tight">
+                    {t.displayName || '—'}
+                  </div>
+                  <div className="font-mono text-xs text-gray-500 mt-0.5">{shortAddr(t.address)}</div>
+                </div>
 
-                  <td className="px-5 py-4 max-w-xs">
-                    {!t.hasStrategy ? (
-                      <span className="inline-flex items-center rounded-full border border-gray-700 bg-gray-800 px-2.5 py-0.5 text-xs text-gray-500">
-                        No strategy yet
-                      </span>
-                    ) : (
-                      <div className="flex flex-wrap gap-1.5">
-                        {t.allocs.map((a, i) => (
-                          <span
-                            key={i}
-                            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium border ${
-                              a.isLong
-                                ? 'bg-green-950 border-green-800 text-green-300'
-                                : 'bg-red-950  border-red-800  text-red-300'
-                            }`}
-                          >
-                            {a.isLong ? '↑' : '↓'}
-                            {' '}{ASSET_LABEL[a.asset] ?? '?'}
-                            {' '}{(Number(a.weight) / 100).toFixed(0)}%
-                            {' '}{String(a.leverage)}×
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </td>
-
-                  <td className="px-5 py-4 text-center">
-                    <span className="font-mono text-white font-semibold">
-                      {String(t.followerCount)}
+                {/* Strategy chips */}
+                <div className="flex-1 flex flex-wrap gap-1.5 min-h-[28px]">
+                  {!t.hasStrategy ? (
+                    <span className="inline-flex items-center rounded-full border border-surface-border bg-surface-elev px-2.5 py-0.5 text-xs text-gray-500">
+                      No strategy yet
                     </span>
-                  </td>
+                  ) : (
+                    t.allocs.map((a, i) => (
+                      <span
+                        key={i}
+                        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium border ${
+                          a.isLong
+                            ? 'bg-green-950 border-green-800 text-green-300'
+                            : 'bg-red-950  border-red-800  text-red-300'
+                        }`}
+                      >
+                        {a.isLong ? '↑' : '↓'}
+                        {' '}{ASSET_LABEL[a.asset] ?? '?'}
+                        {' '}{(Number(a.weight) / 100).toFixed(0)}%
+                        {' '}{String(a.leverage)}×
+                      </span>
+                    ))
+                  )}
+                </div>
 
-                  <td className="px-5 py-4">
-                    <div className="flex gap-2 justify-end">
+                {/* Footer */}
+                <div className="flex items-center justify-between pt-3 border-t border-surface-border">
+                  <span className="text-xs text-gray-500">
+                    <span className="font-mono font-semibold text-white">{String(t.followerCount)}</span>
+                    {' '}follower{t.followerCount !== 1n ? 's' : ''}
+                  </span>
+                  <div className="flex gap-2">
+                    <Link
+                      to={`/copy/${t.address}`}
+                      className="px-3 py-1.5 rounded-lg border border-surface-border text-gray-300 text-xs font-medium hover:border-gray-400 hover:text-white transition-colors"
+                    >
+                      View
+                    </Link>
+                    {t.hasStrategy && (
                       <Link
                         to={`/copy/${t.address}`}
-                        className="px-3 py-1.5 rounded-lg border border-gray-600 text-gray-300 text-xs font-medium hover:border-gray-400 hover:text-white transition-colors"
+                        className="px-3 py-1.5 rounded-lg bg-brand-200 hover:bg-brand-300 text-white text-xs font-semibold transition-colors"
                       >
-                        View
+                        Copy
                       </Link>
-                      {t.hasStrategy && (
-                        <Link
-                          to={`/copy/${t.address}`}
-                          className="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-semibold transition-colors"
-                        >
-                          Copy
-                        </Link>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          <div className="border-t border-gray-800 px-5 py-2.5 flex justify-between text-xs text-gray-600">
-            <span>{traders.length} trader{traders.length !== 1 ? 's' : ''} listed</span>
-            <span>{traders.reduce((s, t) => s + Number(t.followerCount), 0)} total followers</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
-        </div>
+
+          <p className="text-xs text-gray-600 text-right">
+            {traders.length} trader{traders.length !== 1 ? 's' : ''} ·{' '}
+            {traders.reduce((s, t) => s + Number(t.followerCount), 0)} total followers
+          </p>
+        </>
       )}
 
       {traders.length > 0 && (

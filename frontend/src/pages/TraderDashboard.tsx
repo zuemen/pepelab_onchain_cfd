@@ -265,7 +265,7 @@ export default function TraderDashboard({ wallet }: Props) {
       )}
 
       {/* ─── A. Register ────────────────────────────────────────────────── */}
-      <div className="rounded-xl border border-gray-700 bg-gray-900 p-5 space-y-4">
+      <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-4">
         <h2 className="text-base font-bold text-white">Register Trader</h2>
 
         {traderInfo?.isRegistered ? (
@@ -288,7 +288,7 @@ export default function TraderDashboard({ wallet }: Props) {
             <button
               onClick={() => void doRegister()}
               disabled={busy['register'] || !nameInput.trim()}
-              className="px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white text-sm font-semibold transition-colors"
+              className="px-4 py-2 rounded-lg bg-brand-200 hover:bg-brand-300 disabled:opacity-50 text-white text-sm font-semibold transition-colors"
             >
               {busy['register'] ? '…' : 'Register'}
             </button>
@@ -297,7 +297,7 @@ export default function TraderDashboard({ wallet }: Props) {
       </div>
 
       {/* ─── B. Publish Strategy ──────────────────────────────────────── */}
-      <div className="rounded-xl border border-gray-700 bg-gray-900 p-5 space-y-4">
+      <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-bold text-white">Publish Strategy</h2>
           <button onClick={addRow} className="text-sm font-medium text-emerald-400 hover:text-emerald-300 transition-colors">
@@ -435,7 +435,7 @@ export default function TraderDashboard({ wallet }: Props) {
       </div>
 
       {/* ─── C. Fee Earnings ─────────────────────────────────────────── */}
-      <div className="rounded-xl border border-gray-700 bg-gray-900 p-5 space-y-4">
+      <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-bold text-white">Fee Earnings</h2>
           <button onClick={() => void fetchEarnings()} className="text-xs text-gray-500 hover:text-white transition-colors">
@@ -443,7 +443,7 @@ export default function TraderDashboard({ wallet }: Props) {
           </button>
         </div>
 
-        <div className="flex items-center justify-between bg-gray-800 rounded-lg px-4 py-3">
+        <div className="flex items-center justify-between bg-surface-elev rounded-lg px-4 py-3">
           <div>
             <p className="text-xs text-gray-500">Claimable (copy + perf fees)</p>
             <p className="text-2xl font-mono font-bold text-emerald-400">
@@ -466,7 +466,7 @@ export default function TraderDashboard({ wallet }: Props) {
       </div>
 
       {/* ─── D. Strategy History ──────────────────────────────────────── */}
-      <div className="rounded-xl border border-gray-700 bg-gray-900 p-5 space-y-4">
+      <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-bold text-white">Strategy History</h2>
           <button
@@ -482,10 +482,10 @@ export default function TraderDashboard({ wallet }: Props) {
         ) : (
           <div className="space-y-2">
             {history.map(ver => (
-              <div key={ver.versionId} className="rounded-lg border border-gray-700 overflow-hidden">
+              <div key={ver.versionId} className="rounded-lg border border-surface-border overflow-hidden">
                 <button
                   onClick={() => toggleExpand(ver.versionId)}
-                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-800 transition-colors text-left"
+                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-surface-elev transition-colors text-left"
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <span className="text-xs font-mono text-gray-500 shrink-0">v{ver.versionId}</span>
@@ -502,17 +502,17 @@ export default function TraderDashboard({ wallet }: Props) {
                 </button>
 
                 {ver.expanded && (
-                  <div className="border-t border-gray-700 bg-gray-950 px-4 py-3">
+                  <div className="border-t border-surface-border bg-surface-sub px-4 py-3">
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="text-xs text-gray-500 uppercase border-b border-gray-700">
+                        <tr className="text-xs text-gray-500 uppercase border-b border-surface-border">
                           <th className="py-1.5 pr-4 text-left font-medium">Asset</th>
                           <th className="py-1.5 pr-4 text-left font-medium">Side</th>
                           <th className="py-1.5 pr-4 text-left font-medium">Leverage</th>
                           <th className="py-1.5 text-right font-medium">Weight</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-gray-800">
+                      <tbody className="divide-y divide-surface-border">
                         {ver.allocs.map((a, idx) => (
                           <tr key={idx} className="text-gray-300">
                             <td className="py-2 pr-4 font-mono text-white font-medium">
