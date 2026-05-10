@@ -252,16 +252,16 @@ export default function ExchangePage({ wallet }: Props) {
       )}
 
       {/* Onboarding guide */}
-      <div className="rounded-card border border-info/30 bg-info/5 p-5 space-y-3">
+      <div className="rounded-card border border-info/30 bg-info/5 p-5 space-y-2">
         <h3 className="text-sm font-semibold text-info">How CFD trading works on PepeLab</h3>
-        <ol className="text-xs text-gray-300 space-y-1.5 list-decimal list-inside">
+        <ol className="text-xs text-gray-300 space-y-1 list-decimal list-inside leading-relaxed">
           <li><strong>Faucet:</strong> Get free mUSDC (test stablecoin) — your collateral.</li>
-          <li><strong>Margin Account:</strong> Approve &amp; deposit mUSDC into PerpetualExchange. This becomes your "free margin".</li>
-          <li><strong>Open Position:</strong> Use free margin to open a leveraged long/short position on a synthetic asset (sBTC, sETH, sAAPL, sTSLA). You don't hold the underlying — you bet on price movement (CFD).</li>
-          <li><strong>PnL:</strong> When price moves, your position value changes. Close to realize PnL.</li>
+          <li><strong>Margin Account:</strong> Approve &amp; deposit mUSDC into PerpetualExchange. This becomes your free margin.</li>
+          <li><strong>Open Position:</strong> Use free margin to open long/short on synthetic assets (sBTC, sETH, sAAPL, sTSLA). You don't own the asset — you take a CFD position.</li>
+          <li><strong>PnL:</strong> Price moves → position value changes → close to realize PnL.</li>
         </ol>
-        <p className="text-xs text-gray-500 italic">
-          Why no sBTC faucet? Synthetic assets are derivatives — you don't "own" them, you take a CFD position. The position is your exposure.
+        <p className="text-xs text-gray-500 italic pt-1">
+          Why no sBTC faucet? Synthetic CFDs are derivatives — your position is your exposure.
         </p>
       </div>
 

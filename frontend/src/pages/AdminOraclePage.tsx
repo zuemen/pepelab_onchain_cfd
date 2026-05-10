@@ -247,15 +247,15 @@ export default function AdminOraclePage({ wallet }: Props) {
           <div>
             <h3 className="text-sm font-semibold text-brand-100">Live Price Sync</h3>
             <p className="text-xs text-gray-400 mt-0.5">
-              Pull real-time BTC/ETH from CoinGecko, simulate stock prices for AAPL/TSLA.
+              Pull real-time BTC/ETH from CoinGecko. AAPL/TSLA simulated.
             </p>
           </div>
           <button
             onClick={() => void syncFromCoinGecko()}
             disabled={!isOwner || syncBusy}
-            className="px-4 py-2 rounded-lg bg-brand-200 hover:bg-brand-300 disabled:opacity-40 text-white text-sm font-semibold transition-colors whitespace-nowrap"
+            className="px-4 py-2 rounded-lg bg-brand-200 hover:bg-brand-300 disabled:opacity-40 text-white text-sm font-semibold whitespace-nowrap"
           >
-            {syncBusy ? 'Syncing…' : '↺ Sync from CoinGecko'}
+            {syncBusy ? 'Syncing…' : 'Sync from CoinGecko'}
           </button>
         </div>
         {syncMsg && <p className="text-xs text-gray-400">{syncMsg}</p>}
