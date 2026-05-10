@@ -29,14 +29,15 @@ contract CopyTrackerFeeTest is Test {
     function setUp() public {
         usdc      = new MockUSDC();
         oracle    = new MockOracle();
-        registry  = new StrategyRegistry();
+        registry  = new StrategyRegistry(address(0));
         feeRouter = new FeeRouter(address(usdc), platform, slash);
         exchange  = new PerpetualExchange(address(usdc), address(oracle));
         ct        = new CopyTracker(
             address(usdc),
             address(exchange),
             address(registry),
-            address(feeRouter)
+            address(feeRouter),
+            address(0)
         );
 
         // Wire
@@ -136,7 +137,7 @@ contract CopyTrackerFeeTest is Test {
     function test_noFee_whenFeeRouterIsZero() public {
         // Deploy ct2 without feeRouter
         CopyTracker ct2 = new CopyTracker(
-            address(usdc), address(exchange), address(registry), address(0)
+            address(usdc), address(exchange), address(registry), address(0), address(0)
         );
         exchange.setCopyTracker(address(ct2));
 

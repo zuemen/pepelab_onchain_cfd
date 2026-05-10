@@ -35,7 +35,7 @@ contract StrategyRegistryTest is Test {
     }
 
     function setUp() public {
-        reg = new StrategyRegistry();
+        reg = new StrategyRegistry(address(0));
     }
 
     // ── registerTrader ───────────────────────────────────────────────────────

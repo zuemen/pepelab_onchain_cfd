@@ -10,17 +10,25 @@ interface IFeeRouterCopy {
     function distributeCopyFee(address trader, uint256 fee) external;
 }
 
+interface ITraderStakeForCT {
+    function slash(address trader, uint256 amount, address recipient) external;
+    function stakedAmount(address trader) external view returns (uint256);
+}
+
 contract CopyTracker is ReentrancyGuard {
     // ── Constants ────────────────────────────────────────────────────────────
 
-    uint256 public constant COPY_FEE_BPS = 30;  // 0.3 % of totalMargin
+    uint256 public constant COPY_FEE_BPS      = 30;    // 0.3 % of totalMargin
+    uint256 public constant SLASH_TRIGGER_BPS  = 3000;  // 30 % loss triggers slash
+    uint256 public constant SLASH_RATIO_BPS    = 5000;  // slash 50 % of trader's stake
 
     // ── Immutables ───────────────────────────────────────────────────────────
 
     IERC20             public immutable usdc;
     PerpetualExchange  public immutable exchange;
     StrategyRegistry   public immutable registry;
-    IFeeRouterCopy     public immutable feeRouter;  // address(0) = fee disabled
+    IFeeRouterCopy     public immutable feeRouter;    // address(0) = fee disabled
+    ITraderStakeForCT  public immutable traderStake;  // address(0) = slash disabled
 
     // ── Data types ───────────────────────────────────────────────────────────
 
@@ -51,6 +59,11 @@ contract CopyTracker is ReentrancyGuard {
         address indexed trader,
         uint256         recordIdx
     );
+    event TraderSlashed(
+        address indexed trader,
+        address indexed follower,
+        uint256         slashAmount
+    );
 
     // ── Errors ───────────────────────────────────────────────────────────────
 
@@ -64,12 +77,14 @@ contract CopyTracker is ReentrancyGuard {
         address _usdc,
         address _exchange,
         address _registry,
-        address _feeRouter    // pass address(0) to disable copy fee
+        address _feeRouter,    // pass address(0) to disable copy fee
+        address _traderStake   // pass address(0) to disable slashing
     ) {
-        usdc      = IERC20(_usdc);
-        exchange  = PerpetualExchange(_exchange);
-        registry  = StrategyRegistry(_registry);
-        feeRouter = IFeeRouterCopy(_feeRouter);
+        usdc        = IERC20(_usdc);
+        exchange    = PerpetualExchange(_exchange);
+        registry    = StrategyRegistry(_registry);
+        feeRouter   = IFeeRouterCopy(_feeRouter);
+        traderStake = ITraderStakeForCT(_traderStake);
     }
 
     // ── Core functions ───────────────────────────────────────────────────────
@@ -136,8 +151,31 @@ contract CopyTracker is ReentrancyGuard {
         CopyRecord storage rec = records[recordIdx];
         if (!rec.active) revert RecordAlreadyInactive();
 
+        // Track freeMargin delta to measure position returns
+        uint256 marginBefore = exchange.freeMargin(msg.sender);
+
         for (uint256 i; i < rec.positionIds.length; ++i) {
             exchange.closePositionFor(msg.sender, rec.positionIds[i]);
+        }
+
+        uint256 marginAfter = exchange.freeMargin(msg.sender);
+
+        // Slash logic: if traderStake configured and loss ≥ SLASH_TRIGGER_BPS
+        if (address(traderStake) != address(0)) {
+            uint256 finalAmount = marginAfter - marginBefore;
+            if (finalAmount < rec.initialAmount) {
+                uint256 loss    = rec.initialAmount - finalAmount;
+                uint256 lossBps = loss * 10_000 / rec.initialAmount;
+                if (lossBps >= SLASH_TRIGGER_BPS) {
+                    uint256 staked   = traderStake.stakedAmount(rec.trader);
+                    uint256 slashAmt = staked * SLASH_RATIO_BPS / 10_000;
+                    if (slashAmt > 0) {
+                        try traderStake.slash(rec.trader, slashAmt, msg.sender) {
+                            emit TraderSlashed(rec.trader, msg.sender, slashAmt);
+                        } catch {}
+                    }
+                }
+            }
         }
 
         rec.active = false;

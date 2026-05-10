@@ -9,6 +9,7 @@ const NAV = [
   { to: '/',             label: 'Home',        icon: '⌂' },
   { to: '/exchange',     label: 'Exchange',     icon: '⇄' },
   { to: '/trader',       label: 'Trader',       icon: '◈' },
+  { to: '/stake',        label: 'Stake',        icon: '◆' },
   { to: '/marketplace',  label: 'Marketplace',  icon: '⊞' },
   { to: '/portfolio',    label: 'Portfolio',    icon: '◑' },
   { to: '/admin/oracle', label: 'Admin',        icon: '⚙' },
@@ -18,6 +19,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/':             'Home',
   '/exchange':     'Exchange',
   '/trader':       'Trader Dashboard',
+  '/stake':        'Trader Stake',
   '/marketplace':  'Marketplace',
   '/portfolio':    'Portfolio',
   '/admin/oracle': 'Oracle Admin',
@@ -46,7 +48,10 @@ export default function Layout({ wallet, children }: Props) {
       ? 'bg-yellow-900/60 text-yellow-300 border-yellow-700'
       : 'bg-red-900/60 text-red-300 border-red-700'
 
-  const pageTitle = PAGE_TITLES[pathname] ?? 'PepeLab CFD'
+  const pageTitle = PAGE_TITLES[pathname]
+    ?? (pathname.startsWith('/profile/') ? 'Trader Profile'
+      : pathname.startsWith('/copy/')    ? 'Copy Trader'
+      : 'PepeLab CFD')
 
   const switchToAnvil = async () => {
     const eth = (window as unknown as { ethereum?: { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> } }).ethereum

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { Link } from 'react-router-dom'
 import type { WalletAPI } from '../hooks/useWallet'
 import { useContracts } from '../hooks/useContracts'
 import { ASSET_IDS } from '../contracts/addresses'
@@ -69,6 +70,7 @@ export default function TraderDashboard({ wallet }: Props) {
 
   const [traderInfo, setTraderInfo] = useState<TraderInfo | null>(null)
   const [nameInput,  setNameInput]  = useState('')
+  const [eligible,   setEligible]   = useState<boolean | null>(null)
 
   const uidRef = useRef(0)
   const [rows, setRows] = useState<AllocRow[]>([])
@@ -95,6 +97,10 @@ export default function TraderDashboard({ wallet }: Props) {
       console.error('[trader fetch]', e)
       notify(e instanceof Error ? e.message.slice(0, 120) : 'Network error — check your wallet network', false)
     }
+    try {
+      const elig = await contracts.traderStake.isEligible(wallet.address)
+      setEligible(elig as boolean)
+    } catch { setEligible(null) }
   }, [contracts, wallet.address, notify])
 
   const fetchHistory = useCallback(async () => {
@@ -161,7 +167,8 @@ export default function TraderDashboard({ wallet }: Props) {
 
   const hasDup    = new Set(rows.map(r => r.asset)).size !== rows.length
   const weightOk  = totalBps === 10_000
-  const canPublish = weightOk && !hasDup && rows.length > 0 && traderInfo?.isRegistered === true
+  const stakeOk   = eligible !== false   // null = not loaded / not deployed → allow
+  const canPublish = weightOk && !hasDup && rows.length > 0 && traderInfo?.isRegistered === true && stakeOk
 
   // Auto-fix: distribute remainder to last row
   const autoFix = () => {
@@ -305,6 +312,24 @@ export default function TraderDashboard({ wallet }: Props) {
           </button>
         </div>
 
+        {eligible === false && (
+          <div className="rounded-lg border border-yellow-800/60 bg-yellow-950/20 px-4 py-3 flex items-start gap-3 text-sm">
+            <span className="text-yellow-400 text-base shrink-0">⚠</span>
+            <div className="space-y-1">
+              <p className="text-yellow-300 font-semibold">Stake required to publish</p>
+              <p className="text-xs text-gray-400">
+                You need to stake at least 100 mUSDC before publishing a strategy. This gives followers confidence that you have skin-in-the-game.
+              </p>
+              <Link
+                to="/stake"
+                className="inline-block mt-1 text-xs font-semibold text-brand-100 hover:underline"
+              >
+                Go to Trader Stake →
+              </Link>
+            </div>
+          </div>
+        )}
+
         {rows.length === 0 ? (
           <p className="text-sm text-gray-600 py-1">Click "+ Add Asset" to define allocations.</p>
         ) : (
@@ -430,6 +455,11 @@ export default function TraderDashboard({ wallet }: Props) {
         {!traderInfo?.isRegistered && (
           <p className="text-xs text-gray-500 text-center -mt-1">
             Register as a trader first to publish.
+          </p>
+        )}
+        {traderInfo?.isRegistered && eligible === false && (
+          <p className="text-xs text-gray-500 text-center -mt-1">
+            Stake ≥ 100 mUSDC on the <Link to="/stake" className="text-brand-100 hover:underline">Stake page</Link> to unlock publishing.
           </p>
         )}
       </div>

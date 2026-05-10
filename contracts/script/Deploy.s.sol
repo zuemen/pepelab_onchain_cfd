@@ -9,6 +9,7 @@ import "../src/FeeRouter.sol";
 import "../src/PerpetualExchange.sol";
 import "../src/StrategyRegistry.sol";
 import "../src/CopyTracker.sol";
+import "../src/TraderStake.sol";
 
 contract Deploy is Script {
     // Asset IDs — same keccak256 used on-chain and in the frontend
@@ -34,24 +35,29 @@ contract Deploy is Script {
         oracle.addAsset(SAAPL,     200e8);   // $   200
         oracle.addAsset(STSLA,     250e8);   // $   250
 
-        // 4. FeeRouter (platformTreasury = deployer; slashPool = deployer for now)
+        // 4. TraderStake (skin-in-the-game; must deploy before StrategyRegistry)
+        TraderStake traderStake = new TraderStake(address(usdc));
+
+        // 5. FeeRouter (platformTreasury = deployer; slashPool = deployer for now)
         FeeRouter feeRouter = new FeeRouter(address(usdc), deployer, deployer);
 
-        // 5. PerpetualExchange
+        // 6. PerpetualExchange
         PerpetualExchange exchange = new PerpetualExchange(address(usdc), address(oracle));
 
-        // 6. StrategyRegistry
-        StrategyRegistry registry = new StrategyRegistry();
+        // 7. StrategyRegistry (with stake gate)
+        StrategyRegistry registry = new StrategyRegistry(address(traderStake));
 
-        // 7. CopyTracker
+        // 8. CopyTracker (with stake reference for slashing)
         CopyTracker ct = new CopyTracker(
             address(usdc),
             address(exchange),
             address(registry),
-            address(feeRouter)
+            address(feeRouter),
+            address(traderStake)
         );
 
-        // 8. Wire contracts
+        // 9. Wire contracts
+        traderStake.setCopyTracker(address(ct));
         exchange.setCopyTracker(address(ct));
         exchange.setFeeRouter(address(feeRouter));
         feeRouter.setCopyTracker(address(ct));
@@ -63,6 +69,7 @@ contract Deploy is Script {
         console.log("=== Deployed Contract Addresses ===");
         console.log("MockUSDC         :", address(usdc));
         console.log("MockOracle       :", address(oracle));
+        console.log("TraderStake      :", address(traderStake));
         console.log("FeeRouter        :", address(feeRouter));
         console.log("PerpetualExchange:", address(exchange));
         console.log("StrategyRegistry :", address(registry));

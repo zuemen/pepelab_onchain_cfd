@@ -6,6 +6,7 @@ import "forge-std/console.sol";
 import "../src/MockUSDC.sol";
 import "../src/StrategyRegistry.sol";
 import "../src/CopyTracker.sol";
+import "../src/TraderStake.sol";
 
 contract Seed is Script {
     bytes32 constant SBTC  = keccak256("sBTC");
@@ -17,29 +18,32 @@ contract Seed is Script {
         address usdcAddr     = vm.envAddress("USDC_ADDR");
         address registryAddr = vm.envAddress("REGISTRY_ADDR");
         address trackerAddr  = vm.envAddress("TRACKER_ADDR");
+        address stakeAddr    = vm.envAddress("STAKE_ADDR");
 
         // TRADER2_PK / TRADER3_PK: separate funded wallets on Sepolia; on Anvil, well-known account keys
         uint256 trader2Pk = vm.envOr("TRADER2_PK", uint256(0));
         uint256 trader3Pk = vm.envOr("TRADER3_PK", uint256(0));
         bool isAnvil = block.chainid == 31337;
 
-        MockUSDC usdc = MockUSDC(usdcAddr);
+        MockUSDC         usdc     = MockUSDC(usdcAddr);
         StrategyRegistry registry = StrategyRegistry(registryAddr);
-        CopyTracker ct = CopyTracker(trackerAddr);
+        CopyTracker      ct       = CopyTracker(trackerAddr);
+        TraderStake      ts       = TraderStake(stakeAddr);
 
         // ── Trader 1: deployer (Demo Alpha) ───────────────────────────────────
         vm.startBroadcast();
         address deployer = msg.sender;
 
         usdc.mint(deployer, 5_000e18);
-
+        usdc.approve(address(ts), 500e18);
+        try ts.stake(500e18) {} catch {}
         try registry.registerTrader("Demo Alpha") {} catch {}
 
         StrategyRegistry.Allocation[] memory allocs1 = new StrategyRegistry.Allocation[](3);
         allocs1[0] = StrategyRegistry.Allocation({asset: SBTC,  weight: 5000, isLong: true,  leverage: 2});
         allocs1[1] = StrategyRegistry.Allocation({asset: SETH,  weight: 3000, isLong: false, leverage: 1});
         allocs1[2] = StrategyRegistry.Allocation({asset: SAAPL, weight: 2000, isLong: true,  leverage: 1});
-        registry.publishStrategy(allocs1);
+        try registry.publishStrategy(allocs1) {} catch {}
 
         vm.stopBroadcast();
         console.log("Seeded Trader 1 (Demo Alpha):", deployer);
@@ -58,12 +62,14 @@ contract Seed is Script {
             vm.stopBroadcast();
 
             vm.startBroadcast(pk2);
+            usdc.approve(address(ts), 500e18);
+            try ts.stake(500e18) {} catch {}
             try registry.registerTrader("Demo Beta") {} catch {}
 
             StrategyRegistry.Allocation[] memory allocs2 = new StrategyRegistry.Allocation[](2);
             allocs2[0] = StrategyRegistry.Allocation({asset: SETH,  weight: 6000, isLong: true, leverage: 5});
             allocs2[1] = StrategyRegistry.Allocation({asset: STSLA, weight: 4000, isLong: true, leverage: 2});
-            registry.publishStrategy(allocs2);
+            try registry.publishStrategy(allocs2) {} catch {}
 
             vm.stopBroadcast();
             console.log("Seeded Trader 2 (Demo Beta):", t2);
@@ -85,12 +91,14 @@ contract Seed is Script {
             vm.stopBroadcast();
 
             vm.startBroadcast(pk3);
+            usdc.approve(address(ts), 500e18);
+            try ts.stake(500e18) {} catch {}
             try registry.registerTrader("Demo Gamma") {} catch {}
 
             StrategyRegistry.Allocation[] memory allocs3 = new StrategyRegistry.Allocation[](2);
             allocs3[0] = StrategyRegistry.Allocation({asset: SAAPL, weight: 7000, isLong: true,  leverage: 1});
             allocs3[1] = StrategyRegistry.Allocation({asset: SBTC,  weight: 3000, isLong: false, leverage: 2});
-            registry.publishStrategy(allocs3);
+            try registry.publishStrategy(allocs3) {} catch {}
 
             vm.stopBroadcast();
             console.log("Seeded Trader 3 (Demo Gamma):", t3);

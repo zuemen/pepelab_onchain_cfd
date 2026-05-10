@@ -20,12 +20,13 @@ fi
 USDC=$(jq -r '.transactions[] | select(.contractName=="MockUSDC") | .contractAddress' "$BROADCAST")
 REG=$(jq -r '.transactions[] | select(.contractName=="StrategyRegistry") | .contractAddress' "$BROADCAST")
 CT=$(jq -r '.transactions[] | select(.contractName=="CopyTracker") | .contractAddress' "$BROADCAST")
+TS=$(jq -r '.transactions[] | select(.contractName=="TraderStake") | .contractAddress' "$BROADCAST")
 
-echo "Using USDC=$USDC, Registry=$REG, CopyTracker=$CT"
+echo "Using USDC=$USDC, Registry=$REG, CopyTracker=$CT, TraderStake=$TS"
 echo ""
 
 cd "$CONTRACTS_DIR"
-USDC_ADDR="$USDC" REGISTRY_ADDR="$REG" TRACKER_ADDR="$CT" \
+USDC_ADDR="$USDC" REGISTRY_ADDR="$REG" TRACKER_ADDR="$CT" STAKE_ADDR="$TS" \
   forge script script/Seed.s.sol \
   --rpc-url "$RPC_URL" \
   --private-key "$PRIVATE_KEY" \

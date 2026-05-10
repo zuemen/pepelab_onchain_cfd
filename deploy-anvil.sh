@@ -34,6 +34,7 @@ addr() { jq -r --arg n "$1" \
 
 USDC_ADDR=$(addr "MockUSDC")
 ORACLE_ADDR=$(addr "MockOracle")
+STAKE_ADDR=$(addr "TraderStake")
 FEEROUTER_ADDR=$(addr "FeeRouter")
 EXCHANGE_ADDR=$(addr "PerpetualExchange")
 REGISTRY_ADDR=$(addr "StrategyRegistry")
@@ -43,6 +44,7 @@ echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 printf "  %-22s %s\n" "MockUSDC:"          "$USDC_ADDR"
 printf "  %-22s %s\n" "MockOracle:"        "$ORACLE_ADDR"
+printf "  %-22s %s\n" "TraderStake:"       "$STAKE_ADDR"
 printf "  %-22s %s\n" "FeeRouter:"         "$FEEROUTER_ADDR"
 printf "  %-22s %s\n" "PerpetualExchange:" "$EXCHANGE_ADDR"
 printf "  %-22s %s\n" "StrategyRegistry:"  "$REGISTRY_ADDR"
@@ -54,7 +56,7 @@ echo "[4/4] Exporting to frontend..."
 mkdir -p "$FRONTEND_CONTRACTS/abi"
 cd "$REPO_ROOT"
 
-for name in MockUSDC MockOracle FeeRouter PerpetualExchange StrategyRegistry CopyTracker; do
+for name in MockUSDC MockOracle TraderStake FeeRouter PerpetualExchange StrategyRegistry CopyTracker; do
     jq '.abi' "contracts/out/$name.sol/$name.json" \
         > "$FRONTEND_CONTRACTS/abi/$name.json"
 done
@@ -75,6 +77,7 @@ cat > "$ADDRESSES_FILE" <<TEMPLATE
 export interface ChainAddresses {
   MockUSDC:          string
   MockOracle:        string
+  TraderStake:       string
   FeeRouter:         string
   PerpetualExchange: string
   StrategyRegistry:  string
@@ -84,6 +87,7 @@ export interface ChainAddresses {
 const ANVIL: ChainAddresses = {
   MockUSDC:          "0x0000000000000000000000000000000000000000",
   MockOracle:        "0x0000000000000000000000000000000000000000",
+  TraderStake:       "0x0000000000000000000000000000000000000000",
   FeeRouter:         "0x0000000000000000000000000000000000000000",
   PerpetualExchange: "0x0000000000000000000000000000000000000000",
   StrategyRegistry:  "0x0000000000000000000000000000000000000000",
@@ -93,6 +97,7 @@ const ANVIL: ChainAddresses = {
 const SEPOLIA: ChainAddresses = {
   MockUSDC:          "0x0000000000000000000000000000000000000000",
   MockOracle:        "0x0000000000000000000000000000000000000000",
+  TraderStake:       "0x0000000000000000000000000000000000000000",
   FeeRouter:         "0x0000000000000000000000000000000000000000",
   PerpetualExchange: "0x0000000000000000000000000000000000000000",
   StrategyRegistry:  "0x0000000000000000000000000000000000000000",
@@ -129,14 +134,16 @@ TEMPLATE
 fi
 
 # 2. In-place replace only the ANVIL block — SEPOLIA is preserved
-USDC_ADDR=$USDC_ADDR ORACLE_ADDR=$ORACLE_ADDR FEEROUTER_ADDR=$FEEROUTER_ADDR \
-EXCHANGE_ADDR=$EXCHANGE_ADDR REGISTRY_ADDR=$REGISTRY_ADDR TRACKER_ADDR=$TRACKER_ADDR \
+USDC_ADDR=$USDC_ADDR ORACLE_ADDR=$ORACLE_ADDR STAKE_ADDR=$STAKE_ADDR \
+FEEROUTER_ADDR=$FEEROUTER_ADDR EXCHANGE_ADDR=$EXCHANGE_ADDR \
+REGISTRY_ADDR=$REGISTRY_ADDR TRACKER_ADDR=$TRACKER_ADDR \
 ADDRESSES_FILE=$ADDRESSES_FILE python3 <<'PYEOF'
 import os, re
 block = (
     "const ANVIL: ChainAddresses = {\n"
     + '  MockUSDC:          "' + os.environ["USDC_ADDR"] + '",\n'
     + '  MockOracle:        "' + os.environ["ORACLE_ADDR"] + '",\n'
+    + '  TraderStake:       "' + os.environ["STAKE_ADDR"] + '",\n'
     + '  FeeRouter:         "' + os.environ["FEEROUTER_ADDR"] + '",\n'
     + '  PerpetualExchange: "' + os.environ["EXCHANGE_ADDR"] + '",\n'
     + '  StrategyRegistry:  "' + os.environ["REGISTRY_ADDR"] + '",\n'

@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+interface ITraderStakeForReg {
+    function isEligible(address trader) external view returns (bool);
+}
+
 contract StrategyRegistry {
     // ── Data types ──────────────────────────────────────────────────────────
 
@@ -22,6 +26,11 @@ contract StrategyRegistry {
         uint256 createdAt;
     }
 
+    // ── Immutables ───────────────────────────────────────────────────────────
+
+    // address(0) = no stake gate (backward-compatible with existing tests)
+    ITraderStakeForReg public immutable stakeContract;
+
     // ── Storage ─────────────────────────────────────────────────────────────
 
     mapping(address => TraderProfile)    public traders;
@@ -42,12 +51,19 @@ contract StrategyRegistry {
     error InvalidWeightSum(uint256 got);
     error ZeroWeight(uint256 index);
     error InvalidLeverage(uint256 index, uint256 leverage);
+    error InsufficientStake();
 
     // ── Modifiers ────────────────────────────────────────────────────────────
 
     modifier onlyRegistered() {
         if (!traders[msg.sender].isRegistered) revert NotRegistered();
         _;
+    }
+
+    // ── Constructor ──────────────────────────────────────────────────────────
+
+    constructor(address _stake) {
+        stakeContract = ITraderStakeForReg(_stake);
     }
 
     // ── External functions ───────────────────────────────────────────────────
@@ -67,6 +83,11 @@ contract StrategyRegistry {
 
     function publishStrategy(Allocation[] memory allocations) external onlyRegistered {
         if (allocations.length == 0) revert EmptyAllocations();
+
+        // Stake eligibility gate — bypassed when stakeContract == address(0)
+        if (address(stakeContract) != address(0)) {
+            if (!stakeContract.isEligible(msg.sender)) revert InsufficientStake();
+        }
 
         uint256 totalWeight;
         for (uint256 i; i < allocations.length; ++i) {
@@ -115,6 +136,11 @@ contract StrategyRegistry {
 
     function getAllTraders() external view returns (address[] memory) {
         return traderList;
+    }
+
+    function isEligibleTrader(address trader) external view returns (bool) {
+        if (address(stakeContract) == address(0)) return true;
+        return stakeContract.isEligible(trader);
     }
 
     // ── Internal helpers ─────────────────────────────────────────────────────

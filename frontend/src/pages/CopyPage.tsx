@@ -5,6 +5,12 @@ import type { WalletAPI } from '../hooks/useWallet'
 import { useContracts } from '../hooks/useContracts'
 import { ASSET_IDS } from '../contracts/addresses'
 
+interface TraderStakeData {
+  staked:     bigint
+  slashCount: bigint
+  reputation: bigint
+}
+
 // ── Config ──────────────────────────────────────────────────────────────────
 const ASSET_LABEL: Record<string, string> = {
   [ASSET_IDS.sBTC]:  'sBTC',
@@ -51,6 +57,7 @@ export default function CopyPage({ wallet }: Props) {
   const [hasStrategy,      setHasStrategy]      = useState(false)
   const [loadError,        setLoadError]        = useState<string | null>(null)
   const [stratAllocs,      setStratAllocs]      = useState<AllocWithPrice[]>([])
+  const [stakeData,        setStakeData]        = useState<TraderStakeData | null>(null)
   const [totalMargin,      setTotalMargin]      = useState('1000')
   const [approved,         setApproved]         = useState(false)
   const [busy,             setBusy]             = useState<Record<string, boolean>>({})
@@ -103,6 +110,16 @@ export default function CopyPage({ wallet }: Props) {
         setStratAllocs([])
         setHasStrategy(false)
       }
+
+      // stake info — optional, silently skip if TraderStake not deployed
+      try {
+        const [si, score] = await Promise.all([
+          contracts.traderStake.getStake(traderAddress),
+          contracts.traderStake.reputationScore(traderAddress),
+        ])
+        const s = si as unknown as { stakedAmount: bigint; slashCount: bigint }
+        setStakeData({ staked: s.stakedAmount, slashCount: s.slashCount, reputation: score as bigint })
+      } catch { /* not deployed */ }
     }
     void go()
   }, [contracts, traderAddress])
@@ -314,6 +331,56 @@ export default function CopyPage({ wallet }: Props) {
           </div>
           <p className="text-xs text-gray-600 pt-1">
             Copy fee is split 70 % → trader · 20 % → platform · 10 % → slash pool
+          </p>
+        </div>
+      )}
+
+      {/* Trader stake / risk summary */}
+      {stakeData && (
+        <div className={`rounded-xl border p-4 space-y-3 text-sm ${
+          stakeData.slashCount > 0n
+            ? 'border-red-800/60 bg-red-950/20'
+            : 'border-surface-border bg-surface-elev/40'
+        }`}>
+          <p className="font-semibold text-white text-xs uppercase tracking-wide">
+            Trader Skin-in-the-Game
+          </p>
+          <div className="flex flex-wrap gap-4 text-gray-300">
+            <div>
+              <span className="text-xs text-gray-500 block">Staked</span>
+              <span className="font-mono font-semibold text-white">
+                {(Number(stakeData.staked) / 1e18).toFixed(0)}
+              </span>
+              <span className="text-xs text-gray-500 ml-1">mUSDC</span>
+            </div>
+            <div>
+              <span className="text-xs text-gray-500 block">Reputation</span>
+              <span className={`font-mono font-semibold ${
+                stakeData.reputation >= 80n ? 'text-emerald-400'
+                : stakeData.reputation >= 50n ? 'text-yellow-400'
+                : 'text-red-400'
+              }`}>{String(stakeData.reputation)}</span>
+              <span className="text-xs text-gray-500 ml-1">pts</span>
+            </div>
+            <div>
+              <span className="text-xs text-gray-500 block">Slash Events</span>
+              <span className={`font-mono font-semibold ${stakeData.slashCount > 0n ? 'text-danger' : 'text-white'}`}>
+                {String(stakeData.slashCount)}
+              </span>
+            </div>
+          </div>
+          {stakeData.slashCount > 0n && (
+            <p className="text-xs text-red-400 font-medium">
+              ⚠ This trader has been slashed {String(stakeData.slashCount)} time{stakeData.slashCount !== 1n ? 's' : ''} for causing excessive losses to followers. Proceed with caution.
+            </p>
+          )}
+          {stakeData.staked === 0n && (
+            <p className="text-xs text-yellow-400 font-medium">
+              ⚠ This trader has no stake — they have no skin-in-the-game. You cannot trigger slashing if they cause losses.
+            </p>
+          )}
+          <p className="text-xs text-gray-600">
+            If your copied positions lose &gt; 30%, you may trigger on-chain slashing — 50% of the trader's stake is sent directly to you.
           </p>
         </div>
       )}

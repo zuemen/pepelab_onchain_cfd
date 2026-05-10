@@ -26,6 +26,9 @@ interface TraderCard {
   allocs:        RawAlloc[]
   followerCount: bigint
   hasStrategy:   boolean
+  reputation:    bigint | null   // null = TraderStake not deployed
+  staked:        bigint | null
+  slashCount:    bigint | null
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -44,6 +47,11 @@ const summarize = (allocs: RawAlloc[]): string =>
       `${(Number(a.weight) / 100).toFixed(0)}% ${String(a.leverage)}×`,
     )
     .join(' | ')
+
+const repColor = (score: bigint) =>
+  score >= 80n ? 'bg-emerald-900 border-emerald-700 text-emerald-300'
+  : score >= 50n ? 'bg-yellow-900/60 border-yellow-700 text-yellow-300'
+  : 'bg-red-900/60 border-red-800 text-red-300'
 
 // ── Component ────────────────────────────────────────────────────────────────
 interface Props { wallet: WalletAPI }
@@ -70,14 +78,27 @@ export default function MarketplacePage({ wallet }: Props) {
           ])
           const tRaw = traderRaw as unknown as [boolean, string, bigint]
 
-          // getLatestStrategy reverts when trader has no strategy yet — guard it
           let allocs: RawAlloc[] = []
           let hasStrategy = false
           try {
             const stratRaw = (await contracts.registry.getLatestStrategy(addr)) as unknown as [unknown[], bigint]
             allocs = parseAllocs(stratRaw[0] as unknown[])
             hasStrategy = allocs.length > 0
-          } catch { /* trader registered but has not published a strategy yet */ }
+          } catch { /* no strategy yet */ }
+
+          let reputation: bigint | null = null
+          let staked:     bigint | null = null
+          let slashCount: bigint | null = null
+          try {
+            const [score, si] = await Promise.all([
+              contracts.traderStake.reputationScore(addr),
+              contracts.traderStake.getStake(addr),
+            ])
+            reputation = score as bigint
+            const s = si as unknown as { stakedAmount: bigint; slashCount: bigint }
+            staked     = s.stakedAmount
+            slashCount = s.slashCount
+          } catch { /* TraderStake not available */ }
 
           return {
             address:       addr,
@@ -85,9 +106,21 @@ export default function MarketplacePage({ wallet }: Props) {
             allocs,
             followerCount: fc as bigint,
             hasStrategy,
+            reputation,
+            staked,
+            slashCount,
           }
         }),
       )
+
+      // Sort by reputation descending (nulls last)
+      cards.sort((a, b) => {
+        if (a.reputation === null && b.reputation === null) return 0
+        if (a.reputation === null) return 1
+        if (b.reputation === null) return -1
+        return Number(b.reputation - a.reputation)
+      })
+
       setTraders(cards)
     } catch (e) {
       console.error('[marketplace fetch]', e)
@@ -113,7 +146,7 @@ export default function MarketplacePage({ wallet }: Props) {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-white">Strategy Marketplace</h1>
-          <p className="text-sm text-gray-400 mt-0.5">Browse and copy public trader strategies</p>
+          <p className="text-sm text-gray-400 mt-0.5">Browse and copy public trader strategies · sorted by reputation</p>
         </div>
         <button
           onClick={() => void fetchAll()}
@@ -123,7 +156,6 @@ export default function MarketplacePage({ wallet }: Props) {
         </button>
       </div>
 
-      {/* Fetch error banner */}
       {fetchError && (
         <div className="rounded-lg border border-red-800 bg-red-950/40 px-4 py-3 text-sm text-red-400">
           <strong>Failed to load marketplace:</strong> {fetchError}
@@ -154,15 +186,32 @@ export default function MarketplacePage({ wallet }: Props) {
             {traders.map(t => (
               <div
                 key={t.address}
-                className="rounded-card border border-surface-border bg-surface shadow-card hover:shadow-card-hover transition-shadow flex flex-col gap-4 p-5"
+                className="rounded-card border border-surface-border bg-surface shadow-card hover:shadow-card-hover transition-shadow flex flex-col gap-3 p-5"
               >
-                {/* Trader identity */}
-                <div>
-                  <div className="font-bold text-white text-base leading-tight">
-                    {t.displayName || '—'}
+                {/* Trader identity + reputation */}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="font-bold text-white text-base leading-tight truncate">
+                      {t.displayName || '—'}
+                    </div>
+                    <div className="font-mono text-xs text-gray-500 mt-0.5">{shortAddr(t.address)}</div>
                   </div>
-                  <div className="font-mono text-xs text-gray-500 mt-0.5">{shortAddr(t.address)}</div>
+                  {t.reputation !== null && (
+                    <span className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold border ${repColor(t.reputation)}`}>
+                      ◆ {String(t.reputation)}
+                    </span>
+                  )}
                 </div>
+
+                {/* Stake info row */}
+                {t.staked !== null && (
+                  <div className="flex items-center gap-2 text-xs text-gray-500">
+                    <span>Staked: <span className="text-white font-mono">{(Number(t.staked) / 1e18).toFixed(0)}</span> mUSDC</span>
+                    {t.slashCount !== null && t.slashCount > 0n && (
+                      <span className="text-danger">· {String(t.slashCount)} slash{t.slashCount !== 1n ? 'es' : ''}</span>
+                    )}
+                  </div>
+                )}
 
                 {/* Strategy chips */}
                 <div className="flex-1 flex flex-wrap gap-1.5 min-h-[28px]">
@@ -190,17 +239,17 @@ export default function MarketplacePage({ wallet }: Props) {
                 </div>
 
                 {/* Footer */}
-                <div className="flex items-center justify-between pt-3 border-t border-surface-border">
+                <div className="flex items-center justify-between pt-2 border-t border-surface-border">
                   <span className="text-xs text-gray-500">
                     <span className="font-mono font-semibold text-white">{String(t.followerCount)}</span>
                     {' '}follower{t.followerCount !== 1n ? 's' : ''}
                   </span>
                   <div className="flex gap-2">
                     <Link
-                      to={`/copy/${t.address}`}
+                      to={`/profile/${t.address}`}
                       className="px-3 py-1.5 rounded-lg border border-surface-border text-gray-300 text-xs font-medium hover:border-gray-400 hover:text-white transition-colors"
                     >
-                      View
+                      Profile
                     </Link>
                     {t.hasStrategy && (
                       <Link
