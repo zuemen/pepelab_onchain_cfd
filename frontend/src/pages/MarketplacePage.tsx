@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import type { WalletAPI } from '../hooks/useWallet'
 import { useContracts } from '../hooks/useContracts'
+import { useLivePrices } from '../hooks/useLivePrices'
 import { ASSET_IDS } from '../contracts/addresses'
 
 // ── Config ──────────────────────────────────────────────────────────────────
@@ -65,6 +66,7 @@ export default function MarketplacePage({ wallet }: Props) {
   const [isLoading,  setIsLoading]  = useState(false)
   const [fetchError, setFetchError] = useState<string | null>(null)
   const [sortKey,    setSortKey]    = useState<SortKey>('reputation')
+  const livePrices = useLivePrices()
 
   const fetchAll = useCallback(async () => {
     if (!contracts) return
@@ -172,6 +174,25 @@ export default function MarketplacePage({ wallet }: Props) {
             ↺ Refresh
           </button>
         </div>
+      </div>
+
+      {/* Live Prices ticker */}
+      <div className="rounded-card border border-surface-border bg-surface p-4 flex flex-wrap gap-x-6 gap-y-2 text-sm">
+        <span className="text-xs text-gray-500 uppercase font-semibold tracking-wide self-center">Live Prices</span>
+        {Object.entries(ASSET_LABEL).map(([id, label]) => {
+          const p = livePrices[id]
+          if (!p) return null
+          return (
+            <span key={id} className="flex items-center gap-2">
+              <span className="text-gray-400 font-medium">{label}</span>
+              <span className={`font-mono ${p.isMock ? 'text-yellow-400' : 'text-emerald-400'}`}>
+                ${p.usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+              {p.isMock && <span className="text-xs text-gray-600">(simulated)</span>}
+            </span>
+          )
+        })}
+        <span className="text-xs text-gray-600 self-center ml-auto">Refresh 30s · CoinGecko + simulated</span>
       </div>
 
       {fetchError && (

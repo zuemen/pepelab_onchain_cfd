@@ -6,6 +6,7 @@ import {
 } from 'recharts'
 import type { WalletAPI } from '../hooks/useWallet'
 import { useContracts } from '../hooks/useContracts'
+import { useLivePrices } from '../hooks/useLivePrices'
 import { ASSET_IDS } from '../contracts/addresses'
 import StatCard from '../components/StatCard'
 
@@ -95,7 +96,8 @@ const tryParse = (s: string): bigint | null => {
 interface Props { wallet: WalletAPI }
 
 export default function PortfolioPage({ wallet }: Props) {
-  const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId)
+  const contracts  = useContracts(wallet.provider, wallet.signer, wallet.chainId)
+  const livePrices = useLivePrices()
 
   const [copyRecs,   setCopyRecs]   = useState<CopyRec[]>([])
   const [positions,  setPositions]  = useState<PosRow[]>([])
@@ -397,7 +399,7 @@ export default function PortfolioPage({ wallet }: Props) {
             <table className="w-full text-sm text-left">
               <thead>
                 <tr className="text-xs text-gray-500 uppercase tracking-wide border-b border-surface-border">
-                  {['Asset','Side','Entry','Current','Margin','Lev','Copied From','Unr. PnL','Value'].map(h => (
+                  {['Asset','Side','Entry','Current','Live Market','Margin','Lev','Copied From','Unr. PnL','Value'].map(h => (
                     <th key={h} className="px-4 py-3 font-medium whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -418,6 +420,13 @@ export default function PortfolioPage({ wallet }: Props) {
                     </td>
                     <td className="px-4 py-3 font-mono text-gray-300 whitespace-nowrap">
                       {fUsd(row.currentPrice)}
+                    </td>
+                    <td className="px-4 py-3 font-mono whitespace-nowrap">
+                      {livePrices[row.asset] ? (
+                        <span className={livePrices[row.asset].isMock ? 'text-yellow-400/80' : 'text-emerald-400/80'}>
+                          ${livePrices[row.asset].usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      ) : <span className="text-gray-600">—</span>}
                     </td>
                     <td className="px-4 py-3 font-mono text-gray-300">
                       {f18(row.margin)}
@@ -442,7 +451,7 @@ export default function PortfolioPage({ wallet }: Props) {
               </tbody>
               <tfoot>
                 <tr className="border-t border-surface-border text-xs text-gray-500">
-                  <td colSpan={7} className="px-4 py-2">Total</td>
+                  <td colSpan={8} className="px-4 py-2">Total</td>
                   <td className={`px-4 py-2 font-mono font-semibold ${
                     pnlColor(positions.reduce((s, p) => s + p.unrealizedPnL, 0n))
                   }`}>

@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
+import { Link } from 'react-router-dom'
 import { parseEther } from 'ethers'
 import type { WalletAPI } from '../hooks/useWallet'
 import { useContracts } from '../hooks/useContracts'
+import { useLivePrices } from '../hooks/useLivePrices'
 import { ASSET_IDS } from '../contracts/addresses'
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -58,7 +60,8 @@ const asTx = (tx: unknown): TxResp => tx as TxResp
 interface Props { wallet: WalletAPI }
 
 export default function ExchangePage({ wallet }: Props) {
-  const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId)
+  const contracts  = useContracts(wallet.provider, wallet.signer, wallet.chainId)
+  const livePrices = useLivePrices()
 
   const [usdcBal,   setUsdcBal]   = useState(0n)
   const [freeMgn,   setFreeMgn]   = useState(0n)
@@ -385,10 +388,27 @@ export default function ExchangePage({ wallet }: Props) {
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-6 text-sm text-gray-400">
-          <span>Entry price: <span className="font-mono text-white">{fUsd(curPrice)}</span></span>
+        <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-gray-400">
+          <span>
+            Entry (oracle):{' '}
+            <span className="font-mono text-white">{fUsd(curPrice)}</span>
+          </span>
+          {livePrices[selAsset] && (
+            <span>
+              Live market:{' '}
+              <span className={`font-mono ${livePrices[selAsset].isMock ? 'text-yellow-400' : 'text-emerald-400'}`}>
+                ${livePrices[selAsset].usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+              {livePrices[selAsset].isMock && <span className="text-xs text-gray-600 ml-1">(simulated)</span>}
+            </span>
+          )}
           <span>Notional: <span className="font-mono text-white">{f18(notional)} mUSDC</span></span>
         </div>
+        <p className="text-xs text-gray-500">
+          PnL is calculated using on-chain oracle price. Live market shown for reference.
+          Admin can sync oracle to live market on the{' '}
+          <Link to="/admin/oracle" className="text-emerald-400 hover:underline">Oracle Admin</Link> page.
+        </p>
 
         <button
           onClick={() => void openPosition()}
