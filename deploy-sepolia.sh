@@ -60,11 +60,11 @@ addrs = {
 names = ["MockUSDC", "MockOracle", "TraderStake", "FeeRouter", "PerpetualExchange", "StrategyRegistry", "CopyTracker"]
 
 print()
-print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+print("  ----------------------------------------------------")
 print("  Sepolia contract addresses:")
 for n in names:
     print(f"    {(n + ':'):<22} {addrs.get(n, 'NOT FOUND')}")
-print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+print("  ----------------------------------------------------")
 
 with open(os.environ["ADDRESSES_FILE"]) as f:
     content = f.read()

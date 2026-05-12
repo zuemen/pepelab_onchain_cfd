@@ -24,13 +24,13 @@ const ANVIL: ChainAddresses = {
 
 // ── Sepolia testnet (chainId 11155111) ────────────────────────────────────────
 const SEPOLIA: ChainAddresses = {
-  MockUSDC:           "0x29e5732AC62254d9b92A1C7d3F38EbFA8809B57d",
-  MockOracle:         "0x6196E77023318EE3DF0745b001161c17c2c109bF",
-  TraderStake:        "0xE8D78859B61AF6CEd5318044bAd0E265f1D1CE8E",
-  FeeRouter:          "0xBb7c02d02EFa81a44bC0fb7E0bC2F531Ee39FB2B",
-  PerpetualExchange:  "0xb3e978E96e36FeDa703827D9dfE142d502C3bd1d",
-  StrategyRegistry:   "0x481E650A3E6617C8E387E2e9229e725BE242BD3f",
-  CopyTracker:        "0x042A4e1F9750CE76fb96F063acB40a4f813C0737",
+  MockUSDC:          "0x655D51EDE4439d66894663AD4725770381db3EBa",
+  MockOracle:        "0x446eeaC0368Dad42fC9e3B57ECC24FAb747CDFf5",
+  TraderStake:       "0x11D1E96aa302a93897de8e60CB00b38247Fafc78",
+  FeeRouter:         "0xCCD05CBdC2f7961a4C27D3633694022722786A0F",
+  PerpetualExchange: "0xc100f942366305E2917d5a7B5eD0F5F1E930a49c",
+  StrategyRegistry:  "0x5f98b068480334633EdA2C1051293b325e1e5c20",
+  CopyTracker:       "0x7134CfDCc806Dd9f1C39f1c8a5828bE10604fBFB",
 }
 
 const CHAIN_MAP: Record<number, ChainAddresses> = {
