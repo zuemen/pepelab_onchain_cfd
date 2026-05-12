@@ -162,8 +162,8 @@ export default function ExchangePage({ wallet }: Props) {
     
     setLoad('swap', true)
     try {
-      // Note: On testnet we use the MockUSDC mint function to simulate a Uniswap route
-      const tx = asTx(await contracts.usdc.mint(wallet.address, usdcOut))
+      // Execute the real swap via the MockSwapRouter (deducts ETH and mints mUSDC)
+      const tx = asTx(await contracts.swapRouter.swapETHForUSDC({ value: parseEther(payEth) }))
       await tx.wait()
       notify(`Swapped ${payEth} ETH for ${(ethAmt * 3000).toFixed(2)} mUSDC ✓`, true, tx.hash)
       setPayEth('')

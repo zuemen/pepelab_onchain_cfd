@@ -9,6 +9,7 @@ import FeeRouterABI         from '../contracts/abi/FeeRouter.json'
 import PerpetualExchangeABI from '../contracts/abi/PerpetualExchange.json'
 import StrategyRegistryABI  from '../contracts/abi/StrategyRegistry.json'
 import CopyTrackerABI       from '../contracts/abi/CopyTracker.json'
+import MockSwapRouterABI    from '../contracts/abi/MockSwapRouter.json'
 
 export function useContracts(
   provider: BrowserProvider | null,
@@ -28,6 +29,7 @@ export function useContracts(
       exchange:    new Contract(addr.PerpetualExchange, PerpetualExchangeABI, runner),
       registry:    new Contract(addr.StrategyRegistry,  StrategyRegistryABI,  runner),
       copyTracker: new Contract(addr.CopyTracker,       CopyTrackerABI,       runner),
+      swapRouter:  new Contract(addr.MockSwapRouter,    MockSwapRouterABI?.abi ?? MockSwapRouterABI, runner),
     }
   }, [provider, signer, chainId])
 }

@@ -9,6 +9,7 @@ export interface ChainAddresses {
   PerpetualExchange: string
   StrategyRegistry:  string
   CopyTracker:       string
+  MockSwapRouter:    string
 }
 
 // ── Anvil local (chainId 31337) ───────────────────────────────────────────────
@@ -20,6 +21,7 @@ const ANVIL: ChainAddresses = {
   PerpetualExchange: "0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1",
   StrategyRegistry:  "0x9A9f2CCfdE556A7E9Ff0848998Aa4a0CFD8863AE",
   CopyTracker:       "0x68B1D87F95878fE05B998F19b66F4baba5De1aed",
+  MockSwapRouter:    "0x0000000000000000000000000000000000000000",
 }
 
 // ── Sepolia testnet (chainId 11155111) ────────────────────────────────────────
@@ -31,6 +33,7 @@ const SEPOLIA: ChainAddresses = {
   PerpetualExchange: "0xc100f942366305E2917d5a7B5eD0F5F1E930a49c",
   StrategyRegistry:  "0x5f98b068480334633EdA2C1051293b325e1e5c20",
   CopyTracker:       "0x7134CfDCc806Dd9f1C39f1c8a5828bE10604fBFB",
+  MockSwapRouter:    "0xA27BeB4899d71A5A4966AE23f97139A6248B1FA1",
 }
 
 const CHAIN_MAP: Record<number, ChainAddresses> = {
