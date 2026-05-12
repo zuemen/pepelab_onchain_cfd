@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { Link } from 'react-router-dom'
 import { parseEther } from 'ethers'
 import {
   LineChart, Line, XAxis, YAxis, Tooltip,
@@ -103,6 +104,7 @@ export default function PortfolioPage({ wallet }: Props) {
   const [positions,  setPositions]  = useState<PosRow[]>([])
   const [freeMargin, setFreeMargin] = useState(0n)
   const [withdrawAmt, setWithdrawAmt] = useState('')
+  const [isLoaded,   setIsLoaded]   = useState(false)
 
   const [busy,  setBusy]  = useState<Record<string, boolean>>({})
   const [toast, setToast] = useState<{ msg: string; ok: boolean; hash?: string } | null>(null)
@@ -190,6 +192,7 @@ export default function PortfolioPage({ wallet }: Props) {
       // ── C: Free margin ────────────────────────────────────────────────────
       setFreeMargin((await contracts.exchange.freeMargin(addr)) as bigint)
 
+      setIsLoaded(true)
     } catch (e) {
       console.error('[portfolio fetch]', e)
       notify(e instanceof Error ? e.message.slice(0, 120) : 'Network error — check your wallet network', false)
@@ -253,6 +256,27 @@ export default function PortfolioPage({ wallet }: Props) {
     return (
       <div className="flex items-center justify-center min-h-[60vh] text-gray-400">
         Connect wallet to view your portfolio.
+      </div>
+    )
+  }
+
+  if (isLoaded && copyRecs.length === 0 && positions.length === 0 && freeMargin === 0n) {
+    return (
+      <div className="max-w-6xl mx-auto px-4 py-8 flex items-center justify-center min-h-[60vh]">
+        <div className="rounded-card border border-surface-border bg-surface p-12 text-center space-y-4 max-w-lg w-full">
+          <h3 className="text-lg font-semibold text-white">Your portfolio is empty</h3>
+          <p className="text-sm text-gray-400 max-w-md mx-auto">
+            Start by getting test mUSDC from the Faucet, then either copy a trader from the Marketplace or open positions yourself on the Exchange.
+          </p>
+          <div className="flex gap-3 justify-center">
+            <Link to="/exchange" className="px-5 py-2 rounded-lg bg-brand-200 hover:bg-brand-300 text-white text-sm font-semibold">
+              Get mUSDC →
+            </Link>
+            <Link to="/marketplace" className="px-5 py-2 rounded-lg border border-surface-border text-gray-300 text-sm font-semibold hover:bg-surface-elev">
+              Browse Traders
+            </Link>
+          </div>
+        </div>
       </div>
     )
   }
@@ -329,6 +353,7 @@ export default function PortfolioPage({ wallet }: Props) {
             No active copy positions.
           </p>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
             <thead>
               <tr className="text-xs text-gray-500 uppercase tracking-wide border-b border-surface-border">
@@ -381,6 +406,7 @@ export default function PortfolioPage({ wallet }: Props) {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

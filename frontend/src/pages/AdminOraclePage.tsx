@@ -37,20 +37,6 @@ const fDate = (ts: bigint) =>
         timeStyle: 'short',
       })
 
-const inRange = (current8: bigint, newUsd: string): boolean => {
-  const n = parseFloat(newUsd)
-  if (!isFinite(n) || n <= 0 || current8 === 0n) return false
-  const new8 = BigInt(Math.round(n * 1e8))
-  const diff = new8 > current8 ? new8 - current8 : current8 - new8
-  return diff * 10_000n <= current8 * 5_000n
-}
-
-const allowedRange = (price8: bigint): string => {
-  const p = Number(price8) / 1e8
-  return `$${(p * 0.5).toLocaleString('en-US', { maximumFractionDigits: 2 })} – `
-       + `$${(p * 1.5).toLocaleString('en-US', { maximumFractionDigits: 2 })}`
-}
-
 type TxResp = { wait(): Promise<unknown>; hash: string }
 const asTx = (tx: unknown): TxResp => tx as TxResp
 
@@ -131,10 +117,6 @@ export default function AdminOraclePage({ wallet }: Props) {
       notify('Connected wallet is not the oracle owner', false)
       return
     }
-    if (!inRange(current8, inputStr)) {
-      notify('Price change exceeds ±50% limit', false)
-      return
-    }
     const new8 = BigInt(Math.round(parseFloat(inputStr) * 1e8))
     setLoad(id, true)
     try {
@@ -179,12 +161,6 @@ export default function AdminOraclePage({ wallet }: Props) {
         const row = assets.find(a => a.id === id)
         if (!row || row.price8 === 0n) continue
         const new8 = BigInt(Math.round(usdPrice * 1e8))
-        const cur  = row.price8
-        const diff = new8 > cur ? new8 - cur : cur - new8
-        if (diff * 10_000n > cur * 5_000n) {
-          updates.push(`${label}: skipped (>±50%)`)
-          continue
-        }
         const tx = asTx(await contracts.oracle.updatePrice(id, new8))
         await tx.wait()
         updates.push(`${label}: $${(Number(new8) / 1e8).toFixed(2)}`)
@@ -237,7 +213,7 @@ export default function AdminOraclePage({ wallet }: Props) {
       <div>
         <h1 className="text-xl font-bold text-white">Oracle Price Admin</h1>
         <p className="text-sm text-gray-400 mt-0.5">
-          Only the oracle owner wallet can update prices. Max ±50% per update.
+          Only the oracle owner wallet can update prices.
         </p>
       </div>
 
@@ -319,11 +295,6 @@ export default function AdminOraclePage({ wallet }: Props) {
                     </div>
                     <div className="text-xs text-gray-500">
                       Last updated: {fDate(row.updatedAt)}
-                      {row.price8 > 0n && (
-                        <span className="ml-3 text-gray-600">
-                          Allowed range: {allowedRange(row.price8)}
-                        </span>
-                      )}
                     </div>
                   </div>
                 </div>
@@ -341,23 +312,18 @@ export default function AdminOraclePage({ wallet }: Props) {
                       onChange={e => updateInput(row.id, e.target.value)}
                       className={`w-full pl-7 pr-3 py-2 rounded-lg bg-gray-800 border text-sm text-white focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed ${
                         hasVal
-                          ? ok
-                            ? 'border-emerald-600 focus:border-emerald-500'
-                            : 'border-red-700 focus:border-red-600'
+                          ? 'border-emerald-600 focus:border-emerald-500'
                           : 'border-gray-600 focus:border-gray-500'
                       }`}
                     />
                   </div>
                   <button
                     onClick={() => void updatePrice(row.id, row.input, row.price8)}
-                    disabled={busy[row.id] || !hasVal || !ok || !isOwner}
+                    disabled={busy[row.id] || !hasVal || !isOwner}
                     className="px-4 py-2 rounded-lg bg-orange-700 hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors whitespace-nowrap"
                   >
                     {busy[row.id] ? 'Updating…' : 'Update Price'}
                   </button>
-                  {hasVal && !ok && (
-                    <span className="text-xs text-red-400 whitespace-nowrap">exceeds ±50%</span>
-                  )}
                 </div>
               </div>
             )

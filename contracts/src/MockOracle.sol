@@ -11,7 +11,6 @@ contract MockOracle is Ownable {
     }
 
     uint256 public constant STALE_THRESHOLD = 86400;   // 24 hours
-    uint256 public constant MAX_PRICE_CHANGE_BPS = 5000; // 50% in basis points
 
     mapping(bytes32 => Asset) private _assets;
 
@@ -20,7 +19,6 @@ contract MockOracle is Ownable {
 
     error AssetNotFound(bytes32 assetId);
     error AssetAlreadyExists(bytes32 assetId);
-    error PriceChangeExceedsLimit(uint256 oldPrice, uint256 newPrice);
     error InvalidPrice();
 
     constructor() Ownable(msg.sender) {}
@@ -44,12 +42,6 @@ contract MockOracle is Ownable {
         if (newPrice == 0) revert InvalidPrice();
 
         uint256 oldPrice = asset.price;
-
-        // ±50% guard: |newPrice - oldPrice| / oldPrice <= 50%
-        uint256 diff = newPrice > oldPrice ? newPrice - oldPrice : oldPrice - newPrice;
-        if (diff * 10000 > oldPrice * MAX_PRICE_CHANGE_BPS) {
-            revert PriceChangeExceedsLimit(oldPrice, newPrice);
-        }
 
         asset.price = newPrice;
         asset.updatedAt = block.timestamp;

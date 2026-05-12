@@ -4,6 +4,7 @@ import { parseEther } from 'ethers'
 import type { WalletAPI } from '../hooks/useWallet'
 import { useContracts } from '../hooks/useContracts'
 import { useLivePrices } from '../hooks/useLivePrices'
+import { LineChart, Line, YAxis, ResponsiveContainer } from 'recharts'
 import { ASSET_IDS } from '../contracts/addresses'
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -74,6 +75,7 @@ export default function ExchangePage({ wallet }: Props) {
   const [isLong,      setIsLong]      = useState(true)
   const [leverage,    setLeverage]    = useState(1)
   const [openMgn,     setOpenMgn]     = useState('')
+  const [history,     setHistory]     = useState<{ time: string; price: number }[]>([])
 
   const [busy,  setBusy]  = useState<Record<string, boolean>>({})
   const [toast, setToast] = useState<{ msg: string; ok: boolean; hash?: string } | null>(null)
@@ -116,7 +118,6 @@ export default function ExchangePage({ wallet }: Props) {
     }
   }, [contracts, wallet.address, notify])
 
-  // Refresh price when selected asset changes
   useEffect(() => {
     if (!contracts) return
     void (async () => {
@@ -128,6 +129,20 @@ export default function ExchangePage({ wallet }: Props) {
   }, [contracts, selAsset])
 
   useEffect(() => { void fetchAll() }, [fetchAll])
+
+  // Reset history on asset change
+  useEffect(() => { setHistory([]) }, [selAsset])
+
+  // Track history for chart
+  useEffect(() => {
+    const p = livePrices[selAsset]?.usd
+    if (p !== undefined) {
+      setHistory(prev => {
+        const next = [...prev, { time: new Date().toLocaleTimeString(), price: p }]
+        return next.slice(-30) // last 30 data points (~1 min)
+      })
+    }
+  }, [livePrices[selAsset]?.usd, selAsset])
 
   // ── Transactions ────────────────────────────────────────────────────────────
   const mintFaucet = async () => {
@@ -404,7 +419,27 @@ export default function ExchangePage({ wallet }: Props) {
           )}
           <span>Notional: <span className="font-mono text-white">{f18(notional)} mUSDC</span></span>
         </div>
-        <p className="text-xs text-gray-500">
+
+        {/* Live Chart */}
+        {history.length > 1 && (
+          <div className="h-24 w-full mt-4 -ml-2">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={history}>
+                <YAxis domain={['dataMin', 'dataMax']} hide />
+                <Line
+                  type="monotone"
+                  dataKey="price"
+                  stroke="#34d399"
+                  strokeWidth={2}
+                  dot={false}
+                  isAnimationActive={false}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+
+        <p className="text-xs text-gray-500 mt-2">
           PnL is calculated using on-chain oracle price. Live market shown for reference.
           Admin can sync oracle to live market on the{' '}
           <Link to="/admin/oracle" className="text-emerald-400 hover:underline">Oracle Admin</Link> page.

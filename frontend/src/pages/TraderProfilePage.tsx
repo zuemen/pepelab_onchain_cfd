@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import type { WalletAPI } from '../hooks/useWallet'
 import { useContracts } from '../hooks/useContracts'
@@ -22,6 +22,13 @@ interface RawAlloc {
   asset: string; weight: bigint; isLong: boolean; leverage: bigint
 }
 
+interface HistVer {
+  versionId: number
+  createdAt: bigint
+  allocs:    RawAlloc[]
+  expanded:  boolean
+}
+
 interface SlashEvent {
   trader:    string
   amount:    bigint
@@ -31,6 +38,8 @@ interface SlashEvent {
 
 const f18 = (v: bigint, d = 2) => (Number(v) / 1e18).toFixed(d)
 const shortAddr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
+const fmtDate = (ts: bigint) =>
+  new Date(Number(ts) * 1000).toLocaleString('zh-TW', { dateStyle: 'short', timeStyle: 'short' })
 
 interface Props { wallet: WalletAPI }
 
@@ -44,12 +53,21 @@ export default function TraderProfilePage({ wallet }: Props) {
   const [followerList,  setFollowerList]  = useState<string[]>([])
   const [allocs,        setAllocs]        = useState<RawAlloc[]>([])
   const [hasStrategy,   setHasStrategy]   = useState(false)
+  const [stratHistory,  setStratHistory]  = useState<HistVer[]>([])
   const [stakeInfo,     setStakeInfo]     = useState<StakeInfo | null>(null)
   const [repScore,      setRepScore]      = useState<bigint | null>(null)
   const [eligible,      setEligible]      = useState<boolean | null>(null)
+  const [earnings,      setEarnings]      = useState<bigint | null>(null)
+  const [stratCount,    setStratCount]    = useState<number | null>(null)
   const [slashHistory,  setSlashHistory]  = useState<SlashEvent[]>([])
   const [loading,       setLoading]       = useState(true)
   const [error,         setError]         = useState<string | null>(null)
+
+  const toggleVer = useCallback((versionId: number) => {
+    setStratHistory(prev =>
+      prev.map(v => v.versionId === versionId ? { ...v, expanded: !v.expanded } : v),
+    )
+  }, [])
 
   useEffect(() => {
     if (!contracts || !traderAddr) return
@@ -83,14 +101,32 @@ export default function TraderProfilePage({ wallet }: Props) {
         setFollowerList(list)
       } catch { /* no followers */ }
 
-      // strategy
+      // strategy + history
       try {
-        const stratRaw = (await contracts.registry.getLatestStrategy(traderAddr)) as unknown as [unknown[], bigint]
-        setAllocs((stratRaw[0] as unknown[]).map(a => {
-          const x = a as { asset: string; weight: bigint; isLong: boolean; leverage: bigint }
-          return { asset: x.asset, weight: x.weight, isLong: x.isLong, leverage: x.leverage }
-        }))
-        setHasStrategy(true)
+        const count = Number((await contracts.registry.getStrategyCount(traderAddr)) as bigint)
+        setStratCount(count)
+        if (count > 0) {
+          const vers = await Promise.all(
+            Array.from({ length: count }, (_, i) => i).map(async (i): Promise<HistVer> => {
+              const res = (await contracts.registry.getStrategyVersion(traderAddr, BigInt(i))) as unknown as [unknown[], bigint]
+              return {
+                versionId: i,
+                createdAt: res[1],
+                allocs:    (res[0] as unknown[]).map(a => {
+                  const x = a as { asset: string; weight: bigint; isLong: boolean; leverage: bigint }
+                  return { asset: x.asset, weight: x.weight, isLong: x.isLong, leverage: x.leverage }
+                }),
+                expanded: false,
+              }
+            }),
+          )
+          const sorted = [...vers].reverse()
+          setStratHistory(sorted)
+          setAllocs(sorted[0]?.allocs ?? [])
+          setHasStrategy(sorted[0]?.allocs.length > 0)
+        } else {
+          setHasStrategy(false)
+        }
       } catch { setHasStrategy(false) }
 
       // stake + reputation
@@ -104,6 +140,12 @@ export default function TraderProfilePage({ wallet }: Props) {
         setRepScore(score as bigint)
         setEligible(elig as boolean)
       } catch { /* TraderStake not deployed */ }
+
+      // fee earnings
+      try {
+        const raw = (await contracts.feeRouter.traderEarnings(traderAddr)) as bigint
+        setEarnings(raw)
+      } catch { /* FeeRouter not deployed */ }
 
       // slash history from Slashed events
       try {
@@ -209,35 +251,37 @@ export default function TraderProfilePage({ wallet }: Props) {
             </Link>
           </div>
 
-          {/* ─── B. Stake Status ───────────────────────────────────── */}
-          {stakeInfo && (
-            <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-3">
-              <h2 className="text-base font-bold text-white">Skin-in-the-Game</h2>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="bg-surface-elev rounded-lg p-3 text-center">
-                  <p className="text-xs text-gray-500">Staked</p>
-                  <p className="text-base font-bold font-mono text-white">{f18(stakeInfo.amount)}</p>
-                  <p className="text-xs text-gray-600">mUSDC</p>
-                </div>
-                <div className="bg-surface-elev rounded-lg p-3 text-center">
-                  <p className="text-xs text-gray-500">Total Slashed</p>
-                  <p className={`text-base font-bold font-mono ${stakeInfo.totalSlashed > 0n ? 'text-danger' : 'text-white'}`}>
-                    {f18(stakeInfo.totalSlashed)}
-                  </p>
-                  <p className="text-xs text-gray-600">mUSDC</p>
-                </div>
-                <div className="bg-surface-elev rounded-lg p-3 text-center">
-                  <p className="text-xs text-gray-500">Reputation</p>
-                  <p className={`text-base font-bold font-mono ${repColor}`}>
-                    {repScore !== null ? String(repScore) : '—'}
-                  </p>
-                  <p className="text-xs text-gray-600">/ 100</p>
-                </div>
-              </div>
+          {/* ─── B. Stats grid (4 cards) ──────────────────────────── */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="bg-surface rounded-card border border-surface-border p-4 text-center space-y-1">
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Staked</p>
+              <p className="text-lg font-bold font-mono text-white">
+                {stakeInfo ? f18(stakeInfo.amount) : '—'}
+              </p>
+              <p className="text-xs text-gray-600">mUSDC</p>
             </div>
-          )}
+            <div className="bg-surface rounded-card border border-surface-border p-4 text-center space-y-1">
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Followers</p>
+              <p className="text-lg font-bold font-mono text-white">{String(followers)}</p>
+              <p className="text-xs text-gray-600">copiers</p>
+            </div>
+            <div className="bg-surface rounded-card border border-surface-border p-4 text-center space-y-1">
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Earnings</p>
+              <p className="text-lg font-bold font-mono text-emerald-400">
+                {earnings !== null ? f18(earnings, 4) : '—'}
+              </p>
+              <p className="text-xs text-gray-600">mUSDC</p>
+            </div>
+            <div className="bg-surface rounded-card border border-surface-border p-4 text-center space-y-1">
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Strategies</p>
+              <p className="text-lg font-bold font-mono text-white">
+                {stratCount !== null ? stratCount : '—'}
+              </p>
+              <p className="text-xs text-gray-600">versions</p>
+            </div>
+          </div>
 
-          {/* ─── C. Strategy History ───────────────────────────────── */}
+          {/* ─── C. Latest Strategy ────────────────────────────────── */}
           <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-3">
             <h2 className="text-base font-bold text-white">Latest Strategy</h2>
             {!hasStrategy ? (
@@ -260,6 +304,67 @@ export default function TraderProfilePage({ wallet }: Props) {
               </div>
             )}
           </div>
+
+          {/* ─── D. Strategy History ───────────────────────────────── */}
+          {stratHistory.length > 0 && (
+            <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-3">
+              <h2 className="text-base font-bold text-white">
+                Strategy History
+                <span className="ml-2 text-xs font-normal text-gray-500">({stratHistory.length} version{stratHistory.length !== 1 ? 's' : ''})</span>
+              </h2>
+              <div className="space-y-2">
+                {stratHistory.map(ver => (
+                  <div key={ver.versionId} className="rounded-lg border border-surface-border overflow-hidden">
+                    <button
+                      onClick={() => toggleVer(ver.versionId)}
+                      className="w-full flex items-center justify-between px-4 py-3 hover:bg-surface-elev transition-colors text-left"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="text-xs font-mono text-gray-500 shrink-0">v{ver.versionId}</span>
+                        <span className="text-sm text-white truncate">
+                          {ver.allocs.map(a =>
+                            `${ASSET_LABEL[a.asset] ?? '?'} ${a.isLong ? 'L' : 'S'} ${String(a.leverage)}×`,
+                          ).join(' · ')}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0 ml-4">
+                        <span className="text-xs text-gray-500">{fmtDate(ver.createdAt)}</span>
+                        <span className="text-gray-500 text-xs">{ver.expanded ? '▲' : '▼'}</span>
+                      </div>
+                    </button>
+                    {ver.expanded && (
+                      <div className="border-t border-surface-border bg-surface-sub px-4 py-3 overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-xs text-gray-500 uppercase border-b border-surface-border">
+                              <th className="py-1.5 pr-4 text-left">Asset</th>
+                              <th className="py-1.5 pr-4 text-left">Side</th>
+                              <th className="py-1.5 pr-4 text-left">Lev</th>
+                              <th className="py-1.5 text-right">Weight</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-surface-border">
+                            {ver.allocs.map((a, idx) => (
+                              <tr key={idx} className="text-gray-300">
+                                <td className="py-2 pr-4 font-mono text-white">{ASSET_LABEL[a.asset] ?? '?'}</td>
+                                <td className={`py-2 pr-4 font-bold text-xs ${a.isLong ? 'text-green-400' : 'text-red-400'}`}>
+                                  {a.isLong ? 'Long ↑' : 'Short ↓'}
+                                </td>
+                                <td className="py-2 pr-4 font-mono">{String(a.leverage)}×</td>
+                                <td className="py-2 text-right font-mono font-semibold text-white">
+                                  {(Number(a.weight) / 100).toFixed(0)}%
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* ─── D. Followers ──────────────────────────────────────── */}
           {followerList.length > 0 && (

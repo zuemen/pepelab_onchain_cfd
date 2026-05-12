@@ -206,16 +206,13 @@ export default function MarketplacePage({ wallet }: Props) {
           Loading traders…
         </div>
       ) : sorted.length === 0 ? (
-        <div className="rounded-card border border-surface-border bg-surface shadow-card p-12 text-center space-y-4">
-          <div className="text-4xl">🎯</div>
-          <h3 className="text-lg font-semibold text-white">Strategy Marketplace is empty</h3>
+        <div className="rounded-card border border-surface-border bg-surface p-12 text-center space-y-4">
+          <div className="text-5xl">🎯</div>
+          <h3 className="text-lg font-semibold text-white">No public traders yet</h3>
           <p className="text-sm text-gray-400 max-w-md mx-auto">
-            No traders have registered on this network yet. Be the first to publish a trading strategy and start building your follower base.
+            Be the first to publish a strategy. Stake mUSDC, set your allocation, and earn copy fees from followers.
           </p>
-          <Link
-            to="/trader"
-            className="inline-block px-6 py-2.5 rounded-lg bg-brand-200 hover:bg-brand-300 text-white text-sm font-semibold transition-colors"
-          >
+          <Link to="/trader" className="inline-block px-6 py-2.5 rounded-lg bg-brand-200 hover:bg-brand-300 text-white text-sm font-semibold">
             Become a Trader →
           </Link>
         </div>

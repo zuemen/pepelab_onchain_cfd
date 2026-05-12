@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { ASSET_IDS } from '../contracts/addresses'
 
 const COIN_MAP: Record<string, string> = {
@@ -11,8 +11,6 @@ const MOCK_INITIAL: Record<string, number> = {
   [ASSET_IDS.sTSLA]: 250,
 }
 
-const REFRESH_MS = 30_000
-
 export interface LivePrice {
   usd:       number
   fetchedAt: number
@@ -21,45 +19,52 @@ export interface LivePrice {
 
 export function useLivePrices(): Record<string, LivePrice> {
   const [prices, setPrices] = useState<Record<string, LivePrice>>({})
+  const basePrices = useRef<Record<string, number>>({ ...MOCK_INITIAL })
 
   useEffect(() => {
     let cancelled = false
-    const mockState: Record<string, number> = { ...MOCK_INITIAL }
 
-    const fetchOnce = async () => {
-      const out: Record<string, LivePrice> = {}
-
+    const fetchCG = async () => {
       try {
         const ids = Object.values(COIN_MAP).join(',')
-        const res = await fetch(
-          `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`,
-        )
+        const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`)
         if (res.ok) {
-          const data = (await res.json()) as Record<string, { usd: number }>
+          const data = await res.json() as Record<string, { usd: number }>
           for (const [assetId, coinId] of Object.entries(COIN_MAP)) {
             if (data[coinId]) {
-              out[assetId] = { usd: data[coinId].usd, fetchedAt: Date.now(), isMock: false }
+              // Anchor to real price when fetched
+              basePrices.current[assetId] = data[coinId].usd
             }
           }
         }
       } catch (e) {
-        console.warn('[useLivePrices] CoinGecko fetch failed:', e)
+        console.warn('[useLivePrices] CoinGecko fetch failed', e)
       }
-
-      for (const [assetId] of Object.entries(MOCK_INITIAL)) {
-        const cur    = mockState[assetId]
-        const wiggle = 1 + (Math.random() - 0.5) * 0.04
-        mockState[assetId] = cur * wiggle
-        out[assetId] = { usd: mockState[assetId], fetchedAt: Date.now(), isMock: true }
-      }
-
-      if (!cancelled) setPrices(out)
     }
 
-    void fetchOnce()
-    const id = setInterval(() => void fetchOnce(), REFRESH_MS)
-    return () => { cancelled = true; clearInterval(id) }
+    const tick = () => {
+      const out: Record<string, LivePrice> = {}
+      for (const [id, baseUsd] of Object.entries(basePrices.current)) {
+        // Wiggle the price slightly every tick (±0.2%)
+        const wiggle = 1 + (Math.random() - 0.5) * 0.004
+        basePrices.current[id] = baseUsd * wiggle
+        out[id] = { usd: basePrices.current[id], fetchedAt: Date.now(), isMock: !COIN_MAP[id] }
+      }
+      if (!cancelled && Object.keys(out).length > 0) {
+        setPrices(out)
+      }
+    }
+
+    void fetchCG()
+    const cgId = setInterval(() => void fetchCG(), 30_000)
+    const tickId = setInterval(tick, 2000)
+
+    // Initial tick to populate prices before 2s
+    tick()
+
+    return () => { cancelled = true; clearInterval(cgId); clearInterval(tickId) }
   }, [])
 
   return prices
 }
+

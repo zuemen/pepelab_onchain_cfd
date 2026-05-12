@@ -39,32 +39,15 @@ contract MockOracleTest is Test {
 
     // ── updatePrice ─────────────────────────────────────────────────────────
 
-    function test_updatePrice_withinLimit() public {
+    function test_updatePrice_success() public {
         oracle.addAsset(BTC, BTC_INIT);
-        // +49% — should succeed
-        uint256 newPrice = BTC_INIT * 149 / 100;
+        // +200% — should succeed now that limits are removed
+        uint256 newPrice = BTC_INIT * 300 / 100;
         oracle.updatePrice(BTC, newPrice);
         (uint256 price,) = oracle.getPrice(BTC);
         assertEq(price, newPrice);
     }
 
-    function test_updatePrice_exactlyFiftyPercentUp_reverts() public {
-        oracle.addAsset(BTC, 100e8);
-        // +50.01% — exceeds limit
-        vm.expectRevert(
-            abi.encodeWithSelector(MockOracle.PriceChangeExceedsLimit.selector, 100e8, 150_010_000)
-        );
-        oracle.updatePrice(BTC, 150_010_000);
-    }
-
-    function test_updatePrice_exactlyFiftyPercentDown_reverts() public {
-        oracle.addAsset(BTC, 100e8);
-        // −50.01% — exceeds limit
-        vm.expectRevert(
-            abi.encodeWithSelector(MockOracle.PriceChangeExceedsLimit.selector, 100e8, 49_990_000)
-        );
-        oracle.updatePrice(BTC, 49_990_000);
-    }
 
     function test_updatePrice_emitsPriceUpdatedEvent() public {
         oracle.addAsset(ETH, 3_000e8);
