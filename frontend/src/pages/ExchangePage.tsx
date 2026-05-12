@@ -265,6 +265,15 @@ export default function ExchangePage({ wallet }: Props) {
   // ── Derived ───────────────────────────────────────────────────────────────
   const openMgnBig = tryParse(openMgn)
   const notional   = openMgnBig !== null ? openMgnBig * BigInt(leverage) : 0n
+  
+  // Liquidation Price = Entry * (1 ± 1/Leverage)
+  const liqPrice   = isLong 
+    ? curPrice - (curPrice / BigInt(leverage))
+    : curPrice + (curPrice / BigInt(leverage))
+
+  // Account Equity
+  const totalUnrealizedPnL = positions.reduce((acc, p) => acc + p.unrealizedPnL, 0n)
+  const accountEquity = freeMgn + totalUnrealizedPnL
 
   const activeTask = Object.entries(busy).find(([k, v]) => v)?.[0]
   const isBusy = !!activeTask
@@ -426,13 +435,24 @@ export default function ExchangePage({ wallet }: Props) {
           </div>
         </div>
 
-        {/* B. Margin */}
+        {/* B. Margin & Account Equity */}
         <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-4">
-          <h2 className="text-base font-bold text-white">Margin Account</h2>
-          <p className="text-sm text-gray-400">
-            Free margin:{' '}
-            <span className="font-mono text-white">{f18(freeMgn)} mUSDC</span>
-          </p>
+          <div className="flex justify-between items-start">
+            <div>
+              <h2 className="text-base font-bold text-white">Account Equity</h2>
+              <p className="text-2xl font-mono text-white mt-1">
+                {fUsd(accountEquity)} <span className="text-sm text-gray-400 font-sans">mUSDC</span>
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-gray-400">Free Margin</p>
+              <p className="font-mono text-white">{f18(freeMgn)}</p>
+              <p className="text-xs text-gray-400 mt-1">Unrealized PnL</p>
+              <p className={`font-mono ${pnlColor(totalUnrealizedPnL)}`}>{fPnL(totalUnrealizedPnL)}</p>
+            </div>
+          </div>
+          
+          <div className="h-px bg-surface-border w-full my-2"></div>
 
           <div className="flex gap-2">
             <input
@@ -541,6 +561,11 @@ export default function ExchangePage({ wallet }: Props) {
             </span>
           )}
           <span>Notional: <span className="font-mono text-white">{f18(notional)} mUSDC</span></span>
+          {openMgn && (
+            <span className="text-red-400 border border-red-900/50 bg-red-900/20 px-2 rounded">
+              Est. Liquidation: <span className="font-mono">{fUsd(liqPrice)}</span>
+            </span>
+          )}
         </div>
 
         {/* Live Chart */}
