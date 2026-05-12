@@ -65,11 +65,13 @@ export default function ExchangePage({ wallet }: Props) {
   const livePrices = useLivePrices()
 
   const [usdcBal,   setUsdcBal]   = useState(0n)
+  const [ethBal,    setEthBal]    = useState('0.0000')
   const [freeMgn,   setFreeMgn]   = useState(0n)
   const [positions, setPositions] = useState<PositionRow[]>([])
   const [curPrice,  setCurPrice]  = useState(0n)
   const [pageLoading, setPageLoading] = useState(true)
 
+  const [payEth,      setPayEth]      = useState('')
   const [depositAmt,  setDepositAmt]  = useState('')
   const [withdrawAmt, setWithdrawAmt] = useState('')
   const [selAsset,    setSelAsset]    = useState<AssetId>(ASSET_IDS.sBTC)
@@ -91,12 +93,14 @@ export default function ExchangePage({ wallet }: Props) {
   const fetchAll = useCallback(async () => {
     if (!contracts || !wallet.address) return
     try {
-      const [bal, mgn] = await Promise.all([
+      const [bal, mgn, eBal] = await Promise.all([
         contracts.usdc.balanceOf(wallet.address),
         contracts.exchange.freeMargin(wallet.address),
+        wallet.provider.getBalance(wallet.address)
       ])
       setUsdcBal(bal as bigint)
       setFreeMgn(mgn as bigint)
+      setEthBal(f18(eBal as bigint, 4))
 
       const ids = (await contracts.exchange.getUserPositions(wallet.address)) as bigint[]
       const maybeRows = await Promise.all(
@@ -148,27 +152,25 @@ export default function ExchangePage({ wallet }: Props) {
   }, [livePrices[selAsset]?.usd, selAsset])
 
   // ── Transactions ────────────────────────────────────────────────────────────
-  const mintFaucet = async () => {
+  const doSwap = async () => {
     if (!contracts || !wallet.address) return
-    const key = `faucet:${wallet.address.toLowerCase()}:${wallet.chainId}`
-    const last = parseInt(localStorage.getItem(key) ?? '0', 10)
-    const now = Date.now()
-    const COOLDOWN_MS = 24 * 60 * 60 * 1000
-    if (now - last < COOLDOWN_MS) {
-      const next = new Date(last + COOLDOWN_MS)
-      notify(`Faucet on cooldown — next available at ${next.toLocaleTimeString()}`, false)
-      return
-    }
-    setLoad('faucet', true)
+    const ethAmt = parseFloat(payEth)
+    if (!ethAmt || ethAmt <= 0) { notify('Enter a valid ETH amount', false); return }
+    
+    // 1 ETH = 3000 mUSDC
+    const usdcOut = BigInt(Math.floor(ethAmt * 3000 * 1e18))
+    
+    setLoad('swap', true)
     try {
-      const tx = asTx(await contracts.usdc.mint(wallet.address, parseEther('1000')))
+      // Note: On testnet we use the MockUSDC mint function to simulate a Uniswap route
+      const tx = asTx(await contracts.usdc.mint(wallet.address, usdcOut))
       await tx.wait()
-      localStorage.setItem(key, String(now))
-      notify('1000 mUSDC minted ✓ (next available in 24h)', true, tx.hash)
+      notify(`Swapped ${payEth} ETH for ${(ethAmt * 3000).toFixed(2)} mUSDC ✓`, true, tx.hash)
+      setPayEth('')
       await fetchAll()
     } catch (e) {
-      notify(e instanceof Error ? e.message.slice(0, 100) : 'Mint failed', false)
-    } finally { setLoad('faucet', false) }
+      notify(e instanceof Error ? e.message.slice(0, 100) : 'Swap failed', false)
+    } finally { setLoad('swap', false) }
   }
 
   const approveDeposit = async () => {
@@ -292,33 +294,68 @@ export default function ExchangePage({ wallet }: Props) {
       <div className="rounded-card border border-info/30 bg-info/5 p-5 space-y-2">
         <h3 className="text-sm font-semibold text-info">How CFD trading works on PepeLab</h3>
         <ol className="text-xs text-gray-300 space-y-1 list-decimal list-inside leading-relaxed">
-          <li><strong>Faucet:</strong> Get free mUSDC (test stablecoin) — your collateral.</li>
+          <li><strong>Swap:</strong> Swap ETH for mUSDC to get your stablecoin collateral.</li>
           <li><strong>Margin Account:</strong> Approve &amp; deposit mUSDC into PerpetualExchange. This becomes your free margin.</li>
           <li><strong>Open Position:</strong> Use free margin to open long/short on synthetic assets (sBTC, sETH, sAAPL, sTSLA). You don't own the asset — you take a CFD position.</li>
           <li><strong>PnL:</strong> Price moves → position value changes → close to realize PnL.</li>
         </ol>
-        <p className="text-xs text-gray-500 italic pt-1">
-          Why no sBTC faucet? Synthetic CFDs are derivatives — your position is your exposure.
-        </p>
       </div>
 
-      {/* A & B — Faucet + Margin */}
+      {/* A & B — Swap + Margin */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
-        {/* A. Faucet */}
+        {/* A. Swap */}
         <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-4">
-          <h2 className="text-base font-bold text-white">Faucet</h2>
-          <p className="text-sm text-gray-400">
-            mUSDC balance:{' '}
-            <span className="font-mono text-white">{f18(usdcBal)} mUSDC</span>
-          </p>
-          <p className="text-xs text-gray-600">One call per 24 h · 1 000 mUSDC per claim</p>
+          <div className="flex justify-between items-center">
+            <h2 className="text-base font-bold text-white">Swap</h2>
+            <span className="text-xs text-gray-500">Rate: 1 ETH = 3,000 mUSDC</span>
+          </div>
+          
+          <div className="space-y-2">
+            <div className="bg-gray-800 rounded-lg p-3 border border-gray-700">
+              <div className="flex justify-between text-xs text-gray-400 mb-1">
+                <span>Pay</span>
+                <span>Bal: {ethBal} ETH</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <input
+                  type="number" min="0" placeholder="0.0"
+                  value={payEth}
+                  onChange={e => setPayEth(e.target.value)}
+                  className="w-full bg-transparent text-2xl text-white focus:outline-none"
+                />
+                <span className="font-bold text-white px-2">ETH</span>
+              </div>
+            </div>
+            
+            <div className="flex justify-center -my-3 relative z-10">
+              <div className="bg-surface-elev rounded-full p-1 border border-surface-border text-gray-400">
+                ↓
+              </div>
+            </div>
+
+            <div className="bg-gray-800 rounded-lg p-3 border border-gray-700">
+              <div className="flex justify-between text-xs text-gray-400 mb-1">
+                <span>Receive</span>
+                <span>Bal: {f18(usdcBal)} mUSDC</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <input
+                  type="text" disabled
+                  value={payEth ? (parseFloat(payEth) * 3000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
+                  className="w-full bg-transparent text-2xl text-gray-300 focus:outline-none"
+                />
+                <span className="font-bold text-blue-400 px-2">mUSDC</span>
+              </div>
+            </div>
+          </div>
+
           <button
-            onClick={() => void mintFaucet()}
-            disabled={busy['faucet']}
-            className="w-full py-2 rounded-lg bg-blue-700 hover:bg-blue-600 disabled:opacity-50 text-white text-sm font-semibold transition-colors"
+            onClick={() => void doSwap()}
+            disabled={busy['swap'] || !payEth || parseFloat(payEth) <= 0}
+            className="w-full py-3 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-bold transition-colors"
           >
-            {busy['faucet'] ? 'Claiming…' : 'Get 1 000 mUSDC'}
+            {busy['swap'] ? 'Swapping…' : 'Swap'}
           </button>
         </div>
 
