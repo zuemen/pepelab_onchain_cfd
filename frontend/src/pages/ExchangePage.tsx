@@ -275,7 +275,7 @@ export default function ExchangePage({ wallet }: Props) {
   const totalUnrealizedPnL = positions.reduce((acc, p) => acc + p.unrealizedPnL, 0n)
   const accountEquity = freeMgn + totalUnrealizedPnL
 
-  const activeTask = Object.entries(busy).find(([k, v]) => v)?.[0]
+  const activeTask = Object.entries(busy).find(([_, v]) => v)?.[0]
   const isBusy = !!activeTask
   let loadingMsg = 'Processing transaction...'
   if (activeTask) {
