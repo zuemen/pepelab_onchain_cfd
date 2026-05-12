@@ -15,9 +15,11 @@ interface IFeeRouterPerp {
 contract PerpetualExchange is Ownable {
     // ── Constants ────────────────────────────────────────────────────────────
 
-    uint256 public constant MAX_LEVERAGE        = 5;
-    uint256 public constant MIN_MARGIN          = 10e18;
-    uint256 public constant PERFORMANCE_FEE_BPS = 1000;  // 10 % of profit on copied positions
+    uint256 public constant MAX_LEVERAGE            = 5;
+    uint256 public constant MIN_MARGIN              = 10e18;
+    uint256 public constant PERFORMANCE_FEE_BPS     = 1000;  // 10% of profit on copied positions
+    uint256 public constant TRADING_FEE_BPS         = 10;    // 0.1% swap fee (Uniswap concept)
+    uint256 public constant BORROW_FEE_BPS_PER_HOUR = 1;     // 0.01% borrow rate per hour (Aave concept)
 
     // ── Immutables ───────────────────────────────────────────────────────────
 
@@ -194,13 +196,16 @@ contract PerpetualExchange is Ownable {
     ) internal returns (uint256 positionId) {
         if (margin < MIN_MARGIN)                       revert MarginTooLow();
         if (leverage == 0 || leverage > MAX_LEVERAGE)  revert InvalidLeverage();
-        if (freeMargin[owner] < margin)                revert InsufficientFreeMargin();
+        uint256 notional   = margin * leverage;
+        uint256 tradingFee = notional * TRADING_FEE_BPS / 10000;
+
+        if (freeMargin[owner] < margin + tradingFee)   revert InsufficientFreeMargin();
 
         // oracle returns 8-decimal price; scale to 18 dec for internal accounting
         (uint256 rawPrice,) = oracle.getPrice(asset);
         uint256 entryPrice  = rawPrice * 1e10;
 
-        freeMargin[owner] -= margin;
+        freeMargin[owner] -= (margin + tradingFee);
 
         positionId = nextPositionId++;
         positions[positionId] = Position({
@@ -228,7 +233,17 @@ contract PerpetualExchange is Ownable {
         if (!pos.isOpen)         revert PositionAlreadyClosed();
 
         int256 pnl         = _calcPnL(pos);
-        int256 closeAmount = int256(pos.margin) + pnl;
+        
+        // DeFi Mechanics: Trading Fee (Uniswap) + Borrow Fee (Aave)
+        uint256 notional     = pos.margin * pos.leverage;
+        uint256 tradingFee   = notional * TRADING_FEE_BPS / 10000;
+        
+        uint256 borrowed     = pos.margin * (pos.leverage - 1);
+        uint256 hoursElapsed = (block.timestamp - pos.openedAt) / 3600;
+        uint256 borrowFee    = borrowed * BORROW_FEE_BPS_PER_HOUR * hoursElapsed / 10000;
+        
+        int256 totalFees   = int256(tradingFee + borrowFee);
+        int256 closeAmount = int256(pos.margin) + pnl - totalFees;
         if (closeAmount < 0) closeAmount = 0;
 
         // Performance fee: 10 % of profit on copied positions when feeRouter is set
