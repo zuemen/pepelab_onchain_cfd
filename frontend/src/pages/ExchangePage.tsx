@@ -266,6 +266,17 @@ export default function ExchangePage({ wallet }: Props) {
   const openMgnBig = tryParse(openMgn)
   const notional   = openMgnBig !== null ? openMgnBig * BigInt(leverage) : 0n
 
+  const activeTask = Object.entries(busy).find(([k, v]) => v)?.[0]
+  const isBusy = !!activeTask
+  let loadingMsg = 'Processing transaction...'
+  if (activeTask) {
+    if (activeTask === 'swap') loadingMsg = 'Swapping ETH to mUSDC...'
+    else if (activeTask === 'deposit') loadingMsg = 'Depositing Margin...'
+    else if (activeTask === 'withdraw') loadingMsg = 'Withdrawing Margin...'
+    else if (activeTask === 'open') loadingMsg = 'Opening Position...'
+    else if (activeTask.startsWith('close')) loadingMsg = 'Closing Position...'
+  }
+
   if (!wallet.isConnected) {
     return (
       <div className="flex items-center justify-center min-h-[60vh] text-gray-400">
@@ -292,7 +303,26 @@ export default function ExchangePage({ wallet }: Props) {
   }
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8 space-y-6 fade-in">
+    <div className="max-w-6xl mx-auto px-4 py-8 space-y-6 fade-in relative">
+
+      {/* Global Transaction Overlay */}
+      {isBusy && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm fade-in">
+          <div className="bg-surface-elev border border-brand-300/30 rounded-2xl p-8 flex flex-col items-center justify-center shadow-2xl max-w-sm mx-4 w-full">
+            <div className="relative w-16 h-16 mb-6">
+              <div className="absolute inset-0 rounded-full border-4 border-surface-border"></div>
+              <div className="absolute inset-0 rounded-full border-4 border-brand-400 border-t-transparent animate-spin"></div>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-xl">🐸</span>
+              </div>
+            </div>
+            <h3 className="text-lg font-bold text-white mb-2">{loadingMsg}</h3>
+            <p className="text-sm text-gray-400 text-center">
+              Please confirm the transaction in your wallet and wait for block confirmation.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Toast */}
       {toast && (
