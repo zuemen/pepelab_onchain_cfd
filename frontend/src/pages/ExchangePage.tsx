@@ -68,6 +68,7 @@ export default function ExchangePage({ wallet }: Props) {
   const [freeMgn,   setFreeMgn]   = useState(0n)
   const [positions, setPositions] = useState<PositionRow[]>([])
   const [curPrice,  setCurPrice]  = useState(0n)
+  const [pageLoading, setPageLoading] = useState(true)
 
   const [depositAmt,  setDepositAmt]  = useState('')
   const [withdrawAmt, setWithdrawAmt] = useState('')
@@ -115,6 +116,8 @@ export default function ExchangePage({ wallet }: Props) {
     } catch (e) {
       console.error('[exchange fetch]', e)
       notify(e instanceof Error ? e.message.slice(0, 120) : 'Network error — check your wallet network', false)
+    } finally {
+      setPageLoading(false)
     }
   }, [contracts, wallet.address, notify])
 
@@ -245,8 +248,24 @@ export default function ExchangePage({ wallet }: Props) {
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
+  if (pageLoading) {
+    return (
+      <div className="max-w-6xl mx-auto px-4 py-8 space-y-6 animate-pulse">
+        <div className="h-24 bg-surface-elev rounded-card border border-surface-border"></div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="h-40 bg-surface-elev rounded-card border border-surface-border"></div>
+          <div className="h-40 bg-surface-elev rounded-card border border-surface-border"></div>
+        </div>
+        <div className="h-64 bg-surface-elev rounded-card border border-surface-border"></div>
+        <div className="h-48 bg-surface-elev rounded-card border border-surface-border flex items-center justify-center text-gray-500">
+          Loading blockchain data...
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
+    <div className="max-w-6xl mx-auto px-4 py-8 space-y-6 fade-in">
 
       {/* Toast */}
       {toast && (
