@@ -111,7 +111,7 @@ export default function AdminOraclePage({ wallet }: Props) {
   useEffect(() => { void fetchPrices() }, [fetchPrices])
 
   // ── Update price ──────────────────────────────────────────────────────────
-  const updatePrice = async (id: AssetId, inputStr: string, current8: bigint) => {
+  const updatePrice = async (id: AssetId, inputStr: string) => {
     if (!contracts) return
     if (!isOwner) {
       notify('Connected wallet is not the oracle owner', false)
@@ -278,7 +278,6 @@ export default function AdminOraclePage({ wallet }: Props) {
 
         <div className="divide-y divide-surface-border">
           {assets.map(row => {
-            const ok     = inRange(row.price8, row.input)
             const hasVal = row.input !== '' && !isNaN(parseFloat(row.input))
             return (
               <div key={row.id} className="px-5 py-4 space-y-3">
@@ -318,7 +317,7 @@ export default function AdminOraclePage({ wallet }: Props) {
                     />
                   </div>
                   <button
-                    onClick={() => void updatePrice(row.id, row.input, row.price8)}
+                    onClick={() => void updatePrice(row.id, row.input)}
                     disabled={busy[row.id] || !hasVal || !isOwner}
                     className="px-4 py-2 rounded-lg bg-orange-700 hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors whitespace-nowrap"
                   >

@@ -177,10 +177,6 @@ export default function TraderProfilePage({ wallet }: Props) {
     )
   }
 
-  const repColor = repScore === null ? 'text-gray-400'
-    : repScore >= 80n ? 'text-emerald-400'
-    : repScore >= 50n ? 'text-yellow-400'
-    : 'text-red-400'
 
   const repBadge = repScore === null ? ''
     : repScore >= 80n ? 'bg-emerald-900 border-emerald-700 text-emerald-300'
