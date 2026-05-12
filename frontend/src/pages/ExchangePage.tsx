@@ -167,6 +167,12 @@ export default function ExchangePage({ wallet }: Props) {
       await tx.wait()
       notify(`Swapped ${payEth} ETH for ${(ethAmt * 3000).toFixed(2)} mUSDC ✓`, true, tx.hash)
       setPayEth('')
+      
+      // Optimistic update
+      setUsdcBal(prev => prev + usdcOut)
+      
+      // Wait for RPC sync
+      await new Promise(r => setTimeout(r, 1500))
       await fetchAll()
     } catch (e) {
       notify(e instanceof Error ? e.message.slice(0, 100) : 'Swap failed', false)
@@ -478,7 +484,7 @@ export default function ExchangePage({ wallet }: Props) {
 
         {/* Live Chart */}
         {history.length > 1 && (
-          <div className="h-24 w-full mt-4 -ml-2">
+          <div className="w-full mt-4 -ml-2" style={{ height: '100px', minHeight: '100px' }}>
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={history}>
                 <YAxis domain={['dataMin', 'dataMax']} hide />

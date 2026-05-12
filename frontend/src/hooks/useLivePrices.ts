@@ -7,6 +7,8 @@ const COIN_MAP: Record<string, string> = {
 }
 
 const MOCK_INITIAL: Record<string, number> = {
+  [ASSET_IDS.sBTC]:  81000,
+  [ASSET_IDS.sETH]:  2300,
   [ASSET_IDS.sAAPL]: 200,
   [ASSET_IDS.sTSLA]: 250,
 }
