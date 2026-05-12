@@ -179,6 +179,25 @@ export default function ExchangePage({ wallet }: Props) {
     } finally { setLoad('swap', false) }
   }
 
+  const addToWallet = async () => {
+    if (!contracts || !(window as any).ethereum) return
+    try {
+      await (window as any).ethereum.request({
+        method: 'wallet_watchAsset',
+        params: {
+          type: 'ERC20',
+          options: {
+            address: contracts.usdc.target,
+            symbol: 'mUSDC',
+            decimals: 18,
+          },
+        },
+      })
+    } catch (e) {
+      console.error('Add to wallet failed', e)
+    }
+  }
+
   const approveDeposit = async () => {
     if (!contracts) return
     const amt = tryParse(depositAmt)
@@ -363,6 +382,18 @@ export default function ExchangePage({ wallet }: Props) {
           >
             {busy['swap'] ? 'Swapping…' : 'Swap'}
           </button>
+          
+          <div className="text-center mt-2">
+            <button 
+              onClick={() => void addToWallet()} 
+              className="text-xs text-blue-400 hover:text-blue-300 hover:underline flex items-center justify-center gap-1 w-full"
+            >
+              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+              </svg>
+              Don't see mUSDC? Add to MetaMask
+            </button>
+          </div>
         </div>
 
         {/* B. Margin */}
