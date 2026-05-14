@@ -383,59 +383,86 @@ export default function ExchangePage({ wallet }: Props) {
       {/* A & B — Swap + Margin */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
-        {/* A. Swap */}
-        <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-4">
-          <div className="flex justify-between items-center">
-            <h2 className="text-base font-bold text-white">Swap</h2>
-            <span className="text-xs text-gray-500">Rate: 1 ETH = 3,000 mUSDC</span>
+        {/* A. Swap (Uniswap Style) */}
+        <div className="rounded-3xl border border-surface-border bg-[#0D111C] shadow-2xl p-2 space-y-1 relative max-w-md mx-auto w-full md:mx-0">
+          
+          <div className="flex justify-between items-center px-4 pt-3 pb-2">
+            <h2 className="text-base font-semibold text-white">Swap</h2>
+            <div className="flex gap-3 text-gray-400">
+              <button className="hover:text-white transition-colors" title="Settings">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+              </button>
+            </div>
           </div>
           
-          <div className="space-y-2">
-            <div className="bg-gray-800 rounded-lg p-3 border border-gray-700">
-              <div className="flex justify-between text-xs text-gray-400 mb-1">
-                <span>Pay</span>
-                <span>Bal: {ethBal} ETH</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <input
-                  type="number" min="0" placeholder="0.0"
-                  value={payEth}
-                  onChange={e => setPayEth(e.target.value)}
-                  className="w-full bg-transparent text-2xl text-white focus:outline-none"
-                />
-                <span className="font-bold text-white px-2">ETH</span>
-              </div>
+          {/* Pay Block */}
+          <div className="bg-[#131A2A] hover:border-gray-700 border border-transparent rounded-2xl p-4 transition-colors group">
+            <div className="flex justify-between text-sm text-gray-400 mb-2">
+              <span>You pay</span>
             </div>
-            
-            <div className="flex justify-center -my-3 relative z-10">
-              <div className="bg-surface-elev rounded-full p-1 border border-surface-border text-gray-400">
-                ↓
-              </div>
+            <div className="flex items-center gap-3">
+              <input
+                type="number" min="0" placeholder="0"
+                value={payEth}
+                onChange={e => setPayEth(e.target.value)}
+                className="w-full bg-transparent text-4xl text-white focus:outline-none placeholder-gray-600 font-medium"
+              />
+              <button className="shrink-0 flex items-center gap-2 bg-[#293249] hover:bg-[#323D59] text-white font-semibold rounded-full py-1.5 px-3 transition-colors shadow-sm">
+                <img src="https://assets.coingecko.com/coins/images/279/standard/ethereum.png" alt="ETH" className="w-5 h-5 rounded-full" />
+                ETH
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
             </div>
-
-            <div className="bg-gray-800 rounded-lg p-3 border border-gray-700">
-              <div className="flex justify-between text-xs text-gray-400 mb-1">
-                <span>Receive</span>
-                <span>Bal: {f18(usdcBal)} mUSDC</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <input
-                  type="text" disabled
-                  value={payEth ? (parseFloat(payEth) * 3000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
-                  className="w-full bg-transparent text-2xl text-gray-300 focus:outline-none"
-                />
-                <span className="font-bold text-blue-400 px-2">mUSDC</span>
-              </div>
+            <div className="flex justify-between text-sm text-gray-500 mt-2">
+              <span>$ {(parseFloat(payEth || '0') * 3000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <span className="cursor-pointer hover:text-white transition-colors">Balance: {ethBal}</span>
+            </div>
+          </div>
+          
+          {/* Arrow */}
+          <div className="flex justify-center -my-5 relative z-10">
+            <div className="bg-[#131A2A] rounded-xl p-1.5 border-4 border-[#0D111C] text-white hover:bg-gray-800 cursor-pointer transition-colors">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>
             </div>
           </div>
 
-          <button
-            onClick={() => void doSwap()}
-            disabled={busy['swap'] || !payEth || parseFloat(payEth) <= 0}
-            className="w-full py-3 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-bold transition-colors"
-          >
-            {busy['swap'] ? 'Swapping…' : 'Swap'}
-          </button>
+          {/* Receive Block */}
+          <div className="bg-[#131A2A] hover:border-gray-700 border border-transparent rounded-2xl p-4 transition-colors group">
+            <div className="flex justify-between text-sm text-gray-400 mb-2">
+              <span>You receive</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <input
+                type="text" disabled
+                value={payEth ? (parseFloat(payEth) * 3000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}
+                placeholder="0"
+                className="w-full bg-transparent text-4xl text-white focus:outline-none placeholder-gray-600 font-medium"
+              />
+              <button className="shrink-0 flex items-center gap-2 bg-[#293249] hover:bg-[#323D59] text-white font-semibold rounded-full py-1.5 px-3 transition-colors shadow-sm">
+                <div className="w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center text-[10px]">m</div>
+                mUSDC
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+            </div>
+            <div className="flex justify-between text-sm text-gray-500 mt-2">
+              <span>$ {(parseFloat(payEth || '0') * 3000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <span className="cursor-pointer hover:text-white transition-colors">Balance: {f18(usdcBal)}</span>
+            </div>
+          </div>
+
+          <div className="pt-2 pb-1">
+            <button
+              onClick={() => void doSwap()}
+              disabled={busy['swap'] || !payEth || parseFloat(payEth) <= 0}
+              className={`w-full py-4 rounded-2xl text-xl font-bold transition-colors ${
+                !payEth || parseFloat(payEth) <= 0 
+                  ? 'bg-[#131A2A] text-gray-500 cursor-not-allowed'
+                  : 'bg-brand-500 hover:bg-brand-400 text-white shadow-lg shadow-brand-500/20'
+              }`}
+            >
+              {busy['swap'] ? 'Swapping…' : (!payEth || parseFloat(payEth) <= 0) ? 'Enter an amount' : 'Swap'}
+            </button>
+          </div>
           
           <div className="text-center mt-2">
             <button 

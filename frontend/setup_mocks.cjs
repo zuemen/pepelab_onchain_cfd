@@ -28,9 +28,10 @@ async function main() {
     console.log(`Setting up ${mt.name}...`);
     const traderWallet = new ethers.Wallet(mt.pk, provider);
     
-    // 1. Send ETH for gas (0.005 ETH)
-    const ethTx = await adminWallet.sendTransaction({ to: traderWallet.address, value: ethers.parseEther("0.005") });
-    await ethTx.wait();
+    // 1. Send ETH for gas (0.02 ETH)
+    const ethTx = await adminWallet.sendTransaction({ to: traderWallet.address, value: ethers.parseEther("0.02") });
+    await ethTx.wait(2);
+    await new Promise(r => setTimeout(r, 5000));
     console.log(`  Sent ETH to ${traderWallet.address}`);
 
     // 2. Mint USDC
