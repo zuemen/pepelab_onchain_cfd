@@ -271,8 +271,23 @@ export default function ExchangePage({ wallet }: Props) {
     ? curPrice - (curPrice / BigInt(leverage))
     : curPrice + (curPrice / BigInt(leverage))
 
-  // Account Equity
-  const totalUnrealizedPnL = positions.reduce((acc, p) => acc + p.unrealizedPnL, 0n)
+  // Map positions to dynamic live PnL
+  const livePositions = positions.map(p => {
+    // Convert float USD from Coingecko to 18-decimal fixed point
+    const liveUsd = livePrices[p.asset]?.usd
+    const currentLivePrice = liveUsd ? BigInt(Math.floor(liveUsd * 1e10)) : p.currentPrice
+    
+    const notional = p.margin * p.leverage
+    const size = (notional * 10n**18n) / p.entryPrice
+    const priceChange = currentLivePrice - p.entryPrice
+    let livePnL = (priceChange * size) / 10n**18n
+    if (!p.isLong) livePnL = -livePnL
+    
+    return { ...p, currentLivePrice, livePnL }
+  })
+
+  // Account Equity using LIVE PnL
+  const totalUnrealizedPnL = livePositions.reduce((acc, p) => acc + p.livePnL, 0n)
   const accountEquity = freeMgn + totalUnrealizedPnL
 
   const activeTask = Object.entries(busy).find(([_, v]) => v)?.[0]
@@ -518,6 +533,7 @@ export default function ExchangePage({ wallet }: Props) {
                 className={`flex-1 text-sm font-bold transition-colors ${!isLong ? 'bg-red-700 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}
               >SHORT ↓</button>
             </div>
+            <div className="text-[10px] text-gray-500 mt-1 text-right">Order Type: Market</div>
           </div>
 
           <div className="space-y-1">
@@ -624,7 +640,7 @@ export default function ExchangePage({ wallet }: Props) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-surface-border">
-                {positions.map(row => {
+                {livePositions.map(row => {
                   const size     = row.entryPrice > 0n
                     ? (row.margin * row.leverage * 10n ** 18n) / row.entryPrice
                     : 0n
@@ -638,12 +654,12 @@ export default function ExchangePage({ wallet }: Props) {
                         {row.isLong ? 'LONG' : 'SHORT'}
                       </td>
                       <td className="py-2.5 pr-4 font-mono text-gray-300">{fUsd(row.entryPrice)}</td>
-                      <td className="py-2.5 pr-4 font-mono text-gray-300">{fUsd(row.currentPrice)}</td>
+                      <td className="py-2.5 pr-4 font-mono text-gray-300">{fUsd(row.currentLivePrice)}</td>
                       <td className="py-2.5 pr-4 font-mono text-gray-400">{f18(size, 6)}</td>
                       <td className="py-2.5 pr-4 font-mono text-gray-300">{f18(row.margin)}</td>
                       <td className="py-2.5 pr-4 text-gray-300">{String(row.leverage)}×</td>
-                      <td className={`py-2.5 pr-4 font-mono font-semibold ${pnlColor(row.unrealizedPnL)}`}>
-                        {fPnL(row.unrealizedPnL)}
+                      <td className={`py-2.5 pr-4 font-mono font-semibold ${pnlColor(row.livePnL)}`}>
+                        {fPnL(row.livePnL)}
                       </td>
                       <td className="py-2.5">
                         <button
