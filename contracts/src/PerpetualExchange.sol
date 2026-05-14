@@ -50,6 +50,11 @@ contract PerpetualExchange is Ownable {
     mapping(uint256 => Position)      public positions;
     mapping(address => uint256[])     public userPositions;
     mapping(address => uint256)       public freeMargin;
+    
+    // Global Open Interest (OI) for Funding Rate calculations
+    mapping(bytes32 => uint256)       public globalLongNotional;
+    mapping(bytes32 => uint256)       public globalShortNotional;
+
     uint256                           public nextPositionId;
     address                           public copyTracker;
     IFeeRouterPerp                    public feeRouter;
@@ -265,6 +270,12 @@ contract PerpetualExchange is Ownable {
 
         freeMargin[owner] -= (margin + tradingFee);
 
+        if (isLong) {
+            globalLongNotional[asset] += notional;
+        } else {
+            globalShortNotional[asset] += notional;
+        }
+
         positionId = nextPositionId++;
         positions[positionId] = Position({
             id:          positionId,
@@ -314,6 +325,12 @@ contract PerpetualExchange is Ownable {
         pos.isOpen      = false;
         pos.closedAt    = block.timestamp;
         pos.realizedPnL = pnl;
+
+        if (pos.isLong) {
+            globalLongNotional[pos.asset] -= notional;
+        } else {
+            globalShortNotional[pos.asset] -= notional;
+        }
 
         freeMargin[pos.owner] += uint256(closeAmount);
 
