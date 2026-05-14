@@ -32,41 +32,36 @@ interface TraderCard {
   reputation:    bigint | null   // null = TraderStake not deployed
   stake:         bigint | null
   totalSlashed:  bigint | null
-  isMock?:       boolean
 }
 
 const MOCK_TRADERS: TraderCard[] = [
   {
-    address: '0x1111111111111111111111111111111111111111',
-    displayName: 'Crypto_Chad (Mock)',
+    address: '0x19E7E376E7C213B7E7e7e46cc70A5dD086DAff2A',
+    displayName: 'Crypto_Chad',
     allocs: [
-      { asset: ASSET_IDS.sBTC, weight: 6000n, isLong: true, leverage: 5n },
-      { asset: ASSET_IDS.sETH, weight: 4000n, isLong: true, leverage: 2n }
+      { asset: ASSET_IDS.sBTC, weight: 10000n, isLong: true, leverage: 5n }
     ],
     followerCount: 1250n,
     hasStrategy: true,
     reputation: 95n,
     stake: 5000n * 10n**18n,
     totalSlashed: 0n,
-    isMock: true,
   },
   {
-    address: '0x2222222222222222222222222222222222222222',
-    displayName: 'Tech_Bear_Fund (Mock)',
+    address: '0x1563915e194D8CfBA1943570603F7606A3115508',
+    displayName: 'Tech_Bear_Fund',
     allocs: [
-      { asset: ASSET_IDS.sAAPL, weight: 5000n, isLong: false, leverage: 5n },
-      { asset: ASSET_IDS.sTSLA, weight: 5000n, isLong: false, leverage: 5n }
+      { asset: ASSET_IDS.sBTC, weight: 10000n, isLong: false, leverage: 2n }
     ],
     followerCount: 840n,
     hasStrategy: true,
     reputation: 82n,
     stake: 10000n * 10n**18n,
     totalSlashed: 500n * 10n**18n,
-    isMock: true,
   },
   {
-    address: '0x3333333333333333333333333333333333333333',
-    displayName: 'Stable_Quant (Mock)',
+    address: '0x5CbDd86a2FA8Dc4bDdd8a8f69dBa48572EeC07FB',
+    displayName: 'Stable_Quant',
     allocs: [
       { asset: ASSET_IDS.sBTC, weight: 10000n, isLong: true, leverage: 1n }
     ],
@@ -75,7 +70,6 @@ const MOCK_TRADERS: TraderCard[] = [
     reputation: 99n,
     stake: 25000n * 10n**18n,
     totalSlashed: 0n,
-    isMock: true,
   }
 ]
 
@@ -272,21 +266,12 @@ export default function MarketplacePage({ wallet }: Props) {
                 {/* Trader identity + reputation */}
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    {t.isMock ? (
-                      <button
-                        onClick={() => alert('This is a simulated mock trader for showcase purposes. You cannot view their real profile.')}
-                        className="font-bold text-white text-base leading-tight truncate block hover:text-brand-100 transition-colors text-left"
-                      >
-                        {t.displayName || '—'}
-                      </button>
-                    ) : (
-                      <Link
-                        to={`/trader/${t.address}`}
-                        className="font-bold text-white text-base leading-tight truncate block hover:text-brand-100 transition-colors"
-                      >
-                        {t.displayName || '—'}
-                      </Link>
-                    )}
+                    <Link
+                      to={`/trader/${t.address}`}
+                      className="font-bold text-white text-base leading-tight truncate block hover:text-brand-100 transition-colors"
+                    >
+                      {t.displayName || '—'}
+                    </Link>
                     <div className="font-mono text-xs text-gray-500 mt-0.5">{shortAddr(t.address)}</div>
                   </div>
                   {t.reputation !== null && (
@@ -337,30 +322,19 @@ export default function MarketplacePage({ wallet }: Props) {
                     {' '}follower{t.followerCount !== 1n ? 's' : ''}
                   </span>
                   <div className="flex gap-2">
-                    {t.isMock ? (
-                      <button
-                        onClick={() => alert('This is a simulated mock trader for showcase purposes.')}
-                        className="px-3 py-1.5 rounded-lg border border-brand-500/50 bg-brand-900/30 text-brand-200 text-xs font-semibold hover:bg-brand-800/50 transition-colors"
+                    <Link
+                      to={`/trader/${t.address}`}
+                      className="px-3 py-1.5 rounded-lg border border-surface-border text-gray-300 text-xs font-medium hover:border-gray-400 hover:text-white transition-colors"
+                    >
+                      Profile
+                    </Link>
+                    {t.hasStrategy && (
+                      <Link
+                        to={`/copy/${t.address}`}
+                        className="px-3 py-1.5 rounded-lg bg-brand-200 hover:bg-brand-300 text-white text-xs font-semibold transition-colors"
                       >
-                        Simulated Demo
-                      </button>
-                    ) : (
-                      <>
-                        <Link
-                          to={`/trader/${t.address}`}
-                          className="px-3 py-1.5 rounded-lg border border-surface-border text-gray-300 text-xs font-medium hover:border-gray-400 hover:text-white transition-colors"
-                        >
-                          Profile
-                        </Link>
-                        {t.hasStrategy && (
-                          <Link
-                            to={`/copy/${t.address}`}
-                            className="px-3 py-1.5 rounded-lg bg-brand-200 hover:bg-brand-300 text-white text-xs font-semibold transition-colors"
-                          >
-                            Copy
-                          </Link>
-                        )}
-                      </>
+                        Copy
+                      </Link>
                     )}
                   </div>
                 </div>
