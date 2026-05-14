@@ -90,7 +90,7 @@ contract CopyTracker is ReentrancyGuard {
 
     // ── Core functions ───────────────────────────────────────────────────────
 
-    function followTrader(address trader, uint256 totalMargin) external nonReentrant {
+    function followTrader(address trader, uint256 totalMargin) external payable nonReentrant {
         // 1. Fetch latest published strategy
         (StrategyRegistry.Allocation[] memory allocations, uint256 versionId) =
             registry.getLatestStrategy(trader);
@@ -116,9 +116,10 @@ contract CopyTracker is ReentrancyGuard {
 
         // 6. Open one position per allocation; copiedFrom = trader for perf-fee tracking
         uint256[] memory ids = new uint256[](allocations.length);
+        uint256 feePerPosition = allocations.length > 0 ? msg.value / allocations.length : 0;
         for (uint256 i; i < allocations.length; ++i) {
             uint256 portion = netMargin * allocations[i].weight / 10_000;
-            ids[i] = exchange.openPositionFor(
+            ids[i] = exchange.openPositionFor{value: feePerPosition}(
                 msg.sender,
                 allocations[i].asset,
                 allocations[i].isLong,

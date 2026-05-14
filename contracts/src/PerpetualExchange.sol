@@ -21,6 +21,8 @@ contract PerpetualExchange is Ownable {
     uint256 public constant TRADING_FEE_BPS         = 10;    // 0.1% swap fee (Uniswap concept)
     uint256 public constant BORROW_FEE_BPS_PER_HOUR = 1;     // 0.01% borrow rate per hour (Aave concept)
 
+    uint256 public executionFee = 0.001 ether; // Fee paid in native ETH to cover platform/Keeper gas
+
     // ── Immutables ───────────────────────────────────────────────────────────
 
     IERC20  public immutable usdc;
@@ -111,6 +113,16 @@ contract PerpetualExchange is Ownable {
         feeRouter = IFeeRouterPerp(_feeRouter);
     }
 
+    function setExecutionFee(uint256 _fee) external onlyOwner {
+        executionFee = _fee;
+    }
+
+    function withdrawExecutionFees() external onlyOwner {
+        uint256 balance = address(this).balance;
+        (bool success, ) = msg.sender.call{value: balance}("");
+        require(success, "ETH transfer failed");
+    }
+
     // ── Margin management ────────────────────────────────────────────────────
 
     function depositMargin(uint256 amount) external {
@@ -141,7 +153,8 @@ contract PerpetualExchange is Ownable {
         bool    isLong,
         uint256 margin,
         uint256 leverage
-    ) external returns (uint256 positionId) {
+    ) external payable returns (uint256 positionId) {
+        require(msg.value >= executionFee, "Insufficient execution fee");
         return _openPosition(msg.sender, asset, isLong, margin, leverage, address(0));
     }
 
@@ -152,7 +165,8 @@ contract PerpetualExchange is Ownable {
         uint256 margin,
         uint256 leverage,
         address copiedFrom
-    ) external returns (uint256 positionId) {
+    ) external payable returns (uint256 positionId) {
+        require(msg.value >= executionFee, "Insufficient execution fee");
         if (copyTracker == address(0)) revert CopyTrackerNotSet();
         if (msg.sender != copyTracker) revert NotCopyTracker();
         return _openPosition(user, asset, isLong, margin, leverage, copiedFrom);

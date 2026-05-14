@@ -238,7 +238,7 @@ export default function ExchangePage({ wallet }: Props) {
     if (!amt) { notify('Enter a valid margin', false); return }
     setLoad('open', true)
     try {
-      const tx = asTx(await contracts.exchange.openPosition(selAsset, isLong, amt, BigInt(leverage)))
+      const tx = asTx(await contracts.exchange.openPosition(selAsset, isLong, amt, BigInt(leverage), { value: parseEther('0.001') }))
       await tx.wait()
       notify(`${isLong ? 'Long' : 'Short'} ${ASSET_LABEL[selAsset] ?? selAsset} opened ✓`, true, tx.hash)
       setOpenMgn('')
@@ -561,6 +561,10 @@ export default function ExchangePage({ wallet }: Props) {
               >SHORT ↓</button>
             </div>
             <div className="text-[10px] text-gray-500 mt-1 text-right">Order Type: Market</div>
+            <div className="text-[10px] text-brand-300 mt-0.5 text-right flex items-center justify-end gap-1">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+              Execution Fee: 0.001 ETH
+            </div>
           </div>
 
           <div className="space-y-1">

@@ -160,7 +160,10 @@ export default function CopyPage({ wallet }: Props) {
     if (!amt) { notify('Enter a valid amount', false); return }
     setLoad('follow', true)
     try {
-      const tx = asTx(await contracts.copyTracker.followTrader(traderAddress, amt))
+      const execFeeEth = (stratAllocs.length * 0.001).toString()
+      const tx = asTx(await contracts.copyTracker.followTrader(traderAddress, amt, {
+        value: parseEther(execFeeEth)
+      }))
       await tx.wait()
       notify('Following trader ✓', true, tx.hash)
       navigate('/portfolio')
@@ -347,8 +350,12 @@ export default function CopyPage({ wallet }: Props) {
             <span>Net margin deposited</span>
             <span className="font-mono font-semibold text-white">{f18(netBig)} mUSDC</span>
           </div>
+          <div className="flex justify-between text-gray-300 mt-2 pt-2 border-t border-yellow-900/30">
+            <span>Execution Fee (ETH)</span>
+            <span className="font-mono font-semibold text-brand-300">{(stratAllocs.length * 0.001).toFixed(3)} ETH</span>
+          </div>
           <p className="text-xs text-gray-600 pt-1">
-            Copy fee is split 70 % → trader · 20 % → platform · 10 % → slash pool
+            Copy fee is split 70% → trader · 20% → platform · 10% → slash pool. Execution fee pays Keeper bots.
           </p>
         </div>
       )}
