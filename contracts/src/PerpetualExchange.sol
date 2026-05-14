@@ -71,6 +71,12 @@ contract PerpetualExchange is Ownable {
     );
     event MarginDeposited(address indexed user, uint256 amount);
     event MarginWithdrawn(address indexed user, uint256 amount);
+    event PositionLiquidated(
+        uint256 indexed positionId,
+        address indexed owner,
+        address indexed liquidator,
+        int256  pnl
+    );
     event PerformanceFeePaid(
         uint256 indexed positionId,
         address indexed copiedFrom,
@@ -86,6 +92,7 @@ contract PerpetualExchange is Ownable {
     error InvalidLeverage();
     error NotPositionOwner();
     error PositionAlreadyClosed();
+    error PositionIsHealthy();
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
@@ -159,6 +166,43 @@ contract PerpetualExchange is Ownable {
     function closePositionFor(address owner, uint256 positionId) external {
         if (msg.sender != copyTracker) revert NotCopyTracker();
         _closePosition(owner, positionId);
+    }
+
+    // ── Liquidation Engine ───────────────────────────────────────────────────
+
+    /// @notice Anyone can call this to liquidate an underwater position and protect the protocol.
+    /// @dev If (margin + PnL - fees) < Maintenance Margin (5% of notional), the position is liquidated.
+    function liquidatePosition(uint256 positionId) external {
+        Position storage pos = positions[positionId];
+        if (!pos.isOpen) revert PositionAlreadyClosed();
+
+        int256 pnl = _calcPnL(pos);
+        
+        uint256 notional     = pos.margin * pos.leverage;
+        uint256 tradingFee   = notional * TRADING_FEE_BPS / 10000;
+        uint256 borrowed     = pos.margin * (pos.leverage - 1);
+        uint256 hoursElapsed = (block.timestamp - pos.openedAt) / 3600;
+        uint256 borrowFee    = borrowed * BORROW_FEE_BPS_PER_HOUR * hoursElapsed / 10000;
+        
+        int256 totalFees   = int256(tradingFee + borrowFee);
+        int256 closeAmount = int256(pos.margin) + pnl - totalFees;
+        
+        // Maintenance margin is 5% of notional size. If value drops below this, it's liquidated.
+        uint256 maintenanceMargin = notional * 500 / 10000;
+        
+        if (closeAmount > int256(maintenanceMargin)) {
+            revert PositionIsHealthy();
+        }
+
+        pos.isOpen      = false;
+        pos.closedAt    = block.timestamp;
+        pos.realizedPnL = pnl;
+
+        // Optional: Pay a small liquidator reward here from remaining margin.
+        // For simplicity in this iteration, we just close it with 0 returned to owner.
+
+        emit PositionLiquidated(positionId, pos.owner, msg.sender, pnl);
+        emit PositionClosed(positionId, pos.owner, pnl, 0);
     }
 
     // ── Views ────────────────────────────────────────────────────────────────
