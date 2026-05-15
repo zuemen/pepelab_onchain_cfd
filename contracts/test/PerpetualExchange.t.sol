@@ -43,6 +43,10 @@ contract PerpetualExchangeTest is Test {
         vm.prank(alice);   usdc.approve(address(exchange), type(uint256).max);
         vm.prank(bob);     usdc.approve(address(exchange), type(uint256).max);
         vm.prank(tracker); usdc.approve(address(exchange), type(uint256).max);
+
+        exchange.setExecutionFee(0);
+        exchange.setTradingFeeBps(0);
+        exchange.setBorrowFeePerHour(0);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

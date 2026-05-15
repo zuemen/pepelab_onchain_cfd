@@ -61,6 +61,7 @@ interface PosRow {
   unrealizedPnL: bigint    // signed 18-dec
   currentValue:  bigint    // 18-dec ≥ 0
   copiedFrom:    string    // address(0) for self-opened
+  accruedFunding: bigint   // signed 18-dec; positive = owes, negative = receives
 }
 
 // ── Formatting ────────────────────────────────────────────────────────────────
@@ -166,23 +167,25 @@ export default function PortfolioPage({ wallet }: Props) {
           try {
             const raw = (await contracts.exchange.getPosition(id)) as unknown as RawPos
             if (!raw.isOpen) return null
-            const [pnl, val, priceRes] = await Promise.all([
+            const [pnl, val, priceRes, funding] = await Promise.all([
               contracts.exchange.getUnrealizedPnL(id),
               contracts.exchange.getPositionValue(id),
               contracts.oracle.getPrice(raw.asset),
+              contracts.exchange.pendingFunding(id).catch(() => 0n),
             ])
             const pr = priceRes as unknown as [bigint, bigint]
             return {
               id,
-              asset:         raw.asset,
-              isLong:        raw.isLong,
-              entryPrice:    raw.entryPrice,
-              currentPrice:  pr[0] * 10n ** 10n,
-              margin:        raw.margin,
-              leverage:      raw.leverage,
-              unrealizedPnL: pnl as bigint,
-              currentValue:  val as bigint,
-              copiedFrom:    raw.copiedFrom,
+              asset:          raw.asset,
+              isLong:         raw.isLong,
+              entryPrice:     raw.entryPrice,
+              currentPrice:   pr[0] * 10n ** 10n,
+              margin:         raw.margin,
+              leverage:       raw.leverage,
+              unrealizedPnL:  pnl as bigint,
+              currentValue:   val as bigint,
+              copiedFrom:     raw.copiedFrom,
+              accruedFunding: funding as bigint,
             }
           } catch { return null }
         }),
@@ -425,7 +428,7 @@ export default function PortfolioPage({ wallet }: Props) {
             <table className="w-full text-sm text-left">
               <thead>
                 <tr className="text-xs text-gray-500 uppercase tracking-wide border-b border-surface-border">
-                  {['Asset','Side','Entry','Current','Live Market','Margin','Lev','Copied From','Unr. PnL','Value'].map(h => (
+                  {['Asset','Side','Entry','Current','Live Market','Margin','Lev','Copied From','Unr. PnL','Accrued Funding','Value'].map(h => (
                     <th key={h} className="px-4 py-3 font-medium whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -469,6 +472,11 @@ export default function PortfolioPage({ wallet }: Props) {
                     <td className={`px-4 py-3 font-mono font-semibold whitespace-nowrap ${pnlColor(row.unrealizedPnL)}`}>
                       {fPnL(row.unrealizedPnL)}
                     </td>
+                    <td className={`px-4 py-3 font-mono text-xs whitespace-nowrap ${
+                      row.accruedFunding < 0n ? 'text-green-400' : row.accruedFunding > 0n ? 'text-red-400' : 'text-gray-500'
+                    }`} title={row.accruedFunding < 0n ? 'You receive' : row.accruedFunding > 0n ? 'You pay' : 'No funding'}>
+                      {row.accruedFunding === 0n ? '—' : fPnL(-row.accruedFunding)}
+                    </td>
                     <td className={`px-4 py-3 font-mono font-semibold ${pnlColor(row.currentValue - row.margin)}`}>
                       {f18(row.currentValue)}
                     </td>
@@ -482,6 +490,11 @@ export default function PortfolioPage({ wallet }: Props) {
                     pnlColor(positions.reduce((s, p) => s + p.unrealizedPnL, 0n))
                   }`}>
                     {fPnL(positions.reduce((s, p) => s + p.unrealizedPnL, 0n))}
+                  </td>
+                  <td className={`px-4 py-2 font-mono text-xs ${
+                    positions.reduce((s, p) => s + p.accruedFunding, 0n) < 0n ? 'text-green-400' : 'text-red-400'
+                  }`}>
+                    {fPnL(-positions.reduce((s, p) => s + p.accruedFunding, 0n))}
                   </td>
                   <td className="px-4 py-2 font-mono font-semibold text-white">
                     {f18(positions.reduce((s, p) => s + p.currentValue, 0n))}

@@ -60,6 +60,11 @@ contract CopyTrackerTest is Test {
         // Fund followers
         usdc.mint(bob,   100_000e18);
         usdc.mint(carol, 100_000e18);
+        usdc.mint(address(exchange), 1_000_000e18);
+
+        exchange.setExecutionFee(0);
+        exchange.setTradingFeeBps(0);
+        exchange.setBorrowFeePerHour(0);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

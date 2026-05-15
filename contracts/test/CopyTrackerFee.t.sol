@@ -62,6 +62,10 @@ contract CopyTrackerFeeTest is Test {
 
         // Reserve USDC in exchange so withdrawals can be processed
         usdc.mint(address(exchange), 1_000_000e18);
+
+        exchange.setExecutionFee(0);
+        exchange.setTradingFeeBps(0);
+        exchange.setBorrowFeePerHour(0);
     }
 
     // ── Fee amounts ──────────────────────────────────────────────────────────

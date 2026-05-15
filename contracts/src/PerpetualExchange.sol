@@ -18,8 +18,14 @@ contract PerpetualExchange is Ownable {
     uint256 public constant MAX_LEVERAGE            = 5;
     uint256 public constant MIN_MARGIN              = 10e18;
     uint256 public constant PERFORMANCE_FEE_BPS     = 1000;  // 10% of profit on copied positions
-    uint256 public constant TRADING_FEE_BPS         = 10;    // 0.1% swap fee (Uniswap concept)
-    uint256 public constant BORROW_FEE_BPS_PER_HOUR = 1;     // 0.01% borrow rate per hour (Aave concept)
+
+    // Owner-adjustable fees (kept as public vars so tests and admin can override)
+    uint256 public TRADING_FEE_BPS         = 10;   // 0.1% swap fee (Uniswap concept)
+    uint256 public BORROW_FEE_BPS_PER_HOUR = 1;    // 0.01% borrow rate per hour (Aave concept)
+
+    // Funding rate: 5 min for demo (change to 8 hours = 28800 for production)
+    uint256 public constant FUNDING_INTERVAL        = 5 minutes;
+    uint256 public constant MAX_FUNDING_RATE_BPS    = 75;    // 0.75% per interval cap
 
     uint256 public executionFee = 0.001 ether; // Fee paid in native ETH to cover platform/Keeper gas
 
@@ -35,14 +41,15 @@ contract PerpetualExchange is Ownable {
         address owner;
         bytes32 asset;
         bool    isLong;
-        uint256 entryPrice;   // 18 decimals
-        uint256 margin;       // 18 decimals (USDC)
-        uint256 leverage;     // 1, 2, or 5
+        uint256 entryPrice;        // 18 decimals
+        uint256 margin;            // 18 decimals (USDC)
+        uint256 leverage;          // 1, 2, or 5
         uint256 openedAt;
         uint256 closedAt;
         int256  realizedPnL;
         bool    isOpen;
-        address copiedFrom;   // address(0) for self-opened positions
+        address copiedFrom;        // address(0) for self-opened positions
+        int256  entryFundingIndex; // locked cumulativeFundingIndex at open time
     }
 
     // ── State ────────────────────────────────────────────────────────────────
@@ -50,10 +57,14 @@ contract PerpetualExchange is Ownable {
     mapping(uint256 => Position)      public positions;
     mapping(address => uint256[])     public userPositions;
     mapping(address => uint256)       public freeMargin;
-    
+
     // Global Open Interest (OI) for Funding Rate calculations
     mapping(bytes32 => uint256)       public globalLongNotional;
     mapping(bytes32 => uint256)       public globalShortNotional;
+
+    // Funding rate state
+    mapping(bytes32 => int256)        public cumulativeFundingIndex;  // 18-dec, can be negative
+    mapping(bytes32 => uint256)       public lastFundingUpdateAt;
 
     uint256                           public nextPositionId;
     address                           public copyTracker;
@@ -89,6 +100,11 @@ contract PerpetualExchange is Ownable {
         address indexed copiedFrom,
         uint256 fee
     );
+    event FundingSettled(
+        bytes32 indexed asset,
+        int256  rateBps,
+        int256  newIndex
+    );
 
     // ── Errors ───────────────────────────────────────────────────────────────
 
@@ -100,6 +116,7 @@ contract PerpetualExchange is Ownable {
     error NotPositionOwner();
     error PositionAlreadyClosed();
     error PositionIsHealthy();
+    error FundingIntervalNotElapsed();
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
@@ -120,6 +137,14 @@ contract PerpetualExchange is Ownable {
 
     function setExecutionFee(uint256 _fee) external onlyOwner {
         executionFee = _fee;
+    }
+
+    function setTradingFeeBps(uint256 _bps) external onlyOwner {
+        TRADING_FEE_BPS = _bps;
+    }
+
+    function setBorrowFeePerHour(uint256 _bps) external onlyOwner {
+        BORROW_FEE_BPS_PER_HOUR = _bps;
     }
 
     function withdrawExecutionFees() external onlyOwner {
@@ -224,6 +249,47 @@ contract PerpetualExchange is Ownable {
         emit PositionClosed(positionId, pos.owner, pnl, 0);
     }
 
+    // ── Funding Rate ─────────────────────────────────────────────────────────
+
+    /// @notice Settle funding for an asset. Anyone can call once per FUNDING_INTERVAL.
+    function settleFunding(bytes32 asset) external {
+        if (block.timestamp < lastFundingUpdateAt[asset] + FUNDING_INTERVAL)
+            revert FundingIntervalNotElapsed();
+
+        uint256 longOI  = globalLongNotional[asset];
+        uint256 shortOI = globalShortNotional[asset];
+        lastFundingUpdateAt[asset] = block.timestamp;
+
+        if (longOI + shortOI == 0) return;
+
+        // imbalance ∈ (-1e18, +1e18)
+        int256 imbalance = (int256(longOI) - int256(shortOI)) * int256(1e18)
+                         / int256(longOI + shortOI);
+        int256 fundingRateBps = imbalance * int256(MAX_FUNDING_RATE_BPS) / int256(1e18);
+
+        // 1 bps × 1e14 = 1e-4 fraction of notional (18-dec USDC)
+        cumulativeFundingIndex[asset] += fundingRateBps * int256(1e14);
+
+        emit FundingSettled(asset, fundingRateBps, cumulativeFundingIndex[asset]);
+    }
+
+    /// @notice Current per-interval funding rate in BPS (positive = longs pay, negative = shorts pay).
+    function getFundingRate(bytes32 asset) external view returns (int256 rateBps) {
+        uint256 longOI  = globalLongNotional[asset];
+        uint256 shortOI = globalShortNotional[asset];
+        if (longOI + shortOI == 0) return 0;
+        int256 imbalance = (int256(longOI) - int256(shortOI)) * int256(1e18)
+                         / int256(longOI + shortOI);
+        return imbalance * int256(MAX_FUNDING_RATE_BPS) / int256(1e18);
+    }
+
+    /// @notice Accrued funding for an open position (positive = trader owes, negative = trader receives).
+    function pendingFunding(uint256 positionId) external view returns (int256) {
+        Position storage pos = positions[positionId];
+        if (!pos.isOpen) return 0;
+        return _calcFunding(pos);
+    }
+
     // ── Views ────────────────────────────────────────────────────────────────
 
     function getUnrealizedPnL(uint256 positionId) external view returns (int256) {
@@ -278,18 +344,19 @@ contract PerpetualExchange is Ownable {
 
         positionId = nextPositionId++;
         positions[positionId] = Position({
-            id:          positionId,
-            owner:       owner,
-            asset:       asset,
-            isLong:      isLong,
-            entryPrice:  entryPrice,
-            margin:      margin,
-            leverage:    leverage,
-            openedAt:    block.timestamp,
-            closedAt:    0,
-            realizedPnL: 0,
-            isOpen:      true,
-            copiedFrom:  copiedFrom
+            id:               positionId,
+            owner:            owner,
+            asset:            asset,
+            isLong:           isLong,
+            entryPrice:       entryPrice,
+            margin:           margin,
+            leverage:         leverage,
+            openedAt:         block.timestamp,
+            closedAt:         0,
+            realizedPnL:      0,
+            isOpen:           true,
+            copiedFrom:       copiedFrom,
+            entryFundingIndex: cumulativeFundingIndex[asset]
         });
         userPositions[owner].push(positionId);
 
@@ -311,8 +378,9 @@ contract PerpetualExchange is Ownable {
         uint256 hoursElapsed = (block.timestamp - pos.openedAt) / 3600;
         uint256 borrowFee    = borrowed * BORROW_FEE_BPS_PER_HOUR * hoursElapsed / 10000;
         
-        int256 totalFees   = int256(tradingFee + borrowFee);
-        int256 closeAmount = int256(pos.margin) + pnl - totalFees;
+        int256 totalFees      = int256(tradingFee + borrowFee);
+        int256 fundingPayment = _calcFunding(pos); // positive = trader pays, negative = trader receives
+        int256 closeAmount    = int256(pos.margin) + pnl - totalFees - fundingPayment;
         if (closeAmount < 0) closeAmount = 0;
 
         // Performance fee: 10 % of profit on copied positions when feeRouter is set
@@ -360,5 +428,15 @@ contract PerpetualExchange is Ownable {
 
         if (!pos.isLong) pnl = -pnl;
         return pnl;
+    }
+
+    /// @dev Funding owed by this position since it was opened.
+    ///      Positive = position pays (deducted on close), negative = position receives.
+    function _calcFunding(Position storage pos) internal view returns (int256) {
+        int256 indexDiff = cumulativeFundingIndex[pos.asset] - pos.entryFundingIndex;
+        uint256 notional = pos.margin * pos.leverage;
+        int256 funding   = int256(notional) * indexDiff / int256(1e18);
+        // Long pays when index rises (positive funding); short receives (flip sign)
+        return pos.isLong ? funding : -funding;
     }
 }

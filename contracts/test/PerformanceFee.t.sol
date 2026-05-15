@@ -43,6 +43,10 @@ contract PerformanceFeeTest is Test {
 
         vm.prank(follower);
         usdc.approve(address(exchange), type(uint256).max);
+
+        exchange.setExecutionFee(0);
+        exchange.setTradingFeeBps(0);
+        exchange.setBorrowFeePerHour(0);
     }
 
     // ── Helper: open a copied position ───────────────────────────────────────
@@ -158,6 +162,9 @@ contract PerformanceFeeTest is Test {
     function test_performanceFee_skippedWhenFeeRouterNotSet() public {
         PerpetualExchange exchangeNoFee = new PerpetualExchange(address(usdc), address(oracle));
         exchangeNoFee.setCopyTracker(tracker);
+        exchangeNoFee.setExecutionFee(0);
+        exchangeNoFee.setTradingFeeBps(0);
+        exchangeNoFee.setBorrowFeePerHour(0);
         // intentionally do NOT call setFeeRouter
 
         usdc.mint(address(exchangeNoFee), 1_000_000e18);

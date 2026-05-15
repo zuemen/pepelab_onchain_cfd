@@ -4,6 +4,7 @@ import { parseEther } from 'ethers'
 import type { WalletAPI } from '../hooks/useWallet'
 import { useContracts } from '../hooks/useContracts'
 import { useLivePrices } from '../hooks/useLivePrices'
+import { useFundingData } from '../hooks/useFundingData'
 import { LineChart, Line, YAxis, ResponsiveContainer } from 'recharts'
 import { ASSET_IDS } from '../contracts/addresses'
 
@@ -61,8 +62,9 @@ const asTx = (tx: unknown): TxResp => tx as TxResp
 interface Props { wallet: WalletAPI }
 
 export default function ExchangePage({ wallet }: Props) {
-  const contracts  = useContracts(wallet.provider, wallet.signer, wallet.chainId)
-  const livePrices = useLivePrices()
+  const contracts    = useContracts(wallet.provider, wallet.signer, wallet.chainId)
+  const livePrices   = useLivePrices()
+  const fundingData  = useFundingData(contracts?.exchange ?? null)
 
   const [usdcBal,   setUsdcBal]   = useState(0n)
   const [ethBal,    setEthBal]    = useState('0.0000')
@@ -608,6 +610,19 @@ export default function ExchangePage({ wallet }: Props) {
             </span>
           )}
           <span>Notional: <span className="font-mono text-white">{f18(notional)} mUSDC</span></span>
+          {(() => {
+            const fi = fundingData[selAsset]
+            if (!fi) return null
+            const rateNum = Number(fi.rate)
+            const ratePct = (rateNum / 100).toFixed(4)
+            return (
+              <span className={`${rateNum > 0 ? 'text-red-400' : rateNum < 0 ? 'text-green-400' : 'text-gray-500'}`}>
+                Funding rate (8h):{' '}
+                <span className="font-mono">{rateNum >= 0 ? '+' : ''}{ratePct}%</span>
+                {' '}{rateNum > 0 ? '(longs pay)' : rateNum < 0 ? '(shorts pay)' : '(balanced)'}
+              </span>
+            )
+          })()}
           {openMgn && (
             <span className="text-red-400 border border-red-900/50 bg-red-900/20 px-2 rounded">
               Est. Liquidation: <span className="font-mono">{fUsd(liqPrice)}</span>

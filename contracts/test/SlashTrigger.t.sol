@@ -52,6 +52,10 @@ contract SlashTriggerTest is Test {
         usdc.mint(bob, 100_000e18);
         usdc.mint(address(exchange), 200_000e18);
         vm.prank(bob); usdc.approve(address(ct), type(uint256).max);
+
+        exchange.setExecutionFee(0);
+        exchange.setTradingFeeBps(0);
+        exchange.setBorrowFeePerHour(0);
     }
 
     function _follow(uint256 amount) internal {

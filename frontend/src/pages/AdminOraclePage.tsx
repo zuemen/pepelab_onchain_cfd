@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import type { WalletAPI } from '../hooks/useWallet'
 import { useContracts } from '../hooks/useContracts'
+import { useFundingData } from '../hooks/useFundingData'
 import { ASSET_IDS } from '../contracts/addresses'
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -40,11 +41,30 @@ const fDate = (ts: bigint) =>
 type TxResp = { wait(): Promise<unknown>; hash: string }
 const asTx = (tx: unknown): TxResp => tx as TxResp
 
+// ── Funding helpers ───────────────────────────────────────────────────────────
+const fOI = (v: bigint) => (Number(v) / 1e18).toFixed(2)
+const fImbalance = (long: bigint, short: bigint): string => {
+  const total = long + short
+  if (total === 0n) return '0.00%'
+  const pct = (Number(long - short) / Number(total)) * 100
+  return (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%'
+}
+const fCountdown = (lastSettled: bigint, interval: bigint): string => {
+  const nextAt = Number(lastSettled + interval)
+  const now    = Math.floor(Date.now() / 1000)
+  const secs   = nextAt - now
+  if (secs <= 0) return 'Now'
+  const m = Math.floor(secs / 60)
+  const s = secs % 60
+  return m > 0 ? `${m}m ${s}s` : `${s}s`
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 interface Props { wallet: WalletAPI }
 
 export default function AdminOraclePage({ wallet }: Props) {
-  const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId)
+  const contracts    = useContracts(wallet.provider, wallet.signer, wallet.chainId)
+  const fundingData  = useFundingData(contracts?.exchange ?? null)
 
   const [assets,         setAssets]         = useState<AssetRow[]>(
     ASSETS.map(a => ({ ...a, price8: 0n, updatedAt: 0n, input: '' })),
@@ -55,6 +75,10 @@ export default function AdminOraclePage({ wallet }: Props) {
   const [toast,          setToast]          = useState<{ msg: string; ok: boolean; hash?: string } | null>(null)
   const [syncBusy,       setSyncBusy]       = useState(false)
   const [syncMsg,        setSyncMsg]        = useState<string | null>(null)
+  const [autoSettle,     setAutoSettle]     = useState(false)
+  const [fundingSettleBusy, setFundingSettleBusy] = useState<Record<string, boolean>>({})
+  const [, setTick]   = useState(0)  // force re-render for countdown
+  const autoSettleRef = useRef(false)
 
   const isOwner =
     oracleOwner !== null &&
@@ -66,6 +90,51 @@ export default function AdminOraclePage({ wallet }: Props) {
     setToast({ msg, ok, hash })
     setTimeout(() => setToast(null), 6000)
   }
+
+  // Countdown ticker
+  useEffect(() => {
+    const t = setInterval(() => setTick(n => n + 1), 1000)
+    return () => clearInterval(t)
+  }, [])
+
+  // Settle funding for one asset
+  const settleFunding = useCallback(async (assetId: string) => {
+    if (!contracts || !isOwner) return
+    const key = `settle_${assetId}`
+    setFundingSettleBusy(p => ({ ...p, [key]: true }))
+    try {
+      const tx = asTx(await contracts.exchange.settleFunding(assetId))
+      await tx.wait()
+      notify(`Funding settled ✓`, true, tx.hash)
+    } catch (e) {
+      notify(e instanceof Error ? e.message.slice(0, 100) : 'Settle failed', false)
+    } finally {
+      setFundingSettleBusy(p => ({ ...p, [key]: false }))
+    }
+  }, [contracts, isOwner])
+
+  // Auto-settle toggle: check every 60s, settle all eligible assets
+  useEffect(() => {
+    autoSettleRef.current = autoSettle
+  }, [autoSettle])
+
+  useEffect(() => {
+    if (!autoSettle) return
+    const run = async () => {
+      if (!contracts || !autoSettleRef.current) return
+      for (const [id, info] of Object.entries(fundingData)) {
+        if (info.canSettle) {
+          try {
+            const tx = asTx(await contracts.exchange.settleFunding(id))
+            await tx.wait()
+          } catch { /* ignore */ }
+        }
+      }
+    }
+    void run()
+    const t = setInterval(() => { void run() }, 60_000)
+    return () => clearInterval(t)
+  }, [autoSettle, contracts, fundingData])
 
   // ── Fetch prices ──────────────────────────────────────────────────────────
   const fetchPrices = useCallback(async () => {
@@ -263,6 +332,83 @@ export default function AdminOraclePage({ wallet }: Props) {
         <strong>Note:</strong> MockOracle price changes immediately affect all open position PnL.
         In production, oracle prices would come from trusted off-chain data feeds (e.g. Chainlink).
       </div>
+
+      {/* ─── Funding Settlement ──────────────────────────────────────────── */}
+      {isOwner && (
+        <div className="rounded-card border border-surface-border bg-surface shadow-card overflow-hidden">
+          <div className="px-5 py-4 border-b border-surface-border flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-bold text-white">Funding Settlement</h2>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Settle per-asset funding (every {Object.values(fundingData)[0]
+                  ? `${Number(Object.values(fundingData)[0].interval) / 60}m`
+                  : '5m'}). Anyone can call on-chain; UI restricts to owner.
+              </p>
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <span className="text-xs text-gray-400">Auto-Settle</span>
+              <div
+                onClick={() => setAutoSettle(v => !v)}
+                className={`relative w-10 h-5 rounded-full transition-colors ${autoSettle ? 'bg-emerald-600' : 'bg-gray-700'}`}
+              >
+                <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${autoSettle ? 'translate-x-5' : 'translate-x-0.5'}`} />
+              </div>
+            </label>
+          </div>
+
+          {Object.keys(fundingData).length === 0 ? (
+            <p className="px-5 py-6 text-sm text-gray-600 text-center">Loading funding data…</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead>
+                  <tr className="text-xs text-gray-500 uppercase border-b border-surface-border">
+                    {['Asset','Rate (bps)','Long OI','Short OI','Imbalance','Last Settled','Next In',''].map(h => (
+                      <th key={h} className="px-4 py-3 font-medium whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-surface-border">
+                  {ASSETS.map(a => {
+                    const info = fundingData[a.id]
+                    if (!info) return null
+                    const key     = `settle_${a.id}`
+                    const rateNum = Number(info.rate)
+                    return (
+                      <tr key={a.id} className="hover:bg-surface-elev/60 transition-colors">
+                        <td className="px-4 py-3 font-mono font-bold text-white">{a.label}</td>
+                        <td className={`px-4 py-3 font-mono font-semibold ${rateNum > 0 ? 'text-red-400' : rateNum < 0 ? 'text-green-400' : 'text-gray-500'}`}>
+                          {rateNum > 0 ? '+' : ''}{rateNum} {rateNum > 0 ? '(L pay)' : rateNum < 0 ? '(S pay)' : ''}
+                        </td>
+                        <td className="px-4 py-3 font-mono text-gray-300">{fOI(info.longOI)}</td>
+                        <td className="px-4 py-3 font-mono text-gray-300">{fOI(info.shortOI)}</td>
+                        <td className={`px-4 py-3 font-mono ${Number(info.longOI) > Number(info.shortOI) ? 'text-red-400' : 'text-green-400'}`}>
+                          {fImbalance(info.longOI, info.shortOI)}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-500">
+                          {info.lastSettled === 0n ? 'Never' : fDate(info.lastSettled)}
+                        </td>
+                        <td className="px-4 py-3 text-xs font-mono text-gray-400">
+                          {info.canSettle ? <span className="text-emerald-400 font-semibold">Ready</span> : fCountdown(info.lastSettled, info.interval)}
+                        </td>
+                        <td className="px-4 py-3">
+                          <button
+                            onClick={() => void settleFunding(a.id)}
+                            disabled={!info.canSettle || !!fundingSettleBusy[key]}
+                            className="px-3 py-1 rounded bg-gray-700 text-gray-300 text-xs hover:bg-emerald-900 hover:text-emerald-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                          >
+                            {fundingSettleBusy[key] ? '…' : 'Settle Now'}
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Price table */}
       <div className="rounded-card border border-surface-border bg-surface shadow-card overflow-hidden">
