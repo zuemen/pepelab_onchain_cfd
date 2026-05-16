@@ -5,6 +5,7 @@ import { getAddresses } from '../contracts/addresses'
 import MockUSDCABI          from '../contracts/abi/MockUSDC.json'
 import MockOracleABI        from '../contracts/abi/MockOracle.json'
 import TraderStakeABI       from '../contracts/abi/TraderStake.json'
+import InsuranceVaultABI    from '../contracts/abi/InsuranceVault.json'
 import FeeRouterABI         from '../contracts/abi/FeeRouter.json'
 import PerpetualExchangeABI from '../contracts/abi/PerpetualExchange.json'
 import StrategyRegistryABI  from '../contracts/abi/StrategyRegistry.json'
@@ -22,14 +23,15 @@ export function useContracts(
     const addr = getAddresses(chainId)
     if (!addr) return null
     return {
-      usdc:        new Contract(addr.MockUSDC,          MockUSDCABI,          runner),
-      oracle:      new Contract(addr.MockOracle,        MockOracleABI,        runner),
-      traderStake: new Contract(addr.TraderStake,       TraderStakeABI,       runner),
-      feeRouter:   new Contract(addr.FeeRouter,         FeeRouterABI,         runner),
-      exchange:    new Contract(addr.PerpetualExchange, PerpetualExchangeABI, runner),
-      registry:    new Contract(addr.StrategyRegistry,  StrategyRegistryABI,  runner),
-      copyTracker: new Contract(addr.CopyTracker,       CopyTrackerABI,       runner),
-      swapRouter:  new Contract(addr.MockSwapRouter,    MockSwapRouterABI?.abi ?? MockSwapRouterABI, runner),
+      usdc:           new Contract(addr.MockUSDC,          MockUSDCABI,          runner),
+      oracle:         new Contract(addr.MockOracle,        MockOracleABI,        runner),
+      traderStake:    new Contract(addr.TraderStake,       TraderStakeABI,       runner),
+      insuranceVault: new Contract(addr.InsuranceVault,    InsuranceVaultABI,    runner),
+      feeRouter:      new Contract(addr.FeeRouter,         FeeRouterABI,         runner),
+      exchange:       new Contract(addr.PerpetualExchange, PerpetualExchangeABI, runner),
+      registry:       new Contract(addr.StrategyRegistry,  StrategyRegistryABI,  runner),
+      copyTracker:    new Contract(addr.CopyTracker,       CopyTrackerABI,       runner),
+      swapRouter:     new Contract(addr.MockSwapRouter,    MockSwapRouterABI?.abi ?? MockSwapRouterABI, runner),
     }
   }, [provider, signer, chainId])
 }

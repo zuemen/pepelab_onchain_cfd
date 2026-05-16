@@ -39,6 +39,7 @@ export default function LandingPage({ wallet }: Props) {
           <li>Visit <code className="bg-gray-800 px-1.5 rounded">/exchange</code> and click "Get 1000 mUSDC" to fund your account</li>
           <li>Browse <code className="bg-gray-800 px-1.5 rounded">/marketplace</code> to copy <strong className="text-white">Demo Alpha</strong> trader, or open positions yourself</li>
           <li>Optional: register as a trader on <code className="bg-gray-800 px-1.5 rounded">/trader</code> and publish your own strategy</li>
+          <li>Optional: provide liquidity on <code className="bg-gray-800 px-1.5 rounded">/vault</code> as an <strong className="text-white">LP</strong> — earn yield from protocol fees and cover extreme losses as the insurance pool</li>
         </ol>
         <p className="text-xs text-emerald-400/70 pt-1">
           ⚠ Oracle prices are controlled by the deployer (admin). During live demos the deployer will update prices to show PnL changes.

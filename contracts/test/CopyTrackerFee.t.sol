@@ -6,6 +6,7 @@ import "../src/CopyTracker.sol";
 import "../src/PerpetualExchange.sol";
 import "../src/StrategyRegistry.sol";
 import "../src/FeeRouter.sol";
+import "../src/InsuranceVault.sol";
 import "../src/MockUSDC.sol";
 import "../src/MockOracle.sol";
 
@@ -15,11 +16,11 @@ contract CopyTrackerFeeTest is Test {
     MockOracle        oracle;
     StrategyRegistry  registry;
     PerpetualExchange exchange;
+    InsuranceVault    vault;
     FeeRouter         feeRouter;
     CopyTracker       ct;
 
     address platform = makeAddr("platform");
-    address slash    = makeAddr("slash");
     address alice    = makeAddr("alice");   // trader
     address bob      = makeAddr("bob");     // follower
 
@@ -30,7 +31,8 @@ contract CopyTrackerFeeTest is Test {
         usdc      = new MockUSDC();
         oracle    = new MockOracle();
         registry  = new StrategyRegistry(address(0));
-        feeRouter = new FeeRouter(address(usdc), platform, slash);
+        vault     = new InsuranceVault(address(usdc));
+        feeRouter = new FeeRouter(address(usdc), platform, address(vault));
         exchange  = new PerpetualExchange(address(usdc), address(oracle));
         ct        = new CopyTracker(
             address(usdc),
@@ -41,6 +43,7 @@ contract CopyTrackerFeeTest is Test {
         );
 
         // Wire
+        vault.setFeeRouter(address(feeRouter));
         exchange.setCopyTracker(address(ct));
         feeRouter.setCopyTracker(address(ct));
 
@@ -99,8 +102,8 @@ contract CopyTrackerFeeTest is Test {
         assertEq(feeRouter.traderEarnings(alice), fee * 7_000 / 10_000);
         // Platform earns 20 % = 6e18
         assertEq(feeRouter.platformEarnings(), fee * 2_000 / 10_000);
-        // Slash pool received 10 % = 3e18
-        assertEq(usdc.balanceOf(slash), fee * 1_000 / 10_000);
+        // Insurance vault received 10 % = 3e18
+        assertEq(vault.totalAssets(), fee * 1_000 / 10_000);
     }
 
     function test_fee_deductedFromFollowerBalance() public {

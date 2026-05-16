@@ -12,6 +12,7 @@ const NAV = [
   { to: '/stake',        label: 'Stake',        icon: '◆' },
   { to: '/marketplace',  label: 'Marketplace',  icon: '⊞' },
   { to: '/portfolio',    label: 'Portfolio',    icon: '◑' },
+  { to: '/vault',        label: 'LP Vault',     icon: '◎' },
   { to: '/admin/oracle', label: 'Admin',        icon: '⚙' },
 ]
 
@@ -22,6 +23,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/stake':        'Trader Stake',
   '/marketplace':  'Marketplace',
   '/portfolio':    'Portfolio',
+  '/vault':        'LP Vault',
   '/admin/oracle': 'Oracle Admin',
 }
 

@@ -4,18 +4,22 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-/// @dev Fee split: 70% trader / 20% platform treasury / 10% slash pool
+interface IInsuranceVault {
+    function depositFromProtocol(uint256 amount) external;
+}
+
+/// @dev Fee split: 70% trader / 20% platform treasury / 10% insurance vault
 contract FeeRouter is Ownable {
     // ── Immutables ───────────────────────────────────────────────────────────
 
-    IERC20  public immutable usdc;
-    address public immutable platformTreasury;
-    address public immutable slashPool;
+    IERC20           public immutable usdc;
+    address          public immutable platformTreasury;
+    IInsuranceVault  public immutable insuranceVault;
 
     // ── Constants ────────────────────────────────────────────────────────────
 
-    uint256 public constant PLATFORM_SHARE_BPS  = 2000;  // 20 %
-    uint256 public constant SLASH_POOL_SHARE_BPS = 1000;  // 10 % — trader gets remaining 70 %
+    uint256 public constant PLATFORM_SHARE_BPS = 2000;  // 20 %
+    uint256 public constant VAULT_SHARE_BPS    = 1000;  // 10 % — trader gets remaining 70 %
 
     // ── State ────────────────────────────────────────────────────────────────
 
@@ -32,14 +36,14 @@ contract FeeRouter is Ownable {
         uint256 fee,
         uint256 traderShare,
         uint256 platformShare,
-        uint256 slashShare
+        uint256 vaultShare
     );
     event PerformanceFeeDistributed(
         address indexed trader,
         uint256 fee,
         uint256 traderShare,
         uint256 platformShare,
-        uint256 slashShare
+        uint256 vaultShare
     );
     event TraderEarningsWithdrawn(address indexed trader, uint256 amount);
     event PlatformFeesWithdrawn(uint256 amount);
@@ -58,12 +62,12 @@ contract FeeRouter is Ownable {
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
-    constructor(address _usdc, address _platformTreasury, address _slashPool)
+    constructor(address _usdc, address _platformTreasury, address _insuranceVault)
         Ownable(msg.sender)
     {
         usdc             = IERC20(_usdc);
         platformTreasury = _platformTreasury;
-        slashPool        = _slashPool;
+        insuranceVault   = IInsuranceVault(_insuranceVault);
     }
 
     // ── Admin ────────────────────────────────────────────────────────────────
@@ -107,14 +111,17 @@ contract FeeRouter is Ownable {
 
     function _split(address trader, uint256 fee, bool isCopy) internal {
         uint256 platformShare = fee * PLATFORM_SHARE_BPS / 10_000;
-        uint256 slashShare    = fee * SLASH_POOL_SHARE_BPS / 10_000;
-        uint256 traderShare   = fee - platformShare - slashShare;
+        uint256 vaultShare    = fee * VAULT_SHARE_BPS    / 10_000;
+        uint256 traderShare   = fee - platformShare - vaultShare;
 
         traderEarnings[trader] += traderShare;
         platformEarnings       += platformShare;
-        usdc.transfer(slashPool, slashShare);
 
-        if (isCopy) emit CopyFeeDistributed(trader, fee, traderShare, platformShare, slashShare);
-        else        emit PerformanceFeeDistributed(trader, fee, traderShare, platformShare, slashShare);
+        // Route vault share to InsuranceVault; vault calls transferFrom back to pull USDC
+        usdc.approve(address(insuranceVault), vaultShare);
+        insuranceVault.depositFromProtocol(vaultShare);
+
+        if (isCopy) emit CopyFeeDistributed(trader, fee, traderShare, platformShare, vaultShare);
+        else        emit PerformanceFeeDistributed(trader, fee, traderShare, platformShare, vaultShare);
     }
 }

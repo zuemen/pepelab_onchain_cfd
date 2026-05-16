@@ -5,6 +5,7 @@ export interface ChainAddresses {
   MockUSDC:          string
   MockOracle:        string
   TraderStake:       string
+  InsuranceVault:    string
   FeeRouter:         string
   PerpetualExchange: string
   StrategyRegistry:  string
@@ -17,6 +18,7 @@ const ANVIL: ChainAddresses = {
   MockUSDC:          "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
   MockOracle:        "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e",
   TraderStake:       "0x0000000000000000000000000000000000000000",
+  InsuranceVault:    "0x0000000000000000000000000000000000000000",
   FeeRouter:         "0x0000000000000000000000000000000000000000",
   PerpetualExchange: "0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1",
   StrategyRegistry:  "0x9A9f2CCfdE556A7E9Ff0848998Aa4a0CFD8863AE",
@@ -29,6 +31,7 @@ const SEPOLIA: ChainAddresses = {
   MockUSDC:          "0x655D51EDE4439d66894663AD4725770381db3EBa",
   MockOracle:        "0x446eeaC0368Dad42fC9e3B57ECC24FAb747CDFf5",
   TraderStake:       "0x11D1E96aa302a93897de8e60CB00b38247Fafc78",
+  InsuranceVault:    "0x0000000000000000000000000000000000000000",
   FeeRouter:         "0xCCD05CBdC2f7961a4C27D3633694022722786A0F",
   PerpetualExchange: "0xc100f942366305E2917d5a7B5eD0F5F1E930a49c",
   StrategyRegistry:  "0x5f98b068480334633EdA2C1051293b325e1e5c20",

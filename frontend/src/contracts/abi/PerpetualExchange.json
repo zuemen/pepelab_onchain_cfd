@@ -14,6 +14,9 @@
   { "type": "function", "name": "BORROW_FEE_BPS_PER_HOUR", "inputs": [], "outputs": [{ "name": "", "type": "uint256", "internalType": "uint256" }], "stateMutability": "view" },
   { "type": "function", "name": "FUNDING_INTERVAL", "inputs": [], "outputs": [{ "name": "", "type": "uint256", "internalType": "uint256" }], "stateMutability": "view" },
   { "type": "function", "name": "MAX_FUNDING_RATE_BPS", "inputs": [], "outputs": [{ "name": "", "type": "uint256", "internalType": "uint256" }], "stateMutability": "view" },
+  { "type": "function", "name": "BAILOUT_FLOOR_BPS", "inputs": [], "outputs": [{ "name": "", "type": "uint256", "internalType": "uint256" }], "stateMutability": "view" },
+  { "type": "function", "name": "insuranceVault", "inputs": [], "outputs": [{ "name": "", "type": "address", "internalType": "contract IInsuranceVaultPerp" }], "stateMutability": "view" },
+  { "type": "function", "name": "setInsuranceVault", "inputs": [{ "name": "_vault", "type": "address", "internalType": "address" }], "outputs": [], "stateMutability": "nonpayable" },
   { "type": "function", "name": "executionFee", "inputs": [], "outputs": [{ "name": "", "type": "uint256", "internalType": "uint256" }], "stateMutability": "view" },
   {
     "type": "function", "name": "cumulativeFundingIndex",

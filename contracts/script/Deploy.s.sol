@@ -6,6 +6,7 @@ import "forge-std/console.sol";
 import "../src/MockUSDC.sol";
 import "../src/MockOracle.sol";
 import "../src/FeeRouter.sol";
+import "../src/InsuranceVault.sol";
 import "../src/PerpetualExchange.sol";
 import "../src/StrategyRegistry.sol";
 import "../src/CopyTracker.sol";
@@ -38,16 +39,19 @@ contract Deploy is Script {
         // 4. TraderStake (skin-in-the-game; must deploy before StrategyRegistry)
         TraderStake traderStake = new TraderStake(address(usdc));
 
-        // 5. FeeRouter (platformTreasury = deployer; slashPool = deployer for now)
-        FeeRouter feeRouter = new FeeRouter(address(usdc), deployer, deployer);
+        // 5. InsuranceVault (must deploy before FeeRouter since FeeRouter holds it immutably)
+        InsuranceVault vault = new InsuranceVault(address(usdc));
 
-        // 6. PerpetualExchange
+        // 6. FeeRouter (platformTreasury = deployer; 10% slash share → vault)
+        FeeRouter feeRouter = new FeeRouter(address(usdc), deployer, address(vault));
+
+        // 7. PerpetualExchange
         PerpetualExchange exchange = new PerpetualExchange(address(usdc), address(oracle));
 
-        // 7. StrategyRegistry (with stake gate)
+        // 8. StrategyRegistry (with stake gate)
         StrategyRegistry registry = new StrategyRegistry(address(traderStake));
 
-        // 8. CopyTracker (with stake reference for slashing)
+        // 9. CopyTracker (with stake reference for slashing)
         CopyTracker ct = new CopyTracker(
             address(usdc),
             address(exchange),
@@ -56,10 +60,13 @@ contract Deploy is Script {
             address(traderStake)
         );
 
-        // 9. Wire contracts
+        // 10. Wire contracts
+        vault.setFeeRouter(address(feeRouter));
+        vault.setExchange(address(exchange));
         traderStake.setCopyTracker(address(ct));
         exchange.setCopyTracker(address(ct));
         exchange.setFeeRouter(address(feeRouter));
+        exchange.setInsuranceVault(address(vault));
         feeRouter.setCopyTracker(address(ct));
         feeRouter.setExchange(address(exchange));
 
@@ -70,6 +77,7 @@ contract Deploy is Script {
         console.log("MockUSDC         :", address(usdc));
         console.log("MockOracle       :", address(oracle));
         console.log("TraderStake      :", address(traderStake));
+        console.log("InsuranceVault   :", address(vault));
         console.log("FeeRouter        :", address(feeRouter));
         console.log("PerpetualExchange:", address(exchange));
         console.log("StrategyRegistry :", address(registry));

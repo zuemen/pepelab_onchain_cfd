@@ -4,19 +4,20 @@ pragma solidity ^0.8.20;
 import "forge-std/Test.sol";
 import "../src/PerpetualExchange.sol";
 import "../src/FeeRouter.sol";
+import "../src/InsuranceVault.sol";
 import "../src/MockUSDC.sol";
 import "../src/MockOracle.sol";
 
 /// @dev Tests that verify the 10 % performance fee on copied positions.
 contract PerformanceFeeTest is Test {
     PerpetualExchange exchange;
+    InsuranceVault    vault;
     FeeRouter         feeRouter;
     MockUSDC          usdc;
     MockOracle        oracle;
 
     address owner    = address(this);
     address platform = makeAddr("platform");
-    address slash    = makeAddr("slash");
     address trader   = makeAddr("trader");
     address follower = makeAddr("follower");
     address tracker  = makeAddr("tracker");  // simulates CopyTracker
@@ -27,10 +28,12 @@ contract PerformanceFeeTest is Test {
     function setUp() public {
         usdc      = new MockUSDC();
         oracle    = new MockOracle();
-        feeRouter = new FeeRouter(address(usdc), platform, slash);
+        vault     = new InsuranceVault(address(usdc));
+        feeRouter = new FeeRouter(address(usdc), platform, address(vault));
         exchange  = new PerpetualExchange(address(usdc), address(oracle));
 
         // Wire: exchange authorized to call feeRouter.receivePerformanceFee
+        vault.setFeeRouter(address(feeRouter));
         feeRouter.setExchange(address(exchange));
         exchange.setCopyTracker(tracker);
         exchange.setFeeRouter(address(feeRouter));
@@ -98,16 +101,16 @@ contract PerformanceFeeTest is Test {
         assertEq(feeRouter.platformEarnings(), 0.2e18);
     }
 
-    function test_performanceFee_slashPoolEarns10Pct() public {
+    function test_performanceFee_vaultEarns10Pct() public {
         uint256 posId = _openCopied(100e18);
         oracle.updatePrice(BTC, 110_000e8);
 
-        uint256 slashBefore = usdc.balanceOf(slash);
+        uint256 vaultBefore = vault.totalAssets();
         vm.prank(follower);
         exchange.closePosition(posId);
 
-        // 10 % of 1e18 = 0.1e18
-        assertEq(usdc.balanceOf(slash), slashBefore + 0.1e18);
+        // 10 % of 1e18 = 0.1e18 goes to insurance vault
+        assertEq(vault.totalAssets(), vaultBefore + 0.1e18);
     }
 
     // ── No fee when not profitable ────────────────────────────────────────────

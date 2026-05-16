@@ -3,22 +3,27 @@ pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
 import "../src/FeeRouter.sol";
+import "../src/InsuranceVault.sol";
 import "../src/MockUSDC.sol";
 
 contract FeeRouterTest is Test {
-    FeeRouter feeRouter;
-    MockUSDC  usdc;
+    InsuranceVault vault;
+    FeeRouter      feeRouter;
+    MockUSDC       usdc;
 
     address owner    = address(this);
     address platform = makeAddr("platform");
-    address slash    = makeAddr("slash");
     address trader   = makeAddr("trader");
     address caller   = makeAddr("caller");  // authorized copyTracker/exchange mock
     address stranger = makeAddr("stranger");
 
     function setUp() public {
         usdc      = new MockUSDC();
-        feeRouter = new FeeRouter(address(usdc), platform, slash);
+        vault     = new InsuranceVault(address(usdc));
+        feeRouter = new FeeRouter(address(usdc), platform, address(vault));
+
+        // Wire: authorize vault to accept deposits from feeRouter
+        vault.setFeeRouter(address(feeRouter));
 
         // Authorize caller as copyTracker
         feeRouter.setCopyTracker(caller);
@@ -37,8 +42,7 @@ contract FeeRouterTest is Test {
     function test_distributeCopyFee_splitsCorrectly() public {
         uint256 fee = 1_000e18;
 
-        uint256 slashBefore    = usdc.balanceOf(slash);
-        uint256 callerBefore   = usdc.balanceOf(caller);
+        uint256 callerBefore = usdc.balanceOf(caller);
 
         vm.prank(caller);
         feeRouter.distributeCopyFee(trader, fee);
@@ -47,8 +51,8 @@ contract FeeRouterTest is Test {
         assertEq(feeRouter.traderEarnings(trader), 700e18);
         // Platform: 20 %
         assertEq(feeRouter.platformEarnings(), 200e18);
-        // Slash pool: 10 % — direct transfer
-        assertEq(usdc.balanceOf(slash), slashBefore + 100e18);
+        // Insurance vault: 10 % — via depositFromProtocol
+        assertEq(vault.totalAssets(), 100e18);
         // Caller paid the fee
         assertEq(usdc.balanceOf(caller), callerBefore - fee);
     }
@@ -77,14 +81,14 @@ contract FeeRouterTest is Test {
         // authorize caller as exchange too
         feeRouter.setExchange(caller);
 
-        uint256 slashBefore = usdc.balanceOf(slash);
+        uint256 vaultBefore = vault.totalAssets();
 
         vm.prank(caller);
         feeRouter.receivePerformanceFee(trader, fee);
 
-        assertEq(feeRouter.traderEarnings(trader), 350e18);    // 70 %
-        assertEq(feeRouter.platformEarnings(), 100e18);         // 20 %
-        assertEq(usdc.balanceOf(slash), slashBefore + 50e18);  // 10 %
+        assertEq(feeRouter.traderEarnings(trader), 350e18);           // 70 %
+        assertEq(feeRouter.platformEarnings(), 100e18);                // 20 %
+        assertEq(vault.totalAssets(), vaultBefore + 50e18);           // 10 %
     }
 
     function test_receivePerformanceFee_revertsForUnauthorized() public {

@@ -12,6 +12,12 @@ interface IFeeRouterPerp {
     function receivePerformanceFee(address trader, uint256 fee) external;
 }
 
+interface IInsuranceVaultPerp {
+    function totalAssets() external view returns (uint256);
+    function bailout(uint256 amount, address trader) external;
+    function depositFromProtocol(uint256 amount) external;
+}
+
 contract PerpetualExchange is Ownable {
     // ── Constants ────────────────────────────────────────────────────────────
 
@@ -26,6 +32,9 @@ contract PerpetualExchange is Ownable {
     // Funding rate: 5 min for demo (change to 8 hours = 28800 for production)
     uint256 public constant FUNDING_INTERVAL        = 5 minutes;
     uint256 public constant MAX_FUNDING_RATE_BPS    = 75;    // 0.75% per interval cap
+
+    // Insurance vault: floor paid to trader when closeAmount < 0
+    uint256 public constant BAILOUT_FLOOR_BPS       = 1000;  // 10% of margin
 
     uint256 public executionFee = 0.001 ether; // Fee paid in native ETH to cover platform/Keeper gas
 
@@ -69,6 +78,7 @@ contract PerpetualExchange is Ownable {
     uint256                           public nextPositionId;
     address                           public copyTracker;
     IFeeRouterPerp                    public feeRouter;
+    IInsuranceVaultPerp               public insuranceVault;
 
     // ── Events ───────────────────────────────────────────────────────────────
 
@@ -145,6 +155,10 @@ contract PerpetualExchange is Ownable {
 
     function setBorrowFeePerHour(uint256 _bps) external onlyOwner {
         BORROW_FEE_BPS_PER_HOUR = _bps;
+    }
+
+    function setInsuranceVault(address _vault) external onlyOwner {
+        insuranceVault = IInsuranceVaultPerp(_vault);
     }
 
     function withdrawExecutionFees() external onlyOwner {
@@ -242,8 +256,18 @@ contract PerpetualExchange is Ownable {
         pos.closedAt    = block.timestamp;
         pos.realizedPnL = pnl;
 
-        // Optional: Pay a small liquidator reward here from remaining margin.
-        // For simplicity in this iteration, we just close it with 0 returned to owner.
+        if (pos.isLong) {
+            globalLongNotional[pos.asset]  -= notional;
+        } else {
+            globalShortNotional[pos.asset] -= notional;
+        }
+
+        // Send remaining collateral (if any) to InsuranceVault
+        if (closeAmount > 0 && address(insuranceVault) != address(0)) {
+            uint256 remainder = uint256(closeAmount);
+            usdc.approve(address(insuranceVault), remainder);
+            insuranceVault.depositFromProtocol(remainder);
+        }
 
         emit PositionLiquidated(positionId, pos.owner, msg.sender, pnl);
         emit PositionClosed(positionId, pos.owner, pnl, 0);
@@ -381,7 +405,13 @@ contract PerpetualExchange is Ownable {
         int256 totalFees      = int256(tradingFee + borrowFee);
         int256 fundingPayment = _calcFunding(pos); // positive = trader pays, negative = trader receives
         int256 closeAmount    = int256(pos.margin) + pnl - totalFees - fundingPayment;
-        if (closeAmount < 0) closeAmount = 0;
+        if (closeAmount < 0) {
+            if (address(insuranceVault) != address(0)) {
+                uint256 floor = pos.margin * BAILOUT_FLOOR_BPS / 10_000;
+                try insuranceVault.bailout(floor, pos.owner) { } catch { }
+            }
+            closeAmount = 0;
+        }
 
         // Performance fee: 10 % of profit on copied positions when feeRouter is set
         uint256 perfFee = 0;
