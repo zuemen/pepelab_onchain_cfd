@@ -3,7 +3,9 @@ import type { ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import type { WalletAPI } from '../hooks/useWallet'
 import WalletButton from './WalletButton'
-import { CHAIN_NAMES } from '../contracts/addresses'
+import { CHAIN_NAMES, getAddresses } from '../contracts/addresses'
+
+const DEMO_OWNER = '0xE80A81360608C1342e66743F70a00f75d792Eb93'
 
 const NAV = [
   { to: '/',             label: 'Home',        icon: '⌂' },
@@ -37,8 +39,15 @@ export default function Layout({ wallet, children }: Props) {
   const [dismissed, setDismissed] = useState(
     () => localStorage.getItem('disclaimer-dismissed') === '1'
   )
+  const [demoDismissed, setDemoDismissed] = useState(
+    () => localStorage.getItem('demo-banner-dismissed') === '1'
+  )
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [switching, setSwitching] = useState(false)
+
+  const addresses   = getAddresses(wallet.chainId)
+  const isOwner     = wallet.address?.toLowerCase() === DEMO_OWNER.toLowerCase()
+  const showDemoBanner = isOwner && !demoDismissed
 
   const chainLabel = wallet.chainId !== null
     ? (CHAIN_NAMES[wallet.chainId] ?? `Chain ${wallet.chainId}`)
@@ -191,6 +200,20 @@ export default function Layout({ wallet, children }: Props) {
           </div>
         )}
 
+        {/* Demo mode banner — visible only to deployer/admin */}
+        {showDemoBanner && (
+          <div className="bg-brand-400/10 border-b border-brand-300/30 px-6 py-1.5 flex items-center justify-between text-xs text-brand-100">
+            <span>🎬 Live demo mode — admin auto-keeper running, prices update every 60s</span>
+            <button
+              onClick={() => { setDemoDismissed(true); localStorage.setItem('demo-banner-dismissed', '1') }}
+              className="ml-4 hover:text-white transition-colors shrink-0"
+              aria-label="Dismiss demo banner"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {/* Top header */}
         <header className="sticky top-0 z-30 bg-surface-sub/80 backdrop-blur-md border-b border-surface-border px-4 md:px-6 py-3 flex items-center gap-4">
           <button
@@ -232,8 +255,27 @@ export default function Layout({ wallet, children }: Props) {
 
         <main className="flex-1 p-4 md:p-6">{children}</main>
 
-        <footer className="border-t border-surface-border px-6 py-3 text-center text-xs text-gray-600">
-          Research prototype · Anvil local / Sepolia testnet · No real assets
+        <footer className="border-t border-surface-border px-6 py-3 text-center text-xs text-gray-600 space-x-2">
+          <span>Research prototype · Sepolia ·</span>
+          {addresses?.PerpetualExchange && wallet.chainId === 11155111 && (
+            <a
+              href={`https://sepolia.etherscan.io/address/${addresses.PerpetualExchange}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-emerald-500 hover:text-emerald-300 transition-colors"
+            >
+              Exchange ↗
+            </a>
+          )}
+          {addresses?.PerpetualExchange && wallet.chainId === 11155111 && <span>·</span>}
+          <a
+            href="https://github.com/zuemen/pepelab_onchain_cfd"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-emerald-500 hover:text-emerald-300 transition-colors"
+          >
+            GitHub ↗
+          </a>
         </footer>
       </div>
     </div>

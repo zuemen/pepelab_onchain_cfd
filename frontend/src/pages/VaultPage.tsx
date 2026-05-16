@@ -3,6 +3,7 @@ import type { Contract } from 'ethers'
 import { parseUnits, formatUnits } from 'ethers'
 import type { WalletAPI } from '../hooks/useWallet'
 import { useContracts } from '../hooks/useContracts'
+import { explorerTx } from '../lib/notify'
 
 interface Props {
   wallet: WalletAPI
@@ -80,8 +81,12 @@ export default function VaultPage({ wallet }: Props) {
   const [depositAmt, setDepositAmt] = useState('')
   const [withdrawAmt, setWithdrawAmt] = useState('')
   const [busy, setBusy]           = useState(false)
-  const [err, setErr]             = useState('')
-  const [ok, setOk]               = useState('')
+  const [toast, setToast]         = useState<{ msg: string; ok: boolean; hash?: string } | null>(null)
+
+  const notify = (msg: string, ok: boolean, hash?: string) => {
+    setToast({ msg, ok, hash })
+    setTimeout(() => setToast(null), 6000)
+  }
 
   const fetchStats = useCallback(async () => {
     if (!vault || !wallet.address) return
@@ -108,19 +113,19 @@ export default function VaultPage({ wallet }: Props) {
 
   const doDeposit = async () => {
     if (!vault || !usdc || !wallet.signer) return
-    setErr(''); setOk(''); setBusy(true)
+    setBusy(true)
     try {
       const amount = parseUnits(depositAmt.trim(), 18)
       const approveTx = await usdc.approve(await vault.getAddress(), amount)
       await approveTx.wait()
       const tx = await vault.deposit(amount)
       await tx.wait()
-      setOk(`Deposited ${depositAmt} USDC`)
+      notify(`Deposited ${depositAmt} USDC ✓`, true, tx.hash)
       setDepositAmt('')
       await fetchStats()
       if (vault) setActivity(await fetchActivity(vault))
     } catch (e: any) {
-      setErr(e?.reason ?? e?.message ?? 'Transaction failed')
+      notify(e?.reason ?? e?.message ?? 'Transaction failed', false)
     } finally {
       setBusy(false)
     }
@@ -128,17 +133,17 @@ export default function VaultPage({ wallet }: Props) {
 
   const doWithdraw = async () => {
     if (!vault || !wallet.signer) return
-    setErr(''); setOk(''); setBusy(true)
+    setBusy(true)
     try {
       const shares = parseUnits(withdrawAmt.trim(), 18)
       const tx = await vault.withdraw(shares)
       await tx.wait()
-      setOk(`Withdrew ${withdrawAmt} pIV shares`)
+      notify(`Withdrew ${withdrawAmt} pIV shares ✓`, true, tx.hash)
       setWithdrawAmt('')
       await fetchStats()
       if (vault) setActivity(await fetchActivity(vault))
     } catch (e: any) {
-      setErr(e?.reason ?? e?.message ?? 'Transaction failed')
+      notify(e?.reason ?? e?.message ?? 'Transaction failed', false)
     } finally {
       setBusy(false)
     }
@@ -269,9 +274,22 @@ export default function VaultPage({ wallet }: Props) {
         </div>
       </div>
 
-      {/* Feedback */}
-      {err && <div className="rounded-lg bg-red-900/20 border border-red-700/40 px-4 py-3 text-sm text-red-400">{err}</div>}
-      {ok  && <div className="rounded-lg bg-green-900/20 border border-green-700/40 px-4 py-3 text-sm text-green-400">{ok}</div>}
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed top-4 right-4 z-50 rounded-lg px-5 py-3 text-sm font-medium shadow-xl ${toast.ok ? 'bg-emerald-800 text-emerald-100' : 'bg-red-900 text-red-100'}`}>
+          {toast.msg}
+          {toast.hash && explorerTx(toast.hash, wallet.chainId) && (
+            <a
+              href={explorerTx(toast.hash, wallet.chainId)!}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block mt-1 text-xs underline opacity-80"
+            >
+              View on Etherscan ↗
+            </a>
+          )}
+        </div>
+      )}
 
       {/* Activity Feed */}
       <div className="bg-surface-sub rounded-xl border border-surface-border overflow-hidden">

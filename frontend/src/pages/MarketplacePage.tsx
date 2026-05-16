@@ -13,7 +13,7 @@ const ASSET_LABEL: Record<string, string> = {
   [ASSET_IDS.sTSLA]: 'sTSLA',
 }
 
-type SortKey = 'reputation' | 'followers'
+type SortKey = 'reputation' | 'followers' | 'stake'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface RawAlloc {
@@ -168,8 +168,11 @@ export default function MarketplacePage({ wallet }: Props) {
 
   // ── Sorted view ───────────────────────────────────────────────────────────
   const sorted = [...traders].sort((a, b) => {
-    if (sortKey === 'followers') {
-      return Number(b.followerCount - a.followerCount)
+    if (sortKey === 'followers') return Number(b.followerCount - a.followerCount)
+    if (sortKey === 'stake') {
+      const sa = a.stake ?? 0n
+      const sb = b.stake ?? 0n
+      return sa === sb ? 0 : sb > sa ? 1 : -1
     }
     // reputation (default): nulls last
     if (a.reputation === null && b.reputation === null) return 0
@@ -177,6 +180,8 @@ export default function MarketplacePage({ wallet }: Props) {
     if (b.reputation === null) return -1
     return Number(b.reputation - a.reputation)
   })
+
+  const MEDALS = ['🥇', '🥈', '🥉']
 
   // ── Guard ─────────────────────────────────────────────────────────────────
   if (!wallet.isConnected) {
@@ -205,6 +210,7 @@ export default function MarketplacePage({ wallet }: Props) {
           >
             <option value="reputation">Sort: Reputation</option>
             <option value="followers">Sort: Followers</option>
+            <option value="stake">Sort: Stake</option>
           </select>
           <button
             onClick={() => void fetchAll()}
@@ -258,21 +264,33 @@ export default function MarketplacePage({ wallet }: Props) {
       ) : (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {sorted.map(t => (
+            {sorted.map((t, idx) => (
               <div
                 key={t.address}
-                className="rounded-card border border-surface-border bg-surface shadow-card hover:shadow-card-hover transition-shadow flex flex-col gap-3 p-5"
+                className={`rounded-card border bg-surface shadow-card hover:shadow-card-hover transition-shadow flex flex-col gap-3 p-5 ${
+                  idx === 0 ? 'border-yellow-600/60' : idx === 1 ? 'border-gray-400/40' : idx === 2 ? 'border-amber-700/40' : 'border-surface-border'
+                }`}
               >
-                {/* Trader identity + reputation */}
+                {/* Rank + Trader identity + reputation */}
                 <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <Link
-                      to={`/trader/${t.address}`}
-                      className="font-bold text-white text-base leading-tight truncate block hover:text-brand-100 transition-colors"
-                    >
-                      {t.displayName || '—'}
-                    </Link>
-                    <div className="font-mono text-xs text-gray-500 mt-0.5">{shortAddr(t.address)}</div>
+                  <div className="min-w-0 flex items-start gap-2">
+                    {idx < 3 && (
+                      <span className="text-lg leading-none shrink-0 mt-0.5" title={`#${idx + 1}`}>
+                        {MEDALS[idx]}
+                      </span>
+                    )}
+                    {idx >= 3 && (
+                      <span className="text-xs text-gray-600 font-mono shrink-0 mt-1">#{idx + 1}</span>
+                    )}
+                    <div className="min-w-0">
+                      <Link
+                        to={`/trader/${t.address}`}
+                        className="font-bold text-white text-base leading-tight truncate block hover:text-brand-100 transition-colors"
+                      >
+                        {t.displayName || '—'}
+                      </Link>
+                      <div className="font-mono text-xs text-gray-500 mt-0.5">{shortAddr(t.address)}</div>
+                    </div>
                   </div>
                   {t.reputation !== null && (
                     <span className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold border ${repBadge(t.reputation)}`}>
