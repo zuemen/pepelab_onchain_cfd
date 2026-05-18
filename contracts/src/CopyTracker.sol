@@ -71,6 +71,7 @@ contract CopyTracker is ReentrancyGuard {
     error NoStrategyPublished();
     error InvalidRecordIndex();
     error RecordAlreadyInactive();
+    error TradingFeeExceedsMargin(uint256 fee, uint256 margin);
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
@@ -108,17 +109,27 @@ contract CopyTracker is ReentrancyGuard {
             feeRouter.distributeCopyFee(trader, fee);
         }
 
-        // 4. Approve exchange to pull netMargin from CopyTracker
+        // 4. Calculate total trading fee buffer (exchange deducts tradingFee per position)
+        uint256 tradingFeeBps  = exchange.TRADING_FEE_BPS();
+        uint256 totalTradingFee = 0;
+        for (uint256 i; i < allocations.length; ++i) {
+            uint256 weightedNotional = netMargin * allocations[i].weight * allocations[i].leverage / 10_000;
+            totalTradingFee += weightedNotional * tradingFeeBps / 10_000;
+        }
+        if (totalTradingFee >= netMargin) revert TradingFeeExceedsMargin(totalTradingFee, netMargin);
+        uint256 marginForPositions = netMargin - totalTradingFee;
+
+        // 5. Approve exchange to pull full netMargin (margin budget + tradingFee budget)
         usdc.approve(address(exchange), netMargin);
 
-        // 5. Deposit on behalf of follower (exchange pulls from CopyTracker, credits follower)
+        // 6. Deposit on behalf of follower
         exchange.depositMarginFor(msg.sender, netMargin);
 
-        // 6. Open one position per allocation; copiedFrom = trader for perf-fee tracking
+        // 7. Open one position per allocation; portion based on marginForPositions
         uint256[] memory ids = new uint256[](allocations.length);
         uint256 feePerPosition = allocations.length > 0 ? msg.value / allocations.length : 0;
         for (uint256 i; i < allocations.length; ++i) {
-            uint256 portion = netMargin * allocations[i].weight / 10_000;
+            uint256 portion = marginForPositions * allocations[i].weight / 10_000;
             ids[i] = exchange.openPositionFor{value: feePerPosition}(
                 msg.sender,
                 allocations[i].asset,
@@ -129,7 +140,7 @@ contract CopyTracker is ReentrancyGuard {
             );
         }
 
-        // 7. Persist copy record
+        // 8. Persist copy record
         copyRecords[msg.sender].push();
         CopyRecord storage rec = copyRecords[msg.sender][copyRecords[msg.sender].length - 1];
         rec.trader        = trader;
@@ -196,5 +207,37 @@ contract CopyTracker is ReentrancyGuard {
 
     function getFollowerCount(address trader) external view returns (uint256) {
         return followersByTrader[trader].length;
+    }
+
+    function previewCopyAllocation(address trader, uint256 totalMargin)
+        external view returns (
+            uint256 copyFee,
+            uint256 totalTradingFee,
+            uint256 marginForPositions,
+            uint256[] memory portions
+        )
+    {
+        (StrategyRegistry.Allocation[] memory allocs,) = registry.getLatestStrategy(trader);
+
+        copyFee = address(feeRouter) != address(0) ? totalMargin * COPY_FEE_BPS / 10_000 : 0;
+        uint256 netMargin    = totalMargin - copyFee;
+        uint256 tradingFeeBps = exchange.TRADING_FEE_BPS();
+
+        portions = new uint256[](allocs.length);
+        totalTradingFee = 0;
+        for (uint256 i; i < allocs.length; ++i) {
+            uint256 wNotional = netMargin * allocs[i].weight * allocs[i].leverage / 10_000;
+            totalTradingFee += wNotional * tradingFeeBps / 10_000;
+        }
+
+        if (totalTradingFee >= netMargin) {
+            marginForPositions = 0;
+            return (copyFee, totalTradingFee, 0, portions);
+        }
+
+        marginForPositions = netMargin - totalTradingFee;
+        for (uint256 i; i < allocs.length; ++i) {
+            portions[i] = marginForPositions * allocs[i].weight / 10_000;
+        }
     }
 }
