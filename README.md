@@ -1,116 +1,83 @@
-# PepeLab Onchain CFD — 鏈上 CFD 衍生品跟單系統
+# PepeLab On-Chain CFD
 
-## 專題簡介
+A proof-of-concept perpetual CFD (Contract for Difference) protocol deployed on Sepolia testnet, built as an NCCU Capstone 2026 project.
 
-本專題為政治大學資管系大學部個人專題，目標是在區塊鏈上實作一套 **差價合約（CFD, Contract for Difference）跟單交易系統**。
+## Architecture
 
-使用者可選擇跟單特定的「領單交易員」，自動複製其在鏈上開立的合成資產倉位（多/空），無需自行判斷行情。系統透過智能合約管理保證金、計算 PnL、執行清算，全程去中心化、透明可驗證。
+| Layer | Component | Role |
+|---|---|---|
+| Core | `PerpetualExchange` | Open/close positions, margin management |
+| Oracle | `PriceOracle` | Keeper-updated price feed |
+| Liquidity | `LiquidityVault` | LP deposits, PnL settlement |
+| Fees | `FeeRouter` | 70/20/10 split (trader / platform / vault) |
+| Copy Trading | `CopyTracker` | Follow/unfollow traders, mirror positions |
+| Staking | `TraderStake` | Reputation stake with slashing |
+| Swap | `MockSwapRouter` | Bidirectional ETH ↔ mUSDC at 1 ETH = 3000 USDC |
 
-### 核心概念
+## Features
 
-- **合成資產（Synthetic Asset）**：以超額抵押穩定幣模擬標的資產（如 BTC、ETH）價格曝險，無需持有真實資產
-- **CFD 倉位**：記錄開倉價、方向（多/空）、槓桿、抵押品，到期或平倉結算差額
-- **跟單（Copy Trading）**：追蹤者存入資金後，鏈上合約自動按比例複製領單者的開倉與平倉操作
-- **去中心化預言機**：價格來源使用 Chainlink / 自建 Mock Oracle，確保公平
+- **Long / Short positions** with configurable leverage (1×–10×)
+- **Copy trading** — follow a trader, positions mirror automatically
+- **LP Vault** — provide liquidity and earn from spread/fees
+- **Trader staking** — stake ETH as reputation collateral
+- **Bidirectional swap** — ETH → mUSDC (mint) and mUSDC → ETH (burn + send)
+- **Admin treasury** — claim accumulated platform fees, convert to ETH
+- **On-chain history** — queryFilter-based event log across all contracts
 
----
+## On-Chain Auditability
 
-## 技術棧
+Every state-changing action emits a Solidity event. The `/history` page replays those events client-side via ethers.js `queryFilter` so anyone can verify the full activity log without trusting a backend.
 
-| 層次 | 技術 |
-|------|------|
-| 智能合約 | Solidity ^0.8, Foundry（forge / cast / anvil） |
-| 前端框架 | React 19 + Vite + TypeScript |
-| 樣式 | Tailwind CSS v3 |
-| 路由 | React Router DOM v7 |
-| 圖表 | Recharts |
-| 鏈上互動 | ethers.js v6 |
-| 測試 | Forge 單元測試 + Invariant Tests |
-| 版本控制 | Git / GitHub |
-
----
-
-## 目錄結構
-
-```
-pepelab_onchain_cfd/
-├── contracts/                  # Foundry 專案（Solidity 智能合約）
-│   ├── src/                    # 合約原始碼
-│   │   ├── CFDEngine.sol       # 核心 CFD 引擎（保證金、開倉、平倉、清算）
-│   │   ├── CopyTrading.sol     # 跟單邏輯合約
-│   │   ├── SyntheticAsset.sol  # 合成資產 ERC-20 token
-│   │   └── MockOracle.sol      # 測試用價格預言機
-│   ├── test/                   # Forge 測試
-│   ├── script/                 # 部署腳本
-│   ├── lib/                    # 依賴（forge-std、openzeppelin）
-│   └── foundry.toml
-│
-├── frontend/                   # React + Vite 前端
-│   ├── src/
-│   │   ├── components/         # 共用 UI 元件
-│   │   ├── pages/              # 頁面（Dashboard、Trading、Leaderboard）
-│   │   ├── hooks/              # 自訂 React Hooks（useContract、usePrices…）
-│   │   ├── abis/               # 合約 ABI JSON
-│   │   └── main.tsx
-│   ├── public/
-│   ├── tailwind.config.js
-│   ├── vite.config.ts
-│   └── package.json
-│
-├── README.md
-└── .gitignore
+```ts
+// Example: fetch last 5000 blocks of PositionOpened for any user
+const filter = exchange.filters.PositionOpened(null, null, null)
+const logs   = await exchange.queryFilter(filter, -5000)
 ```
 
----
+Events covered:
 
-## 快速啟動
+| Event | Contract |
+|---|---|
+| `SwapEthToUsdc` / `SwapUsdcToEth` | MockSwapRouter |
+| `PositionOpened` / `PositionClosed` | PerpetualExchange |
+| `MarginDeposited` / `MarginWithdrawn` | PerpetualExchange |
+| `TraderFollowed` / `TraderUnfollowed` | CopyTracker |
+| `CopyFeeDistributed` | FeeRouter |
+| `PriceUpdated` | PriceOracle |
+| `Staked` / `Slashed` | TraderStake |
 
-### Anvil（本地測試）
+## Development
 
 ```bash
-# Terminal 1
-anvil
-
-# Terminal 2
-bash deploy-anvil.sh          # 部署合約 + 自動寫 frontend/src/contracts/addresses.ts
-bash seed-anvil.sh            # 建立 Demo Alpha + Demo Beta 兩個示範交易員
-
-# Terminal 3
-cd frontend && npm install && npm run dev   # http://localhost:5173
-```
-
-### Sepolia testnet
-
-```bash
-# 確認 contracts/.env 已填入：
-#   PRIVATE_KEY=0x...
-#   SEPOLIA_RPC_URL=https://...
-#   ETHERSCAN_API_KEY=...（選填，用於 verify）
-
-bash deploy-sepolia.sh        # 部署 + 自動更新 addresses.ts SEPOLIA 區塊
-bash seed-sepolia.sh          # 建立 Demo Alpha（deployer），可設 TRADER2_PK 加 Demo Beta
-git push                      # Vercel 自動 redeploy
-```
-
-### 合約測試
-
-```bash
+# Contracts
 cd contracts
 forge build
 forge test
+
+# Frontend
+cd frontend
+npm install
+npm run dev
 ```
 
----
+## Deployment (Sepolia)
 
-## 開發進度
+```bash
+cd contracts
+forge script script/Deploy.s.sol --rpc-url $SEPOLIA_RPC --broadcast --verify
+# Then update frontend/src/contracts/addresses.ts with new addresses
+# Pre-fund swap router:
+# cast send <SwapRouter> "fundRouter()" --value 1ether --rpc-url $SEPOLIA_RPC
+```
 
-- [ ] CFDEngine 合約設計與測試
-- [ ] CopyTrading 合約
-- [ ] MockOracle 整合
-- [ ] 前端 Dashboard（倉位總覽、PnL 圖表）
-- [ ] 跟單 UI 流程
-- [ ] Testnet 部署（Sepolia）
+## Stack
 
----
+- Solidity 0.8.20 + Foundry
+- React 18 + TypeScript + Vite
+- ethers.js v6
+- Tailwind CSS v3
+- MetaMask (EIP-1193)
 
-*政治大學資管系 · 2025–2026 個人專題 · PepeLab*
+## Disclaimer
+
+Research prototype · NCCU Capstone 2026 · No real assets · 僅供學術展示，非投資建議
