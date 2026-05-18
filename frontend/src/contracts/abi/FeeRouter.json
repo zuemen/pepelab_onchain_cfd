@@ -142,7 +142,11 @@
   },
   {
     "type": "event", "name": "PlatformFeesWithdrawn", "anonymous": false,
-    "inputs": [{ "name": "amount", "type": "uint256", "indexed": false, "internalType": "uint256" }]
+    "inputs": [
+      { "name": "to",        "type": "address", "indexed": true,  "internalType": "address" },
+      { "name": "amount",    "type": "uint256", "indexed": false, "internalType": "uint256" },
+      { "name": "timestamp", "type": "uint256", "indexed": false, "internalType": "uint256" }
+    ]
   },
   {
     "type": "event", "name": "TraderEarningsWithdrawn", "anonymous": false,

@@ -8,25 +8,30 @@ import { CHAIN_NAMES, getAddresses } from '../contracts/addresses'
 const DEMO_OWNER = '0xE80A81360608C1342e66743F70a00f75d792Eb93'
 
 const NAV = [
-  { to: '/',             label: 'Home',        icon: '⌂' },
-  { to: '/exchange',     label: 'Exchange',     icon: '⇄' },
-  { to: '/trader',       label: 'Trader',       icon: '◈' },
-  { to: '/stake',        label: 'Stake',        icon: '◆' },
-  { to: '/marketplace',  label: 'Marketplace',  icon: '⊞' },
-  { to: '/portfolio',    label: 'Portfolio',    icon: '◑' },
-  { to: '/vault',        label: 'LP Vault',     icon: '◎' },
-  { to: '/admin/oracle', label: 'Admin',        icon: '⚙' },
+  { to: '/',            label: 'Home',       icon: '⌂' },
+  { to: '/exchange',    label: 'Exchange',    icon: '⇄' },
+  { to: '/trader',      label: 'Trader',      icon: '◈' },
+  { to: '/stake',       label: 'Stake',       icon: '◆' },
+  { to: '/marketplace', label: 'Marketplace', icon: '⊞' },
+  { to: '/portfolio',   label: 'Portfolio',   icon: '◑' },
+  { to: '/vault',       label: 'LP Vault',    icon: '◎' },
+]
+
+const ADMIN_NAV = [
+  { to: '/admin/oracle',   label: 'Oracle & Keeper', icon: '⚙' },
+  { to: '/admin/treasury', label: 'Cash Out',        icon: '◈' },
 ]
 
 const PAGE_TITLES: Record<string, string> = {
-  '/':             'Home',
-  '/exchange':     'Exchange',
-  '/trader':       'Trader Dashboard',
-  '/stake':        'Trader Stake',
-  '/marketplace':  'Marketplace',
-  '/portfolio':    'Portfolio',
-  '/vault':        'LP Vault',
-  '/admin/oracle': 'Oracle Admin',
+  '/':               'Home',
+  '/exchange':       'Exchange',
+  '/trader':         'Trader Dashboard',
+  '/stake':          'Trader Stake',
+  '/marketplace':    'Marketplace',
+  '/portfolio':      'Portfolio',
+  '/vault':          'LP Vault',
+  '/admin/oracle':   'Oracle Admin',
+  '/admin/treasury': 'Treasury Admin',
 }
 
 interface Props {
@@ -148,6 +153,52 @@ export default function Layout({ wallet, children }: Props) {
             </Link>
           )
         })}
+
+        {/* Admin section — sub-menu for owner, single link for others */}
+        {isOwner ? (
+          <>
+            <div className="px-3 pt-3 pb-0.5 text-[10px] text-gray-600 uppercase tracking-widest font-semibold select-none">
+              Admin
+            </div>
+            {ADMIN_NAV.map(({ to, label, icon }) => {
+              const active = pathname === to
+              return (
+                <Link
+                  key={to}
+                  to={to}
+                  onClick={() => setSidebarOpen(false)}
+                  className={`relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                    active
+                      ? 'bg-brand-400/20 text-brand-100'
+                      : 'text-gray-400 hover:text-gray-100 hover:bg-surface-elev'
+                  }`}
+                >
+                  {active && (
+                    <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-brand-200 rounded-r-full" />
+                  )}
+                  <span className="w-5 text-center">{icon}</span>
+                  {label}
+                </Link>
+              )
+            })}
+          </>
+        ) : (
+          <Link
+            to="/admin/oracle"
+            onClick={() => setSidebarOpen(false)}
+            className={`relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+              pathname.startsWith('/admin')
+                ? 'bg-brand-400/20 text-brand-100'
+                : 'text-gray-400 hover:text-gray-100 hover:bg-surface-elev'
+            }`}
+          >
+            {pathname.startsWith('/admin') && (
+              <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-brand-200 rounded-r-full" />
+            )}
+            <span className="w-5 text-center">⚙</span>
+            Admin
+          </Link>
+        )}
       </nav>
 
       <div className="px-3 pb-4 pt-3 border-t border-surface-border shrink-0">

@@ -46,7 +46,7 @@ contract FeeRouter is Ownable {
         uint256 vaultShare
     );
     event TraderEarningsWithdrawn(address indexed trader, uint256 amount);
-    event PlatformFeesWithdrawn(uint256 amount);
+    event PlatformFeesWithdrawn(address indexed to, uint256 amount, uint256 timestamp);
 
     // ── Errors ───────────────────────────────────────────────────────────────
 
@@ -104,7 +104,7 @@ contract FeeRouter is Ownable {
         if (amt == 0) revert NothingToWithdraw();
         platformEarnings = 0;
         usdc.transfer(platformTreasury, amt);
-        emit PlatformFeesWithdrawn(amt);
+        emit PlatformFeesWithdrawn(platformTreasury, amt, block.timestamp);
     }
 
     // ── Internal ─────────────────────────────────────────────────────────────

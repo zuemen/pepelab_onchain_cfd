@@ -10,6 +10,7 @@ import MarketplacePage   from './pages/MarketplacePage'
 import CopyPage          from './pages/CopyPage'
 import PortfolioPage     from './pages/PortfolioPage'
 import AdminOraclePage   from './pages/AdminOraclePage'
+import AdminTreasuryPage from './pages/AdminTreasuryPage'
 import VaultPage         from './pages/VaultPage'
 
 export default function App() {
@@ -28,7 +29,8 @@ export default function App() {
           <Route path="/copy/:traderAddress"    element={<CopyPage          wallet={wallet} />} />
           <Route path="/portfolio"              element={<PortfolioPage     wallet={wallet} />} />
           <Route path="/vault"                  element={<VaultPage         wallet={wallet} />} />
-          <Route path="/admin/oracle"           element={<AdminOraclePage   wallet={wallet} />} />
+          <Route path="/admin/oracle"           element={<AdminOraclePage    wallet={wallet} />} />
+          <Route path="/admin/treasury"         element={<AdminTreasuryPage  wallet={wallet} />} />
         </Routes>
       </Layout>
     </BrowserRouter>
