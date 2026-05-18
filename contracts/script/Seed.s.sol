@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import "forge-std/Script.sol";
 import "forge-std/console.sol";
 import "../src/MockUSDC.sol";
+import "../src/PerpetualExchange.sol";
 import "../src/StrategyRegistry.sol";
 import "../src/CopyTracker.sol";
 import "../src/TraderStake.sol";
@@ -16,6 +17,7 @@ contract Seed is Script {
 
     function run() external {
         address usdcAddr     = vm.envAddress("USDC_ADDR");
+        address exchangeAddr = vm.envAddress("EXCHANGE_ADDR");
         address registryAddr = vm.envAddress("REGISTRY_ADDR");
         address trackerAddr  = vm.envAddress("TRACKER_ADDR");
         address stakeAddr    = vm.envAddress("STAKE_ADDR");
@@ -25,10 +27,11 @@ contract Seed is Script {
         uint256 trader3Pk = vm.envOr("TRADER3_PK", uint256(0));
         bool isAnvil = block.chainid == 31337;
 
-        MockUSDC         usdc     = MockUSDC(usdcAddr);
-        StrategyRegistry registry = StrategyRegistry(registryAddr);
-        CopyTracker      ct       = CopyTracker(trackerAddr);
-        TraderStake      ts       = TraderStake(stakeAddr);
+        MockUSDC          usdc     = MockUSDC(usdcAddr);
+        PerpetualExchange exchange = PerpetualExchange(exchangeAddr);
+        StrategyRegistry  registry = StrategyRegistry(registryAddr);
+        CopyTracker       ct       = CopyTracker(trackerAddr);
+        TraderStake       ts       = TraderStake(stakeAddr);
 
         // ── Trader 1: deployer (Demo Alpha) ───────────────────────────────────
         vm.startBroadcast();
@@ -110,7 +113,9 @@ contract Seed is Script {
         // Wrapped in try/catch — may fail if oracle has no prices or already followed
         vm.startBroadcast();
         usdc.approve(address(ct), 500e18);
-        try ct.followTrader(deployer, 500e18) {
+        uint256 execFee   = exchange.executionFee();
+        uint256 ethNeeded = execFee * allocs1.length; // one fee per position opened
+        try ct.followTrader{value: ethNeeded}(deployer, 500e18) {
             console.log("Demo Alpha self-follow seeded (follower count = 1)");
         } catch {
             console.log("Skipped self-follow (oracle prices not set or already followed)");
