@@ -5,6 +5,7 @@ import "forge-std/Script.sol";
 import "forge-std/console.sol";
 import "../src/MockUSDC.sol";
 import "../src/MockOracle.sol";
+import "../src/MockSwapRouter.sol";
 import "../src/FeeRouter.sol";
 import "../src/InsuranceVault.sol";
 import "../src/PerpetualExchange.sol";
@@ -26,32 +27,36 @@ contract Deploy is Script {
         // 1. MockUSDC
         MockUSDC usdc = new MockUSDC();
 
-        // 2. MockOracle
+        // 2. MockSwapRouter (needs usdc; wire setSwapRouter immediately)
+        MockSwapRouter swapRouter = new MockSwapRouter(address(usdc));
+        usdc.setSwapRouter(address(swapRouter));
+
+        // 3. MockOracle
         MockOracle oracle = new MockOracle();
 
-        // 3. Register synthetic assets
+        // 4. Register synthetic assets
         //    Prices use 8-decimal format (1e8 = $1.00) — PerpetualExchange scales ×1e10 internally
         oracle.addAsset(SBTC,   50_000e8);   // $50,000
         oracle.addAsset(SETH,    3_000e8);   // $ 3,000
         oracle.addAsset(SAAPL,     200e8);   // $   200
         oracle.addAsset(STSLA,     250e8);   // $   250
 
-        // 4. TraderStake (skin-in-the-game; must deploy before StrategyRegistry)
+        // 5. TraderStake (skin-in-the-game; must deploy before StrategyRegistry)
         TraderStake traderStake = new TraderStake(address(usdc));
 
-        // 5. InsuranceVault (must deploy before FeeRouter since FeeRouter holds it immutably)
+        // 6. InsuranceVault (must deploy before FeeRouter since FeeRouter holds it immutably)
         InsuranceVault vault = new InsuranceVault(address(usdc));
 
-        // 6. FeeRouter (platformTreasury = deployer; 10% slash share → vault)
+        // 7. FeeRouter (platformTreasury = deployer; 10% slash share → vault)
         FeeRouter feeRouter = new FeeRouter(address(usdc), deployer, address(vault));
 
-        // 7. PerpetualExchange
+        // 8. PerpetualExchange
         PerpetualExchange exchange = new PerpetualExchange(address(usdc), address(oracle));
 
-        // 8. StrategyRegistry (with stake gate)
+        // 9. StrategyRegistry (with stake gate)
         StrategyRegistry registry = new StrategyRegistry(address(traderStake));
 
-        // 9. CopyTracker (with stake reference for slashing)
+        // 10. CopyTracker (with stake reference for slashing)
         CopyTracker ct = new CopyTracker(
             address(usdc),
             address(exchange),
@@ -60,7 +65,7 @@ contract Deploy is Script {
             address(traderStake)
         );
 
-        // 10. Wire contracts
+        // 11. Wire contracts
         vault.setFeeRouter(address(feeRouter));
         vault.setExchange(address(exchange));
         traderStake.setCopyTracker(address(ct));
@@ -75,6 +80,7 @@ contract Deploy is Script {
         // Print addresses (visible with forge script -v)
         console.log("=== Deployed Contract Addresses ===");
         console.log("MockUSDC         :", address(usdc));
+        console.log("MockSwapRouter   :", address(swapRouter));
         console.log("MockOracle       :", address(oracle));
         console.log("TraderStake      :", address(traderStake));
         console.log("InsuranceVault   :", address(vault));

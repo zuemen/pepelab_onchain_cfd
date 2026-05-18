@@ -9,9 +9,21 @@ contract MockUSDC is ERC20 {
 
     mapping(address => uint256) public lastFaucet;
 
+    address public swapRouter;
+
     error FaucetCooldown(uint256 nextAvailable);
 
     constructor() ERC20("Mock USDC", "mUSDC") {}
+
+    function setSwapRouter(address _router) external {
+        require(swapRouter == address(0), "Already set");
+        swapRouter = _router;
+    }
+
+    function burnFrom(address from, uint256 amount) external {
+        require(msg.sender == swapRouter, "Only router can burn");
+        _burn(from, amount);
+    }
 
     /// @notice One call per 24 h, mints 1 000 mUSDC.
     function faucet() external {

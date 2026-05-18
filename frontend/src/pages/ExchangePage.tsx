@@ -73,8 +73,10 @@ export default function ExchangePage({ wallet }: Props) {
   const [curPrice,  setCurPrice]  = useState(0n)
   const [pageLoading, setPageLoading] = useState(true)
 
-  const [payEth,      setPayEth]      = useState('')
-  const [depositAmt,  setDepositAmt]  = useState('')
+  const [swapMode,         setSwapMode]         = useState<'eth-to-usdc' | 'usdc-to-eth'>('eth-to-usdc')
+  const [payAmount,        setPayAmount]         = useState('')
+  const [routerEthReserve, setRouterEthReserve]  = useState(0n)
+  const [depositAmt,       setDepositAmt]        = useState('')
   const [withdrawAmt, setWithdrawAmt] = useState('')
   const [selAsset,    setSelAsset]    = useState<AssetId>(ASSET_IDS.sBTC)
   const [isLong,      setIsLong]      = useState(true)
@@ -95,14 +97,16 @@ export default function ExchangePage({ wallet }: Props) {
   const fetchAll = useCallback(async () => {
     if (!contracts || !wallet.address || !wallet.provider) return
     try {
-      const [bal, mgn, eBal] = await Promise.all([
+      const [bal, mgn, eBal, reserve] = await Promise.all([
         contracts.usdc.balanceOf(wallet.address),
         contracts.exchange.freeMargin(wallet.address),
-        wallet.provider.getBalance(wallet.address)
+        wallet.provider.getBalance(wallet.address),
+        contracts.swapRouter.ethReserve(),
       ])
       setUsdcBal(bal as bigint)
       setFreeMgn(mgn as bigint)
       setEthBal(f18(eBal as bigint, 4))
+      setRouterEthReserve(reserve as bigint)
 
       const ids = (await contracts.exchange.getUserPositions(wallet.address)) as bigint[]
       const maybeRows = await Promise.all(
@@ -154,26 +158,30 @@ export default function ExchangePage({ wallet }: Props) {
   }, [livePrices[selAsset]?.usd, selAsset])
 
   // ── Transactions ────────────────────────────────────────────────────────────
+  const ethToUsdc = (eth: string) => (parseFloat(eth || '0') * 3000).toFixed(2)
+  const usdcToEth = (u: string)   => (parseFloat(u   || '0') / 3000).toFixed(6)
+  const fEth      = (v: bigint)   => (Number(v) / 1e18).toFixed(6)
+
   const doSwap = async () => {
     if (!contracts || !wallet.address) return
-    const ethAmt = parseFloat(payEth)
-    if (!ethAmt || ethAmt <= 0) { notify('Enter a valid ETH amount', false); return }
-    
-    // 1 ETH = 3000 mUSDC
-    const usdcOut = BigInt(Math.floor(ethAmt * 3000 * 1e18))
-    
+    const amt = parseFloat(payAmount)
+    if (!amt || amt <= 0) { notify('Enter a valid amount', false); return }
+
     setLoad('swap', true)
     try {
-      // Execute the real swap via the MockSwapRouter (deducts ETH and mints mUSDC)
-      const tx = asTx(await contracts.swapRouter.swapETHForUSDC({ value: parseEther(payEth) }))
-      await tx.wait()
-      notify(`Swapped ${payEth} ETH for ${(ethAmt * 3000).toFixed(2)} mUSDC ✓`, true, tx.hash)
-      setPayEth('')
-      
-      // Optimistic update
-      setUsdcBal(prev => prev + usdcOut)
-      
-      // Wait for RPC sync
+      if (swapMode === 'eth-to-usdc') {
+        const tx = asTx(await contracts.swapRouter.swapETHForUSDC({ value: parseEther(payAmount) }))
+        await tx.wait()
+        notify(`Swapped ${payAmount} ETH for ${ethToUsdc(payAmount)} mUSDC ✓`, true, tx.hash)
+      } else {
+        const amtBig = parseEther(payAmount)
+        const approveTx = asTx(await contracts.usdc.approve(String(contracts.swapRouter.target), amtBig))
+        await approveTx.wait()
+        const tx = asTx(await contracts.swapRouter.swapUSDCForETH(amtBig))
+        await tx.wait()
+        notify(`Swapped ${payAmount} mUSDC for ${usdcToEth(payAmount)} ETH ✓`, true, tx.hash)
+      }
+      setPayAmount('')
       await new Promise(r => setTimeout(r, 1500))
       await fetchAll()
     } catch (e) {
@@ -296,7 +304,7 @@ export default function ExchangePage({ wallet }: Props) {
   const isBusy = !!activeTask
   let loadingMsg = 'Processing transaction...'
   if (activeTask) {
-    if (activeTask === 'swap') loadingMsg = 'Swapping ETH to mUSDC...'
+    if (activeTask === 'swap') loadingMsg = swapMode === 'eth-to-usdc' ? 'Swapping ETH to mUSDC...' : 'Swapping mUSDC to ETH...'
     else if (activeTask === 'deposit') loadingMsg = 'Depositing Margin...'
     else if (activeTask === 'withdraw') loadingMsg = 'Withdrawing Margin...'
     else if (activeTask === 'open') loadingMsg = 'Opening Position...'
@@ -405,27 +413,45 @@ export default function ExchangePage({ wallet }: Props) {
             <div className="flex items-center gap-3">
               <input
                 type="number" min="0" placeholder="0"
-                value={payEth}
-                onChange={e => setPayEth(e.target.value)}
+                value={payAmount}
+                onChange={e => setPayAmount(e.target.value)}
                 className="w-full bg-transparent text-4xl text-white focus:outline-none placeholder-gray-600 font-medium"
               />
-              <button className="shrink-0 flex items-center gap-2 bg-[#293249] hover:bg-[#323D59] text-white font-semibold rounded-full py-1.5 px-3 transition-colors shadow-sm">
-                <img src="https://assets.coingecko.com/coins/images/279/standard/ethereum.png" alt="ETH" className="w-5 h-5 rounded-full" />
-                ETH
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-              </button>
+              {swapMode === 'eth-to-usdc' ? (
+                <button className="shrink-0 flex items-center gap-2 bg-[#293249] hover:bg-[#323D59] text-white font-semibold rounded-full py-1.5 px-3 transition-colors shadow-sm">
+                  <img src="https://assets.coingecko.com/coins/images/279/standard/ethereum.png" alt="ETH" className="w-5 h-5 rounded-full" />
+                  ETH
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                </button>
+              ) : (
+                <button className="shrink-0 flex items-center gap-2 bg-[#293249] hover:bg-[#323D59] text-white font-semibold rounded-full py-1.5 px-3 transition-colors shadow-sm">
+                  <div className="w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center text-[10px] font-bold">m</div>
+                  mUSDC
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                </button>
+              )}
             </div>
             <div className="flex justify-between text-sm text-gray-500 mt-2">
-              <span>$ {(parseFloat(payEth || '0') * 3000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-              <span className="cursor-pointer hover:text-white transition-colors">Balance: {ethBal}</span>
+              <span>$ {swapMode === 'eth-to-usdc'
+                ? (parseFloat(payAmount || '0') * 3000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                : parseFloat(payAmount || '0').toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <span className="cursor-pointer hover:text-white transition-colors">
+                Balance: {swapMode === 'eth-to-usdc' ? ethBal : f18(usdcBal)}
+              </span>
             </div>
           </div>
-          
-          {/* Arrow */}
+
+          {/* Switch direction button */}
           <div className="flex justify-center -my-5 relative z-10">
-            <div className="bg-[#131A2A] rounded-xl p-1.5 border-4 border-[#0D111C] text-white hover:bg-gray-800 cursor-pointer transition-colors">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>
-            </div>
+            <button
+              onClick={() => { setSwapMode(m => m === 'eth-to-usdc' ? 'usdc-to-eth' : 'eth-to-usdc'); setPayAmount('') }}
+              className="bg-[#131A2A] rounded-xl p-1.5 border-4 border-[#0D111C] text-white hover:bg-[#1e2a45] transition-colors"
+              title="Switch direction"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M7 16V4m0 0L3 8m4-4 4 4"/><path d="M17 8v12m0 0 4-4m-4 4-4-4"/>
+              </svg>
+            </button>
           </div>
 
           {/* Receive Block */}
@@ -436,33 +462,66 @@ export default function ExchangePage({ wallet }: Props) {
             <div className="flex items-center gap-3">
               <input
                 type="text" disabled
-                value={payEth ? (parseFloat(payEth) * 3000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}
+                value={payAmount
+                  ? swapMode === 'eth-to-usdc'
+                    ? parseFloat(ethToUsdc(payAmount)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                    : usdcToEth(payAmount)
+                  : ''}
                 placeholder="0"
                 className="w-full bg-transparent text-4xl text-white focus:outline-none placeholder-gray-600 font-medium"
               />
-              <button className="shrink-0 flex items-center gap-2 bg-[#293249] hover:bg-[#323D59] text-white font-semibold rounded-full py-1.5 px-3 transition-colors shadow-sm">
-                <div className="w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center text-[10px]">m</div>
-                mUSDC
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-              </button>
+              {swapMode === 'eth-to-usdc' ? (
+                <button className="shrink-0 flex items-center gap-2 bg-[#293249] hover:bg-[#323D59] text-white font-semibold rounded-full py-1.5 px-3 transition-colors shadow-sm">
+                  <div className="w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center text-[10px] font-bold">m</div>
+                  mUSDC
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                </button>
+              ) : (
+                <button className="shrink-0 flex items-center gap-2 bg-[#293249] hover:bg-[#323D59] text-white font-semibold rounded-full py-1.5 px-3 transition-colors shadow-sm">
+                  <img src="https://assets.coingecko.com/coins/images/279/standard/ethereum.png" alt="ETH" className="w-5 h-5 rounded-full" />
+                  ETH
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                </button>
+              )}
             </div>
             <div className="flex justify-between text-sm text-gray-500 mt-2">
-              <span>$ {(parseFloat(payEth || '0') * 3000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-              <span className="cursor-pointer hover:text-white transition-colors">Balance: {f18(usdcBal)}</span>
+              <span>$ {swapMode === 'eth-to-usdc'
+                ? parseFloat(ethToUsdc(payAmount)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                : (parseFloat(usdcToEth(payAmount)) * 3000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <span className="cursor-pointer hover:text-white transition-colors">
+                Balance: {swapMode === 'eth-to-usdc' ? f18(usdcBal) : ethBal}
+              </span>
             </div>
           </div>
+
+          {/* Router ETH reserve warning */}
+          {swapMode === 'usdc-to-eth' && (() => {
+            try {
+              const needed = payAmount ? parseEther(usdcToEth(payAmount)) : 0n
+              return needed > 0n && routerEthReserve < needed ? (
+                <div className="rounded-xl bg-yellow-900/30 border border-yellow-700/40 px-3 py-2 text-xs text-yellow-300 flex items-start gap-2">
+                  <span>⚠</span>
+                  <span>Router has insufficient ETH ({fEth(routerEthReserve)} available). Ask admin to fund.</span>
+                </div>
+              ) : null
+            } catch { return null }
+          })()}
 
           <div className="pt-2 pb-1">
             <button
               onClick={() => void doSwap()}
-              disabled={busy['swap'] || !payEth || parseFloat(payEth) <= 0}
+              disabled={busy['swap'] || !payAmount || parseFloat(payAmount) <= 0}
               className={`w-full py-4 rounded-2xl text-xl font-bold transition-colors ${
-                !payEth || parseFloat(payEth) <= 0 
+                !payAmount || parseFloat(payAmount) <= 0
                   ? 'bg-[#131A2A] text-gray-500 cursor-not-allowed'
                   : 'bg-brand-500 hover:bg-brand-400 text-white shadow-lg shadow-brand-500/20'
               }`}
             >
-              {busy['swap'] ? 'Swapping…' : (!payEth || parseFloat(payEth) <= 0) ? 'Enter an amount' : 'Swap'}
+              {busy['swap']
+                ? 'Swapping…'
+                : !payAmount || parseFloat(payAmount) <= 0
+                  ? 'Enter an amount'
+                  : swapMode === 'eth-to-usdc' ? 'Swap ETH → mUSDC' : 'Swap mUSDC → ETH'}
             </button>
           </div>
           
