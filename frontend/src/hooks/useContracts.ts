@@ -31,7 +31,8 @@ export function useContracts(
       exchange:       new Contract(addr.PerpetualExchange, PerpetualExchangeABI, runner),
       registry:       new Contract(addr.StrategyRegistry,  StrategyRegistryABI,  runner),
       copyTracker:    new Contract(addr.CopyTracker,       CopyTrackerABI,       runner),
-      swapRouter:     new Contract(addr.MockSwapRouter,    MockSwapRouterABI, runner),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      swapRouter:     new Contract(addr.MockSwapRouter,    (MockSwapRouterABI as any).abi ?? MockSwapRouterABI, runner),
     }
   }, [provider, signer, chainId])
 }
