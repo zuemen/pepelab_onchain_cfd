@@ -174,12 +174,32 @@ export default function ExchangePage({ wallet }: Props) {
         await tx.wait()
         notify(`Swapped ${payAmount} ETH for ${ethToUsdc(payAmount)} mUSDC ✓`, true, tx.hash)
       } else {
-        const amtBig = parseEther(payAmount)
-        const approveTx = asTx(await contracts.usdc.approve(String(contracts.swapRouter.target), amtBig))
-        await approveTx.wait()
-        const tx = asTx(await contracts.swapRouter.swapUSDCForETH(amtBig))
+        const amt = parseEther(payAmount)
+
+        const currentAllowance = await contracts.usdc.allowance(
+          wallet.address!,
+          String(contracts.swapRouter.target)
+        ) as bigint
+
+        if (currentAllowance < amt) {
+          notify('Approving mUSDC...', true)
+          const approveTx = asTx(await contracts.usdc.approve(String(contracts.swapRouter.target), amt))
+          await approveTx.wait()
+        }
+
+        const routerBal = await wallet.provider!.getBalance(String(contracts.swapRouter.target))
+        const expectedEth = amt / 3000n
+        if (routerBal < expectedEth) {
+          const need = (Number(expectedEth) / 1e18).toFixed(4)
+          const have = (Number(routerBal) / 1e18).toFixed(4)
+          notify(`Swap router only has ${have} ETH (need ${need}). Ask admin to fund.`, false)
+          return
+        }
+
+        const tx = asTx(await contracts.swapRouter.swapUSDCForETH(amt))
         await tx.wait()
-        notify(`Swapped ${payAmount} mUSDC for ${usdcToEth(payAmount)} ETH ✓`, true, tx.hash)
+        const ethOut = (parseFloat(payAmount) / 3000).toFixed(6)
+        notify(`Swapped ${payAmount} mUSDC for ${ethOut} ETH ✓`, true, tx.hash)
       }
       setPayAmount('')
       await new Promise(r => setTimeout(r, 1500))
@@ -494,18 +514,20 @@ export default function ExchangePage({ wallet }: Props) {
             </div>
           </div>
 
-          {/* Router ETH reserve warning */}
-          {swapMode === 'usdc-to-eth' && (() => {
-            try {
-              const needed = payAmount ? parseEther(usdcToEth(payAmount)) : 0n
-              return needed > 0n && routerEthReserve < needed ? (
-                <div className="rounded-xl bg-yellow-900/30 border border-yellow-700/40 px-3 py-2 text-xs text-yellow-300 flex items-start gap-2">
-                  <span>⚠</span>
-                  <span>Router has insufficient ETH ({fEth(routerEthReserve)} available). Ask admin to fund.</span>
-                </div>
-              ) : null
-            } catch { return null }
-          })()}
+          {/* Router ETH reserve */}
+          {swapMode === 'usdc-to-eth' && routerEthReserve !== undefined && (
+            <p className="text-xs text-gray-500 mt-2">
+              Router ETH reserve: {fEth(routerEthReserve)} ETH
+              {payAmount && parseFloat(payAmount) > 0 && (() => {
+                try {
+                  const expectedEth = parseEther(payAmount) / 3000n
+                  return routerEthReserve < expectedEth
+                    ? <span className="text-red-400 ml-2">⚠ Insufficient. Admin must fund.</span>
+                    : null
+                } catch { return null }
+              })()}
+            </p>
+          )}
 
           <div className="pt-2 pb-1">
             <button
