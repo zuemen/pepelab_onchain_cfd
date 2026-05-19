@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { useWallet } from './hooks/useWallet'
 import Layout            from './components/Layout'
+import ErrorBoundary     from './components/ErrorBoundary'
 import LandingPage       from './pages/LandingPage'
 import ExchangePage      from './pages/ExchangePage'
 import TraderDashboard   from './pages/TraderDashboard'
@@ -20,6 +21,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <Layout wallet={wallet}>
+        <ErrorBoundary>
         <Routes>
           <Route path="/"                       element={<LandingPage       wallet={wallet} />} />
           <Route path="/exchange"               element={<ExchangePage      wallet={wallet} />} />
@@ -34,6 +36,7 @@ export default function App() {
           <Route path="/admin/oracle"           element={<AdminOraclePage    wallet={wallet} />} />
           <Route path="/admin/treasury"         element={<AdminTreasuryPage  wallet={wallet} />} />
         </Routes>
+        </ErrorBoundary>
       </Layout>
     </BrowserRouter>
   )

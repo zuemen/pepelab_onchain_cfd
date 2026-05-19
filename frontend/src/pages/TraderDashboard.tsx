@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom'
 import type { WalletAPI } from '../hooks/useWallet'
 import { useContracts } from '../hooks/useContracts'
 import { ASSET_IDS } from '../contracts/addresses'
+import { prettyError } from '../lib/errorMessages'
+import { TableSkeleton } from '../components/Skeleton'
 
 // ── Config ─────────────────────────────────────────────────────────────────
 type AssetId = `0x${string}`
@@ -75,8 +77,9 @@ export default function TraderDashboard({ wallet }: Props) {
   const uidRef = useRef(0)
   const [rows, setRows] = useState<AllocRow[]>([])
 
-  const [history,  setHistory]  = useState<HistVer[]>([])
-  const [earnings, setEarnings] = useState<bigint | null>(null)
+  const [history,        setHistory]        = useState<HistVer[]>([])
+  const [historyLoading, setHistoryLoading] = useState(true)
+  const [earnings,       setEarnings]       = useState<bigint | null>(null)
 
   const [busy,  setBusy]  = useState<Record<string, boolean>>({})
   const [toast, setToast] = useState<{ msg: string; ok: boolean; hash?: string } | null>(null)
@@ -95,7 +98,7 @@ export default function TraderDashboard({ wallet }: Props) {
       setTraderInfo({ isRegistered: raw[0], displayName: raw[1] })
     } catch (e) {
       console.error('[trader fetch]', e)
-      notify(e instanceof Error ? e.message.slice(0, 120) : 'Network error — check your wallet network', false)
+      notify(prettyError(e), false)
     }
     try {
       const elig = await contracts.traderStake.isEligible(wallet.address)
@@ -105,6 +108,7 @@ export default function TraderDashboard({ wallet }: Props) {
 
   const fetchHistory = useCallback(async () => {
     if (!contracts || !wallet.address) return
+    setHistoryLoading(true)
     try {
       const count = Number((await contracts.registry.getStrategyCount(wallet.address)) as bigint)
       const addr  = wallet.address
@@ -124,7 +128,9 @@ export default function TraderDashboard({ wallet }: Props) {
       setHistory([...vers].reverse())
     } catch (e) {
       console.error('[history fetch]', e)
-      notify(e instanceof Error ? e.message.slice(0, 120) : 'Network error — check your wallet network', false)
+      notify(prettyError(e), false)
+    } finally {
+      setHistoryLoading(false)
     }
   }, [contracts, wallet.address, notify])
 
@@ -195,7 +201,7 @@ export default function TraderDashboard({ wallet }: Props) {
       setNameInput('')
       await fetchTrader()
     } catch (e) {
-      notify(e instanceof Error ? e.message.slice(0, 100) : 'Register failed', false)
+      notify(prettyError(e), false)
     } finally { setLoad('register', false) }
   }
 
@@ -215,7 +221,7 @@ export default function TraderDashboard({ wallet }: Props) {
       setRows([])
       await fetchHistory()
     } catch (e) {
-      notify(e instanceof Error ? e.message.slice(0, 100) : 'Publish failed', false)
+      notify(prettyError(e), false)
     } finally { setLoad('publish', false) }
   }
 
@@ -228,7 +234,7 @@ export default function TraderDashboard({ wallet }: Props) {
       notify('Earnings claimed ✓', true, tx.hash)
       await fetchEarnings()
     } catch (e) {
-      notify(e instanceof Error ? e.message.slice(0, 100) : 'Claim failed', false)
+      notify(prettyError(e), false)
     } finally { setLoad('claim', false) }
   }
 
@@ -507,7 +513,9 @@ export default function TraderDashboard({ wallet }: Props) {
           </button>
         </div>
 
-        {history.length === 0 ? (
+        {historyLoading ? (
+          <TableSkeleton rows={3} cols={4} />
+        ) : history.length === 0 ? (
           <p className="text-sm text-gray-600 py-4 text-center">No strategies published yet.</p>
         ) : (
           <div className="space-y-2">

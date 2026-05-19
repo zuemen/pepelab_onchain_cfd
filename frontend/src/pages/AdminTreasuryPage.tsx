@@ -3,6 +3,8 @@ import { parseEther, formatEther, formatUnits } from 'ethers'
 import type { WalletAPI } from '../hooks/useWallet'
 import { useContracts } from '../hooks/useContracts'
 import { explorerTx } from '../lib/notify'
+import { prettyError } from '../lib/errorMessages'
+import EmptyState from '../components/EmptyState'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 type TxResp = { wait(): Promise<unknown>; hash: string }
@@ -141,7 +143,7 @@ export default function AdminTreasuryPage({ wallet }: Props) {
       await fetchStats()
       await fetchHistory()
     } catch (e: any) {
-      notify(e?.reason ?? e?.message ?? 'Claim failed', false)
+      notify(prettyError(e), false)
     } finally { setLoad('claim', false) }
   }
 
@@ -154,7 +156,7 @@ export default function AdminTreasuryPage({ wallet }: Props) {
       await tx.wait()
       notify('mUSDC approved ✓', true, tx.hash)
     } catch (e: any) {
-      notify(e?.reason ?? e?.message ?? 'Approve failed', false)
+      notify(prettyError(e), false)
     } finally { setLoad('approve', false) }
   }
 
@@ -171,7 +173,7 @@ export default function AdminTreasuryPage({ wallet }: Props) {
       await fetchStats()
       await fetchHistory()
     } catch (e: any) {
-      notify(e?.reason ?? e?.message ?? 'Swap failed', false)
+      notify(prettyError(e), false)
     } finally { setLoad('swap', false) }
   }
 
@@ -185,7 +187,7 @@ export default function AdminTreasuryPage({ wallet }: Props) {
       setFundAmt('')
       await fetchStats()
     } catch (e: any) {
-      notify(e?.reason ?? e?.message ?? 'Fund failed', false)
+      notify(prettyError(e), false)
     } finally { setLoad('fund', false) }
   }
 
@@ -390,7 +392,7 @@ export default function AdminTreasuryPage({ wallet }: Props) {
         </div>
 
         {history.length === 0 ? (
-          <div className="px-5 py-8 text-center text-gray-600 text-sm">No cash out history yet</div>
+          <EmptyState icon="📋" title="No cash out history yet" description="Fee claims and USDC→ETH swaps will appear here." />
         ) : (
           <div className="divide-y divide-surface-border">
             {history.slice(0, 20).map((r, i) => (

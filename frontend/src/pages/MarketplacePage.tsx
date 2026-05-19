@@ -4,6 +4,8 @@ import type { WalletAPI } from '../hooks/useWallet'
 import { useContracts } from '../hooks/useContracts'
 import { useLivePrices } from '../hooks/useLivePrices'
 import { ASSET_IDS } from '../contracts/addresses'
+import Skeleton from '../components/Skeleton'
+import EmptyState from '../components/EmptyState'
 
 // ── Config ──────────────────────────────────────────────────────────────────
 const ASSET_LABEL: Record<string, string> = {
@@ -247,20 +249,33 @@ export default function MarketplacePage({ wallet }: Props) {
       )}
 
       {isLoading ? (
-        <div className="rounded-card border border-surface-border bg-surface shadow-card p-12 text-center text-gray-500">
-          Loading traders…
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-3">
+              <div className="flex items-center gap-3">
+                <Skeleton className="h-10 w-10 rounded-full" />
+                <div className="space-y-1.5 flex-1">
+                  <Skeleton className="h-4 w-28" />
+                  <Skeleton className="h-3 w-20" />
+                </div>
+              </div>
+              <Skeleton className="h-3 w-full" />
+              <Skeleton className="h-3 w-3/4" />
+              <div className="flex gap-2 pt-1">
+                <Skeleton className="h-7 flex-1" />
+                <Skeleton className="h-7 flex-1" />
+              </div>
+            </div>
+          ))}
         </div>
       ) : sorted.length === 0 ? (
-        <div className="rounded-card border border-surface-border bg-surface p-12 text-center space-y-4">
-          <div className="text-5xl">🎯</div>
-          <h3 className="text-lg font-semibold text-white">No public traders yet</h3>
-          <p className="text-sm text-gray-400 max-w-md mx-auto">
-            Be the first to publish a strategy. Stake mUSDC, set your allocation, and earn copy fees from followers.
-          </p>
-          <Link to="/trader" className="inline-block px-6 py-2.5 rounded-lg bg-brand-200 hover:bg-brand-300 text-white text-sm font-semibold">
-            Become a Trader →
-          </Link>
-        </div>
+        <EmptyState
+          icon="🎯"
+          title="No traders yet"
+          description="Be the first to publish a strategy and earn copy fees from followers."
+          ctaText="Become a Trader"
+          ctaHref="/trader"
+        />
       ) : (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

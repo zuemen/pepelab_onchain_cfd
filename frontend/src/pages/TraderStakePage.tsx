@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { parseEther } from 'ethers'
 import type { WalletAPI } from '../hooks/useWallet'
 import { useContracts } from '../hooks/useContracts'
+import { prettyError } from '../lib/errorMessages'
 
 type TxResp = { wait(): Promise<unknown>; hash: string }
 const asTx = (v: unknown) => v as TxResp
@@ -73,7 +74,7 @@ export default function TraderStakePage({ wallet }: Props) {
       notify('Staked successfully ✓', true, stakeTx.hash)
       await fetchAll()
     } catch (e) {
-      notify(e instanceof Error ? e.message.slice(0, 100) : 'Stake failed', false)
+      notify(prettyError(e), false)
     } finally { setLoad('stake', false) }
   }
 
@@ -88,7 +89,7 @@ export default function TraderStakePage({ wallet }: Props) {
       notify('Unstake requested ✓ — wait 24 h then execute', true, tx.hash)
       await fetchAll()
     } catch (e) {
-      notify(e instanceof Error ? e.message.slice(0, 100) : 'Request failed', false)
+      notify(prettyError(e), false)
     } finally { setLoad('reqUnstake', false) }
   }
 
@@ -101,7 +102,7 @@ export default function TraderStakePage({ wallet }: Props) {
       notify('Unstake executed ✓', true, tx.hash)
       await fetchAll()
     } catch (e) {
-      notify(e instanceof Error ? e.message.slice(0, 100) : 'Execute failed', false)
+      notify(prettyError(e), false)
     } finally { setLoad('execUnstake', false) }
   }
 
@@ -114,7 +115,7 @@ export default function TraderStakePage({ wallet }: Props) {
       notify('Unstake cancelled ✓', true, tx.hash)
       await fetchAll()
     } catch (e) {
-      notify(e instanceof Error ? e.message.slice(0, 100) : 'Cancel failed', false)
+      notify(prettyError(e), false)
     } finally { setLoad('cancelUnstake', false) }
   }
 

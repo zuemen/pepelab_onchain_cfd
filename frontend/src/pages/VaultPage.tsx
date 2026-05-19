@@ -4,6 +4,9 @@ import { parseUnits, formatUnits } from 'ethers'
 import type { WalletAPI } from '../hooks/useWallet'
 import { useContracts } from '../hooks/useContracts'
 import { explorerTx } from '../lib/notify'
+import { prettyError } from '../lib/errorMessages'
+import Skeleton from '../components/Skeleton'
+import EmptyState from '../components/EmptyState'
 
 interface Props {
   wallet: WalletAPI
@@ -125,7 +128,7 @@ export default function VaultPage({ wallet }: Props) {
       await fetchStats()
       if (vault) setActivity(await fetchActivity(vault))
     } catch (e: any) {
-      notify(e?.reason ?? e?.message ?? 'Transaction failed', false)
+      notify(prettyError(e), false)
     } finally {
       setBusy(false)
     }
@@ -143,7 +146,7 @@ export default function VaultPage({ wallet }: Props) {
       await fetchStats()
       if (vault) setActivity(await fetchActivity(vault))
     } catch (e: any) {
-      notify(e?.reason ?? e?.message ?? 'Transaction failed', false)
+      notify(prettyError(e), false)
     } finally {
       setBusy(false)
     }
@@ -170,14 +173,17 @@ export default function VaultPage({ wallet }: Props) {
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: 'Total Assets', value: stats ? f18(stats.totalAssets) + ' USDC' : '—' },
-          { label: 'Share Price',  value: stats ? f18(stats.sharePrice) + ' USDC/pIV' : '—' },
-          { label: 'Total Supply', value: stats ? f18(stats.totalSupply) + ' pIV' : '—' },
-          { label: 'My pIV Value', value: stats ? f18(stats.myUsdcValue) + ' USDC' : '—' },
+          { label: 'Total Assets', value: stats ? f18(stats.totalAssets) + ' USDC' : null },
+          { label: 'Share Price',  value: stats ? f18(stats.sharePrice) + ' USDC/pIV' : null },
+          { label: 'Total Supply', value: stats ? f18(stats.totalSupply) + ' pIV' : null },
+          { label: 'My pIV Value', value: stats ? f18(stats.myUsdcValue) + ' USDC' : null },
         ].map(s => (
           <div key={s.label} className="bg-surface-sub rounded-xl p-4 border border-surface-border">
             <div className="text-xs text-gray-500 mb-1">{s.label}</div>
-            <div className="text-lg font-mono font-semibold text-white">{s.value}</div>
+            {s.value === null
+              ? <Skeleton className="h-7 w-28 mt-1" />
+              : <div className="text-lg font-mono font-semibold text-white">{s.value}</div>
+            }
           </div>
         ))}
       </div>
@@ -297,7 +303,7 @@ export default function VaultPage({ wallet }: Props) {
           <h2 className="text-sm font-semibold text-gray-300">Recent Activity</h2>
         </div>
         {activity.length === 0 ? (
-          <div className="px-5 py-8 text-center text-gray-600 text-sm">No activity yet</div>
+          <EmptyState icon="🏦" title="No activity yet" description="Deposit USDC to start earning yield from protocol fees." />
         ) : (
           <div className="divide-y divide-surface-border">
             {activity.slice(0, 20).map((a, i) => (

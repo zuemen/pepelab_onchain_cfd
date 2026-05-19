@@ -7,6 +7,7 @@ import { useLivePrices } from '../hooks/useLivePrices'
 import { useFundingData } from '../hooks/useFundingData'
 import { LineChart, Line, YAxis, ResponsiveContainer } from 'recharts'
 import { ASSET_IDS } from '../contracts/addresses'
+import { prettyError } from '../lib/errorMessages'
 
 // ── Config ────────────────────────────────────────────────────────────────────
 type AssetId = `0x${string}`
@@ -125,7 +126,7 @@ export default function ExchangePage({ wallet }: Props) {
       setPositions(maybeRows.filter((r): r is PositionRow => r !== null))
     } catch (e) {
       console.error('[exchange fetch]', e)
-      notify(e instanceof Error ? e.message.slice(0, 120) : 'Network error — check your wallet network', false)
+      notify(prettyError(e), false)
     } finally {
       setPageLoading(false)
     }
@@ -205,7 +206,7 @@ export default function ExchangePage({ wallet }: Props) {
       await new Promise(r => setTimeout(r, 1500))
       await fetchAll()
     } catch (e) {
-      notify(e instanceof Error ? e.message.slice(0, 100) : 'Swap failed', false)
+      notify(prettyError(e), false)
     } finally { setLoad('swap', false) }
   }
 
@@ -242,7 +243,7 @@ export default function ExchangePage({ wallet }: Props) {
       setDepositAmt('')
       await fetchAll()
     } catch (e) {
-      notify(e instanceof Error ? e.message.slice(0, 100) : 'Deposit failed', false)
+      notify(prettyError(e), false)
     } finally { setLoad('deposit', false) }
   }
 
@@ -258,7 +259,7 @@ export default function ExchangePage({ wallet }: Props) {
       setWithdrawAmt('')
       await fetchAll()
     } catch (e) {
-      notify(e instanceof Error ? e.message.slice(0, 100) : 'Withdraw failed', false)
+      notify(prettyError(e), false)
     } finally { setLoad('withdraw', false) }
   }
 
@@ -274,7 +275,7 @@ export default function ExchangePage({ wallet }: Props) {
       setOpenMgn('')
       await fetchAll()
     } catch (e) {
-      notify(e instanceof Error ? e.message.slice(0, 100) : 'Open failed', false)
+      notify(prettyError(e), false)
     } finally { setLoad('open', false) }
   }
 
@@ -288,7 +289,7 @@ export default function ExchangePage({ wallet }: Props) {
       notify('Position closed ✓', true, tx.hash)
       await fetchAll()
     } catch (e) {
-      notify(e instanceof Error ? e.message.slice(0, 100) : 'Close failed', false)
+      notify(prettyError(e), false)
     } finally { setLoad(key, false) }
   }
 

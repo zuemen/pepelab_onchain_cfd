@@ -3,6 +3,8 @@ import type { WalletAPI } from '../hooks/useWallet'
 import { useContracts } from '../hooks/useContracts'
 import { ASSET_IDS } from '../contracts/addresses'
 import { explorerTx } from '../lib/notify'
+import { TableSkeleton } from '../components/Skeleton'
+import EmptyState from '../components/EmptyState'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const FETCH_BLOCKS = 5000   // ~15 h on Sepolia (12 s/block)
@@ -433,12 +435,13 @@ export default function HistoryPage({ wallet }: Props) {
       {(tab === 'all' || wallet.isConnected) && (
         <div className="rounded-card border border-surface-border bg-surface overflow-hidden">
           {loading ? (
-            <div className="p-12 text-center text-gray-500 text-sm">Loading events…</div>
+            <TableSkeleton rows={5} cols={6} />
           ) : visible.length === 0 ? (
-            <div className="p-12 text-center text-gray-600 text-sm">
-              No events found in the last {FETCH_BLOCKS.toLocaleString()} blocks
-              {filterKey !== 'all' ? ` for filter "${filterKey}"` : ''}.
-            </div>
+            <EmptyState
+              icon="📜"
+              title="No activity yet"
+              description={`No events found in the last ${FETCH_BLOCKS.toLocaleString()} blocks${filterKey !== 'all' ? ` for filter "${filterKey}"` : ''}.`}
+            />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left">

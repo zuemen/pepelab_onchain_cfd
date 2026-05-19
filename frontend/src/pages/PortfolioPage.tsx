@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Link } from 'react-router-dom'
 import { parseEther } from 'ethers'
 import {
   LineChart, Line, XAxis, YAxis, Tooltip,
@@ -10,6 +9,9 @@ import { useContracts } from '../hooks/useContracts'
 import { useLivePrices } from '../hooks/useLivePrices'
 import { ASSET_IDS } from '../contracts/addresses'
 import StatCard from '../components/StatCard'
+import { prettyError } from '../lib/errorMessages'
+import { TableSkeleton } from '../components/Skeleton'
+import EmptyState from '../components/EmptyState'
 
 // ── Config ──────────────────────────────────────────────────────────────────
 const ASSET_LABEL: Record<string, string> = {
@@ -198,7 +200,7 @@ export default function PortfolioPage({ wallet }: Props) {
       setIsLoaded(true)
     } catch (e) {
       console.error('[portfolio fetch]', e)
-      notify(e instanceof Error ? e.message.slice(0, 120) : 'Network error — check your wallet network', false)
+      notify(prettyError(e), false)
     }
   }, [contracts, wallet.address, notify])
 
@@ -220,7 +222,7 @@ export default function PortfolioPage({ wallet }: Props) {
       notify('Unfollowed and all positions closed ✓', true, tx.hash)
       await fetchAll()
     } catch (e) {
-      notify(e instanceof Error ? e.message.slice(0, 100) : 'Unfollow failed', false)
+      notify(prettyError(e), false)
     } finally { setLoad(key, false) }
   }
 
@@ -236,7 +238,7 @@ export default function PortfolioPage({ wallet }: Props) {
       setWithdrawAmt('')
       await fetchAll()
     } catch (e) {
-      notify(e instanceof Error ? e.message.slice(0, 100) : 'Withdraw failed', false)
+      notify(prettyError(e), false)
     } finally { setLoad('withdraw', false) }
   }
 
@@ -263,23 +265,38 @@ export default function PortfolioPage({ wallet }: Props) {
     )
   }
 
+  if (!isLoaded) {
+    return (
+      <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-3">
+              <div className="h-3 w-20 animate-pulse bg-surface-elev rounded" />
+              <div className="h-8 w-32 animate-pulse bg-surface-elev rounded" />
+              <div className="h-3 w-full animate-pulse bg-surface-elev rounded" />
+            </div>
+          ))}
+        </div>
+        <div className="rounded-card border border-surface-border bg-surface shadow-card overflow-hidden">
+          <div className="px-5 py-4 border-b border-surface-border">
+            <div className="h-4 w-32 animate-pulse bg-surface-elev rounded" />
+          </div>
+          <TableSkeleton rows={3} cols={8} />
+        </div>
+      </div>
+    )
+  }
+
   if (isLoaded && copyRecs.length === 0 && positions.length === 0 && freeMargin === 0n) {
     return (
       <div className="max-w-6xl mx-auto px-4 py-8 flex items-center justify-center min-h-[60vh]">
-        <div className="rounded-card border border-surface-border bg-surface p-12 text-center space-y-4 max-w-lg w-full">
-          <h3 className="text-lg font-semibold text-white">Your portfolio is empty</h3>
-          <p className="text-sm text-gray-400 max-w-md mx-auto">
-            Start by getting test mUSDC from the Faucet, then either copy a trader from the Marketplace or open positions yourself on the Exchange.
-          </p>
-          <div className="flex gap-3 justify-center">
-            <Link to="/exchange" className="px-5 py-2 rounded-lg bg-brand-200 hover:bg-brand-300 text-white text-sm font-semibold">
-              Get mUSDC →
-            </Link>
-            <Link to="/marketplace" className="px-5 py-2 rounded-lg border border-surface-border text-gray-300 text-sm font-semibold hover:bg-surface-elev">
-              Browse Traders
-            </Link>
-          </div>
-        </div>
+        <EmptyState
+          icon="💼"
+          title="Your portfolio is empty"
+          description="Start by getting test mUSDC, then copy a trader or open positions yourself."
+          ctaText="Get mUSDC"
+          ctaHref="/exchange"
+        />
       </div>
     )
   }

@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import type { WalletAPI } from '../hooks/useWallet'
 import { useContracts } from '../hooks/useContracts'
 import { ASSET_IDS } from '../contracts/addresses'
+import { CardSkeleton } from '../components/Skeleton'
 
 const ASSET_LABEL: Record<string, string> = {
   [ASSET_IDS.sBTC]:  'sBTC',
@@ -199,8 +200,11 @@ export default function TraderProfilePage({ wallet }: Props) {
       )}
 
       {loading ? (
-        <div className="rounded-card border border-surface-border bg-surface shadow-card p-12 text-center text-gray-500">
-          Loading profile…
+        <div className="space-y-4">
+          <CardSkeleton />
+          <CardSkeleton />
+          <CardSkeleton />
+          <CardSkeleton />
         </div>
       ) : (
         <>

@@ -4,6 +4,7 @@ import { parseEther } from 'ethers'
 import type { WalletAPI } from '../hooks/useWallet'
 import { useContracts } from '../hooks/useContracts'
 import { ASSET_IDS } from '../contracts/addresses'
+import { prettyError } from '../lib/errorMessages'
 
 interface TraderStakeData {
   stake:        bigint
@@ -184,7 +185,7 @@ export default function CopyPage({ wallet }: Props) {
       notify('mUSDC approved ✓', true, tx.hash)
       setApproved(true)
     } catch (e) {
-      notify(e instanceof Error ? e.message.slice(0, 100) : 'Approve failed', false)
+      notify(prettyError(e), false)
     } finally { setLoad('approve', false) }
   }
 
@@ -203,7 +204,7 @@ export default function CopyPage({ wallet }: Props) {
       notify('Following trader ✓', true, tx.hash)
       navigate('/portfolio')
     } catch (e) {
-      notify(e instanceof Error ? e.message.slice(0, 100) : 'Follow failed', false)
+      notify(prettyError(e), false)
     } finally { setLoad('follow', false) }
   }
 

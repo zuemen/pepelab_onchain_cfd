@@ -3,6 +3,8 @@ import type { WalletAPI } from '../hooks/useWallet'
 import { useContracts } from '../hooks/useContracts'
 import { useFundingData } from '../hooks/useFundingData'
 import { ASSET_IDS } from '../contracts/addresses'
+import { prettyError } from '../lib/errorMessages'
+import { TableSkeleton } from '../components/Skeleton'
 
 // ── Config ────────────────────────────────────────────────────────────────────
 type AssetId = `0x${string}`
@@ -107,7 +109,7 @@ export default function AdminOraclePage({ wallet }: Props) {
       await tx.wait()
       notify(`Funding settled ✓`, true, tx.hash)
     } catch (e) {
-      notify(e instanceof Error ? e.message.slice(0, 100) : 'Settle failed', false)
+      notify(prettyError(e), false)
     } finally {
       setFundingSettleBusy(p => ({ ...p, [key]: false }))
     }
@@ -155,7 +157,7 @@ export default function AdminOraclePage({ wallet }: Props) {
       setAssets(rows)
     } catch (e) {
       console.error('[oracle fetch]', e)
-      notify(e instanceof Error ? e.message.slice(0, 120) : 'Network error — check your wallet network', false)
+      notify(prettyError(e), false)
     }
   }, [contracts])
 
@@ -194,7 +196,7 @@ export default function AdminOraclePage({ wallet }: Props) {
       notify('Price updated ✓', true, tx.hash)
       await fetchPrices()
     } catch (e) {
-      notify(e instanceof Error ? e.message.slice(0, 100) : 'Update failed', false)
+      notify(prettyError(e), false)
     } finally { setLoad(id, false) }
   }
 
@@ -357,7 +359,7 @@ export default function AdminOraclePage({ wallet }: Props) {
           </div>
 
           {Object.keys(fundingData).length === 0 ? (
-            <p className="px-5 py-6 text-sm text-gray-600 text-center">Loading funding data…</p>
+            <TableSkeleton rows={4} cols={7} />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left">
