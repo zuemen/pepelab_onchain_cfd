@@ -20,6 +20,13 @@ const ASSET_LABEL: Record<string, string> = {
 }
 
 // ── Types ────────────────────────────────────────────────────────────────────
+interface CopyPreview {
+  copyFee:            bigint
+  totalTradingFee:    bigint
+  marginForPositions: bigint
+  portions:           bigint[]
+}
+
 interface AllocWithPrice {
   asset:      string
   weight:     bigint
@@ -62,6 +69,7 @@ export default function CopyPage({ wallet }: Props) {
   const [approved,         setApproved]         = useState(false)
   const [busy,             setBusy]             = useState<Record<string, boolean>>({})
   const [toast,            setToast]            = useState<{ msg: string; ok: boolean; hash?: string } | null>(null)
+  const [preview,          setPreview]          = useState<CopyPreview | null>(null)
 
   const setLoad = (k: string, v: boolean) => setBusy(p => ({ ...p, [k]: v }))
   const notify  = (msg: string, ok: boolean, hash?: string) => {
@@ -132,11 +140,37 @@ export default function CopyPage({ wallet }: Props) {
   const totalBig  = tryParse(totalMargin) ?? 0n
   const feeBig    = totalBig * COPY_FEE_BPS / 10_000n
   const netBig    = totalBig - feeBig
-  const preview   = stratAllocs.map(a => ({
+  const previewRows = stratAllocs.map(a => ({
     ...a,
     margin:   netBig * a.weight / 10_000n,
     notional: netBig * a.weight / 10_000n * a.leverage,
   }))
+
+  // Fetch fee breakdown from contract whenever amount or contracts change
+  // (placed after totalBig declaration so the dependency array can reference it)
+  useEffect(() => {
+    if (!contracts || !traderAddress || !totalBig || totalBig === 0n) {
+      setPreview(null)
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const r = await contracts.copyTracker.previewCopyAllocation(traderAddress, totalBig)
+        if (!cancelled) {
+          setPreview({
+            copyFee:            r[0] as bigint,
+            totalTradingFee:    r[1] as bigint,
+            marginForPositions: r[2] as bigint,
+            portions:           Array.from(r[3] as bigint[]),
+          })
+        }
+      } catch {
+        if (!cancelled) setPreview(null)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [contracts, traderAddress, totalBig])
 
   // ── Transactions ────────────────────────────────────────────────────────────
   const doApprove = async () => {
@@ -160,9 +194,10 @@ export default function CopyPage({ wallet }: Props) {
     if (!amt) { notify('Enter a valid amount', false); return }
     setLoad('follow', true)
     try {
-      const execFeeEth = (stratAllocs.length * 0.001).toString()
+      const execFeePerPosition = await contracts.exchange.executionFee() as bigint
+      const totalExecFee = execFeePerPosition * BigInt(stratAllocs.length)
       const tx = asTx(await contracts.copyTracker.followTrader(traderAddress, amt, {
-        value: parseEther(execFeeEth)
+        value: totalExecFee
       }))
       await tx.wait()
       notify('Following trader ✓', true, tx.hash)
@@ -302,7 +337,28 @@ export default function CopyPage({ wallet }: Props) {
           )}
         </div>
 
-        {preview.length > 0 && totalBig > 0n && (
+        {preview && totalBig > 0n && (
+          <div className="rounded-md bg-gray-900 border border-surface-border p-3 mt-2 space-y-1 text-xs">
+            <div className="flex justify-between text-gray-400">
+              <span>Total deposit:</span>
+              <span className="font-mono text-white">{f18(totalBig)} mUSDC</span>
+            </div>
+            <div className="flex justify-between text-gray-400">
+              <span>− Copy fee (0.3%):</span>
+              <span className="font-mono text-red-400">-{f18(preview.copyFee)} mUSDC</span>
+            </div>
+            <div className="flex justify-between text-gray-400">
+              <span>− Trading fee buffer:</span>
+              <span className="font-mono text-red-400">-{f18(preview.totalTradingFee)} mUSDC</span>
+            </div>
+            <div className="flex justify-between text-gray-300 font-semibold border-t border-gray-800 pt-1.5 mt-1">
+              <span>Effective margin:</span>
+              <span className="font-mono text-emerald-400">{f18(preview.marginForPositions)} mUSDC</span>
+            </div>
+          </div>
+        )}
+
+        {previewRows.length > 0 && totalBig > 0n && (
           <div className="overflow-x-auto mt-2">
             <table className="w-full text-sm text-left">
               <thead>
@@ -317,7 +373,7 @@ export default function CopyPage({ wallet }: Props) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-surface-border">
-                {preview.map((row, i) => (
+                {previewRows.map((row, i) => (
                   <tr key={i} className="text-gray-300">
                     <td className="py-2.5 pr-4 font-mono text-white font-medium">
                       {ASSET_LABEL[row.asset] ?? '?'}
@@ -327,7 +383,11 @@ export default function CopyPage({ wallet }: Props) {
                     </td>
                     <td className="py-2.5 pr-4 font-mono">{String(row.leverage)}×</td>
                     <td className="py-2.5 pr-4 font-mono">{(Number(row.weight) / 100).toFixed(0)}%</td>
-                    <td className="py-2.5 pr-4 font-mono text-right">{f18(row.margin)}</td>
+                    <td className="py-2.5 pr-4 font-mono text-right">
+                      {preview && preview.portions[i] !== undefined
+                        ? f18(preview.portions[i])
+                        : f18(row.margin)}
+                    </td>
                     <td className="py-2.5 pr-4 font-mono text-right">{f18(row.notional)}</td>
                     <td className="py-2.5 font-mono text-right">{fUsd(row.entryPrice)}</td>
                   </tr>
@@ -448,7 +508,10 @@ export default function CopyPage({ wallet }: Props) {
 
           <button
             onClick={() => void doFollow()}
-            disabled={!approved || busy['follow'] || stratAllocs.length === 0 || !hasStrategy}
+            disabled={
+              !hasStrategy || !approved || busy['follow'] || stratAllocs.length === 0 ||
+              (preview !== null && preview.marginForPositions === 0n)
+            }
             className="flex-1 py-2.5 rounded-lg bg-brand-200 hover:bg-brand-300 disabled:opacity-40 text-white text-sm font-bold transition-colors"
           >
             {busy['follow'] ? 'Following…' : 'Step 2 · Follow Trader'}

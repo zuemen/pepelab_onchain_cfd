@@ -31,7 +31,7 @@ export function useContracts(
       exchange:       new Contract(addr.PerpetualExchange, PerpetualExchangeABI, runner),
       registry:       new Contract(addr.StrategyRegistry,  StrategyRegistryABI,  runner),
       copyTracker:    new Contract(addr.CopyTracker,       CopyTrackerABI,       runner),
-      swapRouter:     new Contract(addr.MockSwapRouter,    MockSwapRouterABI?.abi ?? MockSwapRouterABI, runner),
+      swapRouter:     new Contract(addr.MockSwapRouter,    MockSwapRouterABI, runner),
     }
   }, [provider, signer, chainId])
 }
