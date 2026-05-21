@@ -168,7 +168,7 @@
       }
     ],
     "outputs": [],
-    "stateMutability": "nonpayable"
+    "stateMutability": "payable"
   },
   {
     "type": "function",
@@ -260,6 +260,45 @@
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "previewCopyAllocation",
+    "inputs": [
+      {
+        "name": "trader",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "totalMargin",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "copyFee",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "totalTradingFee",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "marginForPositions",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "portions",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
       }
     ],
     "stateMutability": "view"
@@ -416,5 +455,21 @@
     "type": "error",
     "name": "ReentrancyGuardReentrantCall",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TradingFeeExceedsMargin",
+    "inputs": [
+      {
+        "name": "fee",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "margin",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   }
 ]

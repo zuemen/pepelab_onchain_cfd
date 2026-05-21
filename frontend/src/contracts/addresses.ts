@@ -39,7 +39,7 @@ const SEPOLIA: ChainAddresses = {
   StrategyRegistry:   "0x999962a2F031623cF4996841004BAE8fd0589FeB",
   CopyTracker:        "0xA261E76c7C465f910082b372580a57Dea4DD210d",
   MockSwapRouter:     "0x115CED81eD9Ef6a1c5faa428cEaf076E284b4871",
-  ESGRegistry:        "0x0000000000000000000000000000000000000000",
+  ESGRegistry:        "0xdCFdDd38e1d80C1A5eeB44c05187Ec7979B98c13",
 }
 
 const CHAIN_MAP: Record<number, ChainAddresses> = {
