@@ -6,6 +6,8 @@ import { useLivePrices } from '../hooks/useLivePrices'
 import { ASSET_IDS } from '../contracts/addresses'
 import Skeleton from '../components/Skeleton'
 import EmptyState from '../components/EmptyState'
+import { useESG } from '../hooks/useESG'
+import ESGBadge from '../components/ESGBadge'
 
 // ── Config ──────────────────────────────────────────────────────────────────
 const ASSET_LABEL: Record<string, string> = {
@@ -102,6 +104,7 @@ interface Props { wallet: WalletAPI }
 
 export default function MarketplacePage({ wallet }: Props) {
   const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId)
+  const esg       = useESG(contracts?.esgRegistry ?? null)
 
   const [traders,    setTraders]    = useState<TraderCard[]>([])
   const [isLoading,  setIsLoading]  = useState(false)
@@ -348,6 +351,20 @@ export default function MarketplacePage({ wallet }: Props) {
                     ))
                   )}
                 </div>
+                {/* Weighted-average ESG badge for the strategy */}
+                {t.hasStrategy && (() => {
+                  const totalWeight = t.allocs.reduce((s, a) => s + Number(a.weight), 0)
+                  if (totalWeight === 0) return null
+                  let wavg = 0
+                  for (const a of t.allocs) {
+                    const info = esg[a.asset]
+                    if (!info) return null
+                    wavg += info.composite * Number(a.weight)
+                  }
+                  const composite = Math.round(wavg / totalWeight)
+                  const rating = composite >= 80 ? 'AAA' : composite >= 70 ? 'AA' : composite >= 60 ? 'A' : composite >= 50 ? 'BBB' : 'CCC'
+                  return <ESGBadge composite={composite} rating={rating} size="sm" />
+                })()}
 
                 <div className="flex items-center justify-between pt-2 border-t border-surface-border">
                   <span className="text-xs text-gray-500">

@@ -4,6 +4,8 @@ import type { WalletAPI } from '../hooks/useWallet'
 import { useContracts } from '../hooks/useContracts'
 import { ASSET_IDS } from '../contracts/addresses'
 import { CardSkeleton } from '../components/Skeleton'
+import { useESG } from '../hooks/useESG'
+import ESGBadge from '../components/ESGBadge'
 
 const ASSET_LABEL: Record<string, string> = {
   [ASSET_IDS.sBTC]:  'sBTC',
@@ -47,6 +49,7 @@ interface Props { wallet: WalletAPI }
 export default function TraderProfilePage({ wallet }: Props) {
   const { address: traderAddr } = useParams<{ address: string }>()
   const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId)
+  const esg       = useESG(contracts?.esgRegistry ?? null)
 
   const [name,          setName]          = useState('')
   const [registered,    setRegistered]    = useState(false)
@@ -338,6 +341,7 @@ export default function TraderProfilePage({ wallet }: Props) {
                           <thead>
                             <tr className="text-xs text-gray-500 uppercase border-b border-surface-border">
                               <th className="py-1.5 pr-4 text-left">Asset</th>
+                              <th className="py-1.5 pr-4 text-left">ESG</th>
                               <th className="py-1.5 pr-4 text-left">Side</th>
                               <th className="py-1.5 pr-4 text-left">Lev</th>
                               <th className="py-1.5 text-right">Weight</th>
@@ -347,6 +351,12 @@ export default function TraderProfilePage({ wallet }: Props) {
                             {ver.allocs.map((a, idx) => (
                               <tr key={idx} className="text-gray-300">
                                 <td className="py-2 pr-4 font-mono text-white">{ASSET_LABEL[a.asset] ?? '?'}</td>
+                                <td className="py-2 pr-4">
+                                  {esg[a.asset]
+                                    ? <ESGBadge composite={esg[a.asset].composite} rating={esg[a.asset].rating} />
+                                    : <span className="text-gray-600 text-xs">—</span>
+                                  }
+                                </td>
                                 <td className={`py-2 pr-4 font-bold text-xs ${a.isLong ? 'text-green-400' : 'text-red-400'}`}>
                                   {a.isLong ? 'Long ↑' : 'Short ↓'}
                                 </td>

@@ -8,6 +8,8 @@ import { useFundingData } from '../hooks/useFundingData'
 import { LineChart, Line, YAxis, ResponsiveContainer } from 'recharts'
 import { ASSET_IDS } from '../contracts/addresses'
 import { prettyError } from '../lib/errorMessages'
+import { useESG } from '../hooks/useESG'
+import ESGBadge from '../components/ESGBadge'
 
 // ── Config ────────────────────────────────────────────────────────────────────
 type AssetId = `0x${string}`
@@ -66,6 +68,7 @@ export default function ExchangePage({ wallet }: Props) {
   const contracts    = useContracts(wallet.provider, wallet.signer, wallet.chainId)
   const livePrices   = useLivePrices()
   const fundingData  = useFundingData(contracts?.exchange ?? null)
+  const esg          = useESG(contracts?.esgRegistry ?? null)
 
   const [usdcBal,   setUsdcBal]   = useState(0n)
   const [ethBal,    setEthBal]    = useState('0.0000')
@@ -630,6 +633,11 @@ export default function ExchangePage({ wallet }: Props) {
                 <option key={a.id} value={a.id}>{a.label}</option>
               ))}
             </select>
+            {esg[selAsset] && (
+              <div className="pt-0.5">
+                <ESGBadge composite={esg[selAsset].composite} rating={esg[selAsset].rating} size="sm" />
+              </div>
+            )}
           </div>
 
           <div className="space-y-1">
@@ -745,6 +753,47 @@ export default function ExchangePage({ wallet }: Props) {
           {busy['open'] ? 'Opening…' : `Open ${isLong ? 'Long' : 'Short'} ${ASSET_LABEL[selAsset] ?? ''}`}
         </button>
       </div>
+
+      {/* ESG Leaderboard */}
+      {Object.keys(esg).length > 0 && (
+        <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-3">
+          <h2 className="text-base font-bold text-white">ESG Leaderboard</h2>
+          <div className="space-y-2">
+            {Object.entries(esg)
+              .sort(([, a], [, b]) => b.composite - a.composite)
+              .map(([id, info]) => {
+                const label = ASSET_LABEL[id as AssetId] ?? id.slice(0, 8)
+                const barColor =
+                  info.composite >= 80 ? 'bg-emerald-500' :
+                  info.composite >= 60 ? 'bg-lime-500'    :
+                  info.composite >= 40 ? 'bg-amber-500'   :
+                                         'bg-red-500'
+                return (
+                  <div key={id} className="grid grid-cols-[60px_1fr_auto] gap-3 items-center">
+                    <span className="text-xs font-mono text-gray-300">{label}</span>
+                    <div className="flex gap-1 items-center">
+                      {[
+                        { label: 'E', val: info.environmental },
+                        { label: 'S', val: info.social        },
+                        { label: 'G', val: info.governance    },
+                      ].map(({ label: l, val }) => (
+                        <div key={l} className="flex-1">
+                          <div className="flex justify-between text-[10px] text-gray-500 mb-0.5">
+                            <span>{l}</span><span>{val}</span>
+                          </div>
+                          <div className="h-1.5 rounded-full bg-surface-elev overflow-hidden">
+                            <div className={`h-full rounded-full ${barColor}`} style={{ width: `${val}%` }} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <ESGBadge composite={info.composite} rating={info.rating} size="sm" />
+                  </div>
+                )
+              })}
+          </div>
+        </div>
+      )}
 
       {/* D. Open Positions */}
       <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-4">

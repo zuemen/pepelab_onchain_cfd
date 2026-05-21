@@ -11,6 +11,7 @@ export interface ChainAddresses {
   StrategyRegistry:  string
   CopyTracker:       string
   MockSwapRouter:    string
+  ESGRegistry:       string
 }
 
 // ── Anvil local (chainId 31337) ───────────────────────────────────────────────
@@ -24,19 +25,21 @@ const ANVIL: ChainAddresses = {
   StrategyRegistry:  "0x9A9f2CCfdE556A7E9Ff0848998Aa4a0CFD8863AE",
   CopyTracker:       "0x68B1D87F95878fE05B998F19b66F4baba5De1aed",
   MockSwapRouter:    "0x0000000000000000000000000000000000000000",
+  ESGRegistry:       "0x0000000000000000000000000000000000000000",
 }
 
 // ── Sepolia testnet (chainId 11155111) ────────────────────────────────────────
 const SEPOLIA: ChainAddresses = {
-  MockUSDC:          "0x82c94AAE3F50F2eE31241B986366BC929b774f7a",
-  MockOracle:        "0x3f1E53C64bc644D07b8FA76baC8aEE33b96194d8",
-  TraderStake:       "0x2cBB4310Dfc62A591975f71c818EF4E3f655Bc1d",
-  InsuranceVault:    "0xE40ABfbDb4B70A3788faF0E6A04e10C4204A6eB3",
-  FeeRouter:         "0x0FfA7f279fED4E19b3018A4461A8F387aA6c16C2",
-  PerpetualExchange: "0x4cC711AEa7c6D7E19e99676b51b7A69ee08c31Eb",
-  StrategyRegistry:  "0xe362dE5b06e98D4c5292209EEc965aC842d36c75",
-  CopyTracker:       "0x191b8D2F561F977c8bF31e40a0E03fafd7c1E421",
-  MockSwapRouter:    "0xcDcC229A7C33FafCc5C963308eC08934F4F86985",
+  MockUSDC:           "0x167Bacef1925184f0df34A3196F834C0622Cfd36",
+  MockOracle:         "0x17CA20A37Cf04F2f589B2573EC95f1411D29d958",
+  TraderStake:        "0x3fe1dbC82eA267085CAB5eb67C6b7d3E68A7d673",
+  InsuranceVault:     "0x8bDE83dBC2CA450B539346e224E7819348C7b091",
+  FeeRouter:          "0x2297e580166aF35dd0065379286f782933653079",
+  PerpetualExchange:  "0x0c6459d38617E60017bDc4ed69ec26137DA5c32b",
+  StrategyRegistry:   "0x999962a2F031623cF4996841004BAE8fd0589FeB",
+  CopyTracker:        "0xA261E76c7C465f910082b372580a57Dea4DD210d",
+  MockSwapRouter:     "0x115CED81eD9Ef6a1c5faa428cEaf076E284b4871",
+  ESGRegistry:        "0x0000000000000000000000000000000000000000",
 }
 
 const CHAIN_MAP: Record<number, ChainAddresses> = {
@@ -59,10 +62,12 @@ export const ASSET_IDS = {
   sETH:  "0x83e22e1d95f2093dd401ec5cba75bcd950cd90282356f086011849e4fbaad8a9"  as `0x${string}`,
   sAAPL: "0xeed17252f75eebef59a2839f0991464677fec970326e35128ddaf7f3acfb7220"  as `0x${string}`,
   sTSLA: "0xd3cea6476633c192bfd36c9af4a9d0ee6e1863484325ee0f546a36393d1df1e9"  as `0x${string}`,
+  sGOLD: "0x12b611f69af3b5e84f9d2d8a8818b4ad7f2cf0b45274bc7c3b9616f67c7baa1a" as `0x${string}`,
+  sBOND: "0xc310184149786e37d3493804e896dd8582e216011114ff6a7b6b8c02678bf6bb"  as `0x${string}`,
 } as const
 
-// Initial oracle prices (8-decimal, same as MockOracle storage)
-export const INITIAL_PRICES: Record<keyof typeof ASSET_IDS, bigint> = {
+// Initial oracle prices (8-decimal, same as MockOracle storage). sGOLD/sBOND are ESG-only, not traded.
+export const INITIAL_PRICES: Partial<Record<keyof typeof ASSET_IDS, bigint>> = {
   sBTC:  50_000n * 10n ** 8n,
   sETH:   3_000n * 10n ** 8n,
   sAAPL:    200n * 10n ** 8n,

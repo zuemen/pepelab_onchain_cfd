@@ -12,6 +12,8 @@ import StatCard from '../components/StatCard'
 import { prettyError } from '../lib/errorMessages'
 import { TableSkeleton } from '../components/Skeleton'
 import EmptyState from '../components/EmptyState'
+import { useESG } from '../hooks/useESG'
+import ESGBadge from '../components/ESGBadge'
 
 // ── Config ──────────────────────────────────────────────────────────────────
 const ASSET_LABEL: Record<string, string> = {
@@ -102,6 +104,7 @@ interface Props { wallet: WalletAPI }
 export default function PortfolioPage({ wallet }: Props) {
   const contracts  = useContracts(wallet.provider, wallet.signer, wallet.chainId)
   const livePrices = useLivePrices()
+  const esg        = useESG(contracts?.esgRegistry ?? null)
 
   const [copyRecs,   setCopyRecs]   = useState<CopyRec[]>([])
   const [positions,  setPositions]  = useState<PosRow[]>([])
@@ -445,7 +448,7 @@ export default function PortfolioPage({ wallet }: Props) {
             <table className="w-full text-sm text-left">
               <thead>
                 <tr className="text-xs text-gray-500 uppercase tracking-wide border-b border-surface-border">
-                  {['Asset','Side','Entry','Current','Live Market','Margin','Lev','Copied From','Unr. PnL','Accrued Funding','Value'].map(h => (
+                  {['Asset','ESG','Side','Entry','Current','Live Market','Margin','Lev','Copied From','Unr. PnL','Accrued Funding','Value'].map(h => (
                     <th key={h} className="px-4 py-3 font-medium whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -455,6 +458,12 @@ export default function PortfolioPage({ wallet }: Props) {
                   <tr key={String(row.id)} className="hover:bg-surface-elev/60 transition-colors">
                     <td className="px-4 py-3 font-mono text-white font-medium">
                       {ASSET_LABEL[row.asset] ?? row.asset.slice(0, 8)}
+                    </td>
+                    <td className="px-4 py-3">
+                      {esg[row.asset]
+                        ? <ESGBadge composite={esg[row.asset].composite} rating={esg[row.asset].rating} />
+                        : <span className="text-gray-600 text-xs">—</span>
+                      }
                     </td>
                     <td className={`px-4 py-3 font-bold text-xs ${
                       row.isLong ? 'text-green-400' : 'text-red-400'

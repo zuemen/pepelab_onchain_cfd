@@ -11,6 +11,7 @@ import PerpetualExchangeABI from '../contracts/abi/PerpetualExchange.json'
 import StrategyRegistryABI  from '../contracts/abi/StrategyRegistry.json'
 import CopyTrackerABI       from '../contracts/abi/CopyTracker.json'
 import MockSwapRouterABI    from '../contracts/abi/MockSwapRouter.json'
+import ESGRegistryABI       from '../contracts/abi/ESGRegistry.json'
 
 export function useContracts(
   provider: BrowserProvider | null,
@@ -33,6 +34,7 @@ export function useContracts(
       copyTracker:    new Contract(addr.CopyTracker,       CopyTrackerABI,       runner),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       swapRouter:     new Contract(addr.MockSwapRouter,    (MockSwapRouterABI as any).abi ?? MockSwapRouterABI, runner),
+      esgRegistry:    new Contract(addr.ESGRegistry,       ESGRegistryABI,       runner),
     }
   }, [provider, signer, chainId])
 }
