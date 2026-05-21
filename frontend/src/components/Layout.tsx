@@ -8,14 +8,15 @@ import { CHAIN_NAMES, getAddresses } from '../contracts/addresses'
 const DEMO_OWNER = '0xE80A81360608C1342e66743F70a00f75d792Eb93'
 
 const NAV = [
-  { to: '/',            label: 'Home',       icon: '⌂' },
-  { to: '/exchange',    label: 'Exchange',    icon: '⇄' },
-  { to: '/trader',      label: 'Trader',      icon: '◈' },
-  { to: '/stake',       label: 'Stake',       icon: '◆' },
-  { to: '/marketplace', label: 'Marketplace', icon: '⊞' },
-  { to: '/portfolio',   label: 'Portfolio',   icon: '◑' },
-  { to: '/vault',       label: 'LP Vault',    icon: '◎' },
-  { to: '/history',    label: 'History',     icon: '☰' },
+  { to: '/',            label: 'Home',          icon: '⌂' },
+  { to: '/exchange',    label: 'Exchange',       icon: '⇄' },
+  { to: '/trader',      label: 'Trader',         icon: '◈' },
+  { to: '/stake',       label: 'Stake',          icon: '◆' },
+  { to: '/marketplace', label: 'Marketplace',    icon: '⊞' },
+  { to: '/portfolio',   label: 'Portfolio',      icon: '◑' },
+  { to: '/vault',       label: 'LP Vault',       icon: '◎' },
+  { to: '/history',     label: 'History',        icon: '☰' },
+  { to: '/whale',       label: 'Whale Tracker',  icon: '🐋' },
 ]
 
 const ADMIN_NAV = [
@@ -32,6 +33,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/portfolio':      'Portfolio',
   '/vault':          'LP Vault',
   '/history':        'Transaction History',
+  '/whale':          'Whale Tracker',
   '/admin/oracle':   'Oracle Admin',
   '/admin/treasury': 'Treasury Admin',
 }
