@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import {
   PieChart, Pie, Cell, Tooltip as PieTooltip, Legend,
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip as LineTooltip, ResponsiveContainer,
 } from 'recharts'
 import type { WalletAPI } from '../hooks/useWallet'
+import type { WhaleAlert } from '../hooks/useWhaleAlerts'
 import { useContracts } from '../hooks/useContracts'
 import { useLivePrices } from '../hooks/useLivePrices'
 import { useESG } from '../hooks/useESG'
@@ -72,9 +74,30 @@ const ESG_COMMENT = (score: number): string => {
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-interface Props { wallet: WalletAPI }
+// ── Shared helpers ────────────────────────────────────────────────────────────
 
-export default function DashboardPage({ wallet }: Props) {
+const fNotional = (n: bigint) => {
+  const v = Number(n) / 1e18
+  if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`
+  if (v >= 1_000)     return `$${(v / 1_000).toFixed(1)}k`
+  return `$${v.toFixed(0)}`
+}
+
+const timeAgo = (ts: number): string => {
+  const diff = Math.floor(Date.now() / 1000) - ts
+  if (diff < 120)   return `${diff}s ago`
+  if (diff < 3600)  return `${Math.floor(diff / 60)} min ago`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+  return `${Math.floor(diff / 86400)}d ago`
+}
+
+const shortAddr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
+
+// ── Component ────────────────────────────────────────────────────────────────
+
+interface Props { wallet: WalletAPI; whaleAlerts?: WhaleAlert[] }
+
+export default function DashboardPage({ wallet, whaleAlerts = [] }: Props) {
   const contracts   = useContracts(wallet.provider, wallet.signer, wallet.chainId)
   const livePrices  = useLivePrices()
   const esg         = useESG(contracts?.esgRegistry ?? null)
@@ -297,6 +320,64 @@ export default function DashboardPage({ wallet }: Props) {
           </div>
         ))}
       </div>
+
+      {/* ── Whale Activity ────────────────────────────────────────────────────────── */}
+      {(whaleAlerts.length > 0) && (
+        <section className="rounded-card border border-cyan-900/60 bg-cyan-950/20 p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-cyan-300 uppercase tracking-wider flex items-center gap-2">
+              🐋 Whale Activity
+              <span className="text-xs font-normal text-cyan-600 normal-case">最近巨鯨交易（≥ $5k notional）</span>
+            </h2>
+            <Link
+              to="/whale"
+              className="text-xs text-cyan-600 hover:text-cyan-300 transition-colors"
+            >
+              Open Whale Tracker →
+            </Link>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-gray-600 border-b border-surface-border">
+                  <th className="text-left pb-2 pr-4 font-medium">Address</th>
+                  <th className="text-left pb-2 pr-4 font-medium">Asset</th>
+                  <th className="text-left pb-2 pr-4 font-medium">Side</th>
+                  <th className="text-right pb-2 pr-4 font-medium">Notional</th>
+                  <th className="text-right pb-2 font-medium">Time</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-surface-border/50">
+                {whaleAlerts.slice(0, 10).map((a) => (
+                  <tr key={a.txHash} className="hover:bg-cyan-950/20 transition-colors">
+                    <td className="py-1.5 pr-4">
+                      <Link
+                        to={`/whale?addr=${a.owner}`}
+                        className="font-mono text-cyan-400 hover:text-white transition-colors hover:underline underline-offset-2"
+                      >
+                        {shortAddr(a.owner)}
+                      </Link>
+                    </td>
+                    <td className="py-1.5 pr-4 text-gray-300">{a.assetLabel}</td>
+                    <td className="py-1.5 pr-4">
+                      <span className={`font-semibold ${a.isLong ? 'text-green-400' : 'text-red-400'}`}>
+                        {a.isLong ? 'LONG' : 'SHORT'} {String(a.leverage)}×
+                      </span>
+                    </td>
+                    <td className="py-1.5 pr-4 text-right font-mono font-semibold text-white">
+                      {fNotional(a.notional)}
+                    </td>
+                    <td className="py-1.5 text-right text-gray-500">
+                      {timeAgo(a.timestamp)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       {/* ── Section A: Category breakdown cards (2×2) ─────────────────────────── */}
       <section>

@@ -1,4 +1,5 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import type { WalletAPI } from '../hooks/useWallet'
 import { useContracts } from '../hooks/useContracts'
 import { explorerTx, explorerAddr } from '../lib/notify'
@@ -136,6 +137,7 @@ interface Props { wallet: WalletAPI }
 
 export default function WhaleTrackerPage({ wallet }: Props) {
   const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId)
+  const [searchParams]  = useSearchParams()
 
   const [inputAddr,     setInputAddr]     = useState('')
   const [searchAddr,    setSearchAddr]    = useState<string | null>(null)
@@ -162,6 +164,10 @@ export default function WhaleTrackerPage({ wallet }: Props) {
     : null
 
   const tier = whaleTier(totalVolume)
+
+  // URL ?addr= param — stored here so it's accessible after doSearch is declared
+  const addrParam   = searchParams.get('addr') ?? ''
+  const urlSearched = useRef(false)
 
   // ── Search ─────────────────────────────────────────────────────────────────
   const doSearch = useCallback(async (addr: string, mainnetDemo = false) => {
@@ -321,6 +327,16 @@ export default function WhaleTrackerPage({ wallet }: Props) {
     setInputAddr(addr)
     void doSearch(addr, mainnetDemo)
   }
+
+  // ── Auto-search from ?addr= URL param (runs after doSearch is stable) ─────
+  useEffect(() => {
+    if (!addrParam || urlSearched.current) return
+    if (!isEthAddr(addrParam))             return
+    if (!contracts || !wallet.provider)    return
+    urlSearched.current = true
+    setInputAddr(addrParam)
+    void doSearch(addrParam)
+  }, [addrParam, contracts, wallet.provider, doSearch])
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (

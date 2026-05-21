@@ -2,7 +2,9 @@ import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import type { WalletAPI } from '../hooks/useWallet'
+import type { WhaleAlert } from '../hooks/useWhaleAlerts'
 import WalletButton from './WalletButton'
+import WhaleAlertBanner from './WhaleAlertBanner'
 import { CHAIN_NAMES, getAddresses } from '../contracts/addresses'
 
 const DEMO_OWNER = '0xE80A81360608C1342e66743F70a00f75d792Eb93'
@@ -44,9 +46,10 @@ interface Props {
   wallet:         WalletAPI
   children:       ReactNode
   isKYCVerified?: boolean
+  whaleAlerts?:   WhaleAlert[]
 }
 
-export default function Layout({ wallet, children, isKYCVerified }: Props) {
+export default function Layout({ wallet, children, isKYCVerified, whaleAlerts }: Props) {
   const { pathname } = useLocation()
   const [dismissed, setDismissed] = useState(
     () => localStorage.getItem('disclaimer-dismissed') === '1'
@@ -266,6 +269,11 @@ export default function Layout({ wallet, children, isKYCVerified }: Props) {
               ✕
             </button>
           </div>
+        )}
+
+        {/* Whale alert banner */}
+        {whaleAlerts && whaleAlerts.length > 0 && (
+          <WhaleAlertBanner alerts={whaleAlerts} />
         )}
 
         {/* Demo mode banner — visible only to deployer/admin */}
