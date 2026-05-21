@@ -14,7 +14,9 @@ import { ASSET_LABEL } from '../lib/assetMeta'
 const FETCH_BLOCKS_VOLUME = 50_000   // ~7 days on Sepolia
 
 // ── Types ────────────────────────────────────────────────────────────────────
-type SortKey = 'reputation' | 'followers' | 'volume' | 'pnl'
+type SortKey = 'reputation' | 'followers' | 'volume' | 'pnl' | 'esg'
+
+const ESG_FRIENDLY_THRESHOLD = 60   // weighted composite ≥ 60
 
 interface RawAlloc {
   asset:    string
@@ -93,6 +95,7 @@ export default function MarketplacePage({ wallet }: Props) {
   const [isLoading,  setIsLoading]  = useState(false)
   const [fetchError, setFetchError] = useState<string | null>(null)
   const [sortKey,    setSortKey]    = useState<SortKey>('reputation')
+  const [esgOnly,    setEsgOnly]    = useState(false)
 
   const fetchAll = useCallback(async () => {
     if (!contracts || !wallet.provider) return
@@ -181,21 +184,46 @@ export default function MarketplacePage({ wallet }: Props) {
 
   useEffect(() => { void fetchAll() }, [fetchAll])
 
-  // ── Sorted view ───────────────────────────────────────────────────────────
-  const sorted = [...traders].sort((a, b) => {
-    switch (sortKey) {
-      case 'followers':   return cmpBigDesc(a.followerCount, b.followerCount)
-      case 'volume':      return cmpBigDesc(a.totalVolume, b.totalVolume)
-      case 'pnl':         return cmpBigDesc(a.pnl7d, b.pnl7d)
-      case 'reputation':
-      default: {
-        if (a.reputation === null && b.reputation === null) return 0
-        if (a.reputation === null) return 1
-        if (b.reputation === null) return -1
-        return cmpBigDesc(a.reputation, b.reputation)
-      }
+  // ── ESG composite per trader (weighted by allocation weight) ─────────────
+  const getEsgComposite = (t: TraderCard): number | null => {
+    if (!t.hasStrategy || t.allocs.length === 0) return null
+    const totalW = t.allocs.reduce((s, a) => s + Number(a.weight), 0)
+    if (totalW === 0) return null
+    let wavg = 0
+    for (const a of t.allocs) {
+      const info = esg[a.asset]
+      if (!info) return null
+      wavg += info.composite * Number(a.weight)
     }
-  })
+    return Math.round(wavg / totalW)
+  }
+
+  // ── Sorted + filtered view ────────────────────────────────────────────────
+  const sorted = [...traders]
+    .filter(t => {
+      if (!esgOnly) return true
+      const score = getEsgComposite(t)
+      return score !== null && score >= ESG_FRIENDLY_THRESHOLD
+    })
+    .sort((a, b) => {
+      switch (sortKey) {
+        case 'followers':   return cmpBigDesc(a.followerCount, b.followerCount)
+        case 'volume':      return cmpBigDesc(a.totalVolume, b.totalVolume)
+        case 'pnl':         return cmpBigDesc(a.pnl7d, b.pnl7d)
+        case 'esg': {
+          const ea = getEsgComposite(a) ?? -1
+          const eb = getEsgComposite(b) ?? -1
+          return eb - ea
+        }
+        case 'reputation':
+        default: {
+          if (a.reputation === null && b.reputation === null) return 0
+          if (a.reputation === null) return 1
+          if (b.reputation === null) return -1
+          return cmpBigDesc(a.reputation, b.reputation)
+        }
+      }
+    })
 
   const MEDALS    = ['🥇', '🥈', '🥉']
   const MEDAL_CSS = [
@@ -227,6 +255,17 @@ export default function MarketplacePage({ wallet }: Props) {
           <p className="text-sm text-gray-400 mt-0.5">Browse and copy on-chain verified strategies</p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setEsgOnly(v => !v)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+              esgOnly
+                ? 'bg-emerald-900/60 border-emerald-700 text-emerald-300'
+                : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-500'
+            }`}
+            title="Only show strategies with weighted ESG ≥ 60"
+          >
+            🌱 ESG {esgOnly ? '已篩選' : '全部'}
+          </button>
           <select
             value={sortKey}
             onChange={e => setSortKey(e.target.value as SortKey)}
@@ -236,6 +275,7 @@ export default function MarketplacePage({ wallet }: Props) {
             <option value="followers">Sort: Followers</option>
             <option value="volume">Sort: Volume (7d)</option>
             <option value="pnl">Sort: PnL (7d)</option>
+            <option value="esg">Sort: ESG Score</option>
           </select>
           <button
             onClick={() => void fetchAll()}
@@ -307,21 +347,14 @@ export default function MarketplacePage({ wallet }: Props) {
               const medal  = MEDALS[idx]
               const border = idx < 3 ? MEDAL_CSS[idx] : 'border-surface-border'
 
-              // Weighted ESG composite for strategy
-              const esgComposite = (() => {
-                if (!t.hasStrategy) return null
-                const totalW = t.allocs.reduce((s, a) => s + Number(a.weight), 0)
-                if (totalW === 0) return null
-                let wavg = 0
-                for (const a of t.allocs) {
-                  const info = esg[a.asset]
-                  if (!info) return null
-                  wavg += info.composite * Number(a.weight)
-                }
-                const c = Math.round(wavg / totalW)
-                const r = c >= 80 ? 'AAA' : c >= 70 ? 'AA' : c >= 60 ? 'A' : c >= 50 ? 'BBB' : 'CCC'
-                return { composite: c, rating: r }
-              })()
+              // Weighted ESG composite — reuse helper (avoids duplication)
+              const esgScore = getEsgComposite(t)
+              const esgComposite = esgScore !== null
+                ? {
+                    composite: esgScore,
+                    rating: esgScore >= 80 ? 'AAA' : esgScore >= 70 ? 'AA' : esgScore >= 60 ? 'A' : esgScore >= 50 ? 'BBB' : 'CCC',
+                  }
+                : null
 
               return (
                 <div

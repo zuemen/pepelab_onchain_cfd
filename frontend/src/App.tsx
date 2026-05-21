@@ -11,6 +11,7 @@ import TraderDashboard   from './pages/TraderDashboard'
 import TraderStakePage   from './pages/TraderStakePage'
 import TraderProfilePage from './pages/TraderProfilePage'
 import DashboardPage     from './pages/DashboardPage'
+import ESGPage           from './pages/ESGPage'
 import MarketplacePage   from './pages/MarketplacePage'
 import CopyPage          from './pages/CopyPage'
 import PortfolioPage     from './pages/PortfolioPage'
@@ -48,6 +49,7 @@ export default function App() {
           <Route path="/stake"                  element={<TraderStakePage   wallet={wallet} />} />
           <Route path="/trader/:address"        element={<TraderProfilePage wallet={wallet} />} />
           <Route path="/marketplace"            element={<MarketplacePage   wallet={wallet} />} />
+          <Route path="/esg"                    element={<ESGPage           wallet={wallet} />} />
           <Route path="/copy/:traderAddress"    element={<CopyPage          wallet={wallet} />} />
           <Route path="/portfolio"              element={<PortfolioPage     wallet={wallet} />} />
           <Route path="/vault"                  element={<VaultPage         wallet={wallet} />} />

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import {
   PieChart, Pie, Cell, Tooltip as PieTooltip, Legend,
@@ -64,6 +64,12 @@ const fPnL = (v: bigint) => {
 }
 
 const pnlColor = (v: bigint) => Number(v) >= 0 ? 'text-green-400' : 'text-red-400'
+
+const ESG_TIER = (score: number): { name: string; color: string } => {
+  if (score >= 80) return { name: 'ESG Champion',           color: '#34d399' }
+  if (score >= 60) return { name: 'ESG Aware',              color: '#86efac' }
+  return                  { name: 'Consider greener assets', color: '#fbbf24' }
+}
 
 const ESG_COMMENT = (score: number): string => {
   if (score >= 80) return '您的投資組合符合高標準 ESG 準則，表現優異 🌱'
@@ -302,19 +308,23 @@ export default function DashboardPage({ wallet, whaleAlerts = [] }: Props) {
           },
           {
             label: 'ESG Score',
-            value: portfolioESG ? `${portfolioESG.rating} · ${portfolioESG.composite}` : '—',
-            sub:   portfolioESG ? ESG_COMMENT(portfolioESG.composite).slice(0, 20) + '…' : 'no positions',
-            cls:   portfolioESG
-              ? portfolioESG.composite >= 65 ? 'text-emerald-400' : portfolioESG.composite >= 50 ? 'text-yellow-400' : 'text-red-400'
-              : 'text-gray-500',
+            value: portfolioESG ? `${portfolioESG.composite} · ${portfolioESG.rating}` : '—',
+            sub:   portfolioESG ? ESG_TIER(portfolioESG.composite).name : 'no positions',
+            cls:   portfolioESG ? '' : 'text-gray-500',
+            style: portfolioESG ? { color: ESG_TIER(portfolioESG.composite).color } : undefined,
           },
-        ].map(({ label, value, sub, cls }) => (
+        ].map(({ label, value, sub, cls, ...rest }) => (
           <div key={label} className="rounded-card border border-surface-border bg-surface shadow-card p-4 space-y-1">
             <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">{label}</p>
             {isLoading ? (
               <Skeleton className="h-6 w-24" />
             ) : (
-              <p className={`text-lg font-bold font-mono ${cls}`}>{value}</p>
+              <p
+                className={`text-lg font-bold font-mono ${cls}`}
+                style={('style' in rest) ? (rest as { style?: React.CSSProperties }).style : undefined}
+              >
+                {value}
+              </p>
             )}
             <p className="text-[11px] text-gray-600">{sub}</p>
           </div>
@@ -500,13 +510,13 @@ export default function DashboardPage({ wallet, whaleAlerts = [] }: Props) {
               {/* Score display */}
               <div className="flex items-end gap-4">
                 <div>
-                  <p className="text-5xl font-extrabold font-mono" style={{
-                    color: portfolioESG.composite >= 65 ? '#34d399'
-                         : portfolioESG.composite >= 50 ? '#fbbf24' : '#f87171',
-                  }}>
+                  <p className="text-5xl font-extrabold font-mono" style={{ color: ESG_TIER(portfolioESG.composite).color }}>
                     {portfolioESG.composite}
                   </p>
-                  <p className="text-sm text-gray-400 mt-1">Portfolio ESG Score</p>
+                  <p className="text-sm font-bold mt-1" style={{ color: ESG_TIER(portfolioESG.composite).color }}>
+                    {ESG_TIER(portfolioESG.composite).name}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">Portfolio ESG Score</p>
                 </div>
                 <div className="pb-1">
                   <span

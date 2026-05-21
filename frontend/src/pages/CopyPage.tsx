@@ -6,6 +6,8 @@ import { useContracts } from '../hooks/useContracts'
 import { prettyError } from '../lib/errorMessages'
 import { ASSET_LABEL, ASSET_META } from '../lib/assetMeta'
 import { useKYC } from '../hooks/useKYC'
+import { useESG } from '../hooks/useESG'
+import ESGBadge from '../components/ESGBadge'
 import KYCModal from '../components/KYCModal'
 
 interface TraderStakeData {
@@ -73,6 +75,7 @@ export default function CopyPage({ wallet }: Props) {
     contracts?.kycRegistry ?? null,
     wallet.address ?? null,
   )
+  const esg = useESG(contracts?.esgRegistry ?? null)
 
   const setLoad = (k: string, v: boolean) => setBusy(p => ({ ...p, [k]: v }))
   const notify  = (msg: string, ok: boolean, hash?: string) => {
@@ -324,6 +327,45 @@ export default function CopyPage({ wallet }: Props) {
           </div>
         )}
       </div>
+
+      {/* Strategy ESG composite */}
+      {stratAllocs.length > 0 && (() => {
+        const totalW = stratAllocs.reduce((s, a) => s + Number(a.weight), 0)
+        if (totalW === 0) return null
+        let wavg = 0
+        let allRated = true
+        for (const a of stratAllocs) {
+          const info = esg[a.asset]
+          if (!info) { allRated = false; break }
+          wavg += info.composite * Number(a.weight)
+        }
+        if (!allRated) return null
+        const composite = Math.round(wavg / totalW)
+        const rating    = composite >= 80 ? 'AAA' : composite >= 70 ? 'AA' : composite >= 60 ? 'A' : composite >= 50 ? 'BBB' : 'CCC'
+        const tierName  = composite >= 80 ? 'ESG Champion' : composite >= 60 ? 'ESG Aware' : 'Consider greener assets'
+        const tierColor = composite >= 80 ? 'text-emerald-300' : composite >= 60 ? 'text-lime-300' : 'text-yellow-400'
+        return (
+          <div className="rounded-card border border-surface-border bg-surface shadow-card p-4 flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-base">🌱</span>
+              <div>
+                <p className="text-xs text-gray-500 font-medium">Strategy ESG Score</p>
+                <p className={`text-sm font-bold ${tierColor}`}>{tierName}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 ml-auto">
+              <ESGBadge composite={composite} rating={rating} size="md" />
+              <span className={`text-xl font-extrabold font-mono ${tierColor}`}>{composite}</span>
+            </div>
+            <Link
+              to="/esg"
+              className="text-xs text-gray-600 hover:text-emerald-400 transition-colors shrink-0"
+            >
+              詳情 →
+            </Link>
+          </div>
+        )
+      })()}
 
       {/* Total margin input */}
       <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-3">
