@@ -9,6 +9,7 @@ import ExchangePage      from './pages/ExchangePage'
 import TraderDashboard   from './pages/TraderDashboard'
 import TraderStakePage   from './pages/TraderStakePage'
 import TraderProfilePage from './pages/TraderProfilePage'
+import DashboardPage     from './pages/DashboardPage'
 import MarketplacePage   from './pages/MarketplacePage'
 import CopyPage          from './pages/CopyPage'
 import PortfolioPage     from './pages/PortfolioPage'
@@ -32,6 +33,7 @@ export default function App() {
         <ErrorBoundary>
         <Routes>
           <Route path="/"                       element={<LandingPage       wallet={wallet} />} />
+          <Route path="/dashboard"              element={<DashboardPage     wallet={wallet} />} />
           <Route path="/exchange"               element={<ExchangePage      wallet={wallet} />} />
           <Route path="/trader"                 element={<TraderDashboard   wallet={wallet} />} />
           <Route path="/stake"                  element={<TraderStakePage   wallet={wallet} />} />

@@ -9,6 +9,7 @@ const DEMO_OWNER = '0xE80A81360608C1342e66743F70a00f75d792Eb93'
 
 const NAV = [
   { to: '/',            label: 'Home',          icon: '⌂' },
+  { to: '/dashboard',   label: 'Dashboard',     icon: '◉' },
   { to: '/exchange',    label: 'Exchange',       icon: '⇄' },
   { to: '/trader',      label: 'Trader',         icon: '◈' },
   { to: '/stake',       label: 'Stake',          icon: '◆' },
@@ -26,6 +27,7 @@ const ADMIN_NAV = [
 
 const PAGE_TITLES: Record<string, string> = {
   '/':               'Home',
+  '/dashboard':      'Dashboard',
   '/exchange':       'Exchange',
   '/trader':         'Trader Dashboard',
   '/stake':          'Trader Stake',
