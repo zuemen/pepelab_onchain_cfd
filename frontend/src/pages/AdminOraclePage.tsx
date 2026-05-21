@@ -5,16 +5,12 @@ import { useFundingData } from '../hooks/useFundingData'
 import { ASSET_IDS } from '../contracts/addresses'
 import { prettyError } from '../lib/errorMessages'
 import { TableSkeleton } from '../components/Skeleton'
+import { ASSETS_LIST } from '../lib/assetMeta'
 
 // ── Config ────────────────────────────────────────────────────────────────────
 type AssetId = `0x${string}`
 
-const ASSETS: { label: string; id: AssetId }[] = [
-  { label: 'sBTC',  id: ASSET_IDS.sBTC  },
-  { label: 'sETH',  id: ASSET_IDS.sETH  },
-  { label: 'sAAPL', id: ASSET_IDS.sAAPL },
-  { label: 'sTSLA', id: ASSET_IDS.sTSLA },
-]
+const ASSETS = ASSETS_LIST
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface AssetRow {

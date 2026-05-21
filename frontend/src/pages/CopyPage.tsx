@@ -3,8 +3,8 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { parseEther } from 'ethers'
 import type { WalletAPI } from '../hooks/useWallet'
 import { useContracts } from '../hooks/useContracts'
-import { ASSET_IDS } from '../contracts/addresses'
 import { prettyError } from '../lib/errorMessages'
+import { ASSET_LABEL } from '../lib/assetMeta'
 
 interface TraderStakeData {
   stake:        bigint
@@ -13,12 +13,6 @@ interface TraderStakeData {
 }
 
 // ── Config ──────────────────────────────────────────────────────────────────
-const ASSET_LABEL: Record<string, string> = {
-  [ASSET_IDS.sBTC]:  'sBTC',
-  [ASSET_IDS.sETH]:  'sETH',
-  [ASSET_IDS.sAAPL]: 'sAAPL',
-  [ASSET_IDS.sTSLA]: 'sTSLA',
-}
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface CopyPreview {

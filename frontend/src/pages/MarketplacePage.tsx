@@ -8,14 +8,9 @@ import Skeleton from '../components/Skeleton'
 import EmptyState from '../components/EmptyState'
 import { useESG } from '../hooks/useESG'
 import ESGBadge from '../components/ESGBadge'
+import { ASSET_LABEL } from '../lib/assetMeta'
 
 // ── Config ──────────────────────────────────────────────────────────────────
-const ASSET_LABEL: Record<string, string> = {
-  [ASSET_IDS.sBTC]:  'sBTC',
-  [ASSET_IDS.sETH]:  'sETH',
-  [ASSET_IDS.sAAPL]: 'sAAPL',
-  [ASSET_IDS.sTSLA]: 'sTSLA',
-}
 
 type SortKey = 'reputation' | 'followers' | 'stake'
 

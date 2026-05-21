@@ -5,19 +5,12 @@ import { useContracts } from '../hooks/useContracts'
 import { ASSET_IDS } from '../contracts/addresses'
 import { prettyError } from '../lib/errorMessages'
 import { TableSkeleton } from '../components/Skeleton'
+import { ASSETS_LIST, ASSET_LABEL } from '../lib/assetMeta'
 
 // ── Config ─────────────────────────────────────────────────────────────────
 type AssetId = `0x${string}`
 
-const ASSETS: { label: string; id: AssetId }[] = [
-  { label: 'sBTC',  id: ASSET_IDS.sBTC  },
-  { label: 'sETH',  id: ASSET_IDS.sETH  },
-  { label: 'sAAPL', id: ASSET_IDS.sAAPL },
-  { label: 'sTSLA', id: ASSET_IDS.sTSLA },
-]
-const ASSET_LABEL: Record<string, string> = Object.fromEntries(
-  ASSETS.map(a => [a.id, a.label])
-)
+const ASSETS = ASSETS_LIST
 
 // ── Types ──────────────────────────────────────────────────────────────────
 interface AllocRow {

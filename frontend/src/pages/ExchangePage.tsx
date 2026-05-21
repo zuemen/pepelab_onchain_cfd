@@ -10,19 +10,12 @@ import { ASSET_IDS } from '../contracts/addresses'
 import { prettyError } from '../lib/errorMessages'
 import { useESG } from '../hooks/useESG'
 import ESGBadge from '../components/ESGBadge'
+import { ASSETS_LIST, ASSET_LABEL } from '../lib/assetMeta'
 
 // ── Config ────────────────────────────────────────────────────────────────────
 type AssetId = `0x${string}`
 
-const ASSETS: { label: string; id: AssetId }[] = [
-  { label: 'sBTC',  id: ASSET_IDS.sBTC  },
-  { label: 'sETH',  id: ASSET_IDS.sETH  },
-  { label: 'sAAPL', id: ASSET_IDS.sAAPL },
-  { label: 'sTSLA', id: ASSET_IDS.sTSLA },
-]
-const ASSET_LABEL: Record<string, string> = Object.fromEntries(
-  ASSETS.map(a => [a.id, a.label])
-)
+const ASSETS = ASSETS_LIST
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface PositionRow {
@@ -270,6 +263,10 @@ export default function ExchangePage({ wallet }: Props) {
     if (!contracts) return
     const amt = tryParse(openMgn)
     if (!amt) { notify('Enter a valid margin', false); return }
+    if (amt > freeMgn) {
+      notify('保證金不足，請先在 Margin Account 區塊 Approve & Deposit', false)
+      return
+    }
     setLoad('open', true)
     try {
       const tx = asTx(await contracts.exchange.openPosition(selAsset, isLong, amt, BigInt(leverage), { value: parseEther('0.001') }))
@@ -621,6 +618,12 @@ export default function ExchangePage({ wallet }: Props) {
       <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-5">
         <h2 className="text-base font-bold text-white">Open Position</h2>
 
+        {freeMgn === 0n && (
+          <div className="rounded-lg border border-yellow-700/40 bg-yellow-900/20 px-4 py-3 text-sm text-yellow-300">
+            You have no free margin. Deposit mUSDC in the <strong>Margin Account</strong> section above first.
+          </div>
+        )}
+
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="space-y-1">
             <label className="text-xs text-gray-400 uppercase tracking-wide">Asset</label>
@@ -745,9 +748,18 @@ export default function ExchangePage({ wallet }: Props) {
           <Link to="/admin/oracle" className="text-emerald-400 hover:underline">Oracle Admin</Link> page.
         </p>
 
+        <div className="text-xs text-gray-400">
+          Free margin: <span className="font-mono text-white">{f18(freeMgn)} mUSDC</span>
+          {openMgnBig !== null && openMgnBig > freeMgn && (
+            <span className="text-red-400 ml-2">
+              ⚠ Insufficient — deposit at least {f18(openMgnBig - freeMgn)} more mUSDC first
+            </span>
+          )}
+        </div>
+
         <button
           onClick={() => void openPosition()}
-          disabled={busy['open'] || !openMgn}
+          disabled={busy['open'] || !openMgn || (openMgnBig !== null && openMgnBig > freeMgn)}
           className={`px-8 py-2.5 rounded-lg text-white text-sm font-bold disabled:opacity-50 transition-colors ${isLong ? 'bg-green-700 hover:bg-green-600' : 'bg-red-700 hover:bg-red-600'}`}
         >
           {busy['open'] ? 'Opening…' : `Open ${isLong ? 'Long' : 'Short'} ${ASSET_LABEL[selAsset] ?? ''}`}

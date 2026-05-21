@@ -66,12 +66,14 @@ export const ASSET_IDS = {
   sBOND: "0xc310184149786e37d3493804e896dd8582e216011114ff6a7b6b8c02678bf6bb"  as `0x${string}`,
 } as const
 
-// Initial oracle prices (8-decimal, same as MockOracle storage). sGOLD/sBOND are ESG-only, not traded.
+// Initial oracle prices (8-decimal, same as MockOracle storage)
 export const INITIAL_PRICES: Partial<Record<keyof typeof ASSET_IDS, bigint>> = {
   sBTC:  50_000n * 10n ** 8n,
   sETH:   3_000n * 10n ** 8n,
   sAAPL:    200n * 10n ** 8n,
   sTSLA:    250n * 10n ** 8n,
+  sGOLD:  2_650n * 10n ** 8n,
+  sBOND:    100n * 10n ** 8n,
 }
 
 export type ContractName = keyof typeof ANVIL

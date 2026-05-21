@@ -1,20 +1,13 @@
 import { useState, useEffect, useCallback, type ReactNode } from 'react'
 import type { WalletAPI } from '../hooks/useWallet'
 import { useContracts } from '../hooks/useContracts'
-import { ASSET_IDS } from '../contracts/addresses'
 import { explorerTx } from '../lib/notify'
 import { TableSkeleton } from '../components/Skeleton'
 import EmptyState from '../components/EmptyState'
+import { ASSET_LABEL } from '../lib/assetMeta'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const FETCH_BLOCKS = 5000   // ~15 h on Sepolia (12 s/block)
-
-const ASSET_LABEL: Record<string, string> = {
-  [ASSET_IDS.sBTC]:  'sBTC',
-  [ASSET_IDS.sETH]:  'sETH',
-  [ASSET_IDS.sAAPL]: 'sAAPL',
-  [ASSET_IDS.sTSLA]: 'sTSLA',
-}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type EventType =
