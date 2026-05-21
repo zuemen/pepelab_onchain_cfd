@@ -12,6 +12,7 @@ export interface ChainAddresses {
   CopyTracker:       string
   MockSwapRouter:    string
   ESGRegistry:       string
+  KYCRegistry:       string
 }
 
 // ── Anvil local (chainId 31337) ───────────────────────────────────────────────
@@ -26,6 +27,7 @@ const ANVIL: ChainAddresses = {
   CopyTracker:       "0x68B1D87F95878fE05B998F19b66F4baba5De1aed",
   MockSwapRouter:    "0x0000000000000000000000000000000000000000",
   ESGRegistry:       "0x0000000000000000000000000000000000000000",
+  KYCRegistry:       "0x0000000000000000000000000000000000000000",
 }
 
 // ── Sepolia testnet (chainId 11155111) ────────────────────────────────────────
@@ -40,6 +42,7 @@ const SEPOLIA: ChainAddresses = {
   CopyTracker:        "0xA261E76c7C465f910082b372580a57Dea4DD210d",
   MockSwapRouter:     "0x115CED81eD9Ef6a1c5faa428cEaf076E284b4871",
   ESGRegistry:        "0xdCFdDd38e1d80C1A5eeB44c05187Ec7979B98c13",
+  KYCRegistry:        "0x0000000000000000000000000000000000000000",
 }
 
 const CHAIN_MAP: Record<number, ChainAddresses> = {

@@ -10,7 +10,9 @@ import { ASSET_IDS } from '../contracts/addresses'
 import { prettyError } from '../lib/errorMessages'
 import { useESG } from '../hooks/useESG'
 import ESGBadge from '../components/ESGBadge'
-import { ASSETS_LIST, ASSET_LABEL } from '../lib/assetMeta'
+import { ASSETS_LIST, ASSET_LABEL, ASSET_META } from '../lib/assetMeta'
+import { useKYC } from '../hooks/useKYC'
+import KYCModal from '../components/KYCModal'
 
 // ── Config ────────────────────────────────────────────────────────────────────
 type AssetId = `0x${string}`
@@ -81,8 +83,14 @@ export default function ExchangePage({ wallet }: Props) {
   const [openMgn,     setOpenMgn]     = useState('')
   const [history,     setHistory]     = useState<{ time: string; price: number }[]>([])
 
-  const [busy,  setBusy]  = useState<Record<string, boolean>>({})
-  const [toast, setToast] = useState<{ msg: string; ok: boolean; hash?: string } | null>(null)
+  const [busy,         setBusy]        = useState<Record<string, boolean>>({})
+  const [toast,        setToast]       = useState<{ msg: string; ok: boolean; hash?: string } | null>(null)
+  const [showKYCModal, setShowKYCModal] = useState(false)
+
+  const { isVerified: isKYCVerified, refetch: refetchKYC } = useKYC(
+    contracts?.kycRegistry ?? null,
+    wallet.address ?? null,
+  )
 
   const setLoad = (k: string, v: boolean) => setBusy(p => ({ ...p, [k]: v }))
   const notify  = useCallback((msg: string, ok: boolean, hash?: string) => {
@@ -294,6 +302,10 @@ export default function ExchangePage({ wallet }: Props) {
   }
 
   // ── Derived ───────────────────────────────────────────────────────────────
+  const selectedAssetMeta = ASSET_META[selAsset]
+  const kycRequired       = selectedAssetMeta?.requiresKYC ?? false
+  const kycBlocked        = kycRequired && !isKYCVerified
+
   const openMgnBig = tryParse(openMgn)
   const notional   = openMgnBig !== null ? openMgnBig * BigInt(leverage) : 0n
   
@@ -624,6 +636,20 @@ export default function ExchangePage({ wallet }: Props) {
           </div>
         )}
 
+        {kycBlocked && (
+          <div className="rounded-lg border border-orange-700/40 bg-orange-900/20 px-4 py-3 text-sm text-orange-300 flex items-center justify-between gap-4">
+            <span>
+              🔒 <strong>{selectedAssetMeta?.label}</strong> 是股票 / 債券類資產，需要完成 KYC 驗證才能交易。
+            </span>
+            <button
+              onClick={() => setShowKYCModal(true)}
+              className="shrink-0 px-3 py-1.5 rounded-lg bg-orange-700 hover:bg-orange-600 text-white text-xs font-bold transition-colors"
+            >
+              完成 KYC
+            </button>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="space-y-1">
             <label className="text-xs text-gray-400 uppercase tracking-wide">Asset</label>
@@ -633,7 +659,9 @@ export default function ExchangePage({ wallet }: Props) {
               className="w-full rounded-lg bg-gray-800 border border-gray-600 px-3 py-2 text-sm text-white focus:outline-none"
             >
               {ASSETS.map(a => (
-                <option key={a.id} value={a.id}>{a.label}</option>
+                <option key={a.id} value={a.id}>
+                  {a.requiresKYC ? '🔒 ' : ''}{a.label}
+                </option>
               ))}
             </select>
             {esg[selAsset] && (
@@ -758,13 +786,29 @@ export default function ExchangePage({ wallet }: Props) {
         </div>
 
         <button
-          onClick={() => void openPosition()}
-          disabled={busy['open'] || !openMgn || (openMgnBig !== null && openMgnBig > freeMgn)}
-          className={`px-8 py-2.5 rounded-lg text-white text-sm font-bold disabled:opacity-50 transition-colors ${isLong ? 'bg-green-700 hover:bg-green-600' : 'bg-red-700 hover:bg-red-600'}`}
+          onClick={() => kycBlocked ? setShowKYCModal(true) : void openPosition()}
+          disabled={busy['open'] || !openMgn || (openMgnBig !== null && openMgnBig > freeMgn) || (kycBlocked && !openMgn)}
+          className={`px-8 py-2.5 rounded-lg text-white text-sm font-bold disabled:opacity-50 transition-colors ${
+            kycBlocked
+              ? 'bg-orange-700 hover:bg-orange-600'
+              : isLong ? 'bg-green-700 hover:bg-green-600' : 'bg-red-700 hover:bg-red-600'
+          }`}
         >
-          {busy['open'] ? 'Opening…' : `Open ${isLong ? 'Long' : 'Short'} ${ASSET_LABEL[selAsset] ?? ''}`}
+          {busy['open']
+            ? 'Opening…'
+            : kycBlocked
+              ? `🔒 完成 KYC 才能交易 ${ASSET_LABEL[selAsset] ?? ''}`
+              : `Open ${isLong ? 'Long' : 'Short'} ${ASSET_LABEL[selAsset] ?? ''}`}
         </button>
       </div>
+
+      {/* KYC Modal */}
+      <KYCModal
+        isOpen={showKYCModal}
+        onClose={() => setShowKYCModal(false)}
+        onSuccess={() => { refetchKYC(); setShowKYCModal(false) }}
+        kycRegistry={contracts?.kycRegistry ?? null}
+      />
 
       {/* ESG Leaderboard */}
       {Object.keys(esg).length > 0 && (

@@ -12,6 +12,7 @@ import StrategyRegistryABI  from '../contracts/abi/StrategyRegistry.json'
 import CopyTrackerABI       from '../contracts/abi/CopyTracker.json'
 import MockSwapRouterABI    from '../contracts/abi/MockSwapRouter.json'
 import ESGRegistryABI       from '../contracts/abi/ESGRegistry.json'
+import KYCRegistryABI       from '../contracts/abi/KYCRegistry.json'
 
 export function useContracts(
   provider: BrowserProvider | null,
@@ -35,6 +36,7 @@ export function useContracts(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       swapRouter:     new Contract(addr.MockSwapRouter,    (MockSwapRouterABI as any).abi ?? MockSwapRouterABI, runner),
       esgRegistry:    new Contract(addr.ESGRegistry,       ESGRegistryABI,       runner),
+      kycRegistry:    new Contract(addr.KYCRegistry,       KYCRegistryABI,       runner),
     }
   }, [provider, signer, chainId])
 }

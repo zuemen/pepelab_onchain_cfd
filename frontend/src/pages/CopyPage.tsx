@@ -4,7 +4,9 @@ import { parseEther } from 'ethers'
 import type { WalletAPI } from '../hooks/useWallet'
 import { useContracts } from '../hooks/useContracts'
 import { prettyError } from '../lib/errorMessages'
-import { ASSET_LABEL } from '../lib/assetMeta'
+import { ASSET_LABEL, ASSET_META } from '../lib/assetMeta'
+import { useKYC } from '../hooks/useKYC'
+import KYCModal from '../components/KYCModal'
 
 interface TraderStakeData {
   stake:        bigint
@@ -65,6 +67,12 @@ export default function CopyPage({ wallet }: Props) {
   const [busy,             setBusy]             = useState<Record<string, boolean>>({})
   const [toast,            setToast]            = useState<{ msg: string; ok: boolean; hash?: string } | null>(null)
   const [preview,          setPreview]          = useState<CopyPreview | null>(null)
+  const [showKYCModal,     setShowKYCModal]     = useState(false)
+
+  const { isVerified: isKYCVerified, refetch: refetchKYC } = useKYC(
+    contracts?.kycRegistry ?? null,
+    wallet.address ?? null,
+  )
 
   const setLoad = (k: string, v: boolean) => setBusy(p => ({ ...p, [k]: v }))
   const notify  = (msg: string, ok: boolean, hash?: string) => {
@@ -129,6 +137,10 @@ export default function CopyPage({ wallet }: Props) {
 
   // Reset approval when amount changes
   useEffect(() => { setApproved(false) }, [totalMargin])
+
+  // ── KYC gate ──────────────────────────────────────────────────────────────
+  const hasKYCRequired = stratAllocs.some(a => ASSET_META[a.asset]?.requiresKYC)
+  const kycBlocked     = hasKYCRequired && !isKYCVerified
 
   // ── Computed preview ───────────────────────────────────────────────────────
   const COPY_FEE_BPS = 30n
@@ -488,10 +500,24 @@ export default function CopyPage({ wallet }: Props) {
           <span className="text-gray-400">Follow Trader</span>
         </div>
 
+        {kycBlocked && (
+          <div className="rounded-lg border border-orange-700/40 bg-orange-900/20 px-4 py-3 text-sm text-orange-300 flex items-center justify-between gap-4">
+            <span>
+              🔒 此策略包含股票 / 債券資產，需要完成 KYC 驗證才能跟單。
+            </span>
+            <button
+              onClick={() => setShowKYCModal(true)}
+              className="shrink-0 px-3 py-1.5 rounded-lg bg-orange-700 hover:bg-orange-600 text-white text-xs font-bold transition-colors"
+            >
+              完成 KYC
+            </button>
+          </div>
+        )}
+
         <div className="flex gap-3">
           <button
             onClick={() => void doApprove()}
-            disabled={approved || busy['approve'] || !totalMargin || !hasStrategy}
+            disabled={approved || busy['approve'] || !totalMargin || !hasStrategy || kycBlocked}
             className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-colors ${
               approved
                 ? 'bg-emerald-900 text-emerald-400 opacity-60 cursor-default'
@@ -505,7 +531,8 @@ export default function CopyPage({ wallet }: Props) {
             onClick={() => void doFollow()}
             disabled={
               !hasStrategy || !approved || busy['follow'] || stratAllocs.length === 0 ||
-              (preview !== null && preview.marginForPositions === 0n)
+              (preview !== null && preview.marginForPositions === 0n) ||
+              kycBlocked
             }
             className="flex-1 py-2.5 rounded-lg bg-brand-200 hover:bg-brand-300 disabled:opacity-40 text-white text-sm font-bold transition-colors"
           >
@@ -523,6 +550,14 @@ export default function CopyPage({ wallet }: Props) {
           Your margin will be automatically split and deposited into positions according to the strategy above.
         </p>
       </div>
+
+      {/* KYC Modal */}
+      <KYCModal
+        isOpen={showKYCModal}
+        onClose={() => setShowKYCModal(false)}
+        onSuccess={() => { refetchKYC(); setShowKYCModal(false) }}
+        kycRegistry={contracts?.kycRegistry ?? null}
+      />
     </div>
   )
 }

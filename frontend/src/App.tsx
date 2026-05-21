@@ -1,5 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { useWallet } from './hooks/useWallet'
+import { useContracts } from './hooks/useContracts'
+import { useKYC } from './hooks/useKYC'
 import Layout            from './components/Layout'
 import ErrorBoundary     from './components/ErrorBoundary'
 import LandingPage       from './pages/LandingPage'
@@ -16,11 +18,16 @@ import VaultPage         from './pages/VaultPage'
 import HistoryPage       from './pages/HistoryPage'
 
 export default function App() {
-  const wallet = useWallet()
+  const wallet    = useWallet()
+  const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId)
+  const { isVerified: isKYCVerified } = useKYC(
+    contracts?.kycRegistry ?? null,
+    wallet.address ?? null,
+  )
 
   return (
     <BrowserRouter>
-      <Layout wallet={wallet}>
+      <Layout wallet={wallet} isKYCVerified={wallet.isConnected ? isKYCVerified : undefined}>
         <ErrorBoundary>
         <Routes>
           <Route path="/"                       element={<LandingPage       wallet={wallet} />} />

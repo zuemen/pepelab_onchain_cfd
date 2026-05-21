@@ -37,11 +37,12 @@ const PAGE_TITLES: Record<string, string> = {
 }
 
 interface Props {
-  wallet:   WalletAPI
-  children: ReactNode
+  wallet:         WalletAPI
+  children:       ReactNode
+  isKYCVerified?: boolean
 }
 
-export default function Layout({ wallet, children }: Props) {
+export default function Layout({ wallet, children, isKYCVerified }: Props) {
   const { pathname } = useLocation()
   const [dismissed, setDismissed] = useState(
     () => localStorage.getItem('disclaimer-dismissed') === '1'
@@ -208,6 +209,16 @@ export default function Layout({ wallet, children }: Props) {
           <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border mb-2 ${chainBadgeColor}`}>
             <span className="w-1.5 h-1.5 rounded-full bg-current opacity-80" />
             {chainLabel}
+          </div>
+        )}
+        {wallet.isConnected && isKYCVerified !== undefined && (
+          <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border mb-2 ${
+            isKYCVerified
+              ? 'bg-emerald-900/60 text-emerald-300 border-emerald-700'
+              : 'bg-gray-800 text-gray-500 border-gray-700'
+          }`}>
+            <span>{isKYCVerified ? '✓' : '?'}</span>
+            KYC {isKYCVerified ? '已驗證' : '未驗證'}
           </div>
         )}
         <WalletButton wallet={wallet} />

@@ -5,6 +5,7 @@ export interface AssetMeta {
   coingeckoId: string   // CoinGecko price id (empty = simulated/no live feed)
   category:    'crypto' | 'equity' | 'commodity' | 'bond'
   description: string
+  requiresKYC: boolean  // equity + bond require KYC verification
 }
 
 export const ASSET_META: Record<string, AssetMeta> = {
@@ -13,36 +14,42 @@ export const ASSET_META: Record<string, AssetMeta> = {
     coingeckoId: 'bitcoin',
     category:    'crypto',
     description: 'Synthetic Bitcoin',
+    requiresKYC: false,
   },
   [ASSET_IDS.sETH]: {
     label:       'sETH',
     coingeckoId: 'ethereum',
     category:    'crypto',
     description: 'Synthetic Ethereum',
+    requiresKYC: false,
   },
   [ASSET_IDS.sAAPL]: {
     label:       'sAAPL',
     coingeckoId: '',
     category:    'equity',
     description: 'Synthetic Apple Inc.',
+    requiresKYC: true,
   },
   [ASSET_IDS.sTSLA]: {
     label:       'sTSLA',
     coingeckoId: '',
     category:    'equity',
     description: 'Synthetic Tesla Inc.',
+    requiresKYC: true,
   },
   [ASSET_IDS.sGOLD]: {
     label:       'sGOLD',
     coingeckoId: '',
     category:    'commodity',
     description: 'Synthetic Gold (XAU/USD)',
+    requiresKYC: false,
   },
   [ASSET_IDS.sBOND]: {
     label:       'sBOND',
     coingeckoId: '',
     category:    'bond',
     description: 'Synthetic US Treasury Bond',
+    requiresKYC: true,
   },
 }
 
