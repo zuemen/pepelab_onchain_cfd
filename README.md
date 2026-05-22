@@ -1,4 +1,4 @@
-# PepeLab On-Chain CFD
+# PepeFi On-Chain CFD
 
 A proof-of-concept perpetual CFD (Contract for Difference) protocol deployed on Sepolia testnet, built as an NCCU Capstone 2026 project.
 

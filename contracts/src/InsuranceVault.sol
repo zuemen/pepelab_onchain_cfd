@@ -33,7 +33,7 @@ contract InsuranceVault is ERC20, Ownable, ReentrancyGuard {
     // ── Constructor ──────────────────────────────────────────────────────────
 
     constructor(address _usdc)
-        ERC20("PepeLab Insurance Vault", "pIV")
+        ERC20("PepeFi Insurance Vault", "pIV")
         Ownable(msg.sender)
     {
         usdc = IERC20(_usdc);

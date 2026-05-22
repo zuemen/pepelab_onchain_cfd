@@ -14,7 +14,7 @@ export default function LandingPage({ wallet }: Props) {
       {/* Hero */}
       <div className="space-y-3">
         <h1 className="text-4xl font-extrabold tracking-tight text-white">
-          On-Chain CFD Copy Trading PoC
+          PepeFi — On-Chain CFD Copy Trading
         </h1>
         <p className="text-lg text-emerald-400 font-medium">
           鏈上合成衍生品跟單系統

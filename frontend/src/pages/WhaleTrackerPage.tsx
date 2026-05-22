@@ -348,7 +348,7 @@ export default function WhaleTrackerPage({ wallet }: Props) {
           🐋 Whale Tracker
         </h1>
         <p className="text-sm text-gray-400 mt-0.5">
-          Enter any wallet address to inspect its full on-chain activity on PepeLab
+          Enter any wallet address to inspect its full on-chain activity on PepeFi
         </p>
       </div>
 
@@ -399,7 +399,7 @@ export default function WhaleTrackerPage({ wallet }: Props) {
       {/* Mainnet warning */}
       {isMainnetDemo && searchAddr && (
         <div className="rounded-lg border border-purple-700/40 bg-purple-900/20 px-4 py-3 text-sm text-purple-300">
-          <span className="font-semibold">ℹ Mainnet address</span> — PepeLab runs on Sepolia testnet.
+          <span className="font-semibold">ℹ Mainnet address</span> — PepeFi runs on Sepolia testnet.
           This address has no activity here. The search demonstrates the queryFilter capability for any address.
         </div>
       )}
@@ -534,7 +534,7 @@ export default function WhaleTrackerPage({ wallet }: Props) {
                 title="No activity found"
                 description={
                   isMainnetDemo
-                    ? 'This is a mainnet address — no PepeLab activity on Sepolia.'
+                    ? 'This is a mainnet address — no PepeFi activity on Sepolia.'
                     : `No events found for ${shortAddr(searchAddr)} in the last ${FETCH_BLOCKS.toLocaleString()} blocks.`
                 }
               />

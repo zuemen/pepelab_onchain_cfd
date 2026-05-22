@@ -79,7 +79,7 @@ export default function Layout({ wallet, children, isKYCVerified, whaleAlerts }:
   const pageTitle = PAGE_TITLES[pathname]
     ?? (pathname.startsWith('/trader/') ? 'Trader Profile'
       : pathname.startsWith('/copy/')   ? 'Copy Trader'
-      : 'PepeLab CFD')
+      : 'PepeFi CFD')
 
   const switchToAnvil = async () => {
     const eth = (window as unknown as { ethereum?: { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> } }).ethereum
@@ -139,7 +139,7 @@ export default function Layout({ wallet, children, isKYCVerified, whaleAlerts }:
   const renderSidebarContent = () => (
     <>
       <div className="px-5 py-5 border-b border-surface-border shrink-0">
-        <div className="font-extrabold text-xl tracking-tight text-brand-200">PepeLab</div>
+        <div className="font-extrabold text-xl tracking-tight text-brand-200">PepeFi</div>
         <div className="text-xs text-gray-500 mt-0.5">On-Chain CFD · PoC</div>
       </div>
 
@@ -334,7 +334,7 @@ export default function Layout({ wallet, children, isKYCVerified, whaleAlerts }:
         <main className="flex-1 p-4 md:p-6">{children}</main>
 
         <footer className="border-t border-surface-border px-6 py-3 text-center text-xs text-gray-600 space-x-2">
-          <span>Research prototype · Sepolia ·</span>
+          <span>PepeFi · Research prototype · Sepolia ·</span>
           {addresses?.PerpetualExchange && wallet.chainId === 11155111 && (
             <a
               href={`https://sepolia.etherscan.io/address/${addresses.PerpetualExchange}`}

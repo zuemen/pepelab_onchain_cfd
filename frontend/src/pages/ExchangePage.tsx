@@ -414,7 +414,7 @@ export default function ExchangePage({ wallet }: Props) {
 
       {/* Onboarding guide */}
       <div className="rounded-card border border-info/30 bg-info/5 p-5 space-y-2">
-        <h3 className="text-sm font-semibold text-info">How CFD trading works on PepeLab</h3>
+        <h3 className="text-sm font-semibold text-info">How CFD trading works on PepeFi</h3>
         <ol className="text-xs text-gray-300 space-y-1 list-decimal list-inside leading-relaxed">
           <li><strong>Swap:</strong> Swap ETH for mUSDC to get your stablecoin collateral.</li>
           <li><strong>Margin Account:</strong> Approve &amp; deposit mUSDC into PerpetualExchange. This becomes your free margin.</li>
