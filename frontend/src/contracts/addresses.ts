@@ -82,11 +82,11 @@ export const INITIAL_PRICES: Partial<Record<keyof typeof ASSET_IDS, bigint>> = {
   sTSLA:     250n * 10n ** 8n,
   sGOLD:   2_650n * 10n ** 8n,
   sBOND:     100n * 10n ** 8n,
-  sNVDA:   1_100n * 10n ** 8n,
-  sMSFT:     415n * 10n ** 8n,
-  sGOOGL:    170n * 10n ** 8n,
-  sICLN:      13n * 10n ** 8n,
-  sESGU:      45n * 10n ** 8n,
+  sNVDA:     135n * 10n ** 8n,
+  sMSFT:     420n * 10n ** 8n,
+  sGOOGL:    175n * 10n ** 8n,
+  sICLN:      14n * 10n ** 8n,
+  sESGU:     120n * 10n ** 8n,
 }
 
 export type ContractName = keyof typeof ANVIL
