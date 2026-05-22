@@ -7,10 +7,17 @@ const COIN_MAP: Record<string, string> = {
 }
 
 const MOCK_INITIAL: Record<string, number> = {
-  [ASSET_IDS.sBTC]:  81000,
-  [ASSET_IDS.sETH]:  2300,
-  [ASSET_IDS.sAAPL]: 200,
-  [ASSET_IDS.sTSLA]: 250,
+  [ASSET_IDS.sBTC]:   81000,
+  [ASSET_IDS.sETH]:   2300,
+  [ASSET_IDS.sAAPL]:  200,
+  [ASSET_IDS.sTSLA]:  250,
+  [ASSET_IDS.sGOLD]:  2650,
+  [ASSET_IDS.sBOND]:  100,
+  [ASSET_IDS.sNVDA]:  1100,
+  [ASSET_IDS.sMSFT]:  415,
+  [ASSET_IDS.sGOOGL]: 170,
+  [ASSET_IDS.sICLN]:  13,
+  [ASSET_IDS.sESGU]:  45,
 }
 
 export interface LivePrice {

@@ -357,7 +357,9 @@ export default function TraderDashboard({ wallet }: Props) {
                       }`}
                     >
                       {ASSETS.map(a => (
-                        <option key={a.id} value={a.id}>{a.label}</option>
+                        <option key={a.id} value={a.id}>
+                          {a.regulated ? '🔒 ' : ''}{a.symbol}
+                        </option>
                       ))}
                     </select>
 

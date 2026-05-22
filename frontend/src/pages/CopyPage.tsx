@@ -142,7 +142,7 @@ export default function CopyPage({ wallet }: Props) {
   useEffect(() => { setApproved(false) }, [totalMargin])
 
   // ── KYC gate ──────────────────────────────────────────────────────────────
-  const hasKYCRequired = stratAllocs.some(a => ASSET_META[a.asset]?.requiresKYC)
+  const hasKYCRequired = stratAllocs.some(a => ASSET_META[a.asset]?.regulated)
   const kycBlocked     = hasKYCRequired && !isKYCVerified
 
   // ── Computed preview ───────────────────────────────────────────────────────

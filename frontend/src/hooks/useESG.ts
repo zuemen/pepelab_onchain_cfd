@@ -17,6 +17,11 @@ const ASSETS = [
   ASSET_IDS.sTSLA,
   ASSET_IDS.sGOLD,
   ASSET_IDS.sBOND,
+  ASSET_IDS.sNVDA,
+  ASSET_IDS.sMSFT,
+  ASSET_IDS.sGOOGL,
+  ASSET_IDS.sICLN,
+  ASSET_IDS.sESGU,
 ]
 
 export function useESG(esgRegistry: Contract | null): Record<string, ESGInfo> {

@@ -303,7 +303,7 @@ export default function ExchangePage({ wallet }: Props) {
 
   // ── Derived ───────────────────────────────────────────────────────────────
   const selectedAssetMeta = ASSET_META[selAsset]
-  const kycRequired       = selectedAssetMeta?.requiresKYC ?? false
+  const kycRequired       = selectedAssetMeta?.regulated ?? false
   const kycBlocked        = kycRequired && !isKYCVerified
 
   const openMgnBig = tryParse(openMgn)
@@ -418,7 +418,7 @@ export default function ExchangePage({ wallet }: Props) {
         <ol className="text-xs text-gray-300 space-y-1 list-decimal list-inside leading-relaxed">
           <li><strong>Swap:</strong> Swap ETH for mUSDC to get your stablecoin collateral.</li>
           <li><strong>Margin Account:</strong> Approve &amp; deposit mUSDC into PerpetualExchange. This becomes your free margin.</li>
-          <li><strong>Open Position:</strong> Use free margin to open long/short on synthetic assets (sBTC, sETH, sAAPL, sTSLA). You don't own the asset — you take a CFD position.</li>
+          <li><strong>Open Position:</strong> Use free margin to open long/short on 11 synthetic assets — crypto (sBTC, sETH), equity (sAAPL, sTSLA, sNVDA, sMSFT, sGOOGL), commodity (sGOLD), bond (sBOND), and ESG ETFs (sICLN, sESGU). 🔒 = KYC required.</li>
           <li><strong>PnL:</strong> Price moves → position value changes → close to realize PnL.</li>
         </ol>
       </div>
@@ -639,7 +639,7 @@ export default function ExchangePage({ wallet }: Props) {
         {kycBlocked && (
           <div className="rounded-lg border border-orange-700/40 bg-orange-900/20 px-4 py-3 text-sm text-orange-300 flex items-center justify-between gap-4">
             <span>
-              🔒 <strong>{selectedAssetMeta?.label}</strong> 是股票 / 債券類資產，需要完成 KYC 驗證才能交易。
+              🔒 <strong>{selectedAssetMeta?.symbol}</strong> 是股票 / 債券 / ETF 類資產，需要完成 KYC 驗證才能交易。
             </span>
             <button
               onClick={() => setShowKYCModal(true)}
@@ -660,7 +660,8 @@ export default function ExchangePage({ wallet }: Props) {
             >
               {ASSETS.map(a => (
                 <option key={a.id} value={a.id}>
-                  {a.requiresKYC ? '🔒 ' : ''}{a.label}
+                  {a.regulated ? '🔒 ' : ''}{a.symbol}
+                  {a.category === 'etf' ? ' [ETF]' : ''}
                 </option>
               ))}
             </select>

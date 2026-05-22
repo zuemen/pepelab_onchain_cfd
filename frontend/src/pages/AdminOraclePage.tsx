@@ -65,7 +65,7 @@ export default function AdminOraclePage({ wallet }: Props) {
   const fundingData  = useFundingData(contracts?.exchange ?? null)
 
   const [assets,         setAssets]         = useState<AssetRow[]>(
-    ASSETS.map(a => ({ ...a, price8: 0n, updatedAt: 0n, input: '' })),
+    ASSETS.map(a => ({ id: a.id, label: a.symbol, price8: 0n, updatedAt: 0n, input: '' })),
   )
   const [oracleOwner,    setOracleOwner]    = useState<string | null>(null)
   const [ownerCheckError, setOwnerCheckError] = useState<string | null>(null)
@@ -143,7 +143,7 @@ export default function AdminOraclePage({ wallet }: Props) {
           const res = (await contracts.oracle.getPrice(a.id)) as unknown as [bigint, bigint]
           return {
             id:        a.id,
-            label:     a.label,
+            label:     a.symbol,
             price8:    res[0],
             updatedAt: res[1],
             input:     (Number(res[0]) / 1e8).toFixed(2),
@@ -210,17 +210,24 @@ export default function AdminOraclePage({ wallet }: Props) {
       if (!res.ok) throw new Error(`CoinGecko API error ${res.status}`)
       const data = await res.json() as { bitcoin: { usd: number }; ethereum: { usd: number } }
 
-      const currentAAPL = Number(assets.find(a => a.id === ASSET_IDS.sAAPL)?.price8 ?? 0n) / 1e8
-      const currentTSLA = Number(assets.find(a => a.id === ASSET_IDS.sTSLA)?.price8 ?? 0n) / 1e8
       const wiggle = () => 1 + (Math.random() - 0.5) * 0.06
-      const newAAPL = currentAAPL > 0 ? currentAAPL * wiggle() : 200
-      const newTSLA = currentTSLA > 0 ? currentTSLA * wiggle() : 250
+      const simulated = (id: AssetId, fallback: number) => {
+        const cur = Number(assets.find(a => a.id === id)?.price8 ?? 0n) / 1e8
+        return cur > 0 ? cur * wiggle() : fallback
+      }
 
       const targets: Array<[AssetId, number, string]> = [
-        [ASSET_IDS.sBTC,  data.bitcoin.usd,  'BTC'],
-        [ASSET_IDS.sETH,  data.ethereum.usd, 'ETH'],
-        [ASSET_IDS.sAAPL, newAAPL,           'AAPL'],
-        [ASSET_IDS.sTSLA, newTSLA,           'TSLA'],
+        [ASSET_IDS.sBTC,   data.bitcoin.usd,       'BTC'],
+        [ASSET_IDS.sETH,   data.ethereum.usd,      'ETH'],
+        [ASSET_IDS.sAAPL,  simulated(ASSET_IDS.sAAPL,  200),  'AAPL'],
+        [ASSET_IDS.sTSLA,  simulated(ASSET_IDS.sTSLA,  250),  'TSLA'],
+        [ASSET_IDS.sGOLD,  simulated(ASSET_IDS.sGOLD,  2650), 'GOLD'],
+        [ASSET_IDS.sBOND,  simulated(ASSET_IDS.sBOND,  100),  'BOND'],
+        [ASSET_IDS.sNVDA,  simulated(ASSET_IDS.sNVDA,  1100), 'NVDA'],
+        [ASSET_IDS.sMSFT,  simulated(ASSET_IDS.sMSFT,  415),  'MSFT'],
+        [ASSET_IDS.sGOOGL, simulated(ASSET_IDS.sGOOGL, 170),  'GOOGL'],
+        [ASSET_IDS.sICLN,  simulated(ASSET_IDS.sICLN,  13),   'ICLN'],
+        [ASSET_IDS.sESGU,  simulated(ASSET_IDS.sESGU,  45),   'ESGU'],
       ]
 
       const updates: string[] = []
