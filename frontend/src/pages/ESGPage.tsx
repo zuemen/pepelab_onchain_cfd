@@ -217,7 +217,6 @@ export default function ESGPage({ wallet }: Props) {
           {sorted.map((id, rank) => {
             const info  = esg[id]
             const meta  = ASSET_META[id]
-            const color = RADAR_COLOR[id] ?? '#6366f1'
             const isSel = id === selected
 
             return (

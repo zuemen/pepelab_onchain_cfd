@@ -77,7 +77,6 @@ export default function ExchangePage({ wallet }: Props) {
   const [ammPrice,  setAmmPrice]  = useState(0n)
   const [ammEth,    setAmmEth]    = useState(0n)
   const [ammUsdc,   setAmmUsdc]   = useState(0n)
-  const [quoteOut,       setQuoteOut]       = useState('')
   const [receiveAmount,  setReceiveAmount]  = useState('')
   const [depositAmt,       setDepositAmt]        = useState('')
   const [withdrawAmt, setWithdrawAmt] = useState('')
@@ -173,7 +172,6 @@ export default function ExchangePage({ wallet }: Props) {
   // ── Live AMM quote ────────────────────────────────────────────────────────
   useEffect(() => {
     if (!contracts?.pepeAMM || !payAmount || parseFloat(payAmount) <= 0) {
-      setQuoteOut('')
       setReceiveAmount('')
       return
     }
@@ -185,12 +183,10 @@ export default function ExchangePage({ wallet }: Props) {
           ? await contracts.pepeAMM.quoteETHForUSDC(parsed) as bigint
           : await contracts.pepeAMM.quoteUSDCForETH(parsed) as bigint
         if (!cancelled) {
-          const fmt = (Number(out) / 1e18).toFixed(swapMode === 'eth-to-usdc' ? 2 : 6)
-          setQuoteOut(fmt)
-          setReceiveAmount(fmt)
+          setReceiveAmount((Number(out) / 1e18).toFixed(swapMode === 'eth-to-usdc' ? 2 : 6))
         }
       } catch {
-        if (!cancelled) { setQuoteOut(''); setReceiveAmount('') }
+        if (!cancelled) { setReceiveAmount('') }
       }
     })()
     return () => { cancelled = true }
@@ -502,7 +498,7 @@ export default function ExchangePage({ wallet }: Props) {
           {/* Switch direction button */}
           <div className="flex justify-center -my-5 relative z-10">
             <button
-              onClick={() => { setSwapMode(m => m === 'eth-to-usdc' ? 'usdc-to-eth' : 'eth-to-usdc'); setPayAmount(''); setReceiveAmount(''); setQuoteOut('') }}
+              onClick={() => { setSwapMode(m => m === 'eth-to-usdc' ? 'usdc-to-eth' : 'eth-to-usdc'); setPayAmount(''); setReceiveAmount('') }}
               className="bg-[#131A2A] rounded-xl p-1.5 border-4 border-[#0D111C] text-white hover:bg-[#1e2a45] transition-colors"
               title="Switch direction"
             >
