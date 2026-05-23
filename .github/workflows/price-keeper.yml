@@ -1,0 +1,38 @@
+name: Oracle Price Keeper
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'    # 每 15 分鐘跑一次
+  workflow_dispatch:           # 也允許在 GitHub 網頁手動觸發
+
+jobs:
+  update-prices:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Update oracle prices
+        env:
+          ORACLE: "0x17CA20A37Cf04F2f589B2573EC95f1411D29d958"
+          RPC_URL: ${{ secrets.KEEPER_RPC_URL }}
+          PK: ${{ secrets.KEEPER_PRIVATE_KEY }}
+        run: |
+          set -e
+          ASSETS="sBTC sETH sAAPL sTSLA sGOLD sBOND"
+          for SYM in $ASSETS; do
+            KEY=$(cast keccak "$SYM")
+            RAW=$(cast call "$ORACLE" "getPrice(bytes32)(uint256,uint256)" "$KEY" --rpc-url "$RPC_URL")
+            PRICE=$(echo "$RAW" | head -n1 | awk '{print $1}')
+            if [ -z "$PRICE" ] || [ "$PRICE" = "0" ]; then
+              echo "$SYM: no price on-chain, skip"
+              continue
+            fi
+            # -200 ~ +200 bps = ±2% 隨機漫步
+            DELTA_BPS=$(( RANDOM % 401 - 200 ))
+            NEW_PRICE=$(( PRICE + PRICE * DELTA_BPS / 10000 ))
+            echo "$SYM: $PRICE -> $NEW_PRICE (${DELTA_BPS} bps)"
+            cast send "$ORACLE" "updatePrice(bytes32,uint256)" "$KEY" "$NEW_PRICE" \
+              --rpc-url "$RPC_URL" --private-key "$PK"
+          done
+          echo "All prices updated."
