@@ -45,7 +45,7 @@ const SEPOLIA: ChainAddresses = {
   MockSwapRouter:     "0x115CED81eD9Ef6a1c5faa428cEaf076E284b4871",
   ESGRegistry:        "0xdCFdDd38e1d80C1A5eeB44c05187Ec7979B98c13",
   KYCRegistry:        "0x7d40A2D3e39cDD1Dc613071D3C463AA161f7C5bB",
-  PepeAMM:            "0x0000000000000000000000000000000000000000",
+  PepeAMM:            "0x612674Ab98589228309353FCc2f9d88Cc830CBdF",
 }
 
 const CHAIN_MAP: Record<number, ChainAddresses> = {

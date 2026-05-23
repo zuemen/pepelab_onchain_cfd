@@ -105,18 +105,27 @@ export default function ExchangePage({ wallet }: Props) {
   const fetchAll = useCallback(async () => {
     if (!contracts || !wallet.address || !wallet.provider) return
     try {
-      const [bal, mgn, eBal, price, reserves] = await Promise.all([
+      // 第一組:使用者餘額（必須成功,跟 AMM 無關）
+      const [bal, mgn, eBal] = await Promise.all([
         contracts.usdc.balanceOf(wallet.address),
         contracts.exchange.freeMargin(wallet.address),
-        wallet.provider.getBalance(wallet.address),
-        contracts.pepeAMM.getPrice(),
-        contracts.pepeAMM.getReserves(),
+        wallet.provider!.getBalance(wallet.address),
       ])
       setUsdcBal(bal as bigint)
       setFreeMgn(mgn as bigint)
       setEthBal(f18(eBal as bigint, 4))
-      setAmmPrice(price as bigint)
-      const [ethR, usdcR] = reserves as [bigint, bigint]
+
+      // 第二組:AMM 資料（失敗不影響餘額顯示）
+      let price = 0n
+      let reserves: [bigint, bigint] = [0n, 0n]
+      try {
+        price    = await contracts.pepeAMM.getPrice() as bigint
+        reserves = await contracts.pepeAMM.getReserves() as [bigint, bigint]
+      } catch (e) {
+        console.warn('[AMM] unavailable:', e)
+      }
+      setAmmPrice(price)
+      const [ethR, usdcR] = reserves
       setAmmEth(ethR)
       setAmmUsdc(usdcR)
 

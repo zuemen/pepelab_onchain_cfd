@@ -10,6 +10,13 @@
   },
   {
     "type": "function",
+    "name": "FEE_BPS",
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "uint256", "internalType": "uint256" }],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "addLiquidity",
     "inputs": [{ "name": "usdcAmount", "type": "uint256", "internalType": "uint256" }],
     "outputs": [],
@@ -17,20 +24,10 @@
   },
   {
     "type": "function",
-    "name": "swapETHForUSDC",
-    "inputs": [{ "name": "minUsdcOut", "type": "uint256", "internalType": "uint256" }],
-    "outputs": [{ "name": "usdcOut", "type": "uint256", "internalType": "uint256" }],
-    "stateMutability": "payable"
-  },
-  {
-    "type": "function",
-    "name": "swapUSDCForETH",
-    "inputs": [
-      { "name": "usdcIn",    "type": "uint256", "internalType": "uint256" },
-      { "name": "minEthOut", "type": "uint256", "internalType": "uint256" }
-    ],
-    "outputs": [{ "name": "ethOut", "type": "uint256", "internalType": "uint256" }],
-    "stateMutability": "nonpayable"
+    "name": "ethReserve",
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "uint256", "internalType": "uint256" }],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -51,6 +48,13 @@
   },
   {
     "type": "function",
+    "name": "owner",
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "address", "internalType": "address" }],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "quoteETHForUSDC",
     "inputs": [{ "name": "ethIn", "type": "uint256", "internalType": "uint256" }],
     "outputs": [{ "name": "", "type": "uint256", "internalType": "uint256" }],
@@ -65,38 +69,27 @@
   },
   {
     "type": "function",
-    "name": "ethReserve",
+    "name": "renounceOwnership",
     "inputs": [],
-    "outputs": [{ "name": "", "type": "uint256", "internalType": "uint256" }],
-    "stateMutability": "view"
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
-    "name": "usdcReserve",
-    "inputs": [],
-    "outputs": [{ "name": "", "type": "uint256", "internalType": "uint256" }],
-    "stateMutability": "view"
+    "name": "swapETHForUSDC",
+    "inputs": [{ "name": "minUsdcOut", "type": "uint256", "internalType": "uint256" }],
+    "outputs": [{ "name": "usdcOut", "type": "uint256", "internalType": "uint256" }],
+    "stateMutability": "payable"
   },
   {
     "type": "function",
-    "name": "usdc",
-    "inputs": [],
-    "outputs": [{ "name": "", "type": "address", "internalType": "contract IERC20" }],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "FEE_BPS",
-    "inputs": [],
-    "outputs": [{ "name": "", "type": "uint256", "internalType": "uint256" }],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "owner",
-    "inputs": [],
-    "outputs": [{ "name": "", "type": "address", "internalType": "address" }],
-    "stateMutability": "view"
+    "name": "swapUSDCForETH",
+    "inputs": [
+      { "name": "usdcIn",    "type": "uint256", "internalType": "uint256" },
+      { "name": "minEthOut", "type": "uint256", "internalType": "uint256" }
+    ],
+    "outputs": [{ "name": "ethOut", "type": "uint256", "internalType": "uint256" }],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -107,10 +100,17 @@
   },
   {
     "type": "function",
-    "name": "renounceOwnership",
+    "name": "usdc",
     "inputs": [],
-    "outputs": [],
-    "stateMutability": "nonpayable"
+    "outputs": [{ "name": "", "type": "address", "internalType": "contract IERC20" }],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "usdcReserve",
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "uint256", "internalType": "uint256" }],
+    "stateMutability": "view"
   },
   {
     "type": "event",
@@ -118,7 +118,17 @@
     "inputs": [
       { "name": "ethAmount",  "indexed": false, "type": "uint256", "internalType": "uint256" },
       { "name": "usdcAmount", "indexed": false, "type": "uint256", "internalType": "uint256" }
-    ]
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "OwnershipTransferred",
+    "inputs": [
+      { "name": "previousOwner", "indexed": true, "type": "address", "internalType": "address" },
+      { "name": "newOwner",      "indexed": true, "type": "address", "internalType": "address" }
+    ],
+    "anonymous": false
   },
   {
     "type": "event",
@@ -129,15 +139,8 @@
       { "name": "amountIn",  "indexed": false, "type": "uint256", "internalType": "uint256" },
       { "name": "amountOut", "indexed": false, "type": "uint256", "internalType": "uint256" },
       { "name": "newPrice",  "indexed": false, "type": "uint256", "internalType": "uint256" }
-    ]
-  },
-  {
-    "type": "event",
-    "name": "OwnershipTransferred",
-    "inputs": [
-      { "name": "previousOwner", "indexed": true, "type": "address", "internalType": "address" },
-      { "name": "newOwner",      "indexed": true, "type": "address", "internalType": "address" }
-    ]
+    ],
+    "anonymous": false
   },
   {
     "type": "error",
@@ -148,5 +151,15 @@
     "type": "error",
     "name": "InsufficientOutput",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "OwnableInvalidOwner",
+    "inputs": [{ "name": "owner", "type": "address", "internalType": "address" }]
+  },
+  {
+    "type": "error",
+    "name": "OwnableUnauthorizedAccount",
+    "inputs": [{ "name": "account", "type": "address", "internalType": "address" }]
   }
 ]
