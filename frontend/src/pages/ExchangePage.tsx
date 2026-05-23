@@ -72,9 +72,12 @@ export default function ExchangePage({ wallet }: Props) {
   const [curPrice,  setCurPrice]  = useState(0n)
   const [pageLoading, setPageLoading] = useState(true)
 
-  const [swapMode,         setSwapMode]         = useState<'eth-to-usdc' | 'usdc-to-eth'>('eth-to-usdc')
-  const [payAmount,        setPayAmount]         = useState('')
-  const [routerEthReserve, setRouterEthReserve]  = useState(0n)
+  const [swapMode,  setSwapMode]  = useState<'eth-to-usdc' | 'usdc-to-eth'>('eth-to-usdc')
+  const [payAmount, setPayAmount] = useState('')
+  const [ammPrice,  setAmmPrice]  = useState(0n)
+  const [ammEth,    setAmmEth]    = useState(0n)
+  const [ammUsdc,   setAmmUsdc]   = useState(0n)
+  const [quoteOut,  setQuoteOut]  = useState('')
   const [depositAmt,       setDepositAmt]        = useState('')
   const [withdrawAmt, setWithdrawAmt] = useState('')
   const [selAsset,    setSelAsset]    = useState<AssetId>(ASSET_IDS.sBTC)
@@ -102,16 +105,20 @@ export default function ExchangePage({ wallet }: Props) {
   const fetchAll = useCallback(async () => {
     if (!contracts || !wallet.address || !wallet.provider) return
     try {
-      const [bal, mgn, eBal, reserve] = await Promise.all([
+      const [bal, mgn, eBal, price, reserves] = await Promise.all([
         contracts.usdc.balanceOf(wallet.address),
         contracts.exchange.freeMargin(wallet.address),
         wallet.provider.getBalance(wallet.address),
-        contracts.swapRouter.ethReserve(),
+        contracts.pepeAMM.getPrice(),
+        contracts.pepeAMM.getReserves(),
       ])
       setUsdcBal(bal as bigint)
       setFreeMgn(mgn as bigint)
       setEthBal(f18(eBal as bigint, 4))
-      setRouterEthReserve(reserve as bigint)
+      setAmmPrice(price as bigint)
+      const [ethR, usdcR] = reserves as [bigint, bigint]
+      setAmmEth(ethR)
+      setAmmUsdc(usdcR)
 
       const ids = (await contracts.exchange.getUserPositions(wallet.address)) as bigint[]
       const maybeRows = await Promise.all(
@@ -162,11 +169,29 @@ export default function ExchangePage({ wallet }: Props) {
     }
   }, [livePrices[selAsset]?.usd, selAsset])
 
-  // ── Transactions ────────────────────────────────────────────────────────────
-  const ethToUsdc = (eth: string) => (parseFloat(eth || '0') * 3000).toFixed(2)
-  const usdcToEth = (u: string)   => (parseFloat(u   || '0') / 3000).toFixed(6)
-  const fEth      = (v: bigint)   => (Number(v) / 1e18).toFixed(6)
+  // ── Live AMM quote ────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!contracts?.pepeAMM || !payAmount || parseFloat(payAmount) <= 0) {
+      setQuoteOut('')
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const parsed = parseEther(payAmount)
+        const out = swapMode === 'eth-to-usdc'
+          ? await contracts.pepeAMM.quoteETHForUSDC(parsed) as bigint
+          : await contracts.pepeAMM.quoteUSDCForETH(parsed) as bigint
+        if (!cancelled)
+          setQuoteOut((Number(out) / 1e18).toFixed(swapMode === 'eth-to-usdc' ? 2 : 6))
+      } catch {
+        if (!cancelled) setQuoteOut('')
+      }
+    })()
+    return () => { cancelled = true }
+  }, [contracts?.pepeAMM, payAmount, swapMode])
 
+  // ── Transactions ────────────────────────────────────────────────────────────
   const doSwap = async () => {
     if (!contracts || !wallet.address) return
     const amt = parseFloat(payAmount)
@@ -175,36 +200,31 @@ export default function ExchangePage({ wallet }: Props) {
     setLoad('swap', true)
     try {
       if (swapMode === 'eth-to-usdc') {
-        const tx = asTx(await contracts.swapRouter.swapETHForUSDC({ value: parseEther(payAmount) }))
+        const ethIn  = parseEther(payAmount)
+        const quoted = await contracts.pepeAMM.quoteETHForUSDC(ethIn) as bigint
+        const minOut = quoted * 99n / 100n
+        const tx = asTx(await contracts.pepeAMM.swapETHForUSDC(minOut, { value: ethIn }))
         await tx.wait()
-        notify(`Swapped ${payAmount} ETH for ${ethToUsdc(payAmount)} mUSDC ✓`, true, tx.hash)
+        notify(`Swapped ${payAmount} ETH for ~${(Number(quoted) / 1e18).toFixed(2)} mUSDC ✓`, true, tx.hash)
       } else {
-        const amt = parseEther(payAmount)
+        const usdcIn = parseEther(payAmount)
 
         const currentAllowance = await contracts.usdc.allowance(
           wallet.address!,
-          String(contracts.swapRouter.target)
+          String(contracts.pepeAMM.target)
         ) as bigint
 
-        if (currentAllowance < amt) {
+        if (currentAllowance < usdcIn) {
           notify('Approving mUSDC...', true)
-          const approveTx = asTx(await contracts.usdc.approve(String(contracts.swapRouter.target), amt))
+          const approveTx = asTx(await contracts.usdc.approve(String(contracts.pepeAMM.target), usdcIn))
           await approveTx.wait()
         }
 
-        const routerBal = await wallet.provider!.getBalance(String(contracts.swapRouter.target))
-        const expectedEth = amt / 3000n
-        if (routerBal < expectedEth) {
-          const need = (Number(expectedEth) / 1e18).toFixed(4)
-          const have = (Number(routerBal) / 1e18).toFixed(4)
-          notify(`Swap router only has ${have} ETH (need ${need}). Ask admin to fund.`, false)
-          return
-        }
-
-        const tx = asTx(await contracts.swapRouter.swapUSDCForETH(amt))
+        const quoted    = await contracts.pepeAMM.quoteUSDCForETH(usdcIn) as bigint
+        const minEthOut = quoted * 99n / 100n
+        const tx = asTx(await contracts.pepeAMM.swapUSDCForETH(usdcIn, minEthOut))
         await tx.wait()
-        const ethOut = (parseFloat(payAmount) / 3000).toFixed(6)
-        notify(`Swapped ${payAmount} mUSDC for ${ethOut} ETH ✓`, true, tx.hash)
+        notify(`Swapped ${payAmount} mUSDC for ~${(Number(quoted) / 1e18).toFixed(6)} ETH ✓`, true, tx.hash)
       }
       setPayAmount('')
       await new Promise(r => setTimeout(r, 1500))
@@ -466,7 +486,7 @@ export default function ExchangePage({ wallet }: Props) {
             </div>
             <div className="flex justify-between text-sm text-gray-500 mt-2">
               <span>$ {swapMode === 'eth-to-usdc'
-                ? (parseFloat(payAmount || '0') * 3000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                ? (parseFloat(payAmount || '0') * Number(ammPrice) / 1e18).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                 : parseFloat(payAmount || '0').toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               <span className="cursor-pointer hover:text-white transition-colors">
                 Balance: {swapMode === 'eth-to-usdc' ? ethBal : f18(usdcBal)}
@@ -495,10 +515,10 @@ export default function ExchangePage({ wallet }: Props) {
             <div className="flex items-center gap-3">
               <input
                 type="text" disabled
-                value={payAmount
+                value={quoteOut
                   ? swapMode === 'eth-to-usdc'
-                    ? parseFloat(ethToUsdc(payAmount)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                    : usdcToEth(payAmount)
+                    ? parseFloat(quoteOut).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                    : quoteOut
                   : ''}
                 placeholder="0"
                 className="w-full bg-transparent text-4xl text-white focus:outline-none placeholder-gray-600 font-medium"
@@ -519,28 +539,19 @@ export default function ExchangePage({ wallet }: Props) {
             </div>
             <div className="flex justify-between text-sm text-gray-500 mt-2">
               <span>$ {swapMode === 'eth-to-usdc'
-                ? parseFloat(ethToUsdc(payAmount)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                : (parseFloat(usdcToEth(payAmount)) * 3000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                ? parseFloat(quoteOut || '0').toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                : (parseFloat(quoteOut || '0') * Number(ammPrice) / 1e18).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               <span className="cursor-pointer hover:text-white transition-colors">
                 Balance: {swapMode === 'eth-to-usdc' ? f18(usdcBal) : ethBal}
               </span>
             </div>
           </div>
 
-          {/* Router ETH reserve */}
-          {swapMode === 'usdc-to-eth' && routerEthReserve !== undefined && (
-            <p className="text-xs text-gray-500 mt-2">
-              Router ETH reserve: {fEth(routerEthReserve)} ETH
-              {payAmount && parseFloat(payAmount) > 0 && (() => {
-                try {
-                  const expectedEth = parseEther(payAmount) / 3000n
-                  return routerEthReserve < expectedEth
-                    ? <span className="text-red-400 ml-2">⚠ Insufficient. Admin must fund.</span>
-                    : null
-                } catch { return null }
-              })()}
-            </p>
-          )}
+          {/* AMM pool info */}
+          <div className="px-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
+            <span>Rate: <span className="text-gray-300 font-mono">1 ETH = {ammPrice > 0n ? (Number(ammPrice) / 1e18).toFixed(2) : '–'} mUSDC</span></span>
+            <span>Pool: <span className="text-gray-300 font-mono">{ammEth > 0n ? (Number(ammEth) / 1e18).toFixed(4) : '–'} ETH</span> / <span className="text-gray-300 font-mono">{ammUsdc > 0n ? (Number(ammUsdc) / 1e18).toFixed(2) : '–'} mUSDC</span></span>
+          </div>
 
           <div className="pt-2 pb-1">
             <button

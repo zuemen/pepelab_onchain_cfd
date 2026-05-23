@@ -13,6 +13,7 @@ import CopyTrackerABI       from '../contracts/abi/CopyTracker.json'
 import MockSwapRouterABI    from '../contracts/abi/MockSwapRouter.json'
 import ESGRegistryABI       from '../contracts/abi/ESGRegistry.json'
 import KYCRegistryABI       from '../contracts/abi/KYCRegistry.json'
+import PepeAMMABI           from '../contracts/abi/PepeAMM.json'
 
 export function useContracts(
   provider: BrowserProvider | null,
@@ -37,6 +38,7 @@ export function useContracts(
       swapRouter:     new Contract(addr.MockSwapRouter,    (MockSwapRouterABI as any).abi ?? MockSwapRouterABI, runner),
       esgRegistry:    new Contract(addr.ESGRegistry,       ESGRegistryABI,       runner),
       kycRegistry:    new Contract(addr.KYCRegistry,       KYCRegistryABI,       runner),
+      pepeAMM:        new Contract(addr.PepeAMM,           PepeAMMABI,           runner),
     }
   }, [provider, signer, chainId])
 }
