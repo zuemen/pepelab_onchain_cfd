@@ -1,32 +1,25 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { Contract } from 'ethers'
 
-export function useKYC(
-  kycRegistry: Contract | null,
-  address:     string   | null,
-): { isVerified: boolean; loading: boolean; refetch: () => void } {
-  const [isVerified, setIsVerified] = useState(false)
-  const [loading,    setLoading]    = useState(false)
-  const [tick,       setTick]       = useState(0)
+const ZERO = '0x0000000000000000000000000000000000000000'
 
-  const refetch = useCallback(() => setTick(t => t + 1), [])
+export function useKYC(kycRegistry: Contract | null, userAddress: string | null) {
+  const [isVerified, setIsVerified] = useState(true)
 
-  useEffect(() => {
-    if (!kycRegistry || !address) { setIsVerified(false); return }
-    let cancelled = false
-    setLoading(true)
-    void (async () => {
-      try {
-        const ok = await kycRegistry.isVerified(address) as boolean
-        if (!cancelled) setIsVerified(ok)
-      } catch {
-        if (!cancelled) setIsVerified(false)
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    })()
-    return () => { cancelled = true }
-  }, [kycRegistry, address, tick])
+  const refetch = useCallback(async () => {
+    if (!kycRegistry || !userAddress) { setIsVerified(true); return }
+    const addr = String(kycRegistry.target).toLowerCase()
+    if (addr === ZERO) { setIsVerified(true); return }
+    try {
+      const v = await kycRegistry.isVerified(userAddress)
+      setIsVerified(Boolean(v))
+    } catch (e) {
+      console.warn('[useKYC] isVerified call failed, defaulting to allowed:', e)
+      setIsVerified(true)
+    }
+  }, [kycRegistry, userAddress])
 
-  return { isVerified, loading, refetch }
+  useEffect(() => { void refetch() }, [refetch])
+
+  return { isVerified, refetch }
 }

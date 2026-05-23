@@ -6,20 +6,8 @@
   },
   {
     "type": "function",
-    "name": "submitKYC",
-    "inputs": [
-      { "name": "fullName",    "type": "string", "internalType": "string" },
-      { "name": "nationality", "type": "string", "internalType": "string" }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "batchVerify",
-    "inputs": [
-      { "name": "users", "type": "address[]", "internalType": "address[]" }
-    ],
+    "inputs": [{ "name": "users", "type": "address[]", "internalType": "address[]" }],
     "outputs": [],
     "stateMutability": "nonpayable"
   },
@@ -28,6 +16,13 @@
     "name": "isVerified",
     "inputs": [{ "name": "user", "type": "address", "internalType": "address" }],
     "outputs": [{ "name": "", "type": "bool", "internalType": "bool" }],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "owner",
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "address", "internalType": "address" }],
     "stateMutability": "view"
   },
   {
@@ -44,15 +39,18 @@
   },
   {
     "type": "function",
-    "name": "owner",
+    "name": "renounceOwnership",
     "inputs": [],
-    "outputs": [{ "name": "", "type": "address", "internalType": "address" }],
-    "stateMutability": "view"
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
-    "name": "renounceOwnership",
-    "inputs": [],
+    "name": "submitKYC",
+    "inputs": [
+      { "name": "fullName",    "type": "string", "internalType": "string" },
+      { "name": "nationality", "type": "string", "internalType": "string" }
+    ],
     "outputs": [],
     "stateMutability": "nonpayable"
   },
@@ -65,20 +63,22 @@
   },
   {
     "type": "event",
+    "name": "KYCBatchVerified",
+    "inputs": [
+      { "name": "count",     "indexed": false, "type": "uint256", "internalType": "uint256" },
+      { "name": "timestamp", "indexed": false, "type": "uint256", "internalType": "uint256" }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "KYCVerified",
     "inputs": [
       { "name": "user",        "indexed": true,  "type": "address", "internalType": "address" },
       { "name": "nationality", "indexed": false, "type": "string",  "internalType": "string"  },
       { "name": "timestamp",   "indexed": false, "type": "uint256", "internalType": "uint256" }
-    ]
-  },
-  {
-    "type": "event",
-    "name": "KYCBatchVerified",
-    "inputs": [
-      { "name": "count",     "indexed": false, "type": "uint256", "internalType": "uint256" },
-      { "name": "timestamp", "indexed": false, "type": "uint256", "internalType": "uint256" }
-    ]
+    ],
+    "anonymous": false
   },
   {
     "type": "event",
@@ -86,6 +86,17 @@
     "inputs": [
       { "name": "previousOwner", "indexed": true, "type": "address", "internalType": "address" },
       { "name": "newOwner",      "indexed": true, "type": "address", "internalType": "address" }
-    ]
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "OwnableInvalidOwner",
+    "inputs": [{ "name": "owner", "type": "address", "internalType": "address" }]
+  },
+  {
+    "type": "error",
+    "name": "OwnableUnauthorizedAccount",
+    "inputs": [{ "name": "account", "type": "address", "internalType": "address" }]
   }
 ]

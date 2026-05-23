@@ -1,4 +1,3 @@
-import { Navigate } from 'react-router-dom'
 import type { WalletAPI } from '../hooks/useWallet'
 import WalletButton from '../components/WalletButton'
 
@@ -7,8 +6,6 @@ interface Props {
 }
 
 export default function LandingPage({ wallet }: Props) {
-  if (wallet.isConnected) return <Navigate to="/dashboard" replace />
-
   return (
     <div className="flex flex-col items-center justify-center min-h-[80vh] px-6 text-center gap-8">
       {/* Hero */}

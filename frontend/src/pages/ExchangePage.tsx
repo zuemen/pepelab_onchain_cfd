@@ -77,7 +77,8 @@ export default function ExchangePage({ wallet }: Props) {
   const [ammPrice,  setAmmPrice]  = useState(0n)
   const [ammEth,    setAmmEth]    = useState(0n)
   const [ammUsdc,   setAmmUsdc]   = useState(0n)
-  const [quoteOut,  setQuoteOut]  = useState('')
+  const [quoteOut,       setQuoteOut]       = useState('')
+  const [receiveAmount,  setReceiveAmount]  = useState('')
   const [depositAmt,       setDepositAmt]        = useState('')
   const [withdrawAmt, setWithdrawAmt] = useState('')
   const [selAsset,    setSelAsset]    = useState<AssetId>(ASSET_IDS.sBTC)
@@ -173,6 +174,7 @@ export default function ExchangePage({ wallet }: Props) {
   useEffect(() => {
     if (!contracts?.pepeAMM || !payAmount || parseFloat(payAmount) <= 0) {
       setQuoteOut('')
+      setReceiveAmount('')
       return
     }
     let cancelled = false
@@ -182,10 +184,13 @@ export default function ExchangePage({ wallet }: Props) {
         const out = swapMode === 'eth-to-usdc'
           ? await contracts.pepeAMM.quoteETHForUSDC(parsed) as bigint
           : await contracts.pepeAMM.quoteUSDCForETH(parsed) as bigint
-        if (!cancelled)
-          setQuoteOut((Number(out) / 1e18).toFixed(swapMode === 'eth-to-usdc' ? 2 : 6))
+        if (!cancelled) {
+          const fmt = (Number(out) / 1e18).toFixed(swapMode === 'eth-to-usdc' ? 2 : 6)
+          setQuoteOut(fmt)
+          setReceiveAmount(fmt)
+        }
       } catch {
-        if (!cancelled) setQuoteOut('')
+        if (!cancelled) { setQuoteOut(''); setReceiveAmount('') }
       }
     })()
     return () => { cancelled = true }
@@ -497,7 +502,7 @@ export default function ExchangePage({ wallet }: Props) {
           {/* Switch direction button */}
           <div className="flex justify-center -my-5 relative z-10">
             <button
-              onClick={() => { setSwapMode(m => m === 'eth-to-usdc' ? 'usdc-to-eth' : 'eth-to-usdc'); setPayAmount('') }}
+              onClick={() => { setSwapMode(m => m === 'eth-to-usdc' ? 'usdc-to-eth' : 'eth-to-usdc'); setPayAmount(''); setReceiveAmount(''); setQuoteOut('') }}
               className="bg-[#131A2A] rounded-xl p-1.5 border-4 border-[#0D111C] text-white hover:bg-[#1e2a45] transition-colors"
               title="Switch direction"
             >
@@ -514,13 +519,20 @@ export default function ExchangePage({ wallet }: Props) {
             </div>
             <div className="flex items-center gap-3">
               <input
-                type="text" disabled
-                value={quoteOut
-                  ? swapMode === 'eth-to-usdc'
-                    ? parseFloat(quoteOut).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                    : quoteOut
-                  : ''}
-                placeholder="0"
+                type="number" min="0" placeholder="0"
+                value={receiveAmount}
+                onChange={e => {
+                  const v = e.target.value
+                  setReceiveAmount(v)
+                  const r = parseFloat(v || '0')
+                  const price = Number(ammPrice) / 1e18
+                  if (r > 0 && price > 0) {
+                    if (swapMode === 'eth-to-usdc') setPayAmount((r / price).toFixed(6))
+                    else setPayAmount((r * price).toFixed(2))
+                  } else {
+                    setPayAmount('')
+                  }
+                }}
                 className="w-full bg-transparent text-4xl text-white focus:outline-none placeholder-gray-600 font-medium"
               />
               {swapMode === 'eth-to-usdc' ? (
@@ -539,8 +551,8 @@ export default function ExchangePage({ wallet }: Props) {
             </div>
             <div className="flex justify-between text-sm text-gray-500 mt-2">
               <span>$ {swapMode === 'eth-to-usdc'
-                ? parseFloat(quoteOut || '0').toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                : (parseFloat(quoteOut || '0') * Number(ammPrice) / 1e18).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                ? parseFloat(receiveAmount || '0').toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                : (parseFloat(receiveAmount || '0') * Number(ammPrice) / 1e18).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               <span className="cursor-pointer hover:text-white transition-colors">
                 Balance: {swapMode === 'eth-to-usdc' ? f18(usdcBal) : ethBal}
               </span>
