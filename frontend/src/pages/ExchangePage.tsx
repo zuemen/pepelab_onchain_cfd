@@ -89,6 +89,7 @@ export default function ExchangePage({ wallet }: Props) {
   const [busy,         setBusy]        = useState<Record<string, boolean>>({})
   const [toast,        setToast]       = useState<{ msg: string; ok: boolean; hash?: string } | null>(null)
   const [showKYCModal, setShowKYCModal] = useState(false)
+  const [esgConfirmed, setEsgConfirmed] = useState(false)
 
   const { isVerified: isKYCVerified, refetch: refetchKYC } = useKYC(
     contracts?.kycRegistry ?? null,
@@ -164,8 +165,8 @@ export default function ExchangePage({ wallet }: Props) {
 
   useEffect(() => { void fetchAll() }, [fetchAll])
 
-  // Reset history on asset change
-  useEffect(() => { setHistory([]) }, [selAsset])
+  // Reset history and ESG confirmation on asset change
+  useEffect(() => { setHistory([]); setEsgConfirmed(false) }, [selAsset])
 
   // Track history for chart
   useEffect(() => {
@@ -335,6 +336,9 @@ export default function ExchangePage({ wallet }: Props) {
   const selectedAssetMeta = ASSET_META[selAsset]
   const kycRequired       = selectedAssetMeta?.regulated ?? false
   const kycBlocked        = kycRequired && !isKYCVerified
+
+  const selEsg   = esg[selAsset] ?? null
+  const isLowEsg = selEsg !== null && selEsg.composite < 50
 
   const openMgnBig = tryParse(openMgn)
   const notional   = openMgnBig !== null ? openMgnBig * BigInt(leverage) : 0n
@@ -678,6 +682,26 @@ export default function ExchangePage({ wallet }: Props) {
           </div>
         )}
 
+        {isLowEsg && (
+          <div className="rounded-lg border border-red-700/50 bg-red-950/40 px-4 py-3 space-y-2">
+            <p className="text-sm text-red-300 font-semibold">
+              ⚠ ESG 警告：此資產評分偏低（{selEsg!.composite}/100 · {selEsg!.rating}）
+            </p>
+            <p className="text-xs text-red-400/80">
+              此資產 ESG 評分偏低，可能涉及較高環境、社會或治理風險，請謹慎評估永續投資風險後再決定是否開倉。
+            </p>
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={esgConfirmed}
+                onChange={e => setEsgConfirmed(e.target.checked)}
+                className="w-4 h-4 rounded accent-red-500"
+              />
+              <span className="text-xs text-red-200">我已了解此資產的 ESG 風險，仍要繼續交易</span>
+            </label>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="space-y-1">
             <label className="text-xs text-gray-400 uppercase tracking-wide">Asset</label>
@@ -693,11 +717,27 @@ export default function ExchangePage({ wallet }: Props) {
                 </option>
               ))}
             </select>
-            {esg[selAsset] && (
-              <div className="pt-0.5">
-                <ESGBadge composite={esg[selAsset].composite} rating={esg[selAsset].rating} size="sm" />
+            {selEsg ? (
+              <div className="pt-1 space-y-1">
+                <div className="flex items-center gap-2">
+                  <ESGBadge composite={selEsg.composite} rating={selEsg.rating} size="sm" />
+                  <span className={`text-[11px] font-medium ${
+                    selEsg.composite >= 65 ? 'text-emerald-400' :
+                    selEsg.composite >= 40 ? 'text-amber-400'   : 'text-red-400'
+                  }`}>
+                    {selEsg.composite >= 65 ? '高永續評級' :
+                     selEsg.composite >= 40 ? '中永續評級' : '低永續評級'}
+                  </span>
+                </div>
+                <div className="flex gap-2 text-[10px] text-gray-500">
+                  <span>E&nbsp;<span className="text-gray-300 font-mono">{selEsg.environmental}</span></span>
+                  <span>S&nbsp;<span className="text-gray-300 font-mono">{selEsg.social}</span></span>
+                  <span>G&nbsp;<span className="text-gray-300 font-mono">{selEsg.governance}</span></span>
+                </div>
               </div>
-            )}
+            ) : contracts ? (
+              <p className="text-[11px] text-gray-500 pt-1">ESG 資料載入中…</p>
+            ) : null}
           </div>
 
           <div className="space-y-1">
@@ -816,18 +856,28 @@ export default function ExchangePage({ wallet }: Props) {
 
         <button
           onClick={() => kycBlocked ? setShowKYCModal(true) : void openPosition()}
-          disabled={busy['open'] || !openMgn || (openMgnBig !== null && openMgnBig > freeMgn) || (kycBlocked && !openMgn)}
+          disabled={
+            busy['open'] ||
+            !openMgn ||
+            (openMgnBig !== null && openMgnBig > freeMgn) ||
+            (kycBlocked && !openMgn) ||
+            (isLowEsg && !esgConfirmed)
+          }
           className={`px-8 py-2.5 rounded-lg text-white text-sm font-bold disabled:opacity-50 transition-colors ${
             kycBlocked
               ? 'bg-orange-700 hover:bg-orange-600'
-              : isLong ? 'bg-green-700 hover:bg-green-600' : 'bg-red-700 hover:bg-red-600'
+              : isLowEsg && !esgConfirmed
+                ? 'bg-red-900 cursor-not-allowed'
+                : isLong ? 'bg-green-700 hover:bg-green-600' : 'bg-red-700 hover:bg-red-600'
           }`}
         >
           {busy['open']
             ? 'Opening…'
             : kycBlocked
               ? `🔒 完成 KYC 才能交易 ${ASSET_LABEL[selAsset] ?? ''}`
-              : `Open ${isLong ? 'Long' : 'Short'} ${ASSET_LABEL[selAsset] ?? ''}`}
+              : isLowEsg && !esgConfirmed
+                ? '請先確認 ESG 風險'
+                : `Open ${isLong ? 'Long' : 'Short'} ${ASSET_LABEL[selAsset] ?? ''}`}
         </button>
       </div>
 
