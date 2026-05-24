@@ -61,18 +61,20 @@ export default function AdminTreasuryPage({ wallet }: Props) {
   const fetchStats = useCallback(async () => {
     if (!contracts || !wallet.address || !wallet.provider) return
     try {
-      const [pending, myMusdc, myEth, routerEth, treasury] = await Promise.all([
+      const [pending, myMusdc, myEth, treasury] = await Promise.all([
         contracts.feeRouter.platformEarnings(),
         contracts.usdc.balanceOf(wallet.address),
         wallet.provider.getBalance(wallet.address),
-        contracts.swapRouter.ethReserve(),
         contracts.feeRouter.platformTreasury(),
       ])
+      let routerEth = 0n
+      try { routerEth = await contracts.swapRouter.ethReserve() as bigint }
+      catch { /* swapRouter not deployed on this chain */ }
       setStats({
         platformEarnings: pending as bigint,
         myMusdc:          myMusdc as bigint,
         myEth:            myEth as bigint,
-        routerEth:        routerEth as bigint,
+        routerEth,
       })
       setPlatformTreasury(treasury as string)
     } catch (e) {

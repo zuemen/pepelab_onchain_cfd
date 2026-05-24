@@ -34,27 +34,29 @@ export function useFundingData(exchange: Contract | null): FundingData {
       const interval = (await exchange.FUNDING_INTERVAL()) as bigint
 
       const entries = await Promise.all(
-        ASSETS.map(async (a) => {
-          const [rate, longOI, shortOI, lastSettled, cumIdx] = await Promise.all([
-            exchange.getFundingRate(a.id)           as Promise<bigint>,
-            exchange.globalLongNotional(a.id)       as Promise<bigint>,
-            exchange.globalShortNotional(a.id)      as Promise<bigint>,
-            exchange.lastFundingUpdateAt(a.id)      as Promise<bigint>,
-            exchange.cumulativeFundingIndex(a.id)   as Promise<bigint>,
-          ])
-          return [a.id, {
-            label:           a.label,
-            rate,
-            longOI,
-            shortOI,
-            lastSettled,
-            canSettle:       now >= lastSettled + interval,
-            cumulativeIndex: cumIdx,
-            interval,
-          }] as [string, FundingInfo]
+        ASSETS.map(async (a): Promise<[string, FundingInfo] | null> => {
+          try {
+            const [rate, longOI, shortOI, lastSettled, cumIdx] = await Promise.all([
+              exchange.getFundingRate(a.id)           as Promise<bigint>,
+              exchange.globalLongNotional(a.id)       as Promise<bigint>,
+              exchange.globalShortNotional(a.id)      as Promise<bigint>,
+              exchange.lastFundingUpdateAt(a.id)      as Promise<bigint>,
+              exchange.cumulativeFundingIndex(a.id)   as Promise<bigint>,
+            ])
+            return [a.id, {
+              label:           a.label,
+              rate,
+              longOI,
+              shortOI,
+              lastSettled,
+              canSettle:       now >= lastSettled + interval,
+              cumulativeIndex: cumIdx,
+              interval,
+            }]
+          } catch { return null }
         })
       )
-      setData(Object.fromEntries(entries))
+      setData(Object.fromEntries(entries.filter((e): e is [string, FundingInfo] => e !== null)))
     } catch (e) {
       console.error('[useFundingData]', e)
     }

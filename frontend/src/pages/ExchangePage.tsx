@@ -133,15 +133,17 @@ export default function ExchangePage({ wallet }: Props) {
       const ids = (await contracts.exchange.getUserPositions(wallet.address)) as bigint[]
       const maybeRows = await Promise.all(
         ids.map(async (id): Promise<PositionRow | null> => {
-          const raw = (await contracts.exchange.getPosition(id)) as unknown as RawPos
-          if (!raw.isOpen) return null
-          const pnl = (await contracts.exchange.getUnrealizedPnL(id)) as bigint
-          const pr  = (await contracts.oracle.getPrice(raw.asset)) as unknown as [bigint, bigint]
-          return {
-            id, asset: raw.asset, isLong: raw.isLong,
-            entryPrice: raw.entryPrice, margin: raw.margin, leverage: raw.leverage,
-            unrealizedPnL: pnl, currentPrice: pr[0] * 10n ** 10n,
-          }
+          try {
+            const raw = (await contracts.exchange.getPosition(id)) as unknown as RawPos
+            if (!raw.isOpen) return null
+            const pnl = (await contracts.exchange.getUnrealizedPnL(id)) as bigint
+            const pr  = (await contracts.oracle.getPrice(raw.asset)) as unknown as [bigint, bigint]
+            return {
+              id, asset: raw.asset, isLong: raw.isLong,
+              entryPrice: raw.entryPrice, margin: raw.margin, leverage: raw.leverage,
+              unrealizedPnL: pnl, currentPrice: pr[0] * 10n ** 10n,
+            }
+          } catch { return null }
         }),
       )
       setPositions(maybeRows.filter((r): r is PositionRow => r !== null))
@@ -574,21 +576,31 @@ export default function ExchangePage({ wallet }: Props) {
             <span>Pool: <span className="text-gray-300 font-mono">{ammEth > 0n ? (Number(ammEth) / 1e18).toFixed(4) : '–'} ETH</span> / <span className="text-gray-300 font-mono">{ammUsdc > 0n ? (Number(ammUsdc) / 1e18).toFixed(2) : '–'} mUSDC</span></span>
           </div>
 
+          {ammEth === 0n && (
+            <div className="px-1">
+              <p className="text-xs text-amber-400/80 bg-amber-900/20 border border-amber-700/30 rounded-lg px-3 py-2">
+                流動性不足，暫無法兌換
+              </p>
+            </div>
+          )}
+
           <div className="pt-2 pb-1">
             <button
               onClick={() => void doSwap()}
-              disabled={busy['swap'] || !payAmount || parseFloat(payAmount) <= 0}
+              disabled={busy['swap'] || ammEth === 0n || !payAmount || parseFloat(payAmount) <= 0}
               className={`w-full py-4 rounded-2xl text-xl font-bold transition-colors ${
-                !payAmount || parseFloat(payAmount) <= 0
+                ammEth === 0n || !payAmount || parseFloat(payAmount) <= 0
                   ? 'bg-[#131A2A] text-gray-500 cursor-not-allowed'
                   : 'bg-brand-500 hover:bg-brand-400 text-white shadow-lg shadow-brand-500/20'
               }`}
             >
               {busy['swap']
                 ? 'Swapping…'
-                : !payAmount || parseFloat(payAmount) <= 0
-                  ? 'Enter an amount'
-                  : swapMode === 'eth-to-usdc' ? 'Swap ETH → mUSDC' : 'Swap mUSDC → ETH'}
+                : ammEth === 0n
+                  ? '流動性不足'
+                  : !payAmount || parseFloat(payAmount) <= 0
+                    ? 'Enter an amount'
+                    : swapMode === 'eth-to-usdc' ? 'Swap ETH → mUSDC' : 'Swap mUSDC → ETH'}
             </button>
           </div>
           

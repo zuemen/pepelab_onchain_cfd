@@ -106,12 +106,16 @@ export default function MarketplacePage({ wallet }: Props) {
       const fromBlock    = Math.max(0, currentBlock - FETCH_BLOCKS_VOLUME)
 
       // ── Batch: fetch all position events + trader list in parallel ──────────
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const [allOpened, allClosed, addresses] = await Promise.all([
+      const [openedRes, closedRes, addressesRes] = await Promise.allSettled([
         contracts.exchange.queryFilter(contracts.exchange.filters.PositionOpened(), fromBlock, 'latest'),
         contracts.exchange.queryFilter(contracts.exchange.filters.PositionClosed(), fromBlock, 'latest'),
         contracts.registry.getAllTraders() as Promise<string[]>,
       ])
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const allOpened  = openedRes.status    === 'fulfilled' ? openedRes.value    : []
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const allClosed  = closedRes.status    === 'fulfilled' ? closedRes.value    : []
+      const addresses  = addressesRes.status === 'fulfilled' ? addressesRes.value : []
 
       // Build address → volume / PnL maps
       const volumeMap: Record<string, bigint> = {}
