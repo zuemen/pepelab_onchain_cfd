@@ -88,9 +88,16 @@ function deriveRow(pos: PosRow, livePrices: Record<string, LivePrice>): DerivedR
     : 0n
 
   const liveUsd = livePrices[pos.asset]?.usd
+  // liveUsd is raw USD (e.g. 81000); convert to 18-dec to match entryPrice scale.
+  // Must use BigInt arithmetic: liveUsd*1e18 overflows JS float, so split as *1e8 then *1e10.
   const currentPrice18 = liveUsd
-    ? BigInt(Math.floor(liveUsd * 1e10))
+    ? BigInt(Math.round(liveUsd * 1e8)) * 10n ** 10n
     : pos.oraclePrice18
+
+  // If price is genuinely unavailable, show nothing rather than a false -100% PnL.
+  if (currentPrice18 === 0n) {
+    return { ...pos, notional, quantity, currentPrice18: 0n, holdingsValue: 0n, livePnL: 0n }
+  }
 
   const holdingsValue = (quantity * currentPrice18) / 10n ** 18n
 
@@ -668,9 +675,15 @@ export default function DashboardPage({ wallet, whaleAlerts = [] }: Props) {
                       </td>
                       {/* 現價 */}
                       <td className="px-4 py-3 font-mono text-white tabular-nums">
-                        {fUsdFloat(Number(row.currentPrice18) / 1e18)}
-                        {livePrices[row.asset]?.isMock && (
-                          <span className="text-[10px] text-gray-600 ml-1">~</span>
+                        {row.currentPrice18 === 0n ? (
+                          <span className="text-gray-500">—</span>
+                        ) : (
+                          <>
+                            {fUsdFloat(Number(row.currentPrice18) / 1e18)}
+                            {livePrices[row.asset]?.isMock && (
+                              <span className="text-[10px] text-gray-600 ml-1">~</span>
+                            )}
+                          </>
                         )}
                       </td>
                       {/* 持倉現值 */}
@@ -678,9 +691,15 @@ export default function DashboardPage({ wallet, whaleAlerts = [] }: Props) {
                         {fUsd(row.holdingsValue)}
                       </td>
                       {/* 損益 */}
-                      <td className={`px-4 py-3 font-mono tabular-nums text-right ${pnlColor(row.livePnL)}`}>
-                        <div className="font-semibold">{fPnL(row.livePnL)}</div>
-                        <div className="text-[10px] opacity-70">{pnlPctRow}</div>
+                      <td className={`px-4 py-3 font-mono tabular-nums text-right ${row.currentPrice18 === 0n ? 'text-gray-500' : pnlColor(row.livePnL)}`}>
+                        {row.currentPrice18 === 0n ? (
+                          <div className="font-semibold text-xs">無報價</div>
+                        ) : (
+                          <>
+                            <div className="font-semibold">{fPnL(row.livePnL)}</div>
+                            <div className="text-[10px] opacity-70">{pnlPctRow}</div>
+                          </>
+                        )}
                       </td>
                       {/* ESG badge */}
                       <td className="px-4 py-3">
