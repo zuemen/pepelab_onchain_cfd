@@ -345,15 +345,6 @@ export default function Layout({ wallet, children, isKYCVerified, whaleAlerts }:
               Exchange ↗
             </a>
           )}
-          {addresses?.PerpetualExchange && wallet.chainId === 11155111 && <span>·</span>}
-          <a
-            href="https://github.com/zuemen/pepelab_onchain_cfd"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-emerald-500 hover:text-emerald-300 transition-colors"
-          >
-            GitHub ↗
-          </a>
         </footer>
       </div>
     </div>

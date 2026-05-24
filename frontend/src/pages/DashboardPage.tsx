@@ -289,6 +289,25 @@ export default function DashboardPage({ wallet, whaleAlerts = [] }: Props) {
     }
   }, [contracts, fetchPepe])
 
+  const addPepeToWallet = async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (!(window as any).ethereum) return
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (window as any).ethereum.request({
+        method: 'wallet_watchAsset',
+        params: {
+          type: 'ERC20',
+          options: {
+            address:  '0xa364F43627A17BE5bfbcb32693f3eD7E44ebe1D9',
+            symbol:   'PEPE',
+            decimals: 18,
+          },
+        },
+      })
+    } catch (e) { console.error('Add PEPE to wallet failed', e) }
+  }
+
   // ── Derived: live-updated from livePrices tick ────────────────────────────
 
   const derived = useMemo(() => {
@@ -858,12 +877,24 @@ export default function DashboardPage({ wallet, whaleAlerts = [] }: Props) {
                 <p className="text-sm text-gray-400 mt-0.5">Pepe RWA Token · KYC 通過即可領取空投</p>
               </div>
               {pepeReady && (
-                <button
-                  onClick={() => void fetchPepe()}
-                  className="text-xs text-gray-500 hover:text-white transition-colors"
-                >
-                  ↺
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => void addPepeToWallet()}
+                    className="text-xs text-blue-400 hover:text-blue-300 hover:underline flex items-center gap-1 transition-colors"
+                    title="在 MetaMask 加入 PEPE 代幣"
+                  >
+                    <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+                    </svg>
+                    加入錢包
+                  </button>
+                  <button
+                    onClick={() => void fetchPepe()}
+                    className="text-xs text-gray-500 hover:text-white transition-colors"
+                  >
+                    ↺
+                  </button>
+                </div>
               )}
             </div>
 
