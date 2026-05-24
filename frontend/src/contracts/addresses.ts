@@ -14,6 +14,8 @@ export interface ChainAddresses {
   ESGRegistry:       string
   KYCRegistry:       string
   PepeAMM:           string
+  PepeToken:         string
+  PepeClaim:         string
 }
 
 // ── Anvil local (chainId 31337) ───────────────────────────────────────────────
@@ -30,6 +32,8 @@ const ANVIL: ChainAddresses = {
   ESGRegistry:       "0x0000000000000000000000000000000000000000",
   KYCRegistry:       "0x0000000000000000000000000000000000000000",
   PepeAMM:           "0x0000000000000000000000000000000000000000",
+  PepeToken:         "0x0000000000000000000000000000000000000000",
+  PepeClaim:         "0x0000000000000000000000000000000000000000",
 }
 
 // ── Sepolia testnet (chainId 11155111) ────────────────────────────────────────
@@ -46,6 +50,8 @@ const SEPOLIA: ChainAddresses = {
   ESGRegistry:        "0xdCFdDd38e1d80C1A5eeB44c05187Ec7979B98c13",
   KYCRegistry:        "0x7d40A2D3e39cDD1Dc613071D3C463AA161f7C5bB",
   PepeAMM:            "0x612674Ab98589228309353FCc2f9d88Cc830CBdF",
+  PepeToken:          "0x0000000000000000000000000000000000000000",
+  PepeClaim:          "0x0000000000000000000000000000000000000000",
 }
 
 const CHAIN_MAP: Record<number, ChainAddresses> = {
