@@ -192,6 +192,7 @@ export default function DashboardPage({ wallet, whaleAlerts = [] }: Props) {
   const [pepeClaimed,  setPepeClaimed]  = useState<boolean | null>(null)
   const [pepeAmount,   setPepeAmount]   = useState<bigint>(1000n * 10n ** 18n)
   const [pepeKyc,      setPepeKyc]      = useState(false)
+  const [pepePoolBal,  setPepePoolBal]  = useState<bigint | null>(null)
   const [claimLoading, setClaimLoading] = useState(false)
   const [claimError,   setClaimError]   = useState<string | null>(null)
 
@@ -254,17 +255,19 @@ export default function DashboardPage({ wallet, whaleAlerts = [] }: Props) {
     if (!contracts || !wallet.address) return
     if (String(contracts.pepeToken.target).toLowerCase() === ZERO_ADDR) return
     if (String(contracts.pepeClaim.target).toLowerCase()  === ZERO_ADDR) return
-    const [balR, claimedR, amountR, kycR] = await Promise.allSettled([
+    const [balR, claimedR, amountR, kycR, poolR] = await Promise.allSettled([
       contracts.pepeToken.balanceOf(wallet.address),
       contracts.pepeClaim.claimed(wallet.address),
       contracts.pepeClaim.claimAmount(),
       contracts.kycRegistry.isVerified(wallet.address),
+      contracts.pepeToken.balanceOf(contracts.pepeClaim.target),
     ])
     if (balR.status     === 'fulfilled') setPepeBal(balR.value as bigint)
     if (claimedR.status === 'fulfilled') setPepeClaimed(claimedR.value as boolean)
     if (amountR.status  === 'fulfilled') setPepeAmount(amountR.value as bigint)
     if (kycR.status     === 'fulfilled') setPepeKyc(Boolean(kycR.value))
     else setPepeKyc(true) // default allow when registry unavailable
+    if (poolR.status    === 'fulfilled') setPepePoolBal(poolR.value as bigint)
   }, [contracts, wallet.address])
 
   useEffect(() => { void fetchPepe() }, [fetchPepe])
@@ -843,69 +846,99 @@ export default function DashboardPage({ wallet, whaleAlerts = [] }: Props) {
       </section>
 
       {/* ── G. PEPE 平台幣 ──────────────────────────────────────────────────────── */}
-      {pepeBal !== null && (
-        <section className="rounded-card border border-emerald-900/50 bg-gradient-to-br from-emerald-950/30 to-emerald-900/10 shadow-card p-5 space-y-4">
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <div>
-              <h2 className="text-xs font-semibold text-emerald-400 uppercase tracking-wider">G · PEPE 平台幣</h2>
-              <p className="text-sm text-gray-400 mt-0.5">Pepe RWA Token · KYC 通過即可領取空投</p>
-            </div>
-            <button
-              onClick={() => void fetchPepe()}
-              className="text-xs text-gray-500 hover:text-white transition-colors"
-            >
-              ↺
-            </button>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-6">
-            {/* Balance */}
-            <div className="space-y-0.5">
-              <p className="text-[11px] text-gray-500 uppercase tracking-wide">PEPE 餘額</p>
-              <p className="text-2xl font-bold font-mono text-emerald-300">
-                {(Number(pepeBal) / 1e18).toLocaleString('en-US', { maximumFractionDigits: 0 })}
-                <span className="text-sm text-gray-500 ml-1">PEPE</span>
-              </p>
-            </div>
-
-            {/* Divider */}
-            <div className="h-10 w-px bg-emerald-900/50 hidden sm:block" />
-
-            {/* Claim */}
-            <div className="space-y-2">
-              <p className="text-[11px] text-gray-500 uppercase tracking-wide">空投領取</p>
-              {pepeClaimed ? (
-                <span className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-900/40 border border-emerald-700/40 text-sm font-semibold text-emerald-400">
-                  ✓ 已領取
-                </span>
-              ) : (
+      {(() => {
+        const pepeReady = !!(contracts &&
+          String(contracts.pepeToken.target).toLowerCase() !== ZERO_ADDR &&
+          String(contracts.pepeClaim.target).toLowerCase() !== ZERO_ADDR)
+        return (
+          <section className="rounded-card border border-emerald-900/50 bg-gradient-to-br from-emerald-950/30 to-emerald-900/10 shadow-card p-5 space-y-4">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <h2 className="text-xs font-semibold text-emerald-400 uppercase tracking-wider">G · PEPE 平台幣</h2>
+                <p className="text-sm text-gray-400 mt-0.5">Pepe RWA Token · KYC 通過即可領取空投</p>
+              </div>
+              {pepeReady && (
                 <button
-                  onClick={() => void doClaimPepe()}
-                  disabled={claimLoading || !pepeKyc}
-                  title={!pepeKyc ? '需先完成 KYC 才能領取' : undefined}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed bg-emerald-600 hover:bg-emerald-500 text-white"
+                  onClick={() => void fetchPepe()}
+                  className="text-xs text-gray-500 hover:text-white transition-colors"
                 >
-                  {claimLoading ? (
-                    <span className="animate-spin">⟳</span>
-                  ) : (
-                    <span>🐸</span>
-                  )}
-                  {claimLoading
-                    ? '領取中…'
-                    : `Claim ${(Number(pepeAmount) / 1e18).toLocaleString()} PEPE`
-                  }
+                  ↺
                 </button>
               )}
-              {!pepeKyc && !pepeClaimed && (
-                <p className="text-xs text-amber-400/80">需先完成 KYC 才能領取</p>
-              )}
-              {claimError && (
-                <p className="text-xs text-red-400 max-w-xs">{claimError}</p>
-              )}
             </div>
-          </div>
-        </section>
-      )}
+
+            {!pepeReady ? (
+              <p className="text-sm text-gray-500 py-2">PEPE 功能尚未啟用（合約尚未部署於此鏈）</p>
+            ) : pepeBal === null ? (
+              <div className="flex flex-wrap items-center gap-6">
+                <div className="space-y-0.5">
+                  <p className="text-[11px] text-gray-500 uppercase tracking-wide">PEPE 餘額</p>
+                  <Skeleton className="h-8 w-32 rounded" />
+                </div>
+                <div className="h-10 w-px bg-emerald-900/50 hidden sm:block" />
+                <div className="space-y-2">
+                  <p className="text-[11px] text-gray-500 uppercase tracking-wide">空投領取</p>
+                  <Skeleton className="h-9 w-40 rounded-lg" />
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center gap-6">
+                {/* Balance */}
+                <div className="space-y-0.5">
+                  <p className="text-[11px] text-gray-500 uppercase tracking-wide">PEPE 餘額</p>
+                  <p className="text-2xl font-bold font-mono text-emerald-300">
+                    {(Number(pepeBal) / 1e18).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                    <span className="text-sm text-gray-500 ml-1">PEPE</span>
+                  </p>
+                </div>
+
+                {/* Divider */}
+                <div className="h-10 w-px bg-emerald-900/50 hidden sm:block" />
+
+                {/* Claim */}
+                <div className="space-y-2">
+                  <p className="text-[11px] text-gray-500 uppercase tracking-wide">空投領取</p>
+                  {pepeClaimed ? (
+                    <span className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-900/40 border border-emerald-700/40 text-sm font-semibold text-emerald-400">
+                      ✓ 已領取
+                    </span>
+                  ) : pepePoolBal !== null && pepePoolBal < pepeAmount ? (
+                    <button
+                      disabled
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm opacity-40 cursor-not-allowed bg-gray-700 text-gray-400"
+                    >
+                      獎池已空
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => void doClaimPepe()}
+                      disabled={claimLoading || !pepeKyc}
+                      title={!pepeKyc ? '需先完成 KYC 才能領取' : undefined}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed bg-emerald-600 hover:bg-emerald-500 text-white"
+                    >
+                      {claimLoading ? (
+                        <span className="animate-spin">⟳</span>
+                      ) : (
+                        <span>🐸</span>
+                      )}
+                      {claimLoading
+                        ? '領取中…'
+                        : `Claim ${(Number(pepeAmount) / 1e18).toLocaleString()} PEPE`
+                      }
+                    </button>
+                  )}
+                  {!pepeKyc && !pepeClaimed && !(pepePoolBal !== null && pepePoolBal < pepeAmount) && (
+                    <p className="text-xs text-amber-400/80">需先完成 KYC 才能領取</p>
+                  )}
+                  {claimError && (
+                    <p className="text-xs text-red-400 max-w-xs">{claimError}</p>
+                  )}
+                </div>
+              </div>
+            )}
+          </section>
+        )
+      })()}
 
     </div>
   )
