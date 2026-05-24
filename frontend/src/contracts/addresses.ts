@@ -50,8 +50,8 @@ const SEPOLIA: ChainAddresses = {
   ESGRegistry:        "0xdCFdDd38e1d80C1A5eeB44c05187Ec7979B98c13",
   KYCRegistry:        "0x7d40A2D3e39cDD1Dc613071D3C463AA161f7C5bB",
   PepeAMM:            "0x612674Ab98589228309353FCc2f9d88Cc830CBdF",
-  PepeToken:          "0x0000000000000000000000000000000000000000",
-  PepeClaim:          "0x0000000000000000000000000000000000000000",
+  PepeToken:          "0xa364F43627A17BE5bfbcb32693f3eD7E44ebe1D9",
+  PepeClaim:          "0x852c0fBa54552aafbA4798709d90056159682A4C",
 }
 
 const CHAIN_MAP: Record<number, ChainAddresses> = {
