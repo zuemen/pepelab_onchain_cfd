@@ -6,7 +6,7 @@ import { useContracts } from '../hooks/useContracts'
 import { useLivePrices } from '../hooks/useLivePrices'
 import { useFundingData } from '../hooks/useFundingData'
 import { LineChart, Line, YAxis, ResponsiveContainer } from 'recharts'
-import { ASSET_IDS } from '../contracts/addresses'
+import { ASSET_IDS, getAddresses } from '../contracts/addresses'
 import { prettyError } from '../lib/errorMessages'
 import { useESG } from '../hooks/useESG'
 import ESGBadge from '../components/ESGBadge'
@@ -63,7 +63,7 @@ export default function ExchangePage({ wallet }: Props) {
   const contracts    = useContracts(wallet.provider, wallet.signer, wallet.chainId)
   const livePrices   = useLivePrices()
   const fundingData  = useFundingData(contracts?.exchange ?? null)
-  const esg          = useESG(contracts?.esgRegistry ?? null)
+  const { data: esg } = useESG(contracts?.esgRegistry ?? null)
 
   const [usdcBal,   setUsdcBal]   = useState(0n)
   const [ethBal,    setEthBal]    = useState('0.0000')
@@ -90,6 +90,9 @@ export default function ExchangePage({ wallet }: Props) {
   const [toast,        setToast]       = useState<{ msg: string; ok: boolean; hash?: string } | null>(null)
   const [showKYCModal, setShowKYCModal] = useState(false)
   const [esgConfirmed, setEsgConfirmed] = useState(false)
+
+  const [esgRewardedMap, setEsgRewardedMap] = useState<Record<string, boolean>>({})
+  const [esgPreviewMap,  setEsgPreviewMap]  = useState<Record<string, bigint>>({})
 
   const { isVerified: isKYCVerified, refetch: refetchKYC } = useKYC(
     contracts?.kycRegistry ?? null,
@@ -169,6 +172,41 @@ export default function ExchangePage({ wallet }: Props) {
 
   // Reset history and ESG confirmation on asset change
   useEffect(() => { setHistory([]); setEsgConfirmed(false) }, [selAsset])
+
+  // Fetch ESG reward status for high-ESG positions
+  useEffect(() => {
+    const addr = getAddresses(wallet.chainId)
+    if (addr?.EsgRewardDistributor === '0x0000000000000000000000000000000000000000') return
+    if (!contracts?.esgRewardDistributor || !positions.length) return
+
+    const highEsgPositions = positions.filter(r => (esg[r.asset]?.composite ?? 0) >= 70)
+    if (!highEsgPositions.length) return
+
+    let cancelled = false
+    void (async () => {
+      const results = await Promise.allSettled(
+        highEsgPositions.map(async row => {
+          const [isRewarded, preview] = await Promise.all([
+            contracts.esgRewardDistributor.rewarded(row.id) as Promise<boolean>,
+            contracts.esgRewardDistributor.previewReward(row.id) as Promise<bigint>,
+          ])
+          return { id: String(row.id), isRewarded, preview }
+        })
+      )
+      if (cancelled) return
+      const newRewarded: Record<string, boolean> = {}
+      const newPreview:  Record<string, bigint>  = {}
+      for (const r of results) {
+        if (r.status === 'fulfilled') {
+          newRewarded[r.value.id] = r.value.isRewarded
+          newPreview[r.value.id]  = r.value.preview
+        }
+      }
+      setEsgRewardedMap(newRewarded)
+      setEsgPreviewMap(newPreview)
+    })()
+    return () => { cancelled = true }
+  }, [contracts, positions, esg, wallet.chainId])
 
   // Track history for chart
   useEffect(() => {
@@ -334,10 +372,26 @@ export default function ExchangePage({ wallet }: Props) {
     } finally { setLoad(key, false) }
   }
 
+  const claimEsgReward = async (id: bigint) => {
+    if (!contracts) return
+    const key = `claim_${id}`
+    setLoad(key, true)
+    try {
+      const tx = asTx(await contracts.esgRewardDistributor.claimEsgReward(id))
+      await tx.wait()
+      setEsgRewardedMap(prev => ({ ...prev, [String(id)]: true }))
+      notify('🌱 ESG 獎勵領取成功！', true, tx.hash)
+    } catch (e) {
+      notify(prettyError(e), false)
+    } finally { setLoad(key, false) }
+  }
+
   // ── Derived ───────────────────────────────────────────────────────────────
-  const selectedAssetMeta = ASSET_META[selAsset]
-  const kycRequired       = selectedAssetMeta?.regulated ?? false
-  const kycBlocked        = kycRequired && !isKYCVerified
+  const selectedAssetMeta     = ASSET_META[selAsset]
+  const kycRequired           = selectedAssetMeta?.regulated ?? false
+  const kycBlocked            = kycRequired && !isKYCVerified
+  const hasEsgRewardDistributor = getAddresses(wallet.chainId)?.EsgRewardDistributor
+    !== '0x0000000000000000000000000000000000000000'
 
   const selEsg   = esg[selAsset] ?? null
   const isLowEsg = selEsg !== null && selEsg.composite < 50
@@ -354,7 +408,7 @@ export default function ExchangePage({ wallet }: Props) {
   const livePositions = positions.map(p => {
     // Convert float USD from Coingecko to 18-decimal fixed point
     const liveUsd = livePrices[p.asset]?.usd
-    const currentLivePrice = liveUsd ? BigInt(Math.floor(liveUsd * 1e10)) : p.currentPrice
+    const currentLivePrice = liveUsd ? BigInt(Math.round(liveUsd * 1e8)) * 10n**10n : p.currentPrice
     
     const notional = p.margin * p.leverage
     const size = (notional * 10n**18n) / p.entryPrice
@@ -986,13 +1040,37 @@ export default function ExchangePage({ wallet }: Props) {
                         {fPnL(row.livePnL)}
                       </td>
                       <td className="py-2.5">
-                        <button
-                          onClick={() => void closePos(row.id)}
-                          disabled={busy[closeKey]}
-                          className="px-3 py-1 rounded bg-gray-700 text-gray-300 text-xs hover:bg-red-900 hover:text-red-200 disabled:opacity-50 transition-colors"
-                        >
-                          {busy[closeKey] ? '…' : 'Close'}
-                        </button>
+                        <div className="flex flex-col gap-1 items-start">
+                          <button
+                            onClick={() => void closePos(row.id)}
+                            disabled={busy[closeKey]}
+                            className="px-3 py-1 rounded bg-gray-700 text-gray-300 text-xs hover:bg-red-900 hover:text-red-200 disabled:opacity-50 transition-colors"
+                          >
+                            {busy[closeKey] ? '…' : 'Close'}
+                          </button>
+                          {hasEsgRewardDistributor && (esg[row.asset]?.composite ?? 0) >= 70 && (() => {
+                            const isRewarded = esgRewardedMap[String(row.id)]
+                            const claimKey   = `claim_${row.id}`
+                            if (isRewarded === true) {
+                              return (
+                                <span className="text-[10px] text-emerald-400 font-medium">✓ 已領 ESG 獎勵</span>
+                              )
+                            }
+                            if (isRewarded === false) {
+                              const preview = esgPreviewMap[String(row.id)] ?? 0n
+                              return (
+                                <button
+                                  onClick={() => void claimEsgReward(row.id)}
+                                  disabled={busy[claimKey]}
+                                  className="px-2 py-0.5 rounded bg-emerald-900/50 text-emerald-300 text-[10px] hover:bg-emerald-800/70 disabled:opacity-50 transition-colors border border-emerald-700/50 whitespace-nowrap"
+                                >
+                                  {busy[claimKey] ? '…' : `🌱 ${f18(preview)} PEPE`}
+                                </button>
+                              )
+                            }
+                            return null
+                          })()}
+                        </div>
                       </td>
                     </tr>
                   )

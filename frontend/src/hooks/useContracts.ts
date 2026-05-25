@@ -15,7 +15,8 @@ import ESGRegistryABI       from '../contracts/abi/ESGRegistry.json'
 import KYCRegistryABI       from '../contracts/abi/KYCRegistry.json'
 import PepeAMMABI           from '../contracts/abi/PepeAMM.json'
 import PepeTokenABI         from '../contracts/abi/PepeToken.json'
-import PepeClaimABI         from '../contracts/abi/PepeClaim.json'
+import PepeClaimABI              from '../contracts/abi/PepeClaim.json'
+import EsgRewardDistributorABI  from '../contracts/abi/EsgRewardDistributor.json'
 
 export function useContracts(
   provider: BrowserProvider | null,
@@ -41,8 +42,9 @@ export function useContracts(
       esgRegistry:    new Contract(addr.ESGRegistry,       ESGRegistryABI,       runner),
       kycRegistry:    new Contract(addr.KYCRegistry,       KYCRegistryABI,       runner),
       pepeAMM:        new Contract(addr.PepeAMM,           PepeAMMABI,           runner),
-      pepeToken:      new Contract(addr.PepeToken,         PepeTokenABI,         runner),
-      pepeClaim:      new Contract(addr.PepeClaim,         PepeClaimABI,         runner),
+      pepeToken:              new Contract(addr.PepeToken,             PepeTokenABI,             runner),
+      pepeClaim:              new Contract(addr.PepeClaim,             PepeClaimABI,             runner),
+      esgRewardDistributor:   new Contract(addr.EsgRewardDistributor,  EsgRewardDistributorABI,  runner),
     }
   }, [provider, signer, chainId])
 }
