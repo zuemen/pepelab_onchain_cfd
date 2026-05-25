@@ -74,8 +74,8 @@ export default function ExchangePage({ wallet }: Props) {
   const fundingData  = useFundingData(contracts?.exchange ?? null)
   const { data: esgData } = useESG(contracts?.esgRegistry ?? null)
   
-  // 安全地將 esg 斷言為以資產 ID 為 Key 的 Record
-  const esg = (esgData ?? {}) as Record<string, ESGAssetInfo>
+  // ✅ 修正：透過 unknown 中轉，解決 ESGInfo 與 Record<string, ESGAssetInfo> 型別不相容的問題
+  const esg = (esgData ?? {}) as unknown as Record<string, ESGAssetInfo>
 
   const [usdcBal,   setUsdcBal]   = useState(0n)
   const [ethBal,    setEthBal]    = useState('0.0000')
@@ -188,7 +188,6 @@ export default function ExchangePage({ wallet }: Props) {
     if (addr?.EsgRewardDistributor === '0x0000000000000000000000000000000000000000') return
     if (!contracts?.esgRewardDistributor || !positions.length) return
 
-    // 修正點：使用 esg[row.asset] 存取時轉型為 string 索引安全存取
     const highEsgPositions = positions.filter(r => (esg[r.asset]?.composite ?? 0) >= 70)
     if (!highEsgPositions.length) return
 
