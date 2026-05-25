@@ -36,6 +36,15 @@ interface RawPos {
   entryPrice: bigint; margin: bigint; leverage: bigint
 }
 
+// 定義明確的單一資產 ESG 型別
+interface ESGAssetInfo {
+  composite: number
+  rating: string
+  environmental: number
+  social: number
+  governance: number
+}
+
 // ── Formatting ────────────────────────────────────────────────────────────────
 const f18    = (v: bigint, d = 2) => (Number(v) / 1e18).toFixed(d)
 const fUsd   = (v: bigint) =>
@@ -63,7 +72,10 @@ export default function ExchangePage({ wallet }: Props) {
   const contracts    = useContracts(wallet.provider, wallet.signer, wallet.chainId)
   const livePrices   = useLivePrices()
   const fundingData  = useFundingData(contracts?.exchange ?? null)
-  const { data: esg } = useESG(contracts?.esgRegistry ?? null)
+  const { data: esgData } = useESG(contracts?.esgRegistry ?? null)
+  
+  // 安全地將 esg 斷言為以資產 ID 為 Key 的 Record
+  const esg = (esgData ?? {}) as Record<string, ESGAssetInfo>
 
   const [usdcBal,   setUsdcBal]   = useState(0n)
   const [ethBal,    setEthBal]    = useState('0.0000')
@@ -109,7 +121,6 @@ export default function ExchangePage({ wallet }: Props) {
   const fetchAll = useCallback(async () => {
     if (!contracts || !wallet.address || !wallet.provider) return
     try {
-      // 第一組:使用者餘額（必須成功,跟 AMM 無關）
       const [bal, mgn, eBal] = await Promise.all([
         contracts.usdc.balanceOf(wallet.address),
         contracts.exchange.freeMargin(wallet.address),
@@ -119,7 +130,6 @@ export default function ExchangePage({ wallet }: Props) {
       setFreeMgn(mgn as bigint)
       setEthBal(f18(eBal as bigint, 4))
 
-      // 第二組:AMM 資料（失敗不影響餘額顯示）
       let price = 0n
       let reserves: [bigint, bigint] = [0n, 0n]
       try {
@@ -170,7 +180,6 @@ export default function ExchangePage({ wallet }: Props) {
 
   useEffect(() => { void fetchAll() }, [fetchAll])
 
-  // Reset history and ESG confirmation on asset change
   useEffect(() => { setHistory([]); setEsgConfirmed(false) }, [selAsset])
 
   // Fetch ESG reward status for high-ESG positions
@@ -179,6 +188,7 @@ export default function ExchangePage({ wallet }: Props) {
     if (addr?.EsgRewardDistributor === '0x0000000000000000000000000000000000000000') return
     if (!contracts?.esgRewardDistributor || !positions.length) return
 
+    // 修正點：使用 esg[row.asset] 存取時轉型為 string 索引安全存取
     const highEsgPositions = positions.filter(r => (esg[r.asset]?.composite ?? 0) >= 70)
     if (!highEsgPositions.length) return
 
@@ -214,7 +224,7 @@ export default function ExchangePage({ wallet }: Props) {
     if (p !== undefined) {
       setHistory(prev => {
         const next = [...prev, { time: new Date().toLocaleTimeString(), price: p }]
-        return next.slice(-30) // last 30 data points (~1 min)
+        return next.slice(-30)
       })
     }
   }, [livePrices[selAsset]?.usd, selAsset])
@@ -393,21 +403,18 @@ export default function ExchangePage({ wallet }: Props) {
   const hasEsgRewardDistributor = getAddresses(wallet.chainId)?.EsgRewardDistributor
     !== '0x0000000000000000000000000000000000000000'
 
-  const selEsg   = esg[selAsset] ?? null
+  const selEsg   = esg[selAsset as string] ?? null
   const isLowEsg = selEsg !== null && selEsg.composite < 50
 
   const openMgnBig = tryParse(openMgn)
   const notional   = openMgnBig !== null ? openMgnBig * BigInt(leverage) : 0n
   
-  // Liquidation Price = Entry * (1 ± 1/Leverage)
   const liqPrice   = isLong 
     ? curPrice - (curPrice / BigInt(leverage))
     : curPrice + (curPrice / BigInt(leverage))
 
-  // Map positions to dynamic live PnL
   const livePositions = positions.map(p => {
-    // Convert float USD from Coingecko to 18-decimal fixed point
-    const liveUsd = livePrices[p.asset]?.usd
+    const liveUsd = livePrices[p.asset as AssetId]?.usd
     const currentLivePrice = liveUsd ? BigInt(Math.round(liveUsd * 1e8)) * 10n**10n : p.currentPrice
     
     const notional = p.margin * p.leverage
@@ -419,7 +426,6 @@ export default function ExchangePage({ wallet }: Props) {
     return { ...p, currentLivePrice, livePnL }
   })
 
-  // Account Equity using LIVE PnL
   const totalUnrealizedPnL = livePositions.reduce((acc, p) => acc + p.livePnL, 0n)
   const accountEquity = freeMgn + totalUnrealizedPnL
 
@@ -442,7 +448,6 @@ export default function ExchangePage({ wallet }: Props) {
     )
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
   if (pageLoading) {
     return (
       <div className="max-w-6xl mx-auto px-4 py-8 space-y-6 animate-pulse">
@@ -523,7 +528,7 @@ export default function ExchangePage({ wallet }: Props) {
             <h2 className="text-base font-semibold text-white">Swap</h2>
             <div className="flex gap-3 text-gray-400">
               <button className="hover:text-white transition-colors" title="Settings">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1 2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
               </button>
             </div>
           </div>
@@ -792,7 +797,7 @@ export default function ExchangePage({ wallet }: Props) {
                     selEsg.composite >= 40 ? 'text-amber-400'   : 'text-red-400'
                   }`}>
                     {selEsg.composite >= 65 ? '高永續評級' :
-                     selEsg.composite >= 40 ? '中永續評級' : '低永續評級'}
+                     selEsg.composite >= 40 ? '低永續評級' : '低永續評級'}
                   </span>
                 </div>
                 <div className="flex gap-2 text-[10px] text-gray-500">
@@ -1026,7 +1031,7 @@ export default function ExchangePage({ wallet }: Props) {
                   return (
                     <tr key={String(row.id)} className="hover:bg-surface-elev/60 transition-colors">
                       <td className="py-2.5 pr-4 font-mono text-white">
-                        {ASSET_LABEL[row.asset] ?? row.asset.slice(0, 8)}
+                        {ASSET_LABEL[row.asset as AssetId] ?? row.asset.slice(0, 8)}
                       </td>
                       <td className={`py-2.5 pr-4 font-bold ${row.isLong ? 'text-green-400' : 'text-red-400'}`}>
                         {row.isLong ? 'LONG' : 'SHORT'}
