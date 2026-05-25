@@ -54,7 +54,7 @@ const SEPOLIA: ChainAddresses = {
   PepeAMM:            "0x612674Ab98589228309353FCc2f9d88Cc830CBdF",
   PepeToken:              "0xa364F43627A17BE5bfbcb32693f3eD7E44ebe1D9",
   PepeClaim:              "0x852c0fBa54552aafbA4798709d90056159682A4C",
-  EsgRewardDistributor:   "0x0000000000000000000000000000000000000000",
+  EsgRewardDistributor:   "0xA1a522B9d31e5B48E41DcCd050DE10dA2e3BEdD0",
 }
 
 const CHAIN_MAP: Record<number, ChainAddresses> = {
