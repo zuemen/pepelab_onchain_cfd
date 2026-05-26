@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { Contract, BrowserProvider } from 'ethers'
-import { ASSET_LABEL } from '../lib/assetMeta'
+import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
 
 export interface WhaleAlert {
   txHash:      string

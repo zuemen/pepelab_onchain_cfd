@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { ASSET_IDS } from '../contracts/addresses'
+import { ASSET_IDS } from 'src/contracts/addresses'
 
 const COIN_MAP: Record<string, string> = {
   [ASSET_IDS.sBTC]: 'bitcoin',

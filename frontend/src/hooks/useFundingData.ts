@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { Contract } from 'ethers'
-import { ASSET_IDS } from '../contracts/addresses'
+import { ASSET_IDS } from 'src/contracts/addresses'
 
 type AssetId = `0x${string}`
 
