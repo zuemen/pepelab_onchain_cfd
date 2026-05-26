@@ -445,7 +445,7 @@ export default function ESGPage() {
               </Box>
             ) : (
               <Box sx={{ width: '100%', height: 240 }}>
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height={240}>
                   <RadarChart data={radarData} margin={{ top: 8, right: 28, bottom: 8, left: 28 }}>
                     <PolarGrid stroke="rgba(255,255,255,0.06)" />
                     <PolarAngleAxis dataKey="subject" tick={{ fill: '#919eab', fontSize: 10, fontWeight: 500 }} />

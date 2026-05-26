@@ -649,7 +649,7 @@ export default function DashboardPage() {
               </Box>
             ) : (
               <Box sx={{ flexGrow: 1, width: '100%', height: 220 }}>
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height={220}>
                   <PieChart>
                     <Pie
                       data={pieData} dataKey="value" nameKey="name"
@@ -996,7 +996,7 @@ export default function DashboardPage() {
           </Box>
         ) : (
           <Box sx={{ width: '100%', height: 260 }}>
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height={260}>
               <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
                 <CartesianGrid stroke="rgba(255,255,255,0.06)" strokeDasharray="3 3" />
                 <XAxis dataKey="time" tick={{ fill: '#637381', fontSize: 10 }} interval="preserveStartEnd" />

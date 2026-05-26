@@ -1082,7 +1082,7 @@ export default function ExchangePage() {
         {/* Live Sparkline */}
         {history.length > 1 && (
           <Box sx={{ width: '100%', height: 100, mt: 1 }}>
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height={100}>
               <LineChart data={history}>
                 <YAxis domain={['dataMin', 'dataMax']} hide />
                 <Line

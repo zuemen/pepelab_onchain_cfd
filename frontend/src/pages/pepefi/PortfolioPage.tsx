@@ -640,7 +640,7 @@ export default function PortfolioPage() {
             </Box>
 
             <Box sx={{ width: '100%', height: 160 }}>
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height={160}>
                 <LineChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                   <XAxis
