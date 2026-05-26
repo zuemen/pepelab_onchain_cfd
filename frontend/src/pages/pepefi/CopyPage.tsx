@@ -9,6 +9,8 @@ import { useKYC } from 'src/hooks/useKYC'
 import { useESG } from 'src/hooks/useESG'
 import ESGBadge from 'src/components/pepefi/ESGBadge'
 import KYCModal from 'src/components/pepefi/KYCModal'
+import { getPepeAvatar } from 'src/utils/pepefi-assets'
+import TraderRankBadge from 'src/components/pepefi/TraderRankBadge'
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -29,6 +31,7 @@ import TableRow from '@mui/material/TableRow';
 import TableCell from '@mui/material/TableCell';
 import Chip from '@mui/material/Chip';
 import Breadcrumbs from '@mui/material/Breadcrumbs';
+import Avatar from '@mui/material/Avatar';
 
 interface TraderStakeData {
   stake:        bigint
@@ -286,34 +289,51 @@ export default function CopyPage() {
 
       {/* Header */}
       <Card sx={{ p: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 2 }}>
-          <Box>
-            <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
-              {traderName || 'Unknown Trader'}
-            </Typography>
-            <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary', display: 'block', mt: 0.5 }}>
-              {traderAddress}
-            </Typography>
-          </Box>
-          {stakeData && (
-            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5 }}>
-              <Chip
-                label={`◆ ${String(stakeData.reputation)} rep`}
-                size="small"
-                sx={{
-                  fontWeight: 'bold',
-                  ...(stakeData.reputation >= 80n ? { bgcolor: 'rgba(34, 197, 94, 0.16)', color: '#22c55e', border: '1px solid', borderColor: 'rgba(34, 197, 94, 0.24)' }
-                    : stakeData.reputation >= 60n ? { bgcolor: 'rgba(255, 171, 0, 0.16)', color: '#ffab00', border: '1px solid', borderColor: 'rgba(255, 171, 0, 0.24)' }
-                    : { bgcolor: 'rgba(255, 86, 48, 0.16)', color: '#ff5630', border: '1px solid', borderColor: 'rgba(255, 86, 48, 0.24)' }
-                  )
-                }}
-              />
-              <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
-                {(Number(stakeData.stake) / 1e18).toFixed(0)} mUSDC staked
-              </Typography>
+        <Stack direction="row" spacing={3} alignItems="center">
+          <Avatar
+            src={getPepeAvatar(stakeData ? stakeData.reputation : null, traderAddress)}
+            sx={{
+              width: 80,
+              height: 80,
+              border: '3px solid',
+              borderColor: stakeData && stakeData.reputation >= 80n ? 'warning.main' : 'rgba(255,255,255,0.1)',
+              boxShadow: '0 0 16px rgba(0,0,0,0.5)',
+            }}
+          />
+          <Box sx={{ flexGrow: 1 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 2 }}>
+              <Box>
+                <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexWrap: 'wrap', gap: 1 }}>
+                  <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
+                    {traderName || 'Unknown Trader'}
+                  </Typography>
+                  <TraderRankBadge reputation={stakeData ? stakeData.reputation : null} />
+                </Stack>
+                <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary', display: 'block', mt: 0.5 }}>
+                  {traderAddress}
+                </Typography>
+              </Box>
+              {stakeData && (
+                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5 }}>
+                  <Chip
+                    label={`◆ ${String(stakeData.reputation)} rep`}
+                    size="small"
+                    sx={{
+                      fontWeight: 'bold',
+                      ...(stakeData.reputation >= 80n ? { bgcolor: 'rgba(34, 197, 94, 0.16)', color: '#22c55e', border: '1px solid', borderColor: 'rgba(34, 197, 94, 0.24)' }
+                        : stakeData.reputation >= 60n ? { bgcolor: 'rgba(255, 171, 0, 0.16)', color: '#ffab00', border: '1px solid', borderColor: 'rgba(255, 171, 0, 0.24)' }
+                        : { bgcolor: 'rgba(255, 86, 48, 0.16)', color: '#ff5630', border: '1px solid', borderColor: 'rgba(255, 86, 48, 0.24)' }
+                      )
+                    }}
+                  />
+                  <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                    {(Number(stakeData.stake) / 1e18).toFixed(0)} mUSDC staked
+                  </Typography>
+                </Box>
+              )}
             </Box>
-          )}
-        </Box>
+          </Box>
+        </Stack>
         {!loadError && traderName !== '' && !traderRegistered && (
           <Typography variant="caption" color="warning.main" sx={{ display: 'block', mt: 2, fontWeight: 'bold' }}>
             ⚠ This address is not registered as a trader.

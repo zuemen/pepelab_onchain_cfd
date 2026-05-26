@@ -7,6 +7,8 @@ import { useESG } from 'src/hooks/useESG'
 import ESGBadge from 'src/components/pepefi/ESGBadge'
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
 import StatCard from 'src/components/pepefi/StatCard'
+import { getPepeAvatar } from 'src/utils/pepefi-assets'
+import TraderRankBadge from 'src/components/pepefi/TraderRankBadge'
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -25,6 +27,7 @@ import TableCell from '@mui/material/TableCell';
 import Chip from '@mui/material/Chip';
 import Breadcrumbs from '@mui/material/Breadcrumbs';
 import Alert from '@mui/material/Alert';
+import Avatar from '@mui/material/Avatar';
 
 interface StakeInfo {
   amount:             bigint
@@ -220,53 +223,70 @@ export default function TraderProfilePage() {
       ) : (
         <>
           {/* ─── A. Header ────────────────────────────────────────── */}
-          <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 2 }}>
-              <Box>
-                <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
-                  {name || 'Unknown'}
-                </Typography>
-                <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary', display: 'block', mt: 0.5 }}>
-                  {traderAddr}
-                </Typography>
-              </Box>
-              {repScore !== null && (
-                <Chip
-                  label={`◆ ${String(repScore)}`}
-                  size="small"
-                  sx={{
-                    fontWeight: 'bold',
-                    ...(repScore >= 80n ? { bgcolor: 'rgba(34, 197, 94, 0.16)', color: '#22c55e', border: '1px solid', borderColor: 'rgba(34, 197, 94, 0.24)' }
-                      : repScore >= 50n ? { bgcolor: 'rgba(255, 171, 0, 0.16)', color: '#ffab00', border: '1px solid', borderColor: 'rgba(255, 171, 0, 0.24)' }
-                      : { bgcolor: 'rgba(255, 86, 48, 0.16)', color: '#ff5630', border: '1px solid', borderColor: 'rgba(255, 86, 48, 0.24)' }
-                    )
-                  }}
-                />
-              )}
-            </Box>
+          <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <Stack direction="row" spacing={3} alignItems="center">
+              <Avatar
+                src={getPepeAvatar(repScore, traderAddr)}
+                sx={{
+                  width: 80,
+                  height: 80,
+                  border: '3px solid',
+                  borderColor: repScore && repScore >= 80n ? 'warning.main' : 'rgba(255,255,255,0.1)',
+                  boxShadow: '0 0 16px rgba(0,0,0,0.5)',
+                }}
+              />
+              <Box sx={{ flexGrow: 1 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 2 }}>
+                  <Box>
+                    <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexWrap: 'wrap', gap: 1 }}>
+                      <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
+                        {name || 'Unknown'}
+                      </Typography>
+                      <TraderRankBadge reputation={repScore} />
+                    </Stack>
+                    <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary', display: 'block', mt: 0.5 }}>
+                      {traderAddr}
+                    </Typography>
+                  </Box>
+                  {repScore !== null && (
+                    <Chip
+                      label={`◆ ${String(repScore)} rep`}
+                      size="small"
+                      sx={{
+                        fontWeight: 'bold',
+                        ...(repScore >= 80n ? { bgcolor: 'rgba(34, 197, 94, 0.16)', color: '#22c55e', border: '1px solid', borderColor: 'rgba(34, 197, 94, 0.24)' }
+                          : repScore >= 50n ? { bgcolor: 'rgba(255, 171, 0, 0.16)', color: '#ffab00', border: '1px solid', borderColor: 'rgba(255, 171, 0, 0.24)' }
+                          : { bgcolor: 'rgba(255, 86, 48, 0.16)', color: '#ff5630', border: '1px solid', borderColor: 'rgba(255, 86, 48, 0.24)' }
+                        )
+                      }}
+                    />
+                  )}
+                </Box>
 
-            <Stack direction="row" spacing={2} sx={{ flexWrap: 'wrap', gap: 1 }}>
-              <Typography variant="body2" color="text.secondary">
-                <Box component="span" sx={{ fontWeight: 'bold', color: 'text.primary' }}>{String(followers)}</Box> follower{followers !== 1n ? 's' : ''}
-              </Typography>
-              {registered && (
-                <Chip
-                  label="Registered"
-                  color="success"
-                  variant="outlined"
-                  size="small"
-                  sx={{ fontWeight: 'bold' }}
-                />
-              )}
-              {eligible !== null && (
-                <Chip
-                  label={eligible ? '◆ Staked' : '✗ Not staked'}
-                  color={eligible ? 'primary' : 'error'}
-                  variant="outlined"
-                  size="small"
-                  sx={{ fontWeight: 'bold' }}
-                />
-              )}
+                <Stack direction="row" spacing={2} sx={{ flexWrap: 'wrap', gap: 1, mt: 1.5, alignItems: 'center' }}>
+                  <Typography variant="body2" color="text.secondary">
+                    <Box component="span" sx={{ fontWeight: 'bold', color: 'text.primary' }}>{String(followers)}</Box> follower{followers !== 1n ? 's' : ''}
+                  </Typography>
+                  {registered && (
+                    <Chip
+                      label="Registered"
+                      color="success"
+                      variant="outlined"
+                      size="small"
+                      sx={{ fontWeight: 'bold' }}
+                    />
+                  )}
+                  {eligible !== null && (
+                    <Chip
+                      label={eligible ? '◆ Staked' : '✗ Not staked'}
+                      color={eligible ? 'primary' : 'error'}
+                      variant="outlined"
+                      size="small"
+                      sx={{ fontWeight: 'bold' }}
+                    />
+                  )}
+                </Stack>
+              </Box>
             </Stack>
 
             <Button
@@ -275,6 +295,7 @@ export default function TraderProfilePage() {
               variant="contained"
               color="primary"
               fullWidth
+              sx={{ fontWeight: 'bold', py: 1.2 }}
             >
               Copy This Trader →
             </Button>

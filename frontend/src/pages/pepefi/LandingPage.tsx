@@ -46,27 +46,24 @@ export default function LandingPage() {
           <Stack spacing={2} alignItems="center" sx={{ mb: 4 }}>
             {/* Icon */}
             <Box
+              component="img"
+              src="/assets/images/pepefi/pepe_eth.jpg"
+              alt="PepeFi Logo"
               sx={{
-                display: 'flex',
-                height: 80,
-                width: 80,
-                alignItems: 'center',
-                justifyContent: 'center',
-                borderRadius: 2,
-                fontSize: '2.5rem',
-                background: 'linear-gradient(135deg, #065f46, #059669)',
-                boxShadow: '0 0 32px rgba(5,150,105,0.4)',
+                height: 96,
+                width: 96,
+                borderRadius: '50%',
+                border: '3px solid #34d399',
+                boxShadow: '0 0 32px rgba(52,211,153,0.6)',
               }}
-            >
-              🐸
-            </Box>
+            />
 
             {/* Name */}
             <Box>
               <Typography
                 variant="h1"
                 sx={{
-                  fontSize: { xs: '3rem', sm: '3.75rem' },
+                  fontSize: { xs: '3.5rem', sm: '4.5rem' },
                   fontWeight: 900,
                   tracking: -1,
                   background: 'linear-gradient(90deg, #34d399 0%, #059669 60%, #a3e635 100%)',
@@ -84,6 +81,7 @@ export default function LandingPage() {
                   letterSpacing: '0.25em',
                   display: 'block',
                   mt: 0.5,
+                  fontSize: '0.875rem',
                 }}
               >
                 On-Chain CFD Protocol
@@ -92,13 +90,30 @@ export default function LandingPage() {
           </Stack>
 
           {/* Tagline */}
-          <Typography variant="h4" sx={{ color: 'text.primary', fontWeight: 'bold', mb: 2, px: 2 }}>
+          <Typography variant="h3" sx={{ color: 'text.primary', fontWeight: 'bold', mb: 2, px: 2 }}>
             鏈上合成衍生品跟單系統
           </Typography>
-          <Typography variant="body1" sx={{ color: 'text.secondary', maxWidth: 540, mb: 4, px: 2, lineHeight: 1.6 }}>
+          <Typography variant="body1" sx={{ color: 'text.secondary', maxWidth: 580, mb: 4, px: 2, lineHeight: 1.6, fontSize: '1.125rem' }}>
             結合 Synthetic CFD 永續合約與一鍵 Copy Trading，
             交易者公開策略，跟單者授權 USDC 自動跟進，全程上鏈透明。
           </Typography>
+
+          {/* Hero Banner Space Rocket Pepe */}
+          <Box
+            component="img"
+            src="/assets/images/pepefi/pepe_11.png"
+            alt="Pepe Rocket Space Trader"
+            sx={{
+              width: '100%',
+              maxWidth: 640,
+              height: 280,
+              objectFit: 'cover',
+              borderRadius: 3,
+              border: '1px solid rgba(52, 211, 153, 0.25)',
+              boxShadow: '0 12px 40px rgba(0,0,0,0.7), 0 0 24px rgba(52, 211, 153, 0.15)',
+              mb: 4.5,
+            }}
+          />
 
           {/* Testnet badge */}
           <Chip
@@ -126,7 +141,9 @@ export default function LandingPage() {
               borderColor: 'rgba(34, 197, 94, 0.24)',
               bgcolor: 'rgba(34, 197, 94, 0.08)',
               color: '#22c55e',
-              px: 1,
+              px: 1.5,
+              py: 0.5,
+              fontWeight: 'bold',
             }}
           />
 
@@ -137,7 +154,7 @@ export default function LandingPage() {
               {wallet.error}
             </Typography>
           )}
-          <Typography variant="caption" sx={{ color: 'text.secondary', opacity: 0.6, mt: 1.5 }}>
+          <Typography variant="caption" sx={{ color: 'text.secondary', opacity: 0.6, mt: 1.5, fontSize: '0.875rem' }}>
             連線後可直接瀏覽所有功能，無需註冊帳號
           </Typography>
         </Box>

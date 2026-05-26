@@ -14,6 +14,7 @@ import { ASSETS_LIST, ASSET_LABEL, ASSET_META } from 'src/lib/pepefi/assetMeta';
 import { useKYC } from 'src/hooks/useKYC';
 import KYCModal from 'src/components/pepefi/KYCModal';
 import Skeleton from 'src/components/pepefi/Skeleton';
+import AssetIcon from 'src/components/pepefi/AssetIcon';
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -909,11 +910,32 @@ export default function ExchangePage() {
                 value={selAsset}
                 onChange={e => setSelAsset(e.target.value as AssetId)}
                 label="Asset"
+                renderValue={(selected) => {
+                  const meta = ASSET_META[selected as string];
+                  return (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <AssetIcon symbol={meta?.symbol ?? ''} size={24} />
+                      <Typography variant="body1" sx={{ fontWeight: 'bold' }}>
+                        {meta?.symbol}
+                      </Typography>
+                    </Box>
+                  );
+                }}
               >
                 {ASSETS.map(a => (
                   <MenuItem key={a.id} value={a.id}>
-                    {a.regulated ? '🔒 ' : ''}{a.symbol}
-                    {a.category === 'etf' ? ' [ETF]' : ''}
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 0.5 }}>
+                      <AssetIcon symbol={a.symbol} size={28} />
+                      <Box>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                          {a.regulated ? '🔒 ' : ''}{a.symbol}
+                          {a.category === 'etf' ? ' [ETF]' : ''}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {a.name}
+                        </Typography>
+                      </Box>
+                    </Box>
                   </MenuItem>
                 ))}
               </Select>
@@ -1146,10 +1168,13 @@ export default function ExchangePage() {
                   info.composite >= 40 ? 'warning.main'   :
                                          'error.main';
                 return (
-                  <Box key={id} sx={{ display: 'grid', gridTemplateColumns: '60px 1fr auto', gap: 3, alignItems: 'center' }}>
-                    <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
-                      {label}
-                    </Typography>
+                  <Box key={id} sx={{ display: 'grid', gridTemplateColumns: '120px 1fr auto', gap: 3, alignItems: 'center' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <AssetIcon symbol={label} size={24} />
+                      <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
+                        {label}
+                      </Typography>
+                    </Box>
                     <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
                       {[
                         { label: 'E', val: info.environmental },
@@ -1227,8 +1252,13 @@ export default function ExchangePage() {
                   const closeKey = `close_${row.id}`;
                   return (
                     <TableRow key={String(row.id)} sx={{ '&:hover': { bgcolor: 'action.hover' } }}>
-                      <TableCell sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
-                        {ASSET_LABEL[row.asset as AssetId] ?? row.asset.slice(0, 8)}
+                      <TableCell sx={{ py: 1 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <AssetIcon symbol={ASSET_LABEL[row.asset as AssetId] ?? ''} size={24} />
+                          <Typography variant="subtitle2" sx={{ fontWeight: 'bold', fontFamily: 'monospace' }}>
+                            {ASSET_LABEL[row.asset as AssetId] ?? row.asset.slice(0, 8)}
+                          </Typography>
+                        </Box>
                       </TableCell>
                       <TableCell>
                         <Chip

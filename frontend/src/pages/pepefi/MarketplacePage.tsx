@@ -9,6 +9,8 @@ import EmptyState from 'src/components/pepefi/EmptyState';
 import { useESG } from 'src/hooks/useESG';
 import ESGBadge from 'src/components/pepefi/ESGBadge';
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta';
+import { getPepeAvatar } from 'src/utils/pepefi-assets';
+import TraderRankBadge from 'src/components/pepefi/TraderRankBadge';
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -434,16 +436,15 @@ export default function MarketplacePage() {
                       {/* Identity Row */}
                       <Box sx={{ display: 'flex', alignItems: 'start', gap: 2 }}>
                         <Avatar
+                          src={getPepeAvatar(t.reputation, t.address)}
                           sx={{
-                            bgcolor: avatarHue(t.address),
-                            color: 'white',
-                            fontWeight: 'bold',
-                            width: 40,
-                            height: 40,
+                            width: 56,
+                            height: 56,
+                            border: '2px solid',
+                            borderColor: t.reputation && t.reputation >= 80n ? 'warning.main' : 'rgba(255,255,255,0.1)',
+                            boxShadow: '0 0 12px rgba(0,0,0,0.5)',
                           }}
-                        >
-                          {(t.displayName || '?')[0]?.toUpperCase() ?? '?'}
-                        </Avatar>
+                        />
 
                         <Box sx={{ flexGrow: 1, minWidth: 0 }}>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
@@ -472,9 +473,12 @@ export default function MarketplacePage() {
                               {t.displayName || '—'}
                             </Link>
                           </Box>
-                          <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary', display: 'block', mt: 0.2 }}>
-                            {shortAddr(t.address)}
-                          </Typography>
+                          <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 0.5, flexWrap: 'wrap', gap: 1 }}>
+                            <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>
+                              {shortAddr(t.address)}
+                            </Typography>
+                            <TraderRankBadge reputation={t.reputation} />
+                          </Stack>
                         </Box>
 
                         {t.reputation !== null && (
