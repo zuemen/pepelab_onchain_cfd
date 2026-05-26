@@ -5,6 +5,26 @@ import { usePepefiWallet } from 'src/layouts/pepefi'
 import { explorerTx } from 'src/lib/pepefi/notify'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import EmptyState from 'src/components/pepefi/EmptyState'
+import StatCard from 'src/components/pepefi/StatCard'
+
+import Box from '@mui/material/Box';
+import Container from '@mui/material/Container';
+import Typography from '@mui/material/Typography';
+import Card from '@mui/material/Card';
+import Grid from '@mui/material/Grid';
+import Stack from '@mui/material/Stack';
+import Button from '@mui/material/Button';
+import TextField from '@mui/material/TextField';
+import Snackbar from '@mui/material/Snackbar';
+import Alert from '@mui/material/Alert';
+import Link from '@mui/material/Link';
+import TableContainer from '@mui/material/TableContainer';
+import Table from '@mui/material/Table';
+import TableHead from '@mui/material/TableHead';
+import TableBody from '@mui/material/TableBody';
+import TableRow from '@mui/material/TableRow';
+import TableCell from '@mui/material/TableCell';
+import Chip from '@mui/material/Chip';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 type TxResp = { wait(): Promise<unknown>; hash: string }
@@ -192,250 +212,300 @@ export default function AdminTreasuryPage() {
     } finally { setLoad('fund', false) }
   }
 
-  // ── Guards ────────────────────────────────────────────────────────────────
   if (!wallet.isConnected) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh] text-gray-400">
-        Connect wallet to access Treasury Admin.
-      </div>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+        <Typography color="text.secondary">Connect wallet to access Treasury Admin.</Typography>
+      </Box>
     )
   }
 
   if (!isOwner) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
-        <div className="text-4xl">🔒</div>
-        <div className="text-lg font-semibold text-white">Not authorized</div>
-        <div className="text-sm text-gray-500">This page is restricted to the platform owner wallet.</div>
-        <div className="text-xs text-gray-600 font-mono mt-1">
+      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', gap: 2 }}>
+        <Typography variant="h2">🔒</Typography>
+        <Typography variant="h5" sx={{ fontWeight: 'bold' }}>Not authorized</Typography>
+        <Typography color="text.secondary" sx={{ mb: 2 }}>This page is restricted to the platform owner wallet.</Typography>
+        <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.disabled' }}>
           Owner: {DEMO_OWNER.slice(0, 10)}…{DEMO_OWNER.slice(-6)}
-        </div>
-      </div>
+        </Typography>
+      </Box>
     )
   }
 
-  // ── Router insufficient check ─────────────────────────────────────────────
   const ethNeeded = (() => {
     try { return swapAmt ? parseEther((parseFloat(swapAmt) / 3000).toFixed(18)) : 0n }
     catch { return 0n }
   })()
   const routerInsufficient = ethNeeded > 0n && !!stats && stats.routerEth < ethNeeded
 
-  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
+    <Container maxWidth="md" sx={{ py: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
 
-      {/* Toast */}
-      {toast && (
-        <div className={`fixed top-4 right-4 z-50 rounded-lg px-5 py-3 text-sm font-medium shadow-xl ${
-          toast.ok ? 'bg-emerald-800 text-emerald-100' : 'bg-red-900 text-red-100'
-        }`}>
-          {toast.msg}
-          {toast.hash && explorerTx(toast.hash, wallet.chainId) && (
-            <a href={explorerTx(toast.hash, wallet.chainId)!} target="_blank" rel="noopener noreferrer"
-              className="block mt-1 text-xs underline opacity-80 hover:opacity-100">
-              View on Etherscan ↗
-            </a>
-          )}
-        </div>
-      )}
+      {/* Snackbar notification */}
+      <Snackbar
+        open={!!toast}
+        autoHideDuration={6000}
+        onClose={() => setToast(null)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+      >
+        {toast ? (
+          <Alert
+            severity={toast.ok ? 'success' : 'error'}
+            onClose={() => setToast(null)}
+            sx={{ width: '100%' }}
+          >
+            {toast.msg}
+            {toast.hash && explorerTx(toast.hash, wallet.chainId) && (
+              <Link
+                href={explorerTx(toast.hash, wallet.chainId)!}
+                target="_blank"
+                rel="noopener noreferrer"
+                color="inherit"
+                sx={{ display: 'block', mt: 0.5, typography: 'caption', textDecoration: 'underline' }}
+              >
+                View on Etherscan ↗
+              </Link>
+            )}
+          </Alert>
+        ) : undefined}
+      </Snackbar>
 
       {/* Header */}
-      <div>
-        <h1 className="text-xl font-bold text-white">Treasury Admin</h1>
-        <p className="text-sm text-gray-400 mt-0.5">Cash out accumulated platform fees → ETH</p>
-      </div>
+      <Box sx={{ mb: 1 }}>
+        <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
+          Treasury Admin
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          Cash out accumulated platform fees → ETH
+        </Typography>
+      </Box>
 
       {/* A. Revenue Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          { label: 'Pending Platform Fees', value: stats ? f18(stats.platformEarnings) + ' mUSDC' : '—', accent: true  },
-          { label: 'Wallet mUSDC Balance',  value: stats ? f18(stats.myMusdc) + ' mUSDC'          : '—', accent: false },
-          { label: 'Wallet ETH Balance',    value: stats ? fEth(stats.myEth) + ' ETH'             : '—', accent: false },
-          { label: 'Router ETH Reserve',    value: stats ? fEth(stats.routerEth) + ' ETH'         : '—', accent: false },
-        ].map(s => (
-          <div key={s.label} className="bg-surface-sub rounded-xl p-4 border border-surface-border">
-            <div className="text-xs text-gray-500 mb-1">{s.label}</div>
-            <div className={`text-base font-mono font-semibold truncate ${s.accent ? 'text-brand-100' : 'text-white'}`}>
-              {s.value}
-            </div>
-          </div>
-        ))}
-      </div>
+      <Grid container spacing={2}>
+        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+          <StatCard title="Pending Platform Fees" value={stats ? f18(stats.platformEarnings) : '—'} sub="mUSDC" valueColor="primary.main" />
+        </Grid>
+        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+          <StatCard title="Wallet mUSDC Balance" value={stats ? f18(stats.myMusdc) : '—'} sub="mUSDC" />
+        </Grid>
+        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+          <StatCard title="Wallet ETH Balance" value={stats ? fEth(stats.myEth) : '—'} sub="ETH" />
+        </Grid>
+        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+          <StatCard title="Router ETH Reserve" value={stats ? fEth(stats.routerEth) : '—'} sub="ETH" />
+        </Grid>
+      </Grid>
 
       {/* B. Step 1: Claim */}
-      <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-4">
-        <div className="flex items-center gap-2">
-          <span className="flex items-center justify-center w-6 h-6 rounded-full bg-brand-400/20 text-brand-100 text-xs font-bold shrink-0">1</span>
-          <h2 className="text-base font-bold text-white">Claim Platform Fees from FeeRouter</h2>
-        </div>
+      <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <Chip label="1" size="small" color="primary" sx={{ fontWeight: 'bold' }} />
+          <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+            Claim Platform Fees from FeeRouter
+          </Typography>
+        </Box>
 
         {platformTreasury && (
-          <div className="text-xs text-gray-500">
-            Treasury: <span className="font-mono">{platformTreasury}</span>
-          </div>
+          <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+            Treasury: {platformTreasury}
+          </Typography>
         )}
 
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div>
-            <div className="text-xs text-gray-400 mb-1">Pending platform fees</div>
-            <div className="text-2xl font-mono font-bold text-brand-100">
-              {stats ? f18(stats.platformEarnings) : '—'} <span className="text-sm text-gray-400">mUSDC</span>
-            </div>
-          </div>
-          <button
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
+          <Box>
+            <Typography variant="caption" color="text.secondary">
+              Pending platform fees
+            </Typography>
+            <Typography variant="h4" color="primary.main" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
+              {stats ? f18(stats.platformEarnings) : '—'} <Box component="span" sx={{ fontSize: '1rem', fontWeight: 'normal', color: 'text.secondary' }}>mUSDC</Box>
+            </Typography>
+          </Box>
+          <Button
+            variant="contained"
             onClick={() => void doClaim()}
             disabled={busy['claim'] || !stats || stats.platformEarnings === 0n}
-            className="px-5 py-2.5 rounded-lg bg-brand-200 hover:bg-brand-300 disabled:opacity-50 text-white font-semibold text-sm transition-colors"
           >
             {busy['claim'] ? 'Claiming…' : 'Claim Platform Fees'}
-          </button>
-        </div>
+          </Button>
+        </Box>
 
-        <p className="text-xs text-gray-600">
+        <Typography variant="caption" color="text.secondary">
           This transfers all accumulated platform-share fees (20% of each copy / performance fee) to your wallet.
-        </p>
-      </div>
+        </Typography>
+      </Card>
 
       {/* C. Step 2: Convert mUSDC → ETH */}
-      <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-4">
-        <div className="flex items-center gap-2">
-          <span className="flex items-center justify-center w-6 h-6 rounded-full bg-brand-400/20 text-brand-100 text-xs font-bold shrink-0">2</span>
-          <h2 className="text-base font-bold text-white">Convert mUSDC → ETH via SwapRouter</h2>
-        </div>
+      <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <Chip label="2" size="small" color="primary" sx={{ fontWeight: 'bold' }} />
+          <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+            Convert mUSDC → ETH via SwapRouter
+          </Typography>
+        </Box>
 
-        <div className="space-y-2">
-          <div className="flex gap-2">
-            <input
-              type="number" min="0" placeholder="mUSDC amount"
-              value={swapAmt}
-              onChange={e => setSwapAmt(e.target.value)}
-              className="flex-1 rounded-lg bg-gray-800 border border-gray-600 px-3 py-2 text-sm text-white font-mono placeholder-gray-500 focus:outline-none focus:border-brand-300"
-            />
-            <button
-              onClick={() => stats && setSwapAmt(formatUnits(stats.myMusdc, 18))}
-              disabled={!stats || stats.myMusdc === 0n}
-              className="px-3 py-2 rounded-lg bg-gray-700 text-gray-300 text-xs hover:bg-gray-600 disabled:opacity-40 transition-colors"
-            >
-              Max
-            </button>
-          </div>
-          {swapAmt && parseFloat(swapAmt) > 0 && (
-            <div className="text-xs text-gray-500">
-              ≈ {(parseFloat(swapAmt) / 3000).toFixed(6)} ETH (rate: 1 ETH = 3000 mUSDC)
-            </div>
-          )}
-        </div>
+        <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center' }}>
+          <TextField
+            type="number"
+            size="small"
+            placeholder="mUSDC amount"
+            value={swapAmt}
+            onChange={e => setSwapAmt(e.target.value)}
+            slotProps={{ htmlInput: { min: "0", style: { fontFamily: 'monospace' } } }}
+            sx={{ flexGrow: 1, minWidth: 200 }}
+          />
+          <Button
+            variant="outlined"
+            onClick={() => stats && setSwapAmt(formatUnits(stats.myMusdc, 18))}
+            disabled={!stats || stats.myMusdc === 0n}
+          >
+            Max
+          </Button>
+        </Box>
 
-        {routerInsufficient && (
-          <div className="rounded-xl bg-yellow-900/30 border border-yellow-700/40 px-3 py-2 text-xs text-yellow-300 flex items-start gap-2">
-            <span>⚠</span>
-            <span>
-              Router only has {stats ? fEth(stats.routerEth) : '0'} ETH available.
-              Fund it using the Treasury Tools below before swapping.
-            </span>
-          </div>
+        {swapAmt && parseFloat(swapAmt) > 0 && (
+          <Typography variant="caption" color="text.secondary">
+            ≈ {(parseFloat(swapAmt) / 3000).toFixed(6)} ETH (rate: 1 ETH = 3000 mUSDC)
+          </Typography>
         )}
 
-        <div className="flex gap-3">
-          <button
+        {routerInsufficient && (
+          <Alert severity="warning">
+            Router only has {stats ? fEth(stats.routerEth) : '0'} ETH available.
+            Fund it using the Treasury Tools below before swapping.
+          </Alert>
+        )}
+
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          <Button
+            variant="outlined"
             onClick={() => void doApprove()}
             disabled={busy['approve'] || !swapAmt || parseFloat(swapAmt) <= 0}
-            className="flex-1 py-2.5 rounded-lg bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white text-sm font-semibold transition-colors"
+            sx={{ flexGrow: 1 }}
           >
             {busy['approve'] ? 'Approving…' : '① Approve mUSDC'}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="contained"
+            color="success"
             onClick={() => void doSwapToEth()}
             disabled={busy['swap'] || !swapAmt || parseFloat(swapAmt) <= 0}
-            className="flex-1 py-2.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white text-sm font-semibold transition-colors"
+            sx={{ flexGrow: 1 }}
           >
             {busy['swap'] ? 'Swapping…' : '② Swap to ETH'}
-          </button>
-        </div>
-      </div>
+          </Button>
+        </Box>
+      </Card>
 
       {/* E. Treasury Tools */}
-      <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-4">
-        <h2 className="text-base font-bold text-white">Treasury Tools</h2>
+      <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+          Treasury Tools
+        </Typography>
 
-        <div>
-          <div className="text-sm font-medium text-gray-300 mb-1">Fund SwapRouter with ETH</div>
-          <p className="text-xs text-gray-600 mb-3">
+        <Box>
+          <Typography variant="body2" sx={{ fontWeight: 'semibold', mb: 0.5 }}>
+            Fund SwapRouter with ETH
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
             The router needs an ETH reserve to fulfill mUSDC→ETH swaps from users and admin.
-            Current reserve: <span className="font-mono text-gray-400">{stats ? fEth(stats.routerEth) : '—'} ETH</span>
-          </p>
-          <div className="flex gap-2">
-            <input
-              type="number" min="0" step="0.01" placeholder="ETH amount (e.g. 1)"
+            Current reserve: <Box component="span" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{stats ? fEth(stats.routerEth) : '—'} ETH</Box>
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+            <TextField
+              type="number"
+              size="small"
+              placeholder="ETH amount (e.g. 1)"
               value={fundAmt}
               onChange={e => setFundAmt(e.target.value)}
-              className="flex-1 rounded-lg bg-gray-800 border border-gray-600 px-3 py-2 text-sm text-white font-mono placeholder-gray-500 focus:outline-none focus:border-brand-300"
+              slotProps={{ htmlInput: { min: "0", step: "0.01", style: { fontFamily: 'monospace' } } }}
+              sx={{ width: 200 }}
             />
-            <button
+            <Button
+              variant="contained"
               onClick={() => void doFundRouter()}
               disabled={busy['fund'] || !fundAmt || parseFloat(fundAmt) <= 0}
-              className="px-4 py-2 rounded-lg bg-info/10 hover:bg-info/20 disabled:opacity-50 text-info text-sm font-semibold border border-info/30 transition-colors"
             >
               {busy['fund'] ? 'Funding…' : 'Fund Router'}
-            </button>
-          </div>
-        </div>
-      </div>
+            </Button>
+          </Box>
+        </Box>
+      </Card>
 
       {/* D. Cash Out History */}
-      <div className="rounded-card border border-surface-border bg-surface shadow-card overflow-hidden">
-        <div className="px-5 py-4 border-b border-surface-border flex items-center justify-between">
-          <h2 className="text-base font-bold text-white">Recent Cash Out History</h2>
-          <button onClick={() => void fetchHistory()} className="text-xs text-gray-500 hover:text-white transition-colors">
+      <Card>
+        <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
+          <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+            Recent Cash Out History
+          </Typography>
+          <Button
+            variant="text"
+            size="small"
+            onClick={() => void fetchHistory()}
+            sx={{ textTransform: 'none' }}
+          >
             ↺ Refresh
-          </button>
-        </div>
+          </Button>
+        </Box>
 
         {history.length === 0 ? (
           <EmptyState icon="📋" title="No cash out history yet" description="Fee claims and USDC→ETH swaps will appear here." />
         ) : (
-          <div className="divide-y divide-surface-border">
-            {history.slice(0, 20).map((r, i) => (
-              <div key={i} className="flex items-center justify-between px-5 py-3 text-sm">
-                <div className="flex items-center gap-3">
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
-                    r.type === 'claim'
-                      ? 'bg-brand-400/20 text-brand-100'
-                      : 'bg-emerald-900/50 text-emerald-300'
-                  }`}>
-                    {r.type === 'claim' ? 'Claimed' : 'Swapped'}
-                  </span>
-                  <span className="font-mono text-white">
-                    {r.type === 'claim'
-                      ? `${f18(r.amount)} mUSDC`
-                      : `${r.usdcIn ? f18(r.usdcIn) : '—'} mUSDC → ${fEth(r.amount)} ETH`}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 text-xs shrink-0">
-                  <span className="text-gray-600">#{r.blockNumber}</span>
-                  {explorerTx(r.txHash, wallet.chainId) && (
-                    <a
-                      href={explorerTx(r.txHash, wallet.chainId)!}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-emerald-500 hover:text-emerald-300 transition-colors"
-                    >
-                      Etherscan ↗
-                    </a>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
+          <TableContainer>
+            <Table size="small">
+              <TableBody>
+                {history.slice(0, 20).map((r, i) => (
+                  <TableRow key={i} hover>
+                    <TableCell>
+                      <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
+                        <Chip
+                          label={r.type === 'claim' ? 'Claimed' : 'Swapped'}
+                          size="small"
+                          color={r.type === 'claim' ? 'primary' : 'success'}
+                          sx={{ fontWeight: 'bold' }}
+                        />
+                        <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
+                          {r.type === 'claim'
+                            ? `${f18(r.amount)} mUSDC`
+                            : `${r.usdcIn ? f18(r.usdcIn) : '—'} mUSDC → ${fEth(r.amount)} ETH`}
+                        </Typography>
+                      </Stack>
+                    </TableCell>
+                    <TableCell align="right" sx={{ fontFamily: 'monospace', fontSize: '0.75rem', color: 'text.secondary' }}>
+                      #{r.blockNumber}
+                    </TableCell>
+                    <TableCell align="right">
+                      {explorerTx(r.txHash, wallet.chainId) && (
+                        <Link
+                          href={explorerTx(r.txHash, wallet.chainId)!}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          color="success.main"
+                          sx={{ fontWeight: 'bold', fontSize: '1.1rem', textDecoration: 'none' }}
+                        >
+                          ↗
+                        </Link>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
         )}
-      </div>
+      </Card>
 
       {/* Info */}
-      <div className="rounded-xl border border-surface-border bg-surface-sub px-5 py-4 text-xs text-gray-500 space-y-1">
-        <p><span className="text-gray-400 font-semibold">Revenue model:</span> Each copy-trade or performance fee is split 70% trader / 20% platform / 10% insurance vault. Platform fees accumulate in FeeRouter until this admin claims them.</p>
-        <p>After claiming mUSDC, use the swap above to convert to ETH at the mock rate (1 ETH = 3000 mUSDC). In production, you'd use a real DEX.</p>
-      </div>
-    </div>
+      <Card sx={{ p: 2.5, bgcolor: 'background.neutral' }}>
+        <Stack spacing={1} sx={{ typography: 'caption', color: 'text.secondary' }}>
+          <Typography variant="caption">
+            <Box component="span" sx={{ color: 'text.primary', fontWeight: 'bold' }}>Revenue model:</Box> Each copy-trade or performance fee is split 70% trader / 20% platform / 10% insurance vault. Platform fees accumulate in FeeRouter until this admin claims them.
+          </Typography>
+          <Typography variant="caption">
+            After claiming mUSDC, use the swap above to convert to ETH at the mock rate (1 ETH = 3000 mUSDC). In production, you'd use a real DEX.
+          </Typography>
+        </Stack>
+      </Card>
+    </Container>
   )
 }

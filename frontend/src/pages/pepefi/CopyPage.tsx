@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate, Link } from 'react-router'
+import { useParams, useNavigate, Link as RouterLink } from 'react-router'
 import { parseEther } from 'ethers'
 import { useContracts } from 'src/hooks/useContracts'
 import { usePepefiWallet } from 'src/layouts/pepefi'
@@ -10,15 +10,32 @@ import { useESG } from 'src/hooks/useESG'
 import ESGBadge from 'src/components/pepefi/ESGBadge'
 import KYCModal from 'src/components/pepefi/KYCModal'
 
+import Box from '@mui/material/Box';
+import Container from '@mui/material/Container';
+import Typography from '@mui/material/Typography';
+import Card from '@mui/material/Card';
+import Grid from '@mui/material/Grid';
+import Stack from '@mui/material/Stack';
+import Button from '@mui/material/Button';
+import TextField from '@mui/material/TextField';
+import Snackbar from '@mui/material/Snackbar';
+import Alert from '@mui/material/Alert';
+import Link from '@mui/material/Link';
+import TableContainer from '@mui/material/TableContainer';
+import Table from '@mui/material/Table';
+import TableHead from '@mui/material/TableHead';
+import TableBody from '@mui/material/TableBody';
+import TableRow from '@mui/material/TableRow';
+import TableCell from '@mui/material/TableCell';
+import Chip from '@mui/material/Chip';
+import Breadcrumbs from '@mui/material/Breadcrumbs';
+
 interface TraderStakeData {
   stake:        bigint
   totalSlashed: bigint
   reputation:   bigint
 }
 
-// ── Config ──────────────────────────────────────────────────────────────────
-
-// ── Types ────────────────────────────────────────────────────────────────────
 interface CopyPreview {
   copyFee:            bigint
   totalTradingFee:    bigint
@@ -34,7 +51,6 @@ interface AllocWithPrice {
   entryPrice: bigint   // 18-dec, current oracle price
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
 const tryParse = (s: string): bigint | null => {
   if (!s) return null
   try { return parseEther(s) } catch { return null }
@@ -47,10 +63,11 @@ const fUsd = (v: bigint) =>
     maximumFractionDigits: 2,
   })
 
+const shortAddr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
+
 type TxResp = { wait(): Promise<unknown>; hash: string }
 const asTx = (tx: unknown): TxResp => tx as TxResp
 
-// ── Component ────────────────────────────────────────────────────────────────
 export default function CopyPage() {
   const wallet = usePepefiWallet()
   const { traderAddress } = useParams<{ traderAddress: string }>()
@@ -82,12 +99,10 @@ export default function CopyPage() {
     setTimeout(() => setToast(null), 6000)
   }
 
-  // Fetch trader name and strategy independently — strategy may revert if none published
   useEffect(() => {
     if (!contracts || !traderAddress) return
     setLoadError(null)
     const go = async () => {
-      // trader info — failure means RPC error, abort the whole load
       try {
         const traderRaw = (await contracts.registry.traders(traderAddress)) as unknown as [boolean, string, bigint]
         setTraderName(traderRaw[1])
@@ -98,7 +113,6 @@ export default function CopyPage() {
         return
       }
 
-      // strategy — revert is expected when trader has not published yet
       try {
         const stratRaw = (await contracts.registry.getLatestStrategy(traderAddress)) as unknown as [unknown[], bigint]
         const allocs = stratRaw[0] as unknown as Array<{
@@ -124,7 +138,6 @@ export default function CopyPage() {
         setHasStrategy(false)
       }
 
-      // stake info — optional, silently skip if TraderStake not deployed
       try {
         const [si, score] = await Promise.all([
           contracts.traderStake.getStake(traderAddress),
@@ -137,14 +150,11 @@ export default function CopyPage() {
     void go()
   }, [contracts, traderAddress])
 
-  // Reset approval when amount changes
   useEffect(() => { setApproved(false) }, [totalMargin])
 
-  // ── KYC gate ──────────────────────────────────────────────────────────────
   const hasKYCRequired = stratAllocs.some(a => ASSET_META[a.asset]?.regulated)
   const kycBlocked     = hasKYCRequired && !isKYCVerified
 
-  // ── Computed preview ───────────────────────────────────────────────────────
   const COPY_FEE_BPS = 30n
   const totalBig  = tryParse(totalMargin) ?? 0n
   const feeBig    = totalBig * COPY_FEE_BPS / 10_000n
@@ -155,8 +165,6 @@ export default function CopyPage() {
     notional: netBig * a.weight / 10_000n * a.leverage,
   }))
 
-  // Fetch fee breakdown from contract whenever amount or contracts change
-  // (placed after totalBig declaration so the dependency array can reference it)
   useEffect(() => {
     if (!contracts || !traderAddress || !totalBig || totalBig === 0n) {
       setPreview(null)
@@ -181,7 +189,6 @@ export default function CopyPage() {
     return () => { cancelled = true }
   }, [contracts, traderAddress, totalBig])
 
-  // ── Transactions ────────────────────────────────────────────────────────────
   const doApprove = async () => {
     if (!contracts) return
     const amt = tryParse(totalMargin)
@@ -216,116 +223,131 @@ export default function CopyPage() {
     } finally { setLoad('follow', false) }
   }
 
-  // ── Guard ─────────────────────────────────────────────────────────────────
   if (!traderAddress) {
-    return <div className="p-8 text-gray-400">Invalid trader address.</div>
+    return <Box sx={{ p: 4 }}><Typography color="text.secondary">Invalid trader address.</Typography></Box>
   }
 
   if (!wallet.isConnected) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh] text-gray-400">
-        Connect wallet to copy a trader.
-      </div>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+        <Typography color="text.secondary">Connect wallet to copy a trader.</Typography>
+      </Box>
     )
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
+    <Container maxWidth="md" sx={{ py: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
 
-      {/* Toast */}
-      {toast && (
-        <div
-          className={`fixed top-4 right-4 z-50 rounded-lg px-5 py-3 text-sm font-medium shadow-xl ${
-            toast.ok ? 'bg-emerald-800 text-emerald-100' : 'bg-red-900 text-red-100'
-          }`}
-        >
-          {toast.msg}
-          {toast.hash && wallet.chainId === 11155111 && (
-            <a
-              href={`https://sepolia.etherscan.io/tx/${toast.hash}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block mt-1 text-xs underline opacity-80 hover:opacity-100"
-            >
-              View on Etherscan ↗
-            </a>
-          )}
-        </div>
-      )}
+      {/* Snackbar notification */}
+      <Snackbar
+        open={!!toast}
+        autoHideDuration={6000}
+        onClose={() => setToast(null)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+      >
+        {toast ? (
+          <Alert
+            severity={toast.ok ? 'success' : 'error'}
+            onClose={() => setToast(null)}
+            sx={{ width: '100%' }}
+          >
+            {toast.msg}
+            {toast.hash && wallet.chainId === 11155111 && (
+              <Link
+                href={`https://sepolia.etherscan.io/tx/${toast.hash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                color="inherit"
+                sx={{ display: 'block', mt: 0.5, typography: 'caption', textDecoration: 'underline' }}
+              >
+                View on Etherscan ↗
+              </Link>
+            )}
+          </Alert>
+        ) : undefined}
+      </Snackbar>
 
       {/* Load error banner */}
       {loadError && (
-        <div className="rounded-lg border border-red-800 bg-red-950/40 px-4 py-3 text-sm text-red-400">
+        <Alert severity="error">
           <strong>Failed to load trader:</strong> {loadError}
-        </div>
+        </Alert>
       )}
 
       {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm text-gray-500">
-        <Link to="/marketplace" className="hover:text-white transition-colors">Marketplace</Link>
-        <span>/</span>
-        <span className="text-gray-300">
-          {traderName || `${traderAddress.slice(0, 6)}…${traderAddress.slice(-4)}`}
-        </span>
-      </div>
+      <Breadcrumbs separator="/" sx={{ mb: 1 }}>
+        <Link component={RouterLink} to="/marketplace" color="inherit" underline="hover" sx={{ fontSize: '0.875rem' }}>
+          Marketplace
+        </Link>
+        <Typography variant="body2" color="text.primary">
+          {traderName || shortAddr(traderAddress)}
+        </Typography>
+      </Breadcrumbs>
 
       {/* Header */}
-      <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-3">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-bold text-white">{traderName || 'Unknown Trader'}</h1>
-            <p className="text-xs font-mono text-gray-500 mt-0.5">{traderAddress}</p>
-          </div>
+      <Card sx={{ p: 3 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 2 }}>
+          <Box>
+            <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
+              {traderName || 'Unknown Trader'}
+            </Typography>
+            <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary', display: 'block', mt: 0.5 }}>
+              {traderAddress}
+            </Typography>
+          </Box>
           {stakeData && (
-            <div className="flex flex-col items-end gap-1 shrink-0">
-              <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold border ${
-                stakeData.reputation >= 80n ? 'bg-emerald-900 border-emerald-700 text-emerald-300'
-                : stakeData.reputation >= 60n ? 'bg-yellow-900/60 border-yellow-700 text-yellow-300'
-                : 'bg-red-900/60 border-red-800 text-red-300'
-              }`}>
-                ◆ {String(stakeData.reputation)} rep
-              </span>
-              <span className="text-xs text-gray-500 font-mono">
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5 }}>
+              <Chip
+                label={`◆ ${String(stakeData.reputation)} rep`}
+                size="small"
+                sx={{
+                  fontWeight: 'bold',
+                  ...(stakeData.reputation >= 80n ? { bgcolor: 'rgba(34, 197, 94, 0.16)', color: '#22c55e', border: '1px solid', borderColor: 'rgba(34, 197, 94, 0.24)' }
+                    : stakeData.reputation >= 60n ? { bgcolor: 'rgba(255, 171, 0, 0.16)', color: '#ffab00', border: '1px solid', borderColor: 'rgba(255, 171, 0, 0.24)' }
+                    : { bgcolor: 'rgba(255, 86, 48, 0.16)', color: '#ff5630', border: '1px solid', borderColor: 'rgba(255, 86, 48, 0.24)' }
+                  )
+                }}
+              />
+              <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
                 {(Number(stakeData.stake) / 1e18).toFixed(0)} mUSDC staked
-              </span>
-            </div>
+              </Typography>
+            </Box>
           )}
-        </div>
+        </Box>
         {!loadError && traderName !== '' && !traderRegistered && (
-          <p className="text-xs text-yellow-400 font-medium">
+          <Typography variant="caption" color="warning.main" sx={{ display: 'block', mt: 2, fontWeight: 'bold' }}>
             ⚠ This address is not registered as a trader.
-          </p>
+          </Typography>
         )}
-      </div>
+      </Card>
 
       {/* Strategy allocations */}
-      <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-4">
-        <h2 className="text-base font-bold text-white">Latest Strategy</h2>
+      <Card sx={{ p: 3 }}>
+        <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 2 }}>
+          Latest Strategy
+        </Typography>
 
         {stratAllocs.length === 0 ? (
-          <p className="text-sm text-gray-600">No strategy published yet.</p>
+          <Typography color="text.secondary">No strategy published yet.</Typography>
         ) : (
-          <div className="flex flex-wrap gap-2">
+          <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
             {stratAllocs.map((a, i) => (
-              <span
+              <Chip
                 key={i}
-                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium border ${
-                  a.isLong
-                    ? 'bg-green-950 border-green-800 text-green-300'
-                    : 'bg-red-950  border-red-800  text-red-300'
-                }`}
-              >
-                {a.isLong ? '↑' : '↓'}
-                {ASSET_LABEL[a.asset] ?? '?'}
-                <span className="text-xs opacity-70">
-                  {(Number(a.weight) / 100).toFixed(0)}% · {String(a.leverage)}×
-                </span>
-              </span>
+                label={`${a.isLong ? '↑' : '↓'} ${ASSET_LABEL[a.asset] ?? '?'} ${(Number(a.weight) / 100).toFixed(0)}% · ${String(a.leverage)}×`}
+                size="small"
+                sx={{
+                  fontWeight: 'bold',
+                  ...(a.isLong
+                    ? { bgcolor: 'rgba(34, 197, 94, 0.16)', color: '#22c55e', border: '1px solid', borderColor: 'rgba(34, 197, 94, 0.24)' }
+                    : { bgcolor: 'rgba(255, 86, 48, 0.16)', color: '#ff5630', border: '1px solid', borderColor: 'rgba(255, 86, 48, 0.24)' }
+                  )
+                }}
+              />
             ))}
-          </div>
+          </Stack>
         )}
-      </div>
+      </Card>
 
       {/* Strategy ESG composite */}
       {stratAllocs.length > 0 && (() => {
@@ -342,255 +364,271 @@ export default function CopyPage() {
         const composite = Math.round(wavg / totalW)
         const rating    = composite >= 80 ? 'AAA' : composite >= 70 ? 'AA' : composite >= 60 ? 'A' : composite >= 50 ? 'BBB' : 'CCC'
         const tierName  = composite >= 80 ? 'ESG Champion' : composite >= 60 ? 'ESG Aware' : 'Consider greener assets'
-        const tierColor = composite >= 80 ? 'text-emerald-300' : composite >= 60 ? 'text-lime-300' : 'text-yellow-400'
+        const tierColorHex = composite >= 80 ? '#22c55e' : composite >= 60 ? '#c0ca33' : '#ffab00'
         return (
-          <div className="rounded-card border border-surface-border bg-surface shadow-card p-4 flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-base">🌱</span>
-              <div>
-                <p className="text-xs text-gray-500 font-medium">Strategy ESG Score</p>
-                <p className={`text-sm font-bold ${tierColor}`}>{tierName}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 ml-auto">
+          <Card sx={{ p: 2.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Typography variant="h5">🌱</Typography>
+              <Box>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 'bold' }}>
+                  Strategy ESG Score
+                </Typography>
+                <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: tierColorHex }}>
+                  {tierName}
+                </Typography>
+              </Box>
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, ml: 'auto' }}>
               <ESGBadge composite={composite} rating={rating} size="md" />
-              <span className={`text-xl font-extrabold font-mono ${tierColor}`}>{composite}</span>
-            </div>
-            <Link
-              to="/esg"
-              className="text-xs text-gray-600 hover:text-emerald-400 transition-colors shrink-0"
-            >
-              詳情 →
-            </Link>
-          </div>
+              <Typography variant="h5" sx={{ fontWeight: 'extrabold', fontFamily: 'monospace', color: tierColorHex }}>
+                {composite}
+              </Typography>
+              <Button
+                component={RouterLink}
+                to="/esg"
+                variant="text"
+                size="small"
+                sx={{ textTransform: 'none' }}
+              >
+                Details →
+              </Button>
+            </Box>
+          </Card>
         )
       })()}
 
       {/* Total margin input */}
-      <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-3">
-        <h2 className="text-base font-bold text-white">Copy Amount</h2>
-        <div className="flex gap-3 items-center">
-          <input
+      <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+        <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+          Copy Amount
+        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+          <TextField
             type="number"
-            min="0"
+            size="small"
             placeholder="1000"
             value={totalMargin}
             disabled={!hasStrategy}
             onChange={e => setTotalMargin(e.target.value)}
-            className="w-48 rounded-lg bg-gray-800 border border-gray-600 px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed"
+            slotProps={{ htmlInput: { min: "0", style: { fontFamily: 'monospace' } } }}
+            sx={{ width: 200 }}
           />
-          <span className="text-sm text-gray-400">mUSDC total margin</span>
+          <Typography variant="body2" color="text.secondary">
+            mUSDC total margin
+          </Typography>
           {!hasStrategy && (
-            <span className="text-xs text-gray-600 italic">disabled — no strategy</span>
+            <Typography variant="caption" color="text.disabled" sx={{ fontStyle: 'italic' }}>
+              disabled — no strategy
+            </Typography>
           )}
-        </div>
+        </Box>
 
         {preview && totalBig > 0n && (
-          <div className="rounded-md bg-gray-900 border border-surface-border p-3 mt-2 space-y-1 text-xs">
-            <div className="flex justify-between text-gray-400">
-              <span>Total deposit:</span>
-              <span className="font-mono text-white">{f18(totalBig)} mUSDC</span>
-            </div>
-            <div className="flex justify-between text-gray-400">
-              <span>− Copy fee (0.3%):</span>
-              <span className="font-mono text-red-400">-{f18(preview.copyFee)} mUSDC</span>
-            </div>
-            <div className="flex justify-between text-gray-400">
-              <span>− Trading fee buffer:</span>
-              <span className="font-mono text-red-400">-{f18(preview.totalTradingFee)} mUSDC</span>
-            </div>
-            <div className="flex justify-between text-gray-300 font-semibold border-t border-gray-800 pt-1.5 mt-1">
-              <span>Effective margin:</span>
-              <span className="font-mono text-emerald-400">{f18(preview.marginForPositions)} mUSDC</span>
-            </div>
-          </div>
+          <Card sx={{ p: 2, bgcolor: 'background.neutral' }}>
+            <Stack spacing={1} sx={{ typography: 'caption' }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.secondary' }}>
+                <Box>Total deposit:</Box>
+                <Box sx={{ fontFamily: 'monospace', color: 'text.primary', fontWeight: 'semibold' }}>{f18(totalBig)} mUSDC</Box>
+              </Box>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.secondary' }}>
+                <Box>− Copy fee (0.3%):</Box>
+                <Box sx={{ fontFamily: 'monospace', color: 'error.main', fontWeight: 'semibold' }}>-{f18(preview.copyFee)} mUSDC</Box>
+              </Box>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.secondary' }}>
+                <Box>− Trading fee buffer:</Box>
+                <Box sx={{ fontFamily: 'monospace', color: 'error.main', fontWeight: 'semibold' }}>-{f18(preview.totalTradingFee)} mUSDC</Box>
+              </Box>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.primary', fontWeight: 'bold', borderTop: '1px solid', borderColor: 'divider', pt: 1, mt: 0.5 }}>
+                <Box>Effective margin:</Box>
+                <Box sx={{ fontFamily: 'monospace', color: 'success.main' }}>{f18(preview.marginForPositions)} mUSDC</Box>
+              </Box>
+            </Stack>
+          </Card>
         )}
 
         {previewRows.length > 0 && totalBig > 0n && (
-          <div className="overflow-x-auto mt-2">
-            <table className="w-full text-sm text-left">
-              <thead>
-                <tr className="text-xs text-gray-500 uppercase border-b border-surface-border">
-                  <th className="py-2 pr-4 font-medium">Asset</th>
-                  <th className="py-2 pr-4 font-medium">Side</th>
-                  <th className="py-2 pr-4 font-medium">Lev</th>
-                  <th className="py-2 pr-4 font-medium">Weight</th>
-                  <th className="py-2 pr-4 font-medium text-right">Margin</th>
-                  <th className="py-2 pr-4 font-medium text-right">Notional</th>
-                  <th className="py-2 font-medium text-right">Est. Entry</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-surface-border">
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  {['Asset', 'Side', 'Lev', 'Weight', 'Margin', 'Notional', 'Est. Entry'].map(h => (
+                    <TableCell key={h} sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{h}</TableCell>
+                  ))}
+                </TableRow>
+              </TableHead>
+              <TableBody>
                 {previewRows.map((row, i) => (
-                  <tr key={i} className="text-gray-300">
-                    <td className="py-2.5 pr-4 font-mono text-white font-medium">
+                  <TableRow key={i}>
+                    <TableCell sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: 'text.primary' }}>
                       {ASSET_LABEL[row.asset] ?? '?'}
-                    </td>
-                    <td className={`py-2.5 pr-4 font-bold text-xs ${row.isLong ? 'text-green-400' : 'text-red-400'}`}>
+                    </TableCell>
+                    <TableCell sx={{ fontWeight: 'bold', color: row.isLong ? 'success.main' : 'error.main' }}>
                       {row.isLong ? 'LONG ↑' : 'SHORT ↓'}
-                    </td>
-                    <td className="py-2.5 pr-4 font-mono">{String(row.leverage)}×</td>
-                    <td className="py-2.5 pr-4 font-mono">{(Number(row.weight) / 100).toFixed(0)}%</td>
-                    <td className="py-2.5 pr-4 font-mono text-right">
+                    </TableCell>
+                    <TableCell sx={{ fontFamily: 'monospace' }}>{String(row.leverage)}×</TableCell>
+                    <TableCell sx={{ fontFamily: 'monospace' }}>{(Number(row.weight) / 100).toFixed(0)}%</TableCell>
+                    <TableCell sx={{ fontFamily: 'monospace' }} align="right">
                       {preview && preview.portions[i] !== undefined
                         ? f18(preview.portions[i])
                         : f18(row.margin)}
-                    </td>
-                    <td className="py-2.5 pr-4 font-mono text-right">{f18(row.notional)}</td>
-                    <td className="py-2.5 font-mono text-right">{fUsd(row.entryPrice)}</td>
-                  </tr>
+                    </TableCell>
+                    <TableCell sx={{ fontFamily: 'monospace' }} align="right">{f18(row.notional)}</TableCell>
+                    <TableCell sx={{ fontFamily: 'monospace' }} align="right">{fUsd(row.entryPrice)}</TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </TableBody>
+            </Table>
+          </TableContainer>
         )}
-      </div>
+      </Card>
 
       {/* Fee preview */}
       {totalBig > 0n && (
-        <div className="rounded-xl border border-yellow-900/50 bg-yellow-950/20 p-4 space-y-1 text-sm">
-          <p className="text-yellow-400 font-semibold text-xs uppercase tracking-wide">Fee Preview</p>
-          <div className="flex justify-between text-gray-300">
-            <span>Copy fee (0.3%)</span>
-            <span className="font-mono">−{f18(feeBig, 4)} mUSDC</span>
-          </div>
-          <div className="flex justify-between text-gray-300">
-            <span>Net margin deposited</span>
-            <span className="font-mono font-semibold text-white">{f18(netBig)} mUSDC</span>
-          </div>
-          <div className="flex justify-between text-gray-300 mt-2 pt-2 border-t border-yellow-900/30">
-            <span>Execution Fee (ETH)</span>
-            <span className="font-mono font-semibold text-brand-300">{(stratAllocs.length * 0.001).toFixed(3)} ETH</span>
-          </div>
-          <p className="text-xs text-gray-600 pt-1">
-            Copy fee is split 70% → trader · 20% → platform · 10% → slash pool. Execution fee pays Keeper bots.
-          </p>
-        </div>
+        <Card sx={{ p: 2.5, bgcolor: 'background.neutral', border: '1px solid', borderColor: 'divider' }}>
+          <Typography variant="overline" color="warning.main" sx={{ fontWeight: 'bold', display: 'block', mb: 1 }}>
+            Fee Preview
+          </Typography>
+          <Stack spacing={1} sx={{ typography: 'body2' }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.secondary' }}>
+              <Box>Copy fee (0.3%)</Box>
+              <Box sx={{ fontFamily: 'monospace' }}>−{f18(feeBig, 4)} mUSDC</Box>
+            </Box>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.secondary' }}>
+              <Box>Net margin deposited</Box>
+              <Box sx={{ fontFamily: 'monospace', color: 'text.primary', fontWeight: 'semibold' }}>{f18(netBig)} mUSDC</Box>
+            </Box>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.secondary', borderTop: '1px solid', borderColor: 'divider', pt: 1, mt: 1 }}>
+              <Box>Execution Fee (ETH)</Box>
+              <Box sx={{ fontFamily: 'monospace', color: 'primary.main', fontWeight: 'semibold' }}>{(stratAllocs.length * 0.001).toFixed(3)} ETH</Box>
+            </Box>
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+              Copy fee is split 70% → trader · 20% → platform · 10% → slash pool. Execution fee pays Keeper bots.
+            </Typography>
+          </Stack>
+        </Card>
       )}
 
       {/* Trader stake / risk summary */}
       {stakeData && (
-        <div className={`rounded-xl border p-4 space-y-3 text-sm ${
-          stakeData.totalSlashed > 0n
-            ? 'border-red-800/60 bg-red-950/20'
-            : 'border-surface-border bg-surface-elev/40'
-        }`}>
-          <p className="font-semibold text-white text-xs uppercase tracking-wide">
+        <Card sx={{ p: 3, border: '1px solid', borderColor: stakeData.totalSlashed > 0n ? 'error.main' : 'divider', bgcolor: 'background.neutral' }}>
+          <Typography variant="overline" sx={{ fontWeight: 'bold', display: 'block', mb: 1.5 }}>
             Trader Skin-in-the-Game
-          </p>
-          <div className="flex flex-wrap gap-4 text-gray-300">
-            <div>
-              <span className="text-xs text-gray-500 block">Staked</span>
-              <span className="font-mono font-semibold text-white">
-                {(Number(stakeData.stake) / 1e18).toFixed(0)}
-              </span>
-              <span className="text-xs text-gray-500 ml-1">mUSDC</span>
-            </div>
-            <div>
-              <span className="text-xs text-gray-500 block">Reputation</span>
-              <span className={`font-mono font-semibold ${
-                stakeData.reputation >= 80n ? 'text-emerald-400'
-                : stakeData.reputation >= 60n ? 'text-yellow-400'
-                : 'text-red-400'
-              }`}>{String(stakeData.reputation)}</span>
-              <span className="text-xs text-gray-500 ml-1">pts</span>
-            </div>
-            <div>
-              <span className="text-xs text-gray-500 block">Total Slashed</span>
-              <span className={`font-mono font-semibold ${stakeData.totalSlashed > 0n ? 'text-danger' : 'text-white'}`}>
-                {(Number(stakeData.totalSlashed) / 1e18).toFixed(0)}
-              </span>
-              <span className="text-xs text-gray-500 ml-1">mUSDC</span>
-            </div>
-          </div>
+          </Typography>
+          <Grid container spacing={3}>
+            <Grid size={{ xs: 4 }}>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>Staked</Typography>
+              <Typography variant="h6" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
+                {(Number(stakeData.stake) / 1e18).toFixed(0)} <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary' }}>mUSDC</Box>
+              </Typography>
+            </Grid>
+            <Grid size={{ xs: 4 }}>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>Reputation</Typography>
+              <Typography variant="h6" sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: stakeData.reputation >= 80n ? 'success.main' : stakeData.reputation >= 60n ? 'warning.main' : 'error.main' }}>
+                {String(stakeData.reputation)} <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary' }}>pts</Box>
+              </Typography>
+            </Grid>
+            <Grid size={{ xs: 4 }}>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>Total Slashed</Typography>
+              <Typography variant="h6" sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: stakeData.totalSlashed > 0n ? 'error.main' : 'text.primary' }}>
+                {(Number(stakeData.totalSlashed) / 1e18).toFixed(0)} <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary' }}>mUSDC</Box>
+              </Typography>
+            </Grid>
+          </Grid>
           {stakeData.totalSlashed > 0n && (
-            <p className="text-xs text-red-400 font-medium">
+            <Typography variant="caption" color="error.main" sx={{ display: 'block', mt: 2, fontWeight: 'semibold' }}>
               ⚠ This trader has had {(Number(stakeData.totalSlashed) / 1e18).toFixed(0)} mUSDC slashed for causing excessive losses to followers. Proceed with caution.
-            </p>
+            </Typography>
           )}
           {stakeData.stake === 0n && (
-            <p className="text-xs text-yellow-400 font-medium">
+            <Typography variant="caption" color="warning.main" sx={{ display: 'block', mt: 2, fontWeight: 'semibold' }}>
               ⚠ This trader has no stake — they have no skin-in-the-game. You cannot trigger slashing if they cause losses.
-            </p>
+            </Typography>
           )}
-          <p className="text-xs text-gray-600">
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
             ⚠ If your loss exceeds 30%, this trader's stake will be slashed (50% of loss, capped at 50% of stake) and transferred to you as compensation.
-          </p>
-        </div>
+          </Typography>
+        </Card>
       )}
 
       {/* Two-stage action */}
-      <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-4">
-        <h2 className="text-base font-bold text-white">Confirm Copy</h2>
+      <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+        <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+          Confirm Copy
+        </Typography>
 
-        <div className="flex items-center gap-1 text-xs text-gray-500 mb-2">
-          <span className={`w-5 h-5 rounded-full flex items-center justify-center text-white font-bold text-xs ${
-            approved ? 'bg-emerald-700' : 'bg-gray-700'
-          }`}>
-            {approved ? '✓' : '1'}
-          </span>
-          <span className={approved ? 'text-emerald-400' : 'text-gray-400'}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+          <Chip
+            label={approved ? '✓' : '1'}
+            size="small"
+            color={approved ? 'success' : 'default'}
+            sx={{ fontWeight: 'bold' }}
+          />
+          <Typography variant="body2" color={approved ? 'success.main' : 'text.secondary'}>
             Approve mUSDC to CopyTracker
-          </span>
-          <span className="mx-2 text-gray-700">→</span>
-          <span className={`w-5 h-5 rounded-full flex items-center justify-center text-white font-bold text-xs ${
-            approved ? 'bg-gray-600' : 'bg-gray-800'
-          }`}>
-            2
-          </span>
-          <span className="text-gray-400">Follow Trader</span>
-        </div>
+          </Typography>
+          <Typography variant="body2" color="text.disabled" sx={{ mx: 1 }}>→</Typography>
+          <Chip
+            label="2"
+            size="small"
+            color={approved ? 'default' : 'primary'}
+            sx={{ fontWeight: 'bold' }}
+          />
+          <Typography variant="body2" color="text.secondary">
+            Follow Trader
+          </Typography>
+        </Box>
 
         {kycBlocked && (
-          <div className="rounded-lg border border-orange-700/40 bg-orange-900/20 px-4 py-3 text-sm text-orange-300 flex items-center justify-between gap-4">
-            <span>
-              🔒 此策略包含股票 / 債券資產，需要完成 KYC 驗證才能跟單。
-            </span>
-            <button
+          <Alert severity="warning" action={
+            <Button
+              color="inherit"
+              size="small"
               onClick={() => setShowKYCModal(true)}
-              className="shrink-0 px-3 py-1.5 rounded-lg bg-orange-700 hover:bg-orange-600 text-white text-xs font-bold transition-colors"
+              sx={{ fontWeight: 'bold' }}
             >
               完成 KYC
-            </button>
-          </div>
+            </Button>
+          }>
+            🔒 此策略包含股票 / 債券資產，需要完成 KYC 驗證才能跟單。
+          </Alert>
         )}
 
-        <div className="flex gap-3">
-          <button
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          <Button
+            variant={approved ? 'contained' : 'outlined'}
+            color={approved ? 'success' : 'inherit'}
             onClick={() => void doApprove()}
             disabled={approved || busy['approve'] || !totalMargin || !hasStrategy || kycBlocked}
-            className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-colors ${
-              approved
-                ? 'bg-emerald-900 text-emerald-400 opacity-60 cursor-default'
-                : 'bg-gray-700 hover:bg-gray-600 disabled:opacity-40 text-white'
-            }`}
+            sx={{ flexGrow: 1 }}
           >
-            {busy['approve'] ? 'Approving…' : approved ? '✓ Approved' : 'Step 1 · Approve'}
-          </button>
+            {busy['approve'] ? 'Approving…' : approved ? 'Approved' : 'Step 1 · Approve'}
+          </Button>
 
-          <button
+          <Button
+            variant="contained"
+            color="primary"
             onClick={() => void doFollow()}
             disabled={
               !hasStrategy || !approved || busy['follow'] || stratAllocs.length === 0 ||
               (preview !== null && preview.marginForPositions === 0n) ||
               kycBlocked
             }
-            className="flex-1 py-2.5 rounded-lg bg-brand-200 hover:bg-brand-300 disabled:opacity-40 text-white text-sm font-bold transition-colors"
+            sx={{ flexGrow: 1 }}
           >
             {busy['follow'] ? 'Following…' : 'Step 2 · Follow Trader'}
-          </button>
-        </div>
+          </Button>
+        </Box>
 
         {!hasStrategy && (
-          <p className="text-xs text-yellow-500 text-center font-medium">
+          <Typography variant="caption" color="warning.main" sx={{ textAlign: 'center', fontWeight: 'bold', display: 'block' }}>
             ⚠ Trader has no published strategy. Copy is disabled.
-          </p>
+          </Typography>
         )}
 
-        <p className="text-xs text-gray-600 text-center">
+        <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center', display: 'block' }}>
           Your margin will be automatically split and deposited into positions according to the strategy above.
-        </p>
-      </div>
+        </Typography>
+      </Card>
 
       {/* KYC Modal */}
       <KYCModal
@@ -599,6 +637,6 @@ export default function CopyPage() {
         onSuccess={() => { refetchKYC(); setShowKYCModal(false) }}
         kycRegistry={contracts?.kycRegistry ?? null}
       />
-    </div>
+    </Container>
   )
 }

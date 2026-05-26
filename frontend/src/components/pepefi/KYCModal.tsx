@@ -1,6 +1,20 @@
-import { useState } from 'react'
-import type { Contract } from 'ethers'
-import { prettyError } from 'src/lib/pepefi/errorMessages'
+import { useState } from 'react';
+import type { Contract } from 'ethers';
+import { prettyError } from 'src/lib/pepefi/errorMessages';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
+import Button from '@mui/material/Button';
+import TextField from '@mui/material/TextField';
+import FormControl from '@mui/material/FormControl';
+import Select from '@mui/material/Select';
+import MenuItem from '@mui/material/MenuItem';
+import InputLabel from '@mui/material/InputLabel';
+import Alert from '@mui/material/Alert';
+import Box from '@mui/material/Box';
+import Typography from '@mui/material/Typography';
+import IconButton from '@mui/material/IconButton';
 
 const COUNTRIES = [
   'TW', 'US', 'JP', 'KR', 'HK', 'SG', 'GB', 'DE', 'FR', 'CA',
@@ -20,115 +34,149 @@ const COUNTRY_NAMES: Record<string, string> = {
 }
 
 interface Props {
-  isOpen:      boolean
-  onClose:     () => void
-  onSuccess:   () => void
-  kycRegistry: Contract | null
+  isOpen:      boolean;
+  onClose:     () => void;
+  onSuccess:   () => void;
+  kycRegistry: Contract | null;
 }
 
 type TxResp = { wait(): Promise<unknown>; hash: string }
 const asTx = (tx: unknown): TxResp => tx as TxResp
 
 export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry }: Props) {
-  const [fullName,    setFullName]    = useState('')
-  const [nationality, setNationality] = useState('TW')
-  const [busy,        setBusy]        = useState(false)
-  const [error,       setError]       = useState<string | null>(null)
-
-  if (!isOpen) return null
+  const [fullName,    setFullName]    = useState('');
+  const [nationality, setNationality] = useState('TW');
+  const [busy,        setBusy]        = useState(false);
+  const [error,       setError]       = useState<string | null>(null);
 
   const handleSubmit = async () => {
-    if (!kycRegistry) return
-    if (!fullName.trim()) { setError('請輸入姓名'); return }
-    setBusy(true)
-    setError(null)
+    if (!kycRegistry) return;
+    if (!fullName.trim()) { setError('請輸入姓名'); return; }
+    setBusy(true);
+    setError(null);
     try {
-      const tx = asTx(await kycRegistry.submitKYC(fullName.trim(), nationality))
-      await tx.wait()
-      onSuccess()
-      onClose()
+      const tx = asTx(await kycRegistry.submitKYC(fullName.trim(), nationality));
+      await tx.wait();
+      onSuccess();
+      onClose();
     } catch (e) {
-      setError(prettyError(e))
+      setError(prettyError(e));
     } finally {
-      setBusy(false)
+      setBusy(false);
     }
-  }
+  };
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-sm">
-      <div className="bg-surface-sub border border-surface-border rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl space-y-5">
+    <Dialog
+      open={isOpen}
+      onClose={onClose}
+      maxWidth="xs"
+      fullWidth
+      PaperProps={{
+        sx: {
+          borderRadius: 2,
+          p: 1.5,
+          bgcolor: 'background.paper',
+          backgroundImage: 'none',
+        },
+      }}
+    >
+      <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', pb: 1 }}>
+        <Box>
+          <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+            KYC 身分驗證
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            交易股票 / 債券類合成資產需要完成 KYC
+          </Typography>
+        </Box>
+        <IconButton size="small" onClick={onClose} sx={{ color: 'text.secondary', p: 0.5 }}>
+          <Box sx={{ fontSize: '0.875rem', lineHeight: 1 }}>✕</Box>
+        </IconButton>
+      </DialogTitle>
 
-        {/* Header */}
-        <div className="flex items-start justify-between">
-          <div>
-            <h2 className="text-lg font-bold text-white">KYC 身分驗證</h2>
-            <p className="text-xs text-gray-400 mt-0.5">交易股票 / 債券類合成資產需要完成 KYC</p>
-          </div>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-white transition-colors text-xl leading-none"
-            aria-label="Close"
-          >
-            ✕
-          </button>
-        </div>
-
+      <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, pt: 1 }}>
         {/* Demo disclaimer */}
-        <div className="rounded-lg bg-yellow-900/20 border border-yellow-700/40 px-4 py-3 text-xs text-yellow-300 space-y-1">
-          <p className="font-semibold">Demo KYC — 不會儲存真實個資</p>
-          <p className="text-yellow-400/80">
+        <Alert
+          severity="warning"
+          variant="outlined"
+          sx={{
+            bgcolor: 'rgba(255, 171, 0, 0.08)',
+            borderColor: 'rgba(255, 171, 0, 0.24)',
+            color: 'warning.main',
+            '& .MuiAlert-icon': { color: 'warning.main' },
+          }}
+        >
+          <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+            Demo KYC — 不會儲存真實個資
+          </Typography>
+          <Typography variant="caption" display="block" sx={{ opacity: 0.9 }}>
             此為學術展示系統。填入的姓名與國籍僅儲存在智能合約上作為 PoC 示範，請勿填入真實個人資訊。
-          </p>
-        </div>
+          </Typography>
+        </Alert>
 
         {/* Form */}
-        <div className="space-y-4">
-          <div className="space-y-1">
-            <label className="text-xs text-gray-400 uppercase tracking-wide">姓名（示範用）</label>
-            <input
-              type="text"
-              placeholder="e.g. Demo User"
-              value={fullName}
-              onChange={e => setFullName(e.target.value)}
-              className="w-full rounded-lg bg-gray-800 border border-gray-600 px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-brand-300"
-            />
-          </div>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <TextField
+            label="姓名（示範用）"
+            placeholder="e.g. Demo User"
+            fullWidth
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            disabled={busy}
+            slotProps={{
+              inputLabel: { shrink: true },
+            }}
+          />
 
-          <div className="space-y-1">
-            <label className="text-xs text-gray-400 uppercase tracking-wide">國籍</label>
-            <select
+          <FormControl fullWidth>
+            <InputLabel id="nationality-select-label" shrink>國籍</InputLabel>
+            <Select
+              labelId="nationality-select-label"
               value={nationality}
-              onChange={e => setNationality(e.target.value)}
-              className="w-full rounded-lg bg-gray-800 border border-gray-600 px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-300"
+              onChange={(e) => setNationality(e.target.value)}
+              disabled={busy}
+              label="國籍"
+              notched
             >
-              {COUNTRIES.map(c => (
-                <option key={c} value={c}>{c} — {COUNTRY_NAMES[c] ?? c}</option>
+              {COUNTRIES.map((c) => (
+                <MenuItem key={c} value={c}>
+                  {c} — {COUNTRY_NAMES[c] ?? c}
+                </MenuItem>
               ))}
-            </select>
-          </div>
-        </div>
+            </Select>
+          </FormControl>
+        </Box>
 
         {error && (
-          <p className="text-xs text-red-400 font-medium">{error}</p>
+          <Alert severity="error" sx={{ py: 0 }}>
+            {error}
+          </Alert>
         )}
+      </DialogContent>
 
-        {/* Actions */}
-        <div className="flex gap-3">
-          <button
-            onClick={onClose}
-            className="flex-1 py-2.5 rounded-lg bg-gray-700 hover:bg-gray-600 text-white text-sm font-medium transition-colors"
-          >
-            取消
-          </button>
-          <button
-            onClick={() => void handleSubmit()}
-            disabled={busy || !fullName.trim() || !kycRegistry}
-            className="flex-1 py-2.5 rounded-lg bg-brand-200 hover:bg-brand-300 disabled:opacity-40 text-white text-sm font-bold transition-colors"
-          >
-            {busy ? '提交中…' : '完成 KYC 驗證'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
+      <DialogActions sx={{ px: 3, pb: 2, gap: 1.5 }}>
+        <Button
+          variant="outlined"
+          color="inherit"
+          onClick={onClose}
+          disabled={busy}
+          fullWidth
+          sx={{ py: 1.2 }}
+        >
+          取消
+        </Button>
+        <Button
+          variant="contained"
+          color="primary"
+          onClick={() => void handleSubmit()}
+          disabled={busy || !fullName.trim() || !kycRegistry}
+          fullWidth
+          sx={{ py: 1.2, fontWeight: 'bold' }}
+        >
+          {busy ? '提交中…' : '完成 KYC 驗證'}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
 }

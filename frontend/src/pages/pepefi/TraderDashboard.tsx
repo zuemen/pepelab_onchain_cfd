@@ -1,11 +1,32 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Link } from 'react-router'
+import { Link as RouterLink } from 'react-router'
 import { useContracts } from 'src/hooks/useContracts'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { ASSET_IDS } from 'src/contracts/addresses'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { TableSkeleton } from 'src/components/pepefi/Skeleton'
 import { ASSETS_LIST, ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
+
+import Box from '@mui/material/Box';
+import Container from '@mui/material/Container';
+import Typography from '@mui/material/Typography';
+import Card from '@mui/material/Card';
+import Grid from '@mui/material/Grid';
+import Stack from '@mui/material/Stack';
+import Button from '@mui/material/Button';
+import TextField from '@mui/material/TextField';
+import Snackbar from '@mui/material/Snackbar';
+import Alert from '@mui/material/Alert';
+import Link from '@mui/material/Link';
+import TableContainer from '@mui/material/TableContainer';
+import Table from '@mui/material/Table';
+import TableHead from '@mui/material/TableHead';
+import TableBody from '@mui/material/TableBody';
+import TableRow from '@mui/material/TableRow';
+import TableCell from '@mui/material/TableCell';
+import Select from '@mui/material/Select';
+import MenuItem from '@mui/material/MenuItem';
+import Chip from '@mui/material/Chip';
 
 // ── Config ─────────────────────────────────────────────────────────────────
 type AssetId = `0x${string}`
@@ -235,339 +256,434 @@ export default function TraderDashboard() {
       prev.map(v => v.versionId === versionId ? { ...v, expanded: !v.expanded } : v),
     )
 
-  // ── Guard ─────────────────────────────────────────────────────────────────
   if (!wallet.isConnected) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh] text-gray-400">
-        Connect wallet to access Trader Dashboard.
-      </div>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+        <Typography color="text.secondary">Connect wallet to access Trader Dashboard.</Typography>
+      </Box>
     )
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
+    <Container maxWidth="md" sx={{ py: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
 
-      {/* Toast */}
-      {toast && (
-        <div
-          className={`fixed top-4 right-4 z-50 rounded-lg px-5 py-3 text-sm font-medium shadow-xl ${
-            toast.ok ? 'bg-emerald-800 text-emerald-100' : 'bg-red-900 text-red-100'
-          }`}
-        >
-          {toast.msg}
-          {toast.hash && wallet.chainId === 11155111 && (
-            <a
-              href={`https://sepolia.etherscan.io/tx/${toast.hash}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block mt-1 text-xs underline opacity-80 hover:opacity-100"
-            >
-              View on Etherscan ↗
-            </a>
-          )}
-        </div>
-      )}
+      {/* Snackbar notification */}
+      <Snackbar
+        open={!!toast}
+        autoHideDuration={6000}
+        onClose={() => setToast(null)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+      >
+        {toast ? (
+          <Alert
+            severity={toast.ok ? 'success' : 'error'}
+            onClose={() => setToast(null)}
+            sx={{ width: '100%' }}
+          >
+            {toast.msg}
+            {toast.hash && wallet.chainId === 11155111 && (
+              <Link
+                href={`https://sepolia.etherscan.io/tx/${toast.hash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                color="inherit"
+                sx={{ display: 'block', mt: 0.5, typography: 'caption', textDecoration: 'underline' }}
+              >
+                View on Etherscan ↗
+              </Link>
+            )}
+          </Alert>
+        ) : undefined}
+      </Snackbar>
 
       {/* ─── A. Register ────────────────────────────────────────────────── */}
-      <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-4">
-        <h2 className="text-base font-bold text-white">Register Trader</h2>
+      <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+          Register Trader
+        </Typography>
 
         {traderInfo?.isRegistered ? (
-          <div className="flex items-center gap-3">
-            <span className="inline-flex items-center gap-2 rounded-full bg-emerald-900 border border-emerald-700 px-4 py-1.5 text-sm font-semibold text-emerald-300">
-              ✓ {traderInfo.displayName}
-            </span>
-            <span className="text-xs text-gray-500">Registered as public trader</span>
-          </div>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+            <Chip
+              label={`✓ ${traderInfo.displayName}`}
+              color="success"
+              sx={{ fontWeight: 'bold' }}
+            />
+            <Typography variant="caption" color="text.secondary">
+              Registered as public trader
+            </Typography>
+          </Box>
         ) : (
-          <div className="flex gap-2">
-            <input
-              type="text"
+          <Box sx={{ display: 'flex', gap: 1.5 }}>
+            <TextField
               placeholder="Display name (e.g. AlphaTrader)"
               value={nameInput}
               onChange={e => setNameInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') void doRegister() }}
-              className="flex-1 rounded-lg bg-gray-800 border border-gray-600 px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500"
+              size="small"
+              sx={{ flexGrow: 1 }}
             />
-            <button
+            <Button
+              variant="contained"
               onClick={() => void doRegister()}
               disabled={busy['register'] || !nameInput.trim()}
-              className="px-4 py-2 rounded-lg bg-brand-200 hover:bg-brand-300 disabled:opacity-50 text-white text-sm font-semibold transition-colors"
             >
               {busy['register'] ? '…' : 'Register'}
-            </button>
-          </div>
+            </Button>
+          </Box>
         )}
-      </div>
+      </Card>
 
       {/* ─── B. Publish Strategy ──────────────────────────────────────── */}
-      <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-bold text-white">Publish Strategy</h2>
-          <button onClick={addRow} className="text-sm font-medium text-emerald-400 hover:text-emerald-300 transition-colors">
+      <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+            Publish Strategy
+          </Typography>
+          <Button
+            variant="text"
+            onClick={addRow}
+            sx={{ textTransform: 'none', fontWeight: 'bold' }}
+          >
             + Add Asset
-          </button>
-        </div>
+          </Button>
+        </Box>
 
         {eligible === false && (
-          <div className="rounded-lg border border-yellow-800/60 bg-yellow-950/20 px-4 py-3 flex items-start gap-3 text-sm">
-            <span className="text-yellow-400 text-base shrink-0">⚠</span>
-            <div className="space-y-1">
-              <p className="text-yellow-300 font-semibold">Stake required to publish</p>
-              <p className="text-xs text-gray-400">
-                You need to stake at least 100 mUSDC before publishing a strategy. This gives followers confidence that you have skin-in-the-game.
-              </p>
-              <Link
-                to="/stake"
-                className="inline-block mt-1 text-xs font-semibold text-brand-100 hover:underline"
-              >
-                Go to Trader Stake →
-              </Link>
-            </div>
-          </div>
+          <Alert severity="warning" action={
+            <Button
+              color="inherit"
+              size="small"
+              component={RouterLink}
+              to="/stake"
+              sx={{ fontWeight: 'bold' }}
+            >
+              Go to Trader Stake →
+            </Button>
+          }>
+            <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+              Stake required to publish
+            </Typography>
+            You need to stake at least 100 mUSDC before publishing a strategy. This gives followers confidence that you have skin-in-the-game.
+          </Alert>
         )}
 
         {rows.length === 0 ? (
-          <p className="text-sm text-gray-600 py-1">Click "+ Add Asset" to define allocations.</p>
+          <Typography color="text.secondary" sx={{ py: 1 }}>
+            Click "+ Add Asset" to define allocations.
+          </Typography>
         ) : (
           <>
-            <div className="grid grid-cols-[1fr_130px_110px_80px_36px] gap-2 text-xs text-gray-500 uppercase tracking-wide px-1">
-              <span>Asset</span>
-              <span>Direction</span>
-              <span>Leverage</span>
-              <span className="text-right">Weight %</span>
-              <span />
-            </div>
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ color: 'text.secondary', fontWeight: 'bold' }}>Asset</TableCell>
+                    <TableCell sx={{ color: 'text.secondary', fontWeight: 'bold' }}>Direction</TableCell>
+                    <TableCell sx={{ color: 'text.secondary', fontWeight: 'bold' }}>Leverage</TableCell>
+                    <TableCell align="right" sx={{ color: 'text.secondary', fontWeight: 'bold' }}>Weight %</TableCell>
+                    <TableCell />
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {rows.map(row => {
+                    const isDup = rows.filter(r => r.asset === row.asset).length > 1
+                    return (
+                      <TableRow key={row.uid} hover sx={{ opacity: isDup ? 0.8 : 1 }}>
+                        <TableCell sx={{ minWidth: 150 }}>
+                          <Select
+                            size="small"
+                            value={row.asset}
+                            onChange={e => updateRow(row.uid, { asset: e.target.value as AssetId })}
+                            error={isDup}
+                            fullWidth
+                          >
+                            {ASSETS.map(a => (
+                              <MenuItem key={a.id} value={a.id}>
+                                {a.regulated ? '🔒 ' : ''}{a.symbol}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </TableCell>
 
-            <div className="space-y-2">
-              {rows.map(row => {
-                const isDup = rows.filter(r => r.asset === row.asset).length > 1
-                return (
-                  <div
-                    key={row.uid}
-                    className={`grid grid-cols-[1fr_130px_110px_80px_36px] gap-2 items-center ${isDup ? 'opacity-80' : ''}`}
-                  >
-                    <select
-                      value={row.asset}
-                      onChange={e => updateRow(row.uid, { asset: e.target.value as AssetId })}
-                      className={`rounded-lg bg-gray-800 border px-3 py-2 text-sm text-white focus:outline-none ${
-                        isDup ? 'border-red-600' : 'border-gray-600'
-                      }`}
-                    >
-                      {ASSETS.map(a => (
-                        <option key={a.id} value={a.id}>
-                          {a.regulated ? '🔒 ' : ''}{a.symbol}
-                        </option>
-                      ))}
-                    </select>
+                        <TableCell sx={{ minWidth: 160 }}>
+                          <Box sx={{ display: 'flex', borderRadius: 1, border: '1px solid', borderColor: 'divider', overflow: 'hidden', height: 40 }}>
+                            <Button
+                              onClick={() => updateRow(row.uid, { isLong: true })}
+                              sx={{
+                                flexGrow: 1,
+                                borderRadius: 0,
+                                textTransform: 'none',
+                                fontWeight: 'bold',
+                                fontSize: '0.75rem',
+                                bgcolor: row.isLong ? 'success.main' : 'transparent',
+                                color: row.isLong ? 'success.contrastText' : 'text.secondary',
+                                '&:hover': { bgcolor: row.isLong ? 'success.dark' : 'action.hover' }
+                              }}
+                            >
+                              Long ↑
+                            </Button>
+                            <Button
+                              onClick={() => updateRow(row.uid, { isLong: false })}
+                              sx={{
+                                flexGrow: 1,
+                                borderRadius: 0,
+                                textTransform: 'none',
+                                fontWeight: 'bold',
+                                fontSize: '0.75rem',
+                                bgcolor: !row.isLong ? 'error.main' : 'transparent',
+                                color: !row.isLong ? 'error.contrastText' : 'text.secondary',
+                                '&:hover': { bgcolor: !row.isLong ? 'error.dark' : 'action.hover' }
+                              }}
+                            >
+                              Short ↓
+                            </Button>
+                          </Box>
+                        </TableCell>
 
-                    <div className="flex rounded-lg overflow-hidden border border-gray-600 h-[38px]">
-                      <button
-                        onClick={() => updateRow(row.uid, { isLong: true })}
-                        className={`flex-1 text-xs font-bold transition-colors ${
-                          row.isLong ? 'bg-green-700 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-                        }`}
-                      >Long ↑</button>
-                      <button
-                        onClick={() => updateRow(row.uid, { isLong: false })}
-                        className={`flex-1 text-xs font-bold transition-colors ${
-                          !row.isLong ? 'bg-red-700 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-                        }`}
-                      >Short ↓</button>
-                    </div>
+                        <TableCell sx={{ minWidth: 90 }}>
+                          <Select
+                            size="small"
+                            value={row.leverage}
+                            onChange={e => updateRow(row.uid, { leverage: Number(e.target.value) })}
+                            fullWidth
+                          >
+                            {[1, 2, 5].map(lv => (
+                              <MenuItem key={lv} value={lv}>{lv}×</MenuItem>
+                            ))}
+                          </Select>
+                        </TableCell>
 
-                    <select
-                      value={row.leverage}
-                      onChange={e => updateRow(row.uid, { leverage: Number(e.target.value) })}
-                      className="rounded-lg bg-gray-800 border border-gray-600 px-3 py-2 text-sm text-white focus:outline-none"
-                    >
-                      {[1, 2, 5].map(lv => (
-                        <option key={lv} value={lv}>{lv}×</option>
-                      ))}
-                    </select>
+                        <TableCell align="right" sx={{ minWidth: 100 }}>
+                          <TextField
+                            type="number"
+                            size="small"
+                            placeholder="0"
+                            value={row.weight}
+                            onChange={e => updateRow(row.uid, { weight: e.target.value })}
+                            slotProps={{ htmlInput: { min: "0", max: "100", step: "0.01", style: { textAlign: 'right', fontFamily: 'monospace' } } }}
+                          />
+                        </TableCell>
 
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.01"
-                      placeholder="0"
-                      value={row.weight}
-                      onChange={e => updateRow(row.uid, { weight: e.target.value })}
-                      className="rounded-lg bg-gray-800 border border-gray-600 px-2 py-2 text-sm text-white text-right focus:outline-none focus:border-yellow-500"
-                    />
+                        <TableCell align="right" sx={{ width: 40 }}>
+                          <Button
+                            color="error"
+                            onClick={() => removeRow(row.uid)}
+                            sx={{ minWidth: 0, p: 1, borderRadius: 1 }}
+                          >
+                            ×
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            </TableContainer>
 
-                    <button
-                      onClick={() => removeRow(row.uid)}
-                      aria-label="Remove row"
-                      className="h-[38px] w-9 rounded-lg bg-gray-800 hover:bg-red-900 text-gray-400 hover:text-red-300 text-xl transition-colors flex items-center justify-center leading-none"
-                    >×</button>
-                  </div>
-                )
-              })}
-            </div>
-
-            {/* Duplicate asset warning */}
             {hasDup && (
-              <p className="text-xs text-red-400">
+              <Typography variant="caption" color="error.main">
                 Each asset can only appear once per strategy. Remove the duplicate.
-              </p>
+              </Typography>
             )}
 
-            {/* Weight progress bar */}
-            <div className="flex items-center gap-3 pt-1">
-              <div className="flex-1 h-2 rounded-full bg-gray-800 overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all duration-300 ${weightOk ? 'bg-emerald-500' : 'bg-yellow-500'}`}
-                  style={{ width: `${Math.min(totalBps / 100, 100)}%` }}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <Box sx={{ flexGrow: 1, bgcolor: 'background.neutral', borderRadius: 1, height: 8, overflow: 'hidden' }}>
+                <Box
+                  sx={{
+                    bgcolor: weightOk ? 'success.main' : 'warning.main',
+                    height: '100%',
+                    borderRadius: 1,
+                    width: `${Math.min(totalBps / 100, 100)}%`,
+                    transition: 'width 0.3s'
+                  }}
                 />
-              </div>
-              <span className={`text-sm font-mono font-semibold tabular-nums w-16 text-right ${weightOk ? 'text-emerald-400' : 'text-yellow-400'}`}>
+              </Box>
+              <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: weightOk ? 'success.main' : 'warning.main', w: 60, textRight: 'right' }}>
                 {(totalBps / 100).toFixed(2)}%
-              </span>
+              </Typography>
               {!weightOk && (
-                <span className="text-xs text-gray-500 whitespace-nowrap">
-                  {totalBps > 10_000 ? 'exceeds' : 'must reach'} 100%
-                </span>
+                <Typography variant="caption" color="text.secondary">
+                  {totalBps > 10000 ? 'exceeds' : 'must reach'} 100%
+                </Typography>
               )}
-              {/* Auto-fix button — shown when close but not exact */}
-              {!weightOk && rows.length > 0 && totalBps > 9_000 && totalBps < 11_000 && (
-                <button
+              {!weightOk && rows.length > 0 && totalBps > 9000 && totalBps < 11000 && (
+                <Button
+                  size="small"
                   onClick={autoFix}
-                  className="text-xs text-emerald-400 hover:text-emerald-300 underline whitespace-nowrap"
+                  sx={{ textTransform: 'none', textDecoration: 'underline', color: 'success.main', minWidth: 0, p: 0 }}
                 >
                   Auto-fix to 100%
-                </button>
+                </Button>
               )}
-            </div>
+            </Box>
           </>
         )}
 
-        <button
+        <Button
+          variant="contained"
+          color="secondary"
           onClick={() => void doPublish()}
           disabled={busy['publish'] || !canPublish}
-          className="w-full py-2.5 rounded-lg bg-purple-700 hover:bg-purple-600 disabled:opacity-40 text-white text-sm font-bold transition-colors"
+          fullWidth
         >
           {busy['publish'] ? 'Publishing…' : 'Publish Strategy'}
-        </button>
+        </Button>
 
         {!traderInfo?.isRegistered && (
-          <p className="text-xs text-gray-500 text-center -mt-1">
+          <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center', display: 'block' }}>
             Register as a trader first to publish.
-          </p>
+          </Typography>
         )}
         {traderInfo?.isRegistered && eligible === false && (
-          <p className="text-xs text-gray-500 text-center -mt-1">
-            Stake ≥ 100 mUSDC on the <Link to="/stake" className="text-brand-100 hover:underline">Stake page</Link> to unlock publishing.
-          </p>
+          <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center', display: 'block' }}>
+            Stake ≥ 100 mUSDC on the <Link component={RouterLink} to="/stake" color="primary.main">Stake page</Link> to unlock publishing.
+          </Typography>
         )}
-      </div>
+      </Card>
 
       {/* ─── C. Fee Earnings ─────────────────────────────────────────── */}
-      <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-bold text-white">Fee Earnings</h2>
-          <button onClick={() => void fetchEarnings()} className="text-xs text-gray-500 hover:text-white transition-colors">
+      <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+            Fee Earnings
+          </Typography>
+          <Button
+            variant="text"
+            size="small"
+            onClick={() => void fetchEarnings()}
+            sx={{ textTransform: 'none' }}
+          >
             ↺ Refresh
-          </button>
-        </div>
+          </Button>
+        </Box>
 
-        <div className="flex items-center justify-between bg-surface-elev rounded-lg px-4 py-3">
-          <div>
-            <p className="text-xs text-gray-500">Claimable (copy + perf fees)</p>
-            <p className="text-2xl font-mono font-bold text-emerald-400">
+        <Card sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', bgcolor: 'background.neutral' }}>
+          <Box>
+            <Typography variant="caption" color="text.secondary">
+              Claimable (copy + perf fees)
+            </Typography>
+            <Typography variant="h5" color="success.main" sx={{ fontFamily: 'monospace', fontWeight: 'bold', display: 'flex', alignItems: 'baseline' }}>
               {earnings === null ? '…' : (Number(earnings) / 1e18).toFixed(4)}
-              <span className="text-sm font-normal text-gray-500 ml-1">mUSDC</span>
-            </p>
-          </div>
-          <button
+              <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary', ml: 0.5 }}>
+                mUSDC
+              </Box>
+            </Typography>
+          </Box>
+          <Button
+            variant="contained"
+            color="success"
             onClick={() => void doClaim()}
             disabled={busy['claim'] || !earnings || earnings === 0n}
-            className="px-5 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-600 disabled:opacity-40 text-white text-sm font-semibold transition-colors"
           >
             {busy['claim'] ? 'Claiming…' : 'Claim All'}
-          </button>
-        </div>
+          </Button>
+        </Card>
 
-        <p className="text-xs text-gray-600">
+        <Typography variant="caption" color="text.secondary">
           Earnings accrue when followers pay the 0.3% copy fee or close copied positions in profit (10% performance fee). Your share is 70% of each fee.
-        </p>
-      </div>
+        </Typography>
+      </Card>
 
       {/* ─── D. Strategy History ──────────────────────────────────────── */}
-      <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-bold text-white">Strategy History</h2>
-          <button
+      <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+            Strategy History
+          </Typography>
+          <Button
+            variant="text"
+            size="small"
             onClick={() => void fetchHistory()}
-            className="text-xs text-gray-500 hover:text-white transition-colors"
+            sx={{ textTransform: 'none' }}
           >
             ↺ Refresh
-          </button>
-        </div>
+          </Button>
+        </Box>
 
         {historyLoading ? (
           <TableSkeleton rows={3} cols={4} />
         ) : history.length === 0 ? (
-          <p className="text-sm text-gray-600 py-4 text-center">No strategies published yet.</p>
+          <Typography color="text.secondary" sx={{ py: 4, textAlign: 'center' }}>
+            No strategies published yet.
+          </Typography>
         ) : (
-          <div className="space-y-2">
+          <Stack spacing={1.5}>
             {history.map(ver => (
-              <div key={ver.versionId} className="rounded-lg border border-surface-border overflow-hidden">
-                <button
+              <Card key={ver.versionId} sx={{ border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
+                <Box
+                  component="button"
                   onClick={() => toggleExpand(ver.versionId)}
-                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-surface-elev transition-colors text-left"
+                  sx={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    px: 2,
+                    py: 1.5,
+                    bgcolor: 'transparent',
+                    border: 0,
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    '&:hover': { bgcolor: 'action.hover' }
+                  }}
                 >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span className="text-xs font-mono text-gray-500 shrink-0">v{ver.versionId}</span>
-                    <span className="text-sm text-white truncate">
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0, flexGrow: 1 }}>
+                    <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>
+                      v{ver.versionId}
+                    </Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'text.primary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {ver.allocs.map(a =>
                         `${ASSET_LABEL[a.asset] ?? a.asset.slice(0, 6)} ${a.isLong ? 'L' : 'S'} ${String(a.leverage)}×`,
                       ).join('  ·  ')}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0 ml-4">
-                    <span className="text-xs text-gray-500">{fmtDate(ver.createdAt)}</span>
-                    <span className="text-gray-500 text-xs">{ver.expanded ? '▲' : '▼'}</span>
-                  </div>
-                </button>
+                    </Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, ml: 2, shrink: 0 }}>
+                    <Typography variant="caption" color="text.secondary">
+                      {fmtDate(ver.createdAt)}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {ver.expanded ? '▲' : '▼'}
+                    </Typography>
+                  </Box>
+                </Box>
 
                 {ver.expanded && (
-                  <div className="border-t border-surface-border bg-surface-sub px-4 py-3">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="text-xs text-gray-500 uppercase border-b border-surface-border">
-                          <th className="py-1.5 pr-4 text-left font-medium">Asset</th>
-                          <th className="py-1.5 pr-4 text-left font-medium">Side</th>
-                          <th className="py-1.5 pr-4 text-left font-medium">Leverage</th>
-                          <th className="py-1.5 text-right font-medium">Weight</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-surface-border">
-                        {ver.allocs.map((a, idx) => (
-                          <tr key={idx} className="text-gray-300">
-                            <td className="py-2 pr-4 font-mono text-white font-medium">
-                              {ASSET_LABEL[a.asset] ?? a.asset.slice(0, 8)}
-                            </td>
-                            <td className={`py-2 pr-4 font-bold text-xs uppercase tracking-wide ${a.isLong ? 'text-green-400' : 'text-red-400'}`}>
-                              {a.isLong ? 'Long ↑' : 'Short ↓'}
-                            </td>
-                            <td className="py-2 pr-4 font-mono">{String(a.leverage)}×</td>
-                            <td className="py-2 text-right font-mono font-semibold text-white">
-                              {fmtPct(a.weight)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <Box sx={{ borderTop: '1px solid', borderColor: 'divider', bgcolor: 'background.neutral', px: 2, py: 1.5 }}>
+                    <TableContainer>
+                      <Table size="small">
+                        <TableHead>
+                          <TableRow>
+                            {['Asset', 'Side', 'Leverage', 'Weight'].map(h => (
+                              <TableCell key={h} sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{h}</TableCell>
+                            ))}
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {ver.allocs.map((a, idx) => (
+                            <TableRow key={idx}>
+                              <TableCell sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: 'text.primary' }}>
+                                {ASSET_LABEL[a.asset] ?? a.asset.slice(0, 8)}
+                              </TableCell>
+                              <TableCell sx={{ fontWeight: 'bold', color: a.isLong ? 'success.main' : 'error.main' }}>
+                                {a.isLong ? 'Long ↑' : 'Short ↓'}
+                              </TableCell>
+                              <TableCell sx={{ fontFamily: 'monospace' }}>{String(a.leverage)}×</TableCell>
+                              <TableCell align="right" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
+                                {fmtPct(a.weight)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+                  </Box>
                 )}
-              </div>
+              </Card>
             ))}
-          </div>
+          </Stack>
         )}
-      </div>
-    </div>
+      </Card>
+    </Container>
   )
 }

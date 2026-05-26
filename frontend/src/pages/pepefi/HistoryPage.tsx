@@ -6,6 +6,24 @@ import { TableSkeleton } from 'src/components/pepefi/Skeleton'
 import EmptyState from 'src/components/pepefi/EmptyState'
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
 
+import Box from '@mui/material/Box';
+import Container from '@mui/material/Container';
+import Typography from '@mui/material/Typography';
+import Card from '@mui/material/Card';
+import Button from '@mui/material/Button';
+import Chip from '@mui/material/Chip';
+import Alert from '@mui/material/Alert';
+import Stack from '@mui/material/Stack';
+import Tabs from '@mui/material/Tabs';
+import Tab from '@mui/material/Tab';
+import TableContainer from '@mui/material/TableContainer';
+import Table from '@mui/material/Table';
+import TableHead from '@mui/material/TableHead';
+import TableBody from '@mui/material/TableBody';
+import TableRow from '@mui/material/TableRow';
+import TableCell from '@mui/material/TableCell';
+import Link from '@mui/material/Link';
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 const FETCH_BLOCKS = 5000   // ~15 h on Sepolia (12 s/block)
 
@@ -40,18 +58,18 @@ const f8   = (v: bigint) =>
   '$' + (Number(v) / 1e8).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 // ── Type badge styling ────────────────────────────────────────────────────────
-const TYPE_STYLE: Partial<Record<EventType, string>> = {
-  Swap:             'bg-blue-900/60 text-blue-300 border-blue-700/60',
-  PositionOpened:   'bg-green-900/60 text-green-300 border-green-700/60',
-  PositionClosed:   'bg-orange-900/60 text-orange-300 border-orange-700/60',
-  MarginDeposited:  'bg-cyan-900/60 text-cyan-300 border-cyan-700/60',
-  MarginWithdrawn:  'bg-amber-900/60 text-amber-300 border-amber-700/60',
-  TraderFollowed:   'bg-purple-900/60 text-purple-300 border-purple-700/60',
-  TraderUnfollowed: 'bg-gray-700/80 text-gray-300 border-gray-600',
-  CopyFee:          'bg-brand-400/20 text-brand-100 border-brand-300/30',
-  PriceUpdated:     'bg-teal-900/60 text-teal-300 border-teal-700/60',
-  Stake:            'bg-yellow-900/60 text-yellow-300 border-yellow-700/60',
-  Slash:            'bg-red-900/60 text-red-300 border-red-700/60',
+const TYPE_STYLE: Record<EventType, any> = {
+  Swap:             { bgcolor: 'rgba(0, 184, 217, 0.16)', color: '#00b8d9', border: '1px solid', borderColor: 'rgba(0, 184, 217, 0.24)' },
+  PositionOpened:   { bgcolor: 'rgba(34, 197, 94, 0.16)', color: '#22c55e', border: '1px solid', borderColor: 'rgba(34, 197, 94, 0.24)' },
+  PositionClosed:   { bgcolor: 'rgba(255, 171, 0, 0.16)', color: '#ffab00', border: '1px solid', borderColor: 'rgba(255, 171, 0, 0.24)' },
+  MarginDeposited:  { bgcolor: 'rgba(0, 184, 217, 0.16)', color: '#00b8d9', border: '1px solid', borderColor: 'rgba(0, 184, 217, 0.24)' },
+  MarginWithdrawn:  { bgcolor: 'rgba(255, 171, 0, 0.16)', color: '#ffab00', border: '1px solid', borderColor: 'rgba(255, 171, 0, 0.24)' },
+  TraderFollowed:   { bgcolor: 'rgba(142, 51, 255, 0.16)', color: '#8e33ff', border: '1px solid', borderColor: 'rgba(142, 51, 255, 0.24)' },
+  TraderUnfollowed: { bgcolor: 'rgba(145, 158, 171, 0.16)', color: '#919eab', border: '1px solid', borderColor: 'rgba(145, 158, 171, 0.24)' },
+  CopyFee:          { bgcolor: 'rgba(0, 167, 111, 0.16)', color: '#00a76f', border: '1px solid', borderColor: 'rgba(0, 167, 111, 0.24)' },
+  PriceUpdated:     { bgcolor: 'rgba(34, 197, 94, 0.16)', color: '#22c55e', border: '1px solid', borderColor: 'rgba(34, 197, 94, 0.24)' },
+  Stake:            { bgcolor: 'rgba(255, 171, 0, 0.16)', color: '#ffab00', border: '1px solid', borderColor: 'rgba(255, 171, 0, 0.24)' },
+  Slash:            { bgcolor: 'rgba(255, 86, 48, 0.16)', color: '#ff5630', border: '1px solid', borderColor: 'rgba(255, 86, 48, 0.24)' },
 }
 
 const TYPE_LABEL: Partial<Record<EventType, string>> = {
@@ -95,57 +113,57 @@ function renderDetails(e: ChainEvent): ReactNode {
   switch (e.type) {
     case 'Swap':
       return d.direction === 'ETH→USDC'
-        ? <span><span className="text-gray-300">{fEth(d.ethIn as bigint)} ETH</span> → <span className="text-emerald-400">{f18(d.usdcOut as bigint)} mUSDC</span></span>
-        : <span><span className="text-gray-300">{f18(d.usdcIn as bigint)} mUSDC</span> → <span className="text-emerald-400">{fEth(d.ethOut as bigint)} ETH</span></span>
+        ? <span><Typography variant="body2" component="span" color="text.secondary">{fEth(d.ethIn as bigint)} ETH</Typography> → <Typography variant="body2" component="span" color="success.main" sx={{ fontWeight: 'semibold' }}>{f18(d.usdcOut as bigint)} mUSDC</Typography></span>
+        : <span><Typography variant="body2" component="span" color="text.secondary">{f18(d.usdcIn as bigint)} mUSDC</Typography> → <Typography variant="body2" component="span" color="success.main" sx={{ fontWeight: 'semibold' }}>{fEth(d.ethOut as bigint)} ETH</Typography></span>
 
     case 'PositionOpened': {
       const label   = ASSET_LABEL[d.asset as string] ?? '?'
       const side    = (d.isLong as boolean) ? 'LONG' : 'SHORT'
-      const sideCol = (d.isLong as boolean) ? 'text-green-400' : 'text-red-400'
-      return <span><span className={`font-semibold ${sideCol}`}>{side}</span> {label} {String(d.leverage as bigint)}× @ {f8(d.entryPrice as bigint)} | Margin: {f18(d.margin as bigint)} mUSDC</span>
+      const sideCol = (d.isLong as boolean) ? 'success.main' : 'error.main'
+      return <span><Box component="span" sx={{ fontWeight: 'bold', color: sideCol }}>{side}</Box> {label} {String(d.leverage as bigint)}× @ {f8(d.entryPrice as bigint)} | Margin: {f18(d.margin as bigint)} mUSDC</span>
     }
 
     case 'PositionClosed': {
       const pnl    = d.pnl as bigint
       const pnlStr = (pnl >= 0n ? '+' : '') + f18(pnl)
-      const col    = pnl >= 0n ? 'text-green-400' : 'text-red-400'
-      return <span>PnL: <span className={`font-semibold ${col}`}>{pnlStr}</span> mUSDC | Received: {f18(d.closeAmount as bigint)}</span>
+      const col    = pnl >= 0n ? 'success.main' : 'error.main'
+      return <span>PnL: <Box component="span" sx={{ fontWeight: 'bold', color: col }}>{pnlStr}</Box> mUSDC | Received: {f18(d.closeAmount as bigint)}</span>
     }
 
     case 'MarginDeposited':
-      return <span className="text-emerald-400">+{f18(d.amount as bigint)} mUSDC</span>
+      return <Box component="span" sx={{ color: 'success.main', fontWeight: 'semibold' }}>+{f18(d.amount as bigint)} mUSDC</Box>
 
     case 'MarginWithdrawn':
-      return <span className="text-amber-400">−{f18(d.amount as bigint)} mUSDC</span>
+      return <Box component="span" sx={{ color: 'warning.main', fontWeight: 'semibold' }}>−{f18(d.amount as bigint)} mUSDC</Box>
 
     case 'TraderFollowed': {
       const trader = d.trader as string
-      return <span>Following <span className="font-mono">{shortAddr(trader)}</span> | Margin: {f18(d.totalMargin as bigint)} mUSDC</span>
+      return <span>Following <Box component="span" sx={{ fontFamily: 'monospace', color: 'text.primary' }}>{shortAddr(trader)}</Box> | Margin: {f18(d.totalMargin as bigint)} mUSDC</span>
     }
 
     case 'TraderUnfollowed': {
       const trader = d.trader as string
-      return <span>Unfollowed <span className="font-mono">{shortAddr(trader)}</span></span>
+      return <span>Unfollowed <Box component="span" sx={{ fontFamily: 'monospace', color: 'text.primary' }}>{shortAddr(trader)}</Box></span>
     }
 
     case 'CopyFee':
-      return <span>Earned: <span className="text-brand-100 font-semibold">{f18(d.traderShare as bigint)}</span> mUSDC (fee: {f18(d.fee as bigint)})</span>
+      return <span>Earned: <Box component="span" sx={{ color: 'primary.main', fontWeight: 'bold' }}>{f18(d.traderShare as bigint)}</Box> mUSDC (fee: {f18(d.fee as bigint)})</span>
 
     case 'PriceUpdated': {
       const label = ASSET_LABEL[d.assetId as string] ?? '?'
-      return <span>{label}: {f8(d.oldPrice as bigint)} → <span className="text-teal-300 font-semibold">{f8(d.newPrice as bigint)}</span></span>
+      return <span>{label}: {f8(d.oldPrice as bigint)} → <Box component="span" sx={{ color: 'info.main', fontWeight: 'semibold' }}>{f8(d.newPrice as bigint)}</Box></span>
     }
 
     case 'Stake':
-      return <span>Staked <span className="text-yellow-300 font-semibold">{f18(d.amount as bigint)}</span> mUSDC</span>
+      return <span>Staked <Box component="span" sx={{ color: 'warning.main', fontWeight: 'semibold' }}>{f18(d.amount as bigint)}</Box> mUSDC</span>
 
     case 'Slash': {
       const recipient = d.recipient as string
-      return <span>Slashed <span className="text-red-300 font-semibold">{f18(d.amount as bigint)}</span> mUSDC → <span className="font-mono">{shortAddr(recipient)}</span></span>
+      return <span>Slashed <Box component="span" sx={{ color: 'error.main', fontWeight: 'semibold' }}>{f18(d.amount as bigint)}</Box> mUSDC → <Box component="span" sx={{ fontFamily: 'monospace' }}>{shortAddr(recipient)}</Box></span>
     }
 
     default:
-      return <span className="text-gray-600 text-xs">{JSON.stringify(d).slice(0, 80)}</span>
+      return <Typography variant="caption" color="text.secondary">{JSON.stringify(d).slice(0, 80)}</Typography>
   }
 }
 
@@ -348,84 +366,92 @@ export default function HistoryPage() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
+    <Container maxWidth="lg" sx={{ py: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
 
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-white">Transaction History</h1>
-          <p className="text-sm text-gray-400 mt-0.5">On-chain auditability — decoded directly from Sepolia via ethers.js</p>
-        </div>
-        <button
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'between', flexWrap: 'wrap', gap: 2 }}>
+        <Box sx={{ flexGrow: 1 }}>
+          <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
+            Transaction History
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            On-chain auditability — decoded directly from Sepolia via ethers.js
+          </Typography>
+        </Box>
+        <Button
+          variant="text"
           onClick={() => void fetchEvents()}
           disabled={loading}
-          className="text-xs text-gray-500 hover:text-white disabled:opacity-40 transition-colors"
+          sx={{ textTransform: 'none' }}
         >
           {loading ? 'Loading…' : '↺ Refresh'}
-        </button>
-      </div>
+        </Button>
+      </Box>
 
       {/* Proof-of-transparency note */}
-      <div className="rounded-card border border-info/30 bg-info/5 px-5 py-4 text-xs text-gray-300 leading-relaxed">
+      <Alert severity="info" sx={{ bgcolor: 'rgba(0, 184, 217, 0.08)', color: 'info.lighter', border: '1px solid', borderColor: 'rgba(0, 184, 217, 0.16)' }}>
         All activity is read directly from the Sepolia blockchain — no backend, no database, just the immutable ledger.{' '}
-        <strong className="text-white">Every row below is a real on-chain event.</strong>{' '}
-        Click <span className="font-mono text-emerald-400">↗</span> to verify on Sepolia Etherscan.
-      </div>
+        <Box component="span" sx={{ fontWeight: 'bold', color: 'text.primary' }}>Every row below is a real on-chain event.</Box>{' '}
+        Click <Box component="span" sx={{ color: 'success.main', fontWeight: 'bold', fontFamily: 'monospace' }}>↗</Box> to verify on Sepolia Etherscan.
+      </Alert>
 
       {/* Tabs */}
-      <div className="flex gap-2">
-        {(['mine', 'all'] as const).map(t => (
-          <button
-            key={t}
-            onClick={() => { setTab(t); setFilterKey('all') }}
-            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              tab === t
-                ? 'bg-brand-400/20 text-brand-100 border border-brand-300/30'
-                : 'text-gray-400 hover:text-white border border-transparent hover:border-surface-border'
-            }`}
-          >
-            {t === 'mine' ? (wallet.isConnected ? 'My Activity' : 'My Activity (connect wallet)') : 'All Activity'}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        value={tab}
+        onChange={(_, val) => { setTab(val); setFilterKey('all') }}
+        sx={{ borderBottom: 1, borderColor: 'divider' }}
+      >
+        <Tab
+          value="mine"
+          label={wallet.isConnected ? 'My Activity' : 'My Activity (connect wallet)'}
+          sx={{ textTransform: 'none' }}
+        />
+        <Tab
+          value="all"
+          label="All Activity"
+          sx={{ textTransform: 'none' }}
+        />
+      </Tabs>
 
       {/* Type filter chips */}
-      <div className="flex flex-wrap gap-2">
-        {FILTERS.map(f => (
-          <button
-            key={f.key}
-            onClick={() => setFilterKey(f.key)}
-            className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-              filterKey === f.key
-                ? 'bg-gray-600 text-white'
-                : 'bg-surface-sub text-gray-400 hover:text-white border border-surface-border'
-            }`}
-          >
-            {f.label}
-            {filterKey === f.key && visible.length > 0 && (
-              <span className="ml-1.5 text-gray-400">{visible.length}</span>
-            )}
-          </button>
-        ))}
-      </div>
+      <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
+        {FILTERS.map(f => {
+          const active = filterKey === f.key;
+          return (
+            <Chip
+              key={f.key}
+              label={
+                active && visible.length > 0
+                  ? `${f.label} (${visible.length})`
+                  : f.label
+              }
+              onClick={() => setFilterKey(f.key)}
+              color={active ? 'primary' : 'default'}
+              variant={active ? 'filled' : 'outlined'}
+              size="small"
+              sx={{ cursor: 'pointer' }}
+            />
+          );
+        })}
+      </Stack>
 
       {/* Error banner */}
       {error && (
-        <div className="rounded-lg border border-red-800 bg-red-950/40 px-4 py-3 text-xs text-red-400">
+        <Alert severity="error">
           {error}
-        </div>
+        </Alert>
       )}
 
       {/* "Mine" tab, no wallet */}
       {tab === 'mine' && !wallet.isConnected && (
-        <div className="rounded-card border border-surface-border bg-surface p-12 text-center text-gray-500">
-          Connect your wallet to see your activity.
-        </div>
+        <Card sx={{ p: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Typography color="text.secondary">Connect your wallet to see your activity.</Typography>
+        </Card>
       )}
 
       {/* Events table */}
       {(tab === 'all' || wallet.isConnected) && (
-        <div className="rounded-card border border-surface-border bg-surface overflow-hidden">
+        <Card>
           {loading ? (
             <TableSkeleton rows={5} cols={6} />
           ) : visible.length === 0 ? (
@@ -435,66 +461,72 @@ export default function HistoryPage() {
               description={`No events found in the last ${FETCH_BLOCKS.toLocaleString()} blocks${filterKey !== 'all' ? ` for filter "${filterKey}"` : ''}.`}
             />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm text-left">
-                <thead>
-                  <tr className="text-xs text-gray-500 uppercase border-b border-surface-border bg-surface-sub/50">
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow sx={{ bgcolor: 'background.neutral' }}>
                     {['Time', 'Type', 'User', 'Details', 'Block', 'Tx'].map(h => (
-                      <th key={h} className="px-4 py-3 font-medium whitespace-nowrap">{h}</th>
+                      <TableCell key={h} sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{h}</TableCell>
                     ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-surface-border">
+                  </TableRow>
+                </TableHead>
+                <TableBody>
                   {visible.map((e, i) => (
-                    <tr key={i} className="hover:bg-surface-elev/50 transition-colors">
-                      <td className="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">
+                    <TableRow key={i} hover>
+                      <TableCell sx={{ fontSize: '0.75rem', color: 'text.secondary', whitespace: 'nowrap' }}>
                         {fTime(e.timestamp)}
-                      </td>
-                      <td className="px-4 py-2.5">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${TYPE_STYLE[e.type] ?? 'bg-gray-800 text-gray-300 border-gray-700'}`}>
-                          {TYPE_LABEL[e.type] ?? e.type}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2.5 font-mono text-xs text-gray-400 whitespace-nowrap">
+                      </TableCell>
+                      <TableCell>
+                        <Chip
+                          label={TYPE_LABEL[e.type] ?? e.type}
+                          size="small"
+                          sx={{
+                            fontWeight: 'bold',
+                            ...TYPE_STYLE[e.type]
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.75rem', color: 'text.secondary' }}>
                         {shortAddr(e.user)}
-                      </td>
-                      <td className="px-4 py-2.5 text-xs text-gray-300 max-w-xs">
+                      </TableCell>
+                      <TableCell sx={{ fontSize: '0.75rem', color: 'text.primary' }}>
                         {renderDetails(e)}
-                      </td>
-                      <td className="px-4 py-2.5 font-mono text-xs text-gray-500 whitespace-nowrap">
+                      </TableCell>
+                      <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.75rem', color: 'text.secondary' }}>
                         #{e.blockNumber}
-                      </td>
-                      <td className="px-4 py-2.5">
+                      </TableCell>
+                      <TableCell>
                         {explorerTx(e.txHash, wallet.chainId) ? (
-                          <a
+                          <Link
                             href={explorerTx(e.txHash, wallet.chainId)!}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-emerald-500 hover:text-emerald-300 transition-colors text-base"
+                            color="success.main"
+                            sx={{ fontWeight: 'bold', fontSize: '1.1rem', textDecoration: 'none' }}
                           >
                             ↗
-                          </a>
+                          </Link>
                         ) : (
-                          <span className="text-gray-700 text-xs font-mono" title={e.txHash}>
+                          <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>
                             {e.txHash.slice(0, 8)}…
-                          </span>
+                          </Typography>
                         )}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
-            </div>
+                </TableBody>
+              </Table>
+            </TableContainer>
           )}
-        </div>
+        </Card>
       )}
 
       {/* Footer note */}
-      <p className="text-xs text-gray-600 text-center">
+      <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center', display: 'block', mt: 2 }}>
         Showing events from last ~{FETCH_BLOCKS.toLocaleString()} blocks (~15 hours on Sepolia) ·{' '}
         {visible.length} event{visible.length !== 1 ? 's' : ''} displayed ·
         Older history: use Etherscan or queryFilter with a custom fromBlock
-      </p>
-    </div>
+      </Typography>
+    </Container>
   )
 }

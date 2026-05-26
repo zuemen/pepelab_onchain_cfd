@@ -1,31 +1,41 @@
+import Card from '@mui/material/Card';
+import Box from '@mui/material/Box';
+import Typography from '@mui/material/Typography';
+import Button from '@mui/material/Button';
+
 interface Props {
-  icon?: string
-  title: string
-  description?: string
-  ctaText?: string
-  ctaHref?: string
-  onClick?: () => void
+  icon?: string;
+  title: string;
+  description?: string;
+  ctaText?: string;
+  ctaHref?: string;
+  onClick?: () => void;
 }
 
 export default function EmptyState({ icon = '🎯', title, description, ctaText, ctaHref, onClick }: Props) {
   return (
-    <div className="rounded-card border border-surface-border bg-surface p-12 text-center space-y-4">
-      <div className="text-5xl">{icon}</div>
-      <h3 className="text-lg font-semibold text-white">{title}</h3>
+    <Card sx={{ p: 6, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+      <Box sx={{ fontSize: '3.5rem' }}>{icon}</Box>
+      <Typography variant="h6" sx={{ color: 'text.primary', fontWeight: 'bold' }}>
+        {title}
+      </Typography>
       {description && (
-        <p className="text-sm text-gray-400 max-w-md mx-auto">{description}</p>
+        <Typography variant="body2" sx={{ color: 'text.secondary', maxWidth: 400, mx: 'auto' }}>
+          {description}
+        </Typography>
       )}
       {ctaText && (ctaHref || onClick) && (
-        ctaHref ? (
-          <a href={ctaHref} className="inline-block px-6 py-2.5 rounded-lg bg-brand-200 hover:bg-brand-300 text-white text-sm font-semibold">
-            {ctaText} →
-          </a>
-        ) : (
-          <button onClick={onClick} className="px-6 py-2.5 rounded-lg bg-brand-200 hover:bg-brand-300 text-white text-sm font-semibold">
-            {ctaText} →
-          </button>
-        )
+        <Button
+          variant="contained"
+          color="primary"
+          href={ctaHref}
+          component={ctaHref ? 'a' : 'button'}
+          onClick={onClick}
+          sx={{ mt: 1 }}
+        >
+          {ctaText} →
+        </Button>
       )}
-    </div>
-  )
+    </Card>
+  );
 }

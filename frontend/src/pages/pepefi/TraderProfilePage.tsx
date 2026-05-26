@@ -1,11 +1,30 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useParams, Link } from 'react-router'
+import { useParams, Link as RouterLink } from 'react-router'
 import { useContracts } from 'src/hooks/useContracts'
 import { usePepefiWallet } from 'src/layouts/pepefi'
-import { CardSkeleton } from 'src/components/pepefi/Skeleton'
+import { TableSkeleton, CardSkeleton } from 'src/components/pepefi/Skeleton'
 import { useESG } from 'src/hooks/useESG'
 import ESGBadge from 'src/components/pepefi/ESGBadge'
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
+import StatCard from 'src/components/pepefi/StatCard'
+
+import Box from '@mui/material/Box';
+import Container from '@mui/material/Container';
+import Typography from '@mui/material/Typography';
+import Card from '@mui/material/Card';
+import Grid from '@mui/material/Grid';
+import Stack from '@mui/material/Stack';
+import Button from '@mui/material/Button';
+import Link from '@mui/material/Link';
+import TableContainer from '@mui/material/TableContainer';
+import Table from '@mui/material/Table';
+import TableHead from '@mui/material/TableHead';
+import TableBody from '@mui/material/TableBody';
+import TableRow from '@mui/material/TableRow';
+import TableCell from '@mui/material/TableCell';
+import Chip from '@mui/material/Chip';
+import Breadcrumbs from '@mui/material/Breadcrumbs';
+import Alert from '@mui/material/Alert';
 
 interface StakeInfo {
   amount:             bigint
@@ -163,270 +182,315 @@ export default function TraderProfilePage() {
     void go()
   }, [contracts, traderAddr])
 
-  if (!traderAddr) return <div className="p-8 text-gray-400">Invalid address.</div>
+  if (!traderAddr) return <Box sx={{ p: 4 }}><Typography color="text.secondary">Invalid address.</Typography></Box>
 
   if (!wallet.isConnected) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh] text-gray-400">
-        Connect wallet to view trader profiles.
-      </div>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+        <Typography color="text.secondary">Connect wallet to view trader profiles.</Typography>
+      </Box>
     )
   }
 
-
-  const repBadge = repScore === null ? ''
-    : repScore >= 80n ? 'bg-emerald-900 border-emerald-700 text-emerald-300'
-    : repScore >= 50n ? 'bg-yellow-900/60 border-yellow-700 text-yellow-300'
-    : 'bg-red-900/60 border-red-800 text-red-300'
-
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8 space-y-6">
+    <Container maxWidth="md" sx={{ py: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
 
-      <div className="flex items-center gap-2 text-sm text-gray-500">
-        <Link to="/marketplace" className="hover:text-white transition-colors">Marketplace</Link>
-        <span>/</span>
-        <span className="text-gray-300">{name || traderAddr.slice(0, 10) + '…'}</span>
-      </div>
+      {/* Breadcrumbs */}
+      <Breadcrumbs separator="/" sx={{ mb: 1 }}>
+        <Link component={RouterLink} to="/marketplace" color="inherit" underline="hover" sx={{ fontSize: '0.875rem' }}>
+          Marketplace
+        </Link>
+        <Typography variant="body2" color="text.primary">
+          {name || shortAddr(traderAddr)}
+        </Typography>
+      </Breadcrumbs>
 
       {error && (
-        <div className="rounded-lg border border-red-800 bg-red-950/40 px-4 py-3 text-sm text-red-400">
+        <Alert severity="error">
           {error}
-        </div>
+        </Alert>
       )}
 
       {loading ? (
-        <div className="space-y-4">
+        <Stack spacing={3}>
           <CardSkeleton />
           <CardSkeleton />
           <CardSkeleton />
-          <CardSkeleton />
-        </div>
+        </Stack>
       ) : (
         <>
           {/* ─── A. Header ────────────────────────────────────────── */}
-          <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-3">
-            <div className="flex items-start justify-between">
-              <div>
-                <h1 className="text-xl font-bold text-white">{name || 'Unknown'}</h1>
-                <p className="text-xs font-mono text-gray-500 mt-0.5">{traderAddr}</p>
-              </div>
+          <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 2 }}>
+              <Box>
+                <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
+                  {name || 'Unknown'}
+                </Typography>
+                <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary', display: 'block', mt: 0.5 }}>
+                  {traderAddr}
+                </Typography>
+              </Box>
               {repScore !== null && (
-                <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-bold border ${repBadge}`}>
-                  ◆ {String(repScore)}
-                </span>
+                <Chip
+                  label={`◆ ${String(repScore)}`}
+                  size="small"
+                  sx={{
+                    fontWeight: 'bold',
+                    ...(repScore >= 80n ? { bgcolor: 'rgba(34, 197, 94, 0.16)', color: '#22c55e', border: '1px solid', borderColor: 'rgba(34, 197, 94, 0.24)' }
+                      : repScore >= 50n ? { bgcolor: 'rgba(255, 171, 0, 0.16)', color: '#ffab00', border: '1px solid', borderColor: 'rgba(255, 171, 0, 0.24)' }
+                      : { bgcolor: 'rgba(255, 86, 48, 0.16)', color: '#ff5630', border: '1px solid', borderColor: 'rgba(255, 86, 48, 0.24)' }
+                    )
+                  }}
+                />
               )}
-            </div>
+            </Box>
 
-            <div className="flex flex-wrap gap-3 text-sm">
-              <span className="text-gray-400">
-                <span className="font-semibold text-white">{String(followers)}</span>
-                {' '}follower{followers !== 1n ? 's' : ''}
-              </span>
+            <Stack direction="row" spacing={2} sx={{ flexWrap: 'wrap', gap: 1 }}>
+              <Typography variant="body2" color="text.secondary">
+                <Box component="span" sx={{ fontWeight: 'bold', color: 'text.primary' }}>{String(followers)}</Box> follower{followers !== 1n ? 's' : ''}
+              </Typography>
               {registered && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-900/40 border border-emerald-800 text-emerald-300 text-xs">
-                  ✓ Registered
-                </span>
+                <Chip
+                  label="Registered"
+                  color="success"
+                  variant="outlined"
+                  size="small"
+                  sx={{ fontWeight: 'bold' }}
+                />
               )}
               {eligible !== null && (
-                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border ${
-                  eligible
-                    ? 'bg-brand-400/20 border-brand-300/30 text-brand-100'
-                    : 'bg-red-900/30 border-red-800 text-red-300'
-                }`}>
-                  {eligible ? '◆ Staked' : '✗ Not staked'}
-                </span>
+                <Chip
+                  label={eligible ? '◆ Staked' : '✗ Not staked'}
+                  color={eligible ? 'primary' : 'error'}
+                  variant="outlined"
+                  size="small"
+                  sx={{ fontWeight: 'bold' }}
+                />
               )}
-            </div>
+            </Stack>
 
-            <Link
+            <Button
+              component={RouterLink}
               to={`/copy/${traderAddr}`}
-              className="block w-full py-2.5 text-center rounded-lg bg-brand-200 hover:bg-brand-300 text-white text-sm font-semibold transition-colors"
+              variant="contained"
+              color="primary"
+              fullWidth
             >
               Copy This Trader →
-            </Link>
-          </div>
+            </Button>
+          </Card>
 
           {/* ─── B. Stats grid (4 cards) ──────────────────────────── */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="bg-surface rounded-card border border-surface-border p-4 text-center space-y-1">
-              <p className="text-xs text-gray-500 uppercase tracking-wide">Staked</p>
-              <p className="text-lg font-bold font-mono text-white">
-                {stakeInfo ? f18(stakeInfo.amount) : '—'}
-              </p>
-              <p className="text-xs text-gray-600">mUSDC</p>
-            </div>
-            <div className="bg-surface rounded-card border border-surface-border p-4 text-center space-y-1">
-              <p className="text-xs text-gray-500 uppercase tracking-wide">Followers</p>
-              <p className="text-lg font-bold font-mono text-white">{String(followers)}</p>
-              <p className="text-xs text-gray-600">copiers</p>
-            </div>
-            <div className="bg-surface rounded-card border border-surface-border p-4 text-center space-y-1">
-              <p className="text-xs text-gray-500 uppercase tracking-wide">Earnings</p>
-              <p className="text-lg font-bold font-mono text-emerald-400">
-                {earnings !== null ? f18(earnings, 4) : '—'}
-              </p>
-              <p className="text-xs text-gray-600">mUSDC</p>
-            </div>
-            <div className="bg-surface rounded-card border border-surface-border p-4 text-center space-y-1">
-              <p className="text-xs text-gray-500 uppercase tracking-wide">Strategies</p>
-              <p className="text-lg font-bold font-mono text-white">
-                {stratCount !== null ? stratCount : '—'}
-              </p>
-              <p className="text-xs text-gray-600">versions</p>
-            </div>
-          </div>
+          <Grid container spacing={2}>
+            <Grid size={{ xs: 6, md: 3 }}>
+              <StatCard title="Staked" value={stakeInfo ? f18(stakeInfo.amount) : '—'} sub="mUSDC" />
+            </Grid>
+            <Grid size={{ xs: 6, md: 3 }}>
+              <StatCard title="Followers" value={String(followers)} sub="copiers" />
+            </Grid>
+            <Grid size={{ xs: 6, md: 3 }}>
+              <StatCard title="Earnings" value={earnings !== null ? f18(earnings, 4) : '—'} sub="mUSDC" valueColor="success.main" />
+            </Grid>
+            <Grid size={{ xs: 6, md: 3 }}>
+              <StatCard title="Strategies" value={stratCount !== null ? String(stratCount) : '—'} sub="versions" />
+            </Grid>
+          </Grid>
 
           {/* ─── C. Latest Strategy ────────────────────────────────── */}
-          <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-3">
-            <h2 className="text-base font-bold text-white">Latest Strategy</h2>
+          <Card sx={{ p: 3 }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 2 }}>
+              Latest Strategy
+            </Typography>
             {!hasStrategy ? (
-              <p className="text-sm text-gray-600">No strategy published yet.</p>
+              <Typography color="text.secondary">No strategy published yet.</Typography>
             ) : (
-              <div className="flex flex-wrap gap-2">
+              <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
                 {allocs.map((a, i) => (
-                  <span key={i} className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium border ${
-                    a.isLong
-                      ? 'bg-green-950 border-green-800 text-green-300'
-                      : 'bg-red-950  border-red-800  text-red-300'
-                  }`}>
-                    {a.isLong ? '↑' : '↓'}
-                    {ASSET_LABEL[a.asset] ?? '?'}
-                    <span className="text-xs opacity-70">
-                      {(Number(a.weight) / 100).toFixed(0)}% · {String(a.leverage)}×
-                    </span>
-                  </span>
+                  <Chip
+                    key={i}
+                    label={`${a.isLong ? '↑' : '↓'} ${ASSET_LABEL[a.asset] ?? '?'} ${(Number(a.weight) / 100).toFixed(0)}% · ${String(a.leverage)}×`}
+                    size="small"
+                    sx={{
+                      fontWeight: 'bold',
+                      ...(a.isLong
+                        ? { bgcolor: 'rgba(34, 197, 94, 0.16)', color: '#22c55e', border: '1px solid', borderColor: 'rgba(34, 197, 94, 0.24)' }
+                        : { bgcolor: 'rgba(255, 86, 48, 0.16)', color: '#ff5630', border: '1px solid', borderColor: 'rgba(255, 86, 48, 0.24)' }
+                      )
+                    }}
+                  />
                 ))}
-              </div>
+              </Stack>
             )}
-          </div>
+          </Card>
 
           {/* ─── D. Strategy History ───────────────────────────────── */}
           {stratHistory.length > 0 && (
-            <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-3">
-              <h2 className="text-base font-bold text-white">
-                Strategy History
-                <span className="ml-2 text-xs font-normal text-gray-500">({stratHistory.length} version{stratHistory.length !== 1 ? 's' : ''})</span>
-              </h2>
-              <div className="space-y-2">
+            <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+                Strategy History <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary' }}>({stratHistory.length} version{stratHistory.length !== 1 ? 's' : ''})</Box>
+              </Typography>
+              <Stack spacing={1.5}>
                 {stratHistory.map(ver => (
-                  <div key={ver.versionId} className="rounded-lg border border-surface-border overflow-hidden">
-                    <button
+                  <Card key={ver.versionId} sx={{ border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
+                    <Box
+                      component="button"
                       onClick={() => toggleVer(ver.versionId)}
-                      className="w-full flex items-center justify-between px-4 py-3 hover:bg-surface-elev transition-colors text-left"
+                      sx={{
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        px: 2,
+                        py: 1.5,
+                        bgcolor: 'transparent',
+                        border: 0,
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        '&:hover': { bgcolor: 'action.hover' }
+                      }}
                     >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className="text-xs font-mono text-gray-500 shrink-0">v{ver.versionId}</span>
-                        <span className="text-sm text-white truncate">
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0, flexGrow: 1 }}>
+                        <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>
+                          v{ver.versionId}
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'text.primary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {ver.allocs.map(a =>
                             `${ASSET_LABEL[a.asset] ?? '?'} ${a.isLong ? 'L' : 'S'} ${String(a.leverage)}×`,
                           ).join(' · ')}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-3 shrink-0 ml-4">
-                        <span className="text-xs text-gray-500">{fmtDate(ver.createdAt)}</span>
-                        <span className="text-gray-500 text-xs">{ver.expanded ? '▲' : '▼'}</span>
-                      </div>
-                    </button>
+                        </Typography>
+                      </Box>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, ml: 2, shrink: 0 }}>
+                        <Typography variant="caption" color="text.secondary">
+                          {fmtDate(ver.createdAt)}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {ver.expanded ? '▲' : '▼'}
+                        </Typography>
+                      </Box>
+                    </Box>
                     {ver.expanded && (
-                      <div className="border-t border-surface-border bg-surface-sub px-4 py-3 overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="text-xs text-gray-500 uppercase border-b border-surface-border">
-                              <th className="py-1.5 pr-4 text-left">Asset</th>
-                              <th className="py-1.5 pr-4 text-left">ESG</th>
-                              <th className="py-1.5 pr-4 text-left">Side</th>
-                              <th className="py-1.5 pr-4 text-left">Lev</th>
-                              <th className="py-1.5 text-right">Weight</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-surface-border">
-                            {ver.allocs.map((a, idx) => (
-                              <tr key={idx} className="text-gray-300">
-                                <td className="py-2 pr-4 font-mono text-white">{ASSET_LABEL[a.asset] ?? '?'}</td>
-                                <td className="py-2 pr-4">
-                                  {esg[a.asset]
-                                    ? <ESGBadge composite={esg[a.asset].composite} rating={esg[a.asset].rating} />
-                                    : <span className="text-gray-600 text-xs">—</span>
-                                  }
-                                </td>
-                                <td className={`py-2 pr-4 font-bold text-xs ${a.isLong ? 'text-green-400' : 'text-red-400'}`}>
-                                  {a.isLong ? 'Long ↑' : 'Short ↓'}
-                                </td>
-                                <td className="py-2 pr-4 font-mono">{String(a.leverage)}×</td>
-                                <td className="py-2 text-right font-mono font-semibold text-white">
-                                  {(Number(a.weight) / 100).toFixed(0)}%
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                      <Box sx={{ borderTop: '1px solid', borderColor: 'divider', bgcolor: 'background.neutral', px: 2, py: 1.5 }}>
+                        <TableContainer>
+                          <Table size="small">
+                            <TableHead>
+                              <TableRow>
+                                {['Asset', 'ESG', 'Side', 'Lev', 'Weight'].map(h => (
+                                  <TableCell key={h} sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{h}</TableCell>
+                                ))}
+                              </TableRow>
+                            </TableHead>
+                            <TableBody>
+                              {ver.allocs.map((a, idx) => (
+                                <TableRow key={idx}>
+                                  <TableCell sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: 'text.primary' }}>
+                                    {ASSET_LABEL[a.asset] ?? '?'}
+                                  </TableCell>
+                                  <TableCell>
+                                    {esg[a.asset] ? (
+                                      <ESGBadge composite={esg[a.asset].composite} rating={esg[a.asset].rating} />
+                                    ) : (
+                                      <Typography variant="caption" color="text.disabled">—</Typography>
+                                    )}
+                                  </TableCell>
+                                  <TableCell sx={{ fontWeight: 'bold', color: a.isLong ? 'success.main' : 'error.main' }}>
+                                    {a.isLong ? 'Long ↑' : 'Short ↓'}
+                                  </TableCell>
+                                  <TableCell sx={{ fontFamily: 'monospace' }}>{String(a.leverage)}×</TableCell>
+                                  <TableCell align="right" sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: 'text.primary' }}>
+                                    {(Number(a.weight) / 100).toFixed(0)}%
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </TableContainer>
+                      </Box>
                     )}
-                  </div>
+                  </Card>
                 ))}
-              </div>
-            </div>
+              </Stack>
+            </Card>
           )}
 
           {/* ─── D. Followers ──────────────────────────────────────── */}
           {followerList.length > 0 && (
-            <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-3">
-              <h2 className="text-base font-bold text-white">
-                Followers
-                <span className="ml-2 text-xs font-normal text-gray-500">(first {followerList.length})</span>
-              </h2>
-              <div className="space-y-1">
-                {followerList.map((addr, i) => (
-                  <div key={i} className="flex items-center justify-between text-xs py-1 border-b border-surface-border last:border-0">
-                    <span className="font-mono text-gray-300">{shortAddr(addr)}</span>
-                    <span className="text-gray-600">#{i + 1}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+                Followers <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary' }}>(first {followerList.length})</Box>
+              </Typography>
+              <TableContainer>
+                <Table size="small">
+                  <TableBody>
+                    {followerList.map((addr, i) => (
+                      <TableRow key={i} hover>
+                        <TableCell sx={{ fontFamily: 'monospace', color: 'text.primary' }}>
+                          {shortAddr(addr)}
+                        </TableCell>
+                        <TableCell align="right" sx={{ color: 'text.secondary' }}>
+                          #{i + 1}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Card>
           )}
 
           {/* ─── E. Slash History ──────────────────────────────────── */}
           {slashHistory.length > 0 && (
-            <div className="rounded-card border border-red-900/40 bg-red-950/10 shadow-card p-5 space-y-3">
-              <h2 className="text-base font-bold text-red-300">
-                Slash History
-                <span className="ml-2 text-xs font-normal text-gray-500">({slashHistory.length} event{slashHistory.length !== 1 ? 's' : ''})</span>
-              </h2>
-              <div className="space-y-2">
-                {slashHistory.map((ev, i) => (
-                  <div key={i} className="flex items-center justify-between text-xs py-2 border-b border-surface-border last:border-0">
-                    <div>
-                      <p className="text-danger font-mono font-semibold">−{f18(ev.amount)} mUSDC</p>
-                      <p className="text-gray-500 mt-0.5">→ {shortAddr(ev.recipient)}</p>
-                    </div>
-                    {wallet.chainId === 11155111 && (
-                      <a
-                        href={`https://sepolia.etherscan.io/tx/${ev.txHash}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-info hover:underline text-xs"
-                      >
-                        Etherscan ↗
-                      </a>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
+            <Card sx={{ p: 3, border: '1px solid', borderColor: 'error.main', bgcolor: 'rgba(255, 86, 48, 0.08)', display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Typography variant="subtitle1" color="error.main" sx={{ fontWeight: 'bold' }}>
+                Slash History <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary' }}>({slashHistory.length} event{slashHistory.length !== 1 ? 's' : ''})</Box>
+              </Typography>
+              <TableContainer>
+                <Table size="small">
+                  <TableBody>
+                    {slashHistory.map((ev, i) => (
+                      <TableRow key={i}>
+                        <TableCell>
+                          <Typography variant="body2" color="error.main" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
+                            −{f18(ev.amount)} mUSDC
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                            → {shortAddr(ev.recipient)}
+                          </Typography>
+                        </TableCell>
+                        <TableCell align="right">
+                          {wallet.chainId === 11155111 && (
+                            <Link
+                              href={`https://sepolia.etherscan.io/tx/${ev.txHash}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              color="info.main"
+                              sx={{ fontSize: '0.875rem', textDecoration: 'underline' }}
+                            >
+                              Etherscan ↗
+                            </Link>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Card>
           )}
 
           {/* Actions */}
-          <div className="flex gap-3">
-            <Link
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            <Button
+              component={RouterLink}
               to="/marketplace"
-              className="px-4 py-2.5 rounded-lg border border-surface-border text-gray-300 text-sm font-medium hover:border-gray-400 hover:text-white transition-colors"
+              variant="outlined"
+              color="inherit"
+              sx={{ textTransform: 'none' }}
             >
-              ← Back
-            </Link>
-          </div>
+              ← Back to Marketplace
+            </Button>
+          </Box>
         </>
       )}
-    </div>
+    </Container>
   )
 }

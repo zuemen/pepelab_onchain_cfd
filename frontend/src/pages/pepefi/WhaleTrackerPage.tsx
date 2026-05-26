@@ -5,8 +5,27 @@ import { useContracts } from 'src/hooks/useContracts'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { explorerTx, explorerAddr } from 'src/lib/pepefi/notify'
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
-import { TableSkeleton, CardSkeleton } from 'src/components/pepefi/Skeleton'
+import { TableSkeleton } from 'src/components/pepefi/Skeleton'
 import EmptyState from 'src/components/pepefi/EmptyState'
+import StatCard from 'src/components/pepefi/StatCard'
+
+import Box from '@mui/material/Box';
+import Container from '@mui/material/Container';
+import Typography from '@mui/material/Typography';
+import Card from '@mui/material/Card';
+import Grid from '@mui/material/Grid';
+import Stack from '@mui/material/Stack';
+import Button from '@mui/material/Button';
+import TextField from '@mui/material/TextField';
+import Alert from '@mui/material/Alert';
+import Link from '@mui/material/Link';
+import TableContainer from '@mui/material/TableContainer';
+import Table from '@mui/material/Table';
+import TableHead from '@mui/material/TableHead';
+import TableBody from '@mui/material/TableBody';
+import TableRow from '@mui/material/TableRow';
+import TableCell from '@mui/material/TableCell';
+import Chip from '@mui/material/Chip';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const DEPLOY_BLOCK = 10_874_200  // Exchange + Seed block on Sepolia
@@ -21,7 +40,7 @@ const FEATURED_WHALES = [
   { label: 'Crypto Degen',     address: '0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65' },
   { label: 'Tesla Maxi',       address: '0x976EA74026E726554dB657fA54763abd0C3a0aa9' },
   { label: 'Index Tracker',    address: '0x23618e81E3f5cdF7f54C3d65f7FBc0aBf5B21E8f' },
-]
+ ]
 
 const MAINNET_DEMO = {
   label:   'Vitalik (mainnet demo)',
@@ -81,7 +100,7 @@ const fUsd = (v: bigint) =>
   '$' + (Number(v) / 1e18).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const fTime = (ts: number) =>
   ts ? new Date(ts * 1000).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }) : '—'
-const pnlColor = (v: bigint) => Number(v) >= 0 ? 'text-green-400' : 'text-red-400'
+const pnlColor = (v: bigint) => Number(v) >= 0 ? 'success.main' : 'error.main'
 
 // ── Chunked log fetcher — stays under Infura's 10k-block getLogs limit ────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -101,21 +120,21 @@ async function queryLogsChunked(contract: Contract, filter: any, fromBlock: numb
 }
 
 // ── Whale tier ────────────────────────────────────────────────────────────────
-function whaleTier(volumeWei: bigint): { icon: string; label: string; color: string } {
+function whaleTier(volumeWei: bigint): { icon: string; label: string; style: any } {
   const v = Number(volumeWei) / 1e18
-  if (v >= 50_000) return { icon: '🐋', label: 'Mega Whale',  color: 'text-cyan-300 border-cyan-700 bg-cyan-900/40' }
-  if (v >= 10_000) return { icon: '🐬', label: 'Whale',       color: 'text-blue-300 border-blue-700 bg-blue-900/40' }
-  return              { icon: '🐟', label: 'Fish',          color: 'text-gray-400 border-gray-700 bg-gray-800/60' }
+  if (v >= 50_000) return { icon: '🐋', label: 'Mega Whale',  style: { bgcolor: 'rgba(0, 184, 217, 0.16)', color: '#00b8d9', border: '1px solid', borderColor: 'rgba(0, 184, 217, 0.24)' } }
+  if (v >= 10_000) return { icon: '🐬', label: 'Whale',       style: { bgcolor: 'rgba(142, 51, 255, 0.16)', color: '#8e33ff', border: '1px solid', borderColor: 'rgba(142, 51, 255, 0.24)' } }
+  return              { icon: '🐟', label: 'Fish',        style: { bgcolor: 'rgba(145, 158, 171, 0.16)', color: '#919eab', border: '1px solid', borderColor: 'rgba(145, 158, 171, 0.24)' } }
 }
 
 // ── Event styling ─────────────────────────────────────────────────────────────
-const KIND_STYLE: Record<EventKind, string> = {
-  PositionOpened: 'bg-green-900/60 text-green-300 border-green-700/60',
-  PositionClosed: 'bg-orange-900/60 text-orange-300 border-orange-700/60',
-  Following:      'bg-purple-900/60 text-purple-300 border-purple-700/60',
-  FollowedBy:     'bg-teal-900/60 text-teal-300 border-teal-700/60',
-  Staked:         'bg-yellow-900/60 text-yellow-300 border-yellow-700/60',
-  Slashed:        'bg-red-900/60 text-red-300 border-red-700/60',
+const KIND_STYLE: Record<EventKind, any> = {
+  PositionOpened: { bgcolor: 'rgba(34, 197, 94, 0.16)', color: '#22c55e', border: '1px solid', borderColor: 'rgba(34, 197, 94, 0.24)' },
+  PositionClosed: { bgcolor: 'rgba(255, 171, 0, 0.16)', color: '#ffab00', border: '1px solid', borderColor: 'rgba(255, 171, 0, 0.24)' },
+  Following:      { bgcolor: 'rgba(142, 51, 255, 0.16)', color: '#8e33ff', border: '1px solid', borderColor: 'rgba(142, 51, 255, 0.24)' },
+  FollowedBy:     { bgcolor: 'rgba(0, 184, 217, 0.16)', color: '#00b8d9', border: '1px solid', borderColor: 'rgba(0, 184, 217, 0.24)' },
+  Staked:         { bgcolor: 'rgba(255, 171, 0, 0.16)', color: '#ffab00', border: '1px solid', borderColor: 'rgba(255, 171, 0, 0.24)' },
+  Slashed:        { bgcolor: 'rgba(255, 86, 48, 0.16)', color: '#ff5630', border: '1px solid', borderColor: 'rgba(255, 86, 48, 0.24)' },
 }
 const KIND_LABEL: Record<EventKind, string> = {
   PositionOpened: 'Opened',
@@ -132,12 +151,12 @@ function renderDetail(a: Activity): React.ReactNode {
     case 'PositionOpened': {
       const label = ASSET_LABEL[d.asset as string] ?? '?'
       const side  = (d.isLong as boolean) ? 'LONG' : 'SHORT'
-      const col   = (d.isLong as boolean) ? 'text-green-400' : 'text-red-400'
+      const col   = (d.isLong as boolean) ? 'success.main' : 'error.main'
       return (
         <span>
-          <span className={`font-semibold ${col}`}>{side}</span>{' '}
+          <Box component="span" sx={{ fontWeight: 'bold', color: col }}>{side}</Box>{' '}
           {label} {String(d.leverage as bigint)}× @ {fUsd(d.entryPrice as bigint)}{' '}
-          | Margin: <span className="text-white">{f18(d.margin as bigint)}</span> USDC
+          | Margin: <Box component="span" sx={{ color: 'text.primary', fontWeight: 'semibold' }}>{f18(d.margin as bigint)}</Box> USDC
         </span>
       )
     }
@@ -146,21 +165,21 @@ function renderDetail(a: Activity): React.ReactNode {
       return (
         <span>
           PnL:{' '}
-          <span className={`font-semibold ${pnlColor(pnl)}`}>
+          <Box component="span" sx={{ fontWeight: 'bold', color: pnlColor(pnl) }}>
             {(pnl >= 0n ? '+' : '') + f18(pnl)}
-          </span>{' '}
+          </Box>{' '}
           USDC | Received: {f18(d.closeAmount as bigint)}
         </span>
       )
     }
     case 'Following':
-      return <span>Following <span className="font-mono">{shortAddr(d.trader as string)}</span> | Margin: {f18(d.totalMargin as bigint)} USDC</span>
+      return <span>Following <Box component="span" sx={{ fontFamily: 'monospace' }}>{shortAddr(d.trader as string)}</Box> | Margin: {f18(d.totalMargin as bigint)} USDC</span>
     case 'FollowedBy':
-      return <span><span className="font-mono">{shortAddr(d.follower as string)}</span> copied this trader | Margin: {f18(d.totalMargin as bigint)} USDC</span>
+      return <span><Box component="span" sx={{ fontFamily: 'monospace' }}>{shortAddr(d.follower as string)}</Box> copied this trader | Margin: {f18(d.totalMargin as bigint)} USDC</span>
     case 'Staked':
-      return <span>Staked <span className="text-yellow-300 font-semibold">{f18(d.amount as bigint)}</span> USDC</span>
+      return <span>Staked <Box component="span" sx={{ color: 'warning.main', fontWeight: 'semibold' }}>{f18(d.amount as bigint)}</Box> USDC</span>
     case 'Slashed':
-      return <span>Slashed <span className="text-red-300 font-semibold">{f18(d.amount as bigint)}</span> USDC → <span className="font-mono">{shortAddr(d.recipient as string)}</span></span>
+      return <span>Slashed <Box component="span" sx={{ color: 'error.main', fontWeight: 'semibold' }}>{f18(d.amount as bigint)}</Box> USDC → <Box component="span" sx={{ fontFamily: 'monospace' }}>{shortAddr(d.recipient as string)}</Box></span>
   }
 }
 
@@ -419,282 +438,342 @@ export default function WhaleTrackerPage() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
+    <Container maxWidth="lg" sx={{ py: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
 
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-white flex items-center gap-2">
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'between', flexWrap: 'wrap', gap: 2 }}>
+        <Box sx={{ flexGrow: 1 }}>
+          <Typography variant="h4" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}>
             🐋 Whale Tracker
-          </h1>
-          <p className="text-sm text-gray-400 mt-0.5">
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
             Global leaderboard · Per-address activity · On-chain position history
-          </p>
-        </div>
-        <button
+          </Typography>
+        </Box>
+        <Button
+          variant="text"
           onClick={() => void fetchGlobal()}
           disabled={globalLoading}
-          className="text-xs text-gray-500 hover:text-white disabled:opacity-40 transition-colors"
+          sx={{ textTransform: 'none' }}
         >
           ↺ Refresh
-        </button>
-      </div>
+        </Button>
+      </Box>
 
       {/* ── A. Global Overview ─────────────────────────────────────────────────── */}
       {!wallet.isConnected ? (
-        <div className="rounded-card border border-surface-border bg-surface p-10 text-center text-gray-500 text-sm">
-          Connect your wallet to view on-chain data.
-        </div>
+        <Card sx={{ p: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Typography color="text.secondary">Connect your wallet to view on-chain data.</Typography>
+        </Card>
       ) : (
         <>
           {/* Global stat cards */}
           {globalLoading ? (
-            <div className="grid grid-cols-3 gap-4">
-              {Array.from({ length: 3 }).map((_, i) => <CardSkeleton key={i} />)}
-            </div>
+            <Grid container spacing={3}>
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Grid size={{ xs: 12, md: 4 }} key={i}>
+                  <Card sx={{ p: 4 }}>
+                    <TableSkeleton rows={2} cols={1} />
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
           ) : globalStats ? (
-            <div className="grid grid-cols-3 gap-4">
-              <StatCard
-                title="Positions Opened"
-                value={String(globalStats.openedCount)}
-                sub="all-time (all traders)"
-              />
-              <StatCard
-                title="Total Volume"
-                value={fUsd(globalStats.volume)}
-                sub="Σ margin × leverage"
-                highlight={Number(globalStats.volume) / 1e18 >= 10_000}
-              />
-              <StatCard
-                title="Open Positions"
-                value={String(globalStats.openCount)}
-                sub="currently active"
-                highlight={globalStats.openCount > 0}
-              />
-            </div>
+            <Grid container spacing={3}>
+              <Grid size={{ xs: 12, md: 4 }}>
+                <StatCard
+                  title="Positions Opened"
+                  value={String(globalStats.openedCount)}
+                  sub="all-time (all traders)"
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 4 }}>
+                <StatCard
+                  title="Total Volume"
+                  value={fUsd(globalStats.volume)}
+                  sub="Σ margin × leverage"
+                  valueColor={Number(globalStats.volume) / 1e18 >= 10_000 ? 'primary.main' : undefined}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 4 }}>
+                <StatCard
+                  title="Open Positions"
+                  value={String(globalStats.openCount)}
+                  sub="currently active"
+                  valueColor={globalStats.openCount > 0 ? 'success.main' : undefined}
+                />
+              </Grid>
+            </Grid>
           ) : (
-            <div className="rounded-card border border-surface-border bg-surface p-6 text-center text-gray-500 text-sm">
-              載入全局統計中…
-            </div>
+            <Card sx={{ p: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Typography color="text.secondary">Loading global stats...</Typography>
+            </Card>
           )}
 
           {/* ── B. Trader Leaderboard ─────────────────────────────────────────── */}
           {globalStats && globalStats.leaderboard.length > 0 && (
-            <div className="rounded-card border border-surface-border bg-surface shadow-card overflow-hidden">
-              <div className="px-5 py-4 border-b border-surface-border flex items-center justify-between">
-                <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  B · Trader Leaderboard
-                </h2>
-                <span className="text-xs text-gray-600">{globalStats.leaderboard.length} traders</span>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm text-left">
-                  <thead>
-                    <tr className="text-xs text-gray-500 uppercase border-b border-surface-border">
+            <Card>
+              <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Typography variant="overline" sx={{ fontWeight: 'bold', color: 'text.secondary' }}>
+                  Trader Leaderboard
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {globalStats.leaderboard.length} traders
+                </Typography>
+              </Box>
+              <TableContainer>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow sx={{ bgcolor: 'background.neutral' }}>
                       {['Rank', 'Address', 'Tier', 'Total Volume', 'Positions', 'Open', ''].map(h => (
-                        <th key={h} className="px-4 py-3 font-medium whitespace-nowrap">{h}</th>
+                        <TableCell key={h} sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{h}</TableCell>
                       ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-surface-border">
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
                     {globalStats.leaderboard.map((t, i) => {
                       const tier = whaleTier(t.volume)
                       return (
-                        <tr key={t.address} className="hover:bg-surface-elev/50 transition-colors">
-                          <td className="px-4 py-2.5 font-mono text-gray-500 tabular-nums">#{i + 1}</td>
-                          <td className="px-4 py-2.5 font-mono text-cyan-400">
+                        <TableRow key={t.address} hover>
+                          <TableCell sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>
+                            #{i + 1}
+                          </TableCell>
+                          <TableCell sx={{ fontFamily: 'monospace', color: 'info.main', fontWeight: 'semibold' }}>
                             {shortAddr(t.address)}
-                          </td>
-                          <td className="px-4 py-2.5">
-                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${tier.color}`}>
-                              {tier.icon} {tier.label}
-                            </span>
-                          </td>
-                          <td className="px-4 py-2.5 font-mono font-semibold text-white tabular-nums">
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              label={`${tier.icon} ${tier.label}`}
+                              size="small"
+                              sx={{
+                                fontWeight: 'bold',
+                                ...tier.style
+                              }}
+                            />
+                          </TableCell>
+                          <TableCell sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: 'text.primary' }}>
                             {fUsd(t.volume)}
-                          </td>
-                          <td className="px-4 py-2.5 font-mono text-gray-400 tabular-nums">{t.count}</td>
-                          <td className="px-4 py-2.5 font-mono tabular-nums">
-                            <span className={t.openCount > 0 ? 'text-green-400' : 'text-gray-600'}>
+                          </TableCell>
+                          <TableCell sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>{t.count}</TableCell>
+                          <TableCell sx={{ fontFamily: 'monospace' }}>
+                            <Box component="span" sx={{ color: t.openCount > 0 ? 'success.main' : 'text.disabled', fontWeight: 'bold' }}>
                               {t.openCount}
-                            </span>
-                          </td>
-                          <td className="px-4 py-2.5">
-                            <button
+                            </Box>
+                          </TableCell>
+                          <TableCell align="right">
+                            <Button
+                              size="small"
+                              variant="outlined"
                               onClick={() => pickAddress(t.address)}
-                              className="text-xs text-brand-300 hover:text-white transition-colors px-2 py-1 rounded border border-brand-300/30 hover:border-brand-300"
+                              sx={{ textTransform: 'none' }}
                             >
                               View →
-                            </button>
-                          </td>
-                        </tr>
+                            </Button>
+                          </TableCell>
+                        </TableRow>
                       )
                     })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Card>
           )}
 
           {/* ── C. Per-address search ──────────────────────────────────────────── */}
-          <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-4">
-            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">C · Address Lookup</h2>
-            <div className="flex gap-3">
-              <input
-                type="text"
+          <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+            <Typography variant="overline" sx={{ fontWeight: 'bold', color: 'text.secondary' }}>
+              Address Lookup
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 1.5 }}>
+              <TextField
                 placeholder="0x… Ethereum address"
                 value={inputAddr}
                 onChange={e => setInputAddr(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleSearch()}
-                className="flex-1 rounded-lg bg-gray-800 border border-gray-600 px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-brand-300 font-mono"
+                slotProps={{ htmlInput: { style: { fontFamily: 'monospace' } } }}
+                size="small"
+                sx={{ flexGrow: 1 }}
               />
-              <button
+              <Button
+                variant="contained"
                 onClick={handleSearch}
                 disabled={loading || !inputAddr.trim()}
-                className="px-5 py-2.5 rounded-lg bg-brand-200 hover:bg-brand-300 disabled:opacity-40 text-white text-sm font-bold transition-colors"
               >
                 {loading ? '…' : 'Search'}
-              </button>
-            </div>
+              </Button>
+            </Box>
 
             {/* Featured whale quick-select */}
-            <div className="space-y-2">
-              <p className="text-xs text-gray-500 uppercase tracking-wide">Featured Demo Whales</p>
-              <div className="flex flex-wrap gap-2">
+            <Stack spacing={1}>
+              <Typography variant="caption" sx={{ textTransform: 'uppercase', fontWeight: 'bold', color: 'text.secondary' }}>
+                Featured Demo Whales
+              </Typography>
+              <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
                 {FEATURED_WHALES.map(w => (
-                  <button
+                  <Chip
                     key={w.address}
+                    label={w.label}
                     onClick={() => pickAddress(w.address)}
-                    className="px-3 py-1.5 rounded-lg bg-surface-elev border border-surface-border text-xs text-gray-300 hover:text-white hover:border-brand-300/50 transition-colors font-medium"
-                  >
-                    {w.label}
-                  </button>
+                    variant="outlined"
+                    size="small"
+                    sx={{ cursor: 'pointer' }}
+                  />
                 ))}
-                <button
+                <Chip
+                  label={MAINNET_DEMO.label}
                   onClick={() => pickAddress(MAINNET_DEMO.address, true)}
-                  className="px-3 py-1.5 rounded-lg bg-purple-900/30 border border-purple-700/40 text-xs text-purple-300 hover:text-purple-100 transition-colors font-medium"
+                  color="secondary"
+                  variant="outlined"
+                  size="small"
+                  sx={{ cursor: 'pointer' }}
                   title="Mainnet address — for demo purposes only"
-                >
-                  {MAINNET_DEMO.label}
-                </button>
-              </div>
-            </div>
-          </div>
+                />
+              </Stack>
+            </Stack>
+          </Card>
 
           {/* Mainnet warning */}
           {isMainnetDemo && searchAddr && (
-            <div className="rounded-lg border border-purple-700/40 bg-purple-900/20 px-4 py-3 text-sm text-purple-300">
-              <span className="font-semibold">ℹ Mainnet address</span> — PepeFi runs on Sepolia testnet.
+            <Alert severity="info">
+              <Box component="span" sx={{ fontWeight: 'bold' }}>Mainnet address</Box> — PepeFi runs on Sepolia testnet.
               This address has no activity here. The search demonstrates the queryFilter capability for any address.
-            </div>
+            </Alert>
           )}
 
           {/* Error */}
           {error && (
-            <div className="rounded-lg border border-red-800 bg-red-950/40 px-4 py-3 text-xs text-red-400">
+            <Alert severity="error">
               {error}
-            </div>
+            </Alert>
           )}
 
           {/* ── D. Per-address results ─────────────────────────────────────────── */}
           {searchAddr && (
             <>
               {/* Address header + whale tier */}
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="font-mono text-gray-300 text-sm">{searchAddr}</span>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 2, mt: 1 }}>
+                <Typography variant="subtitle1" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
+                  {searchAddr}
+                </Typography>
                 {wallet.chainId === 11155111 && (
-                  <a
+                  <Link
                     href={explorerAddr(searchAddr, wallet.chainId) ?? '#'}
-                    target="_blank" rel="noopener noreferrer"
-                    className="text-emerald-400 text-xs hover:underline"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    color="success.main"
+                    sx={{ fontSize: '0.875rem', fontWeight: 'semibold', textDecoration: 'underline' }}
                   >
                     Etherscan ↗
-                  </a>
+                  </Link>
                 )}
                 {!loading && !isMainnetDemo && (
-                  <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${tier.color}`}>
-                    {tier.icon} {tier.label}
-                  </span>
+                  <Chip
+                    label={`${tier.icon} ${tier.label}`}
+                    size="small"
+                    sx={{ fontWeight: 'bold', ...tier.style }}
+                  />
                 )}
-              </div>
+              </Box>
 
               {/* Per-address stat cards */}
               {loading ? (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  {Array.from({ length: 4 }).map((_, i) => <CardSkeleton key={i} />)}
-                </div>
+                <Grid container spacing={2}>
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <Grid size={{ xs: 6, md: 3 }} key={i}>
+                      <Card sx={{ p: 3 }}>
+                        <TableSkeleton rows={2} cols={1} />
+                      </Card>
+                    </Grid>
+                  ))}
+                </Grid>
               ) : (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <StatCard title="Positions Opened" value={String(openedEvents.length)} sub="total lifetime" />
-                  <StatCard
-                    title="Total Volume"
-                    value={fUsd(totalVolume)}
-                    sub="margin × leverage"
-                    highlight={Number(totalVolume) / 1e18 >= 10_000}
-                  />
-                  <StatCard title="Open Positions" value={String(openPositions.length)} sub="currently active" />
-                  <StatCard
-                    title="Win Rate"
-                    value={winRate !== null ? `${winRate}%` : '—'}
-                    sub={`${wins}/${closedEvents.length} closes`}
-                    highlight={winRate !== null && winRate >= 60}
-                  />
-                </div>
+                <Grid container spacing={2}>
+                  <Grid size={{ xs: 6, md: 3 }}>
+                    <StatCard title="Positions Opened" value={String(openedEvents.length)} sub="total lifetime" />
+                  </Grid>
+                  <Grid size={{ xs: 6, md: 3 }}>
+                    <StatCard
+                      title="Total Volume"
+                      value={fUsd(totalVolume)}
+                      sub="margin × leverage"
+                      valueColor={Number(totalVolume) / 1e18 >= 10_000 ? 'primary.main' : undefined}
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 6, md: 3 }}>
+                    <StatCard title="Open Positions" value={String(openPositions.length)} sub="currently active" />
+                  </Grid>
+                  <Grid size={{ xs: 6, md: 3 }}>
+                    <StatCard
+                      title="Win Rate"
+                      value={winRate !== null ? `${winRate}%` : '—'}
+                      sub={`${wins}/${closedEvents.length} closes`}
+                      valueColor={winRate !== null && winRate >= 60 ? 'success.main' : undefined}
+                    />
+                  </Grid>
+                </Grid>
               )}
 
               {/* Current Open Positions */}
-              <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-3">
-                <h2 className="text-base font-bold text-white">Current Open Positions</h2>
+              <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                  Current Open Positions
+                </Typography>
                 {loading ? (
                   <TableSkeleton rows={3} cols={6} />
                 ) : openPositions.length === 0 ? (
-                  <p className="text-sm text-gray-600 py-4 text-center">No open positions.</p>
+                  <Typography color="text.secondary" sx={{ py: 3, textAlign: 'center' }}>
+                    No open positions.
+                  </Typography>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left">
-                      <thead>
-                        <tr className="text-xs text-gray-500 uppercase border-b border-surface-border">
+                  <TableContainer>
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
                           {['Asset', 'Side', 'Lev', 'Entry', 'Current', 'Margin', 'Notional', 'PnL'].map(h => (
-                            <th key={h} className="py-2 pr-4 font-medium whitespace-nowrap">{h}</th>
+                            <TableCell key={h} sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{h}</TableCell>
                           ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-surface-border">
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
                         {openPositions.map(row => {
                           const notional = row.margin * row.leverage
                           return (
-                            <tr key={String(row.id)} className="hover:bg-surface-elev/50 transition-colors">
-                              <td className="py-2.5 pr-4 font-mono text-white font-medium">
+                            <TableRow key={String(row.id)} hover>
+                              <TableCell sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: 'text.primary' }}>
                                 {ASSET_LABEL[row.asset] ?? row.asset.slice(0, 8)}
-                              </td>
-                              <td className={`py-2.5 pr-4 font-bold text-xs ${row.isLong ? 'text-green-400' : 'text-red-400'}`}>
+                              </TableCell>
+                              <TableCell sx={{ fontWeight: 'bold', color: row.isLong ? 'success.main' : 'error.main' }}>
                                 {row.isLong ? 'LONG ↑' : 'SHORT ↓'}
-                              </td>
-                              <td className="py-2.5 pr-4 font-mono text-gray-300">{String(row.leverage)}×</td>
-                              <td className="py-2.5 pr-4 font-mono text-gray-300">{fUsd(row.entryPrice)}</td>
-                              <td className="py-2.5 pr-4 font-mono text-gray-300">
+                              </TableCell>
+                              <TableCell sx={{ fontFamily: 'monospace' }}>{String(row.leverage)}×</TableCell>
+                              <TableCell sx={{ fontFamily: 'monospace' }}>{fUsd(row.entryPrice)}</TableCell>
+                              <TableCell sx={{ fontFamily: 'monospace' }}>
                                 {row.currentPrice === 0n ? '—' : fUsd(row.currentPrice)}
-                              </td>
-                              <td className="py-2.5 pr-4 font-mono text-gray-300">{f18(row.margin)}</td>
-                              <td className="py-2.5 pr-4 font-mono text-gray-400">{f18(notional)}</td>
-                              <td className={`py-2.5 pr-4 font-mono font-semibold ${pnlColor(row.pnl)}`}>
+                              </TableCell>
+                              <TableCell sx={{ fontFamily: 'monospace' }}>{f18(row.margin)}</TableCell>
+                              <TableCell sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>{f18(notional)}</TableCell>
+                              <TableCell sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: pnlColor(row.pnl) }}>
                                 {(Number(row.pnl) >= 0 ? '+' : '') + f18(row.pnl, 4)}
-                              </td>
-                            </tr>
+                              </TableCell>
+                            </TableRow>
                           )
                         })}
-                      </tbody>
-                    </table>
-                  </div>
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
                 )}
-              </div>
+              </Card>
 
               {/* Activity Timeline */}
-              <div className="rounded-card border border-surface-border bg-surface shadow-card overflow-hidden">
-                <div className="px-5 py-4 border-b border-surface-border flex items-center justify-between">
-                  <h2 className="text-base font-bold text-white">Activity Timeline</h2>
-                  <span className="text-xs text-gray-500">From deploy block #{DEPLOY_BLOCK.toLocaleString()}</span>
-                </div>
+              <Card>
+                <Box sx={{ p: 2.5, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
+                  <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                    Activity Timeline
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    From deploy block #{DEPLOY_BLOCK.toLocaleString()}
+                  </Typography>
+                </Box>
 
                 {loading ? (
                   <TableSkeleton rows={6} cols={5} />
@@ -709,53 +788,59 @@ export default function WhaleTrackerPage() {
                     }
                   />
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left">
-                      <thead>
-                        <tr className="text-xs text-gray-500 uppercase border-b border-surface-border bg-surface-sub/50">
+                  <TableContainer>
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow sx={{ bgcolor: 'background.neutral' }}>
                           {['Time', 'Type', 'Details', 'Block', 'Tx'].map(h => (
-                            <th key={h} className="px-4 py-3 font-medium whitespace-nowrap">{h}</th>
+                            <TableCell key={h} sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{h}</TableCell>
                           ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-surface-border">
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
                         {activity.map((e, i) => (
-                          <tr key={i} className="hover:bg-surface-elev/50 transition-colors">
-                            <td className="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">
+                          <TableRow key={i} hover>
+                            <TableCell sx={{ fontSize: '0.75rem', color: 'text.secondary', whitespace: 'nowrap' }}>
                               {fTime(e.timestamp)}
-                            </td>
-                            <td className="px-4 py-2.5">
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${KIND_STYLE[e.kind]}`}>
-                                {KIND_LABEL[e.kind]}
-                              </span>
-                            </td>
-                            <td className="px-4 py-2.5 text-xs text-gray-300 max-w-sm">
+                            </TableCell>
+                            <TableCell>
+                              <Chip
+                                label={KIND_LABEL[e.kind]}
+                                size="small"
+                                sx={{ fontWeight: 'bold', ...KIND_STYLE[e.kind] }}
+                              />
+                            </TableCell>
+                            <TableCell sx={{ fontSize: '0.75rem', color: 'text.primary' }}>
                               {renderDetail(e)}
-                            </td>
-                            <td className="px-4 py-2.5 font-mono text-xs text-gray-500 whitespace-nowrap">
+                            </TableCell>
+                            <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.75rem', color: 'text.secondary' }}>
                               #{e.blockNumber}
-                            </td>
-                            <td className="px-4 py-2.5">
+                            </TableCell>
+                            <TableCell>
                               {explorerTx(e.txHash, wallet.chainId) ? (
-                                <a
+                                <Link
                                   href={explorerTx(e.txHash, wallet.chainId)!}
-                                  target="_blank" rel="noopener noreferrer"
-                                  className="text-emerald-500 hover:text-emerald-300 transition-colors text-base"
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  color="success.main"
+                                  sx={{ fontWeight: 'bold', fontSize: '1.1rem', textDecoration: 'none' }}
                                   title={e.txHash}
                                 >
                                   ↗
-                                </a>
+                                </Link>
                               ) : (
-                                <span className="text-gray-700 text-xs font-mono">{e.txHash.slice(0, 8)}…</span>
+                                <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>
+                                  {e.txHash.slice(0, 8)}…
+                                </Typography>
                               )}
-                            </td>
-                          </tr>
+                            </TableCell>
+                          </TableRow>
                         ))}
-                      </tbody>
-                    </table>
-                  </div>
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
                 )}
-              </div>
+              </Card>
             </>
           )}
         </>
@@ -763,29 +848,10 @@ export default function WhaleTrackerPage() {
 
       {/* Footer note */}
       {wallet.isConnected && !globalLoading && (
-        <p className="text-xs text-gray-700 text-center">
+        <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center', display: 'block', mt: 2 }}>
           Data scanned from block #{DEPLOY_BLOCK.toLocaleString()} · {FETCH_BLOCKS.toLocaleString()} block window per chunk
-        </p>
+        </Typography>
       )}
-    </div>
-  )
-}
-
-// ── Stat Card ─────────────────────────────────────────────────────────────────
-function StatCard({
-  title, value, sub, highlight = false
-}: { title: string; value: string; sub?: string; highlight?: boolean }) {
-  return (
-    <div className={`rounded-card border p-4 space-y-1 ${
-      highlight
-        ? 'border-brand-300/40 bg-brand-400/5'
-        : 'border-surface-border bg-surface'
-    }`}>
-      <p className="text-xs text-gray-400 uppercase tracking-wide">{title}</p>
-      <p className={`text-xl font-bold font-mono ${highlight ? 'text-brand-100' : 'text-white'}`}>
-        {value}
-      </p>
-      {sub && <p className="text-xs text-gray-500">{sub}</p>}
-    </div>
+    </Container>
   )
 }

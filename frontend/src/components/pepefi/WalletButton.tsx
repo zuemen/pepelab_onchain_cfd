@@ -1,84 +1,159 @@
-import type { WalletAPI } from 'src/hooks/useWallet'
+import type { WalletAPI } from 'src/hooks/useWallet';
 
-import { useRef, useState, useEffect } from 'react'
+import { useState } from 'react';
+
+import Button from '@mui/material/Button';
+import Menu from '@mui/material/Menu';
+import MenuItem from '@mui/material/MenuItem';
+import Box from '@mui/material/Box';
+import Typography from '@mui/material/Typography';
+import CircularProgress from '@mui/material/CircularProgress';
+import { Icon } from '@iconify/react';
 
 interface Props {
-  wallet: WalletAPI
+  wallet: WalletAPI;
 }
 
 export default function WalletButton({ wallet }: Props) {
-  const { address, isConnected, isConnecting, connect, disconnect, switchAccount } = wallet
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
+  const { address, isConnected, isConnecting, connect, disconnect, switchAccount } = wallet;
+  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const open = Boolean(anchorEl);
 
-  useEffect(() => {
-    if (!open) return undefined
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [open])
+  const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    setAnchorEl(event.currentTarget);
+  };
+
+  const handleClose = () => {
+    setAnchorEl(null);
+  };
 
   if (isConnecting) {
     return (
-      <button disabled className="btn-secondary btn-pill opacity-60 cursor-not-allowed">
-        <span className="h-3.5 w-3.5 rounded-full border-2 border-slate-400 border-t-transparent animate-spin" />
+      <Button
+        disabled
+        variant="outlined"
+        color="inherit"
+        startIcon={<CircularProgress size={16} color="inherit" />}
+        sx={{ borderRadius: 50, px: 2.5 }}
+      >
         Connecting…
-      </button>
-    )
+      </Button>
+    );
   }
 
   if (isConnected && address) {
-    const short = `${address.slice(0, 6)}…${address.slice(-4)}`
+    const short = `${address.slice(0, 6)}…${address.slice(-4)}`;
     return (
-      <div ref={ref} className="relative">
-        <button
-          onClick={() => setOpen(o => !o)}
-          className="btn-secondary btn-pill btn-sm flex items-center gap-2"
+      <Box>
+        <Button
+          variant="outlined"
+          color="inherit"
+          onClick={handleClick}
+          startIcon={
+            <Box
+              sx={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                bgcolor: 'success.main',
+                boxShadow: (theme) => `0 0 8px ${theme.palette.success.main}`,
+              }}
+            />
+          }
+          endIcon={
+            <Icon
+              icon={open ? 'eva:chevron-up-fill' : 'eva:chevron-down-fill'}
+              width={16}
+              height={16}
+            />
+          }
+          sx={{
+            borderRadius: 50,
+            px: 2,
+            fontFamily: 'monospace',
+            borderColor: 'divider',
+            textTransform: 'none',
+            '&:hover': {
+              borderColor: 'text.secondary',
+            },
+          }}
         >
-          {/* 綠點：已連線指示 */}
-          <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/60" />
-          <span className="font-mono">{short}</span>
-          <svg className={`h-3.5 w-3.5 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor">
-            <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
-          </svg>
-        </button>
+          {short}
+        </Button>
 
-        {open && (
-          <div className="absolute right-0 mt-2 w-48 rounded-xl border border-slate-700 bg-slate-800 shadow-xl shadow-black/40 z-50 overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-slate-700">
-              <p className="text-xs text-slate-500">Connected</p>
-              <p className="text-xs font-mono text-slate-300 truncate">{address}</p>
-            </div>
-            <button
-              onClick={() => { setOpen(false); void switchAccount() }}
-              className="w-full text-left px-4 py-2.5 text-sm text-slate-300 hover:bg-slate-700 hover:text-white transition-colors"
-            >
-              Switch Account
-            </button>
-            <button
-              onClick={() => { setOpen(false); disconnect() }}
-              className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-red-900/30 hover:text-red-300 transition-colors"
-            >
-              Disconnect
-            </button>
-          </div>
-        )}
-      </div>
-    )
+        <Menu
+          anchorEl={anchorEl}
+          open={open}
+          onClose={handleClose}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+          transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+          slotProps={{
+            paper: {
+              sx: {
+                mt: 1,
+                width: 220,
+                borderRadius: 1.5,
+                boxShadow: (theme) => theme.shadows[16],
+                border: '1px solid',
+                borderColor: 'divider',
+              },
+            },
+          }}
+        >
+          <Box sx={{ px: 2, py: 1, borderBottom: '1px solid', borderColor: 'divider' }}>
+            <Typography variant="caption" color="text.secondary" display="block">
+              Connected Wallet
+            </Typography>
+            <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.primary', wordBreak: 'break-all' }}>
+              {address}
+            </Typography>
+          </Box>
+          <MenuItem
+            onClick={() => {
+              handleClose();
+              void switchAccount();
+            }}
+            sx={{ py: 1, fontSize: '0.875rem' }}
+          >
+            <Icon icon="eva:swap-fill" width={18} height={18} style={{ marginRight: 8 }} />
+            Switch Account
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              handleClose();
+              disconnect();
+            }}
+            sx={{
+              py: 1,
+              fontSize: '0.875rem',
+              color: 'error.main',
+              '&:hover': {
+                bgcolor: 'rgba(255, 86, 48, 0.08)',
+              },
+            }}
+          >
+            <Icon icon="eva:log-out-fill" width={18} height={18} style={{ marginRight: 8 }} />
+            Disconnect
+          </MenuItem>
+        </Menu>
+      </Box>
+    );
   }
 
   return (
-    <button
+    <Button
+      variant="contained"
+      color="primary"
       onClick={() => void connect()}
-      className="btn-primary btn-pill"
+      startIcon={<Icon icon="eva:diagonal-arrow-right-up-fill" width={18} height={18} />}
+      sx={{
+        borderRadius: 50,
+        px: 2.5,
+        fontWeight: 'bold',
+        boxShadow: '0 8px 16px 0 rgba(0, 167, 111, 0.24)',
+      }}
     >
-      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M21 12V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2h14a2 2 0 002-2v-5" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M16 12h6m-3-3l3 3-3 3" />
-      </svg>
       Connect Wallet
-    </button>
-  )
+    </Button>
+  );
 }

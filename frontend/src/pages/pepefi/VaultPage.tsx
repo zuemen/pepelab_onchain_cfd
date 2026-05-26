@@ -8,6 +8,24 @@ import { prettyError } from 'src/lib/pepefi/errorMessages'
 import Skeleton from 'src/components/pepefi/Skeleton'
 import EmptyState from 'src/components/pepefi/EmptyState'
 
+import Box from '@mui/material/Box';
+import Container from '@mui/material/Container';
+import Typography from '@mui/material/Typography';
+import Card from '@mui/material/Card';
+import Grid from '@mui/material/Grid';
+import Stack from '@mui/material/Stack';
+import Button from '@mui/material/Button';
+import TextField from '@mui/material/TextField';
+import Snackbar from '@mui/material/Snackbar';
+import Alert from '@mui/material/Alert';
+import Link from '@mui/material/Link';
+import TableContainer from '@mui/material/TableContainer';
+import Table from '@mui/material/Table';
+import TableHead from '@mui/material/TableHead';
+import TableBody from '@mui/material/TableBody';
+import TableRow from '@mui/material/TableRow';
+import TableCell from '@mui/material/TableCell';
+
 interface VaultStats {
   totalAssets:  bigint
   totalSupply:  bigint
@@ -151,179 +169,248 @@ export default function VaultPage() {
 
   if (!wallet.isConnected) {
     return (
-      <div className="flex items-center justify-center h-64 text-gray-400">
-        Connect wallet to use the LP Vault.
-      </div>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+        <Typography color="text.secondary">Connect wallet to use the LP Vault.</Typography>
+      </Box>
     )
   }
 
-  const activityColor: Record<ActivityEntry['type'], string> = {
-    Deposited:      'text-green-400',
-    Withdrawn:      'text-yellow-400',
-    ProtocolDeposit:'text-blue-400',
-    Bailout:        'text-red-400',
+  const activityColorMui: Record<ActivityEntry['type'], string> = {
+    Deposited:      'success.main',
+    Withdrawn:      'warning.main',
+    ProtocolDeposit:'info.main',
+    Bailout:        'error.main',
   }
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <Container maxWidth="md" sx={{ py: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <Grid container spacing={2}>
         {[
           { label: 'Total Assets', value: stats ? f18(stats.totalAssets) + ' USDC' : null },
           { label: 'Share Price',  value: stats ? f18(stats.sharePrice) + ' USDC/pIV' : null },
           { label: 'Total Supply', value: stats ? f18(stats.totalSupply) + ' pIV' : null },
           { label: 'My pIV Value', value: stats ? f18(stats.myUsdcValue) + ' USDC' : null },
         ].map(s => (
-          <div key={s.label} className="bg-surface-sub rounded-xl p-4 border border-surface-border">
-            <div className="text-xs text-gray-500 mb-1">{s.label}</div>
-            {s.value === null
-              ? <Skeleton className="h-7 w-28 mt-1" />
-              : <div className="text-lg font-mono font-semibold text-white">{s.value}</div>
-            }
-          </div>
+          <Grid size={{ xs: 6, md: 3 }} key={s.label}>
+            <Card sx={{ p: 2 }}>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                {s.label}
+              </Typography>
+              {s.value === null ? (
+                <Skeleton height={28} sx={{ width: '80%', mt: 0.5 }} />
+              ) : (
+                <Typography variant="h6" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
+                  {s.value}
+                </Typography>
+              )}
+            </Card>
+          </Grid>
         ))}
-      </div>
+      </Grid>
 
       {/* Your position */}
       {stats && stats.myShares > ZERO && (
-        <div className="bg-surface-sub rounded-xl p-5 border border-surface-border">
-          <h2 className="text-sm font-semibold text-gray-300 mb-3">Your Position</h2>
-          <div className="flex gap-8 text-sm">
-            <div>
-              <span className="text-gray-500">pIV held: </span>
-              <span className="font-mono text-white">{f18(stats.myShares, 4)}</span>
-            </div>
-            <div>
-              <span className="text-gray-500">USDC value: </span>
-              <span className="font-mono text-green-400">{f18(stats.myUsdcValue)}</span>
-            </div>
-          </div>
-        </div>
+        <Card sx={{ p: 3, bgcolor: 'background.neutral' }}>
+          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2, fontWeight: 'bold' }}>
+            Your Position
+          </Typography>
+          <Stack direction="row" spacing={4}>
+            <Box>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                pIV held
+              </Typography>
+              <Typography variant="body1" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
+                {f18(stats.myShares, 4)}
+              </Typography>
+            </Box>
+            <Box>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                USDC value
+              </Typography>
+              <Typography variant="body1" color="success.main" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
+                {f18(stats.myUsdcValue)}
+              </Typography>
+            </Box>
+          </Stack>
+        </Card>
       )}
 
       {/* Deposit + Withdraw */}
-      <div className="grid md:grid-cols-2 gap-4">
+      <Grid container spacing={2}>
         {/* Deposit */}
-        <div className="bg-surface-sub rounded-xl p-5 border border-surface-border space-y-3">
-          <h2 className="text-sm font-semibold text-gray-300">Deposit USDC</h2>
-          <p className="text-xs text-gray-500">
-            Receive pIV shares proportional to current pool size. Earn yield from protocol fees.
-          </p>
-          <div className="flex gap-2">
-            <input
-              type="number"
-              min="0"
-              placeholder="USDC amount"
-              value={depositAmt}
-              onChange={e => setDepositAmt(e.target.value)}
-              className="flex-1 bg-surface rounded-lg px-3 py-2 text-sm font-mono text-white border border-surface-border focus:outline-none focus:border-brand-300"
-            />
-            <button
-              onClick={() => void doDeposit()}
-              disabled={busy || !depositAmt}
-              className="px-4 py-2 rounded-lg bg-brand-400/20 hover:bg-brand-400/30 disabled:opacity-50 text-brand-100 text-sm font-semibold border border-brand-300/30 transition-colors"
-            >
-              {busy ? '…' : 'Deposit'}
-            </button>
-          </div>
-          {stats && depositAmt && (
-            <div className="text-xs text-gray-500">
-              ≈ {f18((stats.totalSupply > ZERO && stats.totalAssets > ZERO)
-                ? BigInt(Math.floor(Number(depositAmt) * 1e18)) * stats.totalSupply / stats.totalAssets
-                : BigInt(Math.floor(Number(depositAmt) * 1e18)), 4)} pIV
-            </div>
-          )}
-        </div>
+        <Grid size={{ xs: 12, md: 6 }}>
+          <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2, height: '100%' }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+              Deposit USDC
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ flexGrow: 1 }}>
+              Receive pIV shares proportional to current pool size. Earn yield from protocol fees.
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <TextField
+                type="number"
+                size="small"
+                placeholder="USDC amount"
+                value={depositAmt}
+                onChange={e => setDepositAmt(e.target.value)}
+                slotProps={{ htmlInput: { min: "0", style: { fontFamily: 'monospace' } } }}
+                sx={{ flexGrow: 1 }}
+              />
+              <Button
+                variant="contained"
+                onClick={() => void doDeposit()}
+                disabled={busy || !depositAmt}
+              >
+                {busy ? '…' : 'Deposit'}
+              </Button>
+            </Box>
+            {stats && depositAmt && (
+              <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                ≈ {f18((stats.totalSupply > ZERO && stats.totalAssets > ZERO)
+                  ? BigInt(Math.floor(Number(depositAmt) * 1e18)) * stats.totalSupply / stats.totalAssets
+                  : BigInt(Math.floor(Number(depositAmt) * 1e18)), 4)} pIV
+              </Typography>
+            )}
+          </Card>
+        </Grid>
 
         {/* Withdraw */}
-        <div className="bg-surface-sub rounded-xl p-5 border border-surface-border space-y-3">
-          <h2 className="text-sm font-semibold text-gray-300">Withdraw Shares</h2>
-          <p className="text-xs text-gray-500">
-            Burn pIV shares to receive proportional USDC from the pool.
-          </p>
-          <div className="flex gap-2">
-            <input
-              type="number"
-              min="0"
-              placeholder="pIV shares"
-              value={withdrawAmt}
-              onChange={e => setWithdrawAmt(e.target.value)}
-              className="flex-1 bg-surface rounded-lg px-3 py-2 text-sm font-mono text-white border border-surface-border focus:outline-none focus:border-brand-300"
-            />
-            <button
-              onClick={() => void doWithdraw()}
-              disabled={busy || !withdrawAmt}
-              className="px-4 py-2 rounded-lg bg-warn/10 hover:bg-warn/20 disabled:opacity-50 text-warn text-sm font-semibold border border-warn/30 transition-colors"
-            >
-              {busy ? '…' : 'Withdraw'}
-            </button>
-          </div>
-          {stats && withdrawAmt && (
-            <div className="text-xs text-gray-500">
-              ≈ {f18(stats.totalSupply > ZERO
-                ? BigInt(Math.floor(Number(withdrawAmt) * 1e18)) * stats.totalAssets / stats.totalSupply
-                : 0n, 4)} USDC
-            </div>
-          )}
-          {stats && stats.myShares > ZERO && (
-            <button
-              onClick={() => setWithdrawAmt(formatUnits(stats.myShares, 18))}
-              className="text-xs text-gray-500 hover:text-gray-300 transition-colors underline"
-            >
-              Max ({f18(stats.myShares, 4)} pIV)
-            </button>
-          )}
-        </div>
-      </div>
+        <Grid size={{ xs: 12, md: 6 }}>
+          <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2, height: '100%' }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+              Withdraw Shares
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ flexGrow: 1 }}>
+              Burn pIV shares to receive proportional USDC from the pool.
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <TextField
+                type="number"
+                size="small"
+                placeholder="pIV shares"
+                value={withdrawAmt}
+                onChange={e => setWithdrawAmt(e.target.value)}
+                slotProps={{ htmlInput: { min: "0", style: { fontFamily: 'monospace' } } }}
+                sx={{ flexGrow: 1 }}
+              />
+              <Button
+                variant="contained"
+                color="warning"
+                onClick={() => void doWithdraw()}
+                disabled={busy || !withdrawAmt}
+              >
+                {busy ? '…' : 'Withdraw'}
+              </Button>
+            </Box>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              {stats && withdrawAmt ? (
+                <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                  ≈ {f18(stats.totalSupply > ZERO
+                    ? BigInt(Math.floor(Number(withdrawAmt) * 1e18)) * stats.totalAssets / stats.totalSupply
+                    : 0n, 4)} USDC
+                </Typography>
+              ) : <Box />}
+              {stats && stats.myShares > ZERO && (
+                <Button
+                  size="small"
+                  variant="text"
+                  color="inherit"
+                  onClick={() => setWithdrawAmt(formatUnits(stats.myShares, 18))}
+                  sx={{ textDecoration: 'underline', p: 0, minWidth: 0, textTransform: 'none', typography: 'caption', color: 'text.secondary', '&:hover': { color: 'text.primary', bgcolor: 'transparent' } }}
+                >
+                  Max ({f18(stats.myShares, 4)} pIV)
+                </Button>
+              )}
+            </Box>
+          </Card>
+        </Grid>
+      </Grid>
 
-      {/* Toast */}
-      {toast && (
-        <div className={`fixed top-4 right-4 z-50 rounded-lg px-5 py-3 text-sm font-medium shadow-xl ${toast.ok ? 'bg-emerald-800 text-emerald-100' : 'bg-red-900 text-red-100'}`}>
-          {toast.msg}
-          {toast.hash && explorerTx(toast.hash, wallet.chainId) && (
-            <a
-              href={explorerTx(toast.hash, wallet.chainId)!}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block mt-1 text-xs underline opacity-80"
-            >
-              View on Etherscan ↗
-            </a>
-          )}
-        </div>
-      )}
+      {/* Toast Notification */}
+      <Snackbar
+        open={!!toast}
+        autoHideDuration={6000}
+        onClose={() => setToast(null)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+      >
+        {toast ? (
+          <Alert
+            severity={toast.ok ? 'success' : 'error'}
+            onClose={() => setToast(null)}
+            sx={{ width: '100%' }}
+          >
+            {toast.msg}
+            {toast.hash && explorerTx(toast.hash, wallet.chainId) && (
+              <Link
+                href={explorerTx(toast.hash, wallet.chainId)!}
+                target="_blank"
+                rel="noopener noreferrer"
+                color="inherit"
+                sx={{ display: 'block', mt: 0.5, typography: 'caption', textDecoration: 'underline' }}
+              >
+                View on Etherscan ↗
+              </Link>
+            )}
+          </Alert>
+        ) : undefined}
+      </Snackbar>
 
       {/* Activity Feed */}
-      <div className="bg-surface-sub rounded-xl border border-surface-border overflow-hidden">
-        <div className="px-5 py-3 border-b border-surface-border">
-          <h2 className="text-sm font-semibold text-gray-300">Recent Activity</h2>
-        </div>
+      <Card>
+        <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+          <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+            Recent Activity
+          </Typography>
+        </Box>
         {activity.length === 0 ? (
           <EmptyState icon="🏦" title="No activity yet" description="Deposit USDC to start earning yield from protocol fees." />
         ) : (
-          <div className="divide-y divide-surface-border">
-            {activity.slice(0, 20).map((a, i) => (
-              <div key={i} className="flex items-center justify-between px-5 py-3 text-sm">
-                <div className="flex items-center gap-3">
-                  <span className={`font-semibold ${activityColor[a.type]}`}>{a.label}</span>
-                  <span className="text-gray-600 font-mono text-xs truncate max-w-[120px]">{a.from.slice(0, 10)}…</span>
-                </div>
-                <div className="text-right">
-                  <span className="font-mono text-white">{a.amount}</span>
-                  <span className="text-gray-600 text-xs ml-2">#{a.block}</span>
-                </div>
-              </div>
-            ))}
-          </div>
+          <TableContainer>
+            <Table size="small">
+              <TableBody>
+                {activity.slice(0, 20).map((a, i) => (
+                  <TableRow key={i} sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
+                    <TableCell>
+                      <Typography variant="body2" sx={{ fontWeight: 'bold', color: activityColorMui[a.type] }}>
+                        {a.label}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                        {a.from.slice(0, 10)}…
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 'semibold' }}>
+                        {a.amount}
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                        #{a.block}
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
         )}
-      </div>
+      </Card>
 
       {/* Info box */}
-      <div className="rounded-xl border border-surface-border bg-surface-sub px-5 py-4 text-xs text-gray-500 space-y-1">
-        <p><span className="text-gray-400 font-semibold">How it works:</span> LPs deposit USDC and receive pIV shares. The vault earns 10% of all copy-trading and performance fees via the FeeRouter. It also absorbs remaining collateral from liquidated positions.</p>
-        <p>When a trader's loss exceeds their margin (extreme event), the vault pays a 10% bailout floor directly to the trader. LPs bear this risk in exchange for the yield.</p>
-      </div>
-    </div>
+      <Card sx={{ p: 2.5, bgcolor: 'background.neutral' }}>
+        <Stack spacing={1}>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+            <Box component="span" sx={{ color: 'text.primary', fontWeight: 'bold' }}>How it works:</Box> LPs deposit USDC and receive pIV shares. The vault earns 10% of all copy-trading and performance fees via the FeeRouter. It also absorbs remaining collateral from liquidated positions.
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+            When a trader's loss exceeds their margin (extreme event), the vault pays a 10% bailout floor directly to the trader. LPs bear this risk in exchange for the yield.
+          </Typography>
+        </Stack>
+      </Card>
+    </Container>
   )
 }

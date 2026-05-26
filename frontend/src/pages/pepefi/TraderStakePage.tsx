@@ -1,9 +1,22 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Link } from 'react-router'
+import { Link as RouterLink } from 'react-router'
 import { parseEther } from 'ethers'
 import { useContracts } from 'src/hooks/useContracts'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
+
+import Box from '@mui/material/Box'
+import Container from '@mui/material/Container'
+import Typography from '@mui/material/Typography'
+import Card from '@mui/material/Card'
+import Grid from '@mui/material/Grid'
+import Stack from '@mui/material/Stack'
+import Button from '@mui/material/Button'
+import TextField from '@mui/material/TextField'
+import Snackbar from '@mui/material/Snackbar'
+import Alert from '@mui/material/Alert'
+import Link from '@mui/material/Link'
+import Chip from '@mui/material/Chip'
 
 type TxResp = { wait(): Promise<unknown>; hash: string }
 const asTx = (v: unknown) => v as TxResp
@@ -125,205 +138,259 @@ export default function TraderStakePage() {
   const canExecute = info && info.unstakeAmount > 0n &&
     BigInt(Math.floor(Date.now() / 1000)) >= (info.unstakeRequestedAt + cooldown)
 
-  // reputation score 0-100 as percentage for progress bar
   const repPct = repScore !== null ? Math.min(Number(repScore), 100) : 0
-  const repBarColor = repScore === null ? 'bg-gray-600'
-    : repScore >= 80n ? 'bg-emerald-500'
-    : repScore >= 50n ? 'bg-yellow-500'
-    : 'bg-red-500'
+  const repBarColor = repScore === null ? 'text.disabled'
+    : repScore >= 80n ? 'success.main'
+    : repScore >= 50n ? 'warning.main'
+    : 'error.main'
 
   if (!wallet.isConnected) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh] text-gray-400">
-        Connect wallet to manage your stake.
-      </div>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+        <Typography color="text.secondary">Connect wallet to manage your stake.</Typography>
+      </Box>
     )
   }
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8 space-y-6">
+    <Container maxWidth="sm" sx={{ py: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
 
-      {toast && (
-        <div className={`fixed top-4 right-4 z-50 rounded-lg px-5 py-3 text-sm font-medium shadow-xl ${
-          toast.ok ? 'bg-emerald-800 text-emerald-100' : 'bg-red-900 text-red-100'
-        }`}>
-          {toast.msg}
-          {toast.hash && wallet.chainId === 11155111 && (
-            <a href={`https://sepolia.etherscan.io/tx/${toast.hash}`}
-               target="_blank" rel="noopener noreferrer"
-               className="block mt-1 text-xs underline opacity-80 hover:opacity-100">
-              View on Etherscan ↗
-            </a>
-          )}
-        </div>
-      )}
+      {/* Snackbar notification */}
+      <Snackbar
+        open={!!toast}
+        autoHideDuration={6000}
+        onClose={() => setToast(null)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+      >
+        {toast ? (
+          <Alert
+            severity={toast.ok ? 'success' : 'error'}
+            onClose={() => setToast(null)}
+            sx={{ width: '100%' }}
+          >
+            {toast.msg}
+            {toast.hash && wallet.chainId === 11155111 && (
+              <Link
+                href={`https://sepolia.etherscan.io/tx/${toast.hash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                color="inherit"
+                sx={{ display: 'block', mt: 0.5, typography: 'caption', textDecoration: 'underline' }}
+              >
+                View on Etherscan ↗
+              </Link>
+            )}
+          </Alert>
+        ) : undefined}
+      </Snackbar>
 
       {/* ─── A. Current Stake ────────────────────────────────────────────── */}
-      <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-bold text-white">Your Stake</h2>
-          <button onClick={() => void fetchAll()} className="text-xs text-gray-500 hover:text-white transition-colors">
+      <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+            Your Stake
+          </Typography>
+          <Button
+            variant="text"
+            size="small"
+            onClick={() => void fetchAll()}
+            sx={{ textTransform: 'none' }}
+          >
             ↺ Refresh
-          </button>
-        </div>
+          </Button>
+        </Box>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div className="bg-surface-elev rounded-lg p-3 space-y-1">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">Staked</p>
-            <p className="text-xl font-bold font-mono text-white">
-              {info ? f18(info.amount) : '…'}
-              <span className="text-xs font-normal text-gray-500 ml-1">mUSDC</span>
-            </p>
-          </div>
-          <div className="bg-surface-elev rounded-lg p-3 space-y-1">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">Total Slashed</p>
-            <p className="text-xl font-bold font-mono text-danger">
-              {info ? f18(info.totalSlashed) : '…'}
-              <span className="text-xs font-normal text-gray-500 ml-1">mUSDC</span>
-            </p>
-          </div>
-        </div>
+        <Grid container spacing={2}>
+          <Grid size={{ xs: 6 }}>
+            <Card sx={{ p: 2, bgcolor: 'background.neutral' }}>
+              <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold', display: 'block', mb: 0.5 }}>
+                Staked
+              </Typography>
+              <Typography variant="h5" sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: 'text.primary' }}>
+                {info ? f18(info.amount) : '…'}
+                <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary', ml: 0.5 }}>mUSDC</Box>
+              </Typography>
+            </Card>
+          </Grid>
+          <Grid size={{ xs: 6 }}>
+            <Card sx={{ p: 2, bgcolor: 'background.neutral' }}>
+              <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold', display: 'block', mb: 0.5 }}>
+                Total Slashed
+              </Typography>
+              <Typography variant="h5" sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: 'error.main' }}>
+                {info ? f18(info.totalSlashed) : '…'}
+                <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary', ml: 0.5 }}>mUSDC</Box>
+              </Typography>
+            </Card>
+          </Grid>
+        </Grid>
 
         {/* Reputation score with progress bar */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">Reputation Score</p>
-            <span className={`text-sm font-bold font-mono ${
-              repScore === null ? 'text-gray-400'
-              : repScore >= 80n ? 'text-emerald-400'
-              : repScore >= 50n ? 'text-yellow-400'
-              : 'text-red-400'
-            }`}>
+        <Stack spacing={1}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold' }}>
+              Reputation Score
+            </Typography>
+            <Typography variant="subtitle1" sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: repBarColor }}>
               {repScore !== null ? `${String(repScore)} / 100` : '…'}
-            </span>
-          </div>
-          <div className="h-2 rounded-full bg-gray-800 overflow-hidden">
-            <div
-              className={`h-full rounded-full transition-all duration-500 ${repBarColor}`}
-              style={{ width: `${repPct}%` }}
+            </Typography>
+          </Box>
+          <Box sx={{ h: 8, bgcolor: 'background.neutral', borderRadius: 1, overflow: 'hidden' }}>
+            <Box
+              sx={{
+                bgcolor: repBarColor,
+                height: '100%',
+                width: `${repPct}%`,
+                transition: 'width 0.5s'
+              }}
             />
-          </div>
-          <p className="text-xs text-gray-600">
+          </Box>
+          <Typography variant="caption" color="text.secondary">
             Formula: stake × 100 ÷ (stake + totalSlashed × 5)
-          </p>
-        </div>
+          </Typography>
+        </Stack>
 
         {/* Eligibility badge */}
         {eligible !== null && (
-          <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold border ${
-            eligible
-              ? 'bg-emerald-900/40 border-emerald-700 text-emerald-300'
-              : 'bg-red-900/40 border-red-700 text-red-300'
-          }`}>
-            {eligible ? '✓ Eligible to publish strategies' : '✗ Need 100 mUSDC stake'}
-          </div>
+          <Chip
+            label={eligible ? '✓ Eligible to publish strategies' : '✗ Need 100 mUSDC stake'}
+            color={eligible ? 'success' : 'error'}
+            variant="outlined"
+            size="small"
+            sx={{ alignSelf: 'flex-start', fontWeight: 'bold' }}
+          />
         )}
 
-        <p className="text-xs text-gray-600">
+        <Typography variant="caption" color="text.secondary">
           Minimum stake: {f18(minStake)} mUSDC · Skin-in-the-game for your followers
-        </p>
-      </div>
+        </Typography>
+      </Card>
 
       {/* ─── B. Stake More ───────────────────────────────────────────────── */}
-      <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-4">
-        <h2 className="text-base font-bold text-white">Stake mUSDC</h2>
-        <p className="text-xs text-gray-500">
+      <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+        <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+          Stake mUSDC
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
           Staking puts your capital at risk — followers can trigger slashing if your strategy causes &gt; 30% loss.
           In return, you earn credibility (reputation score) and can publish strategies.
-        </p>
-        <div className="flex gap-3">
-          <input
+        </Typography>
+        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+          <TextField
             type="number"
-            min="100"
-            step="100"
+            size="small"
             placeholder="100"
             value={stakeInput}
             onChange={e => setStakeInput(e.target.value)}
-            className="w-40 rounded-lg bg-gray-800 border border-gray-600 px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-brand-200"
+            slotProps={{ htmlInput: { min: "100", step: "100", style: { fontFamily: 'monospace' } } }}
+            sx={{ width: 140 }}
           />
-          <span className="self-center text-sm text-gray-400">mUSDC</span>
-          <button
+          <Typography variant="body2" color="text.secondary">mUSDC</Typography>
+          <Button
+            variant="contained"
             onClick={() => void doApproveAndStake()}
             disabled={busy['stake'] || !stakeInput}
-            className="flex-1 py-2 rounded-lg bg-brand-200 hover:bg-brand-300 disabled:opacity-40 text-white text-sm font-semibold transition-colors"
+            sx={{ flexGrow: 1 }}
           >
             {busy['stake'] ? 'Staking…' : 'Approve + Stake'}
-          </button>
-        </div>
-      </div>
+          </Button>
+        </Box>
+      </Card>
 
       {/* ─── C. Unstake Request ──────────────────────────────────────────── */}
-      <div className="rounded-card border border-surface-border bg-surface shadow-card p-5 space-y-4">
-        <h2 className="text-base font-bold text-white">Unstake (24 h cooldown)</h2>
+      <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+          Unstake (24 h cooldown)
+        </Typography>
 
-        {/* ─── D. Pending Unstake ──────────────────────────────────────────── */}
         {info && info.unstakeAmount > 0n ? (
-          <div className="space-y-3">
-            <div className="rounded-lg border border-warn/30 bg-warn/5 p-3 text-sm space-y-1">
-              <p className="text-warn font-semibold">Pending unstake: {f18(info.unstakeAmount)} mUSDC</p>
-              <p className="text-xs text-gray-400">
-                {canExecute ? 'Cooldown elapsed — ready to execute.' : `Available at: ${cooldownEnds}`}
-              </p>
-            </div>
-            <div className="flex gap-3">
-              <button
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <Alert severity="warning">
+              <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+                Pending unstake: {f18(info.unstakeAmount)} mUSDC
+              </Typography>
+              {canExecute ? 'Cooldown elapsed — ready to execute.' : `Available at: ${cooldownEnds}`}
+            </Alert>
+            <Box sx={{ display: 'flex', gap: 2 }}>
+              <Button
+                variant="contained"
+                color="warning"
                 onClick={() => void doExecuteUnstake()}
                 disabled={!canExecute || busy['execUnstake']}
-                className="flex-1 py-2 rounded-lg bg-brand-200 hover:bg-brand-300 disabled:opacity-40 text-white text-sm font-semibold transition-colors"
+                sx={{ flexGrow: 1 }}
               >
                 {busy['execUnstake'] ? 'Executing…' : 'Execute Unstake'}
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="outlined"
                 onClick={() => void doCancelUnstake()}
                 disabled={busy['cancelUnstake']}
-                className="flex-1 py-2 rounded-lg bg-surface-elev hover:bg-surface-border disabled:opacity-40 text-gray-300 text-sm font-medium transition-colors border border-surface-border"
+                sx={{ flexGrow: 1 }}
               >
                 {busy['cancelUnstake'] ? 'Cancelling…' : 'Cancel'}
-              </button>
-            </div>
-          </div>
+              </Button>
+            </Box>
+          </Box>
         ) : (
-          <div className="space-y-3">
-            <p className="text-xs text-gray-500">Request unstake — funds unlock after 24 h cooldown.</p>
-            <div className="flex gap-3">
-              <input
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <Typography variant="body2" color="text.secondary">Request unstake — funds unlock after 24 h cooldown.</Typography>
+            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+              <TextField
                 type="number"
-                min="0"
-                step="50"
+                size="small"
                 placeholder="50"
                 value={unstakeAmt}
                 onChange={e => setUnstakeAmt(e.target.value)}
-                className="w-40 rounded-lg bg-gray-800 border border-gray-600 px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-brand-200"
+                slotProps={{ htmlInput: { min: "0", step: "50", style: { fontFamily: 'monospace' } } }}
+                sx={{ width: 140 }}
               />
-              <span className="self-center text-sm text-gray-400">mUSDC</span>
-              <button
+              <Typography variant="body2" color="text.secondary">mUSDC</Typography>
+              <Button
+                variant="outlined"
                 onClick={() => void doRequestUnstake()}
                 disabled={busy['reqUnstake'] || !unstakeAmt}
-                className="flex-1 py-2 rounded-lg bg-surface-elev hover:bg-surface-border disabled:opacity-40 text-gray-300 text-sm font-medium transition-colors border border-surface-border"
+                sx={{ flexGrow: 1 }}
               >
                 {busy['reqUnstake'] ? 'Requesting…' : 'Request Unstake'}
-              </button>
-            </div>
-          </div>
+              </Button>
+            </Box>
+          </Box>
         )}
-      </div>
+      </Card>
 
       {/* ─── Info ────────────────────────────────────────────────────── */}
-      <div className="rounded-card border border-info/20 bg-info/5 p-4 text-xs text-gray-400 space-y-1.5">
-        <p className="text-info font-semibold text-sm">How Trader Stake works</p>
-        <ul className="space-y-1 list-disc list-inside leading-relaxed">
-          <li>Stake ≥ 100 mUSDC to publish strategies on the Marketplace.</li>
-          <li>If a follower suffers &gt; 30% loss, 50% of that loss amount (capped at 50% of your stake) is slashed and sent to them.</li>
-          <li>Reputation = stake × 100 ÷ (stake + totalSlashed × 5) — degrades as you get slashed.</li>
-          <li>Unstaking requires a 24-hour cooldown.</li>
-        </ul>
-        <div className="pt-2">
-          <Link to="/marketplace" className="text-info hover:underline">← Back to Marketplace</Link>
-          {' · '}
-          <Link to="/trader" className="text-info hover:underline">Trader Dashboard →</Link>
-        </div>
-      </div>
+      <Card sx={{ p: 3, bgcolor: 'rgba(0, 184, 217, 0.08)', border: '1px solid', borderColor: 'rgba(0, 184, 217, 0.16)' }}>
+        <Typography variant="subtitle2" color="info.lighter" sx={{ fontWeight: 'bold', mb: 1 }}>
+          How Trader Stake works
+        </Typography>
+        <Stack spacing={1} sx={{ typography: 'caption', color: 'text.secondary', mb: 2 }}>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Box component="span" sx={{ color: 'info.main', fontWeight: 'bold' }}>•</Box>
+            <Box>Stake ≥ 100 mUSDC to publish strategies on the Marketplace.</Box>
+          </Box>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Box component="span" sx={{ color: 'info.main', fontWeight: 'bold' }}>•</Box>
+            <Box>If a follower suffers &gt; 30% loss, 50% of that loss amount (capped at 50% of your stake) is slashed and sent to them.</Box>
+          </Box>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Box component="span" sx={{ color: 'info.main', fontWeight: 'bold' }}>•</Box>
+            <Box>Reputation = stake × 100 ÷ (stake + totalSlashed × 5) — degrades as you get slashed.</Box>
+          </Box>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Box component="span" sx={{ color: 'info.main', fontWeight: 'bold' }}>•</Box>
+            <Box>Unstaking requires a 24-hour cooldown.</Box>
+          </Box>
+        </Stack>
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          <Link component={RouterLink} to="/marketplace" color="info.main" sx={{ fontSize: '0.75rem', fontWeight: 'bold', textDecoration: 'underline' }}>
+            ← Back to Marketplace
+          </Link>
+          <Link component={RouterLink} to="/trader" color="info.main" sx={{ fontSize: '0.75rem', fontWeight: 'bold', textDecoration: 'underline' }}>
+            Trader Dashboard →
+          </Link>
+        </Box>
+      </Card>
 
-    </div>
+    </Container>
   )
 }

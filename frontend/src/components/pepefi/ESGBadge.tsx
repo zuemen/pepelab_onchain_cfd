@@ -1,23 +1,72 @@
+import Chip from '@mui/material/Chip';
+import Typography from '@mui/material/Typography';
+
 interface Props {
-  composite: number
-  rating:    string
-  size?:     'sm' | 'md'
+  composite: number;
+  rating:    string;
+  size?:     'sm' | 'md';
 }
 
 export default function ESGBadge({ composite, rating, size = 'sm' }: Props) {
-  const color =
-    composite >= 80 ? 'bg-emerald-900 text-emerald-300 border-emerald-700' :
-    composite >= 60 ? 'bg-lime-900 text-lime-300 border-lime-700'         :
-    composite >= 40 ? 'bg-amber-900 text-amber-300 border-amber-700'       :
-                      'bg-red-900 text-red-300 border-red-700'
+  const getBadgeColors = () => {
+    if (composite >= 80) {
+      return {
+        bgcolor: 'rgba(34, 197, 94, 0.16)',
+        color: '#22c55e',
+        borderColor: 'rgba(34, 197, 94, 0.24)',
+      };
+    }
+    if (composite >= 60) {
+      return {
+        bgcolor: 'rgba(0, 184, 217, 0.16)',
+        color: '#00b8d9',
+        borderColor: 'rgba(0, 184, 217, 0.24)',
+      };
+    }
+    if (composite >= 40) {
+      return {
+        bgcolor: 'rgba(255, 171, 0, 0.16)',
+        color: '#ffab00',
+        borderColor: 'rgba(255, 171, 0, 0.24)',
+      };
+    }
+    return {
+      bgcolor: 'rgba(255, 86, 48, 0.16)',
+      color: '#ff5630',
+      borderColor: 'rgba(255, 86, 48, 0.24)',
+    };
+  };
 
-  const pad = size === 'md' ? 'px-2.5 py-1 text-xs' : 'px-2 py-0.5 text-[11px]'
+  const colors = getBadgeColors();
 
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full border font-medium ${color} ${pad}`}>
-      <span className="opacity-70">ESG</span>
-      <span className="font-bold">{rating}</span>
-      <span className="opacity-70">{composite}</span>
-    </span>
-  )
+    <Chip
+      size={size === 'sm' ? 'small' : 'medium'}
+      variant="outlined"
+      label={
+        <>
+          <Typography component="span" variant="caption" sx={{ opacity: 0.7, mr: 0.5, fontWeight: 'medium' }}>
+            ESG
+          </Typography>
+          <Typography component="span" variant="caption" sx={{ fontWeight: 'bold', mr: 0.5 }}>
+            {rating}
+          </Typography>
+          <Typography component="span" variant="caption" sx={{ opacity: 0.7 }}>
+            {composite}
+          </Typography>
+        </>
+      }
+      sx={{
+        bgcolor: colors.bgcolor,
+        color: colors.color,
+        borderColor: colors.borderColor,
+        fontWeight: 'bold',
+        '& .MuiChip-label': {
+          display: 'inline-flex',
+          alignItems: 'center',
+          px: 1,
+        },
+      }}
+    />
+  );
 }

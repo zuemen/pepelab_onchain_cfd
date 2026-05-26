@@ -1,5 +1,7 @@
 import { Outlet, useOutletContext } from 'react-router';
 
+import Box from '@mui/material/Box';
+
 import { useWallet, type WalletAPI } from 'src/hooks/useWallet';
 
 // ----------------------------------------------------------------------
@@ -8,10 +10,10 @@ import { useWallet, type WalletAPI } from 'src/hooks/useWallet';
 export function PepefiLayout() {
   const wallet = useWallet();
   return (
-    // 深色背景包住所有 pepefi 頁面，因為 pepefi 設計用 text-white / text-gray-300
-    <div style={{ minHeight: '100%', backgroundColor: '#0f172a', color: '#f1f5f9' }}>
+    // 讓 MUI theme 的 dark mode 控制背景色
+    <Box sx={{ minHeight: '100%', bgcolor: 'background.default', color: 'text.primary' }}>
       <Outlet context={wallet} />
-    </div>
+    </Box>
   );
 }
 

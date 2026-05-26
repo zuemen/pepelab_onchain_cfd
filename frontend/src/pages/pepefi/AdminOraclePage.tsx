@@ -7,6 +7,28 @@ import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { TableSkeleton } from 'src/components/pepefi/Skeleton'
 import { ASSETS_LIST } from 'src/lib/pepefi/assetMeta'
 
+import Box from '@mui/material/Box';
+import Container from '@mui/material/Container';
+import Typography from '@mui/material/Typography';
+import Card from '@mui/material/Card';
+import Button from '@mui/material/Button';
+import TextField from '@mui/material/TextField';
+import Snackbar from '@mui/material/Snackbar';
+import Alert from '@mui/material/Alert';
+import Link from '@mui/material/Link';
+import TableContainer from '@mui/material/TableContainer';
+import Table from '@mui/material/Table';
+import TableHead from '@mui/material/TableHead';
+import TableBody from '@mui/material/TableBody';
+import TableRow from '@mui/material/TableRow';
+import TableCell from '@mui/material/TableCell';
+import Checkbox from '@mui/material/Checkbox';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import Stack from '@mui/material/Stack';
+import Accordion from '@mui/material/Accordion';
+import AccordionSummary from '@mui/material/AccordionSummary';
+import AccordionDetails from '@mui/material/AccordionDetails';
+
 // ── Config ────────────────────────────────────────────────────────────────────
 type AssetId = `0x${string}`
 
@@ -248,251 +270,278 @@ export default function AdminOraclePage() {
     }
   }
 
-  // ── Guard ─────────────────────────────────────────────────────────────────
   if (!wallet.isConnected) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh] text-gray-400">
-        Connect wallet to access Oracle Admin.
-      </div>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+        <Typography color="text.secondary">Connect wallet to access Oracle Admin.</Typography>
+      </Box>
     )
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
+    <Container maxWidth="md" sx={{ py: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
 
-      {/* Toast */}
-      {toast && (
-        <div
-          className={`fixed top-4 right-4 z-50 rounded-lg px-5 py-3 text-sm font-medium shadow-xl ${
-            toast.ok ? 'bg-emerald-800 text-emerald-100' : 'bg-red-900 text-red-100'
-          }`}
-        >
-          {toast.msg}
-          {toast.hash && wallet.chainId === 11155111 && (
-            <a
-              href={`https://sepolia.etherscan.io/tx/${toast.hash}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block mt-1 text-xs underline opacity-80 hover:opacity-100"
-            >
-              View on Etherscan ↗
-            </a>
-          )}
-        </div>
-      )}
+      {/* Snackbar notification */}
+      <Snackbar
+        open={!!toast}
+        autoHideDuration={6000}
+        onClose={() => setToast(null)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+      >
+        {toast ? (
+          <Alert
+            severity={toast.ok ? 'success' : 'error'}
+            onClose={() => setToast(null)}
+            sx={{ width: '100%' }}
+          >
+            {toast.msg}
+            {toast.hash && wallet.chainId === 11155111 && (
+              <Link
+                href={`https://sepolia.etherscan.io/tx/${toast.hash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                color="inherit"
+                sx={{ display: 'block', mt: 0.5, typography: 'caption', textDecoration: 'underline' }}
+              >
+                View on Etherscan ↗
+              </Link>
+            )}
+          </Alert>
+        ) : undefined}
+      </Snackbar>
 
       {/* Header */}
-      <div>
-        <h1 className="text-xl font-bold text-white">Oracle Price Admin</h1>
-        <p className="text-sm text-gray-400 mt-0.5">
+      <Box sx={{ mb: 1 }}>
+        <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
+          Oracle Price Admin
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
           Only the oracle owner wallet can update prices.
-        </p>
-      </div>
+        </Typography>
+      </Box>
 
       {/* Live Price Sync */}
-      <div className="rounded-card border border-brand-200/30 bg-brand-200/5 p-5 space-y-3">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <h3 className="text-sm font-semibold text-brand-100">Live Price Sync</h3>
-            <p className="text-xs text-gray-400 mt-0.5">
+      <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2, bgcolor: 'rgba(0, 167, 111, 0.08)', border: '1px solid', borderColor: 'rgba(0, 167, 111, 0.16)' }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
+          <Box>
+            <Typography variant="subtitle1" color="success.main" sx={{ fontWeight: 'bold' }}>
+              Live Price Sync
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
               Pull real-time BTC/ETH from CoinGecko. AAPL/TSLA simulated.
-            </p>
-          </div>
-          <button
+            </Typography>
+          </Box>
+          <Button
+            variant="contained"
+            color="success"
             onClick={() => void syncFromCoinGecko()}
             disabled={!isOwner || syncBusy}
-            className="px-4 py-2 rounded-lg bg-brand-200 hover:bg-brand-300 disabled:opacity-40 text-white text-sm font-semibold whitespace-nowrap"
           >
             {syncBusy ? 'Syncing…' : 'Sync from CoinGecko'}
-          </button>
-        </div>
-        {syncMsg && <p className="text-xs text-gray-400">{syncMsg}</p>}
-      </div>
+          </Button>
+        </Box>
+        {syncMsg && (
+          <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic', display: 'block' }}>
+            {syncMsg}
+          </Typography>
+        )}
+      </Card>
 
       {/* Owner status banner */}
       {ownerCheckError ? (
-        <div className="rounded-lg border border-red-800 bg-red-950/40 px-4 py-3 text-xs text-red-400">
+        <Alert severity="error">
           <strong>Failed to read oracle owner:</strong> {ownerCheckError}
-        </div>
+        </Alert>
       ) : oracleOwner === null ? (
-        <div className="rounded-lg border border-gray-700 bg-gray-800/60 px-4 py-3 text-xs text-gray-400">
-          Checking owner permissions…
-        </div>
+        <Alert severity="info">Checking owner permissions…</Alert>
       ) : !isOwner ? (
-        <div className="rounded-lg border border-red-800 bg-red-950/40 px-4 py-3 text-xs text-red-400 space-y-1">
-          <p><strong>Read-only mode:</strong> connected wallet is not the oracle owner. Updates will revert.</p>
-          <p className="font-mono">Owner: {oracleOwner.slice(0, 10)}…{oracleOwner.slice(-6)}</p>
-          <p className="font-mono">You:&nbsp;&nbsp;&nbsp;{wallet.address?.slice(0, 10)}…{wallet.address?.slice(-6)}</p>
-        </div>
+        <Alert severity="warning">
+          <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+            Read-only mode: connected wallet is not the oracle owner. Updates will revert.
+          </Typography>
+          <Box sx={{ fontFamily: 'monospace', fontSize: '0.75rem', mt: 1 }}>
+            Owner: {oracleOwner.slice(0, 10)}…{oracleOwner.slice(-6)}<br />
+            You:&nbsp;&nbsp;&nbsp;{wallet.address?.slice(0, 10)}…{wallet.address?.slice(-6)}
+          </Box>
+        </Alert>
       ) : (
-        <div className="rounded-lg border border-emerald-800 bg-emerald-950/40 px-4 py-3 text-xs text-emerald-400">
-          Owner verified ✓
-        </div>
+        <Alert severity="success">Owner verified ✓</Alert>
       )}
 
       {/* General warning */}
-      <div className="rounded-lg border border-yellow-800 bg-yellow-950/40 px-4 py-3 text-xs text-yellow-400">
+      <Alert severity="warning">
         <strong>Note:</strong> MockOracle price changes immediately affect all open position PnL.
         In production, oracle prices would come from trusted off-chain data feeds (e.g. Chainlink).
-      </div>
+      </Alert>
 
       {/* ─── Funding Settlement ──────────────────────────────────────────── */}
       {isOwner && (
-        <div className="rounded-card border border-surface-border bg-surface shadow-card overflow-hidden">
-          <div className="px-5 py-4 border-b border-surface-border flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-bold text-white">Funding Settlement</h2>
-              <p className="text-xs text-gray-400 mt-0.5">
+        <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                Funding Settlement
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
                 Settle per-asset funding (every {Object.values(fundingData)[0]
                   ? `${Number(Object.values(fundingData)[0].interval) / 60}m`
                   : '5m'}). Anyone can call on-chain; UI restricts to owner.
-              </p>
-            </div>
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <span className="text-xs text-gray-400">Auto-Settle</span>
-              <div
-                onClick={() => setAutoSettle(v => !v)}
-                className={`relative w-10 h-5 rounded-full transition-colors ${autoSettle ? 'bg-emerald-600' : 'bg-gray-700'}`}
-              >
-                <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${autoSettle ? 'translate-x-5' : 'translate-x-0.5'}`} />
-              </div>
-            </label>
-          </div>
+              </Typography>
+            </Box>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={autoSettle}
+                  onChange={e => setAutoSettle(e.target.checked)}
+                  color="success"
+                />
+              }
+              label={<Typography variant="body2">Auto-Settle</Typography>}
+            />
+          </Box>
 
           {Object.keys(fundingData).length === 0 ? (
             <TableSkeleton rows={4} cols={7} />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm text-left">
-                <thead>
-                  <tr className="text-xs text-gray-500 uppercase border-b border-surface-border">
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow sx={{ bgcolor: 'background.neutral' }}>
                     {['Asset','Rate (bps)','Long OI','Short OI','Imbalance','Last Settled','Next In',''].map(h => (
-                      <th key={h} className="px-4 py-3 font-medium whitespace-nowrap">{h}</th>
+                      <TableCell key={h} sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{h}</TableCell>
                     ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-surface-border">
+                  </TableRow>
+                </TableHead>
+                <TableBody>
                   {ASSETS.map(a => {
                     const info = fundingData[a.id]
                     if (!info) return null
                     const key     = `settle_${a.id}`
                     const rateNum = Number(info.rate)
                     return (
-                      <tr key={a.id} className="hover:bg-surface-elev/60 transition-colors">
-                        <td className="px-4 py-3 font-mono font-bold text-white">{a.label}</td>
-                        <td className={`px-4 py-3 font-mono font-semibold ${rateNum > 0 ? 'text-red-400' : rateNum < 0 ? 'text-green-400' : 'text-gray-500'}`}>
+                      <TableRow key={a.id} hover>
+                        <TableCell sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: 'text.primary' }}>{a.symbol}</TableCell>
+                        <TableCell sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: rateNum > 0 ? 'error.main' : rateNum < 0 ? 'success.main' : 'text.secondary' }}>
                           {rateNum > 0 ? '+' : ''}{rateNum} {rateNum > 0 ? '(L pay)' : rateNum < 0 ? '(S pay)' : ''}
-                        </td>
-                        <td className="px-4 py-3 font-mono text-gray-300">{fOI(info.longOI)}</td>
-                        <td className="px-4 py-3 font-mono text-gray-300">{fOI(info.shortOI)}</td>
-                        <td className={`px-4 py-3 font-mono ${Number(info.longOI) > Number(info.shortOI) ? 'text-red-400' : 'text-green-400'}`}>
+                        </TableCell>
+                        <TableCell sx={{ fontFamily: 'monospace' }}>{fOI(info.longOI)}</TableCell>
+                        <TableCell sx={{ fontFamily: 'monospace' }}>{fOI(info.shortOI)}</TableCell>
+                        <TableCell sx={{ fontFamily: 'monospace', color: Number(info.longOI) > Number(info.shortOI) ? 'error.main' : 'success.main' }}>
                           {fImbalance(info.longOI, info.shortOI)}
-                        </td>
-                        <td className="px-4 py-3 text-xs text-gray-500">
+                        </TableCell>
+                        <TableCell sx={{ fontSize: '0.75rem', color: 'text.secondary' }}>
                           {info.lastSettled === 0n ? 'Never' : fDate(info.lastSettled)}
-                        </td>
-                        <td className="px-4 py-3 text-xs font-mono text-gray-400">
-                          {info.canSettle ? <span className="text-emerald-400 font-semibold">Ready</span> : fCountdown(info.lastSettled, info.interval)}
-                        </td>
-                        <td className="px-4 py-3">
-                          <button
+                        </TableCell>
+                        <TableCell sx={{ fontSize: '0.75rem', fontFamily: 'monospace' }}>
+                          {info.canSettle ? <Typography variant="caption" sx={{ color: 'success.main', fontWeight: 'bold' }}>Ready</Typography> : fCountdown(info.lastSettled, info.interval)}
+                        </TableCell>
+                        <TableCell align="right">
+                          <Button
+                            size="small"
+                            variant="outlined"
                             onClick={() => void settleFunding(a.id)}
                             disabled={!info.canSettle || !!fundingSettleBusy[key]}
-                            className="px-3 py-1 rounded bg-gray-700 text-gray-300 text-xs hover:bg-emerald-900 hover:text-emerald-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                            sx={{ textTransform: 'none' }}
                           >
                             {fundingSettleBusy[key] ? '…' : 'Settle Now'}
-                          </button>
-                        </td>
-                      </tr>
+                          </Button>
+                        </TableCell>
+                      </TableRow>
                     )
                   })}
-                </tbody>
-              </table>
-            </div>
+                </TableBody>
+              </Table>
+            </TableContainer>
           )}
-        </div>
+        </Card>
       )}
 
       {/* Price table */}
-      <div className="rounded-card border border-surface-border bg-surface shadow-card overflow-hidden">
-        <div className="px-5 py-4 border-b border-surface-border flex items-center justify-between">
-          <h2 className="text-base font-bold text-white">Asset Prices (8-decimal)</h2>
-          <button
+      <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+            Asset Prices (8-decimal)
+          </Typography>
+          <Button
+            variant="text"
+            size="small"
             onClick={() => void fetchPrices()}
-            className="text-xs text-gray-500 hover:text-white transition-colors"
+            sx={{ textTransform: 'none' }}
           >
             ↺ Refresh
-          </button>
-        </div>
+          </Button>
+        </Box>
 
-        <div className="divide-y divide-surface-border">
-          {assets.map(row => {
+        <Stack spacing={2}>
+          {assets.map((row, index) => {
             const hasVal = row.input !== '' && !isNaN(parseFloat(row.input))
             return (
-              <div key={row.id} className="px-5 py-4 space-y-3">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="space-y-0.5">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono font-bold text-white text-lg">{row.label}</span>
-                      <span className="text-xs font-mono text-gray-500 break-all">
+              <Box key={row.id} sx={{ pt: index > 0 ? 2 : 0, borderTop: index > 0 ? '1px solid' : 'none', borderColor: 'divider', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 2 }}>
+                  <Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 'bold', fontFamily: 'monospace' }}>{row.label}</Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
                         {row.id.slice(0, 10)}…
-                      </span>
-                    </div>
-                    <div className="text-2xl font-bold font-mono text-emerald-400">
-                      {row.price8 > 0n ? fPrice8(row.price8) : '—'}
-                    </div>
-                    <div className="text-xs text-gray-500">
+                      </Typography>
+                    </Box>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
                       Last updated: {fDate(row.updatedAt)}
-                    </div>
-                  </div>
-                </div>
+                    </Typography>
+                  </Box>
+                  <Typography variant="h5" color="success.main" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
+                    {row.price8 > 0n ? fPrice8(row.price8) : '—'}
+                  </Typography>
+                </Box>
 
-                <div className="flex gap-2 items-center">
-                  <div className="relative flex-1 max-w-xs">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      disabled={!isOwner}
-                      placeholder={row.price8 > 0n ? (Number(row.price8) / 1e8).toFixed(2) : '0.00'}
-                      value={row.input}
-                      onChange={e => updateInput(row.id, e.target.value)}
-                      className={`w-full pl-7 pr-3 py-2 rounded-lg bg-gray-800 border text-sm text-white focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed ${
-                        hasVal
-                          ? 'border-emerald-600 focus:border-emerald-500'
-                          : 'border-gray-600 focus:border-gray-500'
-                      }`}
-                    />
-                  </div>
-                  <button
+                <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <TextField
+                    type="number"
+                    size="small"
+                    disabled={!isOwner}
+                    placeholder={row.price8 > 0n ? (Number(row.price8) / 1e8).toFixed(2) : '0.00'}
+                    value={row.input}
+                    onChange={e => updateInput(row.id, e.target.value)}
+                    slotProps={{
+                      htmlInput: { min: "0", step: "0.01", style: { fontFamily: 'monospace' } },
+                      input: {
+                        startAdornment: <Typography variant="body2" color="text.secondary" sx={{ mr: 0.5 }}>$</Typography>,
+                      }
+                    }}
+                    sx={{ width: 200 }}
+                  />
+                  <Button
+                    variant="contained"
+                    color="warning"
                     onClick={() => void updatePrice(row.id, row.input)}
                     disabled={busy[row.id] || !hasVal || !isOwner}
-                    className="px-4 py-2 rounded-lg bg-orange-700 hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors whitespace-nowrap"
                   >
                     {busy[row.id] ? 'Updating…' : 'Update Price'}
-                  </button>
-                </div>
-              </div>
+                  </Button>
+                </Box>
+              </Box>
             )
           })}
-        </div>
-      </div>
+        </Stack>
+      </Card>
 
-      {/* Raw values */}
-      <details className="text-xs text-gray-700">
-        <summary className="cursor-pointer hover:text-gray-500 w-fit">
-          Raw 8-decimal prices (for cast commands)
-        </summary>
-        <div className="mt-2 space-y-1 p-3 rounded-lg bg-surface border border-surface-border font-mono text-gray-500">
-          {assets.map(a => (
-            <div key={a.id}>
-              {a.label}: {String(a.price8)} (= ${(Number(a.price8)/1e8).toFixed(2)})
-            </div>
-          ))}
-        </div>
-      </details>
-    </div>
+      {/* Raw values Accordion */}
+      <Accordion sx={{ bgcolor: 'transparent', backgroundImage: 'none', border: '1px solid', borderColor: 'divider', '&::before': { display: 'none' } }}>
+        <AccordionSummary expandIcon={<Typography variant="caption">▼</Typography>}>
+          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>
+            Raw 8-decimal prices (for cast commands)
+          </Typography>
+        </AccordionSummary>
+        <AccordionDetails sx={{ borderTop: '1px solid', borderColor: 'divider', bgcolor: 'background.neutral' }}>
+          <Stack spacing={0.5} sx={{ fontFamily: 'monospace', fontSize: '0.75rem', color: 'text.secondary' }}>
+            {assets.map(a => (
+              <Box key={a.id}>
+                {a.label}: {String(a.price8)} (= ${(Number(a.price8)/1e8).toFixed(2)})
+              </Box>
+            ))}
+          </Stack>
+        </AccordionDetails>
+      </Accordion>
+    </Container>
   )
 }

@@ -1,94 +1,162 @@
-import { useState, useEffect } from 'react'
-import { Link } from 'react-router'
-import type { WhaleAlert } from 'src/hooks/useWhaleAlerts'
+import { useState, useEffect } from 'react';
+import { Link as RouterLink } from 'react-router';
+import Box from '@mui/material/Box';
+import Typography from '@mui/material/Typography';
+import Link from '@mui/material/Link';
+import IconButton from '@mui/material/IconButton';
+import type { WhaleAlert } from 'src/hooks/useWhaleAlerts';
 
 interface Props { alerts: WhaleAlert[] }
 
 const fNotional = (n: bigint) => {
-  const v = Number(n) / 1e18
-  if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`
-  if (v >= 1_000)     return `$${(v / 1_000).toFixed(1)}k`
-  return `$${v.toFixed(0)}`
-}
+  const v = Number(n) / 1e18;
+  if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`;
+  if (v >= 1_000)     return `$${(v / 1_000).toFixed(1)}k`;
+  return `$${v.toFixed(0)}`;
+};
 
 const timeAgo = (ts: number) => {
-  const diff = Math.floor(Date.now() / 1000) - ts
-  if (diff < 120)   return `${diff}s ago`
-  if (diff < 3600)  return `${Math.floor(diff / 60)} min ago`
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
-  return `${Math.floor(diff / 86400)}d ago`
-}
+  const diff = Math.floor(Date.now() / 1000) - ts;
+  if (diff < 120)   return `${diff}s ago`;
+  if (diff < 3600)  return `${Math.floor(diff / 60)} min ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+};
 
-const shortAddr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
+const shortAddr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
 export default function WhaleAlertBanner({ alerts }: Props) {
-  const [visible, setVisible] = useState(true)
-  const [idx,     setIdx]     = useState(0)
+  const [visible, setVisible] = useState(true);
+  const [idx,     setIdx]     = useState(0);
 
-  const top3 = alerts.slice(0, 3)
+  const top3 = alerts.slice(0, 3);
 
   // Auto-rotate every 6 s when multiple alerts
   useEffect(() => {
-    if (top3.length < 2) return
-    const id = setInterval(() => setIdx(c => (c + 1) % top3.length), 6000)
-    return () => clearInterval(id)
-  }, [top3.length])
+    if (top3.length < 2) return;
+    const id = setInterval(() => setIdx(c => (c + 1) % top3.length), 6000);
+    return () => clearInterval(id);
+  }, [top3.length]);
 
   // Reset when alerts list refreshes
-  useEffect(() => { setIdx(0); setVisible(true) }, [alerts])
+  useEffect(() => { setIdx(0); setVisible(true) }, [alerts]);
 
-  if (!visible || top3.length === 0) return null
+  if (!visible || top3.length === 0) return null;
 
-  const a = top3[idx]
-  if (!a) return null
+  const a = top3[idx];
+  if (!a) return null;
 
   return (
-    <div className="bg-cyan-950/70 border-b border-cyan-800/50 px-4 py-1.5 flex items-center gap-3 text-xs select-none">
-      <span className="shrink-0 text-base leading-none">🐋</span>
-      <span className="shrink-0 font-bold text-cyan-300 hidden sm:block">Whale Alert</span>
+    <Box
+      sx={{
+        bgcolor: 'rgba(0, 184, 217, 0.08)',
+        borderBottom: '1px solid',
+        borderColor: 'rgba(0, 184, 217, 0.16)',
+        px: 2,
+        py: 0.75,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 1.5,
+        userSelect: 'none',
+      }}
+    >
+      <Box sx={{ fontSize: '1rem', lineHeight: 1 }}>🐋</Box>
+      <Typography
+        variant="caption"
+        sx={{
+          color: '#00b8d9',
+          fontWeight: 'bold',
+          display: { xs: 'none', sm: 'block' },
+          textTransform: 'uppercase',
+          letterSpacing: 1,
+        }}
+      >
+        Whale Alert
+      </Typography>
 
       {/* Message */}
-      <span className="flex-1 min-w-0 truncate text-cyan-100">
+      <Box sx={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         <Link
+          component={RouterLink}
           to={`/whale?addr=${a.owner}`}
-          className="font-mono hover:text-white transition-colors hover:underline underline-offset-2"
+          sx={{
+            fontFamily: 'monospace',
+            color: 'text.secondary',
+            textDecoration: 'none',
+            fontWeight: 'medium',
+            '&:hover': {
+              color: 'text.primary',
+              textDecoration: 'underline',
+            },
+          }}
         >
           {shortAddr(a.owner)}
         </Link>
-        {' opened '}
-        <span className={`font-semibold ${a.isLong ? 'text-green-300' : 'text-red-300'}`}>
+        <Typography component="span" variant="caption" sx={{ color: 'text.secondary', mx: 0.5 }}>
+          opened
+        </Typography>
+        <Typography
+          component="span"
+          variant="caption"
+          sx={{
+            fontWeight: 'bold',
+            color: a.isLong ? 'success.main' : 'error.main',
+          }}
+        >
           {a.isLong ? 'LONG' : 'SHORT'}
-        </span>
-        {' '}{a.assetLabel}
-        {' — '}
-        <span className="font-bold text-white">{fNotional(a.notional)}</span>
-        {' notional'}
-        {' · '}
-        <span className="text-cyan-400/80">{timeAgo(a.timestamp)}</span>
-      </span>
+        </Typography>
+        <Typography component="span" variant="caption" sx={{ color: 'text.secondary', mx: 0.5 }}>
+          {a.assetLabel} —
+        </Typography>
+        <Typography component="span" variant="caption" sx={{ fontWeight: 'bold', color: 'text.primary' }}>
+          {fNotional(a.notional)}
+        </Typography>
+        <Typography component="span" variant="caption" sx={{ color: 'text.secondary', mx: 0.5 }}>
+          notional
+        </Typography>
+        <Typography component="span" variant="caption" sx={{ color: 'info.main', opacity: 0.8 }}>
+          · {timeAgo(a.timestamp)}
+        </Typography>
+      </Box>
 
       {/* Pagination dots */}
       {top3.length > 1 && (
-        <div className="flex items-center gap-1 shrink-0">
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
           {top3.map((_, i) => (
-            <button
+            <Box
+              component="button"
               key={i}
               onClick={() => setIdx(i)}
-              className={`w-1.5 h-1.5 rounded-full transition-colors ${
-                i === idx ? 'bg-cyan-300' : 'bg-cyan-700 hover:bg-cyan-500'
-              }`}
+              sx={{
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                border: 'none',
+                p: 0,
+                cursor: 'pointer',
+                transition: 'background-color 0.2s',
+                bgcolor: i === idx ? '#00b8d9' : 'action.disabled',
+                '&:hover': {
+                  bgcolor: i === idx ? '#00b8d9' : 'text.secondary',
+                },
+              }}
             />
           ))}
-        </div>
+        </Box>
       )}
 
-      <button
+      <IconButton
+        size="small"
         onClick={() => setVisible(false)}
-        className="shrink-0 text-cyan-700 hover:text-cyan-300 transition-colors ml-1"
         aria-label="Dismiss whale alert"
+        sx={{
+          p: 0.25,
+          color: 'text.secondary',
+          '&:hover': { color: 'text.primary' },
+        }}
       >
-        ✕
-      </button>
-    </div>
-  )
+        <Box sx={{ fontSize: '0.75rem', lineHeight: 1 }}>✕</Box>
+      </IconButton>
+    </Box>
+  );
 }
