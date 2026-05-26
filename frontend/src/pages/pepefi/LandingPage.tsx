@@ -1,4 +1,5 @@
-import { Link as RouterLink, Navigate } from 'react-router';
+import { Link as RouterLink, useNavigate } from 'react-router';
+import { useEffect } from 'react';
 import { usePepefiWallet } from 'src/layouts/pepefi';
 import WalletButton from 'src/components/pepefi/WalletButton';
 
@@ -28,7 +29,15 @@ const STEPS = [
 
 export default function LandingPage() {
   const wallet = usePepefiWallet();
-  if (wallet.isConnected) return <Navigate to="/dashboard" replace />;
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (wallet.isConnected) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [wallet.isConnected, navigate]);
+
+  if (wallet.isConnected) return null;
 
   return (
     <Box
