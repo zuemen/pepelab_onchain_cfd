@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import { usePathname } from 'src/routes/hooks';
 
 import { themeConfig, ThemeProvider } from 'src/theme';
+import { WalletProvider } from 'src/contexts/wallet-context';
 
 import { ProgressBar } from 'src/components/progress-bar';
 import { MotionLazy } from 'src/components/animate/motion-lazy';
@@ -29,9 +30,11 @@ export default function App({ children }: AppProps) {
           defaultMode={themeConfig.defaultMode}
         >
           <MotionLazy>
-            <ProgressBar />
-            <SettingsDrawer defaultSettings={defaultSettings} />
-            {children}
+            <WalletProvider>
+              <ProgressBar />
+              <SettingsDrawer defaultSettings={defaultSettings} />
+              {children}
+            </WalletProvider>
           </MotionLazy>
         </ThemeProvider>
       </SettingsProvider>

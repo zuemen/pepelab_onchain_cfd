@@ -23,3 +23,20 @@ export function avatarFor(address: string | null | undefined): string {
   if (!address) return AVATAR_FILES[0];
   return AVATAR_FILES[djb2(address.toLowerCase()) % AVATAR_FILES.length];
 }
+
+const lsKey = (addr: string) => `pepeAvatar_${addr.toLowerCase()}`;
+
+export function getUserAvatar(address: string | null | undefined): string {
+  if (!address) return avatarFor(address);
+  try {
+    return localStorage.getItem(lsKey(address)) ?? avatarFor(address);
+  } catch {
+    return avatarFor(address);
+  }
+}
+
+export function setUserAvatar(address: string, src: string): void {
+  try {
+    localStorage.setItem(lsKey(address), src);
+  } catch { /* localStorage unavailable */ }
+}

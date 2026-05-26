@@ -10,13 +10,13 @@ import Alert from '@mui/material/Alert';
 import { useTheme } from '@mui/material/styles';
 import { iconButtonClasses } from '@mui/material/IconButton';
 
-import { useWallet } from 'src/hooks/useWallet';
-
 import { _contacts, _notifications } from 'src/_mock';
+import { useWalletContext } from 'src/contexts/wallet-context';
 
 import { Logo } from 'src/components/logo';
 import { useSettingsContext } from 'src/components/settings';
 import WalletButton from 'src/components/pepefi/WalletButton';
+import { PepeAvatar } from 'src/components/pepefi/PepeAvatar';
 
 import { useMockedUser } from 'src/auth/hooks';
 
@@ -26,13 +26,10 @@ import { NavVertical } from './nav-vertical';
 import { NavHorizontal } from './nav-horizontal';
 import { _account } from '../nav-config-account';
 import { Searchbar } from '../components/searchbar';
-import { _workspaces } from '../nav-config-workspace';
 import { MenuButton } from '../components/menu-button';
 import { AccountDrawer } from '../components/account-drawer';
 import { SettingsButton } from '../components/settings-button';
-import { LanguagePopover } from '../components/language-popover';
 import { ContactsPopover } from '../components/contacts-popover';
-import { WorkspacesPopover } from '../components/workspaces-popover';
 import { navData as dashboardNavData } from '../nav-config-dashboard';
 import { dashboardLayoutVars, dashboardNavColorVars } from './css-vars';
 import { NotificationsDrawer } from '../components/notifications-drawer';
@@ -62,7 +59,7 @@ export function DashboardLayout({
 }: DashboardLayoutProps) {
   const theme = useTheme();
 
-  const wallet = useWallet();
+  const wallet = useWalletContext();
 
   const { user } = useMockedUser();
 
@@ -161,6 +158,9 @@ export function DashboardLayout({
 
           {/** @slot Wallet connect */}
           <WalletButton wallet={wallet} />
+
+          {/** @slot Pepe avatar picker */}
+          {wallet.address && <PepeAvatar address={wallet.address} size={32} editable />}
 
           {/** @slot Account drawer */}
           <AccountDrawer data={_account} />
