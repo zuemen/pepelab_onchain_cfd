@@ -93,27 +93,42 @@ export default function LandingPage() {
           <Typography variant="h3" sx={{ color: 'text.primary', fontWeight: 'bold', mb: 2, px: 2 }}>
             鏈上合成衍生品跟單系統
           </Typography>
-          <Typography variant="body1" sx={{ color: 'text.secondary', maxWidth: 580, mb: 4, px: 2, lineHeight: 1.6, fontSize: '1.125rem' }}>
+          <Typography variant="body1" sx={{ color: 'text.secondary', maxWidth: 580, mb: 4, px: 2, lineHeight: 1.6, fontSize: '1.25rem' }}>
             結合 Synthetic CFD 永續合約與一鍵 Copy Trading，
             交易者公開策略，跟單者授權 USDC 自動跟進，全程上鏈透明。
           </Typography>
 
-          {/* Hero Banner Space Rocket Pepe */}
+          {/* Hero Banner Space Rocket Pepe - Styled with Premium Glowing Border Frame */}
           <Box
-            component="img"
-            src="/assets/images/pepefi/pepe_11.png"
-            alt="Pepe Rocket Space Trader"
             sx={{
+              position: 'relative',
+              borderRadius: 3,
+              overflow: 'hidden',
+              mb: 5,
+              p: '3px',
+              background: 'linear-gradient(135deg, #34d399 0%, #a3e635 100%)',
+              boxShadow: '0 20px 48px rgba(0,0,0,0.8), 0 0 32px rgba(52, 211, 153, 0.3)',
               width: '100%',
               maxWidth: 640,
-              height: 280,
-              objectFit: 'cover',
-              borderRadius: 3,
-              border: '1px solid rgba(52, 211, 153, 0.25)',
-              boxShadow: '0 12px 40px rgba(0,0,0,0.7), 0 0 24px rgba(52, 211, 153, 0.15)',
-              mb: 4.5,
+              transition: 'transform 0.3s ease',
+              '&:hover': {
+                transform: 'scale(1.02)',
+              }
             }}
-          />
+          >
+            <Box
+              component="img"
+              src="/assets/images/pepefi/pepe_11.png"
+              alt="Pepe Rocket Space Trader"
+              sx={{
+                width: '100%',
+                height: 320,
+                objectFit: 'cover',
+                borderRadius: '10px',
+                display: 'block',
+              }}
+            />
+          </Box>
 
           {/* Testnet badge */}
           <Chip
@@ -141,8 +156,9 @@ export default function LandingPage() {
               borderColor: 'rgba(34, 197, 94, 0.24)',
               bgcolor: 'rgba(34, 197, 94, 0.08)',
               color: '#22c55e',
-              px: 1.5,
-              py: 0.5,
+              px: 2,
+              py: 1,
+              fontSize: '0.95rem',
               fontWeight: 'bold',
             }}
           />
@@ -154,7 +170,7 @@ export default function LandingPage() {
               {wallet.error}
             </Typography>
           )}
-          <Typography variant="caption" sx={{ color: 'text.secondary', opacity: 0.6, mt: 1.5, fontSize: '0.875rem' }}>
+          <Typography variant="caption" sx={{ color: 'text.secondary', opacity: 0.8, mt: 2, fontSize: '0.95rem' }}>
             連線後可直接瀏覽所有功能，無需註冊帳號
           </Typography>
         </Box>
@@ -164,44 +180,47 @@ export default function LandingPage() {
 
         {/* ── Features ── */}
         <Box sx={{ mb: 6 }}>
-          <Typography variant="overline" color="text.secondary" align="center" display="block" sx={{ mb: 3, fontWeight: 'bold', letterSpacing: 2 }}>
+          <Typography variant="overline" color="text.secondary" align="center" display="block" sx={{ mb: 3.5, fontWeight: 'bold', letterSpacing: 3, fontSize: '1rem' }}>
             核心功能
           </Typography>
-          <Grid container spacing={2}>
+          <Grid container spacing={2.5}>
             {FEATURES.map((f) => (
               <Grid size={{ xs: 12, sm: 6 }} key={f.title}>
                 <Card
                   sx={{
-                    p: 3,
+                    p: 3.5,
                     height: '100%',
-                    bgcolor: 'rgba(255,255,255,0.02)',
+                    bgcolor: 'rgba(255,255,255,0.01)',
                     borderColor: 'rgba(255,255,255,0.05)',
-                    transition: 'all 0.2s',
+                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                     '&:hover': {
-                      bgcolor: 'rgba(255,255,255,0.04)',
-                      borderColor: 'rgba(0, 167, 111, 0.2)',
+                      bgcolor: 'rgba(52, 211, 153, 0.03)',
+                      borderColor: '#34d399',
+                      boxShadow: '0 12px 24px rgba(52, 211, 153, 0.12)',
+                      transform: 'translateY(-6px)',
                     },
                   }}
                 >
                   <Box
                     sx={{
-                      mb: 2,
+                      mb: 2.5,
                       display: 'flex',
-                      height: 40,
-                      width: 40,
+                      height: 48,
+                      width: 48,
                       alignItems: 'center',
                       justifyContent: 'center',
                       borderRadius: 1.5,
-                      bgcolor: 'rgba(255,255,255,0.05)',
-                      fontSize: '1.25rem',
+                      bgcolor: 'rgba(52, 211, 153, 0.1)',
+                      color: '#34d399',
+                      fontSize: '1.5rem',
                     }}
                   >
                     {f.icon}
                   </Box>
-                  <Typography variant="subtitle1" sx={{ color: 'text.primary', fontWeight: 'bold', mb: 1 }}>
+                  <Typography variant="subtitle1" sx={{ color: 'text.primary', fontWeight: 'bold', mb: 1.5, fontSize: '1.2rem' }}>
                     {f.title}
                   </Typography>
-                  <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.5 }}>
+                  <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6, fontSize: '1rem' }}>
                     {f.desc}
                   </Typography>
                 </Card>
@@ -214,37 +233,50 @@ export default function LandingPage() {
         <Box sx={{ mb: 4 }}>
           <Card
             sx={{
-              p: 3.5,
-              bgcolor: 'rgba(0, 167, 111, 0.02)',
-              borderColor: 'rgba(0, 167, 111, 0.1)',
+              p: 4,
+              bgcolor: 'rgba(52, 211, 153, 0.02)',
+              borderColor: 'rgba(52, 211, 153, 0.15)',
+              boxShadow: '0 8px 32px 0 rgba(52, 211, 153, 0.05)',
+              border: '1px solid rgba(52, 211, 153, 0.2)',
+              position: 'relative',
+              overflow: 'hidden',
+              '&::after': {
+                content: '""',
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '4px',
+                background: 'linear-gradient(90deg, #34d399, #a3e635)',
+              }
             }}
           >
-            <Typography variant="overline" color="primary" display="block" sx={{ mb: 2.5, fontWeight: 'bold', letterSpacing: 2 }}>
+            <Typography variant="overline" color="primary" display="block" sx={{ mb: 3, fontWeight: 'bold', letterSpacing: 2.5, fontSize: '1.1rem' }}>
               如何開始
             </Typography>
-            <Stack spacing={2.5}>
+            <Stack spacing={3}>
               {STEPS.map((s) => (
-                <Box key={s.n} sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
+                <Box key={s.n} sx={{ display: 'flex', alignItems: 'flex-start', gap: 2.5 }}>
                   <Box
                     sx={{
                       display: 'flex',
-                      height: 28,
-                      width: 28,
+                      height: 32,
+                      width: 32,
                       flexShrink: 0,
                       alignItems: 'center',
                       justifyContent: 'center',
                       borderRadius: '50%',
-                      bgcolor: 'rgba(0, 167, 111, 0.1)',
+                      bgcolor: 'rgba(52, 211, 153, 0.15)',
                       border: '1px solid',
-                      borderColor: 'rgba(0, 167, 111, 0.3)',
+                      borderColor: 'rgba(52, 211, 153, 0.4)',
                       color: 'primary.main',
-                      fontSize: '0.75rem',
+                      fontSize: '0.875rem',
                       fontWeight: 'bold',
                     }}
                   >
                     {s.n}
                   </Box>
-                  <Typography variant="body2" sx={{ color: 'text.primary', pt: 0.3, lineHeight: 1.5 }}>
+                  <Typography variant="body2" sx={{ color: 'text.primary', pt: 0.4, lineHeight: 1.6, fontSize: '1.05rem' }}>
                     {s.text}
                   </Typography>
                 </Box>
@@ -252,7 +284,7 @@ export default function LandingPage() {
             </Stack>
 
             {/* Quick links */}
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 3, pt: 3, borderTop: '1px solid', borderColor: 'divider' }}>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, mt: 4, pt: 3, borderTop: '1px solid', borderColor: 'divider' }}>
               {[
                 { label: '💱 Exchange', to: '/exchange' },
                 { label: '🏪 Marketplace', to: '/marketplace' },
@@ -263,13 +295,15 @@ export default function LandingPage() {
                   component={RouterLink}
                   to={link.to}
                   variant="outlined"
-                  size="small"
+                  size="medium"
                   color="inherit"
                   sx={{
                     borderRadius: 1,
                     textTransform: 'none',
                     borderColor: 'divider',
                     color: 'text.secondary',
+                    fontSize: '0.95rem',
+                    px: 2.5,
                     '&:hover': {
                       borderColor: 'text.primary',
                       color: 'text.primary',
@@ -283,7 +317,7 @@ export default function LandingPage() {
             </Box>
           </Card>
 
-          <Typography variant="caption" display="block" align="center" sx={{ color: 'text.secondary', opacity: 0.5, mt: 2 }}>
+          <Typography variant="caption" display="block" align="center" sx={{ color: 'text.secondary', opacity: 0.6, mt: 2.5, fontSize: '0.875rem' }}>
             ⚠ Oracle 價格由部署者（admin）控制，Demo 期間會即時更新以展示 PnL 變化
           </Typography>
         </Box>

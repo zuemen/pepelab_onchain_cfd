@@ -1,15 +1,12 @@
 import type { IconButtonProps } from '@mui/material/IconButton';
 
-import { varAlpha } from 'minimal-shared/utils';
 import { useBoolean } from 'minimal-shared/hooks';
 
 import Box from '@mui/material/Box';
 import Link from '@mui/material/Link';
-import Avatar from '@mui/material/Avatar';
 import Drawer from '@mui/material/Drawer';
-import Tooltip from '@mui/material/Tooltip';
-import MenuList from '@mui/material/MenuList';
 import MenuItem from '@mui/material/MenuItem';
+import MenuList from '@mui/material/MenuList';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 
@@ -17,12 +14,15 @@ import { paths } from 'src/routes/paths';
 import { usePathname } from 'src/routes/hooks';
 import { RouterLink } from 'src/routes/components';
 
-import { _mock } from 'src/_mock';
+import { useUserAvatar } from 'src/hooks/useUserAvatar';
+
+import { useWalletContext } from 'src/contexts/wallet-context';
 
 import { Label } from 'src/components/label';
 import { Iconify } from 'src/components/iconify';
 import { Scrollbar } from 'src/components/scrollbar';
 import { AnimateBorder } from 'src/components/animate';
+import { PepeAvatar } from 'src/components/pepefi/PepeAvatar';
 
 import { useMockedUser } from 'src/auth/hooks';
 
@@ -44,6 +44,8 @@ export function AccountDrawer({ data = [], sx, ...other }: AccountDrawerProps) {
   const pathname = usePathname();
 
   const { user } = useMockedUser();
+  const wallet = useWalletContext();
+  const { src: avatarUrl } = useUserAvatar(wallet.address || 'mock_user');
 
   const { value: open, onFalse: onClose, onTrue: onOpen } = useBoolean();
 
@@ -54,9 +56,7 @@ export function AccountDrawer({ data = [], sx, ...other }: AccountDrawerProps) {
         primaryBorder: { size: 120, sx: { color: 'primary.main' } },
       }}
     >
-      <Avatar src={user?.photoURL} alt={user?.displayName} sx={{ width: 1, height: 1 }}>
-        {user?.displayName?.charAt(0).toUpperCase()}
-      </Avatar>
+      <PepeAvatar address={wallet.address || 'mock_user'} size={84} editable />
     </AnimateBorder>
   );
 
@@ -118,7 +118,7 @@ export function AccountDrawer({ data = [], sx, ...other }: AccountDrawerProps) {
     <>
       <AccountButton
         onClick={onOpen}
-        photoURL={user?.photoURL}
+        photoURL={avatarUrl}
         displayName={user?.displayName}
         sx={sx}
         {...other}

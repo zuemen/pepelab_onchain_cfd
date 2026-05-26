@@ -1,6 +1,6 @@
 import type { WalletAPI } from 'src/hooks/useWallet';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 import Button from '@mui/material/Button';
 import Menu from '@mui/material/Menu';
@@ -8,6 +8,14 @@ import MenuItem from '@mui/material/MenuItem';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import CircularProgress from '@mui/material/CircularProgress';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
+import Stack from '@mui/material/Stack';
+import Link from '@mui/material/Link';
+import Card from '@mui/material/Card';
+import IconButton from '@mui/material/IconButton';
 import { Icon } from '@iconify/react';
 
 interface Props {
@@ -15,9 +23,16 @@ interface Props {
 }
 
 export default function WalletButton({ wallet }: Props) {
-  const { address, isConnected, isConnecting, connect, disconnect, switchAccount } = wallet;
+  const { address, isConnected, isConnecting, error, connect, connectMock, disconnect, switchAccount } = wallet;
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const open = Boolean(anchorEl);
+
+  useEffect(() => {
+    if (isConnected) {
+      setDialogOpen(false);
+    }
+  }, [isConnected]);
 
   const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
     setAnchorEl(event.currentTarget);
@@ -25,6 +40,14 @@ export default function WalletButton({ wallet }: Props) {
 
   const handleClose = () => {
     setAnchorEl(null);
+  };
+
+  const handleOpenDialog = () => {
+    setDialogOpen(true);
+  };
+
+  const handleCloseDialog = () => {
+    setDialogOpen(false);
   };
 
   if (isConnecting) {
@@ -140,20 +163,163 @@ export default function WalletButton({ wallet }: Props) {
     );
   }
 
+  const isMetaMaskAvailable = typeof window !== 'undefined' && !!window.ethereum;
+
   return (
-    <Button
-      variant="contained"
-      color="primary"
-      onClick={() => void connect()}
-      startIcon={<Icon icon="eva:diagonal-arrow-right-up-fill" width={18} height={18} />}
-      sx={{
-        borderRadius: 50,
-        px: 2.5,
-        fontWeight: 'bold',
-        boxShadow: '0 8px 16px 0 rgba(0, 167, 111, 0.24)',
-      }}
-    >
-      Connect Wallet
-    </Button>
+    <>
+      <Button
+        variant="contained"
+        color="primary"
+        onClick={handleOpenDialog}
+        startIcon={<Icon icon="eva:diagonal-arrow-right-up-fill" width={18} height={18} />}
+        sx={{
+          borderRadius: 50,
+          px: 3,
+          py: 1,
+          fontWeight: 'bold',
+          fontSize: '1rem',
+          boxShadow: '0 8px 16px 0 rgba(0, 167, 111, 0.24)',
+        }}
+      >
+        Connect Wallet
+      </Button>
+
+      <Dialog
+        open={dialogOpen}
+        onClose={handleCloseDialog}
+        maxWidth="xs"
+        fullWidth
+        slotProps={{
+          paper: {
+            sx: {
+              borderRadius: 2.5,
+              bgcolor: 'background.paper',
+              border: '1px solid',
+              borderColor: 'divider',
+              p: 1.5,
+            },
+          },
+        }}
+      >
+        <DialogTitle sx={{ m: 0, p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Typography variant="h5" sx={{ fontWeight: 800, background: 'linear-gradient(90deg, #34d399 0%, #a3e635 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+            連接帳號 / Connect Wallet
+          </Typography>
+          <IconButton onClick={handleCloseDialog} size="small" sx={{ color: 'text.secondary' }}>
+            <Icon icon="mingcute:close-line" width={20} height={20} />
+          </IconButton>
+        </DialogTitle>
+
+        <DialogContent sx={{ p: 2, pt: 0 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+            選擇您的登入通道以進入 PepeFi 鏈上衍生品系統。
+          </Typography>
+
+          <Stack spacing={2}>
+            {/* 1. MetaMask Real Web3 Connection */}
+            <Card
+              onClick={() => void connect()}
+              sx={{
+                p: 2.5,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 2,
+                border: '1px solid',
+                borderColor: 'divider',
+                bgcolor: 'rgba(255, 255, 255, 0.01)',
+                transition: 'all 0.2s',
+                '&:hover': {
+                  borderColor: '#f6851b',
+                  bgcolor: 'rgba(246, 133, 27, 0.05)',
+                  boxShadow: '0 0 16px rgba(246, 133, 27, 0.15)',
+                },
+              }}
+            >
+              <Box sx={{ bgcolor: 'rgba(246, 133, 27, 0.1)', p: 1.2, borderRadius: '50%', display: 'flex' }}>
+                <Icon icon="logos:metamask-icon" width={32} height={32} />
+              </Box>
+              <Box sx={{ flexGrow: 1 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'text.primary' }}>
+                  MetaMask 錢包連線
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                  透過 MetaMask 瀏覽器擴充功能連線 (Sepolia)
+                </Typography>
+              </Box>
+            </Card>
+
+            {/* Error handling helper if MetaMask is missing or rejected */}
+            {error && (
+              <Box
+                sx={{
+                  p: 1.5,
+                  borderRadius: 1,
+                  bgcolor: 'rgba(255, 86, 48, 0.08)',
+                  border: '1px solid',
+                  borderColor: 'rgba(255, 86, 48, 0.2)',
+                }}
+              >
+                <Typography variant="caption" color="error.main" sx={{ display: 'block', fontWeight: 'bold' }}>
+                  ⚠️ {error}
+                </Typography>
+                {!isMetaMaskAvailable && (
+                  <Link
+                    href="https://metamask.io/download/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    sx={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      mt: 1,
+                      fontSize: '0.75rem',
+                      color: 'primary.main',
+                      fontWeight: 'bold',
+                      textDecoration: 'none',
+                      '&:hover': { textDecoration: 'underline' },
+                    }}
+                  >
+                    前往安裝 MetaMask 擴充功能 ↗
+                  </Link>
+                )}
+              </Box>
+            )}
+
+            {/* 2. Mock Presentation Connection */}
+            <Card
+              onClick={connectMock}
+              sx={{
+                p: 2.5,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 2,
+                border: '1px solid',
+                borderColor: 'rgba(52, 211, 153, 0.2)',
+                bgcolor: 'rgba(52, 211, 153, 0.02)',
+                transition: 'all 0.2s',
+                '&:hover': {
+                  borderColor: '#34d399',
+                  bgcolor: 'rgba(52, 211, 153, 0.08)',
+                  boxShadow: '0 0 16px rgba(52, 211, 153, 0.25)',
+                },
+              }}
+            >
+              <Box sx={{ bgcolor: 'rgba(52, 211, 153, 0.15)', p: 1.2, borderRadius: '50%', display: 'flex', color: '#34d399' }}>
+                <Icon icon="solar:rocket-bold-duotone" width={32} height={32} />
+              </Box>
+              <Box sx={{ flexGrow: 1 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+                  Pepe 簡報測試通道 (模擬 Web3)
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                  無須錢包即可一鍵進入系統、切換 Pepe 蛙頭像與測試跟單
+                </Typography>
+              </Box>
+            </Card>
+          </Stack>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

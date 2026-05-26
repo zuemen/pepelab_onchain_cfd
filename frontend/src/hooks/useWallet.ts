@@ -24,6 +24,7 @@ export interface WalletState {
 
 export interface WalletAPI extends WalletState {
   connect: () => Promise<void>
+  connectMock: () => void
   disconnect: () => void
   switchAccount: () => Promise<void>
 }
@@ -42,7 +43,23 @@ export function useWallet(): WalletAPI {
   const [state, setState] = useState<WalletState>(INITIAL)
   const isConnectingRef = useRef(false)
 
-  const disconnect = useCallback(() => setState(INITIAL), [])
+  const connectMock = useCallback(() => {
+    localStorage.setItem('pepefi_wallet_mock', 'true');
+    setState({
+      address: '0x7cc14a7cc14a7cc14a7cc14a7cc14a7cc14a7cc14a',
+      chainId: 11155111,
+      isConnected: true,
+      provider: null,
+      signer: null,
+      isConnecting: false,
+      error: null,
+    });
+  }, []);
+
+  const disconnect = useCallback(() => {
+    localStorage.removeItem('pepefi_wallet_mock');
+    setState(INITIAL);
+  }, []);
 
   const connect = useCallback(async () => {
     if (!window.ethereum) {
@@ -80,6 +97,7 @@ export function useWallet(): WalletAPI {
   }, [])
 
   const switchAccount = useCallback(async () => {
+    if (localStorage.getItem('pepefi_wallet_mock') === 'true') return;
     if (!window.ethereum) return
     try {
       await (window.ethereum as unknown as {
@@ -88,12 +106,29 @@ export function useWallet(): WalletAPI {
     } catch { /* user dismissed — ignore */ }
   }, [])
 
+  // Restore mock session on load
+  useEffect(() => {
+    const wasMock = localStorage.getItem('pepefi_wallet_mock') === 'true';
+    if (wasMock) {
+      setState({
+        address: '0x7cc14a7cc14a7cc14a7cc14a7cc14a7cc14a7cc14a',
+        chainId: 11155111,
+        isConnected: true,
+        provider: null,
+        signer: null,
+        isConnecting: false,
+        error: null,
+      });
+    }
+  }, []);
+
   // React to wallet / chain changes from MetaMask
   useEffect(() => {
     const eth = window.ethereum
     if (!eth) return
 
     const onAccountsChanged = async (raw: unknown) => {
+      if (localStorage.getItem('pepefi_wallet_mock') === 'true') return;
       const accounts = raw as string[]
       if (accounts.length === 0) { disconnect(); return }
       // Re-fetch provider + signer so the new account's signing key is used
@@ -114,7 +149,10 @@ export function useWallet(): WalletAPI {
       } catch { /* silently ignore */ }
     }
 
-    const onChainChanged = () => window.location.reload()
+    const onChainChanged = () => {
+      if (localStorage.getItem('pepefi_wallet_mock') === 'true') return;
+      window.location.reload()
+    }
 
     eth.on('accountsChanged', onAccountsChanged as (...args: unknown[]) => void)
     eth.on('chainChanged', onChainChanged)
@@ -124,5 +162,5 @@ export function useWallet(): WalletAPI {
     }
   }, [disconnect])
 
-  return { ...state, connect, disconnect, switchAccount }
+  return { ...state, connect, connectMock, disconnect, switchAccount }
 }
