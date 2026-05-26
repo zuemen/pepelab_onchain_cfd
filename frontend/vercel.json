@@ -1,5 +1,6 @@
 {
   "rewrites": [
-    { "source": "/((?!assets/).*)", "destination": "/index.html" }
+    { "source": "/api/coingecko/(.*)", "destination": "https://api.coingecko.com/$1" },
+    { "source": "/((?!assets/|api/).*)", "destination": "/index.html" }
   ]
 }

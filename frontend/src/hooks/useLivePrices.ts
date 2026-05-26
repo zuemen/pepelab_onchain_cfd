@@ -36,7 +36,7 @@ export function useLivePrices(): Record<string, LivePrice> {
     const fetchCG = async () => {
       try {
         const ids = Object.values(COIN_MAP).join(',')
-        const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`)
+        const res = await fetch(`/api/coingecko/api/v3/simple/price?ids=${ids}&vs_currencies=usd`)
         if (res.ok) {
           const data = await res.json() as Record<string, { usd: number }>
           for (const [assetId, coinId] of Object.entries(COIN_MAP)) {

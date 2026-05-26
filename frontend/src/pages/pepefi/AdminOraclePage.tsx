@@ -226,7 +226,7 @@ export default function AdminOraclePage() {
     setSyncMsg(null)
     try {
       const res = await fetch(
-        'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd',
+        '/api/coingecko/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd',
       )
       if (!res.ok) throw new Error(`CoinGecko API error ${res.status}`)
       const data = await res.json() as { bitcoin: { usd: number }; ethereum: { usd: number } }
