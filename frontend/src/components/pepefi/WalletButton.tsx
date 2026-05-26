@@ -1,5 +1,6 @@
 import type { WalletAPI } from 'src/hooks/useWallet';
 
+import { useLocation, useNavigate } from 'react-router';
 import { useState, useEffect } from 'react';
 
 import Button from '@mui/material/Button';
@@ -28,11 +29,17 @@ export default function WalletButton({ wallet }: Props) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const open = Boolean(anchorEl);
 
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
+
   useEffect(() => {
-    if (isConnected) {
+    if (isConnected && dialogOpen) {
       setDialogOpen(false);
+      if (pathname === '/') {
+        navigate('/dashboard', { replace: true });
+      }
     }
-  }, [isConnected]);
+  }, [isConnected, dialogOpen, pathname, navigate]);
 
   const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
     setAnchorEl(event.currentTarget);
