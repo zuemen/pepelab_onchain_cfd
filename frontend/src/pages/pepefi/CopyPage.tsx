@@ -106,39 +106,49 @@ export default function CopyPage() {
     if (!contracts || !traderAddress) return
     setLoadError(null)
     const go = async () => {
+      let traderRaw: [boolean, string, bigint] | null = null;
       try {
-        const traderRaw = (await contracts.registry.traders(traderAddress)) as unknown as [boolean, string, bigint]
+        traderRaw = (await contracts.registry.traders(traderAddress)) as unknown as [boolean, string, bigint]
+      } catch { traderRaw = null; }
+      if (traderRaw) {
         setTraderName(traderRaw[1])
-        setTraderRegistered(traderRaw[0] as boolean)
-      } catch (e) {
-        console.error('[CopyPage] trader fetch error', e)
-        setLoadError(e instanceof Error ? e.message.slice(0, 120) : 'Could not load trader info — check network')
-        return
+        setTraderRegistered(traderRaw[0])
       }
 
+      let stratRaw: [unknown[], bigint] | null = null;
       try {
-        const stratRaw = (await contracts.registry.getLatestStrategy(traderAddress)) as unknown as [unknown[], bigint]
-        const allocs = stratRaw[0] as unknown as Array<{
-          asset: string; weight: bigint; isLong: boolean; leverage: bigint
-        }>
+        stratRaw = (await contracts.registry.getLatestStrategy(traderAddress)) as unknown as [unknown[], bigint]
+      } catch (e) {
+        console.warn('[CopyPage] no strategy for', traderAddress, e)
+        stratRaw = null;
+      }
 
-        const withPrices = await Promise.all(
-          allocs.map(async a => {
-            const pr = (await contracts.oracle.getPrice(a.asset)) as unknown as [bigint, bigint]
-            return {
-              asset:      a.asset,
-              weight:     a.weight,
-              isLong:     a.isLong,
-              leverage:   a.leverage,
-              entryPrice: pr[0] * 10n ** 10n,
-            } satisfies AllocWithPrice
-          }),
-        )
-        setStratAllocs(withPrices)
-        setHasStrategy(true)
-      } catch {
+      if (stratRaw === null) {
         setStratAllocs([])
         setHasStrategy(false)
+      } else {
+        try {
+          const allocs = stratRaw[0] as unknown as Array<{
+            asset: string; weight: bigint; isLong: boolean; leverage: bigint
+          }>
+          const withPrices = await Promise.all(
+            allocs.map(async a => {
+              const pr = (await contracts.oracle.getPrice(a.asset)) as unknown as [bigint, bigint]
+              return {
+                asset:      a.asset,
+                weight:     a.weight,
+                isLong:     a.isLong,
+                leverage:   a.leverage,
+                entryPrice: pr[0] * 10n ** 10n,
+              } satisfies AllocWithPrice
+            }),
+          )
+          setStratAllocs(withPrices)
+          setHasStrategy(true)
+        } catch {
+          setStratAllocs([])
+          setHasStrategy(false)
+        }
       }
 
       try {

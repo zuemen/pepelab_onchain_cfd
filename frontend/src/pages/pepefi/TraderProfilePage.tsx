@@ -92,20 +92,18 @@ export default function TraderProfilePage() {
     setLoading(true)
     setError(null)
     const go = async () => {
+      let traderRaw: [boolean, string, bigint] | null = null
       try {
-        const [traderRaw, fc] = await Promise.all([
-          contracts.registry.traders(traderAddr),
-          contracts.copyTracker.getFollowerCount(traderAddr),
-        ])
-        const t = traderRaw as unknown as [boolean, string, bigint]
-        setName(t[1])
-        setRegistered(t[0])
-        setFollowers(fc as bigint)
-      } catch (e) {
-        setError(e instanceof Error ? e.message.slice(0, 120) : 'Could not load trader')
-        setLoading(false)
-        return
+        traderRaw = (await contracts.registry.traders(traderAddr)) as unknown as [boolean, string, bigint]
+      } catch { traderRaw = null }
+      if (traderRaw) {
+        setName(traderRaw[1])
+        setRegistered(traderRaw[0])
       }
+      try {
+        const fc = await contracts.copyTracker.getFollowerCount(traderAddr)
+        setFollowers(fc as bigint)
+      } catch { /* no follower data */ }
 
       // followersByTrader (first 10)
       try {

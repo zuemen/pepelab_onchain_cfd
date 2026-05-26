@@ -6,6 +6,9 @@ import { ASSET_IDS } from 'src/contracts/addresses'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { TableSkeleton } from 'src/components/pepefi/Skeleton'
 import { ASSETS_LIST, ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
+import { getPepeAvatar } from 'src/utils/pepefi-assets'
+import TraderRankBadge from 'src/components/pepefi/TraderRankBadge'
+import Avatar from '@mui/material/Avatar'
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -86,6 +89,7 @@ export default function TraderDashboard() {
   const [traderInfo, setTraderInfo] = useState<TraderInfo | null>(null)
   const [nameInput,  setNameInput]  = useState('')
   const [eligible,   setEligible]   = useState<boolean | null>(null)
+  const [stakeData,  setStakeData]  = useState<{ stake: bigint; totalSlashed: bigint; reputation: bigint } | null>(null)
 
   const uidRef = useRef(0)
   const [rows, setRows] = useState<AllocRow[]>([])
@@ -110,13 +114,22 @@ export default function TraderDashboard() {
       const raw = (await contracts.registry.traders(wallet.address)) as unknown as [boolean, string, bigint]
       setTraderInfo({ isRegistered: raw[0], displayName: raw[1] })
     } catch (e) {
-      console.error('[trader fetch]', e)
-      notify(prettyError(e), false)
+      console.warn('[trader fetch]', e)
     }
     try {
       const elig = await contracts.traderStake.isEligible(wallet.address)
       setEligible(elig as boolean)
     } catch { setEligible(null) }
+
+    // Fetch stake and reputation score
+    try {
+      const [si, score] = await Promise.all([
+        contracts.traderStake.getStake(wallet.address),
+        contracts.traderStake.reputationScore(wallet.address),
+      ])
+      const s = si as unknown as { amount: bigint; totalSlashed: bigint }
+      setStakeData({ stake: s.amount, totalSlashed: s.totalSlashed, reputation: score as bigint })
+    } catch { /* not deployed or failed */ }
   }, [contracts, wallet.address, notify])
 
   const fetchHistory = useCallback(async () => {
@@ -140,8 +153,8 @@ export default function TraderDashboard() {
       )
       setHistory([...vers].reverse())
     } catch (e) {
-      console.error('[history fetch]', e)
-      notify(prettyError(e), false)
+      setHistory([])
+      console.warn('[history fetch]', e)
     } finally {
       setHistoryLoading(false)
     }
@@ -295,6 +308,55 @@ export default function TraderDashboard() {
           </Alert>
         ) : undefined}
       </Snackbar>
+
+      {/* ─── Personal Profile Header (Only shown if registered) ─── */}
+      {traderInfo?.isRegistered && (
+        <Card sx={{ p: 3, display: 'flex', flexDirection: 'row', gap: 3, alignItems: 'center' }}>
+          <Avatar
+            src={getPepeAvatar(stakeData ? stakeData.reputation : null, wallet.address || '')}
+            sx={{
+              width: 80,
+              height: 80,
+              border: '3px solid',
+              borderColor: stakeData && stakeData.reputation >= 80n ? 'warning.main' : 'rgba(255,255,255,0.1)',
+              boxShadow: '0 0 16px rgba(0,0,0,0.5)',
+            }}
+          />
+          <Box sx={{ flexGrow: 1 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 2 }}>
+              <Box>
+                <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexWrap: 'wrap', gap: 1 }}>
+                  <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
+                    {traderInfo.displayName}
+                  </Typography>
+                  <TraderRankBadge reputation={stakeData ? stakeData.reputation : null} />
+                </Stack>
+                <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary', display: 'block', mt: 0.5 }}>
+                  {wallet.address}
+                </Typography>
+              </Box>
+              {stakeData && (
+                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5 }}>
+                  <Chip
+                    label={`◆ ${String(stakeData.reputation)} rep`}
+                    size="small"
+                    sx={{
+                      fontWeight: 'bold',
+                      ...(stakeData.reputation >= 80n ? { bgcolor: 'rgba(34, 197, 94, 0.16)', color: '#22c55e', border: '1px solid', borderColor: 'rgba(34, 197, 94, 0.24)' }
+                        : stakeData.reputation >= 60n ? { bgcolor: 'rgba(255, 171, 0, 0.16)', color: '#ffab00', border: '1px solid', borderColor: 'rgba(255, 171, 0, 0.24)' }
+                        : { bgcolor: 'rgba(255, 86, 48, 0.16)', color: '#ff5630', border: '1px solid', borderColor: 'rgba(255, 86, 48, 0.24)' }
+                      )
+                    }}
+                  />
+                  <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                    {(Number(stakeData.stake) / 1e18).toFixed(0)} mUSDC staked
+                  </Typography>
+                </Box>
+              )}
+            </Box>
+          </Box>
+        </Card>
+      )}
 
       {/* ─── A. Register ────────────────────────────────────────────────── */}
       <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>

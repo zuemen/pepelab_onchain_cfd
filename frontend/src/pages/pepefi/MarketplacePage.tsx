@@ -146,11 +146,16 @@ export default function MarketplacePage() {
 
       const cards = await Promise.all(
         (addresses as string[]).map(async (addr): Promise<TraderCard> => {
-          const [traderRaw, fc] = await Promise.all([
-            contracts.registry.traders(addr),
-            contracts.copyTracker.getFollowerCount(addr),
-          ]);
-          const tRaw = traderRaw as unknown as [boolean, string, bigint];
+          let tRaw: [boolean, string, bigint] = [false, '', 0n];
+          let fc: bigint = 0n;
+          try {
+            const [traderRaw, followerCount] = await Promise.all([
+              contracts.registry.traders(addr),
+              contracts.copyTracker.getFollowerCount(addr),
+            ]);
+            tRaw = traderRaw as unknown as [boolean, string, bigint];
+            fc = followerCount as bigint;
+          } catch { /* unregistered or unavailable */ }
 
           let allocs: RawAlloc[] = [];
           let hasStrategy = false;
@@ -179,7 +184,7 @@ export default function MarketplacePage() {
             address:      addr,
             displayName:  tRaw[1],
             allocs,
-            followerCount: fc as bigint,
+            followerCount: fc,
             hasStrategy,
             reputation,
             stake,
