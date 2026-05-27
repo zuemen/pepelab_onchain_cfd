@@ -6,6 +6,7 @@ import { explorerTx } from 'src/lib/pepefi/notify'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import EmptyState from 'src/components/pepefi/EmptyState'
 import StatCard from 'src/components/pepefi/StatCard'
+import { Iconify } from 'src/components/iconify'
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -67,6 +68,10 @@ export default function AdminTreasuryPage() {
   const [history,         setHistory]         = useState<CashOutRecord[]>([])
   const [busy,            setBusy]            = useState<Record<string, boolean>>({})
   const [toast,           setToast]           = useState<{ msg: string; ok: boolean; hash?: string } | null>(null)
+
+  const [walletPepeBal,   setWalletPepeBal]   = useState<bigint | null>(null)
+  const [contractPepeBal, setContractPepeBal] = useState<bigint | null>(null)
+  const [pepeFundAmt,     setPepeFundAmt]     = useState('')
 
   const isOwner = wallet.address?.toLowerCase() === DEMO_OWNER.toLowerCase()
 
@@ -146,12 +151,31 @@ export default function AdminTreasuryPage() {
     }
   }, [contracts, wallet.address, wallet.provider])
 
+  // ── Fetch PEPE balances ────────────────────────────────────────────────────
+  const fetchPepeBalances = useCallback(async () => {
+    if (!contracts || !wallet.address) return
+    try {
+      const [walletBal, contractBal] = await Promise.all([
+        contracts.pepeToken.balanceOf(wallet.address),
+        contracts.pepeToken.balanceOf(contracts.pepeIncentives.target),
+      ])
+      setWalletPepeBal(walletBal as bigint)
+      setContractPepeBal(contractBal as bigint)
+    } catch (e) {
+      console.error('[pepe balance fetch]', e)
+    }
+  }, [contracts, wallet.address])
+
   useEffect(() => {
     void fetchStats()
     void fetchHistory()
-    const t = setInterval(() => { void fetchStats() }, 15_000)
+    void fetchPepeBalances()
+    const t = setInterval(() => {
+      void fetchStats()
+      void fetchPepeBalances()
+    }, 15_000)
     return () => clearInterval(t)
-  }, [fetchStats, fetchHistory])
+  }, [fetchStats, fetchHistory, fetchPepeBalances])
 
   // ── Actions ───────────────────────────────────────────────────────────────
   const doClaim = async () => {
@@ -210,6 +234,21 @@ export default function AdminTreasuryPage() {
     } catch (e: any) {
       notify(prettyError(e), false)
     } finally { setLoad('fund', false) }
+  }
+
+  const doFundPepePool = async () => {
+    if (!contracts || !pepeFundAmt) return
+    setLoad('fundPepe', true)
+    try {
+      const parsedAmt = parseEther(pepeFundAmt)
+      const tx = asTx(await contracts.pepeToken.transfer(String(contracts.pepeIncentives.target), parsedAmt))
+      await tx.wait()
+      notify(`Successfully funded Incentives Pool with ${pepeFundAmt} PEPE ✓`, true, tx.hash)
+      setPepeFundAmt('')
+      await fetchPepeBalances()
+    } catch (e: any) {
+      notify(prettyError(e), false)
+    } finally { setLoad('fundPepe', false) }
   }
 
   if (!wallet.isConnected) {
@@ -429,6 +468,62 @@ export default function AdminTreasuryPage() {
               {busy['fund'] ? 'Funding…' : 'Fund Router'}
             </Button>
           </Box>
+        </Box>
+      </Card>
+
+      {/* F. PepeFi Incentives Pool Refill */}
+      <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <Box sx={{ bgcolor: 'rgba(124,193,74,0.1)', p: 1, borderRadius: '50%', color: '#7cc14a', display: 'flex' }}>
+            <Iconify icon="solar:palette-bold" sx={{ fontSize: 20 }} />
+          </Box>
+          <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+            🎁 PepeFi Incentives Pool Refill (獎勵池充值)
+          </Typography>
+        </Box>
+
+        <Typography variant="caption" color="text.secondary">
+          跟單獎勵、每日簽到、等級晉級與交易挖礦均由 <strong>PEPE</strong> 代幣激勵。為防止用戶領取時發生 <code>revert InsufficientPool</code> 錯誤，請確保此激勵合約中有足夠的 PEPE 儲備。
+        </Typography>
+
+        <Grid container spacing={2} sx={{ mt: 0.5 }}>
+          <Grid size={{ xs: 12, sm: 6 }}>
+            <Box sx={{ p: 2, bgcolor: 'rgba(255,255,255,0.02)', borderRadius: 1.5, border: '1px solid rgba(255,255,255,0.05)' }}>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>我的錢包 PEPE 餘額</Typography>
+              <Typography variant="h5" sx={{ fontWeight: 'bold', color: '#ffb300', fontFamily: 'monospace' }}>
+                {walletPepeBal !== null ? f18(walletPepeBal) : '—'} <Box component="span" sx={{ fontSize: '0.85rem', fontWeight: 'normal', color: 'text.secondary' }}>PEPE</Box>
+              </Typography>
+            </Box>
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6 }}>
+            <Box sx={{ p: 2, bgcolor: 'rgba(124,193,74,0.04)', borderRadius: 1.5, border: '1px solid rgba(124,193,74,0.15)' }}>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>激勵合約 PEPE 儲備</Typography>
+              <Typography variant="h5" sx={{ fontWeight: 'bold', color: '#7cc14a', fontFamily: 'monospace' }}>
+                {contractPepeBal !== null ? f18(contractPepeBal) : '—'} <Box component="span" sx={{ fontSize: '0.85rem', fontWeight: 'normal', color: 'text.secondary' }}>PEPE</Box>
+              </Typography>
+            </Box>
+          </Grid>
+        </Grid>
+
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap', mt: 1.5 }}>
+          <TextField
+            type="number"
+            size="small"
+            placeholder="注資 PEPE 數量 (例如 100000)"
+            value={pepeFundAmt}
+            onChange={e => setPepeFundAmt(e.target.value)}
+            slotProps={{ htmlInput: { min: "0", style: { fontFamily: 'monospace' } } }}
+            sx={{ width: 250, flexGrow: 1 }}
+          />
+          <Button
+            variant="contained"
+            color="success"
+            onClick={() => void doFundPepePool()}
+            disabled={busy['fundPepe'] || !pepeFundAmt || parseFloat(pepeFundAmt) <= 0}
+            sx={{ fontWeight: 'bold', px: 3 }}
+          >
+            {busy['fundPepe'] ? '注資中…' : '確認注資'}
+          </Button>
         </Box>
       </Card>
 

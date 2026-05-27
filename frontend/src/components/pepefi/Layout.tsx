@@ -269,7 +269,7 @@ export default function Layout({ wallet, children, isKYCVerified, whaleAlerts }:
           ) : (
             <ListItemButton
               component={RouterLink}
-              to="/pepefi/admin/oracle"
+              to="/admin/oracle"
               onClick={() => setMobileOpen(false)}
               selected={pathname.startsWith('/admin')}
               sx={{
