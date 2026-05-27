@@ -111,7 +111,7 @@ export function AccountDrawer({ data = [], sx, ...other }: AccountDrawerProps) {
         return (
           <MenuItem key={option.label}>
             <Link
-              component={RouterLink}
+              {...(isGamefi ? {} : { component: RouterLink })}
               href={isGamefi ? '#' : (option.label === 'Home' ? rootHref : targetHref)}
               onClick={handleClick}
               color="inherit"
