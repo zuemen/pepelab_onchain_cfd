@@ -143,14 +143,30 @@ function deriveRow(pos: PosRow, livePrices: Record<string, LivePrice>): DerivedR
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
-const fUsd = (v: bigint) =>
-  '$' + (Number(v) / 1e18).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fUsd = (v: bigint | number | null | undefined) => {
+  if (v === null || v === undefined) return '$0.00';
+  try {
+    const val = typeof v === 'bigint' ? Number(v) / 1e18 : Number(v);
+    if (isNaN(val)) return '$0.00';
+    return '$' + val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  } catch {
+    return '$0.00';
+  }
+};
 
-const f18 = (v: bigint, d = 0) =>
-  Number(v / 10n ** 18n).toLocaleString('en-US', {
-    minimumFractionDigits: d,
-    maximumFractionDigits: d,
-  });
+const f18 = (v: bigint | null | undefined, d = 0) => {
+  if (v === null || v === undefined) return '0';
+  try {
+    const val = Number(v / 10n ** 18n);
+    if (isNaN(val)) return '0';
+    return val.toLocaleString('en-US', {
+      minimumFractionDigits: d,
+      maximumFractionDigits: d,
+    });
+  } catch {
+    return '0';
+  }
+};
 
 const fUsdFloat = (v: number) =>
   '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -264,7 +280,23 @@ export default function DashboardPage() {
       ]);
       setFreeMargin(fmRaw as bigint);
       setWalletUSDC(walletUsdcRaw as bigint);
-      setStakedUSDC(stakedUsdcRaw as bigint);
+
+      let stakedAmt = 0n;
+      if (stakedUsdcRaw) {
+        if (typeof stakedUsdcRaw === 'bigint') {
+          stakedAmt = stakedUsdcRaw;
+        } else if (typeof stakedUsdcRaw === 'object') {
+          const raw = stakedUsdcRaw as any;
+          if ('amount' in raw) {
+            stakedAmt = BigInt(raw.amount);
+          } else if (Array.isArray(raw) && raw.length > 0) {
+            stakedAmt = BigInt(raw[0]);
+          } else if (raw[0] !== undefined) {
+            stakedAmt = BigInt(raw[0]);
+          }
+        }
+      }
+      setStakedUSDC(stakedAmt);
  
       let vaultUsdcVal = 0n;
       if (contracts.insuranceVault) {

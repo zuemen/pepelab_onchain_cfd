@@ -32,6 +32,7 @@ interface ICopyTracker {
         uint256   versionId;
         uint256   initialAmount;
         uint256[] positionIds;
+        uint256   copiedAt;
         bool      active;
     }
 
