@@ -27,6 +27,7 @@ import { Iconify } from 'src/components/iconify';
 import { Scrollbar } from 'src/components/scrollbar';
 import { AnimateBorder } from 'src/components/animate';
 import { PepeAvatar } from 'src/components/pepefi/PepeAvatar';
+import PepeGameFiModal from 'src/components/pepefi/PepeGameFiModal';
 
 import { useMockedUser } from 'src/auth/hooks';
 
@@ -56,6 +57,9 @@ export function AccountDrawer({ data = [], sx, ...other }: AccountDrawerProps) {
   const [nameInput, setNameInput] = useState('');
   useEffect(() => { if (open) setNameInput(displayName); }, [open, displayName]);
 
+  const [gamefiOpen, setGamefiOpen] = useState(false);
+  const [gamefiTab, setGamefiTab] = useState<'breed' | 'potions' | 'wardrobe'>('breed');
+
   const renderAvatar = () => (
     <AnimateBorder
       sx={{ mb: 2, p: '6px', width: 96, height: 96, borderRadius: '50%' }}
@@ -84,14 +88,34 @@ export function AccountDrawer({ data = [], sx, ...other }: AccountDrawerProps) {
         const rootLabel = pathname.includes('/dashboard') ? 'Home' : 'Dashboard';
         const rootHref = pathname.includes('/dashboard') ? '/' : paths.dashboard.root;
 
+        // Dynamic profile link
+        let targetHref = option.href;
+        if (option.label.includes('Profile') && wallet.address) {
+          targetHref = `/trader/${wallet.address}`;
+        }
+
+        const isGamefi = option.href.startsWith('#gamefi-');
+
+        const handleClick = (e: React.MouseEvent) => {
+          if (isGamefi) {
+            e.preventDefault();
+            const tab = option.href.replace('#gamefi-', '') as 'breed' | 'potions' | 'wardrobe';
+            setGamefiTab(tab);
+            setGamefiOpen(true);
+            onClose(); // Close drawer
+          } else {
+            onClose();
+          }
+        };
+
         return (
           <MenuItem key={option.label}>
             <Link
               component={RouterLink}
-              href={option.label === 'Home' ? rootHref : option.href}
+              href={isGamefi ? '#' : (option.label === 'Home' ? rootHref : targetHref)}
+              onClick={handleClick}
               color="inherit"
               underline="none"
-              onClick={onClose}
               sx={{
                 p: 1,
                 width: 1,
@@ -101,6 +125,7 @@ export function AccountDrawer({ data = [], sx, ...other }: AccountDrawerProps) {
                 color: 'text.secondary',
                 '& svg': { width: 24, height: 24 },
                 '&:hover': { color: 'text.primary' },
+                cursor: 'pointer',
               }}
             >
               {option.icon}
@@ -208,6 +233,12 @@ export function AccountDrawer({ data = [], sx, ...other }: AccountDrawerProps) {
           <SignOutButton onClose={onClose} />
         </Box>
       </Drawer>
+
+      <PepeGameFiModal
+        open={gamefiOpen}
+        onClose={() => setGamefiOpen(false)}
+        defaultTab={gamefiTab}
+      />
     </>
   );
 }

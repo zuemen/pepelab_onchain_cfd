@@ -33,6 +33,15 @@ export const _addressBooks = Array.from({ length: 24 }, (_, index) => ({
 
 // ----------------------------------------------------------------------
 
+const PEPE_NAMES = [
+  'GigaPepe 🦾', 'Elon Frog 🚀', 'Wizard Pepe 🧙', 'Gold Emperor Pepe 👑',
+  'Diamond Hands Frog 💎', 'DeFi Farmer Frog 🚜', 'Leverage Master Pepe ⚡',
+  'Green Whale Alpha 🐋', 'Moon Shot Pepe 🌙', 'LaserEyes Frog 🔴',
+  'Safu Guard Pepe 🛡️', 'Meme Lord Frog 🎭', 'Alpha Caller Pepe 📞',
+  'Rich Merchant Pepe 💼', 'Smart Copier Frog 🤝', 'Green Green Grass Pepe 🌱',
+  'Super Saiyan Pepe ⚡', 'Cybernetic Cyborg Frog 🤖', 'Green Sovereign 👑', 'Pepe the Great 🐸'
+];
+
 export const _contacts = Array.from({ length: 20 }, (_, index) => {
   const status =
     (index % 2 && 'online') || (index % 3 && 'offline') || (index % 4 && 'always') || 'busy';
@@ -40,63 +49,74 @@ export const _contacts = Array.from({ length: 20 }, (_, index) => {
   return {
     id: _mock.id(index),
     status,
-    role: _mock.role(index),
-    email: _mock.email(index),
-    name: _mock.fullName(index),
+    role: index % 2 === 0 ? 'Star Trader' : 'Copier',
+    email: `${PEPE_NAMES[index].toLowerCase().replace(/[^a-z0-9]/g, '')}@pepefi.io`,
+    name: PEPE_NAMES[index],
     phoneNumber: _mock.phoneNumber(index),
     lastActivity: _mock.time(index),
-    avatarUrl: _mock.image.avatar(index),
+    avatarUrl: index % 2 === 0 ? '/avatars/pepe-01.png' : '/assets/images/pepefi/pepe_eth.jpg',
     address: _mock.fullAddress(index),
   };
 });
 
 // ----------------------------------------------------------------------
 
+const PEPE_NOTIFS = [
+  {
+    title: '<p><strong>GigaPepe 🦾</strong> sent you a copy-trade follow request!</p>',
+    type: 'friend',
+    category: 'SocialFi'
+  },
+  {
+    title: '<p><strong>Elon Frog 🚀</strong> paired with you! You both earned <strong>200 PEPE</strong> copy rewards! 🤝</p>',
+    type: 'project',
+    category: 'SocialFi'
+  },
+  {
+    title: '<p>🧪 Your <strong>Golden Elixir (黃金仙露)</strong> purchase was successful! (-300 PEPE)</p>',
+    type: 'file',
+    category: 'GameFi'
+  },
+  {
+    title: '<p>🐣 孵化成功！您的繁育蛋誕生了一隻 <strong>Supreme Space Lord 🌌</strong> 傳奇佩佩！</p>',
+    type: 'tags',
+    category: 'GameFi'
+  },
+  {
+    title: '<p>💰 <strong>Whale Alert</strong>: A copy whale just locked <strong>$50,000 USDC</strong> to follow your strategy!</p>',
+    type: 'payment',
+    category: 'SocialFi'
+  },
+  {
+    title: '<p>📅 <strong>每日簽到提醒</strong>：您今天還沒簽到喔！點擊去領取今日 <strong>+50 PEPE</strong> 激勵！</p>',
+    type: 'order',
+    category: 'MemeFi'
+  },
+  {
+    title: '<p>📈 您的交易量突破等級閾值，成功解鎖 <strong>Gold 🥇</strong> 等級，並獲得一次性獎勵 10,000 PEPE！</p>',
+    type: 'delivery',
+    category: 'MemeFi'
+  },
+  {
+    title: '<p>⛏️ 您開倉的槓桿交易頭寸已累積可申領 <strong>4,200 PEPE</strong> 交易挖礦獎勵！</p>',
+    type: 'chat',
+    category: 'DeFi'
+  },
+  {
+    title: '<p>🛡️ Insurance Vault has fully rebalanced! Platform risk index is extremely low & SAFU.</p>',
+    type: 'mail',
+    category: 'DeFi'
+  }
+];
+
 export const _notifications = Array.from({ length: 9 }, (_, index) => ({
   id: _mock.id(index),
-  avatarUrl: [
-    _mock.image.avatar(1),
-    _mock.image.avatar(2),
-    _mock.image.avatar(3),
-    _mock.image.avatar(4),
-    _mock.image.avatar(5),
-    null,
-    null,
-    null,
-    null,
-    null,
-  ][index],
-  type: ['friend', 'project', 'file', 'tags', 'payment', 'order', 'delivery', 'chat', 'mail'][
-    index
-  ],
-  category: [
-    'Communication',
-    'Project UI',
-    'File manager',
-    'File manager',
-    'File manager',
-    'Order',
-    'Order',
-    'Communication',
-    'Communication',
-  ][index],
-  isUnRead: _mock.boolean(index),
+  avatarUrl: index % 2 === 0 ? '/avatars/pepe-01.png' : '/assets/images/pepefi/pepe_eth.jpg',
+  type: PEPE_NOTIFS[index].type,
+  category: PEPE_NOTIFS[index].category,
+  isUnRead: index < 3,
   createdAt: _mock.time(index),
-  title:
-    (index === 0 && `<p><strong>Deja Brady</strong> sent you a friend request</p>`) ||
-    (index === 1 &&
-      `<p><strong>Jayvon Hull</strong> mentioned you in <strong><a href='#'>Minimal UI</a></strong></p>`) ||
-    (index === 2 &&
-      `<p><strong>Lainey Davidson</strong> added file to <strong><a href='#'>File manager</a></strong></p>`) ||
-    (index === 3 &&
-      `<p><strong>Angelique Morse</strong> added new tags to <strong><a href='#'>File manager<a/></strong></p>`) ||
-    (index === 4 &&
-      `<p><strong>Giana Brandt</strong> request a payment of <strong>$200</strong></p>`) ||
-    (index === 5 && `<p>Your order is placed waiting for shipping</p>`) ||
-    (index === 6 && `<p>Delivery processing your order is being shipped</p>`) ||
-    (index === 7 && `<p>You have new message 5 unread messages</p>`) ||
-    (index === 8 && `<p>You have new mail`) ||
-    '',
+  title: PEPE_NOTIFS[index].title,
 }));
 
 // ----------------------------------------------------------------------
