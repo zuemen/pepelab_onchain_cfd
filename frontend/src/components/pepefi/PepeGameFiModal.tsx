@@ -5,7 +5,6 @@ import Box from '@mui/material/Box';
 import Tabs from '@mui/material/Tabs';
 import Grid from '@mui/material/Grid';
 import Card from '@mui/material/Card';
-import Alert from '@mui/material/Alert';
 import Stack from '@mui/material/Stack';
 import Dialog from '@mui/material/Dialog';
 import Button from '@mui/material/Button';
@@ -19,23 +18,6 @@ import { Iconify } from 'src/components/iconify';
 
 // ── Types & Assets ─────────────────────────────────────────────────────────────
 
-interface PepeAvatarOption {
-  id: string;
-  name: string;
-  url: string;
-  rarity: 'Common' | 'Rare' | 'Epic' | 'Legendary';
-  unlocked: boolean;
-}
-
-const DEFAULT_AVATARS: PepeAvatarOption[] = [
-  { id: '1', name: 'Original Pepe', url: '/avatars/pepe-01.png', rarity: 'Common', unlocked: true },
-  { id: '2', name: 'Eth Pepe', url: '/assets/images/pepefi/pepe_eth.jpg', rarity: 'Common', unlocked: true },
-  { id: '3', name: 'Trader Pepe', url: '/avatars/pepe-01.png', rarity: 'Common', unlocked: true },
-  { id: '4', name: 'Gold Pepe', url: '/avatars/pepe-01.png', rarity: 'Rare', unlocked: true },
-  { id: '5', name: 'Rocket Pepe', url: '/avatars/pepe-01.png', rarity: 'Rare', unlocked: true },
-  { id: '6', name: 'Wizard Frog', url: '/avatars/pepe-01.png', rarity: 'Rare', unlocked: true },
-];
-
 const POTIONS = [
   { id: 'green', name: 'Pepe Green Juice (綠色蛙汁)', desc: '讓你的 Pepe 眼睛發光，經驗值 +50 XP！', cost: 100, xp: 50, color: '#4caf50', emoji: '🧪' },
   { id: 'gold', name: 'Golden Elixir (黃金仙露)', desc: '解鎖奢華黃金配飾，經驗值 +150 XP！', cost: 300, xp: 150, color: '#ffd700', emoji: '🍶' },
@@ -43,10 +25,10 @@ const POTIONS = [
 ];
 
 const CLOTHES = [
-  { id: 'none', name: 'Original Look (經典皮膚)', cost: 0, levelRequired: 1, emoji: '🐸' },
-  { id: 'suit', name: 'Merchant Suit (明星交易員西裝)', cost: 200, levelRequired: 5, emoji: '👔' },
-  { id: 'cape', name: 'Royal Cape (黃金國王披風)', cost: 500, levelRequired: 15, emoji: '👑' },
-  { id: 'astronaut', name: 'Astronaut Suit (登月太空衣)', cost: 1000, levelRequired: 30, emoji: '👨‍🚀' },
+  { id: 'none', name: 'Original Look (經典皮衣)', cost: 0, levelRequired: 1, emoji: '🐸', desc: '原汁原味的佩佩蛙經典造型。' },
+  { id: 'suit', name: 'Merchant Suit (交易員西裝)', cost: 200, levelRequired: 5, emoji: '👔', desc: '穿上極具專業感的明星交易員西服。' },
+  { id: 'cape', name: 'Royal Cape (黃金蛙皇披風)', cost: 500, levelRequired: 15, emoji: '👑', desc: '披上金光璀璨的皇家王者金披風。' },
+  { id: 'astronaut', name: 'Astronaut Suit (登月太空衣)', cost: 1000, levelRequired: 30, emoji: '👨‍🚀', desc: '配備最硬核的火箭噴射登月太空服飾。' },
 ];
 
 // ── Helper Title ──────────────────────────────────────────────────────────────
@@ -61,11 +43,11 @@ const getTitleByLevel = (lvl: number) => {
 interface PepeGameFiModalProps {
   open: boolean;
   onClose: () => void;
-  defaultTab?: 'breed' | 'potions' | 'wardrobe';
+  defaultTab?: 'potions' | 'wardrobe';
 }
 
-export default function PepeGameFiModal({ open, onClose, defaultTab = 'breed' }: PepeGameFiModalProps) {
-  const [tabValue, setTabValue] = useState<'breed' | 'potions' | 'wardrobe'>('breed');
+export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' }: PepeGameFiModalProps) {
+  const [tabValue, setTabValue] = useState<'potions' | 'wardrobe'>('potions');
 
   useEffect(() => {
     if (open) {
@@ -78,7 +60,6 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'breed' }:
   const [xp, setXp] = useState<number>(0);
   const [level, setLevel] = useState<number>(1);
   const [activeClothes, setActiveClothes] = useState<string>('none');
-  const [avatars, setAvatars] = useState<PepeAvatarOption[]>(DEFAULT_AVATARS);
 
   // Load from storage
   useEffect(() => {
@@ -87,29 +68,25 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'breed' }:
       const savedXp  = localStorage.getItem('pepefi:gamefi:xp');
       const savedLvl = localStorage.getItem('pepefi:gamefi:level');
       const savedClo = localStorage.getItem('pepefi:gamefi:active_clothes');
-      const savedAvs = localStorage.getItem('pepefi:gamefi:avatars');
 
       if (savedBal) setPepeBal(Number(savedBal));
       if (savedXp)  setXp(Number(savedXp));
       if (savedLvl) setLevel(Number(savedLvl));
       if (savedClo) setActiveClothes(savedClo);
-      if (savedAvs) setAvatars(JSON.parse(savedAvs));
     } catch (e) { /* fallback to defaults */ }
   }, [open]);
 
   // Save to storage
-  const saveState = (newBal: number, newXp: number, newLvl: number, newClo: string, newAvs?: PepeAvatarOption[]) => {
+  const saveState = (newBal: number, newXp: number, newLvl: number, newClo: string) => {
     localStorage.setItem('pepefi:gamefi:balance', newBal.toString());
     localStorage.setItem('pepefi:gamefi:xp', newXp.toString());
     localStorage.setItem('pepefi:gamefi:level', newLvl.toString());
     localStorage.setItem('pepefi:gamefi:active_clothes', newClo);
-    if (newAvs) localStorage.setItem('pepefi:gamefi:avatars', JSON.stringify(newAvs));
 
     setPepeBal(newBal);
     setXp(newXp);
     setLevel(newLvl);
     setActiveClothes(newClo);
-    if (newAvs) setAvatars(newAvs);
 
     // Dispatch global event so header avatar or layouts can react to level-ups
     window.dispatchEvent(new CustomEvent('pepefi:gamefi-updated'));
@@ -134,54 +111,6 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'breed' }:
     saveState(nextBal, tempXp, nextLvl, activeClothes);
   };
 
-  // ── Breeding Logic ───────────────────────────────────────────────────────────
-  const [parent1, setParent1] = useState<string | null>(null);
-  const [parent2, setParent2] = useState<string | null>(null);
-  const [isBreeding, setIsBreeding] = useState(false);
-  const [hatchedPepe, setHatchedPepe] = useState<PepeAvatarOption | null>(null);
-
-  const handleBreed = () => {
-    if (!parent1 || !parent2) return;
-    if (parent1 === parent2) {
-      alert('請選擇兩個不同的 Pepe 進行繁育！');
-      return;
-    }
-    if (pepeBal < 200) {
-      alert('繁育需要消耗 200 PEPE！');
-      return;
-    }
-
-    setIsBreeding(true);
-    setHatchedPepe(null);
-
-    setTimeout(() => {
-      setIsBreeding(false);
-      // Hatch custom Pepe!
-      const p1 = avatars.find(a => a.id === parent1);
-      const p2 = avatars.find(a => a.id === parent2);
-      const randomNames = ['Cyber Overlord Pepe 🦾', 'Gold Emperor Pepe 👑', 'Ether Cosmic Frog 🌌', 'Diamond Chad Pepe 💎'];
-      const randomUrls  = [
-        '/assets/images/pepefi/pepe_eth.jpg',
-        '/avatars/pepe-01.png',
-      ];
-      const name = randomNames[Math.floor(Math.random() * randomNames.length)];
-      const url  = randomUrls[Math.floor(Math.random() * randomUrls.length)];
-      const newPepe: PepeAvatarOption = {
-        id: (avatars.length + 1).toString(),
-        name,
-        url,
-        rarity: 'Legendary',
-        unlocked: true,
-      };
-
-      const nextAvs = [...avatars, newPepe];
-      saveState(pepeBal - 200, xp, level, activeClothes, nextAvs);
-      setHatchedPepe(newPepe);
-      setParent1(null);
-      setParent2(null);
-    }, 2500); // 2.5s incubating animation
-  };
-
   // ── Wardrobe Logic ───────────────────────────────────────────────────────────
 
   const equipClothes = (clothId: string, levelReq: number) => {
@@ -191,6 +120,13 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'breed' }:
     }
     saveState(pepeBal, xp, level, clothId);
   };
+
+  // Find active outfit emoji for avatar box
+  const activeOutfit = CLOTHES.find(c => c.id === activeClothes) || CLOTHES[0];
+
+  // Calculate next unlock
+  const nextUnlock = CLOTHES.find(c => level < c.levelRequired);
+  const levelsToNext = nextUnlock ? nextUnlock.levelRequired - level : 0;
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="md" slotProps={{ paper: { sx: { bgcolor: '#0b1625', border: '1px solid rgba(124,193,74,0.3)', borderRadius: 3 } } }}>
@@ -202,7 +138,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'breed' }:
               Pepe GameFi & MemeFi Lab 🧪
             </Typography>
             <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-              DeFi · SocialFi · GameFi · MemeFi 一體化娛樂中心
+              DeFi · SocialFi · GameFi · MemeFi 一體化升級中心
             </Typography>
           </Box>
         </Stack>
@@ -215,7 +151,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'breed' }:
       <Box sx={{ px: 3, py: 2, bgcolor: 'rgba(255,255,255,0.02)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
         <Stack direction="row" spacing={3}>
           <Box>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>等級 Title</Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>等級稱號 Title</Typography>
             <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#ffb300' }}>
               {getTitleByLevel(level)}
             </Typography>
@@ -237,121 +173,18 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'breed' }:
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, bgcolor: 'rgba(124,193,74,0.12)', border: '1px solid rgba(124,193,74,0.3)', px: 2, py: 0.75, borderRadius: 2 }}>
           <Typography variant="subtitle2" sx={{ color: '#7cc14a', fontWeight: 'bold' }}>
-            💰 我的代幣: {pepeBal.toLocaleString()} PEPE
+            💰 餘額: {pepeBal.toLocaleString()} PEPE
           </Typography>
         </Box>
       </Box>
 
-      <Tabs value={tabValue} onChange={(_, nv) => setTabValue(nv)} centered indicatorColor="custom" sx={{ borderBottom: '1px solid rgba(255,255,255,0.06)', '& .MuiTab-root': { color: 'text.secondary', fontWeight: 'bold', fontSize: '1rem', '&.Mui-selected': { color: '#7cc14a' } } }}>
-        <Tab value="breed" label="🧬 佩佩繁育孵化室 (Breeding Lab)" />
+      <Tabs value={tabValue} onChange={(_, nv) => setTabValue(nv)} centered indicatorColor="custom" sx={{ borderBottom: '1px solid rgba(255,255,255,0.06)', '& .MuiTab-root': { color: 'text.secondary', fontWeight: 'bold', fontSize: '1.05rem', '&.Mui-selected': { color: '#7cc14a' } } }}>
         <Tab value="potions" label="🧪 魔法藥水商店 (Potion Shop)" />
-        <Tab value="wardrobe" label="👕 衣櫥與尊貴衣裝 (Wardrobe)" />
+        <Tab value="wardrobe" label="👕 尊貴更衣室 (Pepe Wardrobe)" />
       </Tabs>
 
       <DialogContent sx={{ minHeight: 400, py: 3 }}>
-        {/* A. BREEDING TAB */}
-        {tabValue === 'breed' && (
-          <Box sx={{ textAlign: 'center' }}>
-            <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 2 }}>
-              🧬 融合兩隻佩佩蛙，孵化出更高等級、更炫酷的傳奇 Pepe！
-            </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 3 }}>
-              每次繁育需消耗 200 PEPE 代幣。新一代 Pepe 將解鎖獨一無二的超稀有屬性！
-            </Typography>
-
-            {isBreeding ? (
-              <Box sx={{ py: 6 }}>
-                <Box
-                  component="span"
-                  sx={{
-                    display: 'inline-block',
-                    fontSize: 80,
-                    animation: 'shake 0.5s ease-in-out infinite',
-                    '@keyframes shake': {
-                      '0%, 100%': { transform: 'rotate(-8deg) scale(1)' },
-                      '50%': { transform: 'rotate(8deg) scale(1.1)' }
-                    }
-                  }}
-                >
-                  🥚
-                </Box>
-                <Typography variant="h6" sx={{ mt: 3, fontWeight: 'bold', color: '#ffd23d' }}>
-                  孵化進行中...
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  兩隻基因重組，傳奇生命正在誕生...
-                </Typography>
-              </Box>
-            ) : hatchedPepe ? (
-              <Card sx={{ p: 4, maxWidth: 400, mx: 'auto', bgcolor: 'rgba(255,210,61,0.08)', border: '2px dashed #ffd23d', textAlign: 'center' }}>
-                <Box sx={{ fontSize: 60, mb: 1 }}>✨🐣✨</Box>
-                <Typography variant="h5" sx={{ fontWeight: 900, color: '#ffd23d', mb: 2 }}>
-                  恭喜孵化成功！🎉
-                </Typography>
-                <Avatar src={hatchedPepe.url} sx={{ width: 120, height: 120, mx: 'auto', border: '4px solid #ffd23d', boxShadow: '0 0 20px rgba(255,210,61,0.5)', mb: 2 }} />
-                <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-                  {hatchedPepe.name}
-                </Typography>
-                <Typography variant="caption" sx={{ color: '#ffd23d', bgcolor: 'rgba(255,210,61,0.2)', px: 1.5, py: 0.5, borderRadius: 1, display: 'inline-block', mt: 1, fontWeight: 'bold' }}>
-                  等級: {hatchedPepe.rarity}
-                </Typography>
-                <Button variant="outlined" color="warning" fullWidth sx={{ mt: 3 }} onClick={() => setHatchedPepe(null)}>
-                  太棒了，繼續！
-                </Button>
-              </Card>
-            ) : (
-              <Grid container spacing={3} alignItems="center" justifyContent="center">
-                {/* Parent 1 */}
-                <Grid size={{ xs: 12, sm: 5 }}>
-                  <Card sx={{ p: 3, border: '1px solid', borderColor: parent1 ? '#7cc14a' : 'rgba(255,255,255,0.08)', bgcolor: 'rgba(255,255,255,0.02)' }}>
-                    <Typography variant="subtitle2" sx={{ mb: 2, color: parent1 ? '#7cc14a' : 'text.primary' }}>
-                      {parent1 ? '✓ 父本 Pepe 已選擇' : '選擇父本 Pepe 🧬'}
-                    </Typography>
-                    <Grid container spacing={1}>
-                      {avatars.map(av => (
-                        <Grid size={{ xs: 4 }} key={av.id}>
-                          <IconButton onClick={() => setParent1(av.id)} sx={{ border: parent1 === av.id ? '2px solid #7cc14a' : '2px solid transparent', p: 0.5 }}>
-                            <Avatar src={av.url} />
-                          </IconButton>
-                        </Grid>
-                      ))}
-                    </Grid>
-                  </Card>
-                </Grid>
-
-                <Grid size={{ xs: 12, sm: 2 }}>
-                  <Typography variant="h3" sx={{ color: 'rgba(255,255,255,0.3)' }}>+</Typography>
-                </Grid>
-
-                {/* Parent 2 */}
-                <Grid size={{ xs: 12, sm: 5 }}>
-                  <Card sx={{ p: 3, border: '1px solid', borderColor: parent2 ? '#7cc14a' : 'rgba(255,255,255,0.08)', bgcolor: 'rgba(255,255,255,0.02)' }}>
-                    <Typography variant="subtitle2" sx={{ mb: 2, color: parent2 ? '#7cc14a' : 'text.primary' }}>
-                      {parent2 ? '✓ 母本 Pepe 已選擇' : '選擇母本 Pepe 🧬'}
-                    </Typography>
-                    <Grid container spacing={1}>
-                      {avatars.map(av => (
-                        <Grid size={{ xs: 4 }} key={av.id}>
-                          <IconButton onClick={() => setParent2(av.id)} sx={{ border: parent2 === av.id ? '2px solid #7cc14a' : '2px solid transparent', p: 0.5 }}>
-                            <Avatar src={av.url} />
-                          </IconButton>
-                        </Grid>
-                      ))}
-                    </Grid>
-                  </Card>
-                </Grid>
-
-                <Grid size={{ xs: 12 }}>
-                  <Button variant="contained" size="large" disabled={!parent1 || !parent2 || parent1 === parent2} onClick={handleBreed} sx={{ bgcolor: '#7cc14a', color: '#fff', fontWeight: 'bold', py: 1.5, px: 6, fontSize: '1.1rem', '&:hover': { bgcolor: '#5a9e2f' } }}>
-                    🔥 開始繁育孵化 (花費 200 PEPE)
-                  </Button>
-                </Grid>
-              </Grid>
-            )}
-          </Box>
-        )}
-
-        {/* B. POTION SHOP TAB */}
+        {/* A. POTION SHOP TAB */}
         {tabValue === 'potions' && (
           <Grid container spacing={3}>
             {POTIONS.map(potion => (
@@ -380,30 +213,247 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'breed' }:
           </Grid>
         )}
 
-        {/* C. WARDROBE TAB */}
+        {/* B. WARDROBE TAB */}
         {tabValue === 'wardrobe' && (
           <Box>
-            <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 3, textAlign: 'center' }}>
-              👕 穿戴您解鎖的華麗衣裝！隨著等級提升解鎖更酷炫的配飾：
-            </Typography>
+            {/* Top Interactive Character Showcase Card */}
+            <Card sx={{
+              p: 3,
+              mb: 4,
+              position: 'relative',
+              overflow: 'hidden',
+              background: 'linear-gradient(135deg, rgba(124,193,74,0.12) 0%, rgba(255,210,61,0.06) 100%)',
+              border: '1px solid rgba(124,193,74,0.3)',
+              borderRadius: 2.5,
+              boxShadow: '0 8px 32px rgba(124,193,74,0.1)'
+            }}>
+              <Grid container spacing={3} alignItems="center">
+                {/* Character preview */}
+                <Grid size={{ xs: 12, sm: 4 }} sx={{ textAlign: 'center' }}>
+                  <Box sx={{ position: 'relative', display: 'inline-block' }}>
+                    {/* Glowing Outer Ring */}
+                    <Box sx={{
+                      position: 'absolute', top: -5, left: -5, right: -5, bottom: -5,
+                      borderRadius: '50%',
+                      border: '3px solid transparent',
+                      borderTopColor: '#7cc14a',
+                      borderBottomColor: '#ffd700',
+                      animation: 'spin 6s linear infinite',
+                      '@keyframes spin': {
+                        '0%': { transform: 'rotate(0deg)' },
+                        '100%': { transform: 'rotate(360deg)' }
+                      }
+                    }} />
+
+                    {/* Dynamic Floating Accessory */}
+                    {activeClothes !== 'none' && (
+                      <Box sx={{
+                        position: 'absolute',
+                        top: -15,
+                        left: -15,
+                        fontSize: '2.5rem',
+                        filter: 'drop-shadow(0 0 10px rgba(124,193,74,0.7))',
+                        animation: 'floatAcc 2.5s infinite ease-in-out',
+                        '@keyframes floatAcc': {
+                          '0%, 100%': { transform: 'translateY(0) rotate(0deg)' },
+                          '50%': { transform: 'translateY(-12px) rotate(12deg)' }
+                        }
+                      }}>
+                        {activeClothes === 'suit' && '💼'}
+                        {activeClothes === 'cape' && '👑'}
+                        {activeClothes === 'astronaut' && '🚀'}
+                      </Box>
+                    )}
+
+                    <Avatar src="/avatars/pepe-01.png" sx={{ width: 130, height: 130, border: '4px solid #0b1625', boxShadow: '0 0 25px rgba(124,193,74,0.4)', mx: 'auto' }} />
+                    <Box sx={{ position: 'absolute', bottom: -10, right: 10, bgcolor: '#ffb300', color: '#000', px: 1.5, py: 0.5, borderRadius: 1.5, fontSize: '0.85rem', fontWeight: '900', border: '2px solid #0b1625', boxShadow: '0 4px 10px rgba(0,0,0,0.5)' }}>
+                      {activeOutfit.emoji} 等級 {level}
+                    </Box>
+                  </Box>
+                </Grid>
+
+                {/* Status description */}
+                <Grid size={{ xs: 12, sm: 8 }}>
+                  <Typography variant="h5" sx={{ fontWeight: 900, color: '#7cc14a', mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                    {activeOutfit.emoji} {activeOutfit.name.split(' ')[0]}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5, lineHeight: 1.6 }}>
+                    {activeOutfit.desc} 目前您已達到了 <strong>Lv. {level} {getTitleByLevel(level).split(' ')[0]}</strong> 的尊貴段位。
+                  </Typography>
+                  <Stack direction="row" spacing={1.5}>
+                    <Box sx={{ bgcolor: 'rgba(255,255,255,0.04)', px: 2.5, py: 1, borderRadius: 1.5, border: '1px solid rgba(255,255,255,0.06)', minWidth: 120 }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>目前穿戴</Typography>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        {activeOutfit.emoji} {activeOutfit.name.split(' ')[0]}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ bgcolor: 'rgba(255,255,255,0.04)', px: 2.5, py: 1, borderRadius: 1.5, border: '1px solid rgba(255,255,255,0.06)', minWidth: 120 }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>聲譽 Title</Typography>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#ffb300' }}>
+                        {getTitleByLevel(level).split(' ')[0]}
+                      </Typography>
+                    </Box>
+                  </Stack>
+
+                  {/* Progress message with a clean gamified design */}
+                  <Box sx={{ mt: 2, p: 1.5, bgcolor: 'rgba(0,0,0,0.2)', borderRadius: 1.5, border: '1px solid rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                    <Box sx={{ bgcolor: nextUnlock ? 'rgba(255,179,0,0.1)' : 'rgba(124,193,74,0.1)', color: nextUnlock ? '#ffb300' : '#7cc14a', width: 26, height: 26, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.85rem', flexShrink: 0 }}>
+                      {nextUnlock ? '⚡' : '🏆'}
+                    </Box>
+                    <Typography variant="caption" sx={{ color: nextUnlock ? 'text.secondary' : '#7cc14a', fontWeight: 'bold' }}>
+                      {nextUnlock ? (
+                        <>
+                          距離解鎖下一件酷炫裝備 <strong>{nextUnlock.emoji} {nextUnlock.name.split(' ')[0]}</strong> 還差 <strong style={{ color: '#ffb300' }}>{levelsToNext}</strong> 級！(需要達 Lv.{nextUnlock.levelRequired})
+                        </>
+                      ) : (
+                        '🎉 恭喜！您已解鎖所有終極神裝，傲視群雄！'
+                      )}
+                    </Typography>
+                  </Box>
+                </Grid>
+              </Grid>
+            </Card>
+
+            <Box sx={{ mb: 3, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Box sx={{ bgcolor: 'rgba(124,193,74,0.1)', p: 1, borderRadius: '50%', color: '#7cc14a', display: 'flex' }}>
+                <Iconify icon="solar:palette-bold" sx={{ fontSize: 22 }} />
+              </Box>
+              <Box>
+                <Typography variant="subtitle1" sx={{ fontWeight: '900', color: 'text.primary' }}>
+                  穿戴您解鎖的華麗衣裝！
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  隨著等級提升解鎖更酷炫的配飾與尊貴徽章，換裝後頭像旁將會獲得專屬標識！
+                </Typography>
+              </Box>
+            </Box>
+
             <Grid container spacing={3}>
               {CLOTHES.map(c => {
                 const isUnlocked = level >= c.levelRequired;
                 const isEquipped = activeClothes === c.id;
                 return (
                   <Grid size={{ xs: 12, sm: 6 }} key={c.id}>
-                    <Card sx={{ p: 3, border: '1px solid', borderColor: isEquipped ? '#7cc14a' : 'rgba(255,255,255,0.08)', bgcolor: 'rgba(255,255,255,0.02)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <Stack direction="row" spacing={2} alignItems="center">
-                        <Box sx={{ fontSize: 36 }}>{c.emoji}</Box>
+                    <Card sx={{
+                      p: 3,
+                      position: 'relative',
+                      border: '1px solid',
+                      borderColor: isEquipped ? '#7cc14a' : 'rgba(255,255,255,0.08)',
+                      bgcolor: isEquipped ? 'rgba(124,193,74,0.04)' : 'rgba(255,255,255,0.02)',
+                      boxShadow: isEquipped ? '0 0 25px rgba(124,193,74,0.15)' : 'none',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                      '&:hover': {
+                        borderColor: isUnlocked ? '#7cc14a' : 'rgba(255,255,255,0.08)',
+                        boxShadow: isUnlocked ? '0 8px 30px rgba(124,193,74,0.2)' : 'none',
+                        transform: isUnlocked ? 'translateY(-4px)' : 'none',
+                      }
+                    }}>
+                      {/* Equipped/Locked Badge */}
+                      {isEquipped && (
+                        <Box sx={{
+                          position: 'absolute',
+                          top: 0,
+                          right: 0,
+                          bgcolor: '#7cc14a',
+                          color: '#000',
+                          px: 1.5,
+                          py: 0.25,
+                          borderRadius: '0 0 0 8px',
+                          fontSize: '0.72rem',
+                          fontWeight: 'bold',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 0.5
+                        }}>
+                          <Iconify icon="solar:check-circle-bold" sx={{ fontSize: 13 }} />
+                          已穿戴
+                        </Box>
+                      )}
+                      {!isUnlocked && (
+                        <Box sx={{
+                          position: 'absolute',
+                          top: 0,
+                          right: 0,
+                          bgcolor: 'rgba(255,255,255,0.08)',
+                          color: 'text.secondary',
+                          px: 1.5,
+                          py: 0.25,
+                          borderRadius: '0 0 0 8px',
+                          fontSize: '0.72rem',
+                          fontWeight: 'bold',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 0.5
+                        }}>
+                          <Iconify icon="solar:shield-keyhole-bold-duotone" sx={{ fontSize: 13 }} />
+                          未解鎖
+                        </Box>
+                      )}
+
+                      <Stack direction="row" spacing={2.5} alignItems="center">
+                        <Box sx={{
+                          fontSize: 38,
+                          filter: isUnlocked ? 'none' : 'grayscale(1) opacity(0.3)',
+                          bgcolor: isEquipped ? 'rgba(124,193,74,0.1)' : 'rgba(255,255,255,0.04)',
+                          p: 1.5,
+                          borderRadius: 2,
+                          border: '1px solid',
+                          borderColor: isEquipped ? '#7cc14a' : 'rgba(255,255,255,0.08)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: 60,
+                          height: 60
+                        }}>
+                          {c.emoji}
+                        </Box>
                         <Box>
-                          <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>{c.name}</Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            {isUnlocked ? '✓ 已經解鎖' : `需要達到等級 Lv.${c.levelRequired} 才能穿著`}
+                          <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: isUnlocked ? 'text.primary' : 'text.disabled' }}>
+                            {c.name}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, maxWidth: 200, lineHeight: 1.4 }}>
+                            {c.desc}
+                          </Typography>
+                          <Typography variant="caption" sx={{ color: isUnlocked ? '#7cc14a' : '#ffb300', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 0.5, mt: 1 }}>
+                            {isUnlocked ? (
+                              <>
+                                <Iconify icon="solar:verified-check-bold" sx={{ fontSize: 12 }} />
+                                已解鎖
+                              </>
+                            ) : (
+                              <>
+                                <Iconify icon="solar:clock-circle-bold" sx={{ fontSize: 12 }} />
+                                需要達 Lv.{c.levelRequired} 級
+                              </>
+                            )}
                           </Typography>
                         </Box>
                       </Stack>
-                      <Button size="small" variant={isEquipped ? 'contained' : 'outlined'} disabled={!isUnlocked} onClick={() => equipClothes(c.id, c.levelRequired)} sx={{ bgcolor: isEquipped ? '#7cc14a' : 'transparent', color: isEquipped ? '#fff' : '#7cc14a', borderColor: '#7cc14a' }}>
-                        {isEquipped ? '已穿戴' : isUnlocked ? '更換服裝' : `Lv.${c.levelRequired} 解鎖`}
+
+                      <Button
+                        size="small"
+                        variant={isEquipped ? 'contained' : 'outlined'}
+                        disabled={!isUnlocked}
+                        onClick={() => equipClothes(c.id, c.levelRequired)}
+                        sx={{
+                          bgcolor: isEquipped ? '#7cc14a' : 'transparent',
+                          color: isEquipped ? '#fff' : '#7cc14a',
+                          borderColor: '#7cc14a',
+                          fontWeight: 'bold',
+                          py: 0.75,
+                          px: 2,
+                          borderRadius: 1.5,
+                          textTransform: 'none',
+                          '&:hover': {
+                            bgcolor: isEquipped ? '#5a9e2f' : 'rgba(124,193,74,0.08)',
+                            borderColor: '#7cc14a'
+                          }
+                        }}
+                      >
+                        {isEquipped ? '已穿戴' : isUnlocked ? '換上這件' : `Lv.${c.levelRequired}`}
                       </Button>
                     </Card>
                   </Grid>
@@ -415,8 +465,8 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'breed' }:
       </DialogContent>
 
       <Box sx={{ p: 2, display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-        <Button variant="outlined" color="inherit" onClick={onClose}>
-          關閉
+        <Button variant="outlined" color="inherit" onClick={onClose} sx={{ fontWeight: 'bold' }}>
+          關閉 Lab 視窗
         </Button>
       </Box>
     </Dialog>

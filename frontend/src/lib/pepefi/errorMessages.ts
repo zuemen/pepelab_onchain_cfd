@@ -21,6 +21,14 @@ const ERROR_MAP: Record<string, string> = {
   'CooldownNotElapsed':       'Unstake 冷凍期還沒結束',
   'NoUnstakeRequest':         '沒有 pending unstake 請求',
   'InsufficientStake':        '質押額度不足',
+  'AlreadyMined':             '此倉位已申領過交易挖礦獎勵，請勿重複申領',
+  'AlreadyCheckedIn':         '您今天已經簽到過囉，明天再來吧！',
+  'TierAlreadyClaimed':       '此等級的晉升獎勵已申領過囉！',
+  'CopyAlreadyClaimed':       '此跟單關係的獎勵已申領過囉！',
+  'NotFollowing':             '您目前尚未開始跟單此交易員！',
+  'InvalidTier':              '無效的等級參數！',
+  'InsufficientPool':         '激勵合約的 PEPE 資金池餘額不足，請聯絡管理員充值！',
+  'TierThresholdNotMet':      '您的累計交易量（Notional Volume）未達到此等級的要求！',
   'user rejected':            '你拒絕了交易',
   'User rejected':            '你拒絕了交易',
   'ACTION_REJECTED':          '你拒絕了交易',
@@ -29,7 +37,7 @@ const ERROR_MAP: Record<string, string> = {
   'nonce too low':            'Nonce 太低，請重試',
 }
 
-export function prettyError(err: unknown): string {
+export function prettyError(err: unknown, context?: 'mining' | 'tier' | 'copy' | 'checkin'): string {
   if (!err) return '未知錯誤'
 
   const e = err as {
@@ -49,8 +57,27 @@ export function prettyError(err: unknown): string {
 
   // 2. keyword scan across all message fields
   const msg = e.shortMessage ?? e.reason ?? e.message ?? e.code ?? String(err)
+  const msgLower = msg.toLowerCase()
+  
   for (const [keyword, friendly] of Object.entries(ERROR_MAP)) {
-    if (msg.includes(keyword)) return friendly
+    if (msgLower.includes(keyword.toLowerCase())) return friendly
+  }
+
+  // 3. Fallback for generic reverts using context
+  if (msgLower.includes('missing revert data') || msgLower.includes('execution reverted') || msgLower.includes('3: execution reverted')) {
+    if (context === 'copy') {
+      return '領取跟單獎勵失敗 (Reverted)。請確認：1. 您已開始跟單此交易員；2. 您尚未領取過此關係的獎勵；3. 激勵合約已充值足夠的 PEPE 資金池。';
+    }
+    if (context === 'tier') {
+      return '等級晉級獎勵領取失敗 (Reverted)。請確認：1. 您的累計交易量已達標該等級門檻；2. 您尚未領取過此等級獎勵；3. 激勵合約已充值足夠的 PEPE 資金池。';
+    }
+    if (context === 'mining') {
+      return '交易挖礦獎勵領取失敗 (Reverted)。請確認：1. 您是此倉位的持有者；2. 該倉位尚未領取過挖礦獎勵；3. 激勵合約已充值足夠的 PEPE 資金池。';
+    }
+    if (context === 'checkin') {
+      return '每日簽到失敗 (Reverted)。請確認：1. 您今天尚未簽到過；2. 激勵合約的 PEPE 資金池已充值足夠資金。';
+    }
+    return '交易執行失敗 (Reverted)。請確認：1. 激勵合約已充值足夠的 PEPE 資金池；2. 您的地址符合領取條件（例如：已開始複製該交易員、已達標交易量門檻、或今日尚未簽到）。';
   }
 
   return msg.slice(0, 120)

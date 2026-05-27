@@ -58,7 +58,7 @@ export function AccountDrawer({ data = [], sx, ...other }: AccountDrawerProps) {
   useEffect(() => { if (open) setNameInput(displayName); }, [open, displayName]);
 
   const [gamefiOpen, setGamefiOpen] = useState(false);
-  const [gamefiTab, setGamefiTab] = useState<'breed' | 'potions' | 'wardrobe'>('breed');
+  const [gamefiTab, setGamefiTab] = useState<'potions' | 'wardrobe'>('potions');
 
   const renderAvatar = () => (
     <AnimateBorder
@@ -99,7 +99,7 @@ export function AccountDrawer({ data = [], sx, ...other }: AccountDrawerProps) {
         const handleClick = (e: React.MouseEvent) => {
           if (isGamefi) {
             e.preventDefault();
-            const tab = option.href.replace('#gamefi-', '') as 'breed' | 'potions' | 'wardrobe';
+            const tab = option.href.replace('#gamefi-', '') as 'potions' | 'wardrobe';
             setGamefiTab(tab);
             setGamefiOpen(true);
             onClose(); // Close drawer

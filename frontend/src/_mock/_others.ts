@@ -78,7 +78,7 @@ const PEPE_NOTIFS = [
     category: 'GameFi'
   },
   {
-    title: '<p>🐣 孵化成功！您的繁育蛋誕生了一隻 <strong>Supreme Space Lord 🌌</strong> 傳奇佩佩！</p>',
+    title: '<p>👑 穿戴變更成功！您已換上最新的 <strong>Astronaut Suit (登月太空衣)</strong> 華麗衣裝！</p>',
     type: 'tags',
     category: 'GameFi'
   },

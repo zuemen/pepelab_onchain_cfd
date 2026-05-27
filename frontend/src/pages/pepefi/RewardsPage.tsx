@@ -108,7 +108,7 @@ export default function RewardsPage() {
       await tx.wait();
       notify('Trade mining claimed! 🎉', true);
       await fetchPositions();
-    } catch (e) { notify(prettyError(e), false); }
+    } catch (e) { notify(prettyError(e, 'mining'), false); }
     finally { setMiningBusy(p => ({ ...p, [posId.toString()]: false })); }
   };
 
@@ -139,12 +139,13 @@ export default function RewardsPage() {
     if (!contracts || !wallet.address) return;
     setTierBusy(p => ({ ...p, [tier]: true }));
     try {
-      const ids = (await contracts.exchange.getUserPositions(wallet.address)) as bigint[];
+      const rawIds = (await contracts.exchange.getUserPositions(wallet.address)) as bigint[];
+      const ids = Array.from(rawIds).map(id => id.toString());
       const tx = (await contracts.pepeIncentives.claimTierReward(tier, ids)) as { wait(): Promise<unknown> };
       await tx.wait();
       notify(`${TIER_NAMES[tier]} reward claimed! 🏆`, true);
       await fetchTier();
-    } catch (e) { notify(prettyError(e), false); }
+    } catch (e) { notify(prettyError(e, 'tier'), false); }
     finally { setTierBusy(p => ({ ...p, [tier]: false })); }
   };
 
@@ -179,8 +180,8 @@ export default function RewardsPage() {
       await tx.wait();
       notify('Copy reward claimed! 200 PEPE each 🐸', true);
       await fetchCopy();
-    } catch (e) { notify(prettyError(e), false); }
-    finally { setCopyBusy(p => ({ ...p, [trader]: false })); }
+    } catch (e) { notify(prettyError(e, 'copy'), false); }
+    finally {setCopyBusy(p => ({ ...p, [trader]: false })); }
   };
 
   // ── Daily Check-in ──────────────────────────────────────────────────────────
@@ -206,7 +207,7 @@ export default function RewardsPage() {
       await tx.wait();
       notify('Checked in! 🐸', true);
       await fetchCheckin();
-    } catch (e) { notify(prettyError(e), false); }
+    } catch (e) { notify(prettyError(e, 'checkin'), false); }
     finally { setCheckInBusy(false); }
   };
 
