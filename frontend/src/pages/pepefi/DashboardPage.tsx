@@ -146,6 +146,12 @@ function deriveRow(pos: PosRow, livePrices: Record<string, LivePrice>): DerivedR
 const fUsd = (v: bigint) =>
   '$' + (Number(v) / 1e18).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+const f18 = (v: bigint, d = 0) =>
+  Number(v / 10n ** 18n).toLocaleString('en-US', {
+    minimumFractionDigits: d,
+    maximumFractionDigits: d,
+  });
+
 const fUsdFloat = (v: number) =>
   '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -219,6 +225,9 @@ export default function DashboardPage() {
   const [isLoading,  setIsLoading]  = useState(false);
   const [isLoaded,   setIsLoaded]   = useState(false);
 
+  const [stakedUSDC, setStakedUSDC] = useState<bigint | null>(null);
+  const [walletUSDC, setWalletUSDC] = useState<bigint | null>(null);
+
   // ── PEPE token state ──────────────────────────────────────────────────────
   const [pepeBal,      setPepeBal]      = useState<bigint | null>(null);
   const [pepeClaimed,  setPepeClaimed]  = useState<boolean | null>(null);
@@ -246,11 +255,15 @@ export default function DashboardPage() {
     if (!contracts || !wallet.address) return;
     setIsLoading(true);
     try {
-      const [posIds, fmRaw] = await Promise.all([
+      const [posIds, fmRaw, walletUsdcRaw, stakedUsdcRaw] = await Promise.all([
         contracts.exchange.getUserPositions(wallet.address),
         contracts.exchange.freeMargin(wallet.address),
+        contracts.usdc.balanceOf(wallet.address),
+        contracts.traderStake.getStake(wallet.address),
       ]);
       setFreeMargin(fmRaw as bigint);
+      setWalletUSDC(walletUsdcRaw as bigint);
+      setStakedUSDC(stakedUsdcRaw as bigint);
 
       const rows = await Promise.all(
         (posIds as bigint[]).map(async (id): Promise<PosRow | null> => {
@@ -484,6 +497,126 @@ export default function DashboardPage() {
           Refresh
         </Button>
       </Box>
+
+      {/* ── Asset Overview & Wealth Navigator ── */}
+      <Card sx={{
+        p: 3,
+        background: 'linear-gradient(135deg, rgba(124,193,74,0.12) 0%, rgba(11,22,37,0.8) 100%)',
+        border: '1px solid rgba(124,193,74,0.35)',
+        borderRadius: 2.5,
+        boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+      }}>
+        {/* Aggregated Net Worth Header */}
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2, mb: 3 }}>
+          <Box>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontWeight: 'bold', letterSpacing: 1 }}>
+              💼 總資產估值 (TOTAL USDC NET WORTH)
+            </Typography>
+            <Typography variant="h3" sx={{ fontWeight: '900', color: '#7cc14a', fontFamily: 'monospace' }}>
+              {fUsd((walletUSDC ?? 0n) + (stakedUSDC ?? 0n) + derived.totalMargin + freeMargin)}
+            </Typography>
+          </Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, bgcolor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', p: 2, borderRadius: 2 }}>
+            <Box sx={{ fontSize: 32 }}>🐸</Box>
+            <Box>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>MemeFi 代幣儲備</Typography>
+              <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: '#ffd700', fontFamily: 'monospace' }}>
+                {pepeBal !== null ? f18(pepeBal, 0) : '0'} PEPE
+              </Typography>
+            </Box>
+          </Box>
+        </Box>
+
+        <Divider sx={{ borderColor: 'rgba(255,255,255,0.08)', mb: 3 }} />
+
+        {/* Segmented Wealth Cards */}
+        <Grid container spacing={3}>
+          {/* 1. Wallet Available cash */}
+          <Grid size={{ xs: 12, md: 4 }}>
+            <Card sx={{ p: 2.5, bgcolor: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'space-between' }}>
+              <Box>
+                <Typography variant="subtitle2" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, color: 'text.secondary' }}>
+                  💰 錢包可用現金 (Cash)
+                </Typography>
+                <Typography variant="h5" sx={{ fontWeight: 'bold', mt: 1.5, fontFamily: 'monospace', color: 'text.primary' }}>
+                  {walletUSDC !== null ? fUsd(walletUSDC) : '$0.00'}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                  存放在錢包中的可用 mUSDC，可隨時用於入金交易或質押。
+                </Typography>
+              </Box>
+              <Button
+                component={RouterLink}
+                to="/dashboard"
+                size="small"
+                variant="outlined"
+                sx={{ mt: 2.5, width: 'fit-content', border: '1px solid rgba(255,255,255,0.08)', color: 'text.secondary', textTransform: 'none' }}
+              >
+                可用現金 💰
+              </Button>
+            </Card>
+          </Grid>
+
+          {/* 2. Perpetual Margined account */}
+          <Grid size={{ xs: 12, md: 4 }}>
+            <Card sx={{ p: 2.5, bgcolor: 'rgba(99,102,241,0.03)', border: '1px solid rgba(99,102,241,0.15)', display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'space-between', transition: 'all 0.2s', '&:hover': { borderColor: 'rgba(99,102,241,0.3)', boxShadow: '0 8px 24px rgba(99,102,241,0.08)' } }}>
+              <Box>
+                <Typography variant="subtitle2" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, color: '#818cf8' }}>
+                  📈 槓桿合約帳戶 (Trading)
+                </Typography>
+                <Typography variant="h5" sx={{ fontWeight: 'bold', mt: 1.5, fontFamily: 'monospace', color: '#a5b4fc' }}>
+                  {fUsd(derived.totalMargin + freeMargin)}
+                </Typography>
+                <Stack spacing={0.5} sx={{ mt: 1 }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>已鎖定倉位保證金:</span>
+                    <span style={{ color: 'text.primary', fontFamily: 'monospace' }}>{fUsd(derived.totalMargin)}</span>
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>帳戶可用自由餘額:</span>
+                    <span style={{ color: 'text.primary', fontFamily: 'monospace' }}>{fUsd(freeMargin)}</span>
+                  </Typography>
+                </Stack>
+              </Box>
+              <Button
+                component={RouterLink}
+                to="/exchange"
+                size="small"
+                variant="contained"
+                sx={{ mt: 2.5, width: 'fit-content', bgcolor: '#6366f1', color: '#fff', fontWeight: 'bold', textTransform: 'none', '&:hover': { bgcolor: '#4f46e5' } }}
+              >
+                前往槓桿交易 ↗
+              </Button>
+            </Card>
+          </Grid>
+
+          {/* 3. DeFi Staking Position */}
+          <Grid size={{ xs: 12, md: 4 }}>
+            <Card sx={{ p: 2.5, bgcolor: 'rgba(16,185,129,0.03)', border: '1px solid rgba(16,185,129,0.15)', display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'space-between', transition: 'all 0.2s', '&:hover': { borderColor: 'rgba(16,185,129,0.3)', boxShadow: '0 8px 24px rgba(16,185,129,0.08)' } }}>
+              <Box>
+                <Typography variant="subtitle2" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, color: '#34d399' }}>
+                  🛡️ DeFi 質押倉位 (Staked)
+                </Typography>
+                <Typography variant="h5" sx={{ fontWeight: 'bold', mt: 1.5, fontFamily: 'monospace', color: '#a7f3d0' }}>
+                  {stakedUSDC !== null ? fUsd(stakedUSDC) : '$0.00'}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                  質押於 TraderStake 治理合約中的資本，可用於提升交易聲譽並解鎖更高的跟單額度。
+                </Typography>
+              </Box>
+              <Button
+                component={RouterLink}
+                to="/stake"
+                size="small"
+                variant="contained"
+                sx={{ mt: 2.5, width: 'fit-content', bgcolor: '#10b981', color: '#fff', fontWeight: 'bold', textTransform: 'none', '&:hover': { bgcolor: '#059669' } }}
+              >
+                管理質押資本 ↗
+              </Button>
+            </Card>
+          </Grid>
+        </Grid>
+      </Card>
 
       {/* ── Daily check-in banner ─────────────────────────────────────────────── */}
       {!bannerDismissed && checkedInToday === false && (
