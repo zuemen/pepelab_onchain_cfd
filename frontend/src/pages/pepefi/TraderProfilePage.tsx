@@ -118,10 +118,13 @@ export default function TraderProfilePage() {
       } catch { /* no followers */ }
 
       // strategy + history
+      let count = 0
       try {
-        const count = Number((await contracts.registry.getStrategyCount(traderAddr)) as bigint)
-        setStratCount(count)
-        if (count > 0) {
+        count = Number((await contracts.registry.getStrategyCount(traderAddr)) as bigint)
+      } catch { count = 0 }
+      setStratCount(count)
+      if (count > 0) {
+        try {
           const vers = await Promise.all(
             Array.from({ length: count }, (_, i) => i).map(async (i): Promise<HistVer> => {
               const res = (await contracts.registry.getStrategyVersion(traderAddr, BigInt(i))) as unknown as [unknown[], bigint]
@@ -140,10 +143,10 @@ export default function TraderProfilePage() {
           setStratHistory(sorted)
           setAllocs(sorted[0]?.allocs ?? [])
           setHasStrategy(sorted[0]?.allocs.length > 0)
-        } else {
-          setHasStrategy(false)
-        }
-      } catch { setHasStrategy(false) }
+        } catch { setHasStrategy(false) }
+      } else {
+        setHasStrategy(false)
+      }
 
       // stake + reputation
       try {

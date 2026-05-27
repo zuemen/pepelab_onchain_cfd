@@ -92,8 +92,6 @@ export default function AdminOraclePage() {
   const [ownerCheckError, setOwnerCheckError] = useState<string | null>(null)
   const [busy,           setBusy]           = useState<Record<string, boolean>>({})
   const [toast,          setToast]          = useState<{ msg: string; ok: boolean; hash?: string } | null>(null)
-  const [syncBusy,       setSyncBusy]       = useState(false)
-  const [syncMsg,        setSyncMsg]        = useState<string | null>(null)
   const [autoSettle,     setAutoSettle]     = useState(false)
   const [fundingSettleBusy, setFundingSettleBusy] = useState<Record<string, boolean>>({})
   const [, setTick]   = useState(0)  // force re-render for countdown
@@ -220,55 +218,6 @@ export default function AdminOraclePage() {
   const updateInput = (id: AssetId, value: string) =>
     setAssets(prev => prev.map(a => a.id === id ? { ...a, input: value } : a))
 
-  const syncFromCoinGecko = async () => {
-    if (!contracts || !isOwner) return
-    setSyncBusy(true)
-    setSyncMsg(null)
-    try {
-      const res = await fetch(
-        '/api/coingecko/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd',
-      )
-      if (!res.ok) throw new Error(`CoinGecko API error ${res.status}`)
-      const data = await res.json() as { bitcoin: { usd: number }; ethereum: { usd: number } }
-
-      const wiggle = () => 1 + (Math.random() - 0.5) * 0.06
-      const simulated = (id: AssetId, fallback: number) => {
-        const cur = Number(assets.find(a => a.id === id)?.price8 ?? 0n) / 1e8
-        return cur > 0 ? cur * wiggle() : fallback
-      }
-
-      const targets: Array<[AssetId, number, string]> = [
-        [ASSET_IDS.sBTC,   data.bitcoin.usd,       'BTC'],
-        [ASSET_IDS.sETH,   data.ethereum.usd,      'ETH'],
-        [ASSET_IDS.sAAPL,  simulated(ASSET_IDS.sAAPL,  200),  'AAPL'],
-        [ASSET_IDS.sTSLA,  simulated(ASSET_IDS.sTSLA,  250),  'TSLA'],
-        [ASSET_IDS.sGOLD,  simulated(ASSET_IDS.sGOLD,  2650), 'GOLD'],
-        [ASSET_IDS.sBOND,  simulated(ASSET_IDS.sBOND,  100),  'BOND'],
-        [ASSET_IDS.sNVDA,  simulated(ASSET_IDS.sNVDA,  1100), 'NVDA'],
-        [ASSET_IDS.sMSFT,  simulated(ASSET_IDS.sMSFT,  415),  'MSFT'],
-        [ASSET_IDS.sGOOGL, simulated(ASSET_IDS.sGOOGL, 170),  'GOOGL'],
-        [ASSET_IDS.sICLN,  simulated(ASSET_IDS.sICLN,  13),   'ICLN'],
-        [ASSET_IDS.sESGU,  simulated(ASSET_IDS.sESGU,  45),   'ESGU'],
-      ]
-
-      const updates: string[] = []
-      for (const [id, usdPrice, label] of targets) {
-        const row = assets.find(a => a.id === id)
-        if (!row || row.price8 === 0n) continue
-        const new8 = BigInt(Math.round(usdPrice * 1e8))
-        const tx = asTx(await contracts.oracle.updatePrice(id, new8))
-        await tx.wait()
-        updates.push(`${label}: $${(Number(new8) / 1e8).toFixed(2)}`)
-      }
-
-      setSyncMsg('✓ ' + updates.join(' · '))
-      await fetchPrices()
-    } catch (e) {
-      setSyncMsg('Sync failed: ' + (e instanceof Error ? e.message.slice(0, 80) : 'unknown'))
-    } finally {
-      setSyncBusy(false)
-    }
-  }
 
   if (!wallet.isConnected) {
     return (
@@ -320,32 +269,6 @@ export default function AdminOraclePage() {
         </Typography>
       </Box>
 
-      {/* Live Price Sync */}
-      <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2, bgcolor: 'rgba(0, 167, 111, 0.08)', border: '1px solid', borderColor: 'rgba(0, 167, 111, 0.16)' }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
-          <Box>
-            <Typography variant="subtitle1" color="success.main" sx={{ fontWeight: 'bold' }}>
-              Live Price Sync
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Pull real-time BTC/ETH from CoinGecko. AAPL/TSLA simulated.
-            </Typography>
-          </Box>
-          <Button
-            variant="contained"
-            color="success"
-            onClick={() => void syncFromCoinGecko()}
-            disabled={!isOwner || syncBusy}
-          >
-            {syncBusy ? 'Syncing…' : 'Sync from CoinGecko'}
-          </Button>
-        </Box>
-        {syncMsg && (
-          <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic', display: 'block' }}>
-            {syncMsg}
-          </Typography>
-        )}
-      </Card>
 
       {/* Owner status banner */}
       {ownerCheckError ? (

@@ -39,96 +39,141 @@ export default function LandingPage() {
       }}
     >
       <Container maxWidth="md">
-        {/* ── Logo / Brand ── */}
-        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 6, textAlign: 'center' }}>
-          {/* PepeFi Logo Block */}
-          <Stack spacing={2} alignItems="center" sx={{ mb: 4 }}>
-            {/* Icon */}
-            <Box
-              component="img"
-              src="/assets/images/pepefi/pepe_eth.jpg"
-              alt="PepeFi Logo"
-              sx={{
-                height: 96,
-                width: 96,
-                borderRadius: '50%',
-                border: '3px solid #34d399',
-                boxShadow: '0 0 32px rgba(52,211,153,0.6)',
-              }}
-            />
+        {/* ── HERO ── */}
+        <Box sx={{ position: 'relative', mb: 6 }}>
+          {/* Floating decorations */}
+          {[
+            { top: '0%',  left: '2%',   fontSize: 40, content: '🚀', delay: '0s' },
+            { top: '10%', right: '3%',  fontSize: 36, content: '💰', delay: '0.4s' },
+            { top: '30%', left: '1%',   fontSize: 28, content: '✨', delay: '0.8s' },
+            { top: '55%', right: '2%',  fontSize: 32, content: '🌙', delay: '0.2s' },
+            { top: '70%', left: '5%',   fontSize: 24, content: '⚡', delay: '1s' },
+            { top: '80%', right: '8%',  fontSize: 28, content: '🔥', delay: '0.6s' },
+          ].map((d, i) => (
+            <Box key={i} sx={{
+              position: 'absolute', fontSize: d.fontSize, pointerEvents: 'none', userSelect: 'none',
+              top: d.top, left: 'left' in d ? d.left : undefined, right: 'right' in d ? d.right : undefined,
+              animation: 'floatBob 3s ease-in-out infinite',
+              animationDelay: d.delay,
+              '@keyframes floatBob': {
+                '0%,100%': { transform: 'translateY(0)' },
+                '50%': { transform: 'translateY(-12px)' },
+              },
+              display: { xs: 'none', md: 'block' },
+            }}>
+              {d.content}
+            </Box>
+          ))}
 
-            {/* Name */}
-            <Box>
+          {/* Two-column layout: text left, Pepe right */}
+          <Stack
+            direction={{ xs: 'column', md: 'row' }}
+            alignItems="center"
+            justifyContent="space-between"
+            spacing={4}
+          >
+            {/* Left: text */}
+            <Box sx={{ flex: 1, textAlign: { xs: 'center', md: 'left' } }}>
+              {/* PepeFi main title */}
               <Typography
                 variant="h1"
                 sx={{
-                  fontSize: { xs: '3.5rem', sm: '4.5rem' },
+                  fontSize: { xs: '4rem', md: '6rem' },
                   fontWeight: 900,
-                  tracking: -1,
-                  background: 'linear-gradient(90deg, #34d399 0%, #059669 60%, #a3e635 100%)',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
+                  lineHeight: 1,
+                  color: '#7cc14a',
+                  textShadow: '-1px -1px 0 #FFD23D, 1px -1px 0 #FFD23D, -1px 1px 0 #FFD23D, 1px 1px 0 #FFD23D, 0 0 40px rgba(124,193,74,0.6)',
+                  mb: 2,
                 }}
               >
                 PepeFi
               </Typography>
-              <Typography
-                variant="overline"
-                sx={{
-                  color: 'text.secondary',
-                  fontWeight: 'bold',
-                  letterSpacing: '0.25em',
-                  display: 'block',
-                  mt: 0.5,
-                  fontSize: '0.875rem',
-                }}
-              >
-                On-Chain CFD Protocol
+
+              {/* Subtitle */}
+              <Typography sx={{
+                fontSize: { xs: '1rem', md: '1.75rem' },
+                fontWeight: 700,
+                letterSpacing: { xs: '2px', md: '4px' },
+                color: '#cad8b0',
+                textTransform: 'uppercase',
+                mb: 3,
+              }}>
+                DeFi · SocialFi · GameFi · MemeFi
               </Typography>
+
+              <Typography variant="body1" sx={{
+                color: 'text.secondary',
+                maxWidth: 480,
+                lineHeight: 1.7,
+                fontSize: { xs: '1rem', md: '1.15rem' },
+                mb: 4,
+                mx: { xs: 'auto', md: 0 },
+              }}>
+                鏈上合成衍生品跟單系統。交易者公開策略，跟單者一鍵跟進，全程透明上鏈。
+              </Typography>
+
+              <Stack direction="row" spacing={2} justifyContent={{ xs: 'center', md: 'flex-start' }}>
+                <WalletButton wallet={wallet} />
+                <Button
+                  component={RouterLink}
+                  to="/marketplace"
+                  variant="outlined"
+                  size="large"
+                  sx={{ borderColor: '#7cc14a', color: '#7cc14a', '&:hover': { bgcolor: 'rgba(124,193,74,0.1)' } }}
+                >
+                  View Traders
+                </Button>
+              </Stack>
+            </Box>
+
+            {/* Right: Pepe hero image */}
+            <Box sx={{
+              position: 'relative',
+              flexShrink: 0,
+              width: { xs: 220, md: 360 },
+              height: { xs: 220, md: 360 },
+            }}>
+              {/* Glow ring */}
+              <Box sx={{
+                position: 'absolute', inset: -8,
+                borderRadius: '50%',
+                background: 'radial-gradient(circle, rgba(124,193,74,0.4) 0%, transparent 70%)',
+                animation: 'pulse 2s ease-in-out infinite',
+                '@keyframes pulse': {
+                  '0%,100%': { opacity: 0.6, transform: 'scale(1)' },
+                  '50%': { opacity: 1, transform: 'scale(1.05)' },
+                },
+              }} />
+              <Box
+                component="img"
+                src="/avatars/pepe-01.png"
+                alt="PepeFi Mascot"
+                sx={{
+                  width: '100%', height: '100%',
+                  borderRadius: '50%',
+                  objectFit: 'cover',
+                  border: '4px solid #7cc14a',
+                  boxShadow: '0 0 48px rgba(124,193,74,0.5), 0 0 96px rgba(255,210,61,0.2)',
+                  position: 'relative', zIndex: 1,
+                }}
+                onError={(e) => { (e.target as HTMLImageElement).src = '/assets/images/pepefi/pepe_eth.jpg'; }}
+              />
+              {/* Gold badge overlay */}
+              <Box sx={{
+                position: 'absolute', bottom: 12, right: 12, zIndex: 2,
+                bgcolor: '#FFD23D', color: '#1C252E',
+                borderRadius: '50%', width: 48, height: 48,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 22, fontWeight: 900,
+                boxShadow: '0 4px 12px rgba(255,210,61,0.6)',
+              }}>
+                🐸
+              </Box>
             </Box>
           </Stack>
+        </Box>
 
-          {/* Tagline */}
-          <Typography variant="h3" sx={{ color: 'text.primary', fontWeight: 'bold', mb: 2, px: 2 }}>
-            鏈上合成衍生品跟單系統
-          </Typography>
-          <Typography variant="body1" sx={{ color: 'text.secondary', maxWidth: 580, mb: 4, px: 2, lineHeight: 1.6, fontSize: '1.25rem' }}>
-            結合 Synthetic CFD 永續合約與一鍵 Copy Trading，
-            交易者公開策略，跟單者授權 USDC 自動跟進，全程上鏈透明。
-          </Typography>
-
-          {/* Hero Banner Space Rocket Pepe - Styled with Premium Glowing Border Frame */}
-          <Box
-            sx={{
-              position: 'relative',
-              borderRadius: 3,
-              overflow: 'hidden',
-              mb: 5,
-              p: '3px',
-              background: 'linear-gradient(135deg, #34d399 0%, #a3e635 100%)',
-              boxShadow: '0 20px 48px rgba(0,0,0,0.8), 0 0 32px rgba(52, 211, 153, 0.3)',
-              width: '100%',
-              maxWidth: 640,
-              transition: 'transform 0.3s ease',
-              '&:hover': {
-                transform: 'scale(1.02)',
-              }
-            }}
-          >
-            <Box
-              component="img"
-              src="/assets/images/pepefi/pepe_11.png"
-              alt="Pepe Rocket Space Trader"
-              sx={{
-                width: '100%',
-                height: 320,
-                objectFit: 'cover',
-                borderRadius: '10px',
-                display: 'block',
-              }}
-            />
-          </Box>
-
+        <Stack alignItems="center" spacing={2} sx={{ mb: 4 }}>
           {/* Testnet badge */}
           <Chip
             label="Deployed on Sepolia Testnet"
@@ -169,10 +214,10 @@ export default function LandingPage() {
               {wallet.error}
             </Typography>
           )}
-          <Typography variant="caption" sx={{ color: 'text.secondary', opacity: 0.8, mt: 2, fontSize: '0.95rem' }}>
+          <Typography variant="caption" sx={{ color: 'text.secondary', opacity: 0.8, fontSize: '0.95rem' }}>
             連線後可直接瀏覽所有功能，無需註冊帳號
           </Typography>
-        </Box>
+        </Stack>
 
         {/* ── Divider ── */}
         <Divider sx={{ my: 6, opacity: 0.15 }} />

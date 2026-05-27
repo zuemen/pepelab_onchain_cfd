@@ -28,6 +28,7 @@ const HistoryPage       = lazy(() => import('src/pages/pepefi/HistoryPage'));
 const WhaleTrackerPage  = lazy(() => import('src/pages/pepefi/WhaleTrackerPage'));
 const AdminOraclePage   = lazy(() => import('src/pages/pepefi/AdminOraclePage'));
 const AdminTreasuryPage = lazy(() => import('src/pages/pepefi/AdminTreasuryPage'));
+const RewardsPage       = lazy(() => import('src/pages/pepefi/RewardsPage'));
 
 // ----------------------------------------------------------------------
 
@@ -72,6 +73,7 @@ export const pepefiRoutes: RouteObject[] = [
           { path: 'whale', element: <WhaleTrackerPage /> },
           { path: 'admin/oracle', element: <AdminOraclePage /> },
           { path: 'admin/treasury', element: <AdminTreasuryPage /> },
+          { path: 'rewards', element: <RewardsPage /> },
         ],
       },
     ],

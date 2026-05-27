@@ -135,8 +135,11 @@ export default function TraderDashboard() {
   const fetchHistory = useCallback(async () => {
     if (!contracts || !wallet.address) return
     setHistoryLoading(true)
+    let count = 0
     try {
-      const count = Number((await contracts.registry.getStrategyCount(wallet.address)) as bigint)
+      count = Number((await contracts.registry.getStrategyCount(wallet.address)) as bigint)
+    } catch { count = 0 }
+    try {
       const addr  = wallet.address
       const vers  = await Promise.all(
         Array.from({ length: count }, (_, i) => i).map(async (i): Promise<HistVer> => {

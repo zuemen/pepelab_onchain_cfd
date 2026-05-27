@@ -39,6 +39,23 @@ import { Icon } from '@iconify/react';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
+const PEPE_QUOTES = [
+  '「不要問市場給了你什麼，要問你為市場帶來了什麼。」 — Pepe the Wise',
+  '「槓桿是雙面刃，用好了飛天，用壞了入地。」 — OG Pepe',
+  '「每天簽到，財富自然到。」 — Lucky Pepe',
+  '「鏈上透明，永不說謊。」 — On-chain Pepe',
+  '「止損是交易者最好的朋友。」 — Profitable Pepe',
+  '「跟單之前，先搞清楚自己跟的是誰。」 — Alpha Pepe',
+  '「ESG 高分代表責任感，長期看好。」 — Green Pepe',
+  '「Copy trading 不是投機，是有策略的信任。」 — Social Pepe',
+];
+
+const PEPE_AVATARS = [
+  '/avatars/pepe-01.png',
+  '/assets/images/pepefi/pepe_eth.jpg',
+  '/avatars/pepe-01.png',
+];
+
 const TREND_ASSET_IDS = [
   ASSET_IDS.sBTC,
   ASSET_IDS.sETH,
@@ -212,6 +229,10 @@ export default function DashboardPage() {
   const [claimError,   setClaimError]   = useState<string | null>(null);
 
   const [enabled, setEnabled] = useState<Set<string>>(new Set(TREND_ASSET_IDS));
+
+  // ── Daily check-in banner ─────────────────────────────────────────────────
+  const [checkedInToday, setCheckedInToday] = useState<boolean | null>(null);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
   const toggleAsset = (id: string) =>
     setEnabled(prev => {
       const next = new Set(prev);
@@ -286,6 +307,18 @@ export default function DashboardPage() {
   }, [contracts, wallet.address]);
 
   useEffect(() => { void fetchPepe() }, [fetchPepe]);
+
+  useEffect(() => {
+    if (!contracts?.pepeIncentives || !wallet.address) return;
+    const ZERO = '0x0000000000000000000000000000000000000000';
+    if (String((contracts.pepeIncentives as any).target).toLowerCase() === ZERO) return;
+    contracts.pepeIncentives.lastCheckIn(wallet.address)
+      .then((lastDay: unknown) => {
+        const todayIdx = Math.floor(Date.now() / 1000 / 86400);
+        setCheckedInToday(Number(lastDay) >= todayIdx);
+      })
+      .catch(() => setCheckedInToday(null));
+  }, [contracts, wallet.address]);
 
   const doClaimPepe = useCallback(async () => {
     if (!contracts) return;
@@ -451,6 +484,49 @@ export default function DashboardPage() {
           Refresh
         </Button>
       </Box>
+
+      {/* ── Daily check-in banner ─────────────────────────────────────────────── */}
+      {!bannerDismissed && checkedInToday === false && (
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 2,
+            px: 3,
+            py: 1.5,
+            borderRadius: 2,
+            background: 'linear-gradient(90deg, rgba(124,193,74,0.15) 0%, rgba(255,210,61,0.12) 100%)',
+            border: '1px solid rgba(124,193,74,0.35)',
+          }}
+        >
+          <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#a8d96a' }}>
+            🐸 你今天還沒簽到！每日簽到可得 +50 PEPE，連續簽到最多 +110 PEPE
+          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
+            <Button
+              component={RouterLink}
+              to="/rewards"
+              size="small"
+              variant="contained"
+              sx={{
+                bgcolor: '#7cc14a',
+                color: '#fff',
+                fontWeight: 'bold',
+                fontSize: '0.8rem',
+                py: 0.5,
+                px: 2,
+                '&:hover': { bgcolor: '#5a9e2f' },
+              }}
+            >
+              去簽到
+            </Button>
+            <IconButton size="small" onClick={() => setBannerDismissed(true)} sx={{ color: 'text.secondary', p: 0.5 }}>
+              <Icon icon="mingcute:close-line" width={16} />
+            </IconButton>
+          </Box>
+        </Box>
+      )}
 
       {/* ── A. 頂部總覽 ───────────────────────────────────────────────────────── */}
       <Grid container spacing={2}>
@@ -1025,6 +1101,62 @@ export default function DashboardPage() {
           </Box>
         )}
       </Card>
+
+      {/* ── Pepe of the Day ──────────────────────────────────────────────────── */}
+      {(() => {
+        const dayIdx = Math.floor(Date.now() / 1000 / 86400);
+        const avatar = PEPE_AVATARS[dayIdx % PEPE_AVATARS.length];
+        const quote  = PEPE_QUOTES[dayIdx % PEPE_QUOTES.length];
+        return (
+          <Card sx={{
+            p: 3,
+            background: 'linear-gradient(135deg, rgba(124,193,74,0.06) 0%, rgba(255,210,61,0.04) 100%)',
+            border: '1px solid rgba(124,193,74,0.2)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 3,
+            flexWrap: 'wrap',
+          }}>
+            <Box
+              component="img"
+              src={avatar}
+              alt="Pepe of the Day"
+              onError={(e) => { (e.target as HTMLImageElement).src = '/assets/images/pepefi/pepe_eth.jpg'; }}
+              sx={{
+                width: 72,
+                height: 72,
+                borderRadius: '50%',
+                objectFit: 'cover',
+                border: '3px solid #7cc14a',
+                boxShadow: '0 0 16px rgba(124,193,74,0.4)',
+                flexShrink: 0,
+              }}
+            />
+            <Box sx={{ flex: 1, minWidth: 200 }}>
+              <Typography variant="overline" sx={{ color: '#7cc14a', fontWeight: 'bold', letterSpacing: 2, display: 'block', mb: 0.5 }}>
+                🐸 Pepe of the Day
+              </Typography>
+              <Typography variant="body1" sx={{ color: 'text.primary', fontStyle: 'italic', lineHeight: 1.6 }}>
+                {quote}
+              </Typography>
+            </Box>
+            <Box sx={{ flexShrink: 0, textAlign: 'right' }}>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                每日更新
+              </Typography>
+              <Button
+                component={RouterLink}
+                to="/rewards"
+                size="small"
+                variant="outlined"
+                sx={{ borderColor: '#7cc14a', color: '#7cc14a', fontSize: '0.8rem', '&:hover': { bgcolor: 'rgba(124,193,74,0.08)' } }}
+              >
+                簽到領 PEPE 🎁
+              </Button>
+            </Box>
+          </Card>
+        );
+      })()}
 
       {/* ── G. PEPE 平台幣 ──────────────────────────────────────────────────────── */}
       {(() => {

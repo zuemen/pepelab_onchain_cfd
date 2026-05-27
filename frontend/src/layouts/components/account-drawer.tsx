@@ -1,12 +1,15 @@
 import type { IconButtonProps } from '@mui/material/IconButton';
 
+import { useState, useEffect } from 'react';
 import { useBoolean } from 'minimal-shared/hooks';
 
 import Box from '@mui/material/Box';
 import Link from '@mui/material/Link';
+import Button from '@mui/material/Button';
 import Drawer from '@mui/material/Drawer';
 import MenuItem from '@mui/material/MenuItem';
 import MenuList from '@mui/material/MenuList';
+import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 
@@ -15,6 +18,7 @@ import { usePathname } from 'src/routes/hooks';
 import { RouterLink } from 'src/routes/components';
 
 import { useUserAvatar } from 'src/hooks/useUserAvatar';
+import { useDisplayName } from 'src/hooks/useDisplayName';
 
 import { useWalletContext } from 'src/contexts/wallet-context';
 
@@ -48,6 +52,9 @@ export function AccountDrawer({ data = [], sx, ...other }: AccountDrawerProps) {
   const { src: avatarUrl } = useUserAvatar(wallet.address || 'mock_user');
 
   const { value: open, onFalse: onClose, onTrue: onOpen } = useBoolean();
+  const [displayName, saveDisplayName] = useDisplayName(wallet.address);
+  const [nameInput, setNameInput] = useState('');
+  useEffect(() => { if (open) setNameInput(displayName); }, [open, displayName]);
 
   const renderAvatar = () => (
     <AnimateBorder
@@ -119,7 +126,7 @@ export function AccountDrawer({ data = [], sx, ...other }: AccountDrawerProps) {
       <AccountButton
         onClick={onOpen}
         photoURL={avatarUrl}
-        displayName={user?.displayName}
+        displayName={displayName || user?.displayName || ''}
         sx={sx}
         {...other}
       />
@@ -157,15 +164,43 @@ export function AccountDrawer({ data = [], sx, ...other }: AccountDrawerProps) {
             {renderAvatar()}
 
             <Typography variant="subtitle1" noWrap sx={{ mt: 2 }}>
-              {user?.displayName}
+              {displayName || (wallet.address ? `${wallet.address.slice(0, 6)}…${wallet.address.slice(-4)}` : user?.displayName)}
             </Typography>
 
             <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.5 }} noWrap>
-              {user?.email}
+              {wallet.address || user?.email}
             </Typography>
           </Box>
 
 
+
+          {/* Edit display name */}
+          {wallet.address && (
+            <Box sx={{ px: 2.5, py: 2 }}>
+              <TextField
+                label="Display Name"
+                value={nameInput}
+                onChange={(e) => setNameInput(e.target.value.slice(0, 20))}
+                size="small"
+                fullWidth
+                inputProps={{ maxLength: 20 }}
+                placeholder={wallet.address.slice(0, 6) + '…' + wallet.address.slice(-4)}
+              />
+              <Button
+                variant="contained"
+                size="small"
+                fullWidth
+                sx={{ mt: 1 }}
+                disabled={!nameInput.trim() || nameInput.trim() === displayName}
+                onClick={() => {
+                  saveDisplayName(nameInput.trim());
+                  onClose();
+                }}
+              >
+                Save Name
+              </Button>
+            </Box>
+          )}
 
           {renderList()}
 

@@ -60,6 +60,7 @@ export const navData: NavSectionProps['data'] = [
       { title: 'History', path: paths.pepefi.history, icon: ICONS.order },
       { title: 'Whale Tracker', path: paths.pepefi.whale, icon: ICONS.label },
       { title: 'ESG', path: paths.pepefi.esg, icon: ICONS.tour },
+      { title: 'Rewards 🎁', path: paths.pepefi.rewards, icon: ICONS.booking },
     ],
   },
   /**
@@ -70,23 +71,6 @@ export const navData: NavSectionProps['data'] = [
     items: [
       { title: 'Trader Dashboard', path: paths.pepefi.trader, icon: ICONS.user },
       { title: 'Stake', path: paths.pepefi.stake, icon: ICONS.booking },
-    ],
-  },
-  /**
-   * Admin
-   */
-  {
-    subheader: 'Admin',
-    items: [
-      {
-        title: 'Admin',
-        path: paths.pepefi.adminOracle,
-        icon: ICONS.params,
-        children: [
-          { title: 'Oracle', path: paths.pepefi.adminOracle },
-          { title: 'Treasury', path: paths.pepefi.adminTreasury },
-        ],
-      },
     ],
   },
 ];

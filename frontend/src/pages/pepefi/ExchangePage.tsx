@@ -625,7 +625,7 @@ export default function ExchangePage() {
                 />
                 {swapMode === 'eth-to-usdc' ? (
                   <Chip
-                    avatar={<img src="https://assets.coingecko.com/coins/images/279/standard/ethereum.png" alt="ETH" style={{ borderRadius: '50%' }} />}
+                    avatar={<Box component="span" sx={{ width: 20, height: 20, borderRadius: "50%", bgcolor: "#627eea", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: "0.625rem", fontWeight: "bold", color: "white" }}>Ξ</Box>}
                     label="ETH"
                     onClick={() => {}}
                     sx={{ bgcolor: '#293249', color: 'white', fontWeight: 'bold', '&:hover': { bgcolor: '#323D59' } }}
@@ -707,7 +707,7 @@ export default function ExchangePage() {
                   />
                 ) : (
                   <Chip
-                    avatar={<img src="https://assets.coingecko.com/coins/images/279/standard/ethereum.png" alt="ETH" style={{ borderRadius: '50%' }} />}
+                    avatar={<Box component="span" sx={{ width: 20, height: 20, borderRadius: "50%", bgcolor: "#627eea", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: "0.625rem", fontWeight: "bold", color: "white" }}>Ξ</Box>}
                     label="ETH"
                     onClick={() => {}}
                     sx={{ bgcolor: '#293249', color: 'white', fontWeight: 'bold', '&:hover': { bgcolor: '#323D59' } }}

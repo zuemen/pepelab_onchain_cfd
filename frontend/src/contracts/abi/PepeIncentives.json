@@ -1,0 +1,104 @@
+[
+  { "type": "constructor", "inputs": [
+    { "name": "pepe_", "type": "address" },
+    { "name": "exchange_", "type": "address" },
+    { "name": "copyTracker_", "type": "address" }
+  ], "stateMutability": "nonpayable" },
+
+  { "type": "function", "name": "claimTradeMining",
+    "inputs": [{ "name": "positionId", "type": "uint256" }],
+    "outputs": [], "stateMutability": "nonpayable" },
+
+  { "type": "function", "name": "claimTierReward",
+    "inputs": [
+      { "name": "tier", "type": "uint8" },
+      { "name": "positionIds", "type": "uint256[]" }
+    ],
+    "outputs": [], "stateMutability": "nonpayable" },
+
+  { "type": "function", "name": "claimCopyReward",
+    "inputs": [{ "name": "trader", "type": "address" }],
+    "outputs": [], "stateMutability": "nonpayable" },
+
+  { "type": "function", "name": "dailyCheckIn",
+    "inputs": [], "outputs": [], "stateMutability": "nonpayable" },
+
+  { "type": "function", "name": "minedPosition",
+    "inputs": [{ "name": "", "type": "uint256" }],
+    "outputs": [{ "name": "", "type": "bool" }], "stateMutability": "view" },
+
+  { "type": "function", "name": "tierClaimed",
+    "inputs": [{ "name": "", "type": "address" }],
+    "outputs": [{ "name": "", "type": "uint8" }], "stateMutability": "view" },
+
+  { "type": "function", "name": "copyClaimed",
+    "inputs": [{ "name": "", "type": "bytes32" }],
+    "outputs": [{ "name": "", "type": "bool" }], "stateMutability": "view" },
+
+  { "type": "function", "name": "lastCheckIn",
+    "inputs": [{ "name": "", "type": "address" }],
+    "outputs": [{ "name": "", "type": "uint256" }], "stateMutability": "view" },
+
+  { "type": "function", "name": "streak",
+    "inputs": [{ "name": "", "type": "address" }],
+    "outputs": [{ "name": "", "type": "uint8" }], "stateMutability": "view" },
+
+  { "type": "function", "name": "tradeMiningBps",
+    "inputs": [], "outputs": [{ "name": "", "type": "uint256" }], "stateMutability": "view" },
+
+  { "type": "function", "name": "tradeMiningCap",
+    "inputs": [], "outputs": [{ "name": "", "type": "uint256" }], "stateMutability": "view" },
+
+  { "type": "function", "name": "copyReward",
+    "inputs": [], "outputs": [{ "name": "", "type": "uint256" }], "stateMutability": "view" },
+
+  { "type": "function", "name": "dailyBase",
+    "inputs": [], "outputs": [{ "name": "", "type": "uint256" }], "stateMutability": "view" },
+
+  { "type": "function", "name": "dailyStreakBonus",
+    "inputs": [], "outputs": [{ "name": "", "type": "uint256" }], "stateMutability": "view" },
+
+  { "type": "function", "name": "dailyStreakCap",
+    "inputs": [], "outputs": [{ "name": "", "type": "uint8" }], "stateMutability": "view" },
+
+  { "type": "function", "name": "tierThresholds",
+    "inputs": [{ "name": "", "type": "uint256" }],
+    "outputs": [{ "name": "", "type": "uint256" }], "stateMutability": "view" },
+
+  { "type": "function", "name": "tierRewards",
+    "inputs": [{ "name": "", "type": "uint256" }],
+    "outputs": [{ "name": "", "type": "uint256" }], "stateMutability": "view" },
+
+  { "type": "function", "name": "withdraw",
+    "inputs": [{ "name": "amount", "type": "uint256" }],
+    "outputs": [], "stateMutability": "nonpayable" },
+
+  { "type": "event", "name": "TradeMined",
+    "inputs": [
+      { "name": "trader", "type": "address", "indexed": true },
+      { "name": "positionId", "type": "uint256", "indexed": true },
+      { "name": "reward", "type": "uint256", "indexed": false }
+    ] },
+
+  { "type": "event", "name": "TierClaimed",
+    "inputs": [
+      { "name": "trader", "type": "address", "indexed": true },
+      { "name": "tier", "type": "uint8", "indexed": false },
+      { "name": "reward", "type": "uint256", "indexed": false }
+    ] },
+
+  { "type": "event", "name": "CopyClaimed",
+    "inputs": [
+      { "name": "follower", "type": "address", "indexed": true },
+      { "name": "trader", "type": "address", "indexed": true },
+      { "name": "reward", "type": "uint256", "indexed": false }
+    ] },
+
+  { "type": "event", "name": "DailyCheckIn",
+    "inputs": [
+      { "name": "user", "type": "address", "indexed": true },
+      { "name": "day", "type": "uint256", "indexed": false },
+      { "name": "streak", "type": "uint8", "indexed": false },
+      { "name": "reward", "type": "uint256", "indexed": false }
+    ] }
+]

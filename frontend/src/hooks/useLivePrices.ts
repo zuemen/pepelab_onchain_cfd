@@ -1,10 +1,8 @@
-import { useState, useEffect, useRef } from 'react'
-import { ASSET_IDS } from 'src/contracts/addresses'
+import { useState, useEffect } from 'react'
 
-const COIN_MAP: Record<string, string> = {
-  [ASSET_IDS.sBTC]: 'bitcoin',
-  [ASSET_IDS.sETH]: 'ethereum',
-}
+import { useContracts } from 'src/hooks/useContracts'
+import { useWalletContext } from 'src/contexts/wallet-context'
+import { ASSET_IDS } from 'src/contracts/addresses'
 
 const MOCK_INITIAL: Record<string, number> = {
   [ASSET_IDS.sBTC]:   81000,
@@ -26,54 +24,48 @@ export interface LivePrice {
   isMock:    boolean
 }
 
+function wiggleMock(): Record<string, LivePrice> {
+  const out: Record<string, LivePrice> = {}
+  for (const [id, base] of Object.entries(MOCK_INITIAL)) {
+    const w = 1 + (Math.random() - 0.5) * 0.004
+    out[id] = { usd: base * w, fetchedAt: Date.now(), isMock: true }
+  }
+  return out
+}
+
 export function useLivePrices(): Record<string, LivePrice> {
-  const [prices, setPrices] = useState<Record<string, LivePrice>>({})
-  const basePrices = useRef<Record<string, number>>({ ...MOCK_INITIAL })
+  const { provider, signer, chainId } = useWalletContext()
+  const contracts = useContracts(provider, signer, chainId)
+  const [prices, setPrices] = useState<Record<string, LivePrice>>(wiggleMock)
 
   useEffect(() => {
-    let cancelled = false
+    if (!contracts?.oracle) {
+      // No oracle: keep wiggling mock prices every 2s
+      const id = setInterval(() => setPrices(wiggleMock()), 2000)
+      return () => clearInterval(id)
+    }
 
-    const fetchCG = async () => {
-      try {
-        const ids = Object.values(COIN_MAP).join(',')
-        const res = await fetch(`/api/coingecko/api/v3/simple/price?ids=${ids}&vs_currencies=usd`)
-        if (res.ok) {
-          const data = await res.json() as Record<string, { usd: number }>
-          for (const [assetId, coinId] of Object.entries(COIN_MAP)) {
-            if (data[coinId]) {
-              // Anchor to real price when fetched
-              basePrices.current[assetId] = data[coinId].usd
-            }
-          }
+    const tick = async () => {
+      const next: Record<string, LivePrice> = {}
+      for (const id of Object.values(ASSET_IDS)) {
+        try {
+          const raw = (await contracts.oracle.getPrice(id)) as unknown as [bigint, bigint]
+          const base = Number(raw[0]) / 1e8
+          const w = 1 + (Math.random() - 0.5) * 0.004
+          next[id] = { usd: base * w, fetchedAt: Date.now(), isMock: false }
+        } catch {
+          const fallback = MOCK_INITIAL[id] ?? 100
+          const w = 1 + (Math.random() - 0.5) * 0.004
+          next[id] = { usd: fallback * w, fetchedAt: Date.now(), isMock: true }
         }
-      } catch (e) {
-        console.warn('[useLivePrices] CoinGecko fetch failed', e)
       }
+      setPrices(next)
     }
 
-    const tick = () => {
-      const out: Record<string, LivePrice> = {}
-      for (const [id, baseUsd] of Object.entries(basePrices.current)) {
-        // Wiggle the price slightly every tick (±0.2%)
-        const wiggle = 1 + (Math.random() - 0.5) * 0.004
-        basePrices.current[id] = baseUsd * wiggle
-        out[id] = { usd: basePrices.current[id], fetchedAt: Date.now(), isMock: !COIN_MAP[id] }
-      }
-      if (!cancelled && Object.keys(out).length > 0) {
-        setPrices(out)
-      }
-    }
-
-    void fetchCG()
-    const cgId = setInterval(() => void fetchCG(), 30_000)
-    const tickId = setInterval(tick, 2000)
-
-    // Initial tick to populate prices before 2s
-    tick()
-
-    return () => { cancelled = true; clearInterval(cgId); clearInterval(tickId) }
-  }, [])
+    void tick()
+    const id = setInterval(() => void tick(), 8000)
+    return () => clearInterval(id)
+  }, [contracts])
 
   return prices
 }
-
