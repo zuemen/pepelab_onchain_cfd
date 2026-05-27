@@ -52,7 +52,7 @@ export function AccountDrawer({ data = [], sx, ...other }: AccountDrawerProps) {
   const { src: avatarUrl } = useUserAvatar(wallet.address || 'mock_user');
 
   const { value: open, onFalse: onClose, onTrue: onOpen } = useBoolean();
-  const [displayName, saveDisplayName] = useDisplayName(wallet.address);
+  const [displayName, saveDisplayName] = useDisplayName(wallet.address || 'mock_user');
   const [nameInput, setNameInput] = useState('');
   useEffect(() => { if (open) setNameInput(displayName); }, [open, displayName]);
 
@@ -175,32 +175,30 @@ export function AccountDrawer({ data = [], sx, ...other }: AccountDrawerProps) {
 
 
           {/* Edit display name */}
-          {wallet.address && (
-            <Box sx={{ px: 2.5, py: 2 }}>
-              <TextField
-                label="Display Name"
-                value={nameInput}
-                onChange={(e) => setNameInput(e.target.value.slice(0, 20))}
-                size="small"
-                fullWidth
-                inputProps={{ maxLength: 20 }}
-                placeholder={wallet.address.slice(0, 6) + '…' + wallet.address.slice(-4)}
-              />
-              <Button
-                variant="contained"
-                size="small"
-                fullWidth
-                sx={{ mt: 1 }}
-                disabled={!nameInput.trim() || nameInput.trim() === displayName}
-                onClick={() => {
-                  saveDisplayName(nameInput.trim());
-                  onClose();
-                }}
-              >
-                Save Name
-              </Button>
-            </Box>
-          )}
+          <Box sx={{ px: 2.5, py: 2 }}>
+            <TextField
+              label="Display Name (編輯暱稱)"
+              value={nameInput}
+              onChange={(e) => setNameInput(e.target.value.slice(0, 20))}
+              size="small"
+              fullWidth
+              inputProps={{ maxLength: 20 }}
+              placeholder={wallet.address ? (wallet.address.slice(0, 6) + '…' + wallet.address.slice(-4)) : 'Enter nickname...'}
+            />
+            <Button
+              variant="contained"
+              size="small"
+              fullWidth
+              sx={{ mt: 1 }}
+              disabled={!nameInput.trim() || nameInput.trim() === displayName}
+              onClick={() => {
+                saveDisplayName(nameInput.trim());
+                onClose();
+              }}
+            >
+              Save Name (儲存變更)
+            </Button>
+          </Box>
 
           {renderList()}
 
