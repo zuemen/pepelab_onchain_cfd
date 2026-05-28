@@ -1,7 +1,10 @@
 const ERROR_MAP: Record<string, string> = {
   // Selectors (0x + 4-byte hex)
   '0xbb90b0d9': '需要先批准 mUSDC 給 Swap Router，請點擊 Approve',
+  '0xe450d38c': '您的 Web3 錢包 mUSDC 餘額不足，請先前往【首頁/水龍頭】免費領取 mUSDC 測試幣 🚰',
   // Keyword matches (case-insensitive)
+  'ERC20InsufficientBalance': '您的 Web3 錢包 mUSDC 餘額不足，請先前往【首頁/水龍頭】免費領取 mUSDC 測試幣 🚰',
+  'no strategies':            '該交易員目前尚未發布任何跟單策略！',
   'FaucetCooldown':           'Faucet 24h 內只能領一次，請等待 cooldown',
   'NoStrategyPublished':      '此 trader 尚未發布策略',
   'TradingFeeExceedsMargin':  '跟單金額太小，trading fee 超過 margin，請增加金額',
