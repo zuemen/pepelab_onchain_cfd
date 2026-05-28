@@ -296,9 +296,10 @@ export default function TraderProfilePage() {
               variant="contained"
               color="primary"
               fullWidth
+              disabled={!hasStrategy}
               sx={{ fontWeight: 'bold', py: 1.2 }}
             >
-              Copy This Trader →
+              {!hasStrategy ? 'No Strategy to Copy 🔒' : 'Copy This Trader →'}
             </Button>
           </Card>
 

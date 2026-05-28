@@ -219,6 +219,7 @@ export default function MarketplacePage() {
 
   const sorted = [...traders]
     .filter(t => {
+      if (!t.hasStrategy) return false;
       if (!esgOnly) return true;
       const score = getEsgComposite(t);
       return score !== null && score >= ESG_FRIENDLY_THRESHOLD;
