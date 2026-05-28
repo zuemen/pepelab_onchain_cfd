@@ -27,10 +27,10 @@ contract DeployAMM is Script {
         PepeAMM amm = new PepeAMM(usdcAddr);
 
         // 2. Mint initial USDC for liquidity seed
-        uint256 usdcSeed = 3_000e18;
+        uint256 usdcSeed = 2_300e18;
         usdc.mint(deployer, usdcSeed);
 
-        // 3. Approve and add initial liquidity: 1 ETH : 3 000 mUSDC
+        // 3. Approve and add initial liquidity: 1 ETH : 2 300 mUSDC
         usdc.approve(address(amm), usdcSeed);
         amm.addLiquidity{value: 1 ether}(usdcSeed);
 
