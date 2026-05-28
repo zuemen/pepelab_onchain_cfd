@@ -53,7 +53,7 @@ const SEPOLIA: ChainAddresses = {
   MockSwapRouter:     "0x115CED81eD9Ef6a1c5faa428cEaf076E284b4871",
   ESGRegistry:        "0xdCFdDd38e1d80C1A5eeB44c05187Ec7979B98c13",
   KYCRegistry:        "0x7d40A2D3e39cDD1Dc613071D3C463AA161f7C5bB",
-  PepeAMM:            "0x4cF1A7DB08BDcC59FAA2514606F1096AB85D159f",
+  PepeAMM:            "0x3e6503BA0F4ad9E4743b695141CeB48709106A0c",
   PepeToken:              "0xa364F43627A17BE5bfbcb32693f3eD7E44ebe1D9",
   PepeClaim:              "0x852c0fBa54552aafbA4798709d90056159682A4C",
   EsgRewardDistributor:   "0xA1a522B9d31e5B48E41DcCd050DE10dA2e3BEdD0",

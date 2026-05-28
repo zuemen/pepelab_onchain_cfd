@@ -4,7 +4,9 @@
     {
       "name": "pepefi-dev",
       "runtimeExecutable": "yarn",
-      "runtimeArgs": ["dev"],
+      "runtimeArgs": [
+        "dev"
+      ],
       "port": 8081
     }
   ]

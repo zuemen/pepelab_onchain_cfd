@@ -729,10 +729,13 @@ export default function ExchangePage() {
             {/* AMM pool info */}
             <Box sx={{ px: 1, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
               <Typography variant="caption" color="text.secondary">
-                Rate: <Box component="span" sx={{ color: 'white', fontFamily: 'monospace' }}>1 ETH = {ammPrice > 0n ? (Number(ammPrice) / 1e18).toFixed(2) : '–'} mUSDC</Box>
+                Oracle Swap Rate: <Box component="span" sx={{ color: 'white', fontFamily: 'monospace', fontWeight: 'bold' }}>1 ETH = {ammPrice > 0n ? (Number(ammPrice) / 1e18).toFixed(2) : '–'} mUSDC</Box>
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                Pool: <Box component="span" sx={{ color: 'white', fontFamily: 'monospace' }}>{ammEth > 0n ? (Number(ammEth) / 1e18).toFixed(4) : '–'} ETH</Box> / <Box component="span" sx={{ color: 'white', fontFamily: 'monospace' }}>{ammUsdc > 0n ? (Number(ammUsdc) / 1e18).toFixed(2) : '–'} mUSDC</Box>
+                Vault Reserves: <Box component="span" sx={{ color: 'white', fontFamily: 'monospace' }}>{ammEth > 0n ? (Number(ammEth) / 1e18).toFixed(4) : '–'} ETH</Box> / <Box component="span" sx={{ color: 'white', fontFamily: 'monospace' }}>{ammUsdc > 0n ? (Number(ammUsdc) / 1e18).toFixed(2) : '–'} mUSDC</Box>
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'success.main', display: 'flex', alignItems: 'center', gap: 0.5, fontWeight: 'bold', mt: 0.5 }}>
+                ● Real-time Oracle Price (Zero Slippage)
               </Typography>
             </Box>
 

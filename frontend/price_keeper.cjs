@@ -25,8 +25,8 @@ const ASSET_IDS = {
 };
 
 const BASE_PRICES = {
-  sBTC: 81000,
-  sETH: 2300,
+  sBTC: 73190,
+  sETH: 1987,
   sAAPL: 200,
   sTSLA: 250,
   sGOLD: 2650,
@@ -38,74 +38,103 @@ const BASE_PRICES = {
   sESGU: 45,
 };
 
-async function fetchLivePrice(symbol) {
+let cachedGeckoPrices = null;
+let lastGeckoFetchTime = 0;
+
+async function fetchGeckoPrices() {
+  const now = Date.now();
+  // Cache for 10 seconds to avoid spamming the CoinGecko public API
+  if (cachedGeckoPrices && (now - lastGeckoFetchTime < 10000)) {
+    return cachedGeckoPrices;
+  }
   try {
-    const res = await fetch(`https://api.coinbase.com/v2/prices/${symbol}-USD/spot`);
-    if (!res.ok) return null;
+    const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ethereum,bitcoin&vs_currencies=usd');
+    if (!res.ok) return cachedGeckoPrices;
     const json = await res.json();
-    return parseFloat(json.data.amount);
+    cachedGeckoPrices = {
+      BTC: json.bitcoin ? parseFloat(json.bitcoin.usd) : null,
+      ETH: json.ethereum ? parseFloat(json.ethereum.usd) : null,
+    };
+    lastGeckoFetchTime = now;
+    return cachedGeckoPrices;
   } catch (e) {
-    return null;
+    console.error('  -> Failed to fetch from CoinGecko:', e.message || e);
+    return cachedGeckoPrices;
   }
 }
 
+let isTicking = false;
+
 async function updateOraclePrices() {
-  console.log('\n--- Ticking Price Keeper Bot (' + new Date().toLocaleTimeString() + ') ---');
-  const oracle = new ethers.Contract(ORACLE_ADDR, oracleAbi, wallet);
+  if (isTicking) {
+    console.log('Skipping tick: Previous tick is still running...');
+    return;
+  }
+  isTicking = true;
 
-  // Fetch real-time BTC and ETH from Coinbase
-  const liveBtc = await fetchLivePrice('BTC');
-  const liveEth = await fetchLivePrice('ETH');
+  try {
+    console.log('\n--- Ticking Price Keeper Bot (' + new Date().toLocaleTimeString() + ') ---');
+    const oracle = new ethers.Contract(ORACLE_ADDR, oracleAbi, wallet);
 
-  for (const [key, id] of Object.entries(ASSET_IDS)) {
-    try {
-      let targetPrice = BASE_PRICES[key];
-      let source = 'Default';
-      
-      if (key === 'sBTC' && liveBtc) {
-        targetPrice = liveBtc;
-        source = 'Coinbase Spot';
-      } else if (key === 'sETH' && liveEth) {
-        targetPrice = liveEth;
-        source = 'Coinbase Spot';
-      } else {
-        // Other assets: use a dynamic random walk based on baseline
-        const wiggle = 1 + (Math.random() - 0.5) * 0.003; // +/- 0.15%
-        targetPrice = BASE_PRICES[key] * wiggle;
-        source = 'Random Walk';
+    // Fetch real-time BTC and ETH from CoinGecko
+    const geckoPrices = await fetchGeckoPrices();
+    const liveBtc = geckoPrices ? geckoPrices.BTC : null;
+    const liveEth = geckoPrices ? geckoPrices.ETH : null;
+
+    for (const [key, id] of Object.entries(ASSET_IDS)) {
+      try {
+        let targetPrice = BASE_PRICES[key];
+        let source = 'Default';
+        
+        if (key === 'sBTC' && liveBtc) {
+          targetPrice = liveBtc;
+          source = 'CoinGecko Spot';
+        } else if (key === 'sETH' && liveEth) {
+          targetPrice = liveEth;
+          source = 'CoinGecko Spot';
+        } else {
+          // Other assets: use a dynamic random walk based on baseline
+          const wiggle = 1 + (Math.random() - 0.5) * 0.003; // +/- 0.15%
+          targetPrice = BASE_PRICES[key] * wiggle;
+          source = 'Random Walk';
+        }
+
+        // Read current on-chain price and last updated time
+        const [rawPrice, rawUpdatedAt] = await oracle.getPrice(id);
+        const currentPrice = Number(rawPrice) / 1e8;
+        const lastUpdated = Number(rawUpdatedAt);
+        
+        // Calculate deviation and elapsed time
+        const priceDiffPercent = currentPrice > 0 ? Math.abs(targetPrice - currentPrice) / currentPrice : 1;
+        const secondsElapsed = Math.floor(Date.now() / 1000) - lastUpdated;
+        
+        const DEVIATION_THRESHOLD = 0.001; // 0.1% change triggers update
+        const HEARTBEAT_INTERVAL = 300;     // 5 minutes (300s) triggers update regardless of deviation
+
+        const needsUpdate = priceDiffPercent >= DEVIATION_THRESHOLD || secondsElapsed >= HEARTBEAT_INTERVAL;
+
+        console.log(`[${source}] ${key.padEnd(5)} | Live: $${targetPrice.toFixed(2)} | On-Chain: $${currentPrice.toFixed(2)} | Dev: ${(priceDiffPercent * 100).toFixed(3)}% | Age: ${secondsElapsed}s | Needs Update: ${needsUpdate}`);
+
+        if (needsUpdate) {
+          const price8 = BigInt(Math.round(targetPrice * 1e8));
+          const tx = await oracle.updatePrice(id, price8);
+          console.log(`  -> Sending update tx: ${tx.hash}`);
+          await tx.wait();
+          console.log(`  -> ${key} updated successfully on-chain ✓`);
+        }
+      } catch (e) {
+        console.error(`  -> Failed to tick ${key}:`, e.message || e);
       }
-
-      // Read current on-chain price and last updated time
-      const [rawPrice, rawUpdatedAt] = await oracle.getPrice(id);
-      const currentPrice = Number(rawPrice) / 1e8;
-      const lastUpdated = Number(rawUpdatedAt);
-      
-      // Calculate deviation and elapsed time
-      const priceDiffPercent = currentPrice > 0 ? Math.abs(targetPrice - currentPrice) / currentPrice : 1;
-      const secondsElapsed = Math.floor(Date.now() / 1000) - lastUpdated;
-      
-      const DEVIATION_THRESHOLD = 0.001; // 0.1% change triggers update
-      const HEARTBEAT_INTERVAL = 300;     // 5 minutes (300s) triggers update regardless of deviation
-
-      const needsUpdate = priceDiffPercent >= DEVIATION_THRESHOLD || secondsElapsed >= HEARTBEAT_INTERVAL;
-
-      console.log(`[${source}] ${key.padEnd(5)} | Live: $${targetPrice.toFixed(2)} | On-Chain: $${currentPrice.toFixed(2)} | Dev: ${(priceDiffPercent * 100).toFixed(3)}% | Age: ${secondsElapsed}s | Needs Update: ${needsUpdate}`);
-
-      if (needsUpdate) {
-        const price8 = BigInt(Math.round(targetPrice * 1e8));
-        const tx = await oracle.updatePrice(id, price8);
-        console.log(`  -> Sending update tx: ${tx.hash}`);
-        await tx.wait();
-        console.log(`  -> ${key} updated successfully on-chain ✓`);
-      }
-    } catch (e) {
-      console.error(`  -> Failed to tick ${key}:`, e.message || e);
     }
+  } catch (outerErr) {
+    console.error('Outer execution error in price keeper:', outerErr.message || outerErr);
+  } finally {
+    isTicking = false;
   }
 }
 
 async function main() {
-  console.log('Starting automated gas-optimized Price Keeper Bot (Coinbase Edition) on Sepolia...');
+  console.log('Starting automated gas-optimized Price Keeper Bot (CoinGecko Edition) on Sepolia...');
   console.log('Oracle address:', ORACLE_ADDR);
   console.log('Keeper wallet: ', wallet.address);
 
