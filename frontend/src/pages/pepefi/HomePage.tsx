@@ -252,7 +252,7 @@ export default function HomePage() {
               🛒 Pepe Shop
             </Button>
 
-            <LootBoxButton pepeBalance={pepeBalance} onBurn={handleBurn} />
+            <LootBoxButton pepeBalance={pepeBalance} onBurn={handleBurn} address={wallet.address} />
           </Card>
         </Grid>
 
