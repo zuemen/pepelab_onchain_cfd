@@ -347,7 +347,13 @@ export default function DashboardPage() {
     } finally { setIsLoading(false); }
   }, [contracts, wallet.address]);
 
-  useEffect(() => { void fetchAll() }, [fetchAll]);
+  useEffect(() => {
+    void fetchAll();
+    const timer = setInterval(() => {
+      void fetchAll();
+    }, 8000); // Poll on-chain balances every 8s
+    return () => clearInterval(timer);
+  }, [fetchAll]);
 
   // ── PEPE fetch (isolated — failures never affect main dashboard) ───────────
   const ZERO_ADDR = '0x0000000000000000000000000000000000000000';
@@ -371,7 +377,13 @@ export default function DashboardPage() {
     if (poolR.status    === 'fulfilled') setPepePoolBal(poolR.value as bigint);
   }, [contracts, wallet.address]);
 
-  useEffect(() => { void fetchPepe() }, [fetchPepe]);
+  useEffect(() => {
+    void fetchPepe();
+    const timer = setInterval(() => {
+      void fetchPepe();
+    }, 8000); // Poll PEPE balance every 8s
+    return () => clearInterval(timer);
+  }, [fetchPepe]);
 
   useEffect(() => {
     if (!contracts?.pepeIncentives || !wallet.address) return;
@@ -557,7 +569,7 @@ export default function DashboardPage() {
             📊 即時價格
           </Typography>
           <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 2 }}>
-            {Object.entries(livePrices).slice(0, 6).map(([id, lp]) => {
+            {Object.entries(livePrices).map(([id, lp]) => {
               const meta = ASSET_META[id];
               if (!meta) return null;
               const up = !lp.isMock;
@@ -569,7 +581,7 @@ export default function DashboardPage() {
                   borderRadius: 2,
                 }}>
                   <Typography fontSize={40} sx={{ display: 'block', mb: 0.5 }}>
-                    {meta.category === 'crypto' ? '🪙' : meta.category === 'equity' ? '📊' : meta.category === 'bond' ? '📜' : '🏅'}
+                    {meta.icon || (meta.category === 'crypto' ? '🪙' : meta.category === 'equity' ? '📊' : meta.category === 'bond' ? '📜' : '🏅')}
                   </Typography>
                   <Typography fontWeight={800} fontSize={14}>{meta.symbol}</Typography>
                   <Typography fontWeight={700} fontSize={15} sx={{ color: '#7cc14a', fontFamily: 'monospace' }}>

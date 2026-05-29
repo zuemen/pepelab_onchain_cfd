@@ -38,7 +38,7 @@ export const ASSET_META: Record<string, AssetMeta> = {
     name:      'Synthetic Apple Inc.',
     category:  'equity',
     regulated: true,
-    icon:      '',
+    icon:      '🍎',
   },
   [ASSET_IDS.sTSLA]: {
     symbol:    'sTSLA',
