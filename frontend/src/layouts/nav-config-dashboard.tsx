@@ -51,8 +51,7 @@ export const navData: NavSectionProps['data'] = [
   {
     subheader: 'PepeFi',
     items: [
-      { title: 'Landing', path: paths.pepefi.landing, icon: ICONS.dashboard },
-      { title: 'Dashboard', path: paths.pepefi.dashboard, icon: ICONS.analytics },
+      { title: '🏠 我的 Pepe (Dashboard)', path: paths.pepefi.dashboard, icon: ICONS.analytics },
       { title: 'Exchange', path: paths.pepefi.exchange, icon: ICONS.ecommerce },
       { title: 'Marketplace', path: paths.pepefi.marketplace, icon: ICONS.invoice },
       { title: 'Portfolio', path: paths.pepefi.portfolio, icon: ICONS.banking },
@@ -61,7 +60,6 @@ export const navData: NavSectionProps['data'] = [
       { title: 'Whale Tracker', path: paths.pepefi.whale, icon: ICONS.label },
       { title: 'ESG', path: paths.pepefi.esg, icon: ICONS.tour },
       { title: 'Rewards 🎁', path: paths.pepefi.rewards, icon: ICONS.booking },
-      { title: '🏠 我的 Pepe', path: paths.pepefi.home, icon: ICONS.course },
     ],
   },
   /**
