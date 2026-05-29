@@ -20,6 +20,7 @@ import PepeTokenABI             from 'src/contracts/abi/PepeToken.json'
 import PepeClaimABI             from 'src/contracts/abi/PepeClaim.json'
 import EsgRewardDistributorABI  from 'src/contracts/abi/EsgRewardDistributor.json'
 import PepeIncentivesABI        from 'src/contracts/abi/PepeIncentives.json'
+import PepeStakingABI          from 'src/contracts/abi/PepeStaking.json'
 
 export function useContracts(
   provider: BrowserProvider | null,
@@ -49,6 +50,7 @@ export function useContracts(
       pepeClaim:            new Contract(addr.PepeClaim,            PepeClaimABI,            runner),
       esgRewardDistributor: new Contract(addr.EsgRewardDistributor, EsgRewardDistributorABI, runner),
       pepeIncentives:       new Contract(addr.PepeIncentives,       PepeIncentivesABI,       runner),
+      pepeStaking:          new Contract(addr.PepeStaking,          PepeStakingABI,          runner),
     }
   }, [provider, signer, chainId])
 }
