@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 
 // ── Interfaces ────────────────────────────────────────────────────────────────
 
@@ -39,12 +40,16 @@ interface ICopyTracker {
     function getCopyRecords(address follower) external view returns (CopyRecord[] memory);
 }
 
+interface IESGRegistry {
+    function compositeScore(bytes32 assetId) external view returns (uint8);
+}
+
 // ── PepeIncentives ────────────────────────────────────────────────────────────
 
 /// @title  PepeIncentives
-/// @notice Trade mining, tier upgrades, copy rewards, and daily check-in
-///         powered by PEPE tokens. Reward pool must be pre-funded by owner.
-contract PepeIncentives is Ownable {
+/// @notice Trade mining, tier upgrades, copy rewards, daily check-in,
+///         and ESG hold rewards powered by PEPE tokens.
+contract PepeIncentives is Ownable, Pausable {
     // ── Errors ───────────────────────────────────────────────────────────────
 
     error NotPositionOwner();
@@ -56,6 +61,9 @@ contract PepeIncentives is Ownable {
     error InvalidTier();
     error InsufficientPool();
     error TierThresholdNotMet();
+    error HoldTooShort();
+    error EsgScoreTooLow();
+    error EsgHoldAlreadyClaimed();
 
     // ── Events ───────────────────────────────────────────────────────────────
 
@@ -63,12 +71,14 @@ contract PepeIncentives is Ownable {
     event TierClaimed(address indexed trader, uint8 tier, uint256 reward);
     event CopyClaimed(address indexed follower, address indexed trader, uint256 reward);
     event DailyCheckIn(address indexed user, uint256 day, uint8 streak, uint256 reward);
+    event EsgHoldClaimed(address indexed trader, uint256 indexed positionId, uint256 reward);
 
     // ── State ─────────────────────────────────────────────────────────────────
 
-    IERC20           public immutable pepe;
-    IPerpExchange    public immutable exchange;
-    ICopyTracker     public immutable copyTracker;
+    IERC20        public immutable pepe;
+    IPerpExchange public immutable exchange;
+    ICopyTracker  public immutable copyTracker;
+    IESGRegistry  public esgRegistry;
 
     // Trade mining
     uint256 public tradeMiningBps = 50;         // 0.5% of notional
@@ -91,6 +101,13 @@ contract PepeIncentives is Ownable {
     mapping(address => uint256) public lastCheckIn; // day index (unix / 86400)
     mapping(address => uint8)   public streak;
 
+    // ESG hold reward
+    uint256 public esgHoldBps      = 200;        // 2% of notional
+    uint256 public esgHoldCap      = 20_000e18;  // max 20 000 PEPE per position
+    uint256 public esgMinHoldDays  = 30;
+    uint8   public esgMinScore     = 70;
+    mapping(uint256 => bool) public esgHoldClaimed;
+
     // ── Constructor ───────────────────────────────────────────────────────────
 
     constructor(address pepe_, address exchange_, address copyTracker_) Ownable(msg.sender) {
@@ -101,16 +118,14 @@ contract PepeIncentives is Ownable {
 
     // ── Trade Mining ──────────────────────────────────────────────────────────
 
-    /// @notice Claim PEPE for opening a position. Reward = notional × 0.5%, cap 5 000 PEPE.
-    function claimTradeMining(uint256 positionId) external {
+    function claimTradeMining(uint256 positionId) external whenNotPaused {
         IPerpExchange.Position memory pos = exchange.getPosition(positionId);
-        if (pos.owner != msg.sender)     revert NotPositionOwner();
-        if (minedPosition[positionId])   revert AlreadyMined();
+        if (pos.owner != msg.sender)   revert NotPositionOwner();
+        if (minedPosition[positionId]) revert AlreadyMined();
 
         uint256 notional = pos.margin * pos.leverage;
         uint256 reward   = notional * tradeMiningBps / 10_000;
         if (reward > tradeMiningCap) reward = tradeMiningCap;
-
         if (pepe.balanceOf(address(this)) < reward) revert InsufficientPool();
 
         minedPosition[positionId] = true;
@@ -120,22 +135,16 @@ contract PepeIncentives is Ownable {
 
     // ── Tier Upgrade ─────────────────────────────────────────────────────────
 
-    /// @notice Claim tier reward. Caller provides positionIds as proof; contract
-    ///         verifies cumulative notional ≥ tier threshold.
-    /// @param  tier       0=Bronze 1=Silver 2=Gold 3=Diamond
-    /// @param  positionIds array of position IDs owned by caller for notional proof
-    function claimTierReward(uint8 tier, uint256[] calldata positionIds) external {
+    function claimTierReward(uint8 tier, uint256[] calldata positionIds) external whenNotPaused {
         if (tier > 3) revert InvalidTier();
         if ((tierClaimed[msg.sender] & (1 << tier)) != 0) revert TierAlreadyClaimed();
 
-        // Sum cumulative notional from provided positions
         uint256 cumNotional;
         for (uint256 i; i < positionIds.length; i++) {
             IPerpExchange.Position memory pos = exchange.getPosition(positionIds[i]);
             if (pos.owner != msg.sender) continue;
             cumNotional += pos.margin * pos.leverage;
         }
-
         if (cumNotional < tierThresholds[tier]) revert TierThresholdNotMet();
 
         uint256 reward = tierRewards[tier];
@@ -148,11 +157,7 @@ contract PepeIncentives is Ownable {
 
     // ── Copy Reward ───────────────────────────────────────────────────────────
 
-    /// @notice Claim copy reward for following a trader.
-    ///         Both follower and trader receive 200 PEPE (once per pair).
-    /// @param  trader  the trader being followed
-    function claimCopyReward(address trader) external {
-        // Verify caller is actively following this trader
+    function claimCopyReward(address trader) external whenNotPaused {
         ICopyTracker.CopyRecord[] memory records = copyTracker.getCopyRecords(msg.sender);
         bool isFollowing;
         for (uint256 i; i < records.length; i++) {
@@ -177,8 +182,7 @@ contract PepeIncentives is Ownable {
 
     // ── Daily Check-in ────────────────────────────────────────────────────────
 
-    /// @notice Check in once per day. Consecutive days earn streak bonuses up to 7 days.
-    function dailyCheckIn() external {
+    function dailyCheckIn() external whenNotPaused {
         uint256 today = block.timestamp / 1 days;
         if (today == lastCheckIn[msg.sender]) revert AlreadyCheckedIn();
 
@@ -200,32 +204,50 @@ contract PepeIncentives is Ownable {
         emit DailyCheckIn(msg.sender, today, currentStreak, reward);
     }
 
+    // ── ESG Hold Reward ───────────────────────────────────────────────────────
+
+    /// @notice Claim reward for holding an ESG-qualified position ≥ 30 days.
+    function claimEsgHoldReward(uint256 positionId) external whenNotPaused {
+        IPerpExchange.Position memory pos = exchange.getPosition(positionId);
+        if (pos.owner != msg.sender)        revert NotPositionOwner();
+        if (esgHoldClaimed[positionId])     revert EsgHoldAlreadyClaimed();
+        if (block.timestamp - pos.openedAt < esgMinHoldDays * 1 days) revert HoldTooShort();
+
+        if (address(esgRegistry) != address(0)) {
+            if (esgRegistry.compositeScore(pos.asset) < esgMinScore) revert EsgScoreTooLow();
+        }
+
+        uint256 notional = pos.margin * pos.leverage;
+        uint256 reward   = notional * esgHoldBps / 10_000;
+        if (reward > esgHoldCap) reward = esgHoldCap;
+        if (pepe.balanceOf(address(this)) < reward) revert InsufficientPool();
+
+        esgHoldClaimed[positionId] = true;
+        pepe.transfer(msg.sender, reward);
+        emit EsgHoldClaimed(msg.sender, positionId, reward);
+    }
+
     // ── Owner Functions ───────────────────────────────────────────────────────
 
-    /// @notice Withdraw PEPE from the reward pool back to owner.
     function withdraw(uint256 amount) external onlyOwner {
         pepe.transfer(owner(), amount);
     }
 
-    /// @notice Update trade mining parameters.
     function setTradeMining(uint256 bps, uint256 cap) external onlyOwner {
         tradeMiningBps = bps;
         tradeMiningCap = cap;
     }
 
-    /// @notice Update daily check-in parameters.
     function setDailyParams(uint256 base, uint256 bonus, uint8 cap) external onlyOwner {
         dailyBase        = base;
         dailyStreakBonus = bonus;
         dailyStreakCap   = cap;
     }
 
-    /// @notice Update copy reward amount.
     function setCopyReward(uint256 amount) external onlyOwner {
         copyReward = amount;
     }
 
-    /// @notice Update tier thresholds and rewards.
     function setTierParams(
         uint256[4] calldata thresholds,
         uint256[4] calldata rewards
@@ -235,4 +257,18 @@ contract PepeIncentives is Ownable {
             tierRewards[i]    = rewards[i];
         }
     }
+
+    function setEsgParams(uint256 bps, uint256 cap, uint256 minDays, uint8 minScore) external onlyOwner {
+        esgHoldBps     = bps;
+        esgHoldCap     = cap;
+        esgMinHoldDays = minDays;
+        esgMinScore    = minScore;
+    }
+
+    function setEsgRegistry(address reg) external onlyOwner {
+        esgRegistry = IESGRegistry(reg);
+    }
+
+    function pause()   external onlyOwner { _pause(); }
+    function unpause() external onlyOwner { _unpause(); }
 }
