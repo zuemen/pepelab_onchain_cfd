@@ -61,6 +61,7 @@ export const navData: NavSectionProps['data'] = [
       { title: 'Whale Tracker', path: paths.pepefi.whale, icon: ICONS.label },
       { title: 'ESG', path: paths.pepefi.esg, icon: ICONS.tour },
       { title: 'Rewards 🎁', path: paths.pepefi.rewards, icon: ICONS.booking },
+      { title: '🏠 我的 Pepe', path: paths.pepefi.home, icon: ICONS.course },
     ],
   },
   /**
