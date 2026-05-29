@@ -199,7 +199,7 @@ export default function AdminTreasuryPage() {
       const amt = parseEther(swapAmt)
       const tx  = asTx(await contracts.usdc.approve(String(contracts.swapRouter.target), amt))
       await tx.wait()
-      notify('mUSDC approved ✓', true, tx.hash)
+      notify('USDC approved ✓', true, tx.hash)
     } catch (e: any) {
       notify(prettyError(e), false)
     } finally { setLoad('approve', false) }
@@ -213,7 +213,7 @@ export default function AdminTreasuryPage() {
       const tx     = asTx(await contracts.swapRouter.swapUSDCForETH(amt))
       await tx.wait()
       const ethOut = (parseFloat(swapAmt) / 3000).toFixed(6)
-      notify(`Swapped ${swapAmt} mUSDC → ${ethOut} ETH ✓`, true, tx.hash)
+      notify(`Swapped ${swapAmt} USDC → ${ethOut} ETH ✓`, true, tx.hash)
       setSwapAmt('')
       await fetchStats()
       await fetchHistory()
@@ -323,10 +323,10 @@ export default function AdminTreasuryPage() {
       {/* A. Revenue Stats */}
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <StatCard title="Pending Platform Fees" value={stats ? f18(stats.platformEarnings) : '—'} sub="mUSDC" valueColor="primary.main" />
+          <StatCard title="Pending Platform Fees" value={stats ? f18(stats.platformEarnings) : '—'} sub="USDC" valueColor="primary.main" />
         </Grid>
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <StatCard title="Wallet mUSDC Balance" value={stats ? f18(stats.myMusdc) : '—'} sub="mUSDC" />
+          <StatCard title="Wallet USDC Balance" value={stats ? f18(stats.myMusdc) : '—'} sub="USDC" />
         </Grid>
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
           <StatCard title="Wallet ETH Balance" value={stats ? fEth(stats.myEth) : '—'} sub="ETH" />
@@ -357,7 +357,7 @@ export default function AdminTreasuryPage() {
               Pending platform fees
             </Typography>
             <Typography variant="h4" color="primary.main" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
-              {stats ? f18(stats.platformEarnings) : '—'} <Box component="span" sx={{ fontSize: '1rem', fontWeight: 'normal', color: 'text.secondary' }}>mUSDC</Box>
+              {stats ? f18(stats.platformEarnings) : '—'} <Box component="span" sx={{ fontSize: '1rem', fontWeight: 'normal', color: 'text.secondary' }}>USDC</Box>
             </Typography>
           </Box>
           <Button
@@ -374,12 +374,12 @@ export default function AdminTreasuryPage() {
         </Typography>
       </Card>
 
-      {/* C. Step 2: Convert mUSDC → ETH */}
+      {/* C. Step 2: Convert USDC → ETH */}
       <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
           <Chip label="2" size="small" color="primary" sx={{ fontWeight: 'bold' }} />
           <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-            Convert mUSDC → ETH via SwapRouter
+            Convert USDC → ETH via SwapRouter
           </Typography>
         </Box>
 
@@ -387,7 +387,7 @@ export default function AdminTreasuryPage() {
           <TextField
             type="number"
             size="small"
-            placeholder="mUSDC amount"
+            placeholder="USDC amount"
             value={swapAmt}
             onChange={e => setSwapAmt(e.target.value)}
             slotProps={{ htmlInput: { min: "0", style: { fontFamily: 'monospace' } } }}
@@ -404,7 +404,7 @@ export default function AdminTreasuryPage() {
 
         {swapAmt && parseFloat(swapAmt) > 0 && (
           <Typography variant="caption" color="text.secondary">
-            ≈ {(parseFloat(swapAmt) / 3000).toFixed(6)} ETH (rate: 1 ETH = 3000 mUSDC)
+            ≈ {(parseFloat(swapAmt) / 3000).toFixed(6)} ETH (rate: 1 ETH = 3000 USDC)
           </Typography>
         )}
 
@@ -422,7 +422,7 @@ export default function AdminTreasuryPage() {
             disabled={busy['approve'] || !swapAmt || parseFloat(swapAmt) <= 0}
             sx={{ flexGrow: 1 }}
           >
-            {busy['approve'] ? 'Approving…' : '① Approve mUSDC'}
+            {busy['approve'] ? 'Approving…' : '① Approve USDC'}
           </Button>
           <Button
             variant="contained"
@@ -447,7 +447,7 @@ export default function AdminTreasuryPage() {
             Fund SwapRouter with ETH
           </Typography>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-            The router needs an ETH reserve to fulfill mUSDC→ETH swaps from users and admin.
+            The router needs an ETH reserve to fulfill USDC→ETH swaps from users and admin.
             Current reserve: <Box component="span" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{stats ? fEth(stats.routerEth) : '—'} ETH</Box>
           </Typography>
           <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -561,8 +561,8 @@ export default function AdminTreasuryPage() {
                         />
                         <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
                           {r.type === 'claim'
-                            ? `${f18(r.amount)} mUSDC`
-                            : `${r.usdcIn ? f18(r.usdcIn) : '—'} mUSDC → ${fEth(r.amount)} ETH`}
+                            ? `${f18(r.amount)} USDC`
+                            : `${r.usdcIn ? f18(r.usdcIn) : '—'} USDC → ${fEth(r.amount)} ETH`}
                         </Typography>
                       </Stack>
                     </TableCell>
@@ -597,7 +597,7 @@ export default function AdminTreasuryPage() {
             <Box component="span" sx={{ color: 'text.primary', fontWeight: 'bold' }}>Revenue model:</Box> Each copy-trade or performance fee is split 70% trader / 20% platform / 10% insurance vault. Platform fees accumulate in FeeRouter until this admin claims them.
           </Typography>
           <Typography variant="caption">
-            After claiming mUSDC, use the swap above to convert to ETH at the mock rate (1 ETH = 3000 mUSDC). In production, you'd use a real DEX.
+            After claiming USDC, use the swap above to convert to ETH at the mock rate (1 ETH = 3000 USDC). In production, you'd use a real DEX.
           </Typography>
         </Stack>
       </Card>

@@ -150,7 +150,7 @@ export function AccountDrawer({ data = [], sx, ...other }: AccountDrawerProps) {
     <>
       <AccountButton
         onClick={onOpen}
-        photoURL={avatarUrl}
+        address={wallet.address}
         displayName={displayName || user?.displayName || ''}
         sx={sx}
         {...other}

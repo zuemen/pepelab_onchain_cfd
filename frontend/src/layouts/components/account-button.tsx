@@ -2,19 +2,20 @@ import type { IconButtonProps } from '@mui/material/IconButton';
 
 import { m } from 'framer-motion';
 
-import Avatar from '@mui/material/Avatar';
 import IconButton from '@mui/material/IconButton';
 
+import { PepeAvatar } from 'src/components/pepefi/PepeAvatar';
 import { varTap, varHover, AnimateBorder, transitionTap } from 'src/components/animate';
 
 // ----------------------------------------------------------------------
 
 export type AccountButtonProps = IconButtonProps & {
-  photoURL: string;
-  displayName: string;
+  photoURL?: string;
+  displayName?: string;
+  address?: string | null;
 };
 
-export function AccountButton({ photoURL, displayName, sx, ...other }: AccountButtonProps) {
+export function AccountButton({ photoURL, displayName, address, sx, ...other }: AccountButtonProps) {
   return (
     <IconButton
       component={m.button}
@@ -32,9 +33,7 @@ export function AccountButton({ photoURL, displayName, sx, ...other }: AccountBu
           secondaryBorder: { sx: { color: 'warning.main' } },
         }}
       >
-        <Avatar src={photoURL} alt={displayName} sx={{ width: 1, height: 1 }}>
-          {displayName?.charAt(0).toUpperCase()}
-        </Avatar>
+        <PepeAvatar address={address || 'mock_user'} size={34} />
       </AnimateBorder>
     </IconButton>
   );

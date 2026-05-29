@@ -21,7 +21,7 @@ const FEATURES = [
 
 const STEPS = [
   { n: '01', text: '安裝 MetaMask，切換到 Sepolia testnet' },
-  { n: '02', text: '前往 Exchange，點擊「Get 1000 mUSDC」取得測試資金' },
+  { n: '02', text: '前往 Exchange，點擊「Get 1000 USDC」取得測試資金' },
   { n: '03', text: '到 Marketplace 複製 Demo Alpha 交易者策略' },
   { n: '04', text: '（可選）在 Trader 頁面登記成為交易者並公開策略' },
 ];
@@ -78,7 +78,7 @@ export default function LandingPage() {
               <Typography
                 variant="h1"
                 sx={{
-                  fontSize: { xs: '4rem', md: '6rem' },
+                  fontSize: { xs: '4.5rem', md: '7.5rem' },
                   fontWeight: 900,
                   lineHeight: 1,
                   color: '#7cc14a',
@@ -112,8 +112,19 @@ export default function LandingPage() {
                 鏈上合成衍生品跟單系統。交易者公開策略，跟單者一鍵跟進，全程透明上鏈。
               </Typography>
 
-              <Stack direction="row" spacing={2} justifyContent={{ xs: 'center', md: 'flex-start' }}>
+              <Stack direction="row" spacing={2} justifyContent={{ xs: 'center', md: 'flex-start' }} flexWrap="wrap">
                 <WalletButton wallet={wallet} />
+                {wallet.isConnected && (
+                  <Button
+                    component={RouterLink}
+                    to="/dashboard"
+                    variant="contained"
+                    size="large"
+                    sx={{ bgcolor: '#7cc14a', color: '#fff', fontWeight: 900, '&:hover': { bgcolor: '#5a9e2f' } }}
+                  >
+                    🐸 進入 Dashboard
+                  </Button>
+                )}
                 <Button
                   component={RouterLink}
                   to="/marketplace"

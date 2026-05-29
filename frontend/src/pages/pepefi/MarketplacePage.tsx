@@ -565,7 +565,7 @@ export default function MarketplacePage() {
                       {/* Slashed Indicator */}
                       {t.totalSlashed !== null && t.totalSlashed > 0n && (
                         <Alert severity="error" icon={false} sx={{ py: 0, px: 1.5, '& .MuiAlert-message': { py: 0.5, fontSize: '0.6875rem', fontWeight: 'bold' } }}>
-                          ⚠ {(Number(t.totalSlashed) / 1e18).toFixed(0)} mUSDC slashed
+                          ⚠ {(Number(t.totalSlashed) / 1e18).toFixed(0)} USDC slashed
                         </Alert>
                       )}
 

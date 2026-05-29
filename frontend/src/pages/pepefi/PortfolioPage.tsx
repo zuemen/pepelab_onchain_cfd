@@ -261,7 +261,7 @@ export default function PortfolioPage() {
     try {
       const tx = asTx(await contracts.exchange.withdrawMargin(amt));
       await tx.wait();
-      notify(`Withdrew ${withdrawAmt} mUSDC ✓`, true, tx.hash);
+      notify(`Withdrew ${withdrawAmt} USDC ✓`, true, tx.hash);
       setWithdrawAmt('');
       await fetchAll();
     } catch (e) {
@@ -336,8 +336,8 @@ export default function PortfolioPage() {
         <EmptyState
           icon="💼"
           title="Your portfolio is empty"
-          description="Start by getting test mUSDC, then copy a trader or open positions yourself."
-          ctaText="Get mUSDC"
+          description="Start by getting test USDC, then copy a trader or open positions yourself."
+          ctaText="Get USDC"
           ctaHref="/exchange"
         />
       </Container>
@@ -389,7 +389,7 @@ export default function PortfolioPage() {
           <StatCard
             title="Free Margin"
             value={f18(freeMargin)}
-            sub="mUSDC available"
+            sub="USDC available"
             valueColor="primary.light"
           />
         </Grid>
@@ -411,7 +411,7 @@ export default function PortfolioPage() {
           <StatCard
             title="Total Copy PnL"
             value={totalInitial > 0n ? returnPct(totalInitial, totalCopyCur) : '—'}
-            sub={totalInitial > 0n ? `${f18(totalCopyCur)} / ${f18(totalInitial)} mUSDC` : 'no copy positions'}
+            sub={totalInitial > 0n ? `${f18(totalCopyCur)} / ${f18(totalInitial)} USDC` : 'no copy positions'}
             valueColor={totalInitial > 0n ? returnColor(totalInitial, totalCopyCur) : 'text.secondary'}
           />
         </Grid>
@@ -596,7 +596,7 @@ export default function PortfolioPage() {
             <Box>
               <Typography variant="h3" sx={{ fontWeight: 800, fontFamily: 'monospace', color: 'primary.light' }}>
                 {f18(freeMargin)}{' '}
-                <Typography component="span" variant="subtitle1" color="text.secondary">mUSDC</Typography>
+                <Typography component="span" variant="subtitle1" color="text.secondary">USDC</Typography>
               </Typography>
             </Box>
             <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>

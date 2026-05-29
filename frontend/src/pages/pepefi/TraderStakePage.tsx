@@ -208,7 +208,7 @@ export default function TraderStakePage() {
               </Typography>
               <Typography variant="h5" sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: 'text.primary' }}>
                 {info ? f18(info.amount) : '…'}
-                <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary', ml: 0.5 }}>mUSDC</Box>
+                <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary', ml: 0.5 }}>USDC</Box>
               </Typography>
             </Card>
           </Grid>
@@ -219,7 +219,7 @@ export default function TraderStakePage() {
               </Typography>
               <Typography variant="h5" sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: 'error.main' }}>
                 {info ? f18(info.totalSlashed) : '…'}
-                <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary', ml: 0.5 }}>mUSDC</Box>
+                <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary', ml: 0.5 }}>USDC</Box>
               </Typography>
             </Card>
           </Grid>
@@ -253,7 +253,7 @@ export default function TraderStakePage() {
         {/* Eligibility badge */}
         {eligible !== null && (
           <Chip
-            label={eligible ? '✓ Eligible to publish strategies' : '✗ Need 100 mUSDC stake'}
+            label={eligible ? '✓ Eligible to publish strategies' : '✗ Need 100 USDC stake'}
             color={eligible ? 'success' : 'error'}
             variant="outlined"
             size="small"
@@ -262,14 +262,14 @@ export default function TraderStakePage() {
         )}
 
         <Typography variant="caption" color="text.secondary">
-          Minimum stake: {f18(minStake)} mUSDC · Skin-in-the-game for your followers
+          Minimum stake: {f18(minStake)} USDC · Skin-in-the-game for your followers
         </Typography>
       </Card>
 
       {/* ─── B. Stake More ───────────────────────────────────────────────── */}
       <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
         <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-          Stake mUSDC
+          Stake USDC
         </Typography>
         <Typography variant="body2" color="text.secondary">
           Staking puts your capital at risk — followers can trigger slashing if your strategy causes &gt; 30% loss.
@@ -285,7 +285,7 @@ export default function TraderStakePage() {
             slotProps={{ htmlInput: { min: "100", step: "100", style: { fontFamily: 'monospace' } } }}
             sx={{ width: 140 }}
           />
-          <Typography variant="body2" color="text.secondary">mUSDC</Typography>
+          <Typography variant="body2" color="text.secondary">USDC</Typography>
           <Button
             variant="contained"
             onClick={() => void doApproveAndStake()}
@@ -307,7 +307,7 @@ export default function TraderStakePage() {
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <Alert severity="warning">
               <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
-                Pending unstake: {f18(info.unstakeAmount)} mUSDC
+                Pending unstake: {f18(info.unstakeAmount)} USDC
               </Typography>
               {canExecute ? 'Cooldown elapsed — ready to execute.' : `Available at: ${cooldownEnds}`}
             </Alert>
@@ -344,7 +344,7 @@ export default function TraderStakePage() {
                 slotProps={{ htmlInput: { min: "0", step: "50", style: { fontFamily: 'monospace' } } }}
                 sx={{ width: 140 }}
               />
-              <Typography variant="body2" color="text.secondary">mUSDC</Typography>
+              <Typography variant="body2" color="text.secondary">USDC</Typography>
               <Button
                 variant="outlined"
                 onClick={() => void doRequestUnstake()}
@@ -366,7 +366,7 @@ export default function TraderStakePage() {
         <Stack spacing={1} sx={{ typography: 'caption', color: 'text.secondary', mb: 2 }}>
           <Box sx={{ display: 'flex', gap: 1 }}>
             <Box component="span" sx={{ color: 'info.main', fontWeight: 'bold' }}>•</Box>
-            <Box>Stake ≥ 100 mUSDC to publish strategies on the Marketplace.</Box>
+            <Box>Stake ≥ 100 USDC to publish strategies on the Marketplace.</Box>
           </Box>
           <Box sx={{ display: 'flex', gap: 1 }}>
             <Box component="span" sx={{ color: 'info.main', fontWeight: 'bold' }}>•</Box>
