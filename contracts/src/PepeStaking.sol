@@ -102,9 +102,22 @@ contract PepeStaking is Ownable, ReentrancyGuard {
         }
     }
 
-    function exit() external {
-        withdraw(balanceOf[msg.sender]);
-        claimYield();
+    function exit() external nonReentrant updateReward(msg.sender) {
+        uint256 staked = balanceOf[msg.sender];
+        uint256 reward = rewards[msg.sender];
+
+        if (staked > 0) {
+            totalStaked           -= staked;
+            balanceOf[msg.sender]  = 0;
+            pepe.transfer(msg.sender, staked);
+            emit Withdrawn(msg.sender, staked);
+        }
+
+        if (reward > 0) {
+            rewards[msg.sender] = 0;
+            pepe.transfer(msg.sender, reward);
+            emit YieldClaimed(msg.sender, reward);
+        }
     }
 
     // ── Owner Functions ───────────────────────────────────────────────────────

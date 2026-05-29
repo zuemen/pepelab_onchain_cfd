@@ -85,13 +85,14 @@ contract PepeIncentivesTest is Test {
     bytes32 BTC   = keccak256("sBTC");
 
     function setUp() public {
+        vm.warp(365 days); // avoid day-0 == default-storage collision
+
         pepe = new MockPepe();
         exch = new StubExchange();
         copy = new StubCopyTracker();
         esg  = new StubESG();
 
-        incentives = new PepeIncentives(address(pepe), address(exch), address(copy));
-        incentives.setEsgRegistry(address(esg));
+        incentives = new PepeIncentives(address(pepe), address(exch), address(copy), address(esg));
 
         // Fund reward pool: 1M PEPE
         pepe.mint(address(incentives), 1_000_000e18);

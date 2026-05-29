@@ -21,6 +21,11 @@ export const _account: AccountDrawerProps['data'] = [
     icon: <Iconify icon="solar:settings-bold-duotone" />,
   },
   {
+    label: 'Pepe Skins & Gacha (🎰 造型盲盒與商城)',
+    href: '#gamefi-skins',
+    icon: <Iconify icon="solar:palette-bold-duotone" />,
+  },
+  {
     label: 'Staking DeFi Yields (跟單質押)',
     href: '/stake',
     icon: <Iconify icon="solar:shield-keyhole-bold-duotone" />,

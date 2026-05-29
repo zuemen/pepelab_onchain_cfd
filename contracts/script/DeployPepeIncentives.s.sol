@@ -12,6 +12,7 @@ import "../src/PepeIncentives.sol";
 ///     PEPE_TOKEN           deployed PepeToken address
 ///     PERPETUAL_EXCHANGE   deployed PerpetualExchange address
 ///     COPY_TRACKER         deployed CopyTracker address
+///     ESG_REGISTRY         deployed ESGRegistry address
 ///
 ///   Usage:
 ///     forge script script/DeployPepeIncentives.s.sol \
@@ -30,10 +31,11 @@ contract DeployPepeIncentives is Script {
         address pepeToken   = vm.envAddress("PEPE_TOKEN");
         address exchange    = vm.envAddress("PERPETUAL_EXCHANGE");
         address copyTracker = vm.envAddress("COPY_TRACKER");
+        address esgRegistry = vm.envAddress("ESG_REGISTRY");
 
         vm.startBroadcast(deployerPk);
 
-        PepeIncentives incentives = new PepeIncentives(pepeToken, exchange, copyTracker);
+        PepeIncentives incentives = new PepeIncentives(pepeToken, exchange, copyTracker, esgRegistry);
 
         vm.stopBroadcast();
 

@@ -110,10 +110,16 @@ contract PepeIncentives is Ownable, Pausable {
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
-    constructor(address pepe_, address exchange_, address copyTracker_) Ownable(msg.sender) {
+    constructor(
+        address pepe_,
+        address exchange_,
+        address copyTracker_,
+        address esgRegistry_
+    ) Ownable(msg.sender) {
         pepe        = IERC20(pepe_);
         exchange    = IPerpExchange(exchange_);
         copyTracker = ICopyTracker(copyTracker_);
+        esgRegistry = IESGRegistry(esgRegistry_);
     }
 
     // ── Trade Mining ──────────────────────────────────────────────────────────
