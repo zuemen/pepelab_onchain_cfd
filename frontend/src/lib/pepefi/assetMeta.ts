@@ -96,6 +96,20 @@ export const ASSET_META: Record<string, AssetMeta> = {
     regulated: true,
     icon:      '🌱',
   },
+  "0xa364F43627A17BE5bfbcb32693f3eD7E44ebe1D9": {
+    symbol:    'PEPE',
+    name:      'Pepe RWA Utility Token',
+    category:  'crypto',
+    regulated: false,
+    icon:      '🐸',
+  },
+  "0x0000000000000000000000000000000000000000": {
+    symbol:    'PEPE',
+    name:      'Pepe RWA Utility Token',
+    category:  'crypto',
+    regulated: false,
+    icon:      '🐸',
+  },
 }
 
 /** Flat list for selects/maps. Includes backward-compat aliases. */

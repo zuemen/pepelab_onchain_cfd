@@ -45,6 +45,7 @@ export default function TraderStakePage() {
   const [toast, setToast] = useState<{ msg: string; ok: boolean; hash?: string } | null>(null)
 
   // ── PEPE Yield Farm State ──────────────────────────────────────────────────
+  const [onChainPepeBalance, setOnChainPepeBalance] = useState<bigint | null>(null)
   const [lastClaimedAt, setLastClaimedAt] = useState<number>(() => {
     try {
       const saved = localStorage.getItem('pepefi:stake:last_claimed_at')
@@ -66,8 +67,8 @@ export default function TraderStakePage() {
     }
 
     const stakedUSDC = Number(info.amount) / 1e18
-    // Reward Rate: 1 USDC staked yields 2 PEPE tokens per day
-    const rewardRatePerSecond = (stakedUSDC * 2) / 86400
+    // Reward Rate: 1 USDC staked yields 0.02 PEPE tokens per day (slowed down and authentic!)
+    const rewardRatePerSecond = (stakedUSDC * 0.02) / 86400
 
     const interval = setInterval(() => {
       const elapsedSeconds = (Date.now() - lastClaimedAt) / 1000
@@ -78,27 +79,52 @@ export default function TraderStakePage() {
     return () => clearInterval(interval)
   }, [info, lastClaimedAt])
 
-  const doHarvestYield = () => {
-    if (pendingPepe <= 0) return
+  const doHarvestYield = async () => {
+    if (pendingPepe <= 0 || !contracts || !wallet.address) return
     
-    // Read and update GameFi balance
+    setLoad('harvest', true)
     try {
-      const savedBal = localStorage.getItem('pepefi:gamefi:balance')
-      const currentBal = savedBal ? Number(savedBal) : 5000
-      const nextBal = currentBal + pendingPepe
+      const amountToMint = parseEther(pendingPepe.toFixed(18))
+      
+      // Execute ACTUAL on-chain mint transaction to user's Metamask account
+      const tx = asTx(await contracts.pepeToken.mint(wallet.address, amountToMint))
+      await tx.wait()
       
       const now = Date.now()
-      localStorage.setItem('pepefi:gamefi:balance', nextBal.toString())
       localStorage.setItem('pepefi:stake:last_claimed_at', now.toString())
-      
       setLastClaimedAt(now)
       setPendingPepe(0)
       
       // Dispatch global event so all menus refresh their PEPE balances instantly!
       window.dispatchEvent(new CustomEvent('pepefi:gamefi-updated'))
-      notify(`收割成功！已將 ${pendingPepe.toFixed(4)} PEPE 存入您的 GameFi 帳戶 🌾🐸`, true)
+      notify(`鏈上收割成功！已成功在鏈上鑄造 ${Number(amountToMint) / 1e18} PEPE 並發送至您的錢包 🌾🐸`, true, tx.hash)
+      await fetchAll()
     } catch (e) {
-      notify('收割失敗，LocalStorage 無法寫入。', false)
+      console.error('[harvest error]', e)
+      notify(`鏈上收割失敗：${prettyError(e)}。請確保您使用的是 PepeToken 合約的擁有者錢包。`, false)
+    } finally {
+      setLoad('harvest', false)
+    }
+  }
+
+  const addPepeToWallet = async () => {
+    if (!(window as any).ethereum || !contracts) return
+    try {
+      await (window as any).ethereum.request({
+        method: 'wallet_watchAsset',
+        params: {
+          type: 'ERC20',
+          options: {
+            address: String(contracts.pepeToken.target),
+            symbol: 'PEPE',
+            decimals: 18,
+          },
+        },
+      })
+      notify('已將 PEPE 代幣合約成功加入您的 Metamask！ 🦊🐸', true)
+    } catch (e) {
+      console.error('Add PEPE failed', e)
+      notify('新增代幣失敗，請手動複製合約地址。', false)
     }
   }
 
@@ -111,12 +137,13 @@ export default function TraderStakePage() {
   const fetchAll = useCallback(async () => {
     if (!contracts || !wallet.address) return
     try {
-      const [rawInfo, score, elig, min, cd] = await Promise.all([
+      const [rawInfo, score, elig, min, cd, pepeBal] = await Promise.all([
         contracts.traderStake.getStake(wallet.address),
         contracts.traderStake.reputationScore(wallet.address),
         contracts.traderStake.isEligible(wallet.address),
         contracts.traderStake.MIN_STAKE(),
         contracts.traderStake.UNSTAKE_COOLDOWN(),
+        contracts.pepeToken.balanceOf(wallet.address),
       ])
       const s = rawInfo as unknown as StakeInfo
       setInfo(s)
@@ -124,6 +151,7 @@ export default function TraderStakePage() {
       setEligible(elig as boolean)
       setMinStake(min as bigint)
       setCooldown(cd as bigint)
+      setOnChainPepeBalance(pepeBal as bigint)
     } catch (e) {
       console.error('[stake fetch]', e)
     }
@@ -360,80 +388,108 @@ export default function TraderStakePage() {
             <Box>
               <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'success.light', display: 'flex', alignItems: 'center', gap: 1 }}>
                 PEPE 收益農場
-                <Chip label="GameFi 孵化中" color="success" size="small" sx={{ height: 18, fontSize: '0.65rem', fontWeight: 'bold' }} />
+                <Chip label="鏈上聯動實時挖礦" color="success" size="small" sx={{ height: 18, fontSize: '0.65rem', fontWeight: 'bold' }} />
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                利用您的 USDC 聲譽質押賺取額外虛擬收益！
+                利用您的 USDC 聲譽質押賺取真正的鏈上 PEPE 代幣！
               </Typography>
             </Box>
           </Stack>
           <Box sx={{ textAlign: 'right' }}>
             <Typography variant="subtitle2" sx={{ color: 'success.main', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              ⚡ 73% APR
+              ⚡ 0.73% APR
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              極高收益率
+              穩健收益率
             </Typography>
           </Box>
         </Box>
 
         <Card sx={{ p: 2, bgcolor: 'background.paper', border: '1px solid rgba(255, 255, 255, 0.05)', borderRadius: 1.5, zIndex: 1 }}>
-          <Stack spacing={1} alignItems="center">
-            <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold', letterSpacing: 1.2 }}>
-              待收割 PEPE 收益 (PENDING YIELD)
-            </Typography>
-            <Typography 
-              variant="h3" 
-              sx={{ 
-                fontFamily: 'monospace', 
-                fontWeight: '900', 
-                color: pendingPepe > 0 ? '#4caf50' : 'text.disabled',
-                textShadow: pendingPepe > 0 ? '0 0 12px rgba(76,175,80,0.4)' : 'none',
-                transition: 'color 0.2s',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1
-              }}
-            >
-              🐸 {pendingPepe.toFixed(5)}
-            </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center' }}>
-              {info && info.amount > 0n ? (
-                `每秒賺取中... 🚀 (基於您質押的 ${f18(info.amount)} USDC)`
-              ) : (
-                '⚠️ 您目前尚未質押 USDC，無法開始挖礦！'
-              )}
-            </Typography>
-          </Stack>
+          <Grid container spacing={2}>
+            <Grid size={{ xs: 6 }}>
+              <Box sx={{ textAlign: 'center' }}>
+                <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold', display: 'block', mb: 0.5, letterSpacing: 0.8 }}>
+                  待收割 PEPE 收益 (Pending)
+                </Typography>
+                <Typography 
+                  variant="h5" 
+                  sx={{ 
+                    fontFamily: 'monospace', 
+                    fontWeight: '900', 
+                    color: pendingPepe > 0 ? '#4caf50' : 'text.disabled',
+                    textShadow: pendingPepe > 0 ? '0 0 10px rgba(76,175,80,0.3)' : 'none',
+                  }}
+                >
+                  🐸 {pendingPepe.toFixed(5)}
+                </Typography>
+              </Box>
+            </Grid>
+            <Grid size={{ xs: 6 }}>
+              <Box sx={{ textAlign: 'center', borderLeft: '1px solid rgba(255,255,255,0.08)' }}>
+                <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold', display: 'block', mb: 0.5, letterSpacing: 0.8 }}>
+                  錢包鏈上 PEPE 餘額 (Wallet)
+                </Typography>
+                <Typography variant="h5" sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: '#ffb300' }}>
+                  🪙 {onChainPepeBalance !== null ? f18(onChainPepeBalance, 0) : '0'}
+                </Typography>
+              </Box>
+            </Grid>
+          </Grid>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mt: 1.5 }}>
+            {info && info.amount > 0n ? (
+              `每秒賺取中... 🚀 (基於質押的 ${f18(info.amount)} USDC)`
+            ) : (
+              '⚠️ 您目前尚未質押 USDC，無法開始挖礦！'
+            )}
+          </Typography>
         </Card>
 
-        <Button
-          variant="contained"
-          color="success"
-          size="large"
-          onClick={doHarvestYield}
-          disabled={pendingPepe <= 0}
-          fullWidth
-          sx={{
-            py: 1.5,
-            fontWeight: 'bold',
-            zIndex: 1,
-            textShadow: '0 1px 2px rgba(0,0,0,0.2)',
-            background: pendingPepe > 0 ? 'linear-gradient(90deg, #4caf50 0%, #2e7d32 100%)' : undefined,
-            boxShadow: pendingPepe > 0 ? '0 4px 14px 0 rgba(76,175,80,0.4)' : undefined,
-            transition: 'all 0.2s',
-            '&:hover': {
-              background: pendingPepe > 0 ? 'linear-gradient(90deg, #66bb6a 0%, #388e3c 100%)' : undefined,
-              transform: pendingPepe > 0 ? 'translateY(-1px)' : 'none',
-            }
-          }}
-        >
-          {pendingPepe > 0 ? `🌾 立即收割 (Harvest PEPE)` : '🌾 暫無可收割收益 (需質押 USDC)'}
-        </Button>
+        <Stack direction="row" spacing={2} sx={{ zIndex: 1 }}>
+          <Button
+            variant="contained"
+            color="success"
+            size="large"
+            onClick={doHarvestYield}
+            disabled={pendingPepe <= 0 || busy['harvest']}
+            sx={{
+              flexGrow: 2,
+              py: 1.5,
+              fontWeight: 'bold',
+              textShadow: '0 1px 2px rgba(0,0,0,0.2)',
+              background: pendingPepe > 0 ? 'linear-gradient(90deg, #4caf50 0%, #2e7d32 100%)' : undefined,
+              boxShadow: pendingPepe > 0 ? '0 4px 14px 0 rgba(76,175,80,0.4)' : undefined,
+              transition: 'all 0.2s',
+              '&:hover': {
+                background: pendingPepe > 0 ? 'linear-gradient(90deg, #66bb6a 0%, #388e3c 100%)' : undefined,
+                transform: pendingPepe > 0 ? 'translateY(-1px)' : 'none',
+              }
+            }}
+          >
+            {busy['harvest'] ? '鏈上交易發送中...' : pendingPepe > 0 ? `🌾 鏈上收割 (Mint to Wallet)` : '🌾 暫無收益'}
+          </Button>
+          
+          <Button
+            variant="outlined"
+            onClick={addPepeToWallet}
+            sx={{
+              flexGrow: 1,
+              borderColor: 'rgba(255, 179, 0, 0.4)',
+              color: '#ffb300',
+              fontWeight: 'bold',
+              '&:hover': {
+                borderColor: '#ffb300',
+                bgcolor: 'rgba(255, 179, 0, 0.08)'
+              }
+            }}
+          >
+            🦊 加 Metamask
+          </Button>
+        </Stack>
 
         <Typography variant="caption" color="text.secondary" sx={{ zIndex: 1, textAlign: 'center', fontStyle: 'italic' }}>
-          * 提示：質押的 USDC 作為合約聲譽保障金不可免息產生 USDC 收益，但本平台貼心為您自動開啟 PEPE 挖礦！
-          收割的 PEPE 可直接在「我的 PEPE」大廳用於開盲盒寶箱與直接購買珍稀皮膚！
+          * 提示：質押的 USDC 作為合約聲譽保障金不可免息產生 USDC 收益，但本平台貼心為您自動開啟鏈上 PEPE 挖礦！
+          每質押 1 USDC 每日產出 0.02 PEPE，收割將發起鏈上鑄造交易，直接存入您的實體錢包！
         </Typography>
       </Card>
 

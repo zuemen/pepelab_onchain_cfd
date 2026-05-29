@@ -15,6 +15,8 @@ import LinearProgress from '@mui/material/LinearProgress';
 import DialogContent from '@mui/material/DialogContent';
 
 import { useWalletContext } from 'src/contexts/wallet-context';
+import { useContracts } from 'src/hooks/useContracts';
+import { usePepefiWallet } from 'src/layouts/pepefi';
 import { Iconify } from 'src/components/iconify';
 import { PEPE_SKINS, PepeSkin } from 'src/components/pepefi/pepeSkinsData';
 
@@ -52,12 +54,23 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
   const [tabValue, setTabValue] = useState<'potions' | 'wardrobe' | 'skins'>('potions');
   const wallet = useWalletContext();
   const userAddress = wallet.address || 'mock_user';
+  const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId);
 
+  const [onChainPepeBal, setOnChainPepeBal] = useState<bigint | null>(null);
+
+  // Sync real-time on-chain PEPE balance
   useEffect(() => {
-    if (open) {
-      setTabValue(defaultTab);
-    }
-  }, [open, defaultTab]);
+    if (!contracts || !wallet.address) return;
+    const fetchOnChainBal = async () => {
+      try {
+        const bal = await contracts.pepeToken.balanceOf(wallet.address);
+        setOnChainPepeBal(bal as bigint);
+      } catch (e) {
+        console.error('Failed to fetch on-chain PEPE balance in Modal:', e);
+      }
+    };
+    void fetchOnChainBal();
+  }, [contracts, wallet.address, open]);
 
   // ── Persistent state in localStorage ─────────────────────────────────────────
   const [pepeBal, setPepeBal] = useState<number>(5000);
@@ -130,12 +143,31 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
 
   // ── Potion Shop Logic ────────────────────────────────────────────────────────
 
-  const buyPotion = (id: string, cost: number, xpBonus: number) => {
-    if (pepeBal < cost) {
+  // Calculate effective PEPE balance (on-chain if connected, otherwise local storage)
+  const finalPepeBal = onChainPepeBal !== null ? Math.floor(Number(onChainPepeBal) / 1e18) : pepeBal;
+
+  // ── Potion Shop Logic ────────────────────────────────────────────────────────
+
+  const buyPotion = async (id: string, cost: number, xpBonus: number) => {
+    if (finalPepeBal < cost) {
       alert('您的 PEPE 代幣餘額不足！請到 Rewards 🎁 頁面簽到或做交易挖礦領取更多。');
       return;
     }
-    const nextBal = pepeBal - cost;
+
+    if (contracts && wallet.address) {
+      try {
+        const amountBig = BigInt(cost) * 10n ** 18n;
+        const tx = await contracts.pepeToken.transfer("0x000000000000000000000000000000000000dEaD", amountBig);
+        await (tx as { wait(): Promise<unknown> }).wait();
+        const nextBal = await contracts.pepeToken.balanceOf(wallet.address);
+        setOnChainPepeBal(nextBal as bigint);
+      } catch (e) {
+        alert('鏈上購買交易取消或扣款失敗！');
+        return;
+      }
+    }
+
+    const nextBal = finalPepeBal - cost;
     const nextXp  = xp + xpBonus;
     let nextLvl = level;
     let tempXp  = nextXp;
@@ -153,7 +185,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
       alert(`此服裝需要 Pepe 等級達 Lv.${levelReq} 才能解鎖！`);
       return;
     }
-    saveState(pepeBal, xp, level, clothId, unlockedSkins, '/avatars/pepe-01.png');
+    saveState(finalPepeBal, xp, level, clothId, unlockedSkins, '/avatars/pepe-01.png');
   };
 
   // Find active outfit emoji for avatar box
@@ -165,10 +197,10 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
 
   // ── Gachapon & Skin Shop Logic ───────────────────────────────────────────────
 
-  const drawGachapon = () => {
+  const drawGachapon = async () => {
     if (isDrawing) return;
     const COST = 500;
-    if (pepeBal < COST) {
+    if (finalPepeBal < COST) {
       alert('您的 PEPE 代幣餘額不足！抽取一次盲盒需要 500 PEPE。');
       return;
     }
@@ -178,6 +210,19 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
     if (lockedSkins.length === 0) {
       alert('恭喜您！您已經集齊了所有 25 款奢華佩佩蛙造型！無須再抽盲盒。');
       return;
+    }
+
+    if (contracts && wallet.address) {
+      try {
+        const amountBig = BigInt(COST) * 10n ** 18n;
+        const tx = await contracts.pepeToken.transfer("0x000000000000000000000000000000000000dEaD", amountBig);
+        await (tx as { wait(): Promise<unknown> }).wait();
+        const nextBal = await contracts.pepeToken.balanceOf(wallet.address);
+        setOnChainPepeBal(nextBal as bigint);
+      } catch (e) {
+        alert('鏈上交易取消或扣款失敗！');
+        return;
+      }
     }
 
     setIsDrawing(true);
@@ -193,7 +238,6 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
 
       // Find locked skins of selected rarity
       let candidates = lockedSkins.filter(s => s.rarity === selectedRarity);
-      // Fallback if no locked skins in selected rarity
       if (candidates.length === 0) {
         candidates = lockedSkins;
       }
@@ -202,30 +246,43 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
       const chosenSkin = candidates[Math.floor(Math.random() * candidates.length)];
       
       const newUnlocked = [...unlockedSkins, chosenSkin.id];
-      saveState(pepeBal - COST, xp, level, activeClothes, newUnlocked, activeSkin);
+      saveState(finalPepeBal - COST, xp, level, activeClothes, newUnlocked, activeSkin);
 
       setDrawResult(chosenSkin);
       setIsDrawing(false);
     }, 2500);
   };
 
-  const buySkinDirect = (skin: PepeSkin) => {
+  const buySkinDirect = async (skin: PepeSkin) => {
     if (unlockedSkins.includes(skin.id)) return;
-    if (pepeBal < skin.price) {
+    if (finalPepeBal < skin.price) {
       alert(`您的 PEPE 代幣餘額不足！購買此造型需要 ${skin.price} PEPE。`);
       return;
     }
 
     if (window.confirm(`您確定要以 ${skin.price} PEPE 購買此造型「${skin.name}」嗎？`)) {
+      if (contracts && wallet.address) {
+        try {
+          const amountBig = BigInt(skin.price) * 10n ** 18n;
+          const tx = await contracts.pepeToken.transfer("0x000000000000000000000000000000000000dEaD", amountBig);
+          await (tx as { wait(): Promise<unknown> }).wait();
+          const nextBal = await contracts.pepeToken.balanceOf(wallet.address);
+          setOnChainPepeBal(nextBal as bigint);
+        } catch (e) {
+          alert('鏈上購買交易取消或扣款失敗！');
+          return;
+        }
+      }
+      
       const newUnlocked = [...unlockedSkins, skin.id];
-      saveState(pepeBal - skin.price, xp, level, activeClothes, newUnlocked, activeSkin);
+      saveState(finalPepeBal - skin.price, xp, level, activeClothes, newUnlocked, activeSkin);
       alert(`恭喜！成功購買並解鎖「${skin.name}」！🎉`);
     }
   };
 
   const equipSkin = (skinPath: string) => {
     // Save skin image to activeSkin state
-    saveState(pepeBal, xp, level, 'custom_skin', unlockedSkins, skinPath);
+    saveState(finalPepeBal, xp, level, 'custom_skin', unlockedSkins, skinPath);
   };
 
   const getRarityColor = (rarity: string) => {
@@ -311,7 +368,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, bgcolor: 'rgba(124,193,74,0.12)', border: '1px solid rgba(124,193,74,0.3)', px: 2, py: 0.75, borderRadius: 2 }}>
           <Typography variant="subtitle2" sx={{ color: '#7cc14a', fontWeight: 'bold' }}>
-            💰 餘額: {pepeBal.toLocaleString()} PEPE
+            💰 餘額: {finalPepeBal.toLocaleString()} PEPE
           </Typography>
         </Box>
       </Box>
