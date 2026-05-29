@@ -7,9 +7,13 @@ import { useBoolean } from 'minimal-shared/hooks';
 
 import Box from '@mui/material/Box';
 import Alert from '@mui/material/Alert';
+import Stack from '@mui/material/Stack';
+import Switch from '@mui/material/Switch';
 import { useTheme } from '@mui/material/styles';
+import Typography from '@mui/material/Typography';
 import { iconButtonClasses } from '@mui/material/IconButton';
 
+import { useMode } from 'src/contexts/mode-context';
 import { _contacts, _notifications } from 'src/_mock';
 import { useWalletContext } from 'src/contexts/wallet-context';
 
@@ -68,6 +72,7 @@ export function DashboardLayout({
   const navVars = dashboardNavColorVars(theme, settings.state.navColor, settings.state.navLayout);
 
   const { value: open, onFalse: onClose, onTrue: onOpen } = useBoolean();
+  const { mode, toggle: toggleMode } = useMode();
 
   const navData = slotProps?.nav?.data ?? dashboardNavData;
 
@@ -155,6 +160,18 @@ export function DashboardLayout({
 
           {/** @slot Settings button */}
           <SettingsButton />
+
+          {/** @slot Mode toggle */}
+          <Stack direction="row" alignItems="center" gap={0.5} sx={{ display: { xs: 'none', sm: 'flex' } }}>
+            <Typography variant="caption" sx={{ color: mode === 'simple' ? 'primary.main' : 'text.disabled', fontWeight: 700, fontSize: '0.7rem' }}>簡單</Typography>
+            <Switch
+              checked={mode === 'expert'}
+              onChange={toggleMode}
+              size="small"
+              sx={{ '& .MuiSwitch-track': { bgcolor: 'primary.main' } }}
+            />
+            <Typography variant="caption" sx={{ color: mode === 'expert' ? 'primary.main' : 'text.disabled', fontWeight: 700, fontSize: '0.7rem' }}>專家</Typography>
+          </Stack>
 
           {/** @slot Wallet connect */}
           <WalletButton wallet={wallet} />

@@ -2,12 +2,15 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router'
 import type { Contract } from 'ethers'
 import { useContracts } from 'src/hooks/useContracts'
+import { useMode } from 'src/contexts/mode-context'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { explorerTx, explorerAddr } from 'src/lib/pepefi/notify'
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
+import { pepeNameFor } from 'src/lib/pepefi/pepeName'
 import { TableSkeleton } from 'src/components/pepefi/Skeleton'
 import EmptyState from 'src/components/pepefi/EmptyState'
 import StatCard from 'src/components/pepefi/StatCard'
+import { PepeIdentity } from 'src/components/pepefi/PepeIdentity'
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -185,6 +188,7 @@ function renderDetail(a: Activity): React.ReactNode {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function WhaleTrackerPage() {
+  const { mode } = useMode()
   const wallet = usePepefiWallet()
   const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId)
   const [searchParams]  = useSearchParams()
@@ -511,7 +515,40 @@ export default function WhaleTrackerPage() {
           )}
 
           {/* ── B. Trader Leaderboard ─────────────────────────────────────────── */}
-          {globalStats && globalStats.leaderboard.length > 0 && (
+          {/* Simple mode: big Pepe cards for top 5 */}
+          {mode === 'simple' && globalStats && globalStats.leaderboard.length > 0 && (
+            <Box>
+              <Typography variant="overline" sx={{ fontWeight: 'bold', color: 'text.secondary', display: 'block', mb: 2 }}>
+                🐋 Top Whale Traders
+              </Typography>
+              <Grid container spacing={2}>
+                {globalStats.leaderboard.slice(0, 5).map((t, i) => {
+                  const tier = whaleTier(t.volume)
+                  return (
+                    <Grid key={t.address} size={{ xs: 12, sm: 6, md: 4 }}>
+                      <Card sx={{ p: 3, textAlign: 'center', border: '1px solid', borderColor: 'rgba(124,193,74,0.2)', bgcolor: 'rgba(124,193,74,0.03)' }}>
+                        <Box sx={{ fontSize: 48, mb: 1 }}>#{i + 1}</Box>
+                        <Box sx={{ display: 'flex', justifyContent: 'center', mb: 1.5 }}>
+                          <PepeIdentity address={t.address} size={80} vertical />
+                        </Box>
+                        <Chip label={`${tier.icon} ${tier.label}`} size="small" sx={{ fontWeight: 'bold', mb: 1.5, ...tier.style }} />
+                        <Typography variant="h6" sx={{ fontFamily: 'monospace', fontWeight: 900 }}>{fUsd(t.volume)}</Typography>
+                        <Typography variant="caption" color="text.secondary">累積交易量</Typography>
+                        <Typography variant="body2" sx={{ color: 'success.main', fontWeight: 'bold', mt: 1 }}>
+                          {t.openCount > 0 ? `🟢 ${t.openCount} 個持倉` : '無持倉'}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                          「{pepeNameFor(t.address)} 剛買了 {fUsd(t.volume)} 的倉位」
+                        </Typography>
+                      </Card>
+                    </Grid>
+                  )
+                })}
+              </Grid>
+            </Box>
+          )}
+
+          {globalStats && globalStats.leaderboard.length > 0 && mode === 'expert' && (
             <Card>
               <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <Typography variant="overline" sx={{ fontWeight: 'bold', color: 'text.secondary' }}>
@@ -538,8 +575,8 @@ export default function WhaleTrackerPage() {
                           <TableCell sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>
                             #{i + 1}
                           </TableCell>
-                          <TableCell sx={{ fontFamily: 'monospace', color: 'info.main', fontWeight: 'semibold' }}>
-                            {shortAddr(t.address)}
+                          <TableCell>
+                            <PepeIdentity address={t.address} size={36} />
                           </TableCell>
                           <TableCell>
                             <Chip

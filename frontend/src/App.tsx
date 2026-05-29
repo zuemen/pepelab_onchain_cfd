@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import { usePathname } from 'src/routes/hooks';
 
 import { themeConfig, ThemeProvider } from 'src/theme';
+import { ModeProvider } from 'src/contexts/mode-context';
 import { WalletProvider } from 'src/contexts/wallet-context';
 
 import { ProgressBar } from 'src/components/progress-bar';
@@ -24,20 +25,22 @@ export default function App({ children }: AppProps) {
 
   return (
     <AuthProvider>
-      <SettingsProvider defaultSettings={defaultSettings}>
-        <ThemeProvider
-          modeStorageKey={themeConfig.modeStorageKey}
-          defaultMode={themeConfig.defaultMode}
-        >
-          <MotionLazy>
-            <WalletProvider>
-              <ProgressBar />
-              <SettingsDrawer defaultSettings={defaultSettings} />
-              {children}
-            </WalletProvider>
-          </MotionLazy>
-        </ThemeProvider>
-      </SettingsProvider>
+      <ModeProvider>
+        <SettingsProvider defaultSettings={defaultSettings}>
+          <ThemeProvider
+            modeStorageKey={themeConfig.modeStorageKey}
+            defaultMode={themeConfig.defaultMode}
+          >
+            <MotionLazy>
+              <WalletProvider>
+                <ProgressBar />
+                <SettingsDrawer defaultSettings={defaultSettings} />
+                {children}
+              </WalletProvider>
+            </MotionLazy>
+          </ThemeProvider>
+        </SettingsProvider>
+      </ModeProvider>
     </AuthProvider>
   );
 }

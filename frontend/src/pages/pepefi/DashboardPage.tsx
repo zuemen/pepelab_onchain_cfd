@@ -11,6 +11,7 @@ import { useLivePrices } from 'src/hooks/useLivePrices';
 import { useESG } from 'src/hooks/useESG';
 import { usePriceHistory } from 'src/hooks/usePriceHistory';
 import { useWhaleAlerts } from 'src/hooks/useWhaleAlerts';
+import { useMode } from 'src/contexts/mode-context';
 import { usePepefiWallet } from 'src/layouts/pepefi';
 import { ASSET_IDS } from 'src/contracts/addresses';
 import { ASSET_META } from 'src/lib/pepefi/assetMeta';
@@ -224,6 +225,7 @@ const ESG_COMMENT = (score: number): string => {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
+  const { mode } = useMode();
   const wallet = usePepefiWallet();
   const contracts  = useContracts(wallet.provider, wallet.signer, wallet.chainId);
   const { alerts: whaleAlerts } = useWhaleAlerts(contracts?.exchange ?? null, wallet.provider);
@@ -548,6 +550,41 @@ export default function DashboardPage() {
         </Button>
       </Box>
 
+      {/* ── Simple mode: big live-price cards ── */}
+      {mode === 'simple' && (
+        <Box>
+          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1.5, fontWeight: 700 }}>
+            📊 即時價格
+          </Typography>
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 2 }}>
+            {Object.entries(livePrices).slice(0, 6).map(([id, lp]) => {
+              const meta = ASSET_META[id];
+              if (!meta) return null;
+              const up = !lp.isMock;
+              return (
+                <Card key={id} sx={{
+                  p: 2, textAlign: 'center',
+                  bgcolor: '#0e1420',
+                  border: `1px solid ${up ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
+                  borderRadius: 2,
+                }}>
+                  <Typography fontSize={40} sx={{ display: 'block', mb: 0.5 }}>
+                    {meta.category === 'crypto' ? '🪙' : meta.category === 'equity' ? '📊' : meta.category === 'bond' ? '📜' : '🏅'}
+                  </Typography>
+                  <Typography fontWeight={800} fontSize={14}>{meta.symbol}</Typography>
+                  <Typography fontWeight={700} fontSize={15} sx={{ color: '#7cc14a', fontFamily: 'monospace' }}>
+                    ${lp.usd >= 1 ? lp.usd.toLocaleString(undefined, { maximumFractionDigits: 2 }) : lp.usd.toFixed(4)}
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: lp.isMock ? 'text.disabled' : 'success.main', fontWeight: 700 }}>
+                    {lp.isMock ? '模擬價格' : '● 即時'}
+                  </Typography>
+                </Card>
+              );
+            })}
+          </Box>
+        </Box>
+      )}
+
       {/* ── Asset Overview & Wealth Navigator ── */}
       <Card sx={{
         p: 3,
@@ -629,7 +666,7 @@ export default function DashboardPage() {
                   {walletUSDC !== null ? fUsd(walletUSDC) : '$0.00'}
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, minHeight: 48 }}>
-                  存放在您 Web3 錢包中的可用 mUSDC 測試幣。這是您所有鏈上操作與後備儲蓄的起點。
+                  存放在您 Web3 錢包中的可用 USDC 測試幣。這是您所有鏈上操作與後備儲蓄的起點。
                 </Typography>
               </Box>
               <Stack direction="row" spacing={1} sx={{ mt: 2.5 }}>
@@ -1251,8 +1288,11 @@ export default function DashboardPage() {
             <Table>
               <TableHead>
                 <TableRow sx={{ bgcolor: 'background.neutral' }}>
-                  {['資產','多/空','持有數量','平均成本','現價','持倉現值','損益','ESG'].map(h => (
-                    <TableCell key={h} sx={{ color: 'text.secondary', fontWeight: 'bold', fontSize: '0.75rem', py: 1.5, textAlign: h === '損益' || h === '持倉現值' ? 'right' : 'left' }}>
+                  {(mode === 'simple'
+                    ? ['資產','多/空','持倉現值','損益']
+                    : ['資產','多/空','持有數量','平均成本','現價','持倉現值','損益','ESG']
+                  ).map(h => (
+                    <TableCell key={h} sx={{ color: 'text.secondary', fontWeight: 'bold', fontSize: mode === 'simple' ? '0.875rem' : '0.75rem', py: 1.5, textAlign: h === '損益' || h === '持倉現值' ? 'right' : 'left' }}>
                       {h}
                     </TableCell>
                   ))}
@@ -1294,30 +1334,36 @@ export default function DashboardPage() {
                           }}
                         />
                       </TableCell>
-                      {/* 持有數量 */}
-                      <TableCell sx={{ fontFamily: 'monospace' }}>
-                        {fQty(row.quantity, row.asset)}
-                        <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
-                          {meta?.symbol?.replace(/^s/, '') ?? ''}
-                        </Typography>
-                      </TableCell>
-                      {/* 平均成本 */}
-                      <TableCell sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>
-                        {fUsdFloat(Number(row.entryPrice) / 1e18)}
-                      </TableCell>
-                      {/* 現價 */}
-                      <TableCell sx={{ fontFamily: 'monospace' }}>
-                        {row.currentPrice18 === 0n ? (
-                          <Typography color="text.secondary">—</Typography>
-                        ) : (
-                          <Box component="span">
-                            {fUsdFloat(Number(row.currentPrice18) / 1e18)}
-                            {livePrices[row.asset]?.isMock && (
-                              <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>~</Typography>
-                            )}
-                          </Box>
-                        )}
-                      </TableCell>
+                      {/* 持有數量 (expert only) */}
+                      {mode === 'expert' && (
+                        <TableCell sx={{ fontFamily: 'monospace' }}>
+                          {fQty(row.quantity, row.asset)}
+                          <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
+                            {meta?.symbol?.replace(/^s/, '') ?? ''}
+                          </Typography>
+                        </TableCell>
+                      )}
+                      {/* 平均成本 (expert only) */}
+                      {mode === 'expert' && (
+                        <TableCell sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>
+                          {fUsdFloat(Number(row.entryPrice) / 1e18)}
+                        </TableCell>
+                      )}
+                      {/* 現價 (expert only) */}
+                      {mode === 'expert' && (
+                        <TableCell sx={{ fontFamily: 'monospace' }}>
+                          {row.currentPrice18 === 0n ? (
+                            <Typography color="text.secondary">—</Typography>
+                          ) : (
+                            <Box component="span">
+                              {fUsdFloat(Number(row.currentPrice18) / 1e18)}
+                              {livePrices[row.asset]?.isMock && (
+                                <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>~</Typography>
+                              )}
+                            </Box>
+                          )}
+                        </TableCell>
+                      )}
                       {/* 持倉現值 */}
                       <TableCell sx={{ fontFamily: 'monospace', textAlign: 'right', fontWeight: 'bold' }}>
                         {fUsd(row.holdingsValue)}
@@ -1337,14 +1383,16 @@ export default function DashboardPage() {
                           </Box>
                         )}
                       </TableCell>
-                      {/* ESG Badge */}
-                      <TableCell>
-                        {info ? (
-                          <ESGBadge composite={info.composite} rating={info.rating} size="sm" />
-                        ) : (
-                          <Typography variant="caption" color="text.secondary">—</Typography>
-                        )}
-                      </TableCell>
+                      {/* ESG Badge (expert only) */}
+                      {mode === 'expert' && (
+                        <TableCell>
+                          {info ? (
+                            <ESGBadge composite={info.composite} rating={info.rating} size="sm" />
+                          ) : (
+                            <Typography variant="caption" color="text.secondary">—</Typography>
+                          )}
+                        </TableCell>
+                      )}
                     </TableRow>
                   );
                 })}
@@ -1353,7 +1401,7 @@ export default function DashboardPage() {
               {derived.rows.length > 1 && (
                 <tfoot style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
                   <TableRow sx={{ bgcolor: 'background.neutral' }}>
-                    <TableCell colSpan={5} sx={{ fontWeight: 'bold', color: 'text.primary' }}>Total</TableCell>
+                    <TableCell colSpan={mode === 'simple' ? 2 : 5} sx={{ fontWeight: 'bold', color: 'text.primary' }}>Total</TableCell>
                     <TableCell sx={{ fontFamily: 'monospace', fontWeight: 'bold', textAlign: 'right' }}>
                       {fUsd(derived.totalHoldings)}
                     </TableCell>
