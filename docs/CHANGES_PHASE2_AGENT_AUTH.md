@@ -4,7 +4,9 @@
 在現有 `copyTracker` / `NotCopyTracker` 結構內擴充，讓多個 agent 能呼叫 `*For` 代理進入點，
 **不新增業務方法語意、沿用既有 revert/event 慣例**。
 
-**測試基準**：215 → **225 passed, 0 failed**（新增 `AgentAuthorization.t.sol` 10 個）。
+**測試基準**：215 → 225（多代理授權）→ **239 passed, 0 failed**（再加 session 委派層 14 個）。
+
+本文件含兩步：**Step 1** 核心多代理授權、**Step 2** session-key 委派代理層。
 
 ---
 
@@ -48,9 +50,35 @@ getter、`setAgentAuthorized`、`AgentAuthorizationSet`）。
 
 ---
 
-## 尚未處理（Phase 2 剩餘）
+## Step 2 — session-key 委派代理層（`contracts/src/AgentSessionManager.sol`）
 
-- **session-key / smart-wallet 代理層**（限額、限時、限合約）：依設計屬鏈下代理合約 /
-  smart wallet 層，**刻意不汙染核心** `PerpetualExchange`——核心只認授權地址。
-  此層需先決定方案（ERC-4337 smart wallet vs. 自寫限額委派合約），待拍板再實作。
-- agent 經此代理層在限額內走 `openPositionFor` / `closePositionFor` 真下單。
+採**自寫限額委派合約**（非 ERC-4337）：輕、可完整 Foundry 測試、直接接上 Step 1 的
+授權路徑。**刻意不汙染核心**——此合約自己被註冊成 exchange 的 `authorizedAgent`，
+在呼叫 `openPositionFor` / `closePositionFor` 前強制檢查 session 限制；**agent 永不持有
+使用者主錢包私鑰**，且只能操作本協議的 `*For` 進入點（限合約）。
+
+機制：
+- 使用者 `createSession(agent, maxMarginPerTrade, totalMarginBudget, maxLeverage, expiry)`
+  授權一把有界 session 給 agent key。
+- agent 用 session key 呼叫 `openPositionForSession` / `closePositionForSession`，
+  合約檢查：呼叫者為該 session 的 agent、未撤銷、未過期、單筆 ≤ per-trade cap、
+  累計 ≤ budget、leverage ≤ session cap；通過才代呼叫 exchange（CEI：先記 spend 再外呼）。
+- 平倉前用 `getPosition` 驗證該倉位屬於 session 的 user（限合約 + 限對象）。
+- 使用者可隨時 `revokeSession`。
+
+部署接線：`script/Deploy.s.sol` 部署 `AgentSessionManager` 並
+`exchange.setAgentAuthorized(address(sessionManager), true)`。ABI 置於
+`frontend/src/contracts/abi/AgentSessionManager.json`（前端尚未消費；位址待 deploy 腳本
+輸出，未來接前端時再併入 `addresses.ts`）。
+
+新增測試（`contracts/test/AgentSessionManager.t.sol`，14 個）：createSession 驗證、
+限額內開/平倉、per-trade / budget / leverage 三種上限、非 agent / 過期 / 撤銷 / 跨用戶
+倉位拒絕、未授權 manager 仍被 exchange 的 `NotCopyTracker` 擋下。
+
+---
+
+## 尚未處理（Phase 3）
+
+- 預言機接 Chainlink / Pyth（目前 mock，`maxPriceAge` 已擋陳舊）。
+- x402 收入併入 FeeRouter（server `payTo` 已指向 FeeRouter，合約零改動）。
+- 前端接 `AgentSessionManager`（建立/撤銷 session 的 UI）+ 完整 agent 風控監控面板。
