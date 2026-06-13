@@ -20,6 +20,8 @@ export interface RevenueEntry {
   feeUsd: number;
   split: { trader: number; platform: number; vault: number };
   beneficiary: string; // 拿 70% 的對象：trader 地址 or "protocol"
+  // 鏈上結算狀態（FeeRouter.routeExternalRevenue）。off = 未啟用結算。
+  settlement: { status: "off" | "pending" | "settled" | "failed"; tx?: string; error?: string };
 }
 
 interface Totals {
@@ -56,6 +58,7 @@ export function recordRevenue(p: {
     split,
     // signals：70% 歸該 trader（agent 買誰的訊號、誰賺）；oracle：歸 protocol
     beneficiary: p.endpoint === "signals" && p.trader ? p.trader : "protocol",
+    settlement: { status: "off" },
   };
   ledger.push(entry);
   return entry;
@@ -65,6 +68,7 @@ export function recordRevenue(p: {
 export function getRevenueSummary() {
   const totals: Totals = { count: 0, feeUsd: 0, trader: 0, platform: 0, vault: 0 };
   const byBeneficiary: Record<string, number> = {};
+  let settledOnChain = 0;
   for (const e of ledger) {
     totals.count += 1;
     totals.feeUsd += e.feeUsd;
@@ -72,10 +76,13 @@ export function getRevenueSummary() {
     totals.platform += e.split.platform;
     totals.vault += e.split.vault;
     byBeneficiary[e.beneficiary] = (byBeneficiary[e.beneficiary] ?? 0) + e.split.trader;
+    if (e.settlement.status === "settled") settledOnChain += 1;
   }
   const round = (n: number) => Math.round(n * 1e6) / 1e6;
   return {
     model: "FeeRouter 70/20/10 (trader/platform/vault)",
+    onChainSettlement: settledOnChain > 0 ? "on" : "off",
+    settledOnChain,
     totals: {
       count: totals.count,
       feeUsd: round(totals.feeUsd),
