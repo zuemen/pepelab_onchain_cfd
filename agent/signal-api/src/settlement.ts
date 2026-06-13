@@ -42,14 +42,22 @@ export interface SettlementResult {
   error?: string;
 }
 
+// 序列化所有結算：fire-and-forget 的並發呼叫共用同一個 EOA，若同時送會撞 nonce。
+// 用 promise chain 確保一次只送一筆。
+let queue: Promise<unknown> = Promise.resolve();
+
 /**
  * 把一筆費用（USD）上鏈分潤給 trader。會自動確保 mUSDC 餘額與對 FeeRouter 的
- * 授權（不足才送交易）。回傳結果含 tx hash。
+ * 授權（不足才送交易）。多筆呼叫會自動排隊（避免 nonce 衝突）。回傳結果含 tx hash。
  */
-export async function settleRevenue(
-  trader: string,
-  feeUsd: number,
-): Promise<SettlementResult> {
+export function settleRevenue(trader: string, feeUsd: number): Promise<SettlementResult> {
+  const run = queue.then(() => _settle(trader, feeUsd));
+  // 讓 queue 不論成敗都接續下去
+  queue = run.catch(() => undefined);
+  return run;
+}
+
+async function _settle(trader: string, feeUsd: number): Promise<SettlementResult> {
   if (!wallet || !feeRouter || !usdc) {
     return { status: "failed", error: "settlement disabled" };
   }
