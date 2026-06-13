@@ -1,0 +1,26 @@
+{
+  "name": "pepelab-agent",
+  "private": true,
+  "version": "0.1.0",
+  "description": "PepeLab x402 + AI Agent — Phase 1 PoC (read-only)",
+  "type": "module",
+  "workspaces": [
+    "shared",
+    "signal-api",
+    "mcp-server",
+    "demo-agent"
+  ],
+  "scripts": {
+    "signal-api": "npm run start -w signal-api",
+    "mcp-server": "npm run start -w mcp-server",
+    "demo-agent": "npm run start -w demo-agent",
+    "typecheck": "tsc -b --pretty"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}
