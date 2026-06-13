@@ -61,6 +61,7 @@ export const navData: NavSectionProps['data'] = [
       { title: 'ESG', path: paths.pepefi.esg, icon: ICONS.tour },
       { title: 'Rewards 🎁', path: paths.pepefi.rewards, icon: ICONS.booking },
       { title: '🤖 Agent Sessions', path: paths.pepefi.sessions, icon: ICONS.lock },
+      { title: '📊 Agent Monitor', path: paths.pepefi.agentMonitor, icon: ICONS.analytics },
     ],
   },
   /**
