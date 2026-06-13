@@ -85,6 +85,10 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
 
     uint256                           public nextPositionId;
     address                           public copyTracker;
+    // Multi-agent authorization. copyTracker remains the "primary" agent for
+    // backward compatibility; setCopyTracker keeps this mapping in sync, and
+    // setAgentAuthorized lets the owner authorize additional agents.
+    mapping(address => bool)          public authorizedAgents;
     IFeeRouterPerp                    public feeRouter;
     IInsuranceVaultPerp               public insuranceVault;
 
@@ -123,6 +127,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         int256  rateBps,
         int256  newIndex
     );
+    event AgentAuthorizationSet(address indexed agent, bool authorized);
 
     // ── Errors ───────────────────────────────────────────────────────────────
 
@@ -146,8 +151,27 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
 
     // ── Admin ────────────────────────────────────────────────────────────────
 
+    /// @notice Sets the primary copyTracker. Keeps `authorizedAgents` in sync:
+    ///         the previous primary is de-authorized and the new one authorized,
+    ///         preserving the legacy single-tracker swap semantics.
     function setCopyTracker(address _copyTracker) external onlyOwner {
+        address old = copyTracker;
+        if (old != address(0) && old != _copyTracker) {
+            authorizedAgents[old] = false;
+            emit AgentAuthorizationSet(old, false);
+        }
         copyTracker = _copyTracker;
+        if (_copyTracker != address(0)) {
+            authorizedAgents[_copyTracker] = true;
+            emit AgentAuthorizationSet(_copyTracker, true);
+        }
+    }
+
+    /// @notice Authorize or revoke an additional agent (beyond the primary
+    ///         copyTracker) to call the `*For` proxy entrypoints.
+    function setAgentAuthorized(address agent, bool authorized) external onlyOwner {
+        authorizedAgents[agent] = authorized;
+        emit AgentAuthorizationSet(agent, authorized);
     }
 
     function setFeeRouter(address _feeRouter) external onlyOwner {
@@ -191,7 +215,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
 
     /// @dev CopyTracker pulls USDC from itself, credits freeMargin to `user`.
     function depositMarginFor(address user, uint256 amount) external nonReentrant {
-        if (msg.sender != copyTracker) revert NotCopyTracker();
+        if (!authorizedAgents[msg.sender]) revert NotCopyTracker();
         usdc.transferFrom(msg.sender, address(this), amount);
         freeMargin[user] += amount;
         emit MarginDeposited(user, amount);
@@ -226,7 +250,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     ) external payable nonReentrant returns (uint256 positionId) {
         require(msg.value >= executionFee, "Insufficient execution fee");
         if (copyTracker == address(0)) revert CopyTrackerNotSet();
-        if (msg.sender != copyTracker) revert NotCopyTracker();
+        if (!authorizedAgents[msg.sender]) revert NotCopyTracker();
         return _openPosition(user, asset, isLong, margin, leverage, copiedFrom);
     }
 
@@ -236,7 +260,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
 
     /// @dev Lets copyTracker close a position on behalf of its owner (e.g. unfollow flow).
     function closePositionFor(address owner, uint256 positionId) external nonReentrant {
-        if (msg.sender != copyTracker) revert NotCopyTracker();
+        if (!authorizedAgents[msg.sender]) revert NotCopyTracker();
         _closePosition(owner, positionId);
     }
 
