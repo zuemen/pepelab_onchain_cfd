@@ -68,6 +68,7 @@ export const paths = {
     adminTreasury: '/admin/treasury',
     rewards: '/rewards',
     sessions: '/sessions',
+    agentMonitor: '/agent-monitor',
     home:    '/home',
   },
 };

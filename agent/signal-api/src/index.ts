@@ -4,6 +4,7 @@
 // 付費結算走 Base Sepolia USDC；合約狀態讀 Ethereum Sepolia。
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { paymentMiddleware, type Network } from "x402-hono";
 import {
   loadEnv,
@@ -33,6 +34,9 @@ const provider = makeProvider();
 const contracts = makeContracts(provider);
 
 const app = new Hono();
+
+// 允許瀏覽器跨來源讀取（前端監控面板會打 / 與 /revenue）。
+app.use("*", cors());
 
 // ── 免費端點：健康檢查 + 定價表（agent 可先探索） ──────────────────────────
 app.get("/", (c) =>
