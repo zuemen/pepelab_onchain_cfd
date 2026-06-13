@@ -39,8 +39,23 @@ npm run demo-agent
 免費端點列出定價表與設定，不需錢包：
 ```bash
 curl http://localhost:4021/
+curl http://localhost:4021/revenue   # x402 收入歸屬 + 70/20/10 分潤帳務
 ```
 `demo-agent` 在未提供有效 `AGENT_PRIVATE_KEY` 時，會自動退化成只打免費端點並提示。
+
+## x402 收入 → FeeRouter 70/20/10 分潤
+
+每筆付費呼叫由 `revenue.ts` 按 FeeRouter 的 **70 / 20 / 10**（trader / platform / vault）
+歸屬：`/signals/:trader` 的 70% 歸**該 trader**（agent 買誰的訊號、誰賺），`/oracle/:asset`
+歸 protocol。`GET /revenue` 可查總額、各方累計與每個 beneficiary 的 70% 累計。
+
+> ⚠️ **目前是鏈下帳務，尚未真的上鏈分潤**。原因：FeeRouter 的拆分入口
+> `distributeCopyFee` / `receivePerformanceFee` 是 `onlyAuthorized`（限 copyTracker /
+> exchange）且從 `msg.sender` pull USDC，server 無法直接呼叫；加上 x402 在 Base
+> Sepolia 結算、FeeRouter 在 Ethereum Sepolia，跨鏈也擋住「raw 轉帳即分潤」。
+> 要真正上鏈結算，需 FeeRouter 新增一個 permissionless 入口（例如
+> `routeExternalRevenue(address trader, uint256 fee)` → `transferFrom` + 既有 `_split`），
+> 這會「新增方法」，需先拍板再做。`payTo` 已預設指向 FeeRouter，待該入口就緒即可串接。
 
 ## MCP server（給 Claude 等 agent）
 
