@@ -67,6 +67,7 @@ export const paths = {
     adminOracle: '/admin/oracle',
     adminTreasury: '/admin/treasury',
     rewards: '/rewards',
+    sessions: '/sessions',
     home:    '/home',
   },
 };
