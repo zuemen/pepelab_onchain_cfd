@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 interface IOracle {
     function getPrice(bytes32 assetId) external view returns (uint256 price, uint256 updatedAt);
@@ -18,12 +19,15 @@ interface IInsuranceVaultPerp {
     function depositFromProtocol(uint256 amount) external;
 }
 
-contract PerpetualExchange is Ownable {
+contract PerpetualExchange is Ownable, ReentrancyGuard {
     // ── Constants ────────────────────────────────────────────────────────────
 
     uint256 public constant MAX_LEVERAGE            = 5;
     uint256 public constant MIN_MARGIN              = 10e18;
     uint256 public constant PERFORMANCE_FEE_BPS     = 1000;  // 10% of profit on copied positions
+
+    // Liquidator incentive: share of remaining collateral paid to the caller
+    uint256 public constant LIQUIDATION_REWARD_BPS  = 500;   // 5% of remaining collateral
 
     // Owner-adjustable fees (kept as public vars so tests and admin can override)
     uint256 public TRADING_FEE_BPS         = 10;   // 0.1% swap fee (Uniswap concept)
@@ -37,6 +41,10 @@ contract PerpetualExchange is Ownable {
     uint256 public constant BAILOUT_FLOOR_BPS       = 1000;  // 10% of margin
 
     uint256 public executionFee = 0.001 ether; // Fee paid in native ETH to cover platform/Keeper gas
+
+    /// @notice Max acceptable oracle price age for state-changing operations.
+    ///         Views stay lenient so the frontend can still render with stale data.
+    uint256 public maxPriceAge = 24 hours;
 
     // ── Immutables ───────────────────────────────────────────────────────────
 
@@ -127,6 +135,7 @@ contract PerpetualExchange is Ownable {
     error PositionAlreadyClosed();
     error PositionIsHealthy();
     error FundingIntervalNotElapsed();
+    error StalePrice(bytes32 asset, uint256 updatedAt);
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
@@ -161,7 +170,12 @@ contract PerpetualExchange is Ownable {
         insuranceVault = IInsuranceVaultPerp(_vault);
     }
 
-    function withdrawExecutionFees() external onlyOwner {
+    function setMaxPriceAge(uint256 _seconds) external onlyOwner {
+        require(_seconds > 0, "zero age");
+        maxPriceAge = _seconds;
+    }
+
+    function withdrawExecutionFees() external onlyOwner nonReentrant {
         uint256 balance = address(this).balance;
         (bool success, ) = msg.sender.call{value: balance}("");
         require(success, "ETH transfer failed");
@@ -169,21 +183,21 @@ contract PerpetualExchange is Ownable {
 
     // ── Margin management ────────────────────────────────────────────────────
 
-    function depositMargin(uint256 amount) external {
+    function depositMargin(uint256 amount) external nonReentrant {
         usdc.transferFrom(msg.sender, address(this), amount);
         freeMargin[msg.sender] += amount;
         emit MarginDeposited(msg.sender, amount);
     }
 
     /// @dev CopyTracker pulls USDC from itself, credits freeMargin to `user`.
-    function depositMarginFor(address user, uint256 amount) external {
+    function depositMarginFor(address user, uint256 amount) external nonReentrant {
         if (msg.sender != copyTracker) revert NotCopyTracker();
         usdc.transferFrom(msg.sender, address(this), amount);
         freeMargin[user] += amount;
         emit MarginDeposited(user, amount);
     }
 
-    function withdrawMargin(uint256 amount) external {
+    function withdrawMargin(uint256 amount) external nonReentrant {
         if (freeMargin[msg.sender] < amount) revert InsufficientFreeMargin();
         freeMargin[msg.sender] -= amount;
         usdc.transfer(msg.sender, amount);
@@ -197,7 +211,7 @@ contract PerpetualExchange is Ownable {
         bool    isLong,
         uint256 margin,
         uint256 leverage
-    ) external payable returns (uint256 positionId) {
+    ) external payable nonReentrant returns (uint256 positionId) {
         require(msg.value >= executionFee, "Insufficient execution fee");
         return _openPosition(msg.sender, asset, isLong, margin, leverage, address(0));
     }
@@ -209,19 +223,19 @@ contract PerpetualExchange is Ownable {
         uint256 margin,
         uint256 leverage,
         address copiedFrom
-    ) external payable returns (uint256 positionId) {
+    ) external payable nonReentrant returns (uint256 positionId) {
         require(msg.value >= executionFee, "Insufficient execution fee");
         if (copyTracker == address(0)) revert CopyTrackerNotSet();
         if (msg.sender != copyTracker) revert NotCopyTracker();
         return _openPosition(user, asset, isLong, margin, leverage, copiedFrom);
     }
 
-    function closePosition(uint256 positionId) external {
+    function closePosition(uint256 positionId) external nonReentrant {
         _closePosition(msg.sender, positionId);
     }
 
     /// @dev Lets copyTracker close a position on behalf of its owner (e.g. unfollow flow).
-    function closePositionFor(address owner, uint256 positionId) external {
+    function closePositionFor(address owner, uint256 positionId) external nonReentrant {
         if (msg.sender != copyTracker) revert NotCopyTracker();
         _closePosition(owner, positionId);
     }
@@ -230,9 +244,13 @@ contract PerpetualExchange is Ownable {
 
     /// @notice Anyone can call this to liquidate an underwater position and protect the protocol.
     /// @dev If (margin + PnL - fees) < Maintenance Margin (5% of notional), the position is liquidated.
-    function liquidatePosition(uint256 positionId) external {
+    ///      The caller earns LIQUIDATION_REWARD_BPS of the remaining collateral as incentive.
+    function liquidatePosition(uint256 positionId) external nonReentrant {
         Position storage pos = positions[positionId];
         if (!pos.isOpen) revert PositionAlreadyClosed();
+
+        _pokeFunding(pos.asset);
+        _requireFresh(pos.asset);
 
         int256 pnl = _calcPnL(pos);
         
@@ -243,7 +261,7 @@ contract PerpetualExchange is Ownable {
         uint256 borrowFee    = borrowed * BORROW_FEE_BPS_PER_HOUR * hoursElapsed / 10000;
         
         int256 totalFees   = int256(tradingFee + borrowFee);
-        int256 closeAmount = int256(pos.margin) + pnl - totalFees;
+        int256 closeAmount = int256(pos.margin) + pnl - totalFees - _calcFunding(pos);
         
         // Maintenance margin is 5% of notional size. If value drops below this, it's liquidated.
         uint256 maintenanceMargin = notional * 500 / 10000;
@@ -252,6 +270,7 @@ contract PerpetualExchange is Ownable {
             revert PositionIsHealthy();
         }
 
+        // ── Effects ────────────────────────────────────────────────────────────
         pos.isOpen      = false;
         pos.closedAt    = block.timestamp;
         pos.realizedPnL = pnl;
@@ -262,11 +281,20 @@ contract PerpetualExchange is Ownable {
             globalShortNotional[pos.asset] -= notional;
         }
 
-        // Send remaining collateral (if any) to InsuranceVault
-        if (closeAmount > 0 && address(insuranceVault) != address(0)) {
-            uint256 remainder = uint256(closeAmount);
-            usdc.approve(address(insuranceVault), remainder);
-            insuranceVault.depositFromProtocol(remainder);
+        // ── Interactions ──────────────────────────────────────────────────────
+        // Split remaining collateral: reward → liquidator, remainder → InsuranceVault
+        if (closeAmount > 0) {
+            uint256 remaining = uint256(closeAmount);
+            uint256 reward    = remaining * LIQUIDATION_REWARD_BPS / 10_000;
+            uint256 toVault   = remaining - reward;
+
+            if (reward > 0) {
+                usdc.transfer(msg.sender, reward);
+            }
+            if (toVault > 0 && address(insuranceVault) != address(0)) {
+                usdc.approve(address(insuranceVault), toVault);
+                insuranceVault.depositFromProtocol(toVault);
+            }
         }
 
         emit PositionLiquidated(positionId, pos.owner, msg.sender, pnl);
@@ -276,14 +304,37 @@ contract PerpetualExchange is Ownable {
     // ── Funding Rate ─────────────────────────────────────────────────────────
 
     /// @notice Settle funding for an asset. Anyone can call once per FUNDING_INTERVAL.
+    /// @dev Kept permissionless as a public crank, but funding is also settled
+    ///      automatically whenever a position is opened/closed/liquidated, so the
+    ///      mechanism no longer depends on altruistic callers.
     function settleFunding(bytes32 asset) external {
-        if (block.timestamp < lastFundingUpdateAt[asset] + FUNDING_INTERVAL)
+        uint256 last = lastFundingUpdateAt[asset];
+        if (block.timestamp < last + FUNDING_INTERVAL)
             revert FundingIntervalNotElapsed();
+        _pokeFunding(asset);
+    }
 
+    /// @dev Accrues funding for every full interval elapsed since the last update.
+    ///      First touch of an asset only initializes the clock (no retroactive accrual).
+    function _pokeFunding(bytes32 asset) internal {
+        uint256 last = lastFundingUpdateAt[asset];
+        if (last == 0) {
+            // Never touched before: just start the clock. On a live chain
+            // block.timestamp is huge, so accruing from 0 would be catastrophic.
+            // OI is necessarily 0 here because every open pokes first.
+            lastFundingUpdateAt[asset] = block.timestamp;
+            return;
+        }
+
+        uint256 intervals = (block.timestamp - last) / FUNDING_INTERVAL;
+        if (intervals == 0) return;
+        lastFundingUpdateAt[asset] = last + intervals * FUNDING_INTERVAL;
+        _accrueFunding(asset, intervals);
+    }
+
+    function _accrueFunding(bytes32 asset, uint256 intervals) internal {
         uint256 longOI  = globalLongNotional[asset];
         uint256 shortOI = globalShortNotional[asset];
-        lastFundingUpdateAt[asset] = block.timestamp;
-
         if (longOI + shortOI == 0) return;
 
         // imbalance ∈ (-1e18, +1e18)
@@ -292,7 +343,7 @@ contract PerpetualExchange is Ownable {
         int256 fundingRateBps = imbalance * int256(MAX_FUNDING_RATE_BPS) / int256(1e18);
 
         // 1 bps × 1e14 = 1e-4 fraction of notional (18-dec USDC)
-        cumulativeFundingIndex[asset] += fundingRateBps * int256(1e14);
+        cumulativeFundingIndex[asset] += fundingRateBps * int256(1e14) * int256(intervals);
 
         emit FundingSettled(asset, fundingRateBps, cumulativeFundingIndex[asset]);
     }
@@ -339,6 +390,19 @@ contract PerpetualExchange is Ownable {
 
     // ── Internal ─────────────────────────────────────────────────────────────
 
+    /// @dev Oracle returns 8-decimal price; scales to 18 dec and reverts on stale data.
+    ///      Used in every state-changing path (open / close / liquidate).
+    function _freshPrice(bytes32 asset) internal view returns (uint256) {
+        (uint256 rawPrice, uint256 updatedAt) = oracle.getPrice(asset);
+        if (block.timestamp > updatedAt + maxPriceAge) revert StalePrice(asset, updatedAt);
+        return rawPrice * 1e10;
+    }
+
+    function _requireFresh(bytes32 asset) internal view {
+        (, uint256 updatedAt) = oracle.getPrice(asset);
+        if (block.timestamp > updatedAt + maxPriceAge) revert StalePrice(asset, updatedAt);
+    }
+
     function _openPosition(
         address owner,
         bytes32 asset,
@@ -349,14 +413,18 @@ contract PerpetualExchange is Ownable {
     ) internal returns (uint256 positionId) {
         if (margin < MIN_MARGIN)                       revert MarginTooLow();
         if (leverage == 0 || leverage > MAX_LEVERAGE)  revert InvalidLeverage();
+
+        // Settle any pending funding BEFORE locking the entry index,
+        // so the new position is not charged for pre-open accrual.
+        _pokeFunding(asset);
+
         uint256 notional   = margin * leverage;
         uint256 tradingFee = notional * TRADING_FEE_BPS / 10000;
 
         if (freeMargin[owner] < margin + tradingFee)   revert InsufficientFreeMargin();
 
         // oracle returns 8-decimal price; scale to 18 dec for internal accounting
-        (uint256 rawPrice,) = oracle.getPrice(asset);
-        uint256 entryPrice  = rawPrice * 1e10;
+        uint256 entryPrice = _freshPrice(asset);
 
         freeMargin[owner] -= (margin + tradingFee);
 
@@ -392,23 +460,30 @@ contract PerpetualExchange is Ownable {
         if (caller != pos.owner) revert NotPositionOwner();
         if (!pos.isOpen)         revert PositionAlreadyClosed();
 
-        int256 pnl         = _calcPnL(pos);
-        
+        // Settle funding up to now so the position pays/receives the full accrual.
+        _pokeFunding(pos.asset);
+        _requireFresh(pos.asset);
+
+        int256 pnl = _calcPnL(pos);
+
         // DeFi Mechanics: Trading Fee (Uniswap) + Borrow Fee (Aave)
         uint256 notional     = pos.margin * pos.leverage;
         uint256 tradingFee   = notional * TRADING_FEE_BPS / 10000;
-        
+
         uint256 borrowed     = pos.margin * (pos.leverage - 1);
         uint256 hoursElapsed = (block.timestamp - pos.openedAt) / 3600;
         uint256 borrowFee    = borrowed * BORROW_FEE_BPS_PER_HOUR * hoursElapsed / 10000;
-        
+
         int256 totalFees      = int256(tradingFee + borrowFee);
         int256 fundingPayment = _calcFunding(pos); // positive = trader pays, negative = trader receives
         int256 closeAmount    = int256(pos.margin) + pnl - totalFees - fundingPayment;
+
+        bool needsBailout = false;
+        uint256 bailoutFloor;
         if (closeAmount < 0) {
             if (address(insuranceVault) != address(0)) {
-                uint256 floor = pos.margin * BAILOUT_FLOOR_BPS / 10_000;
-                try insuranceVault.bailout(floor, pos.owner) { } catch { }
+                needsBailout = true;
+                bailoutFloor = pos.margin * BAILOUT_FLOOR_BPS / 10_000;
             }
             closeAmount = 0;
         }
@@ -416,10 +491,15 @@ contract PerpetualExchange is Ownable {
         // Performance fee: 10 % of profit on copied positions when feeRouter is set
         uint256 perfFee = 0;
         if (pos.copiedFrom != address(0) && pnl > 0 && address(feeRouter) != address(0)) {
-            perfFee     = uint256(pnl) * PERFORMANCE_FEE_BPS / 10_000;
+            perfFee = uint256(pnl) * PERFORMANCE_FEE_BPS / 10_000;
+            // Never let the fee push closeAmount negative (uint cast would underflow)
+            if (int256(perfFee) > closeAmount) {
+                perfFee = closeAmount > 0 ? uint256(closeAmount) : 0;
+            }
             closeAmount -= int256(perfFee);
         }
 
+        // ── Effects (all state updated BEFORE any external call: CEI pattern) ──
         pos.isOpen      = false;
         pos.closedAt    = block.timestamp;
         pos.realizedPnL = pnl;
@@ -431,6 +511,11 @@ contract PerpetualExchange is Ownable {
         }
 
         freeMargin[pos.owner] += uint256(closeAmount);
+
+        // ── Interactions ──────────────────────────────────────────────────────
+        if (needsBailout) {
+            try insuranceVault.bailout(bailoutFloor, pos.owner) { } catch { }
+        }
 
         if (perfFee > 0) {
             usdc.transfer(address(feeRouter), perfFee);

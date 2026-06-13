@@ -1,5 +1,13 @@
 const { ethers } = require('ethers');
 
+process.on('uncaughtException', (err) => {
+  console.error('*** Uncaught Exception caught to prevent crash ***:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('*** Unhandled Rejection caught to prevent crash at:', promise, 'reason:', reason);
+});
+
 const provider = new ethers.JsonRpcProvider('https://sepolia.infura.io/v3/7cdfb4923cee46ed9238a5181e4e9a4d');
 const wallet = new ethers.Wallet('0x2b94ce61c754caa8138bd62a86b8665afdbbe70c87bed997d91c5bcd90a0ec0d', provider);
 

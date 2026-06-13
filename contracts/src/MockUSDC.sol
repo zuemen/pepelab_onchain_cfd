@@ -2,8 +2,12 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract MockUSDC is ERC20 {
+/// @notice TESTNET-ONLY mock stablecoin. `mint` is intentionally unrestricted so
+///         deploy scripts, seeds, and tests can fund accounts freely.
+///         NEVER deploy this contract to a production network.
+contract MockUSDC is ERC20, Ownable {
     uint256 public constant FAUCET_AMOUNT   = 1_000e18;
     uint256 public constant FAUCET_COOLDOWN = 1 days;
 
@@ -13,9 +17,11 @@ contract MockUSDC is ERC20 {
 
     error FaucetCooldown(uint256 nextAvailable);
 
-    constructor() ERC20("Mock USDC", "mUSDC") {}
+    constructor() ERC20("Mock USDC", "mUSDC") Ownable(msg.sender) {}
 
-    function setSwapRouter(address _router) external {
+    /// @dev Owner-only: previously anyone could front-run deployment and claim
+    ///      the router slot, gaining the right to burn arbitrary balances.
+    function setSwapRouter(address _router) external onlyOwner {
         require(swapRouter == address(0), "Already set");
         swapRouter = _router;
     }
