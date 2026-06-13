@@ -12,6 +12,7 @@ import "../src/PerpetualExchange.sol";
 import "../src/StrategyRegistry.sol";
 import "../src/CopyTracker.sol";
 import "../src/TraderStake.sol";
+import "../src/AgentSessionManager.sol";
 
 contract Deploy is Script {
     // Asset IDs — same keccak256 used on-chain and in the frontend
@@ -75,6 +76,11 @@ contract Deploy is Script {
         feeRouter.setCopyTracker(address(ct));
         feeRouter.setExchange(address(exchange));
 
+        // 12. AgentSessionManager (Phase 2 session-key delegation layer) +
+        //     authorize it as an additional agent on the exchange.
+        AgentSessionManager sessionManager = new AgentSessionManager(address(exchange));
+        exchange.setAgentAuthorized(address(sessionManager), true);
+
         vm.stopBroadcast();
 
         // Print addresses (visible with forge script -v)
@@ -88,6 +94,7 @@ contract Deploy is Script {
         console.log("PerpetualExchange:", address(exchange));
         console.log("StrategyRegistry :", address(registry));
         console.log("CopyTracker      :", address(ct));
+        console.log("AgentSessionMgr  :", address(sessionManager));
         console.log("=== Asset IDs (bytes32) ===");
         console.logBytes32(SBTC);
         console.logBytes32(SETH);
