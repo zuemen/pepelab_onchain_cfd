@@ -1,10 +1,10 @@
-# Patch Changes — Phase 3: Chainlink Oracle Adapter (2026-06)
+# Patch Changes — Phase 3: Oracle Adapters (Chainlink + Pyth) (2026-06)
 
 對應 `docs/DESIGN_x402_AI_AGENT.md` 第 4 節「Oracle → Chainlink/Pyth」與 Phase 3。
-把單點 owner 更新的 MockOracle 升級為真去中心化預言機的第一步：一個 **drop-in 的
-Chainlink 介接合約**，**核心零改動**。
+把單點 owner 更新的 MockOracle 升級為真去中心化預言機：兩個 **drop-in 介接合約**
+（Chainlink 給 crypto、Pyth 給合成/股票資產），**核心皆零改動**。
 
-**測試基準**：239 → **249 passed, 0 failed**（新增 `ChainlinkOracleAdapter.t.sol` 10 個）。
+**測試基準**：239 → 249（Chainlink）→ **259 passed, 0 failed**（再加 Pyth 10 個）。
 
 ---
 
@@ -44,7 +44,36 @@ ABI 置於 `frontend/src/contracts/abi/ChainlinkOracleAdapter.json`。
   feedAddr)`。Base / Ethereum 主網的 BTC/USD、ETH/USD 等 feed 位址見 Chainlink 文件。
   （本 patch 未改 Deploy.s.sol 預設仍用 MockOracle，避免影響現有 testnet demo；
   上 mainnet 時切換即可。）
-- **合成股票/ESG 資產**（sAAPL、sTSLA…）：Chainlink 測試網多無對應 feed，未設 feed 的
-  資產會 `FeedNotSet`。可改接 **Pyth**（pull 型，需先 post update data 再讀
-  `getPriceNoOlderThan`）；adapter 介面相同的 Pyth 版本可作為後續加項。
-- Pyth 介接合約（同 `IOracle` 介面）留待需要合成資產真實報價時再實作。
+- **合成股票/ESG 資產**（sAAPL、sTSLA…）：Chainlink 測試網多無對應 feed → 改用下方 Pyth。
+
+---
+
+## Pyth 介接（`contracts/src/PythOracleAdapter.sol`）
+
+同樣是 **drop-in `IOracle`**（`getPrice` 8-dec + `isStale`），核心零改動，補上 Chainlink
+在測試網缺的合成/股票資產（Pyth 有 AAPL、TSLA 等 feed）。
+
+- `constructor(address _pyth)`：注入 Pyth 合約；`mapping(bytes32 => bytes32) priceIds`
+  把 assetId → Pyth price id，`setPriceId(onlyOwner)` 管理，emit `PriceIdSet`。
+- 讀 `getPriceUnsafe(id)` 拿 Pyth 的 `(mantissa, expo, publishTime)`，依
+  `value = mantissa * 10^expo` **正規化成 8-dec**（scale by `10^(expo+8)`，向上或向下）；
+  `price <= 0` → `InvalidPrice`，未設 id → `PriceIdNotSet`。
+- Pyth 是 **pull 型**：實際上鏈價格由 keeper 先 `updatePriceFeeds`（payable）推送，
+  adapter 只負責 view 讀取；鏈上時效一樣由 exchange `maxPriceAge` 把關，`isStale`
+  以 24h 對齊 MockOracle。
+
+測試（`contracts/test/PythOracleAdapter.t.sol`，10 個）：權限、expo -8/-5/-10 三種正規化、
+`PriceIdNotSet`/`InvalidPrice`、24h 時效、以 adapter 部署 exchange 開倉的 drop-in 整合。
+測試用 `contracts/test/MockPyth.sol`。ABI 置於
+`frontend/src/contracts/abi/PythOracleAdapter.json`。
+
+選用建議：**crypto 資產走 Chainlink、合成/股票走 Pyth**，按 asset 在部署時各設各的
+adapter（或未來做一個 router 依 assetId 分流，屬選用加項）。
+
+---
+
+## 尚未處理（Phase 3 剩餘）
+
+- `Deploy.s.sol` 切換成真 adapter（目前仍預設 MockOracle 以保 testnet demo）。
+- FeeRouter permissionless 收入入口（讓 x402 收入真正上鏈分潤；屬「新增方法」，待拍板）。
+- agent 風控監控面板。
