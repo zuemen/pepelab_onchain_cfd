@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PepeLab — The Agent-Native Perp DEX</title>
+<meta name="description" content="PepeLab is the on-chain perpetual CFD protocol built for AI agents. x402 paid signals, on-chain copy trading, session-key delegation. Hyperliquid is fast — PepeLab is agent-native." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<link href="https://api.fontshare.com/v2/css?f[]=clash-display@500,600,700&f[]=satoshi@400,500,700&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --bg:#080a07;
+  --bg2:#0d110c;
+  --panel:#10160e;
+  --line:rgba(199,249,78,.14);
+  --line2:rgba(238,242,233,.08);
+  --ink:#eef3e6;
+  --muted:#8b9a80;
+  --lime:#c7f94e;
+  --lime-2:#9fe617;
+  --coral:#ff6a45;
+  --green:#5fe39a;
+  --shadow:0 30px 80px -30px rgba(0,0,0,.8);
+  --font-display:"Clash Display","Satoshi",sans-serif;
+  --font-body:"Satoshi",system-ui,sans-serif;
+  --font-mono:"JetBrains Mono",monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  background:var(--bg);color:var(--ink);font-family:var(--font-body);
+  line-height:1.5;-webkit-font-smoothing:antialiased;overflow-x:hidden;
+}
+/* atmospheric background */
+body::before{
+  content:"";position:fixed;inset:0;z-index:-2;
+  background:
+    radial-gradient(60% 50% at 78% 8%, rgba(199,249,78,.16), transparent 60%),
+    radial-gradient(50% 40% at 12% 85%, rgba(95,227,154,.10), transparent 60%),
+    radial-gradient(40% 30% at 50% 50%, rgba(255,106,69,.05), transparent 70%),
+    var(--bg);
+}
+body::after{ /* grain */
+  content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.05;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.wrap{max-width:1200px;margin:0 auto;padding:0 28px}
+a{color:inherit;text-decoration:none}
+.mono{font-family:var(--font-mono)}
+
+/* ── ticker ─────────────────────────────────────────── */
+.ticker{border-bottom:1px solid var(--line2);background:rgba(8,10,7,.6);backdrop-filter:blur(8px);overflow:hidden;white-space:nowrap;position:sticky;top:0;z-index:60}
+.ticker-track{display:inline-flex;gap:42px;padding:9px 0;animation:scroll 34s linear infinite;font-family:var(--font-mono);font-size:12.5px;letter-spacing:.02em}
+.ticker:hover .ticker-track{animation-play-state:paused}
+.tk{color:var(--muted)}
+.tk b{color:var(--ink);font-weight:500}
+.up{color:var(--green)} .down{color:var(--coral)}
+@keyframes scroll{to{transform:translateX(-50%)}}
+
+/* ── nav ────────────────────────────────────────────── */
+nav{position:sticky;top:38px;z-index:50;display:flex;align-items:center;justify-content:space-between;
+  padding:18px 0;backdrop-filter:blur(6px)}
+.brand{display:flex;align-items:center;gap:11px;font-family:var(--font-display);font-weight:700;font-size:20px;letter-spacing:-.01em}
+.logo{width:30px;height:30px;border-radius:9px;background:
+  conic-gradient(from 210deg,var(--lime),var(--green),var(--lime-2),var(--lime));
+  box-shadow:0 0 0 1px rgba(199,249,78,.4),0 0 22px -2px var(--lime);display:grid;place-items:center}
+.logo span{font-family:var(--font-mono);font-weight:700;color:#0a0c08;font-size:15px}
+.nav-links{display:flex;gap:30px;font-size:14.5px;color:var(--muted)}
+.nav-links a{transition:color .2s}.nav-links a:hover{color:var(--ink)}
+.btn{font-family:var(--font-body);font-weight:700;font-size:14.5px;border:none;cursor:pointer;
+  padding:11px 20px;border-radius:11px;transition:transform .18s,box-shadow .25s,background .2s}
+.btn-primary{background:var(--lime);color:#0a0d07;box-shadow:0 0 0 1px rgba(199,249,78,.5),0 8px 30px -8px rgba(199,249,78,.6)}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 0 0 1px var(--lime),0 14px 40px -8px rgba(199,249,78,.8)}
+.btn-ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.btn-ghost:hover{background:rgba(199,249,78,.06);border-color:var(--lime)}
+@media(max-width:820px){.nav-links{display:none}}
+
+/* ── reveal ─────────────────────────────────────────── */
+.reveal{opacity:0;transform:translateY(26px);transition:opacity .8s cubic-bezier(.2,.7,.2,1),transform .8s cubic-bezier(.2,.7,.2,1)}
+.reveal.in{opacity:1;transform:none}
+
+/* ── hero ───────────────────────────────────────────── */
+.hero{display:grid;grid-template-columns:1.05fr .95fr;gap:54px;align-items:center;padding:70px 0 60px}
+@media(max-width:920px){.hero{grid-template-columns:1fr;gap:40px;padding:46px 0}}
+.tag{display:inline-flex;align-items:center;gap:9px;font-family:var(--font-mono);font-size:12px;
+  color:var(--lime);border:1px solid var(--line);border-radius:100px;padding:6px 14px;letter-spacing:.04em;text-transform:uppercase}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--lime);box-shadow:0 0 10px var(--lime);animation:pulse 1.8s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+h1{font-family:var(--font-display);font-weight:600;font-size:clamp(40px,6vw,78px);line-height:.98;
+  letter-spacing:-.025em;margin:22px 0 0}
+h1 .gr{background:linear-gradient(100deg,var(--lime),var(--green) 55%,var(--lime-2));-webkit-background-clip:text;background-clip:text;color:transparent}
+h1 .out{color:transparent;-webkit-text-stroke:1.4px var(--lime);}
+.lead{color:var(--muted);font-size:clamp(16px,1.6vw,18.5px);margin:24px 0 0;max-width:48ch}
+.lead b{color:var(--ink);font-weight:500}
+.cta{display:flex;gap:14px;margin-top:32px;flex-wrap:wrap}
+.proof{display:flex;gap:26px;margin-top:34px;flex-wrap:wrap}
+.proof div{display:flex;flex-direction:column}
+.proof .n{font-family:var(--font-mono);font-weight:700;font-size:21px;color:var(--ink)}
+.proof .l{font-size:12.5px;color:var(--muted);letter-spacing:.02em}
+
+/* hero deck */
+.deck{position:relative;border:1px solid var(--line);border-radius:20px;background:
+  linear-gradient(180deg,rgba(18,24,14,.9),rgba(10,13,8,.92));box-shadow:var(--shadow);overflow:hidden}
+.deck::before{content:"";position:absolute;inset:0;background:radial-gradient(120% 60% at 100% 0,rgba(199,249,78,.12),transparent 50%);pointer-events:none}
+.deck-h{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--line2)}
+.deck-h .pair{display:flex;align-items:center;gap:10px;font-family:var(--font-display);font-weight:600;font-size:17px}
+.chip{font-family:var(--font-mono);font-size:11px;padding:4px 9px;border-radius:7px;border:1px solid var(--line);color:var(--lime)}
+.deck-body{padding:18px}
+.px{display:flex;align-items:baseline;gap:12px}
+.px .big{font-family:var(--font-mono);font-weight:700;font-size:40px;letter-spacing:-.02em}
+.px .chg{font-family:var(--font-mono);font-size:14px;color:var(--green)}
+.spark{height:64px;margin:14px 0;display:flex;align-items:flex-end;gap:3px}
+.spark i{flex:1;background:linear-gradient(180deg,var(--lime),rgba(199,249,78,.15));border-radius:2px;transition:height .5s}
+.row{display:flex;justify-content:space-between;padding:10px 0;border-top:1px dashed var(--line2);font-size:13.5px}
+.row span:first-child{color:var(--muted)}
+.row .mono{color:var(--ink)}
+.agentline{display:flex;align-items:center;gap:10px;margin-top:14px;padding:11px 13px;border-radius:12px;
+  background:rgba(199,249,78,.06);border:1px solid var(--line);font-size:13px}
+.agentline .pill{font-family:var(--font-mono);font-size:10.5px;color:#0a0d07;background:var(--lime);padding:3px 8px;border-radius:6px;font-weight:700}
+
+/* ── section scaffold ───────────────────────────────── */
+section{padding:84px 0;position:relative}
+.kicker{font-family:var(--font-mono);font-size:12.5px;color:var(--lime);letter-spacing:.16em;text-transform:uppercase}
+.h2{font-family:var(--font-display);font-weight:600;font-size:clamp(30px,4.4vw,50px);line-height:1.02;letter-spacing:-.02em;margin:14px 0 0;max-width:18ch}
+.sub{color:var(--muted);font-size:17px;margin:16px 0 0;max-width:60ch}
+
+/* feature grid */
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:46px}
+@media(max-width:920px){.grid{grid-template-columns:1fr}}
+.card{border:1px solid var(--line2);border-radius:16px;padding:26px;background:linear-gradient(180deg,var(--panel),rgba(8,10,7,.5));
+  transition:border-color .3s,transform .3s,background .3s;position:relative;overflow:hidden}
+.card:hover{border-color:var(--line);transform:translateY(-4px)}
+.card .ic{width:42px;height:42px;border-radius:11px;display:grid;place-items:center;font-size:20px;
+  background:rgba(199,249,78,.1);border:1px solid var(--line);margin-bottom:18px}
+.card h3{font-family:var(--font-display);font-weight:600;font-size:20px;letter-spacing:-.01em}
+.card p{color:var(--muted);font-size:14.5px;margin-top:9px}
+.card .tagm{font-family:var(--font-mono);font-size:11px;color:var(--lime);margin-top:14px;display:block}
+
+/* ── versus ─────────────────────────────────────────── */
+.vs{border:1px solid var(--line);border-radius:22px;overflow:hidden;margin-top:50px;box-shadow:var(--shadow)}
+.vs-head{display:grid;grid-template-columns:1.4fr 1fr 1fr}
+.vs-head>div{padding:22px 24px}
+.vs-head .us{background:linear-gradient(180deg,rgba(199,249,78,.14),rgba(199,249,78,.04));border-left:1px solid var(--line)}
+.vs-head .them{background:rgba(255,255,255,.015);border-left:1px solid var(--line2)}
+.vs-head .nm{font-family:var(--font-display);font-weight:700;font-size:22px;display:flex;align-items:center;gap:9px}
+.vs-head .us .nm{color:var(--lime)}
+.vs-head .them .nm{color:var(--muted)}
+.vs-head small{font-family:var(--font-mono);font-size:11px;color:var(--muted);letter-spacing:.04em}
+.vs-row{display:grid;grid-template-columns:1.4fr 1fr 1fr;border-top:1px solid var(--line2);align-items:center}
+.vs-row>div{padding:17px 24px;font-size:14.5px}
+.vs-row .feat{color:var(--ink);font-weight:500}
+.vs-row .us{background:rgba(199,249,78,.05);border-left:1px solid var(--line);color:var(--ink)}
+.vs-row .them{border-left:1px solid var(--line2);color:var(--muted)}
+.yes{color:var(--lime);font-weight:700}.no{color:var(--coral)}
+.vs-row .mono{font-family:var(--font-mono);font-size:13px}
+@media(max-width:820px){
+  .vs-head,.vs-row{grid-template-columns:1fr;}
+  .vs-head .feat0{display:none}
+  .vs-row .feat{background:rgba(255,255,255,.02);font-weight:700}
+  .vs-row>div,.vs-head>div{border-left:none;border-top:1px solid var(--line2)}
+}
+
+/* flow / pipeline */
+.flow{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:46px}
+@media(max-width:920px){.flow{grid-template-columns:1fr 1fr}}
+.step{border:1px solid var(--line2);border-radius:14px;padding:20px;background:var(--panel);position:relative}
+.step .num{font-family:var(--font-mono);font-size:12px;color:var(--lime)}
+.step h4{font-family:var(--font-display);font-weight:600;font-size:16px;margin:8px 0 6px}
+.step p{color:var(--muted);font-size:13px}
+
+/* stats band */
+.band{border-top:1px solid var(--line2);border-bottom:1px solid var(--line2);background:rgba(199,249,78,.025)}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:24px;padding:54px 0}
+@media(max-width:820px){.stats{grid-template-columns:1fr 1fr;gap:34px}}
+.stat .n{font-family:var(--font-mono);font-weight:700;font-size:clamp(30px,4vw,44px);color:var(--lime);letter-spacing:-.02em}
+.stat .l{color:var(--muted);font-size:13.5px;margin-top:6px}
+
+/* CTA */
+.final{text-align:center;padding:110px 0}
+.final h2{font-family:var(--font-display);font-weight:600;font-size:clamp(34px,6vw,68px);line-height:1;letter-spacing:-.025em}
+.final .gr{background:linear-gradient(100deg,var(--lime),var(--green));-webkit-background-clip:text;background-clip:text;color:transparent}
+.final p{color:var(--muted);font-size:18px;margin:22px auto 0;max-width:50ch}
+.glowbtn{margin-top:38px;font-size:17px;padding:16px 34px}
+
+footer{border-top:1px solid var(--line2);padding:40px 0;color:var(--muted);font-size:13px;
+  display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;font-family:var(--font-mono)}
+footer a:hover{color:var(--lime)}
+.disc{max-width:1200px;margin:0 auto;padding:0 28px 40px;color:var(--muted);font-size:11.5px;font-family:var(--font-mono);opacity:.6}
+</style>
+</head>
+<body>
+
+<!-- live ticker -->
+<div class="ticker"><div class="ticker-track" id="tick"></div></div>
+
+<div class="wrap">
+  <nav>
+    <div class="brand"><span class="logo"><span>P</span></span> PEPELAB</div>
+    <div class="nav-links">
+      <a href="#agents">Agents</a>
+      <a href="#versus">vs Hyperliquid</a>
+      <a href="#copy">Copy Trading</a>
+      <a href="#secure">Security</a>
+    </div>
+    <button class="btn btn-primary" onclick="launch()">Launch App ↗</button>
+  </nav>
+
+  <!-- HERO -->
+  <header class="hero">
+    <div>
+      <span class="tag reveal"><span class="dot"></span> on-chain perp CFD · agent-native</span>
+      <h1 class="reveal">The perp DEX<br>built for <span class="gr">AI agents</span>,<br>not just <span class="out">humans</span>.</h1>
+      <p class="lead reveal">PepeLab turns a perpetual CFD protocol into an <b>agent economy</b>: AI agents pay per-call with <b>x402</b> to read strategy signals, mirror top traders on-chain, and trade within <b>session-key</b> limits. Hyperliquid is fast. <b>PepeLab is agent-native.</b></p>
+      <div class="cta reveal">
+        <button class="btn btn-primary" onclick="launch()">Start trading</button>
+        <a class="btn btn-ghost" href="#versus">See why we win →</a>
+      </div>
+      <div class="proof reveal">
+        <div><span class="n" data-count="259" data-suffix="">0</span><span class="l">passing contract tests</span></div>
+        <div><span class="n">70/20/10</span><span class="l">fees → trader / LP / vault</span></div>
+        <div><span class="n" data-count="5" data-suffix="×">0</span><span class="l">max leverage, hard-capped</span></div>
+      </div>
+    </div>
+
+    <!-- live deck -->
+    <div class="deck reveal">
+      <div class="deck-h">
+        <div class="pair"><span class="logo" style="width:24px;height:24px"><span style="font-size:12px">P</span></span> sBTC-PERP</div>
+        <span class="chip" id="fund">funding +0.74%</span>
+      </div>
+      <div class="deck-body">
+        <div class="px"><span class="big" id="px">73,468.20</span><span class="chg" id="chg">+1.84%</span></div>
+        <div class="spark" id="spark"></div>
+        <div class="row"><span>Mark · Oracle</span><span class="mono" id="oracle">Chainlink / Pyth</span></div>
+        <div class="row"><span>Open interest (L/S)</span><span class="mono">5.26M / 0.01M</span></div>
+        <div class="row"><span>Max leverage</span><span class="mono">5×</span></div>
+        <div class="agentline">
+          <span class="pill">x402</span>
+          <span class="mono" id="agentlog">agent paid 0.01 USDC → signal: LONG bias, funding headwind</span>
+        </div>
+      </div>
+    </div>
+  </header>
+</div>
+
+<!-- STATS BAND -->
+<div class="band"><div class="wrap"><div class="stats">
+  <div class="stat reveal"><div class="n"><span data-count="259">0</span></div><div class="l">Foundry tests, 0 failed</div></div>
+  <div class="stat reveal"><div class="n">x402</div><div class="l">pay-per-call signal API</div></div>
+  <div class="stat reveal"><div class="n">MCP</div><div class="l">tools for Claude & agents</div></div>
+  <div class="stat reveal"><div class="n">100%</div><div class="l">on-chain settlement</div></div>
+</div></div></div>
+
+<!-- AGENTS -->
+<section id="agents"><div class="wrap">
+  <span class="kicker reveal">The agent economy</span>
+  <h2 class="h2 reveal">Machines that pay, read, and trade — autonomously.</h2>
+  <p class="sub reveal">Every layer is exposed to AI agents. They discover tools over MCP, pay per request over x402, and execute within cryptographic spend limits. No exchange does this end-to-end.</p>
+  <div class="grid">
+    <div class="card reveal"><div class="ic">⚡</div><h3>x402 paid signals</h3><p>Agents hit HTTP 402, sign a USDC authorization, and get a strategy signal back. Per-call micropayments — a native machine paywall, no API keys.</p><span class="tagm">GET /signals/:trader · 0.01 USDC</span></div>
+    <div class="card reveal"><div class="ic">🧩</div><h3>MCP tool layer</h3><p>The protocol is wrapped as Model Context Protocol tools. Claude and other agents call <span class="mono">get_trader_performance</span>, <span class="mono">get_funding_rate</span>, <span class="mono">get_position</span> directly.</p><span class="tagm">read-only · stdio</span></div>
+    <div class="card reveal"><div class="ic">🔑</div><h3>Session-key delegation</h3><p>Grant an agent a bounded session — per-trade cap, total budget, max leverage, expiry. It trades for you and <b>never</b> touches your main key. Revoke anytime.</p><span class="tagm">AgentSessionManager.sol</span></div>
+    <div class="card reveal"><div class="ic">💸</div><h3>Signal revenue share</h3><p>When an agent buys a trader's signal, that trader earns <b>70%</b> — routed through the same FeeRouter split as trading fees. Traders monetize their alpha to machines.</p><span class="tagm">70 / 20 / 10</span></div>
+    <div class="card reveal"><div class="ic">🛰️</div><h3>Decentralized oracles</h3><p>Drop-in Chainlink adapter for crypto, Pyth adapter for synthetic equities — same interface, zero core change. Stale-price guards on every state change.</p><span class="tagm">Chainlink · Pyth</span></div>
+    <div class="card reveal"><div class="ic">🌱</div><h3>ESG synthetic assets</h3><p>Trade tokenized equities, commodities, bonds and ESG baskets as synthetic perps — exposure Hyperliquid simply doesn't list.</p><span class="tagm">sAAPL · sGOLD · sESGU</span></div>
+  </div>
+</div></section>
+
+<!-- VERSUS -->
+<section id="versus"><div class="wrap">
+  <span class="kicker reveal">Head to head</span>
+  <h2 class="h2 reveal">Hyperliquid optimized the order book.<br>We rebuilt the trader.</h2>
+  <p class="sub reveal">Respect where it's due — Hyperliquid is a world-class execution venue. But the next edge isn't latency, it's <b>autonomy</b>. Here's where PepeLab pulls ahead.</p>
+
+  <div class="vs reveal">
+    <div class="vs-head">
+      <div class="feat0"></div>
+      <div class="us"><div class="nm"><span class="logo" style="width:22px;height:22px"><span style="font-size:11px">P</span></span> PepeLab</div><small>agent-native perp CFD</small></div>
+      <div class="them"><div class="nm">Hyperliquid</div><small>high-perf perp DEX</small></div>
+    </div>
+    <div class="vs-row"><div class="feat">AI-agent native (x402 paywall)</div><div class="us"><span class="yes">✓</span> built-in</div><div class="them"><span class="no">✗</span> none</div></div>
+    <div class="vs-row"><div class="feat">MCP tools for LLM agents</div><div class="us"><span class="yes">✓</span> 3 tools</div><div class="them"><span class="no">✗</span></div></div>
+    <div class="vs-row"><div class="feat">On-chain copy trading</div><div class="us"><span class="yes">✓</span> 1-click mirror</div><div class="them"><span class="no">✗</span></div></div>
+    <div class="vs-row"><div class="feat">Strategy marketplace + versioning</div><div class="us"><span class="yes">✓</span></div><div class="them"><span class="no">✗</span></div></div>
+    <div class="vs-row"><div class="feat">Pay-per-signal economy</div><div class="us"><span class="yes">✓</span> USDC / call</div><div class="them"><span class="no">✗</span></div></div>
+    <div class="vs-row"><div class="feat">Session-key spend limits</div><div class="us"><span class="yes">✓</span> cap / expiry</div><div class="them"><span class="no">✗</span></div></div>
+    <div class="vs-row"><div class="feat">Synthetic equities & ESG assets</div><div class="us"><span class="yes">✓</span> sAAPL·sESGU</div><div class="them"><span class="no">✗</span> crypto only</div></div>
+    <div class="vs-row"><div class="feat">Trader earns from signal sales</div><div class="us"><span class="yes">✓</span> 70%</div><div class="them"><span class="no">✗</span></div></div>
+    <div class="vs-row"><div class="feat">Fully on-chain settlement</div><div class="us"><span class="yes">✓</span></div><div class="them"><span class="mono">✓ L1</span></div></div>
+    <div class="vs-row"><div class="feat">Liquidations &amp; funding</div><div class="us"><span class="yes">✓</span> 5% reward</div><div class="them"><span class="mono">✓</span></div></div>
+  </div>
+</div></section>
+
+<!-- COPY -->
+<section id="copy"><div class="wrap">
+  <span class="kicker reveal">Copy trading, on-chain</span>
+  <h2 class="h2 reveal">Mirror the best. In one transaction.</h2>
+  <p class="sub reveal">Follow a trader and their strategy is replicated to your account by weight, leverage and direction — enforced by contracts, slashable if they blow up. Now agents can be followers too.</p>
+  <div class="flow">
+    <div class="step reveal"><div class="num">01</div><h4>Pick a strategy</h4><p>Browse the marketplace ranked by on-chain, verifiable PnL.</p></div>
+    <div class="step reveal"><div class="num">02</div><h4>Approve &amp; follow</h4><p>One click mirrors allocations — BTC 50%, ETH 30%, AAPL 20%.</p></div>
+    <div class="step reveal"><div class="num">03</div><h4>Auto-managed</h4><p>Funding auto-settles, stale prices are blocked, losses can slash the trader's stake.</p></div>
+    <div class="step reveal"><div class="num">04</div><h4>Unfollow anytime</h4><p>One call closes every mirrored position and returns margin + profit.</p></div>
+  </div>
+</div></section>
+
+<!-- SECURITY -->
+<section id="secure"><div class="wrap">
+  <span class="kicker reveal">Hardened</span>
+  <h2 class="h2 reveal">Audited-grade by construction.</h2>
+  <p class="sub reveal">Security Round 2 shipped before features did. The autonomous-agent surface is only safe because the core is.</p>
+  <div class="grid">
+    <div class="card reveal"><div class="ic">🛡️</div><h3>Reentrancy + CEI</h3><p>Every fund-moving path is <span class="mono">nonReentrant</span> with strict checks-effects-interactions ordering.</p></div>
+    <div class="card reveal"><div class="ic">⏱️</div><h3>Stale-price guard</h3><p><span class="mono">maxPriceAge</span> reverts trades on outdated oracle data — the agent's last line of defense.</p></div>
+    <div class="card reveal"><div class="ic">🎯</div><h3>Keeper-incentivized liquidations</h3><p>Liquidators earn a <b>5%</b> reward, so the protocol stays solvent without trusting altruism.</p></div>
+    <div class="card reveal"><div class="ic">🔁</div><h3>Auto funding</h3><p>Funding accrues across every missed interval — no reliance on a benevolent cranker.</p></div>
+    <div class="card reveal"><div class="ic">🔐</div><h3>Bounded delegation</h3><p>Agents act only inside session limits; the user's main key never leaves the wallet.</p></div>
+    <div class="card reveal"><div class="ic">🧪</div><h3>259 tests, 0 failing</h3><p>From funding math to multi-agent auth to oracle adapters — covered and green.</p></div>
+  </div>
+</div></section>
+
+<!-- FINAL CTA -->
+<section class="final"><div class="wrap">
+  <h2 class="reveal">Trade like a human.<br><span class="gr">Scale like a machine.</span></h2>
+  <p class="reveal">The first perp DEX where your AI agent is a first-class trader — paying, reading, and executing on-chain within limits you set.</p>
+  <div class="reveal"><button class="btn btn-primary glowbtn" onclick="launch()">Launch PepeLab ↗</button></div>
+</div></section>
+
+<footer class="wrap">
+  <div>© 2026 PEPELAB · NCCU Capstone</div>
+  <div style="display:flex;gap:22px">
+    <a href="#agents">Agents</a><a href="#versus">vs HL</a><a href="#secure">Security</a>
+    <a href="https://github.com/zuemen/pepelab_onchain_cfd" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+</footer>
+<div class="disc">Research prototype on testnet. Synthetic CFD exposure, not real securities. “Hyperliquid” is referenced for factual feature comparison only; not affiliated. Nothing here is financial advice.</div>
+
+<script>
+function launch(){ window.location.href = "http://localhost:5173/"; }
+
+// ── live ticker ──
+const assets=[["sBTC",73468.2,1.84],["sETH",2712.5,-0.92],["sAAPL",211.4,0.71],["sGOLD",2655,0.12],["sTSLA",248.9,-1.4],["sNVDA",136.2,2.05],["sESGU",121.3,0.34],["sBOND",100.1,-0.05]];
+function tickHTML(){return assets.map(a=>{const c=a[2]>=0?"up":"down";const s=a[2]>=0?"+":"";return `<span class="tk"><b>${a[0]}</b> ${a[1].toLocaleString()} <span class="${c}">${s}${a[2]}%</span></span>`}).join("")}
+document.getElementById("tick").innerHTML=tickHTML()+tickHTML();
+
+// ── reveal on scroll ──
+const io=new IntersectionObserver((es)=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add("in");io.unobserve(e.target)}}),{threshold:.14});
+document.querySelectorAll(".reveal").forEach((el,i)=>{el.style.transitionDelay=(i%6*55)+"ms";io.observe(el)});
+
+// ── count up ──
+const cio=new IntersectionObserver((es)=>es.forEach(e=>{if(e.isIntersecting){const el=e.target,t=+el.dataset.count,suf=el.dataset.suffix||"";let n=0;const step=t/40;const tick=()=>{n+=step;if(n>=t){el.textContent=t+suf}else{el.textContent=Math.floor(n)+suf;requestAnimationFrame(tick)}};tick();cio.unobserve(el)}}),{threshold:.6});
+document.querySelectorAll("[data-count]").forEach(el=>cio.observe(el));
+
+// ── hero deck: sparkline + live jitter ──
+const spark=document.getElementById("spark");
+let bars=Array.from({length:36},(_,i)=>40+Math.sin(i/3)*18+Math.random()*16);
+function drawSpark(){spark.innerHTML=bars.map(h=>`<i style="height:${Math.max(8,Math.min(100,h))}%"></i>`).join("")}
+drawSpark();
+let price=73468.2;
+const pxEl=document.getElementById("px"),chgEl=document.getElementById("chg");
+const logs=[
+ "agent paid 0.01 USDC → signal: LONG bias, funding headwind",
+ "MCP get_funding_rate(sBTC) → +0.74% (longs pay)",
+ "agent paid 0.005 USDC → oracle snapshot, price fresh ✓",
+ "session #4 opened LONG 2× within 1,000 USDC cap",
+ "agent skipped sETH: funding tailwind, trader PnL negative"
+];
+let li=0;
+setInterval(()=>{
+  const d=(Math.random()-0.46)*42; price=Math.max(60000,price+d);
+  pxEl.textContent=price.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+  const up=d>=0; chgEl.style.color=up?"var(--green)":"var(--coral)";
+  chgEl.textContent=(up?"+":"")+(d/price*100*60).toFixed(2)+"%";
+  bars.push(50+ (price-73000)/40 + Math.random()*20); bars.shift(); drawSpark();
+},900);
+setInterval(()=>{li=(li+1)%logs.length;document.getElementById("agentlog").textContent=logs[li]},2600);
+</script>
+</body>
+</html>
