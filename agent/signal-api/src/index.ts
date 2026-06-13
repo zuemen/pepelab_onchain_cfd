@@ -17,6 +17,7 @@ import {
   jsonSafe,
 } from "@pepelab/shared";
 import { recordRevenue, getRevenueSummary } from "./revenue.ts";
+import { isSettlementEnabled, settleRevenue } from "./settlement.ts";
 
 loadEnv();
 
@@ -86,7 +87,17 @@ app.get("/signals/:trader", async (c) => {
   try {
     const perf = await getTraderPerformance(contracts, trader);
     // 付費已由 x402 中介層結算；把這筆收入按 70/20/10 歸給該 trader。
-    recordRevenue({ endpoint: "signals", feeUsd: PRICE_SIGNALS, trader });
+    const entry = recordRevenue({ endpoint: "signals", feeUsd: PRICE_SIGNALS, trader });
+    // 若啟用鏈上結算：真的呼叫 FeeRouter.routeExternalRevenue（fire-and-forget，
+    // 不擋 agent 的回應；結果寫回帳務，/revenue 可見 tx）。
+    if (isSettlementEnabled()) {
+      entry.settlement = { status: "pending" };
+      void settleRevenue(trader, PRICE_SIGNALS).then((r) => {
+        entry.settlement = r;
+        if (r.status === "settled") console.log(`  ⛓ settled ${PRICE_SIGNALS} USDC → FeeRouter for ${trader}: ${r.tx}`);
+        else console.warn(`  ⚠ settlement failed: ${r.error}`);
+      });
+    }
     return c.json(jsonSafe({ ok: true, data: perf }));
   } catch (err) {
     return c.json({ ok: false, error: (err as Error).message }, 400);
@@ -109,4 +120,5 @@ serve({ fetch: app.fetch, port: PORT }, (info) => {
   console.log(`  payTo (x402 收款 → FeeRouter): ${PAY_TO}`);
   console.log(`  結算網路: ${NETWORK}  facilitator: ${FACILITATOR_URL}`);
   console.log(`  讀取網路: Ethereum Sepolia`);
+  console.log(`  鏈上分潤結算 (FeeRouter.routeExternalRevenue): ${isSettlementEnabled() ? "ON ⛓" : "off (僅鏈下帳務)"}`);
 });

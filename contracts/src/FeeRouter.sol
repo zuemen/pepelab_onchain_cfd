@@ -47,11 +47,20 @@ contract FeeRouter is Ownable {
     );
     event TraderEarningsWithdrawn(address indexed trader, uint256 amount);
     event PlatformFeesWithdrawn(address indexed to, uint256 amount, uint256 timestamp);
+    event ExternalRevenueRouted(
+        address indexed source,
+        address indexed trader,
+        uint256 fee,
+        uint256 traderShare,
+        uint256 platformShare,
+        uint256 vaultShare
+    );
 
     // ── Errors ───────────────────────────────────────────────────────────────
 
     error Unauthorized();
     error NothingToWithdraw();
+    error ZeroFee();
 
     // ── Modifiers ────────────────────────────────────────────────────────────
 
@@ -80,12 +89,27 @@ contract FeeRouter is Ownable {
     /// @dev CopyTracker must approve this contract for `fee` USDC before calling.
     function distributeCopyFee(address trader, uint256 fee) external onlyAuthorized {
         usdc.transferFrom(msg.sender, address(this), fee);
-        _split(trader, fee, true);
+        (uint256 t, uint256 p, uint256 v) = _split(trader, fee);
+        emit CopyFeeDistributed(trader, fee, t, p, v);
     }
 
     /// @dev PerpetualExchange must transfer `fee` USDC to this contract before calling.
     function receivePerformanceFee(address trader, uint256 fee) external onlyAuthorized {
-        _split(trader, fee, false);
+        (uint256 t, uint256 p, uint256 v) = _split(trader, fee);
+        emit PerformanceFeeDistributed(trader, fee, t, p, v);
+    }
+
+    /// @notice Permissionless settlement entry for off-chain revenue — notably
+    ///         x402 paid-signal fees. Anyone holding USDC can route it into the
+    ///         protocol's existing 70/20/10 split, crediting the 70% trader share
+    ///         to `trader` (e.g. the trader whose signal an agent bought). No
+    ///         privileged role required; caller must approve this contract for
+    ///         `fee` USDC first. Reuses the same `_split` accounting as on-chain fees.
+    function routeExternalRevenue(address trader, uint256 fee) external {
+        if (fee == 0) revert ZeroFee();
+        usdc.transferFrom(msg.sender, address(this), fee);
+        (uint256 t, uint256 p, uint256 v) = _split(trader, fee);
+        emit ExternalRevenueRouted(msg.sender, trader, fee, t, p, v);
     }
 
     // ── Withdrawals ──────────────────────────────────────────────────────────
@@ -109,10 +133,15 @@ contract FeeRouter is Ownable {
 
     // ── Internal ─────────────────────────────────────────────────────────────
 
-    function _split(address trader, uint256 fee, bool isCopy) internal {
-        uint256 platformShare = fee * PLATFORM_SHARE_BPS / 10_000;
-        uint256 vaultShare    = fee * VAULT_SHARE_BPS    / 10_000;
-        uint256 traderShare   = fee - platformShare - vaultShare;
+    /// @dev Credits the 70/20/10 split and routes the vault share. Returns the
+    ///      computed shares so each entry point can emit its own event.
+    function _split(address trader, uint256 fee)
+        internal
+        returns (uint256 traderShare, uint256 platformShare, uint256 vaultShare)
+    {
+        platformShare = fee * PLATFORM_SHARE_BPS / 10_000;
+        vaultShare    = fee * VAULT_SHARE_BPS    / 10_000;
+        traderShare   = fee - platformShare - vaultShare;
 
         traderEarnings[trader] += traderShare;
         platformEarnings       += platformShare;
@@ -120,8 +149,5 @@ contract FeeRouter is Ownable {
         // Route vault share to InsuranceVault; vault calls transferFrom back to pull USDC
         usdc.approve(address(insuranceVault), vaultShare);
         insuranceVault.depositFromProtocol(vaultShare);
-
-        if (isCopy) emit CopyFeeDistributed(trader, fee, traderShare, platformShare, vaultShare);
-        else        emit PerformanceFeeDistributed(trader, fee, traderShare, platformShare, vaultShare);
     }
 }

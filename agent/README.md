@@ -49,13 +49,20 @@ curl http://localhost:4021/revenue   # x402 收入歸屬 + 70/20/10 分潤帳務
 歸屬：`/signals/:trader` 的 70% 歸**該 trader**（agent 買誰的訊號、誰賺），`/oracle/:asset`
 歸 protocol。`GET /revenue` 可查總額、各方累計與每個 beneficiary 的 70% 累計。
 
-> ⚠️ **目前是鏈下帳務，尚未真的上鏈分潤**。原因：FeeRouter 的拆分入口
-> `distributeCopyFee` / `receivePerformanceFee` 是 `onlyAuthorized`（限 copyTracker /
-> exchange）且從 `msg.sender` pull USDC，server 無法直接呼叫；加上 x402 在 Base
-> Sepolia 結算、FeeRouter 在 Ethereum Sepolia，跨鏈也擋住「raw 轉帳即分潤」。
-> 要真正上鏈結算，需 FeeRouter 新增一個 permissionless 入口（例如
-> `routeExternalRevenue(address trader, uint256 fee)` → `transferFrom` + 既有 `_split`），
-> 這會「新增方法」，需先拍板再做。`payTo` 已預設指向 FeeRouter，待該入口就緒即可串接。
+### 真上鏈分潤（已實作）
+
+FeeRouter 新增了 permissionless 入口 `routeExternalRevenue(address trader, uint256 fee)`
+（pull USDC → 既有 `_split` 70/20/10），讓 x402 收入能**真的上鏈**走分潤、70% 記到該
+trader 的 `traderEarnings`（之後可 `withdrawTraderEarnings` 提領）。
+
+啟用：在 `.env` 設 `FEE_SETTLEMENT_PRIVATE_KEY`（FeeRouter 所在鏈 = Ethereum Sepolia
+上、持少量 ETH 的測試金鑰）。每筆 `/signals/:trader` 付費後，server 會 fire-and-forget
+呼叫 `routeExternalRevenue`（mUSDC 不足會自動 mint、未授權會自動 approve），結果寫回帳務，
+`GET /revenue` 的 `settledOnChain` 與每筆 `settlement.tx` 可見。未設金鑰則僅保留鏈下帳務。
+
+> 跨鏈備註：x402 在 Base Sepolia 收款、FeeRouter 在 Ethereum Sepolia 結算，是兩段解耦的
+> 金流（x402 收款進 payTo；server 以自己的 treasury 在合約鏈上做 70/20/10 結算）。同鏈部署
+> （或把合約搬到 Base）即可合一。合約端由 `FeeRouterExternalRevenue.t.sol` 6 個測試覆蓋。
 
 ## MCP server（給 Claude 等 agent）
 
