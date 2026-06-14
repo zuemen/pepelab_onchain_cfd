@@ -31,10 +31,17 @@ else
   echo "▶ DRY-RUN (simulation only — no transactions sent). Pass --broadcast to send."
 fi
 
-forge script script/Deploy.s.sol:Deploy \
+# Feed `yes` to stdin so any forge confirmation prompt (e.g. the EIP-170
+# size-limit warning) auto-accepts under non-interactive Git Bash — it no
+# longer hangs. PIPESTATUS preserves forge's real exit code despite the pipe.
+set +o pipefail
+yes | forge script script/Deploy.s.sol:Deploy \
   --rpc-url "$BASE_SEPOLIA_RPC_URL" \
   ${PRIVATE_KEY:+--private-key "$PRIVATE_KEY"} \
   $BROADCAST $VERIFY \
   -vvv
+rc=${PIPESTATUS[1]}
+set -o pipefail
+[ "$rc" -eq 0 ] || { echo "✖ forge script failed (exit $rc)"; exit "$rc"; }
 
 echo "▶ Done. Copy the printed addresses into frontend/src/contracts/addresses.ts (BASE_SEPOLIA block)."
