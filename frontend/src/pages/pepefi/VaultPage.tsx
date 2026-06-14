@@ -32,6 +32,8 @@ interface VaultStats {
   sharePrice:   bigint
   myShares:     bigint
   myUsdcValue:  bigint
+  feesRouted:   bigint  // N1: cumulative trading fees routed to the vault
+  feeShareBps:  bigint  // N1: % of trading fee routed to LPs
 }
 
 interface ActivityEntry {
@@ -93,6 +95,7 @@ export default function VaultPage() {
   const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId)
   const vault     = contracts?.insuranceVault ?? null
   const usdc      = contracts?.usdc ?? null
+  const exchange  = contracts?.exchange ?? null
 
   const [stats, setStats]         = useState<VaultStats | null>(null)
   const [activity, setActivity]   = useState<ActivityEntry[]>([])
@@ -115,12 +118,23 @@ export default function VaultPage() {
         vault.getSharePrice()  as Promise<bigint>,
         vault.balanceOf(wallet.address) as Promise<bigint>,
       ])
+      // N1: trading-fee routing stats (best-effort; older ABIs lack these).
+      let feesRouted = ZERO
+      let feeShareBps = ZERO
+      if (exchange) {
+        try {
+          ;[feesRouted, feeShareBps] = await Promise.all([
+            exchange.cumulativeVaultFees() as Promise<bigint>,
+            exchange.vaultFeeShareBps()    as Promise<bigint>,
+          ])
+        } catch { /* feature not deployed */ }
+      }
       const myUsdcValue = totalSupply > ZERO
         ? myShares * totalAssets / totalSupply
         : ZERO
-      setStats({ totalAssets, totalSupply, sharePrice, myShares, myUsdcValue })
+      setStats({ totalAssets, totalSupply, sharePrice, myShares, myUsdcValue, feesRouted, feeShareBps })
     } catch { /* not deployed */ }
-  }, [vault, wallet.address])
+  }, [vault, exchange, wallet.address])
 
   useEffect(() => {
     void fetchStats()
@@ -209,6 +223,24 @@ export default function VaultPage() {
           </Grid>
         ))}
       </Grid>
+
+      {/* N1: trading-fee → LP routing (market-making yield) */}
+      {stats && stats.feeShareBps > ZERO && (
+        <Card sx={{ p: 2, bgcolor: 'background.neutral', borderLeft: '3px solid', borderColor: 'success.main' }}>
+          <Typography variant="body2" sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, alignItems: 'baseline' }}>
+            <Box component="span" sx={{ fontWeight: 'bold', color: 'success.main' }}>
+              Market-making yield active:
+            </Box>
+            <Box component="span" sx={{ color: 'text.secondary' }}>
+              {Number(stats.feeShareBps) / 100}% of every trade's fee is routed to LPs —
+            </Box>
+            <Box component="span" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
+              {f18(stats.feesRouted)} USDC
+            </Box>
+            <Box component="span" sx={{ color: 'text.secondary' }}>routed to date.</Box>
+          </Typography>
+        </Card>
+      )}
 
       {/* Your position */}
       {stats && stats.myShares > ZERO && (

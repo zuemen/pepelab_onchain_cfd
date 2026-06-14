@@ -124,6 +124,7 @@ export default function ExchangePage() {
   const [selAsset,    setSelAsset]    = useState<AssetId>(ASSET_IDS.sBTC);
   const [isLong,      setIsLong]      = useState(true);
   const [leverage,    setLeverage]    = useState(1);
+  const [maxLev,      setMaxLev]      = useState(5); // N3: per-asset leverage cap
   const [openMgn,     setOpenMgn]     = useState('');
   const [history,     setHistory]     = useState<{ time: string; price: number }[]>([]);
 
@@ -144,6 +145,24 @@ export default function ExchangePage() {
   const notify  = useCallback((msg: string, ok: boolean, hash?: string) => {
     setToast({ msg, ok, hash });
   }, []);
+
+  // N3: read the per-asset max leverage (0 → global default) and clamp the UI.
+  useEffect(() => {
+    let cancelled = false;
+    const ex = contracts?.exchange;
+    if (!ex) { setMaxLev(5); return; }
+    void (async () => {
+      try {
+        const m = Number(await ex.maxLeverageForAsset(selAsset));
+        if (!cancelled) {
+          const cap = m > 0 ? m : 5;
+          setMaxLev(cap);
+          setLeverage(l => (l > cap ? cap : l));
+        }
+      } catch { if (!cancelled) setMaxLev(5); }
+    })();
+    return () => { cancelled = true; };
+  }, [contracts, selAsset]);
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
   const fetchAll = useCallback(async () => {
@@ -1011,6 +1030,7 @@ export default function ExchangePage() {
                   <Button
                     key={lv}
                     fullWidth
+                    disabled={lv > maxLev}
                     variant={leverage === lv ? 'contained' : 'text'}
                     color="warning"
                     onClick={() => setLeverage(lv)}
@@ -1020,6 +1040,11 @@ export default function ExchangePage() {
                   </Button>
                 ))}
               </Box>
+              {maxLev < 5 && (
+                <Typography variant="caption" color="warning.main" sx={{ fontFamily: 'monospace' }}>
+                  ⚠ Max {maxLev}× — tighter risk cap for this asset class
+                </Typography>
+              )}
             </Stack>
           </Grid>
 
