@@ -29,6 +29,7 @@ import {
   getSessionManagerAddress,
   isSessionManagerDeployed,
 } from 'src/contracts/sessionManager'
+import { CHAIN_NAMES } from 'src/contracts/addresses'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface SessionRisk {
@@ -73,6 +74,7 @@ export default function AgentMonitorPage() {
 
   const [sessions, setSessions] = useState<SessionRisk[]>([])
   const [oracle,   setOracle]   = useState<OracleRow[]>([])
+  const [vault,    setVault]    = useState<{ assets: bigint; sharePrice: bigint } | null>(null)
   const [revenue,  setRevenue]  = useState<Revenue | null>(null)
   const [revUrl,   setRevUrl]   = useState('http://localhost:4021')
   const [revErr,   setRevErr]   = useState<string | null>(null)
@@ -110,6 +112,14 @@ export default function AgentMonitorPage() {
         }),
       )
       setOracle(rows)
+      // Vault solvency snapshot (best-effort; 0x0 vault → skip).
+      try {
+        const [assets, sharePrice] = await Promise.all([
+          contracts.insuranceVault.totalAssets() as Promise<bigint>,
+          contracts.insuranceVault.getSharePrice() as Promise<bigint>,
+        ])
+        setVault({ assets, sharePrice })
+      } catch { setVault(null) }
     } catch (e) {
       setErr(prettyError(e))
     }
@@ -167,9 +177,11 @@ export default function AgentMonitorPage() {
       {/* KPI row */}
       <Grid container spacing={2}>
         {[
+          { label: 'Chain', value: wallet.chainId ? (CHAIN_NAMES[wallet.chainId] ?? `#${wallet.chainId}`) : '—' },
           { label: 'Active sessions', value: deployed ? String(activeCount) : '—' },
-          { label: 'Total sessions', value: deployed ? String(sessions.length) : '—' },
           { label: 'Stale feeds', value: `${staleCount}/${oracle.length || '—'}` },
+          { label: 'Vault assets (USDC)', value: vault ? Number(formatUnits(vault.assets, 18)).toLocaleString(undefined, { maximumFractionDigits: 0 }) : '—' },
+          { label: 'Vault px (USDC/pIV)', value: vault ? Number(formatUnits(vault.sharePrice, 18)).toFixed(4) : '—' },
           { label: 'x402 fees (USD)', value: revenue ? revenue.totals.feeUsd.toFixed(3) : '—' },
         ].map(k => (
           <Grid key={k.label} size={{ xs: 6, md: 3 }}>
