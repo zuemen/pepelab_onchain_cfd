@@ -1,7 +1,15 @@
 # ADR-001 — PepeLab vs Hyperliquid：差距盤點與補強路線
 
-- 狀態：Accepted（P0 已於本輪實作，見各 G 項與 commit）
+- 狀態：Accepted（P0 + Phase 2/3/4 已落地，見下方落地狀態與各 commit）
 - 日期：2026-06-14
+
+> **落地狀態（2026-06-14，已部署 Base Sepolia 84532）**
+> - **P0 ✅**：G1 多源聚合預言機、G2 RWA+KYC、G3 MCP write、G4 x402 付費下單、G6 mark-price。
+> - **G5（P1）→ Phase 2 ✅**：做市金庫（交易費分潤入 InsuranceVault）+ N2 ADL + N3 逐標的風險參數。
+> - **Phase 3 ✅**：pro 交易終端、組合保證金（cross-margin 清算 gate）、一鍵 e2e demo。
+> - **Phase 4 ✅**：全套部署到 Base Sepolia、x402 同鏈結算（跨鏈 caveat 解除）、生產級預言機展示、keeper。
+> - 合約 314 測試全綠；位址見 `docs/CAPSTONE_DELIVERABLES.md`。
+> - **未落地（roadmap）**：撮合層（Option C）、Base mainnet、live exchange 切真聚合預言機。
 - 範圍：永續型 CFD 協議的競品對標。對手＝Hyperliquid，定位＝**agent-native + 合規 RWA**
   的差異化超越，而非在純訂單簿撮合上硬拚。
 
