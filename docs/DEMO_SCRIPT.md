@@ -1,4 +1,31 @@
 # Demo Script — On-Chain CFD Copy Trading PoC
+
+## ⚡ One-command end-to-end（P3-3，最快路徑）
+
+整個鏈上故事一行跑完，不需 anvil / 前端 / 錢包，**deterministic 並印出每步關鍵數字**：
+
+```bash
+cd contracts && forge script script/DemoE2E.s.sol:DemoE2E -vv
+```
+
+依序展示：① 上架 RWA 標的 XAU（KYC + 2x 槓桿上限 N3）→ ② 未 KYC 開倉被擋、KYC 後成功（G2）
+→ ③ LP 注入做市金庫（N1）→ ④ 使用者委派有界 agent session（Phase 2）→ ⑤ agent **經 session 自主下單**
+→ ⑥ mark vs index 價（OI 失衡溢價 G6）→ ⑦ 交易費推升金庫 share price＝LP 收益（N1）
+→ ⑧ 崩盤清算：**保險金庫優先兜底、再 ADL 對獲利方減倉**（N2）。
+
+要在本機鏈上產生真實 tx hash，改跑：
+```bash
+anvil   # terminal 1
+cd contracts && forge script script/DemoE2E.s.sol:DemoE2E --broadcast --rpc-url http://localhost:8545
+```
+
+**x402「付費讀訊號 → 決策」那段**是鏈下 agent 棧，見 `agent/README.md`：
+`npm run signal-api` + `npm run demo-agent`（本腳本涵蓋 agent 下單最終落地的鏈上半邊）。
+
+前端互動式 demo 走訪見下方「五分鐘展示腳本」。
+
+---
+
 ## 5-Minute Walkthrough · 五分鐘展示腳本
 
 > **Prerequisites 前置條件**
