@@ -56,6 +56,7 @@ export const paths = {
     landing: '/',
     dashboard: '/dashboard',
     exchange: '/exchange',
+    terminal: '/terminal',
     trader: '/trader',
     stake: '/stake',
     marketplace: '/marketplace',

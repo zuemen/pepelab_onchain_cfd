@@ -50,6 +50,7 @@ export default function TradeTerminalPage() {
   const [freeMgn, setFreeMgn] = useState(0n)
   const [usdcBal, setUsdcBal] = useState(0n)
   const [curPrice, setCurPrice] = useState(0n)
+  const [markPrice, setMarkPrice] = useState(0n) // G6: mark = index ± OI premium
   const [positions, setPositions] = useState<Pos[]>([])
   const [hist, setHist] = useState<{ t: number; p: number }[]>([])
   const [busy, setBusy] = useState<Record<string, boolean>>({})
@@ -89,6 +90,8 @@ export default function TradeTerminalPage() {
     if (!contracts) return
     void (async () => {
       try { const pr = (await contracts.oracle.getPrice(selAsset)) as unknown as [bigint, bigint]; setCurPrice(pr[0] * 10n ** 10n) } catch { /* */ }
+      // G6 mark price (best-effort; older ABIs lack getMarkPrice → fall back to index).
+      try { setMarkPrice((await contracts.exchange.getMarkPrice(selAsset)) as bigint) } catch { setMarkPrice(0n) }
     })()
   }, [contracts, selAsset])
   useEffect(() => { setHist([]) }, [selAsset])
@@ -192,7 +195,12 @@ export default function TradeTerminalPage() {
           <Box sx={{ ...monoCss, fontSize: 26, fontWeight: 700 }}>{livePx ? '$' + livePx.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : fUsd(curPrice)}</Box>
           <Box sx={{ ...monoCss, fontSize: 13, color: chg >= 0 ? C.green : C.red }}>{chg >= 0 ? '▲' : '▼'} {Math.abs(chg).toFixed(2)}%</Box>
         </Box>
-        <Stat label="Oracle (mark)" v={fUsd(curPrice)} />
+        <Stat label="Index (oracle)" v={fUsd(curPrice)} />
+        <Stat
+          label="Mark (OI premium)"
+          v={markPrice > 0n ? fUsd(markPrice) : '—'}
+          color={markPrice > curPrice ? C.green : markPrice > 0n && markPrice < curPrice ? C.red : C.mut}
+        />
         <Stat label="Funding" v={`${rate >= 0 ? '+' : ''}${(rate / 100).toFixed(4)}%`} color={rate > 0 ? C.red : rate < 0 ? C.green : C.mut} />
         <Stat label="Open interest L/S" v={fi ? `${(Number(fi.longOI) / 1e18).toFixed(1)} / ${(Number(fi.shortOI) / 1e18).toFixed(1)}` : '—'} />
         <Box sx={{ ml: 'auto', ...labelCss, color: live[selAsset]?.isMock ? C.mut : C.green }}>● {live[selAsset]?.isMock ? 'simulated feed' : 'live feed'}</Box>
