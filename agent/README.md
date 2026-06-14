@@ -12,15 +12,15 @@
 | `mcp-server/` | MCP tools | read：`get_trader_performance` / `get_funding_rate` / `get_position` / `get_session`；write：`open_position` / `close_position`（經 session 限額）。 |
 | `demo-agent/` | 腳本化 agent | 自管 EOA 付 x402 → 讀訊號 → **依決策經 session 真下單**（缺 session 時退化成印「本來會下的單」）。 |
 
-## 架構重點
+## 架構重點（Phase 4：全程 Base Sepolia 同鏈）
 
-- **合約讀取**走 **Ethereum Sepolia**（chainId 11155111），位址見 `addresses.ts` 的 `SEPOLIA` 區塊。
-- **x402 USDC 結算**走 **Base Sepolia**（設計如此：HTTP 付費層與合約鏈分離）。
-- **收款 `payTo`** 預設指向 `addresses.ts` 的 **FeeRouter**（專案決策：x402 收入接 70/20/10 分潤）。
+- **合約讀取**走 **Base Sepolia**（chainId 84532），位址見 `addresses.ts` 的 `BASE_SEPOLIA` 區塊。
+- **x402 USDC 結算**也走 **Base Sepolia**——與合約**同一條鏈**。
+- **收款 `payTo`** 預設指向 `addresses.ts` 的 Base Sepolia **FeeRouter**（x402 收入接 70/20/10 分潤）。
 
-> ⚠️ **跨鏈 caveat**：FeeRouter 部署在 Ethereum Sepolia，Base Sepolia 上未同址部署。
-> 若要在 Base Sepolia 真的收到 USDC，請把 `.env` 的 `PAY_TO` 改成你在 Base Sepolia
-> 控制的地址，或先把 FeeRouter 部署到 Base。Phase 1 demo 預設沿用 FeeRouter 位址以對齊架構。
+> ✅ **跨鏈 caveat 已解**：協議已部署到 Base Sepolia，FeeRouter 與 x402 USDC 結算同鏈，
+> `routeExternalRevenue` 70/20/10 分潤直接同鏈完成，不再需要把 `PAY_TO` 改成他鏈地址。
+> （要回退到舊的 Ethereum Sepolia 部署：設 `AGENT_CHAIN_ID=11155111` + `SEPOLIA_RPC_URL`。）
 
 ## 啟動
 
@@ -56,14 +56,14 @@ FeeRouter 新增了 permissionless 入口 `routeExternalRevenue(address trader, 
 （pull USDC → 既有 `_split` 70/20/10），讓 x402 收入能**真的上鏈**走分潤、70% 記到該
 trader 的 `traderEarnings`（之後可 `withdrawTraderEarnings` 提領）。
 
-啟用：在 `.env` 設 `FEE_SETTLEMENT_PRIVATE_KEY`（FeeRouter 所在鏈 = Ethereum Sepolia
-上、持少量 ETH 的測試金鑰）。每筆 `/signals/:trader` 付費後，server 會 fire-and-forget
-呼叫 `routeExternalRevenue`（mUSDC 不足會自動 mint、未授權會自動 approve），結果寫回帳務，
+啟用：在 `.env` 設 `FEE_SETTLEMENT_PRIVATE_KEY`（Base Sepolia 上、持少量 ETH 的測試
+金鑰）。每筆 `/signals/:trader` 付費後，server 會 fire-and-forget 呼叫
+`routeExternalRevenue`（mUSDC 不足會自動 mint、未授權會自動 approve），結果寫回帳務，
 `GET /revenue` 的 `settledOnChain` 與每筆 `settlement.tx` 可見。未設金鑰則僅保留鏈下帳務。
 
-> 跨鏈備註：x402 在 Base Sepolia 收款、FeeRouter 在 Ethereum Sepolia 結算，是兩段解耦的
-> 金流（x402 收款進 payTo；server 以自己的 treasury 在合約鏈上做 70/20/10 結算）。同鏈部署
-> （或把合約搬到 Base）即可合一。合約端由 `FeeRouterExternalRevenue.t.sol` 6 個測試覆蓋。
+> ✅ Phase 4 起 x402 收款與 FeeRouter 結算**同在 Base Sepolia**：收款進 payTo（= FeeRouter），
+> server 以 treasury 在同鏈做 70/20/10 結算，金流合一、不再跨鏈。合約端由
+> `FeeRouterExternalRevenue.t.sol` 6 個測試覆蓋。
 
 ## 「付費 → 自主下單」一鍵 demo（北極星）
 
@@ -111,7 +111,7 @@ npm run typecheck             # tsc --noEmit（涵蓋所有 workspace）
 
 | 變數 | 用途 |
 |------|------|
-| `SEPOLIA_RPC_URL` | Ethereum Sepolia RPC（讀合約狀態） |
+| `BASE_SEPOLIA_RPC_URL` | Base Sepolia RPC（讀合約狀態 + x402 結算同鏈） |
 | `X402_NETWORK` | x402 結算網路，預設 `base-sepolia` |
 | `X402_FACILITATOR_URL` | x402 facilitator，預設 `https://x402.org/facilitator` |
 | `PAY_TO` | 收款地址；留空則回退到 FeeRouter |

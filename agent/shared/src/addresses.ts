@@ -7,17 +7,24 @@ import {
   type ChainAddresses,
 } from "../../../frontend/src/contracts/addresses";
 
-// Phase 1 目標鏈：Ethereum Sepolia（合約部署所在）
-export const SEPOLIA_CHAIN_ID = 11155111;
+// Phase 4 目標鏈：Base Sepolia（chainId 84532）—— 與 x402 USDC 結算同鏈，
+// 解掉舊的跨鏈 caveat（合約讀取與 x402 收款／FeeRouter 分潤全在同一條鏈）。
+// 可用 env AGENT_CHAIN_ID 覆寫（如回退到舊的 Ethereum Sepolia 11155111）。
+export const BASE_SEPOLIA_CHAIN_ID = 84532;
+export const AGENT_CHAIN_ID = Number(
+  process.env.AGENT_CHAIN_ID ?? BASE_SEPOLIA_CHAIN_ID,
+);
+// 向後相容別名（舊程式碼引用）。
+export const SEPOLIA_CHAIN_ID = AGENT_CHAIN_ID;
 
-const sepolia = getAddresses(SEPOLIA_CHAIN_ID);
-if (!sepolia) {
+const chain = getAddresses(AGENT_CHAIN_ID);
+if (!chain) {
   throw new Error(
-    `addresses.ts 找不到 chainId ${SEPOLIA_CHAIN_ID} 的設定；請確認 frontend/src/contracts/addresses.ts 已部署 Sepolia 區塊`,
+    `addresses.ts 找不到 chainId ${AGENT_CHAIN_ID} 的設定；請確認 frontend/src/contracts/addresses.ts 已有對應區塊`,
   );
 }
 
-export const ADDRESSES: ChainAddresses = sepolia;
+export const ADDRESSES: ChainAddresses = chain;
 export { ASSET_IDS };
 export type { AssetSymbol, ChainAddresses };
 

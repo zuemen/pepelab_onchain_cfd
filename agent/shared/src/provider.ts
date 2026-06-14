@@ -1,5 +1,5 @@
 import { ethers } from "ethers";
-import { ADDRESSES } from "./addresses.ts";
+import { ADDRESSES, AGENT_CHAIN_ID } from "./addresses.ts";
 import {
   PERPETUAL_EXCHANGE_ABI,
   MOCK_ORACLE_ABI,
@@ -7,17 +7,21 @@ import {
   AGENT_SESSION_MANAGER_ABI,
 } from "./abis.ts";
 
-/** 建立指向 Ethereum Sepolia 的唯讀 provider。RPC 由 env 提供，不寫死。 */
+/** 建立指向 Base Sepolia（預設）的唯讀 provider。RPC 由 env 提供，不寫死。
+ *  優先 BASE_SEPOLIA_RPC_URL；保留 SEPOLIA_RPC_URL 作回退（向後相容）。 */
 export function makeProvider(rpcUrl?: string): ethers.JsonRpcProvider {
-  const url = rpcUrl ?? process.env.SEPOLIA_RPC_URL;
+  const url =
+    rpcUrl ??
+    process.env.BASE_SEPOLIA_RPC_URL ??
+    process.env.SEPOLIA_RPC_URL;
   if (!url) {
     throw new Error(
-      "缺少 SEPOLIA_RPC_URL：請在 .env 設定 Ethereum Sepolia RPC（見 .env.example）",
+      "缺少 BASE_SEPOLIA_RPC_URL：請在 .env 設定 Base Sepolia RPC（見 .env.example）",
     );
   }
   return new ethers.JsonRpcProvider(url, {
-    chainId: 11155111,
-    name: "sepolia",
+    chainId: AGENT_CHAIN_ID,
+    name: AGENT_CHAIN_ID === 84532 ? "base-sepolia" : "sepolia",
   });
 }
 

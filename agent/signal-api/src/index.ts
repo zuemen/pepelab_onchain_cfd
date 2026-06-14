@@ -1,7 +1,7 @@
 // x402 付費 Signal API（Phase 1, read-only）
 //   GET /signals/:trader  — trader 績效摘要 + 開倉建議  (0.01 USDC)
 //   GET /oracle/:asset    — 價格 + funding + OI 快照     (0.005 USDC)
-// 付費結算走 Base Sepolia USDC；合約狀態讀 Ethereum Sepolia。
+// Phase 4：付費結算與合約狀態讀取同走 Base Sepolia（同鏈，跨鏈 caveat 已解）。
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -119,6 +119,6 @@ serve({ fetch: app.fetch, port: PORT }, (info) => {
   console.log(`▶ Signal API listening on http://localhost:${info.port}`);
   console.log(`  payTo (x402 收款 → FeeRouter): ${PAY_TO}`);
   console.log(`  結算網路: ${NETWORK}  facilitator: ${FACILITATOR_URL}`);
-  console.log(`  讀取網路: Ethereum Sepolia`);
+  console.log(`  讀取網路: Base Sepolia (84532, 同鏈結算)`);
   console.log(`  鏈上分潤結算 (FeeRouter.routeExternalRevenue): ${isSettlementEnabled() ? "ON ⛓" : "off (僅鏈下帳務)"}`);
 });

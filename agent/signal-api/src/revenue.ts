@@ -2,10 +2,9 @@
 //
 // 為什麼是帳務（而非直接上鏈）：FeeRouter 的拆分函式 distributeCopyFee /
 // receivePerformanceFee 是 onlyAuthorized（限 copyTracker / exchange）且從
-// msg.sender pull USDC，server 無法直接呼叫；加上 x402 在 Base Sepolia 結算、
-// FeeRouter 在 Ethereum Sepolia，跨鏈也擋住「raw 轉帳即分潤」。因此這裡先做
-// 鏈下歸屬與分潤計算（對齊鏈上 70/20/10），真正上鏈結算需要 FeeRouter 加一個
-// permissionless 入口（見 README 的 on-chain settlement 說明）。
+// msg.sender pull USDC，server 無法直接呼叫。因此這裡做鏈下歸屬與分潤計算
+// （對齊鏈上 70/20/10）；真正上鏈結算走 FeeRouter 的 permissionless
+// routeExternalRevenue（Phase 4 起與 x402 同在 Base Sepolia，見 settlement.ts）。
 
 // 與 contracts/src/FeeRouter.sol 對齊
 export const PLATFORM_SHARE_BPS = 2000n; // 20%

@@ -1,9 +1,8 @@
 // x402 收入「真上鏈結算」：把付費訊號的費用透過 FeeRouter.routeExternalRevenue
 // 真的走 70/20/10 分潤（70% 歸該 trader）。
 //
-// 啟用方式：在 .env 設 FEE_SETTLEMENT_PRIVATE_KEY（一個在 FeeRouter 所在鏈
-// = Ethereum Sepolia 上、持有 mUSDC + 少量 ETH 的測試金鑰）。未設則停用，
-// 僅保留鏈下帳務（/revenue）。
+// 啟用方式：在 .env 設 FEE_SETTLEMENT_PRIVATE_KEY（一個在 Base Sepolia 上、
+// 持有 mUSDC + 少量 ETH 的測試金鑰）。未設則停用，僅保留鏈下帳務（/revenue）。
 import { ethers } from "ethers";
 import { loadEnv, makeProvider, ADDRESSES } from "@pepelab/shared";
 

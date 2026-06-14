@@ -15,6 +15,7 @@ const ZERO = '0x0000000000000000000000000000000000000000'
 const SESSION_MANAGER_ADDRESS: Record<number, string> = {
   31337:    ZERO, // Anvil：跑 deploy-anvil.sh 後填入
   11155111: ZERO, // Sepolia：跑 deploy-sepolia.sh 後填入
+  84532:    '0x5Ebcc64C712C5a26119789dCbD0753981dc518E8', // Base Sepolia (Phase 4)
 }
 
 export function getSessionManagerAddress(chainId: number | null): string {

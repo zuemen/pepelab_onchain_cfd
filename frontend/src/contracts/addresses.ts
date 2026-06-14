@@ -64,20 +64,20 @@ const SEPOLIA: ChainAddresses = {
 }
 
 // ── Base Sepolia testnet (chainId 84532) ──────────────────────────────────────
-// Phase 4 deploy target. Filled in by deploy-base-sepolia.sh after broadcast;
-// 0x0 = not yet deployed (UI shows "not deployed" guards, same as other chains).
+// Phase 4 live deployment (Deploy.s.sol broadcast 2026-06-14). Contracts not in
+// Deploy.s.sol (ESG/Pepe* AMM/staking) stay 0x0 → UI "not deployed" guards.
 const BASE_SEPOLIA: ChainAddresses = {
-  MockUSDC:          "0x0000000000000000000000000000000000000000",
-  MockOracle:        "0x0000000000000000000000000000000000000000",
-  TraderStake:       "0x0000000000000000000000000000000000000000",
-  InsuranceVault:    "0x0000000000000000000000000000000000000000",
-  FeeRouter:         "0x0000000000000000000000000000000000000000",
-  PerpetualExchange: "0x0000000000000000000000000000000000000000",
-  StrategyRegistry:  "0x0000000000000000000000000000000000000000",
-  CopyTracker:       "0x0000000000000000000000000000000000000000",
-  MockSwapRouter:    "0x0000000000000000000000000000000000000000",
+  MockUSDC:          "0x69fd695Bc7C3aFdb35ABA35cD6890C506400b035",
+  MockOracle:        "0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3",
+  TraderStake:       "0x01aEB530bcFc69f036309ffe55acc7eA6C5a28Fe",
+  InsuranceVault:    "0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812",
+  FeeRouter:         "0x00f6cf0113399a7A451c7f85fe094a28092d3e0c",
+  PerpetualExchange: "0xEf75ECA6514cE96B18382E921aC6190a0cF8c072",
+  StrategyRegistry:  "0x54e8C43f9Eb151Bb8DD6e61d16a969C4D0e73915",
+  CopyTracker:       "0x96357144fE56c5E0e33e8046bE2A63F45528b210",
+  MockSwapRouter:    "0xC9b0e5C219AA1B3eB00E92Fd9a883B182F0AE8Ae",
   ESGRegistry:       "0x0000000000000000000000000000000000000000",
-  KYCRegistry:       "0x0000000000000000000000000000000000000000",
+  KYCRegistry:       "0x5D95fD9e7a5f80E5369e24783F1f98E0f952360d",
   PepeAMM:           "0x0000000000000000000000000000000000000000",
   PepeToken:              "0x0000000000000000000000000000000000000000",
   PepeClaim:              "0x0000000000000000000000000000000000000000",
@@ -85,6 +85,15 @@ const BASE_SEPOLIA: ChainAddresses = {
   PepeIncentives:         "0x0000000000000000000000000000000000000000",
   PepeStaking:            "0x0000000000000000000000000000000000000000",
 }
+
+// Phase 4 production-oracle showcase on Base Sepolia (deployed, NOT wired into
+// the live exchange — which runs on MockOracle so synthetic-asset demos work).
+// AggregatorOracle fronts Chainlink + Pyth (Pyth live on Base Sepolia).
+export const BASE_SEPOLIA_ORACLE_SHOWCASE = {
+  ChainlinkAdapter: "0x37DC7b70899BFfB17949366a5b6a86203C428E2f",
+  PythAdapter:      "0x551C0B2e75a9129fe697210223F1Ca6e64F3C6d5",
+  AggregatorOracle: "0x8215158642350a3f329aB9597186d21f957A813D",
+} as const
 
 const CHAIN_MAP: Record<number, ChainAddresses> = {
   31337:    ANVIL,
