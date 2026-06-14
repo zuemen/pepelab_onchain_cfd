@@ -50,6 +50,14 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     ///         Views stay lenient so the frontend can still render with stale data.
     uint256 public maxPriceAge = 24 hours;
 
+    /// @notice Mark-price premium cap, in bps of the index (oracle) price. The
+    ///         mark price = index ± a premium driven by OI imbalance, bounded by
+    ///         this cap. PnL and liquidation are valued on the mark; entry stays
+    ///         on the index. 0 = disabled (mark == index), which is the legacy
+    ///         behaviour, so existing markets are untouched until the owner sets
+    ///         a non-zero cap.
+    uint256 public markPremiumCapBps = 0;
+
     // ── Immutables ───────────────────────────────────────────────────────────
 
     IERC20  public immutable usdc;
@@ -140,6 +148,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     event AgentAuthorizationSet(address indexed agent, bool authorized);
     event KycRegistrySet(address indexed kyc);
     event RwaAssetSet(bytes32 indexed asset, bool isRwa);
+    event MarkPremiumCapBpsSet(uint256 bps);
 
     // ── Errors ───────────────────────────────────────────────────────────────
 
@@ -225,6 +234,13 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     function setMaxPriceAge(uint256 _seconds) external onlyOwner {
         require(_seconds > 0, "zero age");
         maxPriceAge = _seconds;
+    }
+
+    /// @notice Set the mark-price premium cap (bps of index). 0 disables the
+    ///         premium so mark == index (legacy pricing).
+    function setMarkPremiumCapBps(uint256 _bps) external onlyOwner {
+        markPremiumCapBps = _bps;
+        emit MarkPremiumCapBpsSet(_bps);
     }
 
     function withdrawExecutionFees() external onlyOwner nonReentrant {
@@ -592,7 +608,9 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     ///   if short:   pnl = -pnl
     function _calcPnL(Position storage pos) internal view returns (int256) {
         (uint256 rawPrice,) = oracle.getPrice(pos.asset);
-        uint256 currentPrice = rawPrice * 1e10;
+        // Value PnL (and therefore liquidation) on the mark price, not the raw
+        // index, so OI imbalance is reflected the way a real perp does.
+        uint256 currentPrice = _markPrice(pos.asset, rawPrice * 1e10);
 
         uint256 notional    = pos.margin * pos.leverage;
         uint256 size        = notional * 1e18 / pos.entryPrice;
@@ -601,6 +619,34 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
 
         if (!pos.isLong) pnl = -pnl;
         return pnl;
+    }
+
+    /// @notice Mark price for an asset (18-dec): the oracle index adjusted by an
+    ///         OI-imbalance premium, bounded by `markPremiumCapBps`. Longs-heavy
+    ///         books trade at a premium to index, shorts-heavy at a discount.
+    function getMarkPrice(bytes32 asset) external view returns (uint256) {
+        (uint256 rawPrice,) = oracle.getPrice(asset);
+        return _markPrice(asset, rawPrice * 1e10);
+    }
+
+    /// @dev Apply the OI-imbalance premium to an index price (both 18-dec).
+    ///      premiumBps = imbalance × cap, with imbalance ∈ [-1e18, 1e18], so the
+    ///      premium is bounded by ±markPremiumCapBps. Disabled (mark == index)
+    ///      when the cap or total OI is zero.
+    function _markPrice(bytes32 asset, uint256 indexPrice) internal view returns (uint256) {
+        uint256 cap = markPremiumCapBps;
+        if (cap == 0) return indexPrice;
+
+        uint256 longOI  = globalLongNotional[asset];
+        uint256 shortOI = globalShortNotional[asset];
+        if (longOI + shortOI == 0) return indexPrice;
+
+        int256 imbalance = (int256(longOI) - int256(shortOI)) * int256(1e18)
+                         / int256(longOI + shortOI);
+        int256 premiumBps = imbalance * int256(cap) / int256(1e18); // signed, ≤ cap
+        // mark = index + index × premiumBps / 10000
+        int256 mark = int256(indexPrice) + int256(indexPrice) * premiumBps / 10000;
+        return mark > 0 ? uint256(mark) : 0;
     }
 
     /// @dev Funding owed by this position since it was opened.

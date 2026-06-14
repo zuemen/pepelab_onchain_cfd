@@ -311,6 +311,25 @@
   },
   {
     "type": "function",
+    "name": "getMarkPrice",
+    "inputs": [
+      {
+        "name": "asset",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "getPosition",
     "inputs": [
       {
@@ -505,6 +524,19 @@
   },
   {
     "type": "function",
+    "name": "kyc",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IKyc"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "lastFundingUpdateAt",
     "inputs": [
       {
@@ -534,6 +566,19 @@
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "markPremiumCapBps",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -772,6 +817,25 @@
   },
   {
     "type": "function",
+    "name": "rwaAsset",
+    "inputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "setAgentAuthorized",
     "inputs": [
       {
@@ -855,12 +919,56 @@
   },
   {
     "type": "function",
+    "name": "setKycRegistry",
+    "inputs": [
+      {
+        "name": "_kyc",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setMarkPremiumCapBps",
+    "inputs": [
+      {
+        "name": "_bps",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setMaxPriceAge",
     "inputs": [
       {
         "name": "_seconds",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setRwaAsset",
+    "inputs": [
+      {
+        "name": "asset",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "isRwa",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "outputs": [],
@@ -1008,6 +1116,19 @@
   },
   {
     "type": "event",
+    "name": "KycRegistrySet",
+    "inputs": [
+      {
+        "name": "kyc",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "MarginDeposited",
     "inputs": [
       {
@@ -1037,6 +1158,19 @@
       },
       {
         "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "MarkPremiumCapBpsSet",
+    "inputs": [
+      {
+        "name": "bps",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -1200,6 +1334,25 @@
     "anonymous": false
   },
   {
+    "type": "event",
+    "name": "RwaAssetSet",
+    "inputs": [
+      {
+        "name": "asset",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "isRwa",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
     "type": "error",
     "name": "CopyTrackerNotSet",
     "inputs": []
@@ -1228,6 +1381,17 @@
     "type": "error",
     "name": "NotCopyTracker",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotKycVerified",
+    "inputs": [
+      {
+        "name": "user",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
   },
   {
     "type": "error",
