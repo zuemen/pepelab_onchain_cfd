@@ -44,6 +44,9 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     // Insurance vault: floor paid to trader when closeAmount < 0
     uint256 public constant BAILOUT_FLOOR_BPS       = 1000;  // 10% of margin
 
+    uint256 public constant DEFAULT_MAINTENANCE_MARGIN_BPS = 500;  // 5% of notional
+    uint256 public constant MAX_ADL_SCAN            = 128;   // bound ADL gas
+
     uint256 public executionFee = 0.001 ether; // Fee paid in native ETH to cover platform/Keeper gas
 
     /// @notice Max acceptable oracle price age for state-changing operations.
@@ -110,6 +113,22 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     IKyc                              public kyc;
     mapping(bytes32 => bool)          public rwaAsset;
 
+    // N1: share of the collected trading fee routed to the InsuranceVault (LP
+    // yield). 0 = keep current behaviour (no routing). cumulativeVaultFees lets
+    // the frontend estimate LP APR from the realized fee stream.
+    uint256                           public vaultFeeShareBps;   // 0..10000
+    uint256                           public cumulativeVaultFees;
+
+    // N3: per-asset risk overrides. 0 means "use the global default", so every
+    // asset behaves exactly as before until an override is set.
+    mapping(bytes32 => uint256)       public maxLeverageOf;            // 0 → MAX_LEVERAGE
+    mapping(bytes32 => uint256)       public maintenanceMarginBpsOf;   // 0 → DEFAULT_MAINTENANCE_MARGIN_BPS
+
+    // N2: auto-deleveraging (ADL) solvency backstop. Off by default so existing
+    // liquidation behaviour is untouched until explicitly enabled.
+    bool                              public adlEnabled;
+    mapping(bytes32 => uint256[])     public assetPositionIds;        // per-asset index for ADL scan
+
     // ── Events ───────────────────────────────────────────────────────────────
 
     event PositionOpened(
@@ -149,6 +168,17 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     event KycRegistrySet(address indexed kyc);
     event RwaAssetSet(bytes32 indexed asset, bool isRwa);
     event MarkPremiumCapBpsSet(uint256 bps);
+    event VaultFeeShareSet(uint256 bps);
+    event VaultFeeRouted(uint256 amount, uint256 cumulative);
+    event MaxLeverageSet(bytes32 indexed asset, uint256 maxLeverage);
+    event MaintenanceMarginSet(bytes32 indexed asset, uint256 bps);
+    event AdlEnabledSet(bool enabled);
+    event AutoDeleveraged(
+        uint256 indexed liquidatedId,
+        uint256 indexed counterId,
+        uint256         haircut,
+        uint256         payout
+    );
 
     // ── Errors ───────────────────────────────────────────────────────────────
 
@@ -229,6 +259,35 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     function setRwaAsset(bytes32 asset, bool isRwa) external onlyOwner {
         rwaAsset[asset] = isRwa;
         emit RwaAssetSet(asset, isRwa);
+    }
+
+    /// @notice N1: set the share (bps) of the trading fee routed to the LP vault.
+    ///         0 keeps the current behaviour (no routing).
+    function setVaultFeeShareBps(uint256 _bps) external onlyOwner {
+        require(_bps <= 10_000, "bps>100%");
+        vaultFeeShareBps = _bps;
+        emit VaultFeeShareSet(_bps);
+    }
+
+    /// @notice N3: per-asset max leverage override (0 = use global MAX_LEVERAGE).
+    function setMaxLeverageFor(bytes32 asset, uint256 maxLev) external onlyOwner {
+        require(maxLev <= MAX_LEVERAGE, "above global cap");
+        maxLeverageOf[asset] = maxLev;
+        emit MaxLeverageSet(asset, maxLev);
+    }
+
+    /// @notice N3: per-asset maintenance-margin override in bps (0 = use the
+    ///         global DEFAULT_MAINTENANCE_MARGIN_BPS).
+    function setMaintenanceMarginFor(bytes32 asset, uint256 bps) external onlyOwner {
+        require(bps <= 10_000, "bps>100%");
+        maintenanceMarginBpsOf[asset] = bps;
+        emit MaintenanceMarginSet(asset, bps);
+    }
+
+    /// @notice N2: enable/disable the ADL solvency backstop. Off by default.
+    function setAdlEnabled(bool enabled) external onlyOwner {
+        adlEnabled = enabled;
+        emit AdlEnabledSet(enabled);
     }
 
     function setMaxPriceAge(uint256 _seconds) external onlyOwner {
@@ -331,9 +390,9 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         int256 totalFees   = int256(tradingFee + borrowFee);
         int256 closeAmount = int256(pos.margin) + pnl - totalFees - _calcFunding(pos);
         
-        // Maintenance margin is 5% of notional size. If value drops below this, it's liquidated.
-        uint256 maintenanceMargin = notional * 500 / 10000;
-        
+        // Maintenance margin: per-asset override (N3) or global 5% default.
+        uint256 maintenanceMargin = notional * _maintenanceMarginBps(pos.asset) / 10000;
+
         if (closeAmount > int256(maintenanceMargin)) {
             revert PositionIsHealthy();
         }
@@ -363,10 +422,79 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
                 usdc.approve(address(insuranceVault), toVault);
                 insuranceVault.depositFromProtocol(toVault);
             }
+        } else if (adlEnabled && closeAmount < 0) {
+            // N2: the position is underwater beyond its collateral. The protocol
+            // is short uint(-closeAmount). Whatever the InsuranceVault cannot
+            // absorb is socialized by auto-deleveraging profitable counterparties
+            // (haircutting their gains), keeping the system solvent.
+            uint256 shortfall = uint256(-closeAmount);
+            uint256 vaultAvail = address(insuranceVault) != address(0)
+                ? insuranceVault.totalAssets()
+                : 0;
+            if (shortfall > vaultAvail) {
+                _autoDeleverage(positionId, pos.asset, pos.isLong, shortfall - vaultAvail);
+            }
         }
+
+        // N1: route the LP share of the liquidation trading fee into the vault.
+        _routeVaultFee(tradingFee);
 
         emit PositionLiquidated(positionId, pos.owner, msg.sender, pnl);
         emit PositionClosed(positionId, pos.owner, pnl, 0);
+    }
+
+    /// @dev N2: reduce the protocol's winner liability by `uncovered` USDC by
+    ///      force-closing profitable positions on the **opposite** side of the
+    ///      liquidated (losing) position, haircutting their profit. The haircut
+    ///      lowers each winner's `freeMargin` credit — a pure ledger adjustment
+    ///      that needs no cash on hand — so total claims drop to match reserves.
+    ///      Bounded by MAX_ADL_SCAN to cap gas. Involuntary, so no trading/borrow
+    ///      fee is charged; funding is still settled fairly.
+    function _autoDeleverage(
+        uint256 liquidatedId,
+        bytes32 asset,
+        bool    loserIsLong,
+        uint256 uncovered
+    ) internal {
+        uint256 remaining = uncovered;
+        uint256[] storage ids = assetPositionIds[asset];
+        uint256 n = ids.length;
+        uint256 scanned;
+
+        for (uint256 i = 0; i < n && remaining > 0 && scanned < MAX_ADL_SCAN; ++i) {
+            ++scanned;
+            uint256 cid = ids[i];
+            Position storage cp = positions[cid];
+            if (!cp.isOpen)               continue;
+            if (cp.isLong == loserIsLong) continue; // want the winning (opposite) side
+
+            int256 cpnl = _calcPnL(cp);
+            if (cpnl <= 0)                continue; // only profitable counterparties
+
+            uint256 profit  = uint256(cpnl);
+            uint256 haircut = profit >= remaining ? remaining : profit;
+            remaining -= haircut;
+
+            // Force-close the counterparty at mark, minus the haircut.
+            int256 payout = int256(cp.margin) + cpnl - int256(haircut) - _calcFunding(cp);
+            if (payout < 0) payout = 0;
+
+            cp.isOpen      = false;
+            cp.closedAt    = block.timestamp;
+            cp.realizedPnL = cpnl - int256(haircut);
+
+            uint256 cnotional = cp.margin * cp.leverage;
+            if (cp.isLong) {
+                globalLongNotional[asset]  -= cnotional;
+            } else {
+                globalShortNotional[asset] -= cnotional;
+            }
+
+            freeMargin[cp.owner] += uint256(payout);
+
+            emit AutoDeleveraged(liquidatedId, cid, haircut, uint256(payout));
+            emit PositionClosed(cid, cp.owner, cp.realizedPnL, uint256(payout));
+        }
     }
 
     // ── Funding Rate ─────────────────────────────────────────────────────────
@@ -456,7 +584,40 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         return positions[positionId];
     }
 
+    /// @notice N3: effective max leverage for an asset (override or global).
+    function maxLeverageForAsset(bytes32 asset) external view returns (uint256) {
+        return _maxLeverage(asset);
+    }
+
+    /// @notice N3: effective maintenance-margin bps for an asset (override or global).
+    function maintenanceMarginBpsForAsset(bytes32 asset) external view returns (uint256) {
+        return _maintenanceMarginBps(asset);
+    }
+
     // ── Internal ─────────────────────────────────────────────────────────────
+
+    function _maxLeverage(bytes32 asset) internal view returns (uint256) {
+        uint256 o = maxLeverageOf[asset];
+        return o == 0 ? MAX_LEVERAGE : o;
+    }
+
+    function _maintenanceMarginBps(bytes32 asset) internal view returns (uint256) {
+        uint256 o = maintenanceMarginBpsOf[asset];
+        return o == 0 ? DEFAULT_MAINTENANCE_MARGIN_BPS : o;
+    }
+
+    /// @dev N1: route a slice of the trading fee to the InsuranceVault, lifting
+    ///      the LP share price. No-op when disabled or no vault is wired.
+    function _routeVaultFee(uint256 tradingFee) internal {
+        uint256 share = vaultFeeShareBps;
+        if (share == 0 || address(insuranceVault) == address(0)) return;
+        uint256 cut = tradingFee * share / 10_000;
+        if (cut == 0) return;
+        cumulativeVaultFees += cut;
+        usdc.approve(address(insuranceVault), cut);
+        insuranceVault.depositFromProtocol(cut);
+        emit VaultFeeRouted(cut, cumulativeVaultFees);
+    }
 
     /// @dev Oracle returns 8-decimal price; scales to 18 dec and reverts on stale data.
     ///      Used in every state-changing path (open / close / liquidate).
@@ -480,7 +641,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         address copiedFrom
     ) internal returns (uint256 positionId) {
         if (margin < MIN_MARGIN)                       revert MarginTooLow();
-        if (leverage == 0 || leverage > MAX_LEVERAGE)  revert InvalidLeverage();
+        if (leverage == 0 || leverage > _maxLeverage(asset)) revert InvalidLeverage();
 
         // RWA compliance: gated only when both the asset is flagged and a KYC
         // registry is wired (otherwise this is a no-op for backward compat).
@@ -525,8 +686,12 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
             entryFundingIndex: cumulativeFundingIndex[asset]
         });
         userPositions[owner].push(positionId);
+        assetPositionIds[asset].push(positionId); // N2: per-asset index for ADL
 
         emit PositionOpened(positionId, owner, asset, isLong, entryPrice, margin, leverage);
+
+        // N1: route the LP share of this open's trading fee into the vault.
+        _routeVaultFee(tradingFee);
     }
 
     function _closePosition(address caller, uint256 positionId) internal {
@@ -596,6 +761,9 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
             feeRouter.receivePerformanceFee(pos.copiedFrom, perfFee);
             emit PerformanceFeePaid(positionId, pos.copiedFrom, perfFee);
         }
+
+        // N1: route the LP share of this close's trading fee into the vault.
+        _routeVaultFee(tradingFee);
 
         emit PositionClosed(positionId, pos.owner, pnl, uint256(closeAmount));
     }
