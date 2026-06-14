@@ -412,13 +412,17 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         // must be underwater, so offsetting winners protect a losing leg and a
         // winning leg cannot be griefed. Only the GATE differs — settlement below
         // is the same per-position, conservation-proven path in both modes.
-        bool perPositionUnhealthy = closeAmount <= int256(maintenanceMargin);
         if (portfolioMarginEnabled) {
             (int256 eq, uint256 mm) = _accountState(pos.owner);
-            if (!(perPositionUnhealthy && eq < int256(mm))) {
+            // Test this leg on the SAME fee-excluded basis as account equity
+            // (legEquity = margin + pnl − funding = closeAmount + fees), so the
+            // invariant "account underwater ⟹ some leg is liquidatable" always
+            // holds and accounts can never get stuck under maintenance.
+            int256 legEquity = closeAmount + totalFees;
+            if (!(legEquity <= int256(maintenanceMargin) && eq < int256(mm))) {
                 revert PositionIsHealthy();
             }
-        } else if (!perPositionUnhealthy) {
+        } else if (closeAmount > int256(maintenanceMargin)) {
             revert PositionIsHealthy();
         }
 
@@ -651,6 +655,11 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     // ── Internal ─────────────────────────────────────────────────────────────
 
     /// @dev Sum equity and maintenance requirement over an owner's open positions.
+    ///      Note: iterates the owner's full position list (closed ones skipped).
+    ///      Position count per account is naturally bounded by locked margin at
+    ///      the current testnet scope; a hard cap can be added before mainnet if
+    ///      churn ever makes this list large. Health uses strict `eq < mm` at the
+    ///      gate, so an account exactly at maintenance is treated as healthy.
     function _accountState(address owner)
         internal
         view

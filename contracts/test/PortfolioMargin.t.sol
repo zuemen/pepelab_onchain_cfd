@@ -115,6 +115,57 @@ contract PortfolioMarginTest is Test {
         assertFalse(exchange.getPosition(a).isOpen);
     }
 
+    // ── fee asymmetry: account underwater stays actionable (no stuck account) ───
+
+    function test_portfolio_underwaterWithFees_notStuck() public {
+        // Non-zero trading fee: the Q4 review case. The per-leg gate must use the
+        // same fee-excluded basis as account equity, so an underwater account is
+        // always liquidatable (never frozen above its own per-leg maintenance).
+        exchange.setTradingFeeBps(10);     // 0.1% — reintroduces the asymmetry
+        exchange.setPortfolioMarginEnabled(true);
+        _deposit(3_000e18); // room for two 1000@5x legs incl. trading fee
+        uint256 a = _long(1_000e18);
+        _long(1_000e18);
+        oracle.updatePrice(BTC, 70_000e8);
+
+        (, , bool healthy) = exchange.getAccountHealth(user);
+        assertFalse(healthy);
+        exchange.liquidatePosition(a); // must NOT revert despite fees
+        assertFalse(exchange.getPosition(a).isOpen);
+    }
+
+    // ── boundary: closeAmount == maintenance is liquidatable in both modes ──────
+
+    function test_boundary_closeAmountEqualsMaintenance_liquidatable() public {
+        // notional 5000, maintenance 5% = 250. Need closeAmount == 250 →
+        // pnl = 250 - margin(1000) = -750 → priceChange -15000 (price 85k).
+        _deposit(1_000e18);
+        uint256 a = _long(1_000e18);
+        oracle.updatePrice(BTC, 85_000e8);
+        // isolated mode (flag off): closeAmount == maint → liquidatable (<=).
+        exchange.liquidatePosition(a);
+        assertFalse(exchange.getPosition(a).isOpen);
+    }
+
+    // ── boundary: account exactly at maintenance (eq == mm) is NOT liquidatable ─
+
+    function test_boundary_equityEqualsMaintenance_protected() public {
+        // Single long; choose a price where eq (= margin + pnl) == maintenance,
+        // and the leg is individually at-or-below maintenance, so only the strict
+        // `eq < mm` gate decides. notional 5000, maint 250. freeMargin 0.
+        // Want eq = margin(1000) + pnl == 250 → pnl = -750 (price 85k). eq==mm==250.
+        exchange.setPortfolioMarginEnabled(true);
+        _deposit(1_000e18);
+        uint256 a = _long(1_000e18); // freeMargin 0 after open
+        oracle.updatePrice(BTC, 85_000e8);
+
+        (int256 eq, uint256 mm, bool healthy) = exchange.getAccountHealth(user);
+        assertEq(eq, int256(mm));   // exactly at maintenance
+        assertTrue(healthy);        // strict <, so equality = healthy
+        vm.expectRevert(PerpetualExchange.PositionIsHealthy.selector);
+        exchange.liquidatePosition(a);
+    }
+
     // ── conservation: portfolio-mode liquidation moves no USDC out of thin air ──
 
     function test_portfolio_liquidation_conservesUsdc() public {
