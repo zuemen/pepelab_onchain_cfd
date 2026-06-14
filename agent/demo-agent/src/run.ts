@@ -1,7 +1,10 @@
-// Demo Agent（Phase 1）：自管 EOA 付 x402 費用 → 讀訊號 → 印出決策（不真下單）。
-// 端到端展示：「agent 付 0.01 USDC 買訊號 → 印出決策」。
-// 無有效金鑰時，退化成 DRY-RUN：直接讀鏈上訊號（跳過 x402 結算）仍印出決策，
-// 方便沒帶資金錢包時也能 demo 決策引擎。
+// Demo Agent（北極星 demo）：自管 EOA 付 x402 費用 → 讀訊號 → 依決策**經 session
+// 限額真的開一筆受限部位** → 印出 tx hash 與部位。
+// 端到端展示：「agent 付 0.01 USDC 買訊號 → 自主下單」。
+// 優雅退化：
+//   - 無有效金鑰：DRY-RUN，直接讀鏈上訊號（跳過 x402 結算）仍印決策。
+//   - 無 session（缺 SESSION_MANAGER_ADDRESS / DEMO_SESSION_ID）：只讀 + 印出
+//     「本來會下的單」，不送鏈、不 crash。
 import { type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { wrapFetchWithPayment } from "x402-fetch";
@@ -12,6 +15,8 @@ import {
   makeContracts,
   getOracleSnapshot,
   getTraderPerformance,
+  openPositionForSession,
+  getSessionManagerAddress,
   jsonSafe,
 } from "@pepelab/shared";
 
@@ -20,6 +25,9 @@ loadEnv();
 const API = process.env.SIGNAL_API_URL ?? "http://localhost:4021";
 const ASSET = process.env.DEMO_ASSET ?? "sBTC";
 const PK = process.env.AGENT_PRIVATE_KEY?.trim();
+const SESSION_ID = process.env.DEMO_SESSION_ID?.trim();
+const DEMO_MARGIN = Number(process.env.DEMO_MARGIN ?? "10"); // USDC，≥ MIN_MARGIN(10)
+const ZERO = "0x0000000000000000000000000000000000000000";
 
 // 分析對象：env 優先；未指定就自動挑鏈上第一個已註冊 trader（讓 demo 直接有料）。
 let TRADER = process.env.DEMO_TRADER_ADDRESS?.trim() || "";
@@ -61,9 +69,63 @@ function printDecision(oracle: any, perf: any) {
       `  ${verb}  ${s.asset} ${s.direction} ${s.leverage}x (權重 ${s.weightPercent}%) — ${s.note}`,
     );
   }
-  console.log(
-    "\n→ Phase 1 到此為止（只印決策）。Phase 2 才會經 openPositionFor 真下單。",
-  );
+}
+
+/** 從績效訊號挑出第一筆值得跟的腿（與 printDecision 的 follow 規則一致）。 */
+function pickTrade(
+  perf: any,
+): { symbol: string; isLong: boolean; leverage: number } | null {
+  if (!perf?.isRegistered) return null;
+  const net = perf.positions?.netPnL ?? 0;
+  if (net < 0) return null;
+  for (const s of perf.suggestion ?? []) {
+    if (!s.fundingHeadwind) {
+      return {
+        symbol: s.asset,
+        isLong: s.direction === "long",
+        leverage: s.leverage,
+      };
+    }
+  }
+  return null;
+}
+
+/** 北極星步驟：依決策經 session 限額真下單；缺 session/key 時優雅退化成模擬。 */
+async function executeOrSimulate(
+  trade: { symbol: string; isLong: boolean; leverage: number } | null,
+) {
+  banner("④ 經 session 自主下單（受限委派）");
+  if (!trade) {
+    console.log("無可跟訊號（淨 PnL<0 或全逆風）→ 不下單。");
+    return;
+  }
+  const wouldBe = `${trade.symbol} ${trade.isLong ? "LONG" : "SHORT"} ${trade.leverage}x，保證金 ${DEMO_MARGIN} USDC`;
+  const hasKey = PK && PK.startsWith("0x") && PK.length === 66;
+
+  if (!hasKey || !SESSION_ID || getSessionManagerAddress() === ZERO) {
+    console.log(
+      "⚠ 未配置自主下單（需 AGENT_PRIVATE_KEY + SESSION_MANAGER_ADDRESS + DEMO_SESSION_ID）。",
+    );
+    console.log(`  本來會下的單：${wouldBe}（模擬，未送鏈）。`);
+    return;
+  }
+
+  console.log(`送出：${wouldBe}（session #${SESSION_ID}）…`);
+  const res = await openPositionForSession({
+    sessionId: Number(SESSION_ID),
+    symbol: trade.symbol,
+    isLong: trade.isLong,
+    marginUsdc: DEMO_MARGIN,
+    leverage: trade.leverage,
+  });
+  if (res.ok) {
+    console.log(
+      `✓ 已開倉：tx ${res.txHash}，positionId ${res.positionId}（agent ${res.agent}，session #${res.sessionId}）`,
+    );
+  } else {
+    console.log(`✗ 下單失敗：${res.error}`);
+    console.log(`  （優雅退化）本來會下的單：${wouldBe}`);
+  }
 }
 
 /** DRY-RUN：沒有付款錢包時，直接讀鏈上拿訊號（跳過 x402 結算），仍跑決策。 */
@@ -82,6 +144,7 @@ async function dryRun() {
   const perf = jsonSafe(await getTraderPerformance(c, TRADER));
   console.log(JSON.stringify(perf, null, 2));
   printDecision(oracle, perf);
+  await executeOrSimulate(pickTrade(perf));
 }
 
 /** 真實付費路徑：經 signal-api 付 x402 費用拿訊號。 */
@@ -100,7 +163,9 @@ async function paidRun() {
   const sig = (await (await payFetch(`${API}/signals/${TRADER}`)).json()) as any;
   console.log(JSON.stringify(sig, null, 2));
 
-  printDecision(oracle?.data ?? oracle, sig?.data);
+  const perf = sig?.data;
+  printDecision(oracle?.data ?? oracle, perf);
+  await executeOrSimulate(pickTrade(perf));
 }
 
 async function main() {

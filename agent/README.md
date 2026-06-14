@@ -1,15 +1,16 @@
-# PepeLab Agent — x402 + AI Agent Phase 1 PoC
+# PepeLab Agent — x402 + AI Agent PoC
 
-對應 `docs/DESIGN_x402_AI_AGENT.md` 第 6 節 Phase 1。**全部 read-only，先不真下單。**
+對應 `docs/DESIGN_x402_AI_AGENT.md`。Phase 1 = read-only 訊號層；Phase 2 加入
+**經 `AgentSessionManager` session 限額的自主下單**（write path）。
 
-三個 workspace：
+四個 workspace：
 
 | 目錄 | 角色 | 說明 |
 |------|------|------|
-| `shared/` | 共用層 | ethers v6 provider、最小 read-only ABI、鏈上聚合邏輯。合約位址從 `frontend/src/contracts/addresses.ts` 讀取（**不寫死**）。 |
+| `shared/` | 共用層 | ethers v6 provider/signer、最小 ABI、鏈上聚合（`aggregate.ts`）與寫操作（`write.ts`）。合約位址從 `frontend/src/contracts/addresses.ts` 讀取（**不寫死**）。 |
 | `signal-api/` | x402 付費 API | Hono + `x402-hono`。`GET /signals/:trader`(0.01 USDC)、`GET /oracle/:asset`(0.005 USDC)。 |
-| `mcp-server/` | MCP read tools | `get_trader_performance` / `get_funding_rate` / `get_position`（stdio）。 |
-| `demo-agent/` | 腳本化 agent | 自管 EOA 付 x402 → 讀訊號 → 印出決策（不下單）。 |
+| `mcp-server/` | MCP tools | read：`get_trader_performance` / `get_funding_rate` / `get_position` / `get_session`；write：`open_position` / `close_position`（經 session 限額）。 |
+| `demo-agent/` | 腳本化 agent | 自管 EOA 付 x402 → 讀訊號 → **依決策經 session 真下單**（缺 session 時退化成印「本來會下的單」）。 |
 
 ## 架構重點
 
@@ -64,12 +65,39 @@ trader 的 `traderEarnings`（之後可 `withdrawTraderEarnings` 提領）。
 > 金流（x402 收款進 payTo；server 以自己的 treasury 在合約鏈上做 70/20/10 結算）。同鏈部署
 > （或把合約搬到 Base）即可合一。合約端由 `FeeRouterExternalRevenue.t.sol` 6 個測試覆蓋。
 
+## 「付費 → 自主下單」一鍵 demo（北極星）
+
+```bash
+# 0) 一次性：部署合約並把 Deploy 印出的 AgentSessionMgr 填到 .env
+#    使用者再呼叫 AgentSessionManager.createSession 建一個有界 session，記下 sessionId。
+# 1) .env 補三項，啟用真下單：
+#    AGENT_PRIVATE_KEY=0x...            # session key（自管 EOA）
+#    SESSION_MANAGER_ADDRESS=0x...      # Deploy 印出的 AgentSessionMgr
+#    DEMO_SESSION_ID=0                  # createSession 得到的 id
+# 2) 跑：
+npm run signal-api            # 終端機 1
+npm run demo-agent            # 終端機 2：付 x402 讀訊號 → 經 session 開一筆受限部位
+```
+
+流程：付費讀 `/oracle` 與 `/signals/:trader` → 決策引擎挑出第一筆順風且淨 PnL≥0 的腿
+→ 經 `AgentSessionManager.openPositionForSession` 在 **per-trade cap / budget /
+maxLeverage / expiry** 限額內開倉 → 印出 **tx hash 與 positionId**。任一前置缺失
+（無 key / 無 session 位址 / 無 sessionId）即優雅退化成只讀，印「本來會下的單」、不 crash。
+
 ## MCP server（給 Claude 等 agent）
 
 ```bash
 npm run mcp-server            # stdio transport
 ```
-在 MCP client 設定中以 `tsx agent/mcp-server/src/index.ts` 啟動，提供三個 read-only tools。
+在 MCP client 設定中以 `tsx agent/mcp-server/src/index.ts` 啟動。
+
+**read tools**：`get_trader_performance` / `get_funding_rate` / `get_position` /
+`get_session`（唯讀，免金鑰）。
+
+**write tools**（Phase 2）：`open_position` / `close_position`，全部經
+`AgentSessionManager.openPositionForSession` / `closePositionForSession`，受 session
+限額約束。需 `AGENT_PRIVATE_KEY`（session key）+ `SESSION_MANAGER_ADDRESS`；缺任一時
+tool 回明確錯誤、不 crash。輸入含 `sessionId`，agent 永不持有使用者主錢包私鑰。
 
 ## 型別檢查
 
@@ -87,4 +115,7 @@ npm run typecheck             # tsc --noEmit（涵蓋所有 workspace）
 | `X402_NETWORK` | x402 結算網路，預設 `base-sepolia` |
 | `X402_FACILITATOR_URL` | x402 facilitator，預設 `https://x402.org/facilitator` |
 | `PAY_TO` | 收款地址；留空則回退到 FeeRouter |
-| `AGENT_PRIVATE_KEY` | demo agent 自管 EOA（付 x402 費用，僅限測試錢包） |
+| `AGENT_PRIVATE_KEY` | demo agent 自管 EOA / session key（付 x402 費用 + 經 session 下單，僅限測試錢包） |
+| `SESSION_MANAGER_ADDRESS` | `AgentSessionManager` 位址（Deploy 印出；啟用 write path） |
+| `DEMO_SESSION_ID` | demo agent 下單用的 session id（`createSession` 取得） |
+| `DEMO_MARGIN` | 每筆下單保證金（USDC，預設 10） |
