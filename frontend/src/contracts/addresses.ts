@@ -63,9 +63,33 @@ const SEPOLIA: ChainAddresses = {
   PepeStaking:            "0x0000000000000000000000000000000000000000",
 }
 
+// ── Base Sepolia testnet (chainId 84532) ──────────────────────────────────────
+// Phase 4 deploy target. Filled in by deploy-base-sepolia.sh after broadcast;
+// 0x0 = not yet deployed (UI shows "not deployed" guards, same as other chains).
+const BASE_SEPOLIA: ChainAddresses = {
+  MockUSDC:          "0x0000000000000000000000000000000000000000",
+  MockOracle:        "0x0000000000000000000000000000000000000000",
+  TraderStake:       "0x0000000000000000000000000000000000000000",
+  InsuranceVault:    "0x0000000000000000000000000000000000000000",
+  FeeRouter:         "0x0000000000000000000000000000000000000000",
+  PerpetualExchange: "0x0000000000000000000000000000000000000000",
+  StrategyRegistry:  "0x0000000000000000000000000000000000000000",
+  CopyTracker:       "0x0000000000000000000000000000000000000000",
+  MockSwapRouter:    "0x0000000000000000000000000000000000000000",
+  ESGRegistry:       "0x0000000000000000000000000000000000000000",
+  KYCRegistry:       "0x0000000000000000000000000000000000000000",
+  PepeAMM:           "0x0000000000000000000000000000000000000000",
+  PepeToken:              "0x0000000000000000000000000000000000000000",
+  PepeClaim:              "0x0000000000000000000000000000000000000000",
+  EsgRewardDistributor:   "0x0000000000000000000000000000000000000000",
+  PepeIncentives:         "0x0000000000000000000000000000000000000000",
+  PepeStaking:            "0x0000000000000000000000000000000000000000",
+}
+
 const CHAIN_MAP: Record<number, ChainAddresses> = {
   31337:    ANVIL,
   11155111: SEPOLIA,
+  84532:    BASE_SEPOLIA,
 }
 
 export const getAddresses = (chainId: number | null): ChainAddresses | null =>
@@ -74,6 +98,7 @@ export const getAddresses = (chainId: number | null): ChainAddresses | null =>
 export const CHAIN_NAMES: Record<number, string> = {
   31337:    'Anvil Local',
   11155111: 'Sepolia',
+  84532:    'Base Sepolia',
 }
 
 
