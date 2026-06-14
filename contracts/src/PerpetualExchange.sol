@@ -19,6 +19,10 @@ interface IInsuranceVaultPerp {
     function depositFromProtocol(uint256 amount) external;
 }
 
+interface IKyc {
+    function isVerified(address user) external view returns (bool);
+}
+
 contract PerpetualExchange is Ownable, ReentrancyGuard {
     // ── Constants ────────────────────────────────────────────────────────────
 
@@ -92,6 +96,12 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     IFeeRouterPerp                    public feeRouter;
     IInsuranceVaultPerp               public insuranceVault;
 
+    // RWA compliance gating. Assets flagged `rwaAsset` require the opener to be
+    // KYC-verified when a `kyc` registry is configured. Both default off, so
+    // pure-crypto markets and all pre-existing behaviour are unaffected.
+    IKyc                              public kyc;
+    mapping(bytes32 => bool)          public rwaAsset;
+
     // ── Events ───────────────────────────────────────────────────────────────
 
     event PositionOpened(
@@ -128,6 +138,8 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         int256  newIndex
     );
     event AgentAuthorizationSet(address indexed agent, bool authorized);
+    event KycRegistrySet(address indexed kyc);
+    event RwaAssetSet(bytes32 indexed asset, bool isRwa);
 
     // ── Errors ───────────────────────────────────────────────────────────────
 
@@ -141,6 +153,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     error PositionIsHealthy();
     error FundingIntervalNotElapsed();
     error StalePrice(bytes32 asset, uint256 updatedAt);
+    error NotKycVerified(address user);
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
@@ -192,6 +205,21 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
 
     function setInsuranceVault(address _vault) external onlyOwner {
         insuranceVault = IInsuranceVaultPerp(_vault);
+    }
+
+    /// @notice Set (or clear with address(0)) the KYC registry used to gate RWA
+    ///         markets. While unset, RWA flags impose no restriction — preserving
+    ///         backward compatibility for pure-crypto deployments.
+    function setKycRegistry(address _kyc) external onlyOwner {
+        kyc = IKyc(_kyc);
+        emit KycRegistrySet(_kyc);
+    }
+
+    /// @notice Flag an asset as a real-world asset (or clear the flag). Config
+    ///         only — RWA markets require KYC at open time once `kyc` is set.
+    function setRwaAsset(bytes32 asset, bool isRwa) external onlyOwner {
+        rwaAsset[asset] = isRwa;
+        emit RwaAssetSet(asset, isRwa);
     }
 
     function setMaxPriceAge(uint256 _seconds) external onlyOwner {
@@ -437,6 +465,12 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     ) internal returns (uint256 positionId) {
         if (margin < MIN_MARGIN)                       revert MarginTooLow();
         if (leverage == 0 || leverage > MAX_LEVERAGE)  revert InvalidLeverage();
+
+        // RWA compliance: gated only when both the asset is flagged and a KYC
+        // registry is wired (otherwise this is a no-op for backward compat).
+        if (rwaAsset[asset] && address(kyc) != address(0) && !kyc.isVerified(owner)) {
+            revert NotKycVerified(owner);
+        }
 
         // Settle any pending funding BEFORE locking the entry index,
         // so the new position is not charged for pre-open accrual.

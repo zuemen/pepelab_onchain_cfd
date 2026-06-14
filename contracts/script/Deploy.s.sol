@@ -13,13 +13,14 @@ import "../src/StrategyRegistry.sol";
 import "../src/CopyTracker.sol";
 import "../src/TraderStake.sol";
 import "../src/AgentSessionManager.sol";
+import "../src/KYCRegistry.sol";
 
 contract Deploy is Script {
     // Asset IDs — same keccak256 used on-chain and in the frontend
     bytes32 constant SBTC  = keccak256("sBTC");
     bytes32 constant SETH  = keccak256("sETH");
-    bytes32 constant SAAPL = keccak256("sAAPL");
-    bytes32 constant STSLA = keccak256("sTSLA");
+    bytes32 constant SAAPL = keccak256("sAAPL");  // RWA: equity
+    bytes32 constant STSLA = keccak256("sTSLA");  // RWA: equity
 
     function run() external {
         address deployer = msg.sender;
@@ -81,6 +82,14 @@ contract Deploy is Script {
         AgentSessionManager sessionManager = new AgentSessionManager(address(exchange));
         exchange.setAgentAuthorized(address(sessionManager), true);
 
+        // 13. KYCRegistry + RWA compliance gating (G2). Equity synthetics are
+        //     real-world assets: opening them requires KYC. Crypto (sBTC/sETH)
+        //     stays permissionless.
+        KYCRegistry kyc = new KYCRegistry();
+        exchange.setKycRegistry(address(kyc));
+        exchange.setRwaAsset(SAAPL, true);
+        exchange.setRwaAsset(STSLA, true);
+
         vm.stopBroadcast();
 
         // Print addresses (visible with forge script -v)
@@ -95,6 +104,7 @@ contract Deploy is Script {
         console.log("StrategyRegistry :", address(registry));
         console.log("CopyTracker      :", address(ct));
         console.log("AgentSessionMgr  :", address(sessionManager));
+        console.log("KYCRegistry      :", address(kyc));
         console.log("=== Asset IDs (bytes32) ===");
         console.logBytes32(SBTC);
         console.logBytes32(SETH);
