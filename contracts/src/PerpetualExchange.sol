@@ -423,16 +423,24 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
                 insuranceVault.depositFromProtocol(toVault);
             }
         } else if (adlEnabled && closeAmount < 0) {
-            // N2: the position is underwater beyond its collateral. The protocol
-            // is short uint(-closeAmount). Whatever the InsuranceVault cannot
-            // absorb is socialized by auto-deleveraging profitable counterparties
-            // (haircutting their gains), keeping the system solvent.
+            // N2: the position is underwater beyond its collateral, so the
+            // protocol is short uint(-closeAmount). Insurance fund first — draw
+            // what the vault can into the exchange's reserves to fill the hole —
+            // then auto-deleverage profitable counterparties for whatever the
+            // vault could not cover, keeping the system solvent.
             uint256 shortfall = uint256(-closeAmount);
-            uint256 vaultAvail = address(insuranceVault) != address(0)
-                ? insuranceVault.totalAssets()
-                : 0;
-            if (shortfall > vaultAvail) {
-                _autoDeleverage(positionId, pos.asset, pos.isLong, shortfall - vaultAvail);
+            uint256 covered;
+            if (address(insuranceVault) != address(0)) {
+                uint256 vaultAvail = insuranceVault.totalAssets();
+                covered = shortfall < vaultAvail ? shortfall : vaultAvail;
+                if (covered > 0) {
+                    // bailout pays `covered` USDC to the exchange, topping up the
+                    // reserves that back winner payouts (CEI: pos already closed).
+                    insuranceVault.bailout(covered, address(this));
+                }
+            }
+            if (shortfall > covered) {
+                _autoDeleverage(positionId, pos.asset, pos.isLong, shortfall - covered);
             }
         }
 
@@ -445,10 +453,14 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
 
     /// @dev N2: reduce the protocol's winner liability by `uncovered` USDC by
     ///      force-closing profitable positions on the **opposite** side of the
-    ///      liquidated (losing) position, haircutting their profit. The haircut
-    ///      lowers each winner's `freeMargin` credit — a pure ledger adjustment
-    ///      that needs no cash on hand — so total claims drop to match reserves.
-    ///      Bounded by MAX_ADL_SCAN to cap gas. Involuntary, so no trading/borrow
+    ///      liquidated (losing) position, haircutting their profit. Each winner's
+    ///      `freeMargin` credit is lowered by its share of the haircut, so total
+    ///      claims drop back in line with the reserves the bankrupt loser left
+    ///      behind. Runs only on the portion the InsuranceVault could not cover.
+    ///      Bounded by MAX_ADL_SCAN to cap gas (note: the per-asset index is not
+    ///      compacted, so very long-lived markets may exhaust the scan budget on
+    ///      stale entries — acceptable for the current testnet scope). Victims are
+    ///      taken in index (insertion) order. Involuntary, so no trading/borrow
     ///      fee is charged; funding is still settled fairly.
     function _autoDeleverage(
         uint256 liquidatedId,

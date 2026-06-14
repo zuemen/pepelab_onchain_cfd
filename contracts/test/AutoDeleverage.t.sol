@@ -91,11 +91,64 @@ contract AutoDeleverageTest is Test {
         (uint256 longId, uint256 shortId) = _openBalanced();
         oracle.updatePrice(BTC, 70_000e8);
 
+        uint256 vaultBefore = vault.totalAssets();
         exchange.liquidatePosition(longId);
 
-        // Vault covers the 500 shortfall → winner untouched, short still open.
+        // Vault covers the full 500 shortfall → winner untouched, short still open,
+        // and the vault is actually drawn down by exactly the shortfall (the bug
+        // the review caught: the vault must really pay, not just be consulted).
         assertTrue(exchange.getPosition(shortId).isOpen);
         assertEq(exchange.globalShortNotional(BTC), 5_000e18);
+        assertEq(vault.totalAssets(), vaultBefore - 500e18);
+    }
+
+    // ── partial vault coverage: vault pays what it can, ADL covers the rest ─────
+
+    function test_adl_partialVaultCoverage_conserves() public {
+        exchange.setAdlEnabled(true);
+        // Vault holds only 200 of the 500 shortfall.
+        usdc.mint(address(this), 200e18);
+        usdc.approve(address(vault), type(uint256).max);
+        vault.deposit(200e18);
+
+        (uint256 longId, uint256 shortId) = _openBalanced();
+        oracle.updatePrice(BTC, 70_000e8);
+
+        // shortfall 500: vault covers 200, ADL haircuts the remaining 300 from
+        // the short's +1500 profit → realizedPnL = 1200, payout = 1000 + 1200.
+        vm.expectEmit(true, true, false, true, address(exchange));
+        emit PerpetualExchange.AutoDeleveraged(longId, shortId, 300e18, 2_200e18);
+
+        exchange.liquidatePosition(longId);
+
+        assertEq(vault.totalAssets(), 0);                         // vault fully drawn
+        PerpetualExchange.Position memory sp = exchange.getPosition(shortId);
+        assertFalse(sp.isOpen);
+        assertEq(sp.realizedPnL, int256(1_200e18));
+        assertEq(exchange.freeMargin(bear), 99_000e18 + 2_200e18);
+    }
+
+    // ── ADL carries the shortfall across multiple winners ───────────────────────
+
+    function test_adl_multipleWinners_carryOver() public {
+        exchange.setAdlEnabled(true); // vault empty
+
+        // Two small shorts, each profit +750 after the drop; one big losing long.
+        vm.prank(bull); uint256 longId = exchange.openPosition(BTC, true,  2_000e18, 5); // 10000 notional
+        vm.prank(bear); uint256 s1     = exchange.openPosition(BTC, false,   500e18, 5); // 2500 notional
+        vm.prank(bear); uint256 s2     = exchange.openPosition(BTC, false,   500e18, 5); // 2500 notional
+
+        oracle.updatePrice(BTC, 70_000e8);
+        // long pnl = -3000, margin 2000 → closeAmount -1000 → shortfall 1000.
+        // each short profit = +750. ADL: s1 haircut 750 (fully consumed),
+        // s2 haircut 250 → both deleveraged, remaining 0.
+        exchange.liquidatePosition(longId);
+
+        assertFalse(exchange.getPosition(s1).isOpen);
+        assertFalse(exchange.getPosition(s2).isOpen);
+        assertEq(exchange.getPosition(s1).realizedPnL, int256(0));     // 750 - 750
+        assertEq(exchange.getPosition(s2).realizedPnL, int256(500e18)); // 750 - 250
+        assertEq(exchange.globalShortNotional(BTC), 0);
     }
 
     // ── ADL disabled → legacy behaviour (winner untouched) ──────────────────────
