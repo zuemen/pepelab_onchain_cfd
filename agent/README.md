@@ -56,14 +56,37 @@ FeeRouter 新增了 permissionless 入口 `routeExternalRevenue(address trader, 
 （pull USDC → 既有 `_split` 70/20/10），讓 x402 收入能**真的上鏈**走分潤、70% 記到該
 trader 的 `traderEarnings`（之後可 `withdrawTraderEarnings` 提領）。
 
-啟用：在 `.env` 設 `FEE_SETTLEMENT_PRIVATE_KEY`（Base Sepolia 上、持少量 ETH 的測試
-金鑰）。每筆 `/signals/:trader` 付費後，server 會 fire-and-forget 呼叫
-`routeExternalRevenue`（mUSDC 不足會自動 mint、未授權會自動 approve），結果寫回帳務，
-`GET /revenue` 的 `settledOnChain` 與每筆 `settlement.tx` 可見。未設金鑰則僅保留鏈下帳務。
+啟用：在 `.env` 設 `FEE_SETTLEMENT_PRIVATE_KEY`，server 每筆 `/signals/:trader` 付費後
+fire-and-forget 呼叫 `routeExternalRevenue`（餘額不足且不可 mint 時回明確錯誤、不擋回應），
+結果寫回帳務，`GET /revenue` 的 `settledOnChain` 與每筆 `settlement.tx` 可見。
 
-> ✅ Phase 4 起 x402 收款與 FeeRouter 結算**同在 Base Sepolia**：收款進 payTo（= FeeRouter），
-> server 以 treasury 在同鏈做 70/20/10 結算，金流合一、不再跨鏈。合約端由
-> `FeeRouterExternalRevenue.t.sol` 6 個測試覆蓋。
+### 付款幣別 vs 保證金幣別（A0 設計）
+
+x402 在 Base Sepolia 結算的是 **Circle 官方測試 USDC（6-dec, EIP-3009）**
+`0x036CbD53842c5426634e7929541eC2318f3dCF7e`，而永續引擎的保證金用 **MockUSDC（18-dec,
+可自助 mint）**——兩者**用途分離**：
+
+| 用途 | Token | 為何 |
+|------|-------|------|
+| x402 付費 + 70/20/10 分潤 | 官方 USDC（6-dec） | facilitator 只認官方 USDC（EIP-3009 簽章） |
+| 永續部位保證金 | MockUSDC（18-dec） | demo 可自助鑄幣，免 faucet 限額 |
+
+因 `FeeRouter.usdc` 為 immutable，已部署（綁 MockUSDC）的 FeeRouter 不能改幣別，故
+**另部署一組 x402 專用 `FeeRouter`+`InsuranceVault`（綁官方 USDC）** 做真結算：
+
+```bash
+# 1) 部署 x402 收入分潤路由（官方 USDC）
+cd contracts
+forge script script/DeployX402Router.s.sol:DeployX402Router \
+  --rpc-url base_sepolia --broadcast --verify
+# 2) 把印出的 X402_FeeRouter 填進 agent/.env 的 X402_FEE_ROUTER
+# 3) PAY_TO 設為 treasury EOA（= FEE_SETTLEMENT 帳戶地址），領官方 USDC + ETH
+```
+
+流程：agent x402 付官方 USDC → `PAY_TO`(treasury EOA) → `settlement.ts`（同帳戶）approve +
+`routeExternalRevenue` 在官方 USDC 上走 70/20/10，70% 記入該 trader 的 `traderEarnings`。
+合約端：`FeeRouterExternalRevenue.t.sol`（18-dec）+ `FeeRouterX402Usdc.t.sol`（6-dec）共覆蓋。
+未設 `X402_FEE_ROUTER` 則回退到 MockUSDC FeeRouter（舊行為）。
 
 ## 「付費 → 自主下單」一鍵 demo（北極星）
 

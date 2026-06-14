@@ -12,13 +12,23 @@ const FEE_ROUTER_ABI = [
   "function routeExternalRevenue(address trader, uint256 fee)",
 ];
 const USDC_ABI = [
+  "function decimals() view returns (uint8)",
   "function balanceOf(address) view returns (uint256)",
   "function allowance(address owner, address spender) view returns (uint256)",
   "function approve(address spender, uint256 amount) returns (bool)",
-  "function mint(address to, uint256 amount)", // MockUSDC: public (TESTNET ONLY)
+  "function mint(address to, uint256 amount)", // MockUSDC only (TESTNET); real USDC reverts → skipped
 ];
 
 const PK = process.env.FEE_SETTLEMENT_PRIVATE_KEY?.trim();
+
+// A0: settlement currency is configurable so x402 revenue can settle in the
+// SAME token the agent paid (official Base Sepolia USDC, 6-dec) via a dedicated
+// FeeRouter, while the perp engine keeps MockUSDC. Defaults fall back to the
+// MockUSDC FeeRouter from addresses.ts (old behaviour).
+const SETTLEMENT_TOKEN =
+  process.env.X402_SETTLEMENT_TOKEN?.trim() || ADDRESSES.MockUSDC;
+const SETTLEMENT_ROUTER =
+  process.env.X402_FEE_ROUTER?.trim() || ADDRESSES.FeeRouter;
 
 let wallet: ethers.Wallet | null = null;
 let feeRouter: ethers.Contract | null = null;
@@ -27,8 +37,8 @@ let usdc: ethers.Contract | null = null;
 if (PK && PK.startsWith("0x") && PK.length === 66) {
   const provider = makeProvider();
   wallet = new ethers.Wallet(PK, provider);
-  feeRouter = new ethers.Contract(ADDRESSES.FeeRouter, FEE_ROUTER_ABI, wallet);
-  usdc = new ethers.Contract(ADDRESSES.MockUSDC, USDC_ABI, wallet);
+  feeRouter = new ethers.Contract(SETTLEMENT_ROUTER, FEE_ROUTER_ABI, wallet);
+  usdc = new ethers.Contract(SETTLEMENT_TOKEN, USDC_ABI, wallet);
 }
 
 export function isSettlementEnabled(): boolean {
@@ -61,20 +71,30 @@ async function _settle(trader: string, feeUsd: number): Promise<SettlementResult
     return { status: "failed", error: "settlement disabled" };
   }
   try {
-    const atomic = ethers.parseUnits(feeUsd.toString(), 18); // mUSDC = 18-dec
+    // 依結算 token 的實際小數位換算（官方 USDC=6, MockUSDC=18）。
+    const decimals = Number(await usdc.decimals());
+    const atomic = ethers.parseUnits(feeUsd.toString(), decimals);
     const me = wallet.address;
 
-    // 確保餘額（不足就鑄一批測試 mUSDC，省去 faucet）
+    // 確保餘額。MockUSDC 可自助鑄幣省 faucet；官方 USDC 不可 mint → 改用既有
+    // 餘額（來自 x402 付款），鑄幣失敗就略過、不擋結算。
     const bal = (await usdc.balanceOf(me)) as bigint;
     if (bal < atomic) {
-      const mintTx = await usdc.mint(me, atomic * 1000n);
-      await mintTx.wait();
+      try {
+        const mintTx = await usdc.mint(me, atomic * 1000n);
+        await mintTx.wait();
+      } catch {
+        return {
+          status: "failed",
+          error: `結算 token 餘額不足且不可 mint（${SETTLEMENT_TOKEN}）。treasury 需先收到 x402 付款的 USDC。`,
+        };
+      }
     }
 
     // 確保授權
-    const allowance = (await usdc.allowance(me, ADDRESSES.FeeRouter)) as bigint;
+    const allowance = (await usdc.allowance(me, SETTLEMENT_ROUTER)) as bigint;
     if (allowance < atomic) {
-      const apTx = await usdc.approve(ADDRESSES.FeeRouter, ethers.MaxUint256);
+      const apTx = await usdc.approve(SETTLEMENT_ROUTER, ethers.MaxUint256);
       await apTx.wait();
     }
 
