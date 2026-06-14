@@ -1,9 +1,15 @@
-// PepeLab MCP Server（Phase 1, read-only）
-// 把協議唯讀狀態包成 MCP tools，讓 Claude 這類 agent 直接查詢：
-//   - get_trader_performance  → StrategyRegistry + 鏈上 PnL 聚合
-//   - get_funding_rate        → PerpetualExchange.getFundingRate
-//   - get_position            → PerpetualExchange.getPosition (+ unrealized/funding)
-// 透過 stdio 傳輸；合約讀取走 Ethereum Sepolia。
+// PepeLab MCP Server
+// 把協議狀態包成 MCP tools，讓 Claude 這類 agent 直接查詢與下單：
+//   read:
+//     - get_trader_performance  → StrategyRegistry + 鏈上 PnL 聚合
+//     - get_funding_rate        → PerpetualExchange.getFundingRate
+//     - get_position            → PerpetualExchange.getPosition (+ unrealized/funding)
+//     - get_session             → AgentSessionManager.sessions（限額/預算/到期）
+//   write（Phase 2，經 AgentSessionManager session 限額）:
+//     - open_position           → openPositionForSession
+//     - close_position          → closePositionForSession
+// 透過 stdio 傳輸；合約讀取走 Ethereum Sepolia。寫操作需 AGENT_PRIVATE_KEY
+// （session key）+ SESSION_MANAGER_ADDRESS；缺任一時 tool 回明確錯誤、不 crash。
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -14,6 +20,9 @@ import {
   getTraderPerformance,
   getFundingRate,
   getPositionDetail,
+  openPositionForSession,
+  closePositionForSession,
+  getSession,
   jsonSafe,
 } from "@pepelab/shared";
 
@@ -83,6 +92,66 @@ server.tool(
   },
 );
 
+// ── read: session 設定 ───────────────────────────────────────────────────────
+server.tool(
+  "get_session",
+  "讀取某 session 的委派限額：使用者/agent、每筆上限、總預算、已用、最大槓桿、到期、是否撤銷。下單前先用它自我檢查。",
+  { sessionId: z.number().int().nonnegative().describe("鏈上 session id") },
+  async ({ sessionId }) => {
+    try {
+      return ok(await getSession(sessionId));
+    } catch (err) {
+      return fail(err);
+    }
+  },
+);
+
+// ── write: 經 AgentSessionManager 在 session 限額內下單 ───────────────────────
+server.tool(
+  "open_position",
+  "【寫】在指定 session 限額內為 session 使用者開一筆受限部位（受 per-trade cap / budget / leverage cap / expiry 約束）。需 AGENT_PRIVATE_KEY + SESSION_MANAGER_ADDRESS；缺則回明確錯誤。回傳 tx hash 與 positionId。",
+  {
+    sessionId: z.number().int().nonnegative().describe("鏈上 session id"),
+    asset: z.string().describe("資產代號，如 sBTC / sETH / sAAPL"),
+    isLong: z.boolean().describe("true=做多，false=做空"),
+    marginUsdc: z.number().positive().describe("保證金（USDC，人類單位）"),
+    leverage: z.number().int().positive().describe("槓桿（受 session.maxLeverage 約束）"),
+  },
+  async ({ sessionId, asset, isLong, marginUsdc, leverage }) => {
+    try {
+      const res = await openPositionForSession({
+        sessionId,
+        symbol: asset,
+        isLong,
+        marginUsdc,
+        leverage,
+      });
+      return res.ok ? ok(res) : fail(new Error(res.error));
+    } catch (err) {
+      return fail(err);
+    }
+  },
+);
+
+server.tool(
+  "close_position",
+  "【寫】平掉指定 session 使用者的一筆部位。需 AGENT_PRIVATE_KEY + SESSION_MANAGER_ADDRESS；缺則回明確錯誤。回傳 tx hash。",
+  {
+    sessionId: z.number().int().nonnegative().describe("鏈上 session id"),
+    positionId: z.number().int().nonnegative().describe("要平的倉位 ID"),
+  },
+  async ({ sessionId, positionId }) => {
+    try {
+      const res = await closePositionForSession({ sessionId, positionId });
+      return res.ok ? ok(res) : fail(new Error(res.error));
+    } catch (err) {
+      return fail(err);
+    }
+  },
+);
+
 const transport = new StdioServerTransport();
 await server.connect(transport);
-console.error("▶ pepelab-cfd MCP server ready (stdio, read-only)");
+console.error(
+  "▶ pepelab-cfd MCP server ready (stdio) — read tools + session-bounded write tools",
+);

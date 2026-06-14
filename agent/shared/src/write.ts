@@ -1,0 +1,193 @@
+// Phase 2 write path：agent 經 AgentSessionManager 在 session 限額內代下單。
+// 全程綁 session key（自管 EOA），永不持有使用者主錢包私鑰。所有寫操作都受
+// 合約端的 per-trade cap / budget / leverage cap / expiry 約束。
+//
+// 設計守則：缺金鑰或缺 session manager 位址時，回明確的結構化錯誤而非 throw，
+// 讓 MCP tool 與 demo agent 能優雅降級（dry-run），不 crash。
+import { ethers } from "ethers";
+import {
+  makeProvider,
+  makeContracts,
+  makeSigner,
+  makeSessionManager,
+  getSessionManagerAddress,
+} from "./provider.ts";
+import { assetIdOf } from "./addresses.ts";
+
+const ZERO = "0x0000000000000000000000000000000000000000";
+
+export interface WriteResult {
+  ok: boolean;
+  /** 失敗原因（ok=false 時填）；UI/agent 直接展示。 */
+  error?: string;
+  txHash?: string;
+  positionId?: string;
+  agent?: string;
+  sessionId?: number;
+  detail?: Record<string, unknown>;
+}
+
+/** 取得綁 signer 的 session manager；缺金鑰/位址時回結構化錯誤。 */
+function resolveSession():
+  | { signer: ethers.Wallet; mgr: ethers.Contract }
+  | { error: string } {
+  const provider = makeProvider();
+  const signer = makeSigner(provider);
+  if (!signer) {
+    return {
+      error:
+        "未設定有效 AGENT_PRIVATE_KEY（0x + 64 hex）。寫操作需要 session key；" +
+        "請見 agent/.env.example。",
+    };
+  }
+  const mgr = makeSessionManager(signer);
+  if (!mgr) {
+    return {
+      error:
+        `未設定 SESSION_MANAGER_ADDRESS（目前 ${getSessionManagerAddress()}）。` +
+        "請把 Deploy.s.sol 印出的 AgentSessionMgr 位址填入 agent/.env。",
+    };
+  }
+  return { signer, mgr };
+}
+
+/**
+ * 在 session 限額內為 session.user 開一筆受限部位。
+ * @param sessionId 鏈上 session id（由使用者 createSession 建立）
+ * @param symbol    資產代號（sBTC…），轉 bytes32 assetId
+ * @param isLong    多/空
+ * @param marginUsdc 保證金（人類單位，內部轉 18-dec）
+ * @param leverage  槓桿（受 session.maxLeverage 約束）
+ */
+export async function openPositionForSession(params: {
+  sessionId: number;
+  symbol: string;
+  isLong: boolean;
+  marginUsdc: number;
+  leverage: number;
+}): Promise<WriteResult> {
+  const r = resolveSession();
+  if ("error" in r) return { ok: false, error: r.error };
+  const { signer, mgr } = r;
+
+  try {
+    const assetId = assetIdOf(params.symbol);
+    const margin = ethers.parseUnits(String(params.marginUsdc), 18);
+
+    // 開倉需附 execution fee（native ETH），由 session manager 轉發給 exchange。
+    const perp = makeContracts(makeProvider()).perp;
+    const fee = (await perp.executionFee()) as bigint;
+
+    const tx = await mgr.openPositionForSession(
+      params.sessionId,
+      assetId,
+      params.isLong,
+      margin,
+      params.leverage,
+      ZERO, // copiedFrom：self-open
+      { value: fee },
+    );
+    const receipt = await tx.wait();
+
+    // 從 SessionOpenedPosition 事件解出 positionId。
+    let positionId: string | undefined;
+    for (const log of receipt?.logs ?? []) {
+      try {
+        const parsed = mgr.interface.parseLog(log);
+        if (parsed?.name === "SessionOpenedPosition") {
+          positionId = parsed.args.positionId.toString();
+          break;
+        }
+      } catch {
+        /* 非本合約事件，略過 */
+      }
+    }
+
+    return {
+      ok: true,
+      txHash: tx.hash,
+      positionId,
+      agent: signer.address,
+      sessionId: params.sessionId,
+      detail: {
+        symbol: params.symbol,
+        isLong: params.isLong,
+        marginUsdc: params.marginUsdc,
+        leverage: params.leverage,
+      },
+    };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message, agent: signer.address };
+  }
+}
+
+/** 平掉 session 使用者的一筆部位。 */
+export async function closePositionForSession(params: {
+  sessionId: number;
+  positionId: number;
+}): Promise<WriteResult> {
+  const r = resolveSession();
+  if ("error" in r) return { ok: false, error: r.error };
+  const { signer, mgr } = r;
+
+  try {
+    const tx = await mgr.closePositionForSession(
+      params.sessionId,
+      params.positionId,
+    );
+    await tx.wait();
+    return {
+      ok: true,
+      txHash: tx.hash,
+      positionId: String(params.positionId),
+      agent: signer.address,
+      sessionId: params.sessionId,
+    };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message, agent: signer.address };
+  }
+}
+
+/** 讀 session 設定（限額/預算/到期），給 agent 在下單前自我檢查。 */
+export async function getSession(sessionId: number): Promise<WriteResult> {
+  const provider = makeProvider();
+  const signer = makeSigner(provider);
+  // 唯讀也可用 provider；但沿用 signer 一致性，缺則退回 provider。
+  const mgr = signer
+    ? makeSessionManager(signer)
+    : (() => {
+        const addr = getSessionManagerAddress();
+        if (addr === ZERO) return null;
+        return new ethers.Contract(
+          addr,
+          // 延遲 import 會增加複雜度，直接用最小 ABI 片段。
+          ["function sessions(uint256) view returns (address user, address agent, uint256 maxMarginPerTrade, uint256 totalMarginBudget, uint256 spentMargin, uint256 maxLeverage, uint256 expiry, bool revoked)"],
+          provider,
+        );
+      })();
+  if (!mgr) {
+    return {
+      ok: false,
+      error: `未設定 SESSION_MANAGER_ADDRESS（目前 ${getSessionManagerAddress()}）。`,
+    };
+  }
+  try {
+    const s = await mgr.sessions(sessionId);
+    return {
+      ok: true,
+      sessionId,
+      detail: {
+        user: s.user,
+        agent: s.agent,
+        maxMarginPerTrade: ethers.formatUnits(s.maxMarginPerTrade, 18),
+        totalMarginBudget: ethers.formatUnits(s.totalMarginBudget, 18),
+        spentMargin: ethers.formatUnits(s.spentMargin, 18),
+        maxLeverage: Number(s.maxLeverage),
+        expiry: Number(s.expiry),
+        revoked: s.revoked,
+      },
+    };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+}

@@ -8,7 +8,18 @@ export const PERPETUAL_EXCHANGE_ABI = [
   "function getFundingRate(bytes32 asset) view returns (int256 rateBps)",
   "function globalLongNotional(bytes32) view returns (uint256)",
   "function globalShortNotional(bytes32) view returns (uint256)",
+  "function executionFee() view returns (uint256)",
+  "function freeMargin(address) view returns (uint256)",
   "function getPosition(uint256 positionId) view returns (tuple(uint256 id, address owner, bytes32 asset, bool isLong, uint256 entryPrice, uint256 margin, uint256 leverage, uint256 openedAt, uint256 closedAt, int256 realizedPnL, bool isOpen, address copiedFrom, int256 entryFundingIndex))",
+] as const;
+
+// Phase 2 session-key delegation layer (write path). Agents call these within
+// the bounded session limits set by the user via createSession.
+export const AGENT_SESSION_MANAGER_ABI = [
+  "function nextSessionId() view returns (uint256)",
+  "function sessions(uint256) view returns (address user, address agent, uint256 maxMarginPerTrade, uint256 totalMarginBudget, uint256 spentMargin, uint256 maxLeverage, uint256 expiry, bool revoked)",
+  "function openPositionForSession(uint256 sessionId, bytes32 asset, bool isLong, uint256 margin, uint256 leverage, address copiedFrom) payable returns (uint256 positionId)",
+  "function closePositionForSession(uint256 sessionId, uint256 positionId)",
 ] as const;
 
 export const MOCK_ORACLE_ABI = [
