@@ -10,6 +10,7 @@ loadEnv();
 
 const FEE_ROUTER_ABI = [
   "function routeExternalRevenue(address trader, uint256 fee)",
+  "function usdc() view returns (address)",
 ];
 const USDC_ABI = [
   "function decimals() view returns (uint8)",
@@ -66,10 +67,35 @@ export function settleRevenue(trader: string, feeUsd: number): Promise<Settlemen
   return run;
 }
 
+// 一次性檢查：結算 token 必須 == FeeRouter 綁定的 usdc()，否則會 approve A、
+// router 卻 pull/分潤 B → routeExternalRevenue 在金庫 depositFromProtocol 處 revert。
+// 把「靜默失敗」變成明確錯誤（最常見的 .env 誤配：X402_FEE_ROUTER 留空回退到
+// MockUSDC router，但 X402_SETTLEMENT_TOKEN 是官方 USDC）。
+let currencyChecked = false;
+async function _assertCurrencyMatch(): Promise<string | null> {
+  if (currencyChecked) return null;
+  try {
+    const routerUsdc = (await feeRouter!.usdc()) as string;
+    if (routerUsdc.toLowerCase() !== SETTLEMENT_TOKEN.toLowerCase()) {
+      return (
+        `結算幣別不符：X402_SETTLEMENT_TOKEN=${SETTLEMENT_TOKEN} 但 ` +
+        `X402_FEE_ROUTER.usdc()=${routerUsdc}。請先用 DeployX402Router.s.sol 部署官方 USDC ` +
+        `的 FeeRouter 並把位址填進 X402_FEE_ROUTER（見 .env.example）。`
+      );
+    }
+    currencyChecked = true;
+    return null;
+  } catch (err) {
+    return `無法讀取 FeeRouter.usdc()（位址錯誤？）：${(err as Error).message}`;
+  }
+}
+
 async function _settle(trader: string, feeUsd: number): Promise<SettlementResult> {
   if (!wallet || !feeRouter || !usdc) {
     return { status: "failed", error: "settlement disabled" };
   }
+  const mismatch = await _assertCurrencyMatch();
+  if (mismatch) return { status: "failed", error: mismatch };
   try {
     // 依結算 token 的實際小數位換算（官方 USDC=6, MockUSDC=18）。
     const decimals = Number(await usdc.decimals());

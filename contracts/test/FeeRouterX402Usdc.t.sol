@@ -84,4 +84,27 @@ contract FeeRouterX402UsdcTest is Test {
         assertEq(address(router.usdc()), address(usdc));
         assertEq(address(vault.usdc()), address(usdc));
     }
+
+    // ── the misconfig must fail LOUDLY (review finding) ─────────────────────────
+
+    function test_currencyMismatch_revertsLoudly() public {
+        // A FeeRouter on USDC6 but whose vault is bound to a DIFFERENT token
+        // (the classic .env footgun: settle official USDC through a router whose
+        // vault expects another token). routeExternalRevenue must revert at the
+        // vault's depositFromProtocol — never silently corrupt accounting.
+        USDC6 otherToken = new USDC6(); // stands in for a mismatched token
+        InsuranceVault mismatchedVault = new InsuranceVault(address(otherToken));
+        FeeRouter badRouter = new FeeRouter(address(usdc), treasury, address(mismatchedVault));
+        mismatchedVault.setFeeRouter(address(badRouter));
+
+        uint256 fee = 1_000_000;
+        usdc.mint(payer, fee);
+        vm.prank(payer); usdc.approve(address(badRouter), fee);
+
+        // _split pulls fee in `usdc`, then tries vault.depositFromProtocol which
+        // transferFrom's `otherToken` from the router (balance 0) → revert.
+        vm.prank(payer);
+        vm.expectRevert();
+        badRouter.routeExternalRevenue(trader, fee);
+    }
 }

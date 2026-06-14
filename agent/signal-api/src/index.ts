@@ -43,8 +43,7 @@ app.use("*", cors());
 app.get("/", (c) =>
   c.json({
     service: "pepelab-signal-api",
-    phase: "1 (read-only)",
-    network_read: "ethereum-sepolia",
+    network_read: "base-sepolia",
     network_settle: NETWORK,
     payTo: PAY_TO,
     revenueModel: "FeeRouter 70/20/10 (trader/platform/vault)",

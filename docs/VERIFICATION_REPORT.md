@@ -58,3 +58,11 @@
   指向 treasury EOA（= FEE_SETTLEMENT 帳戶）。
 - 加測試 `FeeRouterX402Usdc.t.sol`（6-dec 70/20/10 + 提領）；README/.env.example 寫清楚
   「付款幣別 vs 保證金幣別」設計與 faucet 來源。
+- **subagent review 修補**：settlement.ts 加開機/首次結算前的「結算 token == FeeRouter.usdc()」
+  一致性守衛，把最常見的 .env 誤配（`X402_FEE_ROUTER` 留空回退 MockUSDC router）從**靜默
+  失敗**變成**明確錯誤**；加負向測試 `test_currencyMismatch_revertsLoudly`（幣別不符必 revert）；
+  修掉 `/` 端點 stale 的 `network_read: ethereum-sepolia` 標籤。
+
+> ⚠️ **最重要的 .env 守則**：`X402_SETTLEMENT_TOKEN`（官方 USDC）與 `X402_FEE_ROUTER` 必須**配對**——
+> 先跑 `DeployX402Router.s.sol` 拿到官方 USDC 的 FeeRouter 再填 `X402_FEE_ROUTER`；`PAY_TO` 設
+> treasury EOA（勿留空、勿指 MockUSDC FeeRouter）。守衛會在不符時直接報錯。
