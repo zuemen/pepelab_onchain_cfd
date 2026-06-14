@@ -368,6 +368,35 @@
   },
   {
     "type": "function",
+    "name": "getAccountHealth",
+    "inputs": [
+      {
+        "name": "owner",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "equity",
+        "type": "int256",
+        "internalType": "int256"
+      },
+      {
+        "name": "maintenance",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "healthy",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "getFundingRate",
     "inputs": [
       {
@@ -883,6 +912,19 @@
   },
   {
     "type": "function",
+    "name": "portfolioMarginEnabled",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "positions",
     "inputs": [
       {
@@ -1152,6 +1194,19 @@
         "name": "_seconds",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setPortfolioMarginEnabled",
+    "inputs": [
+      {
+        "name": "enabled",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "outputs": [],
@@ -1527,6 +1582,19 @@
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PortfolioMarginEnabledSet",
+    "inputs": [
+      {
+        "name": "enabled",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
       }
     ],
     "anonymous": false

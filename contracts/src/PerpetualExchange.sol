@@ -129,6 +129,12 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     bool                              public adlEnabled;
     mapping(bytes32 => uint256[])     public assetPositionIds;        // per-asset index for ADL scan
 
+    // P3-2: portfolio (cross) margin. Off by default → per-position isolated
+    // liquidation (legacy). When on, a leg is liquidatable only if it is
+    // individually underwater AND the whole account is underwater, so offsetting
+    // winners protect a losing leg from being wrongly liquidated.
+    bool                              public portfolioMarginEnabled;
+
     // ── Events ───────────────────────────────────────────────────────────────
 
     event PositionOpened(
@@ -173,6 +179,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     event MaxLeverageSet(bytes32 indexed asset, uint256 maxLeverage);
     event MaintenanceMarginSet(bytes32 indexed asset, uint256 bps);
     event AdlEnabledSet(bool enabled);
+    event PortfolioMarginEnabledSet(bool enabled);
     event AutoDeleveraged(
         uint256 indexed liquidatedId,
         uint256 indexed counterId,
@@ -290,6 +297,13 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         emit AdlEnabledSet(enabled);
     }
 
+    /// @notice P3-2: enable/disable account-level (portfolio) margin. Off by
+    ///         default → legacy per-position isolated liquidation.
+    function setPortfolioMarginEnabled(bool enabled) external onlyOwner {
+        portfolioMarginEnabled = enabled;
+        emit PortfolioMarginEnabledSet(enabled);
+    }
+
     function setMaxPriceAge(uint256 _seconds) external onlyOwner {
         require(_seconds > 0, "zero age");
         maxPriceAge = _seconds;
@@ -393,7 +407,18 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         // Maintenance margin: per-asset override (N3) or global 5% default.
         uint256 maintenanceMargin = notional * _maintenanceMarginBps(pos.asset) / 10000;
 
-        if (closeAmount > int256(maintenanceMargin)) {
+        // Liquidation gate. Isolated (default): this position must be below its
+        // own maintenance margin. Portfolio (P3-2): that AND the whole account
+        // must be underwater, so offsetting winners protect a losing leg and a
+        // winning leg cannot be griefed. Only the GATE differs — settlement below
+        // is the same per-position, conservation-proven path in both modes.
+        bool perPositionUnhealthy = closeAmount <= int256(maintenanceMargin);
+        if (portfolioMarginEnabled) {
+            (int256 eq, uint256 mm) = _accountState(pos.owner);
+            if (!(perPositionUnhealthy && eq < int256(mm))) {
+                revert PositionIsHealthy();
+            }
+        } else if (!perPositionUnhealthy) {
             revert PositionIsHealthy();
         }
 
@@ -606,7 +631,41 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         return _maintenanceMarginBps(asset);
     }
 
+    /// @notice P3-2: account-level health across all of `owner`'s open positions.
+    ///         equity      = freeMargin + Σ (margin + unrealized PnL − funding)
+    ///         maintenance = Σ (notional × maintenance-bps)
+    ///         healthy     = equity ≥ maintenance
+    ///         Mirrors the per-position close math (PnL + funding); trading/borrow
+    ///         fees are intentionally excluded from the gate — the maintenance
+    ///         buffer covers them — so portfolio mode is never stricter than
+    ///         isolated mode.
+    function getAccountHealth(address owner)
+        external
+        view
+        returns (int256 equity, uint256 maintenance, bool healthy)
+    {
+        (equity, maintenance) = _accountState(owner);
+        healthy = equity >= int256(maintenance);
+    }
+
     // ── Internal ─────────────────────────────────────────────────────────────
+
+    /// @dev Sum equity and maintenance requirement over an owner's open positions.
+    function _accountState(address owner)
+        internal
+        view
+        returns (int256 equity, uint256 maintenance)
+    {
+        uint256[] storage ids = userPositions[owner];
+        equity = int256(freeMargin[owner]);
+        uint256 n = ids.length;
+        for (uint256 i = 0; i < n; ++i) {
+            Position storage p = positions[ids[i]];
+            if (!p.isOpen) continue;
+            equity     += int256(p.margin) + _calcPnL(p) - _calcFunding(p);
+            maintenance += (p.margin * p.leverage) * _maintenanceMarginBps(p.asset) / 10000;
+        }
+    }
 
     function _maxLeverage(bytes32 asset) internal view returns (uint256) {
         uint256 o = maxLeverageOf[asset];
