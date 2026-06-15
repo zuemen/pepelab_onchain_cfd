@@ -2,8 +2,9 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
   "installCommand": "cd .. && npm install",
+  "buildCommand": "npm run bundle:vercel",
   "functions": {
-    "api/index.ts": { "runtime": "@vercel/node@5.1.7", "maxDuration": 30 }
+    "api/index.js": { "runtime": "@vercel/node@5.1.7", "maxDuration": 30 }
   },
   "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }]
 }

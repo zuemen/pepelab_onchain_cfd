@@ -1,0 +1,2 @@
+# Vercel build artifact (produced by `npm run bundle:vercel` / buildCommand)
+api/index.js
