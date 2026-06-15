@@ -30,6 +30,7 @@ import {
   isSessionManagerDeployed,
 } from 'src/contracts/sessionManager'
 import { CHAIN_NAMES } from 'src/contracts/addresses'
+import { SIGNAL_API_URL } from 'src/lib/pepefi/signalApi'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface SessionRisk {
@@ -76,7 +77,7 @@ export default function AgentMonitorPage() {
   const [oracle,   setOracle]   = useState<OracleRow[]>([])
   const [vault,    setVault]    = useState<{ assets: bigint; sharePrice: bigint } | null>(null)
   const [revenue,  setRevenue]  = useState<Revenue | null>(null)
-  const [revUrl,   setRevUrl]   = useState('http://localhost:4021')
+  const [revUrl,   setRevUrl]   = useState(SIGNAL_API_URL)
   const [revErr,   setRevErr]   = useState<string | null>(null)
   const [err,      setErr]      = useState<string | null>(null)
 

@@ -11,6 +11,7 @@ import ESGBadge from 'src/components/pepefi/ESGBadge';
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta';
 import { getPepeAvatar } from 'src/utils/pepefi-assets';
 import TraderRankBadge from 'src/components/pepefi/TraderRankBadge';
+import X402MarketplaceCard from 'src/components/pepefi/X402MarketplaceCard';
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -264,6 +265,9 @@ export default function MarketplacePage() {
 
   return (
     <Container maxWidth="lg" sx={{ py: 3, display: 'flex', flexDirection: 'column', gap: 4 }}>
+      {/* x402 agent-native commerce */}
+      <X402MarketplaceCard />
+
       {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
         <Box>

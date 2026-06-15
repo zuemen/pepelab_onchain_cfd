@@ -95,3 +95,23 @@
 
 → 幣別綁定一致、wire 正確；`settlement.ts` 的幣別守衛會放行。**剩餘**：agent/treasury EOA 領官方
 USDC + ETH 後，跑 signal-api + demo-agent 產生真實 402→200→下單→分潤 的 tx（B–F）。
+
+---
+
+## 5. 公開 x402 API（Vercel）+ 網站呈現
+
+| # | 項目 | 證據 | 狀態 |
+|---|------|------|------|
+| 5a | signal-api 重構成共用 `createApp()`（本機 + Vercel serverless 共用） | `agent npm run build` 綠；本機啟動 OK | ✅ PASS |
+| 5b | `/` 可被發現的服務目錄 | curl `/` → `discoverable:true` + network/asset/payTo + 4 端點 | ✅ PASS |
+| 5c | **`/revenue` 直接讀鏈上** X402 FeeRouter | curl `/revenue` → `onChain:true`、`feeUsd 0.01 / trader 0.007 / platform 0.002 / vault 0.001`（讀到先前真實 settlement） | ✅ PASS |
+| 5d | serverless 結算在回應前 await + 回 `settlementTx` | `app.ts` /signals 與 /demo/buy-signal 皆 await `settleRevenue` | ✅ PASS（程式） |
+| 5e | 外部消費範例（viem + x402-fetch，無 monorepo 依賴） | `agent/examples/buy-signal.ts` + README 一行跑法 | ✅ PASS |
+| 5f | 前端：`/x402` 文件頁 + 試買 + Marketplace 卡片 + VITE_SIGNAL_API_URL | `frontend npm run build` 綠 | ✅ PASS |
+
+**待你操作（Track D）**：在 Vercel 建兩個專案（signal-api root=`agent/signal-api`、frontend root=`frontend`）、
+填 env secrets、deploy（步驟見 `agent/README.md`）。部署後外部實測一行：
+```bash
+X402_API_URL=https://<signal-api>.vercel.app AGENT_PRIVATE_KEY=0x… npx tsx agent/examples/buy-signal.ts
+```
+預期 402→簽→200→`settlementTx`；把該 tx 收進本報告 B–F。

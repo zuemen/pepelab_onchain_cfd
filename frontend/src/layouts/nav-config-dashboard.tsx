@@ -54,6 +54,7 @@ export const navData: NavSectionProps['data'] = [
       { title: '🏠 我的 Pepe (Dashboard)', path: paths.pepefi.dashboard, icon: ICONS.analytics },
       { title: 'Exchange', path: paths.pepefi.exchange, icon: ICONS.ecommerce },
       { title: 'Pro Terminal', path: paths.pepefi.terminal, icon: ICONS.dashboard },
+      { title: 'x402 Signal API', path: paths.pepefi.x402, icon: ICONS.external },
       { title: 'Marketplace', path: paths.pepefi.marketplace, icon: ICONS.invoice },
       { title: 'Portfolio', path: paths.pepefi.portfolio, icon: ICONS.banking },
       { title: 'Vault', path: paths.pepefi.vault, icon: ICONS.file },

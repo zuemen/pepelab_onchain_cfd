@@ -17,6 +17,7 @@ const LandingPage       = lazy(() => import('src/pages/pepefi/LandingPage'));
 const DashboardPage     = lazy(() => import('src/pages/pepefi/DashboardPage'));
 const ExchangePage      = lazy(() => import('src/pages/pepefi/ExchangePage'));
 const TradeTerminalPage = lazy(() => import('src/pages/pepefi/TradeTerminalPage'));
+const X402DocsPage      = lazy(() => import('src/pages/pepefi/X402DocsPage'));
 const TraderDashboard   = lazy(() => import('src/pages/pepefi/TraderDashboard'));
 const TraderStakePage   = lazy(() => import('src/pages/pepefi/TraderStakePage'));
 const TraderProfilePage = lazy(() => import('src/pages/pepefi/TraderProfilePage'));
@@ -81,6 +82,7 @@ export const pepefiRoutes: RouteObject[] = [
           { path: 'rewards', element: <RewardsPage /> },
           { path: 'sessions', element: <SessionsPage /> },
           { path: 'agent-monitor', element: <AgentMonitorPage /> },
+          { path: 'x402', element: <X402DocsPage /> },
           { path: 'home',    element: <HomePage /> },
         ],
       },
