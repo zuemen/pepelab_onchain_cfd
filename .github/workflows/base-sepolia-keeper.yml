@@ -1,11 +1,16 @@
 name: Base Sepolia Keeper
 
 # Phase 4 keeper for the live Base Sepolia deployment (chainId 84532):
-#   1. refresh MockOracle prices from real market data (with the contract's
-#      own ±45% move guard as backstop),
+#   1. refresh MockOracle prices from real market data (±45% move guard backstop),
 #   2. crank settleFunding so funding accrues even with no organic traders,
 #   3. log InsuranceVault solvency for monitoring.
-# Secrets: BASE_SEPOLIA_RPC_URL, KEEPER_PRIVATE_KEY (funded Base Sepolia EOA).
+#
+# Secrets (repo → Settings → Secrets and variables → Actions):
+#   BASE_SEPOLIA_RPC_URL   Base Sepolia RPC endpoint
+#   KEEPER_PRIVATE_KEY     funded Base Sepolia EOA (0x…)  — needs a little test ETH
+#
+# Hardened: if secrets are absent the real steps are SKIPPED (job stays green with
+# a notice) instead of failing cryptically; Foundry is pinned; RPC is health-checked.
 
 on:
   schedule:
@@ -22,10 +27,34 @@ jobs:
       RPC_URL:  ${{ secrets.BASE_SEPOLIA_RPC_URL }}
       PK:       ${{ secrets.KEEPER_PRIVATE_KEY }}
     steps:
+      - name: Preflight — check secrets
+        id: pre
+        run: |
+          if [ -z "$RPC_URL" ] || [ -z "$PK" ]; then
+            echo "::warning::Keeper secrets not set (BASE_SEPOLIA_RPC_URL / KEEPER_PRIVATE_KEY). Skipping run."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Install Foundry
+        if: steps.pre.outputs.ready == 'true'
         uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: RPC health check
+        if: steps.pre.outputs.ready == 'true'
+        run: |
+          set -euo pipefail
+          CID=$(cast chain-id --rpc-url "$RPC_URL")
+          echo "Connected chainId: $CID"
+          if [ "$CID" != "84532" ]; then
+            echo "::error::RPC is not Base Sepolia (got $CID, want 84532)"; exit 1
+          fi
 
       - name: Refresh prices
+        if: steps.pre.outputs.ready == 'true'
         run: |
           set -uo pipefail
           to8() { awk -v p="$1" 'BEGIN{ printf "%.0f", p*1e8 }'; }
@@ -54,11 +83,11 @@ jobs:
           update sTSLA "$(get_stooq tsla.us)"
 
       - name: Crank settleFunding
+        if: steps.pre.outputs.ready == 'true'
         run: |
           set -uo pipefail
           for SYM in sBTC sETH sAAPL sTSLA; do
             KEY=$(cast keccak "$SYM")
-            # settleFunding reverts FundingIntervalNotElapsed if too soon — that's fine.
             cast send "$EXCHANGE" "settleFunding(bytes32)" "$KEY" \
               --rpc-url "$RPC_URL" --private-key "$PK" \
               && echo "$SYM: funding settled" \
@@ -66,6 +95,7 @@ jobs:
           done
 
       - name: Log vault solvency
+        if: steps.pre.outputs.ready == 'true'
         run: |
           set -uo pipefail
           ASSETS=$(cast call "$VAULT" "totalAssets()(uint256)" --rpc-url "$RPC_URL" | awk '{print $1}')
