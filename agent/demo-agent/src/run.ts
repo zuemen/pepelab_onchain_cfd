@@ -5,12 +5,12 @@
 //   - 無有效金鑰：DRY-RUN，直接讀鏈上訊號（跳過 x402 結算）仍印決策。
 //   - 無 session（缺 SESSION_MANAGER_ADDRESS / DEMO_SESSION_ID）：只讀 + 印出
 //     「本來會下的單」，不送鏈、不 crash。
-import { type Hex } from "viem";
+import { type Hex, createWalletClient, http, publicActions } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { baseSepolia } from "viem/chains";
 import { wrapFetchWithPayment } from "x402-fetch";
 import {
   loadEnv,
-  ADDRESSES,
   makeProvider,
   makeContracts,
   getOracleSnapshot,
@@ -28,6 +28,10 @@ const PK = process.env.AGENT_PRIVATE_KEY?.trim();
 const SESSION_ID = process.env.DEMO_SESSION_ID?.trim();
 const DEMO_MARGIN = Number(process.env.DEMO_MARGIN ?? "10"); // USDC，≥ MIN_MARGIN(10)
 const ZERO = "0x0000000000000000000000000000000000000000";
+// x402 結算與付款都走 Base Sepolia 官方 USDC；RPC 用來建 viem WalletClient 簽 EIP-3009。
+const RPC = process.env.BASE_SEPOLIA_RPC_URL?.trim() || "https://sepolia.base.org";
+const PAY_TO = process.env.PAY_TO?.trim() || "";
+const X402_FEE_ROUTER = process.env.X402_FEE_ROUTER?.trim() || "";
 
 // 分析對象：env 優先；未指定就自動挑鏈上第一個已註冊 trader（讓 demo 直接有料）。
 let TRADER = process.env.DEMO_TRADER_ADDRESS?.trim() || "";
@@ -150,17 +154,34 @@ async function dryRun() {
 /** 真實付費路徑：經 signal-api 付 x402 費用拿訊號。 */
 async function paidRun() {
   const account = privateKeyToAccount(PK as Hex);
-  console.log(`agent 錢包  : ${account.address}（自管 EOA）`);
+  // x402-fetch 第二參數需要一個帶 chain+transport 的 viem WalletClient（才能解析
+  // 出 base-sepolia 的付款需求並簽 EIP-3009 transferWithAuthorization）。傳裸
+  // account 會讓它抓不到 chainId。
+  // .extend(publicActions) 讓它同時具備 wallet + public actions，滿足 x402 的
+  // SignerWallet 型別（執行面 isSignerWallet 只看 chain+transport，型別面要 public actions）。
+  const walletClient = createWalletClient({
+    account,
+    chain: baseSepolia,
+    transport: http(RPC),
+  }).extend(publicActions);
+  console.log(`agent 錢包  : ${account.address}（自管 EOA, Base Sepolia）`);
 
-  // x402：包裝 fetch，遇 402 自動用 EOA 簽 USDC 授權（EIP-3009）並重送
-  const payFetch = wrapFetchWithPayment(fetch, account);
+  // 遇 402 自動用 WalletClient 簽官方 USDC 授權（EIP-3009）並重送。
+  // 轉型：x402-fetch 0.5.1 的 SignerWallet 型別與 viem 2.52 的 client 型別有版本落差
+  // （執行面 isSignerWallet 只看 chain+transport，皆具備），故精準轉成其參數型別。
+  const payFetch = wrapFetchWithPayment(
+    fetch,
+    walletClient as unknown as Parameters<typeof wrapFetchWithPayment>[1],
+  );
 
-  banner("① 付費讀 oracle 快照（0.005 USDC）");
-  const oracle = (await (await payFetch(`${API}/oracle/${ASSET}`)).json()) as any;
+  // 注意：payFetch 第二參數 init 不可省略——x402-fetch 在 402 重送時會讀 init，
+  // 缺它會丟「Missing fetch request configuration」。
+  banner("① 付費讀 oracle 快照（0.005 USDC, 官方 USDC）");
+  const oracle = (await (await payFetch(`${API}/oracle/${ASSET}`, { method: "GET" })).json()) as any;
   console.log(JSON.stringify(oracle, null, 2));
 
-  banner("② 付費讀 trader 訊號（0.01 USDC）");
-  const sig = (await (await payFetch(`${API}/signals/${TRADER}`)).json()) as any;
+  banner("② 付費讀 trader 訊號（0.01 USDC, 官方 USDC）");
+  const sig = (await (await payFetch(`${API}/signals/${TRADER}`, { method: "GET" })).json()) as any;
   console.log(JSON.stringify(sig, null, 2));
 
   const perf = sig?.data;
@@ -169,12 +190,14 @@ async function paidRun() {
 }
 
 async function main() {
-  banner("PepeLab Demo Agent — Phase 1 (read-only, 不真下單)");
+  banner("PepeLab Demo Agent — x402 付費 → 自主下單（Base Sepolia）");
   await resolveTrader();
   console.log(`Signal API : ${API}`);
   console.log(`分析 trader : ${TRADER}${process.env.DEMO_TRADER_ADDRESS ? "" : "（自動挑選鏈上首位）"}`);
   console.log(`查詢資產    : ${ASSET}`);
-  console.log(`收款 payTo  : ${ADDRESSES.FeeRouter}（FeeRouter）`);
+  // x402 付款進 PAY_TO（treasury EOA）；70/20/10 結算由 signal-api 經 X402_FEE_ROUTER 執行。
+  console.log(`x402 payTo  : ${PAY_TO || "(未設 PAY_TO — 由 signal-api 端決定)"}`);
+  console.log(`x402 分潤路由: ${X402_FEE_ROUTER || "(未設，server 端 settlement 讀)"}（官方 USDC）`);
 
   const hasKey = PK && PK.startsWith("0x") && PK.length === 66;
   if (hasKey) {

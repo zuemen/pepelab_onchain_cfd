@@ -14,6 +14,7 @@
     "signal-api": "npm run start -w signal-api",
     "mcp-server": "npm run start -w mcp-server",
     "demo-agent": "npm run start -w demo-agent",
+    "build": "tsc -b --pretty",
     "typecheck": "tsc -b --pretty"
   },
   "engines": {

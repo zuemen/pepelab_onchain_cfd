@@ -25,7 +25,15 @@ const PORT = Number(process.env.SIGNAL_API_PORT ?? 4021);
 const NETWORK = (process.env.X402_NETWORK ?? "base-sepolia") as Network;
 const FACILITATOR_URL =
   process.env.X402_FACILITATOR_URL ?? "https://x402.org/facilitator";
+// payTo 必須是能持有官方 USDC 的 treasury EOA。未設 PAY_TO 會回退到 MockUSDC 版
+// FeeRouter，官方 USDC 付進去會卡死（與 settlement 幣別守衛打架）→ 開機即警告。
 const PAY_TO = resolvePayTo(ADDRESSES.FeeRouter);
+if (!process.env.PAY_TO?.trim()) {
+  console.warn(
+    `⚠ 未設 PAY_TO，回退到 MockUSDC FeeRouter ${ADDRESSES.FeeRouter}；` +
+      "官方 USDC 付款會卡死。請在 .env 設 PAY_TO=treasury EOA。",
+  );
+}
 
 // 單一定價來源：付費牆與收入帳務共用，避免漂移。
 const PRICE_SIGNALS = 0.01; // USDC
