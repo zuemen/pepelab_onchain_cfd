@@ -23,7 +23,7 @@ const C = {
   green: '#3fd98a', greenDim: 'rgba(63,217,138,.14)',
   red: '#ff5d5d', redDim: 'rgba(255,93,93,.14)',
   lime: '#c7f94e',
-  mono: '"JetBrains Mono", ui-monospace, monospace',
+  mono: "'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'SF Mono', monospace",
 }
 
 type AssetId = `0x${string}`
@@ -166,6 +166,23 @@ export default function TradeTerminalPage() {
           {toast?.msg}
         </Box>
       </Snackbar>
+
+      {/* brand header */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5, flexWrap: 'wrap' }}>
+        <Box sx={{ fontSize: 18 }}>🐸</Box>
+        <Box sx={{ ...monoCss, fontWeight: 800, fontSize: 14, letterSpacing: '.18em', color: C.ink }}>
+          PEPELAB<span style={{ color: C.lime }}>·</span>TERMINAL
+        </Box>
+        <Box sx={{ ...monoCss, fontSize: 11, color: C.mut, letterSpacing: '.08em' }}>
+          agent-native perps · base sepolia
+        </Box>
+        <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 0.7, ...monoCss, fontSize: 11.5, color: C.green }}>
+          <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: C.green,
+            animation: 'tPulse 1.6s ease-out infinite',
+            '@keyframes tPulse': { '0%': { boxShadow: `0 0 0 0 ${C.greenDim}` }, '70%': { boxShadow: '0 0 0 6px rgba(63,217,138,0)' }, '100%': { boxShadow: '0 0 0 0 rgba(63,217,138,0)' } } }} />
+          on-chain · live
+        </Box>
+      </Box>
 
       {/* asset tab strip */}
       <Box sx={{ display: 'flex', gap: 0.5, overflowX: 'auto', pb: 1, mb: 1.5, '&::-webkit-scrollbar': { height: 0 } }}>

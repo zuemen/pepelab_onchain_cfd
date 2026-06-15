@@ -103,7 +103,8 @@ export const text = {
 
 export const background = {
   light: createPaletteChannel({ paper: '#FFFFFF', default: '#FFFFFF', neutral: grey[200] }),
-  dark: createPaletteChannel({ paper: grey[800], default: grey[900], neutral: '#28323D' }),
+  // PepeLab — green-tinted near-black "on-chain lab terminal" surfaces
+  dark: createPaletteChannel({ paper: '#121A13', default: '#0A0F0B', neutral: '#1B241C' }),
 };
 
 export const action = (mode: 'light' | 'dark'): Partial<TypeAction> => ({

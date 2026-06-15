@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import Chip from '@mui/material/Chip'
 import Link from '@mui/material/Link'
+import Grid from '@mui/material/Grid'
 import Stack from '@mui/material/Stack'
 import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
@@ -11,6 +12,33 @@ import Container from '@mui/material/Container'
 import Typography from '@mui/material/Typography'
 
 import { SIGNAL_API_URL, demoBuySignal } from 'src/lib/pepefi/signalApi'
+import { Mono as Num, LiveDot, PEPE, MONO, hexA } from 'src/components/pepefi/brandKit'
+
+interface RevenueTotals {
+  count: number
+  feeUsd: number
+  traderShare: number
+  platformShare: number
+  vaultShare: number
+}
+
+// endpoint = product. 定價卡資料。
+const PRODUCTS = [
+  {
+    method: 'GET',
+    path: '/signals/:trader',
+    price: '$0.01',
+    blurb: '指定交易者的下一步訊號（方向 / 標的 / 信心度）。',
+    accent: PEPE.green,
+  },
+  {
+    method: 'GET',
+    path: '/oracle/:asset',
+    price: '$0.005',
+    blurb: '單一標的的即時預言機快照（index / mark / funding）。',
+    accent: PEPE.gold,
+  },
+] as const
 
 const OFFICIAL_USDC = '0x036CbD53842c5426634e7929541eC2318f3dCF7e'
 const X402_FEE_ROUTER = '0x29e5732AC62254d9b92A1C7d3F38EbFA8809B57d'
@@ -25,10 +53,71 @@ function Mono({ children }: { children: React.ReactNode }) {
   )
 }
 
+// 即時 70/20/10 分潤條（讀鏈上 /revenue）。
+function SplitBar({ rev }: { rev: RevenueTotals | null }) {
+  const segs = [
+    { label: 'Traders', pct: 70, val: rev?.traderShare, color: PEPE.green },
+    { label: 'Platform', pct: 20, val: rev?.platformShare, color: PEPE.gold },
+    { label: 'Vault', pct: 10, val: rev?.vaultShare, color: '#00B8D9' },
+  ]
+  return (
+    <Card sx={{ p: 2.5 }}>
+      <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1.5 }}>
+        {rev && <LiveDot size={6} />}
+        <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+          即時 70/20/10 分潤
+        </Typography>
+        <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
+          鏈上累計收入{' '}
+          <Num tone="green">${(rev?.feeUsd ?? 0).toFixed(3)}</Num>{' · '}
+          <Num tone="muted">{rev?.count ?? 0} calls</Num>
+        </Typography>
+      </Stack>
+      <Box sx={{ display: 'flex', height: 12, borderRadius: 999, overflow: 'hidden', mb: 1.5 }}>
+        {segs.map((s) => (
+          <Box key={s.label} sx={{ width: `${s.pct}%`, bgcolor: s.color, opacity: 0.85 }} />
+        ))}
+      </Box>
+      <Stack direction="row" spacing={2} flexWrap="wrap">
+        {segs.map((s) => (
+          <Stack key={s.label} direction="row" alignItems="center" spacing={0.8}>
+            <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: s.color }} />
+            <Typography variant="caption" color="text.secondary">
+              {s.label} {s.pct}%
+            </Typography>
+            <Num tone="muted" sx={{ fontSize: 12 }}>
+              ${(s.val ?? 0).toFixed(4)}
+            </Num>
+          </Stack>
+        ))}
+      </Stack>
+    </Card>
+  )
+}
+
 export default function X402DocsPage() {
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<Awaited<ReturnType<typeof demoBuySignal>> | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [rev, setRev] = useState<RevenueTotals | null>(null)
+
+  useEffect(() => {
+    let off = false
+    const pull = async () => {
+      try {
+        const r = await (await fetch(`${SIGNAL_API_URL}/revenue`)).json()
+        if (!off && r?.totals) setRev(r.totals)
+      } catch {
+        /* API 未連上 → 靜默 */
+      }
+    }
+    void pull()
+    const id = setInterval(pull, 15_000)
+    return () => {
+      off = true
+      clearInterval(id)
+    }
+  }, [])
 
   const tryBuy = async () => {
     setBusy(true); setErr(null); setResult(null)
@@ -73,6 +162,50 @@ export default function X402DocsPage() {
           ))}
         </Stack>
       </Card>
+
+      {/* pricing cards — endpoint = product */}
+      <Box>
+        <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold', letterSpacing: 2 }}>
+          Endpoints = Products
+        </Typography>
+        <Grid container spacing={2} sx={{ mt: 0.5 }}>
+          {PRODUCTS.map((p) => (
+            <Grid size={{ xs: 12, sm: 6 }} key={p.path}>
+              <Card
+                sx={{
+                  p: 2.5,
+                  height: '100%',
+                  position: 'relative',
+                  overflow: 'hidden',
+                  border: '1px solid',
+                  borderColor: hexA(p.accent, 0.25),
+                  transition: 'transform .25s, border-color .25s',
+                  '&:hover': { transform: 'translateY(-4px)', borderColor: hexA(p.accent, 0.6) },
+                  '&::before': {
+                    content: '""', position: 'absolute', top: 0, left: 0, width: '100%', height: 3,
+                    background: `linear-gradient(90deg, ${p.accent}, transparent)`,
+                  },
+                }}
+              >
+                <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
+                  <Chip size="small" label={p.method} sx={{ bgcolor: hexA(p.accent, 0.15), color: p.accent, fontWeight: 700, fontFamily: MONO }} />
+                  <Num sx={{ fontSize: 14, color: p.accent }}>{p.path}</Num>
+                </Stack>
+                <Typography component="div" sx={{ fontSize: 28, lineHeight: 1, mb: 1 }}>
+                  <Num glow sx={{ color: p.accent }}>{p.price}</Num>
+                  <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+                    / call
+                  </Typography>
+                </Typography>
+                <Typography variant="body2" color="text.secondary">{p.blurb}</Typography>
+              </Card>
+            </Grid>
+          ))}
+        </Grid>
+      </Box>
+
+      {/* live 70/20/10 split */}
+      <SplitBar rev={rev} />
 
       {/* try-buy */}
       <Card sx={{ p: 3, borderLeft: '3px solid', borderColor: 'success.main' }}>

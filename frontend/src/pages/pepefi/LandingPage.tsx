@@ -1,6 +1,8 @@
 import { Link as RouterLink } from 'react-router';
 import { usePepefiWallet } from 'src/layouts/pepefi';
 import WalletButton from 'src/components/pepefi/WalletButton';
+import HeroKpiStrip from 'src/components/pepefi/HeroKpiStrip';
+import { MONO } from 'src/components/pepefi/brandKit';
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -17,10 +19,12 @@ const FEATURES = [
   { icon: '🔗', title: 'One-Click Copy Trading', desc: '一鍵跟單頂尖交易者，授權 USDC 後自動按比例開倉。' },
   { icon: '🌿', title: 'ESG Scoring', desc: '每位交易者皆有 ESG 評分，讓投資更有責任感與透明度。' },
   { icon: '🏦', title: 'Insurance Vault', desc: '提供流動性賺取協議費用，同時作為極端損失的保險池。' },
+  { icon: '🤖', title: 'x402 Paid Signals', desc: 'Agent 自帶錢包、按次付費購買交易訊號，收入 70/20/10 上鏈分潤。' },
+  { icon: '⚡', title: 'Agent-Native Trading', desc: 'session key 有界委派，AI agent 付費後可自主在鏈上開受限部位。' },
 ];
 
 const STEPS = [
-  { n: '01', text: '安裝 MetaMask，切換到 Sepolia testnet' },
+  { n: '01', text: '安裝 MetaMask，切換到 Base Sepolia testnet' },
   { n: '02', text: '前往 Exchange，點擊「Get 1000 USDC」取得測試資金' },
   { n: '03', text: '到 Marketplace 複製 Demo Alpha 交易者策略' },
   { n: '04', text: '（可選）在 Trader 頁面登記成為交易者並公開策略' },
@@ -33,7 +37,7 @@ export default function LandingPage() {
     <Box
       sx={{
         minHeight: '100vh',
-        background: 'linear-gradient(160deg, #0a1628 0%, #0d1f12 55%, #0a1628 100%)',
+        background: 'radial-gradient(120% 80% at 80% -10%, rgba(124,193,74,0.10) 0%, transparent 55%), linear-gradient(165deg, #0A0F0B 0%, #0d1f12 55%, #0A0F0B 100%)',
         pt: 8,
         pb: 8,
       }}
@@ -74,42 +78,57 @@ export default function LandingPage() {
           >
             {/* Left: text */}
             <Box sx={{ flex: 1, textAlign: { xs: 'center', md: 'left' } }}>
-              {/* PepeFi main title */}
+              {/* PepeLab wordmark */}
               <Typography
                 variant="h1"
                 sx={{
-                  fontSize: { xs: '4.5rem', md: '7.5rem' },
+                  fontSize: { xs: '4rem', md: '7rem' },
                   fontWeight: 900,
-                  lineHeight: 1,
+                  lineHeight: 0.95,
                   color: '#7cc14a',
                   textShadow: '-1px -1px 0 #FFD23D, 1px -1px 0 #FFD23D, -1px 1px 0 #FFD23D, 1px 1px 0 #FFD23D, 0 0 40px rgba(124,193,74,0.6)',
-                  mb: 2,
+                  mb: 1.5,
                 }}
               >
-                PepeFi
+                PepeLab
               </Typography>
 
-              {/* Subtitle */}
+              {/* Mono kicker — "on-chain terminal" cred */}
               <Typography sx={{
-                fontSize: { xs: '1rem', md: '1.75rem' },
+                fontFamily: MONO,
+                fontSize: { xs: '0.8rem', md: '0.95rem' },
+                fontWeight: 600,
+                letterSpacing: { xs: '1px', md: '2px' },
+                color: '#7cc14a',
+                textTransform: 'uppercase',
+                mb: 2.5,
+              }}>
+                {'>'} agent-native RWA perpetuals · on Base
+              </Typography>
+
+              {/* Meme energy tagline */}
+              <Typography sx={{
+                fontSize: { xs: '0.95rem', md: '1.35rem' },
                 fontWeight: 700,
-                letterSpacing: { xs: '2px', md: '4px' },
+                letterSpacing: { xs: '2px', md: '3px' },
                 color: '#cad8b0',
                 textTransform: 'uppercase',
                 mb: 3,
               }}>
-                DeFi · SocialFi · GameFi · MemeFi
+                DeFi · SocialFi · GameFi · MemeFi 🐸
               </Typography>
 
               <Typography variant="body1" sx={{
                 color: 'text.secondary',
-                maxWidth: 480,
+                maxWidth: 500,
                 lineHeight: 1.7,
                 fontSize: { xs: '1rem', md: '1.15rem' },
                 mb: 4,
                 mx: { xs: 'auto', md: 0 },
               }}>
-                鏈上合成衍生品跟單系統。交易者公開策略，跟單者一鍵跟進，全程透明上鏈。
+                對標 Hyperliquid 的鏈上永續 + agent 經濟。5x 槓桿合成/RWA 永續、社交跟單、
+                做市金庫，外加 <b style={{ color: '#7cc14a' }}>x402 付費訊號</b>——讓 AI agent
+                自帶錢包、付費、自主下單。全程透明上鏈。
               </Typography>
 
               <Stack direction="row" spacing={2} justifyContent={{ xs: 'center', md: 'flex-start' }} flexWrap="wrap">
@@ -158,7 +177,7 @@ export default function LandingPage() {
               <Box
                 component="img"
                 src="/avatars/pepe-01.png"
-                alt="PepeFi Mascot"
+                alt="PepeLab Mascot"
                 sx={{
                   width: '100%', height: '100%',
                   borderRadius: '50%',
@@ -184,10 +203,13 @@ export default function LandingPage() {
           </Stack>
         </Box>
 
+        {/* ── Live on-chain KPI strip ── */}
+        <HeroKpiStrip />
+
         <Stack alignItems="center" spacing={2} sx={{ mb: 4 }}>
           {/* Testnet badge */}
           <Chip
-            label="Deployed on Sepolia Testnet"
+            label="Live on Base Sepolia · 84532"
             variant="outlined"
             color="success"
             icon={
@@ -249,9 +271,9 @@ export default function LandingPage() {
                     borderColor: 'rgba(255,255,255,0.05)',
                     transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                     '&:hover': {
-                      bgcolor: 'rgba(52, 211, 153, 0.03)',
-                      borderColor: '#34d399',
-                      boxShadow: '0 12px 24px rgba(52, 211, 153, 0.12)',
+                      bgcolor: 'rgba(124, 193, 74, 0.03)',
+                      borderColor: '#7cc14a',
+                      boxShadow: '0 12px 24px rgba(124, 193, 74, 0.12)',
                       transform: 'translateY(-6px)',
                     },
                   }}
@@ -265,8 +287,8 @@ export default function LandingPage() {
                       alignItems: 'center',
                       justifyContent: 'center',
                       borderRadius: 1.5,
-                      bgcolor: 'rgba(52, 211, 153, 0.1)',
-                      color: '#34d399',
+                      bgcolor: 'rgba(124, 193, 74, 0.1)',
+                      color: '#7cc14a',
                       fontSize: '1.5rem',
                     }}
                   >
@@ -289,10 +311,10 @@ export default function LandingPage() {
           <Card
             sx={{
               p: 4,
-              bgcolor: 'rgba(52, 211, 153, 0.02)',
-              borderColor: 'rgba(52, 211, 153, 0.15)',
-              boxShadow: '0 8px 32px 0 rgba(52, 211, 153, 0.05)',
-              border: '1px solid rgba(52, 211, 153, 0.2)',
+              bgcolor: 'rgba(124, 193, 74, 0.02)',
+              borderColor: 'rgba(124, 193, 74, 0.15)',
+              boxShadow: '0 8px 32px 0 rgba(124, 193, 74, 0.05)',
+              border: '1px solid rgba(124, 193, 74, 0.2)',
               position: 'relative',
               overflow: 'hidden',
               '&::after': {
@@ -302,7 +324,7 @@ export default function LandingPage() {
                 left: 0,
                 width: '100%',
                 height: '4px',
-                background: 'linear-gradient(90deg, #34d399, #a3e635)',
+                background: 'linear-gradient(90deg, #7cc14a, #FFD23D)',
               }
             }}
           >
@@ -321,9 +343,9 @@ export default function LandingPage() {
                       alignItems: 'center',
                       justifyContent: 'center',
                       borderRadius: '50%',
-                      bgcolor: 'rgba(52, 211, 153, 0.15)',
+                      bgcolor: 'rgba(124, 193, 74, 0.15)',
                       border: '1px solid',
-                      borderColor: 'rgba(52, 211, 153, 0.4)',
+                      borderColor: 'rgba(124, 193, 74, 0.4)',
                       color: 'primary.main',
                       fontSize: '0.875rem',
                       fontWeight: 'bold',

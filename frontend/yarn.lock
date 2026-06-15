@@ -447,6 +447,11 @@
   resolved "https://registry.npmjs.org/@fontsource-variable/inter/-/inter-5.2.8.tgz"
   integrity sha512-kOfP2D+ykbcX/P3IFnokOhVRNoTozo5/JxhAIVYLpea/UBmCQ/YWPBfWIDuBImXX/15KH+eKh4xpEUyS2sQQGQ==
 
+"@fontsource-variable/jetbrains-mono@^5.2.8":
+  version "5.2.8"
+  resolved "https://registry.npmjs.org/@fontsource-variable/jetbrains-mono/-/jetbrains-mono-5.2.8.tgz"
+  integrity sha512-WBA9elru6Jdp5df2mES55wuOO0WIrn3kpXnI4+W2ek5u3ZgLS9XS4gmIlcQhiZOWEKl95meYdvK7xI+ETLCq/Q==
+
 "@fontsource-variable/nunito-sans@^5.2.7":
   version "5.2.7"
   resolved "https://registry.npmjs.org/@fontsource-variable/nunito-sans/-/nunito-sans-5.2.7.tgz"
