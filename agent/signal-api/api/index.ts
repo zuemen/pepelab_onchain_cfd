@@ -7,8 +7,8 @@ import { createApp } from "../src/app.ts";
 
 loadEnv(); // Vercel 上環境變數已注入；本機 vercel dev 時讀 agent/.env
 
-// ethers / secp256k1 需要 Node runtime（非 Edge）。
-export const config = { runtime: "nodejs" };
+// 註：不設 `export const config = { runtime }`——@vercel/node 預設即 Node runtime
+// （ethers/secp256k1 需要），且 "nodejs" 字串已被 Vercel 棄用。
 
 const app = createApp();
 
