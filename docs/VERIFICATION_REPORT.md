@@ -15,6 +15,7 @@
 | 2 | x402 分潤會計（官方 USDC 6-dec） | `FeeRouterX402Usdc.t.sol` 4 測試：70/20/10 在 6-dec、trader/platform 提領 | ✅ PASS |
 | 3 | x402 分潤會計（MockUSDC 18-dec） | `FeeRouterExternalRevenue.t.sol` 6 測試 | ✅ PASS |
 | 4 | x402 router 部署腳本 | `DeployX402Router.s.sol` dry-run：settlement USDC = `0x036C…CF7e`（官方） | ✅ PASS |
+| 4b | **x402 router 真實上鏈 + 綁定驗證** | 已部署並用 `cast` 鏈上驗證（見 §4） | ✅ PASS |
 | 5 | 部署 wiring（live 鏈上 cast） | Phase 4 subagent 15/15 invariant PASS（oracle/usdc/vault/feeRouter/kyc/authorizedAgents/rwa…） | ✅ PASS |
 | 6 | 前端 build | `frontend npm run build` 綠（所有頁面編譯） | ✅ PASS |
 | 7 | agent build | `agent tsc -b` 綠 | ✅ PASS |
@@ -30,7 +31,7 @@
 
 | # | 流程 | 怎麼跑 | 待貼證據 |
 |---|------|--------|----------|
-| A | 部署 x402 收入路由（官方 USDC） | `forge script script/DeployX402Router.s.sol:DeployX402Router --rpc-url base_sepolia --broadcast` | X402_FeeRouter 位址 |
+| A | 部署 x402 收入路由（官方 USDC） | ✅ **已完成**（見 §4 真實位址 + tx） | DONE |
 | B | signal-api 起服務 | `npm run signal-api`；`curl /` `/revenue` | 200 JSON |
 | C | x402 付費 402→200 | `npm run demo-agent`（填好 .env） | 402 + 付款 tx + 200 訊號 |
 | D | agent 經 session 自主下單 | demo-agent 自動（需 DEMO_SESSION_ID） | open tx + BaseScan + positionId |
@@ -66,3 +67,31 @@
 > ⚠️ **最重要的 .env 守則**：`X402_SETTLEMENT_TOKEN`（官方 USDC）與 `X402_FEE_ROUTER` 必須**配對**——
 > 先跑 `DeployX402Router.s.sol` 拿到官方 USDC 的 FeeRouter 再填 `X402_FEE_ROUTER`；`PAY_TO` 設
 > treasury EOA（勿留空、勿指 MockUSDC FeeRouter）。守衛會在不符時直接報錯。
+
+---
+
+## 4. x402 收入路由（官方 USDC）— 已上鏈並驗證（2026-06-15）
+
+部署位址（Base Sepolia，`agent/.env.example` 已預填 `X402_FEE_ROUTER`）：
+
+| 合約 | 位址 |
+|------|------|
+| X402 FeeRouter（綁官方 USDC） | `0x29e5732AC62254d9b92A1C7d3F38EbFA8809B57d` |
+| X402 InsuranceVault（綁官方 USDC） | `0xc7AfE2064106A608E0E21BFbF9aff89B0EAd7B9f` |
+| 結算 token（Circle 官方 USDC, 6-dec） | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
+| platformTreasury / payTo | `0xE80A81360608C1342e66743F70a00f75d792Eb93` |
+
+部署 tx（BaseScan `https://sepolia.basescan.org/tx/<hash>`）：
+- vault deploy : `0xc4eca36da4086257a905981a2026ff7dc6cc49c09d8f26e1e5d9c9285d502b02`
+- router deploy: `0xc937363267bef7ab94f44bfef9bfd336818122ec6698d707054a93b805459d19`
+- vault.setFeeRouter (wire): `0xf6b00ab78e38a365b837fddb93bae1f57f39d263c02a30e9387a1273bcd5d9c0`
+
+**鏈上綁定驗證（`cast call`，本報告作者執行）**：
+- `router.usdc()` = `0x036C…CF7e`（官方 USDC）✓
+- `router.insuranceVault()` = `0xc7Af…7B9f` ✓
+- `router.platformTreasury()` = `0xE80A…Eb93` ✓
+- `vault.usdc()` = `0x036C…CF7e` ✓
+- `vault.feeRouter()` = `0x29e5…B57d` ✓
+
+→ 幣別綁定一致、wire 正確；`settlement.ts` 的幣別守衛會放行。**剩餘**：agent/treasury EOA 領官方
+USDC + ETH 後，跑 signal-api + demo-agent 產生真實 402→200→下單→分潤 的 tx（B–F）。

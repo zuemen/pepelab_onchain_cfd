@@ -48,6 +48,16 @@
 > exchange 的 `oracle` 是 immutable，故 live exchange 用 MockOracle 保住全合成資產 demo；
 > 聚合 adapter 作為「生產就緒、待 mainnet 切換」的展示物（Pyth 已接 BTC/ETH 真 feed）。
 
+### x402 收入路由（官方 USDC, 6-dec — 真結算用）
+| 合約 | 位址 |
+|------|------|
+| X402 FeeRouter（綁 Circle 官方 USDC） | `0x29e5732AC62254d9b92A1C7d3F38EbFA8809B57d` |
+| X402 InsuranceVault | `0xc7AfE2064106A608E0E21BFbF9aff89B0EAd7B9f` |
+| 官方 USDC（結算幣別） | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
+
+> 付款幣別（官方 USDC, 6-dec）與保證金幣別（MockUSDC, 18-dec）**用途分離**；x402 收入經此
+> 專用 router 走 70/20/10 真分潤。鏈上綁定已驗證，見 `docs/VERIFICATION_REPORT.md §4`。
+
 ---
 
 ## 3. 架構與資料流（Phase 4：全程 Base Sepolia 同鏈）
