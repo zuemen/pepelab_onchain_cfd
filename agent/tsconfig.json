@@ -3,8 +3,10 @@
   "include": [
     "shared/src/**/*.ts",
     "signal-api/src/**/*.ts",
+    "signal-api/api/**/*.ts",
     "mcp-server/src/**/*.ts",
     "demo-agent/src/**/*.ts",
+    "examples/**/*.ts",
     "../frontend/src/contracts/addresses.ts"
   ]
 }

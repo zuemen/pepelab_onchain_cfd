@@ -107,6 +107,46 @@ npm run demo-agent            # 終端機 2：付 x402 讀訊號 → 經 session
 maxLeverage / expiry** 限額內開倉 → 印出 **tx hash 與 positionId**。任一前置缺失
 （無 key / 無 session 位址 / 無 sessionId）即優雅退化成只讀，印「本來會下的單」、不 crash。
 
+## 公開部署到 Vercel（agent-native commerce）
+
+把付費 API 公開上線，讓**任何外部 agent/CLI 帶自己的錢包付費購買**（端點即商品）。
+
+- 入口：`signal-api/api/index.ts`（`hono/vercel` 把 `src/app.ts` 的 `createApp()` 包成 serverless handler；端點邏輯與本機完全共用）。
+- serverless 調整：x402 結算（`routeExternalRevenue`）在**回應前 await**並把 `settlementTx` 一起回傳（serverless 沒有「回應後背景跑」）；`/revenue` 改**直接讀鏈上** X402 FeeRouter 累計（in-memory 帳務每次 invocation 歸零）。
+- CORS 對 GET 開放（瀏覽器 demo + 外部 agent 皆可）。
+
+**在 Vercel 建 signal-api 專案**（我準備好 `vercel.json`，你操作）：
+1. New Project → 指向此 repo，**Root Directory = `agent/signal-api`**。
+2. Environment Variables（**不要 commit**）：
+   `BASE_SEPOLIA_RPC_URL`、`X402_NETWORK=base-sepolia`、`X402_FACILITATOR_URL=https://x402.org/facilitator`、
+   `X402_SETTLEMENT_TOKEN=0x036CbD…CF7e`、`X402_FEE_ROUTER=0x29e5732A…B57d`、
+   `PAY_TO=0xE80A…Eb93`（treasury EOA）、`FEE_SETTLEMENT_PRIVATE_KEY=0x…`（半公開測試金鑰，僅放極少量）。
+3. Deploy。`vercel.json` 已設 `installCommand: cd .. && npm install`（在 `agent/` 跑、建 `@pepelab/shared` workspace symlink）+ rewrite 全路徑到 function、`api/index.ts` 走 `@vercel/node`（Node runtime）。
+
+> **疑難排解**：若 Vercel 的 bundler 在 `.ts` import 或 `@pepelab/shared`(workspace `.ts` 入口) 解析失敗，
+> 用 fallback 預打包：`npm run bundle:vercel -w @pepelab/signal-api`（esbuild 把整個 handler + shared
+> 內聯成單一 `api/_bundled.cjs`），再把 function 指向它。`copyTracker/exchange` 在 x402 router 上為
+> address(0)（DeployX402Router 不接線），故 `/revenue` 的 `platformEarnings` 是純 x402 收入。
+
+**前端**：另建一個 Vercel 專案（Root = `frontend`），設 `VITE_SIGNAL_API_URL=https://<signal-api>.vercel.app`。
+
+## 外部 agent 自帶錢包付費（CLI 直接購買）
+
+`examples/buy-signal.ts` 只依賴 **viem + x402-fetch**（不依賴本 monorepo），任何人複製即可跑：
+
+```bash
+export X402_API_URL=https://<your-signal-api>.vercel.app   # 或 http://localhost:4021
+export AGENT_PRIVATE_KEY=0x...    # 持 Base Sepolia 官方 USDC + 一點 ETH
+npx tsx examples/buy-signal.ts
+```
+流程：探索 `/` →（付費端點）402（accepts: network/asset/payTo/price）→ 官方 USDC 簽 EIP-3009 → 重送帶 `X-PAYMENT` → 200 + 訊號 + `settlementTx`。
+
+## 訪客試買（免錢包）
+
+`POST /demo/buy-signal`：伺服器以 settlement 錢包代付一筆並在鏈上跑 70/20/10，回 `{signal, paymentInfo, settlementTx}`。前端 `/x402` 文件頁與 Marketplace 卡片都接這支（含簡易速率限制 `DEMO_COOLDOWN_MS`，預設 15s/IP，避免測試 USDC 被刷乾）。
+
+> ⚠️ **安全**：`FEE_SETTLEMENT_PRIVATE_KEY` 放公開 serverless = 視為**半公開測試金鑰**，只放極少量測試資產，絕不重用到任何有價值錢包。capstone 後若上 mainnet，改用受控 signer / KMS。x402 付費牆本身天然抗刷；`/demo/buy-signal` 額外加速率限制。
+
 ## MCP server（給 Claude 等 agent）
 
 ```bash
