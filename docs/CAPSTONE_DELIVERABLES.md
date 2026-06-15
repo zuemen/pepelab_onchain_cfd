@@ -58,6 +58,18 @@
 > 付款幣別（官方 USDC, 6-dec）與保證金幣別（MockUSDC, 18-dec）**用途分離**；x402 收入經此
 > 專用 router 走 70/20/10 真分潤。鏈上綁定已驗證，見 `docs/VERIFICATION_REPORT.md §4`。
 
+### x402 Signal API（已公開上線 · Vercel）
+| 項目 | 值 |
+|------|----|
+| 正式網址 | **`https://agent-git-master-zuemens-projects.vercel.app`** |
+| 健康檢查 | `GET /healthz` → `ok` |
+| 服務目錄 | `GET /` → JSON |
+| 付費端點（402 牆） | `GET /signals/:trader`（$0.01） · `GET /oracle/:asset`（$0.005） |
+
+> 前端 `VITE_SIGNAL_API_URL` 預設即指向此網址（見 `frontend/src/lib/pepefi/signalApi.ts`
+> 的 `DEFAULT_SIGNAL_API_URL`），`/x402` 開發者頁的 Base URL 與試買、Marketplace 卡片、
+> AgentMonitor 的鏈上 `/revenue` 皆走此線上 API。外部自帶錢包付費見 §4-B 與 `agent/examples/buy-signal.ts`。
+
 ---
 
 ## 3. 架構與資料流（Phase 4：全程 Base Sepolia 同鏈）
