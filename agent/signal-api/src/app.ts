@@ -59,6 +59,9 @@ export function createApp(): Hono {
   // GET 端點對所有來源開放（瀏覽器 demo + 外部 agent）；只開 GET/OPTIONS/POST 給 demo。
   app.use("*", cors({ origin: "*", allowMethods: ["GET", "POST", "OPTIONS"] }));
 
+  // ── 極簡 liveness（隔離進入點/adapter 問題用，立即回 200） ────────────────
+  app.get("/healthz", (c) => c.text("ok"));
+
   // ── 免費：可被發現的服務目錄（agent/CLI 先探索） ─────────────────────────
   app.get("/", (c) =>
     c.json({
