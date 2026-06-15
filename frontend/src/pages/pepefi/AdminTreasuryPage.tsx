@@ -1,3 +1,4 @@
+import { MONO } from 'src/components/pepefi/brandKit'
 import { useState, useEffect, useCallback } from 'react'
 import { parseEther, formatEther, formatUnits } from 'ethers'
 import { useContracts } from 'src/hooks/useContracts'
@@ -265,7 +266,7 @@ export default function AdminTreasuryPage() {
         <Typography variant="h2">🔒</Typography>
         <Typography variant="h5" sx={{ fontWeight: 'bold' }}>Not authorized</Typography>
         <Typography color="text.secondary" sx={{ mb: 2 }}>This page is restricted to the platform owner wallet.</Typography>
-        <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.disabled' }}>
+        <Typography variant="caption" sx={{ fontFamily: MONO, color: 'text.disabled' }}>
           Owner: {DEMO_OWNER.slice(0, 10)}…{DEMO_OWNER.slice(-6)}
         </Typography>
       </Box>
@@ -346,7 +347,7 @@ export default function AdminTreasuryPage() {
         </Box>
 
         {platformTreasury && (
-          <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+          <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
             Treasury: {platformTreasury}
           </Typography>
         )}
@@ -356,7 +357,7 @@ export default function AdminTreasuryPage() {
             <Typography variant="caption" color="text.secondary">
               Pending platform fees
             </Typography>
-            <Typography variant="h4" color="primary.main" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
+            <Typography variant="h4" color="primary.main" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
               {stats ? f18(stats.platformEarnings) : '—'} <Box component="span" sx={{ fontSize: '1rem', fontWeight: 'normal', color: 'text.secondary' }}>USDC</Box>
             </Typography>
           </Box>
@@ -390,7 +391,7 @@ export default function AdminTreasuryPage() {
             placeholder="USDC amount"
             value={swapAmt}
             onChange={e => setSwapAmt(e.target.value)}
-            slotProps={{ htmlInput: { min: "0", style: { fontFamily: 'monospace' } } }}
+            slotProps={{ htmlInput: { min: "0", style: { fontFamily: MONO } } }}
             sx={{ flexGrow: 1, minWidth: 200 }}
           />
           <Button
@@ -448,7 +449,7 @@ export default function AdminTreasuryPage() {
           </Typography>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
             The router needs an ETH reserve to fulfill USDC→ETH swaps from users and admin.
-            Current reserve: <Box component="span" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{stats ? fEth(stats.routerEth) : '—'} ETH</Box>
+            Current reserve: <Box component="span" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>{stats ? fEth(stats.routerEth) : '—'} ETH</Box>
           </Typography>
           <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
             <TextField
@@ -457,7 +458,7 @@ export default function AdminTreasuryPage() {
               placeholder="ETH amount (e.g. 1)"
               value={fundAmt}
               onChange={e => setFundAmt(e.target.value)}
-              slotProps={{ htmlInput: { min: "0", step: "0.01", style: { fontFamily: 'monospace' } } }}
+              slotProps={{ htmlInput: { min: "0", step: "0.01", style: { fontFamily: MONO } } }}
               sx={{ width: 200 }}
             />
             <Button
@@ -471,14 +472,14 @@ export default function AdminTreasuryPage() {
         </Box>
       </Card>
 
-      {/* F. PepeFi Incentives Pool Refill */}
+      {/* F. PepeLab Incentives Pool Refill */}
       <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
           <Box sx={{ bgcolor: 'rgba(124,193,74,0.1)', p: 1, borderRadius: '50%', color: '#7cc14a', display: 'flex' }}>
             <Iconify icon="solar:palette-bold" sx={{ fontSize: 20 }} />
           </Box>
           <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-            🎁 PepeFi Incentives Pool Refill (獎勵池充值)
+            🎁 PepeLab Incentives Pool Refill (獎勵池充值)
           </Typography>
         </Box>
 
@@ -490,7 +491,7 @@ export default function AdminTreasuryPage() {
           <Grid size={{ xs: 12, sm: 6 }}>
             <Box sx={{ p: 2, bgcolor: 'rgba(255,255,255,0.02)', borderRadius: 1.5, border: '1px solid rgba(255,255,255,0.05)' }}>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>我的錢包 PEPE 餘額</Typography>
-              <Typography variant="h5" sx={{ fontWeight: 'bold', color: '#ffb300', fontFamily: 'monospace' }}>
+              <Typography variant="h5" sx={{ fontWeight: 'bold', color: '#ffb300', fontFamily: MONO }}>
                 {walletPepeBal !== null ? f18(walletPepeBal) : '—'} <Box component="span" sx={{ fontSize: '0.85rem', fontWeight: 'normal', color: 'text.secondary' }}>PEPE</Box>
               </Typography>
             </Box>
@@ -498,7 +499,7 @@ export default function AdminTreasuryPage() {
           <Grid size={{ xs: 12, sm: 6 }}>
             <Box sx={{ p: 2, bgcolor: 'rgba(124,193,74,0.04)', borderRadius: 1.5, border: '1px solid rgba(124,193,74,0.15)' }}>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>激勵合約 PEPE 儲備</Typography>
-              <Typography variant="h5" sx={{ fontWeight: 'bold', color: '#7cc14a', fontFamily: 'monospace' }}>
+              <Typography variant="h5" sx={{ fontWeight: 'bold', color: '#7cc14a', fontFamily: MONO }}>
                 {contractPepeBal !== null ? f18(contractPepeBal) : '—'} <Box component="span" sx={{ fontSize: '0.85rem', fontWeight: 'normal', color: 'text.secondary' }}>PEPE</Box>
               </Typography>
             </Box>
@@ -512,7 +513,7 @@ export default function AdminTreasuryPage() {
             placeholder="注資 PEPE 數量 (例如 100000)"
             value={pepeFundAmt}
             onChange={e => setPepeFundAmt(e.target.value)}
-            slotProps={{ htmlInput: { min: "0", style: { fontFamily: 'monospace' } } }}
+            slotProps={{ htmlInput: { min: "0", style: { fontFamily: MONO } } }}
             sx={{ width: 250, flexGrow: 1 }}
           />
           <Button
@@ -559,14 +560,14 @@ export default function AdminTreasuryPage() {
                           color={r.type === 'claim' ? 'primary' : 'success'}
                           sx={{ fontWeight: 'bold' }}
                         />
-                        <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
+                        <Typography variant="body2" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
                           {r.type === 'claim'
                             ? `${f18(r.amount)} USDC`
                             : `${r.usdcIn ? f18(r.usdcIn) : '—'} USDC → ${fEth(r.amount)} ETH`}
                         </Typography>
                       </Stack>
                     </TableCell>
-                    <TableCell align="right" sx={{ fontFamily: 'monospace', fontSize: '0.75rem', color: 'text.secondary' }}>
+                    <TableCell align="right" sx={{ fontFamily: MONO, fontSize: '0.75rem', color: 'text.secondary' }}>
                       #{r.blockNumber}
                     </TableCell>
                     <TableCell align="right">

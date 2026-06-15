@@ -100,7 +100,7 @@ export default function Layout({ wallet, children, isKYCVerified, whaleAlerts }:
   const pageTitle = PAGE_TITLES[pathname]
     ?? (pathname.startsWith('/trader/') ? 'Trader Profile'
       : pathname.startsWith('/copy/')   ? 'Copy Trader'
-      : 'PepeFi CFD');
+      : 'PepeLab CFD');
 
   const switchToAnvil = async () => {
     const eth = (window as any).ethereum;
@@ -162,7 +162,7 @@ export default function Layout({ wallet, children, isKYCVerified, whaleAlerts }:
       {/* Header */}
       <Box sx={{ p: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
         <Typography variant="h5" sx={{ fontWeight: 800, color: 'primary.main', letterSpacing: 0.5 }}>
-          PepeFi
+          PepeLab
         </Typography>
         <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 'medium' }}>
           On-Chain CFD · PoC
@@ -502,7 +502,7 @@ export default function Layout({ wallet, children, isKYCVerified, whaleAlerts }:
           }}
         >
           <Typography variant="caption" color="text.secondary">
-            PepeFi · Research prototype · Sepolia ·{' '}
+            PepeLab · Research prototype · Sepolia ·{' '}
             {addresses?.PerpetualExchange && wallet.chainId === 11155111 && (
               <>
                 <Link

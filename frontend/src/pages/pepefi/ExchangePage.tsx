@@ -1,3 +1,4 @@
+import { MONO } from 'src/components/pepefi/brandKit'
 import { useState, useEffect, useCallback } from 'react';
 import { Link as RouterLink } from 'react-router';
 import { parseEther } from 'ethers';
@@ -47,6 +48,7 @@ import InputAdornment from '@mui/material/InputAdornment';
 import Checkbox from '@mui/material/Checkbox';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import { Icon } from '@iconify/react';
+import { explorerTx, explorerName } from 'src/lib/pepefi/notify'
 
 // ── Config ────────────────────────────────────────────────────────────────────
 type AssetId = `0x${string}`;
@@ -562,16 +564,16 @@ export default function ExchangePage() {
         anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
         message={toast?.msg}
         action={
-          toast?.hash && wallet.chainId === 11155111 ? (
+          toast?.hash && explorerTx(toast.hash, wallet.chainId) ? (
             <Button
               color="primary"
               size="small"
               component="a"
-              href={`https://sepolia.etherscan.io/tx/${toast.hash}`}
+              href={explorerTx(toast.hash, wallet.chainId)!}
               target="_blank"
               rel="noopener noreferrer"
             >
-              Etherscan
+              {explorerName(wallet.chainId)}
             </Button>
           ) : null
         }
@@ -589,7 +591,7 @@ export default function ExchangePage() {
         }}
       >
         <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
-          How CFD trading works on PepeFi
+          How CFD trading works on PepeLab
         </Typography>
         <Typography variant="body2" component="ol" sx={{ pl: 2, m: 0, '& li': { mb: 0.5 } }}>
           <li><strong>Swap:</strong> Swap ETH for USDC to get your stablecoin collateral.</li>
@@ -639,7 +641,7 @@ export default function ExchangePage() {
                     color: 'white',
                     outline: 'none',
                     fontWeight: 700,
-                    fontFamily: 'monospace',
+                    fontFamily: MONO,
                   }}
                 />
                 {swapMode === 'eth-to-usdc' ? (
@@ -714,7 +716,7 @@ export default function ExchangePage() {
                     color: 'white',
                     outline: 'none',
                     fontWeight: 700,
-                    fontFamily: 'monospace',
+                    fontFamily: MONO,
                   }}
                 />
                 {swapMode === 'eth-to-usdc' ? (
@@ -748,10 +750,10 @@ export default function ExchangePage() {
             {/* AMM pool info */}
             <Box sx={{ px: 1, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
               <Typography variant="caption" color="text.secondary">
-                Oracle Swap Rate: <Box component="span" sx={{ color: 'white', fontFamily: 'monospace', fontWeight: 'bold' }}>1 ETH = {ammPrice > 0n ? (Number(ammPrice) / 1e18).toFixed(2) : '–'} USDC</Box>
+                Oracle Swap Rate: <Box component="span" sx={{ color: 'white', fontFamily: MONO, fontWeight: 'bold' }}>1 ETH = {ammPrice > 0n ? (Number(ammPrice) / 1e18).toFixed(2) : '–'} USDC</Box>
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                Vault Reserves: <Box component="span" sx={{ color: 'white', fontFamily: 'monospace' }}>{ammEth > 0n ? (Number(ammEth) / 1e18).toFixed(4) : '–'} ETH</Box> / <Box component="span" sx={{ color: 'white', fontFamily: 'monospace' }}>{ammUsdc > 0n ? (Number(ammUsdc) / 1e18).toFixed(2) : '–'} USDC</Box>
+                Vault Reserves: <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>{ammEth > 0n ? (Number(ammEth) / 1e18).toFixed(4) : '–'} ETH</Box> / <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>{ammUsdc > 0n ? (Number(ammUsdc) / 1e18).toFixed(2) : '–'} USDC</Box>
               </Typography>
               <Typography variant="caption" sx={{ color: 'success.main', display: 'flex', alignItems: 'center', gap: 0.5, fontWeight: 'bold', mt: 0.5 }}>
                 ● Real-time Oracle Price (Zero Slippage)
@@ -807,16 +809,16 @@ export default function ExchangePage() {
                 <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold' }}>
                   Account Equity
                 </Typography>
-                <Typography variant="h4" sx={{ fontWeight: 800, fontFamily: 'monospace', mt: 0.5 }}>
+                <Typography variant="h4" sx={{ fontWeight: 800, fontFamily: MONO, mt: 0.5 }}>
                   {fUsd(accountEquity)}{' '}
                   <Typography component="span" variant="subtitle2" color="text.secondary">USDC</Typography>
                 </Typography>
               </Box>
               <Box sx={{ textAlign: 'right' }}>
                 <Typography variant="caption" color="text.secondary" display="block">Free Margin</Typography>
-                <Typography sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{f18(freeMgn)}</Typography>
+                <Typography sx={{ fontFamily: MONO, fontWeight: 'bold' }}>{f18(freeMgn)}</Typography>
                 <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>Unrealized PnL</Typography>
-                <Typography sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: pnlColor(totalUnrealizedPnL) }}>
+                <Typography sx={{ fontFamily: MONO, fontWeight: 'bold', color: pnlColor(totalUnrealizedPnL) }}>
                   {fPnL(totalUnrealizedPnL)}
                 </Typography>
               </Box>
@@ -972,9 +974,9 @@ export default function ExchangePage() {
                   </Typography>
                 </Box>
                 <Box sx={{ display: 'flex', gap: 1.5 }}>
-                  <Typography variant="caption" color="text.secondary">E: <Box component="span" sx={{ color: 'text.primary', fontFamily: 'monospace' }}>{selEsg.environmental}</Box></Typography>
-                  <Typography variant="caption" color="text.secondary">S: <Box component="span" sx={{ color: 'text.primary', fontFamily: 'monospace' }}>{selEsg.social}</Box></Typography>
-                  <Typography variant="caption" color="text.secondary">G: <Box component="span" sx={{ color: 'text.primary', fontFamily: 'monospace' }}>{selEsg.governance}</Box></Typography>
+                  <Typography variant="caption" color="text.secondary">E: <Box component="span" sx={{ color: 'text.primary', fontFamily: MONO }}>{selEsg.environmental}</Box></Typography>
+                  <Typography variant="caption" color="text.secondary">S: <Box component="span" sx={{ color: 'text.primary', fontFamily: MONO }}>{selEsg.social}</Box></Typography>
+                  <Typography variant="caption" color="text.secondary">G: <Box component="span" sx={{ color: 'text.primary', fontFamily: MONO }}>{selEsg.governance}</Box></Typography>
                 </Box>
               </Box>
             ) : contracts ? (
@@ -1041,7 +1043,7 @@ export default function ExchangePage() {
                 ))}
               </Box>
               {maxLev < 5 && (
-                <Typography variant="caption" color="warning.main" sx={{ fontFamily: 'monospace' }}>
+                <Typography variant="caption" color="warning.main" sx={{ fontFamily: MONO }}>
                   ⚠ Max {maxLev}× — tighter risk cap for this asset class
                 </Typography>
               )}
@@ -1069,19 +1071,19 @@ export default function ExchangePage() {
         {/* Live quote values */}
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3, fontSize: '0.8125rem', color: 'text.secondary', pt: 1 }}>
           <Typography variant="body2" color="text.secondary">
-            Entry (oracle): <Box component="span" sx={{ color: 'text.primary', fontWeight: 'bold', fontFamily: 'monospace' }}>{fUsd(curPrice)}</Box>
+            Entry (oracle): <Box component="span" sx={{ color: 'text.primary', fontWeight: 'bold', fontFamily: MONO }}>{fUsd(curPrice)}</Box>
           </Typography>
           {livePrices[selAsset] && (
             <Typography variant="body2" color="text.secondary">
               Live market:{' '}
-              <Box component="span" sx={{ fontWeight: 'bold', fontFamily: 'monospace', color: livePrices[selAsset].isMock ? 'warning.main' : 'success.main' }}>
+              <Box component="span" sx={{ fontWeight: 'bold', fontFamily: MONO, color: livePrices[selAsset].isMock ? 'warning.main' : 'success.main' }}>
                 ${livePrices[selAsset].usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </Box>
               {livePrices[selAsset].isMock && <Box component="span" sx={{ opacity: 0.6, fontSize: '0.6875rem', ml: 0.5 }}>(simulated)</Box>}
             </Typography>
           )}
           <Typography variant="body2" color="text.secondary">
-            Notional: <Box component="span" sx={{ color: 'text.primary', fontWeight: 'bold', fontFamily: 'monospace' }}>{f18(notional)} USDC</Box>
+            Notional: <Box component="span" sx={{ color: 'text.primary', fontWeight: 'bold', fontFamily: MONO }}>{f18(notional)} USDC</Box>
           </Typography>
           {(() => {
             const fi = fundingData[selAsset];
@@ -1091,7 +1093,7 @@ export default function ExchangePage() {
             return (
               <Typography variant="body2" sx={{ fontWeight: 'medium', color: rateNum > 0 ? 'error.main' : rateNum < 0 ? 'success.main' : 'text.secondary' }}>
                 Funding rate (8h):{' '}
-                <Box component="span" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{rateNum >= 0 ? '+' : ''}{ratePct}%</Box>
+                <Box component="span" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>{rateNum >= 0 ? '+' : ''}{ratePct}%</Box>
                 {' '}{rateNum > 0 ? '(longs pay)' : rateNum < 0 ? '(shorts pay)' : '(balanced)'}
               </Typography>
             );
@@ -1102,7 +1104,7 @@ export default function ExchangePage() {
               color="error"
               size="small"
               variant="outlined"
-              sx={{ fontFamily: 'monospace', fontWeight: 'bold', bgcolor: 'rgba(255, 86, 48, 0.08)' }}
+              sx={{ fontFamily: MONO, fontWeight: 'bold', bgcolor: 'rgba(255, 86, 48, 0.08)' }}
             />
           )}
         </Box>
@@ -1134,7 +1136,7 @@ export default function ExchangePage() {
 
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
           <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 'medium' }}>
-            Free margin: <Box component="span" sx={{ color: 'text.primary', fontFamily: 'monospace', fontWeight: 'bold' }}>{f18(freeMgn)} USDC</Box>
+            Free margin: <Box component="span" sx={{ color: 'text.primary', fontFamily: MONO, fontWeight: 'bold' }}>{f18(freeMgn)} USDC</Box>
             {openMgnBig !== null && openMgnBig > freeMgn && (
               <Box component="span" sx={{ color: 'error.main', fontWeight: 'bold', ml: 2 }}>
                 ⚠ Insufficient — deposit at least {f18(openMgnBig - freeMgn)} more USDC first
@@ -1199,7 +1201,7 @@ export default function ExchangePage() {
                   <Box key={id} sx={{ display: 'grid', gridTemplateColumns: '120px 1fr auto', gap: 3, alignItems: 'center' }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <AssetIcon symbol={label} size={24} />
-                      <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
+                      <Typography variant="caption" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
                         {label}
                       </Typography>
                     </Box>
@@ -1212,7 +1214,7 @@ export default function ExchangePage() {
                         <Box key={l} sx={{ flexGrow: 1 }}>
                           <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
                             <Typography variant="caption" sx={{ fontSize: '0.625rem', color: 'text.secondary', fontWeight: 'bold' }}>{l}</Typography>
-                            <Typography variant="caption" sx={{ fontSize: '0.625rem', color: 'text.secondary', fontFamily: 'monospace' }}>{val}</Typography>
+                            <Typography variant="caption" sx={{ fontSize: '0.625rem', color: 'text.secondary', fontFamily: MONO }}>{val}</Typography>
                           </Box>
                           <LinearProgress
                             variant="determinate"
@@ -1283,7 +1285,7 @@ export default function ExchangePage() {
                       <TableCell sx={{ py: 1 }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                           <AssetIcon symbol={ASSET_LABEL[row.asset as AssetId] ?? ''} size={24} />
-                          <Typography variant="subtitle2" sx={{ fontWeight: 'bold', fontFamily: 'monospace' }}>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 'bold', fontFamily: MONO }}>
                             {ASSET_LABEL[row.asset as AssetId] ?? row.asset.slice(0, 8)}
                           </Typography>
                         </Box>
@@ -1302,12 +1304,12 @@ export default function ExchangePage() {
                           }}
                         />
                       </TableCell>
-                      <TableCell sx={{ fontFamily: 'monospace' }}>{fUsd(row.entryPrice)}</TableCell>
-                      <TableCell sx={{ fontFamily: 'monospace' }}>{fUsd(row.currentLivePrice)}</TableCell>
-                      <TableCell sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>{f18(size, 6)}</TableCell>
-                      <TableCell sx={{ fontFamily: 'monospace' }}>{f18(row.margin)}</TableCell>
+                      <TableCell sx={{ fontFamily: MONO }}>{fUsd(row.entryPrice)}</TableCell>
+                      <TableCell sx={{ fontFamily: MONO }}>{fUsd(row.currentLivePrice)}</TableCell>
+                      <TableCell sx={{ fontFamily: MONO, color: 'text.secondary' }}>{f18(size, 6)}</TableCell>
+                      <TableCell sx={{ fontFamily: MONO }}>{f18(row.margin)}</TableCell>
                       <TableCell>{String(row.leverage)}×</TableCell>
-                      <TableCell sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: pnlColor(row.livePnL) }}>
+                      <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: pnlColor(row.livePnL) }}>
                         {fPnL(row.livePnL)}
                       </TableCell>
                       <TableCell>

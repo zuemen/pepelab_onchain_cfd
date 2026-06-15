@@ -1,3 +1,4 @@
+import { MONO } from 'src/components/pepefi/brandKit'
 import { useState, useEffect, useCallback, type ReactNode } from 'react'
 import { useContracts } from 'src/hooks/useContracts'
 import { usePepefiWallet } from 'src/layouts/pepefi'
@@ -138,12 +139,12 @@ function renderDetails(e: ChainEvent): ReactNode {
 
     case 'TraderFollowed': {
       const trader = d.trader as string
-      return <span>Following <Box component="span" sx={{ fontFamily: 'monospace', color: 'text.primary' }}>{shortAddr(trader)}</Box> | Margin: {f18(d.totalMargin as bigint)} USDC</span>
+      return <span>Following <Box component="span" sx={{ fontFamily: MONO, color: 'text.primary' }}>{shortAddr(trader)}</Box> | Margin: {f18(d.totalMargin as bigint)} USDC</span>
     }
 
     case 'TraderUnfollowed': {
       const trader = d.trader as string
-      return <span>Unfollowed <Box component="span" sx={{ fontFamily: 'monospace', color: 'text.primary' }}>{shortAddr(trader)}</Box></span>
+      return <span>Unfollowed <Box component="span" sx={{ fontFamily: MONO, color: 'text.primary' }}>{shortAddr(trader)}</Box></span>
     }
 
     case 'CopyFee':
@@ -159,7 +160,7 @@ function renderDetails(e: ChainEvent): ReactNode {
 
     case 'Slash': {
       const recipient = d.recipient as string
-      return <span>Slashed <Box component="span" sx={{ color: 'error.main', fontWeight: 'semibold' }}>{f18(d.amount as bigint)}</Box> USDC → <Box component="span" sx={{ fontFamily: 'monospace' }}>{shortAddr(recipient)}</Box></span>
+      return <span>Slashed <Box component="span" sx={{ color: 'error.main', fontWeight: 'semibold' }}>{f18(d.amount as bigint)}</Box> USDC → <Box component="span" sx={{ fontFamily: MONO }}>{shortAddr(recipient)}</Box></span>
     }
 
     default:
@@ -375,7 +376,7 @@ export default function HistoryPage() {
             Transaction History
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            On-chain auditability — decoded directly from Sepolia via ethers.js
+            On-chain auditability — decoded directly from Base Sepolia via ethers.js
           </Typography>
         </Box>
         <Button
@@ -390,9 +391,9 @@ export default function HistoryPage() {
 
       {/* Proof-of-transparency note */}
       <Alert severity="info" sx={{ bgcolor: 'rgba(0, 184, 217, 0.08)', color: 'info.lighter', border: '1px solid', borderColor: 'rgba(0, 184, 217, 0.16)' }}>
-        All activity is read directly from the Sepolia blockchain — no backend, no database, just the immutable ledger.{' '}
+        All activity is read directly from the Base Sepolia blockchain — no backend, no database, just the immutable ledger.{' '}
         <Box component="span" sx={{ fontWeight: 'bold', color: 'text.primary' }}>Every row below is a real on-chain event.</Box>{' '}
-        Click <Box component="span" sx={{ color: 'success.main', fontWeight: 'bold', fontFamily: 'monospace' }}>↗</Box> to verify on Sepolia Etherscan.
+        Click <Box component="span" sx={{ color: 'success.main', fontWeight: 'bold', fontFamily: MONO }}>↗</Box> to verify on BaseScan.
       </Alert>
 
       {/* Tabs */}
@@ -486,13 +487,13 @@ export default function HistoryPage() {
                           }}
                         />
                       </TableCell>
-                      <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.75rem', color: 'text.secondary' }}>
+                      <TableCell sx={{ fontFamily: MONO, fontSize: '0.75rem', color: 'text.secondary' }}>
                         {shortAddr(e.user)}
                       </TableCell>
                       <TableCell sx={{ fontSize: '0.75rem', color: 'text.primary' }}>
                         {renderDetails(e)}
                       </TableCell>
-                      <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.75rem', color: 'text.secondary' }}>
+                      <TableCell sx={{ fontFamily: MONO, fontSize: '0.75rem', color: 'text.secondary' }}>
                         #{e.blockNumber}
                       </TableCell>
                       <TableCell>
@@ -507,7 +508,7 @@ export default function HistoryPage() {
                             ↗
                           </Link>
                         ) : (
-                          <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>
+                          <Typography variant="caption" sx={{ fontFamily: MONO, color: 'text.secondary' }}>
                             {e.txHash.slice(0, 8)}…
                           </Typography>
                         )}
@@ -523,7 +524,7 @@ export default function HistoryPage() {
 
       {/* Footer note */}
       <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center', display: 'block', mt: 2 }}>
-        Showing events from last ~{FETCH_BLOCKS.toLocaleString()} blocks (~15 hours on Sepolia) ·{' '}
+        Showing events from last ~{FETCH_BLOCKS.toLocaleString()} blocks (on Base Sepolia) ·{' '}
         {visible.length} event{visible.length !== 1 ? 's' : ''} displayed ·
         Older history: use Etherscan or queryFilter with a custom fromBlock
       </Typography>

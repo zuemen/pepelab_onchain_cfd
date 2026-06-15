@@ -31,7 +31,7 @@ export const _account: AccountDrawerProps['data'] = [
     icon: <Iconify icon="solar:shield-keyhole-bold-duotone" />,
   },
   {
-    label: 'PepeFi Rewards 🎁 (每日激勵)',
+    label: 'PepeLab Rewards 🎁 (每日激勵)',
     href: '/rewards',
     icon: <Iconify icon="solar:notes-bold-duotone" />,
   },

@@ -1,10 +1,11 @@
+import { MONO } from 'src/components/pepefi/brandKit'
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router'
 import type { Contract } from 'ethers'
 import { useContracts } from 'src/hooks/useContracts'
 import { useMode } from 'src/contexts/mode-context'
 import { usePepefiWallet } from 'src/layouts/pepefi'
-import { explorerTx, explorerAddr } from 'src/lib/pepefi/notify'
+import { explorerTx, explorerAddr, explorerName } from 'src/lib/pepefi/notify'
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
 import { pepeNameFor } from 'src/lib/pepefi/pepeName'
 import { TableSkeleton } from 'src/components/pepefi/Skeleton'
@@ -176,13 +177,13 @@ function renderDetail(a: Activity): React.ReactNode {
       )
     }
     case 'Following':
-      return <span>Following <Box component="span" sx={{ fontFamily: 'monospace' }}>{shortAddr(d.trader as string)}</Box> | Margin: {f18(d.totalMargin as bigint)} USDC</span>
+      return <span>Following <Box component="span" sx={{ fontFamily: MONO }}>{shortAddr(d.trader as string)}</Box> | Margin: {f18(d.totalMargin as bigint)} USDC</span>
     case 'FollowedBy':
-      return <span><Box component="span" sx={{ fontFamily: 'monospace' }}>{shortAddr(d.follower as string)}</Box> copied this trader | Margin: {f18(d.totalMargin as bigint)} USDC</span>
+      return <span><Box component="span" sx={{ fontFamily: MONO }}>{shortAddr(d.follower as string)}</Box> copied this trader | Margin: {f18(d.totalMargin as bigint)} USDC</span>
     case 'Staked':
       return <span>Staked <Box component="span" sx={{ color: 'warning.main', fontWeight: 'semibold' }}>{f18(d.amount as bigint)}</Box> USDC</span>
     case 'Slashed':
-      return <span>Slashed <Box component="span" sx={{ color: 'error.main', fontWeight: 'semibold' }}>{f18(d.amount as bigint)}</Box> USDC → <Box component="span" sx={{ fontFamily: 'monospace' }}>{shortAddr(d.recipient as string)}</Box></span>
+      return <span>Slashed <Box component="span" sx={{ color: 'error.main', fontWeight: 'semibold' }}>{f18(d.amount as bigint)}</Box> USDC → <Box component="span" sx={{ fontFamily: MONO }}>{shortAddr(d.recipient as string)}</Box></span>
   }
 }
 
@@ -532,7 +533,7 @@ export default function WhaleTrackerPage() {
                           <PepeIdentity address={t.address} size={80} vertical />
                         </Box>
                         <Chip label={`${tier.icon} ${tier.label}`} size="small" sx={{ fontWeight: 'bold', mb: 1.5, ...tier.style }} />
-                        <Typography variant="h6" sx={{ fontFamily: 'monospace', fontWeight: 900 }}>{fUsd(t.volume)}</Typography>
+                        <Typography variant="h6" sx={{ fontFamily: MONO, fontWeight: 900 }}>{fUsd(t.volume)}</Typography>
                         <Typography variant="caption" color="text.secondary">累積交易量</Typography>
                         <Typography variant="body2" sx={{ color: 'success.main', fontWeight: 'bold', mt: 1 }}>
                           {t.openCount > 0 ? `🟢 ${t.openCount} 個持倉` : '無持倉'}
@@ -572,7 +573,7 @@ export default function WhaleTrackerPage() {
                       const tier = whaleTier(t.volume)
                       return (
                         <TableRow key={t.address} hover>
-                          <TableCell sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>
+                          <TableCell sx={{ fontFamily: MONO, color: 'text.secondary' }}>
                             #{i + 1}
                           </TableCell>
                           <TableCell>
@@ -588,11 +589,11 @@ export default function WhaleTrackerPage() {
                               }}
                             />
                           </TableCell>
-                          <TableCell sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: 'text.primary' }}>
+                          <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'text.primary' }}>
                             {fUsd(t.volume)}
                           </TableCell>
-                          <TableCell sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>{t.count}</TableCell>
-                          <TableCell sx={{ fontFamily: 'monospace' }}>
+                          <TableCell sx={{ fontFamily: MONO, color: 'text.secondary' }}>{t.count}</TableCell>
+                          <TableCell sx={{ fontFamily: MONO }}>
                             <Box component="span" sx={{ color: t.openCount > 0 ? 'success.main' : 'text.disabled', fontWeight: 'bold' }}>
                               {t.openCount}
                             </Box>
@@ -627,7 +628,7 @@ export default function WhaleTrackerPage() {
                 value={inputAddr}
                 onChange={e => setInputAddr(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleSearch()}
-                slotProps={{ htmlInput: { style: { fontFamily: 'monospace' } } }}
+                slotProps={{ htmlInput: { style: { fontFamily: MONO } } }}
                 size="small"
                 sx={{ flexGrow: 1 }}
               />
@@ -672,7 +673,7 @@ export default function WhaleTrackerPage() {
           {/* Mainnet warning */}
           {isMainnetDemo && searchAddr && (
             <Alert severity="info">
-              <Box component="span" sx={{ fontWeight: 'bold' }}>Mainnet address</Box> — PepeFi runs on Sepolia testnet.
+              <Box component="span" sx={{ fontWeight: 'bold' }}>Mainnet address</Box> — PepeLab runs on Base Sepolia testnet.
               This address has no activity here. The search demonstrates the queryFilter capability for any address.
             </Alert>
           )}
@@ -689,18 +690,18 @@ export default function WhaleTrackerPage() {
             <>
               {/* Address header + whale tier */}
               <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 2, mt: 1 }}>
-                <Typography variant="subtitle1" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
+                <Typography variant="subtitle1" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
                   {searchAddr}
                 </Typography>
-                {wallet.chainId === 11155111 && (
+                {explorerAddr(searchAddr, wallet.chainId) && (
                   <Link
-                    href={explorerAddr(searchAddr, wallet.chainId) ?? '#'}
+                    href={explorerAddr(searchAddr, wallet.chainId)!}
                     target="_blank"
                     rel="noopener noreferrer"
                     color="success.main"
                     sx={{ fontSize: '0.875rem', fontWeight: 'semibold', textDecoration: 'underline' }}
                   >
-                    Etherscan ↗
+                    {explorerName(wallet.chainId)} ↗
                   </Link>
                 )}
                 {!loading && !isMainnetDemo && (
@@ -776,20 +777,20 @@ export default function WhaleTrackerPage() {
                           const notional = row.margin * row.leverage
                           return (
                             <TableRow key={String(row.id)} hover>
-                              <TableCell sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: 'text.primary' }}>
+                              <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'text.primary' }}>
                                 {ASSET_LABEL[row.asset] ?? row.asset.slice(0, 8)}
                               </TableCell>
                               <TableCell sx={{ fontWeight: 'bold', color: row.isLong ? 'success.main' : 'error.main' }}>
                                 {row.isLong ? 'LONG ↑' : 'SHORT ↓'}
                               </TableCell>
-                              <TableCell sx={{ fontFamily: 'monospace' }}>{String(row.leverage)}×</TableCell>
-                              <TableCell sx={{ fontFamily: 'monospace' }}>{fUsd(row.entryPrice)}</TableCell>
-                              <TableCell sx={{ fontFamily: 'monospace' }}>
+                              <TableCell sx={{ fontFamily: MONO }}>{String(row.leverage)}×</TableCell>
+                              <TableCell sx={{ fontFamily: MONO }}>{fUsd(row.entryPrice)}</TableCell>
+                              <TableCell sx={{ fontFamily: MONO }}>
                                 {row.currentPrice === 0n ? '—' : fUsd(row.currentPrice)}
                               </TableCell>
-                              <TableCell sx={{ fontFamily: 'monospace' }}>{f18(row.margin)}</TableCell>
-                              <TableCell sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>{f18(notional)}</TableCell>
-                              <TableCell sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: pnlColor(row.pnl) }}>
+                              <TableCell sx={{ fontFamily: MONO }}>{f18(row.margin)}</TableCell>
+                              <TableCell sx={{ fontFamily: MONO, color: 'text.secondary' }}>{f18(notional)}</TableCell>
+                              <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: pnlColor(row.pnl) }}>
                                 {(Number(row.pnl) >= 0 ? '+' : '') + f18(row.pnl, 4)}
                               </TableCell>
                             </TableRow>
@@ -820,7 +821,7 @@ export default function WhaleTrackerPage() {
                     title="No activity found"
                     description={
                       isMainnetDemo
-                        ? 'This is a mainnet address — no PepeFi activity on Sepolia.'
+                        ? 'This is a mainnet address — no PepeLab activity on Base Sepolia.'
                         : `No events found for ${shortAddr(searchAddr)} since block #${DEPLOY_BLOCK.toLocaleString()}.`
                     }
                   />
@@ -850,7 +851,7 @@ export default function WhaleTrackerPage() {
                             <TableCell sx={{ fontSize: '0.75rem', color: 'text.primary' }}>
                               {renderDetail(e)}
                             </TableCell>
-                            <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.75rem', color: 'text.secondary' }}>
+                            <TableCell sx={{ fontFamily: MONO, fontSize: '0.75rem', color: 'text.secondary' }}>
                               #{e.blockNumber}
                             </TableCell>
                             <TableCell>
@@ -866,7 +867,7 @@ export default function WhaleTrackerPage() {
                                   ↗
                                 </Link>
                               ) : (
-                                <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>
+                                <Typography variant="caption" sx={{ fontFamily: MONO, color: 'text.secondary' }}>
                                   {e.txHash.slice(0, 8)}…
                                 </Typography>
                               )}

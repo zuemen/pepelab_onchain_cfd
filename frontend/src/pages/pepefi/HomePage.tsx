@@ -1,3 +1,4 @@
+import { MONO } from 'src/components/pepefi/brandKit'
 import { useState, useEffect, useCallback } from 'react'
 
 import Box          from '@mui/material/Box'
@@ -220,7 +221,7 @@ export default function HomePage() {
               <Typography fontWeight={900} fontSize={20} sx={{ color: '#7cc14a' }}>
                 {pepeNameFor(wallet.address)}
               </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+              <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
                 {wallet.address ? `${wallet.address.slice(0,6)}…${wallet.address.slice(-4)}` : ''}
               </Typography>
             </Box>

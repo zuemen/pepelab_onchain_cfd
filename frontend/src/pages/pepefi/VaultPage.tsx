@@ -1,3 +1,4 @@
+import { MONO } from 'src/components/pepefi/brandKit'
 import { useState, useEffect, useCallback } from 'react'
 import type { Contract } from 'ethers'
 import { parseUnits, formatUnits } from 'ethers'
@@ -215,7 +216,7 @@ export default function VaultPage() {
               {s.value === null ? (
                 <Skeleton height={28} sx={{ width: '80%', mt: 0.5 }} />
               ) : (
-                <Typography variant="h6" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
+                <Typography variant="h6" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
                   {s.value}
                 </Typography>
               )}
@@ -234,7 +235,7 @@ export default function VaultPage() {
             <Box component="span" sx={{ color: 'text.secondary' }}>
               {Number(stats.feeShareBps) / 100}% of every trade's fee is routed to LPs —
             </Box>
-            <Box component="span" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
+            <Box component="span" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
               {f18(stats.feesRouted)} USDC
             </Box>
             <Box component="span" sx={{ color: 'text.secondary' }}>routed to date.</Box>
@@ -253,7 +254,7 @@ export default function VaultPage() {
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                 pIV held
               </Typography>
-              <Typography variant="body1" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
+              <Typography variant="body1" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
                 {f18(stats.myShares, 4)}
               </Typography>
             </Box>
@@ -261,7 +262,7 @@ export default function VaultPage() {
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                 USDC value
               </Typography>
-              <Typography variant="body1" color="success.main" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
+              <Typography variant="body1" color="success.main" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
                 {f18(stats.myUsdcValue)}
               </Typography>
             </Box>
@@ -287,7 +288,7 @@ export default function VaultPage() {
                 placeholder="USDC amount"
                 value={depositAmt}
                 onChange={e => setDepositAmt(e.target.value)}
-                slotProps={{ htmlInput: { min: "0", style: { fontFamily: 'monospace' } } }}
+                slotProps={{ htmlInput: { min: "0", style: { fontFamily: MONO } } }}
                 sx={{ flexGrow: 1 }}
               />
               <Button
@@ -299,7 +300,7 @@ export default function VaultPage() {
               </Button>
             </Box>
             {stats && depositAmt && (
-              <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+              <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
                 ≈ {f18((stats.totalSupply > ZERO && stats.totalAssets > ZERO)
                   ? BigInt(Math.floor(Number(depositAmt) * 1e18)) * stats.totalSupply / stats.totalAssets
                   : BigInt(Math.floor(Number(depositAmt) * 1e18)), 4)} pIV
@@ -324,7 +325,7 @@ export default function VaultPage() {
                 placeholder="pIV shares"
                 value={withdrawAmt}
                 onChange={e => setWithdrawAmt(e.target.value)}
-                slotProps={{ htmlInput: { min: "0", style: { fontFamily: 'monospace' } } }}
+                slotProps={{ htmlInput: { min: "0", style: { fontFamily: MONO } } }}
                 sx={{ flexGrow: 1 }}
               />
               <Button
@@ -338,7 +339,7 @@ export default function VaultPage() {
             </Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               {stats && withdrawAmt ? (
-                <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
                   ≈ {f18(stats.totalSupply > ZERO
                     ? BigInt(Math.floor(Number(withdrawAmt) * 1e18)) * stats.totalAssets / stats.totalSupply
                     : 0n, 4)} USDC
@@ -410,17 +411,17 @@ export default function VaultPage() {
                       </Typography>
                     </TableCell>
                     <TableCell>
-                      <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
                         {a.from.slice(0, 10)}…
                       </Typography>
                     </TableCell>
                     <TableCell align="right">
-                      <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 'semibold' }}>
+                      <Typography variant="body2" sx={{ fontFamily: MONO, fontWeight: 'semibold' }}>
                         {a.amount}
                       </Typography>
                     </TableCell>
                     <TableCell align="right">
-                      <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
                         #{a.block}
                       </Typography>
                     </TableCell>

@@ -30,7 +30,7 @@ export function Logo({
     <Box
       component="img"
       src="/avatars/pepe-01.png"
-      alt="PepeFi"
+      alt="PepeLab"
       onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
         e.currentTarget.src = '/assets/images/pepefi/pepe_eth.jpg';
       }}
@@ -61,7 +61,7 @@ export function Logo({
           letterSpacing: '-0.5px',
         }}
       >
-        PepeFi
+        PepeLab
       </Typography>
     </Box>
   );

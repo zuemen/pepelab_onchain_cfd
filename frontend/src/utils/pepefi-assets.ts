@@ -1,5 +1,5 @@
 /**
- * PepeFi Asset Helper Utility
+ * PepeLab Asset Helper Utility
  * Manages custom Pepe avatar rendering and gamified outfit/level mechanics.
  */
 

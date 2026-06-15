@@ -1,3 +1,4 @@
+import { MONO } from 'src/components/pepefi/brandKit'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Link as RouterLink } from 'react-router'
 import { useContracts } from 'src/hooks/useContracts'
@@ -30,6 +31,7 @@ import TableCell from '@mui/material/TableCell';
 import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
 import Chip from '@mui/material/Chip';
+import { explorerTx, explorerName } from 'src/lib/pepefi/notify'
 
 // ── Config ─────────────────────────────────────────────────────────────────
 type AssetId = `0x${string}`
@@ -297,15 +299,15 @@ export default function TraderDashboard() {
             sx={{ width: '100%' }}
           >
             {toast.msg}
-            {toast.hash && wallet.chainId === 11155111 && (
+            {toast.hash && explorerTx(toast.hash, wallet.chainId) && (
               <Link
-                href={`https://sepolia.etherscan.io/tx/${toast.hash}`}
+                href={explorerTx(toast.hash, wallet.chainId)!}
                 target="_blank"
                 rel="noopener noreferrer"
                 color="inherit"
                 sx={{ display: 'block', mt: 0.5, typography: 'caption', textDecoration: 'underline' }}
               >
-                View on Etherscan ↗
+                View on {explorerName(wallet.chainId)} ↗
               </Link>
             )}
           </Alert>
@@ -334,7 +336,7 @@ export default function TraderDashboard() {
                   </Typography>
                   <TraderRankBadge reputation={stakeData ? stakeData.reputation : null} />
                 </Stack>
-                <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary', display: 'block', mt: 0.5 }}>
+                <Typography variant="caption" sx={{ fontFamily: MONO, color: 'text.secondary', display: 'block', mt: 0.5 }}>
                   {wallet.address}
                 </Typography>
               </Box>
@@ -351,7 +353,7 @@ export default function TraderDashboard() {
                       )
                     }}
                   />
-                  <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
                     {(Number(stakeData.stake) / 1e18).toFixed(0)} USDC staked
                   </Typography>
                 </Box>
@@ -526,7 +528,7 @@ export default function TraderDashboard() {
                             placeholder="0"
                             value={row.weight}
                             onChange={e => updateRow(row.uid, { weight: e.target.value })}
-                            slotProps={{ htmlInput: { min: "0", max: "100", step: "0.01", style: { textAlign: 'right', fontFamily: 'monospace' } } }}
+                            slotProps={{ htmlInput: { min: "0", max: "100", step: "0.01", style: { textAlign: 'right', fontFamily: MONO } } }}
                           />
                         </TableCell>
 
@@ -564,7 +566,7 @@ export default function TraderDashboard() {
                   }}
                 />
               </Box>
-              <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: weightOk ? 'success.main' : 'warning.main', w: 60, textRight: 'right' }}>
+              <Typography variant="body2" sx={{ fontFamily: MONO, fontWeight: 'bold', color: weightOk ? 'success.main' : 'warning.main', w: 60, textRight: 'right' }}>
                 {(totalBps / 100).toFixed(2)}%
               </Typography>
               {!weightOk && (
@@ -628,7 +630,7 @@ export default function TraderDashboard() {
             <Typography variant="caption" color="text.secondary">
               Claimable (copy + perf fees)
             </Typography>
-            <Typography variant="h5" color="success.main" sx={{ fontFamily: 'monospace', fontWeight: 'bold', display: 'flex', alignItems: 'baseline' }}>
+            <Typography variant="h5" color="success.main" sx={{ fontFamily: MONO, fontWeight: 'bold', display: 'flex', alignItems: 'baseline' }}>
               {earnings === null ? '…' : (Number(earnings) / 1e18).toFixed(4)}
               <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary', ml: 0.5 }}>
                 USDC
@@ -694,7 +696,7 @@ export default function TraderDashboard() {
                   }}
                 >
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0, flexGrow: 1 }}>
-                    <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>
+                    <Typography variant="caption" sx={{ fontFamily: MONO, color: 'text.secondary' }}>
                       v{ver.versionId}
                     </Typography>
                     <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'text.primary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -727,14 +729,14 @@ export default function TraderDashboard() {
                         <TableBody>
                           {ver.allocs.map((a, idx) => (
                             <TableRow key={idx}>
-                              <TableCell sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: 'text.primary' }}>
+                              <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'text.primary' }}>
                                 {ASSET_LABEL[a.asset] ?? a.asset.slice(0, 8)}
                               </TableCell>
                               <TableCell sx={{ fontWeight: 'bold', color: a.isLong ? 'success.main' : 'error.main' }}>
                                 {a.isLong ? 'Long ↑' : 'Short ↓'}
                               </TableCell>
-                              <TableCell sx={{ fontFamily: 'monospace' }}>{String(a.leverage)}×</TableCell>
-                              <TableCell align="right" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
+                              <TableCell sx={{ fontFamily: MONO }}>{String(a.leverage)}×</TableCell>
+                              <TableCell align="right" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
                                 {fmtPct(a.weight)}
                               </TableCell>
                             </TableRow>

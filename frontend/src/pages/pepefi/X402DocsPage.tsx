@@ -48,7 +48,7 @@ function Mono({ children }: { children: React.ReactNode }) {
   return (
     <Box component="pre" sx={{
       m: 0, p: 2, borderRadius: 1, bgcolor: 'background.neutral', overflowX: 'auto',
-      fontFamily: 'monospace', fontSize: 13, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+      fontFamily: MONO, fontSize: 13, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
     }}>{children}</Box>
   )
 }
@@ -157,7 +157,7 @@ export default function X402DocsPage() {
           ].map(([k, v]) => (
             <Box key={k} sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
               <Typography variant="caption" color="text.secondary" sx={{ minWidth: 130, fontWeight: 'bold' }}>{k}</Typography>
-              <Typography variant="body2" sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{v}</Typography>
+              <Typography variant="body2" sx={{ fontFamily: MONO, wordBreak: 'break-all' }}>{v}</Typography>
             </Box>
           ))}
         </Stack>

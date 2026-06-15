@@ -1,3 +1,4 @@
+import { MONO } from 'src/components/pepefi/brandKit'
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link as RouterLink } from 'react-router'
 import { parseEther } from 'ethers'
@@ -32,6 +33,7 @@ import TableCell from '@mui/material/TableCell';
 import Chip from '@mui/material/Chip';
 import Breadcrumbs from '@mui/material/Breadcrumbs';
 import Avatar from '@mui/material/Avatar';
+import { explorerTx, explorerName } from 'src/lib/pepefi/notify'
 
 interface TraderStakeData {
   stake:        bigint
@@ -265,15 +267,15 @@ export default function CopyPage() {
             sx={{ width: '100%' }}
           >
             {toast.msg}
-            {toast.hash && wallet.chainId === 11155111 && (
+            {toast.hash && explorerTx(toast.hash, wallet.chainId) && (
               <Link
-                href={`https://sepolia.etherscan.io/tx/${toast.hash}`}
+                href={explorerTx(toast.hash, wallet.chainId)!}
                 target="_blank"
                 rel="noopener noreferrer"
                 color="inherit"
                 sx={{ display: 'block', mt: 0.5, typography: 'caption', textDecoration: 'underline' }}
               >
-                View on Etherscan ↗
+                View on {explorerName(wallet.chainId)} ↗
               </Link>
             )}
           </Alert>
@@ -319,7 +321,7 @@ export default function CopyPage() {
                   </Typography>
                   <TraderRankBadge reputation={stakeData ? stakeData.reputation : null} />
                 </Stack>
-                <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary', display: 'block', mt: 0.5 }}>
+                <Typography variant="caption" sx={{ fontFamily: MONO, color: 'text.secondary', display: 'block', mt: 0.5 }}>
                   {traderAddress}
                 </Typography>
               </Box>
@@ -336,7 +338,7 @@ export default function CopyPage() {
                       )
                     }}
                   />
-                  <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
                     {(Number(stakeData.stake) / 1e18).toFixed(0)} USDC staked
                   </Typography>
                 </Box>
@@ -410,7 +412,7 @@ export default function CopyPage() {
             </Box>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, ml: 'auto' }}>
               <ESGBadge composite={composite} rating={rating} size="md" />
-              <Typography variant="h5" sx={{ fontWeight: 'extrabold', fontFamily: 'monospace', color: tierColorHex }}>
+              <Typography variant="h5" sx={{ fontWeight: 'extrabold', fontFamily: MONO, color: tierColorHex }}>
                 {composite}
               </Typography>
               <Button
@@ -440,7 +442,7 @@ export default function CopyPage() {
             value={totalMargin}
             disabled={!hasStrategy}
             onChange={e => setTotalMargin(e.target.value)}
-            slotProps={{ htmlInput: { min: "0", style: { fontFamily: 'monospace' } } }}
+            slotProps={{ htmlInput: { min: "0", style: { fontFamily: MONO } } }}
             sx={{ width: 200 }}
           />
           <Typography variant="body2" color="text.secondary">
@@ -458,19 +460,19 @@ export default function CopyPage() {
             <Stack spacing={1} sx={{ typography: 'caption' }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.secondary' }}>
                 <Box>Total deposit:</Box>
-                <Box sx={{ fontFamily: 'monospace', color: 'text.primary', fontWeight: 'semibold' }}>{f18(totalBig)} USDC</Box>
+                <Box sx={{ fontFamily: MONO, color: 'text.primary', fontWeight: 'semibold' }}>{f18(totalBig)} USDC</Box>
               </Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.secondary' }}>
                 <Box>− Copy fee (0.3%):</Box>
-                <Box sx={{ fontFamily: 'monospace', color: 'error.main', fontWeight: 'semibold' }}>-{f18(preview.copyFee)} USDC</Box>
+                <Box sx={{ fontFamily: MONO, color: 'error.main', fontWeight: 'semibold' }}>-{f18(preview.copyFee)} USDC</Box>
               </Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.secondary' }}>
                 <Box>− Trading fee buffer:</Box>
-                <Box sx={{ fontFamily: 'monospace', color: 'error.main', fontWeight: 'semibold' }}>-{f18(preview.totalTradingFee)} USDC</Box>
+                <Box sx={{ fontFamily: MONO, color: 'error.main', fontWeight: 'semibold' }}>-{f18(preview.totalTradingFee)} USDC</Box>
               </Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.primary', fontWeight: 'bold', borderTop: '1px solid', borderColor: 'divider', pt: 1, mt: 0.5 }}>
                 <Box>Effective margin:</Box>
-                <Box sx={{ fontFamily: 'monospace', color: 'success.main' }}>{f18(preview.marginForPositions)} USDC</Box>
+                <Box sx={{ fontFamily: MONO, color: 'success.main' }}>{f18(preview.marginForPositions)} USDC</Box>
               </Box>
             </Stack>
           </Card>
@@ -489,21 +491,21 @@ export default function CopyPage() {
               <TableBody>
                 {previewRows.map((row, i) => (
                   <TableRow key={i}>
-                    <TableCell sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: 'text.primary' }}>
+                    <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'text.primary' }}>
                       {ASSET_LABEL[row.asset] ?? '?'}
                     </TableCell>
                     <TableCell sx={{ fontWeight: 'bold', color: row.isLong ? 'success.main' : 'error.main' }}>
                       {row.isLong ? 'LONG ↑' : 'SHORT ↓'}
                     </TableCell>
-                    <TableCell sx={{ fontFamily: 'monospace' }}>{String(row.leverage)}×</TableCell>
-                    <TableCell sx={{ fontFamily: 'monospace' }}>{(Number(row.weight) / 100).toFixed(0)}%</TableCell>
-                    <TableCell sx={{ fontFamily: 'monospace' }} align="right">
+                    <TableCell sx={{ fontFamily: MONO }}>{String(row.leverage)}×</TableCell>
+                    <TableCell sx={{ fontFamily: MONO }}>{(Number(row.weight) / 100).toFixed(0)}%</TableCell>
+                    <TableCell sx={{ fontFamily: MONO }} align="right">
                       {preview && preview.portions[i] !== undefined
                         ? f18(preview.portions[i])
                         : f18(row.margin)}
                     </TableCell>
-                    <TableCell sx={{ fontFamily: 'monospace' }} align="right">{f18(row.notional)}</TableCell>
-                    <TableCell sx={{ fontFamily: 'monospace' }} align="right">{fUsd(row.entryPrice)}</TableCell>
+                    <TableCell sx={{ fontFamily: MONO }} align="right">{f18(row.notional)}</TableCell>
+                    <TableCell sx={{ fontFamily: MONO }} align="right">{fUsd(row.entryPrice)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -521,15 +523,15 @@ export default function CopyPage() {
           <Stack spacing={1} sx={{ typography: 'body2' }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.secondary' }}>
               <Box>Copy fee (0.3%)</Box>
-              <Box sx={{ fontFamily: 'monospace' }}>−{f18(feeBig, 4)} USDC</Box>
+              <Box sx={{ fontFamily: MONO }}>−{f18(feeBig, 4)} USDC</Box>
             </Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.secondary' }}>
               <Box>Net margin deposited</Box>
-              <Box sx={{ fontFamily: 'monospace', color: 'text.primary', fontWeight: 'semibold' }}>{f18(netBig)} USDC</Box>
+              <Box sx={{ fontFamily: MONO, color: 'text.primary', fontWeight: 'semibold' }}>{f18(netBig)} USDC</Box>
             </Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.secondary', borderTop: '1px solid', borderColor: 'divider', pt: 1, mt: 1 }}>
               <Box>Execution Fee (ETH)</Box>
-              <Box sx={{ fontFamily: 'monospace', color: 'primary.main', fontWeight: 'semibold' }}>{(stratAllocs.length * 0.001).toFixed(3)} ETH</Box>
+              <Box sx={{ fontFamily: MONO, color: 'primary.main', fontWeight: 'semibold' }}>{(stratAllocs.length * 0.001).toFixed(3)} ETH</Box>
             </Box>
             <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
               Copy fee is split 70% → trader · 20% → platform · 10% → slash pool. Execution fee pays Keeper bots.
@@ -547,19 +549,19 @@ export default function CopyPage() {
           <Grid container spacing={3}>
             <Grid size={{ xs: 4 }}>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>Staked</Typography>
-              <Typography variant="h6" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
+              <Typography variant="h6" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
                 {(Number(stakeData.stake) / 1e18).toFixed(0)} <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary' }}>USDC</Box>
               </Typography>
             </Grid>
             <Grid size={{ xs: 4 }}>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>Reputation</Typography>
-              <Typography variant="h6" sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: stakeData.reputation >= 80n ? 'success.main' : stakeData.reputation >= 60n ? 'warning.main' : 'error.main' }}>
+              <Typography variant="h6" sx={{ fontFamily: MONO, fontWeight: 'bold', color: stakeData.reputation >= 80n ? 'success.main' : stakeData.reputation >= 60n ? 'warning.main' : 'error.main' }}>
                 {String(stakeData.reputation)} <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary' }}>pts</Box>
               </Typography>
             </Grid>
             <Grid size={{ xs: 4 }}>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>Total Slashed</Typography>
-              <Typography variant="h6" sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: stakeData.totalSlashed > 0n ? 'error.main' : 'text.primary' }}>
+              <Typography variant="h6" sx={{ fontFamily: MONO, fontWeight: 'bold', color: stakeData.totalSlashed > 0n ? 'error.main' : 'text.primary' }}>
                 {(Number(stakeData.totalSlashed) / 1e18).toFixed(0)} <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary' }}>USDC</Box>
               </Typography>
             </Grid>

@@ -1,3 +1,4 @@
+import { MONO, LiveDot } from 'src/components/pepefi/brandKit'
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { formatUnits } from 'ethers'
 
@@ -167,7 +168,11 @@ export default function AgentMonitorPage() {
   return (
     <Container maxWidth="lg" sx={{ py: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
       <Box>
-        <Typography variant="h4" sx={{ fontWeight: 'bold' }}>📊 Agent Risk Monitor</Typography>
+        <Stack direction="row" alignItems="center" spacing={1}>
+          <Typography variant="h4" sx={{ fontWeight: 'bold' }}>📊 Agent Risk Monitor</Typography>
+          <LiveDot />
+          <Typography variant="caption" sx={{ fontFamily: MONO, color: 'primary.main', letterSpacing: 1 }}>LIVE</Typography>
+        </Stack>
         <Typography variant="body2" color="text.secondary">
           監控 AI agent 經濟：委派 session 的限額使用、x402 收入分潤、預言機健康度。唯讀。
         </Typography>
@@ -188,7 +193,7 @@ export default function AgentMonitorPage() {
           <Grid key={k.label} size={{ xs: 6, md: 3 }}>
             <Card sx={{ p: 2 }}>
               <Typography variant="caption" color="text.secondary">{k.label}</Typography>
-              <Typography variant="h5" sx={{ fontWeight: 'bold', fontFamily: 'monospace' }}>{k.value}</Typography>
+              <Typography variant="h5" sx={{ fontWeight: 'bold', fontFamily: MONO }}>{k.value}</Typography>
             </Card>
           </Grid>
         ))}
@@ -220,9 +225,9 @@ export default function AgentMonitorPage() {
                   const pct = utilPct(s)
                   return (
                     <TableRow key={s.id} hover>
-                      <TableCell sx={{ fontFamily: 'monospace' }}>{s.id}</TableCell>
-                      <TableCell sx={{ fontFamily: 'monospace' }}>{short(s.user)}</TableCell>
-                      <TableCell sx={{ fontFamily: 'monospace' }}>{short(s.agent)}</TableCell>
+                      <TableCell sx={{ fontFamily: MONO }}>{s.id}</TableCell>
+                      <TableCell sx={{ fontFamily: MONO }}>{short(s.user)}</TableCell>
+                      <TableCell sx={{ fontFamily: MONO }}>{short(s.agent)}</TableCell>
                       <TableCell sx={{ minWidth: 160 }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                           <LinearProgress
@@ -231,12 +236,12 @@ export default function AgentMonitorPage() {
                             color={pct >= 80 ? 'error' : pct >= 50 ? 'warning' : 'success'}
                             sx={{ flex: 1, height: 6, borderRadius: 1 }}
                           />
-                          <Typography variant="caption" sx={{ fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
+                          <Typography variant="caption" sx={{ fontFamily: MONO, whiteSpace: 'nowrap' }}>
                             {fUsdc(s.spent)}/{fUsdc(s.budget)}
                           </Typography>
                         </Box>
                       </TableCell>
-                      <TableCell sx={{ fontFamily: 'monospace' }}>{Number(s.maxLeverage)}x</TableCell>
+                      <TableCell sx={{ fontFamily: MONO }}>{Number(s.maxLeverage)}x</TableCell>
                       <TableCell sx={{ fontSize: '0.75rem' }}>{fDate(s.expiry)}</TableCell>
                       <TableCell><Chip size="small" label={st.label} color={st.color} variant="outlined" /></TableCell>
                     </TableRow>
@@ -263,27 +268,27 @@ export default function AgentMonitorPage() {
               <Stack spacing={1}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                   <Typography variant="body2" color="text.secondary">Calls / Total</Typography>
-                  <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>{revenue.totals.count} / ${revenue.totals.feeUsd.toFixed(3)}</Typography>
+                  <Typography variant="body2" sx={{ fontFamily: MONO }}>{revenue.totals.count} / ${revenue.totals.feeUsd.toFixed(3)}</Typography>
                 </Box>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                   <Typography variant="body2" color="success.main">Trader 70%</Typography>
-                  <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>${revenue.totals.traderShare.toFixed(4)}</Typography>
+                  <Typography variant="body2" sx={{ fontFamily: MONO }}>${revenue.totals.traderShare.toFixed(4)}</Typography>
                 </Box>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                   <Typography variant="body2">Platform 20%</Typography>
-                  <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>${revenue.totals.platformShare.toFixed(4)}</Typography>
+                  <Typography variant="body2" sx={{ fontFamily: MONO }}>${revenue.totals.platformShare.toFixed(4)}</Typography>
                 </Box>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                   <Typography variant="body2">Vault 10%</Typography>
-                  <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>${revenue.totals.vaultShare.toFixed(4)}</Typography>
+                  <Typography variant="body2" sx={{ fontFamily: MONO }}>${revenue.totals.vaultShare.toFixed(4)}</Typography>
                 </Box>
                 {Object.keys(revenue.byBeneficiary).length > 0 && (
                   <>
                     <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>Top beneficiaries (70% share)</Typography>
                     {Object.entries(revenue.byBeneficiary).slice(0, 5).map(([k, v]) => (
                       <Box key={k} sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>{k === 'protocol' ? 'protocol' : short(k)}</Typography>
-                        <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>${v.toFixed(4)}</Typography>
+                        <Typography variant="caption" sx={{ fontFamily: MONO }}>{k === 'protocol' ? 'protocol' : short(k)}</Typography>
+                        <Typography variant="caption" sx={{ fontFamily: MONO }}>${v.toFixed(4)}</Typography>
                       </Box>
                     ))}
                   </>
@@ -316,9 +321,9 @@ export default function AgentMonitorPage() {
                     const r = Number(o.rate)
                     return (
                       <TableRow key={o.id} hover>
-                        <TableCell sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{o.symbol}</TableCell>
-                        <TableCell sx={{ fontFamily: 'monospace' }}>{o.price8 > 0n ? fPrice8(o.price8) : '—'}</TableCell>
-                        <TableCell sx={{ fontFamily: 'monospace', color: r > 0 ? 'error.main' : r < 0 ? 'success.main' : 'text.secondary' }}>
+                        <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold' }}>{o.symbol}</TableCell>
+                        <TableCell sx={{ fontFamily: MONO }}>{o.price8 > 0n ? fPrice8(o.price8) : '—'}</TableCell>
+                        <TableCell sx={{ fontFamily: MONO, color: r > 0 ? 'error.main' : r < 0 ? 'success.main' : 'text.secondary' }}>
                           {r > 0 ? '+' : ''}{r}
                         </TableCell>
                         <TableCell>
@@ -334,7 +339,7 @@ export default function AgentMonitorPage() {
         </Grid>
       </Grid>
 
-      <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+      <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
         AgentSessionManager: {short(getSessionManagerAddress(wallet.chainId))}
       </Typography>
     </Container>

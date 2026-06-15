@@ -1,3 +1,4 @@
+import { MONO } from 'src/components/pepefi/brandKit'
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link as RouterLink } from 'react-router';
 import {
@@ -742,7 +743,7 @@ export default function DashboardPage() {
                 <Typography fontWeight={900} fontSize={20} sx={{ color: '#7cc14a' }}>
                   {pepeNameFor(wallet.address)}
                 </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
                   {wallet.address ? `${wallet.address.slice(0,6)}…${wallet.address.slice(-4)}` : ''}
                 </Typography>
               </Box>
@@ -864,7 +865,7 @@ export default function DashboardPage() {
                     {meta.icon || (meta.category === 'crypto' ? '🪙' : meta.category === 'equity' ? '📊' : meta.category === 'bond' ? '📜' : '🏅')}
                   </Typography>
                   <Typography fontWeight={800} fontSize={14}>{meta.symbol}</Typography>
-                  <Typography fontWeight={700} fontSize={15} sx={{ color: '#7cc14a', fontFamily: 'monospace' }}>
+                  <Typography fontWeight={700} fontSize={15} sx={{ color: '#7cc14a', fontFamily: MONO }}>
                     ${lp.usd >= 1 ? lp.usd.toLocaleString(undefined, { maximumFractionDigits: 2 }) : lp.usd.toFixed(4)}
                   </Typography>
                   <Typography variant="caption" sx={{ color: lp.isMock ? 'text.disabled' : 'success.main', fontWeight: 700 }}>
@@ -891,7 +892,7 @@ export default function DashboardPage() {
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontWeight: 'bold', letterSpacing: 1 }}>
               💼 總資產估值 (TOTAL USDC NET WORTH)
             </Typography>
-            <Typography variant="h3" sx={{ fontWeight: '900', color: '#7cc14a', fontFamily: 'monospace' }}>
+            <Typography variant="h3" sx={{ fontWeight: '900', color: '#7cc14a', fontFamily: MONO }}>
               {fUsd((walletUSDC ?? 0n) + (stakedUSDC ?? 0n) + derived.totalMargin + freeMargin + (vaultUSDC ?? 0n))}
             </Typography>
           </Box>
@@ -899,7 +900,7 @@ export default function DashboardPage() {
             <Box sx={{ fontSize: 32 }}>🐸</Box>
             <Box>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>MemeFi 代幣儲備</Typography>
-              <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: '#ffd700', fontFamily: 'monospace' }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: '#ffd700', fontFamily: MONO }}>
                 {pepeBal !== null ? f18(pepeBal, 0) : '0'} PEPE
               </Typography>
             </Box>
@@ -954,7 +955,7 @@ export default function DashboardPage() {
                 <Typography variant="subtitle2" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, color: 'text.secondary' }}>
                   💰 錢包可用現金 (Cash)
                 </Typography>
-                <Typography variant="h5" sx={{ fontWeight: 'bold', mt: 1.5, fontFamily: 'monospace', color: 'text.primary' }}>
+                <Typography variant="h5" sx={{ fontWeight: 'bold', mt: 1.5, fontFamily: MONO, color: 'text.primary' }}>
                   {walletUSDC !== null ? fUsd(walletUSDC) : '$0.00'}
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, minHeight: 48 }}>
@@ -1012,17 +1013,17 @@ export default function DashboardPage() {
                 <Typography variant="subtitle2" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, color: '#818cf8' }}>
                   📈 槓桿合約帳戶 (Trading)
                 </Typography>
-                <Typography variant="h5" sx={{ fontWeight: 'bold', mt: 1.5, fontFamily: 'monospace', color: '#a5b4fc' }}>
+                <Typography variant="h5" sx={{ fontWeight: 'bold', mt: 1.5, fontFamily: MONO, color: '#a5b4fc' }}>
                   {fUsd(derived.totalMargin + freeMargin)}
                 </Typography>
                 <Stack spacing={0.5} sx={{ mt: 1, minHeight: 48 }}>
                   <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span>已鎖定倉位保證金:</span>
-                    <span style={{ color: 'text.primary', fontFamily: 'monospace' }}>{fUsd(derived.totalMargin)}</span>
+                    <span style={{ color: 'text.primary', fontFamily: MONO }}>{fUsd(derived.totalMargin)}</span>
                   </Typography>
                   <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span>帳戶可用自由餘額:</span>
-                    <span style={{ color: 'text.primary', fontFamily: 'monospace' }}>{fUsd(freeMargin)}</span>
+                    <span style={{ color: 'text.primary', fontFamily: MONO }}>{fUsd(freeMargin)}</span>
                   </Typography>
                 </Stack>
               </Box>
@@ -1079,7 +1080,7 @@ export default function DashboardPage() {
                 <Typography variant="subtitle2" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, color: '#34d399' }}>
                   🛡️ DeFi 質押倉位 (Staked)
                 </Typography>
-                <Typography variant="h5" sx={{ fontWeight: 'bold', mt: 1.5, fontFamily: 'monospace', color: '#a7f3d0' }}>
+                <Typography variant="h5" sx={{ fontWeight: 'bold', mt: 1.5, fontFamily: MONO, color: '#a7f3d0' }}>
                   {stakedUSDC !== null ? fUsd(stakedUSDC) : '$0.00'}
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, minHeight: 48 }}>
@@ -1139,7 +1140,7 @@ export default function DashboardPage() {
                 <Typography variant="subtitle2" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, color: '#f59e0b' }}>
                   🏦 LP 保險資金池 (LP Vault)
                 </Typography>
-                <Typography variant="h5" sx={{ fontWeight: 'bold', mt: 1.5, fontFamily: 'monospace', color: '#fcd34d' }}>
+                <Typography variant="h5" sx={{ fontWeight: 'bold', mt: 1.5, fontFamily: MONO, color: '#fcd34d' }}>
                   {vaultUSDC !== null ? fUsd(vaultUSDC) : '$0.00'}
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, minHeight: 48 }}>
@@ -1247,7 +1248,7 @@ export default function DashboardPage() {
               {isLoading ? (
                 <Skeleton width={100} height={28} />
               ) : (
-                <Typography variant="h5" sx={{ color, fontWeight: 'bold', fontFamily: 'monospace' }}>
+                <Typography variant="h5" sx={{ color, fontWeight: 'bold', fontFamily: MONO }}>
                   {value}
                 </Typography>
               )}
@@ -1304,10 +1305,10 @@ export default function DashboardPage() {
                   ) : (
                     <>
                       <Box>
-                        <Typography variant="h5" sx={{ fontWeight: 'bold', fontFamily: 'monospace' }}>
+                        <Typography variant="h5" sx={{ fontWeight: 'bold', fontFamily: MONO }}>
                           {fUsd(s.value)}
                         </Typography>
-                        <Typography variant="body2" sx={{ fontWeight: 'bold', color: pnlColor(s.pnl), fontFamily: 'monospace', mt: 0.5 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 'bold', color: pnlColor(s.pnl), fontFamily: MONO, mt: 0.5 }}>
                           {fPnL(s.pnl)} USDC
                         </Typography>
                       </Box>
@@ -1365,7 +1366,7 @@ export default function DashboardPage() {
                 {whaleAlerts.slice(0, 8).map(a => (
                   <TableRow key={a.txHash} sx={{ '&:hover': { bgcolor: 'rgba(0, 184, 217, 0.05)' } }}>
                     <TableCell sx={{ py: 1 }}>
-                      <Link component={RouterLink} to={`/whale?addr=${a.owner}`} sx={{ fontFamily: 'monospace', color: 'info.main', fontSize: '0.75rem', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}>
+                      <Link component={RouterLink} to={`/whale?addr=${a.owner}`} sx={{ fontFamily: MONO, color: 'info.main', fontSize: '0.75rem', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}>
                         {shortAddr(a.owner)}
                       </Link>
                     </TableCell>
@@ -1375,7 +1376,7 @@ export default function DashboardPage() {
                         {a.isLong ? 'LONG' : 'SHORT'} {String(a.leverage)}×
                       </Typography>
                     </TableCell>
-                    <TableCell sx={{ py: 1, textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold', fontSize: '0.75rem' }}>
+                    <TableCell sx={{ py: 1, textAlign: 'right', fontFamily: MONO, fontWeight: 'bold', fontSize: '0.75rem' }}>
                       {fNotional(a.notional)}
                     </TableCell>
                     <TableCell sx={{ py: 1, textAlign: 'right', color: 'text.secondary', fontSize: '0.75rem' }}>
@@ -1515,7 +1516,7 @@ export default function DashboardPage() {
                     const sym = ASSET_META[row.asset]?.symbol ?? '?';
                     return (
                       <Box key={`${row.asset}-${String(row.id)}`} sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                        <Typography variant="caption" sx={{ width: 60, fontFamily: 'monospace', fontWeight: 'bold' }}>
+                        <Typography variant="caption" sx={{ width: 60, fontFamily: MONO, fontWeight: 'bold' }}>
                           {sym}
                         </Typography>
                         <Box sx={{ flexGrow: 1 }}>
@@ -1533,7 +1534,7 @@ export default function DashboardPage() {
                             }}
                           />
                         </Box>
-                        <Typography variant="caption" sx={{ width: 30, textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold', color: 'text.secondary' }}>
+                        <Typography variant="caption" sx={{ width: 30, textAlign: 'right', fontFamily: MONO, fontWeight: 'bold', color: 'text.secondary' }}>
                           {info.composite}
                         </Typography>
                         <Typography variant="caption" sx={{ width: 30, color: 'text.secondary', fontWeight: 'bold' }}>
@@ -1602,7 +1603,7 @@ export default function DashboardPage() {
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                           <Typography variant="h6" sx={{ fontSize: '1.25rem', lineHeight: 1 }}>{meta?.icon ?? '?'}</Typography>
                           <Box>
-                            <Typography variant="subtitle2" sx={{ fontWeight: 'bold', fontFamily: 'monospace' }}>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 'bold', fontFamily: MONO }}>
                               {meta?.symbol ?? row.asset.slice(0, 8)}
                             </Typography>
                             <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', fontSize: '0.625rem', display: 'block', lineHeight: 1 }}>
@@ -1628,7 +1629,7 @@ export default function DashboardPage() {
                       </TableCell>
                       {/* 持有數量 (expert only) */}
                       {mode === 'expert' && (
-                        <TableCell sx={{ fontFamily: 'monospace' }}>
+                        <TableCell sx={{ fontFamily: MONO }}>
                           {fQty(row.quantity, row.asset)}
                           <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
                             {meta?.symbol?.replace(/^s/, '') ?? ''}
@@ -1637,13 +1638,13 @@ export default function DashboardPage() {
                       )}
                       {/* 平均成本 (expert only) */}
                       {mode === 'expert' && (
-                        <TableCell sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>
+                        <TableCell sx={{ fontFamily: MONO, color: 'text.secondary' }}>
                           {fUsdFloat(Number(row.entryPrice) / 1e18)}
                         </TableCell>
                       )}
                       {/* 現價 (expert only) */}
                       {mode === 'expert' && (
-                        <TableCell sx={{ fontFamily: 'monospace' }}>
+                        <TableCell sx={{ fontFamily: MONO }}>
                           {row.currentPrice18 === 0n ? (
                             <Typography color="text.secondary">—</Typography>
                           ) : (
@@ -1657,11 +1658,11 @@ export default function DashboardPage() {
                         </TableCell>
                       )}
                       {/* 持倉現值 */}
-                      <TableCell sx={{ fontFamily: 'monospace', textAlign: 'right', fontWeight: 'bold' }}>
+                      <TableCell sx={{ fontFamily: MONO, textAlign: 'right', fontWeight: 'bold' }}>
                         {fUsd(row.holdingsValue)}
                       </TableCell>
                       {/* 損益 */}
-                      <TableCell sx={{ textAlign: 'right', fontFamily: 'monospace' }}>
+                      <TableCell sx={{ textAlign: 'right', fontFamily: MONO }}>
                         {row.currentPrice18 === 0n ? (
                           <Typography variant="caption" color="text.secondary">無報價</Typography>
                         ) : (
@@ -1694,10 +1695,10 @@ export default function DashboardPage() {
                 <tfoot style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
                   <TableRow sx={{ bgcolor: 'background.neutral' }}>
                     <TableCell colSpan={mode === 'simple' ? 2 : 5} sx={{ fontWeight: 'bold', color: 'text.primary' }}>Total</TableCell>
-                    <TableCell sx={{ fontFamily: 'monospace', fontWeight: 'bold', textAlign: 'right' }}>
+                    <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', textAlign: 'right' }}>
                       {fUsd(derived.totalHoldings)}
                     </TableCell>
-                    <TableCell sx={{ textAlign: 'right', fontFamily: 'monospace' }}>
+                    <TableCell sx={{ textAlign: 'right', fontFamily: MONO }}>
                       <Typography sx={{ fontWeight: 'bold', color: pnlColor(derived.totalPnL), fontSize: '0.875rem' }}>
                         {fPnL(derived.totalPnL)}
                       </Typography>
@@ -1921,7 +1922,7 @@ export default function DashboardPage() {
                   <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', fontWeight: 'bold', display: 'block' }}>
                     PEPE 餘額
                   </Typography>
-                  <Typography variant="h4" sx={{ fontWeight: 800, color: 'primary.light', fontFamily: 'monospace', mt: 0.5 }}>
+                  <Typography variant="h4" sx={{ fontWeight: 800, color: 'primary.light', fontFamily: MONO, mt: 0.5 }}>
                     {(Number(pepeBal) / 1e18).toLocaleString('en-US', { maximumFractionDigits: 0 })}{' '}
                     <Typography component="span" variant="subtitle2" color="text.secondary">PEPE</Typography>
                   </Typography>

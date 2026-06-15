@@ -1,3 +1,4 @@
+import { MONO } from 'src/components/pepefi/brandKit'
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { parseUnits, formatUnits } from 'ethers'
 
@@ -22,6 +23,7 @@ import TableContainer from '@mui/material/TableContainer'
 
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
+import { explorerTx, explorerName } from 'src/lib/pepefi/notify'
 import {
   getSessionManager,
   getSessionManagerAddress,
@@ -172,13 +174,13 @@ export default function SessionsPage() {
         {toast ? (
           <Alert severity={toast.ok ? 'success' : 'error'} onClose={() => setToast(null)} sx={{ width: '100%' }}>
             {toast.msg}
-            {toast.hash && wallet.chainId === 11155111 && (
+            {toast.hash && explorerTx(toast.hash, wallet.chainId) && (
               <Link
-                href={`https://sepolia.etherscan.io/tx/${toast.hash}`}
+                href={explorerTx(toast.hash, wallet.chainId)!}
                 target="_blank" rel="noopener noreferrer" color="inherit"
                 sx={{ display: 'block', mt: 0.5, typography: 'caption', textDecoration: 'underline' }}
               >
-                View on Etherscan ↗
+                View on {explorerName(wallet.chainId)} ↗
               </Link>
             )}
           </Alert>
@@ -269,11 +271,11 @@ export default function SessionsPage() {
                       const key = `revoke_${s.id}`
                       return (
                         <TableRow key={s.id} hover>
-                          <TableCell sx={{ fontFamily: 'monospace' }}>{s.id}</TableCell>
-                          <TableCell sx={{ fontFamily: 'monospace' }}>{short(s.agent)}</TableCell>
-                          <TableCell sx={{ fontFamily: 'monospace' }}>{fUsdc(s.spentMargin)} / {fUsdc(s.totalMarginBudget)}</TableCell>
-                          <TableCell sx={{ fontFamily: 'monospace' }}>{fUsdc(s.maxMarginPerTrade)}</TableCell>
-                          <TableCell sx={{ fontFamily: 'monospace' }}>{Number(s.maxLeverage)}x</TableCell>
+                          <TableCell sx={{ fontFamily: MONO }}>{s.id}</TableCell>
+                          <TableCell sx={{ fontFamily: MONO }}>{short(s.agent)}</TableCell>
+                          <TableCell sx={{ fontFamily: MONO }}>{fUsdc(s.spentMargin)} / {fUsdc(s.totalMarginBudget)}</TableCell>
+                          <TableCell sx={{ fontFamily: MONO }}>{fUsdc(s.maxMarginPerTrade)}</TableCell>
+                          <TableCell sx={{ fontFamily: MONO }}>{Number(s.maxLeverage)}x</TableCell>
                           <TableCell sx={{ fontSize: '0.75rem' }}>{fDate(s.expiry)}</TableCell>
                           <TableCell><Chip size="small" label={st.label} color={st.color} variant="outlined" /></TableCell>
                           <TableCell align="right">
@@ -296,7 +298,7 @@ export default function SessionsPage() {
           </Card>
 
           <Divider />
-          <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+          <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
             AgentSessionManager: {short(getSessionManagerAddress(wallet.chainId))}
           </Typography>
         </>

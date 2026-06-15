@@ -46,10 +46,10 @@ const ICONS = {
 
 export const navData: NavSectionProps['data'] = [
   /**
-   * PepeFi
+   * PepeLab
    */
   {
-    subheader: 'PepeFi',
+    subheader: 'PepeLab',
     items: [
       { title: '🏠 我的 Pepe (Dashboard)', path: paths.pepefi.dashboard, icon: ICONS.analytics },
       { title: 'Exchange', path: paths.pepefi.exchange, icon: ICONS.ecommerce },

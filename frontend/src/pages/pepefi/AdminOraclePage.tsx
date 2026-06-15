@@ -1,3 +1,4 @@
+import { MONO } from 'src/components/pepefi/brandKit'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useContracts } from 'src/hooks/useContracts'
 import { usePepefiWallet } from 'src/layouts/pepefi'
@@ -28,6 +29,7 @@ import Stack from '@mui/material/Stack';
 import Accordion from '@mui/material/Accordion';
 import AccordionSummary from '@mui/material/AccordionSummary';
 import AccordionDetails from '@mui/material/AccordionDetails';
+import { explorerTx, explorerName } from 'src/lib/pepefi/notify'
 
 // ── Config ────────────────────────────────────────────────────────────────────
 type AssetId = `0x${string}`
@@ -244,15 +246,15 @@ export default function AdminOraclePage() {
             sx={{ width: '100%' }}
           >
             {toast.msg}
-            {toast.hash && wallet.chainId === 11155111 && (
+            {toast.hash && explorerTx(toast.hash, wallet.chainId) && (
               <Link
-                href={`https://sepolia.etherscan.io/tx/${toast.hash}`}
+                href={explorerTx(toast.hash, wallet.chainId)!}
                 target="_blank"
                 rel="noopener noreferrer"
                 color="inherit"
                 sx={{ display: 'block', mt: 0.5, typography: 'caption', textDecoration: 'underline' }}
               >
-                View on Etherscan ↗
+                View on {explorerName(wallet.chainId)} ↗
               </Link>
             )}
           </Alert>
@@ -282,7 +284,7 @@ export default function AdminOraclePage() {
           <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
             Read-only mode: connected wallet is not the oracle owner. Updates will revert.
           </Typography>
-          <Box sx={{ fontFamily: 'monospace', fontSize: '0.75rem', mt: 1 }}>
+          <Box sx={{ fontFamily: MONO, fontSize: '0.75rem', mt: 1 }}>
             Owner: {oracleOwner.slice(0, 10)}…{oracleOwner.slice(-6)}<br />
             You:&nbsp;&nbsp;&nbsp;{wallet.address?.slice(0, 10)}…{wallet.address?.slice(-6)}
           </Box>
@@ -343,19 +345,19 @@ export default function AdminOraclePage() {
                     const rateNum = Number(info.rate)
                     return (
                       <TableRow key={a.id} hover>
-                        <TableCell sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: 'text.primary' }}>{a.symbol}</TableCell>
-                        <TableCell sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: rateNum > 0 ? 'error.main' : rateNum < 0 ? 'success.main' : 'text.secondary' }}>
+                        <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'text.primary' }}>{a.symbol}</TableCell>
+                        <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: rateNum > 0 ? 'error.main' : rateNum < 0 ? 'success.main' : 'text.secondary' }}>
                           {rateNum > 0 ? '+' : ''}{rateNum} {rateNum > 0 ? '(L pay)' : rateNum < 0 ? '(S pay)' : ''}
                         </TableCell>
-                        <TableCell sx={{ fontFamily: 'monospace' }}>{fOI(info.longOI)}</TableCell>
-                        <TableCell sx={{ fontFamily: 'monospace' }}>{fOI(info.shortOI)}</TableCell>
-                        <TableCell sx={{ fontFamily: 'monospace', color: Number(info.longOI) > Number(info.shortOI) ? 'error.main' : 'success.main' }}>
+                        <TableCell sx={{ fontFamily: MONO }}>{fOI(info.longOI)}</TableCell>
+                        <TableCell sx={{ fontFamily: MONO }}>{fOI(info.shortOI)}</TableCell>
+                        <TableCell sx={{ fontFamily: MONO, color: Number(info.longOI) > Number(info.shortOI) ? 'error.main' : 'success.main' }}>
                           {fImbalance(info.longOI, info.shortOI)}
                         </TableCell>
                         <TableCell sx={{ fontSize: '0.75rem', color: 'text.secondary' }}>
                           {info.lastSettled === 0n ? 'Never' : fDate(info.lastSettled)}
                         </TableCell>
-                        <TableCell sx={{ fontSize: '0.75rem', fontFamily: 'monospace' }}>
+                        <TableCell sx={{ fontSize: '0.75rem', fontFamily: MONO }}>
                           {info.canSettle ? <Typography variant="caption" sx={{ color: 'success.main', fontWeight: 'bold' }}>Ready</Typography> : fCountdown(info.lastSettled, info.interval)}
                         </TableCell>
                         <TableCell align="right">
@@ -403,8 +405,8 @@ export default function AdminOraclePage() {
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 2 }}>
                   <Box>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                      <Typography variant="subtitle1" sx={{ fontWeight: 'bold', fontFamily: 'monospace' }}>{row.label}</Typography>
-                      <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 'bold', fontFamily: MONO }}>{row.label}</Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
                         {row.id.slice(0, 10)}…
                       </Typography>
                     </Box>
@@ -412,7 +414,7 @@ export default function AdminOraclePage() {
                       Last updated: {fDate(row.updatedAt)}
                     </Typography>
                   </Box>
-                  <Typography variant="h5" color="success.main" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
+                  <Typography variant="h5" color="success.main" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
                     {row.price8 > 0n ? fPrice8(row.price8) : '—'}
                   </Typography>
                 </Box>
@@ -426,7 +428,7 @@ export default function AdminOraclePage() {
                     value={row.input}
                     onChange={e => updateInput(row.id, e.target.value)}
                     slotProps={{
-                      htmlInput: { min: "0", step: "0.01", style: { fontFamily: 'monospace' } },
+                      htmlInput: { min: "0", step: "0.01", style: { fontFamily: MONO } },
                       input: {
                         startAdornment: <Typography variant="body2" color="text.secondary" sx={{ mr: 0.5 }}>$</Typography>,
                       }
@@ -456,7 +458,7 @@ export default function AdminOraclePage() {
           </Typography>
         </AccordionSummary>
         <AccordionDetails sx={{ borderTop: '1px solid', borderColor: 'divider', bgcolor: 'background.neutral' }}>
-          <Stack spacing={0.5} sx={{ fontFamily: 'monospace', fontSize: '0.75rem', color: 'text.secondary' }}>
+          <Stack spacing={0.5} sx={{ fontFamily: MONO, fontSize: '0.75rem', color: 'text.secondary' }}>
             {assets.map(a => (
               <Box key={a.id}>
                 {a.label}: {String(a.price8)} (= ${(Number(a.price8)/1e8).toFixed(2)})

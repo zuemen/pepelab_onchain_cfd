@@ -1,3 +1,4 @@
+import { MONO, LiveDot } from 'src/components/pepefi/brandKit'
 import { useState, useEffect, useCallback } from 'react';
 import { Link as RouterLink } from 'react-router';
 import { useContracts } from 'src/hooks/useContracts';
@@ -271,9 +272,12 @@ export default function MarketplacePage() {
       {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
         <Box>
-          <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
-            ⭐ Star Trader Leaderboard
-          </Typography>
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
+              ⭐ Star Trader Leaderboard
+            </Typography>
+            <LiveDot />
+          </Stack>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
             Browse and copy on-chain verified strategies
           </Typography>
@@ -331,7 +335,7 @@ export default function MarketplacePage() {
                 label={
                   <Box component="span" sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
                     <Typography variant="caption" sx={{ fontWeight: 'bold', color: 'text.secondary' }}>{label}</Typography>
-                    <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: p.isMock ? 'warning.main' : 'success.main' }}>
+                    <Typography variant="caption" sx={{ fontFamily: MONO, fontWeight: 'bold', color: p.isMock ? 'warning.main' : 'success.main' }}>
                       ${p.usd.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                     </Typography>
                   </Box>
@@ -461,7 +465,7 @@ export default function MarketplacePage() {
                             {medal ? (
                               <Typography sx={{ fontSize: '1.125rem', lineHeight: 1 }} title={`#${idx + 1}`}>{medal}</Typography>
                             ) : (
-                              <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary', fontWeight: 'bold', mr: 0.5 }}>
+                              <Typography variant="caption" sx={{ fontFamily: MONO, color: 'text.secondary', fontWeight: 'bold', mr: 0.5 }}>
                                 #{idx + 1}
                               </Typography>
                             )}
@@ -484,7 +488,7 @@ export default function MarketplacePage() {
                             </Link>
                           </Box>
                           <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 0.5, flexWrap: 'wrap', gap: 1 }}>
-                            <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>
+                            <Typography variant="caption" sx={{ fontFamily: MONO, color: 'text.secondary' }}>
                               {shortAddr(t.address)}
                             </Typography>
                             <TraderRankBadge reputation={t.reputation} />
@@ -644,7 +648,7 @@ export default function MarketplacePage() {
                 borderColor: 'divider',
                 fontSize: '0.6875rem',
                 color: 'text.secondary',
-                fontFamily: 'monospace',
+                fontFamily: MONO,
                 overflowX: 'auto',
               }}
             >
@@ -669,7 +673,7 @@ function MetricCell({
       <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textTransform: 'uppercase', fontSize: '0.5625rem', letterSpacing: 0.5, mb: 0.25 }}>
         {label}
       </Typography>
-      <Typography variant="caption" sx={{ fontWeight: 'bold', fontFamily: 'monospace', color: valueColor, fontSize: '0.75rem', lineHeight: 1 }}>
+      <Typography variant="caption" sx={{ fontWeight: 'bold', fontFamily: MONO, color: valueColor, fontSize: '0.75rem', lineHeight: 1 }}>
         {value}
       </Typography>
     </Box>

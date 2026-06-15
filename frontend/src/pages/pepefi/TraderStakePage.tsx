@@ -1,3 +1,4 @@
+import { MONO } from 'src/components/pepefi/brandKit'
 import { useState, useEffect, useCallback } from 'react'
 import { Link as RouterLink } from 'react-router'
 import { parseEther } from 'ethers'
@@ -17,6 +18,7 @@ import Snackbar from '@mui/material/Snackbar'
 import Alert from '@mui/material/Alert'
 import Link from '@mui/material/Link'
 import Chip from '@mui/material/Chip'
+import { explorerTx, explorerName } from 'src/lib/pepefi/notify'
 
 type TxResp = { wait(): Promise<unknown>; hash: string }
 const asTx = (v: unknown) => v as TxResp
@@ -255,15 +257,15 @@ export default function TraderStakePage() {
             sx={{ width: '100%' }}
           >
             {toast.msg}
-            {toast.hash && wallet.chainId === 11155111 && (
+            {toast.hash && explorerTx(toast.hash, wallet.chainId) && (
               <Link
-                href={`https://sepolia.etherscan.io/tx/${toast.hash}`}
+                href={explorerTx(toast.hash, wallet.chainId)!}
                 target="_blank"
                 rel="noopener noreferrer"
                 color="inherit"
                 sx={{ display: 'block', mt: 0.5, typography: 'caption', textDecoration: 'underline' }}
               >
-                View on Etherscan ↗
+                View on {explorerName(wallet.chainId)} ↗
               </Link>
             )}
           </Alert>
@@ -292,7 +294,7 @@ export default function TraderStakePage() {
               <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold', display: 'block', mb: 0.5 }}>
                 Staked
               </Typography>
-              <Typography variant="h5" sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: 'text.primary' }}>
+              <Typography variant="h5" sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'text.primary' }}>
                 {info ? f18(info.amount) : '…'}
                 <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary', ml: 0.5 }}>USDC</Box>
               </Typography>
@@ -303,7 +305,7 @@ export default function TraderStakePage() {
               <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold', display: 'block', mb: 0.5 }}>
                 Total Slashed
               </Typography>
-              <Typography variant="h5" sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: 'error.main' }}>
+              <Typography variant="h5" sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'error.main' }}>
                 {info ? f18(info.totalSlashed) : '…'}
                 <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary', ml: 0.5 }}>USDC</Box>
               </Typography>
@@ -317,7 +319,7 @@ export default function TraderStakePage() {
             <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold' }}>
               Reputation Score
             </Typography>
-            <Typography variant="subtitle1" sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: repBarColor }}>
+            <Typography variant="subtitle1" sx={{ fontFamily: MONO, fontWeight: 'bold', color: repBarColor }}>
               {repScore !== null ? `${String(repScore)} / 100` : '…'}
             </Typography>
           </Box>
@@ -415,7 +417,7 @@ export default function TraderStakePage() {
                 <Typography 
                   variant="h5" 
                   sx={{ 
-                    fontFamily: 'monospace', 
+                    fontFamily: MONO, 
                     fontWeight: '900', 
                     color: pendingPepe > 0 ? '#4caf50' : 'text.disabled',
                     textShadow: pendingPepe > 0 ? '0 0 10px rgba(76,175,80,0.3)' : 'none',
@@ -430,7 +432,7 @@ export default function TraderStakePage() {
                 <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold', display: 'block', mb: 0.5, letterSpacing: 0.8 }}>
                   錢包鏈上 PEPE 餘額 (Wallet)
                 </Typography>
-                <Typography variant="h5" sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: '#ffb300' }}>
+                <Typography variant="h5" sx={{ fontFamily: MONO, fontWeight: 'bold', color: '#ffb300' }}>
                   🪙 {onChainPepeBalance !== null ? f18(onChainPepeBalance, 0) : '0'}
                 </Typography>
               </Box>
@@ -509,7 +511,7 @@ export default function TraderStakePage() {
             placeholder="100"
             value={stakeInput}
             onChange={e => setStakeInput(e.target.value)}
-            slotProps={{ htmlInput: { min: "100", step: "100", style: { fontFamily: 'monospace' } } }}
+            slotProps={{ htmlInput: { min: "100", step: "100", style: { fontFamily: MONO } } }}
             sx={{ width: 140 }}
           />
           <Typography variant="body2" color="text.secondary">USDC</Typography>
@@ -568,7 +570,7 @@ export default function TraderStakePage() {
                 placeholder="50"
                 value={unstakeAmt}
                 onChange={e => setUnstakeAmt(e.target.value)}
-                slotProps={{ htmlInput: { min: "0", step: "50", style: { fontFamily: 'monospace' } } }}
+                slotProps={{ htmlInput: { min: "0", step: "50", style: { fontFamily: MONO } } }}
                 sx={{ width: 140 }}
               />
               <Typography variant="body2" color="text.secondary">USDC</Typography>
