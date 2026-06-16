@@ -53,7 +53,8 @@ interface OracleRow {
 }
 interface Revenue {
   totals: { count: number; feeUsd: number; traderShare: number; platformShare: number; vaultShare: number }
-  byBeneficiary: Record<string, number>
+  // 鏈上讀的 /revenue 不一定帶 byBeneficiary（舊鏈下帳務才有）→ optional + guard。
+  byBeneficiary?: Record<string, number> | null
 }
 
 const fUsdc = (v: bigint) => Number(formatUnits(v, 18)).toLocaleString('en-US', { maximumFractionDigits: 2 })
@@ -206,7 +207,10 @@ export default function AgentMonitorPage() {
           <Button variant="text" size="small" onClick={() => void fetchSessions()} sx={{ textTransform: 'none' }}>↺ Refresh</Button>
         </Box>
         {!deployed ? (
-          <Alert severity="info">AgentSessionManager 未部署到目前網路；部署後填入 <code>sessionManager.ts</code> 即顯示。</Alert>
+          <Alert severity="warning">
+            請切換到 <b>Base Sepolia</b>（chainId 84532）以檢視 agent sessions。目前網路：
+            <b>{wallet.chainId !== null ? (CHAIN_NAMES[wallet.chainId] ?? `chainId ${wallet.chainId}`) : '未連線'}</b>。
+          </Alert>
         ) : sessions.length === 0 ? (
           <Typography variant="body2" color="text.secondary">尚無 session。</Typography>
         ) : (
@@ -282,10 +286,10 @@ export default function AgentMonitorPage() {
                   <Typography variant="body2">Vault 10%</Typography>
                   <Typography variant="body2" sx={{ fontFamily: MONO }}>${revenue.totals.vaultShare.toFixed(4)}</Typography>
                 </Box>
-                {Object.keys(revenue.byBeneficiary).length > 0 && (
+                {Object.keys(revenue.byBeneficiary ?? {}).length > 0 && (
                   <>
                     <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>Top beneficiaries (70% share)</Typography>
-                    {Object.entries(revenue.byBeneficiary).slice(0, 5).map(([k, v]) => (
+                    {Object.entries(revenue.byBeneficiary ?? {}).slice(0, 5).map(([k, v]) => (
                       <Box key={k} sx={{ display: 'flex', justifyContent: 'space-between' }}>
                         <Typography variant="caption" sx={{ fontFamily: MONO }}>{k === 'protocol' ? 'protocol' : short(k)}</Typography>
                         <Typography variant="caption" sx={{ fontFamily: MONO }}>${v.toFixed(4)}</Typography>

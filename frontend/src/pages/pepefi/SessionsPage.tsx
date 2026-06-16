@@ -24,6 +24,7 @@ import TableContainer from '@mui/material/TableContainer'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { explorerTx, explorerName } from 'src/lib/pepefi/notify'
+import { CHAIN_NAMES } from 'src/contracts/addresses'
 import {
   getSessionManager,
   getSessionManagerAddress,
@@ -197,13 +198,13 @@ export default function SessionsPage() {
       </Box>
 
       {!deployed ? (
-        <Alert severity="info">
+        <Alert severity="warning">
           <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
-            AgentSessionManager 尚未部署到目前網路（{wallet.chainId ?? '—'}）。
+            請切換到 Base Sepolia（chainId 84532）
           </Typography>
-          跑 <code>deploy-anvil.sh</code> / <code>deploy-sepolia.sh</code> 部署後，把
-          Deploy 輸出的 <code>AgentSessionMgr</code> 位址填入
-          <code>src/contracts/sessionManager.ts</code> 即可啟用本頁。
+          AI Agent Sessions 部署在 <b>Base Sepolia</b> 測試網。你目前連到的是{' '}
+          <b>{wallet.chainId !== null ? (CHAIN_NAMES[wallet.chainId] ?? `chainId ${wallet.chainId}`) : '未知網路'}</b>
+          ，請在 MetaMask 切換到 Base Sepolia 後重整本頁。
         </Alert>
       ) : (
         <>
