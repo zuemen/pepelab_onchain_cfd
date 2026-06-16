@@ -1,4 +1,6 @@
 const { ethers } = require('ethers');
+// Price data source: Binance Public API (free, no API key required)
+// Docs: https://binance-docs.github.io/apidocs/spot/en/#symbol-price-ticker
 
 process.on('uncaughtException', (err) => {
   console.error('*** Uncaught Exception caught to prevent crash ***:', err);
@@ -46,28 +48,51 @@ const BASE_PRICES = {
   sESGU: 45,
 };
 
-let cachedGeckoPrices = null;
-let lastGeckoFetchTime = 0;
+let cachedBinancePrices = null;
+let lastBinanceFetchTime = 0;
 
-async function fetchGeckoPrices() {
+async function fetchBinancePrices() {
   const now = Date.now();
-  // Cache for 10 seconds to avoid spamming the CoinGecko public API
-  if (cachedGeckoPrices && (now - lastGeckoFetchTime < 10000)) {
-    return cachedGeckoPrices;
+  // Cache for 10 seconds to avoid spamming the Binance public API
+  if (cachedBinancePrices && (now - lastBinanceFetchTime < 10000)) {
+    return cachedBinancePrices;
   }
   try {
-    const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ethereum,bitcoin&vs_currencies=usd');
-    if (!res.ok) return cachedGeckoPrices;
+    // Batch fetch BTC and ETH from Binance (free, no API key)
+    const symbols = ['BTCUSDC', 'ETHUSDC'];
+    const url = `https://api.binance.com/api/v3/ticker/price?symbols=${encodeURIComponent(JSON.stringify(symbols))}`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      // Fallback: fetch individually
+      const result = { BTC: null, ETH: null };
+      for (const sym of symbols) {
+        try {
+          const r = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}`);
+          if (r.ok) {
+            const d = await r.json();
+            if (sym === 'BTCUSDC') result.BTC = parseFloat(d.price);
+            if (sym === 'ETHUSDC') result.ETH = parseFloat(d.price);
+          }
+        } catch { /* skip */ }
+      }
+      if (result.BTC || result.ETH) {
+        cachedBinancePrices = result;
+        lastBinanceFetchTime = now;
+      }
+      return cachedBinancePrices;
+    }
     const json = await res.json();
-    cachedGeckoPrices = {
-      BTC: json.bitcoin ? parseFloat(json.bitcoin.usd) : null,
-      ETH: json.ethereum ? parseFloat(json.ethereum.usd) : null,
+    const priceMap = {};
+    for (const t of json) priceMap[t.symbol] = parseFloat(t.price);
+    cachedBinancePrices = {
+      BTC: priceMap['BTCUSDC'] || null,
+      ETH: priceMap['ETHUSDC'] || null,
     };
-    lastGeckoFetchTime = now;
-    return cachedGeckoPrices;
+    lastBinanceFetchTime = now;
+    return cachedBinancePrices;
   } catch (e) {
-    console.error('  -> Failed to fetch from CoinGecko:', e.message || e);
-    return cachedGeckoPrices;
+    console.error('  -> Failed to fetch from Binance:', e.message || e);
+    return cachedBinancePrices;
   }
 }
 
@@ -84,10 +109,10 @@ async function updateOraclePrices() {
     console.log('\n--- Ticking Price Keeper Bot (' + new Date().toLocaleTimeString() + ') ---');
     const oracle = new ethers.Contract(ORACLE_ADDR, oracleAbi, wallet);
 
-    // Fetch real-time BTC and ETH from CoinGecko
-    const geckoPrices = await fetchGeckoPrices();
-    const liveBtc = geckoPrices ? geckoPrices.BTC : null;
-    const liveEth = geckoPrices ? geckoPrices.ETH : null;
+    // Fetch real-time BTC and ETH from Binance (free, no API key)
+    const binancePrices = await fetchBinancePrices();
+    const liveBtc = binancePrices ? binancePrices.BTC : null;
+    const liveEth = binancePrices ? binancePrices.ETH : null;
 
     for (const [key, id] of Object.entries(ASSET_IDS)) {
       try {
@@ -96,10 +121,10 @@ async function updateOraclePrices() {
         
         if (key === 'sBTC' && liveBtc) {
           targetPrice = liveBtc;
-          source = 'CoinGecko Spot';
+          source = 'Binance Spot';
         } else if (key === 'sETH' && liveEth) {
           targetPrice = liveEth;
-          source = 'CoinGecko Spot';
+          source = 'Binance Spot';
         } else {
           // Other assets: use a dynamic random walk based on baseline
           const wiggle = 1 + (Math.random() - 0.5) * 0.003; // +/- 0.15%
@@ -142,7 +167,7 @@ async function updateOraclePrices() {
 }
 
 async function main() {
-  console.log('Starting automated gas-optimized Price Keeper Bot (CoinGecko Edition) on Sepolia...');
+  console.log('Starting automated gas-optimized Price Keeper Bot (Binance Edition) on Sepolia...');
   console.log('Oracle address:', ORACLE_ADDR);
   console.log('Keeper wallet: ', wallet.address);
 
