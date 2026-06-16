@@ -457,6 +457,11 @@ export default function MarketplacePage() {
                             border: '2px solid',
                             borderColor: t.reputation && t.reputation >= 80n ? 'warning.main' : 'rgba(255,255,255,0.1)',
                             boxShadow: '0 0 12px rgba(0,0,0,0.5)',
+                            bgcolor: 'rgba(255, 255, 255, 0.05)',
+                            '& .MuiAvatar-img': {
+                              objectFit: 'contain',
+                              padding: '3px',
+                            }
                           }}
                         />
 
