@@ -1,4 +1,7 @@
 const { ethers } = require('ethers');
+const fs = require('fs');
+const path = require('path');
+
 // Price data source: Binance Public API (free, no API key required)
 // Docs: https://binance-docs.github.io/apidocs/spot/en/#symbol-price-ticker
 
@@ -10,10 +13,50 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('*** Unhandled Rejection caught to prevent crash at:', promise, 'reason:', reason);
 });
 
-const provider = new ethers.JsonRpcProvider('https://sepolia.infura.io/v3/7cdfb4923cee46ed9238a5181e4e9a4d');
-const wallet = new ethers.Wallet('0x2b94ce61c754caa8138bd62a86b8665afdbbe70c87bed997d91c5bcd90a0ec0d', provider);
+// Load environment variables from .env if it exists
+function loadEnv() {
+  const envPaths = [
+    path.join(__dirname, '.env'),
+    path.join(__dirname, '..', '.env'),
+    path.join(__dirname, '..', 'agent', '.env')
+  ];
+  for (const envPath of envPaths) {
+    if (fs.existsSync(envPath)) {
+      try {
+        const content = fs.readFileSync(envPath, 'utf8');
+        content.split(/\r?\n/).forEach(line => {
+          const trimmed = line.trim();
+          if (trimmed && !trimmed.startsWith('#') && trimmed.includes('=')) {
+            const idx = trimmed.indexOf('=');
+            const key = trimmed.substring(0, idx).trim();
+            let val = trimmed.substring(idx + 1).trim();
+            if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+              val = val.substring(1, val.length - 1);
+            }
+            process.env[key] = val;
+          }
+        });
+        console.log(`Loaded environment from: ${envPath}`);
+        break;
+      } catch (e) {
+        console.error(`Failed to read env file: ${e.message}`);
+      }
+    }
+  }
+}
+loadEnv();
 
-const ORACLE_ADDR = '0x17CA20A37Cf04F2f589B2573EC95f1411D29d958';
+const RPC_URL = process.env.KEEPER_RPC_URL || 'https://sepolia.infura.io/v3/7cdfb4923cee46ed9238a5181e4e9a4d';
+const PRIVATE_KEY = process.env.KEEPER_PRIVATE_KEY;
+const ORACLE_ADDR = process.env.KEEPER_ORACLE_ADDRESS || '0x17CA20A37Cf04F2f589B2573EC95f1411D29d958';
+
+if (!PRIVATE_KEY) {
+  console.error('ERROR: KEEPER_PRIVATE_KEY is not set in environment variables or .env file.');
+  process.exit(1);
+}
+
+const provider = new ethers.JsonRpcProvider(RPC_URL);
+const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
 
 const oracleAbi = [
   'function updatePrice(bytes32 assetId, uint256 newPrice) external',
@@ -35,17 +78,17 @@ const ASSET_IDS = {
 };
 
 const BASE_PRICES = {
-  sBTC: 73190,
-  sETH: 1987,
+  sBTC: 50000,
+  sETH: 3000,
   sAAPL: 200,
   sTSLA: 250,
   sGOLD: 2650,
   sBOND: 100,
-  sNVDA: 1100,
-  sMSFT: 415,
-  sGOOGL: 170,
-  sICLN: 13,
-  sESGU: 45,
+  sNVDA: 135,
+  sMSFT: 420,
+  sGOOGL: 175,
+  sICLN: 14,
+  sESGU: 120,
 };
 
 let cachedBinancePrices = null;
@@ -167,7 +210,8 @@ async function updateOraclePrices() {
 }
 
 async function main() {
-  console.log('Starting automated gas-optimized Price Keeper Bot (Binance Edition) on Sepolia...');
+  console.log('Starting automated gas-optimized Price Keeper Bot (Binance Edition)...');
+  console.log('RPC Endpoint:  ', RPC_URL);
   console.log('Oracle address:', ORACLE_ADDR);
   console.log('Keeper wallet: ', wallet.address);
 

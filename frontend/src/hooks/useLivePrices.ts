@@ -5,17 +5,17 @@ import { useWalletContext } from 'src/contexts/wallet-context'
 import { ASSET_IDS, getAddresses } from 'src/contracts/addresses'
 
 const MOCK_INITIAL: Record<string, number> = {
-  [ASSET_IDS.sBTC]:   81000,
-  [ASSET_IDS.sETH]:   2300,
+  [ASSET_IDS.sBTC]:   50000,
+  [ASSET_IDS.sETH]:   3000,
   [ASSET_IDS.sAAPL]:  200,
   [ASSET_IDS.sTSLA]:  250,
   [ASSET_IDS.sGOLD]:  2650,
   [ASSET_IDS.sBOND]:  100,
-  [ASSET_IDS.sNVDA]:  1100,
-  [ASSET_IDS.sMSFT]:  415,
-  [ASSET_IDS.sGOOGL]: 170,
-  [ASSET_IDS.sICLN]:  13,
-  [ASSET_IDS.sESGU]:  45,
+  [ASSET_IDS.sNVDA]:  135,
+  [ASSET_IDS.sMSFT]:  420,
+  [ASSET_IDS.sGOOGL]: 175,
+  [ASSET_IDS.sICLN]:  14,
+  [ASSET_IDS.sESGU]:  120,
 }
 
 export interface LivePrice {
@@ -67,8 +67,7 @@ export function useLivePrices(): Record<string, LivePrice> {
         try {
           const raw = (await contracts.oracle.getPrice(id)) as unknown as [bigint, bigint]
           const base = Number(raw[0]) / 1e8
-          const w = 1 + (Math.random() - 0.5) * 0.004
-          next[id] = { usd: base * w, fetchedAt: Date.now(), isMock: false }
+          next[id] = { usd: base, fetchedAt: Date.now(), isMock: false }
         } catch {
           const fallback = MOCK_INITIAL[id] ?? 100
           const w = 1 + (Math.random() - 0.5) * 0.004

@@ -352,7 +352,7 @@ export default function ExchangePage() {
           type: 'ERC20',
           options: {
             address: contracts.usdc.target,
-            symbol: 'USDC',
+            symbol: 'mUSDC',
             decimals: 18,
           },
         },
@@ -457,9 +457,12 @@ export default function ExchangePage() {
   const openMgnBig = tryParse(openMgn);
   const notional   = openMgnBig !== null ? openMgnBig * BigInt(leverage) : 0n;
   
-  const liqPrice   = isLong 
-    ? curPrice - (curPrice / BigInt(leverage))
-    : curPrice + (curPrice / BigInt(leverage));
+  const maintenanceBps = 500n; // 5% maintenance margin
+  const tradingFeeBps  = 10n;  // 0.1% closing fee
+  const bufferBps      = maintenanceBps + tradingFeeBps; // 5.1% total buffer
+  const liqPrice = isLong
+    ? curPrice * (10000n - 10000n / BigInt(leverage) + bufferBps) / 10000n
+    : curPrice * (10000n + 10000n / BigInt(leverage) - bufferBps) / 10000n;
 
   const livePositions = positions.map(p => {
     const liveUsd = livePrices[p.asset as AssetId]?.usd;
@@ -722,7 +725,7 @@ export default function ExchangePage() {
                 {swapMode === 'eth-to-usdc' ? (
                   <Chip
                     avatar={<Box sx={{ width: 20, height: 20, borderRadius: '50%', bgcolor: 'primary.main', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.625rem', fontWeight: 'bold', color: 'white' }}>m</Box>}
-                    label="USDC"
+                    label="mUSDC"
                     onClick={() => {}}
                     sx={{ bgcolor: '#293249', color: 'white', fontWeight: 'bold', '&:hover': { bgcolor: '#323D59' } }}
                   />
@@ -786,7 +789,7 @@ export default function ExchangePage() {
                   ? '流動性不足'
                   : !payAmount || parseFloat(payAmount) <= 0
                     ? 'Enter an amount'
-                    : swapMode === 'eth-to-usdc' ? 'Swap ETH → USDC' : 'Swap USDC → ETH'}
+                    : swapMode === 'eth-to-usdc' ? 'Swap ETH → mUSDC' : 'Swap mUSDC → ETH'}
             </Button>
 
             <Button
@@ -796,7 +799,7 @@ export default function ExchangePage() {
               startIcon={<Icon icon="solar:wallet-bold-duotone" />}
               sx={{ textTransform: 'none', color: 'info.main', fontSize: '0.75rem', mt: 0.5 }}
             >
-              Don't see USDC? Add to MetaMask
+              Don't see mUSDC? Add to MetaMask
             </Button>
           </Card>
         </Grid>
@@ -811,7 +814,7 @@ export default function ExchangePage() {
                 </Typography>
                 <Typography variant="h4" sx={{ fontWeight: 800, fontFamily: MONO, mt: 0.5 }}>
                   {fUsd(accountEquity)}{' '}
-                  <Typography component="span" variant="subtitle2" color="text.secondary">USDC</Typography>
+                  <Typography component="span" variant="subtitle2" color="text.secondary">mUSDC (Testnet)</Typography>
                 </Typography>
               </Box>
               <Box sx={{ textAlign: 'right' }}>
@@ -1061,7 +1064,7 @@ export default function ExchangePage() {
               onChange={e => setOpenMgn(e.target.value)}
               slotProps={{
                 input: {
-                  endAdornment: <InputAdornment position="end">USDC</InputAdornment>,
+                  endAdornment: <InputAdornment position="end">mUSDC</InputAdornment>,
                 },
               }}
             />
@@ -1083,7 +1086,7 @@ export default function ExchangePage() {
             </Typography>
           )}
           <Typography variant="body2" color="text.secondary">
-            Notional: <Box component="span" sx={{ color: 'text.primary', fontWeight: 'bold', fontFamily: MONO }}>{f18(notional)} USDC</Box>
+            Notional: <Box component="span" sx={{ color: 'text.primary', fontWeight: 'bold', fontFamily: MONO }}>{f18(notional)} mUSDC</Box>
           </Typography>
           {(() => {
             const fi = fundingData[selAsset];
@@ -1136,10 +1139,10 @@ export default function ExchangePage() {
 
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
           <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 'medium' }}>
-            Free margin: <Box component="span" sx={{ color: 'text.primary', fontFamily: MONO, fontWeight: 'bold' }}>{f18(freeMgn)} USDC</Box>
+            Free margin: <Box component="span" sx={{ color: 'text.primary', fontFamily: MONO, fontWeight: 'bold' }}>{f18(freeMgn)} mUSDC</Box>
             {openMgnBig !== null && openMgnBig > freeMgn && (
               <Box component="span" sx={{ color: 'error.main', fontWeight: 'bold', ml: 2 }}>
-                ⚠ Insufficient — deposit at least {f18(openMgnBig - freeMgn)} more USDC first
+                ⚠ Insufficient — deposit at least {f18(openMgnBig - freeMgn)} more mUSDC first
               </Box>
             )}
           </Typography>

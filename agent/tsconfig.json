@@ -6,6 +6,7 @@
     "mcp-server/src/**/*.ts",
     "demo-agent/src/**/*.ts",
     "examples/**/*.ts",
+    "x402_agent.ts",
     "../frontend/src/contracts/addresses.ts"
   ]
 }
