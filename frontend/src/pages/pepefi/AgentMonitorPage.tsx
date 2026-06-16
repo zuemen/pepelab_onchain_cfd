@@ -181,6 +181,15 @@ export default function AgentMonitorPage() {
 
       {err && <Alert severity="error">{err}</Alert>}
 
+      {/* Risk disclosure — be honest about live solvency backstops */}
+      <Alert severity="info" variant="outlined">
+        <Typography variant="caption" sx={{ display: 'block' }}>
+          <b>償付後盾揭露</b>：ADL（自動減倉）與組合保證金<b>已實作、由旗標控管</b>，本測試網部署
+          目前<b>預設關閉</b>（線上跑逐倉清算 + 保險金庫 bailout）。極端行情下，在 ADL 啟用前協議
+          作為對手方仍有償付風險——本頁數據不代表線上償付無虞。詳見 docs/RISK_NOTES.md。
+        </Typography>
+      </Alert>
+
       {/* KPI row */}
       <Grid container spacing={2}>
         {[
