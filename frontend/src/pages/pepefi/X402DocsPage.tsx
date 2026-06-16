@@ -135,13 +135,14 @@ export default function X402DocsPage() {
   return (
     <Container maxWidth="md" sx={{ py: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
       <Box>
-        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }} flexWrap="wrap">
           <Typography variant="h4" sx={{ fontWeight: 'bold' }}>x402 Signal API</Typography>
+          <Chip size="small" color="primary" variant="outlined" label="Developers / Agents" />
           <Chip size="small" color="success" label="agent-native commerce" />
         </Stack>
         <Typography color="text.secondary">
-          按次付費的交易訊號 API。<b>端點本身就是商品</b>——任何帶 Base Sepolia USDC 錢包的
-          agent / CLI 都能直接付費購買，收入經 FeeRouter 70/20/10 上鏈分潤。
+          <b>開發者 / AI agent 專用</b>的按次付費交易訊號 API。<b>端點本身就是商品</b>——任何帶
+          Base Sepolia USDC 錢包的 agent / CLI 都能直接付費購買，收入經 FeeRouter 70/20/10 上鏈分潤。
         </Typography>
       </Box>
 
@@ -250,8 +251,8 @@ npx tsx examples/buy-signal.ts`}</Mono>
         </Typography>
       </Card>
 
-      <Typography variant="caption" color="text.secondary">
-        測試網展示用途；`FEE_SETTLEMENT_PRIVATE_KEY` 為半公開測試金鑰，只放極少量測試資產。
+      <Typography variant="caption" color="text.secondary" sx={{ opacity: 0.7 }}>
+        測試網展示環境（Base Sepolia）；結算金鑰僅供 demo，不涉及真實資產。鏈上分潤數字為即時讀取。
       </Typography>
     </Container>
   )
