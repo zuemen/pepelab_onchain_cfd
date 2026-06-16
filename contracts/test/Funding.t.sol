@@ -143,7 +143,8 @@ contract FundingTest is Test {
     //   cumulativeIndex = 75e14
     //   fundingPayment = 500e18 * 75e14 / 1e18 = 3.75e18
     //   tradingFee(close) = 500e18 * 10/10000 = 0.5e18
-    //   closeAmount = 100e18 + 0 - 0.5e18 - 3.75e18 = 95.75e18
+    //   borrowFee = borrowed(400e18) * 1 * hours / 10000  (1 interval = 8h)
+    //   closeAmount = 100e18 + 0 - tradingFee - borrowFee - fundingPayment
 
     function testCloseLongPosition_paysFunding_whenLongHeavy() public {
         _deposit(alice, 1_000e18);
@@ -160,10 +161,12 @@ contract FundingTest is Test {
         _close(alice, pid);
         uint256 received = exchange.freeMargin(alice) - fmBefore;
 
-        // tradingFee = 500e18 * 10/10000 = 5e18/10 = 0.5e18 — wait let me recalc
-        // 500e18 * 10 / 10000 = 5000e18/10000 = 0.5e18
-        uint256 tradingFee = 500e18 * 10 / 10_000;
-        uint256 expected   = 100e18 - tradingFee - uint256(expectedFunding);
+        uint256 tradingFee = 500e18 * 10 / 10_000; // 0.5e18
+        // borrow fee accrues on the protocol-supplied notional (lev>1) per hour
+        uint256 borrowed   = 100e18 * (5 - 1);     // 400e18
+        uint256 hoursEl    = INTERVAL / 3600;      // 8h
+        uint256 borrowFee  = borrowed * exchange.BORROW_FEE_BPS_PER_HOUR() * hoursEl / 10_000;
+        uint256 expected   = 100e18 - tradingFee - borrowFee - uint256(expectedFunding);
         assertEq(received, expected);
     }
 
@@ -215,5 +218,28 @@ contract FundingTest is Test {
 
         assertEq(exchange.cumulativeFundingIndex(BTC), 0);
         assertEq(exchange.lastFundingUpdateAt(BTC), block.timestamp);
+    }
+
+    // ── 9. Economic sanity: funding stays in a reasonable band ────────────────
+    //   At FULL one-sided imbalance the per-interval rate equals the cap, and the
+    //   annualised/daily figure must stay sane (≤ ~3%/day with the 8h cadence).
+    function testFunding_dailyRate_isEconomicallySane() public {
+        _deposit(alice, 200e18);
+        _open(alice, BTC, true, 100e18, 1); // only longs → maximum imbalance
+
+        vm.warp(block.timestamp + INTERVAL);
+        _settle(BTC);
+
+        // Per-interval rate never exceeds the configured cap.
+        int256 ratePerInterval = exchange.getFundingRate(BTC);
+        assertLe(ratePerInterval, int256(exchange.MAX_FUNDING_RATE_BPS()),
+            "per-interval funding above cap");
+
+        // Daily funding at the cap = rate * (1 day / interval).
+        // With 8h interval and 75 bps cap → 75 * 3 = 225 bps = 2.25%/day.
+        uint256 intervalsPerDay = 1 days / exchange.FUNDING_INTERVAL();
+        uint256 dailyBps = uint256(ratePerInterval) * intervalsPerDay;
+        assertEq(dailyBps, 225, "daily funding at full imbalance should be 2.25%/day");
+        assertLe(dailyBps, 1000, "daily funding cap must stay <= 10%/day"); // sanity ceiling
     }
 }

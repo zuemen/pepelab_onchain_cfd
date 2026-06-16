@@ -37,9 +37,21 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     uint256 public TRADING_FEE_BPS         = 10;   // 0.1% swap fee (Uniswap concept)
     uint256 public BORROW_FEE_BPS_PER_HOUR = 1;    // 0.01% borrow rate per hour (Aave concept)
 
-    // Funding rate: 5 min for demo (change to 8 hours = 28800 for production)
-    uint256 public constant FUNDING_INTERVAL        = 5 minutes;
-    uint256 public constant MAX_FUNDING_RATE_BPS    = 75;    // 0.75% per interval cap
+    // ── Funding (multi/short imbalance) ──────────────────────────────────────
+    // Funding charges the crowded side and pays the other; it is NOT a financing
+    // cost of leverage. Borrowing leverage is priced separately by the per-hour
+    // BORROW_FEE above (Aave-style). The two are complementary, not double-billing:
+    //   • funding   = OI-imbalance rebalancer between longs and shorts (peer-to-peer)
+    //   • borrow fee = cost of the protocol-supplied notional on a leveraged position
+    //
+    // Funding settles every 8h (standard perp cadence; Hyperliquid-class). The cap
+    // applies to the most extreme one-sided OI; typical (partial) imbalance is far
+    // lower. Economic sanity check at the cap:
+    //   max per interval = 0.75%  →  daily = 0.75% × (24h / 8h) = 2.25%/day.
+    // (The previous 5-min interval put the same 0.75% cap at 0.75%×288 ≈ 216%/day,
+    //  which was economically nonsensical — fixed by the 8h cadence here.)
+    uint256 public constant FUNDING_INTERVAL        = 8 hours;
+    uint256 public constant MAX_FUNDING_RATE_BPS    = 75;    // 0.75% per 8h at full imbalance
 
     // Insurance vault: floor paid to trader when closeAmount < 0
     uint256 public constant BAILOUT_FLOOR_BPS       = 1000;  // 10% of margin

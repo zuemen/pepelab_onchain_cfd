@@ -131,8 +131,10 @@ contract SecurityFixesTest is Test {
 
         // notional 500e18, rate 75 bps/interval × 3 intervals
         // funding = 500e18 * 3*75e14 / 1e18 = 11.25e18
-        // tradingFee = 0.5e18 → closeAmount = 100 - 0.5 - 11.25 = 88.25e18
-        uint256 expected = 100e18 - 0.5e18 - 11.25e18;
+        // tradingFee = 0.5e18
+        // borrowFee = borrowed(400e18) * 1bps/h * (3 * 8h) / 10000  (8h interval)
+        uint256 borrowFee = (100e18 * (5 - 1)) * exchange.BORROW_FEE_BPS_PER_HOUR() * (3 * INTERVAL / 3600) / 10_000;
+        uint256 expected = 100e18 - 0.5e18 - 11.25e18 - borrowFee;
         assertEq(exchange.freeMargin(alice) - fmBefore, expected);
     }
 
