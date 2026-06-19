@@ -14,7 +14,8 @@ name: Base Sepolia Keeper
 
 on:
   schedule:
-    - cron: '*/30 * * * *'   # every 30 min (FUNDING_INTERVAL is 5 min)
+    - cron: '*/30 * * * *'   # every 30 min — keeps MockOracle prices fresh
+                             # (FUNDING_INTERVAL is 8h → settleFunding mostly skips, which is fine)
   workflow_dispatch:
 
 jobs:
@@ -68,6 +69,8 @@ jobs:
           }
           update() {
             local SYM=$1 USD=$2
+            # Skip (don't fail) when a free source has no quote for this asset —
+            # the on-chain price simply stays put until the next successful run.
             if [ -z "$USD" ] || [ "$USD" = "N/D" ] || [ "$USD" = "0" ]; then
               echo "$SYM: no real price, skip"; return
             fi
@@ -75,12 +78,22 @@ jobs:
             echo "$SYM: real=\$$USD -> $REAL"
             cast send "$ORACLE" "updatePrice(bytes32,uint256)" "$KEY" "$REAL" \
               --rpc-url "$RPC_URL" --private-key "$PK" \
-              || echo "$SYM: updatePrice failed (price guard?), skip"
+              || echo "$SYM: updatePrice failed (asset not on oracle / guard?), skip"
           }
+          # Crypto — CoinGecko (free, keyless)
           update sBTC  "$(get_crypto bitcoin)"
           update sETH  "$(get_crypto ethereum)"
-          update sAAPL "$(get_stooq aapl.us)"
-          update sTSLA "$(get_stooq tsla.us)"
+          # Equities / ETFs — Stooq (free, keyless). Assets not seeded on the
+          # live oracle simply log "updatePrice failed … skip" and are harmless.
+          update sAAPL  "$(get_stooq aapl.us)"
+          update sTSLA  "$(get_stooq tsla.us)"
+          update sNVDA  "$(get_stooq nvda.us)"
+          update sMSFT  "$(get_stooq msft.us)"
+          update sGOOGL "$(get_stooq googl.us)"
+          update sICLN  "$(get_stooq icln.us)"
+          update sESGU  "$(get_stooq esgu.us)"
+          # Commodities / FX — Stooq (gold spot per oz)
+          update sGOLD  "$(get_stooq xauusd)"
 
       - name: Crank settleFunding
         if: steps.pre.outputs.ready == 'true'

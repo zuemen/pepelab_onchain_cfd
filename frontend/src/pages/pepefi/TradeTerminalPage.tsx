@@ -211,8 +211,9 @@ export default function TradeTerminalPage() {
         <Box>
           <Box sx={{ ...monoCss, fontSize: 26, fontWeight: 700 }}>{livePx ? '$' + livePx.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : fUsd(curPrice)}</Box>
           <Box sx={{ ...monoCss, fontSize: 13, color: chg >= 0 ? C.green : C.red }}>{chg >= 0 ? '▲' : '▼'} {Math.abs(chg).toFixed(2)}%</Box>
+          <Box sx={{ ...labelCss, mt: 0.2, fontSize: 9.5 }}>display price</Box>
         </Box>
-        <Stat label="Index (oracle)" v={fUsd(curPrice)} />
+        <Stat label="Index (oracle · settles here)" v={fUsd(curPrice)} />
         <Stat
           label="Mark (OI premium)"
           v={markPrice > 0n ? fUsd(markPrice) : '—'}
@@ -220,7 +221,11 @@ export default function TradeTerminalPage() {
         />
         <Stat label="Funding" v={`${rate >= 0 ? '+' : ''}${(rate / 100).toFixed(4)}%`} color={rate > 0 ? C.red : rate < 0 ? C.green : C.mut} />
         <Stat label="Open interest L/S" v={fi ? `${(Number(fi.longOI) / 1e18).toFixed(1)} / ${(Number(fi.shortOI) / 1e18).toFixed(1)}` : '—'} />
-        <Box sx={{ ml: 'auto', ...labelCss, color: live[selAsset]?.isMock ? C.mut : C.green }}>● {live[selAsset]?.isMock ? 'simulated feed' : 'live feed'}</Box>
+        <Box sx={{ ml: 'auto', ...labelCss, color: live[selAsset]?.isMock ? C.mut : C.green }}>
+          ● {live[selAsset]?.source === 'coingecko' ? 'live · coingecko'
+            : live[selAsset]?.source === 'oracle' ? 'live · on-chain oracle'
+            : 'simulated feed'}
+        </Box>
       </Box>
 
       {/* chart + ticket */}
