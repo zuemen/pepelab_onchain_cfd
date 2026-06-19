@@ -19,6 +19,28 @@
 // signature → verification fails → the trade is refused.
 import { ethers } from "ethers";
 import { AGENT_CHAIN_ID } from "./addresses.ts";
+// Single source of truth for the EIP-712 schema + VC shape, shared with the
+// frontend (browser-wallet issuer). Re-exported below so "@pepelab/shared"
+// consumers — and the frontend, which imports the same file directly — stay
+// byte-for-byte consistent. Mirrors how addresses.ts cross-imports frontend.
+import {
+  AUTH_DOMAIN,
+  AUTH_TYPES,
+  buildAuthTypedValue,
+  assembleAuthorizationVC,
+  type AuthorizationCaps,
+  type AuthorizationVC,
+} from "../../../frontend/src/contracts/agentAuth";
+
+export {
+  AUTH_DOMAIN,
+  AUTH_TYPES,
+  AUTH_VC_CHAIN_ID,
+  buildAuthTypedValue,
+  assembleAuthorizationVC,
+  authDid,
+} from "../../../frontend/src/contracts/agentAuth";
+export type { AuthorizationCaps, AuthorizationVC } from "../../../frontend/src/contracts/agentAuth";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
 
@@ -34,82 +56,24 @@ export function parseDidPkh(did: string): { chainId: number; address: string } {
   return { chainId: Number(m[1]), address: ethers.getAddress(m[2]) };
 }
 
-/** Authorization caps — mirror the on-chain AgentSessionManager session fields. */
-export interface AuthorizationCaps {
-  /** Max margin per single trade (USDC, human units). */
-  maxMarginPerTrade: string;
-  /** Total margin budget over the session (USDC, human units). */
-  totalBudget: string;
-  /** Max leverage allowed. */
-  maxLeverage: number;
-  /** Unix expiry (seconds). */
-  expiry: number;
-}
+// EIP-712 domain/types live in the shared agentAuth module (AUTH_DOMAIN /
+// AUTH_TYPES) so the frontend signs the exact tuple this file verifies.
+const DOMAIN: ethers.TypedDataDomain = AUTH_DOMAIN;
+const TYPES: Record<string, ethers.TypedDataField[]> = AUTH_TYPES;
 
-export interface AuthorizationVC {
-  "@context": string[];
-  type: string[];
-  issuer: string;          // did:pkh of the user
-  issuanceDate: string;    // ISO
-  expirationDate: string;  // ISO
-  credentialSubject: {
-    id: string;            // did:pkh of the agent (holder)
-    sessionId: number;
-    authorization: AuthorizationCaps;
-  };
-  proof: {
-    type: "EthereumEip712Signature2021";
-    created: string;
-    proofPurpose: "assertionMethod";
-    verificationMethod: string; // <issuerDid>#blockchainAccountId
-    proofValue: string;         // 0x… EIP-712 signature
-  };
-}
-
-// EIP-712 domain/types — the canonical signed payload. Verification reconstructs
-// this exact tuple from the VC and recovers the signer.
-const DOMAIN = {
-  name: "PepeLabAgentAuthorization",
-  version: "1",
-  chainId: AGENT_CHAIN_ID,
-};
-
-const TYPES: Record<string, ethers.TypedDataField[]> = {
-  AgentTradingAuthorization: [
-    { name: "issuer", type: "address" },
-    { name: "agent", type: "address" },
-    { name: "sessionId", type: "uint256" },
-    { name: "maxMarginPerTrade", type: "string" },
-    { name: "totalBudget", type: "string" },
-    { name: "maxLeverage", type: "uint256" },
-    { name: "expiry", type: "uint256" },
-    { name: "issuedAt", type: "uint256" },
-  ],
-};
-
-function typedValue(p: {
-  issuer: string;
-  agent: string;
-  sessionId: number;
-  caps: AuthorizationCaps;
-  issuedAt: number;
-}) {
-  return {
-    issuer: ethers.getAddress(p.issuer),
-    agent: ethers.getAddress(p.agent),
-    sessionId: BigInt(p.sessionId),
-    maxMarginPerTrade: p.caps.maxMarginPerTrade,
-    totalBudget: p.caps.totalBudget,
-    maxLeverage: BigInt(p.caps.maxLeverage),
-    expiry: BigInt(p.caps.expiry),
-    issuedAt: BigInt(p.issuedAt),
-  };
-}
+/** A connected-wallet EIP-712 signer (ethers Wallet/Signer or a wagmi adapter). */
+export type TypedDataSigner = (
+  domain: ethers.TypedDataDomain,
+  types: Record<string, ethers.TypedDataField[]>,
+  value: ReturnType<typeof buildAuthTypedValue>,
+) => Promise<string>;
 
 /**
- * Issue (sign) an authorization VC. `issuer` is the user's wallet (the EOA that
- * created the on-chain session). The credential authorizes `agentAddress` to
- * trade within `sessionId` limited by `caps`.
+ * Issue (sign) an authorization VC with a local key wallet (agent-side / tests).
+ * `issuer` is the user's wallet (the EOA that created the on-chain session). The
+ * credential authorizes `agentAddress` to trade within `sessionId` limited by
+ * `caps`. For the browser flow (user signs in MetaMask) use
+ * `issueAuthorizationVCWithSigner` instead — same schema, same output.
  */
 export async function issueAuthorizationVC(params: {
   issuer: ethers.Wallet | ethers.HDNodeWallet;
@@ -118,40 +82,46 @@ export async function issueAuthorizationVC(params: {
   caps: AuthorizationCaps;
 }): Promise<AuthorizationVC> {
   const issuerAddr = await params.issuer.getAddress();
-  const issuedAt = Math.floor(Date.now() / 1000);
+  return issueAuthorizationVCWithSigner({
+    issuerAddress: issuerAddr,
+    agentAddress: params.agentAddress,
+    sessionId: params.sessionId,
+    caps: params.caps,
+    signTypedData: (d, t, v) => params.issuer.signTypedData(d, t, v),
+  });
+}
 
-  const value = typedValue({
-    issuer: issuerAddr,
+/**
+ * Issue (sign) an authorization VC using a connected-wallet typed-data signer.
+ * This is the true SSI path: the user (issuer) signs in their wallet (MetaMask),
+ * so the private key never leaves the wallet. The frontend passes its connected
+ * signer's `signTypedData`; agent-side `verifyAuthorizationVC` validates the
+ * result. Identical schema/output to `issueAuthorizationVC`.
+ */
+export async function issueAuthorizationVCWithSigner(params: {
+  issuerAddress: string;
+  agentAddress: string;
+  sessionId: number;
+  caps: AuthorizationCaps;
+  signTypedData: TypedDataSigner;
+}): Promise<AuthorizationVC> {
+  const issuedAt = Math.floor(Date.now() / 1000);
+  const value = buildAuthTypedValue({
+    issuer: params.issuerAddress,
     agent: params.agentAddress,
     sessionId: params.sessionId,
     caps: params.caps,
     issuedAt,
   });
-  const signature = await params.issuer.signTypedData(DOMAIN, TYPES, value);
-
-  const issuerDid = agentDid(issuerAddr);
-  return {
-    "@context": [
-      "https://www.w3.org/2018/credentials/v1",
-      "https://pepelab.xyz/credentials/agent-authorization/v1",
-    ],
-    type: ["VerifiableCredential", "AgentTradingAuthorization"],
-    issuer: issuerDid,
-    issuanceDate: new Date(issuedAt * 1000).toISOString(),
-    expirationDate: new Date(params.caps.expiry * 1000).toISOString(),
-    credentialSubject: {
-      id: agentDid(params.agentAddress),
-      sessionId: params.sessionId,
-      authorization: params.caps,
-    },
-    proof: {
-      type: "EthereumEip712Signature2021",
-      created: new Date(issuedAt * 1000).toISOString(),
-      proofPurpose: "assertionMethod",
-      verificationMethod: `${issuerDid}#blockchainAccountId`,
-      proofValue: signature,
-    },
-  };
+  const signature = await params.signTypedData(DOMAIN, TYPES, value);
+  return assembleAuthorizationVC({
+    issuerAddress: params.issuerAddress,
+    agentAddress: params.agentAddress,
+    sessionId: params.sessionId,
+    caps: params.caps,
+    issuedAt,
+    signature,
+  });
 }
 
 export interface VerifyResult {
@@ -183,7 +153,7 @@ export function verifyAuthorizationVC(vc: AuthorizationVC): VerifyResult {
     // Reconstruct issuedAt from the proof's created timestamp (signed field).
     const issuedAt = Math.floor(new Date(vc.proof.created).getTime() / 1000);
 
-    const value = typedValue({ issuer, agent, sessionId, caps, issuedAt });
+    const value = buildAuthTypedValue({ issuer, agent, sessionId, caps, issuedAt });
     const recovered = ethers.verifyTypedData(DOMAIN, TYPES, value, vc.proof.proofValue);
 
     if (recovered === ZERO || ethers.getAddress(recovered) !== ethers.getAddress(issuer)) {
