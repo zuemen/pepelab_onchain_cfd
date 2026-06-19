@@ -6,3 +6,4 @@ export * from "./format.ts";
 export * from "./aggregate.ts";
 export * from "./write.ts";
 export * from "./identity.ts";
+export * from "./verification.ts";
