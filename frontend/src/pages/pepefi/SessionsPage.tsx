@@ -10,10 +10,15 @@ import Stack from '@mui/material/Stack'
 import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Divider from '@mui/material/Divider'
+import Dialog from '@mui/material/Dialog'
 import Snackbar from '@mui/material/Snackbar'
 import TextField from '@mui/material/TextField'
 import Container from '@mui/material/Container'
 import Typography from '@mui/material/Typography'
+import IconButton from '@mui/material/IconButton'
+import DialogTitle from '@mui/material/DialogTitle'
+import DialogContent from '@mui/material/DialogContent'
+import DialogActions from '@mui/material/DialogActions'
 import Table from '@mui/material/Table'
 import TableRow from '@mui/material/TableRow'
 import TableBody from '@mui/material/TableBody'
@@ -83,9 +88,28 @@ export default function SessionsPage() {
   const [maxLev,   setMaxLev]   = useState('5')
   const [hours,    setHours]    = useState('24')
 
-  // Onboarding: issued VCs (in-memory only) + which session's export panel is open
+  // Onboarding: issued VCs (persisted in localStorage, keyed by wallet+chain) +
+  // which session's export dialog is open.
   const [vcBySession, setVcBySession] = useState<Record<number, AuthorizationVC>>({})
   const [exportFor,   setExportFor]   = useState<number | null>(null)
+
+  // localStorage key for this wallet's issued VCs (per chain + address).
+  const vcStorageKey = useCallback(
+    () => (wallet.address ? `pepelab_vc_${wallet.chainId ?? 0}_${wallet.address.toLowerCase()}` : null),
+    [wallet.address, wallet.chainId],
+  )
+
+  // Restore persisted VCs whenever the wallet / chain changes (survives reload).
+  useEffect(() => {
+    const k = vcStorageKey()
+    if (!k) { setVcBySession({}); return }
+    try {
+      const raw = localStorage.getItem(k)
+      setVcBySession(raw ? (JSON.parse(raw) as Record<number, AuthorizationVC>) : {})
+    } catch {
+      setVcBySession({})
+    }
+  }, [vcStorageKey])
 
   const notify = (msg: string, ok: boolean, hash?: string) => {
     setToast({ msg, ok, hash })
@@ -150,7 +174,12 @@ export default function SessionsPage() {
       const vc = assembleAuthorizationVC({
         issuerAddress: wallet.address, agentAddress: s.agent, sessionId: s.id, caps, issuedAt, signature,
       })
-      setVcBySession(p => ({ ...p, [s.id]: vc }))
+      setVcBySession(p => {
+        const nextMap = { ...p, [s.id]: vc }
+        const k = vcStorageKey()
+        if (k) { try { localStorage.setItem(k, JSON.stringify(nextMap)) } catch { /* quota — keep in memory */ } }
+        return nextMap
+      })
       setExportFor(s.id)
       notify('Credential issued ✓', true)
     } catch (e) {
@@ -386,8 +415,12 @@ export default function SessionsPage() {
                             {vcBySession[s.id] ? (
                               <Stack direction="row" spacing={0.5} alignItems="center">
                                 <Chip size="small" label="Issued ✓" color="success" variant="outlined" />
-                                <Button size="small" variant="text" onClick={() => setExportFor(s.id)} sx={{ textTransform: 'none', minWidth: 0 }}>
-                                  Export
+                                <Button
+                                  size="small" variant="outlined" color="primary"
+                                  onClick={() => setExportFor(s.id)}
+                                  sx={{ textTransform: 'none', whiteSpace: 'nowrap' }}
+                                >
+                                  Export ⤓
                                 </Button>
                               </Stack>
                             ) : (
@@ -421,61 +454,74 @@ export default function SessionsPage() {
             )}
           </Card>
 
-          {/* Export / Connect your Agent */}
-          {exportFor !== null && vcBySession[exportFor] && (() => {
-            const sid = exportFor
-            const vc = vcBySession[sid]
-            const cfg = mcpConfig(sid)
-            const cfgStr = JSON.stringify(cfg, null, 2)
-            const vcStr = JSON.stringify(vc, null, 2)
-            const preSx = {
-              fontFamily: MONO, fontSize: 11, m: 0, p: 1.5, borderRadius: 1,
-              bgcolor: 'background.neutral', maxHeight: 220, overflow: 'auto', whiteSpace: 'pre' as const,
-            }
-            return (
-              <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Typography variant="h6" sx={{ fontWeight: 'bold' }}>🔌 Connect your Agent — Session #{sid}</Typography>
-                  <Button variant="text" size="small" onClick={() => setExportFor(null)} sx={{ textTransform: 'none' }}>Close</Button>
-                </Box>
-                <Typography variant="body2" color="text.secondary">
-                  把以下兩份貼進你本機的 agent client，之後只需下「口頭交易意圖」，agent 會在 session 限額內憑 VC 代你下單：
-                </Typography>
-                <Box component="ol" sx={{ pl: 2.5, m: 0, typography: 'caption', color: 'text.secondary' }}>
-                  <li>把 <b>MCP 設定</b>貼進 Claude Desktop/Code 的 <code>mcpServers</code>，並把 <code>AGENT_PRIVATE_KEY</code> 換成你本機 agent 的 session key。</li>
-                  <li>把 <b>授權 VC</b> 存成檔案，agent 下單時以 <code>AGENT_AUTH_VC_PATH</code> 指向它（或 MCP <code>open_position</code> 的 <code>authVcJson</code>）。</li>
-                  <li>完成後直接對 agent 說：「幫我用 3x 槓桿做多 sBTC、保證金 200」即可，無需再報帳號/位址。</li>
-                </Box>
+          {/* Export / Connect your Agent — modal dialog (centered, always reachable) */}
+          <Dialog
+            open={exportFor !== null && !!vcBySession[exportFor ?? -1]}
+            onClose={() => setExportFor(null)}
+            maxWidth="md"
+            fullWidth
+            scroll="paper"
+          >
+            {exportFor !== null && vcBySession[exportFor] && (() => {
+              const sid = exportFor
+              const vc = vcBySession[sid]
+              const cfg = mcpConfig(sid)
+              const cfgStr = JSON.stringify(cfg, null, 2)
+              const vcStr = JSON.stringify(vc, null, 2)
+              const preSx = {
+                fontFamily: MONO, fontSize: 11, m: 0, p: 1.5, borderRadius: 1,
+                bgcolor: 'background.neutral', maxHeight: 220, overflow: 'auto', whiteSpace: 'pre' as const,
+              }
+              return (
+                <>
+                  <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pr: 1 }}>
+                    🔌 Connect your Agent — Session #{sid}
+                    <IconButton onClick={() => setExportFor(null)} size="small" aria-label="close">✕</IconButton>
+                  </DialogTitle>
+                  <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <Typography variant="body2" color="text.secondary">
+                      把以下兩份貼進你本機的 agent client，之後只需下「口頭交易意圖」，agent 會在 session 限額內憑 VC 代你下單：
+                    </Typography>
+                    <Box component="ol" sx={{ pl: 2.5, m: 0, typography: 'caption', color: 'text.secondary' }}>
+                      <li>把 <b>MCP 設定</b>貼進 Claude Desktop/Code 的 <code>mcpServers</code>，並把 <code>AGENT_PRIVATE_KEY</code> 換成你本機 agent 的 session key。</li>
+                      <li>把 <b>授權 VC</b> 存成檔案，agent 下單時以 <code>AGENT_AUTH_VC_PATH</code> 指向它（或 MCP <code>open_position</code> 的 <code>authVcJson</code>）。</li>
+                      <li>完成後直接對 agent 說：「幫我用 3x 槓桿做多 sBTC、保證金 200」即可，無需再報帳號/位址。</li>
+                    </Box>
 
-                {/* MCP config */}
-                <Box>
-                  <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>MCP 設定（Claude Desktop / Code）</Typography>
-                    <Button size="small" variant="outlined" onClick={() => void copyText('MCP config', cfgStr)} sx={{ textTransform: 'none' }}>Copy</Button>
-                    <Button size="small" variant="outlined" onClick={() => downloadJson(`pepelab-mcp-session-${sid}.json`, cfg)} sx={{ textTransform: 'none' }}>Download .json</Button>
-                  </Stack>
-                  <Box component="pre" sx={preSx}>{cfgStr}</Box>
-                </Box>
+                    {/* MCP config */}
+                    <Box>
+                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>MCP 設定（Claude Desktop / Code）</Typography>
+                        <Button size="small" variant="outlined" onClick={() => void copyText('MCP config', cfgStr)} sx={{ textTransform: 'none' }}>Copy</Button>
+                        <Button size="small" variant="outlined" onClick={() => downloadJson(`pepelab-mcp-session-${sid}.json`, cfg)} sx={{ textTransform: 'none' }}>Download .json</Button>
+                      </Stack>
+                      <Box component="pre" sx={preSx}>{cfgStr}</Box>
+                    </Box>
 
-                {/* Authorization VC */}
-                <Box>
-                  <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>授權 VC（下單驗證用）</Typography>
-                    <Button size="small" variant="outlined" onClick={() => void copyText('Authorization VC', vcStr)} sx={{ textTransform: 'none' }}>Copy</Button>
-                    <Button size="small" variant="outlined" onClick={() => downloadJson(`pepelab-auth-vc-session-${sid}.json`, vc)} sx={{ textTransform: 'none' }}>Download .json</Button>
-                  </Stack>
-                  <Box component="pre" sx={preSx}>{vcStr}</Box>
-                </Box>
+                    {/* Authorization VC */}
+                    <Box>
+                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>授權 VC（下單驗證用）</Typography>
+                        <Button size="small" variant="outlined" onClick={() => void copyText('Authorization VC', vcStr)} sx={{ textTransform: 'none' }}>Copy</Button>
+                        <Button size="small" variant="outlined" onClick={() => downloadJson(`pepelab-auth-vc-session-${sid}.json`, vc)} sx={{ textTransform: 'none' }}>Download .json</Button>
+                      </Stack>
+                      <Box component="pre" sx={preSx}>{vcStr}</Box>
+                    </Box>
 
-                <Alert severity="warning" variant="outlined">
-                  <Typography variant="caption">
-                    agent 私鑰只放你本機的 agent 設定，<b>勿外流</b>。本網站不會產生、儲存或嵌入任何真實私鑰；
-                    匯出的 <code>AGENT_PRIVATE_KEY</code> 一律為佔位字串。
-                  </Typography>
-                </Alert>
-              </Card>
-            )
-          })()}
+                    <Alert severity="warning" variant="outlined">
+                      <Typography variant="caption">
+                        agent 私鑰只放你本機的 agent 設定，<b>勿外流</b>。本網站不會產生、儲存或嵌入任何真實私鑰；
+                        匯出的 <code>AGENT_PRIVATE_KEY</code> 一律為佔位字串。
+                      </Typography>
+                    </Alert>
+                  </DialogContent>
+                  <DialogActions>
+                    <Button onClick={() => setExportFor(null)} sx={{ textTransform: 'none' }}>Close</Button>
+                  </DialogActions>
+                </>
+              )
+            })()}
+          </Dialog>
 
           <Divider />
           <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
