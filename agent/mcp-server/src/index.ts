@@ -23,6 +23,7 @@ import {
   openPositionForSession,
   closePositionForSession,
   getSession,
+  type AuthorizationVC,
   jsonSafe,
 } from "@pepelab/shared";
 
@@ -109,22 +110,32 @@ server.tool(
 // ── write: 經 AgentSessionManager 在 session 限額內下單 ───────────────────────
 server.tool(
   "open_position",
-  "【寫】在指定 session 限額內為 session 使用者開一筆受限部位（受 per-trade cap / budget / leverage cap / expiry 約束）。需 AGENT_PRIVATE_KEY + SESSION_MANAGER_ADDRESS；缺則回明確錯誤。回傳 tx hash 與 positionId。",
+  "【寫】在指定 session 限額內為 session 使用者開一筆受限部位（受 per-trade cap / budget / leverage cap / expiry 約束）。需 AGENT_PRIVATE_KEY + SESSION_MANAGER_ADDRESS；缺則回明確錯誤。可選帶 authVcJson（使用者簽發的授權 VC）→ 下單前驗簽+鏈上交叉比對，不符即拒絕。回傳 tx hash 與 positionId。",
   {
     sessionId: z.number().int().nonnegative().describe("鏈上 session id"),
     asset: z.string().describe("資產代號，如 sBTC / sETH / sAAPL"),
     isLong: z.boolean().describe("true=做多，false=做空"),
     marginUsdc: z.number().positive().describe("保證金（USDC，人類單位）"),
     leverage: z.number().int().positive().describe("槓桿（受 session.maxLeverage 約束）"),
+    authVcJson: z.string().optional().describe("（可選）使用者簽發的授權 VC JSON 字串；提供時下單前必須驗證通過"),
   },
-  async ({ sessionId, asset, isLong, marginUsdc, leverage }) => {
+  async ({ sessionId, asset, isLong, marginUsdc, leverage, authVcJson }) => {
     try {
+      let authVc: AuthorizationVC | undefined;
+      if (authVcJson) {
+        try {
+          authVc = JSON.parse(authVcJson) as AuthorizationVC;
+        } catch (e) {
+          return fail(new Error(`authVcJson 解析失敗：${(e as Error).message}`));
+        }
+      }
       const res = await openPositionForSession({
         sessionId,
         symbol: asset,
         isLong,
         marginUsdc,
         leverage,
+        authVc,
       });
       return res.ok ? ok(res) : fail(new Error(res.error));
     } catch (err) {

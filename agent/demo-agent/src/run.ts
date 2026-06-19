@@ -9,6 +9,7 @@ import { type Hex, createWalletClient, http, publicActions } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
 import { wrapFetchWithPayment } from "x402-fetch";
+import { readFileSync } from "node:fs";
 import {
   loadEnv,
   makeProvider,
@@ -17,10 +18,29 @@ import {
   getTraderPerformance,
   openPositionForSession,
   getSessionManagerAddress,
+  agentDid,
+  verifyAuthorizationVC,
+  type AuthorizationVC,
   jsonSafe,
 } from "@pepelab/shared";
 
 loadEnv();
+
+// 可選：使用者簽發的授權 VC（W3C VC / did:pkh）。提供時下單前必須驗證通過。
+//   AGENT_AUTH_VC      = VC JSON 字串
+//   AGENT_AUTH_VC_PATH = VC JSON 檔路徑
+function loadAuthVc(): AuthorizationVC | null {
+  const raw = process.env.AGENT_AUTH_VC?.trim();
+  const path = process.env.AGENT_AUTH_VC_PATH?.trim();
+  try {
+    if (raw) return JSON.parse(raw) as AuthorizationVC;
+    if (path) return JSON.parse(readFileSync(path, "utf8")) as AuthorizationVC;
+  } catch (e) {
+    console.log(`⚠ 無法載入 AGENT_AUTH_VC：${(e as Error).message}`);
+  }
+  return null;
+}
+const AUTH_VC = loadAuthVc();
 
 const API = process.env.SIGNAL_API_URL ?? "http://localhost:4021";
 const ASSET = process.env.DEMO_ASSET ?? "sBTC";
@@ -114,6 +134,18 @@ async function executeOrSimulate(
     return;
   }
 
+  // VC/SSI 閘門：帶了授權憑證就先在本地驗證並印結果（鏈上交叉比對在 write 層）。
+  if (AUTH_VC) {
+    const v = verifyAuthorizationVC(AUTH_VC);
+    if (v.valid) {
+      console.log(`🪪 授權憑證已驗證 ✓（issuer ${v.issuer} → agent ${v.agent}, session #${v.sessionId}）`);
+    } else {
+      console.log(`🛑 授權憑證驗證失敗 → 拒絕下單：${v.reason}`);
+      console.log(`  （正反對照：竄改 VC 或換 agent 即無法下單）`);
+      return;
+    }
+  }
+
   console.log(`送出：${wouldBe}（session #${SESSION_ID}）…`);
   const res = await openPositionForSession({
     sessionId: Number(SESSION_ID),
@@ -121,6 +153,7 @@ async function executeOrSimulate(
     isLong: trade.isLong,
     marginUsdc: DEMO_MARGIN,
     leverage: trade.leverage,
+    authVc: AUTH_VC ?? undefined,
   });
   if (res.ok) {
     console.log(
@@ -201,6 +234,9 @@ async function main() {
 
   const hasKey = PK && PK.startsWith("0x") && PK.length === 66;
   if (hasKey) {
+    const acct = privateKeyToAccount(PK as Hex);
+    console.log(`agent DID   : ${agentDid(acct.address)}`);
+    console.log(`授權憑證(VC): ${AUTH_VC ? "已載入（下單前驗證）" : "未提供（session-only）"}`);
     await paidRun();
   } else {
     await dryRun();

@@ -13,6 +13,10 @@ import {
   getSessionManagerAddress,
 } from "./provider.ts";
 import { assetIdOf } from "./addresses.ts";
+import {
+  verifyAuthorizationVC,
+  type AuthorizationVC,
+} from "./identity.ts";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
 
@@ -52,12 +56,46 @@ function resolveSession():
 }
 
 /**
+ * 驗證使用者簽發的授權 VC：驗簽 + 比對「持有者=本 agent」、「sessionId 相符」、
+ * 並與鏈上 session 交叉比對（issuer==session.user、agent==session.agent）。
+ * 回 null 代表通過；回字串代表拒絕原因（呼叫端據此拒絕下單）。
+ */
+async function verifyVcAgainstChain(
+  vc: AuthorizationVC,
+  sessionId: number,
+  agentAddress: string,
+  mgr: ethers.Contract,
+): Promise<string | null> {
+  const res = verifyAuthorizationVC(vc);
+  if (!res.valid) return `授權憑證(VC)驗證失敗：${res.reason}`;
+  if (res.sessionId !== sessionId)
+    return `VC sessionId(${res.sessionId}) 與請求(${sessionId}) 不符`;
+  if (res.agent && ethers.getAddress(res.agent) !== ethers.getAddress(agentAddress))
+    return `VC 授權的 agent(${res.agent}) 非本 session key(${agentAddress})`;
+
+  // 交叉比對鏈上 session：VC 的 issuer 必須是 session.user、agent 必須是 session.agent。
+  try {
+    const s = await mgr.sessions(sessionId);
+    if (res.issuer && ethers.getAddress(s.user) !== ethers.getAddress(res.issuer))
+      return `VC 簽發者(${res.issuer}) 非鏈上 session.user(${s.user})`;
+    if (res.agent && ethers.getAddress(s.agent) !== ethers.getAddress(res.agent))
+      return `VC agent 與鏈上 session.agent(${s.agent}) 不符`;
+    if (s.revoked) return "鏈上 session 已撤銷";
+  } catch (err) {
+    return `讀取鏈上 session 失敗：${(err as Error).message}`;
+  }
+  return null;
+}
+
+/**
  * 在 session 限額內為 session.user 開一筆受限部位。
  * @param sessionId 鏈上 session id（由使用者 createSession 建立）
  * @param symbol    資產代號（sBTC…），轉 bytes32 assetId
  * @param isLong    多/空
  * @param marginUsdc 保證金（人類單位，內部轉 18-dec）
  * @param leverage  槓桿（受 session.maxLeverage 約束）
+ * @param authVc    （可選）使用者簽發的授權 VC；提供時下單前**必須驗證通過**，
+ *                  否則拒絕——這就是「可驗證的 agent 自主交易」(VC/SSI)。
  */
 export async function openPositionForSession(params: {
   sessionId: number;
@@ -65,10 +103,24 @@ export async function openPositionForSession(params: {
   isLong: boolean;
   marginUsdc: number;
   leverage: number;
+  authVc?: AuthorizationVC;
 }): Promise<WriteResult> {
   const r = resolveSession();
   if ("error" in r) return { ok: false, error: r.error };
   const { signer, mgr } = r;
+
+  // VC/SSI 閘門：若帶了授權憑證，必須驗證通過（驗簽 + 鏈上 session 交叉比對）才下單。
+  if (params.authVc) {
+    const reason = await verifyVcAgainstChain(
+      params.authVc,
+      params.sessionId,
+      signer.address,
+      mgr,
+    );
+    if (reason) {
+      return { ok: false, error: `拒絕下單（VC 驗證未過）：${reason}`, agent: signer.address };
+    }
+  }
 
   try {
     const assetId = assetIdOf(params.symbol);

@@ -24,6 +24,7 @@ import TableContainer from '@mui/material/TableContainer'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { explorerTx, explorerName } from 'src/lib/pepefi/notify'
+import { agentDid, shortDid } from 'src/lib/pepefi/did'
 import { CHAIN_NAMES } from 'src/contracts/addresses'
 import {
   getSessionManager,
@@ -194,6 +195,8 @@ export default function SessionsPage() {
         <Typography variant="body2" color="text.secondary">
           委派一把有界 session key 給 agent：限單筆保證金、總預算、最大槓桿與到期。
           Agent 只能在限額內經 AgentSessionManager 代你開/平倉，永不持有你的主錢包私鑰。
+          每個 agent 具 <b>did:pkh</b> 身分，授權可憑證化為 <b>W3C VC</b> 供下單前驗簽
+          （SSI / 可驗證自主交易，見 docs/AGENT_IDENTITY_VC_SSI.md）。
         </Typography>
       </Box>
 
@@ -273,7 +276,12 @@ export default function SessionsPage() {
                       return (
                         <TableRow key={s.id} hover>
                           <TableCell sx={{ fontFamily: MONO }}>{s.id}</TableCell>
-                          <TableCell sx={{ fontFamily: MONO }}>{short(s.agent)}</TableCell>
+                          <TableCell sx={{ fontFamily: MONO }}>
+                            {short(s.agent)}
+                            <Box component="span" sx={{ display: 'block', fontSize: 10, color: 'text.disabled' }} title={agentDid(s.agent)}>
+                              {shortDid(s.agent)}
+                            </Box>
+                          </TableCell>
                           <TableCell sx={{ fontFamily: MONO }}>{fUsdc(s.spentMargin)} / {fUsdc(s.totalMarginBudget)}</TableCell>
                           <TableCell sx={{ fontFamily: MONO }}>{fUsdc(s.maxMarginPerTrade)}</TableCell>
                           <TableCell sx={{ fontFamily: MONO }}>{Number(s.maxLeverage)}x</TableCell>

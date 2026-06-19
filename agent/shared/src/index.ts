@@ -5,3 +5,4 @@ export * from "./provider.ts";
 export * from "./format.ts";
 export * from "./aggregate.ts";
 export * from "./write.ts";
+export * from "./identity.ts";
