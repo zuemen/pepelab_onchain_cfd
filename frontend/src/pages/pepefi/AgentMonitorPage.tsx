@@ -56,12 +56,36 @@ interface Revenue {
   // 鏈上讀的 /revenue 不一定帶 byBeneficiary（舊鏈下帳務才有）→ optional + guard。
   byBeneficiary?: Record<string, number> | null
 }
+// ERC-8126 agent 驗證（讀 GET /agent/:did/verification）。
+interface VerificationCheck {
+  type: 'ETV' | 'MCV' | 'SCV' | 'WAV' | 'WV'
+  name: string
+  applicable: boolean
+  passed: boolean
+  score: number
+  details: string
+}
+type RiskTier = 'low' | 'moderate' | 'elevated' | 'high' | 'critical'
+interface AgentVerification {
+  subject: string
+  overallRiskScore: number
+  riskTier: RiskTier
+  assessment: string
+  checks: VerificationCheck[]
+  verifier: string
+}
 
 const fUsdc = (v: bigint) => Number(formatUnits(v, 18)).toLocaleString('en-US', { maximumFractionDigits: 2 })
 const fPrice8 = (p: bigint) => '$' + (Number(p) / 1e8).toLocaleString('en-US', { maximumFractionDigits: 2 })
 const fDate = (ts: bigint) =>
   ts === 0n ? '—' : new Date(Number(ts) * 1000).toLocaleString('zh-TW', { dateStyle: 'short', timeStyle: 'short' })
 const short = (a: string) => `${a.slice(0, 8)}…${a.slice(-6)}`
+
+// ERC-8126 風險分數越低越安全；對應 SSL「綠鎖」式信任色。
+const tierColor = (t: RiskTier): 'success' | 'warning' | 'error' | 'default' =>
+  t === 'low' ? 'success' : t === 'moderate' ? 'success' : t === 'elevated' ? 'warning' : 'error'
+const checkColor = (c: VerificationCheck): 'success' | 'warning' | 'error' | 'default' =>
+  !c.applicable ? 'default' : c.score <= 20 ? 'success' : c.score <= 60 ? 'warning' : 'error'
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function AgentMonitorPage() {
@@ -82,6 +106,30 @@ export default function AgentMonitorPage() {
   const [revUrl,   setRevUrl]   = useState(SIGNAL_API_URL)
   const [revErr,   setRevErr]   = useState<string | null>(null)
   const [err,      setErr]      = useState<string | null>(null)
+
+  // ── ERC-8126 agent verification ────────────────────────────────────────────
+  const [vDid,     setVDid]     = useState('')
+  const [verif,    setVerif]    = useState<AgentVerification | null>(null)
+  const [vErr,     setVErr]     = useState<string | null>(null)
+  const [vLoading, setVLoading] = useState(false)
+
+  const fetchVerification = useCallback(async (didOrAddr: string) => {
+    const q = didOrAddr.trim()
+    if (!q) { setVErr('請輸入 agent 地址或 did:pkh'); return }
+    setVLoading(true)
+    try {
+      const res = await fetch(`${revUrl.replace(/\/$/, '')}/agent/${encodeURIComponent(q)}/verification`)
+      const json = await res.json()
+      if (!res.ok || !json.ok) throw new Error(json.error ?? `HTTP ${res.status}`)
+      setVerif(json.verification as AgentVerification)
+      setVErr(null)
+    } catch (e) {
+      setVerif(null)
+      setVErr(e instanceof Error ? e.message : 'fetch failed')
+    } finally {
+      setVLoading(false)
+    }
+  }, [revUrl])
 
   // ── All sessions (risk view) ──────────────────────────────────────────────
   const fetchSessions = useCallback(async () => {
@@ -144,6 +192,10 @@ export default function AgentMonitorPage() {
   useEffect(() => { void fetchSessions() }, [fetchSessions])
   useEffect(() => { void fetchOracle() }, [fetchOracle])
   useEffect(() => { void fetchRevenue() }, [fetchRevenue])
+  // 預填第一個 session 的 agent，方便一鍵驗證。
+  useEffect(() => {
+    if (!vDid && sessions.length > 0) setVDid(sessions[0].agent)
+  }, [sessions, vDid])
 
   // risk helpers
   const utilPct = (s: SessionRisk) => (s.budget === 0n ? 0 : Math.min(100, (Number(s.spent) / Number(s.budget)) * 100))
@@ -263,6 +315,60 @@ export default function AgentMonitorPage() {
               </TableBody>
             </Table>
           </TableContainer>
+        )}
+      </Card>
+
+      {/* ERC-8126 agent verification — SSL「綠鎖」式信任訊號 */}
+      <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+          <Box>
+            <Typography variant="h6" sx={{ fontWeight: 'bold' }}>Agent Verification (ERC-8126)</Typography>
+            <Typography variant="caption" color="text.secondary">
+              「這個 agent 可不可信？」— ETV / SCV / WAV / WV 四項檢查 + 統一 0–100 風險分數（越低越安全），verifier 簽章。
+            </Typography>
+          </Box>
+        </Box>
+        <Stack direction="row" spacing={1}>
+          <TextField
+            size="small"
+            fullWidth
+            label="agent 地址或 did:pkh"
+            value={vDid}
+            onChange={e => setVDid(e.target.value)}
+            placeholder="0x… 或 did:pkh:eip155:84532:0x…"
+          />
+          <Button variant="outlined" disabled={vLoading} onClick={() => void fetchVerification(vDid)} sx={{ textTransform: 'none' }}>
+            {vLoading ? '驗證中…' : 'Verify'}
+          </Button>
+        </Stack>
+        {vErr && <Alert severity="warning">無法取得驗證（{vErr}）。請確認 signal-api URL，並見 docs/AGENT_ECONOMY_STANDARDS.md。</Alert>}
+        {verif && (
+          <Stack spacing={2}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+              <Chip
+                label={`風險 ${verif.overallRiskScore}/100 · ${verif.riskTier.toUpperCase()}`}
+                color={tierColor(verif.riskTier)}
+                sx={{ fontFamily: MONO, fontWeight: 'bold' }}
+              />
+              <Typography variant="caption" color="text.secondary">{verif.assessment}</Typography>
+            </Box>
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+              {verif.checks.map(c => (
+                <Chip
+                  key={c.type}
+                  size="small"
+                  variant="outlined"
+                  color={checkColor(c)}
+                  label={`${c.type} ${c.applicable ? c.score : 'N/A'}`}
+                  title={`${c.name}: ${c.details}`}
+                  sx={{ fontFamily: MONO }}
+                />
+              ))}
+            </Stack>
+            <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
+              subject: {short(verif.subject.replace(/^did:pkh:eip155:\d+:/, ''))} · verifier: {short(verif.verifier.replace(/^did:pkh:eip155:\d+:/, ''))}
+            </Typography>
+          </Stack>
         )}
       </Card>
 
