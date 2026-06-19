@@ -31,6 +31,14 @@ import {
   getSessionManagerAddress,
   isSessionManagerDeployed,
 } from 'src/contracts/sessionManager'
+import {
+  AUTH_DOMAIN,
+  AUTH_TYPES,
+  buildAuthTypedValue,
+  assembleAuthorizationVC,
+  type AuthorizationCaps,
+  type AuthorizationVC,
+} from 'src/contracts/agentAuth'
 
 // ── Types ───────────────────────────────────────────────────────────────────
 interface SessionRow {
@@ -75,9 +83,81 @@ export default function SessionsPage() {
   const [maxLev,   setMaxLev]   = useState('5')
   const [hours,    setHours]    = useState('24')
 
+  // Onboarding: issued VCs (in-memory only) + which session's export panel is open
+  const [vcBySession, setVcBySession] = useState<Record<number, AuthorizationVC>>({})
+  const [exportFor,   setExportFor]   = useState<number | null>(null)
+
   const notify = (msg: string, ok: boolean, hash?: string) => {
     setToast({ msg, ok, hash })
     setTimeout(() => setToast(null), 6000)
+  }
+
+  // ── Export helpers ──────────────────────────────────────────────────────────
+  const copyText = async (label: string, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      notify(`${label} copied ✓`, true)
+    } catch {
+      notify('複製失敗（瀏覽器剪貼簿權限）', false)
+    }
+  }
+  const downloadJson = (filename: string, obj: unknown) => {
+    const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  // Claude Desktop / Code MCP config — auto-filled; AGENT_PRIVATE_KEY stays a
+  // placeholder (the website never generates or embeds a real private key).
+  const mcpConfig = (sessionId: number) => ({
+    mcpServers: {
+      'pepelab-cfd': {
+        command: 'npx',
+        args: ['-y', 'tsx', '/path/to/pepelab_onchain_cfd/agent/mcp-server/src/index.ts'],
+        env: {
+          AGENT_PRIVATE_KEY: '0x...   # your agent session key — keep local, never share',
+          SESSION_MANAGER_ADDRESS: getSessionManagerAddress(wallet.chainId),
+          BASE_SEPOLIA_RPC_URL: 'https://sepolia.base.org',
+          DEMO_SESSION_ID: String(sessionId),
+        },
+      },
+    },
+  })
+
+  // ── Issue authorization VC (user signs in MetaMask — SSI issuer role) ─────────
+  const issueCredential = async (s: SessionRow) => {
+    if (!wallet.signer || !wallet.address) {
+      notify('需連接真實錢包以簽署 VC（mock 模式不支援簽章）', false)
+      return
+    }
+    const key = `vc_${s.id}`
+    try {
+      setBusy(p => ({ ...p, [key]: true }))
+      const caps: AuthorizationCaps = {
+        maxMarginPerTrade: formatUnits(s.maxMarginPerTrade, 18),
+        totalBudget:       formatUnits(s.totalMarginBudget, 18),
+        maxLeverage:       Number(s.maxLeverage),
+        expiry:            Number(s.expiry),
+      }
+      const issuedAt = Math.floor(Date.now() / 1000)
+      // 與 agent 端 verifyAuthorizationVC 共用同一組 EIP-712 schema（agentAuth.ts）。
+      const value = buildAuthTypedValue({ issuer: wallet.address, agent: s.agent, sessionId: s.id, caps, issuedAt })
+      const signature = await wallet.signer.signTypedData(AUTH_DOMAIN, AUTH_TYPES, value)
+      const vc = assembleAuthorizationVC({
+        issuerAddress: wallet.address, agentAddress: s.agent, sessionId: s.id, caps, issuedAt, signature,
+      })
+      setVcBySession(p => ({ ...p, [s.id]: vc }))
+      setExportFor(s.id)
+      notify('Credential issued ✓', true)
+    } catch (e) {
+      notify(prettyError(e), false)
+    } finally {
+      setBusy(p => ({ ...p, [key]: false }))
+    }
   }
 
   // ── Fetch this wallet's sessions ──────────────────────────────────────────
@@ -200,6 +280,21 @@ export default function SessionsPage() {
         </Typography>
       </Box>
 
+      {/* SSI 角色說明 — 一眼看懂三角 */}
+      <Alert severity="info" variant="outlined" icon={false}>
+        <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+          SSI 三角：你的錢包就是信任根
+        </Typography>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={{ xs: 0.5, sm: 3 }} sx={{ typography: 'caption' }}>
+          <span>🖊️ <b>Issuer＝你</b>：用 MetaMask 簽發授權 VC（私鑰不離開錢包）</span>
+          <span>🤖 <b>Holder＝agent</b>：持 VC + session key 代你下單</span>
+          <span>✅ <b>Verifier＝MCP/合約</b>：下單前驗簽 + 鏈上 session 交叉比對</span>
+        </Stack>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+          流程：連錢包 → 設限額建 session → 簽發授權 VC → 一鍵匯出 agent 設定 → 之後只下口頭交易意圖。
+        </Typography>
+      </Alert>
+
       {!deployed ? (
         <Alert severity="warning">
           <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
@@ -264,7 +359,7 @@ export default function SessionsPage() {
                 <Table size="small">
                   <TableHead>
                     <TableRow sx={{ bgcolor: 'background.neutral' }}>
-                      {['#', 'Agent', 'Spent / Budget', 'Max/trade', 'Lev', 'Expiry', 'Status', ''].map(h => (
+                      {['#', 'Agent', 'Spent / Budget', 'Max/trade', 'Lev', 'Expiry', 'Status', 'Credential', ''].map(h => (
                         <TableCell key={h} sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{h}</TableCell>
                       ))}
                     </TableRow>
@@ -287,6 +382,26 @@ export default function SessionsPage() {
                           <TableCell sx={{ fontFamily: MONO }}>{Number(s.maxLeverage)}x</TableCell>
                           <TableCell sx={{ fontSize: '0.75rem' }}>{fDate(s.expiry)}</TableCell>
                           <TableCell><Chip size="small" label={st.label} color={st.color} variant="outlined" /></TableCell>
+                          <TableCell>
+                            {vcBySession[s.id] ? (
+                              <Stack direction="row" spacing={0.5} alignItems="center">
+                                <Chip size="small" label="Issued ✓" color="success" variant="outlined" />
+                                <Button size="small" variant="text" onClick={() => setExportFor(s.id)} sx={{ textTransform: 'none', minWidth: 0 }}>
+                                  Export
+                                </Button>
+                              </Stack>
+                            ) : (
+                              <Button
+                                size="small" variant="outlined"
+                                onClick={() => void issueCredential(s)}
+                                disabled={s.revoked || Number(s.expiry) * 1000 < Date.now() || !!busy[`vc_${s.id}`] || !wallet.signer}
+                                sx={{ textTransform: 'none' }}
+                                title={!wallet.signer ? '需真實錢包簽署（mock 模式不支援）' : 'MetaMask 簽發授權 VC'}
+                              >
+                                {busy[`vc_${s.id}`] ? 'Signing…' : 'Issue VC'}
+                              </Button>
+                            )}
+                          </TableCell>
                           <TableCell align="right">
                             <Button
                               size="small" variant="outlined" color="error"
@@ -305,6 +420,62 @@ export default function SessionsPage() {
               </TableContainer>
             )}
           </Card>
+
+          {/* Export / Connect your Agent */}
+          {exportFor !== null && vcBySession[exportFor] && (() => {
+            const sid = exportFor
+            const vc = vcBySession[sid]
+            const cfg = mcpConfig(sid)
+            const cfgStr = JSON.stringify(cfg, null, 2)
+            const vcStr = JSON.stringify(vc, null, 2)
+            const preSx = {
+              fontFamily: MONO, fontSize: 11, m: 0, p: 1.5, borderRadius: 1,
+              bgcolor: 'background.neutral', maxHeight: 220, overflow: 'auto', whiteSpace: 'pre' as const,
+            }
+            return (
+              <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Typography variant="h6" sx={{ fontWeight: 'bold' }}>🔌 Connect your Agent — Session #{sid}</Typography>
+                  <Button variant="text" size="small" onClick={() => setExportFor(null)} sx={{ textTransform: 'none' }}>Close</Button>
+                </Box>
+                <Typography variant="body2" color="text.secondary">
+                  把以下兩份貼進你本機的 agent client，之後只需下「口頭交易意圖」，agent 會在 session 限額內憑 VC 代你下單：
+                </Typography>
+                <Box component="ol" sx={{ pl: 2.5, m: 0, typography: 'caption', color: 'text.secondary' }}>
+                  <li>把 <b>MCP 設定</b>貼進 Claude Desktop/Code 的 <code>mcpServers</code>，並把 <code>AGENT_PRIVATE_KEY</code> 換成你本機 agent 的 session key。</li>
+                  <li>把 <b>授權 VC</b> 存成檔案，agent 下單時以 <code>AGENT_AUTH_VC_PATH</code> 指向它（或 MCP <code>open_position</code> 的 <code>authVcJson</code>）。</li>
+                  <li>完成後直接對 agent 說：「幫我用 3x 槓桿做多 sBTC、保證金 200」即可，無需再報帳號/位址。</li>
+                </Box>
+
+                {/* MCP config */}
+                <Box>
+                  <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>MCP 設定（Claude Desktop / Code）</Typography>
+                    <Button size="small" variant="outlined" onClick={() => void copyText('MCP config', cfgStr)} sx={{ textTransform: 'none' }}>Copy</Button>
+                    <Button size="small" variant="outlined" onClick={() => downloadJson(`pepelab-mcp-session-${sid}.json`, cfg)} sx={{ textTransform: 'none' }}>Download .json</Button>
+                  </Stack>
+                  <Box component="pre" sx={preSx}>{cfgStr}</Box>
+                </Box>
+
+                {/* Authorization VC */}
+                <Box>
+                  <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>授權 VC（下單驗證用）</Typography>
+                    <Button size="small" variant="outlined" onClick={() => void copyText('Authorization VC', vcStr)} sx={{ textTransform: 'none' }}>Copy</Button>
+                    <Button size="small" variant="outlined" onClick={() => downloadJson(`pepelab-auth-vc-session-${sid}.json`, vc)} sx={{ textTransform: 'none' }}>Download .json</Button>
+                  </Stack>
+                  <Box component="pre" sx={preSx}>{vcStr}</Box>
+                </Box>
+
+                <Alert severity="warning" variant="outlined">
+                  <Typography variant="caption">
+                    agent 私鑰只放你本機的 agent 設定，<b>勿外流</b>。本網站不會產生、儲存或嵌入任何真實私鑰；
+                    匯出的 <code>AGENT_PRIVATE_KEY</code> 一律為佔位字串。
+                  </Typography>
+                </Alert>
+              </Card>
+            )
+          })()}
 
           <Divider />
           <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
