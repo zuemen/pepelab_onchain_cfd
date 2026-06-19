@@ -8,14 +8,21 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { paymentMiddleware, type Network } from "x402-hono";
+import { ethers } from "ethers";
 import {
   resolvePayTo,
   ADDRESSES,
   makeProvider,
   makeContracts,
+  makeSigner,
+  getSessionManagerAddress,
   getTraderPerformance,
   getOracleSnapshot,
   jsonSafe,
+  parseDidPkh,
+  agentDid,
+  buildAgentVerification,
+  type ContractTarget,
 } from "@pepelab/shared";
 import { isSettlementEnabled, settleRevenue } from "./settlement.ts";
 import { getOnchainRevenue, isOnchainRevenueEnabled } from "./onchainRevenue.ts";
@@ -34,6 +41,41 @@ export const PRICE_ORACLE = 0.005; // USDC
 
 const provider = makeProvider();
 const contracts = makeContracts(provider);
+
+// ── ERC-8126 verification layer ───────────────────────────────────────────────
+// Verifier identity that signs agent verification attestations. Prefers
+// VERIFIER_PRIVATE_KEY; falls back to a process-stable random wallet so the
+// endpoint works out-of-the-box (each attestation self-describes its verifier
+// DID, and tamper-detection still holds within a process lifetime).
+const VERIFIER_WALLET = (() => {
+  const pk = process.env.VERIFIER_PRIVATE_KEY?.trim();
+  if (pk && pk.startsWith("0x") && pk.length === 66) return new ethers.Wallet(pk);
+  return ethers.Wallet.createRandom();
+})();
+
+// Public base URL for the WAV (web-accessible) self-check. SIGNAL_API_PUBLIC_URL
+// overrides; otherwise derived per-request from the incoming origin.
+function resolveApiBaseUrl(reqUrl: string): string {
+  const fromEnv = process.env.SIGNAL_API_PUBLIC_URL?.trim();
+  if (fromEnv) return fromEnv.replace(/\/$/, "");
+  try {
+    return new URL(reqUrl).origin;
+  } catch {
+    return "http://localhost:4021";
+  }
+}
+
+// ETV targets: settlement token + core protocol contract (must exist on-chain).
+const ETV_TARGETS: ContractTarget[] = [
+  { label: "USDC (settlement)", address: SETTLEMENT_TOKEN },
+  { label: "PerpetualExchange", address: ADDRESSES.PerpetualExchange },
+];
+// SCV targets: core contracts whose source should be explorer-verified.
+const SCV_TARGETS: ContractTarget[] = [
+  { label: "PerpetualExchange", address: ADDRESSES.PerpetualExchange },
+  { label: "FeeRouter", address: ADDRESSES.FeeRouter },
+  { label: "AgentSessionManager", address: getSessionManagerAddress() },
+];
 
 // 解析分析對象（demo 用）：env 優先，否則鏈上第一個已註冊 trader。
 async function resolveTrader(want?: string): Promise<string> {
@@ -78,6 +120,7 @@ export function createApp(): Hono {
         "GET /signals/:trader": { price: `$${PRICE_SIGNALS}`, paid: true, desc: "trader 績效 + 開倉建議" },
         "GET /oracle/:asset": { price: `$${PRICE_ORACLE}`, paid: true, desc: "價格 + funding + OI 快照" },
         "GET /revenue": { price: "free", desc: "鏈上 70/20/10 累計（可選 ?trader=）" },
+        "GET /agent/:did/verification": { price: "free", desc: "ERC-8126 agent 驗證（ETV/SCV/WAV/WV + 0–100 風險分數，verifier 簽章）" },
         "POST /demo/buy-signal": { price: "free", desc: "訪客試買（伺服器代付，回真實 settlement tx）" },
       },
       example: {
@@ -94,6 +137,43 @@ export function createApp(): Hono {
       return c.json(jsonSafe(await getOnchainRevenue(trader)));
     } catch (err) {
       return c.json({ ok: false, error: (err as Error).message }, 502);
+    }
+  });
+
+  // ── 免費：ERC-8126 agent 驗證層（對手方/marketplace 可查「這個 agent 可不可信」）──
+  app.get("/agent/:did/verification", async (c) => {
+    const raw = c.req.param("did");
+    try {
+      // 接受 did:pkh 或裸 0x 地址；裸地址轉成 did:pkh。
+      const did = raw.startsWith("did:") ? raw : agentDid(raw);
+      parseDidPkh(did); // 驗證格式；malformed 直接丟錯 → 400
+      const av = await buildAgentVerification({
+        did,
+        verifier: VERIFIER_WALLET,
+        provider,
+        apiBaseUrl: resolveApiBaseUrl(c.req.url),
+        etvTargets: ETV_TARGETS,
+        scvTargets: SCV_TARGETS,
+        explorerApiKey:
+          process.env.ETHERSCAN_API_KEY?.trim() ||
+          process.env.BASESCAN_API_KEY?.trim(),
+        paidPath: "/oracle/sBTC",
+        // 若伺服器持有的 session key 正好是此 agent，附上持有證明（WV）。
+        holderSigner: (() => {
+          const s = makeSigner(provider);
+          if (!s) return undefined;
+          try {
+            return ethers.getAddress(s.address) === parseDidPkh(did).address
+              ? s
+              : undefined;
+          } catch {
+            return undefined;
+          }
+        })(),
+      });
+      return c.json(jsonSafe({ ok: true, verification: av }));
+    } catch (err) {
+      return c.json({ ok: false, error: (err as Error).message }, 400);
     }
   });
 

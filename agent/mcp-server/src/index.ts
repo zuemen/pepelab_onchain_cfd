@@ -13,17 +13,25 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { ethers } from "ethers";
 import {
   loadEnv,
   makeProvider,
   makeContracts,
+  makeSigner,
+  getSessionManagerAddress,
+  ADDRESSES,
   getTraderPerformance,
   getFundingRate,
   getPositionDetail,
   openPositionForSession,
   closePositionForSession,
   getSession,
+  agentDid,
+  parseDidPkh,
+  buildAgentVerification,
   type AuthorizationVC,
+  type ContractTarget,
   jsonSafe,
 } from "@pepelab/shared";
 
@@ -31,6 +39,13 @@ loadEnv();
 
 const provider = makeProvider();
 const contracts = makeContracts(provider);
+
+// ERC-8126 verifier identity（VERIFIER_PRIVATE_KEY 優先，否則一次性隨機）。
+const VERIFIER_WALLET = (() => {
+  const pk = process.env.VERIFIER_PRIVATE_KEY?.trim();
+  if (pk && pk.startsWith("0x") && pk.length === 66) return new ethers.Wallet(pk);
+  return ethers.Wallet.createRandom();
+})();
 
 const server = new McpServer({
   name: "pepelab-cfd",
@@ -101,6 +116,48 @@ server.tool(
   async ({ sessionId }) => {
     try {
       return ok(await getSession(sessionId));
+    } catch (err) {
+      return fail(err);
+    }
+  },
+);
+
+// ── read: ERC-8126 agent 驗證 ────────────────────────────────────────────────
+server.tool(
+  "get_agent_verification",
+  "取得某 agent 的 ERC-8126 驗證 attestation：ETV/SCV/WAV/WV 四項檢查 + MCV(N/A) + 統一 0–100 風險分數（越低越安全）+ verifier 簽章。用來判斷『這個 agent 可不可信』，可與授權 VC 並用。",
+  { did: z.string().describe("agent 的 did:pkh 或裸 0x 地址") },
+  async ({ did }) => {
+    try {
+      const subject = did.startsWith("did:") ? did : agentDid(did);
+      parseDidPkh(subject); // 驗格式
+      const etvTargets: ContractTarget[] = [
+        { label: "USDC (settlement)", address: process.env.X402_SETTLEMENT_TOKEN?.trim() || "0x036CbD53842c5426634e7929541eC2318f3dCF7e" },
+        { label: "PerpetualExchange", address: ADDRESSES.PerpetualExchange },
+      ];
+      const scvTargets: ContractTarget[] = [
+        { label: "PerpetualExchange", address: ADDRESSES.PerpetualExchange },
+        { label: "FeeRouter", address: ADDRESSES.FeeRouter },
+        { label: "AgentSessionManager", address: getSessionManagerAddress() },
+      ];
+      const signer = makeSigner(provider);
+      const holderSigner =
+        signer && ethers.getAddress(signer.address) === parseDidPkh(subject).address
+          ? signer
+          : undefined;
+      const av = await buildAgentVerification({
+        did: subject,
+        verifier: VERIFIER_WALLET,
+        provider,
+        apiBaseUrl: process.env.SIGNAL_API_PUBLIC_URL?.trim() || "http://localhost:4021",
+        etvTargets,
+        scvTargets,
+        explorerApiKey:
+          process.env.ETHERSCAN_API_KEY?.trim() || process.env.BASESCAN_API_KEY?.trim(),
+        paidPath: "/oracle/sBTC",
+        holderSigner,
+      });
+      return ok(av);
     } catch (err) {
       return fail(err);
     }

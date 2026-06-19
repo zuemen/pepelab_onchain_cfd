@@ -12,13 +12,70 @@ import {
   makeSessionManager,
   getSessionManagerAddress,
 } from "./provider.ts";
-import { assetIdOf } from "./addresses.ts";
+import { ADDRESSES, assetIdOf } from "./addresses.ts";
 import {
   verifyAuthorizationVC,
   type AuthorizationVC,
 } from "./identity.ts";
+import {
+  buildAgentVerification,
+  type ContractTarget,
+} from "./verification.ts";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
+// 官方 Base Sepolia USDC（與 signal-api SETTLEMENT_TOKEN 預設一致）。
+const DEFAULT_USDC = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
+
+/**
+ * ERC-8126 風險分數下單閘門（**預設關閉**，向後相容）。
+ * 開啟方式：RISK_GATE_ENABLED=true；門檻 RISK_SCORE_MAX（預設 40＝moderate 以內放行）。
+ * 開啟後，除了授權 VC，agent 自身的 ERC-8126 風險分數必須 ≤ 門檻才放行。
+ * 回 null＝通過（或未啟用）；回字串＝拒絕原因。
+ */
+async function checkRiskGate(
+  signer: ethers.Wallet,
+  provider: ethers.JsonRpcProvider,
+): Promise<string | null> {
+  if (process.env.RISK_GATE_ENABLED?.trim().toLowerCase() !== "true") return null;
+  const threshold = Number(process.env.RISK_SCORE_MAX ?? "40");
+
+  // verifier 身分：VERIFIER_PRIVATE_KEY 優先，否則用一次性隨機錢包（仍可算分）。
+  const vpk = process.env.VERIFIER_PRIVATE_KEY?.trim();
+  const verifier =
+    vpk && vpk.startsWith("0x") && vpk.length === 66
+      ? new ethers.Wallet(vpk)
+      : ethers.Wallet.createRandom();
+
+  const usdc = process.env.X402_SETTLEMENT_TOKEN?.trim() || DEFAULT_USDC;
+  const etvTargets: ContractTarget[] = [
+    { label: "USDC (settlement)", address: usdc },
+    { label: "PerpetualExchange", address: ADDRESSES.PerpetualExchange },
+  ];
+  const scvTargets: ContractTarget[] = [
+    { label: "PerpetualExchange", address: ADDRESSES.PerpetualExchange },
+    { label: "FeeRouter", address: ADDRESSES.FeeRouter },
+  ];
+
+  try {
+    const av = await buildAgentVerification({
+      did: signer.address,
+      verifier,
+      provider,
+      apiBaseUrl: process.env.SIGNAL_API_PUBLIC_URL?.trim() || "http://localhost:4021",
+      etvTargets,
+      scvTargets,
+      explorerApiKey:
+        process.env.ETHERSCAN_API_KEY?.trim() || process.env.BASESCAN_API_KEY?.trim(),
+      holderSigner: signer, // agent 對自己下單 → 可出示持有證明
+    });
+    if (av.overallRiskScore > threshold) {
+      return `agent 風險分數 ${av.overallRiskScore}（${av.riskTier}）超過門檻 ${threshold}`;
+    }
+    return null;
+  } catch (err) {
+    return `風險閘門評估失敗：${(err as Error).message}`;
+  }
+}
 
 export interface WriteResult {
   ok: boolean;
@@ -120,6 +177,12 @@ export async function openPositionForSession(params: {
     if (reason) {
       return { ok: false, error: `拒絕下單（VC 驗證未過）：${reason}`, agent: signer.address };
     }
+  }
+
+  // ERC-8126 風險閘門（預設關，旗標開啟才生效）。
+  const riskReason = await checkRiskGate(signer, makeProvider());
+  if (riskReason) {
+    return { ok: false, error: `拒絕下單（風險閘門）：${riskReason}`, agent: signer.address };
   }
 
   try {
