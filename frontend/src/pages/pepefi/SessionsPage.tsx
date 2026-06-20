@@ -1,6 +1,6 @@
 import { MONO } from 'src/components/pepefi/brandKit'
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { parseUnits, formatUnits } from 'ethers'
+import { parseUnits, formatUnits, Wallet, getAddress } from 'ethers'
 
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
@@ -16,6 +16,8 @@ import TextField from '@mui/material/TextField'
 import Container from '@mui/material/Container'
 import Typography from '@mui/material/Typography'
 import IconButton from '@mui/material/IconButton'
+import Checkbox from '@mui/material/Checkbox'
+import FormControlLabel from '@mui/material/FormControlLabel'
 import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
 import DialogActions from '@mui/material/DialogActions'
@@ -88,6 +90,21 @@ export default function SessionsPage() {
   const [maxLev,   setMaxLev]   = useState('5')
   const [hours,    setHours]    = useState('24')
 
+  // Generated agent burner key — **kept only in memory**, never persisted / sent.
+  const [genKey,    setGenKey]    = useState<{ address: string; privateKey: string } | null>(null)
+  const [revealKey, setRevealKey] = useState(false)
+  const [includeKey, setIncludeKey] = useState(false) // opt-in: embed real key in exported MCP config
+
+  // Generate a fresh agent-only keypair in the browser and auto-fill the address.
+  const generateAgentKey = () => {
+    const w = Wallet.createRandom()
+    setGenKey({ address: w.address, privateKey: w.privateKey })
+    setRevealKey(false)
+    setIncludeKey(false)
+    setAgent(w.address) // 自動填入 Agent address 欄
+    notify('已產生 agent 專用金鑰（只在本機瀏覽器，請立即保存）', true)
+  }
+
   // Onboarding: issued VCs (persisted in localStorage, keyed by wallet+chain) +
   // which session's export dialog is open.
   const [vcBySession, setVcBySession] = useState<Record<number, AuthorizationVC>>({})
@@ -135,15 +152,27 @@ export default function SessionsPage() {
     URL.revokeObjectURL(url)
   }
 
-  // Claude Desktop / Code MCP config — auto-filled; AGENT_PRIVATE_KEY stays a
-  // placeholder (the website never generates or embeds a real private key).
-  const mcpConfig = (sessionId: number) => ({
+  // Whether the generated burner key belongs to a given session's agent (so the
+  // export can offer to embed it). Compares checksummed addresses.
+  const genKeyMatchesAgent = (agentAddr: string): boolean => {
+    if (!genKey) return false
+    try { return getAddress(genKey.address) === getAddress(agentAddr) } catch { return false }
+  }
+
+  // Claude Desktop / Code MCP config — auto-filled. AGENT_PRIVATE_KEY stays a
+  // placeholder UNLESS the user explicitly opts to embed the key they just
+  // generated on this page (includeKey + same agent). The website never embeds
+  // any other private key.
+  const mcpConfig = (sessionId: number, agentAddr: string) => ({
     mcpServers: {
       'pepelab-cfd': {
         command: 'npx',
         args: ['-y', 'tsx', '/path/to/pepelab_onchain_cfd/agent/mcp-server/src/index.ts'],
         env: {
-          AGENT_PRIVATE_KEY: '0x...   # your agent session key — keep local, never share',
+          AGENT_PRIVATE_KEY:
+            includeKey && genKeyMatchesAgent(agentAddr) && genKey
+              ? genKey.privateKey
+              : '0x...   # 貼上你剛產生/保存的 agent 私鑰（放本機，勿外流）',
           SESSION_MANAGER_ADDRESS: getSessionManagerAddress(wallet.chainId),
           BASE_SEPOLIA_RPC_URL: 'https://sepolia.base.org',
           DEMO_SESSION_ID: String(sessionId),
@@ -338,18 +367,64 @@ export default function SessionsPage() {
           {/* Create session */}
           <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
             <Typography variant="h6" sx={{ fontWeight: 'bold' }}>Create Session</Typography>
-            <TextField
-              label="Agent address (session key)"
-              placeholder="0x…"
-              value={agent}
-              onChange={e => setAgent(e.target.value)}
-              size="small"
-              fullWidth
-            />
+
+            {/* 觀念說明：agent 用獨立 session key，不是主錢包 */}
+            <Alert severity="info" variant="outlined" icon={false} sx={{ py: 0.5 }}>
+              <Typography variant="caption">
+                <b>agent 用一把獨立的 session key，不是你的主錢包</b>：
+                <b>地址</b> → 拿來授權下面這個 session；<b>私鑰</b> → 放進 agent 的 MCP 設定 + 一點 ETH 付 gas。
+                沒有現成的就按「Generate agent key」在瀏覽器產生一把全新 burner。
+              </Typography>
+            </Alert>
+
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }}>
+              <TextField
+                label="Agent address (session key)"
+                placeholder="0x…"
+                value={agent}
+                onChange={e => setAgent(e.target.value)}
+                size="small"
+                fullWidth
+              />
+              <Button
+                variant="outlined"
+                onClick={generateAgentKey}
+                sx={{ textTransform: 'none', whiteSpace: 'nowrap', minWidth: 180 }}
+                startIcon={<span>🔑</span>}
+              >
+                Generate agent key
+              </Button>
+            </Stack>
+
+            {/* 產生的金鑰只顯示一次（記憶體，不入庫/不上傳） */}
+            {genKey && (
+              <Alert severity="warning" variant="outlined" sx={{ '& .MuiAlert-message': { width: '100%' } }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>🔑 你的 agent 專用金鑰（burner）</Typography>
+                  <Button size="small" variant="text" color="inherit" onClick={() => { setGenKey(null); setRevealKey(false); setIncludeKey(false) }} sx={{ textTransform: 'none' }}>清除</Button>
+                </Box>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                  這是一把獨立的 burner 金鑰，只受你下面設的 session 限額拘束。請存到本機 agent 設定，<b>別放主錢包資產</b>。本頁只顯示這一次，且不會上傳或寫入伺服器。
+                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                  <Chip size="small" label="地址（會上鏈授權）" color="success" variant="outlined" />
+                  <Typography variant="caption" sx={{ fontFamily: MONO, wordBreak: 'break-all', flex: 1 }}>{genKey.address}</Typography>
+                  <Button size="small" variant="outlined" onClick={() => void copyText('Agent address', genKey.address)} sx={{ textTransform: 'none' }}>Copy</Button>
+                </Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Chip size="small" label="私鑰（只放本機）" color="error" variant="outlined" />
+                  <Typography variant="caption" sx={{ fontFamily: MONO, wordBreak: 'break-all', flex: 1 }}>
+                    {revealKey ? genKey.privateKey : '•'.repeat(24) + ' （已隱藏）'}
+                  </Typography>
+                  <Button size="small" variant="text" onClick={() => setRevealKey(v => !v)} sx={{ textTransform: 'none', minWidth: 0 }}>{revealKey ? 'Hide' : 'Reveal'}</Button>
+                  <Button size="small" variant="outlined" color="error" onClick={() => void copyText('Agent private key', genKey.privateKey)} sx={{ textTransform: 'none' }}>Copy</Button>
+                </Box>
+              </Alert>
+            )}
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-              <TextField label="Max / trade (USDC)" type="number" value={perTrade}
+              <TextField label="Max / trade (USDT)" type="number" value={perTrade}
                 onChange={e => setPerTrade(e.target.value)} size="small" fullWidth />
-              <TextField label="Total budget (USDC)" type="number" value={budget}
+              <TextField label="Total budget (USDT)" type="number" value={budget}
                 onChange={e => setBudget(e.target.value)} size="small" fullWidth />
             </Stack>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
@@ -465,7 +540,9 @@ export default function SessionsPage() {
             {exportFor !== null && vcBySession[exportFor] && (() => {
               const sid = exportFor
               const vc = vcBySession[sid]
-              const cfg = mcpConfig(sid)
+              const sessAgent = sessions.find(s => s.id === sid)?.agent ?? vc.credentialSubject.id.split(':').pop() ?? ''
+              const canIncludeKey = genKeyMatchesAgent(sessAgent)
+              const cfg = mcpConfig(sid, sessAgent)
               const cfgStr = JSON.stringify(cfg, null, 2)
               const vcStr = JSON.stringify(vc, null, 2)
               const preSx = {
@@ -488,13 +565,36 @@ export default function SessionsPage() {
                       <li>完成後直接對 agent 說：「幫我用 3x 槓桿做多 sBTC、保證金 200」即可，無需再報帳號/位址。</li>
                     </Box>
 
+                    {/* 地址 vs 私鑰 對應，避免混淆 */}
+                    <Alert severity="info" variant="outlined" icon={false} sx={{ py: 0.5 }}>
+                      <Typography variant="caption">
+                        <b>地址</b>（<code>{short(sessAgent)}</code>）＝已上鏈授權的 agent，放在 session / VC 裡；
+                        <b>私鑰</b>＝對應這個地址、只放本機 agent 設定的 <code>AGENT_PRIVATE_KEY</code>。兩者是同一把 key 的公開/秘密兩面。
+                      </Typography>
+                    </Alert>
+
                     {/* MCP config */}
                     <Box>
-                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
+                      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mb: 0.5 }}>
                         <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>MCP 設定（Claude Desktop / Code）</Typography>
                         <Button size="small" variant="outlined" onClick={() => void copyText('MCP config', cfgStr)} sx={{ textTransform: 'none' }}>Copy</Button>
                         <Button size="small" variant="outlined" onClick={() => downloadJson(`pepelab-mcp-session-${sid}.json`, cfg)} sx={{ textTransform: 'none' }}>Download .json</Button>
                       </Stack>
+                      {canIncludeKey ? (
+                        <FormControlLabel
+                          control={<Checkbox size="small" color="error" checked={includeKey} onChange={e => setIncludeKey(e.target.checked)} />}
+                          label={
+                            <Typography variant="caption" color={includeKey ? 'error.main' : 'text.secondary'}>
+                              把我剛產生的 agent 私鑰填進 <code>AGENT_PRIVATE_KEY</code>（含真鑰，請只在自己機器使用）
+                            </Typography>
+                          }
+                          sx={{ mb: 0.5 }}
+                        />
+                      ) : (
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                          <code>AGENT_PRIVATE_KEY</code> 為佔位 — 貼上你保存的 agent 私鑰即可（在本頁用「Generate agent key」產生的，可勾選自動填入）。
+                        </Typography>
+                      )}
                       <Box component="pre" sx={preSx}>{cfgStr}</Box>
                     </Box>
 
@@ -510,8 +610,8 @@ export default function SessionsPage() {
 
                     <Alert severity="warning" variant="outlined">
                       <Typography variant="caption">
-                        agent 私鑰只放你本機的 agent 設定，<b>勿外流</b>。本網站不會產生、儲存或嵌入任何真實私鑰；
-                        匯出的 <code>AGENT_PRIVATE_KEY</code> 一律為佔位字串。
+                        agent 私鑰只放你本機的 agent 設定，<b>勿外流</b>。私鑰只存在你瀏覽器記憶體（不寫伺服器、不入庫）；
+                        預設匯出的 <code>AGENT_PRIVATE_KEY</code> 為佔位字串，只有你<b>明確勾選「填入私鑰」</b>時才會含真鑰——此時請勿把這份 JSON 貼到任何他人/公開處。
                       </Typography>
                     </Alert>
                   </DialogContent>
