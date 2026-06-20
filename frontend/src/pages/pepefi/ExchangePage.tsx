@@ -24,7 +24,6 @@ import Card from '@mui/material/Card';
 import Grid from '@mui/material/Grid';
 import Stack from '@mui/material/Stack';
 import Button from '@mui/material/Button';
-import IconButton from '@mui/material/IconButton';
 import Chip from '@mui/material/Chip';
 import Divider from '@mui/material/Divider';
 import Alert from '@mui/material/Alert';
@@ -131,12 +130,7 @@ export default function ExchangePage() {
   const [curPrice,  setCurPrice]  = useState(0n);
   const [pageLoading, setPageLoading] = useState(true);
 
-  const [swapMode,  setSwapMode]  = useState<'eth-to-usdc' | 'usdc-to-eth'>('eth-to-usdc');
-  const [payAmount, setPayAmount] = useState('');
-  const [ammPrice,  setAmmPrice]  = useState(0n);
-  const [ammEth,    setAmmEth]    = useState(0n);
-  const [ammUsdc,   setAmmUsdc]   = useState(0n);
-  const [receiveAmount,  setReceiveAmount]  = useState('');
+  const [pepeBal,   setPepeBal]   = useState(0n);
   const [depositAmt,       setDepositAmt]        = useState('');
   const [withdrawAmt, setWithdrawAmt] = useState('');
   const [selAsset,    setSelAsset]    = useState<AssetId>(ASSET_IDS.sBTC);
@@ -198,24 +192,15 @@ export default function ExchangePage() {
       setFreeMgn(mgn);
       setEthBal(f18(eBal, 4));
 
-      // AMM: skip ALL reads when the pool isn't deployed (address 0x0) → page
-      // falls straight to the "兌換暫不可用 + Faucet" state, no hanging call.
-      const ammAddr = String(contracts.pepeAMM.target);
-      if (ammAddr !== ZERO_ADDR) {
-        const [price, reserves] = await Promise.all([
-          safeRead(contracts.pepeAMM.getPrice() as Promise<bigint>, 0n),
-          safeRead(contracts.pepeAMM.getReserves() as Promise<[bigint, bigint]>, [0n, 0n] as [bigint, bigint]),
-        ]);
-        setAmmPrice(price);
-        setAmmEth(reserves[0]);
-        setAmmUsdc(reserves[1]);
+      // PEPE balance — skip the read when PepeToken isn't deployed on this chain
+      // (address 0x0) so we never call a non-existent contract.
+      if (String(contracts.pepeToken.target) !== ZERO_ADDR) {
+        setPepeBal(await safeRead(contracts.pepeToken.balanceOf(addr) as Promise<bigint>, 0n));
       } else {
-        setAmmPrice(0n);
-        setAmmEth(0n);
-        setAmmUsdc(0n);
+        setPepeBal(0n);
       }
 
-      // Above-the-fold shell (balances, swap/faucet, margin, open-position form)
+      // Above-the-fold shell (balances, faucets, margin, open-position form)
       // is ready → drop the skeleton now. Positions stream in below afterwards,
       // so a slow positions read can't delay the whole page.
       setPageLoading(false);
@@ -307,76 +292,10 @@ export default function ExchangePage() {
     }
   }, [livePrices[selAsset]?.usd, selAsset]);
 
-  // ── Live AMM quote ────────────────────────────────────────────────────────
-  useEffect(() => {
-    // Skip entirely when the pool isn't deployed (0x0) — no read against 0x0.
-    if (!contracts?.pepeAMM || String(contracts.pepeAMM.target) === ZERO_ADDR
-        || !payAmount || parseFloat(payAmount) <= 0) {
-      setReceiveAmount('');
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      try {
-        const parsed = parseEther(payAmount);
-        const out = swapMode === 'eth-to-usdc'
-          ? await contracts.pepeAMM.quoteETHForUSDC(parsed) as bigint
-          : await contracts.pepeAMM.quoteUSDCForETH(parsed) as bigint;
-        if (!cancelled) {
-          setReceiveAmount((Number(out) / 1e18).toFixed(swapMode === 'eth-to-usdc' ? 2 : 6));
-        }
-      } catch {
-        if (!cancelled) { setReceiveAmount(''); }
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [contracts?.pepeAMM, payAmount, swapMode]);
 
   // ── Transactions ────────────────────────────────────────────────────────────
-  const doSwap = async () => {
-    if (!contracts || !wallet.address) return;
-    const amt = parseFloat(payAmount);
-    if (!amt || amt <= 0) { notify('Enter a valid amount', false); return; }
-
-    setLoad('swap', true);
-    try {
-      if (swapMode === 'eth-to-usdc') {
-        const ethIn  = parseEther(payAmount);
-        const quoted = await contracts.pepeAMM.quoteETHForUSDC(ethIn) as bigint;
-        const minOut = quoted * 99n / 100n;
-        const tx = asTx(await contracts.pepeAMM.swapETHForUSDC(minOut, { value: ethIn }));
-        await tx.wait();
-        notify(`Swapped ${payAmount} ETH for ~${(Number(quoted) / 1e18).toFixed(2)} USDT ✓`, true, tx.hash);
-      } else {
-        const usdcIn = parseEther(payAmount);
-
-        const currentAllowance = await contracts.usdc.allowance(
-          wallet.address!,
-          String(contracts.pepeAMM.target)
-        ) as bigint;
-
-        if (currentAllowance < usdcIn) {
-          notify('Approving USDT...', true);
-          const approveTx = asTx(await contracts.usdc.approve(String(contracts.pepeAMM.target), usdcIn));
-          await approveTx.wait();
-        }
-
-        const quoted    = await contracts.pepeAMM.quoteUSDCForETH(usdcIn) as bigint;
-        const minEthOut = quoted * 99n / 100n;
-        const tx = asTx(await contracts.pepeAMM.swapUSDCForETH(usdcIn, minEthOut));
-        await tx.wait();
-        notify(`Swapped ${payAmount} USDT for ~${(Number(quoted) / 1e18).toFixed(6)} ETH ✓`, true, tx.hash);
-      }
-      setPayAmount('');
-      await new Promise(r => setTimeout(r, 1500));
-      await fetchAll();
-    } catch (e) {
-      notify(prettyError(e), false);
-    } finally { setLoad('swap', false); }
-  };
-
-  // Testnet on-ramp: the Base Sepolia AMM pool is unseeded, so users get mock
-  // collateral directly from the MockUSDC faucet instead of swapping ETH.
+  // Testnet on-ramp for the mock margin stablecoin (USDT = MockUSDC). No AMM —
+  // users self-serve from the faucet, then Approve & Deposit as margin.
   const claimFaucet = async () => {
     if (!contracts) return;
     setLoad('faucet', true);
@@ -388,6 +307,21 @@ export default function ExchangePage() {
     } catch (e) {
       notify(prettyError(e), false);
     } finally { setLoad('faucet', false); }
+  };
+
+  // Testnet faucet for the platform token PEPE (guarded: skip if undeployed).
+  const pepeDeployed = !!contracts && String(contracts.pepeToken.target) !== ZERO_ADDR;
+  const claimPepe = async () => {
+    if (!contracts || !pepeDeployed) return;
+    setLoad('pepe', true);
+    try {
+      const tx = asTx(await contracts.pepeToken.faucet());
+      await tx.wait();
+      notify('已領取測試 PEPE ✓', true, tx.hash);
+      await fetchAll();
+    } catch (e) {
+      notify(prettyError(e), false);
+    } finally { setLoad('pepe', false); }
   };
 
   const addToWallet = async () => {
@@ -531,7 +465,8 @@ export default function ExchangePage() {
   const isBusy = !!activeTask;
   let loadingMsg = 'Processing transaction...';
   if (activeTask) {
-    if (activeTask === 'swap') loadingMsg = swapMode === 'eth-to-usdc' ? 'Swapping ETH to USDT...' : 'Swapping USDT to ETH...';
+    if (activeTask === 'faucet') loadingMsg = 'Claiming test USDT…';
+    else if (activeTask === 'pepe') loadingMsg = 'Claiming test PEPE…';
     else if (activeTask === 'deposit') loadingMsg = 'Depositing Margin...';
     else if (activeTask === 'withdraw') loadingMsg = 'Withdrawing Margin...';
     else if (activeTask === 'open') loadingMsg = 'Opening Position...';
@@ -644,7 +579,7 @@ export default function ExchangePage() {
           How CFD trading works on PepeLab
         </Typography>
         <Typography variant="body2" component="ol" sx={{ pl: 2, m: 0, '& li': { mb: 0.5 } }}>
-          <li><strong>Swap:</strong> Swap ETH for USDT to get your stablecoin collateral.</li>
+          <li><strong>Get tokens:</strong> Claim test USDT (and PEPE) from the faucet — no swap needed.</li>
           <li><strong>Margin Account:</strong> Approve &amp; deposit USDT into PerpetualExchange. This becomes your free margin.</li>
           <li><strong>Open Position:</strong> Use free margin to open long/short on 11 synthetic assets — crypto (sBTC, sETH), equity (sAAPL, sTSLA, sNVDA, sMSFT, sGOOGL), commodity (sGOLD), bond (sBOND), and ESG ETFs (sICLN, sESGU). 🔒 = KYC required.</li>
           <li><strong>PnL:</strong> Price moves → position value changes → close to realize PnL.</li>
@@ -657,216 +592,80 @@ export default function ExchangePage() {
 
       {/* A & B — Swap + Margin */}
       <Grid container spacing={3}>
-        {/* A. Swap (Uniswap Style) */}
+        {/* A. Get Test Tokens — faucets (no AMM) */}
         <Grid size={{ xs: 12, md: 6 }}>
-          <Card
-            sx={{
-              p: 2,
-              bgcolor: '#0D111C',
-              border: '1px solid rgba(255,255,255,0.06)',
-              borderRadius: 3,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 2,
-              height: '100%',
-            }}
-          >
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 1 }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'white' }}>Swap</Typography>
-              <IconButton size="small" sx={{ color: 'text.secondary' }}>
-                <Icon icon="solar:settings-bold-duotone" width={20} />
-              </IconButton>
+          <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5, height: '100%' }}>
+            <Box>
+              <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>🚰 Get Test Tokens</Typography>
+              <Typography variant="caption" color="text.secondary">
+                PEPE 是平台幣（測試網模擬），用水龍頭免費領取；USDT 為模擬保證金穩定幣；x402 付費用官方 USDC。
+              </Typography>
             </Box>
 
-            {/* Pay block */}
-            <Box sx={{ bgcolor: '#131A2A', borderRadius: 2, p: 2, border: '1px solid transparent', '&:hover': { borderColor: 'rgba(255,255,255,0.08)' } }}>
-              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>You pay</Typography>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                <input
-                  type="number"
-                  placeholder="0"
-                  value={payAmount}
-                  onChange={e => setPayAmount(e.target.value)}
-                  style={{
-                    width: '100%',
-                    background: 'transparent',
-                    border: 'none',
-                    fontSize: '2rem',
-                    color: 'white',
-                    outline: 'none',
-                    fontWeight: 700,
-                    fontFamily: MONO,
-                  }}
-                />
-                {swapMode === 'eth-to-usdc' ? (
-                  <Chip
-                    avatar={<Box component="span" sx={{ width: 20, height: 20, borderRadius: "50%", bgcolor: "#627eea", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: "0.625rem", fontWeight: "bold", color: "white" }}>Ξ</Box>}
-                    label="ETH"
-                    onClick={() => {}}
-                    sx={{ bgcolor: '#293249', color: 'white', fontWeight: 'bold', '&:hover': { bgcolor: '#323D59' } }}
-                  />
-                ) : (
-                  <Chip
-                    avatar={<Box sx={{ width: 20, height: 20, borderRadius: '50%', bgcolor: 'primary.main', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.625rem', fontWeight: 'bold', color: 'white' }}>m</Box>}
-                    label="USDT"
-                    onClick={() => {}}
-                    sx={{ bgcolor: '#293249', color: 'white', fontWeight: 'bold', '&:hover': { bgcolor: '#323D59' } }}
-                  />
-                )}
-              </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1.5 }}>
-                <Typography variant="caption" color="text.secondary">
-                  $ {swapMode === 'eth-to-usdc'
-                    ? (parseFloat(payAmount || '0') * Number(ammPrice) / 1e18).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                    : parseFloat(payAmount || '0').toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            {/* USDT — mock margin stablecoin */}
+            <Box sx={{ bgcolor: 'background.neutral', borderRadius: 2, p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
+              <Box>
+                <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                  USDT <Typography component="span" variant="caption" color="text.secondary">· 模擬保證金</Typography>
                 </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ cursor: 'pointer', '&:hover': { color: 'white' } }}>
-                  Balance: {swapMode === 'eth-to-usdc' ? ethBal : f18(usdcBal)}
-                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>Balance: {f18(usdcBal)}</Typography>
               </Box>
-            </Box>
-
-            {/* Switch direction button */}
-            <Box sx={{ display: 'flex', justifyContent: 'center', my: -2.5, zIndex: 2 }}>
-              <IconButton
-                onClick={() => { setSwapMode(m => m === 'eth-to-usdc' ? 'usdc-to-eth' : 'eth-to-usdc'); setPayAmount(''); setReceiveAmount(''); }}
-                sx={{
-                  bgcolor: '#131A2A',
-                  border: '4px solid #0D111C',
-                  color: 'white',
-                  '&:hover': { bgcolor: '#1e2a45' },
-                  p: 1,
-                }}
+              <Button
+                variant="contained"
+                onClick={() => void claimFaucet()}
+                disabled={busy['faucet']}
+                startIcon={<span>🚰</span>}
+                sx={{ textTransform: 'none', fontWeight: 'bold', whiteSpace: 'nowrap' }}
               >
-                <Icon icon="solar:transfer-vertical-bold-duotone" width={18} />
-              </IconButton>
+                {busy['faucet'] ? '領取中…' : '領取 USDT'}
+              </Button>
             </Box>
 
-            {/* Receive Block */}
-            <Box sx={{ bgcolor: '#131A2A', borderRadius: 2, p: 2, border: '1px solid transparent', '&:hover': { borderColor: 'rgba(255,255,255,0.08)' } }}>
-              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>You receive</Typography>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                <input
-                  type="number"
-                  placeholder="0"
-                  value={receiveAmount}
-                  onChange={e => {
-                    const v = e.target.value;
-                    setReceiveAmount(v);
-                    const r = parseFloat(v || '0');
-                    const price = Number(ammPrice) / 1e18;
-                    if (r > 0 && price > 0) {
-                      if (swapMode === 'eth-to-usdc') setPayAmount((r / price).toFixed(6));
-                      else setPayAmount((r * price).toFixed(2));
-                    } else {
-                      setPayAmount('');
-                    }
-                  }}
-                  style={{
-                    width: '100%',
-                    background: 'transparent',
-                    border: 'none',
-                    fontSize: '2rem',
-                    color: 'white',
-                    outline: 'none',
-                    fontWeight: 700,
-                    fontFamily: MONO,
-                  }}
-                />
-                {swapMode === 'eth-to-usdc' ? (
-                  <Chip
-                    avatar={<Box sx={{ width: 20, height: 20, borderRadius: '50%', bgcolor: 'primary.main', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.625rem', fontWeight: 'bold', color: 'white' }}>m</Box>}
-                    label="mUSDT"
-                    onClick={() => {}}
-                    sx={{ bgcolor: '#293249', color: 'white', fontWeight: 'bold', '&:hover': { bgcolor: '#323D59' } }}
-                  />
-                ) : (
-                  <Chip
-                    avatar={<Box component="span" sx={{ width: 20, height: 20, borderRadius: "50%", bgcolor: "#627eea", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: "0.625rem", fontWeight: "bold", color: "white" }}>Ξ</Box>}
-                    label="ETH"
-                    onClick={() => {}}
-                    sx={{ bgcolor: '#293249', color: 'white', fontWeight: 'bold', '&:hover': { bgcolor: '#323D59' } }}
-                  />
-                )}
-              </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1.5 }}>
-                <Typography variant="caption" color="text.secondary">
-                  $ {swapMode === 'eth-to-usdc'
-                    ? parseFloat(receiveAmount || '0').toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                    : (parseFloat(receiveAmount || '0') * Number(ammPrice) / 1e18).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            {/* PEPE — platform token */}
+            <Box sx={{ bgcolor: 'background.neutral', borderRadius: 2, p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
+              <Box>
+                <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                  PEPE <Typography component="span" variant="caption" color="text.secondary">· 平台幣</Typography>
                 </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ cursor: 'pointer', '&:hover': { color: 'white' } }}>
-                  Balance: {swapMode === 'eth-to-usdc' ? f18(usdcBal) : ethBal}
+                <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
+                  {pepeDeployed ? `Balance: ${f18(pepeBal)}` : '尚未在本網路部署'}
                 </Typography>
               </Box>
-            </Box>
-
-            {/* AMM pool info */}
-            <Box sx={{ px: 1, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-              <Typography variant="caption" color="text.secondary">
-                Oracle Swap Rate: <Box component="span" sx={{ color: 'white', fontFamily: MONO, fontWeight: 'bold' }}>1 ETH = {ammPrice > 0n ? (Number(ammPrice) / 1e18).toFixed(2) : '–'} USDT</Box>
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                Vault Reserves: <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>{ammEth > 0n ? (Number(ammEth) / 1e18).toFixed(4) : '–'} ETH</Box> / <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>{ammUsdc > 0n ? (Number(ammUsdc) / 1e18).toFixed(2) : '–'} USDT</Box>
-              </Typography>
-              <Typography variant="caption" sx={{ color: 'success.main', display: 'flex', alignItems: 'center', gap: 0.5, fontWeight: 'bold', mt: 0.5 }}>
-                ● Real-time Oracle Price (Zero Slippage)
-              </Typography>
-            </Box>
-
-            {ammEth === 0n && (
-              <Alert severity="info" variant="outlined" sx={{ py: 1 }}>
-                <Typography variant="caption" sx={{ display: 'block', fontWeight: 'bold', mb: 0.5 }}>
-                  測試網兌換池流動性有限
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                  Base Sepolia 上的 ETH↔USDT AMM 池尚未注入流動性，此兌換暫僅供示意（非錯誤）。
-                  要拿到測試保證金，直接用下方水龍頭免費領取測試 <b>USDT</b>，或改用<b>永續交易 / x402 付費</b>（本平台核心）。
-                </Typography>
+              {pepeDeployed ? (
                 <Button
-                  size="small"
                   variant="contained"
-                  onClick={() => void claimFaucet()}
-                  disabled={busy['faucet']}
-                  startIcon={<span>🚰</span>}
-                  sx={{ textTransform: 'none', fontWeight: 'bold' }}
+                  color="success"
+                  onClick={() => void claimPepe()}
+                  disabled={busy['pepe']}
+                  startIcon={<span>🐸</span>}
+                  sx={{ textTransform: 'none', fontWeight: 'bold', whiteSpace: 'nowrap' }}
                 >
-                  {busy['faucet'] ? '領取中…' : '領取測試 USDT（Faucet）'}
+                  {busy['pepe'] ? '領取中…' : '領取 PEPE'}
                 </Button>
+              ) : (
+                <Chip size="small" label="尚未部署" variant="outlined" />
+              )}
+            </Box>
+            {!pepeDeployed && (
+              <Alert severity="info" variant="outlined" sx={{ py: 0.5 }}>
+                <Typography variant="caption">
+                  PEPE 尚未在本網路（Base Sepolia）部署。部署 PepeToken 後把位址填入 addresses.ts 即可開放領取。
+                </Typography>
               </Alert>
             )}
 
-            <Button
-              variant="contained"
-              fullWidth
-              onClick={() => void doSwap()}
-              disabled={busy['swap'] || ammEth === 0n || !payAmount || parseFloat(payAmount) <= 0}
-              sx={{
-                py: 1.8,
-                borderRadius: 2,
-                fontWeight: 'bold',
-                fontSize: '1.125rem',
-                bgcolor: ammEth === 0n || !payAmount || parseFloat(payAmount) <= 0 ? 'rgba(255,255,255,0.03)' : 'primary.main',
-                color: ammEth === 0n || !payAmount || parseFloat(payAmount) <= 0 ? 'text.disabled' : 'white',
-              }}
-            >
-              {busy['swap']
-                ? 'Swapping…'
-                : ammEth === 0n
-                  ? '測試網兌換暫不可用（用下方 Faucet）'
-                  : !payAmount || parseFloat(payAmount) <= 0
-                    ? 'Enter an amount'
-                    : swapMode === 'eth-to-usdc' ? 'Swap ETH → mUSDT' : 'Swap mUSDT → ETH'}
-            </Button>
+            <Typography variant="caption" color="text.secondary">
+              ETH 餘額：<Box component="span" sx={{ fontFamily: MONO, color: 'text.primary' }}>{ethBal}</Box>（開倉需少量 ETH 付執行費）
+            </Typography>
 
             <Button
               variant="text"
               size="small"
               onClick={() => void addToWallet()}
               startIcon={<Icon icon="solar:wallet-bold-duotone" />}
-              sx={{ textTransform: 'none', color: 'info.main', fontSize: '0.75rem', mt: 0.5 }}
+              sx={{ textTransform: 'none', color: 'info.main', fontSize: '0.75rem', alignSelf: 'flex-start' }}
             >
-              Don't see mUSDT? Add to MetaMask
+              把 USDT 加入 MetaMask
             </Button>
           </Card>
         </Grid>
