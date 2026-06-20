@@ -147,7 +147,7 @@ interface PosRow {
   asset:         string;
   isLong:        boolean;
   entryPrice:    bigint;   // 18-dec
-  margin:        bigint;   // 18-dec USDC
+  margin:        bigint;   // 18-dec USDT
   leverage:      bigint;
   unrealizedPnL: bigint;   // signed int256 as bigint, 18-dec
   oraclePrice18: bigint;   // oracle current price converted to 18-dec
@@ -157,7 +157,7 @@ interface DerivedRow extends PosRow {
   notional:      bigint;   // margin × leverage, 18-dec
   quantity:      bigint;   // notional × 1e18 / entryPrice, 18-dec asset units
   currentPrice18: bigint;  // live or oracle, 18-dec
-  holdingsValue: bigint;   // quantity × currentPrice18 / 1e18, 18-dec USDC
+  holdingsValue: bigint;   // quantity × currentPrice18 / 1e18, 18-dec USDT
   livePnL:       bigint;   // (currentPrice - entryPrice) × quantity / 1e18 × dir, 18-dec
 }
 
@@ -890,7 +890,7 @@ export default function DashboardPage() {
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2, mb: 3.5 }}>
           <Box>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontWeight: 'bold', letterSpacing: 1 }}>
-              💼 總資產估值 (TOTAL USDC NET WORTH)
+              💼 總資產估值 (TOTAL USDT NET WORTH)
             </Typography>
             <Typography variant="h3" sx={{ fontWeight: '900', color: '#7cc14a', fontFamily: MONO }}>
               {fUsd((walletUSDC ?? 0n) + (stakedUSDC ?? 0n) + derived.totalMargin + freeMargin + (vaultUSDC ?? 0n))}
@@ -959,7 +959,7 @@ export default function DashboardPage() {
                   {walletUSDC !== null ? fUsd(walletUSDC) : '$0.00'}
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, minHeight: 48 }}>
-                  存放在您 Web3 錢包中的可用 USDC 測試幣。這是您所有鏈上操作與後備儲蓄的起點。
+                  存放在您 Web3 錢包中的可用 USDT 測試幣。這是您所有鏈上操作與後備儲蓄的起點。
                 </Typography>
               </Box>
               <Stack direction="row" spacing={1} sx={{ mt: 2.5 }}>
@@ -1223,7 +1223,7 @@ export default function DashboardPage() {
           },
           {
             label: '未實現損益',
-            value: isLoaded ? `${fPnL(derived.totalPnL)} USDC` : '—',
+            value: isLoaded ? `${fPnL(derived.totalPnL)} USDT` : '—',
             sub:   pnlPctStr,
             color: isLoaded ? pnlColor(derived.totalPnL) : 'text.primary',
           },
@@ -1309,7 +1309,7 @@ export default function DashboardPage() {
                           {fUsd(s.value)}
                         </Typography>
                         <Typography variant="body2" sx={{ fontWeight: 'bold', color: pnlColor(s.pnl), fontFamily: MONO, mt: 0.5 }}>
-                          {fPnL(s.pnl)} USDC
+                          {fPnL(s.pnl)} USDT
                         </Typography>
                       </Box>
                       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>

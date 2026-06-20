@@ -113,33 +113,33 @@ function renderDetails(e: ChainEvent): ReactNode {
   const d = e.details
   switch (e.type) {
     case 'Swap':
-      return d.direction === 'ETH→USDC'
-        ? <span><Typography variant="body2" component="span" color="text.secondary">{fEth(d.ethIn as bigint)} ETH</Typography> → <Typography variant="body2" component="span" color="success.main" sx={{ fontWeight: 'semibold' }}>{f18(d.usdcOut as bigint)} USDC</Typography></span>
-        : <span><Typography variant="body2" component="span" color="text.secondary">{f18(d.usdcIn as bigint)} USDC</Typography> → <Typography variant="body2" component="span" color="success.main" sx={{ fontWeight: 'semibold' }}>{fEth(d.ethOut as bigint)} ETH</Typography></span>
+      return d.direction === 'ETH→USDT'
+        ? <span><Typography variant="body2" component="span" color="text.secondary">{fEth(d.ethIn as bigint)} ETH</Typography> → <Typography variant="body2" component="span" color="success.main" sx={{ fontWeight: 'semibold' }}>{f18(d.usdcOut as bigint)} USDT</Typography></span>
+        : <span><Typography variant="body2" component="span" color="text.secondary">{f18(d.usdcIn as bigint)} USDT</Typography> → <Typography variant="body2" component="span" color="success.main" sx={{ fontWeight: 'semibold' }}>{fEth(d.ethOut as bigint)} ETH</Typography></span>
 
     case 'PositionOpened': {
       const label   = ASSET_LABEL[d.asset as string] ?? '?'
       const side    = (d.isLong as boolean) ? 'LONG' : 'SHORT'
       const sideCol = (d.isLong as boolean) ? 'success.main' : 'error.main'
-      return <span><Box component="span" sx={{ fontWeight: 'bold', color: sideCol }}>{side}</Box> {label} {String(d.leverage as bigint)}× @ {f8(d.entryPrice as bigint)} | Margin: {f18(d.margin as bigint)} USDC</span>
+      return <span><Box component="span" sx={{ fontWeight: 'bold', color: sideCol }}>{side}</Box> {label} {String(d.leverage as bigint)}× @ {f8(d.entryPrice as bigint)} | Margin: {f18(d.margin as bigint)} USDT</span>
     }
 
     case 'PositionClosed': {
       const pnl    = d.pnl as bigint
       const pnlStr = (pnl >= 0n ? '+' : '') + f18(pnl)
       const col    = pnl >= 0n ? 'success.main' : 'error.main'
-      return <span>PnL: <Box component="span" sx={{ fontWeight: 'bold', color: col }}>{pnlStr}</Box> USDC | Received: {f18(d.closeAmount as bigint)}</span>
+      return <span>PnL: <Box component="span" sx={{ fontWeight: 'bold', color: col }}>{pnlStr}</Box> USDT | Received: {f18(d.closeAmount as bigint)}</span>
     }
 
     case 'MarginDeposited':
-      return <Box component="span" sx={{ color: 'success.main', fontWeight: 'semibold' }}>+{f18(d.amount as bigint)} USDC</Box>
+      return <Box component="span" sx={{ color: 'success.main', fontWeight: 'semibold' }}>+{f18(d.amount as bigint)} USDT</Box>
 
     case 'MarginWithdrawn':
-      return <Box component="span" sx={{ color: 'warning.main', fontWeight: 'semibold' }}>−{f18(d.amount as bigint)} USDC</Box>
+      return <Box component="span" sx={{ color: 'warning.main', fontWeight: 'semibold' }}>−{f18(d.amount as bigint)} USDT</Box>
 
     case 'TraderFollowed': {
       const trader = d.trader as string
-      return <span>Following <Box component="span" sx={{ fontFamily: MONO, color: 'text.primary' }}>{shortAddr(trader)}</Box> | Margin: {f18(d.totalMargin as bigint)} USDC</span>
+      return <span>Following <Box component="span" sx={{ fontFamily: MONO, color: 'text.primary' }}>{shortAddr(trader)}</Box> | Margin: {f18(d.totalMargin as bigint)} USDT</span>
     }
 
     case 'TraderUnfollowed': {
@@ -148,7 +148,7 @@ function renderDetails(e: ChainEvent): ReactNode {
     }
 
     case 'CopyFee':
-      return <span>Earned: <Box component="span" sx={{ color: 'primary.main', fontWeight: 'bold' }}>{f18(d.traderShare as bigint)}</Box> USDC (fee: {f18(d.fee as bigint)})</span>
+      return <span>Earned: <Box component="span" sx={{ color: 'primary.main', fontWeight: 'bold' }}>{f18(d.traderShare as bigint)}</Box> USDT (fee: {f18(d.fee as bigint)})</span>
 
     case 'PriceUpdated': {
       const label = ASSET_LABEL[d.assetId as string] ?? '?'
@@ -156,11 +156,11 @@ function renderDetails(e: ChainEvent): ReactNode {
     }
 
     case 'Stake':
-      return <span>Staked <Box component="span" sx={{ color: 'warning.main', fontWeight: 'semibold' }}>{f18(d.amount as bigint)}</Box> USDC</span>
+      return <span>Staked <Box component="span" sx={{ color: 'warning.main', fontWeight: 'semibold' }}>{f18(d.amount as bigint)}</Box> USDT</span>
 
     case 'Slash': {
       const recipient = d.recipient as string
-      return <span>Slashed <Box component="span" sx={{ color: 'error.main', fontWeight: 'semibold' }}>{f18(d.amount as bigint)}</Box> USDC → <Box component="span" sx={{ fontFamily: MONO }}>{shortAddr(recipient)}</Box></span>
+      return <span>Slashed <Box component="span" sx={{ color: 'error.main', fontWeight: 'semibold' }}>{f18(d.amount as bigint)}</Box> USDT → <Box component="span" sx={{ fontFamily: MONO }}>{shortAddr(recipient)}</Box></span>
     }
 
     default:
@@ -192,12 +192,12 @@ export default function HistoryPage() {
       const uf = userFilter  // shorthand
 
       const results = await Promise.allSettled([
-        // [0] ETH→USDC swaps
+        // [0] ETH→USDT swaps
         contracts.swapRouter.queryFilter(
           uf ? contracts.swapRouter.filters.SwapEthToUsdc(uf) : contracts.swapRouter.filters.SwapEthToUsdc(),
           fromBlock, 'latest',
         ),
-        // [1] USDC→ETH swaps
+        // [1] USDT→ETH swaps
         contracts.swapRouter.queryFilter(
           uf ? contracts.swapRouter.filters.SwapUsdcToEth(uf) : contracts.swapRouter.filters.SwapUsdcToEth(),
           fromBlock, 'latest',
@@ -257,19 +257,19 @@ export default function HistoryPage() {
 
       const evs: ChainEvent[] = []
 
-      // 0 — ETH→USDC
+      // 0 — ETH→USDT
       for (const log of getLogs(0)) {
         const a = log.args
         evs.push({ type: 'Swap', user: a.user, txHash: log.transactionHash, blockNumber: log.blockNumber,
           timestamp: Number(a.timestamp ?? 0),
-          details: { direction: 'ETH→USDC', ethIn: a.ethIn as bigint, usdcOut: a.usdcOut as bigint } })
+          details: { direction: 'ETH→USDT', ethIn: a.ethIn as bigint, usdcOut: a.usdcOut as bigint } })
       }
-      // 1 — USDC→ETH
+      // 1 — USDT→ETH
       for (const log of getLogs(1)) {
         const a = log.args
         evs.push({ type: 'Swap', user: a.user, txHash: log.transactionHash, blockNumber: log.blockNumber,
           timestamp: Number(a.timestamp ?? 0),
-          details: { direction: 'USDC→ETH', usdcIn: a.usdcIn as bigint, ethOut: a.ethOut as bigint } })
+          details: { direction: 'USDT→ETH', usdcIn: a.usdcIn as bigint, ethOut: a.ethOut as bigint } })
       }
       // 2 — PositionOpened
       for (const log of getLogs(2)) {

@@ -146,7 +146,7 @@ export default function TradeTerminalPage() {
     try {
       const a = asTx(await contracts.usdc.approve(String(contracts.exchange.target), amt)); await a.wait()
       const d = asTx(await contracts.exchange.depositMargin(amt)); await d.wait()
-      notify(`Deposited ${dep} USDC ✓`, true); setDep(''); await fetchAll()
+      notify(`Deposited ${dep} USDT ✓`, true); setDep(''); await fetchAll()
     } catch (e) { notify(prettyError(e), false) } finally { setL('dep', false) }
   }
 
@@ -303,13 +303,13 @@ export default function TradeTerminalPage() {
             <Box sx={{ display: 'flex', alignItems: 'center', ...panel, bgcolor: C.panel2, px: 1.5, py: 1 }}>
               <input value={margin} onChange={e => setMargin(e.target.value)} type="number" placeholder="0.00"
                 style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: C.ink, fontFamily: C.mono, fontWeight: 700, fontSize: 20, width: '100%' }} />
-              <Box sx={{ ...monoCss, color: C.mut, fontSize: 13 }}>USDC</Box>
+              <Box sx={{ ...monoCss, color: C.mut, fontSize: 13 }}>USDT</Box>
             </Box>
           </Box>
 
           {/* quote rows */}
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.6, py: 0.5 }}>
-            <Row k="Notional" v={`${f18(notional)} USDC`} />
+            <Row k="Notional" v={`${f18(notional)} USDT`} />
             <Row k="Entry (oracle)" v={fUsd(curPrice)} />
             <Row k="Est. liquidation" v={fUsd(liq)} color={C.red} />
             <Row k="Funding (8h)" v={`${rate >= 0 ? '+' : ''}${(rate / 100).toFixed(4)}%`} color={rate > 0 ? C.red : rate < 0 ? C.green : C.mut} />
@@ -329,9 +329,9 @@ export default function TradeTerminalPage() {
           {/* account */}
           <Box sx={{ borderTop: `1px solid ${C.line}`, pt: 1.5, mt: 0.5, display: 'flex', flexDirection: 'column', gap: 0.6 }}>
             <Row k="Equity" v={fUsd(equity)} strong />
-            <Row k="Free margin" v={`${f18(freeMgn)} USDC`} />
+            <Row k="Free margin" v={`${f18(freeMgn)} USDT`} />
             <Row k="Unrealized PnL" v={`${Number(totalPnl) >= 0 ? '+' : ''}${f18(totalPnl, 4)}`} color={Number(totalPnl) >= 0 ? C.green : C.red} />
-            <Row k="Wallet USDC" v={f18(usdcBal)} />
+            <Row k="Wallet USDT" v={f18(usdcBal)} />
             <Box sx={{ display: 'flex', gap: 0.8, mt: 0.8 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', flex: 1, ...panel, bgcolor: C.panel2, px: 1.2 }}>
                 <input value={dep} onChange={e => setDep(e.target.value)} type="number" placeholder="deposit"

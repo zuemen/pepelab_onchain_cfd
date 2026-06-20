@@ -69,7 +69,7 @@ export default function TraderStakePage() {
     }
 
     const stakedUSDC = Number(info.amount) / 1e18
-    // Reward Rate: 1 USDC staked yields 0.02 PEPE tokens per day (slowed down and authentic!)
+    // Reward Rate: 1 USDT staked yields 0.02 PEPE tokens per day (slowed down and authentic!)
     const rewardRatePerSecond = (stakedUSDC * 0.02) / 86400
 
     const interval = setInterval(() => {
@@ -296,7 +296,7 @@ export default function TraderStakePage() {
               </Typography>
               <Typography variant="h5" sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'text.primary' }}>
                 {info ? f18(info.amount) : '…'}
-                <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary', ml: 0.5 }}>USDC</Box>
+                <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary', ml: 0.5 }}>USDT</Box>
               </Typography>
             </Card>
           </Grid>
@@ -307,7 +307,7 @@ export default function TraderStakePage() {
               </Typography>
               <Typography variant="h5" sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'error.main' }}>
                 {info ? f18(info.totalSlashed) : '…'}
-                <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary', ml: 0.5 }}>USDC</Box>
+                <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary', ml: 0.5 }}>USDT</Box>
               </Typography>
             </Card>
           </Grid>
@@ -341,7 +341,7 @@ export default function TraderStakePage() {
         {/* Eligibility badge */}
         {eligible !== null && (
           <Chip
-            label={eligible ? '✓ Eligible to publish strategies' : '✗ Need 100 USDC stake'}
+            label={eligible ? '✓ Eligible to publish strategies' : '✗ Need 100 USDT stake'}
             color={eligible ? 'success' : 'error'}
             variant="outlined"
             size="small"
@@ -350,7 +350,7 @@ export default function TraderStakePage() {
         )}
 
         <Typography variant="caption" color="text.secondary">
-          Minimum stake: {f18(minStake)} USDC · Skin-in-the-game for your followers
+          Minimum stake: {f18(minStake)} USDT · Skin-in-the-game for your followers
         </Typography>
       </Card>
 
@@ -393,7 +393,7 @@ export default function TraderStakePage() {
                 <Chip label="鏈上聯動實時挖礦" color="success" size="small" sx={{ height: 18, fontSize: '0.65rem', fontWeight: 'bold' }} />
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                利用您的 USDC 聲譽質押賺取真正的鏈上 PEPE 代幣！
+                利用您的 USDT 聲譽質押賺取真正的鏈上 PEPE 代幣！
               </Typography>
             </Box>
           </Stack>
@@ -440,9 +440,9 @@ export default function TraderStakePage() {
           </Grid>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mt: 1.5 }}>
             {info && info.amount > 0n ? (
-              `每秒賺取中... 🚀 (基於質押的 ${f18(info.amount)} USDC)`
+              `每秒賺取中... 🚀 (基於質押的 ${f18(info.amount)} USDT)`
             ) : (
-              '⚠️ 您目前尚未質押 USDC，無法開始挖礦！'
+              '⚠️ 您目前尚未質押 USDT，無法開始挖礦！'
             )}
           </Typography>
         </Card>
@@ -490,15 +490,15 @@ export default function TraderStakePage() {
         </Stack>
 
         <Typography variant="caption" color="text.secondary" sx={{ zIndex: 1, textAlign: 'center', fontStyle: 'italic' }}>
-          * 提示：質押的 USDC 作為合約聲譽保障金不可免息產生 USDC 收益，但本平台貼心為您自動開啟鏈上 PEPE 挖礦！
-          每質押 1 USDC 每日產出 0.02 PEPE，收割將發起鏈上鑄造交易，直接存入您的實體錢包！
+          * 提示：質押的 USDT 作為合約聲譽保障金不可免息產生 USDT 收益，但本平台貼心為您自動開啟鏈上 PEPE 挖礦！
+          每質押 1 USDT 每日產出 0.02 PEPE，收割將發起鏈上鑄造交易，直接存入您的實體錢包！
         </Typography>
       </Card>
 
       {/* ─── B. Stake More ───────────────────────────────────────────────── */}
       <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
         <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-          Stake USDC
+          Stake USDT
         </Typography>
         <Typography variant="body2" color="text.secondary">
           Staking puts your capital at risk — followers can trigger slashing if your strategy causes &gt; 30% loss.
@@ -514,7 +514,7 @@ export default function TraderStakePage() {
             slotProps={{ htmlInput: { min: "100", step: "100", style: { fontFamily: MONO } } }}
             sx={{ width: 140 }}
           />
-          <Typography variant="body2" color="text.secondary">USDC</Typography>
+          <Typography variant="body2" color="text.secondary">USDT</Typography>
           <Button
             variant="contained"
             onClick={() => void doApproveAndStake()}
@@ -536,7 +536,7 @@ export default function TraderStakePage() {
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <Alert severity="warning">
               <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
-                Pending unstake: {f18(info.unstakeAmount)} USDC
+                Pending unstake: {f18(info.unstakeAmount)} USDT
               </Typography>
               {canExecute ? 'Cooldown elapsed — ready to execute.' : `Available at: ${cooldownEnds}`}
             </Alert>
@@ -573,7 +573,7 @@ export default function TraderStakePage() {
                 slotProps={{ htmlInput: { min: "0", step: "50", style: { fontFamily: MONO } } }}
                 sx={{ width: 140 }}
               />
-              <Typography variant="body2" color="text.secondary">USDC</Typography>
+              <Typography variant="body2" color="text.secondary">USDT</Typography>
               <Button
                 variant="outlined"
                 onClick={() => void doRequestUnstake()}
@@ -595,7 +595,7 @@ export default function TraderStakePage() {
         <Stack spacing={1} sx={{ typography: 'caption', color: 'text.secondary', mb: 2 }}>
           <Box sx={{ display: 'flex', gap: 1 }}>
             <Box component="span" sx={{ color: 'info.main', fontWeight: 'bold' }}>•</Box>
-            <Box>Stake ≥ 100 USDC to publish strategies on the Marketplace.</Box>
+            <Box>Stake ≥ 100 USDT to publish strategies on the Marketplace.</Box>
           </Box>
           <Box sx={{ display: 'flex', gap: 1 }}>
             <Box component="span" sx={{ color: 'info.main', fontWeight: 'bold' }}>•</Box>

@@ -20,7 +20,7 @@ import { prettyError } from 'src/lib/pepefi/errorMessages';
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const TIER_NAMES  = ['Bronze 🥉', 'Silver 🥈', 'Gold 🥇', 'Diamond 💎'];
-const TIER_THRESHOLD = [10_000, 50_000, 200_000, 1_000_000]; // in USDC (18-dec /1e18)
+const TIER_THRESHOLD = [10_000, 50_000, 200_000, 1_000_000]; // in USDT (18-dec /1e18)
 const TIER_REWARD    = [500,    2_000,  10_000,  50_000];    // PEPE
 
 const fmt18 = (v: bigint) => Number(v) / 1e18;

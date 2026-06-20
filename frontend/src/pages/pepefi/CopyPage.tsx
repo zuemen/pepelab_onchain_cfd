@@ -212,7 +212,7 @@ export default function CopyPage() {
     try {
       const tx = asTx(await contracts.usdc.approve(String(contracts.copyTracker.target), amt))
       await tx.wait()
-      notify('USDC approved ✓', true, tx.hash)
+      notify('USDT approved ✓', true, tx.hash)
       setApproved(true)
     } catch (e) {
       notify(prettyError(e), false)
@@ -344,7 +344,7 @@ export default function CopyPage() {
                     }}
                   />
                   <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
-                    {(Number(stakeData.stake) / 1e18).toFixed(0)} USDC staked
+                    {(Number(stakeData.stake) / 1e18).toFixed(0)} USDT staked
                   </Typography>
                 </Box>
               )}
@@ -451,7 +451,7 @@ export default function CopyPage() {
             sx={{ width: 200 }}
           />
           <Typography variant="body2" color="text.secondary">
-            USDC total margin
+            USDT total margin
           </Typography>
           {!hasStrategy && (
             <Typography variant="caption" color="text.disabled" sx={{ fontStyle: 'italic' }}>
@@ -465,19 +465,19 @@ export default function CopyPage() {
             <Stack spacing={1} sx={{ typography: 'caption' }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.secondary' }}>
                 <Box>Total deposit:</Box>
-                <Box sx={{ fontFamily: MONO, color: 'text.primary', fontWeight: 'semibold' }}>{f18(totalBig)} USDC</Box>
+                <Box sx={{ fontFamily: MONO, color: 'text.primary', fontWeight: 'semibold' }}>{f18(totalBig)} USDT</Box>
               </Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.secondary' }}>
                 <Box>− Copy fee (0.3%):</Box>
-                <Box sx={{ fontFamily: MONO, color: 'error.main', fontWeight: 'semibold' }}>-{f18(preview.copyFee)} USDC</Box>
+                <Box sx={{ fontFamily: MONO, color: 'error.main', fontWeight: 'semibold' }}>-{f18(preview.copyFee)} USDT</Box>
               </Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.secondary' }}>
                 <Box>− Trading fee buffer:</Box>
-                <Box sx={{ fontFamily: MONO, color: 'error.main', fontWeight: 'semibold' }}>-{f18(preview.totalTradingFee)} USDC</Box>
+                <Box sx={{ fontFamily: MONO, color: 'error.main', fontWeight: 'semibold' }}>-{f18(preview.totalTradingFee)} USDT</Box>
               </Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.primary', fontWeight: 'bold', borderTop: '1px solid', borderColor: 'divider', pt: 1, mt: 0.5 }}>
                 <Box>Effective margin:</Box>
-                <Box sx={{ fontFamily: MONO, color: 'success.main' }}>{f18(preview.marginForPositions)} USDC</Box>
+                <Box sx={{ fontFamily: MONO, color: 'success.main' }}>{f18(preview.marginForPositions)} USDT</Box>
               </Box>
             </Stack>
           </Card>
@@ -528,11 +528,11 @@ export default function CopyPage() {
           <Stack spacing={1} sx={{ typography: 'body2' }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.secondary' }}>
               <Box>Copy fee (0.3%)</Box>
-              <Box sx={{ fontFamily: MONO }}>−{f18(feeBig, 4)} USDC</Box>
+              <Box sx={{ fontFamily: MONO }}>−{f18(feeBig, 4)} USDT</Box>
             </Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.secondary' }}>
               <Box>Net margin deposited</Box>
-              <Box sx={{ fontFamily: MONO, color: 'text.primary', fontWeight: 'semibold' }}>{f18(netBig)} USDC</Box>
+              <Box sx={{ fontFamily: MONO, color: 'text.primary', fontWeight: 'semibold' }}>{f18(netBig)} USDT</Box>
             </Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.secondary', borderTop: '1px solid', borderColor: 'divider', pt: 1, mt: 1 }}>
               <Box>Execution Fee (ETH)</Box>
@@ -555,7 +555,7 @@ export default function CopyPage() {
             <Grid size={{ xs: 4 }}>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>Staked</Typography>
               <Typography variant="h6" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
-                {(Number(stakeData.stake) / 1e18).toFixed(0)} <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary' }}>USDC</Box>
+                {(Number(stakeData.stake) / 1e18).toFixed(0)} <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary' }}>USDT</Box>
               </Typography>
             </Grid>
             <Grid size={{ xs: 4 }}>
@@ -567,13 +567,13 @@ export default function CopyPage() {
             <Grid size={{ xs: 4 }}>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>Total Slashed</Typography>
               <Typography variant="h6" sx={{ fontFamily: MONO, fontWeight: 'bold', color: stakeData.totalSlashed > 0n ? 'error.main' : 'text.primary' }}>
-                {(Number(stakeData.totalSlashed) / 1e18).toFixed(0)} <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary' }}>USDC</Box>
+                {(Number(stakeData.totalSlashed) / 1e18).toFixed(0)} <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary' }}>USDT</Box>
               </Typography>
             </Grid>
           </Grid>
           {stakeData.totalSlashed > 0n && (
             <Typography variant="caption" color="error.main" sx={{ display: 'block', mt: 2, fontWeight: 'semibold' }}>
-              ⚠ This trader has had {(Number(stakeData.totalSlashed) / 1e18).toFixed(0)} USDC slashed for causing excessive losses to followers. Proceed with caution.
+              ⚠ This trader has had {(Number(stakeData.totalSlashed) / 1e18).toFixed(0)} USDT slashed for causing excessive losses to followers. Proceed with caution.
             </Typography>
           )}
           {stakeData.stake === 0n && (
@@ -601,7 +601,7 @@ export default function CopyPage() {
             sx={{ fontWeight: 'bold' }}
           />
           <Typography variant="body2" color={approved ? 'success.main' : 'text.secondary'}>
-            Approve USDC to CopyTracker
+            Approve USDT to CopyTracker
           </Typography>
           <Typography variant="body2" color="text.disabled" sx={{ mx: 1 }}>→</Typography>
           <Chip

@@ -359,7 +359,7 @@ export default function TraderDashboard() {
                     }}
                   />
                   <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
-                    {(Number(stakeData.stake) / 1e18).toFixed(0)} USDC staked
+                    {(Number(stakeData.stake) / 1e18).toFixed(0)} USDT staked
                   </Typography>
                 </Box>
               )}
@@ -436,7 +436,7 @@ export default function TraderDashboard() {
             <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
               Stake required to publish
             </Typography>
-            You need to stake at least 100 USDC before publishing a strategy. This gives followers confidence that you have skin-in-the-game.
+            You need to stake at least 100 USDT before publishing a strategy. This gives followers confidence that you have skin-in-the-game.
           </Alert>
         )}
 
@@ -609,7 +609,7 @@ export default function TraderDashboard() {
         )}
         {traderInfo?.isRegistered && eligible === false && (
           <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center', display: 'block' }}>
-            Stake ≥ 100 USDC on the <Link component={RouterLink} to="/stake" color="primary.main">Stake page</Link> to unlock publishing.
+            Stake ≥ 100 USDT on the <Link component={RouterLink} to="/stake" color="primary.main">Stake page</Link> to unlock publishing.
           </Typography>
         )}
       </Card>
@@ -638,7 +638,7 @@ export default function TraderDashboard() {
             <Typography variant="h5" color="success.main" sx={{ fontFamily: MONO, fontWeight: 'bold', display: 'flex', alignItems: 'baseline' }}>
               {earnings === null ? '…' : (Number(earnings) / 1e18).toFixed(4)}
               <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary', ml: 0.5 }}>
-                USDC
+                USDT
               </Box>
             </Typography>
           </Box>
