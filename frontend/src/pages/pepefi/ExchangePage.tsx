@@ -99,6 +99,22 @@ const tryParse = (s: string): bigint | null => {
 type TxResp = { wait(): Promise<unknown>; hash: string };
 const asTx = (tx: unknown): TxResp => tx as TxResp;
 
+const ZERO_ADDR = '0x0000000000000000000000000000000000000000';
+
+// Reject after `ms` so a hung RPC call (e.g. a view on a 0x0 / undeployed
+// contract) can never block the whole page from settling.
+function withTimeout<T>(p: Promise<T>, ms = 8000): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error('rpc timeout')), ms)),
+  ]);
+}
+// Resolve a single chain read to a fallback on ANY error/timeout — never throws,
+// never hangs. Each read is isolated so one failure can't break the page.
+async function safeRead<T>(p: Promise<T>, fallback: T, ms = 8000): Promise<T> {
+  try { return await withTimeout(p, ms); } catch { return fallback; }
+}
+
 export default function ExchangePage() {
   const wallet = usePepefiWallet();
   const contracts    = useContracts(wallet.provider, wallet.signer, wallet.chainId);
@@ -154,77 +170,91 @@ export default function ExchangePage() {
     const ex = contracts?.exchange;
     if (!ex) { setMaxLev(5); return; }
     void (async () => {
-      try {
-        const m = Number(await ex.maxLeverageForAsset(selAsset));
-        if (!cancelled) {
-          const cap = m > 0 ? m : 5;
-          setMaxLev(cap);
-          setLeverage(l => (l > cap ? cap : l));
-        }
-      } catch { if (!cancelled) setMaxLev(5); }
+      const m = Number(await safeRead(ex.maxLeverageForAsset(selAsset) as Promise<bigint>, 0n));
+      if (!cancelled) {
+        const cap = m > 0 ? m : 5;
+        setMaxLev(cap);
+        setLeverage(l => (l > cap ? cap : l));
+      }
     })();
     return () => { cancelled = true; };
   }, [contracts, selAsset]);
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
+  // Every chain read is isolated (safeRead = per-call try/catch + 8s timeout) and
+  // independent batches use allSettled, so no single hung/undeployed-contract
+  // call can block the page. setPageLoading(false) is always reached.
   const fetchAll = useCallback(async () => {
     if (!contracts || !wallet.address || !wallet.provider) return;
+    const addr = wallet.address;
+    const provider = wallet.provider;
     try {
       const [bal, mgn, eBal] = await Promise.all([
-        contracts.usdc.balanceOf(wallet.address),
-        contracts.exchange.freeMargin(wallet.address),
-        wallet.provider!.getBalance(wallet.address),
+        safeRead(contracts.usdc.balanceOf(addr) as Promise<bigint>, 0n),
+        safeRead(contracts.exchange.freeMargin(addr) as Promise<bigint>, 0n),
+        safeRead(provider.getBalance(addr), 0n),
       ]);
-      setUsdcBal(bal as bigint);
-      setFreeMgn(mgn as bigint);
-      setEthBal(f18(eBal as bigint, 4));
+      setUsdcBal(bal);
+      setFreeMgn(mgn);
+      setEthBal(f18(eBal, 4));
 
-      let price = 0n;
-      let reserves: [bigint, bigint] = [0n, 0n];
-      try {
-        price    = await contracts.pepeAMM.getPrice() as bigint;
-        reserves = await contracts.pepeAMM.getReserves() as [bigint, bigint];
-      } catch (e) {
-        console.warn('[AMM] unavailable:', e);
+      // AMM: skip ALL reads when the pool isn't deployed (address 0x0) → page
+      // falls straight to the "兌換暫不可用 + Faucet" state, no hanging call.
+      const ammAddr = String(contracts.pepeAMM.target);
+      if (ammAddr !== ZERO_ADDR) {
+        const [price, reserves] = await Promise.all([
+          safeRead(contracts.pepeAMM.getPrice() as Promise<bigint>, 0n),
+          safeRead(contracts.pepeAMM.getReserves() as Promise<[bigint, bigint]>, [0n, 0n] as [bigint, bigint]),
+        ]);
+        setAmmPrice(price);
+        setAmmEth(reserves[0]);
+        setAmmUsdc(reserves[1]);
+      } else {
+        setAmmPrice(0n);
+        setAmmEth(0n);
+        setAmmUsdc(0n);
       }
-      setAmmPrice(price);
-      const [ethR, usdcR] = reserves;
-      setAmmEth(ethR);
-      setAmmUsdc(usdcR);
 
-      const ids = (await contracts.exchange.getUserPositions(wallet.address)) as bigint[];
-      const maybeRows = await Promise.all(
+      // Above-the-fold shell (balances, swap/faucet, margin, open-position form)
+      // is ready → drop the skeleton now. Positions stream in below afterwards,
+      // so a slow positions read can't delay the whole page.
+      setPageLoading(false);
+
+      const ids = await safeRead(contracts.exchange.getUserPositions(addr) as Promise<bigint[]>, []);
+      const settled = await Promise.allSettled(
         ids.map(async (id): Promise<PositionRow | null> => {
-          try {
-            const raw = (await contracts.exchange.getPosition(id)) as unknown as RawPos;
-            if (!raw.isOpen) return null;
-            const pnl = (await contracts.exchange.getUnrealizedPnL(id)) as bigint;
-            const pr  = (await contracts.oracle.getPrice(raw.asset)) as unknown as [bigint, bigint];
-            return {
-              id, asset: raw.asset, isLong: raw.isLong,
-              entryPrice: raw.entryPrice, margin: raw.margin, leverage: raw.leverage,
-              unrealizedPnL: pnl, currentPrice: pr[0] * 10n ** 10n,
-            };
-          } catch { return null; }
+          const raw = await safeRead(contracts.exchange.getPosition(id) as unknown as Promise<RawPos | null>, null);
+          if (!raw || !raw.isOpen) return null;
+          const pnl = await safeRead(contracts.exchange.getUnrealizedPnL(id) as Promise<bigint>, 0n);
+          const pr  = await safeRead(contracts.oracle.getPrice(raw.asset) as unknown as Promise<[bigint, bigint]>, [0n, 0n] as [bigint, bigint]);
+          return {
+            id, asset: raw.asset, isLong: raw.isLong,
+            entryPrice: raw.entryPrice, margin: raw.margin, leverage: raw.leverage,
+            unrealizedPnL: pnl, currentPrice: pr[0] * 10n ** 10n,
+          };
         })
       );
-      setPositions(maybeRows.filter((r): r is PositionRow => r !== null));
-    } catch (e) {
-      console.error('[exchange fetch]', e);
-      notify(prettyError(e), false);
+      setPositions(
+        settled
+          .map(r => (r.status === 'fulfilled' ? r.value : null))
+          .filter((r): r is PositionRow => r !== null),
+      );
     } finally {
       setPageLoading(false);
     }
-  }, [contracts, wallet.address, notify]);
+  }, [contracts, wallet.address, wallet.provider]);
 
   useEffect(() => {
     if (!contracts) return;
+    let cancelled = false;
     void (async () => {
-      try {
-        const pr = (await contracts.oracle.getPrice(selAsset)) as unknown as [bigint, bigint];
-        setCurPrice(pr[0] * 10n ** 10n);
-      } catch (e) { console.error('[price fetch]', e); }
+      const pr = await safeRead(
+        contracts.oracle.getPrice(selAsset) as unknown as Promise<[bigint, bigint]>,
+        [0n, 0n] as [bigint, bigint],
+      );
+      if (!cancelled) setCurPrice(pr[0] * 10n ** 10n);
     })();
+    return () => { cancelled = true; };
   }, [contracts, selAsset]);
 
   useEffect(() => { void fetchAll() }, [fetchAll]);
@@ -279,7 +309,9 @@ export default function ExchangePage() {
 
   // ── Live AMM quote ────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!contracts?.pepeAMM || !payAmount || parseFloat(payAmount) <= 0) {
+    // Skip entirely when the pool isn't deployed (0x0) — no read against 0x0.
+    if (!contracts?.pepeAMM || String(contracts.pepeAMM.target) === ZERO_ADDR
+        || !payAmount || parseFloat(payAmount) <= 0) {
       setReceiveAmount('');
       return;
     }
