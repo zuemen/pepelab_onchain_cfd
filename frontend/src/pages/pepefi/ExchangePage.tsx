@@ -89,7 +89,7 @@ const fUsd   = (v: bigint) =>
   });
 const fPnL   = (v: bigint) => {
   const n = Number(v) / 1e18;
-  return (n >= 0 ? '+' : '') + n.toFixed(4) + ' USDC';
+  return (n >= 0 ? '+' : '') + n.toFixed(4) + ' USDT';
 };
 const pnlColor = (v: bigint) => Number(v) >= 0 ? 'success.main' : 'error.main';
 const tryParse = (s: string): bigint | null => {
@@ -314,7 +314,7 @@ export default function ExchangePage() {
         const minOut = quoted * 99n / 100n;
         const tx = asTx(await contracts.pepeAMM.swapETHForUSDC(minOut, { value: ethIn }));
         await tx.wait();
-        notify(`Swapped ${payAmount} ETH for ~${(Number(quoted) / 1e18).toFixed(2)} USDC ✓`, true, tx.hash);
+        notify(`Swapped ${payAmount} ETH for ~${(Number(quoted) / 1e18).toFixed(2)} USDT ✓`, true, tx.hash);
       } else {
         const usdcIn = parseEther(payAmount);
 
@@ -324,7 +324,7 @@ export default function ExchangePage() {
         ) as bigint;
 
         if (currentAllowance < usdcIn) {
-          notify('Approving USDC...', true);
+          notify('Approving USDT...', true);
           const approveTx = asTx(await contracts.usdc.approve(String(contracts.pepeAMM.target), usdcIn));
           await approveTx.wait();
         }
@@ -333,7 +333,7 @@ export default function ExchangePage() {
         const minEthOut = quoted * 99n / 100n;
         const tx = asTx(await contracts.pepeAMM.swapUSDCForETH(usdcIn, minEthOut));
         await tx.wait();
-        notify(`Swapped ${payAmount} USDC for ~${(Number(quoted) / 1e18).toFixed(6)} ETH ✓`, true, tx.hash);
+        notify(`Swapped ${payAmount} USDT for ~${(Number(quoted) / 1e18).toFixed(6)} ETH ✓`, true, tx.hash);
       }
       setPayAmount('');
       await new Promise(r => setTimeout(r, 1500));
@@ -341,6 +341,21 @@ export default function ExchangePage() {
     } catch (e) {
       notify(prettyError(e), false);
     } finally { setLoad('swap', false); }
+  };
+
+  // Testnet on-ramp: the Base Sepolia AMM pool is unseeded, so users get mock
+  // collateral directly from the MockUSDC faucet instead of swapping ETH.
+  const claimFaucet = async () => {
+    if (!contracts) return;
+    setLoad('faucet', true);
+    try {
+      const tx = asTx(await contracts.usdc.faucet());
+      await tx.wait();
+      notify('已領取測試 USDT ✓ — 可在右側 Margin Account「Approve & Deposit」作為保證金', true, tx.hash);
+      await fetchAll();
+    } catch (e) {
+      notify(prettyError(e), false);
+    } finally { setLoad('faucet', false); }
   };
 
   const addToWallet = async () => {
@@ -352,7 +367,7 @@ export default function ExchangePage() {
           type: 'ERC20',
           options: {
             address: contracts.usdc.target,
-            symbol: 'mUSDC',
+            symbol: 'mUSDT',
             decimals: 18,
           },
         },
@@ -372,7 +387,7 @@ export default function ExchangePage() {
       await approveTx.wait();
       const depositTx = asTx(await contracts.exchange.depositMargin(amt));
       await depositTx.wait();
-      notify(`Deposited ${depositAmt} USDC ✓`, true, depositTx.hash);
+      notify(`Deposited ${depositAmt} USDT ✓`, true, depositTx.hash);
       setDepositAmt('');
       await fetchAll();
     } catch (e) {
@@ -388,7 +403,7 @@ export default function ExchangePage() {
     try {
       const tx = asTx(await contracts.exchange.withdrawMargin(amt));
       await tx.wait();
-      notify(`Withdrew ${withdrawAmt} USDC ✓`, true, tx.hash);
+      notify(`Withdrew ${withdrawAmt} USDT ✓`, true, tx.hash);
       setWithdrawAmt('');
       await fetchAll();
     } catch (e) {
@@ -484,7 +499,7 @@ export default function ExchangePage() {
   const isBusy = !!activeTask;
   let loadingMsg = 'Processing transaction...';
   if (activeTask) {
-    if (activeTask === 'swap') loadingMsg = swapMode === 'eth-to-usdc' ? 'Swapping ETH to USDC...' : 'Swapping USDC to ETH...';
+    if (activeTask === 'swap') loadingMsg = swapMode === 'eth-to-usdc' ? 'Swapping ETH to USDT...' : 'Swapping USDT to ETH...';
     else if (activeTask === 'deposit') loadingMsg = 'Depositing Margin...';
     else if (activeTask === 'withdraw') loadingMsg = 'Withdrawing Margin...';
     else if (activeTask === 'open') loadingMsg = 'Opening Position...';
@@ -597,10 +612,14 @@ export default function ExchangePage() {
           How CFD trading works on PepeLab
         </Typography>
         <Typography variant="body2" component="ol" sx={{ pl: 2, m: 0, '& li': { mb: 0.5 } }}>
-          <li><strong>Swap:</strong> Swap ETH for USDC to get your stablecoin collateral.</li>
-          <li><strong>Margin Account:</strong> Approve &amp; deposit USDC into PerpetualExchange. This becomes your free margin.</li>
+          <li><strong>Swap:</strong> Swap ETH for USDT to get your stablecoin collateral.</li>
+          <li><strong>Margin Account:</strong> Approve &amp; deposit USDT into PerpetualExchange. This becomes your free margin.</li>
           <li><strong>Open Position:</strong> Use free margin to open long/short on 11 synthetic assets — crypto (sBTC, sETH), equity (sAAPL, sTSLA, sNVDA, sMSFT, sGOOGL), commodity (sGOLD), bond (sBOND), and ESG ETFs (sICLN, sESGU). 🔒 = KYC required.</li>
           <li><strong>PnL:</strong> Price moves → position value changes → close to realize PnL.</li>
+        </Typography>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+          💱 幣別：平台保證金與兌換用 <b>USDT</b>（測試網模擬幣，可用 Faucet 免費領）；
+          <b>x402</b> 付費 API 結算用 <b>官方 USDC</b>（Circle，EIP-3009）。兩者用途不同、勿混用。
         </Typography>
       </Alert>
 
@@ -657,7 +676,7 @@ export default function ExchangePage() {
                 ) : (
                   <Chip
                     avatar={<Box sx={{ width: 20, height: 20, borderRadius: '50%', bgcolor: 'primary.main', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.625rem', fontWeight: 'bold', color: 'white' }}>m</Box>}
-                    label="USDC"
+                    label="USDT"
                     onClick={() => {}}
                     sx={{ bgcolor: '#293249', color: 'white', fontWeight: 'bold', '&:hover': { bgcolor: '#323D59' } }}
                   />
@@ -725,7 +744,7 @@ export default function ExchangePage() {
                 {swapMode === 'eth-to-usdc' ? (
                   <Chip
                     avatar={<Box sx={{ width: 20, height: 20, borderRadius: '50%', bgcolor: 'primary.main', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.625rem', fontWeight: 'bold', color: 'white' }}>m</Box>}
-                    label="mUSDC"
+                    label="mUSDT"
                     onClick={() => {}}
                     sx={{ bgcolor: '#293249', color: 'white', fontWeight: 'bold', '&:hover': { bgcolor: '#323D59' } }}
                   />
@@ -753,10 +772,10 @@ export default function ExchangePage() {
             {/* AMM pool info */}
             <Box sx={{ px: 1, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
               <Typography variant="caption" color="text.secondary">
-                Oracle Swap Rate: <Box component="span" sx={{ color: 'white', fontFamily: MONO, fontWeight: 'bold' }}>1 ETH = {ammPrice > 0n ? (Number(ammPrice) / 1e18).toFixed(2) : '–'} USDC</Box>
+                Oracle Swap Rate: <Box component="span" sx={{ color: 'white', fontFamily: MONO, fontWeight: 'bold' }}>1 ETH = {ammPrice > 0n ? (Number(ammPrice) / 1e18).toFixed(2) : '–'} USDT</Box>
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                Vault Reserves: <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>{ammEth > 0n ? (Number(ammEth) / 1e18).toFixed(4) : '–'} ETH</Box> / <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>{ammUsdc > 0n ? (Number(ammUsdc) / 1e18).toFixed(2) : '–'} USDC</Box>
+                Vault Reserves: <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>{ammEth > 0n ? (Number(ammEth) / 1e18).toFixed(4) : '–'} ETH</Box> / <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>{ammUsdc > 0n ? (Number(ammUsdc) / 1e18).toFixed(2) : '–'} USDT</Box>
               </Typography>
               <Typography variant="caption" sx={{ color: 'success.main', display: 'flex', alignItems: 'center', gap: 0.5, fontWeight: 'bold', mt: 0.5 }}>
                 ● Real-time Oracle Price (Zero Slippage)
@@ -764,8 +783,24 @@ export default function ExchangePage() {
             </Box>
 
             {ammEth === 0n && (
-              <Alert severity="warning" variant="outlined" sx={{ py: 0, px: 2 }}>
-                流動性不足，暫無法兌換
+              <Alert severity="info" variant="outlined" sx={{ py: 1 }}>
+                <Typography variant="caption" sx={{ display: 'block', fontWeight: 'bold', mb: 0.5 }}>
+                  測試網兌換池流動性有限
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                  Base Sepolia 上的 ETH↔USDT AMM 池尚未注入流動性，此兌換暫僅供示意（非錯誤）。
+                  要拿到測試保證金，直接用下方水龍頭免費領取測試 <b>USDT</b>，或改用<b>永續交易 / x402 付費</b>（本平台核心）。
+                </Typography>
+                <Button
+                  size="small"
+                  variant="contained"
+                  onClick={() => void claimFaucet()}
+                  disabled={busy['faucet']}
+                  startIcon={<span>🚰</span>}
+                  sx={{ textTransform: 'none', fontWeight: 'bold' }}
+                >
+                  {busy['faucet'] ? '領取中…' : '領取測試 USDT（Faucet）'}
+                </Button>
               </Alert>
             )}
 
@@ -786,10 +821,10 @@ export default function ExchangePage() {
               {busy['swap']
                 ? 'Swapping…'
                 : ammEth === 0n
-                  ? '流動性不足'
+                  ? '測試網兌換暫不可用（用下方 Faucet）'
                   : !payAmount || parseFloat(payAmount) <= 0
                     ? 'Enter an amount'
-                    : swapMode === 'eth-to-usdc' ? 'Swap ETH → mUSDC' : 'Swap mUSDC → ETH'}
+                    : swapMode === 'eth-to-usdc' ? 'Swap ETH → mUSDT' : 'Swap mUSDT → ETH'}
             </Button>
 
             <Button
@@ -799,7 +834,7 @@ export default function ExchangePage() {
               startIcon={<Icon icon="solar:wallet-bold-duotone" />}
               sx={{ textTransform: 'none', color: 'info.main', fontSize: '0.75rem', mt: 0.5 }}
             >
-              Don't see mUSDC? Add to MetaMask
+              Don't see mUSDT? Add to MetaMask
             </Button>
           </Card>
         </Grid>
@@ -814,7 +849,7 @@ export default function ExchangePage() {
                 </Typography>
                 <Typography variant="h4" sx={{ fontWeight: 800, fontFamily: MONO, mt: 0.5 }}>
                   {fUsd(accountEquity)}{' '}
-                  <Typography component="span" variant="subtitle2" color="text.secondary">mUSDC (Testnet)</Typography>
+                  <Typography component="span" variant="subtitle2" color="text.secondary">mUSDT (Testnet)</Typography>
                 </Typography>
               </Box>
               <Box sx={{ textAlign: 'right' }}>
@@ -884,7 +919,7 @@ export default function ExchangePage() {
 
         {freeMgn === 0n && (
           <Alert severity="warning">
-            You have no free margin. Deposit USDC in the <strong>Margin Account</strong> section above first.
+            You have no free margin. Deposit USDT in the <strong>Margin Account</strong> section above first.
           </Alert>
         )}
 
@@ -1064,7 +1099,7 @@ export default function ExchangePage() {
               onChange={e => setOpenMgn(e.target.value)}
               slotProps={{
                 input: {
-                  endAdornment: <InputAdornment position="end">mUSDC</InputAdornment>,
+                  endAdornment: <InputAdornment position="end">mUSDT</InputAdornment>,
                 },
               }}
             />
@@ -1086,7 +1121,7 @@ export default function ExchangePage() {
             </Typography>
           )}
           <Typography variant="body2" color="text.secondary">
-            Notional: <Box component="span" sx={{ color: 'text.primary', fontWeight: 'bold', fontFamily: MONO }}>{f18(notional)} mUSDC</Box>
+            Notional: <Box component="span" sx={{ color: 'text.primary', fontWeight: 'bold', fontFamily: MONO }}>{f18(notional)} mUSDT</Box>
           </Typography>
           {(() => {
             const fi = fundingData[selAsset];
@@ -1139,10 +1174,10 @@ export default function ExchangePage() {
 
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
           <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 'medium' }}>
-            Free margin: <Box component="span" sx={{ color: 'text.primary', fontFamily: MONO, fontWeight: 'bold' }}>{f18(freeMgn)} mUSDC</Box>
+            Free margin: <Box component="span" sx={{ color: 'text.primary', fontFamily: MONO, fontWeight: 'bold' }}>{f18(freeMgn)} mUSDT</Box>
             {openMgnBig !== null && openMgnBig > freeMgn && (
               <Box component="span" sx={{ color: 'error.main', fontWeight: 'bold', ml: 2 }}>
-                ⚠ Insufficient — deposit at least {f18(openMgnBig - freeMgn)} more mUSDC first
+                ⚠ Insufficient — deposit at least {f18(openMgnBig - freeMgn)} more mUSDT first
               </Box>
             )}
           </Typography>
