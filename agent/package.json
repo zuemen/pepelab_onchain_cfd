@@ -21,7 +21,11 @@
     "node": ">=20"
   },
   "devDependencies": {
+    "@types/node-telegram-bot-api": "^0.64.15",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3"
+  },
+  "dependencies": {
+    "node-telegram-bot-api": "^1.1.0"
   }
 }
