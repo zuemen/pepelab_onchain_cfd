@@ -15,6 +15,122 @@ export interface OracleSnapshot {
   fundingDirection: "longs_pay" | "shorts_pay" | "balanced";
   longOpenInterest: number; // 18-dec notional
   shortOpenInterest: number;
+  // ── 決策級欄位（Part A，皆由上面鏈上資料純函式導出，非捏造）──────────────
+  /** (longOI − shortOI)/(longOI + shortOI)，−1~1；>0 偏多、<0 偏空。 */
+  oiImbalance: number;
+  /** OI 失衡推估的 mark/index 偏移 proxy（bps）。**非真實 mark 讀值**——本部署
+   *  mark 溢價旗標預設關（mark==index），故以 OI skew 當代理並誠實標示。 */
+  skewProxyBps: number;
+  /** 維持保證金率（bps，平台 5%）。 */
+  maintenanceMarginBps: number;
+  /** 以 index price + 維持保證金率估算的清算價（long/short × 1x/3x/5x）。 */
+  estLiquidation: EstLiquidation;
+  /** 綜合 edge 分數 −100~100（透明規則式）。 */
+  edgeScore: number;
+  /** edge 拆解：funding 分量。 */
+  fundingComponent: number;
+  /** edge 拆解：OI 反向（contrarian）分量。 */
+  oiComponent: number;
+  /** edgeScore ≥ +ENTRY → long；≤ −ENTRY → short；否則 no_trade（stale 一律 no_trade）。 */
+  recommendation: "long" | "short" | "no_trade";
+  /** |edgeScore|。 */
+  confidence: number;
+  /** 建議理由（人類可讀）。 */
+  reason: string;
+}
+
+export interface EstLiquidation {
+  long: Record<"1x" | "3x" | "5x", number>;
+  short: Record<"1x" | "3x" | "5x", number>;
+}
+
+/** edge 政策參數（透明可調；非投資建議）。 */
+export const EDGE_DEFAULTS = {
+  /** funding bps → 分數的係數（−fundingRateBps×Kf，clamp ±60）。 */
+  Kf: 0.8,
+  /** 進場門檻：|edgeScore| ≥ ENTRY 才給方向。 */
+  entryThreshold: 25,
+  /** 維持保證金率 bps（平台 5%）。 */
+  maintenanceMarginBps: 500,
+} as const;
+
+const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
+const round2 = (x: number) => Math.round(x * 100) / 100;
+
+/** OI 失衡 (l−s)/(l+s)，−1~1；總額 0 → 0。純函式。 */
+export function computeOiImbalance(longOI: number, shortOI: number): number {
+  const tot = longOI + shortOI;
+  if (tot <= 0) return 0;
+  return clamp((longOI - shortOI) / tot, -1, 1);
+}
+
+/** 由 index price + 維持保證金率估清算價（long/short × 1x/3x/5x）。純函式。
+ *  多單 liq = entry×(1 − 1/lev + mm)；空單 liq = entry×(1 + 1/lev − mm)。 */
+export function estLiquidationPrices(price: number, maintenanceMarginBps: number = EDGE_DEFAULTS.maintenanceMarginBps): EstLiquidation {
+  const mm = maintenanceMarginBps / 10000;
+  const lvls: Array<"1x" | "3x" | "5x"> = ["1x", "3x", "5x"];
+  const long = {} as Record<"1x" | "3x" | "5x", number>;
+  const short = {} as Record<"1x" | "3x" | "5x", number>;
+  for (const k of lvls) {
+    const lev = Number(k.replace("x", ""));
+    long[k] = round2(price * (1 - 1 / lev + mm));
+    short[k] = round2(price * (1 + 1 / lev - mm));
+  }
+  return { long, short };
+}
+
+/** 綜合 edge：funding（負=shorts_pay=偏多→正分）+ OI 反向（人多做反向）。純函式。 */
+export function computeEdge(input: {
+  fundingRateBps: number;
+  oiImbalance: number;
+  isStale: boolean;
+  Kf?: number;
+  entryThreshold?: number;
+}): {
+  edgeScore: number;
+  fundingComponent: number;
+  oiComponent: number;
+  recommendation: "long" | "short" | "no_trade";
+  confidence: number;
+  reason: string;
+} {
+  const Kf = input.Kf ?? EDGE_DEFAULTS.Kf;
+  const entry = input.entryThreshold ?? EDGE_DEFAULTS.entryThreshold;
+  const fundingComponent = clamp(-input.fundingRateBps * Kf, -60, 60);
+  const oiComponent = clamp(-input.oiImbalance * 40, -40, 40);
+  const edgeScore = Math.round(clamp(fundingComponent + oiComponent, -100, 100));
+  if (input.isStale) {
+    return { edgeScore, fundingComponent: round2(fundingComponent), oiComponent: round2(oiComponent),
+      recommendation: "no_trade", confidence: Math.abs(edgeScore), reason: "oracle 資料過期（stale），本輪不建議進場" };
+  }
+  let recommendation: "long" | "short" | "no_trade";
+  let reason: string;
+  if (edgeScore >= entry) { recommendation = "long"; reason = `edge ${edgeScore} ≥ +${entry}（funding/OI 偏多）→ 做多`; }
+  else if (edgeScore <= -entry) { recommendation = "short"; reason = `edge ${edgeScore} ≤ −${entry}（funding/OI 偏空）→ 做空`; }
+  else { recommendation = "no_trade"; reason = `|edge| ${Math.abs(edgeScore)} < 門檻 ${entry}，訊號不夠強 → 不進場`; }
+  return { edgeScore, fundingComponent: round2(fundingComponent), oiComponent: round2(oiComponent),
+    recommendation, confidence: Math.abs(edgeScore), reason };
+}
+
+/** 把基礎 oracle 快照（價格/funding/OI/stale）enrich 成決策級資料。純函式、可測。 */
+export function enrichOracle(
+  base: Pick<OracleSnapshot, "price" | "fundingRateBps" | "longOpenInterest" | "shortOpenInterest" | "isStale">,
+  opts: { Kf?: number; entryThreshold?: number; maintenanceMarginBps?: number } = {},
+): Omit<OracleSnapshot, keyof OracleSnapshot> & {
+  oiImbalance: number; skewProxyBps: number; maintenanceMarginBps: number;
+  estLiquidation: EstLiquidation; edgeScore: number; fundingComponent: number;
+  oiComponent: number; recommendation: "long" | "short" | "no_trade"; confidence: number; reason: string;
+} {
+  const mmBps = opts.maintenanceMarginBps ?? EDGE_DEFAULTS.maintenanceMarginBps;
+  const oiImbalance = round2(computeOiImbalance(base.longOpenInterest, base.shortOpenInterest));
+  // OI skew → mark/index 偏移 proxy：滿失衡(±1) 約 ±50 bps（誠實的粗估，非真 mark）。
+  const skewProxyBps = Math.round(oiImbalance * 50);
+  const edge = computeEdge({ fundingRateBps: base.fundingRateBps, oiImbalance, isStale: base.isStale, Kf: opts.Kf, entryThreshold: opts.entryThreshold });
+  return {
+    oiImbalance, skewProxyBps, maintenanceMarginBps: mmBps,
+    estLiquidation: estLiquidationPrices(base.price, mmBps),
+    ...edge,
+  };
 }
 
 export interface StrategyLeg {
@@ -89,7 +205,7 @@ export async function getOracleSnapshot(
   const [price, updatedAt] = priceRes;
   const direction =
     fundingBps > 0n ? "longs_pay" : fundingBps < 0n ? "shorts_pay" : "balanced";
-  return {
+  const base = {
     asset: symbol,
     assetId,
     price: fmtPrice8(price),
@@ -97,10 +213,23 @@ export async function getOracleSnapshot(
     isStale,
     fundingRateBps: Number(fundingBps),
     fundingRatePercent: bpsToPercent(fundingBps),
-    fundingDirection: direction,
+    fundingDirection: direction as OracleSnapshot["fundingDirection"],
     longOpenInterest: fmtUsdc18(longOI),
     shortOpenInterest: fmtUsdc18(shortOI),
   };
+  // 決策級欄位（edge 政策參數可由 env 覆寫）。
+  const enriched = enrichOracle(base, {
+    Kf: numEnv("X402_EDGE_KF"),
+    entryThreshold: numEnv("X402_EDGE_ENTRY"),
+  });
+  return { ...base, ...enriched };
+}
+
+function numEnv(k: string): number | undefined {
+  const v = process.env[k]?.trim();
+  if (!v) return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
 }
 
 /** 當前每-interval funding rate（單一資產）。 */

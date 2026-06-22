@@ -118,7 +118,7 @@ export function createApp(): Hono {
       revenueModel: "FeeRouter 70/20/10 (trader/platform/vault), settled on-chain",
       endpoints: {
         "GET /signals/:trader": { price: `$${PRICE_SIGNALS}`, paid: true, desc: "trader 績效 + 開倉建議" },
-        "GET /oracle/:asset": { price: `$${PRICE_ORACLE}`, paid: true, desc: "價格 + funding + OI 快照" },
+        "GET /oracle/:asset": { price: `$${PRICE_ORACLE}`, paid: true, desc: "決策級快照：價格 / funding / OI 失衡 / 預估清算價 / edge 建議（long·short·no_trade）" },
         "GET /revenue": { price: "free", desc: "鏈上 70/20/10 累計（可選 ?trader=）" },
         "GET /agent/:did/verification": { price: "free", desc: "ERC-8126 agent 驗證（ETV/SCV/WAV/WV + 0–100 風險分數，verifier 簽章）" },
         "POST /demo/buy-signal": { price: "free", desc: "訪客試買（伺服器代付，回真實 settlement tx）" },
@@ -245,7 +245,7 @@ export function createApp(): Hono {
         "GET /oracle/[asset]": {
           price: `$${PRICE_ORACLE}`,
           network: NETWORK,
-          config: { description: "聚合價格 + funding rate + OI 快照" },
+          config: { description: "決策級快照：價格 + funding + OI 失衡 + 預估清算價 + edge 建議" },
         },
       },
       { url: FACILITATOR_URL as `${string}://${string}` },
