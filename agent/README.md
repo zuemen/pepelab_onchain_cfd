@@ -96,7 +96,7 @@ forge script script/DeployX402Router.s.sol:DeployX402Router \
 # 1) .env 補三項，啟用真下單：
 #    AGENT_PRIVATE_KEY=0x...            # session key（自管 EOA）
 #    SESSION_MANAGER_ADDRESS=0x...      # Deploy 印出的 AgentSessionMgr
-#    DEMO_SESSION_ID=0                  # createSession 得到的 id
+#    DEMO_SESSION_ID=6                  # session id（#0 已過期 → 用 #6，到 2027）
 # 2) 跑：
 npm run signal-api            # 終端機 1
 npm run demo-agent            # 終端機 2：付 x402 讀訊號 → 經 session 開一筆受限部位
