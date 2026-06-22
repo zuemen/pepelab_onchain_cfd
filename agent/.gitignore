@@ -3,3 +3,7 @@ dist/
 *.tsbuildinfo
 .env
 .env.local
+
+# Audit trail (runtime) + user-signed VC（含簽章，勿入庫）
+audit/
+examples/vc.json

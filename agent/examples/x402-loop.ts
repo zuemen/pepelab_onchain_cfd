@@ -15,8 +15,10 @@ import { baseSepolia } from "viem/chains";
 import { wrapFetchWithPayment } from "x402-fetch";
 import {
   openPositionForSession, getSession, makeProvider, makeContracts, assetIdOf,
+  agentDid, appendAudit, type AuditRecord, type AuthorizationVC,
 } from "@pepelab/shared";
 import { decide } from "./x402-autonomous.ts";
+import { loadVc, localVerifyVc, fetchAgentVerification, AUDIT_PATH, type VcCheck } from "./vc-gate.ts";
 
 const API = (process.env.X402_API_URL ?? "https://agent-git-master-zuemens-projects.vercel.app").replace(/\/$/, "");
 const PK = process.env.AGENT_PRIVATE_KEY?.trim();
@@ -54,24 +56,41 @@ async function hasOpenPosition(user: string, symbol: string): Promise<boolean> {
   return false;
 }
 
-async function runRound(payFetch: typeof fetch, sessionUser: string, det: any) {
-  const stamp = new Date().toISOString();
-  console.log(`\n──────── ${stamp} ────────`);
+interface RoundCtx {
+  payFetch: typeof fetch; sessionUser: string; det: any;
+  vc: AuthorizationVC | null; vcChk: VcCheck; agentAddress: string;
+  agentVerification: { overallRiskScore: number; riskTier: string } | null;
+}
+
+/** 每資產：付費研究 → 寫一筆稽核（不論下單/skip）→ 有效 VC + 決策才開倉。 */
+async function runRound(ctx: RoundCtx) {
+  const { payFetch, sessionUser, det, vc, vcChk, agentAddress, agentVerification } = ctx;
+  console.log(`\n──────── ${new Date().toISOString()} ────────`);
   for (const symbol of ASSETS) {
+    const rec: AuditRecord = {
+      ts: new Date().toISOString(), issuerDid: vcChk.issuerDid, agentDid: agentDid(agentAddress),
+      sessionId: SESSION_ID, vc: { id: vcChk.id, expiry: vcChk.expiry, verified: vcChk.ok, reason: vcChk.reason },
+      research: { resource: `/oracle/${symbol}`, priceUsdc: "0.005", settlementTx: null },
+      decision: { edgeScore: null, side: "skip", reason: "" },
+      action: { opened: false, positionId: null, txHash: null }, agentVerification,
+    };
     try {
       const res = await payFetch(`${API}/oracle/${symbol}`, { method: "GET" });
       const data = ((await res.json()) as any)?.data;
-      const payTx = decodePaymentTx(res);
+      rec.research.settlementTx = decodePaymentTx(res) ?? null;
+      rec.decision.edgeScore = data?.edgeScore ?? null;
+      const payTx = rec.research.settlementTx ?? undefined;
 
-      // 冷卻：N 分內開過 → 跳過
+      // 冷卻 / 已有部位 → skip（仍寫稽核）
       if (lastOpened[symbol] && Date.now() - lastOpened[symbol] < COOLDOWN_MS) {
-        console.log(`  ${symbol}: edge=${data?.edgeScore} → 冷卻中（${COOLDOWN_MS / 60000}分內已開過），跳過　[x402 ${link(payTx)}]`);
-        continue;
+        rec.decision.reason = `冷卻中（${COOLDOWN_MS / 60000} 分內已開過）`;
+        console.log(`  ${symbol}: edge=${data?.edgeScore} → 冷卻，跳過　[x402 ${link(payTx)}]`);
+        appendAudit(AUDIT_PATH, rec); continue;
       }
-      // 已有未平倉部位 → 跳過
       if (await hasOpenPosition(sessionUser, symbol)) {
-        console.log(`  ${symbol}: edge=${data?.edgeScore} → 已有未平倉部位，跳過　[x402 ${link(payTx)}]`);
-        continue;
+        rec.decision.reason = "已有未平倉部位";
+        console.log(`  ${symbol}: edge=${data?.edgeScore} → 已有部位，跳過　[x402 ${link(payTx)}]`);
+        appendAudit(AUDIT_PATH, rec); continue;
       }
 
       const dec = decide({
@@ -80,21 +99,30 @@ async function runRound(payFetch: typeof fetch, sessionUser: string, det: any) {
         sessionRemainingBudget: Number(det.totalMarginBudget ?? 0) - Number(det.spentMargin ?? 0),
         sessionMaxLev: Number(det.maxLeverage ?? 5),
       });
+      rec.decision.side = dec.action; rec.decision.reason = dec.reason;
+
       if (dec.action === "skip") {
         console.log(`  ${symbol}: edge=${data?.edgeScore} → skip（${dec.reason}）　[x402 ${link(payTx)}]`);
-        continue;
-      }
-      const isLong = dec.action === "long";
-      const r = await openPositionForSession({ sessionId: SESSION_ID, symbol, isLong, marginUsdc: dec.margin!, leverage: dec.leverage! });
-      if (r.ok) {
-        lastOpened[symbol] = Date.now();
-        console.log(`  ${symbol}: edge=${data?.edgeScore} → ${dec.action} ✓ position #${r.positionId ?? "?"}　開倉 ${link(r.txHash)}　[x402 ${link(payTx)}]`);
+      } else if (!vcChk.ok) {
+        rec.decision.reason += `；VC 無效 → 拒絕下單`;
+        console.log(`  ${symbol}: ${dec.action} 但 VC 無效 → 拒絕下單（${vcChk.reason}）`);
       } else {
-        console.log(`  ${symbol}: ${dec.action} 被拒：${r.error}`);
+        const isLong = dec.action === "long";
+        const r = await openPositionForSession({ sessionId: SESSION_ID, symbol, isLong, marginUsdc: dec.margin!, leverage: dec.leverage!, authVc: vc! });
+        if (r.ok) {
+          lastOpened[symbol] = Date.now();
+          rec.action = { opened: true, positionId: r.positionId ?? null, txHash: r.txHash ?? null };
+          console.log(`  ${symbol}: edge=${data?.edgeScore} → ${dec.action} ✓ #${r.positionId ?? "?"}　開倉 ${link(r.txHash)}　[x402 ${link(payTx)}]`);
+        } else {
+          rec.decision.reason += `；開倉被拒：${r.error}`;
+          console.log(`  ${symbol}: ${dec.action} 被拒：${r.error}`);
+        }
       }
     } catch (e) {
+      rec.decision.reason = `本輪失敗 — ${(e as Error).message}`;
       console.log(`  ${symbol}: 本輪失敗 — ${(e as Error).message}`);
     }
+    appendAudit(AUDIT_PATH, rec);
   }
 }
 
@@ -109,11 +137,18 @@ async function main() {
   const s: any = await getSession(SESSION_ID);
   const det = s?.detail ?? {};
   const sessionUser = det.user ?? account.address;
-  console.log(`x402-loop 上線。session #${SESSION_ID}（user ${sessionUser}）・資產 [${ASSETS.join(", ")}]・每 ${INTERVAL_MS / 60000} 分・冷卻 ${COOLDOWN_MS / 60000} 分。`);
 
+  // VC/SSI 閘門（E1）：載入使用者簽發的 VC。缺/無效 → 全程只研究，拒絕下單。
+  const vc = loadVc();
+  const vcChk = localVerifyVc(vc, account.address, SESSION_ID);
+  const agentVerification = await fetchAgentVerification(API, agentDid(account.address)); // E3
+  console.log(`x402-loop 上線。session #${SESSION_ID}（user ${sessionUser}）・資產 [${ASSETS.join(", ")}]・每 ${INTERVAL_MS / 60000} 分・冷卻 ${COOLDOWN_MS / 60000} 分。`);
+  console.log(`VC/SSI：${vcChk.ok ? "✓ 有效，可下單" : "✗ " + vcChk.reason + " → 全程只研究、拒絕下單"}。稽核 → ${AUDIT_PATH}`);
+
+  const ctx: RoundCtx = { payFetch, sessionUser, det, vc, vcChk, agentAddress: account.address, agentVerification };
   // 立即跑一輪，之後每 INTERVAL 重複（完全自主）。
   for (;;) {
-    await runRound(payFetch, sessionUser, det);
+    await runRound(ctx);
     await sleep(INTERVAL_MS);
   }
 }

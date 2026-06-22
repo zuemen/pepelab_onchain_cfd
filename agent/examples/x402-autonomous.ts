@@ -22,7 +22,8 @@ import { privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
 import { wrapFetchWithPayment } from "x402-fetch";
 import { pathToFileURL } from "node:url";
-import { openPositionForSession, getSession } from "@pepelab/shared";
+import { openPositionForSession, getSession, agentDid, appendAudit, type AuditRecord } from "@pepelab/shared";
+import { loadVc, localVerifyVc, fetchAgentVerification, AUDIT_PATH } from "./vc-gate.ts";
 
 // ── 決策參數（透明可調）──────────────────────────────────────────────────────
 const ENTRY_THRESHOLD = Number(process.env.X402_EDGE_ENTRY ?? "25"); // server 也用同門檻
@@ -115,6 +116,12 @@ async function main() {
     edgeScore: data?.edgeScore, recommendation: data?.recommendation, confidence: data?.confidence, isStale: data?.isStale,
   }));
 
+  // VC/SSI 閘門（E1）：載入使用者簽發的授權 VC；缺檔/壞檔/無效 → 可研究但**不准下單**。
+  const vc = loadVc();
+  const vcChk = localVerifyVc(vc, account.address, SESSION_ID);
+  console.log(`\nVC/SSI：${vcChk.ok ? "✓" : "✗"} ${vcChk.reason}` + (vcChk.issuerDid ? `（issuer ${vcChk.issuerDid}）` : ""));
+  if (!vc) console.error("   ⚠ 缺有效 VC（AGENT_AUTH_VC_PATH）→ 本次只做研究，拒絕下單（不可否認鏈不成立）。");
+
   // 讀 session 限額
   const s: any = await getSession(SESSION_ID);
   const det = s?.detail ?? {};
@@ -125,23 +132,50 @@ async function main() {
   // ② agent 自己判斷
   const dec = decide({ data, wantMargin, wantLeverage, sessionMaxPerTrade, sessionRemainingBudget, sessionMaxLev });
   console.log(`\n② 決策：${dec.action === "skip" ? "skip（不投資）" : dec.action} — ${dec.reason}`);
+
+  // E3：agent 可信度（ERC-8126，免費端點、best-effort）
+  const agentVerification = await fetchAgentVerification(API, agentDid(account.address));
+
+  const settlementTx = decodePaymentTx(res) ?? null;
+  const rec: AuditRecord = {
+    ts: new Date().toISOString(),
+    issuerDid: vcChk.issuerDid,
+    agentDid: agentDid(account.address),
+    sessionId: SESSION_ID,
+    vc: { id: vcChk.id, expiry: vcChk.expiry, verified: vcChk.ok, reason: vcChk.reason },
+    research: { resource: `/oracle/${symbol}`, priceUsdc: "0.005", settlementTx },
+    decision: { edgeScore: data?.edgeScore ?? null, side: dec.action, reason: dec.reason },
+    action: { opened: false, positionId: null, txHash: null },
+    agentVerification,
+  };
+
+  // ③ 下單條件：決策為 long/short **且** VC 有效（帶 authVc → 鏈上交叉比對）。
   if (dec.action === "skip") {
     console.log("\n④ 本輪不下單（x402 資料費已花，研究後決定不進場）。");
-    console.log("\n=== 鐵證 ===\n① x402 付款 tx:", link(decodePaymentTx(res)), "\n（本輪 skip，無開倉 tx）");
-    return;
+  } else if (!vcChk.ok) {
+    rec.decision.reason += `；VC 無效 → 拒絕下單`;
+    console.log(`\n④ 決策為 ${dec.action}，但 VC 無效 → 拒絕下單（${vcChk.reason}）。`);
+  } else {
+    const isLong = dec.action === "long";
+    console.log(`\n③ openPositionForSession(#${SESSION_ID}, ${symbol}, ${isLong ? "long" : "short"}, ${dec.margin}, ${dec.leverage}x, authVc) 上鏈中…⏳`);
+    const r = await openPositionForSession({ sessionId: SESSION_ID, symbol, isLong, marginUsdc: dec.margin!, leverage: dec.leverage!, authVc: vc! });
+    if (!r.ok) {
+      rec.decision.reason += `；開倉被拒：${r.error}`;
+      console.error(`   ❌ 開倉被拒：${r.error}`);
+    } else {
+      rec.action = { opened: true, positionId: r.positionId ?? null, txHash: r.txHash ?? null };
+      console.log(`   ✓ 開倉 tx: ${link(r.txHash)}  · position #${r.positionId ?? "?"}`);
+    }
   }
 
-  // ③ 決定下單才開倉
-  const isLong = dec.action === "long";
-  console.log(`\n③ openPositionForSession(#${SESSION_ID}, ${symbol}, ${isLong ? "long" : "short"}, ${dec.margin}, ${dec.leverage}x) 上鏈中…⏳`);
-  const r = await openPositionForSession({ sessionId: SESSION_ID, symbol, isLong, marginUsdc: dec.margin!, leverage: dec.leverage! });
-  if (!r.ok) { console.error(`   ❌ 開倉被拒：${r.error}`); process.exit(1); }
-  console.log(`   ✓ 開倉 tx: ${link(r.txHash)}  · position #${r.positionId ?? "?"}`);
+  appendAudit(AUDIT_PATH, rec);
+  console.log(`\n稽核已寫入 ${AUDIT_PATH}（verified=${rec.vc.verified}, opened=${rec.action.opened}）`);
 
-  console.log("\n=== 鐵證（BaseScan 可查）===");
-  console.log("① x402 付款 tx:", link(decodePaymentTx(res)));
-  console.log("③ 開倉 tx    :", link(r.txHash));
-  console.log("\n結論：agent 付官方 USDC 買決策級資料 → 自己判斷（可不投資）→ 該進才經 session 上鏈。");
+  console.log("\n=== 不可否認鏈（可獨立核對）===");
+  console.log("VC(誰授權)   :", rec.issuerDid ?? "—", rec.vc.verified ? "✓" : "✗");
+  console.log("① x402 付款 tx:", link(settlementTx ?? undefined));
+  if (rec.action.opened) console.log("③ 開倉 tx    :", link(rec.action.txHash ?? undefined));
+  console.log("→ 用 audit-verify.ts 可重新驗證此筆是否可被承認。");
 }
 
 // 只有「直接執行」這支時才跑 main；被 x402-loop.ts import（取 decide）時不自動執行。
