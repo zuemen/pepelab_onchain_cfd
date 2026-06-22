@@ -4,7 +4,7 @@ import { openPositionForSession, getSession } from "@pepelab/shared";
 
 const TOKEN = req("TELEGRAM_BOT_TOKEN");
 const ALLOWED = (process.env.TELEGRAM_ALLOWED_CHAT ?? "").trim();
-const SESSION_ID = Number(process.env.DEMO_SESSION_ID ?? "0");
+const SESSION_ID = Number(process.env.DEMO_SESSION_ID ?? "6"); // #0 已過期，改用 #6（到 2027）
 const VC = loadVc(process.env.AGENT_AUTH_VC_PATH);
 
 function req(k: string): string { const v = process.env[k]?.trim(); if (!v) throw new Error(`缺少環境變數 ${k}`); return v; }
