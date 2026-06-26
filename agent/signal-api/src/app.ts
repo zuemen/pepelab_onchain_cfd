@@ -209,8 +209,19 @@ export function createApp(): Hono {
       let settlementTx: string | undefined;
       let settleError: string | undefined;
       if (isSettlementEnabled()) {
-        const r = await settleRevenue(trader, PRICE_SIGNALS); // 真的上鏈 70/20/10
+        // serverless：別讓慢的鏈上結算(mint→approve→route 最多 3 筆 tx)拖到整個
+        // function timeout。給結算 12s 預算；逾時就先回訊號，結算視為背景 pending。
+        const SETTLE_BUDGET_MS = 12_000;
+        const timeoutP = new Promise<{ status: "pending" }>((res) =>
+          setTimeout(() => res({ status: "pending" }), SETTLE_BUDGET_MS),
+        );
+        const r = (await Promise.race([
+          settleRevenue(trader, PRICE_SIGNALS), // 真的上鏈 70/20/10
+          timeoutP,
+        ])) as { status: string; tx?: string; error?: string };
         if (r.status === "settled") settlementTx = r.tx;
+        else if (r.status === "pending")
+          settleError = "結算背景進行中（demo；稍後可於 /revenue 查鏈上累計）";
         else settleError = r.error;
       }
       return c.json(
