@@ -90,6 +90,9 @@ async function _assertCurrencyMatch(): Promise<string | null> {
   }
 }
 
+// 註：x402 付款由 facilitator 結算到 payTo；本函式另以結算錢包餘額透過 FeeRouter
+// 補上對應金額的 70/20/10「鏈上分潤紀錄」。即分潤金額對得上、但非與該筆 x402
+// 付款原子綁定（demo 帳務）。正式可改為直接從 payTo 收款後原子路由。
 async function _settle(trader: string, feeUsd: number): Promise<SettlementResult> {
   if (!wallet || !feeRouter || !usdc) {
     return { status: "failed", error: "settlement disabled" };
