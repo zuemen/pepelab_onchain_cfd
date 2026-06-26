@@ -189,7 +189,10 @@ export default function ExchangePage() {
   // independent batches use allSettled, so no single hung/undeployed-contract
   // call can block the page. setPageLoading(false) is always reached.
   const fetchAll = useCallback(async () => {
-    if (!contracts || !wallet.address || !wallet.provider) return;
+    if (!contracts || !wallet.address || !wallet.provider) {
+      setPageLoading(false);   // 未連錢包也要渲染頁面骨幹，別卡在 Skeleton
+      return;
+    }
     const addr = wallet.address;
     const provider = wallet.provider;
     try {
@@ -269,6 +272,12 @@ export default function ExchangePage() {
   }, [contracts, selAsset]);
 
   useEffect(() => { void fetchAll() }, [fetchAll]);
+
+  // 防呆保險：掛載後最多 10 秒一定關掉骨架，避免任何未來路徑再卡死。
+  useEffect(() => {
+    const t = setTimeout(() => setPageLoading(false), 10000);
+    return () => clearTimeout(t);
+  }, []);
 
   useEffect(() => { setHistory([]); setEsgConfirmed(false); }, [selAsset]);
 
