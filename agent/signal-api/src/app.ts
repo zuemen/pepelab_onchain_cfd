@@ -50,6 +50,7 @@ const contracts = makeContracts(provider);
 const VERIFIER_WALLET = (() => {
   const pk = process.env.VERIFIER_PRIVATE_KEY?.trim();
   if (pk && pk.startsWith("0x") && pk.length === 66) return new ethers.Wallet(pk);
+  console.warn("[verifier] 未設 VERIFIER_PRIVATE_KEY → 使用臨時隨機 verifier；正式環境請固定設定以保身分穩定。");
   return ethers.Wallet.createRandom();
 })();
 
