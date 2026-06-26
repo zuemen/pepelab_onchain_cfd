@@ -138,6 +138,19 @@ async function verifyVcAgainstChain(
     if (res.agent && ethers.getAddress(s.agent) !== ethers.getAddress(res.agent))
       return `VC agent 與鏈上 session.agent(${s.agent}) 不符`;
     if (s.revoked) return "鏈上 session 已撤銷";
+
+    // ── VC 宣稱的 caps 必須與鏈上 session 完全一致（防止 VC 與鏈上額度不符）──
+    if (res.caps) {
+      const c = res.caps;
+      if (ethers.parseUnits(String(c.maxMarginPerTrade), 18) !== (s.maxMarginPerTrade as bigint))
+        return `VC maxMarginPerTrade(${c.maxMarginPerTrade}) 與鏈上不符`;
+      if (ethers.parseUnits(String(c.totalBudget), 18) !== (s.totalMarginBudget as bigint))
+        return `VC totalBudget(${c.totalBudget}) 與鏈上不符`;
+      if (Number(c.maxLeverage) !== Number(s.maxLeverage))
+        return `VC maxLeverage(${c.maxLeverage}) 與鏈上不符`;
+      if (Number(c.expiry) !== Number(s.expiry))
+        return `VC expiry(${c.expiry}) 與鏈上 session 到期不符`;
+    }
   } catch (err) {
     return `讀取鏈上 session 失敗：${(err as Error).message}`;
   }
@@ -177,6 +190,13 @@ export async function openPositionForSession(params: {
     if (reason) {
       return { ok: false, error: `拒絕下單（VC 驗證未過）：${reason}`, agent: signer.address };
     }
+
+    // caps 預檢（省 gas、錯誤更清楚）：單筆保證金 / 槓桿不得超過 VC 授權上限。
+    const caps = params.authVc.credentialSubject.authorization;
+    if (params.marginUsdc > Number(caps.maxMarginPerTrade))
+      return { ok: false, error: `單筆保證金 ${params.marginUsdc} 超過上限 ${caps.maxMarginPerTrade}`, agent: signer.address };
+    if (params.leverage > Number(caps.maxLeverage))
+      return { ok: false, error: `槓桿 ${params.leverage} 超過上限 ${caps.maxLeverage}`, agent: signer.address };
   }
 
   // ERC-8126 風險閘門（預設關，旗標開啟才生效）。
