@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { MONO } from 'src/components/pepefi/brandKit'
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { parseUnits, formatUnits, Wallet, getAddress } from 'ethers'
@@ -67,6 +68,22 @@ const fUsdc = (v: bigint) => Number(formatUnits(v, 18)).toLocaleString('en-US', 
 const fDate = (ts: bigint) =>
   ts === 0n ? '—' : new Date(Number(ts) * 1000).toLocaleString('zh-TW', { dateStyle: 'short', timeStyle: 'short' })
 const short = (a: string) => `${a.slice(0, 8)}…${a.slice(-6)}`
+
+// 表單欄位：標籤置於框上方，避免 MUI 浮動標籤在有值時壓線/溢出。
+function Labeled({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <Box sx={{ flex: 1, minWidth: 0 }}>
+      <Typography
+        variant="caption"
+        color="text.secondary"
+        sx={{ display: 'block', mb: 0.5, fontWeight: 600 }}
+      >
+        {label}
+      </Typography>
+      {children}
+    </Box>
+  )
+}
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function SessionsPage() {
@@ -377,15 +394,16 @@ export default function SessionsPage() {
               </Typography>
             </Alert>
 
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }}>
-              <TextField
-                label="Agent address (session key)"
-                placeholder="0x…"
-                value={agent}
-                onChange={e => setAgent(e.target.value)}
-                size="small"
-                fullWidth
-              />
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'flex-end' }}>
+              <Labeled label="Agent address (session key)">
+                <TextField
+                  placeholder="0x… 或按右側 Generate agent key"
+                  value={agent}
+                  onChange={e => setAgent(e.target.value)}
+                  size="small"
+                  fullWidth
+                />
+              </Labeled>
               <Button
                 variant="outlined"
                 onClick={generateAgentKey}
@@ -422,17 +440,25 @@ export default function SessionsPage() {
               </Alert>
             )}
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-              <TextField label="Max / trade (USDT)" type="number" value={perTrade}
-                onChange={e => setPerTrade(e.target.value)} size="small" fullWidth />
-              <TextField label="Total budget (USDT)" type="number" value={budget}
-                onChange={e => setBudget(e.target.value)} size="small" fullWidth />
+              <Labeled label="Max / trade (USDT)">
+                <TextField type="number" value={perTrade} placeholder="1000"
+                  onChange={e => setPerTrade(e.target.value)} size="small" fullWidth />
+              </Labeled>
+              <Labeled label="Total budget (USDT)">
+                <TextField type="number" value={budget} placeholder="5000"
+                  onChange={e => setBudget(e.target.value)} size="small" fullWidth />
+              </Labeled>
             </Stack>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-              <TextField label="Max leverage" type="number" value={maxLev}
-                onChange={e => setMaxLev(e.target.value)} size="small" fullWidth
-                slotProps={{ htmlInput: { min: 1, max: 5 } }} />
-              <TextField label="Valid for (hours)" type="number" value={hours}
-                onChange={e => setHours(e.target.value)} size="small" fullWidth />
+              <Labeled label="Max leverage">
+                <TextField type="number" value={maxLev} placeholder="5"
+                  onChange={e => setMaxLev(e.target.value)} size="small" fullWidth
+                  slotProps={{ htmlInput: { min: 1, max: 5 } }} />
+              </Labeled>
+              <Labeled label="Valid for (hours)">
+                <TextField type="number" value={hours} placeholder="24"
+                  onChange={e => setHours(e.target.value)} size="small" fullWidth />
+              </Labeled>
             </Stack>
             <Box>
               <Button
