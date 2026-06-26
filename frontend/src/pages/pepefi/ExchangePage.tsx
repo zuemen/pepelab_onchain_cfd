@@ -147,6 +147,7 @@ export default function ExchangePage() {
   const [leverage,    setLeverage]    = useState(1);
   const [maxLev,      setMaxLev]      = useState(5); // N3: per-asset leverage cap
   const [openMgn,     setOpenMgn]     = useState('');
+  const [riskOpen,    setRiskOpen]    = useState(true); // 測試網/ADL/oracle 風險提示（可收合）
   const [history,     setHistory]     = useState<{ time: string; price: number }[]>([]);
 
   const [busy,         setBusy]        = useState<Record<string, boolean>>({});
@@ -939,6 +940,16 @@ export default function ExchangePage() {
         <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 1 }}>
           Open Position
         </Typography>
+
+        {riskOpen ? (
+          <Alert severity="info" variant="outlined" onClose={() => setRiskOpen(false)} sx={{ py: 0.5 }}>
+            ⚠️ 測試網：本平台為 oracle 計價永續，損益以 mark 價（含 OI 失衡）結算；極端單邊行情下帳面利潤可能因 ADL 自動減倉而調整；保證金為測試代幣。
+          </Alert>
+        ) : (
+          <Button size="small" variant="text" onClick={() => setRiskOpen(true)} sx={{ alignSelf: 'flex-start', textTransform: 'none', color: 'text.secondary' }}>
+            ⚠️ 顯示風險提示
+          </Button>
+        )}
 
         {freeMgn === 0n && (
           <Alert severity="warning">

@@ -3,6 +3,7 @@ import { parseEther } from 'ethers'
 import { AreaChart, Area, YAxis, ResponsiveContainer, Tooltip } from 'recharts'
 
 import Box from '@mui/material/Box'
+import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Snackbar from '@mui/material/Snackbar'
 
@@ -55,6 +56,7 @@ export default function TradeTerminalPage() {
   const [hist, setHist] = useState<{ t: number; p: number }[]>([])
   const [busy, setBusy] = useState<Record<string, boolean>>({})
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
+  const [riskOpen, setRiskOpen] = useState(true) // 測試網/ADL/oracle 風險提示（可收合）
 
   const { isVerified: kycOk } = useKYC(contracts?.kycRegistry ?? null, wallet.address ?? null)
   const meta = ASSET_META[selAsset]
@@ -316,6 +318,16 @@ export default function TradeTerminalPage() {
           </Box>
 
           {kycBlocked && <Box sx={{ ...monoCss, fontSize: 11.5, color: C.lime, ...panel, borderColor: C.line2, p: 1 }}>🔒 {meta?.symbol} 需 KYC，請至 Exchange 頁完成驗證</Box>}
+
+          {riskOpen ? (
+            <Alert severity="info" variant="outlined" onClose={() => setRiskOpen(false)} sx={{ py: 0.5, fontSize: 11.5 }}>
+              ⚠️ 測試網：本平台為 oracle 計價永續，損益以 mark 價（含 OI 失衡）結算；極端單邊行情下帳面利潤可能因 ADL 自動減倉而調整；保證金為測試代幣。
+            </Alert>
+          ) : (
+            <Button size="small" variant="text" onClick={() => setRiskOpen(true)} sx={{ alignSelf: 'flex-start', textTransform: 'none', color: C.mut, fontSize: 11.5 }}>
+              ⚠️ 顯示風險提示
+            </Button>
+          )}
 
           <Button onClick={() => void openPosition()}
             disabled={busy.open || !margin || (marginBig !== null && marginBig > freeMgn) || kycBlocked}
