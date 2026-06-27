@@ -109,6 +109,7 @@ export function createApp(): Hono {
   app.get("/", (c) =>
     c.json({
       service: "pepelab-signal-api",
+      buildMarker: "demo-bg-settle-20260627",
       discoverable: true,
       description:
         "Pay-per-call trading signals over x402. The endpoint IS the product — " +
