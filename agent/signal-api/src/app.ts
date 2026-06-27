@@ -209,20 +209,12 @@ export function createApp(): Hono {
       let settlementTx: string | undefined;
       let settleError: string | undefined;
       if (isSettlementEnabled()) {
-        // serverless：別讓慢的鏈上結算(mint→approve→route 最多 3 筆 tx)拖到整個
-        // function timeout。給結算 12s 預算；逾時就先回訊號，結算視為背景 pending。
-        const SETTLE_BUDGET_MS = 12_000;
-        const timeoutP = new Promise<{ status: "pending" }>((res) =>
-          setTimeout(() => res({ status: "pending" }), SETTLE_BUDGET_MS),
-        );
-        const r = (await Promise.race([
-          settleRevenue(trader, PRICE_SIGNALS), // 真的上鏈 70/20/10
-          timeoutP,
-        ])) as { status: string; tx?: string; error?: string };
-        if (r.status === "settled") settlementTx = r.tx;
-        else if (r.status === "pending")
-          settleError = "結算背景進行中（demo；稍後可於 /revenue 查鏈上累計）";
-        else settleError = r.error;
+        // serverless：鏈上結算(mint→approve→route 最多 3 筆 tx)在公共 RPC 上很慢，
+        // 疊加上面 getTraderPerformance 的多次鏈讀會超過 function 上限(30s)→ timeout。
+        // 故把結算移出回應路徑：背景觸發(真的上鏈 70/20/10)、立即回訊號；
+        // 結算視為 pending，累計可於 /revenue 查鏈上紀錄。
+        void settleRevenue(trader, PRICE_SIGNALS).catch(() => undefined);
+        settleError = "結算背景進行中（demo；稍後可於 /revenue 查鏈上累計）";
       }
       return c.json(
         jsonSafe({
