@@ -109,7 +109,7 @@ export function createApp(): Hono {
   app.get("/", (c) =>
     c.json({
       service: "pepelab-signal-api",
-      buildMarker: "demo-bg-settle-20260627",
+      buildMarker: "demo-no-settle-20260627b",
       discoverable: true,
       description:
         "Pay-per-call trading signals over x402. The endpoint IS the product — " +
@@ -207,16 +207,15 @@ export function createApp(): Hono {
       const trader = await resolveTrader(body.trader);
       const signal = await getTraderPerformance(contracts, trader);
 
-      let settlementTx: string | undefined;
-      let settleError: string | undefined;
-      if (isSettlementEnabled()) {
-        // serverless：鏈上結算(mint→approve→route 最多 3 筆 tx)在公共 RPC 上很慢，
-        // 疊加上面 getTraderPerformance 的多次鏈讀會超過 function 上限(30s)→ timeout。
-        // 故把結算移出回應路徑：背景觸發(真的上鏈 70/20/10)、立即回訊號；
-        // 結算視為 pending，累計可於 /revenue 查鏈上紀錄。
-        void settleRevenue(trader, PRICE_SIGNALS).catch(() => undefined);
-        settleError = "結算背景進行中（demo；稍後可於 /revenue 查鏈上累計）";
-      }
+      // 免費 demo：**不在請求內做鏈上結算**。理由——鏈上結算要 mint→approve→
+      // routeExternalRevenue 最多 3 筆循序 tx，在 serverless 上即使「背景觸發」，
+      // 平台仍會等事件圈清空才回應（callbackWaitsForEmptyEventLoop），導致整個
+      // function 撐到 30s 上限 → FUNCTION_INVOCATION_TIMEOUT。故 demo 只回訊號，
+      // 真實 70/20/10 分潤由「付費 x402 端點」實際結算，累計可於 /revenue 查。
+      const settlementTx: string | undefined = undefined;
+      const settleError: string | undefined = isSettlementEnabled()
+        ? "demo 免費試買不即時結算（避免 serverless 逾時）；真實分潤見付費 x402 端點 + /revenue 鏈上累計"
+        : undefined;
       return c.json(
         jsonSafe({
           ok: true,
