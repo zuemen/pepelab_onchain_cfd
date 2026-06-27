@@ -109,7 +109,7 @@ export function createApp(): Hono {
   app.get("/", (c) =>
     c.json({
       service: "pepelab-signal-api",
-      buildMarker: "diag-20260627d",
+      buildMarker: "bodyrace-20260627e",
       discoverable: true,
       description:
         "Pay-per-call trading signals over x402. The endpoint IS the product — " +
@@ -228,8 +228,16 @@ export function createApp(): Hono {
     demoBuyCount += 1;
 
     try {
-      const body = (await c.req.json().catch(() => ({}))) as { trader?: string };
-      const trader = await resolveTrader(body.trader);
+      // serverless 關鍵修正：Vercel Node runtime 常已先消化掉 request body，
+      // 導致 Hono 的 c.req.json() **永遠 hang**（不 resolve 也不 reject，.catch 救不了）
+      // → 整個 function 撐到 30s timeout。這正是 /demo/buy-signal 卡死的真因
+      //（GET 端點 /diag、/revenue 不讀 body 故正常）。
+      // 解法：body 解析加 1.5s 預算，逾時就當沒帶 body；trader 也接受 ?trader= query。
+      const body = (await Promise.race([
+        c.req.json().catch(() => ({})),
+        new Promise<Record<string, never>>((r) => setTimeout(() => r({}), 1500)),
+      ])) as { trader?: string };
+      const trader = await resolveTrader(body.trader ?? c.req.query("trader"));
       const signal = await getTraderPerformance(contracts, trader);
 
       // 免費 demo：**不在請求內做鏈上結算**。理由——鏈上結算要 mint→approve→
