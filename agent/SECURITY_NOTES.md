@@ -48,4 +48,27 @@ session 的單筆保證金 / 總預算 / 槓桿 / 到期 / 撤銷皆由 `AgentSe
 - 若本 repo 的 EIP-712 schema（`frontend/src/contracts/agentAuth.ts`）變更，
   獨立版必須同步，否則既有 VC 會驗證失敗。
 - repo 內 `agent/examples/*` 的 VC 驗證應一律 import 自 `@pepelab/shared` 的
-  `verifyAuthorizationVC`（單一來源），不要各自複製驗簽邏輯。
+  `verifyAuthorizationVC`（單一來源），不要各自複製驗簽邏輯。已核：`agent/examples/*`
+  皆 import 自 shared，無自寫 EIP-712 驗簽。
+
+## 6. session 預算為「累計」而非「淨未平倉」
+
+`AgentSessionManager.spentMargin` 目前**只增不減**：每次開倉 `+margin`，平倉／清算
+**不退還**額度。因此 `totalMarginBudget` 是該 session 的**終生累計保證金上限**，不是
+「同時在倉的淨上限」。含意：一個 budget=1000 的 session，開→平→開… 累計用滿 1000 後
+即不能再開，即使當下淨未平倉為 0。
+
+- 這是**保守**設計（額度不會被反覆開平「回收」放大曝險），對安全有利。
+- 若要改為「平倉後退還額度」（記淨未平倉保證金：開倉 +margin、平倉/清算 −margin），
+  需改 `AgentSessionManager` 並補 `forge test`（含開平往返守恆）後**重部署** session
+  manager。非必要；目前以本文件明示語意即可。
+
+## 7. 合約償付 / 預言機 / 資金費 現況（對應 docs/RISK_NOTES.md）
+
+- **ADL 已於 live 開啟**（owner tx `setAdlEnabled(true)`）：償付三層（輸家保證金 →
+  InsuranceVault → ADL haircut）全部生效。`portfolioMarginEnabled` 仍 off、
+  `markPremiumCapBps=0`（mark==index）。
+- **資金費守恆**：正式版（新部署）已改 per-side 雙索引、多空間等額轉移；live demo
+  交易所仍舊版單索引。詳見 RISK_NOTES。
+- **去中心化預言機**：`DeployWithPyth`(Aggregator: Pyth+Chainlink) 已 dry-run 通過、
+  等手動 broadcast；live 仍 MockOracle（合成資產 demo）。RWA 正式定價走 Pyth。
