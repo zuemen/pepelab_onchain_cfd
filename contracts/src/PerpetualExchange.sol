@@ -93,7 +93,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         int256  realizedPnL;
         bool    isOpen;
         address copiedFrom;        // address(0) for self-opened positions
-        int256  entryFundingIndex; // locked cumulativeFundingIndex at open time
+        int256  entryFundingIndex; // locked per-side cumulative funding index at open
     }
 
     // ── State ────────────────────────────────────────────────────────────────
@@ -106,8 +106,19 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     mapping(bytes32 => uint256)       public globalLongNotional;
     mapping(bytes32 => uint256)       public globalShortNotional;
 
-    // Funding rate state
-    mapping(bytes32 => int256)        public cumulativeFundingIndex;  // 18-dec, can be negative
+    // Funding rate state — conservative (peer-to-peer) model.
+    //
+    // Funding is a strict transfer between longs and shorts: every interval the
+    // crowded side PAYS and the other side RECEIVES the *same total* amount, so
+    // funding never mints/burns value against the pool (Σ longs pay == Σ shorts
+    // receive, modulo wei-level rounding that favours the pool). To keep both
+    // legs settling lazily via the cumulative-index trick we track a SEPARATE
+    // per-unit-notional index for each side; a position locks its own side's
+    // index at open and pays/receives the delta on close. The receiver side's
+    // per-unit rate is scaled by (payerOI / receiverOI) so the totals match.
+    // If either side has zero OI there is no counterparty → no funding accrues.
+    mapping(bytes32 => int256)        public cumulativeFundingIndexLong;   // 18-dec, signed
+    mapping(bytes32 => int256)        public cumulativeFundingIndexShort;  // 18-dec, signed
     mapping(bytes32 => uint256)       public lastFundingUpdateAt;
 
     uint256                           public nextPositionId;
@@ -180,7 +191,8 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     event FundingSettled(
         bytes32 indexed asset,
         int256  rateBps,
-        int256  newIndex
+        int256  longIndex,
+        int256  shortIndex
     );
     event AgentAuthorizationSet(address indexed agent, bool authorized);
     event KycRegistrySet(address indexed kyc);
@@ -584,27 +596,58 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     function _accrueFunding(bytes32 asset, uint256 intervals) internal {
         uint256 longOI  = globalLongNotional[asset];
         uint256 shortOI = globalShortNotional[asset];
-        if (longOI + shortOI == 0) return;
+        // Funding is peer-to-peer: with no counterparty on one side there is
+        // nobody to pay/receive, so no funding accrues (keeps it conservative).
+        if (longOI == 0 || shortOI == 0) return;
 
-        // imbalance ∈ (-1e18, +1e18)
-        int256 imbalance = (int256(longOI) - int256(shortOI)) * int256(1e18)
-                         / int256(longOI + shortOI);
-        int256 fundingRateBps = imbalance * int256(MAX_FUNDING_RATE_BPS) / int256(1e18);
+        int256 rateBps = _fundingRateBps(longOI, shortOI);
+        if (rateBps == 0) {
+            emit FundingSettled(
+                asset, 0, cumulativeFundingIndexLong[asset], cumulativeFundingIndexShort[asset]
+            );
+            return;
+        }
 
-        // 1 bps × 1e14 = 1e-4 fraction of notional (18-dec USDC)
-        cumulativeFundingIndex[asset] += fundingRateBps * int256(1e14) * int256(intervals);
+        // Per-unit-notional charge for the PAYER (crowded) side this settlement.
+        // 1 bps × 1e14 = 1e-4 fraction of notional (18-dec). |rate| because the
+        // sign only tells us *which* side pays; the magnitude is the payer charge.
+        uint256 absRate     = uint256(rateBps < 0 ? -rateBps : rateBps);
+        int256  payerCharge = int256(absRate * 1e14 * intervals);
 
-        emit FundingSettled(asset, fundingRateBps, cumulativeFundingIndex[asset]);
+        if (rateBps > 0) {
+            // Longs crowded → longs pay, shorts receive the same total pro-rata.
+            // receiver per-unit = payer per-unit × payerOI / receiverOI so that
+            //   shortOI × receiverPerUnit == longOI × payerCharge  (conserved).
+            cumulativeFundingIndexLong[asset]  += payerCharge;
+            cumulativeFundingIndexShort[asset] -= payerCharge * int256(longOI) / int256(shortOI);
+        } else {
+            // Shorts crowded → shorts pay, longs receive.
+            cumulativeFundingIndexShort[asset] += payerCharge;
+            cumulativeFundingIndexLong[asset]  -= payerCharge * int256(shortOI) / int256(longOI);
+        }
+
+        emit FundingSettled(
+            asset, rateBps, cumulativeFundingIndexLong[asset], cumulativeFundingIndexShort[asset]
+        );
     }
 
-    /// @notice Current per-interval funding rate in BPS (positive = longs pay, negative = shorts pay).
-    function getFundingRate(bytes32 asset) external view returns (int256 rateBps) {
-        uint256 longOI  = globalLongNotional[asset];
-        uint256 shortOI = globalShortNotional[asset];
-        if (longOI + shortOI == 0) return 0;
+    /// @dev Imbalance-driven payer rate in BPS for the given OI (positive = longs
+    ///      pay, negative = shorts pay). This is the per-unit charge applied to the
+    ///      crowded side; the thin side receives a pro-rata-scaled amount.
+    function _fundingRateBps(uint256 longOI, uint256 shortOI) internal pure returns (int256) {
         int256 imbalance = (int256(longOI) - int256(shortOI)) * int256(1e18)
                          / int256(longOI + shortOI);
         return imbalance * int256(MAX_FUNDING_RATE_BPS) / int256(1e18);
+    }
+
+    /// @notice Current per-interval funding rate in BPS (positive = longs pay,
+    ///         negative = shorts pay). Zero when either side has no open interest,
+    ///         since funding is a strict long↔short transfer with no counterparty.
+    function getFundingRate(bytes32 asset) external view returns (int256 rateBps) {
+        uint256 longOI  = globalLongNotional[asset];
+        uint256 shortOI = globalShortNotional[asset];
+        if (longOI == 0 || shortOI == 0) return 0;
+        return _fundingRateBps(longOI, shortOI);
     }
 
     /// @notice Accrued funding for an open position (positive = trader owes, negative = trader receives).
@@ -775,7 +818,9 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
             realizedPnL:      0,
             isOpen:           true,
             copiedFrom:       copiedFrom,
-            entryFundingIndex: cumulativeFundingIndex[asset]
+            entryFundingIndex: isLong
+                ? cumulativeFundingIndexLong[asset]
+                : cumulativeFundingIndexShort[asset]
         });
         userPositions[owner].push(positionId);
         assetPositionIds[asset].push(positionId); // N2: per-asset index for ADL
@@ -912,10 +957,15 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     /// @dev Funding owed by this position since it was opened.
     ///      Positive = position pays (deducted on close), negative = position receives.
     function _calcFunding(Position storage pos) internal view returns (int256) {
-        int256 indexDiff = cumulativeFundingIndex[pos.asset] - pos.entryFundingIndex;
+        // Each side has its own cumulative index; the sign of the index delta
+        // already encodes pay (+) vs receive (−), so no extra flip is needed.
+        // A long's index rises when longs are crowded (it pays); a short's index
+        // falls when longs are crowded (it receives) and vice-versa.
+        int256 sideIndex = pos.isLong
+            ? cumulativeFundingIndexLong[pos.asset]
+            : cumulativeFundingIndexShort[pos.asset];
+        int256 indexDiff = sideIndex - pos.entryFundingIndex;
         uint256 notional = pos.margin * pos.leverage;
-        int256 funding   = int256(notional) * indexDiff / int256(1e18);
-        // Long pays when index rises (positive funding); short receives (flip sign)
-        return pos.isLong ? funding : -funding;
+        return int256(notional) * indexDiff / int256(1e18);
     }
 }

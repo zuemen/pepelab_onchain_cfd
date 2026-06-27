@@ -20,6 +20,7 @@ contract SecurityFixesTest is Test {
     MockOracle        oracle;
 
     address alice      = makeAddr("alice");
+    address bob        = makeAddr("bob");
     address liquidator = makeAddr("liquidator");
     address attacker   = makeAddr("attacker");
 
@@ -38,9 +39,12 @@ contract SecurityFixesTest is Test {
         oracle.addAsset(BTC, BTC_PRICE);
 
         usdc.mint(alice, 1_000_000e18);
+        usdc.mint(bob,   1_000_000e18);
         usdc.mint(address(exchange), 10_000_000e18); // payout reserve
 
         vm.prank(alice);
+        usdc.approve(address(exchange), type(uint256).max);
+        vm.prank(bob);
         usdc.approve(address(exchange), type(uint256).max);
 
         exchange.setExecutionFee(0);
@@ -113,13 +117,18 @@ contract SecurityFixesTest is Test {
     // ── 4. Automatic funding settlement ───────────────────────────────────────
 
     /// Funding now accrues on close even if nobody ever calls settleFunding().
+    /// Two-sided long-heavy market: long 400 / short 100 → payer rate 45 bps.
     function test_funding_autoSettledOnClose() public {
         uint256 INTERVAL = exchange.FUNDING_INTERVAL();
 
         vm.prank(alice);
         exchange.depositMargin(1_000e18);
         vm.prank(alice);
-        uint256 pid = exchange.openPosition(BTC, true, 100e18, 5); // long-only → max funding
+        uint256 pid = exchange.openPosition(BTC, true, 100e18, 4); // long notional 400
+        vm.prank(bob);
+        exchange.depositMargin(1_000e18);
+        vm.prank(bob);
+        exchange.openPosition(BTC, false, 100e18, 1);              // short notional 100
 
         // 3 intervals pass; NOBODY calls settleFunding
         vm.warp(block.timestamp + 3 * INTERVAL);
@@ -129,29 +138,34 @@ contract SecurityFixesTest is Test {
         vm.prank(alice);
         exchange.closePosition(pid);
 
-        // notional 500e18, rate 75 bps/interval × 3 intervals
-        // funding = 500e18 * 3*75e14 / 1e18 = 11.25e18
-        // tradingFee = 0.5e18
-        // borrowFee = borrowed(400e18) * 1bps/h * (3 * 8h) / 10000  (8h interval)
-        uint256 borrowFee = (100e18 * (5 - 1)) * exchange.BORROW_FEE_BPS_PER_HOUR() * (3 * INTERVAL / 3600) / 10_000;
-        uint256 expected = 100e18 - 0.5e18 - 11.25e18 - borrowFee;
+        // notional 400e18, rate 45 bps/interval × 3 intervals
+        // funding = 400e18 * 3*45e14 / 1e18 = 5.4e18
+        // tradingFee = 0.4e18
+        // borrowFee = borrowed(300e18) * 1bps/h * (3 * 8h) / 10000  (8h interval)
+        uint256 borrowFee = (100e18 * (4 - 1)) * exchange.BORROW_FEE_BPS_PER_HOUR() * (3 * INTERVAL / 3600) / 10_000;
+        uint256 expected = 100e18 - 0.4e18 - 5.4e18 - borrowFee;
         assertEq(exchange.freeMargin(alice) - fmBefore, expected);
     }
 
     /// Multi-interval accrual: one settleFunding call after N intervals charges N× rate.
+    /// Two-sided long-heavy market (400/100) → 45 bps/interval on the long index.
     function test_settleFunding_accruesMultipleIntervals() public {
         uint256 INTERVAL = exchange.FUNDING_INTERVAL();
 
         vm.prank(alice);
         exchange.depositMargin(1_000e18);
         vm.prank(alice);
-        exchange.openPosition(BTC, true, 100e18, 1);
+        exchange.openPosition(BTC, true, 400e18, 1);
+        vm.prank(bob);
+        exchange.depositMargin(1_000e18);
+        vm.prank(bob);
+        exchange.openPosition(BTC, false, 100e18, 1);
 
         vm.warp(block.timestamp + 4 * INTERVAL);
         exchange.settleFunding(BTC);
 
-        // 4 intervals × 75 bps
-        assertEq(exchange.cumulativeFundingIndex(BTC), int256(4 * 75) * int256(1e14));
+        // 4 intervals × 45 bps on the long (payer) index
+        assertEq(exchange.cumulativeFundingIndexLong(BTC), int256(4 * 45) * int256(1e14));
     }
 
     /// A position opened AFTER funding accrued must not pay for the past.
@@ -161,7 +175,11 @@ contract SecurityFixesTest is Test {
         vm.prank(alice);
         exchange.depositMargin(2_000e18);
         vm.prank(alice);
-        exchange.openPosition(BTC, true, 100e18, 1); // creates long-only OI
+        exchange.openPosition(BTC, true, 400e18, 1); // long side OI
+        vm.prank(bob);
+        exchange.depositMargin(1_000e18);
+        vm.prank(bob);
+        exchange.openPosition(BTC, false, 100e18, 1); // short side → funding accrues
 
         vm.warp(block.timestamp + 5 * INTERVAL);
         oracle.updatePrice(BTC, BTC_PRICE);

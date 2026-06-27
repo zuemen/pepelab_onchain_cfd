@@ -67,7 +67,14 @@ contract FundingTest is Test {
         exchange.settleFunding(asset);
     }
 
-    // ── 1. Balanced OI → zero rate ───────────────────────────────────────────
+    // Canonical conservative scenario reused below: longOI 400 / shortOI 100
+    //   imbalance = (400-100)/500 = 0.6e18 → payer rate = 0.6 * 75 = 45 bps (exact)
+    //   payer (long) per-unit index += 45e14
+    //   receiver (short) per-unit index -= 45e14 * longOI/shortOI = 45e14 * 4 = 180e14
+    //   Σ longs pay   = 45e14  * 400e18 / 1e18 = 1.8e18
+    //   Σ shorts recv = 180e14 * 100e18 / 1e18 = 1.8e18   → conserved exactly
+
+    // ── 1. Balanced OI → zero rate, indices unchanged ────────────────────────
 
     function testSettleFunding_balanced_zeroRate() public {
         _deposit(alice, 200e18);
@@ -77,40 +84,44 @@ contract FundingTest is Test {
 
         vm.warp(block.timestamp + INTERVAL);
         vm.expectEmit(true, false, false, true);
-        emit PerpetualExchange.FundingSettled(BTC, 0, 0);
+        emit PerpetualExchange.FundingSettled(BTC, 0, 0, 0);
         _settle(BTC);
 
-        assertEq(exchange.cumulativeFundingIndex(BTC), 0);
+        assertEq(exchange.cumulativeFundingIndexLong(BTC),  0);
+        assertEq(exchange.cumulativeFundingIndexShort(BTC), 0);
+        assertEq(exchange.getFundingRate(BTC), 0);
     }
 
-    // ── 2. Long-heavy → positive rate (index rises) ──────────────────────────
+    // ── 2. Long-heavy → longs pay (index rises), shorts receive (index falls) ─
 
-    function testSettleFunding_longHeavy_positiveRate() public {
-        _deposit(alice, 200e18);
-        _open(alice, BTC, true, 100e18, 1); // only longs, imbalance = 1
+    function testSettleFunding_longHeavy_longsPayShortsReceive() public {
+        _deposit(alice, 500e18);
+        _deposit(bob,   500e18);
+        _open(alice, BTC, true,  400e18, 1); // long  400 notional
+        _open(bob,   BTC, false, 100e18, 1); // short 100 notional
 
         vm.warp(block.timestamp + INTERVAL);
         _settle(BTC);
 
-        // imbalance = 1e18, fundingRateBps = 75, index = 75 * 1e14
-        int256 expectedIndex = int256(75) * int256(1e14);
-        assertEq(exchange.cumulativeFundingIndex(BTC), expectedIndex);
-        assertEq(exchange.getFundingRate(BTC), 75);
+        assertEq(exchange.getFundingRate(BTC), 45);
+        assertEq(exchange.cumulativeFundingIndexLong(BTC),   int256(45)  * int256(1e14));
+        assertEq(exchange.cumulativeFundingIndexShort(BTC), -int256(180) * int256(1e14));
     }
 
-    // ── 3. Short-heavy → negative rate (index falls) ─────────────────────────
+    // ── 3. Short-heavy → shorts pay (index rises), longs receive (index falls) ─
 
-    function testSettleFunding_shortHeavy_negativeRate() public {
-        _deposit(alice, 200e18);
-        _open(alice, BTC, false, 100e18, 1); // only shorts, imbalance = -1
+    function testSettleFunding_shortHeavy_shortsPayLongsReceive() public {
+        _deposit(alice, 500e18);
+        _deposit(bob,   500e18);
+        _open(alice, BTC, false, 400e18, 1); // short 400 notional
+        _open(bob,   BTC, true,  100e18, 1); // long  100 notional
 
         vm.warp(block.timestamp + INTERVAL);
         _settle(BTC);
 
-        // imbalance = -1e18, fundingRateBps = -75, index = -75 * 1e14
-        int256 expectedIndex = -int256(75) * int256(1e14);
-        assertEq(exchange.cumulativeFundingIndex(BTC), expectedIndex);
-        assertEq(exchange.getFundingRate(BTC), -75);
+        assertEq(exchange.getFundingRate(BTC), -45);
+        assertEq(exchange.cumulativeFundingIndexShort(BTC),  int256(45)  * int256(1e14));
+        assertEq(exchange.cumulativeFundingIndexLong(BTC),  -int256(180) * int256(1e14));
     }
 
     // ── 4. Settle before interval elapses → revert ───────────────────────────
@@ -120,126 +131,155 @@ contract FundingTest is Test {
         _settle(BTC);
     }
 
-    // ── 5. Index accumulates across multiple periods ──────────────────────────
+    // ── 5. Indices accumulate across multiple periods ─────────────────────────
 
     function testFundingAccumulatesOverPeriods() public {
-        _deposit(alice, 200e18);
-        _open(alice, BTC, true, 100e18, 1);
+        _deposit(alice, 500e18);
+        _deposit(bob,   500e18);
+        _open(alice, BTC, true,  400e18, 1);
+        _open(bob,   BTC, false, 100e18, 1);
 
         // Period 1
         vm.warp(block.timestamp + INTERVAL);
         _settle(BTC);
-        assertEq(exchange.cumulativeFundingIndex(BTC), int256(75) * int256(1e14));
+        assertEq(exchange.cumulativeFundingIndexLong(BTC), int256(45) * int256(1e14));
 
         // Period 2
         vm.warp(block.timestamp + INTERVAL);
         _settle(BTC);
-        assertEq(exchange.cumulativeFundingIndex(BTC), int256(150) * int256(1e14));
+        assertEq(exchange.cumulativeFundingIndexLong(BTC),  int256(90)  * int256(1e14));
+        assertEq(exchange.cumulativeFundingIndexShort(BTC), -int256(360) * int256(1e14));
     }
 
-    // ── 6. Long pays funding when long-heavy ─────────────────────────────────
-    //   margin=100e18, lev=5 → notional=500e18
-    //   Only longs → imbalance=1 → fundingRateBps=75
-    //   cumulativeIndex = 75e14
-    //   fundingPayment = 500e18 * 75e14 / 1e18 = 3.75e18
-    //   tradingFee(close) = 500e18 * 10/10000 = 0.5e18
-    //   borrowFee = borrowed(400e18) * 1 * hours / 10000  (1 interval = 8h)
-    //   closeAmount = 100e18 + 0 - tradingFee - borrowFee - fundingPayment
+    // ── 6. Long pays funding when long-heavy (canonical scenario) ─────────────
+    //   alice long: margin=100, lev=4 → notional=400 ; bob short: notional=100
+    //   rate=45 → alice funding = 400e18 * 45e14 / 1e18 = 1.8e18
 
     function testCloseLongPosition_paysFunding_whenLongHeavy() public {
         _deposit(alice, 1_000e18);
-        uint256 pid = _open(alice, BTC, true, 100e18, 5);
+        _deposit(bob,   1_000e18);
+        uint256 pid = _open(alice, BTC, true, 100e18, 4); // long  notional 400
+        _open(bob,   BTC, false, 100e18, 1);              // short notional 100
 
         vm.warp(block.timestamp + INTERVAL);
         _settle(BTC);
 
-        int256 expectedFunding = int256(500e18) * int256(75) * int256(1e14) / int256(1e18);
-        // = 500 * 75e14 / 1 = 37500e14 = 3.75e18
+        int256 expectedFunding = int256(400e18) * int256(45) * int256(1e14) / int256(1e18); // 1.8e18
         assertEq(exchange.pendingFunding(pid), expectedFunding);
 
         uint256 fmBefore = exchange.freeMargin(alice);
         _close(alice, pid);
         uint256 received = exchange.freeMargin(alice) - fmBefore;
 
-        uint256 tradingFee = 500e18 * 10 / 10_000; // 0.5e18
-        // borrow fee accrues on the protocol-supplied notional (lev>1) per hour
-        uint256 borrowed   = 100e18 * (5 - 1);     // 400e18
-        uint256 hoursEl    = INTERVAL / 3600;      // 8h
+        uint256 tradingFee = 400e18 * 10 / 10_000;  // 0.4e18
+        uint256 borrowed   = 100e18 * (4 - 1);      // 300e18
+        uint256 hoursEl    = INTERVAL / 3600;       // 8h
         uint256 borrowFee  = borrowed * exchange.BORROW_FEE_BPS_PER_HOUR() * hoursEl / 10_000;
         uint256 expected   = 100e18 - tradingFee - borrowFee - uint256(expectedFunding);
         assertEq(received, expected);
     }
 
-    // ── 7. Short receives funding when long-heavy ─────────────────────────────
-    //   alice long  200e18 notional (margin=200, lev=1)
-    //   bob   short 100e18 notional (margin=100, lev=1)
-    //   imbalance = (200-100)*1e18/300 = 333333333333333333
-    //   fundingRateBps = 333333333333333333 * 75 / 1e18 = 24 (int div)
-    //   cumulativeIndex = 24e14
-    //   bob pendingFunding = -(100e18 * 24e14 / 1e18) = -2.4e17  (receives)
-    //   bob closeAmount = 100e18 - tradingFee - (-2.4e17) = 100e18 - 0.1e18 + 0.24e18
+    // ── 7. Short receives EXACTLY what the long pays (conservation) ────────────
 
     function testCloseShortPosition_receivesFunding_whenLongHeavy() public {
-        _deposit(alice, 500e18);
-        _deposit(bob,   500e18);
-        _open(alice, BTC, true,  200e18, 1); // long  200e18 notional
-        uint256 bobPid = _open(bob, BTC, false, 100e18, 1); // short 100e18 notional
+        _deposit(alice, 1_000e18);
+        _deposit(bob,   1_000e18);
+        uint256 alicePid = _open(alice, BTC, true,  100e18, 4); // long  400
+        uint256 bobPid   = _open(bob,   BTC, false, 100e18, 1); // short 100
 
         vm.warp(block.timestamp + INTERVAL);
         _settle(BTC);
 
-        // Compute expected fundingRateBps (same int arithmetic as contract)
-        int256 imbalance = (int256(200e18) - int256(100e18)) * int256(1e18)
-                         / int256(200e18 + 100e18); // 333333333333333333
-        int256 rateBps   = imbalance * int256(75) / int256(1e18); // 24
-
-        int256 bobFunding = exchange.pendingFunding(bobPid);
-        // bob is short → pendingFunding is negative (receives)
-        int256 expectedBobFunding = -(int256(100e18) * rateBps * int256(1e14) / int256(1e18));
-        assertEq(bobFunding, expectedBobFunding);
+        int256 aliceFunding = exchange.pendingFunding(alicePid); // +1.8e18 (pays)
+        int256 bobFunding   = exchange.pendingFunding(bobPid);   // -1.8e18 (receives)
+        assertEq(aliceFunding,  int256(18e17));
+        assertEq(bobFunding,   -int256(18e17));
         assertTrue(bobFunding < 0, "short should receive (negative)");
+        // conservation: long pays exactly what short receives
+        assertEq(aliceFunding, -bobFunding);
 
         uint256 fmBefore = exchange.freeMargin(bob);
         _close(bob, bobPid);
         uint256 received = exchange.freeMargin(bob) - fmBefore;
 
         uint256 tradingFee  = 100e18 * 10 / 10_000; // 0.1e18
-        // closeAmount = 100e18 - tradingFee - fundingPayment
-        // fundingPayment is negative, so we add it
+        // closeAmount = 100e18 - tradingFee - fundingPayment (negative → adds back)
         int256 expectedClose = int256(100e18) - int256(tradingFee) - bobFunding;
         assertEq(int256(received), expectedClose);
     }
 
-    // ── 8. No OI → settle does nothing to index ──────────────────────────────
+    // ── 8. No OI → settle does nothing to either index ────────────────────────
 
     function testFundingZero_whenNoOI() public {
         vm.warp(block.timestamp + INTERVAL);
         _settle(BTC);
 
-        assertEq(exchange.cumulativeFundingIndex(BTC), 0);
+        assertEq(exchange.cumulativeFundingIndexLong(BTC),  0);
+        assertEq(exchange.cumulativeFundingIndexShort(BTC), 0);
         assertEq(exchange.lastFundingUpdateAt(BTC), block.timestamp);
     }
 
-    // ── 9. Economic sanity: funding stays in a reasonable band ────────────────
-    //   At FULL one-sided imbalance the per-interval rate equals the cap, and the
-    //   annualised/daily figure must stay sane (≤ ~3%/day with the 8h cadence).
+    // ── 9. Economic sanity: per-interval rate bounded by the cap ──────────────
+    //   A strongly imbalanced (but two-sided) market approaches the cap. The cap
+    //   (75 bps / 8h) bounds daily funding to 2.25%/day — well under the 10% ceiling.
     function testFunding_dailyRate_isEconomicallySane() public {
-        _deposit(alice, 200e18);
-        _open(alice, BTC, true, 100e18, 1); // only longs → maximum imbalance
+        _deposit(alice, 1_000e18);
+        _deposit(bob,   1_000e18);
+        _open(alice, BTC, true,  900e18, 1); // long  900
+        _open(bob,   BTC, false, 100e18, 1); // short 100 → imbalance 0.8 → rate 60
 
         vm.warp(block.timestamp + INTERVAL);
         _settle(BTC);
 
-        // Per-interval rate never exceeds the configured cap.
         int256 ratePerInterval = exchange.getFundingRate(BTC);
+        assertEq(ratePerInterval, 60);
         assertLe(ratePerInterval, int256(exchange.MAX_FUNDING_RATE_BPS()),
             "per-interval funding above cap");
 
-        // Daily funding at the cap = rate * (1 day / interval).
-        // With 8h interval and 75 bps cap → 75 * 3 = 225 bps = 2.25%/day.
+        // Daily funding projected at the *cap* = cap * (1 day / interval).
         uint256 intervalsPerDay = 1 days / exchange.FUNDING_INTERVAL();
-        uint256 dailyBps = uint256(ratePerInterval) * intervalsPerDay;
-        assertEq(dailyBps, 225, "daily funding at full imbalance should be 2.25%/day");
-        assertLe(dailyBps, 1000, "daily funding cap must stay <= 10%/day"); // sanity ceiling
+        uint256 dailyAtCap = exchange.MAX_FUNDING_RATE_BPS() * intervalsPerDay;
+        assertEq(dailyAtCap, 225, "daily funding at cap should be 2.25%/day");
+        assertLe(dailyAtCap, 1000, "daily funding cap must stay <= 10%/day");
+    }
+
+    // ── 10. Conservation: Σ longs pay == Σ shorts receive ─────────────────────
+
+    function testFunding_conserved_longsPayEqualsShortsReceive() public {
+        _deposit(alice, 1_000e18);
+        _deposit(bob,   1_000e18);
+        uint256 longPid  = _open(alice, BTC, true,  400e18, 1); // long  400
+        uint256 shortPid = _open(bob,   BTC, false, 100e18, 1); // short 100
+
+        vm.warp(block.timestamp + INTERVAL);
+        _settle(BTC);
+
+        // aggregate owed by each side via the per-side index identity:
+        //   longOI × ΔlongIndex == −(shortOI × ΔshortIndex)
+        int256 longIdx  = exchange.cumulativeFundingIndexLong(BTC);
+        int256 shortIdx = exchange.cumulativeFundingIndexShort(BTC);
+        int256 longsPay      = int256(400e18) * longIdx  / int256(1e18); // > 0
+        int256 shortsReceive = int256(100e18) * shortIdx / int256(1e18); // < 0
+        assertGt(longsPay, 0);
+        assertEq(longsPay, -shortsReceive); // strict conservation
+
+        // one position per side → equals each position's funding
+        assertEq(exchange.pendingFunding(longPid),  longsPay);
+        assertEq(exchange.pendingFunding(shortPid), shortsReceive);
+    }
+
+    // ── 11. Degenerate one-sided market → no counterparty → no funding ────────
+
+    function testFunding_oneSided_noFunding() public {
+        _deposit(alice, 500e18);
+        uint256 pid = _open(alice, BTC, true, 100e18, 1); // longs only, no shorts
+
+        vm.warp(block.timestamp + INTERVAL);
+        _settle(BTC);
+
+        assertEq(exchange.getFundingRate(BTC), 0);
+        assertEq(exchange.cumulativeFundingIndexLong(BTC),  0);
+        assertEq(exchange.cumulativeFundingIndexShort(BTC), 0);
+        assertEq(exchange.pendingFunding(pid), 0);
     }
 }
