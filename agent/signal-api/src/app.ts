@@ -109,7 +109,7 @@ export function createApp(): Hono {
   app.get("/", (c) =>
     c.json({
       service: "pepelab-signal-api",
-      buildMarker: "demo-no-settle-20260627b",
+      buildMarker: "demo-nobatch-20260627c",
       discoverable: true,
       description:
         "Pay-per-call trading signals over x402. The endpoint IS the product — " +
@@ -123,7 +123,7 @@ export function createApp(): Hono {
         "GET /oracle/:asset": { price: `$${PRICE_ORACLE}`, paid: true, desc: "決策級快照：價格 / funding / OI 失衡 / 預估清算價 / edge 建議（long·short·no_trade）" },
         "GET /revenue": { price: "free", desc: "鏈上 70/20/10 累計（可選 ?trader=）" },
         "GET /agent/:did/verification": { price: "free", desc: "ERC-8126 agent 驗證（ETV/SCV/WAV/WV + 0–100 風險分數，verifier 簽章）" },
-        "POST /demo/buy-signal": { price: "free", desc: "訪客試買（伺服器代付，回真實 settlement tx）" },
+        "POST /demo/buy-signal": { price: "free", desc: "訪客試買（免費回訊號；真實 70/20/10 分潤見付費 x402 端點 + /revenue 累計）" },
       },
       example: {
         curl: "curl -s <BASE_URL>/  # discover, then pay with any x402 client",

@@ -19,10 +19,19 @@ export function makeProvider(rpcUrl?: string): ethers.JsonRpcProvider {
       "缺少 BASE_SEPOLIA_RPC_URL：請在 .env 設定 Base Sepolia RPC（見 .env.example）",
     );
   }
-  return new ethers.JsonRpcProvider(url, {
-    chainId: AGENT_CHAIN_ID,
-    name: AGENT_CHAIN_ID === 84532 ? "base-sepolia" : "sepolia",
-  });
+  return new ethers.JsonRpcProvider(
+    url,
+    {
+      chainId: AGENT_CHAIN_ID,
+      name: AGENT_CHAIN_ID === 84532 ? "base-sepolia" : "sepolia",
+    },
+    // batchMaxCount: 1 → 關閉 JSON-RPC 請求批次化。ethers v6 預設會把同一個 tick 內
+    // 的並發 eth_call（如 getTraderPerformance 的 Promise.all）合併成一個 batch 請求；
+    // 公共節點 sepolia.base.org 對 batch 的處理在某些 serverless 區域不穩，會整批卡住
+    // （本機正常、Vercel 卡到 30s function timeout）。逐筆送出最穩、相容性最好。
+    // staticNetwork → 已給定 chainId，省去網路偵測往返。
+    { batchMaxCount: 1, staticNetwork: true },
+  );
 }
 
 /** 一次建好三個唯讀合約實例，給聚合層使用。 */
