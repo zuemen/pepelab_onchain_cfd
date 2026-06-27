@@ -39,6 +39,11 @@ const SETTLEMENT_TOKEN =
 export const PRICE_SIGNALS = 0.01; // USDC
 export const PRICE_ORACLE = 0.005; // USDC
 
+// 免費 demo 的預設分析對象：當未帶 trader、未設 DEMO_TRADER_ADDRESS 且鏈上
+// registry 尚無註冊 trader 時，退回這個已知有鏈上活動的地址（treasury/deployer），
+// 讓「訪客試買」仍能回真實訊號。可用 DEMO_TRADER_ADDRESS env 覆寫。
+const DEFAULT_DEMO_TRADER = "0xE80A81360608C1342e66743F70a00f75d792Eb93";
+
 const provider = makeProvider();
 const contracts = makeContracts(provider);
 
@@ -84,8 +89,9 @@ async function resolveTrader(want?: string): Promise<string> {
   const envT = process.env.DEMO_TRADER_ADDRESS?.trim();
   if (envT && /^0x[0-9a-fA-F]{40}$/.test(envT)) return envT;
   const list = (await contracts.registry.getAllTraders()) as string[];
-  if (!list.length) throw new Error("鏈上尚無已註冊 trader");
-  return list[0];
+  if (list.length) return list[0];
+  // registry 尚無註冊 trader → 退回已知有鏈上活動的 demo 地址，免費試買仍可回真實訊號。
+  return DEFAULT_DEMO_TRADER;
 }
 
 // /demo/buy-signal 速率限制（best-effort）：per-IP 冷卻 + per-instance 硬上限。
@@ -109,7 +115,6 @@ export function createApp(): Hono {
   app.get("/", (c) =>
     c.json({
       service: "pepelab-signal-api",
-      buildMarker: "bodyrace-20260627e",
       discoverable: true,
       description:
         "Pay-per-call trading signals over x402. The endpoint IS the product — " +
@@ -131,31 +136,6 @@ export function createApp(): Hono {
       },
     }),
   );
-
-  // ── 暫時診斷端點：逐步量測各 RPC 呼叫耗時（定位 serverless 卡點，之後移除） ──
-  app.get("/diag", async (c) => {
-    const DEAD = "0x000000000000000000000000000000000000dEaD";
-    const out: Record<string, string> = {};
-    const cap = <T>(p: Promise<T>, ms: number): Promise<T | { __timeout: true }> =>
-      Promise.race([p, new Promise<{ __timeout: true }>((r) => setTimeout(() => r({ __timeout: true }), ms))]);
-    const step = async (label: string, p: Promise<unknown>) => {
-      const t0 = Date.now();
-      try {
-        const r = await cap(p, 8000);
-        out[label] =
-          r && typeof r === "object" && "__timeout" in r
-            ? `>8000ms TIMEOUT`
-            : `${Date.now() - t0}ms ok`;
-      } catch (e) {
-        out[label] = `${Date.now() - t0}ms ERR ${(e as Error).message.slice(0, 80)}`;
-      }
-    };
-    await step("provider.getBlockNumber", provider.getBlockNumber());
-    await step("registry.getStrategyCount(dead)", contracts.registry.getStrategyCount(DEAD) as Promise<unknown>);
-    await step("perp.getUserPositions(dead)", contracts.perp.getUserPositions(DEAD) as Promise<unknown>);
-    await step("getTraderPerformance(dead)", getTraderPerformance(contracts, DEAD));
-    return c.json(out);
-  });
 
   // ── 免費：鏈上收入（X402 FeeRouter 真實累計） ────────────────────────────
   app.get("/revenue", async (c) => {
