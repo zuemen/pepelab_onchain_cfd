@@ -109,7 +109,7 @@ export function createApp(): Hono {
   app.get("/", (c) =>
     c.json({
       service: "pepelab-signal-api",
-      buildMarker: "demo-nobatch-20260627c",
+      buildMarker: "diag-20260627d",
       discoverable: true,
       description:
         "Pay-per-call trading signals over x402. The endpoint IS the product — " +
@@ -131,6 +131,31 @@ export function createApp(): Hono {
       },
     }),
   );
+
+  // ── 暫時診斷端點：逐步量測各 RPC 呼叫耗時（定位 serverless 卡點，之後移除） ──
+  app.get("/diag", async (c) => {
+    const DEAD = "0x000000000000000000000000000000000000dEaD";
+    const out: Record<string, string> = {};
+    const cap = <T>(p: Promise<T>, ms: number): Promise<T | { __timeout: true }> =>
+      Promise.race([p, new Promise<{ __timeout: true }>((r) => setTimeout(() => r({ __timeout: true }), ms))]);
+    const step = async (label: string, p: Promise<unknown>) => {
+      const t0 = Date.now();
+      try {
+        const r = await cap(p, 8000);
+        out[label] =
+          r && typeof r === "object" && "__timeout" in r
+            ? `>8000ms TIMEOUT`
+            : `${Date.now() - t0}ms ok`;
+      } catch (e) {
+        out[label] = `${Date.now() - t0}ms ERR ${(e as Error).message.slice(0, 80)}`;
+      }
+    };
+    await step("provider.getBlockNumber", provider.getBlockNumber());
+    await step("registry.getStrategyCount(dead)", contracts.registry.getStrategyCount(DEAD) as Promise<unknown>);
+    await step("perp.getUserPositions(dead)", contracts.perp.getUserPositions(DEAD) as Promise<unknown>);
+    await step("getTraderPerformance(dead)", getTraderPerformance(contracts, DEAD));
+    return c.json(out);
+  });
 
   // ── 免費：鏈上收入（X402 FeeRouter 真實累計） ────────────────────────────
   app.get("/revenue", async (c) => {
