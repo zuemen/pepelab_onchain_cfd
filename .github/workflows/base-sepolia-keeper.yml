@@ -14,8 +14,10 @@ name: Base Sepolia Keeper
 
 on:
   schedule:
-    - cron: '*/30 * * * *'   # every 30 min — keeps MockOracle prices fresh
-                             # (FUNDING_INTERVAL is 8h → settleFunding mostly skips, which is fine)
+    - cron: '*/15 * * * *'   # every 15 min nominal — GitHub cron is best-effort and
+                             # often lags/skips, so a tighter schedule keeps the real
+                             # cadence near 30 min. (FUNDING_INTERVAL is 8h →
+                             # settleFunding mostly skips, which is fine.)
   workflow_dispatch:
 
 jobs:

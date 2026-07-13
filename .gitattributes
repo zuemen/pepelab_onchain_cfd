@@ -1,0 +1,15 @@
+# Normalize line endings: text files are stored as LF in the repo;
+# working-tree endings follow each developer's platform settings.
+* text=auto
+
+# Files that must always keep LF (executed on Linux/CI)
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Binary assets — never touch line endings
+*.png binary
+*.jpg binary
+*.svg text
+*.woff binary
+*.woff2 binary
