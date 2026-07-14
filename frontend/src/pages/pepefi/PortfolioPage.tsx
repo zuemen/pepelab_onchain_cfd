@@ -102,7 +102,7 @@ const fDate = (ts: bigint) =>
     dateStyle: 'short',
     timeStyle: 'short',
   });
-const fPnL      = (v: bigint) => (Number(v) >= 0 ? '+' : '') + f18(v, 4) + ' USDT';
+const fPnL      = (v: bigint) => (Number(v) >= 0 ? '+' : '') + f18(v, 4) + ' mUSDC';
 const pnlColor  = (v: bigint) => Number(v) >= 0 ? 'success.main' : 'error.main';
 const returnPct = (initial: bigint, current: bigint): string => {
   if (initial === 0n) return '—';
@@ -263,7 +263,7 @@ export default function PortfolioPage() {
     try {
       const tx = asTx(await contracts.exchange.withdrawMargin(amt));
       await tx.wait();
-      notify(`Withdrew ${withdrawAmt} USDT ✓`, true, tx.hash);
+      notify(`Withdrew ${withdrawAmt} mUSDC ✓`, true, tx.hash);
       setWithdrawAmt('');
       await fetchAll();
     } catch (e) {
@@ -338,8 +338,8 @@ export default function PortfolioPage() {
         <EmptyState
           icon="💼"
           title="Your portfolio is empty"
-          description="Start by getting test USDT, then copy a trader or open positions yourself."
-          ctaText="Get USDT"
+          description="Start by getting test mUSDC, then copy a trader or open positions yourself."
+          ctaText="Get mUSDC"
           ctaHref="/exchange"
         />
       </Container>
@@ -391,7 +391,7 @@ export default function PortfolioPage() {
           <StatCard
             title="Free Margin"
             value={f18(freeMargin)}
-            sub="USDT available"
+            sub="mUSDC available"
             valueColor="primary.light"
           />
         </Grid>
@@ -413,7 +413,7 @@ export default function PortfolioPage() {
           <StatCard
             title="Total Copy PnL"
             value={totalInitial > 0n ? returnPct(totalInitial, totalCopyCur) : '—'}
-            sub={totalInitial > 0n ? `${f18(totalCopyCur)} / ${f18(totalInitial)} USDT` : 'no copy positions'}
+            sub={totalInitial > 0n ? `${f18(totalCopyCur)} / ${f18(totalInitial)} mUSDC` : 'no copy positions'}
             valueColor={totalInitial > 0n ? returnColor(totalInitial, totalCopyCur) : 'text.secondary'}
           />
         </Grid>
@@ -598,7 +598,7 @@ export default function PortfolioPage() {
             <Box>
               <Typography variant="h3" sx={{ fontWeight: 800, fontFamily: MONO, color: 'primary.light' }}>
                 {f18(freeMargin)}{' '}
-                <Typography component="span" variant="subtitle1" color="text.secondary">USDT</Typography>
+                <Typography component="span" variant="subtitle1" color="text.secondary">mUSDC</Typography>
               </Typography>
             </Box>
             <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
