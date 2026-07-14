@@ -20,6 +20,8 @@ export interface WalletState {
   signer: Signer | null
   isConnecting: boolean
   error: string | null
+  /** true until the initial silent session-restore check finishes (route guards wait on this) */
+  initializing: boolean
 }
 
 export interface WalletAPI extends WalletState {
@@ -37,6 +39,7 @@ const INITIAL: WalletState = {
   signer: null,
   isConnecting: false,
   error: null,
+  initializing: true,
 }
 
 export function useWallet(): WalletAPI {
@@ -53,12 +56,13 @@ export function useWallet(): WalletAPI {
       signer: null,
       isConnecting: false,
       error: null,
+      initializing: false,
     });
   }, []);
 
   const disconnect = useCallback(() => {
     localStorage.removeItem('pepefi_wallet_mock');
-    setState(INITIAL);
+    setState({ ...INITIAL, initializing: false });
   }, []);
 
   const connect = useCallback(async () => {
@@ -83,6 +87,7 @@ export function useWallet(): WalletAPI {
         signer,
         isConnecting: false,
         error: null,
+        initializing: false,
       })
     } catch (err) {
       const code = (err as { code?: number }).code
@@ -106,20 +111,51 @@ export function useWallet(): WalletAPI {
     } catch { /* user dismissed — ignore */ }
   }, [])
 
-  // Restore mock session on load
+  // Eager session restore on load: mock session from localStorage, or a silent
+  // MetaMask `eth_accounts` check (no popup) when the site was already
+  // authorized. Route guards wait on `initializing` so refreshes of inner
+  // pages don't bounce to the landing page before this finishes.
   useEffect(() => {
-    const wasMock = localStorage.getItem('pepefi_wallet_mock') === 'true';
-    if (wasMock) {
-      setState({
-        address: '0x7cc14a7cc14a7cc14a7cc14a7cc14a7cc14a7cc14a',
-        chainId: 84532,
-        isConnected: true,
-        provider: null,
-        signer: null,
-        isConnecting: false,
-        error: null,
-      });
+    const restore = async () => {
+      if (localStorage.getItem('pepefi_wallet_mock') === 'true') {
+        setState({
+          address: '0x7cc14a7cc14a7cc14a7cc14a7cc14a7cc14a7cc14a',
+          chainId: 84532,
+          isConnected: true,
+          provider: null,
+          signer: null,
+          isConnecting: false,
+          error: null,
+          initializing: false,
+        });
+        return;
+      }
+      const eth = window.ethereum
+      if (eth) {
+        try {
+          const provider = new BrowserProvider(eth)
+          const accounts = (await provider.send('eth_accounts', [])) as string[]
+          if (accounts.length > 0) {
+            const signer  = await provider.getSigner()
+            const address = await signer.getAddress()
+            const { chainId } = await provider.getNetwork()
+            setState({
+              address,
+              chainId: Number(chainId),
+              isConnected: true,
+              provider,
+              signer,
+              isConnecting: false,
+              error: null,
+              initializing: false,
+            })
+            return
+          }
+        } catch { /* fall through to disconnected */ }
+      }
+      setState(s => ({ ...s, initializing: false }))
     }
+    void restore()
   }, []);
 
   // React to wallet / chain changes from MetaMask
@@ -145,6 +181,7 @@ export function useWallet(): WalletAPI {
           signer,
           isConnecting: false,
           error: null,
+          initializing: false,
         })
       } catch { /* silently ignore */ }
     }
