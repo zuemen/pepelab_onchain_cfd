@@ -160,7 +160,7 @@ function renderDetail(a: Activity): React.ReactNode {
         <span>
           <Box component="span" sx={{ fontWeight: 'bold', color: col }}>{side}</Box>{' '}
           {label} {String(d.leverage as bigint)}× @ {fUsd(d.entryPrice as bigint)}{' '}
-          | Margin: <Box component="span" sx={{ color: 'text.primary', fontWeight: 'semibold' }}>{f18(d.margin as bigint)}</Box> USDT
+          | Margin: <Box component="span" sx={{ color: 'text.primary', fontWeight: 'semibold' }}>{f18(d.margin as bigint)}</Box> mUSDC
         </span>
       )
     }
@@ -172,18 +172,18 @@ function renderDetail(a: Activity): React.ReactNode {
           <Box component="span" sx={{ fontWeight: 'bold', color: pnlColor(pnl) }}>
             {(pnl >= 0n ? '+' : '') + f18(pnl)}
           </Box>{' '}
-          USDT | Received: {f18(d.closeAmount as bigint)}
+          mUSDC | Received: {f18(d.closeAmount as bigint)}
         </span>
       )
     }
     case 'Following':
-      return <span>Following <Box component="span" sx={{ fontFamily: MONO }}>{shortAddr(d.trader as string)}</Box> | Margin: {f18(d.totalMargin as bigint)} USDT</span>
+      return <span>Following <Box component="span" sx={{ fontFamily: MONO }}>{shortAddr(d.trader as string)}</Box> | Margin: {f18(d.totalMargin as bigint)} mUSDC</span>
     case 'FollowedBy':
-      return <span><Box component="span" sx={{ fontFamily: MONO }}>{shortAddr(d.follower as string)}</Box> copied this trader | Margin: {f18(d.totalMargin as bigint)} USDT</span>
+      return <span><Box component="span" sx={{ fontFamily: MONO }}>{shortAddr(d.follower as string)}</Box> copied this trader | Margin: {f18(d.totalMargin as bigint)} mUSDC</span>
     case 'Staked':
-      return <span>Staked <Box component="span" sx={{ color: 'warning.main', fontWeight: 'semibold' }}>{f18(d.amount as bigint)}</Box> USDT</span>
+      return <span>Staked <Box component="span" sx={{ color: 'warning.main', fontWeight: 'semibold' }}>{f18(d.amount as bigint)}</Box> mUSDC</span>
     case 'Slashed':
-      return <span>Slashed <Box component="span" sx={{ color: 'error.main', fontWeight: 'semibold' }}>{f18(d.amount as bigint)}</Box> USDT → <Box component="span" sx={{ fontFamily: MONO }}>{shortAddr(d.recipient as string)}</Box></span>
+      return <span>Slashed <Box component="span" sx={{ color: 'error.main', fontWeight: 'semibold' }}>{f18(d.amount as bigint)}</Box> mUSDC → <Box component="span" sx={{ fontFamily: MONO }}>{shortAddr(d.recipient as string)}</Box></span>
   }
 }
 

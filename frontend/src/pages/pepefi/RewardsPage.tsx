@@ -20,7 +20,7 @@ import { prettyError } from 'src/lib/pepefi/errorMessages';
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const TIER_NAMES  = ['Bronze 🥉', 'Silver 🥈', 'Gold 🥇', 'Diamond 💎'];
-const TIER_THRESHOLD = [10_000, 50_000, 200_000, 1_000_000]; // in USDT (18-dec /1e18)
+const TIER_THRESHOLD = [10_000, 50_000, 200_000, 1_000_000]; // in mUSDC (18-dec /1e18)
 const TIER_REWARD    = [500,    2_000,  10_000,  50_000];    // PEPE
 
 const fmt18 = (v: bigint) => Number(v) / 1e18;
@@ -64,6 +64,13 @@ export default function RewardsPage() {
   const wallet    = usePepefiWallet();
   const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId);
 
+  // PEPE incentives are not deployed on every network (address(0) placeholder in
+  // addresses.ts) — guard all reward actions so we never send a tx to 0x0.
+  const incentivesLive = !!contracts
+    && (contracts.pepeIncentives.target as string).toLowerCase()
+       !== '0x0000000000000000000000000000000000000000';
+  const INCENTIVES_OFFLINE_MSG = 'PEPE 獎勵系統尚未部署在此網路，暫時無法領取';
+
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const notify = (msg: string, ok: boolean) => {
     setToast({ msg, ok });
@@ -103,6 +110,7 @@ export default function RewardsPage() {
 
   const claimMining = async (posId: bigint) => {
     if (!contracts) return;
+    if (!incentivesLive) { notify(INCENTIVES_OFFLINE_MSG, false); return; }
     setMiningBusy(p => ({ ...p, [posId.toString()]: true }));
     try {
       const tx = (await contracts.pepeIncentives.claimTradeMining(posId)) as { wait(): Promise<unknown> };
@@ -138,6 +146,7 @@ export default function RewardsPage() {
 
   const claimTier = async (tier: number) => {
     if (!contracts || !wallet.address) return;
+    if (!incentivesLive) { notify(INCENTIVES_OFFLINE_MSG, false); return; }
     setTierBusy(p => ({ ...p, [tier]: true }));
     try {
       const rawIds = (await contracts.exchange.getUserPositions(wallet.address)) as bigint[];
@@ -175,6 +184,7 @@ export default function RewardsPage() {
 
   const claimCopy = async (trader: string) => {
     if (!contracts) return;
+    if (!incentivesLive) { notify(INCENTIVES_OFFLINE_MSG, false); return; }
     setCopyBusy(p => ({ ...p, [trader]: true }));
     try {
       const tx = (await contracts.pepeIncentives.claimCopyReward(trader)) as { wait(): Promise<unknown> };
@@ -202,6 +212,7 @@ export default function RewardsPage() {
 
   const doCheckIn = async () => {
     if (!contracts) return;
+    if (!incentivesLive) { notify(INCENTIVES_OFFLINE_MSG, false); return; }
     setCheckInBusy(true);
     try {
       const tx = (await contracts.pepeIncentives.dailyCheckIn()) as { wait(): Promise<unknown> };
@@ -391,7 +402,7 @@ export default function RewardsPage() {
               <Button
                 variant="contained"
                 size="large"
-                disabled={checkedInToday || checkInBusy}
+                disabled={checkedInToday || checkInBusy || !incentivesLive}
                 onClick={() => void doCheckIn()}
                 sx={{ minWidth: 160, fontWeight: 900 }}
               >

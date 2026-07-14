@@ -440,11 +440,11 @@ export default function SessionsPage() {
               </Alert>
             )}
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-              <Labeled label="Max / trade (USDT)">
+              <Labeled label="Max / trade (mUSDC)">
                 <TextField type="number" value={perTrade} placeholder="1000"
                   onChange={e => setPerTrade(e.target.value)} size="small" fullWidth />
               </Labeled>
-              <Labeled label="Total budget (USDT)">
+              <Labeled label="Total budget (mUSDC)">
                 <TextField type="number" value={budget} placeholder="5000"
                   onChange={e => setBudget(e.target.value)} size="small" fullWidth />
               </Labeled>
