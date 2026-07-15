@@ -62,6 +62,7 @@ export function useWallet(): WalletAPI {
 
   const disconnect = useCallback(() => {
     localStorage.removeItem('pepefi_wallet_mock');
+    localStorage.removeItem('pepefi_wallet_session');
     setState({ ...INITIAL, initializing: false });
   }, []);
 
@@ -79,6 +80,8 @@ export function useWallet(): WalletAPI {
       const signer  = await provider.getSigner()
       const address = await signer.getAddress()
       const { chainId } = await provider.getNetwork()
+      // 記住「使用者明確連過線」— 刷新時才允許靜默恢復 session
+      localStorage.setItem('pepefi_wallet_session', 'true')
       setState({
         address,
         chainId: Number(chainId),
@@ -130,8 +133,10 @@ export function useWallet(): WalletAPI {
         });
         return;
       }
+      // 只有使用者曾明確按過 Connect（且尚未 Disconnect）才靜默恢復，
+      // 否則即使 MetaMask 已授權過本站，刷新後仍停留在未連線狀態。
       const eth = window.ethereum
-      if (eth) {
+      if (eth && localStorage.getItem('pepefi_wallet_session') === 'true') {
         try {
           const provider = new BrowserProvider(eth)
           const accounts = (await provider.send('eth_accounts', [])) as string[]
