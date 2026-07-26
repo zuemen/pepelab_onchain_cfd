@@ -3,7 +3,9 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useContracts } from 'src/hooks/useContracts'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { useFundingData } from 'src/hooks/useFundingData'
-import { ASSET_IDS } from 'src/contracts/addresses'
+import { Contract } from 'ethers'
+import { ASSET_IDS, BASE_SEPOLIA_ORACLE_SHOWCASE } from 'src/contracts/addresses'
+import MockOracleABI from 'src/contracts/abi/MockOracle.json'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { TableSkeleton } from 'src/components/pepefi/Skeleton'
 import { ASSETS_LIST } from 'src/lib/pepefi/assetMeta'
@@ -99,6 +101,14 @@ export default function AdminOraclePage() {
   const [, setTick]   = useState(0)  // force re-render for countdown
   const autoSettleRef = useRef(false)
 
+  // Read-only comparison of the three oracle sources. The exchange's oracle is
+  // immutable with no setter, so this is a showcase — it cannot be switched
+  // without redeploying, which would wipe live positions.
+  const [oracleCmp, setOracleCmp] = useState<
+    Record<string, { mock: number; chainlink: number; pyth: number }>
+  >({})
+  const isBaseSepolia = wallet.chainId === 84532
+
   const isOwner =
     oracleOwner !== null &&
     wallet.address !== null &&
@@ -115,6 +125,40 @@ export default function AdminOraclePage() {
     const t = setInterval(() => setTick(n => n + 1), 1000)
     return () => clearInterval(t)
   }, [])
+
+  // All three sources expose the same getPrice(bytes32) -> (price, updatedAt)
+  // signature, so MockOracle's ABI reads the adapters too. Adapters revert for
+  // assets they don't cover (most equities) — those surface as 0 → "—".
+  const fetchOracleComparison = useCallback(async () => {
+    if (!contracts || !isBaseSepolia) return
+    const runner = contracts.oracle.runner
+    const chainlink = new Contract(BASE_SEPOLIA_ORACLE_SHOWCASE.ChainlinkAdapter, MockOracleABI, runner)
+    const pyth      = new Contract(BASE_SEPOLIA_ORACLE_SHOWCASE.PythAdapter,      MockOracleABI, runner)
+
+    const read = async (c: Contract, id: string): Promise<number> => {
+      try {
+        const [p] = (await c.getPrice(id)) as [bigint, bigint]
+        return Number(p) / 1e8
+      } catch {
+        return 0   // adapter has no feed for this asset
+      }
+    }
+
+    const rows: Record<string, { mock: number; chainlink: number; pyth: number }> = {}
+    await Promise.all(
+      ASSETS.map(async (a) => {
+        const [mock, cl, py] = await Promise.all([
+          read(contracts.oracle as unknown as Contract, a.id),
+          read(chainlink, a.id),
+          read(pyth, a.id),
+        ])
+        rows[a.id] = { mock, chainlink: cl, pyth: py }
+      })
+    )
+    setOracleCmp(rows)
+  }, [contracts, isBaseSepolia])
+
+  useEffect(() => { void fetchOracleComparison() }, [fetchOracleComparison])
 
   // Settle funding for one asset
   const settleFunding = useCallback(async (assetId: string) => {
@@ -380,6 +424,70 @@ export default function AdminOraclePage() {
           )}
         </Card>
       )}
+
+      {/* ─── Oracle source comparison (read-only) ─────────────────────────── */}
+      <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
+          <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+            Oracle 來源比較
+          </Typography>
+          {isBaseSepolia && (
+            <Button variant="text" size="small" onClick={() => void fetchOracleComparison()} sx={{ textTransform: 'none' }}>
+              ↺ Refresh
+            </Button>
+          )}
+        </Box>
+
+        <Alert severity="info" variant="outlined">
+          交易引擎目前使用 <b>MockOracle</b>（由 keeper 從真實市場抓價寫入）。
+          Chainlink / Pyth adapter <b>已部署並可即時查詢</b>（如下表），
+          但<b>尚未接入交易引擎</b> —— PerpetualExchange 的 oracle 位址是
+          <Box component="code" sx={{ mx: 0.5, fontFamily: MONO }}>immutable</Box>
+          且無 setter，切換來源需重新部署，故整合列為下一階段。
+        </Alert>
+
+        {!isBaseSepolia ? (
+          <Alert severity="warning" variant="outlined">
+            Chainlink / Pyth adapter 僅部署於 <b>Base Sepolia</b>（chainId 84532）。
+            請切換網路以查看三來源即時比較；本網路僅顯示 MockOracle 價格。
+          </Alert>
+        ) : (
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>資產</TableCell>
+                  <TableCell align="right">MockOracle（引擎使用）</TableCell>
+                  <TableCell align="right">Chainlink</TableCell>
+                  <TableCell align="right">Pyth</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {ASSETS.map((a) => {
+                  const cmp = oracleCmp[a.id]
+                  const cell = (v: number | undefined) =>
+                    v === undefined ? '…' : v > 0 ? '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'
+                  return (
+                    <TableRow key={a.id}>
+                      <TableCell sx={{ fontFamily: MONO }}>{a.symbol}</TableCell>
+                      <TableCell align="right" sx={{ fontFamily: MONO }}>{cell(cmp?.mock)}</TableCell>
+                      <TableCell align="right" sx={{ fontFamily: MONO, color: cmp?.chainlink ? 'text.primary' : 'text.disabled' }}>
+                        {cell(cmp?.chainlink)}
+                      </TableCell>
+                      <TableCell align="right" sx={{ fontFamily: MONO, color: cmp?.pyth ? 'text.primary' : 'text.disabled' }}>
+                        {cell(cmp?.pyth)}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
+        <Typography variant="caption" color="text.secondary">
+          「—」表示該 adapter 未提供此資產的報價（多為股票／ETF，Chainlink 與 Pyth 測試網僅涵蓋主流加密資產）。
+        </Typography>
+      </Card>
 
       {/* Price table */}
       <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
