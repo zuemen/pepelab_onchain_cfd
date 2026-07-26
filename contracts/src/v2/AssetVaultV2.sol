@@ -121,9 +121,56 @@ contract AssetVaultV2 is
 
     function _authorizeUpgrade(address) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
-    // ── temporary stubs — replaced in Tasks 4–6 ──────────────────────────────
-    function previewMint(bytes32, uint256) public view virtual returns (uint256, uint256) { revert InvalidParam(); }
-    function previewRedeem(bytes32, uint256) public view virtual returns (uint256, uint256) { revert InvalidParam(); }
+    /// @dev VULNERABILITY #3 FIX: V1 read updatedAt and discarded it, so a dead
+    ///      keeper meant trading against a frozen quote. PerpetualExchange has
+    ///      always reverted StalePrice past maxPriceAge; this now matches it.
+    function _price(bytes32 assetId) internal view returns (uint256 price) {
+        uint256 updatedAt;
+        (price, updatedAt) = IAssetOracleV2(_oracle).getPrice(assetId);
+        if (price == 0) revert NoPrice(assetId);
+        if (block.timestamp > updatedAt + maxPriceAge) revert StalePrice(assetId, updatedAt);
+    }
+
+    function previewMint(bytes32 assetId, uint256 usdcAmount)
+        public view returns (uint256 tokenOut, uint256 feePaid)
+    {
+        if (_assetToken[assetId] == address(0)) revert AssetNotRegistered(assetId);
+        uint256 price = _price(assetId);
+        feePaid  = usdcAmount * mintFeeBps / BPS_DENOM;
+        tokenOut = (usdcAmount - feePaid) * 1e8 / price;
+    }
+
+    function previewRedeem(bytes32 assetId, uint256 tokenAmount)
+        public view returns (uint256 usdcOut, uint256 feePaid)
+    {
+        if (_assetToken[assetId] == address(0)) revert AssetNotRegistered(assetId);
+        uint256 price = _price(assetId);
+        uint256 gross = tokenAmount * price / 1e8;
+        feePaid = gross * redeemFeeBps / BPS_DENOM;
+        usdcOut = gross - feePaid;
+    }
+
+    /// @notice Operator risk knobs. Separate RISK_ROLE from upgrade authority so
+    ///         a risk committee can retune without holding upgrade power.
+    function setRiskParams(
+        uint256 mintFeeBps_,
+        uint256 redeemFeeBps_,
+        uint256 minReserveRatioBps_,
+        uint256 maxPriceAge_
+    ) external onlyRole(RISK_ROLE) {
+        // Cap fees at 10% so a compromised risk key cannot confiscate deposits.
+        if (mintFeeBps_ > 1_000 || redeemFeeBps_ > 1_000) revert InvalidParam();
+        if (maxPriceAge_ == 0) revert InvalidParam();
+
+        mintFeeBps         = mintFeeBps_;
+        redeemFeeBps       = redeemFeeBps_;
+        minReserveRatioBps = minReserveRatioBps_;
+        maxPriceAge        = maxPriceAge_;
+
+        emit RiskParamsUpdated(mintFeeBps_, redeemFeeBps_, minReserveRatioBps_, maxPriceAge_);
+    }
+
+    // ── temporary stubs — replaced in Task 5 ─────────────────────────────────
     function reserve() public view virtual returns (uint256) { return 0; }
     function outstandingValue() public view virtual returns (uint256) { return 0; }
     function reserveRatioBps() public view virtual returns (uint256) { return 0; }
