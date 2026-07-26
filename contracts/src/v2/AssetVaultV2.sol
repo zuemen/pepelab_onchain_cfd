@@ -170,12 +170,114 @@ contract AssetVaultV2 is
         emit RiskParamsUpdated(mintFeeBps_, redeemFeeBps_, minReserveRatioBps_, maxPriceAge_);
     }
 
-    // ── temporary stubs — replaced in Task 5 ─────────────────────────────────
-    function reserve() public view virtual returns (uint256) { return 0; }
-    function outstandingValue() public view virtual returns (uint256) { return 0; }
-    function reserveRatioBps() public view virtual returns (uint256) { return 0; }
-    function mint(bytes32, uint256) external virtual returns (uint256) { revert InvalidParam(); }
-    function redeem(bytes32, uint256) external virtual returns (uint256) { revert InvalidParam(); }
-    function fundVault(uint256) external virtual { revert InvalidParam(); }
-    function withdrawFees(address, uint256) external virtual { revert InvalidParam(); }
+    /// @notice USDC available to pay redeemers. Excludes accrued fees, which
+    ///         belong to the operator and are not payout collateral.
+    function reserve() public view returns (uint256) {
+        uint256 bal = IERC20(_usdc).balanceOf(address(this));
+        return bal > accruedFees ? bal - accruedFees : 0;
+    }
+
+    /// @dev Skips assets with a stale or zero price rather than reverting, so
+    ///      risk dashboards stay readable during an oracle outage. A skipped
+    ///      asset understates the liability — callers must treat a stale oracle
+    ///      as "ratio unknown", which is why mint independently calls _price and
+    ///      reverts on staleness.
+    function outstandingValue() public view returns (uint256 total) {
+        uint256 len = _assetIds.length;
+        for (uint256 i = 0; i < len; i++) {
+            bytes32 id = _assetIds[i];
+            uint256 amount = _outstanding[id];
+            if (amount == 0) continue;
+            (uint256 price, uint256 updatedAt) = IAssetOracleV2(_oracle).getPrice(id);
+            if (price == 0 || block.timestamp > updatedAt + maxPriceAge) continue;
+            total += amount * price / 1e8;
+        }
+    }
+
+    function reserveRatioBps() public view returns (uint256) {
+        uint256 liability = outstandingValue();
+        if (liability == 0) return type(uint256).max;
+        return reserve() * BPS_DENOM / liability;
+    }
+
+    /// @notice Bounds exposure to one market. 0 closes the asset to new mints
+    ///         while leaving redemptions open.
+    function setAssetCap(bytes32 assetId, uint256 cap) external onlyRole(RISK_ROLE) {
+        assetCap[assetId] = cap;
+        emit AssetCapUpdated(assetId, cap);
+    }
+
+    /// @notice Pay USDC, receive tokens at the oracle price less the mint fee.
+    /// @dev Gated by the per-asset cap and the reserve ratio.
+    function mint(bytes32 assetId, uint256 usdcAmount)
+        external whenNotPaused returns (uint256 tokenOut)
+    {
+        address token = _assetToken[assetId];
+        if (token == address(0)) revert AssetNotRegistered(assetId);
+        if (usdcAmount == 0) revert ZeroAmount();
+
+        uint256 feePaid;
+        (tokenOut, feePaid) = previewMint(assetId, usdcAmount);   // reverts if stale
+        if (tokenOut == 0) revert ZeroAmount();
+
+        uint256 newOutstanding = _outstanding[assetId] + tokenOut;
+        if (newOutstanding > assetCap[assetId]) {
+            revert CapExceeded(assetId, newOutstanding, assetCap[assetId]);
+        }
+
+        _outstanding[assetId] = newOutstanding;
+        accruedFees += feePaid;
+
+        require(IERC20(_usdc).transferFrom(msg.sender, address(this), usdcAmount), "usdc in failed");
+
+        // VULNERABILITY #2 FIX: refuse the mint if it would leave the book below
+        // the operator's minimum coverage. Checked after the transfer so the
+        // incoming USDC counts toward the ratio it must satisfy.
+        uint256 ratio = reserveRatioBps();
+        if (ratio < minReserveRatioBps) revert ReserveRatioTooLow(ratio, minReserveRatioBps);
+
+        SyntheticAssetV2(token).mint(msg.sender, tokenOut);
+        emit Minted(msg.sender, assetId, usdcAmount, tokenOut, feePaid);
+    }
+
+    /// @notice Burn tokens, receive their USDC value less the redeem fee.
+    /// @dev Deliberately NOT gated by the reserve ratio — blocking exits during
+    ///      stress is the bank run, not a defence against it.
+    function redeem(bytes32 assetId, uint256 tokenAmount)
+        external whenNotPaused returns (uint256 usdcOut)
+    {
+        address token = _assetToken[assetId];
+        if (token == address(0)) revert AssetNotRegistered(assetId);
+        if (tokenAmount == 0) revert ZeroAmount();
+
+        uint256 feePaid;
+        (usdcOut, feePaid) = previewRedeem(assetId, tokenAmount);
+
+        uint256 avail = reserve();
+        if (avail < usdcOut) revert VaultDry(usdcOut, avail);
+
+        _outstanding[assetId] -= tokenAmount;
+        accruedFees += feePaid;
+
+        SyntheticAssetV2(token).burn(msg.sender, tokenAmount);
+        require(IERC20(_usdc).transfer(msg.sender, usdcOut), "usdc out failed");
+
+        emit Redeemed(msg.sender, assetId, tokenAmount, usdcOut, feePaid);
+    }
+
+    /// @notice Operator injects payout collateral.
+    function fundVault(uint256 usdcAmount) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (usdcAmount == 0) revert ZeroAmount();
+        require(IERC20(_usdc).transferFrom(msg.sender, address(this), usdcAmount), "fund failed");
+        emit VaultFunded(msg.sender, usdcAmount);
+    }
+
+    /// @notice Operator withdraws earned fees. Cannot touch payout collateral.
+    function withdrawFees(address to, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (to == address(0)) revert InvalidParam();
+        if (amount > accruedFees) revert InvalidParam();
+        accruedFees -= amount;
+        require(IERC20(_usdc).transfer(to, amount), "fee out failed");
+        emit FeesWithdrawn(to, amount);
+    }
 }
