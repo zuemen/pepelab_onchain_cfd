@@ -8,6 +8,7 @@ import Button from '@mui/material/Button'
 import Snackbar from '@mui/material/Snackbar'
 
 import { useContracts } from 'src/hooks/useContracts'
+import { useStablecoin } from 'src/hooks/useStablecoin'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { useLivePrices } from 'src/hooks/useLivePrices'
 import { useFundingData } from 'src/hooks/useFundingData'
@@ -50,6 +51,7 @@ export default function TradeTerminalPage() {
   const [dep, setDep] = useState('')
   const [freeMgn, setFreeMgn] = useState(0n)
   const [usdcBal, setUsdcBal] = useState(0n)
+  const [usdtBal, setUsdtBal] = useState(0n)
   const [curPrice, setCurPrice] = useState(0n)
   const [markPrice, setMarkPrice] = useState(0n) // G6: mark = index ± OI premium
   const [positions, setPositions] = useState<Pos[]>([])
@@ -58,6 +60,7 @@ export default function TradeTerminalPage() {
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
   const [riskOpen, setRiskOpen] = useState(true) // 測試網/ADL/oracle 風險提示（可收合）
 
+  const { stable, setStable } = useStablecoin(contracts)
   const { isVerified: kycOk } = useKYC(contracts?.kycRegistry ?? null, wallet.address ?? null)
   const meta = ASSET_META[selAsset]
   const kycBlocked = (meta?.regulated ?? false) && !kycOk
@@ -73,6 +76,10 @@ export default function TradeTerminalPage() {
         contracts.exchange.freeMargin(wallet.address) as Promise<bigint>,
       ])
       setUsdcBal(bal); setFreeMgn(mgn)
+      // MockUSDT may not be deployed on this chain — 0x0 reads would throw.
+      if (String(contracts.usdt.target) !== '0x0000000000000000000000000000000000000000') {
+        try { setUsdtBal((await contracts.usdt.balanceOf(wallet.address)) as bigint) } catch { setUsdtBal(0n) }
+      } else { setUsdtBal(0n) }
       const ids = (await contracts.exchange.getUserPositions(wallet.address)) as bigint[]
       const rows = await Promise.all(ids.map(async (id): Promise<Pos | null> => {
         try {
@@ -148,7 +155,7 @@ export default function TradeTerminalPage() {
     try {
       const a = asTx(await contracts.usdc.approve(String(contracts.exchange.target), amt)); await a.wait()
       const d = asTx(await contracts.exchange.depositMargin(amt)); await d.wait()
-      notify(`Deposited ${dep} USDT ✓`, true); setDep(''); await fetchAll()
+      notify(`Deposited ${dep} USDC ✓`, true); setDep(''); await fetchAll()
     } catch (e) { notify(prettyError(e), false) } finally { setL('dep', false) }
   }
 
@@ -305,13 +312,13 @@ export default function TradeTerminalPage() {
             <Box sx={{ display: 'flex', alignItems: 'center', ...panel, bgcolor: C.panel2, px: 1.5, py: 1 }}>
               <input value={margin} onChange={e => setMargin(e.target.value)} type="number" placeholder="0.00"
                 style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: C.ink, fontFamily: C.mono, fontWeight: 700, fontSize: 20, width: '100%' }} />
-              <Box sx={{ ...monoCss, color: C.mut, fontSize: 13 }}>USDT</Box>
+              <Box sx={{ ...monoCss, color: C.mut, fontSize: 13 }}>USDC</Box>
             </Box>
           </Box>
 
           {/* quote rows */}
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.6, py: 0.5 }}>
-            <Row k="Notional" v={`${f18(notional)} USDT`} />
+            <Row k="Notional" v={`${f18(notional)} USDC`} />
             <Row k="Entry (oracle)" v={fUsd(curPrice)} />
             <Row k="Est. liquidation" v={fUsd(liq)} color={C.red} />
             <Row k="Funding (8h)" v={`${rate >= 0 ? '+' : ''}${(rate / 100).toFixed(4)}%`} color={rate > 0 ? C.red : rate < 0 ? C.green : C.mut} />
@@ -341,9 +348,29 @@ export default function TradeTerminalPage() {
           {/* account */}
           <Box sx={{ borderTop: `1px solid ${C.line}`, pt: 1.5, mt: 0.5, display: 'flex', flexDirection: 'column', gap: 0.6 }}>
             <Row k="Equity" v={fUsd(equity)} strong />
-            <Row k="Free margin" v={`${f18(freeMgn)} USDT`} />
+            <Row k="Free margin" v={`${f18(freeMgn)} USDC`} />
             <Row k="Unrealized PnL" v={`${Number(totalPnl) >= 0 ? '+' : ''}${f18(totalPnl, 4)}`} color={Number(totalPnl) >= 0 ? C.green : C.red} />
-            <Row k="Wallet USDT" v={f18(usdcBal)} />
+
+            {/* Stablecoin selector — balance display only. Deposit always uses
+                USDC because PerpetualExchange hardcodes it; the note says so. */}
+            <Box sx={{ display: 'flex', gap: 0.6, mt: 0.4 }}>
+              {(['USDC', 'USDT'] as const).map((s) => {
+                const on = stable === s
+                return (
+                  <Box key={s} onClick={() => setStable(s)}
+                    sx={{ ...monoCss, flex: 1, textAlign: 'center', py: 0.6, borderRadius: '8px', cursor: 'pointer',
+                      fontSize: 11, fontWeight: 700,
+                      bgcolor: on ? 'rgba(255,255,255,.06)' : 'transparent', color: on ? C.ink : C.mut,
+                      border: `1px solid ${on ? C.ink : C.line}`, transition: '.15s' }}>
+                    {s}
+                  </Box>
+                )
+              })}
+            </Box>
+            <Row k={`Wallet ${stable}`} v={f18(stable === 'USDC' ? usdcBal : usdtBal)} />
+            <Box sx={{ ...monoCss, fontSize: 10, color: C.mut, lineHeight: 1.4 }}>
+              margin settles in USDC · USDT is hold/swap only
+            </Box>
             <Box sx={{ display: 'flex', gap: 0.8, mt: 0.8 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', flex: 1, ...panel, bgcolor: C.panel2, px: 1.2 }}>
                 <input value={dep} onChange={e => setDep(e.target.value)} type="number" placeholder="deposit"
