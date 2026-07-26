@@ -56,6 +56,7 @@ export const paths = {
     landing: '/',
     dashboard: '/dashboard',
     exchange: '/exchange',
+    tokens: '/tokens',
     terminal: '/terminal',
     x402: '/x402',
     trader: '/trader',
