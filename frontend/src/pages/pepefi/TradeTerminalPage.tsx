@@ -9,6 +9,7 @@ import Snackbar from '@mui/material/Snackbar'
 
 import { useContracts } from 'src/hooks/useContracts'
 import { useStablecoin } from 'src/hooks/useStablecoin'
+import PaperTradingBadge from 'src/components/pepefi/PaperTradingBadge'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { useLivePrices } from 'src/hooks/useLivePrices'
 import { useFundingData } from 'src/hooks/useFundingData'
@@ -175,6 +176,10 @@ export default function TradeTerminalPage() {
           {toast?.msg}
         </Box>
       </Snackbar>
+
+      <Box sx={{ display: 'flex', mb: 1.5 }}>
+        <PaperTradingBadge />
+      </Box>
 
       {/* brand header */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5, flexWrap: 'wrap' }}>

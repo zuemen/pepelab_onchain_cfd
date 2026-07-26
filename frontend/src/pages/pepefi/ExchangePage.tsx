@@ -17,6 +17,7 @@ import { ASSETS_LIST, ASSET_LABEL, ASSET_META } from 'src/lib/pepefi/assetMeta';
 import { useKYC } from 'src/hooks/useKYC';
 import KYCModal from 'src/components/pepefi/KYCModal';
 import Skeleton from 'src/components/pepefi/Skeleton';
+import PaperTradingBadge from 'src/components/pepefi/PaperTradingBadge';
 import AssetIcon from 'src/components/pepefi/AssetIcon';
 
 import Box from '@mui/material/Box';
@@ -693,6 +694,10 @@ export default function ExchangePage() {
           ) : null
         }
       />
+
+      <Box sx={{ display: 'flex', mb: 1 }}>
+        <PaperTradingBadge />
+      </Box>
 
       {/* Pointer to the ERC-20 layer. Positions opened here are ledger entries
           on PerpetualExchange, so nothing lands in the wallet; /tokens is where

@@ -2,6 +2,7 @@ import { Link as RouterLink } from 'react-router';
 import { usePepefiWallet } from 'src/layouts/pepefi';
 import WalletButton from 'src/components/pepefi/WalletButton';
 import HeroKpiStrip from 'src/components/pepefi/HeroKpiStrip';
+import PaperTradingBadge from 'src/components/pepefi/PaperTradingBadge';
 import { MONO } from 'src/components/pepefi/brandKit';
 
 import Box from '@mui/material/Box';
@@ -207,6 +208,8 @@ export default function LandingPage() {
         <HeroKpiStrip />
 
         <Stack alignItems="center" spacing={2} sx={{ mb: 4 }}>
+          <PaperTradingBadge />
+
           {/* Testnet badge */}
           <Chip
             label="Live on Base Sepolia · 84532"
@@ -251,6 +254,21 @@ export default function LandingPage() {
             連線後可直接瀏覽所有功能，無需註冊帳號
           </Typography>
         </Stack>
+
+        {/* ── What is Paper Trading? ── */}
+        <Box sx={{ py: 5, textAlign: 'center' }}>
+          <Typography variant="h4" sx={{ fontWeight: 800, mb: 1.5 }}>
+            什麼是 Paper Trading？
+          </Typography>
+          <Typography
+            variant="body1"
+            sx={{ maxWidth: 680, mx: 'auto', color: 'text.secondary', lineHeight: 1.9 }}
+          >
+            本平台使用<b>測試網代幣</b>進行模擬交易，讓使用者無風險體驗 RWA 投資、
+            社交跟單與 AI 代理交易。<b>所有價格追蹤真實市場</b>，但資金為模擬資產，
+            不涉及真實金錢 —— 等同 TradingView 的 Paper Trading 模式。
+          </Typography>
+        </Box>
 
         {/* ── Divider ── */}
         <Divider sx={{ my: 6, opacity: 0.15 }} />

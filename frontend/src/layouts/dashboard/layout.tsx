@@ -21,6 +21,7 @@ import { Logo } from 'src/components/logo';
 import { useSettingsContext } from 'src/components/settings';
 import WalletButton from 'src/components/pepefi/WalletButton';
 import { PepeAvatar } from 'src/components/pepefi/PepeAvatar';
+import PaperTradingBadge from 'src/components/pepefi/PaperTradingBadge';
 
 import { useMockedUser } from 'src/auth/hooks';
 
@@ -157,6 +158,11 @@ export function DashboardLayout({
 
           {/** @slot Contacts popover */}
           <ContactsPopover data={_contacts} />
+
+          {/** @slot Paper trading notice — always visible, hidden on xs for space */}
+          <Box sx={{ display: { xs: 'none', md: 'block' } }}>
+            <PaperTradingBadge compact />
+          </Box>
 
           {/** @slot Settings button */}
           <SettingsButton />
