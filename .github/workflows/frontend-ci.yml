@@ -1,0 +1,41 @@
+name: Frontend CI
+
+# Type-check, lint, and build the Vite app on every push and PR touching it.
+# The build runs tsc + eslint + vite, so a type error or lint error fails here
+# rather than at deploy time.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-ci.yml'
+  pull_request:
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-ci.yml'
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: frontend
+
+jobs:
+  build:
+    name: yarn build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+
+      # frontend is yarn-only; --frozen-lockfile makes an out-of-date lockfile
+      # a CI failure rather than a silent resolution difference.
+      - name: Install
+        run: yarn install --frozen-lockfile
+
+      - name: Build
+        run: yarn build

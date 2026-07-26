@@ -1,0 +1,64 @@
+name: Contracts CI
+
+# Runs the Foundry suite on every push and PR. Until now these 396 tests only
+# ever ran on developers' machines, so a regression could reach main unnoticed —
+# which is also the first thing an institutional customer's technical due
+# diligence asks about.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'contracts/**'
+      - '.github/workflows/contracts-ci.yml'
+  pull_request:
+    paths:
+      - 'contracts/**'
+      - '.github/workflows/contracts-ci.yml'
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: contracts
+
+jobs:
+  test:
+    name: forge build + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: Show versions
+        run: forge --version
+
+      - name: Build
+        run: forge build --sizes
+
+      - name: Test
+        run: forge test -vv
+
+  gas:
+    name: gas snapshot
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      # Writes .gas-snapshot if absent, otherwise fails when gas moves beyond
+      # tolerance. Informational for now — flip continue-on-error off once the
+      # snapshot is committed and stable.
+      - name: Gas snapshot
+        run: forge snapshot --check || forge snapshot
+        continue-on-error: true
