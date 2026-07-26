@@ -5,6 +5,8 @@ import { Contract } from 'ethers'
 
 import { getAddresses } from 'src/contracts/addresses'
 import MockUSDCABI              from 'src/contracts/abi/MockUSDC.json'
+import MockUSDTABI              from 'src/contracts/abi/MockUSDT.json'
+import AssetVaultABI            from 'src/contracts/abi/AssetVault.json'
 import FeeRouterABI             from 'src/contracts/abi/FeeRouter.json'
 import MockOracleABI            from 'src/contracts/abi/MockOracle.json'
 import TraderStakeABI           from 'src/contracts/abi/TraderStake.json'
@@ -34,6 +36,8 @@ export function useContracts(
     if (!addr) return null
     return {
       usdc:                 new Contract(addr.MockUSDC,             MockUSDCABI,             runner),
+      usdt:                 new Contract(addr.MockUSDT,             MockUSDTABI,             runner),
+      assetVault:           new Contract(addr.AssetVault,           AssetVaultABI,           runner),
       oracle:               new Contract(addr.MockOracle,           MockOracleABI,           runner),
       traderStake:          new Contract(addr.TraderStake,          TraderStakeABI,          runner),
       insuranceVault:       new Contract(addr.InsuranceVault,       InsuranceVaultABI,       runner),
