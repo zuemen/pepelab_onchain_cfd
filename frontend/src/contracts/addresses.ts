@@ -49,7 +49,7 @@ const ANVIL: ChainAddresses = {
 // ── Sepolia testnet (chainId 11155111) ────────────────────────────────────────
 const SEPOLIA: ChainAddresses = {
   MockUSDC:           "0x167Bacef1925184f0df34A3196F834C0622Cfd36",
-  MockUSDT:           "0x0000000000000000000000000000000000000000",
+  MockUSDT:           "0xA08C0F92804173Bf796FDa3FA66654F96aDDB5F1",
   MockOracle:         "0x17CA20A37Cf04F2f589B2573EC95f1411D29d958",
   TraderStake:        "0x3fe1dbC82eA267085CAB5eb67C6b7d3E68A7d673",
   InsuranceVault:     "0x8bDE83dBC2CA450B539346e224E7819348C7b091",
@@ -66,7 +66,7 @@ const SEPOLIA: ChainAddresses = {
   EsgRewardDistributor:   "0xA1a522B9d31e5B48E41DcCd050DE10dA2e3BEdD0",
   PepeIncentives:         "0x65b9F1B4d18822d4faBa763621E3e4eA065aE5D7",
   PepeStaking:            "0xf5d0953A443259ebdFC62fE49189998988e309f9",
-  AssetVault:             "0x0000000000000000000000000000000000000000",
+  AssetVault:             "0xB4D10cBC6143E410dd7b48797334C4397b99325f",
 }
 
 // ── Base Sepolia testnet (chainId 84532) ──────────────────────────────────────
@@ -158,7 +158,22 @@ export type AssetSymbol  = keyof typeof ASSET_IDS
 // a "not enabled yet" notice instead of failing.
 export const SYNTH_TOKENS: Record<number, Partial<Record<AssetSymbol, string>>> = {
   31337:    {},
-  11155111: {},
+  // DeploySyntheticAssets.s.sol broadcast on Sepolia (2026-07-26) — recovered
+  // from broadcast/DeploySyntheticAssets.s.sol/11155111/run-latest.json.
+  // All 11 verified registered on AssetVault.
+  11155111: {
+    sBTC:   "0x70B91d94e80C71FFfad3Ab39cd187aa67F70bfd7",
+    sETH:   "0xc2eAB19e995458ce06dD7a188bABbeEC6F96478A",
+    sAAPL:  "0xf45f00D4D74D0B4352993424d5EA7d6D28AFbEE5",
+    sTSLA:  "0x9B9c176184C1d7B83206Dd5eb06F6563e8BA1100",
+    sGOLD:  "0x468a65aCB9e83955459e6FeA41783ecF0D90c067",
+    sBOND:  "0x5Bb30b2C730c6C9FE03911D696d895c0A3e3B123",
+    sNVDA:  "0x349757C3C171DbAF1cB885f03b8EFc2c93C9a3a9",
+    sMSFT:  "0xc120bbCc68db30F8fc87d4ce983AabD89555F0cB",
+    sGOOGL: "0xC7F23AAa4aCf63C0990C0B0Fc2BCcF0A3Df2532d",
+    sICLN:  "0x0971690615EcAAa39eA517B85B9Cf7ABd247Fe59",
+    sESGU:  "0xC236D6298b280def6D70931c8E67953E9De0Eb41",
+  },
   84532:    {},
 }
 
