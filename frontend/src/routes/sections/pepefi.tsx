@@ -16,6 +16,7 @@ import { usePathname } from '../hooks';
 const LandingPage       = lazy(() => import('src/pages/pepefi/LandingPage'));
 const DashboardPage     = lazy(() => import('src/pages/pepefi/DashboardPage'));
 const ExchangePage      = lazy(() => import('src/pages/pepefi/ExchangePage'));
+const TokenizedAssetsPage = lazy(() => import('src/pages/pepefi/TokenizedAssetsPage'));
 const TradeTerminalPage = lazy(() => import('src/pages/pepefi/TradeTerminalPage'));
 const X402DocsPage      = lazy(() => import('src/pages/pepefi/X402DocsPage'));
 const TraderDashboard   = lazy(() => import('src/pages/pepefi/TraderDashboard'));
@@ -66,6 +67,7 @@ export const pepefiRoutes: RouteObject[] = [
           { index: true, element: <LandingPage /> },
           { path: 'dashboard', element: <DashboardPage /> },
           { path: 'exchange', element: <ExchangePage /> },
+          { path: 'tokens', element: <TokenizedAssetsPage /> },
           { path: 'terminal', element: <TradeTerminalPage /> },
           { path: 'trader', element: <TraderDashboard /> },
           { path: 'stake', element: <TraderStakePage /> },
