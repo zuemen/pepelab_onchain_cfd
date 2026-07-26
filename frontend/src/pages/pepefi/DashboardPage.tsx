@@ -147,7 +147,7 @@ interface PosRow {
   asset:         string;
   isLong:        boolean;
   entryPrice:    bigint;   // 18-dec
-  margin:        bigint;   // 18-dec USDT
+  margin:        bigint;   // 18-dec USDC
   leverage:      bigint;
   unrealizedPnL: bigint;   // signed int256 as bigint, 18-dec
   oraclePrice18: bigint;   // oracle current price converted to 18-dec
@@ -157,7 +157,7 @@ interface DerivedRow extends PosRow {
   notional:      bigint;   // margin × leverage, 18-dec
   quantity:      bigint;   // notional × 1e18 / entryPrice, 18-dec asset units
   currentPrice18: bigint;  // live or oracle, 18-dec
-  holdingsValue: bigint;   // quantity × currentPrice18 / 1e18, 18-dec USDT
+  holdingsValue: bigint;   // quantity × currentPrice18 / 1e18, 18-dec USDC
   livePnL:       bigint;   // (currentPrice - entryPrice) × quantity / 1e18 × dir, 18-dec
 }
 
@@ -290,6 +290,8 @@ export default function DashboardPage() {
   const [stakedUSDC, setStakedUSDC] = useState<bigint | null>(null);
   const [walletUSDC, setWalletUSDC] = useState<bigint | null>(null);
   const [vaultUSDC,  setVaultUSDC]  = useState<bigint | null>(null);
+  const [walletUSDT, setWalletUSDT] = useState<bigint | null>(null);
+  const [usdtBusy,   setUsdtBusy]   = useState(false);
  
   const [streak,      setStreak]      = useState(0);
   const [lastDay,     setLastDay]     = useState(0);
@@ -300,6 +302,31 @@ export default function DashboardPage() {
   const notify = (msg: string, ok: boolean) => {
     setToast({ msg, ok });
     setTimeout(() => setToast(null), 5000);
+  };
+
+  // MockUSDT faucet. Second mock stablecoin — hold / swap only; trading margin
+  // still settles in USDC. Hidden entirely when USDT isn't deployed here.
+  const usdtDeployed =
+    !!contracts &&
+    String(contracts.usdt.target) !== '0x0000000000000000000000000000000000000000';
+
+  const claimUsdt = async () => {
+    if (!contracts || !usdtDeployed) return;
+    setUsdtBusy(true);
+    try {
+      const tx = (await contracts.usdt.faucet()) as { wait: () => Promise<unknown> };
+      await tx.wait();
+      notify('已領取測試 USDT ✓（保證金請用 USDC）', true);
+      if (wallet.address) {
+        try {
+          setWalletUSDT((await contracts.usdt.balanceOf(wallet.address)) as bigint);
+        } catch { /* balance refresh is best-effort */ }
+      }
+    } catch {
+      notify('領取 USDT 失敗（可能尚在 24 小時冷卻期）', false);
+    } finally {
+      setUsdtBusy(false);
+    }
   };
 
   useEffect(() => {
@@ -345,6 +372,16 @@ export default function DashboardPage() {
       ]);
       setFreeMargin(fmRaw as bigint);
       setWalletUSDC(walletUsdcRaw as bigint);
+
+      // USDT is optional per chain — a 0x0 read would throw, so guard it and
+      // keep it out of the Promise.all above.
+      if (String(contracts.usdt.target) !== '0x0000000000000000000000000000000000000000') {
+        try {
+          setWalletUSDT((await contracts.usdt.balanceOf(wallet.address)) as bigint);
+        } catch { setWalletUSDT(0n); }
+      } else {
+        setWalletUSDT(null);
+      }
 
       let stakedAmt = 0n;
       if (stakedUsdcRaw) {
@@ -890,7 +927,7 @@ export default function DashboardPage() {
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2, mb: 3.5 }}>
           <Box>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontWeight: 'bold', letterSpacing: 1 }}>
-              💼 總資產估值 (TOTAL USDT NET WORTH)
+              💼 總資產估值 (TOTAL USDC NET WORTH)
             </Typography>
             <Typography variant="h3" sx={{ fontWeight: '900', color: '#7cc14a', fontFamily: MONO }}>
               {fUsd((walletUSDC ?? 0n) + (stakedUSDC ?? 0n) + derived.totalMargin + freeMargin + (vaultUSDC ?? 0n))}
@@ -958,8 +995,12 @@ export default function DashboardPage() {
                 <Typography variant="h5" sx={{ fontWeight: 'bold', mt: 1.5, fontFamily: MONO, color: 'text.primary' }}>
                   {walletUSDC !== null ? fUsd(walletUSDC) : '$0.00'}
                 </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, minHeight: 48 }}>
-                  存放在您 Web3 錢包中的可用 USDT 測試幣。這是您所有鏈上操作與後備儲蓄的起點。
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                  存放在您 Web3 錢包中的可用 USDC 測試幣。這是您所有鏈上操作與後備儲蓄的起點。
+                </Typography>
+                {/* USDT is a second mock stablecoin — hold / swap only, not margin. */}
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75, fontFamily: MONO, minHeight: 20 }}>
+                  USDT: {usdtDeployed ? fUsd(walletUSDT ?? 0n) : '尚未部署'}
                 </Typography>
               </Box>
               <Stack direction="row" spacing={1} sx={{ mt: 2.5 }}>
@@ -979,6 +1020,24 @@ export default function DashboardPage() {
                 >
                   去領水與入金 ↗
                 </Button>
+                {usdtDeployed && (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    disabled={usdtBusy}
+                    onClick={() => void claimUsdt()}
+                    sx={{
+                      borderColor: 'rgba(255,255,255,0.08)',
+                      color: 'text.secondary',
+                      textTransform: 'none',
+                      fontWeight: 'bold',
+                      whiteSpace: 'nowrap',
+                      '&:hover': { borderColor: 'info.main', bgcolor: 'rgba(0,184,217,0.04)', color: '#fff' }
+                    }}
+                  >
+                    {usdtBusy ? '領取中…' : '領 USDT'}
+                  </Button>
+                )}
                 <Button
                   component={RouterLink}
                   to="/history"
@@ -1223,7 +1282,7 @@ export default function DashboardPage() {
           },
           {
             label: '未實現損益',
-            value: isLoaded ? `${fPnL(derived.totalPnL)} USDT` : '—',
+            value: isLoaded ? `${fPnL(derived.totalPnL)} USDC` : '—',
             sub:   pnlPctStr,
             color: isLoaded ? pnlColor(derived.totalPnL) : 'text.primary',
           },
@@ -1309,7 +1368,7 @@ export default function DashboardPage() {
                           {fUsd(s.value)}
                         </Typography>
                         <Typography variant="body2" sx={{ fontWeight: 'bold', color: pnlColor(s.pnl), fontFamily: MONO, mt: 0.5 }}>
-                          {fPnL(s.pnl)} USDT
+                          {fPnL(s.pnl)} USDC
                         </Typography>
                       </Box>
                       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
