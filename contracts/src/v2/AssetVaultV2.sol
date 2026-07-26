@@ -1,0 +1,134 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
+import "./SyntheticAssetV2.sol";
+import "./IAssetVaultV2.sol";
+
+interface IAssetOracleV2 {
+    function getPrice(bytes32 assetId) external view returns (uint256 price, uint256 updatedAt);
+}
+
+/// @notice Upgradeable mint/redeem vault for tokenized synthetic assets.
+///
+///         Honest description of the risk model: the vault is the counterparty
+///         to every long. It is NOT fully collateralized and this contract does
+///         not make it so — that is a property of the mint-burn design. What it
+///         does is make the exposure bounded, priced, and observable:
+///           - fees accrue a buffer and pay the operator for carrying risk
+///           - a per-asset cap bounds exposure to any single market
+///           - a minimum reserve ratio stops new mints BEFORE the reserve is
+///             gone, instead of discovering it when a redeemer is denied
+///           - pause gives the operator a kill switch
+///
+///         Risk parameters are operator-configurable because the operator is a
+///         licensed institution whose risk committee — not this code — decides
+///         acceptable exposure. See docs/RISK_MODEL.md.
+contract AssetVaultV2 is
+    Initializable,
+    UUPSUpgradeable,
+    AccessControlUpgradeable,
+    PausableUpgradeable,
+    IAssetVaultV2
+{
+    bytes32 public constant RISK_ROLE   = keccak256("RISK_ROLE");
+    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
+
+    uint256 public constant BPS_DENOM = 10_000;
+
+    // ── storage — APPEND ONLY, never reorder (UUPS) ──────────────────────────
+    address private _usdc;
+    address private _oracle;
+
+    mapping(bytes32 => address) private _assetToken;
+
+    /// @notice USDC set aside as collected fees; excluded from the payout reserve.
+    uint256 public accruedFees;
+
+    /// @notice Token units outstanding per asset, used for the exposure cap.
+    mapping(bytes32 => uint256) private _outstanding;
+
+    /// @notice Max token units mintable per asset. 0 = asset closed to new mints.
+    mapping(bytes32 => uint256) public assetCap;
+
+    uint256 public mintFeeBps;
+    uint256 public redeemFeeBps;
+    uint256 public minReserveRatioBps;
+    uint256 public maxPriceAge;
+
+    /// @notice Asset ids ever registered, so ratio math can iterate them.
+    bytes32[] private _assetIds;
+
+    // ── errors ───────────────────────────────────────────────────────────────
+    error StalePrice(bytes32 assetId, uint256 updatedAt);
+    error NoPrice(bytes32 assetId);
+    error AssetNotRegistered(bytes32 assetId);
+    error ZeroAmount();
+    error CapExceeded(bytes32 assetId, uint256 outstanding, uint256 cap);
+    error ReserveRatioTooLow(uint256 ratioBps, uint256 minBps);
+    error VaultDry(uint256 needed, uint256 available);
+    error InvalidParam();
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(address usdc_, address oracle_, address admin_) public initializer {
+        if (usdc_ == address(0) || oracle_ == address(0) || admin_ == address(0)) revert InvalidParam();
+
+        // UUPSUpgradeable is stateless in OZ 5.x and has no initializer.
+        __AccessControl_init();
+        __Pausable_init();
+
+        _usdc   = usdc_;
+        _oracle = oracle_;
+
+        _grantRole(DEFAULT_ADMIN_ROLE, admin_);
+        _grantRole(RISK_ROLE, admin_);
+        _grantRole(PAUSER_ROLE, admin_);
+
+        // Conservative defaults. The operator's risk committee overrides these.
+        mintFeeBps         = 30;      // 0.30%
+        redeemFeeBps       = 30;      // 0.30%
+        minReserveRatioBps = 11_000;  // require 110% reserve coverage to mint
+        maxPriceAge        = 1 hours; // matches keeper cadence with headroom
+    }
+
+    function version() public pure virtual returns (string memory) {
+        return "2.0.0";
+    }
+
+    function usdc() public view returns (address) { return _usdc; }
+    function oracle() public view returns (address) { return _oracle; }
+    function assetToken(bytes32 assetId) public view returns (address) { return _assetToken[assetId]; }
+    function exposureOf(bytes32 assetId) public view returns (uint256) { return _outstanding[assetId]; }
+
+    function registerAsset(bytes32 assetId, address token) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (token == address(0)) revert InvalidParam();
+        if (_assetToken[assetId] == address(0)) _assetIds.push(assetId);
+        _assetToken[assetId] = token;
+        emit AssetRegistered(assetId, token);
+    }
+
+    function pause()   external onlyRole(PAUSER_ROLE) { _pause(); }
+    function unpause() external onlyRole(PAUSER_ROLE) { _unpause(); }
+
+    function _authorizeUpgrade(address) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
+
+    // ── temporary stubs — replaced in Tasks 4–6 ──────────────────────────────
+    function previewMint(bytes32, uint256) public view virtual returns (uint256, uint256) { revert InvalidParam(); }
+    function previewRedeem(bytes32, uint256) public view virtual returns (uint256, uint256) { revert InvalidParam(); }
+    function reserve() public view virtual returns (uint256) { return 0; }
+    function outstandingValue() public view virtual returns (uint256) { return 0; }
+    function reserveRatioBps() public view virtual returns (uint256) { return 0; }
+    function mint(bytes32, uint256) external virtual returns (uint256) { revert InvalidParam(); }
+    function redeem(bytes32, uint256) external virtual returns (uint256) { revert InvalidParam(); }
+    function fundVault(uint256) external virtual { revert InvalidParam(); }
+    function withdrawFees(address, uint256) external virtual { revert InvalidParam(); }
+}
