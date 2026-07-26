@@ -46,13 +46,16 @@ const ICONS = {
 
 export const navData: NavSectionProps['data'] = [
   /**
-   * PepeFi
+   * PepeLab
    */
   {
-    subheader: 'PepeFi',
+    subheader: 'PepeLab',
     items: [
       { title: '🏠 我的 Pepe (Dashboard)', path: paths.pepefi.dashboard, icon: ICONS.analytics },
       { title: 'Exchange', path: paths.pepefi.exchange, icon: ICONS.ecommerce },
+      { title: '🪙 代幣化資產', path: paths.pepefi.tokens, icon: ICONS.product },
+      { title: 'Pro Terminal', path: paths.pepefi.terminal, icon: ICONS.dashboard },
+      { title: 'x402 Signal API', path: paths.pepefi.x402, icon: ICONS.external },
       { title: 'Marketplace', path: paths.pepefi.marketplace, icon: ICONS.invoice },
       { title: 'Portfolio', path: paths.pepefi.portfolio, icon: ICONS.banking },
       { title: 'Vault', path: paths.pepefi.vault, icon: ICONS.file },
@@ -60,6 +63,8 @@ export const navData: NavSectionProps['data'] = [
       { title: 'Whale Tracker', path: paths.pepefi.whale, icon: ICONS.label },
       { title: 'ESG', path: paths.pepefi.esg, icon: ICONS.tour },
       { title: 'Rewards 🎁', path: paths.pepefi.rewards, icon: ICONS.booking },
+      { title: '🤖 Agent Sessions', path: paths.pepefi.sessions, icon: ICONS.lock },
+      { title: '📊 Agent Monitor', path: paths.pepefi.agentMonitor, icon: ICONS.analytics },
     ],
   },
   /**

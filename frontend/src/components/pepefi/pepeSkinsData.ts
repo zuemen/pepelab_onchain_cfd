@@ -15,7 +15,7 @@ export const PEPE_SKINS: PepeSkin[] = [
     rarity: 'Legendary',
     price: 5000,
     imagePath: '/skins/01_a_digital_illustration_of_pepe_the_frog_depicts_hi.png',
-    desc: '穿梭在星際與DeFi虛無之中的高階佩佩探索者，手持雷射光劍，誓將PepeFi推向宇宙深處！',
+    desc: '穿梭在星際與DeFi虛無之中的高階佩佩探索者，手持雷射光劍，誓將PepeLab推向宇宙深處！',
     emoji: '🚀'
   },
   {

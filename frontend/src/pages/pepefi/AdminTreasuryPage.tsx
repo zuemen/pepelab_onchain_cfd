@@ -1,3 +1,4 @@
+import { MONO } from 'src/components/pepefi/brandKit'
 import { useState, useEffect, useCallback } from 'react'
 import { parseEther, formatEther, formatUnits } from 'ethers'
 import { useContracts } from 'src/hooks/useContracts'
@@ -199,7 +200,7 @@ export default function AdminTreasuryPage() {
       const amt = parseEther(swapAmt)
       const tx  = asTx(await contracts.usdc.approve(String(contracts.swapRouter.target), amt))
       await tx.wait()
-      notify('USDC approved ✓', true, tx.hash)
+      notify('USDT approved ✓', true, tx.hash)
     } catch (e: any) {
       notify(prettyError(e), false)
     } finally { setLoad('approve', false) }
@@ -213,7 +214,7 @@ export default function AdminTreasuryPage() {
       const tx     = asTx(await contracts.swapRouter.swapUSDCForETH(amt))
       await tx.wait()
       const ethOut = (parseFloat(swapAmt) / 3000).toFixed(6)
-      notify(`Swapped ${swapAmt} USDC → ${ethOut} ETH ✓`, true, tx.hash)
+      notify(`Swapped ${swapAmt} USDT → ${ethOut} ETH ✓`, true, tx.hash)
       setSwapAmt('')
       await fetchStats()
       await fetchHistory()
@@ -265,7 +266,7 @@ export default function AdminTreasuryPage() {
         <Typography variant="h2">🔒</Typography>
         <Typography variant="h5" sx={{ fontWeight: 'bold' }}>Not authorized</Typography>
         <Typography color="text.secondary" sx={{ mb: 2 }}>This page is restricted to the platform owner wallet.</Typography>
-        <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.disabled' }}>
+        <Typography variant="caption" sx={{ fontFamily: MONO, color: 'text.disabled' }}>
           Owner: {DEMO_OWNER.slice(0, 10)}…{DEMO_OWNER.slice(-6)}
         </Typography>
       </Box>
@@ -323,10 +324,10 @@ export default function AdminTreasuryPage() {
       {/* A. Revenue Stats */}
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <StatCard title="Pending Platform Fees" value={stats ? f18(stats.platformEarnings) : '—'} sub="USDC" valueColor="primary.main" />
+          <StatCard title="Pending Platform Fees" value={stats ? f18(stats.platformEarnings) : '—'} sub="USDT" valueColor="primary.main" />
         </Grid>
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <StatCard title="Wallet USDC Balance" value={stats ? f18(stats.myMusdc) : '—'} sub="USDC" />
+          <StatCard title="Wallet USDT Balance" value={stats ? f18(stats.myMusdc) : '—'} sub="USDT" />
         </Grid>
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
           <StatCard title="Wallet ETH Balance" value={stats ? fEth(stats.myEth) : '—'} sub="ETH" />
@@ -346,7 +347,7 @@ export default function AdminTreasuryPage() {
         </Box>
 
         {platformTreasury && (
-          <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+          <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
             Treasury: {platformTreasury}
           </Typography>
         )}
@@ -356,8 +357,8 @@ export default function AdminTreasuryPage() {
             <Typography variant="caption" color="text.secondary">
               Pending platform fees
             </Typography>
-            <Typography variant="h4" color="primary.main" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
-              {stats ? f18(stats.platformEarnings) : '—'} <Box component="span" sx={{ fontSize: '1rem', fontWeight: 'normal', color: 'text.secondary' }}>USDC</Box>
+            <Typography variant="h4" color="primary.main" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
+              {stats ? f18(stats.platformEarnings) : '—'} <Box component="span" sx={{ fontSize: '1rem', fontWeight: 'normal', color: 'text.secondary' }}>USDT</Box>
             </Typography>
           </Box>
           <Button
@@ -374,12 +375,12 @@ export default function AdminTreasuryPage() {
         </Typography>
       </Card>
 
-      {/* C. Step 2: Convert USDC → ETH */}
+      {/* C. Step 2: Convert USDT → ETH */}
       <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
           <Chip label="2" size="small" color="primary" sx={{ fontWeight: 'bold' }} />
           <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-            Convert USDC → ETH via SwapRouter
+            Convert USDT → ETH via SwapRouter
           </Typography>
         </Box>
 
@@ -387,10 +388,10 @@ export default function AdminTreasuryPage() {
           <TextField
             type="number"
             size="small"
-            placeholder="USDC amount"
+            placeholder="USDT amount"
             value={swapAmt}
             onChange={e => setSwapAmt(e.target.value)}
-            slotProps={{ htmlInput: { min: "0", style: { fontFamily: 'monospace' } } }}
+            slotProps={{ htmlInput: { min: "0", style: { fontFamily: MONO } } }}
             sx={{ flexGrow: 1, minWidth: 200 }}
           />
           <Button
@@ -404,7 +405,7 @@ export default function AdminTreasuryPage() {
 
         {swapAmt && parseFloat(swapAmt) > 0 && (
           <Typography variant="caption" color="text.secondary">
-            ≈ {(parseFloat(swapAmt) / 3000).toFixed(6)} ETH (rate: 1 ETH = 3000 USDC)
+            ≈ {(parseFloat(swapAmt) / 3000).toFixed(6)} ETH (rate: 1 ETH = 3000 USDT)
           </Typography>
         )}
 
@@ -422,7 +423,7 @@ export default function AdminTreasuryPage() {
             disabled={busy['approve'] || !swapAmt || parseFloat(swapAmt) <= 0}
             sx={{ flexGrow: 1 }}
           >
-            {busy['approve'] ? 'Approving…' : '① Approve USDC'}
+            {busy['approve'] ? 'Approving…' : '① Approve USDT'}
           </Button>
           <Button
             variant="contained"
@@ -447,8 +448,8 @@ export default function AdminTreasuryPage() {
             Fund SwapRouter with ETH
           </Typography>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-            The router needs an ETH reserve to fulfill USDC→ETH swaps from users and admin.
-            Current reserve: <Box component="span" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{stats ? fEth(stats.routerEth) : '—'} ETH</Box>
+            The router needs an ETH reserve to fulfill USDT→ETH swaps from users and admin.
+            Current reserve: <Box component="span" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>{stats ? fEth(stats.routerEth) : '—'} ETH</Box>
           </Typography>
           <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
             <TextField
@@ -457,7 +458,7 @@ export default function AdminTreasuryPage() {
               placeholder="ETH amount (e.g. 1)"
               value={fundAmt}
               onChange={e => setFundAmt(e.target.value)}
-              slotProps={{ htmlInput: { min: "0", step: "0.01", style: { fontFamily: 'monospace' } } }}
+              slotProps={{ htmlInput: { min: "0", step: "0.01", style: { fontFamily: MONO } } }}
               sx={{ width: 200 }}
             />
             <Button
@@ -471,14 +472,14 @@ export default function AdminTreasuryPage() {
         </Box>
       </Card>
 
-      {/* F. PepeFi Incentives Pool Refill */}
+      {/* F. PepeLab Incentives Pool Refill */}
       <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
           <Box sx={{ bgcolor: 'rgba(124,193,74,0.1)', p: 1, borderRadius: '50%', color: '#7cc14a', display: 'flex' }}>
             <Iconify icon="solar:palette-bold" sx={{ fontSize: 20 }} />
           </Box>
           <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-            🎁 PepeFi Incentives Pool Refill (獎勵池充值)
+            🎁 PepeLab Incentives Pool Refill (獎勵池充值)
           </Typography>
         </Box>
 
@@ -490,7 +491,7 @@ export default function AdminTreasuryPage() {
           <Grid size={{ xs: 12, sm: 6 }}>
             <Box sx={{ p: 2, bgcolor: 'rgba(255,255,255,0.02)', borderRadius: 1.5, border: '1px solid rgba(255,255,255,0.05)' }}>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>我的錢包 PEPE 餘額</Typography>
-              <Typography variant="h5" sx={{ fontWeight: 'bold', color: '#ffb300', fontFamily: 'monospace' }}>
+              <Typography variant="h5" sx={{ fontWeight: 'bold', color: '#ffb300', fontFamily: MONO }}>
                 {walletPepeBal !== null ? f18(walletPepeBal) : '—'} <Box component="span" sx={{ fontSize: '0.85rem', fontWeight: 'normal', color: 'text.secondary' }}>PEPE</Box>
               </Typography>
             </Box>
@@ -498,7 +499,7 @@ export default function AdminTreasuryPage() {
           <Grid size={{ xs: 12, sm: 6 }}>
             <Box sx={{ p: 2, bgcolor: 'rgba(124,193,74,0.04)', borderRadius: 1.5, border: '1px solid rgba(124,193,74,0.15)' }}>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>激勵合約 PEPE 儲備</Typography>
-              <Typography variant="h5" sx={{ fontWeight: 'bold', color: '#7cc14a', fontFamily: 'monospace' }}>
+              <Typography variant="h5" sx={{ fontWeight: 'bold', color: '#7cc14a', fontFamily: MONO }}>
                 {contractPepeBal !== null ? f18(contractPepeBal) : '—'} <Box component="span" sx={{ fontSize: '0.85rem', fontWeight: 'normal', color: 'text.secondary' }}>PEPE</Box>
               </Typography>
             </Box>
@@ -512,7 +513,7 @@ export default function AdminTreasuryPage() {
             placeholder="注資 PEPE 數量 (例如 100000)"
             value={pepeFundAmt}
             onChange={e => setPepeFundAmt(e.target.value)}
-            slotProps={{ htmlInput: { min: "0", style: { fontFamily: 'monospace' } } }}
+            slotProps={{ htmlInput: { min: "0", style: { fontFamily: MONO } } }}
             sx={{ width: 250, flexGrow: 1 }}
           />
           <Button
@@ -544,7 +545,7 @@ export default function AdminTreasuryPage() {
         </Box>
 
         {history.length === 0 ? (
-          <EmptyState icon="📋" title="No cash out history yet" description="Fee claims and USDC→ETH swaps will appear here." />
+          <EmptyState icon="📋" title="No cash out history yet" description="Fee claims and USDT→ETH swaps will appear here." />
         ) : (
           <TableContainer>
             <Table size="small">
@@ -559,14 +560,14 @@ export default function AdminTreasuryPage() {
                           color={r.type === 'claim' ? 'primary' : 'success'}
                           sx={{ fontWeight: 'bold' }}
                         />
-                        <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
+                        <Typography variant="body2" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
                           {r.type === 'claim'
-                            ? `${f18(r.amount)} USDC`
-                            : `${r.usdcIn ? f18(r.usdcIn) : '—'} USDC → ${fEth(r.amount)} ETH`}
+                            ? `${f18(r.amount)} USDT`
+                            : `${r.usdcIn ? f18(r.usdcIn) : '—'} USDT → ${fEth(r.amount)} ETH`}
                         </Typography>
                       </Stack>
                     </TableCell>
-                    <TableCell align="right" sx={{ fontFamily: 'monospace', fontSize: '0.75rem', color: 'text.secondary' }}>
+                    <TableCell align="right" sx={{ fontFamily: MONO, fontSize: '0.75rem', color: 'text.secondary' }}>
                       #{r.blockNumber}
                     </TableCell>
                     <TableCell align="right">
@@ -597,7 +598,7 @@ export default function AdminTreasuryPage() {
             <Box component="span" sx={{ color: 'text.primary', fontWeight: 'bold' }}>Revenue model:</Box> Each copy-trade or performance fee is split 70% trader / 20% platform / 10% insurance vault. Platform fees accumulate in FeeRouter until this admin claims them.
           </Typography>
           <Typography variant="caption">
-            After claiming USDC, use the swap above to convert to ETH at the mock rate (1 ETH = 3000 USDC). In production, you'd use a real DEX.
+            After claiming USDT, use the swap above to convert to ETH at the mock rate (1 ETH = 3000 USDT). In production, you'd use a real DEX.
           </Typography>
         </Stack>
       </Card>

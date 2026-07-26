@@ -219,7 +219,7 @@ export default function WalletButton({ wallet }: Props) {
 
         <DialogContent sx={{ p: 2, pt: 0 }}>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-            選擇您的登入通道以進入 PepeFi 鏈上衍生品系統。
+            選擇您的登入通道以進入 PepeLab 鏈上衍生品系統。
           </Typography>
 
           <Stack spacing={2}>
@@ -251,7 +251,7 @@ export default function WalletButton({ wallet }: Props) {
                   MetaMask 錢包連線
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                  透過 MetaMask 瀏覽器擴充功能連線 (Sepolia)
+                  透過 MetaMask 瀏覽器擴充功能連線 (Base Sepolia)
                 </Typography>
               </Box>
             </Card>

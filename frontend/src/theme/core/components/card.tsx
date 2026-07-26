@@ -10,6 +10,11 @@ const MuiCard: Components<Theme>['MuiCard'] = {
       boxShadow: `var(--card-shadow, ${theme.vars.customShadows.card})`,
       borderRadius: `var(--card-radius, ${Number(theme.shape.borderRadius) * 2}px)`,
       zIndex: 0, // Fix Safari overflow: hidden with border radius
+      // PepeLab: faint green hairline unifies every panel as an "on-chain terminal"
+      // surface in dark mode. Cards that set their own border override this.
+      ...theme.applyStyles('dark', {
+        border: '1px solid rgba(124, 193, 74, 0.10)',
+      }),
     }),
   },
 };

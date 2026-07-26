@@ -16,6 +16,9 @@ import { usePathname } from '../hooks';
 const LandingPage       = lazy(() => import('src/pages/pepefi/LandingPage'));
 const DashboardPage     = lazy(() => import('src/pages/pepefi/DashboardPage'));
 const ExchangePage      = lazy(() => import('src/pages/pepefi/ExchangePage'));
+const TokenizedAssetsPage = lazy(() => import('src/pages/pepefi/TokenizedAssetsPage'));
+const TradeTerminalPage = lazy(() => import('src/pages/pepefi/TradeTerminalPage'));
+const X402DocsPage      = lazy(() => import('src/pages/pepefi/X402DocsPage'));
 const TraderDashboard   = lazy(() => import('src/pages/pepefi/TraderDashboard'));
 const TraderStakePage   = lazy(() => import('src/pages/pepefi/TraderStakePage'));
 const TraderProfilePage = lazy(() => import('src/pages/pepefi/TraderProfilePage'));
@@ -29,6 +32,8 @@ const WhaleTrackerPage  = lazy(() => import('src/pages/pepefi/WhaleTrackerPage')
 const AdminOraclePage   = lazy(() => import('src/pages/pepefi/AdminOraclePage'));
 const AdminTreasuryPage = lazy(() => import('src/pages/pepefi/AdminTreasuryPage'));
 const RewardsPage       = lazy(() => import('src/pages/pepefi/RewardsPage'));
+const SessionsPage      = lazy(() => import('src/pages/pepefi/SessionsPage'));
+const AgentMonitorPage  = lazy(() => import('src/pages/pepefi/AgentMonitorPage'));
 const HomePage          = lazy(() => import('src/pages/pepefi/HomePage'));
 
 // ----------------------------------------------------------------------
@@ -62,6 +67,8 @@ export const pepefiRoutes: RouteObject[] = [
           { index: true, element: <LandingPage /> },
           { path: 'dashboard', element: <DashboardPage /> },
           { path: 'exchange', element: <ExchangePage /> },
+          { path: 'tokens', element: <TokenizedAssetsPage /> },
+          { path: 'terminal', element: <TradeTerminalPage /> },
           { path: 'trader', element: <TraderDashboard /> },
           { path: 'stake', element: <TraderStakePage /> },
           { path: 'trader/:address', element: <TraderProfilePage /> },
@@ -75,6 +82,9 @@ export const pepefiRoutes: RouteObject[] = [
           { path: 'admin/oracle', element: <AdminOraclePage /> },
           { path: 'admin/treasury', element: <AdminTreasuryPage /> },
           { path: 'rewards', element: <RewardsPage /> },
+          { path: 'sessions', element: <SessionsPage /> },
+          { path: 'agent-monitor', element: <AgentMonitorPage /> },
+          { path: 'x402', element: <X402DocsPage /> },
           { path: 'home',    element: <HomePage /> },
         ],
       },

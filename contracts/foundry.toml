@@ -3,6 +3,8 @@ src = "src"
 out = "out"
 libs = ["lib"]
 via_ir = true
+optimizer = true
+optimizer_runs = 200
 remappings = [
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
     "forge-std/=lib/forge-std/src/",
@@ -11,8 +13,11 @@ remappings = [
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
 
 [rpc_endpoints]
-anvil   = "http://localhost:8545"
-sepolia = "${SEPOLIA_RPC_URL}"
+anvil        = "http://localhost:8545"
+sepolia      = "${SEPOLIA_RPC_URL}"
+base_sepolia = "${BASE_SEPOLIA_RPC_URL}"
 
 [etherscan]
-sepolia = { key = "${ETHERSCAN_API_KEY}" }
+sepolia      = { key = "${ETHERSCAN_API_KEY}" }
+# BaseScan (Base Sepolia, chainId 84532). Key from env, never committed.
+base_sepolia = { key = "${BASESCAN_API_KEY}", chain = 84532, url = "https://api-sepolia.basescan.org/api" }

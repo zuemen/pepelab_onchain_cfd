@@ -1,0 +1,14 @@
+{
+  "name": "@pepelab/demo-agent",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "tsx src/run.ts"
+  },
+  "dependencies": {
+    "@pepelab/shared": "*",
+    "viem": "^2.21.54",
+    "x402-fetch": "^0.5.0"
+  }
+}

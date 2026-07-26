@@ -1,3 +1,4 @@
+import { MONO } from 'src/components/pepefi/brandKit'
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link as RouterLink } from 'react-router'
 import { useContracts } from 'src/hooks/useContracts'
@@ -28,6 +29,8 @@ import Chip from '@mui/material/Chip';
 import Breadcrumbs from '@mui/material/Breadcrumbs';
 import Alert from '@mui/material/Alert';
 import Avatar from '@mui/material/Avatar';
+
+import { explorerTx, explorerName } from 'src/lib/pepefi/notify';
 
 interface StakeInfo {
   amount:             bigint
@@ -234,6 +237,11 @@ export default function TraderProfilePage() {
                   border: '3px solid',
                   borderColor: repScore && repScore >= 80n ? 'warning.main' : 'rgba(255,255,255,0.1)',
                   boxShadow: '0 0 16px rgba(0,0,0,0.5)',
+                  bgcolor: 'rgba(255, 255, 255, 0.05)',
+                  '& .MuiAvatar-img': {
+                    objectFit: 'contain',
+                    padding: '4px',
+                  }
                 }}
               />
               <Box sx={{ flexGrow: 1 }}>
@@ -245,7 +253,7 @@ export default function TraderProfilePage() {
                       </Typography>
                       <TraderRankBadge reputation={repScore} />
                     </Stack>
-                    <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary', display: 'block', mt: 0.5 }}>
+                    <Typography variant="caption" sx={{ fontFamily: MONO, color: 'text.secondary', display: 'block', mt: 0.5 }}>
                       {traderAddr}
                     </Typography>
                   </Box>
@@ -306,13 +314,13 @@ export default function TraderProfilePage() {
           {/* ─── B. Stats grid (4 cards) ──────────────────────────── */}
           <Grid container spacing={2}>
             <Grid size={{ xs: 6, md: 3 }}>
-              <StatCard title="Staked" value={stakeInfo ? f18(stakeInfo.amount) : '—'} sub="USDC" />
+              <StatCard title="Staked" value={stakeInfo ? f18(stakeInfo.amount) : '—'} sub="USDT" />
             </Grid>
             <Grid size={{ xs: 6, md: 3 }}>
               <StatCard title="Followers" value={String(followers)} sub="copiers" />
             </Grid>
             <Grid size={{ xs: 6, md: 3 }}>
-              <StatCard title="Earnings" value={earnings !== null ? f18(earnings, 4) : '—'} sub="USDC" valueColor="success.main" />
+              <StatCard title="Earnings" value={earnings !== null ? f18(earnings, 4) : '—'} sub="USDT" valueColor="success.main" />
             </Grid>
             <Grid size={{ xs: 6, md: 3 }}>
               <StatCard title="Strategies" value={stratCount !== null ? String(stratCount) : '—'} sub="versions" />
@@ -373,7 +381,7 @@ export default function TraderProfilePage() {
                       }}
                     >
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0, flexGrow: 1 }}>
-                        <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>
+                        <Typography variant="caption" sx={{ fontFamily: MONO, color: 'text.secondary' }}>
                           v{ver.versionId}
                         </Typography>
                         <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'text.primary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -405,7 +413,7 @@ export default function TraderProfilePage() {
                             <TableBody>
                               {ver.allocs.map((a, idx) => (
                                 <TableRow key={idx}>
-                                  <TableCell sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: 'text.primary' }}>
+                                  <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'text.primary' }}>
                                     {ASSET_LABEL[a.asset] ?? '?'}
                                   </TableCell>
                                   <TableCell>
@@ -418,8 +426,8 @@ export default function TraderProfilePage() {
                                   <TableCell sx={{ fontWeight: 'bold', color: a.isLong ? 'success.main' : 'error.main' }}>
                                     {a.isLong ? 'Long ↑' : 'Short ↓'}
                                   </TableCell>
-                                  <TableCell sx={{ fontFamily: 'monospace' }}>{String(a.leverage)}×</TableCell>
-                                  <TableCell align="right" sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: 'text.primary' }}>
+                                  <TableCell sx={{ fontFamily: MONO }}>{String(a.leverage)}×</TableCell>
+                                  <TableCell align="right" sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'text.primary' }}>
                                     {(Number(a.weight) / 100).toFixed(0)}%
                                   </TableCell>
                                 </TableRow>
@@ -446,7 +454,7 @@ export default function TraderProfilePage() {
                   <TableBody>
                     {followerList.map((addr, i) => (
                       <TableRow key={i} hover>
-                        <TableCell sx={{ fontFamily: 'monospace', color: 'text.primary' }}>
+                        <TableCell sx={{ fontFamily: MONO, color: 'text.primary' }}>
                           {shortAddr(addr)}
                         </TableCell>
                         <TableCell align="right" sx={{ color: 'text.secondary' }}>
@@ -472,23 +480,23 @@ export default function TraderProfilePage() {
                     {slashHistory.map((ev, i) => (
                       <TableRow key={i}>
                         <TableCell>
-                          <Typography variant="body2" color="error.main" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
-                            −{f18(ev.amount)} USDC
+                          <Typography variant="body2" color="error.main" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
+                            −{f18(ev.amount)} USDT
                           </Typography>
                           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
                             → {shortAddr(ev.recipient)}
                           </Typography>
                         </TableCell>
                         <TableCell align="right">
-                          {wallet.chainId === 11155111 && (
+                          {explorerTx(ev.txHash, wallet.chainId) && (
                             <Link
-                              href={`https://sepolia.etherscan.io/tx/${ev.txHash}`}
+                              href={explorerTx(ev.txHash, wallet.chainId)!}
                               target="_blank"
                               rel="noopener noreferrer"
                               color="info.main"
                               sx={{ fontSize: '0.875rem', textDecoration: 'underline' }}
                             >
-                              Etherscan ↗
+                              {explorerName(wallet.chainId)} ↗
                             </Link>
                           )}
                         </TableCell>

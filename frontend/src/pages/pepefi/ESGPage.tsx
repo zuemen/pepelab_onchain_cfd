@@ -1,3 +1,4 @@
+import { MONO } from 'src/components/pepefi/brandKit'
 import { useState, useMemo } from 'react';
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
@@ -150,7 +151,7 @@ export default function ESGPage() {
       )}
       {wallet.isConnected && wallet.chainId !== 11155111 && (
         <Alert severity="warning" variant="outlined" sx={{ py: 0 }}>
-          ESGRegistry is only deployed on Sepolia. Connect to Sepolia to see live on-chain scores.
+          ESGRegistry is only deployed on Ethereum Sepolia. Connect to Ethereum Sepolia to see live on-chain scores.
         </Alert>
       )}
       {wallet.isConnected && wallet.chainId === 11155111 && esgFailed && (
@@ -199,7 +200,7 @@ export default function ESGPage() {
                 }}
               >
                 <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
-                  <Typography variant="h4" sx={{ fontWeight: '900', color: color, fontFamily: 'monospace', lineHeight: 1 }}>
+                  <Typography variant="h4" sx={{ fontWeight: '900', color: color, fontFamily: MONO, lineHeight: 1 }}>
                     {short}
                   </Typography>
                   <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'text.primary' }}>
@@ -255,7 +256,7 @@ export default function ESGPage() {
                   gap: 0.5,
                 }}
               >
-                <Typography variant="h5" sx={{ fontWeight: '900', color, fontFamily: 'monospace', lineHeight: 1 }}>
+                <Typography variant="h5" sx={{ fontWeight: '900', color, fontFamily: MONO, lineHeight: 1 }}>
                   {rating}
                 </Typography>
                 <Typography variant="caption" sx={{ fontWeight: 'bold', color, fontSize: '0.6875rem' }}>
@@ -310,13 +311,13 @@ export default function ESGPage() {
                 >
                   {/* Top row */}
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                    <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: 'monospace', width: 24, textAlign: 'right' }}>
+                    <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: MONO, width: 24, textAlign: 'right' }}>
                       #{rank + 1}
                     </Typography>
                     <Typography variant="h5" sx={{ fontSize: '1.25rem', lineHeight: 1 }}>{meta?.icon ?? '?'}</Typography>
                     <Box sx={{ flexGrow: 1, minWidth: 0 }}>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Typography variant="subtitle2" sx={{ fontWeight: 'bold', fontFamily: 'monospace' }}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 'bold', fontFamily: MONO }}>
                           {meta?.symbol ?? '?'}
                         </Typography>
                         {meta && (
@@ -344,7 +345,7 @@ export default function ESGPage() {
                       <Skeleton width={40} height={32} />
                     ) : info ? (
                       <Box sx={{ textAlign: 'right', mr: 2 }}>
-                        <Typography variant="h5" sx={{ fontWeight: '800', fontFamily: 'monospace', lineHeight: 1, color: barColor(info.composite) }}>
+                        <Typography variant="h5" sx={{ fontWeight: '800', fontFamily: MONO, lineHeight: 1, color: barColor(info.composite) }}>
                           {info.composite}
                         </Typography>
                         <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.625rem' }}>/ 100</Typography>
@@ -390,7 +391,7 @@ export default function ESGPage() {
                                 }}
                               />
                             </Box>
-                            <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary', width: 24, textAlign: 'right' }}>
+                            <Typography variant="caption" sx={{ fontFamily: MONO, color: 'text.secondary', width: 24, textAlign: 'right' }}>
                               {val}
                             </Typography>
                           </Box>
@@ -422,7 +423,7 @@ export default function ESGPage() {
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
               <Typography variant="h4" sx={{ fontSize: '1.75rem', lineHeight: 1 }}>{selMeta?.icon ?? '?'}</Typography>
               <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-                <Typography variant="subtitle1" sx={{ fontWeight: 'bold', fontFamily: 'monospace' }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 'bold', fontFamily: MONO }}>
                   {selMeta?.symbol ?? '?'}
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
@@ -441,7 +442,7 @@ export default function ESGPage() {
               </Box>
             ) : radarData.length === 0 ? (
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 240 }}>
-                <Typography variant="body2" color="text.secondary">No data — connect wallet on Sepolia</Typography>
+                <Typography variant="body2" color="text.secondary">No data — connect wallet on Ethereum Sepolia</Typography>
               </Box>
             ) : (
               <Box sx={{ width: '100%', height: 240 }}>
@@ -497,7 +498,7 @@ export default function ESGPage() {
                           }}
                         />
                       </Box>
-                      <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: bc, width: 24, textAlign: 'right' }}>
+                      <Typography variant="caption" sx={{ fontFamily: MONO, fontWeight: 'bold', color: bc, width: 24, textAlign: 'right' }}>
                         {val}
                       </Typography>
                     </Box>
@@ -523,7 +524,7 @@ export default function ESGPage() {
                       }}
                     />
                   </Box>
-                  <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: barColor(selInfo.composite), width: 24, textAlign: 'right' }}>
+                  <Typography variant="caption" sx={{ fontFamily: MONO, fontWeight: 'bold', color: barColor(selInfo.composite), width: 24, textAlign: 'right' }}>
                     {selInfo.composite}
                   </Typography>
                 </Box>

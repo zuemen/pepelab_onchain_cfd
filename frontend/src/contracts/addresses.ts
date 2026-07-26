@@ -3,6 +3,7 @@
 
 export interface ChainAddresses {
   MockUSDC:          string
+  MockUSDT:          string
   MockOracle:        string
   TraderStake:       string
   InsuranceVault:    string
@@ -19,11 +20,13 @@ export interface ChainAddresses {
   EsgRewardDistributor:   string
   PepeIncentives:         string
   PepeStaking:            string
+  AssetVault:             string
 }
 
 // ── Anvil local (chainId 31337) ───────────────────────────────────────────────
 const ANVIL: ChainAddresses = {
   MockUSDC:          "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
+  MockUSDT:          "0x0000000000000000000000000000000000000000",
   MockOracle:        "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e",
   TraderStake:       "0x0000000000000000000000000000000000000000",
   InsuranceVault:    "0x0000000000000000000000000000000000000000",
@@ -40,11 +43,13 @@ const ANVIL: ChainAddresses = {
   EsgRewardDistributor:   "0x0000000000000000000000000000000000000000",
   PepeIncentives:         "0x0000000000000000000000000000000000000000",
   PepeStaking:            "0x0000000000000000000000000000000000000000",
+  AssetVault:             "0x0000000000000000000000000000000000000000",
 }
 
 // ── Sepolia testnet (chainId 11155111) ────────────────────────────────────────
 const SEPOLIA: ChainAddresses = {
   MockUSDC:           "0x167Bacef1925184f0df34A3196F834C0622Cfd36",
+  MockUSDT:           "0x0000000000000000000000000000000000000000",
   MockOracle:         "0x17CA20A37Cf04F2f589B2573EC95f1411D29d958",
   TraderStake:        "0x3fe1dbC82eA267085CAB5eb67C6b7d3E68A7d673",
   InsuranceVault:     "0x8bDE83dBC2CA450B539346e224E7819348C7b091",
@@ -60,12 +65,48 @@ const SEPOLIA: ChainAddresses = {
   PepeClaim:              "0x852c0fBa54552aafbA4798709d90056159682A4C",
   EsgRewardDistributor:   "0xA1a522B9d31e5B48E41DcCd050DE10dA2e3BEdD0",
   PepeIncentives:         "0x65b9F1B4d18822d4faBa763621E3e4eA065aE5D7",
-  PepeStaking:            "0x0000000000000000000000000000000000000000",
+  PepeStaking:            "0xf5d0953A443259ebdFC62fE49189998988e309f9",
+  AssetVault:             "0x0000000000000000000000000000000000000000",
 }
+
+// ── Base Sepolia testnet (chainId 84532) ──────────────────────────────────────
+// Phase 4 live deployment (Deploy.s.sol broadcast 2026-06-14). Contracts not in
+// Deploy.s.sol (ESG/Pepe* AMM/staking) stay 0x0 → UI "not deployed" guards.
+const BASE_SEPOLIA: ChainAddresses = {
+  MockUSDC:          "0x69fd695Bc7C3aFdb35ABA35cD6890C506400b035",
+  MockUSDT:          "0x0000000000000000000000000000000000000000",
+  MockOracle:        "0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3",
+  TraderStake:       "0x01aEB530bcFc69f036309ffe55acc7eA6C5a28Fe",
+  InsuranceVault:    "0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812",
+  FeeRouter:         "0x00f6cf0113399a7A451c7f85fe094a28092d3e0c",
+  PerpetualExchange: "0xEf75ECA6514cE96B18382E921aC6190a0cF8c072",
+  StrategyRegistry:  "0x54e8C43f9Eb151Bb8DD6e61d16a969C4D0e73915",
+  CopyTracker:       "0x96357144fE56c5E0e33e8046bE2A63F45528b210",
+  MockSwapRouter:    "0xC9b0e5C219AA1B3eB00E92Fd9a883B182F0AE8Ae",
+  ESGRegistry:       "0x0000000000000000000000000000000000000000",
+  KYCRegistry:       "0x5D95fD9e7a5f80E5369e24783F1f98E0f952360d",
+  PepeAMM:           "0x93be44a81a2796d378f65ebcc8d5f8b40166ad63",
+  PepeToken:              "0xccd05cbdc2f7961a4c27d3633694022722786a0f",
+  PepeClaim:              "0x0000000000000000000000000000000000000000",
+  EsgRewardDistributor:   "0x0000000000000000000000000000000000000000",
+  PepeIncentives:         "0x0000000000000000000000000000000000000000",
+  PepeStaking:            "0x0000000000000000000000000000000000000000",
+  AssetVault:             "0x0000000000000000000000000000000000000000",
+}
+
+// Phase 4 production-oracle showcase on Base Sepolia (deployed, NOT wired into
+// the live exchange — which runs on MockOracle so synthetic-asset demos work).
+// AggregatorOracle fronts Chainlink + Pyth (Pyth live on Base Sepolia).
+export const BASE_SEPOLIA_ORACLE_SHOWCASE = {
+  ChainlinkAdapter: "0x37DC7b70899BFfB17949366a5b6a86203C428E2f",
+  PythAdapter:      "0x551C0B2e75a9129fe697210223F1Ca6e64F3C6d5",
+  AggregatorOracle: "0x8215158642350a3f329aB9597186d21f957A813D",
+} as const
 
 const CHAIN_MAP: Record<number, ChainAddresses> = {
   31337:    ANVIL,
   11155111: SEPOLIA,
+  84532:    BASE_SEPOLIA,
 }
 
 export const getAddresses = (chainId: number | null): ChainAddresses | null =>
@@ -74,6 +115,7 @@ export const getAddresses = (chainId: number | null): ChainAddresses | null =>
 export const CHAIN_NAMES: Record<number, string> = {
   31337:    'Anvil Local',
   11155111: 'Sepolia',
+  84532:    'Base Sepolia',
 }
 
 
@@ -109,3 +151,18 @@ export const INITIAL_PRICES: Partial<Record<keyof typeof ASSET_IDS, bigint>> = {
 
 export type ContractName = keyof typeof ANVIL
 export type AssetSymbol  = keyof typeof ASSET_IDS
+
+// ── Tokenized assets (ERC-20 wrapper layer) ───────────────────────────────────
+// SyntheticAsset addresses per chain, filled in after DeploySyntheticAssets.
+// Empty = the tokenized layer is not live on that chain; the /tokens page shows
+// a "not enabled yet" notice instead of failing.
+export const SYNTH_TOKENS: Record<number, Partial<Record<AssetSymbol, string>>> = {
+  31337:    {},
+  11155111: {},
+  84532:    {},
+}
+
+export const getSynthTokens = (
+  chainId: number | null,
+): Partial<Record<AssetSymbol, string>> =>
+  chainId === null ? {} : (SYNTH_TOKENS[chainId] ?? {})

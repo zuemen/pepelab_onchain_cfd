@@ -56,6 +56,9 @@ export const paths = {
     landing: '/',
     dashboard: '/dashboard',
     exchange: '/exchange',
+    tokens: '/tokens',
+    terminal: '/terminal',
+    x402: '/x402',
     trader: '/trader',
     stake: '/stake',
     marketplace: '/marketplace',
@@ -67,6 +70,8 @@ export const paths = {
     adminOracle: '/admin/oracle',
     adminTreasury: '/admin/treasury',
     rewards: '/rewards',
+    sessions: '/sessions',
+    agentMonitor: '/agent-monitor',
     home:    '/home',
   },
 };

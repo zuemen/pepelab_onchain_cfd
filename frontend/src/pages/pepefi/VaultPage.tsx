@@ -1,3 +1,4 @@
+import { MONO } from 'src/components/pepefi/brandKit'
 import { useState, useEffect, useCallback } from 'react'
 import type { Contract } from 'ethers'
 import { parseUnits, formatUnits } from 'ethers'
@@ -32,6 +33,8 @@ interface VaultStats {
   sharePrice:   bigint
   myShares:     bigint
   myUsdcValue:  bigint
+  feesRouted:   bigint  // N1: cumulative trading fees routed to the vault
+  feeShareBps:  bigint  // N1: % of trading fee routed to LPs
 }
 
 interface ActivityEntry {
@@ -68,19 +71,19 @@ async function fetchActivity(vault: Contract): Promise<ActivityEntry[]> {
 
     for (const e of dep) {
       const args = (e as any).args
-      events.push({ type: 'Deposited', label: 'LP Deposit', amount: f18(args.usdcAmount) + ' USDC', from: args.user, block: e.blockNumber ?? 0 })
+      events.push({ type: 'Deposited', label: 'LP Deposit', amount: f18(args.usdcAmount) + ' USDT', from: args.user, block: e.blockNumber ?? 0 })
     }
     for (const e of wit) {
       const args = (e as any).args
-      events.push({ type: 'Withdrawn', label: 'LP Withdraw', amount: f18(args.usdcAmount) + ' USDC', from: args.user, block: e.blockNumber ?? 0 })
+      events.push({ type: 'Withdrawn', label: 'LP Withdraw', amount: f18(args.usdcAmount) + ' USDT', from: args.user, block: e.blockNumber ?? 0 })
     }
     for (const e of pro) {
       const args = (e as any).args
-      events.push({ type: 'ProtocolDeposit', label: 'Protocol Fee', amount: f18(args.amount) + ' USDC', from: args.from, block: e.blockNumber ?? 0 })
+      events.push({ type: 'ProtocolDeposit', label: 'Protocol Fee', amount: f18(args.amount) + ' USDT', from: args.from, block: e.blockNumber ?? 0 })
     }
     for (const e of bai) {
       const args = (e as any).args
-      events.push({ type: 'Bailout', label: 'Bailout Paid', amount: f18(args.amount) + ' USDC', from: args.trader, block: e.blockNumber ?? 0 })
+      events.push({ type: 'Bailout', label: 'Bailout Paid', amount: f18(args.amount) + ' USDT', from: args.trader, block: e.blockNumber ?? 0 })
     }
 
     events.sort((a, b) => b.block - a.block)
@@ -93,6 +96,7 @@ export default function VaultPage() {
   const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId)
   const vault     = contracts?.insuranceVault ?? null
   const usdc      = contracts?.usdc ?? null
+  const exchange  = contracts?.exchange ?? null
 
   const [stats, setStats]         = useState<VaultStats | null>(null)
   const [activity, setActivity]   = useState<ActivityEntry[]>([])
@@ -115,12 +119,23 @@ export default function VaultPage() {
         vault.getSharePrice()  as Promise<bigint>,
         vault.balanceOf(wallet.address) as Promise<bigint>,
       ])
+      // N1: trading-fee routing stats (best-effort; older ABIs lack these).
+      let feesRouted = ZERO
+      let feeShareBps = ZERO
+      if (exchange) {
+        try {
+          ;[feesRouted, feeShareBps] = await Promise.all([
+            exchange.cumulativeVaultFees() as Promise<bigint>,
+            exchange.vaultFeeShareBps()    as Promise<bigint>,
+          ])
+        } catch { /* feature not deployed */ }
+      }
       const myUsdcValue = totalSupply > ZERO
         ? myShares * totalAssets / totalSupply
         : ZERO
-      setStats({ totalAssets, totalSupply, sharePrice, myShares, myUsdcValue })
+      setStats({ totalAssets, totalSupply, sharePrice, myShares, myUsdcValue, feesRouted, feeShareBps })
     } catch { /* not deployed */ }
-  }, [vault, wallet.address])
+  }, [vault, exchange, wallet.address])
 
   useEffect(() => {
     void fetchStats()
@@ -138,7 +153,7 @@ export default function VaultPage() {
       await approveTx.wait()
       const tx = await vault.deposit(amount)
       await tx.wait()
-      notify(`Deposited ${depositAmt} USDC ✓`, true, tx.hash)
+      notify(`Deposited ${depositAmt} USDT ✓`, true, tx.hash)
       setDepositAmt('')
       await fetchStats()
       if (vault) setActivity(await fetchActivity(vault))
@@ -188,10 +203,10 @@ export default function VaultPage() {
       {/* Stats */}
       <Grid container spacing={2}>
         {[
-          { label: 'Total Assets', value: stats ? f18(stats.totalAssets) + ' USDC' : null },
-          { label: 'Share Price',  value: stats ? f18(stats.sharePrice) + ' USDC/pIV' : null },
+          { label: 'Total Assets', value: stats ? f18(stats.totalAssets) + ' USDT' : null },
+          { label: 'Share Price',  value: stats ? f18(stats.sharePrice) + ' USDT/pIV' : null },
           { label: 'Total Supply', value: stats ? f18(stats.totalSupply) + ' pIV' : null },
-          { label: 'My pIV Value', value: stats ? f18(stats.myUsdcValue) + ' USDC' : null },
+          { label: 'My pIV Value', value: stats ? f18(stats.myUsdcValue) + ' USDT' : null },
         ].map(s => (
           <Grid size={{ xs: 6, md: 3 }} key={s.label}>
             <Card sx={{ p: 2 }}>
@@ -201,7 +216,7 @@ export default function VaultPage() {
               {s.value === null ? (
                 <Skeleton height={28} sx={{ width: '80%', mt: 0.5 }} />
               ) : (
-                <Typography variant="h6" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
+                <Typography variant="h6" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
                   {s.value}
                 </Typography>
               )}
@@ -209,6 +224,24 @@ export default function VaultPage() {
           </Grid>
         ))}
       </Grid>
+
+      {/* N1: trading-fee → LP routing (market-making yield) */}
+      {stats && stats.feeShareBps > ZERO && (
+        <Card sx={{ p: 2, bgcolor: 'background.neutral', borderLeft: '3px solid', borderColor: 'success.main' }}>
+          <Typography variant="body2" sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, alignItems: 'baseline' }}>
+            <Box component="span" sx={{ fontWeight: 'bold', color: 'success.main' }}>
+              Market-making yield active:
+            </Box>
+            <Box component="span" sx={{ color: 'text.secondary' }}>
+              {Number(stats.feeShareBps) / 100}% of every trade's fee is routed to LPs —
+            </Box>
+            <Box component="span" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
+              {f18(stats.feesRouted)} USDT
+            </Box>
+            <Box component="span" sx={{ color: 'text.secondary' }}>routed to date.</Box>
+          </Typography>
+        </Card>
+      )}
 
       {/* Your position */}
       {stats && stats.myShares > ZERO && (
@@ -221,15 +254,15 @@ export default function VaultPage() {
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                 pIV held
               </Typography>
-              <Typography variant="body1" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
+              <Typography variant="body1" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
                 {f18(stats.myShares, 4)}
               </Typography>
             </Box>
             <Box>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                USDC value
+                USDT value
               </Typography>
-              <Typography variant="body1" color="success.main" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
+              <Typography variant="body1" color="success.main" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
                 {f18(stats.myUsdcValue)}
               </Typography>
             </Box>
@@ -243,7 +276,7 @@ export default function VaultPage() {
         <Grid size={{ xs: 12, md: 6 }}>
           <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2, height: '100%' }}>
             <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-              Deposit USDC
+              Deposit USDT
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ flexGrow: 1 }}>
               Receive pIV shares proportional to current pool size. Earn yield from protocol fees.
@@ -252,10 +285,10 @@ export default function VaultPage() {
               <TextField
                 type="number"
                 size="small"
-                placeholder="USDC amount"
+                placeholder="USDT amount"
                 value={depositAmt}
                 onChange={e => setDepositAmt(e.target.value)}
-                slotProps={{ htmlInput: { min: "0", style: { fontFamily: 'monospace' } } }}
+                slotProps={{ htmlInput: { min: "0", style: { fontFamily: MONO } } }}
                 sx={{ flexGrow: 1 }}
               />
               <Button
@@ -267,7 +300,7 @@ export default function VaultPage() {
               </Button>
             </Box>
             {stats && depositAmt && (
-              <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+              <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
                 ≈ {f18((stats.totalSupply > ZERO && stats.totalAssets > ZERO)
                   ? BigInt(Math.floor(Number(depositAmt) * 1e18)) * stats.totalSupply / stats.totalAssets
                   : BigInt(Math.floor(Number(depositAmt) * 1e18)), 4)} pIV
@@ -283,7 +316,7 @@ export default function VaultPage() {
               Withdraw Shares
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ flexGrow: 1 }}>
-              Burn pIV shares to receive proportional USDC from the pool.
+              Burn pIV shares to receive proportional USDT from the pool.
             </Typography>
             <Box sx={{ display: 'flex', gap: 1 }}>
               <TextField
@@ -292,7 +325,7 @@ export default function VaultPage() {
                 placeholder="pIV shares"
                 value={withdrawAmt}
                 onChange={e => setWithdrawAmt(e.target.value)}
-                slotProps={{ htmlInput: { min: "0", style: { fontFamily: 'monospace' } } }}
+                slotProps={{ htmlInput: { min: "0", style: { fontFamily: MONO } } }}
                 sx={{ flexGrow: 1 }}
               />
               <Button
@@ -306,10 +339,10 @@ export default function VaultPage() {
             </Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               {stats && withdrawAmt ? (
-                <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
                   ≈ {f18(stats.totalSupply > ZERO
                     ? BigInt(Math.floor(Number(withdrawAmt) * 1e18)) * stats.totalAssets / stats.totalSupply
-                    : 0n, 4)} USDC
+                    : 0n, 4)} USDT
                 </Typography>
               ) : <Box />}
               {stats && stats.myShares > ZERO && (
@@ -365,7 +398,7 @@ export default function VaultPage() {
           </Typography>
         </Box>
         {activity.length === 0 ? (
-          <EmptyState icon="🏦" title="No activity yet" description="Deposit USDC to start earning yield from protocol fees." />
+          <EmptyState icon="🏦" title="No activity yet" description="Deposit USDT to start earning yield from protocol fees." />
         ) : (
           <TableContainer>
             <Table size="small">
@@ -378,17 +411,17 @@ export default function VaultPage() {
                       </Typography>
                     </TableCell>
                     <TableCell>
-                      <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
                         {a.from.slice(0, 10)}…
                       </Typography>
                     </TableCell>
                     <TableCell align="right">
-                      <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 'semibold' }}>
+                      <Typography variant="body2" sx={{ fontFamily: MONO, fontWeight: 'semibold' }}>
                         {a.amount}
                       </Typography>
                     </TableCell>
                     <TableCell align="right">
-                      <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
                         #{a.block}
                       </Typography>
                     </TableCell>
@@ -404,7 +437,7 @@ export default function VaultPage() {
       <Card sx={{ p: 2.5, bgcolor: 'background.neutral' }}>
         <Stack spacing={1}>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-            <Box component="span" sx={{ color: 'text.primary', fontWeight: 'bold' }}>How it works:</Box> LPs deposit USDC and receive pIV shares. The vault earns 10% of all copy-trading and performance fees via the FeeRouter. It also absorbs remaining collateral from liquidated positions.
+            <Box component="span" sx={{ color: 'text.primary', fontWeight: 'bold' }}>How it works:</Box> LPs deposit USDT and receive pIV shares. The vault earns 10% of all copy-trading and performance fees via the FeeRouter. It also absorbs remaining collateral from liquidated positions.
           </Typography>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
             When a trader's loss exceeds their margin (extreme event), the vault pays a 10% bailout floor directly to the trader. LPs bear this risk in exchange for the yield.

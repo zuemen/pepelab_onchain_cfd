@@ -47,7 +47,7 @@ export function useWallet(): WalletAPI {
     localStorage.setItem('pepefi_wallet_mock', 'true');
     setState({
       address: '0x7cc14a7cc14a7cc14a7cc14a7cc14a7cc14a7cc14a',
-      chainId: 11155111,
+      chainId: 84532,
       isConnected: true,
       provider: null,
       signer: null,
@@ -112,7 +112,7 @@ export function useWallet(): WalletAPI {
     if (wasMock) {
       setState({
         address: '0x7cc14a7cc14a7cc14a7cc14a7cc14a7cc14a7cc14a',
-        chainId: 11155111,
+        chainId: 84532,
         isConnected: true,
         provider: null,
         signer: null,

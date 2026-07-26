@@ -1,3 +1,4 @@
+import { MONO } from 'src/components/pepefi/brandKit'
 import { useState, useEffect, useCallback } from 'react';
 import { ethers } from 'ethers';
 
@@ -19,7 +20,7 @@ import { prettyError } from 'src/lib/pepefi/errorMessages';
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const TIER_NAMES  = ['Bronze 🥉', 'Silver 🥈', 'Gold 🥇', 'Diamond 💎'];
-const TIER_THRESHOLD = [10_000, 50_000, 200_000, 1_000_000]; // in USDC (18-dec /1e18)
+const TIER_THRESHOLD = [10_000, 50_000, 200_000, 1_000_000]; // in USDT (18-dec /1e18)
 const TIER_REWARD    = [500,    2_000,  10_000,  50_000];    // PEPE
 
 const fmt18 = (v: bigint) => Number(v) / 1e18;
@@ -247,7 +248,7 @@ export default function RewardsPage() {
         </Box>
       )}
 
-      <Typography variant="h4" sx={{ fontWeight: 900, mb: 1 }}>🎁 PepeFi Rewards</Typography>
+      <Typography variant="h4" sx={{ fontWeight: 900, mb: 1 }}>🎁 PepeLab Rewards</Typography>
       <Typography color="text.secondary" sx={{ mb: 4 }}>
         Trade, follow, and check-in daily to earn PEPE.
       </Typography>
@@ -356,7 +357,7 @@ export default function RewardsPage() {
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                     p: 1.5, borderRadius: 1, bgcolor: 'rgba(255,255,255,0.04)',
                   }}>
-                    <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: 12 }}>
+                    <Typography variant="body2" sx={{ fontFamily: MONO, fontSize: 12 }}>
                       {e.trader.slice(0, 8)}…{e.trader.slice(-6)}
                     </Typography>
                     <Button

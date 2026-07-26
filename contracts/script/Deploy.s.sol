@@ -12,13 +12,18 @@ import "../src/PerpetualExchange.sol";
 import "../src/StrategyRegistry.sol";
 import "../src/CopyTracker.sol";
 import "../src/TraderStake.sol";
+import "../src/AgentSessionManager.sol";
+import "../src/KYCRegistry.sol";
+import "../src/ChainlinkOracleAdapter.sol";
+import "../src/PythOracleAdapter.sol";
+import "../src/AggregatorOracleAdapter.sol";
 
 contract Deploy is Script {
     // Asset IDs — same keccak256 used on-chain and in the frontend
     bytes32 constant SBTC  = keccak256("sBTC");
     bytes32 constant SETH  = keccak256("sETH");
-    bytes32 constant SAAPL = keccak256("sAAPL");
-    bytes32 constant STSLA = keccak256("sTSLA");
+    bytes32 constant SAAPL = keccak256("sAAPL");  // RWA: equity
+    bytes32 constant STSLA = keccak256("sTSLA");  // RWA: equity
 
     function run() external {
         address deployer = msg.sender;
@@ -75,6 +80,35 @@ contract Deploy is Script {
         feeRouter.setCopyTracker(address(ct));
         feeRouter.setExchange(address(exchange));
 
+        // 12. AgentSessionManager (Phase 2 session-key delegation layer) +
+        //     authorize it as an additional agent on the exchange.
+        AgentSessionManager sessionManager = new AgentSessionManager(address(exchange));
+        exchange.setAgentAuthorized(address(sessionManager), true);
+
+        // 13. KYCRegistry + RWA compliance gating (G2). Equity synthetics are
+        //     real-world assets: opening them requires KYC. Crypto (sBTC/sETH)
+        //     stays permissionless.
+        KYCRegistry kyc = new KYCRegistry();
+        exchange.setKycRegistry(address(kyc));
+        exchange.setRwaAsset(SAAPL, true);
+        exchange.setRwaAsset(STSLA, true);
+
+        // 14. Production oracle SHOWCASE (P4-3). Deployed and Pyth-wired, but
+        //     intentionally NOT connected to the live exchange (oracle is
+        //     immutable; the exchange runs on MockOracle so the synthetic-asset
+        //     demo keeps working). To go live on real feeds, set Chainlink feeds
+        //     via setFeed with verified Base Sepolia aggregators and redeploy the
+        //     exchange pointing at `aggOracle`. The aggregator degrades to a
+        //     single live source, so Pyth alone already serves BTC/ETH.
+        //     Pyth contract defaults to Base Sepolia; override with env PYTH_CONTRACT.
+        address pythContract = vm.envOr("PYTH_CONTRACT", address(0xA2aa501b19aff244D90cc15a4Cf739D2725B5729));
+        ChainlinkOracleAdapter clOracle  = new ChainlinkOracleAdapter();
+        PythOracleAdapter       pythOracle = new PythOracleAdapter(pythContract);
+        // Universal Pyth price ids (chain-independent).
+        pythOracle.setPriceId(SBTC, 0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43);
+        pythOracle.setPriceId(SETH, 0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace);
+        AggregatorOracleAdapter aggOracle = new AggregatorOracleAdapter(address(clOracle), address(pythOracle));
+
         vm.stopBroadcast();
 
         // Print addresses (visible with forge script -v)
@@ -88,6 +122,12 @@ contract Deploy is Script {
         console.log("PerpetualExchange:", address(exchange));
         console.log("StrategyRegistry :", address(registry));
         console.log("CopyTracker      :", address(ct));
+        console.log("AgentSessionMgr  :", address(sessionManager));
+        console.log("KYCRegistry      :", address(kyc));
+        console.log("-- oracle showcase (NOT wired to exchange) --");
+        console.log("ChainlinkAdapter :", address(clOracle));
+        console.log("PythAdapter      :", address(pythOracle));
+        console.log("AggregatorOracle :", address(aggOracle));
         console.log("=== Asset IDs (bytes32) ===");
         console.logBytes32(SBTC);
         console.logBytes32(SETH);

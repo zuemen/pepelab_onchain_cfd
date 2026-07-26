@@ -24,3 +24,7 @@ frontend/dist/
 # OS
 .DS_Store
 Thumbs.db
+
+# Telegram agent secrets（勿入庫）
+agent/.env
+agent/tg-bot/vc.json

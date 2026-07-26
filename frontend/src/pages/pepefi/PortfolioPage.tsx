@@ -1,3 +1,4 @@
+import { MONO } from 'src/components/pepefi/brandKit'
 import { parseEther } from 'ethers';
 import { useState, useEffect, useCallback } from 'react';
 import {
@@ -40,6 +41,7 @@ import TextField from '@mui/material/TextField';
 import Snackbar from '@mui/material/Snackbar';
 import Link from '@mui/material/Link';
 import { Icon } from '@iconify/react';
+import { explorerTx, explorerName } from 'src/lib/pepefi/notify'
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
@@ -100,7 +102,7 @@ const fDate = (ts: bigint) =>
     dateStyle: 'short',
     timeStyle: 'short',
   });
-const fPnL      = (v: bigint) => (Number(v) >= 0 ? '+' : '') + f18(v, 4) + ' USDC';
+const fPnL      = (v: bigint) => (Number(v) >= 0 ? '+' : '') + f18(v, 4) + ' USDT';
 const pnlColor  = (v: bigint) => Number(v) >= 0 ? 'success.main' : 'error.main';
 const returnPct = (initial: bigint, current: bigint): string => {
   if (initial === 0n) return '—';
@@ -261,7 +263,7 @@ export default function PortfolioPage() {
     try {
       const tx = asTx(await contracts.exchange.withdrawMargin(amt));
       await tx.wait();
-      notify(`Withdrew ${withdrawAmt} USDC ✓`, true, tx.hash);
+      notify(`Withdrew ${withdrawAmt} USDT ✓`, true, tx.hash);
       setWithdrawAmt('');
       await fetchAll();
     } catch (e) {
@@ -299,8 +301,8 @@ export default function PortfolioPage() {
         <Typography sx={{ fontSize: '2.5rem' }}>⛓️</Typography>
         <Typography variant="h6" sx={{ fontWeight: 'bold' }}>Unsupported Network</Typography>
         <Typography variant="body2" color="text.secondary" align="center">
-          Connected to <Typography component="span" sx={{ color: 'warning.main', fontFamily: 'monospace' }}>{name}</Typography>.<br />
-          Please switch to <Typography component="span" sx={{ color: 'primary.main', fontFamily: 'monospace' }}>Sepolia</Typography> testnet.
+          Connected to <Typography component="span" sx={{ color: 'warning.main', fontFamily: MONO }}>{name}</Typography>.<br />
+          Please switch to <Typography component="span" sx={{ color: 'primary.main', fontFamily: MONO }}>Base Sepolia</Typography> testnet.
         </Typography>
       </Box>
     );
@@ -336,8 +338,8 @@ export default function PortfolioPage() {
         <EmptyState
           icon="💼"
           title="Your portfolio is empty"
-          description="Start by getting test USDC, then copy a trader or open positions yourself."
-          ctaText="Get USDC"
+          description="Start by getting test USDT, then copy a trader or open positions yourself."
+          ctaText="Get USDT"
           ctaHref="/exchange"
         />
       </Container>
@@ -354,16 +356,16 @@ export default function PortfolioPage() {
         anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
         message={toast?.msg}
         action={
-          toast?.hash && wallet.chainId === 11155111 ? (
+          toast?.hash && explorerTx(toast.hash, wallet.chainId) ? (
             <Button
               color="primary"
               size="small"
               component="a"
-              href={`https://sepolia.etherscan.io/tx/${toast.hash}`}
+              href={explorerTx(toast.hash, wallet.chainId)!}
               target="_blank"
               rel="noopener noreferrer"
             >
-              Etherscan
+              {explorerName(wallet.chainId)}
             </Button>
           ) : null
         }
@@ -389,7 +391,7 @@ export default function PortfolioPage() {
           <StatCard
             title="Free Margin"
             value={f18(freeMargin)}
-            sub="USDC available"
+            sub="USDT available"
             valueColor="primary.light"
           />
         </Grid>
@@ -411,7 +413,7 @@ export default function PortfolioPage() {
           <StatCard
             title="Total Copy PnL"
             value={totalInitial > 0n ? returnPct(totalInitial, totalCopyCur) : '—'}
-            sub={totalInitial > 0n ? `${f18(totalCopyCur)} / ${f18(totalInitial)} USDC` : 'no copy positions'}
+            sub={totalInitial > 0n ? `${f18(totalCopyCur)} / ${f18(totalInitial)} USDT` : 'no copy positions'}
             valueColor={totalInitial > 0n ? returnColor(totalInitial, totalCopyCur) : 'text.secondary'}
           />
         </Grid>
@@ -450,20 +452,20 @@ export default function PortfolioPage() {
                         <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
                           {rec.traderName || SHORT_ADDR(rec.trader)}
                         </Typography>
-                        <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary', display: 'block', mt: 0.2 }}>
+                        <Typography variant="caption" sx={{ fontFamily: MONO, color: 'text.secondary', display: 'block', mt: 0.2 }}>
                           {SHORT_ADDR(rec.trader)}
                         </Typography>
                       </TableCell>
                       <TableCell sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>
                         {fDate(rec.copiedAt)}
                       </TableCell>
-                      <TableCell sx={{ fontFamily: 'monospace', textAlign: 'right' }}>
+                      <TableCell sx={{ fontFamily: MONO, textAlign: 'right' }}>
                         {f18(rec.initialAmount)}
                       </TableCell>
-                      <TableCell sx={{ fontFamily: 'monospace', textAlign: 'right', fontWeight: 'bold' }}>
+                      <TableCell sx={{ fontFamily: MONO, textAlign: 'right', fontWeight: 'bold' }}>
                         {f18(rec.currentValue)}
                       </TableCell>
-                      <TableCell sx={{ fontFamily: 'monospace', textAlign: 'right', fontWeight: 'bold', color: returnColor(rec.initialAmount, rec.currentValue) }}>
+                      <TableCell sx={{ fontFamily: MONO, textAlign: 'right', fontWeight: 'bold', color: returnColor(rec.initialAmount, rec.currentValue) }}>
                         {returnPct(rec.initialAmount, rec.currentValue)}
                       </TableCell>
                       <TableCell sx={{ textAlign: 'right' }}>
@@ -514,7 +516,7 @@ export default function PortfolioPage() {
               <TableBody>
                 {positions.map(row => (
                   <TableRow key={String(row.id)} sx={{ '&:hover': { bgcolor: 'action.hover' } }}>
-                    <TableCell sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
+                    <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
                       {ASSET_LABEL[row.asset] ?? row.asset.slice(0, 8)}
                     </TableCell>
                     <TableCell>
@@ -538,29 +540,29 @@ export default function PortfolioPage() {
                         }}
                       />
                     </TableCell>
-                    <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8125rem' }}>{fUsd(row.entryPrice)}</TableCell>
-                    <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8125rem' }}>{fUsd(row.currentPrice)}</TableCell>
-                    <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8125rem' }}>
+                    <TableCell sx={{ fontFamily: MONO, fontSize: '0.8125rem' }}>{fUsd(row.entryPrice)}</TableCell>
+                    <TableCell sx={{ fontFamily: MONO, fontSize: '0.8125rem' }}>{fUsd(row.currentPrice)}</TableCell>
+                    <TableCell sx={{ fontFamily: MONO, fontSize: '0.8125rem' }}>
                       {livePrices[row.asset] ? (
-                        <Typography component="span" sx={{ fontSize: '0.8125rem', fontFamily: 'monospace', color: livePrices[row.asset].isMock ? 'warning.main' : 'success.main' }}>
+                        <Typography component="span" sx={{ fontSize: '0.8125rem', fontFamily: MONO, color: livePrices[row.asset].isMock ? 'warning.main' : 'success.main' }}>
                           ${livePrices[row.asset].usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </Typography>
                       ) : <Typography variant="caption" color="text.secondary">—</Typography>}
                     </TableCell>
-                    <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8125rem' }}>{f18(row.margin)}</TableCell>
+                    <TableCell sx={{ fontFamily: MONO, fontSize: '0.8125rem' }}>{f18(row.margin)}</TableCell>
                     <TableCell sx={{ fontSize: '0.8125rem' }}>{String(row.leverage)}×</TableCell>
-                    <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.75rem', color: 'text.secondary' }}>
+                    <TableCell sx={{ fontFamily: MONO, fontSize: '0.75rem', color: 'text.secondary' }}>
                       {row.copiedFrom === '0x0000000000000000000000000000000000000000' ? (
                         <Typography component="span" variant="caption" color="text.disabled">—</Typography>
                       ) : SHORT_ADDR(row.copiedFrom)}
                     </TableCell>
-                    <TableCell sx={{ fontFamily: 'monospace', fontWeight: 'bold', fontSize: '0.8125rem', color: pnlColor(row.unrealizedPnL) }}>
+                    <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', fontSize: '0.8125rem', color: pnlColor(row.unrealizedPnL) }}>
                       {fPnL(row.unrealizedPnL)}
                     </TableCell>
-                    <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.75rem', color: row.accruedFunding < 0n ? 'success.main' : row.accruedFunding > 0n ? 'error.main' : 'text.secondary' }}>
+                    <TableCell sx={{ fontFamily: MONO, fontSize: '0.75rem', color: row.accruedFunding < 0n ? 'success.main' : row.accruedFunding > 0n ? 'error.main' : 'text.secondary' }}>
                       {row.accruedFunding === 0n ? '—' : fPnL(-row.accruedFunding)}
                     </TableCell>
-                    <TableCell sx={{ fontFamily: 'monospace', fontWeight: 'bold', fontSize: '0.8125rem', color: pnlColor(row.currentValue - row.margin) }}>
+                    <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', fontSize: '0.8125rem', color: pnlColor(row.currentValue - row.margin) }}>
                       {f18(row.currentValue)}
                     </TableCell>
                   </TableRow>
@@ -569,13 +571,13 @@ export default function PortfolioPage() {
               <tfoot style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
                 <TableRow sx={{ bgcolor: 'background.neutral' }}>
                   <TableCell colSpan={8} sx={{ fontWeight: 'bold', color: 'text.primary' }}>Total</TableCell>
-                  <TableCell sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: pnlColor(positions.reduce((s, p) => s + p.unrealizedPnL, 0n)) }}>
+                  <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: pnlColor(positions.reduce((s, p) => s + p.unrealizedPnL, 0n)) }}>
                     {fPnL(positions.reduce((s, p) => s + p.unrealizedPnL, 0n))}
                   </TableCell>
-                  <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.75rem', color: positions.reduce((s, p) => s + p.accruedFunding, 0n) < 0n ? 'success.main' : 'error.main' }}>
+                  <TableCell sx={{ fontFamily: MONO, fontSize: '0.75rem', color: positions.reduce((s, p) => s + p.accruedFunding, 0n) < 0n ? 'success.main' : 'error.main' }}>
                     {fPnL(-positions.reduce((s, p) => s + p.accruedFunding, 0n))}
                   </TableCell>
-                  <TableCell sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: 'text.primary' }}>
+                  <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'text.primary' }}>
                     {f18(positions.reduce((s, p) => s + p.currentValue, 0n))}
                   </TableCell>
                 </TableRow>
@@ -594,9 +596,9 @@ export default function PortfolioPage() {
               Free Margin
             </Typography>
             <Box>
-              <Typography variant="h3" sx={{ fontWeight: 800, fontFamily: 'monospace', color: 'primary.light' }}>
+              <Typography variant="h3" sx={{ fontWeight: 800, fontFamily: MONO, color: 'primary.light' }}>
                 {f18(freeMargin)}{' '}
-                <Typography component="span" variant="subtitle1" color="text.secondary">USDC</Typography>
+                <Typography component="span" variant="subtitle1" color="text.secondary">USDT</Typography>
               </Typography>
             </Box>
             <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
