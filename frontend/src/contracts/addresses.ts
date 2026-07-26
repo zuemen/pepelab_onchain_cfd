@@ -60,7 +60,7 @@ const SEPOLIA: ChainAddresses = {
   PepeClaim:              "0x852c0fBa54552aafbA4798709d90056159682A4C",
   EsgRewardDistributor:   "0xA1a522B9d31e5B48E41DcCd050DE10dA2e3BEdD0",
   PepeIncentives:         "0x65b9F1B4d18822d4faBa763621E3e4eA065aE5D7",
-  PepeStaking:            "0x0000000000000000000000000000000000000000",
+  PepeStaking:            "0xf5d0953A443259ebdFC62fE49189998988e309f9",
 }
 
 // ── Base Sepolia testnet (chainId 84532) ──────────────────────────────────────
