@@ -156,6 +156,71 @@ async function fetchBinancePrices(): Promise<Record<string, number>> {
   }
 }
 
+// ── Coinbase Price Fetcher (preferred: free, no key, generous rate limits) ──
+// Keyed by the same Binance symbols as fetchBinancePrices so the caller's
+// lookup through BINANCE_SYMBOL_MAP works for either source.
+const COINBASE_PRODUCT_MAP: Record<string, string> = {
+  BTCUSDC: "BTC-USD",
+  ETHUSDC: "ETH-USD",
+};
+
+interface CoinbaseTicker {
+  price?: string;
+}
+
+async function fetchCoinbasePrice(product: string): Promise<number | null> {
+  try {
+    const res = await fetch(
+      `https://api.exchange.coinbase.com/products/${product}/ticker`,
+      { headers: { "User-Agent": "pepefi-price-keeper" } }
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as CoinbaseTicker;
+    const p = data.price ? parseFloat(data.price) : NaN;
+    return Number.isFinite(p) && p > 0 ? p : null;
+  } catch {
+    return null;
+  }
+}
+
+// Which source each symbol actually came from on the last fetch — purely for
+// the log line, so it never claims Coinbase when Binance answered.
+let lastCryptoSource: Record<string, string> = {};
+
+/**
+ * Crypto spot prices, Coinbase first with Binance as fallback. Only the symbols
+ * Coinbase couldn't answer are requested from Binance.
+ */
+async function fetchCryptoPrices(): Promise<Record<string, number>> {
+  const out: Record<string, number> = {};
+  lastCryptoSource = {};
+
+  await Promise.all(
+    Object.entries(COINBASE_PRODUCT_MAP).map(async ([sym, product]) => {
+      const p = await fetchCoinbasePrice(product);
+      if (p !== null) {
+        out[sym] = p;
+        lastCryptoSource[sym] = "Coinbase";
+      }
+    })
+  );
+
+  const missing = Object.values(BINANCE_SYMBOL_MAP).filter(
+    (s) => out[s] === undefined
+  );
+  if (missing.length === 0) return out;
+
+  console.log(`  -> Coinbase missing ${missing.join(", ")}; falling back to Binance`);
+  const binance = await fetchBinancePrices();
+  for (const s of missing) {
+    if (binance[s] !== undefined) {
+      out[s] = binance[s];
+      lastCryptoSource[s] = "Binance Spot";
+    }
+  }
+  return out;
+}
+
 // ── Oracle Update Logic ────────────────────────────────────────────────────
 const DEVIATION_THRESHOLD = 0.001; // 0.1% price change triggers update
 const HEARTBEAT_INTERVAL = 300; // 5 minutes triggers update regardless
@@ -176,19 +241,19 @@ async function updateOraclePrices(): Promise<void> {
     );
     const oracle = new ethers.Contract(ORACLE_ADDR, oracleAbi, wallet);
 
-    // Fetch real-time BTC and ETH from Binance
-    const binancePrices = await fetchBinancePrices();
+    // Real-time BTC and ETH — Coinbase preferred, Binance as fallback
+    const cryptoPrices = await fetchCryptoPrices();
 
     for (const [key, id] of Object.entries(ASSET_IDS)) {
       try {
         let targetPrice = BASE_PRICES[key];
         let source = "Default";
 
-        // Use Binance live price if available
-        const binanceSymbol = BINANCE_SYMBOL_MAP[key];
-        if (binanceSymbol && binancePrices[binanceSymbol]) {
-          targetPrice = binancePrices[binanceSymbol];
-          source = "Binance Spot";
+        // Use the live exchange price if available
+        const cryptoSymbol = BINANCE_SYMBOL_MAP[key];
+        if (cryptoSymbol && cryptoPrices[cryptoSymbol]) {
+          targetPrice = cryptoPrices[cryptoSymbol];
+          source = lastCryptoSource[cryptoSymbol] ?? "Exchange";
         } else {
           // Other assets: use a dynamic random walk based on baseline
           const wiggle = 1 + (Math.random() - 0.5) * 0.003; // +/- 0.15%

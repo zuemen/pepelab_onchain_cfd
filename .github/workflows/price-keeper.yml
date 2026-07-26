@@ -1,8 +1,11 @@
-name: Oracle Price Keeper
+name: Oracle Price Keeper (Sepolia)
 
+# Keeps the Sepolia MockOracle fresh. Needs repo secrets KEEPER_RPC_URL and
+# KEEPER_PRIVATE_KEY; without them the cast calls fail but nothing else breaks.
+# Base Sepolia has its own keeper (base-sepolia-keeper.yml) with its own secrets.
 on:
   schedule:
-    - cron: '0 * * * *'
+    - cron: '*/15 * * * *'
   workflow_dispatch:
 
 jobs:
