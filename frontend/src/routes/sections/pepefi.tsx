@@ -50,21 +50,32 @@ function SuspenseOutlet() {
   );
 }
 
+// 內頁專用外框：Minimal UI 的 sidebar/navbar。Landing 不走這層，
+// 所以未連錢包時（停留在 landing）完全看不到側邊欄。
+function DashboardShell() {
+  return (
+    <DashboardLayout>
+      <SuspenseOutlet />
+    </DashboardLayout>
+  );
+}
+
 export const pepefiRoutes: RouteObject[] = [
   {
     path: '/',
-    // DashboardLayout 提供 Minimal UI 的 sidebar/navbar 外框
-    // PepefiLayout 負責呼叫 useWallet() 並透過 outlet context 傳給子頁面
-    element: (
-      <DashboardLayout>
-        <PepefiLayout />
-      </DashboardLayout>
-    ),
+    // PepefiLayout 負責呼叫 useWallet()、wallet gate 導向，
+    // 並透過 outlet context 傳給子頁面
+    element: <PepefiLayout />,
     children: [
+      // Landing：全螢幕、無側邊欄
       {
         element: <SuspenseOutlet />,
+        children: [{ index: true, element: <LandingPage /> }],
+      },
+      // App 內頁：DashboardLayout（sidebar/navbar）包住
+      {
+        element: <DashboardShell />,
         children: [
-          { index: true, element: <LandingPage /> },
           { path: 'dashboard', element: <DashboardPage /> },
           { path: 'exchange', element: <ExchangePage /> },
           { path: 'tokens', element: <TokenizedAssetsPage /> },

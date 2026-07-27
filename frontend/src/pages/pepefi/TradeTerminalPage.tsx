@@ -141,7 +141,8 @@ export default function TradeTerminalPage() {
     if (amt > freeMgn) return notify('Insufficient free margin — deposit first', false)
     setL('open', true)
     try {
-      const tx = asTx(await contracts.exchange.openPosition(selAsset, isLong, amt, BigInt(lev), { value: parseEther('0.001') }))
+      const execFee = (await contracts.exchange.executionFee()) as bigint
+      const tx = asTx(await contracts.exchange.openPosition(selAsset, isLong, amt, BigInt(lev), { value: execFee }))
       await tx.wait(); notify(`${isLong ? 'Long' : 'Short'} ${meta?.symbol} opened ✓`, true); setMargin(''); await fetchAll()
     } catch (e) { notify(prettyError(e), false) } finally { setL('open', false) }
   }

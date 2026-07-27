@@ -155,7 +155,7 @@ export default function VaultPage() {
       await approveTx.wait()
       const tx = await vault.deposit(amount)
       await tx.wait()
-      notify(`Deposited ${depositAmt} USDT ✓`, true, tx.hash)
+      notify(`Deposited ${depositAmt} mUSDC ✓`, true, tx.hash)
       setDepositAmt('')
       await fetchStats()
       if (vault) setActivity(await fetchActivity(vault))
@@ -205,10 +205,10 @@ export default function VaultPage() {
       {/* Stats */}
       <Grid container spacing={2}>
         {[
-          { label: 'Total Assets', value: stats ? f18(stats.totalAssets) + ' USDT' : null },
-          { label: 'Share Price',  value: stats ? f18(stats.sharePrice) + ' USDT/pIV' : null },
+          { label: 'Total Assets', value: stats ? f18(stats.totalAssets) + ' mUSDC' : null },
+          { label: 'Share Price',  value: stats ? f18(stats.sharePrice) + ' mUSDC/pIV' : null },
           { label: 'Total Supply', value: stats ? f18(stats.totalSupply) + ' pIV' : null },
-          { label: 'My pIV Value', value: stats ? f18(stats.myUsdcValue) + ' USDT' : null },
+          { label: 'My pIV Value', value: stats ? f18(stats.myUsdcValue) + ' mUSDC' : null },
         ].map(s => (
           <Grid size={{ xs: 6, md: 3 }} key={s.label}>
             <Card sx={{ p: 2 }}>
@@ -238,7 +238,7 @@ export default function VaultPage() {
               {Number(stats.feeShareBps) / 100}% of every trade's fee is routed to LPs —
             </Box>
             <Box component="span" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
-              {f18(stats.feesRouted)} USDT
+              {f18(stats.feesRouted)} mUSDC
             </Box>
             <Box component="span" sx={{ color: 'text.secondary' }}>routed to date.</Box>
           </Typography>
@@ -262,7 +262,7 @@ export default function VaultPage() {
             </Box>
             <Box>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                USDT value
+                mUSDC value
               </Typography>
               <Typography variant="body1" color="success.main" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
                 {f18(stats.myUsdcValue)}
@@ -278,7 +278,7 @@ export default function VaultPage() {
         <Grid size={{ xs: 12, md: 6 }}>
           <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2, height: '100%' }}>
             <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-              Deposit USDT
+              Deposit mUSDC
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ flexGrow: 1 }}>
               Receive pIV shares proportional to current pool size. Earn yield from protocol fees.
@@ -287,7 +287,7 @@ export default function VaultPage() {
               <TextField
                 type="number"
                 size="small"
-                placeholder="USDT amount"
+                placeholder="mUSDC amount"
                 value={depositAmt}
                 onChange={e => setDepositAmt(e.target.value)}
                 slotProps={{ htmlInput: { min: "0", style: { fontFamily: MONO } } }}
@@ -318,7 +318,7 @@ export default function VaultPage() {
               Withdraw Shares
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ flexGrow: 1 }}>
-              Burn pIV shares to receive proportional USDT from the pool.
+              Burn pIV shares to receive proportional mUSDC from the pool.
             </Typography>
             <Box sx={{ display: 'flex', gap: 1 }}>
               <TextField
@@ -344,7 +344,7 @@ export default function VaultPage() {
                 <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
                   ≈ {f18(stats.totalSupply > ZERO
                     ? BigInt(Math.floor(Number(withdrawAmt) * 1e18)) * stats.totalAssets / stats.totalSupply
-                    : 0n, 4)} USDT
+                    : 0n, 4)} mUSDC
                 </Typography>
               ) : <Box />}
               {stats && stats.myShares > ZERO && (
@@ -400,7 +400,7 @@ export default function VaultPage() {
           </Typography>
         </Box>
         {activity.length === 0 ? (
-          <EmptyState icon="🏦" title="No activity yet" description="Deposit USDT to start earning yield from protocol fees." />
+          <EmptyState icon="🏦" title="No activity yet" description="Deposit mUSDC to start earning yield from protocol fees." />
         ) : (
           <TableContainer>
             <Table size="small">
@@ -439,7 +439,7 @@ export default function VaultPage() {
       <Card sx={{ p: 2.5, bgcolor: 'background.neutral' }}>
         <Stack spacing={1}>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-            <Box component="span" sx={{ color: 'text.primary', fontWeight: 'bold' }}>How it works:</Box> LPs deposit USDT and receive pIV shares. The vault earns 10% of all copy-trading and performance fees via the FeeRouter. It also absorbs remaining collateral from liquidated positions.
+            <Box component="span" sx={{ color: 'text.primary', fontWeight: 'bold' }}>How it works:</Box> LPs deposit mUSDC and receive pIV shares. The vault earns 10% of all copy-trading and performance fees via the FeeRouter. It also absorbs remaining collateral from liquidated positions.
           </Typography>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
             When a trader's loss exceeds their margin (extreme event), the vault pays a 10% bailout floor directly to the trader. LPs bear this risk in exchange for the yield.

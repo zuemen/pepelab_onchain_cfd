@@ -1,15 +1,15 @@
 const ERROR_MAP: Record<string, string> = {
   // Selectors (0x + 4-byte hex)
-  '0xbb90b0d9': '需要先批准 USDT 給 Swap Router，請點擊 Approve',
-  '0xe450d38c': '您的 Web3 錢包 USDT 餘額不足，請先前往【首頁/水龍頭】免費領取 USDT 測試幣 🚰',
+  '0xbb90b0d9': '需要先批准 mUSDC 給 Swap Router，請點擊 Approve',
+  '0xe450d38c': '您的 Web3 錢包 mUSDC 餘額不足，請先前往【首頁/水龍頭】免費領取 mUSDC 測試幣 🚰',
   // Keyword matches (case-insensitive)
-  'ERC20InsufficientBalance': '您的 Web3 錢包 USDT 餘額不足，請先前往【首頁/水龍頭】免費領取 USDT 測試幣 🚰',
+  'ERC20InsufficientBalance': '您的 Web3 錢包 mUSDC 餘額不足，請先前往【首頁/水龍頭】免費領取 mUSDC 測試幣 🚰',
   'no strategies':            '該交易員目前尚未發布任何跟單策略！',
   'FaucetCooldown':           'Faucet 24h 內只能領一次，請等待 cooldown',
   'NoStrategyPublished':      '此 trader 尚未發布策略',
   'TradingFeeExceedsMargin':  '跟單金額太小，trading fee 超過 margin，請增加金額',
-  'InsufficientFreeMargin':   '保證金不足，請先 deposit 更多 USDT',
-  'MarginTooLow':             '保證金低於最低門檻（10 USDT）',
+  'InsufficientFreeMargin':   '保證金不足，請先 deposit 更多 mUSDC',
+  'MarginTooLow':             '保證金低於最低門檻（10 mUSDC）',
   'InvalidLeverage':          '槓桿必須是 1x / 2x / 5x',
   'NotPositionOwner':         '只有 position 持有者能操作',
   'PositionAlreadyClosed':    '此 position 已平倉',
@@ -32,10 +32,15 @@ const ERROR_MAP: Record<string, string> = {
   'InvalidTier':              '無效的等級參數！',
   'InsufficientPool':         '激勵合約的 PEPE 資金池餘額不足，請聯絡管理員充值！',
   'TierThresholdNotMet':      '您的累計交易量（Notional Volume）未達到此等級的要求！',
+  'StalePrice':               '鏈上價格已過期，keeper 尚未更新。請稍等幾分鐘再試，或聯絡管理員手動觸發 keeper',
+  'NotKycVerified':           '此資產為 RWA 市場，需先完成 KYC 驗證才能交易',
+  'PositionIsHealthy':        '此倉位保證金仍充足，不符合清算條件',
+  'FundingIntervalNotElapsed': 'Funding 結算間隔（8 小時）尚未到，無需手動結算',
   'user rejected':            '你拒絕了交易',
   'User rejected':            '你拒絕了交易',
   'ACTION_REJECTED':          '你拒絕了交易',
   'insufficient funds':       'ETH 不夠付 gas 費',
+  'OutOfFunds':               'ETH 餘額不足以支付執行費（開倉需附 ETH），請先領取測試 ETH 🚰',
   'execution reverted':       '交易執行失敗',
   'nonce too low':            'Nonce 太低，請重試',
 }
@@ -80,7 +85,7 @@ export function prettyError(err: unknown, context?: 'mining' | 'tier' | 'copy' |
     if (context === 'checkin') {
       return '每日簽到失敗 (Reverted)。請確認：1. 您今天尚未簽到過；2. 激勵合約的 PEPE 資金池已充值足夠資金。';
     }
-    return '交易執行失敗 (Reverted)。請確認：1. 激勵合約已充值足夠的 PEPE 資金池；2. 您的地址符合領取條件（例如：已開始複製該交易員、已達標交易量門檻、或今日尚未簽到）。';
+    return '交易執行失敗 (Reverted)。常見原因：ETH 不足以支付執行費、保證金不足、或鏈上價格過期。請檢查餘額與參數後再試。';
   }
 
   return msg.slice(0, 120)

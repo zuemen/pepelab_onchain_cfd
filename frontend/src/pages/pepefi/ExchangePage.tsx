@@ -507,7 +507,8 @@ export default function ExchangePage() {
     }
     setLoad('open', true);
     try {
-      const tx = asTx(await contracts.exchange.openPosition(selAsset, isLong, amt, BigInt(leverage), { value: parseEther('0.001') }));
+      const execFee = (await contracts.exchange.executionFee()) as bigint;
+      const tx = asTx(await contracts.exchange.openPosition(selAsset, isLong, amt, BigInt(leverage), { value: execFee }));
       await tx.wait();
       notify(`${isLong ? 'Long' : 'Short'} ${ASSET_LABEL[selAsset] ?? selAsset} opened ✓`, true, tx.hash);
       setOpenMgn('');
