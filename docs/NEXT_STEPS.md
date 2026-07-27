@@ -174,9 +174,13 @@ open" paragraphs describe a state that will no longer be true.
 
 ## Smaller open items
 
-**`MockSwapRouter` has no test file.** Only contract in `src/` without one. Add
-`contracts/test/MockSwapRouter.t.sol` following the pattern in
-`contracts/test/PepeAMM.t.sol`.
+~~**`MockSwapRouter` has no test file.**~~ **Done** (`4d9b7cb`) —
+`contracts/test/MockSwapRouter.t.sol`, 19 tests. Every contract in `src/` now
+has one. Two asymmetries pinned while writing it: the ETH→USDC leg mints rather
+than paying from a reserve so it can never run dry, while USDC→ETH pays from the
+router's own balance and can be drained to zero; and `ethOut` is integer
+division by `RATE`, so under 3000 wei of USDC rounds to zero ETH while the USDC
+burns anyway.
 
 **Frontend `any` escapes: 19 remaining** (down from 42). Mostly ethers return
 values. `KNOWN_LIMITATIONS.md` #12 has the detail.
@@ -222,6 +226,8 @@ cast call 0x3a37415981F6f4fC27FA6c8C62F1d4e47115fD17 'paused()(bool)' \
 
 ## Related documents
 
+- `docs/VAULT_VERSIONS.md` — which of the three vault sources is actually live,
+  read from the EIP-1967 slot, and what changed between them
 - `docs/ROLE_SEPARATION.md` — what was done, with the on-chain verification log
 - `docs/KNOWN_LIMITATIONS.md` — all 13 limitations with current status
 - `docs/audit/ADERYN_TRIAGE.md` — Aderyn findings, each triaged with reasoning
