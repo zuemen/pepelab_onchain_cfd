@@ -6,6 +6,7 @@ import { useContracts } from 'src/hooks/useContracts'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { explorerTx } from 'src/lib/pepefi/notify'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
+import { safeRead } from 'src/lib/pepefi/safeRead'
 import Skeleton from 'src/components/pepefi/Skeleton'
 import EmptyState from 'src/components/pepefi/EmptyState'
 
@@ -113,11 +114,12 @@ export default function VaultPage() {
   const fetchStats = useCallback(async () => {
     if (!vault || !wallet.address) return
     try {
+      // Isolated so one unavailable view doesn't blank every vault stat.
       const [totalAssets, totalSupply, sharePrice, myShares] = await Promise.all([
-        vault.totalAssets()    as Promise<bigint>,
-        vault.totalSupply()    as Promise<bigint>,
-        vault.getSharePrice()  as Promise<bigint>,
-        vault.balanceOf(wallet.address) as Promise<bigint>,
+        safeRead(vault.totalAssets()    as Promise<bigint>, ZERO),
+        safeRead(vault.totalSupply()    as Promise<bigint>, ZERO),
+        safeRead(vault.getSharePrice()  as Promise<bigint>, ZERO),
+        safeRead(vault.balanceOf(wallet.address) as Promise<bigint>, ZERO),
       ])
       // N1: trading-fee routing stats (best-effort; older ABIs lack these).
       let feesRouted = ZERO

@@ -16,6 +16,7 @@ import { useMode } from 'src/contexts/mode-context';
 import { usePepefiWallet } from 'src/layouts/pepefi';
 import { ASSET_IDS } from 'src/contracts/addresses';
 import { ASSET_META } from 'src/lib/pepefi/assetMeta';
+import { safeRead } from 'src/lib/pepefi/safeRead';
 import ESGBadge from 'src/components/pepefi/ESGBadge';
 import Skeleton, { TableSkeleton } from 'src/components/pepefi/Skeleton';
 import { PepeAvatar } from 'src/components/pepefi/PepeAvatar';
@@ -364,11 +365,14 @@ export default function DashboardPage() {
     if (!contracts || !wallet.address) return;
     setIsLoading(true);
     try {
+      // Isolated per read. Previously one reverting call — TraderStake is 0x0
+      // on chains where it isn't deployed — took positions, margin, and balance
+      // down with it, which is what blanked the dashboard.
       const [posIds, fmRaw, walletUsdcRaw, stakedUsdcRaw] = await Promise.all([
-        contracts.exchange.getUserPositions(wallet.address),
-        contracts.exchange.freeMargin(wallet.address),
-        contracts.usdc.balanceOf(wallet.address),
-        contracts.traderStake.getStake(wallet.address),
+        safeRead(contracts.exchange.getUserPositions(wallet.address) as Promise<bigint[]>, []),
+        safeRead(contracts.exchange.freeMargin(wallet.address) as Promise<bigint>, 0n),
+        safeRead(contracts.usdc.balanceOf(wallet.address) as Promise<bigint>, 0n),
+        safeRead(contracts.traderStake.getStake(wallet.address) as Promise<unknown>, 0n),
       ]);
       setFreeMargin(fmRaw as bigint);
       setWalletUSDC(walletUsdcRaw as bigint);

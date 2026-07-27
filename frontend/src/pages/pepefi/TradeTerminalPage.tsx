@@ -17,6 +17,7 @@ import { useKYC } from 'src/hooks/useKYC'
 import { ASSET_IDS } from 'src/contracts/addresses'
 import { ASSETS_LIST, ASSET_META } from 'src/lib/pepefi/assetMeta'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
+import { safeRead } from 'src/lib/pepefi/safeRead'
 
 // ── terminal palette (forced dark, Hyperliquid-grade, Pepe-green) ──────────────
 const C = {
@@ -72,9 +73,11 @@ export default function TradeTerminalPage() {
   const fetchAll = useCallback(async () => {
     if (!contracts || !wallet.address) return
     try {
+      // Isolated: a failed balance read must not also drop free margin and
+      // skip the positions fetch below it.
       const [bal, mgn] = await Promise.all([
-        contracts.usdc.balanceOf(wallet.address) as Promise<bigint>,
-        contracts.exchange.freeMargin(wallet.address) as Promise<bigint>,
+        safeRead(contracts.usdc.balanceOf(wallet.address) as Promise<bigint>, 0n),
+        safeRead(contracts.exchange.freeMargin(wallet.address) as Promise<bigint>, 0n),
       ])
       setUsdcBal(bal); setFreeMgn(mgn)
       // MockUSDT may not be deployed on this chain — 0x0 reads would throw.
