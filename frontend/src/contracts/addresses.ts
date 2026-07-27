@@ -181,3 +181,39 @@ export const getSynthTokens = (
   chainId: number | null,
 ): Partial<Record<AssetSymbol, string>> =>
   chainId === null ? {} : (SYNTH_TOKENS[chainId] ?? {})
+
+// ── V2 hardened stack (deployed Sepolia 2026-07-27) ───────────────────────────
+// Runs ALONGSIDE V1, which stays deployed and untouched. Differences that matter:
+//   - GuardedOracle replaces MockOracle's single owner key with N keepers plus a
+//     per-update deviation cap, freeze, and pause. Verified on chain: a post of
+//     $1 against a $200 price reverts DeviationTooLarge; a 3% move is accepted.
+//   - AssetVaultV2 is a UUPS proxy whose oracle is ordinary storage, so it can
+//     be repointed with setOracle — the exchange cannot, its oracle is immutable.
+//   - SafeERC20, reentrancy guards, per-asset caps, and a reserve-ratio gate.
+// See docs/RISK_MODEL.md and docs/KNOWN_LIMITATIONS.md.
+export const V2_STACK: Record<number, {
+  GuardedOracle: string
+  AssetVaultV2:  string
+  tokens: Partial<Record<AssetSymbol, string>>
+}> = {
+  11155111: {
+    GuardedOracle: "0x32A19D04ef2ca5A7DA02Df39419729fA745749A1",
+    AssetVaultV2:  "0x3a37415981F6f4fC27FA6c8C62F1d4e47115fD17",
+    tokens: {
+      sBTC:   "0xeCF271592C0D64663906318f250d49c255E332Ac",
+      sETH:   "0x576856E68FdE8D586EAa2E2c21e74c4D37587e8F",
+      sAAPL:  "0x84C27703db71062061364E5B8E015139b2ac0163",
+      sTSLA:  "0x0e8b6478038876741925A5B7A571596E6f4a695E",
+      sGOLD:  "0xc97b8195cBd00fec5D3aAb103C9E313414B11a10",
+      sBOND:  "0xb84C17a704F9e7d96c3aF84Df05C6a8da5c344eb",
+      sNVDA:  "0xB5586Ef5bBA7DAa698a4a6745C9D46F0b3bECfeE",
+      sMSFT:  "0xCB2c5c834f1f0d54E6Da1f3628B1c624aAa750cf",
+      sGOOGL: "0x42D083F0e4a60FdFe28b5E00D44f11C41Bf1763d",
+      sICLN:  "0xF34cA755a315531745dDC4A85963EeFA6129F459",
+      sESGU:  "0x3f89C2Fd5e7222012d563ecC67e41De02ad746e7",
+    },
+  },
+}
+
+export const getV2Stack = (chainId: number | null) =>
+  chainId === null ? undefined : V2_STACK[chainId]
