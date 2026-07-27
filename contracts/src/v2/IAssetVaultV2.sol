@@ -14,6 +14,7 @@ interface IAssetVaultV2 {
     function previewRedeem(bytes32 assetId, uint256 tokenAmount)
         external view returns (uint256 usdcOut, uint256 feePaid);
 
+    function registeredAssets() external view returns (bytes32[] memory);
     function reserve() external view returns (uint256);
     function outstandingValue() external view returns (uint256);
     function reserveRatioBps() external view returns (uint256);
@@ -31,6 +32,7 @@ interface IAssetVaultV2 {
     event Minted(address indexed user, bytes32 indexed assetId, uint256 usdcIn, uint256 tokenOut, uint256 fee);
     event Redeemed(address indexed user, bytes32 indexed assetId, uint256 tokenIn, uint256 usdcOut, uint256 fee);
     event AssetRegistered(bytes32 indexed assetId, address token);
+    event AssetUnregistered(bytes32 indexed assetId);
     event VaultFunded(address indexed from, uint256 amount);
     event FeesWithdrawn(address indexed to, uint256 amount);
     event RiskParamsUpdated(uint256 mintFeeBps, uint256 redeemFeeBps, uint256 minReserveRatioBps, uint256 maxPriceAge);
