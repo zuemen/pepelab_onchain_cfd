@@ -6,6 +6,7 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import "./SyntheticAssetV2.sol";
 import "./IAssetVaultV2.sol";
@@ -36,6 +37,13 @@ contract AssetVaultV2 is
     PausableUpgradeable,
     IAssetVaultV2
 {
+    /// @dev SafeERC20 because real-world stablecoins are not uniformly
+    ///      ERC-20 compliant. Mainnet USDT's transfer returns NOTHING, so a
+    ///      `require(token.transfer(...))` against an interface declaring a
+    ///      bool return reverts on ABI decode — the transfer never happens.
+    ///      safeTransfer tolerates both the void and bool conventions.
+    using SafeERC20 for IERC20;
+
     bytes32 public constant RISK_ROLE   = keccak256("RISK_ROLE");
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
@@ -228,7 +236,7 @@ contract AssetVaultV2 is
         _outstanding[assetId] = newOutstanding;
         accruedFees += feePaid;
 
-        require(IERC20(_usdc).transferFrom(msg.sender, address(this), usdcAmount), "usdc in failed");
+        IERC20(_usdc).safeTransferFrom(msg.sender, address(this), usdcAmount);
 
         // VULNERABILITY #2 FIX: refuse the mint if it would leave the book below
         // the operator's minimum coverage. Checked after the transfer so the
@@ -260,7 +268,7 @@ contract AssetVaultV2 is
         accruedFees += feePaid;
 
         SyntheticAssetV2(token).burn(msg.sender, tokenAmount);
-        require(IERC20(_usdc).transfer(msg.sender, usdcOut), "usdc out failed");
+        IERC20(_usdc).safeTransfer(msg.sender, usdcOut);
 
         emit Redeemed(msg.sender, assetId, tokenAmount, usdcOut, feePaid);
     }
@@ -268,7 +276,7 @@ contract AssetVaultV2 is
     /// @notice Operator injects payout collateral.
     function fundVault(uint256 usdcAmount) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (usdcAmount == 0) revert ZeroAmount();
-        require(IERC20(_usdc).transferFrom(msg.sender, address(this), usdcAmount), "fund failed");
+        IERC20(_usdc).safeTransferFrom(msg.sender, address(this), usdcAmount);
         emit VaultFunded(msg.sender, usdcAmount);
     }
 
@@ -277,7 +285,7 @@ contract AssetVaultV2 is
         if (to == address(0)) revert InvalidParam();
         if (amount > accruedFees) revert InvalidParam();
         accruedFees -= amount;
-        require(IERC20(_usdc).transfer(to, amount), "fee out failed");
+        IERC20(_usdc).safeTransfer(to, amount);
         emit FeesWithdrawn(to, amount);
     }
 }
