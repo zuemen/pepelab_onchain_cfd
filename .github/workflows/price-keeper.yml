@@ -56,9 +56,53 @@ jobs:
               || echo "$SYM: updatePrice 失敗(價格防護?),略過"
           }
           update sBTC  "$(get_crypto bitcoin)"
+          # (assets below; GuardedOracle sync runs as a separate step)
           update sETH  "$(get_crypto ethereum)"
           update sAAPL "$(get_stooq aapl.us)"
           update sTSLA "$(get_stooq tsla.us)"
           update sGOLD "$(get_stooq xauusd)"
           update sBOND "$(get_stooq tlt.us)"
           echo "Done."
+
+      # ── Keep the V2 stack alive ──────────────────────────────────────────
+      #
+      # AssetVaultV2 prices off GuardedOracle, which fails CLOSED: getPrice
+      # reverts once a price ages past maxPriceAge (1 h) instead of returning
+      # stale data. AssetVaultV2.outstandingValue() calls it directly, so one
+      # stale price takes down reserveRatioBps() AND mint() — V2 stops working.
+      #
+      # The step above only refreshes six assets, and only from external feeds.
+      # This mirrors whatever MockOracle currently holds for ALL eleven, so an
+      # asset nobody fetches a price for still cannot brick V2 once it has any
+      # supply outstanding.
+      #
+      # Non-fatal by design: GuardedOracle rejects a move beyond its per-update
+      # deviation cap, and that rejection is the guard working. Log it, never
+      # massage the number to sneak past.
+      - name: Sync GuardedOracle from MockOracle (V2 stack)
+        env:
+          ORACLE:  "0x17CA20A37Cf04F2f589B2573EC95f1411D29d958"
+          GUARDED: "0x32A19D04ef2ca5A7DA02Df39419729fA745749A1"
+          RPC_URL: ${{ secrets.KEEPER_RPC_URL }}
+          PK:      ${{ secrets.KEEPER_PRIVATE_KEY }}
+        run: |
+          set -uo pipefail
+          if [ -z "${RPC_URL:-}" ] || [ -z "${PK:-}" ]; then
+            echo "::warning::Keeper secrets unset - skipping GuardedOracle sync."
+            exit 0
+          fi
+          for SYM in sBTC sETH sAAPL sTSLA sGOLD sBOND sNVDA sMSFT sGOOGL sICLN sESGU; do
+            KEY=$(cast keccak "$SYM")
+            P=$(cast call "$ORACLE" "getPrice(bytes32)(uint256,uint256)" "$KEY" \
+                  --rpc-url "$RPC_URL" 2>/dev/null | head -n1 | awk '{print $1}')
+            if [ -z "${P:-}" ] || [ "$P" = "0" ]; then
+              echo "$SYM: no MockOracle price, skipping"; continue
+            fi
+            if cast send "$GUARDED" "updatePrice(bytes32,uint256)" "$KEY" "$P" \
+                 --rpc-url "$RPC_URL" --private-key "$PK" >/dev/null 2>&1; then
+              echo "$SYM: mirrored -> $P"
+            else
+              echo "$SYM: mirror rejected (deviation cap / not registered / frozen)"
+            fi
+          done
+          echo "GuardedOracle sync done."

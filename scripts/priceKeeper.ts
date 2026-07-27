@@ -86,6 +86,60 @@ const aggregatorAbi = [
   "function isStale(bytes32 assetId) view returns (bool)",
 ];
 
+// ── GuardedOracle mirror ────────────────────────────────────────────────────
+//
+// The V2 stack prices off GuardedOracle, not MockOracle, and GuardedOracle
+// fails closed: getPrice REVERTS once a price ages past maxPriceAge rather than
+// returning stale data. AssetVaultV2.outstandingValue() calls it directly, so a
+// stale price takes down reserveRatioBps() and mint() with it — V2 stops
+// working entirely.
+//
+// Nothing was keeping it fresh, because this keeper only ever wrote MockOracle.
+// So mirror every update into GuardedOracle when GUARDED_ORACLE is configured.
+//
+// Two ways a mirrored write legitimately fails, neither of which should stop
+// the keeper:
+//   - the asset was never added to GuardedOracle (AssetNotFound)
+//   - the move exceeds its per-update deviation cap (DeviationTooLarge) — that
+//     is the guard doing its job, and clamping the number to sneak past it
+//     would defeat the point
+const GUARDED_ORACLE = process.env.GUARDED_ORACLE ?? "";
+
+const guardedOracleAbi = [
+  "function updatePrice(bytes32 assetId, uint256 newPrice) external",
+  "function peek(bytes32 assetId) view returns (uint256 price, uint256 updatedAt, bool exists, bool frozen)",
+];
+
+/** Mirror one price into GuardedOracle. Never throws. */
+async function mirrorToGuarded(
+  assetId: string,
+  key: string,
+  price8: bigint
+): Promise<void> {
+  if (!GUARDED_ORACLE) return;
+  try {
+    const g = new ethers.Contract(GUARDED_ORACLE, guardedOracleAbi, wallet);
+    const [, , exists, frozen] = (await g.peek(assetId)) as [
+      bigint,
+      bigint,
+      boolean,
+      boolean,
+    ];
+    if (!exists) return;                       // not registered there
+    if (frozen) {
+      console.log(`  -> ${key} frozen on GuardedOracle, skipping mirror`);
+      return;
+    }
+    const tx = await g.updatePrice(assetId, price8);
+    await tx.wait();
+    console.log(`  -> ${key} mirrored to GuardedOracle ✓`);
+  } catch (e) {
+    // Deviation cap rejections are expected and healthy — log, do not retry
+    // with a massaged number.
+    console.log(`  -> ${key} GuardedOracle mirror skipped: ${(e as Error).message.slice(0, 90)}`);
+  }
+}
+
 /** Read one asset from the on-chain reference feed. null when unavailable. */
 async function fetchFromRelay(assetId: string): Promise<number | null> {
   if (!RELAY_SOURCE) return null;
@@ -332,6 +386,11 @@ async function updateOraclePrices(): Promise<void> {
           console.log(`  -> Sending update tx: ${tx.hash}`);
           await tx.wait();
           console.log(`  -> ${key} updated successfully on-chain ✓`);
+
+          // Keep the V2 stack alive. MockOracle's heartbeat (5 min) is well
+          // inside GuardedOracle's staleness deadline (1 h), so following the
+          // same trigger is enough to stop V2 mint from failing closed.
+          await mirrorToGuarded(id, key, price8);
         }
       } catch (e) {
         console.error(`  -> Failed to tick ${key}:`, (e as Error).message);
