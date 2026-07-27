@@ -11,6 +11,7 @@ import { LineChart, Line, YAxis, ResponsiveContainer } from 'recharts';
 import { ASSET_IDS, getAddresses } from 'src/contracts/addresses';
 import { paths } from 'src/routes/paths';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
+import { safeRead } from 'src/lib/pepefi/safeRead';
 import { useESG } from 'src/hooks/useESG';
 import ESGBadge from 'src/components/pepefi/ESGBadge';
 import { ASSETS_LIST, ASSET_LABEL, ASSET_META } from 'src/lib/pepefi/assetMeta';
@@ -105,19 +106,8 @@ const asTx = (tx: unknown): TxResp => tx as TxResp;
 
 const ZERO_ADDR = '0x0000000000000000000000000000000000000000';
 
-// Reject after `ms` so a hung RPC call (e.g. a view on a 0x0 / undeployed
-// contract) can never block the whole page from settling.
-function withTimeout<T>(p: Promise<T>, ms = 8000): Promise<T> {
-  return Promise.race([
-    p,
-    new Promise<T>((_, reject) => setTimeout(() => reject(new Error('rpc timeout')), ms)),
-  ]);
-}
-// Resolve a single chain read to a fallback on ANY error/timeout — never throws,
-// never hangs. Each read is isolated so one failure can't break the page.
-async function safeRead<T>(p: Promise<T>, fallback: T, ms = 8000): Promise<T> {
-  try { return await withTimeout(p, ms); } catch { return fallback; }
-}
+// safeRead now lives in src/lib/pepefi/safeRead.ts so every page shares one
+// implementation — this file was the only place that had the guard.
 
 export default function ExchangePage() {
   const wallet = usePepefiWallet();

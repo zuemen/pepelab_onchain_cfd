@@ -14,6 +14,7 @@ import { usePepefiWallet } from 'src/layouts/pepefi';
 import { getAddresses, CHAIN_NAMES } from 'src/contracts/addresses';
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
+import { safeRead } from 'src/lib/pepefi/safeRead';
 
 import StatCard from 'src/components/pepefi/StatCard';
 import ESGBadge from 'src/components/pepefi/ESGBadge';
@@ -194,11 +195,16 @@ export default function PortfolioPage() {
           try {
             const raw = (await contracts.exchange.getPosition(id)) as unknown as RawPos;
             if (!raw.isOpen) return null;
+            // Each read is isolated: a reverting view on one position must not
+            // blank the whole portfolio.
             const [pnl, val, priceRes, funding] = await Promise.all([
-              contracts.exchange.getUnrealizedPnL(id),
-              contracts.exchange.getPositionValue(id),
-              contracts.oracle.getPrice(raw.asset),
-              contracts.exchange.pendingFunding(id).catch(() => 0n),
+              safeRead(contracts.exchange.getUnrealizedPnL(id) as Promise<bigint>, 0n),
+              safeRead(contracts.exchange.getPositionValue(id) as Promise<bigint>, 0n),
+              safeRead(
+                contracts.oracle.getPrice(raw.asset) as Promise<[bigint, bigint]>,
+                [0n, 0n] as [bigint, bigint],
+              ),
+              safeRead(contracts.exchange.pendingFunding(id) as Promise<bigint>, 0n),
             ]);
             const pr = priceRes as unknown as [bigint, bigint];
             return {
