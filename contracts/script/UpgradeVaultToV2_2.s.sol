@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Script.sol";
-import "../src/v2/AssetVaultV2_1.sol";
+import "../src/v2/AssetVaultV2_2.sol";
 
 interface IUpgradeable {
     function upgradeToAndCall(address newImplementation, bytes calldata data) external payable;
@@ -24,12 +24,12 @@ interface IUpgradeable {
 ///           VAULT_PROXY=0x… forge script … --broadcast
 ///
 ///         Requires DEFAULT_ADMIN_ROLE on the proxy.
-contract UpgradeVaultToV2_1 is Script {
+contract UpgradeVaultToV2_2 is Script {
     error StatePreservationFailed(string field);
 
     function run() external {
         address proxy = vm.envAddress("VAULT_PROXY");
-        AssetVaultV2_1 v = AssetVaultV2_1(proxy);
+        AssetVaultV2_2 v = AssetVaultV2_2(proxy);
 
         // Snapshot before, so the upgrade can be checked rather than trusted.
         string memory versionBefore = v.version();
@@ -48,7 +48,7 @@ contract UpgradeVaultToV2_1 is Script {
 
         vm.startBroadcast();
 
-        AssetVaultV2_1 impl = new AssetVaultV2_1();
+        AssetVaultV2_2 impl = new AssetVaultV2_2();
         console.log("new implementation:", address(impl));
 
         // No initializer call: V2.1 adds no state, so re-initializing would be
@@ -59,7 +59,7 @@ contract UpgradeVaultToV2_1 is Script {
 
         // Verify on chain. A silent state loss here is the failure mode that
         // matters, so assert rather than print and hope someone reads it.
-        if (keccak256(bytes(v.version())) != keccak256(bytes("2.1.0"))) {
+        if (keccak256(bytes(v.version())) != keccak256(bytes("2.2.0"))) {
             revert StatePreservationFailed("version");
         }
         if (v.accruedFees()  != feesBefore)    revert StatePreservationFailed("accruedFees");

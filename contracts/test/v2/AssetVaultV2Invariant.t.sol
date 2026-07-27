@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import "../../src/v2/AssetVaultV2.sol";
+import "../../src/v2/AssetVaultV2_2.sol";
 import "../../src/v2/SyntheticAssetV2.sol";
 import "../../src/MockUSDC.sol";
 import "../../src/MockOracle.sol";
@@ -12,7 +12,7 @@ import "../../src/MockOracle.sol";
 ///      plausible range so the fuzzer spends its time on real states rather
 ///      than on reverts.
 contract VaultHandler is Test {
-    AssetVaultV2     public vault;
+    AssetVaultV2_2     public vault;
     SyntheticAssetV2 public token;
     MockUSDC         public usdc;
     MockOracle       public oracle;
@@ -24,7 +24,7 @@ contract VaultHandler is Test {
     uint256 public redeemCalls;
 
     constructor(
-        AssetVaultV2 v,
+        AssetVaultV2_2 v,
         SyntheticAssetV2 t,
         MockUSDC u,
         MockOracle o,
@@ -84,7 +84,7 @@ contract VaultHandler is Test {
 ///         price moves. Unit tests check the cases we thought of; these check
 ///         the ones we did not.
 contract AssetVaultV2InvariantTest is Test {
-    AssetVaultV2     vault;
+    AssetVaultV2_2     vault;
     SyntheticAssetV2 token;
     MockUSDC         usdc;
     MockOracle       oracle;
@@ -98,10 +98,10 @@ contract AssetVaultV2InvariantTest is Test {
         oracle = new MockOracle();
         oracle.addAsset(AID, 200e8);
 
-        AssetVaultV2 impl = new AssetVaultV2();
-        vault = AssetVaultV2(address(new ERC1967Proxy(
+        AssetVaultV2_2 impl = new AssetVaultV2_2();
+        vault = AssetVaultV2_2(address(new ERC1967Proxy(
             address(impl),
-            abi.encodeCall(AssetVaultV2.initialize, (address(usdc), address(oracle), admin))
+            abi.encodeCall(AssetVaultV2_2.initialize, (address(usdc), address(oracle), admin))
         )));
 
         token = new SyntheticAssetV2("Synthetic Apple", "sAAPL", AID, admin);
