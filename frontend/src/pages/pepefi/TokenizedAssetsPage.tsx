@@ -91,14 +91,30 @@ export default function TokenizedAssetsPage() {
 
   const v2Available = !!getV2Stack(wallet.chainId)
 
+  // Default to V2 where it exists: V1 is deployed bytecode that cannot be given
+  // SafeERC20, so it stays reachable as a comparison case rather than the path
+  // a new user lands on. An explicit stored choice always wins.
   const [version, setVersion] = useState<VaultVersion>(() => {
-    try { return (localStorage.getItem(VERSION_KEY) as VaultVersion) ?? 'v1' }
-    catch { return 'v1' }
+    try {
+      const saved = localStorage.getItem(VERSION_KEY) as VaultVersion | null
+      if (saved === 'v1' || saved === 'v2') return saved
+    } catch { /* private mode */ }
+    return getV2Stack(wallet.chainId) ? 'v2' : 'v1'
   })
   const switchVersion = (v: VaultVersion) => {
     setVersion(v)
     try { localStorage.setItem(VERSION_KEY, v) } catch { /* private mode */ }
   }
+
+  // The initializer above runs before the wallet reports a chain, so a first
+  // visitor would be stuck on V1 until they touched the switch. Promote once the
+  // chain resolves — but never over an explicit stored choice.
+  useEffect(() => {
+    let stored: string | null = null
+    try { stored = localStorage.getItem(VERSION_KEY) } catch { /* private mode */ }
+    if (stored === 'v1' || stored === 'v2') return
+    if (v2Available) setVersion('v2')
+  }, [v2Available])
 
   // If the stored preference is v2 but this chain has no V2, fall back rather
   // than rendering an empty page.
@@ -450,7 +466,8 @@ export default function TokenizedAssetsPage() {
         </Card>
       ) : (
         <Alert severity="warning" variant="outlined">
-          V1 為初版實作，未包含 SafeERC20、儲備率保護與暫停機制。切換至 V2 查看硬化版本。
+          V1 為初版實作，未包含 SafeERC20、儲備率保護與暫停機制。已部署合約的 bytecode
+          無法修改，因此 V1 保留於鏈上作為架構演進的對照組，建議使用 V2。
         </Alert>
       )}
 

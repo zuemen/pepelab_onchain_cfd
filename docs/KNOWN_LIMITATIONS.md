@@ -8,10 +8,10 @@ was not, the reason is given rather than glossed over.
 
 | # | Limitation | Status |
 |---|---|---|
-| 1 | V1 contracts do not use SafeERC20 | **Open** — V2 fixed, V1 documented |
+| 1 | V1 contracts do not use SafeERC20 | **Mitigated** — V2 uses SafeERC20; the UI now defaults to V2 |
 | 2 | `PerpetualExchange.oracle` is immutable | **Mitigated** — keeper relays the on-chain feed |
 | 3 | Oracle is a single owner key | **Mitigated** — GuardedOracle + V2 `setOracle` |
-| 4 | No third-party security audit | **Open** — Slither + invariants added |
+| 4 | No third-party security audit | **Open** — Slither + Aderyn + invariants; audit still required |
 | 5 | Mock stablecoins have unrestricted `mint` | **By design** (testnet only) |
 | 6 | AssetVault is not fully collateralized | **By design** — bounded in V2 |
 | 7 | Contract tests never ran in CI | **Fixed** |
@@ -20,7 +20,7 @@ was not, the reason is given rather than glossed over.
 | 10 | Agent sessions had no asset restriction | **Fixed and live on Base Sepolia** |
 | 11 | V2 vault: no reentrancy guard, unbounded asset registry | **Fixed** |
 | 12 | Frontend type escapes (`any`) | **Reduced 42 → 19**; rest is library typing |
-| 13 | All 6 roles on one deployer key | **Open** — tooling ready, needs your addresses |
+| 13 | All 6 roles on one deployer key | **Mitigated** — separated 2026-07-27; multisig + revoke still open |
 
 ---
 
@@ -42,6 +42,15 @@ demonstrates both halves: V2 completes a mint and redeem against it, V1 reverts.
 Changing its source would not change the deployed bytecode, so the code would no
 longer describe what is running. Redeploying would destroy existing positions.
 V2 carries the fix; V1's gap is documented here.
+
+**What was done instead.** `TokenizedAssetsPage` now defaults to V2 on any chain
+where the V2 stack is deployed, so V1 is something a reader opts into rather than
+the path a new user lands on. Selecting V1 raises a warning naming the missing
+protections and stating that deployed bytecode cannot be changed. V1 stays
+reachable because the comparison is the point: the two vaults sitting side by
+side on the same chain is the clearest evidence of what the hardening actually
+changed. On testnet the gap does not fire — MockUSDC and MockUSDT both revert on
+failure, which is the well-behaved case V1 assumes.
 
 ## 2. `PerpetualExchange.oracle` is immutable — mitigated by relay
 
@@ -109,8 +118,21 @@ an audit is third-party by definition. What has been automated:
   exposure equals real token supply, exposure never exceeds the cap, and
   registration stays within its ceiling.
 
+- **Aderyn** (Cyfrin, v0.6.8) run against `src/v2/` on 2026-07-27 as a second
+  static-analysis engine — it overlaps Slither but does not duplicate it.
+  1 High and 12 Low. The High and the two Low findings that could have mattered
+  are false positives here, triaged individually in
+  `docs/audit/ADERYN_TRIAGE.md` with reasoning rather than dismissal; raw output
+  in `docs/audit/aderyn-v2-report.md`.
+
 Unit tests check the cases we thought of; invariants check the ones we did not.
 An auditor will still find things neither does.
+
+The clearest evidence for that last sentence is our own: the fee accounting error
+CI caught on 2026-07-27 was found by an invariant test, and neither Slither nor
+Aderyn would have flagged it — the code was internally consistent and locally
+correct, just wrong about a quantity. Static analysis finds a class of bug. This
+was a different class, and there are classes neither tool nor test covers.
 
 ## 5. Mock stablecoins have unrestricted `mint`
 
@@ -197,16 +219,32 @@ for everything downstream in those files.
 The remaining 19 are MUI `sx`, recharts formatter callbacks, and template code,
 where the upstream types are genuinely loose. Not worth contorting around.
 
-## 13. All six roles sit on one deployer key
+## 13. All six roles sat on one deployer key — separated 2026-07-27
 
-The deployed GuardedOracle and AssetVaultV2 hold admin, keeper, guardian, risk,
-and pauser all on `0xE80A8136…Eb93`. So the guard bounds a compromised *keeper*
-— proven on chain — but not a compromised *admin*, which can widen the caps,
-swap the reference source, or upgrade the vault.
+**Done:** admin, keeper, guardian, and risk now sit on four distinct keys on both
+GuardedOracle and AssetVaultV2. Each was exercised against Sepolia before being
+relied on: the guardian key paused and unpaused the vault, the new keeper key
+posted a price (which also cleared a live staleness fault), and a $1 post against
+a $73,468 sBTC reverted `DeviationTooLarge` with the stored price unchanged.
+Addresses and the full verification log are in
+[ROLE_SEPARATION.md](ROLE_SEPARATION.md).
 
-This is the largest remaining gap that is not an audit, and it is key
-management rather than code: the tooling is written, tested, and dry-run against
-the live contracts, but only the operator can decide which addresses hold what.
+**Still open, and it matters:** the admin is a fresh single-purpose EOA, not a
+multisig. That is better than the deployer key — which also holds funds and every
+other role — but one key is one key. A compromised admin can still widen the
+deviation cap, repoint the oracle, or upgrade the vault. The cap bounds a
+compromised keeper; nothing bounds a compromised admin. The fix is a Safe 2-of-3
+across the team, free on Sepolia, blocked only on collecting two teammate
+addresses. A multisig with one signer is not a multisig, so the interim EOA is
+described as what it is rather than counted as the fix.
+
+**Also still open:** the deployer has not been revoked. Deliberate — the new
+keeper key is not yet in GitHub Actions, so revoking now would stop the price
+feed. Until it is revoked the deployer remains a single point of compromise for
+both contracts, so the separation above is real but not yet exclusive.
+
+The original gap, for the record: both contracts held admin, keeper, guardian,
+risk, and pauser all on `0xE80A8136…Eb93`.
 
 `script/HandoverRoles.s.sol` performs the separation in the only safe order —
 grant, verify on chain, then revoke with admin last — and reverts
