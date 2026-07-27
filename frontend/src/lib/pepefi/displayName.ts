@@ -15,5 +15,7 @@ export function setDisplayName(addr: string, name: string): void {
     window.dispatchEvent(
       new CustomEvent('pepefi:displayName-changed', { detail: { addr, name } }),
     )
-  } catch {}
+  } catch {
+    /* storage unavailable (private mode / quota) — the name just won't persist */
+  }
 }

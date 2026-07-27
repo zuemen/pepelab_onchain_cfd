@@ -1,6 +1,6 @@
 import { MONO } from 'src/components/pepefi/brandKit'
 import { useState, useEffect, useCallback } from 'react'
-import type { Contract } from 'ethers'
+import type { Contract, EventLog } from 'ethers'
 import { parseUnits, formatUnits } from 'ethers'
 import { useContracts } from 'src/hooks/useContracts'
 import { usePepefiWallet } from 'src/layouts/pepefi'
@@ -71,19 +71,19 @@ async function fetchActivity(vault: Contract): Promise<ActivityEntry[]> {
     ])
 
     for (const e of dep) {
-      const args = (e as any).args
+      const args = (e as EventLog).args
       events.push({ type: 'Deposited', label: 'LP Deposit', amount: f18(args.usdcAmount) + ' USDT', from: args.user, block: e.blockNumber ?? 0 })
     }
     for (const e of wit) {
-      const args = (e as any).args
+      const args = (e as EventLog).args
       events.push({ type: 'Withdrawn', label: 'LP Withdraw', amount: f18(args.usdcAmount) + ' USDT', from: args.user, block: e.blockNumber ?? 0 })
     }
     for (const e of pro) {
-      const args = (e as any).args
+      const args = (e as EventLog).args
       events.push({ type: 'ProtocolDeposit', label: 'Protocol Fee', amount: f18(args.amount) + ' USDT', from: args.from, block: e.blockNumber ?? 0 })
     }
     for (const e of bai) {
-      const args = (e as any).args
+      const args = (e as EventLog).args
       events.push({ type: 'Bailout', label: 'Bailout Paid', amount: f18(args.amount) + ' USDT', from: args.trader, block: e.blockNumber ?? 0 })
     }
 
@@ -159,7 +159,7 @@ export default function VaultPage() {
       setDepositAmt('')
       await fetchStats()
       if (vault) setActivity(await fetchActivity(vault))
-    } catch (e: any) {
+    } catch (e) {
       notify(prettyError(e), false)
     } finally {
       setBusy(false)
@@ -177,7 +177,7 @@ export default function VaultPage() {
       setWithdrawAmt('')
       await fetchStats()
       if (vault) setActivity(await fetchActivity(vault))
-    } catch (e: any) {
+    } catch (e) {
       notify(prettyError(e), false)
     } finally {
       setBusy(false)

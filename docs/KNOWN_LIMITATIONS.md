@@ -18,6 +18,8 @@ was not, the reason is given rather than glossed over.
 | 8 | Two payout contracts had zero tests | **Fixed** |
 | 9 | Batched chain reads blanked pages | **Fixed** |
 | 10 | Agent sessions had no asset restriction | **Fixed and live on Base Sepolia** |
+| 11 | V2 vault: no reentrancy guard, unbounded asset registry | **Fixed** |
+| 12 | Frontend type escapes (`any`) | **Reduced 42 → 19**; rest is library typing |
 
 ---
 
@@ -126,6 +128,28 @@ and sETH while returning `false` for sAAPL and sTSLA.
 The previous instance `0x5Ebcc64C712C5a26119789dCbD0753981dc518E8` is untouched
 and its 13 sessions remain readable, but it has no asset gate. Frontend
 (`sessionManager.ts`) and `agent/.env` both point at the new address.
+
+**11. V2 vault hardening.** Four defects found reviewing my own V2 work, all in
+code not yet deployed. The one that mattered: `mint()` prices every active asset
+via `reserveRatioBps()`, and registration was unbounded — an operator onboarding
+markets would make mint progressively more expensive until it exceeded the block
+gas limit, bricking their own vault by using the product as intended. Now capped
+at `MAX_REGISTERED_ASSETS` with `unregisterAsset` to free slots, which refuses
+while tokens are outstanding so holders cannot be stranded. Also added
+`nonReentrant` on the four state-changing functions, a storage `__gap`, and a
+dedicated `AggregatorOracleAdapter` suite (it would front Chainlink and Pyth in
+production and had none).
+
+**12. Frontend type escapes.** 42 `any` casts reduced to 19. Removed
+`catch (e: any)` throughout (`prettyError` already accepts `unknown`), replaced
+`(log as any).args` with ethers' `EventLog`, and dropped seven
+`(window as any).ethereum` casts in favour of the `declare global` block that
+already existed in `useWallet.ts`. That last change surfaced a latent conflict
+hidden by a stale `tsbuildinfo` — the casts had been suppressing type checking
+for everything downstream in those files.
+
+The remaining 19 are MUI `sx`, recharts formatter callbacks, and template code,
+where the upstream types are genuinely loose. Not worth contorting around.
 
 ---
 

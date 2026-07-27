@@ -34,8 +34,8 @@ export default function X402MarketplaceCard() {
       const r = await demoBuySignal()
       if (r.ok && r.settlementTx) setTx(r.settlementTx)
       else if (!r.ok) setErr(r.error ?? 'demo buy failed')
-    } catch (e: any) {
-      setErr(e?.message ?? 'API 未連上（VITE_SIGNAL_API_URL?）')
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'API 未連上（VITE_SIGNAL_API_URL?）')
     } finally { setBusy(false) }
   }
 

@@ -110,9 +110,9 @@ export default function TraderStakePage() {
   }
 
   const addPepeToWallet = async () => {
-    if (!(window as any).ethereum || !contracts) return
+    if (!window.ethereum || !contracts) return
     try {
-      await (window as any).ethereum.request({
+      await window.ethereum.request({
         method: 'wallet_watchAsset',
         params: {
           type: 'ERC20',
