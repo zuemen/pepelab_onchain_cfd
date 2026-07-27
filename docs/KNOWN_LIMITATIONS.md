@@ -17,7 +17,7 @@ was not, the reason is given rather than glossed over.
 | 7 | Contract tests never ran in CI | **Fixed** |
 | 8 | Two payout contracts had zero tests | **Fixed** |
 | 9 | Batched chain reads blanked pages | **Fixed** |
-| 10 | Agent sessions had no asset restriction | **Fixed in source — needs redeploy** |
+| 10 | Agent sessions had no asset restriction | **Fixed and live on Base Sepolia** |
 
 ---
 
@@ -113,12 +113,19 @@ Deliberately opt-in: an empty list means unrestricted, so `createSession` and
 every session already created behave exactly as before. The existing
 AgentSessionManager test suite passes unchanged, which is the evidence for that.
 
-**⚠️ Not yet in effect on-chain.** `AgentSessionManager` is deployed to Base
-Sepolia at `0x5Ebcc64C712C5a26119789dCbD0753981dc518E8` and the source now
-differs from that bytecode. The allow-list only applies once redeployed, and
-redeploying resets session ids — including the demo session used by the agent
-examples. Until then, treat the deployed instance as having no asset
-restriction.
+**Live on Base Sepolia as of 2026-07-27.** Redeployed to
+`0x4E7cC1B79B72ab72531a6C790e14304370f70764` via
+`script/DeployAgentSessionManager.s.sol`, which deploys only the session manager
+against the existing exchange — running the full `Deploy.s.sol` would have
+destroyed every open position.
+
+Verified on chain rather than assumed: the new manager is bound to the live
+exchange, is authorized via `authorizedAgents`, and demo session 0 allows sBTC
+and sETH while returning `false` for sAAPL and sTSLA.
+
+The previous instance `0x5Ebcc64C712C5a26119789dCbD0753981dc518E8` is untouched
+and its 13 sessions remain readable, but it has no asset gate. Frontend
+(`sessionManager.ts`) and `agent/.env` both point at the new address.
 
 ---
 
