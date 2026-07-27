@@ -5,6 +5,7 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -35,6 +36,7 @@ contract AssetVaultV2 is
     UUPSUpgradeable,
     AccessControlUpgradeable,
     PausableUpgradeable,
+    ReentrancyGuard,
     IAssetVaultV2
 {
     /// @dev SafeERC20 because real-world stablecoins are not uniformly
@@ -48,6 +50,14 @@ contract AssetVaultV2 is
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
     uint256 public constant BPS_DENOM = 10_000;
+
+    /// @notice Hard ceiling on registered assets.
+    /// @dev The reserve-ratio check prices every asset with a non-zero balance,
+    ///      so mint() costs one oracle call per active asset. Unbounded
+    ///      registration would let that grow until mint exceeds the block gas
+    ///      limit — the operator would brick their own vault by onboarding
+    ///      markets. Bounded here, and unregisterAsset frees slots.
+    uint256 public constant MAX_REGISTERED_ASSETS = 32;
 
     // ── storage — APPEND ONLY, never reorder (UUPS) ──────────────────────────
     address private _usdc;
@@ -72,6 +82,13 @@ contract AssetVaultV2 is
     /// @notice Asset ids ever registered, so ratio math can iterate them.
     bytes32[] private _assetIds;
 
+    /// @dev Reserved slots so a future version can add state without colliding
+    ///      with anything a new parent contract introduces. OZ 5.x parents use
+    ///      ERC-7201 namespaced storage and won't collide on their own, but this
+    ///      contract's own layout is plain — consume from the front when adding
+    ///      variables and shrink the gap by the same amount.
+    uint256[45] private __gap;
+
     // ── errors ───────────────────────────────────────────────────────────────
     error StalePrice(bytes32 assetId, uint256 updatedAt);
     error NoPrice(bytes32 assetId);
@@ -81,6 +98,8 @@ contract AssetVaultV2 is
     error ReserveRatioTooLow(uint256 ratioBps, uint256 minBps);
     error VaultDry(uint256 needed, uint256 available);
     error InvalidParam();
+    error TooManyAssets(uint256 max);
+    error AssetStillOutstanding(bytes32 assetId, uint256 outstanding);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -119,9 +138,44 @@ contract AssetVaultV2 is
 
     function registerAsset(bytes32 assetId, address token) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (token == address(0)) revert InvalidParam();
-        if (_assetToken[assetId] == address(0)) _assetIds.push(assetId);
+        if (_assetToken[assetId] == address(0)) {
+            if (_assetIds.length >= MAX_REGISTERED_ASSETS) {
+                revert TooManyAssets(MAX_REGISTERED_ASSETS);
+            }
+            _assetIds.push(assetId);
+        }
         _assetToken[assetId] = token;
         emit AssetRegistered(assetId, token);
+    }
+
+    /// @notice Removes an asset, freeing a slot and taking it out of the
+    ///         reserve-ratio loop.
+    /// @dev Refuses while tokens are still outstanding — de-registering then
+    ///      would strand holders with a token the vault no longer redeems. Wind
+    ///      down with setAssetCap(id, 0) first, let holders redeem, then remove.
+    function unregisterAsset(bytes32 assetId) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (_assetToken[assetId] == address(0)) revert AssetNotRegistered(assetId);
+        uint256 out = _outstanding[assetId];
+        if (out != 0) revert AssetStillOutstanding(assetId, out);
+
+        uint256 len = _assetIds.length;
+        for (uint256 i = 0; i < len; i++) {
+            if (_assetIds[i] == assetId) {
+                _assetIds[i] = _assetIds[len - 1];
+                _assetIds.pop();
+                break;
+            }
+        }
+        delete _assetToken[assetId];
+        delete assetCap[assetId];
+
+        emit AssetUnregistered(assetId);
+    }
+
+    /// @notice Registered asset ids, so the operator can see what counts toward
+    ///         the MAX_REGISTERED_ASSETS ceiling and the ratio loop.
+    function registeredAssets() external view returns (bytes32[] memory) {
+        return _assetIds;
     }
 
     function pause()   external onlyRole(PAUSER_ROLE) { _pause(); }
@@ -218,7 +272,7 @@ contract AssetVaultV2 is
     /// @notice Pay USDC, receive tokens at the oracle price less the mint fee.
     /// @dev Gated by the per-asset cap and the reserve ratio.
     function mint(bytes32 assetId, uint256 usdcAmount)
-        external whenNotPaused returns (uint256 tokenOut)
+        external whenNotPaused nonReentrant returns (uint256 tokenOut)
     {
         address token = _assetToken[assetId];
         if (token == address(0)) revert AssetNotRegistered(assetId);
@@ -252,7 +306,7 @@ contract AssetVaultV2 is
     /// @dev Deliberately NOT gated by the reserve ratio — blocking exits during
     ///      stress is the bank run, not a defence against it.
     function redeem(bytes32 assetId, uint256 tokenAmount)
-        external whenNotPaused returns (uint256 usdcOut)
+        external whenNotPaused nonReentrant returns (uint256 usdcOut)
     {
         address token = _assetToken[assetId];
         if (token == address(0)) revert AssetNotRegistered(assetId);
@@ -274,14 +328,14 @@ contract AssetVaultV2 is
     }
 
     /// @notice Operator injects payout collateral.
-    function fundVault(uint256 usdcAmount) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function fundVault(uint256 usdcAmount) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
         if (usdcAmount == 0) revert ZeroAmount();
         IERC20(_usdc).safeTransferFrom(msg.sender, address(this), usdcAmount);
         emit VaultFunded(msg.sender, usdcAmount);
     }
 
     /// @notice Operator withdraws earned fees. Cannot touch payout collateral.
-    function withdrawFees(address to, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function withdrawFees(address to, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
         if (to == address(0)) revert InvalidParam();
         if (amount > accruedFees) revert InvalidParam();
         accruedFees -= amount;

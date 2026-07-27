@@ -125,8 +125,8 @@ export default function X402DocsPage() {
       const r = await demoBuySignal()
       if (r.ok) setResult(r)
       else setErr(r.error ?? 'demo buy failed')
-    } catch (e: any) {
-      setErr(e?.message ?? 'network error — is the API deployed / VITE_SIGNAL_API_URL set?')
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'network error — is the API deployed / VITE_SIGNAL_API_URL set?')
     } finally {
       setBusy(false)
     }

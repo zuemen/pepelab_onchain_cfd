@@ -1,6 +1,6 @@
 import { MONO } from 'src/components/pepefi/brandKit'
 import { useState, useEffect, useCallback } from 'react'
-import { Contract, parseEther } from 'ethers'
+import { Contract, parseEther, type ContractTransactionResponse } from 'ethers'
 import { useContracts } from 'src/hooks/useContracts'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { explorerTx, explorerName } from 'src/lib/pepefi/notify'
@@ -34,8 +34,9 @@ const f18 = (v: bigint, d = 4) => (Number(v) / 1e18).toFixed(d)
 const fUsd = (n: number) =>
   '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const asTx = (t: any) => t as { wait: () => Promise<unknown>; hash: string }
+// Contract methods come off a JSON ABI, so ethers types them loosely. Narrow to
+// the transaction shape we actually use rather than casting through `any`.
+const asTx = (t: unknown) => t as ContractTransactionResponse
 
 interface Row {
   price:   bigint   // 8-dec oracle price
@@ -130,8 +131,7 @@ export default function TokenizedAssetsPage() {
   // EIP-747: make the token visible in MetaMask. This is the point of the page —
   // the professor should be able to see sAAPL sitting in the wallet.
   const addToWallet = async (sym: AssetSymbol) => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const eth = (window as any).ethereum
+    const eth = window.ethereum
     if (!eth) { notify('找不到錢包擴充功能', false); return }
     try {
       await eth.request({

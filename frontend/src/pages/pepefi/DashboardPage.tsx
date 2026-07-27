@@ -528,9 +528,9 @@ export default function DashboardPage() {
   }, [contracts, fetchPepe]);
 
   const addPepeToWallet = async () => {
-    if (!(window as any).ethereum) return;
+    if (!window.ethereum) return;
     try {
-      await (window as any).ethereum.request({
+      await window.ethereum.request({
         method: 'wallet_watchAsset',
         params: {
           type: 'ERC20',

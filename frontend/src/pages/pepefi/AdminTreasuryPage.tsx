@@ -1,5 +1,6 @@
 import { MONO } from 'src/components/pepefi/brandKit'
 import { useState, useEffect, useCallback } from 'react'
+import type { EventLog } from 'ethers'
 import { parseEther, formatEther, formatUnits } from 'ethers'
 import { useContracts } from 'src/hooks/useContracts'
 import { usePepefiWallet } from 'src/layouts/pepefi'
@@ -127,7 +128,7 @@ export default function AdminTreasuryPage() {
 
       const records: CashOutRecord[] = []
       for (const log of claimLogs) {
-        const args = (log as any).args
+        const args = (log as EventLog).args
         records.push({
           type:        'claim',
           amount:      (args.amount ?? args[1] ?? 0n) as bigint,
@@ -136,7 +137,7 @@ export default function AdminTreasuryPage() {
         })
       }
       for (const log of swapLogs) {
-        const args = (log as any).args
+        const args = (log as EventLog).args
         records.push({
           type:        'swap',
           amount:      (args.ethOut ?? args[2] ?? 0n) as bigint,
@@ -188,7 +189,7 @@ export default function AdminTreasuryPage() {
       notify('Platform fees claimed ✓', true, tx.hash)
       await fetchStats()
       await fetchHistory()
-    } catch (e: any) {
+    } catch (e) {
       notify(prettyError(e), false)
     } finally { setLoad('claim', false) }
   }
@@ -201,7 +202,7 @@ export default function AdminTreasuryPage() {
       const tx  = asTx(await contracts.usdc.approve(String(contracts.swapRouter.target), amt))
       await tx.wait()
       notify('USDT approved ✓', true, tx.hash)
-    } catch (e: any) {
+    } catch (e) {
       notify(prettyError(e), false)
     } finally { setLoad('approve', false) }
   }
@@ -218,7 +219,7 @@ export default function AdminTreasuryPage() {
       setSwapAmt('')
       await fetchStats()
       await fetchHistory()
-    } catch (e: any) {
+    } catch (e) {
       notify(prettyError(e), false)
     } finally { setLoad('swap', false) }
   }
@@ -232,7 +233,7 @@ export default function AdminTreasuryPage() {
       notify(`Funded router with ${fundAmt} ETH ✓`, true, tx.hash)
       setFundAmt('')
       await fetchStats()
-    } catch (e: any) {
+    } catch (e) {
       notify(prettyError(e), false)
     } finally { setLoad('fund', false) }
   }
@@ -247,7 +248,7 @@ export default function AdminTreasuryPage() {
       notify(`Successfully funded Incentives Pool with ${pepeFundAmt} PEPE ✓`, true, tx.hash)
       setPepeFundAmt('')
       await fetchPepeBalances()
-    } catch (e: any) {
+    } catch (e) {
       notify(prettyError(e), false)
     } finally { setLoad('fundPepe', false) }
   }

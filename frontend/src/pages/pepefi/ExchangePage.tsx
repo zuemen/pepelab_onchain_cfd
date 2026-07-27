@@ -445,9 +445,9 @@ export default function ExchangePage() {
   };
 
   const addToWallet = async () => {
-    if (!contracts || !(window as any).ethereum) return;
+    if (!contracts || !window.ethereum) return;
     try {
-      await (window as any).ethereum.request({
+      await window.ethereum.request({
         method: 'wallet_watchAsset',
         params: {
           type: 'ERC20',
