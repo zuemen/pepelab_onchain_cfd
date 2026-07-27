@@ -37,7 +37,10 @@ export default function LandingPage() {
   return (
     <Box
       sx={{
-        minHeight: '100vh',
+        // dvh, not vh: on mobile Safari/Chrome `100vh` is the viewport with the
+        // URL bar *hidden*, so the hero overflows by the bar's height until the
+        // user scrolls. dvh tracks the visible viewport.
+        minHeight: '100dvh',
         background: 'radial-gradient(120% 80% at 80% -10%, rgba(124,193,74,0.10) 0%, transparent 55%), linear-gradient(165deg, #0A0F0B 0%, #0d1f12 55%, #0A0F0B 100%)',
         pt: 8,
         pb: 8,

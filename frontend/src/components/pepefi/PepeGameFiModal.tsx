@@ -18,6 +18,7 @@ import { useWalletContext } from 'src/contexts/wallet-context';
 import { useContracts } from 'src/hooks/useContracts';
 import { usePepefiWallet } from 'src/layouts/pepefi';
 import { Iconify } from 'src/components/iconify';
+import { useToast } from 'src/components/pepefi/ToastProvider';
 import { PEPE_SKINS, PepeSkin } from 'src/components/pepefi/pepeSkinsData';
 
 // ── Types & Assets ─────────────────────────────────────────────────────────────
@@ -52,6 +53,7 @@ interface PepeGameFiModalProps {
 
 export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' }: PepeGameFiModalProps) {
   const [tabValue, setTabValue] = useState<'potions' | 'wardrobe' | 'skins'>('potions');
+  const { notify, confirm } = useToast();
   const wallet = useWalletContext();
   const userAddress = wallet.address || 'mock_user';
   const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId);
@@ -150,7 +152,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
 
   const buyPotion = async (id: string, cost: number, xpBonus: number) => {
     if (finalPepeBal < cost) {
-      alert('您的 PEPE 代幣餘額不足！請到 Rewards 🎁 頁面簽到或做交易挖礦領取更多。');
+      notify('PEPE 餘額不足。可到 Rewards 頁面簽到或交易挖礦取得更多。', false);
       return;
     }
 
@@ -162,7 +164,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
         const nextBal = await contracts.pepeToken.balanceOf(wallet.address);
         setOnChainPepeBal(nextBal as bigint);
       } catch (e) {
-        alert('鏈上購買交易取消或扣款失敗！');
+        notify('鏈上交易已取消或扣款失敗，未扣除任何 PEPE。', false);
         return;
       }
     }
@@ -182,7 +184,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
 
   const equipClothes = (clothId: string, levelReq: number) => {
     if (level < levelReq) {
-      alert(`此服裝需要 Pepe 等級達 Lv.${levelReq} 才能解鎖！`);
+      notify(`此服裝需 Pepe 等級 Lv.${levelReq} 解鎖，目前 Lv.${level}。`, false);
       return;
     }
     saveState(finalPepeBal, xp, level, clothId, unlockedSkins, '/avatars/pepe-01.png');
@@ -201,14 +203,14 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
     if (isDrawing) return;
     const COST = 500;
     if (finalPepeBal < COST) {
-      alert('您的 PEPE 代幣餘額不足！抽取一次盲盒需要 500 PEPE。');
+      notify(`PEPE 餘額不足，抽取一次需要 ${COST} PEPE。`, false);
       return;
     }
 
     // Filter locked custom skins (excluding 'none')
     const lockedSkins = PEPE_SKINS.filter(s => !unlockedSkins.includes(s.id));
     if (lockedSkins.length === 0) {
-      alert('恭喜您！您已經集齊了所有 25 款奢華佩佩蛙造型！無須再抽盲盒。');
+      notify('已集齊所有造型，無須再抽盲盒。', true);
       return;
     }
 
@@ -220,7 +222,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
         const nextBal = await contracts.pepeToken.balanceOf(wallet.address);
         setOnChainPepeBal(nextBal as bigint);
       } catch (e) {
-        alert('鏈上交易取消或扣款失敗！');
+        notify('鏈上交易已取消或扣款失敗，未扣除任何 PEPE。', false);
         return;
       }
     }
@@ -256,28 +258,36 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
   const buySkinDirect = async (skin: PepeSkin) => {
     if (unlockedSkins.includes(skin.id)) return;
     if (finalPepeBal < skin.price) {
-      alert(`您的 PEPE 代幣餘額不足！購買此造型需要 ${skin.price} PEPE。`);
+      notify(`PEPE 餘額不足，此造型需要 ${skin.price} PEPE。`, false);
       return;
     }
 
-    if (window.confirm(`您確定要以 ${skin.price} PEPE 購買此造型「${skin.name}」嗎？`)) {
-      if (contracts && wallet.address) {
-        try {
-          const amountBig = BigInt(skin.price) * 10n ** 18n;
-          const tx = await contracts.pepeToken.transfer("0x000000000000000000000000000000000000dEaD", amountBig);
-          await (tx as { wait(): Promise<unknown> }).wait();
-          const nextBal = await contracts.pepeToken.balanceOf(wallet.address);
-          setOnChainPepeBal(nextBal as bigint);
-        } catch (e) {
-          alert('鏈上購買交易取消或扣款失敗！');
-          return;
-        }
+    // Spends a real (testnet) token balance, so it keeps a confirmation step —
+    // now an in-app dialog rather than window.confirm. Early-return on cancel
+    // instead of nesting the whole purchase inside the branch.
+    const confirmed = await confirm({
+      title: '購買造型',
+      message: `以 ${skin.price} PEPE 購買「${skin.name}」？PEPE 將轉入銷毀地址，無法復原。`,
+      confirmLabel: `購買 · ${skin.price} PEPE`,
+    });
+    if (!confirmed) return;
+
+    if (contracts && wallet.address) {
+      try {
+        const amountBig = BigInt(skin.price) * 10n ** 18n;
+        const tx = await contracts.pepeToken.transfer("0x000000000000000000000000000000000000dEaD", amountBig);
+        await (tx as { wait(): Promise<unknown> }).wait();
+        const nextBal = await contracts.pepeToken.balanceOf(wallet.address);
+        setOnChainPepeBal(nextBal as bigint);
+      } catch (e) {
+        notify('鏈上交易已取消或扣款失敗，未扣除任何 PEPE。', false);
+        return;
       }
-      
-      const newUnlocked = [...unlockedSkins, skin.id];
-      saveState(finalPepeBal - skin.price, xp, level, activeClothes, newUnlocked, activeSkin);
-      alert(`恭喜！成功購買並解鎖「${skin.name}」！🎉`);
     }
+
+    const newUnlocked = [...unlockedSkins, skin.id];
+    saveState(finalPepeBal - skin.price, xp, level, activeClothes, newUnlocked, activeSkin);
+    notify(`已購買並解鎖「${skin.name}」`, true);
   };
 
   const equipSkin = (skinPath: string) => {
@@ -725,10 +735,13 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
                     size="small"
                     variant="outlined"
                     color="success"
-                    onClick={() => {
-                      if (window.confirm('確定要切換回預設經典頭像嗎？')) {
-                        equipSkin('/avatars/pepe-01.png');
-                      }
+                    onClick={async () => {
+                      const ok = await confirm({
+                        title: '重置頭像',
+                        message: '切換回預設經典頭像？已解鎖的造型會保留，隨時可再穿戴。',
+                        confirmLabel: '重置',
+                      });
+                      if (ok) equipSkin('/avatars/pepe-01.png');
                     }}
                     sx={{ textTransform: 'none', fontWeight: 'bold' }}
                   >

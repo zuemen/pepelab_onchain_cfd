@@ -9,6 +9,7 @@ import Typography from '@mui/material/Typography'
 import DialogContent from '@mui/material/DialogContent'
 
 import { LOOTBOX_PRICE } from 'src/lib/pepefi/items'
+import { useToast } from 'src/components/pepefi/ToastProvider'
 import { PEPE_SKINS, PepeSkin } from 'src/components/pepefi/pepeSkinsData'
 
 const RARITY_COLOR: Record<string, string> = {
@@ -25,6 +26,7 @@ interface Props {
 }
 
 export function LootBoxButton({ pepeBalance, onBurn, address }: Props) {
+  const { notify } = useToast()
   const [loading, setLoading]   = useState(false)
   const [result, setResult]     = useState<PepeSkin | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -118,7 +120,7 @@ export function LootBoxButton({ pepeBalance, onBurn, address }: Props) {
 
     // Dispatch global event
     window.dispatchEvent(new CustomEvent('pepefi:gamefi-updated'))
-    alert('造型更換成功！已應用至全站頭像 ✓')
+    notify('造型更換成功！已應用至全站頭像', true)
   }
 
   const getRarityColor = (rarity: string) => RARITY_COLOR[rarity] || '#7cc14a'

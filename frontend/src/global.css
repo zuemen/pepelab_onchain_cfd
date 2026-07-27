@@ -64,3 +64,75 @@ input[type='number']::-webkit-inner-spin-button {
   margin: 0;
   -webkit-appearance: none;
 }
+
+/** **************************************
+* Numerals
+*************************************** */
+/* Tabular figures app-wide.
+ *
+ * Almost every screen here is a data surface: prices the keeper rewrites every
+ * 15 minutes, PnL that recomputes per block, balances, reserve ratios, basis
+ * points. In a proportional font "1" is narrower than "8", so a value ticking
+ * 1.11 -> 8.88 changes its own pixel width and nudges whatever sits beside it.
+ * Across a table of them it reads as the page twitching.
+ *
+ * Setting this globally rather than per-call-site because there were ~146
+ * separate toFixed/toLocaleString sites and any new one would have missed it.
+ * Prose pays a very slightly wider digit for it, which is the usual trade a
+ * trading terminal makes. Values already rendered in the MONO stack were
+ * unaffected either way -- monospace is tabular by construction, which is why
+ * the terminal views looked stable while the same figure in a Typography did
+ * not. */
+body {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+/** **************************************
+* Motion
+*************************************** */
+/* Honour the OS "reduce motion" setting.
+ *
+ * There was no support for this anywhere: 11 infinite animations (floating hero
+ * decorations, pulses) and several hundred elements carrying `transition: all`
+ * kept running regardless. For a user who has asked their OS to stop moving
+ * things -- vestibular disorder, migraine, or simple preference -- that request
+ * was being ignored.
+ *
+ * Done as one global rule rather than per component because the animations are
+ * spread across 403 files and any new one should be covered by default.
+ * Durations collapse to ~0 instead of `animation: none` so that animation-end
+ * callbacks still fire and nothing waits forever on a transition that will
+ * never complete. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/** **************************************
+* Interaction
+*************************************** */
+/* Removes the legacy ~300ms tap delay on touch devices without disabling
+ * pinch-zoom (which `touch-action: none` would, breaking accessibility). */
+a,
+button,
+[role='button'],
+input,
+select,
+textarea,
+label {
+  touch-action: manipulation;
+}
+
+/* Keyboard focus must stay visible. Scoped to :focus-visible so pointer users
+ * do not get a ring on click, but keyboard and screen-reader users always do. */
+:focus-visible {
+  outline: 2px solid var(--palette-primary-main, #7cc14a);
+  outline-offset: 2px;
+}

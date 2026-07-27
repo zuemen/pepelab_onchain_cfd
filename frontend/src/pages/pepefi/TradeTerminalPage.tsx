@@ -174,7 +174,7 @@ export default function TradeTerminalPage() {
   const monoCss = { fontFamily: C.mono }
 
   return (
-    <Box sx={{ bgcolor: C.bg, color: C.ink, minHeight: '100vh', p: { xs: 1.5, md: 2.5 }, fontFamily: '"Satoshi", system-ui, sans-serif' }}>
+    <Box sx={{ bgcolor: C.bg, color: C.ink, minHeight: '100dvh', p: { xs: 1.5, md: 2.5 }, fontFamily: '"Satoshi", system-ui, sans-serif' }}>
       <Snackbar open={!!toast} anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>
         <Box sx={{ ...panel, px: 2, py: 1.2, borderColor: toast?.ok ? C.line2 : C.redDim, bgcolor: C.panel2, ...monoCss, fontSize: 13, color: toast?.ok ? C.green : C.red }}>
           {toast?.msg}
