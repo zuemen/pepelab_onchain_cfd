@@ -20,6 +20,7 @@ was not, the reason is given rather than glossed over.
 | 10 | Agent sessions had no asset restriction | **Fixed and live on Base Sepolia** |
 | 11 | V2 vault: no reentrancy guard, unbounded asset registry | **Fixed** |
 | 12 | Frontend type escapes (`any`) | **Reduced 42 → 19**; rest is library typing |
+| 13 | All 6 roles on one deployer key | **Open** — tooling ready, needs your addresses |
 
 ---
 
@@ -195,6 +196,26 @@ for everything downstream in those files.
 
 The remaining 19 are MUI `sx`, recharts formatter callbacks, and template code,
 where the upstream types are genuinely loose. Not worth contorting around.
+
+## 13. All six roles sit on one deployer key
+
+The deployed GuardedOracle and AssetVaultV2 hold admin, keeper, guardian, risk,
+and pauser all on `0xE80A8136…Eb93`. So the guard bounds a compromised *keeper*
+— proven on chain — but not a compromised *admin*, which can widen the caps,
+swap the reference source, or upgrade the vault.
+
+This is the largest remaining gap that is not an audit, and it is key
+management rather than code: the tooling is written, tested, and dry-run against
+the live contracts, but only the operator can decide which addresses hold what.
+
+`script/HandoverRoles.s.sol` performs the separation in the only safe order —
+grant, verify on chain, then revoke with admin last — and reverts
+`WouldLeaveNoAdmin` rather than proceeding if the replacement admin is not
+confirmed. `test/v2/RoleHandover.t.sol` performs the mistake deliberately and
+asserts that a contract left with zero admins can never grant a role or be
+upgraded again.
+
+Procedure in [KEY_MANAGEMENT.md](KEY_MANAGEMENT.md).
 
 ---
 
