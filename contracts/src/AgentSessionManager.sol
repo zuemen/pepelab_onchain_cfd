@@ -37,6 +37,20 @@ contract AgentSessionManager is ReentrancyGuard {
     uint256 public nextSessionId;
     mapping(uint256 => Session) public sessions;
 
+    /// @notice Per-session asset allow-list. sessionId => assetId => allowed.
+    /// @dev Deliberately opt-in: a session with an EMPTY list may trade any
+    ///      asset, so existing sessions and callers of the original
+    ///      createSession() behave exactly as before. Restriction is something
+    ///      the user opts into, not something that silently changes under them.
+    mapping(uint256 => mapping(bytes32 => bool)) private _assetAllowed;
+
+    /// @notice How many assets a session has allow-listed. 0 = unrestricted.
+    mapping(uint256 => uint256) public allowedAssetCount;
+
+    /// @dev Enumerable copy of the allow-list, so replacing it can clear the
+    ///      old entries and so the frontend can display what a session permits.
+    mapping(uint256 => bytes32[]) private _assetList;
+
     // ── Events ───────────────────────────────────────────────────────────────
 
     event SessionCreated(
@@ -47,6 +61,7 @@ contract AgentSessionManager is ReentrancyGuard {
         uint256         expiry
     );
     event SessionRevoked(uint256 indexed sessionId);
+    event SessionAssetsSet(uint256 indexed sessionId, bytes32[] assets);
     event SessionOpenedPosition(
         uint256 indexed sessionId,
         address indexed agent,
@@ -72,6 +87,7 @@ contract AgentSessionManager is ReentrancyGuard {
     error BudgetExceeded();
     error LeverageExceedsSessionCap();
     error NotSessionUserPosition();
+    error AssetNotAllowed(uint256 sessionId, bytes32 asset);
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
@@ -89,6 +105,18 @@ contract AgentSessionManager is ReentrancyGuard {
         uint256 maxLeverage,
         uint256 expiry
     ) external returns (uint256 sessionId) {
+        sessionId = _createSession(
+            agent, maxMarginPerTrade, totalMarginBudget, maxLeverage, expiry
+        );
+    }
+
+    function _createSession(
+        address agent,
+        uint256 maxMarginPerTrade,
+        uint256 totalMarginBudget,
+        uint256 maxLeverage,
+        uint256 expiry
+    ) internal returns (uint256 sessionId) {
         if (agent == address(0)) revert ZeroAgent();
         if (maxMarginPerTrade == 0 || totalMarginBudget == 0) revert ZeroBudget();
         if (expiry <= block.timestamp) revert InvalidExpiry();
@@ -106,6 +134,44 @@ contract AgentSessionManager is ReentrancyGuard {
         });
 
         emit SessionCreated(sessionId, msg.sender, agent, totalMarginBudget, expiry);
+    }
+
+    /// @notice Same as createSession, but restricts the agent to `allowedAssets`.
+    /// @dev Pass an empty array for an unrestricted session (identical to
+    ///      createSession). The three existing caps bound how much an agent can
+    ///      lose; this bounds what it can lose it on — a budgeted agent could
+    ///      otherwise put the whole allowance into an asset the user never
+    ///      intended to hold.
+    function createSessionWithAssets(
+        address   agent,
+        uint256   maxMarginPerTrade,
+        uint256   totalMarginBudget,
+        uint256   maxLeverage,
+        uint256   expiry,
+        bytes32[] calldata allowedAssets
+    ) external returns (uint256 sessionId) {
+        sessionId = _createSession(
+            agent, maxMarginPerTrade, totalMarginBudget, maxLeverage, expiry
+        );
+        if (allowedAssets.length > 0) {
+            _setSessionAssets(sessionId, allowedAssets);
+        }
+    }
+
+    /// @notice Session owner sets or replaces the allow-list.
+    /// @dev Only the user, never the agent — an agent that could widen its own
+    ///      permissions would make the list decorative. Passing an empty array
+    ///      clears the restriction.
+    function setSessionAssets(uint256 sessionId, bytes32[] calldata assets) external {
+        if (msg.sender != sessions[sessionId].user) revert NotSessionOwner();
+        _setSessionAssets(sessionId, assets);
+    }
+
+    /// @notice Whether `asset` may be traded by `sessionId`.
+    ///         True for every asset when the session has no allow-list.
+    function isAssetAllowed(uint256 sessionId, bytes32 asset) public view returns (bool) {
+        if (allowedAssetCount[sessionId] == 0) return true;
+        return _assetAllowed[sessionId][asset];
     }
 
     /// @notice User revokes their session at any time.
@@ -128,6 +194,7 @@ contract AgentSessionManager is ReentrancyGuard {
         address copiedFrom
     ) external payable nonReentrant returns (uint256 positionId) {
         Session storage s = _requireActiveAgent(sessionId);
+        if (!isAssetAllowed(sessionId, asset)) revert AssetNotAllowed(sessionId, asset);
         if (margin > s.maxMarginPerTrade) revert MarginExceedsPerTradeCap();
         if (s.spentMargin + margin > s.totalMarginBudget) revert BudgetExceeded();
         if (leverage > s.maxLeverage) revert LeverageExceedsSessionCap();
@@ -155,6 +222,32 @@ contract AgentSessionManager is ReentrancyGuard {
     }
 
     // ── Internal ───────────────────────────────────────────────────────────────
+
+    /// @dev Replaces the list wholesale. The previous entries are cleared first
+    ///      so a shorter list genuinely narrows permissions rather than leaving
+    ///      stale assets allowed.
+    function _setSessionAssets(uint256 sessionId, bytes32[] calldata assets) internal {
+        bytes32[] storage prev = _assetList[sessionId];
+        for (uint256 i = 0; i < prev.length; i++) {
+            _assetAllowed[sessionId][prev[i]] = false;
+        }
+        delete _assetList[sessionId];
+
+        for (uint256 i = 0; i < assets.length; i++) {
+            if (!_assetAllowed[sessionId][assets[i]]) {
+                _assetAllowed[sessionId][assets[i]] = true;
+                _assetList[sessionId].push(assets[i]);
+            }
+        }
+        allowedAssetCount[sessionId] = _assetList[sessionId].length;
+
+        emit SessionAssetsSet(sessionId, assets);
+    }
+
+    /// @notice The assets a session has allow-listed (empty = unrestricted).
+    function allowedAssets(uint256 sessionId) external view returns (bytes32[] memory) {
+        return _assetList[sessionId];
+    }
 
     /// @dev Reverts unless caller is the session agent and the session is live.
     function _requireActiveAgent(uint256 sessionId)

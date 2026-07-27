@@ -17,6 +17,7 @@ was not, the reason is given rather than glossed over.
 | 7 | Contract tests never ran in CI | **Fixed** |
 | 8 | Two payout contracts had zero tests | **Fixed** |
 | 9 | Batched chain reads blanked pages | **Fixed** |
+| 10 | Agent sessions had no asset restriction | **Fixed in source — needs redeploy** |
 
 ---
 
@@ -97,6 +98,27 @@ dry pools, KYC gating, and the claimed flag surviving KYC revocation.
 and TraderStake is `0x0` on chains where it isn't deployed, so one guaranteed
 failure emptied the dashboard. `safeRead` was moved from a single page into
 `src/lib/pepefi/safeRead.ts` and applied to the batches that blank a view.
+
+**10. Agent sessions had no asset restriction.** `AgentSessionManager` capped
+per-trade margin, total budget, and leverage — all of which bound how much an
+agent can lose, none of which bound *what* it trades. A budgeted agent could put
+the entire allowance into an asset the user never intended to hold.
+
+Added a per-session allow-list: `createSessionWithAssets`, `setSessionAssets`,
+`isAssetAllowed`, `allowedAssets`, `allowedAssetCount`, enforced in
+`openPositionForSession`. Only the session owner can change it — an agent that
+could widen its own permissions would make the list decorative.
+
+Deliberately opt-in: an empty list means unrestricted, so `createSession` and
+every session already created behave exactly as before. The existing
+AgentSessionManager test suite passes unchanged, which is the evidence for that.
+
+**⚠️ Not yet in effect on-chain.** `AgentSessionManager` is deployed to Base
+Sepolia at `0x5Ebcc64C712C5a26119789dCbD0753981dc518E8` and the source now
+differs from that bytecode. The allow-list only applies once redeployed, and
+redeploying resets session ids — including the demo session used by the agent
+examples. Until then, treat the deployed instance as having no asset
+restriction.
 
 ---
 
