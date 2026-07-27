@@ -55,6 +55,26 @@ role. Listed here so nobody revives them by mistake:
 
 Steps 1–3 gate step 4. Doing 4 first breaks the price feed and cannot be undone.
 
+> **Done 2026-07-27, and it exposed two live bugs — read this before step 3.**
+>
+> The secret now holds `KEEPER_PK`. Two things surfaced the moment it did:
+>
+> **The keeper key cannot write MockOracle.** `MockOracle.updatePrice` is
+> `onlyOwner` and the owner is still the deployer `0xE80A…Eb93`. So the first
+> workflow step now fails for every asset while the GuardedOracle sync (which
+> uses `KEEPER_ROLE`) works. **Unresolved — see "MockOracle ownership" below.**
+>
+> **The stooq stock feed is dead and was silently corrupting prices.** It serves
+> an HTML 404 page. The old guard only rejected empty / `N/D` / `0`, so the HTML
+> passed, `awk` coerced it to `0`, and `0` is below the lower clamp — meaning
+> every run rewrote each stock price to **55% of its previous value**,
+> compounding every 15 minutes. Confirmed in the live log:
+> `sAAPL 3329784553 -> 1831381504`, exactly 55%.
+>
+> Only the missing write permission stopped that reaching the oracle. Both the
+> validation and the silent-success behaviour are fixed; the feed itself is
+> still dead, so stock prices are now skipped rather than fabricated.
+
 ### 1. Move the keeper key into GitHub Actions — human, 2 minutes
 
 The scheduled keeper (`.github/workflows/price-keeper.yml`, every 15 min) still
@@ -181,6 +201,30 @@ than paying from a reserve so it can never run dry, while USDC→ETH pays from t
 router's own balance and can be drained to zero; and `ethOut` is integer
 division by `RATE`, so under 3000 wei of USDC rounds to zero ETH while the USDC
 burns anyway.
+
+**MockOracle ownership — a decision, not a task.** The keeper key now signs the
+workflow but `MockOracle.updatePrice` is `onlyOwner`, owner = deployer, so V1
+and PerpetualExchange prices have stopped updating. Two ways out, and the
+tradeoff is real enough that it should be chosen deliberately:
+
+- **Transfer MockOracle ownership to the keeper.** One key, correct privileges,
+  one more thing off the deployer. But MockOracle has **no deviation cap** —
+  unlike GuardedOracle, whoever owns it can set any price instantly, and
+  PerpetualExchange prices off it with an `immutable` oracle address. That puts
+  unbounded price power in a key that is necessarily hot (CI, every 15 min).
+- **Give the MockOracle step its own secret** holding the owner key, and leave
+  `KEEPER_PRIVATE_KEY` for the GuardedOracle sync. Keeps unbounded power in a
+  colder key, at the cost of the deployer key still appearing in CI — which is
+  where it already was before this change, so not a regression.
+
+Deliberately not chosen here. The second is the smaller change and the safer
+default; the first is tidier and worse.
+
+**Stock price feed is dead.** stooq serves HTML 404s on every URL variant tried
+(`stooq.com` and `stooq.pl`, with and without the `f=`/`h` params). sBTC and
+sETH still work — those come from Coinbase/Binance via `fetchCryptoPrices`.
+Stock and commodity assets are skipped rather than fabricated until a feed is
+picked. `scripts/priceKeeper.ts` has a working pattern to copy.
 
 **Frontend `any` escapes: 19 remaining** (down from 42). Mostly ethers return
 values. `KNOWN_LIMITATIONS.md` #12 has the detail.

@@ -33,12 +33,27 @@ jobs:
           }
           update() {
             local SYM=$1 USD=$2
-            if [ -z "$USD" ] || [ "$USD" = "N/D" ] || [ "$USD" = "0" ]; then
-              echo "$SYM: 取不到真實價格,跳過"; return
+            # The old check tested only for empty / N/D / 0. A dead feed that
+            # returns an HTML error page passes all three, and awk then coerces
+            # that HTML to 0 — which is BELOW the lower clamp, so the price got
+            # rewritten to 55% of its previous value. Every run. Compounding.
+            # Observed live 2026-07-27 when stooq started serving 404 pages:
+            # sAAPL 3329784553 -> 1831381504, exactly 55%.
+            #
+            # So validate the shape of the reading, not just a few sentinels,
+            # and SKIP rather than clamp. Clamping an invalid reading fabricates
+            # a price the reader cannot distinguish from a real one — the same
+            # reasoning GuardedOracle.updatePrice already applies on chain.
+            if ! printf '%s' "$USD" | grep -qE '^[0-9]+(\.[0-9]+)?$'; then
+              echo "$SYM: 來源回傳非數值,跳過 (${USD:0:40})"; return
             fi
             local KEY REAL OLD NEW UP DN
             KEY=$(cast keccak "$SYM")
             REAL=$(to8 "$USD")
+            # Belt and braces: a numeric-looking value can still round to zero.
+            if [ -z "$REAL" ] || [ "$REAL" = "0" ]; then
+              echo "$SYM: 換算後為 0,跳過"; return
+            fi
             OLD=$(cast call "$ORACLE" "getPrice(bytes32)(uint256,uint256)" "$KEY" \
                   --rpc-url "$RPC_URL" | head -n1 | awk '{print $1}')
             if [ -z "$OLD" ] || [ "$OLD" = "0" ]; then
@@ -51,10 +66,16 @@ jobs:
               [ "$NEW" -lt "$DN" ] && NEW=$DN
             fi
             echo "$SYM: real=\$$USD  oracle $OLD -> $NEW"
-            cast send "$ORACLE" "updatePrice(bytes32,uint256)" "$KEY" "$NEW" \
-              --rpc-url "$RPC_URL" --private-key "$PK" \
-              || echo "$SYM: updatePrice 失敗(價格防護?),略過"
+            if cast send "$ORACLE" "updatePrice(bytes32,uint256)" "$KEY" "$NEW" \
+                 --rpc-url "$RPC_URL" --private-key "$PK" >/dev/null 2>&1; then
+              WROTE=$((WROTE + 1))
+            else
+              echo "$SYM: updatePrice 失敗(權限或價格防護),略過"
+              FAILED=$((FAILED + 1))
+            fi
           }
+          WROTE=0
+          FAILED=0
           update sBTC  "$(get_crypto bitcoin)"
           # (assets below; GuardedOracle sync runs as a separate step)
           update sETH  "$(get_crypto ethereum)"
@@ -62,6 +83,19 @@ jobs:
           update sTSLA "$(get_stooq tsla.us)"
           update sGOLD "$(get_stooq xauusd)"
           update sBOND "$(get_stooq tlt.us)"
+
+          # A keeper that writes nothing is broken, and until now it still went
+          # green: every cast send ended in `|| echo`, so a wrong key or a dead
+          # feed produced a passing run doing precisely nothing. That is how the
+          # 2026-07-27 key swap looked healthy while updating zero assets.
+          echo "wrote=$WROTE failed=$FAILED"
+          if [ "$WROTE" -eq 0 ]; then
+            echo "::error::Keeper wrote 0 prices ($FAILED attempts failed). Check the signer has permission and the price feeds are alive."
+            exit 1
+          fi
+          if [ "$FAILED" -gt 0 ]; then
+            echo "::warning::Keeper wrote $WROTE prices but $FAILED failed."
+          fi
           echo "Done."
 
       # ── Keep the V2 stack alive ──────────────────────────────────────────
