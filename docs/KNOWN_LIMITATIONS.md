@@ -9,9 +9,9 @@ was not, the reason is given rather than glossed over.
 | # | Limitation | Status |
 |---|---|---|
 | 1 | V1 contracts do not use SafeERC20 | **Open** — V2 fixed, V1 documented |
-| 2 | `PerpetualExchange.oracle` is immutable | **Open** — architectural, needs redeploy |
-| 3 | Oracle is a single owner key | **Open** — needs decentralized feed |
-| 4 | No third-party security audit | **Open** |
+| 2 | `PerpetualExchange.oracle` is immutable | **Mitigated** — keeper relays the on-chain feed |
+| 3 | Oracle is a single owner key | **Mitigated** — GuardedOracle + V2 `setOracle` |
+| 4 | No third-party security audit | **Open** — Slither + invariants added |
 | 5 | Mock stablecoins have unrestricted `mint` | **By design** (testnet only) |
 | 6 | AssetVault is not fully collateralized | **By design** — bounded in V2 |
 | 7 | Contract tests never ran in CI | **Fixed** |
@@ -42,7 +42,7 @@ Changing its source would not change the deployed bytecode, so the code would no
 longer describe what is running. Redeploying would destroy existing positions.
 V2 carries the fix; V1's gap is documented here.
 
-## 2. `PerpetualExchange.oracle` is immutable
+## 2. `PerpetualExchange.oracle` is immutable — mitigated by relay
 
 ```solidity
 IOracle public immutable oracle;   // PerpetualExchange.sol:79 — set once, no setter
@@ -54,17 +54,62 @@ would destroy all open positions. `AdminOraclePage` therefore shows a read-only
 three-source price comparison and states plainly that the engine runs on
 MockOracle. Nothing in the UI claims the adapters are connected.
 
-## 3. Oracle is a single owner key
+**The relay.** The exchange cannot be *pointed at* the adapters, but it can be
+*fed by* them. Set `RELAY_SOURCE` to the aggregator address and `priceKeeper.ts`
+reads the on-chain feed and writes that price into MockOracle, falling back to
+the CEX APIs only for assets the adapters do not cover (most equities on
+testnet). The exchange then settles on Chainlink/Pyth data at one remove.
 
-`MockOracle.updatePrice` is `onlyOwner`. One compromised key can set any price
-and drain value from every contract that prices off it. A production deployment
-must point at a decentralized feed. This is the most serious unmitigated risk
-in the system and is not solved by any of the work above.
+Be precise about what that is: a **trusted relay, not a trustless integration**.
+The keeper key can still write whatever it likes. It removes the dependency on a
+centralised exchange API, not the dependency on the keeper. Direct integration
+still requires redeploying the exchange, which would destroy every open
+position.
+
+## 3. Oracle is a single owner key — mitigated, not eliminated
+
+`MockOracle.updatePrice` is `onlyOwner`: one compromised key can set any price
+and drain everything downstream. `GuardedOracleTest` keeps that as a baseline
+test so the difference is measurable.
+
+`src/v2/GuardedOracle.sol` is a drop-in replacement (same
+`getPrice(bytes32) -> (price, updatedAt)`) that bounds it:
+
+- N keepers instead of one owner
+- a per-update deviation cap — a compromised keeper cannot crash or spike the
+  price, only nudge it
+- rejection rather than clamping, because a clamped price is a fabricated number
+  the reader cannot detect
+- an optional reference source (the Chainlink/Pyth aggregator) that posts must
+  agree with
+- per-asset freeze and global pause, held by a separate guardian role
+- admin role transferable to a multisig behind a timelock
+
+`AssetVaultV2.setOracle` lets the tokenized layer migrate to it in one
+transaction — its oracle is ordinary storage, unlike the exchange's.
+
+**What this does not achieve:** keepers remain trusted. A patient attacker can
+still walk the price in legal steps, and there is a test named for exactly that
+(`test_attackerCanStillWalkPriceGradually`). This converts "one key can do
+anything instantly" into "one key can do a little, slowly, and visibly".
+Custody-grade pricing still needs a decentralized feed as the reference source.
 
 ## 4. No third-party security audit
 
-None of the contracts has been audited. The 420-test suite and the documented
-risk model are not a substitute for one.
+None of the contracts has been audited, and nothing here substitutes for one —
+an audit is third-party by definition. What has been automated:
+
+- **Slither** runs on every contracts change in CI (reporting mode; tighten
+  `fail-on` once findings are triaged)
+- **Invariant tests** — `AssetVaultV2Invariant.t.sol` drives randomised
+  sequences of mint, redeem, price moves, and time warps, checking five
+  properties across 128,000 calls: fees are never counted as redeemable
+  collateral, the vault always covers what it owes the operator, tracked
+  exposure equals real token supply, exposure never exceeds the cap, and
+  registration stays within its ceiling.
+
+Unit tests check the cases we thought of; invariants check the ones we did not.
+An auditor will still find things neither does.
 
 ## 5. Mock stablecoins have unrestricted `mint`
 

@@ -43,6 +43,25 @@ jobs:
       - name: Test
         run: forge test -vv
 
+  slither:
+    name: slither static analysis
+    runs-on: ubuntu-latest
+    # Not a substitute for a third-party audit — it catches a known catalogue of
+    # patterns, nothing more. It is the part of audit readiness that can be
+    # automated, and it runs on every change instead of once.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: crytic/slither-action@v0.4.0
+        id: slither
+        continue-on-error: true       # reporting first; tighten once triaged
+        with:
+          target: contracts/
+          slither-args: --exclude-dependencies --exclude-informational
+          fail-on: none
+
   gas:
     name: gas snapshot
     runs-on: ubuntu-latest

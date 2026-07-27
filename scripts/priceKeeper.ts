@@ -65,6 +65,43 @@ const oracleAbi = [
   "function getPrice(bytes32 assetId) view returns (uint256 price, uint256 updatedAt)",
 ];
 
+// ── On-chain reference feed (Chainlink / Pyth via AggregatorOracleAdapter) ──
+//
+// PerpetualExchange.oracle is `immutable`, so the exchange can never be pointed
+// at Chainlink or Pyth without a redeploy that would destroy every open
+// position. It can, however, be fed BY them: the adapters are already deployed
+// and queryable, and the exchange reads whatever MockOracle holds.
+//
+// So when RELAY_SOURCE is set, this keeper reads the aggregator on chain and
+// relays that price into MockOracle instead of using a CEX API. The exchange
+// then settles on a decentralized feed at one remove.
+//
+// Be precise about what this is: a trusted relay, not a trustless integration.
+// The keeper key can still write whatever it likes. It removes the dependency
+// on a centralised exchange API, not the dependency on the keeper.
+const RELAY_SOURCE = process.env.RELAY_SOURCE ?? "";
+
+const aggregatorAbi = [
+  "function getPrice(bytes32 assetId) view returns (uint256 price, uint256 updatedAt)",
+  "function isStale(bytes32 assetId) view returns (bool)",
+];
+
+/** Read one asset from the on-chain reference feed. null when unavailable. */
+async function fetchFromRelay(assetId: string): Promise<number | null> {
+  if (!RELAY_SOURCE) return null;
+  try {
+    const agg = new ethers.Contract(RELAY_SOURCE, aggregatorAbi, provider);
+    const stale = (await agg.isStale(assetId)) as boolean;
+    if (stale) return null;
+    const [raw] = (await agg.getPrice(assetId)) as [bigint, bigint];
+    const p = Number(raw) / 1e8;
+    return Number.isFinite(p) && p > 0 ? p : null;
+  } catch {
+    // Adapter has no feed for this asset (most equities), or the call reverted.
+    return null;
+  }
+}
+
 // ── Asset IDs (keccak256 of symbol string — must match Deploy.s.sol) ──────
 const ASSET_IDS: Record<string, string> = {
   sBTC: "0x6587d61b59ac1e9c9f12c71f220fb1b1740d054e81277d4466a0d348e0e266e1",
@@ -249,9 +286,17 @@ async function updateOraclePrices(): Promise<void> {
         let targetPrice = BASE_PRICES[key];
         let source = "Default";
 
-        // Use the live exchange price if available
+        // Preferred: relay the on-chain decentralized feed, so the exchange
+        // settles on Chainlink/Pyth data even though its oracle address is
+        // immutable. Falls through when the adapter has no feed for this asset
+        // (true for most equities on testnet) or reports itself stale.
+        const relayed = await fetchFromRelay(id);
+
         const cryptoSymbol = BINANCE_SYMBOL_MAP[key];
-        if (cryptoSymbol && cryptoPrices[cryptoSymbol]) {
+        if (relayed !== null) {
+          targetPrice = relayed;
+          source = "Chainlink/Pyth";
+        } else if (cryptoSymbol && cryptoPrices[cryptoSymbol]) {
           targetPrice = cryptoPrices[cryptoSymbol];
           source = lastCryptoSource[cryptoSymbol] ?? "Exchange";
         } else {

@@ -178,6 +178,23 @@ contract AssetVaultV2 is
         return _assetIds;
     }
 
+    /// @notice Repoint the vault at a different price oracle.
+    /// @dev This is the escape hatch PerpetualExchange does not have — its
+    ///      oracle is `immutable`, so it can never move off MockOracle without
+    ///      a redeploy that would destroy every open position. Here the oracle
+    ///      is ordinary storage, so the operator can migrate to a hardened or
+    ///      decentralized feed (see GuardedOracle) with one transaction.
+    ///
+    ///      Admin-gated because it is equivalent to control of the reserve: an
+    ///      attacker who can set the oracle can set any price. Hold this role in
+    ///      a multisig behind a timelock.
+    function setOracle(address newOracle) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newOracle == address(0)) revert InvalidParam();
+        address old = _oracle;
+        _oracle = newOracle;
+        emit OracleChanged(old, newOracle);
+    }
+
     function pause()   external onlyRole(PAUSER_ROLE) { _pause(); }
     function unpause() external onlyRole(PAUSER_ROLE) { _unpause(); }
 
