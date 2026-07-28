@@ -1268,7 +1268,12 @@ export default function DashboardPage() {
             >
               去簽到
             </Button>
-            <IconButton size="small" onClick={() => setBannerDismissed(true)} sx={{ color: 'text.secondary', p: 0.5 }}>
+            <IconButton
+              size="small"
+              onClick={() => setBannerDismissed(true)}
+              aria-label="關閉此提示"
+              sx={{ color: 'text.secondary', p: 0.5 }}
+            >
               <Icon icon="mingcute:close-line" width={16} />
             </IconButton>
           </Box>
@@ -1955,7 +1960,12 @@ export default function DashboardPage() {
                   >
                     加入錢包
                   </Button>
-                  <IconButton size="small" onClick={() => void fetchPepe()} color="inherit">
+                  <IconButton
+                    size="small"
+                    onClick={() => void fetchPepe()}
+                    color="inherit"
+                    aria-label="重新讀取 PEPE 餘額"
+                  >
                     <Icon icon="solar:restart-bold-duotone" width={16} />
                   </IconButton>
                 </Box>

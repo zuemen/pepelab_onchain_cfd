@@ -32,13 +32,13 @@ export function FormSocials({
       ]}
       {...other}
     >
-      <IconButton color="inherit" onClick={signInWithGoogle}>
+      <IconButton color="inherit" aria-label="Sign in with Google" onClick={signInWithGoogle}>
         <Iconify width={22} icon="socials:google" />
       </IconButton>
-      <IconButton color="inherit" onClick={singInWithGithub}>
+      <IconButton color="inherit" aria-label="Sign in with GitHub" onClick={singInWithGithub}>
         <Iconify width={22} icon="socials:github" />
       </IconButton>
-      <IconButton color="inherit" onClick={signInWithTwitter}>
+      <IconButton color="inherit" aria-label="Sign in with Twitter" onClick={signInWithTwitter}>
         <Iconify width={22} icon="socials:twitter" />
       </IconButton>
     </Box>

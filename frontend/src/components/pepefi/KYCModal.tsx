@@ -16,6 +16,8 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 
+import { Iconify } from 'src/components/iconify';
+
 const COUNTRIES = [
   'TW', 'US', 'JP', 'KR', 'HK', 'SG', 'GB', 'DE', 'FR', 'CA',
   'AU', 'NZ', 'CH', 'SE', 'NL', 'BE', 'IT', 'ES', 'PT', 'AT',
@@ -90,8 +92,16 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry }: Pr
             交易股票 / 債券類合成資產需要完成 KYC
           </Typography>
         </Box>
-        <IconButton size="small" onClick={onClose} sx={{ color: 'text.secondary', p: 0.5 }}>
-          <Box sx={{ fontSize: '0.875rem', lineHeight: 1 }}>✕</Box>
+        <IconButton
+          size="small"
+          onClick={onClose}
+          aria-label="關閉"
+          sx={{ color: 'text.secondary', p: 0.5 }}
+        >
+          {/* Iconify rather than a bare "✕" glyph: the character renders at a
+              different weight and baseline in every font, and cannot inherit
+              the icon sizing used by every other close button here. */}
+          <Iconify icon="mingcute:close-line" width={18} />
         </IconButton>
       </DialogTitle>
 

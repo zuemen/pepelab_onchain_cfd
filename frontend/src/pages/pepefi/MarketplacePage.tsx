@@ -314,7 +314,12 @@ export default function MarketplacePage() {
             </Select>
           </FormControl>
 
-          <IconButton size="small" onClick={() => void fetchAll()} color="inherit">
+          <IconButton
+            size="small"
+            onClick={() => void fetchAll()}
+            color="inherit"
+            aria-label="重新整理市集資料"
+          >
             <Icon icon="solar:restart-bold-duotone" width={16} />
           </IconButton>
         </Box>

@@ -347,7 +347,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
             </Typography>
           </Box>
         </Stack>
-        <IconButton onClick={onClose} sx={{ color: 'text.secondary' }}>
+        <IconButton onClick={onClose} aria-label="關閉" sx={{ color: 'text.secondary' }}>
           <Iconify icon="mingcute:close-line" />
         </IconButton>
       </Box>

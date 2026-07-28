@@ -4,6 +4,7 @@ import WalletButton from 'src/components/pepefi/WalletButton';
 import HeroKpiStrip from 'src/components/pepefi/HeroKpiStrip';
 import PaperTradingBadge from 'src/components/pepefi/PaperTradingBadge';
 import { MONO } from 'src/components/pepefi/brandKit';
+import { Iconify } from 'src/components/iconify';
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -16,13 +17,22 @@ import Divider from '@mui/material/Divider';
 import Button from '@mui/material/Button';
 
 const FEATURES = [
-  { icon: '📈', title: 'Synthetic CFD Perpetuals', desc: '合成衍生品永續合約，全程透明上鏈，無需中心化交易所。' },
-  { icon: '🔗', title: 'One-Click Copy Trading', desc: '一鍵跟單頂尖交易者，授權 USDC 後自動按比例開倉。' },
-  { icon: '🌿', title: 'ESG Scoring', desc: '每位交易者皆有 ESG 評分，讓投資更有責任感與透明度。' },
-  { icon: '🏦', title: 'Insurance Vault', desc: '提供流動性賺取協議費用，同時作為極端損失的保險池。' },
-  { icon: '🤖', title: 'x402 Paid Signals', desc: 'Agent 自帶錢包、按次付費購買交易訊號，收入 70/20/10 上鏈分潤。' },
-  { icon: '⚡', title: 'Agent-Native Trading', desc: 'session key 有界委派，AI agent 付費後可自主在鏈上開受限部位。' },
-];
+  // Iconify rather than emoji. Emoji render from whatever font the OS supplies,
+  // so these six drew at six different weights and baselines depending on the
+  // machine, and none of them could inherit the panel's colour. The mascot 🐸
+  // stays — that is brand, not an icon.
+  { icon: 'solar:chart-square-outline',            title: 'Synthetic CFD Perpetuals', desc: '合成衍生品永續合約，全程透明上鏈，無需中心化交易所。' },
+  { icon: 'solar:copy-bold',                       title: 'One-Click Copy Trading',   desc: '一鍵跟單頂尖交易者，授權 USDC 後自動按比例開倉。' },
+  { icon: 'solar:verified-check-bold',             title: 'ESG Scoring',              desc: '每位交易者皆有 ESG 評分，讓投資更有責任感與透明度。' },
+  { icon: 'solar:shield-keyhole-bold-duotone',     title: 'Insurance Vault',          desc: '提供流動性賺取協議費用，同時作為極端損失的保險池。' },
+  { icon: 'solar:wad-of-money-bold',               title: 'x402 Paid Signals',        desc: 'Agent 自帶錢包、按次付費購買交易訊號，收入 70/20/10 上鏈分潤。' },
+  { icon: 'solar:atom-bold-duotone',               title: 'Agent-Native Trading',     desc: 'session key 有界委派，AI agent 付費後可自主在鏈上開受限部位。' },
+  // `as const` so the icon strings keep their literal types. Iconify's `icon`
+  // prop is a union of the 206 names registered in components/iconify/icon-sets
+  // (which inlines each SVG body, so icons ship with the bundle rather than
+  // being fetched). Without this the array widens to `string` and the check
+  // that catches a typo'd or unregistered icon at compile time is lost.
+] as const;
 
 const STEPS = [
   { n: '01', text: '安裝 MetaMask，切換到 Base Sepolia testnet' },
@@ -49,29 +59,18 @@ export default function LandingPage() {
       <Container maxWidth="md">
         {/* ── HERO ── */}
         <Box sx={{ position: 'relative', mb: 6 }}>
-          {/* Floating decorations */}
-          {[
-            { top: '0%',  left: '2%',   fontSize: 40, content: '🚀', delay: '0s' },
-            { top: '10%', right: '3%',  fontSize: 36, content: '💰', delay: '0.4s' },
-            { top: '30%', left: '1%',   fontSize: 28, content: '✨', delay: '0.8s' },
-            { top: '55%', right: '2%',  fontSize: 32, content: '🌙', delay: '0.2s' },
-            { top: '70%', left: '5%',   fontSize: 24, content: '⚡', delay: '1s' },
-            { top: '80%', right: '8%',  fontSize: 28, content: '🔥', delay: '0.6s' },
-          ].map((d, i) => (
-            <Box key={i} sx={{
-              position: 'absolute', fontSize: d.fontSize, pointerEvents: 'none', userSelect: 'none',
-              top: d.top, left: 'left' in d ? d.left : undefined, right: 'right' in d ? d.right : undefined,
-              animation: 'floatBob 3s ease-in-out infinite',
-              animationDelay: d.delay,
-              '@keyframes floatBob': {
-                '0%,100%': { transform: 'translateY(0)' },
-                '50%': { transform: 'translateY(-12px)' },
-              },
-              display: { xs: 'none', md: 'block' },
-            }}>
-              {d.content}
-            </Box>
-          ))}
+          {/* Six floating emoji (🚀 💰 ✨ 🌙 ⚡ 🔥) used to bob around the hero
+              on a 3s infinite loop. Removed rather than restyled:
+
+              - They carried no meaning. The first thing a visitor evaluating a
+                venue for tokenised RWAs saw was decoration.
+              - ⚡ was ALSO one of the six feature icons below, so the same glyph
+                meant "Agent-Native Trading" in one place and nothing at all in
+                another, twelve hundred pixels apart.
+              - @keyframes floatBob was declared inside the .map, so emotion
+                emitted six identical copies of the same keyframe rule.
+
+              The mascot and the wordmark carry the brand; these did not. */}
 
           {/* Two-column layout: text left, Pepe right */}
           <Stack
@@ -309,11 +308,10 @@ export default function LandingPage() {
                       justifyContent: 'center',
                       borderRadius: 1.5,
                       bgcolor: 'rgba(124, 193, 74, 0.1)',
-                      color: '#7cc14a',
-                      fontSize: '1.5rem',
+                      color: 'primary.main',
                     }}
                   >
-                    {f.icon}
+                    <Iconify icon={f.icon} width={26} />
                   </Box>
                   <Typography variant="subtitle1" sx={{ color: 'text.primary', fontWeight: 'bold', mb: 1.5, fontSize: '1.2rem' }}>
                     {f.title}
@@ -383,11 +381,11 @@ export default function LandingPage() {
 
             {/* Quick links */}
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, mt: 4, pt: 3, borderTop: '1px solid', borderColor: 'divider' }}>
-              {[
-                { label: '💱 Exchange', to: '/exchange' },
-                { label: '🏪 Marketplace', to: '/marketplace' },
-                { label: '🏦 Vault', to: '/vault' },
-              ].map((link) => (
+              {([
+                { label: 'Exchange',    icon: 'solar:transfer-horizontal-bold-duotone', to: '/exchange' },
+                { label: 'Marketplace', icon: 'solar:cart-3-bold',                      to: '/marketplace' },
+                { label: 'Vault',       icon: 'solar:shield-keyhole-bold-duotone',      to: '/vault' },
+              ] as const).map((link) => (
                 <Button
                   key={link.label}
                   component={RouterLink}
@@ -395,6 +393,7 @@ export default function LandingPage() {
                   variant="outlined"
                   size="medium"
                   color="inherit"
+                  startIcon={<Iconify icon={link.icon} width={18} />}
                   sx={{
                     borderRadius: 1,
                     textTransform: 'none',
@@ -415,9 +414,23 @@ export default function LandingPage() {
             </Box>
           </Card>
 
-          <Typography variant="caption" display="block" align="center" sx={{ color: 'text.secondary', opacity: 0.6, mt: 2.5, fontSize: '0.875rem' }}>
-            ⚠ Oracle 價格由部署者（admin）控制，Demo 期間會即時更新以展示 PnL 變化
-          </Typography>
+          {/* A real disclosure about who controls the price feed, previously set
+              in caption size at opacity 0.6 — dimmed to roughly 2.5:1 against
+              the panel, i.e. below the 4.5:1 floor, and read as decoration. If
+              a venue is telling you an admin key moves the oracle, that has to
+              be legible. Same words, no longer whispered. */}
+          <Stack
+            direction="row"
+            spacing={1}
+            alignItems="flex-start"
+            justifyContent="center"
+            sx={{ mt: 2.5, color: 'warning.main' }}
+          >
+            <Iconify icon="solar:danger-triangle-bold" width={18} sx={{ mt: '1px', flexShrink: 0 }} />
+            <Typography variant="body2" align="center" sx={{ fontSize: '0.875rem' }}>
+              Oracle 價格由部署者（admin）控制，Demo 期間會即時更新以展示 PnL 變化
+            </Typography>
+          </Stack>
         </Box>
       </Container>
     </Box>

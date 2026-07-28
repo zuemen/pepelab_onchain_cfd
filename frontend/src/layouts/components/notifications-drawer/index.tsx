@@ -76,11 +76,15 @@ export function NotificationsDrawer({ data = [], sx, ...other }: NotificationsDr
         </Tooltip>
       )}
 
-      <IconButton onClick={onClose} sx={{ display: { xs: 'inline-flex', sm: 'none' } }}>
+      <IconButton
+        onClick={onClose}
+        aria-label="Close notifications"
+        sx={{ display: { xs: 'inline-flex', sm: 'none' } }}
+      >
         <Iconify icon="mingcute:close-line" />
       </IconButton>
 
-      <IconButton>
+      <IconButton aria-label="Notification settings">
         <Iconify icon="solar:settings-bold-duotone" />
       </IconButton>
     </Box>

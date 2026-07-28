@@ -113,7 +113,12 @@ export function JwtSignUpView() {
           input: {
             endAdornment: (
               <InputAdornment position="end">
-                <IconButton onClick={showPassword.onToggle} edge="end">
+                <IconButton
+                  onClick={showPassword.onToggle}
+                  edge="end"
+                  // Tracks state: a fixed label would be wrong half the time.
+                  aria-label={showPassword.value ? 'Hide password' : 'Show password'}
+                >
                   <Iconify icon={showPassword.value ? 'solar:eye-bold' : 'solar:eye-closed-bold'} />
                 </IconButton>
               </InputAdornment>

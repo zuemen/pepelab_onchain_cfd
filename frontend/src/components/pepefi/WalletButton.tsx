@@ -212,7 +212,12 @@ export default function WalletButton({ wallet }: Props) {
           <Typography variant="h5" sx={{ fontWeight: 800, background: 'linear-gradient(90deg, #34d399 0%, #a3e635 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
             連接帳號 / Connect Wallet
           </Typography>
-          <IconButton onClick={handleCloseDialog} size="small" sx={{ color: 'text.secondary' }}>
+          <IconButton
+            onClick={handleCloseDialog}
+            size="small"
+            aria-label="關閉錢包連線視窗"
+            sx={{ color: 'text.secondary' }}
+          >
             <Icon icon="mingcute:close-line" width={20} height={20} />
           </IconButton>
         </DialogTitle>

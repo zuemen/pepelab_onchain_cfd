@@ -167,6 +167,7 @@ export function AccountDrawer({ data = [], sx, ...other }: AccountDrawerProps) {
       >
         <IconButton
           onClick={onClose}
+          aria-label="Close account menu"
           sx={{
             top: 12,
             left: 12,

@@ -16,6 +16,10 @@ export function NavToggleButton({ isNavMini, sx, ...other }: NavToggleButtonProp
   return (
     <IconButton
       size="small"
+      // Describes the outcome, not the glyph: the arrow flips with isNavMini,
+      // so "collapse"/"expand" is what a screen reader user needs to hear.
+      aria-label={isNavMini ? 'Expand sidebar' : 'Collapse sidebar'}
+      aria-expanded={!isNavMini}
       sx={[
         (theme) => ({
           p: 0.5,
