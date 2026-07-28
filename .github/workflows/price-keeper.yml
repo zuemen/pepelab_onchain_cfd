@@ -27,8 +27,16 @@ jobs:
             curl -s "https://api.coingecko.com/api/v3/simple/price?ids=$1&vs_currencies=usd" \
               | jq -r --arg id "$1" '.[$id].usd // empty'
           }
+          # stooq started serving HTML 404s for every symbol on 2026-07-27 and is
+          # not coming back — kept only as a fallback in case that reverses.
+          # Yahoo's chart endpoint needs a browser User-Agent or it returns 401.
+          get_stock() {
+            curl -s --max-time 15 -H "User-Agent: Mozilla/5.0" \
+              "https://query1.finance.yahoo.com/v8/finance/chart/$1?interval=1d&range=1d" \
+              | jq -r '.chart.result[0].meta.regularMarketPrice // empty'
+          }
           get_stooq() {
-            curl -s "https://stooq.com/q/l/?s=$1&f=sd2t2ohlcv&h&e=csv" \
+            curl -s --max-time 15 "https://stooq.com/q/l/?s=$1&f=sd2t2ohlcv&h&e=csv" \
               | tail -n1 | cut -d, -f7 | tr -d '\r'
           }
           update() {
@@ -79,10 +87,15 @@ jobs:
           update sBTC  "$(get_crypto bitcoin)"
           # (assets below; GuardedOracle sync runs as a separate step)
           update sETH  "$(get_crypto ethereum)"
-          update sAAPL "$(get_stooq aapl.us)"
-          update sTSLA "$(get_stooq tsla.us)"
-          update sGOLD "$(get_stooq xauusd)"
-          update sBOND "$(get_stooq tlt.us)"
+          update sAAPL "$(get_stock AAPL)"
+          update sTSLA "$(get_stock TSLA)"
+          update sNVDA "$(get_stock NVDA)"
+          update sMSFT "$(get_stock MSFT)"
+          update sGOOGL "$(get_stock GOOGL)"
+          update sGOLD "$(get_stock GC=F)"
+          update sBOND "$(get_stock TLT)"
+          update sICLN "$(get_stock ICLN)"
+          update sESGU "$(get_stock ESGU)"
 
           # A keeper that writes nothing is broken, and until now it still went
           # green: every cast send ended in `|| echo`, so a wrong key or a dead

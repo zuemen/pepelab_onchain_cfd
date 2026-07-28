@@ -59,10 +59,16 @@ Steps 1–3 gate step 4. Doing 4 first breaks the price feed and cannot be undon
 >
 > The secret now holds `KEEPER_PK`. Two things surfaced the moment it did:
 >
-> **The keeper key cannot write MockOracle.** `MockOracle.updatePrice` is
-> `onlyOwner` and the owner is still the deployer `0xE80A…Eb93`. So the first
-> workflow step now fails for every asset while the GuardedOracle sync (which
-> uses `KEEPER_ROLE`) works. **Unresolved — see "MockOracle ownership" below.**
+> **The keeper key could not write MockOracle.** `MockOracle.updatePrice` is
+> `onlyOwner` and the owner was still the deployer, so every asset failed, the
+> run exited 1, and a failure email arrived every 15 minutes.
+> **Fixed** — MockOracle ownership transferred to the keeper
+> `0x540aECD3…ef17`, verified by writing a price with that key. MockOracle's only
+> owner functions are `addAsset` and `updatePrice`, which is exactly the keeper's
+> job, so the transfer does not widen what that key can reach. It does mean a
+> hot key in GitHub Actions now owns the oracle the V1 exchange reads, and
+> MockOracle has no deviation cap — anyone holding that key can set any price.
+> That is limitation #3, and it is precisely why GuardedOracle exists.
 >
 > **The stooq stock feed is dead and was silently corrupting prices.** It serves
 > an HTML 404 page. The old guard only rejected empty / `N/D` / `0`, so the HTML
@@ -71,9 +77,12 @@ Steps 1–3 gate step 4. Doing 4 first breaks the price feed and cannot be undon
 > compounding every 15 minutes. Confirmed in the live log:
 > `sAAPL 3329784553 -> 1831381504`, exactly 55%.
 >
-> Only the missing write permission stopped that reaching the oracle. Both the
-> validation and the silent-success behaviour are fixed; the feed itself is
-> still dead, so stock prices are now skipped rather than fabricated.
+> **Fixed, and the damage was real.** By the time the write permission was
+> restored, sAAPL had decayed to $33.30 against a true $336.91 and sTSLA to
+> $41.62 against $309.22 — an order of magnitude, from a feed nobody was
+> watching. All eleven assets were rewritten from live quotes. The source is now
+> Yahoo's chart endpoint (needs a browser `User-Agent` or it 401s), stooq is
+> demoted to a fallback, and the keeper covers all eleven assets instead of six.
 
 ### 1. Move the keeper key into GitHub Actions — human, 2 minutes
 

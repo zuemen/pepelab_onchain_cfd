@@ -20,6 +20,15 @@ is called out below rather than glossed over.
 | `GUARDIAN_ROLE` | GuardedOracle | `0x9913f5D63817B1b98a2c07713d4516CC3b33A4e4` |
 | `PAUSER_ROLE` | AssetVaultV2 | `0x9913f5D63817B1b98a2c07713d4516CC3b33A4e4` |
 | `RISK_ROLE` | AssetVaultV2 | `0xECe96A5EC46e20E0F9A441c9D787E89CE366B165` |
+| `owner` (Ownable) | MockOracle `0x17CA20A3…d958` | `0x540aECD37E7A7885824e7b7e996eBddfb842ef17` |
+
+MockOracle ownership moved to the keeper on 2026-07-27 because
+`MockOracle.updatePrice` is `onlyOwner` — the scheduled keeper could not write a
+single price otherwise, and the run failed every 15 minutes. Its only owner
+functions are `addAsset` and `updatePrice`, so this does not widen the keeper's
+reach. It does put the oracle the V1 exchange reads behind a key stored in GitHub
+Actions, and MockOracle has no deviation cap: whoever holds that key can set any
+price. That exposure is limitation #3 and is the reason GuardedOracle exists.
 
 Deployer `0xE80A81360608C1342e66743F70a00f75d792Eb93` **still holds every role**.
 The handover ran with `REVOKE_DEPLOYER=false` on purpose — see "What is still
