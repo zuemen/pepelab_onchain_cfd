@@ -14,7 +14,12 @@ import Typography from '@mui/material/Typography';
 import { iconButtonClasses } from '@mui/material/IconButton';
 
 import { useMode } from 'src/contexts/mode-context';
-import { _contacts, _notifications } from 'src/_mock';
+// Direct module import, not the `src/_mock` barrel. Both values live in
+// _others.ts, but the barrel re-exports eleven mock modules, so pulling two
+// names from it dragged all of them — assets.ts, _job, _user, _invoice and the
+// rest — into the production entry chunk. This layout is part of the app shell,
+// so that demo fixture data was being downloaded by every real visitor.
+import { _contacts, _notifications } from 'src/_mock/_others';
 import { useWalletContext } from 'src/contexts/wallet-context';
 
 import { Logo } from 'src/components/logo';

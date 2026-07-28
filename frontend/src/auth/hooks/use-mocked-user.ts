@@ -1,4 +1,7 @@
-import { _mock } from 'src/_mock';
+// Direct module import rather than the `src/_mock` barrel — this hook is used by
+// account-drawer and account-popover, both of which sit in the app shell, so the
+// barrel pulled all eleven mock modules into the entry chunk.
+import { _mock } from 'src/_mock/_mock';
 
 // To get the user from the <AuthContext/>, you can use
 

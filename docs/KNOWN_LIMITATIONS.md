@@ -257,6 +257,46 @@ Procedure in [KEY_MANAGEMENT.md](KEY_MANAGEMENT.md).
 
 ---
 
+## Frontend
+
+**Dead Minimal UI template code still reaches the production bundle.** The app is
+built on the Minimal UI template, and its demo dashboard was never removed:
+`routes/sections/dashboard.tsx` is imported by nothing (`routes/sections/index.tsx`
+mounts only `pepefiRoutes` and `authRoutes`), and `layouts/dashboard/layout.tsx`
+plus `layouts/components/account-drawer` / `account-popover` are reachable only
+through it.
+
+Despite being unmounted, the template's placeholder identity is present in the
+built entry chunk — grepping `dist/assets/index-*.js` finds both
+`Jaydon Frankie` and `demo@minimals.cc`, which come from
+`auth/hooks/use-mocked-user.ts`. Rollup is not shaking the chain out. Nothing
+renders it today, but a hardcoded fake user shipping inside a financial product's
+bundle is the kind of thing a technical due-diligence reader will find, and the
+right fix is to delete the template dashboard rather than to keep pruning
+imports around it. Not attempted here because it is a large deletion that wants
+its own change and its own verification pass.
+
+**Entry chunk is 1,057 kB (328 kB gzipped).** Routes were already code-split;
+vendors were not, so everything landed in one file. `vite.config.ts` now splits
+ethers / MUI / recharts / react into their own chunks, taking the entry from
+1,789 kB → 1,057 kB (570 → 328 kB gzip) and stopping a routine deploy from
+invalidating ~1.7 MB of otherwise-unchanged vendor cache.
+
+What remains is dominated by `components/iconify/icon-sets.ts` — 168 kB of source
+inlining 206 icons as raw SVG bodies (320 paths in the built chunk). That is a
+deliberate trade: icons ship with the bundle instead of being fetched from the
+Iconify CDN, which keeps the app working offline and avoids a third-party request
+on every page. Splitting it would mean lazy icon loading and a flash of missing
+glyphs. Left as is, but it is the next lever if the entry chunk needs to shrink.
+
+**The product code is not linted.** `eslint.config.mjs` ignores
+`src/pages/pepefi/**`, `src/components/pepefi/**`, `src/hooks/**` and
+`src/lib/pepefi/**` — deliberate per the comment there (ported code, original
+style preserved), but it means the lint gate in CI covers the template scaffolding
+and not the application. `tsc --noEmit` does cover everything.
+
+---
+
 ## Honest positioning
 
 This is a **high-completeness academic prototype deployed to testnets**, not a
