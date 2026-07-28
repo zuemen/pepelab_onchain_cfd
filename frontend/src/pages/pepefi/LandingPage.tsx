@@ -88,8 +88,8 @@ export default function LandingPage() {
                   fontSize: { xs: '4rem', md: '7rem' },
                   fontWeight: 900,
                   lineHeight: 0.95,
-                  color: '#7cc14a',
-                  textShadow: '-1px -1px 0 #FFD23D, 1px -1px 0 #FFD23D, -1px 1px 0 #FFD23D, 1px 1px 0 #FFD23D, 0 0 40px rgba(124,193,74,0.6)',
+                  color: 'var(--palette-primary-main)',
+                  textShadow: '-1px -1px 0 var(--palette-secondary-main), 1px -1px 0 var(--palette-secondary-main), -1px 1px 0 var(--palette-secondary-main), 1px 1px 0 var(--palette-secondary-main), 0 0 40px rgba(124,193,74,0.6)',
                   mb: 1.5,
                 }}
               >
@@ -102,7 +102,7 @@ export default function LandingPage() {
                 fontSize: { xs: '0.8rem', md: '0.95rem' },
                 fontWeight: 600,
                 letterSpacing: { xs: '1px', md: '2px' },
-                color: '#7cc14a',
+                color: 'var(--palette-primary-main)',
                 textTransform: 'uppercase',
                 mb: 2.5,
               }}>
@@ -130,7 +130,7 @@ export default function LandingPage() {
                 mx: { xs: 'auto', md: 0 },
               }}>
                 對標 Hyperliquid 的鏈上永續 + agent 經濟。5x 槓桿合成/RWA 永續、社交跟單、
-                做市金庫，外加 <b style={{ color: '#7cc14a' }}>x402 付費訊號</b>——讓 AI agent
+                做市金庫，外加 <b style={{ color: 'var(--palette-primary-main)' }}>x402 付費訊號</b>——讓 AI agent
                 自帶錢包、付費、自主下單。全程透明上鏈。
               </Typography>
 
@@ -142,7 +142,7 @@ export default function LandingPage() {
                     to="/dashboard"
                     variant="contained"
                     size="large"
-                    sx={{ bgcolor: '#7cc14a', color: '#fff', fontWeight: 900, '&:hover': { bgcolor: '#5a9e2f' } }}
+                    sx={{ bgcolor: 'var(--palette-primary-main)', color: '#fff', fontWeight: 900, '&:hover': { bgcolor: '#5a9e2f' } }}
                   >
                     🐸 進入 Dashboard
                   </Button>
@@ -152,7 +152,7 @@ export default function LandingPage() {
                   to="/marketplace"
                   variant="outlined"
                   size="large"
-                  sx={{ borderColor: '#7cc14a', color: '#7cc14a', '&:hover': { bgcolor: 'rgba(124,193,74,0.1)' } }}
+                  sx={{ borderColor: 'var(--palette-primary-main)', color: 'var(--palette-primary-main)', '&:hover': { bgcolor: 'rgba(124,193,74,0.1)' } }}
                 >
                   View Traders
                 </Button>
@@ -185,7 +185,7 @@ export default function LandingPage() {
                   width: '100%', height: '100%',
                   borderRadius: '50%',
                   objectFit: 'cover',
-                  border: '4px solid #7cc14a',
+                  border: '4px solid var(--palette-primary-main)',
                   boxShadow: '0 0 48px rgba(124,193,74,0.5), 0 0 96px rgba(255,210,61,0.2)',
                   position: 'relative', zIndex: 1,
                 }}
@@ -194,7 +194,7 @@ export default function LandingPage() {
               {/* Gold badge overlay */}
               <Box sx={{
                 position: 'absolute', bottom: 12, right: 12, zIndex: 2,
-                bgcolor: '#FFD23D', color: '#1C252E',
+                bgcolor: 'var(--palette-secondary-main)', color: '#1C252E',
                 borderRadius: '50%', width: 48, height: 48,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: 22, fontWeight: 900,
@@ -292,7 +292,7 @@ export default function LandingPage() {
                     transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                     '&:hover': {
                       bgcolor: 'rgba(124, 193, 74, 0.03)',
-                      borderColor: '#7cc14a',
+                      borderColor: 'var(--palette-primary-main)',
                       boxShadow: '0 12px 24px rgba(124, 193, 74, 0.12)',
                       transform: 'translateY(-6px)',
                     },
@@ -343,7 +343,7 @@ export default function LandingPage() {
                 left: 0,
                 width: '100%',
                 height: '4px',
-                background: 'linear-gradient(90deg, #7cc14a, #FFD23D)',
+                background: 'linear-gradient(90deg, var(--palette-primary-main), var(--palette-secondary-main))',
               }
             }}
           >

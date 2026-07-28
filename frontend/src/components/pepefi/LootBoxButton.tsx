@@ -13,7 +13,7 @@ import { useToast } from 'src/components/pepefi/ToastProvider'
 import { PEPE_SKINS, PepeSkin } from 'src/components/pepefi/pepeSkinsData'
 
 const RARITY_COLOR: Record<string, string> = {
-  Common:    '#7cc14a',
+  Common:    'var(--palette-primary-main)',
   Rare:      '#00b0ff',
   Epic:      '#b200ff',
   Legendary: '#ff3d00',
@@ -123,7 +123,7 @@ export function LootBoxButton({ pepeBalance, onBurn, address }: Props) {
     notify('造型更換成功！已應用至全站頭像', true)
   }
 
-  const getRarityColor = (rarity: string) => RARITY_COLOR[rarity] || '#7cc14a'
+  const getRarityColor = (rarity: string) => RARITY_COLOR[rarity] || 'var(--palette-primary-main)'
 
   return (
     <>
@@ -266,7 +266,7 @@ export function LootBoxButton({ pepeBalance, onBurn, address }: Props) {
                 px: 1,
                 minWidth: 0,
                 width: '100%',
-                bgcolor: '#7cc14a',
+                bgcolor: 'var(--palette-primary-main)',
                 color: '#000',
                 fontWeight: '900',
                 '&:hover': { bgcolor: '#94d862' }
@@ -302,7 +302,7 @@ export function LootBoxButton({ pepeBalance, onBurn, address }: Props) {
         PaperProps={{
           sx: {
             bgcolor: '#070f19',
-            border: `2px solid ${result ? getRarityColor(result.rarity) : '#7cc14a'}`,
+            border: `2px solid ${result ? getRarityColor(result.rarity) : 'var(--palette-primary-main)'}`,
             borderRadius: 3.5,
             textAlign: 'center',
             maxWidth: 380,
@@ -365,7 +365,7 @@ export function LootBoxButton({ pepeBalance, onBurn, address }: Props) {
                     equipSkin(result.imagePath)
                     setDialogOpen(false)
                   }}
-                  sx={{ bgcolor: '#7cc14a', color: '#000', fontWeight: '900', '&:hover': { bgcolor: '#94d862' } }}
+                  sx={{ bgcolor: 'var(--palette-primary-main)', color: '#000', fontWeight: '900', '&:hover': { bgcolor: '#94d862' } }}
                 >
                   👕 立即穿戴造型
                 </Button>

@@ -300,7 +300,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
       case 'Legendary': return '#ff3d00';
       case 'Epic': return '#b200ff';
       case 'Rare': return '#00b0ff';
-      default: return '#7cc14a';
+      default: return 'var(--palette-primary-main)';
     }
   };
 
@@ -337,9 +337,9 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
 
       <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
         <Stack direction="row" spacing={1.5} alignItems="center">
-          <Avatar src={displayAvatar} sx={{ border: '2px solid #7cc14a', boxShadow: '0 0 10px rgba(124,193,74,0.5)', width: 42, height: 42 }} />
+          <Avatar src={displayAvatar} sx={{ border: '2px solid var(--palette-primary-main)', boxShadow: '0 0 10px rgba(124,193,74,0.5)', width: 42, height: 42 }} />
           <Box>
-            <Typography variant="h6" sx={{ fontWeight: 900, color: '#7cc14a' }}>
+            <Typography variant="h6" sx={{ fontWeight: 900, color: 'var(--palette-primary-main)' }}>
               Pepe GameFi & MemeFi Lab 🧪
             </Typography>
             <Typography variant="caption" sx={{ color: 'text.secondary' }}>
@@ -363,7 +363,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
           </Box>
           <Box>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>Pepe等級</Typography>
-            <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#7cc14a' }}>
+            <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'var(--palette-primary-main)' }}>
               Lv. {level}
             </Typography>
           </Box>
@@ -372,18 +372,18 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
               <span>經驗值 XP</span>
               <span>{xp}/{level * 100}</span>
             </Typography>
-            <LinearProgress variant="determinate" value={Math.min(100, (xp / (level * 100)) * 100)} sx={{ height: 6, borderRadius: 3, mt: 0.5, bgcolor: 'rgba(255,255,255,0.08)', '& .MuiLinearProgress-bar': { bgcolor: '#7cc14a' } }} />
+            <LinearProgress variant="determinate" value={Math.min(100, (xp / (level * 100)) * 100)} sx={{ height: 6, borderRadius: 3, mt: 0.5, bgcolor: 'rgba(255,255,255,0.08)', '& .MuiLinearProgress-bar': { bgcolor: 'var(--palette-primary-main)' } }} />
           </Box>
         </Stack>
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, bgcolor: 'rgba(124,193,74,0.12)', border: '1px solid rgba(124,193,74,0.3)', px: 2, py: 0.75, borderRadius: 2 }}>
-          <Typography variant="subtitle2" sx={{ color: '#7cc14a', fontWeight: 'bold' }}>
+          <Typography variant="subtitle2" sx={{ color: 'var(--palette-primary-main)', fontWeight: 'bold' }}>
             💰 餘額: {finalPepeBal.toLocaleString()} PEPE
           </Typography>
         </Box>
       </Box>
 
-      <Tabs value={tabValue} onChange={(_, nv) => setTabValue(nv)} centered indicatorColor="custom" sx={{ borderBottom: '1px solid rgba(255,255,255,0.06)', '& .MuiTab-root': { color: 'text.secondary', fontWeight: 'bold', fontSize: '1.05rem', '&.Mui-selected': { color: '#7cc14a' } } }}>
+      <Tabs value={tabValue} onChange={(_, nv) => setTabValue(nv)} centered indicatorColor="custom" sx={{ borderBottom: '1px solid rgba(255,255,255,0.06)', '& .MuiTab-root': { color: 'text.secondary', fontWeight: 'bold', fontSize: '1.05rem', '&.Mui-selected': { color: 'var(--palette-primary-main)' } } }}>
         <Tab value="potions" label="🧪 魔法藥水 (Potions)" />
         <Tab value="wardrobe" label="👕 尊貴衣裝 (Wardrobe)" />
         <Tab value="skins" label="🎰 造型盲盒與商城 (Skins & Gacha)" />
@@ -410,7 +410,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
                       +{potion.xp} XP 經驗值
                     </Typography>
-                    <Button variant="contained" fullWidth onClick={() => buyPotion(potion.id, potion.cost, potion.xp)} sx={{ bgcolor: 'rgba(124,193,74,0.15)', border: '1px solid', borderColor: '#7cc14a', color: '#7cc14a', fontWeight: 'bold', '&:hover': { bgcolor: '#7cc14a', color: '#fff' } }}>
+                    <Button variant="contained" fullWidth onClick={() => buyPotion(potion.id, potion.cost, potion.xp)} sx={{ bgcolor: 'rgba(124,193,74,0.15)', border: '1px solid', borderColor: 'var(--palette-primary-main)', color: 'var(--palette-primary-main)', fontWeight: 'bold', '&:hover': { bgcolor: 'var(--palette-primary-main)', color: '#fff' } }}>
                       🛒 購買並使用 ({potion.cost} PEPE)
                     </Button>
                   </Box>
@@ -443,7 +443,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
                       position: 'absolute', top: -5, left: -5, right: -5, bottom: -5,
                       borderRadius: '50%',
                       border: '3px solid transparent',
-                      borderTopColor: '#7cc14a',
+                      borderTopColor: 'var(--palette-primary-main)',
                       borderBottomColor: '#ffd700',
                       animation: 'spin 6s linear infinite',
                       '@keyframes spin': {
@@ -481,7 +481,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
 
                 {/* Status description */}
                 <Grid size={{ xs: 12, sm: 8 }}>
-                  <Typography variant="h5" sx={{ fontWeight: 900, color: '#7cc14a', mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography variant="h5" sx={{ fontWeight: 900, color: 'var(--palette-primary-main)', mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
                     {activeClothes === 'custom_skin' && currentActiveSkinObject ? (
                       <>
                         {currentActiveSkinObject.emoji} {currentActiveSkinObject.name}
@@ -520,10 +520,10 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
 
                   {/* Progress message */}
                   <Box sx={{ mt: 2, p: 1.5, bgcolor: 'rgba(0,0,0,0.2)', borderRadius: 1.5, border: '1px solid rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                    <Box sx={{ bgcolor: nextUnlock ? 'rgba(255,179,0,0.1)' : 'rgba(124,193,74,0.1)', color: nextUnlock ? '#ffb300' : '#7cc14a', width: 26, height: 26, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.85rem', flexShrink: 0 }}>
+                    <Box sx={{ bgcolor: nextUnlock ? 'rgba(255,179,0,0.1)' : 'rgba(124,193,74,0.1)', color: nextUnlock ? '#ffb300' : 'var(--palette-primary-main)', width: 26, height: 26, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.85rem', flexShrink: 0 }}>
                       {nextUnlock ? '⚡' : '🏆'}
                     </Box>
-                    <Typography variant="caption" sx={{ color: nextUnlock ? 'text.secondary' : '#7cc14a', fontWeight: 'bold' }}>
+                    <Typography variant="caption" sx={{ color: nextUnlock ? 'text.secondary' : 'var(--palette-primary-main)', fontWeight: 'bold' }}>
                       {nextUnlock ? (
                         <>
                           距離解鎖下一件等級裝備 <strong>{nextUnlock.emoji} {nextUnlock.name.split(' ')[0]}</strong> 還差 <strong style={{ color: '#ffb300' }}>{levelsToNext}</strong> 級！(需要達 Lv.{nextUnlock.levelRequired})
@@ -547,7 +547,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
                       p: 3,
                       position: 'relative',
                       border: '1px solid',
-                      borderColor: isEquipped ? '#7cc14a' : 'rgba(255,255,255,0.08)',
+                      borderColor: isEquipped ? 'var(--palette-primary-main)' : 'rgba(255,255,255,0.08)',
                       bgcolor: isEquipped ? 'rgba(124,193,74,0.04)' : 'rgba(255,255,255,0.02)',
                       boxShadow: isEquipped ? '0 0 25px rgba(124,193,74,0.15)' : 'none',
                       display: 'flex',
@@ -555,13 +555,13 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
                       justifyContent: 'space-between',
                       transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                       '&:hover': {
-                        borderColor: isUnlocked ? '#7cc14a' : 'rgba(255,255,255,0.08)',
+                        borderColor: isUnlocked ? 'var(--palette-primary-main)' : 'rgba(255,255,255,0.08)',
                         boxShadow: isUnlocked ? '0 8px 30px rgba(124,193,74,0.2)' : 'none',
                         transform: isUnlocked ? 'translateY(-4px)' : 'none',
                       }
                     }}>
                       {isEquipped && (
-                        <Box sx={{ position: 'absolute', top: 0, right: 0, bgcolor: '#7cc14a', color: '#000', px: 1.5, py: 0.25, borderRadius: '0 0 0 8px', fontSize: '0.72rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <Box sx={{ position: 'absolute', top: 0, right: 0, bgcolor: 'var(--palette-primary-main)', color: '#000', px: 1.5, py: 0.25, borderRadius: '0 0 0 8px', fontSize: '0.72rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 0.5 }}>
                           <Iconify icon="solar:check-circle-bold" sx={{ fontSize: 13 }} /> 已穿戴
                         </Box>
                       )}
@@ -572,7 +572,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
                       )}
 
                       <Stack direction="row" spacing={2.5} alignItems="center">
-                        <Box sx={{ fontSize: 38, filter: isUnlocked ? 'none' : 'grayscale(1) opacity(0.3)', bgcolor: isEquipped ? 'rgba(124,193,74,0.1)' : 'rgba(255,255,255,0.04)', p: 1.5, borderRadius: 2, border: '1px solid', borderColor: isEquipped ? '#7cc14a' : 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 60, height: 60 }}>
+                        <Box sx={{ fontSize: 38, filter: isUnlocked ? 'none' : 'grayscale(1) opacity(0.3)', bgcolor: isEquipped ? 'rgba(124,193,74,0.1)' : 'rgba(255,255,255,0.04)', p: 1.5, borderRadius: 2, border: '1px solid', borderColor: isEquipped ? 'var(--palette-primary-main)' : 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 60, height: 60 }}>
                           {c.emoji}
                         </Box>
                         <Box>
@@ -582,7 +582,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
                           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, maxWidth: 200, lineHeight: 1.4 }}>
                             {c.desc}
                           </Typography>
-                          <Typography variant="caption" sx={{ color: isUnlocked ? '#7cc14a' : '#ffb300', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 0.5, mt: 1 }}>
+                          <Typography variant="caption" sx={{ color: isUnlocked ? 'var(--palette-primary-main)' : '#ffb300', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 0.5, mt: 1 }}>
                             {isUnlocked ? (
                               <>
                                 <Iconify icon="solar:verified-check-bold" sx={{ fontSize: 12 }} /> 已解鎖
@@ -602,9 +602,9 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
                         disabled={!isUnlocked}
                         onClick={() => equipClothes(c.id, c.levelRequired)}
                         sx={{
-                          bgcolor: isEquipped ? '#7cc14a' : 'transparent',
-                          color: isEquipped ? '#fff' : '#7cc14a',
-                          borderColor: '#7cc14a',
+                          bgcolor: isEquipped ? 'var(--palette-primary-main)' : 'transparent',
+                          color: isEquipped ? '#fff' : 'var(--palette-primary-main)',
+                          borderColor: 'var(--palette-primary-main)',
                           fontWeight: 'bold',
                           py: 0.75,
                           px: 2,
@@ -612,7 +612,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
                           textTransform: 'none',
                           '&:hover': {
                             bgcolor: isEquipped ? '#5a9e2f' : 'rgba(124,193,74,0.08)',
-                            borderColor: '#7cc14a'
+                            borderColor: 'var(--palette-primary-main)'
                           }
                         }}
                       >
@@ -664,7 +664,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
                       width: 140,
                       height: 140,
                       borderRadius: '50%',
-                      background: 'radial-gradient(circle, #ffe082 10%, #7cc14a 70%)',
+                      background: 'radial-gradient(circle, #ffe082 10%, var(--palette-primary-main) 70%)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -695,7 +695,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
                     disabled={isDrawing}
                     onClick={drawGachapon}
                     sx={{
-                      bgcolor: '#7cc14a',
+                      bgcolor: 'var(--palette-primary-main)',
                       color: '#000',
                       fontWeight: 'bold',
                       fontSize: '1.05rem',
@@ -765,20 +765,20 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
                           position: 'relative',
                           bgcolor: isEquipped ? 'rgba(124,193,74,0.06)' : 'rgba(255,255,255,0.01)',
                           border: '1px solid',
-                          borderColor: isEquipped ? '#7cc14a' : 'rgba(255,255,255,0.06)',
+                          borderColor: isEquipped ? 'var(--palette-primary-main)' : 'rgba(255,255,255,0.06)',
                           textAlign: 'center',
                           borderRadius: 2,
                           transition: 'all 0.3s',
                           '&:hover': {
                             transform: 'translateY(-4px)',
-                            borderColor: isUnlocked ? '#7cc14a' : rColor,
+                            borderColor: isUnlocked ? 'var(--palette-primary-main)' : rColor,
                             boxShadow: `0 4px 20px ${isUnlocked ? 'rgba(124,193,74,0.2)' : 'rgba(255,255,255,0.08)'}`
                           }
                         }}
                       >
                         {/* Status overlays */}
                         {isEquipped && (
-                          <Box sx={{ position: 'absolute', top: 4, right: 4, bgcolor: '#7cc14a', color: '#000', borderRadius: '50%', width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem' }}>
+                          <Box sx={{ position: 'absolute', top: 4, right: 4, bgcolor: 'var(--palette-primary-main)', color: '#000', borderRadius: '50%', width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem' }}>
                             ✓
                           </Box>
                         )}
@@ -838,7 +838,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
       <Dialog
         open={!!drawResult}
         onClose={() => setDrawResult(null)}
-        slotProps={{ paper: { sx: { bgcolor: '#070f19', border: `2px solid ${drawResult ? getRarityColor(drawResult.rarity) : '#7cc14a'}`, borderRadius: 4, maxWidth: 450, overflow: 'hidden', p: 4, textAlign: 'center' } } }}
+        slotProps={{ paper: { sx: { bgcolor: '#070f19', border: `2px solid ${drawResult ? getRarityColor(drawResult.rarity) : 'var(--palette-primary-main)'}`, borderRadius: 4, maxWidth: 450, overflow: 'hidden', p: 4, textAlign: 'center' } } }}
       >
         {drawResult && (
           <Box sx={{ position: 'relative' }}>
@@ -884,7 +884,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
                   equipSkin(drawResult.imagePath);
                   setDrawResult(null);
                 }}
-                sx={{ bgcolor: '#7cc14a', color: '#000', fontWeight: 'bold', '&:hover': { bgcolor: '#94d862' } }}
+                sx={{ bgcolor: 'var(--palette-primary-main)', color: '#000', fontWeight: 'bold', '&:hover': { bgcolor: '#94d862' } }}
               >
                 👕 立即穿戴造型
               </Button>

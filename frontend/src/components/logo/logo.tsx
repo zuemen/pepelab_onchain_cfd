@@ -39,7 +39,7 @@ export function Logo({
         height: size,
         borderRadius: '50%',
         objectFit: 'cover',
-        border: '2px solid #7cc14a',
+        border: '2px solid var(--palette-primary-main)',
         boxShadow: '0 0 8px rgba(124,193,74,0.5)',
         flexShrink: 0,
       }}
@@ -56,7 +56,7 @@ export function Logo({
         sx={{
           fontWeight: 900,
           fontSize: '1.15rem',
-          color: '#7cc14a',
+          color: 'var(--palette-primary-main)',
           lineHeight: 1,
           letterSpacing: '-0.5px',
         }}

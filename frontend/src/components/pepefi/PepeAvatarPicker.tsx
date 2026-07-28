@@ -31,7 +31,7 @@ export function PepeAvatarPicker({ open, onClose, onPick, current }: Props) {
               borderRadius: '50%',
               objectFit: 'cover',
               cursor: 'pointer',
-              border: file === current ? '3px solid #7cc14a' : '2px solid transparent',
+              border: file === current ? '3px solid var(--palette-primary-main)' : '2px solid transparent',
               '&:hover': { opacity: 0.8 },
             }}
           />

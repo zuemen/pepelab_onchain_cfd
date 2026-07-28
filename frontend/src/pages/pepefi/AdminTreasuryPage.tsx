@@ -476,7 +476,7 @@ export default function AdminTreasuryPage() {
       {/* F. PepeLab Incentives Pool Refill */}
       <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-          <Box sx={{ bgcolor: 'rgba(124,193,74,0.1)', p: 1, borderRadius: '50%', color: '#7cc14a', display: 'flex' }}>
+          <Box sx={{ bgcolor: 'rgba(124,193,74,0.1)', p: 1, borderRadius: '50%', color: 'var(--palette-primary-main)', display: 'flex' }}>
             <Iconify icon="solar:palette-bold" sx={{ fontSize: 20 }} />
           </Box>
           <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
@@ -500,7 +500,7 @@ export default function AdminTreasuryPage() {
           <Grid size={{ xs: 12, sm: 6 }}>
             <Box sx={{ p: 2, bgcolor: 'rgba(124,193,74,0.04)', borderRadius: 1.5, border: '1px solid rgba(124,193,74,0.15)' }}>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>激勵合約 PEPE 儲備</Typography>
-              <Typography variant="h5" sx={{ fontWeight: 'bold', color: '#7cc14a', fontFamily: MONO }}>
+              <Typography variant="h5" sx={{ fontWeight: 'bold', color: 'var(--palette-primary-main)', fontFamily: MONO }}>
                 {contractPepeBal !== null ? f18(contractPepeBal) : '—'} <Box component="span" sx={{ fontSize: '0.85rem', fontWeight: 'normal', color: 'text.secondary' }}>PEPE</Box>
               </Typography>
             </Box>

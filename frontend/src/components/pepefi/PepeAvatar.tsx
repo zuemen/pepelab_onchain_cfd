@@ -32,7 +32,7 @@ export function PepeAvatar({ address, size = 64, editable = false }: Props) {
             borderRadius: '50%',
             objectFit: 'contain',
             padding: size > 40 ? '6px' : '2px',
-            border: '2px solid #7cc14a',
+            border: '2px solid var(--palette-primary-main)',
             background: '#0e1420',
             display: 'block',
           }}
@@ -48,7 +48,7 @@ export function PepeAvatar({ address, size = 64, editable = false }: Props) {
               right: 0,
               width: 18,
               height: 18,
-              bgcolor: '#7cc14a',
+              bgcolor: 'var(--palette-primary-main)',
               borderRadius: '50%',
               display: 'flex',
               alignItems: 'center',

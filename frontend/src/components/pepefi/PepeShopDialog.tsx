@@ -62,8 +62,8 @@ export function PepeShopDialog({ open, onClose, pepeBalance, onBuy }: Props) {
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth
-      PaperProps={{ sx: { bgcolor: '#0e1420', border: '1px solid #7cc14a44', borderRadius: 3 } }}>
-      <DialogTitle sx={{ color: '#7cc14a', fontWeight: 900, fontSize: 22, pb: 0 }}>
+      PaperProps={{ sx: { bgcolor: '#0e1420', border: '1px solid var(--palette-primary-main)44', borderRadius: 3 } }}>
+      <DialogTitle sx={{ color: 'var(--palette-primary-main)', fontWeight: 900, fontSize: 22, pb: 0 }}>
         🛒 Pepe Shop
         {pepeNum !== null && (
           <Typography component="span" variant="body2" sx={{ ml: 2, color: 'text.secondary' }}>
@@ -80,15 +80,15 @@ export function PepeShopDialog({ open, onClose, pepeBalance, onBuy }: Props) {
               onClick={() => setTab(c)}
               sx={{
                 fontWeight: 700,
-                bgcolor: tab === c ? '#7cc14a' : 'transparent',
-                color:   tab === c ? '#0e1420' : '#7cc14a',
-                border:  '1px solid #7cc14a55',
+                bgcolor: tab === c ? 'var(--palette-primary-main)' : 'transparent',
+                color:   tab === c ? '#0e1420' : 'var(--palette-primary-main)',
+                border:  '1px solid var(--palette-primary-main)55',
                 cursor:  'pointer',
               }} />
           ))}
         </Box>
 
-        <Divider sx={{ borderColor: '#7cc14a22', mb: 2 }} />
+        <Divider sx={{ borderColor: 'var(--palette-primary-main)22', mb: 2 }} />
 
         {/* Item grid */}
         <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 2 }}>
@@ -99,7 +99,7 @@ export function PepeShopDialog({ open, onClose, pepeBalance, onBuy }: Props) {
             return (
               <Box key={item.id} sx={{
                 bgcolor: '#161f2e',
-                border:  `2px solid ${equipped ? '#7cc14a' : RARITY_COLOR[item.rarity] + '55'}`,
+                border:  `2px solid ${equipped ? 'var(--palette-primary-main)' : RARITY_COLOR[item.rarity] + '55'}`,
                 borderRadius: 2,
                 p: 1.5,
                 display: 'flex',
@@ -112,7 +112,7 @@ export function PepeShopDialog({ open, onClose, pepeBalance, onBuy }: Props) {
               }}>
                 {equipped && (
                   <Chip label="裝備中" size="small"
-                    sx={{ position: 'absolute', top: 6, right: 6, bgcolor: '#7cc14a', color: '#0e1420', fontWeight: 700, fontSize: 10, height: 18, px: 0.5 }} />
+                    sx={{ position: 'absolute', top: 6, right: 6, bgcolor: 'var(--palette-primary-main)', color: '#0e1420', fontWeight: 700, fontSize: 10, height: 18, px: 0.5 }} />
                 )}
                 <Typography fontSize={36}>{item.emoji}</Typography>
                 <Typography fontWeight={800} fontSize={13} textAlign="center">{item.name}</Typography>
@@ -123,19 +123,19 @@ export function PepeShopDialog({ open, onClose, pepeBalance, onBuy }: Props) {
                 </Tooltip>
                 <Chip label={item.rarity} size="small"
                   sx={{ bgcolor: RARITY_COLOR[item.rarity] + '33', color: RARITY_COLOR[item.rarity], fontWeight: 700, fontSize: 10, mt: 0.5 }} />
-                <Typography fontWeight={900} fontSize={13} sx={{ color: '#7cc14a', mt: 0.5 }}>
+                <Typography fontWeight={900} fontSize={13} sx={{ color: 'var(--palette-primary-main)', mt: 0.5 }}>
                   {item.price.toLocaleString()} PEPE
                 </Typography>
 
                 {owned ? (
                   <Button size="small" variant={equipped ? 'outlined' : 'contained'} fullWidth
-                    sx={{ mt: 0.5, fontSize: 11, py: 0.4, bgcolor: equipped ? 'transparent' : '#7cc14a', color: equipped ? '#7cc14a' : '#0e1420', borderColor: '#7cc14a' }}
+                    sx={{ mt: 0.5, fontSize: 11, py: 0.4, bgcolor: equipped ? 'transparent' : 'var(--palette-primary-main)', color: equipped ? 'var(--palette-primary-main)' : '#0e1420', borderColor: 'var(--palette-primary-main)' }}
                     onClick={() => equipped ? undefined : handleEquip(item)}>
                     {equipped ? '已裝備' : '裝備'}
                   </Button>
                 ) : (
                   <Button size="small" variant="contained" fullWidth disabled={isBuying || pepeNum === null || pepeNum < item.price}
-                    sx={{ mt: 0.5, fontSize: 11, py: 0.4, bgcolor: '#7cc14a', color: '#0e1420', '&:disabled': { opacity: 0.4 } }}
+                    sx={{ mt: 0.5, fontSize: 11, py: 0.4, bgcolor: 'var(--palette-primary-main)', color: '#0e1420', '&:disabled': { opacity: 0.4 } }}
                     onClick={() => handleBuy(item)}>
                     {isBuying ? '購買中…' : '購買'}
                   </Button>

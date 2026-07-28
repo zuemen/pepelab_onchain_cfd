@@ -148,7 +148,7 @@ export default function HomePage() {
   if (!wallet.isConnected) {
     return (
       <Container maxWidth="md" sx={{ py: 8, textAlign: 'center' }}>
-        <Typography variant="h3" sx={{ fontWeight: 900, color: '#7cc14a', mb: 2 }}>🏠 我的 Pepe</Typography>
+        <Typography variant="h3" sx={{ fontWeight: 900, color: 'var(--palette-primary-main)', mb: 2 }}>🏠 我的 Pepe</Typography>
         <Typography color="text.secondary">請先連結錢包</Typography>
       </Container>
     )
@@ -168,28 +168,28 @@ export default function HomePage() {
         </Box>
       )}
 
-      <Typography variant="h4" sx={{ fontWeight: 900, mb: 3, color: '#7cc14a' }}>🏠 我的 Pepe</Typography>
+      <Typography variant="h4" sx={{ fontWeight: 900, mb: 3, color: 'var(--palette-primary-main)' }}>🏠 我的 Pepe</Typography>
 
       <Grid container spacing={3}>
         {/* ── Left: Achievements ── */}
         <Grid size={{ xs: 12, md: 4 }}>
-          <Card sx={{ p: 2.5, bgcolor: '#0e1420', border: '1px solid #7cc14a22', borderRadius: 3, height: '100%' }}>
-            <Typography fontWeight={900} fontSize={16} sx={{ mb: 2, color: '#7cc14a' }}>🏅 成就</Typography>
+          <Card sx={{ p: 2.5, bgcolor: '#0e1420', border: '1px solid var(--palette-primary-main)22', borderRadius: 3, height: '100%' }}>
+            <Typography fontWeight={900} fontSize={16} sx={{ mb: 2, color: 'var(--palette-primary-main)' }}>🏅 成就</Typography>
             <Stack spacing={1}>
               {ACHIEVEMENTS.map(a => {
                 const done = a.check(achCtx)
                 return (
                   <Box key={a.id} sx={{
                     display: 'flex', alignItems: 'center', gap: 1.5, p: 1,
-                    borderRadius: 1.5, bgcolor: done ? '#7cc14a18' : 'transparent',
+                    borderRadius: 1.5, bgcolor: done ? 'var(--palette-primary-main)18' : 'transparent',
                     opacity: done ? 1 : 0.45,
                   }}>
                     <Typography fontSize={22}>{a.emoji}</Typography>
                     <Box>
-                      <Typography fontSize={13} fontWeight={700} sx={{ color: done ? '#7cc14a' : 'text.primary' }}>{a.title}</Typography>
+                      <Typography fontSize={13} fontWeight={700} sx={{ color: done ? 'var(--palette-primary-main)' : 'text.primary' }}>{a.title}</Typography>
                       <Typography variant="caption" color="text.secondary">{a.desc}</Typography>
                     </Box>
-                    {done && <Chip label="✓" size="small" sx={{ ml: 'auto', bgcolor: '#7cc14a', color: '#0e1420', fontWeight: 900, height: 20 }} />}
+                    {done && <Chip label="✓" size="small" sx={{ ml: 'auto', bgcolor: 'var(--palette-primary-main)', color: '#0e1420', fontWeight: 900, height: 20 }} />}
                   </Box>
                 )
               })}
@@ -200,7 +200,7 @@ export default function HomePage() {
         {/* ── Center: My Pepe Card ── */}
         <Grid size={{ xs: 12, md: 4 }}>
           <Card sx={{
-            p: 3, bgcolor: '#0e1420', border: '2px solid #7cc14a44', borderRadius: 3,
+            p: 3, bgcolor: '#0e1420', border: '2px solid var(--palette-primary-main)44', borderRadius: 3,
             display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, height: '100%',
           }}>
             {/* Avatar */}
@@ -218,7 +218,7 @@ export default function HomePage() {
 
             {/* Name */}
             <Box sx={{ textAlign: 'center' }}>
-              <Typography fontWeight={900} fontSize={20} sx={{ color: '#7cc14a' }}>
+              <Typography fontWeight={900} fontSize={20} sx={{ color: 'var(--palette-primary-main)' }}>
                 {pepeNameFor(wallet.address)}
               </Typography>
               <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
@@ -230,7 +230,7 @@ export default function HomePage() {
             <Box sx={{ width: '100%', bgcolor: '#161f2e', borderRadius: 2, p: 2 }}>
               <Stack direction="row" justifyContent="space-between" sx={{ mb: 1 }}>
                 <Typography variant="caption" color="text.secondary">PEPE 餘額</Typography>
-                <Typography variant="caption" fontWeight={700} sx={{ color: '#7cc14a' }}>
+                <Typography variant="caption" fontWeight={700} sx={{ color: 'var(--palette-primary-main)' }}>
                   {pepeNum.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                 </Typography>
               </Stack>
@@ -244,11 +244,11 @@ export default function HomePage() {
               </Stack>
             </Box>
 
-            <Divider sx={{ width: '100%', borderColor: '#7cc14a22' }} />
+            <Divider sx={{ width: '100%', borderColor: 'var(--palette-primary-main)22' }} />
 
             {/* Shop + Lootbox */}
             <Button variant="contained" fullWidth
-              sx={{ bgcolor: '#7cc14a', color: '#0e1420', fontWeight: 900 }}
+              sx={{ bgcolor: 'var(--palette-primary-main)', color: '#0e1420', fontWeight: 900 }}
               onClick={() => setShopOpen(true)}>
               🛒 Pepe Shop
             </Button>
@@ -259,8 +259,8 @@ export default function HomePage() {
 
         {/* ── Right: Daily Quests ── */}
         <Grid size={{ xs: 12, md: 4 }}>
-          <Card sx={{ p: 2.5, bgcolor: '#0e1420', border: '1px solid #7cc14a22', borderRadius: 3, height: '100%' }}>
-            <Typography fontWeight={900} fontSize={16} sx={{ mb: 2, color: '#7cc14a' }}>📋 每日任務</Typography>
+          <Card sx={{ p: 2.5, bgcolor: '#0e1420', border: '1px solid var(--palette-primary-main)22', borderRadius: 3, height: '100%' }}>
+            <Typography fontWeight={900} fontSize={16} sx={{ mb: 2, color: 'var(--palette-primary-main)' }}>📋 每日任務</Typography>
             <Stack spacing={2}>
               {quests.map(q => (
                 <Box key={q.id}>
@@ -270,9 +270,9 @@ export default function HomePage() {
                     </Typography>
                     <Chip label={q.done ? '✓ 完成' : q.reward} size="small"
                       sx={{
-                        bgcolor: q.done ? '#7cc14a' : 'transparent',
-                        color:   q.done ? '#0e1420' : '#7cc14a',
-                        border:  q.done ? 'none' : '1px solid #7cc14a55',
+                        bgcolor: q.done ? 'var(--palette-primary-main)' : 'transparent',
+                        color:   q.done ? '#0e1420' : 'var(--palette-primary-main)',
+                        border:  q.done ? 'none' : '1px solid var(--palette-primary-main)55',
                         fontWeight: 700,
                         fontSize: 10,
                         height: 20,
@@ -284,17 +284,17 @@ export default function HomePage() {
                     sx={{
                       height: 6, borderRadius: 3,
                       bgcolor: '#1e2a3a',
-                      '& .MuiLinearProgress-bar': { bgcolor: q.done ? '#7cc14a' : '#2196f3' },
+                      '& .MuiLinearProgress-bar': { bgcolor: q.done ? 'var(--palette-primary-main)' : '#2196f3' },
                     }}
                   />
                 </Box>
               ))}
             </Stack>
 
-            <Divider sx={{ my: 3, borderColor: '#7cc14a22' }} />
+            <Divider sx={{ my: 3, borderColor: 'var(--palette-primary-main)22' }} />
 
             {/* Equipped showcase */}
-            <Typography fontWeight={900} fontSize={14} sx={{ mb: 1.5, color: '#7cc14a' }}>🎨 已裝備道具</Typography>
+            <Typography fontWeight={900} fontSize={14} sx={{ mb: 1.5, color: 'var(--palette-primary-main)' }}>🎨 已裝備道具</Typography>
             {equippedItems.length === 0 ? (
               <Typography variant="caption" color="text.secondary">
                 前往 Pepe Shop 購買並裝備道具吧！
@@ -303,7 +303,7 @@ export default function HomePage() {
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
                 {equippedItems.map(item => (
                   <Chip key={item.id} label={`${item.emoji} ${item.name}`} size="small"
-                    sx={{ bgcolor: '#7cc14a18', color: '#7cc14a', border: '1px solid #7cc14a44', fontWeight: 700, fontSize: 11 }} />
+                    sx={{ bgcolor: 'var(--palette-primary-main)18', color: 'var(--palette-primary-main)', border: '1px solid var(--palette-primary-main)44', fontWeight: 700, fontSize: 11 }} />
                 ))}
               </Box>
             )}
