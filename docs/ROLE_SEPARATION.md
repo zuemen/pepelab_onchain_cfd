@@ -71,6 +71,37 @@ that makes keeper separation worth doing: a compromised keeper cannot move the
 price arbitrarily, only within `maxDeviationBps` (10%), and every attempt is on
 chain.
 
+## Deviation cap temporarily disabled — 2026-07-27
+
+Recorded because it is exactly the admin power described as a risk below, and a
+log that only contains the flattering operations is not a log.
+
+GuardedOracle held seed prices that predated the keeper and were badly wrong:
+sNVDA $1,100.83 against a real $196.51, sESGU $44.96 against $162.09, sGOOGL
+$170.11 against $326.56. The 10% per-update cap is designed to stop exactly that
+kind of jump, so correcting them within the cap would have taken about 47
+sequential transactions walking each price 9% at a time.
+
+Instead the admin key set `maxDeviationBps` to 0, the keeper wrote all eleven
+correct prices, and the cap was restored to 1000 in the same session. Verified
+afterwards: `maxDeviationBps` reads 1000, and a $1 post against sAAPL at $335.65
+reverts `DeviationTooLarge`. `AssetVaultV2.reserveRatioBps()` returns normally,
+so the V2 stack prices off fresh data again.
+
+Three points worth being plain about:
+
+The guard did not fail — it was switched off deliberately by the account allowed
+to switch it off. That is the difference between a control and a law, and it is
+why the admin key matters more than the keeper key.
+
+A one-key admin made this a single unilateral action with no second opinion.
+With the Safe in place it would have needed two signatures, which is the entire
+argument for the multisig step below.
+
+Walking the prices in 47 steps would have demonstrated nothing new. The guard was
+already proven on chain, twice, by rejecting a $1 sBTC post. Repeating the
+demonstration is not worth an hour of transactions; disclosing the shortcut is.
+
 ## What is still open
 
 **The admin is a single EOA, not a multisig.** `0x2a588AeA…` is a freshly
