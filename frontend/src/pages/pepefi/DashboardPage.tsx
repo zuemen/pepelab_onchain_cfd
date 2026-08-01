@@ -1258,12 +1258,13 @@ export default function DashboardPage() {
               variant="contained"
               sx={{
                 bgcolor: 'var(--palette-primary-main)',
-                color: '#fff',
+                // contrastText, not #fff — white on this green is 2.19:1.
+                color: 'primary.contrastText',
                 fontWeight: 'bold',
                 fontSize: '0.8rem',
                 py: 0.5,
                 px: 2,
-                '&:hover': { bgcolor: '#5a9e2f' },
+                '&:hover': { bgcolor: 'var(--palette-primary-dark)' },
               }}
             >
               去簽到

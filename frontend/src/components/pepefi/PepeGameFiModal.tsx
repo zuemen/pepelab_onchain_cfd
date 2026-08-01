@@ -410,7 +410,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
                       +{potion.xp} XP 經驗值
                     </Typography>
-                    <Button variant="contained" fullWidth onClick={() => buyPotion(potion.id, potion.cost, potion.xp)} sx={{ bgcolor: 'rgba(124,193,74,0.15)', border: '1px solid', borderColor: 'var(--palette-primary-main)', color: 'var(--palette-primary-main)', fontWeight: 'bold', '&:hover': { bgcolor: 'var(--palette-primary-main)', color: '#fff' } }}>
+                    <Button variant="contained" fullWidth onClick={() => buyPotion(potion.id, potion.cost, potion.xp)} sx={{ bgcolor: 'rgba(124,193,74,0.15)', border: '1px solid', borderColor: 'var(--palette-primary-main)', color: 'var(--palette-primary-main)', fontWeight: 'bold', '&:hover': { bgcolor: 'var(--palette-primary-main)', color: 'primary.contrastText' } }}>
                       🛒 購買並使用 ({potion.cost} PEPE)
                     </Button>
                   </Box>

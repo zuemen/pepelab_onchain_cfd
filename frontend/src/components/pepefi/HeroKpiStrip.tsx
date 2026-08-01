@@ -81,7 +81,11 @@ function KpiTile({
             textTransform: 'uppercase',
             letterSpacing: 1.5,
             fontWeight: 700,
-            fontSize: 11,
+            // 12, not 11: these were the only text on the page under the 12px
+            // floor, and 1.5px of letter-spacing on uppercase makes small type
+            // read smaller still. One pixel costs nothing in a label row this
+            // short and keeps the KPI captions legible on a phone.
+            fontSize: 12,
           }}
         >
           {label}

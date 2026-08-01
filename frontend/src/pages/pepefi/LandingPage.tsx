@@ -142,7 +142,9 @@ export default function LandingPage() {
                     to="/dashboard"
                     variant="contained"
                     size="large"
-                    sx={{ bgcolor: 'var(--palette-primary-main)', color: '#fff', fontWeight: 900, '&:hover': { bgcolor: '#5a9e2f' } }}
+                    // contrastText, not #fff: white on this green measures
+                    // 2.19:1, below the 4.5:1 floor. The token is 7.08:1.
+                    sx={{ bgcolor: 'var(--palette-primary-main)', color: 'primary.contrastText', fontWeight: 900, '&:hover': { bgcolor: 'var(--palette-primary-dark)' } }}
                   >
                     🐸 進入 Dashboard
                   </Button>

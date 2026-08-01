@@ -51,7 +51,14 @@ export const themeConfig: ThemeConfig = {
       main: '#7cc14a',
       dark: '#5a9e2f',
       darker: '#2e5c16',
-      contrastText: '#FFFFFF',
+      // Was #FFFFFF, which is 2.19:1 against this green — measured on the live
+      // "Connect Wallet" button, i.e. the platform's primary call to action was
+      // below the 4.5:1 floor. #1C252E is 7.08:1.
+      //
+      // Not a new opinion: `secondary` (gold) and `warning` already use this
+      // exact value for the same reason. Primary was the one light-background
+      // colour that kept white text.
+      contrastText: '#1C252E',
     },
     secondary: {
       lighter: '#FFF5CC',

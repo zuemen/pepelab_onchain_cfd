@@ -125,6 +125,26 @@ const softVariants = [
   })) satisfies ButtonVariants),
 ] satisfies ButtonVariants;
 
+/* Touch-target floor, scoped to where it actually applies.
+ *
+ * DIMENSIONS gives small=30px and medium=36px, and `medium` is MUI's default —
+ * so most buttons in the app sat under the 44px touch minimum. Measured on the
+ * landing page, the three quick-links rendered at exactly 36px.
+ *
+ * Raising every button to 44px unconditionally would be the wrong fix. 44px is
+ * Apple's HIG figure for *fingers*; WCAG 2.5.8 asks for 24x24 CSS px, and 36px
+ * is comfortable under a mouse on the dense desktop dashboard this scale was
+ * drawn for. Scoping to coarse pointers gives touch devices the room they need
+ * without inflating the desktop layout. */
+const touchTargetVariants = [
+  {
+    props: {},
+    style: {
+      '@media (pointer: coarse)': { minHeight: 44 },
+    },
+  },
+];
+
 const sizeVariants = [
   {
     props: {},
@@ -201,6 +221,10 @@ const MuiButton: Components<Theme>['MuiButton'] = {
         ...softVariants,
         ...sizeVariants,
         ...disabledVariants,
+        // Must come after sizeVariants: those set minHeight 30/36/48, and at
+        // equal specificity the later declaration wins. Putting this in `root`
+        // instead would lose to them.
+        ...touchTargetVariants,
       ],
     },
   },
