@@ -44,7 +44,36 @@ export function PepefiLayout() {
   return (
     // 讓 MUI theme 的 dark mode 控制背景色
     <Box sx={{ minHeight: '100%', bgcolor: 'background.default', color: 'text.primary' }}>
-      <Outlet context={wallet} />
+      {/* Skip link. The app rendered no landmarks at all — 0 <main>, 0 <nav> —
+          so a keyboard or screen-reader user had no way past the header on
+          every single page; they tabbed through it again on each navigation.
+          Visually hidden until focused, which is the point: it appears for the
+          people who need it and stays out of the way for everyone else. */}
+      <Box
+        component="a"
+        href="#main-content"
+        sx={{
+          position: 'absolute',
+          left: 8,
+          top: -60,
+          zIndex: (theme) => theme.zIndex.modal + 1,
+          px: 2,
+          py: 1.25,
+          borderRadius: 1,
+          bgcolor: 'primary.main',
+          color: 'primary.contrastText',
+          fontWeight: 700,
+          textDecoration: 'none',
+          transition: 'top 150ms ease-out',
+          '&:focus': { top: 8 },
+        }}
+      >
+        跳到主要內容
+      </Box>
+
+      <Box component="main" id="main-content" tabIndex={-1} sx={{ outline: 'none' }}>
+        <Outlet context={wallet} />
+      </Box>
     </Box>
   );
 }

@@ -261,7 +261,12 @@ export default function LandingPage() {
 
         {/* ── What is Paper Trading? ── */}
         <Box sx={{ py: 5, textAlign: 'center' }}>
-          <Typography variant="h4" sx={{ fontWeight: 800, mb: 1.5 }}>
+          {/* component="h2" while keeping the h4 look. The outline ran
+              h1 -> h4 -> h6, so anyone navigating by heading in a screen reader
+              got two phantom levels and no sense of the page structure.
+              `variant` is the type scale, `component` is the semantics — they
+              do not have to match, and here they should not. */}
+          <Typography variant="h4" component="h2" sx={{ fontWeight: 800, mb: 1.5 }}>
             什麼是 Paper Trading？
           </Typography>
           <Typography
@@ -279,7 +284,10 @@ export default function LandingPage() {
 
         {/* ── Features ── */}
         <Box sx={{ mb: 6 }}>
-          <Typography variant="overline" color="text.secondary" align="center" display="block" sx={{ mb: 3.5, fontWeight: 'bold', letterSpacing: 3, fontSize: '1rem' }}>
+          {/* Was a plain overline — visually a section heading, semantically
+              nothing, so the six feature cards below had no parent in the
+              outline. */}
+          <Typography variant="overline" component="h2" color="text.secondary" align="center" display="block" sx={{ mb: 3.5, fontWeight: 'bold', letterSpacing: 3, fontSize: '1rem' }}>
             核心功能
           </Typography>
           <Grid container spacing={2.5}>
@@ -315,7 +323,9 @@ export default function LandingPage() {
                   >
                     <Iconify icon={f.icon} width={26} />
                   </Box>
-                  <Typography variant="subtitle1" sx={{ color: 'text.primary', fontWeight: 'bold', mb: 1.5, fontSize: '1.2rem' }}>
+                  {/* subtitle1 renders as h6 by default — an h6 directly under
+                      an h2 is a two-level jump. h3 is the correct child. */}
+                  <Typography variant="subtitle1" component="h3" sx={{ color: 'text.primary', fontWeight: 'bold', mb: 1.5, fontSize: '1.2rem' }}>
                     {f.title}
                   </Typography>
                   <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6, fontSize: '1rem' }}>
@@ -349,7 +359,7 @@ export default function LandingPage() {
               }
             }}
           >
-            <Typography variant="overline" color="primary" display="block" sx={{ mb: 3, fontWeight: 'bold', letterSpacing: 2.5, fontSize: '1.1rem' }}>
+            <Typography variant="overline" component="h2" color="primary" display="block" sx={{ mb: 3, fontWeight: 'bold', letterSpacing: 2.5, fontSize: '1.1rem' }}>
               如何開始
             </Typography>
             <Stack spacing={3}>
