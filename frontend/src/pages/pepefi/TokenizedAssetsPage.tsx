@@ -7,6 +7,7 @@ import { usePepefiWallet } from 'src/layouts/pepefi'
 import { explorerTx, explorerName } from 'src/lib/pepefi/notify'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { safeRead } from 'src/lib/pepefi/safeRead'
+import { fNum, fUsd, fromUnits } from 'src/lib/pepefi/format'
 import {
   ASSET_IDS, getAddresses, getSynthTokens, getV2Stack, type AssetSymbol,
 } from 'src/contracts/addresses'
@@ -54,9 +55,15 @@ const VERSION_KEY = 'pepefi:vaultVersion'
 
 type VaultVersion = 'v1' | 'v2'
 
-const f18 = (v: bigint, d = 4) => (Number(v) / 1e18).toFixed(d)
-const fUsd = (n: number) =>
-  '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+// These two were declared locally here (and again, slightly differently, on
+// other pages) — which is the duplication lib/pepefi/format.ts exists to stop.
+// The local fUsd also pinned 'en-US' on a Traditional Chinese interface; the
+// shared one follows the user's locale. For zh-Hant the grouping and decimal
+// separators are the same, so the rendered output does not change.
+//
+// f18 gains thousands separators, which toFixed did not produce: a balance now
+// reads 1,234.5678 instead of 1234.5678.
+const f18 = (v: bigint, d = 4) => fNum(fromUnits(v, 18), { dp: d })
 
 // Contract methods come off a JSON ABI, so ethers types them loosely. Narrow to
 // the transaction shape we actually use rather than casting through `any`.
