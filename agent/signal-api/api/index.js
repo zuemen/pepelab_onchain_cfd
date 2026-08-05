@@ -14071,14 +14071,14 @@ var Response2 = class _Response {
     }
   }
   get headers() {
-    const cache = this[cacheKey];
-    if (cache) {
-      if (!(cache[2] instanceof Headers)) {
-        cache[2] = new Headers(
-          cache[2] || { "content-type": "text/plain; charset=UTF-8" }
+    const cache2 = this[cacheKey];
+    if (cache2) {
+      if (!(cache2[2] instanceof Headers)) {
+        cache2[2] = new Headers(
+          cache2[2] || { "content-type": "text/plain; charset=UTF-8" }
         );
       }
-      return cache[2];
+      return cache2[2];
     }
     return this[getResponseCache]().headers;
   }
@@ -14481,6 +14481,7 @@ function resolvePayTo(feeRouter2) {
 // ../../frontend/src/contracts/addresses.ts
 var ANVIL = {
   MockUSDC: "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
+  MockUSDT: "0x0000000000000000000000000000000000000000",
   MockOracle: "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e",
   TraderStake: "0x0000000000000000000000000000000000000000",
   InsuranceVault: "0x0000000000000000000000000000000000000000",
@@ -14496,10 +14497,12 @@ var ANVIL = {
   PepeClaim: "0x0000000000000000000000000000000000000000",
   EsgRewardDistributor: "0x0000000000000000000000000000000000000000",
   PepeIncentives: "0x0000000000000000000000000000000000000000",
-  PepeStaking: "0x0000000000000000000000000000000000000000"
+  PepeStaking: "0x0000000000000000000000000000000000000000",
+  AssetVault: "0x0000000000000000000000000000000000000000"
 };
 var SEPOLIA = {
   MockUSDC: "0x167Bacef1925184f0df34A3196F834C0622Cfd36",
+  MockUSDT: "0xA08C0F92804173Bf796FDa3FA66654F96aDDB5F1",
   MockOracle: "0x17CA20A37Cf04F2f589B2573EC95f1411D29d958",
   TraderStake: "0x3fe1dbC82eA267085CAB5eb67C6b7d3E68A7d673",
   InsuranceVault: "0x8bDE83dBC2CA450B539346e224E7819348C7b091",
@@ -14515,10 +14518,12 @@ var SEPOLIA = {
   PepeClaim: "0x852c0fBa54552aafbA4798709d90056159682A4C",
   EsgRewardDistributor: "0xA1a522B9d31e5B48E41DcCd050DE10dA2e3BEdD0",
   PepeIncentives: "0x65b9F1B4d18822d4faBa763621E3e4eA065aE5D7",
-  PepeStaking: "0x0000000000000000000000000000000000000000"
+  PepeStaking: "0xf5d0953A443259ebdFC62fE49189998988e309f9",
+  AssetVault: "0xB4D10cBC6143E410dd7b48797334C4397b99325f"
 };
 var BASE_SEPOLIA = {
   MockUSDC: "0x69fd695Bc7C3aFdb35ABA35cD6890C506400b035",
+  MockUSDT: "0x0000000000000000000000000000000000000000",
   MockOracle: "0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3",
   TraderStake: "0x01aEB530bcFc69f036309ffe55acc7eA6C5a28Fe",
   InsuranceVault: "0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812",
@@ -14533,8 +14538,9 @@ var BASE_SEPOLIA = {
   PepeToken: "0xccd05cbdc2f7961a4c27d3633694022722786a0f",
   PepeClaim: "0x0000000000000000000000000000000000000000",
   EsgRewardDistributor: "0x0000000000000000000000000000000000000000",
-  PepeIncentives: "0x0000000000000000000000000000000000000000",
-  PepeStaking: "0x0000000000000000000000000000000000000000"
+  PepeIncentives: "0xEBfA1dc7dDea032ac6242cB619d982e543A23c12",
+  PepeStaking: "0x0000000000000000000000000000000000000000",
+  AssetVault: "0x0000000000000000000000000000000000000000"
 };
 var CHAIN_MAP = {
   31337: ANVIL,
@@ -42763,10 +42769,10 @@ init_stringify();
 var promiseCache = /* @__PURE__ */ new Map();
 var responseCache2 = /* @__PURE__ */ new Map();
 function getCache(cacheKey3) {
-  const buildCache = (cacheKey4, cache) => ({
-    clear: () => cache.delete(cacheKey4),
-    get: () => cache.get(cacheKey4),
-    set: (data4) => cache.set(cacheKey4, data4)
+  const buildCache = (cacheKey4, cache2) => ({
+    clear: () => cache2.delete(cacheKey4),
+    get: () => cache2.get(cacheKey4),
+    set: (data4) => cache2.set(cacheKey4, data4)
   });
   const promise = buildCache(cacheKey3, promiseCache);
   const response = buildCache(cacheKey3, responseCache2);
@@ -42780,24 +42786,24 @@ function getCache(cacheKey3) {
   };
 }
 async function withCache(fn, { cacheKey: cacheKey3, cacheTime = Number.POSITIVE_INFINITY }) {
-  const cache = getCache(cacheKey3);
-  const response = cache.response.get();
+  const cache2 = getCache(cacheKey3);
+  const response = cache2.response.get();
   if (response && cacheTime > 0) {
     const age = Date.now() - response.created.getTime();
     if (age < cacheTime)
       return response.data;
   }
-  let promise = cache.promise.get();
+  let promise = cache2.promise.get();
   if (!promise) {
     promise = fn();
-    cache.promise.set(promise);
+    cache2.promise.set(promise);
   }
   try {
     const data4 = await promise;
-    cache.response.set({ created: /* @__PURE__ */ new Date(), data: data4 });
+    cache2.response.set({ created: /* @__PURE__ */ new Date(), data: data4 });
     return data4;
   } finally {
-    cache.promise.clear();
+    cache2.promise.clear();
   }
 }
 
@@ -58357,6 +58363,454 @@ async function getOnchainRevenue(trader) {
   };
 }
 
+// src/symbols.ts
+var MARKETS = {
+  sBTC: {
+    symbol: "sBTC",
+    underlying: "BTC \u6C38\u7E8C",
+    category: "crypto",
+    bybit: "BTCUSDT",
+    coinbase: "BTC-USD",
+    seed: 5e4
+  },
+  sETH: {
+    symbol: "sETH",
+    underlying: "ETH \u6C38\u7E8C",
+    category: "crypto",
+    bybit: "ETHUSDT",
+    coinbase: "ETH-USD",
+    seed: 3e3
+  },
+  sAAPL: {
+    symbol: "sAAPL",
+    underlying: "AAPL",
+    category: "equity",
+    yahoo: "AAPL",
+    seed: 200
+  },
+  sTSLA: {
+    symbol: "sTSLA",
+    underlying: "TSLA",
+    category: "equity",
+    yahoo: "TSLA",
+    seed: 250
+  },
+  sNVDA: {
+    symbol: "sNVDA",
+    underlying: "NVDA",
+    category: "equity",
+    yahoo: "NVDA",
+    seed: 135
+  },
+  sMSFT: {
+    symbol: "sMSFT",
+    underlying: "MSFT",
+    category: "equity",
+    yahoo: "MSFT",
+    seed: 420
+  },
+  sGOOGL: {
+    symbol: "sGOOGL",
+    underlying: "GOOGL",
+    category: "equity",
+    yahoo: "GOOGL",
+    seed: 175
+  },
+  sGOLD: {
+    // 黃金走 COMEX 期貨連續合約，不是現貨 XAU/USD——keeper 也是用這個，
+    // 兩邊必須一致，否則 oracle 價與圖表價會系統性差一個基差。
+    symbol: "sGOLD",
+    underlying: "GC=F (COMEX Gold Futures)",
+    category: "commodity",
+    yahoo: "GC=F",
+    seed: 2650
+  },
+  sBOND: {
+    // 沒有「美國公債」這個可交易報價，用 TLT（20+ 年期公債 ETF）當代理標的。
+    symbol: "sBOND",
+    underlying: "TLT (iShares 20+ Year Treasury ETF)",
+    category: "bond",
+    yahoo: "TLT",
+    seed: 100
+  },
+  sICLN: {
+    symbol: "sICLN",
+    underlying: "ICLN",
+    category: "etf",
+    yahoo: "ICLN",
+    seed: 14
+  },
+  sESGU: {
+    symbol: "sESGU",
+    underlying: "ESGU",
+    category: "etf",
+    yahoo: "ESGU",
+    seed: 120
+  }
+};
+var MARKET_SYMBOLS = Object.keys(MARKETS);
+function resolveMarket(raw2) {
+  const input = raw2.trim();
+  if (!input) return void 0;
+  if (input.startsWith("0x") && input.length === 66) {
+    const sym = symbolOfAssetId(input);
+    return sym ? MARKETS[sym] : void 0;
+  }
+  if (MARKETS[input]) return MARKETS[input];
+  const lower = input.toLowerCase();
+  for (const meta of Object.values(MARKETS)) {
+    if (meta.symbol.toLowerCase() === lower) return meta;
+    if (meta.symbol.toLowerCase() === `s${lower}`) return meta;
+  }
+  return void 0;
+}
+function assetIdFor(symbol) {
+  return ASSET_IDS[symbol];
+}
+
+// src/candles.ts
+var INTERVALS = {
+  "1m": 60,
+  "5m": 300,
+  "15m": 900,
+  "1h": 3600,
+  "4h": 14400,
+  "1d": 86400
+};
+var INTERVAL_KEYS = Object.keys(INTERVALS);
+function isInterval(v) {
+  return v in INTERVALS;
+}
+var MAX_LIMIT = 500;
+var DEFAULT_LIMIT = 300;
+function aggregate(candles, seconds) {
+  const buckets = /* @__PURE__ */ new Map();
+  for (const k of candles) {
+    const bt = Math.floor(k.t / seconds) * seconds;
+    const cur = buckets.get(bt);
+    if (!cur) {
+      buckets.set(bt, { t: bt, o: k.o, h: k.h, l: k.l, c: k.c, v: k.v });
+    } else {
+      cur.h = Math.max(cur.h, k.h);
+      cur.l = Math.min(cur.l, k.l);
+      cur.c = k.c;
+      cur.v += k.v;
+    }
+  }
+  return [...buckets.values()].sort((a, b2) => a.t - b2.t);
+}
+function sane(k) {
+  return Number.isFinite(k.t) && Number.isFinite(k.o) && Number.isFinite(k.h) && Number.isFinite(k.l) && Number.isFinite(k.c) && k.o > 0 && k.h > 0 && k.l > 0 && k.c > 0 && k.h >= k.l;
+}
+var UA = "Mozilla/5.0 (compatible; pepelab-signal-api/1.0; +https://github.com/pepelab)";
+async function getJson(url, timeoutMs = 8e3) {
+  const res = await fetch(url, {
+    headers: { "User-Agent": UA, Accept: "application/json" },
+    signal: AbortSignal.timeout(timeoutMs)
+  });
+  if (!res.ok) {
+    throw new Error(`${new URL(url).host} \u56DE ${res.status}`);
+  }
+  return res.json();
+}
+var BYBIT_HOST = "https://api.bybit.com";
+var BYBIT_INTERVAL = {
+  "1m": "1",
+  "5m": "5",
+  "15m": "15",
+  "1h": "60",
+  "4h": "240",
+  "1d": "D"
+};
+var BYBIT_LIMIT = 1e3;
+async function fetchBybit(symbol, interval, need) {
+  const url = `${BYBIT_HOST}/v5/market/kline?category=linear&symbol=${encodeURIComponent(symbol)}&interval=${BYBIT_INTERVAL[interval]}&limit=${Math.min(need, BYBIT_LIMIT)}`;
+  const json = await getJson(url);
+  if (json.retCode !== 0) {
+    throw new Error(`retCode ${json.retCode}: ${json.retMsg ?? "\u672A\u77E5\u932F\u8AA4"}`);
+  }
+  const list2 = json.result?.list;
+  if (!list2?.length) throw new Error("\u56DE\u61C9\u6C92\u6709 K \u7DDA\u8CC7\u6599");
+  const out = [];
+  for (const row of list2) {
+    if (row.length < 6) continue;
+    const k = {
+      t: Math.floor(Number(row[0]) / 1e3),
+      o: Number(row[1]),
+      h: Number(row[2]),
+      l: Number(row[3]),
+      c: Number(row[4]),
+      v: Number(row[5])
+    };
+    if (sane(k)) out.push(k);
+  }
+  return out.sort((a, b2) => a.t - b2.t);
+}
+var COINBASE_HOST = "https://api.exchange.coinbase.com";
+var COINBASE_GRANULARITIES = [60, 300, 900, 3600, 21600, 86400];
+var COINBASE_PAGE = 300;
+async function fetchCoinbase(product, granularity, need) {
+  const pages = Math.min(Math.ceil(need / COINBASE_PAGE), 5);
+  const now = Math.floor(Date.now() / 1e3);
+  const span = COINBASE_PAGE * granularity;
+  const reqs = Array.from({ length: pages }, (_, i) => {
+    const end = now - i * span;
+    const start = end - span;
+    const url = `${COINBASE_HOST}/products/${encodeURIComponent(product)}/candles?granularity=${granularity}&start=${new Date(start * 1e3).toISOString()}&end=${new Date(end * 1e3).toISOString()}`;
+    return getJson(url);
+  });
+  const pagesData = await Promise.all(reqs);
+  const out = [];
+  for (const raw2 of pagesData) {
+    if (!Array.isArray(raw2)) continue;
+    for (const row of raw2) {
+      if (!Array.isArray(row) || row.length < 6) continue;
+      const [t, l, h, o, c, v] = row;
+      const k = { t: Number(t), o: Number(o), h: Number(h), l: Number(l), c: Number(c), v: Number(v) };
+      if (sane(k)) out.push(k);
+    }
+  }
+  const byTime = new Map(out.map((k) => [k.t, k]));
+  return [...byTime.values()].sort((a, b2) => a.t - b2.t);
+}
+var YAHOO_HOST = "https://query1.finance.yahoo.com";
+var YAHOO_INTERVAL = {
+  "1m": { interval: "1m", baseSeconds: 60, maxSpan: 7 * 86400, intraday: true },
+  "5m": { interval: "5m", baseSeconds: 300, maxSpan: 60 * 86400, intraday: true },
+  "15m": { interval: "15m", baseSeconds: 900, maxSpan: 60 * 86400, intraday: true },
+  "1h": { interval: "60m", baseSeconds: 3600, maxSpan: 730 * 86400, intraday: true },
+  // 4h 由 60m 併出來：baseSeconds 是 3600 而不是 14400，吃的也是 60m 的上限。
+  "4h": { interval: "60m", baseSeconds: 3600, maxSpan: 730 * 86400, intraday: true },
+  "1d": { interval: "1d", baseSeconds: 86400, maxSpan: 10 * 365 * 86400, intraday: false }
+};
+var INTRADAY_FACTOR = 5.2;
+var DAILY_FACTOR = 1.4;
+var YAHOO_RANGES = [
+  { label: "1d", seconds: 86400 },
+  { label: "5d", seconds: 5 * 86400 },
+  { label: "1mo", seconds: 30 * 86400 },
+  { label: "3mo", seconds: 91 * 86400 },
+  { label: "6mo", seconds: 182 * 86400 },
+  { label: "1y", seconds: 365 * 86400 },
+  { label: "2y", seconds: 730 * 86400 },
+  { label: "5y", seconds: 5 * 365 * 86400 },
+  { label: "10y", seconds: 10 * 365 * 86400 }
+];
+function pickYahooRange(needSeconds, maxSpan) {
+  const want = Math.min(needSeconds, maxSpan);
+  for (const r of YAHOO_RANGES) {
+    if (r.seconds >= want && r.seconds <= maxSpan) return r.label;
+  }
+  const legal = YAHOO_RANGES.filter((r) => r.seconds <= maxSpan);
+  return legal.length ? legal[legal.length - 1].label : "1mo";
+}
+async function fetchYahoo(ticker, interval, need) {
+  const cfg = YAHOO_INTERVAL[interval];
+  const factor = cfg.intraday ? INTRADAY_FACTOR : DAILY_FACTOR;
+  const range = pickYahooRange(need * cfg.baseSeconds * factor, cfg.maxSpan);
+  const url = `${YAHOO_HOST}/v8/finance/chart/${encodeURIComponent(ticker)}?interval=${cfg.interval}&range=${range}`;
+  const json = await getJson(url);
+  if (json.chart?.error) {
+    throw new Error(json.chart.error.description ?? "Yahoo \u56DE\u5831\u932F\u8AA4");
+  }
+  const result = json.chart?.result?.[0];
+  const ts = result?.timestamp;
+  const q = result?.indicators?.quote?.[0];
+  if (!ts?.length || !q) throw new Error("Yahoo \u56DE\u61C9\u6C92\u6709 K \u7DDA\u8CC7\u6599");
+  const out = [];
+  for (let i = 0; i < ts.length; i += 1) {
+    const o = q.open?.[i];
+    const h = q.high?.[i];
+    const l = q.low?.[i];
+    const c = q.close?.[i];
+    if (o == null || h == null || l == null || c == null) continue;
+    const k = { t: Number(ts[i]), o, h, l, c, v: Number(q.volume?.[i] ?? 0) };
+    if (sane(k)) out.push(k);
+  }
+  return out.sort((a, b2) => a.t - b2.t);
+}
+function hash32(s) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i += 1) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = a + 1831565813 >>> 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function simPrice(meta, t) {
+  const waves = [
+    [30 * 86400, 0.06],
+    [7 * 86400, 0.03],
+    [86400, 0.015],
+    [4 * 3600, 8e-3]
+  ];
+  let x = 0;
+  for (let k = 0; k < waves.length; k += 1) {
+    const [period, amp] = waves[k];
+    const phase = mulberry32(hash32(`${meta.symbol}:w${k}`))() * Math.PI * 2;
+    x += amp * Math.sin(2 * Math.PI * t / period + phase);
+  }
+  return meta.seed * Math.exp(x);
+}
+function simulate(meta, interval, need) {
+  const step = INTERVALS[interval];
+  const nowBucket = Math.floor(Date.now() / 1e3 / step) * step;
+  const out = [];
+  for (let i = need - 1; i >= 0; i -= 1) {
+    const t = nowBucket - i * step;
+    const rnd = mulberry32(hash32(`${meta.symbol}:${t}`));
+    const o = simPrice(meta, t);
+    const c = simPrice(meta, t + step);
+    const h = Math.max(o, c) * (1 + rnd() * 18e-4);
+    const l = Math.min(o, c) * (1 - rnd() * 18e-4);
+    out.push({ t, o, h, l, c, v: Math.round(rnd() * 1e3) });
+  }
+  return out;
+}
+var cache = /* @__PURE__ */ new Map();
+var TTL_MS = {
+  "1m": 15e3,
+  "5m": 3e4,
+  "15m": 6e4,
+  "1h": 12e4,
+  "4h": 3e5,
+  "1d": 3e5
+};
+var DISCLAIMER = "\u793A\u7BC4\u8CC7\u6599\u3002\u5716\u8868\u70BA\u5916\u90E8\u516C\u958B\u4F86\u6E90\u7684\u53C3\u8003\u884C\u60C5\uFF0C\u975E\u672C\u5E73\u53F0\u6210\u4EA4\u7D00\u9304\uFF1B\u958B\u5009 / \u5E73\u5009 / \u6E05\u7B97\u4E00\u5F8B\u4EE5\u93C8\u4E0A oracle index \u50F9\u7D50\u7B97\u3002";
+var UnknownMarketError = class extends Error {
+};
+var BadIntervalError = class extends Error {
+};
+async function getCandles(rawSymbol, rawInterval = "1h", rawLimit) {
+  const meta = resolveMarket(rawSymbol);
+  if (!meta) {
+    throw new UnknownMarketError(
+      `\u672A\u77E5\u6A19\u7684 "${rawSymbol}"\uFF0C\u53EF\u7528\uFF1A${MARKET_SYMBOLS.join(", ")}`
+    );
+  }
+  if (!isInterval(rawInterval)) {
+    throw new BadIntervalError(
+      `\u672A\u77E5\u6642\u9593\u6846 "${rawInterval}"\uFF0C\u53EF\u7528\uFF1A${INTERVAL_KEYS.join(", ")}`
+    );
+  }
+  const interval = rawInterval;
+  const parsed = Number(rawLimit ?? DEFAULT_LIMIT);
+  const limit = Number.isFinite(parsed) ? Math.max(1, Math.min(Math.floor(parsed), MAX_LIMIT)) : DEFAULT_LIMIT;
+  const key = `${meta.symbol}:${interval}:${limit}`;
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.at < TTL_MS[interval]) {
+    return hit.payload;
+  }
+  const seconds = INTERVALS[interval];
+  const now = Math.floor(Date.now() / 1e3);
+  let candles = [];
+  let source = null;
+  let sourceError;
+  if (meta.bybit) {
+    try {
+      const raw2 = await fetchBybit(meta.bybit, interval, limit);
+      if (raw2.length) {
+        candles = raw2;
+        source = {
+          kind: "exchange",
+          name: "Bybit",
+          url: `https://www.bybit.com/trade/usdt/${meta.bybit}`,
+          attribution: `Bybit \xB7 ${meta.bybit} \u6C38\u7E8C\u5408\u7D04`,
+          reference: "perpetual",
+          fetchedAt: now
+        };
+      } else {
+        sourceError = "Bybit \u56DE\u61C9\u6C92\u6709\u53EF\u7528\u881F\u71ED";
+      }
+    } catch (err) {
+      sourceError = `Bybit: ${err.message}`;
+    }
+  }
+  if (!source && meta.coinbase) {
+    try {
+      const native = COINBASE_GRANULARITIES.includes(seconds);
+      const base2 = native ? seconds : 3600;
+      const need = native ? limit : limit * (seconds / base2);
+      const raw2 = await fetchCoinbase(meta.coinbase, base2, need);
+      const merged = native ? raw2 : aggregate(raw2, seconds);
+      if (merged.length) {
+        candles = merged;
+        source = {
+          kind: "exchange",
+          name: "Coinbase Exchange",
+          url: `https://exchange.coinbase.com/trade/${meta.coinbase}`,
+          attribution: `Coinbase Exchange \xB7 ${meta.coinbase} \u73FE\u8CA8`,
+          reference: "spot",
+          fetchedAt: now
+        };
+      } else {
+        sourceError = "Coinbase \u56DE\u61C9\u6C92\u6709\u53EF\u7528\u881F\u71ED";
+      }
+    } catch (err) {
+      sourceError = `Coinbase: ${err.message}`;
+    }
+  }
+  if (!source && meta.yahoo) {
+    try {
+      const native = interval !== "4h";
+      const need = native ? limit : limit * 4;
+      const raw2 = await fetchYahoo(meta.yahoo, interval, need);
+      const merged = native ? raw2 : aggregate(raw2, seconds);
+      if (merged.length) {
+        candles = merged;
+        source = {
+          kind: "delayed",
+          name: "Yahoo Finance",
+          url: `https://finance.yahoo.com/quote/${encodeURIComponent(meta.yahoo)}`,
+          attribution: `Yahoo Finance \xB7 ${meta.underlying}\uFF08\u975E\u5B98\u65B9\u7AEF\u9EDE\uFF0C\u5831\u50F9\u53EF\u80FD\u5EF6\u9072\uFF09`,
+          reference: "delayed quote",
+          fetchedAt: now
+        };
+      } else {
+        sourceError = "Yahoo \u56DE\u61C9\u6C92\u6709\u53EF\u7528\u881F\u71ED";
+      }
+    } catch (err) {
+      sourceError = `Yahoo: ${err.message}`;
+    }
+  }
+  let degraded = sourceError !== void 0;
+  if (!source) {
+    degraded = true;
+    candles = simulate(meta, interval, limit);
+    source = {
+      kind: "simulated",
+      name: "\u6A21\u64EC\u8CC7\u6599",
+      url: "",
+      attribution: "SIMULATED \u2014 \u5916\u90E8\u884C\u60C5\u4F86\u6E90\u7121\u6CD5\u53D6\u5F97\uFF0C\u6B64\u5716\u70BA\u7A0B\u5F0F\u751F\u6210\uFF0C\u975E\u771F\u5BE6\u5E02\u5834\u50F9\u683C",
+      reference: "simulated",
+      fetchedAt: now
+    };
+  }
+  const payload = {
+    ok: true,
+    symbol: meta.symbol,
+    assetId: assetIdFor(meta.symbol),
+    underlying: meta.underlying,
+    interval,
+    candles: candles.slice(-limit),
+    source,
+    ...degraded ? { degraded } : {},
+    ...sourceError ? { sourceError } : {},
+    disclaimer: DISCLAIMER
+  };
+  cache.set(key, { at: Date.now(), payload });
+  return payload;
+}
+
 // src/app.ts
 var NETWORK = process.env.X402_NETWORK ?? "base-sepolia";
 var FACILITATOR_URL = process.env.X402_FACILITATOR_URL ?? "https://x402.org/facilitator";
@@ -58421,6 +58875,11 @@ function createApp() {
         "GET /signals/:trader": { price: `$${PRICE_SIGNALS}`, paid: true, desc: "trader \u7E3E\u6548 + \u958B\u5009\u5EFA\u8B70" },
         "GET /oracle/:asset": { price: `$${PRICE_ORACLE}`, paid: true, desc: "\u6C7A\u7B56\u7D1A\u5FEB\u7167\uFF1A\u50F9\u683C / funding / OI \u5931\u8861 / \u9810\u4F30\u6E05\u7B97\u50F9 / edge \u5EFA\u8B70\uFF08long\xB7short\xB7no_trade\uFF09" },
         "GET /revenue": { price: "free", desc: "\u93C8\u4E0A 70/20/10 \u7D2F\u8A08\uFF08\u53EF\u9078 ?trader=\uFF09" },
+        "GET /candles/:symbol": {
+          price: "free",
+          desc: `K \u7DDA OHLCV\u3002?interval= \u9810\u8A2D 1h\uFF0C?limit= \u9810\u8A2D 300\uFF08\u4E0A\u9650 ${MAX_LIMIT}\uFF09\u3002\u56DE\u61C9\u5E36 source \u51FA\u8655\uFF0C\u5716\u8868\u9808\u6A19\u793A\u3002`,
+          intervals: INTERVAL_KEYS
+        },
         "GET /agent/:did/verification": { price: "free", desc: "ERC-8126 agent \u9A57\u8B49\uFF08ETV/SCV/WAV/WV + 0\u2013100 \u98A8\u96AA\u5206\u6578\uFF0Cverifier \u7C3D\u7AE0\uFF09" },
         "POST /demo/buy-signal": { price: "free", desc: "\u8A2A\u5BA2\u8A66\u8CB7\uFF08\u514D\u8CBB\u56DE\u8A0A\u865F\uFF1B\u771F\u5BE6 70/20/10 \u5206\u6F64\u898B\u4ED8\u8CBB x402 \u7AEF\u9EDE + /revenue \u7D2F\u8A08\uFF09" }
       },
@@ -58435,6 +58894,21 @@ function createApp() {
       const trader = c.req.query("trader");
       return c.json(jsonSafe(await getOnchainRevenue(trader)));
     } catch (err) {
+      return c.json({ ok: false, error: err.message }, 502);
+    }
+  });
+  app2.get("/candles/:symbol", async (c) => {
+    try {
+      const data4 = await getCandles(
+        c.req.param("symbol"),
+        c.req.query("interval") ?? "1h",
+        c.req.query("limit")
+      );
+      return c.json(data4);
+    } catch (err) {
+      if (err instanceof UnknownMarketError || err instanceof BadIntervalError) {
+        return c.json({ ok: false, error: err.message }, 400);
+      }
       return c.json({ ok: false, error: err.message }, 502);
     }
   });
