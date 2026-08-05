@@ -103,7 +103,11 @@ export const BASE_SEPOLIA_ORACLE_SHOWCASE = {
   AggregatorOracle: "0x8215158642350a3f329aB9597186d21f957A813D",
 } as const
 
-const CHAIN_MAP: Record<number, ChainAddresses> = {
+// Exported (not just used internally) so callers that need "every chain's
+// addresses" — e.g. assetMeta.ts building PEPE metadata for whichever chain
+// the wallet is connected to — have one place to read from instead of
+// re-hardcoding a chain's addresses a second time.
+export const CHAIN_MAP: Record<number, ChainAddresses> = {
   31337:    ANVIL,
   11155111: SEPOLIA,
   84532:    BASE_SEPOLIA,
