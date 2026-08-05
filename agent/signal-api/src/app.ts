@@ -26,6 +26,13 @@ import {
 } from "@pepelab/shared";
 import { isSettlementEnabled, settleRevenue } from "./settlement.ts";
 import { getOnchainRevenue, isOnchainRevenueEnabled } from "./onchainRevenue.ts";
+import {
+  getCandles,
+  INTERVAL_KEYS,
+  MAX_LIMIT,
+  UnknownMarketError,
+  BadIntervalError,
+} from "./candles.ts";
 
 const NETWORK = (process.env.X402_NETWORK ?? "base-sepolia") as Network;
 const FACILITATOR_URL =
@@ -127,6 +134,13 @@ export function createApp(): Hono {
         "GET /signals/:trader": { price: `$${PRICE_SIGNALS}`, paid: true, desc: "trader 績效 + 開倉建議" },
         "GET /oracle/:asset": { price: `$${PRICE_ORACLE}`, paid: true, desc: "決策級快照：價格 / funding / OI 失衡 / 預估清算價 / edge 建議（long·short·no_trade）" },
         "GET /revenue": { price: "free", desc: "鏈上 70/20/10 累計（可選 ?trader=）" },
+        "GET /candles/:symbol": {
+          price: "free",
+          desc:
+            "K 線 OHLCV。?interval= 預設 1h，?limit= 預設 300（上限 " +
+            `${MAX_LIMIT}）。回應帶 source 出處，圖表須標示。`,
+          intervals: INTERVAL_KEYS,
+        },
         "GET /agent/:did/verification": { price: "free", desc: "ERC-8126 agent 驗證（ETV/SCV/WAV/WV + 0–100 風險分數，verifier 簽章）" },
         "POST /demo/buy-signal": { price: "free", desc: "訪客試買（免費回訊號；真實 70/20/10 分潤見付費 x402 端點 + /revenue 累計）" },
       },
@@ -143,6 +157,28 @@ export function createApp(): Hono {
       const trader = c.req.query("trader");
       return c.json(jsonSafe(await getOnchainRevenue(trader)));
     } catch (err) {
+      return c.json({ ok: false, error: (err as Error).message }, 502);
+    }
+  });
+
+  // ── 免費：K 線（OHLCV）──────────────────────────────────────────────────
+  //
+  // ⚠ 位置有意義：Hono 依註冊順序比對，這條必須留在下面 paymentMiddleware 的
+  //   app.use() **之前**，否則會被 x402 付費牆攔下。圖表資料是前端每次載入頁面
+  //   都要打的公開資料，不是付費商品。
+  app.get("/candles/:symbol", async (c) => {
+    try {
+      const data = await getCandles(
+        c.req.param("symbol"),
+        c.req.query("interval") ?? "1h",
+        c.req.query("limit"),
+      );
+      return c.json(data);
+    } catch (err) {
+      if (err instanceof UnknownMarketError || err instanceof BadIntervalError) {
+        return c.json({ ok: false, error: (err as Error).message }, 400);
+      }
+      // getCandles 內部有模擬保底，走到這裡代表是預期外的錯誤。
       return c.json({ ok: false, error: (err as Error).message }, 502);
     }
   });
