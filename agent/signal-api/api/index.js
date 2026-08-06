@@ -2625,9 +2625,9 @@ var require_event_target = __commonJS({
        *     the listener would be automatically removed when invoked.
        * @public
        */
-      addEventListener(type, handler, options = {}) {
+      addEventListener(type, handler2, options = {}) {
         for (const listener of this.listeners(type)) {
-          if (!options[kForOnEventAttribute] && listener[kListener] === handler && !listener[kForOnEventAttribute]) {
+          if (!options[kForOnEventAttribute] && listener[kListener] === handler2 && !listener[kForOnEventAttribute]) {
             return;
           }
         }
@@ -2638,7 +2638,7 @@ var require_event_target = __commonJS({
               data: isBinary ? data4 : data4.toString()
             });
             event[kTarget] = this;
-            callListener(handler, this, event);
+            callListener(handler2, this, event);
           };
         } else if (type === "close") {
           wrapper = function onClose(code, message) {
@@ -2648,7 +2648,7 @@ var require_event_target = __commonJS({
               wasClean: this._closeFrameReceived && this._closeFrameSent
             });
             event[kTarget] = this;
-            callListener(handler, this, event);
+            callListener(handler2, this, event);
           };
         } else if (type === "error") {
           wrapper = function onError(error) {
@@ -2657,19 +2657,19 @@ var require_event_target = __commonJS({
               message: error.message
             });
             event[kTarget] = this;
-            callListener(handler, this, event);
+            callListener(handler2, this, event);
           };
         } else if (type === "open") {
           wrapper = function onOpen() {
             const event = new Event2("open");
             event[kTarget] = this;
-            callListener(handler, this, event);
+            callListener(handler2, this, event);
           };
         } else {
           return;
         }
         wrapper[kForOnEventAttribute] = !!options[kForOnEventAttribute];
-        wrapper[kListener] = handler;
+        wrapper[kListener] = handler2;
         if (options.once) {
           this.once(type, wrapper);
         } else {
@@ -2683,9 +2683,9 @@ var require_event_target = __commonJS({
        * @param {(Function|Object)} handler The listener to remove
        * @public
        */
-      removeEventListener(type, handler) {
+      removeEventListener(type, handler2) {
         for (const listener of this.listeners(type)) {
-          if (listener[kListener] === handler && !listener[kForOnEventAttribute]) {
+          if (listener[kListener] === handler2 && !listener[kForOnEventAttribute]) {
             this.removeListener(type, listener);
             break;
           }
@@ -3318,15 +3318,15 @@ var require_websocket = __commonJS({
           }
           return null;
         },
-        set(handler) {
+        set(handler2) {
           for (const listener of this.listeners(method)) {
             if (listener[kForOnEventAttribute]) {
               this.removeListener(method, listener);
               break;
             }
           }
-          if (typeof handler !== "function") return;
-          this.addEventListener(method, handler, {
+          if (typeof handler2 !== "function") return;
+          this.addEventListener(method, handler2, {
             [kForOnEventAttribute]: true
           });
         }
@@ -14610,6 +14610,9 @@ var PERPETUAL_EXCHANGE_ABI = [
   "function getUnrealizedPnL(uint256 positionId) view returns (int256)",
   "function pendingFunding(uint256 positionId) view returns (int256)",
   "function getFundingRate(bytes32 asset) view returns (int256 rateBps)",
+  // 交易所自己的新鮮度門檻。付費 API 必須以它為準，而不是 MockOracle.isStale
+  // 的 24 小時 —— 兩者差 4 倍，中間那段會讓 API 建議下單而鏈上 revert。
+  "function maxPriceAge() view returns (uint256)",
   "function globalLongNotional(bytes32) view returns (uint256)",
   "function globalShortNotional(bytes32) view returns (uint256)",
   "function executionFee() view returns (uint256)",
@@ -38218,6 +38221,16 @@ function jsonSafe(obj) {
   );
 }
 
+// ../shared/src/freshness.ts
+function classifyTradeFreshness(a) {
+  const ageSec = Math.max(0, a.nowSec - a.updatedAtSec);
+  return {
+    fresh: ageSec <= a.maxPriceAgeSec,
+    ageSec,
+    maxPriceAgeSec: a.maxPriceAgeSec
+  };
+}
+
 // ../shared/src/aggregate.ts
 var EDGE_DEFAULTS = {
   /** funding bps → 分數的係數（−fundingRateBps×Kf，clamp ±60）。 */
@@ -38299,21 +38312,30 @@ function enrichOracle(base2, opts = {}) {
 var ZERO2 = "0x0000000000000000000000000000000000000000";
 async function getOracleSnapshot(c, symbol) {
   const assetId = assetIdOf(symbol);
-  const [priceRes, isStale, fundingBps, longOI, shortOI] = await Promise.all([
+  const [priceRes, isStale, fundingBps, longOI, shortOI, maxPriceAge] = await Promise.all([
     c.oracle.getPrice(assetId),
     c.oracle.isStale(assetId),
     c.perp.getFundingRate(assetId),
     c.perp.globalLongNotional(assetId),
-    c.perp.globalShortNotional(assetId)
+    c.perp.globalShortNotional(assetId),
+    c.perp.maxPriceAge()
   ]);
   const [price, updatedAt] = priceRes;
   const direction = fundingBps > 0n ? "longs_pay" : fundingBps < 0n ? "shorts_pay" : "balanced";
+  const tf = classifyTradeFreshness({
+    updatedAtSec: Number(updatedAt),
+    nowSec: Math.floor(Date.now() / 1e3),
+    maxPriceAgeSec: Number(maxPriceAge)
+  });
   const base2 = {
     asset: symbol,
     assetId,
     price: fmtPrice8(price),
     updatedAt: fmtTime(updatedAt),
     isStale,
+    ageSec: tf.ageSec,
+    maxPriceAgeSec: tf.maxPriceAgeSec,
+    tradableNow: tf.fresh,
     fundingRateBps: Number(fundingBps),
     fundingRatePercent: bpsToPercent(fundingBps),
     fundingDirection: direction,
@@ -38807,16 +38829,16 @@ var compose = (middleware, onError, onNotFound) => {
       index2 = i;
       let res;
       let isError2 = false;
-      let handler;
+      let handler2;
       if (middleware[i]) {
-        handler = middleware[i][0][0];
+        handler2 = middleware[i][0][0];
         context.req.routeIndex = i;
       } else {
-        handler = i === middleware.length && next || void 0;
+        handler2 = i === middleware.length && next || void 0;
       }
-      if (handler) {
+      if (handler2) {
         try {
-          res = await handler(context, () => dispatch(i + 1));
+          res = await handler2(context, () => dispatch(i + 1));
         } catch (err) {
           if (err instanceof Error && onError) {
             context.error = err;
@@ -39902,8 +39924,8 @@ var Hono = class _Hono {
         } else {
           this.#addRoute(method, this.#path, args1);
         }
-        args.forEach((handler) => {
-          this.#addRoute(method, this.#path, handler);
+        args.forEach((handler2) => {
+          this.#addRoute(method, this.#path, handler2);
         });
         return this;
       };
@@ -39912,8 +39934,8 @@ var Hono = class _Hono {
       for (const p of [path].flat()) {
         this.#path = p;
         for (const m of [method].flat()) {
-          handlers.map((handler) => {
-            this.#addRoute(m.toUpperCase(), this.#path, handler);
+          handlers.map((handler2) => {
+            this.#addRoute(m.toUpperCase(), this.#path, handler2);
           });
         }
       }
@@ -39926,8 +39948,8 @@ var Hono = class _Hono {
         this.#path = "*";
         handlers.unshift(arg1);
       }
-      handlers.forEach((handler) => {
-        this.#addRoute(METHOD_NAME_ALL, this.#path, handler);
+      handlers.forEach((handler2) => {
+        this.#addRoute(METHOD_NAME_ALL, this.#path, handler2);
       });
       return this;
     };
@@ -39969,14 +39991,14 @@ var Hono = class _Hono {
   route(path, app2) {
     const subApp = this.basePath(path);
     app2.routes.map((r) => {
-      let handler;
+      let handler2;
       if (app2.errorHandler === errorHandler) {
-        handler = r.handler;
+        handler2 = r.handler;
       } else {
-        handler = async (c, next) => (await compose([], app2.errorHandler)(c, () => r.handler(c, next))).res;
-        handler[COMPOSED_HANDLER] = r.handler;
+        handler2 = async (c, next) => (await compose([], app2.errorHandler)(c, () => r.handler(c, next))).res;
+        handler2[COMPOSED_HANDLER] = r.handler;
       }
-      subApp.#addRoute(r.method, r.path, handler, r.basePath);
+      subApp.#addRoute(r.method, r.path, handler2, r.basePath);
     });
     return this;
   }
@@ -40014,8 +40036,8 @@ var Hono = class _Hono {
    * })
    * ```
    */
-  onError = (handler) => {
-    this.errorHandler = handler;
+  onError = (handler2) => {
+    this.errorHandler = handler2;
     return this;
   };
   /**
@@ -40033,8 +40055,8 @@ var Hono = class _Hono {
    * })
    * ```
    */
-  notFound = (handler) => {
-    this.#notFoundHandler = handler;
+  notFound = (handler2) => {
+    this.#notFoundHandler = handler2;
     return this;
   };
   /**
@@ -40104,26 +40126,26 @@ var Hono = class _Hono {
         return new Request(url, request);
       };
     })();
-    const handler = async (c, next) => {
+    const handler2 = async (c, next) => {
       const res = await applicationHandler(replaceRequest(c.req.raw), ...getOptions(c));
       if (res) {
         return res;
       }
       await next();
     };
-    this.#addRoute(METHOD_NAME_ALL, mergePath(path, "*"), handler);
+    this.#addRoute(METHOD_NAME_ALL, mergePath(path, "*"), handler2);
     return this;
   }
-  #addRoute(method, path, handler, baseRoutePath) {
+  #addRoute(method, path, handler2, baseRoutePath) {
     method = method.toUpperCase();
     path = mergePath(this._basePath, path);
     const r = {
       basePath: baseRoutePath !== void 0 ? mergePath(this._basePath, baseRoutePath) : this._basePath,
       path,
       method,
-      handler
+      handler: handler2
     };
-    this.router.add(method, path, [handler, r]);
+    this.router.add(method, path, [handler2, r]);
     this.routes.push(r);
   }
   #handleError(err, c) {
@@ -40512,7 +40534,7 @@ var RegExpRouter = class {
     this.#middleware = { [METHOD_NAME_ALL]: /* @__PURE__ */ Object.create(null) };
     this.#routes = { [METHOD_NAME_ALL]: /* @__PURE__ */ Object.create(null) };
   }
-  add(method, path, handler) {
+  add(method, path, handler2) {
     const middleware = this.#middleware;
     const routes = this.#routes;
     if (!middleware || !routes) {
@@ -40543,14 +40565,14 @@ var RegExpRouter = class {
       Object.keys(middleware).forEach((m) => {
         if (method === METHOD_NAME_ALL || method === m) {
           Object.keys(middleware[m]).forEach((p) => {
-            re.test(p) && middleware[m][p].push([handler, paramCount]);
+            re.test(p) && middleware[m][p].push([handler2, paramCount]);
           });
         }
       });
       Object.keys(routes).forEach((m) => {
         if (method === METHOD_NAME_ALL || method === m) {
           Object.keys(routes[m]).forEach(
-            (p) => re.test(p) && routes[m][p].push([handler, paramCount])
+            (p) => re.test(p) && routes[m][p].push([handler2, paramCount])
           );
         }
       });
@@ -40564,7 +40586,7 @@ var RegExpRouter = class {
           routes[m][path2] ||= [
             ...findMiddleware(middleware[m], path2) || findMiddleware(middleware[METHOD_NAME_ALL], path2) || []
           ];
-          routes[m][path2].push([handler, paramCount - len + i + 1]);
+          routes[m][path2].push([handler2, paramCount - len + i + 1]);
         }
       });
     }
@@ -40609,11 +40631,11 @@ var SmartRouter = class {
   constructor(init2) {
     this.#routers = init2.routers;
   }
-  add(method, path, handler) {
+  add(method, path, handler2) {
     if (!this.#routes) {
       throw new Error(MESSAGE_MATCHER_IS_ALREADY_BUILT);
     }
-    this.#routes.push([method, path, handler]);
+    this.#routes.push([method, path, handler2]);
   }
   match(method, path) {
     if (!this.#routes) {
@@ -40670,17 +40692,17 @@ var Node2 = class _Node2 {
   #patterns;
   #order = 0;
   #params = emptyParams;
-  constructor(method, handler, children) {
+  constructor(method, handler2, children) {
     this.#children = children || /* @__PURE__ */ Object.create(null);
     this.#methods = [];
-    if (method && handler) {
+    if (method && handler2) {
       const m = /* @__PURE__ */ Object.create(null);
-      m[method] = { handler, possibleKeys: [], score: 0 };
+      m[method] = { handler: handler2, possibleKeys: [], score: 0 };
       this.#methods = [m];
     }
     this.#patterns = [];
   }
-  insert(method, path, handler) {
+  insert(method, path, handler2) {
     this.#order = ++this.#order;
     let curNode = this;
     const parts = splitRoutingPath(path);
@@ -40706,7 +40728,7 @@ var Node2 = class _Node2 {
     }
     curNode.#methods.push({
       [method]: {
-        handler,
+        handler: handler2,
         possibleKeys: possibleKeys.filter((v, i, a) => a.indexOf(v) === i),
         score: this.#order
       }
@@ -40827,7 +40849,7 @@ var Node2 = class _Node2 {
         return a.score - b2.score;
       });
     }
-    return [handlerSets.map(({ handler, params }) => [handler, params])];
+    return [handlerSets.map(({ handler: handler2, params }) => [handler2, params])];
   }
 };
 
@@ -40838,15 +40860,15 @@ var TrieRouter = class {
   constructor() {
     this.#node = new Node2();
   }
-  add(method, path, handler) {
+  add(method, path, handler2) {
     const results = checkOptionalParameter(path);
     if (results) {
       for (let i = 0, len = results.length; i < len; i++) {
-        this.#node.insert(method, results[i], handler);
+        this.#node.insert(method, results[i], handler2);
       }
       return;
     }
-    this.#node.insert(method, path, handler);
+    this.#node.insert(method, path, handler2);
   }
   match(method, path) {
     return this.#node.search(method, path);
@@ -56410,25 +56432,25 @@ var ZodEffects = class extends ZodType {
         return acc;
       };
       if (ctx.common.async === false) {
-        const inner = this._def.schema._parseSync({
+        const inner2 = this._def.schema._parseSync({
           data: ctx.data,
           path: ctx.path,
           parent: ctx
         });
-        if (inner.status === "aborted")
+        if (inner2.status === "aborted")
           return INVALID;
-        if (inner.status === "dirty")
+        if (inner2.status === "dirty")
           status.dirty();
-        executeRefinement(inner.value);
-        return { status: status.value, value: inner.value };
+        executeRefinement(inner2.value);
+        return { status: status.value, value: inner2.value };
       } else {
-        return this._def.schema._parseAsync({ data: ctx.data, path: ctx.path, parent: ctx }).then((inner) => {
-          if (inner.status === "aborted")
+        return this._def.schema._parseAsync({ data: ctx.data, path: ctx.path, parent: ctx }).then((inner2) => {
+          if (inner2.status === "aborted")
             return INVALID;
-          if (inner.status === "dirty")
+          if (inner2.status === "dirty")
             status.dirty();
-          return executeRefinement(inner.value).then(() => {
-            return { status: status.value, value: inner.value };
+          return executeRefinement(inner2.value).then(() => {
+            return { status: status.value, value: inner2.value };
           });
         });
       }
@@ -58870,7 +58892,9 @@ function createApp() {
       network: NETWORK,
       asset: SETTLEMENT_TOKEN2,
       payTo: PAY_TO,
-      revenueModel: "FeeRouter 70/20/10 (trader/platform/vault), settled on-chain",
+      // 誠實描述金流：x402 的付款直接進 payTo，70/20/10 是平台事後另外送的一筆
+      // 交易。把兩者寫成同一件事會讓讀者以為買方付的那筆錢就是被分潤的那筆錢。
+      revenueModel: `x402 \u4ED8\u6B3E\u76F4\u63A5\u9032 payTo\uFF08${PAY_TO}\uFF09\uFF1B70/20/10 \u5206\u6F64\u7531\u5E73\u53F0\u53E6\u884C\u900F\u904E FeeRouter.routeExternalRevenue \u4E0A\u93C8\u7D50\u7B97\uFF0C\u7D2F\u8A08\u53EF\u65BC /revenue \u67E5\u8A62\u3002\u5169\u8005\u662F\u4E0D\u540C\u7684\u5169\u7B46\u4EA4\u6613\u3002`,
       endpoints: {
         "GET /signals/:trader": { price: `$${PRICE_SIGNALS}`, paid: true, desc: "trader \u7E3E\u6548 + \u958B\u5009\u5EFA\u8B70" },
         "GET /oracle/:asset": { price: `$${PRICE_ORACLE}`, paid: true, desc: "\u6C7A\u7B56\u7D1A\u5FEB\u7167\uFF1A\u50F9\u683C / funding / OI \u5931\u8861 / \u9810\u4F30\u6E05\u7B97\u50F9 / edge \u5EFA\u8B70\uFF08long\xB7short\xB7no_trade\uFF09" },
@@ -58988,6 +59012,37 @@ function createApp() {
       return c.json({ ok: false, error: err.message }, 400);
     }
   });
+  app2.use("/oracle/*", async (c, next) => {
+    const asset = c.req.path.split("/")[2];
+    if (!asset) return next();
+    try {
+      const assetId = assetIdOf(asset);
+      const [[, updatedAt], maxPriceAge] = await Promise.all([
+        contracts2.oracle.getPrice(assetId),
+        contracts2.perp.maxPriceAge()
+      ]);
+      const tf = classifyTradeFreshness({
+        updatedAtSec: Number(updatedAt),
+        nowSec: Math.floor(Date.now() / 1e3),
+        maxPriceAgeSec: Number(maxPriceAge)
+      });
+      if (!tf.fresh) {
+        return c.json(
+          {
+            ok: false,
+            error: "price_stale",
+            message: `${asset} \u7684\u93C8\u4E0A\u50F9\u683C\u5DF2 ${Math.round(tf.ageSec / 3600)} \u5C0F\u6642\u672A\u66F4\u65B0\uFF0C\u8D85\u904E\u4EA4\u6613\u6240\u7684 maxPriceAge\uFF08${tf.maxPriceAgeSec} \u79D2\uFF09\u3002\u6B64\u6642\u958B\u5009\u6703 revert StalePrice\uFF0C\u6545\u4E0D\u8CA9\u552E\u9019\u4EFD\u5FEB\u7167\u3002`,
+            asset,
+            ageSec: tf.ageSec,
+            maxPriceAgeSec: tf.maxPriceAgeSec
+          },
+          503
+        );
+      }
+    } catch {
+    }
+    return next();
+  });
   app2.use(
     paymentMiddleware(
       PAY_TO,
@@ -59039,9 +59094,19 @@ function createApp() {
 // src/vercel-entry.ts
 loadEnv();
 var app = createApp();
-var vercel_entry_default = handle(app);
+var inner = handle(app);
+function handler(req, res) {
+  const proto = String(req.headers["x-forwarded-proto"] ?? "");
+  if (proto.includes("https") && req.socket && !req.socket.encrypted) {
+    Object.defineProperty(req.socket, "encrypted", {
+      value: true,
+      configurable: true
+    });
+  }
+  return inner(req, res);
+}
 export {
-  vercel_entry_default as default
+  handler as default
 };
 /*! Bundled license information:
 

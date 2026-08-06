@@ -14,4 +14,19 @@ loadEnv(); // Vercel 上 env 已注入；本機 vercel dev 時讀 agent/.env
 
 const app = createApp();
 
-export default handle(app);
+const inner = handle(app);
+
+// Vercel 在邊緣終止 TLS，抵達 Node runtime 的 socket 不是加密的，而
+// @hono/node-server 是用 `incoming.socket.encrypted ? "https" : "http"` 決定
+// scheme（dist/index.mjs:194）。結果是 x402 的 402 回應把 resource 寫成
+// http://…，而 resource 是付款方會一起驗證的欄位。
+export default function handler(req: any, res: any) {
+  const proto = String(req.headers["x-forwarded-proto"] ?? "");
+  if (proto.includes("https") && req.socket && !req.socket.encrypted) {
+    Object.defineProperty(req.socket, "encrypted", {
+      value: true,
+      configurable: true,
+    });
+  }
+  return inner(req, res);
+}

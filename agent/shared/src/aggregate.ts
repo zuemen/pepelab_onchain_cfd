@@ -3,13 +3,21 @@ import { ethers } from "ethers";
 import type { Contracts } from "./provider.ts";
 import { assetIdOf, symbolOfAssetId } from "./addresses.ts";
 import { fmtUsdc18, fmtPrice8, bpsToPercent, fmtTime } from "./format.ts";
+import { classifyTradeFreshness } from "./freshness.ts";
 
 export interface OracleSnapshot {
   asset: string;
   assetId: string;
   price: number; // USD
   updatedAt: string | null;
+  /** MockOracle 自己的 24 小時門檻。**不是**能不能交易的判準 —— 見 tradableNow。 */
   isStale: boolean;
+  /** 價格年齡（秒）。 */
+  ageSec: number;
+  /** 交易所的 maxPriceAge（秒）。開倉／平倉／清算都以它為準。 */
+  maxPriceAgeSec: number;
+  /** ageSec <= maxPriceAgeSec。false 代表此刻在鏈上開倉會 revert StalePrice。 */
+  tradableNow: boolean;
   fundingRateBps: number; // 原始 bps（int）
   fundingRatePercent: number; // 每 interval %
   fundingDirection: "longs_pay" | "shorts_pay" | "balanced";
@@ -195,22 +203,35 @@ export async function getOracleSnapshot(
   symbol: string,
 ): Promise<OracleSnapshot> {
   const assetId = assetIdOf(symbol);
-  const [priceRes, isStale, fundingBps, longOI, shortOI] = await Promise.all([
+  const [priceRes, isStale, fundingBps, longOI, shortOI, maxPriceAge] = await Promise.all([
     c.oracle.getPrice(assetId) as Promise<[bigint, bigint]>,
     c.oracle.isStale(assetId) as Promise<boolean>,
     c.perp.getFundingRate(assetId) as Promise<bigint>,
     c.perp.globalLongNotional(assetId) as Promise<bigint>,
     c.perp.globalShortNotional(assetId) as Promise<bigint>,
+    c.perp.maxPriceAge() as Promise<bigint>,
   ]);
   const [price, updatedAt] = priceRes;
   const direction =
     fundingBps > 0n ? "longs_pay" : fundingBps < 0n ? "shorts_pay" : "balanced";
+
+  // isStale 是 MockOracle 的 24 小時門檻；交易能不能成立由交易所的 maxPriceAge
+  // 決定，兩者差 4 倍，所以兩個都要回，並且明講哪個才是可交易的判準。
+  const tf = classifyTradeFreshness({
+    updatedAtSec: Number(updatedAt),
+    nowSec: Math.floor(Date.now() / 1000),
+    maxPriceAgeSec: Number(maxPriceAge),
+  });
+
   const base = {
     asset: symbol,
     assetId,
     price: fmtPrice8(price),
     updatedAt: fmtTime(updatedAt),
     isStale,
+    ageSec: tf.ageSec,
+    maxPriceAgeSec: tf.maxPriceAgeSec,
+    tradableNow: tf.fresh,
     fundingRateBps: Number(fundingBps),
     fundingRatePercent: bpsToPercent(fundingBps),
     fundingDirection: direction as OracleSnapshot["fundingDirection"],

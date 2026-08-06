@@ -11,6 +11,8 @@ import { paymentMiddleware, type Network } from "x402-hono";
 import { ethers } from "ethers";
 import {
   resolvePayTo,
+  assetIdOf,
+  classifyTradeFreshness,
   ADDRESSES,
   makeProvider,
   makeContracts,
@@ -129,7 +131,12 @@ export function createApp(): Hono {
       network: NETWORK,
       asset: SETTLEMENT_TOKEN,
       payTo: PAY_TO,
-      revenueModel: "FeeRouter 70/20/10 (trader/platform/vault), settled on-chain",
+      // 誠實描述金流：x402 的付款直接進 payTo，70/20/10 是平台事後另外送的一筆
+      // 交易。把兩者寫成同一件事會讓讀者以為買方付的那筆錢就是被分潤的那筆錢。
+      revenueModel:
+        `x402 付款直接進 payTo（${PAY_TO}）；70/20/10 分潤由平台另行透過 ` +
+        `FeeRouter.routeExternalRevenue 上鏈結算，累計可於 /revenue 查詢。` +
+        `兩者是不同的兩筆交易。`,
       endpoints: {
         "GET /signals/:trader": { price: `$${PRICE_SIGNALS}`, paid: true, desc: "trader 績效 + 開倉建議" },
         "GET /oracle/:asset": { price: `$${PRICE_ORACLE}`, paid: true, desc: "決策級快照：價格 / funding / OI 失衡 / 預估清算價 / edge 建議（long·short·no_trade）" },
@@ -283,6 +290,53 @@ export function createApp(): Hono {
     } catch (err) {
       return c.json({ ok: false, error: (err as Error).message }, 400);
     }
+  });
+
+  // ── 付費前的新鮮度閘門 ────────────────────────────────────────────────────
+  //
+  // /oracle/:asset 賣的是價格。當鏈上價格已超過交易所自己的 maxPriceAge 時，
+  // 這份資料既不能用來交易（openPosition 會 revert StalePrice），也沒有市場意義。
+  // x402 沒有退費機制，所以必須在 402 之前擋下來，而不是收了錢再回一個 isStale:true。
+  //
+  // 註冊順序有意義：Hono 依序執行 middleware，這一段必須在 paymentMiddleware
+  // 之前，否則買方已經付款了。
+  //
+  // 2026-08-06 的實況：Base Sepolia 的 oracle 已 9.5–44 天未更新，這個端點會用
+  // $0.005 賣出 sAAPL $199.15（真實 $311）。
+  app.use("/oracle/*", async (c, next) => {
+    const asset = c.req.path.split("/")[2];
+    if (!asset) return next();
+    try {
+      const assetId = assetIdOf(asset);
+      const [[, updatedAt], maxPriceAge] = await Promise.all([
+        contracts.oracle.getPrice(assetId) as Promise<[bigint, bigint]>,
+        contracts.perp.maxPriceAge() as Promise<bigint>,
+      ]);
+      const tf = classifyTradeFreshness({
+        updatedAtSec: Number(updatedAt),
+        nowSec: Math.floor(Date.now() / 1000),
+        maxPriceAgeSec: Number(maxPriceAge),
+      });
+      if (!tf.fresh) {
+        return c.json(
+          {
+            ok: false,
+            error: "price_stale",
+            message:
+              `${asset} 的鏈上價格已 ${Math.round(tf.ageSec / 3600)} 小時未更新，` +
+              `超過交易所的 maxPriceAge（${tf.maxPriceAgeSec} 秒）。此時開倉會 revert ` +
+              `StalePrice，故不販售這份快照。`,
+            asset,
+            ageSec: tf.ageSec,
+            maxPriceAgeSec: tf.maxPriceAgeSec,
+          },
+          503,
+        );
+      }
+    } catch {
+      // 讀不到（資產不存在、RPC 抖動）→ 交給下游處理，不要因為監測失敗就擋住服務。
+    }
+    return next();
   });
 
   // ── x402 付費牆：保護兩個 GET 端點 ──────────────────────────────────────
