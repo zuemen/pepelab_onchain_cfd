@@ -118,9 +118,29 @@ export const getAddresses = (chainId: number | null): ChainAddresses | null =>
 
 export const CHAIN_NAMES: Record<number, string> = {
   31337:    'Anvil Local',
-  11155111: 'Sepolia',
+  11155111: 'Sepolia（legacy demo）',
   84532:    'Base Sepolia',
 }
+
+/**
+ * 正式部署鏈。交易引擎、agent session、x402 收費全部只在這裡。
+ *
+ * 不是偏好問題，是限制：x402 的 `exact` scheme 需要 Circle 官方 USDC 走
+ * EIP-3009 `transferWithAuthorization`（`0x036CbD53…CF7e`），那顆幣只有 Base
+ * Sepolia 有。所以只要產品包含 x402，Base 就是唯一可能的鏈。
+ */
+export const PRIMARY_CHAIN_ID = 84532
+
+/**
+ * Sepolia 仍然部署著、仍然可讀，但它承載的是另一組展示：代幣化資產層
+ * （SYNTH_TOKENS）與 V2 硬化金庫（V2_STACK）。這兩者在 Base 上是空的。
+ * 反過來，agent session、x402、PepeAMM 只在 Base 上。
+ *
+ * 兩條鏈不是彼此的鏡像，所以 UI 必須說清楚使用者現在站在哪一邊，
+ * 而不是靜默地讓半個產品消失。
+ */
+export const isPrimaryChain = (chainId: number | null): boolean =>
+  chainId === PRIMARY_CHAIN_ID
 
 
 // keccak256 of symbol string — matches Deploy.s.sol and on-chain IDs
