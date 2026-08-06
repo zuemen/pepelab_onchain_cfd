@@ -7,10 +7,8 @@ import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { fUsd, fNum, fToken, fromUnits } from 'src/lib/pepefi/format'
 
 import { Row } from '../Atoms'
-import { asTx, tryParse } from '../types'
 import { C, panel, monoCss } from '../terminal-theme'
-
-type Contracts = any
+import { asTx, tryParse, type TerminalContracts } from '../types'
 
 type Stable = 'USDC' | 'USDT'
 
@@ -27,7 +25,7 @@ export function AccountPanel({
   notify,
   onDeposited,
 }: {
-  contracts: Contracts
+  contracts: TerminalContracts
   equity: bigint
   freeMgn: bigint
   totalPnl: bigint

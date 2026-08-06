@@ -5,7 +5,9 @@ name: Frontend CI
 # rather than at deploy time.
 on:
   push:
-    branches: [main]
+    # 這個 repo 的預設分支是 master。綁在 main 的時候 push trigger 從未觸發過，
+    # 只有 pull_request 會跑 —— 又一個「看起來有 CI，實際上沒跑」的例子。
+    branches: [master]
     paths:
       - 'frontend/**'
       - '.github/workflows/frontend-ci.yml'
@@ -15,6 +17,13 @@ on:
       - '.github/workflows/frontend-ci.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 defaults:
   run:
     working-directory: frontend
@@ -23,10 +32,11 @@ jobs:
   build:
     name: yarn build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '20'
           cache: yarn
@@ -34,8 +44,13 @@ jobs:
 
       # frontend is yarn-only; --frozen-lockfile makes an out-of-date lockfile
       # a CI failure rather than a silent resolution difference.
+      # package-lock.json 已刪除並加進 .gitignore —— 它從未被任何流程驗證過，
+      # 留著只會是第二個互相矛盾的真相來源（稽核 §六）。
       - name: Install
         run: yarn install --frozen-lockfile
 
       - name: Build
         run: yarn build
+
+      - name: Test
+        run: yarn test

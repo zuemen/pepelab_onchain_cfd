@@ -40,16 +40,27 @@ interface Props {
   onClose:     () => void;
   onSuccess:   () => void;
   kycRegistry: Contract | null;
+  /**
+   * 這個地址已經送出過申請、正在等審核。
+   *
+   * KYCRegistry 改成審核制之後，「還沒通過」有兩種完全不同的狀態，重送表單對
+   * `pending` 的使用者沒有任何幫助（只是再燒一次 gas），所以送出鍵要關掉。
+   */
+  isPending?:  boolean;
 }
 
 type TxResp = { wait(): Promise<unknown>; hash: string }
 const asTx = (tx: unknown): TxResp => tx as TxResp
 
-export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry }: Props) {
+export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPending = false }: Props) {
   const [fullName,    setFullName]    = useState('');
   const [nationality, setNationality] = useState('TW');
   const [busy,        setBusy]        = useState(false);
   const [error,       setError]       = useState<string | null>(null);
+  /** 這一輪送出成功 → 停在「已送出、待審核」畫面，不要直接關掉讓人以為過了。 */
+  const [submitted,   setSubmitted]   = useState(false);
+
+  const awaitingReview = isPending || submitted;
 
   const handleSubmit = async () => {
     if (!kycRegistry) return;
@@ -59,8 +70,11 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry }: Pr
     try {
       const tx = asTx(await kycRegistry.submitKYC(fullName.trim(), nationality));
       await tx.wait();
+      // submitKYC 現在只 emit KYCSubmitted——使用者「還沒」通過。舊版在這裡直接
+      // onClose()，畫面看起來就像驗證完成了，然後他回去下單被合約 revert
+      // NotKycVerified，完全不知道發生什麼事。改成留在原地明確告知「待審核」。
+      setSubmitted(true);
       onSuccess();
-      onClose();
     } catch (e) {
       setError(prettyError(e));
     } finally {
@@ -86,10 +100,10 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry }: Pr
       <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', pb: 1 }}>
         <Box>
           <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-            KYC 身分驗證
+            {awaitingReview ? 'KYC 申請審核中' : '送出 KYC 申請'}
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            交易股票 / 債券類合成資產需要完成 KYC
+            交易股票 / 債券類合成資產需要通過 KYC 審核
           </Typography>
         </Box>
         <IconButton
@@ -106,7 +120,20 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry }: Pr
       </DialogTitle>
 
       <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, pt: 1 }}>
-        {/* Demo disclaimer */}
+        {/* 審核制說明。這是這個 Dialog 最重要的一句話：送出 ≠ 通過。 */}
+        <Alert severity={awaitingReview ? 'success' : 'info'} variant="outlined">
+          <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+            {awaitingReview ? '✅ 申請已送出，等待審核' : '這是「送出申請」，不是即時通過'}
+          </Typography>
+          <Typography variant="caption" display="block" sx={{ opacity: 0.9 }}>
+            {awaitingReview
+              ? '你的 KYC 申請已上鏈記錄（KYCSubmitted）。審核人員核准（approveKYC）後，受管制標的才會解鎖；在那之前下單仍會被合約擋下（NotKycVerified）。可以先關掉這個視窗，稍後回來重新整理查看狀態。'
+              : '送出後會在鏈上留下一筆待審申請（KYCSubmitted），需由審核人員核准（approveKYC）才會通過。核准前仍無法交易受管制標的。'}
+          </Typography>
+        </Alert>
+
+        {/* Demo disclaimer — 已送出待審時不用再看填表注意事項 */}
+        {!awaitingReview && (
         <Alert
           severity="warning"
           variant="outlined"
@@ -124,8 +151,10 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry }: Pr
             此為學術展示系統。填入的姓名與國籍僅儲存在智能合約上作為 PoC 示範，請勿填入真實個人資訊。
           </Typography>
         </Alert>
+        )}
 
-        {/* Form */}
+        {/* Form — 待審核時隱藏，重複送出只是再燒一次 gas */}
+        {!awaitingReview && (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           <TextField
             label="姓名（示範用）"
@@ -157,6 +186,7 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry }: Pr
             </Select>
           </FormControl>
         </Box>
+        )}
 
         {error && (
           <Alert severity="error" sx={{ py: 0 }}>
@@ -174,18 +204,20 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry }: Pr
           fullWidth
           sx={{ py: 1.2 }}
         >
-          取消
+          {awaitingReview ? '關閉' : '取消'}
         </Button>
-        <Button
-          variant="contained"
-          color="primary"
-          onClick={() => void handleSubmit()}
-          disabled={busy || !fullName.trim() || !kycRegistry}
-          fullWidth
-          sx={{ py: 1.2, fontWeight: 'bold' }}
-        >
-          {busy ? '提交中…' : '完成 KYC 驗證'}
-        </Button>
+        {!awaitingReview && (
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={() => void handleSubmit()}
+            disabled={busy || !fullName.trim() || !kycRegistry}
+            fullWidth
+            sx={{ py: 1.2, fontWeight: 'bold' }}
+          >
+            {busy ? '送出中…' : '送出 KYC 申請'}
+          </Button>
+        )}
       </DialogActions>
     </Dialog>
   );

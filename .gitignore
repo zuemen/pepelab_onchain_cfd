@@ -2,9 +2,24 @@
 node_modules/
 
 # Foundry build output
-broadcast/
 cache/
 out/
+
+# Foundry broadcast logs
+#
+# 這裡刻意「只」忽略根目錄的 /broadcast/，而不是全 repo 的 broadcast/。
+# contracts/.gitignore 之前用 `!/broadcast` 反解這一條，於是同一份產物同時被
+# 「忽略」與「取消忽略」兩條語意相反的規則描述，從任一份都看不出意圖（稽核 §六）。
+#
+# 決定：**contracts/broadcast/ 保留進版控**。它是唯一記錄「哪個位址來自哪次部署、
+# 哪個 commit、哪個區塊」的機器可讀檔案，而且能拿去跟鏈上對照重新驗證。本專案的
+# 說明文件已多次與鏈上實況分歧（SessionManager 位址、FUNDING_INTERVAL、keeper
+# owner…，見 docs/audit/AUDIT_2026-08-06.md），broadcast 是這些爭議裡唯一不靠
+# 人工維護的一方。內容只有 tx / 位址 / receipt，不含私鑰。
+#
+# 因此：根目錄這條縮小成只管 repo 根目錄自己的 broadcast/；該排除的本機 anvil
+# 與 dry-run 由 contracts/.gitignore 處理。
+/broadcast/
 
 # Environment variables
 .env
@@ -16,6 +31,13 @@ foundry-local.toml
 
 # Frontend build
 frontend/dist/
+
+# frontend 是 yarn-only（package.json 有 "packageManager": "yarn@1.22.22"，
+# CI 跑 yarn install --frozen-lockfile）。package-lock.json 從來不會被任何流程
+# 驗證，留著只是第二個會慢慢與 yarn.lock 分歧的真相來源 —— 已刪除，別讓它回來。
+# 依賴的安全 pin 放在 package.json 的 "resolutions"，那是 yarn 專屬欄位、npm 會
+# 直接忽略，所以一份 npm lockfile 連漏洞修補都對不上。
+frontend/package-lock.json
 
 # Editor
 .vscode/

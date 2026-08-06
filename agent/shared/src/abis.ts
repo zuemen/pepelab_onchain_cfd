@@ -6,6 +6,9 @@ export const PERPETUAL_EXCHANGE_ABI = [
   "function getUnrealizedPnL(uint256 positionId) view returns (int256)",
   "function pendingFunding(uint256 positionId) view returns (int256)",
   "function getFundingRate(bytes32 asset) view returns (int256 rateBps)",
+  // 交易所自己的新鮮度門檻。付費 API 必須以它為準，而不是 MockOracle.isStale
+  // 的 24 小時 —— 兩者差 4 倍，中間那段會讓 API 建議下單而鏈上 revert。
+  "function maxPriceAge() view returns (uint256)",
   "function globalLongNotional(bytes32) view returns (uint256)",
   "function globalShortNotional(bytes32) view returns (uint256)",
   "function executionFee() view returns (uint256)",

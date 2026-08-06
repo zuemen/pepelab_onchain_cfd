@@ -12,10 +12,22 @@ import { ASSET_IDS, getAddresses } from 'src/contracts/addresses';
 import { paths } from 'src/routes/paths';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
 import { safeRead } from 'src/lib/pepefi/safeRead';
+import { STABLE_LABEL, ALT_STABLE_LABEL, X402_STABLE_LABEL } from 'src/lib/pepefi/tokenLabel';
+import { estimateLiquidationPrice } from 'src/lib/pepefi/liquidation';
+import { blocksTrading, stalenessNotice } from 'src/lib/pepefi/priceFreshness';
+import {
+  isOracleStale,
+  priceImpactBps,
+  HIGH_IMPACT_BPS,
+  SEVERE_IMPACT_BPS,
+  minOutWithSlippage,
+  DEFAULT_SLIPPAGE_BPS,
+} from 'src/lib/pepefi/ammQuote';
 import { useESG } from 'src/hooks/useESG';
 import ESGBadge from 'src/components/pepefi/ESGBadge';
 import { ASSETS_LIST, ASSET_LABEL, ASSET_META } from 'src/lib/pepefi/assetMeta';
 import { useKYC } from 'src/hooks/useKYC';
+import { useExecutionFee } from 'src/hooks/useExecutionFee';
 import KYCModal from 'src/components/pepefi/KYCModal';
 import Skeleton from 'src/components/pepefi/Skeleton';
 import PaperTradingBadge from 'src/components/pepefi/PaperTradingBadge';
@@ -70,11 +82,14 @@ interface PositionRow {
   leverage:      bigint;
   unrealizedPnL: bigint;
   currentPrice:  bigint;
+  /** 開倉時間（unix 秒）。ESG 獎勵有最短持有期，沒有這個就算不出還差多久。 */
+  openedAt:      bigint;
 }
 
 interface RawPos {
   asset: string; isLong: boolean; isOpen: boolean;
   entryPrice: bigint; margin: bigint; leverage: bigint;
+  openedAt: bigint;
 }
 
 interface ESGAssetInfo {
@@ -94,7 +109,7 @@ const fUsd   = (v: bigint) =>
   });
 const fPnL   = (v: bigint) => {
   const n = Number(v) / 1e18;
-  return (n >= 0 ? '+' : '') + n.toFixed(4) + ' USDC';
+  return (n >= 0 ? '+' : '') + n.toFixed(4) + ' ' + STABLE_LABEL;
 };
 const pnlColor = (v: bigint) => Number(v) >= 0 ? 'success.main' : 'error.main';
 const tryParse = (s: string): bigint | null => {
@@ -114,8 +129,9 @@ export default function ExchangePage() {
   const contracts    = useContracts(wallet.provider, wallet.signer, wallet.chainId);
   const livePrices   = useLivePrices();
   const fundingData  = useFundingData(contracts?.exchange ?? null);
-  const { data: esgData } = useESG(contracts?.esgRegistry ?? null);
-  
+  const execFee      = useExecutionFee(contracts?.exchange ?? null);
+  const { data: esgData, loaded: esgLoaded, unavailable: esgUnavailable } = useESG(contracts?.esgRegistry ?? null);
+
   const esg = (esgData ?? {}) as unknown as Record<string, ESGAssetInfo>;
 
   const { stable, setStable } = useStablecoin(contracts);
@@ -131,12 +147,21 @@ export default function ExchangePage() {
   const [pepeBal,   setPepeBal]   = useState(0n);
 
   // AMM swap (PepeAMM — deployed + funded on Base Sepolia)
+  //
+  // PepeAMM 這一輪被改寫成真正的恆定乘積池：`getPrice()` 現在是**池內現價**
+  // （儲備比例），不再是 oracle 報價；oracle 報價搬到新的 `oraclePrice()`。
+  // 兩者是不同的數字，而且會分岔——把池價標成 "Oracle rate" 會直接說謊。
   const [swapMode,  setSwapMode]  = useState<'eth-to-usdc' | 'usdc-to-eth'>('eth-to-usdc');
   const [payAmount, setPayAmount] = useState('');
-  const [ammPrice,  setAmmPrice]  = useState(0n);
+  const [ammPrice,  setAmmPrice]  = useState(0n);   // getPrice() — 池內現價
   const [ammEth,    setAmmEth]    = useState(0n);
   const [ammUsdc,   setAmmUsdc]   = useState(0n);
+  const [ammOracle, setAmmOracle] = useState<{ price: bigint; updatedAt: bigint }>({ price: 0n, updatedAt: 0n });
+  const [ammMaxAge, setAmmMaxAge] = useState(0n);   // maxOracleAge()，預設 1h
   const [receiveAmount, setReceiveAmount] = useState('');
+  /** 這筆兌換相對池內中價的滑點（bps）。恆定乘積 → 金額越大越痛。 */
+  const [impactBps, setImpactBps] = useState<number | null>(null);
+  const [quotedOut, setQuotedOut] = useState<bigint | null>(null);
 
   const [depositAmt,       setDepositAmt]        = useState('');
   const [withdrawAmt, setWithdrawAmt] = useState('');
@@ -155,16 +180,29 @@ export default function ExchangePage() {
 
   const [esgRewardedMap, setEsgRewardedMap] = useState<Record<string, boolean>>({});
   const [esgPreviewMap,  setEsgPreviewMap]  = useState<Record<string, bigint>>({});
+  /** EsgRewardDistributor.minHoldSeconds()（預設 30 天）。0 = 還沒讀到。 */
+  const [esgMinHold,     setEsgMinHold]     = useState(0n);
 
-  const { isVerified: isKYCVerified, refetch: refetchKYC } = useKYC(
-    contracts?.kycRegistry ?? null,
-    wallet.address ?? null
-  );
+  const {
+    isVerified: isKYCVerified,
+    isUnknown:  kycStatusUnknown,
+    isPending:  kycPending,
+    refetch:    refetchKYC,
+  } = useKYC(contracts?.kycRegistry ?? null, wallet.address ?? null);
 
   const setLoad = (k: string, v: boolean) => setBusy(p => ({ ...p, [k]: v }));
   const notify  = useCallback((msg: string, ok: boolean, hash?: string) => {
     setToast({ msg, ok, hash });
   }, []);
+
+  // ── F-1 · stale 擋單 ───────────────────────────────────────────────────────
+  // 這一頁是最大的下單路徑，卻是唯一沒接 stale 擋單的：顯示價來自 CoinGecko，
+  // 永遠是漂亮的綠色即時價，但結算走鏈上 oracle。oracle 過期時使用者按下
+  // Open Long → 簽名 → 付 gas → 合約 revert StalePrice。Terminal 早就擋了
+  // （見 sections/terminal/TerminalView.tsx），這裡把同一個判斷接上來。
+  const openFreshness = livePrices[selAsset]?.freshness;
+  const openStaleBlocked = openFreshness ? blocksTrading(openFreshness) : false;
+  const openStaleNotice = stalenessNotice(openFreshness, ASSET_LABEL[selAsset] ?? undefined);
 
   // N3: read the per-asset max leverage (0 → global default) and clamp the UI.
   useEffect(() => {
@@ -222,17 +260,26 @@ export default function ExchangePage() {
       // AMM reserves/price — skip when PepeAMM isn't deployed (0x0). Each read is
       // isolated so a slow/failed call can't block the page.
       if (String(contracts.pepeAMM.target) !== ZERO_ADDR) {
-        const [price, reserves] = await Promise.all([
+        const [price, reserves, oraclePx, maxAge] = await Promise.all([
           safeRead(contracts.pepeAMM.getPrice() as Promise<bigint>, 0n),
           safeRead(contracts.pepeAMM.getReserves() as Promise<[bigint, bigint]>, [0n, 0n] as [bigint, bigint]),
+          // oraclePrice() ＝ 舊 getPrice() 的語意（oracle 參考價 + updatedAt）。
+          // swap 會在 oracle 過期時 revert StaleOraclePrice，所以這個 updatedAt
+          // 要拿來事前擋單，而不是等使用者付完 gas 才知道。
+          safeRead(contracts.pepeAMM.oraclePrice() as unknown as Promise<[bigint, bigint]>, [0n, 0n] as [bigint, bigint]),
+          safeRead(contracts.pepeAMM.maxOracleAge() as Promise<bigint>, 0n),
         ]);
         setAmmPrice(price);
         setAmmEth(reserves[0]);
         setAmmUsdc(reserves[1]);
+        setAmmOracle({ price: oraclePx[0], updatedAt: oraclePx[1] });
+        setAmmMaxAge(maxAge);
       } else {
         setAmmPrice(0n);
         setAmmEth(0n);
         setAmmUsdc(0n);
+        setAmmOracle({ price: 0n, updatedAt: 0n });
+        setAmmMaxAge(0n);
       }
 
       // Above-the-fold shell (balances, faucets, swap, margin, open-position form)
@@ -241,16 +288,24 @@ export default function ExchangePage() {
       setPageLoading(false);
 
       const ids = await safeRead(contracts.exchange.getUserPositions(addr) as Promise<bigint[]>, []);
+      // 三個 view 之前是逐一 await：N 個倉位就是 3N 個往返。getPosition 併發拿完，
+      // 其餘兩個再一起併發，總延遲降到 2 個往返。
+      const rawPositions = await Promise.all(
+        ids.map(id => safeRead(contracts.exchange.getPosition(id) as unknown as Promise<RawPos | null>, null)),
+      );
       const settled = await Promise.allSettled(
-        ids.map(async (id): Promise<PositionRow | null> => {
-          const raw = await safeRead(contracts.exchange.getPosition(id) as unknown as Promise<RawPos | null>, null);
+        ids.map(async (id, i): Promise<PositionRow | null> => {
+          const raw = rawPositions[i];
           if (!raw || !raw.isOpen) return null;
-          const pnl = await safeRead(contracts.exchange.getUnrealizedPnL(id) as Promise<bigint>, 0n);
-          const pr  = await safeRead(contracts.oracle.getPrice(raw.asset) as unknown as Promise<[bigint, bigint]>, [0n, 0n] as [bigint, bigint]);
+          const [pnl, pr] = await Promise.all([
+            safeRead(contracts.exchange.getUnrealizedPnL(id) as Promise<bigint>, 0n),
+            safeRead(contracts.oracle.getPrice(raw.asset) as unknown as Promise<[bigint, bigint]>, [0n, 0n] as [bigint, bigint]),
+          ]);
           return {
             id, asset: raw.asset, isLong: raw.isLong,
             entryPrice: raw.entryPrice, margin: raw.margin, leverage: raw.leverage,
             unrealizedPnL: pnl, currentPrice: pr[0] * 10n ** 10n,
+            openedAt: raw.openedAt ?? 0n,
           };
         })
       );
@@ -318,6 +373,13 @@ export default function ExchangePage() {
       }
       setEsgRewardedMap(newRewarded);
       setEsgPreviewMap(newPreview);
+
+      // EsgRewardDistributor 現在要求倉位 isOpen 且已滿最短持有期（預設 30 天），
+      // 而 previewReward 對不合格的情況一律回 0。沒有 minHoldSeconds 的話，
+      // 使用者只會看到一顆寫著「0.0 PEPE」的按鈕，按下去 revert HoldTooShort，
+      // 完全不知道自己只是抱得不夠久。
+      const mh = await safeRead(contracts.esgRewardDistributor.minHoldSeconds() as Promise<bigint>, 0n);
+      if (!cancelled) setEsgMinHold(mh);
     })();
     return () => { cancelled = true; };
   }, [contracts, positions, esg, wallet.chainId]);
@@ -333,37 +395,61 @@ export default function ExchangePage() {
     }
   }, [livePrices[selAsset]?.usd, selAsset]);
 
-  // ── Live AMM quote (oracle-priced, zero slippage) ───────────────────────────
+  // ── Live AMM quote (constant-product → 有滑點) ──────────────────────────────
+  // quote 現在是 x*y=k 的實際輸出，不是 oracle × 數量。除了金額之外還要把
+  // 價格衝擊算出來給使用者看，否則大額兌換會在毫無預警下吃掉好幾個百分點。
   useEffect(() => {
     if (!contracts?.pepeAMM || String(contracts.pepeAMM.target) === ZERO_ADDR
         || !payAmount || parseFloat(payAmount) <= 0) {
       setReceiveAmount('');
+      setImpactBps(null);
+      setQuotedOut(null);
       return;
     }
     let cancelled = false;
     void (async () => {
       try {
         const parsed = parseEther(payAmount);
-        const out = swapMode === 'eth-to-usdc'
+        const isEthIn = swapMode === 'eth-to-usdc';
+        const out = isEthIn
           ? await contracts.pepeAMM.quoteETHForUSDC(parsed) as bigint
           : await contracts.pepeAMM.quoteUSDCForETH(parsed) as bigint;
-        if (!cancelled) setReceiveAmount((Number(out) / 1e18).toFixed(swapMode === 'eth-to-usdc' ? 2 : 6));
+        if (cancelled) return;
+        setQuotedOut(out);
+        setReceiveAmount((Number(out) / 1e18).toFixed(isEthIn ? 2 : 6));
+        setImpactBps(priceImpactBps({
+          amountIn:   parsed,
+          amountOut:  out,
+          reserveIn:  isEthIn ? ammEth : ammUsdc,
+          reserveOut: isEthIn ? ammUsdc : ammEth,
+        }));
       } catch {
-        if (!cancelled) setReceiveAmount('');
+        // quote 也會 revert（InsufficientLiquidity / InsufficientInput）——那代表
+        // 這筆金額根本換不成，顯示空白比顯示一個假數字誠實。
+        if (!cancelled) { setReceiveAmount(''); setImpactBps(null); setQuotedOut(null); }
       }
     })();
     return () => { cancelled = true; };
-  }, [contracts?.pepeAMM, payAmount, swapMode]);
+  }, [contracts?.pepeAMM, payAmount, swapMode, ammEth, ammUsdc]);
 
   // ── Transactions ────────────────────────────────────────────────────────────
   const ammDeployed = !!contracts && String(contracts.pepeAMM.target) !== ZERO_ADDR;
 
-  // ETH ↔ USDC swap via PepeAMM. minOut carries a 0.5% slippage buffer off the
-  // oracle quote to avoid InsufficientOutput. USDC shown, MockUSDC underneath.
+  // swap 會在 oracle 過期（> maxOracleAge，預設 1h）時 revert StaleOraclePrice。
+  // 和開倉的 stale 擋單同樣的道理：能在按下去之前就知道的事，不要讓使用者付 gas 才知道。
+  const ammOracleStale = isOracleStale(ammOracle.updatedAt, ammMaxAge, Date.now() / 1000);
+  const AMM_STALE_MSG = '兌換池的參考預言機報價已過期，合約會拒絕兌換（StaleOraclePrice）。請等 keeper 更新價格後再試。';
+
+  // ETH ↔ USDC swap via PepeAMM (constant product). minOut 一律以**當下的 quote**
+  // 為基準打 DEFAULT_SLIPPAGE_BPS，而不是 oracle 價——池子有滑點，拿 oracle 價
+  // 打 0.5% 當底線會讓任何稍大的單子必定 revert InsufficientOutput。
+  // 這 0.5% 只負責吸收「送出 → 上鏈」之間別人動過池子的那一點差。
   const doSwap = async () => {
     if (!contracts || !wallet.address || !ammDeployed) return;
     const amt = parseFloat(payAmount);
     if (!amt || amt <= 0) { notify('Enter a valid amount', false); return; }
+    // 事前擋掉必定 revert 的兩種情況，不讓使用者白付 gas。
+    if (ammOracleStale) { notify(AMM_STALE_MSG, false); return; }
     const amm = String(contracts.pepeAMM.target);
 
     setLoad('swap', true);
@@ -371,23 +457,23 @@ export default function ExchangePage() {
       if (swapMode === 'eth-to-usdc') {
         const ethIn  = parseEther(payAmount);
         const quoted = await contracts.pepeAMM.quoteETHForUSDC(ethIn) as bigint;
-        const minOut = quoted * 995n / 1000n; // 0.5% slippage buffer
+        const minOut = minOutWithSlippage(quoted);
         const tx = asTx(await contracts.pepeAMM.swapETHForUSDC(minOut, { value: ethIn }));
         await tx.wait();
-        notify(`Swapped ${payAmount} ETH for ~${(Number(quoted) / 1e18).toFixed(2)} USDC ✓`, true, tx.hash);
+        notify(`Swapped ${payAmount} ETH for ~${(Number(quoted) / 1e18).toFixed(2)} ${STABLE_LABEL} ✓`, true, tx.hash);
       } else {
         const usdcIn = parseEther(payAmount);
         const currentAllowance = await contracts.usdc.allowance(wallet.address, amm) as bigint;
         if (currentAllowance < usdcIn) {
-          notify('Approving USDC...', true);
+          notify(`Approving ${STABLE_LABEL}…`, true);
           const approveTx = asTx(await contracts.usdc.approve(amm, usdcIn));
           await approveTx.wait();
         }
         const quoted    = await contracts.pepeAMM.quoteUSDCForETH(usdcIn) as bigint;
-        const minEthOut = quoted * 995n / 1000n; // 0.5% slippage buffer
+        const minEthOut = minOutWithSlippage(quoted);
         const tx = asTx(await contracts.pepeAMM.swapUSDCForETH(usdcIn, minEthOut));
         await tx.wait();
-        notify(`Swapped ${payAmount} USDC for ~${(Number(quoted) / 1e18).toFixed(6)} ETH ✓`, true, tx.hash);
+        notify(`Swapped ${payAmount} ${STABLE_LABEL} for ~${(Number(quoted) / 1e18).toFixed(6)} ETH ✓`, true, tx.hash);
       }
       setPayAmount('');
       await new Promise(r => setTimeout(r, 1500));
@@ -405,7 +491,7 @@ export default function ExchangePage() {
     try {
       const tx = asTx(await contracts.usdc.faucet());
       await tx.wait();
-      notify('已領取測試 USDC ✓ — 可在右側 Margin Account「Approve & Deposit」作為保證金', true, tx.hash);
+      notify(`已領取測試 ${STABLE_LABEL} ✓ — 可在右側 Margin Account「Approve & Deposit」作為保證金`, true, tx.hash);
       await fetchAll();
     } catch (e) {
       notify(prettyError(e), false);
@@ -422,7 +508,7 @@ export default function ExchangePage() {
     try {
       const tx = asTx(await contracts.usdt.faucet());
       await tx.wait();
-      notify('已領取測試 USDT ✓ — 可持有與兌換；保證金請用 USDC', true, tx.hash);
+      notify(`已領取測試 ${ALT_STABLE_LABEL} ✓ — 可持有與兌換；保證金請用 ${STABLE_LABEL}`, true, tx.hash);
       await fetchAll();
     } catch (e) {
       notify(prettyError(e), false);
@@ -453,7 +539,7 @@ export default function ExchangePage() {
           type: 'ERC20',
           options: {
             address: contracts.usdc.target,
-            symbol: 'mUSDC',
+            symbol: STABLE_LABEL,
             decimals: 18,
           },
         },
@@ -473,7 +559,7 @@ export default function ExchangePage() {
       await approveTx.wait();
       const depositTx = asTx(await contracts.exchange.depositMargin(amt));
       await depositTx.wait();
-      notify(`Deposited ${depositAmt} USDC ✓`, true, depositTx.hash);
+      notify(`Deposited ${depositAmt} ${STABLE_LABEL} ✓`, true, depositTx.hash);
       setDepositAmt('');
       await fetchAll();
     } catch (e) {
@@ -489,7 +575,7 @@ export default function ExchangePage() {
     try {
       const tx = asTx(await contracts.exchange.withdrawMargin(amt));
       await tx.wait();
-      notify(`Withdrew ${withdrawAmt} USDC ✓`, true, tx.hash);
+      notify(`Withdrew ${withdrawAmt} ${STABLE_LABEL} ✓`, true, tx.hash);
       setWithdrawAmt('');
       await fetchAll();
     } catch (e) {
@@ -505,6 +591,9 @@ export default function ExchangePage() {
       notify('保證金不足，請先在 Margin Account 區塊 Approve & Deposit', false);
       return;
     }
+    // F-1：鏈上價過期時 openPosition 會 revert StalePrice。按鈕已經是 disabled，
+    // 這裡是第二道防線——鍵盤送出、UI 狀態還沒重繪的那一瞬間都要擋住。
+    if (openStaleNotice) { notify(openStaleNotice, false); return; }
     setLoad('open', true);
     try {
       const execFee = (await contracts.exchange.executionFee()) as bigint;
@@ -518,8 +607,15 @@ export default function ExchangePage() {
     } finally { setLoad('open', false); }
   };
 
-  const closePos = async (id: bigint) => {
+  // M1：平倉走的是同一顆 oracle，一樣會被 StalePrice 擋。以該倉位自己的標的
+  // 判斷，而不是拿當前選中的資產去猜——持倉表裡每一列可能是不同標的。
+  const staleNoticeForAsset = (asset: string): string | null =>
+    stalenessNotice(livePrices[asset as AssetId]?.freshness, ASSET_LABEL[asset as AssetId] ?? undefined);
+
+  const closePos = async (id: bigint, asset: string) => {
     if (!contracts) return;
+    const blocked = staleNoticeForAsset(asset);
+    if (blocked) { notify(blocked, false); return; }
     const key = `close_${id}`;
     setLoad(key, true);
     try {
@@ -558,24 +654,23 @@ export default function ExchangePage() {
 
   const openMgnBig = tryParse(openMgn);
   const notional   = openMgnBig !== null ? openMgnBig * BigInt(leverage) : 0n;
-  
-  const maintenanceBps = 500n; // 5% maintenance margin
-  const tradingFeeBps  = 10n;  // 0.1% closing fee
-  const bufferBps      = maintenanceBps + tradingFeeBps; // 5.1% total buffer
-  const liqPrice = isLong
-    ? curPrice * (10000n - 10000n / BigInt(leverage) + bufferBps) / 10000n
-    : curPrice * (10000n + 10000n / BigInt(leverage) - bufferBps) / 10000n;
+
+  // 清算價公式集中在 lib/pepefi/liquidation.ts，和終端機共用同一份
+  // （之前這頁含 5.1% buffer、終端機沒有，同一個倉位在兩頁看到兩個數字）。
+  const liqPrice = estimateLiquidationPrice({ entryPrice: curPrice, isLong, leverage: BigInt(leverage) });
 
   const livePositions = positions.map(p => {
     const liveUsd = livePrices[p.asset as AssetId]?.usd;
     const currentLivePrice = liveUsd ? BigInt(Math.round(liveUsd * 1e8)) * 10n**10n : p.currentPrice;
-    
+
+    // entryPrice 為 0 代表這筆讀取失敗或倉位資料異常；除下去會是 division by zero。
+    // 同檔另外兩處早就有這個守衛，只有這裡漏掉。
     const notional = p.margin * p.leverage;
-    const size = (notional * 10n**18n) / p.entryPrice;
+    const size = p.entryPrice > 0n ? (notional * 10n**18n) / p.entryPrice : 0n;
     const priceChange = currentLivePrice - p.entryPrice;
-    let livePnL = (priceChange * size) / 10n**18n;
+    let livePnL = p.entryPrice > 0n ? (priceChange * size) / 10n**18n : 0n;
     if (!p.isLong) livePnL = -livePnL;
-    
+
     return { ...p, currentLivePrice, livePnL };
   });
 
@@ -586,8 +681,8 @@ export default function ExchangePage() {
   const isBusy = !!activeTask;
   let loadingMsg = 'Processing transaction...';
   if (activeTask) {
-    if (activeTask === 'swap') loadingMsg = swapMode === 'eth-to-usdc' ? 'Swapping ETH to USDC...' : 'Swapping USDC to ETH...';
-    else if (activeTask === 'faucet') loadingMsg = 'Claiming test USDC…';
+    if (activeTask === 'swap') loadingMsg = swapMode === 'eth-to-usdc' ? `Swapping ETH to ${STABLE_LABEL}…` : `Swapping ${STABLE_LABEL} to ETH…`;
+    else if (activeTask === 'faucet') loadingMsg = `Claiming test ${STABLE_LABEL}…`;
     else if (activeTask === 'pepe') loadingMsg = 'Claiming test PEPE…';
     else if (activeTask === 'deposit') loadingMsg = 'Depositing Margin...';
     else if (activeTask === 'withdraw') loadingMsg = 'Withdrawing Margin...';
@@ -716,14 +811,14 @@ export default function ExchangePage() {
           How CFD trading works on PepeLab
         </Typography>
         <Typography variant="body2" component="ol" sx={{ pl: 2, m: 0, '& li': { mb: 0.5 } }}>
-          <li><strong>Get tokens:</strong> Claim test USDC (and PEPE) from the faucet — no swap needed.</li>
-          <li><strong>Margin Account:</strong> Approve &amp; deposit USDC into PerpetualExchange. This becomes your free margin.</li>
+          <li><strong>Get tokens:</strong> Claim test {STABLE_LABEL} (and PEPE) from the faucet — no swap needed.</li>
+          <li><strong>Margin Account:</strong> Approve &amp; deposit {STABLE_LABEL} into PerpetualExchange. This becomes your free margin.</li>
           <li><strong>Open Position:</strong> Use free margin to open long/short on 11 synthetic assets — crypto (sBTC, sETH), equity (sAAPL, sTSLA, sNVDA, sMSFT, sGOOGL), commodity (sGOLD), bond (sBOND), and ESG ETFs (sICLN, sESGU). 🔒 = KYC required.</li>
           <li><strong>PnL:</strong> Price moves → position value changes → close to realize PnL.</li>
         </Typography>
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-          💱 幣別：平台保證金與兌換用 <b>USDC</b>（測試網模擬幣，可用 Faucet 免費領）；
-          <b>x402</b> 付費 API 結算用 <b>官方 USDC</b>（Circle，EIP-3009）。兩者用途不同、勿混用。
+          💱 幣別：平台保證金與兌換用 <b>{STABLE_LABEL}</b>（測試網模擬幣，可用 Faucet 免費領）；
+          <b>x402</b> 付費 API 結算用 <b>{X402_STABLE_LABEL}</b>（Circle，EIP-3009）。兩者用途不同、勿混用。
         </Typography>
       </Alert>
 
@@ -732,7 +827,7 @@ export default function ExchangePage() {
             <Box>
               <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>🚰 Get Test Tokens</Typography>
               <Typography variant="caption" color="text.secondary">
-                PEPE 是平台幣（測試網模擬），用水龍頭免費領取；USDC 為模擬保證金穩定幣；x402 付費用官方 USDC。
+                PEPE 是平台幣（測試網模擬），用水龍頭免費領取；{STABLE_LABEL} 為模擬保證金穩定幣；x402 付費用{X402_STABLE_LABEL}。
               </Typography>
             </Box>
 
@@ -740,7 +835,7 @@ export default function ExchangePage() {
             <Box sx={{ bgcolor: 'background.neutral', borderRadius: 2, p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
               <Box>
                 <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
-                  USDC <Typography component="span" variant="caption" color="text.secondary">· 模擬保證金</Typography>
+                  {STABLE_LABEL} <Typography component="span" variant="caption" color="text.secondary">· 模擬保證金</Typography>
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>Balance: {f18(usdcBal)}</Typography>
               </Box>
@@ -751,7 +846,7 @@ export default function ExchangePage() {
                 startIcon={<span>🚰</span>}
                 sx={{ textTransform: 'none', fontWeight: 'bold', whiteSpace: 'nowrap' }}
               >
-                {busy['faucet'] ? '領取中…' : '領取 USDC'}
+                {busy['faucet'] ? '領取中…' : `領取 ${STABLE_LABEL}`}
               </Button>
             </Box>
 
@@ -759,7 +854,7 @@ export default function ExchangePage() {
             <Box sx={{ bgcolor: 'background.neutral', borderRadius: 2, p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
               <Box>
                 <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
-                  USDT <Typography component="span" variant="caption" color="text.secondary">· 模擬穩定幣（持有／兌換）</Typography>
+                  {ALT_STABLE_LABEL} <Typography component="span" variant="caption" color="text.secondary">· 模擬穩定幣（持有／兌換）</Typography>
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
                   {usdtDeployed ? `Balance: ${f18(usdtBal)}` : '尚未在本網路部署'}
@@ -774,7 +869,7 @@ export default function ExchangePage() {
                   startIcon={<span>🚰</span>}
                   sx={{ textTransform: 'none', fontWeight: 'bold', whiteSpace: 'nowrap' }}
                 >
-                  {busy['usdt'] ? '領取中…' : '領取 USDT'}
+                  {busy['usdt'] ? '領取中…' : `領取 ${ALT_STABLE_LABEL}`}
                 </Button>
               ) : (
                 <Chip size="small" label="尚未部署" variant="outlined" />
@@ -818,6 +913,18 @@ export default function ExchangePage() {
               ETH 餘額：<Box component="span" sx={{ fontFamily: MONO, color: 'text.primary' }}>{ethBal}</Box>（開倉需少量 ETH 付執行費）
             </Typography>
 
+            {/* faucet() 現在要求 msg.sender == tx.origin：合約錢包按下去必定
+                revert FaucetCallerMustBeEOA。這是水龍頭唯一一個使用者自己無法
+                從錯誤訊息推理出來的限制，所以寫在按鈕旁邊而不是只放在 toast。 */}
+            <Alert severity="info" variant="outlined" sx={{ py: 0.5 }}>
+              <Typography variant="caption">
+                🔑 水龍頭只開放<b>一般錢包（EOA）</b>領取：合約防機器人濫領的條件是
+                <code> msg.sender == tx.origin</code>，所以用 <b>Safe / ERC-4337 智能合約錢包</b>
+                （或任何 batch / multicall 代呼叫）點下去會被合約以 <code>FaucetCallerMustBeEOA</code> 拒絕。
+                請改用一般 EOA 錢包領取後再轉過去。每個地址 24 小時可領一次。
+              </Typography>
+            </Alert>
+
             <Button
               variant="text"
               size="small"
@@ -825,7 +932,7 @@ export default function ExchangePage() {
               startIcon={<Icon icon="solar:wallet-bold-duotone" />}
               sx={{ textTransform: 'none', color: 'info.main', fontSize: '0.75rem', alignSelf: 'flex-start' }}
             >
-              把 USDC 加入 MetaMask
+              把 {STABLE_LABEL} 加入 MetaMask
             </Button>
       </Card>
 
@@ -847,7 +954,9 @@ export default function ExchangePage() {
           >
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'white' }}>Swap</Typography>
-              <Typography variant="caption" sx={{ color: 'success.main', fontWeight: 'bold' }}>● Oracle-priced</Typography>
+              {/* 池子是恆定乘積，不是 oracle 定價。舊的「● Oracle-priced」徽章
+                  現在是錯的，而且錯在會讓人以為大額換匯沒有滑點。 */}
+              <Typography variant="caption" sx={{ color: 'warning.main', fontWeight: 'bold' }}>● 恆定乘積池 · 有滑點</Typography>
             </Box>
 
             {!ammDeployed ? (
@@ -868,7 +977,7 @@ export default function ExchangePage() {
                       style={{ width: '100%', background: 'transparent', border: 'none', fontSize: '2rem', color: 'white', outline: 'none', fontWeight: 700, fontFamily: MONO }}
                     />
                     <Chip
-                      label={swapMode === 'eth-to-usdc' ? 'ETH' : 'USDC'}
+                      label={swapMode === 'eth-to-usdc' ? 'ETH' : STABLE_LABEL}
                       sx={{ bgcolor: '#293249', color: 'white', fontWeight: 'bold' }}
                     />
                   </Box>
@@ -897,7 +1006,7 @@ export default function ExchangePage() {
                       {receiveAmount || '0'}
                     </Typography>
                     <Chip
-                      label={swapMode === 'eth-to-usdc' ? 'USDC' : 'ETH'}
+                      label={swapMode === 'eth-to-usdc' ? STABLE_LABEL : 'ETH'}
                       sx={{ bgcolor: '#293249', color: 'white', fontWeight: 'bold' }}
                     />
                   </Box>
@@ -908,29 +1017,75 @@ export default function ExchangePage() {
                   </Box>
                 </Box>
 
-                {/* Pool info */}
+                {/* Pool info。getPrice() 是**池內現價**（儲備比例），oraclePrice()
+                    才是 oracle 參考價——兩個都顯示，因為它們分岔到超過
+                    maxOracleDeviationBps 時合約就會擋下兌換。 */}
                 <Box sx={{ px: 1, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                   <Typography variant="caption" color="text.secondary">
-                    Oracle rate: <Box component="span" sx={{ color: 'white', fontFamily: MONO, fontWeight: 'bold' }}>1 ETH = {ammPrice > 0n ? (Number(ammPrice) / 1e18).toFixed(2) : '–'} USDC</Box>
+                    Pool price（池內現價）: <Box component="span" sx={{ color: 'white', fontFamily: MONO, fontWeight: 'bold' }}>1 ETH = {ammPrice > 0n ? (Number(ammPrice) / 1e18).toFixed(2) : '–'} {STABLE_LABEL}</Box>
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    Pool reserves: <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>{(Number(ammEth) / 1e18).toFixed(4)} ETH</Box> / <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>{(Number(ammUsdc) / 1e18).toFixed(2)} USDC</Box>
+                    Oracle ref.（參考價）: <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>1 ETH = {ammOracle.price > 0n ? (Number(ammOracle.price) / 1e18).toFixed(2) : '–'} {STABLE_LABEL}</Box>
                   </Typography>
-                  <Typography variant="caption" color="text.secondary">Slippage buffer: 0.5% · zero-slippage oracle pricing</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Pool reserves: <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>{(Number(ammEth) / 1e18).toFixed(4)} ETH</Box> / <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>{(Number(ammUsdc) / 1e18).toFixed(2)} {STABLE_LABEL}</Box>
+                  </Typography>
+                  {impactBps !== null && (
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        fontWeight: impactBps >= HIGH_IMPACT_BPS ? 'bold' : 'normal',
+                        color: impactBps >= SEVERE_IMPACT_BPS
+                          ? 'error.main'
+                          : impactBps >= HIGH_IMPACT_BPS ? 'warning.main' : 'text.secondary',
+                      }}
+                    >
+                      Price impact（含手續費）: <Box component="span" sx={{ fontFamily: MONO }}>{(impactBps / 100).toFixed(2)}%</Box>
+                    </Typography>
+                  )}
+                  {quotedOut !== null && quotedOut > 0n && (
+                    <Typography variant="caption" color="text.secondary">
+                      Minimum received（{(DEFAULT_SLIPPAGE_BPS / 100).toFixed(1)}% 容忍）:{' '}
+                      <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>
+                        {(Number(minOutWithSlippage(quotedOut)) / 1e18).toFixed(swapMode === 'eth-to-usdc' ? 2 : 6)}{' '}
+                        {swapMode === 'eth-to-usdc' ? STABLE_LABEL : 'ETH'}
+                      </Box>
+                    </Typography>
+                  )}
+                  <Typography variant="caption" color="text.secondary">
+                    恆定乘積 (x·y=k) 池：金額越大滑點越高。報價已含 0.3% 手續費，minOut 以即時 quote 為基準。
+                  </Typography>
                 </Box>
+
+                {impactBps !== null && impactBps >= SEVERE_IMPACT_BPS && (
+                  <Alert severity="error" variant="outlined" sx={{ py: 0.5 }}>
+                    <Typography variant="caption">
+                      ⚠ 這筆兌換的價格衝擊高達 <b>{(impactBps / 100).toFixed(2)}%</b>，等於用遠差於市價的價格成交。
+                      建議分批換小額；金額太大時合約還會以 <code>PriceOutOfBand</code> 直接拒絕（池價被推離 oracle 太遠）。
+                    </Typography>
+                  </Alert>
+                )}
+
+                {ammOracleStale && (
+                  <Alert severity="warning" variant="outlined" sx={{ py: 0.5 }}>
+                    <Typography variant="caption">⛔ {AMM_STALE_MSG}</Typography>
+                  </Alert>
+                )}
 
                 <Button
                   variant="contained"
                   fullWidth
                   onClick={() => void doSwap()}
-                  disabled={busy['swap'] || !payAmount || parseFloat(payAmount) <= 0}
+                  disabled={busy['swap'] || !payAmount || parseFloat(payAmount) <= 0 || ammOracleStale}
                   sx={{ py: 1.6, borderRadius: 2, fontWeight: 'bold', fontSize: '1.05rem' }}
                 >
                   {busy['swap']
                     ? 'Swapping…'
-                    : !payAmount || parseFloat(payAmount) <= 0
-                      ? 'Enter an amount'
-                      : swapMode === 'eth-to-usdc' ? 'Swap ETH → USDC' : 'Swap USDC → ETH'}
+                    : ammOracleStale
+                      ? '⛔ 預言機報價過期，暫停兌換'
+                      : !payAmount || parseFloat(payAmount) <= 0
+                        ? 'Enter an amount'
+                        : swapMode === 'eth-to-usdc' ? `Swap ETH → ${STABLE_LABEL}` : `Swap ${STABLE_LABEL} → ETH`}
                 </Button>
               </>
             )}
@@ -947,7 +1102,7 @@ export default function ExchangePage() {
                 </Typography>
                 <Typography variant="h4" sx={{ fontWeight: 800, fontFamily: MONO, mt: 0.5 }}>
                   {fUsd(accountEquity)}{' '}
-                  <Typography component="span" variant="subtitle2" color="text.secondary">mUSDC (Testnet)</Typography>
+                  <Typography component="span" variant="subtitle2" color="text.secondary">{STABLE_LABEL} (Testnet)</Typography>
                 </Typography>
               </Box>
               <Box sx={{ textAlign: 'right' }}>
@@ -976,14 +1131,14 @@ export default function ExchangePage() {
                   value={stable}
                   onChange={(_, v) => v && setStable(v)}
                 >
-                  <ToggleButton value="USDC" sx={{ textTransform: 'none', px: 2 }}>USDC</ToggleButton>
-                  <ToggleButton value="USDT" sx={{ textTransform: 'none', px: 2 }}>USDT</ToggleButton>
+                  <ToggleButton value="USDC" sx={{ textTransform: 'none', px: 2 }}>{STABLE_LABEL}</ToggleButton>
+                  <ToggleButton value="USDT" sx={{ textTransform: 'none', px: 2 }}>{ALT_STABLE_LABEL}</ToggleButton>
                 </ToggleButtonGroup>
                 <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.75, fontFamily: MONO }}>
-                  餘額 {stable}: {f18(stable === 'USDC' ? usdcBal : usdtBal)}
+                  餘額 {stable === 'USDC' ? STABLE_LABEL : ALT_STABLE_LABEL}: {f18(stable === 'USDC' ? usdcBal : usdtBal)}
                 </Typography>
                 <Typography variant="caption" color="warning.main" display="block" sx={{ mt: 0.5 }}>
-                  ⚠ 目前交易保證金使用 <b>USDC</b>；USDT 支援持有與兌換，保證金支援列為下一階段。
+                  ⚠ 目前交易保證金使用 <b>{STABLE_LABEL}</b>；{ALT_STABLE_LABEL} 支援持有與兌換，保證金支援列為下一階段。
                 </Typography>
               </Box>
 
@@ -1051,20 +1206,59 @@ export default function ExchangePage() {
 
         {freeMgn === 0n && (
           <Alert severity="warning">
-            You have no free margin. Deposit USDC in the <strong>Margin Account</strong> section above first.
+            You have no free margin. Deposit {STABLE_LABEL} in the <strong>Margin Account</strong> section above first.
           </Alert>
         )}
 
-        {kycBlocked && (
+        {/* F-1 · 價格過期。放在 KYC / ESG 之前，因為它是最硬的擋單條件：
+            不管有沒有 KYC、確不確認 ESG，鏈上都會 revert。 */}
+        {openStaleNotice && (
+          <Alert severity="error">
+            <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+              價格過期 — 暫停下單
+            </Typography>
+            <Typography variant="caption" sx={{ display: 'block' }}>
+              {openStaleNotice}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, fontFamily: MONO }}>
+              指數價年齡：{openFreshness?.label ?? '未知'} · 上方「Live market」是 CoinGecko 顯示價，
+              不是結算價，兩者不一致時以鏈上 oracle 為準。
+            </Typography>
+          </Alert>
+        )}
+
+        {kycStatusUnknown && kycRequired && (
+          <Alert severity="warning">
+            <Typography variant="caption">
+              ⚠ 無法確認您的 KYC 狀態（鏈上讀取失敗），不是「未驗證」。合規閘門採 fail-closed，
+              在確認之前暫停受管制資產的交易。請檢查網路或稍後重試。
+            </Typography>
+          </Alert>
+        )}
+
+        {/* KYCRegistry 改成審核制：送出 ≠ 通過。「審核中」和「還沒送」要說不同的話，
+            否則使用者會一直重送同一份表單、以為自己哪裡填錯。 */}
+        {kycBlocked && !kycStatusUnknown && kycPending && (
+          <Alert severity="info">
+            <Typography variant="caption">
+              ⏳ 你的 KYC 申請<b>已送出，正在等待審核</b>（鏈上已記錄 KYCSubmitted）。
+              審核人員核准（approveKYC）後，<strong>{selectedAssetMeta?.symbol}</strong> 就會解鎖；
+              在那之前下單仍會被合約擋下。不需要重複送出申請。
+            </Typography>
+          </Alert>
+        )}
+
+        {kycBlocked && !kycStatusUnknown && !kycPending && (
           <Alert
             severity="warning"
             action={
               <Button color="inherit" size="small" variant="outlined" onClick={() => setShowKYCModal(true)} sx={{ fontWeight: 'bold' }}>
-                完成 KYC
+                送出 KYC 申請
               </Button>
             }
           >
-            🔒 <strong>{selectedAssetMeta?.symbol}</strong> 是股票 / 債券 / ETF 類資產，需要完成 KYC 驗證才能交易。
+            🔒 <strong>{selectedAssetMeta?.symbol}</strong> 是股票 / 債券 / ETF 類資產，需通過 KYC 審核才能交易。
+            送出申請後需等審核人員核准，不是立即通過。
           </Alert>
         )}
 
@@ -1149,9 +1343,19 @@ export default function ExchangePage() {
                   <Typography variant="caption" color="text.secondary">G: <Box component="span" sx={{ color: 'text.primary', fontFamily: MONO }}>{selEsg.governance}</Box></Typography>
                 </Box>
               </Box>
-            ) : contracts ? (
+            ) : esgUnavailable ? (
+              // Base Sepolia 上 ESGRegistry = 0x0。舊版在這裡永遠顯示「載入中…」，
+              // 因為它根本沒有能結束的載入——說清楚是這條鏈沒有這份資料。
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                本鏈未提供 ESG 資料（ESGRegistry 未部署）
+              </Typography>
+            ) : contracts && !esgLoaded ? (
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
                 ESG 資料載入中…
+              </Typography>
+            ) : contracts ? (
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                此標的無 ESG 評級
               </Typography>
             ) : null}
           </Grid>
@@ -1185,7 +1389,8 @@ export default function ExchangePage() {
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
                 <Typography variant="caption" color="text.secondary">Order Type: Market</Typography>
                 <Typography variant="caption" color="primary.main" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  <Icon icon="solar:dollar-bold" /> Execution Fee: 0.001 ETH
+                  <Icon icon="solar:dollar-bold" /> Execution Fee: {execFee.eth} ETH
+                  {!execFee.loaded && <Box component="span" sx={{ opacity: 0.6 }}>（預設值）</Box>}
                 </Typography>
               </Box>
             </Stack>
@@ -1231,7 +1436,7 @@ export default function ExchangePage() {
               onChange={e => setOpenMgn(e.target.value)}
               slotProps={{
                 input: {
-                  endAdornment: <InputAdornment position="end">mUSDC</InputAdornment>,
+                  endAdornment: <InputAdornment position="end">{STABLE_LABEL}</InputAdornment>,
                 },
               }}
             />
@@ -1253,7 +1458,7 @@ export default function ExchangePage() {
             </Typography>
           )}
           <Typography variant="body2" color="text.secondary">
-            Notional: <Box component="span" sx={{ color: 'text.primary', fontWeight: 'bold', fontFamily: MONO }}>{f18(notional)} mUSDC</Box>
+            Notional: <Box component="span" sx={{ color: 'text.primary', fontWeight: 'bold', fontFamily: MONO }}>{f18(notional)} {STABLE_LABEL}</Box>
           </Typography>
           {(() => {
             const fi = fundingData[selAsset];
@@ -1274,6 +1479,9 @@ export default function ExchangePage() {
               color="error"
               size="small"
               variant="outlined"
+              // 清算不再是 100% 沒收：扣掉虧損、費用、清算獎勵與
+              // liquidationPenaltyBps 之後的殘值會退還給倉位所有者。
+              title="觸及清算價時倉位會被強制平倉。扣除虧損、手續費、清算人獎勵與清算罰金（liquidationPenaltyBps）後的殘餘保證金會退還給你——不是全額沒收。"
               sx={{ fontFamily: MONO, fontWeight: 'bold', bgcolor: 'rgba(255, 86, 48, 0.08)' }}
             />
           )}
@@ -1306,25 +1514,29 @@ export default function ExchangePage() {
 
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
           <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 'medium' }}>
-            Free margin: <Box component="span" sx={{ color: 'text.primary', fontFamily: MONO, fontWeight: 'bold' }}>{f18(freeMgn)} mUSDC</Box>
+            Free margin: <Box component="span" sx={{ color: 'text.primary', fontFamily: MONO, fontWeight: 'bold' }}>{f18(freeMgn)} {STABLE_LABEL}</Box>
             {openMgnBig !== null && openMgnBig > freeMgn && (
               <Box component="span" sx={{ color: 'error.main', fontWeight: 'bold', ml: 2 }}>
-                ⚠ Insufficient — deposit at least {f18(openMgnBig - freeMgn)} more mUSDC first
+                ⚠ Insufficient — deposit at least {f18(openMgnBig - freeMgn)} more {STABLE_LABEL} first
               </Box>
             )}
           </Typography>
 
           <Button
-            onClick={() => kycBlocked ? setShowKYCModal(true) : void openPosition()}
+            onClick={() => kycBlocked && !kycStatusUnknown && !kycPending ? setShowKYCModal(true) : void openPosition()}
             disabled={
               busy['open'] ||
+              openStaleBlocked ||
               !openMgn ||
               (openMgnBig !== null && openMgnBig > freeMgn) ||
               (kycBlocked && !openMgn) ||
+              // 審核中：既不能下單（合約會 revert），也沒有「再送一次申請」這個
+              // 可行動的下一步——把 CTA 關掉，由上方的 Alert 說明狀態。
+              (kycBlocked && kycPending) ||
               (isLowEsg && !esgConfirmed)
             }
             variant="contained"
-            color={kycBlocked ? 'warning' : isLowEsg && !esgConfirmed ? 'inherit' : isLong ? 'success' : 'error'}
+            color={openStaleBlocked ? 'inherit' : kycBlocked ? 'warning' : isLowEsg && !esgConfirmed ? 'inherit' : isLong ? 'success' : 'error'}
             sx={{
               fontWeight: 'bold',
               px: 4,
@@ -1334,11 +1546,17 @@ export default function ExchangePage() {
           >
             {busy['open']
               ? 'Opening…'
-              : kycBlocked
-                ? `🔒 完成 KYC 才能交易 ${ASSET_LABEL[selAsset] ?? ''}`
-                : isLowEsg && !esgConfirmed
-                  ? '請先確認 ESG 風險'
-                  : `Open ${isLong ? 'Long' : 'Short'} ${ASSET_LABEL[selAsset] ?? ''}`}
+              : openStaleBlocked
+                ? '⛔ 價格過期，無法下單'
+                : kycBlocked
+                  ? kycStatusUnknown
+                    ? '⚠ 無法確認 KYC 狀態'
+                    : kycPending
+                      ? '⏳ KYC 審核中，尚未核准'
+                      : `🔒 送出 KYC 申請才能交易 ${ASSET_LABEL[selAsset] ?? ''}`
+                  : isLowEsg && !esgConfirmed
+                    ? '請先確認 ESG 風險'
+                    : `Open ${isLong ? 'Long' : 'Short'} ${ASSET_LABEL[selAsset] ?? ''}`}
           </Button>
         </Box>
       </Card>
@@ -1347,8 +1565,9 @@ export default function ExchangePage() {
       <KYCModal
         isOpen={showKYCModal}
         onClose={() => setShowKYCModal(false)}
-        onSuccess={() => { refetchKYC(); setShowKYCModal(false); }}
+        onSuccess={() => { void refetchKYC(); }}
         kycRegistry={contracts?.kycRegistry ?? null}
+        isPending={kycPending}
       />
 
       {/* ESG Leaderboard */}
@@ -1450,6 +1669,8 @@ export default function ExchangePage() {
                     ? (row.margin * row.leverage * 10n ** 18n) / row.entryPrice
                     : 0n;
                   const closeKey = `close_${row.id}`;
+                  // M1：平倉也讀 oracle，過期一樣 revert。逐列判斷，因為每列可能是不同標的。
+                  const rowStale = staleNoticeForAsset(row.asset);
                   return (
                     <TableRow key={String(row.id)} sx={{ '&:hover': { bgcolor: 'action.hover' } }}>
                       <TableCell sx={{ py: 1 }}>
@@ -1488,8 +1709,9 @@ export default function ExchangePage() {
                             size="small"
                             variant="outlined"
                             color="inherit"
-                            onClick={() => void closePos(row.id)}
-                            disabled={busy[closeKey]}
+                            onClick={() => void closePos(row.id, row.asset)}
+                            disabled={busy[closeKey] || !!rowStale}
+                            title={rowStale ?? undefined}
                             sx={{
                               borderColor: 'divider',
                               fontSize: '0.75rem',
@@ -1501,8 +1723,14 @@ export default function ExchangePage() {
                               },
                             }}
                           >
-                            {busy[closeKey] ? '…' : 'Close'}
+                            {busy[closeKey] ? '…' : rowStale ? '價格過期' : 'Close'}
                           </Button>
+                          {rowStale && (
+                            <Typography variant="caption" color="error.main" sx={{ fontSize: '0.625rem', maxWidth: 220, display: 'block' }}>
+                              指數價 {livePrices[row.asset as AssetId]?.freshness.label ?? '年齡未知'} — 平倉會被
+                              StalePrice 拒絕，等 keeper 更新後再試。
+                            </Typography>
+                          )}
 
                           {hasEsgRewardDistributor && (esg[row.asset]?.composite ?? 0) >= 70 && (() => {
                             const isRewarded = esgRewardedMap[String(row.id)];
@@ -1520,6 +1748,33 @@ export default function ExchangePage() {
                             }
                             if (isRewarded === false) {
                               const preview = esgPreviewMap[String(row.id)] ?? 0n;
+                              // previewReward 回 0 = 還不符合資格。最常見的原因是
+                              // 最短持有期沒到（合約會 revert HoldTooShort），所以
+                              // 這裡把「還差多久」算出來，而不是給一顆按了就失敗
+                              // 的「0.0 PEPE」按鈕。
+                              if (preview === 0n) {
+                                const heldFor  = BigInt(Math.floor(Date.now() / 1000)) - row.openedAt;
+                                const remain   = esgMinHold > 0n && row.openedAt > 0n ? esgMinHold - heldFor : 0n;
+                                const remainDays = remain > 0n ? Math.ceil(Number(remain) / 86_400) : 0;
+                                return (
+                                  <Chip
+                                    size="small"
+                                    variant="outlined"
+                                    color="default"
+                                    label={
+                                      remainDays > 0
+                                        ? `🌱 ESG 獎勵：再抱 ${remainDays} 天`
+                                        : '🌱 ESG 獎勵：尚不符資格'
+                                    }
+                                    title={
+                                      remainDays > 0
+                                        ? `ESG 獎勵需持倉滿 ${Math.round(Number(esgMinHold) / 86_400)} 天且倉位仍未平倉`
+                                        : 'previewReward 回 0：倉位需仍持有中，且已滿最短持有期'
+                                    }
+                                    sx={{ fontSize: '0.625rem', fontWeight: 'bold' }}
+                                  />
+                                );
+                              }
                               return (
                                 <Button
                                   size="small"

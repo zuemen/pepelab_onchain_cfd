@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 
 // ── Interfaces ────────────────────────────────────────────────────────────────
@@ -50,9 +51,14 @@ interface IESGRegistry {
 /// @notice Trade mining, tier upgrades, copy rewards, daily check-in,
 ///         and ESG hold rewards powered by PEPE tokens.
 contract PepeIncentives is Ownable, Pausable {
+    using SafeERC20 for IERC20;
+
     // ── Errors ───────────────────────────────────────────────────────────────
 
     error NotPositionOwner();
+    error PositionIdsNotSorted();
+    error SelfCopyNotAllowed();
+    error PositionNotOpen();
     error AlreadyMined();
     error AlreadyCheckedIn();
     error TierAlreadyClaimed();
@@ -135,19 +141,33 @@ contract PepeIncentives is Ownable, Pausable {
         if (pepe.balanceOf(address(this)) < reward) revert InsufficientPool();
 
         minedPosition[positionId] = true;
-        pepe.transfer(msg.sender, reward);
+        pepe.safeTransfer(msg.sender, reward);
         emit TradeMined(msg.sender, positionId, reward);
     }
 
     // ── Tier Upgrade ─────────────────────────────────────────────────────────
 
+    /// @param positionIds MUST be strictly increasing.
+    /// @dev PA-4: the loop used to sum whatever it was handed, so the same
+    ///      position could be listed 1,000 times and a single 1,000-notional
+    ///      trade cleared the 1,000,000 Diamond threshold outright (audit PoC).
+    ///      Requiring a strictly increasing list makes duplicates
+    ///      unrepresentable in O(n) with no extra storage — cheaper and more
+    ///      robust than a seen-mapping, which would also have to be cleared.
     function claimTierReward(uint8 tier, uint256[] calldata positionIds) external whenNotPaused {
         if (tier > 3) revert InvalidTier();
         if ((tierClaimed[msg.sender] & (1 << tier)) != 0) revert TierAlreadyClaimed();
 
         uint256 cumNotional;
+        uint256 prevId;
+        bool first = true;
         for (uint256 i; i < positionIds.length; i++) {
-            IPerpExchange.Position memory pos = exchange.getPosition(positionIds[i]);
+            uint256 id = positionIds[i];
+            if (!first && id <= prevId) revert PositionIdsNotSorted();
+            prevId = id;
+            first  = false;
+
+            IPerpExchange.Position memory pos = exchange.getPosition(id);
             if (pos.owner != msg.sender) continue;
             cumNotional += pos.margin * pos.leverage;
         }
@@ -157,13 +177,17 @@ contract PepeIncentives is Ownable, Pausable {
         if (pepe.balanceOf(address(this)) < reward) revert InsufficientPool();
 
         tierClaimed[msg.sender] |= uint8(1 << tier);
-        pepe.transfer(msg.sender, reward);
+        pepe.safeTransfer(msg.sender, reward);
         emit TierClaimed(msg.sender, tier, reward);
     }
 
     // ── Copy Reward ───────────────────────────────────────────────────────────
 
+    /// @dev Low: `trader == msg.sender` used to be allowed, so a self-follow
+    ///      paid the same address twice (`copyReward * 2`) for copying itself.
     function claimCopyReward(address trader) external whenNotPaused {
+        if (trader == msg.sender) revert SelfCopyNotAllowed();
+
         ICopyTracker.CopyRecord[] memory records = copyTracker.getCopyRecords(msg.sender);
         bool isFollowing;
         for (uint256 i; i < records.length; i++) {
@@ -181,8 +205,8 @@ contract PepeIncentives is Ownable, Pausable {
         if (pepe.balanceOf(address(this)) < totalNeeded) revert InsufficientPool();
 
         copyClaimed[k] = true;
-        pepe.transfer(msg.sender, copyReward);
-        pepe.transfer(trader,     copyReward);
+        pepe.safeTransfer(msg.sender, copyReward);
+        pepe.safeTransfer(trader,     copyReward);
         emit CopyClaimed(msg.sender, trader, copyReward);
     }
 
@@ -206,16 +230,21 @@ contract PepeIncentives is Ownable, Pausable {
         uint256 reward = dailyBase + dailyStreakBonus * (currentStreak - 1);
         if (pepe.balanceOf(address(this)) < reward) revert InsufficientPool();
 
-        pepe.transfer(msg.sender, reward);
+        pepe.safeTransfer(msg.sender, reward);
         emit DailyCheckIn(msg.sender, today, currentStreak, reward);
     }
 
     // ── ESG Hold Reward ───────────────────────────────────────────────────────
 
     /// @notice Claim reward for holding an ESG-qualified position ≥ 30 days.
+    /// @dev M6: `isOpen` was never read, so "holding" only ever meant "opened
+    ///      30 days ago". Open + close in the same block, wait a month, collect
+    ///      the hold reward for a position that was held for zero seconds. The
+    ///      `Position` struct already carried `isOpen`/`closedAt`; this reads it.
     function claimEsgHoldReward(uint256 positionId) external whenNotPaused {
         IPerpExchange.Position memory pos = exchange.getPosition(positionId);
         if (pos.owner != msg.sender)        revert NotPositionOwner();
+        if (!pos.isOpen)                    revert PositionNotOpen();
         if (esgHoldClaimed[positionId])     revert EsgHoldAlreadyClaimed();
         if (block.timestamp - pos.openedAt < esgMinHoldDays * 1 days) revert HoldTooShort();
 
@@ -229,14 +258,14 @@ contract PepeIncentives is Ownable, Pausable {
         if (pepe.balanceOf(address(this)) < reward) revert InsufficientPool();
 
         esgHoldClaimed[positionId] = true;
-        pepe.transfer(msg.sender, reward);
+        pepe.safeTransfer(msg.sender, reward);
         emit EsgHoldClaimed(msg.sender, positionId, reward);
     }
 
     // ── Owner Functions ───────────────────────────────────────────────────────
 
     function withdraw(uint256 amount) external onlyOwner {
-        pepe.transfer(owner(), amount);
+        pepe.safeTransfer(owner(), amount);
     }
 
     function setTradeMining(uint256 bps, uint256 cap) external onlyOwner {

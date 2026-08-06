@@ -9,6 +9,10 @@ import "../src/PerpetualExchange.sol";
 import "../src/InsuranceVault.sol";
 import "../src/KYCRegistry.sol";
 import "../src/AgentSessionManager.sol";
+import "../src/TraderStake.sol";
+import "../src/FeeRouter.sol";
+import "../src/StrategyRegistry.sol";
+import "../src/CopyTracker.sol";
 
 /// @notice P3-3: one-command end-to-end capstone narrative. Deploys a fresh
 ///         stack and walks the full PepeLab story, printing the key numbers at
@@ -40,6 +44,10 @@ contract DemoE2E is Script {
     InsuranceVault    vault;
     KYCRegistry       kyc;
     AgentSessionManager sessions;
+    TraderStake       traderStake;
+    FeeRouter         feeRouter;
+    StrategyRegistry  registry;
+    CopyTracker       copyTracker;
 
     // Actors (deterministic).
     address owner   = address(this);
@@ -71,11 +79,36 @@ contract DemoE2E is Script {
         kyc      = new KYCRegistry();
         sessions = new AgentSessionManager(address(exchange));
 
+        // The copy-trading trio. Not decoration: `openPositionFor` refuses to
+        // run while `copyTracker` is unset, so an agent session cannot place an
+        // order without a real CopyTracker wired in. Deploying it here is what
+        // lets step [5] go through the same code path production does.
+        traderStake = new TraderStake(address(usdc));
+        feeRouter   = new FeeRouter(address(usdc), owner, address(vault));
+        registry    = new StrategyRegistry(address(traderStake));
+        copyTracker = new CopyTracker(
+            address(usdc), address(exchange), address(registry),
+            address(feeRouter), address(traderStake)
+        );
+
         // Wiring (same setters Deploy.s.sol uses).
         vault.setExchange(address(exchange));
+        vault.setFeeRouter(address(feeRouter));
         exchange.setInsuranceVault(address(vault));
+        exchange.setFeeRouter(address(feeRouter));
         exchange.setKycRegistry(address(kyc));
-        exchange.setCopyTracker(address(sessions));        // primary agent + authorizes it
+        traderStake.setCopyTracker(address(copyTracker));
+        feeRouter.setCopyTracker(address(copyTracker));
+        feeRouter.setExchange(address(exchange));
+        exchange.setCopyTracker(address(copyTracker));
+
+        // The session manager is an ADDITIONAL agent, never the primary tracker.
+        // This line used to read `exchange.setCopyTracker(address(sessions))`:
+        // it compiled (both parameters are bare `address`) but it wrote an
+        // AgentSessionManager into the slot the exchange calls CopyTracker-shaped
+        // functions on, and `setCopyTracker` also de-authorizes whatever was
+        // primary before. The correct authorization is exactly the call below,
+        // which was already there immediately afterwards.
         exchange.setAgentAuthorized(address(sessions), true);
 
         // Demo economics: no gas/exec fee noise, 0.1% trading fee, half to LPs,
@@ -89,10 +122,20 @@ contract DemoE2E is Script {
         oracle.addAsset(SBTC, 100_000e8);
         oracle.addAsset(XAU,    2_000e8);
 
-        // Fund actors + protocol reserves.
+        // Fund the two actors. This is the ONLY minting in the demo: both are
+        // ordinary users being handed testnet play money, exactly as the faucet
+        // would.
+        //
+        // What used to be here as well — `usdc.mint(address(exchange), 10e6)` —
+        // is gone. Printing ten million USDC straight into the exchange gave the
+        // protocol a solvency buffer that exists nowhere in the real deployment,
+        // and steps [7] and [8] are *about* solvency: the LP vault's yield and
+        // the ADL backstop only mean something when the exchange holds nothing
+        // but the margin its users actually deposited. With the mint in place,
+        // "insurance first, then ADL" was being demonstrated against a balance
+        // sheet that could never run out.
         usdc.mint(alice, 1_000_000e18);
         usdc.mint(bear,  1_000_000e18);
-        usdc.mint(address(exchange), 10_000_000e18);
         vm.prank(alice); usdc.approve(address(exchange), type(uint256).max);
         vm.prank(alice); usdc.approve(address(vault),    type(uint256).max);
         vm.prank(bear);  usdc.approve(address(exchange), type(uint256).max);
@@ -121,10 +164,17 @@ contract DemoE2E is Script {
             console.log("\n[2] Pre-KYC open on XAU correctly BLOCKED (compliance gate)");
         }
 
-        // Complete (mock) KYC, then the RWA open succeeds.
+        // Submit, then get approved. `submitKYC` no longer self-verifies (M8):
+        // it records the application and marks the applicant pending, and only
+        // the owner or an appointed verifier can flip `verified`. This script's
+        // contract deployed the registry, so it is the owner and plays the
+        // compliance operator here.
         vm.prank(alice); kyc.submitKYC("Alice", "TW");
+        console.log("    application submitted, pending review: %s", kyc.isPending(alice));
+        kyc.approveKYC(alice);
+
         vm.prank(alice); uint256 pid = exchange.openPosition(XAU, true, 1_000e18, 2);
-        console.log("    KYC verified -> XAU position opened, id=%s", pid);
+        console.log("    KYC approved by the operator -> XAU position opened, id=%s", pid);
     }
 
     function _step3_lpSeedsVault() internal {

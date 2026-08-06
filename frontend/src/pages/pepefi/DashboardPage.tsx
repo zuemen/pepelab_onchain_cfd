@@ -16,7 +16,8 @@ import { useMode } from 'src/contexts/mode-context';
 import { usePepefiWallet } from 'src/layouts/pepefi';
 import { ASSET_IDS } from 'src/contracts/addresses';
 import { ASSET_META } from 'src/lib/pepefi/assetMeta';
-import { safeRead } from 'src/lib/pepefi/safeRead';
+import { safeRead, isDeployed } from 'src/lib/pepefi/safeRead';
+import { prettyError } from 'src/lib/pepefi/errorMessages';
 import ESGBadge from 'src/components/pepefi/ESGBadge';
 import Skeleton, { TableSkeleton } from 'src/components/pepefi/Skeleton';
 import { PepeAvatar } from 'src/components/pepefi/PepeAvatar';
@@ -25,6 +26,9 @@ import { LootBoxButton } from 'src/components/pepefi/LootBoxButton';
 import { pepeNameFor } from 'src/lib/pepefi/pepeName';
 import { getEquipped } from 'src/lib/pepefi/inventory';
 import { ITEMS, BURN_ADDRESS } from 'src/lib/pepefi/items';
+
+/** 鏈上餘額的輪詢間隔。原本是 8 秒——見下方 useEffect 的說明。 */
+const POLL_MS = 30_000;
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -273,7 +277,14 @@ export default function DashboardPage() {
   const { mode } = useMode();
   const wallet = usePepefiWallet();
   const contracts  = useContracts(wallet.provider, wallet.signer, wallet.chainId);
-  const { alerts: whaleAlerts } = useWhaleAlerts(contracts?.exchange ?? null, wallet.provider);
+  // chainId 必須傳進去：掃描起點與出塊時間都依鏈而定，不傳就會退回 12 秒/塊的
+  // Ethereum 假設，在 Base 上把每筆事件的時間高估六倍。
+  const { alerts: whaleAlerts } = useWhaleAlerts(
+    contracts?.exchange ?? null,
+    wallet.provider,
+    20,
+    wallet.chainId ?? null,
+  );
   const livePrices = useLivePrices();
   const { data: esg } = useESG(contracts?.esgRegistry ?? null);
   const { history: priceHistory } = usePriceHistory(
@@ -323,8 +334,11 @@ export default function DashboardPage() {
           setWalletUSDT((await contracts.usdt.balanceOf(wallet.address)) as bigint);
         } catch { /* balance refresh is best-effort */ }
       }
-    } catch {
-      notify('領取 USDT 失敗（可能尚在 24 小時冷卻期）', false);
+    } catch (e) {
+      // 舊版一律歸咎於「24 小時冷卻期」。faucet() 現在還會因為
+      // FaucetCallerMustBeEOA（合約錢包呼叫）而 revert，猜錯原因會讓使用者
+      // 一直等一個永遠不會過的冷卻期。交給 prettyError 說實話。
+      notify(prettyError(e), false);
     } finally {
       setUsdtBusy(false);
     }
@@ -451,12 +465,17 @@ export default function DashboardPage() {
     } finally { setIsLoading(false); }
   }, [contracts, wallet.address]);
 
+  // 兩組 8 秒輪詢（餘額 + PEPE）疊上 useLivePrices 的每輪 12 次 oracle 讀取，
+  // 在公共 RPC 上是穩定的限流來源。鏈上餘額不會每 8 秒變一次；30 秒足夠，而且
+  // 分頁在背景時完全不打（切回前景會立刻補一次）。
   useEffect(() => {
     void fetchAll();
     const timer = setInterval(() => {
-      void fetchAll();
-    }, 8000); // Poll on-chain balances every 8s
-    return () => clearInterval(timer);
+      if (document.visibilityState !== 'hidden') void fetchAll();
+    }, POLL_MS);
+    const onVisible = () => { if (document.visibilityState !== 'hidden') void fetchAll(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
   }, [fetchAll]);
 
   // ── PEPE fetch (isolated — failures never affect main dashboard) ───────────
@@ -476,16 +495,17 @@ export default function DashboardPage() {
     if (balR.status     === 'fulfilled') setPepeBal(balR.value as bigint);
     if (claimedR.status === 'fulfilled') setPepeClaimed(claimedR.value as boolean);
     if (amountR.status  === 'fulfilled') setPepeAmount(amountR.value as bigint);
-    if (kycR.status     === 'fulfilled') setPepeKyc(Boolean(kycR.value));
-    else setPepeKyc(true);
+    // Fail closed: an unreadable registry means we cannot confirm eligibility,
+    // which is not the same as being eligible.
+    setPepeKyc(kycR.status === 'fulfilled' ? Boolean(kycR.value) : false);
     if (poolR.status    === 'fulfilled') setPepePoolBal(poolR.value as bigint);
   }, [contracts, wallet.address]);
 
   useEffect(() => {
     void fetchPepe();
     const timer = setInterval(() => {
-      void fetchPepe();
-    }, 8000); // Poll PEPE balance every 8s
+      if (document.visibilityState !== 'hidden') void fetchPepe();
+    }, POLL_MS);
     return () => clearInterval(timer);
   }, [fetchPepe]);
 
@@ -527,15 +547,23 @@ export default function DashboardPage() {
     }
   }, [contracts, fetchPepe]);
 
+  // 位址一定要跟著目前這條鏈走。舊版寫死 Sepolia 的 PepeToken，Base 使用者
+  // 加進 MetaMask 的是另一條鏈上的合約，餘額永遠 0 而且看不出原因。
+  // 比照 TraderStakePage：讀 contracts.pepeToken.target。
   const addPepeToWallet = async () => {
-    if (!window.ethereum) return;
+    if (!window.ethereum || !contracts) return;
+    const pepeAddr = String(contracts.pepeToken.target);
+    if (!isDeployed(pepeAddr)) {
+      notify('本網路尚未部署 PepeToken，無法加入錢包', false);
+      return;
+    }
     try {
       await window.ethereum.request({
         method: 'wallet_watchAsset',
         params: {
           type: 'ERC20',
           options: {
-            address:  '0xa364F43627A17BE5bfbcb32693f3eD7E44ebe1D9',
+            address:  pepeAddr,
             symbol:   'PEPE',
             decimals: 18,
           },
@@ -2033,7 +2061,7 @@ export default function DashboardPage() {
                         color="primary"
                         onClick={() => void doClaimPepe()}
                         disabled={claimLoading || !pepeKyc}
-                        title={!pepeKyc ? '需先完成 KYC 才能領取' : undefined}
+                        title={!pepeKyc ? '需 KYC 審核通過才能領取（送出申請後需等審核人員核准）' : undefined}
                         startIcon={claimLoading ? <Icon icon="line-md:loading-twotone-loop" /> : <span>🐸</span>}
                         sx={{
                           py: 1,
@@ -2054,7 +2082,7 @@ export default function DashboardPage() {
 
                     {!pepeKyc && !pepeClaimed && !(pepePoolBal !== null && pepePoolBal < pepeAmount) && (
                       <Typography variant="caption" sx={{ color: 'warning.main', fontWeight: 'bold' }}>
-                        需先完成 KYC 才能領取
+                        需 KYC 審核通過才能領取（送出申請 ≠ 通過）
                       </Typography>
                     )}
                   </Box>

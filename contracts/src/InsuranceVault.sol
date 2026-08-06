@@ -4,10 +4,13 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /// @notice LP vault that earns yield from protocol fees and covers extreme losses via bailout.
 contract InsuranceVault is ERC20, Ownable, ReentrancyGuard {
+    using SafeERC20 for IERC20;   // M-4
+
     // ── Immutables ───────────────────────────────────────────────────────────
 
     IERC20 public immutable usdc;
@@ -24,11 +27,17 @@ contract InsuranceVault is ERC20, Ownable, ReentrancyGuard {
     event Withdrawn(address indexed user, uint256 shares, uint256 usdcAmount);
     event ProtocolDeposit(address indexed from, uint256 amount);
     event Bailout(address indexed trader, uint256 amount);
+    event Recapitalized(address indexed from, uint256 amount);
+    event FeeRouterSet(address indexed feeRouter);
+    event ExchangeSet(address indexed exchange);
 
     // ── Errors ───────────────────────────────────────────────────────────────
 
     error NotAuthorized();
     error InsufficientVault();
+    /// @notice H-4: shares exist but back zero assets, so there is no price at
+    ///         which new capital can be issued shares fairly.
+    error VaultInsolvent();
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
@@ -41,8 +50,29 @@ contract InsuranceVault is ERC20, Ownable, ReentrancyGuard {
 
     // ── Admin ────────────────────────────────────────────────────────────────
 
-    function setFeeRouter(address _fr) external onlyOwner { feeRouter = _fr; }
-    function setExchange(address _ex)  external onlyOwner { exchange  = _ex; }
+    function setFeeRouter(address _fr) external onlyOwner {
+        feeRouter = _fr;
+        emit FeeRouterSet(_fr);
+    }
+
+    function setExchange(address _ex) external onlyOwner {
+        exchange = _ex;
+        emit ExchangeSet(_ex);
+    }
+
+    /// @notice H-4 escape hatch: inject assets WITHOUT minting shares, to restore
+    ///         a vault that bailouts drained to zero. Deposits are refused while
+    ///         `totalAssets == 0 && totalSupply > 0` (there is no fair share
+    ///         price), so without this the vault could only be revived by
+    ///         protocol fee flow. The value is a gift to existing shareholders,
+    ///         which is why it is owner-only and explicit rather than a side
+    ///         effect of someone else's deposit.
+    function recapitalize(uint256 amount) external onlyOwner nonReentrant {
+        require(amount > 0, "zero");
+        usdc.safeTransferFrom(msg.sender, address(this), amount);
+        totalAssets += amount;
+        emit Recapitalized(msg.sender, amount);
+    }
 
     // ── LP: deposit / withdraw ────────────────────────────────────────────────
 
@@ -50,7 +80,7 @@ contract InsuranceVault is ERC20, Ownable, ReentrancyGuard {
         require(usdcAmount > 0, "zero");
         shares = previewDeposit(usdcAmount);
         totalAssets += usdcAmount;
-        usdc.transferFrom(msg.sender, address(this), usdcAmount);
+        usdc.safeTransferFrom(msg.sender, address(this), usdcAmount);
         _mint(msg.sender, shares);
         emit Deposited(msg.sender, usdcAmount, shares);
     }
@@ -61,16 +91,28 @@ contract InsuranceVault is ERC20, Ownable, ReentrancyGuard {
         if (usdcAmount > totalAssets) revert InsufficientVault();
         totalAssets -= usdcAmount;
         _burn(msg.sender, shares);
-        usdc.transfer(msg.sender, usdcAmount);
+        usdc.safeTransfer(msg.sender, usdcAmount);
         emit Withdrawn(msg.sender, shares, usdcAmount);
     }
 
     // ── Views ────────────────────────────────────────────────────────────────
 
     /// @dev First deposit mints 1:1. Subsequent deposits proportional to current share price.
+    ///
+    ///      H-4: the old guard was `supply == 0 || totalAssets == 0`, so once a
+    ///      bailout had drained the vault to zero while shares were still
+    ///      outstanding, the next depositor was minted 1:1 against a share price
+    ///      of ZERO. PoC: alice deposits 1,000 → vault drained → bob deposits
+    ///      1,000 and instantly owns only half of it, while alice's worthless
+    ///      shares are resurrected at bob's expense.
+    ///
+    ///      There is no fair price in that state, so deposits are refused rather
+    ///      than mispriced. `recapitalize()` (owner) or ordinary protocol fee
+    ///      flow through `depositFromProtocol` restores a positive share price.
     function previewDeposit(uint256 usdcAmount) public view returns (uint256) {
         uint256 supply = totalSupply();
-        if (supply == 0 || totalAssets == 0) return usdcAmount;
+        if (supply == 0) return usdcAmount;
+        if (totalAssets == 0) revert VaultInsolvent();
         return usdcAmount * supply / totalAssets;
     }
 
@@ -93,7 +135,7 @@ contract InsuranceVault is ERC20, Ownable, ReentrancyGuard {
     ///         Caller must approve this contract for `amount` USDC before calling.
     function depositFromProtocol(uint256 amount) external {
         if (msg.sender != feeRouter && msg.sender != exchange) revert NotAuthorized();
-        usdc.transferFrom(msg.sender, address(this), amount);
+        usdc.safeTransferFrom(msg.sender, address(this), amount);
         totalAssets += amount;
         emit ProtocolDeposit(msg.sender, amount);
     }
@@ -104,7 +146,7 @@ contract InsuranceVault is ERC20, Ownable, ReentrancyGuard {
         if (msg.sender != exchange) revert NotAuthorized();
         if (amount > totalAssets) revert InsufficientVault();
         totalAssets -= amount;
-        usdc.transfer(trader, amount);
+        usdc.safeTransfer(trader, amount);
         emit Bailout(trader, amount);
     }
 }

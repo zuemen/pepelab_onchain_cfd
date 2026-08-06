@@ -1,13 +1,27 @@
 name: Admin — Base Sepolia owner call
 
 # Runs an owner-only call on any Base Sepolia contract using the keeper key
-# stored in repo secrets (which is the deployer/owner of the core contracts).
-# Manual trigger only.
-# Examples:
-#   setMaxPriceAge(uint256)   args: 21600            target: PerpetualExchange
-#   setExecutionFee(uint256)  args: 100000000000000  target: PerpetualExchange
-#   mint(address,uint256)     args: 0xRecipient 1000000000000000000000000
-#                             target: PepeToken (owner-only)
+# stored in repo secrets. Manual trigger only.
+#
+# 鏈上實況（2026-08-06 稽核實測，取代先前那段已過期的警告）：
+#   - KEEPER_PRIVATE_KEY = 0x540aECD37E7A7885824e7b7e996eBddfb842ef17
+#   - 該地址在 Base Sepolia 的餘額約 **0.05 ETH**（不再是 0），gas 沒問題
+#   - `MockOracle 0xeD90c4F3…0Aa3` 的 owner **已是** 0x540aECD3…ef17
+#     → 對 MockOracle 的 owner-only 呼叫（updatePrice / addAsset…）可以從這裡送
+#   - 但 `PerpetualExchange 0xEf75…c072`、`MockUSDC`、`PepeToken`、`InsuranceVault`
+#     的 owner **仍是舊部署者 0xE80A8136…Eb93**
+#     → 針對這些合約（含本 workflow 的預設 target）的呼叫仍會 revert
+#
+# 0xE80A8136…Eb93 的私鑰在 public repo 的 git 歷史中，必須先輪替再談其他事：
+# 見 docs/RUNBOOK_KEY_ROTATION.md。在輪替完成前，這個 workflow 只對 MockOracle 有用。
+#
+# 白名單：`function` 是 choice 型別，只能從下方 options 選；`args` 逐一做格式
+# 驗證後以陣列傳給 cast，不再內插進 shell 字串。2026-08-06 之前這裡是
+# `cast send "$TARGET" "${{ github.event.inputs.function }}" ${{ ... args }}`，
+# 任何有 write 權限的人都能藉此在持有 KEEPER_PRIVATE_KEY 的 job 裡執行任意指令
+# 並把金鑰外送（稽核 O-4）。
+#
+# 要新增可呼叫的函式，請改這個檔案的 options —— 這是刻意的摩擦。
 #
 # NOTE: anyone with write access to this repo can effectively act as the
 # contract owner through this workflow — do not accept external changes to
@@ -21,37 +35,111 @@ on:
         required: true
         default: "0xEf75ECA6514cE96B18382E921aC6190a0cF8c072"
       function:
-        description: "Function signature, e.g. setMaxPriceAge(uint256) or mint(address,uint256)"
+        description: "Function signature (whitelist)"
         required: true
+        type: choice
         default: "setMaxPriceAge(uint256)"
+        options:
+          - "setMaxPriceAge(uint256)"
+          - "setExecutionFee(uint256)"
+          - "setTradingFeeBps(uint256)"
+          - "setMaintenanceMarginBps(uint256)"
+          - "settleFunding(bytes32)"
+          - "transferOwnership(address)"
+          - "updatePrice(bytes32,uint256)"
+          - "addAsset(bytes32,uint256)"
+          - "mint(address,uint256)"
       args:
-        description: "Space-separated arguments, e.g. '21600' or '0xRecipient 1000000000000000000000'"
+        description: "Space-separated arguments (only 0x-hex / decimal / true / false accepted)"
         required: true
         default: "21600"
+
+permissions:
+  contents: read
+
+# 與 base-sepolia-keeper.yml 共用同一個 group：兩者都用 KEEPER_PRIVATE_KEY 對
+# Base Sepolia 送交易，並行會撞 nonce。2026-08-06 04:40 的 dispatch 就與排程重疊過。
+concurrency:
+  group: keeper-key-base-sepolia
+  cancel-in-progress: false
 
 jobs:
   admin-call:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
+      # 所有使用者輸入一律經 env 傳遞，絕不直接內插進 run: 的 shell 字串。
       TARGET:   ${{ github.event.inputs.target }}
+      FUNC:     ${{ github.event.inputs.function }}
+      ARGS:     ${{ github.event.inputs.args }}
       RPC_URL:  ${{ secrets.BASE_SEPOLIA_RPC_URL }}
       PK:       ${{ secrets.KEEPER_PRIVATE_KEY }}
     steps:
       - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
 
       - name: Guard — secrets present
         run: |
-          if [ -z "$RPC_URL" ] || [ -z "$PK" ]; then
+          set -euo pipefail
+          if [ -z "${RPC_URL:-}" ] || [ -z "${PK:-}" ]; then
             echo "::error::BASE_SEPOLIA_RPC_URL / KEEPER_PRIVATE_KEY secrets not set"
             exit 1
           fi
 
+      - name: Validate inputs
+        run: |
+          set -euo pipefail
+
+          # target 必須是規範長度的位址字面值。
+          if ! printf '%s' "$TARGET" | grep -Eq '^0x[0-9a-fA-F]{40}$'; then
+            echo "::error::target 不是合法位址：$TARGET"
+            exit 1
+          fi
+
+          # function 已由 choice 型別限制，這裡再逐字比對一次（API dispatch 的縱深防禦）。
+          # 這份清單必須與上方 inputs.function 的 options 完全一致。
+          ALLOWED=(
+            "setMaxPriceAge(uint256)"
+            "setExecutionFee(uint256)"
+            "setTradingFeeBps(uint256)"
+            "setMaintenanceMarginBps(uint256)"
+            "settleFunding(bytes32)"
+            "transferOwnership(address)"
+            "updatePrice(bytes32,uint256)"
+            "addAsset(bytes32,uint256)"
+            "mint(address,uint256)"
+          )
+          OK=0
+          for f in "${ALLOWED[@]}"; do
+            if [ "$FUNC" = "$f" ]; then OK=1; break; fi
+          done
+          if [ "$OK" -ne 1 ]; then
+            echo "::error::function 不在白名單內：$FUNC"
+            exit 1
+          fi
+
+          # args 逐一驗證。只接受 0x-hex、十進位整數、true/false ——
+          # 任何空白以外的 shell 元字元都會在這裡被擋下。
+          read -r -a ARG_ARR <<< "$ARGS"
+          if [ "${#ARG_ARR[@]}" -eq 0 ]; then
+            echo "::error::args 不可為空"
+            exit 1
+          fi
+          for a in "${ARG_ARR[@]}"; do
+            if ! printf '%s' "$a" | grep -Eq '^(0x[0-9a-fA-F]{1,64}|[0-9]{1,78}|true|false)$'; then
+              echo "::error::拒絕引數（只允許 0x-hex / 十進位 / true / false）：$a"
+              exit 1
+            fi
+          done
+          echo "驗證通過：$FUNC on $TARGET with ${#ARG_ARR[@]} arg(s)"
+
       - name: Send owner transaction
         run: |
           set -euo pipefail
-          echo "Calling ${{ github.event.inputs.function }} on $TARGET with args: ${{ github.event.inputs.args }}"
-          cast send "$TARGET" \
-            "${{ github.event.inputs.function }}" ${{ github.event.inputs.args }} \
+          # 重新切分成陣列後以 "${ARG_ARR[@]}" 傳給 cast：每個引數都是獨立的
+          # argv 元素，不經過任何一次 shell 重新解析。
+          read -r -a ARG_ARR <<< "$ARGS"
+          echo "Calling $FUNC on $TARGET"
+          cast send "$TARGET" "$FUNC" "${ARG_ARR[@]}" \
             --rpc-url "$RPC_URL" \
             --private-key "$PK"

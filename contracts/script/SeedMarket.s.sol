@@ -8,6 +8,7 @@ import "../src/TraderStake.sol";
 import "../src/StrategyRegistry.sol";
 import "../src/PerpetualExchange.sol";
 import "../src/CopyTracker.sol";
+import "../src/KYCRegistry.sol";
 
 /// @notice Seeds 50 fake traders + deployer star account on Sepolia.
 ///         Usage:
@@ -18,9 +19,28 @@ import "../src/CopyTracker.sol";
 ///   Required env vars:
 ///     PRIVATE_KEY, MOCK_USDC, TRADER_STAKE, STRATEGY_REGISTRY,
 ///     PERPETUAL_EXCHANGE, COPY_TRACKER
+///   Optional:
+///     KYC_REGISTRY — see the KYC note below
 ///
 ///   After running: Marketplace shows 50+ traders, deployer has followers,
 ///   whale wall has large trades, history has 150+ records.
+///
+/// @dev Audit 2026-08-06 fallout:
+///
+///      **PA-3 — `MockUSDC.mint` is `onlyOwner`.** This script mints to the star
+///      account and to all 50 traders, so `PRIVATE_KEY` must be the MockUSDC
+///      owner. That is asserted before the first broadcast; without the check the
+///      first mint reverts `NotMinter` and, because most of the body is wrapped
+///      in `try/catch`, the run would look like it half-worked.
+///
+///      **M8 — KYC is review-based now.** `submitKYC` records an application and
+///      leaves it pending; only the owner or an appointed verifier can approve.
+///      The seeded traders never applied, so every open on an RWA-flagged market
+///      (sAAPL / sTSLA and whatever else the operator flagged) reverts
+///      `NotKycVerified` — silently, into the `try/catch`, producing a market
+///      that looks seeded but has no equity positions in it. Set `KYC_REGISTRY`
+///      and the script batch-verifies the star plus all 50 traders first, using
+///      the owner-only `batchVerify`. Leave it unset to seed crypto-only.
 contract SeedMarket is Script {
     // Asset IDs — keccak256(symbol) matches on-chain IDs
     bytes32 constant SBTC   = keccak256("sBTC");
@@ -61,6 +81,29 @@ contract SeedMarket is Script {
         registry = StrategyRegistry(vm.envAddress("STRATEGY_REGISTRY"));
         exchange = PerpetualExchange(vm.envAddress("PERPETUAL_EXCHANGE"));
         copyT    = CopyTracker(vm.envAddress("COPY_TRACKER"));
+
+        // PA-3: mint is owner-gated. Say so before 51 mints fail one by one.
+        require(
+            usdc.owner() == star,
+            "PRIVATE_KEY is not the MockUSDC owner - mint() became onlyOwner in PA-3"
+        );
+
+        // ── Section 0: KYC (M8 — approval is no longer self-service) ──────────
+        address kycAddr = vm.envOr("KYC_REGISTRY", address(0));
+        if (kycAddr != address(0)) {
+            address[] memory people = new address[](51);
+            people[0] = star;
+            for (uint256 i = 1; i <= 50; i++) {
+                people[i] = vm.addr(vm.deriveKey(MNEMONIC, uint32(i)));
+            }
+            vm.startBroadcast(deployerPk);
+            KYCRegistry(kycAddr).batchVerify(people);
+            vm.stopBroadcast();
+            console.log("KYC batch-verified 51 seed accounts on", kycAddr);
+        } else {
+            console.log("KYC_REGISTRY unset - RWA markets (sAAPL/sTSLA/...) will be skipped.");
+            console.log("Those opens revert NotKycVerified and are swallowed by try/catch.");
+        }
 
         // ── Section A: Star (deployer) ────────────────────────────────────────
         vm.startBroadcast(deployerPk);

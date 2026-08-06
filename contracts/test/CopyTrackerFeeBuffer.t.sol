@@ -158,32 +158,37 @@ contract CopyTrackerFeeBufferTest is Test {
         assertEq(copyFee, 0, "copyFee must be 0 when feeRouter == address(0)");
     }
 
-    // ── Test 5: followTrader reverts when fees exceed margin ──────────────────
+    // ── Test 5: the fee can no longer be raised to a margin-eating level ──────
     //
-    // 100 % weight, 5× leverage (StrategyRegistry MAX_LEVERAGE = 5), tradingFeeBps = 2001
-    // weightedNotional = 10 000e18 * 10 000 * 5 / 10 000 = 50 000e18
-    // totalTradingFee  = 50 000e18 * 2001 / 10 000 = 10 005e18 > 10 000e18 → revert
+    // Originally this test set tradingFeeBps = 2001 to reach CopyTracker's
+    // `TradingFeeExceedsMargin` guard (lev 5 × 2001 bps > 100% of margin).
+    // M-3 caps `setTradingFeeBps` at MAX_TRADING_FEE_BPS = 100, so that state is
+    // now unreachable by construction: with the maximum leverage of 5 the fee can
+    // consume at most 5% of a follower's margin. The guard stays as
+    // defence-in-depth; what is worth asserting is the bound that makes it
+    // unreachable, since an unbounded fee setter was itself the vulnerability.
 
-    function testFollowTrader_revertWhenFeesExceedMargin() public {
+    function testSetTradingFeeBps_boundedSoFeesCannotExceedMargin() public {
+        vm.expectRevert(bytes("fee>1%"));
         exchange.setTradingFeeBps(2001);
+
+        // The ceiling itself is accepted, and even at the ceiling a 5× copy
+        // allocation costs 5% of margin — far below the guard's trigger.
+        exchange.setTradingFeeBps(exchange.MAX_TRADING_FEE_BPS());
 
         StrategyRegistry.Allocation[] memory allocs = new StrategyRegistry.Allocation[](1);
         allocs[0] = StrategyRegistry.Allocation({asset: ASSET1, weight: 10_000, isLong: true, leverage: 5});
         _publishStrategy(allocs);
 
-        uint256 totalMargin    = 10_000e18;
-        uint256 expectedFee    = 10_005e18;   // 50_000e18 * 2001 / 10_000
-        uint256 expectedMargin = totalMargin; // netMargin (no copy fee)
+        uint256 totalMargin = 10_000e18;
+        (, uint256 totalTradingFee, uint256 marginForPositions,) =
+            ct.previewCopyAllocation(alice, totalMargin);
+        assertEq(totalTradingFee, 500e18, "5x at 1% = 5% of margin");
+        assertLt(totalTradingFee, totalMargin, "guard can no longer be reached");
+        assertGt(marginForPositions, 0);
 
         vm.prank(bob);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                CopyTracker.TradingFeeExceedsMargin.selector,
-                expectedFee,
-                expectedMargin
-            )
-        );
-        ct.followTrader(alice, totalMargin);
+        ct.followTrader(alice, totalMargin); // succeeds
     }
 
     // ── Test 6: atomic all-or-nothing — any position failure reverts all ──────

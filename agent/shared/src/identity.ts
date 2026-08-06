@@ -26,6 +26,7 @@ import { AGENT_CHAIN_ID } from "./addresses.ts";
 import {
   AUTH_DOMAIN,
   AUTH_TYPES,
+  AUTH_VC_CHAIN_ID,
   buildAuthTypedValue,
   assembleAuthorizationVC,
   type AuthorizationCaps,
@@ -145,10 +146,29 @@ export function verifyAuthorizationVC(vc: AuthorizationVC): VerifyResult {
   try {
     if (!vc?.proof?.proofValue) return { valid: false, reason: "missing proof" };
 
-    const issuer = parseDidPkh(vc.issuer).address;
-    const agent = parseDidPkh(vc.credentialSubject.id).address;
+    const issuerDid = parseDidPkh(vc.issuer);
+    const agentDidParsed = parseDidPkh(vc.credentialSubject.id);
+    const issuer = issuerDid.address;
+    const agent = agentDidParsed.address;
     const caps = vc.credentialSubject.authorization;
     const sessionId = vc.credentialSubject.sessionId;
+
+    // DID 的 chainId 必須綁定（稽核 四·Low）：EIP-712 簽的是「地址」，不是完整 DID，
+    // 所以把 `did:pkh:eip155:84532:0x…` 改成 `eip155:1:0x…` 以前照樣 valid:true，
+    // 而 vcId（proofValue 的摘要）也不變 —— 一張 Base Sepolia 的授權會被讀成
+    // 主網身分。這裡明確要求兩個 DID 都在本 VC schema 綁定的鏈上。
+    if (issuerDid.chainId !== AUTH_VC_CHAIN_ID) {
+      return {
+        valid: false,
+        reason: `issuer DID 的 chainId(${issuerDid.chainId}) 非本 VC schema 綁定的鏈(${AUTH_VC_CHAIN_ID})`,
+      };
+    }
+    if (agentDidParsed.chainId !== AUTH_VC_CHAIN_ID) {
+      return {
+        valid: false,
+        reason: `holder DID 的 chainId(${agentDidParsed.chainId}) 非本 VC schema 綁定的鏈(${AUTH_VC_CHAIN_ID})`,
+      };
+    }
 
     // Reconstruct issuedAt from the proof's created timestamp (signed field).
     const issuedAt = Math.floor(new Date(vc.proof.created).getTime() / 1000);

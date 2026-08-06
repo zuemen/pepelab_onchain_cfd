@@ -73,21 +73,40 @@ contract AggregatorOracleAdapterTest is Test {
         assertEq(t, 3_000);
     }
 
-    /// @dev The safety property: disagreement fails closed rather than picking
-    ///      a winner. One of the two feeds is wrong and the adapter cannot know
-    ///      which.
-    function test_disagreementRevertsRatherThanGuessing() public {
+    /// @dev REWRITTEN for M-1. This used to assert that ANY spread over 1%
+    ///      reverted. That fail-closed-everywhere posture also blocked
+    ///      `closePosition` and `liquidatePosition`, which read the very same
+    ///      `getPrice` — so during the volatility that makes two feeds disagree,
+    ///      nobody could reduce risk and no liquidator could act. A 10% spread
+    ///      is now *degraded*: the price is still served (so risk can be cut),
+    ///      and the divergence is surfaced through isStale/isDegraded.
+    function test_softDisagreementServesDegradedPriceInsteadOfBlocking() public {
         a.set(ID, 100_000e8, 1_000);
-        b.set(ID, 110_000e8, 1_000);      // 1000 bps apart, tolerance is 100
+        b.set(ID, 110_000e8, 2_000);      // 1000 bps apart, soft bound is 100
+
+        (uint256 p, uint256 t) = agg.getPrice(ID);
+        assertEq(p, 110_000e8, "fresher quote is still served");
+        assertEq(t, 2_000);
+
+        assertTrue(agg.isDegraded(ID), "and it is flagged as degraded");
+        assertTrue(agg.isStale(ID),    "monitoring readers see it too");
+    }
+
+    /// @dev Past the hard bound the two numbers are not noise: one feed is
+    ///      broken or compromised. There the fail-closed revert is kept.
+    function test_hardDisagreementStillFailsClosed() public {
+        a.set(ID, 100_000e8, 1_000);
+        b.set(ID, 130_000e8, 1_000);      // 3000 bps apart, halt bound is 2000
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                AggregatorOracleAdapter.PriceDeviationTooHigh.selector, ID, 100_000e8, 110_000e8
+                AggregatorOracleAdapter.PriceDeviationTooHigh.selector, ID, 100_000e8, 130_000e8
             )
         );
         agg.getPrice(ID);
 
-        assertTrue(agg.isStale(ID));      // and it reports itself stale
+        assertTrue(agg.isStale(ID));
+        assertFalse(agg.isDegraded(ID), "halted is not merely degraded");
     }
 
     function test_deviationExactlyAtToleranceIsAccepted() public {
@@ -107,9 +126,29 @@ contract AggregatorOracleAdapterTest is Test {
         assertEq(p, 100_000e8);
     }
 
-    // ── degrading to one source ──────────────────────────────────────────────
+    // ── degrading to one source (PA-7) ───────────────────────────────────────
 
-    function test_fallsBackWhenSourceAReverts() public {
+    /// @dev THE PA-7 REGRESSION. These tests used to assert that a single live
+    ///      source silently serves the price. That is fail-open: it turns the
+    ///      whole two-source design into decoration the moment one feed is
+    ///      misconfigured — which is exactly what happened on the live
+    ///      deployment, where the Chainlink leg was never wired and the
+    ///      "aggregator" was a bare Pyth passthrough. Degrading is now an
+    ///      explicit owner decision.
+    function test_singleLiveSourceFailsClosedByDefault() public {
+        a.set(ID, 100_000e8, 1_000);
+        b.set(ID, 100_000e8, 1_000);
+        a.setRevertOnGetPrice(true);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(AggregatorOracleAdapter.SingleSourceNotAllowed.selector, ID)
+        );
+        agg.getPrice(ID);
+        assertTrue(agg.isStale(ID), "a one-legged aggregate is not trustworthy");
+    }
+
+    function test_fallsBackWhenSourceARevertsIfDegradeIsEnabled() public {
+        agg.setAllowSingleSource(true);
         a.set(ID, 100_000e8, 1_000);
         b.set(ID, 100_000e8, 1_000);
         a.setRevertOnGetPrice(true);
@@ -120,6 +159,7 @@ contract AggregatorOracleAdapterTest is Test {
     }
 
     function test_fallsBackWhenSourceAReportsItselfStale() public {
+        agg.setAllowSingleSource(true);
         a.set(ID, 99_000e8, 1_000);
         a.setStale(ID, true);
         b.set(ID, 100_000e8, 1_000);
@@ -131,6 +171,7 @@ contract AggregatorOracleAdapterTest is Test {
     /// @dev A source whose isStale itself reverts must be treated as dead, not
     ///      trusted by default.
     function test_sourceWithRevertingIsStaleIsTreatedAsDead() public {
+        agg.setAllowSingleSource(true);
         a.set(ID, 99_000e8, 1_000);
         a.setRevertOnIsStale(true);
         b.set(ID, 100_000e8, 1_000);
@@ -140,6 +181,7 @@ contract AggregatorOracleAdapterTest is Test {
     }
 
     function test_zeroPriceCountsAsDead() public {
+        agg.setAllowSingleSource(true);
         a.set(ID, 0, 1_000);              // zero is not a price
         b.set(ID, 100_000e8, 1_000);
 
@@ -150,6 +192,7 @@ contract AggregatorOracleAdapterTest is Test {
     /// @dev A wide spread does NOT block the feed when only one source is live
     ///      — there is nothing to disagree with.
     function test_deviationIrrelevantWhenOnlyOneSourceLive() public {
+        agg.setAllowSingleSource(true);
         a.set(ID, 100_000e8, 1_000);
         b.set(ID, 500_000e8, 1_000);
         b.setStale(ID, true);

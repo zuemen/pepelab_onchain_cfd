@@ -82,12 +82,17 @@ contract AssetVaultV2_1 is
     /// @notice Asset ids ever registered, so ratio math can iterate them.
     bytes32[] private _assetIds;
 
+    /// @notice M-7: last oracle price actually used to mint or redeem an asset.
+    ///         Written on every state-changing valuation, read only as a fallback
+    ///         when the live oracle cannot quote.
+    mapping(bytes32 => uint256) private _lastPrice;
+
     /// @dev Reserved slots so a future version can add state without colliding
     ///      with anything a new parent contract introduces. OZ 5.x parents use
     ///      ERC-7201 namespaced storage and won't collide on their own, but this
     ///      contract's own layout is plain — consume from the front when adding
     ///      variables and shrink the gap by the same amount.
-    uint256[45] private __gap;
+    uint256[44] private __gap;
 
     // ── errors ───────────────────────────────────────────────────────────────
     error StalePrice(bytes32 assetId, uint256 updatedAt);
@@ -136,8 +141,19 @@ contract AssetVaultV2_1 is
     function assetToken(bytes32 assetId) public view returns (address) { return _assetToken[assetId]; }
     function exposureOf(bytes32 assetId) public view returns (uint256) { return _outstanding[assetId]; }
 
+    /// @dev M-5: re-pointing an asset id at a DIFFERENT token while units are
+    ///      still outstanding strands every holder — `redeem` burns from the new
+    ///      token, which they do not hold, while `_outstanding` keeps recording
+    ///      the old liability. `unregisterAsset` already refuses in that state;
+    ///      this closes the same hole on the way in. Same-token re-registration
+    ///      stays allowed (idempotent re-wiring).
     function registerAsset(bytes32 assetId, address token) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (token == address(0)) revert InvalidParam();
+        address current = _assetToken[assetId];
+        if (current != address(0) && current != token) {
+            uint256 out = _outstanding[assetId];
+            if (out != 0) revert AssetStillOutstanding(assetId, out);
+        }
         if (_assetToken[assetId] == address(0)) {
             if (_assetIds.length >= MAX_REGISTERED_ASSETS) {
                 revert TooManyAssets(MAX_REGISTERED_ASSETS);
@@ -291,15 +307,22 @@ contract AssetVaultV2_1 is
             uint256 amount = _outstanding[id];
             if (amount == 0) continue;
 
+            // M-7: an asset that cannot be quoted is marked to the last price
+            // the vault itself transacted on rather than dropped from the
+            // liability. Dropping it made the ratio — and therefore mint()'s
+            // only solvency gate — optimistic precisely when the feed was down.
             try IAssetOracleV2(_oracle).getPrice(id) returns (uint256 price, uint256 updatedAt) {
                 if (price == 0 || block.timestamp > updatedAt + maxPriceAge) {
                     unpriced++;
-                    continue;
+                    price = _lastPrice[id];
+                    if (price == 0) continue;   // never transacted → nothing to mark to
                 }
                 total += amount * price / 1e8;
             } catch {
                 // Oracle refused to quote — stale, frozen, or unknown asset.
                 unpriced++;
+                uint256 fallbackPrice = _lastPrice[id];
+                if (fallbackPrice != 0) total += amount * fallbackPrice / 1e8;
             }
         }
     }
@@ -336,6 +359,7 @@ contract AssetVaultV2_1 is
         uint256 feePaid;
         (tokenOut, feePaid) = previewMint(assetId, usdcAmount);   // reverts if stale
         if (tokenOut == 0) revert ZeroAmount();
+        _lastPrice[assetId] = _price(assetId);   // M-7: remember the live quote
 
         uint256 newOutstanding = _outstanding[assetId] + tokenOut;
         if (newOutstanding > assetCap[assetId]) {
@@ -369,17 +393,28 @@ contract AssetVaultV2_1 is
 
         uint256 feePaid;
         (usdcOut, feePaid) = previewRedeem(assetId, tokenAmount);
+        _lastPrice[assetId] = _price(assetId);   // M-7: remember the live quote
 
         uint256 avail = reserve();
         if (avail < usdcOut) revert VaultDry(usdcOut, avail);
 
+        // M-6: only credit the portion of the fee the vault can actually back.
+        // The guard above covers the NET payout, so a redeem in the window
+        // `usdcOut <= reserve < gross` used to book operator revenue against
+        // money that was not there. Once accruedFees passed the balance,
+        // reserve() clamped to 0 and every later redeem reverted VaultDry on
+        // USDC the vault demonstrably held — holders frozen out by an accounting
+        // artefact. Backported from V2.2, which is where this was first fixed.
+        uint256 headroom  = avail - usdcOut;
+        uint256 backedFee = feePaid <= headroom ? feePaid : headroom;
+
         _outstanding[assetId] -= tokenAmount;
-        accruedFees += feePaid;
+        accruedFees += backedFee;
 
         SyntheticAssetV2(token).burn(msg.sender, tokenAmount);
         IERC20(_usdc).safeTransfer(msg.sender, usdcOut);
 
-        emit Redeemed(msg.sender, assetId, tokenAmount, usdcOut, feePaid);
+        emit Redeemed(msg.sender, assetId, tokenAmount, usdcOut, backedFee);
     }
 
     /// @notice Operator injects payout collateral.

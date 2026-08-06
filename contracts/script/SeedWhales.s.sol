@@ -7,6 +7,7 @@ import "../src/MockUSDC.sol";
 import "../src/PerpetualExchange.sol";
 import "../src/StrategyRegistry.sol";
 import "../src/TraderStake.sol";
+import "../src/KYCRegistry.sol";
 
 /// @notice Seeds 12 demo whale traders on Sepolia (or Anvil).
 ///         Run with:
@@ -15,6 +16,18 @@ import "../src/TraderStake.sol";
 ///     --broadcast --skip-simulation --slow -v
 ///
 ///   Required env vars: USDC_ADDR, REGISTRY_ADDR, STAKE_ADDR, EXCHANGE_ADDR
+///   Optional:          KYC_REGISTRY
+///
+/// @dev Audit 2026-08-06 fallout:
+///
+///      **PA-3** — `MockUSDC.mint` is `onlyOwner`, and this script mints to all
+///      12 whales. The signer must be the MockUSDC owner; asserted below.
+///
+///      **M8** — `submitKYC` no longer self-verifies, so RWA-flagged markets
+///      (sAAPL / sTSLA on the live deployment) revert `NotKycVerified` for these
+///      accounts. Half the whale strategies are equity-heavy, so without
+///      `KYC_REGISTRY` set the "whale wall" ends up crypto-and-gold only, and the
+///      failures print as `pos1 skipped` rather than as a configuration problem.
 contract SeedWhales is Script {
     bytes32 constant SBTC  = keccak256("sBTC");
     bytes32 constant SETH  = keccak256("sETH");
@@ -38,6 +51,27 @@ contract SeedWhales is Script {
         TraderStake       ts       = TraderStake(stakeAddr);
 
         uint256 execFee = exchange.executionFee();
+
+        // PA-3: mint is owner-gated now.
+        require(
+            usdc.owner() == msg.sender,
+            "signer is not the MockUSDC owner - mint() became onlyOwner in PA-3"
+        );
+
+        // M8: pre-approve the whales so their equity legs can actually open.
+        address kycAddr = vm.envOr("KYC_REGISTRY", address(0));
+        if (kycAddr != address(0)) {
+            address[] memory whales = new address[](12);
+            for (uint32 i = 0; i < 12; i++) {
+                whales[i] = vm.addr(vm.deriveKey(MNEMONIC, i + 1));
+            }
+            vm.startBroadcast();
+            KYCRegistry(kycAddr).batchVerify(whales);
+            vm.stopBroadcast();
+            console.log("KYC batch-verified 12 whales on", kycAddr);
+        } else {
+            console.log("KYC_REGISTRY unset - equity legs on RWA markets will be skipped.");
+        }
 
         for (uint32 i = 0; i < 12; i++) {
             // Indices 1-12 — index 0 is reserved for the deployer in Seed.s.sol

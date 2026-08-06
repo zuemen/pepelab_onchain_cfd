@@ -20,6 +20,8 @@ import {
   getSessionManagerAddress,
   agentDid,
   verifyAuthorizationVC,
+  parseOracleBody,
+  parseSignalsBody,
   type AuthorizationVC,
   jsonSafe,
 } from "@pepelab/shared";
@@ -134,16 +136,20 @@ async function executeOrSimulate(
     return;
   }
 
-  // VC/SSI 閘門：帶了授權憑證就先在本地驗證並印結果（鏈上交叉比對在 write 層）。
-  if (AUTH_VC) {
-    const v = verifyAuthorizationVC(AUTH_VC);
-    if (v.valid) {
-      console.log(`🪪 授權憑證已驗證 ✓（issuer ${v.issuer} → agent ${v.agent}, session #${v.sessionId}）`);
-    } else {
-      console.log(`🛑 授權憑證驗證失敗 → 拒絕下單：${v.reason}`);
-      console.log(`  （正反對照：竄改 VC 或換 agent 即無法下單）`);
-      return;
-    }
+  // VC/SSI 閘門（A-3）：VC 是**必要**的，不是「有帶才驗」。缺 VC 直接退化成模擬，
+  // 不送鏈——write 層也會再拒絕一次，這裡只是給出人看得懂的訊息。
+  if (!AUTH_VC) {
+    console.log("🛑 未提供授權憑證（AGENT_AUTH_VC / AGENT_AUTH_VC_PATH）→ 拒絕下單。");
+    console.log(`  本來會下的單：${wouldBe}（模擬，未送鏈）。`);
+    return;
+  }
+  const v = verifyAuthorizationVC(AUTH_VC);
+  if (v.valid) {
+    console.log(`🪪 授權憑證已驗證 ✓（issuer ${v.issuer} → agent ${v.agent}, session #${v.sessionId}）`);
+  } else {
+    console.log(`🛑 授權憑證驗證失敗 → 拒絕下單：${v.reason}`);
+    console.log(`  （正反對照：竄改 VC 或換 agent 即無法下單）`);
+    return;
   }
 
   console.log(`送出：${wouldBe}（session #${SESSION_ID}）…`);
@@ -153,7 +159,7 @@ async function executeOrSimulate(
     isLong: trade.isLong,
     marginUsdc: DEMO_MARGIN,
     leverage: trade.leverage,
-    authVc: AUTH_VC ?? undefined,
+    authVc: AUTH_VC,
   });
   if (res.ok) {
     console.log(
@@ -210,15 +216,30 @@ async function paidRun() {
   // 注意：payFetch 第二參數 init 不可省略——x402-fetch 在 402 重送時會讀 init，
   // 缺它會丟「Missing fetch request configuration」。
   banner("① 付費讀 oracle 快照（0.005 USDC, 官方 USDC）");
-  const oracle = (await (await payFetch(`${API}/oracle/${ASSET}`, { method: "GET" })).json()) as any;
-  console.log(JSON.stringify(oracle, null, 2));
+  const oracleRes = await payFetch(`${API}/oracle/${ASSET}`, { method: "GET" });
+  const oracleBody = (await oracleRes.json().catch(() => null)) as any;
+  console.log(JSON.stringify(oracleBody, null, 2));
 
   banner("② 付費讀 trader 訊號（0.01 USDC, 官方 USDC）");
-  const sig = (await (await payFetch(`${API}/signals/${TRADER}`, { method: "GET" })).json()) as any;
-  console.log(JSON.stringify(sig, null, 2));
+  const sigRes = await payFetch(`${API}/signals/${TRADER}`, { method: "GET" });
+  const sigBody = (await sigRes.json().catch(() => null)) as any;
+  console.log(JSON.stringify(sigBody, null, 2));
 
-  const perf = sig?.data;
-  printDecision(oracle?.data ?? oracle, perf);
+  // A-1 同類修正：`body?.data ?? body` 會讓錯誤物件變成「資料」，決策就此建立在
+  // 錯誤訊息上。兩份回應都先過 shared 的嚴格解析，任一不可用就停在這裡。
+  const oracleParsed = parseOracleBody(oracleBody, oracleRes.status);
+  if (!oracleParsed.ok) {
+    console.log(`\n🛑 oracle 回應不可用：${oracleParsed.reason} → 不做決策、不下單。`);
+    return;
+  }
+  const sigParsed = parseSignalsBody(sigBody, sigRes.status);
+  if (!sigParsed.ok) {
+    console.log(`\n🛑 signals 回應不可用：${sigParsed.reason} → 不做決策、不下單。`);
+    return;
+  }
+
+  const perf = sigParsed.data;
+  printDecision(oracleParsed.data, perf);
   await executeOrSimulate(pickTrade(perf));
 }
 

@@ -2,9 +2,19 @@
 cache/
 out/
 
-# Ignores development broadcast logs
-!/broadcast
+# Broadcast logs
+#
+# contracts/broadcast/ **刻意保留進版控**：它是「哪個位址來自哪次部署、哪個
+# commit、哪個區塊」的唯一機器可讀紀錄，可以拿去跟鏈上對照重新驗證。內容只有
+# tx / 位址 / receipt，不含私鑰。
+#
+# 先前這裡寫 `!/broadcast` 來反解根目錄 .gitignore 的 `broadcast/`，兩份規則語意
+# 相反。現在根目錄那條已縮小成只管 `/broadcast/`（repo 根目錄自己的那一個），
+# 這裡不再需要 negation，只留下真正該排除的兩類：
+#
+# 本機 anvil（chainId 31337）—— 每次重啟即作廢，無保存價值。
 /broadcast/*/31337/
+# dry-run —— 沒有真的上鏈，位址是模擬出來的，收進版控只會誤導。
 /broadcast/**/dry-run/
 
 # Docs

@@ -3,6 +3,8 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 interface IOracle {
@@ -24,6 +26,13 @@ interface IKyc {
 }
 
 contract PerpetualExchange is Ownable, ReentrancyGuard {
+    /// @dev M-4: non-standard ERC20s (mainnet USDT and friends) return no bool
+    ///      from transfer/approve, so a bare `usdc.transfer(...)` against an
+    ///      interface declaring a bool either reverts on ABI decode or, worse,
+    ///      silently succeeds on failure. SafeERC20 handles both conventions and
+    ///      turns a `false` return into a revert.
+    using SafeERC20 for IERC20;
+
     // ── Constants ────────────────────────────────────────────────────────────
 
     uint256 public constant MAX_LEVERAGE            = 5;
@@ -36,6 +45,17 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     // Owner-adjustable fees (kept as public vars so tests and admin can override)
     uint256 public TRADING_FEE_BPS         = 10;   // 0.1% swap fee (Uniswap concept)
     uint256 public BORROW_FEE_BPS_PER_HOUR = 1;    // 0.01% borrow rate per hour (Aave concept)
+
+    // ── M-3: hard bounds on every owner-adjustable risk knob ──────────────────
+    // The setters used to be unbounded, so a compromised (or careless) owner key
+    // could set a 1000% trading fee and confiscate every open position's margin
+    // on close. These ceilings make that impossible at the bytecode level rather
+    // than by policy.
+    uint256 public constant MAX_TRADING_FEE_BPS          = 100;    // 1.00% per side
+    uint256 public constant MAX_BORROW_FEE_BPS_PER_HOUR  = 10;     // 0.10%/h
+    uint256 public constant MAX_MAINTENANCE_MARGIN_BPS   = 9_999;  // must stay < 100%
+    uint256 public constant MAX_PRICE_AGE_LIMIT          = 7 days;
+    uint256 public constant MAX_EXECUTION_FEE            = 1 ether;
 
     // ── Funding (multi/short imbalance) ──────────────────────────────────────
     // Funding charges the crowded side and pays the other; it is NOT a financing
@@ -52,6 +72,27 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     //  which was economically nonsensical — fixed by the 8h cadence here.)
     uint256 public constant FUNDING_INTERVAL        = 8 hours;
     uint256 public constant MAX_FUNDING_RATE_BPS    = 75;    // 0.75% per 8h at full imbalance
+
+    /// @notice H-2: maximum number of missed intervals a single settlement may
+    ///         catch up on. Without it, a market nobody cranked for months
+    ///         accrued `intervals × rate` in one shot — the PoC reached 438% of
+    ///         notional after 200 idle days, an amount the payer can never post
+    ///         and which therefore becomes bad debt the moment it is charged.
+    ///         The clock is still advanced past the whole gap, so the skipped
+    ///         accrual is forgiven symmetrically for payers and receivers and
+    ///         conservation is untouched. 21 × 8h = one week of catch-up, which
+    ///         bounds a single settlement at 21 × 0.75% = 15.75% of notional.
+    uint256 public constant MAX_FUNDING_CATCHUP_INTERVALS = 21;
+
+    /// @notice H-3: ceiling on how much larger the thin side's per-unit funding
+    ///         receipt may be than the crowded side's per-unit charge. Funding
+    ///         scales the receiver rate by payerOI/receiverOI to conserve the
+    ///         total; with a 10-USDC short facing 1,000,000 of longs that ratio
+    ///         was 100,000×, and the exchange had to advance the receipt out of
+    ///         its own reserves long before the payers ever closed. Beyond this
+    ///         multiple the surplus simply stays with the payers' side of the
+    ///         book (the exchange never advances it), which errs toward the pool.
+    uint256 public constant MAX_FUNDING_RECEIVE_SCALE = 10;
 
     // Insurance vault: floor paid to trader when closeAmount < 0
     uint256 public constant BAILOUT_FLOOR_BPS       = 1000;  // 10% of margin
@@ -99,8 +140,24 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     // ── State ────────────────────────────────────────────────────────────────
 
     mapping(uint256 => Position)      public positions;
+    /// @notice OPEN positions of a user. Closed ids are swap-and-popped out (C-3),
+    ///         so this list is bounded by the margin an account actually has
+    ///         locked. Historical (closed) positions are recoverable from the
+    ///         PositionOpened / PositionClosed event stream.
     mapping(address => uint256[])     public userPositions;
     mapping(address => uint256)       public freeMargin;
+
+    /// @dev C-3 / H-1: 1-based index of a position inside `userPositions[owner]`
+    ///      and `assetPositionIds[asset]`. 0 means "not in the list". Kept in
+    ///      sync by the swap-and-pop removers below.
+    mapping(uint256 => uint256)       private _userPosIndex;
+    mapping(uint256 => uint256)       private _assetPosIndex;
+
+    /// @notice H-6: the agent that opened a position through `openPositionFor`
+    ///         (address(0) for self-opened positions). `closePositionFor` only
+    ///         honours a request from THIS agent, so an authorized agent can
+    ///         never reach a position it did not create.
+    mapping(uint256 => address)       public positionAgent;
 
     // Global Open Interest (OI) for Funding Rate calculations
     mapping(bytes32 => uint256)       public globalLongNotional;
@@ -158,6 +215,15 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     // winners protect a losing leg from being wrongly liquidated.
     bool                              public portfolioMarginEnabled;
 
+    /// @notice M-2: share (bps) of a liquidated position's REMAINING collateral
+    ///         that is confiscated to the InsuranceVault as the liquidation
+    ///         penalty. The liquidator reward comes out first; whatever is left
+    ///         after reward + penalty is returned to the position owner instead
+    ///         of being swept wholesale. Liquidation triggers at or below the
+    ///         maintenance margin, so the residual is at most the maintenance
+    ///         buffer — money the trader posted precisely to absorb this event.
+    uint256 public liquidationPenaltyBps = 2_000; // 20% of remaining collateral
+
     // ── Events ───────────────────────────────────────────────────────────────
 
     event PositionOpened(
@@ -211,6 +277,22 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         uint256         payout
     );
 
+    // M-3: every admin setter is now observable.
+    event FeeRouterSet(address indexed feeRouter);
+    event InsuranceVaultSet(address indexed vault);
+    event CopyTrackerSet(address indexed copyTracker);
+    event ExecutionFeeSet(uint256 fee);
+    event TradingFeeBpsSet(uint256 bps);
+    event BorrowFeeBpsPerHourSet(uint256 bps);
+    event MaxPriceAgeSet(uint256 secs);
+    event LiquidationPenaltyBpsSet(uint256 bps);
+
+    /// @notice C-2 / Low: bad debt that neither the closing position's collateral
+    ///         nor the InsuranceVault nor ADL could cover. Previously silent.
+    event BadDebt(uint256 indexed positionId, bytes32 indexed asset, uint256 amount);
+    /// @notice H-2: emitted when a settlement had to skip un-accrued intervals.
+    event FundingCatchupClamped(bytes32 indexed asset, uint256 elapsed, uint256 accrued);
+
     // ── Errors ───────────────────────────────────────────────────────────────
 
     error NotCopyTracker();
@@ -223,11 +305,25 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     error PositionIsHealthy();
     error FundingIntervalNotElapsed();
     error StalePrice(bytes32 asset, uint256 updatedAt);
+    error InvalidPrice(bytes32 asset);
     error NotKycVerified(address user);
+    /// @notice H-6: caller is an authorized agent, but not the agent that opened
+    ///         this particular position.
+    error NotPositionAgent(uint256 positionId, address caller);
+    error InvalidParam();
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
     constructor(address _usdc, address _oracle) Ownable(msg.sender) {
+        if (_usdc == address(0) || _oracle == address(0)) revert InvalidParam();
+        // Low: MIN_MARGIN (10e18) and the `rawPrice * 1e10` index scaling both
+        // hard-code an 18-decimal collateral token, while `usdc` is immutable —
+        // wiring a 6-decimal USDC would silently mis-scale every position and
+        // could never be corrected. Checked softly (try/catch) because minimal
+        // test doubles legitimately omit IERC20Metadata.
+        try IERC20Metadata(_usdc).decimals() returns (uint8 d) {
+            if (d != 18) revert InvalidParam();
+        } catch {}
         usdc   = IERC20(_usdc);
         oracle = IOracle(_oracle);
     }
@@ -248,6 +344,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
             authorizedAgents[_copyTracker] = true;
             emit AgentAuthorizationSet(_copyTracker, true);
         }
+        emit CopyTrackerSet(_copyTracker);
     }
 
     /// @notice Authorize or revoke an additional agent (beyond the primary
@@ -257,24 +354,52 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         emit AgentAuthorizationSet(agent, authorized);
     }
 
+    /// @notice M-3: `address(0)` is accepted and means "disable performance-fee
+    ///         routing" — the close path already branches on it — but the change
+    ///         is now emitted so it can never happen unobserved.
     function setFeeRouter(address _feeRouter) external onlyOwner {
         feeRouter = IFeeRouterPerp(_feeRouter);
+        emit FeeRouterSet(_feeRouter);
     }
 
     function setExecutionFee(uint256 _fee) external onlyOwner {
+        require(_fee <= MAX_EXECUTION_FEE, "fee>1 ether");
         executionFee = _fee;
+        emit ExecutionFeeSet(_fee);
     }
 
+    /// @notice M-3: bounded at 1% per side. The old setter was unbounded, so
+    ///         `setTradingFeeBps(100000)` would have swallowed every open
+    ///         position's entire margin at close time.
     function setTradingFeeBps(uint256 _bps) external onlyOwner {
+        require(_bps <= MAX_TRADING_FEE_BPS, "fee>1%");
         TRADING_FEE_BPS = _bps;
+        emit TradingFeeBpsSet(_bps);
     }
 
+    /// @notice M-3: bounded at 0.10%/hour (~876%/yr) — an absolute ceiling, not
+    ///         a target. Previously unbounded and applied to elapsed hours, so
+    ///         it was an even more direct confiscation lever than the trade fee.
     function setBorrowFeePerHour(uint256 _bps) external onlyOwner {
+        require(_bps <= MAX_BORROW_FEE_BPS_PER_HOUR, "borrow fee too high");
         BORROW_FEE_BPS_PER_HOUR = _bps;
+        emit BorrowFeeBpsPerHourSet(_bps);
     }
 
+    /// @notice M-3: `address(0)` disables bailout/ADL vault interaction, which is
+    ///         a supported configuration; the change is emitted either way.
     function setInsuranceVault(address _vault) external onlyOwner {
         insuranceVault = IInsuranceVaultPerp(_vault);
+        emit InsuranceVaultSet(_vault);
+    }
+
+    /// @notice M-2: share of a liquidated position's remaining collateral kept as
+    ///         the protocol penalty. Bounded so reward + penalty can never exceed
+    ///         the collateral itself.
+    function setLiquidationPenaltyBps(uint256 _bps) external onlyOwner {
+        require(_bps + LIQUIDATION_REWARD_BPS <= 10_000, "penalty+reward>100%");
+        liquidationPenaltyBps = _bps;
+        emit LiquidationPenaltyBpsSet(_bps);
     }
 
     /// @notice Set (or clear with address(0)) the KYC registry used to gate RWA
@@ -309,8 +434,10 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
 
     /// @notice N3: per-asset maintenance-margin override in bps (0 = use the
     ///         global DEFAULT_MAINTENANCE_MARGIN_BPS).
+    ///         M-3: strictly below 100% — a maintenance requirement of exactly
+    ///         the full notional makes every position instantly liquidatable.
     function setMaintenanceMarginFor(bytes32 asset, uint256 bps) external onlyOwner {
-        require(bps <= 10_000, "bps>100%");
+        require(bps <= MAX_MAINTENANCE_MARGIN_BPS, "bps>=100%");
         maintenanceMarginBpsOf[asset] = bps;
         emit MaintenanceMarginSet(asset, bps);
     }
@@ -328,9 +455,14 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         emit PortfolioMarginEnabledSet(enabled);
     }
 
+    /// @notice M-3: bounded on BOTH sides. The old setter only rejected 0, so an
+    ///         owner could set `type(uint256).max` and disable staleness entirely
+    ///         while the getter still looked configured.
     function setMaxPriceAge(uint256 _seconds) external onlyOwner {
         require(_seconds > 0, "zero age");
+        require(_seconds <= MAX_PRICE_AGE_LIMIT, "age>7d");
         maxPriceAge = _seconds;
+        emit MaxPriceAgeSet(_seconds);
     }
 
     /// @notice Set the mark-price premium cap (bps of index). 0 disables the
@@ -349,7 +481,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     // ── Margin management ────────────────────────────────────────────────────
 
     function depositMargin(uint256 amount) external nonReentrant {
-        usdc.transferFrom(msg.sender, address(this), amount);
+        usdc.safeTransferFrom(msg.sender, address(this), amount);
         freeMargin[msg.sender] += amount;
         emit MarginDeposited(msg.sender, amount);
     }
@@ -357,7 +489,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     /// @dev CopyTracker pulls USDC from itself, credits freeMargin to `user`.
     function depositMarginFor(address user, uint256 amount) external nonReentrant {
         if (!authorizedAgents[msg.sender]) revert NotCopyTracker();
-        usdc.transferFrom(msg.sender, address(this), amount);
+        usdc.safeTransferFrom(msg.sender, address(this), amount);
         freeMargin[user] += amount;
         emit MarginDeposited(user, amount);
     }
@@ -365,7 +497,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     function withdrawMargin(uint256 amount) external nonReentrant {
         if (freeMargin[msg.sender] < amount) revert InsufficientFreeMargin();
         freeMargin[msg.sender] -= amount;
-        usdc.transfer(msg.sender, amount);
+        usdc.safeTransfer(msg.sender, amount);
         emit MarginWithdrawn(msg.sender, amount);
     }
 
@@ -378,7 +510,9 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         uint256 leverage
     ) external payable nonReentrant returns (uint256 positionId) {
         require(msg.value >= executionFee, "Insufficient execution fee");
-        return _openPosition(msg.sender, asset, isLong, margin, leverage, address(0));
+        positionId = _openPosition(msg.sender, asset, isLong, margin, leverage, address(0), address(0));
+        // Low: refund execution-fee overpayment instead of silently keeping it.
+        _refundExcessFee();
     }
 
     function openPositionFor(
@@ -392,17 +526,48 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         require(msg.value >= executionFee, "Insufficient execution fee");
         if (copyTracker == address(0)) revert CopyTrackerNotSet();
         if (!authorizedAgents[msg.sender]) revert NotCopyTracker();
-        return _openPosition(user, asset, isLong, margin, leverage, copiedFrom);
+        positionId = _openPosition(user, asset, isLong, margin, leverage, copiedFrom, msg.sender);
+        _refundExcessFee();
     }
 
     function closePosition(uint256 positionId) external nonReentrant {
         _closePosition(msg.sender, positionId);
     }
 
-    /// @dev Lets copyTracker close a position on behalf of its owner (e.g. unfollow flow).
+    /// @notice Lets an agent close a position it opened on the owner's behalf.
+    /// @dev H-6: `owner` used to be a free parameter, so ANY address in
+    ///      `authorizedAgents` could force-close ANY user's position — including
+    ///      positions the user opened themselves and positions belonging to a
+    ///      different agent's customers. The exchange had no way to check the
+    ///      claim, because nothing on-chain recorded who an agent represents.
+    ///
+    ///      The minimal verifiable fix is to bind the representation at the only
+    ///      moment where it IS provable: `openPositionFor` is already gated on
+    ///      the owner's own funds (`freeMargin[owner]`), so the agent that opened
+    ///      a position is recorded in `positionAgent[id]` and is the only agent
+    ///      that may later close it. That is exactly the two legitimate flows —
+    ///      CopyTracker closing the positions it created in `followTrader`, and
+    ///      AgentSessionManager closing the positions it created in a session —
+    ///      with no new user-facing approval state to manage or revoke, and it
+    ///      revokes automatically when the owner's agent authorization is pulled.
     function closePositionFor(address owner, uint256 positionId) external nonReentrant {
         if (!authorizedAgents[msg.sender]) revert NotCopyTracker();
+        if (positionAgent[positionId] != msg.sender) {
+            revert NotPositionAgent(positionId, msg.sender);
+        }
         _closePosition(owner, positionId);
+    }
+
+    /// @dev Returns any execution fee paid above the current `executionFee`.
+    ///      Best-effort: a caller that cannot receive ETH (e.g. a contract with
+    ///      no receive function) simply leaves the overpayment in the exchange's
+    ///      execution-fee balance, exactly as before this fix — refusing the
+    ///      trade over a refund would be worse than keeping the dust.
+    function _refundExcessFee() internal {
+        uint256 excess = msg.value - executionFee;
+        if (excess == 0) return;
+        (bool ok, ) = msg.sender.call{value: excess}("");
+        ok; // intentionally ignored — see above
     }
 
     // ── Liquidation Engine ───────────────────────────────────────────────────
@@ -425,9 +590,10 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         uint256 hoursElapsed = (block.timestamp - pos.openedAt) / 3600;
         uint256 borrowFee    = borrowed * BORROW_FEE_BPS_PER_HOUR * hoursElapsed / 10000;
         
-        int256 totalFees   = int256(tradingFee + borrowFee);
-        int256 closeAmount = int256(pos.margin) + pnl - totalFees - _calcFunding(pos);
-        
+        int256 totalFees      = int256(tradingFee + borrowFee);
+        int256 fundingPayment = _calcFunding(pos);
+        int256 closeAmount    = int256(pos.margin) + pnl - totalFees - fundingPayment;
+
         // Maintenance margin: per-asset override (N3) or global 5% default.
         uint256 maintenanceMargin = notional * _maintenanceMarginBps(pos.asset) / 10000;
 
@@ -460,48 +626,99 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         } else {
             globalShortNotional[pos.asset] -= notional;
         }
+        // C-3 / H-1: drop the id from the owner's list now. The per-asset ADL
+        // index is compacted AFTER _autoDeleverage so the scan still sees this
+        // slot and keeps its insertion-order victim selection.
+        _removeUserPosition(pos.owner, positionId);
+
+        uint256 refund;
+        uint256 reward;
+        uint256 toVault;
+        if (closeAmount > 0) {
+            // M-2: the remaining collateral is no longer swept wholesale. The
+            // liquidator is paid, the protocol keeps its penalty, and the rest —
+            // at most the maintenance buffer the trader posted for exactly this
+            // moment — is returned to the owner.
+            uint256 remaining = uint256(closeAmount);
+            reward  = remaining * LIQUIDATION_REWARD_BPS / 10_000;
+            toVault = remaining * liquidationPenaltyBps / 10_000;
+            refund  = remaining - reward - toVault;
+            if (refund > 0) freeMargin[pos.owner] += refund;
+        }
 
         // ── Interactions ──────────────────────────────────────────────────────
-        // Split remaining collateral: reward → liquidator, remainder → InsuranceVault
         if (closeAmount > 0) {
-            uint256 remaining = uint256(closeAmount);
-            uint256 reward    = remaining * LIQUIDATION_REWARD_BPS / 10_000;
-            uint256 toVault   = remaining - reward;
-
             if (reward > 0) {
-                usdc.transfer(msg.sender, reward);
+                usdc.safeTransfer(msg.sender, reward);
             }
             if (toVault > 0 && address(insuranceVault) != address(0)) {
-                usdc.approve(address(insuranceVault), toVault);
+                usdc.forceApprove(address(insuranceVault), toVault);
                 insuranceVault.depositFromProtocol(toVault);
             }
-        } else if (adlEnabled && closeAmount < 0) {
+        } else if (closeAmount < 0) {
             // N2: the position is underwater beyond its collateral, so the
             // protocol is short uint(-closeAmount). Insurance fund first — draw
             // what the vault can into the exchange's reserves to fill the hole —
             // then auto-deleverage profitable counterparties for whatever the
             // vault could not cover, keeping the system solvent.
-            uint256 shortfall = uint256(-closeAmount);
-            uint256 covered;
-            if (address(insuranceVault) != address(0)) {
-                uint256 vaultAvail = insuranceVault.totalAssets();
-                covered = shortfall < vaultAvail ? shortfall : vaultAvail;
-                if (covered > 0) {
-                    // bailout pays `covered` USDC to the exchange, topping up the
-                    // reserves that back winner payouts (CEI: pos already closed).
-                    insuranceVault.bailout(covered, address(this));
-                }
-            }
-            if (shortfall > covered) {
-                _autoDeleverage(positionId, pos.asset, pos.isLong, shortfall - covered);
-            }
+            _absorbShortfall(positionId, pos.asset, pos.isLong, uint256(-closeAmount));
         }
 
-        // N1: route the LP share of the liquidation trading fee into the vault.
-        _routeVaultFee(tradingFee);
+        // N2 / C-3: compact the per-asset ADL index last, so _autoDeleverage
+        // scanned the book in its original order.
+        _removeAssetPosition(pos.asset, positionId);
+
+        // N1 / M-1: route the LP share of the trading fee that was ACTUALLY
+        // collected. A liquidation with no residual collateral collects nothing,
+        // and must therefore not push protocol reserves into the vault.
+        _routeVaultFee(_collectedTradingFee(pos.margin, pnl, fundingPayment, tradingFee));
 
         emit PositionLiquidated(positionId, pos.owner, msg.sender, pnl);
-        emit PositionClosed(positionId, pos.owner, pnl, 0);
+        emit PositionClosed(positionId, pos.owner, pnl, refund);
+    }
+
+    /// @dev C-2: the single bad-debt path shared by `liquidatePosition` and
+    ///      `_closePosition`. InsuranceVault first, ADL for the remainder, and
+    ///      whatever neither could cover is surfaced as an explicit BadDebt event
+    ///      instead of quietly disappearing into the reserves.
+    function _absorbShortfall(
+        uint256 positionId,
+        bytes32 asset,
+        bool    loserIsLong,
+        uint256 shortfall
+    ) internal {
+        uint256 covered;
+        if (address(insuranceVault) != address(0)) {
+            uint256 vaultAvail = insuranceVault.totalAssets();
+            covered = shortfall < vaultAvail ? shortfall : vaultAvail;
+            if (covered > 0) {
+                // bailout pays `covered` USDC to the exchange, topping up the
+                // reserves that back winner payouts (CEI: pos already closed).
+                insuranceVault.bailout(covered, address(this));
+            }
+        }
+        uint256 uncovered = shortfall - covered;
+        if (uncovered > 0 && adlEnabled) {
+            uncovered = _autoDeleverage(positionId, asset, loserIsLong, uncovered);
+        }
+        if (uncovered > 0) {
+            emit BadDebt(positionId, asset, uncovered);
+        }
+    }
+
+    /// @dev M-1: how much of the nominal trading fee the position could actually
+    ///      pay out of its own equity. `_routeVaultFee` moves real USDC out of
+    ///      the exchange, so routing a fee that was never collected is a direct
+    ///      transfer from protocol reserves to LPs.
+    function _collectedTradingFee(
+        uint256 margin,
+        int256  pnl,
+        int256  fundingPayment,
+        uint256 tradingFee
+    ) internal pure returns (uint256) {
+        int256 gross = int256(margin) + pnl - fundingPayment;
+        if (gross <= 0) return 0;
+        return uint256(gross) >= tradingFee ? tradingFee : uint256(gross);
     }
 
     /// @dev N2: reduce the protocol's winner liability by `uncovered` USDC by
@@ -510,31 +727,36 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     ///      `freeMargin` credit is lowered by its share of the haircut, so total
     ///      claims drop back in line with the reserves the bankrupt loser left
     ///      behind. Runs only on the portion the InsuranceVault could not cover.
-    ///      Bounded by MAX_ADL_SCAN to cap gas (note: the per-asset index is not
-    ///      compacted, so very long-lived markets may exhaust the scan budget on
-    ///      stale entries — acceptable for the current testnet scope). Victims are
-    ///      taken in index (insertion) order. Involuntary, so no trading/borrow
-    ///      fee is charged; funding is still settled fairly.
+    ///      Bounded by MAX_ADL_SCAN to cap gas. H-1: the per-asset index is now
+    ///      compacted on every close, so the scan budget can no longer be burned
+    ///      on stale entries — the PoC filled the first 128 slots with closed
+    ///      positions and the backstop silently did nothing. Victims are taken in
+    ///      index order; a victim removed mid-scan is swapped out from the tail,
+    ///      so the cursor deliberately does not advance in that case. Involuntary,
+    ///      so no trading/borrow fee is charged; funding is still settled fairly.
+    /// @return remaining the part of `uncovered` no counterparty could absorb.
     function _autoDeleverage(
         uint256 liquidatedId,
         bytes32 asset,
         bool    loserIsLong,
         uint256 uncovered
-    ) internal {
-        uint256 remaining = uncovered;
+    ) internal returns (uint256 remaining) {
+        remaining = uncovered;
         uint256[] storage ids = assetPositionIds[asset];
-        uint256 n = ids.length;
         uint256 scanned;
+        uint256 i;
 
-        for (uint256 i = 0; i < n && remaining > 0 && scanned < MAX_ADL_SCAN; ++i) {
+        while (i < ids.length && remaining > 0 && scanned < MAX_ADL_SCAN) {
             ++scanned;
             uint256 cid = ids[i];
             Position storage cp = positions[cid];
-            if (!cp.isOpen)               continue;
-            if (cp.isLong == loserIsLong) continue; // want the winning (opposite) side
+            // The position being liquidated is still in the index (it is removed
+            // after this scan) and is skipped here, as is any other closed entry.
+            if (!cp.isOpen)               { ++i; continue; }
+            if (cp.isLong == loserIsLong) { ++i; continue; } // want the winning side
 
             int256 cpnl = _calcPnL(cp);
-            if (cpnl <= 0)                continue; // only profitable counterparties
+            if (cpnl <= 0)                { ++i; continue; } // only profitable counterparties
 
             uint256 profit  = uint256(cpnl);
             uint256 haircut = profit >= remaining ? remaining : profit;
@@ -559,7 +781,52 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
 
             emit AutoDeleveraged(liquidatedId, cid, haircut, uint256(payout));
             emit PositionClosed(cid, cp.owner, cp.realizedPnL, uint256(payout));
+
+            _removeUserPosition(cp.owner, cid);
+            // Swap-and-pop moves the tail element into slot `i`; re-examine it.
+            _removeAssetPosition(asset, cid);
         }
+    }
+
+    // ── C-3 / H-1: bounded position indices (swap-and-pop) ───────────────────
+
+    /// @dev Removes `positionId` from `userPositions[owner]` in O(1). The moved
+    ///      tail element's cached index is rewritten, which is the only part of
+    ///      swap-and-pop that can silently corrupt the structure.
+    function _removeUserPosition(address owner, uint256 positionId) internal {
+        uint256 idx1 = _userPosIndex[positionId];
+        if (idx1 == 0) return;                 // not indexed (already removed)
+        uint256[] storage ids = userPositions[owner];
+        uint256 idx  = idx1 - 1;
+        uint256 last = ids.length - 1;
+        if (idx != last) {
+            uint256 moved = ids[last];
+            ids[idx] = moved;
+            _userPosIndex[moved] = idx + 1;
+        }
+        ids.pop();
+        delete _userPosIndex[positionId];
+    }
+
+    /// @dev Removes `positionId` from `assetPositionIds[asset]` in O(1).
+    function _removeAssetPosition(bytes32 asset, uint256 positionId) internal {
+        uint256 idx1 = _assetPosIndex[positionId];
+        if (idx1 == 0) return;
+        uint256[] storage ids = assetPositionIds[asset];
+        uint256 idx  = idx1 - 1;
+        uint256 last = ids.length - 1;
+        if (idx != last) {
+            uint256 moved = ids[last];
+            ids[idx] = moved;
+            _assetPosIndex[moved] = idx + 1;
+        }
+        ids.pop();
+        delete _assetPosIndex[positionId];
+    }
+
+    /// @notice Number of open positions currently indexed for ADL on `asset`.
+    function openPositionCountFor(bytes32 asset) external view returns (uint256) {
+        return assetPositionIds[asset].length;
     }
 
     // ── Funding Rate ─────────────────────────────────────────────────────────
@@ -590,7 +857,16 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         uint256 intervals = (block.timestamp - last) / FUNDING_INTERVAL;
         if (intervals == 0) return;
         lastFundingUpdateAt[asset] = last + intervals * FUNDING_INTERVAL;
-        _accrueFunding(asset, intervals);
+
+        // H-2: bound the catch-up. The clock above is advanced past the whole
+        // gap regardless, so the forgiven accrual is identical for payers and
+        // receivers and the conservation identity is preserved.
+        uint256 accrued = intervals;
+        if (accrued > MAX_FUNDING_CATCHUP_INTERVALS) {
+            accrued = MAX_FUNDING_CATCHUP_INTERVALS;
+            emit FundingCatchupClamped(asset, intervals, accrued);
+        }
+        _accrueFunding(asset, accrued);
     }
 
     function _accrueFunding(bytes32 asset, uint256 intervals) internal {
@@ -619,16 +895,31 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
             // receiver per-unit = payer per-unit × payerOI / receiverOI so that
             //   shortOI × receiverPerUnit == longOI × payerCharge  (conserved).
             cumulativeFundingIndexLong[asset]  += payerCharge;
-            cumulativeFundingIndexShort[asset] -= payerCharge * int256(longOI) / int256(shortOI);
+            cumulativeFundingIndexShort[asset] -= _receiverCharge(payerCharge, longOI, shortOI);
         } else {
             // Shorts crowded → shorts pay, longs receive.
             cumulativeFundingIndexShort[asset] += payerCharge;
-            cumulativeFundingIndexLong[asset]  -= payerCharge * int256(shortOI) / int256(longOI);
+            cumulativeFundingIndexLong[asset]  -= _receiverCharge(payerCharge, shortOI, longOI);
         }
 
         emit FundingSettled(
             asset, rateBps, cumulativeFundingIndexLong[asset], cumulativeFundingIndexShort[asset]
         );
+    }
+
+    /// @dev H-3: the thin side's per-unit receipt, scaled by payerOI/receiverOI
+    ///      to conserve the total but capped at MAX_FUNDING_RECEIVE_SCALE× the
+    ///      payer's per-unit charge. Uncapped, a dust-sized position on the empty
+    ///      side received hundreds of times its own margin in one settlement,
+    ///      money the exchange had to advance from its reserves because the
+    ///      crowded side had not closed yet. Above the cap the surplus stays with
+    ///      the payers (they still owe it on close), which errs toward the pool.
+    function _receiverCharge(int256 payerCharge, uint256 payerOI, uint256 receiverOI)
+        internal pure returns (int256)
+    {
+        int256 scaled = payerCharge * int256(payerOI) / int256(receiverOI);
+        int256 cap    = payerCharge * int256(MAX_FUNDING_RECEIVE_SCALE);
+        return scaled > cap ? cap : scaled;
     }
 
     /// @dev Imbalance-driven payer rate in BPS for the given OI (positive = longs
@@ -665,13 +956,30 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         return _calcPnL(pos);
     }
 
+    /// @notice What the position would actually be worth if closed right now.
+    /// @dev Low: this used to report margin + PnL only, ignoring accrued funding
+    ///      and the fees the close path deducts, so the UI over-stated every
+    ///      position — badly so for one that had been open for months. It now
+    ///      mirrors `_closePosition`'s arithmetic exactly.
     function getPositionValue(uint256 positionId) external view returns (uint256) {
         Position storage pos = positions[positionId];
         if (!pos.isOpen) return 0;
-        int256 val = int256(pos.margin) + _calcPnL(pos);
+
+        uint256 notional     = pos.margin * pos.leverage;
+        uint256 tradingFee   = notional * TRADING_FEE_BPS / 10000;
+        uint256 borrowed     = pos.margin * (pos.leverage - 1);
+        uint256 hoursElapsed = (block.timestamp - pos.openedAt) / 3600;
+        uint256 borrowFee    = borrowed * BORROW_FEE_BPS_PER_HOUR * hoursElapsed / 10000;
+
+        int256 val = int256(pos.margin) + _calcPnL(pos)
+                   - int256(tradingFee + borrowFee) - _calcFunding(pos);
         return val > 0 ? uint256(val) : 0;
     }
 
+    /// @notice The user's currently OPEN position ids.
+    /// @dev C-3: closed ids are compacted out, so this list — and the
+    ///      `_accountState` loop behind portfolio margin — is bounded by locked
+    ///      margin rather than by lifetime trade count.
     function getUserPositions(address user) external view returns (uint256[] memory) {
         return userPositions[user];
     }
@@ -749,7 +1057,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         uint256 cut = tradingFee * share / 10_000;
         if (cut == 0) return;
         cumulativeVaultFees += cut;
-        usdc.approve(address(insuranceVault), cut);
+        usdc.forceApprove(address(insuranceVault), cut);
         insuranceVault.depositFromProtocol(cut);
         emit VaultFeeRouted(cut, cumulativeVaultFees);
     }
@@ -759,6 +1067,9 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     function _freshPrice(bytes32 asset) internal view returns (uint256) {
         (uint256 rawPrice, uint256 updatedAt) = oracle.getPrice(asset);
         if (block.timestamp > updatedAt + maxPriceAge) revert StalePrice(asset, updatedAt);
+        // Low: a zero price passes the staleness check but makes `size` divide by
+        // zero at entry and marks every position to zero — fail closed instead.
+        if (rawPrice == 0) revert InvalidPrice(asset);
         return rawPrice * 1e10;
     }
 
@@ -773,7 +1084,8 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         bool    isLong,
         uint256 margin,
         uint256 leverage,
-        address copiedFrom
+        address copiedFrom,
+        address agent
     ) internal returns (uint256 positionId) {
         if (margin < MIN_MARGIN)                       revert MarginTooLow();
         if (leverage == 0 || leverage > _maxLeverage(asset)) revert InvalidLeverage();
@@ -793,8 +1105,15 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
 
         if (freeMargin[owner] < margin + tradingFee)   revert InsufficientFreeMargin();
 
-        // oracle returns 8-decimal price; scale to 18 dec for internal accounting
-        uint256 entryPrice = _freshPrice(asset);
+        // C-1: entry is booked at the MARK price the book shows *before* this
+        // position exists — not the raw index. Together with `_calcPnL` excluding
+        // the position's own notional from its mark, this makes the premium a
+        // strictly zero-sum transfer between traders. Previously entry used the
+        // index while PnL used a mark that the position itself inflated, so
+        // opening and immediately closing a one-sided position minted free money
+        // (1% premium against 0.2% round-trip fees). OI is incremented below, so
+        // `_markPrice` here is by construction "excluding self".
+        uint256 entryPrice = _markPrice(asset, _freshPrice(asset));
 
         freeMargin[owner] -= (margin + tradingFee);
 
@@ -823,7 +1142,11 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
                 : cumulativeFundingIndexShort[asset]
         });
         userPositions[owner].push(positionId);
+        _userPosIndex[positionId] = userPositions[owner].length;   // 1-based
         assetPositionIds[asset].push(positionId); // N2: per-asset index for ADL
+        _assetPosIndex[positionId] = assetPositionIds[asset].length;
+        // H-6: remember which agent (if any) is allowed to close this position.
+        if (agent != address(0)) positionAgent[positionId] = agent;
 
         emit PositionOpened(positionId, owner, asset, isLong, entryPrice, margin, leverage);
 
@@ -854,14 +1177,29 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         int256 fundingPayment = _calcFunding(pos); // positive = trader pays, negative = trader receives
         int256 closeAmount    = int256(pos.margin) + pnl - totalFees - fundingPayment;
 
-        bool needsBailout = false;
+        // ── C-2: bad debt on a voluntary close ────────────────────────────────
+        // The loss used to be clamped at 0 and the protocol then *paid the
+        // bankrupt trader* BAILOUT_FLOOR_BPS of their margin out of the insurance
+        // fund — so closing a hopeless position voluntarily was strictly better
+        // than being liquidated, and the hole it left was never funded. Two
+        // hedged accounts could therefore drain the pool on any large move.
+        //
+        // A close now walks the SAME path as a liquidation: the shortfall is
+        // covered by the InsuranceVault, then by ADL, and any remainder is
+        // emitted as BadDebt. The bailout floor keeps its original intent — a
+        // small softener for a wiped-out trader — but is only paid when the vault
+        // is demonstrably solvent afterwards, i.e. it fully covered the shortfall
+        // and still has the floor to spare. A drained vault pays nothing.
+        uint256 shortfall;
         uint256 bailoutFloor;
         if (closeAmount < 0) {
-            if (address(insuranceVault) != address(0)) {
-                needsBailout = true;
-                bailoutFloor = pos.margin * BAILOUT_FLOOR_BPS / 10_000;
-            }
+            shortfall = uint256(-closeAmount);
             closeAmount = 0;
+            if (address(insuranceVault) != address(0)) {
+                uint256 avail = insuranceVault.totalAssets();
+                uint256 floor = pos.margin * BAILOUT_FLOOR_BPS / 10_000;
+                if (avail >= shortfall + floor) bailoutFloor = floor;
+            }
         }
 
         // Performance fee: 10 % of profit on copied positions when feeRouter is set
@@ -885,22 +1223,31 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         } else {
             globalShortNotional[pos.asset] -= notional;
         }
+        // C-3 / H-1: compact both indices (asset index last, as in liquidation).
+        _removeUserPosition(pos.owner, positionId);
 
         freeMargin[pos.owner] += uint256(closeAmount);
 
         // ── Interactions ──────────────────────────────────────────────────────
-        if (needsBailout) {
+        if (shortfall > 0) {
+            _absorbShortfall(positionId, pos.asset, pos.isLong, shortfall);
+        }
+        _removeAssetPosition(pos.asset, positionId);
+
+        if (bailoutFloor > 0) {
             try insuranceVault.bailout(bailoutFloor, pos.owner) { } catch { }
         }
 
         if (perfFee > 0) {
-            usdc.transfer(address(feeRouter), perfFee);
+            // Low: FeeRouter now pulls the fee itself, so it can only ever credit
+            // USDC the caller actually handed over.
+            usdc.forceApprove(address(feeRouter), perfFee);
             feeRouter.receivePerformanceFee(pos.copiedFrom, perfFee);
             emit PerformanceFeePaid(positionId, pos.copiedFrom, perfFee);
         }
 
-        // N1: route the LP share of this close's trading fee into the vault.
-        _routeVaultFee(tradingFee);
+        // N1 / M-1: only the trading fee this close could actually pay.
+        _routeVaultFee(_collectedTradingFee(pos.margin, pnl, fundingPayment, tradingFee));
 
         emit PositionClosed(positionId, pos.owner, pnl, uint256(closeAmount));
     }
@@ -915,7 +1262,15 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         (uint256 rawPrice,) = oracle.getPrice(pos.asset);
         // Value PnL (and therefore liquidation) on the mark price, not the raw
         // index, so OI imbalance is reflected the way a real perp does.
-        uint256 currentPrice = _markPrice(pos.asset, rawPrice * 1e10);
+        //
+        // C-1: the position's OWN notional is excluded from the imbalance that
+        // drives its mark. Otherwise a trader marks their own book: `_closePosition`
+        // computes PnL before decrementing `globalLongNotional`, so a lone 5×
+        // long was valued at a premium it created itself and could round-trip for
+        // a risk-free 1% (PoC: +4,000 USDC on a 100,000 margin, zero price move).
+        // With self excluded, mark can only move on OTHER traders' flow, so the
+        // premium is a transfer between positions and never a mint.
+        uint256 currentPrice = _markPriceExcluding(pos, rawPrice * 1e10);
 
         uint256 notional    = pos.margin * pos.leverage;
         uint256 size        = notional * 1e18 / pos.entryPrice;
@@ -939,11 +1294,36 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     ///      premium is bounded by ±markPremiumCapBps. Disabled (mark == index)
     ///      when the cap or total OI is zero.
     function _markPrice(bytes32 asset, uint256 indexPrice) internal view returns (uint256) {
+        return _markFrom(
+            indexPrice, globalLongNotional[asset], globalShortNotional[asset]
+        );
+    }
+
+    /// @dev C-1: mark for a specific position, with that position's own notional
+    ///      removed from the open interest driving the premium.
+    function _markPriceExcluding(Position storage pos, uint256 indexPrice)
+        internal view returns (uint256)
+    {
+        if (markPremiumCapBps == 0) return indexPrice;   // fast path: mark == index
+
+        uint256 longOI  = globalLongNotional[pos.asset];
+        uint256 shortOI = globalShortNotional[pos.asset];
+        if (pos.isOpen) {
+            uint256 own = pos.margin * pos.leverage;
+            if (pos.isLong) {
+                longOI  = own >= longOI  ? 0 : longOI  - own;
+            } else {
+                shortOI = own >= shortOI ? 0 : shortOI - own;
+            }
+        }
+        return _markFrom(indexPrice, longOI, shortOI);
+    }
+
+    function _markFrom(uint256 indexPrice, uint256 longOI, uint256 shortOI)
+        internal view returns (uint256)
+    {
         uint256 cap = markPremiumCapBps;
         if (cap == 0) return indexPrice;
-
-        uint256 longOI  = globalLongNotional[asset];
-        uint256 shortOI = globalShortNotional[asset];
         if (longOI + shortOI == 0) return indexPrice;
 
         int256 imbalance = (int256(longOI) - int256(shortOI)) * int256(1e18)

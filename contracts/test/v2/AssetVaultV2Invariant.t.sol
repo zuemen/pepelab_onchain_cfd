@@ -33,6 +33,9 @@ contract VaultHandler is Test {
         vault = v; token = t; usdc = u; oracle = o; assetId = id;
         actors = [makeAddr("a1"), makeAddr("a2"), makeAddr("a3")];
         for (uint256 i = 0; i < actors.length; i++) {
+            // PA-3: MockUSDC.mint is owner-gated now, and the handler is not
+            // the owner — the test contract that deployed the token is.
+            vm.prank(u.owner());
             usdc.mint(actors[i], 1_000_000e18);
             vm.prank(actors[i]);
             usdc.approve(address(vault), type(uint256).max);

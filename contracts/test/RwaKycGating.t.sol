@@ -53,7 +53,26 @@ contract RwaKycGatingTest is Test {
         vm.prank(bob);   exchange.depositMargin(1_000e18);
 
         // bob completes (mock) KYC; alice does not.
+        // M8: submitting is no longer self-approving — a reviewer (the owner,
+        // which is this test contract) has to approve the application.
         vm.prank(bob); kyc.submitKYC("Bob", "TW");
+        kyc.approveKYC(bob);
+    }
+
+    /// @dev M8 regression: the RWA gate must not be clearable by the applicant
+    ///      alone. Before the fix `submitKYC` was all it took.
+    function test_selfSubmittedKycDoesNotOpenTheRwaGate() public {
+        vm.prank(alice); kyc.submitKYC("Alice", "TW");
+        assertFalse(kyc.isVerified(alice));
+
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(PerpetualExchange.NotKycVerified.selector, alice));
+        exchange.openPosition(XAU, true, 100e18, 2);
+
+        kyc.approveKYC(alice);                     // reviewer signs off
+        vm.prank(alice);
+        uint256 pid = exchange.openPosition(XAU, true, 100e18, 2);
+        assertEq(exchange.getPosition(pid).owner, alice);
     }
 
     // ── config setters ─────────────────────────────────────────────────────────

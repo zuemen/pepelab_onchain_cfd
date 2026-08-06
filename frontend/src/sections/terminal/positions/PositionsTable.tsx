@@ -7,10 +7,8 @@ import { ASSET_META } from 'src/lib/pepefi/assetMeta'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { fUsd, fNum, fromUnits } from 'src/lib/pepefi/format'
 
-import { asTx, type LivePos } from '../types'
 import { C, monoCss, labelCss } from '../terminal-theme'
-
-type Contracts = any
+import { asTx, type LivePos, type TerminalContracts } from '../types'
 
 /** 欄寬定義只寫一次，表頭與資料列共用——分開寫就會慢慢對不齊。 */
 const COLS = '1fr .7fr 1fr 1fr 1fr .6fr 1.1fr .9fr'
@@ -18,18 +16,30 @@ const COLS = '1fr .7fr 1fr 1fr 1fr .6fr 1.1fr .9fr'
 export function PositionsTable({
   contracts,
   positions,
+  staleNoticeFor,
   notify,
   onRefresh,
 }: {
-  contracts: Contracts
+  contracts: TerminalContracts
   positions: LivePos[]
+  /**
+   * M1：`closePosition` 走的是同一顆 oracle，價格過期一樣 revert StalePrice。
+   * TerminalView 的註解早就寫了「開倉／平倉／清算在鏈上都會 revert」，但實際上
+   * 只有開倉被擋。回傳 null = 這檔可以平倉；回傳字串 = 擋單原因（直接顯示給人看）。
+   */
+  staleNoticeFor: (asset: string) => string | null
   notify: (msg: string, ok: boolean) => void
   onRefresh: () => Promise<void>
 }) {
   const [busy, setBusy] = useState<Record<string, boolean>>({})
 
-  const closePos = async (id: bigint) => {
+  const closePos = async (id: bigint, asset: string) => {
     if (!contracts) return
+    const blocked = staleNoticeFor(asset)
+    if (blocked) {
+      notify(blocked, false)
+      return
+    }
     const k = String(id)
     setBusy((p) => ({ ...p, [k]: true }))
     try {
@@ -75,6 +85,7 @@ export function PositionsTable({
               const sym = ASSET_META[p.asset]?.symbol ?? p.asset.slice(0, 8)
               const pnl = fromUnits(p.livePnl, 18)
               const k = String(p.id)
+              const stale = staleNoticeFor(p.asset)
               return (
                 <Box
                   key={k}
@@ -103,8 +114,10 @@ export function PositionsTable({
                   </Box>
                   <Box>
                     <Button
-                      onClick={() => void closePos(p.id)}
-                      disabled={busy[k]}
+                      onClick={() => void closePos(p.id, p.asset)}
+                      disabled={busy[k] || !!stale}
+                      // 灰掉的按鈕一定要說明原因，否則使用者只會一直重按。
+                      title={stale ?? undefined}
                       sx={{
                         ...monoCss,
                         fontSize: 11.5,
@@ -113,12 +126,12 @@ export function PositionsTable({
                         py: 0.4,
                         px: 1.4,
                         borderRadius: '7px',
-                        color: C.ink,
-                        border: `1px solid ${C.line}`,
+                        color: stale ? C.red : C.ink,
+                        border: `1px solid ${stale ? C.redDim : C.line}`,
                         '&:hover': { borderColor: C.red, color: C.red, bgcolor: C.redDim },
                       }}
                     >
-                      {busy[k] ? '…' : 'Close'}
+                      {busy[k] ? '…' : stale ? '價格過期' : 'Close'}
                     </Button>
                   </Box>
                 </Box>

@@ -42,31 +42,50 @@ contract PepeAMMTest is Test {
         (uint256 ethR, uint256 usdcR) = amm.getReserves();
         assertEq(ethR,  INIT_ETH,  "eth reserve");
         assertEq(usdcR, INIT_USDC, "usdc reserve");
-        // Oracle price: 1 ETH = 3000 USDC (18-dec)
-        assertEq(amm.getPrice(), 3_000e18, "oracle price");
+        // Pool spot price = reserve ratio = 3000 mUSDC per ETH (18-dec), which
+        // happens to equal the oracle here because the pool was seeded at par.
+        assertEq(amm.getPrice(), 3_000e18, "pool spot price");
     }
 
     // ── ETH → USDC ───────────────────────────────────────────────────────────
 
-    function testSwapETHForUSDC_priceRemainsUnchanged() public {
+    /// @dev REPLACES `testSwapETHForUSDC_priceRemainsUnchanged`.
+    ///
+    ///      The old assertion (`assertEq(amm.getPrice(), priceBefore)`) pinned
+    ///      PA-1 as if it were the specification: it asserted that buying out of
+    ///      the pool does NOT move the price, i.e. zero slippage. That is the
+    ///      vulnerability — with no slippage an arbitrageur can round-trip the
+    ///      pool against a one-tick-stale oracle for free and repeat until the
+    ///      reserves are gone. A constant-product pool MUST move its price when
+    ///      inventory moves, so the correct assertion is the opposite one.
+    function testSwapETHForUSDC_movesPriceDown() public {
         uint256 priceBefore = amm.getPrice();
+
         vm.prank(alice);
-        amm.swapETHForUSDC{value: 0.5 ether}(0);
-        // Under oracle pricing, price remains identical regardless of pool balances
-        assertEq(amm.getPrice(), priceBefore, "price should not change under oracle swap");
+        amm.swapETHForUSDC{value: 0.05 ether}(0);
+
+        uint256 priceAfter = amm.getPrice();
+        assertLt(priceAfter, priceBefore, "buying USDC out must cheapen ETH in the pool");
+        // k is preserved up to the fee, which accrues to the pool.
+        (uint256 ethR, uint256 usdcR) = amm.getReserves();
+        assertGe(ethR * usdcR, INIT_ETH * INIT_USDC, "k never decreases");
     }
 
     // ── USDC → ETH ───────────────────────────────────────────────────────────
 
-    function testSwapUSDCForETH_priceRemainsUnchanged() public {
+    /// @dev REPLACES `testSwapUSDCForETH_priceRemainsUnchanged` — same reason.
+    function testSwapUSDCForETH_movesPriceUp() public {
         uint256 priceBefore = amm.getPrice();
 
         vm.startPrank(alice);
-        usdc.approve(address(amm), 1_000e18);
-        amm.swapUSDCForETH(1_000e18, 0);
+        usdc.approve(address(amm), 150e18);
+        amm.swapUSDCForETH(150e18, 0);
         vm.stopPrank();
 
-        assertEq(amm.getPrice(), priceBefore, "price should not change under oracle swap");
+        uint256 priceAfter = amm.getPrice();
+        assertGt(priceAfter, priceBefore, "buying ETH out must richen ETH in the pool");
+        (uint256 ethR, uint256 usdcR) = amm.getReserves();
+        assertGe(ethR * usdcR, INIT_ETH * INIT_USDC, "k never decreases");
     }
 
     // ── Slippage protection ───────────────────────────────────────────────────

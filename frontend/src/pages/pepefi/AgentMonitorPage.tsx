@@ -75,6 +75,24 @@ interface AgentVerification {
   verifier: string
 }
 
+/**
+ * /revenue 的最小形狀檢查。只驗真的會被 render 讀到的欄位——寧可讓一個欄位缺失
+ * 就退回「—」，也不要在 render 途中丟例外把整頁炸掉。
+ */
+function isRevenueShape(v: unknown): v is Revenue {
+  if (typeof v !== 'object' || v === null) return false
+  const t = (v as { totals?: unknown }).totals
+  if (typeof t !== 'object' || t === null) return false
+  const n = t as Record<string, unknown>
+  return (
+    typeof n.count === 'number' &&
+    typeof n.feeUsd === 'number' &&
+    typeof n.traderShare === 'number' &&
+    typeof n.platformShare === 'number' &&
+    typeof n.vaultShare === 'number'
+  )
+}
+
 const fUsdc = (v: bigint) => Number(formatUnits(v, 18)).toLocaleString('en-US', { maximumFractionDigits: 2 })
 const fPrice8 = (p: bigint) => '$' + (Number(p) / 1e8).toLocaleString('en-US', { maximumFractionDigits: 2 })
 const fDate = (ts: bigint) =>
@@ -181,7 +199,13 @@ export default function AgentMonitorPage() {
     try {
       const res = await fetch(`${revUrl.replace(/\/$/, '')}/revenue`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      setRevenue(await res.json())
+      const json: unknown = await res.json()
+      // 這是一個外部 HTTP 端點，不是型別安全的來源。舊版直接 setRevenue(json)，
+      // 於是任何 shape 變動（404 的 HTML、舊版少了 totals、代理回錯東西）都會在
+      // render 時 `revenue.totals.feeUsd.toFixed` 直接整頁 crash。
+      // HeroKpiStrip.tsx 同樣打這支 API 就有 `r?.totals` 的守衛——標準統一。
+      if (!isRevenueShape(json)) throw new Error('unexpected /revenue shape')
+      setRevenue(json)
       setRevErr(null)
     } catch (e) {
       setRevenue(null)

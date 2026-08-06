@@ -18,23 +18,84 @@ contract KYCRegistryTest is Test {
         assertFalse(kyc.isVerified(alice));
     }
 
-    function testSubmitKYC() public {
+    /// @dev M8: submitting used to verify in the same call. It now only records
+    ///      the application; the verified flag stays false until a reviewer
+    ///      approves. This is the whole point of the fix, so the assertion is
+    ///      deliberately the opposite of what it used to be.
+    function testSubmitKYC_doesNotSelfVerify() public {
         vm.prank(alice);
         kyc.submitKYC("Alice Wang", "TW");
-        assertTrue(kyc.isVerified(alice));
+        assertFalse(kyc.isVerified(alice), "submission must not grant verification");
+        assertTrue(kyc.isPending(alice));
 
         (bool verified, string memory fullName, string memory nationality, uint256 verifiedAt) = kyc.records(alice);
-        assertTrue(verified);
+        assertFalse(verified);
         assertEq(fullName, "Alice Wang");
         assertEq(nationality, "TW");
+        assertEq(verifiedAt, 0);
+    }
+
+    function testApproveKYC_byOwner() public {
+        vm.prank(alice);
+        kyc.submitKYC("Alice Wang", "TW");
+
+        kyc.approveKYC(alice);   // test contract is the owner
+        assertTrue(kyc.isVerified(alice));
+        assertFalse(kyc.isPending(alice));
+
+        (, , , uint256 verifiedAt) = kyc.records(alice);
         assertGt(verifiedAt, 0);
     }
 
-    function testSubmitKYC_emitsKYCVerified() public {
+    function testApproveKYC_byStranger_revert() public {
+        vm.prank(alice);
+        kyc.submitKYC("Alice Wang", "TW");
+
+        vm.prank(bob);
+        vm.expectRevert(abi.encodeWithSelector(KYCRegistry.NotVerifier.selector, bob));
+        kyc.approveKYC(alice);
+        assertFalse(kyc.isVerified(alice));
+    }
+
+    function testApproveKYC_withoutSubmission_revert() public {
+        vm.expectRevert(abi.encodeWithSelector(KYCRegistry.NoSubmission.selector, alice));
+        kyc.approveKYC(alice);
+    }
+
+    function testAppointedVerifierCanApprove() public {
+        vm.prank(alice);
+        kyc.submitKYC("Alice Wang", "TW");
+
+        kyc.setVerifier(bob, true);
+        vm.prank(bob);
+        kyc.approveKYC(alice);
+        assertTrue(kyc.isVerified(alice));
+    }
+
+    function testRevokeKYC() public {
+        vm.prank(alice);
+        kyc.submitKYC("Alice Wang", "TW");
+        kyc.approveKYC(alice);
+        assertTrue(kyc.isVerified(alice));
+
+        kyc.revokeKYC(alice);
+        assertFalse(kyc.isVerified(alice));
+    }
+
+    function testSubmitKYC_emitsKYCSubmitted() public {
         vm.prank(alice);
         vm.expectEmit(true, false, false, true);
-        emit KYCRegistry.KYCVerified(alice, "TW", block.timestamp);
+        emit KYCRegistry.KYCSubmitted(alice, "TW", block.timestamp);
         kyc.submitKYC("Alice Wang", "TW");
+    }
+
+    function testApproveKYC_emitsKYCVerified() public {
+        vm.prank(alice);
+        kyc.submitKYC("Alice Wang", "TW");
+
+        vm.expectEmit(true, false, false, true);
+        emit KYCRegistry.KYCVerified(alice, "TW", block.timestamp);
+        kyc.approveKYC(alice);
     }
 
     function testBatchVerify_byOwner() public {

@@ -9,6 +9,9 @@ import "../src/PepeToken.sol";
 contract ExchangeStub {
     mapping(uint256 => IExchangeForReward.Position) private _positions;
 
+    /// @dev Positions default to opened a year ago and still open, so tests
+    ///      that are not about the M7 holding rules read naturally. Use
+    ///      `setPositionAt` / `closePosition` for the ones that are.
     function setPosition(
         uint256 id,
         address owner_,
@@ -16,13 +19,42 @@ contract ExchangeStub {
         uint256 margin,
         uint256 leverage
     ) external {
+        _set(id, owner_, asset, margin, leverage, block.timestamp - 365 days, true);
+    }
+
+    function setPositionAt(
+        uint256 id,
+        address owner_,
+        bytes32 asset,
+        uint256 margin,
+        uint256 leverage,
+        uint256 openedAt
+    ) external {
+        _set(id, owner_, asset, margin, leverage, openedAt, true);
+    }
+
+    function closePosition(uint256 id) external {
+        _positions[id].isOpen   = false;
+        _positions[id].closedAt = block.timestamp;
+    }
+
+    function _set(
+        uint256 id,
+        address owner_,
+        bytes32 asset,
+        uint256 margin,
+        uint256 leverage,
+        uint256 openedAt,
+        bool isOpen
+    ) internal {
         IExchangeForReward.Position memory p;
         p.id       = id;
         p.owner    = owner_;
         p.asset    = asset;
         p.margin   = margin;
         p.leverage = leverage;
-        p.isOpen   = true;
+        p.openedAt = openedAt;
+        p.isOpen   = isOpen;
         _positions[id] = p;
     }
 
@@ -56,6 +88,10 @@ contract EsgRewardDistributorTest is Test {
     bytes32 constant DIRTY = keccak256("sBTC");    // low ESG
 
     function setUp() public {
+        // The stub back-dates positions by a year; move off block.timestamp==1
+        // so that subtraction is well defined.
+        vm.warp(400 days);
+
         pepe     = new PepeToken();
         exchange = new ExchangeStub();
         registry = new EsgRegistryStub();
@@ -173,5 +209,48 @@ contract EsgRewardDistributorTest is Test {
         uint256 before = pepe.balanceOf(owner);
         dist.withdraw(1_000e18);
         assertEq(pepe.balanceOf(owner) - before, 1_000e18);
+    }
+
+    // ── M7: hold requirements ────────────────────────────────────────────────
+
+    /// @dev The position struct carried `isOpen` and it was never read: open
+    ///      and close in the same block, then collect the "ESG reward" for
+    ///      exposure that lasted zero seconds.
+    function test_M7_closedPositionCannotClaim() public {
+        exchange.closePosition(1);
+        vm.prank(alice);
+        vm.expectRevert(EsgRewardDistributor.PositionNotOpen.selector);
+        dist.claimEsgReward(1);
+    }
+
+    /// @dev And there was no holding period at all, so even an open position
+    ///      could claim in the same block it was opened.
+    function test_M7_freshPositionMustWaitOutTheHoldingPeriod() public {
+        exchange.setPositionAt(9, alice, GREEN, 1_000e18, 5, block.timestamp);
+
+        vm.prank(alice);
+        vm.expectRevert(EsgRewardDistributor.HoldTooShort.selector);
+        dist.claimEsgReward(9);
+
+        vm.warp(block.timestamp + dist.minHoldSeconds());
+        vm.prank(alice);
+        dist.claimEsgReward(9);
+        assertEq(pepe.balanceOf(alice), 50e18);
+    }
+
+    function test_M7_previewIsZeroWhenNotClaimable() public {
+        exchange.setPositionAt(10, alice, GREEN, 1_000e18, 5, block.timestamp);
+        assertEq(dist.previewReward(10), 0, "too fresh");
+
+        exchange.closePosition(1);
+        assertEq(dist.previewReward(1), 0, "closed");
+    }
+
+    function test_M7_ownerCanTuneHoldingPeriod() public {
+        exchange.setPositionAt(11, alice, GREEN, 1_000e18, 5, block.timestamp);
+        dist.setMinHoldSeconds(0);
+        vm.prank(alice);
+        dist.claimEsgReward(11);
+        assertEq(pepe.balanceOf(alice), 50e18);
     }
 }

@@ -1,0 +1,69 @@
+name: Agent CI
+
+# 稽核（docs/audit/AUDIT_2026-08-06.md §四）發現：agent 底下的單元測試
+# （keeper core/feeds、aggregate、audit-trail…）**沒有任何一支在 CI 跑過**。
+# 也就是說 keeper 的偏離逼近邏輯、價格來源解析、x402 決策函式全都只在
+# 開發者本機驗證過。這個 workflow 補上那條線。
+#
+# 刻意「不」把它掛進 base-sepolia-keeper.yml / price-keeper.yml：喂價是 liveness
+# 關鍵路徑，用單元測試當它的前置條件，等於讓一支壞掉的測試把線上價格一起停掉。
+# 測試回歸應該擋的是合併，不是喂價。
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'agent/**'
+      - '.github/workflows/agent-ci.yml'
+  pull_request:
+    paths:
+      - 'agent/**'
+      - '.github/workflows/agent-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: agent
+
+jobs:
+  test:
+    name: npm test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: agent/package-lock.json
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      # `typecheck` 與 `build` 在 agent/package.json 裡是同一條 `tsc -b --pretty`，
+      # 所以只跑一次，不重複編譯。
+      - name: Typecheck
+        run: npm run typecheck
+
+      # 全部離線、不需金鑰、不送任何交易：
+      # test:keeper（core/feeds）、test:core（freshness/edge-policy/decide）、
+      # test:agent（audit-trail/verification/write-gate/identity/onboarding）、test:api。
+      #
+      # 刻意不加 --if-present：script 已經存在，「測試不見了」本身就該讓 CI 紅。
+      - name: Test
+        run: npm test
+
+      # 擋「改了 signal-api/src/*.ts 卻忘記重新打包」。Vercel 服務的是 commit 進
+      # repo 的 bundle（`agent/signal-api/api/index.js`）而**沒有 build step**，
+      # 所以漏打包 = 線上靜默跑舊碼，且從 PR diff 完全看不出來（稽核 §四）。
+      # bundle:check 在記憶體重打包後與已 commit 的檔案比對，不一致就 exit 1。
+      - name: Bundle drift check
+        run: npm run bundle:check

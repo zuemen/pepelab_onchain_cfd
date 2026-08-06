@@ -202,19 +202,27 @@ contract SecurityFixesTest is Test {
 
         oracle.updatePrice(BTC, 5_000e8); // 95% drop → closeAmount ≈ 50e18 - fees
 
-        uint256 vaultBefore = vault.totalAssets();
-        uint256 liqBefore   = usdc.balanceOf(liquidator);
+        uint256 vaultBefore  = vault.totalAssets();
+        uint256 liqBefore    = usdc.balanceOf(liquidator);
+        uint256 marginBefore = exchange.freeMargin(alice);
 
         vm.prank(liquidator);
         exchange.liquidatePosition(pid);
 
         uint256 reward = usdc.balanceOf(liquidator) - liqBefore;
         assertGt(reward, 0, "liquidator must be paid");
-        assertGt(vault.totalAssets(), vaultBefore, "vault still receives remainder");
+        assertGt(vault.totalAssets(), vaultBefore, "vault still receives the penalty");
 
-        // reward = 5% of remaining collateral; remainder = 95%
+        // M-2: reward = 5% of remaining collateral, penalty = 20% to the vault,
+        // and the remaining 75% is returned to the owner rather than confiscated.
+        // (This assertion previously encoded the 5/95 sweep, i.e. the bug.)
         uint256 toVault = vault.totalAssets() - vaultBefore;
-        assertEq(reward * 95 / 5, toVault); // 5/95 split holds exactly
+        assertEq(
+            reward * exchange.liquidationPenaltyBps() / exchange.LIQUIDATION_REWARD_BPS(),
+            toVault,
+            "reward/penalty ratio must hold exactly"
+        );
+        assertGt(exchange.freeMargin(alice) - marginBefore, 0, "owner keeps the residual");
     }
 
     function test_liquidation_revertsOnStalePrice() public {

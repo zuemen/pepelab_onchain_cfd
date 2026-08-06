@@ -1,12 +1,12 @@
 import { MONO } from 'src/components/pepefi/brandKit'
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router'
-import type { Contract } from 'ethers'
 import { useContracts } from 'src/hooks/useContracts'
 import { useMode } from 'src/contexts/mode-context'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { explorerTx, explorerAddr, explorerName } from 'src/lib/pepefi/notify'
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
+import { scanFromBlock, queryLogsChunked, describeScanWindow } from 'src/lib/pepefi/chainLogs'
 import { pepeNameFor } from 'src/lib/pepefi/pepeName'
 import { TableSkeleton } from 'src/components/pepefi/Skeleton'
 import EmptyState from 'src/components/pepefi/EmptyState'
@@ -32,19 +32,23 @@ import TableCell from '@mui/material/TableCell';
 import Chip from '@mui/material/Chip';
 
 // ── Config ────────────────────────────────────────────────────────────────────
-const DEPLOY_BLOCK = 10_874_200  // Exchange + Seed block on Sepolia
-const CHUNK_SIZE   = 9_900       // Infura getLogs limit is 10k blocks; stay under it
-const FETCH_BLOCKS = 50_000      // per-address timeline window (kept for display note)
+// F-3：掃描起點與出塊時間都改成依 chainId 查表（見 lib/pepefi/chainLogs.ts）。
+// 之前這裡寫死 `DEPLOY_BLOCK = 10_874_200`，那是 **Ethereum Sepolia** 的區塊；
+// 在 Base Sepolia（2 秒／塊、高度數千萬）上它會從五千萬塊以前開始，用 9,900 塊
+// 為單位串行 getLogs，等於幾千次 RPC——頁面卡住數分鐘、公共節點直接限流。
 
-// SeedWhales-derived addresses (Anvil mnemonic path indices 1–12)
-const FEATURED_WHALES = [
+// SeedWhales 產生的位址來自 **Anvil 的公開助記詞**（測試網 index 1–12），
+// 私鑰是公開的，只在本地鏈上有意義。留著它們當「Featured Whales」會讓人以為
+// 是真實使用者，所以只在 Anvil（31337）上顯示，而且標明是測試資料。
+const ANVIL_CHAIN_ID = 31337
+const ANVIL_TEST_WHALES = [
   { label: 'Whale Alpha 🐋',   address: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8' },
   { label: 'Bond Steady 🐋',   address: '0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc' },
   { label: 'Macro Trader 🐋',  address: '0xa0Ee7A142d267C1f36714E4a8F75612F20a79720' },
   { label: 'Crypto Degen',     address: '0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65' },
   { label: 'Tesla Maxi',       address: '0x976EA74026E726554dB657fA54763abd0C3a0aa9' },
   { label: 'Index Tracker',    address: '0x23618e81E3f5cdF7f54C3d65f7FBc0aBf5B21E8f' },
- ]
+]
 
 const MAINNET_DEMO = {
   label:   'Vitalik (mainnet demo)',
@@ -105,23 +109,6 @@ const fUsd = (v: bigint) =>
 const fTime = (ts: number) =>
   ts ? new Date(ts * 1000).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }) : '—'
 const pnlColor = (v: bigint) => Number(v) >= 0 ? 'success.main' : 'error.main'
-
-// ── Chunked log fetcher — stays under Infura's 10k-block getLogs limit ────────
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function queryLogsChunked(contract: Contract, filter: any, fromBlock: number, toBlock: number): Promise<any[]> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const all: any[] = []
-  for (let from = fromBlock; from <= toBlock; from += CHUNK_SIZE) {
-    const to = Math.min(from + CHUNK_SIZE - 1, toBlock)
-    try {
-      const chunk = await contract.queryFilter(filter, from, to)
-      all.push(...chunk)
-    } catch (e) {
-      console.warn('[queryLogsChunked] chunk failed', from, '-', to, e)
-    }
-  }
-  return all
-}
 
 // ── Whale tier ────────────────────────────────────────────────────────────────
 function whaleTier(volumeWei: bigint): { icon: string; label: string; style: any } {
@@ -206,6 +193,8 @@ export default function WhaleTrackerPage() {
   // ── Global leaderboard state ───────────────────────────────────────────────
   const [globalStats,   setGlobalStats]   = useState<GlobalStats | null>(null)
   const [globalLoading, setGlobalLoading] = useState(false)
+  // 實際掃了哪一段。之前 UI 寫死「From deploy block #10,874,200」，在 Base 上是假的。
+  const [scanRange,     setScanRange]     = useState<{ from: number; to: number } | null>(null)
 
   // ── Derived per-address stats ──────────────────────────────────────────────
   const openedEvents = activity.filter(a => a.kind === 'PositionOpened')
@@ -233,11 +222,13 @@ export default function WhaleTrackerPage() {
     setGlobalLoading(true)
     try {
       const currentBlock = await wallet.provider.getBlockNumber()
+      // 依鏈決定起點：部署塊與滾動視窗取較晚者，並硬性限制段數。
+      const from = scanFromBlock({ chainId: wallet.chainId, currentBlock })
+      setScanRange({ from, to: currentBlock })
 
-      // Fetch all PositionOpened + PositionClosed from deploy block (chunked)
       const [openedLogs, closedLogs] = await Promise.all([
-        queryLogsChunked(contracts.exchange, contracts.exchange.filters.PositionOpened(), DEPLOY_BLOCK, currentBlock),
-        queryLogsChunked(contracts.exchange, contracts.exchange.filters.PositionClosed(), DEPLOY_BLOCK, currentBlock),
+        queryLogsChunked(contracts.exchange, contracts.exchange.filters.PositionOpened(), from, currentBlock),
+        queryLogsChunked(contracts.exchange, contracts.exchange.filters.PositionClosed(), from, currentBlock),
       ])
 
       const closedIds = new Set(closedLogs.map(l => String(l.args.positionId as bigint)))
@@ -277,7 +268,7 @@ export default function WhaleTrackerPage() {
     } finally {
       setGlobalLoading(false)
     }
-  }, [contracts, wallet.provider])
+  }, [contracts, wallet.provider, wallet.chainId])
 
   useEffect(() => { void fetchGlobal() }, [fetchGlobal])
 
@@ -295,8 +286,9 @@ export default function WhaleTrackerPage() {
 
     try {
       const currentBlock = await wallet.provider.getBlockNumber()
-      // Use DEPLOY_BLOCK so we never miss events; chunked to stay under Infura limit
-      const from = DEPLOY_BLOCK
+      // 同一份依鏈查表的掃描範圍；chunked 以符合節點的 getLogs 上限。
+      const from = scanFromBlock({ chainId: wallet.chainId, currentBlock })
+      setScanRange({ from, to: currentBlock })
 
       const results = await Promise.allSettled([
         // [0] PositionOpened by addr
@@ -418,7 +410,7 @@ export default function WhaleTrackerPage() {
     } finally {
       setLoading(false)
     }
-  }, [contracts, wallet.provider])
+  }, [contracts, wallet.provider, wallet.chainId])
 
   const handleSearch = () => {
     const addr = inputAddr.trim()
@@ -641,20 +633,22 @@ export default function WhaleTrackerPage() {
               </Button>
             </Box>
 
-            {/* Featured whale quick-select */}
+            {/* Featured whale quick-select. Anvil 的助記詞位址只在 Anvil 上有意義，
+                在測試網／主網那些位址不是任何人——不要讓它們看起來像真實使用者。 */}
             <Stack spacing={1}>
               <Typography variant="caption" sx={{ textTransform: 'uppercase', fontWeight: 'bold', color: 'text.secondary' }}>
-                Featured Demo Whales
+                Quick select
               </Typography>
               <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
-                {FEATURED_WHALES.map(w => (
+                {wallet.chainId === ANVIL_CHAIN_ID && ANVIL_TEST_WHALES.map(w => (
                   <Chip
                     key={w.address}
-                    label={w.label}
+                    label={`${w.label} · 測試資料`}
                     onClick={() => pickAddress(w.address)}
                     variant="outlined"
                     size="small"
                     sx={{ cursor: 'pointer' }}
+                    title="Anvil 公開助記詞產生的本地測試位址，非真實使用者"
                   />
                 ))}
                 <Chip
@@ -809,7 +803,9 @@ export default function WhaleTrackerPage() {
                     Activity Timeline
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    From deploy block #{DEPLOY_BLOCK.toLocaleString()}
+                    {scanRange
+                      ? `Blocks #${scanRange.from.toLocaleString()}–#${scanRange.to.toLocaleString()} · 約 ${describeScanWindow(wallet.chainId, scanRange.to - scanRange.from)}`
+                      : '—'}
                   </Typography>
                 </Box>
 
@@ -822,7 +818,7 @@ export default function WhaleTrackerPage() {
                     description={
                       isMainnetDemo
                         ? 'This is a mainnet address — no PepeLab activity on Base Sepolia.'
-                        : `No events found for ${shortAddr(searchAddr)} since block #${DEPLOY_BLOCK.toLocaleString()}.`
+                        : `No events found for ${shortAddr(searchAddr)}${scanRange ? ` in blocks #${scanRange.from.toLocaleString()}–#${scanRange.to.toLocaleString()}` : ''}.`
                     }
                   />
                 ) : (
@@ -887,7 +883,9 @@ export default function WhaleTrackerPage() {
       {/* Footer note */}
       {wallet.isConnected && !globalLoading && (
         <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center', display: 'block', mt: 2 }}>
-          Data scanned from block #{DEPLOY_BLOCK.toLocaleString()} · {FETCH_BLOCKS.toLocaleString()} block window per chunk
+          {scanRange
+            ? `Scanned blocks #${scanRange.from.toLocaleString()}–#${scanRange.to.toLocaleString()}（約 ${describeScanWindow(wallet.chainId, scanRange.to - scanRange.from)}）· 更早的事件不在此視窗內`
+            : 'Scan range pending'}
         </Typography>
       )}
     </Container>

@@ -6,14 +6,14 @@ import Box from '@mui/material/Box'
 import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 
+import { STABLE_LABEL } from 'src/lib/pepefi/tokenLabel'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
+import { estimateLiquidationPrice } from 'src/lib/pepefi/liquidation'
 import { fUsd, fNum, fToken, fromUnits } from 'src/lib/pepefi/format'
 
 import { Row } from '../Atoms'
-import { asTx, tryParse, type AssetId } from '../types'
 import { C, panel, monoCss, labelCss } from '../terminal-theme'
-
-type Contracts = any
+import { asTx, tryParse, type AssetId, type TerminalContracts } from '../types'
 
 /**
  * 下單面板。
@@ -29,16 +29,27 @@ export function OrderTicket({
   freeMgn,
   rate,
   kycBlocked,
+  kycUnknown,
+  kycPending,
+  staleBlocked,
+  staleLabel,
   notify,
   onFilled,
 }: {
-  contracts: Contracts
+  contracts: TerminalContracts
   selAsset: AssetId
   meta?: AssetMeta
   curPrice: bigint
   freeMgn: bigint
   rate: number
   kycBlocked: boolean
+  /** KYC 狀態讀不到（fail-closed 擋住）。和「確定未驗證」要說不同的話。 */
+  kycUnknown: boolean
+  /** 申請已送出、待審核（KYCRegistry 改審核制後才有的狀態）。 */
+  kycPending?: boolean
+  /** 指數價已超過合約的 maxPriceAge —— 鏈上會 revert StalePrice，不讓使用者白送一筆。 */
+  staleBlocked: boolean
+  staleLabel?: string
   notify: (msg: string, ok: boolean) => void
   onFilled: () => Promise<void>
 }) {
@@ -50,12 +61,10 @@ export function OrderTicket({
 
   const marginBig = tryParse(margin)
   const notional = marginBig ? marginBig * BigInt(lev) : 0n
-  const liq =
-    curPrice > 0n
-      ? isLong
-        ? curPrice - curPrice / BigInt(lev)
-        : curPrice + curPrice / BigInt(lev)
-      : 0n
+  // 清算價和 /exchange 共用 lib/pepefi/liquidation.ts。原本這裡少算了 5.1% 的
+  // 維持保證金 + 平倉費 buffer，同一個倉位在兩頁會看到兩個清算價，而且這邊的
+  // 比實際更寬鬆——正好是會害人的那個方向。
+  const liq = estimateLiquidationPrice({ entryPrice: curPrice, isLong, leverage: BigInt(lev) })
   const overFree = marginBig !== null && marginBig > freeMgn
 
   const openPosition = async () => {
@@ -67,6 +76,14 @@ export function OrderTicket({
     }
     if (amt > freeMgn) {
       notify('Insufficient free margin — deposit first', false)
+      return
+    }
+    // 按鈕已經 disabled，這裡是第二道防線：鍵盤送出或狀態剛好在重繪的空窗。
+    if (staleBlocked) {
+      notify(
+        `⛔ 指數價已超過合約的 maxPriceAge${staleLabel ? `（最後更新：${staleLabel}）` : ''}，鏈上會以 StalePrice 拒絕。`,
+        false,
+      )
       return
     }
     setBusy(true)
@@ -167,7 +184,7 @@ export function OrderTicket({
             onChange={(e) => setMargin(e.target.value)}
             type="number"
             placeholder="0.00"
-            aria-label="Margin (USDC)"
+            aria-label={`Margin (${STABLE_LABEL})`}
             style={{
               flex: 1,
               background: 'transparent',
@@ -180,15 +197,18 @@ export function OrderTicket({
               width: '100%',
             }}
           />
-          <Box sx={{ ...monoCss, color: C.mut, fontSize: 13 }}>USDC</Box>
+          <Box sx={{ ...monoCss, color: C.mut, fontSize: 13 }}>{STABLE_LABEL}</Box>
         </Box>
       </Box>
 
       {/* quote rows */}
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.6, py: 0.5 }}>
-        <Row k="Notional" v={fToken(fromUnits(notional, 18), 'USDC', { dp: 2 })} />
+        <Row k="Notional" v={fToken(fromUnits(notional, 18), STABLE_LABEL, { dp: 2 })} />
         <Row k="Entry (oracle)" v={fUsd(fromUnits(curPrice, 18))} />
+        {/* 清算 = 強制平倉，但殘值（扣掉虧損／費用／清算獎勵／liquidationPenaltyBps）
+            會退還給倉位所有者，不再是 100% 沒收。 */}
         <Row k="Est. liquidation" v={fUsd(fromUnits(liq, 18))} color={C.red} />
+        <Row k="On liquidation" v="殘值退還（扣罰金）" color={C.mut} />
         <Row
           k="Funding (8h)"
           v={`${rate >= 0 ? '+' : ''}${fNum(rate / 100, { dp: 4 })}%`}
@@ -200,7 +220,18 @@ export function OrderTicket({
         <Box
           sx={{ ...monoCss, fontSize: 11.5, color: C.lime, ...panel, borderColor: C.line2, p: 1 }}
         >
-          🔒 {meta?.symbol} 需 KYC，請至 Exchange 頁完成驗證
+          {kycUnknown
+            ? `⚠ 無法確認 KYC 狀態（鏈上讀取失敗）。合規閘門採 fail-closed，${meta?.symbol} 暫停交易。`
+            : kycPending
+              ? `⏳ ${meta?.symbol} 需 KYC：申請已送出，等待審核人員核准中，核准後自動解鎖`
+              : `🔒 ${meta?.symbol} 需 KYC，請至 Exchange 頁送出申請（送出後需審核）`}
+        </Box>
+      )}
+
+      {staleBlocked && (
+        <Box sx={{ ...monoCss, fontSize: 11.5, color: C.red, ...panel, borderColor: C.line2, p: 1 }}>
+          ⛔ 指數價格已超過合約的 maxPriceAge{staleLabel ? `（最後更新：${staleLabel}）` : ''}，
+          鏈上會以 StalePrice 拒絕交易。等待 keeper 更新後再下單。
         </Box>
       )}
 
@@ -228,7 +259,7 @@ export function OrderTicket({
 
       <Button
         onClick={() => void openPosition()}
-        disabled={busy || !margin || overFree || kycBlocked}
+        disabled={busy || !margin || overFree || kycBlocked || staleBlocked}
         sx={{
           py: 1.4,
           borderRadius: '10px',

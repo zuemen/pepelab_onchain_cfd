@@ -16,6 +16,7 @@ contract PepeToken is ERC20, Ownable {
     mapping(address => uint256) public lastFaucet;
 
     error FaucetCooldown(uint256 nextAvailable);
+    error FaucetCallerMustBeEOA();
 
     constructor() ERC20("Pepe RWA Token", "PEPE") Ownable(msg.sender) {
         _mint(msg.sender, INITIAL_SUPPLY);
@@ -26,7 +27,15 @@ contract PepeToken is ERC20, Ownable {
     }
 
     /// @notice TESTNET faucet — one call per 24 h, mints 10 000 PEPE to caller.
+    /// @dev M9: the cooldown is per-address, so a contract can deploy N
+    ///      children in one transaction and claim N × FAUCET_AMOUNT. Requiring
+    ///      an EOA caller blocks the loop. Trade-off: contract wallets (Safe,
+    ///      ERC-4337) cannot use the faucet. Acceptable for a TESTNET faucet
+    ///      that must not exist on a production deployment anyway; no protocol
+    ///      contract calls `faucet()`.
     function faucet() external {
+        // solhint-disable-next-line avoid-tx-origin
+        if (msg.sender != tx.origin) revert FaucetCallerMustBeEOA();
         uint256 last = lastFaucet[msg.sender];
         if (last != 0 && block.timestamp < last + FAUCET_COOLDOWN) {
             revert FaucetCooldown(last + FAUCET_COOLDOWN);

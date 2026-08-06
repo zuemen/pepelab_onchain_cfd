@@ -6,7 +6,8 @@
   "scripts": {
     "start": "tsx src/index.ts",
     "dev": "tsx watch src/index.ts",
-    "bundle:vercel": "node build-vercel.mjs"
+    "bundle:vercel": "node build-vercel.mjs",
+    "bundle:check": "node check-vercel-bundle.mjs"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",

@@ -3,7 +3,10 @@
 > 本輪目標：x402 真結算可行 + 平台 smoke test。下表分「**自動可驗證（本機/唯讀）**」與
 > 「**需注資錢包跑（你執行，貼 tx）**」。後者非程式缺陷，是測試網需要真資金/服務的固有限制。
 
-更新：2026-06-14 · 合約 `forge test` **318 passed** · 前端/agent build 綠。
+更新：2026-08-06 · 合約 `forge test` 全綠，**數量以 Contracts CI 的最新 run 為準**
+（本文件先前寫死 318、CAPSTONE 寫 320、ADR-001 寫 314，三者矛盾且全部過期；
+稽核當下 CI 實測 525 passed / 0 failed —— 帶時間戳的參考值，非持續宣稱）
+· 前端 `yarn build` / agent build 綠。
 
 ---
 
@@ -11,13 +14,13 @@
 
 | # | 項目 | 證據 | 狀態 |
 |---|------|------|------|
-| 1 | 合約測試全綠 | `forge test` → 318 passed / 0 failed | ✅ PASS |
+| 1 | 合約測試全綠 | `forge test` → 0 failed（數量見 Contracts CI 最新 run） | ✅ PASS |
 | 2 | x402 分潤會計（官方 USDC 6-dec） | `FeeRouterX402Usdc.t.sol` 4 測試：70/20/10 在 6-dec、trader/platform 提領 | ✅ PASS |
 | 3 | x402 分潤會計（MockUSDC 18-dec） | `FeeRouterExternalRevenue.t.sol` 6 測試 | ✅ PASS |
 | 4 | x402 router 部署腳本 | `DeployX402Router.s.sol` dry-run：settlement USDC = `0x036C…CF7e`（官方） | ✅ PASS |
 | 4b | **x402 router 真實上鏈 + 綁定驗證** | 已部署並用 `cast` 鏈上驗證（見 §4） | ✅ PASS |
 | 5 | 部署 wiring（live 鏈上 cast） | Phase 4 subagent 15/15 invariant PASS（oracle/usdc/vault/feeRouter/kyc/authorizedAgents/rwa…） | ✅ PASS |
-| 6 | 前端 build | `frontend npm run build` 綠（所有頁面編譯） | ✅ PASS |
+| 6 | 前端 build | `cd frontend && yarn build` 綠（所有頁面編譯）—— 本專案 **yarn-only**，先前寫 `npm run build` 是錯的 | ✅ PASS |
 | 7 | agent build | `agent tsc -b` 綠 | ✅ PASS |
 | 8 | EIP-170 合約大小 | 全合約 < 24576 B（optimizer 開） | ✅ PASS |
 
@@ -45,7 +48,18 @@
 | 永續 mark/funding/清算/ADL | `/terminal` 開平倉、看 mark vs index、funding 自動 settle | ⏳ 待錢包 |
 | 做市金庫 | `/vault` LP deposit/withdraw、share price 隨交易上升 | ⏳ 待錢包 |
 | 跟單 70/20/10 | 發策略 → 跟隨 → 複製費分潤 | ⏳ 待錢包 |
-| keeper | GitHub Actions `base-sepolia-keeper`（需設 secrets + 手動 dispatch） | ⏳ 待 secrets |
+| keeper | GitHub Actions `base-sepolia-keeper` | ⚠️ 見下方說明 |
+
+> **keeper 狀態更正（2026-08-06 稽核）**：上表原寫「⏳ 待 secrets」。事實是
+> **secrets 早已設定**，真正的狀態是 keeper 在**靜默失敗**：舊 workflow 每個
+> `cast send` 後掛 `|| echo`，於是連續 10 天寫入 0 筆卻回報 success，鏈上價格
+> 停在 9.5–44 天前（run `31069004586` 的 log：10/10 資產 `updatePrice failed`、
+> settleFunding 全部 `gas required exceeds allowance (0)`，job 綠）。
+>
+> 已修正：寫入 0 筆、或失敗率 >30%，都會讓 job 失敗；`oracle-health.yml` 每 3
+> 小時獨立驗證鏈上 `updatedAt` 作為第二道網。詳見 `docs/RUNBOOK_KEEPER.md`。
+> 「⏳ 待 secrets」這種寫法本身就是問題的一部分 —— 它讓一個**正在失敗**的元件
+> 看起來像一個**尚未啟動**的元件。
 
 ---
 
@@ -107,7 +121,7 @@ USDC + ETH 後，跑 signal-api + demo-agent 產生真實 402→200→下單→�
 | 5c | **`/revenue` 直接讀鏈上** X402 FeeRouter | curl `/revenue` → `onChain:true`、`feeUsd 0.01 / trader 0.007 / platform 0.002 / vault 0.001`（讀到先前真實 settlement） | ✅ PASS |
 | 5d | serverless 結算在回應前 await + 回 `settlementTx` | `app.ts` /signals 與 /demo/buy-signal 皆 await `settleRevenue` | ✅ PASS（程式） |
 | 5e | 外部消費範例（viem + x402-fetch，無 monorepo 依賴） | `agent/examples/buy-signal.ts` + README 一行跑法 | ✅ PASS |
-| 5f | 前端：`/x402` 文件頁 + 試買 + Marketplace 卡片 + VITE_SIGNAL_API_URL | `frontend npm run build` 綠 | ✅ PASS |
+| 5f | 前端：`/x402` 文件頁 + 試買 + Marketplace 卡片 + VITE_SIGNAL_API_URL | `cd frontend && yarn build` 綠 | ✅ PASS |
 
 **待你操作（Track D）**：在 Vercel 建兩個專案（signal-api root=`agent/signal-api`、frontend root=`frontend`）、
 填 env secrets、deploy（步驟見 `agent/README.md`）。部署後外部實測一行：

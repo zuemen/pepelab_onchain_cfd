@@ -30,8 +30,15 @@ contract MockUSDTTest is Test {
         assertEq(usdt.totalSupply(), 800e18);
     }
 
-    function test_anyoneCanMint() public {
+    /// @dev PA-3: mirrors MockUSDC — `mint` is no longer permissionless.
+    function test_strangerCannotMint() public {
         vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(MockUSDT.NotMinter.selector, alice));
+        usdt.mint(alice, 1e18);
+        assertEq(usdt.balanceOf(alice), 0);
+    }
+
+    function test_ownerCanMint() public {
         usdt.mint(alice, 1e18);
         assertEq(usdt.balanceOf(alice), 1e18);
     }
@@ -47,13 +54,13 @@ contract MockUSDTTest is Test {
     // ── Faucet tests ──────────────────────────────────────────────────────────
 
     function test_faucetMintsCorrectAmount() public {
-        vm.prank(alice);
+        vm.prank(alice, alice);
         usdt.faucet();
         assertEq(usdt.balanceOf(alice), usdt.FAUCET_AMOUNT());
     }
 
     function test_faucetCooldown() public {
-        vm.startPrank(alice);
+        vm.startPrank(alice, alice);
         usdt.faucet();
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -66,7 +73,7 @@ contract MockUSDTTest is Test {
     }
 
     function test_faucetCanCallAfterCooldown() public {
-        vm.startPrank(alice);
+        vm.startPrank(alice, alice);
         usdt.faucet();
         vm.warp(block.timestamp + usdt.FAUCET_COOLDOWN() + 1);
         usdt.faucet();
@@ -75,9 +82,9 @@ contract MockUSDTTest is Test {
     }
 
     function test_faucetIndependentPerAddress() public {
-        vm.prank(alice);
+        vm.prank(alice, alice);
         usdt.faucet();
-        vm.prank(bob);
+        vm.prank(bob, bob);
         usdt.faucet();   // bob has no cooldown yet — should not revert
         assertEq(usdt.balanceOf(bob), usdt.FAUCET_AMOUNT());
     }

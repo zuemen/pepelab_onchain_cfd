@@ -8,6 +8,7 @@ import { usePathname } from 'src/routes/hooks';
 import { type WalletAPI } from 'src/hooks/useWallet';
 
 import { useWalletContext } from 'src/contexts/wallet-context';
+import { CHAIN_NAMES, isPrimaryChain, PRIMARY_CHAIN_ID } from 'src/contracts/addresses';
 
 import { LoadingScreen } from 'src/components/loading-screen';
 
@@ -71,9 +72,43 @@ export function PepefiLayout() {
         跳到主要內容
       </Box>
 
+      <ChainNotice chainId={wallet.chainId} />
+
       <Box component="main" id="main-content" tabIndex={-1} sx={{ outline: 'none' }}>
         <Outlet context={wallet} />
       </Box>
+    </Box>
+  );
+}
+
+/**
+ * 連到非正式鏈時的一行說明。
+ *
+ * 兩條鏈不是彼此的鏡像：交易引擎、agent session、x402 只在 Base Sepolia；
+ * 代幣化資產層與 V2 硬化金庫只在 Sepolia。先前 UI 沒有任何統一說明，使用者站在
+ * 哪一邊只能從「某個頁面突然說本網路未部署」反推。與其讓半個產品靜默消失，
+ * 不如直接說現在站在哪裡、少了什麼。
+ */
+function ChainNotice({ chainId }: { chainId: number | null }) {
+  if (chainId === null || isPrimaryChain(chainId)) return null;
+
+  const known = CHAIN_NAMES[chainId];
+  return (
+    <Box
+      role="status"
+      sx={{
+        px: 2,
+        py: 1,
+        fontSize: 13,
+        textAlign: 'center',
+        bgcolor: 'warning.lighter',
+        color: 'warning.darker',
+        borderBottom: (theme) => `1px solid ${theme.palette.warning.light}`,
+      }}
+    >
+      目前連線於 <b>{known ?? `chainId ${chainId}`}</b>。正式部署鏈是{' '}
+      <b>Base Sepolia（{PRIMARY_CHAIN_ID}）</b> —— 交易、agent session 與 x402 只在那裡。
+      {chainId === 11155111 && '　Sepolia 保留的是代幣化資產與 V2 金庫展示。'}
     </Box>
   );
 }

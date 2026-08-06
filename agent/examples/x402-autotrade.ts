@@ -26,11 +26,16 @@ import { privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
 import { wrapFetchWithPayment } from "x402-fetch";
 import { openPositionForSession } from "@pepelab/shared";
+import { loadVc, localVerifyVc } from "./vc-gate.ts";
+import { parseOracleBody } from "./x402-autonomous.ts";
 
 const API = (process.env.X402_API_URL ?? "https://agent-git-master-zuemens-projects.vercel.app").replace(/\/$/, "");
 const PK = process.env.AGENT_PRIVATE_KEY?.trim();
 const RPC = process.env.BASE_SEPOLIA_RPC_URL?.trim() || "https://sepolia.base.org";
-const SESSION_ID = Number(process.env.DEMO_SESSION_ID ?? "6");
+// session id 是每個 manager 各自獨立的。新的 AgentSessionManager
+// (0x4E7cC1B7…) 目前只有 #0：到期 2027-07、白名單 sBTC+sETH。#6 只存在於
+// 舊的 0x5Ebcc64C…（無資產白名單），兩者不可混用。
+const SESSION_ID = Number(process.env.DEMO_SESSION_ID ?? "0");
 
 // 常見輸入正規化成鏈上資產代號（sBTC…）。
 const ALIASES: Record<string, string> = {
@@ -85,30 +90,54 @@ async function main() {
   // ── ① x402 付費取資料 ───────────────────────────────────────────────────────
   console.log(`\n① x402 付費 GET /oracle/${symbol} …（402 → 簽 EIP-3009 → 200）`);
   const oracleRes = await payFetch(`${API}/oracle/${symbol}`, { method: "GET" });
-  const oracleBody = (await oracleRes.json()) as any;
+  const oracleBody = (await oracleRes.json().catch(() => null)) as any;
   console.log("   HTTP", oracleRes.status, "· 付款上鏈 tx:", link(decodePaymentTx(oracleRes)));
-  const data = oracleBody?.data ?? oracleBody;
+
+  // A-1 同類修正：錯誤 body 絕不可以被當成 oracle 資料。`funding` 缺值時舊版
+  // `Number(undefined ?? 0)` = 0 → `0 <= 0` → **無條件做多**，等同對錯誤回應下單。
+  const parsed = parseOracleBody(oracleBody, oracleRes.status);
+  if (!parsed.ok) {
+    console.error(`   ❌ oracle 回應不可用：${parsed.reason} → 不下單。`);
+    console.error(`      原始 body：${JSON.stringify(oracleBody)?.slice(0, 300)}`);
+    process.exit(1);
+  }
+  const data = parsed.data;
   console.log("   oracle 資料：", JSON.stringify(data));
+  if (data.tradableNow === false) {
+    console.error("   ❌ 鏈上價格已超過交易所 maxPriceAge（開倉會 revert StalePrice）→ 不下單。");
+    process.exit(1);
+  }
 
   console.log(`\n① x402 付費 GET /signals/${TRADER} …（取 70/20/10 收入結算 tx）`);
   const sigRes = await payFetch(`${API}/signals/${TRADER}`, { method: "GET" });
-  const sigBody = (await sigRes.json()) as any;
+  const sigBody = (await sigRes.json().catch(() => null)) as any;
   console.log("   HTTP", sigRes.status);
-  const settlementTx: string | undefined = sigBody?.settlementTx;
+  const settlementTx: string | undefined =
+    sigRes.ok && sigBody?.ok !== false && typeof sigBody?.settlementTx === "string"
+      ? sigBody.settlementTx
+      : undefined;
   if (settlementTx) console.log(`   ✓ x402 settlementTx: ${link(settlementTx)}`);
   else console.log("   (server 未回 settlementTx — 結算可能未啟用；x402 付款仍已完成，見上方付款 tx)");
 
   // ── ② 依 x402 買到的資料判斷方向 ────────────────────────────────────────────
   // funding > 0 = longs_pay（多方擁擠）→ 反向做空；≤ 0 = shorts_pay/balanced → 做多。
-  const fundingBps = Number(data?.fundingRateBps ?? 0);
+  const fundingBps = data.fundingRateBps as number;
   const isLong = fundingBps <= 0;
   console.log(
-    `\n② 依 funding=${fundingBps} bps（${data?.fundingDirection ?? "?"}）→ ${isLong ? "做多 (long)" : "做空 (short)"}`,
+    `\n② 依 funding=${fundingBps} bps（${data.fundingDirection ?? "?"}）→ ${isLong ? "做多 (long)" : "做空 (short)"}`,
   );
 
-  // ── ③ session 在限額內開倉 ──────────────────────────────────────────────────
-  console.log(`\n③ openPositionForSession(session #${SESSION_ID}, ${symbol}, ${isLong ? "long" : "short"}, ${marginUsdc}, ${leverage}x) 上鏈中…⏳`);
-  const res = await openPositionForSession({ sessionId: SESSION_ID, symbol, isLong, marginUsdc, leverage });
+  // ── ③ session 在限額內開倉（A-3：必須帶使用者簽發的 VC）─────────────────────
+  const vc = loadVc();
+  const vcChk = localVerifyVc(vc, account.address, SESSION_ID);
+  console.log(`\nVC/SSI：${vcChk.ok ? "✓" : "✗"} ${vcChk.reason}` + (vcChk.issuerDid ? `（issuer ${vcChk.issuerDid}）` : ""));
+  if (!vcChk.ok) {
+    console.error("   ❌ 缺有效授權 VC（設 AGENT_AUTH_VC_PATH）→ 拒絕下單。");
+    process.exit(1);
+  }
+
+  console.log(`\n③ openPositionForSession(session #${SESSION_ID}, ${symbol}, ${isLong ? "long" : "short"}, ${marginUsdc}, ${leverage}x, authVc) 上鏈中…⏳`);
+  const res = await openPositionForSession({ sessionId: SESSION_ID, symbol, isLong, marginUsdc, leverage, authVc: vc! });
   if (!res.ok) {
     console.error(`   ❌ 開倉被拒：${res.error}`);
     process.exit(1);

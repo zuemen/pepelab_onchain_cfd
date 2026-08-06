@@ -36,6 +36,47 @@ const ERROR_MAP: Record<string, string> = {
   'NotKycVerified':           '此資產為 RWA 市場，需先完成 KYC 驗證才能交易',
   'PositionIsHealthy':        '此倉位保證金仍充足，不符合清算條件',
   'FundingIntervalNotElapsed': 'Funding 結算間隔（8 小時）尚未到，無需手動結算',
+  'NotPositionAgent':         '這個倉位是由另一個 agent session 開的，只有當初開倉的那個 agent 能代為平倉',
+
+  // ── PepeAMM（恆定乘積池：swap 會有滑點，且受 oracle 護欄限制）─────────────
+  'StaleOraclePrice':         '兌換池的參考預言機報價已過期（超過 maxOracleAge），為避免被過期價格套利，兌換暫停。請等 keeper 更新價格後再試',
+  'PriceOutOfBand':           '這筆兌換會把池價推離預言機報價太遠（超過 maxOracleDeviationBps）。請減少兌換金額，或等其他人先把池子拉回平衡',
+  'InsufficientLiquidity':    '兌換池流動性不足以支撐這筆金額，請減少兌換數量',
+  'InsufficientInput':        '兌換金額太小（扣掉手續費後為 0），請加大金額',
+  'InsufficientOutput':       '實際成交量低於你設定的最低可接受數量（滑點保護生效）。價格在你送出後變動了，請重新取得報價再試',
+  'InsufficientShares':       'LP share 不足，無法移除這麼多流動性',
+  'EthNotAccepted':           '不能直接把 ETH 轉給兌換池。請用 Swap 功能（swapETHForUSDC）或 addLiquidity',
+  'InvalidOraclePrice':       '預言機回報的價格無效（0 或負值），兌換暫停',
+
+  // ── Mock 代幣 ────────────────────────────────────────────────────────────
+  'FaucetCallerMustBeEOA':    '水龍頭只開放一般錢包（EOA）領取。你目前是用合約錢包（Safe / ERC-4337 smart account）呼叫，請改用一般 EOA 錢包，或請管理員直接轉幣給你',
+  'NotMinter':                'mint 只有合約 owner 或已註冊的 swapRouter 能呼叫。一般使用者請改用水龍頭 faucet() 領取測試幣',
+
+  // ── KYCRegistry（審核制）─────────────────────────────────────────────────
+  'NoSubmission':             '這個地址還沒送出 KYC 申請，無法審核',
+  'NotVerifier':              '只有審核人員（verifier）或合約 owner 能執行 KYC 審核',
+
+  // ── ESG / 激勵 ───────────────────────────────────────────────────────────
+  'EsgHoldAlreadyClaimed':    '此倉位的 ESG 長抱獎勵已領取過囉！',
+  'AlreadyClaimed':           '此獎勵已領取過囉！',
+  'PositionNotOpen':          '倉位必須「仍持有中」才能領獎。已平倉的倉位不符合資格',
+  'HoldTooShort':             '持有時間還沒達到最短持有期（預設 30 天），請再抱一陣子',
+  'AssetNotHighEsg':          '此標的的 ESG 綜合分數未達高分門檻，不符合 ESG 獎勵資格',
+  'EsgScoreTooLow':           '此標的的 ESG 分數低於門檻，不符合獎勵資格',
+  'SelfCopyNotAllowed':       '不能跟單自己',
+  'PositionIdsNotSorted':     '倉位 ID 陣列必須嚴格遞增（已自動排序仍失敗代表有重複 ID），請重新整理頁面再試',
+  'RewardExceedsBudget':      '本次發放金額超過質押合約的獎勵預算（rewardBudget），請聯絡管理員調整',
+
+  // ── 預言機 adapter（stale/不完整/低信賴度時會 revert，不再回傳舊值）──────
+  'PriceIsStale':             '預言機價格已過期（超過 staleThreshold，預設 1 小時），為安全起見直接拒絕，不會用舊價成交',
+  'IncompleteRound':          'Chainlink 該輪報價尚未完成（incomplete round），請稍後再試',
+  'InvalidTimestamp':         '預言機回報的時間戳無效，拒絕使用此報價',
+  'FeedNotSet':               '此標的尚未設定 Chainlink / Pyth feed',
+  'NoLiveSource':             '聚合預言機的兩個來源都無法提供有效報價，交易暫停（fail-closed）',
+  'SingleSourceNotAllowed':   '聚合預言機只剩單一來源可用，且未開啟 allowSingleSource，交易暫停（fail-closed）',
+  'PriceDeviationTooHigh':    '兩個預言機來源的報價偏離過大，為避免用到錯價，交易暫停',
+  'InvalidParam':             '參數超出合約允許的上下界，請檢查輸入值',
+  'InvalidPrice':             '鏈上價格無效（0），無法結算',
   'user rejected':            '你拒絕了交易',
   'User rejected':            '你拒絕了交易',
   'ACTION_REJECTED':          '你拒絕了交易',
@@ -54,18 +95,36 @@ export function prettyError(err: unknown, context?: 'mining' | 'tier' | 'copy' |
     reason?: string
     shortMessage?: string
     code?: string
+    /** ethers v6 decodes custom errors here when the ABI knows them. */
+    revert?: { name?: string } | null
+    /** ethers v5 / some providers. */
+    errorName?: string
+    /** JSON-RPC wraps the real error one level down. */
+    error?: { data?: string; message?: string } | null
+    info?: { error?: { data?: string; message?: string } } | null
   }
 
   // 1. custom error selector
   const data = e.data
+    ?? (typeof e.error?.data === 'string' ? e.error.data : undefined)
+    ?? (typeof e.info?.error?.data === 'string' ? e.info.error.data : undefined)
   if (typeof data === 'string' && data.startsWith('0x') && data.length >= 10) {
     const sel = data.slice(0, 10).toLowerCase()
     if (ERROR_MAP[sel]) return ERROR_MAP[sel]
   }
 
+  // 1b. Decoded custom error name.
+  //
+  // 合約這一輪把大量的 require-string 換成 custom error（PepeAMM 的
+  // StaleOraclePrice/PriceOutOfBand、KYCRegistry 的 NoSubmission…）。ethers v6
+  // 在 ABI 認得該 error 時會把名字放在 `revert.name`，但 `message` 裡只會留下
+  // 「execution reverted」這種沒有資訊量的字串——只靠關鍵字掃描會全部落到 fallback。
+  const revertName = e.revert?.name ?? e.errorName
+  if (typeof revertName === 'string' && ERROR_MAP[revertName]) return ERROR_MAP[revertName]
+
   // 2. keyword scan across all message fields
   const msg = e.shortMessage ?? e.reason ?? e.message ?? e.code ?? String(err)
-  const msgLower = msg.toLowerCase()
+  const msgLower = `${revertName ?? ''} ${msg}`.toLowerCase()
   
   for (const [keyword, friendly] of Object.entries(ERROR_MAP)) {
     if (msgLower.includes(keyword.toLowerCase())) return friendly
@@ -88,5 +147,12 @@ export function prettyError(err: unknown, context?: 'mining' | 'tier' | 'copy' |
     return '交易執行失敗 (Reverted)。常見原因：ETH 不足以支付執行費、保證金不足、或鏈上價格過期。請檢查餘額與參數後再試。';
   }
 
-  return msg.slice(0, 120)
+  // 4. 認不出來的錯誤。
+  //
+  // 舊版直接 `return msg.slice(0, 120)`，於是使用者會在 toast 上看到
+  // "could not coalesce error (error={ \"code\": -32603, \"data\": {...} }, payload=…"
+  // 這種東西：看不懂、沒有可行動的資訊，還會把 RPC 端點與內部欄位漏到畫面上。
+  // 這裡只給一句能行動的話，原文留給 console 供開發者查。
+  console.warn('[prettyError] unmapped error:', err)
+  return '交易失敗，且錯誤訊息無法辨識。請確認網路與餘額後重試；若持續發生，請開瀏覽器 console 取得原始錯誤回報。'
 }

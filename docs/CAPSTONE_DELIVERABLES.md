@@ -1,7 +1,13 @@
 # PepeLab On-Chain CFD — Capstone Deliverables
 
 > NCCU Capstone 2026 · agent-native 永續型 CFD 協議，對標 Hyperliquid。
-> **Live on Base Sepolia (chainId 84532)** · `forge test` 320 passed · 前端/agent build 綠。
+> **Live on Base Sepolia (chainId 84532)** · 合約測試以 **Contracts CI**（`.github/workflows/contracts-ci.yml`）
+> 的最新 run 為準 · 前端 `yarn build` / agent build 綠。
+>
+> 測試數字刻意不寫死：2026-08-06 稽核時本文件寫 320、`docs/VERIFICATION_REPORT.md`
+> 寫 318、`docs/ADR-001-vs-hyperliquid.md` 寫 314，三份互相矛盾且全部過期
+> （當時 CI 實測為 525 passed / 0 failed，57 suites —— 這是一個帶時間戳的參考值，
+> 不是本文件的宣稱）。唯一真相來源是 CI 的最新 run。
 
 ---
 
@@ -35,8 +41,14 @@
 | **PerpetualExchange** | `0xEf75ECA6514cE96B18382E921aC6190a0cF8c072` |
 | StrategyRegistry | `0x54e8C43f9Eb151Bb8DD6e61d16a969C4D0e73915` |
 | CopyTracker | `0x96357144fE56c5E0e33e8046bE2A63F45528b210` |
-| AgentSessionManager | `0x5Ebcc64C712C5a26119789dCbD0753981dc518E8` |
+| AgentSessionManager | `0x4E7cC1B79B72ab72531a6C790e14304370f70764` |
 | KYCRegistry | `0x5D95fD9e7a5f80E5369e24783F1f98E0f952360d` |
+
+> **AgentSessionManager 位址更正（2026-08-06）**：本表原先寫舊的
+> `0x5Ebcc64C712C5a26119789dCbD0753981dc518E8`，與前端／agent 實際使用的位址不符
+> （稽核 O-8）。舊 manager 沒有 per-session 資產白名單。唯一真相來源是
+> `frontend/src/contracts/addresses.ts`。舊 manager 目前**仍在** exchange 的
+> `authorizedAgents` 名單中且從未撤權 —— 在撤權前它仍是繞過資產閘門的可用路徑。
 
 ### 生產級預言機展示（已部署，**未接 live exchange**）
 | 合約 | 位址 |
@@ -122,13 +134,21 @@ npm run demo-agent                 # 終端 2：付 x402 → 經 session 開受�
 
 ## 5. 測試 / 品質
 
-- 合約：**320 Foundry 測試全綠**（含守恆/邊界/回歸/ADL/組合保證金/funding 上限）。
+- 合約：**Foundry 測試全綠**（含守恆/邊界/回歸/ADL/組合保證金/funding 上限）。
+  數量見 **Contracts CI** 的最新 run，本文件不再寫死 —— 寫死的數字上一次讓三份
+  文件各說各話（見文首說明）。
 - 每個動到資金的功能都有「總額守恆」測試；新功能皆預設關閉旗標確保零回歸。
 - 三輪皆經 subagent 安全 review（抓到並修掉 N2 ADL 金庫未抽、P3-2 組合保證金 fee-asymmetry 兩個真 bug）。
 - 前端 `yarn build`、agent `tsc -b` 皆綠。
 
 ### 金融參數與風險（見 `docs/RISK_NOTES.md`）
-- **資金費率**：`FUNDING_INTERVAL = 8h`、`MAX_FUNDING_RATE_BPS = 75`（滿失衡 0.75%/8h = **2.25%/日**上限，典型遠低於此）。先前 5min 週期會讓日化飆到 ≈216%/日，已修正。
+- **資金費率**：source 的 `FUNDING_INTERVAL = 8h`、`MAX_FUNDING_RATE_BPS = 75`
+  （滿失衡 0.75%/8h = **2.25%/日**上限）。
+  > ⚠️ **已部署的 bytecode 還不是 8h。** 2026-08-06 對 Base Sepolia
+  > `0xEf75…c072` 實測 `FUNDING_INTERVAL() = 300`（5 分鐘），同樣的 0.75% 上限
+  > 在 5 分鐘週期下是 **≈216%/日**。`FUNDING_INTERVAL` 是 `constant`，改 source
+  > 不會改變已部署的合約，**必須重新部署 exchange 才會生效**。本文件先前寫
+  > 「先前 5min…已修正」是錯的：source 修了，鏈上沒有。
 - **Funding vs Borrow fee**：兩者用途分離（失衡平衡 vs 槓桿融資成本），非重複收費。
 - **ADL / 組合保證金**：已實作、旗標控管、**本測試網預設關閉**；極端行情在啟用前協議作為對手方仍有償付風險，前端 Agent Risk Monitor 頁與 RISK_NOTES 已明確標註，不暗示線上償付無虞。
 

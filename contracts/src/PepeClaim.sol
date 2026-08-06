@@ -2,13 +2,21 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 interface IKYCRegistry {
     function isVerified(address user) external view returns (bool);
 }
 
+/// @dev M8: the sybil resistance of this airdrop is entirely inherited from
+///      `KYCRegistry`. While `submitKYC` self-approved, "one claim per verified
+///      address" meant "one claim per address", i.e. nothing. With approval now
+///      gated on a reviewer, the claim gate has teeth again — no change was
+///      needed here beyond SafeERC20.
 contract PepeClaim is Ownable {
+    using SafeERC20 for IERC20;
+
     IERC20       public immutable pepe;
     IKYCRegistry public immutable kyc;
 
@@ -29,7 +37,7 @@ contract PepeClaim is Ownable {
         require(kyc.isVerified(msg.sender), "KYC required");
         require(!claimed[msg.sender],       "already claimed");
         claimed[msg.sender] = true;
-        require(pepe.transfer(msg.sender, claimAmount), "transfer failed");
+        pepe.safeTransfer(msg.sender, claimAmount);
         emit Claimed(msg.sender, claimAmount);
     }
 
@@ -39,7 +47,7 @@ contract PepeClaim is Ownable {
     }
 
     function withdraw(uint256 amount) external onlyOwner {
-        require(pepe.transfer(owner(), amount), "transfer failed");
+        pepe.safeTransfer(owner(), amount);
         emit Withdrawn(owner(), amount);
     }
 }

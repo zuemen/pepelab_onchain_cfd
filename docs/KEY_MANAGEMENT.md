@@ -135,8 +135,14 @@ cast call $ORACLE "hasRole(bytes32,address)(bool)" \
   --rpc-url "$SEPOLIA_RPC_URL"    # expect true
 ```
 
-Repeat for the vault. Then update `scripts/priceKeeper.ts`'s key to the keeper
-key, or the keeper stops being able to post.
+Repeat for the vault. Then update the `KEEPER_PRIVATE_KEY` secret consumed by
+`agent/keeper/run.ts` to the keeper key, or the keeper stops being able to post.
+
+Rotating the key is not enough on its own: the keeper must also be the owner of
+the `MockOracle` on **every** chain it writes to, and hold gas there. Missing
+either one produces a keeper that runs and writes nothing. That is exactly how
+Base Sepolia went 9.5 days without a price update after the 2026-07-27
+separation — see [RUNBOOK_KEEPER.md](RUNBOOK_KEEPER.md).
 
 ## What this still does not fix
 

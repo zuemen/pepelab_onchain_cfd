@@ -160,10 +160,20 @@ contract AssetVaultV2RiskTest is Test {
         vault.setAssetCap(AID, 1e18);
     }
 
-    function test_outstandingValueSkipsStaleAssetInsteadOfReverting() public {
+    /// @dev M-7 changed the second assertion. The liability must stay READABLE
+    ///      during an oracle outage (the original point of this test), but it
+    ///      must not silently drop to ZERO — `mint()`'s only solvency gate is the
+    ///      reserve ratio, and a vanished liability makes that ratio look perfect
+    ///      exactly when it is least knowable. An unpriceable asset is now marked
+    ///      to the last price the vault itself transacted on, and flagged.
+    function test_outstandingValueMarksStaleAssetToLastPriceInsteadOfDropping() public {
         _mintAs(alice, 2_000e18);
+        uint256 fresh = vault.outstandingValue();
+        assertGt(fresh, 0);
+
         vm.warp(block.timestamp + 2 hours);          // price now stale
-        assertEq(vault.outstandingValue(), 0);       // readable, not reverting
+        assertEq(vault.outstandingValue(), fresh);   // readable, and still counted
+        assertTrue(vault.ratioIsStale());            // but flagged as an estimate
     }
 
     function test_redeemRevertsVaultDryWhenReserveInsufficient() public {
