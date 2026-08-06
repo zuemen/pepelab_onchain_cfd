@@ -200,8 +200,23 @@ exchange, is authorized via `authorizedAgents`, and demo session 0 allows sBTC
 and sETH while returning `false` for sAAPL and sTSLA.
 
 The previous instance `0x5Ebcc64C712C5a26119789dCbD0753981dc518E8` is untouched
-and its 13 sessions remain readable, but it has no asset gate. Frontend
-(`sessionManager.ts`) and `agent/.env` both point at the new address.
+and its 13 sessions remain readable, but it has no asset gate.
+
+**Correction (2026-08-06).** The line that used to sit here — "Frontend
+(`sessionManager.ts`) and `agent/.env` both point at the new address" — was only
+half true. `agent/.env.example` and the hardcoded fallback in `agent/x402_agent.ts`
+still named the **old** manager, and every agent entry point defaulted to
+`DEMO_SESSION_ID=6`. Session ids are per-manager: the new manager has only `#0`
+(`nextSessionId` reads 1), while `#6` exists solely on the old one. So the two
+halves of the configuration disagreed, and anyone who followed this document and
+switched the address would have pointed an agent at a session that does not
+exist.
+
+Now aligned on the new manager with `DEMO_SESSION_ID=0`. Verified on chain
+2026-08-06: session 0 is unrevoked, expires 2027-07, caps at 1000 per trade /
+3000 budget / 5× leverage, allows exactly `sBTC` and `sETH` and returns false for
+`sAAPL`; the manager is bound to the live exchange and `authorizedAgents` returns
+true for it.
 
 **11. V2 vault hardening.** Four defects found reviewing my own V2 work, all in
 code not yet deployed. The one that mattered: `mint()` prices every active asset

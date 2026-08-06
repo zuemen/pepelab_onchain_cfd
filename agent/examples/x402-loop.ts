@@ -23,7 +23,10 @@ import { loadVc, localVerifyVc, fetchAgentVerification, AUDIT_PATH, type VcCheck
 const API = (process.env.X402_API_URL ?? "https://agent-git-master-zuemens-projects.vercel.app").replace(/\/$/, "");
 const PK = process.env.AGENT_PRIVATE_KEY?.trim();
 const RPC = process.env.BASE_SEPOLIA_RPC_URL?.trim() || "https://sepolia.base.org";
-const SESSION_ID = Number(process.env.DEMO_SESSION_ID ?? "6");
+// session id 是每個 manager 各自獨立的。新的 AgentSessionManager
+// (0x4E7cC1B7…) 目前只有 #0：到期 2027-07、白名單 sBTC+sETH。#6 只存在於
+// 舊的 0x5Ebcc64C…（無資產白名單），兩者不可混用。
+const SESSION_ID = Number(process.env.DEMO_SESSION_ID ?? "0");
 const ASSETS = (process.env.ASSETS ?? "sBTC,sETH").split(",").map((s) => s.trim()).filter(Boolean);
 const INTERVAL_MS = Number(process.env.INTERVAL_MIN ?? "15") * 60_000;
 const COOLDOWN_MS = Number(process.env.COOLDOWN_MIN ?? "30") * 60_000;

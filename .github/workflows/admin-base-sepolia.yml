@@ -1,8 +1,19 @@
 name: Admin — Base Sepolia owner call
 
 # Runs an owner-only call on any Base Sepolia contract using the keeper key
-# stored in repo secrets (which is the deployer/owner of the core contracts).
-# Manual trigger only.
+# stored in repo secrets. Manual trigger only.
+#
+# WARNING — this workflow currently cannot perform owner calls on Base Sepolia.
+# The comment here used to claim KEEPER_PRIVATE_KEY "is the deployer/owner of the
+# core contracts". That stopped being true on 2026-07-27, when the role
+# separation moved the secret to the dedicated keeper key
+# 0x540aECD3…ef17. On Base Sepolia that key holds 0 ETH and owns nothing —
+# MockOracle.owner() is still the deployer 0xE80A8136…Eb93. Every call sent from
+# here fails at gas estimation with "gas required exceeds allowance (0)".
+#
+# Fix the ownership and funding first (docs/RUNBOOK_KEEPER.md), or send the
+# transaction locally with the deployer key. Leaving the old comment in place
+# would send the next reader down a path that cannot work.
 # Examples:
 #   setMaxPriceAge(uint256)   args: 21600            target: PerpetualExchange
 #   setExecutionFee(uint256)  args: 100000000000000  target: PerpetualExchange

@@ -39,9 +39,11 @@ const RPC =
 const CHAIN_ID = 84532; // Base Sepolia
 
 // Session Key configuration (Phase 2 — autonomous trading)
+// 2026-07-27 重新部署的實例，帶 per-session 資產白名單。舊的 0x5Ebcc64C… 沒有，
+// 所以不再當預設值 —— 預設值就是大多數人實際會跑到的設定。
 const SESSION_MANAGER =
   process.env.SESSION_MANAGER_ADDRESS?.trim() ||
-  "0x5Ebcc64C712C5a26119789dCbD0753981dc518E8";
+  "0x4E7cC1B79B72ab72531a6C790e14304370f70764";
 const SESSION_ID = process.env.DEMO_SESSION_ID?.trim();
 const DEMO_MARGIN = Number(process.env.DEMO_MARGIN ?? "10");
 const DEMO_ASSET = process.env.DEMO_ASSET ?? "sBTC";

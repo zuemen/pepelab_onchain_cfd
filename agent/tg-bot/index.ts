@@ -4,7 +4,10 @@ import { openPositionForSession, getSession } from "@pepelab/shared";
 
 const TOKEN = req("TELEGRAM_BOT_TOKEN");
 const ALLOWED = (process.env.TELEGRAM_ALLOWED_CHAT ?? "").trim();
-const SESSION_ID = Number(process.env.DEMO_SESSION_ID ?? "6"); // #0 已過期，改用 #6（到 2027）
+// session id 是每個 manager 各自獨立的。新的 AgentSessionManager
+// (0x4E7cC1B7…) 目前只有 #0：到期 2027-07、白名單 sBTC+sETH。#6 只存在於
+// 舊的 0x5Ebcc64C…（無資產白名單），兩者不可混用。
+const SESSION_ID = Number(process.env.DEMO_SESSION_ID ?? "0");
 const VC = loadVc(process.env.AGENT_AUTH_VC_PATH);
 
 function req(k: string): string { const v = process.env[k]?.trim(); if (!v) throw new Error(`缺少環境變數 ${k}`); return v; }
