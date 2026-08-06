@@ -1,8 +1,8 @@
 name: Oracle Price Keeper (Sepolia)
 
-# Keeps the Sepolia MockOracle fresh. Needs repo secrets KEEPER_RPC_URL and
-# KEEPER_PRIVATE_KEY; without them the cast calls fail but nothing else breaks.
-# Base Sepolia has its own keeper (base-sepolia-keeper.yml) with its own secrets.
+# 與 Base Sepolia keeper 共用 agent/keeper/run.ts。GuardedOracle 的鏡射由 CLI
+# 以分段逼近方式處理：超出 maxDeviationBps 時走一步而不是整筆放棄，避免像
+# 2026-07-27 那樣一旦落後就永遠追不上、只能由 admin 把上限設成 0 手動修正。
 on:
   schedule:
     - cron: '*/15 * * * *'
@@ -11,145 +11,31 @@ on:
 jobs:
   update-prices:
     runs-on: ubuntu-latest
+    env:
+      KEEPER_CHAIN: sepolia
+      KEEPER_RPC_URL: ${{ secrets.KEEPER_RPC_URL }}
+      KEEPER_PRIVATE_KEY: ${{ secrets.KEEPER_PRIVATE_KEY }}
+      KEEPER_ORACLE_ADDRESS: "0x17CA20A37Cf04F2f589B2573EC95f1411D29d958"
+      KEEPER_GUARDED_ORACLE: "0x32A19D04ef2ca5A7DA02Df39419729fA745749A1"
     steps:
-      - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
+      - uses: actions/checkout@v4
 
-      - name: Update oracle with real market prices
-        env:
-          ORACLE: "0x17CA20A37Cf04F2f589B2573EC95f1411D29d958"
-          RPC_URL: ${{ secrets.KEEPER_RPC_URL }}
-          PK: ${{ secrets.KEEPER_PRIVATE_KEY }}
+      - name: Fail fast when secrets are missing
         run: |
-          set -uo pipefail
-          to8() { awk -v p="$1" 'BEGIN{ printf "%.0f", p*1e8 }'; }
-          get_crypto() {
-            curl -s "https://api.coingecko.com/api/v3/simple/price?ids=$1&vs_currencies=usd" \
-              | jq -r --arg id "$1" '.[$id].usd // empty'
-          }
-          # stooq started serving HTML 404s for every symbol on 2026-07-27 and is
-          # not coming back — kept only as a fallback in case that reverses.
-          # Yahoo's chart endpoint needs a browser User-Agent or it returns 401.
-          get_stock() {
-            curl -s --max-time 15 -H "User-Agent: Mozilla/5.0" \
-              "https://query1.finance.yahoo.com/v8/finance/chart/$1?interval=1d&range=1d" \
-              | jq -r '.chart.result[0].meta.regularMarketPrice // empty'
-          }
-          get_stooq() {
-            curl -s --max-time 15 "https://stooq.com/q/l/?s=$1&f=sd2t2ohlcv&h&e=csv" \
-              | tail -n1 | cut -d, -f7 | tr -d '\r'
-          }
-          update() {
-            local SYM=$1 USD=$2
-            # The old check tested only for empty / N/D / 0. A dead feed that
-            # returns an HTML error page passes all three, and awk then coerces
-            # that HTML to 0 — which is BELOW the lower clamp, so the price got
-            # rewritten to 55% of its previous value. Every run. Compounding.
-            # Observed live 2026-07-27 when stooq started serving 404 pages:
-            # sAAPL 3329784553 -> 1831381504, exactly 55%.
-            #
-            # So validate the shape of the reading, not just a few sentinels,
-            # and SKIP rather than clamp. Clamping an invalid reading fabricates
-            # a price the reader cannot distinguish from a real one — the same
-            # reasoning GuardedOracle.updatePrice already applies on chain.
-            if ! printf '%s' "$USD" | grep -qE '^[0-9]+(\.[0-9]+)?$'; then
-              echo "$SYM: 來源回傳非數值,跳過 (${USD:0:40})"; return
-            fi
-            local KEY REAL OLD NEW UP DN
-            KEY=$(cast keccak "$SYM")
-            REAL=$(to8 "$USD")
-            # Belt and braces: a numeric-looking value can still round to zero.
-            if [ -z "$REAL" ] || [ "$REAL" = "0" ]; then
-              echo "$SYM: 換算後為 0,跳過"; return
-            fi
-            OLD=$(cast call "$ORACLE" "getPrice(bytes32)(uint256,uint256)" "$KEY" \
-                  --rpc-url "$RPC_URL" | head -n1 | awk '{print $1}')
-            if [ -z "$OLD" ] || [ "$OLD" = "0" ]; then
-              NEW=$REAL
-            else
-              UP=$(( OLD * 145 / 100 ))
-              DN=$(( OLD * 55 / 100 ))
-              NEW=$REAL
-              [ "$NEW" -gt "$UP" ] && NEW=$UP
-              [ "$NEW" -lt "$DN" ] && NEW=$DN
-            fi
-            echo "$SYM: real=\$$USD  oracle $OLD -> $NEW"
-            if cast send "$ORACLE" "updatePrice(bytes32,uint256)" "$KEY" "$NEW" \
-                 --rpc-url "$RPC_URL" --private-key "$PK" >/dev/null 2>&1; then
-              WROTE=$((WROTE + 1))
-            else
-              echo "$SYM: updatePrice 失敗(權限或價格防護),略過"
-              FAILED=$((FAILED + 1))
-            fi
-          }
-          WROTE=0
-          FAILED=0
-          update sBTC  "$(get_crypto bitcoin)"
-          # (assets below; GuardedOracle sync runs as a separate step)
-          update sETH  "$(get_crypto ethereum)"
-          update sAAPL "$(get_stock AAPL)"
-          update sTSLA "$(get_stock TSLA)"
-          update sNVDA "$(get_stock NVDA)"
-          update sMSFT "$(get_stock MSFT)"
-          update sGOOGL "$(get_stock GOOGL)"
-          update sGOLD "$(get_stock GC=F)"
-          update sBOND "$(get_stock TLT)"
-          update sICLN "$(get_stock ICLN)"
-          update sESGU "$(get_stock ESGU)"
-
-          # A keeper that writes nothing is broken, and until now it still went
-          # green: every cast send ended in `|| echo`, so a wrong key or a dead
-          # feed produced a passing run doing precisely nothing. That is how the
-          # 2026-07-27 key swap looked healthy while updating zero assets.
-          echo "wrote=$WROTE failed=$FAILED"
-          if [ "$WROTE" -eq 0 ]; then
-            echo "::error::Keeper wrote 0 prices ($FAILED attempts failed). Check the signer has permission and the price feeds are alive."
+          set -euo pipefail
+          if [ -z "${KEEPER_RPC_URL:-}" ] || [ -z "${KEEPER_PRIVATE_KEY:-}" ]; then
+            echo "::error::缺少 KEEPER_RPC_URL 或 KEEPER_PRIVATE_KEY —— 喂價無法運作。"
             exit 1
           fi
-          if [ "$FAILED" -gt 0 ]; then
-            echo "::warning::Keeper wrote $WROTE prices but $FAILED failed."
-          fi
-          echo "Done."
 
-      # ── Keep the V2 stack alive ──────────────────────────────────────────
-      #
-      # AssetVaultV2 prices off GuardedOracle, which fails CLOSED: getPrice
-      # reverts once a price ages past maxPriceAge (1 h) instead of returning
-      # stale data. AssetVaultV2.outstandingValue() calls it directly, so one
-      # stale price takes down reserveRatioBps() AND mint() — V2 stops working.
-      #
-      # The step above only refreshes six assets, and only from external feeds.
-      # This mirrors whatever MockOracle currently holds for ALL eleven, so an
-      # asset nobody fetches a price for still cannot brick V2 once it has any
-      # supply outstanding.
-      #
-      # Non-fatal by design: GuardedOracle rejects a move beyond its per-update
-      # deviation cap, and that rejection is the guard working. Log it, never
-      # massage the number to sneak past.
-      - name: Sync GuardedOracle from MockOracle (V2 stack)
-        env:
-          ORACLE:  "0x17CA20A37Cf04F2f589B2573EC95f1411D29d958"
-          GUARDED: "0x32A19D04ef2ca5A7DA02Df39419729fA745749A1"
-          RPC_URL: ${{ secrets.KEEPER_RPC_URL }}
-          PK:      ${{ secrets.KEEPER_PRIVATE_KEY }}
-        run: |
-          set -uo pipefail
-          if [ -z "${RPC_URL:-}" ] || [ -z "${PK:-}" ]; then
-            echo "::warning::Keeper secrets unset - skipping GuardedOracle sync."
-            exit 0
-          fi
-          for SYM in sBTC sETH sAAPL sTSLA sGOLD sBOND sNVDA sMSFT sGOOGL sICLN sESGU; do
-            KEY=$(cast keccak "$SYM")
-            P=$(cast call "$ORACLE" "getPrice(bytes32)(uint256,uint256)" "$KEY" \
-                  --rpc-url "$RPC_URL" 2>/dev/null | head -n1 | awk '{print $1}')
-            if [ -z "${P:-}" ] || [ "$P" = "0" ]; then
-              echo "$SYM: no MockOracle price, skipping"; continue
-            fi
-            if cast send "$GUARDED" "updatePrice(bytes32,uint256)" "$KEY" "$P" \
-                 --rpc-url "$RPC_URL" --private-key "$PK" >/dev/null 2>&1; then
-              echo "$SYM: mirrored -> $P"
-            else
-              echo "$SYM: mirror rejected (deviation cap / not registered / frozen)"
-            fi
-          done
-          echo "GuardedOracle sync done."
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install agent deps
+        working-directory: agent
+        run: npm install --no-audit --no-fund
+
+      - name: Refresh prices (MockOracle + GuardedOracle mirror)
+        working-directory: agent
+        run: npx tsx keeper/run.ts

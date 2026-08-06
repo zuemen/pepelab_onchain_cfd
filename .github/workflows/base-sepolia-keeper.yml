@@ -1,119 +1,68 @@
 name: Base Sepolia Keeper
 
-# Phase 4 keeper for the live Base Sepolia deployment (chainId 84532):
-#   1. refresh MockOracle prices from real market data (±45% move guard backstop),
-#   2. crank settleFunding so funding accrues even with no organic traders,
-#   3. log InsuranceVault solvency for monitoring.
+# 用 agent/keeper/run.ts（單一實作、有單元測試）刷新 MockOracle，並 crank
+# settleFunding。
 #
-# Secrets (repo → Settings → Secrets and variables → Actions):
+# 2026-08-06 之前這個 workflow 用一段行內 bash：每個 cast send 後面掛 `|| echo`，
+# 於是 keeper 錢包餘額為 0、每筆交易在 gas estimation 就失敗的情況下，仍然連續
+# 10 天回報 success，而鏈上價格停在 9.5–44 天前。現在寫入 0 筆會讓 job 失敗。
+#
+# Secrets:
 #   BASE_SEPOLIA_RPC_URL   Base Sepolia RPC endpoint
-#   KEEPER_PRIVATE_KEY     funded Base Sepolia EOA (0x…)  — needs a little test ETH
-#
-# Hardened: if secrets are absent the real steps are SKIPPED (job stays green with
-# a notice) instead of failing cryptically; Foundry is pinned; RPC is health-checked.
-
+#   KEEPER_PRIVATE_KEY     必須是 MockOracle 的 owner，且在 Base Sepolia 上有測試 ETH
 on:
   schedule:
-    - cron: '*/15 * * * *'   # every 15 min nominal — GitHub cron is best-effort and
-                             # often lags/skips, so a tighter schedule keeps the real
-                             # cadence near 30 min. (FUNDING_INTERVAL is 8h →
-                             # settleFunding mostly skips, which is fine.)
+    # 名目 15 分鐘。GitHub 排程是 best-effort，實測真實間隔為 68–169 分鐘，
+    # 所以下游的 maxPriceAge 必須以「約 2 小時」而不是 15 分鐘來設定。
+    - cron: '*/15 * * * *'
   workflow_dispatch:
 
 jobs:
   keep:
     runs-on: ubuntu-latest
     env:
-      ORACLE:   "0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3"
+      KEEPER_CHAIN: base-sepolia
+      KEEPER_RPC_URL: ${{ secrets.BASE_SEPOLIA_RPC_URL }}
+      KEEPER_PRIVATE_KEY: ${{ secrets.KEEPER_PRIVATE_KEY }}
+      KEEPER_ORACLE_ADDRESS: "0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3"
       EXCHANGE: "0xEf75ECA6514cE96B18382E921aC6190a0cF8c072"
-      VAULT:    "0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812"
-      RPC_URL:  ${{ secrets.BASE_SEPOLIA_RPC_URL }}
-      PK:       ${{ secrets.KEEPER_PRIVATE_KEY }}
     steps:
-      - name: Preflight — check secrets
-        id: pre
+      - uses: actions/checkout@v4
+
+      - name: Fail fast when secrets are missing
         run: |
-          if [ -z "$RPC_URL" ] || [ -z "$PK" ]; then
-            echo "::warning::Keeper secrets not set (BASE_SEPOLIA_RPC_URL / KEEPER_PRIVATE_KEY). Skipping run."
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=true" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          if [ -z "${KEEPER_RPC_URL:-}" ] || [ -z "${KEEPER_PRIVATE_KEY:-}" ]; then
+            echo "::error::缺少 BASE_SEPOLIA_RPC_URL 或 KEEPER_PRIVATE_KEY —— 喂價無法運作。"
+            exit 1
           fi
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install agent deps
+        working-directory: agent
+        run: npm install --no-audit --no-fund
+
+      - name: Refresh prices
+        working-directory: agent
+        run: npx tsx keeper/run.ts
+
       - name: Install Foundry
-        if: steps.pre.outputs.ready == 'true'
         uses: foundry-rs/foundry-toolchain@v1
         with:
           version: stable
 
-      - name: RPC health check
-        if: steps.pre.outputs.ready == 'true'
-        run: |
-          set -euo pipefail
-          CID=$(cast chain-id --rpc-url "$RPC_URL")
-          echo "Connected chainId: $CID"
-          if [ "$CID" != "84532" ]; then
-            echo "::error::RPC is not Base Sepolia (got $CID, want 84532)"; exit 1
-          fi
-
-      - name: Refresh prices
-        if: steps.pre.outputs.ready == 'true'
-        run: |
-          set -uo pipefail
-          to8() { awk -v p="$1" 'BEGIN{ printf "%.0f", p*1e8 }'; }
-          get_crypto() {
-            curl -s "https://api.coingecko.com/api/v3/simple/price?ids=$1&vs_currencies=usd" \
-              | jq -r --arg id "$1" '.[$id].usd // empty'
-          }
-          get_stooq() {
-            curl -s "https://stooq.com/q/l/?s=$1&f=sd2t2ohlcv&h&e=csv" \
-              | tail -n1 | cut -d, -f7 | tr -d '\r'
-          }
-          update() {
-            local SYM=$1 USD=$2
-            # Skip (don't fail) when a free source has no quote for this asset —
-            # the on-chain price simply stays put until the next successful run.
-            if [ -z "$USD" ] || [ "$USD" = "N/D" ] || [ "$USD" = "0" ]; then
-              echo "$SYM: no real price, skip"; return
-            fi
-            local KEY REAL; KEY=$(cast keccak "$SYM"); REAL=$(to8 "$USD")
-            echo "$SYM: real=\$$USD -> $REAL"
-            cast send "$ORACLE" "updatePrice(bytes32,uint256)" "$KEY" "$REAL" \
-              --rpc-url "$RPC_URL" --private-key "$PK" \
-              || echo "$SYM: updatePrice failed (asset not on oracle / guard?), skip"
-          }
-          # Crypto — CoinGecko (free, keyless)
-          update sBTC  "$(get_crypto bitcoin)"
-          update sETH  "$(get_crypto ethereum)"
-          # Equities / ETFs — Stooq (free, keyless). Assets not seeded on the
-          # live oracle simply log "updatePrice failed … skip" and are harmless.
-          update sAAPL  "$(get_stooq aapl.us)"
-          update sTSLA  "$(get_stooq tsla.us)"
-          update sNVDA  "$(get_stooq nvda.us)"
-          update sMSFT  "$(get_stooq msft.us)"
-          update sGOOGL "$(get_stooq googl.us)"
-          update sICLN  "$(get_stooq icln.us)"
-          update sESGU  "$(get_stooq esgu.us)"
-          # Commodities / FX — Stooq (gold spot per oz)
-          update sGOLD  "$(get_stooq xauusd)"
-
       - name: Crank settleFunding
-        if: steps.pre.outputs.ready == 'true'
         run: |
           set -uo pipefail
           for SYM in sBTC sETH sAAPL sTSLA; do
             KEY=$(cast keccak "$SYM")
-            cast send "$EXCHANGE" "settleFunding(bytes32)" "$KEY" \
-              --rpc-url "$RPC_URL" --private-key "$PK" \
-              && echo "$SYM: funding settled" \
-              || echo "$SYM: funding interval not elapsed, skip"
+            if cast send "$EXCHANGE" "settleFunding(bytes32)" "$KEY" \
+                 --rpc-url "$KEEPER_RPC_URL" --private-key "$KEEPER_PRIVATE_KEY" >/dev/null 2>&1; then
+              echo "$SYM: funding settled"
+            else
+              echo "$SYM: funding interval 未到，略過"
+            fi
           done
-
-      - name: Log vault solvency
-        if: steps.pre.outputs.ready == 'true'
-        run: |
-          set -uo pipefail
-          ASSETS=$(cast call "$VAULT" "totalAssets()(uint256)" --rpc-url "$RPC_URL" | awk '{print $1}')
-          SUPPLY=$(cast call "$VAULT" "totalSupply()(uint256)" --rpc-url "$RPC_URL" | awk '{print $1}')
-          echo "InsuranceVault: totalAssets=$ASSETS  pIV supply=$SUPPLY"
-          echo "Done."

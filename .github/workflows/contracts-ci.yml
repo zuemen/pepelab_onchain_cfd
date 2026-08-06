@@ -6,7 +6,9 @@ name: Contracts CI
 # diligence asks about.
 on:
   push:
-    branches: [main]
+    # 這個 repo 的預設分支是 master。綁在 main 的時候 push trigger 從未觸發過，
+    # 只有 pull_request 會跑 —— 又一個「看起來有 CI，實際上沒跑」的例子。
+    branches: [master]
     paths:
       - 'contracts/**'
       - '.github/workflows/contracts-ci.yml'
