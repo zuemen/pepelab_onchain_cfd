@@ -18,6 +18,7 @@ import { ASSET_IDS } from 'src/contracts/addresses'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { ASSET_META } from 'src/lib/pepefi/assetMeta'
 import { bybitSymbolFor } from 'src/lib/pepefi/bybitMarket'
+import { blocksTrading } from 'src/lib/pepefi/priceFreshness'
 import { type Interval, DEFAULT_INTERVAL } from 'src/lib/pepefi/candles'
 
 import PaperTradingBadge from 'src/components/pepefi/PaperTradingBadge'
@@ -56,6 +57,11 @@ export function TerminalView() {
 
   const meta = ASSET_META[selAsset]
   const kycBlocked = (meta?.regulated ?? false) && !kycOk
+
+  // 指數價超過合約的 maxPriceAge 時，開倉／平倉／清算在鏈上都會 revert
+  // StalePrice。讓按鈕在送出之前就停用，而不是讓使用者付 gas 去撞牆。
+  const freshness = live[selAsset]?.freshness
+  const staleBlocked = freshness ? blocksTrading(freshness) : false
 
   // 後端代號與 bytes32 assetId 都收；代號比較好讀，也讓 API 錯誤訊息看得懂。
   const feed = useCandles(meta?.symbol ?? selAsset, interval)
@@ -215,6 +221,8 @@ export function TerminalView() {
             freeMgn={account.freeMgn}
             rate={rate}
             kycBlocked={kycBlocked}
+            staleBlocked={staleBlocked}
+            staleLabel={freshness?.label}
             notify={notify}
             onFilled={account.refresh}
           />

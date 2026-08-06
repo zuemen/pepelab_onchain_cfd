@@ -95,13 +95,33 @@ export function MarketStatsBar({
         }
       />
 
-      <Box sx={{ ml: 'auto', ...labelCss, color: priceInfo?.isMock ? C.mut : C.green }}>
+      {/*
+        顯示來源與「指數價的鏈上年齡」。在這之前這個徽章不論指數價多舊都是綠色的
+        live —— 2026-08-06 Base Sepolia 的價格已經 9.5 天沒更新，UI 仍然顯示
+        live，使用者按下下單才吃到 StalePrice revert。年齡由合約自己的
+        maxPriceAge 分級，所以徽章說的和鏈上接受的是同一件事。
+      */}
+      <Box
+        sx={{
+          ml: 'auto',
+          ...labelCss,
+          color:
+            priceInfo?.freshness.level === 'stale'
+              ? C.red
+              : priceInfo?.freshness.level === 'aging'
+                ? C.lime
+                : priceInfo?.isMock
+                  ? C.mut
+                  : C.green,
+        }}
+      >
         ●{' '}
         {priceInfo?.source === 'coingecko'
-          ? 'live · coingecko'
+          ? 'display · coingecko'
           : priceInfo?.source === 'oracle'
-            ? 'live · on-chain oracle'
+            ? 'display · on-chain oracle'
             : 'simulated feed'}
+        {priceInfo?.freshness ? ` · index ${priceInfo.freshness.label}` : ''}
       </Box>
     </Box>
   )

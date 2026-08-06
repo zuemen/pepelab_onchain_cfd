@@ -29,6 +29,8 @@ export function OrderTicket({
   freeMgn,
   rate,
   kycBlocked,
+  staleBlocked,
+  staleLabel,
   notify,
   onFilled,
 }: {
@@ -39,6 +41,9 @@ export function OrderTicket({
   freeMgn: bigint
   rate: number
   kycBlocked: boolean
+  /** 指數價已超過合約的 maxPriceAge —— 鏈上會 revert StalePrice，不讓使用者白送一筆。 */
+  staleBlocked: boolean
+  staleLabel?: string
   notify: (msg: string, ok: boolean) => void
   onFilled: () => Promise<void>
 }) {
@@ -204,6 +209,13 @@ export function OrderTicket({
         </Box>
       )}
 
+      {staleBlocked && (
+        <Box sx={{ ...monoCss, fontSize: 11.5, color: C.red, ...panel, borderColor: C.line2, p: 1 }}>
+          ⛔ 指數價格已超過合約的 maxPriceAge{staleLabel ? `（最後更新：${staleLabel}）` : ''}，
+          鏈上會以 StalePrice 拒絕交易。等待 keeper 更新後再下單。
+        </Box>
+      )}
+
       {riskOpen ? (
         <Alert
           severity="info"
@@ -228,7 +240,7 @@ export function OrderTicket({
 
       <Button
         onClick={() => void openPosition()}
-        disabled={busy || !margin || overFree || kycBlocked}
+        disabled={busy || !margin || overFree || kycBlocked || staleBlocked}
         sx={{
           py: 1.4,
           borderRadius: '10px',
