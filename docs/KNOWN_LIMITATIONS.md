@@ -65,10 +65,16 @@ three-source price comparison and states plainly that the engine runs on
 MockOracle. Nothing in the UI claims the adapters are connected.
 
 **The relay.** The exchange cannot be *pointed at* the adapters, but it can be
-*fed by* them. Set `RELAY_SOURCE` to the aggregator address and `priceKeeper.ts`
-reads the on-chain feed and writes that price into MockOracle, falling back to
-the CEX APIs only for assets the adapters do not cover (most equities on
-testnet). The exchange then settles on Chainlink/Pyth data at one remove.
+*fed by* them. Set `RELAY_SOURCE` (or `KEEPER_RELAY_SOURCE`) to the aggregator
+address and `agent/keeper/run.ts` reads the on-chain feed and writes that price
+into MockOracle, falling back to the public price APIs only for assets the
+adapters do not cover (most equities on testnet). The exchange then settles on
+Chainlink/Pyth data at one remove.
+
+Be precise about the deployment status too: **the relay has never been switched
+on in CI.** Neither keeper workflow sets `RELAY_SOURCE`, so both chains are
+currently fed from the public APIs. The code path exists and is wired; the
+configuration is not. Turning it on is a workflow env change, not a code change.
 
 Be precise about what that is: a **trusted relay, not a trustless integration**.
 The keeper key can still write whatever it likes. It removes the dependency on a
