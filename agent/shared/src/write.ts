@@ -13,6 +13,7 @@ import {
   getSessionManagerAddress,
 } from "./provider.ts";
 import { ADDRESSES, assetIdOf } from "./addresses.ts";
+import { resolveSettlementToken } from "./env.ts";
 import {
   verifyAuthorizationVC,
   type AuthorizationVC,
@@ -23,8 +24,22 @@ import {
 } from "./verification.ts";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
-// 官方 Base Sepolia USDC（與 signal-api SETTLEMENT_TOKEN 預設一致）。
-const DEFAULT_USDC = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
+
+/**
+ * VC 是否可以被省略。**預設 false**（稽核 A-3）：舊版把 VC 閘門寫成「有帶才驗」，
+ * 於是三個呼叫端都沒帶 → 等於沒有授權層。現在缺 VC 一律拒絕，只有明確的
+ * opt-out（參數 `allowUnsignedForTesting:true`，或 env
+ * `AGENT_ALLOW_UNSIGNED_TRADES=true`）才放行，且會在 stderr 大聲警告。
+ */
+function unsignedAllowed(flag?: boolean): boolean {
+  if (flag === true) return true;
+  return process.env.AGENT_ALLOW_UNSIGNED_TRADES?.trim().toLowerCase() === "true";
+}
+
+const NO_VC_ERROR =
+  "拒絕下單：缺少使用者簽發的授權憑證(VC)。自主 agent 的每一筆鏈上動作都必須可" +
+  "歸因到簽發者——請在前端 /sessions「Issue VC」簽發後，以 AGENT_AUTH_VC_PATH 提供。" +
+  "（僅測試可用 allowUnsignedForTesting / AGENT_ALLOW_UNSIGNED_TRADES=true 明確關閉此閘門）";
 
 /**
  * ERC-8126 風險分數下單閘門（**預設關閉**，向後相容）。
@@ -46,7 +61,7 @@ async function checkRiskGate(
       ? new ethers.Wallet(vpk)
       : ethers.Wallet.createRandom();
 
-  const usdc = process.env.X402_SETTLEMENT_TOKEN?.trim() || DEFAULT_USDC;
+  const usdc = resolveSettlementToken();
   const etvTargets: ContractTarget[] = [
     { label: "USDC (settlement)", address: usdc },
     { label: "PerpetualExchange", address: ADDRESSES.PerpetualExchange },
@@ -164,8 +179,9 @@ async function verifyVcAgainstChain(
  * @param isLong    多/空
  * @param marginUsdc 保證金（人類單位，內部轉 18-dec）
  * @param leverage  槓桿（受 session.maxLeverage 約束）
- * @param authVc    （可選）使用者簽發的授權 VC；提供時下單前**必須驗證通過**，
+ * @param authVc    使用者簽發的授權 VC。**必要**（稽核 A-3）：下單前必須驗證通過，
  *                  否則拒絕——這就是「可驗證的 agent 自主交易」(VC/SSI)。
+ * @param allowUnsignedForTesting 明確的測試 opt-out，預設 false。
  */
 export async function openPositionForSession(params: {
   sessionId: number;
@@ -174,12 +190,24 @@ export async function openPositionForSession(params: {
   marginUsdc: number;
   leverage: number;
   authVc?: AuthorizationVC;
+  allowUnsignedForTesting?: boolean;
 }): Promise<WriteResult> {
   const r = resolveSession();
   if ("error" in r) return { ok: false, error: r.error };
   const { signer, mgr } = r;
 
-  // VC/SSI 閘門：若帶了授權憑證，必須驗證通過（驗簽 + 鏈上 session 交叉比對）才下單。
+  // A-3：VC 預設必要。缺 VC 且未明確 opt-out → 直接拒絕（不送鏈、不花 gas）。
+  if (!params.authVc) {
+    if (!unsignedAllowed(params.allowUnsignedForTesting)) {
+      return { ok: false, error: NO_VC_ERROR, agent: signer.address };
+    }
+    console.warn(
+      "[write] ⚠ VC 閘門已被明確關閉（allowUnsignedForTesting / AGENT_ALLOW_UNSIGNED_TRADES）" +
+        " —— 這筆下單無法歸因到任何簽發者，僅限測試環境。",
+    );
+  }
+
+  // VC/SSI 閘門：帶了授權憑證就必須驗證通過（驗簽 + 鏈上 session 交叉比對）才下單。
   if (params.authVc) {
     const reason = await verifyVcAgainstChain(
       params.authVc,
@@ -256,14 +284,64 @@ export async function openPositionForSession(params: {
   }
 }
 
-/** 平掉 session 使用者的一筆部位。 */
+/**
+ * 平掉 session 使用者的一筆部位。
+ *
+ * 稽核 A-4：平倉會實現虧損，破壞力與開倉對稱，舊版卻**完全沒有授權層**（沒有 VC、
+ * 沒有風險閘、連「這個部位是不是這個 session 的」都沒查）。現在與開倉同一套：
+ *   1. VC 預設必要（同 `allowUnsignedForTesting` opt-out）
+ *   2. VC 驗簽 + 鏈上 session 交叉比對（issuer==session.user、agent==session.agent、未撤銷）
+ *   3. 額外的鏈上檢查：該 positionId 必須仍開著、且 owner == session.user
+ *      （否則 agent 可以拿別人的 positionId 呼叫）
+ */
 export async function closePositionForSession(params: {
   sessionId: number;
   positionId: number;
+  authVc?: AuthorizationVC;
+  allowUnsignedForTesting?: boolean;
 }): Promise<WriteResult> {
   const r = resolveSession();
   if ("error" in r) return { ok: false, error: r.error };
   const { signer, mgr } = r;
+
+  if (!params.authVc) {
+    if (!unsignedAllowed(params.allowUnsignedForTesting)) {
+      return { ok: false, error: NO_VC_ERROR.replace("拒絕下單", "拒絕平倉"), agent: signer.address };
+    }
+    console.warn("[write] ⚠ 平倉的 VC 閘門已被明確關閉，僅限測試環境。");
+  }
+
+  if (params.authVc) {
+    const reason = await verifyVcAgainstChain(
+      params.authVc,
+      params.sessionId,
+      signer.address,
+      mgr,
+    );
+    if (reason) {
+      return { ok: false, error: `拒絕平倉（VC 驗證未過）：${reason}`, agent: signer.address };
+    }
+  }
+
+  // 鏈上交叉比對：部位必須存在、仍開著、且屬於這個 session 的 user。
+  try {
+    const s = await mgr.sessions(params.sessionId);
+    const perp = makeContracts(makeProvider()).perp;
+    const pos: any = await perp.getPosition(params.positionId);
+    const owner = String(pos?.owner ?? ZERO);
+    if (ethers.getAddress(owner) === ethers.getAddress(ZERO))
+      return { ok: false, error: `position #${params.positionId} 不存在`, agent: signer.address };
+    if (ethers.getAddress(owner) !== ethers.getAddress(s.user))
+      return {
+        ok: false,
+        error: `拒絕平倉：position #${params.positionId} 的 owner(${owner}) 非本 session 的 user(${s.user})`,
+        agent: signer.address,
+      };
+    if (!pos.isOpen)
+      return { ok: false, error: `position #${params.positionId} 已平倉`, agent: signer.address };
+  } catch (err) {
+    return { ok: false, error: `平倉前的鏈上比對失敗：${(err as Error).message}`, agent: signer.address };
+  }
 
   try {
     const tx = await mgr.closePositionForSession(

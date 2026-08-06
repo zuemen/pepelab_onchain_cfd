@@ -78,11 +78,20 @@ contract ESGRegistry is Ownable {
         return (d.environmental, d.social, d.governance, d.rating);
     }
 
-    /// @notice Returns (e+s+g)/3 rounded down. Reverts if asset not rated.
+    /// @notice Returns (e+s+g)/3 rounded to nearest. Reverts if asset not rated.
+    /// @dev Low: this used to floor. Because every consumer compares the result
+    ///      against a `>=` threshold (`PepeIncentives.esgMinScore`,
+    ///      `EsgRewardDistributor.highEsgThreshold`, both 70), flooring shifted
+    ///      the real bar up by up to two thirds of a point and made it depend on
+    ///      the sum's remainder: 70/70/69 averages 69.67 and was rejected by a
+    ///      "70 or better" gate, while 70/70/70 passed. Round-to-nearest makes
+    ///      the boundary mean what it says. Range is unchanged (0-100), so the
+    ///      uint8 cast still cannot truncate.
     function compositeScore(bytes32 assetId) external view returns (uint8) {
         ESGData storage d = _scores[assetId];
         if (!d.exists) revert AssetNotRated(assetId);
-        return uint8((uint16(d.environmental) + d.social + d.governance) / 3);
+        uint16 sum = uint16(d.environmental) + d.social + d.governance;
+        return uint8((sum + 1) / 3);
     }
 
     function getAllRatedAssets() external view returns (bytes32[] memory) {

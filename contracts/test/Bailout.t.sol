@@ -78,8 +78,30 @@ contract BailoutTest is Test {
 
         // Alice's wallet received the floor directly from vault
         assertEq(usdc.balanceOf(alice), aliceBalBefore + floor);
-        // Vault shrinks by floor amount
-        assertEq(vault.totalAssets(), 10_000e18 - floor);
+        // C-2: the vault now shrinks by the floor AND by the 25e18 of bad debt
+        // this close left behind. Before the fix the vault paid the floor but
+        // nothing funded the hole, so the protocol handed a bankrupt trader 10
+        // USDC while quietly carrying a 25 USDC loss — closing voluntarily was
+        // strictly better than being liquidated.
+        assertEq(vault.totalAssets(), 10_000e18 - floor - 25e18);
+    }
+
+    /// @dev C-2: the bailout floor is a softener, not a subsidy — it is only paid
+    ///      when the vault covered the whole shortfall and still has it to spare.
+    function test_closePosition_noBailoutFloor_whenVaultCannotCoverShortfall() public {
+        uint256 margin = 100e18;
+        _seedVault(20e18);   // less than the 25e18 shortfall
+
+        uint256 posId = _openLong5x(margin);
+        oracle.updatePrice(BTC, 75_000e8);
+
+        uint256 aliceBalBefore = usdc.balanceOf(alice);
+        vm.prank(alice);
+        exchange.closePosition(posId);
+
+        // Vault drained into the hole; the bankrupt trader gets nothing extra.
+        assertEq(usdc.balanceOf(alice), aliceBalBefore);
+        assertEq(vault.totalAssets(), 0);
     }
 
     function test_closePosition_noRevert_whenVaultEmpty() public {

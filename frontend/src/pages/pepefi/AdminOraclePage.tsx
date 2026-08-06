@@ -73,15 +73,19 @@ const fImbalance = (long: bigint, short: bigint): string => {
   const pct = (Number(long - short) / Number(total)) * 100
   return (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%'
 }
+// 倒數顯示的解析度刻意配合下面的重繪頻率（COUNTDOWN_TICK_MS）。顯示到「秒」
+// 卻只有 5 秒重繪一次，看起來會像卡住；所以超過一分鐘就只顯示分鐘。
 const fCountdown = (lastSettled: bigint, interval: bigint): string => {
   const nextAt = Number(lastSettled + interval)
   const now    = Math.floor(Date.now() / 1000)
   const secs   = nextAt - now
   if (secs <= 0) return 'Now'
-  const m = Math.floor(secs / 60)
-  const s = secs % 60
-  return m > 0 ? `${m}m ${s}s` : `${s}s`
+  if (secs >= 60) return `~${Math.ceil(secs / 60)}m`
+  return `~${Math.ceil(secs / 5) * 5}s`
 }
+
+/** 這頁只有一個分鐘級的倒數字串需要更新，每秒重繪整頁純屬浪費。 */
+const COUNTDOWN_TICK_MS = 5_000
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function AdminOraclePage() {
@@ -120,15 +124,22 @@ export default function AdminOraclePage() {
     setTimeout(() => setToast(null), 6000)
   }
 
-  // Countdown ticker
+  // Countdown ticker。分頁在背景時完全不跑——沒人在看的倒數不需要重繪。
   useEffect(() => {
-    const t = setInterval(() => setTick(n => n + 1), 1000)
+    const t = setInterval(() => {
+      if (document.visibilityState !== 'hidden') setTick(n => n + 1)
+    }, COUNTDOWN_TICK_MS)
     return () => clearInterval(t)
   }, [])
 
   // All three sources expose the same getPrice(bytes32) -> (price, updatedAt)
   // signature, so MockOracle's ABI reads the adapters too. Adapters revert for
   // assets they don't cover (most equities) — those surface as 0 → "—".
+  //
+  // 這一輪 adapter 改成 fail-closed：stale（staleThreshold 從 86400 降到 3600）、
+  // incomplete round、Pyth 信賴區間過寬都會 **revert** 而不是回傳舊值。所以
+  // 「—」現在同時代表「沒有 feed」與「這一刻的報價不可信」，表格下方的註解要說清楚，
+  // 否則維運的人會把劣化誤讀成「本來就沒支援」。
   const fetchOracleComparison = useCallback(async () => {
     if (!contracts || !isBaseSepolia) return
     const runner = contracts.oracle.runner
@@ -485,7 +496,11 @@ export default function AdminOraclePage() {
           </TableContainer>
         )}
         <Typography variant="caption" color="text.secondary">
-          「—」表示該 adapter 未提供此資產的報價（多為股票／ETF，Chainlink 與 Pyth 測試網僅涵蓋主流加密資產）。
+          「—」表示該 adapter <b>這一刻拿不到可信報價</b>，有兩種原因：(1) 未提供此資產的 feed
+          （多為股票／ETF，Chainlink 與 Pyth 測試網僅涵蓋主流加密資產）；(2) 報價已過期或不完整——
+          adapter 現在採 fail-closed，<code>staleThreshold</code>（預設 1 小時）內沒更新、round 不完整、
+          或 Pyth 信賴區間過寬時會直接 revert，<b>不會</b>再回傳舊價。所以同一列從有數字變成「—」
+          代表該來源劣化了，不是 feed 被移除。
         </Typography>
       </Card>
 

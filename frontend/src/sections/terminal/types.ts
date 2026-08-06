@@ -1,6 +1,17 @@
+import type { useContracts } from 'src/hooks/useContracts'
+
 import { parseEther } from 'ethers'
 
 export type AssetId = `0x${string}`
+
+/**
+ * 終端機各面板共用的合約集合。
+ *
+ * 六個檔案原本各自寫了一行 `type Contracts = any`，於是打錯合約名、打錯方法名、
+ * 少傳參數全都不會被編譯器發現。直接綁在 useContracts 的回傳型別上，就永遠不會
+ * 和實際建立的合約集合脫節（含 `| null`，因為沒連錢包時它就是 null）。
+ */
+export type TerminalContracts = ReturnType<typeof useContracts>
 
 /** PerpetualExchange.getPosition() 的原始回傳形狀。 */
 export interface RawPos {

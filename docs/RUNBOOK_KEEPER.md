@@ -24,7 +24,7 @@ cd agent && KEEPER_CHAIN=base-sepolia \
 `0xfa53fd94`)。CI 上的 `Base Sepolia Keeper` 連續 10 天回報 success,每次執行
 14–33 秒(健康的 Sepolia keeper 是 4–5 分鐘)。
 
-**兩個各自獨立、都足以致命的原因**:
+**兩個各自獨立、都足以致命的原因**(事故當下):
 
 1. CI 使用的 keeper key `0x540aECD37E7A7885824e7b7e996eBddfb842ef17` 在 Base
    Sepolia 上餘額為 0 → 每筆 `updatePrice` 在 gas estimation 就失敗
@@ -35,13 +35,33 @@ cd agent && KEEPER_CHAIN=base-sepolia \
 
 時間點對得上:sBTC 的最後更新時間換算正好是 2026-07-27,也就是換 key 那天。
 
+> ### ✅ 上述兩點都已解決 —— 下面的 Step A/B 是歷史紀錄,不要再跑一次
+>
+> **2026-08-06 鏈上實測(Base Sepolia)**:
+>
+> | 項目 | 事故當下 | **現在** |
+> |---|---|---|
+> | `0x540aECD3…ef17` 餘額 | 0 ETH | **≈0.0499 ETH** |
+> | `MockOracle.owner()` | `0xE80A8136…Eb93`(部署者) | **`0x540aECD3…ef17`(keeper)** |
+>
+> Step A 與 Step B **已經被執行過**。再跑一次 Step B 會 revert(呼叫者已不是
+> owner);Step A 則只是多送一次 ETH。保留在下方是為了記錄「當時做了什麼」,
+> 以及未來若重新部署 MockOracle 時的參照。**先跑 Step C 確認現況,再決定要不要
+> 動 A/B。**
+>
+> ⚠️ 仍未解決的部分:`PerpetualExchange`、`MockUSDC`、`PepeToken`、
+> `InsuranceVault` 的 owner **仍是** `0xE80A8136…Eb93`,而該地址的私鑰在 public
+> repo 的 git 歷史中。這是目前最高優先的問題 —— 見
+> [`RUNBOOK_KEY_ROTATION.md`](RUNBOOK_KEY_ROTATION.md)。
+
 **為什麼十天沒人發現**:workflow 每個 `cast send` 後面掛 `|| echo`,失敗被吞掉,
 job 依然 success。已修正 —— 現在寫入 0 筆會讓 job 失敗,而且
 `.github/workflows/oracle-health.yml` 每 3 小時獨立檢查鏈上事實一次。
 
 ## 復原程序
 
-以下需要私鑰,由人工執行。
+以下需要私鑰,由人工執行。**Step A / B 在 2026-08-06 之前已執行完成**(見上方
+表格),保留為紀錄與重新部署時的參照;要確認現況請直接跳到 Step C。
 
 **Step A — 給 keeper 加油**(需要部署者 `0xE80A8136…Eb93` 的私鑰)
 
@@ -70,6 +90,8 @@ cast balance 0x540aECD37E7A7885824e7b7e996eBddfb842ef17 --rpc-url https://sepoli
 ```
 
 owner 應為 `0x540aECD3…ef17`,餘額應大於 0。
+**2026-08-06 實測即為此結果**(owner = `0x540aECD3…ef17`、餘額 ≈0.0499 ETH),
+所以這一步現在是「確認沒有回退」,不是「等待被完成」。
 
 **Step D — 手動觸發 keeper 並確認**
 
@@ -180,6 +202,26 @@ HTML 當測資釘住它。
 
 ## 待輪替的憑證
 
-- Infura project id `7cdfb4923cee46ed9238a5181e4e9a4d` —— 曾硬編碼在
-  `frontend/price_keeper.cjs`,雖已刪檔,仍留在 git 歷史中。請到 Infura
-  儀表板刪除該 project 或重置金鑰。**刪除檔案不等於撤銷憑證。**
+### 1. Infura project id `7cdfb4923cee46ed9238a5181e4e9a4d` —— **尚未作廢**
+
+這一節先前寫「雖已刪檔,仍留在 git 歷史中」,**低估了實際情況**:2026-08-06 稽核
+時它不只在歷史裡,連 **HEAD 的被追蹤檔案** `frontend/check_all_pepe_balances.cjs:3`
+都還硬編碼著它(master 另有 `frontend/price_keeper.cjs:49`)。
+
+**現況(本次稽核後)**:
+
+- ✅ 已從 HEAD 移除 —— `frontend/check_all_pepe_balances.cjs` 已刪除(它是零引用的
+  死碼:全 repo 沒有任何檔案、script 或 workflow 參照它,且指向已凍結的 Sepolia
+  位址)。`frontend/price_keeper.cjs` 在本分支早已刪除。
+- ❌ **歷史仍可達,token 仍然有效** —— repo 是 PUBLIC,任何人都能從舊 commit 取出。
+- **待辦(必須人工執行)**:到 Infura 儀表板**刪除該 project 或重置金鑰**。
+
+> **刪除檔案不等於撤銷憑證。** 這一節先前的措辭正是讓這件事被擱置的原因 ——
+> 「已刪檔」讀起來像是已經處理完了。
+
+### 2. Deployer / owner 私鑰 `0xE80A8136…Eb93` —— **P0,最高優先**
+
+私鑰本體在 public repo 的 git 歷史中(commits `1d8536e` / `e912bff` / `cf712ec`),
+而該地址目前仍是四個合約的 owner、x402 的 payTo、以及 demo session 的 user。
+
+完整的輪替步驟書:[`RUNBOOK_KEY_ROTATION.md`](RUNBOOK_KEY_ROTATION.md)。

@@ -41,3 +41,32 @@ export function classifyFreshness(a: {
 export function blocksTrading(f: Freshness): boolean {
   return f.level === 'stale' || f.level === 'unknown'
 }
+
+/**
+ * 擋單時要對使用者說的那句話。
+ *
+ * 只把按鈕變灰是最糟的做法——使用者看不出是自己填錯、錢包沒連、還是鏈上價過期，
+ * 只會一直重按。這裡把「為什麼」寫出來，並附上價齡。
+ * 不需要擋單時回 null，呼叫端就用它決定要不要渲染提示。
+ */
+export function stalenessNotice(f: Freshness | undefined | null, assetLabel?: string): string | null {
+  if (!f || !blocksTrading(f)) return null
+  const who = assetLabel ? `${assetLabel} 的` : ''
+  if (f.level === 'unknown') {
+    return `⛔ 無法確認${who}鏈上指數價的更新時間（${f.label}）。在確認之前不送單，避免鏈上以 StalePrice 拒絕後白付 gas。`
+  }
+  return `⛔ ${who}鏈上指數價已超過合約的 maxPriceAge（最後更新：${f.label}）。此時開倉／平倉都會被 StalePrice revert，請等 keeper 更新後再試。`
+}
+
+/**
+ * 一次要動到多個標的時（跟單、批次平倉），只要有一個過期整筆就會 revert。
+ * 回傳第一個擋單的標的，讓 UI 能指名道姓而不是含糊地說「有東西過期了」。
+ */
+export function firstBlocking<T extends { label: string; freshness?: Freshness | null }>(
+  entries: readonly T[],
+): T | null {
+  for (const e of entries) {
+    if (e.freshness && blocksTrading(e.freshness)) return e
+  }
+  return null
+}

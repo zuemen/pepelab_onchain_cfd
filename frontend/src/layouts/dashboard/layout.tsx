@@ -34,8 +34,8 @@ import { NavMobile } from './nav-mobile';
 import { VerticalDivider } from './content';
 import { NavVertical } from './nav-vertical';
 import { NavHorizontal } from './nav-horizontal';
-import { _account } from '../nav-config-account';
 import { Searchbar } from '../components/searchbar';
+import { accountNavData } from '../nav-config-account';
 import { MenuButton } from '../components/menu-button';
 import { AccountDrawer } from '../components/account-drawer';
 import { SettingsButton } from '../components/settings-button';
@@ -191,7 +191,7 @@ export function DashboardLayout({
           {wallet.address && <PepeAvatar address={wallet.address} size={32} editable />}
 
           {/** @slot Account drawer */}
-          <AccountDrawer data={_account} />
+          <AccountDrawer data={accountNavData(wallet.address)} />
         </Box>
       ),
     };

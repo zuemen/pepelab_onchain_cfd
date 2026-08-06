@@ -136,19 +136,51 @@ contract GuardedOracle is AccessControl {
 
         uint256 old = a.price;
 
-        // Reject rather than clamp: a clamped price is a fabricated price, and
-        // the caller would have no way to know the number is not the market.
-        if (maxDeviationBps != 0 && _deviationExceeded(old, newPrice, maxDeviationBps)) {
-            emit PriceRejected(assetId, newPrice, old, "deviation");
-            revert DeviationTooLarge(assetId, newPrice, old);
-        }
-
+        // ── M-2: the two gates used to contradict each other ──────────────────
+        //
+        // The step cap says "no post may move the price more than
+        // maxDeviationBps from the LAST POST". The reference check said "every
+        // post must land within maxDeviationBps of the REFERENCE". When the
+        // market gaps — say −30% — those two demands have no common solution:
+        //   * posting the true price is rejected by the step cap (30% > 10%);
+        //   * posting a legal −10% step is rejected by the reference check,
+        //     because a −10% price is still 22% away from a −30% reference.
+        // The oracle freezes at the pre-gap price precisely when it matters
+        // most, and the only exit was an admin setting maxDeviationBps to 0 —
+        // i.e. removing the control entirely (docs/ROLE_SEPARATION.md,
+        // 2026-07-27).
+        //
+        // The two gates are now made consistent, and the reference is treated
+        // as what it is: the trust anchor.
+        //   * If the reference AGREES with the post, the post is confirmed by a
+        //     decentralized feed, so the step cap — whose whole purpose is to
+        //     bound an unverified move — does not apply. A real 30% gap lands
+        //     in one call.
+        //   * If the reference DISAGREES, the post must be a converging step:
+        //     strictly closer to the reference than the current price is, and
+        //     still inside the step cap. That is the same "walk towards the
+        //     target" shape the keeper's stepTowards already implements, so a
+        //     keeper can always make progress even with the reference wired in.
+        //   * If the reference is unavailable, behaviour is unchanged: the step
+        //     cap alone applies (an outage must not freeze the platform).
+        bool refConfirms;
         if (referenceSource != address(0)) {
             (bool ok, uint256 refPrice) = _reference(assetId);
-            if (ok && _deviationExceeded(refPrice, newPrice, maxDeviationBps)) {
-                emit PriceRejected(assetId, newPrice, refPrice, "reference");
-                revert ReferenceDisagrees(assetId, newPrice, refPrice);
+            if (ok) {
+                if (!_deviationExceeded(refPrice, newPrice, maxDeviationBps)) {
+                    refConfirms = true;
+                } else if (!_convergesTowards(old, newPrice, refPrice)) {
+                    emit PriceRejected(assetId, newPrice, refPrice, "reference");
+                    revert ReferenceDisagrees(assetId, newPrice, refPrice);
+                }
             }
+        }
+
+        // Reject rather than clamp: a clamped price is a fabricated price, and
+        // the caller would have no way to know the number is not the market.
+        if (!refConfirms && maxDeviationBps != 0 && _deviationExceeded(old, newPrice, maxDeviationBps)) {
+            emit PriceRejected(assetId, newPrice, old, "deviation");
+            revert DeviationTooLarge(assetId, newPrice, old);
         }
 
         a.price = newPrice;
@@ -217,5 +249,16 @@ contract GuardedOracle is AccessControl {
         if (oldPrice == 0) return false;
         uint256 diff = oldPrice > newPrice ? oldPrice - newPrice : newPrice - oldPrice;
         return diff * BPS_DENOM > bps * oldPrice;
+    }
+
+    /// @dev True when `newPrice` is strictly closer to `refPrice` than `old` is.
+    ///      This is the stepping rule that keeps the reference check and the
+    ///      deviation cap solvable at the same time (see updatePrice).
+    function _convergesTowards(uint256 old, uint256 newPrice, uint256 refPrice)
+        internal pure returns (bool)
+    {
+        uint256 dOld = old > refPrice ? old - refPrice : refPrice - old;
+        uint256 dNew = newPrice > refPrice ? newPrice - refPrice : refPrice - newPrice;
+        return dNew < dOld;
     }
 }

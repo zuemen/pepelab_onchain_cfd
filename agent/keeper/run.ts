@@ -10,8 +10,17 @@
 //   KEEPER_CHAIN=base-sepolia npx tsx keeper/run.ts
 //   KEEPER_CHAIN=base-sepolia DRY_RUN=1 npx tsx keeper/run.ts   # 只讀不寫
 import { ethers } from "ethers";
-import { toPrice8, planUpdate, stepTowards, deviationAccepted } from "./core.ts";
-import { fetchPrice } from "./feeds.ts";
+import {
+  toPrice8,
+  planUpdate,
+  stepTowards,
+  deviationAccepted,
+  guardDeviation,
+  DEFAULT_MAX_DEVIATION,
+  DEFAULT_REJECT_DEVIATION,
+  type ParsedFeed,
+} from "./core.ts";
+import { fetchPrice, type QuoteMeta } from "./feeds.ts";
 
 const SYMBOLS = [
   "sBTC", "sETH", "sAAPL", "sTSLA", "sNVDA",
@@ -21,6 +30,11 @@ const SYMBOLS = [
 const DEVIATION_THRESHOLD = Number(process.env.KEEPER_DEVIATION ?? "0.001"); // 0.1%
 const HEARTBEAT_SEC = Number(process.env.KEEPER_HEARTBEAT ?? "900");         // 15 分鐘
 const DRY_RUN = process.env.DRY_RUN === "1";
+// A-5：寫進 MockOracle（交易所實際讀的那顆）的偏離上限與拒寫門檻。
+const MAX_DEVIATION = Number(process.env.KEEPER_MAX_DEVIATION ?? String(DEFAULT_MAX_DEVIATION));
+const REJECT_DEVIATION = Number(process.env.KEEPER_REJECT_DEVIATION ?? String(DEFAULT_REJECT_DEVIATION));
+// 部分失敗門檻：超過這個比例的資產無法更新就讓 CI 變紅（預設 30%）。
+const MAX_DEGRADED_RATIO = Number(process.env.KEEPER_MAX_DEGRADED_RATIO ?? "0.3");
 
 const CHAIN = (process.env.KEEPER_CHAIN ?? "base-sepolia").trim();
 const CHAIN_ID = CHAIN === "sepolia" ? 11155111 : 84532;
@@ -134,6 +148,8 @@ async function main(): Promise<void> {
   let failed = 0;
   let available = 0;   // 拿到合法價格的資產數
   let skipped = 0;     // 來源壞掉而跳過的資產數
+  let rejected = 0;    // 價格離譜、被偏離上限拒寫的資產數（A-5）
+  let clamped = 0;     // 被夾到偏離上限、分段逼近的資產數
 
   for (const symbol of SYMBOLS) {
     const assetId = ethers.id(symbol); // == cast keccak "$SYM"
@@ -141,7 +157,7 @@ async function main(): Promise<void> {
     // 優先中繼鏈上的去中心化聚合價；聚合器沒有這個資產的 feed（測試網上多數股票
     // 都是如此）或自報過期時，才退回外部 API。
     const relayed = await fetchFromRelay(relay, assetId);
-    const feed =
+    const feed: ParsedFeed & QuoteMeta & { source: string } =
       relayed !== null
         ? { value: relayed, reason: "ok", source: "chainlink/pyth relay" }
         : await fetchPrice(symbol);
@@ -174,14 +190,44 @@ async function main(): Promise<void> {
     });
 
     const ageMin = lastUpdated > 0 ? ((nowSec - lastUpdated) / 60).toFixed(1) : "n/a";
+    const quoteAge =
+      typeof feed.quoteAgeSec === "number" ? ` quote=${(feed.quoteAgeSec / 3600).toFixed(1)}h` : "";
     console.log(
       `${symbol.padEnd(6)} [${feed.source.padEnd(20)}] live=$${feed.value.toFixed(2).padStart(10)} ` +
-      `chain=$${current.toFixed(2).padStart(10)} age=${ageMin}m → ${plan.write ? "WRITE" : "skip"} (${plan.reason})`,
+      `chain=$${current.toFixed(2).padStart(10)} age=${ageMin}m${quoteAge} → ${plan.write ? "WRITE" : "skip"} (${plan.reason})`,
     );
+    // 偽新鮮度：報價本身很舊（週末收盤價/來源凍結），寫上鏈會讓 updatedAt 看起來
+    // 新鮮但價格是好幾天前的。價格照寫（否則週末會全部跳過），但必須說出來。
+    if (feed.quoteStale) {
+      console.log(
+        `::warning::${symbol} 來源報價已 ${((feed.quoteAgeSec ?? 0) / 3600).toFixed(1)} 小時未更新` +
+          `（可能是週末/假日收盤價）—— 鏈上 updatedAt 會顯示新鮮，但價格並非即時。`,
+      );
+    }
 
-    if (!plan.write || DRY_RUN) continue;
+    if (!plan.write) continue;
 
-    const price8 = toPrice8(feed.value);
+    // A-5：偏離上限。MockOracle 是交易所實際結算/清算所讀的那顆，沒有任何鏈上
+    // 保護，所以「離譜但合法」的價格必須在這裡就被擋下或夾住。
+    const guard = guardDeviation({
+      target: feed.value,
+      current,
+      maxDeviation: MAX_DEVIATION,
+      rejectDeviation: REJECT_DEVIATION,
+    });
+    if (!guard.write) {
+      rejected += 1;
+      console.error(`::error::${symbol} ${guard.reason}`);
+      continue;
+    }
+    if (guard.clamped) {
+      clamped += 1;
+      console.log(`::warning::${symbol} ${guard.reason}`);
+    }
+
+    if (DRY_RUN) continue;
+
+    const price8 = toPrice8(guard.value);
     try {
       const tx = await oracle.updatePrice(assetId, price8);
       await tx.wait();
@@ -189,14 +235,20 @@ async function main(): Promise<void> {
       console.log(`  → MockOracle ✓ ${tx.hash}`);
     } catch (e) {
       failed += 1;
-      console.error(`  → MockOracle ✗ ${(e as Error).message.slice(0, 140)}`);
+      console.error(`::error::${symbol} MockOracle 寫入失敗：${(e as Error).message.slice(0, 140)}`);
       continue;
     }
 
-    if (guarded) await mirror(guarded, assetId, symbol, price8, guardedCap);
+    if (guarded && !(await mirror(guarded, assetId, symbol, price8, guardedCap))) {
+      // 鏡射失敗以前是完全靜默的 console.log。GuardedOracle 追不上就等於那條
+      // 「有保護的價格路徑」實際上是死的，必須算進 failed 並讓 CI 看得到。
+      failed += 1;
+    }
   }
 
-  console.log(`\navailable=${available} skipped=${skipped} wrote=${wrote} failed=${failed}`);
+  console.log(
+    `\navailable=${available} skipped=${skipped} rejected=${rejected} clamped=${clamped} wrote=${wrote} failed=${failed}`,
+  );
 
   // 有價格可寫卻一筆都沒成功 = keeper 壞了。這一定要讓 CI 變紅。
   if (available > 0 && wrote === 0 && failed > 0) {
@@ -209,12 +261,34 @@ async function main(): Promise<void> {
     console.error("::error::所有價格來源都無效 —— 來源可能已下線。");
     process.exit(1);
   }
-  if (failed > 0) console.log(`::warning::寫入 ${wrote} 筆，${failed} 筆失敗。`);
+  // 部分失敗也要紅：10/11 資產跳過而 CI 全綠，正是 oracle 靜默腐爛 9.5 天的原因。
+  const degraded = skipped + rejected;
+  const degradedRatio = degraded / SYMBOLS.length;
+  if (degradedRatio > MAX_DEGRADED_RATIO) {
+    console.error(
+      `::error::${degraded}/${SYMBOLS.length} 個資產無法更新` +
+        `（skipped=${skipped} rejected=${rejected}，${(degradedRatio * 100).toFixed(0)}% > ` +
+        `${(MAX_DEGRADED_RATIO * 100).toFixed(0)}% 門檻）—— 價格來源或偏離守衛出了問題。`,
+    );
+    process.exit(1);
+  }
+  if (rejected > 0) {
+    console.error(`::error::${rejected} 個資產的價格離譜被拒寫，請人工確認來源。`);
+    process.exit(1);
+  }
+  if (failed > 0) {
+    console.error(`::error::寫入 ${wrote} 筆，${failed} 筆失敗。`);
+    process.exit(1);
+  }
 }
 
 /**
  * 把價格鏡射進 GuardedOracle，超出偏離上限時走一步而不是放棄。
  * 舊 keeper 每次都寫全額目標價，落後超過上限後就永遠被 DeviationTooLarge 打回。
+ *
+ * 回 true 代表「這一輪沒有問題」（含：資產不存在、已凍結、已是目標值）；
+ * 回 false 代表真的失敗 —— 呼叫端會計進 failed 讓 CI 變紅。舊版把失敗寫成
+ * `console.log` 完全靜默，於是「有保護的價格路徑」死掉也沒人知道。
  */
 async function mirror(
   guarded: ethers.Contract,
@@ -222,34 +296,36 @@ async function mirror(
   symbol: string,
   target8: bigint,
   cap: bigint,
-): Promise<void> {
+): Promise<boolean> {
   try {
     const [price, , exists, frozen] = (await guarded.peek(assetId)) as [
       bigint, bigint, boolean, boolean,
     ];
-    if (!exists) return;
+    if (!exists) return true;
     if (frozen) {
       console.log(`  → GuardedOracle 已凍結，略過鏡射`);
-      return;
+      return true;
     }
 
     const next = stepTowards(price, target8, cap);
     if (next === price) {
       console.log(`  → GuardedOracle 已是目標值`);
-      return;
+      return true;
     }
     if (!deviationAccepted(price, next, cap)) {
       // 到不了這裡；到了代表 stepTowards 與合約失去同步，必須大聲。
       console.error(`::error::${symbol} stepTowards 產生會被拒絕的值 ${next}（cap=${cap}）`);
-      return;
+      return false;
     }
 
     const tx = await guarded.updatePrice(assetId, next);
     await tx.wait();
     const partial = next !== target8 ? "（分段逼近，下一輪繼續）" : "";
     console.log(`  → GuardedOracle ✓ ${next} ${partial}`);
+    return true;
   } catch (e) {
-    console.log(`  → GuardedOracle 鏡射失敗：${(e as Error).message.slice(0, 120)}`);
+    console.error(`::error::${symbol} GuardedOracle 鏡射失敗：${(e as Error).message.slice(0, 120)}`);
+    return false;
   }
 }
 

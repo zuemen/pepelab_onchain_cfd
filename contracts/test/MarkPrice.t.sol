@@ -97,15 +97,27 @@ contract MarkPriceTest is Test {
 
     // ── mark drives PnL: long pays the premium it created ───────────────────────
 
-    function test_markAffectsPnL_vsIndex() public {
-        // Open long with cap ON; mark > index, but entry is index → opening a
-        // long into a longs-heavy book shows immediate positive PnL from the
-        // premium (mark above entry index). Compare to cap OFF (zero PnL).
+    /// @dev C-1 changed what this test can legitimately assert. It used to check
+    ///      that opening a lone long into an empty book showed immediate positive
+    ///      PnL — i.e. that a position was valued at a premium IT had created.
+    ///      That is precisely the arbitrage the audit found: entry on index, PnL
+    ///      on a mark the position itself inflated, round-trippable for a
+    ///      risk-free 1%. A position's own notional is now excluded from its own
+    ///      mark, so the premium can only be moved by OTHER traders' flow — which
+    ///      is what this now asserts.
+    function test_markAffectsPnL_vsOtherTradersFlow() public {
         exchange.setMarkPremiumCapBps(50);
+
+        // Alice opens first into an empty book: entry == index, mark == index.
         vm.prank(alice);
         uint256 pid = exchange.openPosition(BTC, true, 1_000e18, 5);
-        int256 pnlWithMark = exchange.getUnrealizedPnL(pid);
-        assertGt(pnlWithMark, 0); // mark (entry+0.5%) above index entry
+        assertEq(exchange.getUnrealizedPnL(pid), 0, "must not profit from own OI");
+
+        // Bob then piles into the same side. Alice's mark (which excludes only
+        // her own notional) now carries bob's premium → she is in profit.
+        vm.prank(bob);
+        exchange.openPosition(BTC, true, 1_000e18, 5);
+        assertGt(exchange.getUnrealizedPnL(pid), 0);
 
         // Disable premium → PnL collapses to ~0 (price unchanged at index).
         exchange.setMarkPremiumCapBps(0);

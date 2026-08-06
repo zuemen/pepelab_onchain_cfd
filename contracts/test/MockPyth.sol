@@ -20,6 +20,11 @@ contract MockPyth is IPyth {
         _prices[id].publishTime = ts;
     }
 
+    /// @notice Pyth's confidence interval, in the same units as `price`.
+    function setConf(bytes32 id, uint64 conf) external {
+        _prices[id].conf = conf;
+    }
+
     function getPriceUnsafe(bytes32 id) external view returns (Price memory) {
         return _prices[id];
     }

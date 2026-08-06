@@ -14477,6 +14477,11 @@ function resolvePayTo(feeRouter2) {
   const fromEnv = process.env.PAY_TO?.trim();
   return fromEnv && fromEnv.length > 0 ? fromEnv : feeRouter2;
 }
+var OFFICIAL_BASE_SEPOLIA_USDC = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
+function resolveSettlementToken() {
+  const fromEnv = process.env.X402_SETTLEMENT_TOKEN?.trim();
+  return fromEnv && /^0x[0-9a-fA-F]{40}$/.test(fromEnv) ? fromEnv : OFFICIAL_BASE_SEPOLIA_USDC;
+}
 
 // ../../frontend/src/contracts/addresses.ts
 var ANVIL = {
@@ -38265,14 +38270,16 @@ function computeEdge(input) {
   const fundingComponent = clamp(-input.fundingRateBps * Kf, -60, 60);
   const oiComponent = clamp(-input.oiImbalance * 40, -40, 40);
   const edgeScore = Math.round(clamp(fundingComponent + oiComponent, -100, 100));
-  if (input.isStale) {
+  const tradable = typeof input.tradableNow === "boolean" ? input.tradableNow : typeof input.isStale === "boolean" ? !input.isStale : false;
+  if (!tradable) {
+    const why = typeof input.tradableNow === "boolean" ? "\u93C8\u4E0A\u50F9\u683C\u5DF2\u8D85\u904E\u4EA4\u6613\u6240 maxPriceAge\uFF08\u6B64\u523B\u958B\u5009\u6703 revert StalePrice\uFF09" : typeof input.isStale === "boolean" ? "oracle \u8CC7\u6599\u904E\u671F\uFF08stale\uFF09" : "\u7121\u6CD5\u5224\u5B9A\u50F9\u683C\u65B0\u9BAE\u5EA6\uFF08\u7F3A tradableNow / isStale\uFF09";
     return {
       edgeScore,
       fundingComponent: round2(fundingComponent),
       oiComponent: round2(oiComponent),
       recommendation: "no_trade",
       confidence: Math.abs(edgeScore),
-      reason: "oracle \u8CC7\u6599\u904E\u671F\uFF08stale\uFF09\uFF0C\u672C\u8F2A\u4E0D\u5EFA\u8B70\u9032\u5834"
+      reason: `${why}\uFF0C\u672C\u8F2A\u4E0D\u5EFA\u8B70\u9032\u5834`
     };
   }
   let recommendation;
@@ -38300,7 +38307,14 @@ function enrichOracle(base2, opts = {}) {
   const mmBps = opts.maintenanceMarginBps ?? EDGE_DEFAULTS.maintenanceMarginBps;
   const oiImbalance = round2(computeOiImbalance(base2.longOpenInterest, base2.shortOpenInterest));
   const skewProxyBps = Math.round(oiImbalance * 50);
-  const edge = computeEdge({ fundingRateBps: base2.fundingRateBps, oiImbalance, isStale: base2.isStale, Kf: opts.Kf, entryThreshold: opts.entryThreshold });
+  const edge = computeEdge({
+    fundingRateBps: base2.fundingRateBps,
+    oiImbalance,
+    tradableNow: base2.tradableNow,
+    isStale: base2.isStale,
+    Kf: opts.Kf,
+    entryThreshold: opts.entryThreshold
+  });
   return {
     oiImbalance,
     skewProxyBps,
@@ -38481,6 +38495,12 @@ function parseDidPkh(did) {
 // ../shared/src/verification.ts
 var ZERO3 = "0x0000000000000000000000000000000000000000";
 var ZERO_BYTES32 = "0x0000000000000000000000000000000000000000000000000000000000000000";
+var HTTP_TIMEOUT_MS = Number(process.env.VERIFICATION_HTTP_TIMEOUT_MS ?? "5000");
+function redact(msg, secret) {
+  let out = msg;
+  if (secret && secret.length >= 6) out = out.split(secret).join("<redacted>");
+  return out.replace(/apikey=[^&\s]+/gi, "apikey=<redacted>").slice(0, 200);
+}
 var TIER_ASSESSMENT = {
   low: "Minimal concerns identified",
   moderate: "Some concerns, review recommended",
@@ -38501,12 +38521,21 @@ function computeRiskScore(checks) {
   const riskTier = riskTierOf(overallRiskScore);
   return { overallRiskScore, riskTier, assessment: TIER_ASSESSMENT[riskTier] };
 }
+function canonicalJson(v) {
+  if (v === null || typeof v !== "object") return JSON.stringify(v ?? null);
+  if (Array.isArray(v)) return `[${v.map(canonicalJson).join(",")}]`;
+  const entries = Object.entries(v).filter(([, val]) => val !== void 0).sort(([a], [b2]) => a < b2 ? -1 : a > b2 ? 1 : 0);
+  return `{${entries.map(([k, val]) => `${JSON.stringify(k)}:${canonicalJson(val)}`).join(",")}}`;
+}
 function checkDigest(c) {
-  const canonical = JSON.stringify({
+  const canonical = canonicalJson({
     type: c.type,
+    name: c.name,
     applicable: c.applicable,
+    passed: c.passed,
     score: c.score,
-    details: c.details
+    details: c.details,
+    evidence: c.evidence ?? null
   });
   return ethers_exports.id(canonical);
 }
@@ -38538,16 +38567,23 @@ var VERIFIER_TYPES = {
   AgentVerificationAttestation: [
     { name: "subject", type: "string" },
     { name: "overallRiskScore", type: "uint256" },
+    { name: "riskTier", type: "string" },
     { name: "summaryProofId", type: "bytes32" },
-    { name: "issuedAt", type: "uint256" }
+    { name: "issuedAt", type: "uint256" },
+    { name: "expiresAt", type: "uint256" },
+    { name: "nonce", type: "bytes32" }
   ]
 };
+var DEFAULT_ATTESTATION_TTL_SEC = 15 * 60;
 function verifierValue(p) {
   return {
     subject: p.subject,
     overallRiskScore: BigInt(p.overallRiskScore),
+    riskTier: p.riskTier,
     summaryProofId: p.summaryProofId,
-    issuedAt: BigInt(p.issuedAt)
+    issuedAt: BigInt(p.issuedAt),
+    expiresAt: BigInt(p.expiresAt),
+    nonce: p.nonce
   };
 }
 async function checkETV(provider2, targets) {
@@ -38617,8 +38653,8 @@ async function checkSCV(provider2, targets, opts = {}) {
       continue;
     }
     try {
-      const url = `https://api.etherscan.io/v2/api?chainid=${chainId}&module=contract&action=getsourcecode&address=${t.address}&apikey=${apiKey}`;
-      const res = await fetch(url);
+      const url = `https://api.etherscan.io/v2/api?chainid=${chainId}&module=contract&action=getsourcecode&address=${encodeURIComponent(t.address)}&apikey=${encodeURIComponent(apiKey)}`;
+      const res = await fetch(url, { signal: AbortSignal.timeout(HTTP_TIMEOUT_MS) });
       const json = await res.json();
       const entry = json.result?.[0];
       const sourceVerified = !!entry?.SourceCode && entry.SourceCode.length > 0;
@@ -38634,7 +38670,7 @@ async function checkSCV(provider2, targets, opts = {}) {
         address: t.address,
         codePresent: true,
         sourceVerified: "error",
-        error: err.message
+        error: redact(err.message, apiKey)
       };
       scoreSum += 30;
     }
@@ -38668,20 +38704,20 @@ async function checkWAV(apiBaseUrl, opts = {}) {
   evidence.https = httpsOk;
   let rootOk = false;
   try {
-    const r = await fetch(base2 + "/", { method: "GET" });
+    const r = await fetch(base2 + "/", { method: "GET", signal: AbortSignal.timeout(HTTP_TIMEOUT_MS) });
     rootOk = r.status === 200;
     evidence.rootStatus = r.status;
   } catch (err) {
-    evidence.rootError = err.message;
+    evidence.rootError = redact(err.message);
   }
   let payWallOk = false;
   try {
-    const r = await fetch(base2 + paidPath, { method: "GET" });
+    const r = await fetch(base2 + paidPath, { method: "GET", signal: AbortSignal.timeout(HTTP_TIMEOUT_MS) });
     payWallOk = r.status === 402;
     evidence.paidPath = paidPath;
     evidence.paidStatus = r.status;
   } catch (err) {
-    evidence.paidError = err.message;
+    evidence.paidError = redact(err.message);
   }
   const passes = [httpsOk, rootOk, payWallOk].filter(Boolean).length;
   const score = Math.round((3 - passes) / 3 * 100);
@@ -38738,9 +38774,7 @@ async function checkWV(provider2, agentAddress, opts = {}) {
     }
   }
   evidence.possession = possession;
-  const baseline = [nonZero, isEoa, hasHistory];
-  if (possession === true) baseline.push(true);
-  if (possession === false) baseline.push(false);
+  const baseline = [nonZero, isEoa, hasHistory, possession === true];
   const passes = baseline.filter(Boolean).length;
   const score = Math.round((baseline.length - passes) / baseline.length * 100);
   return {
@@ -38779,6 +38813,9 @@ async function buildAgentVerification(params) {
   const { overallRiskScore, riskTier, assessment } = computeRiskScore(checks);
   const proofIds = buildProofIds(checks);
   const issuedAtSec = Math.floor(Date.now() / 1e3);
+  const ttlSec = params.ttlSec ?? Number(process.env.AGENT_ATTESTATION_TTL ?? DEFAULT_ATTESTATION_TTL_SEC);
+  const expiresAtSec = issuedAtSec + (Number.isFinite(ttlSec) && ttlSec > 0 ? ttlSec : DEFAULT_ATTESTATION_TTL_SEC);
+  const nonce = ethers_exports.hexlify(ethers_exports.randomBytes(32));
   const verifierAddr = await params.verifier.getAddress();
   const verifierDid = agentDid(verifierAddr);
   const proofValue = await params.verifier.signTypedData(
@@ -38787,8 +38824,11 @@ async function buildAgentVerification(params) {
     verifierValue({
       subject: subjectDid,
       overallRiskScore,
+      riskTier,
       summaryProofId: proofIds.summaryProofId,
-      issuedAt: issuedAtSec
+      issuedAt: issuedAtSec,
+      expiresAt: expiresAtSec,
+      nonce
     })
   );
   const iso = new Date(issuedAtSec * 1e3).toISOString();
@@ -38806,7 +38846,10 @@ async function buildAgentVerification(params) {
     checks,
     proofIds,
     verifier: verifierDid,
+    verifierEphemeral: params.verifierEphemeral === true,
     issuedAt: iso,
+    expiresAt: new Date(expiresAtSec * 1e3).toISOString(),
+    nonce,
     proof: {
       type: "EthereumEip712Signature2021",
       created: iso,
@@ -58262,8 +58305,9 @@ var USDC_ABI = [
   // MockUSDC only (TESTNET); real USDC reverts → skipped
 ];
 var PK = process.env.FEE_SETTLEMENT_PRIVATE_KEY?.trim();
-var SETTLEMENT_TOKEN = process.env.X402_SETTLEMENT_TOKEN?.trim() || ADDRESSES.MockUSDC;
+var SETTLEMENT_TOKEN = resolveSettlementToken();
 var SETTLEMENT_ROUTER = process.env.X402_FEE_ROUTER?.trim() || ADDRESSES.FeeRouter;
+var MINTABLE_MOCK_USDC = ADDRESSES.MockUSDC;
 var wallet = null;
 var feeRouter = null;
 var usdc = null;
@@ -58308,13 +58352,20 @@ async function _settle(trader, feeUsd) {
     const me = wallet.address;
     const bal = await usdc.balanceOf(me);
     if (bal < atomic) {
+      const mintable = SETTLEMENT_TOKEN.toLowerCase() === MINTABLE_MOCK_USDC.toLowerCase();
+      if (!mintable) {
+        return {
+          status: "failed",
+          error: `\u7D50\u7B97 token \u9918\u984D\u4E0D\u8DB3\uFF08${SETTLEMENT_TOKEN}\uFF0C\u975E\u53EF\u9444\u5E63\u7684 MockUSDC\uFF09\u3002treasury \u9700\u5148\u6536\u5230 x402 \u4ED8\u6B3E\u7684 USDC\u3002`
+        };
+      }
       try {
         const mintTx = await usdc.mint(me, atomic * 1000n);
         await mintTx.wait();
-      } catch {
+      } catch (e) {
         return {
           status: "failed",
-          error: `\u7D50\u7B97 token \u9918\u984D\u4E0D\u8DB3\u4E14\u4E0D\u53EF mint\uFF08${SETTLEMENT_TOKEN}\uFF09\u3002treasury \u9700\u5148\u6536\u5230 x402 \u4ED8\u6B3E\u7684 USDC\u3002`
+          error: `MockUSDC \u9444\u5E63\u5931\u6557\uFF1A${e.message}`
         };
       }
     }
@@ -58348,7 +58399,14 @@ async function getOnchainRevenue(trader) {
       model: "FeeRouter 70/20/10 (trader/platform/vault)",
       onChain: false,
       note: "X402_FEE_ROUTER \u672A\u8A2D",
-      totals: { count: 0, feeUsd: 0, traderShare: 0, platformShare: 0, vaultShare: 0 }
+      totals: {
+        count: null,
+        countNote: "\u672A\u63A5\u93C8\u4E0A FeeRouter\uFF0C\u7121\u8CC7\u6599",
+        feeUsd: 0,
+        traderShare: 0,
+        platformShare: 0,
+        vaultShare: 0
+      }
     };
   }
   const provider2 = makeProvider();
@@ -58373,9 +58431,13 @@ async function getOnchainRevenue(trader) {
     network: "base-sepolia",
     settlementToken: usdcAddr,
     feeRouter: ROUTER,
-    // 與前端既有 Revenue 形狀相容（count 鏈上無事件掃描，留 0）。
+    // 與前端既有 Revenue 形狀相容。
+    // 稽核（四·Medium）：`count` 以前硬編 0，讀者會以為「一筆都沒有」，但同一個
+    // 物件裡的 feeUsd 明明是正數 —— 一個看起來像資料的假值比缺值更糟。鏈上沒有
+    // 事件掃描就沒有筆數，誠實回 null 並說明。
     totals: {
-      count: 0,
+      count: null,
+      countNote: "\u93C8\u4E0A\u53EA\u7D2F\u8A08\u91D1\u984D\u3001\u7121\u4E8B\u4EF6\u6383\u63CF\uFF0C\u6545\u7121\u6CD5\u5F97\u77E5\u7B46\u6578\uFF08\u4E0D\u662F 0\uFF09",
       feeUsd: round(P * 5),
       traderShare: round(P * 3.5),
       platformShare: round(P),
@@ -58837,26 +58899,35 @@ async function getCandles(rawSymbol, rawInterval = "1h", rawLimit) {
 var NETWORK = process.env.X402_NETWORK ?? "base-sepolia";
 var FACILITATOR_URL = process.env.X402_FACILITATOR_URL ?? "https://x402.org/facilitator";
 var PAY_TO = resolvePayTo(ADDRESSES.FeeRouter);
-var SETTLEMENT_TOKEN2 = process.env.X402_SETTLEMENT_TOKEN?.trim() || "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
+var SETTLEMENT_TOKEN2 = resolveSettlementToken();
 var PRICE_SIGNALS = 0.01;
 var PRICE_ORACLE = 5e-3;
 var DEFAULT_DEMO_TRADER = "0xE80A81360608C1342e66743F70a00f75d792Eb93";
 var provider = makeProvider();
 var contracts2 = makeContracts(provider);
+var VERIFIER_IS_EPHEMERAL = (() => {
+  const pk = process.env.VERIFIER_PRIVATE_KEY?.trim();
+  return !(pk && pk.startsWith("0x") && pk.length === 66);
+})();
 var VERIFIER_WALLET = (() => {
   const pk = process.env.VERIFIER_PRIVATE_KEY?.trim();
-  if (pk && pk.startsWith("0x") && pk.length === 66) return new ethers_exports.Wallet(pk);
+  if (!VERIFIER_IS_EPHEMERAL) return new ethers_exports.Wallet(pk);
   console.warn("[verifier] \u672A\u8A2D VERIFIER_PRIVATE_KEY \u2192 \u4F7F\u7528\u81E8\u6642\u96A8\u6A5F verifier\uFF1B\u6B63\u5F0F\u74B0\u5883\u8ACB\u56FA\u5B9A\u8A2D\u5B9A\u4EE5\u4FDD\u8EAB\u5206\u7A69\u5B9A\u3002");
   return ethers_exports.Wallet.createRandom();
 })();
+var PUBLIC_URL_ALLOWLIST = (process.env.SIGNAL_API_URL_ALLOWLIST ?? "").split(",").map((s) => s.trim().replace(/\/$/, "")).filter(Boolean);
+var FALLBACK_API_BASE_URL = "http://localhost:4021";
 function resolveApiBaseUrl(reqUrl) {
   const fromEnv = process.env.SIGNAL_API_PUBLIC_URL?.trim();
   if (fromEnv) return fromEnv.replace(/\/$/, "");
   try {
-    return new URL(reqUrl).origin;
+    const origin = new URL(reqUrl).origin;
+    if (PUBLIC_URL_ALLOWLIST.includes(origin)) return origin;
+    const host = new URL(origin).hostname;
+    if (host === "localhost" || host === "127.0.0.1") return origin;
   } catch {
-    return "http://localhost:4021";
   }
+  return FALLBACK_API_BASE_URL;
 }
 var ETV_TARGETS = [
   { label: "USDC (settlement)", address: SETTLEMENT_TOKEN2 },
@@ -58879,10 +58950,67 @@ var DEMO_COOLDOWN_MS = Number(process.env.DEMO_COOLDOWN_MS ?? "15000");
 var DEMO_MAX_BUYS = Number(process.env.DEMO_MAX_BUYS ?? "50");
 var lastBuyByIp = /* @__PURE__ */ new Map();
 var demoBuyCount = 0;
+function pruneIpMap(map, ttlMs, cap = 5e3) {
+  const now = Date.now();
+  for (const [k, t] of map) if (now - t > ttlMs) map.delete(k);
+  if (map.size > cap) {
+    const excess = map.size - cap;
+    let i = 0;
+    for (const k of map.keys()) {
+      map.delete(k);
+      if (++i >= excess) break;
+    }
+  }
+}
+function clientIp(c) {
+  return c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || c.req.header("x-real-ip") || "unknown";
+}
+var FREE_RATE_WINDOW_MS = Number(process.env.FREE_RATE_WINDOW_MS ?? "60000");
+var FREE_RATE_MAX = Number(process.env.FREE_RATE_MAX ?? "60");
+var freeHits = /* @__PURE__ */ new Map();
+function freeRateLimited(ip) {
+  const now = Date.now();
+  const e = freeHits.get(ip);
+  if (!e || now >= e.resetAt) {
+    freeHits.set(ip, { count: 1, resetAt: now + FREE_RATE_WINDOW_MS });
+    if (freeHits.size > 5e3) {
+      for (const [k, v] of freeHits) if (now >= v.resetAt) freeHits.delete(k);
+    }
+    return { limited: false, retryAfterSec: 0 };
+  }
+  e.count += 1;
+  if (e.count > FREE_RATE_MAX) {
+    return { limited: true, retryAfterSec: Math.ceil((e.resetAt - now) / 1e3) };
+  }
+  return { limited: false, retryAfterSec: 0 };
+}
+var CORS_ALLOWED_ORIGINS = (process.env.CORS_ALLOWED_ORIGINS ?? "http://localhost:5173,http://localhost:4173,https://pepelab-onchain-cfd-djot.vercel.app").split(",").map((s) => s.trim().replace(/\/$/, "")).filter(Boolean);
 function createApp() {
   const app2 = new Hono2();
   app2.use("*", cors({ origin: "*", allowMethods: ["GET", "POST", "OPTIONS"] }));
+  app2.use("/demo/*", async (c, next) => {
+    if (c.req.method === "OPTIONS") return next();
+    const origin = c.req.header("origin")?.replace(/\/$/, "");
+    if (origin && !CORS_ALLOWED_ORIGINS.includes(origin)) {
+      return c.json({ ok: false, error: `origin \u672A\u5728\u767D\u540D\u55AE\u5167\uFF1A${origin}` }, 403);
+    }
+    return next();
+  });
   app2.get("/healthz", (c) => c.text("ok"));
+  app2.use("*", async (c, next) => {
+    const p = c.req.path;
+    if (p === "/healthz") return next();
+    if (p.startsWith("/oracle/") || p.startsWith("/signals/")) return next();
+    const { limited, retryAfterSec } = freeRateLimited(clientIp(c));
+    if (limited) {
+      return c.json(
+        { ok: false, error: `rate limited \u2014 \u6BCF ${FREE_RATE_WINDOW_MS / 1e3}s \u4E0A\u9650 ${FREE_RATE_MAX} \u6B21\uFF0C\u8ACB ${retryAfterSec}s \u5F8C\u518D\u8A66` },
+        429,
+        { "Retry-After": String(retryAfterSec) }
+      );
+    }
+    return next();
+  });
   app2.get(
     "/",
     (c) => c.json({
@@ -58897,7 +59025,7 @@ function createApp() {
       revenueModel: `x402 \u4ED8\u6B3E\u76F4\u63A5\u9032 payTo\uFF08${PAY_TO}\uFF09\uFF1B70/20/10 \u5206\u6F64\u7531\u5E73\u53F0\u53E6\u884C\u900F\u904E FeeRouter.routeExternalRevenue \u4E0A\u93C8\u7D50\u7B97\uFF0C\u7D2F\u8A08\u53EF\u65BC /revenue \u67E5\u8A62\u3002\u5169\u8005\u662F\u4E0D\u540C\u7684\u5169\u7B46\u4EA4\u6613\u3002`,
       endpoints: {
         "GET /signals/:trader": { price: `$${PRICE_SIGNALS}`, paid: true, desc: "trader \u7E3E\u6548 + \u958B\u5009\u5EFA\u8B70" },
-        "GET /oracle/:asset": { price: `$${PRICE_ORACLE}`, paid: true, desc: "\u6C7A\u7B56\u7D1A\u5FEB\u7167\uFF1A\u50F9\u683C / funding / OI \u5931\u8861 / \u9810\u4F30\u6E05\u7B97\u50F9 / edge \u5EFA\u8B70\uFF08long\xB7short\xB7no_trade\uFF09" },
+        "GET /oracle/:asset": { price: `$${PRICE_ORACLE}`, paid: true, desc: "\u6C7A\u7B56\u7D1A\u5FEB\u7167\uFF1A\u50F9\u683C / funding / OI \u5931\u8861 / \u9810\u4F30\u6E05\u7B97\u50F9 / edge \u5EFA\u8B70\uFF08long\xB7short\xB7no_trade\uFF09\u3002\u8207 /signals \u4E00\u6A23\u6703\u8D70 FeeRouter 70/20/10 \u7D50\u7B97\u4E26\u56DE settlementTx" },
         "GET /revenue": { price: "free", desc: "\u93C8\u4E0A 70/20/10 \u7D2F\u8A08\uFF08\u53EF\u9078 ?trader=\uFF09" },
         "GET /candles/:symbol": {
           price: "free",
@@ -58950,6 +59078,9 @@ function createApp() {
         scvTargets: SCV_TARGETS,
         explorerApiKey: process.env.ETHERSCAN_API_KEY?.trim() || process.env.BASESCAN_API_KEY?.trim(),
         paidPath: "/oracle/sBTC",
+        // 誠實標示降級：未設 VERIFIER_PRIVATE_KEY 時每個實例一把隨機金鑰，
+        // 簽章仍真、但那個 verifier 身分無法被任何人 pin 住。
+        verifierEphemeral: VERIFIER_IS_EPHEMERAL,
         // 若伺服器持有的 session key 正好是此 agent，附上持有證明（WV）。
         holderSigner: (() => {
           const s = makeSigner(provider);
@@ -58967,8 +59098,9 @@ function createApp() {
     }
   });
   app2.post("/demo/buy-signal", async (c) => {
-    const ip = c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || c.req.header("x-real-ip") || "unknown";
+    const ip = clientIp(c);
     const now = Date.now();
+    pruneIpMap(lastBuyByIp, Math.max(DEMO_COOLDOWN_MS * 10, 6e5));
     const last = lastBuyByIp.get(ip) ?? 0;
     if (now - last < DEMO_COOLDOWN_MS) {
       return c.json(
@@ -59011,6 +59143,48 @@ function createApp() {
     } catch (err) {
       return c.json({ ok: false, error: err.message }, 400);
     }
+  });
+  app2.use("/oracle/*", async (c, next) => {
+    const asset = decodeURIComponent(c.req.path.split("/")[2] ?? "");
+    if (!asset) {
+      return c.json({ ok: false, error: "\u7F3A\u5C11\u8CC7\u7522\u4EE3\u865F\uFF0C\u4F8B\u5982 /oracle/sBTC" }, 400);
+    }
+    if (!(asset in ASSET_IDS)) {
+      return c.json(
+        {
+          ok: false,
+          error: `\u672A\u77E5\u8CC7\u7522 "${asset}"`,
+          known: Object.keys(ASSET_IDS),
+          note: "\u672A\u4ED8\u6B3E\uFF1A\u7121\u6548\u8F38\u5165\u5728 x402 \u4ED8\u8CBB\u7246\u4E4B\u524D\u5C31\u88AB\u64CB\u4E0B\uFF08x402 \u7121\u9000\u8CBB\u6A5F\u5236\uFF09\u3002"
+        },
+        400
+      );
+    }
+    return next();
+  });
+  app2.use("/signals/*", async (c, next) => {
+    const trader = decodeURIComponent(c.req.path.split("/")[2] ?? "");
+    if (!/^0x[0-9a-fA-F]{40}$/.test(trader)) {
+      return c.json(
+        {
+          ok: false,
+          error: `\u4E0D\u662F\u5408\u6CD5\u7684 EVM \u5730\u5740\uFF1A"${trader}"`,
+          note: "\u672A\u4ED8\u6B3E\uFF1A\u7121\u6548\u8F38\u5165\u5728 x402 \u4ED8\u8CBB\u7246\u4E4B\u524D\u5C31\u88AB\u64CB\u4E0B\uFF08x402 \u7121\u9000\u8CBB\u6A5F\u5236\uFF09\u3002"
+        },
+        400
+      );
+    }
+    if (/^0x0{40}$/.test(trader)) {
+      return c.json(
+        {
+          ok: false,
+          error: "trader \u4E0D\u53EF\u70BA\u96F6\u5730\u5740\uFF0870% \u5206\u6F64\u6703\u88AB\u9001\u9032\u9ED1\u6D1E\uFF09\u3002",
+          note: "\u672A\u4ED8\u6B3E\uFF1A\u7121\u6548\u8F38\u5165\u5728 x402 \u4ED8\u8CBB\u7246\u4E4B\u524D\u5C31\u88AB\u64CB\u4E0B\u3002"
+        },
+        400
+      );
+    }
+    return next();
   });
   app2.use("/oracle/*", async (c, next) => {
     const asset = c.req.path.split("/")[2];
@@ -59083,7 +59257,21 @@ function createApp() {
     const asset = c.req.param("asset");
     try {
       const snap = await getOracleSnapshot(contracts2, asset);
-      return c.json(jsonSafe({ ok: true, data: snap }));
+      let settlementTx;
+      let settleError;
+      if (isSettlementEnabled()) {
+        try {
+          const beneficiary = await resolveTrader();
+          const r = await settleRevenue(beneficiary, PRICE_ORACLE);
+          if (r.status === "settled") settlementTx = r.tx;
+          else settleError = r.error;
+        } catch (e) {
+          settleError = e.message;
+        }
+      }
+      return c.json(
+        jsonSafe({ ok: true, settled: !!settlementTx, data: snap, settlementTx, settleError })
+      );
     } catch (err) {
       return c.json({ ok: false, error: err.message }, 400);
     }

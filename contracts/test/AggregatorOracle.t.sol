@@ -76,8 +76,22 @@ contract AggregatorOracleTest is Test {
 
     // ── single-source degradation ──────────────────────────────────────────────
 
+    /// @dev PA-7: degrading to one source is opt-in now. Without the opt-in the
+    ///      aggregate fails closed rather than quietly becoming a single-feed
+    ///      oracle.
+    function test_getPrice_singleSourceRefusedUntilOptedIn() public {
+        vm.warp(block.timestamp + 2 days);
+        pyth.setPublishTime(PYTH_ID, block.timestamp);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(AggregatorOracleAdapter.SingleSourceNotAllowed.selector, XAU)
+        );
+        agg.getPrice(XAU);
+    }
+
     function test_getPrice_degradesWhenChainlinkStale() public {
-        // Age the Chainlink feed past its 24h window → only Pyth is live.
+        agg.setAllowSingleSource(true);
+        // Age the Chainlink feed past its window → only Pyth is live.
         vm.warp(block.timestamp + 2 days);
         pyth.setPublishTime(PYTH_ID, block.timestamp); // refresh Pyth
         (uint256 price, uint256 ts) = agg.getPrice(XAU);
@@ -87,6 +101,7 @@ contract AggregatorOracleTest is Test {
     }
 
     function test_getPrice_degradesWhenSourceUnconfigured() public {
+        agg.setAllowSingleSource(true);
         // Asset only configured on Pyth (Chainlink testnets lack equities).
         bytes32 AAPL = keccak256("AAPL");
         bytes32 aaplId = keccak256("pyth-aapl");
@@ -106,16 +121,25 @@ contract AggregatorOracleTest is Test {
 
     // ── deviation guard: disagreement fails closed ─────────────────────────────
 
-    function test_getPrice_deviationExceeded_reverts() public {
-        // Pyth 5% above Chainlink — well over the 1% bound.
-        pyth.setPrice(PYTH_ID, int64(uint64(2_782e8)), -8);
+    /// @dev M-1: a 5% cross-source spread is volatility noise, not a broken
+    ///      feed. It is served (degraded) instead of reverting, because the
+    ///      revert also took out `closePosition` and `liquidatePosition`.
+    function test_getPrice_softDeviation_servesDegraded() public {
+        pyth.setPrice(PYTH_ID, int64(uint64(2_782e8)), -8);   // ~5% above
+        (uint256 price, ) = agg.getPrice(XAU);
+        assertEq(price, 2_650e8, "tie on timestamp resolves to source A");
+        assertTrue(agg.isDegraded(XAU));
+        assertTrue(agg.isStale(XAU));
+    }
+
+    function test_getPrice_hardDeviation_failsClosed() public {
+        pyth.setPrice(PYTH_ID, int64(uint64(3_500e8)), -8);   // ~32% above
         vm.expectRevert(
             abi.encodeWithSelector(
-                AggregatorOracleAdapter.PriceDeviationTooHigh.selector, XAU, uint256(2_650e8), uint256(2_782e8)
+                AggregatorOracleAdapter.PriceDeviationTooHigh.selector, XAU, uint256(2_650e8), uint256(3_500e8)
             )
         );
         agg.getPrice(XAU);
-        // isStale still reports the divergence without reverting (monitoring).
         assertTrue(agg.isStale(XAU));
     }
 
@@ -139,14 +163,42 @@ contract AggregatorOracleTest is Test {
         uint256 pid = exchange.openPosition(XAU, true, 100e18, 2);
         assertEq(exchange.getPosition(pid).entryPrice, 2_650e18);
 
-        // One feed manipulated 5% away → aggregator fails closed → open reverts.
-        pyth.setPrice(PYTH_ID, int64(uint64(2_782e8)), -8);
+        // One feed manipulated 32% away → aggregator fails closed → open reverts.
+        pyth.setPrice(PYTH_ID, int64(uint64(3_500e8)), -8);
         vm.prank(alice);
         vm.expectRevert(
             abi.encodeWithSelector(
-                AggregatorOracleAdapter.PriceDeviationTooHigh.selector, XAU, uint256(2_650e8), uint256(2_782e8)
+                AggregatorOracleAdapter.PriceDeviationTooHigh.selector, XAU, uint256(2_650e8), uint256(3_500e8)
             )
         );
         exchange.openPosition(XAU, true, 100e18, 2);
+    }
+
+    /// @dev M-1 REGRESSION, the whole point of degraded mode: with the feeds
+    ///      5% apart the trader must still be able to CLOSE. Before the fix
+    ///      this reverted, so risk could not be reduced during exactly the
+    ///      conditions that produced the divergence.
+    function test_M1_softDivergenceStillAllowsClosingRisk() public {
+        MockUSDC usdc = new MockUSDC();
+        PerpetualExchange exchange = new PerpetualExchange(address(usdc), address(agg));
+        exchange.setExecutionFee(0);
+        exchange.setTradingFeeBps(0);
+        exchange.setBorrowFeePerHour(0);
+
+        address alice = makeAddr("alice");
+        usdc.mint(alice, 10_000e18);
+        usdc.mint(address(exchange), 1_000_000e18);
+        vm.prank(alice); usdc.approve(address(exchange), type(uint256).max);
+        vm.prank(alice); exchange.depositMargin(1_000e18);
+
+        vm.prank(alice);
+        uint256 pid = exchange.openPosition(XAU, true, 100e18, 2);
+
+        pyth.setPrice(PYTH_ID, int64(uint64(2_782e8)), -8);   // 5% spread opens up
+        assertTrue(agg.isDegraded(XAU));
+
+        vm.prank(alice);
+        exchange.closePosition(pid);                          // used to revert
+        assertFalse(exchange.getPosition(pid).isOpen);
     }
 }

@@ -122,6 +122,11 @@
         "name": "active",
         "type": "bool",
         "internalType": "bool"
+      },
+      {
+        "name": "deployedAmount",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -239,6 +244,11 @@
             "name": "active",
             "type": "bool",
             "internalType": "bool"
+          },
+          {
+            "name": "deployedAmount",
+            "type": "uint256",
+            "internalType": "uint256"
           }
         ]
       }
@@ -357,6 +367,25 @@
   },
   {
     "type": "event",
+    "name": "PositionCloseSkipped",
+    "inputs": [
+      {
+        "name": "follower",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "positionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "TraderFollowed",
     "inputs": [
       {
@@ -455,6 +484,17 @@
     "type": "error",
     "name": "ReentrancyGuardReentrantCall",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "SafeERC20FailedOperation",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
   },
   {
     "type": "error",

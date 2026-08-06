@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 
 import { useContracts } from 'src/hooks/useContracts'
+import { safeRead } from 'src/lib/pepefi/safeRead'
 import { useWalletContext } from 'src/contexts/wallet-context'
 import { ASSET_IDS, getAddresses } from 'src/contracts/addresses'
 import { classifyFreshness, type Freshness } from 'src/lib/pepefi/priceFreshness'
@@ -10,6 +11,21 @@ const MOCK_FRESHNESS: Freshness = { level: 'unknown', ageSec: null, label: '模�
 
 /** 讀不到 exchange.maxPriceAge() 時的後備值 = Base Sepolia 上實際部署的 6 小時。 */
 const FALLBACK_MAX_PRICE_AGE_SEC = 21600
+
+/**
+ * 輪詢間隔。
+ *
+ * 舊值是 8 秒，而每一輪要對 11 個資產「串行」讀 oracle，加上 maxPriceAge、
+ * 再加上頁面自己的其他輪詢——公共 RPC 端點會直接限流。喂價本身是 keeper 幾分鐘
+ * 才更新一次，8 秒的解析度沒有任何意義。30 秒足夠，而且分頁在背景時完全不打。
+ */
+const POLL_MS = 30_000
+
+/** 單筆鏈上讀取的逾時。全站唯一沒有 timeout 的讀取迴圈就是這裡，補上。 */
+const READ_TIMEOUT_MS = 6_000
+
+const isPageVisible = () =>
+  typeof document === 'undefined' || document.visibilityState !== 'hidden'
 
 const MOCK_INITIAL: Record<string, number> = {
   [ASSET_IDS.sBTC]:   50000,
@@ -109,24 +125,35 @@ export function useLivePrices(): Record<string, LivePrice> {
 
       // 交易所自己的 maxPriceAge 才是「可不可以交易」的真相 —— 顯示價來自
       // CoinGecko，但結算走鏈上 oracle，兩者過期與否由合約說了算。
-      let maxPriceAgeSec = FALLBACK_MAX_PRICE_AGE_SEC
-      if (contracts?.exchange) {
-        try {
-          maxPriceAgeSec = Number(await contracts.exchange.maxPriceAge())
-        } catch { /* 舊部署沒有這個 getter → 保留後備值 */ }
-      }
+      const assetIds = Object.values(ASSET_IDS)
 
-      for (const id of Object.values(ASSET_IDS)) {
+      // maxPriceAge 與 11 個資產的 oracle 讀取一次全部併發送出。舊版是 12 次
+      // 串行 await：任何一次慢，整輪就跟著慢，而且每輪要花 12 個 RTT。
+      const [maxAgeRaw, oracleRaw] = await Promise.all([
+        contracts?.exchange
+          ? safeRead<bigint | null>(contracts.exchange.maxPriceAge() as Promise<bigint>, null, READ_TIMEOUT_MS)
+          : Promise.resolve(null),
+        Promise.all(
+          assetIds.map(id =>
+            contracts?.oracle
+              ? safeRead<[bigint, bigint] | null>(
+                  contracts.oracle.getPrice(id) as unknown as Promise<[bigint, bigint]>,
+                  null,
+                  READ_TIMEOUT_MS,
+                )
+              : Promise.resolve(null),
+          ),
+        ),
+      ])
+
+      // 舊部署沒有這個 getter、或讀取逾時 → 保留後備值。
+      const maxPriceAgeSec = maxAgeRaw === null ? FALLBACK_MAX_PRICE_AGE_SEC : Number(maxAgeRaw)
+
+      for (const [i, id] of assetIds.entries()) {
         // On-chain oracle = settlement price (source of truth for open/close).
-        let settlement: number | undefined
-        let settlementAt: number | undefined
-        if (contracts?.oracle) {
-          try {
-            const raw = (await contracts.oracle.getPrice(id)) as unknown as [bigint, bigint]
-            settlement = Number(raw[0]) / 1e8
-            settlementAt = Number(raw[1])
-          } catch { /* asset not on oracle */ }
-        }
+        const raw = oracleRaw[i]
+        const settlement = raw ? Number(raw[0]) / 1e8 : undefined
+        const settlementAt = raw ? Number(raw[1]) : undefined
 
         const freshness = classifyFreshness({ updatedAtSec: settlementAt, nowSec, maxPriceAgeSec })
 
@@ -158,8 +185,18 @@ export function useLivePrices(): Record<string, LivePrice> {
     }
 
     void tick()
-    const id = setInterval(() => void tick(), 8000)
-    return () => { cancelled = true; clearInterval(id) }
+
+    // 分頁不在前景時完全不輪詢——沒人在看的頁面不該持續消耗 RPC 配額。
+    // 切回前景時立刻補一次，使用者不會看到過期的畫面。
+    const id = setInterval(() => { if (isPageVisible()) void tick() }, POLL_MS)
+    const onVisible = () => { if (isPageVisible()) void tick() }
+    document.addEventListener('visibilitychange', onVisible)
+
+    return () => {
+      cancelled = true
+      clearInterval(id)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [contracts, pepeAddr])
 
   return prices

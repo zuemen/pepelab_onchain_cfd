@@ -1,9 +1,12 @@
 name: Contracts CI
 
-# Runs the Foundry suite on every push and PR. Until now these 396 tests only
-# ever ran on developers' machines, so a regression could reach main unnoticed —
-# which is also the first thing an institutional customer's technical due
-# diligence asks about.
+# Runs the Foundry suite on every push and PR. Until now these tests only ever
+# ran on developers' machines, so a regression could reach the default branch
+# unnoticed — which is also the first thing an institutional customer's
+# technical due diligence asks about.
+#
+# 這裡刻意不寫測試「幾支」。稽核時三份文件各寫 314 / 318 / 320，全部過期且互相
+# 矛盾。測試數量的唯一真相來源是這個 workflow 的最新 run。
 on:
   push:
     # 這個 repo 的預設分支是 master。綁在 main 的時候 push trigger 從未觸發過，
@@ -18,6 +21,17 @@ on:
       - '.github/workflows/contracts-ci.yml'
   workflow_dispatch:
 
+# 這三個 job 只需要讀原始碼。預設的 repo 權限常是 write-all，對一個跑第三方
+# action（slither）的 job 來說那是不必要的攻擊面。
+permissions:
+  contents: read
+
+# 同一個分支/PR 的新 push 讓舊 run 失效 —— 這裡取消是安全的（純唯讀、無鏈上副作用），
+# 與 keeper 的 cancel-in-progress: false 是不同的取捨。
+concurrency:
+  group: contracts-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 defaults:
   run:
     working-directory: contracts
@@ -26,13 +40,16 @@ jobs:
   test:
     name: forge build + test
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      # 第三方 action pin 到 commit SHA；後方註解標明對應的版本 tag。
+      # tag 可以被重指，SHA 不行。
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           submodules: recursive
 
       - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
         with:
           version: stable
 
@@ -43,20 +60,21 @@ jobs:
         run: forge build --sizes
 
       - name: Test
-        run: forge test -vv
+        run: forge test -vv --summary
 
   slither:
     name: slither static analysis
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # Not a substitute for a third-party audit — it catches a known catalogue of
     # patterns, nothing more. It is the part of audit readiness that can be
     # automated, and it runs on every change instead of once.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           submodules: recursive
 
-      - uses: crytic/slither-action@v0.4.0
+      - uses: crytic/slither-action@f197989dea5b53e986d0f88c60a034ddd77ec9a8 # v0.4.0
         id: slither
         continue-on-error: true       # reporting first; tighten once triaged
         with:
@@ -67,13 +85,14 @@ jobs:
   gas:
     name: gas snapshot
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           submodules: recursive
 
       - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
         with:
           version: stable
 

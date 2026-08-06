@@ -7,6 +7,16 @@ name: Base Sepolia Keeper
 # 於是 keeper 錢包餘額為 0、每筆交易在 gas estimation 就失敗的情況下，仍然連續
 # 10 天回報 success，而鏈上價格停在 9.5–44 天前。現在寫入 0 筆會讓 job 失敗。
 #
+# 2026-08-06 稽核（docs/audit/AUDIT_2026-08-06.md §六）後補上：
+#   - `permissions:` 最小化（本 job 只讀 repo，不寫任何 GitHub 資源）
+#   - `concurrency:` 與 admin-base-sepolia.yml **共用同一個 group**。兩者都用
+#     KEEPER_PRIVATE_KEY 對同一條鏈送交易，並行會撞 nonce。cancel-in-progress
+#     必須是 false —— 取消一個正在送交易的 job 會留下不確定的鏈上狀態。
+#   - `timeout-minutes:` 讓卡住的 RPC 不會佔住 runner 六小時。
+#   - settleFunding 改成「先讀鏈上 lastFundingUpdateAt 判斷是否真的還沒到時間」，
+#     不再把所有失敗一律說成「interval 未到」。
+#   - 部分失敗（>30% 資產寫不進去）也會讓 job 失敗，不再只是 warning。
+#
 # Secrets:
 #   BASE_SEPOLIA_RPC_URL   Base Sepolia RPC endpoint
 #   KEEPER_PRIVATE_KEY     必須是 MockOracle 的 owner，且在 Base Sepolia 上有測試 ETH
@@ -17,15 +27,26 @@ on:
     - cron: '*/15 * * * *'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+# 與 admin-base-sepolia.yml 共用：同一把金鑰 + 同一條鏈 = 同一個 nonce 序列。
+concurrency:
+  group: keeper-key-base-sepolia
+  cancel-in-progress: false
+
 jobs:
   keep:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       KEEPER_CHAIN: base-sepolia
       KEEPER_RPC_URL: ${{ secrets.BASE_SEPOLIA_RPC_URL }}
       KEEPER_PRIVATE_KEY: ${{ secrets.KEEPER_PRIVATE_KEY }}
       KEEPER_ORACLE_ADDRESS: "0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3"
       EXCHANGE: "0xEf75ECA6514cE96B18382E921aC6190a0cF8c072"
+      # 部分失敗容忍度：失敗筆數 / 有價可寫筆數 超過這個百分比就讓 job 失敗。
+      MAX_FAIL_PCT: "30"
       # AggregatorOracleAdapter（Chainlink + Pyth）。Pyth 在 Base Sepolia 是活的：
       # 2026-08-06 實測 sBTC $64,484.07、sETH $1,894.91，與外部 API 一致。
       # 設定之後 sBTC/sETH 改讀鏈上去中心化預言機，其餘資產（測試網沒有 feed）
@@ -35,7 +56,9 @@ jobs:
       # 對中心化交易所 API 的依賴，不是對 keeper 的依賴。
       KEEPER_RELAY_SOURCE: "0x8215158642350a3f329aB9597186d21f957A813D"
     steps:
-      - uses: actions/checkout@v4
+      # 第三方 action 一律 pin 到 commit SHA：tag 是可移動的，供應鏈攻擊只要把
+      # tag 重指到惡意 commit，這個持有 KEEPER_PRIVATE_KEY 的 job 就會執行它。
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Fail fast when secrets are missing
         run: |
@@ -45,32 +68,103 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20
+          cache: npm
+          cache-dependency-path: agent/package-lock.json
 
+      # npm ci 而非 npm install：ci 只安裝 lockfile 裡的版本，install 會在
+      # lockfile 過期時自行改寫它。喂價 job 不該有「今天跟昨天裝到不同版本」的自由度。
       - name: Install agent deps
         working-directory: agent
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
+      # agent 的單元測試跑在 .github/workflows/agent-ci.yml，刻意不掛在這裡：
+      # 喂價是 liveness 關鍵路徑，用單元測試當它的前置條件，等於讓一支壞掉的
+      # 測試把線上價格一起停掉。
       - name: Refresh prices
         working-directory: agent
-        run: npx tsx keeper/run.ts
+        run: |
+          set -uo pipefail
+          npx tsx keeper/run.ts 2>&1 | tee /tmp/keeper.log
+          STATUS=${PIPESTATUS[0]}
+          if [ "$STATUS" -ne 0 ]; then
+            echo "::error::keeper/run.ts 以非零狀態結束（exit $STATUS）。"
+            exit "$STATUS"
+          fi
+
+          # run.ts 只在「一筆都沒寫成功」時才 exit 1。部分失敗它只印 warning，
+          # 於是 11 個資產壞掉 7 個仍然是綠的。這裡用它印出的摘要行補上門檻。
+          SUMMARY=$(grep -E '^available=[0-9]+ skipped=[0-9]+ wrote=[0-9]+ failed=[0-9]+$' /tmp/keeper.log | tail -1 || true)
+          if [ -z "$SUMMARY" ]; then
+            echo "::error::找不到 keeper 摘要行 —— 輸出格式已改變，這個門檻已失效，請修正 workflow。"
+            exit 1
+          fi
+          AVAILABLE=$(echo "$SUMMARY" | sed -n 's/.*available=\([0-9]*\).*/\1/p')
+          FAILED=$(echo "$SUMMARY" | sed -n 's/.*failed=\([0-9]*\).*/\1/p')
+          echo "keeper 摘要：$SUMMARY"
+          if [ "$AVAILABLE" -gt 0 ] && [ "$FAILED" -gt 0 ]; then
+            PCT=$(( FAILED * 100 / AVAILABLE ))
+            echo "寫入失敗率 ${PCT}%（門檻 ${MAX_FAIL_PCT}%）"
+            if [ "$PCT" -gt "${MAX_FAIL_PCT}" ]; then
+              echo "::error::${AVAILABLE} 個資產中有 ${FAILED} 個寫入失敗（${PCT}% > ${MAX_FAIL_PCT}%）。喂價已部分失效，不要當成成功。"
+              exit 1
+            fi
+          fi
 
       - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
         with:
           version: stable
 
+      # 舊版把每個失敗都說成「funding interval 未到」，於是「keeper 沒油」「不是
+      # owner」「RPC 掛了」全部長得跟正常狀態一模一樣。現在先讀鏈上的
+      # lastFundingUpdateAt + FUNDING_INTERVAL 判斷是否真的還沒到時間；
+      # 到時間了還送不出去，就是真的壞了。
+      #
+      # FUNDING_INTERVAL 從鏈上讀而不是寫死：已部署的 bytecode 是 300 秒，
+      # source 已改成 8 小時但尚未重部署（見 docs/audit/AUDIT_2026-08-06.md）。
       - name: Crank settleFunding
         run: |
           set -uo pipefail
+          INTERVAL=$(cast call "$EXCHANGE" "FUNDING_INTERVAL()(uint256)" --rpc-url "$KEEPER_RPC_URL" | awk '{print $1}')
+          if ! [ "${INTERVAL:-}" -gt 0 ] 2>/dev/null; then
+            echo "::error::讀不到 FUNDING_INTERVAL —— RPC 或 EXCHANGE 位址有問題。"
+            exit 1
+          fi
+          NOW=$(date -u +%s)
+          echo "FUNDING_INTERVAL=${INTERVAL}s  now=${NOW}"
+
+          FAILURES=0
           for SYM in sBTC sETH sAAPL sTSLA; do
             KEY=$(cast keccak "$SYM")
-            if cast send "$EXCHANGE" "settleFunding(bytes32)" "$KEY" \
-                 --rpc-url "$KEEPER_RPC_URL" --private-key "$KEEPER_PRIVATE_KEY" >/dev/null 2>&1; then
+
+            LAST=$(cast call "$EXCHANGE" "lastFundingUpdateAt(bytes32)(uint256)" "$KEY" \
+                     --rpc-url "$KEEPER_RPC_URL" 2>/dev/null | awk '{print $1}')
+            if ! [ "${LAST:-}" -ge 0 ] 2>/dev/null; then
+              echo "::error::$SYM: 讀不到 lastFundingUpdateAt —— 這是呼叫失敗，不是「時間未到」。"
+              FAILURES=$((FAILURES + 1))
+              continue
+            fi
+
+            DUE=$((LAST + INTERVAL))
+            if [ "$NOW" -lt "$DUE" ]; then
+              echo "$SYM: funding interval 尚未到期（還有 $((DUE - NOW))s），略過。"
+              continue
+            fi
+
+            # 到期了，這一筆就應該會成功。失敗＝真的有問題，把 revert 原文印出來。
+            if OUT=$(cast send "$EXCHANGE" "settleFunding(bytes32)" "$KEY" \
+                       --rpc-url "$KEEPER_RPC_URL" --private-key "$KEEPER_PRIVATE_KEY" 2>&1); then
               echo "$SYM: funding settled"
             else
-              echo "$SYM: funding interval 未到，略過"
+              echo "::error::$SYM: settleFunding 已到期卻失敗 —— $(echo "$OUT" | tr '\n' ' ' | cut -c1-300)"
+              FAILURES=$((FAILURES + 1))
             fi
           done
+
+          if [ "$FAILURES" -gt 0 ]; then
+            echo "::error::settleFunding 有 ${FAILURES} 個資產失敗。"
+            exit 1
+          fi

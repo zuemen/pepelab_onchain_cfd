@@ -8,6 +8,10 @@ import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { ASSET_LABEL, ASSET_META } from 'src/lib/pepefi/assetMeta'
 import { useKYC } from 'src/hooks/useKYC'
 import { useESG } from 'src/hooks/useESG'
+import { useLivePrices } from 'src/hooks/useLivePrices'
+import { useExecutionFee, formatEth } from 'src/hooks/useExecutionFee'
+import { STABLE_LABEL } from 'src/lib/pepefi/tokenLabel'
+import { firstBlocking, stalenessNotice } from 'src/lib/pepefi/priceFreshness'
 import ESGBadge from 'src/components/pepefi/ESGBadge'
 import KYCModal from 'src/components/pepefi/KYCModal'
 import { getPepeAvatar } from 'src/utils/pepefi-assets'
@@ -92,11 +96,13 @@ export default function CopyPage() {
   const [preview,          setPreview]          = useState<CopyPreview | null>(null)
   const [showKYCModal,     setShowKYCModal]     = useState(false)
 
-  const { isVerified: isKYCVerified, refetch: refetchKYC } = useKYC(
+  const { isVerified: isKYCVerified, isPending: kycPending, refetch: refetchKYC } = useKYC(
     contracts?.kycRegistry ?? null,
     wallet.address ?? null,
   )
   const { data: esg } = useESG(contracts?.esgRegistry ?? null)
+  const livePrices = useLivePrices()
+  const execFee = useExecutionFee(contracts?.exchange ?? null)
 
   const setLoad = (k: string, v: boolean) => setBusy(p => ({ ...p, [k]: v }))
   const notify  = (msg: string, ok: boolean, hash?: string) => {
@@ -170,6 +176,19 @@ export default function CopyPage() {
   const hasKYCRequired = stratAllocs.some(a => ASSET_META[a.asset]?.regulated)
   const kycBlocked     = hasKYCRequired && !isKYCVerified
 
+  // ── F-2 · stale 擋單 ───────────────────────────────────────────────────────
+  // 跟單會在同一筆交易裡對策略的每一個標的開倉。只要其中一檔的鏈上價過期，
+  // 整筆就 revert StalePrice——而且 N 檔的 execution fee 已經一起送出去了。
+  // 所以判斷是「有沒有任何一檔過期」，不是「選中的那檔」。
+  const staleAlloc = firstBlocking(
+    stratAllocs.map(a => ({
+      label: ASSET_LABEL[a.asset] ?? a.asset.slice(0, 8),
+      freshness: livePrices[a.asset]?.freshness,
+    })),
+  )
+  const staleNotice = staleAlloc ? stalenessNotice(staleAlloc.freshness, staleAlloc.label) : null
+  const staleBlocked = staleNotice !== null
+
   const COPY_FEE_BPS = 30n
   const totalBig  = tryParse(totalMargin) ?? 0n
   const feeBig    = totalBig * COPY_FEE_BPS / 10_000n
@@ -212,7 +231,7 @@ export default function CopyPage() {
     try {
       const tx = asTx(await contracts.usdc.approve(String(contracts.copyTracker.target), amt))
       await tx.wait()
-      notify('mUSDC approved ✓', true, tx.hash)
+      notify(`${STABLE_LABEL} approved ✓`, true, tx.hash)
       setApproved(true)
     } catch (e) {
       notify(prettyError(e), false)
@@ -223,6 +242,9 @@ export default function CopyPage() {
     if (!contracts || !traderAddress) return
     const amt = tryParse(totalMargin)
     if (!amt) { notify('Enter a valid amount', false); return }
+    // F-2：任何一檔過期就別送。送出去只會 revert，但 N 筆 execution fee 的 gas
+    // 已經花掉了——這是最貴的一種白撞牆。
+    if (staleNotice) { notify(staleNotice, false); return }
     setLoad('follow', true)
     try {
       const execFeePerPosition = await contracts.exchange.executionFee() as bigint
@@ -344,7 +366,7 @@ export default function CopyPage() {
                     }}
                   />
                   <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
-                    {(Number(stakeData.stake) / 1e18).toFixed(0)} mUSDC staked
+                    {(Number(stakeData.stake) / 1e18).toFixed(0)} {STABLE_LABEL} staked
                   </Typography>
                 </Box>
               )}
@@ -451,7 +473,7 @@ export default function CopyPage() {
             sx={{ width: 200 }}
           />
           <Typography variant="body2" color="text.secondary">
-            mUSDC total margin
+            {STABLE_LABEL} total margin
           </Typography>
           {!hasStrategy && (
             <Typography variant="caption" color="text.disabled" sx={{ fontStyle: 'italic' }}>
@@ -465,19 +487,19 @@ export default function CopyPage() {
             <Stack spacing={1} sx={{ typography: 'caption' }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.secondary' }}>
                 <Box>Total deposit:</Box>
-                <Box sx={{ fontFamily: MONO, color: 'text.primary', fontWeight: 'semibold' }}>{f18(totalBig)} mUSDC</Box>
+                <Box sx={{ fontFamily: MONO, color: 'text.primary', fontWeight: 'semibold' }}>{f18(totalBig)} {STABLE_LABEL}</Box>
               </Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.secondary' }}>
                 <Box>− Copy fee (0.3%):</Box>
-                <Box sx={{ fontFamily: MONO, color: 'error.main', fontWeight: 'semibold' }}>-{f18(preview.copyFee)} mUSDC</Box>
+                <Box sx={{ fontFamily: MONO, color: 'error.main', fontWeight: 'semibold' }}>-{f18(preview.copyFee)} {STABLE_LABEL}</Box>
               </Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.secondary' }}>
                 <Box>− Trading fee buffer:</Box>
-                <Box sx={{ fontFamily: MONO, color: 'error.main', fontWeight: 'semibold' }}>-{f18(preview.totalTradingFee)} mUSDC</Box>
+                <Box sx={{ fontFamily: MONO, color: 'error.main', fontWeight: 'semibold' }}>-{f18(preview.totalTradingFee)} {STABLE_LABEL}</Box>
               </Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.primary', fontWeight: 'bold', borderTop: '1px solid', borderColor: 'divider', pt: 1, mt: 0.5 }}>
                 <Box>Effective margin:</Box>
-                <Box sx={{ fontFamily: MONO, color: 'success.main' }}>{f18(preview.marginForPositions)} mUSDC</Box>
+                <Box sx={{ fontFamily: MONO, color: 'success.main' }}>{f18(preview.marginForPositions)} {STABLE_LABEL}</Box>
               </Box>
             </Stack>
           </Card>
@@ -528,15 +550,15 @@ export default function CopyPage() {
           <Stack spacing={1} sx={{ typography: 'body2' }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.secondary' }}>
               <Box>Copy fee (0.3%)</Box>
-              <Box sx={{ fontFamily: MONO }}>−{f18(feeBig, 4)} mUSDC</Box>
+              <Box sx={{ fontFamily: MONO }}>−{f18(feeBig, 4)} {STABLE_LABEL}</Box>
             </Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.secondary' }}>
               <Box>Net margin deposited</Box>
-              <Box sx={{ fontFamily: MONO, color: 'text.primary', fontWeight: 'semibold' }}>{f18(netBig)} mUSDC</Box>
+              <Box sx={{ fontFamily: MONO, color: 'text.primary', fontWeight: 'semibold' }}>{f18(netBig)} {STABLE_LABEL}</Box>
             </Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.secondary', borderTop: '1px solid', borderColor: 'divider', pt: 1, mt: 1 }}>
               <Box>Execution Fee (ETH)</Box>
-              <Box sx={{ fontFamily: MONO, color: 'primary.main', fontWeight: 'semibold' }}>{(stratAllocs.length * 0.001).toFixed(3)} ETH</Box>
+              <Box sx={{ fontFamily: MONO, color: 'primary.main', fontWeight: 'semibold' }}>{formatEth(execFee.wei * BigInt(stratAllocs.length))} ETH</Box>
             </Box>
             <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
               Copy fee is split 70% → trader · 20% → platform · 10% → slash pool. Execution fee pays Keeper bots.
@@ -555,7 +577,7 @@ export default function CopyPage() {
             <Grid size={{ xs: 4 }}>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>Staked</Typography>
               <Typography variant="h6" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
-                {(Number(stakeData.stake) / 1e18).toFixed(0)} <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary' }}>mUSDC</Box>
+                {(Number(stakeData.stake) / 1e18).toFixed(0)} <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary' }}>{STABLE_LABEL}</Box>
               </Typography>
             </Grid>
             <Grid size={{ xs: 4 }}>
@@ -567,13 +589,13 @@ export default function CopyPage() {
             <Grid size={{ xs: 4 }}>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>Total Slashed</Typography>
               <Typography variant="h6" sx={{ fontFamily: MONO, fontWeight: 'bold', color: stakeData.totalSlashed > 0n ? 'error.main' : 'text.primary' }}>
-                {(Number(stakeData.totalSlashed) / 1e18).toFixed(0)} <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary' }}>mUSDC</Box>
+                {(Number(stakeData.totalSlashed) / 1e18).toFixed(0)} <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary' }}>{STABLE_LABEL}</Box>
               </Typography>
             </Grid>
           </Grid>
           {stakeData.totalSlashed > 0n && (
             <Typography variant="caption" color="error.main" sx={{ display: 'block', mt: 2, fontWeight: 'semibold' }}>
-              ⚠ This trader has had {(Number(stakeData.totalSlashed) / 1e18).toFixed(0)} mUSDC slashed for causing excessive losses to followers. Proceed with caution.
+              ⚠ This trader has had {(Number(stakeData.totalSlashed) / 1e18).toFixed(0)} {STABLE_LABEL} slashed for causing excessive losses to followers. Proceed with caution.
             </Typography>
           )}
           {stakeData.stake === 0n && (
@@ -601,7 +623,7 @@ export default function CopyPage() {
             sx={{ fontWeight: 'bold' }}
           />
           <Typography variant="body2" color={approved ? 'success.main' : 'text.secondary'}>
-            Approve mUSDC to CopyTracker
+            Approve {STABLE_LABEL} to CopyTracker
           </Typography>
           <Typography variant="body2" color="text.disabled" sx={{ mx: 1 }}>→</Typography>
           <Chip
@@ -615,7 +637,27 @@ export default function CopyPage() {
           </Typography>
         </Box>
 
-        {kycBlocked && (
+        {staleNotice && (
+          <Alert severity="error">
+            <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+              價格過期 — 暫停跟單
+            </Typography>
+            <Typography variant="caption" sx={{ display: 'block' }}>{staleNotice}</Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+              跟單是一筆交易開 {stratAllocs.length} 個倉位，只要有一檔過期整筆都會被拒絕，
+              而 {stratAllocs.length} 份 execution fee 的 gas 已經付出去了。
+            </Typography>
+          </Alert>
+        )}
+
+        {/* 審核制：送出申請 ≠ 通過。待審中不要再推「完成 KYC」按鈕。 */}
+        {kycBlocked && kycPending && (
+          <Alert severity="info">
+            ⏳ 你的 KYC 申請<b>已送出，正在等待審核</b>。審核人員核准後才能跟單含股票 / 債券的策略，不需要重複送出。
+          </Alert>
+        )}
+
+        {kycBlocked && !kycPending && (
           <Alert severity="warning" action={
             <Button
               color="inherit"
@@ -623,10 +665,10 @@ export default function CopyPage() {
               onClick={() => setShowKYCModal(true)}
               sx={{ fontWeight: 'bold' }}
             >
-              完成 KYC
+              送出 KYC 申請
             </Button>
           }>
-            🔒 此策略包含股票 / 債券資產，需要完成 KYC 驗證才能跟單。
+            🔒 此策略包含股票 / 債券資產，需通過 KYC 審核才能跟單（送出申請後需等審核人員核准）。
           </Alert>
         )}
 
@@ -648,11 +690,16 @@ export default function CopyPage() {
             disabled={
               !hasStrategy || !approved || busy['follow'] || stratAllocs.length === 0 ||
               (preview !== null && preview.marginForPositions === 0n) ||
-              kycBlocked
+              kycBlocked || staleBlocked
             }
+            title={staleNotice ?? undefined}
             sx={{ flexGrow: 1 }}
           >
-            {busy['follow'] ? 'Following…' : 'Step 2 · Follow Trader'}
+            {busy['follow']
+              ? 'Following…'
+              : staleBlocked
+                ? `⛔ ${staleAlloc?.label ?? ''} 價格過期`
+                : 'Step 2 · Follow Trader'}
           </Button>
         </Box>
 
@@ -671,8 +718,9 @@ export default function CopyPage() {
       <KYCModal
         isOpen={showKYCModal}
         onClose={() => setShowKYCModal(false)}
-        onSuccess={() => { refetchKYC(); setShowKYCModal(false) }}
+        onSuccess={() => { void refetchKYC() }}
         kycRegistry={contracts?.kycRegistry ?? null}
+        isPending={kycPending}
       />
     </Container>
   )

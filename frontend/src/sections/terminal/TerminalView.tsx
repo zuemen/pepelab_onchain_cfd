@@ -18,8 +18,8 @@ import { ASSET_IDS } from 'src/contracts/addresses'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { ASSET_META } from 'src/lib/pepefi/assetMeta'
 import { bybitSymbolFor } from 'src/lib/pepefi/bybitMarket'
-import { blocksTrading } from 'src/lib/pepefi/priceFreshness'
 import { type Interval, DEFAULT_INTERVAL } from 'src/lib/pepefi/candles'
+import { blocksTrading, stalenessNotice } from 'src/lib/pepefi/priceFreshness'
 
 import PaperTradingBadge from 'src/components/pepefi/PaperTradingBadge'
 
@@ -53,7 +53,7 @@ export function TerminalView() {
 
   const account = useTerminalAccount(contracts, wallet.address ?? null, selAsset)
   const { stable, setStable } = useStablecoin(contracts)
-  const { isVerified: kycOk } = useKYC(contracts?.kycRegistry ?? null, wallet.address ?? null)
+  const { isVerified: kycOk, isUnknown: kycUnknown, isPending: kycPending } = useKYC(contracts?.kycRegistry ?? null, wallet.address ?? null)
 
   const meta = ASSET_META[selAsset]
   const kycBlocked = (meta?.regulated ?? false) && !kycOk
@@ -62,6 +62,13 @@ export function TerminalView() {
   // StalePrice。讓按鈕在送出之前就停用，而不是讓使用者付 gas 去撞牆。
   const freshness = live[selAsset]?.freshness
   const staleBlocked = freshness ? blocksTrading(freshness) : false
+
+  // M1：上面那句註解原本只有開倉是真的——平倉按鈕從來沒被擋過。持倉表每一列
+  // 可能是不同標的，所以給它一個「按標的查」的函式而不是單一布林值。
+  const staleNoticeFor = useCallback(
+    (asset: string) => stalenessNotice(live[asset as AssetId]?.freshness, ASSET_META[asset]?.symbol),
+    [live],
+  )
 
   // 後端代號與 bytes32 assetId 都收；代號比較好讀，也讓 API 錯誤訊息看得懂。
   const feed = useCandles(meta?.symbol ?? selAsset, interval)
@@ -221,6 +228,8 @@ export function TerminalView() {
             freeMgn={account.freeMgn}
             rate={rate}
             kycBlocked={kycBlocked}
+            kycUnknown={kycUnknown}
+            kycPending={kycPending}
             staleBlocked={staleBlocked}
             staleLabel={freshness?.label}
             notify={notify}
@@ -246,6 +255,7 @@ export function TerminalView() {
         address={wallet.address ?? null}
         positions={livePositions}
         funding={funding}
+        staleNoticeFor={staleNoticeFor}
         notify={notify}
         onRefresh={account.refresh}
         chainId={wallet.chainId ?? null}

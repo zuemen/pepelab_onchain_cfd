@@ -40,7 +40,13 @@ const f18 = (v: bigint, d = 2) =>
   })
 const fEth = (v: bigint) => parseFloat(formatEther(v)).toFixed(6)
 
-const DEMO_OWNER = '0xE80A81360608C1342e66743F70a00f75d792Eb93'
+/**
+ * 只在鏈上 `feeRouter.platformTreasury()` 還沒讀回來之前拿來顯示的後備值。
+ * **不再用它判斷授權**——寫死一個 EOA 等於把權限判斷跟鏈上狀態脫鉤：treasury
+ * 一改，這頁就對真正的 owner 說「Not authorized」，同時對舊位址開門。
+ * 這一頁本來就已經把 platformTreasury 抓回來了，只是沒拿來用。
+ */
+const FALLBACK_TREASURY_HINT = '0xE80A81360608C1342e66743F70a00f75d792Eb93'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface RevenueStats {
@@ -75,7 +81,14 @@ export default function AdminTreasuryPage() {
   const [contractPepeBal, setContractPepeBal] = useState<bigint | null>(null)
   const [pepeFundAmt,     setPepeFundAmt]     = useState('')
 
-  const isOwner = wallet.address?.toLowerCase() === DEMO_OWNER.toLowerCase()
+  // 授權以鏈上的 platformTreasury() 為準。還沒讀到（null）時不放行也不誤判，
+  // 由下方的畫面顯示「確認中」。
+  const isOwner =
+    platformTreasury !== null &&
+    wallet.address !== null &&
+    wallet.address !== undefined &&
+    platformTreasury.toLowerCase() === wallet.address.toLowerCase()
+  const treasuryUnknown = platformTreasury === null
 
   const setLoad = (k: string, v: boolean) => setBusy(p => ({ ...p, [k]: v }))
   const notify  = (msg: string, ok: boolean, hash?: string) => {
@@ -262,13 +275,20 @@ export default function AdminTreasuryPage() {
   }
 
   if (!isOwner) {
+    const shown = platformTreasury ?? FALLBACK_TREASURY_HINT
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', gap: 2 }}>
         <Typography variant="h2">🔒</Typography>
-        <Typography variant="h5" sx={{ fontWeight: 'bold' }}>Not authorized</Typography>
-        <Typography color="text.secondary" sx={{ mb: 2 }}>This page is restricted to the platform owner wallet.</Typography>
+        <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
+          {treasuryUnknown ? '確認權限中…' : 'Not authorized'}
+        </Typography>
+        <Typography color="text.secondary" sx={{ mb: 2 }}>
+          {treasuryUnknown
+            ? '正在讀取鏈上的 feeRouter.platformTreasury()。讀不到就不放行。'
+            : 'This page is restricted to the wallet set as feeRouter.platformTreasury().'}
+        </Typography>
         <Typography variant="caption" sx={{ fontFamily: MONO, color: 'text.disabled' }}>
-          Owner: {DEMO_OWNER.slice(0, 10)}…{DEMO_OWNER.slice(-6)}
+          Treasury{treasuryUnknown ? '（後備顯示值）' : '（鏈上）'}: {shown.slice(0, 10)}…{shown.slice(-6)}
         </Typography>
       </Box>
     )

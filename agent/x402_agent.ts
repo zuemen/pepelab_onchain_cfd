@@ -25,6 +25,8 @@ import { baseSepolia } from "viem/chains";
 import { config as dotenvConfig } from "dotenv";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { openPositionForSession } from "@pepelab/shared";
+import { loadVc, localVerifyVc } from "./examples/vc-gate.ts";
 
 // ── Load env from agent/.env ───────────────────────────────────────────────
 const __here = dirname(fileURLToPath(import.meta.url));
@@ -50,20 +52,8 @@ const DEMO_ASSET = process.env.DEMO_ASSET ?? "sBTC";
 
 // ABI fragments for on-chain interaction
 const SESSION_MANAGER_ABI = [
-  {
-    name: "openPositionForSession",
-    type: "function",
-    stateMutability: "payable",
-    inputs: [
-      { name: "sessionId", type: "uint256" },
-      { name: "asset", type: "bytes32" },
-      { name: "isLong", type: "bool" },
-      { name: "margin", type: "uint256" },
-      { name: "leverage", type: "uint256" },
-      { name: "copiedFrom", type: "address" },
-    ],
-    outputs: [{ name: "positionId", type: "uint256" }],
-  },
+  // openPositionForSession 的 ABI 已移除：下單改走 shared 的 openPositionForSession
+  // （含 VC 閘門 + caps 預檢 + 由合約讀取的 executionFee）。這裡只保留唯讀的 sessions()。
   {
     name: "sessions",
     type: "function",
@@ -222,19 +212,9 @@ function analyzeAndDecide(signalData: any): TradeDecision | null {
   return null;
 }
 
-const ASSET_IDS = {
-  sBTC:   "0x6587d61b59ac1e9c9f12c71f220fb1b1740d054e81277d4466a0d348e0e266e1",
-  sETH:   "0x83e22e1d95f2093dd401ec5cba75bcd950cd90282356f086011849e4fbaad8a9",
-  sAAPL:  "0xeed17252f75eebef59a2839f0991464677fec970326e35128ddaf7f3acfb7220",
-  sTSLA:  "0xd3cea6476633c192bfd36c9af4a9d0ee6e1863484325ee0f546a36393d1df1e9",
-  sGOLD:  "0x12b611f69af3b5e84f9d2d8a8818b4ad7f2cf0b45274bc7c3b9616f67c7baa1a",
-  sBOND:  "0xc310184149786e37d3493804e896dd8582e216011114ff6a7b6b8c02678bf6bb",
-  sNVDA:  "0x59367feafbd2791db3a7462e596e9514b8f32a0dd24dcb4fd34af4725e59388d",
-  sMSFT:  "0x9148a0fa033f72a846b348bb77b949e9dde2f4cd70a6045eb9e25ee5215b5b0b",
-  sGOOGL: "0xa0934421d87a4a6d14ebffa8df8f7aeda1ab515b1a348ca82620b23a527b6875",
-  sICLN:  "0x61663214831fdd7b1dd003226fb7436774c5b030f5858cf47d7aee23934564cb",
-  sESGU:  "0x5820b70264a0c106d7ef7036e13c03b5d9018e2b51178ed68526cf915d594ca2",
-} as const;
+// （已刪除）這裡原本有一份硬編碼的 ASSET_IDS 表 —— 與 shared/addresses.ts 的
+// 單一來源重複，改一邊忘另一邊就會對錯資產下單。現在 assetId 由
+// openPositionForSession → assetIdOf() 解析。
 
 // ── Step 4: Autonomous Trade via Session Key ───────────────────────────────
 async function executeTradeViaSession(
@@ -299,41 +279,33 @@ async function executeTradeViaSession(
   }
 
   console.log(`\n  Executing: ${desc} (session #${SESSION_ID})…`);
-  console.log(`  (Full on-chain execution via AgentSessionManager)`);
-  
-  const assetId = ASSET_IDS[trade.symbol as keyof typeof ASSET_IDS];
-  if (!assetId) {
-    console.log(`  ✗ Unknown asset symbol: ${trade.symbol}`);
+
+  // 稽核 A-3：這支以前用 viem 直接 writeContract 打 AgentSessionManager —— 是繞過
+  // 整個 VC/SSI 授權層的**第四個**寫入路徑（連 write.ts 的閘門都碰不到），還自帶
+  // 一份硬編碼的 ASSET_IDS 與 0.001 ETH execution fee（兩者都會與鏈上實況漂移）。
+  // 現在一律走 shared 的 openPositionForSession：VC 必要、caps 預檢、assetId 與
+  // executionFee 都從單一來源取得。
+  const vc = loadVc();
+  const vcChk = localVerifyVc(vc, walletClient.account.address, Number(SESSION_ID));
+  console.log(`  VC/SSI    : ${vcChk.ok ? "✓" : "✗"} ${vcChk.reason}`);
+  if (!vcChk.ok) {
+    console.log("  ✗ 缺有效授權 VC（設 AGENT_AUTH_VC_PATH）→ 拒絕下單。");
+    console.log(`  Would have traded: ${desc} (simulated, not sent)`);
     return;
   }
 
-  // Resolve copiedFrom address
-  const copiedFrom = traderAddress && traderAddress !== "0x0000000000000000000000000000000000000001"
-    ? traderAddress
-    : ZERO_ADDR;
-
-  try {
-    const marginWei = BigInt(Math.round(DEMO_MARGIN * 1e18));
-    const txHash = await walletClient.writeContract({
-      address: SESSION_MANAGER as `0x${string}`,
-      abi: SESSION_MANAGER_ABI,
-      functionName: "openPositionForSession",
-      args: [
-        BigInt(SESSION_ID),
-        assetId as `0x${string}`,
-        trade.isLong,
-        marginWei,
-        BigInt(trade.leverage),
-        copiedFrom as `0x${string}`,
-      ],
-      value: 1000000000000000n, // 0.001 ETH execution fee
-    });
-    console.log(`  → Sent transaction: ${txHash}`);
-    console.log(`  Waiting for transaction receipt...`);
-    const receipt = await walletClient.waitForTransactionReceipt({ hash: txHash });
-    console.log(`  → Trade submitted to chain ✓ (Block #${receipt.blockNumber})`);
-  } catch (writeErr) {
-    console.error(`  ✗ Execution failed on-chain:`, (writeErr as Error).message || writeErr);
+  const res = await openPositionForSession({
+    sessionId: Number(SESSION_ID),
+    symbol: trade.symbol,
+    isLong: trade.isLong,
+    marginUsdc: DEMO_MARGIN,
+    leverage: trade.leverage,
+    authVc: vc!,
+  });
+  if (res.ok) {
+    console.log(`  → Trade submitted to chain ✓ tx ${res.txHash} · position #${res.positionId ?? "?"}`);
+  } else {
+    console.error(`  ✗ Execution refused: ${res.error}`);
   }
 }
 

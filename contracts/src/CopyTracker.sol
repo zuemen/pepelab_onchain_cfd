@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./PerpetualExchange.sol";
 import "./StrategyRegistry.sol";
@@ -16,6 +17,8 @@ interface ITraderStakeForCT {
 }
 
 contract CopyTracker is ReentrancyGuard {
+    using SafeERC20 for IERC20;   // M-4
+
     // ── Constants ────────────────────────────────────────────────────────────
 
     uint256 public constant COPY_FEE_BPS      = 30;    // 0.3 % of totalMargin
@@ -40,6 +43,13 @@ contract CopyTracker is ReentrancyGuard {
         uint256[] positionIds;
         uint256   copiedAt;
         bool      active;
+        /// @notice Low: margin actually put at risk in the copied positions,
+        ///         i.e. `initialAmount` less the copy fee and the exchange's
+        ///         trading-fee buffer. The slash trigger measures performance
+        ///         against THIS, not against the gross deposit — otherwise
+        ///         protocol fees were scored as the trader's losses and a
+        ///         perfectly flat market registered a loss on every follow.
+        uint256   deployedAmount;
     }
 
     // ── State ────────────────────────────────────────────────────────────────
@@ -65,6 +75,9 @@ contract CopyTracker is ReentrancyGuard {
         address indexed follower,
         uint256         slashAmount
     );
+    /// @notice H-5: a copied position could not be closed on unfollow (already
+    ///         liquidated / deleveraged). Emitted instead of reverting.
+    event PositionCloseSkipped(address indexed follower, uint256 indexed positionId);
 
     // ── Errors ───────────────────────────────────────────────────────────────
 
@@ -98,14 +111,14 @@ contract CopyTracker is ReentrancyGuard {
         if (allocations.length == 0) revert NoStrategyPublished();
 
         // 2. Pull USDC from follower → CopyTracker
-        usdc.transferFrom(msg.sender, address(this), totalMargin);
+        usdc.safeTransferFrom(msg.sender, address(this), totalMargin);
 
         // 3. Deduct copy fee when feeRouter is configured
         uint256 netMargin = totalMargin;
         if (address(feeRouter) != address(0)) {
             uint256 fee = totalMargin * COPY_FEE_BPS / 10_000;
             netMargin   = totalMargin - fee;
-            usdc.approve(address(feeRouter), fee);
+            usdc.forceApprove(address(feeRouter), fee);
             feeRouter.distributeCopyFee(trader, fee);
         }
 
@@ -120,7 +133,7 @@ contract CopyTracker is ReentrancyGuard {
         uint256 marginForPositions = netMargin - totalTradingFee;
 
         // 5. Approve exchange to pull full netMargin (margin budget + tradingFee budget)
-        usdc.approve(address(exchange), netMargin);
+        usdc.forceApprove(address(exchange), netMargin);
 
         // 6. Deposit on behalf of follower
         exchange.depositMarginFor(msg.sender, netMargin);
@@ -145,14 +158,24 @@ contract CopyTracker is ReentrancyGuard {
         CopyRecord storage rec = copyRecords[msg.sender][copyRecords[msg.sender].length - 1];
         rec.trader        = trader;
         rec.versionId     = versionId;
-        rec.initialAmount = totalMargin;
-        rec.copiedAt      = block.timestamp;
+        rec.initialAmount  = totalMargin;
+        rec.deployedAmount = marginForPositions;
+        rec.copiedAt       = block.timestamp;
         rec.active        = true;
         for (uint256 i; i < ids.length; ++i) {
             rec.positionIds.push(ids[i]);
         }
 
         followersByTrader[trader].push(msg.sender);
+
+        // Low: `msg.value / allocations.length` leaves an ETH remainder that this
+        // contract had no way to ever pay out (there is no withdrawal function
+        // and no owner), so it was permanently stuck. Return it to the follower.
+        uint256 dust = msg.value - feePerPosition * allocations.length;
+        if (dust > 0) {
+            (bool ok, ) = msg.sender.call{value: dust}("");
+            require(ok, "ETH refund failed");
+        }
 
         emit TraderFollowed(msg.sender, trader, versionId, totalMargin);
     }
@@ -167,18 +190,33 @@ contract CopyTracker is ReentrancyGuard {
         // Track freeMargin delta to measure position returns
         uint256 marginBefore = exchange.freeMargin(msg.sender);
 
+        // H-5: a position that was already liquidated (or auto-deleveraged)
+        // reverts PositionAlreadyClosed. Unguarded, that single revert bricked
+        // the whole record forever: `rec.active` stayed true, the follower could
+        // never unfollow, and — worse — the slash that the loss should have
+        // triggered could never fire. Exactly the scenario slashing exists for.
+        // Failing to close an already-closed position is a no-op, not an error.
         for (uint256 i; i < rec.positionIds.length; ++i) {
-            exchange.closePositionFor(msg.sender, rec.positionIds[i]);
+            try exchange.closePositionFor(msg.sender, rec.positionIds[i]) {
+                // closed
+            } catch {
+                emit PositionCloseSkipped(msg.sender, rec.positionIds[i]);
+            }
         }
 
         uint256 marginAfter = exchange.freeMargin(msg.sender);
 
         // Slash logic: if traderStake configured and loss ≥ SLASH_TRIGGER_BPS
         if (address(traderStake) != address(0)) {
+            // Low: score the trader against the margin actually deployed on their
+            // strategy. Using the gross deposit charged the copy fee and the
+            // exchange's trading fees to the trader's track record, so every
+            // follow started life showing a loss before the market moved at all.
+            uint256 basis = rec.deployedAmount != 0 ? rec.deployedAmount : rec.initialAmount;
             uint256 finalAmount = marginAfter >= marginBefore ? marginAfter - marginBefore : 0;
-            if (finalAmount < rec.initialAmount) {
-                uint256 loss    = rec.initialAmount - finalAmount;
-                uint256 lossBps = loss * 10_000 / rec.initialAmount;
+            if (finalAmount < basis) {
+                uint256 loss    = basis - finalAmount;
+                uint256 lossBps = loss * 10_000 / basis;
                 if (lossBps >= SLASH_TRIGGER_BPS) {
                     uint256 staked   = traderStake.stakedAmount(rec.trader);
                     // slash = 50% of loss, capped at MAX_SLASH_BPS of stake

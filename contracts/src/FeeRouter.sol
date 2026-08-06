@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 interface IInsuranceVault {
     function depositFromProtocol(uint256 amount) external;
@@ -10,6 +11,8 @@ interface IInsuranceVault {
 
 /// @dev Fee split: 70% trader / 20% platform treasury / 10% insurance vault
 contract FeeRouter is Ownable {
+    using SafeERC20 for IERC20;   // M-4
+
     // ── Immutables ───────────────────────────────────────────────────────────
 
     IERC20           public immutable usdc;
@@ -45,6 +48,8 @@ contract FeeRouter is Ownable {
         uint256 platformShare,
         uint256 vaultShare
     );
+    event CopyTrackerSet(address indexed copyTracker);
+    event ExchangeSet(address indexed exchange);
     event TraderEarningsWithdrawn(address indexed trader, uint256 amount);
     event PlatformFeesWithdrawn(address indexed to, uint256 amount, uint256 timestamp);
     event ExternalRevenueRouted(
@@ -81,20 +86,34 @@ contract FeeRouter is Ownable {
 
     // ── Admin ────────────────────────────────────────────────────────────────
 
-    function setCopyTracker(address _ct) external onlyOwner { copyTracker = _ct; }
-    function setExchange(address _ex)    external onlyOwner { exchange    = _ex; }
+    function setCopyTracker(address _ct) external onlyOwner {
+        copyTracker = _ct;
+        emit CopyTrackerSet(_ct);
+    }
+
+    function setExchange(address _ex) external onlyOwner {
+        exchange = _ex;
+        emit ExchangeSet(_ex);
+    }
 
     // ── Fee entry points ─────────────────────────────────────────────────────
 
     /// @dev CopyTracker must approve this contract for `fee` USDC before calling.
     function distributeCopyFee(address trader, uint256 fee) external onlyAuthorized {
-        usdc.transferFrom(msg.sender, address(this), fee);
+        usdc.safeTransferFrom(msg.sender, address(this), fee);
         (uint256 t, uint256 p, uint256 v) = _split(trader, fee);
         emit CopyFeeDistributed(trader, fee, t, p, v);
     }
 
-    /// @dev PerpetualExchange must transfer `fee` USDC to this contract before calling.
+    /// @notice Books a performance fee and pulls it from the caller.
+    /// @dev Low: this used to be pure accounting — the exchange was trusted to
+    ///      have transferred the USDC first. Nothing verified that, so an
+    ///      authorized-but-buggy (or malicious) caller could credit `trader`
+    ///      earnings against USDC already sitting in this contract, i.e. against
+    ///      other traders' unwithdrawn balances. Pulling makes the credit and the
+    ///      cash inseparable. Caller must approve this contract for `fee` first.
     function receivePerformanceFee(address trader, uint256 fee) external onlyAuthorized {
+        usdc.safeTransferFrom(msg.sender, address(this), fee);
         (uint256 t, uint256 p, uint256 v) = _split(trader, fee);
         emit PerformanceFeeDistributed(trader, fee, t, p, v);
     }
@@ -107,7 +126,7 @@ contract FeeRouter is Ownable {
     ///         `fee` USDC first. Reuses the same `_split` accounting as on-chain fees.
     function routeExternalRevenue(address trader, uint256 fee) external {
         if (fee == 0) revert ZeroFee();
-        usdc.transferFrom(msg.sender, address(this), fee);
+        usdc.safeTransferFrom(msg.sender, address(this), fee);
         (uint256 t, uint256 p, uint256 v) = _split(trader, fee);
         emit ExternalRevenueRouted(msg.sender, trader, fee, t, p, v);
     }
@@ -118,7 +137,7 @@ contract FeeRouter is Ownable {
         uint256 amt = traderEarnings[msg.sender];
         if (amt == 0) revert NothingToWithdraw();
         traderEarnings[msg.sender] = 0;
-        usdc.transfer(msg.sender, amt);
+        usdc.safeTransfer(msg.sender, amt);
         emit TraderEarningsWithdrawn(msg.sender, amt);
     }
 
@@ -127,7 +146,7 @@ contract FeeRouter is Ownable {
         uint256 amt = platformEarnings;
         if (amt == 0) revert NothingToWithdraw();
         platformEarnings = 0;
-        usdc.transfer(platformTreasury, amt);
+        usdc.safeTransfer(platformTreasury, amt);
         emit PlatformFeesWithdrawn(platformTreasury, amt, block.timestamp);
     }
 
@@ -147,7 +166,7 @@ contract FeeRouter is Ownable {
         platformEarnings       += platformShare;
 
         // Route vault share to InsuranceVault; vault calls transferFrom back to pull USDC
-        usdc.approve(address(insuranceVault), vaultShare);
+        usdc.forceApprove(address(insuranceVault), vaultShare);
         insuranceVault.depositFromProtocol(vaultShare);
     }
 }

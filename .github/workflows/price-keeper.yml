@@ -3,22 +3,37 @@ name: Oracle Price Keeper (Sepolia)
 # 與 Base Sepolia keeper 共用 agent/keeper/run.ts。GuardedOracle 的鏡射由 CLI
 # 以分段逼近方式處理：超出 maxDeviationBps 時走一步而不是整筆放棄，避免像
 # 2026-07-27 那樣一旦落後就永遠追不上、只能由 admin 把上限設成 0 手動修正。
+#
+# 注意：README 曾寫「Sepolia 已停更凍結」，但這條 workflow 每 15 分鐘仍在跑它。
+# 兩者擇一必須是假的 —— 現況是「Sepolia 仍在喂價，只是不再是主要部署」，
+# README 已據此修正。
 on:
   schedule:
     - cron: '*/15 * * * *'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+# 與 Base Sepolia keeper 分開：不同鏈 = 不同 nonce 序列，可並行。
+# 但同鏈自己必須互斥，否則兩個 run 會用同一把金鑰搶同一個 nonce。
+concurrency:
+  group: keeper-key-sepolia
+  cancel-in-progress: false
+
 jobs:
   update-prices:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       KEEPER_CHAIN: sepolia
       KEEPER_RPC_URL: ${{ secrets.KEEPER_RPC_URL }}
       KEEPER_PRIVATE_KEY: ${{ secrets.KEEPER_PRIVATE_KEY }}
       KEEPER_ORACLE_ADDRESS: "0x17CA20A37Cf04F2f589B2573EC95f1411D29d958"
       KEEPER_GUARDED_ORACLE: "0x32A19D04ef2ca5A7DA02Df39419729fA745749A1"
+      MAX_FAIL_PCT: "30"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Fail fast when secrets are missing
         run: |
@@ -28,14 +43,44 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20
+          cache: npm
+          cache-dependency-path: agent/package-lock.json
 
+      # npm ci：只裝 lockfile 裡的版本，不讓 CI 自行改寫 lockfile。
       - name: Install agent deps
         working-directory: agent
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
+      # agent 的單元測試跑在 .github/workflows/agent-ci.yml，刻意不掛在這裡：
+      # 喂價是 liveness 關鍵路徑，不該以單元測試為前置條件。
       - name: Refresh prices (MockOracle + GuardedOracle mirror)
         working-directory: agent
-        run: npx tsx keeper/run.ts
+        run: |
+          set -uo pipefail
+          npx tsx keeper/run.ts 2>&1 | tee /tmp/keeper.log
+          STATUS=${PIPESTATUS[0]}
+          if [ "$STATUS" -ne 0 ]; then
+            echo "::error::keeper/run.ts 以非零狀態結束（exit $STATUS）。"
+            exit "$STATUS"
+          fi
+
+          # run.ts 對部分失敗只印 warning，於是 11 個資產壞掉 7 個仍然是綠的。
+          SUMMARY=$(grep -E '^available=[0-9]+ skipped=[0-9]+ wrote=[0-9]+ failed=[0-9]+$' /tmp/keeper.log | tail -1 || true)
+          if [ -z "$SUMMARY" ]; then
+            echo "::error::找不到 keeper 摘要行 —— 輸出格式已改變，這個門檻已失效，請修正 workflow。"
+            exit 1
+          fi
+          AVAILABLE=$(echo "$SUMMARY" | sed -n 's/.*available=\([0-9]*\).*/\1/p')
+          FAILED=$(echo "$SUMMARY" | sed -n 's/.*failed=\([0-9]*\).*/\1/p')
+          echo "keeper 摘要：$SUMMARY"
+          if [ "$AVAILABLE" -gt 0 ] && [ "$FAILED" -gt 0 ]; then
+            PCT=$(( FAILED * 100 / AVAILABLE ))
+            echo "寫入失敗率 ${PCT}%（門檻 ${MAX_FAIL_PCT}%）"
+            if [ "$PCT" -gt "${MAX_FAIL_PCT}" ]; then
+              echo "::error::${AVAILABLE} 個資產中有 ${FAILED} 個寫入失敗（${PCT}% > ${MAX_FAIL_PCT}%）。喂價已部分失效，不要當成成功。"
+              exit 1
+            fi
+          fi

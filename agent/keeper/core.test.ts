@@ -7,6 +7,7 @@ import {
   planUpdate,
   stepTowards,
   deviationAccepted,
+  guardDeviation,
 } from "./core.ts";
 
 // ── parseFeedValue：拒絕垃圾,不夾擠 ──────────────────────────────────────
@@ -95,5 +96,67 @@ while (p !== sbtcTarget && rounds < 20) {
 }
 assert.equal(p, sbtcTarget, "應在有限輪數內追上目標");
 assert.ok(rounds <= 5, `收斂太慢:${rounds} 輪`);
+
+// ── guardDeviation：MockOracle 的偏離上限（稽核 A-5）─────────────────────
+// 交易所讀的是沒有任何鏈上保護的 MockOracle，所以「數值合法但離譜」必須在這裡擋。
+
+// 鏈上還沒有價格 → seed，沒有可比基準，原樣寫入。
+{
+  const g = guardDeviation({ target: 311, current: 0 });
+  assert.equal(g.write, true);
+  assert.equal(g.value, 311);
+  assert.equal(g.clamped, false);
+}
+
+// 正常波動（< 10%）→ 原樣寫入。
+{
+  const g = guardDeviation({ target: 105, current: 100 });
+  assert.equal(g.write, true);
+  assert.equal(g.value, 105);
+  assert.equal(g.clamped, false);
+}
+
+// 超過上限但未達拒寫門檻 → 夾到邊緣，分段逼近（不是放棄、也不是照寫）。
+{
+  const up = guardDeviation({ target: 130, current: 100 });
+  assert.equal(up.write, true);
+  assert.equal(up.clamped, true);
+  assert.ok(Math.abs(up.value - 110) < 1e-9, `向上應夾到 110，得到 ${up.value}`);
+
+  const down = guardDeviation({ target: 70, current: 100 });
+  assert.equal(down.write, true);
+  assert.equal(down.clamped, true);
+  assert.ok(Math.abs(down.value - 90) < 1e-9, `向下應夾到 90，得到 ${down.value}`);
+}
+
+// 這就是 A-5 描述的事故形狀：拆股日 Yahoo 回 1/4 的價格（−75%），
+// 數值完全合法、parseFeedValue 擋不住，舊 keeper 會照寫並在下一輪清算所有部位。
+{
+  const split = guardDeviation({ target: 77.75, current: 311 });
+  assert.equal(split.write, false, "拆股價必須被拒寫，而不是照寫");
+  assert.ok(split.reason.includes("拒寫"), split.reason);
+}
+// 反向的離譜（來源換成別的標的 → 價格翻 3 倍）同樣拒寫。
+assert.equal(guardDeviation({ target: 933, current: 311 }).write, false);
+
+// 分段逼近必須在有限輪數內收斂（不能像舊 GuardedOracle 那樣永遠追不上）。
+{
+  let p = 100;
+  const target = 130;
+  let rounds = 0;
+  while (Math.abs(p - target) / p > 1e-9 && rounds < 20) {
+    const g = guardDeviation({ target, current: p });
+    assert.equal(g.write, true, `第 ${rounds} 輪不該被拒寫`);
+    assert.notEqual(g.value, p, "不得原地踏步");
+    p = g.value;
+    rounds += 1;
+  }
+  assert.ok(Math.abs(p - target) < 1e-6, `應收斂到目標，停在 ${p}`);
+  assert.ok(rounds <= 4, `收斂太慢：${rounds} 輪`);
+}
+
+// 非法 target 一律不寫。
+assert.equal(guardDeviation({ target: 0, current: 100 }).write, false);
+assert.equal(guardDeviation({ target: Number.NaN, current: 100 }).write, false);
 
 console.log("core.test.ts ✓ all assertions passed");

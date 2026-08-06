@@ -35,7 +35,37 @@ export function extractCoinGecko(json: unknown, id: string): ParsedFeed {
   return parseFeedValue((entry as Record<string, unknown>).usd);
 }
 
-export function extractYahoo(json: unknown): ParsedFeed {
+/** Yahoo 回應的附加中繼資料（幣別 / 報價時間），讓 keeper 能誠實回報偽新鮮度。 */
+export interface QuoteMeta {
+  /** 報價本身的年齡（秒）。注意這與「鏈上價格的年齡」是兩件事。 */
+  quoteAgeSec?: number;
+  /** meta.currency 原值。 */
+  currency?: string;
+  /** 報價比 warnQuoteAgeSec 還舊（例如週末的收盤價）→ 寫上鏈會造成偽新鮮度。 */
+  quoteStale?: boolean;
+}
+
+/** 報價超過這個年齡就完全不用（預設 4 天：足以涵蓋週末＋一個假日）。 */
+export const DEFAULT_MAX_QUOTE_AGE_SEC = 4 * 86_400;
+/** 報價超過這個年齡就警告（預設 26 小時：涵蓋正常的隔夜，抓得到週末/凍結）。 */
+export const DEFAULT_WARN_QUOTE_AGE_SEC = 26 * 3_600;
+
+/**
+ * 從 Yahoo chart 回應萃取價格。
+ *
+ * 稽核（四·Low）：舊版只讀 `regularMarketPrice`，**不看幣別也不看報價時間**。
+ *   • 幣別：Yahoo 會因 ticker 換所（例如 `AAPL` → 倫敦/法蘭克福掛牌）回 GBP/EUR
+ *     的數字，型別完全合法，但寫進 oracle 就是錯價，會清算所有部位。
+ *   • 報價時間：週末回的是上一個收盤價，keeper 每 15 分鐘照寫一次 → 鏈上
+ *     `updatedAt` 一直新鮮、價格卻是兩天前的。對「price feed liveness」而言
+ *     這是**偽新鮮度**，比明著過期更危險。
+ * 現在幣別非 USD 直接拒絕；報價過舊超過 maxQuoteAgeSec 也拒絕，介於警告區間
+ * 則回值但標記 `quoteStale`，由呼叫端印出來。
+ */
+export function extractYahoo(
+  json: unknown,
+  opts: { nowSec?: number; maxQuoteAgeSec?: number; warnQuoteAgeSec?: number } = {},
+): ParsedFeed & QuoteMeta {
   if (typeof json !== "object" || json === null) {
     return { value: null, reason: "yahoo: non-object response" };
   }
@@ -47,18 +77,49 @@ export function extractYahoo(json: unknown): ParsedFeed {
   if (!Array.isArray(result) || result.length === 0) {
     return { value: null, reason: "yahoo: empty result" };
   }
-  const meta = (result[0] as Record<string, unknown> | undefined)?.meta;
-  if (typeof meta !== "object" || meta === null) {
+  const metaRaw = (result[0] as Record<string, unknown> | undefined)?.meta;
+  if (typeof metaRaw !== "object" || metaRaw === null) {
     return { value: null, reason: "yahoo: no meta" };
   }
-  return parseFeedValue((meta as Record<string, unknown>).regularMarketPrice);
+  const meta = metaRaw as Record<string, unknown>;
+
+  // 1) 幣別必須是 USD —— oracle 的所有價格都是 USD 8-dec。
+  const currency = typeof meta.currency === "string" ? meta.currency : undefined;
+  if (!currency) {
+    return { value: null, reason: "yahoo: meta.currency 缺漏（無法確認幣別）" };
+  }
+  if (currency.toUpperCase() !== "USD") {
+    return { value: null, reason: `yahoo: 幣別為 ${currency}，不是 USD`, currency };
+  }
+
+  // 2) 報價時間必須存在且合理。
+  const nowSec = opts.nowSec ?? Math.floor(Date.now() / 1000);
+  const maxAge = opts.maxQuoteAgeSec ?? DEFAULT_MAX_QUOTE_AGE_SEC;
+  const warnAge = opts.warnQuoteAgeSec ?? DEFAULT_WARN_QUOTE_AGE_SEC;
+  const t = meta.regularMarketTime;
+  if (typeof t !== "number" || !Number.isFinite(t) || t <= 0) {
+    return { value: null, reason: "yahoo: meta.regularMarketTime 缺漏或非法", currency };
+  }
+  const quoteAgeSec = Math.max(0, nowSec - t);
+  if (quoteAgeSec > maxAge) {
+    return {
+      value: null,
+      reason: `yahoo: 報價已 ${(quoteAgeSec / 3600).toFixed(1)} 小時未更新（上限 ${(maxAge / 3600).toFixed(0)}h）`,
+      currency,
+      quoteAgeSec,
+      quoteStale: true,
+    };
+  }
+
+  const parsed = parseFeedValue(meta.regularMarketPrice);
+  return { ...parsed, currency, quoteAgeSec, quoteStale: quoteAgeSec > warnAge };
 }
 
 /** 網路取價。任何失敗都回 value:null，永遠不丟例外、永遠不編造數字。 */
 export async function fetchPrice(
   symbol: string,
   fetchImpl: typeof fetch = fetch,
-): Promise<ParsedFeed & { source: string }> {
+): Promise<ParsedFeed & QuoteMeta & { source: string }> {
   const src = SOURCES[symbol];
   if (!src) return { value: null, reason: `unknown symbol ${symbol}`, source: "none" };
 

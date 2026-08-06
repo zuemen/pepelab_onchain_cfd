@@ -5,6 +5,7 @@ import { parseEther } from 'ethers'
 import { useContracts } from 'src/hooks/useContracts'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
+import { STABLE_LABEL } from 'src/lib/pepefi/tokenLabel'
 
 import Box from '@mui/material/Box'
 import Container from '@mui/material/Container'
@@ -72,42 +73,30 @@ export default function TraderStakePage() {
     // Reward Rate: 1 mUSDC staked yields 0.02 PEPE tokens per day (slowed down and authentic!)
     const rewardRatePerSecond = (stakedUSDC * 0.02) / 86400
 
+    // 每 100ms 重繪一次整頁只為了讓小數點跳動——手機上這是純粹的耗電，桌機上
+    // 它把 React 的 commit 排滿。收益率是「每天 0.02 PEPE / mUSDC」，1 秒的
+    // 解析度已經遠超過肉眼能分辨的變化。
     const interval = setInterval(() => {
       const elapsedSeconds = (Date.now() - lastClaimedAt) / 1000
       const earned = Math.max(0, elapsedSeconds * rewardRatePerSecond)
       setPendingPepe(earned)
-    }, 100) // Ticks every 100ms for a gorgeous live dynamic GameFi feel!
+    }, 1000)
 
     return () => clearInterval(interval)
   }, [info, lastClaimedAt])
 
-  const doHarvestYield = async () => {
-    if (pendingPepe <= 0 || !contracts || !wallet.address) return
-    
-    setLoad('harvest', true)
-    try {
-      const amountToMint = parseEther(pendingPepe.toFixed(18))
-      
-      // Execute ACTUAL on-chain mint transaction to user's Metamask account
-      const tx = asTx(await contracts.pepeToken.mint(wallet.address, amountToMint))
-      await tx.wait()
-      
-      const now = Date.now()
-      localStorage.setItem('pepefi:stake:last_claimed_at', now.toString())
-      setLastClaimedAt(now)
-      setPendingPepe(0)
-      
-      // Dispatch global event so all menus refresh their PEPE balances instantly!
-      window.dispatchEvent(new CustomEvent('pepefi:gamefi-updated'))
-      notify(`鏈上收割成功！已成功在鏈上鑄造 ${Number(amountToMint) / 1e18} PEPE 並發送至您的錢包 🌾🐸`, true, tx.hash)
-      await fetchAll()
-    } catch (e) {
-      console.error('[harvest error]', e)
-      notify(`鏈上收割失敗：${prettyError(e)}。請確保您使用的是 PepeToken 合約的擁有者錢包。`, false)
-    } finally {
-      setLoad('harvest', false)
-    }
-  }
+  /**
+   * 「收割」目前**沒有真正的獎勵來源**。
+   *
+   * 舊版直接呼叫 `pepeToken.mint(user, amount)`——那是 `onlyOwner`，對任何一般
+   * 使用者都是 100% revert；錯誤文案自己都寫著「請確保您使用的是 PepeToken 合約
+   * 的擁有者錢包」，等於承認這顆按鈕不是給使用者按的。讓使用者簽名、付 gas、
+   * 然後撞回一個必然的 revert，比不給按更糟。
+   *
+   * 真正要能發獎勵，需要一份預先注資的 PepeStaking／分配合約（PepeStaking 在
+   * 本鏈是 0x0）。在那之前這裡明確標示為展示用累計、按鈕停用，不發任何交易。
+   */
+  const HARVEST_ENABLED = false
 
   const addPepeToWallet = async () => {
     if (!window.ethereum || !contracts) return
@@ -296,7 +285,7 @@ export default function TraderStakePage() {
               </Typography>
               <Typography variant="h5" sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'text.primary' }}>
                 {info ? f18(info.amount) : '…'}
-                <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary', ml: 0.5 }}>mUSDC</Box>
+                <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary', ml: 0.5 }}>{STABLE_LABEL}</Box>
               </Typography>
             </Card>
           </Grid>
@@ -307,7 +296,7 @@ export default function TraderStakePage() {
               </Typography>
               <Typography variant="h5" sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'error.main' }}>
                 {info ? f18(info.totalSlashed) : '…'}
-                <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary', ml: 0.5 }}>mUSDC</Box>
+                <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary', ml: 0.5 }}>{STABLE_LABEL}</Box>
               </Typography>
             </Card>
           </Grid>
@@ -341,7 +330,7 @@ export default function TraderStakePage() {
         {/* Eligibility badge */}
         {eligible !== null && (
           <Chip
-            label={eligible ? '✓ Eligible to publish strategies' : '✗ Need 100 mUSDC stake'}
+            label={eligible ? '✓ Eligible to publish strategies' : `✗ Need 100 ${STABLE_LABEL} stake`}
             color={eligible ? 'success' : 'error'}
             variant="outlined"
             size="small"
@@ -350,7 +339,7 @@ export default function TraderStakePage() {
         )}
 
         <Typography variant="caption" color="text.secondary">
-          Minimum stake: {f18(minStake)} mUSDC · Skin-in-the-game for your followers
+          Minimum stake: {f18(minStake)} {STABLE_LABEL} · Skin-in-the-game for your followers
         </Typography>
       </Card>
 
@@ -393,7 +382,7 @@ export default function TraderStakePage() {
                 <Chip label="鏈上聯動實時挖礦" color="success" size="small" sx={{ height: 18, fontSize: '0.65rem', fontWeight: 'bold' }} />
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                利用您的 mUSDC 聲譽質押賺取真正的鏈上 PEPE 代幣！
+                依 {STABLE_LABEL} 聲譽質押試算 PEPE 產出（展示用，尚未接上鏈上獎勵池）
               </Typography>
             </Box>
           </Stack>
@@ -439,11 +428,13 @@ export default function TraderStakePage() {
             </Grid>
           </Grid>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mt: 1.5 }}>
-            {info && info.amount > 0n ? (
-              `每秒賺取中... 🚀 (基於質押的 ${f18(info.amount)} mUSDC)`
-            ) : (
-              '⚠️ 您目前尚未質押 mUSDC，無法開始挖礦！'
-            )}
+            {info && info.amount > 0n
+              ? `依質押的 ${f18(info.amount)} ${STABLE_LABEL} 累計（展示用）`
+              : `⚠️ 您目前尚未質押 ${STABLE_LABEL}`}
+          </Typography>
+          <Typography variant="caption" color="warning.main" sx={{ display: 'block', textAlign: 'center', mt: 0.5 }}>
+            ⚠ 此數字為前端依質押量與時間試算的<b>展示值</b>，鏈上沒有對應的獎勵池，
+            目前無法領取。（PepeStaking 尚未在本網路部署。）
           </Typography>
         </Card>
 
@@ -452,8 +443,8 @@ export default function TraderStakePage() {
             variant="contained"
             color="success"
             size="large"
-            onClick={doHarvestYield}
-            disabled={pendingPepe <= 0 || busy['harvest']}
+            disabled={!HARVEST_ENABLED}
+            title="尚未接上獎勵來源合約（PepeStaking 未部署），此為展示用累計"
             sx={{
               flexGrow: 2,
               py: 1.5,
@@ -468,7 +459,7 @@ export default function TraderStakePage() {
               }
             }}
           >
-            {busy['harvest'] ? '鏈上交易發送中...' : pendingPepe > 0 ? `🌾 鏈上收割 (Mint to Wallet)` : '🌾 暫無收益'}
+            🌾 收割（展示用 · 尚未啟用）
           </Button>
           
           <Button
@@ -490,15 +481,16 @@ export default function TraderStakePage() {
         </Stack>
 
         <Typography variant="caption" color="text.secondary" sx={{ zIndex: 1, textAlign: 'center', fontStyle: 'italic' }}>
-          * 提示：質押的 mUSDC 作為合約聲譽保障金不可免息產生 mUSDC 收益，但本平台貼心為您自動開啟鏈上 PEPE 挖礦！
-          每質押 1 mUSDC 每日產出 0.02 PEPE，收割將發起鏈上鑄造交易，直接存入您的實體錢包！
+          * 質押的 {STABLE_LABEL} 是給跟單者的聲譽保障金，本身不生息。上方的 PEPE 產出
+          （每質押 1 {STABLE_LABEL} 每日 0.02 PEPE）目前是<b>前端試算的展示值</b>：鏈上沒有
+          對應的獎勵池，也沒有任何合約會把它發給你，因此收割按鈕停用。
         </Typography>
       </Card>
 
       {/* ─── B. Stake More ───────────────────────────────────────────────── */}
       <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
         <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-          Stake mUSDC
+          Stake {STABLE_LABEL}
         </Typography>
         <Typography variant="body2" color="text.secondary">
           Staking puts your capital at risk — followers can trigger slashing if your strategy causes &gt; 30% loss.
@@ -514,7 +506,7 @@ export default function TraderStakePage() {
             slotProps={{ htmlInput: { min: "100", step: "100", style: { fontFamily: MONO } } }}
             sx={{ width: 140 }}
           />
-          <Typography variant="body2" color="text.secondary">mUSDC</Typography>
+          <Typography variant="body2" color="text.secondary">{STABLE_LABEL}</Typography>
           <Button
             variant="contained"
             onClick={() => void doApproveAndStake()}
@@ -536,7 +528,7 @@ export default function TraderStakePage() {
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <Alert severity="warning">
               <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
-                Pending unstake: {f18(info.unstakeAmount)} mUSDC
+                Pending unstake: {f18(info.unstakeAmount)} {STABLE_LABEL}
               </Typography>
               {canExecute ? 'Cooldown elapsed — ready to execute.' : `Available at: ${cooldownEnds}`}
             </Alert>
@@ -573,7 +565,7 @@ export default function TraderStakePage() {
                 slotProps={{ htmlInput: { min: "0", step: "50", style: { fontFamily: MONO } } }}
                 sx={{ width: 140 }}
               />
-              <Typography variant="body2" color="text.secondary">mUSDC</Typography>
+              <Typography variant="body2" color="text.secondary">{STABLE_LABEL}</Typography>
               <Button
                 variant="outlined"
                 onClick={() => void doRequestUnstake()}
@@ -595,7 +587,7 @@ export default function TraderStakePage() {
         <Stack spacing={1} sx={{ typography: 'caption', color: 'text.secondary', mb: 2 }}>
           <Box sx={{ display: 'flex', gap: 1 }}>
             <Box component="span" sx={{ color: 'info.main', fontWeight: 'bold' }}>•</Box>
-            <Box>Stake ≥ 100 mUSDC to publish strategies on the Marketplace.</Box>
+            <Box>Stake ≥ 100 {STABLE_LABEL} to publish strategies on the Marketplace.</Box>
           </Box>
           <Box sx={{ display: 'flex', gap: 1 }}>
             <Box component="span" sx={{ color: 'info.main', fontWeight: 'bold' }}>•</Box>

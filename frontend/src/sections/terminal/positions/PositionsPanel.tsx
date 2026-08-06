@@ -1,4 +1,4 @@
-import type { LivePos } from '../types'
+import type { LivePos, TerminalContracts } from '../types'
 import type { FundingData } from 'src/hooks/useFundingData'
 
 import { useState } from 'react'
@@ -11,8 +11,6 @@ import { FillsTable } from './FillsTable'
 import { FundingTable } from './FundingTable'
 import { PositionsTable } from './PositionsTable'
 import { C, panel, monoCss, labelCss } from '../terminal-theme'
-
-type Contracts = any
 
 type Tab = 'positions' | 'fills' | 'funding'
 
@@ -27,14 +25,17 @@ export function PositionsPanel({
   address,
   positions,
   funding,
+  staleNoticeFor,
   notify,
   onRefresh,
   chainId,
 }: {
-  contracts: Contracts
+  contracts: TerminalContracts
   address: string | null
   positions: LivePos[]
   funding: FundingData
+  /** M1：平倉的 stale 擋單原因（null = 可以平）。往下傳給 PositionsTable。 */
+  staleNoticeFor: (asset: string) => string | null
   notify: (msg: string, ok: boolean) => void
   onRefresh: () => Promise<void>
   chainId: number | null
@@ -123,6 +124,7 @@ export function PositionsPanel({
         <PositionsTable
           contracts={contracts}
           positions={positions}
+          staleNoticeFor={staleNoticeFor}
           notify={notify}
           onRefresh={onRefresh}
         />

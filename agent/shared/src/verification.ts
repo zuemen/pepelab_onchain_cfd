@@ -25,6 +25,18 @@ const ZERO = "0x0000000000000000000000000000000000000000";
 const ZERO_BYTES32 =
   "0x0000000000000000000000000000000000000000000000000000000000000000";
 
+/** All outbound HTTP in this module is bounded — `/agent/:did/verification` is a
+ *  free, unauthenticated endpoint, so an unbounded fetch is a way to pin a
+ *  serverless instance open (audit 2026-08-06, 四·Medium). */
+const HTTP_TIMEOUT_MS = Number(process.env.VERIFICATION_HTTP_TIMEOUT_MS ?? "5000");
+
+/** Never let a secret reach a public response body. */
+function redact(msg: string, secret?: string): string {
+  let out = msg;
+  if (secret && secret.length >= 6) out = out.split(secret).join("<redacted>");
+  return out.replace(/apikey=[^&\s]+/gi, "apikey=<redacted>").slice(0, 200);
+}
+
 /** EIP-8126 verification type codes. */
 export type VerificationType = "ETV" | "MCV" | "SCV" | "WAV" | "WV";
 
@@ -78,7 +90,20 @@ export interface AgentVerification {
   proofIds: AgentVerificationProofIds;
   /** Verifier did:pkh (recovers from `proof.proofValue`). */
   verifier: string;
+  /**
+   * True when the verifier key was generated on the fly because
+   * `VERIFIER_PRIVATE_KEY` was not configured. Such an attestation is only
+   * meaningful within one process lifetime and MUST NOT be treated as an
+   * identity anyone can pin. Audit 2026-08-06 (四·Medium): this degradation was
+   * previously invisible to consumers.
+   */
+  verifierEphemeral: boolean;
   issuedAt: string;
+  /** Attestation expiry (ISO). Past this instant the attestation is void. */
+  expiresAt: string;
+  /** Single-use randomness; makes two attestations of identical content distinct
+   *  (anti-replay — the old shape could be replayed for ever). */
+  nonce: string;
   proof: {
     type: "EthereumEip712Signature2021";
     created: string;
@@ -127,13 +152,37 @@ export function computeRiskScore(checks: VerificationCheck[]): {
 
 // ── Proof identifiers (keccak digests, NOT ZK proofs — see header) ────────────
 
-/** Canonical, key-ordered serialization of a check → its proofId is the digest. */
+/**
+ * Deterministic JSON with recursively sorted object keys, so that logically
+ * identical evidence always produces the same digest regardless of key order.
+ */
+function canonicalJson(v: unknown): string {
+  if (v === null || typeof v !== "object") return JSON.stringify(v ?? null);
+  if (Array.isArray(v)) return `[${v.map(canonicalJson).join(",")}]`;
+  const entries = Object.entries(v as Record<string, unknown>)
+    .filter(([, val]) => val !== undefined)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return `{${entries.map(([k, val]) => `${JSON.stringify(k)}:${canonicalJson(val)}`).join(",")}}`;
+}
+
+/**
+ * Canonical, key-ordered serialization of a check → its proofId is the digest.
+ *
+ * Audit 2026-08-06 (四·Medium): `name`, `passed` and `evidence` used to be left
+ * OUT of the digest, so they could be rewritten freely and verification still
+ * returned `valid:true` — the header's claim that "any tampering with a check
+ * changes its digest" was simply false (proven by flipping `riskTier` to `low`).
+ * Every field of the check is now covered.
+ */
 function checkDigest(c: VerificationCheck): string {
-  const canonical = JSON.stringify({
+  const canonical = canonicalJson({
     type: c.type,
+    name: c.name,
     applicable: c.applicable,
+    passed: c.passed,
     score: c.score,
     details: c.details,
+    evidence: c.evidence ?? null,
   });
   return ethers.id(canonical); // keccak256(utf8) → bytes32
 }
@@ -167,26 +216,41 @@ const VERIFIER_DOMAIN = {
   chainId: AGENT_CHAIN_ID,
 };
 
+// riskTier / expiresAt / nonce are part of the signed tuple (audit 2026-08-06):
+// the tier used to be unsigned (flip it to "low" and verification still passed),
+// and without expiry+nonce an attestation could be replayed for ever.
 const VERIFIER_TYPES: Record<string, ethers.TypedDataField[]> = {
   AgentVerificationAttestation: [
     { name: "subject", type: "string" },
     { name: "overallRiskScore", type: "uint256" },
+    { name: "riskTier", type: "string" },
     { name: "summaryProofId", type: "bytes32" },
     { name: "issuedAt", type: "uint256" },
+    { name: "expiresAt", type: "uint256" },
+    { name: "nonce", type: "bytes32" },
   ],
 };
+
+/** Default attestation lifetime (seconds). Overridable via AGENT_ATTESTATION_TTL. */
+export const DEFAULT_ATTESTATION_TTL_SEC = 15 * 60;
 
 function verifierValue(p: {
   subject: string;
   overallRiskScore: number;
+  riskTier: RiskTier;
   summaryProofId: string;
   issuedAt: number;
+  expiresAt: number;
+  nonce: string;
 }) {
   return {
     subject: p.subject,
     overallRiskScore: BigInt(p.overallRiskScore),
+    riskTier: p.riskTier,
     summaryProofId: p.summaryProofId,
     issuedAt: BigInt(p.issuedAt),
+    expiresAt: BigInt(p.expiresAt),
+    nonce: p.nonce,
   };
 }
 
@@ -292,10 +356,15 @@ export async function checkSCV(
     }
 
     try {
+      // 註：Etherscan V2 只接受 query string 形式的 apikey（沒有 header 版本），
+      // 所以金鑰無法從 URL 移走。能做的是：(a) 這是伺服器對外的請求、不經瀏覽器；
+      // (b) 任何含此 URL 的錯誤訊息在寫進 evidence 前一律 redact（見下方 catch），
+      // 因為 evidence 會被公開端點原樣回傳。
       const url =
         `https://api.etherscan.io/v2/api?chainid=${chainId}` +
-        `&module=contract&action=getsourcecode&address=${t.address}&apikey=${apiKey}`;
-      const res = await fetch(url);
+        `&module=contract&action=getsourcecode&address=${encodeURIComponent(t.address)}` +
+        `&apikey=${encodeURIComponent(apiKey)}`;
+      const res = await fetch(url, { signal: AbortSignal.timeout(HTTP_TIMEOUT_MS) });
       const json = (await res.json()) as {
         status?: string;
         result?: Array<{ SourceCode?: string; ContractName?: string }>;
@@ -310,11 +379,13 @@ export async function checkSCV(
       };
       scoreSum += sourceVerified ? 0 : 60; // code present but source unverified → elevated
     } catch (err) {
+      // The URL carries the explorer API key, and this evidence object is
+      // returned by a public endpoint — never echo the raw error.
       evidence[t.label] = {
         address: t.address,
         codePresent: true,
         sourceVerified: "error",
-        error: (err as Error).message,
+        error: redact((err as Error).message, apiKey),
       };
       scoreSum += 30;
     }
@@ -362,21 +433,21 @@ export async function checkWAV(
 
   let rootOk = false;
   try {
-    const r = await fetch(base + "/", { method: "GET" });
+    const r = await fetch(base + "/", { method: "GET", signal: AbortSignal.timeout(HTTP_TIMEOUT_MS) });
     rootOk = r.status === 200;
     evidence.rootStatus = r.status;
   } catch (err) {
-    evidence.rootError = (err as Error).message;
+    evidence.rootError = redact((err as Error).message);
   }
 
   let payWallOk = false;
   try {
-    const r = await fetch(base + paidPath, { method: "GET" });
+    const r = await fetch(base + paidPath, { method: "GET", signal: AbortSignal.timeout(HTTP_TIMEOUT_MS) });
     payWallOk = r.status === 402;
     evidence.paidPath = paidPath;
     evidence.paidStatus = r.status;
   } catch (err) {
-    evidence.paidError = (err as Error).message;
+    evidence.paidError = redact((err as Error).message);
   }
 
   // Equal weighting across the three sub-checks.
@@ -456,12 +527,13 @@ export async function checkWV(
   }
   evidence.possession = possession;
 
-  // Scoring: address + EOA + history are the baseline; possession, when
-  // demonstrated, removes any residual doubt; when not demonstrated it is simply
-  // excluded from the denominator (history already evidences a live wallet).
-  const baseline = [nonZero, isEoa, hasHistory];
-  if (possession === true) baseline.push(true);
-  if (possession === false) baseline.push(false);
+  // Scoring: address + EOA + history + possession, all four always in the
+  // denominator. Audit 2026-08-06 (四·Medium): "not demonstrated" used to be
+  // removed from the denominator, so an arbitrary DID that nobody controls
+  // scored exactly the same as one that proved key possession — the strongest
+  // signal of the four was free to skip. Not proving possession is now simply
+  // not passing it (which is the honest reading: we could not verify control).
+  const baseline = [nonZero, isEoa, hasHistory, possession === true];
   const passes = baseline.filter(Boolean).length;
   const score = Math.round(((baseline.length - passes) / baseline.length) * 100);
   return {
@@ -510,6 +582,12 @@ export interface BuildVerificationParams {
   paidPath?: string;
   /** Optional signer to demonstrate WV proof-of-possession. */
   holderSigner?: ethers.Wallet | ethers.HDNodeWallet;
+  /** Mark the attestation as signed by a throwaway verifier key (no
+   *  VERIFIER_PRIVATE_KEY configured). Surfaced to consumers as
+   *  `verifierEphemeral`. */
+  verifierEphemeral?: boolean;
+  /** Attestation lifetime in seconds (default 15 min). */
+  ttlSec?: number;
 }
 
 /**
@@ -540,6 +618,11 @@ export async function buildAgentVerification(
   const proofIds = buildProofIds(checks);
 
   const issuedAtSec = Math.floor(Date.now() / 1000);
+  const ttlSec =
+    params.ttlSec ??
+    Number(process.env.AGENT_ATTESTATION_TTL ?? DEFAULT_ATTESTATION_TTL_SEC);
+  const expiresAtSec = issuedAtSec + (Number.isFinite(ttlSec) && ttlSec > 0 ? ttlSec : DEFAULT_ATTESTATION_TTL_SEC);
+  const nonce = ethers.hexlify(ethers.randomBytes(32));
   const verifierAddr = await params.verifier.getAddress();
   const verifierDid = agentDid(verifierAddr);
 
@@ -549,8 +632,11 @@ export async function buildAgentVerification(
     verifierValue({
       subject: subjectDid,
       overallRiskScore,
+      riskTier,
       summaryProofId: proofIds.summaryProofId,
       issuedAt: issuedAtSec,
+      expiresAt: expiresAtSec,
+      nonce,
     }),
   );
 
@@ -569,7 +655,10 @@ export async function buildAgentVerification(
     checks,
     proofIds,
     verifier: verifierDid,
+    verifierEphemeral: params.verifierEphemeral === true,
     issuedAt: iso,
+    expiresAt: new Date(expiresAtSec * 1000).toISOString(),
+    nonce,
     proof: {
       type: "EthereumEip712Signature2021",
       created: iso,
@@ -587,6 +676,9 @@ export interface VerifyAttestationResult {
   subject?: string;
   overallRiskScore?: number;
   riskTier?: RiskTier;
+  /** True when the signing verifier key was ephemeral — signature is genuine but
+   *  the identity behind it is not pinnable. */
+  verifierEphemeral?: boolean;
 }
 
 /**
@@ -596,9 +688,29 @@ export interface VerifyAttestationResult {
  * summaryProofId mismatch; tampering with the score/subject/summary breaks the
  * signature → `valid:false`.
  */
-export function verifyAgentVerification(av: AgentVerification): VerifyAttestationResult {
+export function verifyAgentVerification(
+  av: AgentVerification,
+  opts: { nowMs?: number; seenNonces?: Set<string> } = {},
+): VerifyAttestationResult {
   try {
     if (!av?.proof?.proofValue) return { valid: false, reason: "missing proof" };
+
+    // 0) Freshness + replay. An attestation with no expiry/nonce is from the old
+    //    (indefinitely replayable) shape and is refused outright.
+    const now = opts.nowMs ?? Date.now();
+    if (!av.expiresAt) return { valid: false, reason: "missing expiresAt (replayable attestation)" };
+    if (!av.nonce || !/^0x[0-9a-fA-F]{64}$/.test(av.nonce)) {
+      return { valid: false, reason: "missing or malformed nonce" };
+    }
+    const expiresAtSec = Math.floor(new Date(av.expiresAt).getTime() / 1000);
+    if (!Number.isFinite(expiresAtSec)) return { valid: false, reason: "malformed expiresAt" };
+    if (expiresAtSec * 1000 < now) {
+      return { valid: false, reason: `attestation expired at ${av.expiresAt}` };
+    }
+    if (opts.seenNonces) {
+      if (opts.seenNonces.has(av.nonce)) return { valid: false, reason: "nonce replayed" };
+      opts.seenNonces.add(av.nonce);
+    }
 
     // 1) Recompute proof identifiers from the checks and compare.
     const recomputed = buildProofIds(av.checks);
@@ -616,10 +728,13 @@ export function verifyAgentVerification(av: AgentVerification): VerifyAttestatio
       }
     }
 
-    // 2) Recompute the overall score from the checks and compare.
-    const { overallRiskScore } = computeRiskScore(av.checks);
+    // 2) Recompute the overall score AND tier from the checks and compare.
+    const { overallRiskScore, riskTier } = computeRiskScore(av.checks);
     if (overallRiskScore !== av.overallRiskScore) {
       return { valid: false, reason: "overallRiskScore does not match checks" };
+    }
+    if (riskTier !== av.riskTier) {
+      return { valid: false, reason: `riskTier does not match score (expected ${riskTier}, got ${av.riskTier})` };
     }
 
     // 3) Recover the verifier signature.
@@ -631,8 +746,11 @@ export function verifyAgentVerification(av: AgentVerification): VerifyAttestatio
       verifierValue({
         subject: av.subject,
         overallRiskScore: av.overallRiskScore,
+        riskTier: av.riskTier,
         summaryProofId: av.proofIds.summaryProofId,
         issuedAt: issuedAtSec,
+        expiresAt: expiresAtSec,
+        nonce: av.nonce,
       }),
       av.proof.proofValue,
     );
@@ -649,6 +767,7 @@ export function verifyAgentVerification(av: AgentVerification): VerifyAttestatio
       subject: av.subject,
       overallRiskScore: av.overallRiskScore,
       riskTier: av.riskTier,
+      verifierEphemeral: av.verifierEphemeral === true,
     };
   } catch (err) {
     return { valid: false, reason: (err as Error).message };

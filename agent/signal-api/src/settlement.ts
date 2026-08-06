@@ -4,7 +4,7 @@
 // 啟用方式：在 .env 設 FEE_SETTLEMENT_PRIVATE_KEY（一個在 Base Sepolia 上、
 // 持有 mUSDC + 少量 ETH 的測試金鑰）。未設則停用，僅保留鏈下帳務（/revenue）。
 import { ethers } from "ethers";
-import { loadEnv, makeProvider, ADDRESSES } from "@pepelab/shared";
+import { loadEnv, makeProvider, ADDRESSES, resolveSettlementToken } from "@pepelab/shared";
 
 loadEnv();
 
@@ -24,12 +24,16 @@ const PK = process.env.FEE_SETTLEMENT_PRIVATE_KEY?.trim();
 
 // A0: settlement currency is configurable so x402 revenue can settle in the
 // SAME token the agent paid (official Base Sepolia USDC, 6-dec) via a dedicated
-// FeeRouter, while the perp engine keeps MockUSDC. Defaults fall back to the
-// MockUSDC FeeRouter from addresses.ts (old behaviour).
-const SETTLEMENT_TOKEN =
-  process.env.X402_SETTLEMENT_TOKEN?.trim() || ADDRESSES.MockUSDC;
+// FeeRouter, while the perp engine keeps MockUSDC.
+//
+// 稽核（四·Medium）：這裡以前的預設值是 `ADDRESSES.MockUSDC`，而 app.ts 的預設值是
+// 官方 USDC —— 兩個不同的預設值意味著 `_assertCurrencyMatch` 比對的根本不是對外
+// 宣告的那個 token，永遠抓不到誤配。現在兩邊都走 shared 的 `resolveSettlementToken()`。
+const SETTLEMENT_TOKEN = resolveSettlementToken();
 const SETTLEMENT_ROUTER =
   process.env.X402_FEE_ROUTER?.trim() || ADDRESSES.FeeRouter;
+/** 只有這一顆是可以自助鑄幣的測試代幣；其它 token 一律不嘗試 mint。 */
+const MINTABLE_MOCK_USDC = ADDRESSES.MockUSDC;
 
 let wallet: ethers.Wallet | null = null;
 let feeRouter: ethers.Contract | null = null;
@@ -54,6 +58,13 @@ export interface SettlementResult {
 
 // 序列化所有結算：fire-and-forget 的並發呼叫共用同一個 EOA，若同時送會撞 nonce。
 // 用 promise chain 確保一次只送一筆。
+//
+// ⚠ 誠實邊界（稽核 四·Medium）：這個 queue 是**程序內**的。Vercel 會同時跑多個
+// 實例，每個實例各有一條 queue，卻共用同一把 FEE_SETTLEMENT_PRIVATE_KEY —— 跨實例
+// 的並發仍然會撞 nonce（症狀：`replacement transaction underpriced` / `nonce too low`，
+// 結算失敗但付費者已拿到資料，故只影響分潤紀錄不影響商品交付）。真正的修法是把結算
+// 移出請求路徑（佇列 + 單一 worker）或每個實例用不同的簽章金鑰；在那之前，
+// `settleError` 會如實回傳給呼叫端，不會被吞掉。
 let queue: Promise<unknown> = Promise.resolve();
 
 /**
@@ -105,17 +116,29 @@ async function _settle(trader: string, feeUsd: number): Promise<SettlementResult
     const atomic = ethers.parseUnits(feeUsd.toString(), decimals);
     const me = wallet.address;
 
-    // 確保餘額。MockUSDC 可自助鑄幣省 faucet；官方 USDC 不可 mint → 改用既有
-    // 餘額（來自 x402 付款），鑄幣失敗就略過、不擋結算。
+    // 確保餘額。只有已知的 MockUSDC 才嘗試自助鑄幣 —— 舊版對**任意** token 都無條件
+    // 先試 `mint()`（稽核 四·Low）：對真 USDC 那是一筆注定 revert 的交易（估 gas 就
+    // 會失敗、浪費 RPC 來回），對某個剛好有 `mint(address,uint256)` 的第三方合約則是
+    // 一個沒人預期會被觸發的寫呼叫。官方 USDC 只能用既有餘額（來自 x402 付款）。
     const bal = (await usdc.balanceOf(me)) as bigint;
     if (bal < atomic) {
+      const mintable =
+        SETTLEMENT_TOKEN.toLowerCase() === MINTABLE_MOCK_USDC.toLowerCase();
+      if (!mintable) {
+        return {
+          status: "failed",
+          error:
+            `結算 token 餘額不足（${SETTLEMENT_TOKEN}，非可鑄幣的 MockUSDC）。` +
+            `treasury 需先收到 x402 付款的 USDC。`,
+        };
+      }
       try {
         const mintTx = await usdc.mint(me, atomic * 1000n);
         await mintTx.wait();
-      } catch {
+      } catch (e) {
         return {
           status: "failed",
-          error: `結算 token 餘額不足且不可 mint（${SETTLEMENT_TOKEN}）。treasury 需先收到 x402 付款的 USDC。`,
+          error: `MockUSDC 鑄幣失敗：${(e as Error).message}`,
         };
       }
     }

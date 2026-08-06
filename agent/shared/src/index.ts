@@ -9,3 +9,4 @@ export * from "./identity.ts";
 export * from "./verification.ts";
 export * from "./audit.ts";
 export * from "./freshness.ts";
+export * from "./apiResponse.ts";

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 
-import { classifyFreshness } from './priceFreshness'
+import { firstBlocking, blocksTrading, stalenessNotice, classifyFreshness } from './priceFreshness'
 
 describe('classifyFreshness', () => {
   const maxPriceAgeSec = 21600 // Base Sepolia 交易所實際值：6 小時
@@ -55,5 +55,84 @@ describe('classifyFreshness', () => {
     expect(at(600)).toBe('10.0 分鐘前')
     expect(at(7200)).toBe('2.0 小時前')
     expect(at(172800)).toBe('2.0 天前')
+  })
+})
+
+// ── 擋單接線 ────────────────────────────────────────────────────────────────
+// classifyFreshness 早就正確了；漏掉的是「把它接到送單路徑上」。這一段測的是
+// 那條接線本身：什麼情況要擋、擋單時要對使用者說什麼。
+
+describe('blocksTrading', () => {
+  const at = (offset: number) =>
+    classifyFreshness({ updatedAtSec: 1785000000, nowSec: 1785000000 + offset, maxPriceAgeSec: 21600 })
+
+  it('live 與 aging 都可以下單 —— 合約還會接受', () => {
+    expect(blocksTrading(at(60))).toBe(false)
+    expect(blocksTrading(at(12000))).toBe(false)
+  })
+
+  it('stale 要擋 —— 合約會 revert StalePrice', () => {
+    expect(blocksTrading(at(21601))).toBe(true)
+  })
+
+  it('unknown 也要擋 —— 不知道年齡就不能假設它是新的', () => {
+    expect(blocksTrading({ level: 'unknown', ageSec: null, label: '年齡未知' })).toBe(true)
+  })
+})
+
+describe('stalenessNotice', () => {
+  const stale = classifyFreshness({ updatedAtSec: 1785000000, nowSec: 1785000000 + 100000, maxPriceAgeSec: 21600 })
+  const fresh = classifyFreshness({ updatedAtSec: 1785000000, nowSec: 1785000000 + 60, maxPriceAgeSec: 21600 })
+
+  it('可以交易時回 null,呼叫端就不渲染提示', () => {
+    expect(stalenessNotice(fresh)).toBeNull()
+  })
+
+  it('undefined / null（還沒拿到報價）不會被誤判成要擋單', () => {
+    expect(stalenessNotice(undefined)).toBeNull()
+    expect(stalenessNotice(null)).toBeNull()
+  })
+
+  it('擋單時一定帶上價齡 —— 只把按鈕變灰不算解釋', () => {
+    const msg = stalenessNotice(stale)
+    expect(msg).not.toBeNull()
+    expect(msg).toContain(stale.label)
+    expect(msg).toContain('StalePrice')
+  })
+
+  it('有標的名稱時會指名道姓', () => {
+    expect(stalenessNotice(stale, 'sBTC')).toContain('sBTC')
+  })
+
+  it('unknown 的說法和 stale 不同 —— 「無法確認」不是「已過期」', () => {
+    const unknown = stalenessNotice({ level: 'unknown', ageSec: null, label: '年齡未知' })
+    expect(unknown).toContain('無法確認')
+    expect(stalenessNotice(stale)).not.toContain('無法確認')
+  })
+})
+
+describe('firstBlocking', () => {
+  const fresh = classifyFreshness({ updatedAtSec: 1785000000, nowSec: 1785000000 + 60, maxPriceAgeSec: 21600 })
+  const stale = classifyFreshness({ updatedAtSec: 1785000000, nowSec: 1785000000 + 100000, maxPriceAgeSec: 21600 })
+
+  it('全部新鮮回 null', () => {
+    expect(firstBlocking([{ label: 'sBTC', freshness: fresh }, { label: 'sETH', freshness: fresh }])).toBeNull()
+  })
+
+  it('挑出第一個過期的標的 —— 跟單只要一檔過期整筆就 revert', () => {
+    const bad = firstBlocking([
+      { label: 'sBTC', freshness: fresh },
+      { label: 'sTSLA', freshness: stale },
+      { label: 'sETH', freshness: stale },
+    ])
+    expect(bad?.label).toBe('sTSLA')
+  })
+
+  it('還沒拿到報價的標的不算擋單條件', () => {
+    expect(firstBlocking([{ label: 'sBTC', freshness: undefined }])).toBeNull()
+  })
+
+  it('空清單回 null', () => {
+    expect(firstBlocking([])).toBeNull()
   })
 })

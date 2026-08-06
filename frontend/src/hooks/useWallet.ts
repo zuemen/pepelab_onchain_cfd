@@ -42,6 +42,15 @@ const INITIAL: WalletState = {
   initializing: true,
 }
 
+/**
+ * 展示模式用的假地址。
+ *
+ * 舊值 `0x7cc14a…7cc14a` 有 **42 個 hex 字元 = 21 bytes**，不是合法的 EVM 位址
+ * （必須是 20 bytes / 40 個 hex）。任何拿它去做 getAddress／checksum／explorer
+ * 連結的地方都會炸掉或產生無效網址。這裡截成合法的 20 bytes。
+ */
+export const MOCK_ADDRESS = '0x7cc14a7cc14a7cc14a7cc14a7cc14a7cc14a7cc1'
+
 export function useWallet(): WalletAPI {
   const [state, setState] = useState<WalletState>(INITIAL)
   const isConnectingRef = useRef(false)
@@ -49,7 +58,7 @@ export function useWallet(): WalletAPI {
   const connectMock = useCallback(() => {
     localStorage.setItem('pepefi_wallet_mock', 'true');
     setState({
-      address: '0x7cc14a7cc14a7cc14a7cc14a7cc14a7cc14a7cc14a',
+      address: MOCK_ADDRESS,
       chainId: 84532,
       isConnected: true,
       provider: null,
@@ -122,7 +131,7 @@ export function useWallet(): WalletAPI {
     const restore = async () => {
       if (localStorage.getItem('pepefi_wallet_mock') === 'true') {
         setState({
-          address: '0x7cc14a7cc14a7cc14a7cc14a7cc14a7cc14a7cc14a',
+          address: MOCK_ADDRESS,
           chainId: 84532,
           isConnected: true,
           provider: null,

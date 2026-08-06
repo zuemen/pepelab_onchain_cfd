@@ -27,7 +27,11 @@ export async function getOnchainRevenue(trader?: string) {
       model: "FeeRouter 70/20/10 (trader/platform/vault)",
       onChain: false,
       note: "X402_FEE_ROUTER 未設",
-      totals: { count: 0, feeUsd: 0, traderShare: 0, platformShare: 0, vaultShare: 0 },
+      totals: {
+        count: null as number | null,
+        countNote: "未接鏈上 FeeRouter，無資料",
+        feeUsd: 0, traderShare: 0, platformShare: 0, vaultShare: 0,
+      },
     };
   }
   const provider = makeProvider();
@@ -55,9 +59,13 @@ export async function getOnchainRevenue(trader?: string) {
     network: "base-sepolia",
     settlementToken: usdcAddr,
     feeRouter: ROUTER,
-    // 與前端既有 Revenue 形狀相容（count 鏈上無事件掃描，留 0）。
+    // 與前端既有 Revenue 形狀相容。
+    // 稽核（四·Medium）：`count` 以前硬編 0，讀者會以為「一筆都沒有」，但同一個
+    // 物件裡的 feeUsd 明明是正數 —— 一個看起來像資料的假值比缺值更糟。鏈上沒有
+    // 事件掃描就沒有筆數，誠實回 null 並說明。
     totals: {
-      count: 0,
+      count: null as number | null,
+      countNote: "鏈上只累計金額、無事件掃描，故無法得知筆數（不是 0）",
       feeUsd: round(P * 5),
       traderShare: round(P * 3.5),
       platformShare: round(P),

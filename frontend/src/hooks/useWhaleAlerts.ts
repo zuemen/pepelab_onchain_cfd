@@ -1,6 +1,9 @@
-import { useState, useEffect, useCallback } from 'react'
 import type { Contract, BrowserProvider } from 'ethers'
+
+import { useState, useEffect, useCallback } from 'react'
+
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
+import { avgBlockTime, scanFromBlock, queryLogsChunked } from 'src/lib/pepefi/chainLogs'
 
 export interface WhaleAlert {
   txHash:      string
@@ -17,13 +20,23 @@ export interface WhaleAlert {
 
 // 5,000 mUSDC notional = whale threshold
 export const WHALE_THRESHOLD = 5_000n * 10n ** 18n
-const FETCH_BLOCKS   = 50_000
-const AVG_BLOCK_TIME = 12   // Sepolia ~12s per block
 
+/**
+ * 近期鯨魚開倉。
+ *
+ * 修掉兩件事：
+ *  1. 舊版單發一次 50,000 塊的 `queryFilter`。公共節點的 getLogs 上限是 10,000
+ *     塊，所以這一發在 Base Sepolia 上根本不會回資料，只會丟錯進 console，
+ *     UI 靜靜地顯示「沒有鯨魚」。改用共用的 queryLogsChunked。
+ *  2. `AVG_BLOCK_TIME = 12` 是 Ethereum 的出塊時間。Base 是 2 秒，於是每一筆
+ *     事件的時間都被高估六倍——「10 分鐘前」的開倉會被顯示成「1 小時前」。
+ *     現在依 chainId 查表。
+ */
 export function useWhaleAlerts(
   exchange: Contract | null,
   provider: BrowserProvider | null,
   limit    = 20,
+  chainId: number | null = null,
 ): { alerts: WhaleAlert[]; loading: boolean; refetch: () => void } {
   const [alerts,  setAlerts]  = useState<WhaleAlert[]>([])
   const [loading, setLoading] = useState(false)
@@ -35,10 +48,15 @@ export function useWhaleAlerts(
       const latestBlock = await provider.getBlock('latest')
       if (!latestBlock) return
       const { number: latestNum, timestamp: latestTs } = latestBlock
-      const fromBlock = Math.max(0, latestNum - FETCH_BLOCKS)
+      const fromBlock = scanFromBlock({ chainId, currentBlock: latestNum })
+      const blockTime = avgBlockTime(chainId)
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const logs = await exchange.queryFilter(exchange.filters.PositionOpened(), fromBlock, 'latest') as any[]
+      const logs = await queryLogsChunked(
+        exchange,
+        exchange.filters.PositionOpened(),
+        fromBlock,
+        latestNum,
+      )
 
       const whales: WhaleAlert[] = []
       for (const log of logs) {
@@ -51,7 +69,7 @@ export function useWhaleAlerts(
         whales.push({
           txHash:      log.transactionHash as string,
           blockNumber: log.blockNumber     as number,
-          timestamp:   latestTs - blockOffset * AVG_BLOCK_TIME,
+          timestamp:   latestTs - blockOffset * blockTime,
           owner:       log.args.owner      as string,
           asset:       log.args.asset      as string,
           assetLabel:  ASSET_LABEL[log.args.asset as string] ?? '?',
@@ -66,7 +84,7 @@ export function useWhaleAlerts(
     } catch (e) {
       console.error('[useWhaleAlerts]', e)
     } finally { setLoading(false) }
-  }, [exchange, provider, limit])
+  }, [exchange, provider, limit, chainId])
 
   useEffect(() => { void fetchAlerts() }, [fetchAlerts])
 

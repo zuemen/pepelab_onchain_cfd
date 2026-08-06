@@ -17,8 +17,16 @@ set -euo pipefail
 : "${USER_PK:?set USER_PK}"
 : "${AGENT_ADDR:?set AGENT_ADDR}"
 
-# Base Sepolia 已部署位址
-SESSION_MGR="0x5Ebcc64C712C5a26119789dCbD0753981dc518E8"
+# Base Sepolia 已部署位址（AgentSessionManager，**現行版本**）
+#
+# 2026-08-06 更正：這裡原本寫舊的 0x5Ebcc64C712C5a26119789dCbD0753981dc518E8。
+# 舊 manager **沒有 per-session 資產白名單**，照舊值建出來的 session 等於少一道
+# 資產閘門，而前端／agent／範例用的一直是下面這個新位址（稽核 O-8：三方矛盾）。
+# 唯一真相來源：frontend/src/contracts/addresses.ts 的 BASE_SEPOLIA 區塊。
+#
+# 注意：舊 manager 目前**仍在** PerpetualExchange 的 authorizedAgents 名單裡、
+# 其 session #6 也仍未撤銷（到期 2027）。撤權前它仍是可繞過資產閘門的路徑。
+SESSION_MGR="0x4E7cC1B79B72ab72531a6C790e14304370f70764"
 
 # Session 參數（可改）：每筆最高保證金 / 總額度 / 槓桿上限 / 到期
 MAX_PER_TRADE="${MAX_PER_TRADE:-50000000000000000000}"   # 50e18 (MockUSDC 18-dec)
