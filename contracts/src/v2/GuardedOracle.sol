@@ -204,9 +204,18 @@ contract GuardedOracle is AccessControl {
         }
     }
 
-    function _deviationExceeded(uint256 a, uint256 b, uint256 bps) internal pure returns (bool) {
-        if (a == 0) return false;
-        (uint256 hi, uint256 lo) = a > b ? (a, b) : (b, a);
-        return (hi - lo) * BPS_DENOM > bps * lo;
+    /// @dev 以「舊價」為分母，讓上下方向的容許幅度一致。
+    ///
+    ///      先前以兩者中較小的值為分母，於是 +10% 可過而 −10% 被拒（實際只容許
+    ///      −9.09%）。方向是反的：崩盤時最需要價格跟上、最需要清算啟動，而那正是
+    ///      舊公式最容易擋下更新的時候。它也造成 keeper 的追價死鎖——一旦落後超過
+    ///      上限，每一次全額更新都被拒絕，最後只能由 admin 把上限設成 0 手動修正
+    ///      （見 docs/ROLE_SEPARATION.md 的 2026-07-27 紀錄）。
+    function _deviationExceeded(uint256 oldPrice, uint256 newPrice, uint256 bps)
+        internal pure returns (bool)
+    {
+        if (oldPrice == 0) return false;
+        uint256 diff = oldPrice > newPrice ? oldPrice - newPrice : newPrice - oldPrice;
+        return diff * BPS_DENOM > bps * oldPrice;
     }
 }
