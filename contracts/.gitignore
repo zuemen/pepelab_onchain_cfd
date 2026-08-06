@@ -23,3 +23,6 @@ docs/
 # Dotenv file
 .env
 .env.roles
+
+# 金鑰輪替產生的新私鑰（rotate-key.sh）。永遠不得入庫。
+.env.rotation
