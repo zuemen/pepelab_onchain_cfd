@@ -36,8 +36,28 @@ contract SeedWhales is Script {
     bytes32 constant SGOLD = keccak256("sGOLD");
     bytes32 constant SBOND = keccak256("sBOND");
 
-    string constant MNEMONIC =
-        "test test test test test test test test test test test junk";
+    /// @dev Anvil's default mnemonic was used here originally, which works on a
+    ///      local node and cannot work on a public one. Its keys are known to
+    ///      everyone, so sweeper bots watch those addresses and drain any ETH
+    ///      the moment it lands. Observed on Base Sepolia 2026-08-07: every one
+    ///      of the twelve derived accounts had been claimed via an EIP-7702
+    ///      delegation (code `0xef0100…`, nonce in the thousands) and 0.33 ETH
+    ///      of funding disappeared without a single seeded position.
+    ///
+    ///      Set SEED_MNEMONIC in the environment to a phrase only you hold.
+    ///      Falling back to the Anvil phrase is deliberate: local runs stay
+    ///      zero-config, and a public run without the variable set fails loudly
+    ///      in the guard below rather than quietly feeding a bot.
+    function seedMnemonic() internal view returns (string memory m) {
+        m = vm.envOr("SEED_MNEMONIC", string(""));
+        if (bytes(m).length == 0) {
+            require(
+                block.chainid == 31337,
+                "SEED_MNEMONIC unset. Public chains need a private phrase - the Anvil default is swept by bots."
+            );
+            m = "test test test test test test test test test test test junk";
+        }
+    }
 
     function run() external {
         address usdcAddr     = vm.envAddress("USDC_ADDR");
@@ -63,7 +83,7 @@ contract SeedWhales is Script {
         if (kycAddr != address(0)) {
             address[] memory whales = new address[](12);
             for (uint32 i = 0; i < 12; i++) {
-                whales[i] = vm.addr(vm.deriveKey(MNEMONIC, i + 1));
+                whales[i] = vm.addr(vm.deriveKey(seedMnemonic(), i + 1));
             }
             vm.startBroadcast();
             KYCRegistry(kycAddr).batchVerify(whales);
@@ -75,7 +95,7 @@ contract SeedWhales is Script {
 
         for (uint32 i = 0; i < 12; i++) {
             // Indices 1-12 — index 0 is reserved for the deployer in Seed.s.sol
-            uint256 pk     = vm.deriveKey(MNEMONIC, i + 1);
+            uint256 pk     = vm.deriveKey(seedMnemonic(), i + 1);
             address trader = vm.addr(pk);
             string memory name = _nameFor(i);
 
