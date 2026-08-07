@@ -149,6 +149,13 @@ async function getJson(url: string, timeoutMs = 8000): Promise<unknown> {
 
 // ── Bybit（加密貨幣首選）─────────────────────────────────────────────────────
 
+// Bybit 會用 HTTP 403 擋掉美國 IP，而 Vercel 的 function 預設跑在美東（iad1）——
+// 部署上去之後這一級會直接失敗、每次都退到 Coinbase 現貨（回應裡看得到
+// sourceError: "Bybit: api.bybit.com 回 403"）。vercel.json 因此把 regions 釘在
+// sin1（新加坡）。那個設定看起來與行情無關，很容易在日後被當成多餘的東西刪掉，
+// 所以把理由寫在這裡——真正依賴它的是這一行 host。
+//
+// 瀏覽器端直連 Bybit 的訂單簿不受影響，那是從使用者自己的 IP 出去的。
 const BYBIT_HOST = "https://api.bybit.com";
 /** Bybit 六個時間框全部原生支援，不需要聚合。 */
 const BYBIT_INTERVAL: Record<Interval, string> = {
@@ -471,13 +478,23 @@ function simulate(meta: MarketMeta, interval: Interval, need: number): Candle[] 
 const cache = new Map<string, { at: number; payload: CandleResponse }>();
 
 /** TTL 跟著時間框走：1m 線每分鐘就變，1d 線五分鐘內重複抓沒有意義。 */
+/**
+ * 快取存活時間。
+ *
+ * 設定原則：大約是前端輪詢間隔的一半（見 useCandles 的 POLL_MS）。比輪詢長的話
+ * 每次輪詢都可能打到還沒過期的舊快取，等於白輪詢；比一半再短則只是多打上游，
+ * 使用者感受不到差別。
+ *
+ * 注意這裡影響的是「當前那根還沒收盤的蠟燭」有多新——已收盤的歷史蠟燭不會再變，
+ * 快取久一點也無所謂。
+ */
 const TTL_MS: Record<Interval, number> = {
-  "1m": 15_000,
-  "5m": 30_000,
-  "15m": 60_000,
-  "1h": 120_000,
-  "4h": 300_000,
-  "1d": 300_000,
+  "1m": 3_000,
+  "5m": 5_000,
+  "15m": 10_000,
+  "1h": 15_000,
+  "4h": 30_000,
+  "1d": 60_000,
 };
 
 // ── 對外 ─────────────────────────────────────────────────────────────────────
