@@ -198,10 +198,11 @@ export function TerminalView() {
             markPrice={account.markPrice}
           />
 
-          {/* 空間不夠給訂單簿一整欄時，它降級成圖表下方的面板——不是消失。 */}
+          {/* 空間不夠給訂單簿一整欄時，它降級成圖表下方的面板——不是消失。
+              這個位置很寬，所以改成訂單簿與成交併排，否則右邊會空一大片。 */}
           {!layout.bookAsColumn && (
             <Box sx={{ height: 380, display: 'flex' }}>
-              <BookPanel bybitSymbol={bybitSymbol} funding={fi} active />
+              <BookPanel bybitSymbol={bybitSymbol} funding={fi} active split />
             </Box>
           )}
         </Box>
