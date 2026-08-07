@@ -37,7 +37,8 @@ export interface Candle {
   v: number
 }
 
-export type SourceKind = 'exchange' | 'delayed' | 'simulated'
+/** 'none' 只會在往回翻頁翻到底時出現，此時 candles 為空。 */
+export type SourceKind = 'exchange' | 'delayed' | 'simulated' | 'none'
 
 export interface SourceInfo {
   kind: SourceKind
@@ -58,6 +59,8 @@ export interface CandleResponse {
   source: SourceInfo
   /** 沒拿到第一順位來源，已退到下一級。 */
   degraded?: boolean
+  /** 這個 end 之前沒有更早的資料了；呼叫端應停止往回翻頁。 */
+  exhausted?: boolean
   sourceError?: string
   disclaimer: string
 }
@@ -90,8 +93,12 @@ export async function fetchCandles(
   interval: Interval,
   limit: number,
   signal?: AbortSignal,
+  /** 只要早於這個 unix 秒數的蠟燭。往回翻頁時帶目前最舊那根的時間。 */
+  end?: number,
 ): Promise<CandleResponse> {
-  const url = `${CANDLES_API_URL}/candles/${encodeURIComponent(symbol)}?interval=${interval}&limit=${limit}`
+  const url =
+    `${CANDLES_API_URL}/candles/${encodeURIComponent(symbol)}?interval=${interval}&limit=${limit}` +
+    (end ? `&end=${Math.floor(end)}` : '')
 
   let res: Response
   try {

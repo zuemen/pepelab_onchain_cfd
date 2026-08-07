@@ -66,6 +66,19 @@ export function ChartPanel({
           </Box>
         )}
 
+        {/* 往回捲時的狀態。沒有這個的話，抓資料的那一兩秒圖表是靜止的，使用者
+            分不出「正在載入」跟「沒有更早的資料了」——會一直往回拉。 */}
+        {feed.loadingOlder && (
+          <Box sx={{ ...monoCss, fontSize: 10.5, color: C.mut }}>載入更早…</Box>
+        )}
+        {!feed.loadingOlder && feed.exhausted && (
+          <Box sx={{ ...monoCss, fontSize: 10.5, color: C.mut }}>已到最早資料</Box>
+        )}
+        {/* 跟「已到最早資料」要分開講：這是我們自己的顯示上限，不是來源沒東西了。 */}
+        {!feed.loadingOlder && !feed.exhausted && feed.atCapacity && (
+          <Box sx={{ ...monoCss, fontSize: 10.5, color: C.mut }}>已達顯示上限</Box>
+        )}
+
         <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1 }}>
           {feed.underlying && (
             <Box sx={{ ...labelCss, fontSize: 10 }}>{feed.underlying}</Box>
@@ -113,7 +126,11 @@ export function ChartPanel({
           載入 K 線…
         </Box>
       ) : (
-        <CandleChart candles={feed.candles} priceLines={priceLines} />
+        <CandleChart
+          candles={feed.candles}
+          priceLines={priceLines}
+          onNeedOlder={feed.loadOlder}
+        />
       )}
     </Box>
   )

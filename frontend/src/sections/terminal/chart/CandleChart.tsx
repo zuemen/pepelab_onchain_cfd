@@ -22,6 +22,9 @@ export interface PriceLineSpec {
   title: string
 }
 
+/** 可視範圍左緣還剩幾根就去抓更早的。抓一頁 300 根，這個提前量夠掩蓋網路延遲。 */
+const LOAD_OLDER_THRESHOLD = 20
+
 /**
  * 蠟燭圖 + 成交量副圖。
  *
@@ -40,10 +43,13 @@ function CandleChartImpl({
   candles,
   priceLines = [],
   height = 380,
+  onNeedOlder,
 }: {
   candles: Candle[]
   priceLines?: PriceLineSpec[]
   height?: number
+  /** 使用者捲到最左邊時呼叫。實作端要自己擋重複請求。 */
+  onNeedOlder?: () => void
 }) {
   const boxRef = useRef<HTMLDivElement | null>(null)
   const chartRef = useRef<IChartApi | null>(null)
@@ -52,6 +58,12 @@ function CandleChartImpl({
   const linesRef = useRef<IPriceLine[]>([])
   // 已經餵過資料才做 fitContent，否則每次輪詢都把使用者的縮放/平移重設掉。
   const fittedRef = useRef(false)
+  // 上一次餵進去的第一根的時間。往前面插入資料時 logical index 會整體位移，
+  // 靠它算出實際插入了幾根，才能把使用者的視窗移回原本看的那一段。
+  const firstTimeRef = useRef<number | undefined>(undefined)
+  // 放 ref 而不是直接用 prop：訂閱只在掛載時建立一次，閉包會抓住第一次的 prop。
+  const needOlderRef = useRef(onNeedOlder)
+  needOlderRef.current = onNeedOlder
 
   // ── 建立圖表（只在掛載時做一次）──
   useEffect(() => {
@@ -90,15 +102,25 @@ function CandleChartImpl({
     })
     ro.observe(el)
 
+    // 捲到左緣就去要更早的資料。range.from 是 logical index，可能是負的
+    // （使用者把圖拉超過最舊那根時）——那也算「到左邊了」。
+    const onRange = (range: { from: number; to: number } | null) => {
+      if (!range) return
+      if (range.from <= LOAD_OLDER_THRESHOLD) needOlderRef.current?.()
+    }
+    chart.timeScale().subscribeVisibleLogicalRangeChange(onRange)
+
     return () => {
       cancelAnimationFrame(raf)
       ro.disconnect()
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRange)
       chart.remove()
       chartRef.current = null
       candleRef.current = null
       volumeRef.current = null
       linesRef.current = []
       fittedRef.current = false
+      firstTimeRef.current = undefined
     }
     // height 只在建立時當初值用，之後尺寸由 ResizeObserver 接手。
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -114,6 +136,7 @@ function CandleChartImpl({
       cs.setData([])
       vs.setData([])
       fittedRef.current = false
+      firstTimeRef.current = undefined
       return
     }
 
@@ -130,8 +153,24 @@ function CandleChartImpl({
       color: k.c >= k.o ? VOLUME_UP : VOLUME_DOWN,
     }))
 
+    // setData 用 logical index 定位視窗，而往**前面**插入資料會把所有 index 往後
+    // 推。不補償的話，每抓回一頁使用者就會被瞬間拋走，看起來像圖表自己在跳。
+    //
+    // 位移量不能用「根數變多了幾根」來算：尾端輪詢新增一根時根數同樣會變多，
+    // 那時候不該平移。用「舊的第一根現在排在第幾個」才是真正插入在前面的數量。
+    const ts = chartRef.current?.timeScale()
+    const prevFirst = firstTimeRef.current
+    const before = prevFirst !== undefined ? ts?.getVisibleLogicalRange() : null
+    const shift =
+      prevFirst !== undefined ? bars.findIndex((b) => (b.time as number) === prevFirst) : 0
+
     cs.setData(bars)
     vs.setData(vols)
+    firstTimeRef.current = bars[0].time as number
+
+    if (before && shift > 0) {
+      ts?.setVisibleLogicalRange({ from: before.from + shift, to: before.to + shift })
+    }
 
     if (!fittedRef.current) {
       chartRef.current?.timeScale().fitContent()
