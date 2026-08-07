@@ -43,6 +43,30 @@ jobs:
             exit 1
           fi
 
+      # 2026-08-07：keeper 錢包燒完 gas，於是每 15 分鐘失敗一次、每 15 分鐘寄一封
+      # 信，連續數小時。訊息裡沒有一個字提到餘額——症狀是「交易送不出去」，原因是
+      # 「沒錢付 gas」，兩者隔了好幾層。先檢查餘額就能把那幾小時變成一行警告。
+      - name: Check keeper gas balance
+        uses: foundry-rs/foundry-toolchain@v1
+      - name: Warn before the tank runs dry
+        env:
+          RPC_URL: ${{ secrets.KEEPER_RPC_URL }}
+          PK: ${{ secrets.KEEPER_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          ADDR=$(cast wallet address --private-key "$PK")
+          BAL=$(cast balance "$ADDR" --rpc-url "$RPC_URL")
+          ETH=$(cast from-wei "$BAL")
+          echo "keeper $ADDR 餘額 $ETH ETH"
+          # 一次喂價約 0.0005 ETH，0.05 ETH 大約還能跑一天。
+          if [ "$(echo "$ETH < 0.05" | bc -l)" = "1" ]; then
+            echo "::warning::keeper 餘額只剩 $ETH ETH（約一天）。請補 gas，否則喂價會停。"
+          fi
+          if [ "$(echo "$ETH < 0.005" | bc -l)" = "1" ]; then
+            echo "::error::keeper 餘額 $ETH ETH，不足以送出交易。這是喂價失敗的原因，不是 RPC 或程式問題。"
+            exit 1
+          fi
+
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20

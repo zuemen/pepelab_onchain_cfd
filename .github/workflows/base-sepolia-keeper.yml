@@ -68,6 +68,28 @@ jobs:
             exit 1
           fi
 
+      # 見 price-keeper.yml 的同名步驟：keeper 燒完 gas 時，失敗訊息不會提到餘額，
+      # 所以先自己講清楚。Base 的 gas 便宜得多，門檻相應調低。
+      - name: Check keeper gas balance
+        uses: foundry-rs/foundry-toolchain@v1
+      - name: Warn before the tank runs dry
+        env:
+          RPC_URL: ${{ secrets.BASE_SEPOLIA_RPC_URL }}
+          PK: ${{ secrets.KEEPER_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          ADDR=$(cast wallet address --private-key "$PK")
+          BAL=$(cast balance "$ADDR" --rpc-url "${RPC_URL:-https://sepolia.base.org}")
+          ETH=$(cast from-wei "$BAL")
+          echo "keeper $ADDR 餘額 $ETH ETH"
+          if [ "$(echo "$ETH < 0.02" | bc -l)" = "1" ]; then
+            echo "::warning::keeper 餘額只剩 $ETH ETH。請補 gas，否則喂價會停。"
+          fi
+          if [ "$(echo "$ETH < 0.002" | bc -l)" = "1" ]; then
+            echo "::error::keeper 餘額 $ETH ETH，不足以送出交易。這是喂價失敗的原因，不是 RPC 或程式問題。"
+            exit 1
+          fi
+
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20
