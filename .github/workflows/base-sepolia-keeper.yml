@@ -139,6 +139,14 @@ jobs:
           NOW=$(date -u +%s)
           echo "FUNDING_INTERVAL=${INTERVAL}s  now=${NOW}"
 
+          # nonce 自己算，不要每一筆都去問 RPC。`cast send` 會在交易被挖出來之前
+          # 就返回，於是下一筆拿到的 pending nonce 還是同一個 → 第二筆之後全部
+          # 「replacement transaction underpriced」。實測就是這樣掛的：sBTC 成功、
+          # sETH 與 sTSLA 直接撞。失敗時不遞增，因為那個 nonce 沒有被消耗。
+          KEEPER_ADDR=$(cast wallet address --private-key "$KEEPER_PRIVATE_KEY")
+          NONCE=$(cast nonce "$KEEPER_ADDR" --rpc-url "$KEEPER_RPC_URL")
+          echo "keeper=${KEEPER_ADDR} 起始 nonce=${NONCE}"
+
           FAILURES=0
           for SYM in sBTC sETH sAAPL sTSLA; do
             KEY=$(cast keccak "$SYM")
@@ -159,8 +167,10 @@ jobs:
 
             # 到期了，這一筆就應該會成功。失敗＝真的有問題，把 revert 原文印出來。
             if OUT=$(cast send "$EXCHANGE" "settleFunding(bytes32)" "$KEY" \
-                       --rpc-url "$KEEPER_RPC_URL" --private-key "$KEEPER_PRIVATE_KEY" 2>&1); then
-              echo "$SYM: funding settled"
+                       --rpc-url "$KEEPER_RPC_URL" --private-key "$KEEPER_PRIVATE_KEY" \
+                       --nonce "$NONCE" 2>&1); then
+              echo "$SYM: funding settled (nonce ${NONCE})"
+              NONCE=$((NONCE + 1))
             else
               echo "::error::$SYM: settleFunding 已到期卻失敗 —— $(echo "$OUT" | tr '\n' ' ' | cut -c1-300)"
               FAILURES=$((FAILURES + 1))
