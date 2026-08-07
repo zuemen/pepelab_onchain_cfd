@@ -288,6 +288,8 @@ export function createApp(): Hono {
         c.req.param("symbol"),
         c.req.query("interval") ?? "1h",
         c.req.query("limit"),
+        // 往回翻頁：只回早於這個 unix 秒數的蠟燭。省略 = 最新的一段。
+        c.req.query("end"),
       );
       return c.json(data);
     } catch (err) {

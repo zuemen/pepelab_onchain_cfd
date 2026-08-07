@@ -34,7 +34,7 @@ export interface Candle {
   v: number;
 }
 
-export type SourceKind = "exchange" | "delayed" | "simulated";
+export type SourceKind = "exchange" | "delayed" | "simulated" | "none";
 
 export interface SourceInfo {
   kind: SourceKind;
@@ -59,6 +59,11 @@ export interface CandleResponse {
   source: SourceInfo;
   /** true = 沒拿到第一順位來源，已退到下一級（不一定是模擬）。 */
   degraded?: boolean;
+  /**
+   * true = 這個 end 之前已經沒有更早的資料了。前端據此停止往回翻頁，
+   * 不然它會對著一個永遠回空陣列的端點無限重試。
+   */
+  exhausted?: boolean;
   /** 退場原因，讓線上問題可以直接從回應看出來，不必翻 log。 */
   sourceError?: string;
   disclaimer: string;
@@ -183,12 +188,16 @@ async function fetchBybit(
   symbol: string,
   interval: Interval,
   need: number,
+  end?: number,
 ): Promise<Candle[]> {
   const url =
     `${BYBIT_HOST}/v5/market/kline` +
     `?category=linear&symbol=${encodeURIComponent(symbol)}` +
     `&interval=${BYBIT_INTERVAL[interval]}` +
-    `&limit=${Math.min(need, BYBIT_LIMIT)}`;
+    `&limit=${Math.min(need, BYBIT_LIMIT)}` +
+    // Bybit 的 end 是毫秒，而且是「回傳早於它的」。沒有更早的資料時回空陣列
+    // 且 retCode 仍是 0——那是正常的「到底了」，不是錯誤。
+    (end ? `&end=${end * 1000}` : "");
 
   const json = (await getJson(url)) as {
     retCode?: number;
@@ -201,7 +210,12 @@ async function fetchBybit(
     throw new Error(`retCode ${json.retCode}: ${json.retMsg ?? "未知錯誤"}`);
   }
   const list = json.result?.list;
-  if (!list?.length) throw new Error("回應沒有 K 線資料");
+  // 往回翻頁時，空陣列代表「沒有更早的了」，是正常結果；只有查最新時空陣列才
+  // 算異常（那代表這個交易對有問題）。丟錯會讓退場機制誤以為 Bybit 掛了。
+  if (!list?.length) {
+    if (end) return [];
+    throw new Error("回應沒有 K 線資料");
+  }
 
   const out: Candle[] = [];
   for (const row of list) {
@@ -240,13 +254,15 @@ async function fetchCoinbase(
   product: string,
   granularity: number,
   need: number,
+  endAt?: number,
 ): Promise<Candle[]> {
   const pages = Math.min(Math.ceil(need / COINBASE_PAGE), 5);
-  const now = Math.floor(Date.now() / 1000);
+  // 沒給 endAt 就從現在往回抓；給了就從那個時間點往回，也就是往回翻頁。
+  const anchor = endAt ?? Math.floor(Date.now() / 1000);
   const span = COINBASE_PAGE * granularity;
 
   const reqs = Array.from({ length: pages }, (_, i) => {
-    const end = now - i * span;
+    const end = anchor - i * span;
     const start = end - span;
     const url =
       `${COINBASE_HOST}/products/${encodeURIComponent(product)}/candles` +
@@ -345,17 +361,23 @@ async function fetchYahoo(
   ticker: string,
   interval: Interval,
   need: number,
+  end?: number,
 ): Promise<Candle[]> {
   const cfg = YAHOO_INTERVAL[interval];
   // need 的單位是「cfg.interval 這個粒度的根數」，換算日曆時間必須乘 baseSeconds。
   // 乘目標粒度是錯的：4h 的 need 已經是 60m 的根數，再乘 14400 會多要四倍。
   const factor = cfg.intraday ? INTRADAY_FACTOR : DAILY_FACTOR;
-  const range = pickYahooRange(need * cfg.baseSeconds * factor, cfg.maxSpan);
-  const url =
-    `${YAHOO_HOST}/v8/finance/chart/${encodeURIComponent(ticker)}` +
-    `?interval=${cfg.interval}&range=${range}`;
+  const span = Math.min(need * cfg.baseSeconds * factor, cfg.maxSpan);
 
-  const json = (await getJson(url)) as {
+  // Yahoo 沒有「從某個時間往回 N 根」的參數，只有 range（相對現在）與
+  // period1/period2（絕對區間）。往回翻頁時只能用後者。
+  const url = end
+    ? `${YAHOO_HOST}/v8/finance/chart/${encodeURIComponent(ticker)}` +
+      `?interval=${cfg.interval}&period1=${Math.max(0, Math.floor(end - span))}&period2=${Math.floor(end)}`
+    : `${YAHOO_HOST}/v8/finance/chart/${encodeURIComponent(ticker)}` +
+      `?interval=${cfg.interval}&range=${pickYahooRange(span, cfg.maxSpan)}`;
+
+  type YahooChart = {
     chart?: {
       error?: { description?: string } | null;
       result?: {
@@ -373,13 +395,28 @@ async function fetchYahoo(
     };
   };
 
+  let json: YahooChart;
+  try {
+    json = (await getJson(url)) as YahooChart;
+  } catch (err) {
+    // Yahoo 對超出保留期的盤中資料回 422（1m 只留約 7 天）。往回翻頁翻到那條線
+    // 就是「沒有更早的了」，回空陣列讓呼叫端標成 exhausted；當成錯誤丟出去會讓
+    // 分級退場誤判 Yahoo 掛掉而跳去模擬資料。
+    if (end && /\b422\b/.test((err as Error).message)) return [];
+    throw err;
+  }
+
   if (json.chart?.error) {
     throw new Error(json.chart.error.description ?? "Yahoo 回報錯誤");
   }
   const result = json.chart?.result?.[0];
   const ts = result?.timestamp;
   const q = result?.indicators?.quote?.[0];
-  if (!ts?.length || !q) throw new Error("Yahoo 回應沒有 K 線資料");
+  // 休市時段的區間會回 200 但沒有 timestamp——同樣是「這段沒有資料」而非失敗。
+  if (!ts?.length || !q) {
+    if (end) return [];
+    throw new Error("Yahoo 回應沒有 K 線資料");
+  }
 
   const out: Candle[] = [];
   for (let i = 0; i < ts.length; i += 1) {
@@ -452,13 +489,21 @@ function simPrice(meta: MarketMeta, t: number): number {
  * open 取該根起點的價、close 取下一根起點的價，所以相鄰蠟燭首尾相接，不會出現
  * 真實行情不會有的鋸齒。
  */
-function simulate(meta: MarketMeta, interval: Interval, need: number): Candle[] {
+function simulate(
+  meta: MarketMeta,
+  interval: Interval,
+  need: number,
+  end?: number,
+): Candle[] {
   const step = INTERVALS[interval];
-  const nowBucket = Math.floor(Date.now() / 1000 / step) * step;
+  // 往回翻頁時以 end 為錨點。simPrice 是 (symbol, t) 的純函式，所以同一根蠟燭
+  // 無論從哪個窗口算出來都一樣，翻頁接縫不會對不上。
+  const anchor = end ?? Math.floor(Date.now() / 1000);
+  const lastBucket = Math.floor(anchor / step) * step;
   const out: Candle[] = [];
 
   for (let i = need - 1; i >= 0; i -= 1) {
-    const t = nowBucket - i * step;
+    const t = lastBucket - i * step;
     const rnd = mulberry32(hash32(`${meta.symbol}:${t}`));
     const o = simPrice(meta, t);
     const c = simPrice(meta, t + step);
@@ -497,6 +542,14 @@ const TTL_MS: Record<Interval, number> = {
   "1d": 60_000,
 };
 
+/**
+ * 帶 end 的查詢（往回翻頁）用的快取時間。
+ *
+ * 那些區間全部已經收盤，內容永遠不會再變，所以可以放很久。使用者來回捲動時會
+ * 一直命中同一批 key，這個值直接決定「往回捲第二次還順不順」。
+ */
+const HISTORY_TTL_MS = 10 * 60_000;
+
 // ── 對外 ─────────────────────────────────────────────────────────────────────
 
 const DISCLAIMER =
@@ -512,11 +565,14 @@ export class BadIntervalError extends Error {}
  * @param rawSymbol sBTC / btc / bytes32 assetId 都收
  * @param rawInterval 1m 5m 15m 1h 4h 1d
  * @param rawLimit 蠟燭根數，上限 MAX_LIMIT
+ * @param rawEnd 只回傳早於這個 unix 秒數的蠟燭。給了就是「往回翻頁」，前端圖表
+ *   捲到最左邊時帶上目前最舊那根的時間，就能接續拿到更早的歷史。省略 = 最新。
  */
 export async function getCandles(
   rawSymbol: string,
   rawInterval = "1h",
   rawLimit?: string | number,
+  rawEnd?: string | number,
 ): Promise<CandleResponse> {
   const meta = resolveMarket(rawSymbol);
   if (!meta) {
@@ -538,9 +594,19 @@ export async function getCandles(
     ? Math.max(1, Math.min(Math.floor(parsed), MAX_LIMIT))
     : DEFAULT_LIMIT;
 
-  const key = `${meta.symbol}:${interval}:${limit}`;
+  // end 只接受正的 unix 秒數。0 / 負數 / 非數字一律當成「沒給」，不要讓一個
+  // 打錯的參數靜默地變成「查詢 1970 年」然後回一片空白。
+  const parsedEnd = Number(rawEnd);
+  const end =
+    rawEnd !== undefined && Number.isFinite(parsedEnd) && parsedEnd > 0
+      ? Math.floor(parsedEnd)
+      : undefined;
+
+  const key = `${meta.symbol}:${interval}:${limit}:${end ?? "now"}`;
   const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < TTL_MS[interval]) {
+  // 已經收盤的歷史區間不會再變，快取久一點；只有「最新」那一段需要頻繁失效。
+  const ttl = end === undefined ? TTL_MS[interval] : HISTORY_TTL_MS;
+  if (hit && Date.now() - hit.at < ttl) {
     return hit.payload;
   }
 
@@ -553,7 +619,7 @@ export async function getCandles(
   // ── 第一級：加密貨幣走 Bybit 永續 ──
   if (meta.bybit) {
     try {
-      const raw = await fetchBybit(meta.bybit, interval, limit);
+      const raw = await fetchBybit(meta.bybit, interval, limit, end);
       if (raw.length) {
         candles = raw;
         source = {
@@ -579,7 +645,7 @@ export async function getCandles(
       // 4h 沒有原生 granularity，用 1h 抓四倍的量再併。
       const base = native ? seconds : 3600;
       const need = native ? limit : limit * (seconds / base);
-      const raw = await fetchCoinbase(meta.coinbase, base, need);
+      const raw = await fetchCoinbase(meta.coinbase, base, need, end);
       const merged = native ? raw : aggregate(raw, seconds);
       if (merged.length) {
         candles = merged;
@@ -604,7 +670,7 @@ export async function getCandles(
     try {
       const native = interval !== "4h";
       const need = native ? limit : limit * 4;
-      const raw = await fetchYahoo(meta.yahoo, interval, need);
+      const raw = await fetchYahoo(meta.yahoo, interval, need, end);
       const merged = native ? raw : aggregate(raw, seconds);
       if (merged.length) {
         candles = merged;
@@ -629,18 +695,42 @@ export async function getCandles(
   // Coinbase 時 kind 一樣是 exchange，但參考標的從永續變成現貨、價格會有基差，
   // 那也該讓前端知道。sourceError 只在某一級失敗時才會被設，正好等價。
   let degraded = sourceError !== undefined;
+  let exhausted = false;
+
   if (!source) {
-    degraded = true;
-    candles = simulate(meta, interval, limit);
-    source = {
-      kind: "simulated",
-      name: "模擬資料",
-      url: "",
-      attribution: "SIMULATED — 外部行情來源無法取得，此圖為程式生成，非真實市場價格",
-      reference: "simulated",
-      fetchedAt: now,
-    };
+    if (end !== undefined) {
+      // 往回翻頁翻到沒有資料，是正常的終點，不是故障——**絕對不能**在這裡生成
+      // 模擬蠟燭。上游的歷史保留期本來就有限（Bybit 1m、Yahoo 盤中都只留幾天），
+      // 捲到那條線之後憑空畫出「2015 年的行情」比留白糟糕得多：使用者沒有辦法
+      // 分辨那是真的還是編的。回空陣列，讓前端停在最後一根真實資料。
+      exhausted = true;
+      candles = [];
+      source = {
+        kind: "none",
+        name: "無更早資料",
+        url: "",
+        attribution: "已到達此來源的歷史保留上限",
+        reference: "none",
+        fetchedAt: now,
+      };
+    } else {
+      degraded = true;
+      candles = simulate(meta, interval, limit, end);
+      source = {
+        kind: "simulated",
+        name: "模擬資料",
+        url: "",
+        attribution: "SIMULATED — 外部行情來源無法取得，此圖為程式生成，非真實市場價格",
+        reference: "simulated",
+        fetchedAt: now,
+      };
+    }
   }
+
+  // end 對外一律是「嚴格早於」。上游各家不一致——Bybit 的 end 與 Yahoo 的
+  // period2 都是包含式的，直接透出去會讓交界那根蠟燭在相鄰兩頁重複出現。把差異
+  // 收在這裡，前端就不必知道每個來源的邊界規則。
+  const windowed = end === undefined ? candles : candles.filter((k) => k.t < end);
 
   const payload: CandleResponse = {
     ok: true,
@@ -648,9 +738,14 @@ export async function getCandles(
     assetId: assetIdFor(meta.symbol),
     underlying: meta.underlying,
     interval,
-    candles: candles.slice(-limit),
+    candles: windowed.slice(-limit),
     source,
     ...(degraded ? { degraded } : {}),
+    // 上游有回東西、但整批都不早於 end（例如只回了那根包含式的邊界蠟燭），
+    // 過濾後就空了——對呼叫端而言同樣是「沒有更早的了」。
+    ...(exhausted || (end !== undefined && windowed.length === 0)
+      ? { exhausted: true }
+      : {}),
     ...(sourceError ? { sourceError } : {}),
     disclaimer: DISCLAIMER,
   };

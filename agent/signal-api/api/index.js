@@ -14528,7 +14528,7 @@ var SEPOLIA = {
 };
 var BASE_SEPOLIA = {
   MockUSDC: "0x69fd695Bc7C3aFdb35ABA35cD6890C506400b035",
-  MockUSDT: "0x0000000000000000000000000000000000000000",
+  MockUSDT: "0x5c8A1e970D275Cc269e09A949D68693120416d78",
   MockOracle: "0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3",
   TraderStake: "0x01aEB530bcFc69f036309ffe55acc7eA6C5a28Fe",
   InsuranceVault: "0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812",
@@ -14537,15 +14537,15 @@ var BASE_SEPOLIA = {
   StrategyRegistry: "0x54e8C43f9Eb151Bb8DD6e61d16a969C4D0e73915",
   CopyTracker: "0x96357144fE56c5E0e33e8046bE2A63F45528b210",
   MockSwapRouter: "0xC9b0e5C219AA1B3eB00E92Fd9a883B182F0AE8Ae",
-  ESGRegistry: "0x0000000000000000000000000000000000000000",
+  ESGRegistry: "0x73310bfb9f93711e9405EB717e3426246BD58618",
   KYCRegistry: "0x5D95fD9e7a5f80E5369e24783F1f98E0f952360d",
   PepeAMM: "0x93be44a81a2796d378f65ebcc8d5f8b40166ad63",
   PepeToken: "0xccd05cbdc2f7961a4c27d3633694022722786a0f",
-  PepeClaim: "0x0000000000000000000000000000000000000000",
-  EsgRewardDistributor: "0x0000000000000000000000000000000000000000",
+  PepeClaim: "0x459d238aC61eC4A0E08608FBcd363227B860CF34",
+  EsgRewardDistributor: "0x0c85923193AB6137A117E5911aAA7DF7Cb8787D7",
   PepeIncentives: "0xEBfA1dc7dDea032ac6242cB619d982e543A23c12",
-  PepeStaking: "0x0000000000000000000000000000000000000000",
-  AssetVault: "0x0000000000000000000000000000000000000000"
+  PepeStaking: "0xC78D68cA1B217ba241c23Ebad3118c6ec0dc0D34",
+  AssetVault: "0xC30DFe1C9EBb47197b785995aA9Cd0F5B89557A5"
 };
 var CHAIN_MAP = {
   31337: ANVIL,
@@ -58607,14 +58607,19 @@ var BYBIT_INTERVAL = {
   "1d": "D"
 };
 var BYBIT_LIMIT = 1e3;
-async function fetchBybit(symbol, interval, need) {
-  const url = `${BYBIT_HOST}/v5/market/kline?category=linear&symbol=${encodeURIComponent(symbol)}&interval=${BYBIT_INTERVAL[interval]}&limit=${Math.min(need, BYBIT_LIMIT)}`;
+async function fetchBybit(symbol, interval, need, end) {
+  const url = `${BYBIT_HOST}/v5/market/kline?category=linear&symbol=${encodeURIComponent(symbol)}&interval=${BYBIT_INTERVAL[interval]}&limit=${Math.min(need, BYBIT_LIMIT)}` + // Bybit 的 end 是毫秒，而且是「回傳早於它的」。沒有更早的資料時回空陣列
+  // 且 retCode 仍是 0——那是正常的「到底了」，不是錯誤。
+  (end ? `&end=${end * 1e3}` : "");
   const json = await getJson(url);
   if (json.retCode !== 0) {
     throw new Error(`retCode ${json.retCode}: ${json.retMsg ?? "\u672A\u77E5\u932F\u8AA4"}`);
   }
   const list2 = json.result?.list;
-  if (!list2?.length) throw new Error("\u56DE\u61C9\u6C92\u6709 K \u7DDA\u8CC7\u6599");
+  if (!list2?.length) {
+    if (end) return [];
+    throw new Error("\u56DE\u61C9\u6C92\u6709 K \u7DDA\u8CC7\u6599");
+  }
   const out = [];
   for (const row of list2) {
     if (row.length < 6) continue;
@@ -58633,12 +58638,12 @@ async function fetchBybit(symbol, interval, need) {
 var COINBASE_HOST = "https://api.exchange.coinbase.com";
 var COINBASE_GRANULARITIES = [60, 300, 900, 3600, 21600, 86400];
 var COINBASE_PAGE = 300;
-async function fetchCoinbase(product, granularity, need) {
+async function fetchCoinbase(product, granularity, need, endAt) {
   const pages = Math.min(Math.ceil(need / COINBASE_PAGE), 5);
-  const now = Math.floor(Date.now() / 1e3);
+  const anchor = endAt ?? Math.floor(Date.now() / 1e3);
   const span = COINBASE_PAGE * granularity;
   const reqs = Array.from({ length: pages }, (_, i) => {
-    const end = now - i * span;
+    const end = anchor - i * span;
     const start = end - span;
     const url = `${COINBASE_HOST}/products/${encodeURIComponent(product)}/candles?granularity=${granularity}&start=${new Date(start * 1e3).toISOString()}&end=${new Date(end * 1e3).toISOString()}`;
     return getJson(url);
@@ -58688,19 +58693,28 @@ function pickYahooRange(needSeconds, maxSpan) {
   const legal = YAHOO_RANGES.filter((r) => r.seconds <= maxSpan);
   return legal.length ? legal[legal.length - 1].label : "1mo";
 }
-async function fetchYahoo(ticker, interval, need) {
+async function fetchYahoo(ticker, interval, need, end) {
   const cfg = YAHOO_INTERVAL[interval];
   const factor = cfg.intraday ? INTRADAY_FACTOR : DAILY_FACTOR;
-  const range = pickYahooRange(need * cfg.baseSeconds * factor, cfg.maxSpan);
-  const url = `${YAHOO_HOST}/v8/finance/chart/${encodeURIComponent(ticker)}?interval=${cfg.interval}&range=${range}`;
-  const json = await getJson(url);
+  const span = Math.min(need * cfg.baseSeconds * factor, cfg.maxSpan);
+  const url = end ? `${YAHOO_HOST}/v8/finance/chart/${encodeURIComponent(ticker)}?interval=${cfg.interval}&period1=${Math.max(0, Math.floor(end - span))}&period2=${Math.floor(end)}` : `${YAHOO_HOST}/v8/finance/chart/${encodeURIComponent(ticker)}?interval=${cfg.interval}&range=${pickYahooRange(span, cfg.maxSpan)}`;
+  let json;
+  try {
+    json = await getJson(url);
+  } catch (err) {
+    if (end && /\b422\b/.test(err.message)) return [];
+    throw err;
+  }
   if (json.chart?.error) {
     throw new Error(json.chart.error.description ?? "Yahoo \u56DE\u5831\u932F\u8AA4");
   }
   const result = json.chart?.result?.[0];
   const ts = result?.timestamp;
   const q = result?.indicators?.quote?.[0];
-  if (!ts?.length || !q) throw new Error("Yahoo \u56DE\u61C9\u6C92\u6709 K \u7DDA\u8CC7\u6599");
+  if (!ts?.length || !q) {
+    if (end) return [];
+    throw new Error("Yahoo \u56DE\u61C9\u6C92\u6709 K \u7DDA\u8CC7\u6599");
+  }
   const out = [];
   for (let i = 0; i < ts.length; i += 1) {
     const o = q.open?.[i];
@@ -58745,12 +58759,13 @@ function simPrice(meta, t) {
   }
   return meta.seed * Math.exp(x);
 }
-function simulate(meta, interval, need) {
+function simulate(meta, interval, need, end) {
   const step = INTERVALS[interval];
-  const nowBucket = Math.floor(Date.now() / 1e3 / step) * step;
+  const anchor = end ?? Math.floor(Date.now() / 1e3);
+  const lastBucket = Math.floor(anchor / step) * step;
   const out = [];
   for (let i = need - 1; i >= 0; i -= 1) {
-    const t = nowBucket - i * step;
+    const t = lastBucket - i * step;
     const rnd = mulberry32(hash32(`${meta.symbol}:${t}`));
     const o = simPrice(meta, t);
     const c = simPrice(meta, t + step);
@@ -58769,12 +58784,13 @@ var TTL_MS = {
   "4h": 3e4,
   "1d": 6e4
 };
+var HISTORY_TTL_MS = 10 * 6e4;
 var DISCLAIMER = "\u793A\u7BC4\u8CC7\u6599\u3002\u5716\u8868\u70BA\u5916\u90E8\u516C\u958B\u4F86\u6E90\u7684\u53C3\u8003\u884C\u60C5\uFF0C\u975E\u672C\u5E73\u53F0\u6210\u4EA4\u7D00\u9304\uFF1B\u958B\u5009 / \u5E73\u5009 / \u6E05\u7B97\u4E00\u5F8B\u4EE5\u93C8\u4E0A oracle index \u50F9\u7D50\u7B97\u3002";
 var UnknownMarketError = class extends Error {
 };
 var BadIntervalError = class extends Error {
 };
-async function getCandles(rawSymbol, rawInterval = "1h", rawLimit) {
+async function getCandles(rawSymbol, rawInterval = "1h", rawLimit, rawEnd) {
   const meta = resolveMarket(rawSymbol);
   if (!meta) {
     throw new UnknownMarketError(
@@ -58789,9 +58805,12 @@ async function getCandles(rawSymbol, rawInterval = "1h", rawLimit) {
   const interval = rawInterval;
   const parsed = Number(rawLimit ?? DEFAULT_LIMIT);
   const limit = Number.isFinite(parsed) ? Math.max(1, Math.min(Math.floor(parsed), MAX_LIMIT)) : DEFAULT_LIMIT;
-  const key = `${meta.symbol}:${interval}:${limit}`;
+  const parsedEnd = Number(rawEnd);
+  const end = rawEnd !== void 0 && Number.isFinite(parsedEnd) && parsedEnd > 0 ? Math.floor(parsedEnd) : void 0;
+  const key = `${meta.symbol}:${interval}:${limit}:${end ?? "now"}`;
   const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < TTL_MS[interval]) {
+  const ttl = end === void 0 ? TTL_MS[interval] : HISTORY_TTL_MS;
+  if (hit && Date.now() - hit.at < ttl) {
     return hit.payload;
   }
   const seconds = INTERVALS[interval];
@@ -58801,7 +58820,7 @@ async function getCandles(rawSymbol, rawInterval = "1h", rawLimit) {
   let sourceError;
   if (meta.bybit) {
     try {
-      const raw2 = await fetchBybit(meta.bybit, interval, limit);
+      const raw2 = await fetchBybit(meta.bybit, interval, limit, end);
       if (raw2.length) {
         candles = raw2;
         source = {
@@ -58824,7 +58843,7 @@ async function getCandles(rawSymbol, rawInterval = "1h", rawLimit) {
       const native = COINBASE_GRANULARITIES.includes(seconds);
       const base2 = native ? seconds : 3600;
       const need = native ? limit : limit * (seconds / base2);
-      const raw2 = await fetchCoinbase(meta.coinbase, base2, need);
+      const raw2 = await fetchCoinbase(meta.coinbase, base2, need, end);
       const merged = native ? raw2 : aggregate(raw2, seconds);
       if (merged.length) {
         candles = merged;
@@ -58847,7 +58866,7 @@ async function getCandles(rawSymbol, rawInterval = "1h", rawLimit) {
     try {
       const native = interval !== "4h";
       const need = native ? limit : limit * 4;
-      const raw2 = await fetchYahoo(meta.yahoo, interval, need);
+      const raw2 = await fetchYahoo(meta.yahoo, interval, need, end);
       const merged = native ? raw2 : aggregate(raw2, seconds);
       if (merged.length) {
         candles = merged;
@@ -58867,27 +58886,45 @@ async function getCandles(rawSymbol, rawInterval = "1h", rawLimit) {
     }
   }
   let degraded = sourceError !== void 0;
+  let exhausted = false;
   if (!source) {
-    degraded = true;
-    candles = simulate(meta, interval, limit);
-    source = {
-      kind: "simulated",
-      name: "\u6A21\u64EC\u8CC7\u6599",
-      url: "",
-      attribution: "SIMULATED \u2014 \u5916\u90E8\u884C\u60C5\u4F86\u6E90\u7121\u6CD5\u53D6\u5F97\uFF0C\u6B64\u5716\u70BA\u7A0B\u5F0F\u751F\u6210\uFF0C\u975E\u771F\u5BE6\u5E02\u5834\u50F9\u683C",
-      reference: "simulated",
-      fetchedAt: now
-    };
+    if (end !== void 0) {
+      exhausted = true;
+      candles = [];
+      source = {
+        kind: "none",
+        name: "\u7121\u66F4\u65E9\u8CC7\u6599",
+        url: "",
+        attribution: "\u5DF2\u5230\u9054\u6B64\u4F86\u6E90\u7684\u6B77\u53F2\u4FDD\u7559\u4E0A\u9650",
+        reference: "none",
+        fetchedAt: now
+      };
+    } else {
+      degraded = true;
+      candles = simulate(meta, interval, limit, end);
+      source = {
+        kind: "simulated",
+        name: "\u6A21\u64EC\u8CC7\u6599",
+        url: "",
+        attribution: "SIMULATED \u2014 \u5916\u90E8\u884C\u60C5\u4F86\u6E90\u7121\u6CD5\u53D6\u5F97\uFF0C\u6B64\u5716\u70BA\u7A0B\u5F0F\u751F\u6210\uFF0C\u975E\u771F\u5BE6\u5E02\u5834\u50F9\u683C",
+        reference: "simulated",
+        fetchedAt: now
+      };
+    }
   }
+  const windowed = end === void 0 ? candles : candles.filter((k) => k.t < end);
   const payload = {
     ok: true,
     symbol: meta.symbol,
     assetId: assetIdFor(meta.symbol),
     underlying: meta.underlying,
     interval,
-    candles: candles.slice(-limit),
+    candles: windowed.slice(-limit),
     source,
     ...degraded ? { degraded } : {},
+    // 上游有回東西、但整批都不早於 end（例如只回了那根包含式的邊界蠟燭），
+    // 過濾後就空了——對呼叫端而言同樣是「沒有更早的了」。
+    ...exhausted || end !== void 0 && windowed.length === 0 ? { exhausted: true } : {},
     ...sourceError ? { sourceError } : {},
     disclaimer: DISCLAIMER
   };
@@ -59054,7 +59091,9 @@ function createApp() {
       const data4 = await getCandles(
         c.req.param("symbol"),
         c.req.query("interval") ?? "1h",
-        c.req.query("limit")
+        c.req.query("limit"),
+        // 往回翻頁：只回早於這個 unix 秒數的蠟燭。省略 = 最新的一段。
+        c.req.query("end")
       );
       return c.json(data4);
     } catch (err) {
