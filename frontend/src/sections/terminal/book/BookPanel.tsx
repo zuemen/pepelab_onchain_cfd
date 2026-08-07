@@ -32,19 +32,40 @@ export function BookPanel({
   bybitSymbol,
   funding,
   active,
+  split = false,
 }: {
   bybitSymbol?: string
   funding?: FundingInfo
   /** 面板是否可見。收在分頁裡沒展開時傳 false，輪詢就不會建立。 */
   active: boolean
+  /**
+   * 併排模式：訂單簿與近期成交左右並列，取代分頁。
+   *
+   * 給「面板在圖表下方、寬度很寬」的情況用。那個位置只放一個兩欄數字的訂單簿，
+   * 右邊會空出一大片，看起來像版面壞掉；併排才用得掉那個寬度。
+   */
+  split?: boolean
 }) {
   const [tab, setTab] = useState<Tab>('book')
 
-  const book = useOrderBook(bybitSymbol, active && tab === 'book')
-  const trades = useRecentTrades(bybitSymbol, active && tab === 'trades')
+  // 併排時兩邊都要資料；分頁模式只有當前那頁要。
+  const book = useOrderBook(bybitSymbol, active && (split || tab === 'book'))
+  const trades = useRecentTrades(bybitSymbol, active && (split || tab === 'trades'))
 
   return (
-    <Box sx={{ ...panel, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+    <Box
+      sx={{
+        ...panel,
+        // flex:1 + width:100% 缺一不可——這個元件的外層容器是 display:flex，
+        // 沒有它 flex item 會縮成內容寬度，右邊留下一大片空白。
+        flex: 1,
+        width: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: 0,
+        overflow: 'hidden',
+      }}
+    >
       <Box
         sx={{
           display: 'flex',
@@ -56,38 +77,45 @@ export function BookPanel({
           borderBottom: `1px solid ${C.line}`,
         }}
       >
-        {(
-          [
-            ['book', 'Order book'],
-            ['trades', 'Trades'],
-          ] as const
-        ).map(([id, text]) => {
-          const on = tab === id
-          return (
-            <Box
-              key={id}
-              component="button"
-              type="button"
-              onClick={() => setTab(id)}
-              aria-pressed={on}
-              sx={{
-                ...labelCss,
-                fontSize: 10,
-                minHeight: 30,
-                px: 1,
-                borderRadius: '6px',
-                cursor: 'pointer',
-                bgcolor: 'transparent',
-                border: `1px solid ${on ? C.line2 : 'transparent'}`,
-                color: on ? C.lime : C.mut,
-                '@media (pointer: coarse)': { minHeight: 44 },
-                '&:hover': { color: on ? C.lime : C.ink },
-              }}
-            >
-              {text}
-            </Box>
-          )
-        })}
+        {split ? (
+          // 併排模式沒有分頁可切，標題就直接寫兩邊是什麼。
+          <Box sx={{ ...labelCss, fontSize: 10, color: C.mut }}>
+            Order book · Trades
+          </Box>
+        ) : (
+          (
+            [
+              ['book', 'Order book'],
+              ['trades', 'Trades'],
+            ] as const
+          ).map(([id, text]) => {
+            const on = tab === id
+            return (
+              <Box
+                key={id}
+                component="button"
+                type="button"
+                onClick={() => setTab(id)}
+                aria-pressed={on}
+                sx={{
+                  ...labelCss,
+                  fontSize: 10,
+                  minHeight: 30,
+                  px: 1,
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  bgcolor: 'transparent',
+                  border: `1px solid ${on ? C.line2 : 'transparent'}`,
+                  color: on ? C.lime : C.mut,
+                  '@media (pointer: coarse)': { minHeight: 44 },
+                  '&:hover': { color: on ? C.lime : C.ink },
+                }}
+              >
+                {text}
+              </Box>
+            )
+          })
+        )}
 
         {bybitSymbol && (
           <Tooltip title={BYBIT_ATTRIBUTION} arrow>
@@ -112,15 +140,36 @@ export function BookPanel({
         )}
       </Box>
 
-      <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', py: 1 }}>
-        {!bybitSymbol ? (
+      {!bybitSymbol ? (
+        <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', py: 1 }}>
           <NoBook funding={funding} />
-        ) : tab === 'book' ? (
-          <OrderBook book={book.data} loading={book.loading} />
-        ) : (
-          <RecentTrades trades={trades.data} loading={trades.loading} />
-        )}
-      </Box>
+        </Box>
+      ) : split ? (
+        <Box
+          sx={{
+            flex: 1,
+            minHeight: 0,
+            display: 'grid',
+            // minmax(0, 1fr) 同樣的理由：內容不該把欄位撐開。
+            gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+          }}
+        >
+          <Box sx={{ minHeight: 0, overflowY: 'auto', py: 1, borderRight: `1px solid ${C.line}` }}>
+            <OrderBook book={book.data} loading={book.loading} />
+          </Box>
+          <Box sx={{ minHeight: 0, overflowY: 'auto', py: 1 }}>
+            <RecentTrades trades={trades.data} loading={trades.loading} />
+          </Box>
+        </Box>
+      ) : (
+        <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', py: 1 }}>
+          {tab === 'book' ? (
+            <OrderBook book={book.data} loading={book.loading} />
+          ) : (
+            <RecentTrades trades={trades.data} loading={trades.loading} />
+          )}
+        </Box>
+      )}
     </Box>
   )
 }
