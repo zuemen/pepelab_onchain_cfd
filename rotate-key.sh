@@ -66,6 +66,12 @@ echo " 模式                    : $($EXECUTE && echo '真的送出交易' || ec
 echo "════════════════════════════════════════════════════════"
 echo
 
+# --slow 不是效能取捨，是正確性要求。2026-08-07 發現洩漏的 deployer 本身已被
+# EIP-7702 委派接管（code 0xef0100…，掃款機器人幹的，因為私鑰是公開的）。
+# Base 對被委派的帳號要求 nonce 嚴格連續，forge 預設會批次預配 nonce，於是整批
+# 交易被 RPC 以 `gapped-nonce tx from delegated accounts` 拒絕。--slow 逐筆等
+# 收據，nonce 自然連續。
+#
 # ── 目標合約 ─────────────────────────────────────────────────────────────────
 # 這份清單是 2026-08-06 對 Base Sepolia 逐一 cast call owner() 得到的，
 # 不是從部署腳本推的。
@@ -79,6 +85,20 @@ export TRADERSTAKE=0x01aEB530bcFc69f036309ffe55acc7eA6C5a28Fe
 export PEPEAMM=0x93be44a81a2796d378f65ebcc8d5f8b40166ad63
 export X402_FEEROUTER=0x29e5732AC62254d9b92A1C7d3F38EbFA8809B57d
 export X402_INSVAULT=0xc7AfE2064106A608E0E21BFbF9aff89B0EAd7B9f
+# Deployed 2026-08-07 to close the six-contract gap on Base. RotateOwnership.sol
+# already had slots for all of these; the list here did not, so a rotation run
+# before this line was added would have reported success while leaving six
+# contracts on the leaked key. Verified by cast call owner() on each.
+export MOCKUSDT=0x5c8A1e970D275Cc269e09A949D68693120416d78
+export ESGREGISTRY=0x73310bfb9f93711e9405EB717e3426246BD58618
+export PEPECLAIM=0x459d238aC61eC4A0E08608FBcd363227B860CF34
+export ESGDISTRIBUTOR=0x0c85923193AB6137A117E5911aAA7DF7Cb8787D7
+export PEPESTAKING=0xC78D68cA1B217ba241c23Ebad3118c6ec0dc0D34
+export ASSETVAULT=0xC30DFe1C9EBb47197b785995aA9Cd0F5B89557A5
+# MockOracle's owner is already the separated keeper key, not the leaked one, so
+# it is deliberately absent: rotating it would break the price feed.
+export PEPEINCENTIVES=0xEBfA1dc7dDea032ac6242cB619d982e543A23c12
+export COPYTRACKER=0x96357144fE56c5E0e33e8046bE2A63F45528b210
 
 export NEW_OWNER="$NEW_ADDR"
 
@@ -90,7 +110,7 @@ echo "── 步驟 1／3：移轉 ownership ───────────�
   # 比沒有演練更危險。真正的差別只在 --broadcast。
   if $EXECUTE; then
     DRY_RUN=false forge script script/RotateOwnership.s.sol:RotateOwnership \
-      --rpc-url "$RPC" --private-key "$OLD_PK" --broadcast -vv
+      --rpc-url "$RPC" --private-key "$OLD_PK" --broadcast --slow -vv
   else
     DRY_RUN=true  forge script script/RotateOwnership.s.sol:RotateOwnership \
       --rpc-url "$RPC" --private-key "$OLD_PK" -vv
