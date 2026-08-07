@@ -96,7 +96,10 @@ jobs:
 
           # run.ts 只在「一筆都沒寫成功」時才 exit 1。部分失敗它只印 warning，
           # 於是 11 個資產壞掉 7 個仍然是綠的。這裡用它印出的摘要行補上門檻。
-          SUMMARY=$(grep -E '^available=[0-9]+ skipped=[0-9]+ wrote=[0-9]+ failed=[0-9]+$' /tmp/keeper.log | tail -1 || true)
+          # 只錨定真正要用的兩個欄位，中間允許 run.ts 之後再加欄位（它已經加過
+          # rejected= 與 clamped=，把原本寫死整行的 pattern 打掉了）。這個門檻的
+          # 目的是量測失敗率，不是驗證輸出格式；綁太死只會讓它在無關的改動下誤報。
+          SUMMARY=$(grep -E '^available=[0-9]+ .*failed=[0-9]+$' /tmp/keeper.log | tail -1 || true)
           if [ -z "$SUMMARY" ]; then
             echo "::error::找不到 keeper 摘要行 —— 輸出格式已改變，這個門檻已失效，請修正 workflow。"
             exit 1
