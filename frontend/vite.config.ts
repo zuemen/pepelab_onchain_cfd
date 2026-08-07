@@ -69,15 +69,34 @@ export default defineConfig({
         // Deliberately coarse. Splitting per-package produces a request
         // waterfall of tiny chunks that costs more than it saves; these four
         // are the ones large enough to be worth isolating.
-        manualChunks: {
-          ethers: ['ethers'],
-          mui: ['@mui/material', '@mui/system'],
-          charts: ['recharts'],
+        //
+        // Function form, not the object form (`{ mui: ['@mui/material'] }`).
+        // The object form also drags each listed module's *transitive* deps
+        // into the same chunk, and a dep shared by two groups can only land in
+        // one of them. react-is is used by both @mui and recharts: it got
+        // hoisted into `mui`, which made `charts` import `mui` while `mui`
+        // already imported `charts`. Two chunks in an ESM cycle — charts ran
+        // first and called into react-is before mui's top-level
+        // `Le = {}` had executed, so the whole app died at boot with
+        // "Cannot set properties of undefined (setting 'AsyncMode')" and
+        // rendered a blank page.
+        //
+        // The function form assigns only the modules it matches. Anything
+        // shared stays unassigned and Rollup gives it its own chunk that both
+        // groups depend on, so the graph stays acyclic by construction.
+        manualChunks(id) {
+          if (!id.includes('/node_modules/')) return undefined;
+
+          if (/\/node_modules\/(react|react-dom|react-router)\//.test(id)) return 'react';
+          if (/\/node_modules\/@mui\//.test(id)) return 'mui';
+          if (/\/node_modules\/recharts\//.test(id)) return 'charts';
           // lightweight-charts 只有終端機在用，跟 recharts 分開放：終端機的使用者
           // 不必下載 recharts，其他頁面也不必下載這包。混進 entry chunk 則會直接
           // 吃掉 570→328 kB 那次的成果。
-          'charts-lw': ['lightweight-charts'],
-          react: ['react', 'react-dom', 'react-router'],
+          if (/\/node_modules\/lightweight-charts\//.test(id)) return 'charts-lw';
+          if (/\/node_modules\/ethers\//.test(id)) return 'ethers';
+
+          return undefined;
         },
       },
     },
