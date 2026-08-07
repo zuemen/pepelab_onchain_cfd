@@ -3,5 +3,6 @@
   "framework": null,
   "installCommand": "cd .. && npm install",
   "functions": { "api/index.js": { "maxDuration": 60 } },
+  "regions": ["sin1"],
   "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }]
 }

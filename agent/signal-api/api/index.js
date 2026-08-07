@@ -58762,12 +58762,12 @@ function simulate(meta, interval, need) {
 }
 var cache = /* @__PURE__ */ new Map();
 var TTL_MS = {
-  "1m": 15e3,
-  "5m": 3e4,
-  "15m": 6e4,
-  "1h": 12e4,
-  "4h": 3e5,
-  "1d": 3e5
+  "1m": 3e3,
+  "5m": 5e3,
+  "15m": 1e4,
+  "1h": 15e3,
+  "4h": 3e4,
+  "1d": 6e4
 };
 var DISCLAIMER = "\u793A\u7BC4\u8CC7\u6599\u3002\u5716\u8868\u70BA\u5916\u90E8\u516C\u958B\u4F86\u6E90\u7684\u53C3\u8003\u884C\u60C5\uFF0C\u975E\u672C\u5E73\u53F0\u6210\u4EA4\u7D00\u9304\uFF1B\u958B\u5009 / \u5E73\u5009 / \u6E05\u7B97\u4E00\u5F8B\u4EE5\u93C8\u4E0A oracle index \u50F9\u7D50\u7B97\u3002";
 var UnknownMarketError = class extends Error {
