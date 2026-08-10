@@ -23,7 +23,6 @@ export interface FundingInfo {
   shortOI:         bigint   // 18-dec notional
   lastSettled:     bigint   // unix timestamp (0 = never)
   canSettle:       boolean
-  cumulativeIndex: bigint   // signed 18-dec
   interval:        bigint   // FUNDING_INTERVAL in seconds
 }
 
@@ -38,32 +37,39 @@ export function useFundingData(exchange: Contract | null): FundingData {
       const now      = BigInt(Math.floor(Date.now() / 1000))
       const interval = (await exchange.FUNDING_INTERVAL()) as bigint
 
-      // 逐個標的限流，而不是 11 個標的 × 5 個呼叫一次全部送出（= 55 個併發，
-      // 落在公開 RPC 會開始丟包的區間）。每個標的內部的 5 個呼叫仍然併發，
-      // 所以實際同時在飛的大約是 RPC_CONCURRENCY × 5。
+      // 逐個標的限流，而不是 11 個標的 × 4 個呼叫一次全部送出（= 44 個併發，
+      // 落在公開 RPC 會開始丟包的區間）。每個標的內部的呼叫仍然併發，所以實際
+      // 同時在飛的大約是 RPC_CONCURRENCY × 4。
+      //
+      // 用 allSettled 而不是 all：任何一個讀取失敗都會讓整個標的被丟掉，UI 上
+      // 顯示成「—」。這正是 2026-08-10 的實際災情——ABI 已更新成稽核後的版本
+      // （cumulativeFundingIndex 被拆成 Long/Short），但鏈上跑的還是舊 bytecode，
+      // 於是那一個呼叫必定 revert，連坐讓 **全部 11 個標的** 的 funding 與未平倉
+      // 量都消失，儘管其餘四個值鏈上都讀得到（實測 sNVDA 多單 400 / 空單 1,060 /
+      // funding -33bps）。一個不存在的方法不該讓四個好資料一起陪葬。
       const entries = await mapLimit(
         ASSETS,
         Math.max(1, Math.floor(RPC_CONCURRENCY / 2)),
         async (a): Promise<[string, FundingInfo] | null> => {
-          try {
-            const [rate, longOI, shortOI, lastSettled, cumIdx] = await Promise.all([
-              exchange.getFundingRate(a.id)           as Promise<bigint>,
-              exchange.globalLongNotional(a.id)       as Promise<bigint>,
-              exchange.globalShortNotional(a.id)      as Promise<bigint>,
-              exchange.lastFundingUpdateAt(a.id)      as Promise<bigint>,
-              exchange.cumulativeFundingIndex(a.id)   as Promise<bigint>,
-            ])
-            return [a.id, {
-              label:           a.label,
-              rate,
-              longOI,
-              shortOI,
-              lastSettled,
-              canSettle:       now >= lastSettled + interval,
-              cumulativeIndex: cumIdx,
-              interval,
-            }]
-          } catch { return null }
+          const [rate, longOI, shortOI, lastSettled] = await Promise.allSettled([
+            exchange.getFundingRate(a.id)      as Promise<bigint>,
+            exchange.globalLongNotional(a.id)  as Promise<bigint>,
+            exchange.globalShortNotional(a.id) as Promise<bigint>,
+            exchange.lastFundingUpdateAt(a.id) as Promise<bigint>,
+          ])
+          // 未平倉量是這一格的重點；連它都讀不到才真的沒東西可顯示。
+          if (longOI.status !== 'fulfilled' || shortOI.status !== 'fulfilled') return null
+
+          const settled = lastSettled.status === 'fulfilled' ? lastSettled.value : 0n
+          return [a.id, {
+            label:       a.label,
+            rate:        rate.status === 'fulfilled' ? rate.value : 0n,
+            longOI:      longOI.value,
+            shortOI:     shortOI.value,
+            lastSettled: settled,
+            canSettle:   settled > 0n && now >= settled + interval,
+            interval,
+          }]
         },
       )
       setData(Object.fromEntries(entries.filter((e): e is [string, FundingInfo] => e !== null)))

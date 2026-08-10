@@ -19,7 +19,6 @@ import { useTerminalAccount } from 'src/hooks/useTerminalAccount'
 import { ASSET_IDS } from 'src/contracts/addresses'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { ASSET_META } from 'src/lib/pepefi/assetMeta'
-import { bybitSymbolFor } from 'src/lib/pepefi/bybitMarket'
 import { type Interval, DEFAULT_INTERVAL } from 'src/lib/pepefi/candles'
 import { blocksTrading, stalenessNotice } from 'src/lib/pepefi/priceFreshness'
 
@@ -75,10 +74,6 @@ export function TerminalView() {
   // 後端代號與 bytes32 assetId 都收；代號比較好讀，也讓 API 錯誤訊息看得懂。
   const feed = useCandles(meta?.symbol ?? selAsset, interval)
 
-  // 只有加密貨幣在 Bybit 有對應永續合約可以對照盤口；其餘標的拿到 undefined，
-  // BookPanel 會改顯示鏈上的 OI / funding。
-  const bybitSymbol = bybitSymbolFor(meta?.symbol)
-
   // 這個標的在鏈上的實際部位活動（全平台，不只自己的），取代原本借用的 Bybit 盤口。
   const activity = useMarketActivity(contracts, selAsset)
   const { assets: vaultAssets } = useVaultBacking(contracts)
@@ -89,6 +84,16 @@ export function TerminalView() {
   }, [])
 
   const livePx = live[selAsset]?.usd
+
+  // 給 Activity 面板算未實現損益用。刻意用即時價（CoinGecko/live）而不是 oracle
+  // index：跟下方自己持倉表的算法一致，同一個標的的損益在兩個地方不該不一樣。
+  // 拿不到即時價就退回 oracle 價，兩者都沒有就不算（面板顯示 '—'）。
+  const activityPrice =
+    livePx !== undefined
+      ? BigInt(Math.round(livePx * 1e8)) * 10n ** 10n
+      : account.curPrice > 0n
+        ? account.curPrice
+        : undefined
 
   // 以即時價重算未實現損益，不等鏈上刷新。
   const livePositions: LivePos[] = useMemo(
@@ -192,12 +197,7 @@ export function TerminalView() {
       >
         {layout.bookAsColumn && (
           <Box sx={{ height: 520, display: 'flex' }}>
-            <BookPanel
-              bybitSymbol={bybitSymbol}
-              symbol={meta?.symbol}
-              activity={activity}
-              active
-            />
+            <BookPanel symbol={meta?.symbol} activity={activity} currentPrice={activityPrice} />
           </Box>
         )}
 
@@ -214,13 +214,7 @@ export function TerminalView() {
               這個位置很寬，所以改成訂單簿與成交併排，否則右邊會空一大片。 */}
           {!layout.bookAsColumn && (
             <Box sx={{ height: 380, display: 'flex' }}>
-              <BookPanel
-                bybitSymbol={bybitSymbol}
-                symbol={meta?.symbol}
-                activity={activity}
-                active
-                split
-              />
+              <BookPanel symbol={meta?.symbol} activity={activity} currentPrice={activityPrice} />
             </Box>
           )}
         </Box>

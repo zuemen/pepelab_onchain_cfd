@@ -22,6 +22,19 @@ const hhmm = (unix: bigint) => {
  * 交易所的掛單既不是我們的成交，也只有 sBTC / sETH 兩個標的對得上。這裡改成顯示
  * 真正發生過的事，而且 11 個標的一致。
  */
+/**
+ * 未實現損益：用當前價與進場價重算。
+ *
+ * 跟 TerminalView 算自己持倉的公式一致，刻意不共用抽象——那邊吃的是 LivePos，
+ * 這邊吃的是鏈上原始 struct，硬套一個共同型別只會讓兩邊都變難讀。
+ */
+function unrealised(p: ActivityRow, cur: bigint): bigint {
+  if (p.entryPrice <= 0n) return 0n
+  const size = (p.margin * p.leverage * 10n ** 18n) / p.entryPrice
+  const pnl = ((cur - p.entryPrice) * size) / 10n ** 18n
+  return p.isLong ? pnl : -pnl
+}
+
 export function MarketActivity({
   rows,
   loading,
@@ -29,6 +42,7 @@ export function MarketActivity({
   truncated,
   missed,
   symbol,
+  currentPrice,
 }: {
   rows: ActivityRow[]
   loading: boolean
@@ -37,6 +51,11 @@ export function MarketActivity({
   /** 重試後仍讀不到的筆數。 */
   missed: number
   symbol?: string
+  /**
+   * 用來算未實現損益的當前價（18 dp）。拿不到就只顯示已實現的部分——寧可留白，
+   * 也不要用過期的價格算出一個看起來很確定的數字。
+   */
+  currentPrice?: bigint
 }) {
   if (error) {
     return <Msg color={C.red}>{error}</Msg>
@@ -65,7 +84,10 @@ export function MarketActivity({
       </Box>
 
       {rows.map((p) => {
-        const pnl = fromUnits(p.realizedPnL, 18)
+        // 未平倉 → 用當前價即時算；已平倉 → 用鏈上寫死的已實現損益。
+        const live = p.isOpen && currentPrice ? unrealised(p, currentPrice) : null
+        const pnlRaw = p.isOpen ? live : p.realizedPnL
+        const pnl = pnlRaw === null ? null : fromUnits(pnlRaw, 18)
         return (
           <Box
             key={String(p.id)}
@@ -93,16 +115,23 @@ export function MarketActivity({
               {fUsd(fromUnits(p.entryPrice, 18))}
             </Box>
             <Box sx={{ textAlign: 'right', color: C.mut }}>{hhmm(p.openedAt)}</Box>
-            {/* 未平倉沒有已實現損益，就照實留白——不要拿未實現損益填進來假裝有值，
-                那是不同的東西，混在同一欄會讓人誤讀。 */}
+            {/* 未實現與已實現是不同的東西，一定要看得出差別：未平倉的用括號、
+                較淡、後面掛一個 open 記號；已平倉的是粗體實數。只靠顏色不夠——
+                兩者都會是紅或綠。 */}
             <Box
               sx={{
                 textAlign: 'right',
-                color: p.isOpen ? C.mut : pnl >= 0 ? C.green : C.red,
+                color: pnl === null ? C.mut : pnl >= 0 ? C.green : C.red,
                 fontWeight: p.isOpen ? 400 : 700,
+                opacity: p.isOpen ? 0.75 : 1,
               }}
             >
-              {p.isOpen ? 'open' : fNum(pnl, { dp: 2, signed: true })}
+              {pnl === null ? '—' : `${p.isOpen ? '(' : ''}${fNum(pnl, { dp: 2, signed: true })}${p.isOpen ? ')' : ''}`}
+              {p.isOpen && (
+                <Box component="span" sx={{ color: C.mut, fontSize: 9, ml: 0.4 }}>
+                  open
+                </Box>
+              )}
             </Box>
           </Box>
         )
