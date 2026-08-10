@@ -30,8 +30,17 @@ contract MockUSDCTest is Test {
         assertEq(usdc.totalSupply(), 800e18);
     }
 
-    function test_anyoneCanMint() public {
+    /// @dev PA-3: `mint` used to be callable by anyone, which made the
+    ///      owner-only burn guard meaningless and let anyone print the reserve
+    ///      side of MockSwapRouter for free. Inverted deliberately.
+    function test_strangerCannotMint() public {
         vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(MockUSDC.NotMinter.selector, alice));
+        usdc.mint(alice, 1e18);
+        assertEq(usdc.balanceOf(alice), 0);
+    }
+
+    function test_ownerCanMint() public {
         usdc.mint(alice, 1e18);
         assertEq(usdc.balanceOf(alice), 1e18);
     }
@@ -47,13 +56,13 @@ contract MockUSDCTest is Test {
     // ── Faucet tests ──────────────────────────────────────────────────────────
 
     function test_faucetMintsCorrectAmount() public {
-        vm.prank(alice);
+        vm.prank(alice, alice);
         usdc.faucet();
         assertEq(usdc.balanceOf(alice), usdc.FAUCET_AMOUNT());
     }
 
     function test_faucetCooldown() public {
-        vm.startPrank(alice);
+        vm.startPrank(alice, alice);
         usdc.faucet();
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -66,7 +75,7 @@ contract MockUSDCTest is Test {
     }
 
     function test_faucetCanCallAfterCooldown() public {
-        vm.startPrank(alice);
+        vm.startPrank(alice, alice);
         usdc.faucet();
         vm.warp(block.timestamp + usdc.FAUCET_COOLDOWN() + 1);
         usdc.faucet();
@@ -75,9 +84,9 @@ contract MockUSDCTest is Test {
     }
 
     function test_faucetIndependentPerAddress() public {
-        vm.prank(alice);
+        vm.prank(alice, alice);
         usdc.faucet();
-        vm.prank(bob);
+        vm.prank(bob, bob);
         usdc.faucet();   // bob has no cooldown yet — should not revert
         assertEq(usdc.balanceOf(bob), usdc.FAUCET_AMOUNT());
     }

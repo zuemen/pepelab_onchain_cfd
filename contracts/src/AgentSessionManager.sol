@@ -51,6 +51,11 @@ contract AgentSessionManager is ReentrancyGuard {
     ///      old entries and so the frontend can display what a session permits.
     mapping(uint256 => bytes32[]) private _assetList;
 
+    /// @notice M-8: 1-based session id that opened a position, so a session can
+    ///         only ever close what it itself opened. 0 = not opened by any
+    ///         session (e.g. the user's own trades).
+    mapping(uint256 => uint256) private _positionSession;
+
     // ── Events ───────────────────────────────────────────────────────────────
 
     event SessionCreated(
@@ -88,6 +93,10 @@ contract AgentSessionManager is ReentrancyGuard {
     error LeverageExceedsSessionCap();
     error NotSessionUserPosition();
     error AssetNotAllowed(uint256 sessionId, bytes32 asset);
+    /// @notice M-8: the position exists and belongs to the session user, but was
+    ///         not opened by this session.
+    error PositionNotFromSession(uint256 sessionId, uint256 positionId);
+    error ZeroLeverage();
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
@@ -119,6 +128,10 @@ contract AgentSessionManager is ReentrancyGuard {
     ) internal returns (uint256 sessionId) {
         if (agent == address(0)) revert ZeroAgent();
         if (maxMarginPerTrade == 0 || totalMarginBudget == 0) revert ZeroBudget();
+        // M-8: a session with maxLeverage == 0 can never pass the leverage gate
+        // (the exchange rejects leverage 0 too), so it is a dead session that
+        // silently reverts every trade. Reject it at creation instead.
+        if (maxLeverage == 0) revert ZeroLeverage();
         if (expiry <= block.timestamp) revert InvalidExpiry();
 
         sessionId = nextSessionId++;
@@ -204,11 +217,18 @@ contract AgentSessionManager is ReentrancyGuard {
         positionId = exchange.openPositionFor{value: msg.value}(
             s.user, asset, isLong, margin, leverage, copiedFrom
         );
+        _positionSession[positionId] = sessionId + 1;   // M-8, 1-based
 
         emit SessionOpenedPosition(sessionId, msg.sender, positionId, margin);
     }
 
-    /// @notice Agent closes one of the session user's positions.
+    /// @notice Agent closes a position THIS session opened.
+    /// @dev M-8: the check used to be only `pos.owner == s.user`, so an agent
+    ///      granted a small budgeted session could force-close every unrelated
+    ///      position the user had ever opened — realizing their losses at a
+    ///      moment of the agent's choosing. The margin caps bound what an agent
+    ///      can risk; they say nothing about what it can destroy. A session may
+    ///      now only unwind its own trades.
     function closePositionForSession(uint256 sessionId, uint256 positionId)
         external
         nonReentrant
@@ -216,9 +236,18 @@ contract AgentSessionManager is ReentrancyGuard {
         Session storage s = _requireActiveAgent(sessionId);
         PerpetualExchange.Position memory pos = exchange.getPosition(positionId);
         if (pos.owner != s.user) revert NotSessionUserPosition();
+        if (_positionSession[positionId] != sessionId + 1) {
+            revert PositionNotFromSession(sessionId, positionId);
+        }
 
         exchange.closePositionFor(s.user, positionId);
         emit SessionClosedPosition(sessionId, msg.sender, positionId);
+    }
+
+    /// @notice The session that opened `positionId`, or type(uint256).max if none.
+    function sessionOfPosition(uint256 positionId) external view returns (uint256) {
+        uint256 s1 = _positionSession[positionId];
+        return s1 == 0 ? type(uint256).max : s1 - 1;
     }
 
     // ── Internal ───────────────────────────────────────────────────────────────

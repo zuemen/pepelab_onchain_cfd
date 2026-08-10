@@ -439,10 +439,10 @@ export default function VaultPage() {
       <Card sx={{ p: 2.5, bgcolor: 'background.neutral' }}>
         <Stack spacing={1}>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-            <Box component="span" sx={{ color: 'text.primary', fontWeight: 'bold' }}>How it works:</Box> LPs deposit mUSDC and receive pIV shares. The vault earns 10% of all copy-trading and performance fees via the FeeRouter. It also absorbs remaining collateral from liquidated positions.
+            <Box component="span" sx={{ color: 'text.primary', fontWeight: 'bold' }}>How it works:</Box> LPs deposit mUSDC and receive pIV shares. The vault earns 10% of all copy-trading and performance fees via the FeeRouter. On liquidation the vault only receives the <Box component="span" sx={{ fontWeight: 'bold' }}>liquidation penalty</Box> (<code>liquidationPenaltyBps</code>) plus the liquidator&apos;s reward — the position owner is refunded whatever margin is left after loss, fees and penalty, so liquidation is no longer a 100% forfeit.
           </Typography>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-            When a trader's loss exceeds their margin (extreme event), the vault pays a 10% bailout floor directly to the trader. LPs bear this risk in exchange for the yield.
+            When a trader&apos;s loss exceeds their margin (extreme event), the vault pays a 10% bailout floor directly to the trader. If losses exceed what the vault can cover, the shortfall is emitted as a <code>BadDebt</code> event and the vault has to be topped up via <code>recapitalize()</code>. LPs bear this risk in exchange for the yield.
           </Typography>
         </Stack>
       </Card>

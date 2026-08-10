@@ -3,13 +3,21 @@ import { ethers } from "ethers";
 import type { Contracts } from "./provider.ts";
 import { assetIdOf, symbolOfAssetId } from "./addresses.ts";
 import { fmtUsdc18, fmtPrice8, bpsToPercent, fmtTime } from "./format.ts";
+import { classifyTradeFreshness } from "./freshness.ts";
 
 export interface OracleSnapshot {
   asset: string;
   assetId: string;
   price: number; // USD
   updatedAt: string | null;
+  /** MockOracle 自己的 24 小時門檻。**不是**能不能交易的判準 —— 見 tradableNow。 */
   isStale: boolean;
+  /** 價格年齡（秒）。 */
+  ageSec: number;
+  /** 交易所的 maxPriceAge（秒）。開倉／平倉／清算都以它為準。 */
+  maxPriceAgeSec: number;
+  /** ageSec <= maxPriceAgeSec。false 代表此刻在鏈上開倉會 revert StalePrice。 */
+  tradableNow: boolean;
   fundingRateBps: number; // 原始 bps（int）
   fundingRatePercent: number; // 每 interval %
   fundingDirection: "longs_pay" | "shorts_pay" | "balanced";
@@ -31,7 +39,9 @@ export interface OracleSnapshot {
   fundingComponent: number;
   /** edge 拆解：OI 反向（contrarian）分量。 */
   oiComponent: number;
-  /** edgeScore ≥ +ENTRY → long；≤ −ENTRY → short；否則 no_trade（stale 一律 no_trade）。 */
+  /** edgeScore ≥ +ENTRY → long；≤ −ENTRY → short；否則 no_trade
+   *  （`tradableNow === false` 一律 no_trade —— 判準是交易所的 maxPriceAge，不是
+   *   MockOracle 的 24 小時 isStale）。 */
   recommendation: "long" | "short" | "no_trade";
   /** |edgeScore|。 */
   confidence: number;
@@ -80,10 +90,19 @@ export function estLiquidationPrices(price: number, maintenanceMarginBps: number
 }
 
 /** 綜合 edge：funding（負=shorts_pay=偏多→正分）+ OI 反向（人多做反向）。純函式。 */
+/**
+ * 新鮮度判準（稽核 A-6）：以 `tradableNow`（交易所 maxPriceAge，實測 6 小時）為準，
+ * **不是** MockOracle 的 24 小時 `isStale`。落在兩者之間時，舊版會回「建議做多」，
+ * agent 照做，然後開倉在鏈上 revert StalePrice。`tradableNow` 未提供時才退回
+ * `!isStale`（向後相容）；兩者皆缺一律保守判為不可交易。
+ */
 export function computeEdge(input: {
   fundingRateBps: number;
   oiImbalance: number;
-  isStale: boolean;
+  /** 交易所 maxPriceAge 判準：true=此刻可開倉。優先於 isStale。 */
+  tradableNow?: boolean;
+  /** MockOracle 的 24 小時門檻（僅在缺 tradableNow 時當備援）。 */
+  isStale?: boolean;
   Kf?: number;
   entryThreshold?: number;
 }): {
@@ -99,9 +118,22 @@ export function computeEdge(input: {
   const fundingComponent = clamp(-input.fundingRateBps * Kf, -60, 60);
   const oiComponent = clamp(-input.oiImbalance * 40, -40, 40);
   const edgeScore = Math.round(clamp(fundingComponent + oiComponent, -100, 100));
-  if (input.isStale) {
+  // tradableNow 優先；缺它才看 isStale；兩者皆缺 → 保守判為不可交易。
+  const tradable =
+    typeof input.tradableNow === "boolean"
+      ? input.tradableNow
+      : typeof input.isStale === "boolean"
+        ? !input.isStale
+        : false;
+  if (!tradable) {
+    const why =
+      typeof input.tradableNow === "boolean"
+        ? "鏈上價格已超過交易所 maxPriceAge（此刻開倉會 revert StalePrice）"
+        : typeof input.isStale === "boolean"
+          ? "oracle 資料過期（stale）"
+          : "無法判定價格新鮮度（缺 tradableNow / isStale）";
     return { edgeScore, fundingComponent: round2(fundingComponent), oiComponent: round2(oiComponent),
-      recommendation: "no_trade", confidence: Math.abs(edgeScore), reason: "oracle 資料過期（stale），本輪不建議進場" };
+      recommendation: "no_trade", confidence: Math.abs(edgeScore), reason: `${why}，本輪不建議進場` };
   }
   let recommendation: "long" | "short" | "no_trade";
   let reason: string;
@@ -114,7 +146,8 @@ export function computeEdge(input: {
 
 /** 把基礎 oracle 快照（價格/funding/OI/stale）enrich 成決策級資料。純函式、可測。 */
 export function enrichOracle(
-  base: Pick<OracleSnapshot, "price" | "fundingRateBps" | "longOpenInterest" | "shortOpenInterest" | "isStale">,
+  base: Pick<OracleSnapshot, "price" | "fundingRateBps" | "longOpenInterest" | "shortOpenInterest"> &
+    Partial<Pick<OracleSnapshot, "isStale" | "tradableNow">>,
   opts: { Kf?: number; entryThreshold?: number; maintenanceMarginBps?: number } = {},
 ): Omit<OracleSnapshot, keyof OracleSnapshot> & {
   oiImbalance: number; skewProxyBps: number; maintenanceMarginBps: number;
@@ -125,7 +158,15 @@ export function enrichOracle(
   const oiImbalance = round2(computeOiImbalance(base.longOpenInterest, base.shortOpenInterest));
   // OI skew → mark/index 偏移 proxy：滿失衡(±1) 約 ±50 bps（誠實的粗估，非真 mark）。
   const skewProxyBps = Math.round(oiImbalance * 50);
-  const edge = computeEdge({ fundingRateBps: base.fundingRateBps, oiImbalance, isStale: base.isStale, Kf: opts.Kf, entryThreshold: opts.entryThreshold });
+  // A-6：決策欄位改用交易所的 maxPriceAge（tradableNow），不是 24h 的 isStale。
+  const edge = computeEdge({
+    fundingRateBps: base.fundingRateBps,
+    oiImbalance,
+    tradableNow: base.tradableNow,
+    isStale: base.isStale,
+    Kf: opts.Kf,
+    entryThreshold: opts.entryThreshold,
+  });
   return {
     oiImbalance, skewProxyBps, maintenanceMarginBps: mmBps,
     estLiquidation: estLiquidationPrices(base.price, mmBps),
@@ -195,22 +236,35 @@ export async function getOracleSnapshot(
   symbol: string,
 ): Promise<OracleSnapshot> {
   const assetId = assetIdOf(symbol);
-  const [priceRes, isStale, fundingBps, longOI, shortOI] = await Promise.all([
+  const [priceRes, isStale, fundingBps, longOI, shortOI, maxPriceAge] = await Promise.all([
     c.oracle.getPrice(assetId) as Promise<[bigint, bigint]>,
     c.oracle.isStale(assetId) as Promise<boolean>,
     c.perp.getFundingRate(assetId) as Promise<bigint>,
     c.perp.globalLongNotional(assetId) as Promise<bigint>,
     c.perp.globalShortNotional(assetId) as Promise<bigint>,
+    c.perp.maxPriceAge() as Promise<bigint>,
   ]);
   const [price, updatedAt] = priceRes;
   const direction =
     fundingBps > 0n ? "longs_pay" : fundingBps < 0n ? "shorts_pay" : "balanced";
+
+  // isStale 是 MockOracle 的 24 小時門檻；交易能不能成立由交易所的 maxPriceAge
+  // 決定，兩者差 4 倍，所以兩個都要回，並且明講哪個才是可交易的判準。
+  const tf = classifyTradeFreshness({
+    updatedAtSec: Number(updatedAt),
+    nowSec: Math.floor(Date.now() / 1000),
+    maxPriceAgeSec: Number(maxPriceAge),
+  });
+
   const base = {
     asset: symbol,
     assetId,
     price: fmtPrice8(price),
     updatedAt: fmtTime(updatedAt),
     isStale,
+    ageSec: tf.ageSec,
+    maxPriceAgeSec: tf.maxPriceAgeSec,
+    tradableNow: tf.fresh,
     fundingRateBps: Number(fundingBps),
     fundingRatePercent: bpsToPercent(fundingBps),
     fundingDirection: direction as OracleSnapshot["fundingDirection"],

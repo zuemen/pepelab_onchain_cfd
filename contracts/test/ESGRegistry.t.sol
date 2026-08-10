@@ -52,14 +52,33 @@ contract ESGRegistryTest is Test {
 
     // ── testCompositeScore_average ───────────────────────────────────────────
 
-    function testCompositeScore_average() public {
-        // (75 + 65 + 72) / 3 = 212 / 3 = 70 (floor)
+    /// @dev Low (rounding boundary): compositeScore now rounds to nearest
+    ///      instead of flooring. Every consumer compares it with `>=` against a
+    ///      threshold, so flooring silently raised the bar by up to 0.67 points
+    ///      in a way that depended on the sum's remainder.
+    function testCompositeScore_roundsToNearest() public {
+        // (75 + 65 + 72) = 212 → 70.67 → 71
         esg.setESG(SETH, 75, 65, 72, "AA");
-        assertEq(esg.compositeScore(SETH), 70);
+        assertEq(esg.compositeScore(SETH), 71);
 
-        // (82 + 78 + 85) / 3 = 245 / 3 = 81 (floor)
+        // (82 + 78 + 85) = 245 → 81.67 → 82
         esg.setESG(keccak256("sBOND"), 82, 78, 85, "AAA");
-        assertEq(esg.compositeScore(keccak256("sBOND")), 81);
+        assertEq(esg.compositeScore(keccak256("sBOND")), 82);
+
+        // Exact multiples are unaffected.
+        esg.setESG(keccak256("sEXACT"), 70, 70, 70, "A");
+        assertEq(esg.compositeScore(keccak256("sEXACT")), 70);
+
+        // …and .33 still rounds down.
+        esg.setESG(keccak256("sDOWN"), 70, 70, 69, "A");
+        assertEq(esg.compositeScore(keccak256("sDOWN")), 70);   // 209 → 69.67 → 70
+        esg.setESG(keccak256("sDOWN2"), 70, 69, 69, "A");
+        assertEq(esg.compositeScore(keccak256("sDOWN2")), 69);  // 208 → 69.33 → 69
+    }
+
+    function testCompositeScore_cannotExceed100() public {
+        esg.setESG(keccak256("sMAX"), 100, 100, 100, "AAA");
+        assertEq(esg.compositeScore(keccak256("sMAX")), 100);
     }
 
     // ── testGetUnratedAsset_revert ───────────────────────────────────────────

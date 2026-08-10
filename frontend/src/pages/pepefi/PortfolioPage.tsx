@@ -15,6 +15,8 @@ import { getAddresses, CHAIN_NAMES } from 'src/contracts/addresses';
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
 import { safeRead } from 'src/lib/pepefi/safeRead';
+import { STABLE_LABEL } from 'src/lib/pepefi/tokenLabel';
+import { firstBlocking, stalenessNotice } from 'src/lib/pepefi/priceFreshness';
 
 import StatCard from 'src/components/pepefi/StatCard';
 import ESGBadge from 'src/components/pepefi/ESGBadge';
@@ -103,7 +105,7 @@ const fDate = (ts: bigint) =>
     dateStyle: 'short',
     timeStyle: 'short',
   });
-const fPnL      = (v: bigint) => (Number(v) >= 0 ? '+' : '') + f18(v, 4) + ' mUSDC';
+const fPnL      = (v: bigint) => (Number(v) >= 0 ? '+' : '') + f18(v, 4) + ' ' + STABLE_LABEL;
 const pnlColor  = (v: bigint) => Number(v) >= 0 ? 'success.main' : 'error.main';
 const returnPct = (initial: bigint, current: bigint): string => {
   if (initial === 0n) return '—';
@@ -190,11 +192,21 @@ export default function PortfolioPage() {
       // ── B: Open positions ─────────────────────────────────────────────────
       const posIds = (await contracts.exchange.getUserPositions(addr)) as bigint[];
 
+      // getPosition 先併發拿完，再對「還開著」的倉位併發拿細節。舊版是在
+      // 每個 map 裡先 await getPosition 再 await 四個 view，兩層都算在同一個
+      // Promise.all 底下沒錯，但 getPosition 一律要等一個完整 RTT 才開始下一批；
+      // 拆成兩階段後總延遲是 2 個 RTT 而不是 2N 個。
+      const rawPositions = await Promise.all(
+        posIds.map(id =>
+          safeRead<RawPos | null>(contracts.exchange.getPosition(id) as unknown as Promise<RawPos>, null),
+        ),
+      );
+
       const maybeRows = await Promise.all(
-        posIds.map(async (id): Promise<PosRow | null> => {
+        posIds.map(async (id, i): Promise<PosRow | null> => {
           try {
-            const raw = (await contracts.exchange.getPosition(id)) as unknown as RawPos;
-            if (!raw.isOpen) return null;
+            const raw = rawPositions[i];
+            if (!raw || !raw.isOpen) return null;
             // Each read is isolated: a reverting view on one position must not
             // blank the whole portfolio.
             const [pnl, val, priceRes, funding] = await Promise.all([
@@ -247,8 +259,26 @@ export default function PortfolioPage() {
   }, [wallet.isConnected, isWrongNetwork]);
 
   // ── Transactions ────────────────────────────────────────────────────────────
+  // M1：unfollowAndCloseAll 會一口氣平掉這筆跟單底下的所有倉位，每一個都要讀
+  // oracle。只要有一檔過期，整筆交易 revert——所以判斷是「這些倉位裡有沒有任何
+  // 一檔過期」，不是單一標的。
+  const unfollowStaleNotice = (index: number): string | null => {
+    const rec = copyRecs.find(r => r.index === index);
+    if (!rec) return null;
+    const assets = positions
+      .filter(p => p.copiedFrom?.toLowerCase() === rec.trader.toLowerCase())
+      .map(p => ({
+        label: ASSET_LABEL[p.asset] ?? p.asset.slice(0, 8),
+        freshness: livePrices[p.asset]?.freshness,
+      }));
+    const bad = firstBlocking(assets);
+    return bad ? stalenessNotice(bad.freshness, bad.label) : null;
+  };
+
   const doUnfollow = async (index: number) => {
     if (!contracts) return;
+    const blocked = unfollowStaleNotice(index);
+    if (blocked) { notify(blocked, false); return; }
     const key = `unfollow_${index}`;
     setLoad(key, true);
     try {
@@ -269,7 +299,7 @@ export default function PortfolioPage() {
     try {
       const tx = asTx(await contracts.exchange.withdrawMargin(amt));
       await tx.wait();
-      notify(`Withdrew ${withdrawAmt} mUSDC ✓`, true, tx.hash);
+      notify(`Withdrew ${withdrawAmt} ${STABLE_LABEL} ✓`, true, tx.hash);
       setWithdrawAmt('');
       await fetchAll();
     } catch (e) {
@@ -344,8 +374,8 @@ export default function PortfolioPage() {
         <EmptyState
           icon="💼"
           title="Your portfolio is empty"
-          description="Start by getting test mUSDC, then copy a trader or open positions yourself."
-          ctaText="Get mUSDC"
+          description={`Start by getting test ${STABLE_LABEL}, then copy a trader or open positions yourself.`}
+          ctaText={`Get ${STABLE_LABEL}`}
           ctaHref="/exchange"
         />
       </Container>
@@ -397,7 +427,7 @@ export default function PortfolioPage() {
           <StatCard
             title="Free Margin"
             value={f18(freeMargin)}
-            sub="mUSDC available"
+            sub={`${STABLE_LABEL} available`}
             valueColor="primary.light"
           />
         </Grid>
@@ -419,7 +449,7 @@ export default function PortfolioPage() {
           <StatCard
             title="Total Copy PnL"
             value={totalInitial > 0n ? returnPct(totalInitial, totalCopyCur) : '—'}
-            sub={totalInitial > 0n ? `${f18(totalCopyCur)} / ${f18(totalInitial)} mUSDC` : 'no copy positions'}
+            sub={totalInitial > 0n ? `${f18(totalCopyCur)} / ${f18(totalInitial)} ${STABLE_LABEL}` : 'no copy positions'}
             valueColor={totalInitial > 0n ? returnColor(totalInitial, totalCopyCur) : 'text.secondary'}
           />
         </Grid>
@@ -452,6 +482,8 @@ export default function PortfolioPage() {
               <TableBody>
                 {copyRecs.map(rec => {
                   const unfKey = `unfollow_${rec.index}`;
+                  // M1：一鍵平掉所有跟單倉位，任何一檔價格過期整筆都會 revert。
+                  const unfStale = unfollowStaleNotice(rec.index);
                   return (
                     <TableRow key={rec.index} sx={{ '&:hover': { bgcolor: 'action.hover' } }}>
                       <TableCell>
@@ -480,10 +512,11 @@ export default function PortfolioPage() {
                           variant="contained"
                           color="error"
                           onClick={() => void doUnfollow(rec.index)}
-                          disabled={busy[unfKey]}
+                          disabled={busy[unfKey] || !!unfStale}
+                          title={unfStale ?? undefined}
                           sx={{ fontWeight: 'bold' }}
                         >
-                          {busy[unfKey] ? '…' : 'Unfollow'}
+                          {busy[unfKey] ? '…' : unfStale ? '價格過期' : 'Unfollow'}
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -604,7 +637,7 @@ export default function PortfolioPage() {
             <Box>
               <Typography variant="h3" sx={{ fontWeight: 800, fontFamily: MONO, color: 'primary.light' }}>
                 {f18(freeMargin)}{' '}
-                <Typography component="span" variant="subtitle1" color="text.secondary">mUSDC</Typography>
+                <Typography component="span" variant="subtitle1" color="text.secondary">{STABLE_LABEL}</Typography>
               </Typography>
             </Box>
             <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>

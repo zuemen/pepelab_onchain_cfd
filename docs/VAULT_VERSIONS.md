@@ -104,3 +104,16 @@ than re-rolling the fuzzer.
   how it reached a deployment in the first place.
 - **A future V2.3 should be another new file**, layout-compared before
   upgrading, and this table updated. The proxy address stays put.
+
+## GuardedOracle 偏離上限對稱化(2026-08-06)
+
+`_deviationExceeded` 改以舊價為分母,上下方向容許幅度一致。舊版以「兩者中較小值」
+為分母,結果 +10% 可過而 −10% 被拒(實際只容許 −9.09%)。方向是反的:崩盤時最
+需要價格跟上、最需要清算啟動,而那正是舊公式最容易擋下更新的時候。
+
+**線上實例尚未套用。** `0x32A19D04…49A1`(Sepolia)是已部署的不可升級合約,
+換用新版需要重新部署並以 `AssetVaultV2.setOracle` 遷移。在遷移之前,keeper 的
+`stepTowards`(`agent/keeper/core.ts`)刻意複製了**舊合約**的不對稱公式,所以
+它送出的每一步都能被線上實例接受 —— `keeper/core.test.ts` 的
+`deviationAccepted` 就是那份舊公式的複本。遷移時必須同步更新這兩處,否則 keeper
+會低估可用步幅(功能上安全,只是收斂較慢)。

@@ -246,4 +246,53 @@ contract GuardedOracleTest is Test {
         vm.expectRevert();
         oracle.setRiskParams(500, 1 hours);   // old admin is powerless
     }
+
+    /// 上下方向的容許幅度必須一致。舊實作以「較小值」為分母，於是 +10% 可過、
+    /// -10% 被拒（實際只容許 -9.09%）——在崩盤時最容易擋住最該通過的更新。
+    function test_deviationCapIsSymmetric() public {
+        bytes32 id = keccak256("sSYM");
+        oracle.addAsset(id, 100e8);
+
+        // cap = 1000 bps = 10%
+        vm.prank(keeper);
+        oracle.updatePrice(id, 110e8);      // +10% 應通過
+        (uint256 p,) = oracle.getPrice(id);
+        assertEq(p, 110e8);
+
+        vm.prank(keeper);
+        oracle.updatePrice(id, 99e8);       // 110 → 99 是 -10%，必須同樣通過
+        (p,) = oracle.getPrice(id);
+        assertEq(p, 99e8);
+    }
+
+    function test_deviationCapStillRejectsBeyondCap() public {
+        bytes32 id = keccak256("sSYM2");
+        oracle.addAsset(id, 100e8);
+
+        vm.prank(keeper);
+        vm.expectRevert(
+            abi.encodeWithSelector(GuardedOracle.DeviationTooLarge.selector, id, 111e8, 100e8)
+        );
+        oracle.updatePrice(id, 111e8);      // +11% 仍應被拒
+
+        vm.prank(keeper);
+        vm.expectRevert(
+            abi.encodeWithSelector(GuardedOracle.DeviationTooLarge.selector, id, 89e8, 100e8)
+        );
+        oracle.updatePrice(id, 89e8);       // -11% 仍應被拒
+    }
+
+    /// 一個 12% 的下跌現在需要兩步走完，而且每一步都必須被接受——這正是 keeper
+    /// 的 stepTowards（agent/keeper/core.ts）所依賴的性質。
+    function test_largeDropReachableInTwoSteps() public {
+        bytes32 id = keccak256("sSYM3");
+        oracle.addAsset(id, 100e8);
+
+        vm.prank(keeper);
+        oracle.updatePrice(id, 90.5e8);     // 第一步 −9.5%
+        vm.prank(keeper);
+        oracle.updatePrice(id, 88e8);       // 第二步走到目標
+        (uint256 p,) = oracle.getPrice(id);
+        assertEq(p, 88e8);
+    }
 }

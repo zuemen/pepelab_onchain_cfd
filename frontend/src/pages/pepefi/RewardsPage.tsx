@@ -16,6 +16,7 @@ import CircularProgress from '@mui/material/CircularProgress';
 import { useContracts } from 'src/hooks/useContracts';
 import { usePepefiWallet } from 'src/layouts/pepefi';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
+import { toStrictlyIncreasingIds } from 'src/lib/pepefi/positionIds';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -149,8 +150,12 @@ export default function RewardsPage() {
     if (!incentivesLive) { notify(INCENTIVES_OFFLINE_MSG, false); return; }
     setTierBusy(p => ({ ...p, [tier]: true }));
     try {
+      // PepeIncentives.claimTierReward 現在要求 positionIds **嚴格遞增**
+      // （防止同一個倉位重複計入 notional 來灌等級），不符合就 revert
+      // PositionIdsNotSorted。getUserPositions 沒有承諾任何順序，所以排序 +
+      // 去重是前端的責任——舊版直接原樣送出，等於把成敗押在 storage 的巧合上。
       const rawIds = (await contracts.exchange.getUserPositions(wallet.address)) as bigint[];
-      const ids = Array.from(rawIds).map(id => id.toString());
+      const ids = toStrictlyIncreasingIds(rawIds).map(id => id.toString());
       const tx = (await contracts.pepeIncentives.claimTierReward(tier, ids)) as { wait(): Promise<unknown> };
       await tx.wait();
       notify(`${TIER_NAMES[tier]} reward claimed! 🏆`, true);

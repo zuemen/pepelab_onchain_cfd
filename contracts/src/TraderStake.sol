@@ -2,10 +2,13 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 contract TraderStake is Ownable, ReentrancyGuard {
+    using SafeERC20 for IERC20;   // M-4
+
     // ── Constants ────────────────────────────────────────────────────────────
     uint256 public constant MIN_STAKE        = 100e18;
     uint256 public constant UNSTAKE_COOLDOWN = 1 days;
@@ -60,7 +63,7 @@ contract TraderStake is Ownable, ReentrancyGuard {
         if (amount == 0) revert ZeroAmount();
         stakes[msg.sender].amount += amount;
         if (stakes[msg.sender].amount < MIN_STAKE) revert BelowMinStake();
-        usdc.transferFrom(msg.sender, address(this), amount);
+        usdc.safeTransferFrom(msg.sender, address(this), amount);
         emit Staked(msg.sender, amount);
     }
 
@@ -78,11 +81,16 @@ contract TraderStake is Ownable, ReentrancyGuard {
         if (s.unstakeAmount == 0) revert NoPendingUnstake();
         uint256 availableAt = s.unstakeRequestedAt + UNSTAKE_COOLDOWN;
         if (block.timestamp < availableAt) revert CooldownNotElapsed(availableAt);
-        uint256 amt          = s.unstakeAmount;
+        // Low: a slash during the cooldown can leave `s.amount` below the amount
+        // requested; the old `s.amount -= amt` then reverted on underflow and the
+        // trader could never unstake anything (the request cannot be re-made for
+        // less without cancelling, and `cancelUnstake` restarts the cooldown).
+        // Pay out what is actually still staked.
+        uint256 amt = s.unstakeAmount > s.amount ? s.amount : s.unstakeAmount;
         s.unstakeAmount      = 0;
         s.unstakeRequestedAt = 0;
         s.amount            -= amt;
-        usdc.transfer(msg.sender, amt);
+        if (amt > 0) usdc.safeTransfer(msg.sender, amt);
         emit Unstaked(msg.sender, amt);
     }
 
@@ -103,7 +111,7 @@ contract TraderStake is Ownable, ReentrancyGuard {
         if (amount > s.amount) revert InsufficientStake();
         s.amount       -= amount;
         s.totalSlashed += amount;
-        usdc.transfer(recipient, amount);
+        usdc.safeTransfer(recipient, amount);
         emit Slashed(trader, amount, recipient);
         emit ReputationUpdated(trader, reputationScore(trader));
     }

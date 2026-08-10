@@ -191,9 +191,14 @@ contract PortfolioMarginTest is Test {
 
         // No USDC created or destroyed across {exchange, vault, liquidator}.
         assertEq(after_, before_);
-        // And the split actually happened: 5% reward to liquidator, rest to vault.
+        // M-2: the split is now reward → liquidator, penalty → vault, RESIDUAL →
+        // owner. Liquidation triggers at or below the maintenance margin, so the
+        // residual is the buffer the trader posted for exactly this event;
+        // sweeping 95% of it to the vault (the old behaviour asserted here) was
+        // a 100% confiscation of remaining collateral.
         assertEq(usdc.balanceOf(liquidator), 10e18); // 200 * 5%
-        assertEq(vault.totalAssets(), 190e18);        // 200 − 10
+        assertEq(vault.totalAssets(), 40e18);         // 200 * 20% penalty
+        assertEq(exchange.freeMargin(user), 150e18);  // 200 − 10 − 40 back to owner
         assertFalse(exchange.getPosition(a).isOpen);
     }
 }

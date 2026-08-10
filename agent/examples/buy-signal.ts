@@ -26,9 +26,29 @@ async function main() {
   // 1) 先免費探索服務目錄（端點/定價/network/asset）。
   const dir = await (await fetch(`${API}/`)).json();
   console.log("① 服務目錄：", JSON.stringify(dir, null, 2));
+
+  // 稽核（四·Medium）：這裡以前在未設 TRADER 時填零地址就直接付費 —— 買方付了
+  // 0.01 USDC，而 70% 分潤被送往零地址（永遠拿不回來）。零地址不是「讓 server
+  // 自己挑」的意思，server 也沒有這個約定。改成：免費的 /demo/buy-signal 探一個
+  // 真實 trader，探不到就中止，絕不對零地址付費。
   if (!TRADER) {
-    // 沒指定 trader → 讓 server 端用鏈上第一個（這裡用 demo 端點探一個）。
-    TRADER = "0x0000000000000000000000000000000000000000";
+    try {
+      const probe = await fetch(`${API}/demo/buy-signal`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      });
+      const j = (await probe.json()) as any;
+      if (probe.ok && typeof j?.trader === "string" && /^0x[0-9a-fA-F]{40}$/.test(j.trader)) {
+        TRADER = j.trader;
+        console.log(`\n（未設 TRADER，經免費 /demo/buy-signal 探得：${TRADER}）`);
+      }
+    } catch { /* 探測失敗就落到下面的中止 */ }
+  }
+  if (!/^0x[0-9a-fA-F]{40}$/.test(TRADER) || /^0x0{40}$/.test(TRADER)) {
+    throw new Error(
+      "沒有可用的 TRADER 地址（零地址會讓 70% 分潤進黑洞）。請設 TRADER=0x…，或確認 API 的 /demo/buy-signal 可用。",
+    );
   }
 
   // 2) 建 viem WalletClient（x402-fetch 需要 chain+transport 才能簽 EIP-3009）。

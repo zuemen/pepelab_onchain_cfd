@@ -30,13 +30,13 @@ contract PepeTokenTest is Test {
 
     // ── Faucet ──────────────────────────────────────────────────────────────
     function test_faucetMintsFixedAmount() public {
-        vm.prank(alice);
+        vm.prank(alice, alice);
         pepe.faucet();
         assertEq(pepe.balanceOf(alice), pepe.FAUCET_AMOUNT());
     }
 
     function test_faucetCooldown() public {
-        vm.startPrank(alice);
+        vm.startPrank(alice, alice);
         pepe.faucet();
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -49,7 +49,7 @@ contract PepeTokenTest is Test {
     }
 
     function test_faucetAfterCooldown() public {
-        vm.startPrank(alice);
+        vm.startPrank(alice, alice);
         pepe.faucet();
         vm.warp(block.timestamp + pepe.FAUCET_COOLDOWN() + 1);
         pepe.faucet();
@@ -58,9 +58,9 @@ contract PepeTokenTest is Test {
     }
 
     function test_faucetIndependentPerAddress() public {
-        vm.prank(alice);
+        vm.prank(alice, alice);
         pepe.faucet();
-        vm.prank(bob);
+        vm.prank(bob, bob);
         pepe.faucet(); // bob has no cooldown — must not revert
         assertEq(pepe.balanceOf(bob), pepe.FAUCET_AMOUNT());
     }

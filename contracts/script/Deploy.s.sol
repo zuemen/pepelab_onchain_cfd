@@ -88,6 +88,12 @@ contract Deploy is Script {
         // 13. KYCRegistry + RWA compliance gating (G2). Equity synthetics are
         //     real-world assets: opening them requires KYC. Crypto (sBTC/sETH)
         //     stays permissionless.
+        //     M8: `submitKYC` is an application now, not an approval — it marks
+        //     the applicant pending and nothing else. Until the deployer calls
+        //     `approveKYC(user)` (or appoints a hot compliance key with
+        //     `setVerifier`), sAAPL and sTSLA below are closed to everyone,
+        //     including the deployer. That is intended: a compliance gate that
+        //     anyone can clear in one self-service transaction was the bug.
         KYCRegistry kyc = new KYCRegistry();
         exchange.setKycRegistry(address(kyc));
         exchange.setRwaAsset(SAAPL, true);
@@ -96,10 +102,17 @@ contract Deploy is Script {
         // 14. Production oracle SHOWCASE (P4-3). Deployed and Pyth-wired, but
         //     intentionally NOT connected to the live exchange (oracle is
         //     immutable; the exchange runs on MockOracle so the synthetic-asset
-        //     demo keeps working). To go live on real feeds, set Chainlink feeds
-        //     via setFeed with verified Base Sepolia aggregators and redeploy the
-        //     exchange pointing at `aggOracle`. The aggregator degrades to a
-        //     single live source, so Pyth alone already serves BTC/ETH.
+        //     demo keeps working).
+        //
+        //     PA-6/PA-7: this really is a showcase and NOT a usable oracle as
+        //     deployed here. No Chainlink feed is set, and
+        //     `AggregatorOracleAdapter.allowSingleSource` now defaults to FALSE,
+        //     so every read reverts `SingleSourceNotAllowed` — it does not
+        //     "degrade to Pyth" the way the previous comment claimed, and it
+        //     never did serve BTC/ETH through the cross-check. Use
+        //     `DeployWithPyth.s.sol`, which configures both legs and forces the
+        //     single-source decision to be made explicitly, for anything that a
+        //     PerpetualExchange is actually pointed at.
         //     Pyth contract defaults to Base Sepolia; override with env PYTH_CONTRACT.
         address pythContract = vm.envOr("PYTH_CONTRACT", address(0xA2aa501b19aff244D90cc15a4Cf739D2725B5729));
         ChainlinkOracleAdapter clOracle  = new ChainlinkOracleAdapter();
@@ -124,7 +137,8 @@ contract Deploy is Script {
         console.log("CopyTracker      :", address(ct));
         console.log("AgentSessionMgr  :", address(sessionManager));
         console.log("KYCRegistry      :", address(kyc));
-        console.log("-- oracle showcase (NOT wired to exchange) --");
+        console.log("-- oracle showcase (NOT wired to exchange, NOT readable as-is) --");
+        console.log("   no Chainlink feed set + allowSingleSource=false => reads revert.");
         console.log("ChainlinkAdapter :", address(clOracle));
         console.log("PythAdapter      :", address(pythOracle));
         console.log("AggregatorOracle :", address(aggOracle));

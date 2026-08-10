@@ -6,6 +6,10 @@
     "mcp-server/src/**/*.ts",
     "demo-agent/src/**/*.ts",
     "examples/**/*.ts",
+    // 稽核 2026-08-06：keeper/ 與 tg-bot/ 以前不在 include 裡 —— `npm run build`
+    // 全綠卻從來沒有 typecheck 過它們（keeper 是唯一在寫 oracle 的東西）。
+    "keeper/**/*.ts",
+    "tg-bot/**/*.ts",
     "x402_agent.ts",
     "../frontend/src/contracts/addresses.ts"
   ]

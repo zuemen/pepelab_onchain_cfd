@@ -9,6 +9,13 @@ import "../src/StrategyRegistry.sol";
 import "../src/CopyTracker.sol";
 import "../src/TraderStake.sol";
 
+/// @dev Audit 2026-08-06: `MockUSDC.mint` became `onlyOwner` (PA-3). This script
+///      mints to the deployer and to traders 2/3, so the default signer must be
+///      the MockUSDC owner — asserted below rather than discovered as a
+///      `NotMinter` revert inside a broadcast.
+///
+///      It seeds strategies and stakes only; no RWA position is opened here, so
+///      the M8 KYC change (submit no longer self-verifies) does not affect it.
 contract Seed is Script {
     bytes32 constant SBTC  = keccak256("sBTC");
     bytes32 constant SETH  = keccak256("sETH");
@@ -34,8 +41,13 @@ contract Seed is Script {
         TraderStake       ts       = TraderStake(stakeAddr);
 
         // ── Trader 1: deployer (Demo Alpha) ───────────────────────────────────
-        vm.startBroadcast();
         address deployer = msg.sender;
+        require(
+            usdc.owner() == deployer,
+            "signer is not the MockUSDC owner - mint() became onlyOwner in PA-3"
+        );
+
+        vm.startBroadcast();
 
         usdc.mint(deployer, 5_000e18);
         usdc.approve(address(ts), 500e18);

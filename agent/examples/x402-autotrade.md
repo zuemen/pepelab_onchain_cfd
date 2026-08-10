@@ -7,7 +7,7 @@
 cd agent
 # .env 需含（見 .env.example Track D）：
 #   X402_API_URL, AGENT_PRIVATE_KEY(持官方 USDC + ETH), BASE_SEPOLIA_RPC_URL,
-#   SESSION_MANAGER_ADDRESS, DEMO_SESSION_ID=6
+#   SESSION_MANAGER_ADDRESS, DEMO_SESSION_ID=0
 npx tsx examples/x402-autotrade.ts sBTC 50 3      # <symbol> <margin> <leverage>，預設 sBTC 50 3
 ```
 

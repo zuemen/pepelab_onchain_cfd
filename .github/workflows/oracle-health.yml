@@ -1,0 +1,67 @@
+name: Oracle Health
+
+# 獨立於 keeper 的鏈上事實檢查。keeper 沒被排到、被停用、或悄悄寫入 0 筆時，
+# 它自己不會發出訊號；這個 job 只看鏈上的 updatedAt，所以上述任何一種都會被抓到。
+# job 失敗會觸發 GitHub 對 repo 管理者的預設通知。
+#
+# 這個 job **不持有私鑰**、只讀鏈上狀態，所以不需要與 keeper 互斥。
+on:
+  schedule:
+    - cron: '0 */3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 巡檢彼此互斥即可（避免排程與手動 dispatch 疊在一起送出兩份重複告警），
+# 但不與 keeper 共用 group —— 健檢被 keeper 擋住就失去「獨立第二道網」的意義。
+concurrency:
+  group: oracle-health
+  cancel-in-progress: false
+
+jobs:
+  base-sepolia:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      KEEPER_CHAIN: base-sepolia
+      KEEPER_RPC_URL: ${{ secrets.BASE_SEPOLIA_RPC_URL }}
+      KEEPER_ORACLE_ADDRESS: "0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3"
+      KEEPER_EXCHANGE_ADDRESS: "0xEf75ECA6514cE96B18382E921aC6190a0cF8c072"
+      # 門檻必須大於巡檢間隔，否則「排程晚了一次」與「keeper 真的掛了」無法區分。
+      # cron 每 3 小時（10800s），而 GitHub 排程實測會延遲到 68–169 分鐘，
+      # 所以門檻取 5 小時（18000s）＝ 一次巡檢間隔 + 充裕的延遲餘裕。
+      # 低於這個值只會製造被無視的假警報，而被無視的警報等於沒有警報。
+      HEALTH_MAX_AGE: "18000"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: agent/package-lock.json
+      - working-directory: agent
+        run: npm ci --no-audit --no-fund
+      - working-directory: agent
+        run: npx tsx keeper/health.ts
+
+  sepolia:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      KEEPER_CHAIN: sepolia
+      KEEPER_RPC_URL: ${{ secrets.KEEPER_RPC_URL }}
+      KEEPER_ORACLE_ADDRESS: "0x17CA20A37Cf04F2f589B2573EC95f1411D29d958"
+      # 同上：原本是 10800，正好等於巡檢間隔，單次排程延遲就會誤報。
+      HEALTH_MAX_AGE: "18000"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: agent/package-lock.json
+      - working-directory: agent
+        run: npm ci --no-audit --no-fund
+      - working-directory: agent
+        run: npx tsx keeper/health.ts

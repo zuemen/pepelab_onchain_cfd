@@ -74,7 +74,7 @@ const SEPOLIA: ChainAddresses = {
 // Deploy.s.sol (ESG/Pepe* AMM/staking) stay 0x0 → UI "not deployed" guards.
 const BASE_SEPOLIA: ChainAddresses = {
   MockUSDC:          "0x69fd695Bc7C3aFdb35ABA35cD6890C506400b035",
-  MockUSDT:          "0x0000000000000000000000000000000000000000",
+  MockUSDT:          "0x5c8A1e970D275Cc269e09A949D68693120416d78",
   MockOracle:        "0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3",
   TraderStake:       "0x01aEB530bcFc69f036309ffe55acc7eA6C5a28Fe",
   InsuranceVault:    "0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812",
@@ -83,15 +83,15 @@ const BASE_SEPOLIA: ChainAddresses = {
   StrategyRegistry:  "0x54e8C43f9Eb151Bb8DD6e61d16a969C4D0e73915",
   CopyTracker:       "0x96357144fE56c5E0e33e8046bE2A63F45528b210",
   MockSwapRouter:    "0xC9b0e5C219AA1B3eB00E92Fd9a883B182F0AE8Ae",
-  ESGRegistry:       "0x0000000000000000000000000000000000000000",
+  ESGRegistry:       "0x73310bfb9f93711e9405EB717e3426246BD58618",
   KYCRegistry:       "0x5D95fD9e7a5f80E5369e24783F1f98E0f952360d",
   PepeAMM:           "0x93be44a81a2796d378f65ebcc8d5f8b40166ad63",
   PepeToken:              "0xccd05cbdc2f7961a4c27d3633694022722786a0f",
-  PepeClaim:              "0x0000000000000000000000000000000000000000",
-  EsgRewardDistributor:   "0x0000000000000000000000000000000000000000",
+  PepeClaim:              "0x459d238aC61eC4A0E08608FBcd363227B860CF34",
+  EsgRewardDistributor:   "0x0c85923193AB6137A117E5911aAA7DF7Cb8787D7",
   PepeIncentives:         "0xEBfA1dc7dDea032ac6242cB619d982e543A23c12",
-  PepeStaking:            "0x0000000000000000000000000000000000000000",
-  AssetVault:             "0x0000000000000000000000000000000000000000",
+  PepeStaking:            "0xC78D68cA1B217ba241c23Ebad3118c6ec0dc0D34",
+  AssetVault:             "0xC30DFe1C9EBb47197b785995aA9Cd0F5B89557A5",
 }
 
 // Phase 4 production-oracle showcase on Base Sepolia (deployed, NOT wired into
@@ -103,7 +103,11 @@ export const BASE_SEPOLIA_ORACLE_SHOWCASE = {
   AggregatorOracle: "0x8215158642350a3f329aB9597186d21f957A813D",
 } as const
 
-const CHAIN_MAP: Record<number, ChainAddresses> = {
+// Exported (not just used internally) so callers that need "every chain's
+// addresses" — e.g. assetMeta.ts building PEPE metadata for whichever chain
+// the wallet is connected to — have one place to read from instead of
+// re-hardcoding a chain's addresses a second time.
+export const CHAIN_MAP: Record<number, ChainAddresses> = {
   31337:    ANVIL,
   11155111: SEPOLIA,
   84532:    BASE_SEPOLIA,
@@ -114,9 +118,33 @@ export const getAddresses = (chainId: number | null): ChainAddresses | null =>
 
 export const CHAIN_NAMES: Record<number, string> = {
   31337:    'Anvil Local',
-  11155111: 'Sepolia',
+  11155111: 'Sepolia（legacy demo）',
   84532:    'Base Sepolia',
 }
+
+/**
+ * 正式部署鏈。交易引擎、agent session、x402 收費全部只在這裡。
+ *
+ * 不是偏好問題，是限制：x402 的 `exact` scheme 需要 Circle 官方 USDC 走
+ * EIP-3009 `transferWithAuthorization`（`0x036CbD53…CF7e`），那顆幣只有 Base
+ * Sepolia 有。所以只要產品包含 x402，Base 就是唯一可能的鏈。
+ */
+export const PRIMARY_CHAIN_ID = 84532
+
+/**
+ * 2026-08-07：Base 的六個缺口（MockUSDT / ESGRegistry / PepeClaim /
+ * EsgRewardDistributor / PepeStaking / AssetVault + 11 顆 SyntheticAsset）
+ * 已補齊並註冊，所以「canonical 鏈缺代幣化資產」這個矛盾消失了。
+ * Base 現在是唯一一條完整的鏈：交易、agent session、x402、代幣化資產都在。
+ *
+ * Sepolia 仍然部署著、仍然可讀，但它只剩一項 Base 沒有的東西：V2 硬化金庫
+ * （V2_STACK）。那是一組對照展示，不是產品路徑。
+ *
+ * 兩條鏈仍然不是彼此的鏡像，所以 UI 必須說清楚使用者現在站在哪一邊，
+ * 而不是靜默地讓半個產品消失。
+ */
+export const isPrimaryChain = (chainId: number | null): boolean =>
+  chainId === PRIMARY_CHAIN_ID
 
 
 // keccak256 of symbol string — matches Deploy.s.sol and on-chain IDs
@@ -174,7 +202,22 @@ export const SYNTH_TOKENS: Record<number, Partial<Record<AssetSymbol, string>>> 
     sICLN:  "0x0971690615EcAAa39eA517B85B9Cf7ABd247Fe59",
     sESGU:  "0xC236D6298b280def6D70931c8E67953E9De0Eb41",
   },
-  84532:    {},
+  // Deployed 2026-08-07 to close the gap that made Base — the chain the UI calls
+  // canonical — the one where tokenised assets did not work. All 11 verified
+  // registered on AssetVault 0xC30DFe1C…57A5.
+  84532: {
+    sBTC:   "0x217B1B450eC77a8AECC569108683106c169b9dDC",
+    sETH:   "0x56182e30733641616e5D28441E17d00A4cE2b54F",
+    sAAPL:  "0xBF50bc2104C1C47EEe1E0b1693AeB27D6Bb1D70B",
+    sTSLA:  "0xeB869a8f10C251C5eb6626C31aA5D54B94c28044",
+    sGOLD:  "0xb6cDca0a481779cB04DeCf2A25f32bB0326d29fB",
+    sBOND:  "0x019F8b30D5988A3Df828C64c527a5965f6699286",
+    sNVDA:  "0x3dd1447e21C779bddf079baB86E330db0317fDAf",
+    sMSFT:  "0x50b3405e7165d052f0ca5971627004b61249259F",
+    sGOOGL: "0x161ea684812b91c5685237B2DBEc20b861177575",
+    sICLN:  "0x13d13c8BCF513368B48B13e9f9EEB78Be991f315",
+    sESGU:  "0x0b3FC9e94cA04E3457B71064339c599D44dd5B20",
+  },
 }
 
 export const getSynthTokens = (

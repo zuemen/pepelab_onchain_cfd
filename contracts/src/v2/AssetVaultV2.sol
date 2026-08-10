@@ -82,12 +82,17 @@ contract AssetVaultV2 is
     /// @notice Asset ids ever registered, so ratio math can iterate them.
     bytes32[] private _assetIds;
 
+    /// @notice M-7: last oracle price actually used to mint or redeem an asset.
+    ///         Written on every state-changing valuation, read only as a fallback
+    ///         when the live oracle cannot quote.
+    mapping(bytes32 => uint256) private _lastPrice;
+
     /// @dev Reserved slots so a future version can add state without colliding
     ///      with anything a new parent contract introduces. OZ 5.x parents use
     ///      ERC-7201 namespaced storage and won't collide on their own, but this
     ///      contract's own layout is plain — consume from the front when adding
     ///      variables and shrink the gap by the same amount.
-    uint256[45] private __gap;
+    uint256[44] private __gap;
 
     // ── errors ───────────────────────────────────────────────────────────────
     error StalePrice(bytes32 assetId, uint256 updatedAt);
@@ -136,8 +141,19 @@ contract AssetVaultV2 is
     function assetToken(bytes32 assetId) public view returns (address) { return _assetToken[assetId]; }
     function exposureOf(bytes32 assetId) public view returns (uint256) { return _outstanding[assetId]; }
 
+    /// @dev M-5: re-pointing an asset id at a DIFFERENT token while units are
+    ///      still outstanding strands every holder — `redeem` burns from the new
+    ///      token, which they do not hold, while `_outstanding` keeps recording
+    ///      the old liability. `unregisterAsset` already refuses in that state;
+    ///      this closes the same hole on the way in. Same-token re-registration
+    ///      stays allowed (idempotent re-wiring).
     function registerAsset(bytes32 assetId, address token) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (token == address(0)) revert InvalidParam();
+        address current = _assetToken[assetId];
+        if (current != address(0) && current != token) {
+            uint256 out = _outstanding[assetId];
+            if (out != 0) revert AssetStillOutstanding(assetId, out);
+        }
         if (_assetToken[assetId] == address(0)) {
             if (_assetIds.length >= MAX_REGISTERED_ASSETS) {
                 revert TooManyAssets(MAX_REGISTERED_ASSETS);
@@ -262,15 +278,42 @@ contract AssetVaultV2 is
     ///      as "ratio unknown", which is why mint independently calls _price and
     ///      reverts on staleness.
     function outstandingValue() public view returns (uint256 total) {
+        (total, ) = outstandingValueDetailed();
+    }
+
+    /// @notice Liability, plus how many assets had to be valued at their last
+    ///         known price instead of a live quote.
+    /// @dev M-7: the old loop `continue`d past an unpriceable asset, which
+    ///      DELETED that liability from the ratio. The ratio then looked healthy
+    ///      exactly when it was least knowable, and `mint()` — whose only
+    ///      solvency gate is that ratio — happily admitted new exposure. The
+    ///      fallback below marks an unpriceable asset at the last price the vault
+    ///      itself transacted on, so a stale feed can no longer make a liability
+    ///      disappear. It is still approximate, which is why `unpriced` is
+    ///      returned and surfaced by `ratioIsStale()`.
+    function outstandingValueDetailed()
+        public view returns (uint256 total, uint256 unpriced)
+    {
         uint256 len = _assetIds.length;
         for (uint256 i = 0; i < len; i++) {
             bytes32 id = _assetIds[i];
             uint256 amount = _outstanding[id];
             if (amount == 0) continue;
             (uint256 price, uint256 updatedAt) = IAssetOracleV2(_oracle).getPrice(id);
-            if (price == 0 || block.timestamp > updatedAt + maxPriceAge) continue;
+            if (price == 0 || block.timestamp > updatedAt + maxPriceAge) {
+                unpriced++;
+                price = _lastPrice[id];
+                if (price == 0) continue;   // never transacted → nothing to mark to
+            }
             total += amount * price / 1e8;
         }
+    }
+
+    /// @notice True when any outstanding asset had to be marked to its last
+    ///         known price, so `reserveRatioBps()` is an estimate.
+    function ratioIsStale() external view returns (bool) {
+        (, uint256 unpriced) = outstandingValueDetailed();
+        return unpriced > 0;
     }
 
     function reserveRatioBps() public view returns (uint256) {
@@ -298,6 +341,7 @@ contract AssetVaultV2 is
         uint256 feePaid;
         (tokenOut, feePaid) = previewMint(assetId, usdcAmount);   // reverts if stale
         if (tokenOut == 0) revert ZeroAmount();
+        _lastPrice[assetId] = _price(assetId);   // M-7: remember the live quote
 
         uint256 newOutstanding = _outstanding[assetId] + tokenOut;
         if (newOutstanding > assetCap[assetId]) {
@@ -331,17 +375,28 @@ contract AssetVaultV2 is
 
         uint256 feePaid;
         (usdcOut, feePaid) = previewRedeem(assetId, tokenAmount);
+        _lastPrice[assetId] = _price(assetId);   // M-7: remember the live quote
 
         uint256 avail = reserve();
         if (avail < usdcOut) revert VaultDry(usdcOut, avail);
 
+        // M-6: only credit the portion of the fee the vault can actually back.
+        // The guard above covers the NET payout, so a redeem in the window
+        // `usdcOut <= reserve < gross` used to book operator revenue against
+        // money that was not there. Once accruedFees passed the balance,
+        // reserve() clamped to 0 and every later redeem reverted VaultDry on
+        // USDC the vault demonstrably held — holders frozen out by an accounting
+        // artefact. Backported from V2.2, which is where this was first fixed.
+        uint256 headroom  = avail - usdcOut;
+        uint256 backedFee = feePaid <= headroom ? feePaid : headroom;
+
         _outstanding[assetId] -= tokenAmount;
-        accruedFees += feePaid;
+        accruedFees += backedFee;
 
         SyntheticAssetV2(token).burn(msg.sender, tokenAmount);
         IERC20(_usdc).safeTransfer(msg.sender, usdcOut);
 
-        emit Redeemed(msg.sender, assetId, tokenAmount, usdcOut, feePaid);
+        emit Redeemed(msg.sender, assetId, tokenAmount, usdcOut, backedFee);
     }
 
     /// @notice Operator injects payout collateral.

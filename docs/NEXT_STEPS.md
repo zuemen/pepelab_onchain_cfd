@@ -229,11 +229,15 @@ tradeoff is real enough that it should be chosen deliberately:
 Deliberately not chosen here. The second is the smaller change and the safer
 default; the first is tidier and worse.
 
-**Stock price feed is dead.** stooq serves HTML 404s on every URL variant tried
-(`stooq.com` and `stooq.pl`, with and without the `f=`/`h` params). sBTC and
-sETH still work — those come from Coinbase/Binance via `fetchCryptoPrices`.
-Stock and commodity assets are skipped rather than fabricated until a feed is
-picked. `scripts/priceKeeper.ts` has a working pattern to copy.
+**Stock price feed — fixed.** stooq served HTML 404s on every URL variant tried
+(`stooq.com` and `stooq.pl`, with and without the `f=`/`h` params) and has not
+recovered, so it was removed outright rather than kept as a fallback that always
+fails. All nine equity/ETF/commodity assets now come from Yahoo's chart endpoint
+via `agent/keeper/feeds.ts`; crypto comes from CoinGecko. Every reading passes
+`parseFeedValue` first, which rejects anything that is not a bare numeric
+literal — the HTML-coerced-to-zero path that rewrote stock prices to 55% of the
+previous value each run cannot recur, and `keeper/feeds.test.ts` pins that with
+the actual stooq 404 body.
 
 **Frontend `any` escapes: 19 remaining** (down from 42). Mostly ethers return
 values. `KNOWN_LIMITATIONS.md` #12 has the detail.

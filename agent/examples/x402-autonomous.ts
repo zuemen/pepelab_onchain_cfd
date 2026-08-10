@@ -5,7 +5,8 @@
 //   ① x402 真實付費 GET /oracle/<symbol>（402→簽官方 USDC EIP-3009→200），拿 enriched 資料
 //      （edgeScore / recommendation / estLiquidation / isStale）。印付款上鏈 tx（x-payment-response）。
 //   ② agent 自己判斷（核心：可 skip）：
-//      • isStale/缺資料 → skip。
+//      • 回應形狀不合法（非 2xx / ok:false / 缺 data / recommendation 不在白名單）→ skip。
+//      • tradableNow=false（超過交易所 maxPriceAge）或缺資料 → skip。
 //      • recommendation==="no_trade"（|edge|<門檻）→ skip（訊號不夠強）。
 //      • long/short → 方向；再過「清算距離」風險閘（< MIN_LIQ_DIST 就降槓桿；仍不行→skip）；
 //        margin 取 min(想要, session 單筆上限)，超過剩餘預算→skip。
@@ -22,7 +23,10 @@ import { privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
 import { wrapFetchWithPayment } from "x402-fetch";
 import { pathToFileURL } from "node:url";
-import { openPositionForSession, getSession, agentDid, appendAudit, type AuditRecord } from "@pepelab/shared";
+import {
+  openPositionForSession, getSession, agentDid, appendAudit,
+  parseOracleBody as parseOracle, type Recommendation, type AuditRecord,
+} from "@pepelab/shared";
 import { loadVc, localVerifyVc, fetchAgentVerification, AUDIT_PATH } from "./vc-gate.ts";
 
 // ── 決策參數（透明可調）──────────────────────────────────────────────────────
@@ -33,7 +37,10 @@ const HARD_MAX_LEVERAGE = 5;
 const API = (process.env.X402_API_URL ?? "https://agent-git-master-zuemens-projects.vercel.app").replace(/\/$/, "");
 const PK = process.env.AGENT_PRIVATE_KEY?.trim();
 const RPC = process.env.BASE_SEPOLIA_RPC_URL?.trim() || "https://sepolia.base.org";
-const SESSION_ID = Number(process.env.DEMO_SESSION_ID ?? "6");
+// session id 是每個 manager 各自獨立的。新的 AgentSessionManager
+// (0x4E7cC1B7…) 目前只有 #0：到期 2027-07、白名單 sBTC+sETH。#6 只存在於
+// 舊的 0x5Ebcc64C…（無資產白名單），兩者不可混用。
+const SESSION_ID = Number(process.env.DEMO_SESSION_ID ?? "0");
 
 const ALIASES: Record<string, string> = {
   btc: "sBTC", sbtc: "sBTC", eth: "sETH", seth: "sETH",
@@ -61,17 +68,41 @@ function fitLeverage(want: number, mm: number, minDist: number): number {
   return 0;
 }
 
-/** 純決策：吃 enriched oracle + 限制，回 {action, ...}。可獨立推理、好展示。 */
+// A-1 的形狀驗證住在 shared（apiResponse.ts），讓所有 agent 共用同一份白名單。
+export { parseOracleBody } from "@pepelab/shared";
+
+/** 純決策：吃 enriched oracle + 限制，回 {action, ...}。可獨立推理、好展示。
+ *  任何非預期形狀（錯誤 body、缺欄位、未知 recommendation）一律 skip，不猜方向。 */
 export function decide(input: {
   data: any; wantMargin: number; wantLeverage: number;
   sessionMaxPerTrade: number; sessionRemainingBudget: number; sessionMaxLev: number;
+  /** 可選：HTTP 狀態碼；非 2xx 一律 skip。 */
+  httpStatus?: number;
 }): { action: "long" | "short" | "skip"; margin?: number; leverage?: number; reason: string } {
-  const d = input.data;
-  if (!d || d.isStale) return { action: "skip", reason: "資料過期/不足（stale），本輪不投資" };
-  const rec = d.recommendation as "long" | "short" | "no_trade";
+  // 已由呼叫端剝出 data 時（{price,recommendation,…}），包成 {ok:true,data} 再驗一次；
+  // 直接餵整包 body 也可以——兩種形狀都會走同一組白名單檢查。
+  const wrapped =
+    input.data && typeof input.data === "object" && ("data" in input.data || "ok" in input.data)
+      ? input.data
+      : { ok: true, data: input.data };
+  const parsed = parseOracle(wrapped, input.httpStatus);
+  if (!parsed.ok) return { action: "skip", reason: `資料不可用 → 不投資（${parsed.reason}）` };
+  const d = parsed.data;
+
+  // 新鮮度：tradableNow 是交易所判準（優先）；缺它才退回 24h 的 isStale。
+  const tradable = typeof d.tradableNow === "boolean" ? d.tradableNow : d.isStale !== true;
+  if (!tradable) return { action: "skip", reason: "資料過期/不可交易（超過交易所 maxPriceAge），本輪不投資" };
+
+  const rec = d.recommendation as Recommendation;
   if (rec === "no_trade") return { action: "skip", reason: `訊號不夠強（edge=${d.edgeScore}，門檻 ${ENTRY_THRESHOLD}），本輪不投資` };
   const isLong = rec === "long";
-  const mm = (d.maintenanceMarginBps ?? 500) / 10000;
+  const mm = (typeof d.maintenanceMarginBps === "number" ? d.maintenanceMarginBps : 500) / 10000;
+
+  // 想要的保證金/槓桿本身必須是合法正數（CLI 打錯字不能變成 NaN 下單）。
+  if (!Number.isFinite(input.wantMargin) || input.wantMargin <= 0)
+    return { action: "skip", reason: `保證金參數非法（${input.wantMargin}）` };
+  if (!Number.isFinite(input.wantLeverage) || input.wantLeverage < 1)
+    return { action: "skip", reason: `槓桿參數非法（${input.wantLeverage}）` };
 
   // 風險閘：清算距離。先夾 session 最大槓桿，再依清算距離降槓桿。
   const wantLev = Math.min(input.wantLeverage, input.sessionMaxLev || HARD_MAX_LEVERAGE);
@@ -108,13 +139,22 @@ async function main() {
 
   console.log(`\n① x402 付費 0.005 USDC → GET /oracle/${symbol}（402 → 簽 EIP-3009 → 200）`);
   const res = await payFetch(`${API}/oracle/${symbol}`, { method: "GET" });
-  const body = (await res.json()) as any;
-  const data = body?.data ?? body;
+  const body = (await res.json().catch(() => null)) as any;
   console.log("   HTTP", res.status, "· x402 付款上鏈 tx:", link(decodePaymentTx(res)));
-  console.log("   決策級資料：", JSON.stringify({
-    price: data?.price, fundingRateBps: data?.fundingRateBps, oiImbalance: data?.oiImbalance,
-    edgeScore: data?.edgeScore, recommendation: data?.recommendation, confidence: data?.confidence, isStale: data?.isStale,
-  }));
+
+  // A-1：先驗形狀，再談決策。錯誤 body 永遠不會走到「有 data」的路徑。
+  const parsed = parseOracle(body, res.status);
+  const data = parsed.ok ? parsed.data : null;
+  if (!parsed.ok) {
+    console.error(`   ⚠ 回應不可用：${parsed.reason} → 本輪一律 skip（不下單）。`);
+    console.error(`     原始 body：${JSON.stringify(body)?.slice(0, 300)}`);
+  } else {
+    console.log("   決策級資料：", JSON.stringify({
+      price: data.price, fundingRateBps: data.fundingRateBps, oiImbalance: data.oiImbalance,
+      edgeScore: data.edgeScore, recommendation: data.recommendation, confidence: data.confidence,
+      isStale: data.isStale, tradableNow: data.tradableNow,
+    }));
+  }
 
   // VC/SSI 閘門（E1）：載入使用者簽發的授權 VC；缺檔/壞檔/無效 → 可研究但**不准下單**。
   const vc = loadVc();
@@ -130,7 +170,7 @@ async function main() {
   const sessionMaxLev = Number(det.maxLeverage ?? HARD_MAX_LEVERAGE);
 
   // ② agent 自己判斷
-  const dec = decide({ data, wantMargin, wantLeverage, sessionMaxPerTrade, sessionRemainingBudget, sessionMaxLev });
+  const dec = decide({ data, wantMargin, wantLeverage, sessionMaxPerTrade, sessionRemainingBudget, sessionMaxLev, httpStatus: res.status });
   console.log(`\n② 決策：${dec.action === "skip" ? "skip（不投資）" : dec.action} — ${dec.reason}`);
 
   // E3：agent 可信度（ERC-8126，免費端點、best-effort）

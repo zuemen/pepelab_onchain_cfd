@@ -8,7 +8,11 @@
 > - **G5（P1）→ Phase 2 ✅**：做市金庫（交易費分潤入 InsuranceVault）+ N2 ADL + N3 逐標的風險參數。
 > - **Phase 3 ✅**：pro 交易終端、組合保證金（cross-margin 清算 gate）、一鍵 e2e demo。
 > - **Phase 4 ✅**：全套部署到 Base Sepolia、x402 同鏈結算（跨鏈 caveat 解除）、生產級預言機展示、keeper。
-> - 合約 314 測試全綠；位址見 `docs/CAPSTONE_DELIVERABLES.md`。
+> - 合約測試全綠，數量以 **Contracts CI**（`.github/workflows/contracts-ci.yml`）
+>   的最新 run 為準；位址見 `docs/CAPSTONE_DELIVERABLES.md`。
+>   （本文原寫 314、VERIFICATION_REPORT 寫 318、CAPSTONE 寫 320 —— 三者互相矛盾
+>   且全部過期。2026-08-06 稽核時 CI 實測 525 passed / 0 failed，此為帶時間戳的
+>   參考值，不是本文件的持續宣稱。）
 > - **未落地（roadmap）**：撮合層（Option C）、Base mainnet、live exchange 切真聚合預言機。
 - 範圍：永續型 CFD 協議的競品對標。對手＝Hyperliquid，定位＝**agent-native + 合規 RWA**
   的差異化超越，而非在純訂單簿撮合上硬拚。
@@ -49,7 +53,7 @@
 
 ## 3. 行動項清單（P0 / P1 / P2）
 
-### P0 —（本輪完成，測試 265 → 290 全綠）
+### P0 —（本輪完成，測試全綠）
 
 | 編號 | 項目 | 交付 | 對齊戰線 |
 |------|------|------|----------|
@@ -60,7 +64,7 @@
 | **G6** | Mark-price 永續模型 | index（oracle）與 mark（= index ± OI 失衡溢價，`markPremiumCapBps` 上限）分離；PnL/清算取 mark、entry 取 index；`getMarkPrice` + `MarkPrice.t.sol`（cap 預設 0＝零回歸） | 撮合/執行 |
 
 > 守門：每項獨立 commit，改動 ABI 同步 `frontend/src/contracts/abi/*.json`；合約硬閘門
-> ≥265 passed 全程維持。
+> 是「Contracts CI 全綠、且測試數不得減少」—— 以 CI 的最新 run 為準，不寫死數字。
 
 ### P1 — 下一輪
 

@@ -2625,9 +2625,9 @@ var require_event_target = __commonJS({
        *     the listener would be automatically removed when invoked.
        * @public
        */
-      addEventListener(type, handler, options = {}) {
+      addEventListener(type, handler2, options = {}) {
         for (const listener of this.listeners(type)) {
-          if (!options[kForOnEventAttribute] && listener[kListener] === handler && !listener[kForOnEventAttribute]) {
+          if (!options[kForOnEventAttribute] && listener[kListener] === handler2 && !listener[kForOnEventAttribute]) {
             return;
           }
         }
@@ -2638,7 +2638,7 @@ var require_event_target = __commonJS({
               data: isBinary ? data4 : data4.toString()
             });
             event[kTarget] = this;
-            callListener(handler, this, event);
+            callListener(handler2, this, event);
           };
         } else if (type === "close") {
           wrapper = function onClose(code, message) {
@@ -2648,7 +2648,7 @@ var require_event_target = __commonJS({
               wasClean: this._closeFrameReceived && this._closeFrameSent
             });
             event[kTarget] = this;
-            callListener(handler, this, event);
+            callListener(handler2, this, event);
           };
         } else if (type === "error") {
           wrapper = function onError(error) {
@@ -2657,19 +2657,19 @@ var require_event_target = __commonJS({
               message: error.message
             });
             event[kTarget] = this;
-            callListener(handler, this, event);
+            callListener(handler2, this, event);
           };
         } else if (type === "open") {
           wrapper = function onOpen() {
             const event = new Event2("open");
             event[kTarget] = this;
-            callListener(handler, this, event);
+            callListener(handler2, this, event);
           };
         } else {
           return;
         }
         wrapper[kForOnEventAttribute] = !!options[kForOnEventAttribute];
-        wrapper[kListener] = handler;
+        wrapper[kListener] = handler2;
         if (options.once) {
           this.once(type, wrapper);
         } else {
@@ -2683,9 +2683,9 @@ var require_event_target = __commonJS({
        * @param {(Function|Object)} handler The listener to remove
        * @public
        */
-      removeEventListener(type, handler) {
+      removeEventListener(type, handler2) {
         for (const listener of this.listeners(type)) {
-          if (listener[kListener] === handler && !listener[kForOnEventAttribute]) {
+          if (listener[kListener] === handler2 && !listener[kForOnEventAttribute]) {
             this.removeListener(type, listener);
             break;
           }
@@ -3318,15 +3318,15 @@ var require_websocket = __commonJS({
           }
           return null;
         },
-        set(handler) {
+        set(handler2) {
           for (const listener of this.listeners(method)) {
             if (listener[kForOnEventAttribute]) {
               this.removeListener(method, listener);
               break;
             }
           }
-          if (typeof handler !== "function") return;
-          this.addEventListener(method, handler, {
+          if (typeof handler2 !== "function") return;
+          this.addEventListener(method, handler2, {
             [kForOnEventAttribute]: true
           });
         }
@@ -14071,14 +14071,14 @@ var Response2 = class _Response {
     }
   }
   get headers() {
-    const cache = this[cacheKey];
-    if (cache) {
-      if (!(cache[2] instanceof Headers)) {
-        cache[2] = new Headers(
-          cache[2] || { "content-type": "text/plain; charset=UTF-8" }
+    const cache2 = this[cacheKey];
+    if (cache2) {
+      if (!(cache2[2] instanceof Headers)) {
+        cache2[2] = new Headers(
+          cache2[2] || { "content-type": "text/plain; charset=UTF-8" }
         );
       }
-      return cache[2];
+      return cache2[2];
     }
     return this[getResponseCache]().headers;
   }
@@ -14477,10 +14477,16 @@ function resolvePayTo(feeRouter2) {
   const fromEnv = process.env.PAY_TO?.trim();
   return fromEnv && fromEnv.length > 0 ? fromEnv : feeRouter2;
 }
+var OFFICIAL_BASE_SEPOLIA_USDC = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
+function resolveSettlementToken() {
+  const fromEnv = process.env.X402_SETTLEMENT_TOKEN?.trim();
+  return fromEnv && /^0x[0-9a-fA-F]{40}$/.test(fromEnv) ? fromEnv : OFFICIAL_BASE_SEPOLIA_USDC;
+}
 
 // ../../frontend/src/contracts/addresses.ts
 var ANVIL = {
   MockUSDC: "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
+  MockUSDT: "0x0000000000000000000000000000000000000000",
   MockOracle: "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e",
   TraderStake: "0x0000000000000000000000000000000000000000",
   InsuranceVault: "0x0000000000000000000000000000000000000000",
@@ -14496,10 +14502,12 @@ var ANVIL = {
   PepeClaim: "0x0000000000000000000000000000000000000000",
   EsgRewardDistributor: "0x0000000000000000000000000000000000000000",
   PepeIncentives: "0x0000000000000000000000000000000000000000",
-  PepeStaking: "0x0000000000000000000000000000000000000000"
+  PepeStaking: "0x0000000000000000000000000000000000000000",
+  AssetVault: "0x0000000000000000000000000000000000000000"
 };
 var SEPOLIA = {
   MockUSDC: "0x167Bacef1925184f0df34A3196F834C0622Cfd36",
+  MockUSDT: "0xA08C0F92804173Bf796FDa3FA66654F96aDDB5F1",
   MockOracle: "0x17CA20A37Cf04F2f589B2573EC95f1411D29d958",
   TraderStake: "0x3fe1dbC82eA267085CAB5eb67C6b7d3E68A7d673",
   InsuranceVault: "0x8bDE83dBC2CA450B539346e224E7819348C7b091",
@@ -14515,10 +14523,12 @@ var SEPOLIA = {
   PepeClaim: "0x852c0fBa54552aafbA4798709d90056159682A4C",
   EsgRewardDistributor: "0xA1a522B9d31e5B48E41DcCd050DE10dA2e3BEdD0",
   PepeIncentives: "0x65b9F1B4d18822d4faBa763621E3e4eA065aE5D7",
-  PepeStaking: "0x0000000000000000000000000000000000000000"
+  PepeStaking: "0xf5d0953A443259ebdFC62fE49189998988e309f9",
+  AssetVault: "0xB4D10cBC6143E410dd7b48797334C4397b99325f"
 };
 var BASE_SEPOLIA = {
   MockUSDC: "0x69fd695Bc7C3aFdb35ABA35cD6890C506400b035",
+  MockUSDT: "0x5c8A1e970D275Cc269e09A949D68693120416d78",
   MockOracle: "0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3",
   TraderStake: "0x01aEB530bcFc69f036309ffe55acc7eA6C5a28Fe",
   InsuranceVault: "0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812",
@@ -14527,14 +14537,15 @@ var BASE_SEPOLIA = {
   StrategyRegistry: "0x54e8C43f9Eb151Bb8DD6e61d16a969C4D0e73915",
   CopyTracker: "0x96357144fE56c5E0e33e8046bE2A63F45528b210",
   MockSwapRouter: "0xC9b0e5C219AA1B3eB00E92Fd9a883B182F0AE8Ae",
-  ESGRegistry: "0x0000000000000000000000000000000000000000",
+  ESGRegistry: "0x73310bfb9f93711e9405EB717e3426246BD58618",
   KYCRegistry: "0x5D95fD9e7a5f80E5369e24783F1f98E0f952360d",
   PepeAMM: "0x93be44a81a2796d378f65ebcc8d5f8b40166ad63",
   PepeToken: "0xccd05cbdc2f7961a4c27d3633694022722786a0f",
-  PepeClaim: "0x0000000000000000000000000000000000000000",
-  EsgRewardDistributor: "0x0000000000000000000000000000000000000000",
-  PepeIncentives: "0x0000000000000000000000000000000000000000",
-  PepeStaking: "0x0000000000000000000000000000000000000000"
+  PepeClaim: "0x459d238aC61eC4A0E08608FBcd363227B860CF34",
+  EsgRewardDistributor: "0x0c85923193AB6137A117E5911aAA7DF7Cb8787D7",
+  PepeIncentives: "0xEBfA1dc7dDea032ac6242cB619d982e543A23c12",
+  PepeStaking: "0xC78D68cA1B217ba241c23Ebad3118c6ec0dc0D34",
+  AssetVault: "0xC30DFe1C9EBb47197b785995aA9Cd0F5B89557A5"
 };
 var CHAIN_MAP = {
   31337: ANVIL,
@@ -14604,6 +14615,9 @@ var PERPETUAL_EXCHANGE_ABI = [
   "function getUnrealizedPnL(uint256 positionId) view returns (int256)",
   "function pendingFunding(uint256 positionId) view returns (int256)",
   "function getFundingRate(bytes32 asset) view returns (int256 rateBps)",
+  // 交易所自己的新鮮度門檻。付費 API 必須以它為準，而不是 MockOracle.isStale
+  // 的 24 小時 —— 兩者差 4 倍，中間那段會讓 API 建議下單而鏈上 revert。
+  "function maxPriceAge() view returns (uint256)",
   "function globalLongNotional(bytes32) view returns (uint256)",
   "function globalShortNotional(bytes32) view returns (uint256)",
   "function executionFee() view returns (uint256)",
@@ -38212,6 +38226,16 @@ function jsonSafe(obj) {
   );
 }
 
+// ../shared/src/freshness.ts
+function classifyTradeFreshness(a) {
+  const ageSec = Math.max(0, a.nowSec - a.updatedAtSec);
+  return {
+    fresh: ageSec <= a.maxPriceAgeSec,
+    ageSec,
+    maxPriceAgeSec: a.maxPriceAgeSec
+  };
+}
+
 // ../shared/src/aggregate.ts
 var EDGE_DEFAULTS = {
   /** funding bps → 分數的係數（−fundingRateBps×Kf，clamp ±60）。 */
@@ -38246,14 +38270,16 @@ function computeEdge(input) {
   const fundingComponent = clamp(-input.fundingRateBps * Kf, -60, 60);
   const oiComponent = clamp(-input.oiImbalance * 40, -40, 40);
   const edgeScore = Math.round(clamp(fundingComponent + oiComponent, -100, 100));
-  if (input.isStale) {
+  const tradable = typeof input.tradableNow === "boolean" ? input.tradableNow : typeof input.isStale === "boolean" ? !input.isStale : false;
+  if (!tradable) {
+    const why = typeof input.tradableNow === "boolean" ? "\u93C8\u4E0A\u50F9\u683C\u5DF2\u8D85\u904E\u4EA4\u6613\u6240 maxPriceAge\uFF08\u6B64\u523B\u958B\u5009\u6703 revert StalePrice\uFF09" : typeof input.isStale === "boolean" ? "oracle \u8CC7\u6599\u904E\u671F\uFF08stale\uFF09" : "\u7121\u6CD5\u5224\u5B9A\u50F9\u683C\u65B0\u9BAE\u5EA6\uFF08\u7F3A tradableNow / isStale\uFF09";
     return {
       edgeScore,
       fundingComponent: round2(fundingComponent),
       oiComponent: round2(oiComponent),
       recommendation: "no_trade",
       confidence: Math.abs(edgeScore),
-      reason: "oracle \u8CC7\u6599\u904E\u671F\uFF08stale\uFF09\uFF0C\u672C\u8F2A\u4E0D\u5EFA\u8B70\u9032\u5834"
+      reason: `${why}\uFF0C\u672C\u8F2A\u4E0D\u5EFA\u8B70\u9032\u5834`
     };
   }
   let recommendation;
@@ -38281,7 +38307,14 @@ function enrichOracle(base2, opts = {}) {
   const mmBps = opts.maintenanceMarginBps ?? EDGE_DEFAULTS.maintenanceMarginBps;
   const oiImbalance = round2(computeOiImbalance(base2.longOpenInterest, base2.shortOpenInterest));
   const skewProxyBps = Math.round(oiImbalance * 50);
-  const edge = computeEdge({ fundingRateBps: base2.fundingRateBps, oiImbalance, isStale: base2.isStale, Kf: opts.Kf, entryThreshold: opts.entryThreshold });
+  const edge = computeEdge({
+    fundingRateBps: base2.fundingRateBps,
+    oiImbalance,
+    tradableNow: base2.tradableNow,
+    isStale: base2.isStale,
+    Kf: opts.Kf,
+    entryThreshold: opts.entryThreshold
+  });
   return {
     oiImbalance,
     skewProxyBps,
@@ -38293,21 +38326,30 @@ function enrichOracle(base2, opts = {}) {
 var ZERO2 = "0x0000000000000000000000000000000000000000";
 async function getOracleSnapshot(c, symbol) {
   const assetId = assetIdOf(symbol);
-  const [priceRes, isStale, fundingBps, longOI, shortOI] = await Promise.all([
+  const [priceRes, isStale, fundingBps, longOI, shortOI, maxPriceAge] = await Promise.all([
     c.oracle.getPrice(assetId),
     c.oracle.isStale(assetId),
     c.perp.getFundingRate(assetId),
     c.perp.globalLongNotional(assetId),
-    c.perp.globalShortNotional(assetId)
+    c.perp.globalShortNotional(assetId),
+    c.perp.maxPriceAge()
   ]);
   const [price, updatedAt] = priceRes;
   const direction = fundingBps > 0n ? "longs_pay" : fundingBps < 0n ? "shorts_pay" : "balanced";
+  const tf = classifyTradeFreshness({
+    updatedAtSec: Number(updatedAt),
+    nowSec: Math.floor(Date.now() / 1e3),
+    maxPriceAgeSec: Number(maxPriceAge)
+  });
   const base2 = {
     asset: symbol,
     assetId,
     price: fmtPrice8(price),
     updatedAt: fmtTime(updatedAt),
     isStale,
+    ageSec: tf.ageSec,
+    maxPriceAgeSec: tf.maxPriceAgeSec,
+    tradableNow: tf.fresh,
     fundingRateBps: Number(fundingBps),
     fundingRatePercent: bpsToPercent(fundingBps),
     fundingDirection: direction,
@@ -38453,6 +38495,12 @@ function parseDidPkh(did) {
 // ../shared/src/verification.ts
 var ZERO3 = "0x0000000000000000000000000000000000000000";
 var ZERO_BYTES32 = "0x0000000000000000000000000000000000000000000000000000000000000000";
+var HTTP_TIMEOUT_MS = Number(process.env.VERIFICATION_HTTP_TIMEOUT_MS ?? "5000");
+function redact(msg, secret) {
+  let out = msg;
+  if (secret && secret.length >= 6) out = out.split(secret).join("<redacted>");
+  return out.replace(/apikey=[^&\s]+/gi, "apikey=<redacted>").slice(0, 200);
+}
 var TIER_ASSESSMENT = {
   low: "Minimal concerns identified",
   moderate: "Some concerns, review recommended",
@@ -38473,12 +38521,21 @@ function computeRiskScore(checks) {
   const riskTier = riskTierOf(overallRiskScore);
   return { overallRiskScore, riskTier, assessment: TIER_ASSESSMENT[riskTier] };
 }
+function canonicalJson(v) {
+  if (v === null || typeof v !== "object") return JSON.stringify(v ?? null);
+  if (Array.isArray(v)) return `[${v.map(canonicalJson).join(",")}]`;
+  const entries = Object.entries(v).filter(([, val]) => val !== void 0).sort(([a], [b2]) => a < b2 ? -1 : a > b2 ? 1 : 0);
+  return `{${entries.map(([k, val]) => `${JSON.stringify(k)}:${canonicalJson(val)}`).join(",")}}`;
+}
 function checkDigest(c) {
-  const canonical = JSON.stringify({
+  const canonical = canonicalJson({
     type: c.type,
+    name: c.name,
     applicable: c.applicable,
+    passed: c.passed,
     score: c.score,
-    details: c.details
+    details: c.details,
+    evidence: c.evidence ?? null
   });
   return ethers_exports.id(canonical);
 }
@@ -38510,16 +38567,23 @@ var VERIFIER_TYPES = {
   AgentVerificationAttestation: [
     { name: "subject", type: "string" },
     { name: "overallRiskScore", type: "uint256" },
+    { name: "riskTier", type: "string" },
     { name: "summaryProofId", type: "bytes32" },
-    { name: "issuedAt", type: "uint256" }
+    { name: "issuedAt", type: "uint256" },
+    { name: "expiresAt", type: "uint256" },
+    { name: "nonce", type: "bytes32" }
   ]
 };
+var DEFAULT_ATTESTATION_TTL_SEC = 15 * 60;
 function verifierValue(p) {
   return {
     subject: p.subject,
     overallRiskScore: BigInt(p.overallRiskScore),
+    riskTier: p.riskTier,
     summaryProofId: p.summaryProofId,
-    issuedAt: BigInt(p.issuedAt)
+    issuedAt: BigInt(p.issuedAt),
+    expiresAt: BigInt(p.expiresAt),
+    nonce: p.nonce
   };
 }
 async function checkETV(provider2, targets) {
@@ -38589,8 +38653,8 @@ async function checkSCV(provider2, targets, opts = {}) {
       continue;
     }
     try {
-      const url = `https://api.etherscan.io/v2/api?chainid=${chainId}&module=contract&action=getsourcecode&address=${t.address}&apikey=${apiKey}`;
-      const res = await fetch(url);
+      const url = `https://api.etherscan.io/v2/api?chainid=${chainId}&module=contract&action=getsourcecode&address=${encodeURIComponent(t.address)}&apikey=${encodeURIComponent(apiKey)}`;
+      const res = await fetch(url, { signal: AbortSignal.timeout(HTTP_TIMEOUT_MS) });
       const json = await res.json();
       const entry = json.result?.[0];
       const sourceVerified = !!entry?.SourceCode && entry.SourceCode.length > 0;
@@ -38606,7 +38670,7 @@ async function checkSCV(provider2, targets, opts = {}) {
         address: t.address,
         codePresent: true,
         sourceVerified: "error",
-        error: err.message
+        error: redact(err.message, apiKey)
       };
       scoreSum += 30;
     }
@@ -38640,20 +38704,20 @@ async function checkWAV(apiBaseUrl, opts = {}) {
   evidence.https = httpsOk;
   let rootOk = false;
   try {
-    const r = await fetch(base2 + "/", { method: "GET" });
+    const r = await fetch(base2 + "/", { method: "GET", signal: AbortSignal.timeout(HTTP_TIMEOUT_MS) });
     rootOk = r.status === 200;
     evidence.rootStatus = r.status;
   } catch (err) {
-    evidence.rootError = err.message;
+    evidence.rootError = redact(err.message);
   }
   let payWallOk = false;
   try {
-    const r = await fetch(base2 + paidPath, { method: "GET" });
+    const r = await fetch(base2 + paidPath, { method: "GET", signal: AbortSignal.timeout(HTTP_TIMEOUT_MS) });
     payWallOk = r.status === 402;
     evidence.paidPath = paidPath;
     evidence.paidStatus = r.status;
   } catch (err) {
-    evidence.paidError = err.message;
+    evidence.paidError = redact(err.message);
   }
   const passes = [httpsOk, rootOk, payWallOk].filter(Boolean).length;
   const score = Math.round((3 - passes) / 3 * 100);
@@ -38710,9 +38774,7 @@ async function checkWV(provider2, agentAddress, opts = {}) {
     }
   }
   evidence.possession = possession;
-  const baseline = [nonZero, isEoa, hasHistory];
-  if (possession === true) baseline.push(true);
-  if (possession === false) baseline.push(false);
+  const baseline = [nonZero, isEoa, hasHistory, possession === true];
   const passes = baseline.filter(Boolean).length;
   const score = Math.round((baseline.length - passes) / baseline.length * 100);
   return {
@@ -38751,6 +38813,9 @@ async function buildAgentVerification(params) {
   const { overallRiskScore, riskTier, assessment } = computeRiskScore(checks);
   const proofIds = buildProofIds(checks);
   const issuedAtSec = Math.floor(Date.now() / 1e3);
+  const ttlSec = params.ttlSec ?? Number(process.env.AGENT_ATTESTATION_TTL ?? DEFAULT_ATTESTATION_TTL_SEC);
+  const expiresAtSec = issuedAtSec + (Number.isFinite(ttlSec) && ttlSec > 0 ? ttlSec : DEFAULT_ATTESTATION_TTL_SEC);
+  const nonce = ethers_exports.hexlify(ethers_exports.randomBytes(32));
   const verifierAddr = await params.verifier.getAddress();
   const verifierDid = agentDid(verifierAddr);
   const proofValue = await params.verifier.signTypedData(
@@ -38759,8 +38824,11 @@ async function buildAgentVerification(params) {
     verifierValue({
       subject: subjectDid,
       overallRiskScore,
+      riskTier,
       summaryProofId: proofIds.summaryProofId,
-      issuedAt: issuedAtSec
+      issuedAt: issuedAtSec,
+      expiresAt: expiresAtSec,
+      nonce
     })
   );
   const iso = new Date(issuedAtSec * 1e3).toISOString();
@@ -38778,7 +38846,10 @@ async function buildAgentVerification(params) {
     checks,
     proofIds,
     verifier: verifierDid,
+    verifierEphemeral: params.verifierEphemeral === true,
     issuedAt: iso,
+    expiresAt: new Date(expiresAtSec * 1e3).toISOString(),
+    nonce,
     proof: {
       type: "EthereumEip712Signature2021",
       created: iso,
@@ -38801,16 +38872,16 @@ var compose = (middleware, onError, onNotFound) => {
       index2 = i;
       let res;
       let isError2 = false;
-      let handler;
+      let handler2;
       if (middleware[i]) {
-        handler = middleware[i][0][0];
+        handler2 = middleware[i][0][0];
         context.req.routeIndex = i;
       } else {
-        handler = i === middleware.length && next || void 0;
+        handler2 = i === middleware.length && next || void 0;
       }
-      if (handler) {
+      if (handler2) {
         try {
-          res = await handler(context, () => dispatch(i + 1));
+          res = await handler2(context, () => dispatch(i + 1));
         } catch (err) {
           if (err instanceof Error && onError) {
             context.error = err;
@@ -39896,8 +39967,8 @@ var Hono = class _Hono {
         } else {
           this.#addRoute(method, this.#path, args1);
         }
-        args.forEach((handler) => {
-          this.#addRoute(method, this.#path, handler);
+        args.forEach((handler2) => {
+          this.#addRoute(method, this.#path, handler2);
         });
         return this;
       };
@@ -39906,8 +39977,8 @@ var Hono = class _Hono {
       for (const p of [path].flat()) {
         this.#path = p;
         for (const m of [method].flat()) {
-          handlers.map((handler) => {
-            this.#addRoute(m.toUpperCase(), this.#path, handler);
+          handlers.map((handler2) => {
+            this.#addRoute(m.toUpperCase(), this.#path, handler2);
           });
         }
       }
@@ -39920,8 +39991,8 @@ var Hono = class _Hono {
         this.#path = "*";
         handlers.unshift(arg1);
       }
-      handlers.forEach((handler) => {
-        this.#addRoute(METHOD_NAME_ALL, this.#path, handler);
+      handlers.forEach((handler2) => {
+        this.#addRoute(METHOD_NAME_ALL, this.#path, handler2);
       });
       return this;
     };
@@ -39963,14 +40034,14 @@ var Hono = class _Hono {
   route(path, app2) {
     const subApp = this.basePath(path);
     app2.routes.map((r) => {
-      let handler;
+      let handler2;
       if (app2.errorHandler === errorHandler) {
-        handler = r.handler;
+        handler2 = r.handler;
       } else {
-        handler = async (c, next) => (await compose([], app2.errorHandler)(c, () => r.handler(c, next))).res;
-        handler[COMPOSED_HANDLER] = r.handler;
+        handler2 = async (c, next) => (await compose([], app2.errorHandler)(c, () => r.handler(c, next))).res;
+        handler2[COMPOSED_HANDLER] = r.handler;
       }
-      subApp.#addRoute(r.method, r.path, handler, r.basePath);
+      subApp.#addRoute(r.method, r.path, handler2, r.basePath);
     });
     return this;
   }
@@ -40008,8 +40079,8 @@ var Hono = class _Hono {
    * })
    * ```
    */
-  onError = (handler) => {
-    this.errorHandler = handler;
+  onError = (handler2) => {
+    this.errorHandler = handler2;
     return this;
   };
   /**
@@ -40027,8 +40098,8 @@ var Hono = class _Hono {
    * })
    * ```
    */
-  notFound = (handler) => {
-    this.#notFoundHandler = handler;
+  notFound = (handler2) => {
+    this.#notFoundHandler = handler2;
     return this;
   };
   /**
@@ -40098,26 +40169,26 @@ var Hono = class _Hono {
         return new Request(url, request);
       };
     })();
-    const handler = async (c, next) => {
+    const handler2 = async (c, next) => {
       const res = await applicationHandler(replaceRequest(c.req.raw), ...getOptions(c));
       if (res) {
         return res;
       }
       await next();
     };
-    this.#addRoute(METHOD_NAME_ALL, mergePath(path, "*"), handler);
+    this.#addRoute(METHOD_NAME_ALL, mergePath(path, "*"), handler2);
     return this;
   }
-  #addRoute(method, path, handler, baseRoutePath) {
+  #addRoute(method, path, handler2, baseRoutePath) {
     method = method.toUpperCase();
     path = mergePath(this._basePath, path);
     const r = {
       basePath: baseRoutePath !== void 0 ? mergePath(this._basePath, baseRoutePath) : this._basePath,
       path,
       method,
-      handler
+      handler: handler2
     };
-    this.router.add(method, path, [handler, r]);
+    this.router.add(method, path, [handler2, r]);
     this.routes.push(r);
   }
   #handleError(err, c) {
@@ -40506,7 +40577,7 @@ var RegExpRouter = class {
     this.#middleware = { [METHOD_NAME_ALL]: /* @__PURE__ */ Object.create(null) };
     this.#routes = { [METHOD_NAME_ALL]: /* @__PURE__ */ Object.create(null) };
   }
-  add(method, path, handler) {
+  add(method, path, handler2) {
     const middleware = this.#middleware;
     const routes = this.#routes;
     if (!middleware || !routes) {
@@ -40537,14 +40608,14 @@ var RegExpRouter = class {
       Object.keys(middleware).forEach((m) => {
         if (method === METHOD_NAME_ALL || method === m) {
           Object.keys(middleware[m]).forEach((p) => {
-            re.test(p) && middleware[m][p].push([handler, paramCount]);
+            re.test(p) && middleware[m][p].push([handler2, paramCount]);
           });
         }
       });
       Object.keys(routes).forEach((m) => {
         if (method === METHOD_NAME_ALL || method === m) {
           Object.keys(routes[m]).forEach(
-            (p) => re.test(p) && routes[m][p].push([handler, paramCount])
+            (p) => re.test(p) && routes[m][p].push([handler2, paramCount])
           );
         }
       });
@@ -40558,7 +40629,7 @@ var RegExpRouter = class {
           routes[m][path2] ||= [
             ...findMiddleware(middleware[m], path2) || findMiddleware(middleware[METHOD_NAME_ALL], path2) || []
           ];
-          routes[m][path2].push([handler, paramCount - len + i + 1]);
+          routes[m][path2].push([handler2, paramCount - len + i + 1]);
         }
       });
     }
@@ -40603,11 +40674,11 @@ var SmartRouter = class {
   constructor(init2) {
     this.#routers = init2.routers;
   }
-  add(method, path, handler) {
+  add(method, path, handler2) {
     if (!this.#routes) {
       throw new Error(MESSAGE_MATCHER_IS_ALREADY_BUILT);
     }
-    this.#routes.push([method, path, handler]);
+    this.#routes.push([method, path, handler2]);
   }
   match(method, path) {
     if (!this.#routes) {
@@ -40664,17 +40735,17 @@ var Node2 = class _Node2 {
   #patterns;
   #order = 0;
   #params = emptyParams;
-  constructor(method, handler, children) {
+  constructor(method, handler2, children) {
     this.#children = children || /* @__PURE__ */ Object.create(null);
     this.#methods = [];
-    if (method && handler) {
+    if (method && handler2) {
       const m = /* @__PURE__ */ Object.create(null);
-      m[method] = { handler, possibleKeys: [], score: 0 };
+      m[method] = { handler: handler2, possibleKeys: [], score: 0 };
       this.#methods = [m];
     }
     this.#patterns = [];
   }
-  insert(method, path, handler) {
+  insert(method, path, handler2) {
     this.#order = ++this.#order;
     let curNode = this;
     const parts = splitRoutingPath(path);
@@ -40700,7 +40771,7 @@ var Node2 = class _Node2 {
     }
     curNode.#methods.push({
       [method]: {
-        handler,
+        handler: handler2,
         possibleKeys: possibleKeys.filter((v, i, a) => a.indexOf(v) === i),
         score: this.#order
       }
@@ -40821,7 +40892,7 @@ var Node2 = class _Node2 {
         return a.score - b2.score;
       });
     }
-    return [handlerSets.map(({ handler, params }) => [handler, params])];
+    return [handlerSets.map(({ handler: handler2, params }) => [handler2, params])];
   }
 };
 
@@ -40832,15 +40903,15 @@ var TrieRouter = class {
   constructor() {
     this.#node = new Node2();
   }
-  add(method, path, handler) {
+  add(method, path, handler2) {
     const results = checkOptionalParameter(path);
     if (results) {
       for (let i = 0, len = results.length; i < len; i++) {
-        this.#node.insert(method, results[i], handler);
+        this.#node.insert(method, results[i], handler2);
       }
       return;
     }
-    this.#node.insert(method, path, handler);
+    this.#node.insert(method, path, handler2);
   }
   match(method, path) {
     return this.#node.search(method, path);
@@ -42763,10 +42834,10 @@ init_stringify();
 var promiseCache = /* @__PURE__ */ new Map();
 var responseCache2 = /* @__PURE__ */ new Map();
 function getCache(cacheKey3) {
-  const buildCache = (cacheKey4, cache) => ({
-    clear: () => cache.delete(cacheKey4),
-    get: () => cache.get(cacheKey4),
-    set: (data4) => cache.set(cacheKey4, data4)
+  const buildCache = (cacheKey4, cache2) => ({
+    clear: () => cache2.delete(cacheKey4),
+    get: () => cache2.get(cacheKey4),
+    set: (data4) => cache2.set(cacheKey4, data4)
   });
   const promise = buildCache(cacheKey3, promiseCache);
   const response = buildCache(cacheKey3, responseCache2);
@@ -42780,24 +42851,24 @@ function getCache(cacheKey3) {
   };
 }
 async function withCache(fn, { cacheKey: cacheKey3, cacheTime = Number.POSITIVE_INFINITY }) {
-  const cache = getCache(cacheKey3);
-  const response = cache.response.get();
+  const cache2 = getCache(cacheKey3);
+  const response = cache2.response.get();
   if (response && cacheTime > 0) {
     const age = Date.now() - response.created.getTime();
     if (age < cacheTime)
       return response.data;
   }
-  let promise = cache.promise.get();
+  let promise = cache2.promise.get();
   if (!promise) {
     promise = fn();
-    cache.promise.set(promise);
+    cache2.promise.set(promise);
   }
   try {
     const data4 = await promise;
-    cache.response.set({ created: /* @__PURE__ */ new Date(), data: data4 });
+    cache2.response.set({ created: /* @__PURE__ */ new Date(), data: data4 });
     return data4;
   } finally {
-    cache.promise.clear();
+    cache2.promise.clear();
   }
 }
 
@@ -56404,25 +56475,25 @@ var ZodEffects = class extends ZodType {
         return acc;
       };
       if (ctx.common.async === false) {
-        const inner = this._def.schema._parseSync({
+        const inner2 = this._def.schema._parseSync({
           data: ctx.data,
           path: ctx.path,
           parent: ctx
         });
-        if (inner.status === "aborted")
+        if (inner2.status === "aborted")
           return INVALID;
-        if (inner.status === "dirty")
+        if (inner2.status === "dirty")
           status.dirty();
-        executeRefinement(inner.value);
-        return { status: status.value, value: inner.value };
+        executeRefinement(inner2.value);
+        return { status: status.value, value: inner2.value };
       } else {
-        return this._def.schema._parseAsync({ data: ctx.data, path: ctx.path, parent: ctx }).then((inner) => {
-          if (inner.status === "aborted")
+        return this._def.schema._parseAsync({ data: ctx.data, path: ctx.path, parent: ctx }).then((inner2) => {
+          if (inner2.status === "aborted")
             return INVALID;
-          if (inner.status === "dirty")
+          if (inner2.status === "dirty")
             status.dirty();
-          return executeRefinement(inner.value).then(() => {
-            return { status: status.value, value: inner.value };
+          return executeRefinement(inner2.value).then(() => {
+            return { status: status.value, value: inner2.value };
           });
         });
       }
@@ -58234,8 +58305,9 @@ var USDC_ABI = [
   // MockUSDC only (TESTNET); real USDC reverts → skipped
 ];
 var PK = process.env.FEE_SETTLEMENT_PRIVATE_KEY?.trim();
-var SETTLEMENT_TOKEN = process.env.X402_SETTLEMENT_TOKEN?.trim() || ADDRESSES.MockUSDC;
+var SETTLEMENT_TOKEN = resolveSettlementToken();
 var SETTLEMENT_ROUTER = process.env.X402_FEE_ROUTER?.trim() || ADDRESSES.FeeRouter;
+var MINTABLE_MOCK_USDC = ADDRESSES.MockUSDC;
 var wallet = null;
 var feeRouter = null;
 var usdc = null;
@@ -58280,13 +58352,20 @@ async function _settle(trader, feeUsd) {
     const me = wallet.address;
     const bal = await usdc.balanceOf(me);
     if (bal < atomic) {
+      const mintable = SETTLEMENT_TOKEN.toLowerCase() === MINTABLE_MOCK_USDC.toLowerCase();
+      if (!mintable) {
+        return {
+          status: "failed",
+          error: `\u7D50\u7B97 token \u9918\u984D\u4E0D\u8DB3\uFF08${SETTLEMENT_TOKEN}\uFF0C\u975E\u53EF\u9444\u5E63\u7684 MockUSDC\uFF09\u3002treasury \u9700\u5148\u6536\u5230 x402 \u4ED8\u6B3E\u7684 USDC\u3002`
+        };
+      }
       try {
         const mintTx = await usdc.mint(me, atomic * 1000n);
         await mintTx.wait();
-      } catch {
+      } catch (e) {
         return {
           status: "failed",
-          error: `\u7D50\u7B97 token \u9918\u984D\u4E0D\u8DB3\u4E14\u4E0D\u53EF mint\uFF08${SETTLEMENT_TOKEN}\uFF09\u3002treasury \u9700\u5148\u6536\u5230 x402 \u4ED8\u6B3E\u7684 USDC\u3002`
+          error: `MockUSDC \u9444\u5E63\u5931\u6557\uFF1A${e.message}`
         };
       }
     }
@@ -58320,7 +58399,14 @@ async function getOnchainRevenue(trader) {
       model: "FeeRouter 70/20/10 (trader/platform/vault)",
       onChain: false,
       note: "X402_FEE_ROUTER \u672A\u8A2D",
-      totals: { count: 0, feeUsd: 0, traderShare: 0, platformShare: 0, vaultShare: 0 }
+      totals: {
+        count: null,
+        countNote: "\u672A\u63A5\u93C8\u4E0A FeeRouter\uFF0C\u7121\u8CC7\u6599",
+        feeUsd: 0,
+        traderShare: 0,
+        platformShare: 0,
+        vaultShare: 0
+      }
     };
   }
   const provider2 = makeProvider();
@@ -58345,9 +58431,13 @@ async function getOnchainRevenue(trader) {
     network: "base-sepolia",
     settlementToken: usdcAddr,
     feeRouter: ROUTER,
-    // 與前端既有 Revenue 形狀相容（count 鏈上無事件掃描，留 0）。
+    // 與前端既有 Revenue 形狀相容。
+    // 稽核（四·Medium）：`count` 以前硬編 0，讀者會以為「一筆都沒有」，但同一個
+    // 物件裡的 feeUsd 明明是正數 —— 一個看起來像資料的假值比缺值更糟。鏈上沒有
+    // 事件掃描就沒有筆數，誠實回 null 並說明。
     totals: {
-      count: 0,
+      count: null,
+      countNote: "\u93C8\u4E0A\u53EA\u7D2F\u8A08\u91D1\u984D\u3001\u7121\u4E8B\u4EF6\u6383\u63CF\uFF0C\u6545\u7121\u6CD5\u5F97\u77E5\u7B46\u6578\uFF08\u4E0D\u662F 0\uFF09",
       feeUsd: round(P * 5),
       traderShare: round(P * 3.5),
       platformShare: round(P),
@@ -58357,30 +58447,524 @@ async function getOnchainRevenue(trader) {
   };
 }
 
+// src/symbols.ts
+var MARKETS = {
+  sBTC: {
+    symbol: "sBTC",
+    underlying: "BTC \u6C38\u7E8C",
+    category: "crypto",
+    bybit: "BTCUSDT",
+    coinbase: "BTC-USD",
+    seed: 5e4
+  },
+  sETH: {
+    symbol: "sETH",
+    underlying: "ETH \u6C38\u7E8C",
+    category: "crypto",
+    bybit: "ETHUSDT",
+    coinbase: "ETH-USD",
+    seed: 3e3
+  },
+  sAAPL: {
+    symbol: "sAAPL",
+    underlying: "AAPL",
+    category: "equity",
+    yahoo: "AAPL",
+    seed: 200
+  },
+  sTSLA: {
+    symbol: "sTSLA",
+    underlying: "TSLA",
+    category: "equity",
+    yahoo: "TSLA",
+    seed: 250
+  },
+  sNVDA: {
+    symbol: "sNVDA",
+    underlying: "NVDA",
+    category: "equity",
+    yahoo: "NVDA",
+    seed: 135
+  },
+  sMSFT: {
+    symbol: "sMSFT",
+    underlying: "MSFT",
+    category: "equity",
+    yahoo: "MSFT",
+    seed: 420
+  },
+  sGOOGL: {
+    symbol: "sGOOGL",
+    underlying: "GOOGL",
+    category: "equity",
+    yahoo: "GOOGL",
+    seed: 175
+  },
+  sGOLD: {
+    // 黃金走 COMEX 期貨連續合約，不是現貨 XAU/USD——keeper 也是用這個，
+    // 兩邊必須一致，否則 oracle 價與圖表價會系統性差一個基差。
+    symbol: "sGOLD",
+    underlying: "GC=F (COMEX Gold Futures)",
+    category: "commodity",
+    yahoo: "GC=F",
+    seed: 2650
+  },
+  sBOND: {
+    // 沒有「美國公債」這個可交易報價，用 TLT（20+ 年期公債 ETF）當代理標的。
+    symbol: "sBOND",
+    underlying: "TLT (iShares 20+ Year Treasury ETF)",
+    category: "bond",
+    yahoo: "TLT",
+    seed: 100
+  },
+  sICLN: {
+    symbol: "sICLN",
+    underlying: "ICLN",
+    category: "etf",
+    yahoo: "ICLN",
+    seed: 14
+  },
+  sESGU: {
+    symbol: "sESGU",
+    underlying: "ESGU",
+    category: "etf",
+    yahoo: "ESGU",
+    seed: 120
+  }
+};
+var MARKET_SYMBOLS = Object.keys(MARKETS);
+function resolveMarket(raw2) {
+  const input = raw2.trim();
+  if (!input) return void 0;
+  if (input.startsWith("0x") && input.length === 66) {
+    const sym = symbolOfAssetId(input);
+    return sym ? MARKETS[sym] : void 0;
+  }
+  if (MARKETS[input]) return MARKETS[input];
+  const lower = input.toLowerCase();
+  for (const meta of Object.values(MARKETS)) {
+    if (meta.symbol.toLowerCase() === lower) return meta;
+    if (meta.symbol.toLowerCase() === `s${lower}`) return meta;
+  }
+  return void 0;
+}
+function assetIdFor(symbol) {
+  return ASSET_IDS[symbol];
+}
+
+// src/candles.ts
+var INTERVALS = {
+  "1m": 60,
+  "5m": 300,
+  "15m": 900,
+  "1h": 3600,
+  "4h": 14400,
+  "1d": 86400
+};
+var INTERVAL_KEYS = Object.keys(INTERVALS);
+function isInterval(v) {
+  return v in INTERVALS;
+}
+var MAX_LIMIT = 500;
+var DEFAULT_LIMIT = 300;
+function aggregate(candles, seconds) {
+  const buckets = /* @__PURE__ */ new Map();
+  for (const k of candles) {
+    const bt = Math.floor(k.t / seconds) * seconds;
+    const cur = buckets.get(bt);
+    if (!cur) {
+      buckets.set(bt, { t: bt, o: k.o, h: k.h, l: k.l, c: k.c, v: k.v });
+    } else {
+      cur.h = Math.max(cur.h, k.h);
+      cur.l = Math.min(cur.l, k.l);
+      cur.c = k.c;
+      cur.v += k.v;
+    }
+  }
+  return [...buckets.values()].sort((a, b2) => a.t - b2.t);
+}
+function sane(k) {
+  return Number.isFinite(k.t) && Number.isFinite(k.o) && Number.isFinite(k.h) && Number.isFinite(k.l) && Number.isFinite(k.c) && k.o > 0 && k.h > 0 && k.l > 0 && k.c > 0 && k.h >= k.l;
+}
+var UA = "Mozilla/5.0 (compatible; pepelab-signal-api/1.0; +https://github.com/pepelab)";
+async function getJson(url, timeoutMs = 8e3) {
+  const res = await fetch(url, {
+    headers: { "User-Agent": UA, Accept: "application/json" },
+    signal: AbortSignal.timeout(timeoutMs)
+  });
+  if (!res.ok) {
+    throw new Error(`${new URL(url).host} \u56DE ${res.status}`);
+  }
+  return res.json();
+}
+var BYBIT_HOST = "https://api.bybit.com";
+var BYBIT_INTERVAL = {
+  "1m": "1",
+  "5m": "5",
+  "15m": "15",
+  "1h": "60",
+  "4h": "240",
+  "1d": "D"
+};
+var BYBIT_LIMIT = 1e3;
+async function fetchBybit(symbol, interval, need, end) {
+  const url = `${BYBIT_HOST}/v5/market/kline?category=linear&symbol=${encodeURIComponent(symbol)}&interval=${BYBIT_INTERVAL[interval]}&limit=${Math.min(need, BYBIT_LIMIT)}` + // Bybit 的 end 是毫秒，而且是「回傳早於它的」。沒有更早的資料時回空陣列
+  // 且 retCode 仍是 0——那是正常的「到底了」，不是錯誤。
+  (end ? `&end=${end * 1e3}` : "");
+  const json = await getJson(url);
+  if (json.retCode !== 0) {
+    throw new Error(`retCode ${json.retCode}: ${json.retMsg ?? "\u672A\u77E5\u932F\u8AA4"}`);
+  }
+  const list2 = json.result?.list;
+  if (!list2?.length) {
+    if (end) return [];
+    throw new Error("\u56DE\u61C9\u6C92\u6709 K \u7DDA\u8CC7\u6599");
+  }
+  const out = [];
+  for (const row of list2) {
+    if (row.length < 6) continue;
+    const k = {
+      t: Math.floor(Number(row[0]) / 1e3),
+      o: Number(row[1]),
+      h: Number(row[2]),
+      l: Number(row[3]),
+      c: Number(row[4]),
+      v: Number(row[5])
+    };
+    if (sane(k)) out.push(k);
+  }
+  return out.sort((a, b2) => a.t - b2.t);
+}
+var COINBASE_HOST = "https://api.exchange.coinbase.com";
+var COINBASE_GRANULARITIES = [60, 300, 900, 3600, 21600, 86400];
+var COINBASE_PAGE = 300;
+async function fetchCoinbase(product, granularity, need, endAt) {
+  const pages = Math.min(Math.ceil(need / COINBASE_PAGE), 5);
+  const anchor = endAt ?? Math.floor(Date.now() / 1e3);
+  const span = COINBASE_PAGE * granularity;
+  const reqs = Array.from({ length: pages }, (_, i) => {
+    const end = anchor - i * span;
+    const start = end - span;
+    const url = `${COINBASE_HOST}/products/${encodeURIComponent(product)}/candles?granularity=${granularity}&start=${new Date(start * 1e3).toISOString()}&end=${new Date(end * 1e3).toISOString()}`;
+    return getJson(url);
+  });
+  const pagesData = await Promise.all(reqs);
+  const out = [];
+  for (const raw2 of pagesData) {
+    if (!Array.isArray(raw2)) continue;
+    for (const row of raw2) {
+      if (!Array.isArray(row) || row.length < 6) continue;
+      const [t, l, h, o, c, v] = row;
+      const k = { t: Number(t), o: Number(o), h: Number(h), l: Number(l), c: Number(c), v: Number(v) };
+      if (sane(k)) out.push(k);
+    }
+  }
+  const byTime = new Map(out.map((k) => [k.t, k]));
+  return [...byTime.values()].sort((a, b2) => a.t - b2.t);
+}
+var YAHOO_HOST = "https://query1.finance.yahoo.com";
+var YAHOO_INTERVAL = {
+  "1m": { interval: "1m", baseSeconds: 60, maxSpan: 7 * 86400, intraday: true },
+  "5m": { interval: "5m", baseSeconds: 300, maxSpan: 60 * 86400, intraday: true },
+  "15m": { interval: "15m", baseSeconds: 900, maxSpan: 60 * 86400, intraday: true },
+  "1h": { interval: "60m", baseSeconds: 3600, maxSpan: 730 * 86400, intraday: true },
+  // 4h 由 60m 併出來：baseSeconds 是 3600 而不是 14400，吃的也是 60m 的上限。
+  "4h": { interval: "60m", baseSeconds: 3600, maxSpan: 730 * 86400, intraday: true },
+  "1d": { interval: "1d", baseSeconds: 86400, maxSpan: 10 * 365 * 86400, intraday: false }
+};
+var INTRADAY_FACTOR = 5.2;
+var DAILY_FACTOR = 1.4;
+var YAHOO_RANGES = [
+  { label: "1d", seconds: 86400 },
+  { label: "5d", seconds: 5 * 86400 },
+  { label: "1mo", seconds: 30 * 86400 },
+  { label: "3mo", seconds: 91 * 86400 },
+  { label: "6mo", seconds: 182 * 86400 },
+  { label: "1y", seconds: 365 * 86400 },
+  { label: "2y", seconds: 730 * 86400 },
+  { label: "5y", seconds: 5 * 365 * 86400 },
+  { label: "10y", seconds: 10 * 365 * 86400 }
+];
+function pickYahooRange(needSeconds, maxSpan) {
+  const want = Math.min(needSeconds, maxSpan);
+  for (const r of YAHOO_RANGES) {
+    if (r.seconds >= want && r.seconds <= maxSpan) return r.label;
+  }
+  const legal = YAHOO_RANGES.filter((r) => r.seconds <= maxSpan);
+  return legal.length ? legal[legal.length - 1].label : "1mo";
+}
+async function fetchYahoo(ticker, interval, need, end) {
+  const cfg = YAHOO_INTERVAL[interval];
+  const factor = cfg.intraday ? INTRADAY_FACTOR : DAILY_FACTOR;
+  const span = Math.min(need * cfg.baseSeconds * factor, cfg.maxSpan);
+  const url = end ? `${YAHOO_HOST}/v8/finance/chart/${encodeURIComponent(ticker)}?interval=${cfg.interval}&period1=${Math.max(0, Math.floor(end - span))}&period2=${Math.floor(end)}` : `${YAHOO_HOST}/v8/finance/chart/${encodeURIComponent(ticker)}?interval=${cfg.interval}&range=${pickYahooRange(span, cfg.maxSpan)}`;
+  let json;
+  try {
+    json = await getJson(url);
+  } catch (err) {
+    if (end && /\b422\b/.test(err.message)) return [];
+    throw err;
+  }
+  if (json.chart?.error) {
+    throw new Error(json.chart.error.description ?? "Yahoo \u56DE\u5831\u932F\u8AA4");
+  }
+  const result = json.chart?.result?.[0];
+  const ts = result?.timestamp;
+  const q = result?.indicators?.quote?.[0];
+  if (!ts?.length || !q) {
+    if (end) return [];
+    throw new Error("Yahoo \u56DE\u61C9\u6C92\u6709 K \u7DDA\u8CC7\u6599");
+  }
+  const out = [];
+  for (let i = 0; i < ts.length; i += 1) {
+    const o = q.open?.[i];
+    const h = q.high?.[i];
+    const l = q.low?.[i];
+    const c = q.close?.[i];
+    if (o == null || h == null || l == null || c == null) continue;
+    const k = { t: Number(ts[i]), o, h, l, c, v: Number(q.volume?.[i] ?? 0) };
+    if (sane(k)) out.push(k);
+  }
+  return out.sort((a, b2) => a.t - b2.t);
+}
+function hash32(s) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i += 1) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = a + 1831565813 >>> 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function simPrice(meta, t) {
+  const waves = [
+    [30 * 86400, 0.06],
+    [7 * 86400, 0.03],
+    [86400, 0.015],
+    [4 * 3600, 8e-3]
+  ];
+  let x = 0;
+  for (let k = 0; k < waves.length; k += 1) {
+    const [period, amp] = waves[k];
+    const phase = mulberry32(hash32(`${meta.symbol}:w${k}`))() * Math.PI * 2;
+    x += amp * Math.sin(2 * Math.PI * t / period + phase);
+  }
+  return meta.seed * Math.exp(x);
+}
+function simulate(meta, interval, need, end) {
+  const step = INTERVALS[interval];
+  const anchor = end ?? Math.floor(Date.now() / 1e3);
+  const lastBucket = Math.floor(anchor / step) * step;
+  const out = [];
+  for (let i = need - 1; i >= 0; i -= 1) {
+    const t = lastBucket - i * step;
+    const rnd = mulberry32(hash32(`${meta.symbol}:${t}`));
+    const o = simPrice(meta, t);
+    const c = simPrice(meta, t + step);
+    const h = Math.max(o, c) * (1 + rnd() * 18e-4);
+    const l = Math.min(o, c) * (1 - rnd() * 18e-4);
+    out.push({ t, o, h, l, c, v: Math.round(rnd() * 1e3) });
+  }
+  return out;
+}
+var cache = /* @__PURE__ */ new Map();
+var TTL_MS = {
+  "1m": 3e3,
+  "5m": 5e3,
+  "15m": 1e4,
+  "1h": 15e3,
+  "4h": 3e4,
+  "1d": 6e4
+};
+var HISTORY_TTL_MS = 10 * 6e4;
+var DISCLAIMER = "\u793A\u7BC4\u8CC7\u6599\u3002\u5716\u8868\u70BA\u5916\u90E8\u516C\u958B\u4F86\u6E90\u7684\u53C3\u8003\u884C\u60C5\uFF0C\u975E\u672C\u5E73\u53F0\u6210\u4EA4\u7D00\u9304\uFF1B\u958B\u5009 / \u5E73\u5009 / \u6E05\u7B97\u4E00\u5F8B\u4EE5\u93C8\u4E0A oracle index \u50F9\u7D50\u7B97\u3002";
+var UnknownMarketError = class extends Error {
+};
+var BadIntervalError = class extends Error {
+};
+async function getCandles(rawSymbol, rawInterval = "1h", rawLimit, rawEnd) {
+  const meta = resolveMarket(rawSymbol);
+  if (!meta) {
+    throw new UnknownMarketError(
+      `\u672A\u77E5\u6A19\u7684 "${rawSymbol}"\uFF0C\u53EF\u7528\uFF1A${MARKET_SYMBOLS.join(", ")}`
+    );
+  }
+  if (!isInterval(rawInterval)) {
+    throw new BadIntervalError(
+      `\u672A\u77E5\u6642\u9593\u6846 "${rawInterval}"\uFF0C\u53EF\u7528\uFF1A${INTERVAL_KEYS.join(", ")}`
+    );
+  }
+  const interval = rawInterval;
+  const parsed = Number(rawLimit ?? DEFAULT_LIMIT);
+  const limit = Number.isFinite(parsed) ? Math.max(1, Math.min(Math.floor(parsed), MAX_LIMIT)) : DEFAULT_LIMIT;
+  const parsedEnd = Number(rawEnd);
+  const end = rawEnd !== void 0 && Number.isFinite(parsedEnd) && parsedEnd > 0 ? Math.floor(parsedEnd) : void 0;
+  const key = `${meta.symbol}:${interval}:${limit}:${end ?? "now"}`;
+  const hit = cache.get(key);
+  const ttl = end === void 0 ? TTL_MS[interval] : HISTORY_TTL_MS;
+  if (hit && Date.now() - hit.at < ttl) {
+    return hit.payload;
+  }
+  const seconds = INTERVALS[interval];
+  const now = Math.floor(Date.now() / 1e3);
+  let candles = [];
+  let source = null;
+  let sourceError;
+  if (meta.bybit) {
+    try {
+      const raw2 = await fetchBybit(meta.bybit, interval, limit, end);
+      if (raw2.length) {
+        candles = raw2;
+        source = {
+          kind: "exchange",
+          name: "Bybit",
+          url: `https://www.bybit.com/trade/usdt/${meta.bybit}`,
+          attribution: `Bybit \xB7 ${meta.bybit} \u6C38\u7E8C\u5408\u7D04`,
+          reference: "perpetual",
+          fetchedAt: now
+        };
+      } else {
+        sourceError = "Bybit \u56DE\u61C9\u6C92\u6709\u53EF\u7528\u881F\u71ED";
+      }
+    } catch (err) {
+      sourceError = `Bybit: ${err.message}`;
+    }
+  }
+  if (!source && meta.coinbase) {
+    try {
+      const native = COINBASE_GRANULARITIES.includes(seconds);
+      const base2 = native ? seconds : 3600;
+      const need = native ? limit : limit * (seconds / base2);
+      const raw2 = await fetchCoinbase(meta.coinbase, base2, need, end);
+      const merged = native ? raw2 : aggregate(raw2, seconds);
+      if (merged.length) {
+        candles = merged;
+        source = {
+          kind: "exchange",
+          name: "Coinbase Exchange",
+          url: `https://exchange.coinbase.com/trade/${meta.coinbase}`,
+          attribution: `Coinbase Exchange \xB7 ${meta.coinbase} \u73FE\u8CA8`,
+          reference: "spot",
+          fetchedAt: now
+        };
+      } else {
+        sourceError = "Coinbase \u56DE\u61C9\u6C92\u6709\u53EF\u7528\u881F\u71ED";
+      }
+    } catch (err) {
+      sourceError = `Coinbase: ${err.message}`;
+    }
+  }
+  if (!source && meta.yahoo) {
+    try {
+      const native = interval !== "4h";
+      const need = native ? limit : limit * 4;
+      const raw2 = await fetchYahoo(meta.yahoo, interval, need, end);
+      const merged = native ? raw2 : aggregate(raw2, seconds);
+      if (merged.length) {
+        candles = merged;
+        source = {
+          kind: "delayed",
+          name: "Yahoo Finance",
+          url: `https://finance.yahoo.com/quote/${encodeURIComponent(meta.yahoo)}`,
+          attribution: `Yahoo Finance \xB7 ${meta.underlying}\uFF08\u975E\u5B98\u65B9\u7AEF\u9EDE\uFF0C\u5831\u50F9\u53EF\u80FD\u5EF6\u9072\uFF09`,
+          reference: "delayed quote",
+          fetchedAt: now
+        };
+      } else {
+        sourceError = "Yahoo \u56DE\u61C9\u6C92\u6709\u53EF\u7528\u881F\u71ED";
+      }
+    } catch (err) {
+      sourceError = `Yahoo: ${err.message}`;
+    }
+  }
+  let degraded = sourceError !== void 0;
+  let exhausted = false;
+  if (!source) {
+    if (end !== void 0) {
+      exhausted = true;
+      candles = [];
+      source = {
+        kind: "none",
+        name: "\u7121\u66F4\u65E9\u8CC7\u6599",
+        url: "",
+        attribution: "\u5DF2\u5230\u9054\u6B64\u4F86\u6E90\u7684\u6B77\u53F2\u4FDD\u7559\u4E0A\u9650",
+        reference: "none",
+        fetchedAt: now
+      };
+    } else {
+      degraded = true;
+      candles = simulate(meta, interval, limit, end);
+      source = {
+        kind: "simulated",
+        name: "\u6A21\u64EC\u8CC7\u6599",
+        url: "",
+        attribution: "SIMULATED \u2014 \u5916\u90E8\u884C\u60C5\u4F86\u6E90\u7121\u6CD5\u53D6\u5F97\uFF0C\u6B64\u5716\u70BA\u7A0B\u5F0F\u751F\u6210\uFF0C\u975E\u771F\u5BE6\u5E02\u5834\u50F9\u683C",
+        reference: "simulated",
+        fetchedAt: now
+      };
+    }
+  }
+  const windowed = end === void 0 ? candles : candles.filter((k) => k.t < end);
+  const payload = {
+    ok: true,
+    symbol: meta.symbol,
+    assetId: assetIdFor(meta.symbol),
+    underlying: meta.underlying,
+    interval,
+    candles: windowed.slice(-limit),
+    source,
+    ...degraded ? { degraded } : {},
+    // 上游有回東西、但整批都不早於 end（例如只回了那根包含式的邊界蠟燭），
+    // 過濾後就空了——對呼叫端而言同樣是「沒有更早的了」。
+    ...exhausted || end !== void 0 && windowed.length === 0 ? { exhausted: true } : {},
+    ...sourceError ? { sourceError } : {},
+    disclaimer: DISCLAIMER
+  };
+  cache.set(key, { at: Date.now(), payload });
+  return payload;
+}
+
 // src/app.ts
 var NETWORK = process.env.X402_NETWORK ?? "base-sepolia";
 var FACILITATOR_URL = process.env.X402_FACILITATOR_URL ?? "https://x402.org/facilitator";
 var PAY_TO = resolvePayTo(ADDRESSES.FeeRouter);
-var SETTLEMENT_TOKEN2 = process.env.X402_SETTLEMENT_TOKEN?.trim() || "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
+var SETTLEMENT_TOKEN2 = resolveSettlementToken();
 var PRICE_SIGNALS = 0.01;
 var PRICE_ORACLE = 5e-3;
 var DEFAULT_DEMO_TRADER = "0xE80A81360608C1342e66743F70a00f75d792Eb93";
 var provider = makeProvider();
 var contracts2 = makeContracts(provider);
+var VERIFIER_IS_EPHEMERAL = (() => {
+  const pk = process.env.VERIFIER_PRIVATE_KEY?.trim();
+  return !(pk && pk.startsWith("0x") && pk.length === 66);
+})();
 var VERIFIER_WALLET = (() => {
   const pk = process.env.VERIFIER_PRIVATE_KEY?.trim();
-  if (pk && pk.startsWith("0x") && pk.length === 66) return new ethers_exports.Wallet(pk);
+  if (!VERIFIER_IS_EPHEMERAL) return new ethers_exports.Wallet(pk);
   console.warn("[verifier] \u672A\u8A2D VERIFIER_PRIVATE_KEY \u2192 \u4F7F\u7528\u81E8\u6642\u96A8\u6A5F verifier\uFF1B\u6B63\u5F0F\u74B0\u5883\u8ACB\u56FA\u5B9A\u8A2D\u5B9A\u4EE5\u4FDD\u8EAB\u5206\u7A69\u5B9A\u3002");
   return ethers_exports.Wallet.createRandom();
 })();
+var PUBLIC_URL_ALLOWLIST = (process.env.SIGNAL_API_URL_ALLOWLIST ?? "").split(",").map((s) => s.trim().replace(/\/$/, "")).filter(Boolean);
+var FALLBACK_API_BASE_URL = "http://localhost:4021";
 function resolveApiBaseUrl(reqUrl) {
   const fromEnv = process.env.SIGNAL_API_PUBLIC_URL?.trim();
   if (fromEnv) return fromEnv.replace(/\/$/, "");
   try {
-    return new URL(reqUrl).origin;
+    const origin = new URL(reqUrl).origin;
+    if (PUBLIC_URL_ALLOWLIST.includes(origin)) return origin;
+    const host = new URL(origin).hostname;
+    if (host === "localhost" || host === "127.0.0.1") return origin;
   } catch {
-    return "http://localhost:4021";
   }
+  return FALLBACK_API_BASE_URL;
 }
 var ETV_TARGETS = [
   { label: "USDC (settlement)", address: SETTLEMENT_TOKEN2 },
@@ -58403,10 +58987,67 @@ var DEMO_COOLDOWN_MS = Number(process.env.DEMO_COOLDOWN_MS ?? "15000");
 var DEMO_MAX_BUYS = Number(process.env.DEMO_MAX_BUYS ?? "50");
 var lastBuyByIp = /* @__PURE__ */ new Map();
 var demoBuyCount = 0;
+function pruneIpMap(map, ttlMs, cap = 5e3) {
+  const now = Date.now();
+  for (const [k, t] of map) if (now - t > ttlMs) map.delete(k);
+  if (map.size > cap) {
+    const excess = map.size - cap;
+    let i = 0;
+    for (const k of map.keys()) {
+      map.delete(k);
+      if (++i >= excess) break;
+    }
+  }
+}
+function clientIp(c) {
+  return c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || c.req.header("x-real-ip") || "unknown";
+}
+var FREE_RATE_WINDOW_MS = Number(process.env.FREE_RATE_WINDOW_MS ?? "60000");
+var FREE_RATE_MAX = Number(process.env.FREE_RATE_MAX ?? "60");
+var freeHits = /* @__PURE__ */ new Map();
+function freeRateLimited(ip) {
+  const now = Date.now();
+  const e = freeHits.get(ip);
+  if (!e || now >= e.resetAt) {
+    freeHits.set(ip, { count: 1, resetAt: now + FREE_RATE_WINDOW_MS });
+    if (freeHits.size > 5e3) {
+      for (const [k, v] of freeHits) if (now >= v.resetAt) freeHits.delete(k);
+    }
+    return { limited: false, retryAfterSec: 0 };
+  }
+  e.count += 1;
+  if (e.count > FREE_RATE_MAX) {
+    return { limited: true, retryAfterSec: Math.ceil((e.resetAt - now) / 1e3) };
+  }
+  return { limited: false, retryAfterSec: 0 };
+}
+var CORS_ALLOWED_ORIGINS = (process.env.CORS_ALLOWED_ORIGINS ?? "http://localhost:5173,http://localhost:4173,https://pepelab-onchain-cfd-djot.vercel.app").split(",").map((s) => s.trim().replace(/\/$/, "")).filter(Boolean);
 function createApp() {
   const app2 = new Hono2();
   app2.use("*", cors({ origin: "*", allowMethods: ["GET", "POST", "OPTIONS"] }));
+  app2.use("/demo/*", async (c, next) => {
+    if (c.req.method === "OPTIONS") return next();
+    const origin = c.req.header("origin")?.replace(/\/$/, "");
+    if (origin && !CORS_ALLOWED_ORIGINS.includes(origin)) {
+      return c.json({ ok: false, error: `origin \u672A\u5728\u767D\u540D\u55AE\u5167\uFF1A${origin}` }, 403);
+    }
+    return next();
+  });
   app2.get("/healthz", (c) => c.text("ok"));
+  app2.use("*", async (c, next) => {
+    const p = c.req.path;
+    if (p === "/healthz") return next();
+    if (p.startsWith("/oracle/") || p.startsWith("/signals/")) return next();
+    const { limited, retryAfterSec } = freeRateLimited(clientIp(c));
+    if (limited) {
+      return c.json(
+        { ok: false, error: `rate limited \u2014 \u6BCF ${FREE_RATE_WINDOW_MS / 1e3}s \u4E0A\u9650 ${FREE_RATE_MAX} \u6B21\uFF0C\u8ACB ${retryAfterSec}s \u5F8C\u518D\u8A66` },
+        429,
+        { "Retry-After": String(retryAfterSec) }
+      );
+    }
+    return next();
+  });
   app2.get(
     "/",
     (c) => c.json({
@@ -58416,11 +59057,18 @@ function createApp() {
       network: NETWORK,
       asset: SETTLEMENT_TOKEN2,
       payTo: PAY_TO,
-      revenueModel: "FeeRouter 70/20/10 (trader/platform/vault), settled on-chain",
+      // 誠實描述金流：x402 的付款直接進 payTo，70/20/10 是平台事後另外送的一筆
+      // 交易。把兩者寫成同一件事會讓讀者以為買方付的那筆錢就是被分潤的那筆錢。
+      revenueModel: `x402 \u4ED8\u6B3E\u76F4\u63A5\u9032 payTo\uFF08${PAY_TO}\uFF09\uFF1B70/20/10 \u5206\u6F64\u7531\u5E73\u53F0\u53E6\u884C\u900F\u904E FeeRouter.routeExternalRevenue \u4E0A\u93C8\u7D50\u7B97\uFF0C\u7D2F\u8A08\u53EF\u65BC /revenue \u67E5\u8A62\u3002\u5169\u8005\u662F\u4E0D\u540C\u7684\u5169\u7B46\u4EA4\u6613\u3002`,
       endpoints: {
         "GET /signals/:trader": { price: `$${PRICE_SIGNALS}`, paid: true, desc: "trader \u7E3E\u6548 + \u958B\u5009\u5EFA\u8B70" },
-        "GET /oracle/:asset": { price: `$${PRICE_ORACLE}`, paid: true, desc: "\u6C7A\u7B56\u7D1A\u5FEB\u7167\uFF1A\u50F9\u683C / funding / OI \u5931\u8861 / \u9810\u4F30\u6E05\u7B97\u50F9 / edge \u5EFA\u8B70\uFF08long\xB7short\xB7no_trade\uFF09" },
+        "GET /oracle/:asset": { price: `$${PRICE_ORACLE}`, paid: true, desc: "\u6C7A\u7B56\u7D1A\u5FEB\u7167\uFF1A\u50F9\u683C / funding / OI \u5931\u8861 / \u9810\u4F30\u6E05\u7B97\u50F9 / edge \u5EFA\u8B70\uFF08long\xB7short\xB7no_trade\uFF09\u3002\u8207 /signals \u4E00\u6A23\u6703\u8D70 FeeRouter 70/20/10 \u7D50\u7B97\u4E26\u56DE settlementTx" },
         "GET /revenue": { price: "free", desc: "\u93C8\u4E0A 70/20/10 \u7D2F\u8A08\uFF08\u53EF\u9078 ?trader=\uFF09" },
+        "GET /candles/:symbol": {
+          price: "free",
+          desc: `K \u7DDA OHLCV\u3002?interval= \u9810\u8A2D 1h\uFF0C?limit= \u9810\u8A2D 300\uFF08\u4E0A\u9650 ${MAX_LIMIT}\uFF09\u3002\u56DE\u61C9\u5E36 source \u51FA\u8655\uFF0C\u5716\u8868\u9808\u6A19\u793A\u3002`,
+          intervals: INTERVAL_KEYS
+        },
         "GET /agent/:did/verification": { price: "free", desc: "ERC-8126 agent \u9A57\u8B49\uFF08ETV/SCV/WAV/WV + 0\u2013100 \u98A8\u96AA\u5206\u6578\uFF0Cverifier \u7C3D\u7AE0\uFF09" },
         "POST /demo/buy-signal": { price: "free", desc: "\u8A2A\u5BA2\u8A66\u8CB7\uFF08\u514D\u8CBB\u56DE\u8A0A\u865F\uFF1B\u771F\u5BE6 70/20/10 \u5206\u6F64\u898B\u4ED8\u8CBB x402 \u7AEF\u9EDE + /revenue \u7D2F\u8A08\uFF09" }
       },
@@ -58438,6 +59086,23 @@ function createApp() {
       return c.json({ ok: false, error: err.message }, 502);
     }
   });
+  app2.get("/candles/:symbol", async (c) => {
+    try {
+      const data4 = await getCandles(
+        c.req.param("symbol"),
+        c.req.query("interval") ?? "1h",
+        c.req.query("limit"),
+        // 往回翻頁：只回早於這個 unix 秒數的蠟燭。省略 = 最新的一段。
+        c.req.query("end")
+      );
+      return c.json(data4);
+    } catch (err) {
+      if (err instanceof UnknownMarketError || err instanceof BadIntervalError) {
+        return c.json({ ok: false, error: err.message }, 400);
+      }
+      return c.json({ ok: false, error: err.message }, 502);
+    }
+  });
   app2.get("/agent/:did/verification", async (c) => {
     const raw2 = c.req.param("did");
     try {
@@ -58452,6 +59117,9 @@ function createApp() {
         scvTargets: SCV_TARGETS,
         explorerApiKey: process.env.ETHERSCAN_API_KEY?.trim() || process.env.BASESCAN_API_KEY?.trim(),
         paidPath: "/oracle/sBTC",
+        // 誠實標示降級：未設 VERIFIER_PRIVATE_KEY 時每個實例一把隨機金鑰，
+        // 簽章仍真、但那個 verifier 身分無法被任何人 pin 住。
+        verifierEphemeral: VERIFIER_IS_EPHEMERAL,
         // 若伺服器持有的 session key 正好是此 agent，附上持有證明（WV）。
         holderSigner: (() => {
           const s = makeSigner(provider);
@@ -58469,8 +59137,9 @@ function createApp() {
     }
   });
   app2.post("/demo/buy-signal", async (c) => {
-    const ip = c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || c.req.header("x-real-ip") || "unknown";
+    const ip = clientIp(c);
     const now = Date.now();
+    pruneIpMap(lastBuyByIp, Math.max(DEMO_COOLDOWN_MS * 10, 6e5));
     const last = lastBuyByIp.get(ip) ?? 0;
     if (now - last < DEMO_COOLDOWN_MS) {
       return c.json(
@@ -58514,6 +59183,79 @@ function createApp() {
       return c.json({ ok: false, error: err.message }, 400);
     }
   });
+  app2.use("/oracle/*", async (c, next) => {
+    const asset = decodeURIComponent(c.req.path.split("/")[2] ?? "");
+    if (!asset) {
+      return c.json({ ok: false, error: "\u7F3A\u5C11\u8CC7\u7522\u4EE3\u865F\uFF0C\u4F8B\u5982 /oracle/sBTC" }, 400);
+    }
+    if (!(asset in ASSET_IDS)) {
+      return c.json(
+        {
+          ok: false,
+          error: `\u672A\u77E5\u8CC7\u7522 "${asset}"`,
+          known: Object.keys(ASSET_IDS),
+          note: "\u672A\u4ED8\u6B3E\uFF1A\u7121\u6548\u8F38\u5165\u5728 x402 \u4ED8\u8CBB\u7246\u4E4B\u524D\u5C31\u88AB\u64CB\u4E0B\uFF08x402 \u7121\u9000\u8CBB\u6A5F\u5236\uFF09\u3002"
+        },
+        400
+      );
+    }
+    return next();
+  });
+  app2.use("/signals/*", async (c, next) => {
+    const trader = decodeURIComponent(c.req.path.split("/")[2] ?? "");
+    if (!/^0x[0-9a-fA-F]{40}$/.test(trader)) {
+      return c.json(
+        {
+          ok: false,
+          error: `\u4E0D\u662F\u5408\u6CD5\u7684 EVM \u5730\u5740\uFF1A"${trader}"`,
+          note: "\u672A\u4ED8\u6B3E\uFF1A\u7121\u6548\u8F38\u5165\u5728 x402 \u4ED8\u8CBB\u7246\u4E4B\u524D\u5C31\u88AB\u64CB\u4E0B\uFF08x402 \u7121\u9000\u8CBB\u6A5F\u5236\uFF09\u3002"
+        },
+        400
+      );
+    }
+    if (/^0x0{40}$/.test(trader)) {
+      return c.json(
+        {
+          ok: false,
+          error: "trader \u4E0D\u53EF\u70BA\u96F6\u5730\u5740\uFF0870% \u5206\u6F64\u6703\u88AB\u9001\u9032\u9ED1\u6D1E\uFF09\u3002",
+          note: "\u672A\u4ED8\u6B3E\uFF1A\u7121\u6548\u8F38\u5165\u5728 x402 \u4ED8\u8CBB\u7246\u4E4B\u524D\u5C31\u88AB\u64CB\u4E0B\u3002"
+        },
+        400
+      );
+    }
+    return next();
+  });
+  app2.use("/oracle/*", async (c, next) => {
+    const asset = c.req.path.split("/")[2];
+    if (!asset) return next();
+    try {
+      const assetId = assetIdOf(asset);
+      const [[, updatedAt], maxPriceAge] = await Promise.all([
+        contracts2.oracle.getPrice(assetId),
+        contracts2.perp.maxPriceAge()
+      ]);
+      const tf = classifyTradeFreshness({
+        updatedAtSec: Number(updatedAt),
+        nowSec: Math.floor(Date.now() / 1e3),
+        maxPriceAgeSec: Number(maxPriceAge)
+      });
+      if (!tf.fresh) {
+        return c.json(
+          {
+            ok: false,
+            error: "price_stale",
+            message: `${asset} \u7684\u93C8\u4E0A\u50F9\u683C\u5DF2 ${Math.round(tf.ageSec / 3600)} \u5C0F\u6642\u672A\u66F4\u65B0\uFF0C\u8D85\u904E\u4EA4\u6613\u6240\u7684 maxPriceAge\uFF08${tf.maxPriceAgeSec} \u79D2\uFF09\u3002\u6B64\u6642\u958B\u5009\u6703 revert StalePrice\uFF0C\u6545\u4E0D\u8CA9\u552E\u9019\u4EFD\u5FEB\u7167\u3002`,
+            asset,
+            ageSec: tf.ageSec,
+            maxPriceAgeSec: tf.maxPriceAgeSec
+          },
+          503
+        );
+      }
+    } catch {
+    }
+    return next();
+  });
   app2.use(
     paymentMiddleware(
       PAY_TO,
@@ -58554,7 +59296,21 @@ function createApp() {
     const asset = c.req.param("asset");
     try {
       const snap = await getOracleSnapshot(contracts2, asset);
-      return c.json(jsonSafe({ ok: true, data: snap }));
+      let settlementTx;
+      let settleError;
+      if (isSettlementEnabled()) {
+        try {
+          const beneficiary = await resolveTrader();
+          const r = await settleRevenue(beneficiary, PRICE_ORACLE);
+          if (r.status === "settled") settlementTx = r.tx;
+          else settleError = r.error;
+        } catch (e) {
+          settleError = e.message;
+        }
+      }
+      return c.json(
+        jsonSafe({ ok: true, settled: !!settlementTx, data: snap, settlementTx, settleError })
+      );
     } catch (err) {
       return c.json({ ok: false, error: err.message }, 400);
     }
@@ -58565,9 +59321,19 @@ function createApp() {
 // src/vercel-entry.ts
 loadEnv();
 var app = createApp();
-var vercel_entry_default = handle(app);
+var inner = handle(app);
+function handler(req, res) {
+  const proto = String(req.headers["x-forwarded-proto"] ?? "");
+  if (proto.includes("https") && req.socket && !req.socket.encrypted) {
+    Object.defineProperty(req.socket, "encrypted", {
+      value: true,
+      configurable: true
+    });
+  }
+  return inner(req, res);
+}
 export {
-  vercel_entry_default as default
+  handler as default
 };
 /*! Bundled license information:
 

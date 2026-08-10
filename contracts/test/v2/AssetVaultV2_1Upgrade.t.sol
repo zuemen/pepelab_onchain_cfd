@@ -137,10 +137,16 @@ contract AssetVaultV2_1UpgradeTest is Test {
         AssetVaultV2_1 v = _upgrade();
         assertFalse(v.ratioIsStale());
 
+        uint256 fresh = v.outstandingValue();
+
         vm.warp(block.timestamp + 2 hours);
         (uint256 total, uint256 unpriced) = v.outstandingValueDetailed();
-        assertEq(total, 0);        // nothing could be priced
-        assertEq(unpriced, 1);     // and it is counted, not silently dropped
+        // M-7: previously `total` collapsed to 0 here — the unpriceable asset was
+        // dropped from the liability, which is what made the mint gate optimistic.
+        // It is now marked to the last price the vault transacted on, so the
+        // liability survives the outage instead of disappearing.
+        assertEq(total, fresh);    // still counted, at its last known price
+        assertEq(unpriced, 1);     // and flagged, so callers know it is an estimate
         assertTrue(v.ratioIsStale());
     }
 

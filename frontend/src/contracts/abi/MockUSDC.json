@@ -480,12 +480,28 @@
   },
   {
     "type": "error",
+    "name": "FaucetCallerMustBeEOA",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "FaucetCooldown",
     "inputs": [
       {
         "name": "nextAvailable",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NotMinter",
+    "inputs": [
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
       }
     ]
   },

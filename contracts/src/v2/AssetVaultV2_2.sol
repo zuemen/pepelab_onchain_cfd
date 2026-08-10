@@ -136,8 +136,19 @@ contract AssetVaultV2_2 is
     function assetToken(bytes32 assetId) public view returns (address) { return _assetToken[assetId]; }
     function exposureOf(bytes32 assetId) public view returns (uint256) { return _outstanding[assetId]; }
 
+    /// @dev M-5: re-pointing an asset id at a DIFFERENT token while units are
+    ///      still outstanding strands every holder — `redeem` burns from the new
+    ///      token, which they do not hold, while `_outstanding` keeps recording
+    ///      the old liability. `unregisterAsset` already refuses in that state;
+    ///      this closes the same hole on the way in. Same-token re-registration
+    ///      stays allowed (idempotent re-wiring).
     function registerAsset(bytes32 assetId, address token) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (token == address(0)) revert InvalidParam();
+        address current = _assetToken[assetId];
+        if (current != address(0) && current != token) {
+            uint256 out = _outstanding[assetId];
+            if (out != 0) revert AssetStillOutstanding(assetId, out);
+        }
         if (_assetToken[assetId] == address(0)) {
             if (_assetIds.length >= MAX_REGISTERED_ASSETS) {
                 revert TooManyAssets(MAX_REGISTERED_ASSETS);

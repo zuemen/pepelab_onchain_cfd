@@ -41,15 +41,11 @@ export const paths = {
     },
   },
   // DASHBOARD
+  // 只剩 root（= pepefi 的 /dashboard，真的有掛載）。two/three/group/* 對應的是
+  // 範本留下的 routes/sections/dashboard.tsx，那份路由從來沒有被掛進 routesSection，
+  // 卻讓 pages/dashboard/* 六個範本頁一直被打包進去。整組已移除。
   dashboard: {
     root: ROOTS.DASHBOARD,
-    two: `${ROOTS.DASHBOARD}/two`,
-    three: `${ROOTS.DASHBOARD}/three`,
-    group: {
-      root: `${ROOTS.DASHBOARD}/group`,
-      five: `${ROOTS.DASHBOARD}/group/five`,
-      six: `${ROOTS.DASHBOARD}/group/six`,
-    },
   },
   // PEPEFI — root-level paths matching pepelab App.tsx
   pepefi: {
