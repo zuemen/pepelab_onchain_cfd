@@ -1,4 +1,4 @@
-import type { FundingInfo } from 'src/hooks/useFundingData'
+import type { ActivityRow } from 'src/hooks/useMarketActivity'
 
 import { useState } from 'react'
 
@@ -7,50 +7,73 @@ import Tooltip from '@mui/material/Tooltip'
 
 import { useOrderBook, useRecentTrades } from 'src/hooks/useBybitMarket'
 
-import { fNum, fBps, fromUnits } from 'src/lib/pepefi/format'
 import { BYBIT_ATTRIBUTION } from 'src/lib/pepefi/bybitMarket'
 
 import { OrderBook } from './OrderBook'
 import { RecentTrades } from './RecentTrades'
+import { MarketActivity } from './MarketActivity'
 import { C, panel, monoCss, labelCss } from '../terminal-theme'
 
-type Tab = 'book' | 'trades'
+type Tab = 'activity' | 'book' | 'trades'
 
 /**
- * 盤口面板：訂單簿 / 近期成交。
+ * 市場面板。
  *
- * 兩件事值得說清楚：
+ * 主分頁是 **Activity：這個標的在鏈上的真實部位活動**（全平台的，不只自己的）。
  *
- * 1. 資料是 Bybit 的公開盤口，**不是本平台的掛單**。本平台是 oracle 計價永續，
- *    沒有自己的訂單簿——成交價由 oracle 決定，不是跟這些掛單撮合出來的。所以這
- *    一區只能當參考，標示必須明講。
+ * 這裡原本是 Bybit 的訂單簿。換掉的理由不是美觀：
+ *   1. 本平台是 oracle 計價永續，**沒有掛單簿**——成交價由 oracle 決定，不是跟
+ *      那些掛單撮合出來的。拿別人的盤口當主角，等於把不相干的東西放在最顯眼的
+ *      位置。
+ *   2. Bybit 只有 sBTC / sETH 對得上，另外九個標的永遠是空的。而鏈上的部位資料
+ *      11 個標的都有。
  *
- * 2. 非加密貨幣（股票 / ETF / 商品）在 Bybit 沒有對應合約，沒有盤口可顯示。那時
- *    改show 鏈上的 OI 與 funding——那才是這些標的真正有的市場資訊。
+ * Bybit 沒有整個拿掉——對加密貨幣它仍是有意義的外部參考，所以降級成次要分頁，
+ * 並在標題列標明來源。非加密貨幣則根本不顯示那兩個分頁，而不是留著空殼。
  */
 export function BookPanel({
   bybitSymbol,
-  funding,
+  symbol,
+  activity,
   active,
   split = false,
 }: {
   bybitSymbol?: string
-  funding?: FundingInfo
+  /** 顯示用的標的代號，例如 sBTC。 */
+  symbol?: string
+  activity: {
+    rows: ActivityRow[]
+    loading: boolean
+    error: string | null
+    truncated: boolean
+    missed: number
+  }
   /** 面板是否可見。收在分頁裡沒展開時傳 false，輪詢就不會建立。 */
   active: boolean
   /**
-   * 併排模式：訂單簿與近期成交左右並列，取代分頁。
+   * 併排模式：左邊活動、右邊盤口。
    *
-   * 給「面板在圖表下方、寬度很寬」的情況用。那個位置只放一個兩欄數字的訂單簿，
-   * 右邊會空出一大片，看起來像版面壞掉；併排才用得掉那個寬度。
+   * 給「面板在圖表下方、寬度很寬」的情況用——單欄內容撐不滿那個寬度，右邊會空
+   * 出一大片看起來像版面壞掉。沒有 Bybit 對照的標的維持單欄，因為右邊沒東西放。
    */
   split?: boolean
 }) {
-  const [tab, setTab] = useState<Tab>('book')
+  const [tab, setTab] = useState<Tab>('activity')
 
-  // 併排時兩邊都要資料；分頁模式只有當前那頁要。
-  const book = useOrderBook(bybitSymbol, active && (split || tab === 'book'))
-  const trades = useRecentTrades(bybitSymbol, active && (split || tab === 'trades'))
+  const hasRef = !!bybitSymbol
+  // split 時右欄固定顯示訂單簿，所以那時候 book 一定要有資料。
+  const book = useOrderBook(bybitSymbol, active && hasRef && (split || tab === 'book'))
+  const trades = useRecentTrades(bybitSymbol, active && hasRef && !split && tab === 'trades')
+
+  const tabs: [Tab, string][] = hasRef
+    ? split
+      ? [['activity', 'Activity']]
+      : [
+          ['activity', 'Activity'],
+          ['book', 'Order book'],
+          ['trades', 'Trades'],
+        ]
+    : [['activity', 'Activity']]
 
   return (
     <Box
@@ -77,18 +100,12 @@ export function BookPanel({
           borderBottom: `1px solid ${C.line}`,
         }}
       >
-        {split ? (
-          // 併排模式沒有分頁可切，標題就直接寫兩邊是什麼。
+        {tabs.length === 1 ? (
           <Box sx={{ ...labelCss, fontSize: 10, color: C.mut }}>
-            Order book · Trades
+            {split ? 'On-chain activity · Order book' : 'On-chain activity'}
           </Box>
         ) : (
-          (
-            [
-              ['book', 'Order book'],
-              ['trades', 'Trades'],
-            ] as const
-          ).map(([id, text]) => {
+          tabs.map(([id, text]) => {
             const on = tab === id
             return (
               <Box
@@ -117,7 +134,8 @@ export function BookPanel({
           })
         )}
 
-        {bybitSymbol && (
+        {/* 出處只在真的顯示 Bybit 資料時才標，免得在純鏈上分頁誤導成資料來自 Bybit。 */}
+        {hasRef && (split || tab !== 'activity') && (
           <Tooltip title={BYBIT_ATTRIBUTION} arrow>
             <Box
               component="a"
@@ -134,17 +152,18 @@ export function BookPanel({
                 '&:hover': { color: C.ink },
               }}
             >
-              ● Bybit
+              ● Bybit 參考
             </Box>
           </Tooltip>
         )}
+        {tab === 'activity' && !split && (
+          <Box sx={{ ml: 'auto', ...monoCss, fontSize: 9.5, color: C.mut, whiteSpace: 'nowrap' }}>
+            ● 鏈上
+          </Box>
+        )}
       </Box>
 
-      {!bybitSymbol ? (
-        <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', py: 1 }}>
-          <NoBook funding={funding} />
-        </Box>
-      ) : split ? (
+      {split && hasRef ? (
         <Box
           sx={{
             flex: 1,
@@ -155,67 +174,17 @@ export function BookPanel({
           }}
         >
           <Box sx={{ minHeight: 0, overflowY: 'auto', py: 1, borderRight: `1px solid ${C.line}` }}>
-            <OrderBook book={book.data} loading={book.loading} />
+            <MarketActivity {...activity} symbol={symbol} />
           </Box>
           <Box sx={{ minHeight: 0, overflowY: 'auto', py: 1 }}>
-            <RecentTrades trades={trades.data} loading={trades.loading} />
+            <OrderBook book={book.data} loading={book.loading} />
           </Box>
         </Box>
       ) : (
         <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', py: 1 }}>
-          {tab === 'book' ? (
-            <OrderBook book={book.data} loading={book.loading} />
-          ) : (
-            <RecentTrades trades={trades.data} loading={trades.loading} />
-          )}
-        </Box>
-      )}
-    </Box>
-  )
-}
-
-/** 沒有公開盤口的標的：改顯示鏈上真正有的市場資訊。 */
-function NoBook({ funding }: { funding?: FundingInfo }) {
-  const longOI = funding ? fromUnits(funding.longOI, 18) : null
-  const shortOI = funding ? fromUnits(funding.shortOI, 18) : null
-  const total = longOI !== null && shortOI !== null ? longOI + shortOI : 0
-  const longPct = total > 0 ? ((longOI as number) / total) * 100 : 50
-
-  return (
-    <Box sx={{ px: 1.4, py: 1 }}>
-      <Box sx={{ ...monoCss, fontSize: 11, color: C.mut, lineHeight: 1.6, mb: 1.5 }}>
-        此標的無公開盤口可對照。本平台為 oracle 計價永續，成交價由 oracle 決定，
-        不經掛單撮合——以下為鏈上實際的持倉分布。
-      </Box>
-
-      {funding ? (
-        <>
-          <Box sx={{ ...labelCss, fontSize: 9.5, mb: 0.6 }}>Open interest L/S</Box>
-          <Box sx={{ display: 'flex', height: 8, borderRadius: '4px', overflow: 'hidden', mb: 0.8 }}>
-            <Box sx={{ width: `${longPct}%`, bgcolor: C.green }} />
-            <Box sx={{ width: `${100 - longPct}%`, bgcolor: C.red }} />
-          </Box>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', ...monoCss, fontSize: 11.5, mb: 1.5 }}>
-            <Box sx={{ color: C.green }}>L {fNum(longOI as number, { dp: 2 })}</Box>
-            <Box sx={{ color: C.red }}>{fNum(shortOI as number, { dp: 2 })} S</Box>
-          </Box>
-
-          <Box sx={{ ...labelCss, fontSize: 9.5, mb: 0.4 }}>Funding (8h)</Box>
-          <Box
-            sx={{
-              ...monoCss,
-              fontSize: 13,
-              fontWeight: 700,
-              color: Number(funding.rate) > 0 ? C.red : Number(funding.rate) < 0 ? C.green : C.mut,
-            }}
-          >
-            {Number(funding.rate) >= 0 ? '+' : ''}
-            {fBps(Number(funding.rate), 4)}
-          </Box>
-        </>
-      ) : (
-        <Box sx={{ ...monoCss, fontSize: 11.5, color: C.mut }}>
-          此標的尚無鏈上 funding / OI 資料。
+          {tab === 'activity' && <MarketActivity {...activity} symbol={symbol} />}
+          {tab === 'book' && <OrderBook book={book.data} loading={book.loading} />}
+          {tab === 'trades' && <RecentTrades trades={trades.data} loading={trades.loading} />}
         </Box>
       )}
     </Box>

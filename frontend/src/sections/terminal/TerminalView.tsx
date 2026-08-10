@@ -11,7 +11,9 @@ import { useContracts } from 'src/hooks/useContracts'
 import { useStablecoin } from 'src/hooks/useStablecoin'
 import { useLivePrices } from 'src/hooks/useLivePrices'
 import { useFundingData } from 'src/hooks/useFundingData'
+import { useVaultBacking } from 'src/hooks/useVaultBacking'
 import { useTerminalLayout } from 'src/hooks/useTerminalLayout'
+import { useMarketActivity } from 'src/hooks/useMarketActivity'
 import { useTerminalAccount } from 'src/hooks/useTerminalAccount'
 
 import { ASSET_IDS } from 'src/contracts/addresses'
@@ -76,6 +78,10 @@ export function TerminalView() {
   // 只有加密貨幣在 Bybit 有對應永續合約可以對照盤口；其餘標的拿到 undefined，
   // BookPanel 會改顯示鏈上的 OI / funding。
   const bybitSymbol = bybitSymbolFor(meta?.symbol)
+
+  // 這個標的在鏈上的實際部位活動（全平台，不只自己的），取代原本借用的 Bybit 盤口。
+  const activity = useMarketActivity(contracts, selAsset)
+  const { assets: vaultAssets } = useVaultBacking(contracts)
 
   const notify = useCallback((msg: string, ok: boolean) => {
     setToast({ msg, ok })
@@ -164,6 +170,7 @@ export function TerminalView() {
         rate={rate}
         funding={fi}
         priceInfo={live[selAsset]}
+        vaultAssets={vaultAssets}
       />
 
       {/* 版面分級。欄寬一律用 minmax(0, …)：1fr 的隱含最小值是 min-content，圖表
@@ -185,7 +192,12 @@ export function TerminalView() {
       >
         {layout.bookAsColumn && (
           <Box sx={{ height: 520, display: 'flex' }}>
-            <BookPanel bybitSymbol={bybitSymbol} funding={fi} active />
+            <BookPanel
+              bybitSymbol={bybitSymbol}
+              symbol={meta?.symbol}
+              activity={activity}
+              active
+            />
           </Box>
         )}
 
@@ -202,7 +214,13 @@ export function TerminalView() {
               這個位置很寬，所以改成訂單簿與成交併排，否則右邊會空一大片。 */}
           {!layout.bookAsColumn && (
             <Box sx={{ height: 380, display: 'flex' }}>
-              <BookPanel bybitSymbol={bybitSymbol} funding={fi} active split />
+              <BookPanel
+                bybitSymbol={bybitSymbol}
+                symbol={meta?.symbol}
+                activity={activity}
+                active
+                split
+              />
             </Box>
           )}
         </Box>

@@ -1,15 +1,20 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { Contract } from 'ethers'
 import { ASSET_IDS } from 'src/contracts/addresses'
+import { mapLimit, RPC_CONCURRENCY } from 'src/lib/pepefi/rpcBatch'
 
 type AssetId = `0x${string}`
 
-const ASSETS: { label: string; id: AssetId }[] = [
-  { label: 'sBTC',  id: ASSET_IDS.sBTC  },
-  { label: 'sETH',  id: ASSET_IDS.sETH  },
-  { label: 'sAAPL', id: ASSET_IDS.sAAPL },
-  { label: 'sTSLA', id: ASSET_IDS.sTSLA },
-]
+/**
+ * 從 ASSET_IDS 推導，不要手寫清單。
+ *
+ * 舊版只列了四個標的，於是另外七個在 UI 上永遠顯示「—」或「尚無鏈上資料」——
+ * 但鏈上其實有：實測 sMSFT 多單 1,360 / 空單 300、funding 47 bps，sGOLD 多單
+ * 7,260。空白不是資料不存在，是前端沒去讀。新增標的時也不必再回來補這裡。
+ */
+const ASSETS: { label: string; id: AssetId }[] = Object.entries(ASSET_IDS).map(
+  ([label, id]) => ({ label, id: id as AssetId }),
+)
 
 export interface FundingInfo {
   label:           string
@@ -33,8 +38,13 @@ export function useFundingData(exchange: Contract | null): FundingData {
       const now      = BigInt(Math.floor(Date.now() / 1000))
       const interval = (await exchange.FUNDING_INTERVAL()) as bigint
 
-      const entries = await Promise.all(
-        ASSETS.map(async (a): Promise<[string, FundingInfo] | null> => {
+      // 逐個標的限流，而不是 11 個標的 × 5 個呼叫一次全部送出（= 55 個併發，
+      // 落在公開 RPC 會開始丟包的區間）。每個標的內部的 5 個呼叫仍然併發，
+      // 所以實際同時在飛的大約是 RPC_CONCURRENCY × 5。
+      const entries = await mapLimit(
+        ASSETS,
+        Math.max(1, Math.floor(RPC_CONCURRENCY / 2)),
+        async (a): Promise<[string, FundingInfo] | null> => {
           try {
             const [rate, longOI, shortOI, lastSettled, cumIdx] = await Promise.all([
               exchange.getFundingRate(a.id)           as Promise<bigint>,
@@ -54,7 +64,7 @@ export function useFundingData(exchange: Contract | null): FundingData {
               interval,
             }]
           } catch { return null }
-        })
+        },
       )
       setData(Object.fromEntries(entries.filter((e): e is [string, FundingInfo] => e !== null)))
     } catch (e) {

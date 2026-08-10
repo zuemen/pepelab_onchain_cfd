@@ -20,6 +20,7 @@ export function MarketStatsBar({
   rate,
   funding,
   priceInfo,
+  vaultAssets,
 }: {
   meta?: AssetMeta
   livePx?: number
@@ -31,6 +32,8 @@ export function MarketStatsBar({
   rate: number
   funding?: FundingInfo
   priceInfo?: LivePrice
+  /** InsuranceVault 資產（18 dp）。null = 讀不到或未部署。 */
+  vaultAssets?: bigint | null
 }) {
   return (
     <Box
@@ -93,6 +96,13 @@ export function MarketStatsBar({
             ? `${fNum(fromUnits(funding.longOI, 18), { dp: 1 })} / ${fNum(fromUnits(funding.shortOI, 18), { dp: 1 })}`
             : '—'
         }
+      />
+      {/* 保險金庫的規模＝極端行情下的兜底資金。null（讀不到／未部署）顯示 '—'，
+          0 就顯示 $0——一個沒有後盾的永續平台，使用者有權在下單前看到。 */}
+      <Stat
+        label="Vault backing"
+        v={vaultAssets == null ? '—' : fUsd(fromUnits(vaultAssets, 18))}
+        color={vaultAssets === 0n ? C.red : undefined}
       />
 
       {/*
