@@ -24,8 +24,8 @@ export const accountNavData = (address?: string | null): AccountDrawerProps['dat
     icon: <Iconify icon="custom:invoice-duotone" />,
   },
   {
-    label: 'My Wardrobe & Clothes (尊貴更衣室)',
-    href: '#gamefi-wardrobe',
+    label: 'My Mounts (尊貴坐騎)',
+    href: '#gamefi-mounts',
     icon: <Iconify icon="solar:settings-bold-duotone" />,
   },
   {

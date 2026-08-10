@@ -50,3 +50,9 @@ Thumbs.db
 # Telegram agent secrets（勿入庫）
 agent/.env
 agent/tg-bot/vc.json
+
+# Source artwork for the GameFi frog: 1254px PNGs, ~126MB.
+# The shipped assets are the cut-out WebP under frontend/public/, regenerated
+# from these by frontend/scripts/import-skins.py. Keeping the originals out of
+# git history — they live in the artist's own folders.
+frontend/assets-src/
