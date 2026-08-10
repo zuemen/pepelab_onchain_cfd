@@ -8,7 +8,6 @@ import Card from '@mui/material/Card';
 import Stack from '@mui/material/Stack';
 import Dialog from '@mui/material/Dialog';
 import Button from '@mui/material/Button';
-import Avatar from '@mui/material/Avatar';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import LinearProgress from '@mui/material/LinearProgress';
@@ -19,7 +18,15 @@ import { useContracts } from 'src/hooks/useContracts';
 import { usePepefiWallet } from 'src/layouts/pepefi';
 import { Iconify } from 'src/components/iconify';
 import { useToast } from 'src/components/pepefi/ToastProvider';
-import { PEPE_SKINS, PepeSkin } from 'src/components/pepefi/pepeSkinsData';
+import { StageSkin, getStageSkins, findStageSkin } from 'src/components/pepefi/pepeStageSkinsData';
+import { PEPE_MOUNTS, getMount, getNextMount } from 'src/components/pepefi/pepeMountsData';
+import PepeEvolution, {
+  PEPE_EVOLUTION_STAGES,
+  PepeEvolutionHero,
+  PepeEvolutionStage,
+  getEvolutionStage,
+  getNextEvolutionStage,
+} from 'src/components/pepefi/PepeEvolution';
 
 // ── Types & Assets ─────────────────────────────────────────────────────────────
 
@@ -29,30 +36,20 @@ const POTIONS = [
   { id: 'moon', name: 'Moon Potion (登月藥水)', desc: '獲得登月火箭背包，直接獲得 +500 XP！', cost: 800, xp: 500, color: '#2196f3', emoji: '🚀' },
 ];
 
-const CLOTHES = [
-  { id: 'none', name: 'Original Look (經典皮衣)', cost: 0, levelRequired: 1, emoji: '🐸', desc: '原汁原味的佩佩蛙經典造型。' },
-  { id: 'suit', name: 'Merchant Suit (交易員西裝)', cost: 200, levelRequired: 5, emoji: '👔', desc: '穿上極具專業感的明星交易員西服。' },
-  { id: 'cape', name: 'Royal Cape (黃金蛙皇披風)', cost: 500, levelRequired: 15, emoji: '👑', desc: '披上金光璀璨的皇家王者金披風。' },
-  { id: 'astronaut', name: 'Astronaut Suit (登月太空衣)', cost: 1000, levelRequired: 30, emoji: '👨‍🚀', desc: '配備最硬核的火箭噴射登月太空服飾。' },
-];
-
 // ── Helper Title ──────────────────────────────────────────────────────────────
 
-const getTitleByLevel = (lvl: number) => {
-  if (lvl >= 30) return 'Supreme DeFi Space Lord 🌌';
-  if (lvl >= 15) return 'Gold Emperor Pepe 👑';
-  if (lvl >= 8)  return 'Elite Chad Trader 💼';
-  return 'Starter Green Frog 🐸';
-};
+// Title now comes from the evolution stage so the text and the artwork can
+// never drift apart.
+const getTitleByLevel = (lvl: number) => getEvolutionStage(lvl).title;
 
 interface PepeGameFiModalProps {
   open: boolean;
   onClose: () => void;
-  defaultTab?: 'potions' | 'wardrobe' | 'skins';
+  defaultTab?: 'potions' | 'mounts' | 'skins';
 }
 
 export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' }: PepeGameFiModalProps) {
-  const [tabValue, setTabValue] = useState<'potions' | 'wardrobe' | 'skins'>('potions');
+  const [tabValue, setTabValue] = useState<'potions' | 'mounts' | 'skins'>('potions');
   const { notify, confirm } = useToast();
   const wallet = useWalletContext();
   const userAddress = wallet.address || 'mock_user';
@@ -78,15 +75,30 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
   const [pepeBal, setPepeBal] = useState<number>(5000);
   const [xp, setXp] = useState<number>(0);
   const [level, setLevel] = useState<number>(1);
-  const [activeClothes, setActiveClothes] = useState<string>('none');
-  
-  // Custom Skins and Avatars
-  const [unlockedSkins, setUnlockedSkins] = useState<string[]>(['none']);
-  const [activeSkin, setActiveSkin] = useState<string>('/avatars/pepe-01.png');
+  // The mount and the skin are independent slots: you ride something *and* wear
+  // something. (The old wardrobe conflated the two behind one 'custom_skin'
+  // sentinel.) Everyone starts on the lotus leaf.
+  const [activeMount, setActiveMount] = useState<string>('leaf');
+
+  // Skins are per-evolution-stage; an unlocked id stays owned across stages.
+  const [unlockedSkins, setUnlockedSkins] = useState<string[]>([]);
+  const [activeSkin, setActiveSkin] = useState<string>('');
 
   // Gachapon state
   const [isDrawing, setIsDrawing] = useState<boolean>(false);
-  const [drawResult, setDrawResult] = useState<PepeSkin | null>(null);
+  const [drawResult, setDrawResult] = useState<StageSkin | null>(null);
+
+  // Evolution celebration. Driven from buyPotion rather than from a level
+  // watcher: the modal reloads its level from localStorage every time it opens,
+  // so a watcher would fire a bogus "evolved!" burst on each open.
+  const [evolvedTo, setEvolvedTo] = useState<PepeEvolutionStage | null>(null);
+  const [heroEvolving, setHeroEvolving] = useState<boolean>(false);
+
+  const celebrateEvolution = (next: PepeEvolutionStage) => {
+    setEvolvedTo(next);
+    setHeroEvolving(true);
+    window.setTimeout(() => setHeroEvolving(false), 1200);
+  };
 
   // Load from storage
   useEffect(() => {
@@ -94,31 +106,37 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
       const savedBal = localStorage.getItem('pepefi:gamefi:balance');
       const savedXp  = localStorage.getItem('pepefi:gamefi:xp');
       const savedLvl = localStorage.getItem('pepefi:gamefi:level');
-      const savedClo = localStorage.getItem('pepefi:gamefi:active_clothes');
-      
+      const savedMnt = localStorage.getItem('pepefi:gamefi:active_mount');
+
       const savedUnl = localStorage.getItem('pepefi:gamefi:unlocked_skins');
       const savedAsk = localStorage.getItem('pepefi:gamefi:active_skin');
 
       if (savedBal) setPepeBal(Number(savedBal));
       if (savedXp)  setXp(Number(savedXp));
       if (savedLvl) setLevel(Number(savedLvl));
-      if (savedClo) setActiveClothes(savedClo);
+      if (savedMnt) setActiveMount(savedMnt);
 
-      if (savedUnl) {
-        setUnlockedSkins(JSON.parse(savedUnl));
-      } else {
-        setUnlockedSkins(['none']);
-      }
-      if (savedAsk) setActiveSkin(savedAsk);
+      setUnlockedSkins(savedUnl ? JSON.parse(savedUnl) : []);
+      setActiveSkin(savedAsk || '');
+
+      // Re-derive the shared avatar on open rather than only on save. It is a
+      // raw image path consumed by other components, so a value written by an
+      // older build can point at a file this one no longer serves; recomputing
+      // here heals it without waiting for the next purchase.
+      const skin = savedAsk ? findStageSkin(savedAsk) : undefined;
+      localStorage.setItem(
+        `pepeAvatar_${userAddress.toLowerCase()}`,
+        skin ? skin.image : getEvolutionStage(Number(savedLvl) || 1).image,
+      );
     } catch (e) { /* fallback to defaults */ }
-  }, [open]);
+  }, [open, userAddress]);
 
   // Save to storage
-  const saveState = (newBal: number, newXp: number, newLvl: number, newClo: string, newUnl?: string[], newAsk?: string) => {
+  const saveState = (newBal: number, newXp: number, newLvl: number, newMnt: string, newUnl?: string[], newAsk?: string) => {
     localStorage.setItem('pepefi:gamefi:balance', newBal.toString());
     localStorage.setItem('pepefi:gamefi:xp', newXp.toString());
     localStorage.setItem('pepefi:gamefi:level', newLvl.toString());
-    localStorage.setItem('pepefi:gamefi:active_clothes', newClo);
+    localStorage.setItem('pepefi:gamefi:active_mount', newMnt);
 
     const finalUnl = newUnl || unlockedSkins;
     const finalAsk = newAsk !== undefined ? newAsk : activeSkin;
@@ -129,13 +147,18 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
     setPepeBal(newBal);
     setXp(newXp);
     setLevel(newLvl);
-    setActiveClothes(newClo);
+    setActiveMount(newMnt);
     setUnlockedSkins(finalUnl);
     setActiveSkin(finalAsk);
 
-    // Save to the standard user avatar store so all PepeAvatars sync instantly
+    // Save to the standard user avatar store so all PepeAvatars sync instantly.
+    // An equipped skin wins; otherwise the evolution artwork is the avatar.
     try {
-      localStorage.setItem(`pepeAvatar_${userAddress.toLowerCase()}`, finalAsk);
+      const skin = finalAsk ? findStageSkin(finalAsk) : undefined;
+      localStorage.setItem(
+        `pepeAvatar_${userAddress.toLowerCase()}`,
+        skin ? skin.image : getEvolutionStage(newLvl).image,
+      );
     } catch (e) { /* fallback */ }
 
     // Dispatch global event so header avatar or layouts can react to level-ups/skin-swaps
@@ -177,25 +200,48 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
       tempXp -= nextLvl * 100;
       nextLvl += 1;
     }
-    saveState(nextBal, tempXp, nextLvl, activeClothes);
+    // Crossing a stage threshold is the only thing that changes the artwork,
+    // so the burst fires on that, not on every level-up.
+    const nextStage = getEvolutionStage(nextLvl);
+    const evolved = nextStage.stage > getEvolutionStage(level).stage;
+
+    // A skin belongs to the stage it was drawn from. Keeping an old one equipped
+    // through an evolution would leave the hero showing the previous form and
+    // hide the thing the player just earned, so it comes off — still owned, and
+    // re-equippable if they ever want it back.
+    const skinSurvives = !evolved || equippedSkin?.stage === nextStage.stage;
+    const nextSkin = skinSurvives ? activeSkin : '';
+
+    saveState(nextBal, tempXp, nextLvl, activeMount, undefined, nextSkin);
+    if (evolved) celebrateEvolution(nextStage);
   };
 
-  // ── Wardrobe Logic ───────────────────────────────────────────────────────────
+  // ── Mount Logic ──────────────────────────────────────────────────────────────
 
-  const equipClothes = (clothId: string, levelReq: number) => {
+  const equipMount = (mountId: string, levelReq: number) => {
     if (level < levelReq) {
-      notify(`此服裝需 Pepe 等級 Lv.${levelReq} 解鎖，目前 Lv.${level}。`, false);
+      notify(`此坐騎需 Pepe 等級 Lv.${levelReq} 解鎖，目前 Lv.${level}。`, false);
       return;
     }
-    saveState(finalPepeBal, xp, level, clothId, unlockedSkins, '/avatars/pepe-01.png');
+    saveState(finalPepeBal, xp, level, mountId);
   };
 
-  // Find active outfit emoji for avatar box
-  const activeOutfit = CLOTHES.find(c => c.id === activeClothes) || CLOTHES[0];
+  const activeMountObj = getMount(activeMount) || PEPE_MOUNTS[0];
 
-  // Calculate next unlock
-  const nextUnlock = CLOTHES.find(c => level < c.levelRequired);
+  // ── Evolution ────────────────────────────────────────────────────────────────
+  // The frog artwork itself evolves with level (蛙蛋 → 蝌蚪 → … → 蛙神).
+  const evoStage = getEvolutionStage(level);
+  const nextEvo = getNextEvolutionStage(level);
+
+  // Next mount to unlock
+  const nextUnlock = getNextMount(level);
   const levelsToNext = nextUnlock ? nextUnlock.levelRequired - level : 0;
+
+  // ── Skins: one pool per evolution stage ──────────────────────────────────────
+  // A Lv.0 egg is only ever offered egg skins; evolving swaps the whole pool.
+  // Stages whose artwork does not exist yet simply have an empty pool.
+  const stagePool = getStageSkins(evoStage.stage);
+  const equippedSkin = activeSkin ? findStageSkin(activeSkin) : undefined;
 
   // ── Gachapon & Skin Shop Logic ───────────────────────────────────────────────
 
@@ -207,10 +253,14 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
       return;
     }
 
-    // Filter locked custom skins (excluding 'none')
-    const lockedSkins = PEPE_SKINS.filter(s => !unlockedSkins.includes(s.id));
+    // Only the current stage's pool is drawable.
+    if (stagePool.length === 0) {
+      notify(`${evoStage.label} 階段的造型還在製作中，敬請期待。`, false);
+      return;
+    }
+    const lockedSkins = stagePool.filter(s => !unlockedSkins.includes(s.id));
     if (lockedSkins.length === 0) {
-      notify('已集齊所有造型，無須再抽盲盒。', true);
+      notify(`已集齊 ${evoStage.label} 階段的所有造型，進化後會解鎖新的一批。`, true);
       return;
     }
 
@@ -248,14 +298,14 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
       const chosenSkin = candidates[Math.floor(Math.random() * candidates.length)];
       
       const newUnlocked = [...unlockedSkins, chosenSkin.id];
-      saveState(finalPepeBal - COST, xp, level, activeClothes, newUnlocked, activeSkin);
+      saveState(finalPepeBal - COST, xp, level, activeMount, newUnlocked, activeSkin);
 
       setDrawResult(chosenSkin);
       setIsDrawing(false);
     }, 2500);
   };
 
-  const buySkinDirect = async (skin: PepeSkin) => {
+  const buySkinDirect = async (skin: StageSkin) => {
     if (unlockedSkins.includes(skin.id)) return;
     if (finalPepeBal < skin.price) {
       notify(`PEPE 餘額不足，此造型需要 ${skin.price} PEPE。`, false);
@@ -286,13 +336,15 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
     }
 
     const newUnlocked = [...unlockedSkins, skin.id];
-    saveState(finalPepeBal - skin.price, xp, level, activeClothes, newUnlocked, activeSkin);
+    saveState(finalPepeBal - skin.price, xp, level, activeMount, newUnlocked, activeSkin);
     notify(`已購買並解鎖「${skin.name}」`, true);
   };
 
-  const equipSkin = (skinPath: string) => {
-    // Save skin image to activeSkin state
-    saveState(finalPepeBal, xp, level, 'custom_skin', unlockedSkins, skinPath);
+  // Equipping a skin swaps the artwork the hero panel renders — the frog on the
+  // golden stage becomes the chosen skin, still riding the equipped mount.
+  // Passing '' clears it and returns to the plain evolution artwork.
+  const equipSkin = (skinId: string) => {
+    saveState(finalPepeBal, xp, level, activeMount, unlockedSkins, skinId);
   };
 
   const getRarityColor = (rarity: string) => {
@@ -304,11 +356,10 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
     }
   };
 
-  const currentActiveSkinObject = PEPE_SKINS.find(s => s.imagePath === activeSkin);
-  const displayAvatar = activeSkin && activeSkin !== 'none' ? activeSkin : '/avatars/pepe-01.png';
+  const displayAvatar = equippedSkin ? equippedSkin.image : evoStage.image;
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="md" slotProps={{ paper: { sx: { bgcolor: '#0b1625', border: '1px solid rgba(124,193,74,0.3)', borderRadius: 3 } } }}>
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth="lg" slotProps={{ paper: { sx: { bgcolor: '#0b1625', border: '1px solid rgba(124,193,74,0.3)', borderRadius: 3 } } }}>
       
       {/* Dynamic Keyframes Animation Injection */}
       <style dangerouslySetInnerHTML={{ __html: `
@@ -337,7 +388,9 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
 
       <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
         <Stack direction="row" spacing={1.5} alignItems="center">
-          <Avatar src={displayAvatar} sx={{ border: '2px solid var(--palette-primary-main)', boxShadow: '0 0 10px rgba(124,193,74,0.5)', width: 42, height: 42 }} />
+          <Box sx={{ width: 48, height: 48, borderRadius: '50%', border: `2px solid ${evoStage.color}`, boxShadow: `0 0 10px ${evoStage.color}80`, overflow: 'hidden', flexShrink: 0 }}>
+            <PepeEvolution level={level} size={44} radius="50%" animated={false} />
+          </Box>
           <Box>
             <Typography variant="h6" sx={{ fontWeight: 900, color: 'var(--palette-primary-main)' }}>
               Pepe GameFi & MemeFi Lab 🧪
@@ -352,30 +405,55 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
         </IconButton>
       </Box>
 
-      {/* Stats bar */}
-      <Box sx={{ px: 3, py: 2, bgcolor: 'rgba(255,255,255,0.02)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
-        <Stack direction="row" spacing={3}>
-          <Box>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>等級稱號 Title</Typography>
-            <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#ffb300' }}>
-              {getTitleByLevel(level)}
-            </Typography>
-          </Box>
-          <Box>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>Pepe等級</Typography>
-            <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'var(--palette-primary-main)' }}>
-              Lv. {level}
-            </Typography>
-          </Box>
-          <Box sx={{ width: 120 }}>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span>經驗值 XP</span>
-              <span>{xp}/{level * 100}</span>
-            </Typography>
-            <LinearProgress variant="determinate" value={Math.min(100, (xp / (level * 100)) * 100)} sx={{ height: 6, borderRadius: 3, mt: 0.5, bgcolor: 'rgba(255,255,255,0.08)', '& .MuiLinearProgress-bar': { bgcolor: 'var(--palette-primary-main)' } }} />
-          </Box>
-        </Stack>
+      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, alignItems: 'stretch', minHeight: 0 }}>
 
+        {/* ── LEFT: the character, enlarged on its golden stage ─────────────── */}
+        <Box
+          sx={{
+            width: { xs: '100%', md: 330 },
+            flexShrink: 0,
+            px: 3, pt: 3, pb: 2.5,
+            borderRight: { md: '1px solid rgba(255,255,255,0.06)' },
+            borderBottom: { xs: '1px solid rgba(255,255,255,0.06)', md: 'none' },
+            background: `radial-gradient(circle at 50% 30%, ${evoStage.color}16 0%, transparent 62%)`,
+            // The right column is the taller one (tabs + their content), so the
+            // hero is centred in the space rather than pinned to the top with a
+            // pool of dead gradient underneath it.
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <PepeEvolutionHero
+            level={level}
+            size={288}
+            evolving={heroEvolving}
+            mount={activeMountObj}
+            skinImage={equippedSkin?.image}
+            skinGroundY={equippedSkin?.groundY}
+          />
+
+          <Typography variant="h6" sx={{ fontWeight: 900, color: evoStage.color, mt: 1, textAlign: 'center' }}>
+            {equippedSkin ? `${equippedSkin.emoji} ${equippedSkin.name}` : `${evoStage.emoji} ${evoStage.label}`}
+          </Typography>
+          <Typography variant="caption" sx={{ color: '#ffb300', fontWeight: 'bold' }}>
+            {getTitleByLevel(level)}
+          </Typography>
+          <Typography variant="caption" sx={{ color: 'text.secondary', mb: 2 }}>
+            {activeMountObj.emoji} {activeMountObj.name.split(' (')[0]}
+          </Typography>
+
+          <Box sx={{ width: '100%' }}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
+              <span>Lv. {level}</span>
+              <span>{xp}/{level * 100} XP</span>
+            </Typography>
+            <LinearProgress variant="determinate" value={Math.min(100, (xp / (level * 100)) * 100)} sx={{ height: 8, borderRadius: 4, mt: 0.75, bgcolor: 'rgba(255,255,255,0.08)', '& .MuiLinearProgress-bar': { bgcolor: evoStage.color } }} />
+          </Box>
+        </Box>
+
+        {/* ── RIGHT: balance, evolution roadmap, tabs and their content ─────── */}
+        <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+
+      <Box sx={{ px: 3, py: 2, bgcolor: 'rgba(255,255,255,0.02)', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, bgcolor: 'rgba(124,193,74,0.12)', border: '1px solid rgba(124,193,74,0.3)', px: 2, py: 0.75, borderRadius: 2 }}>
           <Typography variant="subtitle2" sx={{ color: 'var(--palette-primary-main)', fontWeight: 'bold' }}>
             💰 餘額: {finalPepeBal.toLocaleString()} PEPE
@@ -383,9 +461,60 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
         </Box>
       </Box>
 
+      {/* 🐸 Evolution roadmap — Lv.0 蛙蛋 → Lv.6 蛙神 */}
+      <Box sx={{ px: 3, py: 2, borderTop: '1px solid rgba(255,255,255,0.06)', background: `linear-gradient(180deg, ${evoStage.color}0f 0%, transparent 100%)` }}>
+        <Stack direction="row" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={1} sx={{ mb: 1.5 }}>
+          <Typography variant="caption" sx={{ fontWeight: 'bold', color: 'text.secondary' }}>
+            🐸 佩佩蛙進化樹 (Evolution) · 目前{' '}
+            <Box component="span" sx={{ color: evoStage.color, fontWeight: 900 }}>
+              Lv.{evoStage.stage} {evoStage.label} {evoStage.emoji}
+            </Box>
+          </Typography>
+          <Typography variant="caption" sx={{ color: nextEvo ? '#ffb300' : 'var(--palette-primary-main)', fontWeight: 'bold' }}>
+            {nextEvo
+              ? `⚡ 再升 ${nextEvo.minLevel - level} 級 (Lv.${nextEvo.minLevel}) 即可進化為 ${nextEvo.label} ${nextEvo.emoji}`
+              : '🏆 已進化至最終形態 蛙神 🌌'}
+          </Typography>
+        </Stack>
+
+        <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 0.5, overflowX: 'auto', pb: 0.5 }}>
+          {PEPE_EVOLUTION_STAGES.map((s, i) => {
+            const reached = level >= s.minLevel;
+            const isCurrent = s.stage === evoStage.stage;
+            return (
+              <React.Fragment key={s.stage}>
+                {i > 0 && (
+                  <Box sx={{ flex: '0 0 auto', width: 14, height: 2, mb: 4, borderRadius: 1, bgcolor: reached ? evoStage.color : 'rgba(255,255,255,0.12)' }} />
+                )}
+                <Box
+                  title={`Lv.${s.stage} ${s.label} — ${s.desc}`}
+                  sx={{
+                    flex: '1 1 0', minWidth: 74, textAlign: 'center',
+                    p: 0.75, borderRadius: 2,
+                    border: '1px solid',
+                    borderColor: isCurrent ? s.color : 'rgba(255,255,255,0.06)',
+                    bgcolor: isCurrent ? `${s.color}14` : 'rgba(255,255,255,0.02)',
+                    boxShadow: isCurrent ? `0 0 18px ${s.color}40` : 'none',
+                    transition: 'all 0.3s',
+                  }}
+                >
+                  <PepeEvolution stage={s.stage} size={52} locked={!reached} animated={false} />
+                  <Typography variant="caption" sx={{ display: 'block', fontWeight: 900, fontSize: '0.68rem', color: reached ? 'text.primary' : 'text.disabled' }}>
+                    {s.label}
+                  </Typography>
+                  <Typography variant="caption" sx={{ display: 'block', fontSize: '0.6rem', color: isCurrent ? s.color : 'text.secondary' }}>
+                    {reached ? `Lv.${s.stage}` : `需 Lv.${s.minLevel}`}
+                  </Typography>
+                </Box>
+              </React.Fragment>
+            );
+          })}
+        </Box>
+      </Box>
+
       <Tabs value={tabValue} onChange={(_, nv) => setTabValue(nv)} centered indicatorColor="custom" sx={{ borderBottom: '1px solid rgba(255,255,255,0.06)', '& .MuiTab-root': { color: 'text.secondary', fontWeight: 'bold', fontSize: '1.05rem', '&.Mui-selected': { color: 'var(--palette-primary-main)' } } }}>
         <Tab value="potions" label="🧪 魔法藥水 (Potions)" />
-        <Tab value="wardrobe" label="👕 尊貴衣裝 (Wardrobe)" />
+        <Tab value="mounts" label="🐋 尊貴坐騎 (Mounts)" />
         <Tab value="skins" label="🎰 造型盲盒與商城 (Skins & Gacha)" />
       </Tabs>
 
@@ -420,204 +549,136 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
           </Grid>
         )}
 
-        {/* B. WARDROBE TAB */}
-        {tabValue === 'wardrobe' && (
+        {/* B. MOUNTS TAB */}
+        {tabValue === 'mounts' && (
           <Box>
-            {/* Top Interactive Character Showcase Card */}
+            {/* Current mount summary — the frog riding it is on the left panel */}
             <Card sx={{
-              p: 3,
-              mb: 4,
-              position: 'relative',
-              overflow: 'hidden',
+              p: 3, mb: 4, position: 'relative', overflow: 'hidden',
               background: 'linear-gradient(135deg, rgba(124,193,74,0.12) 0%, rgba(255,210,61,0.06) 100%)',
-              border: '1px solid rgba(124,193,74,0.3)',
-              borderRadius: 2.5,
-              boxShadow: '0 8px 32px rgba(124,193,74,0.1)'
+              border: '1px solid rgba(124,193,74,0.3)', borderRadius: 2.5,
+              boxShadow: '0 8px 32px rgba(124,193,74,0.1)',
             }}>
-              <Grid container spacing={3} alignItems="center">
-                {/* Character preview */}
-                <Grid size={{ xs: 12, sm: 4 }} sx={{ textAlign: 'center' }}>
-                  <Box sx={{ position: 'relative', display: 'inline-block' }}>
-                    {/* Glowing Outer Ring */}
-                    <Box sx={{
-                      position: 'absolute', top: -5, left: -5, right: -5, bottom: -5,
-                      borderRadius: '50%',
-                      border: '3px solid transparent',
-                      borderTopColor: 'var(--palette-primary-main)',
-                      borderBottomColor: '#ffd700',
-                      animation: 'spin 6s linear infinite',
-                      '@keyframes spin': {
-                        '0%': { transform: 'rotate(0deg)' },
-                        '100%': { transform: 'rotate(360deg)' }
-                      }
-                    }} />
-
-                    {/* Dynamic Floating Accessory */}
-                    {activeClothes !== 'none' && activeClothes !== 'custom_skin' && (
-                      <Box sx={{
-                        position: 'absolute',
-                        top: -15,
-                        left: -15,
-                        fontSize: '2.5rem',
-                        filter: 'drop-shadow(0 0 10px rgba(124,193,74,0.7))',
-                        animation: 'floatAcc 2.5s infinite ease-in-out',
-                        '@keyframes floatAcc': {
-                          '0%, 100%': { transform: 'translateY(0) rotate(0deg)' },
-                          '50%': { transform: 'translateY(-12px) rotate(12deg)' }
-                        }
-                      }}>
-                        {activeClothes === 'suit' && '💼'}
-                        {activeClothes === 'cape' && '👑'}
-                        {activeClothes === 'astronaut' && '🚀'}
-                      </Box>
-                    )}
-
-                    <Avatar src={displayAvatar} sx={{ width: 130, height: 130, border: '4px solid #0b1625', boxShadow: '0 0 25px rgba(124,193,74,0.4)', mx: 'auto' }} />
-                    <Box sx={{ position: 'absolute', bottom: -10, right: 10, bgcolor: '#ffb300', color: '#000', px: 1.5, py: 0.5, borderRadius: 1.5, fontSize: '0.85rem', fontWeight: '900', border: '2px solid #0b1625', boxShadow: '0 4px 10px rgba(0,0,0,0.5)' }}>
-                      {activeClothes === 'custom_skin' && currentActiveSkinObject ? currentActiveSkinObject.emoji : activeOutfit.emoji} 等級 {level}
-                    </Box>
-                  </Box>
-                </Grid>
-
-                {/* Status description */}
-                <Grid size={{ xs: 12, sm: 8 }}>
-                  <Typography variant="h5" sx={{ fontWeight: 900, color: 'var(--palette-primary-main)', mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
-                    {activeClothes === 'custom_skin' && currentActiveSkinObject ? (
-                      <>
-                        {currentActiveSkinObject.emoji} {currentActiveSkinObject.name}
-                      </>
-                    ) : (
-                      <>
-                        {activeOutfit.emoji} {activeOutfit.name.split(' ')[0]}
-                      </>
-                    )}
+              <Typography variant="h5" sx={{ fontWeight: 900, color: 'var(--palette-primary-main)', mb: 1 }}>
+                {activeMountObj.emoji} {activeMountObj.name}
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5, lineHeight: 1.6 }}>
+                {activeMountObj.desc} 目前您已達到了 <strong>Lv. {level} · 進化型態 Lv.{evoStage.stage} {evoStage.label} {evoStage.emoji}</strong> 的尊貴段位。
+              </Typography>
+              <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap>
+                <Box sx={{ bgcolor: 'rgba(255,255,255,0.04)', px: 2.5, py: 1, borderRadius: 1.5, border: '1px solid rgba(255,255,255,0.06)', minWidth: 120 }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>目前坐騎</Typography>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+                    {activeMountObj.emoji} {activeMountObj.name.split(' (')[0]}
                   </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5, lineHeight: 1.6 }}>
-                    {activeClothes === 'custom_skin' && currentActiveSkinObject ? currentActiveSkinObject.desc : activeOutfit.desc} 目前您已達到了 <strong>Lv. {level} {getTitleByLevel(level).split(' ')[0]}</strong> 的尊貴段位。
+                </Box>
+                <Box sx={{ bgcolor: 'rgba(255,255,255,0.04)', px: 2.5, py: 1, borderRadius: 1.5, border: '1px solid rgba(255,255,255,0.06)', minWidth: 120 }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>進化型態</Typography>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#ffb300' }}>
+                    {evoStage.emoji} {evoStage.label}
                   </Typography>
-                  <Stack direction="row" spacing={1.5}>
-                    <Box sx={{ bgcolor: 'rgba(255,255,255,0.04)', px: 2.5, py: 1, borderRadius: 1.5, border: '1px solid rgba(255,255,255,0.06)', minWidth: 120 }}>
-                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>目前穿戴</Typography>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                        {activeClothes === 'custom_skin' && currentActiveSkinObject ? (
-                          <>
-                            {currentActiveSkinObject.emoji} {currentActiveSkinObject.name.substring(0, 5)}...
-                          </>
-                        ) : (
-                          <>
-                            {activeOutfit.emoji} {activeOutfit.name.split(' ')[0]}
-                          </>
-                        )}
-                      </Typography>
-                    </Box>
-                    <Box sx={{ bgcolor: 'rgba(255,255,255,0.04)', px: 2.5, py: 1, borderRadius: 1.5, border: '1px solid rgba(255,255,255,0.06)', minWidth: 120 }}>
-                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>聲譽 Title</Typography>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#ffb300' }}>
-                        {getTitleByLevel(level).split(' ')[0]}
-                      </Typography>
-                    </Box>
-                  </Stack>
+                </Box>
+                <Box sx={{ bgcolor: 'rgba(255,255,255,0.04)', px: 2.5, py: 1, borderRadius: 1.5, border: '1px solid rgba(255,255,255,0.06)', minWidth: 120 }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>已解鎖坐騎</Typography>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'var(--palette-primary-main)' }}>
+                    {PEPE_MOUNTS.filter(m => level >= m.levelRequired).length} / {PEPE_MOUNTS.length}
+                  </Typography>
+                </Box>
+              </Stack>
 
-                  {/* Progress message */}
-                  <Box sx={{ mt: 2, p: 1.5, bgcolor: 'rgba(0,0,0,0.2)', borderRadius: 1.5, border: '1px solid rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                    <Box sx={{ bgcolor: nextUnlock ? 'rgba(255,179,0,0.1)' : 'rgba(124,193,74,0.1)', color: nextUnlock ? '#ffb300' : 'var(--palette-primary-main)', width: 26, height: 26, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.85rem', flexShrink: 0 }}>
-                      {nextUnlock ? '⚡' : '🏆'}
-                    </Box>
-                    <Typography variant="caption" sx={{ color: nextUnlock ? 'text.secondary' : 'var(--palette-primary-main)', fontWeight: 'bold' }}>
-                      {nextUnlock ? (
-                        <>
-                          距離解鎖下一件等級裝備 <strong>{nextUnlock.emoji} {nextUnlock.name.split(' ')[0]}</strong> 還差 <strong style={{ color: '#ffb300' }}>{levelsToNext}</strong> 級！(需要達 Lv.{nextUnlock.levelRequired})
-                        </>
-                      ) : (
-                        '🎉 恭喜！您已解鎖所有終極神裝！去 🎰 造型商城 抽取您專屬的傳奇佩佩吧！'
-                      )}
-                    </Typography>
-                  </Box>
-                </Grid>
-              </Grid>
+              <Box sx={{ mt: 2, p: 1.5, bgcolor: 'rgba(0,0,0,0.2)', borderRadius: 1.5, border: '1px solid rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                <Box sx={{ bgcolor: nextUnlock ? 'rgba(255,179,0,0.1)' : 'rgba(124,193,74,0.1)', color: nextUnlock ? '#ffb300' : 'var(--palette-primary-main)', width: 26, height: 26, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.85rem', flexShrink: 0 }}>
+                  {nextUnlock ? '⚡' : '🏆'}
+                </Box>
+                <Typography variant="caption" sx={{ color: nextUnlock ? 'text.secondary' : 'var(--palette-primary-main)', fontWeight: 'bold' }}>
+                  {nextUnlock ? (
+                    <>
+                      距離解鎖下一隻坐騎 <strong>{nextUnlock.emoji} {nextUnlock.name.split(' (')[0]}</strong> 還差 <strong style={{ color: '#ffb300' }}>{levelsToNext}</strong> 級！(需要達 Lv.{nextUnlock.levelRequired})
+                    </>
+                  ) : (
+                    '🎉 恭喜！四隻坐騎全數解鎖，黃金天鯨已在等你。'
+                  )}
+                </Typography>
+              </Box>
             </Card>
 
             <Grid container spacing={3}>
-              {CLOTHES.map(c => {
-                const isUnlocked = level >= c.levelRequired;
-                const isEquipped = activeClothes === c.id;
+              {PEPE_MOUNTS.map(m => {
+                const isUnlocked = level >= m.levelRequired;
+                const isEquipped = activeMount === m.id;
                 return (
-                  <Grid size={{ xs: 12, sm: 6 }} key={c.id}>
+                  <Grid size={{ xs: 12, sm: 6 }} key={m.id}>
                     <Card sx={{
-                      p: 3,
-                      position: 'relative',
+                      p: 2.5, position: 'relative', height: '100%',
                       border: '1px solid',
                       borderColor: isEquipped ? 'var(--palette-primary-main)' : 'rgba(255,255,255,0.08)',
                       bgcolor: isEquipped ? 'rgba(124,193,74,0.04)' : 'rgba(255,255,255,0.02)',
                       boxShadow: isEquipped ? '0 0 25px rgba(124,193,74,0.15)' : 'none',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
+                      display: 'flex', flexDirection: 'column', gap: 1.5,
                       transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                       '&:hover': {
                         borderColor: isUnlocked ? 'var(--palette-primary-main)' : 'rgba(255,255,255,0.08)',
                         boxShadow: isUnlocked ? '0 8px 30px rgba(124,193,74,0.2)' : 'none',
                         transform: isUnlocked ? 'translateY(-4px)' : 'none',
-                      }
+                      },
                     }}>
                       {isEquipped && (
-                        <Box sx={{ position: 'absolute', top: 0, right: 0, bgcolor: 'var(--palette-primary-main)', color: '#000', px: 1.5, py: 0.25, borderRadius: '0 0 0 8px', fontSize: '0.72rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                          <Iconify icon="solar:check-circle-bold" sx={{ fontSize: 13 }} /> 已穿戴
+                        <Box sx={{ position: 'absolute', top: 0, right: 0, zIndex: 2, bgcolor: 'var(--palette-primary-main)', color: '#000', px: 1.5, py: 0.25, borderRadius: '0 0 0 8px', fontSize: '0.72rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                          <Iconify icon="solar:check-circle-bold" sx={{ fontSize: 13 }} /> 騎乘中
                         </Box>
                       )}
                       {!isUnlocked && (
-                        <Box sx={{ position: 'absolute', top: 0, right: 0, bgcolor: 'rgba(255,255,255,0.08)', color: 'text.secondary', px: 1.5, py: 0.25, borderRadius: '0 0 0 8px', fontSize: '0.72rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <Box sx={{ position: 'absolute', top: 0, right: 0, zIndex: 2, bgcolor: 'rgba(255,255,255,0.08)', color: 'text.secondary', px: 1.5, py: 0.25, borderRadius: '0 0 0 8px', fontSize: '0.72rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 0.5 }}>
                           <Iconify icon="solar:shield-keyhole-bold-duotone" sx={{ fontSize: 13 }} /> 未解鎖
                         </Box>
                       )}
 
-                      <Stack direction="row" spacing={2.5} alignItems="center">
-                        <Box sx={{ fontSize: 38, filter: isUnlocked ? 'none' : 'grayscale(1) opacity(0.3)', bgcolor: isEquipped ? 'rgba(124,193,74,0.1)' : 'rgba(255,255,255,0.04)', p: 1.5, borderRadius: 2, border: '1px solid', borderColor: isEquipped ? 'var(--palette-primary-main)' : 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 60, height: 60 }}>
-                          {c.emoji}
-                        </Box>
-                        <Box>
-                          <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: isUnlocked ? 'text.primary' : 'text.disabled' }}>
-                            {c.name}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, maxWidth: 200, lineHeight: 1.4 }}>
-                            {c.desc}
-                          </Typography>
-                          <Typography variant="caption" sx={{ color: isUnlocked ? 'var(--palette-primary-main)' : '#ffb300', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 0.5, mt: 1 }}>
-                            {isUnlocked ? (
-                              <>
-                                <Iconify icon="solar:verified-check-bold" sx={{ fontSize: 12 }} /> 已解鎖
-                              </>
-                            ) : (
-                              <>
-                                <Iconify icon="solar:clock-circle-bold" sx={{ fontSize: 12 }} /> 需要達 Lv.{c.levelRequired} 級
-                              </>
-                            )}
-                          </Typography>
-                        </Box>
-                      </Stack>
+                      {/* Locked mounts stay hidden, same rule as the evolution tree */}
+                      <Box sx={{ width: '100%', aspectRatio: '16 / 9', borderRadius: 2, overflow: 'hidden', bgcolor: '#000', border: '1px solid', borderColor: isEquipped ? 'var(--palette-primary-main)' : 'rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        {isUnlocked ? (
+                          <Box component="img" src={m.image} alt={m.name} sx={{ width: '100%', height: '170%', objectFit: 'cover', transform: 'translateY(-6%)' }} />
+                        ) : (
+                          <Typography sx={{ fontSize: 34, color: 'rgba(255,255,255,0.25)' }}>❔</Typography>
+                        )}
+                      </Box>
 
-                      <Button
-                        size="small"
-                        variant={isEquipped ? 'contained' : 'outlined'}
-                        disabled={!isUnlocked}
-                        onClick={() => equipClothes(c.id, c.levelRequired)}
-                        sx={{
-                          bgcolor: isEquipped ? 'var(--palette-primary-main)' : 'transparent',
-                          color: isEquipped ? '#fff' : 'var(--palette-primary-main)',
-                          borderColor: 'var(--palette-primary-main)',
-                          fontWeight: 'bold',
-                          py: 0.75,
-                          px: 2,
-                          borderRadius: 1.5,
-                          textTransform: 'none',
-                          '&:hover': {
-                            bgcolor: isEquipped ? '#5a9e2f' : 'rgba(124,193,74,0.08)',
-                            borderColor: 'var(--palette-primary-main)'
-                          }
-                        }}
-                      >
-                        {isEquipped ? '已穿戴' : isUnlocked ? '換上這件' : `Lv.${c.levelRequired}`}
-                      </Button>
+                      <Box>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: isUnlocked ? 'text.primary' : 'text.disabled' }}>
+                          {isUnlocked ? `${m.emoji} ${m.name}` : `??? (需 Lv.${m.levelRequired} 解鎖)`}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, lineHeight: 1.5 }}>
+                          {isUnlocked ? m.desc : '達到指定等級後才會揭曉這隻坐騎的真面目。'}
+                        </Typography>
+                      </Box>
+
+                      <Box sx={{ mt: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+                        <Typography variant="caption" sx={{ color: isUnlocked ? 'var(--palette-primary-main)' : '#ffb300', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                          {isUnlocked ? (
+                            <>
+                              <Iconify icon="solar:verified-check-bold" sx={{ fontSize: 12 }} /> 已解鎖
+                            </>
+                          ) : (
+                            <>
+                              <Iconify icon="solar:clock-circle-bold" sx={{ fontSize: 12 }} /> 需要達 Lv.{m.levelRequired} 級
+                            </>
+                          )}
+                        </Typography>
+                        <Button
+                          size="small"
+                          variant={isEquipped ? 'contained' : 'outlined'}
+                          disabled={!isUnlocked}
+                          onClick={() => equipMount(m.id, m.levelRequired)}
+                          sx={{
+                            bgcolor: isEquipped ? 'var(--palette-primary-main)' : 'transparent',
+                            color: isEquipped ? '#fff' : 'var(--palette-primary-main)',
+                            borderColor: 'var(--palette-primary-main)',
+                            fontWeight: 'bold', py: 0.5, px: 2, borderRadius: 1.5, textTransform: 'none',
+                            '&:hover': { bgcolor: isEquipped ? '#5a9e2f' : 'rgba(124,193,74,0.08)', borderColor: 'var(--palette-primary-main)' },
+                          }}
+                        >
+                          {isEquipped ? '騎乘中' : isUnlocked ? '騎上去' : `Lv.${m.levelRequired}`}
+                        </Button>
+                      </Box>
                     </Card>
                   </Grid>
                 );
@@ -683,16 +744,23 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
                   </Box>
 
                   <Typography variant="h6" sx={{ fontWeight: '900', color: '#ffb300', mt: 3, zIndex: 1 }}>
-                    DeFi 佩佩蛙進化盲盒
+                    {evoStage.emoji} {evoStage.label}造型盲盒
                   </Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ mt: 1, mb: 3, textAlign: 'center', maxWidth: 260, zIndex: 1 }}>
-                    花費 <strong>500 PEPE</strong> 隨機抽取 25 款隱藏版傳奇造型！擁有高機率獲得稀有、史詩與傳奇造型。
+                  <Typography variant="caption" color="text.secondary" sx={{ mt: 1, mb: 3, textAlign: 'center', maxWidth: 280, zIndex: 1 }}>
+                    {stagePool.length > 0 ? (
+                      <>
+                        花費 <strong>500 PEPE</strong> 從 <strong>{evoStage.label}</strong> 專屬的 {stagePool.length} 款造型中隨機抽取。
+                        進化到下一階段後，會換上一整批全新造型。
+                      </>
+                    ) : (
+                      <>{evoStage.label} 階段的造型還在製作中，敬請期待 🚧</>
+                    )}
                   </Typography>
 
                   <Button
                     variant="contained"
                     size="large"
-                    disabled={isDrawing}
+                    disabled={isDrawing || stagePool.length === 0}
                     onClick={drawGachapon}
                     sx={{
                       bgcolor: 'var(--palette-primary-main)',
@@ -708,7 +776,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
                       '&:disabled': { bgcolor: 'rgba(255,255,255,0.1)', color: 'text.secondary' }
                     }}
                   >
-                    {isDrawing ? '正在破殼孵化中...' : '🎰 幸運抽造型 (500 PEPE)'}
+                    {isDrawing ? '正在破殼孵化中...' : stagePool.length === 0 ? '🚧 造型製作中' : '🎰 幸運抽造型 (500 PEPE)'}
                   </Button>
 
                   <Stack direction="row" spacing={2} sx={{ mt: 3, zIndex: 1 }}>
@@ -725,10 +793,10 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
                 <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Box>
                     <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
-                      🎨 造型更衣展示牆 ({unlockedSkins.length - 1}/25)
+                      🎨 {evoStage.label}造型牆 ({stagePool.filter(sk => unlockedSkins.includes(sk.id)).length}/{stagePool.length})
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      點擊已解鎖造型即可穿戴，滑鼠懸停於未解鎖造型可花費代幣直接進行解鎖！
+                      只會顯示目前進化階段的造型。點擊已解鎖的即可穿戴，左側主角會立刻換成該造型；未解鎖的可直接花 PEPE 買下。
                     </Typography>
                   </Box>
                   <Button
@@ -737,28 +805,28 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
                     color="success"
                     onClick={async () => {
                       const ok = await confirm({
-                        title: '重置頭像',
-                        message: '切換回預設經典頭像？已解鎖的造型會保留，隨時可再穿戴。',
-                        confirmLabel: '重置',
+                        title: '取消造型',
+                        message: '脫下目前造型，變回原本的進化外觀？已解鎖的造型會保留，隨時可再穿戴。',
+                        confirmLabel: '脫下造型',
                       });
-                      if (ok) equipSkin('/avatars/pepe-01.png');
+                      if (ok) equipSkin('');
                     }}
                     sx={{ textTransform: 'none', fontWeight: 'bold' }}
                   >
-                    重置為經典頭像
+                    脫下造型
                   </Button>
                 </Box>
 
                 <Box sx={{ maxHeight: 380, overflowY: 'auto', pr: 1, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 2 }}>
-                  {PEPE_SKINS.map(skin => {
+                  {stagePool.map(skin => {
                     const isUnlocked = unlockedSkins.includes(skin.id);
-                    const isEquipped = activeSkin === skin.imagePath;
+                    const isEquipped = activeSkin === skin.id;
                     const rColor = getRarityColor(skin.rarity);
 
                     return (
                       <Card
                         key={skin.id}
-                        onClick={() => isUnlocked ? equipSkin(skin.imagePath) : buySkinDirect(skin)}
+                        onClick={() => isUnlocked ? equipSkin(skin.id) : buySkinDirect(skin)}
                         sx={{
                           p: 1.5,
                           cursor: 'pointer',
@@ -790,13 +858,13 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
 
                         <Box sx={{ width: '100%', pt: '100%', position: 'relative', mb: 1, borderRadius: 1.5, overflow: 'hidden', bgcolor: 'rgba(0,0,0,0.2)' }}>
                           <img
-                            src={skin.imagePath}
+                            src={skin.image}
                             alt={skin.name}
                             style={{
                               position: 'absolute',
                               top: 0, left: 0, width: '100%', height: '100%',
                               objectFit: 'cover',
-                              filter: isUnlocked ? 'none' : 'grayscale(1) opacity(0.4)',
+                              filter: isUnlocked ? 'none' : 'grayscale(1) brightness(0.45)',
                               transition: 'filter 0.3s'
                             }}
                           />
@@ -828,11 +896,64 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
 
       </DialogContent>
 
+        </Box>{/* /RIGHT column */}
+      </Box>{/* /two-column body */}
+
       <Box sx={{ p: 2, display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
         <Button variant="outlined" color="inherit" onClick={onClose} sx={{ fontWeight: 'bold' }}>
           關閉 Lab 視窗
         </Button>
       </Box>
+
+      {/* 🐸 EVOLUTION CELEBRATION */}
+      <Dialog
+        open={!!evolvedTo}
+        onClose={() => setEvolvedTo(null)}
+        slotProps={{ paper: { sx: { bgcolor: '#070f19', border: `2px solid ${evolvedTo?.color || 'var(--palette-primary-main)'}`, borderRadius: 4, maxWidth: 460, overflow: 'hidden', p: 4, textAlign: 'center' } } }}
+      >
+        {evolvedTo && (
+          <Box sx={{ position: 'relative' }}>
+            {/* Rotating light rays */}
+            <Box sx={{
+              position: 'absolute', top: -140, left: -140, right: -140, bottom: -140,
+              backgroundImage: `conic-gradient(from 0deg, ${evolvedTo.color}00 0deg, ${evolvedTo.color}44 18deg, ${evolvedTo.color}00 36deg, ${evolvedTo.color}00 72deg, ${evolvedTo.color}44 90deg, ${evolvedTo.color}00 108deg, ${evolvedTo.color}00 144deg, ${evolvedTo.color}44 162deg, ${evolvedTo.color}00 180deg, ${evolvedTo.color}00 216deg, ${evolvedTo.color}44 234deg, ${evolvedTo.color}00 252deg, ${evolvedTo.color}00 288deg, ${evolvedTo.color}44 306deg, ${evolvedTo.color}00 324deg)`,
+              animation: 'rotateBurst 12s linear infinite',
+              zIndex: 0,
+              pointerEvents: 'none',
+            }} />
+
+            <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 2, zIndex: 1, position: 'relative' }}>
+              EVOLUTION
+            </Typography>
+            <Typography variant="h4" sx={{ fontWeight: 900, color: evolvedTo.color, mb: 2, zIndex: 1, position: 'relative', textShadow: `0 0 24px ${evolvedTo.color}88` }}>
+              進化成功！🎉
+            </Typography>
+
+            <Box sx={{ zIndex: 1, position: 'relative' }}>
+              <PepeEvolutionHero level={level} size={260} evolving />
+            </Box>
+
+            <Typography variant="h5" sx={{ fontWeight: 900, color: evolvedTo.color, mt: 1, zIndex: 1, position: 'relative' }}>
+              {evolvedTo.emoji} {evolvedTo.label}
+            </Typography>
+            <Typography variant="subtitle2" sx={{ color: '#ffb300', mb: 1.5, zIndex: 1, position: 'relative' }}>
+              進化 Lv.{evolvedTo.stage} · {evolvedTo.title}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ px: 1, mb: 3.5, lineHeight: 1.6, zIndex: 1, position: 'relative' }}>
+              {evolvedTo.desc}
+            </Typography>
+
+            <Button
+              variant="contained"
+              fullWidth
+              onClick={() => setEvolvedTo(null)}
+              sx={{ bgcolor: evolvedTo.color, color: '#000', fontWeight: 'bold', zIndex: 1, position: 'relative', '&:hover': { bgcolor: evolvedTo.color, filter: 'brightness(1.15)' } }}
+            >
+              太強了 🐸
+            </Button>
+          </Box>
+        )}
+      </Dialog>
 
       {/* 🎰 DRAW RESULT POPUP CELEBRATION */}
       <Dialog
@@ -859,7 +980,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
             </Typography>
 
             <Box sx={{ width: 220, height: 220, mx: 'auto', my: 3, border: `4px solid ${getRarityColor(drawResult.rarity)}`, boxShadow: `0 0 35px ${getRarityColor(drawResult.rarity)}`, borderRadius: 3, overflow: 'hidden', position: 'relative', zIndex: 1 }}>
-              <img src={drawResult.imagePath} alt={drawResult.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              <img src={drawResult.image} alt={drawResult.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             </Box>
 
             <Typography variant="h6" sx={{ fontWeight: '900', color: getRarityColor(drawResult.rarity), zIndex: 1, position: 'relative' }}>
@@ -873,7 +994,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
             </Box>
 
             <Typography variant="body2" color="text.secondary" sx={{ px: 2, mb: 4, lineHeight: 1.5, zIndex: 1, position: 'relative' }}>
-              {drawResult.desc}
+              解鎖了 {evoStage.label} 階段的專屬造型。立即穿戴，左側的主角就會換成牠。
             </Typography>
 
             <Stack direction="row" spacing={2} sx={{ zIndex: 1, position: 'relative' }}>
@@ -881,7 +1002,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
                 variant="contained"
                 fullWidth
                 onClick={() => {
-                  equipSkin(drawResult.imagePath);
+                  equipSkin(drawResult.id);
                   setDrawResult(null);
                 }}
                 sx={{ bgcolor: 'var(--palette-primary-main)', color: '#000', fontWeight: 'bold', '&:hover': { bgcolor: '#94d862' } }}
