@@ -21,11 +21,8 @@ import { prettyError } from 'src/lib/pepefi/errorMessages';
 import ESGBadge from 'src/components/pepefi/ESGBadge';
 import Skeleton, { TableSkeleton } from 'src/components/pepefi/Skeleton';
 import { PepeAvatar } from 'src/components/pepefi/PepeAvatar';
-import { PepeShopDialog } from 'src/components/pepefi/PepeShopDialog';
-import { LootBoxButton } from 'src/components/pepefi/LootBoxButton';
 import { pepeNameFor } from 'src/lib/pepefi/pepeName';
-import { getEquipped } from 'src/lib/pepefi/inventory';
-import { ITEMS, BURN_ADDRESS } from 'src/lib/pepefi/items';
+import { ownedCosmeticsCount } from 'src/lib/pepefi/gamefi';
 import { ACHIEVEMENTS, buildQuests, dailyRewardFor, TODAY_INDEX, type AchCtx } from 'src/lib/pepefi/achievements';
 
 /** 鏈上餘額的輪詢間隔。原本是 8 秒——見下方 useEffect 的說明。 */
@@ -271,9 +268,8 @@ export default function DashboardPage() {
  
   const [streak,      setStreak]      = useState(0);
   const [lastDay,     setLastDay]     = useState(0);
-  const [shopOpen,    setShopOpen]    = useState(false);
   const [toast,       setToast]       = useState<{ msg: string; ok: boolean } | null>(null);
-  const [equipped,    setEquipped]    = useState<Record<string, string>>(() => getEquipped());
+  const [ownedCount,  setOwnedCount]  = useState<number>(() => ownedCosmeticsCount());
 
   const notify = (msg: string, ok: boolean) => {
     setToast({ msg, ok });
@@ -310,7 +306,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const handleUpdate = () => {
-      setEquipped(getEquipped());
+      setOwnedCount(ownedCosmeticsCount());
     };
     window.addEventListener('pepefi:gamefi-updated', handleUpdate);
     return () => window.removeEventListener('pepefi:gamefi-updated', handleUpdate);
@@ -536,27 +532,6 @@ export default function DashboardPage() {
     } catch (e) { console.error('Add PEPE to wallet failed', e); }
   };
 
-  const handleBuy = useCallback(async (_item: { price: number }, price: number) => {
-    if (!contracts) throw new Error('Not connected')
-    const amount = BigInt(price) * 10n ** 18n
-    const tx = (await contracts.pepeToken.transfer(BURN_ADDRESS, amount)) as { wait(): Promise<unknown> }
-    await tx.wait()
-    notify(`購買成功！ -${price.toLocaleString()} PEPE 🐸`, true)
-    setEquipped(getEquipped())
-    await fetchAll()
-    await fetchPepe()
-  }, [contracts, fetchAll, fetchPepe])
-
-  const handleBurn = useCallback(async (amount: number) => {
-    if (!contracts) throw new Error('Not connected')
-    const amountBig = BigInt(amount) * 10n ** 18n
-    const tx = (await contracts.pepeToken.transfer(BURN_ADDRESS, amountBig)) as { wait(): Promise<unknown> }
-    await tx.wait()
-    notify(`開箱成功！消耗 ${amount.toLocaleString()} PEPE`, true)
-    await fetchAll()
-    await fetchPepe()
-  }, [contracts, fetchAll, fetchPepe])
-
   // ── Derived: live-updated from livePrices tick ────────────────────────────
 
   const derived = useMemo(() => {
@@ -662,15 +637,10 @@ export default function DashboardPage() {
   const pepeNum       = pepeBal !== null ? Number(pepeBal) / 1e18 : 0;
   const checkedToday  = lastDay === TODAY_INDEX();
   const dailyReward   = dailyRewardFor(streak);
-  const ownedCount    = Object.values(equipped).length;
 
   const achCtx: AchCtx = { streak, pepeNum, positions: positions.length, owned: ownedCount };
 
   const quests = buildQuests({ streak, pepeNum, positions: positions.length, checkedToday });
-
-  const equippedItems = Object.values(equipped)
-    .map(id => ITEMS.find(i => i.id === id))
-    .filter(Boolean) as typeof ITEMS;
 
   const pnlPctStr = derived.totalNotional > 0n
     ? fPct(derived.totalPnL, derived.totalNotional) : '—';
@@ -714,31 +684,21 @@ export default function DashboardPage() {
       )}
 
       {/* ── My Pepe Section ── */}
-      {/* A summary, not a second lab. The achievement list, the quest list and
-          the equipped showcase all render in full on /pepe now; repeating them
-          here is how the two drifted apart in the first place. What stays is
-          the counts, and the actions that exist nowhere else. */}
+      {/* A summary, not a second lab: identity and a row of figures, with every
+          detail behind them a click away on /pepe. Spending happens there too,
+          which is why this card has exactly one button. */}
       <Box>
         <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1.5, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
           🏠 我的 Pepe (My Pepe)
         </Typography>
 
         <Card sx={{ p: 2.5, bgcolor: '#0e1420', border: '1px solid var(--palette-primary-main)22', borderRadius: 3 }}>
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 2.5 }}>
 
-            {/* Identity */}
-            <Box sx={{ position: 'relative', flexShrink: 0 }}>
-              <PepeAvatar address={wallet.address ?? undefined} size={72} />
-              {equippedItems.length > 0 && (
-                <Box sx={{ position: 'absolute', top: -6, right: -6, display: 'flex', flexWrap: 'wrap', gap: 0.25, maxWidth: 40 }}>
-                  {equippedItems.slice(0, 4).map(item => (
-                    <Typography key={item.id} fontSize={14} title={item.name}>{item.emoji}</Typography>
-                  ))}
-                </Box>
-              )}
-            </Box>
+          {/* Row 1 — who, and the way in */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+            <PepeAvatar address={wallet.address ?? undefined} size={64} />
 
-            <Box sx={{ minWidth: 150 }}>
+            <Box sx={{ minWidth: 0 }}>
               <Typography fontWeight={900} fontSize={18} sx={{ color: 'var(--palette-primary-main)' }}>
                 {pepeNameFor(wallet.address)}
               </Typography>
@@ -747,52 +707,40 @@ export default function DashboardPage() {
               </Typography>
             </Box>
 
-            {/* Counts — the detail behind each lives on /pepe */}
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3, flex: 1, minWidth: 240 }}>
-              {[
-                { label: '鏈上 PEPE',  value: pepeNum.toLocaleString(undefined, { maximumFractionDigits: 0 }) },
-                { label: '簽到連續',   value: `🔥 ${streak} 天` },
-                { label: '持倉數',     value: String(positions.length) },
-                { label: '成就',       value: `${ACHIEVEMENTS.filter(a => a.check(achCtx)).length} / ${ACHIEVEMENTS.length}` },
-                { label: '今日任務',   value: `${quests.filter(q => q.done).length} / ${quests.length}` },
-              ].map(stat => (
-                <Box key={stat.label}>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{stat.label}</Typography>
-                  <Typography fontWeight={700} fontSize={15}>{stat.value}</Typography>
-                </Box>
-              ))}
-            </Box>
+            <Button
+              component={RouterLink}
+              to="/pepe"
+              variant="contained"
+              sx={{ ml: { sm: 'auto' }, bgcolor: 'var(--palette-primary-main)', color: '#0e1420', fontWeight: 900, textTransform: 'none' }}
+            >
+              🐸 前往養成中心 →
+            </Button>
+          </Box>
 
-            {/* Actions. Shop and loot box live only here — the lab sells skins
-                and mounts, which is a different inventory from ITEMS. */}
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
-              <Button variant="outlined" size="small"
-                sx={{ borderColor: 'var(--palette-primary-main)44', color: 'var(--palette-primary-main)', fontWeight: 700 }}
-                onClick={() => setShopOpen(true)}>
-                🛒 Pepe Shop
-              </Button>
+          <Divider sx={{ my: 2, borderColor: 'var(--palette-primary-main)18' }} />
 
-              <LootBoxButton pepeBalance={pepeBal} onBurn={handleBurn} address={wallet.address} />
-
-              <Button
-                component={RouterLink}
-                to="/pepe"
-                variant="contained"
-                size="small"
-                sx={{ bgcolor: 'var(--palette-primary-main)', color: '#0e1420', fontWeight: 900 }}
-              >
-                🐸 前往養成中心 →
-              </Button>
-            </Box>
+          {/* Row 2 — the figures. auto-fit rather than a flex row so they stay
+              on an even grid instead of bunching up as the sidebar collapses. */}
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(104px, 1fr))', gap: 2 }}>
+            {[
+              { label: '鏈上 PEPE', value: pepeNum.toLocaleString(undefined, { maximumFractionDigits: 0 }) },
+              { label: '簽到連續',  value: `🔥 ${streak} 天` },
+              { label: '持倉數',    value: String(positions.length) },
+              { label: '成就',      value: `${ACHIEVEMENTS.filter(a => a.check(achCtx)).length} / ${ACHIEVEMENTS.length}` },
+              { label: '今日任務',  value: `${quests.filter(q => q.done).length} / ${quests.length}` },
+              { label: '造型收藏',  value: String(ownedCount) },
+            ].map(stat => (
+              <Box key={stat.label}>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.25 }}>
+                  {stat.label}
+                </Typography>
+                <Typography fontWeight={700} fontSize={16} sx={{ whiteSpace: 'nowrap' }}>
+                  {stat.value}
+                </Typography>
+              </Box>
+            ))}
           </Box>
         </Card>
-
-        <PepeShopDialog
-          open={shopOpen}
-          onClose={() => { setShopOpen(false); setEquipped(getEquipped()) }}
-          pepeBalance={pepeBal}
-          onBuy={handleBuy}
-        />
       </Box>
 
       <Divider sx={{ my: 1, borderColor: 'rgba(255,255,255,0.06)' }} />

@@ -6,9 +6,9 @@
 // plus a local `notify()` and their own <Snackbar>. Same shape every time, so
 // the duplication was survivable — but it had a consequence that was not:
 // a *component* had no way to reach a *page's* local state. So the two
-// components that needed to say something to the user (PepeGameFiModal,
-// LootBoxButton) fell back to `window.alert()` and `window.confirm()` — twelve
-// calls in total.
+// components that needed to say something to the user (the GameFi lab, since
+// made a page, and the retired loot box) fell back to `window.alert()` and
+// `window.confirm()` — twelve calls in total.
 //
 // Native dialogs are the single loudest "this is not a finished product" signal
 // on a financial surface: they are OS-chrome, unstyled, unbranded, they block

@@ -19,7 +19,7 @@ import { RouterLink } from 'src/routes/components';
 import { useWalletContext } from 'src/contexts/wallet-context';
 import { useContracts } from 'src/hooks/useContracts';
 import { Iconify } from 'src/components/iconify';
-import { getEquipped } from 'src/lib/pepefi/inventory';
+import { BURN_ADDRESS } from 'src/lib/pepefi/gamefi';
 import { ACHIEVEMENTS, buildQuests, TODAY_INDEX, type AchCtx } from 'src/lib/pepefi/achievements';
 import { useToast } from 'src/components/pepefi/ToastProvider';
 import { StageSkin, getStageSkins, findStageSkin } from 'src/components/pepefi/pepeStageSkinsData';
@@ -214,7 +214,7 @@ export default function PepeLabPage() {
     if (contracts && wallet.address) {
       try {
         const amountBig = BigInt(cost) * 10n ** 18n;
-        const tx = await contracts.pepeToken.transfer("0x000000000000000000000000000000000000dEaD", amountBig);
+        const tx = await contracts.pepeToken.transfer(BURN_ADDRESS, amountBig);
         await (tx as { wait(): Promise<unknown> }).wait();
         const nextBal = await contracts.pepeToken.balanceOf(wallet.address);
         setOnChainPepeBal(nextBal as bigint);
@@ -299,7 +299,7 @@ export default function PepeLabPage() {
     if (contracts && wallet.address) {
       try {
         const amountBig = BigInt(COST) * 10n ** 18n;
-        const tx = await contracts.pepeToken.transfer("0x000000000000000000000000000000000000dEaD", amountBig);
+        const tx = await contracts.pepeToken.transfer(BURN_ADDRESS, amountBig);
         await (tx as { wait(): Promise<unknown> }).wait();
         const nextBal = await contracts.pepeToken.balanceOf(wallet.address);
         setOnChainPepeBal(nextBal as bigint);
@@ -357,7 +357,7 @@ export default function PepeLabPage() {
     if (contracts && wallet.address) {
       try {
         const amountBig = BigInt(skin.price) * 10n ** 18n;
-        const tx = await contracts.pepeToken.transfer("0x000000000000000000000000000000000000dEaD", amountBig);
+        const tx = await contracts.pepeToken.transfer(BURN_ADDRESS, amountBig);
         await (tx as { wait(): Promise<unknown> }).wait();
         const nextBal = await contracts.pepeToken.balanceOf(wallet.address);
         setOnChainPepeBal(nextBal as bigint);
@@ -398,7 +398,9 @@ export default function PepeLabPage() {
     streak,
     pepeNum: finalPepeBal,
     positions,
-    owned: Object.values(getEquipped()).length,
+    // Live state rather than a re-read of localStorage: a skin unlocked this
+    // session should light 收藏家 immediately.
+    owned: unlockedSkins.length,
   };
   const quests = buildQuests({ streak, pepeNum: finalPepeBal, positions, checkedToday });
 
