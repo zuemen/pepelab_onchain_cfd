@@ -68,6 +68,6 @@ export const paths = {
     rewards: '/rewards',
     sessions: '/sessions',
     agentMonitor: '/agent-monitor',
-    home:    '/home',
+    pepe:    '/pepe',
   },
 };

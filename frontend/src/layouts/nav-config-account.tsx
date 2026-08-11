@@ -1,5 +1,7 @@
 import type { AccountDrawerProps } from './components/account-drawer';
 
+import { paths } from 'src/routes/paths';
+
 import { Iconify } from 'src/components/iconify';
 
 // ----------------------------------------------------------------------
@@ -20,17 +22,17 @@ export const accountNavData = (address?: string | null): AccountDrawerProps['dat
   },
   {
     label: 'Potion Shop (魔法藥水商店)',
-    href: '#gamefi-potions',
+    href: `${paths.pepefi.pepe}?tab=potions`,
     icon: <Iconify icon="custom:invoice-duotone" />,
   },
   {
     label: 'My Mounts (尊貴坐騎)',
-    href: '#gamefi-mounts',
+    href: `${paths.pepefi.pepe}?tab=mounts`,
     icon: <Iconify icon="solar:settings-bold-duotone" />,
   },
   {
     label: 'Pepe Skins & Gacha (🎰 造型盲盒與商城)',
-    href: '#gamefi-skins',
+    href: `${paths.pepefi.pepe}?tab=skins`,
     icon: <Iconify icon="solar:palette-bold-duotone" />,
   },
   {

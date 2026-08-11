@@ -27,7 +27,6 @@ import { Iconify } from 'src/components/iconify';
 import { Scrollbar } from 'src/components/scrollbar';
 import { AnimateBorder } from 'src/components/animate';
 import { PepeAvatar } from 'src/components/pepefi/PepeAvatar';
-import PepeGameFiModal from 'src/components/pepefi/PepeGameFiModal';
 
 import { useMockedUser } from 'src/auth/hooks';
 
@@ -56,9 +55,6 @@ export function AccountDrawer({ data = [], sx, ...other }: AccountDrawerProps) {
   const [displayName, saveDisplayName] = useDisplayName(wallet.address || 'mock_user');
   const [nameInput, setNameInput] = useState('');
   useEffect(() => { if (open) setNameInput(displayName); }, [open, displayName]);
-
-  const [gamefiOpen, setGamefiOpen] = useState(false);
-  const [gamefiTab, setGamefiTab] = useState<'potions' | 'mounts' | 'skins'>('potions');
 
   const renderAvatar = () => (
     <AnimateBorder
@@ -94,26 +90,12 @@ export function AccountDrawer({ data = [], sx, ...other }: AccountDrawerProps) {
           targetHref = `/trader/${wallet.address}`;
         }
 
-        const isGamefi = option.href.startsWith('#gamefi-');
-
-        const handleClick = (e: React.MouseEvent) => {
-          if (isGamefi) {
-            e.preventDefault();
-            const tab = option.href.replace('#gamefi-', '') as 'potions' | 'mounts' | 'skins';
-            setGamefiTab(tab);
-            setGamefiOpen(true);
-            onClose(); // Close drawer
-          } else {
-            onClose();
-          }
-        };
-
         return (
           <MenuItem key={option.label}>
             <Link
-              {...(isGamefi ? {} : { component: RouterLink })}
-              href={isGamefi ? '#' : (option.label === 'Home' ? rootHref : targetHref)}
-              onClick={handleClick}
+              component={RouterLink}
+              href={option.label === 'Home' ? rootHref : targetHref}
+              onClick={onClose}
               color="inherit"
               underline="none"
               sx={{
@@ -234,12 +216,6 @@ export function AccountDrawer({ data = [], sx, ...other }: AccountDrawerProps) {
           <SignOutButton onClose={onClose} />
         </Box>
       </Drawer>
-
-      <PepeGameFiModal
-        open={gamefiOpen}
-        onClose={() => setGamefiOpen(false)}
-        defaultTab={gamefiTab}
-      />
     </>
   );
 }

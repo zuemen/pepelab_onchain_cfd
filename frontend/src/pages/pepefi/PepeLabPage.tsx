@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router';
 
 import Tab from '@mui/material/Tab';
 import Box from '@mui/material/Box';
@@ -8,15 +9,18 @@ import Card from '@mui/material/Card';
 import Stack from '@mui/material/Stack';
 import Dialog from '@mui/material/Dialog';
 import Button from '@mui/material/Button';
+import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
-import IconButton from '@mui/material/IconButton';
 import LinearProgress from '@mui/material/LinearProgress';
-import DialogContent from '@mui/material/DialogContent';
+
+import { paths } from 'src/routes/paths';
+import { RouterLink } from 'src/routes/components';
 
 import { useWalletContext } from 'src/contexts/wallet-context';
 import { useContracts } from 'src/hooks/useContracts';
-import { usePepefiWallet } from 'src/layouts/pepefi';
 import { Iconify } from 'src/components/iconify';
+import { BURN_ADDRESS } from 'src/lib/pepefi/gamefi';
+import { ACHIEVEMENTS, buildQuests, TODAY_INDEX, type AchCtx } from 'src/lib/pepefi/achievements';
 import { useToast } from 'src/components/pepefi/ToastProvider';
 import { StageSkin, getStageSkins, findStageSkin } from 'src/components/pepefi/pepeStageSkinsData';
 import { PEPE_MOUNTS, getMount, getNextMount } from 'src/components/pepefi/pepeMountsData';
@@ -42,20 +46,32 @@ const POTIONS = [
 // never drift apart.
 const getTitleByLevel = (lvl: number) => getEvolutionStage(lvl).title;
 
-interface PepeGameFiModalProps {
-  open: boolean;
-  onClose: () => void;
-  defaultTab?: 'potions' | 'mounts' | 'skins';
-}
+type PepeLabTab = 'potions' | 'mounts' | 'skins' | 'achievements' | 'quests';
 
-export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' }: PepeGameFiModalProps) {
-  const [tabValue, setTabValue] = useState<'potions' | 'mounts' | 'skins'>('potions');
+const TABS: PepeLabTab[] = ['potions', 'mounts', 'skins', 'achievements', 'quests'];
+
+export default function PepeLabPage() {
+  // The tab lives in the URL rather than in component state, so `/pepe?tab=mounts`
+  // is a real link: shareable, bookmarkable, and the browser back button walks
+  // back through the tabs the way a visitor expects it to.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rawTab = searchParams.get('tab');
+  const tabValue: PepeLabTab = TABS.includes(rawTab as PepeLabTab) ? (rawTab as PepeLabTab) : 'potions';
+  const setTabValue = (next: PepeLabTab) => setSearchParams({ tab: next });
+
   const { notify, confirm } = useToast();
   const wallet = useWalletContext();
   const userAddress = wallet.address || 'mock_user';
   const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId);
 
   const [onChainPepeBal, setOnChainPepeBal] = useState<bigint | null>(null);
+
+  // Progression state, for the achievements and quests tabs. Each read is
+  // independently guarded: on a chain where a contract is not deployed the
+  // others should still populate rather than the whole panel going blank.
+  const [streak, setStreak] = useState(0);
+  const [lastDay, setLastDay] = useState(0);
+  const [positions, setPositions] = useState(0);
 
   // Sync real-time on-chain PEPE balance
   useEffect(() => {
@@ -65,11 +81,27 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
         const bal = await contracts.pepeToken.balanceOf(wallet.address);
         setOnChainPepeBal(bal as bigint);
       } catch (e) {
-        console.error('Failed to fetch on-chain PEPE balance in Modal:', e);
+        console.error('Failed to fetch on-chain PEPE balance in Lab:', e);
       }
     };
     void fetchOnChainBal();
-  }, [contracts, wallet.address, open]);
+  }, [contracts, wallet.address]);
+
+  useEffect(() => {
+    if (!contracts || !wallet.address) return;
+    void (async () => {
+      try {
+        const last = (await contracts.pepeIncentives.lastCheckIn(wallet.address)) as bigint;
+        const s = (await contracts.pepeIncentives.streak(wallet.address)) as bigint;
+        setLastDay(Number(last));
+        setStreak(Number(s));
+      } catch { /* incentives not deployed on this chain */ }
+      try {
+        const ids = (await contracts.exchange.getUserPositions(wallet.address)) as bigint[];
+        setPositions(ids.length);
+      } catch { /* exchange not deployed on this chain */ }
+    })();
+  }, [contracts, wallet.address]);
 
   // ── Persistent state in localStorage ─────────────────────────────────────────
   const [pepeBal, setPepeBal] = useState<number>(5000);
@@ -89,8 +121,8 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
   const [drawResult, setDrawResult] = useState<StageSkin | null>(null);
 
   // Evolution celebration. Driven from buyPotion rather than from a level
-  // watcher: the modal reloads its level from localStorage every time it opens,
-  // so a watcher would fire a bogus "evolved!" burst on each open.
+  // watcher: the page reloads its level from localStorage on every mount, so a
+  // watcher would fire a bogus "evolved!" burst each time you navigate here.
   const [evolvedTo, setEvolvedTo] = useState<PepeEvolutionStage | null>(null);
   const [heroEvolving, setHeroEvolving] = useState<boolean>(false);
 
@@ -119,7 +151,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
       setUnlockedSkins(savedUnl ? JSON.parse(savedUnl) : []);
       setActiveSkin(savedAsk || '');
 
-      // Re-derive the shared avatar on open rather than only on save. It is a
+      // Re-derive the shared avatar on mount rather than only on save. It is a
       // raw image path consumed by other components, so a value written by an
       // older build can point at a file this one no longer serves; recomputing
       // here heals it without waiting for the next purchase.
@@ -129,7 +161,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
         skin ? skin.image : getEvolutionStage(Number(savedLvl) || 1).image,
       );
     } catch (e) { /* fallback to defaults */ }
-  }, [open, userAddress]);
+  }, [userAddress]);
 
   // Save to storage
   const saveState = (newBal: number, newXp: number, newLvl: number, newMnt: string, newUnl?: string[], newAsk?: string) => {
@@ -182,7 +214,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
     if (contracts && wallet.address) {
       try {
         const amountBig = BigInt(cost) * 10n ** 18n;
-        const tx = await contracts.pepeToken.transfer("0x000000000000000000000000000000000000dEaD", amountBig);
+        const tx = await contracts.pepeToken.transfer(BURN_ADDRESS, amountBig);
         await (tx as { wait(): Promise<unknown> }).wait();
         const nextBal = await contracts.pepeToken.balanceOf(wallet.address);
         setOnChainPepeBal(nextBal as bigint);
@@ -267,7 +299,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
     if (contracts && wallet.address) {
       try {
         const amountBig = BigInt(COST) * 10n ** 18n;
-        const tx = await contracts.pepeToken.transfer("0x000000000000000000000000000000000000dEaD", amountBig);
+        const tx = await contracts.pepeToken.transfer(BURN_ADDRESS, amountBig);
         await (tx as { wait(): Promise<unknown> }).wait();
         const nextBal = await contracts.pepeToken.balanceOf(wallet.address);
         setOnChainPepeBal(nextBal as bigint);
@@ -325,7 +357,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
     if (contracts && wallet.address) {
       try {
         const amountBig = BigInt(skin.price) * 10n ** 18n;
-        const tx = await contracts.pepeToken.transfer("0x000000000000000000000000000000000000dEaD", amountBig);
+        const tx = await contracts.pepeToken.transfer(BURN_ADDRESS, amountBig);
         await (tx as { wait(): Promise<unknown> }).wait();
         const nextBal = await contracts.pepeToken.balanceOf(wallet.address);
         setOnChainPepeBal(nextBal as bigint);
@@ -358,9 +390,24 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
 
   const displayAvatar = equippedSkin ? equippedSkin.image : evoStage.image;
 
+  // ── Progression ──────────────────────────────────────────────────────────────
+  // Same definitions the Dashboard renders, so a badge cannot unlock in one
+  // place and stay locked in the other.
+  const checkedToday = lastDay === TODAY_INDEX();
+  const achCtx: AchCtx = {
+    streak,
+    pepeNum: finalPepeBal,
+    positions,
+    // Live state rather than a re-read of localStorage: a skin unlocked this
+    // session should light 收藏家 immediately.
+    owned: unlockedSkins.length,
+  };
+  const quests = buildQuests({ streak, pepeNum: finalPepeBal, positions, checkedToday });
+
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="lg" slotProps={{ paper: { sx: { bgcolor: '#0b1625', border: '1px solid rgba(124,193,74,0.3)', borderRadius: 3 } } }}>
-      
+    <Container maxWidth="lg" sx={{ py: 3 }}>
+     <Box sx={{ bgcolor: '#0b1625', border: '1px solid rgba(124,193,74,0.3)', borderRadius: 3, overflow: 'hidden' }}>
+
       {/* Dynamic Keyframes Animation Injection */}
       <style dangerouslySetInnerHTML={{ __html: `
         @keyframes shakeEgg {
@@ -386,7 +433,8 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
         }
       `}} />
 
-      <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+      {/* ── Header: who you are, and what you can spend ───────────────────── */}
+      <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
         <Stack direction="row" spacing={1.5} alignItems="center">
           <Box sx={{ width: 48, height: 48, borderRadius: '50%', border: `2px solid ${evoStage.color}`, boxShadow: `0 0 10px ${evoStage.color}80`, overflow: 'hidden', flexShrink: 0 }}>
             <PepeEvolution level={level} size={44} radius="50%" animated={false} />
@@ -400,28 +448,38 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
             </Typography>
           </Box>
         </Stack>
-        <IconButton onClick={onClose} aria-label="關閉" sx={{ color: 'text.secondary' }}>
-          <Iconify icon="mingcute:close-line" />
-        </IconButton>
+
+        {/* The balance belongs next to the identity, not stranded above the
+            tabs — every tab spends it, so it reads as a page-level fact. */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, bgcolor: 'rgba(124,193,74,0.12)', border: '1px solid rgba(124,193,74,0.3)', px: 2, py: 0.75, borderRadius: 2 }}>
+          <Typography variant="subtitle2" sx={{ color: 'var(--palette-primary-main)', fontWeight: 'bold' }}>
+            💰 餘額: {finalPepeBal.toLocaleString()} PEPE
+          </Typography>
+        </Box>
       </Box>
 
-      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, alignItems: 'stretch', minHeight: 0 }}>
-
-        {/* ── LEFT: the character, enlarged on its golden stage ─────────────── */}
-        <Box
-          sx={{
-            width: { xs: '100%', md: 330 },
-            flexShrink: 0,
-            px: 3, pt: 3, pb: 2.5,
-            borderRight: { md: '1px solid rgba(255,255,255,0.06)' },
-            borderBottom: { xs: '1px solid rgba(255,255,255,0.06)', md: 'none' },
-            background: `radial-gradient(circle at 50% 30%, ${evoStage.color}16 0%, transparent 62%)`,
-            // The right column is the taller one (tabs + their content), so the
-            // hero is centred in the space rather than pinned to the top with a
-            // pool of dead gradient underneath it.
-            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-          }}
-        >
+      {/* ── HERO: the character, across the full width of the page ─────────── */}
+      {/* As a modal this was a 330px column pinned beside the tabs. A page has
+          room to lay the frog and its vitals out side by side instead, and to
+          give the tabs below the entire width they were previously denied. */}
+      <Box
+        sx={{
+          px: 3, pt: 3, pb: 2.5,
+          borderBottom: '1px solid rgba(255,255,255,0.06)',
+          background: `radial-gradient(circle at 50% 30%, ${evoStage.color}16 0%, transparent 62%)`,
+          display: 'flex',
+          flexDirection: { xs: 'column', md: 'row' },
+          alignItems: 'center',
+          // Centred as a pair. Left-aligned, the art and its vitals hugged the
+          // left edge with ~380px of dead band trailing off to the right.
+          justifyContent: 'center',
+          gap: { xs: 1, md: 5 },
+        }}
+      >
+        {/* PepeEvolutionHero is fluid by design (width:100%, maxWidth:size), so
+            the wrapper has to carry the width — as a row flex item with no
+            basis it would otherwise collapse the hero to nothing. */}
+        <Box sx={{ flexShrink: 0, width: '100%', maxWidth: 288 }}>
           <PepeEvolutionHero
             level={level}
             size={288}
@@ -430,39 +488,32 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
             skinImage={equippedSkin?.image}
             skinGroundY={equippedSkin?.groundY}
           />
+        </Box>
 
-          <Typography variant="h6" sx={{ fontWeight: 900, color: evoStage.color, mt: 1, textAlign: 'center' }}>
+        {/* Capped rather than flex:1 — an XP bar stretched across 1100px reads
+            as a loading screen, not as progress. */}
+        <Box sx={{ width: '100%', maxWidth: 420, textAlign: { xs: 'center', md: 'left' } }}>
+          <Typography variant="h5" sx={{ fontWeight: 900, color: evoStage.color }}>
             {equippedSkin ? `${equippedSkin.emoji} ${equippedSkin.name}` : `${evoStage.emoji} ${evoStage.label}`}
           </Typography>
-          <Typography variant="caption" sx={{ color: '#ffb300', fontWeight: 'bold' }}>
+          <Typography variant="subtitle2" sx={{ color: '#ffb300', fontWeight: 'bold', display: 'block' }}>
             {getTitleByLevel(level)}
           </Typography>
-          <Typography variant="caption" sx={{ color: 'text.secondary', mb: 2 }}>
+          <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 2.5 }}>
             {activeMountObj.emoji} {activeMountObj.name.split(' (')[0]}
           </Typography>
 
-          <Box sx={{ width: '100%' }}>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
-              <span>Lv. {level}</span>
-              <span>{xp}/{level * 100} XP</span>
-            </Typography>
-            <LinearProgress variant="determinate" value={Math.min(100, (xp / (level * 100)) * 100)} sx={{ height: 8, borderRadius: 4, mt: 0.75, bgcolor: 'rgba(255,255,255,0.08)', '& .MuiLinearProgress-bar': { bgcolor: evoStage.color } }} />
-          </Box>
-        </Box>
-
-        {/* ── RIGHT: balance, evolution roadmap, tabs and their content ─────── */}
-        <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-
-      <Box sx={{ px: 3, py: 2, bgcolor: 'rgba(255,255,255,0.02)', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 2 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, bgcolor: 'rgba(124,193,74,0.12)', border: '1px solid rgba(124,193,74,0.3)', px: 2, py: 0.75, borderRadius: 2 }}>
-          <Typography variant="subtitle2" sx={{ color: 'var(--palette-primary-main)', fontWeight: 'bold' }}>
-            💰 餘額: {finalPepeBal.toLocaleString()} PEPE
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
+            <span>Lv. {level}</span>
+            <span>{xp}/{level * 100} XP</span>
           </Typography>
+          <LinearProgress variant="determinate" value={Math.min(100, (xp / (level * 100)) * 100)} sx={{ height: 8, borderRadius: 4, mt: 0.75, bgcolor: 'rgba(255,255,255,0.08)', '& .MuiLinearProgress-bar': { bgcolor: evoStage.color } }} />
         </Box>
       </Box>
 
       {/* 🐸 Evolution roadmap — Lv.0 蛙蛋 → Lv.6 蛙神 */}
-      <Box sx={{ px: 3, py: 2, borderTop: '1px solid rgba(255,255,255,0.06)', background: `linear-gradient(180deg, ${evoStage.color}0f 0%, transparent 100%)` }}>
+      {/* No borderTop: the hero above already draws the dividing line. */}
+      <Box sx={{ px: 3, py: 2, background: `linear-gradient(180deg, ${evoStage.color}0f 0%, transparent 100%)` }}>
         <Stack direction="row" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={1} sx={{ mb: 1.5 }}>
           <Typography variant="caption" sx={{ fontWeight: 'bold', color: 'text.secondary' }}>
             🐸 佩佩蛙進化樹 (Evolution) · 目前{' '}
@@ -512,19 +563,42 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
         </Box>
       </Box>
 
-      <Tabs value={tabValue} onChange={(_, nv) => setTabValue(nv)} centered indicatorColor="custom" sx={{ borderBottom: '1px solid rgba(255,255,255,0.06)', '& .MuiTab-root': { color: 'text.secondary', fontWeight: 'bold', fontSize: '1.05rem', '&.Mui-selected': { color: 'var(--palette-primary-main)' } } }}>
+      {/* `centered` would clip these labels on a phone — they are long in two
+          languages. Scrollable instead, then centred by the flex container
+          once the viewport is wide enough to hold them all. */}
+      <Tabs
+        value={tabValue}
+        onChange={(_, nv) => setTabValue(nv)}
+        variant="scrollable"
+        scrollButtons="auto"
+        allowScrollButtonsMobile
+        indicatorColor="custom"
+        sx={{
+          borderBottom: '1px solid rgba(255,255,255,0.06)',
+          '& .MuiTabs-flexContainer': { justifyContent: { md: 'center' } },
+          '& .MuiTab-root': {
+            color: 'text.secondary',
+            fontWeight: 'bold',
+            fontSize: { xs: '0.9rem', md: '1.05rem' },
+            '&.Mui-selected': { color: 'var(--palette-primary-main)' },
+          },
+        }}
+      >
         <Tab value="potions" label="🧪 魔法藥水 (Potions)" />
         <Tab value="mounts" label="🐋 尊貴坐騎 (Mounts)" />
         <Tab value="skins" label="🎰 造型盲盒與商城 (Skins & Gacha)" />
+        <Tab value="achievements" label="🏅 成就 (Achievements)" />
+        <Tab value="quests" label="📋 每日任務 (Quests)" />
       </Tabs>
 
-      <DialogContent sx={{ minHeight: 450, py: 3 }}>
-        
+      {/* px:3 matches the 24px DialogContent used to add for us */}
+      <Box sx={{ minHeight: 450, py: 3, px: 3 }}>
+
         {/* A. POTION SHOP TAB */}
         {tabValue === 'potions' && (
           <Grid container spacing={3}>
             {POTIONS.map(potion => (
-              <Grid size={{ xs: 12, md: 4 }} key={potion.id}>
+              <Grid size={{ xs: 12, sm: 6, md: 4 }} key={potion.id}>
                 <Card sx={{ p: 3, border: '1px solid rgba(255,255,255,0.08)', bgcolor: 'rgba(255,255,255,0.02)', display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'space-between', gap: 2 }}>
                   <Box>
                     <Box sx={{ fontSize: 40, mb: 1 }}>{potion.emoji}</Box>
@@ -606,8 +680,10 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
               {PEPE_MOUNTS.map(m => {
                 const isUnlocked = level >= m.levelRequired;
                 const isEquipped = activeMount === m.id;
+                // lg:3 puts all four mounts on one row now that the page is
+                // full width — at sm:6 they stretched to ~540px each.
                 return (
-                  <Grid size={{ xs: 12, sm: 6 }} key={m.id}>
+                  <Grid size={{ xs: 12, sm: 6, lg: 3 }} key={m.id}>
                     <Card sx={{
                       p: 2.5, position: 'relative', height: '100%',
                       border: '1px solid',
@@ -894,25 +970,121 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
           </Box>
         )}
 
-      </DialogContent>
+        {/* D. ACHIEVEMENTS TAB */}
+        {tabValue === 'achievements' && (
+          <Grid container spacing={2}>
+            {ACHIEVEMENTS.map(a => {
+              const done = a.check(achCtx);
+              return (
+                <Grid size={12} key={a.id}>
+                  <Card sx={{
+                    p: 2, height: '100%', display: 'flex', alignItems: 'center', gap: 2,
+                    border: '1px solid',
+                    borderColor: done ? 'var(--palette-primary-main)' : 'rgba(255,255,255,0.08)',
+                    bgcolor: done ? 'rgba(124,193,74,0.06)' : 'rgba(255,255,255,0.02)',
+                    opacity: done ? 1 : 0.5,
+                    transition: 'all 0.3s',
+                  }}>
+                    <Typography sx={{ fontSize: 30, lineHeight: 1, flexShrink: 0 }}>{a.emoji}</Typography>
 
-        </Box>{/* /RIGHT column */}
-      </Box>{/* /two-column body */}
+                    {/* Title and requirement sit side by side on a full-width
+                        row — stacked, they left the whole right half empty. */}
+                    <Typography sx={{ fontSize: 15, fontWeight: 700, flexShrink: 0, width: { sm: 140 }, color: done ? 'var(--palette-primary-main)' : 'text.primary' }}>
+                      {a.title}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ flex: 1, minWidth: 0, display: { xs: 'none', sm: 'block' } }}>
+                      {a.desc}
+                    </Typography>
 
-      <Box sx={{ p: 2, display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-        <Button variant="outlined" color="inherit" onClick={onClose} sx={{ fontWeight: 'bold' }}>
-          關閉 Lab 視窗
-        </Button>
-      </Box>
+                    <Box sx={{ ml: 'auto', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                      {done ? (
+                        <>
+                          <Iconify icon="solar:verified-check-bold" sx={{ color: 'var(--palette-primary-main)', fontSize: 20 }} />
+                          <Typography variant="caption" sx={{ color: 'var(--palette-primary-main)', fontWeight: 'bold' }}>已解鎖</Typography>
+                        </>
+                      ) : (
+                        <>
+                          <Iconify icon="solar:shield-keyhole-bold-duotone" sx={{ color: 'text.disabled', fontSize: 18 }} />
+                          <Typography variant="caption" color="text.disabled">未解鎖</Typography>
+                        </>
+                      )}
+                    </Box>
+                  </Card>
+                </Grid>
+              );
+            })}
+          </Grid>
+        )}
+
+        {/* E. DAILY QUESTS TAB */}
+        {tabValue === 'quests' && (
+          <Box>
+            <Grid container spacing={2}>
+              {quests.map(q => (
+                <Grid size={12} key={q.id}>
+                  <Card sx={{
+                    p: 2.5, height: '100%',
+                    border: '1px solid',
+                    borderColor: q.done ? 'var(--palette-primary-main)' : 'rgba(255,255,255,0.08)',
+                    bgcolor: 'rgba(255,255,255,0.02)',
+                  }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1, mb: 1 }}>
+                      <Typography sx={{ fontSize: 15, fontWeight: 700 }}>{q.emoji} {q.title}</Typography>
+                      <Box sx={{
+                        px: 1.25, py: 0.25, borderRadius: 1, fontSize: '0.72rem', fontWeight: 'bold', whiteSpace: 'nowrap',
+                        bgcolor: q.done ? 'var(--palette-primary-main)' : 'transparent',
+                        color: q.done ? '#000' : 'var(--palette-primary-main)',
+                        border: q.done ? 'none' : '1px solid rgba(124,193,74,0.35)',
+                      }}>
+                        {q.done ? '✓ 完成' : q.reward}
+                      </Box>
+                    </Box>
+                    <LinearProgress
+                      variant="determinate"
+                      value={q.progress}
+                      sx={{ height: 6, borderRadius: 3, bgcolor: 'rgba(255,255,255,0.08)', '& .MuiLinearProgress-bar': { bgcolor: q.done ? 'var(--palette-primary-main)' : '#2196f3' } }}
+                    />
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
+
+            {/* Check-in itself stays on /rewards. Two pages both sending the
+                same on-chain transaction is how you get double check-ins. */}
+            <Card sx={{ mt: 3, p: 2.5, display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', border: '1px solid rgba(124,193,74,0.2)', bgcolor: 'rgba(124,193,74,0.04)' }}>
+              <Typography variant="body2" color="text.secondary" sx={{ flex: 1, minWidth: 220 }}>
+                {checkedToday
+                  ? `🔥 已連續簽到 ${streak} 天，明天再來。`
+                  : '🐸 今天還沒簽到，到 Rewards 頁面領取每日 PEPE。'}
+              </Typography>
+              <Button
+                component={RouterLink}
+                href={paths.pepefi.rewards}
+                variant={checkedToday ? 'outlined' : 'contained'}
+                color={checkedToday ? 'inherit' : 'primary'}
+                sx={{ fontWeight: 'bold', textTransform: 'none' }}
+              >
+                前往 Rewards 🎁
+              </Button>
+            </Card>
+          </Box>
+        )}
+
+      </Box>{/* /tab content */}
 
       {/* 🐸 EVOLUTION CELEBRATION */}
       <Dialog
         open={!!evolvedTo}
         onClose={() => setEvolvedTo(null)}
-        slotProps={{ paper: { sx: { bgcolor: '#070f19', border: `2px solid ${evolvedTo?.color || 'var(--palette-primary-main)'}`, borderRadius: 4, maxWidth: 460, overflow: 'hidden', p: 4, textAlign: 'center' } } }}
+        slotProps={{ paper: { sx: { bgcolor: '#070f19', border: `2px solid ${evolvedTo?.color || 'var(--palette-primary-main)'}`, borderRadius: 4, maxWidth: 600, maxHeight: 'calc(100% - 32px)', overflow: 'hidden' } } }}
       >
         {evolvedTo && (
-          <Box sx={{ position: 'relative' }}>
+          // Two layers on purpose. `overflow:hidden` is what clips the light
+          // rays, but on the Paper it also clipped the content — on a short
+          // window the buttons below were cut off and unreachable, because a
+          // hidden Paper cannot scroll. So the rays get their own clip layer
+          // and the content scrolls inside it.
+          <Box sx={{ position: 'relative', overflow: 'hidden' }}>
             {/* Rotating light rays */}
             <Box sx={{
               position: 'absolute', top: -140, left: -140, right: -140, bottom: -140,
@@ -922,6 +1094,8 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
               pointerEvents: 'none',
             }} />
 
+            <Box sx={{ position: 'relative', zIndex: 1, p: 4, textAlign: 'center', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto' }}>
+
             <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 2, zIndex: 1, position: 'relative' }}>
               EVOLUTION
             </Typography>
@@ -929,7 +1103,10 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
               進化成功！🎉
             </Typography>
 
-            <Box sx={{ zIndex: 1, position: 'relative' }}>
+            {/* The hero renders 1.25x its width tall, so it dominates the
+                height budget on a short window. Capping the width keeps the
+                "太強了" button above the fold. */}
+            <Box sx={{ zIndex: 1, position: 'relative', width: 'min(260px, 30vh)', mx: 'auto' }}>
               <PepeEvolutionHero level={level} size={260} evolving />
             </Box>
 
@@ -951,6 +1128,8 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
             >
               太強了 🐸
             </Button>
+
+            </Box>{/* /scroll layer */}
           </Box>
         )}
       </Dialog>
@@ -959,10 +1138,13 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
       <Dialog
         open={!!drawResult}
         onClose={() => setDrawResult(null)}
-        slotProps={{ paper: { sx: { bgcolor: '#070f19', border: `2px solid ${drawResult ? getRarityColor(drawResult.rarity) : 'var(--palette-primary-main)'}`, borderRadius: 4, maxWidth: 450, overflow: 'hidden', p: 4, textAlign: 'center' } } }}
+        slotProps={{ paper: { sx: { bgcolor: '#070f19', border: `2px solid ${drawResult ? getRarityColor(drawResult.rarity) : 'var(--palette-primary-main)'}`, borderRadius: 4, maxWidth: 600, maxHeight: 'calc(100% - 32px)', overflow: 'hidden' } } }}
       >
         {drawResult && (
-          <Box sx={{ position: 'relative' }}>
+          // Same two-layer split as the evolution popup: the rays are clipped
+          // here, the content scrolls inside. This is the one that bit us —
+          // "立即穿戴造型" sat below the fold with no way to reach it.
+          <Box sx={{ position: 'relative', overflow: 'hidden' }}>
             {/* lightburst rays background */}
             <Box sx={{
               position: 'absolute', top: -100, left: -100, right: -100, bottom: -100,
@@ -972,6 +1154,8 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
               pointerEvents: 'none'
             }} />
 
+            <Box sx={{ position: 'relative', zIndex: 1, p: 4, textAlign: 'center', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto' }}>
+
             <Typography variant="h5" sx={{ fontWeight: '900', color: '#ffb300', mb: 1, zIndex: 1, position: 'relative' }}>
               恭喜獲得！🎉
             </Typography>
@@ -979,7 +1163,9 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
               您已成功破殼孵化出全新佩佩蛙稀有造型！
             </Typography>
 
-            <Box sx={{ width: 220, height: 220, mx: 'auto', my: 3, border: `4px solid ${getRarityColor(drawResult.rarity)}`, boxShadow: `0 0 35px ${getRarityColor(drawResult.rarity)}`, borderRadius: 3, overflow: 'hidden', position: 'relative', zIndex: 1 }}>
+            {/* Scrolling is the safety net; this keeps a short window from
+                needing it. Full 220px whenever the viewport can afford it. */}
+            <Box sx={{ width: 'min(220px, 30vh)', height: 'min(220px, 30vh)', mx: 'auto', my: { xs: 2, sm: 3 }, border: `4px solid ${getRarityColor(drawResult.rarity)}`, boxShadow: `0 0 35px ${getRarityColor(drawResult.rarity)}`, borderRadius: 3, overflow: 'hidden', position: 'relative', zIndex: 1 }}>
               <img src={drawResult.image} alt={drawResult.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             </Box>
 
@@ -1019,9 +1205,12 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
                 收進衣櫃
               </Button>
             </Stack>
+
+            </Box>{/* /scroll layer */}
           </Box>
         )}
       </Dialog>
-    </Dialog>
+     </Box>
+    </Container>
   );
 }

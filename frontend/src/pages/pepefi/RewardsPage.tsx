@@ -17,6 +17,7 @@ import { useContracts } from 'src/hooks/useContracts';
 import { usePepefiWallet } from 'src/layouts/pepefi';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
 import { toStrictlyIncreasingIds } from 'src/lib/pepefi/positionIds';
+import { dailyRewardFor, TODAY_INDEX } from 'src/lib/pepefi/achievements';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -26,8 +27,6 @@ const TIER_REWARD    = [500,    2_000,  10_000,  50_000];    // PEPE
 
 const fmt18 = (v: bigint) => Number(v) / 1e18;
 const fmtPepe = (v: bigint) => (Number(v) / 1e18).toFixed(0) + ' PEPE';
-
-const TODAY_INDEX = () => Math.floor(Date.now() / 1000 / 86400);
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -215,6 +214,9 @@ export default function RewardsPage() {
     } catch { /* not deployed */ }
   }, [contracts, wallet.address]);
 
+  // The only place in the app that sends dailyCheckIn(). /dashboard and /pepe
+  // both show the streak and both link here rather than transacting, which is
+  // what keeps a double check-in from being possible. Keep it that way.
   const doCheckIn = async () => {
     if (!contracts) return;
     if (!incentivesLive) { notify(INCENTIVES_OFFLINE_MSG, false); return; }
@@ -239,7 +241,7 @@ export default function RewardsPage() {
 
   // ── Daily state ─────────────────────────────────────────────────────────────
   const checkedInToday = lastDay === TODAY_INDEX();
-  const dailyReward = 50 + 10 * Math.min(myStreak, 6);
+  const dailyReward = dailyRewardFor(myStreak);
 
   if (!wallet.isConnected) {
     return (
@@ -417,7 +419,7 @@ export default function RewardsPage() {
             </Box>
             {checkedInToday && (
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-                明天再來！明日獎勵: {Math.min(50 + 10 * myStreak, 110)} PEPE
+                明天再來！明日獎勵: {dailyRewardFor(myStreak)} PEPE
               </Typography>
             )}
           </SectionCard>

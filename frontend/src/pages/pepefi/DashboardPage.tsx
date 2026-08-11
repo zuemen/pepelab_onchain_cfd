@@ -21,11 +21,9 @@ import { prettyError } from 'src/lib/pepefi/errorMessages';
 import ESGBadge from 'src/components/pepefi/ESGBadge';
 import Skeleton, { TableSkeleton } from 'src/components/pepefi/Skeleton';
 import { PepeAvatar } from 'src/components/pepefi/PepeAvatar';
-import { PepeShopDialog } from 'src/components/pepefi/PepeShopDialog';
-import { LootBoxButton } from 'src/components/pepefi/LootBoxButton';
 import { pepeNameFor } from 'src/lib/pepefi/pepeName';
-import { getEquipped } from 'src/lib/pepefi/inventory';
-import { ITEMS, BURN_ADDRESS } from 'src/lib/pepefi/items';
+import { ownedCosmeticsCount } from 'src/lib/pepefi/gamefi';
+import { ACHIEVEMENTS, buildQuests, dailyRewardFor, TODAY_INDEX, type AchCtx } from 'src/lib/pepefi/achievements';
 
 /** 鏈上餘額的輪詢間隔。原本是 8 秒——見下方 useEffect 的說明。 */
 const POLL_MS = 30_000;
@@ -107,43 +105,6 @@ const CAT_CONFIG: Record<DisplayCat, {
 };
 
 const PIE_COLORS = DISPLAY_CATS.map(c => CAT_CONFIG[c].color);
-
-// ── Achievement definitions ───────────────────────────────────────────────────
-
-interface Achievement {
-  id:    string
-  emoji: string
-  title: string
-  desc:  string
-  check: (ctx: AchCtx) => boolean
-}
-
-interface AchCtx {
-  streak:    number
-  pepeNum:   number
-  positions: number
-  owned:     number
-}
-
-const ACHIEVEMENTS: Achievement[] = [
-  { id: 'ach_first_stake',  emoji: '🌱', title: '初次質押',    desc: '持有任何 PEPE',             check: c => c.pepeNum > 0 },
-  { id: 'ach_streak3',      emoji: '🔥', title: '3 天連到',    desc: '連續簽到 3 天',              check: c => c.streak >= 3 },
-  { id: 'ach_streak7',      emoji: '⚡', title: '週簽神人',    desc: '連續簽到 7 天',              check: c => c.streak >= 7 },
-  { id: 'ach_first_trade',  emoji: '📈', title: '首筆交易',    desc: '開過至少一筆倉',              check: c => c.positions >= 1 },
-  { id: 'ach_whale',        emoji: '🐋', title: 'Whale 降臨', desc: '持有 100,000 PEPE',           check: c => c.pepeNum >= 100_000 },
-  { id: 'ach_collector',    emoji: '🎨', title: '收藏家',      desc: '收藏至少 3 件 Pepe 道具',    check: c => c.owned >= 3 },
-  { id: 'ach_degen',        emoji: '🎰', title: 'Degen',       desc: '持有 1,000,000 PEPE',        check: c => c.pepeNum >= 1_000_000 },
-  { id: 'ach_legend',       emoji: '👑', title: '傳說 Pepe',   desc: '所有成就解鎖',               check: c => c.streak >= 7 && c.pepeNum >= 100_000 && c.owned >= 3 },
-]
-
-interface Quest {
-  id:       string
-  emoji:    string
-  title:    string
-  reward:   string
-  progress: number   // 0-100
-  done:     boolean
-}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -307,9 +268,8 @@ export default function DashboardPage() {
  
   const [streak,      setStreak]      = useState(0);
   const [lastDay,     setLastDay]     = useState(0);
-  const [shopOpen,    setShopOpen]    = useState(false);
   const [toast,       setToast]       = useState<{ msg: string; ok: boolean } | null>(null);
-  const [equipped,    setEquipped]    = useState<Record<string, string>>(() => getEquipped());
+  const [ownedCount,  setOwnedCount]  = useState<number>(() => ownedCosmeticsCount());
 
   const notify = (msg: string, ok: boolean) => {
     setToast({ msg, ok });
@@ -346,7 +306,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const handleUpdate = () => {
-      setEquipped(getEquipped());
+      setOwnedCount(ownedCosmeticsCount());
     };
     window.addEventListener('pepefi:gamefi-updated', handleUpdate);
     return () => window.removeEventListener('pepefi:gamefi-updated', handleUpdate);
@@ -572,27 +532,6 @@ export default function DashboardPage() {
     } catch (e) { console.error('Add PEPE to wallet failed', e); }
   };
 
-  const handleBuy = useCallback(async (_item: { price: number }, price: number) => {
-    if (!contracts) throw new Error('Not connected')
-    const amount = BigInt(price) * 10n ** 18n
-    const tx = (await contracts.pepeToken.transfer(BURN_ADDRESS, amount)) as { wait(): Promise<unknown> }
-    await tx.wait()
-    notify(`購買成功！ -${price.toLocaleString()} PEPE 🐸`, true)
-    setEquipped(getEquipped())
-    await fetchAll()
-    await fetchPepe()
-  }, [contracts, fetchAll, fetchPepe])
-
-  const handleBurn = useCallback(async (amount: number) => {
-    if (!contracts) throw new Error('Not connected')
-    const amountBig = BigInt(amount) * 10n ** 18n
-    const tx = (await contracts.pepeToken.transfer(BURN_ADDRESS, amountBig)) as { wait(): Promise<unknown> }
-    await tx.wait()
-    notify(`開箱成功！消耗 ${amount.toLocaleString()} PEPE`, true)
-    await fetchAll()
-    await fetchPepe()
-  }, [contracts, fetchAll, fetchPepe])
-
   // ── Derived: live-updated from livePrices tick ────────────────────────────
 
   const derived = useMemo(() => {
@@ -695,24 +634,13 @@ export default function DashboardPage() {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  const TODAY_INDEX = () => Math.floor(Date.now() / 1000 / 86400);
   const pepeNum       = pepeBal !== null ? Number(pepeBal) / 1e18 : 0;
   const checkedToday  = lastDay === TODAY_INDEX();
-  const dailyReward   = 50 + 10 * Math.min(streak, 6);
-  const ownedCount    = Object.values(equipped).length;
+  const dailyReward   = dailyRewardFor(streak);
 
   const achCtx: AchCtx = { streak, pepeNum, positions: positions.length, owned: ownedCount };
 
-  const quests: Quest[] = [
-    { id: 'q_checkin',  emoji: '📅', title: '每日簽到',      reward: `+${dailyReward} PEPE`,    progress: checkedToday ? 100 : 0,  done: checkedToday },
-    { id: 'q_trade',    emoji: '📈', title: '開一筆新倉',    reward: '+25 PEPE',                 progress: positions.length > 0 ? 100 : 0, done: positions.length > 0 },
-    { id: 'q_balance',  emoji: '💰', title: '持有 100 PEPE', reward: '達成成就',                 progress: Math.min(100, pepeNum), done: pepeNum >= 100 },
-    { id: 'q_streak3',  emoji: '🔥', title: '連簽 3 天',     reward: '解鎖成就',                 progress: Math.min(100, (streak / 3) * 100), done: streak >= 3 },
-  ];
-
-  const equippedItems = Object.values(equipped)
-    .map(id => ITEMS.find(i => i.id === id))
-    .filter(Boolean) as typeof ITEMS;
+  const quests = buildQuests({ streak, pepeNum, positions: positions.length, checkedToday });
 
   const pnlPctStr = derived.totalNotional > 0n
     ? fPct(derived.totalPnL, derived.totalNotional) : '—';
@@ -755,159 +683,64 @@ export default function DashboardPage() {
         </Box>
       )}
 
-      {/* ── My Pepe Section (原 HomePage 移植) ── */}
+      {/* ── My Pepe Section ── */}
+      {/* A summary, not a second lab: identity and a row of figures, with every
+          detail behind them a click away on /pepe. Spending happens there too,
+          which is why this card has exactly one button. */}
       <Box>
         <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1.5, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
-          🏠 我的 Pepe & 成就大廳 (My Pepe & Achievements)
+          🏠 我的 Pepe (My Pepe)
         </Typography>
 
-        <Grid container spacing={3}>
-          {/* ── Left: Achievements ── */}
-          <Grid size={{ xs: 12, md: 4 }}>
-            <Card sx={{ p: 2.5, bgcolor: '#0e1420', border: '1px solid var(--palette-primary-main)22', borderRadius: 3, height: '100%' }}>
-              <Typography fontWeight={900} fontSize={16} sx={{ mb: 2, color: 'var(--palette-primary-main)' }}>🏅 成就</Typography>
-              <Stack spacing={1}>
-                {ACHIEVEMENTS.map(a => {
-                  const done = a.check(achCtx)
-                  return (
-                    <Box key={a.id} sx={{
-                      display: 'flex', alignItems: 'center', gap: 1.5, p: 1,
-                      borderRadius: 1.5, bgcolor: done ? 'var(--palette-primary-main)18' : 'transparent',
-                      opacity: done ? 1 : 0.45,
-                    }}>
-                      <Typography fontSize={22}>{a.emoji}</Typography>
-                      <Box>
-                        <Typography fontSize={13} fontWeight={700} sx={{ color: done ? 'var(--palette-primary-main)' : 'text.primary' }}>{a.title}</Typography>
-                        <Typography variant="caption" color="text.secondary">{a.desc}</Typography>
-                      </Box>
-                      {done && <Chip label="✓" size="small" sx={{ ml: 'auto', bgcolor: 'var(--palette-primary-main)', color: '#0e1420', fontWeight: 900, height: 20 }} />}
-                    </Box>
-                  )
-                })}
-              </Stack>
-            </Card>
-          </Grid>
+        <Card sx={{ p: 2.5, bgcolor: '#0e1420', border: '1px solid var(--palette-primary-main)22', borderRadius: 3 }}>
 
-          {/* ── Center: My Pepe Card ── */}
-          <Grid size={{ xs: 12, md: 4 }}>
-            <Card sx={{
-              p: 3, bgcolor: '#0e1420', border: '2px solid var(--palette-primary-main)44', borderRadius: 3,
-              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, height: '100%',
-            }}>
-              {/* Avatar */}
-              <Box sx={{ position: 'relative' }}>
-                <PepeAvatar address={wallet.address ?? undefined} size={120} />
-                {/* Equipped item emoji overlays */}
-                {equippedItems.length > 0 && (
-                  <Box sx={{ position: 'absolute', top: -8, right: -8, display: 'flex', flexWrap: 'wrap', gap: 0.25, maxWidth: 48 }}>
-                    {equippedItems.slice(0, 4).map(item => (
-                      <Typography key={item.id} fontSize={18} title={item.name}>{item.emoji}</Typography>
-                    ))}
-                  </Box>
-                )}
-              </Box>
+          {/* Row 1 — who, and the way in */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+            <PepeAvatar address={wallet.address ?? undefined} size={64} />
 
-              {/* Name */}
-              <Box sx={{ textAlign: 'center' }}>
-                <Typography fontWeight={900} fontSize={20} sx={{ color: 'var(--palette-primary-main)' }}>
-                  {pepeNameFor(wallet.address)}
+            <Box sx={{ minWidth: 0 }}>
+              <Typography fontWeight={900} fontSize={18} sx={{ color: 'var(--palette-primary-main)' }}>
+                {pepeNameFor(wallet.address)}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
+                {wallet.address ? `${wallet.address.slice(0,6)}…${wallet.address.slice(-4)}` : ''}
+              </Typography>
+            </Box>
+
+            <Button
+              component={RouterLink}
+              to="/pepe"
+              variant="contained"
+              sx={{ ml: { sm: 'auto' }, bgcolor: 'var(--palette-primary-main)', color: '#0e1420', fontWeight: 900, textTransform: 'none' }}
+            >
+              🐸 前往養成中心 →
+            </Button>
+          </Box>
+
+          <Divider sx={{ my: 2, borderColor: 'var(--palette-primary-main)18' }} />
+
+          {/* Row 2 — the figures. auto-fit rather than a flex row so they stay
+              on an even grid instead of bunching up as the sidebar collapses. */}
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(104px, 1fr))', gap: 2 }}>
+            {[
+              { label: '鏈上 PEPE', value: pepeNum.toLocaleString(undefined, { maximumFractionDigits: 0 }) },
+              { label: '簽到連續',  value: `🔥 ${streak} 天` },
+              { label: '持倉數',    value: String(positions.length) },
+              { label: '成就',      value: `${ACHIEVEMENTS.filter(a => a.check(achCtx)).length} / ${ACHIEVEMENTS.length}` },
+              { label: '今日任務',  value: `${quests.filter(q => q.done).length} / ${quests.length}` },
+              { label: '造型收藏',  value: String(ownedCount) },
+            ].map(stat => (
+              <Box key={stat.label}>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.25 }}>
+                  {stat.label}
                 </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
-                  {wallet.address ? `${wallet.address.slice(0,6)}…${wallet.address.slice(-4)}` : ''}
+                <Typography fontWeight={700} fontSize={16} sx={{ whiteSpace: 'nowrap' }}>
+                  {stat.value}
                 </Typography>
               </Box>
-
-              {/* Stats */}
-              <Box sx={{ width: '100%', bgcolor: '#161f2e', borderRadius: 2, p: 2 }}>
-                <Stack direction="row" justifyContent="space-between" sx={{ mb: 1 }}>
-                  <Typography variant="caption" color="text.secondary">鏈上 PEPE 餘額</Typography>
-                  <Typography variant="caption" fontWeight={700} sx={{ color: 'var(--palette-primary-main)' }}>
-                    {pepeNum.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                  </Typography>
-                </Stack>
-                <Stack direction="row" justifyContent="space-between" sx={{ mb: 1 }}>
-                  <Typography variant="caption" color="text.secondary">簽到連streak</Typography>
-                  <Typography variant="caption" fontWeight={700}>🔥 {streak} 天</Typography>
-                </Stack>
-                <Stack direction="row" justifyContent="space-between">
-                  <Typography variant="caption" color="text.secondary">持倉數</Typography>
-                  <Typography variant="caption" fontWeight={700}>{positions.length}</Typography>
-                </Stack>
-              </Box>
-
-              <Divider sx={{ width: '100%', borderColor: 'var(--palette-primary-main)22' }} />
-
-              {/* Shop + Lootbox */}
-              <Button variant="contained" fullWidth
-                sx={{ bgcolor: 'var(--palette-primary-main)', color: '#0e1420', fontWeight: 900 }}
-                onClick={() => setShopOpen(true)}>
-                🛒 Pepe Shop 商城
-              </Button>
-
-              <LootBoxButton pepeBalance={pepeBal} onBurn={handleBurn} address={wallet.address} />
-            </Card>
-          </Grid>
-
-          {/* ── Right: Daily Quests ── */}
-          <Grid size={{ xs: 12, md: 4 }}>
-            <Card sx={{ p: 2.5, bgcolor: '#0e1420', border: '1px solid var(--palette-primary-main)22', borderRadius: 3, height: '100%' }}>
-              <Typography fontWeight={900} fontSize={16} sx={{ mb: 2, color: 'var(--palette-primary-main)' }}>📋 每日任務</Typography>
-              <Stack spacing={2}>
-                {quests.map(q => (
-                  <Box key={q.id}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                      <Typography fontSize={13} fontWeight={700}>
-                        {q.emoji} {q.title}
-                      </Typography>
-                      <Chip label={q.done ? '✓ 完成' : q.reward} size="small"
-                        sx={{
-                          bgcolor: q.done ? 'var(--palette-primary-main)' : 'transparent',
-                          color:   q.done ? '#0e1420' : 'var(--palette-primary-main)',
-                          border:  q.done ? 'none' : '1px solid var(--palette-primary-main)55',
-                          fontWeight: 700,
-                          fontSize: 10,
-                          height: 20,
-                        }} />
-                    </Box>
-                    <LinearProgress
-                      variant="determinate"
-                      value={q.progress}
-                      sx={{
-                        height: 6, borderRadius: 3,
-                        bgcolor: '#1e2a3a',
-                        '& .MuiLinearProgress-bar': { bgcolor: q.done ? 'var(--palette-primary-main)' : '#2196f3' },
-                      }}
-                    />
-                  </Box>
-                ))}
-              </Stack>
-
-              <Divider sx={{ my: 3, borderColor: 'var(--palette-primary-main)22' }} />
-
-              {/* Equipped showcase */}
-              <Typography fontWeight={900} fontSize={14} sx={{ mb: 1.5, color: 'var(--palette-primary-main)' }}>🎨 已裝備道具</Typography>
-              {equippedItems.length === 0 ? (
-                <Typography variant="caption" color="text.secondary">
-                  前往 Pepe Shop 購買並裝備道具吧！
-                </Typography>
-              ) : (
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                  {equippedItems.map(item => (
-                    <Chip key={item.id} label={`${item.emoji} ${item.name}`} size="small"
-                      sx={{ bgcolor: 'var(--palette-primary-main)18', color: 'var(--palette-primary-main)', border: '1px solid var(--palette-primary-main)44', fontWeight: 700, fontSize: 11 }} />
-                  ))}
-                </Box>
-              )}
-            </Card>
-          </Grid>
-        </Grid>
-
-        <PepeShopDialog
-          open={shopOpen}
-          onClose={() => { setShopOpen(false); setEquipped(getEquipped()) }}
-          pepeBalance={pepeBal}
-          onBuy={handleBuy}
-        />
+            ))}
+          </Box>
+        </Card>
       </Box>
 
       <Divider sx={{ my: 1, borderColor: 'rgba(255,255,255,0.06)' }} />
