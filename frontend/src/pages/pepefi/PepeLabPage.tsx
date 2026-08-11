@@ -974,25 +974,39 @@ export default function PepeLabPage() {
             {ACHIEVEMENTS.map(a => {
               const done = a.check(achCtx);
               return (
-                <Grid size={{ xs: 12, sm: 6, lg: 3 }} key={a.id}>
+                <Grid size={12} key={a.id}>
                   <Card sx={{
-                    p: 2, height: '100%', display: 'flex', alignItems: 'center', gap: 1.5,
+                    p: 2, height: '100%', display: 'flex', alignItems: 'center', gap: 2,
                     border: '1px solid',
                     borderColor: done ? 'var(--palette-primary-main)' : 'rgba(255,255,255,0.08)',
                     bgcolor: done ? 'rgba(124,193,74,0.06)' : 'rgba(255,255,255,0.02)',
                     opacity: done ? 1 : 0.5,
                     transition: 'all 0.3s',
                   }}>
-                    <Typography sx={{ fontSize: 30, lineHeight: 1 }}>{a.emoji}</Typography>
-                    <Box sx={{ minWidth: 0 }}>
-                      <Typography sx={{ fontSize: 14, fontWeight: 700, color: done ? 'var(--palette-primary-main)' : 'text.primary' }}>
-                        {a.title}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">{a.desc}</Typography>
+                    <Typography sx={{ fontSize: 30, lineHeight: 1, flexShrink: 0 }}>{a.emoji}</Typography>
+
+                    {/* Title and requirement sit side by side on a full-width
+                        row — stacked, they left the whole right half empty. */}
+                    <Typography sx={{ fontSize: 15, fontWeight: 700, flexShrink: 0, width: { sm: 140 }, color: done ? 'var(--palette-primary-main)' : 'text.primary' }}>
+                      {a.title}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ flex: 1, minWidth: 0, display: { xs: 'none', sm: 'block' } }}>
+                      {a.desc}
+                    </Typography>
+
+                    <Box sx={{ ml: 'auto', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                      {done ? (
+                        <>
+                          <Iconify icon="solar:verified-check-bold" sx={{ color: 'var(--palette-primary-main)', fontSize: 20 }} />
+                          <Typography variant="caption" sx={{ color: 'var(--palette-primary-main)', fontWeight: 'bold' }}>已解鎖</Typography>
+                        </>
+                      ) : (
+                        <>
+                          <Iconify icon="solar:shield-keyhole-bold-duotone" sx={{ color: 'text.disabled', fontSize: 18 }} />
+                          <Typography variant="caption" color="text.disabled">未解鎖</Typography>
+                        </>
+                      )}
                     </Box>
-                    {done && (
-                      <Iconify icon="solar:verified-check-bold" sx={{ ml: 'auto', flexShrink: 0, color: 'var(--palette-primary-main)', fontSize: 20 }} />
-                    )}
                   </Card>
                 </Grid>
               );
@@ -1005,7 +1019,7 @@ export default function PepeLabPage() {
           <Box>
             <Grid container spacing={2}>
               {quests.map(q => (
-                <Grid size={{ xs: 12, md: 6 }} key={q.id}>
+                <Grid size={12} key={q.id}>
                   <Card sx={{
                     p: 2.5, height: '100%',
                     border: '1px solid',
@@ -1060,7 +1074,7 @@ export default function PepeLabPage() {
       <Dialog
         open={!!evolvedTo}
         onClose={() => setEvolvedTo(null)}
-        slotProps={{ paper: { sx: { bgcolor: '#070f19', border: `2px solid ${evolvedTo?.color || 'var(--palette-primary-main)'}`, borderRadius: 4, maxWidth: 460, overflow: 'hidden' } } }}
+        slotProps={{ paper: { sx: { bgcolor: '#070f19', border: `2px solid ${evolvedTo?.color || 'var(--palette-primary-main)'}`, borderRadius: 4, maxWidth: 600, maxHeight: 'calc(100% - 32px)', overflow: 'hidden' } } }}
       >
         {evolvedTo && (
           // Two layers on purpose. `overflow:hidden` is what clips the light
@@ -1078,7 +1092,7 @@ export default function PepeLabPage() {
               pointerEvents: 'none',
             }} />
 
-            <Box sx={{ position: 'relative', zIndex: 1, p: 4, textAlign: 'center', maxHeight: 'calc(100vh - 64px)', overflowY: 'auto' }}>
+            <Box sx={{ position: 'relative', zIndex: 1, p: 4, textAlign: 'center', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto' }}>
 
             <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 2, zIndex: 1, position: 'relative' }}>
               EVOLUTION
@@ -1122,7 +1136,7 @@ export default function PepeLabPage() {
       <Dialog
         open={!!drawResult}
         onClose={() => setDrawResult(null)}
-        slotProps={{ paper: { sx: { bgcolor: '#070f19', border: `2px solid ${drawResult ? getRarityColor(drawResult.rarity) : 'var(--palette-primary-main)'}`, borderRadius: 4, maxWidth: 450, overflow: 'hidden' } } }}
+        slotProps={{ paper: { sx: { bgcolor: '#070f19', border: `2px solid ${drawResult ? getRarityColor(drawResult.rarity) : 'var(--palette-primary-main)'}`, borderRadius: 4, maxWidth: 600, maxHeight: 'calc(100% - 32px)', overflow: 'hidden' } } }}
       >
         {drawResult && (
           // Same two-layer split as the evolution popup: the rays are clipped
@@ -1138,7 +1152,7 @@ export default function PepeLabPage() {
               pointerEvents: 'none'
             }} />
 
-            <Box sx={{ position: 'relative', zIndex: 1, p: 4, textAlign: 'center', maxHeight: 'calc(100vh - 64px)', overflowY: 'auto' }}>
+            <Box sx={{ position: 'relative', zIndex: 1, p: 4, textAlign: 'center', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto' }}>
 
             <Typography variant="h5" sx={{ fontWeight: '900', color: '#ffb300', mb: 1, zIndex: 1, position: 'relative' }}>
               恭喜獲得！🎉
