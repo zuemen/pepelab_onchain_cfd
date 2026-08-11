@@ -714,151 +714,78 @@ export default function DashboardPage() {
       )}
 
       {/* ── My Pepe Section ── */}
+      {/* A summary, not a second lab. The achievement list, the quest list and
+          the equipped showcase all render in full on /pepe now; repeating them
+          here is how the two drifted apart in the first place. What stays is
+          the counts, and the actions that exist nowhere else. */}
       <Box>
         <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1.5, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
-          🏠 我的 Pepe & 成就大廳 (My Pepe & Achievements)
+          🏠 我的 Pepe (My Pepe)
         </Typography>
 
-        <Grid container spacing={3}>
-          {/* ── Left: Achievements ── */}
-          <Grid size={{ xs: 12, md: 4 }}>
-            <Card sx={{ p: 2.5, bgcolor: '#0e1420', border: '1px solid var(--palette-primary-main)22', borderRadius: 3, height: '100%' }}>
-              <Typography fontWeight={900} fontSize={16} sx={{ mb: 2, color: 'var(--palette-primary-main)' }}>🏅 成就</Typography>
-              <Stack spacing={1}>
-                {ACHIEVEMENTS.map(a => {
-                  const done = a.check(achCtx)
-                  return (
-                    <Box key={a.id} sx={{
-                      display: 'flex', alignItems: 'center', gap: 1.5, p: 1,
-                      borderRadius: 1.5, bgcolor: done ? 'var(--palette-primary-main)18' : 'transparent',
-                      opacity: done ? 1 : 0.45,
-                    }}>
-                      <Typography fontSize={22}>{a.emoji}</Typography>
-                      <Box>
-                        <Typography fontSize={13} fontWeight={700} sx={{ color: done ? 'var(--palette-primary-main)' : 'text.primary' }}>{a.title}</Typography>
-                        <Typography variant="caption" color="text.secondary">{a.desc}</Typography>
-                      </Box>
-                      {done && <Chip label="✓" size="small" sx={{ ml: 'auto', bgcolor: 'var(--palette-primary-main)', color: '#0e1420', fontWeight: 900, height: 20 }} />}
-                    </Box>
-                  )
-                })}
-              </Stack>
-            </Card>
-          </Grid>
+        <Card sx={{ p: 2.5, bgcolor: '#0e1420', border: '1px solid var(--palette-primary-main)22', borderRadius: 3 }}>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 2.5 }}>
 
-          {/* ── Center: My Pepe Card ── */}
-          <Grid size={{ xs: 12, md: 4 }}>
-            <Card sx={{
-              p: 3, bgcolor: '#0e1420', border: '2px solid var(--palette-primary-main)44', borderRadius: 3,
-              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, height: '100%',
-            }}>
-              {/* Avatar */}
-              <Box sx={{ position: 'relative' }}>
-                <PepeAvatar address={wallet.address ?? undefined} size={120} />
-                {/* Equipped item emoji overlays */}
-                {equippedItems.length > 0 && (
-                  <Box sx={{ position: 'absolute', top: -8, right: -8, display: 'flex', flexWrap: 'wrap', gap: 0.25, maxWidth: 48 }}>
-                    {equippedItems.slice(0, 4).map(item => (
-                      <Typography key={item.id} fontSize={18} title={item.name}>{item.emoji}</Typography>
-                    ))}
-                  </Box>
-                )}
-              </Box>
-
-              {/* Name */}
-              <Box sx={{ textAlign: 'center' }}>
-                <Typography fontWeight={900} fontSize={20} sx={{ color: 'var(--palette-primary-main)' }}>
-                  {pepeNameFor(wallet.address)}
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
-                  {wallet.address ? `${wallet.address.slice(0,6)}…${wallet.address.slice(-4)}` : ''}
-                </Typography>
-              </Box>
-
-              {/* Stats */}
-              <Box sx={{ width: '100%', bgcolor: '#161f2e', borderRadius: 2, p: 2 }}>
-                <Stack direction="row" justifyContent="space-between" sx={{ mb: 1 }}>
-                  <Typography variant="caption" color="text.secondary">鏈上 PEPE 餘額</Typography>
-                  <Typography variant="caption" fontWeight={700} sx={{ color: 'var(--palette-primary-main)' }}>
-                    {pepeNum.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                  </Typography>
-                </Stack>
-                <Stack direction="row" justifyContent="space-between" sx={{ mb: 1 }}>
-                  <Typography variant="caption" color="text.secondary">簽到連streak</Typography>
-                  <Typography variant="caption" fontWeight={700}>🔥 {streak} 天</Typography>
-                </Stack>
-                <Stack direction="row" justifyContent="space-between">
-                  <Typography variant="caption" color="text.secondary">持倉數</Typography>
-                  <Typography variant="caption" fontWeight={700}>{positions.length}</Typography>
-                </Stack>
-              </Box>
-
-              <Divider sx={{ width: '100%', borderColor: 'var(--palette-primary-main)22' }} />
-
-              {/* Shop + Lootbox */}
-              <Button variant="contained" fullWidth
-                sx={{ bgcolor: 'var(--palette-primary-main)', color: '#0e1420', fontWeight: 900 }}
-                onClick={() => setShopOpen(true)}>
-                🛒 Pepe Shop 商城
-              </Button>
-
-              <LootBoxButton pepeBalance={pepeBal} onBurn={handleBurn} address={wallet.address} />
-            </Card>
-          </Grid>
-
-          {/* ── Right: Daily Quests ── */}
-          <Grid size={{ xs: 12, md: 4 }}>
-            <Card sx={{ p: 2.5, bgcolor: '#0e1420', border: '1px solid var(--palette-primary-main)22', borderRadius: 3, height: '100%' }}>
-              <Typography fontWeight={900} fontSize={16} sx={{ mb: 2, color: 'var(--palette-primary-main)' }}>📋 每日任務</Typography>
-              <Stack spacing={2}>
-                {quests.map(q => (
-                  <Box key={q.id}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                      <Typography fontSize={13} fontWeight={700}>
-                        {q.emoji} {q.title}
-                      </Typography>
-                      <Chip label={q.done ? '✓ 完成' : q.reward} size="small"
-                        sx={{
-                          bgcolor: q.done ? 'var(--palette-primary-main)' : 'transparent',
-                          color:   q.done ? '#0e1420' : 'var(--palette-primary-main)',
-                          border:  q.done ? 'none' : '1px solid var(--palette-primary-main)55',
-                          fontWeight: 700,
-                          fontSize: 10,
-                          height: 20,
-                        }} />
-                    </Box>
-                    <LinearProgress
-                      variant="determinate"
-                      value={q.progress}
-                      sx={{
-                        height: 6, borderRadius: 3,
-                        bgcolor: '#1e2a3a',
-                        '& .MuiLinearProgress-bar': { bgcolor: q.done ? 'var(--palette-primary-main)' : '#2196f3' },
-                      }}
-                    />
-                  </Box>
-                ))}
-              </Stack>
-
-              <Divider sx={{ my: 3, borderColor: 'var(--palette-primary-main)22' }} />
-
-              {/* Equipped showcase */}
-              <Typography fontWeight={900} fontSize={14} sx={{ mb: 1.5, color: 'var(--palette-primary-main)' }}>🎨 已裝備道具</Typography>
-              {equippedItems.length === 0 ? (
-                <Typography variant="caption" color="text.secondary">
-                  前往 Pepe Shop 購買並裝備道具吧！
-                </Typography>
-              ) : (
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                  {equippedItems.map(item => (
-                    <Chip key={item.id} label={`${item.emoji} ${item.name}`} size="small"
-                      sx={{ bgcolor: 'var(--palette-primary-main)18', color: 'var(--palette-primary-main)', border: '1px solid var(--palette-primary-main)44', fontWeight: 700, fontSize: 11 }} />
+            {/* Identity */}
+            <Box sx={{ position: 'relative', flexShrink: 0 }}>
+              <PepeAvatar address={wallet.address ?? undefined} size={72} />
+              {equippedItems.length > 0 && (
+                <Box sx={{ position: 'absolute', top: -6, right: -6, display: 'flex', flexWrap: 'wrap', gap: 0.25, maxWidth: 40 }}>
+                  {equippedItems.slice(0, 4).map(item => (
+                    <Typography key={item.id} fontSize={14} title={item.name}>{item.emoji}</Typography>
                   ))}
                 </Box>
               )}
-            </Card>
-          </Grid>
-        </Grid>
+            </Box>
+
+            <Box sx={{ minWidth: 150 }}>
+              <Typography fontWeight={900} fontSize={18} sx={{ color: 'var(--palette-primary-main)' }}>
+                {pepeNameFor(wallet.address)}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
+                {wallet.address ? `${wallet.address.slice(0,6)}…${wallet.address.slice(-4)}` : ''}
+              </Typography>
+            </Box>
+
+            {/* Counts — the detail behind each lives on /pepe */}
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3, flex: 1, minWidth: 240 }}>
+              {[
+                { label: '鏈上 PEPE',  value: pepeNum.toLocaleString(undefined, { maximumFractionDigits: 0 }) },
+                { label: '簽到連續',   value: `🔥 ${streak} 天` },
+                { label: '持倉數',     value: String(positions.length) },
+                { label: '成就',       value: `${ACHIEVEMENTS.filter(a => a.check(achCtx)).length} / ${ACHIEVEMENTS.length}` },
+                { label: '今日任務',   value: `${quests.filter(q => q.done).length} / ${quests.length}` },
+              ].map(stat => (
+                <Box key={stat.label}>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{stat.label}</Typography>
+                  <Typography fontWeight={700} fontSize={15}>{stat.value}</Typography>
+                </Box>
+              ))}
+            </Box>
+
+            {/* Actions. Shop and loot box live only here — the lab sells skins
+                and mounts, which is a different inventory from ITEMS. */}
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
+              <Button variant="outlined" size="small"
+                sx={{ borderColor: 'var(--palette-primary-main)44', color: 'var(--palette-primary-main)', fontWeight: 700 }}
+                onClick={() => setShopOpen(true)}>
+                🛒 Pepe Shop
+              </Button>
+
+              <LootBoxButton pepeBalance={pepeBal} onBurn={handleBurn} address={wallet.address} />
+
+              <Button
+                component={RouterLink}
+                to="/pepe"
+                variant="contained"
+                size="small"
+                sx={{ bgcolor: 'var(--palette-primary-main)', color: '#0e1420', fontWeight: 900 }}
+              >
+                🐸 前往養成中心 →
+              </Button>
+            </Box>
+          </Box>
+        </Card>
 
         <PepeShopDialog
           open={shopOpen}

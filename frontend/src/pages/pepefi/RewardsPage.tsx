@@ -214,6 +214,9 @@ export default function RewardsPage() {
     } catch { /* not deployed */ }
   }, [contracts, wallet.address]);
 
+  // The only place in the app that sends dailyCheckIn(). /dashboard and /pepe
+  // both show the streak and both link here rather than transacting, which is
+  // what keeps a double check-in from being possible. Keep it that way.
   const doCheckIn = async () => {
     if (!contracts) return;
     if (!incentivesLive) { notify(INCENTIVES_OFFLINE_MSG, false); return; }
