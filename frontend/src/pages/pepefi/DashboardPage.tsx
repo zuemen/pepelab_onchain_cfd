@@ -755,7 +755,7 @@ export default function DashboardPage() {
         </Box>
       )}
 
-      {/* ── My Pepe Section (原 HomePage 移植) ── */}
+      {/* ── My Pepe Section ── */}
       <Box>
         <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1.5, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
           🏠 我的 Pepe & 成就大廳 (My Pepe & Achievements)
