@@ -22,7 +22,9 @@ import { LoadingScreen } from 'src/components/loading-screen';
 //   - 刷新頁面時 useWallet 會先做靜默 session 恢復（initializing），
 //     守衛等它完成才判斷，避免已連線用戶刷新內頁被誤踢回 landing。
 
-const PUBLIC_PATHS = ['/', '/x402', '/marketplace'];
+// TODO(fix/gamefi): '/pepe' is public only so the lab can be worked on without
+// a wallet. REMOVE IT before this branch merges — the page spends PEPE.
+const PUBLIC_PATHS = ['/', '/x402', '/marketplace', '/pepe'];
 const AFTER_CONNECT_PATH = '/dashboard';
 
 export function PepefiLayout() {

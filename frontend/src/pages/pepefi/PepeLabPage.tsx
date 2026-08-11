@@ -428,6 +428,9 @@ export default function PepeLabPage() {
           display: 'flex',
           flexDirection: { xs: 'column', md: 'row' },
           alignItems: 'center',
+          // Centred as a pair. Left-aligned, the art and its vitals hugged the
+          // left edge with ~380px of dead band trailing off to the right.
+          justifyContent: 'center',
           gap: { xs: 1, md: 5 },
         }}
       >
