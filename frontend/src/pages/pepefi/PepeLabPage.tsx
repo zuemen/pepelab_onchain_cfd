@@ -19,7 +19,7 @@ import { RouterLink } from 'src/routes/components';
 import { useWalletContext } from 'src/contexts/wallet-context';
 import { useContracts } from 'src/hooks/useContracts';
 import { Iconify } from 'src/components/iconify';
-import { BURN_ADDRESS } from 'src/lib/pepefi/gamefi';
+import { BURN_ADDRESS, loadGamefiState, saveGamefiState, GAMEFI_DEFAULT_STATE } from 'src/lib/pepefi/gamefi';
 import { ACHIEVEMENTS, buildQuests, TODAY_INDEX, type AchCtx } from 'src/lib/pepefi/achievements';
 import { useToast } from 'src/components/pepefi/ToastProvider';
 import { StageSkin, getStageSkins, findStageSkin } from 'src/components/pepefi/pepeStageSkinsData';
@@ -103,18 +103,18 @@ export default function PepeLabPage() {
     })();
   }, [contracts, wallet.address]);
 
-  // ── Persistent state in localStorage ─────────────────────────────────────────
-  const [pepeBal, setPepeBal] = useState<number>(5000);
-  const [xp, setXp] = useState<number>(0);
-  const [level, setLevel] = useState<number>(1);
+  // ── Persistent state, scoped to the connected wallet ─────────────────────────
+  const [pepeBal, setPepeBal] = useState<number>(GAMEFI_DEFAULT_STATE.balance);
+  const [xp, setXp] = useState<number>(GAMEFI_DEFAULT_STATE.xp);
+  const [level, setLevel] = useState<number>(GAMEFI_DEFAULT_STATE.level);
   // The mount and the skin are independent slots: you ride something *and* wear
   // something. (The old wardrobe conflated the two behind one 'custom_skin'
   // sentinel.) Everyone starts on the lotus leaf.
-  const [activeMount, setActiveMount] = useState<string>('leaf');
+  const [activeMount, setActiveMount] = useState<string>(GAMEFI_DEFAULT_STATE.activeMount);
 
   // Skins are per-evolution-stage; an unlocked id stays owned across stages.
-  const [unlockedSkins, setUnlockedSkins] = useState<string[]>([]);
-  const [activeSkin, setActiveSkin] = useState<string>('');
+  const [unlockedSkins, setUnlockedSkins] = useState<string[]>(GAMEFI_DEFAULT_STATE.unlockedSkins);
+  const [activeSkin, setActiveSkin] = useState<string>(GAMEFI_DEFAULT_STATE.activeSkin);
 
   // Gachapon state
   const [isDrawing, setIsDrawing] = useState<boolean>(false);
@@ -132,49 +132,46 @@ export default function PepeLabPage() {
     window.setTimeout(() => setHeroEvolving(false), 1200);
   };
 
-  // Load from storage
+  // Load from storage — keyed by the connected wallet, so switching accounts
+  // switches progress instead of dragging the previous wallet's level, mount
+  // and skins along. Every field is set unconditionally (not "if found"),
+  // because a fresh address has to fall back to defaults rather than keep
+  // whatever the previously-connected address left in React state.
   useEffect(() => {
+    const state = loadGamefiState(userAddress);
+    setPepeBal(state.balance);
+    setXp(state.xp);
+    setLevel(state.level);
+    setActiveMount(state.activeMount);
+    setUnlockedSkins(state.unlockedSkins);
+    setActiveSkin(state.activeSkin);
+
+    // Re-derive the shared avatar on mount rather than only on save. It is a
+    // raw image path consumed by other components, so a value written by an
+    // older build can point at a file this one no longer serves; recomputing
+    // here heals it without waiting for the next purchase.
     try {
-      const savedBal = localStorage.getItem('pepefi:gamefi:balance');
-      const savedXp  = localStorage.getItem('pepefi:gamefi:xp');
-      const savedLvl = localStorage.getItem('pepefi:gamefi:level');
-      const savedMnt = localStorage.getItem('pepefi:gamefi:active_mount');
-
-      const savedUnl = localStorage.getItem('pepefi:gamefi:unlocked_skins');
-      const savedAsk = localStorage.getItem('pepefi:gamefi:active_skin');
-
-      if (savedBal) setPepeBal(Number(savedBal));
-      if (savedXp)  setXp(Number(savedXp));
-      if (savedLvl) setLevel(Number(savedLvl));
-      if (savedMnt) setActiveMount(savedMnt);
-
-      setUnlockedSkins(savedUnl ? JSON.parse(savedUnl) : []);
-      setActiveSkin(savedAsk || '');
-
-      // Re-derive the shared avatar on mount rather than only on save. It is a
-      // raw image path consumed by other components, so a value written by an
-      // older build can point at a file this one no longer serves; recomputing
-      // here heals it without waiting for the next purchase.
-      const skin = savedAsk ? findStageSkin(savedAsk) : undefined;
+      const skin = state.activeSkin ? findStageSkin(state.activeSkin) : undefined;
       localStorage.setItem(
         `pepeAvatar_${userAddress.toLowerCase()}`,
-        skin ? skin.image : getEvolutionStage(Number(savedLvl) || 1).image,
+        skin ? skin.image : getEvolutionStage(state.level).image,
       );
     } catch (e) { /* fallback to defaults */ }
   }, [userAddress]);
 
   // Save to storage
   const saveState = (newBal: number, newXp: number, newLvl: number, newMnt: string, newUnl?: string[], newAsk?: string) => {
-    localStorage.setItem('pepefi:gamefi:balance', newBal.toString());
-    localStorage.setItem('pepefi:gamefi:xp', newXp.toString());
-    localStorage.setItem('pepefi:gamefi:level', newLvl.toString());
-    localStorage.setItem('pepefi:gamefi:active_mount', newMnt);
-
     const finalUnl = newUnl || unlockedSkins;
     const finalAsk = newAsk !== undefined ? newAsk : activeSkin;
 
-    localStorage.setItem('pepefi:gamefi:unlocked_skins', JSON.stringify(finalUnl));
-    localStorage.setItem('pepefi:gamefi:active_skin', finalAsk);
+    saveGamefiState(userAddress, {
+      balance: newBal,
+      xp: newXp,
+      level: newLvl,
+      activeMount: newMnt,
+      unlockedSkins: finalUnl,
+      activeSkin: finalAsk,
+    });
 
     setPepeBal(newBal);
     setXp(newXp);

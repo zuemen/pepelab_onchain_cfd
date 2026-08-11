@@ -269,7 +269,7 @@ export default function DashboardPage() {
   const [streak,      setStreak]      = useState(0);
   const [lastDay,     setLastDay]     = useState(0);
   const [toast,       setToast]       = useState<{ msg: string; ok: boolean } | null>(null);
-  const [ownedCount,  setOwnedCount]  = useState<number>(() => ownedCosmeticsCount());
+  const [ownedCount,  setOwnedCount]  = useState<number>(0);
 
   const notify = (msg: string, ok: boolean) => {
     setToast({ msg, ok });
@@ -305,12 +305,15 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
-    const handleUpdate = () => {
-      setOwnedCount(ownedCosmeticsCount());
-    };
+    // Re-reads on every address change too, not just the update event — the
+    // lab's progress is now per-wallet, so switching accounts has to switch
+    // which pile of cosmetics gets counted.
+    const addr = wallet.address || 'mock_user';
+    const handleUpdate = () => setOwnedCount(ownedCosmeticsCount(addr));
+    handleUpdate();
     window.addEventListener('pepefi:gamefi-updated', handleUpdate);
     return () => window.removeEventListener('pepefi:gamefi-updated', handleUpdate);
-  }, []);
+  }, [wallet.address]);
 
   // ── PEPE token state ──────────────────────────────────────────────────────
   const [pepeBal,      setPepeBal]      = useState<bigint | null>(null);
