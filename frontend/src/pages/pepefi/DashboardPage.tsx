@@ -26,6 +26,7 @@ import { LootBoxButton } from 'src/components/pepefi/LootBoxButton';
 import { pepeNameFor } from 'src/lib/pepefi/pepeName';
 import { getEquipped } from 'src/lib/pepefi/inventory';
 import { ITEMS, BURN_ADDRESS } from 'src/lib/pepefi/items';
+import { ACHIEVEMENTS, buildQuests, dailyRewardFor, TODAY_INDEX, type AchCtx } from 'src/lib/pepefi/achievements';
 
 /** 鏈上餘額的輪詢間隔。原本是 8 秒——見下方 useEffect 的說明。 */
 const POLL_MS = 30_000;
@@ -107,43 +108,6 @@ const CAT_CONFIG: Record<DisplayCat, {
 };
 
 const PIE_COLORS = DISPLAY_CATS.map(c => CAT_CONFIG[c].color);
-
-// ── Achievement definitions ───────────────────────────────────────────────────
-
-interface Achievement {
-  id:    string
-  emoji: string
-  title: string
-  desc:  string
-  check: (ctx: AchCtx) => boolean
-}
-
-interface AchCtx {
-  streak:    number
-  pepeNum:   number
-  positions: number
-  owned:     number
-}
-
-const ACHIEVEMENTS: Achievement[] = [
-  { id: 'ach_first_stake',  emoji: '🌱', title: '初次質押',    desc: '持有任何 PEPE',             check: c => c.pepeNum > 0 },
-  { id: 'ach_streak3',      emoji: '🔥', title: '3 天連到',    desc: '連續簽到 3 天',              check: c => c.streak >= 3 },
-  { id: 'ach_streak7',      emoji: '⚡', title: '週簽神人',    desc: '連續簽到 7 天',              check: c => c.streak >= 7 },
-  { id: 'ach_first_trade',  emoji: '📈', title: '首筆交易',    desc: '開過至少一筆倉',              check: c => c.positions >= 1 },
-  { id: 'ach_whale',        emoji: '🐋', title: 'Whale 降臨', desc: '持有 100,000 PEPE',           check: c => c.pepeNum >= 100_000 },
-  { id: 'ach_collector',    emoji: '🎨', title: '收藏家',      desc: '收藏至少 3 件 Pepe 道具',    check: c => c.owned >= 3 },
-  { id: 'ach_degen',        emoji: '🎰', title: 'Degen',       desc: '持有 1,000,000 PEPE',        check: c => c.pepeNum >= 1_000_000 },
-  { id: 'ach_legend',       emoji: '👑', title: '傳說 Pepe',   desc: '所有成就解鎖',               check: c => c.streak >= 7 && c.pepeNum >= 100_000 && c.owned >= 3 },
-]
-
-interface Quest {
-  id:       string
-  emoji:    string
-  title:    string
-  reward:   string
-  progress: number   // 0-100
-  done:     boolean
-}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -695,20 +659,14 @@ export default function DashboardPage() {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  const TODAY_INDEX = () => Math.floor(Date.now() / 1000 / 86400);
   const pepeNum       = pepeBal !== null ? Number(pepeBal) / 1e18 : 0;
   const checkedToday  = lastDay === TODAY_INDEX();
-  const dailyReward   = 50 + 10 * Math.min(streak, 6);
+  const dailyReward   = dailyRewardFor(streak);
   const ownedCount    = Object.values(equipped).length;
 
   const achCtx: AchCtx = { streak, pepeNum, positions: positions.length, owned: ownedCount };
 
-  const quests: Quest[] = [
-    { id: 'q_checkin',  emoji: '📅', title: '每日簽到',      reward: `+${dailyReward} PEPE`,    progress: checkedToday ? 100 : 0,  done: checkedToday },
-    { id: 'q_trade',    emoji: '📈', title: '開一筆新倉',    reward: '+25 PEPE',                 progress: positions.length > 0 ? 100 : 0, done: positions.length > 0 },
-    { id: 'q_balance',  emoji: '💰', title: '持有 100 PEPE', reward: '達成成就',                 progress: Math.min(100, pepeNum), done: pepeNum >= 100 },
-    { id: 'q_streak3',  emoji: '🔥', title: '連簽 3 天',     reward: '解鎖成就',                 progress: Math.min(100, (streak / 3) * 100), done: streak >= 3 },
-  ];
+  const quests = buildQuests({ streak, pepeNum, positions: positions.length, checkedToday });
 
   const equippedItems = Object.values(equipped)
     .map(id => ITEMS.find(i => i.id === id))

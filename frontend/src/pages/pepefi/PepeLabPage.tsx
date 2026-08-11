@@ -13,9 +13,14 @@ import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
 import LinearProgress from '@mui/material/LinearProgress';
 
+import { paths } from 'src/routes/paths';
+import { RouterLink } from 'src/routes/components';
+
 import { useWalletContext } from 'src/contexts/wallet-context';
 import { useContracts } from 'src/hooks/useContracts';
 import { Iconify } from 'src/components/iconify';
+import { getEquipped } from 'src/lib/pepefi/inventory';
+import { ACHIEVEMENTS, buildQuests, TODAY_INDEX, type AchCtx } from 'src/lib/pepefi/achievements';
 import { useToast } from 'src/components/pepefi/ToastProvider';
 import { StageSkin, getStageSkins, findStageSkin } from 'src/components/pepefi/pepeStageSkinsData';
 import { PEPE_MOUNTS, getMount, getNextMount } from 'src/components/pepefi/pepeMountsData';
@@ -41,9 +46,9 @@ const POTIONS = [
 // never drift apart.
 const getTitleByLevel = (lvl: number) => getEvolutionStage(lvl).title;
 
-type PepeLabTab = 'potions' | 'mounts' | 'skins';
+type PepeLabTab = 'potions' | 'mounts' | 'skins' | 'achievements' | 'quests';
 
-const TABS: PepeLabTab[] = ['potions', 'mounts', 'skins'];
+const TABS: PepeLabTab[] = ['potions', 'mounts', 'skins', 'achievements', 'quests'];
 
 export default function PepeLabPage() {
   // The tab lives in the URL rather than in component state, so `/pepe?tab=mounts`
@@ -61,6 +66,13 @@ export default function PepeLabPage() {
 
   const [onChainPepeBal, setOnChainPepeBal] = useState<bigint | null>(null);
 
+  // Progression state, for the achievements and quests tabs. Each read is
+  // independently guarded: on a chain where a contract is not deployed the
+  // others should still populate rather than the whole panel going blank.
+  const [streak, setStreak] = useState(0);
+  const [lastDay, setLastDay] = useState(0);
+  const [positions, setPositions] = useState(0);
+
   // Sync real-time on-chain PEPE balance
   useEffect(() => {
     if (!contracts || !wallet.address) return;
@@ -69,10 +81,26 @@ export default function PepeLabPage() {
         const bal = await contracts.pepeToken.balanceOf(wallet.address);
         setOnChainPepeBal(bal as bigint);
       } catch (e) {
-        console.error('Failed to fetch on-chain PEPE balance in Modal:', e);
+        console.error('Failed to fetch on-chain PEPE balance in Lab:', e);
       }
     };
     void fetchOnChainBal();
+  }, [contracts, wallet.address]);
+
+  useEffect(() => {
+    if (!contracts || !wallet.address) return;
+    void (async () => {
+      try {
+        const last = (await contracts.pepeIncentives.lastCheckIn(wallet.address)) as bigint;
+        const s = (await contracts.pepeIncentives.streak(wallet.address)) as bigint;
+        setLastDay(Number(last));
+        setStreak(Number(s));
+      } catch { /* incentives not deployed on this chain */ }
+      try {
+        const ids = (await contracts.exchange.getUserPositions(wallet.address)) as bigint[];
+        setPositions(ids.length);
+      } catch { /* exchange not deployed on this chain */ }
+    })();
   }, [contracts, wallet.address]);
 
   // ── Persistent state in localStorage ─────────────────────────────────────────
@@ -362,6 +390,18 @@ export default function PepeLabPage() {
 
   const displayAvatar = equippedSkin ? equippedSkin.image : evoStage.image;
 
+  // ── Progression ──────────────────────────────────────────────────────────────
+  // Same definitions the Dashboard renders, so a badge cannot unlock in one
+  // place and stay locked in the other.
+  const checkedToday = lastDay === TODAY_INDEX();
+  const achCtx: AchCtx = {
+    streak,
+    pepeNum: finalPepeBal,
+    positions,
+    owned: Object.values(getEquipped()).length,
+  };
+  const quests = buildQuests({ streak, pepeNum: finalPepeBal, positions, checkedToday });
+
   return (
     <Container maxWidth="lg" sx={{ py: 3 }}>
      <Box sx={{ bgcolor: '#0b1625', border: '1px solid rgba(124,193,74,0.3)', borderRadius: 3, overflow: 'hidden' }}>
@@ -545,6 +585,8 @@ export default function PepeLabPage() {
         <Tab value="potions" label="🧪 魔法藥水 (Potions)" />
         <Tab value="mounts" label="🐋 尊貴坐騎 (Mounts)" />
         <Tab value="skins" label="🎰 造型盲盒與商城 (Skins & Gacha)" />
+        <Tab value="achievements" label="🏅 成就 (Achievements)" />
+        <Tab value="quests" label="📋 每日任務 (Quests)" />
       </Tabs>
 
       {/* px:3 matches the 24px DialogContent used to add for us */}
@@ -923,6 +965,92 @@ export default function PepeLabPage() {
                 </Box>
               </Grid>
             </Grid>
+          </Box>
+        )}
+
+        {/* D. ACHIEVEMENTS TAB */}
+        {tabValue === 'achievements' && (
+          <Grid container spacing={2}>
+            {ACHIEVEMENTS.map(a => {
+              const done = a.check(achCtx);
+              return (
+                <Grid size={{ xs: 12, sm: 6, lg: 3 }} key={a.id}>
+                  <Card sx={{
+                    p: 2, height: '100%', display: 'flex', alignItems: 'center', gap: 1.5,
+                    border: '1px solid',
+                    borderColor: done ? 'var(--palette-primary-main)' : 'rgba(255,255,255,0.08)',
+                    bgcolor: done ? 'rgba(124,193,74,0.06)' : 'rgba(255,255,255,0.02)',
+                    opacity: done ? 1 : 0.5,
+                    transition: 'all 0.3s',
+                  }}>
+                    <Typography sx={{ fontSize: 30, lineHeight: 1 }}>{a.emoji}</Typography>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography sx={{ fontSize: 14, fontWeight: 700, color: done ? 'var(--palette-primary-main)' : 'text.primary' }}>
+                        {a.title}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">{a.desc}</Typography>
+                    </Box>
+                    {done && (
+                      <Iconify icon="solar:verified-check-bold" sx={{ ml: 'auto', flexShrink: 0, color: 'var(--palette-primary-main)', fontSize: 20 }} />
+                    )}
+                  </Card>
+                </Grid>
+              );
+            })}
+          </Grid>
+        )}
+
+        {/* E. DAILY QUESTS TAB */}
+        {tabValue === 'quests' && (
+          <Box>
+            <Grid container spacing={2}>
+              {quests.map(q => (
+                <Grid size={{ xs: 12, md: 6 }} key={q.id}>
+                  <Card sx={{
+                    p: 2.5, height: '100%',
+                    border: '1px solid',
+                    borderColor: q.done ? 'var(--palette-primary-main)' : 'rgba(255,255,255,0.08)',
+                    bgcolor: 'rgba(255,255,255,0.02)',
+                  }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1, mb: 1 }}>
+                      <Typography sx={{ fontSize: 15, fontWeight: 700 }}>{q.emoji} {q.title}</Typography>
+                      <Box sx={{
+                        px: 1.25, py: 0.25, borderRadius: 1, fontSize: '0.72rem', fontWeight: 'bold', whiteSpace: 'nowrap',
+                        bgcolor: q.done ? 'var(--palette-primary-main)' : 'transparent',
+                        color: q.done ? '#000' : 'var(--palette-primary-main)',
+                        border: q.done ? 'none' : '1px solid rgba(124,193,74,0.35)',
+                      }}>
+                        {q.done ? '✓ 完成' : q.reward}
+                      </Box>
+                    </Box>
+                    <LinearProgress
+                      variant="determinate"
+                      value={q.progress}
+                      sx={{ height: 6, borderRadius: 3, bgcolor: 'rgba(255,255,255,0.08)', '& .MuiLinearProgress-bar': { bgcolor: q.done ? 'var(--palette-primary-main)' : '#2196f3' } }}
+                    />
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
+
+            {/* Check-in itself stays on /rewards. Two pages both sending the
+                same on-chain transaction is how you get double check-ins. */}
+            <Card sx={{ mt: 3, p: 2.5, display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', border: '1px solid rgba(124,193,74,0.2)', bgcolor: 'rgba(124,193,74,0.04)' }}>
+              <Typography variant="body2" color="text.secondary" sx={{ flex: 1, minWidth: 220 }}>
+                {checkedToday
+                  ? `🔥 已連續簽到 ${streak} 天，明天再來。`
+                  : '🐸 今天還沒簽到，到 Rewards 頁面領取每日 PEPE。'}
+              </Typography>
+              <Button
+                component={RouterLink}
+                href={paths.pepefi.rewards}
+                variant={checkedToday ? 'outlined' : 'contained'}
+                color={checkedToday ? 'inherit' : 'primary'}
+                sx={{ fontWeight: 'bold', textTransform: 'none' }}
+              >
+                前往 Rewards 🎁
+              </Button>
+            </Card>
           </Box>
         )}
 
