@@ -391,7 +391,8 @@ export default function PepeLabPage() {
         }
       `}} />
 
-      <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+      {/* ── Header: who you are, and what you can spend ───────────────────── */}
+      <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
         <Stack direction="row" spacing={1.5} alignItems="center">
           <Box sx={{ width: 48, height: 48, borderRadius: '50%', border: `2px solid ${evoStage.color}`, boxShadow: `0 0 10px ${evoStage.color}80`, overflow: 'hidden', flexShrink: 0 }}>
             <PepeEvolution level={level} size={44} radius="50%" animated={false} />
@@ -405,25 +406,35 @@ export default function PepeLabPage() {
             </Typography>
           </Box>
         </Stack>
+
+        {/* The balance belongs next to the identity, not stranded above the
+            tabs — every tab spends it, so it reads as a page-level fact. */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, bgcolor: 'rgba(124,193,74,0.12)', border: '1px solid rgba(124,193,74,0.3)', px: 2, py: 0.75, borderRadius: 2 }}>
+          <Typography variant="subtitle2" sx={{ color: 'var(--palette-primary-main)', fontWeight: 'bold' }}>
+            💰 餘額: {finalPepeBal.toLocaleString()} PEPE
+          </Typography>
+        </Box>
       </Box>
 
-      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, alignItems: 'stretch', minHeight: 0 }}>
-
-        {/* ── LEFT: the character, enlarged on its golden stage ─────────────── */}
-        <Box
-          sx={{
-            width: { xs: '100%', md: 330 },
-            flexShrink: 0,
-            px: 3, pt: 3, pb: 2.5,
-            borderRight: { md: '1px solid rgba(255,255,255,0.06)' },
-            borderBottom: { xs: '1px solid rgba(255,255,255,0.06)', md: 'none' },
-            background: `radial-gradient(circle at 50% 30%, ${evoStage.color}16 0%, transparent 62%)`,
-            // The right column is the taller one (tabs + their content), so the
-            // hero is centred in the space rather than pinned to the top with a
-            // pool of dead gradient underneath it.
-            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-          }}
-        >
+      {/* ── HERO: the character, across the full width of the page ─────────── */}
+      {/* As a modal this was a 330px column pinned beside the tabs. A page has
+          room to lay the frog and its vitals out side by side instead, and to
+          give the tabs below the entire width they were previously denied. */}
+      <Box
+        sx={{
+          px: 3, pt: 3, pb: 2.5,
+          borderBottom: '1px solid rgba(255,255,255,0.06)',
+          background: `radial-gradient(circle at 50% 30%, ${evoStage.color}16 0%, transparent 62%)`,
+          display: 'flex',
+          flexDirection: { xs: 'column', md: 'row' },
+          alignItems: 'center',
+          gap: { xs: 1, md: 5 },
+        }}
+      >
+        {/* PepeEvolutionHero is fluid by design (width:100%, maxWidth:size), so
+            the wrapper has to carry the width — as a row flex item with no
+            basis it would otherwise collapse the hero to nothing. */}
+        <Box sx={{ flexShrink: 0, width: '100%', maxWidth: 288 }}>
           <PepeEvolutionHero
             level={level}
             size={288}
@@ -432,39 +443,32 @@ export default function PepeLabPage() {
             skinImage={equippedSkin?.image}
             skinGroundY={equippedSkin?.groundY}
           />
+        </Box>
 
-          <Typography variant="h6" sx={{ fontWeight: 900, color: evoStage.color, mt: 1, textAlign: 'center' }}>
+        {/* Capped rather than flex:1 — an XP bar stretched across 1100px reads
+            as a loading screen, not as progress. */}
+        <Box sx={{ width: '100%', maxWidth: 420, textAlign: { xs: 'center', md: 'left' } }}>
+          <Typography variant="h5" sx={{ fontWeight: 900, color: evoStage.color }}>
             {equippedSkin ? `${equippedSkin.emoji} ${equippedSkin.name}` : `${evoStage.emoji} ${evoStage.label}`}
           </Typography>
-          <Typography variant="caption" sx={{ color: '#ffb300', fontWeight: 'bold' }}>
+          <Typography variant="subtitle2" sx={{ color: '#ffb300', fontWeight: 'bold', display: 'block' }}>
             {getTitleByLevel(level)}
           </Typography>
-          <Typography variant="caption" sx={{ color: 'text.secondary', mb: 2 }}>
+          <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 2.5 }}>
             {activeMountObj.emoji} {activeMountObj.name.split(' (')[0]}
           </Typography>
 
-          <Box sx={{ width: '100%' }}>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
-              <span>Lv. {level}</span>
-              <span>{xp}/{level * 100} XP</span>
-            </Typography>
-            <LinearProgress variant="determinate" value={Math.min(100, (xp / (level * 100)) * 100)} sx={{ height: 8, borderRadius: 4, mt: 0.75, bgcolor: 'rgba(255,255,255,0.08)', '& .MuiLinearProgress-bar': { bgcolor: evoStage.color } }} />
-          </Box>
-        </Box>
-
-        {/* ── RIGHT: balance, evolution roadmap, tabs and their content ─────── */}
-        <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-
-      <Box sx={{ px: 3, py: 2, bgcolor: 'rgba(255,255,255,0.02)', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 2 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, bgcolor: 'rgba(124,193,74,0.12)', border: '1px solid rgba(124,193,74,0.3)', px: 2, py: 0.75, borderRadius: 2 }}>
-          <Typography variant="subtitle2" sx={{ color: 'var(--palette-primary-main)', fontWeight: 'bold' }}>
-            💰 餘額: {finalPepeBal.toLocaleString()} PEPE
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
+            <span>Lv. {level}</span>
+            <span>{xp}/{level * 100} XP</span>
           </Typography>
+          <LinearProgress variant="determinate" value={Math.min(100, (xp / (level * 100)) * 100)} sx={{ height: 8, borderRadius: 4, mt: 0.75, bgcolor: 'rgba(255,255,255,0.08)', '& .MuiLinearProgress-bar': { bgcolor: evoStage.color } }} />
         </Box>
       </Box>
 
       {/* 🐸 Evolution roadmap — Lv.0 蛙蛋 → Lv.6 蛙神 */}
-      <Box sx={{ px: 3, py: 2, borderTop: '1px solid rgba(255,255,255,0.06)', background: `linear-gradient(180deg, ${evoStage.color}0f 0%, transparent 100%)` }}>
+      {/* No borderTop: the hero above already draws the dividing line. */}
+      <Box sx={{ px: 3, py: 2, background: `linear-gradient(180deg, ${evoStage.color}0f 0%, transparent 100%)` }}>
         <Stack direction="row" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={1} sx={{ mb: 1.5 }}>
           <Typography variant="caption" sx={{ fontWeight: 'bold', color: 'text.secondary' }}>
             🐸 佩佩蛙進化樹 (Evolution) · 目前{' '}
@@ -514,7 +518,27 @@ export default function PepeLabPage() {
         </Box>
       </Box>
 
-      <Tabs value={tabValue} onChange={(_, nv) => setTabValue(nv)} centered indicatorColor="custom" sx={{ borderBottom: '1px solid rgba(255,255,255,0.06)', '& .MuiTab-root': { color: 'text.secondary', fontWeight: 'bold', fontSize: '1.05rem', '&.Mui-selected': { color: 'var(--palette-primary-main)' } } }}>
+      {/* `centered` would clip these labels on a phone — they are long in two
+          languages. Scrollable instead, then centred by the flex container
+          once the viewport is wide enough to hold them all. */}
+      <Tabs
+        value={tabValue}
+        onChange={(_, nv) => setTabValue(nv)}
+        variant="scrollable"
+        scrollButtons="auto"
+        allowScrollButtonsMobile
+        indicatorColor="custom"
+        sx={{
+          borderBottom: '1px solid rgba(255,255,255,0.06)',
+          '& .MuiTabs-flexContainer': { justifyContent: { md: 'center' } },
+          '& .MuiTab-root': {
+            color: 'text.secondary',
+            fontWeight: 'bold',
+            fontSize: { xs: '0.9rem', md: '1.05rem' },
+            '&.Mui-selected': { color: 'var(--palette-primary-main)' },
+          },
+        }}
+      >
         <Tab value="potions" label="🧪 魔法藥水 (Potions)" />
         <Tab value="mounts" label="🐋 尊貴坐騎 (Mounts)" />
         <Tab value="skins" label="🎰 造型盲盒與商城 (Skins & Gacha)" />
@@ -527,7 +551,7 @@ export default function PepeLabPage() {
         {tabValue === 'potions' && (
           <Grid container spacing={3}>
             {POTIONS.map(potion => (
-              <Grid size={{ xs: 12, md: 4 }} key={potion.id}>
+              <Grid size={{ xs: 12, sm: 6, md: 4 }} key={potion.id}>
                 <Card sx={{ p: 3, border: '1px solid rgba(255,255,255,0.08)', bgcolor: 'rgba(255,255,255,0.02)', display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'space-between', gap: 2 }}>
                   <Box>
                     <Box sx={{ fontSize: 40, mb: 1 }}>{potion.emoji}</Box>
@@ -609,8 +633,10 @@ export default function PepeLabPage() {
               {PEPE_MOUNTS.map(m => {
                 const isUnlocked = level >= m.levelRequired;
                 const isEquipped = activeMount === m.id;
+                // lg:3 puts all four mounts on one row now that the page is
+                // full width — at sm:6 they stretched to ~540px each.
                 return (
-                  <Grid size={{ xs: 12, sm: 6 }} key={m.id}>
+                  <Grid size={{ xs: 12, sm: 6, lg: 3 }} key={m.id}>
                     <Card sx={{
                       p: 2.5, position: 'relative', height: '100%',
                       border: '1px solid',
@@ -898,9 +924,6 @@ export default function PepeLabPage() {
         )}
 
       </Box>{/* /tab content */}
-
-        </Box>{/* /RIGHT column */}
-      </Box>{/* /two-column body */}
 
       {/* 🐸 EVOLUTION CELEBRATION */}
       <Dialog
