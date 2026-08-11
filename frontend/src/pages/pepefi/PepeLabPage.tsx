@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router';
 
 import Tab from '@mui/material/Tab';
 import Box from '@mui/material/Box';
@@ -8,14 +9,12 @@ import Card from '@mui/material/Card';
 import Stack from '@mui/material/Stack';
 import Dialog from '@mui/material/Dialog';
 import Button from '@mui/material/Button';
+import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
-import IconButton from '@mui/material/IconButton';
 import LinearProgress from '@mui/material/LinearProgress';
-import DialogContent from '@mui/material/DialogContent';
 
 import { useWalletContext } from 'src/contexts/wallet-context';
 import { useContracts } from 'src/hooks/useContracts';
-import { usePepefiWallet } from 'src/layouts/pepefi';
 import { Iconify } from 'src/components/iconify';
 import { useToast } from 'src/components/pepefi/ToastProvider';
 import { StageSkin, getStageSkins, findStageSkin } from 'src/components/pepefi/pepeStageSkinsData';
@@ -42,14 +41,19 @@ const POTIONS = [
 // never drift apart.
 const getTitleByLevel = (lvl: number) => getEvolutionStage(lvl).title;
 
-interface PepeGameFiModalProps {
-  open: boolean;
-  onClose: () => void;
-  defaultTab?: 'potions' | 'mounts' | 'skins';
-}
+type PepeLabTab = 'potions' | 'mounts' | 'skins';
 
-export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' }: PepeGameFiModalProps) {
-  const [tabValue, setTabValue] = useState<'potions' | 'mounts' | 'skins'>('potions');
+const TABS: PepeLabTab[] = ['potions', 'mounts', 'skins'];
+
+export default function PepeLabPage() {
+  // The tab lives in the URL rather than in component state, so `/pepe?tab=mounts`
+  // is a real link: shareable, bookmarkable, and the browser back button walks
+  // back through the tabs the way a visitor expects it to.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rawTab = searchParams.get('tab');
+  const tabValue: PepeLabTab = TABS.includes(rawTab as PepeLabTab) ? (rawTab as PepeLabTab) : 'potions';
+  const setTabValue = (next: PepeLabTab) => setSearchParams({ tab: next });
+
   const { notify, confirm } = useToast();
   const wallet = useWalletContext();
   const userAddress = wallet.address || 'mock_user';
@@ -69,7 +73,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
       }
     };
     void fetchOnChainBal();
-  }, [contracts, wallet.address, open]);
+  }, [contracts, wallet.address]);
 
   // ── Persistent state in localStorage ─────────────────────────────────────────
   const [pepeBal, setPepeBal] = useState<number>(5000);
@@ -89,8 +93,8 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
   const [drawResult, setDrawResult] = useState<StageSkin | null>(null);
 
   // Evolution celebration. Driven from buyPotion rather than from a level
-  // watcher: the modal reloads its level from localStorage every time it opens,
-  // so a watcher would fire a bogus "evolved!" burst on each open.
+  // watcher: the page reloads its level from localStorage on every mount, so a
+  // watcher would fire a bogus "evolved!" burst each time you navigate here.
   const [evolvedTo, setEvolvedTo] = useState<PepeEvolutionStage | null>(null);
   const [heroEvolving, setHeroEvolving] = useState<boolean>(false);
 
@@ -119,7 +123,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
       setUnlockedSkins(savedUnl ? JSON.parse(savedUnl) : []);
       setActiveSkin(savedAsk || '');
 
-      // Re-derive the shared avatar on open rather than only on save. It is a
+      // Re-derive the shared avatar on mount rather than only on save. It is a
       // raw image path consumed by other components, so a value written by an
       // older build can point at a file this one no longer serves; recomputing
       // here heals it without waiting for the next purchase.
@@ -129,7 +133,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
         skin ? skin.image : getEvolutionStage(Number(savedLvl) || 1).image,
       );
     } catch (e) { /* fallback to defaults */ }
-  }, [open, userAddress]);
+  }, [userAddress]);
 
   // Save to storage
   const saveState = (newBal: number, newXp: number, newLvl: number, newMnt: string, newUnl?: string[], newAsk?: string) => {
@@ -359,8 +363,9 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
   const displayAvatar = equippedSkin ? equippedSkin.image : evoStage.image;
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="lg" slotProps={{ paper: { sx: { bgcolor: '#0b1625', border: '1px solid rgba(124,193,74,0.3)', borderRadius: 3 } } }}>
-      
+    <Container maxWidth="lg" sx={{ py: 3 }}>
+     <Box sx={{ bgcolor: '#0b1625', border: '1px solid rgba(124,193,74,0.3)', borderRadius: 3, overflow: 'hidden' }}>
+
       {/* Dynamic Keyframes Animation Injection */}
       <style dangerouslySetInnerHTML={{ __html: `
         @keyframes shakeEgg {
@@ -400,9 +405,6 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
             </Typography>
           </Box>
         </Stack>
-        <IconButton onClick={onClose} aria-label="關閉" sx={{ color: 'text.secondary' }}>
-          <Iconify icon="mingcute:close-line" />
-        </IconButton>
       </Box>
 
       <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, alignItems: 'stretch', minHeight: 0 }}>
@@ -518,8 +520,9 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
         <Tab value="skins" label="🎰 造型盲盒與商城 (Skins & Gacha)" />
       </Tabs>
 
-      <DialogContent sx={{ minHeight: 450, py: 3 }}>
-        
+      {/* px:3 matches the 24px DialogContent used to add for us */}
+      <Box sx={{ minHeight: 450, py: 3, px: 3 }}>
+
         {/* A. POTION SHOP TAB */}
         {tabValue === 'potions' && (
           <Grid container spacing={3}>
@@ -894,16 +897,10 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
           </Box>
         )}
 
-      </DialogContent>
+      </Box>{/* /tab content */}
 
         </Box>{/* /RIGHT column */}
       </Box>{/* /two-column body */}
-
-      <Box sx={{ p: 2, display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-        <Button variant="outlined" color="inherit" onClick={onClose} sx={{ fontWeight: 'bold' }}>
-          關閉 Lab 視窗
-        </Button>
-      </Box>
 
       {/* 🐸 EVOLUTION CELEBRATION */}
       <Dialog
@@ -1022,6 +1019,7 @@ export default function PepeGameFiModal({ open, onClose, defaultTab = 'potions' 
           </Box>
         )}
       </Dialog>
-    </Dialog>
+     </Box>
+    </Container>
   );
 }

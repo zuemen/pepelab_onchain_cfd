@@ -52,6 +52,7 @@ export const navData: NavSectionProps['data'] = [
     subheader: 'PepeLab',
     items: [
       { title: '🏠 我的 Pepe (Dashboard)', path: paths.pepefi.dashboard, icon: ICONS.analytics },
+      { title: '🐸 Pepe 養成中心', path: paths.pepefi.pepe, icon: ICONS.blog },
       { title: 'Exchange', path: paths.pepefi.exchange, icon: ICONS.ecommerce },
       { title: '🪙 代幣化資產', path: paths.pepefi.tokens, icon: ICONS.product },
       { title: 'Pro Terminal', path: paths.pepefi.terminal, icon: ICONS.dashboard },
