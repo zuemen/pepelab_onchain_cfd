@@ -932,10 +932,15 @@ export default function PepeLabPage() {
       <Dialog
         open={!!evolvedTo}
         onClose={() => setEvolvedTo(null)}
-        slotProps={{ paper: { sx: { bgcolor: '#070f19', border: `2px solid ${evolvedTo?.color || 'var(--palette-primary-main)'}`, borderRadius: 4, maxWidth: 460, overflow: 'hidden', p: 4, textAlign: 'center' } } }}
+        slotProps={{ paper: { sx: { bgcolor: '#070f19', border: `2px solid ${evolvedTo?.color || 'var(--palette-primary-main)'}`, borderRadius: 4, maxWidth: 460, overflow: 'hidden' } } }}
       >
         {evolvedTo && (
-          <Box sx={{ position: 'relative' }}>
+          // Two layers on purpose. `overflow:hidden` is what clips the light
+          // rays, but on the Paper it also clipped the content — on a short
+          // window the buttons below were cut off and unreachable, because a
+          // hidden Paper cannot scroll. So the rays get their own clip layer
+          // and the content scrolls inside it.
+          <Box sx={{ position: 'relative', overflow: 'hidden' }}>
             {/* Rotating light rays */}
             <Box sx={{
               position: 'absolute', top: -140, left: -140, right: -140, bottom: -140,
@@ -945,6 +950,8 @@ export default function PepeLabPage() {
               pointerEvents: 'none',
             }} />
 
+            <Box sx={{ position: 'relative', zIndex: 1, p: 4, textAlign: 'center', maxHeight: 'calc(100vh - 64px)', overflowY: 'auto' }}>
+
             <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 2, zIndex: 1, position: 'relative' }}>
               EVOLUTION
             </Typography>
@@ -952,7 +959,10 @@ export default function PepeLabPage() {
               進化成功！🎉
             </Typography>
 
-            <Box sx={{ zIndex: 1, position: 'relative' }}>
+            {/* The hero renders 1.25x its width tall, so it dominates the
+                height budget on a short window. Capping the width keeps the
+                "太強了" button above the fold. */}
+            <Box sx={{ zIndex: 1, position: 'relative', width: 'min(260px, 30vh)', mx: 'auto' }}>
               <PepeEvolutionHero level={level} size={260} evolving />
             </Box>
 
@@ -974,6 +984,8 @@ export default function PepeLabPage() {
             >
               太強了 🐸
             </Button>
+
+            </Box>{/* /scroll layer */}
           </Box>
         )}
       </Dialog>
@@ -982,10 +994,13 @@ export default function PepeLabPage() {
       <Dialog
         open={!!drawResult}
         onClose={() => setDrawResult(null)}
-        slotProps={{ paper: { sx: { bgcolor: '#070f19', border: `2px solid ${drawResult ? getRarityColor(drawResult.rarity) : 'var(--palette-primary-main)'}`, borderRadius: 4, maxWidth: 450, overflow: 'hidden', p: 4, textAlign: 'center' } } }}
+        slotProps={{ paper: { sx: { bgcolor: '#070f19', border: `2px solid ${drawResult ? getRarityColor(drawResult.rarity) : 'var(--palette-primary-main)'}`, borderRadius: 4, maxWidth: 450, overflow: 'hidden' } } }}
       >
         {drawResult && (
-          <Box sx={{ position: 'relative' }}>
+          // Same two-layer split as the evolution popup: the rays are clipped
+          // here, the content scrolls inside. This is the one that bit us —
+          // "立即穿戴造型" sat below the fold with no way to reach it.
+          <Box sx={{ position: 'relative', overflow: 'hidden' }}>
             {/* lightburst rays background */}
             <Box sx={{
               position: 'absolute', top: -100, left: -100, right: -100, bottom: -100,
@@ -995,6 +1010,8 @@ export default function PepeLabPage() {
               pointerEvents: 'none'
             }} />
 
+            <Box sx={{ position: 'relative', zIndex: 1, p: 4, textAlign: 'center', maxHeight: 'calc(100vh - 64px)', overflowY: 'auto' }}>
+
             <Typography variant="h5" sx={{ fontWeight: '900', color: '#ffb300', mb: 1, zIndex: 1, position: 'relative' }}>
               恭喜獲得！🎉
             </Typography>
@@ -1002,7 +1019,9 @@ export default function PepeLabPage() {
               您已成功破殼孵化出全新佩佩蛙稀有造型！
             </Typography>
 
-            <Box sx={{ width: 220, height: 220, mx: 'auto', my: 3, border: `4px solid ${getRarityColor(drawResult.rarity)}`, boxShadow: `0 0 35px ${getRarityColor(drawResult.rarity)}`, borderRadius: 3, overflow: 'hidden', position: 'relative', zIndex: 1 }}>
+            {/* Scrolling is the safety net; this keeps a short window from
+                needing it. Full 220px whenever the viewport can afford it. */}
+            <Box sx={{ width: 'min(220px, 30vh)', height: 'min(220px, 30vh)', mx: 'auto', my: { xs: 2, sm: 3 }, border: `4px solid ${getRarityColor(drawResult.rarity)}`, boxShadow: `0 0 35px ${getRarityColor(drawResult.rarity)}`, borderRadius: 3, overflow: 'hidden', position: 'relative', zIndex: 1 }}>
               <img src={drawResult.image} alt={drawResult.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             </Box>
 
@@ -1042,6 +1061,8 @@ export default function PepeLabPage() {
                 收進衣櫃
               </Button>
             </Stack>
+
+            </Box>{/* /scroll layer */}
           </Box>
         )}
       </Dialog>
