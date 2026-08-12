@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { vi, describe, it, expect } from 'vitest'
 
 import {
   CHUNK_SIZE,
@@ -8,6 +8,8 @@ import {
   deployBlock,
   scanFromBlock,
   blocksForSeconds,
+  getLogsChunked,
+  queryLogsChunked,
   describeScanWindow,
   DEFAULT_AVG_BLOCK_TIME,
   DEFAULT_SCAN_WINDOW_SEC,
@@ -124,13 +126,103 @@ describe('chunkRanges', () => {
   })
 })
 
+describe('queryLogsChunked', () => {
+  /** 假合約：第 n 段回一筆帶著段號的 log，failOn 裡的段號則丟錯。 */
+  const fakeContract = (failOn: number[] = []) => {
+    let call = 0
+    return {
+      queryFilter: vi.fn(async (_f: unknown, from: number, to: number) => {
+        call += 1
+        if (failOn.includes(call)) throw new Error('node rate-limited')
+        return [{ chunk: call, from, to }]
+      }),
+    }
+  }
+
+  it('把整個範圍切段掃完,結果串接起來', async () => {
+    const c = fakeContract()
+    const logs = await queryLogsChunked(c, null, 0, CHUNK_SIZE * 3 - 1)
+    expect(c.queryFilter).toHaveBeenCalledTimes(3)
+    expect(logs).toHaveLength(3)
+  })
+
+  it('單段失敗只丟掉那一段,其餘照常回來', async () => {
+    const c = fakeContract([2])
+    const logs = await queryLogsChunked(c, null, 0, CHUNK_SIZE * 3 - 1)
+    expect(logs.map(l => l.chunk)).toEqual([1, 3])
+  })
+
+  it('進度每段回報一次,分母固定', async () => {
+    const seen: Array<[number, number]> = []
+    await queryLogsChunked(fakeContract(), null, 0, CHUNK_SIZE * 3 - 1, (d, t) => seen.push([d, t]))
+    expect(seen).toEqual([[1, 3], [2, 3], [3, 3]])
+  })
+
+  it('失敗的段也算進度——否則節點出錯時進度條會卡住不動', async () => {
+    const seen: number[] = []
+    await queryLogsChunked(fakeContract([1, 2]), null, 0, CHUNK_SIZE * 2 - 1, d => seen.push(d))
+    expect(seen).toEqual([1, 2])
+  })
+
+  it('空範圍不會叫進度,也不會叫節點', async () => {
+    const c = fakeContract()
+    const onChunk = vi.fn()
+    expect(await queryLogsChunked(c, null, 100, 99, onChunk)).toEqual([])
+    expect(c.queryFilter).not.toHaveBeenCalled()
+    expect(onChunk).not.toHaveBeenCalled()
+  })
+})
+
+describe('getLogsChunked', () => {
+  const fakeProvider = (failOn: number[] = []) => {
+    let call = 0
+    return {
+      getLogs: vi.fn(async (f: { fromBlock: number; toBlock: number; topics?: unknown[] }) => {
+        call += 1
+        if (failOn.includes(call)) throw new Error('node rate-limited')
+        return [{ chunk: call, from: f.fromBlock, to: f.toBlock, topics: f.topics }]
+      }),
+    }
+  }
+
+  it('把 filter 原樣帶進每一段,只換 fromBlock/toBlock', async () => {
+    const p = fakeProvider()
+    const topics = [['0xaaa', '0xbbb']]
+    const logs = await getLogsChunked(p, { address: '0xdead', topics }, 0, CHUNK_SIZE * 2 - 1)
+    expect(p.getLogs).toHaveBeenCalledTimes(2)
+    expect(p.getLogs.mock.calls[0][0]).toMatchObject({ address: '0xdead', topics, fromBlock: 0 })
+    expect(logs).toHaveLength(2)
+  })
+
+  it('單段失敗只丟掉那一段', async () => {
+    const logs = await getLogsChunked(fakeProvider([1]), {}, 0, CHUNK_SIZE * 2 - 1)
+    expect(logs.map(l => l.chunk)).toEqual([2])
+  })
+
+  it('進度每段回報一次,失敗的也算', async () => {
+    const seen: Array<[number, number]> = []
+    await getLogsChunked(fakeProvider([2]), {}, 0, CHUNK_SIZE * 3 - 1, (d, t) => seen.push([d, t]))
+    expect(seen).toEqual([[1, 3], [2, 3], [3, 3]])
+  })
+
+  it('空範圍不會叫節點', async () => {
+    const p = fakeProvider()
+    expect(await getLogsChunked(p, {}, 100, 99)).toEqual([])
+    expect(p.getLogs).not.toHaveBeenCalled()
+  })
+})
+
 describe('describeScanWindow', () => {
   it('同樣的塊數在不同鏈上代表不同長度的時間', () => {
-    expect(describeScanWindow(84532, 43_200)).toBe('1.0 天')
-    expect(describeScanWindow(11155111, 43_200)).toBe('6.0 天')
+    expect(describeScanWindow(84532, 43_200)).toBe('1.0d')
+    expect(describeScanWindow(11155111, 43_200)).toBe('6.0d')
   })
 
   it('小範圍用分鐘', () => {
-    expect(describeScanWindow(84532, 300)).toBe('10 分鐘')
+    expect(describeScanWindow(84532, 300)).toBe('10m')
+  })
+
+  it('中間的量級用小時', () => {
+    expect(describeScanWindow(84532, 2_700)).toBe('1.5h')
   })
 })
