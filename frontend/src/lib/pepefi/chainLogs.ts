@@ -116,17 +116,68 @@ export function chunkRanges(
   return out
 }
 
-/** 給 UI 顯示用：這次掃了多久的鏈史。 */
+/**
+ * 給 UI 顯示用：這次掃了多久的鏈史。
+ *
+ * 輸出英文——whale tracker 的介面統一英文，而這個字串是直接印在畫面上的，
+ * 不是給人讀的除錯訊息。
+ */
 export function describeScanWindow(chainId: number | null | undefined, blocks: number): string {
   const sec = blocks * avgBlockTime(chainId)
-  if (sec < 3600) return `${Math.round(sec / 60)} 分鐘`
-  if (sec < 86400) return `${(sec / 3600).toFixed(1)} 小時`
-  return `${(sec / 86400).toFixed(1)} 天`
+  if (sec < 3600) return `${Math.round(sec / 60)}m`
+  if (sec < 86400) return `${(sec / 3600).toFixed(1)}h`
+  return `${(sec / 86400).toFixed(1)}d`
 }
 
 // ── 分段查詢 ─────────────────────────────────────────────────────────────────
 // `Contract` 只當型別用（import type 在編譯後會被抹掉），所以這個檔案在測試裡
 // 不會把 ethers 拉進來。
+
+/**
+ * 分段掃 getLogs 期間的進度回報。一次掃描可能是 40 段序列 RPC，在 UI 上
+ * 只顯示一句「載入中」等於讓使用者對著不動的畫面猜還要多久。
+ * 每一段結束都會叫一次，**包含失敗的那些**——進度講的是做完的工作量，
+ * 不是成功的筆數，否則遇到節點暫時性錯誤進度條會卡住不動。
+ */
+export type ChunkProgress = (done: number, total: number) => void
+
+/**
+ * 分段掃**原始** getLogs，一次帶多個事件 topic。
+ *
+ * 存在的理由是實測出來的：whale tracker 要 PositionOpened / Closed /
+ * Liquidated 三種事件，用三個 `contract.queryFilter` 就是三趟各 31 段＝93 次
+ * getLogs，在 Base Sepolia 的公開節點上足以讓同時間的其他請求（包括
+ * `getBlock('latest')`）直接失敗。
+ *
+ * topics[0] 可以是一個陣列，語意是 OR。所以同一個合約上的三種事件可以合成
+ * 一趟掃完——31 次而不是 93 次。呼叫端拿到原始 log 之後用 `interface.parseLog`
+ * 還原成具名事件。
+ */
+export async function getLogsChunked(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  provider: { getLogs: (f: any) => Promise<any[]> },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  filter: { address?: string; topics?: any[] },
+  fromBlock: number,
+  toBlock: number,
+  onChunk?: ChunkProgress,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Promise<any[]> {
+  const ranges = chunkRanges(fromBlock, toBlock)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const all: any[] = []
+  let done = 0
+  for (const [from, to] of ranges) {
+    try {
+      all.push(...(await provider.getLogs({ ...filter, fromBlock: from, toBlock: to })))
+    } catch (e) {
+      console.warn('[getLogsChunked] chunk failed', from, '-', to, e)
+    }
+    done += 1
+    onChunk?.(done, ranges.length)
+  }
+  return all
+}
 
 /**
  * 分段掃 getLogs，單段不超過 CHUNK_SIZE。
@@ -139,16 +190,21 @@ export async function queryLogsChunked(
   filter: any,
   fromBlock: number,
   toBlock: number,
+  onChunk?: ChunkProgress,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<any[]> {
+  const ranges = chunkRanges(fromBlock, toBlock)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const all: any[] = []
-  for (const [from, to] of chunkRanges(fromBlock, toBlock)) {
+  let done = 0
+  for (const [from, to] of ranges) {
     try {
       all.push(...(await contract.queryFilter(filter, from, to)))
     } catch (e) {
       console.warn('[queryLogsChunked] chunk failed', from, '-', to, e)
     }
+    done += 1
+    onChunk?.(done, ranges.length)
   }
   return all
 }

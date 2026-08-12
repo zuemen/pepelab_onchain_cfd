@@ -1299,7 +1299,9 @@ export default function DashboardPage() {
                 {whaleAlerts.slice(0, 8).map(a => (
                   <TableRow key={a.txHash} sx={{ '&:hover': { bgcolor: 'rgba(0, 184, 217, 0.05)' } }}>
                     <TableCell sx={{ py: 1 }}>
-                      <Link component={RouterLink} to={`/whale?addr=${a.owner}`} sx={{ fontFamily: MONO, color: 'info.main', fontSize: '0.75rem', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}>
+                      {/* 地址檢視搬到 /trader/:address 了（whale 頁不再自己長出
+                          搜尋結果）。/whale?addr= 仍會轉址，但沒必要多繞一次。 */}
+                      <Link component={RouterLink} to={`/trader/${a.owner}`} sx={{ fontFamily: MONO, color: 'info.main', fontSize: '0.75rem', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}>
                         {shortAddr(a.owner)}
                       </Link>
                     </TableCell>

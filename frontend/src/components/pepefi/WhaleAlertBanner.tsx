@@ -6,24 +6,15 @@ import Link from '@mui/material/Link';
 import IconButton from '@mui/material/IconButton';
 import type { WhaleAlert } from 'src/hooks/useWhaleAlerts';
 
+import { shortAddr } from 'src/components/pepefi/brandKit';
+import { timeAgo, fCompact, sideLabel } from 'src/lib/pepefi/whale';
+
+// NOTE(redesign/whale-tracker): 這個元件目前**沒有被任何地方 import**——全 repo
+// 只有 INTEGRATION_PLAN.md 提到它，它從來沒被掛上去過。內容現在也被
+// /whale 的 WhaleFeed 完整涵蓋了。留著是為了讓你決定：掛上去當全站橫幅，
+// 還是刪掉。在那之前至少讓它不要再自己複製一份格式化函式與已經搬家的連結。
+
 interface Props { alerts: WhaleAlert[] }
-
-const fNotional = (n: bigint) => {
-  const v = Number(n) / 1e18;
-  if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1_000)     return `$${(v / 1_000).toFixed(1)}k`;
-  return `$${v.toFixed(0)}`;
-};
-
-const timeAgo = (ts: number) => {
-  const diff = Math.floor(Date.now() / 1000) - ts;
-  if (diff < 120)   return `${diff}s ago`;
-  if (diff < 3600)  return `${Math.floor(diff / 60)} min ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
-};
-
-const shortAddr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
 export default function WhaleAlertBanner({ alerts }: Props) {
   const [visible, setVisible] = useState(true);
@@ -78,7 +69,7 @@ export default function WhaleAlertBanner({ alerts }: Props) {
       <Box sx={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         <Link
           component={RouterLink}
-          to={`/whale?addr=${a.owner}`}
+          to={`/trader/${a.owner}`}
           sx={{
             fontFamily: 'monospace',
             color: 'text.secondary',
@@ -103,13 +94,13 @@ export default function WhaleAlertBanner({ alerts }: Props) {
             color: a.isLong ? 'success.main' : 'error.main',
           }}
         >
-          {a.isLong ? 'LONG' : 'SHORT'}
+          {sideLabel(a.isLong)}
         </Typography>
         <Typography component="span" variant="caption" sx={{ color: 'text.secondary', mx: 0.5 }}>
           {a.assetLabel} —
         </Typography>
         <Typography component="span" variant="caption" sx={{ fontWeight: 'bold', color: 'text.primary' }}>
-          {fNotional(a.notional)}
+          {fCompact(a.notional)}
         </Typography>
         <Typography component="span" variant="caption" sx={{ color: 'text.secondary', mx: 0.5 }}>
           notional

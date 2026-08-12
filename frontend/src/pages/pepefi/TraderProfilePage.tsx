@@ -10,6 +10,9 @@ import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
 import StatCard from 'src/components/pepefi/StatCard'
 import { getPepeAvatar } from 'src/utils/pepefi-assets'
 import TraderRankBadge from 'src/components/pepefi/TraderRankBadge'
+import TraderActivity from 'src/components/pepefi/TraderActivity'
+import { useMode } from 'src/contexts/mode-context'
+import { useAddressActivity } from 'src/hooks/useAddressActivity'
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -64,9 +67,11 @@ const fmtDate = (ts: bigint) =>
 
 export default function TraderProfilePage() {
   const wallet = usePepefiWallet()
+  const { mode } = useMode()
   const { address: traderAddr } = useParams<{ address: string }>()
   const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId)
   const { data: esg } = useESG(contracts?.esgRegistry ?? null)
+  const addressActivity = useAddressActivity(contracts, wallet.provider, wallet.chainId, traderAddr)
 
   const [name,          setName]          = useState('')
   const [registered,    setRegistered]    = useState(false)
@@ -508,8 +513,14 @@ export default function TraderProfilePage() {
             </Card>
           )}
 
+          {/* ─── F. On-chain activity ──────────────────────────────── */}
+          {/* 從 WhaleTrackerPage 搬過來。那一頁查完地址就把交易紀錄長在自己
+              身上，於是這裡有 follower / stake / reputation 卻看不到任何一筆
+              交易，兩邊各只有半張臉。 */}
+          <TraderActivity activity={addressActivity} chainId={wallet.chainId} mode={mode} />
+
           {/* Actions */}
-          <Box sx={{ display: 'flex', gap: 2 }}>
+          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
             <Button
               component={RouterLink}
               to="/marketplace"
@@ -518,6 +529,15 @@ export default function TraderProfilePage() {
               sx={{ textTransform: 'none' }}
             >
               ← Back to Marketplace
+            </Button>
+            <Button
+              component={RouterLink}
+              to="/whale"
+              variant="outlined"
+              color="inherit"
+              sx={{ textTransform: 'none' }}
+            >
+              🐋 Whale Tracker
             </Button>
           </Box>
         </>

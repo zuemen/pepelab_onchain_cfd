@@ -705,7 +705,9 @@ export default function HistoryPage() {
     <Container maxWidth="lg" sx={{ py: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
 
       {/* Header */}
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'between', flexWrap: 'wrap', gap: 2 }}>
+      {/* 'between' 不是合法的 justify-content 值（那是 Tailwind 的簡寫），
+          瀏覽器會整條宣告丟掉。同一個錯誤原本也在 WhaleTrackerPage 的 header。 */}
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
         <Box sx={{ flexGrow: 1 }}>
           <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
             Transaction History
