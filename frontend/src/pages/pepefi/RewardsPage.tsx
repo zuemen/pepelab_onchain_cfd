@@ -15,6 +15,7 @@ import CircularProgress from '@mui/material/CircularProgress';
 
 import { useContracts } from 'src/hooks/useContracts';
 import { usePepefiWallet } from 'src/layouts/pepefi';
+import PepeTokenCard from 'src/components/pepefi/PepeTokenCard';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
 import { toStrictlyIncreasingIds } from 'src/lib/pepefi/positionIds';
 import { dailyRewardFor, TODAY_INDEX } from 'src/lib/pepefi/achievements';
@@ -270,6 +271,14 @@ export default function RewardsPage() {
       <Typography color="text.secondary" sx={{ mb: 4 }}>
         Trade, follow, and check-in daily to earn PEPE.
       </Typography>
+
+      {/* PEPE balance + airdrop. Moved off the Dashboard: claiming belongs on
+          the page that already owns every other claim (trade mining, tiers,
+          copy rewards, daily check-in). Self-contained — it reads its own
+          contracts and owns its own state. */}
+      <Box sx={{ mb: 3 }}>
+        <PepeTokenCard />
+      </Box>
 
       <Grid container spacing={3}>
         {/* A — Trade Mining */}

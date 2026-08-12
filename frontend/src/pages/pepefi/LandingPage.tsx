@@ -139,7 +139,7 @@ export default function LandingPage() {
                 {wallet.isConnected && (
                   <Button
                     component={RouterLink}
-                    to="/dashboard"
+                    to="/portfolio"
                     variant="contained"
                     size="large"
                     // contrastText, not #fff: white on this green measures

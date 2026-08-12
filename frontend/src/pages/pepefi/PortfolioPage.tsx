@@ -1,6 +1,7 @@
 import { MONO } from 'src/components/pepefi/brandKit'
 import { parseEther } from 'ethers';
 import { useState, useEffect, useCallback } from 'react';
+import { Link as RouterLink } from 'react-router';
 import {
   Line, XAxis, YAxis, Tooltip, LineChart,
   CartesianGrid, ReferenceLine, ResponsiveContainer,
@@ -18,8 +19,15 @@ import { safeRead } from 'src/lib/pepefi/safeRead';
 import { STABLE_LABEL } from 'src/lib/pepefi/tokenLabel';
 import { firstBlocking, stalenessNotice } from 'src/lib/pepefi/priceFreshness';
 
+import { useMode } from 'src/contexts/mode-context';
+import { useAccountBalances } from 'src/hooks/useAccountBalances';
+import type { NetWorthParts } from 'src/lib/pepefi/portfolio';
+
 import StatCard from 'src/components/pepefi/StatCard';
 import ESGBadge from 'src/components/pepefi/ESGBadge';
+import NetWorthHero from 'src/components/pepefi/dashboard/NetWorthHero';
+import QuickActions from 'src/components/pepefi/dashboard/QuickActions';
+import PortfolioAnalysis from 'src/components/pepefi/dashboard/PortfolioAnalysis';
 import EmptyState from 'src/components/pepefi/EmptyState';
 import Skeleton, { TableSkeleton } from 'src/components/pepefi/Skeleton';
 
@@ -127,9 +135,14 @@ const tryParse = (s: string): bigint | null => {
 
 export default function PortfolioPage() {
   const wallet = usePepefiWallet();
+  const { mode } = useMode();
   const contracts  = useContracts(wallet.provider, wallet.signer, wallet.chainId);
   const livePrices = useLivePrices();
   const { data: esg } = useESG(contracts?.esgRegistry ?? null);
+
+  // 錢包／質押／金庫。這一頁本來只讀 freeMargin，因為它只管交易帳戶；淨值
+  // hero 從 Dashboard 併過來之後就需要另外三桶錢。
+  const balances = useAccountBalances(contracts, wallet.address);
 
   const [copyRecs,   setCopyRecs]   = useState<CopyRec[]>([]);
   const [positions,  setPositions]  = useState<PosRow[]>([]);
@@ -307,19 +320,43 @@ export default function PortfolioPage() {
     } finally { setLoad('withdraw', false); }
   };
 
+  // ── Net worth ─────────────────────────────────────────────────────────────
+  // freeMargin 有兩個來源：這一頁自己讀的（提領後會立刻更新）與 useAccountBalances
+  // 的輪詢。以本頁的為準，因為提領完不該還顯示舊值等下一輪輪詢。
+  const lockedMargin = positions.reduce((s, p) => s + p.margin, 0n);
+  const unrealisedPnl = positions.reduce((s, p) => s + p.unrealizedPnL, 0n);
+
+  const netWorthParts: NetWorthParts = {
+    walletCash:    balances.walletCash,
+    freeMargin,
+    lockedMargin,
+    unrealisedPnl,
+    staked:        balances.staked,
+    vault:         balances.vault,
+  };
+
+  const notionalTotal = positions.reduce((s, p) => s + p.margin * p.leverage, 0n);
+  const pnlPctStr = notionalTotal > 0n
+    ? (Number(unrealisedPnl) / Number(notionalTotal) >= 0 ? '+' : '')
+      + ((Number(unrealisedPnl) / Number(notionalTotal)) * 100).toFixed(2) + '%'
+    : '—';
+
   // ── Derived (chart data) ───────────────────────────────────────────────────
   const totalInitial = copyRecs.reduce((s, r) => s + r.initialAmount, 0n);
   const totalCopyCur = copyRecs.reduce((s, r) => s + r.currentValue, 0n);
   const initVal      = Number(totalInitial) / 1e18;
   const curVal       = Number(totalCopyCur) / 1e18;
 
-  const chartData =
-    totalInitial > 0n
-      ? [
-          { name: 'Deposited', value: initVal },
-          { name: 'Now',       value: curVal  },
-        ]
-      : [{ name: 'Now', value: Number(freeMargin) / 1e18 }];
+  // 只有跟單記錄帶得出「投入 → 現在」這兩個點；沒有記錄就沒有績效可畫。
+  // 原本的 fallback 是畫一個點、而且畫的是自由保證金——標題寫 Performance、
+  // 副標寫 initial vs current，畫面上卻是一顆跟績效無關的孤點。整張卡不顯示
+  // 才是誠實的做法，跟 hero 不顯示算不出來的「今日變化」是同一個理由。
+  const hasCopyHistory = totalInitial > 0n;
+
+  const chartData = [
+    { name: 'Deposited', value: initVal },
+    { name: 'Now',       value: curVal  },
+  ];
 
   // ── Guard ─────────────────────────────────────────────────────────────────
   if (!wallet.isConnected) {
@@ -368,7 +405,16 @@ export default function PortfolioPage() {
     );
   }
 
-  if (isLoaded && copyRecs.length === 0 && positions.length === 0 && freeMargin === 0n) {
+  // 這個判斷原本只看交易帳戶（跟單、持倉、自由保證金），因為這一頁以前只管
+  // 交易帳戶。淨值 hero 併進來之後它還涵蓋錢包、質押與 LP 金庫——沒有一起看的話，
+  // 一個錢包裡有 $1,000、只是還沒開倉的人，會看到「你的投資組合是空的」，
+  // 而唯一能告訴他錢在哪的那張卡剛好被這個 return 擋掉。
+  const hasOtherFunds =
+    (balances.walletCash ?? 0n) > 0n ||
+    (balances.staked ?? 0n) > 0n ||
+    (balances.vault ?? 0n) > 0n;
+
+  if (isLoaded && copyRecs.length === 0 && positions.length === 0 && freeMargin === 0n && !hasOtherFunds) {
     return (
       <Container maxWidth="lg" sx={{ py: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
         <EmptyState
@@ -413,7 +459,7 @@ export default function PortfolioPage() {
           size="small"
           variant="text"
           color="inherit"
-          onClick={() => void fetchAll()}
+          onClick={() => { void fetchAll(); balances.refetch(); }}
           startIcon={<Icon icon="solar:restart-bold-duotone" />}
           sx={{ textTransform: 'none', color: 'text.secondary' }}
         >
@@ -421,39 +467,50 @@ export default function PortfolioPage() {
         </Button>
       </Box>
 
-      {/* Stat cards */}
-      <Grid container spacing={2}>
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <StatCard
-            title="Free Margin"
-            value={f18(freeMargin)}
-            sub={`${STABLE_LABEL} available`}
-            valueColor="primary.light"
-          />
+      {/* ── Net worth + what to do next ──────────────────────────────────────
+          Merged in from the Dashboard, which answered the same question this
+          page does ("how am I doing") but read-only — every action lived here.
+          A read-only twin of an actionable page is where people get stuck:
+          they can see the number and cannot do anything about it without
+          discovering there is a second page. Aave's dashboard is the same
+          shape — net worth on top, positions and their actions below. */}
+      <NetWorthHero parts={netWorthParts} pnlPct={pnlPctStr} loading={!isLoaded} />
+
+      <QuickActions mode={mode} />
+
+      {/* Copy stats.
+          Free Margin and Open Positions used to sit here too. After the merge
+          each was on screen three times — Free Margin as the hero's "Trading"
+          figure, this card, and the withdraw panel below; Open Positions as a
+          card and as the table right under it. Restating a number does not
+          reinforce it, it just makes a reader check whether the two copies
+          agree. What's left is the pair the hero can't show: copying is a
+          relationship, not a balance.
+
+          Hidden entirely when you copy nobody. Both cards would read 0 and —,
+          directly above a Copy Positions panel already saying the same thing
+          in words: three ways of being told you have not done something yet,
+          for a feature you may never want. The panel below keeps the one
+          version that also offers a way in. */}
+      {copyRecs.length > 0 && (
+        <Grid container spacing={2}>
+          <Grid size={{ xs: 12, sm: 6 }}>
+            <StatCard
+              title="Active Copies"
+              value={String(copyRecs.length)}
+              sub={copyRecs.length === 1 ? 'trader followed' : 'traders followed'}
+            />
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6 }}>
+            <StatCard
+              title="Total Copy PnL"
+              value={totalInitial > 0n ? returnPct(totalInitial, totalCopyCur) : '—'}
+              sub={totalInitial > 0n ? `${f18(totalCopyCur)} / ${f18(totalInitial)} ${STABLE_LABEL}` : 'no copy positions'}
+              valueColor={totalInitial > 0n ? returnColor(totalInitial, totalCopyCur) : 'text.secondary'}
+            />
+          </Grid>
         </Grid>
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <StatCard
-            title="Active Copies"
-            value={String(copyRecs.length)}
-            sub={copyRecs.length === 1 ? 'trader followed' : 'traders followed'}
-          />
-        </Grid>
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <StatCard
-            title="Open Positions"
-            value={String(positions.length)}
-            sub="manual + copied"
-          />
-        </Grid>
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <StatCard
-            title="Total Copy PnL"
-            value={totalInitial > 0n ? returnPct(totalInitial, totalCopyCur) : '—'}
-            sub={totalInitial > 0n ? `${f18(totalCopyCur)} / ${f18(totalInitial)} ${STABLE_LABEL}` : 'no copy positions'}
-            valueColor={totalInitial > 0n ? returnColor(totalInitial, totalCopyCur) : 'text.secondary'}
-          />
-        </Grid>
-      </Grid>
+      )}
 
       {/* ─── A. Copy Records ────────────────────────────────────────────── */}
       <Card sx={{ border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
@@ -464,9 +521,23 @@ export default function PortfolioPage() {
         </Box>
 
         {copyRecs.length === 0 ? (
-          <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 4, fontStyle: 'italic' }}>
-            No active copy positions.
-          </Typography>
+          /* The one place that still says "you copy nobody" — so it's the one
+             that has to offer a way out of that state. */
+          <Box sx={{ py: 4, px: 3, textAlign: 'center' }}>
+            <Typography variant="body2" color="text.secondary">
+              You&apos;re not copying anyone yet.
+            </Typography>
+            <Button
+              component={RouterLink}
+              to="/marketplace"
+              size="small"
+              variant="outlined"
+              color="inherit"
+              sx={{ mt: 1.5, textTransform: 'none', borderColor: 'divider' }}
+            >
+              Browse traders →
+            </Button>
+          </Box>
         ) : (
           <TableContainer>
             <Table>
@@ -530,9 +601,14 @@ export default function PortfolioPage() {
 
       {/* ─── B. Open Positions ──────────────────────────────────────────── */}
       <Card sx={{ border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
-        <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+        <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 1 }}>
             Open Positions
+          </Typography>
+          {/* The count lives here now rather than in its own card above a table
+              that already shows every row. */}
+          <Typography variant="caption" color="text.secondary">
+            {positions.length} open · manual + copied
           </Typography>
         </Box>
 
@@ -545,8 +621,37 @@ export default function PortfolioPage() {
             <Table size="small">
               <TableHead>
                 <TableRow sx={{ bgcolor: 'background.neutral' }}>
-                  {['Asset','ESG','Side','Entry','Current','Live Market','Margin','Lev','Copied From','Unr. PnL','Accrued Funding','Value'].map(h => (
-                    <TableCell key={h} sx={{ color: 'text.secondary', fontWeight: 'bold', fontSize: '0.75rem', py: 1.5 }}>
+                  {/* Two prices sit side by side here and they rarely agree.
+                      "Oracle" is what the contract settles against, so it is
+                      the one Unr. PnL is computed from; "Live Market" is the
+                      off-chain feed, which moves first. Without saying so, the
+                      greener live figure reads like the real one and the PnL
+                      looks wrong against it. Titles carry the explanation. */}
+                  {([
+                    ['Asset', ''],
+                    ['ESG', ''],
+                    ['Side', ''],
+                    ['Entry', 'Price you opened at'],
+                    ['Oracle', 'On-chain price the contract settles against — this is what Unr. PnL uses'],
+                    ['Live Market', 'Off-chain feed. Moves before the oracle does, so a gap here is normal'],
+                    ['Margin', ''],
+                    ['Lev', ''],
+                    ['Copied From', ''],
+                    ['Unr. PnL', 'Unrealised, from the Oracle price'],
+                    ['Accrued Funding', ''],
+                    ['Value', ''],
+                  ] as const).map(([h, hint]) => (
+                    <TableCell
+                      key={h}
+                      title={hint || undefined}
+                      sx={{
+                        color: 'text.secondary',
+                        fontWeight: 'bold',
+                        fontSize: '0.75rem',
+                        py: 1.5,
+                        ...(hint ? { cursor: 'help', textDecoration: 'underline dotted', textUnderlineOffset: 3 } : {}),
+                      }}
+                    >
                       {h}
                     </TableCell>
                   ))}
@@ -626,10 +731,13 @@ export default function PortfolioPage() {
         )}
       </Card>
 
+      {/* ─── Analysis (expert only) ─────────────────────────────────────── */}
+      {mode === 'expert' && <PortfolioAnalysis rows={positions} esg={esg} />}
+
       {/* ─── C + D side-by-side ─────────────────────────────────────────── */}
       <Grid container spacing={3}>
         {/* C. Free Margin */}
-        <Grid size={{ xs: 12, md: 6 }}>
+        <Grid size={{ xs: 12, md: hasCopyHistory ? 6 : 12 }}>
           <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5, height: '100%' }}>
             <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 1 }}>
               Free Margin
@@ -663,12 +771,13 @@ export default function PortfolioPage() {
           </Card>
         </Grid>
 
-        {/* D. Performance Chart */}
+        {/* D. Performance Chart — only when there are two real points to plot. */}
+        {hasCopyHistory && (
         <Grid size={{ xs: 12, md: 6 }}>
           <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5, height: '100%' }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 1 }}>
-                Performance
+                Copy Performance
               </Typography>
               {totalInitial > 0n && (
                 <Chip
@@ -735,6 +844,7 @@ export default function PortfolioPage() {
             </Typography>
           </Card>
         </Grid>
+        )}
       </Grid>
     </Container>
   );
