@@ -1,4 +1,5 @@
-import type { NavSectionProps } from 'src/components/nav-section';
+import type { Mode } from 'src/contexts/mode-context';
+import type { NavSectionProps, NavItemDataProps } from 'src/components/nav-section';
 
 import { paths } from 'src/routes/paths';
 
@@ -79,3 +80,41 @@ export const navData: NavSectionProps['data'] = [
     ],
   },
 ];
+
+// ----------------------------------------------------------------------
+// Simple 模式的側邊欄。
+//
+// 全站 17 個項目對新手是雜訊，不是選項——切到 simple 模式之前，mode 這個
+// 狀態存在了，但從沒改變過側邊欄一個字。這裡把它接上：simple 只留使用流程
+// 上真的用得到的五個入口，其餘收起來，讓側邊欄本身變成「這是簡化版」的
+// 第一個訊號，而不是要使用者先點開每一項才知道自己用不到。
+//
+// 照使用順序排，不是照 EXPERT_NAV_DATA 原本出現的順序：先看資產狀況
+// （Dashboard），再去下單（Exchange），回來看持倉（Portfolio）跟大戶動向
+// （Whale Tracker），Pepe 養成中心放最後，因為它是遊戲化的附加內容。
+const SIMPLE_NAV_PATHS: readonly string[] = [
+  paths.pepefi.dashboard,
+  paths.pepefi.exchange,
+  paths.pepefi.portfolio,
+  paths.pepefi.whale,
+  paths.pepefi.pepe,
+];
+
+/**
+ * 依模式決定側邊欄／手機選單／搜尋列要顯示哪些項目。
+ *
+ * 不做路由層級的攔截——simple 模式收起的是入口，不是路徑本身；被藏起來的
+ * 頁面仍然可以直接用網址打開。把它們真的鎖起來會變成一套假的權限系統：
+ * 擋不住真的想繞過限制的人（前端路由本來就攔不住），卻會擋到照著教學文件
+ * 或客服連結進來、剛好走了一條沒在側邊欄上的路徑的正常使用者。
+ */
+export function navDataForMode(mode: Mode): NavSectionProps['data'] {
+  if (mode === 'expert') return navData;
+
+  const allItems = navData.flatMap(section => section.items);
+  const items = SIMPLE_NAV_PATHS
+    .map(path => allItems.find(item => item.path === path))
+    .filter((item): item is NavItemDataProps => item !== undefined);
+
+  return [{ subheader: 'PepeLab', items }];
+}

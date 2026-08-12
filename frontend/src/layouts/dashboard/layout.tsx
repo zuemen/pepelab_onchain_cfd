@@ -40,10 +40,10 @@ import { MenuButton } from '../components/menu-button';
 import { AccountDrawer } from '../components/account-drawer';
 import { SettingsButton } from '../components/settings-button';
 import { ContactsPopover } from '../components/contacts-popover';
-import { navData as dashboardNavData } from '../nav-config-dashboard';
 import { dashboardLayoutVars, dashboardNavColorVars } from './css-vars';
 import { NotificationsDrawer } from '../components/notifications-drawer';
 import { MainSection, layoutClasses, HeaderSection, LayoutSection } from '../core';
+import { navDataForMode, navData as dashboardNavData } from '../nav-config-dashboard';
 
 // ----------------------------------------------------------------------
 
@@ -80,7 +80,12 @@ export function DashboardLayout({
   const { value: open, onFalse: onClose, onTrue: onOpen } = useBoolean();
   const { mode, toggle: toggleMode } = useMode();
 
-  const navData = slotProps?.nav?.data ?? dashboardNavData;
+  // slotProps override (used by callers that need a custom nav) always wins;
+  // otherwise the nav follows the mode. Simple/expert existed as a state
+  // before this without ever changing the sidebar — 17 items stayed 17 items
+  // regardless of which one was selected.
+  const navData = slotProps?.nav?.data ?? navDataForMode(mode);
+  const totalNavCount = dashboardNavData.flatMap((section) => section.items).length;
 
   const isNavMini = settings.state.navLayout === 'mini';
   const isNavHorizontal = settings.state.navLayout === 'horizontal';
@@ -88,6 +93,37 @@ export function DashboardLayout({
 
   const canDisplayItemByRole = (allowedRoles: NavItemProps['allowedRoles']): boolean =>
     !allowedRoles?.includes(user?.role);
+
+  // Collapsing the sidebar in simple mode without saying so would read as
+  // "some of my features vanished." This turns the toggle in the header into
+  // something the sidebar itself points back to, instead of relying on the
+  // user to notice a switch in the corner.
+  const renderSimpleModeHint = () =>
+    mode === 'simple' ? (
+      <Box
+        component="button"
+        type="button"
+        onClick={toggleMode}
+        sx={{
+          display: 'block',
+          width: '100%',
+          px: 2.5,
+          py: 1.75,
+          border: 'none',
+          borderTop: '1px dashed',
+          borderColor: 'divider',
+          bgcolor: 'transparent',
+          color: 'text.secondary',
+          fontSize: '0.75rem',
+          fontWeight: 600,
+          textAlign: 'left',
+          cursor: 'pointer',
+          '&:hover': { color: 'primary.main' },
+        }}
+      >
+        切換到專家模式看全部 {totalNavCount} 個功能 →
+      </Box>
+    ) : null;
 
   const renderHeader = () => {
     const headerSlotProps: HeaderSectionProps['slotProps'] = {
@@ -131,6 +167,7 @@ export function DashboardLayout({
             onClose={onClose}
             cssVars={navVars.section}
             checkPermissions={canDisplayItemByRole}
+            slots={{ bottomArea: renderSimpleModeHint() }}
           />
 
           {/** @slot Logo */}
@@ -172,16 +209,35 @@ export function DashboardLayout({
           {/** @slot Settings button */}
           <SettingsButton />
 
-          {/** @slot Mode toggle */}
-          <Stack direction="row" alignItems="center" gap={0.5} sx={{ display: { xs: 'none', sm: 'flex' } }}>
-            <Typography variant="caption" sx={{ color: mode === 'simple' ? 'primary.main' : 'text.disabled', fontWeight: 700, fontSize: '0.7rem' }}>簡單</Typography>
+          {/** @slot Mode toggle
+           *
+           * Was `display: { xs: 'none', sm: 'flex' }` on the whole group —
+           * on mobile the switch didn't just look different, it wasn't in
+           * the DOM at all, so the people the "simple" mode is aimed at were
+           * the ones who couldn't reach the control that turns it on. Now
+           * only the two Chinese labels hide below `sm` to save width; the
+           * Switch itself stays reachable at every breakpoint.
+           */}
+          <Stack direction="row" alignItems="center" gap={0.5}>
+            <Typography
+              variant="caption"
+              sx={{ display: { xs: 'none', sm: 'block' }, color: mode === 'simple' ? 'primary.main' : 'text.disabled', fontWeight: 700, fontSize: '0.7rem' }}
+            >
+              簡單
+            </Typography>
             <Switch
               checked={mode === 'expert'}
               onChange={toggleMode}
               size="small"
+              aria-label={mode === 'simple' ? '切換到專家模式' : '切換到簡單模式'}
               sx={{ '& .MuiSwitch-track': { bgcolor: 'primary.main' } }}
             />
-            <Typography variant="caption" sx={{ color: mode === 'expert' ? 'primary.main' : 'text.disabled', fontWeight: 700, fontSize: '0.7rem' }}>專家</Typography>
+            <Typography
+              variant="caption"
+              sx={{ display: { xs: 'none', sm: 'block' }, color: mode === 'expert' ? 'primary.main' : 'text.disabled', fontWeight: 700, fontSize: '0.7rem' }}
+            >
+              專家
+            </Typography>
           </Stack>
 
           {/** @slot Wallet connect */}
@@ -215,6 +271,10 @@ export function DashboardLayout({
       layoutQuery={layoutQuery}
       cssVars={navVars.section}
       checkPermissions={canDisplayItemByRole}
+      // The mini rail is icon-only and has no room for a text hint — the
+      // toggle in the header is still reachable there, this is just the
+      // sidebar-side reminder.
+      slots={{ bottomArea: isNavMini ? null : renderSimpleModeHint() }}
       onToggleNav={() =>
         settings.setField(
           'navLayout',
