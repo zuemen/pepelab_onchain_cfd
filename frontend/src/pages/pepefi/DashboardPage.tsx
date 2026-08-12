@@ -16,14 +16,14 @@ import { useMode } from 'src/contexts/mode-context';
 import { usePepefiWallet } from 'src/layouts/pepefi';
 import { ASSET_IDS } from 'src/contracts/addresses';
 import { ASSET_META } from 'src/lib/pepefi/assetMeta';
-import { safeRead, isDeployed } from 'src/lib/pepefi/safeRead';
-import { prettyError } from 'src/lib/pepefi/errorMessages';
+import { safeRead } from 'src/lib/pepefi/safeRead';
 import ESGBadge from 'src/components/pepefi/ESGBadge';
 import Skeleton, { TableSkeleton } from 'src/components/pepefi/Skeleton';
 import { PepeAvatar } from 'src/components/pepefi/PepeAvatar';
 import { pepeNameFor } from 'src/lib/pepefi/pepeName';
-import { ownedCosmeticsCount } from 'src/lib/pepefi/gamefi';
-import { ACHIEVEMENTS, buildQuests, dailyRewardFor, TODAY_INDEX, type AchCtx } from 'src/lib/pepefi/achievements';
+import type { NetWorthParts } from 'src/lib/pepefi/portfolio';
+import NetWorthHero from 'src/components/pepefi/dashboard/NetWorthHero';
+import QuickActions from 'src/components/pepefi/dashboard/QuickActions';
 
 /** 鏈上餘額的輪詢間隔。原本是 8 秒——見下方 useEffect 的說明。 */
 const POLL_MS = 30_000;
@@ -34,9 +34,7 @@ import Typography from '@mui/material/Typography';
 import Card from '@mui/material/Card';
 import Grid from '@mui/material/Grid';
 import Stack from '@mui/material/Stack';
-import Divider from '@mui/material/Divider';
 import Button from '@mui/material/Button';
-import IconButton from '@mui/material/IconButton';
 import Chip from '@mui/material/Chip';
 import TableContainer from '@mui/material/TableContainer';
 import Table from '@mui/material/Table';
@@ -49,23 +47,6 @@ import Link from '@mui/material/Link';
 import { Icon } from '@iconify/react';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-
-const PEPE_QUOTES = [
-  '「不要問市場給了你什麼，要問你為市場帶來了什麼。」 — Pepe the Wise',
-  '「槓桿是雙面刃，用好了飛天，用壞了入地。」 — OG Pepe',
-  '「每天簽到，財富自然到。」 — Lucky Pepe',
-  '「鏈上透明，永不說謊。」 — On-chain Pepe',
-  '「止損是交易者最好的朋友。」 — Profitable Pepe',
-  '「跟單之前，先搞清楚自己跟的是誰。」 — Alpha Pepe',
-  '「ESG 高分代表責任感，長期看好。」 — Green Pepe',
-  '「Copy trading 不是投機，是有策略的信任。」 — Social Pepe',
-];
-
-const PEPE_AVATARS = [
-  '/avatars/pepe-01.png',
-  '/assets/images/pepefi/pepe_eth.jpg',
-  '/avatars/pepe-01.png',
-];
 
 const TREND_ASSET_IDS = [
   ASSET_IDS.sBTC,
@@ -263,72 +244,13 @@ export default function DashboardPage() {
   const [stakedUSDC, setStakedUSDC] = useState<bigint | null>(null);
   const [walletUSDC, setWalletUSDC] = useState<bigint | null>(null);
   const [vaultUSDC,  setVaultUSDC]  = useState<bigint | null>(null);
-  const [walletUSDT, setWalletUSDT] = useState<bigint | null>(null);
-  const [usdtBusy,   setUsdtBusy]   = useState(false);
- 
-  const [streak,      setStreak]      = useState(0);
-  const [lastDay,     setLastDay]     = useState(0);
-  const [toast,       setToast]       = useState<{ msg: string; ok: boolean } | null>(null);
-  const [ownedCount,  setOwnedCount]  = useState<number>(0);
-
-  const notify = (msg: string, ok: boolean) => {
-    setToast({ msg, ok });
-    setTimeout(() => setToast(null), 5000);
-  };
-
-  // MockUSDT faucet. Second mock stablecoin — hold / swap only; trading margin
-  // still settles in USDC. Hidden entirely when USDT isn't deployed here.
-  const usdtDeployed =
-    !!contracts &&
-    String(contracts.usdt.target) !== '0x0000000000000000000000000000000000000000';
-
-  const claimUsdt = async () => {
-    if (!contracts || !usdtDeployed) return;
-    setUsdtBusy(true);
-    try {
-      const tx = (await contracts.usdt.faucet()) as { wait: () => Promise<unknown> };
-      await tx.wait();
-      notify('已領取測試 USDT ✓（保證金請用 USDC）', true);
-      if (wallet.address) {
-        try {
-          setWalletUSDT((await contracts.usdt.balanceOf(wallet.address)) as bigint);
-        } catch { /* balance refresh is best-effort */ }
-      }
-    } catch (e) {
-      // 舊版一律歸咎於「24 小時冷卻期」。faucet() 現在還會因為
-      // FaucetCallerMustBeEOA（合約錢包呼叫）而 revert，猜錯原因會讓使用者
-      // 一直等一個永遠不會過的冷卻期。交給 prettyError 說實話。
-      notify(prettyError(e), false);
-    } finally {
-      setUsdtBusy(false);
-    }
-  };
-
-  useEffect(() => {
-    // Re-reads on every address change too, not just the update event — the
-    // lab's progress is now per-wallet, so switching accounts has to switch
-    // which pile of cosmetics gets counted.
-    const addr = wallet.address || 'mock_user';
-    const handleUpdate = () => setOwnedCount(ownedCosmeticsCount(addr));
-    handleUpdate();
-    window.addEventListener('pepefi:gamefi-updated', handleUpdate);
-    return () => window.removeEventListener('pepefi:gamefi-updated', handleUpdate);
-  }, [wallet.address]);
-
-  // ── PEPE token state ──────────────────────────────────────────────────────
-  const [pepeBal,      setPepeBal]      = useState<bigint | null>(null);
-  const [pepeClaimed,  setPepeClaimed]  = useState<boolean | null>(null);
-  const [pepeAmount,   setPepeAmount]   = useState<bigint>(1000n * 10n ** 18n);
-  const [pepeKyc,      setPepeKyc]      = useState(false);
-  const [pepePoolBal,  setPepePoolBal]  = useState<bigint | null>(null);
-  const [claimLoading, setClaimLoading] = useState(false);
-  const [claimError,   setClaimError]   = useState<string | null>(null);
- 
+  // GameFi 的狀態（PEPE 餘額與空投、簽到連續、成就、任務、造型收藏、以及
+  // 它們共用的 toast）原本都掛在這一頁。全部移除：
+  //   - PEPE 餘額／空投 → components/pepefi/PepeTokenCard，掛在 /rewards
+  //   - 每日簽到        → /rewards 早就有一份，這裡是重複的
+  //   - 成就／任務／收藏 → /pepe 才是它們的家
+  // 這一頁只剩下投資組合需要的資料。
   const [enabled, setEnabled] = useState<Set<string>>(new Set(TREND_ASSET_IDS));
- 
-  // ── Daily check-in banner ─────────────────────────────────────────────────
-  const [checkedInToday, setCheckedInToday] = useState<boolean | null>(null);
-  const [bannerDismissed, setBannerDismissed] = useState(false);
   const toggleAsset = (id: string) =>
     setEnabled(prev => {
       const next = new Set(prev);
@@ -353,16 +275,6 @@ export default function DashboardPage() {
       ]);
       setFreeMargin(fmRaw as bigint);
       setWalletUSDC(walletUsdcRaw as bigint);
-
-      // USDT is optional per chain — a 0x0 read would throw, so guard it and
-      // keep it out of the Promise.all above.
-      if (String(contracts.usdt.target) !== '0x0000000000000000000000000000000000000000') {
-        try {
-          setWalletUSDT((await contracts.usdt.balanceOf(wallet.address)) as bigint);
-        } catch { setWalletUSDT(0n); }
-      } else {
-        setWalletUSDT(null);
-      }
 
       let stakedAmt = 0n;
       if (stakedUsdcRaw) {
@@ -440,100 +352,6 @@ export default function DashboardPage() {
     document.addEventListener('visibilitychange', onVisible);
     return () => { clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
   }, [fetchAll]);
-
-  // ── PEPE fetch (isolated — failures never affect main dashboard) ───────────
-  const ZERO_ADDR = '0x0000000000000000000000000000000000000000';
-
-  const fetchPepe = useCallback(async () => {
-    if (!contracts || !wallet.address) return;
-    if (String(contracts.pepeToken.target).toLowerCase() === ZERO_ADDR) return;
-    if (String(contracts.pepeClaim.target).toLowerCase()  === ZERO_ADDR) return;
-    const [balR, claimedR, amountR, kycR, poolR] = await Promise.allSettled([
-      contracts.pepeToken.balanceOf(wallet.address),
-      contracts.pepeClaim.claimed(wallet.address),
-      contracts.pepeClaim.claimAmount(),
-      contracts.kycRegistry.isVerified(wallet.address),
-      contracts.pepeToken.balanceOf(contracts.pepeClaim.target),
-    ]);
-    if (balR.status     === 'fulfilled') setPepeBal(balR.value as bigint);
-    if (claimedR.status === 'fulfilled') setPepeClaimed(claimedR.value as boolean);
-    if (amountR.status  === 'fulfilled') setPepeAmount(amountR.value as bigint);
-    // Fail closed: an unreadable registry means we cannot confirm eligibility,
-    // which is not the same as being eligible.
-    setPepeKyc(kycR.status === 'fulfilled' ? Boolean(kycR.value) : false);
-    if (poolR.status    === 'fulfilled') setPepePoolBal(poolR.value as bigint);
-  }, [contracts, wallet.address]);
-
-  useEffect(() => {
-    void fetchPepe();
-    const timer = setInterval(() => {
-      if (document.visibilityState !== 'hidden') void fetchPepe();
-    }, POLL_MS);
-    return () => clearInterval(timer);
-  }, [fetchPepe]);
-
-  useEffect(() => {
-    if (!contracts?.pepeIncentives || !wallet.address) return;
-    const ZERO = '0x0000000000000000000000000000000000000000';
-    if (String((contracts.pepeIncentives as any).target).toLowerCase() === ZERO) return;
-    
-    const loadCheckIn = async () => {
-      try {
-        const last = await contracts.pepeIncentives.lastCheckIn(wallet.address);
-        const s    = await contracts.pepeIncentives.streak(wallet.address);
-        setLastDay(Number(last));
-        setStreak(Number(s));
-        const todayIdx = Math.floor(Date.now() / 1000 / 86400);
-        setCheckedInToday(Number(last) >= todayIdx);
-      } catch (e) {
-        console.warn('pepeIncentives fetch failed:', e);
-        setCheckedInToday(null);
-      }
-    };
-    void loadCheckIn();
-  }, [contracts, wallet.address]);
-
-  const doClaimPepe = useCallback(async () => {
-    if (!contracts) return;
-    setClaimLoading(true);
-    setClaimError(null);
-    try {
-      const tx = await contracts.pepeClaim.claim();
-      await (tx as { wait: () => Promise<unknown> }).wait();
-      await fetchPepe();
-    } catch (e: unknown) {
-      const raw = e instanceof Error ? e.message : String(e);
-      const match = raw.match(/revert[^"]*"([^"]+)"/) ?? raw.match(/"([^"]+)"/);
-      setClaimError(match ? match[1] : raw.slice(0, 100));
-    } finally {
-      setClaimLoading(false);
-    }
-  }, [contracts, fetchPepe]);
-
-  // 位址一定要跟著目前這條鏈走。舊版寫死 Sepolia 的 PepeToken，Base 使用者
-  // 加進 MetaMask 的是另一條鏈上的合約，餘額永遠 0 而且看不出原因。
-  // 比照 TraderStakePage：讀 contracts.pepeToken.target。
-  const addPepeToWallet = async () => {
-    if (!window.ethereum || !contracts) return;
-    const pepeAddr = String(contracts.pepeToken.target);
-    if (!isDeployed(pepeAddr)) {
-      notify('本網路尚未部署 PepeToken，無法加入錢包', false);
-      return;
-    }
-    try {
-      await window.ethereum.request({
-        method: 'wallet_watchAsset',
-        params: {
-          type: 'ERC20',
-          options: {
-            address:  pepeAddr,
-            symbol:   'PEPE',
-            decimals: 18,
-          },
-        },
-      });
-    } catch (e) { console.error('Add PEPE to wallet failed', e); }
-  };
 
   // ── Derived: live-updated from livePrices tick ────────────────────────────
 
@@ -637,16 +455,20 @@ export default function DashboardPage() {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  const pepeNum       = pepeBal !== null ? Number(pepeBal) / 1e18 : 0;
-  const checkedToday  = lastDay === TODAY_INDEX();
-  const dailyReward   = dailyRewardFor(streak);
-
-  const achCtx: AchCtx = { streak, pepeNum, positions: positions.length, owned: ownedCount };
-
-  const quests = buildQuests({ streak, pepeNum, positions: positions.length, checkedToday });
-
   const pnlPctStr = derived.totalNotional > 0n
     ? fPct(derived.totalPnL, derived.totalNotional) : '—';
+
+  // 淨值的組成。null 代表那一項**沒讀到**（例如 TraderStake 在這條鏈上是
+  // 0x0），netWorthOf 會把它排除在總額外並回報，而不是靜默當成 0 端出一個
+  // 看起來很篤定的錯數字。derived.* 一定有值（由持倉算出來的），所以不是 null。
+  const netWorthParts: NetWorthParts = {
+    walletCash:    walletUSDC,
+    freeMargin,
+    lockedMargin:  derived.totalMargin,
+    unrealisedPnl: derived.totalPnL,
+    staked:        stakedUSDC,
+    vault:         vaultUSDC,
+  };
 
   return (
     <Container maxWidth="lg" sx={{ py: 3, display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -674,79 +496,35 @@ export default function DashboardPage() {
         </Button>
       </Box>
 
-      {/* Toast */}
-      {toast && (
-        <Box sx={{
-          position: 'fixed', top: 80, right: 24, zIndex: 9999,
-          bgcolor: toast.ok ? 'success.dark' : 'error.dark',
-          color: '#fff', px: 3, py: 1.5, borderRadius: 2,
-          boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
-        }}>
-          {toast.msg}
+      {/* ── Identity + way into the lab ─────────────────────────────────────── */}
+      {/* Was a six-figure GameFi summary (PEPE balance, check-in streak,
+          achievements, quests, cosmetics). Every one of those numbers is
+          already on /pepe or /rewards, and rendering them here is what kept
+          the Dashboard coupled to the whole GameFi state tree. What's left is
+          the part a portfolio page actually needs: who you are, and one way in. */}
+      <Card sx={{ p: 2.5, bgcolor: '#0e1420', border: '1px solid var(--palette-primary-main)22', borderRadius: 3 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+          <PepeAvatar address={wallet.address ?? undefined} size={56} />
+
+          <Box sx={{ minWidth: 0 }}>
+            <Typography fontWeight={900} fontSize={18} sx={{ color: 'var(--palette-primary-main)' }}>
+              {pepeNameFor(wallet.address)}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
+              {wallet.address ? `${wallet.address.slice(0,6)}…${wallet.address.slice(-4)}` : ''}
+            </Typography>
+          </Box>
+
+          <Button
+            component={RouterLink}
+            to="/pepe"
+            variant="contained"
+            sx={{ ml: { sm: 'auto' }, bgcolor: 'var(--palette-primary-main)', color: '#0e1420', fontWeight: 900, textTransform: 'none' }}
+          >
+            🐸 Pepe Lab →
+          </Button>
         </Box>
-      )}
-
-      {/* ── My Pepe Section ── */}
-      {/* A summary, not a second lab: identity and a row of figures, with every
-          detail behind them a click away on /pepe. Spending happens there too,
-          which is why this card has exactly one button. */}
-      <Box>
-        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1.5, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
-          🏠 我的 Pepe (My Pepe)
-        </Typography>
-
-        <Card sx={{ p: 2.5, bgcolor: '#0e1420', border: '1px solid var(--palette-primary-main)22', borderRadius: 3 }}>
-
-          {/* Row 1 — who, and the way in */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
-            <PepeAvatar address={wallet.address ?? undefined} size={64} />
-
-            <Box sx={{ minWidth: 0 }}>
-              <Typography fontWeight={900} fontSize={18} sx={{ color: 'var(--palette-primary-main)' }}>
-                {pepeNameFor(wallet.address)}
-              </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
-                {wallet.address ? `${wallet.address.slice(0,6)}…${wallet.address.slice(-4)}` : ''}
-              </Typography>
-            </Box>
-
-            <Button
-              component={RouterLink}
-              to="/pepe"
-              variant="contained"
-              sx={{ ml: { sm: 'auto' }, bgcolor: 'var(--palette-primary-main)', color: '#0e1420', fontWeight: 900, textTransform: 'none' }}
-            >
-              🐸 前往養成中心 →
-            </Button>
-          </Box>
-
-          <Divider sx={{ my: 2, borderColor: 'var(--palette-primary-main)18' }} />
-
-          {/* Row 2 — the figures. auto-fit rather than a flex row so they stay
-              on an even grid instead of bunching up as the sidebar collapses. */}
-          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(104px, 1fr))', gap: 2 }}>
-            {[
-              { label: '鏈上 PEPE', value: pepeNum.toLocaleString(undefined, { maximumFractionDigits: 0 }) },
-              { label: '簽到連續',  value: `🔥 ${streak} 天` },
-              { label: '持倉數',    value: String(positions.length) },
-              { label: '成就',      value: `${ACHIEVEMENTS.filter(a => a.check(achCtx)).length} / ${ACHIEVEMENTS.length}` },
-              { label: '今日任務',  value: `${quests.filter(q => q.done).length} / ${quests.length}` },
-              { label: '造型收藏',  value: String(ownedCount) },
-            ].map(stat => (
-              <Box key={stat.label}>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.25 }}>
-                  {stat.label}
-                </Typography>
-                <Typography fontWeight={700} fontSize={16} sx={{ whiteSpace: 'nowrap' }}>
-                  {stat.value}
-                </Typography>
-              </Box>
-            ))}
-          </Box>
-        </Card>
-      </Box>
-
-      <Divider sx={{ my: 1, borderColor: 'rgba(255,255,255,0.06)' }} />
+      </Card>
 
       {/* ── Simple mode: big live-price cards ── */}
       {mode === 'simple' && (
@@ -783,707 +561,15 @@ export default function DashboardPage() {
         </Box>
       )}
 
-      {/* ── Asset Overview & Wealth Navigator ── */}
-      <Card sx={{
-        p: 3,
-        background: 'linear-gradient(135deg, rgba(124,193,74,0.12) 0%, rgba(11,22,37,0.8) 100%)',
-        border: '1px solid rgba(124,193,74,0.35)',
-        borderRadius: 2.5,
-        boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-      }}>
-        {/* Aggregated Net Worth Header */}
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2, mb: 3.5 }}>
-          <Box>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontWeight: 'bold', letterSpacing: 1 }}>
-              💼 總資產估值 (TOTAL USDC NET WORTH)
-            </Typography>
-            <Typography variant="h3" sx={{ fontWeight: '900', color: 'var(--palette-primary-main)', fontFamily: MONO }}>
-              {fUsd((walletUSDC ?? 0n) + (stakedUSDC ?? 0n) + derived.totalMargin + freeMargin + (vaultUSDC ?? 0n))}
-            </Typography>
-          </Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, bgcolor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', p: 2, borderRadius: 2 }}>
-            <Box sx={{ fontSize: 32 }}>🐸</Box>
-            <Box>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>MemeFi 代幣儲備</Typography>
-              <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: '#ffd700', fontFamily: MONO }}>
-                {pepeBal !== null ? f18(pepeBal, 0) : '0'} PEPE
-              </Typography>
-            </Box>
-          </Box>
-        </Box>
- 
-        {/* Flow Map Visual Navigator */}
-        <Box sx={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          gap: 1.5,
-          mb: 3.5,
-          p: 2,
-          bgcolor: 'rgba(0, 0, 0, 0.25)',
-          borderRadius: 1.5,
-          border: '1px dashed rgba(124, 193, 74, 0.25)'
-        }}>
-          <Typography variant="subtitle2" sx={{ color: '#a8d96a', display: 'flex', alignItems: 'center', gap: 1, fontWeight: 'bold' }}>
-            <Icon icon="solar:map-arrow-square-bold-duotone" width={18} />
-            財產分流導航地圖 (Asset Flow Map):
-          </Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', fontSize: '0.8125rem' }}>
-            <Chip label="👛 Web3 錢包" size="small" variant="outlined" sx={{ borderColor: 'rgba(255,255,255,0.2)', color: '#fff', fontWeight: 'bold' }} />
-            <span style={{ color: 'rgba(255,255,255,0.2)' }}>──►</span>
-            <Chip label="💰 錢包可用現金" size="small" sx={{ bgcolor: 'rgba(255,255,255,0.06)', color: 'text.secondary', fontWeight: 'bold' }} />
-            <span style={{ color: 'rgba(255,255,255,0.2)' }}>──分流至──►</span>
-            <Chip label="📈 槓桿合約帳戶" size="small" sx={{ bgcolor: 'rgba(99,102,241,0.12)', color: '#a5b4fc', fontWeight: 'bold' }} />
-            <span style={{ color: 'rgba(255,255,255,0.2)' }}>＋</span>
-            <Chip label="🛡️ DeFi 質押倉位" size="small" sx={{ bgcolor: 'rgba(16,185,129,0.12)', color: '#a7f3d0', fontWeight: 'bold' }} />
-            <span style={{ color: 'rgba(255,255,255,0.2)' }}>＋</span>
-            <Chip label="🏦 LP 做市保險池" size="small" sx={{ bgcolor: 'rgba(245,158,11,0.12)', color: '#fcd34d', fontWeight: 'bold' }} />
-          </Box>
-        </Box>
- 
-        <Divider sx={{ borderColor: 'rgba(255,255,255,0.08)', mb: 3.5 }} />
- 
-        {/* Segmented Wealth Cards */}
-        <Grid container spacing={3.5}>
-          {/* 1. Wallet Available cash */}
-          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Card sx={{
-              p: 2.5,
-              bgcolor: 'rgba(255,255,255,0.01)',
-              border: '1px solid rgba(255,255,255,0.05)',
-              display: 'flex',
-              flexDirection: 'column',
-              height: '100%',
-              justifyContent: 'space-between'
-            }}>
-              <Box>
-                <Typography variant="subtitle2" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, color: 'text.secondary' }}>
-                  💰 錢包可用現金 (Cash)
-                </Typography>
-                <Typography variant="h5" sx={{ fontWeight: 'bold', mt: 1.5, fontFamily: MONO, color: 'text.primary' }}>
-                  {walletUSDC !== null ? fUsd(walletUSDC) : '$0.00'}
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-                  存放在您 Web3 錢包中的可用 USDC 測試幣。這是您所有鏈上操作與後備儲蓄的起點。
-                </Typography>
-                {/* USDT is a second mock stablecoin — hold / swap only, not margin. */}
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75, fontFamily: MONO, minHeight: 20 }}>
-                  USDT: {usdtDeployed ? fUsd(walletUSDT ?? 0n) : '尚未部署'}
-                </Typography>
-              </Box>
-              <Stack direction="row" spacing={1} sx={{ mt: 2.5 }}>
-                <Button
-                  component={RouterLink}
-                  to="/exchange"
-                  size="small"
-                  variant="outlined"
-                  sx={{
-                    flex: 1,
-                    borderColor: 'rgba(255,255,255,0.08)',
-                    color: 'text.secondary',
-                    textTransform: 'none',
-                    fontWeight: 'bold',
-                    '&:hover': { borderColor: 'primary.main', bgcolor: 'rgba(0,167,111,0.04)', color: '#fff' }
-                  }}
-                >
-                  去領水與入金 ↗
-                </Button>
-                {usdtDeployed && (
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    disabled={usdtBusy}
-                    onClick={() => void claimUsdt()}
-                    sx={{
-                      borderColor: 'rgba(255,255,255,0.08)',
-                      color: 'text.secondary',
-                      textTransform: 'none',
-                      fontWeight: 'bold',
-                      whiteSpace: 'nowrap',
-                      '&:hover': { borderColor: 'info.main', bgcolor: 'rgba(0,184,217,0.04)', color: '#fff' }
-                    }}
-                  >
-                    {usdtBusy ? '領取中…' : '領 USDT'}
-                  </Button>
-                )}
-                <Button
-                  component={RouterLink}
-                  to="/history"
-                  size="small"
-                  variant="text"
-                  sx={{
-                    color: 'text.secondary',
-                    textTransform: 'none',
-                    '&:hover': { color: 'text.primary' }
-                  }}
-                >
-                  資產歷史 ↗
-                </Button>
-              </Stack>
-            </Card>
-          </Grid>
- 
-          {/* 2. Perpetual Margined account */}
-          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Card sx={{
-              p: 2.5,
-              bgcolor: 'rgba(99,102,241,0.03)',
-              border: '1px solid rgba(99,102,241,0.15)',
-              display: 'flex',
-              flexDirection: 'column',
-              height: '100%',
-              justifyContent: 'space-between',
-              transition: 'all 0.2s',
-              '&:hover': { borderColor: 'rgba(99,102,241,0.3)', boxShadow: '0 8px 24px rgba(99,102,241,0.08)' }
-            }}>
-              <Box>
-                <Typography variant="subtitle2" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, color: '#818cf8' }}>
-                  📈 槓桿合約帳戶 (Trading)
-                </Typography>
-                <Typography variant="h5" sx={{ fontWeight: 'bold', mt: 1.5, fontFamily: MONO, color: '#a5b4fc' }}>
-                  {fUsd(derived.totalMargin + freeMargin)}
-                </Typography>
-                <Stack spacing={0.5} sx={{ mt: 1, minHeight: 48 }}>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span>已鎖定倉位保證金:</span>
-                    <span style={{ color: 'text.primary', fontFamily: MONO }}>{fUsd(derived.totalMargin)}</span>
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span>帳戶可用自由餘額:</span>
-                    <span style={{ color: 'text.primary', fontFamily: MONO }}>{fUsd(freeMargin)}</span>
-                  </Typography>
-                </Stack>
-              </Box>
-              <Stack direction="row" spacing={1} sx={{ mt: 2.5 }}>
-                <Button
-                  component={RouterLink}
-                  to="/exchange"
-                  size="small"
-                  variant="contained"
-                  sx={{
-                    flex: 1,
-                    bgcolor: '#6366f1',
-                    color: '#fff',
-                    fontWeight: 'bold',
-                    textTransform: 'none',
-                    '&:hover': { bgcolor: '#4f46e5' }
-                  }}
-                >
-                  自主交易 ↗
-                </Button>
-                <Button
-                  component={RouterLink}
-                  to="/portfolio"
-                  size="small"
-                  variant="outlined"
-                  sx={{
-                    borderColor: 'rgba(99,102,241,0.3)',
-                    color: '#a5b4fc',
-                    textTransform: 'none',
-                    fontWeight: 'bold',
-                    '&:hover': { borderColor: '#6366f1', bgcolor: 'rgba(99,102,241,0.08)' }
-                  }}
-                >
-                  跟單保證金 ↗
-                </Button>
-              </Stack>
-            </Card>
-          </Grid>
- 
-          {/* 3. DeFi Staking Position */}
-          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Card sx={{
-              p: 2.5,
-              bgcolor: 'rgba(16,185,129,0.03)',
-              border: '1px solid rgba(16,185,129,0.15)',
-              display: 'flex',
-              flexDirection: 'column',
-              height: '100%',
-              justifyContent: 'space-between',
-              transition: 'all 0.2s',
-              '&:hover': { borderColor: 'rgba(16,185,129,0.3)', boxShadow: '0 8px 24px rgba(16,185,129,0.08)' }
-            }}>
-              <Box>
-                <Typography variant="subtitle2" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, color: '#34d399' }}>
-                  🛡️ DeFi 質押倉位 (Staked)
-                </Typography>
-                <Typography variant="h5" sx={{ fontWeight: 'bold', mt: 1.5, fontFamily: MONO, color: '#a7f3d0' }}>
-                  {stakedUSDC !== null ? fUsd(stakedUSDC) : '$0.00'}
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, minHeight: 48 }}>
-                  質押在 TraderStake 治理合約中的資本。用於提升交易聲譽、並解鎖發布跟單策略的權限。
-                </Typography>
-              </Box>
-              <Stack direction="row" spacing={1} sx={{ mt: 2.5 }}>
-                <Button
-                  component={RouterLink}
-                  to="/stake"
-                  size="small"
-                  variant="contained"
-                  sx={{
-                    flex: 1,
-                    bgcolor: '#10b981',
-                    color: '#fff',
-                    fontWeight: 'bold',
-                    textTransform: 'none',
-                    '&:hover': { bgcolor: '#059669' }
-                  }}
-                >
-                  管理質押 ↗
-                </Button>
-                <Button
-                  component={RouterLink}
-                  to="/marketplace"
-                  size="small"
-                  variant="outlined"
-                  sx={{
-                    borderColor: 'rgba(16,185,129,0.3)',
-                    color: '#a7f3d0',
-                    textTransform: 'none',
-                    fontWeight: 'bold',
-                    '&:hover': { borderColor: '#10b981', bgcolor: 'rgba(16,185,129,0.08)' }
-                  }}
-                >
-                  發布策略 ↗
-                </Button>
-              </Stack>
-            </Card>
-          </Grid>
- 
-          {/* 4. LP Insurance Vault Position */}
-          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Card sx={{
-              p: 2.5,
-              bgcolor: 'rgba(245,158,11,0.03)',
-              border: '1px solid rgba(245,158,11,0.15)',
-              display: 'flex',
-              flexDirection: 'column',
-              height: '100%',
-              justifyContent: 'space-between',
-              transition: 'all 0.2s',
-              '&:hover': { borderColor: 'rgba(245,158,11,0.3)', boxShadow: '0 8px 24px rgba(245,158,11,0.08)' }
-            }}>
-              <Box>
-                <Typography variant="subtitle2" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1, color: '#f59e0b' }}>
-                  🏦 LP 保險資金池 (LP Vault)
-                </Typography>
-                <Typography variant="h5" sx={{ fontWeight: 'bold', mt: 1.5, fontFamily: MONO, color: '#fcd34d' }}>
-                  {vaultUSDC !== null ? fUsd(vaultUSDC) : '$0.00'}
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, minHeight: 48 }}>
-                  提供做市資金給流動性保險資金池。會自動賺取全平台高達 10% 的交易與結算手續費。
-                </Typography>
-              </Box>
-              <Button
-                component={RouterLink}
-                to="/vault"
-                size="small"
-                variant="contained"
-                sx={{
-                  mt: 2.5,
-                  width: '100%',
-                  bgcolor: '#f59e0b',
-                  color: '#fff',
-                  fontWeight: 'bold',
-                  textTransform: 'none',
-                  '&:hover': { bgcolor: '#d97706' }
-                }}
-              >
-                管理做市資金 LP ↗
-              </Button>
-            </Card>
-          </Grid>
-        </Grid>
-      </Card>
+      {/* ── Net worth hero ─────────────────────────────────────── */}
+      <NetWorthHero
+        parts={netWorthParts}
+        pnlPct={pnlPctStr}
+        loading={isLoading}
+      />
 
-      {/* ── Daily check-in banner ─────────────────────────────────────────────── */}
-      {!bannerDismissed && checkedInToday === false && (
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 2,
-            px: 3,
-            py: 1.5,
-            borderRadius: 2,
-            background: 'linear-gradient(90deg, rgba(124,193,74,0.15) 0%, rgba(255,210,61,0.12) 100%)',
-            border: '1px solid rgba(124,193,74,0.35)',
-          }}
-        >
-          <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#a8d96a' }}>
-            🐸 你今天還沒簽到！每日簽到可得 +50 PEPE，連續簽到最多 +110 PEPE
-          </Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
-            <Button
-              component={RouterLink}
-              to="/rewards"
-              size="small"
-              variant="contained"
-              sx={{
-                bgcolor: 'var(--palette-primary-main)',
-                // contrastText, not #fff — white on this green is 2.19:1.
-                color: 'primary.contrastText',
-                fontWeight: 'bold',
-                fontSize: '0.8rem',
-                py: 0.5,
-                px: 2,
-                '&:hover': { bgcolor: 'var(--palette-primary-dark)' },
-              }}
-            >
-              去簽到
-            </Button>
-            <IconButton
-              size="small"
-              onClick={() => setBannerDismissed(true)}
-              aria-label="關閉此提示"
-              sx={{ color: 'text.secondary', p: 0.5 }}
-            >
-              <Icon icon="mingcute:close-line" width={16} />
-            </IconButton>
-          </Box>
-        </Box>
-      )}
-
-      {/* ── A. 頂部總覽 ───────────────────────────────────────────────────────── */}
-      <Grid container spacing={2}>
-        {[
-          {
-            label: '總資產現值',
-            value: isLoaded ? fUsd(derived.totalHoldings) : '—',
-            sub:   '所有持倉 notional 現值',
-            color: 'text.primary',
-          },
-          {
-            label: '未實現損益',
-            value: isLoaded ? `${fPnL(derived.totalPnL)} USDC` : '—',
-            sub:   pnlPctStr,
-            color: isLoaded ? pnlColor(derived.totalPnL) : 'text.primary',
-          },
-          {
-            label: '可用餘額',
-            value: isLoaded ? fUsd(freeMargin) : '—',
-            sub:   'Free Margin',
-            color: 'text.primary',
-          },
-          {
-            label: 'ESG 評分',
-            value: portfolioESG ? `${portfolioESG.composite}` : '—',
-            sub:   portfolioESG ? ESG_TIER(portfolioESG.composite).name : 'no positions',
-            color: portfolioESG ? ESG_TIER(portfolioESG.composite).color : 'text.secondary',
-          },
-        ].map(({ label, value, sub, color }) => (
-          <Grid size={{ xs: 12, sm: 6, md: 3 }} key={label}>
-            <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 0.5, height: '100%' }}>
-              <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold' }}>
-                {label}
-              </Typography>
-              {isLoading ? (
-                <Skeleton width={100} height={28} />
-              ) : (
-                <Typography variant="h5" sx={{ color, fontWeight: 'bold', fontFamily: MONO }}>
-                  {value}
-                </Typography>
-              )}
-              <Typography variant="caption" color="text.secondary">
-                {sub}
-              </Typography>
-            </Card>
-          </Grid>
-        ))}
-      </Grid>
-
-      {/* ── B. 四類資產收益卡 ──────────────────────────────────────────── */}
-      <Box>
-        <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 2, fontWeight: 'bold', letterSpacing: 1.5 }}>
-          四類資產收益
-        </Typography>
-        <Grid container spacing={2}>
-          {DISPLAY_CATS.map(cat => {
-            const cfg = CAT_CONFIG[cat];
-            const s   = catSummary[cat];
-            const cnt = s.symbols.length;
-            return (
-              <Grid size={{ xs: 12, sm: 6 }} key={cat}>
-                <Card
-                  sx={{
-                    p: 3,
-                    background: cfg.bg,
-                    borderColor: cfg.borderColor,
-                    borderWidth: 1,
-                    borderStyle: 'solid',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 2,
-                    height: '100%',
-                  }}
-                >
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Typography variant="h6" sx={{ fontSize: '1.25rem', lineHeight: 1 }}>{cfg.icon}</Typography>
-                    <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'text.primary' }}>{cfg.label}</Typography>
-                    <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
-                      {cnt} asset{cnt !== 1 ? 's' : ''}
-                    </Typography>
-                  </Box>
-
-                  {isLoading ? (
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                      <Skeleton width={120} height={24} />
-                      <Skeleton width={80} height={16} />
-                    </Box>
-                  ) : cnt === 0 ? (
-                    <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic', py: 1 }}>
-                      No positions
-                    </Typography>
-                  ) : (
-                    <>
-                      <Box>
-                        <Typography variant="h5" sx={{ fontWeight: 'bold', fontFamily: MONO }}>
-                          {fUsd(s.value)}
-                        </Typography>
-                        <Typography variant="body2" sx={{ fontWeight: 'bold', color: pnlColor(s.pnl), fontFamily: MONO, mt: 0.5 }}>
-                          {fPnL(s.pnl)} USDC
-                        </Typography>
-                      </Box>
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                        {s.symbols.map(sym => (
-                          <Chip
-                            key={sym}
-                            label={sym}
-                            size="small"
-                            sx={{
-                              borderColor: `${cfg.color}60`,
-                              color: cfg.color,
-                              bgcolor: `${cfg.color}15`,
-                              fontWeight: 'bold',
-                              fontSize: '0.6875rem',
-                            }}
-                          />
-                        ))}
-                      </Box>
-                    </>
-                  )}
-                </Card>
-              </Grid>
-            );
-          })}
-        </Grid>
-      </Box>
-
-      {/* ── Whale Activity ────────────────────────────────────────────────────── */}
-      {whaleAlerts.length > 0 && (
-        <Card sx={{ p: 3, border: '1px solid', borderColor: 'rgba(0, 184, 217, 0.16)', bgcolor: 'rgba(0, 184, 217, 0.02)' }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 1 }}>
-            <Typography variant="subtitle2" sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'info.main', fontWeight: 'bold' }}>
-              🐋 Whale Activity
-              <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 'normal' }}>
-                (≥ $5k notional)
-              </Typography>
-            </Typography>
-            <Link component={RouterLink} to="/whale" sx={{ fontSize: '0.75rem', color: 'info.main', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}>
-              Open Whale Tracker →
-            </Link>
-          </Box>
-          <TableContainer>
-            <Table size="small">
-              <TableHead>
-                <TableRow sx={{ borderColor: 'divider' }}>
-                  {['Address','Asset','Side','Notional','Time'].map(h => (
-                    <TableCell key={h} sx={{ pb: 1, color: 'text.secondary', fontWeight: 'bold', fontSize: '0.75rem', textAlign: h === 'Notional' || h === 'Time' ? 'right' : 'left' }}>
-                      {h}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {whaleAlerts.slice(0, 8).map(a => (
-                  <TableRow key={a.txHash} sx={{ '&:hover': { bgcolor: 'rgba(0, 184, 217, 0.05)' } }}>
-                    <TableCell sx={{ py: 1 }}>
-                      {/* 地址檢視搬到 /trader/:address 了（whale 頁不再自己長出
-                          搜尋結果）。/whale?addr= 仍會轉址，但沒必要多繞一次。 */}
-                      <Link component={RouterLink} to={`/trader/${a.owner}`} sx={{ fontFamily: MONO, color: 'info.main', fontSize: '0.75rem', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}>
-                        {shortAddr(a.owner)}
-                      </Link>
-                    </TableCell>
-                    <TableCell sx={{ py: 1, fontSize: '0.75rem' }}>{a.assetLabel}</TableCell>
-                    <TableCell sx={{ py: 1, fontSize: '0.75rem' }}>
-                      <Typography component="span" sx={{ fontSize: '0.75rem', fontWeight: 'bold', color: a.isLong ? 'success.main' : 'error.main' }}>
-                        {a.isLong ? 'LONG' : 'SHORT'} {String(a.leverage)}×
-                      </Typography>
-                    </TableCell>
-                    <TableCell sx={{ py: 1, textAlign: 'right', fontFamily: MONO, fontWeight: 'bold', fontSize: '0.75rem' }}>
-                      {fNotional(a.notional)}
-                    </TableCell>
-                    <TableCell sx={{ py: 1, textAlign: 'right', color: 'text.secondary', fontSize: '0.75rem' }}>
-                      {timeAgo(a.timestamp)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </Card>
-      )}
-
-      {/* ── C. 資產配置圓餅圖 + E. ESG 組合評分 ─────────────────────────────── */}
-      <Grid container spacing={2}>
-        {/* C. Pie Chart */}
-        <Grid size={{ xs: 12, md: 5 }}>
-          <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 300 }}>
-            <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 3, fontWeight: 'bold', letterSpacing: 1 }}>
-              資產配置佔比
-            </Typography>
-            {isLoading ? (
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexGrow: 1 }}>
-                <Skeleton width={180} height={180} variant="circular" />
-              </Box>
-            ) : pieData.length === 0 ? (
-              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexGrow: 1, gap: 1 }}>
-                <Typography sx={{ fontSize: '2rem', opacity: 0.3 }}>◕</Typography>
-                <Typography variant="body2" color="text.secondary">開倉後顯示配置佔比</Typography>
-              </Box>
-            ) : (
-              <Box sx={{ flexGrow: 1, width: '100%', height: 220 }}>
-                <ResponsiveContainer width="100%" height={220}>
-                  <PieChart>
-                    <Pie
-                      data={pieData} dataKey="value" nameKey="name"
-                      cx="50%" cy="50%" outerRadius={70} innerRadius={35} paddingAngle={3}
-                    >
-                      {pieData.map(entry => (
-                        <Cell key={entry.dcat} fill={PIE_COLORS[DISPLAY_CATS.indexOf(entry.dcat as DisplayCat)]} />
-                      ))}
-                    </Pie>
-                    <PieTooltip
-                      contentStyle={{ background: '#161c24', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, fontSize: 12, color: '#fff' }}
-                      itemStyle={{ color: '#fff' }}
-                      formatter={(value: any) => [fUsdFloat(value as number), '']}
-                    />
-                    <Legend
-                      iconType="circle" iconSize={8}
-                      formatter={value => <span style={{ color: '#919eab', fontSize: 11, fontWeight: 500 }}>{value}</span>}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              </Box>
-            )}
-          </Card>
-        </Grid>
-
-        {/* E. ESG composite */}
-        <Grid size={{ xs: 12, md: 7 }}>
-          <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5, height: '100%' }}>
-            <Typography variant="overline" color="text.secondary" sx={{ display: 'block', fontWeight: 'bold', letterSpacing: 1 }}>
-              ESG 組合評分
-            </Typography>
-
-            {isLoading ? (
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <Skeleton width={150} height={40} />
-                <Skeleton width="100%" height={16} />
-                <Skeleton width="80%" height={16} />
-              </Box>
-            ) : !portfolioESG ? (
-              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexGrow: 1, gap: 1, py: 4 }}>
-                <Typography sx={{ fontSize: '2.5rem', opacity: 0.3 }}>🌱</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {derived.rows.length === 0 ? '開倉後顯示 ESG 評分' : 'ESG 資料載入中…'}
-                </Typography>
-              </Box>
-            ) : (
-              <>
-                <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 3 }}>
-                  <Box>
-                    <Typography variant="h2" sx={{ fontWeight: 800, lineHeight: 1, color: ESG_TIER(portfolioESG.composite).color }}>
-                      {portfolioESG.composite}
-                    </Typography>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mt: 1, color: ESG_TIER(portfolioESG.composite).color }}>
-                      {ESG_TIER(portfolioESG.composite).name}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      加權平均 ESG 評分
-                    </Typography>
-                  </Box>
-                  <Box sx={{ pb: 0.5 }}>
-                    <Chip
-                      label={portfolioESG.rating}
-                      sx={{
-                        fontWeight: 'bold',
-                        fontSize: '0.875rem',
-                        bgcolor: portfolioESG.composite >= 65 ? 'rgba(34,197,94,0.16)' : portfolioESG.composite >= 50 ? 'rgba(255,171,0,0.16)' : 'rgba(255,86,48,0.16)',
-                        borderColor: portfolioESG.composite >= 65 ? 'rgba(34,197,94,0.24)' : portfolioESG.composite >= 50 ? 'rgba(255,171,0,0.24)' : 'rgba(255,86,48,0.24)',
-                        color: portfolioESG.composite >= 65 ? '#22c55e' : portfolioESG.composite >= 50 ? '#ffab00' : '#ff5630',
-                        border: '1px solid',
-                      }}
-                    />
-                  </Box>
-                </Box>
-
-                <Box sx={{ width: '100%' }}>
-                  <LinearProgress
-                    variant="determinate"
-                    value={portfolioESG.composite}
-                    sx={{
-                      height: 8,
-                      borderRadius: 4,
-                      bgcolor: 'background.neutral',
-                      '& .MuiLinearProgress-bar': {
-                        bgcolor: ESG_TIER(portfolioESG.composite).color,
-                        borderRadius: 4,
-                      },
-                    }}
-                  />
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
-                    <Typography variant="caption" color="text.secondary">0</Typography>
-                    <Typography variant="caption" color="text.secondary">50</Typography>
-                    <Typography variant="caption" color="text.secondary">100</Typography>
-                  </Box>
-                </Box>
-
-                <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6 }}>
-                  {ESG_COMMENT(portfolioESG.composite)}
-                </Typography>
-
-                <Stack spacing={1.5} sx={{ pt: 1, borderTop: '1px solid', borderColor: 'divider' }}>
-                  {derived.rows.map(row => {
-                    const info = esg[row.asset];
-                    if (!info) return null;
-                    const sym = ASSET_META[row.asset]?.symbol ?? '?';
-                    return (
-                      <Box key={`${row.asset}-${String(row.id)}`} sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                        <Typography variant="caption" sx={{ width: 60, fontFamily: MONO, fontWeight: 'bold' }}>
-                          {sym}
-                        </Typography>
-                        <Box sx={{ flexGrow: 1 }}>
-                          <LinearProgress
-                            variant="determinate"
-                            value={info.composite}
-                            sx={{
-                              height: 6,
-                              borderRadius: 3,
-                              bgcolor: 'background.neutral',
-                              '& .MuiLinearProgress-bar': {
-                                bgcolor: info.composite >= 65 ? 'success.main' : info.composite >= 50 ? 'warning.main' : 'error.main',
-                                borderRadius: 3,
-                              },
-                            }}
-                          />
-                        </Box>
-                        <Typography variant="caption" sx={{ width: 30, textAlign: 'right', fontFamily: MONO, fontWeight: 'bold', color: 'text.secondary' }}>
-                          {info.composite}
-                        </Typography>
-                        <Typography variant="caption" sx={{ width: 30, color: 'text.secondary', fontWeight: 'bold' }}>
-                          {info.rating}
-                        </Typography>
-                      </Box>
-                    );
-                  })}
-                </Stack>
-              </>
-            )}
-          </Card>
-        </Grid>
-      </Grid>
+      {/* ── What to do next ───────────────────────────────── */}
+      <QuickActions mode={mode} />
 
       {/* ── D. 持倉明細表 ─────────────────────────────────────────────────────── */}
       <Card sx={{ border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
@@ -1511,16 +597,87 @@ export default function DashboardPage() {
               開設第一個倉位
             </Typography>
           </Box>
+        ) : mode === 'simple' ? (
+          /* 簡單模式給卡片，不是把同一張表少切幾欄。一列表格要使用者自己把
+             欄位標題和數字對起來才讀得懂；一張卡片直接說完一件事：買了什麼、
+             方向與倍數、現在值多少、賺賠多少。 */
+          <Box sx={{ p: 2, display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' }, gap: 2 }}>
+            {derived.rows.map(row => {
+              const meta = ASSET_META[row.asset];
+              const noQuote = row.currentPrice18 === 0n;
+              return (
+                <Card
+                  key={String(row.id)}
+                  sx={{
+                    p: 2,
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 1.5,
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                    <Typography sx={{ fontSize: '1.5rem', lineHeight: 1 }}>{meta?.icon ?? '?'}</Typography>
+                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                      <Typography sx={{ fontWeight: 800, fontFamily: MONO }}>
+                        {meta?.symbol ?? row.asset.slice(0, 8)}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {meta?.name ?? ''}
+                      </Typography>
+                    </Box>
+                    <Chip
+                      label={`${row.isLong ? 'LONG' : 'SHORT'} ${String(row.leverage)}×`}
+                      size="small"
+                      sx={{
+                        fontWeight: 'bold',
+                        bgcolor: row.isLong ? 'rgba(34,197,94,0.12)' : 'rgba(255,86,48,0.12)',
+                        color: row.isLong ? 'success.main' : 'error.main',
+                        border: '1px solid',
+                        borderColor: row.isLong ? 'rgba(34,197,94,0.2)' : 'rgba(255,86,48,0.2)',
+                      }}
+                    />
+                  </Box>
+
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                    <Box>
+                      <Typography variant="caption" color="text.secondary" display="block">
+                        Worth now
+                      </Typography>
+                      <Typography sx={{ fontWeight: 800, fontFamily: MONO, fontSize: '1.125rem' }}>
+                        {fUsd(row.holdingsValue)}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ textAlign: 'right' }}>
+                      <Typography variant="caption" color="text.secondary" display="block">
+                        Profit / loss
+                      </Typography>
+                      {noQuote ? (
+                        <Typography variant="body2" color="text.secondary">No quote</Typography>
+                      ) : (
+                        <>
+                          <Typography sx={{ fontWeight: 800, fontFamily: MONO, color: pnlColor(row.livePnL) }}>
+                            {fPnL(row.livePnL)}
+                          </Typography>
+                          <Typography variant="caption" sx={{ color: pnlColor(row.livePnL), opacity: 0.85 }}>
+                            {fPct(row.livePnL, row.notional)}
+                          </Typography>
+                        </>
+                      )}
+                    </Box>
+                  </Box>
+                </Card>
+              );
+            })}
+          </Box>
         ) : (
           <TableContainer>
             <Table>
               <TableHead>
                 <TableRow sx={{ bgcolor: 'background.neutral' }}>
-                  {(mode === 'simple'
-                    ? ['資產','多/空','持倉現值','損益']
-                    : ['資產','多/空','持有數量','平均成本','現價','持倉現值','損益','ESG']
-                  ).map(h => (
-                    <TableCell key={h} sx={{ color: 'text.secondary', fontWeight: 'bold', fontSize: mode === 'simple' ? '0.875rem' : '0.75rem', py: 1.5, textAlign: h === '損益' || h === '持倉現值' ? 'right' : 'left' }}>
+                  {['資產','多/空','持有數量','平均成本','現價','持倉現值','損益','ESG'].map(h => (
+                    <TableCell key={h} sx={{ color: 'text.secondary', fontWeight: 'bold', fontSize: '0.75rem', py: 1.5, textAlign: h === '損益' || h === '持倉現值' ? 'right' : 'left' }}>
                       {h}
                     </TableCell>
                   ))}
@@ -1629,7 +786,7 @@ export default function DashboardPage() {
               {derived.rows.length > 1 && (
                 <tfoot style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
                   <TableRow sx={{ bgcolor: 'background.neutral' }}>
-                    <TableCell colSpan={mode === 'simple' ? 2 : 5} sx={{ fontWeight: 'bold', color: 'text.primary' }}>Total</TableCell>
+                    <TableCell colSpan={5} sx={{ fontWeight: 'bold', color: 'text.primary' }}>Total</TableCell>
                     <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', textAlign: 'right' }}>
                       {fUsd(derived.totalHoldings)}
                     </TableCell>
@@ -1650,291 +807,395 @@ export default function DashboardPage() {
         )}
       </Card>
 
-      {/* ── F. 四資產趨勢圖 ───────────────────────────────────────────────────── */}
-      <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
-          <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold', letterSpacing: 1 }}>
-            四資產趨勢（% 變化）
+      {/* ── Analysis (expert only) ──────────────────────────── */}
+      {/* 分類收益、配置圓餅圖 + ESG、鯨魚動向、趨勢圖——這四塊回答的是
+          「為什麼會長成這樣」，不是「我現在有多少錢」。新手先需要後者，
+          前者在他看得懂之前只是雜訊。 */}
+      {mode === 'expert' && (
+        <>
+
+        {/* ── B. 四類資產收益卡 ──────────────────────────────────────────── */}
+        <Box>
+          <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 2, fontWeight: 'bold', letterSpacing: 1.5 }}>
+            四類資產收益
           </Typography>
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-            {TREND_ASSET_IDS.map(id => {
-              const sym = ASSET_META[id]?.symbol ?? id.slice(0, 6);
-              const isEnabled = enabled.has(id);
+          <Grid container spacing={2}>
+            {DISPLAY_CATS.map(cat => {
+              const cfg = CAT_CONFIG[cat];
+              const s   = catSummary[cat];
+              const cnt = s.symbols.length;
               return (
-                <Button
-                  key={id}
-                  onClick={() => toggleAsset(id)}
-                  size="small"
-                  variant={isEnabled ? 'contained' : 'outlined'}
-                  color="inherit"
-                  startIcon={
-                    <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: TREND_COLORS[id] }} />
-                  }
-                  sx={{
-                    borderRadius: 50,
-                    textTransform: 'none',
-                    fontSize: '0.75rem',
-                    py: 0.5,
-                    px: 1.5,
-                    borderColor: 'divider',
-                    bgcolor: isEnabled ? `${TREND_COLORS[id]}18` : 'transparent',
-                    color: isEnabled ? TREND_COLORS[id] : 'text.secondary',
-                    '&:hover': {
-                      bgcolor: isEnabled ? `${TREND_COLORS[id]}25` : 'action.hover',
-                      borderColor: isEnabled ? TREND_COLORS[id] : 'text.secondary',
-                    },
-                  }}
-                >
-                  {sym}
-                </Button>
+                <Grid size={{ xs: 12, sm: 6 }} key={cat}>
+                  <Card
+                    sx={{
+                      p: 3,
+                      background: cfg.bg,
+                      borderColor: cfg.borderColor,
+                      borderWidth: 1,
+                      borderStyle: 'solid',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 2,
+                      height: '100%',
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Typography variant="h6" sx={{ fontSize: '1.25rem', lineHeight: 1 }}>{cfg.icon}</Typography>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'text.primary' }}>{cfg.label}</Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
+                        {cnt} asset{cnt !== 1 ? 's' : ''}
+                      </Typography>
+                    </Box>
+
+                    {isLoading ? (
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                        <Skeleton width={120} height={24} />
+                        <Skeleton width={80} height={16} />
+                      </Box>
+                    ) : cnt === 0 ? (
+                      <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic', py: 1 }}>
+                        No positions
+                      </Typography>
+                    ) : (
+                      <>
+                        <Box>
+                          <Typography variant="h5" sx={{ fontWeight: 'bold', fontFamily: MONO }}>
+                            {fUsd(s.value)}
+                          </Typography>
+                          <Typography variant="body2" sx={{ fontWeight: 'bold', color: pnlColor(s.pnl), fontFamily: MONO, mt: 0.5 }}>
+                            {fPnL(s.pnl)} USDC
+                          </Typography>
+                        </Box>
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                          {s.symbols.map(sym => (
+                            <Chip
+                              key={sym}
+                              label={sym}
+                              size="small"
+                              sx={{
+                                borderColor: `${cfg.color}60`,
+                                color: cfg.color,
+                                bgcolor: `${cfg.color}15`,
+                                fontWeight: 'bold',
+                                fontSize: '0.6875rem',
+                              }}
+                            />
+                          ))}
+                        </Box>
+                      </>
+                    )}
+                  </Card>
+                </Grid>
               );
             })}
-          </Box>
+          </Grid>
         </Box>
 
-        {chartData.length < 2 ? (
-          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, py: 6 }}>
-            <Typography sx={{ fontSize: '2.5rem', opacity: 0.3 }}>📈</Typography>
-            <Typography variant="body2" color="text.secondary">趨勢資料累積中…</Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ opacity: 0.8 }}>
-              每次載入頁面記錄一個快照，幾分鐘後即可看到走勢
-            </Typography>
-          </Box>
-        ) : (
-          <Box sx={{ width: '100%', height: 260 }}>
-            <ResponsiveContainer width="100%" height={260}>
-              <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
-                <CartesianGrid stroke="rgba(255,255,255,0.06)" strokeDasharray="3 3" />
-                <XAxis dataKey="time" tick={{ fill: '#637381', fontSize: 10 }} interval="preserveStartEnd" />
-                <YAxis
-                  tick={{ fill: '#637381', fontSize: 10 }}
-                  tickFormatter={(v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`}
-                  width={48}
-                />
-                <LineTooltip
-                  contentStyle={{ background: '#161c24', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, fontSize: 11, color: '#fff' }}
-                  labelStyle={{ color: '#919eab' }}
-                  itemStyle={{ color: '#fff' }}
-                  formatter={(value: any, name: any) => [
-                    `${(value as number) >= 0 ? '+' : ''}${(value as number).toFixed(2)}%`,
-                    ASSET_META[name as string]?.symbol ?? (name as string),
-                  ]}
-                />
-                {TREND_ASSET_IDS.filter(id => enabled.has(id)).map(id => (
-                  <Line
-                    key={id} type="monotone" dataKey={id}
-                    stroke={TREND_COLORS[id]} dot={false} strokeWidth={2} connectNulls
-                  />
-                ))}
-              </LineChart>
-            </ResponsiveContainer>
-          </Box>
-        )}
-      </Card>
-
-      {/* ── Pepe of the Day ──────────────────────────────────────────────────── */}
-      {(() => {
-        const dayIdx = Math.floor(Date.now() / 1000 / 86400);
-        const avatar = PEPE_AVATARS[dayIdx % PEPE_AVATARS.length];
-        const quote  = PEPE_QUOTES[dayIdx % PEPE_QUOTES.length];
-        return (
-          <Card sx={{
-            p: 3,
-            background: 'linear-gradient(135deg, rgba(124,193,74,0.06) 0%, rgba(255,210,61,0.04) 100%)',
-            border: '1px solid rgba(124,193,74,0.2)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 3,
-            flexWrap: 'wrap',
-          }}>
-            <Box
-              component="img"
-              src={avatar}
-              alt="Pepe of the Day"
-              onError={(e) => { (e.target as HTMLImageElement).src = '/assets/images/pepefi/pepe_eth.jpg'; }}
-              sx={{
-                width: 72,
-                height: 72,
-                borderRadius: '50%',
-                objectFit: 'cover',
-                border: '3px solid var(--palette-primary-main)',
-                boxShadow: '0 0 16px rgba(124,193,74,0.4)',
-                flexShrink: 0,
-              }}
-            />
-            <Box sx={{ flex: 1, minWidth: 200 }}>
-              <Typography variant="overline" sx={{ color: 'var(--palette-primary-main)', fontWeight: 'bold', letterSpacing: 2, display: 'block', mb: 0.5 }}>
-                🐸 Pepe of the Day
+        {/* ── Whale Activity ────────────────────────────────────────────────────── */}
+        {whaleAlerts.length > 0 && (
+          <Card sx={{ p: 3, border: '1px solid', borderColor: 'rgba(0, 184, 217, 0.16)', bgcolor: 'rgba(0, 184, 217, 0.02)' }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 1 }}>
+              <Typography variant="subtitle2" sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'info.main', fontWeight: 'bold' }}>
+                🐋 Whale Activity
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 'normal' }}>
+                  (≥ $5k notional)
+                </Typography>
               </Typography>
-              <Typography variant="body1" sx={{ color: 'text.primary', fontStyle: 'italic', lineHeight: 1.6 }}>
-                {quote}
-              </Typography>
+              <Link component={RouterLink} to="/whale" sx={{ fontSize: '0.75rem', color: 'info.main', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}>
+                Open Whale Tracker →
+              </Link>
             </Box>
-            <Box sx={{ flexShrink: 0, textAlign: 'right' }}>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                每日更新
-              </Typography>
-              <Button
-                component={RouterLink}
-                to="/rewards"
-                size="small"
-                variant="outlined"
-                sx={{ borderColor: 'var(--palette-primary-main)', color: 'var(--palette-primary-main)', fontSize: '0.8rem', '&:hover': { bgcolor: 'rgba(124,193,74,0.08)' } }}
-              >
-                簽到領 PEPE 🎁
-              </Button>
-            </Box>
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow sx={{ borderColor: 'divider' }}>
+                    {['Address','Asset','Side','Notional','Time'].map(h => (
+                      <TableCell key={h} sx={{ pb: 1, color: 'text.secondary', fontWeight: 'bold', fontSize: '0.75rem', textAlign: h === 'Notional' || h === 'Time' ? 'right' : 'left' }}>
+                        {h}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {whaleAlerts.slice(0, 8).map(a => (
+                    <TableRow key={a.txHash} sx={{ '&:hover': { bgcolor: 'rgba(0, 184, 217, 0.05)' } }}>
+                      <TableCell sx={{ py: 1 }}>
+                        {/* 地址檢視搬到 /trader/:address 了（whale 頁不再自己長出
+                            搜尋結果）。/whale?addr= 仍會轉址，但沒必要多繞一次。 */}
+                        <Link component={RouterLink} to={`/trader/${a.owner}`} sx={{ fontFamily: MONO, color: 'info.main', fontSize: '0.75rem', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}>
+                          {shortAddr(a.owner)}
+                        </Link>
+                      </TableCell>
+                      <TableCell sx={{ py: 1, fontSize: '0.75rem' }}>{a.assetLabel}</TableCell>
+                      <TableCell sx={{ py: 1, fontSize: '0.75rem' }}>
+                        <Typography component="span" sx={{ fontSize: '0.75rem', fontWeight: 'bold', color: a.isLong ? 'success.main' : 'error.main' }}>
+                          {a.isLong ? 'LONG' : 'SHORT'} {String(a.leverage)}×
+                        </Typography>
+                      </TableCell>
+                      <TableCell sx={{ py: 1, textAlign: 'right', fontFamily: MONO, fontWeight: 'bold', fontSize: '0.75rem' }}>
+                        {fNotional(a.notional)}
+                      </TableCell>
+                      <TableCell sx={{ py: 1, textAlign: 'right', color: 'text.secondary', fontSize: '0.75rem' }}>
+                        {timeAgo(a.timestamp)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
           </Card>
-        );
-      })()}
+        )}
 
-      {/* ── G. PEPE 平台幣 ──────────────────────────────────────────────────────── */}
-      {(() => {
-        const pepeReady = !!(contracts &&
-          String(contracts.pepeToken.target).toLowerCase() !== ZERO_ADDR &&
-          String(contracts.pepeClaim.target).toLowerCase() !== ZERO_ADDR);
-        return (
-          <Card
-            sx={{
-              p: 3,
-              background: 'linear-gradient(135deg, rgba(0, 167, 111, 0.08), rgba(0, 167, 111, 0.01))',
-              borderColor: 'rgba(0, 167, 111, 0.2)',
-              borderWidth: 1,
-              borderStyle: 'solid',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 3,
-            }}
-          >
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
-              <Box>
-                <Typography variant="overline" sx={{ color: 'primary.main', fontWeight: 'bold', display: 'block', letterSpacing: 1 }}>
-                  G · PEPE 平台幣
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                  Pepe RWA Token · KYC 通過即可領取空投
-                </Typography>
-              </Box>
-              {pepeReady && (
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                  <Button
-                    size="small"
-                    variant="text"
-                    color="info"
-                    onClick={() => void addPepeToWallet()}
-                    startIcon={<Icon icon="solar:wallet-bold-duotone" />}
-                    sx={{ textTransform: 'none', fontSize: '0.75rem', fontWeight: 'bold' }}
-                  >
-                    加入錢包
-                  </Button>
-                  <IconButton
-                    size="small"
-                    onClick={() => void fetchPepe()}
-                    color="inherit"
-                    aria-label="重新讀取 PEPE 餘額"
-                  >
-                    <Icon icon="solar:restart-bold-duotone" width={16} />
-                  </IconButton>
+        {/* ── C. 資產配置圓餅圖 + E. ESG 組合評分 ─────────────────────────────── */}
+        <Grid container spacing={2}>
+          {/* C. Pie Chart */}
+          <Grid size={{ xs: 12, md: 5 }}>
+            <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 300 }}>
+              <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 3, fontWeight: 'bold', letterSpacing: 1 }}>
+                資產配置佔比
+              </Typography>
+              {isLoading ? (
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexGrow: 1 }}>
+                  <Skeleton width={180} height={180} variant="circular" />
+                </Box>
+              ) : pieData.length === 0 ? (
+                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexGrow: 1, gap: 1 }}>
+                  <Typography sx={{ fontSize: '2rem', opacity: 0.3 }}>◕</Typography>
+                  <Typography variant="body2" color="text.secondary">開倉後顯示配置佔比</Typography>
+                </Box>
+              ) : (
+                <Box sx={{ flexGrow: 1, width: '100%', height: 220 }}>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <PieChart>
+                      <Pie
+                        data={pieData} dataKey="value" nameKey="name"
+                        cx="50%" cy="50%" outerRadius={70} innerRadius={35} paddingAngle={3}
+                      >
+                        {pieData.map(entry => (
+                          <Cell key={entry.dcat} fill={PIE_COLORS[DISPLAY_CATS.indexOf(entry.dcat as DisplayCat)]} />
+                        ))}
+                      </Pie>
+                      <PieTooltip
+                        contentStyle={{ background: '#161c24', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, fontSize: 12, color: '#fff' }}
+                        itemStyle={{ color: '#fff' }}
+                        formatter={(value: any) => [fUsdFloat(value as number), '']}
+                      />
+                      <Legend
+                        iconType="circle" iconSize={8}
+                        formatter={value => <span style={{ color: '#919eab', fontSize: 11, fontWeight: 500 }}>{value}</span>}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
                 </Box>
               )}
-            </Box>
+            </Card>
+          </Grid>
 
-            {!pepeReady ? (
-              <Typography variant="body2" color="text.secondary" sx={{ py: 1, fontStyle: 'italic' }}>
-                PEPE 功能尚未啟用（合約尚未部署於此鏈）
+          {/* E. ESG composite */}
+          <Grid size={{ xs: 12, md: 7 }}>
+            <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5, height: '100%' }}>
+              <Typography variant="overline" color="text.secondary" sx={{ display: 'block', fontWeight: 'bold', letterSpacing: 1 }}>
+                ESG 組合評分
               </Typography>
-            ) : pepeBal === null ? (
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4 }}>
-                <Box>
-                  <Typography variant="overline" color="text.secondary" display="block">PEPE 餘額</Typography>
-                  <Skeleton width={120} height={32} />
+
+              {isLoading ? (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <Skeleton width={150} height={40} />
+                  <Skeleton width="100%" height={16} />
+                  <Skeleton width="80%" height={16} />
                 </Box>
-                <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', sm: 'block' } }} />
-                <Box>
-                  <Typography variant="overline" color="text.secondary" display="block">空投領取</Typography>
-                  <Skeleton width={160} height={40} />
-                </Box>
-              </Box>
-            ) : (
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4 }}>
-                {/* Balance */}
-                <Box>
-                  <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', fontWeight: 'bold', display: 'block' }}>
-                    PEPE 餘額
-                  </Typography>
-                  <Typography variant="h4" sx={{ fontWeight: 800, color: 'primary.light', fontFamily: MONO, mt: 0.5 }}>
-                    {(Number(pepeBal) / 1e18).toLocaleString('en-US', { maximumFractionDigits: 0 })}{' '}
-                    <Typography component="span" variant="subtitle2" color="text.secondary">PEPE</Typography>
+              ) : !portfolioESG ? (
+                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexGrow: 1, gap: 1, py: 4 }}>
+                  <Typography sx={{ fontSize: '2.5rem', opacity: 0.3 }}>🌱</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {derived.rows.length === 0 ? '開倉後顯示 ESG 評分' : 'ESG 資料載入中…'}
                   </Typography>
                 </Box>
-
-                {/* Divider */}
-                <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', sm: 'block' }, borderColor: 'rgba(0, 167, 111, 0.15)' }} />
-
-                {/* Claim */}
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                  <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', fontWeight: 'bold', display: 'block', mb: 0.5 }}>
-                    空投領取
-                  </Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
-                    {pepeClaimed ? (
-                      <Chip
-                        label="✓ 已領取"
-                        color="success"
-                        variant="outlined"
-                        sx={{ fontWeight: 'bold', px: 1, height: 38, borderRadius: 1 }}
-                      />
-                    ) : pepePoolBal !== null && pepePoolBal < pepeAmount ? (
-                      <Button
-                        disabled
-                        variant="contained"
-                        color="inherit"
-                        sx={{ py: 1, px: 3, fontWeight: 'bold', borderRadius: 1 }}
-                      >
-                        獎池已空
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="contained"
-                        color="primary"
-                        onClick={() => void doClaimPepe()}
-                        disabled={claimLoading || !pepeKyc}
-                        title={!pepeKyc ? '需 KYC 審核通過才能領取（送出申請後需等審核人員核准）' : undefined}
-                        startIcon={claimLoading ? <Icon icon="line-md:loading-twotone-loop" /> : <span>🐸</span>}
-                        sx={{
-                          py: 1,
-                          px: 3,
-                          fontWeight: 'bold',
-                          borderRadius: 1,
-                          bgcolor: 'primary.main',
-                          boxShadow: '0 8px 16px 0 rgba(0, 167, 111, 0.2)',
-                          '&:hover': { bgcolor: 'primary.dark' },
-                        }}
-                      >
-                        {claimLoading
-                          ? '領取中…'
-                          : `Claim ${(Number(pepeAmount) / 1e18).toLocaleString()} PEPE`
-                        }
-                      </Button>
-                    )}
-
-                    {!pepeKyc && !pepeClaimed && !(pepePoolBal !== null && pepePoolBal < pepeAmount) && (
-                      <Typography variant="caption" sx={{ color: 'warning.main', fontWeight: 'bold' }}>
-                        需 KYC 審核通過才能領取（送出申請 ≠ 通過）
+              ) : (
+                <>
+                  <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 3 }}>
+                    <Box>
+                      <Typography variant="h2" sx={{ fontWeight: 800, lineHeight: 1, color: ESG_TIER(portfolioESG.composite).color }}>
+                        {portfolioESG.composite}
                       </Typography>
-                    )}
+                      <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mt: 1, color: ESG_TIER(portfolioESG.composite).color }}>
+                        {ESG_TIER(portfolioESG.composite).name}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        加權平均 ESG 評分
+                      </Typography>
+                    </Box>
+                    <Box sx={{ pb: 0.5 }}>
+                      <Chip
+                        label={portfolioESG.rating}
+                        sx={{
+                          fontWeight: 'bold',
+                          fontSize: '0.875rem',
+                          bgcolor: portfolioESG.composite >= 65 ? 'rgba(34,197,94,0.16)' : portfolioESG.composite >= 50 ? 'rgba(255,171,0,0.16)' : 'rgba(255,86,48,0.16)',
+                          borderColor: portfolioESG.composite >= 65 ? 'rgba(34,197,94,0.24)' : portfolioESG.composite >= 50 ? 'rgba(255,171,0,0.24)' : 'rgba(255,86,48,0.24)',
+                          color: portfolioESG.composite >= 65 ? '#22c55e' : portfolioESG.composite >= 50 ? '#ffab00' : '#ff5630',
+                          border: '1px solid',
+                        }}
+                      />
+                    </Box>
                   </Box>
-                  {claimError && (
-                    <Typography variant="caption" color="error" sx={{ fontWeight: 'bold', mt: 0.5 }}>
-                      {claimError}
-                    </Typography>
-                  )}
-                </Box>
-              </Box>
-            )}
-          </Card>
-        );
-      })()}
+
+                  <Box sx={{ width: '100%' }}>
+                    <LinearProgress
+                      variant="determinate"
+                      value={portfolioESG.composite}
+                      sx={{
+                        height: 8,
+                        borderRadius: 4,
+                        bgcolor: 'background.neutral',
+                        '& .MuiLinearProgress-bar': {
+                          bgcolor: ESG_TIER(portfolioESG.composite).color,
+                          borderRadius: 4,
+                        },
+                      }}
+                    />
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
+                      <Typography variant="caption" color="text.secondary">0</Typography>
+                      <Typography variant="caption" color="text.secondary">50</Typography>
+                      <Typography variant="caption" color="text.secondary">100</Typography>
+                    </Box>
+                  </Box>
+
+                  <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6 }}>
+                    {ESG_COMMENT(portfolioESG.composite)}
+                  </Typography>
+
+                  <Stack spacing={1.5} sx={{ pt: 1, borderTop: '1px solid', borderColor: 'divider' }}>
+                    {derived.rows.map(row => {
+                      const info = esg[row.asset];
+                      if (!info) return null;
+                      const sym = ASSET_META[row.asset]?.symbol ?? '?';
+                      return (
+                        <Box key={`${row.asset}-${String(row.id)}`} sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                          <Typography variant="caption" sx={{ width: 60, fontFamily: MONO, fontWeight: 'bold' }}>
+                            {sym}
+                          </Typography>
+                          <Box sx={{ flexGrow: 1 }}>
+                            <LinearProgress
+                              variant="determinate"
+                              value={info.composite}
+                              sx={{
+                                height: 6,
+                                borderRadius: 3,
+                                bgcolor: 'background.neutral',
+                                '& .MuiLinearProgress-bar': {
+                                  bgcolor: info.composite >= 65 ? 'success.main' : info.composite >= 50 ? 'warning.main' : 'error.main',
+                                  borderRadius: 3,
+                                },
+                              }}
+                            />
+                          </Box>
+                          <Typography variant="caption" sx={{ width: 30, textAlign: 'right', fontFamily: MONO, fontWeight: 'bold', color: 'text.secondary' }}>
+                            {info.composite}
+                          </Typography>
+                          <Typography variant="caption" sx={{ width: 30, color: 'text.secondary', fontWeight: 'bold' }}>
+                            {info.rating}
+                          </Typography>
+                        </Box>
+                      );
+                    })}
+                  </Stack>
+                </>
+              )}
+            </Card>
+          </Grid>
+        </Grid>
+
+        {/* ── F. 四資產趨勢圖 ───────────────────────────────────────────────────── */}
+        <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
+            <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold', letterSpacing: 1 }}>
+              四資產趨勢（% 變化）
+            </Typography>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+              {TREND_ASSET_IDS.map(id => {
+                const sym = ASSET_META[id]?.symbol ?? id.slice(0, 6);
+                const isEnabled = enabled.has(id);
+                return (
+                  <Button
+                    key={id}
+                    onClick={() => toggleAsset(id)}
+                    size="small"
+                    variant={isEnabled ? 'contained' : 'outlined'}
+                    color="inherit"
+                    startIcon={
+                      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: TREND_COLORS[id] }} />
+                    }
+                    sx={{
+                      borderRadius: 50,
+                      textTransform: 'none',
+                      fontSize: '0.75rem',
+                      py: 0.5,
+                      px: 1.5,
+                      borderColor: 'divider',
+                      bgcolor: isEnabled ? `${TREND_COLORS[id]}18` : 'transparent',
+                      color: isEnabled ? TREND_COLORS[id] : 'text.secondary',
+                      '&:hover': {
+                        bgcolor: isEnabled ? `${TREND_COLORS[id]}25` : 'action.hover',
+                        borderColor: isEnabled ? TREND_COLORS[id] : 'text.secondary',
+                      },
+                    }}
+                  >
+                    {sym}
+                  </Button>
+                );
+              })}
+            </Box>
+          </Box>
+
+          {chartData.length < 2 ? (
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, py: 6 }}>
+              <Typography sx={{ fontSize: '2.5rem', opacity: 0.3 }}>📈</Typography>
+              <Typography variant="body2" color="text.secondary">趨勢資料累積中…</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ opacity: 0.8 }}>
+                每次載入頁面記錄一個快照，幾分鐘後即可看到走勢
+              </Typography>
+            </Box>
+          ) : (
+            <Box sx={{ width: '100%', height: 260 }}>
+              <ResponsiveContainer width="100%" height={260}>
+                <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
+                  <CartesianGrid stroke="rgba(255,255,255,0.06)" strokeDasharray="3 3" />
+                  <XAxis dataKey="time" tick={{ fill: '#637381', fontSize: 10 }} interval="preserveStartEnd" />
+                  <YAxis
+                    tick={{ fill: '#637381', fontSize: 10 }}
+                    tickFormatter={(v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`}
+                    width={48}
+                  />
+                  <LineTooltip
+                    contentStyle={{ background: '#161c24', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, fontSize: 11, color: '#fff' }}
+                    labelStyle={{ color: '#919eab' }}
+                    itemStyle={{ color: '#fff' }}
+                    formatter={(value: any, name: any) => [
+                      `${(value as number) >= 0 ? '+' : ''}${(value as number).toFixed(2)}%`,
+                      ASSET_META[name as string]?.symbol ?? (name as string),
+                    ]}
+                  />
+                  {TREND_ASSET_IDS.filter(id => enabled.has(id)).map(id => (
+                    <Line
+                      key={id} type="monotone" dataKey={id}
+                      stroke={TREND_COLORS[id]} dot={false} strokeWidth={2} connectNulls
+                    />
+                  ))}
+                </LineChart>
+              </ResponsiveContainer>
+            </Box>
+          )}
+        </Card>
+        </>
+      )}
+
+      {mode === 'simple' && (
+        <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center', display: 'block' }}>
+          Switch to expert mode for allocation, ESG scores, whale activity and trend charts.
+        </Typography>
+      )}
+
 
     </Container>
   );
