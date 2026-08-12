@@ -23,7 +23,7 @@ import { LoadingScreen } from 'src/components/loading-screen';
 //     守衛等它完成才判斷，避免已連線用戶刷新內頁被誤踢回 landing。
 
 const PUBLIC_PATHS = ['/', '/x402', '/marketplace'];
-const AFTER_CONNECT_PATH = '/dashboard';
+const AFTER_CONNECT_PATH = '/portfolio';
 
 export function PepefiLayout() {
   const wallet = useWalletContext();

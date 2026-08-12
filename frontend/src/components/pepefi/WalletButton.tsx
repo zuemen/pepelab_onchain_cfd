@@ -36,7 +36,7 @@ export default function WalletButton({ wallet }: Props) {
     if (isConnected && dialogOpen) {
       setDialogOpen(false);
       if (pathname === '/') {
-        navigate('/dashboard', { replace: true });
+        navigate('/portfolio', { replace: true });
       }
     }
   }, [isConnected, dialogOpen, pathname, navigate]);

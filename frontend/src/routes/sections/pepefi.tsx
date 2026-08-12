@@ -2,7 +2,7 @@ import type { RouteObject } from 'react-router';
 import type { WalletAPI } from 'src/hooks/useWallet';
 
 import { lazy, Suspense } from 'react';
-import { Outlet, useOutletContext } from 'react-router';
+import { Outlet, Navigate, useOutletContext } from 'react-router';
 
 import { PepefiLayout } from 'src/layouts/pepefi';
 import { DashboardLayout } from 'src/layouts/dashboard';
@@ -14,7 +14,6 @@ import { usePathname } from '../hooks';
 // ----------------------------------------------------------------------
 
 const LandingPage       = lazy(() => import('src/pages/pepefi/LandingPage'));
-const DashboardPage     = lazy(() => import('src/pages/pepefi/DashboardPage'));
 const ExchangePage      = lazy(() => import('src/pages/pepefi/ExchangePage'));
 const TokenizedAssetsPage = lazy(() => import('src/pages/pepefi/TokenizedAssetsPage'));
 const TradeTerminalPage = lazy(() => import('src/pages/pepefi/TradeTerminalPage'));
@@ -76,7 +75,10 @@ export const pepefiRoutes: RouteObject[] = [
       {
         element: <DashboardShell />,
         children: [
-          { path: 'dashboard', element: <DashboardPage /> },
+          // /dashboard 併進 /portfolio。兩頁本來都在回答「我現在怎麼樣」，
+          // 但只有 Portfolio 有動作（平倉、提領、停止跟單），Dashboard 是它的
+          // 唯讀分身。轉址而不是移除，舊連結與書籤才不會壞掉。
+          { path: 'dashboard', element: <Navigate to="/portfolio" replace /> },
           { path: 'exchange', element: <ExchangePage /> },
           { path: 'tokens', element: <TokenizedAssetsPage /> },
           { path: 'terminal', element: <TradeTerminalPage /> },

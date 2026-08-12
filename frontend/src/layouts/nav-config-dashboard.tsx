@@ -52,14 +52,13 @@ export const navData: NavSectionProps['data'] = [
   {
     subheader: 'PepeLab',
     items: [
-      { title: '🏠 我的 Pepe (Dashboard)', path: paths.pepefi.dashboard, icon: ICONS.analytics },
+      { title: '🏠 Portfolio', path: paths.pepefi.portfolio, icon: ICONS.analytics },
       { title: '🐸 Pepe 養成中心', path: paths.pepefi.pepe, icon: ICONS.blog },
       { title: 'Exchange', path: paths.pepefi.exchange, icon: ICONS.ecommerce },
       { title: '🪙 代幣化資產', path: paths.pepefi.tokens, icon: ICONS.product },
       { title: 'Pro Terminal', path: paths.pepefi.terminal, icon: ICONS.dashboard },
       { title: 'x402 Signal API', path: paths.pepefi.x402, icon: ICONS.external },
       { title: 'Marketplace', path: paths.pepefi.marketplace, icon: ICONS.invoice },
-      { title: 'Portfolio', path: paths.pepefi.portfolio, icon: ICONS.banking },
       { title: 'Vault', path: paths.pepefi.vault, icon: ICONS.file },
       { title: 'History', path: paths.pepefi.history, icon: ICONS.order },
       { title: 'Whale Tracker', path: paths.pepefi.whale, icon: ICONS.label },
@@ -89,13 +88,12 @@ export const navData: NavSectionProps['data'] = [
 // 上真的用得到的五個入口，其餘收起來，讓側邊欄本身變成「這是簡化版」的
 // 第一個訊號，而不是要使用者先點開每一項才知道自己用不到。
 //
-// 照使用順序排，不是照 EXPERT_NAV_DATA 原本出現的順序：先看資產狀況
-// （Dashboard），再去下單（Exchange），回來看持倉（Portfolio）跟大戶動向
-// （Whale Tracker），Pepe 養成中心放最後，因為它是遊戲化的附加內容。
+// 照使用順序排：先看自己的錢與持倉（Portfolio，前身的 Dashboard 已併入），
+// 再去下單（Exchange），然後看大戶動向（Whale Tracker），Pepe 養成中心放
+// 最後，因為它是遊戲化的附加內容。
 const SIMPLE_NAV_PATHS: readonly string[] = [
-  paths.pepefi.dashboard,
-  paths.pepefi.exchange,
   paths.pepefi.portfolio,
+  paths.pepefi.exchange,
   paths.pepefi.whale,
   paths.pepefi.pepe,
 ];
