@@ -415,6 +415,22 @@ export default function PortfolioPage() {
     );
   }
 
+  // 展示通道沒有 provider/signer,永遠讀不到鏈上資料——不加這一關,下面的
+  // isLoaded 會幾乎立刻變 true(fetchAll 一看沒有 contracts 就直接回傳),
+  // 六項讀取全部停在「還沒讀成功」,最後落到跟真的空投資組合長一樣的畫面。
+  // 那正是「明明有錢卻被說空」的同一種錯誤,只是換了一個必然發生的入口。
+  if (wallet.isMock) {
+    return (
+      <Container maxWidth="lg" sx={{ py: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+        <EmptyState
+          icon="🎭"
+          title="Demo mode — no live chain data"
+          description="You're on the presentation walkthrough, which has no wallet connection to read real balances or positions from. Connect a real wallet to see your actual portfolio."
+        />
+      </Container>
+    );
+  }
+
   if (!isLoaded) {
     return (
       <Container maxWidth="lg" sx={{ py: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
