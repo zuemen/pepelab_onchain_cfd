@@ -21,7 +21,7 @@ import { firstBlocking, stalenessNotice } from 'src/lib/pepefi/priceFreshness';
 
 import { useMode } from 'src/contexts/mode-context';
 import { useAccountBalances } from 'src/hooks/useAccountBalances';
-import type { NetWorthParts } from 'src/lib/pepefi/portfolio';
+import { isPortfolioProvablyEmpty, type NetWorthParts, type PortfolioEmptinessCheck } from 'src/lib/pepefi/portfolio';
 
 import StatCard from 'src/components/pepefi/StatCard';
 import ESGBadge from 'src/components/pepefi/ESGBadge';
@@ -131,6 +131,23 @@ const tryParse = (s: string): bigint | null => {
   try { return parseEther(s); } catch { return null; }
 };
 
+// `safeRead` (src/lib/pepefi/safeRead.ts) reports a fallback but not whether
+// the read actually succeeded — fine for a value nothing else depends on,
+// not enough here, where "did this succeed" feeds isPortfolioProvablyEmpty.
+// This wraps the same fallback-on-error idea and also returns ok + the
+// original error, so a caller can both fall back AND keep proving whether
+// what it's looking at is real data or just a default.
+interface TrackedRead<T> { value: T; ok: boolean; error?: unknown }
+
+async function trackedRead<T>(promise: Promise<T>, fallback: T, label: string): Promise<TrackedRead<T>> {
+  try {
+    return { value: await promise, ok: true };
+  } catch (error) {
+    console.error(`[portfolio fetch: ${label}]`, error);
+    return { value: fallback, ok: false, error };
+  }
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function PortfolioPage() {
@@ -150,6 +167,14 @@ export default function PortfolioPage() {
   const [withdrawAmt, setWithdrawAmt] = useState('');
   const [isLoaded,   setIsLoaded]   = useState(false);
 
+  // 這三項各自成功與否,獨立於它們讀失敗時退回的預設值([]、[]、0n)。
+  // 「空投資組合」的判斷需要知道「讀失敗」跟「讀到、真的是空」的差別——
+  // 兩者的數值長得一樣,但意義完全不同。見 lib/pepefi/portfolio.ts 的
+  // isPortfolioProvablyEmpty。
+  const [copyRecsOk,   setCopyRecsOk]   = useState(false);
+  const [positionsOk,  setPositionsOk]  = useState(false);
+  const [freeMarginOk, setFreeMarginOk] = useState(false);
+
   const [busy,  setBusy]  = useState<Record<string, boolean>>({});
   const [toast, setToast] = useState<{ msg: string; ok: boolean; hash?: string } | null>(null);
 
@@ -164,10 +189,12 @@ export default function PortfolioPage() {
       setIsLoaded(true);
       return;
     }
-    try {
-      const addr = wallet.address;
+    const addr = wallet.address;
 
-      // ── A: Copy records ───────────────────────────────────────────────────
+    // 三項各自獨立讀取,一項失敗只讓那一項退回預設值——不連累另外兩項。
+    // 之前三項擠在同一個 try,任何一項 revert 或逾時就把另外兩項也一起
+    // 洗成空的預設值,結果跟真的讀到空值一模一樣,is-empty 判斷分不出來。
+    const copyRecsResult = await trackedRead((async (): Promise<CopyRec[]> => {
       const rawRecs = (await contracts.copyTracker.getCopyRecords(addr)) as unknown as RawCopyRecord[];
 
       const uniqueTraders = [...new Set(rawRecs.map(r => r.trader))];
@@ -200,9 +227,12 @@ export default function PortfolioPage() {
           };
         })
       );
-      setCopyRecs(enriched.filter((r): r is CopyRec => r !== null));
+      return enriched.filter((r): r is CopyRec => r !== null);
+    })(), [] as CopyRec[], 'copy records');
+    setCopyRecs(copyRecsResult.value);
+    setCopyRecsOk(copyRecsResult.ok);
 
-      // ── B: Open positions ─────────────────────────────────────────────────
+    const positionsResult = await trackedRead((async (): Promise<PosRow[]> => {
       const posIds = (await contracts.exchange.getUserPositions(addr)) as bigint[];
 
       // getPosition 先併發拿完，再對「還開著」的倉位併發拿細節。舊版是在
@@ -248,16 +278,20 @@ export default function PortfolioPage() {
           } catch { return null; }
         })
       );
-      setPositions(maybeRows.filter((r): r is PosRow => r !== null));
+      return maybeRows.filter((r): r is PosRow => r !== null);
+    })(), [] as PosRow[], 'positions');
+    setPositions(positionsResult.value);
+    setPositionsOk(positionsResult.ok);
 
-      // ── C: Free margin ────────────────────────────────────────────────────
-      setFreeMargin((await contracts.exchange.freeMargin(addr)) as bigint);
-    } catch (e) {
-      console.error('[portfolio fetch]', e);
-      notify(prettyError(e), false);
-    } finally {
-      setIsLoaded(true);
-    }
+    const freeMarginResult = await trackedRead(
+      contracts.exchange.freeMargin(addr) as Promise<bigint>, 0n, 'free margin',
+    );
+    setFreeMargin(freeMarginResult.value);
+    setFreeMarginOk(freeMarginResult.ok);
+
+    const failures = [copyRecsResult, positionsResult, freeMarginResult].filter(r => !r.ok);
+    if (failures.length > 0) notify(prettyError(failures[0].error), false);
+    setIsLoaded(true);
   }, [contracts, wallet.address, notify]);
 
   useEffect(() => {
@@ -405,16 +439,21 @@ export default function PortfolioPage() {
     );
   }
 
-  // 這個判斷原本只看交易帳戶（跟單、持倉、自由保證金），因為這一頁以前只管
-  // 交易帳戶。淨值 hero 併進來之後它還涵蓋錢包、質押與 LP 金庫——沒有一起看的話，
-  // 一個錢包裡有 $1,000、只是還沒開倉的人，會看到「你的投資組合是空的」，
-  // 而唯一能告訴他錢在哪的那張卡剛好被這個 return 擋掉。
-  const hasOtherFunds =
-    (balances.walletCash ?? 0n) > 0n ||
-    (balances.staked ?? 0n) > 0n ||
-    (balances.vault ?? 0n) > 0n;
+  // 「空投資組合」只有在六項全部讀成功、而且真的全部是 0/空的時候才成立。
+  // 舊版用 `?? 0n` 把「還沒讀到」跟「讀到、是 0」攤平成同一件事，於是一個
+  // 有錢但某一項暫時讀失敗的使用者會被判定成空,推去 /exchange——這正是
+  // 上線過的那個 bug。任何一項是 null／還沒讀成功,就不能算是「證實是空的」，
+  // 見 lib/pepefi/portfolio.ts 的 isPortfolioProvablyEmpty。
+  const emptinessCheck: PortfolioEmptinessCheck = {
+    copyRecordsCount: copyRecsOk   ? copyRecs.length  : null,
+    positionsCount:   positionsOk  ? positions.length : null,
+    freeMargin:       freeMarginOk ? freeMargin       : null,
+    walletCash:       balances.walletCash,
+    staked:           balances.staked,
+    vault:            balances.vault,
+  };
 
-  if (isLoaded && copyRecs.length === 0 && positions.length === 0 && freeMargin === 0n && !hasOtherFunds) {
+  if (isLoaded && isPortfolioProvablyEmpty(emptinessCheck)) {
     return (
       <Container maxWidth="lg" sx={{ py: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
         <EmptyState

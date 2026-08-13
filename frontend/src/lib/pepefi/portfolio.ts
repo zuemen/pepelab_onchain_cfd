@@ -57,3 +57,31 @@ export function netWorthOf(parts: NetWorthParts): NetWorth {
 
   return { total, incomplete: missing.length > 0, missing }
 }
+
+// 「投資組合是空的」判斷曾經把「沒讀到」跟「讀到、是 0」混為一談——
+// null（未讀）被 `?? 0n` 攤平成 0，於是一個有錢但剛好某項還沒讀完的使用者
+// 被判定成空,推去 /exchange。這個函式把六項讀取結果（含成功與否）攤在一起,
+// 只有全部讀成功、而且全部真的是 0/空,才算「證實是空的」——任何一項 null
+// 都讓答案是 false,不去猜它可能是 0。
+export interface PortfolioEmptinessCheck {
+  copyRecordsCount: number | null
+  positionsCount:   number | null
+  freeMargin:       bigint | null
+  walletCash:       bigint | null
+  staked:           bigint | null
+  vault:            bigint | null
+}
+
+export function isPortfolioProvablyEmpty(check: PortfolioEmptinessCheck): boolean {
+  const { copyRecordsCount, positionsCount, freeMargin, walletCash, staked, vault } = check
+  if (
+    copyRecordsCount === null || positionsCount === null || freeMargin === null ||
+    walletCash === null || staked === null || vault === null
+  ) {
+    return false
+  }
+  return (
+    copyRecordsCount === 0 && positionsCount === 0 &&
+    freeMargin === 0n && walletCash === 0n && staked === 0n && vault === 0n
+  )
+}
