@@ -22,6 +22,14 @@ export interface WalletState {
   error: string | null
   /** true until the initial silent session-restore check finishes (route guards wait on this) */
   initializing: boolean
+  /**
+   * true for the demo/presentation channel — has an address but no provider
+   * or signer, so it can never read chain state. Callers that need to know
+   * "can this connection actually read from chain" should check this rather
+   * than inferring it from `provider === null`, which is an implementation
+   * detail of how the mock channel happens to be wired today.
+   */
+  isMock: boolean
 }
 
 export interface WalletAPI extends WalletState {
@@ -40,6 +48,7 @@ const INITIAL: WalletState = {
   isConnecting: false,
   error: null,
   initializing: true,
+  isMock: false,
 }
 
 /**
@@ -66,6 +75,7 @@ export function useWallet(): WalletAPI {
       isConnecting: false,
       error: null,
       initializing: false,
+      isMock: true,
     });
   }, []);
 
@@ -100,6 +110,7 @@ export function useWallet(): WalletAPI {
         isConnecting: false,
         error: null,
         initializing: false,
+        isMock: false,
       })
     } catch (err) {
       const code = (err as { code?: number }).code
@@ -139,6 +150,7 @@ export function useWallet(): WalletAPI {
           isConnecting: false,
           error: null,
           initializing: false,
+          isMock: true,
         });
         return;
       }
@@ -162,6 +174,7 @@ export function useWallet(): WalletAPI {
               isConnecting: false,
               error: null,
               initializing: false,
+              isMock: false,
             })
             return
           }
@@ -196,6 +209,7 @@ export function useWallet(): WalletAPI {
           isConnecting: false,
           error: null,
           initializing: false,
+          isMock: false,
         })
       } catch { /* silently ignore */ }
     }

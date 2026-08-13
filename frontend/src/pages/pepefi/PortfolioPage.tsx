@@ -1,7 +1,7 @@
 import { MONO } from 'src/components/pepefi/brandKit'
 import { parseEther } from 'ethers';
 import { useState, useEffect, useCallback } from 'react';
-import { Link as RouterLink } from 'react-router';
+import { Link as RouterLink, useNavigate } from 'react-router';
 import {
   Line, XAxis, YAxis, Tooltip, LineChart,
   CartesianGrid, ReferenceLine, ResponsiveContainer,
@@ -21,7 +21,8 @@ import { firstBlocking, stalenessNotice } from 'src/lib/pepefi/priceFreshness';
 
 import { useMode } from 'src/contexts/mode-context';
 import { useAccountBalances } from 'src/hooks/useAccountBalances';
-import type { NetWorthParts } from 'src/lib/pepefi/portfolio';
+import { isPortfolioProvablyEmpty, type NetWorthParts, type PortfolioEmptinessCheck } from 'src/lib/pepefi/portfolio';
+import { COLUMN_LABELS, openPositionColumnsForMode, type OpenPositionColumnKey } from 'src/lib/pepefi/openPositionColumns';
 
 import StatCard from 'src/components/pepefi/StatCard';
 import ESGBadge from 'src/components/pepefi/ESGBadge';
@@ -131,10 +132,75 @@ const tryParse = (s: string): bigint | null => {
   try { return parseEther(s); } catch { return null; }
 };
 
+// Simple-mode Open Positions row cells, keyed the same way as the header
+// (openPositionColumnsForMode('simple')) so reordering or trimming that list
+// can't drift out of sync with what each row actually renders.
+function renderSimplePositionCell(key: OpenPositionColumnKey, row: PosRow) {
+  switch (key) {
+    case 'asset':
+      return (
+        <TableCell key={key} sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
+          {ASSET_LABEL[row.asset] ?? row.asset.slice(0, 8)}
+        </TableCell>
+      );
+    case 'side':
+      return (
+        <TableCell key={key}>
+          <Chip
+            label={row.isLong ? 'LONG ↑' : 'SHORT ↓'}
+            size="small"
+            sx={{
+              fontWeight: 'bold',
+              fontSize: '0.75rem',
+              bgcolor: row.isLong ? 'rgba(34,197,94,0.12)' : 'rgba(255,86,48,0.12)',
+              color: row.isLong ? 'success.main' : 'error.main',
+              borderColor: row.isLong ? 'rgba(34,197,94,0.2)' : 'rgba(255,86,48,0.2)',
+              border: '1px solid',
+            }}
+          />
+        </TableCell>
+      );
+    case 'value':
+      return (
+        <TableCell key={key} sx={{ fontFamily: MONO, fontWeight: 'bold', fontSize: '0.8125rem', color: pnlColor(row.currentValue - row.margin) }}>
+          {f18(row.currentValue)}
+        </TableCell>
+      );
+    case 'unrealizedPnl':
+      return (
+        <TableCell key={key} sx={{ fontFamily: MONO, fontWeight: 'bold', fontSize: '0.8125rem', color: pnlColor(row.unrealizedPnL) }}>
+          {fPnL(row.unrealizedPnL)}
+        </TableCell>
+      );
+    default:
+      // Simple mode only ever asks for the four keys above — reaching this
+      // means SIMPLE_COLUMNS grew without this renderer growing with it.
+      return null;
+  }
+}
+
+// `safeRead` (src/lib/pepefi/safeRead.ts) reports a fallback but not whether
+// the read actually succeeded — fine for a value nothing else depends on,
+// not enough here, where "did this succeed" feeds isPortfolioProvablyEmpty.
+// This wraps the same fallback-on-error idea and also returns ok + the
+// original error, so a caller can both fall back AND keep proving whether
+// what it's looking at is real data or just a default.
+interface TrackedRead<T> { value: T; ok: boolean; error?: unknown }
+
+async function trackedRead<T>(promise: Promise<T>, fallback: T, label: string): Promise<TrackedRead<T>> {
+  try {
+    return { value: await promise, ok: true };
+  } catch (error) {
+    console.error(`[portfolio fetch: ${label}]`, error);
+    return { value: fallback, ok: false, error };
+  }
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function PortfolioPage() {
   const wallet = usePepefiWallet();
+  const navigate = useNavigate();
   const { mode } = useMode();
   const contracts  = useContracts(wallet.provider, wallet.signer, wallet.chainId);
   const livePrices = useLivePrices();
@@ -150,6 +216,14 @@ export default function PortfolioPage() {
   const [withdrawAmt, setWithdrawAmt] = useState('');
   const [isLoaded,   setIsLoaded]   = useState(false);
 
+  // 這三項各自成功與否,獨立於它們讀失敗時退回的預設值([]、[]、0n)。
+  // 「空投資組合」的判斷需要知道「讀失敗」跟「讀到、真的是空」的差別——
+  // 兩者的數值長得一樣,但意義完全不同。見 lib/pepefi/portfolio.ts 的
+  // isPortfolioProvablyEmpty。
+  const [copyRecsOk,   setCopyRecsOk]   = useState(false);
+  const [positionsOk,  setPositionsOk]  = useState(false);
+  const [freeMarginOk, setFreeMarginOk] = useState(false);
+
   const [busy,  setBusy]  = useState<Record<string, boolean>>({});
   const [toast, setToast] = useState<{ msg: string; ok: boolean; hash?: string } | null>(null);
 
@@ -164,10 +238,12 @@ export default function PortfolioPage() {
       setIsLoaded(true);
       return;
     }
-    try {
-      const addr = wallet.address;
+    const addr = wallet.address;
 
-      // ── A: Copy records ───────────────────────────────────────────────────
+    // 三項各自獨立讀取,一項失敗只讓那一項退回預設值——不連累另外兩項。
+    // 之前三項擠在同一個 try,任何一項 revert 或逾時就把另外兩項也一起
+    // 洗成空的預設值,結果跟真的讀到空值一模一樣,is-empty 判斷分不出來。
+    const copyRecsResult = await trackedRead((async (): Promise<CopyRec[]> => {
       const rawRecs = (await contracts.copyTracker.getCopyRecords(addr)) as unknown as RawCopyRecord[];
 
       const uniqueTraders = [...new Set(rawRecs.map(r => r.trader))];
@@ -200,9 +276,12 @@ export default function PortfolioPage() {
           };
         })
       );
-      setCopyRecs(enriched.filter((r): r is CopyRec => r !== null));
+      return enriched.filter((r): r is CopyRec => r !== null);
+    })(), [] as CopyRec[], 'copy records');
+    setCopyRecs(copyRecsResult.value);
+    setCopyRecsOk(copyRecsResult.ok);
 
-      // ── B: Open positions ─────────────────────────────────────────────────
+    const positionsResult = await trackedRead((async (): Promise<PosRow[]> => {
       const posIds = (await contracts.exchange.getUserPositions(addr)) as bigint[];
 
       // getPosition 先併發拿完，再對「還開著」的倉位併發拿細節。舊版是在
@@ -248,16 +327,20 @@ export default function PortfolioPage() {
           } catch { return null; }
         })
       );
-      setPositions(maybeRows.filter((r): r is PosRow => r !== null));
+      return maybeRows.filter((r): r is PosRow => r !== null);
+    })(), [] as PosRow[], 'positions');
+    setPositions(positionsResult.value);
+    setPositionsOk(positionsResult.ok);
 
-      // ── C: Free margin ────────────────────────────────────────────────────
-      setFreeMargin((await contracts.exchange.freeMargin(addr)) as bigint);
-    } catch (e) {
-      console.error('[portfolio fetch]', e);
-      notify(prettyError(e), false);
-    } finally {
-      setIsLoaded(true);
-    }
+    const freeMarginResult = await trackedRead(
+      contracts.exchange.freeMargin(addr) as Promise<bigint>, 0n, 'free margin',
+    );
+    setFreeMargin(freeMarginResult.value);
+    setFreeMarginOk(freeMarginResult.ok);
+
+    const failures = [copyRecsResult, positionsResult, freeMarginResult].filter(r => !r.ok);
+    if (failures.length > 0) notify(prettyError(failures[0].error), false);
+    setIsLoaded(true);
   }, [contracts, wallet.address, notify]);
 
   useEffect(() => {
@@ -381,7 +464,27 @@ export default function PortfolioPage() {
     );
   }
 
-  if (!isLoaded) {
+  // 展示通道沒有 provider/signer,永遠讀不到鏈上資料——不加這一關,下面的
+  // isLoaded 會幾乎立刻變 true(fetchAll 一看沒有 contracts 就直接回傳),
+  // 六項讀取全部停在「還沒讀成功」,最後落到跟真的空投資組合長一樣的畫面。
+  // 那正是「明明有錢卻被說空」的同一種錯誤,只是換了一個必然發生的入口。
+  if (wallet.isMock) {
+    return (
+      <Container maxWidth="lg" sx={{ py: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+        <EmptyState
+          icon="🎭"
+          title="Demo mode — no live chain data"
+          description="You're on the presentation walkthrough, which has no wallet connection to read real balances or positions from. Connect a real wallet to see your actual portfolio."
+        />
+      </Container>
+    );
+  }
+
+  // isLoaded 只看這一頁自己那趟 fetch;balances 是另一個 hook、另一條時間線。
+  // 只等前者,skeleton 可能在 balances 還在讀的時候就放行——那正是後面
+  // isPortfolioProvablyEmpty 拿到「還沒讀到」被誤判方向的老問題,只是換了
+  // 一個更早的入口。兩邊都跑完才算真的 loaded。
+  if (!isLoaded || !balances.settled) {
     return (
       <Container maxWidth="lg" sx={{ py: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
         <Grid container spacing={2}>
@@ -405,16 +508,21 @@ export default function PortfolioPage() {
     );
   }
 
-  // 這個判斷原本只看交易帳戶（跟單、持倉、自由保證金），因為這一頁以前只管
-  // 交易帳戶。淨值 hero 併進來之後它還涵蓋錢包、質押與 LP 金庫——沒有一起看的話，
-  // 一個錢包裡有 $1,000、只是還沒開倉的人，會看到「你的投資組合是空的」，
-  // 而唯一能告訴他錢在哪的那張卡剛好被這個 return 擋掉。
-  const hasOtherFunds =
-    (balances.walletCash ?? 0n) > 0n ||
-    (balances.staked ?? 0n) > 0n ||
-    (balances.vault ?? 0n) > 0n;
+  // 「空投資組合」只有在六項全部讀成功、而且真的全部是 0/空的時候才成立。
+  // 舊版用 `?? 0n` 把「還沒讀到」跟「讀到、是 0」攤平成同一件事，於是一個
+  // 有錢但某一項暫時讀失敗的使用者會被判定成空,推去 /exchange——這正是
+  // 上線過的那個 bug。任何一項是 null／還沒讀成功,就不能算是「證實是空的」，
+  // 見 lib/pepefi/portfolio.ts 的 isPortfolioProvablyEmpty。
+  const emptinessCheck: PortfolioEmptinessCheck = {
+    copyRecordsCount: copyRecsOk   ? copyRecs.length  : null,
+    positionsCount:   positionsOk  ? positions.length : null,
+    freeMargin:       freeMarginOk ? freeMargin       : null,
+    walletCash:       balances.walletCash,
+    staked:           balances.staked,
+    vault:            balances.vault,
+  };
 
-  if (isLoaded && copyRecs.length === 0 && positions.length === 0 && freeMargin === 0n && !hasOtherFunds) {
+  if (isLoaded && isPortfolioProvablyEmpty(emptinessCheck)) {
     return (
       <Container maxWidth="lg" sx={{ py: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
         <EmptyState
@@ -422,7 +530,7 @@ export default function PortfolioPage() {
           title="Your portfolio is empty"
           description={`Start by getting test ${STABLE_LABEL}, then copy a trader or open positions yourself.`}
           ctaText={`Get ${STABLE_LABEL}`}
-          ctaHref="/exchange"
+          onClick={() => navigate('/exchange')}
         />
       </Container>
     );
@@ -616,6 +724,41 @@ export default function PortfolioPage() {
           <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 4, fontStyle: 'italic' }}>
             No open positions.
           </Typography>
+        ) : mode === 'simple' ? (
+          // Simple 只回答「我有什麼、現在好不好」——四欄,不解釋算法。想看
+          // entry/oracle/leverage/funding 那一套,切到 Expert。欄位清單來自
+          // openPositionColumnsForMode,跟它的測試共用同一份事實。
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow sx={{ bgcolor: 'background.neutral' }}>
+                  {openPositionColumnsForMode('simple').map(key => (
+                    <TableCell key={key} sx={{ color: 'text.secondary', fontWeight: 'bold', fontSize: '0.75rem', py: 1.5 }}>
+                      {COLUMN_LABELS[key]}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {positions.map(row => (
+                  <TableRow key={String(row.id)} sx={{ '&:hover': { bgcolor: 'action.hover' } }}>
+                    {openPositionColumnsForMode('simple').map(key => renderSimplePositionCell(key, row))}
+                  </TableRow>
+                ))}
+              </TableBody>
+              <tfoot style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                <TableRow sx={{ bgcolor: 'background.neutral' }}>
+                  <TableCell colSpan={2} sx={{ fontWeight: 'bold', color: 'text.primary' }}>Total</TableCell>
+                  <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'text.primary' }}>
+                    {f18(positions.reduce((s, p) => s + p.currentValue, 0n))}
+                  </TableCell>
+                  <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: pnlColor(positions.reduce((s, p) => s + p.unrealizedPnL, 0n)) }}>
+                    {fPnL(positions.reduce((s, p) => s + p.unrealizedPnL, 0n))}
+                  </TableCell>
+                </TableRow>
+              </tfoot>
+            </Table>
+          </TableContainer>
         ) : (
           <TableContainer>
             <Table size="small">

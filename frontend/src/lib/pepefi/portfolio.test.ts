@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 
-import { netWorthOf, type NetWorthParts } from './portfolio'
+import { netWorthOf, type NetWorthParts, isPortfolioProvablyEmpty, type PortfolioEmptinessCheck } from './portfolio'
 
 /** 把人看得懂的美金金額變成 18-dec。 */
 const usd = (n: number): bigint => BigInt(Math.round(n * 1e6)) * 10n ** 12n
@@ -68,5 +68,58 @@ describe('netWorthOf', () => {
     expect(r.total).toBe(0n)
     expect(r.incomplete).toBe(true)
     expect(r.missing).toHaveLength(6)
+  })
+})
+
+const usd18 = (n: number): bigint => BigInt(Math.round(n * 1e6)) * 10n ** 12n
+
+const allEmpty = (over: Partial<PortfolioEmptinessCheck> = {}): PortfolioEmptinessCheck => ({
+  copyRecordsCount: 0,
+  positionsCount:   0,
+  freeMargin:       0n,
+  walletCash:       0n,
+  staked:           0n,
+  vault:            0n,
+  ...over,
+})
+
+describe('isPortfolioProvablyEmpty', () => {
+  it('是 true,當六項都讀到而且都是空的', () => {
+    expect(isPortfolioProvablyEmpty(allEmpty())).toBe(true)
+  })
+
+  it('任何一項讀不到(null)就不能算空 — 未知不是空', () => {
+    expect(isPortfolioProvablyEmpty(allEmpty({ copyRecordsCount: null }))).toBe(false)
+    expect(isPortfolioProvablyEmpty(allEmpty({ positionsCount: null }))).toBe(false)
+    expect(isPortfolioProvablyEmpty(allEmpty({ freeMargin: null }))).toBe(false)
+    expect(isPortfolioProvablyEmpty(allEmpty({ walletCash: null }))).toBe(false)
+    expect(isPortfolioProvablyEmpty(allEmpty({ staked: null }))).toBe(false)
+    expect(isPortfolioProvablyEmpty(allEmpty({ vault: null }))).toBe(false)
+  })
+
+  it('任何一項讀到但不是空的,就不算空', () => {
+    expect(isPortfolioProvablyEmpty(allEmpty({ copyRecordsCount: 1 }))).toBe(false)
+    expect(isPortfolioProvablyEmpty(allEmpty({ positionsCount: 2 }))).toBe(false)
+    expect(isPortfolioProvablyEmpty(allEmpty({ freeMargin: usd18(10) }))).toBe(false)
+    expect(isPortfolioProvablyEmpty(allEmpty({ walletCash: usd18(1_000) }))).toBe(false)
+    expect(isPortfolioProvablyEmpty(allEmpty({ staked: usd18(5) }))).toBe(false)
+    expect(isPortfolioProvablyEmpty(allEmpty({ vault: usd18(5) }))).toBe(false)
+  })
+
+  it('混合案例:有些讀不到、有些不是空的,都不算空', () => {
+    expect(isPortfolioProvablyEmpty(allEmpty({ walletCash: null, staked: usd18(50) }))).toBe(false)
+  })
+
+  it('回歸測試:fetchAll 因為 catch 而回退成空值時,若有一項是真的讀不到就不能顯示「空」', () => {
+    // 這正是上線過的 bug：交易帳戶那三項因為 catch 落回預設值([]、[]、0n)，
+    // 跟真的讀到「空」在數值上長得一模一樣。這裡如果只看數值、不看是否
+    // 讀成功,會把「這三項讀失敗」誤判成「這三項是空的」。
+    const afterCaughtError = allEmpty({
+      copyRecordsCount: 0,
+      positionsCount:   0,
+      freeMargin:       0n,
+      walletCash:       null, // 錢包餘額還沒讀到 —— 不是真的 0
+    })
+    expect(isPortfolioProvablyEmpty(afterCaughtError)).toBe(false)
   })
 })
