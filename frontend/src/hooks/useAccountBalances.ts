@@ -25,6 +25,13 @@ export interface AccountBalances {
   staked:     bigint | null;
   vault:      bigint | null;
   loading:    boolean;
+  /**
+   * 曾經完整跑完一輪 fetch（不論成功或失敗）。`loading` 在第一次真正開始讀
+   * 之前就是 false,跟「已經讀完」長得一樣,呼叫端沒辦法只靠 loading 分辨
+   * 「還沒開始」跟「讀完了」。想知道「這幾項是不是可以採信了」要看這個,
+   * 不是 loading。
+   */
+  settled:    boolean;
   refetch:    () => void;
 }
 
@@ -58,6 +65,7 @@ export function useAccountBalances(
   const [staked,     setStaked]     = useState<bigint | null>(null);
   const [vault,      setVault]      = useState<bigint | null>(null);
   const [loading,    setLoading]    = useState(false);
+  const [settled,    setSettled]    = useState(false);
 
   // 一次讀取要打好幾個 RPC，期間使用者可能換鏈或換地址。沒有版本號的話，先送出
   // 的舊查詢會在新查詢之後才回來，用過期的餘額蓋掉新的。
@@ -102,7 +110,10 @@ export function useAccountBalances(
       if (isStale()) return;
       setVault(vaultValue);
     } finally {
-      if (runId.current === myRun) setLoading(false);
+      if (runId.current === myRun) {
+        setLoading(false);
+        setSettled(true);
+      }
     }
   }, [contracts, address]);
 
@@ -119,5 +130,5 @@ export function useAccountBalances(
     };
   }, [fetchBalances]);
 
-  return { walletCash, freeMargin, staked, vault, loading, refetch: fetchBalances };
+  return { walletCash, freeMargin, staked, vault, loading, settled, refetch: fetchBalances };
 }

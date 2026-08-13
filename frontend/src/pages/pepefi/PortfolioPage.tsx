@@ -1,7 +1,7 @@
 import { MONO } from 'src/components/pepefi/brandKit'
 import { parseEther } from 'ethers';
 import { useState, useEffect, useCallback } from 'react';
-import { Link as RouterLink } from 'react-router';
+import { Link as RouterLink, useNavigate } from 'react-router';
 import {
   Line, XAxis, YAxis, Tooltip, LineChart,
   CartesianGrid, ReferenceLine, ResponsiveContainer,
@@ -22,6 +22,7 @@ import { firstBlocking, stalenessNotice } from 'src/lib/pepefi/priceFreshness';
 import { useMode } from 'src/contexts/mode-context';
 import { useAccountBalances } from 'src/hooks/useAccountBalances';
 import { isPortfolioProvablyEmpty, type NetWorthParts, type PortfolioEmptinessCheck } from 'src/lib/pepefi/portfolio';
+import { COLUMN_LABELS, openPositionColumnsForMode, type OpenPositionColumnKey } from 'src/lib/pepefi/openPositionColumns';
 
 import StatCard from 'src/components/pepefi/StatCard';
 import ESGBadge from 'src/components/pepefi/ESGBadge';
@@ -131,6 +132,53 @@ const tryParse = (s: string): bigint | null => {
   try { return parseEther(s); } catch { return null; }
 };
 
+// Simple-mode Open Positions row cells, keyed the same way as the header
+// (openPositionColumnsForMode('simple')) so reordering or trimming that list
+// can't drift out of sync with what each row actually renders.
+function renderSimplePositionCell(key: OpenPositionColumnKey, row: PosRow) {
+  switch (key) {
+    case 'asset':
+      return (
+        <TableCell key={key} sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
+          {ASSET_LABEL[row.asset] ?? row.asset.slice(0, 8)}
+        </TableCell>
+      );
+    case 'side':
+      return (
+        <TableCell key={key}>
+          <Chip
+            label={row.isLong ? 'LONG ↑' : 'SHORT ↓'}
+            size="small"
+            sx={{
+              fontWeight: 'bold',
+              fontSize: '0.75rem',
+              bgcolor: row.isLong ? 'rgba(34,197,94,0.12)' : 'rgba(255,86,48,0.12)',
+              color: row.isLong ? 'success.main' : 'error.main',
+              borderColor: row.isLong ? 'rgba(34,197,94,0.2)' : 'rgba(255,86,48,0.2)',
+              border: '1px solid',
+            }}
+          />
+        </TableCell>
+      );
+    case 'value':
+      return (
+        <TableCell key={key} sx={{ fontFamily: MONO, fontWeight: 'bold', fontSize: '0.8125rem', color: pnlColor(row.currentValue - row.margin) }}>
+          {f18(row.currentValue)}
+        </TableCell>
+      );
+    case 'unrealizedPnl':
+      return (
+        <TableCell key={key} sx={{ fontFamily: MONO, fontWeight: 'bold', fontSize: '0.8125rem', color: pnlColor(row.unrealizedPnL) }}>
+          {fPnL(row.unrealizedPnL)}
+        </TableCell>
+      );
+    default:
+      // Simple mode only ever asks for the four keys above — reaching this
+      // means SIMPLE_COLUMNS grew without this renderer growing with it.
+      return null;
+  }
+}
+
 // `safeRead` (src/lib/pepefi/safeRead.ts) reports a fallback but not whether
 // the read actually succeeded — fine for a value nothing else depends on,
 // not enough here, where "did this succeed" feeds isPortfolioProvablyEmpty.
@@ -152,6 +200,7 @@ async function trackedRead<T>(promise: Promise<T>, fallback: T, label: string): 
 
 export default function PortfolioPage() {
   const wallet = usePepefiWallet();
+  const navigate = useNavigate();
   const { mode } = useMode();
   const contracts  = useContracts(wallet.provider, wallet.signer, wallet.chainId);
   const livePrices = useLivePrices();
@@ -431,7 +480,11 @@ export default function PortfolioPage() {
     );
   }
 
-  if (!isLoaded) {
+  // isLoaded 只看這一頁自己那趟 fetch;balances 是另一個 hook、另一條時間線。
+  // 只等前者,skeleton 可能在 balances 還在讀的時候就放行——那正是後面
+  // isPortfolioProvablyEmpty 拿到「還沒讀到」被誤判方向的老問題,只是換了
+  // 一個更早的入口。兩邊都跑完才算真的 loaded。
+  if (!isLoaded || !balances.settled) {
     return (
       <Container maxWidth="lg" sx={{ py: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
         <Grid container spacing={2}>
@@ -477,7 +530,7 @@ export default function PortfolioPage() {
           title="Your portfolio is empty"
           description={`Start by getting test ${STABLE_LABEL}, then copy a trader or open positions yourself.`}
           ctaText={`Get ${STABLE_LABEL}`}
-          ctaHref="/exchange"
+          onClick={() => navigate('/exchange')}
         />
       </Container>
     );
@@ -671,6 +724,41 @@ export default function PortfolioPage() {
           <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 4, fontStyle: 'italic' }}>
             No open positions.
           </Typography>
+        ) : mode === 'simple' ? (
+          // Simple 只回答「我有什麼、現在好不好」——四欄,不解釋算法。想看
+          // entry/oracle/leverage/funding 那一套,切到 Expert。欄位清單來自
+          // openPositionColumnsForMode,跟它的測試共用同一份事實。
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow sx={{ bgcolor: 'background.neutral' }}>
+                  {openPositionColumnsForMode('simple').map(key => (
+                    <TableCell key={key} sx={{ color: 'text.secondary', fontWeight: 'bold', fontSize: '0.75rem', py: 1.5 }}>
+                      {COLUMN_LABELS[key]}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {positions.map(row => (
+                  <TableRow key={String(row.id)} sx={{ '&:hover': { bgcolor: 'action.hover' } }}>
+                    {openPositionColumnsForMode('simple').map(key => renderSimplePositionCell(key, row))}
+                  </TableRow>
+                ))}
+              </TableBody>
+              <tfoot style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                <TableRow sx={{ bgcolor: 'background.neutral' }}>
+                  <TableCell colSpan={2} sx={{ fontWeight: 'bold', color: 'text.primary' }}>Total</TableCell>
+                  <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'text.primary' }}>
+                    {f18(positions.reduce((s, p) => s + p.currentValue, 0n))}
+                  </TableCell>
+                  <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: pnlColor(positions.reduce((s, p) => s + p.unrealizedPnL, 0n)) }}>
+                    {fPnL(positions.reduce((s, p) => s + p.unrealizedPnL, 0n))}
+                  </TableCell>
+                </TableRow>
+              </tfoot>
+            </Table>
+          </TableContainer>
         ) : (
           <TableContainer>
             <Table size="small">
