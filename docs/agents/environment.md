@@ -55,8 +55,14 @@ dev server. These are real and worth doing — they are also the slow parts.
 ```bash
 winget install --id OpenJS.NodeJS.LTS --source winget   # Node >=20 (engines field)
 npm i -g yarn@1.22.22                                   # after reopening the shell
+winget install --id GitHub.cli --source winget          # CLAUDE.md routes issues through gh
 curl -L https://foundry.paradigm.xyz | bash && foundryup # only if touching contracts/
 ```
+
+The first `git push` also needs the user: `credential.helper` is `manager`, and on
+a fresh machine it opens an interactive GitHub sign-in that an agent cannot
+complete. Reads work without it — the repo is public — so a green `git ls-remote`
+proves nothing about push.
 
 **Agent runs (inside the repo):**
 
