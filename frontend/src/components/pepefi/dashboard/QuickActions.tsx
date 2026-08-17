@@ -2,6 +2,8 @@ import type { Mode } from 'src/contexts/mode-context';
 
 import { Link as RouterLink } from 'react-router';
 
+import { t } from 'src/locales';
+
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import { Icon } from '@iconify/react';
@@ -28,10 +30,10 @@ type Action = {
 
 // 沒有 "Positions"：這一列現在長在 Portfolio 頁上，連回自己是死連結。
 const ACTIONS: Action[] = [
-  { label: 'Trade',        to: '/exchange',    icon: 'solar:chart-square-bold-duotone', primary: true },
-  { label: 'Copy a trader', to: '/marketplace', icon: 'solar:users-group-rounded-bold-duotone' },
-  { label: 'History',      to: '/history',     icon: 'solar:clock-circle-bold-duotone' },
-  { label: 'Pro Terminal', to: '/terminal',    icon: 'solar:programming-bold-duotone', expertOnly: true },
+  { label: t.portfolio.quickAction.trade,       to: '/exchange',    icon: 'solar:chart-square-bold-duotone', primary: true },
+  { label: t.portfolio.quickAction.copyTrader,  to: '/marketplace', icon: 'solar:users-group-rounded-bold-duotone' },
+  { label: t.portfolio.quickAction.history,     to: '/history',     icon: 'solar:clock-circle-bold-duotone' },
+  { label: t.portfolio.quickAction.proTerminal, to: '/terminal',    icon: 'solar:programming-bold-duotone', expertOnly: true },
 ];
 
 export default function QuickActions({ mode }: { mode: Mode }) {

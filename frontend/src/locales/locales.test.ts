@@ -25,6 +25,7 @@ const MIGRATED_PATHS: string[] = [
   'src/layouts/nav-config-account.tsx',
   'src/lib/pepefi/errorMessages.ts',
   'src/lib/pepefi/priceFreshness.ts',
+  'src/components/pepefi/dashboard',
 ];
 
 /**
