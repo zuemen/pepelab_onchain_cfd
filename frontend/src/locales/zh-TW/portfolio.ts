@@ -43,6 +43,98 @@ export const portfolio = {
     proTerminal: 'Pro Terminal',
   },
 
+  /**
+   * Open Positions 的欄位名。simple 與 expert 兩張表共用同一份——原本 expert 表在
+   * 頁面裡另外寫了一份一模一樣的清單，兩份字得同時改才不會不一致。
+   */
+  column: {
+    asset: 'Asset',
+    esg: 'ESG',
+    side: 'Side',
+    entry: 'Entry',
+    oracle: 'Oracle',
+    liveMarket: 'Live Market',
+    margin: 'Margin',
+    leverage: 'Lev',
+    copiedFrom: 'Copied From',
+    unrealizedPnl: 'Unr. PnL',
+    accruedFunding: 'Accrued Funding',
+    value: 'Value',
+  },
+
+  /** 欄位的 tooltip。只有會被誤讀的欄位需要——兩個價格擺在一起且幾乎不相等。 */
+  columnHint: {
+    entry: 'Price you opened at',
+    oracle: 'On-chain price the contract settles against — this is what Unr. PnL uses',
+    liveMarket: 'Off-chain feed. Moves before the oracle does, so a gap here is normal',
+    unrealizedPnl: 'Unrealised, from the Oracle price',
+  },
+
+  page: {
+    title: 'My Portfolio',
+    refresh: 'Refresh',
+    connectWallet: 'Connect wallet to view your portfolio.',
+
+    unsupportedNetwork: 'Unsupported Network',
+    unknownChain: 'unknown',
+    chainNumber: 'Chain {id}',
+
+    demoTitle: 'Demo mode — no live chain data',
+    demoDescription:
+      "You're on the presentation walkthrough, which has no wallet connection to read real balances or positions from. Connect a real wallet to see your actual portfolio.",
+
+    emptyTitle: 'Your portfolio is empty',
+    emptyDescription:
+      'Start by getting test {token}, then copy a trader or open positions yourself.',
+    emptyCta: 'Get {token}',
+
+    side: {
+      long: 'LONG ↑',
+      short: 'SHORT ↓',
+    },
+
+    activeCopies: 'Active Copies',
+    traderFollowedOne: 'trader followed',
+    traderFollowedMany: 'traders followed',
+    totalCopyPnl: 'Total Copy PnL',
+    noCopyPositions: 'no copy positions',
+
+    copyPositions: 'Copy Positions',
+    notCopyingAnyone: "You're not copying anyone yet.",
+    browseTraders: 'Browse traders →',
+    copyColumn: {
+      trader: 'Trader',
+      copiedAt: 'Copied At',
+      initial: 'Initial',
+      current: 'Current',
+      return: 'Return',
+      actions: 'Actions',
+    },
+    unfollow: 'Unfollow',
+    unfollowStale: '價格過期',
+    unfollowedOk: 'Unfollowed and all positions closed ✓',
+
+    openPositions: 'Open Positions',
+    openCount: '{count} open · manual + copied',
+    noOpenPositions: 'No open positions.',
+    total: 'Total',
+
+    freeMargin: 'Free Margin',
+    amountPlaceholder: 'Amount',
+    withdraw: 'Withdraw',
+    withdrawnOk: 'Withdrew {amount} {token} ✓',
+    enterValidAmount: 'Enter a valid amount',
+
+    copyPerformance: 'Copy Performance',
+    chart: {
+      deposited: 'Deposited',
+      now: 'Now',
+      initial: 'Initial',
+      portfolioValue: 'Portfolio Value',
+    },
+    autoRefresh: 'Auto-refreshes every 30 s · Two-point view (initial vs current)',
+  },
+
   analysis: {
     allocation: 'Allocation',
     noBreakdown: 'No positions to break down.',

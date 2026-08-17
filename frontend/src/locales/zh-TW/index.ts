@@ -1,7 +1,7 @@
 import { nav } from './nav';
 import { meta } from './meta';
-import { portfolio } from './portfolio';
 import { errors } from './errors';
+import { portfolio } from './portfolio';
 import { freshness } from './freshness';
 
 // ----------------------------------------------------------------------

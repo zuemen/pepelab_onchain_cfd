@@ -1,19 +1,20 @@
 <!doctype html>
 <!-- lang / title / description 都由建置時的 locale 決定，值來自 src/locales。
      這些 placeholder 由 vite.config.ts 的 pepefi-locale-html 外掛在 transformIndexHtml
-     的 pre 階段換掉，所以 Vite 自己的 %VITE_*% 替換不會看到殘留的 % 記號。
+     的 pre 階段換掉。分隔符刻意用 __X__ 而不是 %X%：Vite 內建的 HTML env 替換會把
+     %X% 當成環境變數去找，找不到就每次 build 印一行警告。
 
      zh-TW 對應的 lang 是 zh-Hant 而不是 en：介面是繁體中文時用 lang="en" 會讓螢幕閱讀器
      用英文發音規則念每一個中文字，瀏覽器也會提議把一個它以為使用者看不懂的頁面「翻譯」
      成使用者正在讀的語言。對應表在 src/locales/catalogs.ts。 -->
-<html lang="%LOCALE_HTML_LANG%">
+<html lang="__LOCALE_HTML_LANG__">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/avatars/pepe-01.png" />
     <meta name="theme-color" content="#0A0F0B" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="%APP_DESCRIPTION%" />
-    <title>%APP_TITLE%</title>
+    <meta name="description" content="__APP_DESCRIPTION__" />
+    <title>__APP_TITLE__</title>
   </head>
 
   <body>

@@ -2,18 +2,20 @@ import { t } from 'src/locales'
 
 // ----------------------------------------------------------------------
 
-/**
- * 合約錯誤 → 使用者看得懂的說法。訊息本身住在 catalog（`t.errors.contract`）。
- *
- * 收成 `Record<string, string>` 是必要的：selector 與 keyword 都是執行期才知道的
- * 字串，catalog 推導出來的型別只認得那 73 個字面 key，用任意字串索引會編譯失敗。
- *
- * 順序有意義——下面的 keyword 掃描是照插入順序逐一比對的。catalog 保留了原本的順序。
- */
-const ERROR_MAP: Record<string, string> = t.errors.contract
-
 export function prettyError(err: unknown, context?: 'mining' | 'tier' | 'copy' | 'checkin'): string {
   if (!err) return t.errors.unknown
+
+  // 合約錯誤 → 使用者看得懂的說法。訊息本身住在 catalog。
+  //
+  // 在函式**裡面**讀，不在 module scope。module scope 的讀取會被模組求值順序綁住，
+  // 而編輯任何一個 catalog 檔都會讓 src/locales 失效——dev 的 HMR 就可能在 locales
+  // 重新初始化之前先跑這個檔案，於是 `t` 是 undefined。函式內讀每次只是一次屬性存取。
+  //
+  // 收成 `Record<string, string>` 是必要的：selector 與 keyword 都是執行期才知道的
+  // 字串，catalog 推導出來的型別只認得那 73 個字面 key，用任意字串索引會編譯失敗。
+  //
+  // 順序有意義——下面的 keyword 掃描是照插入順序逐一比對的。catalog 保留了原本的順序。
+  const ERROR_MAP: Record<string, string> = t.errors.contract
 
   const e = err as {
     data?: string

@@ -31,9 +31,9 @@ export default defineConfig(({ mode }) => {
           order: 'pre',
           handler: (html: string) =>
             html
-              .replace('%LOCALE_HTML_LANG%', () => htmlLang)
-              .replace('%APP_TITLE%', () => catalog.meta.title)
-              .replace('%APP_DESCRIPTION%', () => catalog.meta.description),
+              .replace('__LOCALE_HTML_LANG__', () => htmlLang)
+              .replace('__APP_TITLE__', () => catalog.meta.title)
+              .replace('__APP_DESCRIPTION__', () => catalog.meta.description),
         },
       },
       checker({
