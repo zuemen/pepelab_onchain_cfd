@@ -3,6 +3,7 @@ import type { NavSectionProps, NavItemDataProps } from 'src/components/nav-secti
 
 import { paths } from 'src/routes/paths';
 
+import { t } from 'src/locales';
 import { CONFIG } from 'src/global-config';
 
 import { SvgColor } from 'src/components/svg-color';
@@ -50,32 +51,32 @@ export const navData: NavSectionProps['data'] = [
    * PepeLab
    */
   {
-    subheader: 'PepeLab',
+    subheader: t.nav.section.pepelab,
     items: [
-      { title: '🏠 Portfolio', path: paths.pepefi.portfolio, icon: ICONS.analytics },
-      { title: '🐸 Pepe 養成中心', path: paths.pepefi.pepe, icon: ICONS.blog },
-      { title: 'Exchange', path: paths.pepefi.exchange, icon: ICONS.ecommerce },
-      { title: '🪙 代幣化資產', path: paths.pepefi.tokens, icon: ICONS.product },
-      { title: 'Pro Terminal', path: paths.pepefi.terminal, icon: ICONS.dashboard },
-      { title: 'x402 Signal API', path: paths.pepefi.x402, icon: ICONS.external },
-      { title: 'Marketplace', path: paths.pepefi.marketplace, icon: ICONS.invoice },
-      { title: 'Vault', path: paths.pepefi.vault, icon: ICONS.file },
-      { title: 'History', path: paths.pepefi.history, icon: ICONS.order },
-      { title: 'Whale Tracker', path: paths.pepefi.whale, icon: ICONS.label },
-      { title: 'ESG', path: paths.pepefi.esg, icon: ICONS.tour },
-      { title: 'Rewards 🎁', path: paths.pepefi.rewards, icon: ICONS.booking },
-      { title: '🤖 Agent Sessions', path: paths.pepefi.sessions, icon: ICONS.lock },
-      { title: '📊 Agent Monitor', path: paths.pepefi.agentMonitor, icon: ICONS.analytics },
+      { title: t.nav.item.portfolio, path: paths.pepefi.portfolio, icon: ICONS.analytics },
+      { title: t.nav.item.pepe, path: paths.pepefi.pepe, icon: ICONS.blog },
+      { title: t.nav.item.exchange, path: paths.pepefi.exchange, icon: ICONS.ecommerce },
+      { title: t.nav.item.tokens, path: paths.pepefi.tokens, icon: ICONS.product },
+      { title: t.nav.item.terminal, path: paths.pepefi.terminal, icon: ICONS.dashboard },
+      { title: t.nav.item.x402, path: paths.pepefi.x402, icon: ICONS.external },
+      { title: t.nav.item.marketplace, path: paths.pepefi.marketplace, icon: ICONS.invoice },
+      { title: t.nav.item.vault, path: paths.pepefi.vault, icon: ICONS.file },
+      { title: t.nav.item.history, path: paths.pepefi.history, icon: ICONS.order },
+      { title: t.nav.item.whale, path: paths.pepefi.whale, icon: ICONS.label },
+      { title: t.nav.item.esg, path: paths.pepefi.esg, icon: ICONS.tour },
+      { title: t.nav.item.rewards, path: paths.pepefi.rewards, icon: ICONS.booking },
+      { title: t.nav.item.sessions, path: paths.pepefi.sessions, icon: ICONS.lock },
+      { title: t.nav.item.agentMonitor, path: paths.pepefi.agentMonitor, icon: ICONS.analytics },
     ],
   },
   /**
    * Trader
    */
   {
-    subheader: 'Trader',
+    subheader: t.nav.section.trader,
     items: [
-      { title: 'Trader Dashboard', path: paths.pepefi.trader, icon: ICONS.user },
-      { title: 'Stake', path: paths.pepefi.stake, icon: ICONS.booking },
+      { title: t.nav.item.traderDashboard, path: paths.pepefi.trader, icon: ICONS.user },
+      { title: t.nav.item.stake, path: paths.pepefi.stake, icon: ICONS.booking },
     ],
   },
 ];
@@ -109,10 +110,10 @@ const SIMPLE_NAV_PATHS: readonly string[] = [
 export function navDataForMode(mode: Mode): NavSectionProps['data'] {
   if (mode === 'expert') return navData;
 
-  const allItems = navData.flatMap(section => section.items);
-  const items = SIMPLE_NAV_PATHS
-    .map(path => allItems.find(item => item.path === path))
-    .filter((item): item is NavItemDataProps => item !== undefined);
+  const allItems = navData.flatMap((section) => section.items);
+  const items = SIMPLE_NAV_PATHS.map((path) => allItems.find((item) => item.path === path)).filter(
+    (item): item is NavItemDataProps => item !== undefined
+  );
 
-  return [{ subheader: 'PepeLab', items }];
+  return [{ subheader: t.nav.section.pepelab, items }];
 }

@@ -1,5 +1,6 @@
 import type { Catalog } from '../zh-TW';
 
+import { nav } from './nav';
 import { meta } from './meta';
 
 // ----------------------------------------------------------------------
@@ -13,6 +14,7 @@ import { meta } from './meta';
  */
 const en: Catalog = {
   meta,
+  nav,
 };
 
 export default en;

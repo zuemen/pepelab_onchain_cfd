@@ -11,27 +11,40 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FRONTEND_ROOT = path.resolve(HERE, '../..');
 
 /**
- * 已經搬完的目錄。每完成一批就加一行。
+ * 已經搬完的目錄或單一檔案。每完成一批就加一行。
  *
  * 這份清單是遷移能不能收斂的關鍵：沒有它，最後那 20% 永遠不會有人回頭做完，
- * 而已經搬好的目錄也會慢慢長回內嵌字串。
+ * 而已經搬好的地方也會慢慢長回內嵌字串。
+ *
+ * 收單一檔案而不只收目錄，是因為批次是按功能切的、目錄不是：`src/layouts` 底下的
+ * nav 設定搬完時，同目錄的 layout 元件還沒搬。只能寫目錄的話，這一批就得整個
+ * `src/layouts` 一起動，或者乾等到最後才有任何東西受到保護。
  */
-const MIGRATED_DIRS: string[] = [
-  // 'src/layouts',            ← nav 那批完成後解開
+const MIGRATED_PATHS: string[] = [
+  'src/layouts/nav-config-dashboard.tsx',
+  'src/layouts/nav-config-account.tsx',
 ];
 
 /**
  * `en` catalog 裡尚未翻譯的中文字數（不含註解）。
  *
  * 搬移階段兩份 catalog 寫入同一份原文，所以 `en` 一開始就帶著中文。這個數字**只能
- * 下降**：歸零代表英文版翻完了。目前的 12 個字來自 meta description。
+ * 下降**：歸零代表英文版翻完了。
+ *
+ * 每批遷移都會把它推高——那是預期行為，不是退步：字串搬進 catalog 時 `en` 拿到的是
+ * 中文原文。真正的退步是「翻譯過的字又變回中文」，而那會讓這條斷言失敗。
+ * 目前：meta description 12 個字，nav 38 個字。
  */
-const EN_HAN_BASELINE = 12;
+const EN_HAN_BASELINE = 50;
 
-function sourceFilesUnder(dir: string): string[] {
-  const abs = path.resolve(FRONTEND_ROOT, dir);
+/** 傳目錄就回它底下所有原始碼檔案，傳單一檔案就回那一個。測試檔一律排除。 */
+function sourceFilesIn(pathish: string): string[] {
+  const abs = path.resolve(FRONTEND_ROOT, pathish);
   if (!fs.existsSync(abs)) {
     return [];
+  }
+  if (fs.statSync(abs).isFile()) {
+    return [abs];
   }
   return fs
     .readdirSync(abs, { recursive: true, encoding: 'utf8' })
@@ -96,9 +109,9 @@ describe('countHan', () => {
 // ----------------------------------------------------------------------
 
 describe('migration ratchets', () => {
-  it('keeps every migrated directory free of inline display strings', () => {
-    const offenders = MIGRATED_DIRS.flatMap((dir) =>
-      sourceFilesUnder(dir).flatMap((file) =>
+  it('keeps everything already migrated free of inline display strings', () => {
+    const offenders = MIGRATED_PATHS.flatMap((migrated) =>
+      sourceFilesIn(migrated).flatMap((file) =>
         findInlineDisplayStrings(fs.readFileSync(file, 'utf8')).map(
           (hit) => `${path.relative(FRONTEND_ROOT, file)}:${hit.line}  ${hit.text.trim()}`
         )
@@ -109,7 +122,7 @@ describe('migration ratchets', () => {
   });
 
   it('never lets the untranslated Chinese in the en catalog grow', () => {
-    const remaining = sourceFilesUnder('src/locales/en')
+    const remaining = sourceFilesIn('src/locales/en')
       .flatMap((file) => findInlineDisplayStrings(fs.readFileSync(file, 'utf8')))
       .reduce((sum, hit) => sum + countHan(hit.text), 0);
 

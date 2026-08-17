@@ -2,6 +2,8 @@ import type { AccountDrawerProps } from './components/account-drawer';
 
 import { paths } from 'src/routes/paths';
 
+import { t } from 'src/locales';
+
 import { Iconify } from 'src/components/iconify';
 
 // ----------------------------------------------------------------------
@@ -16,32 +18,32 @@ import { Iconify } from 'src/components/iconify';
  */
 export const accountNavData = (address?: string | null): AccountDrawerProps['data'] => [
   {
-    label: 'My Trader Profile (個人首頁)',
+    label: t.nav.account.profile,
     href: address ? `/trader/${address}` : '/trader',
     icon: <Iconify icon="custom:profile-duotone" />,
   },
   {
-    label: 'Potion Shop (魔法藥水商店)',
+    label: t.nav.account.potions,
     href: `${paths.pepefi.pepe}?tab=potions`,
     icon: <Iconify icon="custom:invoice-duotone" />,
   },
   {
-    label: 'My Mounts (尊貴坐騎)',
+    label: t.nav.account.mounts,
     href: `${paths.pepefi.pepe}?tab=mounts`,
     icon: <Iconify icon="solar:settings-bold-duotone" />,
   },
   {
-    label: 'Pepe Skins & Gacha (🎰 造型盲盒與商城)',
+    label: t.nav.account.skins,
     href: `${paths.pepefi.pepe}?tab=skins`,
     icon: <Iconify icon="solar:palette-bold-duotone" />,
   },
   {
-    label: 'Staking DeFi Yields (跟單質押)',
+    label: t.nav.account.staking,
     href: '/stake',
     icon: <Iconify icon="solar:shield-keyhole-bold-duotone" />,
   },
   {
-    label: 'PepeLab Rewards 🎁 (每日激勵)',
+    label: t.nav.account.rewards,
     href: '/rewards',
     icon: <Iconify icon="solar:notes-bold-duotone" />,
   },

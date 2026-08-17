@@ -1,3 +1,4 @@
+import { nav } from './nav';
 import { meta } from './meta';
 
 // ----------------------------------------------------------------------
@@ -11,6 +12,7 @@ import { meta } from './meta';
  */
 const zhTW = {
   meta,
+  nav,
 };
 
 export type Catalog = typeof zhTW;
