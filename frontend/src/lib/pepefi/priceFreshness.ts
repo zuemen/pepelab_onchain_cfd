@@ -5,6 +5,8 @@
 // 下單才會吃到合約的 StalePrice revert。分級的門檻直接對齊合約自己的
 // maxPriceAge，讓 UI 說的「可交易」和鏈上真正接受的一致。
 
+import { t, interpolate } from 'src/locales'
+
 export type FreshnessLevel = 'live' | 'aging' | 'stale' | 'unknown'
 
 export interface Freshness {
@@ -14,10 +16,10 @@ export interface Freshness {
 }
 
 function humanize(ageSec: number): string {
-  if (ageSec < 90) return `${ageSec} 秒前`
-  if (ageSec < 3600) return `${(ageSec / 60).toFixed(1)} 分鐘前`
-  if (ageSec < 86400) return `${(ageSec / 3600).toFixed(1)} 小時前`
-  return `${(ageSec / 86400).toFixed(1)} 天前`
+  if (ageSec < 90) return interpolate(t.freshness.age.seconds, { n: ageSec })
+  if (ageSec < 3600) return interpolate(t.freshness.age.minutes, { n: (ageSec / 60).toFixed(1) })
+  if (ageSec < 86400) return interpolate(t.freshness.age.hours, { n: (ageSec / 3600).toFixed(1) })
+  return interpolate(t.freshness.age.days, { n: (ageSec / 86400).toFixed(1) })
 }
 
 export function classifyFreshness(a: {
@@ -26,7 +28,7 @@ export function classifyFreshness(a: {
   maxPriceAgeSec: number
 }): Freshness {
   if (!a.updatedAtSec || a.updatedAtSec <= 0) {
-    return { level: 'unknown', ageSec: null, label: '年齡未知' }
+    return { level: 'unknown', ageSec: null, label: t.freshness.unknownAge }
   }
   // 節點時間與瀏覽器時間可能有幾秒差距，不讓它變成負數年齡。
   const ageSec = Math.max(0, a.nowSec - a.updatedAtSec)
@@ -51,11 +53,15 @@ export function blocksTrading(f: Freshness): boolean {
  */
 export function stalenessNotice(f: Freshness | undefined | null, assetLabel?: string): string | null {
   if (!f || !blocksTrading(f)) return null
-  const who = assetLabel ? `${assetLabel} 的` : ''
-  if (f.level === 'unknown') {
-    return `⛔ 無法確認${who}鏈上指數價的更新時間（${f.label}）。在確認之前不送單，避免鏈上以 StalePrice 拒絕後白付 gas。`
-  }
-  return `⛔ ${who}鏈上指數價已超過合約的 maxPriceAge（最後更新：${f.label}）。此時開倉／平倉都會被 StalePrice revert，請等 keeper 更新後再試。`
+
+  // 帶標的名稱與不帶是四個完整句子，而不是一句話中間插一個「的」——助詞單獨進
+  // catalog 沒辦法翻譯，英文得寫成 "of sBTC"，位置也和中文不同。
+  const { notice } = t.freshness
+  const template = f.level === 'unknown'
+    ? (assetLabel ? notice.unknownWithAsset : notice.unknownNoAsset)
+    : (assetLabel ? notice.staleWithAsset : notice.staleNoAsset)
+
+  return interpolate(template, { asset: assetLabel ?? '', age: f.label })
 }
 
 /**

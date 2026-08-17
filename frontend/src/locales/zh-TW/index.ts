@@ -1,5 +1,7 @@
 import { nav } from './nav';
 import { meta } from './meta';
+import { errors } from './errors';
+import { freshness } from './freshness';
 
 // ----------------------------------------------------------------------
 
@@ -13,6 +15,8 @@ import { meta } from './meta';
 const zhTW = {
   meta,
   nav,
+  errors,
+  freshness,
 };
 
 export type Catalog = typeof zhTW;

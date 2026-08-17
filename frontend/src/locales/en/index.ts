@@ -2,6 +2,8 @@ import type { Catalog } from '../zh-TW';
 
 import { nav } from './nav';
 import { meta } from './meta';
+import { errors } from './errors';
+import { freshness } from './freshness';
 
 // ----------------------------------------------------------------------
 
@@ -15,6 +17,8 @@ import { meta } from './meta';
 const en: Catalog = {
   meta,
   nav,
+  errors,
+  freshness,
 };
 
 export default en;
