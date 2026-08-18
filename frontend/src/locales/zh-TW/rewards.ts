@@ -5,65 +5,65 @@
  * 讀得到的字，不是代幣代號。門檻與獎勵金額不進——那是數字。
  */
 export const rewards = {
-  connectWallet: 'Connect wallet to view your rewards.',
-  connectTitle: '🎁 Rewards',
+  connectWallet: '連接錢包以查看你的獎勵。',
+  connectTitle: '🎁 獎勵',
 
-  title: '🎁 PepeLab Rewards',
-  subtitle: 'Trade, follow, and check-in daily to earn PEPE.',
+  title: '🎁 PepeLab 獎勵',
+  subtitle: '交易、跟單、每日簽到，賺取 PEPE。',
 
   /** 合約沒部署在這條鏈上時，四個領取動作共用的同一句話。 */
   offline: 'PEPE 獎勵系統尚未部署在此網路，暫時無法領取',
 
   tier: {
-    bronze: 'Bronze 🥉',
-    silver: 'Silver 🥈',
-    gold: 'Gold 🥇',
-    diamond: 'Diamond 💎',
+    bronze: 'Bronze 青銅 🥉',
+    silver: 'Silver 白銀 🥈',
+    gold: 'Gold 黃金 🥇',
+    diamond: 'Diamond 鑽石 💎',
   },
 
   mining: {
-    title: 'Trade Mining',
+    title: '交易挖礦',
     description: '每筆開倉可領一次。獎勵 = 名義價值 × 0.5%，封頂 5,000 PEPE。',
-    empty: 'No open positions found.',
-    position: 'Position #{id}',
-    detail: 'Notional: ${notional}',
-    estReward: 'Est reward: {reward}',
-    claimed: 'Claimed',
-    claim: 'Claim',
-    done: 'Trade mining claimed! 🎉',
+    empty: '找不到未平倉部位。',
+    position: '部位 #{id}',
+    detail: '名義價值：${notional}',
+    estReward: '預估獎勵：{reward}',
+    claimed: '已領取',
+    claim: '領取',
+    done: '交易挖礦獎勵已領取！🎉',
   },
 
   tierSection: {
-    title: 'Tier Upgrade',
-    description: '累積交易量達標即可領取一次性 tier 獎勵。',
-    cumulative: 'Cumulative notional: ${amount}',
+    title: '等級獎勵',
+    description: '累積交易量達標即可領取一次性等級獎勵。',
+    cumulative: '累積名義價值：${amount}',
     reward: '{amount} PEPE',
-    required: '${amount} required',
-    claimed: 'Claimed',
-    claim: 'Claim',
-    locked: 'Locked',
-    done: '{tier} reward claimed! 🏆',
+    required: '需要 ${amount}',
+    claimed: '已領取',
+    claim: '領取',
+    locked: '未達標',
+    done: '{tier} 獎勵已領取！🏆',
   },
 
   copy: {
-    title: 'Copy Reward',
+    title: '跟單獎勵',
     description: '跟單成功後，跟單者與被跟單者各領 200 PEPE（每對一次）。',
-    empty: 'No active copy trades found.',
-    claimed: 'Claimed',
+    empty: '找不到進行中的跟單。',
+    claimed: '已領取',
     claim: '200 PEPE',
-    done: 'Copy reward claimed! 200 PEPE each 🐸',
+    done: '跟單獎勵已領取！雙方各得 200 PEPE 🐸',
   },
 
   checkIn: {
-    title: 'Daily Check-in',
+    title: '每日簽到',
     description: '每日簽到領 50 PEPE，連續簽到每天 +10 PEPE，7 天封頂 110 PEPE。',
-    streak: '🔥 {days} day streak',
+    streak: '🔥 連續簽到 {days} 天',
     todayReward: '今日獎勵: {reward} PEPE',
     /** 按鈕的兩種狀態各自是完整的一句話，不是「簽到 +」加金額。 */
     alreadyCheckedIn: '✓ 今天已簽到',
     checkIn: '🐸 簽到 +{reward} PEPE',
     comeBack: '明天再來！明日獎勵: {reward} PEPE',
-    done: 'Checked in! 🐸',
+    done: '簽到成功！🐸',
   },
 
   /** 交易正在跑的時候按鈕上的字。 */
