@@ -10,6 +10,7 @@ import { useFundingData } from 'src/hooks/useFundingData';
 import { LineChart, Line, YAxis, ResponsiveContainer } from 'recharts';
 import { ASSET_IDS, getAddresses } from 'src/contracts/addresses';
 import { paths } from 'src/routes/paths';
+import { t, interpolate } from 'src/locales';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
 import { safeRead } from 'src/lib/pepefi/safeRead';
 import { STABLE_LABEL, ALT_STABLE_LABEL, X402_STABLE_LABEL } from 'src/lib/pepefi/tokenLabel';
@@ -438,7 +439,7 @@ export default function ExchangePage() {
   // swap 會在 oracle 過期（> maxOracleAge，預設 1h）時 revert StaleOraclePrice。
   // 和開倉的 stale 擋單同樣的道理：能在按下去之前就知道的事，不要讓使用者付 gas 才知道。
   const ammOracleStale = isOracleStale(ammOracle.updatedAt, ammMaxAge, Date.now() / 1000);
-  const AMM_STALE_MSG = '兌換池的參考預言機報價已過期，合約會拒絕兌換（StaleOraclePrice）。請等 keeper 更新價格後再試。';
+  const AMM_STALE_MSG = t.exchange.tx.ammStale;
 
   // ETH ↔ USDC swap via PepeAMM (constant product). minOut 一律以**當下的 quote**
   // 為基準打 DEFAULT_SLIPPAGE_BPS，而不是 oracle 價——池子有滑點，拿 oracle 價
@@ -447,7 +448,7 @@ export default function ExchangePage() {
   const doSwap = async () => {
     if (!contracts || !wallet.address || !ammDeployed) return;
     const amt = parseFloat(payAmount);
-    if (!amt || amt <= 0) { notify('Enter a valid amount', false); return; }
+    if (!amt || amt <= 0) { notify(t.exchange.tx.enterValidAmount, false); return; }
     // 事前擋掉必定 revert 的兩種情況，不讓使用者白付 gas。
     if (ammOracleStale) { notify(AMM_STALE_MSG, false); return; }
     const amm = String(contracts.pepeAMM.target);
@@ -460,12 +461,20 @@ export default function ExchangePage() {
         const minOut = minOutWithSlippage(quoted);
         const tx = asTx(await contracts.pepeAMM.swapETHForUSDC(minOut, { value: ethIn }));
         await tx.wait();
-        notify(`Swapped ${payAmount} ETH for ~${(Number(quoted) / 1e18).toFixed(2)} ${STABLE_LABEL} ✓`, true, tx.hash);
+        notify(
+          interpolate(t.exchange.tx.swappedEthForToken, {
+            amount: payAmount,
+            received: (Number(quoted) / 1e18).toFixed(2),
+            token: STABLE_LABEL,
+          }),
+          true,
+          tx.hash
+        );
       } else {
         const usdcIn = parseEther(payAmount);
         const currentAllowance = await contracts.usdc.allowance(wallet.address, amm) as bigint;
         if (currentAllowance < usdcIn) {
-          notify(`Approving ${STABLE_LABEL}…`, true);
+          notify(interpolate(t.exchange.tx.approving, { token: STABLE_LABEL }), true);
           const approveTx = asTx(await contracts.usdc.approve(amm, usdcIn));
           await approveTx.wait();
         }
@@ -473,7 +482,15 @@ export default function ExchangePage() {
         const minEthOut = minOutWithSlippage(quoted);
         const tx = asTx(await contracts.pepeAMM.swapUSDCForETH(usdcIn, minEthOut));
         await tx.wait();
-        notify(`Swapped ${payAmount} ${STABLE_LABEL} for ~${(Number(quoted) / 1e18).toFixed(6)} ETH ✓`, true, tx.hash);
+        notify(
+          interpolate(t.exchange.tx.swappedTokenForEth, {
+            amount: payAmount,
+            token: STABLE_LABEL,
+            received: (Number(quoted) / 1e18).toFixed(6),
+          }),
+          true,
+          tx.hash
+        );
       }
       setPayAmount('');
       await new Promise(r => setTimeout(r, 1500));
@@ -491,7 +508,7 @@ export default function ExchangePage() {
     try {
       const tx = asTx(await contracts.usdc.faucet());
       await tx.wait();
-      notify(`已領取測試 ${STABLE_LABEL} ✓ — 可在右側 Margin Account「Approve & Deposit」作為保證金`, true, tx.hash);
+      notify(interpolate(t.exchange.tx.faucetStable, { token: STABLE_LABEL }), true, tx.hash);
       await fetchAll();
     } catch (e) {
       notify(prettyError(e), false);
@@ -508,7 +525,11 @@ export default function ExchangePage() {
     try {
       const tx = asTx(await contracts.usdt.faucet());
       await tx.wait();
-      notify(`已領取測試 ${ALT_STABLE_LABEL} ✓ — 可持有與兌換；保證金請用 ${STABLE_LABEL}`, true, tx.hash);
+      notify(
+        interpolate(t.exchange.tx.faucetAltStable, { alt: ALT_STABLE_LABEL, token: STABLE_LABEL }),
+        true,
+        tx.hash
+      );
       await fetchAll();
     } catch (e) {
       notify(prettyError(e), false);
@@ -523,7 +544,7 @@ export default function ExchangePage() {
     try {
       const tx = asTx(await contracts.pepeToken.faucet());
       await tx.wait();
-      notify('已領取測試 PEPE ✓', true, tx.hash);
+      notify(t.exchange.tx.faucetPepe, true, tx.hash);
       await fetchAll();
     } catch (e) {
       notify(prettyError(e), false);
@@ -559,7 +580,11 @@ export default function ExchangePage() {
       await approveTx.wait();
       const depositTx = asTx(await contracts.exchange.depositMargin(amt));
       await depositTx.wait();
-      notify(`Deposited ${depositAmt} ${STABLE_LABEL} ✓`, true, depositTx.hash);
+      notify(
+        interpolate(t.exchange.tx.deposited, { amount: depositAmt, token: STABLE_LABEL }),
+        true,
+        depositTx.hash
+      );
       setDepositAmt('');
       await fetchAll();
     } catch (e) {
@@ -575,7 +600,11 @@ export default function ExchangePage() {
     try {
       const tx = asTx(await contracts.exchange.withdrawMargin(amt));
       await tx.wait();
-      notify(`Withdrew ${withdrawAmt} ${STABLE_LABEL} ✓`, true, tx.hash);
+      notify(
+        interpolate(t.exchange.tx.withdrew, { amount: withdrawAmt, token: STABLE_LABEL }),
+        true,
+        tx.hash
+      );
       setWithdrawAmt('');
       await fetchAll();
     } catch (e) {
@@ -586,9 +615,9 @@ export default function ExchangePage() {
   const openPosition = async () => {
     if (!contracts) return;
     const amt = tryParse(openMgn);
-    if (!amt) { notify('Enter a valid margin', false); return; }
+    if (!amt) { notify(t.exchange.tx.enterValidMargin, false); return; }
     if (amt > freeMgn) {
-      notify('保證金不足，請先在 Margin Account 區塊 Approve & Deposit', false);
+      notify(t.exchange.tx.insufficientMargin, false);
       return;
     }
     // F-1：鏈上價過期時 openPosition 會 revert StalePrice。按鈕已經是 disabled，
@@ -599,7 +628,14 @@ export default function ExchangePage() {
       const execFee = (await contracts.exchange.executionFee()) as bigint;
       const tx = asTx(await contracts.exchange.openPosition(selAsset, isLong, amt, BigInt(leverage), { value: execFee }));
       await tx.wait();
-      notify(`${isLong ? 'Long' : 'Short'} ${ASSET_LABEL[selAsset] ?? selAsset} opened ✓`, true, tx.hash);
+      notify(
+        interpolate(t.exchange.tx.positionOpened, {
+          side: isLong ? t.exchange.side.long : t.exchange.side.short,
+          asset: ASSET_LABEL[selAsset] ?? selAsset,
+        }),
+        true,
+        tx.hash
+      );
       setOpenMgn('');
       await fetchAll();
     } catch (e) {
@@ -621,7 +657,7 @@ export default function ExchangePage() {
     try {
       const tx = asTx(await contracts.exchange.closePosition(id));
       await tx.wait();
-      notify('Position closed ✓', true, tx.hash);
+      notify(t.exchange.tx.positionClosed, true, tx.hash);
       await fetchAll();
     } catch (e) {
       notify(prettyError(e), false);
@@ -636,7 +672,7 @@ export default function ExchangePage() {
       const tx = asTx(await contracts.esgRewardDistributor.claimEsgReward(id));
       await tx.wait();
       setEsgRewardedMap(prev => ({ ...prev, [String(id)]: true }));
-      notify('🌱 ESG 獎勵領取成功！', true, tx.hash);
+      notify(t.exchange.tx.esgClaimed, true, tx.hash);
     } catch (e) {
       notify(prettyError(e), false);
     } finally { setLoad(key, false); }
@@ -679,21 +715,21 @@ export default function ExchangePage() {
 
   const activeTask = Object.entries(busy).find(([_, v]) => v)?.[0];
   const isBusy = !!activeTask;
-  let loadingMsg = 'Processing transaction...';
+  let loadingMsg = t.exchange.loading.fallback;
   if (activeTask) {
-    if (activeTask === 'swap') loadingMsg = swapMode === 'eth-to-usdc' ? `Swapping ETH to ${STABLE_LABEL}…` : `Swapping ${STABLE_LABEL} to ETH…`;
-    else if (activeTask === 'faucet') loadingMsg = `Claiming test ${STABLE_LABEL}…`;
-    else if (activeTask === 'pepe') loadingMsg = 'Claiming test PEPE…';
-    else if (activeTask === 'deposit') loadingMsg = 'Depositing Margin...';
-    else if (activeTask === 'withdraw') loadingMsg = 'Withdrawing Margin...';
-    else if (activeTask === 'open') loadingMsg = 'Opening Position...';
-    else if (activeTask.startsWith('close')) loadingMsg = 'Closing Position...';
+    if (activeTask === 'swap') loadingMsg = interpolate(swapMode === 'eth-to-usdc' ? t.exchange.loading.swapEthToToken : t.exchange.loading.swapTokenToEth, { token: STABLE_LABEL });
+    else if (activeTask === 'faucet') loadingMsg = interpolate(t.exchange.loading.faucetStable, { token: STABLE_LABEL });
+    else if (activeTask === 'pepe') loadingMsg = t.exchange.loading.faucetPepe;
+    else if (activeTask === 'deposit') loadingMsg = t.exchange.loading.deposit;
+    else if (activeTask === 'withdraw') loadingMsg = t.exchange.loading.withdraw;
+    else if (activeTask === 'open') loadingMsg = t.exchange.loading.open;
+    else if (activeTask.startsWith('close')) loadingMsg = t.exchange.loading.close;
   }
 
   if (!wallet.isConnected) {
     return (
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-        <Typography color="text.secondary">Connect wallet to access the exchange.</Typography>
+        <Typography color="text.secondary">{t.exchange.connectWallet}</Typography>
       </Box>
     );
   }

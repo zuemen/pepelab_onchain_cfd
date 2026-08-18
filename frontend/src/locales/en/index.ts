@@ -3,6 +3,7 @@ import type { Catalog } from '../zh-TW';
 import { nav } from './nav';
 import { meta } from './meta';
 import { errors } from './errors';
+import { exchange } from './exchange';
 import { portfolio } from './portfolio';
 import { freshness } from './freshness';
 
@@ -21,6 +22,7 @@ const en: Catalog = {
   errors,
   freshness,
   portfolio,
+  exchange,
 };
 
 export default en;
