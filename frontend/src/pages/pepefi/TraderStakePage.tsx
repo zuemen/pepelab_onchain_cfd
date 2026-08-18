@@ -4,6 +4,7 @@ import { Link as RouterLink } from 'react-router'
 import { parseEther } from 'ethers'
 import { useContracts } from 'src/hooks/useContracts'
 import { usePepefiWallet } from 'src/layouts/pepefi'
+import { t, interpolate } from 'src/locales'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { STABLE_LABEL } from 'src/lib/pepefi/tokenLabel'
 
@@ -112,10 +113,10 @@ export default function TraderStakePage() {
           },
         },
       })
-      notify('已將 PEPE 代幣合約成功加入您的 Metamask！ 🦊🐸', true)
+      notify(t.stake.farm.addedToWallet, true)
     } catch (e) {
       console.error('Add PEPE failed', e)
-      notify('新增代幣失敗，請手動複製合約地址。', false)
+      notify(t.stake.farm.addToWalletFailed, false)
     }
   }
 
@@ -153,14 +154,14 @@ export default function TraderStakePage() {
   const doApproveAndStake = async () => {
     if (!contracts || !wallet.address) return
     const amt = parseEther(stakeInput || '0')
-    if (amt === 0n) { notify('Enter a valid amount', false); return }
+    if (amt === 0n) { notify(t.stake.add.enterAmount, false); return }
     setLoad('stake', true)
     try {
       const approveTx = asTx(await contracts.usdc.approve(String(contracts.traderStake.target), amt))
       await approveTx.wait()
       const stakeTx = asTx(await contracts.traderStake.stake(amt))
       await stakeTx.wait()
-      notify('Staked successfully ✓', true, stakeTx.hash)
+      notify(t.stake.add.done, true, stakeTx.hash)
       await fetchAll()
     } catch (e) {
       notify(prettyError(e), false)
@@ -170,12 +171,12 @@ export default function TraderStakePage() {
   const doRequestUnstake = async () => {
     if (!contracts) return
     const amt = parseEther(unstakeAmt || '0')
-    if (amt === 0n) { notify('Enter amount to unstake', false); return }
+    if (amt === 0n) { notify(t.stake.unstake.enterAmount, false); return }
     setLoad('reqUnstake', true)
     try {
       const tx = asTx(await contracts.traderStake.requestUnstake(amt))
       await tx.wait()
-      notify('Unstake requested ✓ — wait 24 h then execute', true, tx.hash)
+      notify(t.stake.unstake.requested, true, tx.hash)
       await fetchAll()
     } catch (e) {
       notify(prettyError(e), false)
@@ -188,7 +189,7 @@ export default function TraderStakePage() {
     try {
       const tx = asTx(await contracts.traderStake.executeUnstake())
       await tx.wait()
-      notify('Unstake executed ✓', true, tx.hash)
+      notify(t.stake.unstake.executed, true, tx.hash)
       await fetchAll()
     } catch (e) {
       notify(prettyError(e), false)
@@ -201,7 +202,7 @@ export default function TraderStakePage() {
     try {
       const tx = asTx(await contracts.traderStake.cancelUnstake())
       await tx.wait()
-      notify('Unstake cancelled ✓', true, tx.hash)
+      notify(t.stake.unstake.cancelled, true, tx.hash)
       await fetchAll()
     } catch (e) {
       notify(prettyError(e), false)
@@ -254,7 +255,7 @@ export default function TraderStakePage() {
                 color="inherit"
                 sx={{ display: 'block', mt: 0.5, typography: 'caption', textDecoration: 'underline' }}
               >
-                View on {explorerName(wallet.chainId)} ↗
+                {interpolate(t.stake.viewOn, { explorer: explorerName(wallet.chainId) })}
               </Link>
             )}
           </Alert>
@@ -265,7 +266,7 @@ export default function TraderStakePage() {
       <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-            Your Stake
+            {t.stake.current.title}
           </Typography>
           <Button
             variant="text"
@@ -273,7 +274,7 @@ export default function TraderStakePage() {
             onClick={() => void fetchAll()}
             sx={{ textTransform: 'none' }}
           >
-            ↺ Refresh
+            {t.stake.current.refresh}
           </Button>
         </Box>
 
@@ -281,7 +282,7 @@ export default function TraderStakePage() {
           <Grid size={{ xs: 6 }}>
             <Card sx={{ p: 2, bgcolor: 'background.neutral' }}>
               <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold', display: 'block', mb: 0.5 }}>
-                Staked
+                {t.stake.current.staked}
               </Typography>
               <Typography variant="h5" sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'text.primary' }}>
                 {info ? f18(info.amount) : '…'}
@@ -292,7 +293,7 @@ export default function TraderStakePage() {
           <Grid size={{ xs: 6 }}>
             <Card sx={{ p: 2, bgcolor: 'background.neutral' }}>
               <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold', display: 'block', mb: 0.5 }}>
-                Total Slashed
+                {t.stake.current.totalSlashed}
               </Typography>
               <Typography variant="h5" sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'error.main' }}>
                 {info ? f18(info.totalSlashed) : '…'}
@@ -306,10 +307,12 @@ export default function TraderStakePage() {
         <Stack spacing={1}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold' }}>
-              Reputation Score
+              {t.stake.current.reputation}
             </Typography>
             <Typography variant="subtitle1" sx={{ fontFamily: MONO, fontWeight: 'bold', color: repBarColor }}>
-              {repScore !== null ? `${String(repScore)} / 100` : '…'}
+              {repScore !== null
+                ? interpolate(t.stake.current.reputationValue, { score: String(repScore) })
+                : '…'}
             </Typography>
           </Box>
           <Box sx={{ h: 8, bgcolor: 'background.neutral', borderRadius: 1, overflow: 'hidden' }}>
@@ -323,14 +326,18 @@ export default function TraderStakePage() {
             />
           </Box>
           <Typography variant="caption" color="text.secondary">
-            Formula: stake × 100 ÷ (stake + totalSlashed × 5)
+            {t.stake.current.formula}
           </Typography>
         </Stack>
 
         {/* Eligibility badge */}
         {eligible !== null && (
           <Chip
-            label={eligible ? '✓ Eligible to publish strategies' : `✗ Need 100 ${STABLE_LABEL} stake`}
+            label={
+              eligible
+                ? t.stake.current.eligible
+                : interpolate(t.stake.current.notEligible, { token: STABLE_LABEL })
+            }
             color={eligible ? 'success' : 'error'}
             variant="outlined"
             size="small"
@@ -339,7 +346,10 @@ export default function TraderStakePage() {
         )}
 
         <Typography variant="caption" color="text.secondary">
-          Minimum stake: {f18(minStake)} {STABLE_LABEL} · Skin-in-the-game for your followers
+          {interpolate(t.stake.current.minimum, {
+            amount: f18(minStake),
+            token: STABLE_LABEL,
+          })}
         </Typography>
       </Card>
 
@@ -378,11 +388,11 @@ export default function TraderStakePage() {
             <Typography variant="h5" sx={{ fontSize: '1.5rem', cursor: 'default' }}>🌾</Typography>
             <Box>
               <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'success.light', display: 'flex', alignItems: 'center', gap: 1 }}>
-                PEPE 收益農場
-                <Chip label="鏈上聯動實時挖礦" color="success" size="small" sx={{ height: 18, fontSize: '0.65rem', fontWeight: 'bold' }} />
+                {t.stake.farm.title}
+                <Chip label={t.stake.farm.chip} color="success" size="small" sx={{ height: 18, fontSize: '0.65rem', fontWeight: 'bold' }} />
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                依 {STABLE_LABEL} 聲譽質押試算 PEPE 產出（展示用，尚未接上鏈上獎勵池）
+                {interpolate(t.stake.farm.subtitle, { token: STABLE_LABEL })}
               </Typography>
             </Box>
           </Stack>
@@ -391,7 +401,7 @@ export default function TraderStakePage() {
               ⚡ 0.73% APR
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              穩健收益率
+              {t.stake.farm.aprLabel}
             </Typography>
           </Box>
         </Box>
@@ -401,7 +411,7 @@ export default function TraderStakePage() {
             <Grid size={{ xs: 6 }}>
               <Box sx={{ textAlign: 'center' }}>
                 <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold', display: 'block', mb: 0.5, letterSpacing: 0.8 }}>
-                  待收割 PEPE 收益 (Pending)
+                  {t.stake.farm.pending}
                 </Typography>
                 <Typography 
                   variant="h5" 
@@ -419,7 +429,7 @@ export default function TraderStakePage() {
             <Grid size={{ xs: 6 }}>
               <Box sx={{ textAlign: 'center', borderLeft: '1px solid rgba(255,255,255,0.08)' }}>
                 <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold', display: 'block', mb: 0.5, letterSpacing: 0.8 }}>
-                  錢包鏈上 PEPE 餘額 (Wallet)
+                  {t.stake.farm.walletBalance}
                 </Typography>
                 <Typography variant="h5" sx={{ fontFamily: MONO, fontWeight: 'bold', color: '#ffb300' }}>
                   🪙 {onChainPepeBalance !== null ? f18(onChainPepeBalance, 0) : '0'}
@@ -429,8 +439,11 @@ export default function TraderStakePage() {
           </Grid>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mt: 1.5 }}>
             {info && info.amount > 0n
-              ? `依質押的 ${f18(info.amount)} ${STABLE_LABEL} 累計（展示用）`
-              : `⚠️ 您目前尚未質押 ${STABLE_LABEL}`}
+              ? interpolate(t.stake.farm.accruedFrom, {
+                  amount: f18(info.amount),
+                  token: STABLE_LABEL,
+                })
+              : interpolate(t.stake.farm.notStaked, { token: STABLE_LABEL })}
           </Typography>
           <Typography variant="caption" color="warning.main" sx={{ display: 'block', textAlign: 'center', mt: 0.5 }}>
             ⚠ 此數字為前端依質押量與時間試算的<b>展示值</b>，鏈上沒有對應的獎勵池，
@@ -444,7 +457,7 @@ export default function TraderStakePage() {
             color="success"
             size="large"
             disabled={!HARVEST_ENABLED}
-            title="尚未接上獎勵來源合約（PepeStaking 未部署），此為展示用累計"
+            title={t.stake.farm.harvestDisabledHint}
             sx={{
               flexGrow: 2,
               py: 1.5,
@@ -459,7 +472,7 @@ export default function TraderStakePage() {
               }
             }}
           >
-            🌾 收割（展示用 · 尚未啟用）
+            {t.stake.farm.harvest}
           </Button>
           
           <Button
@@ -476,7 +489,7 @@ export default function TraderStakePage() {
               }
             }}
           >
-            🦊 加 Metamask
+            {t.stake.farm.addToWallet}
           </Button>
         </Stack>
 
@@ -490,17 +503,16 @@ export default function TraderStakePage() {
       {/* ─── B. Stake More ───────────────────────────────────────────────── */}
       <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
         <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-          Stake {STABLE_LABEL}
+          {interpolate(t.stake.add.title, { token: STABLE_LABEL })}
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          Staking puts your capital at risk — followers can trigger slashing if your strategy causes &gt; 30% loss.
-          In return, you earn credibility (reputation score) and can publish strategies.
+          {t.stake.add.description}
         </Typography>
         <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
           <TextField
             type="number"
             size="small"
-            placeholder="100"
+            placeholder={t.stake.add.placeholder}
             value={stakeInput}
             onChange={e => setStakeInput(e.target.value)}
             slotProps={{ htmlInput: { min: "100", step: "100", style: { fontFamily: MONO } } }}
@@ -513,7 +525,7 @@ export default function TraderStakePage() {
             disabled={busy['stake'] || !stakeInput}
             sx={{ flexGrow: 1 }}
           >
-            {busy['stake'] ? 'Staking…' : 'Approve + Stake'}
+            {busy['stake'] ? t.stake.add.staking : t.stake.add.cta}
           </Button>
         </Box>
       </Card>
@@ -521,16 +533,21 @@ export default function TraderStakePage() {
       {/* ─── C. Unstake Request ──────────────────────────────────────────── */}
       <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
         <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-          Unstake (24 h cooldown)
+          {t.stake.unstake.title}
         </Typography>
 
         {info && info.unstakeAmount > 0n ? (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <Alert severity="warning">
               <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
-                Pending unstake: {f18(info.unstakeAmount)} {STABLE_LABEL}
+                {interpolate(t.stake.unstake.pending, {
+                  amount: f18(info.unstakeAmount),
+                  token: STABLE_LABEL,
+                })}
               </Typography>
-              {canExecute ? 'Cooldown elapsed — ready to execute.' : `Available at: ${cooldownEnds}`}
+              {canExecute
+                ? t.stake.unstake.ready
+                : interpolate(t.stake.unstake.availableAt, { when: cooldownEnds ?? '' })}
             </Alert>
             <Box sx={{ display: 'flex', gap: 2 }}>
               <Button
@@ -540,7 +557,7 @@ export default function TraderStakePage() {
                 disabled={!canExecute || busy['execUnstake']}
                 sx={{ flexGrow: 1 }}
               >
-                {busy['execUnstake'] ? 'Executing…' : 'Execute Unstake'}
+                {busy['execUnstake'] ? t.stake.unstake.executing : t.stake.unstake.execute}
               </Button>
               <Button
                 variant="outlined"
@@ -548,18 +565,18 @@ export default function TraderStakePage() {
                 disabled={busy['cancelUnstake']}
                 sx={{ flexGrow: 1 }}
               >
-                {busy['cancelUnstake'] ? 'Cancelling…' : 'Cancel'}
+                {busy['cancelUnstake'] ? t.stake.unstake.cancelling : t.stake.unstake.cancel}
               </Button>
             </Box>
           </Box>
         ) : (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <Typography variant="body2" color="text.secondary">Request unstake — funds unlock after 24 h cooldown.</Typography>
+            <Typography variant="body2" color="text.secondary">{t.stake.unstake.description}</Typography>
             <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
               <TextField
                 type="number"
                 size="small"
-                placeholder="50"
+                placeholder={t.stake.unstake.placeholder}
                 value={unstakeAmt}
                 onChange={e => setUnstakeAmt(e.target.value)}
                 slotProps={{ htmlInput: { min: "0", step: "50", style: { fontFamily: MONO } } }}
@@ -572,7 +589,7 @@ export default function TraderStakePage() {
                 disabled={busy['reqUnstake'] || !unstakeAmt}
                 sx={{ flexGrow: 1 }}
               >
-                {busy['reqUnstake'] ? 'Requesting…' : 'Request Unstake'}
+                {busy['reqUnstake'] ? t.stake.unstake.requesting : t.stake.unstake.request}
               </Button>
             </Box>
           </Box>
@@ -582,32 +599,32 @@ export default function TraderStakePage() {
       {/* ─── Info ────────────────────────────────────────────────────── */}
       <Card sx={{ p: 3, bgcolor: 'rgba(0, 184, 217, 0.08)', border: '1px solid', borderColor: 'rgba(0, 184, 217, 0.16)' }}>
         <Typography variant="subtitle2" color="info.lighter" sx={{ fontWeight: 'bold', mb: 1 }}>
-          How Trader Stake works
+          {t.stake.info.title}
         </Typography>
         <Stack spacing={1} sx={{ typography: 'caption', color: 'text.secondary', mb: 2 }}>
           <Box sx={{ display: 'flex', gap: 1 }}>
             <Box component="span" sx={{ color: 'info.main', fontWeight: 'bold' }}>•</Box>
-            <Box>Stake ≥ 100 {STABLE_LABEL} to publish strategies on the Marketplace.</Box>
+            <Box>{interpolate(t.stake.info.publish, { token: STABLE_LABEL })}</Box>
           </Box>
           <Box sx={{ display: 'flex', gap: 1 }}>
             <Box component="span" sx={{ color: 'info.main', fontWeight: 'bold' }}>•</Box>
-            <Box>If a follower suffers &gt; 30% loss, 50% of that loss amount (capped at 50% of your stake) is slashed and sent to them.</Box>
+            <Box>{t.stake.info.slashing}</Box>
           </Box>
           <Box sx={{ display: 'flex', gap: 1 }}>
             <Box component="span" sx={{ color: 'info.main', fontWeight: 'bold' }}>•</Box>
-            <Box>Reputation = stake × 100 ÷ (stake + totalSlashed × 5) — degrades as you get slashed.</Box>
+            <Box>{t.stake.info.reputation}</Box>
           </Box>
           <Box sx={{ display: 'flex', gap: 1 }}>
             <Box component="span" sx={{ color: 'info.main', fontWeight: 'bold' }}>•</Box>
-            <Box>Unstaking requires a 24-hour cooldown.</Box>
+            <Box>{t.stake.info.cooldown}</Box>
           </Box>
         </Stack>
         <Box sx={{ display: 'flex', gap: 2 }}>
           <Link component={RouterLink} to="/marketplace" color="info.main" sx={{ fontSize: '0.75rem', fontWeight: 'bold', textDecoration: 'underline' }}>
-            ← Back to Marketplace
+            {t.stake.info.backToMarketplace}
           </Link>
           <Link component={RouterLink} to="/trader" color="info.main" sx={{ fontSize: '0.75rem', fontWeight: 'bold', textDecoration: 'underline' }}>
-            Trader Dashboard →
+            {t.stake.info.traderDashboard}
           </Link>
         </Box>
       </Card>

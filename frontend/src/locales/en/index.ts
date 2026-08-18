@@ -6,6 +6,7 @@ import { nav } from './nav';
 import { x402 } from './x402';
 import { pepe } from './pepe';
 import { meta } from './meta';
+import { stake } from './stake';
 import { vault } from './vault';
 import { whale } from './whale';
 import { admin } from './admin';
@@ -51,6 +52,7 @@ const en: Catalog = {
   landing,
   common,
   kyc,
+  stake,
 };
 
 export default en;
