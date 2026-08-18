@@ -2,6 +2,8 @@ import { MONO, LiveDot } from 'src/components/pepefi/brandKit'
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { formatUnits } from 'ethers'
 
+import { t, locale, interpolate } from 'src/locales'
+
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import Chip from '@mui/material/Chip'
@@ -96,7 +98,7 @@ function isRevenueShape(v: unknown): v is Revenue {
 const fUsdc = (v: bigint) => Number(formatUnits(v, 18)).toLocaleString('en-US', { maximumFractionDigits: 2 })
 const fPrice8 = (p: bigint) => '$' + (Number(p) / 1e8).toLocaleString('en-US', { maximumFractionDigits: 2 })
 const fDate = (ts: bigint) =>
-  ts === 0n ? '—' : new Date(Number(ts) * 1000).toLocaleString('zh-TW', { dateStyle: 'short', timeStyle: 'short' })
+  ts === 0n ? '—' : new Date(Number(ts) * 1000).toLocaleString(locale, { dateStyle: 'short', timeStyle: 'short' })
 const short = (a: string) => `${a.slice(0, 8)}…${a.slice(-6)}`
 
 // ERC-8126 風險分數越低越安全；對應 SSL「綠鎖」式信任色。
@@ -133,7 +135,7 @@ export default function AgentMonitorPage() {
 
   const fetchVerification = useCallback(async (didOrAddr: string) => {
     const q = didOrAddr.trim()
-    if (!q) { setVErr('請輸入 agent 地址或 did:pkh'); return }
+    if (!q) { setVErr(t.admin.agent.verification.enterQuery); return }
     setVLoading(true)
     try {
       const res = await fetch(`${revUrl.replace(/\/$/, '')}/agent/${encodeURIComponent(q)}/verification`)
@@ -143,7 +145,7 @@ export default function AgentMonitorPage() {
       setVErr(null)
     } catch (e) {
       setVerif(null)
-      setVErr(e instanceof Error ? e.message : 'fetch failed')
+      setVErr(e instanceof Error ? e.message : t.admin.agent.verification.fetchFailed)
     } finally {
       setVLoading(false)
     }
@@ -209,7 +211,7 @@ export default function AgentMonitorPage() {
       setRevErr(null)
     } catch (e) {
       setRevenue(null)
-      setRevErr(e instanceof Error ? e.message : 'fetch failed')
+      setRevErr(e instanceof Error ? e.message : t.admin.agent.verification.fetchFailed)
     }
   }, [revUrl])
 
@@ -224,11 +226,13 @@ export default function AgentMonitorPage() {
   // risk helpers
   const utilPct = (s: SessionRisk) => (s.budget === 0n ? 0 : Math.min(100, (Number(s.spent) / Number(s.budget)) * 100))
   const sessionStatus = (s: SessionRisk): { label: string; color: 'success' | 'warning' | 'error' | 'default' } => {
-    if (s.revoked) return { label: 'Revoked', color: 'default' }
-    if (Number(s.expiry) * 1000 < Date.now()) return { label: 'Expired', color: 'warning' }
-    if (utilPct(s) >= 80) return { label: 'High use', color: 'error' }
-    if (Number(s.expiry) * 1000 - Date.now() < 3600_000) return { label: 'Expiring', color: 'warning' }
-    return { label: 'Active', color: 'success' }
+    const status = t.admin.agent.sessions.status
+    if (s.revoked) return { label: status.revoked, color: 'default' }
+    if (Number(s.expiry) * 1000 < Date.now()) return { label: status.expired, color: 'warning' }
+    if (utilPct(s) >= 80) return { label: status.highUse, color: 'error' }
+    if (Number(s.expiry) * 1000 - Date.now() < 3600_000)
+      return { label: status.expiring, color: 'warning' }
+    return { label: status.active, color: 'success' }
   }
 
   const activeCount = sessions.filter(s => !s.revoked && Number(s.expiry) * 1000 >= Date.now()).length
@@ -237,7 +241,7 @@ export default function AgentMonitorPage() {
   if (!wallet.isConnected) {
     return (
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-        <Typography color="text.secondary">Connect wallet to view the agent monitor.</Typography>
+        <Typography color="text.secondary">{t.admin.agent.connectWallet}</Typography>
       </Box>
     )
   }
@@ -246,12 +250,12 @@ export default function AgentMonitorPage() {
     <Container maxWidth="lg" sx={{ py: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
       <Box>
         <Stack direction="row" alignItems="center" spacing={1}>
-          <Typography variant="h4" sx={{ fontWeight: 'bold' }}>📊 Agent Risk Monitor</Typography>
+          <Typography variant="h4" sx={{ fontWeight: 'bold' }}>{t.admin.agent.title}</Typography>
           <LiveDot />
-          <Typography variant="caption" sx={{ fontFamily: MONO, color: 'primary.main', letterSpacing: 1 }}>LIVE</Typography>
+          <Typography variant="caption" sx={{ fontFamily: MONO, color: 'primary.main', letterSpacing: 1 }}>{t.admin.agent.live}</Typography>
         </Stack>
         <Typography variant="body2" color="text.secondary">
-          監控 AI agent 經濟：委派 session 的限額使用、x402 收入分潤、預言機健康度。唯讀。
+          {t.admin.agent.subtitle}
         </Typography>
       </Box>
 
@@ -260,21 +264,19 @@ export default function AgentMonitorPage() {
       {/* Risk disclosure — be honest about live solvency backstops */}
       <Alert severity="info" variant="outlined">
         <Typography variant="caption" sx={{ display: 'block' }}>
-          <b>償付後盾揭露</b>：ADL（自動減倉）與組合保證金<b>已實作、由旗標控管</b>，本測試網部署
-          目前<b>預設關閉</b>（線上跑逐倉清算 + 保險金庫 bailout）。極端行情下，在 ADL 啟用前協議
-          作為對手方仍有償付風險——本頁數據不代表線上償付無虞。詳見 docs/RISK_NOTES.md。
+          {t.admin.agent.disclosure}
         </Typography>
       </Alert>
 
       {/* KPI row */}
       <Grid container spacing={2}>
         {[
-          { label: 'Chain', value: wallet.chainId ? (CHAIN_NAMES[wallet.chainId] ?? `#${wallet.chainId}`) : '—' },
-          { label: 'Active sessions', value: deployed ? String(activeCount) : '—' },
-          { label: 'Stale feeds', value: `${staleCount}/${oracle.length || '—'}` },
-          { label: 'Vault assets (USDC)', value: vault ? Number(formatUnits(vault.assets, 18)).toLocaleString(undefined, { maximumFractionDigits: 0 }) : '—' },
-          { label: 'Vault px (USDC/pIV)', value: vault ? Number(formatUnits(vault.sharePrice, 18)).toFixed(4) : '—' },
-          { label: 'x402 fees (USD)', value: revenue ? revenue.totals.feeUsd.toFixed(3) : '—' },
+          { label: t.admin.agent.kpi.chain, value: wallet.chainId ? (CHAIN_NAMES[wallet.chainId] ?? `#${wallet.chainId}`) : '—' },
+          { label: t.admin.agent.kpi.activeSessions, value: deployed ? String(activeCount) : '—' },
+          { label: t.admin.agent.kpi.staleFeeds, value: `${staleCount}/${oracle.length || '—'}` },
+          { label: t.admin.agent.kpi.vaultAssets, value: vault ? Number(formatUnits(vault.assets, 18)).toLocaleString(undefined, { maximumFractionDigits: 0 }) : '—' },
+          { label: t.admin.agent.kpi.vaultPrice, value: vault ? Number(formatUnits(vault.sharePrice, 18)).toFixed(4) : '—' },
+          { label: t.admin.agent.kpi.x402Fees, value: revenue ? revenue.totals.feeUsd.toFixed(3) : '—' },
         ].map(k => (
           <Grid key={k.label} size={{ xs: 6, md: 3 }}>
             <Card sx={{ p: 2 }}>
@@ -288,22 +290,34 @@ export default function AgentMonitorPage() {
       {/* Sessions risk */}
       <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="h6" sx={{ fontWeight: 'bold' }}>Delegated Sessions</Typography>
-          <Button variant="text" size="small" onClick={() => void fetchSessions()} sx={{ textTransform: 'none' }}>↺ Refresh</Button>
+          <Typography variant="h6" sx={{ fontWeight: 'bold' }}>{t.admin.agent.sessions.title}</Typography>
+          <Button variant="text" size="small" onClick={() => void fetchSessions()} sx={{ textTransform: 'none' }}>{t.admin.agent.sessions.refresh}</Button>
         </Box>
         {!deployed ? (
           <Alert severity="warning">
-            請切換到 <b>Base Sepolia</b>（chainId 84532）以檢視 agent sessions。目前網路：
-            <b>{wallet.chainId !== null ? (CHAIN_NAMES[wallet.chainId] ?? `chainId ${wallet.chainId}`) : '未連線'}</b>。
+            {interpolate(t.admin.agent.sessions.wrongNetwork, {
+              chain:
+                wallet.chainId !== null
+                  ? (CHAIN_NAMES[wallet.chainId] ?? `chainId ${wallet.chainId}`)
+                  : t.admin.agent.sessions.notConnected,
+            })}
           </Alert>
         ) : sessions.length === 0 ? (
-          <Typography variant="body2" color="text.secondary">尚無 session。</Typography>
+          <Typography variant="body2" color="text.secondary">{t.admin.agent.sessions.empty}</Typography>
         ) : (
           <TableContainer>
             <Table size="small">
               <TableHead>
                 <TableRow sx={{ bgcolor: 'background.neutral' }}>
-                  {['#', 'User', 'Agent', 'Budget use', 'Max lev', 'Expiry', 'Status'].map(h => (
+                  {[
+                    t.admin.agent.sessions.column.id,
+                    t.admin.agent.sessions.column.user,
+                    t.admin.agent.sessions.column.agent,
+                    t.admin.agent.sessions.column.budgetUse,
+                    t.admin.agent.sessions.column.maxLeverage,
+                    t.admin.agent.sessions.column.expiry,
+                    t.admin.agent.sessions.column.status,
+                  ].map(h => (
                     <TableCell key={h} sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{h}</TableCell>
                   ))}
                 </TableRow>
@@ -346,9 +360,9 @@ export default function AgentMonitorPage() {
       <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
           <Box>
-            <Typography variant="h6" sx={{ fontWeight: 'bold' }}>Agent Verification (ERC-8126)</Typography>
+            <Typography variant="h6" sx={{ fontWeight: 'bold' }}>{t.admin.agent.verification.title}</Typography>
             <Typography variant="caption" color="text.secondary">
-              「這個 agent 可不可信？」— ETV / SCV / WAV / WV 四項檢查 + 統一 0–100 風險分數（越低越安全），verifier 簽章。
+              {t.admin.agent.verification.description}
             </Typography>
           </Box>
         </Box>
@@ -356,21 +370,28 @@ export default function AgentMonitorPage() {
           <TextField
             size="small"
             fullWidth
-            label="agent 地址或 did:pkh"
+            label={t.admin.agent.verification.inputLabel}
             value={vDid}
             onChange={e => setVDid(e.target.value)}
-            placeholder="0x… 或 did:pkh:eip155:84532:0x…"
+            placeholder={t.admin.agent.verification.inputPlaceholder}
           />
           <Button variant="outlined" disabled={vLoading} onClick={() => void fetchVerification(vDid)} sx={{ textTransform: 'none' }}>
-            {vLoading ? '驗證中…' : 'Verify'}
+            {vLoading ? t.admin.agent.verification.verifying : t.admin.agent.verification.verify}
           </Button>
         </Stack>
-        {vErr && <Alert severity="warning">無法取得驗證（{vErr}）。請確認 signal-api URL，並見 docs/AGENT_ECONOMY_STANDARDS.md。</Alert>}
+        {vErr && (
+          <Alert severity="warning">
+            {interpolate(t.admin.agent.verification.failed, { error: vErr })}
+          </Alert>
+        )}
         {verif && (
           <Stack spacing={2}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
               <Chip
-                label={`風險 ${verif.overallRiskScore}/100 · ${verif.riskTier.toUpperCase()}`}
+                label={interpolate(t.admin.agent.verification.riskChip, {
+                  score: verif.overallRiskScore,
+                  tier: verif.riskTier.toUpperCase(),
+                })}
                 color={tierColor(verif.riskTier)}
                 sx={{ fontFamily: MONO, fontWeight: 'bold' }}
               />
@@ -383,14 +404,23 @@ export default function AgentMonitorPage() {
                   size="small"
                   variant="outlined"
                   color={checkColor(c)}
-                  label={`${c.type} ${c.applicable ? c.score : 'N/A'}`}
-                  title={`${c.name}: ${c.details}`}
+                  label={interpolate(t.admin.agent.verification.checkChip, {
+                    type: c.type,
+                    score: c.applicable ? c.score : t.admin.agent.verification.checkNotApplicable,
+                  })}
+                  title={interpolate(t.admin.agent.verification.checkTooltip, {
+                    name: c.name,
+                    details: c.details,
+                  })}
                   sx={{ fontFamily: MONO }}
                 />
               ))}
             </Stack>
             <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
-              subject: {short(verif.subject.replace(/^did:pkh:eip155:\d+:/, ''))} · verifier: {short(verif.verifier.replace(/^did:pkh:eip155:\d+:/, ''))}
+              {interpolate(t.admin.agent.verification.identity, {
+                subject: short(verif.subject.replace(/^did:pkh:eip155:\d+:/, '')),
+                verifier: short(verif.verifier.replace(/^did:pkh:eip155:\d+:/, '')),
+              })}
             </Typography>
           </Stack>
         )}
@@ -400,34 +430,36 @@ export default function AgentMonitorPage() {
         {/* x402 revenue */}
         <Grid size={{ xs: 12, md: 6 }}>
           <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2, height: '100%' }}>
-            <Typography variant="h6" sx={{ fontWeight: 'bold' }}>x402 Revenue (70/20/10)</Typography>
+            <Typography variant="h6" sx={{ fontWeight: 'bold' }}>{t.admin.agent.revenue.title}</Typography>
             <Stack direction="row" spacing={1}>
-              <TextField size="small" fullWidth label="signal-api URL" value={revUrl} onChange={e => setRevUrl(e.target.value)} />
-              <Button variant="outlined" onClick={() => void fetchRevenue()} sx={{ textTransform: 'none' }}>Fetch</Button>
+              <TextField size="small" fullWidth label={t.admin.agent.revenue.urlLabel} value={revUrl} onChange={e => setRevUrl(e.target.value)} />
+              <Button variant="outlined" onClick={() => void fetchRevenue()} sx={{ textTransform: 'none' }}>{t.admin.agent.revenue.fetch}</Button>
             </Stack>
             {revErr ? (
-              <Alert severity="warning">無法連到 signal-api（{revErr}）。請先 <code>npm run signal-api</code>。</Alert>
+              <Alert severity="warning">
+                {interpolate(t.admin.agent.revenue.failed, { error: revErr })}
+              </Alert>
             ) : revenue ? (
               <Stack spacing={1}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography variant="body2" color="text.secondary">Calls / Total</Typography>
+                  <Typography variant="body2" color="text.secondary">{t.admin.agent.revenue.callsTotal}</Typography>
                   <Typography variant="body2" sx={{ fontFamily: MONO }}>{revenue.totals.count} / ${revenue.totals.feeUsd.toFixed(3)}</Typography>
                 </Box>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography variant="body2" color="success.main">Trader 70%</Typography>
+                  <Typography variant="body2" color="success.main">{t.admin.agent.revenue.traderShare}</Typography>
                   <Typography variant="body2" sx={{ fontFamily: MONO }}>${revenue.totals.traderShare.toFixed(4)}</Typography>
                 </Box>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography variant="body2">Platform 20%</Typography>
+                  <Typography variant="body2">{t.admin.agent.revenue.platformShare}</Typography>
                   <Typography variant="body2" sx={{ fontFamily: MONO }}>${revenue.totals.platformShare.toFixed(4)}</Typography>
                 </Box>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography variant="body2">Vault 10%</Typography>
+                  <Typography variant="body2">{t.admin.agent.revenue.vaultShare}</Typography>
                   <Typography variant="body2" sx={{ fontFamily: MONO }}>${revenue.totals.vaultShare.toFixed(4)}</Typography>
                 </Box>
                 {Object.keys(revenue.byBeneficiary ?? {}).length > 0 && (
                   <>
-                    <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>Top beneficiaries (70% share)</Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>{t.admin.agent.revenue.topBeneficiaries}</Typography>
                     {Object.entries(revenue.byBeneficiary ?? {}).slice(0, 5).map(([k, v]) => (
                       <Box key={k} sx={{ display: 'flex', justifyContent: 'space-between' }}>
                         <Typography variant="caption" sx={{ fontFamily: MONO }}>{k === 'protocol' ? 'protocol' : short(k)}</Typography>
@@ -438,7 +470,7 @@ export default function AgentMonitorPage() {
                 )}
               </Stack>
             ) : (
-              <Typography variant="body2" color="text.secondary">Loading…</Typography>
+              <Typography variant="body2" color="text.secondary">{t.admin.agent.revenue.loading}</Typography>
             )}
           </Card>
         </Grid>
@@ -447,14 +479,19 @@ export default function AgentMonitorPage() {
         <Grid size={{ xs: 12, md: 6 }}>
           <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2, height: '100%' }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Typography variant="h6" sx={{ fontWeight: 'bold' }}>Oracle Health</Typography>
+              <Typography variant="h6" sx={{ fontWeight: 'bold' }}>{t.admin.agent.oracle.title}</Typography>
               <Button variant="text" size="small" onClick={() => void fetchOracle()} sx={{ textTransform: 'none' }}>↺</Button>
             </Box>
             <TableContainer>
               <Table size="small">
                 <TableHead>
                   <TableRow sx={{ bgcolor: 'background.neutral' }}>
-                    {['Asset', 'Price', 'Funding', 'Feed'].map(h => (
+                    {[
+                      t.admin.agent.oracle.column.asset,
+                      t.admin.agent.oracle.column.price,
+                      t.admin.agent.oracle.column.funding,
+                      t.admin.agent.oracle.column.feed,
+                    ].map(h => (
                       <TableCell key={h} sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{h}</TableCell>
                     ))}
                   </TableRow>
@@ -470,7 +507,7 @@ export default function AgentMonitorPage() {
                           {r > 0 ? '+' : ''}{r}
                         </TableCell>
                         <TableCell>
-                          <Chip size="small" label={o.stale ? 'Stale' : 'Fresh'} color={o.stale ? 'warning' : 'success'} variant="outlined" />
+                          <Chip size="small" label={o.stale ? t.admin.agent.oracle.stale : t.admin.agent.oracle.fresh} color={o.stale ? 'warning' : 'success'} variant="outlined" />
                         </TableCell>
                       </TableRow>
                     )
@@ -483,7 +520,9 @@ export default function AgentMonitorPage() {
       </Grid>
 
       <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
-        AgentSessionManager: {short(getSessionManagerAddress(wallet.chainId))}
+        {interpolate(t.admin.agent.sessionManager, {
+          address: short(getSessionManagerAddress(wallet.chainId)),
+        })}
       </Typography>
     </Container>
   )

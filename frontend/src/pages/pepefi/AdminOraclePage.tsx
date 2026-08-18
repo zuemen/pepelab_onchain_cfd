@@ -6,6 +6,7 @@ import { useFundingData } from 'src/hooks/useFundingData'
 import { Contract } from 'ethers'
 import { ASSET_IDS, BASE_SEPOLIA_ORACLE_SHOWCASE } from 'src/contracts/addresses'
 import MockOracleABI from 'src/contracts/abi/MockOracle.json'
+import { t, locale, interpolate } from 'src/locales'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { TableSkeleton } from 'src/components/pepefi/Skeleton'
 import { ASSETS_LIST } from 'src/lib/pepefi/assetMeta'
@@ -57,7 +58,7 @@ const fPrice8 = (p: bigint) =>
 const fDate = (ts: bigint) =>
   ts === 0n
     ? '—'
-    : new Date(Number(ts) * 1000).toLocaleString('zh-TW', {
+    : new Date(Number(ts) * 1000).toLocaleString(locale, {
         dateStyle: 'short',
         timeStyle: 'short',
       })
@@ -79,9 +80,10 @@ const fCountdown = (lastSettled: bigint, interval: bigint): string => {
   const nextAt = Number(lastSettled + interval)
   const now    = Math.floor(Date.now() / 1000)
   const secs   = nextAt - now
-  if (secs <= 0) return 'Now'
-  if (secs >= 60) return `~${Math.ceil(secs / 60)}m`
-  return `~${Math.ceil(secs / 5) * 5}s`
+  if (secs <= 0) return t.admin.oracle.funding.countdownNow
+  if (secs >= 60)
+    return interpolate(t.admin.oracle.funding.countdownMinutes, { n: Math.ceil(secs / 60) })
+  return interpolate(t.admin.oracle.funding.countdownSeconds, { n: Math.ceil(secs / 5) * 5 })
 }
 
 /** 這頁只有一個分鐘級的倒數字串需要更新，每秒重繪整頁純屬浪費。 */
@@ -179,7 +181,7 @@ export default function AdminOraclePage() {
     try {
       const tx = asTx(await contracts.exchange.settleFunding(assetId))
       await tx.wait()
-      notify(`Funding settled ✓`, true, tx.hash)
+      notify(t.admin.oracle.fundingSettled, true, tx.hash)
     } catch (e) {
       notify(prettyError(e), false)
     } finally {
@@ -244,7 +246,9 @@ export default function AdminOraclePage() {
       } catch (e) {
         if (!cancelled) {
           setOracleOwner(null)
-          setOwnerCheckError(e instanceof Error ? e.message.slice(0, 120) : 'Failed to read owner')
+          setOwnerCheckError(
+            e instanceof Error ? e.message.slice(0, 120) : t.admin.oracle.ownerReadFallback,
+          )
         }
       }
     })()
@@ -257,7 +261,7 @@ export default function AdminOraclePage() {
   const updatePrice = async (id: AssetId, inputStr: string) => {
     if (!contracts) return
     if (!isOwner) {
-      notify('Connected wallet is not the oracle owner', false)
+      notify(t.admin.oracle.notOwner, false)
       return
     }
     const new8 = BigInt(Math.round(parseFloat(inputStr) * 1e8))
@@ -265,7 +269,7 @@ export default function AdminOraclePage() {
     try {
       const tx = asTx(await contracts.oracle.updatePrice(id, new8))
       await tx.wait()
-      notify('Price updated ✓', true, tx.hash)
+      notify(t.admin.oracle.priceUpdated, true, tx.hash)
       await fetchPrices()
     } catch (e) {
       notify(prettyError(e), false)
@@ -279,7 +283,7 @@ export default function AdminOraclePage() {
   if (!wallet.isConnected) {
     return (
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-        <Typography color="text.secondary">Connect wallet to access Oracle Admin.</Typography>
+        <Typography color="text.secondary">{t.admin.oracle.connectWallet}</Typography>
       </Box>
     )
   }
@@ -309,7 +313,7 @@ export default function AdminOraclePage() {
                 color="inherit"
                 sx={{ display: 'block', mt: 0.5, typography: 'caption', textDecoration: 'underline' }}
               >
-                View on {explorerName(wallet.chainId)} ↗
+                {interpolate(t.admin.oracle.viewOn, { explorer: explorerName(wallet.chainId) })}
               </Link>
             )}
           </Alert>
@@ -319,10 +323,10 @@ export default function AdminOraclePage() {
       {/* Header */}
       <Box sx={{ mb: 1 }}>
         <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
-          Oracle Price Admin
+          {t.admin.oracle.title}
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          Only the oracle owner wallet can update prices.
+          {t.admin.oracle.subtitle}
         </Typography>
       </Box>
 
@@ -330,28 +334,27 @@ export default function AdminOraclePage() {
       {/* Owner status banner */}
       {ownerCheckError ? (
         <Alert severity="error">
-          <strong>Failed to read oracle owner:</strong> {ownerCheckError}
+          <strong>{t.admin.oracle.ownerReadFailed}</strong> {ownerCheckError}
         </Alert>
       ) : oracleOwner === null ? (
-        <Alert severity="info">Checking owner permissions…</Alert>
+        <Alert severity="info">{t.admin.oracle.checkingOwner}</Alert>
       ) : !isOwner ? (
         <Alert severity="warning">
           <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
-            Read-only mode: connected wallet is not the oracle owner. Updates will revert.
+            {t.admin.oracle.readOnly}
           </Typography>
           <Box sx={{ fontFamily: MONO, fontSize: '0.75rem', mt: 1 }}>
-            Owner: {oracleOwner.slice(0, 10)}…{oracleOwner.slice(-6)}<br />
-            You:&nbsp;&nbsp;&nbsp;{wallet.address?.slice(0, 10)}…{wallet.address?.slice(-6)}
+            {t.admin.oracle.ownerLabel} {oracleOwner.slice(0, 10)}…{oracleOwner.slice(-6)}<br />
+            {t.admin.oracle.youLabel}&nbsp;&nbsp;&nbsp;{wallet.address?.slice(0, 10)}…{wallet.address?.slice(-6)}
           </Box>
         </Alert>
       ) : (
-        <Alert severity="success">Owner verified ✓</Alert>
+        <Alert severity="success">{t.admin.oracle.ownerVerified}</Alert>
       )}
 
       {/* General warning */}
       <Alert severity="warning">
-        <strong>Note:</strong> MockOracle price changes immediately affect all open position PnL.
-        In production, oracle prices would come from trusted off-chain data feeds (e.g. Chainlink).
+        <strong>{t.admin.oracle.noteLabel}</strong> {t.admin.oracle.noteBody}
       </Alert>
 
       {/* ─── Funding Settlement ──────────────────────────────────────────── */}
@@ -360,12 +363,14 @@ export default function AdminOraclePage() {
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
             <Box>
               <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                Funding Settlement
+                {t.admin.oracle.funding.title}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Settle per-asset funding (every {Object.values(fundingData)[0]
-                  ? `${Number(Object.values(fundingData)[0].interval) / 60}m`
-                  : '5m'}). Anyone can call on-chain; UI restricts to owner.
+                {interpolate(t.admin.oracle.funding.description, {
+                  interval: Object.values(fundingData)[0]
+                    ? `${Number(Object.values(fundingData)[0].interval) / 60}m`
+                    : '5m',
+                })}
               </Typography>
             </Box>
             <FormControlLabel
@@ -376,7 +381,7 @@ export default function AdminOraclePage() {
                   color="success"
                 />
               }
-              label={<Typography variant="body2">Auto-Settle</Typography>}
+              label={<Typography variant="body2">{t.admin.oracle.funding.autoSettle}</Typography>}
             />
           </Box>
 
@@ -387,7 +392,16 @@ export default function AdminOraclePage() {
               <Table size="small">
                 <TableHead>
                   <TableRow sx={{ bgcolor: 'background.neutral' }}>
-                    {['Asset','Rate (bps)','Long OI','Short OI','Imbalance','Last Settled','Next In',''].map(h => (
+                    {[
+                      t.admin.oracle.funding.column.asset,
+                      t.admin.oracle.funding.column.rate,
+                      t.admin.oracle.funding.column.longOi,
+                      t.admin.oracle.funding.column.shortOi,
+                      t.admin.oracle.funding.column.imbalance,
+                      t.admin.oracle.funding.column.lastSettled,
+                      t.admin.oracle.funding.column.nextIn,
+                      '',
+                    ].map(h => (
                       <TableCell key={h} sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{h}</TableCell>
                     ))}
                   </TableRow>
@@ -402,7 +416,12 @@ export default function AdminOraclePage() {
                       <TableRow key={a.id} hover>
                         <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'text.primary' }}>{a.symbol}</TableCell>
                         <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: rateNum > 0 ? 'error.main' : rateNum < 0 ? 'success.main' : 'text.secondary' }}>
-                          {rateNum > 0 ? '+' : ''}{rateNum} {rateNum > 0 ? '(L pay)' : rateNum < 0 ? '(S pay)' : ''}
+                          {rateNum > 0 ? '+' : ''}{rateNum}{' '}
+                          {rateNum > 0
+                            ? t.admin.oracle.funding.longsPay
+                            : rateNum < 0
+                              ? t.admin.oracle.funding.shortsPay
+                              : ''}
                         </TableCell>
                         <TableCell sx={{ fontFamily: MONO }}>{fOI(info.longOI)}</TableCell>
                         <TableCell sx={{ fontFamily: MONO }}>{fOI(info.shortOI)}</TableCell>
@@ -410,10 +429,10 @@ export default function AdminOraclePage() {
                           {fImbalance(info.longOI, info.shortOI)}
                         </TableCell>
                         <TableCell sx={{ fontSize: '0.75rem', color: 'text.secondary' }}>
-                          {info.lastSettled === 0n ? 'Never' : fDate(info.lastSettled)}
+                          {info.lastSettled === 0n ? t.admin.oracle.funding.never : fDate(info.lastSettled)}
                         </TableCell>
                         <TableCell sx={{ fontSize: '0.75rem', fontFamily: MONO }}>
-                          {info.canSettle ? <Typography variant="caption" sx={{ color: 'success.main', fontWeight: 'bold' }}>Ready</Typography> : fCountdown(info.lastSettled, info.interval)}
+                          {info.canSettle ? <Typography variant="caption" sx={{ color: 'success.main', fontWeight: 'bold' }}>{t.admin.oracle.funding.ready}</Typography> : fCountdown(info.lastSettled, info.interval)}
                         </TableCell>
                         <TableCell align="right">
                           <Button
@@ -423,7 +442,7 @@ export default function AdminOraclePage() {
                             disabled={!info.canSettle || !!fundingSettleBusy[key]}
                             sx={{ textTransform: 'none' }}
                           >
-                            {fundingSettleBusy[key] ? '…' : 'Settle Now'}
+                            {fundingSettleBusy[key] ? t.exchange.working : t.admin.oracle.funding.settleNow}
                           </Button>
                         </TableCell>
                       </TableRow>
@@ -440,37 +459,34 @@ export default function AdminOraclePage() {
       <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
           <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-            Oracle 來源比較
+            {t.admin.oracle.comparison.title}
           </Typography>
           {isBaseSepolia && (
             <Button variant="text" size="small" onClick={() => void fetchOracleComparison()} sx={{ textTransform: 'none' }}>
-              ↺ Refresh
+              {t.admin.oracle.comparison.refresh}
             </Button>
           )}
         </Box>
 
         <Alert severity="info" variant="outlined">
-          交易引擎目前使用 <b>MockOracle</b>（由 keeper 從真實市場抓價寫入）。
-          Chainlink / Pyth adapter <b>已部署並可即時查詢</b>（如下表），
-          但<b>尚未接入交易引擎</b> —— PerpetualExchange 的 oracle 位址是
+          {t.admin.oracle.comparison.engineNoteBefore}
           <Box component="code" sx={{ mx: 0.5, fontFamily: MONO }}>immutable</Box>
-          且無 setter，切換來源需重新部署，故整合列為下一階段。
+          {t.admin.oracle.comparison.engineNoteAfter}
         </Alert>
 
         {!isBaseSepolia ? (
           <Alert severity="warning" variant="outlined">
-            Chainlink / Pyth adapter 僅部署於 <b>Base Sepolia</b>（chainId 84532）。
-            請切換網路以查看三來源即時比較；本網路僅顯示 MockOracle 價格。
+            {t.admin.oracle.comparison.wrongNetwork}
           </Alert>
         ) : (
           <TableContainer>
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell>資產</TableCell>
-                  <TableCell align="right">MockOracle（引擎使用）</TableCell>
-                  <TableCell align="right">Chainlink</TableCell>
-                  <TableCell align="right">Pyth</TableCell>
+                  <TableCell>{t.admin.oracle.comparison.column.asset}</TableCell>
+                  <TableCell align="right">{t.admin.oracle.comparison.column.mock}</TableCell>
+                  <TableCell align="right">{t.admin.oracle.comparison.column.chainlink}</TableCell>
+                  <TableCell align="right">{t.admin.oracle.comparison.column.pyth}</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -496,11 +512,7 @@ export default function AdminOraclePage() {
           </TableContainer>
         )}
         <Typography variant="caption" color="text.secondary">
-          「—」表示該 adapter <b>這一刻拿不到可信報價</b>，有兩種原因：(1) 未提供此資產的 feed
-          （多為股票／ETF，Chainlink 與 Pyth 測試網僅涵蓋主流加密資產）；(2) 報價已過期或不完整——
-          adapter 現在採 fail-closed，<code>staleThreshold</code>（預設 1 小時）內沒更新、round 不完整、
-          或 Pyth 信賴區間過寬時會直接 revert，<b>不會</b>再回傳舊價。所以同一列從有數字變成「—」
-          代表該來源劣化了，不是 feed 被移除。
+          {t.admin.oracle.comparison.dashNote}
         </Typography>
       </Card>
 
@@ -508,7 +520,7 @@ export default function AdminOraclePage() {
       <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-            Asset Prices (8-decimal)
+            {t.admin.oracle.prices.title}
           </Typography>
           <Button
             variant="text"
@@ -516,7 +528,7 @@ export default function AdminOraclePage() {
             onClick={() => void fetchPrices()}
             sx={{ textTransform: 'none' }}
           >
-            ↺ Refresh
+            {t.admin.oracle.prices.refresh}
           </Button>
         </Box>
 
@@ -534,7 +546,7 @@ export default function AdminOraclePage() {
                       </Typography>
                     </Box>
                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                      Last updated: {fDate(row.updatedAt)}
+                      {interpolate(t.admin.oracle.prices.lastUpdated, { when: fDate(row.updatedAt) })}
                     </Typography>
                   </Box>
                   <Typography variant="h5" color="success.main" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
@@ -564,7 +576,7 @@ export default function AdminOraclePage() {
                     onClick={() => void updatePrice(row.id, row.input)}
                     disabled={busy[row.id] || !hasVal || !isOwner}
                   >
-                    {busy[row.id] ? 'Updating…' : 'Update Price'}
+                    {busy[row.id] ? t.admin.oracle.prices.updating : t.admin.oracle.prices.update}
                   </Button>
                 </Box>
               </Box>
@@ -577,7 +589,7 @@ export default function AdminOraclePage() {
       <Accordion sx={{ bgcolor: 'transparent', backgroundImage: 'none', border: '1px solid', borderColor: 'divider', '&::before': { display: 'none' } }}>
         <AccordionSummary expandIcon={<Typography variant="caption">▼</Typography>}>
           <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>
-            Raw 8-decimal prices (for cast commands)
+            {t.admin.oracle.raw.title}
           </Typography>
         </AccordionSummary>
         <AccordionDetails sx={{ borderTop: '1px solid', borderColor: 'divider', bgcolor: 'background.neutral' }}>

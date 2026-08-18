@@ -5,6 +5,7 @@ import { parseEther, formatEther, formatUnits } from 'ethers'
 import { useContracts } from 'src/hooks/useContracts'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { explorerTx } from 'src/lib/pepefi/notify'
+import { t, interpolate } from 'src/locales'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import EmptyState from 'src/components/pepefi/EmptyState'
 import StatCard from 'src/components/pepefi/StatCard'
@@ -199,7 +200,7 @@ export default function AdminTreasuryPage() {
     try {
       const tx = asTx(await contracts.feeRouter.withdrawPlatformFees())
       await tx.wait()
-      notify('Platform fees claimed ✓', true, tx.hash)
+      notify(t.admin.treasury.claim.done, true, tx.hash)
       await fetchStats()
       await fetchHistory()
     } catch (e) {
@@ -214,7 +215,7 @@ export default function AdminTreasuryPage() {
       const amt = parseEther(swapAmt)
       const tx  = asTx(await contracts.usdc.approve(String(contracts.swapRouter.target), amt))
       await tx.wait()
-      notify('USDT approved ✓', true, tx.hash)
+      notify(t.admin.treasury.swap.approved, true, tx.hash)
     } catch (e) {
       notify(prettyError(e), false)
     } finally { setLoad('approve', false) }
@@ -228,7 +229,7 @@ export default function AdminTreasuryPage() {
       const tx     = asTx(await contracts.swapRouter.swapUSDCForETH(amt))
       await tx.wait()
       const ethOut = (parseFloat(swapAmt) / 3000).toFixed(6)
-      notify(`Swapped ${swapAmt} mUSDC → ${ethOut} ETH ✓`, true, tx.hash)
+      notify(interpolate(t.admin.treasury.swap.done, { amount: swapAmt, eth: ethOut }), true, tx.hash)
       setSwapAmt('')
       await fetchStats()
       await fetchHistory()
@@ -243,7 +244,7 @@ export default function AdminTreasuryPage() {
     try {
       const tx = asTx(await contracts.swapRouter.fundRouter({ value: parseEther(fundAmt) }))
       await tx.wait()
-      notify(`Funded router with ${fundAmt} ETH ✓`, true, tx.hash)
+      notify(interpolate(t.admin.treasury.tools.done, { amount: fundAmt }), true, tx.hash)
       setFundAmt('')
       await fetchStats()
     } catch (e) {
@@ -258,7 +259,7 @@ export default function AdminTreasuryPage() {
       const parsedAmt = parseEther(pepeFundAmt)
       const tx = asTx(await contracts.pepeToken.transfer(String(contracts.pepeIncentives.target), parsedAmt))
       await tx.wait()
-      notify(`Successfully funded Incentives Pool with ${pepeFundAmt} PEPE ✓`, true, tx.hash)
+      notify(interpolate(t.admin.treasury.incentives.done, { amount: pepeFundAmt }), true, tx.hash)
       setPepeFundAmt('')
       await fetchPepeBalances()
     } catch (e) {
@@ -269,7 +270,7 @@ export default function AdminTreasuryPage() {
   if (!wallet.isConnected) {
     return (
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-        <Typography color="text.secondary">Connect wallet to access Treasury Admin.</Typography>
+        <Typography color="text.secondary">{t.admin.treasury.connectWallet}</Typography>
       </Box>
     )
   }
@@ -280,15 +281,17 @@ export default function AdminTreasuryPage() {
       <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', gap: 2 }}>
         <Typography variant="h2">🔒</Typography>
         <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
-          {treasuryUnknown ? '確認權限中…' : 'Not authorized'}
+          {treasuryUnknown ? t.admin.treasury.checkingAuth : t.admin.treasury.notAuthorized}
         </Typography>
         <Typography color="text.secondary" sx={{ mb: 2 }}>
           {treasuryUnknown
-            ? '正在讀取鏈上的 feeRouter.platformTreasury()。讀不到就不放行。'
-            : 'This page is restricted to the wallet set as feeRouter.platformTreasury().'}
+            ? t.admin.treasury.checkingAuthBody
+            : t.admin.treasury.notAuthorizedBody}
         </Typography>
         <Typography variant="caption" sx={{ fontFamily: MONO, color: 'text.disabled' }}>
-          Treasury{treasuryUnknown ? '（後備顯示值）' : '（鏈上）'}: {shown.slice(0, 10)}…{shown.slice(-6)}
+          {treasuryUnknown
+            ? t.admin.treasury.treasuryFallbackLabel
+            : t.admin.treasury.treasuryOnChainLabel} {shown.slice(0, 10)}…{shown.slice(-6)}
         </Typography>
       </Box>
     )
@@ -325,7 +328,7 @@ export default function AdminTreasuryPage() {
                 color="inherit"
                 sx={{ display: 'block', mt: 0.5, typography: 'caption', textDecoration: 'underline' }}
               >
-                View on Etherscan ↗
+                {t.admin.treasury.viewOnEtherscan}
               </Link>
             )}
           </Alert>
@@ -335,26 +338,26 @@ export default function AdminTreasuryPage() {
       {/* Header */}
       <Box sx={{ mb: 1 }}>
         <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
-          Treasury Admin
+          {t.admin.treasury.title}
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          Cash out accumulated platform fees → ETH
+          {t.admin.treasury.subtitle}
         </Typography>
       </Box>
 
       {/* A. Revenue Stats */}
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <StatCard title="Pending Platform Fees" value={stats ? f18(stats.platformEarnings) : '—'} sub="mUSDC" valueColor="primary.main" />
+          <StatCard title={t.admin.treasury.stat.pendingFees} value={stats ? f18(stats.platformEarnings) : '—'} sub="mUSDC" valueColor="primary.main" />
         </Grid>
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <StatCard title="Wallet mUSDC Balance" value={stats ? f18(stats.myMusdc) : '—'} sub="mUSDC" />
+          <StatCard title={t.admin.treasury.stat.walletMusdc} value={stats ? f18(stats.myMusdc) : '—'} sub="mUSDC" />
         </Grid>
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <StatCard title="Wallet ETH Balance" value={stats ? fEth(stats.myEth) : '—'} sub="ETH" />
+          <StatCard title={t.admin.treasury.stat.walletEth} value={stats ? fEth(stats.myEth) : '—'} sub="ETH" />
         </Grid>
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <StatCard title="Router ETH Reserve" value={stats ? fEth(stats.routerEth) : '—'} sub="ETH" />
+          <StatCard title={t.admin.treasury.stat.routerEth} value={stats ? fEth(stats.routerEth) : '—'} sub="ETH" />
         </Grid>
       </Grid>
 
@@ -363,20 +366,20 @@ export default function AdminTreasuryPage() {
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
           <Chip label="1" size="small" color="primary" sx={{ fontWeight: 'bold' }} />
           <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-            Claim Platform Fees from FeeRouter
+            {t.admin.treasury.claim.title}
           </Typography>
         </Box>
 
         {platformTreasury && (
           <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
-            Treasury: {platformTreasury}
+            {interpolate(t.admin.treasury.claim.treasury, { address: platformTreasury })}
           </Typography>
         )}
 
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
           <Box>
             <Typography variant="caption" color="text.secondary">
-              Pending platform fees
+              {t.admin.treasury.claim.pending}
             </Typography>
             <Typography variant="h4" color="primary.main" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
               {stats ? f18(stats.platformEarnings) : '—'} <Box component="span" sx={{ fontSize: '1rem', fontWeight: 'normal', color: 'text.secondary' }}>mUSDC</Box>
@@ -387,12 +390,12 @@ export default function AdminTreasuryPage() {
             onClick={() => void doClaim()}
             disabled={busy['claim'] || !stats || stats.platformEarnings === 0n}
           >
-            {busy['claim'] ? 'Claiming…' : 'Claim Platform Fees'}
+            {busy['claim'] ? t.admin.treasury.claim.claiming : t.admin.treasury.claim.cta}
           </Button>
         </Box>
 
         <Typography variant="caption" color="text.secondary">
-          This transfers all accumulated platform-share fees (20% of each copy / performance fee) to your wallet.
+          {t.admin.treasury.claim.note}
         </Typography>
       </Card>
 
@@ -401,7 +404,7 @@ export default function AdminTreasuryPage() {
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
           <Chip label="2" size="small" color="primary" sx={{ fontWeight: 'bold' }} />
           <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-            Convert mUSDC → ETH via SwapRouter
+            {t.admin.treasury.swap.title}
           </Typography>
         </Box>
 
@@ -409,7 +412,7 @@ export default function AdminTreasuryPage() {
           <TextField
             type="number"
             size="small"
-            placeholder="mUSDC amount"
+            placeholder={t.admin.treasury.swap.placeholder}
             value={swapAmt}
             onChange={e => setSwapAmt(e.target.value)}
             slotProps={{ htmlInput: { min: "0", style: { fontFamily: MONO } } }}
@@ -420,20 +423,23 @@ export default function AdminTreasuryPage() {
             onClick={() => stats && setSwapAmt(formatUnits(stats.myMusdc, 18))}
             disabled={!stats || stats.myMusdc === 0n}
           >
-            Max
+            {t.admin.treasury.swap.max}
           </Button>
         </Box>
 
         {swapAmt && parseFloat(swapAmt) > 0 && (
           <Typography variant="caption" color="text.secondary">
-            ≈ {(parseFloat(swapAmt) / 3000).toFixed(6)} ETH (rate: 1 ETH = 3000 mUSDC)
+            {interpolate(t.admin.treasury.swap.estimate, {
+              eth: (parseFloat(swapAmt) / 3000).toFixed(6),
+            })}
           </Typography>
         )}
 
         {routerInsufficient && (
           <Alert severity="warning">
-            Router only has {stats ? fEth(stats.routerEth) : '0'} ETH available.
-            Fund it using the Treasury Tools below before swapping.
+            {interpolate(t.admin.treasury.swap.routerInsufficient, {
+              amount: stats ? fEth(stats.routerEth) : '0',
+            })}
           </Alert>
         )}
 
@@ -444,7 +450,7 @@ export default function AdminTreasuryPage() {
             disabled={busy['approve'] || !swapAmt || parseFloat(swapAmt) <= 0}
             sx={{ flexGrow: 1 }}
           >
-            {busy['approve'] ? 'Approving…' : '① Approve mUSDC'}
+            {busy['approve'] ? t.admin.treasury.swap.approving : t.admin.treasury.swap.approve}
           </Button>
           <Button
             variant="contained"
@@ -453,7 +459,7 @@ export default function AdminTreasuryPage() {
             disabled={busy['swap'] || !swapAmt || parseFloat(swapAmt) <= 0}
             sx={{ flexGrow: 1 }}
           >
-            {busy['swap'] ? 'Swapping…' : '② Swap to ETH'}
+            {busy['swap'] ? t.admin.treasury.swap.swapping : t.admin.treasury.swap.swap}
           </Button>
         </Box>
       </Card>
@@ -461,22 +467,23 @@ export default function AdminTreasuryPage() {
       {/* E. Treasury Tools */}
       <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
         <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-          Treasury Tools
+          {t.admin.treasury.tools.title}
         </Typography>
 
         <Box>
           <Typography variant="body2" sx={{ fontWeight: 'semibold', mb: 0.5 }}>
-            Fund SwapRouter with ETH
+            {t.admin.treasury.tools.fundRouter}
           </Typography>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-            The router needs an ETH reserve to fulfill mUSDC→ETH swaps from users and admin.
-            Current reserve: <Box component="span" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>{stats ? fEth(stats.routerEth) : '—'} ETH</Box>
+            {t.admin.treasury.tools.fundRouterDesc}{' '}
+            {t.admin.treasury.tools.currentReserve}{' '}
+            <Box component="span" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>{stats ? fEth(stats.routerEth) : '—'} ETH</Box>
           </Typography>
           <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
             <TextField
               type="number"
               size="small"
-              placeholder="ETH amount (e.g. 1)"
+              placeholder={t.admin.treasury.tools.placeholder}
               value={fundAmt}
               onChange={e => setFundAmt(e.target.value)}
               slotProps={{ htmlInput: { min: "0", step: "0.01", style: { fontFamily: MONO } } }}
@@ -487,7 +494,7 @@ export default function AdminTreasuryPage() {
               onClick={() => void doFundRouter()}
               disabled={busy['fund'] || !fundAmt || parseFloat(fundAmt) <= 0}
             >
-              {busy['fund'] ? 'Funding…' : 'Fund Router'}
+              {busy['fund'] ? t.admin.treasury.tools.funding : t.admin.treasury.tools.cta}
             </Button>
           </Box>
         </Box>
@@ -500,18 +507,18 @@ export default function AdminTreasuryPage() {
             <Iconify icon="solar:palette-bold" sx={{ fontSize: 20 }} />
           </Box>
           <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-            🎁 PepeLab Incentives Pool Refill (獎勵池充值)
+            {t.admin.treasury.incentives.title}
           </Typography>
         </Box>
 
         <Typography variant="caption" color="text.secondary">
-          跟單獎勵、每日簽到、等級晉級與交易挖礦均由 <strong>PEPE</strong> 代幣激勵。為防止用戶領取時發生 <code>revert InsufficientPool</code> 錯誤，請確保此激勵合約中有足夠的 PEPE 儲備。
+          {t.admin.treasury.incentives.description}
         </Typography>
 
         <Grid container spacing={2} sx={{ mt: 0.5 }}>
           <Grid size={{ xs: 12, sm: 6 }}>
             <Box sx={{ p: 2, bgcolor: 'rgba(255,255,255,0.02)', borderRadius: 1.5, border: '1px solid rgba(255,255,255,0.05)' }}>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>我的錢包 PEPE 餘額</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>{t.admin.treasury.incentives.walletBalance}</Typography>
               <Typography variant="h5" sx={{ fontWeight: 'bold', color: '#ffb300', fontFamily: MONO }}>
                 {walletPepeBal !== null ? f18(walletPepeBal) : '—'} <Box component="span" sx={{ fontSize: '0.85rem', fontWeight: 'normal', color: 'text.secondary' }}>PEPE</Box>
               </Typography>
@@ -519,7 +526,7 @@ export default function AdminTreasuryPage() {
           </Grid>
           <Grid size={{ xs: 12, sm: 6 }}>
             <Box sx={{ p: 2, bgcolor: 'rgba(124,193,74,0.04)', borderRadius: 1.5, border: '1px solid rgba(124,193,74,0.15)' }}>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>激勵合約 PEPE 儲備</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>{t.admin.treasury.incentives.poolBalance}</Typography>
               <Typography variant="h5" sx={{ fontWeight: 'bold', color: 'var(--palette-primary-main)', fontFamily: MONO }}>
                 {contractPepeBal !== null ? f18(contractPepeBal) : '—'} <Box component="span" sx={{ fontSize: '0.85rem', fontWeight: 'normal', color: 'text.secondary' }}>PEPE</Box>
               </Typography>
@@ -531,7 +538,7 @@ export default function AdminTreasuryPage() {
           <TextField
             type="number"
             size="small"
-            placeholder="注資 PEPE 數量 (例如 100000)"
+            placeholder={t.admin.treasury.incentives.placeholder}
             value={pepeFundAmt}
             onChange={e => setPepeFundAmt(e.target.value)}
             slotProps={{ htmlInput: { min: "0", style: { fontFamily: MONO } } }}
@@ -544,7 +551,7 @@ export default function AdminTreasuryPage() {
             disabled={busy['fundPepe'] || !pepeFundAmt || parseFloat(pepeFundAmt) <= 0}
             sx={{ fontWeight: 'bold', px: 3 }}
           >
-            {busy['fundPepe'] ? '注資中…' : '確認注資'}
+            {busy['fundPepe'] ? t.admin.treasury.incentives.funding : t.admin.treasury.incentives.cta}
           </Button>
         </Box>
       </Card>
@@ -553,7 +560,7 @@ export default function AdminTreasuryPage() {
       <Card>
         <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
           <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-            Recent Cash Out History
+            {t.admin.treasury.history.title}
           </Typography>
           <Button
             variant="text"
@@ -561,12 +568,16 @@ export default function AdminTreasuryPage() {
             onClick={() => void fetchHistory()}
             sx={{ textTransform: 'none' }}
           >
-            ↺ Refresh
+            {t.admin.treasury.history.refresh}
           </Button>
         </Box>
 
         {history.length === 0 ? (
-          <EmptyState icon="📋" title="No cash out history yet" description="Fee claims and mUSDC→ETH swaps will appear here." />
+          <EmptyState
+            icon="📋"
+            title={t.admin.treasury.history.emptyTitle}
+            description={t.admin.treasury.history.emptyDescription}
+          />
         ) : (
           <TableContainer>
             <Table size="small">
@@ -576,15 +587,20 @@ export default function AdminTreasuryPage() {
                     <TableCell>
                       <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
                         <Chip
-                          label={r.type === 'claim' ? 'Claimed' : 'Swapped'}
+                          label={r.type === 'claim' ? t.admin.treasury.history.claimed : t.admin.treasury.history.swapped}
                           size="small"
                           color={r.type === 'claim' ? 'primary' : 'success'}
                           sx={{ fontWeight: 'bold' }}
                         />
                         <Typography variant="body2" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
                           {r.type === 'claim'
-                            ? `${f18(r.amount)} mUSDC`
-                            : `${r.usdcIn ? f18(r.usdcIn) : '—'} mUSDC → ${fEth(r.amount)} ETH`}
+                            ? interpolate(t.admin.treasury.history.claimAmount, {
+                                amount: f18(r.amount),
+                              })
+                            : interpolate(t.admin.treasury.history.swapAmount, {
+                                usdcIn: r.usdcIn ? f18(r.usdcIn) : '—',
+                                eth: fEth(r.amount),
+                              })}
                         </Typography>
                       </Stack>
                     </TableCell>
@@ -616,10 +632,10 @@ export default function AdminTreasuryPage() {
       <Card sx={{ p: 2.5, bgcolor: 'background.neutral' }}>
         <Stack spacing={1} sx={{ typography: 'caption', color: 'text.secondary' }}>
           <Typography variant="caption">
-            <Box component="span" sx={{ color: 'text.primary', fontWeight: 'bold' }}>Revenue model:</Box> Each copy-trade or performance fee is split 70% trader / 20% platform / 10% insurance vault. Platform fees accumulate in FeeRouter until this admin claims them.
+            <Box component="span" sx={{ color: 'text.primary', fontWeight: 'bold' }}>{t.admin.treasury.info.revenueModelLabel}</Box> {t.admin.treasury.info.revenueModelBody}
           </Typography>
           <Typography variant="caption">
-            After claiming mUSDC, use the swap above to convert to ETH at the mock rate (1 ETH = 3000 mUSDC). In production, you'd use a real DEX.
+            {t.admin.treasury.info.swapNote}
           </Typography>
         </Stack>
       </Card>

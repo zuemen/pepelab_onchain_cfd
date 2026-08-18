@@ -1,5 +1,6 @@
 import { nav } from './nav';
 import { meta } from './meta';
+import { admin } from './admin';
 import { errors } from './errors';
 import { exchange } from './exchange';
 import { terminal } from './terminal';
@@ -18,6 +19,7 @@ import { freshness } from './freshness';
 const zhTW = {
   meta,
   nav,
+  admin,
   errors,
   freshness,
   portfolio,
