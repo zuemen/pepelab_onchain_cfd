@@ -34,7 +34,7 @@ export const pepelab = {
   },
 
   header: {
-    title: 'Pepe GameFi & MemeFi Lab 🧪',
+    title: 'Pepe GameFi & MemeFi 實驗室 🧪',
     subtitle: 'DeFi · SocialFi · GameFi · MemeFi 一體化升級中心',
     balance: '💰 餘額: {amount} PEPE',
   },
@@ -85,10 +85,10 @@ export const pepelab = {
     drawing: '正在破殼孵化中...',
     inProgressButton: '🚧 造型製作中',
     drawButton: '🎰 幸運抽造型 (500 PEPE)',
-    rarityCommon: '🟢 Common: 50%',
-    rarityRare: '🔵 Rare: 30%',
-    rarityEpic: '🟣 Epic: 15%',
-    rarityLegendary: '🔴 Legendary: 5%',
+    rarityCommon: '🟢 普通：50%',
+    rarityRare: '🔵 稀有：30%',
+    rarityEpic: '🟣 史詩：15%',
+    rarityLegendary: '🔴 傳說：5%',
 
     wallTitle: '🎨 {stage}造型牆 ({unlocked}/{total})',
     wallHint:
@@ -109,7 +109,7 @@ export const pepelab = {
   },
 
   evolveDialog: {
-    label: 'EVOLUTION',
+    label: '進化',
     title: '進化成功！🎉',
     stageLine: '進化 Lv.{stage} · {title}',
     cta: '太強了 🐸',
