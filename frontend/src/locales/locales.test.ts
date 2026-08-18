@@ -11,74 +11,22 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FRONTEND_ROOT = path.resolve(HERE, '../..');
 
 /**
- * 已經搬完的目錄或單一檔案。每完成一批就加一行。
- *
- * 這份清單是遷移能不能收斂的關鍵：沒有它，最後那 20% 永遠不會有人回頭做完，
- * 而已經搬好的地方也會慢慢長回內嵌字串。
- *
- * 收單一檔案而不只收目錄，是因為批次是按功能切的、目錄不是：`src/layouts` 底下的
- * nav 設定搬完時，同目錄的 layout 元件還沒搬。只能寫目錄的話，這一批就得整個
- * `src/layouts` 一起動，或者乾等到最後才有任何東西受到保護。
+ * #37：全樹掃描取代了原本「已搬完目錄」的白名單（`MIGRATED_PATHS`）。掃描範圍是
+ * 整個 `src`，扣掉 catalog 本身（`src/locales/{zh-TW,en}` 就是中文原文與英文譯文
+ * 住的地方，不是漏搬的顯示字串）與測試檔。
  */
-const MIGRATED_PATHS: string[] = [
-  'src/layouts/nav-config-dashboard.tsx',
-  'src/layouts/nav-config-account.tsx',
-  'src/lib/pepefi/errorMessages.ts',
-  'src/lib/pepefi/priceFreshness.ts',
-  'src/components/pepefi/dashboard',
-  'src/pages/pepefi/PortfolioPage.tsx',
-  'src/lib/pepefi/openPositionColumns.ts',
-  'src/pages/pepefi/ExchangePage.tsx',
-  'src/sections/terminal',
-  // 這三個不在 terminal 目錄底下，但它們產出的字只在終端機畫面上出現：
-  // K 線 API 的錯誤、成交紀錄讀取失敗、模擬報價的價齡標籤。
-  'src/lib/pepefi/candles.ts',
-  'src/hooks/useUserFills.ts',
-  'src/hooks/useLivePrices.ts',
-  'src/pages/pepefi/AdminOraclePage.tsx',
-  'src/pages/pepefi/AdminTreasuryPage.tsx',
-  'src/pages/pepefi/AgentMonitorPage.tsx',
-  'src/components/pepefi/pepeSkinsData.ts',
-  'src/components/pepefi/pepeStageSkinsData.ts',
-  'src/components/pepefi/pepeMountsData.ts',
-  'src/lib/pepefi/achievements.ts',
-  'src/lib/pepefi/whale.ts',
-  'src/pages/pepefi/WhaleTrackerPage.tsx',
-  'src/components/pepefi/whale/WhaleFeed.tsx',
-  'src/components/pepefi/whale/WhaleKpiRow.tsx',
-  'src/components/pepefi/whale/WhaleTagChips.tsx',
-  'src/components/pepefi/whale/MarketSentimentBar.tsx',
-  'src/components/pepefi/whale/LargestOpenPositions.tsx',
-  'src/pages/pepefi/RewardsPage.tsx',
-  'src/pages/pepefi/ESGPage.tsx',
-  'src/pages/pepefi/MarketplacePage.tsx',
-  'src/pages/pepefi/HistoryPage.tsx',
-  'src/pages/pepefi/TraderProfilePage.tsx',
-  'src/components/pepefi/WalletButton.tsx',
-  'src/components/pepefi/ToastProvider.tsx',
-  'src/components/pepefi/PaperTradingBadge.tsx',
-  'src/components/pepefi/PepeAvatarPicker.tsx',
-  'src/lib/pepefi/tokenLabel.ts',
-  'src/utils/pepefi-assets.ts',
-  'src/layouts/dashboard/layout.tsx',
-  'src/layouts/components/account-drawer.tsx',
-  'src/components/pepefi/KYCModal.tsx',
-  'src/components/pepefi/PepeEvolution.tsx',
-  'src/pages/pepefi/VaultPage.tsx',
-  'src/pages/pepefi/SessionsPage.tsx',
-  'src/pages/pepefi/TokenizedAssetsPage.tsx',
-  'src/pages/pepefi/LandingPage.tsx',
-  'src/layouts/pepefi/index.tsx',
-  'src/pages/pepefi/PepeLabPage.tsx',
-  'src/pages/pepefi/TraderStakePage.tsx',
-  'src/pages/pepefi/CopyPage.tsx',
-  'src/pages/pepefi/TraderDashboard.tsx',
-  'src/_mock/_others.ts',
-  'src/layouts/components/notifications-drawer',
-  // X402DocsPage 的 #36 句子已經解決，但檔案還留著一段可複製貼上的 curl/npx
-  // 範例（含中文註解），那是刻意不進 catalog 的逐字程式碼，不是 #36 的範圍，
-  // 所以這個檔案還不進白名單——見 docs/i18n-markup-inventory.md 的相關筆記。
-];
+function allSourceFiles(): string[] {
+  const root = path.resolve(FRONTEND_ROOT, 'src');
+  return fs
+    .readdirSync(root, { recursive: true, encoding: 'utf8' })
+    .map((rel) => path.join(root, rel))
+    .filter((file) => /\.tsx?$/.test(file) && !/\.test\.tsx?$/.test(file))
+    .filter((file) => fs.statSync(file).isFile())
+    .filter((file) => {
+      const rel = path.relative(FRONTEND_ROOT, file).split(path.sep).join('/');
+      return !rel.startsWith('src/locales/');
+    });
+}
 
 /**
  * `en` catalog 裡尚未翻譯的中文字數（不含註解）。
@@ -181,14 +129,39 @@ function isAssetPathOnly(line: string): boolean {
   return ASSET_PATH.test(line) && countHan(line.replace(new RegExp(ASSET_PATH, 'g'), '')) === 0;
 }
 
+/**
+ * #37：全樹掃描下僅存的合法例外，一條一條列出來，各自附理由。
+ *
+ * 用「檔案 + 該行要包含的片段」比對，不用行號——行號會隨著檔案編輯漂移，
+ * 例外會悄悄失效（漏放行別的中文）或跟丟原本要放行的那一行。新增例外前
+ * 先確認真的沒有更好的做法：能搬進 catalog 的都該搬，這份清單只留給搬不動的。
+ */
+const LINE_EXCEPTIONS: { file: string; contains: string; reason: string }[] = [
+  {
+    file: 'src/pages/pepefi/X402DocsPage.tsx',
+    contains: '只依賴 viem + x402-fetch',
+    reason:
+      '可複製貼上的 npx 範例裡的 shell 註解，逐字保留才能貼了就跑；是程式碼，不是顯示文字。',
+  },
+  {
+    file: 'src/pages/pepefi/X402DocsPage.tsx',
+    contains: '持官方 USDC + 一點 ETH',
+    reason: '同一段 npx 範例裡的第二個 shell 註解，理由同上。',
+  },
+];
+
+function isLineException(file: string, text: string): boolean {
+  const rel = path.relative(FRONTEND_ROOT, file).split(path.sep).join('/');
+  return LINE_EXCEPTIONS.some((exc) => exc.file === rel && text.includes(exc.contains));
+}
+
 describe('migration ratchets', () => {
-  it('keeps everything already migrated free of inline display strings', () => {
-    const offenders = MIGRATED_PATHS.flatMap((migrated) =>
-      sourceFilesIn(migrated).flatMap((file) =>
-        findInlineDisplayStrings(fs.readFileSync(file, 'utf8'))
-          .filter((hit) => !isAssetPathOnly(hit.text))
-          .map((hit) => `${path.relative(FRONTEND_ROOT, file)}:${hit.line}  ${hit.text.trim()}`)
-      )
+  it('keeps the whole source tree free of inline display strings', () => {
+    const offenders = allSourceFiles().flatMap((file) =>
+      findInlineDisplayStrings(fs.readFileSync(file, 'utf8'))
+        .filter((hit) => !isAssetPathOnly(hit.text))
+        .filter((hit) => !isLineException(file, hit.text))
+        .map((hit) => `${path.relative(FRONTEND_ROOT, file)}:${hit.line}  ${hit.text.trim()}`)
     );
 
     expect(offenders).toEqual([]);
