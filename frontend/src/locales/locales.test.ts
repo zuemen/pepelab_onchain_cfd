@@ -51,6 +51,14 @@ const MIGRATED_PATHS: string[] = [
   'src/components/pepefi/whale/LargestOpenPositions.tsx',
   'src/pages/pepefi/RewardsPage.tsx',
   'src/pages/pepefi/ESGPage.tsx',
+  'src/components/pepefi/WalletButton.tsx',
+  'src/components/pepefi/ToastProvider.tsx',
+  'src/components/pepefi/PaperTradingBadge.tsx',
+  'src/components/pepefi/PepeAvatarPicker.tsx',
+  'src/lib/pepefi/tokenLabel.ts',
+  'src/utils/pepefi-assets.ts',
+  'src/layouts/dashboard/layout.tsx',
+  'src/layouts/components/account-drawer.tsx',
 ];
 
 /**
@@ -62,9 +70,9 @@ const MIGRATED_PATHS: string[] = [
  * 每批遷移都會把它推高——那是預期行為，不是退步：字串搬進 catalog 時 `en` 拿到的是
  * 中文原文。真正的退步是「翻譯過的字又變回中文」，而那會讓這條斷言失敗。
  * 目前：errors 1388、pepe 1207、terminal 685、exchange 643、admin 491、
- * pepeStageSkins 264、landing 215、sessions 207、x402 207、freshness 146、rewards 102、esg 42、nav 38、meta 12、portfolio 4。
+ * pepeStageSkins 264、landing 215、sessions 207、x402 207、common 185、freshness 146、rewards 102、esg 42、nav 38、meta 12、portfolio 4。
  */
-const EN_HAN_BASELINE = 6021;
+const EN_HAN_BASELINE = 6206;
 
 /** 傳目錄就回它底下所有原始碼檔案，傳單一檔案就回那一個。測試檔一律排除。 */
 function sourceFilesIn(pathish: string): string[] {

@@ -6,6 +6,7 @@ import { meta } from './meta';
 import { vault } from './vault';
 import { whale } from './whale';
 import { admin } from './admin';
+import { common } from './common';
 import { tokens } from './tokens';
 import { errors } from './errors';
 import { landing } from './landing';
@@ -45,6 +46,7 @@ const zhTW = {
   sessions,
   tokens,
   landing,
+  common,
 };
 
 export type Catalog = typeof zhTW;

@@ -22,6 +22,8 @@
 
 import { useState, useMemo, useCallback, useContext, createContext } from 'react';
 
+import { t } from 'src/locales';
+
 import Box from '@mui/material/Box';
 import Alert from '@mui/material/Alert';
 import Button from '@mui/material/Button';
@@ -171,7 +173,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
           <Button onClick={() => settle(false)} color="inherit" variant="text">
-            {dialog?.cancelLabel ?? '取消'}
+            {dialog?.cancelLabel ?? t.common.dialog.cancel}
           </Button>
           <Button
             onClick={() => settle(true)}
@@ -179,7 +181,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             variant="contained"
             autoFocus={!dialog?.destructive}
           >
-            {dialog?.confirmLabel ?? '確認'}
+            {dialog?.confirmLabel ?? t.common.dialog.confirm}
           </Button>
         </DialogActions>
       </Dialog>

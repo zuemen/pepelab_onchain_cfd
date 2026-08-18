@@ -1,3 +1,5 @@
+import { t } from 'src/locales';
+
 import Box from '@mui/material/Box';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
@@ -14,7 +16,7 @@ type Props = {
 export function PepeAvatarPicker({ open, onClose, onPick, current }: Props) {
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>選擇頭像</DialogTitle>
+      <DialogTitle>{t.common.avatarPicker.title}</DialogTitle>
       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, p: 2, justifyContent: 'center' }}>
         {AVATAR_FILES.map((file) => (
           <Box

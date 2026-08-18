@@ -7,6 +7,7 @@ import { usePathname } from 'src/routes/hooks';
 
 import { type WalletAPI } from 'src/hooks/useWallet';
 
+import { t } from 'src/locales';
 import { useWalletContext } from 'src/contexts/wallet-context';
 import { CHAIN_NAMES, isPrimaryChain, PRIMARY_CHAIN_ID } from 'src/contracts/addresses';
 
@@ -69,7 +70,7 @@ export function PepefiLayout() {
           '&:focus': { top: 8 },
         }}
       >
-        跳到主要內容
+        {t.common.layout.skipToContent}
       </Box>
 
       <ChainNotice chainId={wallet.chainId} />

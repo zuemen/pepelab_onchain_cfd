@@ -1,5 +1,7 @@
 import type { WalletAPI } from 'src/hooks/useWallet';
 
+import { t } from 'src/locales';
+
 import { useLocation, useNavigate } from 'react-router';
 import { useState, useEffect } from 'react';
 
@@ -210,12 +212,12 @@ export default function WalletButton({ wallet }: Props) {
       >
         <DialogTitle sx={{ m: 0, p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <Typography variant="h5" sx={{ fontWeight: 800, background: 'linear-gradient(90deg, #34d399 0%, #a3e635 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-            連接帳號 / Connect Wallet
+            {t.common.wallet.dialogTitle}
           </Typography>
           <IconButton
             onClick={handleCloseDialog}
             size="small"
-            aria-label="關閉錢包連線視窗"
+            aria-label={t.common.wallet.closeAria}
             sx={{ color: 'text.secondary' }}
           >
             <Icon icon="mingcute:close-line" width={20} height={20} />
@@ -224,7 +226,7 @@ export default function WalletButton({ wallet }: Props) {
 
         <DialogContent sx={{ p: 2, pt: 0 }}>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-            選擇您的登入通道以進入 PepeLab 鏈上衍生品系統。
+            {t.common.wallet.intro}
           </Typography>
 
           <Stack spacing={2}>
@@ -253,10 +255,10 @@ export default function WalletButton({ wallet }: Props) {
               </Box>
               <Box sx={{ flexGrow: 1 }}>
                 <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'text.primary' }}>
-                  MetaMask 錢包連線
+                  {t.common.wallet.metamaskTitle}
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                  透過 MetaMask 瀏覽器擴充功能連線 (Base Sepolia)
+                  {t.common.wallet.metamaskDesc}
                 </Typography>
               </Box>
             </Card>
@@ -291,7 +293,7 @@ export default function WalletButton({ wallet }: Props) {
                       '&:hover': { textDecoration: 'underline' },
                     }}
                   >
-                    前往安裝 MetaMask 擴充功能 ↗
+                    {t.common.wallet.installMetamask}
                   </Link>
                 )}
               </Box>
@@ -322,10 +324,10 @@ export default function WalletButton({ wallet }: Props) {
               </Box>
               <Box sx={{ flexGrow: 1 }}>
                 <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
-                  Pepe 簡報測試通道 (模擬 Web3)
+                  {t.common.wallet.mockTitle}
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                  無須錢包即可一鍵進入系統、切換 Pepe 蛙頭像與測試跟單
+                  {t.common.wallet.mockDesc}
                 </Typography>
               </Box>
             </Card>

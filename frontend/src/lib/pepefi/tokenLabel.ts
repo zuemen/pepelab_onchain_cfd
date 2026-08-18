@@ -1,3 +1,5 @@
+import { t } from 'src/locales';
+
 // 代幣顯示名稱的單一真相來源。
 //
 // 這個檔案原本存在但**沒有任何檔案引用它**，於是每一頁都自己手寫標籤，同一頁
@@ -19,7 +21,7 @@ export const STABLE_LABEL = 'mUSDC';
 export const ALT_STABLE_LABEL = 'USDT';
 
 /** x402 付費 API 結算用的 Circle 官方 USDC。**不要改。** */
-export const X402_STABLE_LABEL = '官方 USDC';
+export const X402_STABLE_LABEL = t.common.x402StableLabel;
 
 /** 平台幣。 */
 export const PEPE_LABEL = 'PEPE';

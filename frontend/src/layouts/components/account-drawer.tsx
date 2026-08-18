@@ -20,6 +20,7 @@ import { RouterLink } from 'src/routes/components';
 import { useUserAvatar } from 'src/hooks/useUserAvatar';
 import { useDisplayName } from 'src/hooks/useDisplayName';
 
+import { t } from 'src/locales';
 import { useWalletContext } from 'src/contexts/wallet-context';
 
 import { Label } from 'src/components/label';
@@ -185,7 +186,7 @@ export function AccountDrawer({ data = [], sx, ...other }: AccountDrawerProps) {
           {/* Edit display name */}
           <Box sx={{ px: 2.5, py: 2 }}>
             <TextField
-              label="Display Name (編輯暱稱)"
+              label={t.common.account.displayNameLabel}
               value={nameInput}
               onChange={(e) => setNameInput(e.target.value.slice(0, 20))}
               size="small"
@@ -204,7 +205,7 @@ export function AccountDrawer({ data = [], sx, ...other }: AccountDrawerProps) {
                 onClose();
               }}
             >
-              Save Name (儲存變更)
+              {t.common.account.saveName}
             </Button>
           </Box>
 
