@@ -38,9 +38,9 @@ const MIGRATED_PATHS: string[] = [
  *
  * 每批遷移都會把它推高——那是預期行為，不是退步：字串搬進 catalog 時 `en` 拿到的是
  * 中文原文。真正的退步是「翻譯過的字又變回中文」，而那會讓這條斷言失敗。
- * 目前：errors 1388、freshness 142、exchange 81、nav 38、meta 12、portfolio 4。
+ * 目前：errors 1388、exchange 643、freshness 142、nav 38、meta 12、portfolio 4。
  */
-const EN_HAN_BASELINE = 1665;
+const EN_HAN_BASELINE = 2227;
 
 /** 傳目錄就回它底下所有原始碼檔案，傳單一檔案就回那一個。測試檔一律排除。 */
 function sourceFilesIn(pathish: string): string[] {
