@@ -92,6 +92,27 @@ Line numbers are as of commit `d0378ed`.
 |------|--------|----------|
 | 110–112 | `<b>` ×2 | Network-mismatch banner — `目前連線於 <b>{chain}</b>。正式部署鏈是 <b>Base Sepolia（…）</b> ——…` |
 
+## `src/pages/pepefi/PepeLabPage.tsx` (#34)
+
+| Line | Markup | Sentence |
+|------|--------|----------|
+| 649 | `<strong>` | Current-mount summary — `{desc} 目前您已達到了 <strong>Lv. {level} · 進化型態 …</strong> 的尊貴段位。` |
+| 679 | `<strong>` ×2 | Next-mount unlock hint — `距離解鎖下一隻坐騎 <strong>{emoji} {name}</strong> 還差 <strong>{levels}</strong> 級！(需要達 Lv.{level})` |
+| 844 | `<strong>` ×2 | Gachapon cost line — `花費 <strong>500 PEPE</strong> 從 <strong>{stage}</strong> 專屬的 {count} 款造型中隨機抽取。` |
+
+## `src/pages/pepefi/TraderStakePage.tsx` (#34)
+
+| Line | Markup | Sentence |
+|------|--------|----------|
+| ~449 | `<b>` | PEPE farm disclaimer — `⚠ 此數字為前端依質押量與時間試算的<b>展示值</b>，鏈上沒有對應的獎勵池，目前無法領取。…` |
+| ~498 | `<b>` | Footnote disclaimer — `…目前是<b>前端試算的展示值</b>：鏈上沒有對應的獎勵池，也沒有任何合約會把它發給你，因此收割按鈕停用。` |
+
+## `src/pages/pepefi/CopyPage.tsx` (#34)
+
+| Line | Markup | Sentence |
+|------|--------|----------|
+| 675 | `<b>` | KYC-pending alert — `⏳ 你的 KYC 申請<b>已送出，正在等待審核</b>。審核人員核准後才能跟單含股票 / 債券的策略，不需要重複送出。` |
+
 ---
 
 ## Related: markup inside string values
