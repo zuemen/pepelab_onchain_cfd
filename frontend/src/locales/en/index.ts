@@ -14,6 +14,7 @@ import { admin } from './admin';
 import { common } from './common';
 import { tokens } from './tokens';
 import { errors } from './errors';
+import { history } from './history';
 import { pepelab } from './pepelab';
 import { landing } from './landing';
 import { rewards } from './rewards';
@@ -59,6 +60,7 @@ const en: Catalog = {
   pepelab,
   copy,
   marketplace,
+  history,
 };
 
 export default en;

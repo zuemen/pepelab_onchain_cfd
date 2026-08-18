@@ -8,6 +8,7 @@ import { explorerTx } from 'src/lib/pepefi/notify'
 import { TableSkeleton } from 'src/components/pepefi/Skeleton'
 import EmptyState from 'src/components/pepefi/EmptyState'
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
+import { t, interpolate } from 'src/locales'
 import { mapLimit, withRetry, RPC_CONCURRENCY } from 'src/lib/pepefi/rpcBatch'
 
 import Box from '@mui/material/Box';
@@ -331,28 +332,28 @@ const TYPE_STYLE: Record<EventType, any> = {
 }
 
 const TYPE_LABEL: Partial<Record<EventType, string>> = {
-  Swap:             'Swap',
-  PositionOpened:   'Opened',
-  PositionClosed:   'Closed',
-  MarginDeposited:  'Deposit',
-  MarginWithdrawn:  'Withdraw',
-  TraderFollowed:   'Follow',
-  TraderUnfollowed: 'Unfollow',
-  CopyFee:          'Copy Fee',
-  PriceUpdated:     'Price ↺',
-  Stake:            'Stake',
-  Slash:            'Slash',
+  Swap:             t.history.eventType.swap,
+  PositionOpened:   t.history.eventType.opened,
+  PositionClosed:   t.history.eventType.closed,
+  MarginDeposited:  t.history.eventType.deposit,
+  MarginWithdrawn:  t.history.eventType.withdraw,
+  TraderFollowed:   t.history.eventType.follow,
+  TraderUnfollowed: t.history.eventType.unfollow,
+  CopyFee:          t.history.eventType.copyFee,
+  PriceUpdated:     t.history.eventType.priceUpdated,
+  Stake:            t.history.eventType.stake,
+  Slash:            t.history.eventType.slash,
 }
 
 const FILTERS: { key: FilterKey; label: string }[] = [
-  { key: 'all',      label: 'All' },
-  { key: 'Swap',     label: 'Swap' },
-  { key: 'Position', label: 'Positions' },
-  { key: 'Margin',   label: 'Margin' },
-  { key: 'Social',   label: 'Social' },
-  { key: 'Fee',      label: 'Fees' },
-  { key: 'Price',    label: 'Oracle' },
-  { key: 'Stake',    label: 'Stake' },
+  { key: 'all',      label: t.history.filter.all },
+  { key: 'Swap',     label: t.history.filter.swap },
+  { key: 'Position', label: t.history.filter.position },
+  { key: 'Margin',   label: t.history.filter.margin },
+  { key: 'Social',   label: t.history.filter.social },
+  { key: 'Fee',      label: t.history.filter.fee },
+  { key: 'Price',    label: t.history.filter.price },
+  { key: 'Stake',    label: t.history.filter.stake },
 ]
 
 const FILTER_TYPES: Partial<Record<FilterKey, EventType[]>> = {
@@ -378,7 +379,7 @@ function renderDetails(e: ChainEvent): ReactNode {
       const label   = ASSET_LABEL[d.asset as string] ?? '?'
       const side    = (d.isLong as boolean) ? 'LONG' : 'SHORT'
       const sideCol = (d.isLong as boolean) ? 'success.main' : 'error.main'
-      return <span><Box component="span" sx={{ fontWeight: 'bold', color: sideCol }}>{side}</Box> {label} {String(d.leverage as bigint)}× @ {fPrice18(d.entryPrice as bigint)} | Margin: {f18(d.margin as bigint)} mUSDC</span>
+      return <span><Box component="span" sx={{ fontWeight: 'bold', color: sideCol }}>{side}</Box> {label} {String(d.leverage as bigint)}× @ {fPrice18(d.entryPrice as bigint)} | {t.history.detail.marginLabel} {f18(d.margin as bigint)} mUSDC</span>
     }
 
     case 'PositionClosed': {
@@ -390,8 +391,8 @@ function renderDetails(e: ChainEvent): ReactNode {
       const received = d.closeAmount as bigint | undefined
       return (
         <span>
-          PnL: <Box component="span" sx={{ fontWeight: 'bold', color: col }}>{pnlStr}</Box> mUSDC
-          {received !== undefined && ` | Received: ${f18(received)}`}
+          {t.history.detail.pnlLabel} <Box component="span" sx={{ fontWeight: 'bold', color: col }}>{pnlStr}</Box> mUSDC
+          {received !== undefined && interpolate(t.history.detail.receivedSuffix, { amount: f18(received) })}
         </span>
       )
     }
@@ -404,16 +405,16 @@ function renderDetails(e: ChainEvent): ReactNode {
 
     case 'TraderFollowed': {
       const trader = d.trader as string
-      return <span>Following <Box component="span" sx={{ fontFamily: MONO, color: 'text.primary' }}>{shortAddr(trader)}</Box> | Margin: {f18(d.totalMargin as bigint)} mUSDC</span>
+      return <span>{t.history.detail.following} <Box component="span" sx={{ fontFamily: MONO, color: 'text.primary' }}>{shortAddr(trader)}</Box> | {t.history.detail.marginLabel} {f18(d.totalMargin as bigint)} mUSDC</span>
     }
 
     case 'TraderUnfollowed': {
       const trader = d.trader as string
-      return <span>Unfollowed <Box component="span" sx={{ fontFamily: MONO, color: 'text.primary' }}>{shortAddr(trader)}</Box></span>
+      return <span>{t.history.detail.unfollowed} <Box component="span" sx={{ fontFamily: MONO, color: 'text.primary' }}>{shortAddr(trader)}</Box></span>
     }
 
     case 'CopyFee':
-      return <span>Earned: <Box component="span" sx={{ color: 'primary.main', fontWeight: 'bold' }}>{f18(d.traderShare as bigint)}</Box> mUSDC (fee: {f18(d.fee as bigint)})</span>
+      return <span>{t.history.detail.earned} <Box component="span" sx={{ color: 'primary.main', fontWeight: 'bold' }}>{f18(d.traderShare as bigint)}</Box> mUSDC{interpolate(t.history.detail.feeSuffix, { fee: f18(d.fee as bigint) })}</span>
 
     case 'PriceUpdated': {
       const label = ASSET_LABEL[d.assetId as string] ?? '?'
@@ -421,7 +422,7 @@ function renderDetails(e: ChainEvent): ReactNode {
     }
 
     case 'Stake':
-      return <span>Staked <Box component="span" sx={{ color: 'warning.main', fontWeight: 'semibold' }}>{f18(d.amount as bigint)}</Box> mUSDC</span>
+      return <span>{t.history.detail.staked} <Box component="span" sx={{ color: 'warning.main', fontWeight: 'semibold' }}>{f18(d.amount as bigint)}</Box> mUSDC</span>
 
     case 'Slash': {
       const recipient = d.recipient as string
@@ -619,14 +620,26 @@ export default function HistoryPage() {
   const reportScanIssues = (failedChunks: number, missedPositions = 0) => {
     const notes: string[] = []
     if (failedChunks > 0) {
-      notes.push(`${failedChunks} block-range quer${failedChunks === 1 ? 'y' : 'ies'} failed (swaps, margin, fees and stakes may be incomplete)`)
+      notes.push(
+        interpolate(
+          failedChunks === 1 ? t.history.scanIssue.failedChunkOne : t.history.scanIssue.failedChunkMany,
+          { count: failedChunks },
+        ),
+      )
     }
     if (missedPositions < 0) {
-      notes.push('the position index could not be read — positions below may be missing')
+      notes.push(t.history.scanIssue.positionIndexUnreadable)
     } else if (missedPositions > 0) {
-      notes.push(`${missedPositions} position${missedPositions === 1 ? '' : 's'} could not be read`)
+      notes.push(
+        interpolate(
+          missedPositions === 1 ? t.history.scanIssue.missedPositionOne : t.history.scanIssue.missedPositionMany,
+          { count: missedPositions },
+        ),
+      )
     }
-    setError(notes.length ? `${notes.join(' · ')}. Refresh to retry.` : null)
+    setError(
+      notes.length ? interpolate(t.history.scanIssue.refreshToRetry, { notes: notes.join(' · ') }) : null,
+    )
   }
 
   /** Re-scans the newest window and folds it into what's already known. */
@@ -668,7 +681,7 @@ export default function HistoryPage() {
       reportScanIssues(failedChunks, posResult.missed)
     } catch (err) {
       console.error('[history]', err)
-      setError(err instanceof Error ? err.message.slice(0, 120) : 'Failed to fetch events')
+      setError(err instanceof Error ? err.message.slice(0, 120) : t.history.fetchFailed)
     } finally {
       setLoading(false)
     }
@@ -688,7 +701,7 @@ export default function HistoryPage() {
       reportScanIssues(failedChunks)
     } catch (err) {
       console.error('[history:older]', err)
-      setError(err instanceof Error ? err.message.slice(0, 120) : 'Failed to fetch older events')
+      setError(err instanceof Error ? err.message.slice(0, 120) : t.history.fetchOlderFailed)
     } finally {
       setLoadingMore(false)
     }
@@ -710,10 +723,10 @@ export default function HistoryPage() {
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
         <Box sx={{ flexGrow: 1 }}>
           <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
-            Transaction History
+            {t.history.title}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            On-chain auditability — decoded directly from Base Sepolia via ethers.js
+            {t.history.subtitle}
           </Typography>
         </Box>
         <Button
@@ -722,17 +735,16 @@ export default function HistoryPage() {
           disabled={loading || loadingMore}
           sx={{ textTransform: 'none' }}
         >
-          {loading ? 'Loading…' : '↺ Refresh'}
+          {loading ? t.history.loading : t.history.refresh}
         </Button>
       </Box>
 
       {/* Proof-of-transparency note */}
       <Alert severity="info" sx={{ bgcolor: 'rgba(0, 184, 217, 0.08)', color: 'info.lighter', border: '1px solid', borderColor: 'rgba(0, 184, 217, 0.16)' }}>
-        All activity is read directly from the Base Sepolia blockchain — no backend and no server-side database, just the immutable ledger.{' '}
-        <Box component="span" sx={{ fontWeight: 'bold', color: 'text.primary' }}>Positions are complete</Box> — every one you have ever
-        opened is read from contract storage, however long ago. Swaps, margin moves, fees and stakes exist only as event logs, which the
-        RPC serves in a limited block window, so those build up from what this browser has already seen.{' '}
-        Click <Box component="span" sx={{ color: 'success.main', fontWeight: 'bold', fontFamily: MONO }}>↗</Box> to verify a row on BaseScan.
+        {t.history.proofNote.intro}{' '}
+        <Box component="span" sx={{ fontWeight: 'bold', color: 'text.primary' }}>{t.history.proofNote.positionsComplete}</Box>{' '}
+        {t.history.proofNote.positionsCompleteRest}{' '}
+        {t.history.proofNote.clickToVerify} <Box component="span" sx={{ color: 'success.main', fontWeight: 'bold', fontFamily: MONO }}>↗</Box> {t.history.proofNote.clickToVerifyRest}
       </Alert>
 
       {/* Tabs */}
@@ -743,12 +755,12 @@ export default function HistoryPage() {
       >
         <Tab
           value="mine"
-          label={wallet.isConnected ? 'My Activity' : 'My Activity (connect wallet)'}
+          label={wallet.isConnected ? t.history.tab.mine : t.history.tab.mineDisconnected}
           sx={{ textTransform: 'none' }}
         />
         <Tab
           value="all"
-          label="All Activity"
+          label={t.history.tab.all}
           sx={{ textTransform: 'none' }}
         />
       </Tabs>
@@ -762,7 +774,7 @@ export default function HistoryPage() {
               key={f.key}
               label={
                 active && visible.length > 0
-                  ? `${f.label} (${visible.length})`
+                  ? interpolate(t.history.filter.countedLabel, { label: f.label, count: visible.length })
                   : f.label
               }
               onClick={() => setFilterKey(f.key)}
@@ -785,7 +797,7 @@ export default function HistoryPage() {
       {/* "Mine" tab, no wallet */}
       {tab === 'mine' && !wallet.isConnected && (
         <Card sx={{ p: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Typography color="text.secondary">Connect your wallet to see your activity.</Typography>
+          <Typography color="text.secondary">{t.history.noWallet}</Typography>
         </Card>
       )}
 
@@ -798,15 +810,29 @@ export default function HistoryPage() {
           ) : visible.length === 0 ? (
             <EmptyState
               icon="📜"
-              title="No activity yet"
-              description={`No events found in the last ${FETCH_BLOCKS.toLocaleString()} blocks${filterKey !== 'all' ? ` for filter "${filterKey}"` : ''}.`}
+              title={t.history.empty.title}
+              description={
+                filterKey !== 'all'
+                  ? interpolate(t.history.empty.windowFiltered, {
+                      blocks: FETCH_BLOCKS.toLocaleString(),
+                      filter: filterKey,
+                    })
+                  : interpolate(t.history.empty.windowOnly, { blocks: FETCH_BLOCKS.toLocaleString() })
+              }
             />
           ) : (
             <TableContainer>
               <Table size="small">
                 <TableHead>
                   <TableRow sx={{ bgcolor: 'background.neutral' }}>
-                    {['Time', 'Type', 'User', 'Details', 'Block', 'Tx'].map(h => (
+                    {[
+                      t.history.column.time,
+                      t.history.column.type,
+                      t.history.column.user,
+                      t.history.column.details,
+                      t.history.column.block,
+                      t.history.column.tx,
+                    ].map(h => (
                       <TableCell key={h} sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{h}</TableCell>
                     ))}
                   </TableRow>
@@ -866,9 +892,9 @@ export default function HistoryPage() {
                           </Typography>
                         ) : (
                           // Rebuilt from contract storage, which keeps no tx hash.
-                          <Tooltip title="Read from contract storage — permanent, but not tied to a single transaction. Verify with getPosition() on BaseScan.">
+                          <Tooltip title={t.history.storageTooltip}>
                             <Typography variant="caption" sx={{ color: 'text.disabled', cursor: 'help' }}>
-                              storage
+                              {t.history.storageLabel}
                             </Typography>
                           </Tooltip>
                         )}
@@ -892,18 +918,26 @@ export default function HistoryPage() {
             sx={{ textTransform: 'none' }}
           >
             {loadingMore
-              ? 'Scanning older blocks…'
-              : `↓ Load older (blocks ${Math.max(0, scannedFrom - FETCH_BLOCKS).toLocaleString()}–${(scannedFrom - 1).toLocaleString()})`}
+              ? t.history.loadOlder.scanning
+              : interpolate(t.history.loadOlder.cta, {
+                  from: Math.max(0, scannedFrom - FETCH_BLOCKS).toLocaleString(),
+                  to: (scannedFrom - 1).toLocaleString(),
+                })}
           </Button>
         </Box>
       )}
 
       {/* Footer note */}
       <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center', display: 'block', mt: 2 }}>
-        {visible.length} event{visible.length !== 1 ? 's' : ''} displayed ·{' '}
-        Positions read in full from contract storage
-        {scannedFrom !== null && ` · logs scanned back to block #${scannedFrom.toLocaleString()}`}{' '}
-        · Log rows are cached in this browser only; clearing site data resets them, but the chain keeps everything.
+        {interpolate(
+          visible.length === 1 ? t.history.footer.eventOne : t.history.footer.eventMany,
+          { count: visible.length },
+        )}{' '}
+        ·{' '}
+        {t.history.footer.positionsFull}
+        {scannedFrom !== null &&
+          ` ${interpolate(t.history.footer.scannedBackTo, { block: scannedFrom.toLocaleString() })}`}{' '}
+        {t.history.footer.cacheNote}
       </Typography>
     </Container>
   )

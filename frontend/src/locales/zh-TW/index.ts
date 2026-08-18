@@ -12,6 +12,7 @@ import { admin } from './admin';
 import { common } from './common';
 import { tokens } from './tokens';
 import { errors } from './errors';
+import { history } from './history';
 import { pepelab } from './pepelab';
 import { landing } from './landing';
 import { rewards } from './rewards';
@@ -57,6 +58,7 @@ const zhTW = {
   pepelab,
   copy,
   marketplace,
+  history,
 };
 
 export type Catalog = typeof zhTW;
