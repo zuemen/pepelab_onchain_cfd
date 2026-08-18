@@ -2,6 +2,8 @@
 // 1254×1254 PNG on black, served from /public/pepe-mounts, and unlocks on the
 // same level cadence the wardrobe used (1 / 5 / 15 / 30).
 
+import { t } from 'src/locales';
+
 export interface PepeMount {
   id: string;
   name: string;
@@ -27,11 +29,12 @@ export interface PepeMount {
   frogScale: number;
 }
 
-export const PEPE_MOUNTS: PepeMount[] = [
+/** id 以外全是資料；`name` / `desc` 是顯示字串，住在 catalog。 */
+type MountData = Omit<PepeMount, 'name' | 'desc'> & { id: keyof typeof t.pepe.mount };
+
+const MOUNTS: MountData[] = [
   {
     id: 'leaf',
-    name: 'Lotus Leaf (荷葉浮舟)',
-    desc: '一片掛著露珠的荷葉，每隻佩佩蛙的第一段旅程都從這裡開始。',
     levelRequired: 1,
     emoji: '🍃',
     image: '/pepe-mounts/leaf.webp',
@@ -42,8 +45,6 @@ export const PEPE_MOUNTS: PepeMount[] = [
   },
   {
     id: 'carpet',
-    name: 'Magic Carpet (魔法飛毯)',
-    desc: '織滿古老符文的飛毯，載著你飛越鏈上的第一道高牆。',
     levelRequired: 5,
     emoji: '🧞',
     image: '/pepe-mounts/carpet.webp',
@@ -54,8 +55,6 @@ export const PEPE_MOUNTS: PepeMount[] = [
   },
   {
     id: 'bitcoin',
-    name: 'BitCoin Rider (比特金幣)',
-    desc: '踩著滾動的比特金幣前進，象徵你已經看懂這座市場。',
     levelRequired: 15,
     emoji: '🪙',
     image: '/pepe-mounts/bitcoin.webp',
@@ -66,8 +65,6 @@ export const PEPE_MOUNTS: PepeMount[] = [
   },
   {
     id: 'whale',
-    name: 'Celestial Whale (黃金天鯨)',
-    desc: '傳說中的黃金天鯨，只有真正的巨鯨才騎得動牠。',
     levelRequired: 30,
     emoji: '🐋',
     image: '/pepe-mounts/whale.webp',
@@ -77,6 +74,12 @@ export const PEPE_MOUNTS: PepeMount[] = [
     frogScale: 0.5,
   },
 ];
+
+export const PEPE_MOUNTS: PepeMount[] = MOUNTS.map((m) => ({
+  ...m,
+  name: t.pepe.mount[m.id].name,
+  desc: t.pepe.mount[m.id].desc,
+}));
 
 export function getMount(id: string): PepeMount | undefined {
   return PEPE_MOUNTS.find((m) => m.id === id);

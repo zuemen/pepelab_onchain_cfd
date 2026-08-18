@@ -1,4 +1,5 @@
 import { nav } from './nav';
+import { pepe } from './pepe';
 import { meta } from './meta';
 import { admin } from './admin';
 import { errors } from './errors';
@@ -6,6 +7,7 @@ import { exchange } from './exchange';
 import { terminal } from './terminal';
 import { portfolio } from './portfolio';
 import { freshness } from './freshness';
+import { pepeStageSkins } from './pepeStageSkins';
 
 // ----------------------------------------------------------------------
 
@@ -25,6 +27,8 @@ const zhTW = {
   portfolio,
   exchange,
   terminal,
+  pepe,
+  pepeStageSkins,
 };
 
 export type Catalog = typeof zhTW;

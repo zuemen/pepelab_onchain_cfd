@@ -37,6 +37,10 @@ const MIGRATED_PATHS: string[] = [
   'src/pages/pepefi/AdminOraclePage.tsx',
   'src/pages/pepefi/AdminTreasuryPage.tsx',
   'src/pages/pepefi/AgentMonitorPage.tsx',
+  'src/components/pepefi/pepeSkinsData.ts',
+  'src/components/pepefi/pepeStageSkinsData.ts',
+  'src/components/pepefi/pepeMountsData.ts',
+  'src/lib/pepefi/achievements.ts',
 ];
 
 /**
@@ -47,10 +51,10 @@ const MIGRATED_PATHS: string[] = [
  *
  * 每批遷移都會把它推高——那是預期行為，不是退步：字串搬進 catalog 時 `en` 拿到的是
  * 中文原文。真正的退步是「翻譯過的字又變回中文」，而那會讓這條斷言失敗。
- * 目前：errors 1388、terminal 685、exchange 643、admin 491、freshness 146、nav 38、
- * meta 12、portfolio 4。
+ * 目前：errors 1388、pepe 1207、terminal 685、exchange 643、admin 491、
+ * pepeStageSkins 264、freshness 146、nav 38、meta 12、portfolio 4。
  */
-const EN_HAN_BASELINE = 3407;
+const EN_HAN_BASELINE = 4878;
 
 /** 傳目錄就回它底下所有原始碼檔案，傳單一檔案就回那一個。測試檔一律排除。 */
 function sourceFilesIn(pathish: string): string[] {
@@ -123,17 +127,39 @@ describe('countHan', () => {
 
 // ----------------------------------------------------------------------
 
+/**
+ * 唯一的例外：中文只出現在檔案路徑裡的那一行。
+ *
+ * 造型資料表指向的圖檔就叫 `/skins/03_忍者蛙戰士.png`——那是磁碟上的檔名，不是
+ * 使用者讀的字；改它要連同 `public/` 底下的檔案一起改名，跟這次遷移無關。
+ *
+ * 例外寫成「條件」而不是「某檔案某行」是刻意的：寫成行號，檔案一動就過期；寫成
+ * 整個檔案豁免，就等於那個檔案退出 ratchet。這條規則只放行資產路徑，其他任何
+ * 中文照樣會失敗。
+ */
+const ASSET_PATH = /['"`]\/[^'"`]*\.(png|jpe?g|webp|svg|gif)['"`]/;
+
+function isAssetPathOnly(line: string): boolean {
+  return ASSET_PATH.test(line) && countHan(line.replace(new RegExp(ASSET_PATH, 'g'), '')) === 0;
+}
+
 describe('migration ratchets', () => {
   it('keeps everything already migrated free of inline display strings', () => {
     const offenders = MIGRATED_PATHS.flatMap((migrated) =>
       sourceFilesIn(migrated).flatMap((file) =>
-        findInlineDisplayStrings(fs.readFileSync(file, 'utf8')).map(
-          (hit) => `${path.relative(FRONTEND_ROOT, file)}:${hit.line}  ${hit.text.trim()}`
-        )
+        findInlineDisplayStrings(fs.readFileSync(file, 'utf8'))
+          .filter((hit) => !isAssetPathOnly(hit.text))
+          .map((hit) => `${path.relative(FRONTEND_ROOT, file)}:${hit.line}  ${hit.text.trim()}`)
       )
     );
 
     expect(offenders).toEqual([]);
+  });
+
+  it('still flags a display string sitting next to an asset path', () => {
+    const line = `  { image: '/skins/03_忍者蛙戰士.png', name: '暗影忍者蛙戰士' },`;
+    expect(isAssetPathOnly(line)).toBe(false);
+    expect(isAssetPathOnly(`  imagePath: '/skins/03_忍者蛙戰士.png',`)).toBe(true);
   });
 
   it('never lets the untranslated Chinese in the en catalog grow', () => {
