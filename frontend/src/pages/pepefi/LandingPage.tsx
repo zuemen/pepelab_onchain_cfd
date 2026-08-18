@@ -130,9 +130,7 @@ export default function LandingPage() {
                 mb: 4,
                 mx: { xs: 'auto', md: 0 },
               }}>
-                對標 Hyperliquid 的鏈上永續 + agent 經濟。5x 槓桿合成/RWA 永續、社交跟單、
-                做市金庫，外加 <b style={{ color: 'var(--palette-primary-main)' }}>x402 付費訊號</b>——讓 AI agent
-                自帶錢包、付費、自主下單。全程透明上鏈。
+                {t.landing.markup.heroBefore}<b style={{ color: 'var(--palette-primary-main)' }}>{t.landing.markup.heroBold}</b>{t.landing.markup.heroAfter}
               </Typography>
 
               <Stack direction="row" spacing={2} justifyContent={{ xs: 'center', md: 'flex-start' }} flexWrap="wrap">
@@ -274,9 +272,7 @@ export default function LandingPage() {
             variant="body1"
             sx={{ maxWidth: 680, mx: 'auto', color: 'text.secondary', lineHeight: 1.9 }}
           >
-            本平台使用<b>測試網代幣</b>進行模擬交易，讓使用者無風險體驗 RWA 投資、
-            社交跟單與 AI 代理交易。<b>所有價格追蹤真實市場</b>，但資金為模擬資產，
-            不涉及真實金錢 —— 等同 TradingView 的 Paper Trading 模式。
+            {t.landing.markup.paperBefore}<b>{t.landing.markup.paperBold1}</b>{t.landing.markup.paperMid}<b>{t.landing.markup.paperBold2}</b>{t.landing.markup.paperAfter}
           </Typography>
         </Box>
 

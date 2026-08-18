@@ -2,7 +2,6 @@
  * 進站頁。
  *
  * 六張功能卡的標題與說明、四個上手步驟都是顯示字串，整份搬進來。
- * 主視覺那段介紹與 Paper Trading 的說明各自在句中夾了 `<b>`，留給 #36。
  */
 export const landing = {
   tagline: 'DeFi · SocialFi · GameFi · MemeFi 🐸',
@@ -45,4 +44,17 @@ export const landing = {
   },
 
   oracleDisclosure: 'Oracle 價格由部署者（admin）控制，Demo 期間會即時更新以展示 PnL 變化',
+
+  /** #36：主視覺介紹與 Paper Trading 說明，各自拆成 `<b>` 前後的片段。 */
+  markup: {
+    heroBefore: '對標 Hyperliquid 的鏈上永續 + agent 經濟。5x 槓桿合成/RWA 永續、社交跟單、 做市金庫，外加 ',
+    heroBold: 'x402 付費訊號',
+    heroAfter: '——讓 AI agent 自帶錢包、付費、自主下單。全程透明上鏈。',
+
+    paperBefore: '本平台使用',
+    paperBold1: '測試網代幣',
+    paperMid: '進行模擬交易，讓使用者無風險體驗 RWA 投資、 社交跟單與 AI 代理交易。',
+    paperBold2: '所有價格追蹤真實市場',
+    paperAfter: '，但資金為模擬資產， 不涉及真實金錢 —— 等同 TradingView 的 Paper Trading 模式。',
+  },
 };

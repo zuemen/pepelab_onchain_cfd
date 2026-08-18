@@ -21,9 +21,9 @@ Line numbers are as of commit `d0378ed`.
 
 Resolved (#36): `src/pages/pepefi/ExchangePage.tsx` (#32),
 `src/components/pepefi/whale/WhaleFeed.tsx` (#33/#34),
-`src/pages/pepefi/VaultPage.tsx`, `src/pages/pepefi/SessionsPage.tsx` and
-`src/pages/pepefi/TokenizedAssetsPage.tsx` (#34) — all back on the ratchet
-allowlist.
+`src/pages/pepefi/VaultPage.tsx`, `src/pages/pepefi/SessionsPage.tsx`,
+`src/pages/pepefi/TokenizedAssetsPage.tsx` and `src/pages/pepefi/LandingPage.tsx`
+(#34) — all back on the ratchet allowlist.
 
 `src/pages/pepefi/X402DocsPage.tsx` (#34)'s deferred sentence is resolved too,
 but the file itself still isn't on the allowlist: it also holds a
@@ -32,13 +32,6 @@ template literal (lines ~248–250). That's deliberately-untranslated verbatim
 code, not a display string — same category as the asset-path exception — and
 out of scope for #36. Left as-is; noted here so it isn't mistaken for a
 missed #36 entry.
-
-## `src/pages/pepefi/LandingPage.tsx` (#34)
-
-| Line | Markup | Sentence |
-|------|--------|----------|
-| 133–135 | `<b style>` | Hero paragraph — `…外加 <b>x402 付費訊號</b>——讓 AI agent…` |
-| 277–279 | `<b>` ×2 | Paper Trading explanation |
 
 ## `src/layouts/pepefi/index.tsx` (#34)
 
