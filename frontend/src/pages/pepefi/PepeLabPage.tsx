@@ -646,7 +646,7 @@ export default function PepeLabPage() {
                 {activeMountObj.emoji} {activeMountObj.name}
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5, lineHeight: 1.6 }}>
-                {activeMountObj.desc} 目前您已達到了 <strong>Lv. {level} · 進化型態 Lv.{evoStage.stage} {evoStage.label} {evoStage.emoji}</strong> 的尊貴段位。
+                {activeMountObj.desc}{t.pepelab.markup.currentMountBefore}<strong>{t.pepelab.markup.currentMountStrongPrefix}{level}{t.pepelab.markup.currentMountStrongMid}{evoStage.stage} {evoStage.label} {evoStage.emoji}</strong>{t.pepelab.markup.currentMountAfter}
               </Typography>
               <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap>
                 <Box sx={{ bgcolor: 'rgba(255,255,255,0.04)', px: 2.5, py: 1, borderRadius: 1.5, border: '1px solid rgba(255,255,255,0.06)', minWidth: 120 }}>
@@ -676,7 +676,7 @@ export default function PepeLabPage() {
                 <Typography variant="caption" sx={{ color: nextUnlock ? 'text.secondary' : 'var(--palette-primary-main)', fontWeight: 'bold' }}>
                   {nextUnlock ? (
                     <>
-                      距離解鎖下一隻坐騎 <strong>{nextUnlock.emoji} {nextUnlock.name.split(' (')[0]}</strong> 還差 <strong style={{ color: '#ffb300' }}>{levelsToNext}</strong> 級！(需要達 Lv.{nextUnlock.levelRequired})
+                      {t.pepelab.markup.nextUnlockBefore}<strong>{nextUnlock.emoji} {nextUnlock.name.split(' (')[0]}</strong>{t.pepelab.markup.nextUnlockMid}<strong style={{ color: '#ffb300' }}>{levelsToNext}</strong>{t.pepelab.markup.nextUnlockAfter}{nextUnlock.levelRequired}{t.pepelab.markup.nextUnlockTail}
                     </>
                   ) : (
                     t.pepelab.mountsTab.allUnlocked
@@ -841,8 +841,7 @@ export default function PepeLabPage() {
                   <Typography variant="caption" color="text.secondary" sx={{ mt: 1, mb: 3, textAlign: 'center', maxWidth: 280, zIndex: 1 }}>
                     {stagePool.length > 0 ? (
                       <>
-                        花費 <strong>500 PEPE</strong> 從 <strong>{evoStage.label}</strong> 專屬的 {stagePool.length} 款造型中隨機抽取。
-                        進化到下一階段後，會換上一整批全新造型。
+                        {t.pepelab.markup.gachaCostBefore}<strong>500 PEPE</strong>{t.pepelab.markup.gachaCostMid1}<strong>{evoStage.label}</strong>{t.pepelab.markup.gachaCostMid2}{stagePool.length}{t.pepelab.markup.gachaCostAfter}
                       </>
                     ) : (
                       interpolate(t.pepelab.gacha.inProgress, { stage: evoStage.label })

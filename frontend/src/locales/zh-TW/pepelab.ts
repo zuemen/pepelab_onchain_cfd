@@ -1,9 +1,6 @@
 /**
  * Pepe GameFi Lab：魔法藥水、坐騎、造型盲盒、成就、每日任務五個分頁，
  * 以及進化彈窗與抽卡結果彈窗。
- *
- * 三個地方在句中夾了 `<strong>`，留給 #36：目前坐騎摘要卡的「尊貴段位」句、
- * 下一隻坐騎的解鎖提示、造型盲盒的費用說明。
  */
 export const pepelab = {
   /** 藥水商店的三瓶藥水。 */
@@ -65,7 +62,6 @@ export const pepelab = {
   },
 
   mountsTab: {
-    /** 目前坐騎摘要句的動態部分（尊貴段位那句留給 #36）。 */
     currentMount: '目前坐騎',
     evolutionForm: '進化型態',
     unlockedCount: '已解鎖坐騎',
@@ -126,5 +122,23 @@ export const pepelab = {
     unlockedHint: '解鎖了 {stage} 階段的專屬造型。立即穿戴，左側的主角就會換成牠。',
     equipNow: '👕 立即穿戴造型',
     keepInCloset: '收進衣櫃',
+  },
+
+  /** #36：三段句中夾了 `<strong>` 的說明，各自拆成標記前後的片段。 */
+  markup: {
+    currentMountBefore: ' 目前您已達到了 ',
+    currentMountStrongPrefix: 'Lv. ',
+    currentMountStrongMid: ' · 進化型態 Lv.',
+    currentMountAfter: ' 的尊貴段位。',
+
+    nextUnlockBefore: '距離解鎖下一隻坐騎 ',
+    nextUnlockMid: ' 還差 ',
+    nextUnlockAfter: ' 級！(需要達 Lv.',
+    nextUnlockTail: ')',
+
+    gachaCostBefore: '花費 ',
+    gachaCostMid1: ' 從 ',
+    gachaCostMid2: ' 專屬的 ',
+    gachaCostAfter: ' 款造型中隨機抽取。 進化到下一階段後，會換上一整批全新造型。',
   },
 };

@@ -22,8 +22,9 @@ Line numbers are as of commit `d0378ed`.
 Resolved (#36): `src/pages/pepefi/ExchangePage.tsx` (#32),
 `src/components/pepefi/whale/WhaleFeed.tsx` (#33/#34),
 `src/pages/pepefi/VaultPage.tsx`, `src/pages/pepefi/SessionsPage.tsx`,
-`src/pages/pepefi/TokenizedAssetsPage.tsx`, `src/pages/pepefi/LandingPage.tsx`
-and `src/layouts/pepefi/index.tsx` (#34) — all back on the ratchet allowlist.
+`src/pages/pepefi/TokenizedAssetsPage.tsx`, `src/pages/pepefi/LandingPage.tsx`,
+`src/layouts/pepefi/index.tsx` and `src/pages/pepefi/PepeLabPage.tsx` (#34) —
+all back on the ratchet allowlist.
 
 `src/pages/pepefi/X402DocsPage.tsx` (#34)'s deferred sentence is resolved too,
 but the file itself still isn't on the allowlist: it also holds a
@@ -32,14 +33,6 @@ template literal (lines ~248–250). That's deliberately-untranslated verbatim
 code, not a display string — same category as the asset-path exception — and
 out of scope for #36. Left as-is; noted here so it isn't mistaken for a
 missed #36 entry.
-
-## `src/pages/pepefi/PepeLabPage.tsx` (#34)
-
-| Line | Markup | Sentence |
-|------|--------|----------|
-| 649 | `<strong>` | Current-mount summary — `{desc} 目前您已達到了 <strong>Lv. {level} · 進化型態 …</strong> 的尊貴段位。` |
-| 679 | `<strong>` ×2 | Next-mount unlock hint — `距離解鎖下一隻坐騎 <strong>{emoji} {name}</strong> 還差 <strong>{levels}</strong> 級！(需要達 Lv.{level})` |
-| 844 | `<strong>` ×2 | Gachapon cost line — `花費 <strong>500 PEPE</strong> 從 <strong>{stage}</strong> 專屬的 {count} 款造型中隨機抽取。` |
 
 ## `src/pages/pepefi/TraderStakePage.tsx` (#34)
 

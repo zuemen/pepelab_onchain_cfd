@@ -63,7 +63,6 @@ export const pepelab: Catalog['pepelab'] = {
   },
 
   mountsTab: {
-    /** 目前坐騎摘要句的動態部分（尊貴段位那句留給 #36）。 */
     currentMount: '目前坐騎',
     evolutionForm: '進化型態',
     unlockedCount: '已解鎖坐騎',
@@ -124,5 +123,23 @@ export const pepelab: Catalog['pepelab'] = {
     unlockedHint: '解鎖了 {stage} 階段的專屬造型。立即穿戴，左側的主角就會換成牠。',
     equipNow: '👕 立即穿戴造型',
     keepInCloset: '收進衣櫃',
+  },
+
+  /** #36：三段句中夾了 `<strong>` 的說明，各自拆成標記前後的片段。 */
+  markup: {
+    currentMountBefore: ' 目前您已達到了 ',
+    currentMountStrongPrefix: 'Lv. ',
+    currentMountStrongMid: ' · 進化型態 Lv.',
+    currentMountAfter: ' 的尊貴段位。',
+
+    nextUnlockBefore: '距離解鎖下一隻坐騎 ',
+    nextUnlockMid: ' 還差 ',
+    nextUnlockAfter: ' 級！(需要達 Lv.',
+    nextUnlockTail: ')',
+
+    gachaCostBefore: '花費 ',
+    gachaCostMid1: ' 從 ',
+    gachaCostMid2: ' 專屬的 ',
+    gachaCostAfter: ' 款造型中隨機抽取。 進化到下一階段後，會換上一整批全新造型。',
   },
 };
