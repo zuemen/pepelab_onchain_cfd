@@ -1,3 +1,4 @@
+import { esg } from './esg';
 import { nav } from './nav';
 import { x402 } from './x402';
 import { pepe } from './pepe';
@@ -35,6 +36,7 @@ const zhTW = {
   x402,
   whale,
   rewards,
+  esg,
 };
 
 export type Catalog = typeof zhTW;

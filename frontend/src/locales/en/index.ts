@@ -1,5 +1,6 @@
 import type { Catalog } from '../zh-TW';
 
+import { esg } from './esg';
 import { nav } from './nav';
 import { x402 } from './x402';
 import { pepe } from './pepe';
@@ -37,6 +38,7 @@ const en: Catalog = {
   x402,
   whale,
   rewards,
+  esg,
 };
 
 export default en;

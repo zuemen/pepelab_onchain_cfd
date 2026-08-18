@@ -8,6 +8,7 @@ import { useContracts } from 'src/hooks/useContracts';
 import { usePepefiWallet } from 'src/layouts/pepefi';
 import { useESG } from 'src/hooks/useESG';
 import { ASSET_IDS } from 'src/contracts/addresses';
+import { t, interpolate } from 'src/locales';
 import { ASSET_META } from 'src/lib/pepefi/assetMeta';
 import ESGBadge from 'src/components/pepefi/ESGBadge';
 import Skeleton from 'src/components/pepefi/Skeleton';
@@ -35,29 +36,29 @@ const ALL_ASSET_IDS = [
 // ── Rating table (7 tiers, AAA → CCC) ────────────────────────────────────────
 
 const RATING_TABLE = [
-  { rating: 'AAA', min: 80,  label: 'ESG Champion',    desc: 'Best-in-class across all three dimensions',              color: '#00b8d9', bg: 'rgba(0, 184, 217, 0.16)' },
-  { rating: 'AA',  min: 70,  label: 'ESG Leader',      desc: 'Strong, consistent performance across E, S, and G',      color: '#22c55e', bg: 'rgba(34, 197, 94, 0.16)' },
-  { rating: 'A',   min: 60,  label: 'ESG Aware',       desc: 'Above-average; room for improvement in one dimension',   color: '#bef264', bg: 'rgba(190, 242, 100, 0.16)' },
-  { rating: 'BBB', min: 50,  label: 'Satisfactory',    desc: 'Meets baseline standards; notable gaps remain',          color: '#ffab00', bg: 'rgba(255, 171, 0, 0.16)' },
-  { rating: 'BB',  min: 40,  label: 'Developing',      desc: 'Below average; improvement initiatives underway',        color: '#ff5630', bg: 'rgba(255, 86, 48, 0.16)' },
-  { rating: 'B',   min: 30,  label: 'Below Standard',  desc: 'Significant ESG risks not yet adequately managed',       color: '#ff5630', bg: 'rgba(255, 86, 48, 0.12)' },
-  { rating: 'CCC', min: 0,   label: 'High Risk',       desc: 'Material ESG concerns with limited mitigation evidence', color: '#ff5630', bg: 'rgba(255, 86, 48, 0.08)' },
+  { rating: 'AAA', min: 80,  label: t.esg.rating.aaa, desc: t.esg.rating.aaaDesc, color: '#00b8d9', bg: 'rgba(0, 184, 217, 0.16)' },
+  { rating: 'AA',  min: 70,  label: t.esg.rating.aa,  desc: t.esg.rating.aaDesc,  color: '#22c55e', bg: 'rgba(34, 197, 94, 0.16)' },
+  { rating: 'A',   min: 60,  label: t.esg.rating.a,   desc: t.esg.rating.aDesc,   color: '#bef264', bg: 'rgba(190, 242, 100, 0.16)' },
+  { rating: 'BBB', min: 50,  label: t.esg.rating.bbb, desc: t.esg.rating.bbbDesc, color: '#ffab00', bg: 'rgba(255, 171, 0, 0.16)' },
+  { rating: 'BB',  min: 40,  label: t.esg.rating.bb,  desc: t.esg.rating.bbDesc,  color: '#ff5630', bg: 'rgba(255, 86, 48, 0.16)' },
+  { rating: 'B',   min: 30,  label: t.esg.rating.b,   desc: t.esg.rating.bDesc,   color: '#ff5630', bg: 'rgba(255, 86, 48, 0.12)' },
+  { rating: 'CCC', min: 0,   label: t.esg.rating.ccc, desc: t.esg.rating.cccDesc, color: '#ff5630', bg: 'rgba(255, 86, 48, 0.08)' },
 ];
 
 // ── One-line rationale per asset ──────────────────────────────────────────────
 
 const ESG_RATIONALE: Record<string, string> = {
-  [ASSET_IDS.sBTC]:   'Proof-of-work energy intensity dominates an otherwise permissionless, decentralized governance model.',
-  [ASSET_IDS.sETH]:   'The PoS Merge cut energy use 99.95%; transparent on-chain governance and an inclusive developer culture lift all dimensions.',
-  [ASSET_IDS.sAAPL]:  'Carbon-neutrality supply chain commitment and strong board independence; minor labour concerns in manufacturing cap the S score.',
-  [ASSET_IDS.sTSLA]:  'EV mission drives E above industry average; CEO governance controversy and workforce-relations incidents weigh on S and G.',
-  [ASSET_IDS.sGOLD]:  'Mining causes significant land disruption and CO₂; adoption of Responsible Mining standards remains uneven across producers.',
-  [ASSET_IDS.sBOND]:  'US Treasuries carry no direct environmental impact and are backed by top-tier sovereign governance and social-stability mandates.',
-  [ASSET_IDS.sNVDA]:  'Data-center GPU power demand is high, offset by an AI-efficiency roadmap; semiconductor-industry governance standards are above average.',
-  [ASSET_IDS.sMSFT]:  'Carbon-negative pledge, 100 % renewable electricity target, and robust board governance deliver near-champion ESG performance.',
-  [ASSET_IDS.sGOOGL]: "World's largest corporate renewable-energy buyer (E↑); antitrust investigations and data-privacy controversies moderately restrain S and G.",
-  [ASSET_IDS.sICLN]:  'Tracks global clean-energy producers; near-perfect E score; land use and grid-stability considerations create nuanced social exposure.',
-  [ASSET_IDS.sESGU]:  'Broad MSCI USA ESG-screened index delivers top-quartile performance across all three dimensions with strong sector diversification.',
+  [ASSET_IDS.sBTC]:   t.esg.rationale.sBTC,
+  [ASSET_IDS.sETH]:   t.esg.rationale.sETH,
+  [ASSET_IDS.sAAPL]:  t.esg.rationale.sAAPL,
+  [ASSET_IDS.sTSLA]:  t.esg.rationale.sTSLA,
+  [ASSET_IDS.sGOLD]:  t.esg.rationale.sGOLD,
+  [ASSET_IDS.sBOND]:  t.esg.rationale.sBOND,
+  [ASSET_IDS.sNVDA]:  t.esg.rationale.sNVDA,
+  [ASSET_IDS.sMSFT]:  t.esg.rationale.sMSFT,
+  [ASSET_IDS.sGOOGL]: t.esg.rationale.sGOOGL,
+  [ASSET_IDS.sICLN]:  t.esg.rationale.sICLN,
+  [ASSET_IDS.sESGU]:  t.esg.rationale.sESGU,
 };
 
 // ── Radar accent color per asset ──────────────────────────────────────────────
@@ -101,9 +102,9 @@ const barColor = (score: number) =>
   score >= 40 ? 'warning.main' : 'error.main';
 
 const DIMS = [
-  { key: 'environmental' as const, short: 'E', label: 'Environmental' },
-  { key: 'social'        as const, short: 'S', label: 'Social'        },
-  { key: 'governance'    as const, short: 'G', label: 'Governance'    },
+  { key: 'environmental' as const, short: 'E', label: t.esg.dimension.environmental },
+  { key: 'social'        as const, short: 'S', label: t.esg.dimension.social        },
+  { key: 'governance'    as const, short: 'G', label: t.esg.dimension.governance    },
 ];
 
 export default function ESGPage() {
@@ -137,52 +138,52 @@ export default function ESGPage() {
       {/* Header */}
       <Box>
         <Typography variant="h4" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1.5 }}>
-          🌱 ESG Asset Explorer
+          {t.esg.title}
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          Environmental · Social · Governance — 11 synthetic assets, on-chain registry
+          {t.esg.subtitle}
         </Typography>
       </Box>
 
       {!wallet.isConnected && (
         <Alert severity="info" variant="outlined" sx={{ py: 0 }}>
-          Connect wallet to load live ESG scores from the on-chain ESGRegistry.
+          {t.esg.connectWallet}
         </Alert>
       )}
       {wallet.isConnected && wallet.chainId !== 11155111 && (
         <Alert severity="warning" variant="outlined" sx={{ py: 0 }}>
-          ESGRegistry is only deployed on Ethereum Sepolia. Connect to Ethereum Sepolia to see live on-chain scores.
+          {t.esg.wrongNetwork}
         </Alert>
       )}
       {wallet.isConnected && wallet.chainId === 11155111 && esgFailed && (
         <Alert severity="error" variant="outlined" sx={{ py: 0 }}>
-          ESG 資料載入失敗，請重新整理頁面。
+          {t.esg.loadFailed}
         </Alert>
       )}
 
       {/* ── A. Methodology ───────────────────────────────────────────────────── */}
       <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 3.5 }}>
         <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 1 }}>
-          A · ESG 評分方法論
+          {t.esg.methodology.title}
         </Typography>
 
         {/* Three dimensions */}
         <Grid container spacing={2}>
           {[
             {
-              short: 'E', color: '#22c55e', label: 'Environmental',
-              zh: '環境',
-              items: ['Carbon footprint & energy mix', 'Physical climate risk', 'Land / water use impact', 'Waste & emission management'],
+              short: 'E', color: '#22c55e', label: t.esg.dimension.environmental,
+              zh: t.esg.dimension.environmentalZh,
+              items: t.esg.dimension.environmentalItems,
             },
             {
-              short: 'S', color: '#00b8d9', label: 'Social',
-              zh: '社會',
-              items: ['Labour practices & worker safety', 'Community & stakeholder impact', 'Data privacy & security', 'Supply chain responsibility'],
+              short: 'S', color: '#00b8d9', label: t.esg.dimension.social,
+              zh: t.esg.dimension.socialZh,
+              items: t.esg.dimension.socialItems,
             },
             {
-              short: 'G', color: '#86efac', label: 'Governance',
-              zh: '治理',
-              items: ['Board independence & diversity', 'Executive accountability', 'Disclosure & transparency', 'Shareholder rights protection'],
+              short: 'G', color: '#86efac', label: t.esg.dimension.governance,
+              zh: t.esg.dimension.governanceZh,
+              items: t.esg.dimension.governanceItems,
             },
           ].map(({ short, color, label, zh, items }) => (
             <Grid size={{ xs: 12, md: 4 }} key={short}>
@@ -232,7 +233,7 @@ export default function ESGPage() {
         {/* Rating table */}
         <Box>
           <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 2, fontWeight: 'bold' }}>
-            七級評級對照表
+            {t.esg.methodology.ratingTable}
           </Typography>
           <Box
             sx={{
@@ -263,7 +264,7 @@ export default function ESGPage() {
                   {label}
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.625rem' }}>
-                  {min > 0 ? `≥ ${min}` : '< 30'}
+                  {min > 0 ? interpolate(t.esg.rating.atLeast, { min }) : t.esg.rating.below30}
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', md: 'block' }, fontSize: '0.5625rem', lineHeight: 1.2, mt: 0.5 }}>
                   {desc}
@@ -279,7 +280,7 @@ export default function ESGPage() {
         {/* B. 11-asset ranking */}
         <Grid size={{ xs: 12, md: 7 }}>
           <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 2, fontWeight: 'bold', letterSpacing: 1 }}>
-            B · 11 資產 ESG 排行（composite 由高到低）
+            {t.esg.ranking.title}
           </Typography>
 
           <Stack spacing={1.5}>
@@ -312,7 +313,7 @@ export default function ESGPage() {
                   {/* Top row */}
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                     <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: MONO, width: 24, textAlign: 'right' }}>
-                      #{rank + 1}
+                      {interpolate(t.esg.ranking.rank, { n: rank + 1 })}
                     </Typography>
                     <Typography variant="h5" sx={{ fontSize: '1.25rem', lineHeight: 1 }}>{meta?.icon ?? '?'}</Typography>
                     <Box sx={{ flexGrow: 1, minWidth: 0 }}>
@@ -348,7 +349,7 @@ export default function ESGPage() {
                         <Typography variant="h5" sx={{ fontWeight: '800', fontFamily: MONO, lineHeight: 1, color: barColor(info.composite) }}>
                           {info.composite}
                         </Typography>
-                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.625rem' }}>/ 100</Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.625rem' }}>{t.esg.ranking.outOf}</Typography>
                       </Box>
                     ) : (
                       <Typography color="text.secondary">—</Typography>
@@ -415,7 +416,7 @@ export default function ESGPage() {
         {/* C. Radar chart (sticky) */}
         <Grid size={{ xs: 12, md: 5 }} sx={{ position: { md: 'sticky' }, top: { md: 88 } }}>
           <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 2, fontWeight: 'bold', letterSpacing: 1 }}>
-            C · E/S/G 雷達圖
+            {t.esg.radar.title}
           </Typography>
 
           <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
@@ -442,7 +443,7 @@ export default function ESGPage() {
               </Box>
             ) : radarData.length === 0 ? (
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 240 }}>
-                <Typography variant="body2" color="text.secondary">No data — connect wallet on Ethereum Sepolia</Typography>
+                <Typography variant="body2" color="text.secondary">{t.esg.radar.noData}</Typography>
               </Box>
             ) : (
               <Box sx={{ width: '100%', height: 240 }}>
@@ -507,7 +508,7 @@ export default function ESGPage() {
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, borderTop: '1px solid', borderColor: 'divider', pt: 1.5, mt: 0.5 }}>
                   <Box sx={{ width: 14 }} />
                   <Typography variant="caption" sx={{ fontWeight: 'bold', width: 80 }}>
-                    Composite
+                    {t.esg.radar.composite}
                   </Typography>
                   <Box sx={{ flexGrow: 1 }}>
                     <LinearProgress
@@ -539,7 +540,7 @@ export default function ESGPage() {
             )}
 
             <Typography variant="caption" color="text.secondary" align="center" sx={{ display: 'block', opacity: 0.5, mt: 1 }}>
-              Click any asset card on the left to update the radar
+              {t.esg.radar.hint}
             </Typography>
           </Card>
         </Grid>
