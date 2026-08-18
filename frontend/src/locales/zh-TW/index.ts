@@ -1,6 +1,7 @@
 import { esg } from './esg';
 import { kyc } from './kyc';
 import { nav } from './nav';
+import { copy } from './copy';
 import { x402 } from './x402';
 import { pepe } from './pepe';
 import { meta } from './meta';
@@ -53,6 +54,7 @@ const zhTW = {
   kyc,
   stake,
   pepelab,
+  copy,
 };
 
 export type Catalog = typeof zhTW;

@@ -3,6 +3,7 @@ import type { Catalog } from '../zh-TW';
 import { esg } from './esg';
 import { kyc } from './kyc';
 import { nav } from './nav';
+import { copy } from './copy';
 import { x402 } from './x402';
 import { pepe } from './pepe';
 import { meta } from './meta';
@@ -55,6 +56,7 @@ const en: Catalog = {
   kyc,
   stake,
   pepelab,
+  copy,
 };
 
 export default en;
