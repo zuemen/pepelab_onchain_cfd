@@ -20,8 +20,9 @@ Line numbers are as of commit `d0378ed`.
 ---
 
 Resolved (#36): `src/pages/pepefi/ExchangePage.tsx` (#32),
-`src/components/pepefi/whale/WhaleFeed.tsx` (#33/#34) and
-`src/pages/pepefi/VaultPage.tsx` (#34) — all back on the ratchet allowlist.
+`src/components/pepefi/whale/WhaleFeed.tsx` (#33/#34),
+`src/pages/pepefi/VaultPage.tsx` (#34) and `src/pages/pepefi/SessionsPage.tsx`
+(#34) — all back on the ratchet allowlist.
 
 `src/pages/pepefi/X402DocsPage.tsx` (#34)'s deferred sentence is resolved too,
 but the file itself still isn't on the allowlist: it also holds a
@@ -30,21 +31,6 @@ template literal (lines ~248–250). That's deliberately-untranslated verbatim
 code, not a display string — same category as the asset-path exception — and
 out of scope for #36. Left as-is; noted here so it isn't mistaken for a
 missed #36 entry.
-
-## `src/pages/pepefi/SessionsPage.tsx` (#34)
-
-| Line | Markup | Sentence |
-|------|--------|----------|
-| 353–356 | `<b>` ×2 | Page intro — `每個 agent 具 <b>did:pkh</b> 身分，授權可憑證化為 <b>W3C VC</b>…` |
-| 366–368 | `<b>` ×3 | The three SSI-triangle roles (Issuer / Holder / Verifier) |
-| 380–382 | `<b>` ×2 | Wrong-network alert |
-| 393–395 | `<b>` ×3 | "session key is not your main wallet" note |
-| 427 | `<b>` | Burner-key warning — `…請存到本機 agent 設定，<b>別放主錢包資產</b>。…` |
-| 601–603 | `<b>`, `<code>` ×5 | The three export steps |
-| 609–610 | `<b>` ×2, `<code>` ×2 | Address-vs-private-key note |
-| 626 | `<code>` | Include-key checkbox label |
-| 633 | `<code>` | Placeholder note |
-| 651–652 | `<b>` ×2, `<code>` | Final private-key warning |
 
 ## `src/pages/pepefi/TokenizedAssetsPage.tsx` (#34)
 

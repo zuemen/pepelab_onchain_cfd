@@ -350,10 +350,7 @@ export default function SessionsPage() {
       <Box>
         <Typography variant="h4" sx={{ fontWeight: 'bold' }}>{t.sessions.title}</Typography>
         <Typography variant="body2" color="text.secondary">
-          委派一把有界 session key 給 agent：限單筆保證金、總預算、最大槓桿與到期。
-          Agent 只能在限額內經 AgentSessionManager 代你開/平倉，永不持有你的主錢包私鑰。
-          每個 agent 具 <b>did:pkh</b> 身分，授權可憑證化為 <b>W3C VC</b> 供下單前驗簽
-          （SSI / 可驗證自主交易，見 docs/AGENT_IDENTITY_VC_SSI.md）。
+          {t.sessions.markup.introBefore}<b>did:pkh</b>{t.sessions.markup.introMid}<b>W3C VC</b>{t.sessions.markup.introAfter}
         </Typography>
       </Box>
 
@@ -363,9 +360,9 @@ export default function SessionsPage() {
           {t.sessions.ssi.title}
         </Typography>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={{ xs: 0.5, sm: 3 }} sx={{ typography: 'caption' }}>
-          <span>🖊️ <b>Issuer＝你</b>：用 MetaMask 簽發授權 VC（私鑰不離開錢包）</span>
-          <span>🤖 <b>Holder＝agent</b>：持 VC + session key 代你下單</span>
-          <span>✅ <b>Verifier＝MCP/合約</b>：下單前驗簽 + 鏈上 session 交叉比對</span>
+          <span>{t.sessions.markup.roleIssuerBefore}<b>{t.sessions.markup.roleIssuerBold}</b>{t.sessions.markup.roleIssuerAfter}</span>
+          <span>{t.sessions.markup.roleHolderBefore}<b>{t.sessions.markup.roleHolderBold}</b>{t.sessions.markup.roleHolderAfter}</span>
+          <span>{t.sessions.markup.roleVerifierBefore}<b>{t.sessions.markup.roleVerifierBold}</b>{t.sessions.markup.roleVerifierAfter}</span>
         </Stack>
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
           {t.sessions.ssi.flow}
@@ -377,9 +374,9 @@ export default function SessionsPage() {
           <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
             {t.sessions.wrongNetwork.title}
           </Typography>
-          AI Agent Sessions 部署在 <b>Base Sepolia</b> 測試網。你目前連到的是{' '}
+          {t.sessions.markup.wrongNetBefore}<b>Base Sepolia</b>{t.sessions.markup.wrongNetMid}{' '}
           <b>{wallet.chainId !== null ? (CHAIN_NAMES[wallet.chainId] ?? `chainId ${wallet.chainId}`) : t.sessions.wrongNetwork.unknownChain}</b>
-          ，請在 MetaMask 切換到 Base Sepolia 後重整本頁。
+          {t.sessions.markup.wrongNetAfter}
         </Alert>
       ) : (
         <>
@@ -390,9 +387,8 @@ export default function SessionsPage() {
             {/* 觀念說明：agent 用獨立 session key，不是主錢包 */}
             <Alert severity="info" variant="outlined" icon={false} sx={{ py: 0.5 }}>
               <Typography variant="caption">
-                <b>agent 用一把獨立的 session key，不是你的主錢包</b>：
-                <b>地址</b> → 拿來授權下面這個 session；<b>私鑰</b> → 放進 agent 的 MCP 設定 + 一點 ETH 付 gas。
-                沒有現成的就按「Generate agent key」在瀏覽器產生一把全新 burner。
+                <b>{t.sessions.markup.keyNoteBold1}</b>{t.sessions.markup.keyNoteMid1}
+                <b>{t.sessions.markup.keyNoteBold2}</b>{t.sessions.markup.keyNoteMid2}<b>{t.sessions.markup.keyNoteBold3}</b>{t.sessions.markup.keyNoteAfter}
               </Typography>
             </Alert>
 
@@ -424,7 +420,7 @@ export default function SessionsPage() {
                   <Button size="small" variant="text" color="inherit" onClick={() => { setGenKey(null); setRevealKey(false); setIncludeKey(false) }} sx={{ textTransform: 'none' }}>{t.sessions.key.clear}</Button>
                 </Box>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                  這是一把獨立的 burner 金鑰，只受你下面設的 session 限額拘束。請存到本機 agent 設定，<b>別放主錢包資產</b>。本頁只顯示這一次，且不會上傳或寫入伺服器。
+                  {t.sessions.markup.burnerWarnBefore}<b>{t.sessions.markup.burnerWarnBold}</b>{t.sessions.markup.burnerWarnAfter}
                 </Typography>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
                   <Chip size="small" label={t.sessions.key.addressChip} color="success" variant="outlined" />
@@ -598,16 +594,16 @@ export default function SessionsPage() {
                       {t.sessions.export.intro}
                     </Typography>
                     <Box component="ol" sx={{ pl: 2.5, m: 0, typography: 'caption', color: 'text.secondary' }}>
-                      <li>把 <b>MCP 設定</b>貼進 Claude Desktop/Code 的 <code>mcpServers</code>，並把 <code>AGENT_PRIVATE_KEY</code> 換成你本機 agent 的 session key。</li>
-                      <li>把 <b>授權 VC</b> 存成檔案，agent 下單時以 <code>AGENT_AUTH_VC_PATH</code> 指向它（或 MCP <code>open_position</code> 的 <code>authVcJson</code>）。</li>
-                      <li>完成後直接對 agent 說：「幫我用 3x 槓桿做多 sBTC、保證金 200」即可，無需再報帳號/位址。</li>
+                      <li>{t.sessions.markup.step1Before}<b>{t.sessions.markup.step1Bold}</b>{t.sessions.markup.step1Mid1}<code>mcpServers</code>{t.sessions.markup.step1Mid2}<code>AGENT_PRIVATE_KEY</code>{t.sessions.markup.step1After}</li>
+                      <li>{t.sessions.markup.step2Before}<b>{t.sessions.markup.step2Bold}</b>{t.sessions.markup.step2Mid1}<code>AGENT_AUTH_VC_PATH</code>{t.sessions.markup.step2Mid2}<code>open_position</code>{t.sessions.markup.step2Mid3}<code>authVcJson</code>{t.sessions.markup.step2After}</li>
+                      <li>{t.sessions.markup.step3}</li>
                     </Box>
 
                     {/* 地址 vs 私鑰 對應，避免混淆 */}
                     <Alert severity="info" variant="outlined" icon={false} sx={{ py: 0.5 }}>
                       <Typography variant="caption">
-                        <b>地址</b>（<code>{short(sessAgent)}</code>）＝已上鏈授權的 agent，放在 session / VC 裡；
-                        <b>私鑰</b>＝對應這個地址、只放本機 agent 設定的 <code>AGENT_PRIVATE_KEY</code>。兩者是同一把 key 的公開/秘密兩面。
+                        <b>{t.sessions.markup.addrKeyBold1}</b>{t.sessions.markup.addrKeyMid1}<code>{short(sessAgent)}</code>{t.sessions.markup.addrKeyMid2}
+                        <b>{t.sessions.markup.addrKeyBold2}</b>{t.sessions.markup.addrKeyAfter}<code>AGENT_PRIVATE_KEY</code>{t.sessions.markup.addrKeyTail}
                       </Typography>
                     </Alert>
 
@@ -623,14 +619,14 @@ export default function SessionsPage() {
                           control={<Checkbox size="small" color="error" checked={includeKey} onChange={e => setIncludeKey(e.target.checked)} />}
                           label={
                             <Typography variant="caption" color={includeKey ? 'error.main' : 'text.secondary'}>
-                              把我剛產生的 agent 私鑰填進 <code>AGENT_PRIVATE_KEY</code>（含真鑰，請只在自己機器使用）
+                              {t.sessions.markup.includeKeyBefore}<code>AGENT_PRIVATE_KEY</code>{t.sessions.markup.includeKeyAfter}
                             </Typography>
                           }
                           sx={{ mb: 0.5 }}
                         />
                       ) : (
                         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-                          <code>AGENT_PRIVATE_KEY</code> 為佔位 — 貼上你保存的 agent 私鑰即可（在本頁用「Generate agent key」產生的，可勾選自動填入）。
+                          <code>AGENT_PRIVATE_KEY</code>{t.sessions.markup.placeholderAfter}
                         </Typography>
                       )}
                       <Box component="pre" sx={preSx}>{cfgStr}</Box>
@@ -648,8 +644,7 @@ export default function SessionsPage() {
 
                     <Alert severity="warning" variant="outlined">
                       <Typography variant="caption">
-                        agent 私鑰只放你本機的 agent 設定，<b>勿外流</b>。私鑰只存在你瀏覽器記憶體（不寫伺服器、不入庫）；
-                        預設匯出的 <code>AGENT_PRIVATE_KEY</code> 為佔位字串，只有你<b>明確勾選「填入私鑰」</b>時才會含真鑰——此時請勿把這份 JSON 貼到任何他人/公開處。
+                        {t.sessions.markup.finalWarnBefore}<b>{t.sessions.markup.finalWarnBold1}</b>{t.sessions.markup.finalWarnMid1}<code>AGENT_PRIVATE_KEY</code>{t.sessions.markup.finalWarnMid2}<b>{t.sessions.markup.finalWarnBold2}</b>{t.sessions.markup.finalWarnAfter}
                       </Typography>
                     </Alert>
                   </DialogContent>
