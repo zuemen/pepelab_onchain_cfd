@@ -2,19 +2,19 @@
  * 交易者質押頁：質押、聲譽分數、解質押冷卻，以及 PEPE 收益農場。
  */
 export const stake = {
-  viewOn: 'View on {explorer} ↗',
+  viewOn: '在 {explorer} 查看 ↗',
 
   current: {
-    title: 'Your Stake',
-    refresh: '↺ Refresh',
-    staked: 'Staked',
-    totalSlashed: 'Total Slashed',
-    reputation: 'Reputation Score',
+    title: '你的質押',
+    refresh: '↺ 重新整理',
+    staked: '已質押',
+    totalSlashed: '累計罰沒',
+    reputation: '聲譽分數',
     reputationValue: '{score} / 100',
-    formula: 'Formula: stake × 100 ÷ (stake + totalSlashed × 5)',
-    eligible: '✓ Eligible to publish strategies',
-    notEligible: '✗ Need 100 {token} stake',
-    minimum: 'Minimum stake: {amount} {token} · Skin-in-the-game for your followers',
+    formula: '公式：質押量 × 100 ÷（質押量 + 累計罰沒 × 5）',
+    eligible: '✓ 符合發布策略資格',
+    notEligible: '✗ 需質押 100 {token}',
+    minimum: '最低質押金額：{amount} {token} · 向跟隨者展現你的風險共擔',
   },
 
   /** PEPE 收益農場。整區是展示用的試算，不是鏈上真的獎勵池。 */
@@ -35,45 +35,44 @@ export const stake = {
   },
 
   add: {
-    title: 'Stake {token}',
+    title: '質押 {token}',
     description:
-      'Staking puts your capital at risk — followers can trigger slashing if your strategy causes > 30% loss. In return, you earn credibility (reputation score) and can publish strategies.',
+      '質押會讓你的資金承擔風險——若你的策略造成跟單者虧損超過 30%，可能觸發罰沒。作為回報，你將獲得信譽（聲譽分數）並可發布策略。',
     placeholder: '100',
-    staking: 'Staking…',
-    cta: 'Approve + Stake',
-    enterAmount: 'Enter a valid amount',
-    done: 'Staked successfully ✓',
+    staking: '質押中…',
+    cta: '批准並質押',
+    enterAmount: '請輸入有效金額',
+    done: '質押成功 ✓',
   },
 
   unstake: {
-    title: 'Unstake (24 h cooldown)',
-    pending: 'Pending unstake: {amount} {token}',
-    ready: 'Cooldown elapsed — ready to execute.',
-    availableAt: 'Available at: {when}',
-    executing: 'Executing…',
-    execute: 'Execute Unstake',
-    cancelling: 'Cancelling…',
-    cancel: 'Cancel',
-    description: 'Request unstake — funds unlock after 24 h cooldown.',
+    title: '解除質押（24 小時冷卻）',
+    pending: '待處理解除質押：{amount} {token}',
+    ready: '冷卻期已過——可以執行。',
+    availableAt: '可執行時間：{when}',
+    executing: '執行中…',
+    execute: '執行解除質押',
+    cancelling: '取消中…',
+    cancel: '取消',
+    description: '申請解除質押——資金將在 24 小時冷卻期後解鎖。',
     placeholder: '50',
-    requesting: 'Requesting…',
-    request: 'Request Unstake',
-    enterAmount: 'Enter amount to unstake',
-    requested: 'Unstake requested ✓ — wait 24 h then execute',
-    executed: 'Unstake executed ✓',
-    cancelled: 'Unstake cancelled ✓',
+    requesting: '申請中…',
+    request: '申請解除質押',
+    enterAmount: '請輸入解除質押金額',
+    requested: '已申請解除質押 ✓——請等待 24 小時後執行',
+    executed: '解除質押已執行 ✓',
+    cancelled: '解除質押已取消 ✓',
   },
 
   info: {
-    title: 'How Trader Stake works',
-    publish: 'Stake ≥ 100 {token} to publish strategies on the Marketplace.',
+    title: '交易者質押機制說明',
+    publish: '質押 ≥ 100 {token} 即可在交易市集發布策略。',
     slashing:
-      'If a follower suffers > 30% loss, 50% of that loss amount (capped at 50% of your stake) is slashed and sent to them.',
-    reputation:
-      'Reputation = stake × 100 ÷ (stake + totalSlashed × 5) — degrades as you get slashed.',
-    cooldown: 'Unstaking requires a 24-hour cooldown.',
-    backToMarketplace: '← Back to Marketplace',
-    traderDashboard: 'Trader Dashboard →',
+      '若跟隨者因你的策略虧損超過 30%，該虧損金額的 50%（上限為你質押額的 50%）將被罰沒並發放給他們。',
+    reputation: '聲譽 = 質押量 × 100 ÷（質押量 + 累計罰沒 × 5）——遭罰沒時會下降。',
+    cooldown: '解除質押需要 24 小時冷卻期。',
+    backToMarketplace: '← 返回交易市集',
+    traderDashboard: '交易者主頁 →',
   },
 
   /** #36：兩段免責說明各自在句中夾了 `<b>`，拆成前後片段。 */
