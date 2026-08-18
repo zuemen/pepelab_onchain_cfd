@@ -53,6 +53,7 @@ const MIGRATED_PATHS: string[] = [
   'src/pages/pepefi/ESGPage.tsx',
   'src/pages/pepefi/MarketplacePage.tsx',
   'src/pages/pepefi/HistoryPage.tsx',
+  'src/pages/pepefi/TraderProfilePage.tsx',
   'src/components/pepefi/WalletButton.tsx',
   'src/components/pepefi/ToastProvider.tsx',
   'src/components/pepefi/PaperTradingBadge.tsx',

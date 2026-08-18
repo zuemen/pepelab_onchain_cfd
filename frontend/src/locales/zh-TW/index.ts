@@ -22,6 +22,7 @@ import { terminal } from './terminal';
 import { portfolio } from './portfolio';
 import { freshness } from './freshness';
 import { marketplace } from './marketplace';
+import { traderProfile } from './traderProfile';
 import { pepeStageSkins } from './pepeStageSkins';
 
 // ----------------------------------------------------------------------
@@ -59,6 +60,7 @@ const zhTW = {
   copy,
   marketplace,
   history,
+  traderProfile,
 };
 
 export type Catalog = typeof zhTW;
