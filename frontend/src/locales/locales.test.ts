@@ -41,6 +41,14 @@ const MIGRATED_PATHS: string[] = [
   'src/components/pepefi/pepeStageSkinsData.ts',
   'src/components/pepefi/pepeMountsData.ts',
   'src/lib/pepefi/achievements.ts',
+  'src/lib/pepefi/whale.ts',
+  'src/pages/pepefi/WhaleTrackerPage.tsx',
+  // WhaleFeed 少一個：simple 模式把一筆交易寫成一句話，中間夾了三段標記，
+  // 那一句留給 #36，所以這個檔案還不算搬完。
+  'src/components/pepefi/whale/WhaleKpiRow.tsx',
+  'src/components/pepefi/whale/WhaleTagChips.tsx',
+  'src/components/pepefi/whale/MarketSentimentBar.tsx',
+  'src/components/pepefi/whale/LargestOpenPositions.tsx',
 ];
 
 /**

@@ -15,6 +15,7 @@ import TableContainer from '@mui/material/TableContainer'
 
 import { PepeIdentity } from 'src/components/pepefi/PepeIdentity'
 import { TableSkeleton } from 'src/components/pepefi/Skeleton'
+import { t, interpolate } from 'src/locales'
 import { MONO, PEPE } from 'src/components/pepefi/brandKit'
 import { fUsd, fCompact, sideLabel, fSignedUsd } from 'src/lib/pepefi/whale'
 
@@ -40,9 +41,11 @@ interface Props {
 export default function LargestOpenPositions({ data, mode, ready }: Props) {
   const { rows, missing, loading, error } = data
 
-  const columns = mode === 'simple'
-    ? ['Market', 'Trader', 'Side', 'Notional', 'PnL']
-    : ['Market', 'Trader', 'Side', 'Entry', 'Mark', 'Notional', 'PnL']
+  const col = t.whale.largest.column
+  const columns =
+    mode === 'simple'
+      ? [col.market, col.trader, col.side, col.notional, col.pnl]
+      : [col.market, col.trader, col.side, col.entry, col.mark, col.notional, col.pnl]
 
   return (
     <Card>
@@ -59,18 +62,18 @@ export default function LargestOpenPositions({ data, mode, ready }: Props) {
         }}
       >
         <Typography variant="overline" sx={{ fontWeight: 'bold', color: 'text.secondary' }}>
-          Largest Open Positions
+          {t.whale.largest.title}
         </Typography>
         {rows.length > 0 && (
           <Typography variant="caption" color="text.secondary">
-            top {rows.length}
+            {interpolate(t.whale.largest.top, { count: rows.length })}
           </Typography>
         )}
       </Box>
 
       {!ready ? (
         <Typography variant="body2" color="text.secondary" sx={{ p: 4, textAlign: 'center' }}>
-          Unavailable on this network.
+          {t.whale.largest.unavailable}
         </Typography>
       ) : loading && rows.length === 0 ? (
         <TableSkeleton rows={5} cols={columns.length} />
@@ -78,7 +81,7 @@ export default function LargestOpenPositions({ data, mode, ready }: Props) {
         <Typography variant="body2" color="error.main" sx={{ p: 3 }}>{error}</Typography>
       ) : rows.length === 0 ? (
         <Typography variant="body2" color="text.secondary" sx={{ p: 4, textAlign: 'center' }}>
-          No open positions in the scanned window.
+          {t.whale.largest.empty}
         </Typography>
       ) : (
         <TableContainer sx={{ overflowX: 'auto' }}>
@@ -129,7 +132,7 @@ export default function LargestOpenPositions({ data, mode, ready }: Props) {
                   {mode === 'expert' && (
                     <TableCell
                       sx={{ fontFamily: MONO, whiteSpace: 'nowrap' }}
-                      title={r.markPrice === null ? 'Mark price could not be read' : undefined}
+                      title={r.markPrice === null ? t.whale.largest.markUnread : undefined}
                     >
                       {r.markPrice === null ? '—' : fUsd(r.markPrice)}
                     </TableCell>
@@ -148,7 +151,7 @@ export default function LargestOpenPositions({ data, mode, ready }: Props) {
                         ? 'text.disabled'
                         : r.pnl >= 0n ? PEPE.long : PEPE.short,
                     }}
-                    title={r.pnl === null ? 'Unrealised PnL could not be read' : undefined}
+                    title={r.pnl === null ? t.whale.largest.pnlUnread : undefined}
                   >
                     {r.pnl === null ? '—' : fSignedUsd(r.pnl)}
                   </TableCell>
@@ -161,7 +164,10 @@ export default function LargestOpenPositions({ data, mode, ready }: Props) {
 
       {missing > 0 && (
         <Typography variant="caption" color="warning.main" sx={{ display: 'block', px: 2, py: 1.5 }}>
-          {missing} position{missing === 1 ? '' : 's'} could not be read — the RPC node may be rate-limiting.
+          {interpolate(
+            missing === 1 ? t.whale.largest.missingOne : t.whale.largest.missingMany,
+            { count: missing },
+          )}
         </Typography>
       )}
     </Card>

@@ -33,6 +33,10 @@ export const WHALE_THRESHOLD = 5_000n * 10n ** 18n
  * 與其再猜一個常數，不如讓它可調：什麼叫「大」本來就依市場規模而定，
  * 而規模會隨這條鏈的使用量改變。
  */
+import { t, interpolate } from 'src/locales'
+
+const { tag, timeAgo: ago } = t.whale
+
 export const WHALE_THRESHOLD_OPTIONS: ReadonlyArray<{ label: string; value: bigint }> = [
   { label: '$500',  value:    500n * 10n ** 18n },
   { label: '$1k',   value:  1_000n * 10n ** 18n },
@@ -84,33 +88,33 @@ export const isWhaleTrade = (notional: bigint, threshold: bigint = WHALE_THRESHO
  * 這一筆值得被點名的原因，依重要性排序；平凡的鯨魚開倉回空陣列
  * （它本來就已經在 feed 上了，不需要再掛一個「鯨魚」標籤自我重複）。
  */
-export function positionProfile(t: TradeLike): WhaleTag[] {
+export function positionProfile(trade: TradeLike): WhaleTag[] {
   const tags: WhaleTag[] = []
 
-  if (t.notional >= MEGA_THRESHOLD) {
+  if (trade.notional >= MEGA_THRESHOLD) {
     tags.push({
       id: 'mega',
-      label: 'Mega',
+      label: tag.mega,
       tone: 'gold',
-      hint: `Notional above ${fCompact(MEGA_THRESHOLD)}`,
+      hint: interpolate(tag.megaHint, { threshold: fCompact(MEGA_THRESHOLD) }),
     })
   }
 
-  if (t.leverage >= HIGH_LEVERAGE_X) {
+  if (trade.leverage >= HIGH_LEVERAGE_X) {
     tags.push({
       id: 'high-leverage',
-      label: `${t.leverage}× leverage`,
+      label: interpolate(tag.highLeverage, { leverage: String(trade.leverage) }),
       tone: 'danger',
-      hint: 'Liquidates on a small move against the position',
+      hint: tag.highLeverageHint,
     })
   }
 
-  if (t.isFirstSeen) {
+  if (trade.isFirstSeen) {
     tags.push({
       id: 'new-face',
-      label: 'New face',
+      label: tag.newFace,
       tone: 'info',
-      hint: 'First activity from this address in the scanned window',
+      hint: tag.newFaceHint,
     })
   }
 
@@ -152,10 +156,10 @@ export const fSignedUsd = (v: bigint, d = 2): string => (v >= 0n ? '+' : '') + f
  */
 export function timeAgo(ts: number, nowSec: number = Math.floor(Date.now() / 1000)): string {
   const diff = nowSec - ts
-  if (diff < 60) return 'just now'
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
-  return `${Math.floor(diff / 86400)}d ago`
+  if (diff < 60) return ago.justNow
+  if (diff < 3600) return interpolate(ago.minutes, { n: Math.floor(diff / 60) })
+  if (diff < 86400) return interpolate(ago.hours, { n: Math.floor(diff / 3600) })
+  return interpolate(ago.days, { n: Math.floor(diff / 86400) })
 }
 
 /** LONG / SHORT。UI 統一英文，方向詞不再各頁自己寫三元運算。 */

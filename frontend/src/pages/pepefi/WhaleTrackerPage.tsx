@@ -20,6 +20,7 @@ import { useExchangeActivity } from 'src/hooks/useExchangeActivity'
 import { useRegisteredTraders } from 'src/hooks/useRegisteredTraders'
 import { useLargestOpenPositions } from 'src/hooks/useLargestOpenPositions'
 
+import { t, interpolate } from 'src/locales'
 import { MONO } from 'src/components/pepefi/brandKit'
 import { WHALE_THRESHOLD, WHALE_THRESHOLD_OPTIONS } from 'src/lib/pepefi/whale'
 import WhaleFeed from 'src/components/pepefi/whale/WhaleFeed'
@@ -78,7 +79,7 @@ export default function WhaleTrackerPage() {
 
   const openTrader = useCallback((addr: string) => {
     if (!isEthAddr(addr)) {
-      setAddrError('Not a valid Ethereum address')
+      setAddrError(t.whale.page.lookupInvalid)
       return
     }
     setAddrError(null)
@@ -116,12 +117,14 @@ export default function WhaleTrackerPage() {
   // scanning… 而 KPI 顯示 0 筆、$0 成交量，看起來像鏈上真的沒人在交易。
   const scanFailed = Boolean(activity.error) && !scanRange
   const windowLabel = !ready
-    ? 'unavailable'
+    ? t.whale.page.windowUnavailable
     : scanFailed
-      ? 'scan failed'
+      ? t.whale.page.windowScanFailed
       : scanRange
-        ? `last ${describeScanWindow(wallet.chainId, scanRange.to - scanRange.from)}`
-        : 'scanning…'
+        ? interpolate(t.whale.page.windowLast, {
+            span: describeScanWindow(wallet.chainId, scanRange.to - scanRange.from),
+          })
+        : t.whale.page.windowScanning
   const rangeText = scanRange
     ? `#${scanRange.from.toLocaleString()}–#${scanRange.to.toLocaleString()}`
     : null
@@ -135,10 +138,10 @@ export default function WhaleTrackerPage() {
       <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
         <Box sx={{ flexGrow: 1, minWidth: 260 }}>
           <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
-            🐋 Whale Tracker
+            {t.whale.page.title}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Large trades as they land · live open interest · biggest positions on the book
+            {t.whale.page.subtitle}
           </Typography>
           <Stack direction="row" spacing={1} sx={{ mt: 1.5, flexWrap: 'wrap', gap: 1 }}>
             {/* 掃描範圍要寫在畫面上。舊版把滾動 7 天視窗標成 "all-time"，
@@ -146,14 +149,14 @@ export default function WhaleTrackerPage() {
             <Chip
               size="small"
               variant="outlined"
-              label={`Window · ${windowLabel}`}
-              title="Events older than this window are not included"
+              label={interpolate(t.whale.page.window, { label: windowLabel })}
+              title={t.whale.page.windowHint}
             />
             {rangeText && (
               <Chip
                 size="small"
                 variant="outlined"
-                label={`Blocks ${rangeText}`}
+                label={interpolate(t.whale.page.blocks, { range: rangeText })}
                 sx={{ fontFamily: MONO }}
               />
             )}
@@ -162,7 +165,7 @@ export default function WhaleTrackerPage() {
           {/* 門檻選擇器。只換篩子，不重掃鏈。 */}
           <Stack direction="row" spacing={1} sx={{ mt: 1.5, alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
             <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
-              Whale threshold
+              {t.whale.page.threshold}
             </Typography>
             {WHALE_THRESHOLD_OPTIONS.map(opt => (
               <Chip
@@ -179,7 +182,7 @@ export default function WhaleTrackerPage() {
         </Box>
 
         <Button variant="text" onClick={refreshAll} disabled={busy} sx={{ textTransform: 'none' }}>
-          ↺ Refresh
+          {t.whale.page.refresh}
         </Button>
       </Box>
 
@@ -188,13 +191,15 @@ export default function WhaleTrackerPage() {
           /trader/:address，這裡只是入口，不該再佔一個區塊的份量。 */}
       <Card sx={{ p: 2, display: 'flex', gap: 1.5, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         <TextField
-          placeholder="0x… look up any trader"
+          placeholder={t.whale.page.lookupPlaceholder}
           value={inputAddr}
           onChange={e => { setInputAddr(e.target.value); setAddrError(null) }}
           onKeyDown={e => e.key === 'Enter' && openTrader(inputAddr.trim())}
           error={Boolean(addrError)}
           helperText={addrError ?? ' '}
-          slotProps={{ htmlInput: { style: { fontFamily: MONO }, 'aria-label': 'Trader address' } }}
+          slotProps={{
+            htmlInput: { style: { fontFamily: MONO }, 'aria-label': t.whale.page.lookupAria },
+          }}
           size="small"
           sx={{ flexGrow: 1, minWidth: 240 }}
         />
@@ -204,14 +209,13 @@ export default function WhaleTrackerPage() {
           disabled={!inputAddr.trim()}
           sx={{ mt: 0.25 }}
         >
-          View profile
+          {t.whale.page.viewProfile}
         </Button>
       </Card>
 
       {!ready && (
         <Alert severity="info">
-          The exchange isn&apos;t available on this network — connect a wallet on Base Sepolia to see
-          whale activity. The address lookup above still works.
+          {t.whale.page.notAvailable}
         </Alert>
       )}
 
@@ -220,7 +224,7 @@ export default function WhaleTrackerPage() {
           severity="error"
           action={
             <Button color="inherit" size="small" onClick={refreshAll} disabled={busy}>
-              Retry
+              {t.whale.page.retry}
             </Button>
           }
         >
@@ -248,19 +252,22 @@ export default function WhaleTrackerPage() {
             loading={activity.loading}
             progress={activity.progress}
             registered={registered}
-            emptyTitle={scanFailed ? 'Could not scan' : undefined}
+            emptyTitle={scanFailed ? t.whale.page.scanFailedTitle : undefined}
             emptyHint={
               !ready
-                ? 'Connect a wallet on Base Sepolia to scan the exchange.'
+                ? t.whale.page.emptyDisconnected
                 : scanFailed
-                  ? 'The scan did not complete, so this is not an answer — retry above.'
+                  ? t.whale.page.emptyScanFailed
                   // 掃到了交易、只是都在門檻以下，跟「這段時間沒有人交易」是
                   // 兩件不同的事。把數字說出來，使用者才知道該調門檻而不是
                   // 以為鏈上沒動靜。
                   : activity.totals.openedCount > 0
-                    ? `${activity.totals.openedCount} trades in this window, none at or above ${thresholdLabel}. Try a lower threshold.`
+                    ? interpolate(t.whale.page.emptyBelowThreshold, {
+                        count: activity.totals.openedCount,
+                        threshold: thresholdLabel,
+                      })
                     : rangeText
-                      ? `No positions opened at all in blocks ${rangeText}.`
+                      ? interpolate(t.whale.page.emptyNoTrades, { range: rangeText })
                       : undefined
             }
           />
@@ -276,8 +283,8 @@ export default function WhaleTrackerPage() {
 
       <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center', display: 'block' }}>
         {scanRange
-          ? `Feed and volume cover blocks ${rangeText} (${windowLabel}). Open interest is read live from the exchange and covers every position, including older ones.`
-          : 'Scan range pending'}
+          ? interpolate(t.whale.page.footer, { range: rangeText ?? '', window: windowLabel })
+          : t.whale.page.footerPending}
       </Typography>
     </Container>
   )

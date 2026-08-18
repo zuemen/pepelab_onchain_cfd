@@ -4,6 +4,7 @@ import { nav } from './nav';
 import { x402 } from './x402';
 import { pepe } from './pepe';
 import { meta } from './meta';
+import { whale } from './whale';
 import { admin } from './admin';
 import { errors } from './errors';
 import { exchange } from './exchange';
@@ -33,6 +34,7 @@ const en: Catalog = {
   pepe,
   pepeStageSkins,
   x402,
+  whale,
 };
 
 export default en;
