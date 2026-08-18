@@ -8,6 +8,7 @@ import Card from '@mui/material/Card';
 import Grid from '@mui/material/Grid';
 import Typography from '@mui/material/Typography';
 
+import { t } from 'src/locales';
 import { MONO } from 'src/components/pepefi/brandKit';
 import { ASSET_META } from 'src/lib/pepefi/assetMeta';
 
@@ -28,10 +29,10 @@ type DisplayCat = 'crypto' | 'equity' | 'commodity' | 'bond';
 const DISPLAY_CATS: DisplayCat[] = ['crypto', 'equity', 'commodity', 'bond'];
 
 const CAT_CONFIG: Record<DisplayCat, { label: string; icon: string; color: string }> = {
-  crypto:    { label: 'Crypto',          icon: '₿', color: '#6366f1' },
-  equity:    { label: 'Equity',          icon: '◈', color: '#a855f7' },
-  commodity: { label: 'Commodity & ETF', icon: '◆', color: '#f59e0b' },
-  bond:      { label: 'Bond',            icon: '◉', color: '#10b981' },
+  crypto:    { label: t.portfolio.analysis.cat.crypto,    icon: '₿', color: '#6366f1' },
+  equity:    { label: t.portfolio.analysis.cat.equity,    icon: '◈', color: '#a855f7' },
+  commodity: { label: t.portfolio.analysis.cat.commodity, icon: '◆', color: '#f59e0b' },
+  bond:      { label: t.portfolio.analysis.cat.bond,      icon: '◉', color: '#10b981' },
 };
 
 const displayCatOf = (assetId: string): DisplayCat => {
@@ -118,10 +119,10 @@ export default function PortfolioAnalysis({ rows, esg }: Props) {
       <Grid size={{ xs: 12, md: 5 }}>
         <Card sx={{ p: 3, height: '100%', minHeight: 300 }}>
           <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold', letterSpacing: 1, display: 'block', mb: 2 }}>
-            Allocation
+            {t.portfolio.analysis.allocation}
           </Typography>
           {pieData.length === 0 ? (
-            <Typography variant="body2" color="text.secondary">No positions to break down.</Typography>
+            <Typography variant="body2" color="text.secondary">{t.portfolio.analysis.noBreakdown}</Typography>
           ) : (
             <ResponsiveContainer width="100%" height={240}>
               <PieChart>
@@ -145,7 +146,7 @@ export default function PortfolioAnalysis({ rows, esg }: Props) {
       <Grid size={{ xs: 12, md: 7 }}>
         <Card sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column', gap: 2.5 }}>
           <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold', letterSpacing: 1 }}>
-            By asset class
+            {t.portfolio.analysis.byAssetClass}
           </Typography>
 
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' }, gap: 2 }}>
@@ -162,7 +163,7 @@ export default function PortfolioAnalysis({ rows, esg }: Props) {
                   </Typography>
                   {summary.value === 0n ? (
                     <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                      No positions
+                      {t.portfolio.analysis.noPositions}
                     </Typography>
                   ) : (
                     <>
@@ -184,12 +185,12 @@ export default function PortfolioAnalysis({ rows, esg }: Props) {
 
           <Box sx={{ mt: 'auto', pt: 1.5, borderTop: '1px dashed', borderColor: 'divider' }}>
             <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, display: 'block' }}>
-              ESG score (value-weighted)
+              {t.portfolio.analysis.esgScore}
             </Typography>
             {portfolioESG === null ? (
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                 {/* 缺一個標的的資料就不給分。半套資料算出來的分數比沒有分數更誤導。 */}
-                Not all holdings have ESG data yet.
+                {t.portfolio.analysis.esgIncomplete}
               </Typography>
             ) : (
               <Typography sx={{ fontWeight: 800, fontFamily: MONO, fontSize: '1.25rem', mt: 0.25 }}>

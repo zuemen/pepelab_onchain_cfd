@@ -13,6 +13,7 @@ import { useLivePrices } from 'src/hooks/useLivePrices';
 
 import { usePepefiWallet } from 'src/layouts/pepefi';
 import { getAddresses, CHAIN_NAMES } from 'src/contracts/addresses';
+import { t, interpolate } from 'src/locales';
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
 import { safeRead } from 'src/lib/pepefi/safeRead';
@@ -147,7 +148,7 @@ function renderSimplePositionCell(key: OpenPositionColumnKey, row: PosRow) {
       return (
         <TableCell key={key}>
           <Chip
-            label={row.isLong ? 'LONG ↑' : 'SHORT ↓'}
+            label={row.isLong ? t.portfolio.page.side.long : t.portfolio.page.side.short}
             size="small"
             sx={{
               fontWeight: 'bold',
@@ -380,7 +381,7 @@ export default function PortfolioPage() {
     try {
       const tx = asTx(await contracts.copyTracker.unfollowAndCloseAll(BigInt(index)));
       await tx.wait();
-      notify('Unfollowed and all positions closed ✓', true, tx.hash);
+      notify(t.portfolio.page.unfollowedOk, true, tx.hash);
       await fetchAll();
     } catch (e) {
       notify(prettyError(e), false);
@@ -390,12 +391,16 @@ export default function PortfolioPage() {
   const doWithdraw = async () => {
     if (!contracts) return;
     const amt = tryParse(withdrawAmt);
-    if (!amt) { notify('Enter a valid amount', false); return; }
+    if (!amt) { notify(t.portfolio.page.enterValidAmount, false); return; }
     setLoad('withdraw', true);
     try {
       const tx = asTx(await contracts.exchange.withdrawMargin(amt));
       await tx.wait();
-      notify(`Withdrew ${withdrawAmt} ${STABLE_LABEL} ✓`, true, tx.hash);
+      notify(
+        interpolate(t.portfolio.page.withdrawnOk, { amount: withdrawAmt, token: STABLE_LABEL }),
+        true,
+        tx.hash
+      );
       setWithdrawAmt('');
       await fetchAll();
     } catch (e) {
@@ -437,25 +442,28 @@ export default function PortfolioPage() {
   const hasCopyHistory = totalInitial > 0n;
 
   const chartData = [
-    { name: 'Deposited', value: initVal },
-    { name: 'Now',       value: curVal  },
+    { name: t.portfolio.page.chart.deposited, value: initVal },
+    { name: t.portfolio.page.chart.now,       value: curVal  },
   ];
 
   // ── Guard ─────────────────────────────────────────────────────────────────
   if (!wallet.isConnected) {
     return (
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-        <Typography color="text.secondary">Connect wallet to view your portfolio.</Typography>
+        <Typography color="text.secondary">{t.portfolio.page.connectWallet}</Typography>
       </Box>
     );
   }
 
   if (isWrongNetwork) {
-    const name = wallet.chainId ? (CHAIN_NAMES[wallet.chainId] ?? `Chain ${wallet.chainId}`) : 'unknown';
+    const name = wallet.chainId
+      ? (CHAIN_NAMES[wallet.chainId] ??
+        interpolate(t.portfolio.page.chainNumber, { id: wallet.chainId }))
+      : t.portfolio.page.unknownChain;
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', gap: 2 }}>
         <Typography sx={{ fontSize: '2.5rem' }}>⛓️</Typography>
-        <Typography variant="h6" sx={{ fontWeight: 'bold' }}>Unsupported Network</Typography>
+        <Typography variant="h6" sx={{ fontWeight: 'bold' }}>{t.portfolio.page.unsupportedNetwork}</Typography>
         <Typography variant="body2" color="text.secondary" align="center">
           Connected to <Typography component="span" sx={{ color: 'warning.main', fontFamily: MONO }}>{name}</Typography>.<br />
           Please switch to <Typography component="span" sx={{ color: 'primary.main', fontFamily: MONO }}>Base Sepolia</Typography> testnet.
@@ -473,8 +481,8 @@ export default function PortfolioPage() {
       <Container maxWidth="lg" sx={{ py: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
         <EmptyState
           icon="🎭"
-          title="Demo mode — no live chain data"
-          description="You're on the presentation walkthrough, which has no wallet connection to read real balances or positions from. Connect a real wallet to see your actual portfolio."
+          title={t.portfolio.page.demoTitle}
+          description={t.portfolio.page.demoDescription}
         />
       </Container>
     );
@@ -527,9 +535,9 @@ export default function PortfolioPage() {
       <Container maxWidth="lg" sx={{ py: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
         <EmptyState
           icon="💼"
-          title="Your portfolio is empty"
-          description={`Start by getting test ${STABLE_LABEL}, then copy a trader or open positions yourself.`}
-          ctaText={`Get ${STABLE_LABEL}`}
+          title={t.portfolio.page.emptyTitle}
+          description={interpolate(t.portfolio.page.emptyDescription, { token: STABLE_LABEL })}
+          ctaText={interpolate(t.portfolio.page.emptyCta, { token: STABLE_LABEL })}
           onClick={() => navigate('/exchange')}
         />
       </Container>
@@ -562,7 +570,7 @@ export default function PortfolioPage() {
       />
 
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Typography variant="h4" sx={{ fontWeight: 'bold' }}>My Portfolio</Typography>
+        <Typography variant="h4" sx={{ fontWeight: 'bold' }}>{t.portfolio.page.title}</Typography>
         <Button
           size="small"
           variant="text"
@@ -571,7 +579,7 @@ export default function PortfolioPage() {
           startIcon={<Icon icon="solar:restart-bold-duotone" />}
           sx={{ textTransform: 'none', color: 'text.secondary' }}
         >
-          Refresh
+          {t.portfolio.page.refresh}
         </Button>
       </Box>
 
@@ -604,16 +612,20 @@ export default function PortfolioPage() {
         <Grid container spacing={2}>
           <Grid size={{ xs: 12, sm: 6 }}>
             <StatCard
-              title="Active Copies"
+              title={t.portfolio.page.activeCopies}
               value={String(copyRecs.length)}
-              sub={copyRecs.length === 1 ? 'trader followed' : 'traders followed'}
+              sub={
+                copyRecs.length === 1
+                  ? t.portfolio.page.traderFollowedOne
+                  : t.portfolio.page.traderFollowedMany
+              }
             />
           </Grid>
           <Grid size={{ xs: 12, sm: 6 }}>
             <StatCard
-              title="Total Copy PnL"
+              title={t.portfolio.page.totalCopyPnl}
               value={totalInitial > 0n ? returnPct(totalInitial, totalCopyCur) : '—'}
-              sub={totalInitial > 0n ? `${f18(totalCopyCur)} / ${f18(totalInitial)} ${STABLE_LABEL}` : 'no copy positions'}
+              sub={totalInitial > 0n ? `${f18(totalCopyCur)} / ${f18(totalInitial)} ${STABLE_LABEL}` : t.portfolio.page.noCopyPositions}
               valueColor={totalInitial > 0n ? returnColor(totalInitial, totalCopyCur) : 'text.secondary'}
             />
           </Grid>
@@ -624,7 +636,7 @@ export default function PortfolioPage() {
       <Card sx={{ border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
         <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
           <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 1 }}>
-            Copy Positions
+            {t.portfolio.page.copyPositions}
           </Typography>
         </Box>
 
@@ -633,7 +645,7 @@ export default function PortfolioPage() {
              that has to offer a way out of that state. */
           <Box sx={{ py: 4, px: 3, textAlign: 'center' }}>
             <Typography variant="body2" color="text.secondary">
-              You&apos;re not copying anyone yet.
+              {t.portfolio.page.notCopyingAnyone}
             </Typography>
             <Button
               component={RouterLink}
@@ -643,7 +655,7 @@ export default function PortfolioPage() {
               color="inherit"
               sx={{ mt: 1.5, textTransform: 'none', borderColor: 'divider' }}
             >
-              Browse traders →
+              {t.portfolio.page.browseTraders}
             </Button>
           </Box>
         ) : (
@@ -651,9 +663,16 @@ export default function PortfolioPage() {
             <Table>
               <TableHead>
                 <TableRow sx={{ bgcolor: 'background.neutral' }}>
-                  {['Trader','Copied At','Initial','Current','Return','Actions'].map(h => (
-                    <TableCell key={h} sx={{ color: 'text.secondary', fontWeight: 'bold', fontSize: '0.75rem', py: 1.5, textAlign: h === 'Actions' || h === 'Return' || h === 'Current' || h === 'Initial' ? 'right' : 'left' }}>
-                      {h}
+                  {([
+                    { label: t.portfolio.page.copyColumn.trader,   right: false },
+                    { label: t.portfolio.page.copyColumn.copiedAt, right: false },
+                    { label: t.portfolio.page.copyColumn.initial,  right: true },
+                    { label: t.portfolio.page.copyColumn.current,  right: true },
+                    { label: t.portfolio.page.copyColumn.return,   right: true },
+                    { label: t.portfolio.page.copyColumn.actions,  right: true },
+                  ]).map(({ label, right }) => (
+                    <TableCell key={label} sx={{ color: 'text.secondary', fontWeight: 'bold', fontSize: '0.75rem', py: 1.5, textAlign: right ? 'right' : 'left' }}>
+                      {label}
                     </TableCell>
                   ))}
                 </TableRow>
@@ -695,7 +714,7 @@ export default function PortfolioPage() {
                           title={unfStale ?? undefined}
                           sx={{ fontWeight: 'bold' }}
                         >
-                          {busy[unfKey] ? '…' : unfStale ? '價格過期' : 'Unfollow'}
+                          {busy[unfKey] ? '…' : unfStale ? t.portfolio.page.unfollowStale : t.portfolio.page.unfollow}
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -711,18 +730,18 @@ export default function PortfolioPage() {
       <Card sx={{ border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
         <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 1 }}>
-            Open Positions
+            {t.portfolio.page.openPositions}
           </Typography>
           {/* The count lives here now rather than in its own card above a table
               that already shows every row. */}
           <Typography variant="caption" color="text.secondary">
-            {positions.length} open · manual + copied
+            {interpolate(t.portfolio.page.openCount, { count: positions.length })}
           </Typography>
         </Box>
 
         {positions.length === 0 ? (
           <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 4, fontStyle: 'italic' }}>
-            No open positions.
+            {t.portfolio.page.noOpenPositions}
           </Typography>
         ) : mode === 'simple' ? (
           // Simple 只回答「我有什麼、現在好不好」——四欄,不解釋算法。想看
@@ -748,7 +767,7 @@ export default function PortfolioPage() {
               </TableBody>
               <tfoot style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
                 <TableRow sx={{ bgcolor: 'background.neutral' }}>
-                  <TableCell colSpan={2} sx={{ fontWeight: 'bold', color: 'text.primary' }}>Total</TableCell>
+                  <TableCell colSpan={2} sx={{ fontWeight: 'bold', color: 'text.primary' }}>{t.portfolio.page.total}</TableCell>
                   <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'text.primary' }}>
                     {f18(positions.reduce((s, p) => s + p.currentValue, 0n))}
                   </TableCell>
@@ -771,18 +790,18 @@ export default function PortfolioPage() {
                       greener live figure reads like the real one and the PnL
                       looks wrong against it. Titles carry the explanation. */}
                   {([
-                    ['Asset', ''],
-                    ['ESG', ''],
-                    ['Side', ''],
-                    ['Entry', 'Price you opened at'],
-                    ['Oracle', 'On-chain price the contract settles against — this is what Unr. PnL uses'],
-                    ['Live Market', 'Off-chain feed. Moves before the oracle does, so a gap here is normal'],
-                    ['Margin', ''],
-                    ['Lev', ''],
-                    ['Copied From', ''],
-                    ['Unr. PnL', 'Unrealised, from the Oracle price'],
-                    ['Accrued Funding', ''],
-                    ['Value', ''],
+                    [t.portfolio.column.asset, ''],
+                    [t.portfolio.column.esg, ''],
+                    [t.portfolio.column.side, ''],
+                    [t.portfolio.column.entry, t.portfolio.columnHint.entry],
+                    [t.portfolio.column.oracle, t.portfolio.columnHint.oracle],
+                    [t.portfolio.column.liveMarket, t.portfolio.columnHint.liveMarket],
+                    [t.portfolio.column.margin, ''],
+                    [t.portfolio.column.leverage, ''],
+                    [t.portfolio.column.copiedFrom, ''],
+                    [t.portfolio.column.unrealizedPnl, t.portfolio.columnHint.unrealizedPnl],
+                    [t.portfolio.column.accruedFunding, ''],
+                    [t.portfolio.column.value, ''],
                   ] as const).map(([h, hint]) => (
                     <TableCell
                       key={h}
@@ -815,7 +834,7 @@ export default function PortfolioPage() {
                     </TableCell>
                     <TableCell>
                       <Chip
-                        label={row.isLong ? 'LONG ↑' : 'SHORT ↓'}
+                        label={row.isLong ? t.portfolio.page.side.long : t.portfolio.page.side.short}
                         size="small"
                         sx={{
                           fontWeight: 'bold',
@@ -857,7 +876,7 @@ export default function PortfolioPage() {
               </TableBody>
               <tfoot style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
                 <TableRow sx={{ bgcolor: 'background.neutral' }}>
-                  <TableCell colSpan={8} sx={{ fontWeight: 'bold', color: 'text.primary' }}>Total</TableCell>
+                  <TableCell colSpan={8} sx={{ fontWeight: 'bold', color: 'text.primary' }}>{t.portfolio.page.total}</TableCell>
                   <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: pnlColor(positions.reduce((s, p) => s + p.unrealizedPnL, 0n)) }}>
                     {fPnL(positions.reduce((s, p) => s + p.unrealizedPnL, 0n))}
                   </TableCell>
@@ -883,7 +902,7 @@ export default function PortfolioPage() {
         <Grid size={{ xs: 12, md: hasCopyHistory ? 6 : 12 }}>
           <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5, height: '100%' }}>
             <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 1 }}>
-              Free Margin
+              {t.portfolio.page.freeMargin}
             </Typography>
             <Box>
               <Typography variant="h3" sx={{ fontWeight: 800, fontFamily: MONO, color: 'primary.light' }}>
@@ -893,7 +912,7 @@ export default function PortfolioPage() {
             </Box>
             <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
               <TextField
-                placeholder="Amount"
+                placeholder={t.portfolio.page.amountPlaceholder}
                 type="number"
                 size="small"
                 fullWidth
@@ -908,7 +927,7 @@ export default function PortfolioPage() {
                 disabled={busy['withdraw']}
                 sx={{ fontWeight: 'bold', minWidth: 120 }}
               >
-                {busy['withdraw'] ? '…' : 'Withdraw'}
+                {busy['withdraw'] ? '…' : t.portfolio.page.withdraw}
               </Button>
             </Box>
           </Card>
@@ -920,7 +939,7 @@ export default function PortfolioPage() {
           <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5, height: '100%' }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 1 }}>
-                Copy Performance
+                {t.portfolio.page.copyPerformance}
               </Typography>
               {totalInitial > 0n && (
                 <Chip
@@ -959,7 +978,7 @@ export default function PortfolioPage() {
                     labelStyle={{ color: '#919eab' }}
                     formatter={(value) => [
                       `$${Number(value ?? 0).toFixed(2)}`,
-                      'Portfolio Value',
+                      t.portfolio.page.chart.portfolioValue,
                     ]}
                   />
                   {totalInitial > 0n && (
@@ -967,7 +986,7 @@ export default function PortfolioPage() {
                       y={initVal}
                       stroke="#ffab00"
                       strokeDasharray="4 4"
-                      label={{ value: 'Initial', fill: '#ffab00', fontSize: 9, position: 'insideTopRight' }}
+                      label={{ value: t.portfolio.page.chart.initial, fill: '#ffab00', fontSize: 9, position: 'insideTopRight' }}
                     />
                   )}
                   <Line
@@ -983,7 +1002,7 @@ export default function PortfolioPage() {
             </Box>
 
             <Typography variant="caption" color="text.secondary" align="center" sx={{ opacity: 0.6 }}>
-              Auto-refreshes every 30 s · Two-point view (initial vs current)
+              {t.portfolio.page.autoRefresh}
             </Typography>
           </Card>
         </Grid>

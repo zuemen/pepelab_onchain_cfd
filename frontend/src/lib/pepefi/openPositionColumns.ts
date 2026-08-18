@@ -1,5 +1,7 @@
 import type { Mode } from 'src/contexts/mode-context'
 
+import { t } from 'src/locales'
+
 // Open Positions 在 expert 模式下是一張交易桌——entry/oracle/live/margin/
 // leverage/funding 全部攤開。simple 模式的原則跟 nav（navDataForMode）、
 // PortfolioAnalysis 一樣：只回答「我有什麼、現在好不好」，不回答「怎麼算的」。
@@ -10,20 +12,7 @@ export type OpenPositionColumnKey =
   | 'asset' | 'esg' | 'side' | 'entry' | 'oracle' | 'liveMarket'
   | 'margin' | 'leverage' | 'copiedFrom' | 'unrealizedPnl' | 'accruedFunding' | 'value'
 
-export const COLUMN_LABELS: Record<OpenPositionColumnKey, string> = {
-  asset:          'Asset',
-  esg:            'ESG',
-  side:           'Side',
-  entry:          'Entry',
-  oracle:         'Oracle',
-  liveMarket:     'Live Market',
-  margin:         'Margin',
-  leverage:       'Lev',
-  copiedFrom:     'Copied From',
-  unrealizedPnl:  'Unr. PnL',
-  accruedFunding: 'Accrued Funding',
-  value:          'Value',
-}
+export const COLUMN_LABELS: Record<OpenPositionColumnKey, string> = t.portfolio.column
 
 const EXPERT_COLUMNS: OpenPositionColumnKey[] = [
   'asset', 'esg', 'side', 'entry', 'oracle', 'liveMarket',

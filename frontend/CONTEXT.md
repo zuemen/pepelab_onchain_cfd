@@ -22,6 +22,22 @@ _Avoid_: advanced mode, pro mode
 The light/dark appearance setting, owned by the MUI settings system. Unrelated to Mode despite sharing the word, and the two are never mixed.
 _Avoid_: calling this simply "mode"
 
+### Locale and display text
+
+**Display String**:
+A piece of text the user can read on screen, whichever module it happens to live in. Comments, identifiers and console output are not display strings, however user-facing the code around them is.
+_Avoid_: label, copy, text, message, i18n string
+
+**String Catalog**:
+The one place display strings live — plain data, grouped by feature, with one structurally identical copy per Locale. Holds no markup and no logic.
+_Avoid_: translation file, locale file, lang file, dictionary, i18n resources
+
+**Locale**:
+The single language a build ships in — `zh-TW` or `en`. Chosen when the app is built, so one build is one language and the user cannot change it from inside the app.
+_Avoid_: language mode, i18n mode, lang, or any name containing "mode" (Mode is the Simple/Expert preference, Theme Mode is light/dark)
+
+Display text is Traditional Chinese, with four categories deliberately left in their original form; the rule and its reasoning are in [ADR 0002](./docs/adr/0002-display-text-language-rule.md).
+
 ### Portfolio
 
 **Net Worth**:
