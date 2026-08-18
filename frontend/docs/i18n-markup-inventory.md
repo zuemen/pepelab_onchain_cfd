@@ -113,7 +113,22 @@ Line numbers are as of commit `d0378ed`.
 |------|--------|----------|
 | 675 | `<b>` | KYC-pending alert — `⏳ 你的 KYC 申請<b>已送出，正在等待審核</b>。審核人員核准後才能跟單含股票 / 債券的策略，不需要重複送出。` |
 
+## `src/pages/pepefi/TraderDashboard.tsx` (#34)
+
+| Line | Markup | Sentence |
+|------|--------|----------|
+| 624 | `<Link>` | `Stake ≥ 100 mUSDC on the <Link to="/stake">Stake page</Link> to unlock publishing.` |
+
 ---
+
+## Resolved along the way: hardcoded-locale timestamp formatters
+
+Not part of this inventory (these are formatting bugs, not deferred markup),
+but noted here since they turned up during the same batches: five
+`toLocaleString('zh-TW', …)` calls that ignored the built locale entirely,
+found and fixed in `AdminOraclePage.tsx`, `AgentMonitorPage.tsx` (#35),
+`SessionsPage.tsx`, `TraderProfilePage.tsx` and `TraderDashboard.tsx` (#34).
+All five now read the active `locale` export instead.
 
 ## Related: markup inside string values
 
