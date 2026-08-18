@@ -26,6 +26,7 @@ import { freshness } from './freshness';
 import { marketplace } from './marketplace';
 import { traderProfile } from './traderProfile';
 import { pepeStageSkins } from './pepeStageSkins';
+import { traderDashboard } from './traderDashboard';
 
 // ----------------------------------------------------------------------
 
@@ -63,6 +64,7 @@ const en: Catalog = {
   marketplace,
   history,
   traderProfile,
+  traderDashboard,
 };
 
 export default en;
