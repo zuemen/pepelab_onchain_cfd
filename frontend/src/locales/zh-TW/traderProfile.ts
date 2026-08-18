@@ -2,69 +2,69 @@
  * 交易者個人頁（/trader/:address）。
  */
 export const traderProfile = {
-  invalidAddress: 'Invalid address.',
-  connectWallet: 'Connect wallet to view trader profiles.',
-  breadcrumbMarketplace: 'Marketplace',
+  invalidAddress: '無效的地址。',
+  connectWallet: '連接錢包以查看交易者個人頁。',
+  breadcrumbMarketplace: '交易市集',
 
   header: {
-    unknownName: 'Unknown',
-    repChip: '◆ {rep} rep',
-    /** 粗體數字由元件自己渲染，這裡只是後面接的單複數字尾。 */
-    followerSingular: 'follower',
-    followerPlural: 'followers',
-    registered: 'Registered',
-    staked: '◆ Staked',
-    notStaked: '✗ Not staked',
-    noStrategy: 'No Strategy to Copy 🔒',
-    copyThisTrader: 'Copy This Trader →',
+    unknownName: '未知',
+    repChip: '◆ {rep} 聲譽',
+    /** 粗體數字由元件自己渲染，這裡只是後面接的單複數字尾。中文沒有單複數之分，兩個一樣。 */
+    followerSingular: '位跟隨者',
+    followerPlural: '位跟隨者',
+    registered: '已註冊',
+    staked: '◆ 已質押',
+    notStaked: '✗ 未質押',
+    noStrategy: '尚無可跟單的策略 🔒',
+    copyThisTrader: '跟單此交易者 →',
   },
 
   stats: {
-    staked: 'Staked',
-    followers: 'Followers',
-    copiers: 'copiers',
-    earnings: 'Earnings',
-    strategies: 'Strategies',
-    versions: 'versions',
+    staked: '質押金額',
+    followers: '跟隨者',
+    copiers: '跟單者',
+    earnings: '收益',
+    strategies: '策略數',
+    versions: '版本',
   },
 
   strategy: {
-    title: 'Latest Strategy',
-    empty: 'No strategy published yet.',
+    title: '最新策略',
+    empty: '尚未發布策略。',
     /** 分配標籤：↑ sBTC 50% · 3× */
     chip: '{side} {asset} {weight}% · {leverage}×',
   },
 
   history: {
-    titleOne: 'Strategy History ({count} version)',
-    titleMany: 'Strategy History ({count} versions)',
+    titleOne: '策略歷史（{count} 個版本）',
+    titleMany: '策略歷史（{count} 個版本）',
     /** 摘要行：sBTC L 3× · sETH S 2× */
     summaryEntry: '{asset} {side} {leverage}×',
-    long: 'L',
-    short: 'S',
+    long: '多',
+    short: '空',
 
     column: {
-      asset: 'Asset',
+      asset: '標的',
       esg: 'ESG',
-      side: 'Side',
-      leverage: 'Lev',
-      weight: 'Weight',
+      side: '方向',
+      leverage: '槓桿',
+      weight: '權重',
     },
-    longLabel: 'Long ↑',
-    shortLabel: 'Short ↓',
+    longLabel: '做多 ↑',
+    shortLabel: '做空 ↓',
   },
 
   followers: {
-    titleFirst: 'Followers (first {count})',
+    titleFirst: '跟隨者（前 {count} 位）',
   },
 
   slashHistory: {
-    titleOne: 'Slash History ({count} event)',
-    titleMany: 'Slash History ({count} events)',
+    titleOne: '罰沒紀錄（{count} 筆）',
+    titleMany: '罰沒紀錄（{count} 筆）',
   },
 
   actions: {
-    backToMarketplace: '← Back to Marketplace',
-    whaleTracker: '🐋 Whale Tracker',
+    backToMarketplace: '← 返回交易市集',
+    whaleTracker: '🐋 鯨魚追蹤',
   },
 };

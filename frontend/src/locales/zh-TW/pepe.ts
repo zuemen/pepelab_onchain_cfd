@@ -132,7 +132,12 @@ export const pepe = {
     },
   },
 
-  /** 進化階段。英文 title 是形態的名字，中文 label 是畫面上簡寫的那一個，兩者都會被渲染。 */
+  /**
+   * 進化階段。英文 title 是形態的名字，中文 label 是畫面上簡寫的那一個，兩者都會被渲染。
+   *
+   * #38：title 刻意不翻——它是這隻蛙每個形態的「種名」，跟 Pokémon 的物種名同一類，
+   * 翻了就不是同一隻了；label 才是真正給讀者看懂用的字，那個已經是中文。
+   */
   evolution: {
     stage0: {
       title: 'Pepe Egg 🥚',
@@ -182,7 +187,7 @@ export const pepe = {
     ach_first_trade: { title: '首筆交易', desc: '開過至少一筆倉' },
     ach_whale: { title: 'Whale 降臨', desc: '持有 100,000 PEPE' },
     ach_collector: { title: '收藏家', desc: '收藏至少 3 件 Pepe 道具' },
-    ach_degen: { title: 'Degen', desc: '持有 1,000,000 PEPE' },
+    ach_degen: { title: '重倉狂人', desc: '持有 1,000,000 PEPE' },
     ach_legend: { title: '傳說 Pepe', desc: '所有成就解鎖' },
   },
 
