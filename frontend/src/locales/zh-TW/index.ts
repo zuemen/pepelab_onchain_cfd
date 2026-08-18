@@ -1,4 +1,5 @@
 import { esg } from './esg';
+import { kyc } from './kyc';
 import { nav } from './nav';
 import { x402 } from './x402';
 import { pepe } from './pepe';
@@ -47,6 +48,7 @@ const zhTW = {
   tokens,
   landing,
   common,
+  kyc,
 };
 
 export type Catalog = typeof zhTW;

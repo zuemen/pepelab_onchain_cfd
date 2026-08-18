@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { Contract } from 'ethers';
+import { t, interpolate } from 'src/locales';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
@@ -25,15 +26,8 @@ const COUNTRIES = [
   'ID', 'PH', 'VN', 'PL', 'CZ', 'IL', 'ZA', 'AE', 'SA', 'OTHER',
 ]
 
-const COUNTRY_NAMES: Record<string, string> = {
-  TW: '台灣', US: '美國', JP: '日本', KR: '韓國', HK: '香港', SG: '新加坡',
-  GB: '英國', DE: '德國', FR: '法國', CA: '加拿大', AU: '澳大利亞', NZ: '紐西蘭',
-  CH: '瑞士', SE: '瑞典', NL: '荷蘭', BE: '比利時', IT: '義大利', ES: '西班牙',
-  PT: '葡萄牙', AT: '奧地利', DK: '丹麥', NO: '挪威', FI: '芬蘭', IE: '愛爾蘭',
-  CN: '中國', IN: '印度', BR: '巴西', MX: '墨西哥', TH: '泰國', MY: '馬來西亞',
-  ID: '印尼', PH: '菲律賓', VN: '越南', PL: '波蘭', CZ: '捷克', IL: '以色列',
-  ZA: '南非', AE: '阿聯酋', SA: '沙烏地阿拉伯', OTHER: '其他',
-}
+/** ISO 兩碼是資料，右邊的國名是顯示字串，所以只有後者住在 catalog。 */
+const COUNTRY_NAMES: Record<string, string> = t.kyc.country
 
 interface Props {
   isOpen:      boolean;
@@ -64,7 +58,7 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPe
 
   const handleSubmit = async () => {
     if (!kycRegistry) return;
-    if (!fullName.trim()) { setError('請輸入姓名'); return; }
+    if (!fullName.trim()) { setError(t.kyc.nameRequired); return; }
     setBusy(true);
     setError(null);
     try {
@@ -100,16 +94,16 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPe
       <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', pb: 1 }}>
         <Box>
           <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-            {awaitingReview ? 'KYC 申請審核中' : '送出 KYC 申請'}
+            {awaitingReview ? t.kyc.titleAwaitingReview : t.kyc.title}
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            交易股票 / 債券類合成資產需要通過 KYC 審核
+            {t.kyc.subtitle}
           </Typography>
         </Box>
         <IconButton
           size="small"
           onClick={onClose}
-          aria-label="關閉"
+          aria-label={t.kyc.closeAria}
           sx={{ color: 'text.secondary', p: 0.5 }}
         >
           {/* Iconify rather than a bare "✕" glyph: the character renders at a
@@ -123,12 +117,10 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPe
         {/* 審核制說明。這是這個 Dialog 最重要的一句話：送出 ≠ 通過。 */}
         <Alert severity={awaitingReview ? 'success' : 'info'} variant="outlined">
           <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
-            {awaitingReview ? '✅ 申請已送出，等待審核' : '這是「送出申請」，不是即時通過'}
+            {awaitingReview ? t.kyc.noticeTitleAwaitingReview : t.kyc.noticeTitle}
           </Typography>
           <Typography variant="caption" display="block" sx={{ opacity: 0.9 }}>
-            {awaitingReview
-              ? '你的 KYC 申請已上鏈記錄（KYCSubmitted）。審核人員核准（approveKYC）後，受管制標的才會解鎖；在那之前下單仍會被合約擋下（NotKycVerified）。可以先關掉這個視窗，稍後回來重新整理查看狀態。'
-              : '送出後會在鏈上留下一筆待審申請（KYCSubmitted），需由審核人員核准（approveKYC）才會通過。核准前仍無法交易受管制標的。'}
+            {awaitingReview ? t.kyc.noticeBodyAwaitingReview : t.kyc.noticeBody}
           </Typography>
         </Alert>
 
@@ -145,10 +137,10 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPe
           }}
         >
           <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
-            Demo KYC — 不會儲存真實個資
+            {t.kyc.demoTitle}
           </Typography>
           <Typography variant="caption" display="block" sx={{ opacity: 0.9 }}>
-            此為學術展示系統。填入的姓名與國籍僅儲存在智能合約上作為 PoC 示範，請勿填入真實個人資訊。
+            {t.kyc.demoBody}
           </Typography>
         </Alert>
         )}
@@ -157,8 +149,8 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPe
         {!awaitingReview && (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           <TextField
-            label="姓名（示範用）"
-            placeholder="e.g. Demo User"
+            label={t.kyc.nameLabel}
+            placeholder={t.kyc.namePlaceholder}
             fullWidth
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
@@ -169,18 +161,18 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPe
           />
 
           <FormControl fullWidth>
-            <InputLabel id="nationality-select-label" shrink>國籍</InputLabel>
+            <InputLabel id="nationality-select-label" shrink>{t.kyc.nationalityLabel}</InputLabel>
             <Select
               labelId="nationality-select-label"
               value={nationality}
               onChange={(e) => setNationality(e.target.value)}
               disabled={busy}
-              label="國籍"
+              label={t.kyc.nationalityLabel}
               notched
             >
               {COUNTRIES.map((c) => (
                 <MenuItem key={c} value={c}>
-                  {c} — {COUNTRY_NAMES[c] ?? c}
+                  {interpolate(t.kyc.nationalityOption, { code: c, name: COUNTRY_NAMES[c] ?? c })}
                 </MenuItem>
               ))}
             </Select>
@@ -204,7 +196,7 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPe
           fullWidth
           sx={{ py: 1.2 }}
         >
-          {awaitingReview ? '關閉' : '取消'}
+          {awaitingReview ? t.kyc.close : t.kyc.cancel}
         </Button>
         {!awaitingReview && (
           <Button
@@ -215,7 +207,7 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPe
             fullWidth
             sx={{ py: 1.2, fontWeight: 'bold' }}
           >
-            {busy ? '送出中…' : '送出 KYC 申請'}
+            {busy ? t.kyc.submitting : t.kyc.submit}
           </Button>
         )}
       </DialogActions>

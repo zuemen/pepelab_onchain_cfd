@@ -132,6 +132,49 @@ export const pepe = {
     },
   },
 
+  /** 進化階段。英文 title 是形態的名字，中文 label 是畫面上簡寫的那一個，兩者都會被渲染。 */
+  evolution: {
+    stage0: {
+      title: 'Pepe Egg 🥚',
+      label: '蛙蛋',
+      desc: '一顆發著綠光的神秘蛙蛋，安坐在成堆的 PEPE 金幣上等待孵化。',
+    },
+    stage1: {
+      title: 'Tadpole Pepe 🐟',
+      label: '蟌蚪',
+      desc: '破殼而出的小蟌蚪，甩著尾巴在鏈上光環中第一次游動。',
+    },
+    stage2: {
+      title: 'Baby Pepe 🐸',
+      label: '幼蛙',
+      desc: '長出四肢的幼蛙，包著尿布站上屬於自己的第一個舞台。',
+    },
+    stage3: {
+      title: 'Rookie Trader 📈',
+      label: '新銳蛙',
+      desc: '穿上連帽外套與球鞋，握著滿是綠 K 棒手機的新銳操盤手。',
+    },
+    stage4: {
+      title: 'Elite Chad Trader 🕶️',
+      label: '菁英蛙',
+      desc: '墨鏡、黑皮衣與 PEPE 金鏈，華爾街等級的菁英巨鯨。',
+    },
+    stage5: {
+      title: 'Gold Emperor Pepe 👑',
+      label: '蛙皇',
+      desc: '黃金王冠、紅色皇袍與寶石權杖，腳踏金幣與寶石之山。',
+    },
+    stage6: {
+      title: 'Supreme Pepe Lord 😇',
+      label: '蛙神',
+      desc: '生出聖潔羽翼與黃金光環，披上金紋白袍的終極神化形態。',
+    },
+
+    /** 進化圖上的輔助文字。 */
+    lockedAria: '未解鎖 — 需 Lv.{level}',
+    imageAlt: '{label} — 進化 Lv.{stage}',
+  },
+
   achievement: {
     ach_first_stake: { title: '初次質押', desc: '持有任何 PEPE' },
     ach_streak3: { title: '3 天連到', desc: '連續簽到 3 天' },

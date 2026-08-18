@@ -1,6 +1,7 @@
 import type { Catalog } from '../zh-TW';
 
 import { esg } from './esg';
+import { kyc } from './kyc';
 import { nav } from './nav';
 import { x402 } from './x402';
 import { pepe } from './pepe';
@@ -49,6 +50,7 @@ const en: Catalog = {
   tokens,
   landing,
   common,
+  kyc,
 };
 
 export default en;
