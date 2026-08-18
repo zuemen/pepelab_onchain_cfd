@@ -1,6 +1,7 @@
 import type { Catalog } from '../zh-TW';
 
 import { nav } from './nav';
+import { x402 } from './x402';
 import { pepe } from './pepe';
 import { meta } from './meta';
 import { admin } from './admin';
@@ -31,6 +32,7 @@ const en: Catalog = {
   terminal,
   pepe,
   pepeStageSkins,
+  x402,
 };
 
 export default en;
