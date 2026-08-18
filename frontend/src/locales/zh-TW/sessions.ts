@@ -5,8 +5,8 @@
  * 設定檔，但它本身是給人讀的句子而不是語法，所以進 catalog。
  */
 export const sessions = {
-  title: '🤖 AI Agent Sessions',
-  viewOn: 'View on {explorer} ↗',
+  title: '🤖 AI Agent 委任',
+  viewOn: '在 {explorer} 查看 ↗',
 
   ssi: {
     title: 'SSI 三角：你的錢包就是信任根',
@@ -19,17 +19,17 @@ export const sessions = {
   },
 
   create: {
-    title: 'Create Session',
-    agentAddress: 'Agent address (session key)',
-    agentPlaceholder: '0x… 或按右側 Generate agent key',
-    generateKey: 'Generate agent key',
-    maxPerTrade: 'Max / trade (mUSDC)',
-    totalBudget: 'Total budget (mUSDC)',
-    maxLeverage: 'Max leverage',
-    validFor: 'Valid for (hours)',
-    creating: 'Creating…',
-    cta: 'Create Session',
-    done: 'Session created ✓',
+    title: '建立 Session',
+    agentAddress: 'Agent 地址（session key）',
+    agentPlaceholder: '0x… 或按右側「產生 agent 金鑰」',
+    generateKey: '產生 agent 金鑰',
+    maxPerTrade: '單筆上限（mUSDC）',
+    totalBudget: '總預算（mUSDC）',
+    maxLeverage: '最大槓桿',
+    validFor: '有效期限（小時）',
+    creating: '建立中…',
+    cta: '建立 Session',
+    done: 'Session 已建立 ✓',
   },
 
   /** 瀏覽器裡產生的一次性 burner 金鑰。 */
@@ -40,69 +40,69 @@ export const sessions = {
     privateKeyChip: '私鑰（只放本機）',
     /** 私鑰被遮住時，圓點後面接的那一段字。 */
     hiddenSuffix: ' （已隱藏）',
-    reveal: 'Reveal',
-    hide: 'Hide',
-    copy: 'Copy',
-    copyAddressLabel: 'Agent address',
-    copyPrivateKeyLabel: 'Agent private key',
+    reveal: '顯示',
+    hide: '隱藏',
+    copy: '複製',
+    copyAddressLabel: 'Agent 地址',
+    copyPrivateKeyLabel: 'Agent 私鑰',
     generated: '已產生 agent 專用金鑰（只在本機瀏覽器，請立即保存）',
   },
 
   list: {
-    title: 'My Sessions',
-    refresh: '↺ Refresh',
-    loading: 'Loading…',
+    title: '我的 Session',
+    refresh: '↺ 重新整理',
+    loading: '載入中…',
     empty: '尚無 session。建立一個來授權 agent。',
 
     column: {
       id: '#',
       agent: 'Agent',
-      spent: 'Spent / Budget',
-      maxPerTrade: 'Max/trade',
-      leverage: 'Lev',
-      expiry: 'Expiry',
-      status: 'Status',
-      credential: 'Credential',
+      spent: '花費 / 預算',
+      maxPerTrade: '單筆上限',
+      leverage: '槓桿',
+      expiry: '到期',
+      status: '狀態',
+      credential: '憑證',
     },
 
     status: {
-      revoked: 'Revoked',
-      expired: 'Expired',
-      active: 'Active',
+      revoked: '已撤銷',
+      expired: '已過期',
+      active: '進行中',
     },
 
-    issued: 'Issued ✓',
-    export: 'Export ⤓',
-    issueVc: 'Issue VC',
-    signing: 'Signing…',
+    issued: '已核發 ✓',
+    export: '匯出 ⤓',
+    issueVc: '核發 VC',
+    signing: '簽署中…',
     issueVcHint: 'MetaMask 簽發授權 VC',
     issueVcNeedsWallet: '需真實錢包簽署（mock 模式不支援）',
-    revoke: 'Revoke',
-    revoked: 'Session revoked ✓',
-    credentialIssued: 'Credential issued ✓',
+    revoke: '撤銷',
+    revoked: 'Session 已撤銷 ✓',
+    credentialIssued: '憑證已核發 ✓',
     needsRealWallet: '需連接真實錢包以簽署 VC（mock 模式不支援簽章）',
   },
 
   /** 匯出對話框。 */
   export: {
-    title: '🔌 Connect your Agent — Session #{id}',
-    close: 'Close',
-    closeAria: 'close',
+    title: '🔌 連接你的 Agent — Session #{id}',
+    close: '關閉',
+    closeAria: '關閉',
     intro:
       '把以下兩份貼進你本機的 agent client，之後只需下「口頭交易意圖」，agent 會在 session 限額內憑 VC 代你下單：',
 
     mcpTitle: 'MCP 設定（Claude Desktop / Code）',
     vcTitle: '授權 VC（下單驗證用）',
-    copy: 'Copy',
-    download: 'Download .json',
-    copyMcpLabel: 'MCP config',
-    copyVcLabel: 'Authorization VC',
+    copy: '複製',
+    download: '下載 .json',
+    copyMcpLabel: 'MCP 設定',
+    copyVcLabel: '授權 VC',
 
     /** 匯出的 MCP 設定裡，私鑰欄位的預設佔位提示。 */
     privateKeyPlaceholder: '0x...   # 貼上你剛產生/保存的 agent 私鑰（放本機，勿外流）',
   },
 
-  copied: '{label} copied ✓',
+  copied: '{label} 已複製 ✓',
   copyFailed: '複製失敗（瀏覽器剪貼簿權限）',
 
   sessionManager: 'AgentSessionManager: {address}',
@@ -137,7 +137,7 @@ export const sessions = {
     keyNoteMid2: ' → 拿來授權下面這個 session；',
     keyNoteBold3: '私鑰',
     keyNoteAfter:
-      ' → 放進 agent 的 MCP 設定 + 一點 ETH 付 gas。 沒有現成的就按「Generate agent key」在瀏覽器產生一把全新 burner。',
+      ' → 放進 agent 的 MCP 設定 + 一點 ETH 付 gas。 沒有現成的就按「產生 agent 金鑰」在瀏覽器產生一把全新 burner。',
 
     burnerWarnBefore: '這是一把獨立的 burner 金鑰，只受你下面設的 session 限額拘束。請存到本機 agent 設定，',
     burnerWarnBold: '別放主錢包資產',
@@ -167,7 +167,7 @@ export const sessions = {
     includeKeyAfter: '（含真鑰，請只在自己機器使用）',
 
     placeholderAfter:
-      ' 為佔位 — 貼上你保存的 agent 私鑰即可（在本頁用「Generate agent key」產生的，可勾選自動填入）。',
+      ' 為佔位 — 貼上你保存的 agent 私鑰即可（在本頁用「產生 agent 金鑰」產生的，可勾選自動填入）。',
 
     finalWarnBefore: 'agent 私鑰只放你本機的 agent 設定，',
     finalWarnBold1: '勿外流',
