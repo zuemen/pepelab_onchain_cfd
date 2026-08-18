@@ -1,3 +1,5 @@
+import { t, interpolate } from 'src/locales'
+
 import { SIGNAL_API_URL } from './signalApi'
 
 /**
@@ -107,18 +109,20 @@ export async function fetchCandles(
     // AbortError 要原樣往上丟，呼叫端才分得出「被取消」與「真的失敗」。
     if ((err as Error).name === 'AbortError') throw err
     throw new CandleFetchError(
-      `無法連線到行情 API（${CANDLES_API_URL}）。` +
-        (import.meta.env.DEV ? '請先啟動 signal-api：cd agent/signal-api && npx tsx src/index.ts' : ''),
+      interpolate(
+        import.meta.env.DEV ? t.terminal.candles.unreachableDev : t.terminal.candles.unreachable,
+        { url: CANDLES_API_URL },
+      ),
     )
   }
 
   if (!res.ok) {
     // 錯誤訊息一定要帶出「打去哪裡」。少了它，404 看起來像前端路徑寫錯，
     // 實際上多半是那個部署還沒有這條路由。
-    let msg = `行情 API 回 ${res.status}（${CANDLES_API_URL}）`
-    if (res.status === 404) {
-      msg += ' — 該部署可能尚未包含 /candles 路由，需重新部署 signal-api'
-    }
+    let msg = interpolate(
+      res.status === 404 ? t.terminal.candles.httpError404 : t.terminal.candles.httpError,
+      { status: res.status, url: CANDLES_API_URL },
+    )
     try {
       const body = (await res.json()) as { error?: string }
       if (body?.error) msg = body.error

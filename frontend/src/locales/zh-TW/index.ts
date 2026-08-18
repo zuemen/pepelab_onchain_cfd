@@ -2,6 +2,7 @@ import { nav } from './nav';
 import { meta } from './meta';
 import { errors } from './errors';
 import { exchange } from './exchange';
+import { terminal } from './terminal';
 import { portfolio } from './portfolio';
 import { freshness } from './freshness';
 
@@ -21,6 +22,7 @@ const zhTW = {
   freshness,
   portfolio,
   exchange,
+  terminal,
 };
 
 export type Catalog = typeof zhTW;

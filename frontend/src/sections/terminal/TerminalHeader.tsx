@@ -1,5 +1,7 @@
 import Box from '@mui/material/Box'
 
+import { t } from 'src/locales'
+
 import { C, monoCss } from './terminal-theme'
 
 /** 品牌列：logo、網路標示、連線指示燈。 */
@@ -11,7 +13,7 @@ export function TerminalHeader() {
         PEPELAB<span style={{ color: C.lime }}>·</span>TERMINAL
       </Box>
       <Box sx={{ ...monoCss, fontSize: 11, color: C.mut, letterSpacing: '.08em' }}>
-        agent-native perps · base sepolia
+        {t.terminal.header.tagline}
       </Box>
       <Box
         sx={{
@@ -38,7 +40,7 @@ export function TerminalHeader() {
             },
           }}
         />
-        on-chain · live
+        {t.terminal.header.status}
       </Box>
     </Box>
   )

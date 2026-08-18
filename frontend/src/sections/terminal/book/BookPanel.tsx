@@ -2,6 +2,8 @@ import type { ActivityRow } from 'src/hooks/useMarketActivity'
 
 import Box from '@mui/material/Box'
 
+import { t } from 'src/locales'
+
 import { MarketActivity } from './MarketActivity'
 import { C, panel, monoCss, labelCss } from '../terminal-theme'
 
@@ -61,9 +63,9 @@ export function BookPanel({
           borderBottom: `1px solid ${C.line}`,
         }}
       >
-        <Box sx={{ ...labelCss, fontSize: 10, color: C.mut }}>Market activity</Box>
+        <Box sx={{ ...labelCss, fontSize: 10, color: C.mut }}>{t.terminal.activity.title}</Box>
         <Box sx={{ ml: 'auto', ...monoCss, fontSize: 9.5, color: C.mut, whiteSpace: 'nowrap' }}>
-          ● 鏈上
+          {t.terminal.activity.onChainBadge}
         </Box>
       </Box>
 

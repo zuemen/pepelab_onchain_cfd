@@ -3,6 +3,7 @@ import { useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 
+import { t } from 'src/locales'
 import { ASSET_META } from 'src/lib/pepefi/assetMeta'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { fUsd, fNum, fromUnits } from 'src/lib/pepefi/format'
@@ -45,7 +46,7 @@ export function PositionsTable({
     try {
       const tx = asTx(await contracts.exchange.closePosition(id))
       await tx.wait()
-      notify('Closed ✓', true)
+      notify(t.terminal.positions.closed, true)
       await onRefresh()
     } catch (e) {
       notify(prettyError(e), false)
@@ -71,14 +72,23 @@ export function PositionsTable({
               borderBottom: `1px solid ${C.line}`,
             }}
           >
-            {['Asset', 'Side', 'Entry', 'Mark', 'Margin', 'Lev', 'PnL', ''].map((h, i) => (
+            {[
+              t.terminal.positions.column.asset,
+              t.terminal.positions.column.side,
+              t.terminal.positions.column.entry,
+              t.terminal.positions.column.mark,
+              t.terminal.positions.column.margin,
+              t.terminal.positions.column.leverage,
+              t.terminal.positions.column.pnl,
+              '',
+            ].map((h, i) => (
               <Box key={h || `sp-${i}`}>{h}</Box>
             ))}
           </Box>
 
           {positions.length === 0 ? (
             <Box sx={{ p: 4, textAlign: 'center', color: C.mut, ...monoCss, fontSize: 13 }}>
-              no open positions
+              {t.terminal.positions.empty}
             </Box>
           ) : (
             positions.map((p) => {
@@ -103,7 +113,7 @@ export function PositionsTable({
                 >
                   <Box sx={{ fontWeight: 700 }}>{sym}</Box>
                   <Box sx={{ color: p.isLong ? C.green : C.red, fontWeight: 700 }}>
-                    {p.isLong ? 'LONG' : 'SHORT'}
+                    {p.isLong ? t.terminal.positions.long : t.terminal.positions.short}
                   </Box>
                   <Box>{fUsd(fromUnits(p.entryPrice, 18))}</Box>
                   <Box>{fUsd(fromUnits(p.cur, 18))}</Box>
@@ -131,7 +141,11 @@ export function PositionsTable({
                         '&:hover': { borderColor: C.red, color: C.red, bgcolor: C.redDim },
                       }}
                     >
-                      {busy[k] ? '…' : stale ? '價格過期' : 'Close'}
+                      {busy[k]
+                        ? t.exchange.working
+                        : stale
+                          ? t.terminal.positions.stale
+                          : t.terminal.positions.close}
                     </Button>
                   </Box>
                 </Box>

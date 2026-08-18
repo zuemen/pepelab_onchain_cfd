@@ -4,6 +4,7 @@ import { nav } from './nav';
 import { meta } from './meta';
 import { errors } from './errors';
 import { exchange } from './exchange';
+import { terminal } from './terminal';
 import { portfolio } from './portfolio';
 import { freshness } from './freshness';
 
@@ -23,6 +24,7 @@ const en: Catalog = {
   freshness,
   portfolio,
   exchange,
+  terminal,
 };
 
 export default en;

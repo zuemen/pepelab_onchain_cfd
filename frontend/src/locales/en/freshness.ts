@@ -6,6 +6,9 @@ import type { Catalog } from '../zh-TW';
 export const freshness: Catalog['freshness'] = {
   unknownAge: '年齡未知',
 
+  /** 模擬報價沒有鏈上年齡可言，所以給的是「這不是真價格」而不是一個時間。 */
+  mockLabel: '模擬價格',
+
   age: {
     seconds: '{n} 秒前',
     minutes: '{n} 分鐘前',

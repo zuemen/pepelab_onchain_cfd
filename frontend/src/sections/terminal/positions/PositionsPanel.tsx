@@ -7,6 +7,8 @@ import Box from '@mui/material/Box'
 
 import { useUserFills } from 'src/hooks/useUserFills'
 
+import { t, interpolate } from 'src/locales'
+
 import { FillsTable } from './FillsTable'
 import { FundingTable } from './FundingTable'
 import { PositionsTable } from './PositionsTable'
@@ -47,9 +49,9 @@ export function PositionsPanel({
   const fills = useUserFills(tab === 'fills' ? contracts : null, address)
 
   const tabs: [Tab, string][] = [
-    ['positions', `Positions (${positions.length})`],
-    ['fills', 'Fills'],
-    ['funding', 'Funding'],
+    ['positions', interpolate(t.terminal.panel.tabPositions, { count: positions.length })],
+    ['fills', t.terminal.panel.tabFills],
+    ['funding', t.terminal.panel.tabFunding],
   ]
 
   const refreshCurrent = async () => {
@@ -116,7 +118,7 @@ export function PositionsPanel({
             '&:hover': { color: C.ink },
           }}
         >
-          ↺ refresh
+          {t.terminal.panel.refresh}
         </Box>
       </Box>
 
