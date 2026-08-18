@@ -1,7 +1,5 @@
 /**
  * 交易者質押頁：質押、聲譽分數、解質押冷卻，以及 PEPE 收益農場。
- *
- * 農場那兩段免責說明在句中夾了 `<b>展示值</b>`，留給 #36。
  */
 export const stake = {
   viewOn: 'View on {explorer} ↗',
@@ -76,5 +74,18 @@ export const stake = {
     cooldown: 'Unstaking requires a 24-hour cooldown.',
     backToMarketplace: '← Back to Marketplace',
     traderDashboard: 'Trader Dashboard →',
+  },
+
+  /** #36：兩段免責說明各自在句中夾了 `<b>`，拆成前後片段。 */
+  markup: {
+    disclaimerBefore: '⚠ 此數字為前端依質押量與時間試算的',
+    disclaimerBold: '展示值',
+    disclaimerAfter: '，鏈上沒有對應的獎勵池， 目前無法領取。（PepeStaking 尚未在本網路部署。）',
+
+    footnoteBefore: '* 質押的 ',
+    footnoteMid1: ' 是給跟單者的聲譽保障金，本身不生息。上方的 PEPE 產出 （每質押 1 ',
+    footnoteMid2: ' 每日 0.02 PEPE）目前是',
+    footnoteBold: '前端試算的展示值',
+    footnoteAfter: '：鏈上沒有 對應的獎勵池，也沒有任何合約會把它發給你，因此收割按鈕停用。',
   },
 };

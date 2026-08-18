@@ -1,8 +1,5 @@
 /**
  * Trader Dashboard（/trader）：自己的交易者主頁——註冊、發布策略、收益、策略歷史。
- *
- * 一句留給 #36：「Stake ≥ 100 mUSDC on the Stake page to unlock publishing.」
- * 中間夾了一個連到 /stake 的 `<Link>`。
  */
 export const traderDashboard = {
   connectWallet: 'Connect wallet to access Trader Dashboard.',
@@ -54,7 +51,11 @@ export const traderDashboard = {
     done: 'Strategy published ✓',
 
     registerFirst: 'Register as a trader first to publish.',
-    /** 這句在句中夾了連到 /stake 的 Link，留給 #36。 */
+
+    /** #36：夾了連到 /stake 的 `<Link>`，拆成前後片段。 */
+    stakeToUnlockBefore: 'Stake ≥ 100 mUSDC on the ',
+    stakeToUnlockLink: 'Stake page',
+    stakeToUnlockAfter: ' to unlock publishing.',
   },
 
   earnings: {

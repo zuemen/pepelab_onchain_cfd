@@ -112,4 +112,11 @@ export const copy: Catalog['copy'] = {
     approved: '{token} approved ✓',
     following: 'Following trader ✓',
   },
+
+  /** #36：KYC 待審核那句夾了 `<b>`，拆成前後片段。 */
+  markup: {
+    kycPendingBefore: '⏳ 你的 KYC 申請',
+    kycPendingBold: '已送出，正在等待審核',
+    kycPendingAfter: '。審核人員核准後才能跟單含股票 / 債券的策略，不需要重複送出。',
+  },
 };

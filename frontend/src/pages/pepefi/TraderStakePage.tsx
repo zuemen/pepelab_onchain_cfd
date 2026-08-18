@@ -446,8 +446,7 @@ export default function TraderStakePage() {
               : interpolate(t.stake.farm.notStaked, { token: STABLE_LABEL })}
           </Typography>
           <Typography variant="caption" color="warning.main" sx={{ display: 'block', textAlign: 'center', mt: 0.5 }}>
-            ⚠ 此數字為前端依質押量與時間試算的<b>展示值</b>，鏈上沒有對應的獎勵池，
-            目前無法領取。（PepeStaking 尚未在本網路部署。）
+            {t.stake.markup.disclaimerBefore}<b>{t.stake.markup.disclaimerBold}</b>{t.stake.markup.disclaimerAfter}
           </Typography>
         </Card>
 
@@ -494,9 +493,7 @@ export default function TraderStakePage() {
         </Stack>
 
         <Typography variant="caption" color="text.secondary" sx={{ zIndex: 1, textAlign: 'center', fontStyle: 'italic' }}>
-          * 質押的 {STABLE_LABEL} 是給跟單者的聲譽保障金，本身不生息。上方的 PEPE 產出
-          （每質押 1 {STABLE_LABEL} 每日 0.02 PEPE）目前是<b>前端試算的展示值</b>：鏈上沒有
-          對應的獎勵池，也沒有任何合約會把它發給你，因此收割按鈕停用。
+          {t.stake.markup.footnoteBefore}{STABLE_LABEL}{t.stake.markup.footnoteMid1}{STABLE_LABEL}{t.stake.markup.footnoteMid2}<b>{t.stake.markup.footnoteBold}</b>{t.stake.markup.footnoteAfter}
         </Typography>
       </Card>
 

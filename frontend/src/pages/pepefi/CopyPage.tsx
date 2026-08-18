@@ -672,7 +672,7 @@ export default function CopyPage() {
         {/* 審核制：送出申請 ≠ 通過。待審中不要再推「完成 KYC」按鈕。 */}
         {kycBlocked && kycPending && (
           <Alert severity="info">
-            ⏳ 你的 KYC 申請<b>已送出，正在等待審核</b>。審核人員核准後才能跟單含股票 / 債券的策略，不需要重複送出。
+            {t.copy.markup.kycPendingBefore}<b>{t.copy.markup.kycPendingBold}</b>{t.copy.markup.kycPendingAfter}
           </Alert>
         )}
 

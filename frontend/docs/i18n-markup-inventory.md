@@ -19,39 +19,27 @@ Line numbers are as of commit `d0378ed`.
 
 ---
 
-Resolved (#36): `src/pages/pepefi/ExchangePage.tsx` (#32),
+**All entries resolved (#36).** Every file listed above is back on the
+ratchet allowlist in `src/locales/locales.test.ts`:
+`src/pages/pepefi/ExchangePage.tsx` (#32),
 `src/components/pepefi/whale/WhaleFeed.tsx` (#33/#34),
 `src/pages/pepefi/VaultPage.tsx`, `src/pages/pepefi/SessionsPage.tsx`,
 `src/pages/pepefi/TokenizedAssetsPage.tsx`, `src/pages/pepefi/LandingPage.tsx`,
-`src/layouts/pepefi/index.tsx` and `src/pages/pepefi/PepeLabPage.tsx` (#34) —
-all back on the ratchet allowlist.
+`src/layouts/pepefi/index.tsx`, `src/pages/pepefi/PepeLabPage.tsx`,
+`src/pages/pepefi/TraderStakePage.tsx`, `src/pages/pepefi/CopyPage.tsx` and
+`src/pages/pepefi/TraderDashboard.tsx` (#34).
 
-`src/pages/pepefi/X402DocsPage.tsx` (#34)'s deferred sentence is resolved too,
-but the file itself still isn't on the allowlist: it also holds a
-copy-paste-able curl/npx example with two Chinese comments inside the
-template literal (lines ~248–250). That's deliberately-untranslated verbatim
-code, not a display string — same category as the asset-path exception — and
-out of scope for #36. Left as-is; noted here so it isn't mistaken for a
-missed #36 entry.
+The one exception: `src/pages/pepefi/X402DocsPage.tsx` (#34)'s deferred
+sentence is resolved too, but the file itself still isn't on the allowlist —
+it also holds a copy-paste-able curl/npx example with two Chinese comments
+inside the template literal (lines ~248–250). That's deliberately-untranslated
+verbatim code, not a display string — same category as the asset-path
+exception — and out of scope for #36. Left as-is.
 
-## `src/pages/pepefi/TraderStakePage.tsx` (#34)
-
-| Line | Markup | Sentence |
-|------|--------|----------|
-| ~449 | `<b>` | PEPE farm disclaimer — `⚠ 此數字為前端依質押量與時間試算的<b>展示值</b>，鏈上沒有對應的獎勵池，目前無法領取。…` |
-| ~498 | `<b>` | Footnote disclaimer — `…目前是<b>前端試算的展示值</b>：鏈上沒有對應的獎勵池，也沒有任何合約會把它發給你，因此收割按鈕停用。` |
-
-## `src/pages/pepefi/CopyPage.tsx` (#34)
-
-| Line | Markup | Sentence |
-|------|--------|----------|
-| 675 | `<b>` | KYC-pending alert — `⏳ 你的 KYC 申請<b>已送出，正在等待審核</b>。審核人員核准後才能跟單含股票 / 債券的策略，不需要重複送出。` |
-
-## `src/pages/pepefi/TraderDashboard.tsx` (#34)
-
-| Line | Markup | Sentence |
-|------|--------|----------|
-| 624 | `<Link>` | `Stake ≥ 100 mUSDC on the <Link to="/stake">Stake page</Link> to unlock publishing.` |
+This closes out the #36 inventory: every sentence recorded here has been
+resolved as either one catalog value with markup moved to wrap it, or split
+into fragments verified against rendered output, per the issue's acceptance
+criteria. `#37` (extending the ratchet to the whole tree) is next.
 
 ---
 

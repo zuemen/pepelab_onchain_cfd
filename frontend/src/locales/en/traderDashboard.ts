@@ -53,7 +53,11 @@ export const traderDashboard: Catalog['traderDashboard'] = {
     done: 'Strategy published ✓',
 
     registerFirst: 'Register as a trader first to publish.',
-    /** 這句在句中夾了連到 /stake 的 Link，留給 #36。 */
+
+    /** #36：夾了連到 /stake 的 `<Link>`，拆成前後片段。 */
+    stakeToUnlockBefore: 'Stake ≥ 100 mUSDC on the ',
+    stakeToUnlockLink: 'Stake page',
+    stakeToUnlockAfter: ' to unlock publishing.',
   },
 
   earnings: {

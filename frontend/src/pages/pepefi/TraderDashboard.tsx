@@ -621,7 +621,7 @@ export default function TraderDashboard() {
         )}
         {traderInfo?.isRegistered && eligible === false && (
           <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center', display: 'block' }}>
-            Stake ≥ 100 mUSDC on the <Link component={RouterLink} to="/stake" color="primary.main">Stake page</Link> to unlock publishing.
+            {t.traderDashboard.publish.stakeToUnlockBefore}<Link component={RouterLink} to="/stake" color="primary.main">{t.traderDashboard.publish.stakeToUnlockLink}</Link>{t.traderDashboard.publish.stakeToUnlockAfter}
           </Typography>
         )}
       </Card>
