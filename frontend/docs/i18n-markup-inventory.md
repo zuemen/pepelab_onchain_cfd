@@ -1,0 +1,104 @@
+# Inventory: sentences that wrap inline markup
+
+Input for **#36**. Every entry below was deliberately left in place by the
+extraction batches (#32–#35), because the sentence wraps markup around a
+fragment **mid-sentence** — a bold run, an inline `<code>`, a `<Link>`, or a
+styled `<Box component="span">`.
+
+They are held back for the reason #26 gives: splitting a sentence into
+fragments is where word order, spacing and punctuation break in a way the
+compiler cannot see, and a translator has to be able to reorder the parts.
+Resolving them is one decision per sentence — either the whole sentence
+becomes one catalog value with the markup moved to wrap it, or it is split
+into fragments whose order and spacing are verified against rendered output.
+
+A file with any entry here is **not** on the ratchet allowlist in
+`src/locales/locales.test.ts`, so the guard does not certify it as finished.
+
+Line numbers are as of commit `d0378ed`.
+
+---
+
+## `src/pages/pepefi/ExchangePage.tsx` (#32)
+
+| Line | Markup | Sentence |
+|------|--------|----------|
+| 827–833 | `<b>`, `<Link>` | `本頁開倉為<b>合成持倉</b>（…）。想要真正持有 ERC-20 代幣？<Link>前往代幣化資產頁 →</Link>` |
+| 850–853 | `<strong>` ×4 | The four onboarding steps: `<li><strong>Get tokens:</strong> Claim test {STABLE_LABEL}…</li>` and siblings |
+| 856–857 | `<b>` ×3 | `💱 幣別：…用 <b>{STABLE_LABEL}</b>（…）；<b>x402</b> 付費 API 結算用 <b>{X402_STABLE_LABEL}</b>（…）。…` |
+| 964 | `<Box component="span">` | `ETH 餘額：<Box…>{ethBal}</Box>（開倉需少量 ETH 付執行費）` |
+| 972–975 | `<b>` ×2, `<code>` ×2 | The faucet EOA-only note |
+| 1120–1121 | `<b>`, `<code>` | The severe price-impact warning |
+| 1207 | `<b>` | `⚠ 目前交易保證金使用 <b>{STABLE_LABEL}</b>；…` |
+| 1275 | `<strong>` | `You have no free margin. Deposit … in the <strong>Margin Account</strong> section above first.` |
+| 1310–1312 | `<b>`, `<strong>` | The KYC-pending alert |
+| 1326–1327 | `<strong>` | The KYC-required alert |
+| 1591–1593 | `<Link>` | `PnL is calculated using on-chain oracle price. … on the <Link>Oracle Admin</Link> page.` |
+
+## `src/sections/terminal/book/WhaleFeed.tsx` → `src/components/pepefi/whale/WhaleFeed.tsx` (#33/#34)
+
+| Line | Markup | Sentence |
+|------|--------|----------|
+| 199–208 | 3 styled `<Box component="span">` | Simple-mode feed line: `opened <b>20× LONG</b> <b>sBTC</b> for <b>$12.4k</b>` |
+
+## `src/pages/pepefi/X402DocsPage.tsx` (#34)
+
+| Line | Markup | Sentence |
+|------|--------|----------|
+| 146–149 | `<b>` ×2 | `<b>開發者 / AI agent 專用</b>的按次付費交易訊號 API。<b>端點本身就是商品</b>——…` |
+
+## `src/pages/pepefi/VaultPage.tsx` (#34)
+
+| Line | Markup | Sentence |
+|------|--------|----------|
+| ~232–242 | 4 styled spans | `Market-making yield active: …% of every trade's fee is routed to LPs — … routed to date.` |
+| ~438–443 | `<code>`, bold span | `How it works:` paragraph — `… only receives the <b>liquidation penalty</b> (<code>liquidationPenaltyBps</code>) …` |
+| ~444–446 | `<code>` ×2 | Bad-debt paragraph — `… emitted as a <code>BadDebt</code> event … topped up via <code>recapitalize()</code>.` |
+
+## `src/pages/pepefi/SessionsPage.tsx` (#34)
+
+| Line | Markup | Sentence |
+|------|--------|----------|
+| 353–356 | `<b>` ×2 | Page intro — `每個 agent 具 <b>did:pkh</b> 身分，授權可憑證化為 <b>W3C VC</b>…` |
+| 366–368 | `<b>` ×3 | The three SSI-triangle roles (Issuer / Holder / Verifier) |
+| 380–382 | `<b>` ×2 | Wrong-network alert |
+| 393–395 | `<b>` ×3 | "session key is not your main wallet" note |
+| 427 | `<b>` | Burner-key warning — `…請存到本機 agent 設定，<b>別放主錢包資產</b>。…` |
+| 601–603 | `<b>`, `<code>` ×5 | The three export steps |
+| 609–610 | `<b>` ×2, `<code>` ×2 | Address-vs-private-key note |
+| 626 | `<code>` | Include-key checkbox label |
+| 633 | `<code>` | Placeholder note |
+| 651–652 | `<b>` ×2, `<code>` | Final private-key warning |
+
+## `src/pages/pepefi/TokenizedAssetsPage.tsx` (#34)
+
+| Line | Markup | Sentence |
+|------|--------|----------|
+| 357–358 | `<b>` ×2 | `兩套實作並存於鏈上…詳見 <b>docs/RISK_MODEL.md</b> 與 <b>docs/KNOWN_LIMITATIONS.md</b>。` |
+| 395–397 | `<b>` ×3 | Page intro |
+| 409–412 | `<b>`, `<code>` ×2 | Stale-oracle explanation |
+| 566–567 | `<Box component="code">` | `提示：…需由管理者呼叫 <code>fundVault()</code> 補充。` |
+
+## `src/pages/pepefi/LandingPage.tsx` (#34)
+
+| Line | Markup | Sentence |
+|------|--------|----------|
+| 133–135 | `<b style>` | Hero paragraph — `…外加 <b>x402 付費訊號</b>——讓 AI agent…` |
+| 277–279 | `<b>` ×2 | Paper Trading explanation |
+
+## `src/layouts/pepefi/index.tsx` (#34)
+
+| Line | Markup | Sentence |
+|------|--------|----------|
+| 110–112 | `<b>` ×2 | Network-mismatch banner — `目前連線於 <b>{chain}</b>。正式部署鏈是 <b>Base Sepolia（…）</b> ——…` |
+
+---
+
+## Related: markup inside string values
+
+`src/_mock/_others.ts` holds five notification fixtures whose **values** are
+HTML strings (`'<p>👑 穿戴變更成功！您已換上最新的 <strong>…</strong>…</p>'`).
+These are a different problem from the rows above: #26 rules that no markup
+string may live in the catalog at all, so they cannot simply be moved. They
+need the markup lifted into the component first, which is the same decision
+#36 is making everywhere else.
