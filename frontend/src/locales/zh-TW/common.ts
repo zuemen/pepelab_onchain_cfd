@@ -43,6 +43,16 @@ export const common = {
     expert: '專家',
     toExpertAria: '切換到專家模式',
     toSimpleAria: '切換到簡單模式',
+
+    /** #36：網路不符的橫幅，句中夾了兩段 `<b>`。 */
+    networkMismatch: {
+      before: '目前連線於 ',
+      mid: '。正式部署鏈是',
+      primaryBefore: 'Base Sepolia（',
+      primaryAfter: '）',
+      after: ' —— 交易、agent session 與 x402 只在那裡。',
+      sepoliaExtra: '　Sepolia 保留的是代幣化資產與 V2 金庫展示。',
+    },
   },
 
   account: {

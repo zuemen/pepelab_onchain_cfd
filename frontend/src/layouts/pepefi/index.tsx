@@ -107,9 +107,9 @@ function ChainNotice({ chainId }: { chainId: number | null }) {
         borderBottom: (theme) => `1px solid ${theme.palette.warning.light}`,
       }}
     >
-      目前連線於 <b>{known ?? `chainId ${chainId}`}</b>。正式部署鏈是{' '}
-      <b>Base Sepolia（{PRIMARY_CHAIN_ID}）</b> —— 交易、agent session 與 x402 只在那裡。
-      {chainId === 11155111 && '　Sepolia 保留的是代幣化資產與 V2 金庫展示。'}
+      {t.common.layout.networkMismatch.before}<b>{known ?? `chainId ${chainId}`}</b>{t.common.layout.networkMismatch.mid}{' '}
+      <b>{t.common.layout.networkMismatch.primaryBefore}{PRIMARY_CHAIN_ID}{t.common.layout.networkMismatch.primaryAfter}</b>{t.common.layout.networkMismatch.after}
+      {chainId === 11155111 && t.common.layout.networkMismatch.sepoliaExtra}
     </Box>
   );
 }
