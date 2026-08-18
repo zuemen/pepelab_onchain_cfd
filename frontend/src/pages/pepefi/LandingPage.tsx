@@ -1,5 +1,6 @@
 import { Link as RouterLink } from 'react-router';
 import { usePepefiWallet } from 'src/layouts/pepefi';
+import { t } from 'src/locales';
 import WalletButton from 'src/components/pepefi/WalletButton';
 import HeroKpiStrip from 'src/components/pepefi/HeroKpiStrip';
 import PaperTradingBadge from 'src/components/pepefi/PaperTradingBadge';
@@ -21,12 +22,12 @@ const FEATURES = [
   // so these six drew at six different weights and baselines depending on the
   // machine, and none of them could inherit the panel's colour. The mascot 🐸
   // stays — that is brand, not an icon.
-  { icon: 'solar:chart-square-outline',            title: 'Synthetic CFD Perpetuals', desc: '合成衍生品永續合約，全程透明上鏈，無需中心化交易所。' },
-  { icon: 'solar:copy-bold',                       title: 'One-Click Copy Trading',   desc: '一鍵跟單頂尖交易者，授權 USDC 後自動按比例開倉。' },
-  { icon: 'solar:verified-check-bold',             title: 'ESG Scoring',              desc: '每位交易者皆有 ESG 評分，讓投資更有責任感與透明度。' },
-  { icon: 'solar:shield-keyhole-bold-duotone',     title: 'Insurance Vault',          desc: '提供流動性賺取協議費用，同時作為極端損失的保險池。' },
-  { icon: 'solar:wad-of-money-bold',               title: 'x402 Paid Signals',        desc: 'Agent 自帶錢包、按次付費購買交易訊號，收入 70/20/10 上鏈分潤。' },
-  { icon: 'solar:atom-bold-duotone',               title: 'Agent-Native Trading',     desc: 'session key 有界委派，AI agent 付費後可自主在鏈上開受限部位。' },
+  { icon: 'solar:chart-square-outline',            title: t.landing.features.perpetualsTitle, desc: t.landing.features.perpetualsDesc },
+  { icon: 'solar:copy-bold',                       title: t.landing.features.copyTitle,       desc: t.landing.features.copyDesc },
+  { icon: 'solar:verified-check-bold',             title: t.landing.features.esgTitle,        desc: t.landing.features.esgDesc },
+  { icon: 'solar:shield-keyhole-bold-duotone',     title: t.landing.features.vaultTitle,      desc: t.landing.features.vaultDesc },
+  { icon: 'solar:wad-of-money-bold',               title: t.landing.features.x402Title,       desc: t.landing.features.x402Desc },
+  { icon: 'solar:atom-bold-duotone',               title: t.landing.features.agentTitle,      desc: t.landing.features.agentDesc },
   // `as const` so the icon strings keep their literal types. Iconify's `icon`
   // prop is a union of the 206 names registered in components/iconify/icon-sets
   // (which inlines each SVG body, so icons ship with the bundle rather than
@@ -35,10 +36,10 @@ const FEATURES = [
 ] as const;
 
 const STEPS = [
-  { n: '01', text: '安裝 MetaMask，切換到 Base Sepolia testnet' },
-  { n: '02', text: '前往 Exchange，點擊「Get 1000 USDC」取得測試資金' },
-  { n: '03', text: '到 Marketplace 複製 Demo Alpha 交易者策略' },
-  { n: '04', text: '（可選）在 Trader 頁面登記成為交易者並公開策略' },
+  { n: '01', text: t.landing.steps.one },
+  { n: '02', text: t.landing.steps.two },
+  { n: '03', text: t.landing.steps.three },
+  { n: '04', text: t.landing.steps.four },
 ];
 
 export default function LandingPage() {
@@ -118,7 +119,7 @@ export default function LandingPage() {
                 textTransform: 'uppercase',
                 mb: 3,
               }}>
-                DeFi · SocialFi · GameFi · MemeFi 🐸
+                {t.landing.tagline}
               </Typography>
 
               <Typography variant="body1" sx={{
@@ -146,7 +147,7 @@ export default function LandingPage() {
                     // 2.19:1, below the 4.5:1 floor. The token is 7.08:1.
                     sx={{ bgcolor: 'var(--palette-primary-main)', color: 'primary.contrastText', fontWeight: 900, '&:hover': { bgcolor: 'var(--palette-primary-dark)' } }}
                   >
-                    🐸 進入 Dashboard
+                    {t.landing.enterDashboard}
                   </Button>
                 )}
                 <Button
@@ -156,7 +157,7 @@ export default function LandingPage() {
                   size="large"
                   sx={{ borderColor: 'var(--palette-primary-main)', color: 'var(--palette-primary-main)', '&:hover': { bgcolor: 'rgba(124,193,74,0.1)' } }}
                 >
-                  View Traders
+                  {t.landing.viewTraders}
                 </Button>
               </Stack>
             </Box>
@@ -255,7 +256,7 @@ export default function LandingPage() {
             </Typography>
           )}
           <Typography variant="caption" sx={{ color: 'text.secondary', opacity: 0.8, fontSize: '0.95rem' }}>
-            連線後可直接瀏覽所有功能，無需註冊帳號
+            {t.landing.connectHint}
           </Typography>
         </Stack>
 
@@ -267,7 +268,7 @@ export default function LandingPage() {
               `variant` is the type scale, `component` is the semantics — they
               do not have to match, and here they should not. */}
           <Typography variant="h4" component="h2" sx={{ fontWeight: 800, mb: 1.5 }}>
-            什麼是 Paper Trading？
+            {t.landing.paperTrading.title}
           </Typography>
           <Typography
             variant="body1"
@@ -288,7 +289,7 @@ export default function LandingPage() {
               nothing, so the six feature cards below had no parent in the
               outline. */}
           <Typography variant="overline" component="h2" color="text.secondary" align="center" display="block" sx={{ mb: 3.5, fontWeight: 'bold', letterSpacing: 3, fontSize: '1rem' }}>
-            核心功能
+            {t.landing.features.heading}
           </Typography>
           <Grid container spacing={2.5}>
             {FEATURES.map((f) => (
@@ -360,7 +361,7 @@ export default function LandingPage() {
             }}
           >
             <Typography variant="overline" component="h2" color="primary" display="block" sx={{ mb: 3, fontWeight: 'bold', letterSpacing: 2.5, fontSize: '1.1rem' }}>
-              如何開始
+              {t.landing.steps.heading}
             </Typography>
             <Stack spacing={3}>
               {STEPS.map((s) => (
@@ -440,7 +441,7 @@ export default function LandingPage() {
           >
             <Iconify icon="solar:danger-triangle-bold" width={18} sx={{ mt: '1px', flexShrink: 0 }} />
             <Typography variant="body2" align="center" sx={{ fontSize: '0.875rem' }}>
-              Oracle 價格由部署者（admin）控制，Demo 期間會即時更新以展示 PnL 變化
+              {t.landing.oracleDisclosure}
             </Typography>
           </Stack>
         </Box>
