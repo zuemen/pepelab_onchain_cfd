@@ -1,4 +1,11 @@
+import { t } from 'src/locales';
+
 import { _mock } from './_mock';
+
+// ----------------------------------------------------------------------
+
+/** 通知標題的一段文字，`bold` 決定要不要包 `<strong>`——取代舊有的 HTML 字串。 */
+export type NotifSegment = { text: string; bold?: boolean };
 
 // ----------------------------------------------------------------------
 
@@ -61,49 +68,85 @@ export const _contacts = Array.from({ length: 20 }, (_, index) => {
 
 // ----------------------------------------------------------------------
 
-const PEPE_NOTIFS = [
+const PEPE_NOTIFS: { title: NotifSegment[]; type: string; category: string }[] = [
   {
-    title: '<p><strong>GigaPepe 🦾</strong> sent you a copy-trade follow request!</p>',
+    title: [
+      { text: t.common.notification.friendRequestBold, bold: true },
+      { text: t.common.notification.friendRequestAfter },
+    ],
     type: 'friend',
     category: 'SocialFi'
   },
   {
-    title: '<p><strong>Elon Frog 🚀</strong> paired with you! You both earned <strong>200 PEPE</strong> copy rewards! 🤝</p>',
+    title: [
+      { text: t.common.notification.pairedBold1, bold: true },
+      { text: t.common.notification.pairedMid },
+      { text: t.common.notification.pairedBold2, bold: true },
+      { text: t.common.notification.pairedAfter },
+    ],
     type: 'project',
     category: 'SocialFi'
   },
   {
-    title: '<p>🧪 Your <strong>Golden Elixir (黃金仙露)</strong> purchase was successful! (-300 PEPE)</p>',
+    title: [
+      { text: t.common.notification.potionBefore },
+      { text: t.common.notification.potionBold, bold: true },
+      { text: t.common.notification.potionAfter },
+    ],
     type: 'file',
     category: 'GameFi'
   },
   {
-    title: '<p>👑 穿戴變更成功！您已換上最新的 <strong>Astronaut Suit (登月太空衣)</strong> 華麗衣裝！</p>',
+    title: [
+      { text: t.common.notification.skinBefore },
+      { text: t.common.notification.skinBold, bold: true },
+      { text: t.common.notification.skinAfter },
+    ],
     type: 'tags',
     category: 'GameFi'
   },
   {
-    title: '<p>💰 <strong>Whale Alert</strong>: A copy whale just locked <strong>$50,000 USDC</strong> to follow your strategy!</p>',
+    title: [
+      { text: t.common.notification.whaleAlertBefore },
+      { text: t.common.notification.whaleAlertBold1, bold: true },
+      { text: t.common.notification.whaleAlertMid },
+      { text: t.common.notification.whaleAlertBold2, bold: true },
+      { text: t.common.notification.whaleAlertAfter },
+    ],
     type: 'payment',
     category: 'SocialFi'
   },
   {
-    title: '<p>📅 <strong>每日簽到提醒</strong>：您今天還沒簽到喔！點擊去領取今日 <strong>+50 PEPE</strong> 激勵！</p>',
+    title: [
+      { text: t.common.notification.checkinBefore },
+      { text: t.common.notification.checkinBold1, bold: true },
+      { text: t.common.notification.checkinMid },
+      { text: t.common.notification.checkinBold2, bold: true },
+      { text: t.common.notification.checkinAfter },
+    ],
     type: 'order',
     category: 'MemeFi'
   },
   {
-    title: '<p>📈 您的交易量突破等級閾值，成功解鎖 <strong>Gold 🥇</strong> 等級，並獲得一次性獎勵 10,000 PEPE！</p>',
+    title: [
+      { text: t.common.notification.tierUpBefore },
+      { text: t.common.notification.tierUpBold, bold: true },
+      { text: t.common.notification.tierUpAfter },
+    ],
     type: 'delivery',
     category: 'MemeFi'
   },
   {
-    title: '<p>⛏️ 您開倉的槓桿交易頭寸已累積可申領 <strong>4,200 PEPE</strong> 交易挖礦獎勵！</p>',
+    title: [
+      { text: t.common.notification.miningBefore },
+      { text: t.common.notification.miningBold, bold: true },
+      { text: t.common.notification.miningAfter },
+    ],
     type: 'chat',
     category: 'DeFi'
   },
   {
-    title: '<p>🛡️ Insurance Vault has fully rebalanced! Platform risk index is extremely low & SAFU.</p>',
+    title: [{ text: t.common.notification.vaultRebalanced }],
     type: 'mail',
     category: 'DeFi'
   }

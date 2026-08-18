@@ -1,3 +1,5 @@
+import type { NotifSegment } from 'src/_mock/_others';
+
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Avatar from '@mui/material/Avatar';
@@ -7,6 +9,8 @@ import ListItemAvatar from '@mui/material/ListItemAvatar';
 import ListItemButton from '@mui/material/ListItemButton';
 
 import { fToNow } from 'src/utils/format-time';
+
+import { t } from 'src/locales';
 
 import { Label } from 'src/components/label';
 import { FileThumbnail } from 'src/components/file-thumbnail';
@@ -19,7 +23,7 @@ export type NotificationItemProps = {
   notification: {
     id: string;
     type: string;
-    title: string;
+    title: NotifSegment[];
     category: string;
     isUnRead: boolean;
     avatarUrl: string | null;
@@ -27,15 +31,25 @@ export type NotificationItemProps = {
   };
 };
 
-const readerContent = (data: string) => (
+/**
+ * `title` 是片段陣列而不是 HTML 字串——不用 `dangerouslySetInnerHTML`，粗體
+ * 由 `bold` 旗標決定要不要包真的 `<strong>`，標記留在畫面結構裡，不進資料。
+ */
+const readerContent = (segments: NotifSegment[]) => (
   <Box
-    dangerouslySetInnerHTML={{ __html: data }}
-    sx={{
-      '& p': { m: 0, typography: 'body2' },
-      '& a': { color: 'inherit', textDecoration: 'none' },
-      '& strong': { typography: 'subtitle2' },
-    }}
-  />
+    component="p"
+    sx={{ m: 0, typography: 'body2' }}
+  >
+    {segments.map((seg, i) =>
+      seg.bold ? (
+        <Box key={i} component="strong" sx={{ typography: 'subtitle2' }}>
+          {seg.text}
+        </Box>
+      ) : (
+        seg.text
+      )
+    )}
+  </Box>
 );
 
 const renderIcon = (type: string) =>
@@ -136,9 +150,10 @@ export function NotificationItem({ notification }: NotificationItemProps) {
           bgcolor: 'background.neutral',
         }}
       >
-        {readerContent(
-          `<p><strong>@Jaydon Frankie</strong> feedback by asking questions or just leave a note of appreciation.</p>`
-        )}
+        {readerContent([
+          { text: t.common.notification.projectFeedbackBold, bold: true },
+          { text: t.common.notification.projectFeedbackAfter },
+        ])}
       </Box>
 
       <Button size="small" variant="contained" sx={{ alignSelf: 'flex-start' }}>

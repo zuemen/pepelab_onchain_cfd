@@ -72,4 +72,54 @@ export const common: Catalog['common'] = {
 
   /** x402 結算用的官方 USDC，和平台自己的模擬穩定幣要分得開。 */
   x402StableLabel: '官方 USDC',
+
+  /**
+   * 通知鈴鐺的固定示範內容。每則拆成 `{text, bold?}` 片段陣列而不是 HTML 字串——
+   * `notification-item.tsx` 曾經用 `dangerouslySetInnerHTML` 直接塞 `<p><strong>…`，
+   * 那等於把標記存進資料而不是畫面結構，#26 不允許。片段陣列讓組件自己決定怎麼
+   * 排版，catalog 只放純文字。
+   */
+  notification: {
+    friendRequestBold: 'GigaPepe 🦾',
+    friendRequestAfter: ' sent you a copy-trade follow request!',
+
+    pairedBold1: 'Elon Frog 🚀',
+    pairedMid: ' paired with you! You both earned ',
+    pairedBold2: '200 PEPE',
+    pairedAfter: ' copy rewards! 🤝',
+
+    potionBefore: '🧪 Your ',
+    potionBold: 'Golden Elixir (黃金仙露)',
+    potionAfter: ' purchase was successful! (-300 PEPE)',
+
+    skinBefore: '👑 穿戴變更成功！您已換上最新的 ',
+    skinBold: 'Astronaut Suit (登月太空衣)',
+    skinAfter: ' 華麗衣裝！',
+
+    whaleAlertBefore: '💰 ',
+    whaleAlertBold1: 'Whale Alert',
+    whaleAlertMid: ': A copy whale just locked ',
+    whaleAlertBold2: '$50,000 USDC',
+    whaleAlertAfter: ' to follow your strategy!',
+
+    checkinBefore: '📅 ',
+    checkinBold1: '每日簽到提醒',
+    checkinMid: '：您今天還沒簽到喔！點擊去領取今日 ',
+    checkinBold2: '+50 PEPE',
+    checkinAfter: ' 激勵！',
+
+    tierUpBefore: '📈 您的交易量突破等級閾值，成功解鎖 ',
+    tierUpBold: 'Gold 🥇',
+    tierUpAfter: ' 等級，並獲得一次性獎勵 10,000 PEPE！',
+
+    miningBefore: '⛏️ 您開倉的槓桿交易頭寸已累積可申領 ',
+    miningBold: '4,200 PEPE',
+    miningAfter: ' 交易挖礦獎勵！',
+
+    vaultRebalanced: '🛡️ Insurance Vault has fully rebalanced! Platform risk index is extremely low & SAFU.',
+
+    /** 專案協作卡片示範用的固定內容（非 PepeFi 特有，沿用範本文字）。 */
+    projectFeedbackBold: '@Jaydon Frankie',
+    projectFeedbackAfter: ' feedback by asking questions or just leave a note of appreciation.',
+  },
 };

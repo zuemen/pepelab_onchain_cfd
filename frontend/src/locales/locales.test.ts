@@ -73,6 +73,8 @@ const MIGRATED_PATHS: string[] = [
   'src/pages/pepefi/TraderStakePage.tsx',
   'src/pages/pepefi/CopyPage.tsx',
   'src/pages/pepefi/TraderDashboard.tsx',
+  'src/_mock/_others.ts',
+  'src/layouts/components/notifications-drawer',
   // X402DocsPage 的 #36 句子已經解決，但檔案還留著一段可複製貼上的 curl/npx
   // 範例（含中文註解），那是刻意不進 catalog 的逐字程式碼，不是 #36 的範圍，
   // 所以這個檔案還不進白名單——見 docs/i18n-markup-inventory.md 的相關筆記。
@@ -87,10 +89,10 @@ const MIGRATED_PATHS: string[] = [
  * 每批遷移都會把它推高——那是預期行為，不是退步：字串搬進 catalog 時 `en` 拿到的是
  * 中文原文。真正的退步是「翻譯過的字又變回中文」，而那會讓這條斷言失敗。
  * 目前：errors 1388、pepe 1386、exchange 966、terminal 685、sessions 657、pepelab 596、
- * tokens 543、admin 491、landing 327、kyc 319、pepeStageSkins 264、x402 250、stake 236、
- * common 217、freshness 146、copy 122、rewards 102、esg 42、nav 38、marketplace 13、meta 12、portfolio 4。
+ * tokens 543、admin 491、landing 327、kyc 319、common 313、pepeStageSkins 264、x402 250、
+ * stake 236、freshness 146、copy 122、rewards 102、esg 42、nav 38、marketplace 13、meta 12、portfolio 4。
  */
-const EN_HAN_BASELINE = 8804;
+const EN_HAN_BASELINE = 8900;
 
 /** 傳目錄就回它底下所有原始碼檔案，傳單一檔案就回那一個。測試檔一律排除。 */
 function sourceFilesIn(pathish: string): string[] {
