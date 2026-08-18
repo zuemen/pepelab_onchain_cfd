@@ -5,7 +5,7 @@ import Tooltip from '@mui/material/Tooltip';
 import { Icon } from '@iconify/react';
 
 interface Props {
-  /** Drop the trailing Chinese label where space is tight (e.g. the header). */
+  /** Use the short label where space is tight (e.g. the header). */
   compact?: boolean;
 }
 

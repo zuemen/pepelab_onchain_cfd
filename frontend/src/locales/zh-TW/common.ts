@@ -28,7 +28,7 @@ export const common = {
   paperTrading: {
     tooltip:
       '本平台運行於測試網，所有資產與資金皆為模擬，不涉及真實金錢。等同 TradingView 的 Paper Trading 模式。',
-    compactLabel: 'PAPER TRADING',
+    compactLabel: '模擬交易',
     label: 'PAPER TRADING · 測試網模擬交易',
   },
 
@@ -79,29 +79,33 @@ export const common = {
    * `notification-item.tsx` 曾經用 `dangerouslySetInnerHTML` 直接塞 `<p><strong>…`，
    * 那等於把標記存進資料而不是畫面結構，#26 不允許。片段陣列讓組件自己決定怎麼
    * 排版，catalog 只放純文字。
+   *
+   * #38：`GigaPepe 🦾`、`Elon Frog 🚀`、`@Jaydon Frankie` 這類虛構使用者代稱不翻譯——
+   * 它們是特定帳號的識別名，性質上與 ADR-0002 的協定/產品專有名詞同一類（翻譯
+   * 使用者自己取的名字等於改名，不是在地化），不是漏翻。
    */
   notification: {
     friendRequestBold: 'GigaPepe 🦾',
-    friendRequestAfter: ' sent you a copy-trade follow request!',
+    friendRequestAfter: ' 向你發出跟單追蹤請求！',
 
     pairedBold1: 'Elon Frog 🚀',
-    pairedMid: ' paired with you! You both earned ',
+    pairedMid: ' 與你結為跟單夥伴！雙方各獲得 ',
     pairedBold2: '200 PEPE',
-    pairedAfter: ' copy rewards! 🤝',
+    pairedAfter: ' 跟單獎勵！🤝',
 
-    potionBefore: '🧪 Your ',
+    potionBefore: '🧪 已成功購買 ',
     potionBold: 'Golden Elixir (黃金仙露)',
-    potionAfter: ' purchase was successful! (-300 PEPE)',
+    potionAfter: '！(-300 PEPE)',
 
     skinBefore: '👑 穿戴變更成功！您已換上最新的 ',
     skinBold: 'Astronaut Suit (登月太空衣)',
     skinAfter: ' 華麗衣裝！',
 
     whaleAlertBefore: '💰 ',
-    whaleAlertBold1: 'Whale Alert',
-    whaleAlertMid: ': A copy whale just locked ',
+    whaleAlertBold1: '鯨魚警報',
+    whaleAlertMid: '：一位跟單鯨魚剛鎖定 ',
     whaleAlertBold2: '$50,000 USDC',
-    whaleAlertAfter: ' to follow your strategy!',
+    whaleAlertAfter: ' 追蹤你的策略！',
 
     checkinBefore: '📅 ',
     checkinBold1: '每日簽到提醒',
@@ -110,17 +114,19 @@ export const common = {
     checkinAfter: ' 激勵！',
 
     tierUpBefore: '📈 您的交易量突破等級閾值，成功解鎖 ',
-    tierUpBold: 'Gold 🥇',
+    tierUpBold: 'Gold 黃金 🥇',
     tierUpAfter: ' 等級，並獲得一次性獎勵 10,000 PEPE！',
 
     miningBefore: '⛏️ 您開倉的槓桿交易頭寸已累積可申領 ',
     miningBold: '4,200 PEPE',
     miningAfter: ' 交易挖礦獎勵！',
 
-    vaultRebalanced: '🛡️ Insurance Vault has fully rebalanced! Platform risk index is extremely low & SAFU.',
+    vaultRebalancedBefore: '🛡️ ',
+    vaultRebalancedBold: '保險金庫',
+    vaultRebalancedAfter: '已完成再平衡！平台風險指數處於極低水準，安全無虞。',
 
-    /** 專案協作卡片示範用的固定內容（非 PepeFi 特有，沿用範本文字）。 */
+    /** 專案協作卡片示範用的固定內容（非 PepeFi 特有，沿用範本情境）。 */
     projectFeedbackBold: '@Jaydon Frankie',
-    projectFeedbackAfter: ' feedback by asking questions or just leave a note of appreciation.',
+    projectFeedbackAfter: ' 給了回饋——歡迎提問，或留言表達感謝。',
   },
 };

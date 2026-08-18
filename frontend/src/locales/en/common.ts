@@ -78,6 +78,10 @@ export const common: Catalog['common'] = {
    * `notification-item.tsx` 曾經用 `dangerouslySetInnerHTML` 直接塞 `<p><strong>…`，
    * 那等於把標記存進資料而不是畫面結構，#26 不允許。片段陣列讓組件自己決定怎麼
    * 排版，catalog 只放純文字。
+   *
+   * #38：`GigaPepe 🦾`、`Elon Frog 🚀`、`@Jaydon Frankie` 這類虛構使用者代稱不翻譯——
+   * 它們是特定帳號的識別名，性質上與 ADR-0002 的協定/產品專有名詞同一類（翻譯
+   * 使用者自己取的名字等於改名，不是在地化），不是漏翻。
    */
   notification: {
     friendRequestBold: 'GigaPepe 🦾',
@@ -116,9 +120,11 @@ export const common: Catalog['common'] = {
     miningBold: '4,200 PEPE',
     miningAfter: ' 交易挖礦獎勵！',
 
-    vaultRebalanced: '🛡️ Insurance Vault has fully rebalanced! Platform risk index is extremely low & SAFU.',
+    vaultRebalancedBefore: '🛡️ ',
+    vaultRebalancedBold: 'Insurance Vault',
+    vaultRebalancedAfter: ' has fully rebalanced! Platform risk index is extremely low & SAFU.',
 
-    /** 專案協作卡片示範用的固定內容（非 PepeFi 特有，沿用範本文字）。 */
+    /** 專案協作卡片示範用的固定內容（非 PepeFi 特有，沿用範本情境）。 */
     projectFeedbackBold: '@Jaydon Frankie',
     projectFeedbackAfter: ' feedback by asking questions or just leave a note of appreciation.',
   },

@@ -146,7 +146,11 @@ const PEPE_NOTIFS: { title: NotifSegment[]; type: string; category: string }[] =
     category: 'DeFi'
   },
   {
-    title: [{ text: t.common.notification.vaultRebalanced }],
+    title: [
+      { text: t.common.notification.vaultRebalancedBefore },
+      { text: t.common.notification.vaultRebalancedBold, bold: true },
+      { text: t.common.notification.vaultRebalancedAfter },
+    ],
     type: 'mail',
     category: 'DeFi'
   }
