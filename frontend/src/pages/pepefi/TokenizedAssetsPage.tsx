@@ -354,8 +354,8 @@ export default function TokenizedAssetsPage() {
           </Table>
         </TableContainer>
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
-          兩套實作並存於鏈上，V1 保留作為對照組。詳見 <b>docs/RISK_MODEL.md</b> 與{' '}
-          <b>docs/KNOWN_LIMITATIONS.md</b>。
+          {t.tokens.markup.diffNoteBefore}<b>docs/RISK_MODEL.md</b>{t.tokens.markup.diffNoteMid}{' '}
+          <b>docs/KNOWN_LIMITATIONS.md</b>{t.tokens.markup.diffNoteAfter}
         </Typography>
       </AccordionDetails>
     </Accordion>
@@ -392,9 +392,7 @@ export default function TokenizedAssetsPage() {
       {versionSwitcher}
 
       <Alert severity="info">
-        本頁展示<b>代幣化資產（ERC-20）</b>。與交易頁的合成持倉不同，這裡買入的資產會以
-        ERC-20 token 形式<b>出現在你的錢包中</b>，可加入 MetaMask 檢視、可轉帳給他人。
-        買賣以 <b>USDC</b> 結算，價格取自鏈上 oracle（無滑價）。
+        {t.tokens.markup.introBefore}<b>{t.tokens.markup.introBold1}</b>{t.tokens.markup.introMid1}<b>{t.tokens.markup.introBold2}</b>{t.tokens.markup.introMid2}<b>USDC</b>{t.tokens.markup.introAfter}
       </Alert>
 
       {/* ── V2 hardening panel ─────────────────────────────────────────────── */}
@@ -406,10 +404,7 @@ export default function TokenizedAssetsPage() {
 
           {health.oracleStale && (
             <Alert severity="warning" variant="outlined" sx={{ mb: 2 }}>
-              <b>GuardedOracle 價格已過期</b>，買賣暫時無法執行。
-              這是 fail-closed 的預期行為：預言機拒絕提供過期報價，而金庫的儲備率計算
-              會直接呼叫它，所以 <code>reserveRatioBps()</code> 與 <code>mint()</code> 會一起 revert。
-              需由 KEEPER_ROLE 重新餵價後恢復。
+              <b>{t.tokens.markup.staleOracleBold}</b>{t.tokens.markup.staleOracleMid1}<code>reserveRatioBps()</code>{t.tokens.markup.staleOracleMid2}<code>mint()</code>{t.tokens.markup.staleOracleAfter}
             </Alert>
           )}
           <Grid container spacing={2.5}>
@@ -563,8 +558,7 @@ export default function TokenizedAssetsPage() {
       </Grid>
 
       <Typography variant="caption" color="text.secondary">
-        提示：賣出由金庫的 USDC 儲備支付。若儲備不足會顯示「vault dry」，
-        需由管理者呼叫 <Box component="code" sx={{ fontFamily: MONO }}>fundVault()</Box> 補充。
+        {t.tokens.markup.vaultDryBefore}<Box component="code" sx={{ fontFamily: MONO }}>fundVault()</Box>{t.tokens.markup.vaultDryAfter}
       </Typography>
 
       <Divider />

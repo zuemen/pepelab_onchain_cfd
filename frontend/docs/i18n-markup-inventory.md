@@ -21,8 +21,9 @@ Line numbers are as of commit `d0378ed`.
 
 Resolved (#36): `src/pages/pepefi/ExchangePage.tsx` (#32),
 `src/components/pepefi/whale/WhaleFeed.tsx` (#33/#34),
-`src/pages/pepefi/VaultPage.tsx` (#34) and `src/pages/pepefi/SessionsPage.tsx`
-(#34) — all back on the ratchet allowlist.
+`src/pages/pepefi/VaultPage.tsx`, `src/pages/pepefi/SessionsPage.tsx` and
+`src/pages/pepefi/TokenizedAssetsPage.tsx` (#34) — all back on the ratchet
+allowlist.
 
 `src/pages/pepefi/X402DocsPage.tsx` (#34)'s deferred sentence is resolved too,
 but the file itself still isn't on the allowlist: it also holds a
@@ -31,15 +32,6 @@ template literal (lines ~248–250). That's deliberately-untranslated verbatim
 code, not a display string — same category as the asset-path exception — and
 out of scope for #36. Left as-is; noted here so it isn't mistaken for a
 missed #36 entry.
-
-## `src/pages/pepefi/TokenizedAssetsPage.tsx` (#34)
-
-| Line | Markup | Sentence |
-|------|--------|----------|
-| 357–358 | `<b>` ×2 | `兩套實作並存於鏈上…詳見 <b>docs/RISK_MODEL.md</b> 與 <b>docs/KNOWN_LIMITATIONS.md</b>。` |
-| 395–397 | `<b>` ×3 | Page intro |
-| 409–412 | `<b>`, `<code>` ×2 | Stale-oracle explanation |
-| 566–567 | `<Box component="code">` | `提示：…需由管理者呼叫 <code>fundVault()</code> 補充。` |
 
 ## `src/pages/pepefi/LandingPage.tsx` (#34)
 

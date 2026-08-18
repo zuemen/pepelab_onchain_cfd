@@ -5,7 +5,6 @@
  * 的內容多半是合約與函式名（SafeERC20、ReentrancyGuard、UUPS proxy），逐字保留，
  * 它們和合約錯誤代號同一類。
  *
- * 頁面說明、過期價說明、賣出提示三段在句中夾了 `<b>` 或 `<code>`，留給 #36。
  */
 export const tokens = {
   title: '代幣化資產',
@@ -116,5 +115,28 @@ export const tokens = {
     bought: '已買入 {symbol} ✓ — 代幣已進入你的錢包',
     sold: '已賣出 {symbol} ✓ — USDC 已退回錢包',
     noWallet: '找不到錢包擴充功能',
+  },
+
+  /** #36：四段句中夾標記的說明，各自拆成標記前後的片段。 */
+  markup: {
+    diffNoteBefore: '兩套實作並存於鏈上，V1 保留作為對照組。詳見 ',
+    diffNoteMid: ' 與',
+    diffNoteAfter: '。',
+
+    introBefore: '本頁展示',
+    introBold1: '代幣化資產（ERC-20）',
+    introMid1: '。與交易頁的合成持倉不同，這裡買入的資產會以 ERC-20 token 形式',
+    introBold2: '出現在你的錢包中',
+    introMid2: '，可加入 MetaMask 檢視、可轉帳給他人。 買賣以 ',
+    introAfter: ' 結算，價格取自鏈上 oracle（無滑價）。',
+
+    staleOracleBold: 'GuardedOracle 價格已過期',
+    staleOracleMid1:
+      '，買賣暫時無法執行。 這是 fail-closed 的預期行為：預言機拒絕提供過期報價，而金庫的儲備率計算 會直接呼叫它，所以 ',
+    staleOracleMid2: ' 與 ',
+    staleOracleAfter: ' 會一起 revert。 需由 KEEPER_ROLE 重新餵價後恢復。',
+
+    vaultDryBefore: '提示：賣出由金庫的 USDC 儲備支付。若儲備不足會顯示「vault dry」， 需由管理者呼叫 ',
+    vaultDryAfter: ' 補充。',
   },
 };
