@@ -19,23 +19,17 @@ Line numbers are as of commit `d0378ed`.
 
 ---
 
-Resolved (#36): `src/pages/pepefi/ExchangePage.tsx` (#32) and
-`src/components/pepefi/whale/WhaleFeed.tsx` (#33/#34) — both back on the
-ratchet allowlist.
+Resolved (#36): `src/pages/pepefi/ExchangePage.tsx` (#32),
+`src/components/pepefi/whale/WhaleFeed.tsx` (#33/#34) and
+`src/pages/pepefi/VaultPage.tsx` (#34) — all back on the ratchet allowlist.
 
-## `src/pages/pepefi/X402DocsPage.tsx` (#34)
-
-| Line | Markup | Sentence |
-|------|--------|----------|
-| 146–149 | `<b>` ×2 | `<b>開發者 / AI agent 專用</b>的按次付費交易訊號 API。<b>端點本身就是商品</b>——…` |
-
-## `src/pages/pepefi/VaultPage.tsx` (#34)
-
-| Line | Markup | Sentence |
-|------|--------|----------|
-| ~232–242 | 4 styled spans | `Market-making yield active: …% of every trade's fee is routed to LPs — … routed to date.` |
-| ~438–443 | `<code>`, bold span | `How it works:` paragraph — `… only receives the <b>liquidation penalty</b> (<code>liquidationPenaltyBps</code>) …` |
-| ~444–446 | `<code>` ×2 | Bad-debt paragraph — `… emitted as a <code>BadDebt</code> event … topped up via <code>recapitalize()</code>.` |
+`src/pages/pepefi/X402DocsPage.tsx` (#34)'s deferred sentence is resolved too,
+but the file itself still isn't on the allowlist: it also holds a
+copy-paste-able curl/npx example with two Chinese comments inside the
+template literal (lines ~248–250). That's deliberately-untranslated verbatim
+code, not a display string — same category as the asset-path exception — and
+out of scope for #36. Left as-is; noted here so it isn't mistaken for a
+missed #36 entry.
 
 ## `src/pages/pepefi/SessionsPage.tsx` (#34)
 

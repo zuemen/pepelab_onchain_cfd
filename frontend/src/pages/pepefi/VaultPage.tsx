@@ -233,15 +233,15 @@ export default function VaultPage() {
         <Card sx={{ p: 2, bgcolor: 'background.neutral', borderLeft: '3px solid', borderColor: 'success.main' }}>
           <Typography variant="body2" sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, alignItems: 'baseline' }}>
             <Box component="span" sx={{ fontWeight: 'bold', color: 'success.main' }}>
-              Market-making yield active:
+              {t.vault.markup.mmActiveLabel}
             </Box>
             <Box component="span" sx={{ color: 'text.secondary' }}>
-              {Number(stats.feeShareBps) / 100}% of every trade's fee is routed to LPs —
+              {interpolate(t.vault.markup.mmPctRouted, { pct: Number(stats.feeShareBps) / 100 })}
             </Box>
             <Box component="span" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
-              {f18(stats.feesRouted)} mUSDC
+              {interpolate(t.vault.markup.mmAmount, { amount: f18(stats.feesRouted) })}
             </Box>
-            <Box component="span" sx={{ color: 'text.secondary' }}>routed to date.</Box>
+            <Box component="span" sx={{ color: 'text.secondary' }}>{t.vault.markup.mmRoutedToDate}</Box>
           </Typography>
         </Card>
       )}
@@ -456,10 +456,10 @@ export default function VaultPage() {
       <Card sx={{ p: 2.5, bgcolor: 'background.neutral' }}>
         <Stack spacing={1}>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-            <Box component="span" sx={{ color: 'text.primary', fontWeight: 'bold' }}>How it works:</Box> LPs deposit mUSDC and receive pIV shares. The vault earns 10% of all copy-trading and performance fees via the FeeRouter. On liquidation the vault only receives the <Box component="span" sx={{ fontWeight: 'bold' }}>liquidation penalty</Box> (<code>liquidationPenaltyBps</code>) plus the liquidator&apos;s reward — the position owner is refunded whatever margin is left after loss, fees and penalty, so liquidation is no longer a 100% forfeit.
+            <Box component="span" sx={{ color: 'text.primary', fontWeight: 'bold' }}>{t.vault.markup.howItWorksLabel}</Box>{t.vault.markup.howItWorksBody}<Box component="span" sx={{ fontWeight: 'bold' }}>{t.vault.markup.liquidationPenaltyLabel}</Box>{t.vault.markup.howItWorksCodeWrap}<code>liquidationPenaltyBps</code>{t.vault.markup.howItWorksTail}
           </Typography>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-            When a trader&apos;s loss exceeds their margin (extreme event), the vault pays a 10% bailout floor directly to the trader. If losses exceed what the vault can cover, the shortfall is emitted as a <code>BadDebt</code> event and the vault has to be topped up via <code>recapitalize()</code>. LPs bear this risk in exchange for the yield.
+            {t.vault.markup.badDebtBefore}<code>BadDebt</code>{t.vault.markup.badDebtMid}<code>recapitalize()</code>{t.vault.markup.badDebtAfter}
           </Typography>
         </Stack>
       </Card>

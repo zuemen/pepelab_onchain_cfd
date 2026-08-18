@@ -2,14 +2,19 @@
  * x402 Signal API 的文件頁，以及首頁那張 x402 市集卡。
  *
  * 端點路徑、合約位址、`curl` 與 `npx` 範例（含範例裡的註解）不進 catalog：那一整塊
- * 是要被逐字複製貼上的程式碼，翻譯它只會讓人貼出跑不動的指令。頁面開頭那句
- * 夾著 `<b>` 的介紹則是留給 #36 的句中夾標記案例。
+ * 是要被逐字複製貼上的程式碼，翻譯它只會讓人貼出跑不動的指令。
  */
 export const x402 = {
   docs: {
     title: 'x402 Signal API',
     audienceChip: 'Developers / Agents',
     commerceChip: 'agent-native commerce',
+
+    /** #36：開頭這句夾了兩段 `<b>`，拆成 bold 前後的三個片段。 */
+    introBold1: '開發者 / AI agent 專用',
+    introMid: '的按次付費交易訊號 API。',
+    introBold2: '端點本身就是商品',
+    introAfter: '——任何帶 Base Sepolia USDC 錢包的 agent / CLI 都能直接付費購買，收入經 FeeRouter 70/20/10 上鏈分潤。',
 
     fact: {
       baseUrl: 'Base URL',

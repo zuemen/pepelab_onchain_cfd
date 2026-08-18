@@ -9,6 +9,12 @@ export const x402: Catalog['x402'] = {
     audienceChip: 'Developers / Agents',
     commerceChip: 'agent-native commerce',
 
+    /** #36：開頭這句夾了兩段 `<b>`，拆成 bold 前後的三個片段。 */
+    introBold1: '開發者 / AI agent 專用',
+    introMid: '的按次付費交易訊號 API。',
+    introBold2: '端點本身就是商品',
+    introAfter: '——任何帶 Base Sepolia USDC 錢包的 agent / CLI 都能直接付費購買，收入經 FeeRouter 70/20/10 上鏈分潤。',
+
     fact: {
       baseUrl: 'Base URL',
       network: 'Network',

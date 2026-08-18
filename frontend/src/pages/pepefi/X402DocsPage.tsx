@@ -144,8 +144,7 @@ export default function X402DocsPage() {
           <Chip size="small" color="success" label={t.x402.docs.commerceChip} />
         </Stack>
         <Typography color="text.secondary">
-          <b>開發者 / AI agent 專用</b>的按次付費交易訊號 API。<b>端點本身就是商品</b>——任何帶
-          Base Sepolia USDC 錢包的 agent / CLI 都能直接付費購買，收入經 FeeRouter 70/20/10 上鏈分潤。
+          <b>{t.x402.docs.introBold1}</b>{t.x402.docs.introMid}<b>{t.x402.docs.introBold2}</b>{t.x402.docs.introAfter}
         </Typography>
       </Box>
 
