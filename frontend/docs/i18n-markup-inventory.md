@@ -19,27 +19,9 @@ Line numbers are as of commit `d0378ed`.
 
 ---
 
-## `src/pages/pepefi/ExchangePage.tsx` (#32)
-
-| Line | Markup | Sentence |
-|------|--------|----------|
-| 827–833 | `<b>`, `<Link>` | `本頁開倉為<b>合成持倉</b>（…）。想要真正持有 ERC-20 代幣？<Link>前往代幣化資產頁 →</Link>` |
-| 850–853 | `<strong>` ×4 | The four onboarding steps: `<li><strong>Get tokens:</strong> Claim test {STABLE_LABEL}…</li>` and siblings |
-| 856–857 | `<b>` ×3 | `💱 幣別：…用 <b>{STABLE_LABEL}</b>（…）；<b>x402</b> 付費 API 結算用 <b>{X402_STABLE_LABEL}</b>（…）。…` |
-| 964 | `<Box component="span">` | `ETH 餘額：<Box…>{ethBal}</Box>（開倉需少量 ETH 付執行費）` |
-| 972–975 | `<b>` ×2, `<code>` ×2 | The faucet EOA-only note |
-| 1120–1121 | `<b>`, `<code>` | The severe price-impact warning |
-| 1207 | `<b>` | `⚠ 目前交易保證金使用 <b>{STABLE_LABEL}</b>；…` |
-| 1275 | `<strong>` | `You have no free margin. Deposit … in the <strong>Margin Account</strong> section above first.` |
-| 1310–1312 | `<b>`, `<strong>` | The KYC-pending alert |
-| 1326–1327 | `<strong>` | The KYC-required alert |
-| 1591–1593 | `<Link>` | `PnL is calculated using on-chain oracle price. … on the <Link>Oracle Admin</Link> page.` |
-
-## `src/sections/terminal/book/WhaleFeed.tsx` → `src/components/pepefi/whale/WhaleFeed.tsx` (#33/#34)
-
-| Line | Markup | Sentence |
-|------|--------|----------|
-| 199–208 | 3 styled `<Box component="span">` | Simple-mode feed line: `opened <b>20× LONG</b> <b>sBTC</b> for <b>$12.4k</b>` |
+Resolved (#36): `src/pages/pepefi/ExchangePage.tsx` (#32) and
+`src/components/pepefi/whale/WhaleFeed.tsx` (#33/#34) — both back on the
+ratchet allowlist.
 
 ## `src/pages/pepefi/X402DocsPage.tsx` (#34)
 

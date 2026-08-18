@@ -825,10 +825,9 @@ export default function ExchangePage() {
           on PerpetualExchange, so nothing lands in the wallet; /tokens is where
           real transferable tokens are minted. */}
       <Alert severity="info" sx={{ mb: 2 }}>
-        本頁開倉為<b>合成持倉</b>（記錄在 PerpetualExchange，錢包內不會出現代幣）。
-        想要真正持有 ERC-20 代幣？
+        {t.exchange.markup.syntheticPositionBefore}<b>{t.exchange.markup.syntheticPositionBold}</b>{t.exchange.markup.syntheticPositionAfter}
         <Link component={RouterLink} to={paths.pepefi.tokens} sx={{ ml: 0.5, fontWeight: 'bold' }}>
-          前往代幣化資產頁 →
+          {t.exchange.markup.tokenizedAssetsLink}
         </Link>
       </Alert>
 
@@ -847,14 +846,14 @@ export default function ExchangePage() {
           {t.exchange.guide.title}
         </Typography>
         <Typography variant="body2" component="ol" sx={{ pl: 2, m: 0, '& li': { mb: 0.5 } }}>
-          <li><strong>Get tokens:</strong> Claim test {STABLE_LABEL} (and PEPE) from the faucet — no swap needed.</li>
-          <li><strong>Margin Account:</strong> Approve &amp; deposit {STABLE_LABEL} into PerpetualExchange. This becomes your free margin.</li>
-          <li><strong>Open Position:</strong> Use free margin to open long/short on 11 synthetic assets — crypto (sBTC, sETH), equity (sAAPL, sTSLA, sNVDA, sMSFT, sGOOGL), commodity (sGOLD), bond (sBOND), and ESG ETFs (sICLN, sESGU). 🔒 = KYC required.</li>
-          <li><strong>PnL:</strong> Price moves → position value changes → close to realize PnL.</li>
+          <li><strong>{t.exchange.markup.stepGetTokensLabel}</strong> {interpolate(t.exchange.markup.stepGetTokensBody, { token: STABLE_LABEL })}</li>
+          <li><strong>{t.exchange.markup.stepMarginLabel}</strong> {interpolate(t.exchange.markup.stepMarginBody, { token: STABLE_LABEL })}</li>
+          <li><strong>{t.exchange.markup.stepOpenLabel}</strong> {t.exchange.markup.stepOpenBody}</li>
+          <li><strong>{t.exchange.markup.stepPnlLabel}</strong> {t.exchange.markup.stepPnlBody}</li>
         </Typography>
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-          💱 幣別：平台保證金與兌換用 <b>{STABLE_LABEL}</b>（測試網模擬幣，可用 Faucet 免費領）；
-          <b>x402</b> 付費 API 結算用 <b>{X402_STABLE_LABEL}</b>（Circle，EIP-3009）。兩者用途不同、勿混用。
+          {t.exchange.markup.currencyNoteLine1Before}<b>{STABLE_LABEL}</b>{t.exchange.markup.currencyNoteLine1After}
+          <b>x402</b>{t.exchange.markup.currencyNoteLine2After}<b>{X402_STABLE_LABEL}</b>{t.exchange.markup.currencyNoteLine2End}
         </Typography>
       </Alert>
 
@@ -961,7 +960,7 @@ export default function ExchangePage() {
             )}
 
             <Typography variant="caption" color="text.secondary">
-              ETH 餘額：<Box component="span" sx={{ fontFamily: MONO, color: 'text.primary' }}>{ethBal}</Box>（開倉需少量 ETH 付執行費）
+              {t.exchange.markup.ethBalanceBefore}<Box component="span" sx={{ fontFamily: MONO, color: 'text.primary' }}>{ethBal}</Box>{t.exchange.markup.ethBalanceAfter}
             </Typography>
 
             {/* faucet() 現在要求 msg.sender == tx.origin：合約錢包按下去必定
@@ -969,10 +968,9 @@ export default function ExchangePage() {
                 從錯誤訊息推理出來的限制，所以寫在按鈕旁邊而不是只放在 toast。 */}
             <Alert severity="info" variant="outlined" sx={{ py: 0.5 }}>
               <Typography variant="caption">
-                🔑 水龍頭只開放<b>一般錢包（EOA）</b>領取：合約防機器人濫領的條件是
-                <code> msg.sender == tx.origin</code>，所以用 <b>Safe / ERC-4337 智能合約錢包</b>
-                （或任何 batch / multicall 代呼叫）點下去會被合約以 <code>FaucetCallerMustBeEOA</code> 拒絕。
-                請改用一般 EOA 錢包領取後再轉過去。每個地址 24 小時可領一次。
+                {t.exchange.markup.faucetEoaLine1}<b>{t.exchange.markup.faucetEoaBold1}</b>{t.exchange.markup.faucetEoaLine1After}
+                <code>{t.exchange.markup.faucetEoaCode1}</code>{t.exchange.markup.faucetEoaLine2Mid}<b>{t.exchange.markup.faucetEoaBold2}</b>
+                {t.exchange.markup.faucetEoaLine3}<code>{t.exchange.markup.faucetEoaCode2}</code>{t.exchange.markup.faucetEoaLine3After}
               </Typography>
             </Alert>
 
@@ -1117,8 +1115,7 @@ export default function ExchangePage() {
                 {impactBps !== null && impactBps >= SEVERE_IMPACT_BPS && (
                   <Alert severity="error" variant="outlined" sx={{ py: 0.5 }}>
                     <Typography variant="caption">
-                      ⚠ 這筆兌換的價格衝擊高達 <b>{(impactBps / 100).toFixed(2)}%</b>，等於用遠差於市價的價格成交。
-                      建議分批換小額；金額太大時合約還會以 <code>PriceOutOfBand</code> 直接拒絕（池價被推離 oracle 太遠）。
+                      {t.exchange.markup.priceImpactBefore}<b>{(impactBps / 100).toFixed(2)}%</b>{t.exchange.markup.priceImpactAfter}<code>{t.exchange.markup.priceImpactCode}</code>{t.exchange.markup.priceImpactLine2After}
                     </Typography>
                   </Alert>
                 )}
@@ -1204,7 +1201,7 @@ export default function ExchangePage() {
                   })}: {f18(stable === 'USDC' ? usdcBal : usdtBal)}
                 </Typography>
                 <Typography variant="caption" color="warning.main" display="block" sx={{ mt: 0.5 }}>
-                  ⚠ 目前交易保證金使用 <b>{STABLE_LABEL}</b>；{ALT_STABLE_LABEL} 支援持有與兌換，保證金支援列為下一階段。
+                  {t.exchange.markup.marginNoteBefore}<b>{STABLE_LABEL}</b>{interpolate(t.exchange.markup.marginNoteAfter, { altToken: ALT_STABLE_LABEL })}
                 </Typography>
               </Box>
 
@@ -1272,7 +1269,7 @@ export default function ExchangePage() {
 
         {freeMgn === 0n && (
           <Alert severity="warning">
-            You have no free margin. Deposit {STABLE_LABEL} in the <strong>Margin Account</strong> section above first.
+            {interpolate(t.exchange.markup.noFreeMarginBefore, { token: STABLE_LABEL })}<strong>{t.exchange.markup.noFreeMarginBold}</strong>{t.exchange.markup.noFreeMarginAfter}
           </Alert>
         )}
 
@@ -1307,9 +1304,7 @@ export default function ExchangePage() {
         {kycBlocked && !kycStatusUnknown && kycPending && (
           <Alert severity="info">
             <Typography variant="caption">
-              ⏳ 你的 KYC 申請<b>已送出，正在等待審核</b>（鏈上已記錄 KYCSubmitted）。
-              審核人員核准（approveKYC）後，<strong>{selectedAssetMeta?.symbol}</strong> 就會解鎖；
-              在那之前下單仍會被合約擋下。不需要重複送出申請。
+              {t.exchange.markup.kycPendingBefore}<b>{t.exchange.markup.kycPendingBold}</b>{t.exchange.markup.kycPendingMid}<strong>{selectedAssetMeta?.symbol}</strong>{t.exchange.markup.kycPendingLine2After}
             </Typography>
           </Alert>
         )}
@@ -1323,8 +1318,7 @@ export default function ExchangePage() {
               </Button>
             }
           >
-            🔒 <strong>{selectedAssetMeta?.symbol}</strong> 是股票 / 債券 / ETF 類資產，需通過 KYC 審核才能交易。
-            送出申請後需等審核人員核准，不是立即通過。
+            {t.exchange.markup.kycRequiredBefore}<strong>{selectedAssetMeta?.symbol}</strong>{t.exchange.markup.kycRequiredAfter}
           </Alert>
         )}
 
@@ -1588,9 +1582,9 @@ export default function ExchangePage() {
         )}
 
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', opacity: 0.7 }}>
-          PnL is calculated using on-chain oracle price. Live market shown for reference.
-          Admin can sync oracle to live market on the{' '}
-          <Link component={RouterLink} to="/admin/oracle" sx={{ color: 'primary.main', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}>Oracle Admin</Link> page.
+          {t.exchange.markup.oracleAdminBefore}{' '}
+          <Link component={RouterLink} to="/admin/oracle" sx={{ color: 'primary.main', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}>{t.exchange.markup.oracleAdminLink}</Link>{' '}
+          {t.exchange.markup.oracleAdminAfter}
         </Typography>
 
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>

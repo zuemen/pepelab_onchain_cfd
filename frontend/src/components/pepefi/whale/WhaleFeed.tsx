@@ -180,9 +180,9 @@ export default function WhaleFeed({ trades, mode, chainId, loading, progress, re
 
       {mode === 'simple' ? (
         <Stack divider={<Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }} />}>
-          {trades.map(t => (
+          {trades.map(trade => (
             <Box
-              key={`${t.txHash}-${t.logIndex}`}
+              key={`${trade.txHash}-${trade.logIndex}`}
               sx={{
                 p: 2,
                 display: 'flex',
@@ -194,38 +194,38 @@ export default function WhaleFeed({ trades, mode, chainId, loading, progress, re
             >
               <Link
                 component={RouterLink}
-                to={`/trader/${t.owner}`}
+                to={`/trader/${trade.owner}`}
                 sx={{ textDecoration: 'none', color: 'inherit', flexShrink: 0 }}
               >
-                <PepeIdentity address={t.owner} size={40} />
+                <PepeIdentity address={trade.owner} size={40} />
               </Link>
 
               <Box sx={{ flexGrow: 1, minWidth: 200 }}>
                 <Typography variant="body2" sx={{ color: 'text.primary' }}>
-                  opened{' '}
-                  <Box component="span" sx={{ fontWeight: 800, color: sideColor(t.isLong) }}>
-                    {String(t.leverage)}× {sideLabel(t.isLong)}
+                  {t.whale.feed.openedVerb}{' '}
+                  <Box component="span" sx={{ fontWeight: 800, color: sideColor(trade.isLong) }}>
+                    {String(trade.leverage)}× {sideLabel(trade.isLong)}
                   </Box>{' '}
-                  <Box component="span" sx={{ fontWeight: 700 }}>{t.assetLabel}</Box>{' '}
-                  for{' '}
+                  <Box component="span" sx={{ fontWeight: 700 }}>{trade.assetLabel}</Box>{' '}
+                  {t.whale.feed.forPreposition}{' '}
                   <Box component="span" sx={{ fontFamily: MONO, fontWeight: 800 }}>
-                    {fCompact(t.notional)}
+                    {fCompact(trade.notional)}
                   </Box>
                 </Typography>
                 <Typography variant="caption" component="div" sx={{ mt: 0.25 }}>
-                  <TimeCell trade={t} />
+                  <TimeCell trade={trade} />
                 </Typography>
               </Box>
 
               <WhaleTagChips
                 tags={positionProfile({
-                  notional:    t.notional,
-                  leverage:    t.leverage,
-                  isFirstSeen: t.isFirstSeen,
+                  notional:    trade.notional,
+                  leverage:    trade.leverage,
+                  isFirstSeen: trade.isFirstSeen,
                 })}
               />
-              <CopyCta owner={t.owner} registered={registered} />
-              <TxLink trade={t} chainId={chainId} />
+              <CopyCta owner={trade.owner} registered={registered} />
+              <TxLink trade={trade} chainId={chainId} />
             </Box>
           ))}
         </Stack>

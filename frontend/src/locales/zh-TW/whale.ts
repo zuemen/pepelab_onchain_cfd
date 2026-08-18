@@ -78,6 +78,13 @@ export const whale = {
     title: '🐋 Whale Feed',
     scanning: 'Scanning {done}/{total}',
     trades: '{count} trades',
+
+    /**
+     * #36：simple 模式把一筆交易寫成一句話，每個片段之間本來就用明確的
+     * `{' '}` 隔開，不是靠 JSX 折疊換行空白，所以直接搬進 catalog 不會漏空格。
+     */
+    openedVerb: 'opened',
+    forPreposition: 'for',
     emptyTitle: 'No whale trades in range',
     emptyTitleFailed: '⚠️',
     emptyDescription: 'Nothing above the $5k notional threshold in the scanned window.',

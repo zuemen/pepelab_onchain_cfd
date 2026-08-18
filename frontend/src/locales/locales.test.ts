@@ -28,6 +28,7 @@ const MIGRATED_PATHS: string[] = [
   'src/components/pepefi/dashboard',
   'src/pages/pepefi/PortfolioPage.tsx',
   'src/lib/pepefi/openPositionColumns.ts',
+  'src/pages/pepefi/ExchangePage.tsx',
   'src/sections/terminal',
   // 這三個不在 terminal 目錄底下，但它們產出的字只在終端機畫面上出現：
   // K 線 API 的錯誤、成交紀錄讀取失敗、模擬報價的價齡標籤。
@@ -43,8 +44,7 @@ const MIGRATED_PATHS: string[] = [
   'src/lib/pepefi/achievements.ts',
   'src/lib/pepefi/whale.ts',
   'src/pages/pepefi/WhaleTrackerPage.tsx',
-  // WhaleFeed 少一個：simple 模式把一筆交易寫成一句話，中間夾了三段標記，
-  // 那一句留給 #36，所以這個檔案還不算搬完。
+  'src/components/pepefi/whale/WhaleFeed.tsx',
   'src/components/pepefi/whale/WhaleKpiRow.tsx',
   'src/components/pepefi/whale/WhaleTagChips.tsx',
   'src/components/pepefi/whale/MarketSentimentBar.tsx',
@@ -77,7 +77,7 @@ const MIGRATED_PATHS: string[] = [
  * 目前：errors 1388、pepe 1386、terminal 685、exchange 643、pepelab 533、admin 491、
  * pepeStageSkins 264、landing 215、sessions 207、x402 207、common 185、freshness 146、stake 122、rewards 102、copy 83、esg 42、nav 38、marketplace 13、meta 12、portfolio 4。
  */
-const EN_HAN_BASELINE = 7455;
+const EN_HAN_BASELINE = 7778;
 
 /** 傳目錄就回它底下所有原始碼檔案，傳單一檔案就回那一個。測試檔一律排除。 */
 function sourceFilesIn(pathish: string): string[] {
