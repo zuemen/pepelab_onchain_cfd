@@ -7,6 +7,7 @@ import { meta } from './meta';
 import { whale } from './whale';
 import { admin } from './admin';
 import { errors } from './errors';
+import { rewards } from './rewards';
 import { exchange } from './exchange';
 import { terminal } from './terminal';
 import { portfolio } from './portfolio';
@@ -35,6 +36,7 @@ const en: Catalog = {
   pepeStageSkins,
   x402,
   whale,
+  rewards,
 };
 
 export default en;

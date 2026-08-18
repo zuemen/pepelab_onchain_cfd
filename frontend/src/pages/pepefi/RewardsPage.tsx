@@ -16,13 +16,14 @@ import CircularProgress from '@mui/material/CircularProgress';
 import { useContracts } from 'src/hooks/useContracts';
 import { usePepefiWallet } from 'src/layouts/pepefi';
 import PepeTokenCard from 'src/components/pepefi/PepeTokenCard';
+import { t, interpolate } from 'src/locales';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
 import { toStrictlyIncreasingIds } from 'src/lib/pepefi/positionIds';
 import { dailyRewardFor, TODAY_INDEX } from 'src/lib/pepefi/achievements';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-const TIER_NAMES  = ['Bronze 🥉', 'Silver 🥈', 'Gold 🥇', 'Diamond 💎'];
+const TIER_NAMES  = [t.rewards.tier.bronze, t.rewards.tier.silver, t.rewards.tier.gold, t.rewards.tier.diamond];
 const TIER_THRESHOLD = [10_000, 50_000, 200_000, 1_000_000]; // in mUSDC (18-dec /1e18)
 const TIER_REWARD    = [500,    2_000,  10_000,  50_000];    // PEPE
 
@@ -70,7 +71,7 @@ export default function RewardsPage() {
   const incentivesLive = !!contracts
     && (contracts.pepeIncentives.target as string).toLowerCase()
        !== '0x0000000000000000000000000000000000000000';
-  const INCENTIVES_OFFLINE_MSG = 'PEPE 獎勵系統尚未部署在此網路，暫時無法領取';
+  const INCENTIVES_OFFLINE_MSG = t.rewards.offline;
 
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const notify = (msg: string, ok: boolean) => {
@@ -116,7 +117,7 @@ export default function RewardsPage() {
     try {
       const tx = (await contracts.pepeIncentives.claimTradeMining(posId)) as { wait(): Promise<unknown> };
       await tx.wait();
-      notify('Trade mining claimed! 🎉', true);
+      notify(t.rewards.mining.done, true);
       await fetchPositions();
     } catch (e) { notify(prettyError(e, 'mining'), false); }
     finally { setMiningBusy(p => ({ ...p, [posId.toString()]: false })); }
@@ -158,7 +159,7 @@ export default function RewardsPage() {
       const ids = toStrictlyIncreasingIds(rawIds).map(id => id.toString());
       const tx = (await contracts.pepeIncentives.claimTierReward(tier, ids)) as { wait(): Promise<unknown> };
       await tx.wait();
-      notify(`${TIER_NAMES[tier]} reward claimed! 🏆`, true);
+      notify(interpolate(t.rewards.tierSection.done, { tier: TIER_NAMES[tier] }), true);
       await fetchTier();
     } catch (e) { notify(prettyError(e, 'tier'), false); }
     finally { setTierBusy(p => ({ ...p, [tier]: false })); }
@@ -194,7 +195,7 @@ export default function RewardsPage() {
     try {
       const tx = (await contracts.pepeIncentives.claimCopyReward(trader)) as { wait(): Promise<unknown> };
       await tx.wait();
-      notify('Copy reward claimed! 200 PEPE each 🐸', true);
+      notify(t.rewards.copy.done, true);
       await fetchCopy();
     } catch (e) { notify(prettyError(e, 'copy'), false); }
     finally {setCopyBusy(p => ({ ...p, [trader]: false })); }
@@ -225,7 +226,7 @@ export default function RewardsPage() {
     try {
       const tx = (await contracts.pepeIncentives.dailyCheckIn()) as { wait(): Promise<unknown> };
       await tx.wait();
-      notify('Checked in! 🐸', true);
+      notify(t.rewards.checkIn.done, true);
       await fetchCheckin();
     } catch (e) { notify(prettyError(e, 'checkin'), false); }
     finally { setCheckInBusy(false); }
@@ -247,8 +248,8 @@ export default function RewardsPage() {
   if (!wallet.isConnected) {
     return (
       <Container maxWidth="md" sx={{ py: 6, textAlign: 'center' }}>
-        <Typography variant="h4" sx={{ fontWeight: 900 }}>🎁 Rewards</Typography>
-        <Typography color="text.secondary" sx={{ mt: 2 }}>Connect wallet to view your rewards.</Typography>
+        <Typography variant="h4" sx={{ fontWeight: 900 }}>{t.rewards.connectTitle}</Typography>
+        <Typography color="text.secondary" sx={{ mt: 2 }}>{t.rewards.connectWallet}</Typography>
       </Container>
     );
   }
@@ -267,9 +268,9 @@ export default function RewardsPage() {
         </Box>
       )}
 
-      <Typography variant="h4" sx={{ fontWeight: 900, mb: 1 }}>🎁 PepeLab Rewards</Typography>
+      <Typography variant="h4" sx={{ fontWeight: 900, mb: 1 }}>{t.rewards.title}</Typography>
       <Typography color="text.secondary" sx={{ mb: 4 }}>
-        Trade, follow, and check-in daily to earn PEPE.
+        {t.rewards.subtitle}
       </Typography>
 
       {/* PEPE balance + airdrop. Moved off the Dashboard: claiming belongs on
@@ -283,14 +284,14 @@ export default function RewardsPage() {
       <Grid container spacing={3}>
         {/* A — Trade Mining */}
         <Grid size={{ xs: 12 }}>
-          <SectionCard title="Trade Mining" emoji="⛏️">
+          <SectionCard title={t.rewards.mining.title} emoji="⛏️">
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              每筆開倉可領一次。獎勵 = 名義價值 × 0.5%，封頂 5,000 PEPE。
+              {t.rewards.mining.description}
             </Typography>
             {posLoading ? (
               <CircularProgress size={24} />
             ) : positions.length === 0 ? (
-              <Typography color="text.secondary" variant="body2">No open positions found.</Typography>
+              <Typography color="text.secondary" variant="body2">{t.rewards.mining.empty}</Typography>
             ) : (
               <Stack spacing={1}>
                 {positions.map(p => (
@@ -300,11 +301,14 @@ export default function RewardsPage() {
                   }}>
                     <Box>
                       <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                        Position #{p.id.toString()}
+                        {interpolate(t.rewards.mining.position, { id: p.id.toString() })}
                       </Typography>
                       <Typography variant="caption" color="text.secondary">
-                        Notional: ${(fmt18(p.margin) * Number(p.leverage)).toFixed(0)}
-                        {' · '}Est reward: {fmtPepe(p.estReward)}
+                        {interpolate(t.rewards.mining.detail, {
+                          notional: (fmt18(p.margin) * Number(p.leverage)).toFixed(0),
+                        })}
+                        {' · '}
+                        {interpolate(t.rewards.mining.estReward, { reward: fmtPepe(p.estReward) })}
                       </Typography>
                     </Box>
                     <Button
@@ -313,7 +317,11 @@ export default function RewardsPage() {
                       disabled={p.mined || !!miningBusy[p.id.toString()]}
                       onClick={() => void claimMining(p.id)}
                     >
-                      {p.mined ? 'Claimed' : miningBusy[p.id.toString()] ? '…' : 'Claim'}
+                      {p.mined
+                        ? t.rewards.mining.claimed
+                        : miningBusy[p.id.toString()]
+                          ? t.rewards.working
+                          : t.rewards.mining.claim}
                     </Button>
                   </Box>
                 ))}
@@ -324,12 +332,14 @@ export default function RewardsPage() {
 
         {/* B — Tier Upgrade */}
         <Grid size={{ xs: 12, md: 6 }}>
-          <SectionCard title="Tier Upgrade" emoji="🏆">
+          <SectionCard title={t.rewards.tierSection.title} emoji="🏆">
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              累積交易量達標即可領取一次性 tier 獎勵。
+              {t.rewards.tierSection.description}
             </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-              Cumulative notional: ${(fmt18(cumNotional)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              {interpolate(t.rewards.tierSection.cumulative, {
+                amount: fmt18(cumNotional).toLocaleString(undefined, { maximumFractionDigits: 0 }),
+              })}
             </Typography>
             <Stack spacing={1.5}>
               {TIER_NAMES.map((name, i) => {
@@ -341,7 +351,9 @@ export default function RewardsPage() {
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
                       <Typography variant="body2" sx={{ fontWeight: 700 }}>{name}</Typography>
                       <Typography variant="caption" color="text.secondary">
-                        {TIER_REWARD[i].toLocaleString()} PEPE
+                        {interpolate(t.rewards.tierSection.reward, {
+                          amount: TIER_REWARD[i].toLocaleString(),
+                        })}
                       </Typography>
                     </Box>
                     <LinearProgress
@@ -351,7 +363,9 @@ export default function RewardsPage() {
                     />
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <Typography variant="caption" color="text.secondary">
-                        ${TIER_THRESHOLD[i].toLocaleString()} required
+                        {interpolate(t.rewards.tierSection.required, {
+                          amount: TIER_THRESHOLD[i].toLocaleString(),
+                        })}
                       </Typography>
                       <Button
                         size="small"
@@ -359,7 +373,13 @@ export default function RewardsPage() {
                         disabled={claimed || !eligible || !!tierBusy[i]}
                         onClick={() => void claimTier(i)}
                       >
-                        {claimed ? 'Claimed' : tierBusy[i] ? '…' : eligible ? 'Claim' : 'Locked'}
+                        {claimed
+                          ? t.rewards.tierSection.claimed
+                          : tierBusy[i]
+                            ? t.rewards.working
+                            : eligible
+                              ? t.rewards.tierSection.claim
+                              : t.rewards.tierSection.locked}
                       </Button>
                     </Box>
                   </Box>
@@ -371,12 +391,12 @@ export default function RewardsPage() {
 
         {/* C — Copy Reward */}
         <Grid size={{ xs: 12, md: 6 }}>
-          <SectionCard title="Copy Reward" emoji="🤝">
+          <SectionCard title={t.rewards.copy.title} emoji="🤝">
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              跟單成功後，跟單者與被跟單者各領 200 PEPE（每對一次）。
+              {t.rewards.copy.description}
             </Typography>
             {copyEntries.length === 0 ? (
-              <Typography color="text.secondary" variant="body2">No active copy trades found.</Typography>
+              <Typography color="text.secondary" variant="body2">{t.rewards.copy.empty}</Typography>
             ) : (
               <Stack spacing={1}>
                 {copyEntries.map(e => (
@@ -393,7 +413,11 @@ export default function RewardsPage() {
                       disabled={e.claimed || !!copyBusy[e.trader]}
                       onClick={() => void claimCopy(e.trader)}
                     >
-                      {e.claimed ? 'Claimed' : copyBusy[e.trader] ? '…' : '200 PEPE'}
+                      {e.claimed
+                        ? t.rewards.copy.claimed
+                        : copyBusy[e.trader]
+                          ? t.rewards.working
+                          : t.rewards.copy.claim}
                     </Button>
                   </Box>
                 ))}
@@ -404,15 +428,23 @@ export default function RewardsPage() {
 
         {/* D — Daily Check-in */}
         <Grid size={{ xs: 12 }}>
-          <SectionCard title="Daily Check-in" emoji="📅">
+          <SectionCard title={t.rewards.checkIn.title} emoji="📅">
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap' }}>
               <Box sx={{ flex: 1, minWidth: 200 }}>
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                  每日簽到領 50 PEPE，連續簽到每天 +10 PEPE，7 天封頂 110 PEPE。
+                  {t.rewards.checkIn.description}
                 </Typography>
                 <Stack direction="row" spacing={1} alignItems="center">
-                  <Chip label={`🔥 ${myStreak} day streak`} color={myStreak >= 7 ? 'warning' : 'default'} size="small" />
-                  <Chip label={`今日獎勵: ${dailyReward} PEPE`} color="success" size="small" />
+                  <Chip
+                    label={interpolate(t.rewards.checkIn.streak, { days: myStreak })}
+                    color={myStreak >= 7 ? 'warning' : 'default'}
+                    size="small"
+                  />
+                  <Chip
+                    label={interpolate(t.rewards.checkIn.todayReward, { reward: dailyReward })}
+                    color="success"
+                    size="small"
+                  />
                 </Stack>
               </Box>
               <Button
@@ -422,13 +454,18 @@ export default function RewardsPage() {
                 onClick={() => void doCheckIn()}
                 sx={{ minWidth: 160, fontWeight: 900 }}
               >
-                {checkInBusy ? <CircularProgress size={20} color="inherit" /> :
-                  checkedInToday ? '✓ 今天已簽到' : '🐸 簽到 +' + dailyReward + ' PEPE'}
+                {checkInBusy ? (
+                  <CircularProgress size={20} color="inherit" />
+                ) : checkedInToday ? (
+                  t.rewards.checkIn.alreadyCheckedIn
+                ) : (
+                  interpolate(t.rewards.checkIn.checkIn, { reward: dailyReward })
+                )}
               </Button>
             </Box>
             {checkedInToday && (
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-                明天再來！明日獎勵: {dailyRewardFor(myStreak)} PEPE
+                {interpolate(t.rewards.checkIn.comeBack, { reward: dailyRewardFor(myStreak) })}
               </Typography>
             )}
           </SectionCard>
