@@ -22,6 +22,7 @@ import { exchange } from './exchange';
 import { terminal } from './terminal';
 import { portfolio } from './portfolio';
 import { freshness } from './freshness';
+import { marketplace } from './marketplace';
 import { pepeStageSkins } from './pepeStageSkins';
 
 // ----------------------------------------------------------------------
@@ -57,6 +58,7 @@ const en: Catalog = {
   stake,
   pepelab,
   copy,
+  marketplace,
 };
 
 export default en;

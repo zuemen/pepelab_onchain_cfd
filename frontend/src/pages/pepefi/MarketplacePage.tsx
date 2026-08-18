@@ -12,6 +12,7 @@ import ESGBadge from 'src/components/pepefi/ESGBadge';
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta';
 import { getPepeAvatar } from 'src/utils/pepefi-assets';
 import TraderRankBadge from 'src/components/pepefi/TraderRankBadge';
+import { t, interpolate } from 'src/locales';
 import X402MarketplaceCard from 'src/components/pepefi/X402MarketplaceCard';
 
 import Box from '@mui/material/Box';
@@ -274,12 +275,12 @@ export default function MarketplacePage() {
         <Box>
           <Stack direction="row" alignItems="center" spacing={1}>
             <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
-              ⭐ Star Trader Leaderboard
+              {t.marketplace.title}
             </Typography>
             <LiveDot />
           </Stack>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            Browse and copy on-chain verified strategies
+            {t.marketplace.subtitle}
           </Typography>
         </Box>
 
@@ -297,7 +298,9 @@ export default function MarketplacePage() {
               fontWeight: 'bold',
             }}
           >
-            ESG {esgOnly ? '已篩選' : '全部'}
+            {interpolate(t.marketplace.esgButton, {
+              state: esgOnly ? t.marketplace.esgFiltered : t.marketplace.esgAll,
+            })}
           </Button>
 
           <FormControl size="small" sx={{ minWidth: 160 }}>
@@ -306,11 +309,11 @@ export default function MarketplacePage() {
               onChange={e => setSortKey(e.target.value as SortKey)}
               sx={{ borderRadius: 1 }}
             >
-              <MenuItem value="reputation">Sort: Reputation</MenuItem>
-              <MenuItem value="followers">Sort: Followers</MenuItem>
-              <MenuItem value="volume">Sort: Volume (7d)</MenuItem>
-              <MenuItem value="pnl">Sort: PnL (7d)</MenuItem>
-              <MenuItem value="esg">Sort: ESG Score</MenuItem>
+              <MenuItem value="reputation">{t.marketplace.sort.reputation}</MenuItem>
+              <MenuItem value="followers">{t.marketplace.sort.followers}</MenuItem>
+              <MenuItem value="volume">{t.marketplace.sort.volume}</MenuItem>
+              <MenuItem value="pnl">{t.marketplace.sort.pnl}</MenuItem>
+              <MenuItem value="esg">{t.marketplace.sort.esg}</MenuItem>
             </Select>
           </FormControl>
 
@@ -318,7 +321,7 @@ export default function MarketplacePage() {
             size="small"
             onClick={() => void fetchAll()}
             color="inherit"
-            aria-label="重新整理市集資料"
+            aria-label={t.marketplace.refreshAria}
           >
             <Icon icon="solar:restart-bold-duotone" width={16} />
           </IconButton>
@@ -328,7 +331,7 @@ export default function MarketplacePage() {
       {/* Live Prices ticker */}
       <Card sx={{ p: 2, display: 'flex', flexWrap: 'wrap', gap: 3, alignItems: 'center' }}>
         <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold', letterSpacing: 1.5 }}>
-          Live Prices
+          {t.marketplace.livePrices}
         </Typography>
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
           {Object.entries(ASSET_LABEL).map(([id, label]) => {
@@ -356,7 +359,7 @@ export default function MarketplacePage() {
 
       {fetchError && (
         <Alert severity="error">
-          <strong>Failed to load:</strong> {fetchError}
+          <strong>{t.marketplace.loadFailed}</strong> {fetchError}
         </Alert>
       )}
 
@@ -386,22 +389,22 @@ export default function MarketplacePage() {
       ) : sorted.length === 0 ? (
         <EmptyState
           icon="🎯"
-          title="No traders yet"
-          description="Run SeedWhales to populate the leaderboard, or register a strategy on the Trader page."
-          ctaText="Become a Trader"
+          title={t.marketplace.empty.title}
+          description={t.marketplace.empty.description}
+          ctaText={t.marketplace.empty.cta}
           ctaHref="/trader"
         />
       ) : (
         <>
           <Grid container spacing={3}>
-            {sorted.map((t, idx) => {
-              const star   = isStarTrader(t);
+            {sorted.map((trader, idx) => {
+              const star   = isStarTrader(trader);
               const medal  = MEDALS[idx];
               const isTop3 = idx < 3;
               const borderColor = isTop3 ? MEDAL_BORDER_COLOR[idx] : 'divider';
               const shadowGlow  = isTop3 ? `0 8px 24px rgba(0, 167, 111, 0.08)` : 'none';
 
-              const esgScore = getEsgComposite(t);
+              const esgScore = getEsgComposite(trader);
               const esgComposite = esgScore !== null
                 ? {
                     composite: esgScore,
@@ -410,7 +413,7 @@ export default function MarketplacePage() {
                 : null;
 
               return (
-                <Grid size={{ xs: 12, sm: 6, md: 4 }} key={t.address}>
+                <Grid size={{ xs: 12, sm: 6, md: 4 }} key={trader.address}>
                   <Card
                     sx={{
                       display: 'flex',
@@ -443,10 +446,10 @@ export default function MarketplacePage() {
                         }}
                       >
                         <Typography variant="caption" sx={{ fontWeight: 'bold', color: 'warning.main', display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                          ⭐ Star Trader
+                          {t.marketplace.card.starTrader}
                         </Typography>
                         <Typography variant="caption" sx={{ color: 'text.secondary', opacity: 0.8, fontSize: '0.625rem' }}>
-                          Verified On-Chain
+                          {t.marketplace.card.verifiedOnChain}
                         </Typography>
                       </Box>
                     )}
@@ -455,12 +458,12 @@ export default function MarketplacePage() {
                       {/* Identity Row */}
                       <Box sx={{ display: 'flex', alignItems: 'start', gap: 2 }}>
                         <Avatar
-                          src={getPepeAvatar(t.reputation, t.address)}
+                          src={getPepeAvatar(trader.reputation, trader.address)}
                           sx={{
                             width: 56,
                             height: 56,
                             border: '2px solid',
-                            borderColor: t.reputation && t.reputation >= 80n ? 'warning.main' : 'rgba(255,255,255,0.1)',
+                            borderColor: trader.reputation && trader.reputation >= 80n ? 'warning.main' : 'rgba(255,255,255,0.1)',
                             boxShadow: '0 0 12px rgba(0,0,0,0.5)',
                             bgcolor: 'rgba(255, 255, 255, 0.05)',
                             '& .MuiAvatar-img': {
@@ -481,7 +484,7 @@ export default function MarketplacePage() {
                             )}
                             <Link
                               component={RouterLink}
-                              to={`/trader/${t.address}`}
+                              to={`/trader/${trader.address}`}
                               sx={{
                                 fontWeight: 'bold',
                                 color: 'text.primary',
@@ -494,22 +497,22 @@ export default function MarketplacePage() {
                                 maxWidth: '100%',
                               }}
                             >
-                              {t.displayName || '—'}
+                              {trader.displayName || t.marketplace.card.noName}
                             </Link>
                           </Box>
                           <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 0.5, flexWrap: 'wrap', gap: 1 }}>
                             <Typography variant="caption" sx={{ fontFamily: MONO, color: 'text.secondary' }}>
-                              {shortAddr(t.address)}
+                              {shortAddr(trader.address)}
                             </Typography>
-                            <TraderRankBadge reputation={t.reputation} />
+                            <TraderRankBadge reputation={trader.reputation} />
                           </Stack>
                         </Box>
 
-                        {t.reputation !== null && (
+                        {trader.reputation !== null && (
                           <Chip
-                            label={`◆ ${String(t.reputation)}`}
+                            label={`◆ ${String(trader.reputation)}`}
                             size="small"
-                            color={repBadgeColor(t.reputation)}
+                            color={repBadgeColor(trader.reputation)}
                             sx={{ fontWeight: 'bold', fontSize: '0.75rem', height: 22 }}
                           />
                         )}
@@ -517,18 +520,23 @@ export default function MarketplacePage() {
 
                       {/* Strategy Pills */}
                       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, minHeight: 24 }}>
-                        {!t.hasStrategy ? (
+                        {!trader.hasStrategy ? (
                           <Chip
-                            label="No strategy"
+                            label={t.marketplace.card.noStrategy}
                             size="small"
                             variant="outlined"
                             sx={{ color: 'text.secondary', borderColor: 'divider' }}
                           />
                         ) : (
-                          t.allocs.map((a, i) => (
+                          trader.allocs.map((a, i) => (
                             <Chip
                               key={i}
-                              label={`${a.isLong ? '↑' : '↓'}${ASSET_LABEL[a.asset] ?? '?'} ${(Number(a.weight) / 100).toFixed(0)}% ${String(a.leverage)}×`}
+                              label={interpolate(t.marketplace.card.allocChip, {
+                                side: a.isLong ? '↑' : '↓',
+                                asset: ASSET_LABEL[a.asset] ?? '?',
+                                weight: (Number(a.weight) / 100).toFixed(0),
+                                leverage: String(a.leverage),
+                              })}
                               size="small"
                               sx={{
                                 fontSize: '0.625rem',
@@ -560,30 +568,32 @@ export default function MarketplacePage() {
                         }}
                       >
                         <MetricCell
-                          label="Vol 7d"
-                          value={t.totalVolume > 0n ? fVol(t.totalVolume) : '—'}
-                          highlight={t.totalVolume >= 10_000n * 10n ** 18n}
+                          label={t.marketplace.card.volLabel}
+                          value={trader.totalVolume > 0n ? fVol(trader.totalVolume) : '—'}
+                          highlight={trader.totalVolume >= 10_000n * 10n ** 18n}
                         />
                         <MetricCell
-                          label="PnL 7d"
-                          value={t.pnl7d !== 0n ? fPnL(t.pnl7d) : '—'}
-                          positive={t.pnl7d > 0n}
-                          negative={t.pnl7d < 0n}
+                          label={t.marketplace.card.pnlLabel}
+                          value={trader.pnl7d !== 0n ? fPnL(trader.pnl7d) : '—'}
+                          positive={trader.pnl7d > 0n}
+                          negative={trader.pnl7d < 0n}
                         />
                         <MetricCell
-                          label="Followers"
-                          value={String(t.followerCount)}
+                          label={t.marketplace.card.followersLabel}
+                          value={String(trader.followerCount)}
                         />
                         <MetricCell
-                          label="Stake"
-                          value={t.stake !== null && t.stake > 0n ? fVol(t.stake) : '—'}
+                          label={t.marketplace.card.stakeLabel}
+                          value={trader.stake !== null && trader.stake > 0n ? fVol(trader.stake) : '—'}
                         />
                       </Box>
 
                       {/* Slashed Indicator */}
-                      {t.totalSlashed !== null && t.totalSlashed > 0n && (
+                      {trader.totalSlashed !== null && trader.totalSlashed > 0n && (
                         <Alert severity="error" icon={false} sx={{ py: 0, px: 1.5, '& .MuiAlert-message': { py: 0.5, fontSize: '0.6875rem', fontWeight: 'bold' } }}>
-                          ⚠ {(Number(t.totalSlashed) / 1e18).toFixed(0)} USDC slashed
+                          {interpolate(t.marketplace.card.slashed, {
+                            amount: (Number(trader.totalSlashed) / 1e18).toFixed(0),
+                          })}
                         </Alert>
                       )}
 
@@ -595,22 +605,22 @@ export default function MarketplacePage() {
                           size="small"
                           color="inherit"
                           component={RouterLink}
-                          to={`/trader/${t.address}`}
+                          to={`/trader/${trader.address}`}
                           sx={{ textTransform: 'none', fontWeight: 'bold', fontSize: '0.75rem', py: 0.75, borderRadius: 1 }}
                         >
-                          Profile
+                          {t.marketplace.card.profile}
                         </Button>
-                        {t.hasStrategy ? (
+                        {trader.hasStrategy ? (
                           <Button
                             fullWidth
                             variant="contained"
                             size="small"
                             color="primary"
                             component={RouterLink}
-                            to={`/copy/${t.address}`}
+                            to={`/copy/${trader.address}`}
                             sx={{ textTransform: 'none', fontWeight: 'bold', fontSize: '0.75rem', py: 0.75, borderRadius: 1 }}
                           >
-                            Copy →
+                            {t.marketplace.card.copy}
                           </Button>
                         ) : (
                           <Button
@@ -620,7 +630,7 @@ export default function MarketplacePage() {
                             size="small"
                             sx={{ textTransform: 'none', fontWeight: 'bold', fontSize: '0.75rem', py: 0.75, borderRadius: 1 }}
                           >
-                            No Strategy
+                            {t.marketplace.card.noStrategyButton}
                           </Button>
                         )}
                       </Box>
@@ -634,18 +644,32 @@ export default function MarketplacePage() {
           {/* Footer Info details */}
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'text.secondary', fontSize: '0.75rem', mt: 2, flexWrap: 'wrap', gap: 1 }}>
             <Typography variant="caption" color="text.secondary">
-              {sorted.length} trader{sorted.length !== 1 ? 's' : ''} ·{' '}
-              {sorted.reduce((s, t) => s + Number(t.followerCount), 0)} total followers ·{' '}
-              {sorted.filter(isStarTrader).length} star trader{sorted.filter(isStarTrader).length !== 1 ? 's' : ''}
+              {interpolate(
+                sorted.length === 1 ? t.marketplace.footer.countOne : t.marketplace.footer.countMany,
+                { count: sorted.length },
+              )}{' '}
+              ·{' '}
+              {interpolate(t.marketplace.footer.followersTotal, {
+                count: sorted.reduce((s, tr) => s + Number(tr.followerCount), 0),
+              })}{' '}
+              ·{' '}
+              {interpolate(
+                sorted.filter(isStarTrader).length === 1
+                  ? t.marketplace.footer.starTraderOne
+                  : t.marketplace.footer.starTraderMany,
+                { count: sorted.filter(isStarTrader).length },
+              )}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              Volume + PnL from last ~{FETCH_BLOCKS_VOLUME.toLocaleString()} blocks (~7d)
+              {interpolate(t.marketplace.footer.volumeWindow, {
+                blocks: FETCH_BLOCKS_VOLUME.toLocaleString(),
+              })}
             </Typography>
           </Box>
 
           <Box component="details" sx={{ mt: 2 }}>
             <Typography component="summary" variant="caption" sx={{ color: 'text.secondary', cursor: 'pointer', '&:hover': { color: 'text.primary' } }}>
-              Raw strategy data
+              {t.marketplace.rawData.summary}
             </Typography>
             <Box
               component="pre"
@@ -662,7 +686,12 @@ export default function MarketplacePage() {
                 overflowX: 'auto',
               }}
             >
-              {traders.map(t => `${t.displayName} (${shortAddr(t.address)}): ${summarize(t.allocs) || 'no strategy'}`).join('\n')}
+              {traders
+                .map(
+                  tr =>
+                    `${tr.displayName} (${shortAddr(tr.address)}): ${summarize(tr.allocs) || t.marketplace.rawData.noStrategy}`,
+                )
+                .join('\n')}
             </Box>
           </Box>
         </>

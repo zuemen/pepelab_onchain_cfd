@@ -20,6 +20,7 @@ import { exchange } from './exchange';
 import { terminal } from './terminal';
 import { portfolio } from './portfolio';
 import { freshness } from './freshness';
+import { marketplace } from './marketplace';
 import { pepeStageSkins } from './pepeStageSkins';
 
 // ----------------------------------------------------------------------
@@ -55,6 +56,7 @@ const zhTW = {
   stake,
   pepelab,
   copy,
+  marketplace,
 };
 
 export type Catalog = typeof zhTW;
