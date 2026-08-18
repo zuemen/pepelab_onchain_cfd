@@ -3,6 +3,7 @@ import { nav } from './nav';
 import { x402 } from './x402';
 import { pepe } from './pepe';
 import { meta } from './meta';
+import { vault } from './vault';
 import { whale } from './whale';
 import { admin } from './admin';
 import { errors } from './errors';
@@ -37,6 +38,7 @@ const zhTW = {
   whale,
   rewards,
   esg,
+  vault,
 };
 
 export type Catalog = typeof zhTW;
