@@ -6,7 +6,7 @@
 export const landing = {
   tagline: 'DeFi · SocialFi · GameFi · MemeFi 🐸',
   enterDashboard: '🐸 進入 Dashboard',
-  viewTraders: 'View Traders',
+  viewTraders: '查看交易者',
   connectHint: '連線後可直接瀏覽所有功能，無需註冊帳號',
 
   paperTrading: {
@@ -16,22 +16,22 @@ export const landing = {
   features: {
     heading: '核心功能',
 
-    perpetualsTitle: 'Synthetic CFD Perpetuals',
+    perpetualsTitle: '合成 CFD 永續合約',
     perpetualsDesc: '合成衍生品永續合約，全程透明上鏈，無需中心化交易所。',
 
-    copyTitle: 'One-Click Copy Trading',
+    copyTitle: '一鍵跟單交易',
     copyDesc: '一鍵跟單頂尖交易者，授權 USDC 後自動按比例開倉。',
 
-    esgTitle: 'ESG Scoring',
+    esgTitle: 'ESG 評分',
     esgDesc: '每位交易者皆有 ESG 評分，讓投資更有責任感與透明度。',
 
-    vaultTitle: 'Insurance Vault',
+    vaultTitle: '保險金庫',
     vaultDesc: '提供流動性賺取協議費用，同時作為極端損失的保險池。',
 
-    x402Title: 'x402 Paid Signals',
+    x402Title: 'x402 付費訊號',
     x402Desc: 'Agent 自帶錢包、按次付費購買交易訊號，收入 70/20/10 上鏈分潤。',
 
-    agentTitle: 'Agent-Native Trading',
+    agentTitle: 'Agent 原生交易',
     agentDesc: 'session key 有界委派，AI agent 付費後可自主在鏈上開受限部位。',
   },
 

@@ -43,7 +43,7 @@ export const tokens = {
     upgradeableV1: '不可升級',
     upgradeableV2: 'UUPS proxy',
 
-    oracle: 'Oracle',
+    oracle: '預言機',
     oracleV1: 'MockOracle（單一 key）',
     oracleV2: 'GuardedOracle（多 keeper + 偏差上限）',
 

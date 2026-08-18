@@ -23,7 +23,7 @@ export const kyc = {
     '此為學術展示系統。填入的姓名與國籍僅儲存在智能合約上作為 PoC 示範，請勿填入真實個人資訊。',
 
   nameLabel: '姓名（示範用）',
-  namePlaceholder: 'e.g. Demo User',
+  namePlaceholder: '例如：王小明',
   nameRequired: '請輸入姓名',
   nationalityLabel: '國籍',
   /** 下拉選項是「代號 — 國名」。代號是資料，國名是文字。 */

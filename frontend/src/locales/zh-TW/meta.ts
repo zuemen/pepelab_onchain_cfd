@@ -5,7 +5,7 @@
  * 東西，能證明整條路線接通了。原本寫死在 index.html 裡。
  */
 export const meta = {
-  title: 'PepeLab · Agent-Native RWA Perpetuals',
+  title: 'PepeLab · Agent 原生 RWA 永續合約',
   description:
-    'PepeLab — agent-native RWA perpetuals on Base. 鏈上永續 + x402 付費訊號 + 社交跟單。',
+    'PepeLab — 基於 Base 鏈的 Agent 原生 RWA 永續合約平台。鏈上永續 + x402 付費訊號 + 社交跟單。',
 };
