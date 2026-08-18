@@ -13,6 +13,7 @@ import { admin } from './admin';
 import { common } from './common';
 import { tokens } from './tokens';
 import { errors } from './errors';
+import { pepelab } from './pepelab';
 import { landing } from './landing';
 import { rewards } from './rewards';
 import { sessions } from './sessions';
@@ -53,6 +54,7 @@ const en: Catalog = {
   common,
   kyc,
   stake,
+  pepelab,
 };
 
 export default en;

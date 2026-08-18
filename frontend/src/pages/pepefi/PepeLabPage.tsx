@@ -24,6 +24,7 @@ import { ACHIEVEMENTS, buildQuests, TODAY_INDEX, type AchCtx } from 'src/lib/pep
 import { useToast } from 'src/components/pepefi/ToastProvider';
 import { StageSkin, getStageSkins, findStageSkin } from 'src/components/pepefi/pepeStageSkinsData';
 import { PEPE_MOUNTS, getMount, getNextMount } from 'src/components/pepefi/pepeMountsData';
+import { t, interpolate } from 'src/locales';
 import PepeEvolution, {
   PEPE_EVOLUTION_STAGES,
   PepeEvolutionHero,
@@ -35,9 +36,9 @@ import PepeEvolution, {
 // ── Types & Assets ─────────────────────────────────────────────────────────────
 
 const POTIONS = [
-  { id: 'green', name: 'Pepe Green Juice (綠色蛙汁)', desc: '讓你的 Pepe 眼睛發光，經驗值 +50 XP！', cost: 100, xp: 50, color: '#4caf50', emoji: '🧪' },
-  { id: 'gold', name: 'Golden Elixir (黃金仙露)', desc: '解鎖奢華黃金配飾，經驗值 +150 XP！', cost: 300, xp: 150, color: '#ffd700', emoji: '🍶' },
-  { id: 'moon', name: 'Moon Potion (登月藥水)', desc: '獲得登月火箭背包，直接獲得 +500 XP！', cost: 800, xp: 500, color: '#2196f3', emoji: '🚀' },
+  { id: 'green', name: t.pepelab.potion.green.name, desc: t.pepelab.potion.green.desc, cost: 100, xp: 50, color: '#4caf50', emoji: '🧪' },
+  { id: 'gold', name: t.pepelab.potion.gold.name, desc: t.pepelab.potion.gold.desc, cost: 300, xp: 150, color: '#ffd700', emoji: '🍶' },
+  { id: 'moon', name: t.pepelab.potion.moon.name, desc: t.pepelab.potion.moon.desc, cost: 800, xp: 500, color: '#2196f3', emoji: '🚀' },
 ];
 
 // ── Helper Title ──────────────────────────────────────────────────────────────
@@ -204,7 +205,7 @@ export default function PepeLabPage() {
 
   const buyPotion = async (id: string, cost: number, xpBonus: number) => {
     if (finalPepeBal < cost) {
-      notify('PEPE 餘額不足。可到 Rewards 頁面簽到或交易挖礦取得更多。', false);
+      notify(t.pepelab.toast.insufficientPepe, false);
       return;
     }
 
@@ -216,7 +217,7 @@ export default function PepeLabPage() {
         const nextBal = await contracts.pepeToken.balanceOf(wallet.address);
         setOnChainPepeBal(nextBal as bigint);
       } catch (e) {
-        notify('鏈上交易已取消或扣款失敗，未扣除任何 PEPE。', false);
+        notify(t.pepelab.toast.txCancelled, false);
         return;
       }
     }
@@ -249,7 +250,7 @@ export default function PepeLabPage() {
 
   const equipMount = (mountId: string, levelReq: number) => {
     if (level < levelReq) {
-      notify(`此坐騎需 Pepe 等級 Lv.${levelReq} 解鎖，目前 Lv.${level}。`, false);
+      notify(interpolate(t.pepelab.toast.mountLocked, { level: levelReq, current: level }), false);
       return;
     }
     saveState(finalPepeBal, xp, level, mountId);
@@ -278,18 +279,18 @@ export default function PepeLabPage() {
     if (isDrawing) return;
     const COST = 500;
     if (finalPepeBal < COST) {
-      notify(`PEPE 餘額不足，抽取一次需要 ${COST} PEPE。`, false);
+      notify(interpolate(t.pepelab.toast.gachaInsufficientPepe, { cost: COST }), false);
       return;
     }
 
     // Only the current stage's pool is drawable.
     if (stagePool.length === 0) {
-      notify(`${evoStage.label} 階段的造型還在製作中，敬請期待。`, false);
+      notify(interpolate(t.pepelab.toast.stageInProgress, { stage: evoStage.label }), false);
       return;
     }
     const lockedSkins = stagePool.filter(s => !unlockedSkins.includes(s.id));
     if (lockedSkins.length === 0) {
-      notify(`已集齊 ${evoStage.label} 階段的所有造型，進化後會解鎖新的一批。`, true);
+      notify(interpolate(t.pepelab.toast.stageComplete, { stage: evoStage.label }), true);
       return;
     }
 
@@ -301,7 +302,7 @@ export default function PepeLabPage() {
         const nextBal = await contracts.pepeToken.balanceOf(wallet.address);
         setOnChainPepeBal(nextBal as bigint);
       } catch (e) {
-        notify('鏈上交易已取消或扣款失敗，未扣除任何 PEPE。', false);
+        notify(t.pepelab.toast.txCancelled, false);
         return;
       }
     }
@@ -337,7 +338,7 @@ export default function PepeLabPage() {
   const buySkinDirect = async (skin: StageSkin) => {
     if (unlockedSkins.includes(skin.id)) return;
     if (finalPepeBal < skin.price) {
-      notify(`PEPE 餘額不足，此造型需要 ${skin.price} PEPE。`, false);
+      notify(interpolate(t.pepelab.toast.skinInsufficientPepe, { price: skin.price }), false);
       return;
     }
 
@@ -345,9 +346,9 @@ export default function PepeLabPage() {
     // now an in-app dialog rather than window.confirm. Early-return on cancel
     // instead of nesting the whole purchase inside the branch.
     const confirmed = await confirm({
-      title: '購買造型',
-      message: `以 ${skin.price} PEPE 購買「${skin.name}」？PEPE 將轉入銷毀地址，無法復原。`,
-      confirmLabel: `購買 · ${skin.price} PEPE`,
+      title: t.pepelab.buySkinDialog.title,
+      message: interpolate(t.pepelab.buySkinDialog.message, { price: skin.price, name: skin.name }),
+      confirmLabel: interpolate(t.pepelab.buySkinDialog.confirmLabel, { price: skin.price }),
     });
     if (!confirmed) return;
 
@@ -359,14 +360,14 @@ export default function PepeLabPage() {
         const nextBal = await contracts.pepeToken.balanceOf(wallet.address);
         setOnChainPepeBal(nextBal as bigint);
       } catch (e) {
-        notify('鏈上交易已取消或扣款失敗，未扣除任何 PEPE。', false);
+        notify(t.pepelab.toast.txCancelled, false);
         return;
       }
     }
 
     const newUnlocked = [...unlockedSkins, skin.id];
     saveState(finalPepeBal - skin.price, xp, level, activeMount, newUnlocked, activeSkin);
-    notify(`已購買並解鎖「${skin.name}」`, true);
+    notify(interpolate(t.pepelab.toast.skinPurchased, { name: skin.name }), true);
   };
 
   // Equipping a skin swaps the artwork the hero panel renders — the frog on the
@@ -438,10 +439,10 @@ export default function PepeLabPage() {
           </Box>
           <Box>
             <Typography variant="h6" sx={{ fontWeight: 900, color: 'var(--palette-primary-main)' }}>
-              Pepe GameFi & MemeFi Lab 🧪
+              {t.pepelab.header.title}
             </Typography>
             <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-              DeFi · SocialFi · GameFi · MemeFi 一體化升級中心
+              {t.pepelab.header.subtitle}
             </Typography>
           </Box>
         </Stack>
@@ -450,7 +451,7 @@ export default function PepeLabPage() {
             tabs — every tab spends it, so it reads as a page-level fact. */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, bgcolor: 'rgba(124,193,74,0.12)', border: '1px solid rgba(124,193,74,0.3)', px: 2, py: 0.75, borderRadius: 2 }}>
           <Typography variant="subtitle2" sx={{ color: 'var(--palette-primary-main)', fontWeight: 'bold' }}>
-            💰 餘額: {finalPepeBal.toLocaleString()} PEPE
+            {interpolate(t.pepelab.header.balance, { amount: finalPepeBal.toLocaleString() })}
           </Typography>
         </Box>
       </Box>
@@ -513,15 +514,20 @@ export default function PepeLabPage() {
       <Box sx={{ px: 3, py: 2, background: `linear-gradient(180deg, ${evoStage.color}0f 0%, transparent 100%)` }}>
         <Stack direction="row" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={1} sx={{ mb: 1.5 }}>
           <Typography variant="caption" sx={{ fontWeight: 'bold', color: 'text.secondary' }}>
-            🐸 佩佩蛙進化樹 (Evolution) · 目前{' '}
+            {t.pepelab.roadmap.heading}{' '}
             <Box component="span" sx={{ color: evoStage.color, fontWeight: 900 }}>
               Lv.{evoStage.stage} {evoStage.label} {evoStage.emoji}
             </Box>
           </Typography>
           <Typography variant="caption" sx={{ color: nextEvo ? '#ffb300' : 'var(--palette-primary-main)', fontWeight: 'bold' }}>
             {nextEvo
-              ? `⚡ 再升 ${nextEvo.minLevel - level} 級 (Lv.${nextEvo.minLevel}) 即可進化為 ${nextEvo.label} ${nextEvo.emoji}`
-              : '🏆 已進化至最終形態 蛙神 🌌'}
+              ? interpolate(t.pepelab.roadmap.nextStage, {
+                  levels: nextEvo.minLevel - level,
+                  level: nextEvo.minLevel,
+                  label: nextEvo.label,
+                  emoji: nextEvo.emoji,
+                })
+              : t.pepelab.roadmap.maxStage}
           </Typography>
         </Stack>
 
@@ -535,7 +541,11 @@ export default function PepeLabPage() {
                   <Box sx={{ flex: '0 0 auto', width: 14, height: 2, mb: 4, borderRadius: 1, bgcolor: reached ? evoStage.color : 'rgba(255,255,255,0.12)' }} />
                 )}
                 <Box
-                  title={`Lv.${s.stage} ${s.label} — ${s.desc}`}
+                  title={interpolate(t.pepelab.roadmap.tileTooltip, {
+                    stage: s.stage,
+                    label: s.label,
+                    desc: s.desc,
+                  })}
                   sx={{
                     flex: '1 1 0', minWidth: 74, textAlign: 'center',
                     p: 0.75, borderRadius: 2,
@@ -551,7 +561,9 @@ export default function PepeLabPage() {
                     {s.label}
                   </Typography>
                   <Typography variant="caption" sx={{ display: 'block', fontSize: '0.6rem', color: isCurrent ? s.color : 'text.secondary' }}>
-                    {reached ? `Lv.${s.stage}` : `需 Lv.${s.minLevel}`}
+                    {reached
+                      ? interpolate(t.pepelab.roadmap.tileReached, { stage: s.stage })
+                      : interpolate(t.pepelab.roadmap.tileLocked, { level: s.minLevel })}
                   </Typography>
                 </Box>
               </React.Fragment>
@@ -581,11 +593,11 @@ export default function PepeLabPage() {
           },
         }}
       >
-        <Tab value="potions" label="🧪 魔法藥水 (Potions)" />
-        <Tab value="mounts" label="🐋 尊貴坐騎 (Mounts)" />
-        <Tab value="skins" label="🎰 造型盲盒與商城 (Skins & Gacha)" />
-        <Tab value="achievements" label="🏅 成就 (Achievements)" />
-        <Tab value="quests" label="📋 每日任務 (Quests)" />
+        <Tab value="potions" label={t.pepelab.tab.potions} />
+        <Tab value="mounts" label={t.pepelab.tab.mounts} />
+        <Tab value="skins" label={t.pepelab.tab.skins} />
+        <Tab value="achievements" label={t.pepelab.tab.achievements} />
+        <Tab value="quests" label={t.pepelab.tab.quests} />
       </Tabs>
 
       {/* px:3 matches the 24px DialogContent used to add for us */}
@@ -608,10 +620,10 @@ export default function PepeLabPage() {
                   </Box>
                   <Box>
                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                      +{potion.xp} XP 經驗值
+                      {interpolate(t.pepelab.potionsTab.xpLabel, { xp: potion.xp })}
                     </Typography>
                     <Button variant="contained" fullWidth onClick={() => buyPotion(potion.id, potion.cost, potion.xp)} sx={{ bgcolor: 'rgba(124,193,74,0.15)', border: '1px solid', borderColor: 'var(--palette-primary-main)', color: 'var(--palette-primary-main)', fontWeight: 'bold', '&:hover': { bgcolor: 'var(--palette-primary-main)', color: 'primary.contrastText' } }}>
-                      🛒 購買並使用 ({potion.cost} PEPE)
+                      {interpolate(t.pepelab.potionsTab.buy, { cost: potion.cost })}
                     </Button>
                   </Box>
                 </Card>
@@ -638,19 +650,19 @@ export default function PepeLabPage() {
               </Typography>
               <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap>
                 <Box sx={{ bgcolor: 'rgba(255,255,255,0.04)', px: 2.5, py: 1, borderRadius: 1.5, border: '1px solid rgba(255,255,255,0.06)', minWidth: 120 }}>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>目前坐騎</Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>{t.pepelab.mountsTab.currentMount}</Typography>
                   <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
                     {activeMountObj.emoji} {activeMountObj.name.split(' (')[0]}
                   </Typography>
                 </Box>
                 <Box sx={{ bgcolor: 'rgba(255,255,255,0.04)', px: 2.5, py: 1, borderRadius: 1.5, border: '1px solid rgba(255,255,255,0.06)', minWidth: 120 }}>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>進化型態</Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>{t.pepelab.mountsTab.evolutionForm}</Typography>
                   <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#ffb300' }}>
                     {evoStage.emoji} {evoStage.label}
                   </Typography>
                 </Box>
                 <Box sx={{ bgcolor: 'rgba(255,255,255,0.04)', px: 2.5, py: 1, borderRadius: 1.5, border: '1px solid rgba(255,255,255,0.06)', minWidth: 120 }}>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>已解鎖坐騎</Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>{t.pepelab.mountsTab.unlockedCount}</Typography>
                   <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'var(--palette-primary-main)' }}>
                     {PEPE_MOUNTS.filter(m => level >= m.levelRequired).length} / {PEPE_MOUNTS.length}
                   </Typography>
@@ -667,7 +679,7 @@ export default function PepeLabPage() {
                       距離解鎖下一隻坐騎 <strong>{nextUnlock.emoji} {nextUnlock.name.split(' (')[0]}</strong> 還差 <strong style={{ color: '#ffb300' }}>{levelsToNext}</strong> 級！(需要達 Lv.{nextUnlock.levelRequired})
                     </>
                   ) : (
-                    '🎉 恭喜！四隻坐騎全數解鎖，黃金天鯨已在等你。'
+                    t.pepelab.mountsTab.allUnlocked
                   )}
                 </Typography>
               </Box>
@@ -697,12 +709,12 @@ export default function PepeLabPage() {
                     }}>
                       {isEquipped && (
                         <Box sx={{ position: 'absolute', top: 0, right: 0, zIndex: 2, bgcolor: 'var(--palette-primary-main)', color: '#000', px: 1.5, py: 0.25, borderRadius: '0 0 0 8px', fontSize: '0.72rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                          <Iconify icon="solar:check-circle-bold" sx={{ fontSize: 13 }} /> 騎乘中
+                          <Iconify icon="solar:check-circle-bold" sx={{ fontSize: 13 }} /> {t.pepelab.mountsTab.riding}
                         </Box>
                       )}
                       {!isUnlocked && (
                         <Box sx={{ position: 'absolute', top: 0, right: 0, zIndex: 2, bgcolor: 'rgba(255,255,255,0.08)', color: 'text.secondary', px: 1.5, py: 0.25, borderRadius: '0 0 0 8px', fontSize: '0.72rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                          <Iconify icon="solar:shield-keyhole-bold-duotone" sx={{ fontSize: 13 }} /> 未解鎖
+                          <Iconify icon="solar:shield-keyhole-bold-duotone" sx={{ fontSize: 13 }} /> {t.pepelab.mountsTab.locked}
                         </Box>
                       )}
 
@@ -717,10 +729,12 @@ export default function PepeLabPage() {
 
                       <Box>
                         <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: isUnlocked ? 'text.primary' : 'text.disabled' }}>
-                          {isUnlocked ? `${m.emoji} ${m.name}` : `??? (需 Lv.${m.levelRequired} 解鎖)`}
+                          {isUnlocked
+                            ? `${m.emoji} ${m.name}`
+                            : interpolate(t.pepelab.mountsTab.unknownName, { level: m.levelRequired })}
                         </Typography>
                         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, lineHeight: 1.5 }}>
-                          {isUnlocked ? m.desc : '達到指定等級後才會揭曉這隻坐騎的真面目。'}
+                          {isUnlocked ? m.desc : t.pepelab.mountsTab.unknownDesc}
                         </Typography>
                       </Box>
 
@@ -728,11 +742,12 @@ export default function PepeLabPage() {
                         <Typography variant="caption" sx={{ color: isUnlocked ? 'var(--palette-primary-main)' : '#ffb300', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 0.5 }}>
                           {isUnlocked ? (
                             <>
-                              <Iconify icon="solar:verified-check-bold" sx={{ fontSize: 12 }} /> 已解鎖
+                              <Iconify icon="solar:verified-check-bold" sx={{ fontSize: 12 }} /> {t.pepelab.mountsTab.unlockedBadge}
                             </>
                           ) : (
                             <>
-                              <Iconify icon="solar:clock-circle-bold" sx={{ fontSize: 12 }} /> 需要達 Lv.{m.levelRequired} 級
+                              <Iconify icon="solar:clock-circle-bold" sx={{ fontSize: 12 }} />{' '}
+                              {interpolate(t.pepelab.mountsTab.lockedHint, { level: m.levelRequired })}
                             </>
                           )}
                         </Typography>
@@ -749,7 +764,11 @@ export default function PepeLabPage() {
                             '&:hover': { bgcolor: isEquipped ? '#5a9e2f' : 'rgba(124,193,74,0.08)', borderColor: 'var(--palette-primary-main)' },
                           }}
                         >
-                          {isEquipped ? '騎乘中' : isUnlocked ? '騎上去' : `Lv.${m.levelRequired}`}
+                          {isEquipped
+                            ? t.pepelab.mountsTab.ctaRiding
+                            : isUnlocked
+                              ? t.pepelab.mountsTab.ctaMount
+                              : interpolate(t.pepelab.mountsTab.ctaLocked, { level: m.levelRequired })}
                         </Button>
                       </Box>
                     </Card>
@@ -817,7 +836,7 @@ export default function PepeLabPage() {
                   </Box>
 
                   <Typography variant="h6" sx={{ fontWeight: '900', color: '#ffb300', mt: 3, zIndex: 1 }}>
-                    {evoStage.emoji} {evoStage.label}造型盲盒
+                    {interpolate(t.pepelab.gacha.boxTitle, { emoji: evoStage.emoji, stage: evoStage.label })}
                   </Typography>
                   <Typography variant="caption" color="text.secondary" sx={{ mt: 1, mb: 3, textAlign: 'center', maxWidth: 280, zIndex: 1 }}>
                     {stagePool.length > 0 ? (
@@ -826,7 +845,7 @@ export default function PepeLabPage() {
                         進化到下一階段後，會換上一整批全新造型。
                       </>
                     ) : (
-                      <>{evoStage.label} 階段的造型還在製作中，敬請期待 🚧</>
+                      interpolate(t.pepelab.gacha.inProgress, { stage: evoStage.label })
                     )}
                   </Typography>
 
@@ -849,14 +868,18 @@ export default function PepeLabPage() {
                       '&:disabled': { bgcolor: 'rgba(255,255,255,0.1)', color: 'text.secondary' }
                     }}
                   >
-                    {isDrawing ? '正在破殼孵化中...' : stagePool.length === 0 ? '🚧 造型製作中' : '🎰 幸運抽造型 (500 PEPE)'}
+                    {isDrawing
+                      ? t.pepelab.gacha.drawing
+                      : stagePool.length === 0
+                        ? t.pepelab.gacha.inProgressButton
+                        : t.pepelab.gacha.drawButton}
                   </Button>
 
                   <Stack direction="row" spacing={2} sx={{ mt: 3, zIndex: 1 }}>
-                    <Typography variant="caption" color="text.secondary">🟢 Common: 50%</Typography>
-                    <Typography variant="caption" color="text.secondary">🔵 Rare: 30%</Typography>
-                    <Typography variant="caption" color="text.secondary">🟣 Epic: 15%</Typography>
-                    <Typography variant="caption" color="text.secondary">🔴 Legendary: 5%</Typography>
+                    <Typography variant="caption" color="text.secondary">{t.pepelab.gacha.rarityCommon}</Typography>
+                    <Typography variant="caption" color="text.secondary">{t.pepelab.gacha.rarityRare}</Typography>
+                    <Typography variant="caption" color="text.secondary">{t.pepelab.gacha.rarityEpic}</Typography>
+                    <Typography variant="caption" color="text.secondary">{t.pepelab.gacha.rarityLegendary}</Typography>
                   </Stack>
                 </Card>
               </Grid>
@@ -866,10 +889,14 @@ export default function PepeLabPage() {
                 <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Box>
                     <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
-                      🎨 {evoStage.label}造型牆 ({stagePool.filter(sk => unlockedSkins.includes(sk.id)).length}/{stagePool.length})
+                      {interpolate(t.pepelab.gacha.wallTitle, {
+                        stage: evoStage.label,
+                        unlocked: stagePool.filter(sk => unlockedSkins.includes(sk.id)).length,
+                        total: stagePool.length,
+                      })}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      只會顯示目前進化階段的造型。點擊已解鎖的即可穿戴，左側主角會立刻換成該造型；未解鎖的可直接花 PEPE 買下。
+                      {t.pepelab.gacha.wallHint}
                     </Typography>
                   </Box>
                   <Button
@@ -878,15 +905,15 @@ export default function PepeLabPage() {
                     color="success"
                     onClick={async () => {
                       const ok = await confirm({
-                        title: '取消造型',
-                        message: '脫下目前造型，變回原本的進化外觀？已解鎖的造型會保留，隨時可再穿戴。',
-                        confirmLabel: '脫下造型',
+                        title: t.pepelab.unequipDialog.title,
+                        message: t.pepelab.unequipDialog.message,
+                        confirmLabel: t.pepelab.unequipDialog.confirmLabel,
                       });
                       if (ok) equipSkin('');
                     }}
                     sx={{ textTransform: 'none', fontWeight: 'bold' }}
                   >
-                    脫下造型
+                    {t.pepelab.gacha.unequip}
                   </Button>
                 </Box>
 
@@ -997,12 +1024,12 @@ export default function PepeLabPage() {
                       {done ? (
                         <>
                           <Iconify icon="solar:verified-check-bold" sx={{ color: 'var(--palette-primary-main)', fontSize: 20 }} />
-                          <Typography variant="caption" sx={{ color: 'var(--palette-primary-main)', fontWeight: 'bold' }}>已解鎖</Typography>
+                          <Typography variant="caption" sx={{ color: 'var(--palette-primary-main)', fontWeight: 'bold' }}>{t.pepelab.achievementsTab.unlocked}</Typography>
                         </>
                       ) : (
                         <>
                           <Iconify icon="solar:shield-keyhole-bold-duotone" sx={{ color: 'text.disabled', fontSize: 18 }} />
-                          <Typography variant="caption" color="text.disabled">未解鎖</Typography>
+                          <Typography variant="caption" color="text.disabled">{t.pepelab.achievementsTab.locked}</Typography>
                         </>
                       )}
                     </Box>
@@ -1033,7 +1060,7 @@ export default function PepeLabPage() {
                         color: q.done ? '#000' : 'var(--palette-primary-main)',
                         border: q.done ? 'none' : '1px solid rgba(124,193,74,0.35)',
                       }}>
-                        {q.done ? '✓ 完成' : q.reward}
+                        {q.done ? t.pepelab.questsTab.done : q.reward}
                       </Box>
                     </Box>
                     <LinearProgress
@@ -1051,8 +1078,8 @@ export default function PepeLabPage() {
             <Card sx={{ mt: 3, p: 2.5, display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', border: '1px solid rgba(124,193,74,0.2)', bgcolor: 'rgba(124,193,74,0.04)' }}>
               <Typography variant="body2" color="text.secondary" sx={{ flex: 1, minWidth: 220 }}>
                 {checkedToday
-                  ? `🔥 已連續簽到 ${streak} 天，明天再來。`
-                  : '🐸 今天還沒簽到，到 Rewards 頁面領取每日 PEPE。'}
+                  ? interpolate(t.pepelab.questsTab.checkedIn, { days: streak })
+                  : t.pepelab.questsTab.notCheckedIn}
               </Typography>
               <Button
                 component={RouterLink}
@@ -1061,7 +1088,7 @@ export default function PepeLabPage() {
                 color={checkedToday ? 'inherit' : 'primary'}
                 sx={{ fontWeight: 'bold', textTransform: 'none' }}
               >
-                前往 Rewards 🎁
+                {t.pepelab.questsTab.goToRewards}
               </Button>
             </Card>
           </Box>
@@ -1097,7 +1124,7 @@ export default function PepeLabPage() {
               EVOLUTION
             </Typography>
             <Typography variant="h4" sx={{ fontWeight: 900, color: evolvedTo.color, mb: 2, zIndex: 1, position: 'relative', textShadow: `0 0 24px ${evolvedTo.color}88` }}>
-              進化成功！🎉
+              {t.pepelab.evolveDialog.title}
             </Typography>
 
             {/* The hero renders 1.25x its width tall, so it dominates the
@@ -1111,7 +1138,10 @@ export default function PepeLabPage() {
               {evolvedTo.emoji} {evolvedTo.label}
             </Typography>
             <Typography variant="subtitle2" sx={{ color: '#ffb300', mb: 1.5, zIndex: 1, position: 'relative' }}>
-              進化 Lv.{evolvedTo.stage} · {evolvedTo.title}
+              {interpolate(t.pepelab.evolveDialog.stageLine, {
+                stage: evolvedTo.stage,
+                title: evolvedTo.title,
+              })}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ px: 1, mb: 3.5, lineHeight: 1.6, zIndex: 1, position: 'relative' }}>
               {evolvedTo.desc}
@@ -1123,7 +1153,7 @@ export default function PepeLabPage() {
               onClick={() => setEvolvedTo(null)}
               sx={{ bgcolor: evolvedTo.color, color: '#000', fontWeight: 'bold', zIndex: 1, position: 'relative', '&:hover': { bgcolor: evolvedTo.color, filter: 'brightness(1.15)' } }}
             >
-              太強了 🐸
+              {t.pepelab.evolveDialog.cta}
             </Button>
 
             </Box>{/* /scroll layer */}
@@ -1154,10 +1184,10 @@ export default function PepeLabPage() {
             <Box sx={{ position: 'relative', zIndex: 1, p: 4, textAlign: 'center', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto' }}>
 
             <Typography variant="h5" sx={{ fontWeight: '900', color: '#ffb300', mb: 1, zIndex: 1, position: 'relative' }}>
-              恭喜獲得！🎉
+              {t.pepelab.drawDialog.title}
             </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ zIndex: 1, position: 'relative' }}>
-              您已成功破殼孵化出全新佩佩蛙稀有造型！
+              {t.pepelab.drawDialog.subtitle}
             </Typography>
 
             {/* Scrolling is the safety net; this keeps a short window from
@@ -1172,12 +1202,12 @@ export default function PepeLabPage() {
             
             <Box sx={{ my: 1.5, zIndex: 1, position: 'relative' }}>
               <Box sx={{ px: 2, py: 0.5, bgcolor: `${getRarityColor(drawResult.rarity)}20`, color: getRarityColor(drawResult.rarity), border: `1px solid ${getRarityColor(drawResult.rarity)}`, borderRadius: 1.5, fontSize: '0.8rem', fontWeight: 'bold', display: 'inline-block' }}>
-                稀有度: {drawResult.rarity}
+                {interpolate(t.pepelab.drawDialog.rarity, { rarity: drawResult.rarity })}
               </Box>
             </Box>
 
             <Typography variant="body2" color="text.secondary" sx={{ px: 2, mb: 4, lineHeight: 1.5, zIndex: 1, position: 'relative' }}>
-              解鎖了 {evoStage.label} 階段的專屬造型。立即穿戴，左側的主角就會換成牠。
+              {interpolate(t.pepelab.drawDialog.unlockedHint, { stage: evoStage.label })}
             </Typography>
 
             <Stack direction="row" spacing={2} sx={{ zIndex: 1, position: 'relative' }}>
@@ -1190,7 +1220,7 @@ export default function PepeLabPage() {
                 }}
                 sx={{ bgcolor: 'var(--palette-primary-main)', color: '#000', fontWeight: 'bold', '&:hover': { bgcolor: '#94d862' } }}
               >
-                👕 立即穿戴造型
+                {t.pepelab.drawDialog.equipNow}
               </Button>
               <Button
                 variant="outlined"
@@ -1199,7 +1229,7 @@ export default function PepeLabPage() {
                 onClick={() => setDrawResult(null)}
                 sx={{ fontWeight: 'bold' }}
               >
-                收進衣櫃
+                {t.pepelab.drawDialog.keepInCloset}
               </Button>
             </Stack>
 

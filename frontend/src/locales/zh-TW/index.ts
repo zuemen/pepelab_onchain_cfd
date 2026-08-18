@@ -11,6 +11,7 @@ import { admin } from './admin';
 import { common } from './common';
 import { tokens } from './tokens';
 import { errors } from './errors';
+import { pepelab } from './pepelab';
 import { landing } from './landing';
 import { rewards } from './rewards';
 import { sessions } from './sessions';
@@ -51,6 +52,7 @@ const zhTW = {
   common,
   kyc,
   stake,
+  pepelab,
 };
 
 export type Catalog = typeof zhTW;
