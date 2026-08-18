@@ -6,6 +6,7 @@ import { meta } from './meta';
 import { vault } from './vault';
 import { whale } from './whale';
 import { admin } from './admin';
+import { tokens } from './tokens';
 import { errors } from './errors';
 import { rewards } from './rewards';
 import { sessions } from './sessions';
@@ -41,6 +42,7 @@ const zhTW = {
   esg,
   vault,
   sessions,
+  tokens,
 };
 
 export type Catalog = typeof zhTW;

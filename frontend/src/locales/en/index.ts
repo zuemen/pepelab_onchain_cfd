@@ -8,6 +8,7 @@ import { meta } from './meta';
 import { vault } from './vault';
 import { whale } from './whale';
 import { admin } from './admin';
+import { tokens } from './tokens';
 import { errors } from './errors';
 import { rewards } from './rewards';
 import { sessions } from './sessions';
@@ -43,6 +44,7 @@ const en: Catalog = {
   esg,
   vault,
   sessions,
+  tokens,
 };
 
 export default en;

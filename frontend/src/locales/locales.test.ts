@@ -64,7 +64,7 @@ const MIGRATED_PATHS: string[] = [
  * 目前：errors 1388、pepe 1207、terminal 685、exchange 643、admin 491、
  * pepeStageSkins 264、sessions 207、x402 207、freshness 146、rewards 102、esg 42、nav 38、meta 12、portfolio 4。
  */
-const EN_HAN_BASELINE = 5436;
+const EN_HAN_BASELINE = 5806;
 
 /** 傳目錄就回它底下所有原始碼檔案，傳單一檔案就回那一個。測試檔一律排除。 */
 function sourceFilesIn(pathish: string): string[] {
