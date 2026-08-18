@@ -10,6 +10,7 @@ import { whale } from './whale';
 import { admin } from './admin';
 import { errors } from './errors';
 import { rewards } from './rewards';
+import { sessions } from './sessions';
 import { exchange } from './exchange';
 import { terminal } from './terminal';
 import { portfolio } from './portfolio';
@@ -41,6 +42,7 @@ const en: Catalog = {
   rewards,
   esg,
   vault,
+  sessions,
 };
 
 export default en;

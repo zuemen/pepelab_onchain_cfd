@@ -30,6 +30,7 @@ import TableHead from '@mui/material/TableHead'
 import TableContainer from '@mui/material/TableContainer'
 
 import { usePepefiWallet } from 'src/layouts/pepefi'
+import { t, locale, interpolate } from 'src/locales'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { explorerTx, explorerName } from 'src/lib/pepefi/notify'
 import { agentDid, shortDid } from 'src/lib/pepefi/did'
@@ -66,7 +67,7 @@ const asTx = (tx: unknown): TxResp => tx as TxResp
 
 const fUsdc = (v: bigint) => Number(formatUnits(v, 18)).toLocaleString('en-US', { maximumFractionDigits: 2 })
 const fDate = (ts: bigint) =>
-  ts === 0n ? '—' : new Date(Number(ts) * 1000).toLocaleString('zh-TW', { dateStyle: 'short', timeStyle: 'short' })
+  ts === 0n ? '—' : new Date(Number(ts) * 1000).toLocaleString(locale, { dateStyle: 'short', timeStyle: 'short' })
 const short = (a: string) => `${a.slice(0, 8)}…${a.slice(-6)}`
 
 // 表單欄位：標籤置於框上方，避免 MUI 浮動標籤在有值時壓線/溢出。
@@ -119,7 +120,7 @@ export default function SessionsPage() {
     setRevealKey(false)
     setIncludeKey(false)
     setAgent(w.address) // 自動填入 Agent address 欄
-    notify('已產生 agent 專用金鑰（只在本機瀏覽器，請立即保存）', true)
+    notify(t.sessions.key.generated, true)
   }
 
   // Onboarding: issued VCs (persisted in localStorage, keyed by wallet+chain) +
@@ -154,9 +155,9 @@ export default function SessionsPage() {
   const copyText = async (label: string, text: string) => {
     try {
       await navigator.clipboard.writeText(text)
-      notify(`${label} copied ✓`, true)
+      notify(interpolate(t.sessions.copied, { label }), true)
     } catch {
-      notify('複製失敗（瀏覽器剪貼簿權限）', false)
+      notify(t.sessions.copyFailed, false)
     }
   }
   const downloadJson = (filename: string, obj: unknown) => {
@@ -189,7 +190,7 @@ export default function SessionsPage() {
           AGENT_PRIVATE_KEY:
             includeKey && genKeyMatchesAgent(agentAddr) && genKey
               ? genKey.privateKey
-              : '0x...   # 貼上你剛產生/保存的 agent 私鑰（放本機，勿外流）',
+              : t.sessions.export.privateKeyPlaceholder,
           SESSION_MANAGER_ADDRESS: getSessionManagerAddress(wallet.chainId),
           BASE_SEPOLIA_RPC_URL: 'https://sepolia.base.org',
           DEMO_SESSION_ID: String(sessionId),
@@ -201,7 +202,7 @@ export default function SessionsPage() {
   // ── Issue authorization VC (user signs in MetaMask — SSI issuer role) ─────────
   const issueCredential = async (s: SessionRow) => {
     if (!wallet.signer || !wallet.address) {
-      notify('需連接真實錢包以簽署 VC（mock 模式不支援簽章）', false)
+      notify(t.sessions.list.needsRealWallet, false)
       return
     }
     const key = `vc_${s.id}`
@@ -227,7 +228,7 @@ export default function SessionsPage() {
         return nextMap
       })
       setExportFor(s.id)
-      notify('Credential issued ✓', true)
+      notify(t.sessions.list.credentialIssued, true)
     } catch (e) {
       notify(prettyError(e), false)
     } finally {
@@ -278,7 +279,7 @@ export default function SessionsPage() {
         BigInt(expiry),
       ))
       await tx.wait()
-      notify('Session created ✓', true, tx.hash)
+      notify(t.sessions.create.done, true, tx.hash)
       setAgent('')
       await fetchSessions()
     } catch (e) {
@@ -296,7 +297,7 @@ export default function SessionsPage() {
       setBusy(p => ({ ...p, [key]: true }))
       const tx = asTx(await manager.revokeSession(id))
       await tx.wait()
-      notify('Session revoked ✓', true, tx.hash)
+      notify(t.sessions.list.revoked, true, tx.hash)
       await fetchSessions()
     } catch (e) {
       notify(prettyError(e), false)
@@ -306,9 +307,10 @@ export default function SessionsPage() {
   }
 
   const statusOf = (s: SessionRow): { label: string; color: 'success' | 'warning' | 'default' } => {
-    if (s.revoked) return { label: 'Revoked', color: 'default' }
-    if (Number(s.expiry) * 1000 < Date.now()) return { label: 'Expired', color: 'warning' }
-    return { label: 'Active', color: 'success' }
+    if (s.revoked) return { label: t.sessions.list.status.revoked, color: 'default' }
+    if (Number(s.expiry) * 1000 < Date.now())
+      return { label: t.sessions.list.status.expired, color: 'warning' }
+    return { label: t.sessions.list.status.active, color: 'success' }
   }
 
   // ── Guards ────────────────────────────────────────────────────────────────
@@ -337,7 +339,7 @@ export default function SessionsPage() {
                 target="_blank" rel="noopener noreferrer" color="inherit"
                 sx={{ display: 'block', mt: 0.5, typography: 'caption', textDecoration: 'underline' }}
               >
-                View on {explorerName(wallet.chainId)} ↗
+                {interpolate(t.sessions.viewOn, { explorer: explorerName(wallet.chainId) })}
               </Link>
             )}
           </Alert>
@@ -346,7 +348,7 @@ export default function SessionsPage() {
 
       {/* Header */}
       <Box>
-        <Typography variant="h4" sx={{ fontWeight: 'bold' }}>🤖 AI Agent Sessions</Typography>
+        <Typography variant="h4" sx={{ fontWeight: 'bold' }}>{t.sessions.title}</Typography>
         <Typography variant="body2" color="text.secondary">
           委派一把有界 session key 給 agent：限單筆保證金、總預算、最大槓桿與到期。
           Agent 只能在限額內經 AgentSessionManager 代你開/平倉，永不持有你的主錢包私鑰。
@@ -358,7 +360,7 @@ export default function SessionsPage() {
       {/* SSI 角色說明 — 一眼看懂三角 */}
       <Alert severity="info" variant="outlined" icon={false}>
         <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
-          SSI 三角：你的錢包就是信任根
+          {t.sessions.ssi.title}
         </Typography>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={{ xs: 0.5, sm: 3 }} sx={{ typography: 'caption' }}>
           <span>🖊️ <b>Issuer＝你</b>：用 MetaMask 簽發授權 VC（私鑰不離開錢包）</span>
@@ -366,24 +368,24 @@ export default function SessionsPage() {
           <span>✅ <b>Verifier＝MCP/合約</b>：下單前驗簽 + 鏈上 session 交叉比對</span>
         </Stack>
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-          流程：連錢包 → 設限額建 session → 簽發授權 VC → 一鍵匯出 agent 設定 → 之後只下口頭交易意圖。
+          {t.sessions.ssi.flow}
         </Typography>
       </Alert>
 
       {!deployed ? (
         <Alert severity="warning">
           <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
-            請切換到 Base Sepolia（chainId 84532）
+            {t.sessions.wrongNetwork.title}
           </Typography>
           AI Agent Sessions 部署在 <b>Base Sepolia</b> 測試網。你目前連到的是{' '}
-          <b>{wallet.chainId !== null ? (CHAIN_NAMES[wallet.chainId] ?? `chainId ${wallet.chainId}`) : '未知網路'}</b>
+          <b>{wallet.chainId !== null ? (CHAIN_NAMES[wallet.chainId] ?? `chainId ${wallet.chainId}`) : t.sessions.wrongNetwork.unknownChain}</b>
           ，請在 MetaMask 切換到 Base Sepolia 後重整本頁。
         </Alert>
       ) : (
         <>
           {/* Create session */}
           <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <Typography variant="h6" sx={{ fontWeight: 'bold' }}>Create Session</Typography>
+            <Typography variant="h6" sx={{ fontWeight: 'bold' }}>{t.sessions.create.title}</Typography>
 
             {/* 觀念說明：agent 用獨立 session key，不是主錢包 */}
             <Alert severity="info" variant="outlined" icon={false} sx={{ py: 0.5 }}>
@@ -395,9 +397,9 @@ export default function SessionsPage() {
             </Alert>
 
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'flex-end' }}>
-              <Labeled label="Agent address (session key)">
+              <Labeled label={t.sessions.create.agentAddress}>
                 <TextField
-                  placeholder="0x… 或按右側 Generate agent key"
+                  placeholder={t.sessions.create.agentPlaceholder}
                   value={agent}
                   onChange={e => setAgent(e.target.value)}
                   size="small"
@@ -410,7 +412,7 @@ export default function SessionsPage() {
                 sx={{ textTransform: 'none', whiteSpace: 'nowrap', minWidth: 180 }}
                 startIcon={<span>🔑</span>}
               >
-                Generate agent key
+                {t.sessions.create.generateKey}
               </Button>
             </Stack>
 
@@ -418,44 +420,44 @@ export default function SessionsPage() {
             {genKey && (
               <Alert severity="warning" variant="outlined" sx={{ '& .MuiAlert-message': { width: '100%' } }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>🔑 你的 agent 專用金鑰（burner）</Typography>
-                  <Button size="small" variant="text" color="inherit" onClick={() => { setGenKey(null); setRevealKey(false); setIncludeKey(false) }} sx={{ textTransform: 'none' }}>清除</Button>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>{t.sessions.key.title}</Typography>
+                  <Button size="small" variant="text" color="inherit" onClick={() => { setGenKey(null); setRevealKey(false); setIncludeKey(false) }} sx={{ textTransform: 'none' }}>{t.sessions.key.clear}</Button>
                 </Box>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
                   這是一把獨立的 burner 金鑰，只受你下面設的 session 限額拘束。請存到本機 agent 設定，<b>別放主錢包資產</b>。本頁只顯示這一次，且不會上傳或寫入伺服器。
                 </Typography>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                  <Chip size="small" label="地址（會上鏈授權）" color="success" variant="outlined" />
+                  <Chip size="small" label={t.sessions.key.addressChip} color="success" variant="outlined" />
                   <Typography variant="caption" sx={{ fontFamily: MONO, wordBreak: 'break-all', flex: 1 }}>{genKey.address}</Typography>
-                  <Button size="small" variant="outlined" onClick={() => void copyText('Agent address', genKey.address)} sx={{ textTransform: 'none' }}>Copy</Button>
+                  <Button size="small" variant="outlined" onClick={() => void copyText(t.sessions.key.copyAddressLabel, genKey.address)} sx={{ textTransform: 'none' }}>{t.sessions.key.copy}</Button>
                 </Box>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Chip size="small" label="私鑰（只放本機）" color="error" variant="outlined" />
+                  <Chip size="small" label={t.sessions.key.privateKeyChip} color="error" variant="outlined" />
                   <Typography variant="caption" sx={{ fontFamily: MONO, wordBreak: 'break-all', flex: 1 }}>
-                    {revealKey ? genKey.privateKey : '•'.repeat(24) + ' （已隱藏）'}
+                    {revealKey ? genKey.privateKey : '•'.repeat(24) + t.sessions.key.hiddenSuffix}
                   </Typography>
-                  <Button size="small" variant="text" onClick={() => setRevealKey(v => !v)} sx={{ textTransform: 'none', minWidth: 0 }}>{revealKey ? 'Hide' : 'Reveal'}</Button>
-                  <Button size="small" variant="outlined" color="error" onClick={() => void copyText('Agent private key', genKey.privateKey)} sx={{ textTransform: 'none' }}>Copy</Button>
+                  <Button size="small" variant="text" onClick={() => setRevealKey(v => !v)} sx={{ textTransform: 'none', minWidth: 0 }}>{revealKey ? t.sessions.key.hide : t.sessions.key.reveal}</Button>
+                  <Button size="small" variant="outlined" color="error" onClick={() => void copyText(t.sessions.key.copyPrivateKeyLabel, genKey.privateKey)} sx={{ textTransform: 'none' }}>{t.sessions.key.copy}</Button>
                 </Box>
               </Alert>
             )}
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-              <Labeled label="Max / trade (mUSDC)">
+              <Labeled label={t.sessions.create.maxPerTrade}>
                 <TextField type="number" value={perTrade} placeholder="1000"
                   onChange={e => setPerTrade(e.target.value)} size="small" fullWidth />
               </Labeled>
-              <Labeled label="Total budget (mUSDC)">
+              <Labeled label={t.sessions.create.totalBudget}>
                 <TextField type="number" value={budget} placeholder="5000"
                   onChange={e => setBudget(e.target.value)} size="small" fullWidth />
               </Labeled>
             </Stack>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-              <Labeled label="Max leverage">
+              <Labeled label={t.sessions.create.maxLeverage}>
                 <TextField type="number" value={maxLev} placeholder="5"
                   onChange={e => setMaxLev(e.target.value)} size="small" fullWidth
                   slotProps={{ htmlInput: { min: 1, max: 5 } }} />
               </Labeled>
-              <Labeled label="Valid for (hours)">
+              <Labeled label={t.sessions.create.validFor}>
                 <TextField type="number" value={hours} placeholder="24"
                   onChange={e => setHours(e.target.value)} size="small" fullWidth />
               </Labeled>
@@ -466,7 +468,7 @@ export default function SessionsPage() {
                 onClick={() => void createSession()}
                 disabled={!agent.trim() || !!busy.create}
               >
-                {busy.create ? 'Creating…' : 'Create Session'}
+                {busy.create ? t.sessions.create.creating : t.sessions.create.cta}
               </Button>
             </Box>
           </Card>
@@ -474,22 +476,32 @@ export default function SessionsPage() {
           {/* Session list */}
           <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Typography variant="h6" sx={{ fontWeight: 'bold' }}>My Sessions</Typography>
+              <Typography variant="h6" sx={{ fontWeight: 'bold' }}>{t.sessions.list.title}</Typography>
               <Button variant="text" size="small" onClick={() => void fetchSessions()} sx={{ textTransform: 'none' }}>
-                ↺ Refresh
+                {t.sessions.list.refresh}
               </Button>
             </Box>
 
             {loading ? (
-              <Typography variant="body2" color="text.secondary">Loading…</Typography>
+              <Typography variant="body2" color="text.secondary">{t.sessions.list.loading}</Typography>
             ) : sessions.length === 0 ? (
-              <Typography variant="body2" color="text.secondary">尚無 session。建立一個來授權 agent。</Typography>
+              <Typography variant="body2" color="text.secondary">{t.sessions.list.empty}</Typography>
             ) : (
               <TableContainer>
                 <Table size="small">
                   <TableHead>
                     <TableRow sx={{ bgcolor: 'background.neutral' }}>
-                      {['#', 'Agent', 'Spent / Budget', 'Max/trade', 'Lev', 'Expiry', 'Status', 'Credential', ''].map(h => (
+                      {[
+                        t.sessions.list.column.id,
+                        t.sessions.list.column.agent,
+                        t.sessions.list.column.spent,
+                        t.sessions.list.column.maxPerTrade,
+                        t.sessions.list.column.leverage,
+                        t.sessions.list.column.expiry,
+                        t.sessions.list.column.status,
+                        t.sessions.list.column.credential,
+                        '',
+                      ].map(h => (
                         <TableCell key={h} sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{h}</TableCell>
                       ))}
                     </TableRow>
@@ -515,13 +527,13 @@ export default function SessionsPage() {
                           <TableCell>
                             {vcBySession[s.id] ? (
                               <Stack direction="row" spacing={0.5} alignItems="center">
-                                <Chip size="small" label="Issued ✓" color="success" variant="outlined" />
+                                <Chip size="small" label={t.sessions.list.issued} color="success" variant="outlined" />
                                 <Button
                                   size="small" variant="outlined" color="primary"
                                   onClick={() => setExportFor(s.id)}
                                   sx={{ textTransform: 'none', whiteSpace: 'nowrap' }}
                                 >
-                                  Export ⤓
+                                  {t.sessions.list.export}
                                 </Button>
                               </Stack>
                             ) : (
@@ -530,9 +542,9 @@ export default function SessionsPage() {
                                 onClick={() => void issueCredential(s)}
                                 disabled={s.revoked || Number(s.expiry) * 1000 < Date.now() || !!busy[`vc_${s.id}`] || !wallet.signer}
                                 sx={{ textTransform: 'none' }}
-                                title={!wallet.signer ? '需真實錢包簽署（mock 模式不支援）' : 'MetaMask 簽發授權 VC'}
+                                title={!wallet.signer ? t.sessions.list.issueVcNeedsWallet : t.sessions.list.issueVcHint}
                               >
-                                {busy[`vc_${s.id}`] ? 'Signing…' : 'Issue VC'}
+                                {busy[`vc_${s.id}`] ? t.sessions.list.signing : t.sessions.list.issueVc}
                               </Button>
                             )}
                           </TableCell>
@@ -543,7 +555,7 @@ export default function SessionsPage() {
                               disabled={s.revoked || !!busy[key]}
                               sx={{ textTransform: 'none' }}
                             >
-                              {busy[key] ? '…' : 'Revoke'}
+                              {busy[key] ? t.sessions.working : t.sessions.list.revoke}
                             </Button>
                           </TableCell>
                         </TableRow>
@@ -578,12 +590,12 @@ export default function SessionsPage() {
               return (
                 <>
                   <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pr: 1 }}>
-                    🔌 Connect your Agent — Session #{sid}
-                    <IconButton onClick={() => setExportFor(null)} size="small" aria-label="close">✕</IconButton>
+                    {interpolate(t.sessions.export.title, { id: sid })}
+                    <IconButton onClick={() => setExportFor(null)} size="small" aria-label={t.sessions.export.closeAria}>✕</IconButton>
                   </DialogTitle>
                   <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                     <Typography variant="body2" color="text.secondary">
-                      把以下兩份貼進你本機的 agent client，之後只需下「口頭交易意圖」，agent 會在 session 限額內憑 VC 代你下單：
+                      {t.sessions.export.intro}
                     </Typography>
                     <Box component="ol" sx={{ pl: 2.5, m: 0, typography: 'caption', color: 'text.secondary' }}>
                       <li>把 <b>MCP 設定</b>貼進 Claude Desktop/Code 的 <code>mcpServers</code>，並把 <code>AGENT_PRIVATE_KEY</code> 換成你本機 agent 的 session key。</li>
@@ -602,9 +614,9 @@ export default function SessionsPage() {
                     {/* MCP config */}
                     <Box>
                       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mb: 0.5 }}>
-                        <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>MCP 設定（Claude Desktop / Code）</Typography>
-                        <Button size="small" variant="outlined" onClick={() => void copyText('MCP config', cfgStr)} sx={{ textTransform: 'none' }}>Copy</Button>
-                        <Button size="small" variant="outlined" onClick={() => downloadJson(`pepelab-mcp-session-${sid}.json`, cfg)} sx={{ textTransform: 'none' }}>Download .json</Button>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>{t.sessions.export.mcpTitle}</Typography>
+                        <Button size="small" variant="outlined" onClick={() => void copyText(t.sessions.export.copyMcpLabel, cfgStr)} sx={{ textTransform: 'none' }}>{t.sessions.export.copy}</Button>
+                        <Button size="small" variant="outlined" onClick={() => downloadJson(`pepelab-mcp-session-${sid}.json`, cfg)} sx={{ textTransform: 'none' }}>{t.sessions.export.download}</Button>
                       </Stack>
                       {canIncludeKey ? (
                         <FormControlLabel
@@ -627,9 +639,9 @@ export default function SessionsPage() {
                     {/* Authorization VC */}
                     <Box>
                       <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
-                        <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>授權 VC（下單驗證用）</Typography>
-                        <Button size="small" variant="outlined" onClick={() => void copyText('Authorization VC', vcStr)} sx={{ textTransform: 'none' }}>Copy</Button>
-                        <Button size="small" variant="outlined" onClick={() => downloadJson(`pepelab-auth-vc-session-${sid}.json`, vc)} sx={{ textTransform: 'none' }}>Download .json</Button>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>{t.sessions.export.vcTitle}</Typography>
+                        <Button size="small" variant="outlined" onClick={() => void copyText(t.sessions.export.copyVcLabel, vcStr)} sx={{ textTransform: 'none' }}>{t.sessions.export.copy}</Button>
+                        <Button size="small" variant="outlined" onClick={() => downloadJson(`pepelab-auth-vc-session-${sid}.json`, vc)} sx={{ textTransform: 'none' }}>{t.sessions.export.download}</Button>
                       </Stack>
                       <Box component="pre" sx={preSx}>{vcStr}</Box>
                     </Box>
@@ -642,7 +654,7 @@ export default function SessionsPage() {
                     </Alert>
                   </DialogContent>
                   <DialogActions>
-                    <Button onClick={() => setExportFor(null)} sx={{ textTransform: 'none' }}>Close</Button>
+                    <Button onClick={() => setExportFor(null)} sx={{ textTransform: 'none' }}>{t.sessions.export.close}</Button>
                   </DialogActions>
                 </>
               )
@@ -651,7 +663,9 @@ export default function SessionsPage() {
 
           <Divider />
           <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
-            AgentSessionManager: {short(getSessionManagerAddress(wallet.chainId))}
+            {interpolate(t.sessions.sessionManager, {
+              address: short(getSessionManagerAddress(wallet.chainId)),
+            })}
           </Typography>
         </>
       )}

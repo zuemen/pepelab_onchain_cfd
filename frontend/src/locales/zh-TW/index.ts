@@ -8,6 +8,7 @@ import { whale } from './whale';
 import { admin } from './admin';
 import { errors } from './errors';
 import { rewards } from './rewards';
+import { sessions } from './sessions';
 import { exchange } from './exchange';
 import { terminal } from './terminal';
 import { portfolio } from './portfolio';
@@ -39,6 +40,7 @@ const zhTW = {
   rewards,
   esg,
   vault,
+  sessions,
 };
 
 export type Catalog = typeof zhTW;
