@@ -112,6 +112,7 @@ export const history = {
     earned: '已賺取：',
     feeSuffix: '（手續費：{fee}）',
     staked: '已質押',
+    slashed: '已罰沒',
     /** 開倉明細行首的方向色塊。 */
     sideLong: '做多',
     sideShort: '做空',

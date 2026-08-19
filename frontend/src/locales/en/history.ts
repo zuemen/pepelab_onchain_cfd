@@ -113,6 +113,7 @@ export const history: Catalog['history'] = {
     earned: 'Earned:',
     feeSuffix: ' (fee: {fee})',
     staked: 'Staked',
+    slashed: 'Slashed',
     /** 開倉明細行首的方向色塊。 */
     sideLong: 'LONG',
     sideShort: 'SHORT',

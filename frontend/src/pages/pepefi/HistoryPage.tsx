@@ -426,7 +426,7 @@ function renderDetails(e: ChainEvent): ReactNode {
 
     case 'Slash': {
       const recipient = d.recipient as string
-      return <span>Slashed <Box component="span" sx={{ color: 'error.main', fontWeight: 'semibold' }}>{f18(d.amount as bigint)}</Box> USDC → <Box component="span" sx={{ fontFamily: MONO }}>{shortAddr(recipient)}</Box></span>
+      return <span>{t.history.detail.slashed} <Box component="span" sx={{ color: 'error.main', fontWeight: 'semibold' }}>{f18(d.amount as bigint)}</Box> USDC → <Box component="span" sx={{ fontFamily: MONO }}>{shortAddr(recipient)}</Box></span>
     }
 
     default:
