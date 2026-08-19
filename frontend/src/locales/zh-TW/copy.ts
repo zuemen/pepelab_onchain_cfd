@@ -2,87 +2,86 @@
  * 跟單頁（/copy/:traderAddress）。
  */
 export const copy = {
-  invalidAddress: 'Invalid trader address.',
-  connectWallet: 'Connect wallet to copy a trader.',
-  viewOn: 'View on {explorer} ↗',
-  loadFailed: 'Failed to load trader:',
-  breadcrumbMarketplace: 'Marketplace',
+  invalidAddress: '無效的交易者地址。',
+  connectWallet: '連接錢包以跟單交易者。',
+  viewOn: '在 {explorer} 查看 ↗',
+  loadFailed: '載入交易者失敗：',
+  breadcrumbMarketplace: '交易市集',
 
   header: {
-    unknownTrader: 'Unknown Trader',
-    repChip: '◆ {rep} rep',
-    staked: '{amount} {token} staked',
-    notRegistered: '⚠ This address is not registered as a trader.',
+    unknownTrader: '未知交易者',
+    repChip: '◆ {rep} 聲譽',
+    staked: '已質押 {amount} {token}',
+    notRegistered: '⚠ 此地址尚未註冊為交易者。',
   },
 
   strategy: {
-    title: 'Latest Strategy',
-    empty: 'No strategy published yet.',
+    title: '最新策略',
+    empty: '尚未發布策略。',
     /** 分配標籤：↑ sBTC 50% · 3× */
     chip: '{side} {asset} {weight}% · {leverage}×',
   },
 
   esg: {
-    title: 'Strategy ESG Score',
-    champion: 'ESG Champion',
-    aware: 'ESG Aware',
-    considerGreener: 'Consider greener assets',
-    details: 'Details →',
+    title: '策略 ESG 評分',
+    champion: 'ESG 冠軍',
+    aware: 'ESG 關注者',
+    considerGreener: '考慮選擇更環保的標的',
+    details: '詳情 →',
   },
 
   amount: {
-    title: 'Copy Amount',
+    title: '跟單金額',
     placeholder: '1000',
-    unitSuffix: '{token} total margin',
-    disabledHint: 'disabled — no strategy',
+    unitSuffix: '{token} 總保證金',
+    disabledHint: '已停用 — 無策略',
   },
 
   preview: {
-    totalDeposit: 'Total deposit:',
-    copyFee: '− Copy fee (0.3%):',
-    tradingFeeBuffer: '− Trading fee buffer:',
-    effectiveMargin: 'Effective margin:',
+    totalDeposit: '總存入金額：',
+    copyFee: '− 跟單手續費（0.3%）：',
+    tradingFeeBuffer: '− 交易手續費緩衝：',
+    effectiveMargin: '有效保證金：',
 
     column: {
-      asset: 'Asset',
-      side: 'Side',
-      leverage: 'Lev',
-      weight: 'Weight',
-      margin: 'Margin',
-      notional: 'Notional',
-      estEntry: 'Est. Entry',
+      asset: '標的',
+      side: '方向',
+      leverage: '槓桿',
+      weight: '權重',
+      margin: '保證金',
+      notional: '名義價值',
+      estEntry: '預估進場價',
     },
-    long: 'LONG ↑',
-    short: 'SHORT ↓',
+    long: '做多 ↑',
+    short: '做空 ↓',
   },
 
   feePreview: {
-    title: 'Fee Preview',
-    copyFee: 'Copy fee (0.3%)',
-    netMargin: 'Net margin deposited',
-    executionFee: 'Execution Fee (ETH)',
-    split:
-      'Copy fee is split 70% → trader · 20% → platform · 10% → slash pool. Execution fee pays Keeper bots.',
+    title: '手續費預覽',
+    copyFee: '跟單手續費（0.3%）',
+    netMargin: '實際存入保證金',
+    executionFee: '執行費（ETH）',
+    split: '跟單手續費依 70% → 交易者 · 20% → 平台 · 10% → 罰沒池 分潤。執行費用於支付 Keeper 機器人。',
   },
 
   skinInGame: {
-    title: 'Trader Skin-in-the-Game',
-    staked: 'Staked',
-    reputation: 'Reputation',
-    reputationUnit: 'pts',
-    totalSlashed: 'Total Slashed',
+    title: '交易者風險共擔',
+    staked: '已質押',
+    reputation: '聲譽',
+    reputationUnit: '分',
+    totalSlashed: '累計罰沒',
     slashedWarning:
-      '⚠ This trader has had {amount} {token} slashed for causing excessive losses to followers. Proceed with caution.',
+      '⚠ 此交易者曾因造成跟隨者過度虧損而被罰沒 {amount} {token}。請謹慎評估。',
     noStakeWarning:
-      '⚠ This trader has no stake — they have no skin-in-the-game. You cannot trigger slashing if they cause losses.',
+      '⚠ 此交易者尚未質押——沒有風險共擔。若其造成虧損，你無法觸發罰沒機制。',
     slashRule:
-      "⚠ If your loss exceeds 30%, this trader's stake will be slashed (50% of loss, capped at 50% of stake) and transferred to you as compensation.",
+      '⚠ 若你的虧損超過 30%，此交易者的質押將被罰沒（虧損金額的 50%，上限為質押額的 50%）並轉移給你作為補償。',
   },
 
   confirm: {
-    title: 'Confirm Copy',
-    approveStep: 'Approve {token} to CopyTracker',
-    followStep: 'Follow Trader',
+    title: '確認跟單',
+    approveStep: '批准 {token} 給 CopyTracker',
+    followStep: '跟隨交易者',
 
     staleTitle: '價格過期 — 暫停跟單',
     staleExplain:
@@ -92,23 +91,22 @@ export const copy = {
       '🔒 此策略包含股票 / 債券資產，需通過 KYC 審核才能跟單（送出申請後需等審核人員核准）。',
     kycSubmit: '送出 KYC 申請',
 
-    approving: 'Approving…',
-    approved: 'Approved',
-    approveCta: 'Step 1 · Approve',
+    approving: '批准中…',
+    approved: '已批准',
+    approveCta: '步驟 1 · 批准',
 
-    following: 'Following…',
+    following: '跟單中…',
     stalePrice: '⛔ {asset} 價格過期',
-    followCta: 'Step 2 · Follow Trader',
+    followCta: '步驟 2 · 跟隨交易者',
 
-    noStrategy: '⚠ Trader has no published strategy. Copy is disabled.',
-    footer:
-      'Your margin will be automatically split and deposited into positions according to the strategy above.',
+    noStrategy: '⚠ 交易者尚未發布策略，跟單功能已停用。',
+    footer: '你的保證金將依上述策略自動分配並存入各部位。',
   },
 
   tx: {
-    enterValidAmount: 'Enter a valid amount',
-    approved: '{token} approved ✓',
-    following: 'Following trader ✓',
+    enterValidAmount: '請輸入有效金額',
+    approved: '{token} 已批准 ✓',
+    following: '已跟隨交易者 ✓',
   },
 
   /** #36：KYC 待審核那句夾了 `<b>`，拆成前後片段。 */
