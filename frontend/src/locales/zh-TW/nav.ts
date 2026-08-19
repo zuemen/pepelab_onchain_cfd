@@ -29,11 +29,11 @@ export const nav = {
     stake: '質押',
   },
   account: {
-    profile: 'My Trader Profile (個人首頁)',
-    potions: 'Potion Shop (魔法藥水商店)',
-    mounts: 'My Mounts (尊貴坐騎)',
-    skins: 'Pepe Skins & Gacha (🎰 造型盲盒與商城)',
-    staking: 'Staking DeFi Yields (跟單質押)',
-    rewards: 'PepeLab Rewards 🎁 (每日激勵)',
+    profile: '個人首頁',
+    potions: '魔法藥水商店',
+    mounts: '尊貴坐騎',
+    skins: '🎰 造型盲盒與商城',
+    staking: '跟單質押',
+    rewards: '🎁 每日激勵',
   },
 };

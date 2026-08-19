@@ -55,8 +55,8 @@ export const common: Catalog['common'] = {
   },
 
   account: {
-    displayNameLabel: 'Display Name (編輯暱稱)',
-    saveName: 'Save Name (儲存變更)',
+    displayNameLabel: 'Display Name',
+    saveName: 'Save Name',
   },
 
   /**
@@ -93,11 +93,11 @@ export const common: Catalog['common'] = {
     pairedAfter: ' copy rewards! 🤝',
 
     potionBefore: '🧪 Your ',
-    potionBold: 'Golden Elixir (黃金仙露)',
+    potionBold: 'Golden Elixir',
     potionAfter: ' purchase was successful! (-300 PEPE)',
 
     skinBefore: '👑 穿戴變更成功！您已換上最新的 ',
-    skinBold: 'Astronaut Suit (登月太空衣)',
+    skinBold: 'Astronaut Suit',
     skinAfter: ' 華麗衣裝！',
 
     whaleAlertBefore: '💰 ',

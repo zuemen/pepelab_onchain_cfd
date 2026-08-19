@@ -112,22 +112,22 @@ export const pepe = {
     },
   },
 
-  /** 坐騎。名稱刻意是「英文 (中文)」的雙語形式，原樣搬過來。 */
+  /** 坐騎。 */
   mount: {
     leaf: {
-      name: 'Lotus Leaf (荷葉浮舟)',
+      name: '荷葉浮舟',
       desc: '一片掛著露珠的荷葉，每隻佩佩蛙的第一段旅程都從這裡開始。',
     },
     carpet: {
-      name: 'Magic Carpet (魔法飛毯)',
+      name: '魔法飛毯',
       desc: '織滿古老符文的飛毯，載著你飛越鏈上的第一道高牆。',
     },
     bitcoin: {
-      name: 'BitCoin Rider (比特金幣)',
+      name: '比特金幣',
       desc: '踩著滾動的比特金幣前進，象徵你已經看懂這座市場。',
     },
     whale: {
-      name: 'Celestial Whale (黃金天鯨)',
+      name: '黃金天鯨',
       desc: '傳說中的黃金天鯨，只有真正的巨鯨才騎得動牠。',
     },
   },
@@ -146,8 +146,8 @@ export const pepe = {
     },
     stage1: {
       title: 'Tadpole Pepe 🐟',
-      label: '蟌蚪',
-      desc: '破殼而出的小蟌蚪，甩著尾巴在鏈上光環中第一次游動。',
+      label: '蝌蚪',
+      desc: '破殼而出的小蝌蚪，甩著尾巴在鏈上光環中第一次游動。',
     },
     stage2: {
       title: 'Baby Pepe 🐸',

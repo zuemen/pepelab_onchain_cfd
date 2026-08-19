@@ -975,7 +975,7 @@ export default function PepeLabPage() {
 
                         {/* Rarity Badge */}
                         <Box sx={{ mt: 0.5, px: 0.75, py: 0.1, bgcolor: `${rColor}15`, color: rColor, border: `1px solid ${rColor}30`, borderRadius: 1, fontSize: '0.62rem', fontWeight: 'bold', display: 'inline-block' }}>
-                          {skin.rarity}
+                          {t.pepelab.gacha.rarityLabel[skin.rarity]}
                         </Box>
 
                         {/* Price showing on hover locked card */}

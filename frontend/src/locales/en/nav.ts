@@ -28,11 +28,11 @@ export const nav: Catalog['nav'] = {
     stake: 'Stake',
   },
   account: {
-    profile: 'My Trader Profile (個人首頁)',
-    potions: 'Potion Shop (魔法藥水商店)',
-    mounts: 'My Mounts (尊貴坐騎)',
-    skins: 'Pepe Skins & Gacha (🎰 造型盲盒與商城)',
-    staking: 'Staking DeFi Yields (跟單質押)',
-    rewards: 'PepeLab Rewards 🎁 (每日激勵)',
+    profile: 'My Trader Profile',
+    potions: 'Potion Shop',
+    mounts: 'My Mounts',
+    skins: 'Pepe Skins & Gacha',
+    staking: 'Staking DeFi Yields',
+    rewards: 'PepeLab Rewards 🎁',
   },
 };

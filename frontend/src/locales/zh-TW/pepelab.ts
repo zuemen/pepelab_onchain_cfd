@@ -5,9 +5,9 @@
 export const pepelab = {
   /** 藥水商店的三瓶藥水。 */
   potion: {
-    green: { name: 'Pepe Green Juice (綠色蛙汁)', desc: '讓你的 Pepe 眼睛發光，經驗值 +50 XP！' },
-    gold: { name: 'Golden Elixir (黃金仙露)', desc: '解鎖奢華黃金配飾，經驗值 +150 XP！' },
-    moon: { name: 'Moon Potion (登月藥水)', desc: '獲得登月火箭背包，直接獲得 +500 XP！' },
+    green: { name: '綠色蛙汁', desc: '讓你的 Pepe 眼睛發光，經驗值 +50 XP！' },
+    gold: { name: '黃金仙露', desc: '解鎖奢華黃金配飾，經驗值 +150 XP！' },
+    moon: { name: '登月藥水', desc: '獲得登月火箭背包，直接獲得 +500 XP！' },
   },
 
   toast: {
@@ -40,7 +40,7 @@ export const pepelab = {
   },
 
   roadmap: {
-    heading: '🐸 佩佩蛙進化樹 (Evolution) · 目前',
+    heading: '🐸 佩佩蛙進化樹 · 目前',
     nextStage: '⚡ 再升 {levels} 級 (Lv.{level}) 即可進化為 {label} {emoji}',
     maxStage: '🏆 已進化至最終形態 蛙神 🌌',
     tileReached: 'Lv.{stage}',
@@ -49,11 +49,11 @@ export const pepelab = {
   },
 
   tab: {
-    potions: '🧪 魔法藥水 (Potions)',
-    mounts: '🐋 尊貴坐騎 (Mounts)',
-    skins: '🎰 造型盲盒與商城 (Skins & Gacha)',
-    achievements: '🏅 成就 (Achievements)',
-    quests: '📋 每日任務 (Quests)',
+    potions: '🧪 魔法藥水',
+    mounts: '🐋 尊貴坐騎',
+    skins: '🎰 造型盲盒與商城',
+    achievements: '🏅 成就',
+    quests: '📋 每日任務',
   },
 
   potionsTab: {
@@ -89,6 +89,14 @@ export const pepelab = {
     rarityRare: '🔵 稀有：30%',
     rarityEpic: '🟣 史詩：15%',
     rarityLegendary: '🔴 傳說：5%',
+
+    /** 造型卡片上的稀有度徽章。key 對應 pepeSkinsData.ts 的 rarity 型別（英文，不譯）。 */
+    rarityLabel: {
+      Common: '普通',
+      Rare: '稀有',
+      Epic: '史詩',
+      Legendary: '傳說',
+    },
 
     wallTitle: '🎨 {stage}造型牆 ({unlocked}/{total})',
     wallHint:
