@@ -377,7 +377,7 @@ function renderDetails(e: ChainEvent): ReactNode {
 
     case 'PositionOpened': {
       const label   = ASSET_LABEL[d.asset as string] ?? '?'
-      const side    = (d.isLong as boolean) ? 'LONG' : 'SHORT'
+      const side    = (d.isLong as boolean) ? t.history.detail.sideLong : t.history.detail.sideShort
       const sideCol = (d.isLong as boolean) ? 'success.main' : 'error.main'
       return <span><Box component="span" sx={{ fontWeight: 'bold', color: sideCol }}>{side}</Box> {label} {String(d.leverage as bigint)}× @ {fPrice18(d.entryPrice as bigint)} | {t.history.detail.marginLabel} {f18(d.margin as bigint)} mUSDC</span>
     }

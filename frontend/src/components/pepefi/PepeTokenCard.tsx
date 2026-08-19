@@ -9,6 +9,7 @@ import IconButton from '@mui/material/IconButton';
 import Typography from '@mui/material/Typography';
 import { Icon } from '@iconify/react';
 
+import { t, interpolate } from 'src/locales';
 import { useContracts } from 'src/hooks/useContracts';
 import { usePepefiWallet } from 'src/layouts/pepefi';
 import { isDeployed } from 'src/lib/pepefi/safeRead';
@@ -100,7 +101,7 @@ export default function PepeTokenCard() {
     if (!isDeployed(pepeAddr)) {
       // 搬家前這裡用的是 DashboardPage 的 toast。這個元件沒有那個 toast，
       // 訊息就顯示在自己身上——沉默地什麼都不做才是最糟的選項。
-      setWatchError('PepeToken is not deployed on this network.');
+      setWatchError(t.rewards.pepeToken.notDeployed);
       return;
     }
     setWatchError(null);
@@ -131,10 +132,10 @@ export default function PepeTokenCard() {
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
         <Box>
           <Typography variant="overline" sx={{ color: 'primary.main', fontWeight: 'bold', display: 'block', letterSpacing: 1 }}>
-            🐸 PEPE Token
+            {t.rewards.pepeToken.label}
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            Pepe RWA Token · claim the airdrop once your KYC is approved
+            {t.rewards.pepeToken.subtitle}
           </Typography>
         </Box>
         {pepeReady && (
@@ -147,13 +148,13 @@ export default function PepeTokenCard() {
               startIcon={<Icon icon="solar:wallet-bold-duotone" />}
               sx={{ textTransform: 'none', fontSize: '0.75rem', fontWeight: 'bold' }}
             >
-              Add to wallet
+              {t.rewards.pepeToken.addToWallet}
             </Button>
             <IconButton
               size="small"
               onClick={() => void fetchPepe()}
               color="inherit"
-              aria-label="Reload PEPE balance"
+              aria-label={t.rewards.pepeToken.reloadAria}
             >
               <Icon icon="solar:restart-bold-duotone" width={16} />
             </IconButton>
@@ -169,17 +170,17 @@ export default function PepeTokenCard() {
 
       {!pepeReady ? (
         <Typography variant="body2" color="text.secondary" sx={{ py: 1, fontStyle: 'italic' }}>
-          PEPE is not available on this network (contracts not deployed here).
+          {t.rewards.pepeToken.notAvailable}
         </Typography>
       ) : pepeBal === null ? (
         <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4 }}>
           <Box>
-            <Typography variant="overline" color="text.secondary" display="block">Balance</Typography>
+            <Typography variant="overline" color="text.secondary" display="block">{t.rewards.pepeToken.balance}</Typography>
             <Skeleton width={120} height={32} />
           </Box>
           <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', sm: 'block' } }} />
           <Box>
-            <Typography variant="overline" color="text.secondary" display="block">Airdrop</Typography>
+            <Typography variant="overline" color="text.secondary" display="block">{t.rewards.pepeToken.airdrop}</Typography>
             <Skeleton width={160} height={40} />
           </Box>
         </Box>
@@ -188,7 +189,7 @@ export default function PepeTokenCard() {
           {/* Balance */}
           <Box>
             <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', fontWeight: 'bold', display: 'block' }}>
-              Balance
+              {t.rewards.pepeToken.balance}
             </Typography>
             <Typography variant="h4" sx={{ fontWeight: 800, color: 'primary.light', fontFamily: MONO, mt: 0.5 }}>
               {(Number(pepeBal) / 1e18).toLocaleString('en-US', { maximumFractionDigits: 0 })}{' '}
@@ -201,12 +202,12 @@ export default function PepeTokenCard() {
           {/* Claim */}
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
             <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', fontWeight: 'bold', display: 'block', mb: 0.5 }}>
-              Airdrop
+              {t.rewards.pepeToken.airdrop}
             </Typography>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
               {pepeClaimed ? (
                 <Chip
-                  label="✓ Claimed"
+                  label={t.rewards.pepeToken.claimed}
                   color="success"
                   variant="outlined"
                   sx={{ fontWeight: 'bold', px: 1, height: 38, borderRadius: 1 }}
@@ -218,7 +219,7 @@ export default function PepeTokenCard() {
                   color="inherit"
                   sx={{ py: 1, px: 3, fontWeight: 'bold', borderRadius: 1 }}
                 >
-                  Pool empty
+                  {t.rewards.pepeToken.poolEmpty}
                 </Button>
               ) : (
                 <Button
@@ -226,7 +227,7 @@ export default function PepeTokenCard() {
                   color="primary"
                   onClick={() => void doClaimPepe()}
                   disabled={claimLoading || !pepeKyc}
-                  title={!pepeKyc ? 'Requires an approved KYC application (submitting is not the same as being approved)' : undefined}
+                  title={!pepeKyc ? t.rewards.pepeToken.kycTooltip : undefined}
                   startIcon={claimLoading ? <Icon icon="line-md:loading-twotone-loop" /> : <span>🐸</span>}
                   sx={{
                     py: 1,
@@ -239,14 +240,14 @@ export default function PepeTokenCard() {
                   }}
                 >
                   {claimLoading
-                    ? 'Claiming…'
-                    : `Claim ${(Number(pepeAmount) / 1e18).toLocaleString()} PEPE`}
+                    ? t.rewards.pepeToken.claiming
+                    : interpolate(t.rewards.pepeToken.claim, { amount: (Number(pepeAmount) / 1e18).toLocaleString() })}
                 </Button>
               )}
 
               {!pepeKyc && !pepeClaimed && !(pepePoolBal !== null && pepePoolBal < pepeAmount) && (
                 <Typography variant="caption" sx={{ color: 'warning.main', fontWeight: 'bold' }}>
-                  Requires approved KYC — submitting an application is not the same as being approved
+                  {t.rewards.pepeToken.kycRequired}
                 </Typography>
               )}
             </Box>

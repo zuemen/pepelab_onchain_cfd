@@ -68,4 +68,24 @@ export const rewards = {
 
   /** 交易正在跑的時候按鈕上的字。 */
   working: '…',
+
+  /** PEPE 餘額與空投領取卡（PepeTokenCard，從舊版首頁搬到這一頁）。 */
+  pepeToken: {
+    label: '🐸 PEPE 代幣',
+    subtitle: 'Pepe RWA 代幣 · KYC 核准後即可領取空投',
+    addToWallet: '加入錢包',
+    reloadAria: '重新載入 PEPE 餘額',
+    notAvailable: '此網路無法使用 PEPE（合約尚未部署）。',
+
+    balance: '餘額',
+    airdrop: '空投',
+    claimed: '✓ 已領取',
+    poolEmpty: '獎池已空',
+    claiming: '領取中…',
+    claim: '領取 {amount} PEPE',
+    kycTooltip: '需要已核准的 KYC 申請（送出申請不等於已核准）',
+    kycRequired: '需要已核准的 KYC——送出申請不等於已核准',
+
+    notDeployed: 'PepeToken 尚未在此網路部署。',
+  },
 };

@@ -67,4 +67,24 @@ export const rewards: Catalog['rewards'] = {
 
   /** 交易正在跑的時候按鈕上的字。 */
   working: '…',
+
+  /** PEPE 餘額與空投領取卡（PepeTokenCard，從舊版首頁搬到這一頁）。 */
+  pepeToken: {
+    label: '🐸 PEPE Token',
+    subtitle: 'Pepe RWA Token · claim the airdrop once your KYC is approved',
+    addToWallet: 'Add to wallet',
+    reloadAria: 'Reload PEPE balance',
+    notAvailable: 'PEPE is not available on this network (contracts not deployed here).',
+
+    balance: 'Balance',
+    airdrop: 'Airdrop',
+    claimed: '✓ Claimed',
+    poolEmpty: 'Pool empty',
+    claiming: 'Claiming…',
+    claim: 'Claim {amount} PEPE',
+    kycTooltip: 'Requires an approved KYC application (submitting is not the same as being approved)',
+    kycRequired: 'Requires approved KYC — submitting an application is not the same as being approved',
+
+    notDeployed: 'PepeToken is not deployed on this network.',
+  },
 };
