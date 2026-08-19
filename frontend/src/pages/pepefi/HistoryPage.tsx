@@ -372,14 +372,14 @@ function renderDetails(e: ChainEvent): ReactNode {
   switch (e.type) {
     case 'Swap':
       return d.direction === 'ETH→mUSDC'
-        ? <span><Typography variant="body2" component="span" color="text.secondary">{fEth(d.ethIn as bigint)} ETH</Typography> → <Typography variant="body2" component="span" color="success.main" sx={{ fontWeight: 'semibold' }}>{f18(d.usdcOut as bigint)} mUSDC</Typography></span>
-        : <span><Typography variant="body2" component="span" color="text.secondary">{f18(d.usdcIn as bigint)} mUSDC</Typography> → <Typography variant="body2" component="span" color="success.main" sx={{ fontWeight: 'semibold' }}>{fEth(d.ethOut as bigint)} ETH</Typography></span>
+        ? <span><Typography variant="body2" component="span" color="text.secondary">{fEth(d.ethIn as bigint)} ETH</Typography> → <Typography variant="body2" component="span" color="success.main" sx={{ fontWeight: 'semibold' }}>{f18(d.usdcOut as bigint)} USDC</Typography></span>
+        : <span><Typography variant="body2" component="span" color="text.secondary">{f18(d.usdcIn as bigint)} USDC</Typography> → <Typography variant="body2" component="span" color="success.main" sx={{ fontWeight: 'semibold' }}>{fEth(d.ethOut as bigint)} ETH</Typography></span>
 
     case 'PositionOpened': {
       const label   = ASSET_LABEL[d.asset as string] ?? '?'
       const side    = (d.isLong as boolean) ? t.history.detail.sideLong : t.history.detail.sideShort
       const sideCol = (d.isLong as boolean) ? 'success.main' : 'error.main'
-      return <span><Box component="span" sx={{ fontWeight: 'bold', color: sideCol }}>{side}</Box> {label} {String(d.leverage as bigint)}× @ {fPrice18(d.entryPrice as bigint)} | {t.history.detail.marginLabel} {f18(d.margin as bigint)} mUSDC</span>
+      return <span><Box component="span" sx={{ fontWeight: 'bold', color: sideCol }}>{side}</Box> {label} {String(d.leverage as bigint)}× @ {fPrice18(d.entryPrice as bigint)} | {t.history.detail.marginLabel} {f18(d.margin as bigint)} USDC</span>
     }
 
     case 'PositionClosed': {
@@ -391,21 +391,21 @@ function renderDetails(e: ChainEvent): ReactNode {
       const received = d.closeAmount as bigint | undefined
       return (
         <span>
-          {t.history.detail.pnlLabel} <Box component="span" sx={{ fontWeight: 'bold', color: col }}>{pnlStr}</Box> mUSDC
+          {t.history.detail.pnlLabel} <Box component="span" sx={{ fontWeight: 'bold', color: col }}>{pnlStr}</Box> USDC
           {received !== undefined && interpolate(t.history.detail.receivedSuffix, { amount: f18(received) })}
         </span>
       )
     }
 
     case 'MarginDeposited':
-      return <Box component="span" sx={{ color: 'success.main', fontWeight: 'semibold' }}>+{f18(d.amount as bigint)} mUSDC</Box>
+      return <Box component="span" sx={{ color: 'success.main', fontWeight: 'semibold' }}>+{f18(d.amount as bigint)} USDC</Box>
 
     case 'MarginWithdrawn':
-      return <Box component="span" sx={{ color: 'warning.main', fontWeight: 'semibold' }}>−{f18(d.amount as bigint)} mUSDC</Box>
+      return <Box component="span" sx={{ color: 'warning.main', fontWeight: 'semibold' }}>−{f18(d.amount as bigint)} USDC</Box>
 
     case 'TraderFollowed': {
       const trader = d.trader as string
-      return <span>{t.history.detail.following} <Box component="span" sx={{ fontFamily: MONO, color: 'text.primary' }}>{shortAddr(trader)}</Box> | {t.history.detail.marginLabel} {f18(d.totalMargin as bigint)} mUSDC</span>
+      return <span>{t.history.detail.following} <Box component="span" sx={{ fontFamily: MONO, color: 'text.primary' }}>{shortAddr(trader)}</Box> | {t.history.detail.marginLabel} {f18(d.totalMargin as bigint)} USDC</span>
     }
 
     case 'TraderUnfollowed': {
@@ -414,7 +414,7 @@ function renderDetails(e: ChainEvent): ReactNode {
     }
 
     case 'CopyFee':
-      return <span>{t.history.detail.earned} <Box component="span" sx={{ color: 'primary.main', fontWeight: 'bold' }}>{f18(d.traderShare as bigint)}</Box> mUSDC{interpolate(t.history.detail.feeSuffix, { fee: f18(d.fee as bigint) })}</span>
+      return <span>{t.history.detail.earned} <Box component="span" sx={{ color: 'primary.main', fontWeight: 'bold' }}>{f18(d.traderShare as bigint)}</Box> USDC{interpolate(t.history.detail.feeSuffix, { fee: f18(d.fee as bigint) })}</span>
 
     case 'PriceUpdated': {
       const label = ASSET_LABEL[d.assetId as string] ?? '?'
@@ -422,11 +422,11 @@ function renderDetails(e: ChainEvent): ReactNode {
     }
 
     case 'Stake':
-      return <span>{t.history.detail.staked} <Box component="span" sx={{ color: 'warning.main', fontWeight: 'semibold' }}>{f18(d.amount as bigint)}</Box> mUSDC</span>
+      return <span>{t.history.detail.staked} <Box component="span" sx={{ color: 'warning.main', fontWeight: 'semibold' }}>{f18(d.amount as bigint)}</Box> USDC</span>
 
     case 'Slash': {
       const recipient = d.recipient as string
-      return <span>Slashed <Box component="span" sx={{ color: 'error.main', fontWeight: 'semibold' }}>{f18(d.amount as bigint)}</Box> mUSDC → <Box component="span" sx={{ fontFamily: MONO }}>{shortAddr(recipient)}</Box></span>
+      return <span>Slashed <Box component="span" sx={{ color: 'error.main', fontWeight: 'semibold' }}>{f18(d.amount as bigint)}</Box> USDC → <Box component="span" sx={{ fontFamily: MONO }}>{shortAddr(recipient)}</Box></span>
     }
 
     default:

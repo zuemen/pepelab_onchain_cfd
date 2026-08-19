@@ -7,7 +7,7 @@ export const traderDashboard = {
 
   profile: {
     repChip: '◆ {rep} 聲譽',
-    staked: '已質押 {amount} mUSDC',
+    staked: '已質押 {amount} USDC',
   },
 
   register: {
@@ -25,7 +25,7 @@ export const traderDashboard = {
     addAsset: '+ 新增標的',
 
     stakeRequiredTitle: '發布策略需先質押',
-    stakeRequiredBody: '發布策略前需先質押至少 100 mUSDC。這能讓跟隨者相信你也承擔風險。',
+    stakeRequiredBody: '發布策略前需先質押至少 100 USDC。這能讓跟隨者相信你也承擔風險。',
     goToStake: '前往交易者質押 →',
 
     empty: '點擊「+ 新增標的」以設定配置。',
@@ -54,7 +54,7 @@ export const traderDashboard = {
     /** #36：夾了連到 /stake 的 `<Link>`，拆成前後片段。 */
     stakeToUnlockBefore: '要解鎖發布功能，請在',
     stakeToUnlockLink: '質押頁面',
-    stakeToUnlockAfter: '質押 ≥ 100 mUSDC。',
+    stakeToUnlockAfter: '質押 ≥ 100 USDC。',
   },
 
   earnings: {

@@ -650,7 +650,7 @@ export default function TraderDashboard() {
             <Typography variant="h5" color="success.main" sx={{ fontFamily: MONO, fontWeight: 'bold', display: 'flex', alignItems: 'baseline' }}>
               {earnings === null ? '…' : (Number(earnings) / 1e18).toFixed(4)}
               <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary', ml: 0.5 }}>
-                mUSDC
+                USDC
               </Box>
             </Typography>
           </Box>

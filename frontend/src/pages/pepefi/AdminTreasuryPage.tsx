@@ -348,10 +348,10 @@ export default function AdminTreasuryPage() {
       {/* A. Revenue Stats */}
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <StatCard title={t.admin.treasury.stat.pendingFees} value={stats ? f18(stats.platformEarnings) : '—'} sub="mUSDC" valueColor="primary.main" />
+          <StatCard title={t.admin.treasury.stat.pendingFees} value={stats ? f18(stats.platformEarnings) : '—'} sub="USDC" valueColor="primary.main" />
         </Grid>
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <StatCard title={t.admin.treasury.stat.walletMusdc} value={stats ? f18(stats.myMusdc) : '—'} sub="mUSDC" />
+          <StatCard title={t.admin.treasury.stat.walletMusdc} value={stats ? f18(stats.myMusdc) : '—'} sub="USDC" />
         </Grid>
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
           <StatCard title={t.admin.treasury.stat.walletEth} value={stats ? fEth(stats.myEth) : '—'} sub="ETH" />
@@ -382,7 +382,7 @@ export default function AdminTreasuryPage() {
               {t.admin.treasury.claim.pending}
             </Typography>
             <Typography variant="h4" color="primary.main" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
-              {stats ? f18(stats.platformEarnings) : '—'} <Box component="span" sx={{ fontSize: '1rem', fontWeight: 'normal', color: 'text.secondary' }}>mUSDC</Box>
+              {stats ? f18(stats.platformEarnings) : '—'} <Box component="span" sx={{ fontSize: '1rem', fontWeight: 'normal', color: 'text.secondary' }}>USDC</Box>
             </Typography>
           </Box>
           <Button

@@ -121,7 +121,7 @@ export const admin = {
 
     stat: {
       pendingFees: '待領取平台手續費',
-      walletMusdc: '錢包 mUSDC 餘額',
+      walletMusdc: '錢包 USDC 餘額',
       walletEth: '錢包 ETH 餘額',
       routerEth: 'Router ETH 儲備',
     },
@@ -137,24 +137,24 @@ export const admin = {
     },
 
     swap: {
-      title: '透過 SwapRouter 將 mUSDC 轉換為 ETH',
-      placeholder: 'mUSDC 金額',
+      title: '透過 SwapRouter 將 USDC 轉換為 ETH',
+      placeholder: 'USDC 金額',
       max: '最大值',
-      estimate: '≈ {eth} ETH（匯率：1 ETH = 3000 mUSDC）',
+      estimate: '≈ {eth} ETH（匯率：1 ETH = 3000 USDC）',
       routerInsufficient:
         'Router 目前僅有 {amount} ETH 可用。請先使用下方的 Treasury 工具挹注資金，再進行兌換。',
       approving: '批准中…',
-      approve: '① 批准 mUSDC',
+      approve: '① 批准 USDC',
       approved: 'USDT 已批准 ✓',
       swapping: '兌換中…',
       swap: '② 兌換為 ETH',
-      done: '已將 {amount} mUSDC 兌換為 {eth} ETH ✓',
+      done: '已將 {amount} USDC 兌換為 {eth} ETH ✓',
     },
 
     tools: {
       title: 'Treasury 工具',
       fundRouter: '為 SwapRouter 挹注 ETH',
-      fundRouterDesc: 'Router 需要 ETH 儲備才能處理使用者與管理員的 mUSDC→ETH 兌換。',
+      fundRouterDesc: 'Router 需要 ETH 儲備才能處理使用者與管理員的 USDC→ETH 兌換。',
       currentReserve: '目前儲備：',
       placeholder: 'ETH 數量（例如 1）',
       funding: '挹注中…',
@@ -178,11 +178,11 @@ export const admin = {
       title: '近期兌現紀錄',
       refresh: '↺ 重新整理',
       emptyTitle: '尚無兌現紀錄',
-      emptyDescription: '手續費領取與 mUSDC→ETH 兌換紀錄將顯示於此。',
+      emptyDescription: '手續費領取與 USDC→ETH 兌換紀錄將顯示於此。',
       claimed: '已領取',
       swapped: '已兌換',
-      claimAmount: '{amount} mUSDC',
-      swapAmount: '{usdcIn} mUSDC → {eth} ETH',
+      claimAmount: '{amount} USDC',
+      swapAmount: '{usdcIn} USDC → {eth} ETH',
     },
 
     info: {
@@ -190,7 +190,7 @@ export const admin = {
       revenueModelBody:
         '每筆跟單或績效手續費依 70% 交易者 / 20% 平台 / 10% 保險金庫 分配。平台手續費會累積在 FeeRouter，直到此管理員領取為止。',
       swapNote:
-        '領取 mUSDC 後，可使用上方的兌換功能以模擬匯率（1 ETH = 3000 mUSDC）轉換為 ETH。正式環境中則會使用真正的 DEX。',
+        '領取 USDC 後，可使用上方的兌換功能以模擬匯率（1 ETH = 3000 USDC）轉換為 ETH。正式環境中則會使用真正的 DEX。',
     },
   },
 

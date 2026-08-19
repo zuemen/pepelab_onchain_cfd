@@ -15,24 +15,24 @@ export const vault = {
   position: {
     title: '你的部位',
     shares: '持有 pIV',
-    value: 'mUSDC 價值',
+    value: 'USDC 價值',
   },
 
   deposit: {
-    title: '存入 mUSDC',
+    title: '存入 USDC',
     description: '依目前資金池規模按比例獲得 pIV 份額，賺取協議手續費收益。',
-    placeholder: 'mUSDC 金額',
+    placeholder: 'USDC 金額',
     cta: '存入',
     estimate: '≈ {shares} pIV',
-    done: '已存入 {amount} mUSDC ✓',
+    done: '已存入 {amount} USDC ✓',
   },
 
   withdraw: {
     title: '提領份額',
-    description: '銷毀 pIV 份額，按比例從資金池取回 mUSDC。',
+    description: '銷毀 pIV 份額，按比例從資金池取回 USDC。',
     placeholder: 'pIV 份額',
     cta: '提領',
-    estimate: '≈ {amount} mUSDC',
+    estimate: '≈ {amount} USDC',
     max: '最大值（{shares} pIV）',
     done: '已提領 {amount} pIV 份額 ✓',
   },
@@ -41,7 +41,7 @@ export const vault = {
   activity: {
     title: '近期活動',
     emptyTitle: '尚無活動',
-    emptyDescription: '存入 mUSDC 即可開始賺取協議手續費收益。',
+    emptyDescription: '存入 USDC 即可開始賺取協議手續費收益。',
     deposited: 'LP 存入',
     withdrawn: 'LP 提領',
     protocolDeposit: '協議手續費',
@@ -56,12 +56,12 @@ export const vault = {
   markup: {
     mmActiveLabel: '做市收益已啟動：',
     mmPctRouted: '每筆交易手續費中的 {pct}% 分配給 LP——',
-    mmAmount: '{amount} mUSDC',
+    mmAmount: '{amount} USDC',
     mmRoutedToDate: '累計已分配。',
 
     howItWorksLabel: '運作方式：',
     howItWorksBody:
-      ' LP 存入 mUSDC 並獲得 pIV 份額。金庫透過 FeeRouter 賺取所有跟單與績效手續費的 10%。清算時金庫僅收取',
+      ' LP 存入 USDC 並獲得 pIV 份額。金庫透過 FeeRouter 賺取所有跟單與績效手續費的 10%。清算時金庫僅收取',
     liquidationPenaltyLabel: '清算罰金',
     howItWorksCodeWrap: '（',
     howItWorksTail:

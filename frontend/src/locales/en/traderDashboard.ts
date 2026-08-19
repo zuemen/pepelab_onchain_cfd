@@ -9,7 +9,7 @@ export const traderDashboard: Catalog['traderDashboard'] = {
 
   profile: {
     repChip: '◆ {rep} rep',
-    staked: '{amount} mUSDC staked',
+    staked: '{amount} USDC staked',
   },
 
   register: {
@@ -28,7 +28,7 @@ export const traderDashboard: Catalog['traderDashboard'] = {
 
     stakeRequiredTitle: 'Stake required to publish',
     stakeRequiredBody:
-      'You need to stake at least 100 mUSDC before publishing a strategy. This gives followers confidence that you have skin-in-the-game.',
+      'You need to stake at least 100 USDC before publishing a strategy. This gives followers confidence that you have skin-in-the-game.',
     goToStake: 'Go to Trader Stake →',
 
     empty: 'Click "+ Add Asset" to define allocations.',
@@ -55,7 +55,7 @@ export const traderDashboard: Catalog['traderDashboard'] = {
     registerFirst: 'Register as a trader first to publish.',
 
     /** #36：夾了連到 /stake 的 `<Link>`，拆成前後片段。 */
-    stakeToUnlockBefore: 'Stake ≥ 100 mUSDC on the ',
+    stakeToUnlockBefore: 'Stake ≥ 100 USDC on the ',
     stakeToUnlockLink: 'Stake page',
     stakeToUnlockAfter: ' to unlock publishing.',
   },

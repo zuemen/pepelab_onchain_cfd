@@ -111,7 +111,7 @@ export const admin: Catalog['admin'] = {
 
     stat: {
       pendingFees: 'Pending Platform Fees',
-      walletMusdc: 'Wallet mUSDC Balance',
+      walletMusdc: 'Wallet USDC Balance',
       walletEth: 'Wallet ETH Balance',
       routerEth: 'Router ETH Reserve',
     },
@@ -127,25 +127,25 @@ export const admin: Catalog['admin'] = {
     },
 
     swap: {
-      title: 'Convert mUSDC → ETH via SwapRouter',
-      placeholder: 'mUSDC amount',
+      title: 'Convert USDC → ETH via SwapRouter',
+      placeholder: 'USDC amount',
       max: 'Max',
-      estimate: '≈ {eth} ETH (rate: 1 ETH = 3000 mUSDC)',
+      estimate: '≈ {eth} ETH (rate: 1 ETH = 3000 USDC)',
       routerInsufficient:
         'Router only has {amount} ETH available. Fund it using the Treasury Tools below before swapping.',
       approving: 'Approving…',
-      approve: '① Approve mUSDC',
+      approve: '① Approve USDC',
       approved: 'USDT approved ✓',
       swapping: 'Swapping…',
       swap: '② Swap to ETH',
-      done: 'Swapped {amount} mUSDC → {eth} ETH ✓',
+      done: 'Swapped {amount} USDC → {eth} ETH ✓',
     },
 
     tools: {
       title: 'Treasury Tools',
       fundRouter: 'Fund SwapRouter with ETH',
       fundRouterDesc:
-        'The router needs an ETH reserve to fulfill mUSDC→ETH swaps from users and admin.',
+        'The router needs an ETH reserve to fulfill USDC→ETH swaps from users and admin.',
       currentReserve: 'Current reserve:',
       placeholder: 'ETH amount (e.g. 1)',
       funding: 'Funding…',
@@ -169,11 +169,11 @@ export const admin: Catalog['admin'] = {
       title: 'Recent Cash Out History',
       refresh: '↺ Refresh',
       emptyTitle: 'No cash out history yet',
-      emptyDescription: 'Fee claims and mUSDC→ETH swaps will appear here.',
+      emptyDescription: 'Fee claims and USDC→ETH swaps will appear here.',
       claimed: 'Claimed',
       swapped: 'Swapped',
-      claimAmount: '{amount} mUSDC',
-      swapAmount: '{usdcIn} mUSDC → {eth} ETH',
+      claimAmount: '{amount} USDC',
+      swapAmount: '{usdcIn} USDC → {eth} ETH',
     },
 
     info: {
@@ -181,7 +181,7 @@ export const admin: Catalog['admin'] = {
       revenueModelBody:
         'Each copy-trade or performance fee is split 70% trader / 20% platform / 10% insurance vault. Platform fees accumulate in FeeRouter until this admin claims them.',
       swapNote:
-        "After claiming mUSDC, use the swap above to convert to ETH at the mock rate (1 ETH = 3000 mUSDC). In production, you'd use a real DEX.",
+        "After claiming USDC, use the swap above to convert to ETH at the mock rate (1 ETH = 3000 USDC). In production, you'd use a real DEX.",
     },
   },
 

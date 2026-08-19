@@ -17,25 +17,25 @@ export const vault: Catalog['vault'] = {
   position: {
     title: 'Your Position',
     shares: 'pIV held',
-    value: 'mUSDC value',
+    value: 'USDC value',
   },
 
   deposit: {
-    title: 'Deposit mUSDC',
+    title: 'Deposit USDC',
     description:
       'Receive pIV shares proportional to current pool size. Earn yield from protocol fees.',
-    placeholder: 'mUSDC amount',
+    placeholder: 'USDC amount',
     cta: 'Deposit',
     estimate: '≈ {shares} pIV',
-    done: 'Deposited {amount} mUSDC ✓',
+    done: 'Deposited {amount} USDC ✓',
   },
 
   withdraw: {
     title: 'Withdraw Shares',
-    description: 'Burn pIV shares to receive proportional mUSDC from the pool.',
+    description: 'Burn pIV shares to receive proportional USDC from the pool.',
     placeholder: 'pIV shares',
     cta: 'Withdraw',
-    estimate: '≈ {amount} mUSDC',
+    estimate: '≈ {amount} USDC',
     max: 'Max ({shares} pIV)',
     done: 'Withdrew {amount} pIV shares ✓',
   },
@@ -44,7 +44,7 @@ export const vault: Catalog['vault'] = {
   activity: {
     title: 'Recent Activity',
     emptyTitle: 'No activity yet',
-    emptyDescription: 'Deposit mUSDC to start earning yield from protocol fees.',
+    emptyDescription: 'Deposit USDC to start earning yield from protocol fees.',
     deposited: 'LP Deposit',
     withdrawn: 'LP Withdraw',
     protocolDeposit: 'Protocol Fee',
@@ -59,12 +59,12 @@ export const vault: Catalog['vault'] = {
   markup: {
     mmActiveLabel: 'Market-making yield active:',
     mmPctRouted: "{pct}% of every trade's fee is routed to LPs —",
-    mmAmount: '{amount} mUSDC',
+    mmAmount: '{amount} USDC',
     mmRoutedToDate: 'routed to date.',
 
     howItWorksLabel: 'How it works:',
     howItWorksBody:
-      ' LPs deposit mUSDC and receive pIV shares. The vault earns 10% of all copy-trading and performance fees via the FeeRouter. On liquidation the vault only receives the ',
+      ' LPs deposit USDC and receive pIV shares. The vault earns 10% of all copy-trading and performance fees via the FeeRouter. On liquidation the vault only receives the ',
     liquidationPenaltyLabel: 'liquidation penalty',
     howItWorksCodeWrap: ' (',
     howItWorksTail:

@@ -206,10 +206,10 @@ export default function VaultPage() {
       {/* Stats */}
       <Grid container spacing={2}>
         {[
-          { label: t.vault.stat.totalAssets, value: stats ? f18(stats.totalAssets) + ' mUSDC' : null },
-          { label: t.vault.stat.sharePrice,  value: stats ? f18(stats.sharePrice) + ' mUSDC/pIV' : null },
+          { label: t.vault.stat.totalAssets, value: stats ? f18(stats.totalAssets) + ' USDC' : null },
+          { label: t.vault.stat.sharePrice,  value: stats ? f18(stats.sharePrice) + ' USDC/pIV' : null },
           { label: t.vault.stat.totalSupply, value: stats ? f18(stats.totalSupply) + ' pIV' : null },
-          { label: t.vault.stat.myValue,     value: stats ? f18(stats.myUsdcValue) + ' mUSDC' : null },
+          { label: t.vault.stat.myValue,     value: stats ? f18(stats.myUsdcValue) + ' USDC' : null },
         ].map(s => (
           <Grid size={{ xs: 6, md: 3 }} key={s.label}>
             <Card sx={{ p: 2 }}>

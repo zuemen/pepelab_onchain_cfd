@@ -323,13 +323,13 @@ export default function TraderProfilePage() {
           {/* ─── B. Stats grid (4 cards) ──────────────────────────── */}
           <Grid container spacing={2}>
             <Grid size={{ xs: 6, md: 3 }}>
-              <StatCard title={t.traderProfile.stats.staked} value={stakeInfo ? f18(stakeInfo.amount) : '—'} sub="mUSDC" />
+              <StatCard title={t.traderProfile.stats.staked} value={stakeInfo ? f18(stakeInfo.amount) : '—'} sub="USDC" />
             </Grid>
             <Grid size={{ xs: 6, md: 3 }}>
               <StatCard title={t.traderProfile.stats.followers} value={String(followers)} sub={t.traderProfile.stats.copiers} />
             </Grid>
             <Grid size={{ xs: 6, md: 3 }}>
-              <StatCard title={t.traderProfile.stats.earnings} value={earnings !== null ? f18(earnings, 4) : '—'} sub="mUSDC" valueColor="success.main" />
+              <StatCard title={t.traderProfile.stats.earnings} value={earnings !== null ? f18(earnings, 4) : '—'} sub="USDC" valueColor="success.main" />
             </Grid>
             <Grid size={{ xs: 6, md: 3 }}>
               <StatCard title={t.traderProfile.stats.strategies} value={stratCount !== null ? String(stratCount) : '—'} sub={t.traderProfile.stats.versions} />
@@ -517,7 +517,7 @@ export default function TraderProfilePage() {
                       <TableRow key={i}>
                         <TableCell>
                           <Typography variant="body2" color="error.main" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
-                            −{f18(ev.amount)} mUSDC
+                            −{f18(ev.amount)} USDC
                           </Typography>
                           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
                             → {shortAddr(ev.recipient)}
