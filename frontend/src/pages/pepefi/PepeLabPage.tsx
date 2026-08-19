@@ -572,19 +572,16 @@ export default function PepeLabPage() {
         </Box>
       </Box>
 
-      {/* `centered` would clip these labels on a phone — they are long in two
-          languages. Scrollable instead, then centred by the flex container
-          once the viewport is wide enough to hold them all. */}
+      {/* fullWidth so the five tabs split the row evenly — labels are now
+          short single-language text, so there's no clipping risk to design
+          around like there was with the old bilingual labels. */}
       <Tabs
         value={tabValue}
         onChange={(_, nv) => setTabValue(nv)}
-        variant="scrollable"
-        scrollButtons="auto"
-        allowScrollButtonsMobile
+        variant="fullWidth"
         indicatorColor="custom"
         sx={{
           borderBottom: '1px solid rgba(255,255,255,0.06)',
-          '& .MuiTabs-flexContainer': { justifyContent: { md: 'center' } },
           '& .MuiTab-root': {
             color: 'text.secondary',
             fontWeight: 'bold',
