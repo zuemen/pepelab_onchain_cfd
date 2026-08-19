@@ -1,8 +1,12 @@
 /**
- * Marketplace 頁：Star Trader 排行榜。
+ * Marketplace 頁：明星交易者排行榜。
+ *
+ * 「明星交易者」（isStarTrader）純粹是前端算出來的徽章（聲譽 > 80 且跟隨者 > 3），
+ * 不對應任何合約層級的等級，跟 common.ts 的 `tier`（鑽石／黃金／白銀／青銅，那個
+ * 才是合約事件裡真的用到的名字）不是同一類，沒有理由留英文。
  */
 export const marketplace = {
-  title: '⭐ Star Trader 排行榜',
+  title: '⭐ 明星交易者排行榜',
   subtitle: '瀏覽並跟單鏈上驗證過的策略',
 
   esgFiltered: '已篩選',
@@ -29,7 +33,7 @@ export const marketplace = {
   },
 
   card: {
-    starTrader: '⭐ Star Trader',
+    starTrader: '⭐ 明星交易者',
     verifiedOnChain: '鏈上已驗證',
     noName: '—',
     noStrategy: '尚無策略',
@@ -53,8 +57,8 @@ export const marketplace = {
     countOne: '{count} 位交易者',
     countMany: '{count} 位交易者',
     followersTotal: '共 {count} 位跟隨者',
-    starTraderOne: '{count} 位 Star Trader',
-    starTraderMany: '{count} 位 Star Trader',
+    starTraderOne: '{count} 位明星交易者',
+    starTraderMany: '{count} 位明星交易者',
     volumeWindow: '交易量與 PnL 統計來自最近 ~{blocks} 個區塊（約 7 天）',
   },
 

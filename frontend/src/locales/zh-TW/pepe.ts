@@ -133,44 +133,42 @@ export const pepe = {
   },
 
   /**
-   * 進化階段。英文 title 是形態的名字，中文 label 是畫面上簡寫的那一個，兩者都會被渲染。
-   *
-   * #38：title 刻意不翻——它是這隻蛙每個形態的「種名」，跟 Pokémon 的物種名同一類，
-   * 翻了就不是同一隻了；label 才是真正給讀者看懂用的字，那個已經是中文。
+   * 進化階段。title 是形態的完整名字，label 是畫面上簡寫的那一個，兩者都會被渲染
+   * （title 用在角色名下方的小標題，以及進化成功彈窗的「進化 Lv.{stage} · {title}」）。
    */
   evolution: {
     stage0: {
-      title: 'Pepe Egg 🥚',
+      title: '神秘佩佩蛋 🥚',
       label: '蛙蛋',
       desc: '一顆發著綠光的神秘蛙蛋，安坐在成堆的 PEPE 金幣上等待孵化。',
     },
     stage1: {
-      title: 'Tadpole Pepe 🐟',
+      title: '破殼蝌蚪佩佩 🐟',
       label: '蝌蚪',
       desc: '破殼而出的小蝌蚪，甩著尾巴在鏈上光環中第一次游動。',
     },
     stage2: {
-      title: 'Baby Pepe 🐸',
+      title: '幼年佩佩 🐸',
       label: '幼蛙',
       desc: '長出四肢的幼蛙，包著尿布站上屬於自己的第一個舞台。',
     },
     stage3: {
-      title: 'Rookie Trader 📈',
+      title: '新銳操盤手 📈',
       label: '新銳蛙',
       desc: '穿上連帽外套與球鞋，握著滿是綠 K 棒手機的新銳操盤手。',
     },
     stage4: {
-      title: 'Elite Chad Trader 🕶️',
+      title: '菁英操盤大神 🕶️',
       label: '菁英蛙',
       desc: '墨鏡、黑皮衣與 PEPE 金鏈，華爾街等級的菁英巨鯨。',
     },
     stage5: {
-      title: 'Gold Emperor Pepe 👑',
+      title: '黃金蛙皇 👑',
       label: '蛙皇',
       desc: '黃金王冠、紅色皇袍與寶石權杖，腳踏金幣與寶石之山。',
     },
     stage6: {
-      title: 'Supreme Pepe Lord 😇',
+      title: '至尊蛙神 😇',
       label: '蛙神',
       desc: '生出聖潔羽翼與黃金光環，披上金紋白袍的終極神化形態。',
     },

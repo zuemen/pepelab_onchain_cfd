@@ -18,14 +18,9 @@ export const esg = {
     ratingTable: '七級評級對照表',
   },
 
-  /**
-   * 三個維度：英文名、中文名，以及各自的檢查項目。
-   * #38：英文名（environmental/social/governance）刻意保留——兩個欄位本來就
-   * 是設計成一組同時渲染的英文/中文對照，中文名已經在 xxxZh 裡了。
-   */
+  /** 三個維度的名稱，以及各自的檢查項目。 */
   dimension: {
-    environmental: 'Environmental',
-    environmentalZh: '環境',
+    environmental: '環境',
     environmentalItems: [
       '碳足跡與能源結構',
       '實體氣候風險',
@@ -33,8 +28,7 @@ export const esg = {
       '廢棄物與排放管理',
     ],
 
-    social: 'Social',
-    socialZh: '社會',
+    social: '社會',
     socialItems: [
       '勞工實務與工作場所安全',
       '社區與利害關係人影響',
@@ -42,8 +36,7 @@ export const esg = {
       '供應鏈責任',
     ],
 
-    governance: 'Governance',
-    governanceZh: '治理',
+    governance: '治理',
     governanceItems: [
       '董事會獨立性與多元性',
       '高階經理人課責',

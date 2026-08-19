@@ -128,7 +128,10 @@ export const pepe: Catalog['pepe'] = {
     },
   },
 
-  /** 進化階段。英文 title 是形態的名字，中文 label 是畫面上簡寫的那一個，兩者都會被渲染。 */
+  /**
+   * 進化階段。title 是形態的完整名字，label 是畫面上簡寫的那一個，兩者都會被渲染
+   * （title 用在角色名下方的小標題，以及進化成功彈窗的「進化 Lv.{stage} · {title}」）。
+   */
   evolution: {
     stage0: {
       title: 'Pepe Egg 🥚',

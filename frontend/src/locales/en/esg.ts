@@ -17,10 +17,9 @@ export const esg: Catalog['esg'] = {
     ratingTable: '七級評級對照表',
   },
 
-  /** 三個維度：英文名、中文名，以及各自的檢查項目。 */
+  /** 三個維度的名稱，以及各自的檢查項目。 */
   dimension: {
     environmental: 'Environmental',
-    environmentalZh: '環境',
     environmentalItems: [
       'Carbon footprint & energy mix',
       'Physical climate risk',
@@ -29,7 +28,6 @@ export const esg: Catalog['esg'] = {
     ],
 
     social: 'Social',
-    socialZh: '社會',
     socialItems: [
       'Labour practices & worker safety',
       'Community & stakeholder impact',
@@ -38,7 +36,6 @@ export const esg: Catalog['esg'] = {
     ],
 
     governance: 'Governance',
-    governanceZh: '治理',
     governanceItems: [
       'Board independence & diversity',
       'Executive accountability',

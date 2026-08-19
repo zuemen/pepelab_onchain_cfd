@@ -172,20 +172,17 @@ export default function ESGPage() {
           {[
             {
               short: 'E', color: '#22c55e', label: t.esg.dimension.environmental,
-              zh: t.esg.dimension.environmentalZh,
               items: t.esg.dimension.environmentalItems,
             },
             {
               short: 'S', color: '#00b8d9', label: t.esg.dimension.social,
-              zh: t.esg.dimension.socialZh,
               items: t.esg.dimension.socialItems,
             },
             {
               short: 'G', color: '#86efac', label: t.esg.dimension.governance,
-              zh: t.esg.dimension.governanceZh,
               items: t.esg.dimension.governanceItems,
             },
-          ].map(({ short, color, label, zh, items }) => (
+          ].map(({ short, color, label, items }) => (
             <Grid size={{ xs: 12, md: 4 }} key={short}>
               <Box
                 sx={{
@@ -206,9 +203,6 @@ export default function ESGPage() {
                   </Typography>
                   <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'text.primary' }}>
                     {label}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {zh}
                   </Typography>
                 </Box>
                 <Stack spacing={0.5} component="ul" sx={{ pl: 0, m: 0 }}>
