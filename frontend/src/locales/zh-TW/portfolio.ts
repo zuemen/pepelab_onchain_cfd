@@ -1,46 +1,44 @@
 /**
  * Portfolio 頁與它的 dashboard 元件。
  *
- * 這一批的字幾乎全是英文——搬移階段逐字保留，中文化是 #38 的事。
- *
  * 類別旁邊的符號（₿ ◈ ◆ ◉）留在元件裡不進 catalog：它們是裝飾符號而不是文字，
  * 沒有語言可言，也沒有翻譯的餘地。nav 的 emoji 進 catalog 是因為它就長在標籤字串裡。
  */
 export const portfolio = {
   netWorth: {
-    title: 'Net Worth',
-    unrealisedPnl: 'Unrealised PnL',
-    unrealisedPnlTooltip: 'Mark-to-market PnL on positions that are still open',
+    title: '淨資產',
+    unrealisedPnl: '未實現 PnL',
+    unrealisedPnlTooltip: '未平倉部位以市價計算的 PnL',
 
     /**
      * 單複數寫成兩條完整的句子。catalog 沒有複數引擎，而把 'balance' / 'balances'
      * 抽成一個可插入的字，等於假設每個語言都用同樣的句構——中文沒有複數變化，
      * 其他語言的複數規則也不只兩種。
      */
-    incompleteOne: '{count} balance could not be read — this total is incomplete.',
-    incompleteMany: '{count} balances could not be read — this total is incomplete.',
+    incompleteOne: '{count} 筆餘額無法讀取——此總額不完整。',
+    incompleteMany: '{count} 筆餘額無法讀取——此總額不完整。',
 
     part: {
-      wallet: 'Wallet',
-      trading: 'Trading',
-      staked: 'Staked',
-      lpVault: 'LP Vault',
+      wallet: '錢包',
+      trading: '交易帳戶',
+      staked: '已質押',
+      lpVault: 'LP 保險金庫',
     },
 
     /** 某一項讀不到時的說明（Unread Balance，見 CONTEXT.md）。 */
     unread: {
-      wallet: 'Wallet balance could not be read',
-      trading: 'Trading account could not be read',
-      staked: 'Stake could not be read',
-      lpVault: 'LP vault could not be read',
+      wallet: '錢包餘額無法讀取',
+      trading: '交易帳戶無法讀取',
+      staked: '質押金額無法讀取',
+      lpVault: 'LP 保險金庫無法讀取',
     },
   },
 
   quickAction: {
-    trade: 'Trade',
-    copyTrader: 'Copy a trader',
-    history: 'History',
-    proTerminal: 'Pro Terminal',
+    trade: '交易',
+    copyTrader: '跟單交易者',
+    history: '歷史記錄',
+    proTerminal: '專業交易終端',
   },
 
   /**
@@ -48,106 +46,105 @@ export const portfolio = {
    * 頁面裡另外寫了一份一模一樣的清單，兩份字得同時改才不會不一致。
    */
   column: {
-    asset: 'Asset',
+    asset: '標的',
     esg: 'ESG',
-    side: 'Side',
-    entry: 'Entry',
-    oracle: 'Oracle',
-    liveMarket: 'Live Market',
-    margin: 'Margin',
-    leverage: 'Lev',
-    copiedFrom: 'Copied From',
-    unrealizedPnl: 'Unr. PnL',
-    accruedFunding: 'Accrued Funding',
-    value: 'Value',
+    side: '方向',
+    entry: '進場價',
+    oracle: '預言機',
+    liveMarket: '即時市價',
+    margin: '保證金',
+    leverage: '槓桿',
+    copiedFrom: '跟單來源',
+    unrealizedPnl: '未實現 PnL',
+    accruedFunding: '累計資金費',
+    value: '價值',
   },
 
   /** 欄位的 tooltip。只有會被誤讀的欄位需要——兩個價格擺在一起且幾乎不相等。 */
   columnHint: {
-    entry: 'Price you opened at',
-    oracle: 'On-chain price the contract settles against — this is what Unr. PnL uses',
-    liveMarket: 'Off-chain feed. Moves before the oracle does, so a gap here is normal',
-    unrealizedPnl: 'Unrealised, from the Oracle price',
+    entry: '你的開倉價格',
+    oracle: '合約結算依據的鏈上價格——未實現 PnL 就是用這個價格計算',
+    liveMarket: '鏈下報價來源，變動會早於預言機，因此出現落差是正常現象',
+    unrealizedPnl: '未實現損益，依預言機價格計算',
   },
 
   page: {
-    title: 'My Portfolio',
-    refresh: 'Refresh',
-    connectWallet: 'Connect wallet to view your portfolio.',
+    title: '我的投資組合',
+    refresh: '重新整理',
+    connectWallet: '連接錢包以查看你的投資組合。',
 
-    unsupportedNetwork: 'Unsupported Network',
-    unknownChain: 'unknown',
-    chainNumber: 'Chain {id}',
+    unsupportedNetwork: '不支援的網路',
+    unknownChain: '未知',
+    chainNumber: '鏈 {id}',
 
-    demoTitle: 'Demo mode — no live chain data',
+    demoTitle: '示範模式 — 無即時鏈上資料',
     demoDescription:
-      "You're on the presentation walkthrough, which has no wallet connection to read real balances or positions from. Connect a real wallet to see your actual portfolio.",
+      '你目前在展示導覽模式，沒有連接錢包，因此無法讀取真實餘額或部位。請連接真實錢包以查看你的實際投資組合。',
 
-    emptyTitle: 'Your portfolio is empty',
-    emptyDescription:
-      'Start by getting test {token}, then copy a trader or open positions yourself.',
-    emptyCta: 'Get {token}',
+    emptyTitle: '你的投資組合是空的',
+    emptyDescription: '先取得測試用 {token}，接著可以跟單交易者或自行開倉。',
+    emptyCta: '取得 {token}',
 
     side: {
-      long: 'LONG ↑',
-      short: 'SHORT ↓',
+      long: '做多 ↑',
+      short: '做空 ↓',
     },
 
-    activeCopies: 'Active Copies',
-    traderFollowedOne: 'trader followed',
-    traderFollowedMany: 'traders followed',
-    totalCopyPnl: 'Total Copy PnL',
-    noCopyPositions: 'no copy positions',
+    activeCopies: '進行中的跟單',
+    traderFollowedOne: '已跟隨的交易者',
+    traderFollowedMany: '已跟隨的交易者',
+    totalCopyPnl: '跟單總損益',
+    noCopyPositions: '無跟單部位',
 
-    copyPositions: 'Copy Positions',
-    notCopyingAnyone: "You're not copying anyone yet.",
-    browseTraders: 'Browse traders →',
+    copyPositions: '跟單部位',
+    notCopyingAnyone: '你尚未跟單任何人。',
+    browseTraders: '瀏覽交易者 →',
     copyColumn: {
-      trader: 'Trader',
-      copiedAt: 'Copied At',
-      initial: 'Initial',
-      current: 'Current',
-      return: 'Return',
-      actions: 'Actions',
+      trader: '交易者',
+      copiedAt: '跟單時間',
+      initial: '初始金額',
+      current: '目前金額',
+      return: '報酬率',
+      actions: '操作',
     },
-    unfollow: 'Unfollow',
+    unfollow: '取消跟隨',
     unfollowStale: '價格過期',
-    unfollowedOk: 'Unfollowed and all positions closed ✓',
+    unfollowedOk: '已取消跟隨並平倉所有部位 ✓',
 
-    openPositions: 'Open Positions',
-    openCount: '{count} open · manual + copied',
-    noOpenPositions: 'No open positions.',
-    total: 'Total',
+    openPositions: '未平倉部位',
+    openCount: '{count} 筆未平倉 · 手動 + 跟單',
+    noOpenPositions: '無未平倉部位。',
+    total: '總計',
 
-    freeMargin: 'Free Margin',
-    amountPlaceholder: 'Amount',
-    withdraw: 'Withdraw',
-    withdrawnOk: 'Withdrew {amount} {token} ✓',
-    enterValidAmount: 'Enter a valid amount',
+    freeMargin: '可用保證金',
+    amountPlaceholder: '金額',
+    withdraw: '提領',
+    withdrawnOk: '已提領 {amount} {token} ✓',
+    enterValidAmount: '請輸入有效金額',
 
-    copyPerformance: 'Copy Performance',
+    copyPerformance: '跟單績效',
     chart: {
-      deposited: 'Deposited',
-      now: 'Now',
-      initial: 'Initial',
-      portfolioValue: 'Portfolio Value',
+      deposited: '已存入',
+      now: '目前',
+      initial: '初始',
+      portfolioValue: '投資組合價值',
     },
-    autoRefresh: 'Auto-refreshes every 30 s · Two-point view (initial vs current)',
+    autoRefresh: '每 30 秒自動更新 · 兩點式檢視（初始 vs 目前）',
   },
 
   analysis: {
-    allocation: 'Allocation',
-    noBreakdown: 'No positions to break down.',
-    byAssetClass: 'By asset class',
-    noPositions: 'No positions',
-    esgScore: 'ESG score (value-weighted)',
-    esgIncomplete: 'Not all holdings have ESG data yet.',
+    allocation: '資產配置',
+    noBreakdown: '無部位可供分析。',
+    byAssetClass: '依資產類別',
+    noPositions: '無部位',
+    esgScore: 'ESG 評分（依價值加權）',
+    esgIncomplete: '並非所有持倉都有 ESG 資料。',
 
     cat: {
-      crypto: 'Crypto',
-      equity: 'Equity',
-      commodity: 'Commodity & ETF',
-      bond: 'Bond',
+      crypto: '加密貨幣',
+      equity: '股票',
+      commodity: '商品與 ETF',
+      bond: '債券',
     },
   },
 };

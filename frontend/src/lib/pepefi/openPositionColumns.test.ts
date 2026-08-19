@@ -30,6 +30,6 @@ describe('COLUMN_LABELS', () => {
   })
 
   it('ESG 欄位標籤沒有因為 simple 模式而換過用字——用字跨模式不變', () => {
-    expect(COLUMN_LABELS.unrealizedPnl).toBe('Unr. PnL')
+    expect(COLUMN_LABELS.unrealizedPnl).toBe('未實現 PnL')
   })
 })
