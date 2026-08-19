@@ -70,8 +70,8 @@ export const common: Catalog['common'] = {
     bronze: 'Bronze 青銅',
   },
 
-  /** x402 結算用的官方 USDC，和平台自己的模擬穩定幣要分得開。 */
-  x402StableLabel: '官方 USDC',
+  /** x402 結算用的 Circle 官方 USDC。發行方名字是和平台模擬幣唯一的區別，不可省略。 */
+  x402StableLabel: 'Circle USDC',
 
   /**
    * 通知鈴鐺的固定示範內容。每則拆成 `{text, bold?}` 片段陣列而不是 HTML 字串——

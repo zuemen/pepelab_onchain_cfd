@@ -145,7 +145,7 @@ const LINE_EXCEPTIONS: { file: string; contains: string; reason: string }[] = [
   },
   {
     file: 'src/pages/pepefi/X402DocsPage.tsx',
-    contains: '持官方 USDC + 一點 ETH',
+    contains: '持 Circle USDC + 一點 ETH',
     reason: '同一段 npx 範例裡的第二個 shell 註解，理由同上。',
   },
 ];

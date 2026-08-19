@@ -79,7 +79,7 @@ export const exchange = {
   faucet: {
     title: '🚰 取得測試代幣',
     intro:
-      'PEPE 是平台幣（測試網模擬），用水龍頭免費領取；{stable} 為模擬保證金穩定幣；x402 付費用{x402Stable}。',
+      'PEPE 是平台幣（測試網模擬），用水龍頭免費領取；{stable} 為模擬保證金穩定幣；x402 付費用 {x402Stable}。',
 
     stableNote: '· 模擬保證金',
     altStableNote: '· 模擬穩定幣（持有／兌換）',
@@ -283,7 +283,7 @@ export const exchange = {
     currencyNoteLine1Before: '💱 幣別：平台保證金與兌換用 ',
     currencyNoteLine1After: '（測試網模擬幣，可用 Faucet 免費領）；',
     currencyNoteLine2After: ' 付費 API 結算用 ',
-    currencyNoteLine2End: '（Circle，EIP-3009）。兩者用途不同、勿混用。',
+    currencyNoteLine2End: '（EIP-3009，真實資產）。兩者用途不同、勿混用。',
 
     ethBalanceBefore: 'ETH 餘額：',
     ethBalanceAfter: '（開倉需少量 ETH 付執行費）',

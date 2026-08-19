@@ -71,8 +71,14 @@ export const common = {
     bronze: 'Bronze 青銅',
   },
 
-  /** x402 結算用的官方 USDC，和平台自己的模擬穩定幣要分得開。 */
-  x402StableLabel: '官方 USDC',
+  /**
+   * x402 結算用的 Circle 官方 USDC。**永遠帶著發行方名字。**
+   *
+   * 平台保證金現在畫面上就叫「USDC」（見 ADR-0002 規則 1），和這顆真錢撞名，
+   * 唯一分得開的東西就是 `Circle` 這個字。少了它，使用者會以為水龍頭領的測試幣
+   * 可以拿來付 x402。
+   */
+  x402StableLabel: 'Circle USDC',
 
   /**
    * 通知鈴鐺的固定示範內容。每則拆成 `{text, bold?}` 片段陣列而不是 HTML 字串——

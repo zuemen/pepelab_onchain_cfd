@@ -7,10 +7,12 @@ describe('token labels', () => {
     expect(STABLE_LABEL).toBe('USDC')
   })
 
-  it('x402 結算幣永遠是「官方 USDC」,不能被 STABLE_LABEL 取代', () => {
-    // x402 走 Circle 官方 USDC（EIP-3009），那是真錢。把它和測試用的平台保證金
-    // 講成同一個東西，使用者會以為 402 challenge 也可以用水龍頭領的幣付。
-    expect(X402_STABLE_LABEL).toBe('官方 USDC')
+  it('x402 結算幣永遠帶發行方名字,不能被 STABLE_LABEL 取代', () => {
+    // x402 走 Circle 官方 USDC（EIP-3009），那是真錢。平台保證金畫面上也叫
+    // 「USDC」，兩者唯一分得開的就是「Circle」這個字——少了它，使用者會以為
+    // 402 challenge 也可以用水龍頭領的幣付。見 ADR-0002 規則 1。
+    expect(X402_STABLE_LABEL).toBe('Circle USDC')
+    expect(X402_STABLE_LABEL).toContain('Circle')
     expect(X402_STABLE_LABEL).not.toBe(STABLE_LABEL)
   })
 

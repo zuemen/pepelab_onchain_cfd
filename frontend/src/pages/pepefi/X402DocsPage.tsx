@@ -247,7 +247,7 @@ export default function X402DocsPage() {
         <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mt: 2, mb: 1 }}>{t.x402.docs.external.step2}</Typography>
         <Mono>{`# agent/examples/buy-signal.ts — 只依賴 viem + x402-fetch
 export X402_API_URL=${SIGNAL_API_URL}
-export AGENT_PRIVATE_KEY=0x...   # 持官方 USDC + 一點 ETH
+export AGENT_PRIVATE_KEY=0x...   # 持 Circle USDC + 一點 ETH
 npx tsx examples/buy-signal.ts`}</Mono>
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
           {t.x402.docs.external.flow}

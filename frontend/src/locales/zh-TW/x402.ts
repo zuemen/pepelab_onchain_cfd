@@ -14,13 +14,13 @@ export const x402 = {
     introBold1: '開發者 / AI agent 專用',
     introMid: '的按次付費交易訊號 API。',
     introBold2: '端點本身就是商品',
-    introAfter: '——任何帶 Base Sepolia USDC 錢包的 agent / CLI 都能直接付費購買，收入經 FeeRouter 70/20/10 上鏈分潤。',
+    introAfter: '——任何在 Base Sepolia 上持有 Circle USDC 的 agent / CLI 都能直接付費購買，收入經 FeeRouter 70/20/10 上鏈分潤。',
 
     fact: {
       baseUrl: '基礎網址',
       network: '網路',
       asset: '資產',
-      assetValue: '官方 USDC {address} (6-dec, EIP-3009)',
+      assetValue: 'Circle USDC {address} (6-dec, EIP-3009)',
       router: 'x402 分潤 router',
       pricing: '定價',
       pricingValue: 'GET /signals/:trader → $0.01 · GET /oracle/:asset → $0.005',
@@ -60,7 +60,7 @@ export const x402 = {
       divider: '外部 agent 自帶錢包付費',
       step1: '1) 探索（免費）',
       step2: '2) 付費購買（x402-fetch + viem）',
-      flow: '流程：GET → 收 402（含 accepts: network/asset/payTo/price）→ 用官方 USDC 簽 EIP-3009 transferWithAuthorization → 重送帶 X-PAYMENT → 200 + 訊號 + settlement tx。',
+      flow: '流程：GET → 收 402（含 accepts: network/asset/payTo/price）→ 用 Circle USDC 簽 EIP-3009 transferWithAuthorization → 重送帶 X-PAYMENT → 200 + 訊號 + settlement tx。',
     },
 
     footer:
@@ -72,7 +72,7 @@ export const x402 = {
     title: '⚡ x402 訊號市集',
     chip: '按次付費',
     description:
-      '任何 agent 帶 Base Sepolia USDC 即可付費購買訊號（$0.01/$0.005），收入 70/20/10 上鏈分潤。',
+      '任何 agent 只要在 Base Sepolia 持有 Circle USDC 即可付費購買訊號（$0.01/$0.005），收入 70/20/10 上鏈分潤。',
     accrued: '鏈上累計：${feeUsd} 收入 · ${traderShare} 歸 traders (70%)',
     busy: '購買中…',
     tryBuy: '試買 ($0.01)',
