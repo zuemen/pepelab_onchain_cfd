@@ -46,7 +46,7 @@ function allSourceFiles(): string[] {
  */
 const EN_HAN_BASELINES: Record<string, number> = {
   'errors.ts': 0,
-  'pepe.ts': 1370,
+  'pepe.ts': 0,
   'exchange.ts': 0,
   'terminal.ts': 0,
   'sessions.ts': 657,

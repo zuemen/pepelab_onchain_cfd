@@ -1,110 +1,110 @@
 import type { Catalog } from '../zh-TW';
 
 /**
- * 見 `../zh-TW/pepe.ts`。搬移階段逐字複製原文。
+ * 見 `../zh-TW/pepe.ts`。
  */
 export const pepe: Catalog['pepe'] = {
   /** 舊版全身造型（商店與收藏頁）。 */
   skin: {
     'skin-01': {
-      name: '星際太空探索蛙',
-      desc: '穿梭在星際與DeFi虛無之中的高階佩佩探索者，手持雷射光劍，誓將PepeLab推向宇宙深處！',
+      name: 'Interstellar Explorer Pepe',
+      desc: 'An elite Pepe explorer drifting between the stars and the DeFi void, laser sword in hand, sworn to push PepeLab into deep space!',
     },
     'skin-02': {
-      name: '特級廚神青蛙大師',
-      desc: '熱愛烹飪美味牛排與嫩葉的佩佩，隨時為大家準備最豐盛的DeFi滿漢全席！',
+      name: 'Master Chef Pepe',
+      desc: 'A Pepe who loves cooking up steaks and tender greens, always ready to serve the ultimate DeFi feast!',
     },
     'skin-03': {
-      name: '暗影忍者蛙戰士',
-      desc: '潛伏在影子裡的致命忍者，動作快如閃電，能在萬軍叢中毫無痕跡地完成閃兌。',
+      name: 'Shadow Ninja Warrior',
+      desc: 'A deadly ninja lurking in the shadows, lightning-fast, able to slip through an army and complete a swap without a trace.',
     },
     'skin-04': {
-      name: '金光閃閃時尚蛙王',
-      desc: '戴著金光閃閃大項鍊與復古墨鏡的嘻哈佩佩，無論走到哪裡都是舞台上最矚目的焦點。',
+      name: 'Bling King Pepe',
+      desc: 'A hip-hop Pepe dripping in a gold chain and vintage shades — the center of attention wherever the stage is.',
     },
     'skin-05': {
-      name: '狂野海盜青蛙船長',
-      desc: '統領DeFi無盡海域的海盜船長，手持黃金彎刀，憑藉無人能及的直覺航向財富之島。',
+      name: 'Wild Pirate Captain',
+      desc: 'Captain of the endless DeFi seas, cutlass in hand, sailing toward Treasure Island on instinct no one else has.',
     },
     'skin-06': {
-      name: '魔法君王尊貴蛙皇',
-      desc: '端坐在神聖寶座之上，掌控著古老綠色自然魔力，受萬民景仰的終極蛙中至尊。',
+      name: 'Sorcerer King Pepe',
+      desc: 'Seated on a sacred throne, wielding ancient green nature magic — the ultimate frog sovereign, revered by all.',
     },
     'skin-07': {
-      name: '星際太空蛙戰士',
-      desc: '穿戴厚重高科技太空戰甲的佩佩，配備背部噴射包，準備踏上降臨月球的登月之旅！',
+      name: 'Space Marine Pepe',
+      desc: 'A Pepe suited up in heavy high-tech space armor with a jetpack on its back, ready to launch toward the moon!',
     },
     'skin-08': {
-      name: '賽博龐克機械青蛙',
-      desc: '未來霓虹都市下的機械改造蛙，擁有光纖神經與超強運算大腦，以秒級速度分析市場。',
+      name: 'Cyberpunk Machine Frog',
+      desc: 'A cybernetic frog from a neon-lit future city, running on fiber-optic nerves and a supercomputer brain, reading the market in milliseconds.',
     },
     'skin-09': {
-      name: '寫實派商務精英蛙',
-      desc: '身穿筆挺高檔西裝、散發商務精英氣息的成熟佩佩，是穩健投資與高勝率的代名詞。',
+      name: 'Business Elite Pepe',
+      desc: 'A sharply-suited, mature Pepe radiating executive presence — synonymous with steady investing and a high win rate.',
     },
     'skin-10': {
-      name: '聖殿十字青蛙騎士',
-      desc: '手持十字巨劍與神聖鐵盾的勇敢騎士，誓死守護DeFi聖殿的資產安全與和平。',
+      name: 'Temple Cross Knight',
+      desc: "A brave knight wielding a great cross-sword and holy shield, sworn to defend the DeFi temple's assets to the death.",
     },
     'skin-11': {
-      name: '傳奇青蛙拳擊冠軍',
-      desc: '綁著繃帶、戴著紅色拳套的擂台王者，能在一瞬間對市場的空頭勢力打出致命一擊！',
+      name: 'Legendary Boxing Champ',
+      desc: 'A bandaged, red-gloved king of the ring who can land a knockout blow on the bears in a single instant!',
     },
     'skin-12': {
-      name: '酷炫霓虹派對 DJ 蛙',
-      desc: '在巨型霓虹電音派對上打碟的潮流DJ，它的節奏掌控力就跟交易滑點一樣精準完美。',
+      name: 'Neon Party DJ Pepe',
+      desc: 'A trendsetting DJ spinning at a massive neon rave — its sense of rhythm is as precise as perfectly minimized slippage.',
     },
     'skin-13': {
-      name: '狂戰士維京青蛙',
-      desc: '手執巨大雙板斧、戴著牛角鋼盔的北方維京戰士，咆哮著在巨浪中開疆闢土。',
+      name: 'Berserker Viking Frog',
+      desc: 'A northern Viking warrior with a great double-bladed axe and horned helm, roaring through the waves to conquer new ground.',
     },
     'skin-14': {
-      name: '榮耀赤鎧青蛙武士',
-      desc: '身披大紅色精緻甲冑的日本榮耀武士蛙，長刀出鞘如雷霆萬鈞，講求武士道的絕對專注。',
+      name: 'Crimson Honor Samurai',
+      desc: 'A Japanese samurai frog in exquisite crimson armor, its blade drawn like thunder — living the absolute focus of bushido.',
     },
     'skin-15': {
-      name: '威嚴精英蛙領袖',
-      desc: '胸前掛滿功勳徽章的嚴肅軍事領袖，擅長從宏觀視野進行無懈可擊的戰略佈局。',
+      name: 'Elite Commander Pepe',
+      desc: 'A stern military leader with a chest full of medals, master of flawless strategy from the macro view.',
     },
     'skin-16': {
-      name: '秘術青蛙大巫師',
-      desc: '手握冰藍魔光法杖、吟唱奇幻魔咒的大巫師，掌握著憑空變出巨大流動性的奧秘魔法。',
+      name: 'Arcane Grand Wizard',
+      desc: 'A grand wizard chanting fantastic spells over an ice-blue staff, master of the secret art of conjuring liquidity from thin air.',
     },
     'skin-17': {
-      name: '科技特工佩佩蛙',
-      desc: '身著戰術特工背心、配戴紅外線夜視鏡的特種佩佩，擅長在黑暗中進行高難度滲透任務。',
+      name: 'Tech Agent Pepe',
+      desc: 'A special-ops Pepe in a tactical vest and infrared night-vision goggles, expert at high-difficulty infiltrations in the dark.',
     },
     'skin-18': {
-      name: '深邃幽谷綠林游俠',
-      desc: '在深山綠林幽谷中隱居的優雅射手，百步穿楊，其箭矢代表著精準的目標追蹤。',
+      name: 'Deep Forest Ranger',
+      desc: 'An elegant archer living in seclusion in the deep green valleys — never misses, its arrow a symbol of precise target tracking.',
     },
     'skin-19': {
-      name: '極客骇客未來蛙',
-      desc: '戴著發光炫彩護目鏡、在虛擬世界主機中穿梭的駭客蛙，代碼編織出它的一切王國。',
+      name: 'Geek Hacker Frog',
+      desc: 'A hacker frog in glowing iridescent goggles, moving through virtual mainframes — code weaves its entire kingdom.',
     },
     'skin-20': {
-      name: '潮流迷幻動漫蛙',
-      desc: '具有鮮豔大膽色彩與街頭迷彩風格的動漫卡通佩佩蛙，充滿年輕張力與無窮活力。',
+      name: 'Psychedelic Anime Pepe',
+      desc: 'A cartoon Pepe in bold, vivid colors and street-camo style, bursting with youthful energy.',
     },
     'skin-21': {
-      name: '奇幻森林小勇者',
-      desc: '背著小行囊、手持木劍的奇幻青蛙小勇者，隨時準備踏上賺取巨額利潤的奇異冒險。',
+      name: 'Fantasy Forest Hero',
+      desc: 'A little fantasy frog hero with a pack on its back and a wooden sword, always ready for a strange new adventure toward massive profit.',
     },
     'skin-22': {
-      name: '超頻機甲神兵佩佩',
-      desc: '完全融入巨型外骨骼動力機甲的佩佩，輸出功率爆表，是重裝火力的代名詞！',
+      name: 'Overclocked Mech Pepe',
+      desc: 'A Pepe fully merged with a giant powered exoskeleton, output redlined — synonymous with heavy firepower!',
     },
     'skin-23': {
-      name: '華麗盛裝慶典蛙皇',
-      desc: '身穿奢華紅色刺繡長禮袍出席神聖慶典的蛙皇，象徵著權利與最純粹的黃金時代。',
+      name: 'Gala Regalia Pepe King',
+      desc: 'A frog king in a lavish red embroidered ceremonial robe, attending a sacred festival — a symbol of power and the purest golden age.',
     },
     'skin-24': {
-      name: '古典精靈森林射手',
-      desc: '沐浴在陽光微粒中的古典妖精青蛙射手，與自然精靈神力完美共鳴，心境明鏡止水。',
+      name: 'Classical Elf Archer',
+      desc: 'A classical elven frog archer bathed in sunlight, in perfect resonance with the spirits of nature — a mind still as a mirror.',
     },
     'skin-25': {
-      name: '經典手繪手稿佩佩',
-      desc: '以質樸的2D漫畫手繪黑線與水彩風格呈現的初始佩佩，讓人重溫最真摯的情懷。',
+      name: 'Classic Sketch Pepe',
+      desc: 'The original Pepe, rendered in rustic 2D hand-drawn ink lines and watercolor — a reminder of where the sincerity began.',
     },
   },
 
@@ -112,19 +112,19 @@ export const pepe: Catalog['pepe'] = {
   mount: {
     leaf: {
       name: 'Lotus Leaf',
-      desc: '一片掛著露珠的荷葉，每隻佩佩蛙的第一段旅程都從這裡開始。',
+      desc: "A dew-covered lotus leaf — every Pepe frog's first journey begins here.",
     },
     carpet: {
       name: 'Magic Carpet',
-      desc: '織滿古老符文的飛毯，載著你飛越鏈上的第一道高牆。',
+      desc: 'A flying carpet woven with ancient runes, carrying you over the first wall on-chain.',
     },
     bitcoin: {
       name: 'BitCoin Rider',
-      desc: '踩著滾動的比特金幣前進，象徵你已經看懂這座市場。',
+      desc: "Rolling forward on a Bitcoin coin — a sign you've finally read this market.",
     },
     whale: {
       name: 'Celestial Whale',
-      desc: '傳說中的黃金天鯨，只有真正的巨鯨才騎得動牠。',
+      desc: 'The legendary golden celestial whale — only a true whale can ride it.',
     },
   },
 
@@ -135,61 +135,61 @@ export const pepe: Catalog['pepe'] = {
   evolution: {
     stage0: {
       title: 'Pepe Egg 🥚',
-      label: '蛙蛋',
-      desc: '一顆發著綠光的神秘蛙蛋，安坐在成堆的 PEPE 金幣上等待孵化。',
+      label: 'Egg',
+      desc: 'A mysterious egg glowing green, resting on a pile of PEPE coins waiting to hatch.',
     },
     stage1: {
       title: 'Tadpole Pepe 🐟',
-      label: '蝌蚪',
-      desc: '破殼而出的小蝌蚪，甩著尾巴在鏈上光環中第一次游動。',
+      label: 'Tadpole',
+      desc: 'A tadpole just out of the shell, tail flicking as it swims for the first time in the on-chain glow.',
     },
     stage2: {
       title: 'Baby Pepe 🐸',
-      label: '幼蛙',
-      desc: '長出四肢的幼蛙，包著尿布站上屬於自己的第一個舞台。',
+      label: 'Baby',
+      desc: 'A baby frog with new legs, diapered up and standing on its first stage.',
     },
     stage3: {
       title: 'Rookie Trader 📈',
-      label: '新銳蛙',
-      desc: '穿上連帽外套與球鞋，握著滿是綠 K 棒手機的新銳操盤手。',
+      label: 'Rookie',
+      desc: 'In a hoodie and sneakers, phone screen full of green candles — a rookie trader on the come-up.',
     },
     stage4: {
       title: 'Elite Chad Trader 🕶️',
-      label: '菁英蛙',
-      desc: '墨鏡、黑皮衣與 PEPE 金鏈，華爾街等級的菁英巨鯨。',
+      label: 'Elite',
+      desc: 'Shades, black leather, and a gold PEPE chain — a Wall Street-tier whale.',
     },
     stage5: {
       title: 'Gold Emperor Pepe 👑',
-      label: '蛙皇',
-      desc: '黃金王冠、紅色皇袍與寶石權杖，腳踏金幣與寶石之山。',
+      label: 'Emperor',
+      desc: 'Golden crown, crimson robes, and a jeweled scepter, standing atop a mountain of coins and gems.',
     },
     stage6: {
       title: 'Supreme Pepe Lord 😇',
-      label: '蛙神',
-      desc: '生出聖潔羽翼與黃金光環，披上金紋白袍的終極神化形態。',
+      label: 'Lord',
+      desc: 'Sprouting holy wings and a golden halo, robed in gold-trimmed white — the ultimate ascended form.',
     },
 
     /** 進化圖上的輔助文字。 */
-    lockedAria: '未解鎖 — 需 Lv.{level}',
-    imageAlt: '{label} — 進化 Lv.{stage}',
+    lockedAria: 'Locked — requires Lv.{level}',
+    imageAlt: '{label} — Evolution Lv.{stage}',
   },
 
   achievement: {
-    ach_first_stake: { title: '初次質押', desc: '持有任何 PEPE' },
-    ach_streak3: { title: '3 天連到', desc: '連續簽到 3 天' },
-    ach_streak7: { title: '週簽神人', desc: '連續簽到 7 天' },
-    ach_first_trade: { title: '首筆交易', desc: '開過至少一筆倉' },
-    ach_whale: { title: 'Whale 降臨', desc: '持有 100,000 PEPE' },
-    ach_collector: { title: '收藏家', desc: '收藏至少 3 件 Pepe 道具' },
-    ach_degen: { title: 'Degen', desc: '持有 1,000,000 PEPE' },
-    ach_legend: { title: '傳說 Pepe', desc: '所有成就解鎖' },
+    ach_first_stake: { title: 'First Stake', desc: 'Hold any PEPE' },
+    ach_streak3: { title: '3-Day Streak', desc: 'Check in 3 days in a row' },
+    ach_streak7: { title: 'Weekly Legend', desc: 'Check in 7 days in a row' },
+    ach_first_trade: { title: 'First Trade', desc: 'Opened at least one position' },
+    ach_whale: { title: 'Whale Has Arrived', desc: 'Hold 100,000 PEPE' },
+    ach_collector: { title: 'Collector', desc: 'Collect at least 3 Pepe items' },
+    ach_degen: { title: 'Degen', desc: 'Hold 1,000,000 PEPE' },
+    ach_legend: { title: 'Legendary Pepe', desc: 'All achievements unlocked' },
   },
 
   /** 每日任務。獎勵金額會變的那一條用具名佔位符。 */
   quest: {
-    q_checkin: { title: '每日簽到', reward: '+{amount} PEPE' },
-    q_trade: { title: '開一筆新倉', reward: '+25 PEPE' },
-    q_balance: { title: '持有 100 PEPE', reward: '達成成就' },
-    q_streak3: { title: '連簽 3 天', reward: '解鎖成就' },
+    q_checkin: { title: 'Daily Check-in', reward: '+{amount} PEPE' },
+    q_trade: { title: 'Open a New Position', reward: '+25 PEPE' },
+    q_balance: { title: 'Hold 100 PEPE', reward: 'Unlocks achievement' },
+    q_streak3: { title: '3-Day Check-in Streak', reward: 'Unlocks achievement' },
   },
 };
