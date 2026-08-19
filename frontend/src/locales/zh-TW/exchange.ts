@@ -146,7 +146,7 @@ export const exchange = {
 
   /** 下單表單。 */
   open: {
-    title: 'Open Position',
+    title: '開倉',
 
     riskNotice:
       '⚠️ 測試網：本平台為 oracle 計價永續，損益以 mark 價（含 OI 失衡）結算；極端單邊行情下帳面利潤可能因 ADL 自動減倉而調整；保證金為測試代幣。',
