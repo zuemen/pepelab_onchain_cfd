@@ -1,122 +1,140 @@
 import type { Catalog } from '../zh-TW';
 
 /**
- * 見 `../zh-TW/errors.ts`。搬移階段逐字複製原文，所以這裡整份還是中文——這是英文版
- * 最大的一塊待辦，`locales.test.ts` 的 ratchet 在盯著它的字數。
+ * 見 `../zh-TW/errors.ts`。
  */
 
 export const errors: Catalog['errors'] = {
-  unknown: '未知錯誤',
+  unknown: 'Unknown error',
 
   contract: {
     // Selectors (0x + 4-byte hex)
-    '0xbb90b0d9': '需要先批准 USDC 給 Swap Router，請點擊 Approve',
-    '0xe450d38c': '您的 Web3 錢包 USDC 餘額不足，請先前往【首頁/水龍頭】免費領取 USDC 測試幣 🚰',
+    '0xbb90b0d9': 'Click Approve to let the SwapRouter spend your USDC.',
+    '0xe450d38c':
+      'Your wallet is short on USDC — grab free test USDC from the faucet on the home page first 🚰',
     // Keyword matches (case-insensitive)
     ERC20InsufficientBalance:
-      '您的 Web3 錢包 USDC 餘額不足，請先前往【首頁/水龍頭】免費領取 USDC 測試幣 🚰',
-    'no strategies': '該交易員目前尚未發布任何跟單策略！',
-    FaucetCooldown: 'Faucet 24h 內只能領一次，請等待 cooldown',
-    NoStrategyPublished: '此 trader 尚未發布策略',
-    TradingFeeExceedsMargin: '跟單金額太小，trading fee 超過 margin，請增加金額',
-    InsufficientFreeMargin: '保證金不足，請先 deposit 更多 USDC',
-    MarginTooLow: '保證金低於最低門檻（10 USDC）',
-    InvalidLeverage: '槓桿必須是 1x / 2x / 5x',
-    NotPositionOwner: '只有 position 持有者能操作',
-    PositionAlreadyClosed: '此 position 已平倉',
-    NotCopyTracker: '此 function 只有 CopyTracker 能呼叫',
-    CopyTrackerNotSet: 'CopyTracker 尚未設定，請聯絡管理員',
-    'Insufficient execution fee': '需要 0.001 ETH 作為執行費，請補充 ETH',
-    AlreadyRegistered: '你已經是 trader，不需要重新註冊',
-    NotRegistered: '請先註冊為 trader',
-    EmptyAllocations: '策略不能為空，至少要有一個 allocation',
-    InvalidWeightSum: '權重總和必須等於 100%',
-    ZeroWeight: '權重不能為 0',
-    CooldownNotElapsed: 'Unstake 冷凍期還沒結束',
-    NoUnstakeRequest: '沒有 pending unstake 請求',
-    InsufficientStake: '質押額度不足',
-    AlreadyMined: '此倉位已申領過交易挖礦獎勵，請勿重複申領',
-    AlreadyCheckedIn: '您今天已經簽到過囉，明天再來吧！',
-    TierAlreadyClaimed: '此等級的晉升獎勵已申領過囉！',
-    CopyAlreadyClaimed: '此跟單關係的獎勵已申領過囉！',
-    NotFollowing: '您目前尚未開始跟單此交易員！',
-    InvalidTier: '無效的等級參數！',
-    InsufficientPool: '激勵合約的 PEPE 資金池餘額不足，請聯絡管理員充值！',
-    TierThresholdNotMet: '您的累計交易量（Notional Volume）未達到此等級的要求！',
-    StalePrice: '鏈上價格已過期，keeper 尚未更新。請稍等幾分鐘再試，或聯絡管理員手動觸發 keeper',
-    NotKycVerified: '此資產為 RWA 市場，需先完成 KYC 驗證才能交易',
-    PositionIsHealthy: '此倉位保證金仍充足，不符合清算條件',
-    FundingIntervalNotElapsed: 'Funding 結算間隔（8 小時）尚未到，無需手動結算',
-    NotPositionAgent: '這個倉位是由另一個 agent session 開的，只有當初開倉的那個 agent 能代為平倉',
+      'Your wallet is short on USDC — grab free test USDC from the faucet on the home page first 🚰',
+    'no strategies': "This trader hasn't published a copy-trading strategy yet!",
+    FaucetCooldown: 'The faucet only pays out once every 24h — wait for the cooldown to end.',
+    NoStrategyPublished: "This trader hasn't published a strategy",
+    TradingFeeExceedsMargin:
+      'Copy amount is too small — the trading fee would exceed the margin. Increase the amount.',
+    InsufficientFreeMargin: 'Insufficient free margin — deposit more USDC first.',
+    MarginTooLow: 'Margin is below the minimum threshold (10 USDC).',
+    InvalidLeverage: 'Leverage must be 1x, 2x, or 5x.',
+    NotPositionOwner: 'Only the position owner can do this.',
+    PositionAlreadyClosed: 'This position is already closed.',
+    NotCopyTracker: 'Only CopyTracker can call this function.',
+    CopyTrackerNotSet: 'CopyTracker is not set yet — contact an admin.',
+    'Insufficient execution fee': 'Needs 0.001 ETH as the execution fee — top up your ETH.',
+    AlreadyRegistered: "You're already a trader — no need to register again.",
+    NotRegistered: 'Register as a trader first.',
+    EmptyAllocations: 'A strategy needs at least one allocation — it cannot be empty.',
+    InvalidWeightSum: 'Weights must add up to 100%.',
+    ZeroWeight: 'Weight cannot be 0.',
+    CooldownNotElapsed: "The unstake cooldown hasn't ended yet.",
+    NoUnstakeRequest: 'No pending unstake request.',
+    InsufficientStake: 'Insufficient stake.',
+    AlreadyMined: "This position's trade-mining reward was already claimed — don't claim it twice.",
+    AlreadyCheckedIn: "You've already checked in today — come back tomorrow!",
+    TierAlreadyClaimed: "This tier's promotion reward was already claimed!",
+    CopyAlreadyClaimed: "This copy relationship's reward was already claimed!",
+    NotFollowing: "You're not currently copying this trader!",
+    InvalidTier: 'Invalid tier parameter!',
+    InsufficientPool:
+      "The rewards contract's PEPE pool is running low — contact an admin to top it up!",
+    TierThresholdNotMet:
+      "Your cumulative trading volume (Notional Volume) hasn't reached this tier's requirement!",
+    StalePrice:
+      "The on-chain price is stale — the keeper hasn't updated it yet. Wait a few minutes and try again, or ask an admin to trigger the keeper manually.",
+    NotKycVerified: 'This asset is an RWA market — complete KYC verification before trading.',
+    PositionIsHealthy:
+      "This position's margin is still healthy — it doesn't meet the liquidation condition.",
+    FundingIntervalNotElapsed:
+      "The funding settlement interval (8 hours) hasn't elapsed yet — no need to settle manually.",
+    NotPositionAgent:
+      'This position was opened by a different agent session — only the agent that opened it can close it on your behalf.',
 
-    // ── PepeAMM（恆定乘積池：swap 會有滑點，且受 oracle 護欄限制）─────────────
+    // ── PepeAMM (constant-product pool: swaps slip, and are bounded by an oracle guard rail) ──
     StaleOraclePrice:
-      '兌換池的參考預言機報價已過期（超過 maxOracleAge），為避免被過期價格套利，兌換暫停。請等 keeper 更新價格後再試',
+      "The swap pool's reference oracle price is stale (past maxOracleAge) — swaps are paused to prevent arbitrage on a stale price. Wait for the keeper to update it and try again.",
     PriceOutOfBand:
-      '這筆兌換會把池價推離預言機報價太遠（超過 maxOracleDeviationBps）。請減少兌換金額，或等其他人先把池子拉回平衡',
-    InsufficientLiquidity: '兌換池流動性不足以支撐這筆金額，請減少兌換數量',
-    InsufficientInput: '兌換金額太小（扣掉手續費後為 0），請加大金額',
+      'This swap would push the pool price too far from the oracle price (past maxOracleDeviationBps). Reduce the swap amount, or wait for someone else to rebalance the pool first.',
+    InsufficientLiquidity:
+      "The pool doesn't have enough liquidity for this amount — reduce the swap size.",
+    InsufficientInput: 'Swap amount is too small (it nets to 0 after fees) — increase the amount.',
     InsufficientOutput:
-      '實際成交量低於你設定的最低可接受數量（滑點保護生效）。價格在你送出後變動了，請重新取得報價再試',
-    InsufficientShares: 'LP share 不足，無法移除這麼多流動性',
-    EthNotAccepted: '不能直接把 ETH 轉給兌換池。請用 Swap 功能（swapETHForUSDC）或 addLiquidity',
-    InvalidOraclePrice: '預言機回報的價格無效（0 或負值），兌換暫停',
+      'The actual fill is below your minimum acceptable amount (slippage protection triggered). The price moved after you submitted — get a fresh quote and try again.',
+    InsufficientShares: 'Not enough LP shares to remove that much liquidity.',
+    EthNotAccepted:
+      'Sending ETH directly to the pool is not supported — use the Swap function (swapETHForUSDC) or addLiquidity.',
+    InvalidOraclePrice: 'The oracle reported an invalid price (0 or negative) — swaps are paused.',
 
-    // ── Mock 代幣 ────────────────────────────────────────────────────────────
+    // ── Mock tokens ──────────────────────────────────────────────────────────
     FaucetCallerMustBeEOA:
-      '水龍頭只開放一般錢包（EOA）領取。你目前是用合約錢包（Safe / ERC-4337 smart account）呼叫，請改用一般 EOA 錢包，或請管理員直接轉幣給你',
+      'The faucet only pays out to regular wallets (EOAs). You called it from a contract wallet (Safe / ERC-4337 smart account) — switch to a regular EOA wallet, or ask an admin to send the tokens to you directly.',
     NotMinter:
-      'mint 只有合約 owner 或已註冊的 swapRouter 能呼叫。一般使用者請改用水龍頭 faucet() 領取測試幣',
+      'Only the contract owner or a registered swapRouter can call mint. Regular users should use faucet() to claim test tokens instead.',
 
-    // ── KYCRegistry（審核制）─────────────────────────────────────────────────
-    NoSubmission: '這個地址還沒送出 KYC 申請，無法審核',
-    NotVerifier: '只有審核人員（verifier）或合約 owner 能執行 KYC 審核',
+    // ── KYCRegistry (review-gated) ──────────────────────────────────────────
+    NoSubmission: "This address hasn't submitted a KYC application yet — nothing to review.",
+    NotVerifier: 'Only a verifier or the contract owner can perform KYC review.',
 
-    // ── ESG / 激勵 ───────────────────────────────────────────────────────────
-    EsgHoldAlreadyClaimed: '此倉位的 ESG 長抱獎勵已領取過囉！',
-    AlreadyClaimed: '此獎勵已領取過囉！',
-    PositionNotOpen: '倉位必須「仍持有中」才能領獎。已平倉的倉位不符合資格',
-    HoldTooShort: '持有時間還沒達到最短持有期（預設 30 天），請再抱一陣子',
-    AssetNotHighEsg: '此標的的 ESG 綜合分數未達高分門檻，不符合 ESG 獎勵資格',
-    EsgScoreTooLow: '此標的的 ESG 分數低於門檻，不符合獎勵資格',
-    SelfCopyNotAllowed: '不能跟單自己',
+    // ── ESG / incentives ─────────────────────────────────────────────────────
+    EsgHoldAlreadyClaimed: "This position's ESG long-hold reward was already claimed!",
+    AlreadyClaimed: 'This reward was already claimed!',
+    PositionNotOpen:
+      'The position must still be open to claim this reward — a closed position is not eligible.',
+    HoldTooShort:
+      "You haven't held it for the minimum holding period yet (30 days by default) — hang on to it a bit longer.",
+    AssetNotHighEsg:
+      "This asset's composite ESG score is below the high-score threshold — it doesn't qualify for the ESG reward.",
+    EsgScoreTooLow:
+      "This asset's ESG score is below the threshold — it doesn't qualify for the reward.",
+    SelfCopyNotAllowed: "You can't copy your own trades.",
     PositionIdsNotSorted:
-      '倉位 ID 陣列必須嚴格遞增（已自動排序仍失敗代表有重複 ID），請重新整理頁面再試',
-    RewardExceedsBudget: '本次發放金額超過質押合約的獎勵預算（rewardBudget），請聯絡管理員調整',
+      'The position ID array must be strictly increasing (still failing after auto-sorting means there are duplicate IDs) — refresh the page and try again.',
+    RewardExceedsBudget:
+      "This payout exceeds the staking contract's reward budget (rewardBudget) — contact an admin to adjust it.",
 
-    // ── 預言機 adapter（stale/不完整/低信賴度時會 revert，不再回傳舊值）──────
+    // ── Oracle adapter (reverts rather than returning a stale value when stale/incomplete/low-confidence) ──
     PriceIsStale:
-      '預言機價格已過期（超過 staleThreshold，預設 1 小時），為安全起見直接拒絕，不會用舊價成交',
-    IncompleteRound: 'Chainlink 該輪報價尚未完成（incomplete round），請稍後再試',
-    InvalidTimestamp: '預言機回報的時間戳無效，拒絕使用此報價',
-    FeedNotSet: '此標的尚未設定 Chainlink / Pyth feed',
-    NoLiveSource: '聚合預言機的兩個來源都無法提供有效報價，交易暫停（fail-closed）',
+      'The oracle price is stale (past staleThreshold, 1 hour by default) — rejected outright for safety rather than filling at a stale price.',
+    IncompleteRound:
+      "This Chainlink price round hasn't completed yet (incomplete round) — try again shortly.",
+    InvalidTimestamp: 'The oracle reported an invalid timestamp — rejecting this price.',
+    FeedNotSet: "This asset doesn't have a Chainlink / Pyth feed set yet.",
+    NoLiveSource:
+      'Neither source in the aggregated oracle can provide a valid price — trading is paused (fail-closed).',
     SingleSourceNotAllowed:
-      '聚合預言機只剩單一來源可用，且未開啟 allowSingleSource，交易暫停（fail-closed）',
-    PriceDeviationTooHigh: '兩個預言機來源的報價偏離過大，為避免用到錯價，交易暫停',
-    InvalidParam: '參數超出合約允許的上下界，請檢查輸入值',
-    InvalidPrice: '鏈上價格無效（0），無法結算',
-    'user rejected': '你拒絕了交易',
-    'User rejected': '你拒絕了交易',
-    ACTION_REJECTED: '你拒絕了交易',
-    'insufficient funds': 'ETH 不夠付 gas 費',
-    OutOfFunds: 'ETH 餘額不足以支付執行費（開倉需附 ETH），請先領取測試 ETH 🚰',
-    'execution reverted': '交易執行失敗',
-    'nonce too low': 'Nonce 太低，請重試',
+      'Only one source is available in the aggregated oracle, and allowSingleSource is off — trading is paused (fail-closed).',
+    PriceDeviationTooHigh:
+      'The two oracle sources have diverged too far — trading is paused to avoid using a bad price.',
+    InvalidParam: 'Parameter is outside the bounds the contract allows — check your input.',
+    InvalidPrice: 'The on-chain price is invalid (0) — cannot settle.',
+    'user rejected': 'You rejected the transaction',
+    'User rejected': 'You rejected the transaction',
+    ACTION_REJECTED: 'You rejected the transaction',
+    'insufficient funds': 'Not enough ETH to cover the gas fee',
+    OutOfFunds:
+      'ETH balance is too low to cover the execution fee (opening a position requires ETH) — claim test ETH first 🚰',
+    'execution reverted': 'Transaction execution failed',
+    'nonce too low': 'Nonce too low — try again.',
   },
 
   /** 認得出是 revert、但只有「execution reverted」這種沒資訊量的訊息時的說法。 */
   reverted: {
-    copy: '領取跟單獎勵失敗 (Reverted)。請確認：1. 您已開始跟單此交易員；2. 您尚未領取過此關係的獎勵；3. 激勵合約已充值足夠的 PEPE 資金池。',
-    tier: '等級晉級獎勵領取失敗 (Reverted)。請確認：1. 您的累計交易量已達標該等級門檻；2. 您尚未領取過此等級獎勵；3. 激勵合約已充值足夠的 PEPE 資金池。',
+    copy: "Claiming the copy-trading reward failed (Reverted). Check that: 1. You've started copying this trader; 2. You haven't already claimed the reward for this relationship; 3. The rewards contract has enough PEPE funded in its pool.",
+    tier: "Claiming the tier promotion reward failed (Reverted). Check that: 1. Your cumulative trading volume has reached this tier's threshold; 2. You haven't already claimed this tier's reward; 3. The rewards contract has enough PEPE funded in its pool.",
     mining:
-      '交易挖礦獎勵領取失敗 (Reverted)。請確認：1. 您是此倉位的持有者；2. 該倉位尚未領取過挖礦獎勵；3. 激勵合約已充值足夠的 PEPE 資金池。',
+      "Claiming the trade-mining reward failed (Reverted). Check that: 1. You are the owner of this position; 2. This position hasn't already claimed its mining reward; 3. The rewards contract has enough PEPE funded in its pool.",
     checkin:
-      '每日簽到失敗 (Reverted)。請確認：1. 您今天尚未簽到過；2. 激勵合約的 PEPE 資金池已充值足夠資金。',
+      "Daily check-in failed (Reverted). Check that: 1. You haven't already checked in today; 2. The rewards contract's PEPE pool is funded.",
     generic:
-      '交易執行失敗 (Reverted)。常見原因：ETH 不足以支付執行費、保證金不足、或鏈上價格過期。請檢查餘額與參數後再試。',
+      'Transaction execution failed (Reverted). Common causes: not enough ETH for the execution fee, insufficient margin, or a stale on-chain price. Check your balance and parameters and try again.',
   },
 
   unrecognised:
-    '交易失敗，且錯誤訊息無法辨識。請確認網路與餘額後重試；若持續發生，請開瀏覽器 console 取得原始錯誤回報。',
+    'The transaction failed and the error could not be identified. Check your network and balance and try again — if it keeps happening, open the browser console for the raw error to report.',
 };

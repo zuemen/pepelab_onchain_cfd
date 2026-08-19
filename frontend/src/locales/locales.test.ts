@@ -45,7 +45,7 @@ function allSourceFiles(): string[] {
  * 就不帶中文，要嘛得先在這裡登記非零的天花板，否則會立刻讓 ratchet 失敗。
  */
 const EN_HAN_BASELINES: Record<string, number> = {
-  'errors.ts': 1388,
+  'errors.ts': 0,
   'pepe.ts': 1370,
   'exchange.ts': 970,
   'terminal.ts': 685,
