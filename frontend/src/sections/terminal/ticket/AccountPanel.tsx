@@ -3,6 +3,7 @@ import { useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 
+import { t, interpolate } from 'src/locales'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { fUsd, fNum, fToken, fromUnits } from 'src/lib/pepefi/format'
 
@@ -43,7 +44,7 @@ export function AccountPanel({
     if (!contracts) return
     const amt = tryParse(dep)
     if (!amt) {
-      notify('Enter amount', false)
+      notify(t.terminal.account.enterAmount, false)
       return
     }
     setBusy(true)
@@ -52,7 +53,7 @@ export function AccountPanel({
       await a.wait()
       const d = asTx(await contracts.exchange.depositMargin(amt))
       await d.wait()
-      notify(`Deposited ${dep} USDC ✓`, true)
+      notify(interpolate(t.terminal.account.deposited, { amount: dep }), true)
       setDep('')
       await onDeposited()
     } catch (e) {
@@ -75,10 +76,13 @@ export function AccountPanel({
         gap: 0.6,
       }}
     >
-      <Row k="Equity" v={fUsd(fromUnits(equity, 18))} strong />
-      <Row k="Free margin" v={fToken(fromUnits(freeMgn, 18), 'USDC', { dp: 2 })} />
+      <Row k={t.terminal.account.equity} v={fUsd(fromUnits(equity, 18))} strong />
       <Row
-        k="Unrealized PnL"
+        k={t.terminal.account.freeMargin}
+        v={fToken(fromUnits(freeMgn, 18), 'USDC', { dp: 2 })}
+      />
+      <Row
+        k={t.terminal.account.unrealizedPnl}
         v={fNum(pnl, { dp: 4, signed: true })}
         color={pnl >= 0 ? C.green : C.red}
       />
@@ -113,9 +117,12 @@ export function AccountPanel({
         })}
       </Box>
 
-      <Row k={`Wallet ${stable}`} v={fNum(fromUnits(stable === 'USDC' ? usdcBal : usdtBal, 18))} />
+      <Row
+        k={interpolate(t.terminal.account.wallet, { token: stable })}
+        v={fNum(fromUnits(stable === 'USDC' ? usdcBal : usdtBal, 18))}
+      />
       <Box sx={{ ...monoCss, fontSize: 10, color: C.mut, lineHeight: 1.4 }}>
-        margin settles in USDC · USDT is hold/swap only
+        {t.terminal.account.marginNote}
       </Box>
 
       <Box sx={{ display: 'flex', gap: 0.8, mt: 0.8 }}>
@@ -124,8 +131,8 @@ export function AccountPanel({
             value={dep}
             onChange={(e) => setDep(e.target.value)}
             type="number"
-            placeholder="deposit"
-            aria-label="Deposit amount (USDC)"
+            placeholder={t.terminal.account.depositPlaceholder}
+            aria-label={t.terminal.account.depositAria}
             style={{
               flex: 1,
               background: 'transparent',
@@ -155,7 +162,7 @@ export function AccountPanel({
             '&.Mui-disabled': { bgcolor: 'rgba(255,255,255,.05)', color: C.mut },
           }}
         >
-          {busy ? '…' : 'Deposit'}
+          {busy ? t.exchange.working : t.terminal.account.deposit}
         </Button>
       </Box>
     </Box>

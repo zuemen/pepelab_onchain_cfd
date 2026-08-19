@@ -2,6 +2,7 @@ import type { Fill } from 'src/hooks/useUserFills'
 
 import Box from '@mui/material/Box'
 
+import { t } from 'src/locales'
 import { explorerTx } from 'src/lib/pepefi/notify'
 import { ASSET_META } from 'src/lib/pepefi/assetMeta'
 import { fUsd, fNum, fromUnits } from 'src/lib/pepefi/format'
@@ -11,9 +12,9 @@ import { C, monoCss, labelCss } from '../terminal-theme'
 const COLS = '.9fr 1fr .8fr 1fr 1fr .9fr'
 
 const KIND_LABEL: Record<Fill['kind'], string> = {
-  opened: 'Open',
-  closed: 'Close',
-  liquidated: 'Liquidated',
+  opened: t.terminal.fills.kind.opened,
+  closed: t.terminal.fills.kind.closed,
+  liquidated: t.terminal.fills.kind.liquidated,
 }
 
 export function FillsTable({
@@ -32,7 +33,7 @@ export function FillsTable({
     return <Msg color={C.red}>{error}</Msg>
   }
   if (!fills.length) {
-    return <Msg>{loading ? '讀取鏈上成交…' : '近期無成交紀錄'}</Msg>
+    return <Msg>{loading ? t.terminal.fills.loading : t.terminal.fills.empty}</Msg>
   }
 
   return (
@@ -48,7 +49,14 @@ export function FillsTable({
             borderBottom: `1px solid ${C.line}`,
           }}
         >
-          {['Type', 'Asset', 'Side', 'Price', 'PnL', 'Tx'].map((h) => (
+          {[
+            t.terminal.fills.column.type,
+            t.terminal.fills.column.asset,
+            t.terminal.fills.column.side,
+            t.terminal.fills.column.price,
+            t.terminal.fills.column.pnl,
+            t.terminal.fills.column.tx,
+          ].map((h) => (
             <Box key={h}>{h}</Box>
           ))}
         </Box>
@@ -77,7 +85,11 @@ export function FillsTable({
               <Box sx={{ color: kindColor, fontWeight: 700 }}>{KIND_LABEL[f.kind]}</Box>
               <Box>{sym}</Box>
               <Box sx={{ color: f.isLong === undefined ? C.mut : f.isLong ? C.green : C.red }}>
-                {f.isLong === undefined ? '—' : f.isLong ? 'LONG' : 'SHORT'}
+                {f.isLong === undefined
+                  ? '—'
+                  : f.isLong
+                    ? t.terminal.fills.long
+                    : t.terminal.fills.short}
               </Box>
               <Box>{f.price !== undefined ? fUsd(fromUnits(f.price, 18)) : '—'}</Box>
               <Box sx={{ color: pnl === null ? C.mut : pnl >= 0 ? C.green : C.red }}>

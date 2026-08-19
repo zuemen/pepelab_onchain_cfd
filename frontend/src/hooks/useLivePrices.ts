@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 
+import { t } from 'src/locales'
 import { useContracts } from 'src/hooks/useContracts'
 import { safeRead } from 'src/lib/pepefi/safeRead'
 import { useWalletContext } from 'src/contexts/wallet-context'
@@ -7,7 +8,7 @@ import { ASSET_IDS, getAddresses } from 'src/contracts/addresses'
 import { classifyFreshness, type Freshness } from 'src/lib/pepefi/priceFreshness'
 
 /** 模擬價格沒有鏈上年齡可言。 */
-const MOCK_FRESHNESS: Freshness = { level: 'unknown', ageSec: null, label: '模擬價格' }
+const MOCK_FRESHNESS: Freshness = { level: 'unknown', ageSec: null, label: t.freshness.mockLabel }
 
 /** 讀不到 exchange.maxPriceAge() 時的後備值 = Base Sepolia 上實際部署的 6 小時。 */
 const FALLBACK_MAX_PRICE_AGE_SEC = 21600

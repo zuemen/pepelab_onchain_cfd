@@ -8,6 +8,7 @@ import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { TableSkeleton } from 'src/components/pepefi/Skeleton'
 import { ASSETS_LIST, ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
 import { getPepeAvatar } from 'src/utils/pepefi-assets'
+import { t, locale, interpolate } from 'src/locales'
 import TraderRankBadge from 'src/components/pepefi/TraderRankBadge'
 import Avatar from '@mui/material/Avatar'
 
@@ -73,7 +74,7 @@ const parseAlloc = (a: unknown): RawAlloc => {
 }
 
 const fmtDate = (ts: bigint) =>
-  new Date(Number(ts) * 1000).toLocaleString('zh-TW', {
+  new Date(Number(ts) * 1000).toLocaleString(locale, {
     dateStyle: 'short',
     timeStyle: 'short',
   })
@@ -228,7 +229,7 @@ export default function TraderDashboard() {
     try {
       const tx = asTx(await contracts.registry.registerTrader(nameInput.trim()))
       await tx.wait()
-      notify('Registered as trader ✓', true, tx.hash)
+      notify(t.traderDashboard.register.done, true, tx.hash)
       setNameInput('')
       await fetchTrader()
     } catch (e) {
@@ -248,7 +249,7 @@ export default function TraderDashboard() {
     try {
       const tx = asTx(await contracts.registry.publishStrategy(allocs))
       await tx.wait()
-      notify('Strategy published ✓', true, tx.hash)
+      notify(t.traderDashboard.publish.done, true, tx.hash)
       setRows([])
       await fetchHistory()
     } catch (e) {
@@ -262,7 +263,7 @@ export default function TraderDashboard() {
     try {
       const tx = asTx(await contracts.feeRouter.withdrawTraderEarnings())
       await tx.wait()
-      notify('Earnings claimed ✓', true, tx.hash)
+      notify(t.traderDashboard.earnings.claimed, true, tx.hash)
       await fetchEarnings()
     } catch (e) {
       notify(prettyError(e), false)
@@ -277,7 +278,7 @@ export default function TraderDashboard() {
   if (!wallet.isConnected) {
     return (
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-        <Typography color="text.secondary">Connect wallet to access Trader Dashboard.</Typography>
+        <Typography color="text.secondary">{t.traderDashboard.connectWallet}</Typography>
       </Box>
     )
   }
@@ -307,7 +308,7 @@ export default function TraderDashboard() {
                 color="inherit"
                 sx={{ display: 'block', mt: 0.5, typography: 'caption', textDecoration: 'underline' }}
               >
-                View on {explorerName(wallet.chainId)} ↗
+                {interpolate(t.traderDashboard.viewOn, { explorer: explorerName(wallet.chainId) })}
               </Link>
             )}
           </Alert>
@@ -348,7 +349,9 @@ export default function TraderDashboard() {
               {stakeData && (
                 <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5 }}>
                   <Chip
-                    label={`◆ ${String(stakeData.reputation)} rep`}
+                    label={interpolate(t.traderDashboard.profile.repChip, {
+                      rep: String(stakeData.reputation),
+                    })}
                     size="small"
                     sx={{
                       fontWeight: 'bold',
@@ -359,7 +362,9 @@ export default function TraderDashboard() {
                     }}
                   />
                   <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
-                    {(Number(stakeData.stake) / 1e18).toFixed(0)} mUSDC staked
+                    {interpolate(t.traderDashboard.profile.staked, {
+                      amount: (Number(stakeData.stake) / 1e18).toFixed(0),
+                    })}
                   </Typography>
                 </Box>
               )}
@@ -371,24 +376,26 @@ export default function TraderDashboard() {
       {/* ─── A. Register ────────────────────────────────────────────────── */}
       <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
         <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-          Register Trader
+          {t.traderDashboard.register.title}
         </Typography>
 
         {traderInfo?.isRegistered ? (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
             <Chip
-              label={`✓ ${traderInfo.displayName}`}
+              label={interpolate(t.traderDashboard.register.registeredChip, {
+                name: traderInfo.displayName,
+              })}
               color="success"
               sx={{ fontWeight: 'bold' }}
             />
             <Typography variant="caption" color="text.secondary">
-              Registered as public trader
+              {t.traderDashboard.register.registeredNote}
             </Typography>
           </Box>
         ) : (
           <Box sx={{ display: 'flex', gap: 1.5 }}>
             <TextField
-              placeholder="Display name (e.g. AlphaTrader)"
+              placeholder={t.traderDashboard.register.placeholder}
               value={nameInput}
               onChange={e => setNameInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') void doRegister() }}
@@ -400,7 +407,7 @@ export default function TraderDashboard() {
               onClick={() => void doRegister()}
               disabled={busy['register'] || !nameInput.trim()}
             >
-              {busy['register'] ? '…' : 'Register'}
+              {busy['register'] ? t.traderDashboard.register.registering : t.traderDashboard.register.cta}
             </Button>
           </Box>
         )}
@@ -410,14 +417,14 @@ export default function TraderDashboard() {
       <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-            Publish Strategy
+            {t.traderDashboard.publish.title}
           </Typography>
           <Button
             variant="text"
             onClick={addRow}
             sx={{ textTransform: 'none', fontWeight: 'bold' }}
           >
-            + Add Asset
+            {t.traderDashboard.publish.addAsset}
           </Button>
         </Box>
 
@@ -430,19 +437,19 @@ export default function TraderDashboard() {
               to="/stake"
               sx={{ fontWeight: 'bold' }}
             >
-              Go to Trader Stake →
+              {t.traderDashboard.publish.goToStake}
             </Button>
           }>
             <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
-              Stake required to publish
+              {t.traderDashboard.publish.stakeRequiredTitle}
             </Typography>
-            You need to stake at least 100 mUSDC before publishing a strategy. This gives followers confidence that you have skin-in-the-game.
+            {t.traderDashboard.publish.stakeRequiredBody}
           </Alert>
         )}
 
         {rows.length === 0 ? (
           <Typography color="text.secondary" sx={{ py: 1 }}>
-            Click "+ Add Asset" to define allocations.
+            {t.traderDashboard.publish.empty}
           </Typography>
         ) : (
           <>
@@ -450,10 +457,10 @@ export default function TraderDashboard() {
               <Table size="small">
                 <TableHead>
                   <TableRow>
-                    <TableCell sx={{ color: 'text.secondary', fontWeight: 'bold' }}>Asset</TableCell>
-                    <TableCell sx={{ color: 'text.secondary', fontWeight: 'bold' }}>Direction</TableCell>
-                    <TableCell sx={{ color: 'text.secondary', fontWeight: 'bold' }}>Leverage</TableCell>
-                    <TableCell align="right" sx={{ color: 'text.secondary', fontWeight: 'bold' }}>Weight %</TableCell>
+                    <TableCell sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{t.traderDashboard.publish.column.asset}</TableCell>
+                    <TableCell sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{t.traderDashboard.publish.column.direction}</TableCell>
+                    <TableCell sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{t.traderDashboard.publish.column.leverage}</TableCell>
+                    <TableCell align="right" sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{t.traderDashboard.publish.column.weight}</TableCell>
                     <TableCell />
                   </TableRow>
                 </TableHead>
@@ -493,7 +500,7 @@ export default function TraderDashboard() {
                                 '&:hover': { bgcolor: row.isLong ? 'success.dark' : 'action.hover' }
                               }}
                             >
-                              Long ↑
+                              {t.traderDashboard.publish.long}
                             </Button>
                             <Button
                               onClick={() => updateRow(row.uid, { isLong: false })}
@@ -508,7 +515,7 @@ export default function TraderDashboard() {
                                 '&:hover': { bgcolor: !row.isLong ? 'error.dark' : 'action.hover' }
                               }}
                             >
-                              Short ↓
+                              {t.traderDashboard.publish.short}
                             </Button>
                           </Box>
                         </TableCell>
@@ -555,7 +562,7 @@ export default function TraderDashboard() {
 
             {hasDup && (
               <Typography variant="caption" color="error.main">
-                Each asset can only appear once per strategy. Remove the duplicate.
+                {t.traderDashboard.publish.duplicateWarning}
               </Typography>
             )}
 
@@ -576,7 +583,12 @@ export default function TraderDashboard() {
               </Typography>
               {!weightOk && (
                 <Typography variant="caption" color="text.secondary">
-                  {totalBps > 10000 ? 'exceeds' : 'must reach'} 100%
+                  {interpolate(t.traderDashboard.publish.weightTarget, {
+                    state:
+                      totalBps > 10000
+                        ? t.traderDashboard.publish.exceeds
+                        : t.traderDashboard.publish.mustReach,
+                  })}
                 </Typography>
               )}
               {!weightOk && rows.length > 0 && totalBps > 9000 && totalBps < 11000 && (
@@ -585,7 +597,7 @@ export default function TraderDashboard() {
                   onClick={autoFix}
                   sx={{ textTransform: 'none', textDecoration: 'underline', color: 'success.main', minWidth: 0, p: 0 }}
                 >
-                  Auto-fix to 100%
+                  {t.traderDashboard.publish.autoFix}
                 </Button>
               )}
             </Box>
@@ -599,17 +611,17 @@ export default function TraderDashboard() {
           disabled={busy['publish'] || !canPublish}
           fullWidth
         >
-          {busy['publish'] ? 'Publishing…' : 'Publish Strategy'}
+          {busy['publish'] ? t.traderDashboard.publish.publishing : t.traderDashboard.publish.cta}
         </Button>
 
         {!traderInfo?.isRegistered && (
           <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center', display: 'block' }}>
-            Register as a trader first to publish.
+            {t.traderDashboard.publish.registerFirst}
           </Typography>
         )}
         {traderInfo?.isRegistered && eligible === false && (
           <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center', display: 'block' }}>
-            Stake ≥ 100 mUSDC on the <Link component={RouterLink} to="/stake" color="primary.main">Stake page</Link> to unlock publishing.
+            {t.traderDashboard.publish.stakeToUnlockBefore}<Link component={RouterLink} to="/stake" color="primary.main">{t.traderDashboard.publish.stakeToUnlockLink}</Link>{t.traderDashboard.publish.stakeToUnlockAfter}
           </Typography>
         )}
       </Card>
@@ -618,7 +630,7 @@ export default function TraderDashboard() {
       <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-            Fee Earnings
+            {t.traderDashboard.earnings.title}
           </Typography>
           <Button
             variant="text"
@@ -626,19 +638,19 @@ export default function TraderDashboard() {
             onClick={() => void fetchEarnings()}
             sx={{ textTransform: 'none' }}
           >
-            ↺ Refresh
+            {t.traderDashboard.earnings.refresh}
           </Button>
         </Box>
 
         <Card sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', bgcolor: 'background.neutral' }}>
           <Box>
             <Typography variant="caption" color="text.secondary">
-              Claimable (copy + perf fees)
+              {t.traderDashboard.earnings.claimable}
             </Typography>
             <Typography variant="h5" color="success.main" sx={{ fontFamily: MONO, fontWeight: 'bold', display: 'flex', alignItems: 'baseline' }}>
               {earnings === null ? '…' : (Number(earnings) / 1e18).toFixed(4)}
               <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary', ml: 0.5 }}>
-                mUSDC
+                USDC
               </Box>
             </Typography>
           </Box>
@@ -648,12 +660,12 @@ export default function TraderDashboard() {
             onClick={() => void doClaim()}
             disabled={busy['claim'] || !earnings || earnings === 0n}
           >
-            {busy['claim'] ? 'Claiming…' : 'Claim All'}
+            {busy['claim'] ? t.traderDashboard.earnings.claiming : t.traderDashboard.earnings.claimAll}
           </Button>
         </Card>
 
         <Typography variant="caption" color="text.secondary">
-          Earnings accrue when followers pay the 0.3% copy fee or close copied positions in profit (10% performance fee). Your share is 70% of each fee.
+          {t.traderDashboard.earnings.note}
         </Typography>
       </Card>
 
@@ -661,7 +673,7 @@ export default function TraderDashboard() {
       <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-            Strategy History
+            {t.traderDashboard.history.title}
           </Typography>
           <Button
             variant="text"
@@ -669,7 +681,7 @@ export default function TraderDashboard() {
             onClick={() => void fetchHistory()}
             sx={{ textTransform: 'none' }}
           >
-            ↺ Refresh
+            {t.traderDashboard.history.refresh}
           </Button>
         </Box>
 
@@ -677,7 +689,7 @@ export default function TraderDashboard() {
           <TableSkeleton rows={3} cols={4} />
         ) : history.length === 0 ? (
           <Typography color="text.secondary" sx={{ py: 4, textAlign: 'center' }}>
-            No strategies published yet.
+            {t.traderDashboard.history.empty}
           </Typography>
         ) : (
           <Stack spacing={1.5}>
@@ -705,9 +717,15 @@ export default function TraderDashboard() {
                       v{ver.versionId}
                     </Typography>
                     <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'text.primary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {ver.allocs.map(a =>
-                        `${ASSET_LABEL[a.asset] ?? a.asset.slice(0, 6)} ${a.isLong ? 'L' : 'S'} ${String(a.leverage)}×`,
-                      ).join('  ·  ')}
+                      {ver.allocs
+                        .map(a =>
+                          interpolate(t.traderDashboard.history.summaryEntry, {
+                            asset: ASSET_LABEL[a.asset] ?? a.asset.slice(0, 6),
+                            side: a.isLong ? t.traderDashboard.history.long : t.traderDashboard.history.short,
+                            leverage: String(a.leverage),
+                          }),
+                        )
+                        .join('  ·  ')}
                     </Typography>
                   </Box>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, ml: 2, shrink: 0 }}>
@@ -726,7 +744,12 @@ export default function TraderDashboard() {
                       <Table size="small">
                         <TableHead>
                           <TableRow>
-                            {['Asset', 'Side', 'Leverage', 'Weight'].map(h => (
+                            {[
+                              t.traderDashboard.history.column.asset,
+                              t.traderDashboard.history.column.side,
+                              t.traderDashboard.history.column.leverage,
+                              t.traderDashboard.history.column.weight,
+                            ].map(h => (
                               <TableCell key={h} sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{h}</TableCell>
                             ))}
                           </TableRow>
@@ -738,7 +761,7 @@ export default function TraderDashboard() {
                                 {ASSET_LABEL[a.asset] ?? a.asset.slice(0, 8)}
                               </TableCell>
                               <TableCell sx={{ fontWeight: 'bold', color: a.isLong ? 'success.main' : 'error.main' }}>
-                                {a.isLong ? 'Long ↑' : 'Short ↓'}
+                                {a.isLong ? t.traderDashboard.history.longLabel : t.traderDashboard.history.shortLabel}
                               </TableCell>
                               <TableCell sx={{ fontFamily: MONO }}>{String(a.leverage)}×</TableCell>
                               <TableCell align="right" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>

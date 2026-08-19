@@ -1,3 +1,5 @@
+import { t, interpolate } from 'src/locales'
+
 // Achievements, daily quests, and the check-in reward curve.
 //
 // These lived inline in DashboardPage and (until it was deleted) in an
@@ -30,14 +32,14 @@ export interface Achievement {
 }
 
 export const ACHIEVEMENTS: Achievement[] = [
-  { id: 'ach_first_stake',  emoji: '🌱', title: '初次質押',    desc: '持有任何 PEPE',             check: c => c.pepeNum > 0 },
-  { id: 'ach_streak3',      emoji: '🔥', title: '3 天連到',    desc: '連續簽到 3 天',              check: c => c.streak >= 3 },
-  { id: 'ach_streak7',      emoji: '⚡', title: '週簽神人',    desc: '連續簽到 7 天',              check: c => c.streak >= 7 },
-  { id: 'ach_first_trade',  emoji: '📈', title: '首筆交易',    desc: '開過至少一筆倉',              check: c => c.positions >= 1 },
-  { id: 'ach_whale',        emoji: '🐋', title: 'Whale 降臨', desc: '持有 100,000 PEPE',           check: c => c.pepeNum >= 100_000 },
-  { id: 'ach_collector',    emoji: '🎨', title: '收藏家',      desc: '收藏至少 3 件 Pepe 道具',    check: c => c.owned >= 3 },
-  { id: 'ach_degen',        emoji: '🎰', title: 'Degen',       desc: '持有 1,000,000 PEPE',        check: c => c.pepeNum >= 1_000_000 },
-  { id: 'ach_legend',       emoji: '👑', title: '傳說 Pepe',   desc: '所有成就解鎖',               check: c => c.streak >= 7 && c.pepeNum >= 100_000 && c.owned >= 3 },
+  { id: 'ach_first_stake', emoji: '🌱', title: t.pepe.achievement.ach_first_stake.title, desc: t.pepe.achievement.ach_first_stake.desc, check: c => c.pepeNum > 0 },
+  { id: 'ach_streak3', emoji: '🔥', title: t.pepe.achievement.ach_streak3.title, desc: t.pepe.achievement.ach_streak3.desc, check: c => c.streak >= 3 },
+  { id: 'ach_streak7', emoji: '⚡', title: t.pepe.achievement.ach_streak7.title, desc: t.pepe.achievement.ach_streak7.desc, check: c => c.streak >= 7 },
+  { id: 'ach_first_trade', emoji: '📈', title: t.pepe.achievement.ach_first_trade.title, desc: t.pepe.achievement.ach_first_trade.desc, check: c => c.positions >= 1 },
+  { id: 'ach_whale', emoji: '🐋', title: t.pepe.achievement.ach_whale.title, desc: t.pepe.achievement.ach_whale.desc, check: c => c.pepeNum >= 100_000 },
+  { id: 'ach_collector', emoji: '🎨', title: t.pepe.achievement.ach_collector.title, desc: t.pepe.achievement.ach_collector.desc, check: c => c.owned >= 3 },
+  { id: 'ach_degen', emoji: '🎰', title: t.pepe.achievement.ach_degen.title, desc: t.pepe.achievement.ach_degen.desc, check: c => c.pepeNum >= 1_000_000 },
+  { id: 'ach_legend', emoji: '👑', title: t.pepe.achievement.ach_legend.title, desc: t.pepe.achievement.ach_legend.desc, check: c => c.streak >= 7 && c.pepeNum >= 100_000 && c.owned >= 3 },
 ]
 
 // ── Daily quests ──────────────────────────────────────────────────────────────
@@ -61,9 +63,9 @@ export interface QuestCtx {
 /** Quests are derived from live state, so they are built rather than listed. */
 export function buildQuests(c: QuestCtx): Quest[] {
   return [
-    { id: 'q_checkin', emoji: '📅', title: '每日簽到',      reward: `+${dailyRewardFor(c.streak)} PEPE`, progress: c.checkedToday ? 100 : 0,            done: c.checkedToday },
-    { id: 'q_trade',   emoji: '📈', title: '開一筆新倉',    reward: '+25 PEPE',                          progress: c.positions > 0 ? 100 : 0,           done: c.positions > 0 },
-    { id: 'q_balance', emoji: '💰', title: '持有 100 PEPE', reward: '達成成就',                          progress: Math.min(100, c.pepeNum),            done: c.pepeNum >= 100 },
-    { id: 'q_streak3', emoji: '🔥', title: '連簽 3 天',     reward: '解鎖成就',                          progress: Math.min(100, (c.streak / 3) * 100), done: c.streak >= 3 },
+    { id: 'q_checkin', emoji: '📅', title: t.pepe.quest.q_checkin.title, reward: interpolate(t.pepe.quest.q_checkin.reward, { amount: dailyRewardFor(c.streak) }), progress: c.checkedToday ? 100 : 0,            done: c.checkedToday },
+    { id: 'q_trade', emoji: '📈', title: t.pepe.quest.q_trade.title, reward: t.pepe.quest.q_trade.reward, progress: c.positions > 0 ? 100 : 0,           done: c.positions > 0 },
+    { id: 'q_balance', emoji: '💰', title: t.pepe.quest.q_balance.title, reward: t.pepe.quest.q_balance.reward, progress: Math.min(100, c.pepeNum),            done: c.pepeNum >= 100 },
+    { id: 'q_streak3', emoji: '🔥', title: t.pepe.quest.q_streak3.title, reward: t.pepe.quest.q_streak3.reward, progress: Math.min(100, (c.streak / 3) * 100), done: c.streak >= 3 },
   ]
 }

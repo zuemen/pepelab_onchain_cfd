@@ -11,6 +11,7 @@ import { fNum, fUsd, fromUnits } from 'src/lib/pepefi/format'
 import {
   ASSET_IDS, getAddresses, getSynthTokens, getV2Stack, type AssetSymbol,
 } from 'src/contracts/addresses'
+import { t, interpolate } from 'src/locales'
 import { ASSET_META } from 'src/lib/pepefi/assetMeta'
 import SyntheticAssetABI   from 'src/contracts/abi/SyntheticAsset.json'
 import SyntheticAssetV2ABI from 'src/contracts/abi/SyntheticAssetV2.json'
@@ -244,8 +245,8 @@ export default function TokenizedAssetsPage() {
   const doBuy = async (sym: AssetSymbol) => {
     if (!contracts || !activeVault || !activeVaultAddr) return
     let usdcAmt: bigint
-    try { usdcAmt = parseEther(amount) } catch { notify('金額格式不正確', false); return }
-    if (usdcAmt <= 0n) { notify('請輸入大於 0 的金額', false); return }
+    try { usdcAmt = parseEther(amount) } catch { notify(t.tokens.tx.badAmount, false); return }
+    if (usdcAmt <= 0n) { notify(t.tokens.tx.amountTooSmall, false); return }
 
     setBusy(true)
     try {
@@ -255,7 +256,7 @@ export default function TokenizedAssetsPage() {
       await approveTx.wait()
       const tx = asTx(await activeVault.mint(ASSET_IDS[sym], usdcAmt))
       await tx.wait()
-      notify(`已買入 ${sym} ✓ — 代幣已進入你的錢包`, true, tx.hash)
+      notify(interpolate(t.tokens.tx.bought, { symbol: sym }), true, tx.hash)
       closeDlg()
       await refresh()
     } catch (e) {
@@ -266,14 +267,14 @@ export default function TokenizedAssetsPage() {
   const doSell = async (sym: AssetSymbol) => {
     if (!activeVault) return
     let tokenAmt: bigint
-    try { tokenAmt = parseEther(amount) } catch { notify('數量格式不正確', false); return }
-    if (tokenAmt <= 0n) { notify('請輸入大於 0 的數量', false); return }
+    try { tokenAmt = parseEther(amount) } catch { notify(t.tokens.tx.badQuantity, false); return }
+    if (tokenAmt <= 0n) { notify(t.tokens.tx.quantityTooSmall, false); return }
 
     setBusy(true)
     try {
       const tx = asTx(await activeVault.redeem(ASSET_IDS[sym], tokenAmt))
       await tx.wait()
-      notify(`已賣出 ${sym} ✓ — USDC 已退回錢包`, true, tx.hash)
+      notify(interpolate(t.tokens.tx.sold, { symbol: sym }), true, tx.hash)
       closeDlg()
       await refresh()
     } catch (e) {
@@ -285,7 +286,7 @@ export default function TokenizedAssetsPage() {
   // the token should be visibly sitting in the wallet.
   const addToWallet = async (sym: AssetSymbol) => {
     const eth = window.ethereum
-    if (!eth) { notify('找不到錢包擴充功能', false); return }
+    if (!eth) { notify(t.tokens.tx.noWallet, false); return }
     try {
       await eth.request({
         method: 'wallet_watchAsset',
@@ -302,46 +303,46 @@ export default function TokenizedAssetsPage() {
         size="small" exclusive value={version}
         onChange={(_, v) => v && switchVersion(v)}
       >
-        <ToggleButton value="v1" sx={{ textTransform: 'none', px: 2 }}>V1（原始版）</ToggleButton>
-        <Tooltip title={v2Available ? '' : '此網路尚未部署 V2'} arrow>
+        <ToggleButton value="v1" sx={{ textTransform: 'none', px: 2 }}>{t.tokens.version.v1}</ToggleButton>
+        <Tooltip title={v2Available ? '' : t.tokens.version.v2Unavailable} arrow>
           {/* span keeps the tooltip alive on a disabled control */}
           <span>
             <ToggleButton value="v2" disabled={!v2Available} sx={{ textTransform: 'none', px: 2 }}>
-              V2（硬化版）
+              {t.tokens.version.v2}
             </ToggleButton>
           </span>
         </Tooltip>
       </ToggleButtonGroup>
-      {isV2 && <Chip size="small" color="success" variant="outlined" label="SafeERC20 · 重入保護 · 可暫停" />}
+      {isV2 && <Chip size="small" color="success" variant="outlined" label={t.tokens.version.v2Chip} />}
     </Stack>
   )
 
   const diffTable = (
     <Accordion sx={{ mt: 1 }}>
       <AccordionSummary expandIcon={<Icon icon="solar:alt-arrow-down-linear" />}>
-        <Typography sx={{ fontWeight: 'bold' }}>V1 / V2 差異對照</Typography>
+        <Typography sx={{ fontWeight: 'bold' }}>{t.tokens.diff.title}</Typography>
       </AccordionSummary>
       <AccordionDetails>
         <TableContainer>
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>項目</TableCell>
-                <TableCell>V1</TableCell>
-                <TableCell>V2</TableCell>
+                <TableCell>{t.tokens.diff.columnItem}</TableCell>
+                <TableCell>{t.tokens.diff.columnV1}</TableCell>
+                <TableCell>{t.tokens.diff.columnV2}</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {[
-                ['ERC-20 轉帳', '裸 transfer', 'SafeERC20'],
-                ['重入保護', '無', 'ReentrancyGuard'],
-                ['暫停機制', '無', 'Pausable'],
-                ['權限模型', 'Ownable（單一 owner）', 'AccessControl（角色分離）'],
-                ['可升級性', '不可升級', 'UUPS proxy'],
-                ['Oracle', 'MockOracle（單一 key）', 'GuardedOracle（多 keeper + 偏差上限）'],
-                ['發行上限', '無', '每資產 cap'],
-                ['儲備率保護', '無', '低於下限拒絕 mint'],
-                ['手續費', '無', 'mint 手續費'],
+                [t.tokens.diff.transfer, t.tokens.diff.transferV1, t.tokens.diff.transferV2],
+                [t.tokens.diff.reentrancy, t.tokens.diff.reentrancyV1, t.tokens.diff.reentrancyV2],
+                [t.tokens.diff.pausable, t.tokens.diff.pausableV1, t.tokens.diff.pausableV2],
+                [t.tokens.diff.access, t.tokens.diff.accessV1, t.tokens.diff.accessV2],
+                [t.tokens.diff.upgradeable, t.tokens.diff.upgradeableV1, t.tokens.diff.upgradeableV2],
+                [t.tokens.diff.oracle, t.tokens.diff.oracleV1, t.tokens.diff.oracleV2],
+                [t.tokens.diff.cap, t.tokens.diff.capV1, t.tokens.diff.capV2],
+                [t.tokens.diff.reserve, t.tokens.diff.reserveV1, t.tokens.diff.reserveV2],
+                [t.tokens.diff.fee, t.tokens.diff.feeV1, t.tokens.diff.feeV2],
               ].map(([k, a, b]) => (
                 <TableRow key={k}>
                   <TableCell sx={{ fontWeight: 'bold' }}>{k}</TableCell>
@@ -353,8 +354,8 @@ export default function TokenizedAssetsPage() {
           </Table>
         </TableContainer>
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
-          兩套實作並存於鏈上，V1 保留作為對照組。詳見 <b>docs/RISK_MODEL.md</b> 與{' '}
-          <b>docs/KNOWN_LIMITATIONS.md</b>。
+          {t.tokens.markup.diffNoteBefore}<b>docs/RISK_MODEL.md</b>{t.tokens.markup.diffNoteMid}{' '}
+          <b>docs/KNOWN_LIMITATIONS.md</b>{t.tokens.markup.diffNoteAfter}
         </Typography>
       </AccordionDetails>
     </Accordion>
@@ -365,14 +366,12 @@ export default function TokenizedAssetsPage() {
     return (
       <Container maxWidth="md" sx={{ py: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
         <Box>
-          <Typography variant="h4" sx={{ fontWeight: 800 }}>代幣化資產</Typography>
+          <Typography variant="h4" sx={{ fontWeight: 800 }}>{t.tokens.title}</Typography>
           <Typography variant="body2" color="text.secondary">ERC-20 Tokenized Assets</Typography>
         </Box>
         {versionSwitcher}
         <Alert severity="info">
-          {isV2
-            ? '此網路尚未部署 V2 硬化版金庫。'
-            : '代幣化資產尚未在此網路啟用（AssetVault 未部署）。'}
+          {isV2 ? t.tokens.notDeployed.v2 : t.tokens.notDeployed.vault}
         </Alert>
         {diffTable}
       </Container>
@@ -386,40 +385,35 @@ export default function TokenizedAssetsPage() {
   return (
     <Container maxWidth="lg" sx={{ py: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
       <Box>
-        <Typography variant="h4" sx={{ fontWeight: 800 }}>代幣化資產</Typography>
+        <Typography variant="h4" sx={{ fontWeight: 800 }}>{t.tokens.title}</Typography>
         <Typography variant="body2" color="text.secondary">ERC-20 Tokenized Assets</Typography>
       </Box>
 
       {versionSwitcher}
 
       <Alert severity="info">
-        本頁展示<b>代幣化資產（ERC-20）</b>。與交易頁的合成持倉不同，這裡買入的資產會以
-        ERC-20 token 形式<b>出現在你的錢包中</b>，可加入 MetaMask 檢視、可轉帳給他人。
-        買賣以 <b>USDC</b> 結算，價格取自鏈上 oracle（無滑價）。
+        {t.tokens.markup.introBefore}<b>{t.tokens.markup.introBold1}</b>{t.tokens.markup.introMid1}<b>{t.tokens.markup.introBold2}</b>{t.tokens.markup.introMid2}<b>USDC</b>{t.tokens.markup.introAfter}
       </Alert>
 
       {/* ── V2 hardening panel ─────────────────────────────────────────────── */}
       {isV2 ? (
         <Card sx={{ p: 2.5 }}>
           <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 2 }}>
-            🛡️ V2 硬化特性（鏈上即時數值）
+            {t.tokens.health.title}
           </Typography>
 
           {health.oracleStale && (
             <Alert severity="warning" variant="outlined" sx={{ mb: 2 }}>
-              <b>GuardedOracle 價格已過期</b>，買賣暫時無法執行。
-              這是 fail-closed 的預期行為：預言機拒絕提供過期報價，而金庫的儲備率計算
-              會直接呼叫它，所以 <code>reserveRatioBps()</code> 與 <code>mint()</code> 會一起 revert。
-              需由 KEEPER_ROLE 重新餵價後恢復。
+              <b>{t.tokens.markup.staleOracleBold}</b>{t.tokens.markup.staleOracleMid1}<code>reserveRatioBps()</code>{t.tokens.markup.staleOracleMid2}<code>mint()</code>{t.tokens.markup.staleOracleAfter}
             </Alert>
           )}
           <Grid container spacing={2.5}>
             <Grid size={{ xs: 12, md: 4 }}>
-              <Typography variant="caption" color="text.secondary" display="block">儲備率</Typography>
+              <Typography variant="caption" color="text.secondary" display="block">{t.tokens.health.reserveRatio}</Typography>
               <Typography sx={{ fontFamily: MONO, fontWeight: 'bold', fontSize: '1.15rem' }}>
                 {ratioPct === null
                   ? '—'
-                  : ratioPct > 100000 ? '∞（尚無發行）' : ratioPct.toFixed(1) + '%'}
+                  : ratioPct > 100000 ? t.tokens.health.reserveRatioInfinite : ratioPct.toFixed(1) + '%'}
               </Typography>
               <LinearProgress
                 variant="determinate"
@@ -428,28 +422,28 @@ export default function TokenizedAssetsPage() {
                 sx={{ mt: 0.75, height: 6, borderRadius: 3 }}
               />
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
-                金庫 USDC 儲備 / 已發行代幣總值。低於下限時 mint 會被拒絕。
+                {t.tokens.health.reserveRatioNote}
               </Typography>
             </Grid>
 
             <Grid size={{ xs: 12, md: 4 }}>
-              <Typography variant="caption" color="text.secondary" display="block">運作狀態</Typography>
+              <Typography variant="caption" color="text.secondary" display="block">{t.tokens.health.status}</Typography>
               {health.paused === null ? (
                 <Typography sx={{ fontFamily: MONO }}>—</Typography>
               ) : (
                 <Chip
                   size="small"
                   color={health.paused ? 'error' : 'success'}
-                  label={health.paused ? '已暫停' : '運作中'}
+                  label={health.paused ? t.tokens.health.paused : t.tokens.health.running}
                   sx={{ fontWeight: 'bold', mt: 0.5 }}
                 />
               )}
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-                Pausable：緊急時可由 PAUSER_ROLE 停止買賣。
+                {t.tokens.health.pausableNote}
               </Typography>
 
               <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1.5 }}>
-                累積手續費
+                {t.tokens.health.accruedFees}
               </Typography>
               <Typography sx={{ fontFamily: MONO }}>
                 {health.accruedFees === null ? '—' : f18(health.accruedFees, 2) + ' USDC'}
@@ -457,7 +451,7 @@ export default function TokenizedAssetsPage() {
             </Grid>
 
             <Grid size={{ xs: 12, md: 4 }}>
-              <Typography variant="caption" color="text.secondary" display="block">GuardedOracle</Typography>
+              <Typography variant="caption" color="text.secondary" display="block">{t.tokens.health.guardedOracle}</Typography>
               <Link
                 href={`https://sepolia.etherscan.io/address/${v2!.oracleAddr}`}
                 target="_blank" rel="noopener noreferrer"
@@ -466,15 +460,14 @@ export default function TokenizedAssetsPage() {
                 {v2!.oracleAddr}
               </Link>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
-                多 keeper 預言機，單次更新偏差超過上限會被拒絕。
+                {t.tokens.health.guardedOracleNote}
               </Typography>
             </Grid>
           </Grid>
         </Card>
       ) : (
         <Alert severity="warning" variant="outlined">
-          V1 為初版實作，未包含 SafeERC20、儲備率保護與暫停機制。已部署合約的 bytecode
-          無法修改，因此 V1 保留於鏈上作為架構演進的對照組，建議使用 V2。
+          {t.tokens.health.v1Notice}
         </Alert>
       )}
 
@@ -499,7 +492,7 @@ export default function TokenizedAssetsPage() {
                 </Box>
 
                 <Box>
-                  <Typography variant="caption" color="text.secondary" display="block">Oracle 價格</Typography>
+                  <Typography variant="caption" color="text.secondary" display="block">{t.tokens.card.oraclePrice}</Typography>
                   {loading ? (
                     <Skeleton height={24} sx={{ width: '60%' }} />
                   ) : (
@@ -510,7 +503,7 @@ export default function TokenizedAssetsPage() {
                 </Box>
 
                 <Box>
-                  <Typography variant="caption" color="text.secondary" display="block">我的餘額</Typography>
+                  <Typography variant="caption" color="text.secondary" display="block">{t.tokens.card.myBalance}</Typography>
                   {loading ? (
                     <Skeleton height={24} sx={{ width: '70%' }} />
                   ) : (
@@ -525,9 +518,9 @@ export default function TokenizedAssetsPage() {
 
                 {isV2 && (
                   <Box>
-                    <Typography variant="caption" color="text.secondary" display="block">發行量 / 上限</Typography>
+                    <Typography variant="caption" color="text.secondary" display="block">{t.tokens.card.issuedOverCap}</Typography>
                     <Typography variant="caption" sx={{ fontFamily: MONO }}>
-                      {f18(row?.issued ?? 0n, 2)} / {(row?.cap ?? 0n) === 0n ? '0（已關閉）' : f18(row?.cap ?? 0n, 2)}
+                      {f18(row?.issued ?? 0n, 2)} / {(row?.cap ?? 0n) === 0n ? t.tokens.card.capClosed : f18(row?.cap ?? 0n, 2)}
                     </Typography>
                   </Box>
                 )}
@@ -539,7 +532,7 @@ export default function TokenizedAssetsPage() {
                     onClick={() => setDlg({ sym, mode: 'buy' })}
                     sx={{ textTransform: 'none', fontWeight: 'bold' }}
                   >
-                    買入
+                    {t.tokens.card.buy}
                   </Button>
                   <Button
                     size="small" variant="outlined" fullWidth
@@ -547,7 +540,7 @@ export default function TokenizedAssetsPage() {
                     onClick={() => setDlg({ sym, mode: 'sell' })}
                     sx={{ textTransform: 'none', fontWeight: 'bold' }}
                   >
-                    賣出
+                    {t.tokens.card.sell}
                   </Button>
                 </Stack>
 
@@ -556,7 +549,7 @@ export default function TokenizedAssetsPage() {
                   onClick={() => void addToWallet(sym)}
                   sx={{ textTransform: 'none', fontSize: '0.75rem', color: 'info.main', alignSelf: 'flex-start' }}
                 >
-                  ➕ 加入 MetaMask
+                  {t.tokens.card.addToWallet}
                 </Button>
               </Card>
             </Grid>
@@ -565,8 +558,7 @@ export default function TokenizedAssetsPage() {
       </Grid>
 
       <Typography variant="caption" color="text.secondary">
-        提示：賣出由金庫的 USDC 儲備支付。若儲備不足會顯示「vault dry」，
-        需由管理者呼叫 <Box component="code" sx={{ fontFamily: MONO }}>fundVault()</Box> 補充。
+        {t.tokens.markup.vaultDryBefore}<Box component="code" sx={{ fontFamily: MONO }}>fundVault()</Box>{t.tokens.markup.vaultDryAfter}
       </Typography>
 
       <Divider />
@@ -575,7 +567,9 @@ export default function TokenizedAssetsPage() {
       {/* buy / sell dialog */}
       <Dialog open={!!dlg} onClose={closeDlg} maxWidth="xs" fullWidth>
         <DialogTitle sx={{ fontWeight: 'bold' }}>
-          {dlg?.mode === 'buy' ? '買入' : '賣出'} {dlg?.sym}
+          {interpolate(dlg?.mode === 'buy' ? t.tokens.dialog.buyTitle : t.tokens.dialog.sellTitle, {
+            symbol: dlg?.sym ?? '',
+          })}
           <Chip size="small" label={isV2 ? 'V2' : 'V1'} sx={{ ml: 1 }} />
         </DialogTitle>
         <DialogContent>
@@ -592,7 +586,11 @@ export default function TokenizedAssetsPage() {
             />
             <TextField
               autoFocus fullWidth type="number" size="small"
-              label={dlg?.mode === 'buy' ? '支付 USDC 金額' : `賣出 ${dlg?.sym ?? ''} 數量`}
+              label={
+                dlg?.mode === 'buy'
+                  ? t.tokens.dialog.buyAmountLabel
+                  : interpolate(t.tokens.dialog.sellAmountLabel, { symbol: dlg?.sym ?? '' })
+              }
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               disabled={busy}
@@ -609,28 +607,33 @@ export default function TokenizedAssetsPage() {
             <Box>
               <Typography variant="caption" color="text.secondary" display="block">
                 {quote === null
-                  ? '輸入金額以取得報價'
+                  ? t.tokens.dialog.needAmount
                   : dlg?.mode === 'buy'
-                    ? `你將獲得 ≈ ${f18(quote.out)} ${dlg?.sym ?? ''}`
-                    : `你將收到 ≈ ${fUsd(Number(quote.out) / 1e18)} USDC`}
+                    ? interpolate(t.tokens.dialog.buyQuote, {
+                        amount: f18(quote.out),
+                        symbol: dlg?.sym ?? '',
+                      })
+                    : interpolate(t.tokens.dialog.sellQuote, {
+                        amount: fUsd(Number(quote.out) / 1e18),
+                      })}
               </Typography>
               {isV2 && quote !== null && quote.fee > 0n && (
                 <Typography variant="caption" color="warning.main" display="block">
-                  手續費：{f18(quote.fee, 4)} USDC
+                  {interpolate(t.tokens.dialog.fee, { amount: f18(quote.fee, 4) })}
                 </Typography>
               )}
             </Box>
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={closeDlg} disabled={busy} sx={{ textTransform: 'none' }}>取消</Button>
+          <Button onClick={closeDlg} disabled={busy} sx={{ textTransform: 'none' }}>{t.tokens.dialog.cancel}</Button>
           <Button
             variant="contained"
             disabled={busy || !amount}
             onClick={() => dlg && void (dlg.mode === 'buy' ? doBuy(dlg.sym) : doSell(dlg.sym))}
             sx={{ textTransform: 'none', fontWeight: 'bold' }}
           >
-            {busy ? '處理中…' : '確認'}
+            {busy ? t.tokens.dialog.working : t.tokens.dialog.confirm}
           </Button>
         </DialogActions>
       </Dialog>

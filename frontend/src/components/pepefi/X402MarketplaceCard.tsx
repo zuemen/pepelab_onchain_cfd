@@ -8,6 +8,7 @@ import Stack from '@mui/material/Stack'
 import Button from '@mui/material/Button'
 import Typography from '@mui/material/Typography'
 
+import { t, interpolate } from 'src/locales'
 import { SIGNAL_API_URL, demoBuySignal } from 'src/lib/pepefi/signalApi'
 
 // 即時鏈上分潤統計（讀 Track A 的 /revenue）+ 訪客試買按鈕。
@@ -33,9 +34,9 @@ export default function X402MarketplaceCard() {
     try {
       const r = await demoBuySignal()
       if (r.ok && r.settlementTx) setTx(r.settlementTx)
-      else if (!r.ok) setErr(r.error ?? 'demo buy failed')
+      else if (!r.ok) setErr(r.error ?? t.x402.docs.tryBuy.failed)
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'API 未連上（VITE_SIGNAL_API_URL?）')
+      setErr(e instanceof Error ? e.message : t.x402.card.apiUnreachable)
     } finally { setBusy(false) }
   }
 
@@ -44,30 +45,33 @@ export default function X402MarketplaceCard() {
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ md: 'center' }} justifyContent="space-between">
         <Box>
           <Stack direction="row" spacing={1} alignItems="center">
-            <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>⚡ x402 Signal Marketplace</Typography>
-            <Chip size="small" color="success" label="pay-per-call" />
+            <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>{t.x402.card.title}</Typography>
+            <Chip size="small" color="success" label={t.x402.card.chip} />
           </Stack>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            任何 agent 帶 Base Sepolia USDC 即可付費購買訊號（$0.01/$0.005），收入 70/20/10 上鏈分潤。
+            {t.x402.card.description}
           </Typography>
           {rev && (
             <Typography variant="caption" sx={{ fontFamily: 'monospace', mt: 0.5, display: 'block' }}>
-              鏈上累計：${rev.feeUsd.toFixed(3)} 收入 · ${rev.traderShare.toFixed(3)} 歸 traders (70%)
+              {interpolate(t.x402.card.accrued, {
+                feeUsd: rev.feeUsd.toFixed(3),
+                traderShare: rev.traderShare.toFixed(3),
+              })}
             </Typography>
           )}
         </Box>
         <Stack direction="row" spacing={1} alignItems="center">
           <Button variant="contained" color="success" disabled={busy} onClick={() => void tryBuy()}>
-            {busy ? '購買中…' : '試買 ($0.01)'}
+            {busy ? t.x402.card.busy : t.x402.card.tryBuy}
           </Button>
-          <Button component={RouterLink} to="/x402" variant="outlined">API 文件</Button>
+          <Button component={RouterLink} to="/x402" variant="outlined">{t.x402.card.docs}</Button>
         </Stack>
       </Stack>
       {tx && (
         <Typography variant="caption" sx={{ display: 'block', mt: 1 }}>
-          ✓ 已上鏈：{' '}
+          {t.x402.card.settled}{' '}
           <Link href={`https://sepolia.basescan.org/tx/${tx}`} target="_blank" rel="noopener" sx={{ textDecoration: 'underline' }}>
-            BaseScan settlement tx ↗
+            {t.x402.card.viewSettlement}
           </Link>
         </Typography>
       )}

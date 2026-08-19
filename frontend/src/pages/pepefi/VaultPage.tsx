@@ -5,6 +5,7 @@ import { parseUnits, formatUnits } from 'ethers'
 import { useContracts } from 'src/hooks/useContracts'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { explorerTx } from 'src/lib/pepefi/notify'
+import { t, interpolate } from 'src/locales'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { safeRead } from 'src/lib/pepefi/safeRead'
 import Skeleton from 'src/components/pepefi/Skeleton'
@@ -72,19 +73,19 @@ async function fetchActivity(vault: Contract): Promise<ActivityEntry[]> {
 
     for (const e of dep) {
       const args = (e as EventLog).args
-      events.push({ type: 'Deposited', label: 'LP Deposit', amount: f18(args.usdcAmount) + ' USDT', from: args.user, block: e.blockNumber ?? 0 })
+      events.push({ type: 'Deposited', label: t.vault.activity.deposited, amount: f18(args.usdcAmount) + ' USDT', from: args.user, block: e.blockNumber ?? 0 })
     }
     for (const e of wit) {
       const args = (e as EventLog).args
-      events.push({ type: 'Withdrawn', label: 'LP Withdraw', amount: f18(args.usdcAmount) + ' USDT', from: args.user, block: e.blockNumber ?? 0 })
+      events.push({ type: 'Withdrawn', label: t.vault.activity.withdrawn, amount: f18(args.usdcAmount) + ' USDT', from: args.user, block: e.blockNumber ?? 0 })
     }
     for (const e of pro) {
       const args = (e as EventLog).args
-      events.push({ type: 'ProtocolDeposit', label: 'Protocol Fee', amount: f18(args.amount) + ' USDT', from: args.from, block: e.blockNumber ?? 0 })
+      events.push({ type: 'ProtocolDeposit', label: t.vault.activity.protocolDeposit, amount: f18(args.amount) + ' USDT', from: args.from, block: e.blockNumber ?? 0 })
     }
     for (const e of bai) {
       const args = (e as EventLog).args
-      events.push({ type: 'Bailout', label: 'Bailout Paid', amount: f18(args.amount) + ' USDT', from: args.trader, block: e.blockNumber ?? 0 })
+      events.push({ type: 'Bailout', label: t.vault.activity.bailout, amount: f18(args.amount) + ' USDT', from: args.trader, block: e.blockNumber ?? 0 })
     }
 
     events.sort((a, b) => b.block - a.block)
@@ -155,7 +156,7 @@ export default function VaultPage() {
       await approveTx.wait()
       const tx = await vault.deposit(amount)
       await tx.wait()
-      notify(`Deposited ${depositAmt} mUSDC ✓`, true, tx.hash)
+      notify(interpolate(t.vault.deposit.done, { amount: depositAmt }), true, tx.hash)
       setDepositAmt('')
       await fetchStats()
       if (vault) setActivity(await fetchActivity(vault))
@@ -173,7 +174,7 @@ export default function VaultPage() {
       const shares = parseUnits(withdrawAmt.trim(), 18)
       const tx = await vault.withdraw(shares)
       await tx.wait()
-      notify(`Withdrew ${withdrawAmt} pIV shares ✓`, true, tx.hash)
+      notify(interpolate(t.vault.withdraw.done, { amount: withdrawAmt }), true, tx.hash)
       setWithdrawAmt('')
       await fetchStats()
       if (vault) setActivity(await fetchActivity(vault))
@@ -187,7 +188,7 @@ export default function VaultPage() {
   if (!wallet.isConnected) {
     return (
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-        <Typography color="text.secondary">Connect wallet to use the LP Vault.</Typography>
+        <Typography color="text.secondary">{t.vault.connectWallet}</Typography>
       </Box>
     )
   }
@@ -205,10 +206,10 @@ export default function VaultPage() {
       {/* Stats */}
       <Grid container spacing={2}>
         {[
-          { label: 'Total Assets', value: stats ? f18(stats.totalAssets) + ' mUSDC' : null },
-          { label: 'Share Price',  value: stats ? f18(stats.sharePrice) + ' mUSDC/pIV' : null },
-          { label: 'Total Supply', value: stats ? f18(stats.totalSupply) + ' pIV' : null },
-          { label: 'My pIV Value', value: stats ? f18(stats.myUsdcValue) + ' mUSDC' : null },
+          { label: t.vault.stat.totalAssets, value: stats ? f18(stats.totalAssets) + ' USDC' : null },
+          { label: t.vault.stat.sharePrice,  value: stats ? f18(stats.sharePrice) + ' USDC/pIV' : null },
+          { label: t.vault.stat.totalSupply, value: stats ? f18(stats.totalSupply) + ' pIV' : null },
+          { label: t.vault.stat.myValue,     value: stats ? f18(stats.myUsdcValue) + ' USDC' : null },
         ].map(s => (
           <Grid size={{ xs: 6, md: 3 }} key={s.label}>
             <Card sx={{ p: 2 }}>
@@ -232,15 +233,15 @@ export default function VaultPage() {
         <Card sx={{ p: 2, bgcolor: 'background.neutral', borderLeft: '3px solid', borderColor: 'success.main' }}>
           <Typography variant="body2" sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, alignItems: 'baseline' }}>
             <Box component="span" sx={{ fontWeight: 'bold', color: 'success.main' }}>
-              Market-making yield active:
+              {t.vault.markup.mmActiveLabel}
             </Box>
             <Box component="span" sx={{ color: 'text.secondary' }}>
-              {Number(stats.feeShareBps) / 100}% of every trade's fee is routed to LPs —
+              {interpolate(t.vault.markup.mmPctRouted, { pct: Number(stats.feeShareBps) / 100 })}
             </Box>
             <Box component="span" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
-              {f18(stats.feesRouted)} mUSDC
+              {interpolate(t.vault.markup.mmAmount, { amount: f18(stats.feesRouted) })}
             </Box>
-            <Box component="span" sx={{ color: 'text.secondary' }}>routed to date.</Box>
+            <Box component="span" sx={{ color: 'text.secondary' }}>{t.vault.markup.mmRoutedToDate}</Box>
           </Typography>
         </Card>
       )}
@@ -249,12 +250,12 @@ export default function VaultPage() {
       {stats && stats.myShares > ZERO && (
         <Card sx={{ p: 3, bgcolor: 'background.neutral' }}>
           <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2, fontWeight: 'bold' }}>
-            Your Position
+            {t.vault.position.title}
           </Typography>
           <Stack direction="row" spacing={4}>
             <Box>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                pIV held
+                {t.vault.position.shares}
               </Typography>
               <Typography variant="body1" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
                 {f18(stats.myShares, 4)}
@@ -262,7 +263,7 @@ export default function VaultPage() {
             </Box>
             <Box>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                mUSDC value
+                {t.vault.position.value}
               </Typography>
               <Typography variant="body1" color="success.main" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
                 {f18(stats.myUsdcValue)}
@@ -278,16 +279,16 @@ export default function VaultPage() {
         <Grid size={{ xs: 12, md: 6 }}>
           <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2, height: '100%' }}>
             <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-              Deposit mUSDC
+              {t.vault.deposit.title}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ flexGrow: 1 }}>
-              Receive pIV shares proportional to current pool size. Earn yield from protocol fees.
+              {t.vault.deposit.description}
             </Typography>
             <Box sx={{ display: 'flex', gap: 1 }}>
               <TextField
                 type="number"
                 size="small"
-                placeholder="mUSDC amount"
+                placeholder={t.vault.deposit.placeholder}
                 value={depositAmt}
                 onChange={e => setDepositAmt(e.target.value)}
                 slotProps={{ htmlInput: { min: "0", style: { fontFamily: MONO } } }}
@@ -298,14 +299,20 @@ export default function VaultPage() {
                 onClick={() => void doDeposit()}
                 disabled={busy || !depositAmt}
               >
-                {busy ? '…' : 'Deposit'}
+                {busy ? t.vault.working : t.vault.deposit.cta}
               </Button>
             </Box>
             {stats && depositAmt && (
               <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
-                ≈ {f18((stats.totalSupply > ZERO && stats.totalAssets > ZERO)
-                  ? BigInt(Math.floor(Number(depositAmt) * 1e18)) * stats.totalSupply / stats.totalAssets
-                  : BigInt(Math.floor(Number(depositAmt) * 1e18)), 4)} pIV
+                {interpolate(t.vault.deposit.estimate, {
+                  shares: f18(
+                    stats.totalSupply > ZERO && stats.totalAssets > ZERO
+                      ? (BigInt(Math.floor(Number(depositAmt) * 1e18)) * stats.totalSupply) /
+                          stats.totalAssets
+                      : BigInt(Math.floor(Number(depositAmt) * 1e18)),
+                    4,
+                  ),
+                })}
               </Typography>
             )}
           </Card>
@@ -315,16 +322,16 @@ export default function VaultPage() {
         <Grid size={{ xs: 12, md: 6 }}>
           <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2, height: '100%' }}>
             <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-              Withdraw Shares
+              {t.vault.withdraw.title}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ flexGrow: 1 }}>
-              Burn pIV shares to receive proportional mUSDC from the pool.
+              {t.vault.withdraw.description}
             </Typography>
             <Box sx={{ display: 'flex', gap: 1 }}>
               <TextField
                 type="number"
                 size="small"
-                placeholder="pIV shares"
+                placeholder={t.vault.withdraw.placeholder}
                 value={withdrawAmt}
                 onChange={e => setWithdrawAmt(e.target.value)}
                 slotProps={{ htmlInput: { min: "0", style: { fontFamily: MONO } } }}
@@ -336,15 +343,21 @@ export default function VaultPage() {
                 onClick={() => void doWithdraw()}
                 disabled={busy || !withdrawAmt}
               >
-                {busy ? '…' : 'Withdraw'}
+                {busy ? t.vault.working : t.vault.withdraw.cta}
               </Button>
             </Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               {stats && withdrawAmt ? (
                 <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
-                  ≈ {f18(stats.totalSupply > ZERO
-                    ? BigInt(Math.floor(Number(withdrawAmt) * 1e18)) * stats.totalAssets / stats.totalSupply
-                    : 0n, 4)} mUSDC
+                  {interpolate(t.vault.withdraw.estimate, {
+                    amount: f18(
+                      stats.totalSupply > ZERO
+                        ? (BigInt(Math.floor(Number(withdrawAmt) * 1e18)) * stats.totalAssets) /
+                            stats.totalSupply
+                        : 0n,
+                      4,
+                    ),
+                  })}
                 </Typography>
               ) : <Box />}
               {stats && stats.myShares > ZERO && (
@@ -355,7 +368,7 @@ export default function VaultPage() {
                   onClick={() => setWithdrawAmt(formatUnits(stats.myShares, 18))}
                   sx={{ textDecoration: 'underline', p: 0, minWidth: 0, textTransform: 'none', typography: 'caption', color: 'text.secondary', '&:hover': { color: 'text.primary', bgcolor: 'transparent' } }}
                 >
-                  Max ({f18(stats.myShares, 4)} pIV)
+                  {interpolate(t.vault.withdraw.max, { shares: f18(stats.myShares, 4) })}
                 </Button>
               )}
             </Box>
@@ -385,7 +398,7 @@ export default function VaultPage() {
                 color="inherit"
                 sx={{ display: 'block', mt: 0.5, typography: 'caption', textDecoration: 'underline' }}
               >
-                View on Etherscan ↗
+                {t.vault.viewOnEtherscan}
               </Link>
             )}
           </Alert>
@@ -396,11 +409,15 @@ export default function VaultPage() {
       <Card>
         <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
           <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
-            Recent Activity
+            {t.vault.activity.title}
           </Typography>
         </Box>
         {activity.length === 0 ? (
-          <EmptyState icon="🏦" title="No activity yet" description="Deposit mUSDC to start earning yield from protocol fees." />
+          <EmptyState
+            icon="🏦"
+            title={t.vault.activity.emptyTitle}
+            description={t.vault.activity.emptyDescription}
+          />
         ) : (
           <TableContainer>
             <Table size="small">
@@ -424,7 +441,7 @@ export default function VaultPage() {
                     </TableCell>
                     <TableCell align="right">
                       <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
-                        #{a.block}
+                        {interpolate(t.vault.activity.block, { block: a.block })}
                       </Typography>
                     </TableCell>
                   </TableRow>
@@ -439,10 +456,10 @@ export default function VaultPage() {
       <Card sx={{ p: 2.5, bgcolor: 'background.neutral' }}>
         <Stack spacing={1}>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-            <Box component="span" sx={{ color: 'text.primary', fontWeight: 'bold' }}>How it works:</Box> LPs deposit mUSDC and receive pIV shares. The vault earns 10% of all copy-trading and performance fees via the FeeRouter. On liquidation the vault only receives the <Box component="span" sx={{ fontWeight: 'bold' }}>liquidation penalty</Box> (<code>liquidationPenaltyBps</code>) plus the liquidator&apos;s reward — the position owner is refunded whatever margin is left after loss, fees and penalty, so liquidation is no longer a 100% forfeit.
+            <Box component="span" sx={{ color: 'text.primary', fontWeight: 'bold' }}>{t.vault.markup.howItWorksLabel}</Box>{t.vault.markup.howItWorksBody}<Box component="span" sx={{ fontWeight: 'bold' }}>{t.vault.markup.liquidationPenaltyLabel}</Box>{t.vault.markup.howItWorksCodeWrap}<code>liquidationPenaltyBps</code>{t.vault.markup.howItWorksTail}
           </Typography>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-            When a trader&apos;s loss exceeds their margin (extreme event), the vault pays a 10% bailout floor directly to the trader. If losses exceed what the vault can cover, the shortfall is emitted as a <code>BadDebt</code> event and the vault has to be topped up via <code>recapitalize()</code>. LPs bear this risk in exchange for the yield.
+            {t.vault.markup.badDebtBefore}<code>BadDebt</code>{t.vault.markup.badDebtMid}<code>recapitalize()</code>{t.vault.markup.badDebtAfter}
           </Typography>
         </Stack>
       </Card>

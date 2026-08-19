@@ -1,4 +1,5 @@
 import Box from '@mui/material/Box';
+import { t, interpolate } from 'src/locales';
 
 import type { PepeMount } from 'src/components/pepefi/pepeMountsData';
 
@@ -36,13 +37,13 @@ export interface PepeEvolutionStage {
 }
 
 export const PEPE_EVOLUTION_STAGES: PepeEvolutionStage[] = [
-  { stage: 0, minLevel: 1,  title: 'Pepe Egg 🥚',          label: '蛙蛋',   desc: '一顆發著綠光的神秘蛙蛋，安坐在成堆的 PEPE 金幣上等待孵化。', color: '#8fe33d', emoji: '🥚', image: '/pepe-evolution/stage_0.webp', groundY: 0.747 },
-  { stage: 1, minLevel: 2,  title: 'Tadpole Pepe 🐟',      label: '蝌蚪',   desc: '破殼而出的小蝌蚪，甩著尾巴在鏈上光環中第一次游動。',         color: '#6ab04c', emoji: '🐟', image: '/pepe-evolution/stage_1.webp', groundY: 0.75 },
-  { stage: 2, minLevel: 5,  title: 'Baby Pepe 🐸',         label: '幼蛙',   desc: '長出四肢的幼蛙，包著尿布站上屬於自己的第一個舞台。',         color: '#8bc34a', emoji: '🐸', image: '/pepe-evolution/stage_2.webp', groundY: 0.825 },
-  { stage: 3, minLevel: 8,  title: 'Rookie Trader 📈',     label: '新銳蛙', desc: '穿上連帽外套與球鞋，握著滿是綠 K 棒手機的新銳操盤手。',     color: '#4caf50', emoji: '📈', image: '/pepe-evolution/stage_3.webp', groundY: 0.85 },
-  { stage: 4, minLevel: 15, title: 'Elite Chad Trader 🕶️', label: '菁英蛙', desc: '墨鏡、黑皮衣與 PEPE 金鍊，華爾街等級的菁英巨鯨。',          color: '#b0873a', emoji: '🕶️', image: '/pepe-evolution/stage_4.webp', groundY: 0.859 },
-  { stage: 5, minLevel: 23, title: 'Gold Emperor Pepe 👑', label: '蛙皇',   desc: '黃金王冠、紅色皇袍與寶石權杖，腳踏金幣與寶石之山。',         color: '#f2c744', emoji: '👑', image: '/pepe-evolution/stage_5.webp', groundY: 0.823 },
-  { stage: 6, minLevel: 30, title: 'Supreme Pepe Lord 😇',  label: '蛙神',   desc: '生出聖潔羽翼與黃金光環，披上金紋白袍的終極神化形態。',       color: '#ffe89a', emoji: '😇', image: '/pepe-evolution/stage_6.webp', groundY: 0.75 },
+  { stage: 0, minLevel: 1, title: t.pepe.evolution.stage0.title, label: t.pepe.evolution.stage0.label, desc: t.pepe.evolution.stage0.desc, color: '#8fe33d', emoji: '🥚', image: '/pepe-evolution/stage_0.webp', groundY: 0.747 },
+  { stage: 1, minLevel: 2, title: t.pepe.evolution.stage1.title, label: t.pepe.evolution.stage1.label, desc: t.pepe.evolution.stage1.desc, color: '#6ab04c', emoji: '🐟', image: '/pepe-evolution/stage_1.webp', groundY: 0.75 },
+  { stage: 2, minLevel: 5, title: t.pepe.evolution.stage2.title, label: t.pepe.evolution.stage2.label, desc: t.pepe.evolution.stage2.desc, color: '#8bc34a', emoji: '🐸', image: '/pepe-evolution/stage_2.webp', groundY: 0.825 },
+  { stage: 3, minLevel: 8, title: t.pepe.evolution.stage3.title, label: t.pepe.evolution.stage3.label, desc: t.pepe.evolution.stage3.desc, color: '#4caf50', emoji: '📈', image: '/pepe-evolution/stage_3.webp', groundY: 0.85 },
+  { stage: 4, minLevel: 15, title: t.pepe.evolution.stage4.title, label: t.pepe.evolution.stage4.label, desc: t.pepe.evolution.stage4.desc, color: '#b0873a', emoji: '🕶️', image: '/pepe-evolution/stage_4.webp', groundY: 0.859 },
+  { stage: 5, minLevel: 23, title: t.pepe.evolution.stage5.title, label: t.pepe.evolution.stage5.label, desc: t.pepe.evolution.stage5.desc, color: '#f2c744', emoji: '👑', image: '/pepe-evolution/stage_5.webp', groundY: 0.823 },
+  { stage: 6, minLevel: 30, title: t.pepe.evolution.stage6.title, label: t.pepe.evolution.stage6.label, desc: t.pepe.evolution.stage6.desc, color: '#ffe89a', emoji: '😇', image: '/pepe-evolution/stage_6.webp', groundY: 0.75 },
 ];
 
 /** Highest stage whose level requirement the player has met. */
@@ -104,7 +105,7 @@ export default function PepeEvolution({
   if (locked) {
     return (
       <Box
-        aria-label={`未解鎖 — 需 Lv.${resolved.minLevel}`}
+        aria-label={interpolate(t.pepe.evolution.lockedAria, { level: resolved.minLevel })}
         sx={{
           width: size,
           height: size,
@@ -151,7 +152,7 @@ export default function PepeEvolution({
       <Box
         component="img"
         src={resolved.image}
-        alt={`${resolved.label} — 進化 Lv.${resolved.stage}`}
+        alt={interpolate(t.pepe.evolution.imageAlt, { label: resolved.label, stage: resolved.stage })}
         sx={{
           width: '100%',
           height: '100%',
@@ -301,7 +302,7 @@ export function PepeEvolutionHero({
         <Box
           component="img"
           src={src}
-          alt={`${resolved.label} — 進化 Lv.${resolved.stage}`}
+          alt={interpolate(t.pepe.evolution.imageAlt, { label: resolved.label, stage: resolved.stage })}
           sx={{
             position: 'absolute',
             top: `${topPct.toFixed(2)}%`,

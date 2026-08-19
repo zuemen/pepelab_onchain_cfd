@@ -5,6 +5,7 @@ import Card from '@mui/material/Card'
 
 import StatCard from 'src/components/pepefi/StatCard'
 import { TableSkeleton } from 'src/components/pepefi/Skeleton'
+import { t, interpolate } from 'src/locales'
 import { fCompact } from 'src/lib/pepefi/whale'
 
 interface Props {
@@ -49,24 +50,34 @@ export default function WhaleKpiRow({ totals, openInterest, windowLabel, thresho
     <Grid container spacing={3}>
       <Grid size={{ xs: 12, md: 4 }}>
         <StatCard
-          title="Whale Trades"
+          title={t.whale.kpi.whaleTrades}
           value={ready ? String(totals.whaleCount) : '—'}
-          sub={`≥ ${thresholdLabel} notional · ${windowLabel}`}
+          sub={interpolate(t.whale.kpi.whaleTradesSub, {
+            threshold: thresholdLabel,
+            window: windowLabel,
+          })}
           valueColor={ready && totals.whaleCount > 0 ? 'primary.main' : undefined}
         />
       </Grid>
       <Grid size={{ xs: 12, md: 4 }}>
         <StatCard
-          title="Traded Volume"
+          title={t.whale.kpi.volume}
           value={ready ? fCompact(totals.volume) : '—'}
-          sub={ready ? `all ${totals.openedCount} positions opened · ${windowLabel}` : windowLabel}
+          sub={
+            ready
+              ? interpolate(t.whale.kpi.volumeSub, {
+                  count: totals.openedCount,
+                  window: windowLabel,
+                })
+              : windowLabel
+          }
         />
       </Grid>
       <Grid size={{ xs: 12, md: 4 }}>
         <StatCard
-          title="Open Interest"
+          title={t.whale.kpi.openInterest}
           value={openInterest === null ? '—' : fCompact(openInterest)}
-          sub="live · every market, all time"
+          sub={t.whale.kpi.openInterestSub}
           valueColor={openInterest !== null && openInterest > 0n ? 'success.main' : undefined}
         />
       </Grid>

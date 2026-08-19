@@ -74,7 +74,7 @@ describe('positionProfile', () => {
   it('高槓桿的門檻也是閉區間', () => {
     const at = positionProfile({ notional: usd(6_000), leverage: HIGH_LEVERAGE_X })
     expect(at.map(t => t.id)).toEqual(['high-leverage'])
-    expect(at[0].label).toBe('20× leverage')
+    expect(at[0].label).toBe('20× 槓桿')
     expect(positionProfile({ notional: usd(6_000), leverage: HIGH_LEVERAGE_X - 1n })).toEqual([])
   })
 
@@ -128,22 +128,22 @@ describe('timeAgo', () => {
   const now = 1_700_000_000
 
   it('依量級換單位', () => {
-    expect(timeAgo(now - 30, now)).toBe('just now')
-    expect(timeAgo(now - 8 * 60, now)).toBe('8m ago')
-    expect(timeAgo(now - 3 * 3600, now)).toBe('3h ago')
-    expect(timeAgo(now - 2 * 86400, now)).toBe('2d ago')
+    expect(timeAgo(now - 30, now)).toBe('剛剛')
+    expect(timeAgo(now - 8 * 60, now)).toBe('8 分鐘前')
+    expect(timeAgo(now - 3 * 3600, now)).toBe('3 小時前')
+    expect(timeAgo(now - 2 * 86400, now)).toBe('2 天前')
   })
 
   it('邊界不會跳過單位', () => {
-    expect(timeAgo(now - 59, now)).toBe('just now')
-    expect(timeAgo(now - 60, now)).toBe('1m ago')
-    expect(timeAgo(now - 3599, now)).toBe('59m ago')
-    expect(timeAgo(now - 3600, now)).toBe('1h ago')
+    expect(timeAgo(now - 59, now)).toBe('剛剛')
+    expect(timeAgo(now - 60, now)).toBe('1 分鐘前')
+    expect(timeAgo(now - 3599, now)).toBe('59 分鐘前')
+    expect(timeAgo(now - 3600, now)).toBe('1 小時前')
   })
 
   it('未來的時間戳不顯示負秒數', () => {
     // 節點時鐘偏移、或用出塊時間推估未來區塊時，ts 可能大於 now。
-    expect(timeAgo(now + 120, now)).toBe('just now')
+    expect(timeAgo(now + 120, now)).toBe('剛剛')
   })
 })
 

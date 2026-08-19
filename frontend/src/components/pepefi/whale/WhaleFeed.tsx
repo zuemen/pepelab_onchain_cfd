@@ -20,6 +20,7 @@ import TableContainer from '@mui/material/TableContainer'
 import EmptyState from 'src/components/pepefi/EmptyState'
 import { PepeIdentity } from 'src/components/pepefi/PepeIdentity'
 import { TableSkeleton } from 'src/components/pepefi/Skeleton'
+import { t, interpolate } from 'src/locales'
 import { MONO, PEPE } from 'src/components/pepefi/brandKit'
 import { explorerTx } from 'src/lib/pepefi/notify'
 import { timeAgo, fCompact, sideLabel, positionProfile } from 'src/lib/pepefi/whale'
@@ -57,11 +58,11 @@ function CopyCta({ owner, registered }: { owner: string; registered: Map<string,
       to={`/copy/${owner}`}
       clickable
       size="small"
-      label="⭐ Copy"
+      label={t.whale.feed.copy}
       color="secondary"
       variant="outlined"
       sx={{ height: 22, fontWeight: 700, fontSize: '0.6875rem' }}
-      title="Registered strategy — copy this trader on the Marketplace"
+      title={t.whale.feed.copyHint}
     />
   )
 }
@@ -71,7 +72,7 @@ function TimeCell({ trade }: { trade: OpenedTrade }) {
   return (
     <Box
       component="span"
-      title={trade.timestampExact ? undefined : 'Estimated from average block time'}
+      title={trade.timestampExact ? undefined : t.whale.feed.estimatedTime}
       sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}
     >
       {trade.timestampExact ? '' : '~'}
@@ -95,7 +96,7 @@ function TxLink({ trade, chainId }: { trade: OpenedTrade; chainId: number | null
       target="_blank"
       rel="noopener noreferrer"
       title={trade.txHash}
-      aria-label="View transaction in block explorer"
+      aria-label={t.whale.feed.txAria}
       sx={{ color: 'success.main', fontWeight: 'bold', textDecoration: 'none' }}
     >
       ↗
@@ -129,12 +130,15 @@ export default function WhaleFeed({ trades, mode, chainId, loading, progress, re
       }}
     >
       <Typography variant="overline" sx={{ fontWeight: 'bold', color: 'text.secondary' }}>
-        🐋 Whale Feed
+        {t.whale.feed.title}
       </Typography>
       <Typography variant="caption" color="text.secondary">
         {loading && progress
-          ? `Scanning ${progress.done}/${progress.total}`
-          : `${trades.length} trades`}
+          ? interpolate(t.whale.feed.scanning, {
+              done: progress.done,
+              total: progress.total,
+            })
+          : interpolate(t.whale.feed.trades, { count: trades.length })}
       </Typography>
     </Box>
   )
@@ -163,8 +167,8 @@ export default function WhaleFeed({ trades, mode, chainId, loading, progress, re
     return (
       <EmptyState
         icon={emptyTitle ? '⚠️' : '🌊'}
-        title={emptyTitle ?? 'No whale trades in range'}
-        description={emptyHint ?? 'Nothing above the $5k notional threshold in the scanned window.'}
+        title={emptyTitle ?? t.whale.feed.emptyTitle}
+        description={emptyHint ?? t.whale.feed.emptyDescription}
       />
     )
   }
@@ -176,9 +180,9 @@ export default function WhaleFeed({ trades, mode, chainId, loading, progress, re
 
       {mode === 'simple' ? (
         <Stack divider={<Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }} />}>
-          {trades.map(t => (
+          {trades.map(trade => (
             <Box
-              key={`${t.txHash}-${t.logIndex}`}
+              key={`${trade.txHash}-${trade.logIndex}`}
               sx={{
                 p: 2,
                 display: 'flex',
@@ -190,38 +194,38 @@ export default function WhaleFeed({ trades, mode, chainId, loading, progress, re
             >
               <Link
                 component={RouterLink}
-                to={`/trader/${t.owner}`}
+                to={`/trader/${trade.owner}`}
                 sx={{ textDecoration: 'none', color: 'inherit', flexShrink: 0 }}
               >
-                <PepeIdentity address={t.owner} size={40} />
+                <PepeIdentity address={trade.owner} size={40} />
               </Link>
 
               <Box sx={{ flexGrow: 1, minWidth: 200 }}>
                 <Typography variant="body2" sx={{ color: 'text.primary' }}>
-                  opened{' '}
-                  <Box component="span" sx={{ fontWeight: 800, color: sideColor(t.isLong) }}>
-                    {String(t.leverage)}× {sideLabel(t.isLong)}
+                  {t.whale.feed.openedVerb}{' '}
+                  <Box component="span" sx={{ fontWeight: 800, color: sideColor(trade.isLong) }}>
+                    {String(trade.leverage)}× {sideLabel(trade.isLong)}
                   </Box>{' '}
-                  <Box component="span" sx={{ fontWeight: 700 }}>{t.assetLabel}</Box>{' '}
-                  for{' '}
+                  <Box component="span" sx={{ fontWeight: 700 }}>{trade.assetLabel}</Box>{' '}
+                  {t.whale.feed.forPreposition}{' '}
                   <Box component="span" sx={{ fontFamily: MONO, fontWeight: 800 }}>
-                    {fCompact(t.notional)}
+                    {fCompact(trade.notional)}
                   </Box>
                 </Typography>
                 <Typography variant="caption" component="div" sx={{ mt: 0.25 }}>
-                  <TimeCell trade={t} />
+                  <TimeCell trade={trade} />
                 </Typography>
               </Box>
 
               <WhaleTagChips
                 tags={positionProfile({
-                  notional:    t.notional,
-                  leverage:    t.leverage,
-                  isFirstSeen: t.isFirstSeen,
+                  notional:    trade.notional,
+                  leverage:    trade.leverage,
+                  isFirstSeen: trade.isFirstSeen,
                 })}
               />
-              <CopyCta owner={t.owner} registered={registered} />
-              <TxLink trade={t} chainId={chainId} />
+              <CopyCta owner={trade.owner} registered={registered} />
+              <TxLink trade={trade} chainId={chainId} />
             </Box>
           ))}
         </Stack>
@@ -230,7 +234,15 @@ export default function WhaleFeed({ trades, mode, chainId, loading, progress, re
           <Table size="small">
             <TableHead>
               <TableRow sx={{ bgcolor: 'background.neutral' }}>
-                {['Time', 'Trader', 'Market', 'Side', 'Notional', 'Entry', 'Tx'].map(h => (
+                {[
+                  t.whale.feed.column.time,
+                  t.whale.feed.column.trader,
+                  t.whale.feed.column.market,
+                  t.whale.feed.column.side,
+                  t.whale.feed.column.notional,
+                  t.whale.feed.column.entry,
+                  t.whale.feed.column.tx,
+                ].map(h => (
                   <TableCell key={h} sx={{ color: 'text.secondary', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
                     {h}
                   </TableCell>

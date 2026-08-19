@@ -3,6 +3,8 @@ import type { SourceInfo } from 'src/lib/pepefi/candles'
 import Box from '@mui/material/Box'
 import Tooltip from '@mui/material/Tooltip'
 
+import { t, interpolate } from 'src/locales'
+
 import { C, monoCss } from '../terminal-theme'
 
 /**
@@ -31,7 +33,9 @@ export function DataSourceBadge({
   const tip = [
     source.attribution,
     disclaimer,
-    degraded && sourceError ? `已退用備援來源：${sourceError}` : null,
+    degraded && sourceError
+      ? interpolate(t.terminal.chart.sourceFallbackReason, { error: sourceError })
+      : null,
   ]
     .filter(Boolean)
     .join('\n\n')
@@ -52,8 +56,11 @@ export function DataSourceBadge({
         whiteSpace: 'nowrap',
       }}
     >
-      {simulated ? '⚠' : '●'} {simulated ? 'SIMULATED' : `data · ${source.name}`}
-      {degraded && !simulated ? ' (備援)' : ''}
+      {simulated ? '⚠' : '●'}{' '}
+      {simulated
+        ? t.terminal.chart.sourceSimulated
+        : interpolate(t.terminal.chart.sourceNamed, { name: source.name })}
+      {degraded && !simulated ? t.terminal.chart.sourceFallbackSuffix : ''}
     </Box>
   )
 

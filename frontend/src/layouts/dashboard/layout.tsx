@@ -13,6 +13,7 @@ import { useTheme } from '@mui/material/styles';
 import Typography from '@mui/material/Typography';
 import { iconButtonClasses } from '@mui/material/IconButton';
 
+import { t, interpolate } from 'src/locales';
 import { useMode } from 'src/contexts/mode-context';
 // Direct module import, not the `src/_mock` barrel. Both values live in
 // _others.ts, but the barrel re-exports eleven mock modules, so pulling two
@@ -121,7 +122,7 @@ export function DashboardLayout({
           '&:hover': { color: 'primary.main' },
         }}
       >
-        切換到專家模式看全部 {totalNavCount} 個功能 →
+        {interpolate(t.common.layout.expertHint, { count: totalNavCount })}
       </Box>
     ) : null;
 
@@ -223,20 +224,20 @@ export function DashboardLayout({
               variant="caption"
               sx={{ display: { xs: 'none', sm: 'block' }, color: mode === 'simple' ? 'primary.main' : 'text.disabled', fontWeight: 700, fontSize: '0.7rem' }}
             >
-              簡單
+              {t.common.layout.simple}
             </Typography>
             <Switch
               checked={mode === 'expert'}
               onChange={toggleMode}
               size="small"
-              aria-label={mode === 'simple' ? '切換到專家模式' : '切換到簡單模式'}
+              aria-label={mode === 'simple' ? t.common.layout.toExpertAria : t.common.layout.toSimpleAria}
               sx={{ '& .MuiSwitch-track': { bgcolor: 'primary.main' } }}
             />
             <Typography
               variant="caption"
               sx={{ display: { xs: 'none', sm: 'block' }, color: mode === 'expert' ? 'primary.main' : 'text.disabled', fontWeight: 700, fontSize: '0.7rem' }}
             >
-              專家
+              {t.common.layout.expert}
             </Typography>
           </Stack>
 

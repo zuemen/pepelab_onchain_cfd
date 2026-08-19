@@ -11,24 +11,22 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FRONTEND_ROOT = path.resolve(HERE, '../..');
 
 /**
- * 已經搬完的目錄或單一檔案。每完成一批就加一行。
- *
- * 這份清單是遷移能不能收斂的關鍵：沒有它，最後那 20% 永遠不會有人回頭做完，
- * 而已經搬好的地方也會慢慢長回內嵌字串。
- *
- * 收單一檔案而不只收目錄，是因為批次是按功能切的、目錄不是：`src/layouts` 底下的
- * nav 設定搬完時，同目錄的 layout 元件還沒搬。只能寫目錄的話，這一批就得整個
- * `src/layouts` 一起動，或者乾等到最後才有任何東西受到保護。
+ * #37：全樹掃描取代了原本「已搬完目錄」的白名單（`MIGRATED_PATHS`）。掃描範圍是
+ * 整個 `src`，扣掉 catalog 本身（`src/locales/{zh-TW,en}` 就是中文原文與英文譯文
+ * 住的地方，不是漏搬的顯示字串）與測試檔。
  */
-const MIGRATED_PATHS: string[] = [
-  'src/layouts/nav-config-dashboard.tsx',
-  'src/layouts/nav-config-account.tsx',
-  'src/lib/pepefi/errorMessages.ts',
-  'src/lib/pepefi/priceFreshness.ts',
-  'src/components/pepefi/dashboard',
-  'src/pages/pepefi/PortfolioPage.tsx',
-  'src/lib/pepefi/openPositionColumns.ts',
-];
+function allSourceFiles(): string[] {
+  const root = path.resolve(FRONTEND_ROOT, 'src');
+  return fs
+    .readdirSync(root, { recursive: true, encoding: 'utf8' })
+    .map((rel) => path.join(root, rel))
+    .filter((file) => /\.tsx?$/.test(file) && !/\.test\.tsx?$/.test(file))
+    .filter((file) => fs.statSync(file).isFile())
+    .filter((file) => {
+      const rel = path.relative(FRONTEND_ROOT, file).split(path.sep).join('/');
+      return !rel.startsWith('src/locales/');
+    });
+}
 
 /**
  * `en` catalog 裡尚未翻譯的中文字數（不含註解）。
@@ -38,9 +36,11 @@ const MIGRATED_PATHS: string[] = [
  *
  * 每批遷移都會把它推高——那是預期行為，不是退步：字串搬進 catalog 時 `en` 拿到的是
  * 中文原文。真正的退步是「翻譯過的字又變回中文」，而那會讓這條斷言失敗。
- * 目前：errors 1388、freshness 142、nav 38、meta 12、portfolio 4。
+ * 目前：errors 1388、pepe 1386、exchange 966、terminal 685、sessions 657、pepelab 596、
+ * tokens 543、admin 491、landing 327、kyc 319、common 313、pepeStageSkins 264、x402 250、
+ * stake 236、freshness 146、copy 122、rewards 102、esg 42、nav 38、marketplace 13、meta 12、portfolio 4。
  */
-const EN_HAN_BASELINE = 1584;
+const EN_HAN_BASELINE = 8900;
 
 /** 傳目錄就回它底下所有原始碼檔案，傳單一檔案就回那一個。測試檔一律排除。 */
 function sourceFilesIn(pathish: string): string[] {
@@ -113,17 +113,64 @@ describe('countHan', () => {
 
 // ----------------------------------------------------------------------
 
+/**
+ * 唯一的例外：中文只出現在檔案路徑裡的那一行。
+ *
+ * 造型資料表指向的圖檔就叫 `/skins/03_忍者蛙戰士.png`——那是磁碟上的檔名，不是
+ * 使用者讀的字；改它要連同 `public/` 底下的檔案一起改名，跟這次遷移無關。
+ *
+ * 例外寫成「條件」而不是「某檔案某行」是刻意的：寫成行號，檔案一動就過期；寫成
+ * 整個檔案豁免，就等於那個檔案退出 ratchet。這條規則只放行資產路徑，其他任何
+ * 中文照樣會失敗。
+ */
+const ASSET_PATH = /['"`]\/[^'"`]*\.(png|jpe?g|webp|svg|gif)['"`]/;
+
+function isAssetPathOnly(line: string): boolean {
+  return ASSET_PATH.test(line) && countHan(line.replace(new RegExp(ASSET_PATH, 'g'), '')) === 0;
+}
+
+/**
+ * #37：全樹掃描下僅存的合法例外，一條一條列出來，各自附理由。
+ *
+ * 用「檔案 + 該行要包含的片段」比對，不用行號——行號會隨著檔案編輯漂移，
+ * 例外會悄悄失效（漏放行別的中文）或跟丟原本要放行的那一行。新增例外前
+ * 先確認真的沒有更好的做法：能搬進 catalog 的都該搬，這份清單只留給搬不動的。
+ */
+const LINE_EXCEPTIONS: { file: string; contains: string; reason: string }[] = [
+  {
+    file: 'src/pages/pepefi/X402DocsPage.tsx',
+    contains: '只依賴 viem + x402-fetch',
+    reason:
+      '可複製貼上的 npx 範例裡的 shell 註解，逐字保留才能貼了就跑；是程式碼，不是顯示文字。',
+  },
+  {
+    file: 'src/pages/pepefi/X402DocsPage.tsx',
+    contains: '持 Circle USDC + 一點 ETH',
+    reason: '同一段 npx 範例裡的第二個 shell 註解，理由同上。',
+  },
+];
+
+function isLineException(file: string, text: string): boolean {
+  const rel = path.relative(FRONTEND_ROOT, file).split(path.sep).join('/');
+  return LINE_EXCEPTIONS.some((exc) => exc.file === rel && text.includes(exc.contains));
+}
+
 describe('migration ratchets', () => {
-  it('keeps everything already migrated free of inline display strings', () => {
-    const offenders = MIGRATED_PATHS.flatMap((migrated) =>
-      sourceFilesIn(migrated).flatMap((file) =>
-        findInlineDisplayStrings(fs.readFileSync(file, 'utf8')).map(
-          (hit) => `${path.relative(FRONTEND_ROOT, file)}:${hit.line}  ${hit.text.trim()}`
-        )
-      )
+  it('keeps the whole source tree free of inline display strings', () => {
+    const offenders = allSourceFiles().flatMap((file) =>
+      findInlineDisplayStrings(fs.readFileSync(file, 'utf8'))
+        .filter((hit) => !isAssetPathOnly(hit.text))
+        .filter((hit) => !isLineException(file, hit.text))
+        .map((hit) => `${path.relative(FRONTEND_ROOT, file)}:${hit.line}  ${hit.text.trim()}`)
     );
 
     expect(offenders).toEqual([]);
+  });
+
+  it('still flags a display string sitting next to an asset path', () => {
+    const line = `  { image: '/skins/03_忍者蛙戰士.png', name: '暗影忍者蛙戰士' },`;
+    expect(isAssetPathOnly(line)).toBe(false);
+    expect(isAssetPathOnly(`  imagePath: '/skins/03_忍者蛙戰士.png',`)).toBe(true);
   });
 
   it('never lets the untranslated Chinese in the en catalog grow', () => {

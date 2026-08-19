@@ -2,6 +2,7 @@ import type { FundingData } from 'src/hooks/useFundingData'
 
 import Box from '@mui/material/Box'
 
+import { t, interpolate } from 'src/locales'
 import { ASSET_META } from 'src/lib/pepefi/assetMeta'
 import { fBps, fNum, fromUnits } from 'src/lib/pepefi/format'
 
@@ -10,11 +11,11 @@ import { C, monoCss, labelCss } from '../terminal-theme'
 const COLS = '1fr 1fr 1fr 1fr 1.2fr'
 
 const ago = (unix: bigint) => {
-  if (unix === 0n) return '從未'
+  if (unix === 0n) return t.terminal.funding.agoNever
   const secs = Math.floor(Date.now() / 1000) - Number(unix)
-  if (secs < 60) return `${secs}s 前`
-  if (secs < 3600) return `${Math.floor(secs / 60)}m 前`
-  return `${Math.floor(secs / 3600)}h 前`
+  if (secs < 60) return interpolate(t.terminal.funding.agoSeconds, { n: secs })
+  if (secs < 3600) return interpolate(t.terminal.funding.agoMinutes, { n: Math.floor(secs / 60) })
+  return interpolate(t.terminal.funding.agoHours, { n: Math.floor(secs / 3600) })
 }
 
 export function FundingTable({ funding }: { funding: FundingData }) {
@@ -23,7 +24,7 @@ export function FundingTable({ funding }: { funding: FundingData }) {
   if (!rows.length) {
     return (
       <Box sx={{ p: 4, textAlign: 'center', color: C.mut, ...monoCss, fontSize: 13 }}>
-        無 funding 資料
+        {t.terminal.funding.empty}
       </Box>
     )
   }
@@ -41,7 +42,13 @@ export function FundingTable({ funding }: { funding: FundingData }) {
             borderBottom: `1px solid ${C.line}`,
           }}
         >
-          {['Asset', 'Rate (8h)', 'Long OI', 'Short OI', 'Last settled'].map((h) => (
+          {[
+            t.terminal.funding.column.asset,
+            t.terminal.funding.column.rate,
+            t.terminal.funding.column.longOi,
+            t.terminal.funding.column.shortOi,
+            t.terminal.funding.column.lastSettled,
+          ].map((h) => (
             <Box key={h}>{h}</Box>
           ))}
         </Box>
@@ -74,7 +81,7 @@ export function FundingTable({ funding }: { funding: FundingData }) {
                 {ago(f.lastSettled)}
                 {f.canSettle && (
                   <Box component="span" sx={{ color: C.lime, ml: 0.8 }}>
-                    可結算
+                    {t.terminal.funding.canSettle}
                   </Box>
                 )}
               </Box>
@@ -83,7 +90,7 @@ export function FundingTable({ funding }: { funding: FundingData }) {
         })}
 
         <Box sx={{ px: 2, py: 1.2, ...monoCss, fontSize: 10.5, color: C.mut, lineHeight: 1.5 }}>
-          僅列出鏈上已註冊 funding 的標的。正值代表多方付給空方。
+          {t.terminal.funding.note}
         </Box>
       </Box>
     </Box>

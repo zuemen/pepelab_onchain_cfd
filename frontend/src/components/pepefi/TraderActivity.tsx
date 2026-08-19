@@ -16,6 +16,7 @@ import Typography from '@mui/material/Typography'
 import LinearProgress from '@mui/material/LinearProgress'
 import TableContainer from '@mui/material/TableContainer'
 
+import { t, interpolate } from 'src/locales'
 import { explorerTx } from 'src/lib/pepefi/notify'
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
 import EmptyState from 'src/components/pepefi/EmptyState'
@@ -33,13 +34,13 @@ interface Props {
 // 屬於 /trader/:address；whale tracker 回答的是「錢往哪流」。
 
 const KIND_LABEL: Record<AddressEventKind, string> = {
-  PositionOpened:     'Opened',
-  PositionClosed:     'Closed',
-  PositionLiquidated: 'Liquidated',
-  Following:          'Following',
-  FollowedBy:         'Followed by',
-  Staked:             'Staked',
-  Slashed:            'Slashed',
+  PositionOpened:     t.traderProfile.activity.timeline.kind.opened,
+  PositionClosed:     t.traderProfile.activity.timeline.kind.closed,
+  PositionLiquidated: t.traderProfile.activity.timeline.kind.liquidated,
+  Following:          t.traderProfile.activity.timeline.kind.following,
+  FollowedBy:         t.traderProfile.activity.timeline.kind.followedBy,
+  Staked:             t.traderProfile.activity.timeline.kind.staked,
+  Slashed:            t.traderProfile.activity.timeline.kind.slashed,
 }
 
 // 顏色從 theme 取，不是寫死的 rgba()。舊版把六種事件的色票直接寫成 hex，
@@ -61,6 +62,8 @@ const Addr = ({ a }: { a: unknown }) => (
 function EventDetail({ event }: { event: AddressEvent }) {
   const d = event.details
 
+  const detail = t.traderProfile.activity.timeline.detail
+
   switch (event.kind) {
     case 'PositionOpened': {
       const isLong = d.isLong as boolean
@@ -69,8 +72,12 @@ function EventDetail({ event }: { event: AddressEvent }) {
           <Box component="span" sx={{ fontWeight: 800, color: isLong ? PEPE.long : PEPE.short }}>
             {sideLabel(isLong)}
           </Box>{' '}
-          {ASSET_LABEL[d.asset as string] ?? '?'} {String(d.leverage as bigint)}× @{' '}
-          {fUsd(d.entryPrice as bigint)} · margin {fCompact(d.margin as bigint)}
+          {interpolate(detail.openedTail, {
+            asset: ASSET_LABEL[d.asset as string] ?? '?',
+            leverage: String(d.leverage as bigint),
+            price: fUsd(d.entryPrice as bigint),
+            margin: fCompact(d.margin as bigint),
+          })}
         </span>
       )
     }
@@ -81,8 +88,8 @@ function EventDetail({ event }: { event: AddressEvent }) {
           PnL{' '}
           <Box component="span" sx={{ fontWeight: 800, color: pnl >= 0n ? PEPE.long : PEPE.short }}>
             {fSignedUsd(pnl)}
-          </Box>{' '}
-          · received {fCompact(d.closeAmount as bigint)}
+          </Box>
+          {interpolate(detail.closedTail, { received: fCompact(d.closeAmount as bigint) })}
         </span>
       )
     }
@@ -90,22 +97,38 @@ function EventDetail({ event }: { event: AddressEvent }) {
       const pnl = d.pnl as bigint
       return (
         <span>
-          Liquidated at{' '}
+          {detail.liquidatedBefore}
           <Box component="span" sx={{ fontWeight: 800, color: PEPE.short }}>{fSignedUsd(pnl)}</Box>
-          {' '}by <Addr a={d.liquidator} />
+          {detail.liquidatedBy}<Addr a={d.liquidator} />
         </span>
       )
     }
     case 'Following':
-      return <span>Started copying <Addr a={d.trader} /> · margin {fCompact(d.totalMargin as bigint)}</span>
+      return (
+        <span>
+          {detail.followingBefore}<Addr a={d.trader} />
+          {interpolate(detail.followingAfter, { margin: fCompact(d.totalMargin as bigint) })}
+        </span>
+      )
     case 'FollowedBy':
-      return <span><Addr a={d.follower} /> started copying this trader · margin {fCompact(d.totalMargin as bigint)}</span>
+      return (
+        <span>
+          <Addr a={d.follower} />
+          {interpolate(detail.followedByAfter, { margin: fCompact(d.totalMargin as bigint) })}
+        </span>
+      )
     case 'Staked':
-      return <span>Staked <Box component="span" sx={{ fontWeight: 700 }}>{fCompact(d.amount as bigint)}</Box></span>
+      return (
+        <span>
+          {detail.stakedBefore}
+          <Box component="span" sx={{ fontWeight: 700 }}>{fCompact(d.amount as bigint)}</Box>
+        </span>
+      )
     case 'Slashed':
       return (
         <span>
-          Slashed <Box component="span" sx={{ fontWeight: 700, color: PEPE.short }}>{fCompact(d.amount as bigint)}</Box>
+          {detail.slashedBefore}
+          <Box component="span" sx={{ fontWeight: 700, color: PEPE.short }}>{fCompact(d.amount as bigint)}</Box>
           {' '}→ <Addr a={d.recipient} />
         </span>
       )
@@ -128,9 +151,9 @@ export default function TraderActivity({ activity, chainId, mode }: Props) {
       {/* ── Current open positions ──────────────────────────────────────────── */}
       <Card>
         <Box sx={{ p: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
-          <Typography variant="h6" sx={{ fontWeight: 'bold' }}>Current Open Positions</Typography>
+          <Typography variant="h6" sx={{ fontWeight: 'bold' }}>{t.traderProfile.activity.openPositions.title}</Typography>
           <Typography variant="caption" color="text.secondary">
-            read live from the exchange · includes positions older than the scan window
+            {t.traderProfile.activity.openPositions.subtitle}
           </Typography>
         </Box>
 
@@ -138,7 +161,7 @@ export default function TraderActivity({ activity, chainId, mode }: Props) {
           <TableSkeleton rows={3} cols={5} />
         ) : positions.length === 0 ? (
           <Typography color="text.secondary" sx={{ p: 4, textAlign: 'center' }}>
-            No open positions.
+            {t.traderProfile.activity.openPositions.empty}
           </Typography>
         ) : (
           <TableContainer sx={{ overflowX: 'auto' }}>
@@ -146,8 +169,8 @@ export default function TraderActivity({ activity, chainId, mode }: Props) {
               <TableHead>
                 <TableRow sx={{ bgcolor: 'background.neutral' }}>
                   {(mode === 'simple'
-                    ? ['Market', 'Side', 'Notional', 'PnL']
-                    : ['Market', 'Side', 'Entry', 'Mark', 'Margin', 'Notional', 'PnL']
+                    ? Object.values(t.traderProfile.activity.openPositions.columnSimple)
+                    : Object.values(t.traderProfile.activity.openPositions.columnExpert)
                   ).map(h => (
                     <TableCell key={h} sx={{ color: 'text.secondary', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
                       {h}
@@ -170,7 +193,7 @@ export default function TraderActivity({ activity, chainId, mode }: Props) {
                     {mode === 'expert' && (
                       <TableCell
                         sx={{ fontFamily: MONO, whiteSpace: 'nowrap' }}
-                        title={p.markPrice === null ? 'Mark price could not be read' : undefined}
+                        title={p.markPrice === null ? t.whale.largest.markUnread : undefined}
                       >
                         {p.markPrice === null ? '—' : fUsd(p.markPrice)}
                       </TableCell>
@@ -188,7 +211,7 @@ export default function TraderActivity({ activity, chainId, mode }: Props) {
                         whiteSpace: 'nowrap',
                         color: p.pnl === null ? 'text.disabled' : p.pnl >= 0n ? PEPE.long : PEPE.short,
                       }}
-                      title={p.pnl === null ? 'Unrealised PnL could not be read' : undefined}
+                      title={p.pnl === null ? t.whale.largest.pnlUnread : undefined}
                     >
                       {p.pnl === null ? '—' : fSignedUsd(p.pnl)}
                     </TableCell>
@@ -201,7 +224,7 @@ export default function TraderActivity({ activity, chainId, mode }: Props) {
 
         {missing > 0 && (
           <Typography variant="caption" color="warning.main" sx={{ display: 'block', px: 2.5, py: 1.5 }}>
-            {missing} position{missing === 1 ? '' : 's'} could not be read — the RPC node may be rate-limiting.
+            {interpolate(missing === 1 ? t.whale.largest.missingOne : t.whale.largest.missingMany, { count: missing })}
           </Typography>
         )}
       </Card>
@@ -220,11 +243,11 @@ export default function TraderActivity({ activity, chainId, mode }: Props) {
             gap: 1,
           }}
         >
-          <Typography variant="h6" sx={{ fontWeight: 'bold' }}>Activity Timeline</Typography>
+          <Typography variant="h6" sx={{ fontWeight: 'bold' }}>{t.traderProfile.activity.timeline.title}</Typography>
           <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
             {loading && progress
-              ? `Scanning ${progress.done}/${progress.total}`
-              : rangeText ?? '—'}
+              ? interpolate(t.traderProfile.activity.timeline.scanning, { done: progress.done, total: progress.total })
+              : rangeText ?? t.traderProfile.activity.timeline.noRange}
           </Typography>
         </Box>
 
@@ -237,15 +260,17 @@ export default function TraderActivity({ activity, chainId, mode }: Props) {
         ) : events.length === 0 ? (
           <EmptyState
             icon="📭"
-            title="No activity found"
-            description={rangeText ? `No events in blocks ${rangeText}.` : 'Nothing to show yet.'}
+            title={t.traderProfile.activity.timeline.emptyTitle}
+            description={rangeText
+              ? interpolate(t.traderProfile.activity.timeline.emptyRange, { range: rangeText })
+              : t.traderProfile.activity.timeline.emptyNone}
           />
         ) : (
           <TableContainer sx={{ overflowX: 'auto' }}>
             <Table size="small">
               <TableHead>
                 <TableRow sx={{ bgcolor: 'background.neutral' }}>
-                  {['When', 'Event', 'Detail', 'Tx'].map(h => (
+                  {Object.values(t.traderProfile.activity.timeline.column).map(h => (
                     <TableCell key={h} sx={{ color: 'text.secondary', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
                       {h}
                     </TableCell>
@@ -259,7 +284,7 @@ export default function TraderActivity({ activity, chainId, mode }: Props) {
                     <TableRow key={`${e.txHash}-${e.logIndex}`} hover>
                       <TableCell
                         sx={{ fontSize: '0.75rem', color: 'text.secondary', whiteSpace: 'nowrap' }}
-                        title={e.timestampExact ? undefined : 'Estimated from average block time'}
+                        title={e.timestampExact ? undefined : t.whale.feed.estimatedTime}
                       >
                         {e.timestampExact ? '' : '~'}{timeAgo(e.timestamp)}
                       </TableCell>
@@ -286,7 +311,7 @@ export default function TraderActivity({ activity, chainId, mode }: Props) {
                             target="_blank"
                             rel="noopener noreferrer"
                             title={e.txHash}
-                            aria-label="View transaction in block explorer"
+                            aria-label={t.whale.feed.txAria}
                             sx={{ color: 'success.main', fontWeight: 'bold', textDecoration: 'none' }}
                           >
                             ↗

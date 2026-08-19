@@ -1,3 +1,5 @@
+import { t } from 'src/locales';
+
 /**
  * PepeLab Asset Helper Utility
  * Manages custom Pepe avatar rendering and gamified outfit/level mechanics.
@@ -66,7 +68,7 @@ export const getPepeRank = (reputation: number | bigint | null): PepeRank => {
 
   if (score >= 80) {
     return {
-      label: 'Diamond 鑽石',
+      label: t.common.tier.diamond,
       color: '#00b8d9',
       gradient: 'linear-gradient(135deg, #00b8d9 0%, #003768 100%)',
       borderColor: 'rgba(0, 184, 217, 0.4)',
@@ -75,7 +77,7 @@ export const getPepeRank = (reputation: number | bigint | null): PepeRank => {
   }
   if (score >= 60) {
     return {
-      label: 'Gold 黃金',
+      label: t.common.tier.gold,
       color: '#ffab00',
       gradient: 'linear-gradient(135deg, #ffd666 0%, #7a4100 100%)',
       borderColor: 'rgba(255, 171, 0, 0.4)',
@@ -84,7 +86,7 @@ export const getPepeRank = (reputation: number | bigint | null): PepeRank => {
   }
   if (score >= 40) {
     return {
-      label: 'Silver 白銀',
+      label: t.common.tier.silver,
       color: '#c4cdd5',
       gradient: 'linear-gradient(135deg, #dfe3e8 0%, #637381 100%)',
       borderColor: 'rgba(196, 205, 213, 0.4)',
@@ -92,7 +94,7 @@ export const getPepeRank = (reputation: number | bigint | null): PepeRank => {
     };
   }
   return {
-    label: 'Bronze 青銅',
+    label: t.common.tier.bronze,
     color: '#ff5630',
     gradient: 'linear-gradient(135deg, #ffac82 0%, #7a0916 100%)',
     borderColor: 'rgba(255, 86, 48, 0.3)',

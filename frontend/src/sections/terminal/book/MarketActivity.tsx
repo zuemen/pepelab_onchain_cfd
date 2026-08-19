@@ -2,6 +2,7 @@ import type { ActivityRow } from 'src/hooks/useMarketActivity'
 
 import Box from '@mui/material/Box'
 
+import { t, interpolate } from 'src/locales'
 import { fUsd, fNum, fromUnits } from 'src/lib/pepefi/format'
 
 import { C, monoCss, labelCss } from '../terminal-theme'
@@ -61,7 +62,15 @@ export function MarketActivity({
     return <Msg color={C.red}>{error}</Msg>
   }
   if (!rows.length) {
-    return <Msg>{loading ? '讀取鏈上部位…' : `${symbol ?? '此標的'} 目前無鏈上部位`}</Msg>
+    return (
+      <Msg>
+        {loading
+          ? t.terminal.activity.loading
+          : interpolate(t.terminal.activity.emptyForAsset, {
+              asset: symbol ?? t.terminal.activity.thisAsset,
+            })}
+      </Msg>
+    )
   }
 
   return (
@@ -76,11 +85,11 @@ export function MarketActivity({
           fontSize: 9.5,
         }}
       >
-        <Box>Side</Box>
-        <Box sx={{ textAlign: 'right' }}>Margin</Box>
-        <Box sx={{ textAlign: 'right' }}>Entry</Box>
-        <Box sx={{ textAlign: 'right' }}>Time</Box>
-        <Box sx={{ textAlign: 'right' }}>PnL</Box>
+        <Box>{t.terminal.activity.column.side}</Box>
+        <Box sx={{ textAlign: 'right' }}>{t.terminal.activity.column.margin}</Box>
+        <Box sx={{ textAlign: 'right' }}>{t.terminal.activity.column.entry}</Box>
+        <Box sx={{ textAlign: 'right' }}>{t.terminal.activity.column.time}</Box>
+        <Box sx={{ textAlign: 'right' }}>{t.terminal.activity.column.pnl}</Box>
       </Box>
 
       {rows.map((p) => {
@@ -102,7 +111,7 @@ export function MarketActivity({
             }}
           >
             <Box sx={{ color: p.isLong ? C.green : C.red, fontWeight: 700 }}>
-              {p.isLong ? 'LONG' : 'SHORT'}
+              {p.isLong ? t.terminal.activity.long : t.terminal.activity.short}
               <Box component="span" sx={{ color: C.mut, fontWeight: 400 }}>
                 {' '}
                 {String(p.leverage)}×
@@ -129,7 +138,7 @@ export function MarketActivity({
               {pnl === null ? '—' : `${p.isOpen ? '(' : ''}${fNum(pnl, { dp: 2, signed: true })}${p.isOpen ? ')' : ''}`}
               {p.isOpen && (
                 <Box component="span" sx={{ color: C.mut, fontSize: 9, ml: 0.4 }}>
-                  open
+                  {t.terminal.activity.openMarker}
                 </Box>
               )}
             </Box>
@@ -139,13 +148,13 @@ export function MarketActivity({
 
       {truncated && (
         <Box sx={{ px: 1.2, pt: 0.8, ...monoCss, fontSize: 10, color: C.mut }}>
-          只掃描最近的部位，更早的未列出
+          {t.terminal.activity.truncated}
         </Box>
       )}
       {/* 讀不到的筆數要講出來。靜默跳過會讓不完整的列表看起來像完整的。 */}
       {missed > 0 && (
         <Box sx={{ px: 1.2, pt: 0.8, ...monoCss, fontSize: 10, color: C.lime }}>
-          {missed} 筆因 RPC 限流未讀取，列表可能不完整
+          {interpolate(t.terminal.activity.missed, { count: missed })}
         </Box>
       )}
     </Box>

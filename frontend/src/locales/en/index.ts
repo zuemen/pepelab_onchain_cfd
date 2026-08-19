@@ -1,10 +1,32 @@
 import type { Catalog } from '../zh-TW';
 
+import { esg } from './esg';
+import { kyc } from './kyc';
 import { nav } from './nav';
+import { copy } from './copy';
+import { x402 } from './x402';
+import { pepe } from './pepe';
 import { meta } from './meta';
+import { stake } from './stake';
+import { vault } from './vault';
+import { whale } from './whale';
+import { admin } from './admin';
+import { common } from './common';
+import { tokens } from './tokens';
 import { errors } from './errors';
+import { history } from './history';
+import { pepelab } from './pepelab';
+import { landing } from './landing';
+import { rewards } from './rewards';
+import { sessions } from './sessions';
+import { exchange } from './exchange';
+import { terminal } from './terminal';
 import { portfolio } from './portfolio';
 import { freshness } from './freshness';
+import { marketplace } from './marketplace';
+import { traderProfile } from './traderProfile';
+import { pepeStageSkins } from './pepeStageSkins';
+import { traderDashboard } from './traderDashboard';
 
 // ----------------------------------------------------------------------
 
@@ -18,9 +40,31 @@ import { freshness } from './freshness';
 const en: Catalog = {
   meta,
   nav,
+  admin,
   errors,
   freshness,
   portfolio,
+  exchange,
+  terminal,
+  pepe,
+  pepeStageSkins,
+  x402,
+  whale,
+  rewards,
+  esg,
+  vault,
+  sessions,
+  tokens,
+  landing,
+  common,
+  kyc,
+  stake,
+  pepelab,
+  copy,
+  marketplace,
+  history,
+  traderProfile,
+  traderDashboard,
 };
 
 export default en;

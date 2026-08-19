@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 
+import { t } from 'src/locales'
+
 // 使用者在鏈上的成交紀錄（開倉 / 平倉 / 被清算）。
 //
 // 資料來自 PerpetualExchange 的事件，owner 是 indexed 參數，所以可以直接用
@@ -94,7 +96,7 @@ export function useUserFills(contracts: Contracts, address: string | null): User
       })
 
       if (settled.every((r) => r.status === 'rejected')) {
-        setError('無法讀取鏈上成交紀錄')
+        setError(t.terminal.fills.readError)
       }
 
       rows.sort((x, y) => y.blockNumber - x.blockNumber)

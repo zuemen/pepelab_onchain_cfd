@@ -1,0 +1,178 @@
+import type { Catalog } from '../zh-TW';
+
+/**
+ * 見 `../zh-TW/sessions.ts`。搬移階段逐字複製原文。
+ */
+export const sessions: Catalog['sessions'] = {
+  title: '🤖 AI Agent Sessions',
+  viewOn: 'View on {explorer} ↗',
+
+  ssi: {
+    title: 'SSI 三角：你的錢包就是信任根',
+    flow: '流程：連錢包 → 設限額建 session → 簽發授權 VC → 一鍵匯出 agent 設定 → 之後只下口頭交易意圖。',
+  },
+
+  wrongNetwork: {
+    title: '請切換到 Base Sepolia（chainId 84532）',
+    unknownChain: '未知網路',
+  },
+
+  create: {
+    title: 'Create Session',
+    agentAddress: 'Agent address (session key)',
+    agentPlaceholder: '0x… 或按右側 Generate agent key',
+    generateKey: 'Generate agent key',
+    maxPerTrade: 'Max / trade (USDC)',
+    totalBudget: 'Total budget (USDC)',
+    maxLeverage: 'Max leverage',
+    validFor: 'Valid for (hours)',
+    creating: 'Creating…',
+    cta: 'Create Session',
+    done: 'Session created ✓',
+  },
+
+  /** 瀏覽器裡產生的一次性 burner 金鑰。 */
+  key: {
+    title: '🔑 你的 agent 專用金鑰（burner）',
+    clear: '清除',
+    addressChip: '地址（會上鏈授權）',
+    privateKeyChip: '私鑰（只放本機）',
+    /** 私鑰被遮住時，圓點後面接的那一段字。 */
+    hiddenSuffix: ' （已隱藏）',
+    reveal: 'Reveal',
+    hide: 'Hide',
+    copy: 'Copy',
+    copyAddressLabel: 'Agent address',
+    copyPrivateKeyLabel: 'Agent private key',
+    generated: '已產生 agent 專用金鑰（只在本機瀏覽器，請立即保存）',
+  },
+
+  list: {
+    title: 'My Sessions',
+    refresh: '↺ Refresh',
+    loading: 'Loading…',
+    empty: '尚無 session。建立一個來授權 agent。',
+
+    column: {
+      id: '#',
+      agent: 'Agent',
+      spent: 'Spent / Budget',
+      maxPerTrade: 'Max/trade',
+      leverage: 'Lev',
+      expiry: 'Expiry',
+      status: 'Status',
+      credential: 'Credential',
+    },
+
+    status: {
+      revoked: 'Revoked',
+      expired: 'Expired',
+      active: 'Active',
+    },
+
+    issued: 'Issued ✓',
+    export: 'Export ⤓',
+    issueVc: 'Issue VC',
+    signing: 'Signing…',
+    issueVcHint: 'MetaMask 簽發授權 VC',
+    issueVcNeedsWallet: '需真實錢包簽署（mock 模式不支援）',
+    revoke: 'Revoke',
+    revoked: 'Session revoked ✓',
+    credentialIssued: 'Credential issued ✓',
+    needsRealWallet: '需連接真實錢包以簽署 VC（mock 模式不支援簽章）',
+  },
+
+  /** 匯出對話框。 */
+  export: {
+    title: '🔌 Connect your Agent — Session #{id}',
+    close: 'Close',
+    closeAria: 'close',
+    intro:
+      '把以下兩份貼進你本機的 agent client，之後只需下「口頭交易意圖」，agent 會在 session 限額內憑 VC 代你下單：',
+
+    mcpTitle: 'MCP 設定（Claude Desktop / Code）',
+    vcTitle: '授權 VC（下單驗證用）',
+    copy: 'Copy',
+    download: 'Download .json',
+    copyMcpLabel: 'MCP config',
+    copyVcLabel: 'Authorization VC',
+
+    /** 匯出的 MCP 設定裡，私鑰欄位的預設佔位提示。 */
+    privateKeyPlaceholder: '0x...   # 貼上你剛產生/保存的 agent 私鑰（放本機，勿外流）',
+  },
+
+  copied: '{label} copied ✓',
+  copyFailed: '複製失敗（瀏覽器剪貼簿權限）',
+
+  sessionManager: 'AgentSessionManager: {address}',
+
+  /** 交易正在跑的時候按鈕上的字。 */
+  working: '…',
+
+  /** #36：十段句中夾標記的說明，各自拆成標記前後的片段。 */
+  markup: {
+    introBefore:
+      '委派一把有界 session key 給 agent：限單筆保證金、總預算、最大槓桿與到期。 Agent 只能在限額內經 AgentSessionManager 代你開/平倉，永不持有你的主錢包私鑰。 每個 agent 具 ',
+    introMid: ' 身分，授權可憑證化為 ',
+    introAfter: ' 供下單前驗簽 （SSI / 可驗證自主交易，見 docs/AGENT_IDENTITY_VC_SSI.md）。',
+
+    roleIssuerBefore: '🖊️ ',
+    roleIssuerBold: 'Issuer＝你',
+    roleIssuerAfter: '：用 MetaMask 簽發授權 VC（私鑰不離開錢包）',
+    roleHolderBefore: '🤖 ',
+    roleHolderBold: 'Holder＝agent',
+    roleHolderAfter: '：持 VC + session key 代你下單',
+    roleVerifierBefore: '✅ ',
+    roleVerifierBold: 'Verifier＝MCP/合約',
+    roleVerifierAfter: '：下單前驗簽 + 鏈上 session 交叉比對',
+
+    wrongNetBefore: 'AI Agent Sessions 部署在 ',
+    wrongNetMid: ' 測試網。你目前連到的是',
+    wrongNetAfter: '，請在 MetaMask 切換到 Base Sepolia 後重整本頁。',
+
+    keyNoteBold1: 'agent 用一把獨立的 session key，不是你的主錢包',
+    keyNoteMid1: '：',
+    keyNoteBold2: '地址',
+    keyNoteMid2: ' → 拿來授權下面這個 session；',
+    keyNoteBold3: '私鑰',
+    keyNoteAfter:
+      ' → 放進 agent 的 MCP 設定 + 一點 ETH 付 gas。 沒有現成的就按「Generate agent key」在瀏覽器產生一把全新 burner。',
+
+    burnerWarnBefore: '這是一把獨立的 burner 金鑰，只受你下面設的 session 限額拘束。請存到本機 agent 設定，',
+    burnerWarnBold: '別放主錢包資產',
+    burnerWarnAfter: '。本頁只顯示這一次，且不會上傳或寫入伺服器。',
+
+    step1Before: '把 ',
+    step1Bold: 'MCP 設定',
+    step1Mid1: '貼進 Claude Desktop/Code 的 ',
+    step1Mid2: '，並把 ',
+    step1After: ' 換成你本機 agent 的 session key。',
+    step2Before: '把 ',
+    step2Bold: '授權 VC',
+    step2Mid1: '存成檔案，agent 下單時以 ',
+    step2Mid2: ' 指向它（或 MCP ',
+    step2Mid3: ' 的 ',
+    step2After: '）。',
+    step3: '完成後直接對 agent 說：「幫我用 3x 槓桿做多 sBTC、保證金 200」即可，無需再報帳號/位址。',
+
+    addrKeyBold1: '地址',
+    addrKeyMid1: '（',
+    addrKeyMid2: '）＝已上鏈授權的 agent，放在 session / VC 裡；',
+    addrKeyBold2: '私鑰',
+    addrKeyAfter: '＝對應這個地址、只放本機 agent 設定的 ',
+    addrKeyTail: '。兩者是同一把 key 的公開/秘密兩面。',
+
+    includeKeyBefore: '把我剛產生的 agent 私鑰填進 ',
+    includeKeyAfter: '（含真鑰，請只在自己機器使用）',
+
+    placeholderAfter:
+      ' 為佔位 — 貼上你保存的 agent 私鑰即可（在本頁用「Generate agent key」產生的，可勾選自動填入）。',
+
+    finalWarnBefore: 'agent 私鑰只放你本機的 agent 設定，',
+    finalWarnBold1: '勿外流',
+    finalWarnMid1: '。私鑰只存在你瀏覽器記憶體（不寫伺服器、不入庫）； 預設匯出的 ',
+    finalWarnMid2: ' 為佔位字串，只有你',
+    finalWarnBold2: '明確勾選「填入私鑰」',
+    finalWarnAfter: '時才會含真鑰——此時請勿把這份 JSON 貼到任何他人/公開處。',
+  },
+};

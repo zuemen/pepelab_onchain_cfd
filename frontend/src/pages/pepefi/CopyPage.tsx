@@ -10,6 +10,7 @@ import { useKYC } from 'src/hooks/useKYC'
 import { useESG } from 'src/hooks/useESG'
 import { useLivePrices } from 'src/hooks/useLivePrices'
 import { useExecutionFee, formatEth } from 'src/hooks/useExecutionFee'
+import { t, interpolate } from 'src/locales'
 import { STABLE_LABEL } from 'src/lib/pepefi/tokenLabel'
 import { firstBlocking, stalenessNotice } from 'src/lib/pepefi/priceFreshness'
 import ESGBadge from 'src/components/pepefi/ESGBadge'
@@ -226,12 +227,12 @@ export default function CopyPage() {
   const doApprove = async () => {
     if (!contracts) return
     const amt = tryParse(totalMargin)
-    if (!amt) { notify('Enter a valid amount', false); return }
+    if (!amt) { notify(t.copy.tx.enterValidAmount, false); return }
     setLoad('approve', true)
     try {
       const tx = asTx(await contracts.usdc.approve(String(contracts.copyTracker.target), amt))
       await tx.wait()
-      notify(`${STABLE_LABEL} approved ✓`, true, tx.hash)
+      notify(interpolate(t.copy.tx.approved, { token: STABLE_LABEL }), true, tx.hash)
       setApproved(true)
     } catch (e) {
       notify(prettyError(e), false)
@@ -241,7 +242,7 @@ export default function CopyPage() {
   const doFollow = async () => {
     if (!contracts || !traderAddress) return
     const amt = tryParse(totalMargin)
-    if (!amt) { notify('Enter a valid amount', false); return }
+    if (!amt) { notify(t.copy.tx.enterValidAmount, false); return }
     // F-2：任何一檔過期就別送。送出去只會 revert，但 N 筆 execution fee 的 gas
     // 已經花掉了——這是最貴的一種白撞牆。
     if (staleNotice) { notify(staleNotice, false); return }
@@ -253,7 +254,7 @@ export default function CopyPage() {
         value: totalExecFee
       }))
       await tx.wait()
-      notify('Following trader ✓', true, tx.hash)
+      notify(t.copy.tx.following, true, tx.hash)
       navigate('/portfolio')
     } catch (e) {
       notify(prettyError(e), false)
@@ -261,13 +262,13 @@ export default function CopyPage() {
   }
 
   if (!traderAddress) {
-    return <Box sx={{ p: 4 }}><Typography color="text.secondary">Invalid trader address.</Typography></Box>
+    return <Box sx={{ p: 4 }}><Typography color="text.secondary">{t.copy.invalidAddress}</Typography></Box>
   }
 
   if (!wallet.isConnected) {
     return (
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-        <Typography color="text.secondary">Connect wallet to copy a trader.</Typography>
+        <Typography color="text.secondary">{t.copy.connectWallet}</Typography>
       </Box>
     )
   }
@@ -297,7 +298,7 @@ export default function CopyPage() {
                 color="inherit"
                 sx={{ display: 'block', mt: 0.5, typography: 'caption', textDecoration: 'underline' }}
               >
-                View on {explorerName(wallet.chainId)} ↗
+                {interpolate(t.copy.viewOn, { explorer: explorerName(wallet.chainId) })}
               </Link>
             )}
           </Alert>
@@ -307,14 +308,14 @@ export default function CopyPage() {
       {/* Load error banner */}
       {loadError && (
         <Alert severity="error">
-          <strong>Failed to load trader:</strong> {loadError}
+          <strong>{t.copy.loadFailed}</strong> {loadError}
         </Alert>
       )}
 
       {/* Breadcrumb */}
       <Breadcrumbs separator="/" sx={{ mb: 1 }}>
         <Link component={RouterLink} to="/marketplace" color="inherit" underline="hover" sx={{ fontSize: '0.875rem' }}>
-          Marketplace
+          {t.copy.breadcrumbMarketplace}
         </Link>
         <Typography variant="body2" color="text.primary">
           {traderName || shortAddr(traderAddress)}
@@ -344,7 +345,7 @@ export default function CopyPage() {
               <Box>
                 <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexWrap: 'wrap', gap: 1 }}>
                   <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
-                    {traderName || 'Unknown Trader'}
+                    {traderName || t.copy.header.unknownTrader}
                   </Typography>
                   <TraderRankBadge reputation={stakeData ? stakeData.reputation : null} />
                 </Stack>
@@ -355,7 +356,7 @@ export default function CopyPage() {
               {stakeData && (
                 <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5 }}>
                   <Chip
-                    label={`◆ ${String(stakeData.reputation)} rep`}
+                    label={interpolate(t.copy.header.repChip, { rep: String(stakeData.reputation) })}
                     size="small"
                     sx={{
                       fontWeight: 'bold',
@@ -366,7 +367,10 @@ export default function CopyPage() {
                     }}
                   />
                   <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
-                    {(Number(stakeData.stake) / 1e18).toFixed(0)} {STABLE_LABEL} staked
+                    {interpolate(t.copy.header.staked, {
+                      amount: (Number(stakeData.stake) / 1e18).toFixed(0),
+                      token: STABLE_LABEL,
+                    })}
                   </Typography>
                 </Box>
               )}
@@ -375,7 +379,7 @@ export default function CopyPage() {
         </Stack>
         {!loadError && traderName !== '' && !traderRegistered && (
           <Typography variant="caption" color="warning.main" sx={{ display: 'block', mt: 2, fontWeight: 'bold' }}>
-            ⚠ This address is not registered as a trader.
+            {t.copy.header.notRegistered}
           </Typography>
         )}
       </Card>
@@ -383,17 +387,22 @@ export default function CopyPage() {
       {/* Strategy allocations */}
       <Card sx={{ p: 3 }}>
         <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 2 }}>
-          Latest Strategy
+          {t.copy.strategy.title}
         </Typography>
 
         {stratAllocs.length === 0 ? (
-          <Typography color="text.secondary">No strategy published yet.</Typography>
+          <Typography color="text.secondary">{t.copy.strategy.empty}</Typography>
         ) : (
           <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
             {stratAllocs.map((a, i) => (
               <Chip
                 key={i}
-                label={`${a.isLong ? '↑' : '↓'} ${ASSET_LABEL[a.asset] ?? '?'} ${(Number(a.weight) / 100).toFixed(0)}% · ${String(a.leverage)}×`}
+                label={interpolate(t.copy.strategy.chip, {
+                  side: a.isLong ? '↑' : '↓',
+                  asset: ASSET_LABEL[a.asset] ?? '?',
+                  weight: (Number(a.weight) / 100).toFixed(0),
+                  leverage: String(a.leverage),
+                })}
                 size="small"
                 sx={{
                   fontWeight: 'bold',
@@ -422,7 +431,7 @@ export default function CopyPage() {
         if (!allRated) return null
         const composite = Math.round(wavg / totalW)
         const rating    = composite >= 80 ? 'AAA' : composite >= 70 ? 'AA' : composite >= 60 ? 'A' : composite >= 50 ? 'BBB' : 'CCC'
-        const tierName  = composite >= 80 ? 'ESG Champion' : composite >= 60 ? 'ESG Aware' : 'Consider greener assets'
+        const tierName  = composite >= 80 ? t.copy.esg.champion : composite >= 60 ? t.copy.esg.aware : t.copy.esg.considerGreener
         const tierColorHex = composite >= 80 ? '#22c55e' : composite >= 60 ? '#c0ca33' : '#ffab00'
         return (
           <Card sx={{ p: 2.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
@@ -430,7 +439,7 @@ export default function CopyPage() {
               <Typography variant="h5">🌱</Typography>
               <Box>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 'bold' }}>
-                  Strategy ESG Score
+                  {t.copy.esg.title}
                 </Typography>
                 <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: tierColorHex }}>
                   {tierName}
@@ -449,7 +458,7 @@ export default function CopyPage() {
                 size="small"
                 sx={{ textTransform: 'none' }}
               >
-                Details →
+                {t.copy.esg.details}
               </Button>
             </Box>
           </Card>
@@ -459,13 +468,13 @@ export default function CopyPage() {
       {/* Total margin input */}
       <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
         <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-          Copy Amount
+          {t.copy.amount.title}
         </Typography>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
           <TextField
             type="number"
             size="small"
-            placeholder="1000"
+            placeholder={t.copy.amount.placeholder}
             value={totalMargin}
             disabled={!hasStrategy}
             onChange={e => setTotalMargin(e.target.value)}
@@ -473,11 +482,11 @@ export default function CopyPage() {
             sx={{ width: 200 }}
           />
           <Typography variant="body2" color="text.secondary">
-            {STABLE_LABEL} total margin
+            {interpolate(t.copy.amount.unitSuffix, { token: STABLE_LABEL })}
           </Typography>
           {!hasStrategy && (
             <Typography variant="caption" color="text.disabled" sx={{ fontStyle: 'italic' }}>
-              disabled — no strategy
+              {t.copy.amount.disabledHint}
             </Typography>
           )}
         </Box>
@@ -486,19 +495,19 @@ export default function CopyPage() {
           <Card sx={{ p: 2, bgcolor: 'background.neutral' }}>
             <Stack spacing={1} sx={{ typography: 'caption' }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.secondary' }}>
-                <Box>Total deposit:</Box>
+                <Box>{t.copy.preview.totalDeposit}</Box>
                 <Box sx={{ fontFamily: MONO, color: 'text.primary', fontWeight: 'semibold' }}>{f18(totalBig)} {STABLE_LABEL}</Box>
               </Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.secondary' }}>
-                <Box>− Copy fee (0.3%):</Box>
+                <Box>{t.copy.preview.copyFee}</Box>
                 <Box sx={{ fontFamily: MONO, color: 'error.main', fontWeight: 'semibold' }}>-{f18(preview.copyFee)} {STABLE_LABEL}</Box>
               </Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.secondary' }}>
-                <Box>− Trading fee buffer:</Box>
+                <Box>{t.copy.preview.tradingFeeBuffer}</Box>
                 <Box sx={{ fontFamily: MONO, color: 'error.main', fontWeight: 'semibold' }}>-{f18(preview.totalTradingFee)} {STABLE_LABEL}</Box>
               </Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.primary', fontWeight: 'bold', borderTop: '1px solid', borderColor: 'divider', pt: 1, mt: 0.5 }}>
-                <Box>Effective margin:</Box>
+                <Box>{t.copy.preview.effectiveMargin}</Box>
                 <Box sx={{ fontFamily: MONO, color: 'success.main' }}>{f18(preview.marginForPositions)} {STABLE_LABEL}</Box>
               </Box>
             </Stack>
@@ -510,7 +519,15 @@ export default function CopyPage() {
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  {['Asset', 'Side', 'Lev', 'Weight', 'Margin', 'Notional', 'Est. Entry'].map(h => (
+                  {[
+                    t.copy.preview.column.asset,
+                    t.copy.preview.column.side,
+                    t.copy.preview.column.leverage,
+                    t.copy.preview.column.weight,
+                    t.copy.preview.column.margin,
+                    t.copy.preview.column.notional,
+                    t.copy.preview.column.estEntry,
+                  ].map(h => (
                     <TableCell key={h} sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{h}</TableCell>
                   ))}
                 </TableRow>
@@ -522,7 +539,7 @@ export default function CopyPage() {
                       {ASSET_LABEL[row.asset] ?? '?'}
                     </TableCell>
                     <TableCell sx={{ fontWeight: 'bold', color: row.isLong ? 'success.main' : 'error.main' }}>
-                      {row.isLong ? 'LONG ↑' : 'SHORT ↓'}
+                      {row.isLong ? t.copy.preview.long : t.copy.preview.short}
                     </TableCell>
                     <TableCell sx={{ fontFamily: MONO }}>{String(row.leverage)}×</TableCell>
                     <TableCell sx={{ fontFamily: MONO }}>{(Number(row.weight) / 100).toFixed(0)}%</TableCell>
@@ -545,23 +562,23 @@ export default function CopyPage() {
       {totalBig > 0n && (
         <Card sx={{ p: 2.5, bgcolor: 'background.neutral', border: '1px solid', borderColor: 'divider' }}>
           <Typography variant="overline" color="warning.main" sx={{ fontWeight: 'bold', display: 'block', mb: 1 }}>
-            Fee Preview
+            {t.copy.feePreview.title}
           </Typography>
           <Stack spacing={1} sx={{ typography: 'body2' }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.secondary' }}>
-              <Box>Copy fee (0.3%)</Box>
+              <Box>{t.copy.feePreview.copyFee}</Box>
               <Box sx={{ fontFamily: MONO }}>−{f18(feeBig, 4)} {STABLE_LABEL}</Box>
             </Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.secondary' }}>
-              <Box>Net margin deposited</Box>
+              <Box>{t.copy.feePreview.netMargin}</Box>
               <Box sx={{ fontFamily: MONO, color: 'text.primary', fontWeight: 'semibold' }}>{f18(netBig)} {STABLE_LABEL}</Box>
             </Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.secondary', borderTop: '1px solid', borderColor: 'divider', pt: 1, mt: 1 }}>
-              <Box>Execution Fee (ETH)</Box>
+              <Box>{t.copy.feePreview.executionFee}</Box>
               <Box sx={{ fontFamily: MONO, color: 'primary.main', fontWeight: 'semibold' }}>{formatEth(execFee.wei * BigInt(stratAllocs.length))} ETH</Box>
             </Box>
             <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-              Copy fee is split 70% → trader · 20% → platform · 10% → slash pool. Execution fee pays Keeper bots.
+              {t.copy.feePreview.split}
             </Typography>
           </Stack>
         </Card>
@@ -571,23 +588,23 @@ export default function CopyPage() {
       {stakeData && (
         <Card sx={{ p: 3, border: '1px solid', borderColor: stakeData.totalSlashed > 0n ? 'error.main' : 'divider', bgcolor: 'background.neutral' }}>
           <Typography variant="overline" sx={{ fontWeight: 'bold', display: 'block', mb: 1.5 }}>
-            Trader Skin-in-the-Game
+            {t.copy.skinInGame.title}
           </Typography>
           <Grid container spacing={3}>
             <Grid size={{ xs: 4 }}>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>Staked</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{t.copy.skinInGame.staked}</Typography>
               <Typography variant="h6" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
                 {(Number(stakeData.stake) / 1e18).toFixed(0)} <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary' }}>{STABLE_LABEL}</Box>
               </Typography>
             </Grid>
             <Grid size={{ xs: 4 }}>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>Reputation</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{t.copy.skinInGame.reputation}</Typography>
               <Typography variant="h6" sx={{ fontFamily: MONO, fontWeight: 'bold', color: stakeData.reputation >= 80n ? 'success.main' : stakeData.reputation >= 60n ? 'warning.main' : 'error.main' }}>
-                {String(stakeData.reputation)} <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary' }}>pts</Box>
+                {String(stakeData.reputation)} <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary' }}>{t.copy.skinInGame.reputationUnit}</Box>
               </Typography>
             </Grid>
             <Grid size={{ xs: 4 }}>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>Total Slashed</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{t.copy.skinInGame.totalSlashed}</Typography>
               <Typography variant="h6" sx={{ fontFamily: MONO, fontWeight: 'bold', color: stakeData.totalSlashed > 0n ? 'error.main' : 'text.primary' }}>
                 {(Number(stakeData.totalSlashed) / 1e18).toFixed(0)} <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary' }}>{STABLE_LABEL}</Box>
               </Typography>
@@ -595,16 +612,19 @@ export default function CopyPage() {
           </Grid>
           {stakeData.totalSlashed > 0n && (
             <Typography variant="caption" color="error.main" sx={{ display: 'block', mt: 2, fontWeight: 'semibold' }}>
-              ⚠ This trader has had {(Number(stakeData.totalSlashed) / 1e18).toFixed(0)} {STABLE_LABEL} slashed for causing excessive losses to followers. Proceed with caution.
+              {interpolate(t.copy.skinInGame.slashedWarning, {
+                amount: (Number(stakeData.totalSlashed) / 1e18).toFixed(0),
+                token: STABLE_LABEL,
+              })}
             </Typography>
           )}
           {stakeData.stake === 0n && (
             <Typography variant="caption" color="warning.main" sx={{ display: 'block', mt: 2, fontWeight: 'semibold' }}>
-              ⚠ This trader has no stake — they have no skin-in-the-game. You cannot trigger slashing if they cause losses.
+              {t.copy.skinInGame.noStakeWarning}
             </Typography>
           )}
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
-            ⚠ If your loss exceeds 30%, this trader's stake will be slashed (50% of loss, capped at 50% of stake) and transferred to you as compensation.
+            {t.copy.skinInGame.slashRule}
           </Typography>
         </Card>
       )}
@@ -612,7 +632,7 @@ export default function CopyPage() {
       {/* Two-stage action */}
       <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
         <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-          Confirm Copy
+          {t.copy.confirm.title}
         </Typography>
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
@@ -623,7 +643,7 @@ export default function CopyPage() {
             sx={{ fontWeight: 'bold' }}
           />
           <Typography variant="body2" color={approved ? 'success.main' : 'text.secondary'}>
-            Approve {STABLE_LABEL} to CopyTracker
+            {interpolate(t.copy.confirm.approveStep, { token: STABLE_LABEL })}
           </Typography>
           <Typography variant="body2" color="text.disabled" sx={{ mx: 1 }}>→</Typography>
           <Chip
@@ -633,19 +653,18 @@ export default function CopyPage() {
             sx={{ fontWeight: 'bold' }}
           />
           <Typography variant="body2" color="text.secondary">
-            Follow Trader
+            {t.copy.confirm.followStep}
           </Typography>
         </Box>
 
         {staleNotice && (
           <Alert severity="error">
             <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
-              價格過期 — 暫停跟單
+              {t.copy.confirm.staleTitle}
             </Typography>
             <Typography variant="caption" sx={{ display: 'block' }}>{staleNotice}</Typography>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-              跟單是一筆交易開 {stratAllocs.length} 個倉位，只要有一檔過期整筆都會被拒絕，
-              而 {stratAllocs.length} 份 execution fee 的 gas 已經付出去了。
+              {interpolate(t.copy.confirm.staleExplain, { count: stratAllocs.length })}
             </Typography>
           </Alert>
         )}
@@ -653,7 +672,7 @@ export default function CopyPage() {
         {/* 審核制：送出申請 ≠ 通過。待審中不要再推「完成 KYC」按鈕。 */}
         {kycBlocked && kycPending && (
           <Alert severity="info">
-            ⏳ 你的 KYC 申請<b>已送出，正在等待審核</b>。審核人員核准後才能跟單含股票 / 債券的策略，不需要重複送出。
+            {t.copy.markup.kycPendingBefore}<b>{t.copy.markup.kycPendingBold}</b>{t.copy.markup.kycPendingAfter}
           </Alert>
         )}
 
@@ -665,10 +684,10 @@ export default function CopyPage() {
               onClick={() => setShowKYCModal(true)}
               sx={{ fontWeight: 'bold' }}
             >
-              送出 KYC 申請
+              {t.copy.confirm.kycSubmit}
             </Button>
           }>
-            🔒 此策略包含股票 / 債券資產，需通過 KYC 審核才能跟單（送出申請後需等審核人員核准）。
+            {t.copy.confirm.kycRequired}
           </Alert>
         )}
 
@@ -680,7 +699,7 @@ export default function CopyPage() {
             disabled={approved || busy['approve'] || !totalMargin || !hasStrategy || kycBlocked}
             sx={{ flexGrow: 1 }}
           >
-            {busy['approve'] ? 'Approving…' : approved ? 'Approved' : 'Step 1 · Approve'}
+            {busy['approve'] ? t.copy.confirm.approving : approved ? t.copy.confirm.approved : t.copy.confirm.approveCta}
           </Button>
 
           <Button
@@ -696,21 +715,21 @@ export default function CopyPage() {
             sx={{ flexGrow: 1 }}
           >
             {busy['follow']
-              ? 'Following…'
+              ? t.copy.confirm.following
               : staleBlocked
-                ? `⛔ ${staleAlloc?.label ?? ''} 價格過期`
-                : 'Step 2 · Follow Trader'}
+                ? interpolate(t.copy.confirm.stalePrice, { asset: staleAlloc?.label ?? '' })
+                : t.copy.confirm.followCta}
           </Button>
         </Box>
 
         {!hasStrategy && (
           <Typography variant="caption" color="warning.main" sx={{ textAlign: 'center', fontWeight: 'bold', display: 'block' }}>
-            ⚠ Trader has no published strategy. Copy is disabled.
+            {t.copy.confirm.noStrategy}
           </Typography>
         )}
 
         <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center', display: 'block' }}>
-          Your margin will be automatically split and deposited into positions according to the strategy above.
+          {t.copy.confirm.footer}
         </Typography>
       </Card>
 

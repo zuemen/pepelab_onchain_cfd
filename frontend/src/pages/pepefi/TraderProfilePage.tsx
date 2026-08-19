@@ -33,6 +33,7 @@ import Breadcrumbs from '@mui/material/Breadcrumbs';
 import Alert from '@mui/material/Alert';
 import Avatar from '@mui/material/Avatar';
 
+import { t, locale, interpolate } from 'src/locales';
 import { explorerTx, explorerName } from 'src/lib/pepefi/notify';
 
 interface StakeInfo {
@@ -63,7 +64,7 @@ interface SlashEvent {
 const f18 = (v: bigint, d = 2) => (Number(v) / 1e18).toFixed(d)
 const shortAddr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 const fmtDate = (ts: bigint) =>
-  new Date(Number(ts) * 1000).toLocaleString('zh-TW', { dateStyle: 'short', timeStyle: 'short' })
+  new Date(Number(ts) * 1000).toLocaleString(locale, { dateStyle: 'short', timeStyle: 'short' })
 
 export default function TraderProfilePage() {
   const wallet = usePepefiWallet()
@@ -194,12 +195,12 @@ export default function TraderProfilePage() {
     void go()
   }, [contracts, traderAddr])
 
-  if (!traderAddr) return <Box sx={{ p: 4 }}><Typography color="text.secondary">Invalid address.</Typography></Box>
+  if (!traderAddr) return <Box sx={{ p: 4 }}><Typography color="text.secondary">{t.traderProfile.invalidAddress}</Typography></Box>
 
   if (!wallet.isConnected) {
     return (
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-        <Typography color="text.secondary">Connect wallet to view trader profiles.</Typography>
+        <Typography color="text.secondary">{t.traderProfile.connectWallet}</Typography>
       </Box>
     )
   }
@@ -210,7 +211,7 @@ export default function TraderProfilePage() {
       {/* Breadcrumbs */}
       <Breadcrumbs separator="/" sx={{ mb: 1 }}>
         <Link component={RouterLink} to="/marketplace" color="inherit" underline="hover" sx={{ fontSize: '0.875rem' }}>
-          Marketplace
+          {t.traderProfile.breadcrumbMarketplace}
         </Link>
         <Typography variant="body2" color="text.primary">
           {name || shortAddr(traderAddr)}
@@ -254,7 +255,7 @@ export default function TraderProfilePage() {
                   <Box>
                     <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexWrap: 'wrap', gap: 1 }}>
                       <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
-                        {name || 'Unknown'}
+                        {name || t.traderProfile.header.unknownName}
                       </Typography>
                       <TraderRankBadge reputation={repScore} />
                     </Stack>
@@ -264,7 +265,7 @@ export default function TraderProfilePage() {
                   </Box>
                   {repScore !== null && (
                     <Chip
-                      label={`◆ ${String(repScore)} rep`}
+                      label={interpolate(t.traderProfile.header.repChip, { rep: String(repScore) })}
                       size="small"
                       sx={{
                         fontWeight: 'bold',
@@ -279,11 +280,14 @@ export default function TraderProfilePage() {
 
                 <Stack direction="row" spacing={2} sx={{ flexWrap: 'wrap', gap: 1, mt: 1.5, alignItems: 'center' }}>
                   <Typography variant="body2" color="text.secondary">
-                    <Box component="span" sx={{ fontWeight: 'bold', color: 'text.primary' }}>{String(followers)}</Box> follower{followers !== 1n ? 's' : ''}
+                    <Box component="span" sx={{ fontWeight: 'bold', color: 'text.primary' }}>{String(followers)}</Box>{' '}
+                    {followers === 1n
+                      ? t.traderProfile.header.followerSingular
+                      : t.traderProfile.header.followerPlural}
                   </Typography>
                   {registered && (
                     <Chip
-                      label="Registered"
+                      label={t.traderProfile.header.registered}
                       color="success"
                       variant="outlined"
                       size="small"
@@ -292,7 +296,7 @@ export default function TraderProfilePage() {
                   )}
                   {eligible !== null && (
                     <Chip
-                      label={eligible ? '◆ Staked' : '✗ Not staked'}
+                      label={eligible ? t.traderProfile.header.staked : t.traderProfile.header.notStaked}
                       color={eligible ? 'primary' : 'error'}
                       variant="outlined"
                       size="small"
@@ -312,39 +316,44 @@ export default function TraderProfilePage() {
               disabled={!hasStrategy}
               sx={{ fontWeight: 'bold', py: 1.2 }}
             >
-              {!hasStrategy ? 'No Strategy to Copy 🔒' : 'Copy This Trader →'}
+              {!hasStrategy ? t.traderProfile.header.noStrategy : t.traderProfile.header.copyThisTrader}
             </Button>
           </Card>
 
           {/* ─── B. Stats grid (4 cards) ──────────────────────────── */}
           <Grid container spacing={2}>
             <Grid size={{ xs: 6, md: 3 }}>
-              <StatCard title="Staked" value={stakeInfo ? f18(stakeInfo.amount) : '—'} sub="mUSDC" />
+              <StatCard title={t.traderProfile.stats.staked} value={stakeInfo ? f18(stakeInfo.amount) : '—'} sub="USDC" />
             </Grid>
             <Grid size={{ xs: 6, md: 3 }}>
-              <StatCard title="Followers" value={String(followers)} sub="copiers" />
+              <StatCard title={t.traderProfile.stats.followers} value={String(followers)} sub={t.traderProfile.stats.copiers} />
             </Grid>
             <Grid size={{ xs: 6, md: 3 }}>
-              <StatCard title="Earnings" value={earnings !== null ? f18(earnings, 4) : '—'} sub="mUSDC" valueColor="success.main" />
+              <StatCard title={t.traderProfile.stats.earnings} value={earnings !== null ? f18(earnings, 4) : '—'} sub="USDC" valueColor="success.main" />
             </Grid>
             <Grid size={{ xs: 6, md: 3 }}>
-              <StatCard title="Strategies" value={stratCount !== null ? String(stratCount) : '—'} sub="versions" />
+              <StatCard title={t.traderProfile.stats.strategies} value={stratCount !== null ? String(stratCount) : '—'} sub={t.traderProfile.stats.versions} />
             </Grid>
           </Grid>
 
           {/* ─── C. Latest Strategy ────────────────────────────────── */}
           <Card sx={{ p: 3 }}>
             <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 2 }}>
-              Latest Strategy
+              {t.traderProfile.strategy.title}
             </Typography>
             {!hasStrategy ? (
-              <Typography color="text.secondary">No strategy published yet.</Typography>
+              <Typography color="text.secondary">{t.traderProfile.strategy.empty}</Typography>
             ) : (
               <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
                 {allocs.map((a, i) => (
                   <Chip
                     key={i}
-                    label={`${a.isLong ? '↑' : '↓'} ${ASSET_LABEL[a.asset] ?? '?'} ${(Number(a.weight) / 100).toFixed(0)}% · ${String(a.leverage)}×`}
+                    label={interpolate(t.traderProfile.strategy.chip, {
+                      side: a.isLong ? '↑' : '↓',
+                      asset: ASSET_LABEL[a.asset] ?? '?',
+                      weight: (Number(a.weight) / 100).toFixed(0),
+                      leverage: String(a.leverage),
+                    })}
                     size="small"
                     sx={{
                       fontWeight: 'bold',
@@ -363,7 +372,12 @@ export default function TraderProfilePage() {
           {stratHistory.length > 0 && (
             <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-                Strategy History <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary' }}>({stratHistory.length} version{stratHistory.length !== 1 ? 's' : ''})</Box>
+                {interpolate(
+                  stratHistory.length === 1
+                    ? t.traderProfile.history.titleOne
+                    : t.traderProfile.history.titleMany,
+                  { count: stratHistory.length },
+                )}
               </Typography>
               <Stack spacing={1.5}>
                 {stratHistory.map(ver => (
@@ -390,9 +404,15 @@ export default function TraderProfilePage() {
                           v{ver.versionId}
                         </Typography>
                         <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'text.primary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {ver.allocs.map(a =>
-                            `${ASSET_LABEL[a.asset] ?? '?'} ${a.isLong ? 'L' : 'S'} ${String(a.leverage)}×`,
-                          ).join(' · ')}
+                          {ver.allocs
+                            .map(a =>
+                              interpolate(t.traderProfile.history.summaryEntry, {
+                                asset: ASSET_LABEL[a.asset] ?? '?',
+                                side: a.isLong ? t.traderProfile.history.long : t.traderProfile.history.short,
+                                leverage: String(a.leverage),
+                              }),
+                            )
+                            .join(' · ')}
                         </Typography>
                       </Box>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, ml: 2, shrink: 0 }}>
@@ -410,7 +430,13 @@ export default function TraderProfilePage() {
                           <Table size="small">
                             <TableHead>
                               <TableRow>
-                                {['Asset', 'ESG', 'Side', 'Lev', 'Weight'].map(h => (
+                                {[
+                                  t.traderProfile.history.column.asset,
+                                  t.traderProfile.history.column.esg,
+                                  t.traderProfile.history.column.side,
+                                  t.traderProfile.history.column.leverage,
+                                  t.traderProfile.history.column.weight,
+                                ].map(h => (
                                   <TableCell key={h} sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{h}</TableCell>
                                 ))}
                               </TableRow>
@@ -429,7 +455,7 @@ export default function TraderProfilePage() {
                                     )}
                                   </TableCell>
                                   <TableCell sx={{ fontWeight: 'bold', color: a.isLong ? 'success.main' : 'error.main' }}>
-                                    {a.isLong ? 'Long ↑' : 'Short ↓'}
+                                    {a.isLong ? t.traderProfile.history.longLabel : t.traderProfile.history.shortLabel}
                                   </TableCell>
                                   <TableCell sx={{ fontFamily: MONO }}>{String(a.leverage)}×</TableCell>
                                   <TableCell align="right" sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'text.primary' }}>
@@ -452,7 +478,7 @@ export default function TraderProfilePage() {
           {followerList.length > 0 && (
             <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-                Followers <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary' }}>(first {followerList.length})</Box>
+                {interpolate(t.traderProfile.followers.titleFirst, { count: followerList.length })}
               </Typography>
               <TableContainer>
                 <Table size="small">
@@ -477,7 +503,12 @@ export default function TraderProfilePage() {
           {slashHistory.length > 0 && (
             <Card sx={{ p: 3, border: '1px solid', borderColor: 'error.main', bgcolor: 'rgba(255, 86, 48, 0.08)', display: 'flex', flexDirection: 'column', gap: 2 }}>
               <Typography variant="subtitle1" color="error.main" sx={{ fontWeight: 'bold' }}>
-                Slash History <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'text.secondary' }}>({slashHistory.length} event{slashHistory.length !== 1 ? 's' : ''})</Box>
+                {interpolate(
+                  slashHistory.length === 1
+                    ? t.traderProfile.slashHistory.titleOne
+                    : t.traderProfile.slashHistory.titleMany,
+                  { count: slashHistory.length },
+                )}
               </Typography>
               <TableContainer>
                 <Table size="small">
@@ -486,7 +517,7 @@ export default function TraderProfilePage() {
                       <TableRow key={i}>
                         <TableCell>
                           <Typography variant="body2" color="error.main" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
-                            −{f18(ev.amount)} mUSDC
+                            −{f18(ev.amount)} USDC
                           </Typography>
                           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
                             → {shortAddr(ev.recipient)}
@@ -528,7 +559,7 @@ export default function TraderProfilePage() {
               color="inherit"
               sx={{ textTransform: 'none' }}
             >
-              ← Back to Marketplace
+              {t.traderProfile.actions.backToMarketplace}
             </Button>
             <Button
               component={RouterLink}
@@ -537,7 +568,7 @@ export default function TraderProfilePage() {
               color="inherit"
               sx={{ textTransform: 'none' }}
             >
-              🐋 Whale Tracker
+              {t.traderProfile.actions.whaleTracker}
             </Button>
           </Box>
         </>

@@ -11,6 +11,7 @@ import Grid from '@mui/material/Grid'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 
+import { t } from 'src/locales'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { useContracts } from 'src/hooks/useContracts'
 import { useFundingData } from 'src/hooks/useFundingData'
@@ -135,32 +136,32 @@ export default function HeroKpiStrip() {
   return (
     <Grid container spacing={1.5} sx={{ mb: 5 }}>
       <Grid size={{ xs: 6, md: 3 }}>
-        <KpiTile label="x402 Revenue" live={!!rev}>
+        <KpiTile label={t.landing.heroKpi.x402Revenue} live={!!rev}>
           <Mono glow tone="green">
             ${feeUsd.toFixed(3)}
           </Mono>
         </KpiTile>
       </Grid>
       <Grid size={{ xs: 6, md: 3 }}>
-        <KpiTile label="Agent Calls Paid" live={!!rev}>
+        <KpiTile label={t.landing.heroKpi.agentCallsPaid} live={!!rev}>
           <Mono tone="gold">{Math.round(calls).toLocaleString()}</Mono>
         </KpiTile>
       </Grid>
       <Grid size={{ xs: 6, md: 3 }}>
-        <KpiTile label="Open Interest" live={hasOI}>
+        <KpiTile label={t.landing.heroKpi.openInterest} live={hasOI}>
           {oiUsd != null ? (
             <Mono tone="green">
               ${oiUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })}
             </Mono>
           ) : (
             <Mono tone="muted" sx={{ fontSize: '1.1rem' }}>
-              connect ↗
+              {t.landing.heroKpi.connectHint}
             </Mono>
           )}
         </KpiTile>
       </Grid>
       <Grid size={{ xs: 6, md: 3 }}>
-        <KpiTile label="Network">
+        <KpiTile label={t.landing.heroKpi.network}>
           <Stack direction="row" alignItems="center" spacing={1}>
             <LiveDot color={PEPE.green} size={7} />
             <Mono tone="green" sx={{ fontSize: '1.05rem' }}>

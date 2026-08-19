@@ -16,11 +16,12 @@ import { useTerminalLayout } from 'src/hooks/useTerminalLayout'
 import { useMarketActivity } from 'src/hooks/useMarketActivity'
 import { useTerminalAccount } from 'src/hooks/useTerminalAccount'
 
+import { t } from 'src/locales'
 import { ASSET_IDS } from 'src/contracts/addresses'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { ASSET_META } from 'src/lib/pepefi/assetMeta'
+import { stalenessNotice } from 'src/lib/pepefi/priceFreshness'
 import { type Interval, DEFAULT_INTERVAL } from 'src/lib/pepefi/candles'
-import { blocksTrading, stalenessNotice } from 'src/lib/pepefi/priceFreshness'
 
 import PaperTradingBadge from 'src/components/pepefi/PaperTradingBadge'
 
@@ -61,11 +62,10 @@ export function TerminalView() {
 
   // 指數價超過合約的 maxPriceAge 時，開倉／平倉／清算在鏈上都會 revert
   // StalePrice。讓按鈕在送出之前就停用，而不是讓使用者付 gas 去撞牆。
-  const freshness = live[selAsset]?.freshness
-  const staleBlocked = freshness ? blocksTrading(freshness) : false
-
+  //
   // M1：上面那句註解原本只有開倉是真的——平倉按鈕從來沒被擋過。持倉表每一列
-  // 可能是不同標的，所以給它一個「按標的查」的函式而不是單一布林值。
+  // 可能是不同標的，所以給它一個「按標的查」的函式而不是單一布林值。下單面板
+  // 也吃同一個函式，於是「為什麼不能下單」全站只有一份文案。
   const staleNoticeFor = useCallback(
     (asset: string) => stalenessNotice(live[asset as AssetId]?.freshness, ASSET_META[asset]?.symbol),
     [live],
@@ -125,7 +125,7 @@ export function TerminalView() {
       <Box
         sx={{ minHeight: '70vh', display: 'grid', placeItems: 'center', bgcolor: C.bg, color: C.mut }}
       >
-        Connect wallet to open the terminal.
+        {t.terminal.connectWallet}
       </Box>
     )
   }
@@ -243,8 +243,7 @@ export function TerminalView() {
             kycBlocked={kycBlocked}
             kycUnknown={kycUnknown}
             kycPending={kycPending}
-            staleBlocked={staleBlocked}
-            staleLabel={freshness?.label}
+            staleNotice={staleNoticeFor(selAsset)}
             notify={notify}
             onFilled={account.refresh}
           />
@@ -296,7 +295,7 @@ export function TerminalView() {
               '&:hover': { color: C.ink, borderColor: C.line2 },
             }}
           >
-            {layout.bookCollapsed ? '顯示訂單簿欄' : '收合訂單簿欄'}
+            {layout.bookCollapsed ? t.terminal.book.show : t.terminal.book.hide}
           </Box>
         </Box>
       )}

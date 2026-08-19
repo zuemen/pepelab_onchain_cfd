@@ -5,6 +5,7 @@ import { useMemo } from 'react'
 
 import Box from '@mui/material/Box'
 
+import { t } from 'src/locales'
 import { fUsd, fromUnits } from 'src/lib/pepefi/format'
 
 import { ChartToolbar } from './ChartToolbar'
@@ -37,8 +38,9 @@ export function ChartPanel({
     const lines: PriceLineSpec[] = []
     const idx = fromUnits(indexPrice, 18)
     const mark = fromUnits(markPrice, 18)
-    if (idx > 0) lines.push({ price: idx, color: C.lime, title: 'index' })
-    if (mark > 0 && mark !== idx) lines.push({ price: mark, color: C.mut, title: 'mark' })
+    if (idx > 0) lines.push({ price: idx, color: C.lime, title: t.terminal.chart.lineIndex })
+    if (mark > 0 && mark !== idx)
+      lines.push({ price: mark, color: C.mut, title: t.terminal.chart.lineMark })
     return lines
   }, [indexPrice, markPrice])
 
@@ -59,7 +61,7 @@ export function ChartPanel({
             兩者有小幅價差是正常的——所以標清楚它屬於這張圖。 */}
         {feed.last !== undefined && (
           <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.7 }}>
-            <Box sx={{ ...labelCss, fontSize: 9.5 }}>chart last</Box>
+            <Box sx={{ ...labelCss, fontSize: 9.5 }}>{t.terminal.chart.last}</Box>
             <Box sx={{ ...monoCss, fontSize: 15, fontWeight: 700, color: C.ink }}>
               {fUsd(feed.last)}
             </Box>
@@ -69,14 +71,14 @@ export function ChartPanel({
         {/* 往回捲時的狀態。沒有這個的話，抓資料的那一兩秒圖表是靜止的，使用者
             分不出「正在載入」跟「沒有更早的資料了」——會一直往回拉。 */}
         {feed.loadingOlder && (
-          <Box sx={{ ...monoCss, fontSize: 10.5, color: C.mut }}>載入更早…</Box>
+          <Box sx={{ ...monoCss, fontSize: 10.5, color: C.mut }}>{t.terminal.chart.loadingOlder}</Box>
         )}
         {!feed.loadingOlder && feed.exhausted && (
-          <Box sx={{ ...monoCss, fontSize: 10.5, color: C.mut }}>已到最早資料</Box>
+          <Box sx={{ ...monoCss, fontSize: 10.5, color: C.mut }}>{t.terminal.chart.exhausted}</Box>
         )}
         {/* 跟「已到最早資料」要分開講：這是我們自己的顯示上限，不是來源沒東西了。 */}
         {!feed.loadingOlder && !feed.exhausted && feed.atCapacity && (
-          <Box sx={{ ...monoCss, fontSize: 10.5, color: C.mut }}>已達顯示上限</Box>
+          <Box sx={{ ...monoCss, fontSize: 10.5, color: C.mut }}>{t.terminal.chart.atCapacity}</Box>
         )}
 
         <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -87,7 +89,7 @@ export function ChartPanel({
             source={feed.source}
             degraded={feed.degraded}
             sourceError={feed.sourceError}
-            disclaimer="圖表為外部公開來源的參考行情，非本平台成交紀錄；開倉 / 平倉 / 清算一律以鏈上 oracle index 價結算。"
+            disclaimer={t.terminal.chart.disclaimer}
           />
         </Box>
       </Box>
@@ -107,7 +109,7 @@ export function ChartPanel({
           }}
         >
           <Box>
-            <Box sx={{ mb: 0.8 }}>無法載入 K 線</Box>
+            <Box sx={{ mb: 0.8 }}>{t.terminal.chart.error}</Box>
             <Box sx={{ color: C.mut, fontSize: 11.5 }}>{feed.error}</Box>
           </Box>
         </Box>
@@ -123,7 +125,7 @@ export function ChartPanel({
             fontSize: 13,
           }}
         >
-          載入 K 線…
+          {t.terminal.chart.loading}
         </Box>
       ) : (
         <CandleChart

@@ -6,6 +6,7 @@ import Stack from '@mui/material/Stack'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 
+import { t, interpolate } from 'src/locales'
 import { MONO, PEPE } from 'src/components/pepefi/brandKit'
 import { TableSkeleton } from 'src/components/pepefi/Skeleton'
 import { fCompact } from 'src/lib/pepefi/whale'
@@ -47,16 +48,16 @@ export default function MarketSentimentBar({ sentiment, mode, ready }: Props) {
         {/* 刻意不叫 "Open Interest"：KPI 那一列已經有一張同名的卡，兩個地方
             用同一個標題講不同粒度的事（總額 vs 多空分布）只會讓人以為重複了。 */}
         <Typography variant="overline" sx={{ fontWeight: 'bold', color: 'text.secondary' }}>
-          Long vs Short
+          {t.whale.sentiment.title}
         </Typography>
         <Typography variant="caption" color="text.secondary">
-          open interest · live
+          {t.whale.sentiment.subtitle}
         </Typography>
       </Box>
 
       {!ready ? (
         <Typography variant="body2" color="text.secondary" sx={{ py: 2, textAlign: 'center' }}>
-          Unavailable on this network.
+          {t.whale.sentiment.unavailable}
         </Typography>
       ) : loading && rows.length === 0 ? (
         <TableSkeleton rows={4} cols={1} />
@@ -64,7 +65,7 @@ export default function MarketSentimentBar({ sentiment, mode, ready }: Props) {
         <Typography variant="body2" color="error.main">{error}</Typography>
       ) : total === 0n ? (
         <Typography variant="body2" color="text.secondary" sx={{ py: 2, textAlign: 'center' }}>
-          No open positions in any market.
+          {t.whale.sentiment.empty}
         </Typography>
       ) : (
         <>
@@ -72,16 +73,21 @@ export default function MarketSentimentBar({ sentiment, mode, ready }: Props) {
           <Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.75 }}>
               <Typography variant="caption" sx={{ color: PEPE.long, fontWeight: 800 }}>
-                LONG {Math.round(longShare * 100)}%
+                {interpolate(t.whale.sentiment.long, { pct: Math.round(longShare * 100) })}
               </Typography>
               <Typography variant="caption" sx={{ color: PEPE.short, fontWeight: 800 }}>
-                {100 - Math.round(longShare * 100)}% SHORT
+                {interpolate(t.whale.sentiment.short, {
+                  pct: 100 - Math.round(longShare * 100),
+                })}
               </Typography>
             </Box>
             <SplitBar longShare={longShare} height={10} />
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
-              <Box component="span" sx={{ fontFamily: MONO }}>{fCompact(total)}</Box> across{' '}
-              {rows.length} market{rows.length === 1 ? '' : 's'}
+              <Box component="span" sx={{ fontFamily: MONO }}>{fCompact(total)}</Box>{' '}
+              {interpolate(
+                rows.length === 1 ? t.whale.sentiment.acrossOne : t.whale.sentiment.acrossMany,
+                { count: rows.length },
+              )}
             </Typography>
           </Box>
 
@@ -90,7 +96,10 @@ export default function MarketSentimentBar({ sentiment, mode, ready }: Props) {
             {(mode === 'simple' ? rows.slice(0, 3) : rows).map(r => (
               <Tooltip
                 key={r.asset}
-                title={`Long ${fCompact(r.long)} · Short ${fCompact(r.short)}`}
+                title={interpolate(t.whale.sentiment.rowTooltip, {
+                  long: fCompact(r.long),
+                  short: fCompact(r.short),
+                })}
                 placement="left"
               >
                 <Box>
@@ -112,7 +121,10 @@ export default function MarketSentimentBar({ sentiment, mode, ready }: Props) {
               「這個市場沒有部位」——那會讓使用者以為畫面壞了而不是重試就好。 */}
           {missing > 0 && (
             <Typography variant="caption" color="warning.main">
-              {missing} market{missing === 1 ? '' : 's'} could not be read — the RPC node may be rate-limiting.
+              {interpolate(
+                missing === 1 ? t.whale.sentiment.missingOne : t.whale.sentiment.missingMany,
+                { count: missing },
+              )}
             </Typography>
           )}
         </>

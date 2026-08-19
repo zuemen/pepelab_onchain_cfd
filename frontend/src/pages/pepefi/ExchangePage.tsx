@@ -10,6 +10,7 @@ import { useFundingData } from 'src/hooks/useFundingData';
 import { LineChart, Line, YAxis, ResponsiveContainer } from 'recharts';
 import { ASSET_IDS, getAddresses } from 'src/contracts/addresses';
 import { paths } from 'src/routes/paths';
+import { t, interpolate } from 'src/locales';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
 import { safeRead } from 'src/lib/pepefi/safeRead';
 import { STABLE_LABEL, ALT_STABLE_LABEL, X402_STABLE_LABEL } from 'src/lib/pepefi/tokenLabel';
@@ -438,7 +439,7 @@ export default function ExchangePage() {
   // swap 會在 oracle 過期（> maxOracleAge，預設 1h）時 revert StaleOraclePrice。
   // 和開倉的 stale 擋單同樣的道理：能在按下去之前就知道的事，不要讓使用者付 gas 才知道。
   const ammOracleStale = isOracleStale(ammOracle.updatedAt, ammMaxAge, Date.now() / 1000);
-  const AMM_STALE_MSG = '兌換池的參考預言機報價已過期，合約會拒絕兌換（StaleOraclePrice）。請等 keeper 更新價格後再試。';
+  const AMM_STALE_MSG = t.exchange.tx.ammStale;
 
   // ETH ↔ USDC swap via PepeAMM (constant product). minOut 一律以**當下的 quote**
   // 為基準打 DEFAULT_SLIPPAGE_BPS，而不是 oracle 價——池子有滑點，拿 oracle 價
@@ -447,7 +448,7 @@ export default function ExchangePage() {
   const doSwap = async () => {
     if (!contracts || !wallet.address || !ammDeployed) return;
     const amt = parseFloat(payAmount);
-    if (!amt || amt <= 0) { notify('Enter a valid amount', false); return; }
+    if (!amt || amt <= 0) { notify(t.exchange.tx.enterValidAmount, false); return; }
     // 事前擋掉必定 revert 的兩種情況，不讓使用者白付 gas。
     if (ammOracleStale) { notify(AMM_STALE_MSG, false); return; }
     const amm = String(contracts.pepeAMM.target);
@@ -460,12 +461,20 @@ export default function ExchangePage() {
         const minOut = minOutWithSlippage(quoted);
         const tx = asTx(await contracts.pepeAMM.swapETHForUSDC(minOut, { value: ethIn }));
         await tx.wait();
-        notify(`Swapped ${payAmount} ETH for ~${(Number(quoted) / 1e18).toFixed(2)} ${STABLE_LABEL} ✓`, true, tx.hash);
+        notify(
+          interpolate(t.exchange.tx.swappedEthForToken, {
+            amount: payAmount,
+            received: (Number(quoted) / 1e18).toFixed(2),
+            token: STABLE_LABEL,
+          }),
+          true,
+          tx.hash
+        );
       } else {
         const usdcIn = parseEther(payAmount);
         const currentAllowance = await contracts.usdc.allowance(wallet.address, amm) as bigint;
         if (currentAllowance < usdcIn) {
-          notify(`Approving ${STABLE_LABEL}…`, true);
+          notify(interpolate(t.exchange.tx.approving, { token: STABLE_LABEL }), true);
           const approveTx = asTx(await contracts.usdc.approve(amm, usdcIn));
           await approveTx.wait();
         }
@@ -473,7 +482,15 @@ export default function ExchangePage() {
         const minEthOut = minOutWithSlippage(quoted);
         const tx = asTx(await contracts.pepeAMM.swapUSDCForETH(usdcIn, minEthOut));
         await tx.wait();
-        notify(`Swapped ${payAmount} ${STABLE_LABEL} for ~${(Number(quoted) / 1e18).toFixed(6)} ETH ✓`, true, tx.hash);
+        notify(
+          interpolate(t.exchange.tx.swappedTokenForEth, {
+            amount: payAmount,
+            token: STABLE_LABEL,
+            received: (Number(quoted) / 1e18).toFixed(6),
+          }),
+          true,
+          tx.hash
+        );
       }
       setPayAmount('');
       await new Promise(r => setTimeout(r, 1500));
@@ -491,7 +508,7 @@ export default function ExchangePage() {
     try {
       const tx = asTx(await contracts.usdc.faucet());
       await tx.wait();
-      notify(`已領取測試 ${STABLE_LABEL} ✓ — 可在右側 Margin Account「Approve & Deposit」作為保證金`, true, tx.hash);
+      notify(interpolate(t.exchange.tx.faucetStable, { token: STABLE_LABEL }), true, tx.hash);
       await fetchAll();
     } catch (e) {
       notify(prettyError(e), false);
@@ -508,7 +525,11 @@ export default function ExchangePage() {
     try {
       const tx = asTx(await contracts.usdt.faucet());
       await tx.wait();
-      notify(`已領取測試 ${ALT_STABLE_LABEL} ✓ — 可持有與兌換；保證金請用 ${STABLE_LABEL}`, true, tx.hash);
+      notify(
+        interpolate(t.exchange.tx.faucetAltStable, { alt: ALT_STABLE_LABEL, token: STABLE_LABEL }),
+        true,
+        tx.hash
+      );
       await fetchAll();
     } catch (e) {
       notify(prettyError(e), false);
@@ -523,7 +544,7 @@ export default function ExchangePage() {
     try {
       const tx = asTx(await contracts.pepeToken.faucet());
       await tx.wait();
-      notify('已領取測試 PEPE ✓', true, tx.hash);
+      notify(t.exchange.tx.faucetPepe, true, tx.hash);
       await fetchAll();
     } catch (e) {
       notify(prettyError(e), false);
@@ -552,14 +573,18 @@ export default function ExchangePage() {
   const approveDeposit = async () => {
     if (!contracts) return;
     const amt = tryParse(depositAmt);
-    if (!amt) { notify('Enter a valid amount', false); return; }
+    if (!amt) { notify(t.exchange.tx.enterValidAmount, false); return; }
     setLoad('deposit', true);
     try {
       const approveTx = asTx(await contracts.usdc.approve(String(contracts.exchange.target), amt));
       await approveTx.wait();
       const depositTx = asTx(await contracts.exchange.depositMargin(amt));
       await depositTx.wait();
-      notify(`Deposited ${depositAmt} ${STABLE_LABEL} ✓`, true, depositTx.hash);
+      notify(
+        interpolate(t.exchange.tx.deposited, { amount: depositAmt, token: STABLE_LABEL }),
+        true,
+        depositTx.hash
+      );
       setDepositAmt('');
       await fetchAll();
     } catch (e) {
@@ -570,12 +595,16 @@ export default function ExchangePage() {
   const doWithdraw = async () => {
     if (!contracts) return;
     const amt = tryParse(withdrawAmt);
-    if (!amt) { notify('Enter a valid amount', false); return; }
+    if (!amt) { notify(t.exchange.tx.enterValidAmount, false); return; }
     setLoad('withdraw', true);
     try {
       const tx = asTx(await contracts.exchange.withdrawMargin(amt));
       await tx.wait();
-      notify(`Withdrew ${withdrawAmt} ${STABLE_LABEL} ✓`, true, tx.hash);
+      notify(
+        interpolate(t.exchange.tx.withdrew, { amount: withdrawAmt, token: STABLE_LABEL }),
+        true,
+        tx.hash
+      );
       setWithdrawAmt('');
       await fetchAll();
     } catch (e) {
@@ -586,9 +615,9 @@ export default function ExchangePage() {
   const openPosition = async () => {
     if (!contracts) return;
     const amt = tryParse(openMgn);
-    if (!amt) { notify('Enter a valid margin', false); return; }
+    if (!amt) { notify(t.exchange.tx.enterValidMargin, false); return; }
     if (amt > freeMgn) {
-      notify('保證金不足，請先在 Margin Account 區塊 Approve & Deposit', false);
+      notify(t.exchange.tx.insufficientMargin, false);
       return;
     }
     // F-1：鏈上價過期時 openPosition 會 revert StalePrice。按鈕已經是 disabled，
@@ -599,7 +628,14 @@ export default function ExchangePage() {
       const execFee = (await contracts.exchange.executionFee()) as bigint;
       const tx = asTx(await contracts.exchange.openPosition(selAsset, isLong, amt, BigInt(leverage), { value: execFee }));
       await tx.wait();
-      notify(`${isLong ? 'Long' : 'Short'} ${ASSET_LABEL[selAsset] ?? selAsset} opened ✓`, true, tx.hash);
+      notify(
+        interpolate(t.exchange.tx.positionOpened, {
+          side: isLong ? t.exchange.side.long : t.exchange.side.short,
+          asset: ASSET_LABEL[selAsset] ?? selAsset,
+        }),
+        true,
+        tx.hash
+      );
       setOpenMgn('');
       await fetchAll();
     } catch (e) {
@@ -621,7 +657,7 @@ export default function ExchangePage() {
     try {
       const tx = asTx(await contracts.exchange.closePosition(id));
       await tx.wait();
-      notify('Position closed ✓', true, tx.hash);
+      notify(t.exchange.tx.positionClosed, true, tx.hash);
       await fetchAll();
     } catch (e) {
       notify(prettyError(e), false);
@@ -636,7 +672,7 @@ export default function ExchangePage() {
       const tx = asTx(await contracts.esgRewardDistributor.claimEsgReward(id));
       await tx.wait();
       setEsgRewardedMap(prev => ({ ...prev, [String(id)]: true }));
-      notify('🌱 ESG 獎勵領取成功！', true, tx.hash);
+      notify(t.exchange.tx.esgClaimed, true, tx.hash);
     } catch (e) {
       notify(prettyError(e), false);
     } finally { setLoad(key, false); }
@@ -679,21 +715,21 @@ export default function ExchangePage() {
 
   const activeTask = Object.entries(busy).find(([_, v]) => v)?.[0];
   const isBusy = !!activeTask;
-  let loadingMsg = 'Processing transaction...';
+  let loadingMsg = t.exchange.loading.fallback;
   if (activeTask) {
-    if (activeTask === 'swap') loadingMsg = swapMode === 'eth-to-usdc' ? `Swapping ETH to ${STABLE_LABEL}…` : `Swapping ${STABLE_LABEL} to ETH…`;
-    else if (activeTask === 'faucet') loadingMsg = `Claiming test ${STABLE_LABEL}…`;
-    else if (activeTask === 'pepe') loadingMsg = 'Claiming test PEPE…';
-    else if (activeTask === 'deposit') loadingMsg = 'Depositing Margin...';
-    else if (activeTask === 'withdraw') loadingMsg = 'Withdrawing Margin...';
-    else if (activeTask === 'open') loadingMsg = 'Opening Position...';
-    else if (activeTask.startsWith('close')) loadingMsg = 'Closing Position...';
+    if (activeTask === 'swap') loadingMsg = interpolate(swapMode === 'eth-to-usdc' ? t.exchange.loading.swapEthToToken : t.exchange.loading.swapTokenToEth, { token: STABLE_LABEL });
+    else if (activeTask === 'faucet') loadingMsg = interpolate(t.exchange.loading.faucetStable, { token: STABLE_LABEL });
+    else if (activeTask === 'pepe') loadingMsg = t.exchange.loading.faucetPepe;
+    else if (activeTask === 'deposit') loadingMsg = t.exchange.loading.deposit;
+    else if (activeTask === 'withdraw') loadingMsg = t.exchange.loading.withdraw;
+    else if (activeTask === 'open') loadingMsg = t.exchange.loading.open;
+    else if (activeTask.startsWith('close')) loadingMsg = t.exchange.loading.close;
   }
 
   if (!wallet.isConnected) {
     return (
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-        <Typography color="text.secondary">Connect wallet to access the exchange.</Typography>
+        <Typography color="text.secondary">{t.exchange.connectWallet}</Typography>
       </Box>
     );
   }
@@ -712,7 +748,7 @@ export default function ExchangePage() {
         </Grid>
         <Skeleton height={250} variant="rectangular" />
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 100 }}>
-          <Typography color="text.secondary">Loading blockchain data...</Typography>
+          <Typography color="text.secondary">{t.exchange.loadingChainData}</Typography>
         </Box>
       </Container>
     );
@@ -753,7 +789,7 @@ export default function ExchangePage() {
         <Box sx={{ textAlign: 'center' }}>
           <Typography variant="h5" sx={{ fontWeight: 'bold', mb: 1 }}>{loadingMsg}</Typography>
           <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 300, mx: 'auto' }}>
-            Please confirm the transaction in your wallet and wait for block confirmation.
+            {t.exchange.confirmInWallet}
           </Typography>
         </Box>
       </Backdrop>
@@ -789,10 +825,9 @@ export default function ExchangePage() {
           on PerpetualExchange, so nothing lands in the wallet; /tokens is where
           real transferable tokens are minted. */}
       <Alert severity="info" sx={{ mb: 2 }}>
-        本頁開倉為<b>合成持倉</b>（記錄在 PerpetualExchange，錢包內不會出現代幣）。
-        想要真正持有 ERC-20 代幣？
+        {t.exchange.markup.syntheticPositionBefore}<b>{t.exchange.markup.syntheticPositionBold}</b>{t.exchange.markup.syntheticPositionAfter}
         <Link component={RouterLink} to={paths.pepefi.tokens} sx={{ ml: 0.5, fontWeight: 'bold' }}>
-          前往代幣化資產頁 →
+          {t.exchange.markup.tokenizedAssetsLink}
         </Link>
       </Alert>
 
@@ -808,26 +843,29 @@ export default function ExchangePage() {
         }}
       >
         <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
-          How CFD trading works on PepeLab
+          {t.exchange.guide.title}
         </Typography>
         <Typography variant="body2" component="ol" sx={{ pl: 2, m: 0, '& li': { mb: 0.5 } }}>
-          <li><strong>Get tokens:</strong> Claim test {STABLE_LABEL} (and PEPE) from the faucet — no swap needed.</li>
-          <li><strong>Margin Account:</strong> Approve &amp; deposit {STABLE_LABEL} into PerpetualExchange. This becomes your free margin.</li>
-          <li><strong>Open Position:</strong> Use free margin to open long/short on 11 synthetic assets — crypto (sBTC, sETH), equity (sAAPL, sTSLA, sNVDA, sMSFT, sGOOGL), commodity (sGOLD), bond (sBOND), and ESG ETFs (sICLN, sESGU). 🔒 = KYC required.</li>
-          <li><strong>PnL:</strong> Price moves → position value changes → close to realize PnL.</li>
+          <li><strong>{t.exchange.markup.stepGetTokensLabel}</strong> {interpolate(t.exchange.markup.stepGetTokensBody, { token: STABLE_LABEL })}</li>
+          <li><strong>{t.exchange.markup.stepMarginLabel}</strong> {interpolate(t.exchange.markup.stepMarginBody, { token: STABLE_LABEL })}</li>
+          <li><strong>{t.exchange.markup.stepOpenLabel}</strong> {t.exchange.markup.stepOpenBody}</li>
+          <li><strong>{t.exchange.markup.stepPnlLabel}</strong> {t.exchange.markup.stepPnlBody}</li>
         </Typography>
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-          💱 幣別：平台保證金與兌換用 <b>{STABLE_LABEL}</b>（測試網模擬幣，可用 Faucet 免費領）；
-          <b>x402</b> 付費 API 結算用 <b>{X402_STABLE_LABEL}</b>（Circle，EIP-3009）。兩者用途不同、勿混用。
+          {t.exchange.markup.currencyNoteLine1Before}<b>{STABLE_LABEL}</b>{t.exchange.markup.currencyNoteLine1After}
+          <b>x402</b>{t.exchange.markup.currencyNoteLine2After}<b>{X402_STABLE_LABEL}</b>{t.exchange.markup.currencyNoteLine2End}
         </Typography>
       </Alert>
 
       {/* Get Test Tokens — faucets (full-width, above swap + margin) */}
       <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
             <Box>
-              <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>🚰 Get Test Tokens</Typography>
+              <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>{t.exchange.faucet.title}</Typography>
               <Typography variant="caption" color="text.secondary">
-                PEPE 是平台幣（測試網模擬），用水龍頭免費領取；{STABLE_LABEL} 為模擬保證金穩定幣；x402 付費用{X402_STABLE_LABEL}。
+                {interpolate(t.exchange.faucet.intro, {
+                  stable: STABLE_LABEL,
+                  x402Stable: X402_STABLE_LABEL,
+                })}
               </Typography>
             </Box>
 
@@ -835,9 +873,11 @@ export default function ExchangePage() {
             <Box sx={{ bgcolor: 'background.neutral', borderRadius: 2, p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
               <Box>
                 <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
-                  {STABLE_LABEL} <Typography component="span" variant="caption" color="text.secondary">· 模擬保證金</Typography>
+                  {STABLE_LABEL} <Typography component="span" variant="caption" color="text.secondary">{t.exchange.faucet.stableNote}</Typography>
                 </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>Balance: {f18(usdcBal)}</Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
+                  {interpolate(t.exchange.faucet.balance, { amount: f18(usdcBal) })}
+                </Typography>
               </Box>
               <Button
                 variant="contained"
@@ -846,7 +886,9 @@ export default function ExchangePage() {
                 startIcon={<span>🚰</span>}
                 sx={{ textTransform: 'none', fontWeight: 'bold', whiteSpace: 'nowrap' }}
               >
-                {busy['faucet'] ? '領取中…' : `領取 ${STABLE_LABEL}`}
+                {busy['faucet']
+                  ? t.exchange.faucet.claiming
+                  : interpolate(t.exchange.faucet.claimToken, { token: STABLE_LABEL })}
               </Button>
             </Box>
 
@@ -854,10 +896,12 @@ export default function ExchangePage() {
             <Box sx={{ bgcolor: 'background.neutral', borderRadius: 2, p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
               <Box>
                 <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
-                  {ALT_STABLE_LABEL} <Typography component="span" variant="caption" color="text.secondary">· 模擬穩定幣（持有／兌換）</Typography>
+                  {ALT_STABLE_LABEL} <Typography component="span" variant="caption" color="text.secondary">{t.exchange.faucet.altStableNote}</Typography>
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
-                  {usdtDeployed ? `Balance: ${f18(usdtBal)}` : '尚未在本網路部署'}
+                  {usdtDeployed
+                    ? interpolate(t.exchange.faucet.balance, { amount: f18(usdtBal) })
+                    : t.exchange.faucet.notDeployed}
                 </Typography>
               </Box>
               {usdtDeployed ? (
@@ -869,10 +913,12 @@ export default function ExchangePage() {
                   startIcon={<span>🚰</span>}
                   sx={{ textTransform: 'none', fontWeight: 'bold', whiteSpace: 'nowrap' }}
                 >
-                  {busy['usdt'] ? '領取中…' : `領取 ${ALT_STABLE_LABEL}`}
+                  {busy['usdt']
+                    ? t.exchange.faucet.claiming
+                    : interpolate(t.exchange.faucet.claimToken, { token: ALT_STABLE_LABEL })}
                 </Button>
               ) : (
-                <Chip size="small" label="尚未部署" variant="outlined" />
+                <Chip size="small" label={t.exchange.faucet.notDeployedChip} variant="outlined" />
               )}
             </Box>
 
@@ -880,10 +926,12 @@ export default function ExchangePage() {
             <Box sx={{ bgcolor: 'background.neutral', borderRadius: 2, p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
               <Box>
                 <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
-                  PEPE <Typography component="span" variant="caption" color="text.secondary">· 平台幣</Typography>
+                  PEPE <Typography component="span" variant="caption" color="text.secondary">{t.exchange.faucet.pepeNote}</Typography>
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
-                  {pepeDeployed ? `Balance: ${f18(pepeBal)}` : '尚未在本網路部署'}
+                  {pepeDeployed
+                    ? interpolate(t.exchange.faucet.balance, { amount: f18(pepeBal) })
+                    : t.exchange.faucet.notDeployed}
                 </Typography>
               </Box>
               {pepeDeployed ? (
@@ -895,22 +943,24 @@ export default function ExchangePage() {
                   startIcon={<span>🐸</span>}
                   sx={{ textTransform: 'none', fontWeight: 'bold', whiteSpace: 'nowrap' }}
                 >
-                  {busy['pepe'] ? '領取中…' : '領取 PEPE'}
+                  {busy['pepe']
+                    ? t.exchange.faucet.claiming
+                    : interpolate(t.exchange.faucet.claimToken, { token: 'PEPE' })}
                 </Button>
               ) : (
-                <Chip size="small" label="尚未部署" variant="outlined" />
+                <Chip size="small" label={t.exchange.faucet.notDeployedChip} variant="outlined" />
               )}
             </Box>
             {!pepeDeployed && (
               <Alert severity="info" variant="outlined" sx={{ py: 0.5 }}>
                 <Typography variant="caption">
-                  PEPE 尚未在本網路（Base Sepolia）部署。部署 PepeToken 後把位址填入 addresses.ts 即可開放領取。
+                  {t.exchange.faucet.pepeUndeployed}
                 </Typography>
               </Alert>
             )}
 
             <Typography variant="caption" color="text.secondary">
-              ETH 餘額：<Box component="span" sx={{ fontFamily: MONO, color: 'text.primary' }}>{ethBal}</Box>（開倉需少量 ETH 付執行費）
+              {t.exchange.markup.ethBalanceBefore}<Box component="span" sx={{ fontFamily: MONO, color: 'text.primary' }}>{ethBal}</Box>{t.exchange.markup.ethBalanceAfter}
             </Typography>
 
             {/* faucet() 現在要求 msg.sender == tx.origin：合約錢包按下去必定
@@ -918,10 +968,9 @@ export default function ExchangePage() {
                 從錯誤訊息推理出來的限制，所以寫在按鈕旁邊而不是只放在 toast。 */}
             <Alert severity="info" variant="outlined" sx={{ py: 0.5 }}>
               <Typography variant="caption">
-                🔑 水龍頭只開放<b>一般錢包（EOA）</b>領取：合約防機器人濫領的條件是
-                <code> msg.sender == tx.origin</code>，所以用 <b>Safe / ERC-4337 智能合約錢包</b>
-                （或任何 batch / multicall 代呼叫）點下去會被合約以 <code>FaucetCallerMustBeEOA</code> 拒絕。
-                請改用一般 EOA 錢包領取後再轉過去。每個地址 24 小時可領一次。
+                {t.exchange.markup.faucetEoaLine1}<b>{t.exchange.markup.faucetEoaBold1}</b>{t.exchange.markup.faucetEoaLine1After}
+                <code>{t.exchange.markup.faucetEoaCode1}</code>{t.exchange.markup.faucetEoaLine2Mid}<b>{t.exchange.markup.faucetEoaBold2}</b>
+                {t.exchange.markup.faucetEoaLine3}<code>{t.exchange.markup.faucetEoaCode2}</code>{t.exchange.markup.faucetEoaLine3After}
               </Typography>
             </Alert>
 
@@ -932,7 +981,7 @@ export default function ExchangePage() {
               startIcon={<Icon icon="solar:wallet-bold-duotone" />}
               sx={{ textTransform: 'none', color: 'info.main', fontSize: '0.75rem', alignSelf: 'flex-start' }}
             >
-              把 {STABLE_LABEL} 加入 MetaMask
+              {interpolate(t.exchange.faucet.addToWallet, { token: STABLE_LABEL })}
             </Button>
       </Card>
 
@@ -953,21 +1002,21 @@ export default function ExchangePage() {
             }}
           >
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 1 }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'white' }}>Swap</Typography>
+              <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'white' }}>{t.exchange.swap.title}</Typography>
               {/* 池子是恆定乘積，不是 oracle 定價。舊的「● Oracle-priced」徽章
                   現在是錯的，而且錯在會讓人以為大額換匯沒有滑點。 */}
-              <Typography variant="caption" sx={{ color: 'warning.main', fontWeight: 'bold' }}>● 恆定乘積池 · 有滑點</Typography>
+              <Typography variant="caption" sx={{ color: 'warning.main', fontWeight: 'bold' }}>{t.exchange.swap.poolBadge}</Typography>
             </Box>
 
             {!ammDeployed ? (
               <Alert severity="info" variant="outlined" sx={{ m: 1 }}>
-                <Typography variant="caption">本網路未部署兌換池（PepeAMM）。請切換到 Base Sepolia。</Typography>
+                <Typography variant="caption">{t.exchange.swap.notDeployed}</Typography>
               </Alert>
             ) : (
               <>
                 {/* Pay block */}
                 <Box sx={{ bgcolor: '#131A2A', borderRadius: 2, p: 2 }}>
-                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>You pay</Typography>
+                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>{t.exchange.swap.youPay}</Typography>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                     <input
                       type="number"
@@ -983,7 +1032,9 @@ export default function ExchangePage() {
                   </Box>
                   <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1 }}>
                     <Typography variant="caption" color="text.secondary">
-                      Balance: {swapMode === 'eth-to-usdc' ? ethBal : f18(usdcBal)}
+                      {interpolate(t.exchange.swap.balance, {
+                        amount: swapMode === 'eth-to-usdc' ? ethBal : f18(usdcBal),
+                      })}
                     </Typography>
                   </Box>
                 </Box>
@@ -1000,7 +1051,7 @@ export default function ExchangePage() {
 
                 {/* Receive block */}
                 <Box sx={{ bgcolor: '#131A2A', borderRadius: 2, p: 2 }}>
-                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>You receive (est.)</Typography>
+                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>{t.exchange.swap.youReceive}</Typography>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                     <Typography sx={{ flex: 1, fontSize: '2rem', color: 'white', fontWeight: 700, fontFamily: MONO, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {receiveAmount || '0'}
@@ -1012,7 +1063,9 @@ export default function ExchangePage() {
                   </Box>
                   <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1 }}>
                     <Typography variant="caption" color="text.secondary">
-                      Balance: {swapMode === 'eth-to-usdc' ? f18(usdcBal) : ethBal}
+                      {interpolate(t.exchange.swap.balance, {
+                        amount: swapMode === 'eth-to-usdc' ? f18(usdcBal) : ethBal,
+                      })}
                     </Typography>
                   </Box>
                 </Box>
@@ -1022,13 +1075,13 @@ export default function ExchangePage() {
                     maxOracleDeviationBps 時合約就會擋下兌換。 */}
                 <Box sx={{ px: 1, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                   <Typography variant="caption" color="text.secondary">
-                    Pool price（池內現價）: <Box component="span" sx={{ color: 'white', fontFamily: MONO, fontWeight: 'bold' }}>1 ETH = {ammPrice > 0n ? (Number(ammPrice) / 1e18).toFixed(2) : '–'} {STABLE_LABEL}</Box>
+                    {t.exchange.swap.poolPrice}: <Box component="span" sx={{ color: 'white', fontFamily: MONO, fontWeight: 'bold' }}>1 ETH = {ammPrice > 0n ? (Number(ammPrice) / 1e18).toFixed(2) : '–'} {STABLE_LABEL}</Box>
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    Oracle ref.（參考價）: <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>1 ETH = {ammOracle.price > 0n ? (Number(ammOracle.price) / 1e18).toFixed(2) : '–'} {STABLE_LABEL}</Box>
+                    {t.exchange.swap.oracleRef}: <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>1 ETH = {ammOracle.price > 0n ? (Number(ammOracle.price) / 1e18).toFixed(2) : '–'} {STABLE_LABEL}</Box>
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    Pool reserves: <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>{(Number(ammEth) / 1e18).toFixed(4)} ETH</Box> / <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>{(Number(ammUsdc) / 1e18).toFixed(2)} {STABLE_LABEL}</Box>
+                    {t.exchange.swap.poolReserves}: <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>{(Number(ammEth) / 1e18).toFixed(4)} ETH</Box> / <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>{(Number(ammUsdc) / 1e18).toFixed(2)} {STABLE_LABEL}</Box>
                   </Typography>
                   {impactBps !== null && (
                     <Typography
@@ -1040,12 +1093,14 @@ export default function ExchangePage() {
                           : impactBps >= HIGH_IMPACT_BPS ? 'warning.main' : 'text.secondary',
                       }}
                     >
-                      Price impact（含手續費）: <Box component="span" sx={{ fontFamily: MONO }}>{(impactBps / 100).toFixed(2)}%</Box>
+                      {t.exchange.swap.priceImpact}: <Box component="span" sx={{ fontFamily: MONO }}>{(impactBps / 100).toFixed(2)}%</Box>
                     </Typography>
                   )}
                   {quotedOut !== null && quotedOut > 0n && (
                     <Typography variant="caption" color="text.secondary">
-                      Minimum received（{(DEFAULT_SLIPPAGE_BPS / 100).toFixed(1)}% 容忍）:{' '}
+                      {interpolate(t.exchange.swap.minimumReceived, {
+                        tolerance: (DEFAULT_SLIPPAGE_BPS / 100).toFixed(1),
+                      })}:{' '}
                       <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>
                         {(Number(minOutWithSlippage(quotedOut)) / 1e18).toFixed(swapMode === 'eth-to-usdc' ? 2 : 6)}{' '}
                         {swapMode === 'eth-to-usdc' ? STABLE_LABEL : 'ETH'}
@@ -1053,15 +1108,14 @@ export default function ExchangePage() {
                     </Typography>
                   )}
                   <Typography variant="caption" color="text.secondary">
-                    恆定乘積 (x·y=k) 池：金額越大滑點越高。報價已含 0.3% 手續費，minOut 以即時 quote 為基準。
+                    {t.exchange.swap.constantProductNote}
                   </Typography>
                 </Box>
 
                 {impactBps !== null && impactBps >= SEVERE_IMPACT_BPS && (
                   <Alert severity="error" variant="outlined" sx={{ py: 0.5 }}>
                     <Typography variant="caption">
-                      ⚠ 這筆兌換的價格衝擊高達 <b>{(impactBps / 100).toFixed(2)}%</b>，等於用遠差於市價的價格成交。
-                      建議分批換小額；金額太大時合約還會以 <code>PriceOutOfBand</code> 直接拒絕（池價被推離 oracle 太遠）。
+                      {t.exchange.markup.priceImpactBefore}<b>{(impactBps / 100).toFixed(2)}%</b>{t.exchange.markup.priceImpactAfter}<code>{t.exchange.markup.priceImpactCode}</code>{t.exchange.markup.priceImpactLine2After}
                     </Typography>
                   </Alert>
                 )}
@@ -1080,12 +1134,17 @@ export default function ExchangePage() {
                   sx={{ py: 1.6, borderRadius: 2, fontWeight: 'bold', fontSize: '1.05rem' }}
                 >
                   {busy['swap']
-                    ? 'Swapping…'
+                    ? t.exchange.swap.swapping
                     : ammOracleStale
-                      ? '⛔ 預言機報價過期，暫停兌換'
+                      ? t.exchange.swap.oracleStale
                       : !payAmount || parseFloat(payAmount) <= 0
-                        ? 'Enter an amount'
-                        : swapMode === 'eth-to-usdc' ? `Swap ETH → ${STABLE_LABEL}` : `Swap ${STABLE_LABEL} → ETH`}
+                        ? t.exchange.swap.enterAmount
+                        : interpolate(
+                            swapMode === 'eth-to-usdc'
+                              ? t.exchange.swap.ethToToken
+                              : t.exchange.swap.tokenToEth,
+                            { token: STABLE_LABEL },
+                          )}
                 </Button>
               </>
             )}
@@ -1098,17 +1157,19 @@ export default function ExchangePage() {
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <Box>
                 <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold' }}>
-                  Account Equity
+                  {t.exchange.margin.accountEquity}
                 </Typography>
                 <Typography variant="h4" sx={{ fontWeight: 800, fontFamily: MONO, mt: 0.5 }}>
                   {fUsd(accountEquity)}{' '}
-                  <Typography component="span" variant="subtitle2" color="text.secondary">{STABLE_LABEL} (Testnet)</Typography>
+                  <Typography component="span" variant="subtitle2" color="text.secondary">
+                    {interpolate(t.exchange.margin.equityUnit, { token: STABLE_LABEL })}
+                  </Typography>
                 </Typography>
               </Box>
               <Box sx={{ textAlign: 'right' }}>
-                <Typography variant="caption" color="text.secondary" display="block">Free Margin</Typography>
+                <Typography variant="caption" color="text.secondary" display="block">{t.exchange.margin.freeMargin}</Typography>
                 <Typography sx={{ fontFamily: MONO, fontWeight: 'bold' }}>{f18(freeMgn)}</Typography>
-                <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>Unrealized PnL</Typography>
+                <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>{t.exchange.margin.unrealizedPnl}</Typography>
                 <Typography sx={{ fontFamily: MONO, fontWeight: 'bold', color: pnlColor(totalUnrealizedPnL) }}>
                   {fPnL(totalUnrealizedPnL)}
                 </Typography>
@@ -1123,7 +1184,7 @@ export default function ExchangePage() {
                   below says so rather than letting the toggle imply otherwise. */}
               <Box>
                 <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
-                  穩定幣
+                  {t.exchange.margin.stablecoin}
                 </Typography>
                 <ToggleButtonGroup
                   size="small"
@@ -1135,16 +1196,18 @@ export default function ExchangePage() {
                   <ToggleButton value="USDT" sx={{ textTransform: 'none', px: 2 }}>{ALT_STABLE_LABEL}</ToggleButton>
                 </ToggleButtonGroup>
                 <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.75, fontFamily: MONO }}>
-                  餘額 {stable === 'USDC' ? STABLE_LABEL : ALT_STABLE_LABEL}: {f18(stable === 'USDC' ? usdcBal : usdtBal)}
+                  {interpolate(t.exchange.margin.balance, {
+                    token: stable === 'USDC' ? STABLE_LABEL : ALT_STABLE_LABEL,
+                  })}: {f18(stable === 'USDC' ? usdcBal : usdtBal)}
                 </Typography>
                 <Typography variant="caption" color="warning.main" display="block" sx={{ mt: 0.5 }}>
-                  ⚠ 目前交易保證金使用 <b>{STABLE_LABEL}</b>；{ALT_STABLE_LABEL} 支援持有與兌換，保證金支援列為下一階段。
+                  {t.exchange.markup.marginNoteBefore}<b>{STABLE_LABEL}</b>{interpolate(t.exchange.markup.marginNoteAfter, { altToken: ALT_STABLE_LABEL })}
                 </Typography>
               </Box>
 
               <Box sx={{ display: 'flex', gap: 1 }}>
                 <TextField
-                  placeholder="Amount to deposit"
+                  placeholder={t.exchange.margin.depositPlaceholder}
                   size="small"
                   fullWidth
                   type="number"
@@ -1159,13 +1222,13 @@ export default function ExchangePage() {
                   disabled={busy['deposit']}
                   sx={{ fontWeight: 'bold', minWidth: 160 }}
                 >
-                  {busy['deposit'] ? '…' : 'Approve & Deposit'}
+                  {busy['deposit'] ? t.exchange.working : t.exchange.margin.approveDeposit}
                 </Button>
               </Box>
 
               <Box sx={{ display: 'flex', gap: 1 }}>
                 <TextField
-                  placeholder="Amount to withdraw"
+                  placeholder={t.exchange.margin.withdrawPlaceholder}
                   size="small"
                   fullWidth
                   type="number"
@@ -1180,7 +1243,7 @@ export default function ExchangePage() {
                   disabled={busy['withdraw']}
                   sx={{ fontWeight: 'bold', minWidth: 160 }}
                 >
-                  {busy['withdraw'] ? '…' : 'Withdraw'}
+                  {busy['withdraw'] ? t.exchange.working : t.exchange.margin.withdraw}
                 </Button>
               </Box>
             </Stack>
@@ -1191,22 +1254,22 @@ export default function ExchangePage() {
       {/* C. Open Position */}
       <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 3.5 }}>
         <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 1 }}>
-          Open Position
+          {t.exchange.open.title}
         </Typography>
 
         {riskOpen ? (
           <Alert severity="info" variant="outlined" onClose={() => setRiskOpen(false)} sx={{ py: 0.5 }}>
-            ⚠️ 測試網：本平台為 oracle 計價永續，損益以 mark 價（含 OI 失衡）結算；極端單邊行情下帳面利潤可能因 ADL 自動減倉而調整；保證金為測試代幣。
+            {t.exchange.open.riskNotice}
           </Alert>
         ) : (
           <Button size="small" variant="text" onClick={() => setRiskOpen(true)} sx={{ alignSelf: 'flex-start', textTransform: 'none', color: 'text.secondary' }}>
-            ⚠️ 顯示風險提示
+            {t.exchange.open.showRiskNotice}
           </Button>
         )}
 
         {freeMgn === 0n && (
           <Alert severity="warning">
-            You have no free margin. Deposit {STABLE_LABEL} in the <strong>Margin Account</strong> section above first.
+            {interpolate(t.exchange.markup.noFreeMarginBefore, { token: STABLE_LABEL })}<strong>{t.exchange.markup.noFreeMarginBold}</strong>{t.exchange.markup.noFreeMarginAfter}
           </Alert>
         )}
 
@@ -1215,14 +1278,15 @@ export default function ExchangePage() {
         {openStaleNotice && (
           <Alert severity="error">
             <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
-              價格過期 — 暫停下單
+              {t.exchange.open.staleTitle}
             </Typography>
             <Typography variant="caption" sx={{ display: 'block' }}>
               {openStaleNotice}
             </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, fontFamily: MONO }}>
-              指數價年齡：{openFreshness?.label ?? '未知'} · 上方「Live market」是 CoinGecko 顯示價，
-              不是結算價，兩者不一致時以鏈上 oracle 為準。
+              {interpolate(t.exchange.open.staleIndexAge, {
+                age: openFreshness?.label ?? t.exchange.open.ageUnknown,
+              })}
             </Typography>
           </Alert>
         )}
@@ -1230,8 +1294,7 @@ export default function ExchangePage() {
         {kycStatusUnknown && kycRequired && (
           <Alert severity="warning">
             <Typography variant="caption">
-              ⚠ 無法確認您的 KYC 狀態（鏈上讀取失敗），不是「未驗證」。合規閘門採 fail-closed，
-              在確認之前暫停受管制資產的交易。請檢查網路或稍後重試。
+              {t.exchange.open.kycUnknown}
             </Typography>
           </Alert>
         )}
@@ -1241,9 +1304,7 @@ export default function ExchangePage() {
         {kycBlocked && !kycStatusUnknown && kycPending && (
           <Alert severity="info">
             <Typography variant="caption">
-              ⏳ 你的 KYC 申請<b>已送出，正在等待審核</b>（鏈上已記錄 KYCSubmitted）。
-              審核人員核准（approveKYC）後，<strong>{selectedAssetMeta?.symbol}</strong> 就會解鎖；
-              在那之前下單仍會被合約擋下。不需要重複送出申請。
+              {t.exchange.markup.kycPendingBefore}<b>{t.exchange.markup.kycPendingBold}</b>{t.exchange.markup.kycPendingMid}<strong>{selectedAssetMeta?.symbol}</strong>{t.exchange.markup.kycPendingLine2After}
             </Typography>
           </Alert>
         )}
@@ -1253,22 +1314,24 @@ export default function ExchangePage() {
             severity="warning"
             action={
               <Button color="inherit" size="small" variant="outlined" onClick={() => setShowKYCModal(true)} sx={{ fontWeight: 'bold' }}>
-                送出 KYC 申請
+                {t.exchange.open.kycSubmit}
               </Button>
             }
           >
-            🔒 <strong>{selectedAssetMeta?.symbol}</strong> 是股票 / 債券 / ETF 類資產，需通過 KYC 審核才能交易。
-            送出申請後需等審核人員核准，不是立即通過。
+            {t.exchange.markup.kycRequiredBefore}<strong>{selectedAssetMeta?.symbol}</strong>{t.exchange.markup.kycRequiredAfter}
           </Alert>
         )}
 
         {isLowEsg && (
           <Alert severity="error" sx={{ '& .MuiAlert-message': { width: '100%' } }}>
             <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
-              ⚠ ESG 警告：此資產評分偏低（{selEsg!.composite}/100 · {selEsg!.rating}）
+              {interpolate(t.exchange.open.esgWarningTitle, {
+                composite: selEsg!.composite,
+                rating: selEsg!.rating,
+              })}
             </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-              此資產 ESG 評分偏低，可能涉及較高環境、社會或治理風險，請謹慎評估永續投資風險後再決定是否開倉。
+              {t.exchange.open.esgWarningBody}
             </Typography>
             <FormControlLabel
               control={
@@ -1281,7 +1344,7 @@ export default function ExchangePage() {
               }
               label={
                 <Typography variant="caption" sx={{ fontWeight: 'bold' }}>
-                  我已了解此資產的 ESG 風險，仍要繼續交易
+                  {t.exchange.open.esgConfirm}
                 </Typography>
               }
             />
@@ -1292,12 +1355,12 @@ export default function ExchangePage() {
           {/* Asset Select */}
           <Grid size={{ xs: 12, sm: 6, md: 3 }}>
             <FormControl fullWidth>
-              <InputLabel id="asset-select-label">Asset</InputLabel>
+              <InputLabel id="asset-select-label">{t.exchange.open.asset}</InputLabel>
               <Select
                 labelId="asset-select-label"
                 value={selAsset}
                 onChange={e => setSelAsset(e.target.value as AssetId)}
-                label="Asset"
+                label={t.exchange.open.asset}
                 renderValue={(selected) => {
                   const meta = ASSET_META[selected as string];
                   return (
@@ -1334,7 +1397,9 @@ export default function ExchangePage() {
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   <ESGBadge composite={selEsg.composite} rating={selEsg.rating} size="sm" />
                   <Typography variant="caption" sx={{ fontWeight: 'bold', color: selEsg.composite >= 65 ? 'success.main' : 'warning.main' }}>
-                    {selEsg.composite >= 65 ? '高永續評級' : '低永續評級'}
+                    {selEsg.composite >= 65
+                      ? t.exchange.open.esgHighRating
+                      : t.exchange.open.esgLowRating}
                   </Typography>
                 </Box>
                 <Box sx={{ display: 'flex', gap: 1.5 }}>
@@ -1347,15 +1412,15 @@ export default function ExchangePage() {
               // Base Sepolia 上 ESGRegistry = 0x0。舊版在這裡永遠顯示「載入中…」，
               // 因為它根本沒有能結束的載入——說清楚是這條鏈沒有這份資料。
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-                本鏈未提供 ESG 資料（ESGRegistry 未部署）
+                {t.exchange.open.esgUnavailable}
               </Typography>
             ) : contracts && !esgLoaded ? (
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-                ESG 資料載入中…
+                {t.exchange.open.esgLoading}
               </Typography>
             ) : contracts ? (
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-                此標的無 ESG 評級
+                {t.exchange.open.esgNone}
               </Typography>
             ) : null}
           </Grid>
@@ -1364,7 +1429,7 @@ export default function ExchangePage() {
           <Grid size={{ xs: 12, sm: 6, md: 3 }}>
             <Stack spacing={1}>
               <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', fontWeight: 'bold' }}>
-                Direction
+                {t.exchange.open.direction}
               </Typography>
               <Box sx={{ display: 'flex', border: '1px solid', borderColor: 'divider', borderRadius: 1, overflow: 'hidden', height: 40 }}>
                 <Button
@@ -1374,7 +1439,7 @@ export default function ExchangePage() {
                   onClick={() => setIsLong(true)}
                   sx={{ borderRadius: 0, fontWeight: 'bold' }}
                 >
-                  LONG ↑
+                  {t.exchange.open.long}
                 </Button>
                 <Button
                   fullWidth
@@ -1383,14 +1448,19 @@ export default function ExchangePage() {
                   onClick={() => setIsLong(false)}
                   sx={{ borderRadius: 0, fontWeight: 'bold' }}
                 >
-                  SHORT ↓
+                  {t.exchange.open.short}
                 </Button>
               </Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
-                <Typography variant="caption" color="text.secondary">Order Type: Market</Typography>
+                <Typography variant="caption" color="text.secondary">{t.exchange.open.orderType}</Typography>
                 <Typography variant="caption" color="primary.main" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  <Icon icon="solar:dollar-bold" /> Execution Fee: {execFee.eth} ETH
-                  {!execFee.loaded && <Box component="span" sx={{ opacity: 0.6 }}>（預設值）</Box>}
+                  <Icon icon="solar:dollar-bold" />{' '}
+                  {interpolate(t.exchange.open.executionFee, { fee: execFee.eth })}
+                  {!execFee.loaded && (
+                    <Box component="span" sx={{ opacity: 0.6 }}>
+                      {t.exchange.open.executionFeeDefault}
+                    </Box>
+                  )}
                 </Typography>
               </Box>
             </Stack>
@@ -1400,7 +1470,7 @@ export default function ExchangePage() {
           <Grid size={{ xs: 12, sm: 6, md: 3 }}>
             <Stack spacing={1}>
               <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', fontWeight: 'bold' }}>
-                Leverage
+                {t.exchange.open.leverage}
               </Typography>
               <Box sx={{ display: 'flex', border: '1px solid', borderColor: 'divider', borderRadius: 1, overflow: 'hidden', height: 40 }}>
                 {[1, 2, 5].map(lv => (
@@ -1419,7 +1489,7 @@ export default function ExchangePage() {
               </Box>
               {maxLev < 5 && (
                 <Typography variant="caption" color="warning.main" sx={{ fontFamily: MONO }}>
-                  ⚠ Max {maxLev}× — tighter risk cap for this asset class
+                  {interpolate(t.exchange.open.maxLeverage, { max: maxLev })}
                 </Typography>
               )}
             </Stack>
@@ -1428,10 +1498,10 @@ export default function ExchangePage() {
           {/* Margin Input */}
           <Grid size={{ xs: 12, sm: 6, md: 3 }}>
             <TextField
-              label="Margin"
+              label={t.exchange.open.marginLabel}
               type="number"
               fullWidth
-              placeholder="e.g. 100"
+              placeholder={t.exchange.open.marginPlaceholder}
               value={openMgn}
               onChange={e => setOpenMgn(e.target.value)}
               slotProps={{
@@ -1446,19 +1516,19 @@ export default function ExchangePage() {
         {/* Live quote values */}
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3, fontSize: '0.8125rem', color: 'text.secondary', pt: 1 }}>
           <Typography variant="body2" color="text.secondary">
-            Entry (oracle): <Box component="span" sx={{ color: 'text.primary', fontWeight: 'bold', fontFamily: MONO }}>{fUsd(curPrice)}</Box>
+            {t.exchange.open.entryOracle}: <Box component="span" sx={{ color: 'text.primary', fontWeight: 'bold', fontFamily: MONO }}>{fUsd(curPrice)}</Box>
           </Typography>
           {livePrices[selAsset] && (
             <Typography variant="body2" color="text.secondary">
-              Live market:{' '}
+              {t.exchange.open.liveMarket}:{' '}
               <Box component="span" sx={{ fontWeight: 'bold', fontFamily: MONO, color: livePrices[selAsset].isMock ? 'warning.main' : 'success.main' }}>
                 ${livePrices[selAsset].usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </Box>
-              {livePrices[selAsset].isMock && <Box component="span" sx={{ opacity: 0.6, fontSize: '0.6875rem', ml: 0.5 }}>(simulated)</Box>}
+              {livePrices[selAsset].isMock && <Box component="span" sx={{ opacity: 0.6, fontSize: '0.6875rem', ml: 0.5 }}>{t.exchange.open.simulated}</Box>}
             </Typography>
           )}
           <Typography variant="body2" color="text.secondary">
-            Notional: <Box component="span" sx={{ color: 'text.primary', fontWeight: 'bold', fontFamily: MONO }}>{f18(notional)} {STABLE_LABEL}</Box>
+            {t.exchange.open.notional}: <Box component="span" sx={{ color: 'text.primary', fontWeight: 'bold', fontFamily: MONO }}>{f18(notional)} {STABLE_LABEL}</Box>
           </Typography>
           {(() => {
             const fi = fundingData[selAsset];
@@ -1467,21 +1537,26 @@ export default function ExchangePage() {
             const ratePct = (rateNum / 100).toFixed(4);
             return (
               <Typography variant="body2" sx={{ fontWeight: 'medium', color: rateNum > 0 ? 'error.main' : rateNum < 0 ? 'success.main' : 'text.secondary' }}>
-                Funding rate (8h):{' '}
+                {t.exchange.open.fundingRate}:{' '}
                 <Box component="span" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>{rateNum >= 0 ? '+' : ''}{ratePct}%</Box>
-                {' '}{rateNum > 0 ? '(longs pay)' : rateNum < 0 ? '(shorts pay)' : '(balanced)'}
+                {' '}
+                {rateNum > 0
+                  ? t.exchange.open.fundingLongsPay
+                  : rateNum < 0
+                    ? t.exchange.open.fundingShortsPay
+                    : t.exchange.open.fundingBalanced}
               </Typography>
             );
           })()}
           {openMgn && (
             <Chip
-              label={`Est. Liquidation: ${fUsd(liqPrice)}`}
+              label={interpolate(t.exchange.open.estLiquidation, { price: fUsd(liqPrice) })}
               color="error"
               size="small"
               variant="outlined"
               // 清算不再是 100% 沒收：扣掉虧損、費用、清算獎勵與
               // liquidationPenaltyBps 之後的殘值會退還給倉位所有者。
-              title="觸及清算價時倉位會被強制平倉。扣除虧損、手續費、清算人獎勵與清算罰金（liquidationPenaltyBps）後的殘餘保證金會退還給你——不是全額沒收。"
+              title={t.exchange.open.liquidationTooltip}
               sx={{ fontFamily: MONO, fontWeight: 'bold', bgcolor: 'rgba(255, 86, 48, 0.08)' }}
             />
           )}
@@ -1507,17 +1582,20 @@ export default function ExchangePage() {
         )}
 
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', opacity: 0.7 }}>
-          PnL is calculated using on-chain oracle price. Live market shown for reference.
-          Admin can sync oracle to live market on the{' '}
-          <Link component={RouterLink} to="/admin/oracle" sx={{ color: 'primary.main', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}>Oracle Admin</Link> page.
+          {t.exchange.markup.oracleAdminBefore}{' '}
+          <Link component={RouterLink} to="/admin/oracle" sx={{ color: 'primary.main', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}>{t.exchange.markup.oracleAdminLink}</Link>{' '}
+          {t.exchange.markup.oracleAdminAfter}
         </Typography>
 
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
           <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 'medium' }}>
-            Free margin: <Box component="span" sx={{ color: 'text.primary', fontFamily: MONO, fontWeight: 'bold' }}>{f18(freeMgn)} {STABLE_LABEL}</Box>
+            {t.exchange.open.freeMargin}: <Box component="span" sx={{ color: 'text.primary', fontFamily: MONO, fontWeight: 'bold' }}>{f18(freeMgn)} {STABLE_LABEL}</Box>
             {openMgnBig !== null && openMgnBig > freeMgn && (
               <Box component="span" sx={{ color: 'error.main', fontWeight: 'bold', ml: 2 }}>
-                ⚠ Insufficient — deposit at least {f18(openMgnBig - freeMgn)} more {STABLE_LABEL} first
+                {interpolate(t.exchange.open.insufficient, {
+                  amount: f18(openMgnBig - freeMgn),
+                  token: STABLE_LABEL,
+                })}
               </Box>
             )}
           </Typography>
@@ -1545,18 +1623,23 @@ export default function ExchangePage() {
             }}
           >
             {busy['open']
-              ? 'Opening…'
+              ? t.exchange.open.submitting
               : openStaleBlocked
-                ? '⛔ 價格過期，無法下單'
+                ? t.exchange.open.ctaStale
                 : kycBlocked
                   ? kycStatusUnknown
-                    ? '⚠ 無法確認 KYC 狀態'
+                    ? t.exchange.open.ctaKycUnknown
                     : kycPending
-                      ? '⏳ KYC 審核中，尚未核准'
-                      : `🔒 送出 KYC 申請才能交易 ${ASSET_LABEL[selAsset] ?? ''}`
+                      ? t.exchange.open.ctaKycPending
+                      : interpolate(t.exchange.open.ctaKycRequired, {
+                          asset: ASSET_LABEL[selAsset] ?? '',
+                        })
                   : isLowEsg && !esgConfirmed
-                    ? '請先確認 ESG 風險'
-                    : `Open ${isLong ? 'Long' : 'Short'} ${ASSET_LABEL[selAsset] ?? ''}`}
+                    ? t.exchange.open.ctaEsgUnconfirmed
+                    : interpolate(t.exchange.open.ctaOpen, {
+                        side: isLong ? t.exchange.side.long : t.exchange.side.short,
+                        asset: ASSET_LABEL[selAsset] ?? '',
+                      })}
           </Button>
         </Box>
       </Card>
@@ -1574,7 +1657,7 @@ export default function ExchangePage() {
       {Object.keys(esg).length > 0 && (
         <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
           <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 1 }}>
-            ESG Leaderboard
+            {t.exchange.esgLeaderboard.title}
           </Typography>
           <Stack spacing={2}>
             {Object.entries(esg)
@@ -1633,7 +1716,7 @@ export default function ExchangePage() {
       <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 1 }}>
-            Open Positions
+            {t.exchange.positions.title}
           </Typography>
           <Button
             size="small"
@@ -1643,20 +1726,30 @@ export default function ExchangePage() {
             startIcon={<Icon icon="solar:restart-bold-duotone" />}
             sx={{ textTransform: 'none', color: 'text.secondary' }}
           >
-            Refresh
+            {t.exchange.positions.refresh}
           </Button>
         </Box>
 
         {positions.length === 0 ? (
           <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 4, fontStyle: 'italic' }}>
-            No open positions.
+            {t.exchange.positions.empty}
           </Typography>
         ) : (
           <TableContainer>
             <Table>
               <TableHead>
                 <TableRow sx={{ bgcolor: 'background.neutral' }}>
-                  {['Asset','Side','Entry','Current','Size','Margin','Lev','PnL',''].map(h => (
+                  {[
+                    t.exchange.positions.column.asset,
+                    t.exchange.positions.column.side,
+                    t.exchange.positions.column.entry,
+                    t.exchange.positions.column.current,
+                    t.exchange.positions.column.size,
+                    t.exchange.positions.column.margin,
+                    t.exchange.positions.column.leverage,
+                    t.exchange.positions.column.pnl,
+                    '',
+                  ].map(h => (
                     <TableCell key={h} sx={{ color: 'text.secondary', fontWeight: 'bold', fontSize: '0.75rem', py: 1.5 }}>
                       {h}
                     </TableCell>
@@ -1683,7 +1776,7 @@ export default function ExchangePage() {
                       </TableCell>
                       <TableCell>
                         <Chip
-                          label={row.isLong ? 'LONG' : 'SHORT'}
+                          label={row.isLong ? t.exchange.positions.long : t.exchange.positions.short}
                           size="small"
                           sx={{
                             fontWeight: 'bold',
@@ -1723,12 +1816,19 @@ export default function ExchangePage() {
                               },
                             }}
                           >
-                            {busy[closeKey] ? '…' : rowStale ? '價格過期' : 'Close'}
+                            {busy[closeKey]
+                              ? t.exchange.working
+                              : rowStale
+                                ? t.exchange.positions.stale
+                                : t.exchange.positions.close}
                           </Button>
                           {rowStale && (
                             <Typography variant="caption" color="error.main" sx={{ fontSize: '0.625rem', maxWidth: 220, display: 'block' }}>
-                              指數價 {livePrices[row.asset as AssetId]?.freshness.label ?? '年齡未知'} — 平倉會被
-                              StalePrice 拒絕，等 keeper 更新後再試。
+                              {interpolate(t.exchange.positions.staleNote, {
+                                age:
+                                  livePrices[row.asset as AssetId]?.freshness.label ??
+                                  t.exchange.positions.staleAgeUnknown,
+                              })}
                             </Typography>
                           )}
 
@@ -1738,7 +1838,7 @@ export default function ExchangePage() {
                             if (isRewarded === true) {
                               return (
                                 <Chip
-                                  label="✓ 已領 ESG 獎勵"
+                                  label={t.exchange.positions.esgRewarded}
                                   size="small"
                                   color="success"
                                   variant="outlined"
@@ -1763,13 +1863,17 @@ export default function ExchangePage() {
                                     color="default"
                                     label={
                                       remainDays > 0
-                                        ? `🌱 ESG 獎勵：再抱 ${remainDays} 天`
-                                        : '🌱 ESG 獎勵：尚不符資格'
+                                        ? interpolate(t.exchange.positions.esgHoldLonger, {
+                                            days: remainDays,
+                                          })
+                                        : t.exchange.positions.esgIneligible
                                     }
                                     title={
                                       remainDays > 0
-                                        ? `ESG 獎勵需持倉滿 ${Math.round(Number(esgMinHold) / 86_400)} 天且倉位仍未平倉`
-                                        : 'previewReward 回 0：倉位需仍持有中，且已滿最短持有期'
+                                        ? interpolate(t.exchange.positions.esgHoldLongerTooltip, {
+                                            days: Math.round(Number(esgMinHold) / 86_400),
+                                          })
+                                        : t.exchange.positions.esgIneligibleTooltip
                                     }
                                     sx={{ fontSize: '0.625rem', fontWeight: 'bold' }}
                                   />
@@ -1793,7 +1897,7 @@ export default function ExchangePage() {
                                     '&:hover': { bgcolor: 'success.main' },
                                   }}
                                 >
-                                  {busy[claimKey] ? '…' : `${f18(preview)} PEPE`}
+                                  {busy[claimKey] ? t.exchange.working : `${f18(preview)} PEPE`}
                                 </Button>
                               );
                             }
