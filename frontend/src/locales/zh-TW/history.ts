@@ -1,119 +1,116 @@
 /**
  * History 頁：鏈上事件時間軸。
  *
- * 事件明細（`renderDetails`）用的是英文動詞（Following、Staked、Earned…），
- * 和數字、代號混排成一行，整份搬進來。單複數（event/events、position/positions、
- * query/queries）各自寫成完整的句子，不是拼接 's'。
+ * 事件明細（`renderDetails`）的動詞和數字、代號混排成一行。單複數
+ * （event/events、position/positions、query/queries）各自寫成完整的句子，
+ * 不是拼接 's'——中文沒有單複數之分，兩份文字目前相同。
  */
 export const history = {
-  title: 'Transaction History',
-  subtitle: 'On-chain auditability — decoded directly from Base Sepolia via ethers.js',
-  loading: 'Loading…',
-  refresh: '↺ Refresh',
+  title: '交易歷史',
+  subtitle: '鏈上可稽核性——直接透過 ethers.js 從 Base Sepolia 解碼',
+  loading: '載入中…',
+  refresh: '↺ 重新整理',
 
   proofNote: {
     intro:
-      'All activity is read directly from the Base Sepolia blockchain — no backend and no server-side database, just the immutable ledger.',
-    positionsComplete: 'Positions are complete',
+      '所有活動都直接從 Base Sepolia 區塊鏈讀取——沒有後端、沒有伺服器端資料庫，只有不可竄改的帳本。',
+    positionsComplete: '部位資料完整',
     positionsCompleteRest:
-      '— every one you have ever opened is read from contract storage, however long ago. Swaps, margin moves, fees and stakes exist only as event logs, which the RPC serves in a limited block window, so those build up from what this browser has already seen.',
-    clickToVerify: 'Click',
-    clickToVerifyRest: 'to verify a row on BaseScan.',
+      '——你曾開過的每一筆都是從合約儲存讀取，無論多久以前。兌換、保證金異動、手續費與質押則只存在於事件日誌中，RPC 只提供有限區塊範圍內的資料，因此這些內容會隨著此瀏覽器已經看過的範圍逐漸累積。',
+    clickToVerify: '點擊',
+    clickToVerifyRest: '即可在 BaseScan 上驗證該筆紀錄。',
   },
 
   tab: {
-    mine: 'My Activity',
-    mineDisconnected: 'My Activity (connect wallet)',
-    all: 'All Activity',
+    mine: '我的活動',
+    mineDisconnected: '我的活動（請連接錢包）',
+    all: '全部活動',
   },
 
   filter: {
-    all: 'All',
-    swap: 'Swap',
-    position: 'Positions',
-    margin: 'Margin',
-    social: 'Social',
-    fee: 'Fees',
-    price: 'Oracle',
-    stake: 'Stake',
+    all: '全部',
+    swap: '兌換',
+    position: '部位',
+    margin: '保證金',
+    social: '社交',
+    fee: '手續費',
+    price: '預言機',
+    stake: '質押',
     /** 篩選中且有結果時：Swap (12) */
     countedLabel: '{label} ({count})',
   },
 
-  noWallet: 'Connect your wallet to see your activity.',
+  noWallet: '連接錢包以查看你的活動。',
 
   empty: {
-    title: 'No activity yet',
-    windowOnly: 'No events found in the last {blocks} blocks.',
-    windowFiltered: 'No events found in the last {blocks} blocks for filter "{filter}".',
+    title: '尚無活動',
+    windowOnly: '過去 {blocks} 個區塊內找不到事件。',
+    windowFiltered: '過去 {blocks} 個區塊內找不到符合篩選「{filter}」的事件。',
   },
 
   column: {
-    time: 'Time',
-    type: 'Type',
-    user: 'User',
-    details: 'Details',
-    block: 'Block',
-    tx: 'Tx',
+    time: '時間',
+    type: '類型',
+    user: '使用者',
+    details: '詳情',
+    block: '區塊',
+    tx: '交易',
   },
 
   eventType: {
-    swap: 'Swap',
-    opened: 'Opened',
-    closed: 'Closed',
-    deposit: 'Deposit',
-    withdraw: 'Withdraw',
-    follow: 'Follow',
-    unfollow: 'Unfollow',
-    copyFee: 'Copy Fee',
-    priceUpdated: 'Price ↺',
-    stake: 'Stake',
-    slash: 'Slash',
+    swap: '兌換',
+    opened: '開倉',
+    closed: '平倉',
+    deposit: '存入',
+    withdraw: '提領',
+    follow: '跟隨',
+    unfollow: '取消跟隨',
+    copyFee: '跟單費',
+    priceUpdated: '價格更新 ↺',
+    stake: '質押',
+    slash: '罰沒',
   },
 
   storageTooltip:
-    'Read from contract storage — permanent, but not tied to a single transaction. Verify with getPosition() on BaseScan.',
-  storageLabel: 'storage',
+    '從合約儲存讀取——永久保存，但不對應單一交易。可用 getPosition() 在 BaseScan 上驗證。',
+  storageLabel: '儲存',
 
   loadOlder: {
-    scanning: 'Scanning older blocks…',
-    cta: '↓ Load older (blocks {from}–{to})',
+    scanning: '正在掃描較舊的區塊…',
+    cta: '↓ 載入較舊資料（區塊 {from}–{to}）',
   },
 
   footer: {
-    eventOne: '{count} event displayed',
-    eventMany: '{count} events displayed',
-    positionsFull: 'Positions read in full from contract storage',
-    scannedBackTo: '· logs scanned back to block #{block}',
+    eventOne: '已顯示 {count} 筆事件',
+    eventMany: '已顯示 {count} 筆事件',
+    positionsFull: '部位資料完整讀取自合約儲存',
+    scannedBackTo: '· 日誌已掃描回溯至區塊 #{block}',
     cacheNote:
-      '· Log rows are cached in this browser only; clearing site data resets them, but the chain keeps everything.',
+      '· 日誌紀錄僅快取於此瀏覽器；清除網站資料會重置快取，但鏈上資料永久保留。',
   },
 
   /** 掃描不完整時的說明——缺口不該被誤讀成「沒有資料」。 */
   scanIssue: {
-    failedChunkOne:
-      '{count} block-range query failed (swaps, margin, fees and stakes may be incomplete)',
-    failedChunkMany:
-      '{count} block-range queries failed (swaps, margin, fees and stakes may be incomplete)',
-    positionIndexUnreadable:
-      'the position index could not be read — positions below may be missing',
-    missedPositionOne: '{count} position could not be read',
-    missedPositionMany: '{count} positions could not be read',
-    refreshToRetry: '{notes}. Refresh to retry.',
+    failedChunkOne: '{count} 個區塊範圍查詢失敗（兌換、保證金、手續費與質押資料可能不完整）',
+    failedChunkMany: '{count} 個區塊範圍查詢失敗（兌換、保證金、手續費與質押資料可能不完整）',
+    positionIndexUnreadable: '無法讀取部位索引——下方部位資料可能有缺漏',
+    missedPositionOne: '{count} 筆部位無法讀取',
+    missedPositionMany: '{count} 筆部位無法讀取',
+    refreshToRetry: '{notes}。重新整理以再試一次。',
   },
 
-  fetchFailed: 'Failed to fetch events',
-  fetchOlderFailed: 'Failed to fetch older events',
+  fetchFailed: '事件讀取失敗',
+  fetchOlderFailed: '較舊事件讀取失敗',
 
   /** 每一種事件明細的敘述。 */
   detail: {
-    marginLabel: 'Margin:',
-    pnlLabel: 'PnL:',
-    receivedSuffix: ' | Received: {amount}',
-    following: 'Following',
-    unfollowed: 'Unfollowed',
-    earned: 'Earned:',
-    feeSuffix: ' (fee: {fee})',
-    staked: 'Staked',
+    marginLabel: '保證金：',
+    pnlLabel: 'PnL：',
+    receivedSuffix: ' | 已收到：{amount}',
+    following: '跟隨',
+    unfollowed: '取消跟隨',
+    earned: '已賺取：',
+    feeSuffix: '（手續費：{fee}）',
+    staked: '已質押',
   },
 };
