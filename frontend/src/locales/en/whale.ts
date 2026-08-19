@@ -121,6 +121,16 @@ export const whale: Catalog['whale'] = {
     missingMany: '{count} markets could not be read — the RPC node may be rate-limiting.',
   },
 
+  /**
+   * 全站橫幅版的鯨魚警報（WhaleAlertBanner）。目前沒有掛在任何頁面上，見元件
+   * 檔頂的說明。「開倉」「名義價值」複用 `feed.openedVerb` / `feed.column.notional`，
+   * 沒有另外造字，避免同一句話在 catalog 裡出現兩份。
+   */
+  alertBanner: {
+    title: 'Whale Alert',
+    dismissAria: 'Dismiss whale alert',
+  },
+
   largest: {
     title: 'Largest Open Positions',
     top: 'top {count}',

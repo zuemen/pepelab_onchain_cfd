@@ -45,6 +45,15 @@ export const landing: Catalog['landing'] = {
 
   oracleDisclosure: 'Oracle 價格由部署者（admin）控制，Demo 期間會即時更新以展示 PnL 變化',
 
+  /** 首頁最上方的即時 KPI 條（HeroKpiStrip）。網路名稱、chainId 是技術識別碼，不譯。 */
+  heroKpi: {
+    x402Revenue: 'x402 Revenue',
+    agentCallsPaid: 'Agent Calls Paid',
+    openInterest: 'Open Interest',
+    network: 'Network',
+    connectHint: 'connect ↗',
+  },
+
   /** #36：主視覺介紹與 Paper Trading 說明，各自拆成 `<b>` 前後的片段。 */
   markup: {
     heroBefore: '對標 Hyperliquid 的鏈上永續 + agent 經濟。5x 槓桿合成/RWA 永續、社交跟單、 做市金庫，外加 ',

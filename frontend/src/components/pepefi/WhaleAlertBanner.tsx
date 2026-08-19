@@ -6,6 +6,7 @@ import Link from '@mui/material/Link';
 import IconButton from '@mui/material/IconButton';
 import type { WhaleAlert } from 'src/hooks/useWhaleAlerts';
 
+import { t } from 'src/locales';
 import { shortAddr } from 'src/components/pepefi/brandKit';
 import { timeAgo, fCompact, sideLabel } from 'src/lib/pepefi/whale';
 
@@ -62,7 +63,7 @@ export default function WhaleAlertBanner({ alerts }: Props) {
           letterSpacing: 1,
         }}
       >
-        Whale Alert
+        {t.whale.alertBanner.title}
       </Typography>
 
       {/* Message */}
@@ -84,7 +85,7 @@ export default function WhaleAlertBanner({ alerts }: Props) {
           {shortAddr(a.owner)}
         </Link>
         <Typography component="span" variant="caption" sx={{ color: 'text.secondary', mx: 0.5 }}>
-          opened
+          {t.whale.feed.openedVerb}
         </Typography>
         <Typography
           component="span"
@@ -103,7 +104,7 @@ export default function WhaleAlertBanner({ alerts }: Props) {
           {fCompact(a.notional)}
         </Typography>
         <Typography component="span" variant="caption" sx={{ color: 'text.secondary', mx: 0.5 }}>
-          notional
+          {t.whale.feed.column.notional}
         </Typography>
         <Typography component="span" variant="caption" sx={{ color: 'info.main', opacity: 0.8 }}>
           · {timeAgo(a.timestamp)}
@@ -139,7 +140,7 @@ export default function WhaleAlertBanner({ alerts }: Props) {
       <IconButton
         size="small"
         onClick={() => setVisible(false)}
-        aria-label="Dismiss whale alert"
+        aria-label={t.whale.alertBanner.dismissAria}
         sx={{
           p: 0.25,
           color: 'text.secondary',

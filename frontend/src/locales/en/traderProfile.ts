@@ -69,4 +69,66 @@ export const traderProfile: Catalog['traderProfile'] = {
     backToMarketplace: '← Back to Marketplace',
     whaleTracker: '🐋 Whale Tracker',
   },
+
+  /**
+   * TraderActivity：目前未平倉部位表 + 動態時間軸，兩張卡都在這裡。
+   *
+   * side 徽章仍是 `sideLabel()` 回傳的裸英文 LONG/SHORT——那是 `lib/pepefi/whale.ts`
+   * 的已知缺口，WhaleFeed / LargestOpenPositions 兩個已搬過的手足元件也是同樣處理
+   * 方式，這裡跟著一致，不單獨修。
+   *
+   * markUnreadTitle / pnlUnreadTitle / missingOne / missingMany / estimatedTime /
+   * txAria 直接複用 `whale.largest` 與 `whale.feed` 裡已經存在、逐字相同的句子，
+   * 不在這裡另造一份。
+   */
+  activity: {
+    openPositions: {
+      title: 'Current Open Positions',
+      subtitle: 'read live from the exchange · includes positions older than the scan window',
+      empty: 'No open positions.',
+      columnSimple: { market: 'Market', side: 'Side', notional: 'Notional', pnl: 'PnL' },
+      columnExpert: {
+        market: 'Market',
+        side: 'Side',
+        entry: 'Entry',
+        mark: 'Mark',
+        margin: 'Margin',
+        notional: 'Notional',
+        pnl: 'PnL',
+      },
+    },
+
+    timeline: {
+      title: 'Activity Timeline',
+      scanning: 'Scanning {done}/{total}',
+      noRange: '—',
+      emptyTitle: 'No activity found',
+      emptyRange: 'No events in blocks {range}.',
+      emptyNone: 'Nothing to show yet.',
+      column: { when: 'When', event: 'Event', detail: 'Detail', tx: 'Tx' },
+
+      kind: {
+        opened: 'Opened',
+        closed: 'Closed',
+        liquidated: 'Liquidated',
+        following: 'Following',
+        followedBy: 'Followed by',
+        staked: 'Staked',
+        slashed: 'Slashed',
+      },
+
+      /** 每種事件在「詳情」欄的句子。side 徽章與地址是獨立 JSX，前後才是這裡的字串。 */
+      detail: {
+        openedTail: '{asset} {leverage}× @ {price} · margin {margin}',
+        closedTail: ' · received {received}',
+        liquidatedBefore: 'Liquidated at ',
+        liquidatedBy: ' by ',
+        followingBefore: 'Started copying ',
+        followingAfter: ' · margin {margin}',
+        followedByAfter: ' started copying this trader · margin {margin}',
+        stakedBefore: 'Staked ',
+        slashedBefore: 'Slashed ',
+      },
+    },
+  },
 };

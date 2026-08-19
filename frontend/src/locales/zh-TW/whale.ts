@@ -124,6 +124,16 @@ export const whale = {
     missingMany: '{count} 個市場無法讀取——RPC 節點可能正在限速。',
   },
 
+  /**
+   * 全站橫幅版的鯨魚警報（WhaleAlertBanner）。目前沒有掛在任何頁面上，見元件
+   * 檔頂的說明。「開倉」「名義價值」複用 `feed.openedVerb` / `feed.column.notional`，
+   * 沒有另外造字，避免同一句話在 catalog 裡出現兩份。
+   */
+  alertBanner: {
+    title: '鯨魚警報',
+    dismissAria: '關閉鯨魚警報',
+  },
+
   largest: {
     title: '最大未平倉部位',
     top: '前 {count} 名',
