@@ -48,7 +48,7 @@ const EN_HAN_BASELINES: Record<string, number> = {
   'errors.ts': 0,
   'pepe.ts': 1370,
   'exchange.ts': 0,
-  'terminal.ts': 685,
+  'terminal.ts': 0,
   'sessions.ts': 657,
   'pepelab.ts': 555,
   'tokens.ts': 543,
