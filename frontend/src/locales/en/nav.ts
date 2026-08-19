@@ -1,8 +1,7 @@
 import type { Catalog } from '../zh-TW';
 
 /**
- * 見 `../zh-TW/nav.ts`。搬移階段逐字複製原文，所以這裡還帶著中文——那些字就是英文版
- * 的待辦，`locales.test.ts` 的 ratchet 在盯著它們的數量。
+ * 見 `../zh-TW/nav.ts`。
  */
 export const nav: Catalog['nav'] = {
   section: {
@@ -11,9 +10,9 @@ export const nav: Catalog['nav'] = {
   },
   item: {
     portfolio: '🏠 Portfolio',
-    pepe: '🐸 Pepe 養成中心',
+    pepe: '🐸 Pepe Growth Center',
     exchange: 'Exchange',
-    tokens: '🪙 代幣化資產',
+    tokens: '🪙 Tokenized Assets',
     terminal: 'Pro Terminal',
     x402: 'x402 Signal API',
     marketplace: 'Marketplace',
