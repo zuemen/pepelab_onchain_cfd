@@ -14,21 +14,21 @@
  *    畫面上本來就有那個空格。搬移階段要求逐字相同，就得連它一起搬——不是筆誤。
  */
 export const exchange = {
-  connectWallet: 'Connect wallet to access the exchange.',
-  loadingChainData: 'Loading blockchain data...',
+  connectWallet: '連接錢包以使用交易所。',
+  loadingChainData: '載入區塊鏈資料中…',
 
   /** 全域交易覆蓋層上，標題底下那句固定的說明。 */
-  confirmInWallet: 'Please confirm the transaction in your wallet and wait for block confirmation.',
+  confirmInWallet: '請在錢包中確認交易，並等待區塊確認。',
 
   side: {
-    long: 'Long',
-    short: 'Short',
+    long: '做多',
+    short: '做空',
   },
 
   /** 送出交易前後對使用者說的話。 */
   tx: {
-    enterValidAmount: 'Enter a valid amount',
-    enterValidMargin: 'Enter a valid margin',
+    enterValidAmount: '請輸入有效金額',
+    enterValidMargin: '請輸入有效保證金',
     insufficientMargin: '保證金不足，請先在 Margin Account 區塊 Approve & Deposit',
 
     /**
@@ -38,33 +38,33 @@ export const exchange = {
     ammStale:
       '兌換池的參考預言機報價已過期，合約會拒絕兌換（StaleOraclePrice）。請等 keeper 更新價格後再試。',
 
-    approving: 'Approving {token}…',
-    swappedEthForToken: 'Swapped {amount} ETH for ~{received} {token} ✓',
-    swappedTokenForEth: 'Swapped {amount} {token} for ~{received} ETH ✓',
+    approving: '批准 {token} 中…',
+    swappedEthForToken: '已用 {amount} ETH 兌換約 {received} {token} ✓',
+    swappedTokenForEth: '已用 {amount} {token} 兌換約 {received} ETH ✓',
 
     faucetStable: '已領取測試 {token} ✓ — 可在右側 Margin Account「Approve & Deposit」作為保證金',
     faucetAltStable: '已領取測試 {alt} ✓ — 可持有與兌換；保證金請用 {token}',
     faucetPepe: '已領取測試 PEPE ✓',
 
-    deposited: 'Deposited {amount} {token} ✓',
-    withdrew: 'Withdrew {amount} {token} ✓',
+    deposited: '已存入 {amount} {token} ✓',
+    withdrew: '已提領 {amount} {token} ✓',
 
-    positionOpened: '{side} {asset} opened ✓',
-    positionClosed: 'Position closed ✓',
+    positionOpened: '{side} {asset} 開倉成功 ✓',
+    positionClosed: '部位已平倉 ✓',
     esgClaimed: '🌱 ESG 獎勵領取成功！',
   },
 
   /** 全域交易覆蓋層上的字，依當下進行中的動作切換。 */
   loading: {
-    fallback: 'Processing transaction...',
-    swapEthToToken: 'Swapping ETH to {token}…',
-    swapTokenToEth: 'Swapping {token} to ETH…',
-    faucetStable: 'Claiming test {token}…',
-    faucetPepe: 'Claiming test PEPE…',
-    deposit: 'Depositing Margin...',
-    withdraw: 'Withdrawing Margin...',
-    open: 'Opening Position...',
-    close: 'Closing Position...',
+    fallback: '處理交易中…',
+    swapEthToToken: '兌換 ETH 為 {token} 中…',
+    swapTokenToEth: '兌換 {token} 為 ETH 中…',
+    faucetStable: '領取測試 {token} 中…',
+    faucetPepe: '領取測試 PEPE 中…',
+    deposit: '存入保證金中…',
+    withdraw: '提領保證金中…',
+    open: '開倉中…',
+    close: '平倉中…',
   },
 
   /**
@@ -72,12 +72,12 @@ export const exchange = {
    * `<strong>前綴：</strong> 說明` 的句中夾標記，和幣別說明那段一起留給 #36。
    */
   guide: {
-    title: 'How CFD trading works on PepeLab',
+    title: 'PepeLab 上的 CFD 交易如何運作',
   },
 
   /** 水龍頭區塊。三種代幣共用同一組「領取中／領取 X／尚未部署」的字。 */
   faucet: {
-    title: '🚰 Get Test Tokens',
+    title: '🚰 取得測試代幣',
     intro:
       'PEPE 是平台幣（測試網模擬），用水龍頭免費領取；{stable} 為模擬保證金穩定幣；x402 付費用{x402Stable}。',
 
@@ -85,7 +85,7 @@ export const exchange = {
     altStableNote: '· 模擬穩定幣（持有／兌換）',
     pepeNote: '· 平台幣',
 
-    balance: 'Balance: {amount}',
+    balance: '餘額：{amount}',
     notDeployed: '尚未在本網路部署',
     notDeployedChip: '尚未部署',
 
@@ -100,48 +100,48 @@ export const exchange = {
 
   /** ETH ↔ USDC 兌換區塊（PepeAMM）。 */
   swap: {
-    title: 'Swap',
+    title: '兌換',
     poolBadge: '● 恆定乘積池 · 有滑點',
     notDeployed: '本網路未部署兌換池（PepeAMM）。請切換到 Base Sepolia。',
 
-    youPay: 'You pay',
-    youReceive: 'You receive (est.)',
-    balance: 'Balance: {amount}',
+    youPay: '你支付',
+    youReceive: '你將收到（預估）',
+    balance: '餘額：{amount}',
 
     /**
      * 池內現價和 oracle 參考價是兩個不同的數字，所以是兩條 label 而不是一條——
      * 它們分岔超過 maxOracleDeviationBps 時合約就會擋下兌換。
      */
-    poolPrice: 'Pool price（池內現價）',
-    oracleRef: 'Oracle ref.（參考價）',
-    poolReserves: 'Pool reserves',
-    priceImpact: 'Price impact（含手續費）',
-    minimumReceived: 'Minimum received（{tolerance}% 容忍）',
+    poolPrice: '池內現價',
+    oracleRef: 'Oracle 參考價',
+    poolReserves: '池內儲備量',
+    priceImpact: '價格衝擊（含手續費）',
+    minimumReceived: '最低收到數量（{tolerance}% 容忍）',
 
     constantProductNote:
       '恆定乘積 (x·y=k) 池：金額越大滑點越高。報價已含 0.3% 手續費，minOut 以即時 quote 為基準。',
 
-    swapping: 'Swapping…',
+    swapping: '兌換中…',
     oracleStale: '⛔ 預言機報價過期，暫停兌換',
-    enterAmount: 'Enter an amount',
-    ethToToken: 'Swap ETH → {token}',
-    tokenToEth: 'Swap {token} → ETH',
+    enterAmount: '請輸入金額',
+    ethToToken: '兌換 ETH → {token}',
+    tokenToEth: '兌換 {token} → ETH',
   },
 
   /** 保證金帳戶區塊。 */
   margin: {
-    accountEquity: 'Account Equity',
-    equityUnit: '{token} (Testnet)',
-    freeMargin: 'Free Margin',
-    unrealizedPnl: 'Unrealized PnL',
+    accountEquity: '帳戶權益',
+    equityUnit: '{token}（測試網）',
+    freeMargin: '可用保證金',
+    unrealizedPnl: '未實現 PnL',
 
     stablecoin: '穩定幣',
     balance: '餘額 {token}',
 
-    depositPlaceholder: 'Amount to deposit',
-    approveDeposit: 'Approve & Deposit',
-    withdrawPlaceholder: 'Amount to withdraw',
-    withdraw: 'Withdraw',
+    depositPlaceholder: '存入金額',
+    approveDeposit: '批准並存入',
+    withdrawPlaceholder: '提領金額',
+    withdraw: '提領',
   },
 
   /** 下單表單。 */
@@ -166,78 +166,78 @@ export const exchange = {
       '此資產 ESG 評分偏低，可能涉及較高環境、社會或治理風險，請謹慎評估永續投資風險後再決定是否開倉。',
     esgConfirm: '我已了解此資產的 ESG 風險，仍要繼續交易',
 
-    asset: 'Asset',
+    asset: '標的',
     esgHighRating: '高永續評級',
     esgLowRating: '低永續評級',
     esgUnavailable: '本鏈未提供 ESG 資料（ESGRegistry 未部署）',
     esgLoading: 'ESG 資料載入中…',
     esgNone: '此標的無 ESG 評級',
 
-    direction: 'Direction',
-    long: 'LONG ↑',
-    short: 'SHORT ↓',
-    orderType: 'Order Type: Market',
-    executionFee: 'Execution Fee: {fee} ETH',
+    direction: '方向',
+    long: '做多 ↑',
+    short: '做空 ↓',
+    orderType: '訂單類型：市價單',
+    executionFee: '執行費：{fee} ETH',
     executionFeeDefault: '（預設值）',
 
-    leverage: 'Leverage',
-    maxLeverage: '⚠ Max {max}× — tighter risk cap for this asset class',
+    leverage: '槓桿',
+    maxLeverage: '⚠ 最高 {max}×——此資產類別採更嚴格的風險上限',
 
-    marginLabel: 'Margin',
-    marginPlaceholder: 'e.g. 100',
+    marginLabel: '保證金',
+    marginPlaceholder: '例如：100',
 
-    entryOracle: 'Entry (oracle)',
-    liveMarket: 'Live market',
-    simulated: '(simulated)',
-    notional: 'Notional',
+    entryOracle: '進場價（oracle）',
+    liveMarket: '即時市價',
+    simulated: '（模擬）',
+    notional: '名義價值',
 
-    fundingRate: 'Funding rate (8h)',
-    fundingLongsPay: '(longs pay)',
-    fundingShortsPay: '(shorts pay)',
-    fundingBalanced: '(balanced)',
+    fundingRate: '資金費率（8 小時）',
+    fundingLongsPay: '（多方支付）',
+    fundingShortsPay: '（空方支付）',
+    fundingBalanced: '（平衡）',
 
-    estLiquidation: 'Est. Liquidation: {price}',
+    estLiquidation: '預估清算價：{price}',
     liquidationTooltip:
       '觸及清算價時倉位會被強制平倉。扣除虧損、手續費、清算人獎勵與清算罰金（liquidationPenaltyBps）後的殘餘保證金會退還給你——不是全額沒收。',
 
-    freeMargin: 'Free margin',
-    insufficient: '⚠ Insufficient — deposit at least {amount} more {token} first',
+    freeMargin: '可用保證金',
+    insufficient: '⚠ 保證金不足——請先至少再存入 {amount} {token}',
 
     /** 下單鈕的每一種狀態都是完整的一句話，不是拼接出來的。 */
-    submitting: 'Opening…',
+    submitting: '開倉中…',
     ctaStale: '⛔ 價格過期，無法下單',
     ctaKycUnknown: '⚠ 無法確認 KYC 狀態',
     ctaKycPending: '⏳ KYC 審核中，尚未核准',
     ctaKycRequired: '🔒 送出 KYC 申請才能交易 {asset}',
     ctaEsgUnconfirmed: '請先確認 ESG 風險',
-    ctaOpen: 'Open {side} {asset}',
+    ctaOpen: '開倉 {side} {asset}',
   },
 
   esgLeaderboard: {
-    title: 'ESG Leaderboard',
+    title: 'ESG 排行榜',
   },
 
   /** 持倉表。 */
   positions: {
-    title: 'Open Positions',
-    refresh: 'Refresh',
-    empty: 'No open positions.',
+    title: '未平倉部位',
+    refresh: '重新整理',
+    empty: '無未平倉部位。',
 
     column: {
-      asset: 'Asset',
-      side: 'Side',
-      entry: 'Entry',
-      current: 'Current',
-      size: 'Size',
-      margin: 'Margin',
-      leverage: 'Lev',
+      asset: '標的',
+      side: '方向',
+      entry: '進場價',
+      current: '目前價',
+      size: '大小',
+      margin: '保證金',
+      leverage: '槓桿',
       pnl: 'PnL',
     },
 
-    long: 'LONG',
-    short: 'SHORT',
+    long: '做多',
+    short: '做空',
 
-    close: 'Close',
+    close: '平倉',
     stale: '價格過期',
     staleNote: '指數價 {age} — 平倉會被 StalePrice 拒絕，等 keeper 更新後再試。',
     staleAgeUnknown: '年齡未知',
@@ -270,16 +270,15 @@ export const exchange = {
       '（記錄在 PerpetualExchange，錢包內不會出現代幣）。 想要真正持有 ERC-20 代幣？',
     tokenizedAssetsLink: '前往代幣化資產頁 →',
 
-    stepGetTokensLabel: 'Get tokens:',
-    stepGetTokensBody: 'Claim test {token} (and PEPE) from the faucet — no swap needed.',
-    stepMarginLabel: 'Margin Account:',
-    stepMarginBody:
-      'Approve & deposit {token} into PerpetualExchange. This becomes your free margin.',
-    stepOpenLabel: 'Open Position:',
+    stepGetTokensLabel: '取得代幣：',
+    stepGetTokensBody: '從水龍頭領取測試用 {token}（以及 PEPE）——不需要兌換。',
+    stepMarginLabel: '保證金帳戶：',
+    stepMarginBody: '批准並將 {token} 存入 PerpetualExchange，這將成為你的可用保證金。',
+    stepOpenLabel: '開倉：',
     stepOpenBody:
-      'Use free margin to open long/short on 11 synthetic assets — crypto (sBTC, sETH), equity (sAAPL, sTSLA, sNVDA, sMSFT, sGOOGL), commodity (sGOLD), bond (sBOND), and ESG ETFs (sICLN, sESGU). 🔒 = KYC required.',
-    stepPnlLabel: 'PnL:',
-    stepPnlBody: 'Price moves → position value changes → close to realize PnL.',
+      '使用可用保證金在 11 種合成資產上做多/做空——加密貨幣（sBTC、sETH）、股票（sAAPL、sTSLA、sNVDA、sMSFT、sGOOGL）、商品（sGOLD）、債券（sBOND），以及 ESG ETF（sICLN、sESGU）。🔒 = 需要 KYC。',
+    stepPnlLabel: 'PnL：',
+    stepPnlBody: '價格變動 → 部位價值改變 → 平倉即可實現 PnL。',
 
     currencyNoteLine1Before: '💱 幣別：平台保證金與兌換用 ',
     currencyNoteLine1After: '（測試網模擬幣，可用 Faucet 免費領）；',
@@ -307,9 +306,9 @@ export const exchange = {
     marginNoteBefore: '⚠ 目前交易保證金使用 ',
     marginNoteAfter: '；{altToken} 支援持有與兌換，保證金支援列為下一階段。',
 
-    noFreeMarginBefore: 'You have no free margin. Deposit {token} in the ',
-    noFreeMarginBold: 'Margin Account',
-    noFreeMarginAfter: ' section above first.',
+    noFreeMarginBefore: '你沒有可用保證金。請先存入 {token} 到上方的',
+    noFreeMarginBold: '保證金帳戶',
+    noFreeMarginAfter: '區塊。',
 
     kycPendingBefore: '⏳ 你的 KYC 申請',
     kycPendingBold: '已送出，正在等待審核',
@@ -321,8 +320,8 @@ export const exchange = {
       ' 是股票 / 債券 / ETF 類資產，需通過 KYC 審核才能交易。 送出申請後需等審核人員核准，不是立即通過。',
 
     oracleAdminBefore:
-      'PnL is calculated using on-chain oracle price. Live market shown for reference. Admin can sync oracle to live market on the',
-    oracleAdminLink: 'Oracle Admin',
-    oracleAdminAfter: 'page.',
+      'PnL 是依鏈上 oracle 價格計算。即時市價僅供參考。管理員可在',
+    oracleAdminLink: 'Oracle 管理',
+    oracleAdminAfter: '頁面同步 oracle 與即時市價。',
   },
 };
