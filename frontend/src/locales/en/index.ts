@@ -36,6 +36,10 @@ import { traderDashboard } from './traderDashboard';
  * 型別標註（而不是 `satisfies`）是刻意的：標註會讓「少一個 key」和「多一個 key」兩種
  * 錯誤都在 `tsc` 就爆掉，而 build 已經是 `tsc && vite build`，所以一次 build 就同時
  * 驗證兩種語言，不管當下在建哪一個。
+ *
+ * 翻譯這裡任何一個檔案前，先查 `frontend/CONTEXT.md` 的「Trading vocabulary, Chinese
+ * to English」表——保證金、開倉／平倉、強制平倉、資金費率、質押／罰沒等常見詞已經
+ * 各自釘死一個英文譯法，不要在這裡重新發明第二種說法。
  */
 const en: Catalog = {
   meta,

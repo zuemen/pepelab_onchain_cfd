@@ -29,18 +29,51 @@ function allSourceFiles(): string[] {
 }
 
 /**
- * `en` catalog 裡尚未翻譯的中文字數（不含註解）。
+ * `en` catalog 裡尚未翻譯的中文字數（不含註解），每個檔案各自的天花板。
  *
- * 搬移階段兩份 catalog 寫入同一份原文，所以 `en` 一開始就帶著中文。這個數字**只能
- * 下降**：歸零代表英文版翻完了。
+ * #41 把翻譯拆成十幾張各自獨立的票，同時動工。天花板原本是單一總數，兩張票的
+ * PR 會在同一行上衝突，而且誰都無法只憑這個數字證明「我的檔案真的翻完了」——
+ * 別的檔案還沒動的空間會被這張票的進度借走，遮住了真正的退步。改成逐檔案的
+ * 天花板後，每張票只動自己名下那一行，退步只會讓那一個檔案的斷言失敗，不會
+ * 被別的檔案沖銷掉。
  *
- * 每批遷移都會把它推高——那是預期行為，不是退步：字串搬進 catalog 時 `en` 拿到的是
- * 中文原文。真正的退步是「翻譯過的字又變回中文」，而那會讓這條斷言失敗。
- * 目前：errors 1388、pepe 1386、exchange 966、terminal 685、sessions 657、pepelab 596、
- * tokens 543、admin 491、landing 327、kyc 319、common 313、pepeStageSkins 264、x402 250、
- * stake 236、freshness 146、copy 122、rewards 102、esg 42、nav 38、marketplace 13、meta 12、portfolio 4。
+ * 數字全部用下面斷言同一套 `findInlineDisplayStrings` + `countHan` 現場重算——
+ * 不是抄 #41 issue 原本的表格，那張表在開票時就已經跟原始碼脫勾（詳見 #41 的
+ * 更新記錄）。0 代表這個檔案已經翻完，之後只能維持 0，不能再上升。
+ *
+ * 不在這份清單裡的檔案，天花板視為 0：新增一個 catalog 檔案時，要嘛它一開始
+ * 就不帶中文，要嘛得先在這裡登記非零的天花板，否則會立刻讓 ratchet 失敗。
  */
-const EN_HAN_BASELINE = 8900;
+const EN_HAN_BASELINES: Record<string, number> = {
+  'errors.ts': 1388,
+  'pepe.ts': 1370,
+  'exchange.ts': 970,
+  'terminal.ts': 685,
+  'sessions.ts': 657,
+  'pepelab.ts': 555,
+  'tokens.ts': 543,
+  'admin.ts': 486,
+  'landing.ts': 327,
+  'kyc.ts': 319,
+  'common.ts': 294,
+  'pepeStageSkins.ts': 264,
+  'x402.ts': 251,
+  'stake.ts': 236,
+  'freshness.ts': 146,
+  'copy.ts': 122,
+  'rewards.ts': 102,
+  'esg.ts': 36,
+  'marketplace.ts': 13,
+  'meta.ts': 12,
+  'nav.ts': 9,
+  'portfolio.ts': 4,
+  'history.ts': 0,
+  'index.ts': 0,
+  'traderDashboard.ts': 0,
+  'traderProfile.ts': 0,
+  'vault.ts': 0,
+  'whale.ts': 0,
+};
 
 /** 傳目錄就回它底下所有原始碼檔案，傳單一檔案就回那一個。測試檔一律排除。 */
 function sourceFilesIn(pathish: string): string[] {
@@ -173,12 +206,19 @@ describe('migration ratchets', () => {
     expect(isAssetPathOnly(`  imagePath: '/skins/03_忍者蛙戰士.png',`)).toBe(true);
   });
 
-  it('never lets the untranslated Chinese in the en catalog grow', () => {
-    const remaining = sourceFilesIn('src/locales/en')
-      .flatMap((file) => findInlineDisplayStrings(fs.readFileSync(file, 'utf8')))
-      .reduce((sum, hit) => sum + countHan(hit.text), 0);
+  it('never lets the untranslated Chinese in any en catalog file grow', () => {
+    const offenders = sourceFilesIn('src/locales/en').flatMap((file) => {
+      const name = path.basename(file);
+      const remaining = findInlineDisplayStrings(fs.readFileSync(file, 'utf8')).reduce(
+        (sum, hit) => sum + countHan(hit.text),
+        0
+      );
+      const baseline = EN_HAN_BASELINES[name] ?? 0;
 
-    expect(remaining).toBeLessThanOrEqual(EN_HAN_BASELINE);
+      return remaining > baseline ? [`${name}: ${remaining} Han chars, baseline is ${baseline}`] : [];
+    });
+
+    expect(offenders).toEqual([]);
   });
 });
 

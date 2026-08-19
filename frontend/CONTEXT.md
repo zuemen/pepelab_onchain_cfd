@@ -38,6 +38,30 @@ _Avoid_: language mode, i18n mode, lang, or any name containing "mode" (Mode is 
 
 Display text is Traditional Chinese, with four categories deliberately left in their original form; the rule and its reasoning are in [ADR 0002](./docs/adr/0002-display-text-language-rule.md).
 
+### Trading vocabulary, Chinese to English
+
+The `en` catalog translates the trading domain's recurring terms, not just individual sentences. Translated independently across a dozen catalog files, the same Chinese term drifts into several different English words for the same concept — this list pins one rendering per term so it doesn't. Seeded from the terms already settled in the catalog files that reached zero Han characters first (`whale`, `history`, `vault`, `traderProfile`, `traderDashboard`) and from identifiers already in code (`freeMargin`, `lockedMargin`, `unrealizedPnl`).
+
+| Chinese | English |
+|---|---|
+| 保證金 | Margin |
+| 可用保證金 | Free Margin |
+| 鎖定保證金 / 已用保證金 | Locked Margin |
+| 開倉 | Open (a position) |
+| 平倉 | Close (a position) |
+| 未平倉部位 | Open Position(s) |
+| 強制平倉 / 清算 | Liquidation, liquidated |
+| 資金費率 | Funding rate |
+| 質押 | Stake, staked |
+| 罰沒 | Slash, slashed |
+| 未實現損益 | Unrealised PnL |
+| 預言機報價 | Oracle price |
+| 滑價 | Slippage |
+
+`PnL` follows the ADR-0002 abbreviation rule: spelled out on first appearance on a screen, bare afterward. Everything else in this table is a full word, not an abbreviation, so it doesn't get the parenthetical treatment.
+
+British spelling (`Unrealised`, `realise`) is the convention, matching the files that reached zero Han characters first. `exchange.ts` and `terminal.ts` still carry a few pre-existing American spellings (`Unrealized`, `realize`) left from before this glossary existed; normalise them to British spelling as those files are translated, rather than treating the American spelling as a second accepted form.
+
 ### Portfolio
 
 **Net Worth**:
