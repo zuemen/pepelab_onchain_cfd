@@ -12,71 +12,71 @@
  *    持倉表用的是同一句話。這裡刻意不放第二份 stale 文案——兩份會分岔。
  */
 export const terminal = {
-  connectWallet: 'Connect wallet to open the terminal.',
+  connectWallet: '連接錢包以開啟終端機。',
 
   header: {
-    tagline: 'agent-native perps · base sepolia',
-    status: 'on-chain · live',
+    tagline: 'agent 原生永續 · base sepolia',
+    status: '鏈上 · 即時',
   },
 
   /** 行情列。每個 Stat 的 hint 都是滑鼠提示，`\n\n` 是段落分隔。 */
   stats: {
     perpSuffix: '-PERP',
-    displayPrice: 'display price',
+    displayPrice: '參考價格',
 
-    index: 'Index (oracle · settles here)',
+    index: '指數（oracle · 此為結算價）',
     indexHint:
       '鏈上預言機價格，也是你實際成交的價格。\n\n開倉、平倉、清算全部以這個價格結算，跟上面的顯示價和 K 線圖都無關——那兩個是外部行情的參考。預言機由 keeper 定期寫入鏈上，所以會比市場慢一些。',
 
-    mark: 'Mark (OI premium)',
+    mark: '標記價（OI 溢價）',
     markHint:
       '在指數價之上，依多空失衡加減一個溢價後的價格。\n\n多單明顯多於空單時 mark 會高於 index，反之則低。用途是讓損益與清算反映「大家都站同一邊」的風險，而不是只看預言機報價。',
 
-    funding: 'Funding',
+    funding: '資金費率',
     fundingHint:
       '多空之間定期互付的資金費，用來把價格拉回指數。\n\n正值 = 持多單的人付錢給持空單的人（代表多單過熱）；負值相反。你持倉期間會依這個費率累積成本或收益。',
 
-    openInterest: 'Open interest L/S',
+    openInterest: '未平倉量 多/空',
     openInterestHint:
       '這個標的目前鏈上未平倉的多單 / 空單名目金額。\n\n兩邊差距越大代表市場越偏向一邊，funding 費率也會跟著變大。顯示 "—" 代表鏈上讀取失敗，不是沒有部位。',
 
-    vaultBacking: 'Vault backing',
+    vaultBacking: '金庫後盾',
     vaultBackingHint:
       '保險金庫目前的資金規模——極端行情下用來吸收穿倉損失的後盾。\n\n顯示 $0 代表金庫已部署但還沒有人存入資金，此時平台沒有額外的償付緩衝。這是測試網的真實狀態，不是顯示錯誤。',
 
-    sourceCoingecko: 'display · coingecko',
-    sourceOracle: 'display · on-chain oracle',
-    sourceSimulated: 'simulated feed',
+    sourceCoingecko: '參考 · coingecko',
+    sourceOracle: '參考 · 鏈上 oracle',
+    sourceSimulated: '模擬報價',
 
     /**
      * 接在報價來源後面的價齡。前導空白是值的一部分：畫面上本來就是
      * `display · coingecko · index 3 分鐘前`，那個空白不是排版意外。
      */
-    indexAge: ' · index {age}',
+    indexAge: ' · 指數 {age}',
   },
 
   /** 下單面板。 */
   ticket: {
-    long: 'LONG',
-    short: 'SHORT',
-    sideLong: 'Long',
-    sideShort: 'Short',
+    long: '做多',
+    short: '做空',
+    sideLong: '做多',
+    sideShort: '做空',
 
-    leverage: 'Leverage',
-    margin: 'Margin',
-    free: 'free: {amount}',
-    marginAria: 'Margin ({token})',
+    leverage: '槓桿',
+    margin: '保證金',
+    free: '可用：{amount}',
+    marginAria: '保證金（{token}）',
 
-    notional: 'Notional',
-    entryOracle: 'Entry (oracle)',
-    estLiquidation: 'Est. liquidation',
-    onLiquidation: 'On liquidation',
+    notional: '名義價值',
+    entryOracle: '進場價（oracle）',
+    estLiquidation: '預估清算價',
+    onLiquidation: '清算時',
     onLiquidationValue: '殘值退還（扣罰金）',
-    funding8h: 'Funding (8h)',
+    funding8h: '資金費率（8 小時）',
 
-    enterMargin: 'Enter margin',
-    insufficientFreeMargin: 'Insufficient free margin — deposit first',
-    opened: '{side} {asset} opened ✓',
+    enterMargin: '輸入保證金',
+    insufficientFreeMargin: '可用保證金不足——請先存入',
+    opened: '{side} {asset} 開倉成功 ✓',
 
     /** 受管制標的的三種 KYC 狀態，各自是完整的一句話。 */
     kycUnknown: '⚠ 無法確認 KYC 狀態（鏈上讀取失敗）。合規閘門採 fail-closed，{asset} 暫停交易。',
@@ -87,81 +87,81 @@ export const terminal = {
       '⚠️ 測試網：本平台為 oracle 計價永續，損益以 mark 價（含 OI 失衡）結算；極端單邊行情下帳面利潤可能因 ADL 自動減倉而調整；保證金為測試代幣。',
     showRiskNotice: '⚠️ 顯示風險提示',
 
-    submitting: 'Opening…',
-    insufficientMargin: 'Insufficient margin',
-    ctaOpen: 'Open {side} {asset}',
+    submitting: '開倉中…',
+    insufficientMargin: '保證金不足',
+    ctaOpen: '開倉 {side} {asset}',
   },
 
   /** 帳戶區。 */
   account: {
-    equity: 'Equity',
-    freeMargin: 'Free margin',
-    unrealizedPnl: 'Unrealized PnL',
-    wallet: 'Wallet {token}',
-    marginNote: 'margin settles in USDC · USDT is hold/swap only',
+    equity: '權益',
+    freeMargin: '可用保證金',
+    unrealizedPnl: '未實現 PnL',
+    wallet: '錢包 {token}',
+    marginNote: '保證金以 USDC 結算 · USDT 僅供持有/兌換',
 
-    enterAmount: 'Enter amount',
-    deposited: 'Deposited {amount} USDC ✓',
+    enterAmount: '輸入金額',
+    deposited: '已存入 {amount} USDC ✓',
 
-    depositPlaceholder: 'deposit',
-    depositAria: 'Deposit amount (USDC)',
-    deposit: 'Deposit',
+    depositPlaceholder: '存入',
+    depositAria: '存入金額（USDC）',
+    deposit: '存入',
   },
 
   /** 持倉區的分頁殼。 */
   panel: {
-    tabPositions: 'Positions ({count})',
-    tabFills: 'Fills',
-    tabFunding: 'Funding',
-    refresh: '↺ refresh',
+    tabPositions: '持倉（{count}）',
+    tabFills: '成交紀錄',
+    tabFunding: '資金費率',
+    refresh: '↺ 重新整理',
   },
 
   positions: {
     column: {
-      asset: 'Asset',
-      side: 'Side',
-      entry: 'Entry',
-      mark: 'Mark',
-      margin: 'Margin',
-      leverage: 'Lev',
+      asset: '標的',
+      side: '方向',
+      entry: '進場價',
+      mark: '標記價',
+      margin: '保證金',
+      leverage: '槓桿',
       pnl: 'PnL',
     },
-    empty: 'no open positions',
-    long: 'LONG',
-    short: 'SHORT',
-    closed: 'Closed ✓',
-    close: 'Close',
+    empty: '無未平倉部位',
+    long: '做多',
+    short: '做空',
+    closed: '已平倉 ✓',
+    close: '平倉',
     stale: '價格過期',
   },
 
   fills: {
     column: {
-      type: 'Type',
-      asset: 'Asset',
-      side: 'Side',
-      price: 'Price',
+      type: '類型',
+      asset: '標的',
+      side: '方向',
+      price: '價格',
       pnl: 'PnL',
-      tx: 'Tx',
+      tx: '交易',
     },
     kind: {
-      opened: 'Open',
-      closed: 'Close',
-      liquidated: 'Liquidated',
+      opened: '開倉',
+      closed: '平倉',
+      liquidated: '已清算',
     },
     loading: '讀取鏈上成交…',
     empty: '近期無成交紀錄',
     readError: '無法讀取鏈上成交紀錄',
-    long: 'LONG',
-    short: 'SHORT',
+    long: '做多',
+    short: '做空',
   },
 
   funding: {
     column: {
-      asset: 'Asset',
-      rate: 'Rate (8h)',
-      longOi: 'Long OI',
-      shortOi: 'Short OI',
-      lastSettled: 'Last settled',
+      asset: '標的',
+      rate: '費率（8 小時）',
+      longOi: '多方未平倉',
+      shortOi: '空方未平倉',
+      lastSettled: '上次結算',
     },
     empty: '無 funding 資料',
 
@@ -177,14 +177,14 @@ export const terminal = {
 
   /** 市場活動面板（取代原本的交易所盤口）。 */
   activity: {
-    title: 'Market activity',
+    title: '市場動態',
     onChainBadge: '● 鏈上',
 
     column: {
-      side: 'Side',
-      margin: 'Margin',
-      entry: 'Entry',
-      time: 'Time',
+      side: '方向',
+      margin: '保證金',
+      entry: '進場價',
+      time: '時間',
       pnl: 'PnL',
     },
 
@@ -193,9 +193,9 @@ export const terminal = {
     /** 標的代號還沒讀到時，`emptyForAsset` 用的代稱。 */
     thisAsset: '此標的',
 
-    long: 'LONG',
-    short: 'SHORT',
-    openMarker: 'open',
+    long: '做多',
+    short: '做空',
+    openMarker: '未平倉',
 
     truncated: '只掃描最近的部位，更早的未列出',
     missed: '{count} 筆因 RPC 限流未讀取，列表可能不完整',
@@ -204,10 +204,10 @@ export const terminal = {
   /** 圖表面板。 */
   chart: {
     /** 價格線上的圖例文字。 */
-    lineIndex: 'index',
-    lineMark: 'mark',
+    lineIndex: '指數',
+    lineMark: '標記價',
 
-    last: 'chart last',
+    last: '圖表最新',
     loadingOlder: '載入更早…',
     exhausted: '已到最早資料',
     atCapacity: '已達顯示上限',
@@ -219,8 +219,8 @@ export const terminal = {
     loading: '載入 K 線…',
 
     /** 來源徽章。 */
-    sourceSimulated: 'SIMULATED',
-    sourceNamed: 'data · {name}',
+    sourceSimulated: '模擬資料',
+    sourceNamed: '資料 · {name}',
     sourceFallbackSuffix: ' (備援)',
     sourceFallbackReason: '已退用備援來源：{error}',
   },
