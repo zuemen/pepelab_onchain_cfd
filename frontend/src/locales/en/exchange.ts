@@ -1,7 +1,7 @@
 import type { Catalog } from '../zh-TW';
 
 /**
- * 見 `../zh-TW/exchange.ts`。搬移階段逐字複製原文。
+ * 見 `../zh-TW/exchange.ts`。
  */
 export const exchange: Catalog['exchange'] = {
   connectWallet: 'Connect wallet to access the exchange.',
@@ -19,29 +19,31 @@ export const exchange: Catalog['exchange'] = {
   tx: {
     enterValidAmount: 'Enter a valid amount',
     enterValidMargin: 'Enter a valid margin',
-    insufficientMargin: '保證金不足，請先在 Margin Account 區塊 Approve & Deposit',
+    insufficientMargin:
+      'Insufficient margin — Approve & Deposit in the Margin Account section first',
 
     /**
      * 兌換池的 oracle 過期。這句話在按下去之前就要說——合約會 revert
      * StaleOraclePrice，等使用者付完 gas 才知道是最糟的順序。
      */
     ammStale:
-      '兌換池的參考預言機報價已過期，合約會拒絕兌換（StaleOraclePrice）。請等 keeper 更新價格後再試。',
+      "The swap pool's reference oracle price is stale — the contract will reject the swap (StaleOraclePrice). Wait for the keeper to update the price and try again.",
 
     approving: 'Approving {token}…',
     swappedEthForToken: 'Swapped {amount} ETH for ~{received} {token} ✓',
     swappedTokenForEth: 'Swapped {amount} {token} for ~{received} ETH ✓',
 
-    faucetStable: '已領取測試 {token} ✓ — 可在右側 Margin Account「Approve & Deposit」作為保證金',
-    faucetAltStable: '已領取測試 {alt} ✓ — 可持有與兌換；保證金請用 {token}',
-    faucetPepe: '已領取測試 PEPE ✓',
+    faucetStable:
+      'Claimed test {token} ✓ — deposit it as margin using Approve & Deposit in the Margin Account panel on the right',
+    faucetAltStable: 'Claimed test {alt} ✓ — hold or swap it; use {token} for margin',
+    faucetPepe: 'Claimed test PEPE ✓',
 
     deposited: 'Deposited {amount} {token} ✓',
     withdrew: 'Withdrew {amount} {token} ✓',
 
     positionOpened: '{side} {asset} opened ✓',
     positionClosed: 'Position closed ✓',
-    esgClaimed: '🌱 ESG 獎勵領取成功！',
+    esgClaimed: '🌱 ESG reward claimed!',
   },
 
   /** 全域交易覆蓋層上的字，依當下進行中的動作切換。 */
@@ -69,30 +71,30 @@ export const exchange: Catalog['exchange'] = {
   faucet: {
     title: '🚰 Get Test Tokens',
     intro:
-      'PEPE 是平台幣（測試網模擬），用水龍頭免費領取；{stable} 為模擬保證金穩定幣；x402 付費用 {x402Stable}。',
+      'PEPE is the platform token (testnet mock) — claim it free from the faucet. {stable} is the mock margin stablecoin. x402 payments settle in {x402Stable}.',
 
-    stableNote: '· 模擬保證金',
-    altStableNote: '· 模擬穩定幣（持有／兌換）',
-    pepeNote: '· 平台幣',
+    stableNote: '· Mock margin',
+    altStableNote: '· Mock stablecoin (hold / swap)',
+    pepeNote: '· Platform token',
 
     balance: 'Balance: {amount}',
-    notDeployed: '尚未在本網路部署',
-    notDeployedChip: '尚未部署',
+    notDeployed: 'Not deployed on this network',
+    notDeployedChip: 'Not deployed',
 
-    claiming: '領取中…',
-    claimToken: '領取 {token}',
+    claiming: 'Claiming…',
+    claimToken: 'Claim {token}',
 
     pepeUndeployed:
-      'PEPE 尚未在本網路（Base Sepolia）部署。部署 PepeToken 後把位址填入 addresses.ts 即可開放領取。',
+      "PEPE isn't deployed on this network (Base Sepolia) yet. Once PepeToken is deployed, add its address to addresses.ts to enable claiming.",
 
-    addToWallet: '把 {token} 加入 MetaMask',
+    addToWallet: 'Add {token} to MetaMask',
   },
 
   /** ETH ↔ USDC 兌換區塊（PepeAMM）。 */
   swap: {
     title: 'Swap',
-    poolBadge: '● 恆定乘積池 · 有滑點',
-    notDeployed: '本網路未部署兌換池（PepeAMM）。請切換到 Base Sepolia。',
+    poolBadge: '● Constant-product pool · Slippage applies',
+    notDeployed: "The swap pool (PepeAMM) isn't deployed on this network. Switch to Base Sepolia.",
 
     youPay: 'You pay',
     youReceive: 'You receive (est.)',
@@ -102,17 +104,17 @@ export const exchange: Catalog['exchange'] = {
      * 池內現價和 oracle 參考價是兩個不同的數字，所以是兩條 label 而不是一條——
      * 它們分岔超過 maxOracleDeviationBps 時合約就會擋下兌換。
      */
-    poolPrice: 'Pool price（池內現價）',
-    oracleRef: 'Oracle ref.（參考價）',
+    poolPrice: 'Pool price',
+    oracleRef: 'Oracle ref.',
     poolReserves: 'Pool reserves',
-    priceImpact: 'Price impact（含手續費）',
-    minimumReceived: 'Minimum received（{tolerance}% 容忍）',
+    priceImpact: 'Price impact (includes fee)',
+    minimumReceived: 'Minimum received ({tolerance}% tolerance)',
 
     constantProductNote:
-      '恆定乘積 (x·y=k) 池：金額越大滑點越高。報價已含 0.3% 手續費，minOut 以即時 quote 為基準。',
+      'Constant-product (x·y=k) pool — the bigger the amount, the higher the slippage. The quote already includes a 0.3% fee; minOut is based on the live quote.',
 
     swapping: 'Swapping…',
-    oracleStale: '⛔ 預言機報價過期，暫停兌換',
+    oracleStale: '⛔ Oracle price is stale — swaps paused',
     enterAmount: 'Enter an amount',
     ethToToken: 'Swap ETH → {token}',
     tokenToEth: 'Swap {token} → ETH',
@@ -123,10 +125,10 @@ export const exchange: Catalog['exchange'] = {
     accountEquity: 'Account Equity',
     equityUnit: '{token} (Testnet)',
     freeMargin: 'Free Margin',
-    unrealizedPnl: 'Unrealized PnL',
+    unrealizedPnl: 'Unrealised PnL',
 
-    stablecoin: '穩定幣',
-    balance: '餘額 {token}',
+    stablecoin: 'Stablecoin',
+    balance: 'Balance {token}',
 
     depositPlaceholder: 'Amount to deposit',
     approveDeposit: 'Approve & Deposit',
@@ -139,36 +141,36 @@ export const exchange: Catalog['exchange'] = {
     title: 'Open Position',
 
     riskNotice:
-      '⚠️ 測試網：本平台為 oracle 計價永續，損益以 mark 價（含 OI 失衡）結算；極端單邊行情下帳面利潤可能因 ADL 自動減倉而調整；保證金為測試代幣。',
-    showRiskNotice: '⚠️ 顯示風險提示',
+      '⚠️ Testnet: this platform is an oracle-priced perpetual — PnL settles at mark price (including OI imbalance); in extreme one-sided markets, paper profit may be adjusted by ADL auto-deleveraging; margin is a test token.',
+    showRiskNotice: '⚠️ Show risk notice',
 
-    staleTitle: '價格過期 — 暫停下單',
+    staleTitle: 'Price stale — orders paused',
     staleIndexAge:
-      '指數價年齡：{age} · 上方「Live market」是 CoinGecko 顯示價， 不是結算價，兩者不一致時以鏈上 oracle 為準。',
-    ageUnknown: '未知',
+      'Index price age: {age} · The "Live market" price above comes from CoinGecko — it\'s not the settlement price. When they disagree, the on-chain oracle wins.',
+    ageUnknown: 'unknown',
 
     kycUnknown:
-      '⚠ 無法確認您的 KYC 狀態（鏈上讀取失敗），不是「未驗證」。合規閘門採 fail-closed， 在確認之前暫停受管制資產的交易。請檢查網路或稍後重試。',
-    kycSubmit: '送出 KYC 申請',
+      '⚠ Can\'t confirm your KYC status (on-chain read failed) — this is not the same as "not verified." The compliance gate is fail-closed, so trading in regulated assets is paused until we can confirm. Check your network or try again shortly.',
+    kycSubmit: 'Submit KYC application',
 
-    esgWarningTitle: '⚠ ESG 警告：此資產評分偏低（{composite}/100 · {rating}）',
+    esgWarningTitle: '⚠ ESG warning: this asset scores low ({composite}/100 · {rating})',
     esgWarningBody:
-      '此資產 ESG 評分偏低，可能涉及較高環境、社會或治理風險，請謹慎評估永續投資風險後再決定是否開倉。',
-    esgConfirm: '我已了解此資產的 ESG 風險，仍要繼續交易',
+      "This asset's ESG score is low, which may carry higher environmental, social, or governance risk. Weigh the sustainability risk carefully, then decide whether to open a position.",
+    esgConfirm: "I understand this asset's ESG risk and want to trade anyway",
 
     asset: 'Asset',
-    esgHighRating: '高永續評級',
-    esgLowRating: '低永續評級',
-    esgUnavailable: '本鏈未提供 ESG 資料（ESGRegistry 未部署）',
-    esgLoading: 'ESG 資料載入中…',
-    esgNone: '此標的無 ESG 評級',
+    esgHighRating: 'High sustainability rating',
+    esgLowRating: 'Low sustainability rating',
+    esgUnavailable: "ESG data isn't available on this chain (ESGRegistry not deployed)",
+    esgLoading: 'Loading ESG data…',
+    esgNone: 'This asset has no ESG rating',
 
     direction: 'Direction',
     long: 'LONG ↑',
     short: 'SHORT ↓',
     orderType: 'Order Type: Market',
     executionFee: 'Execution Fee: {fee} ETH',
-    executionFeeDefault: '（預設值）',
+    executionFeeDefault: '(default)',
 
     leverage: 'Leverage',
     maxLeverage: '⚠ Max {max}× — tighter risk cap for this asset class',
@@ -188,18 +190,18 @@ export const exchange: Catalog['exchange'] = {
 
     estLiquidation: 'Est. Liquidation: {price}',
     liquidationTooltip:
-      '觸及清算價時倉位會被強制平倉。扣除虧損、手續費、清算人獎勵與清算罰金（liquidationPenaltyBps）後的殘餘保證金會退還給你——不是全額沒收。',
+      "When the price hits the liquidation price, the position is force-closed. What's left of your margin after losses, fees, the liquidator's reward, and the liquidation penalty (liquidationPenaltyBps) is refunded to you — it's not a full forfeiture.",
 
-    freeMargin: 'Free margin',
+    freeMargin: 'Free Margin',
     insufficient: '⚠ Insufficient — deposit at least {amount} more {token} first',
 
     /** 下單鈕的每一種狀態都是完整的一句話，不是拼接出來的。 */
     submitting: 'Opening…',
-    ctaStale: '⛔ 價格過期，無法下單',
-    ctaKycUnknown: '⚠ 無法確認 KYC 狀態',
-    ctaKycPending: '⏳ KYC 審核中，尚未核准',
-    ctaKycRequired: '🔒 送出 KYC 申請才能交易 {asset}',
-    ctaEsgUnconfirmed: '請先確認 ESG 風險',
+    ctaStale: "⛔ Price stale — can't submit order",
+    ctaKycUnknown: "⚠ Can't confirm KYC status",
+    ctaKycPending: '⏳ KYC under review — not yet approved',
+    ctaKycRequired: '🔒 Submit a KYC application to trade {asset}',
+    ctaEsgUnconfirmed: 'Confirm the ESG risk first',
     ctaOpen: 'Open {side} {asset}',
   },
 
@@ -228,15 +230,18 @@ export const exchange: Catalog['exchange'] = {
     short: 'SHORT',
 
     close: 'Close',
-    stale: '價格過期',
-    staleNote: '指數價 {age} — 平倉會被 StalePrice 拒絕，等 keeper 更新後再試。',
-    staleAgeUnknown: '年齡未知',
+    stale: 'Price stale',
+    staleNote:
+      'Index price {age} — closing will be rejected with StalePrice. Wait for the keeper to update and try again.',
+    staleAgeUnknown: 'Age unknown',
 
-    esgRewarded: '✓ 已領 ESG 獎勵',
-    esgHoldLonger: '🌱 ESG 獎勵：再抱 {days} 天',
-    esgIneligible: '🌱 ESG 獎勵：尚不符資格',
-    esgHoldLongerTooltip: 'ESG 獎勵需持倉滿 {days} 天且倉位仍未平倉',
-    esgIneligibleTooltip: 'previewReward 回 0：倉位需仍持有中，且已滿最短持有期',
+    esgRewarded: '✓ ESG reward claimed',
+    esgHoldLonger: '🌱 ESG reward: hold {days} more days',
+    esgIneligible: '🌱 ESG reward: not yet eligible',
+    esgHoldLongerTooltip:
+      'ESG rewards require holding the position for {days} days and it must still be open',
+    esgIneligibleTooltip:
+      'previewReward returned 0 — the position must still be open and must have met the minimum holding period',
   },
 
   /** 按鈕正在跑交易的時候，格子裡顯示的字。 */
@@ -252,13 +257,17 @@ export const exchange: Catalog['exchange'] = {
    * JSX 只會把「同一個文字節點裡」跨行的空白折成一個空格；兩個 `{expr}` 之間
    * 單純換行、中間沒有別的字元，那段空白會被直接砍掉，不會變成空格。第一版曾經
    * 這樣拆過幾句，實測畫面上少了空格，才改成現在這個規則。
+   *
+   * 英文和中文的斷詞方式不一樣：中文詞與詞之間不需要空格，英文需要。所以這裡的
+   * 英文譯文在標記前後手動加了空格（中文原文沒有），不是筆誤——沒有那個空格，
+   * 組出來的句子會黏成一個字。
    */
   markup: {
-    syntheticPositionBefore: '本頁開倉為',
-    syntheticPositionBold: '合成持倉',
+    syntheticPositionBefore: 'Positions opened on this page are ',
+    syntheticPositionBold: 'synthetic positions',
     syntheticPositionAfter:
-      '（記錄在 PerpetualExchange，錢包內不會出現代幣）。 想要真正持有 ERC-20 代幣？',
-    tokenizedAssetsLink: '前往代幣化資產頁 →',
+      ' (recorded in PerpetualExchange — no token ever appears in your wallet). Want to actually hold ERC-20 tokens? ',
+    tokenizedAssetsLink: 'Go to the Tokenized Assets page →',
 
     stepGetTokensLabel: 'Get tokens:',
     stepGetTokensBody: 'Claim test {token} (and PEPE) from the faucet — no swap needed.',
@@ -269,46 +278,52 @@ export const exchange: Catalog['exchange'] = {
     stepOpenBody:
       'Use free margin to open long/short on 11 synthetic assets — crypto (sBTC, sETH), equity (sAAPL, sTSLA, sNVDA, sMSFT, sGOOGL), commodity (sGOLD), bond (sBOND), and ESG ETFs (sICLN, sESGU). 🔒 = KYC required.',
     stepPnlLabel: 'PnL:',
-    stepPnlBody: 'Price moves → position value changes → close to realize PnL.',
+    stepPnlBody: 'Price moves → position value changes → close to realise PnL.',
 
-    currencyNoteLine1Before: '💱 幣別：平台保證金與兌換用 ',
-    currencyNoteLine1After: '（測試網模擬幣，可用 Faucet 免費領）；',
-    currencyNoteLine2After: ' 付費 API 結算用 ',
-    currencyNoteLine2End: '（EIP-3009，真實資產）。兩者用途不同、勿混用。',
+    currencyNoteLine1Before: '💱 Currency: platform margin and swaps use ',
+    currencyNoteLine1After: ' (testnet mock — free from the Faucet); ',
+    currencyNoteLine2After: ' payments settle in ',
+    currencyNoteLine2End:
+      " (EIP-3009, real asset). The two serve different purposes — don't mix them up.",
 
-    ethBalanceBefore: 'ETH 餘額：',
-    ethBalanceAfter: '（開倉需少量 ETH 付執行費）',
+    ethBalanceBefore: 'ETH balance: ',
+    ethBalanceAfter: ' (opening a position needs a small amount of ETH for the execution fee)',
 
-    faucetEoaLine1: '🔑 水龍頭只開放',
-    faucetEoaBold1: '一般錢包（EOA）',
-    faucetEoaLine1After: '領取：合約防機器人濫領的條件是',
+    faucetEoaLine1: '🔑 The faucet only pays out to ',
+    faucetEoaBold1: 'regular wallets (EOAs)',
+    faucetEoaLine1After: " — the contract's anti-bot condition is",
     faucetEoaCode1: ' msg.sender == tx.origin',
-    faucetEoaLine2Mid: '，所以用 ',
-    faucetEoaBold2: 'Safe / ERC-4337 智能合約錢包',
-    faucetEoaLine3: '（或任何 batch / multicall 代呼叫）點下去會被合約以 ',
+    faucetEoaLine2Mid: ', so a ',
+    faucetEoaBold2: 'Safe / ERC-4337 smart contract wallet',
+    faucetEoaLine3: ' (or any batch / multicall proxy call) gets rejected by the contract with ',
     faucetEoaCode2: 'FaucetCallerMustBeEOA',
-    faucetEoaLine3After: ' 拒絕。 請改用一般 EOA 錢包領取後再轉過去。每個地址 24 小時可領一次。',
+    faucetEoaLine3After:
+      '. Use a regular EOA wallet to claim instead, then transfer the tokens over. Each address can claim once every 24 hours.',
 
-    priceImpactBefore: '⚠ 這筆兌換的價格衝擊高達 ',
-    priceImpactAfter: '，等於用遠差於市價的價格成交。 建議分批換小額；金額太大時合約還會以 ',
+    priceImpactBefore: '⚠ This swap has a price impact as high as ',
+    priceImpactAfter:
+      " — that's filling far off the market price. Consider splitting into smaller swaps; too large an amount and the contract will reject it outright with ",
     priceImpactCode: 'PriceOutOfBand',
-    priceImpactLine2After: ' 直接拒絕（池價被推離 oracle 太遠）。',
+    priceImpactLine2After: ' (the pool price would be pushed too far from the oracle).',
 
-    marginNoteBefore: '⚠ 目前交易保證金使用 ',
-    marginNoteAfter: '；{altToken} 支援持有與兌換，保證金支援列為下一階段。',
+    marginNoteBefore: '⚠ Trading margin currently uses ',
+    marginNoteAfter:
+      '; {altToken} supports holding and swapping — margin support is planned for a later phase.',
 
     noFreeMarginBefore: 'You have no free margin. Deposit {token} in the ',
     noFreeMarginBold: 'Margin Account',
     noFreeMarginAfter: ' section above first.',
 
-    kycPendingBefore: '⏳ 你的 KYC 申請',
-    kycPendingBold: '已送出，正在等待審核',
-    kycPendingMid: '（鏈上已記錄 KYCSubmitted）。 審核人員核准（approveKYC）後，',
-    kycPendingLine2After: ' 就會解鎖； 在那之前下單仍會被合約擋下。不需要重複送出申請。',
+    kycPendingBefore: '⏳ Your KYC application ',
+    kycPendingBold: 'has been submitted and is under review',
+    kycPendingMid:
+      ' (KYCSubmitted is recorded on-chain). Once a reviewer approves it (approveKYC), ',
+    kycPendingLine2After:
+      ' will unlock; until then, orders are still blocked by the contract. No need to resubmit.',
 
     kycRequiredBefore: '🔒 ',
     kycRequiredAfter:
-      ' 是股票 / 債券 / ETF 類資產，需通過 KYC 審核才能交易。 送出申請後需等審核人員核准，不是立即通過。',
+      " is a stock / bond / ETF asset — it requires KYC review before you can trade it. After you submit, you'll need reviewer approval; it's not instant.",
 
     oracleAdminBefore:
       'PnL is calculated using on-chain oracle price. Live market shown for reference. Admin can sync oracle to live market on the',
