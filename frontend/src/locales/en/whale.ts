@@ -1,7 +1,7 @@
 import type { Catalog } from '../zh-TW';
 
 /**
- * 見 `../zh-TW/whale.ts`。搬移階段逐字複製原文。
+ * 見 `../zh-TW/whale.ts`。
  */
 export const whale: Catalog['whale'] = {
   /** 相對時間。四個區間各自是完整的一句話，不是「數字 + 單位」。 */

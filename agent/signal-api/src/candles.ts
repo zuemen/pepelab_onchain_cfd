@@ -147,7 +147,7 @@ async function getJson(url: string, timeoutMs = 8000): Promise<unknown> {
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) {
-    throw new Error(`${new URL(url).host} 回 ${res.status}`);
+    throw new Error(`${new URL(url).host} returned ${res.status}`);
   }
   return res.json();
 }
@@ -156,7 +156,7 @@ async function getJson(url: string, timeoutMs = 8000): Promise<unknown> {
 
 // Bybit 會用 HTTP 403 擋掉美國 IP，而 Vercel 的 function 預設跑在美東（iad1）——
 // 部署上去之後這一級會直接失敗、每次都退到 Coinbase 現貨（回應裡看得到
-// sourceError: "Bybit: api.bybit.com 回 403"）。vercel.json 因此把 regions 釘在
+// sourceError: "Bybit: api.bybit.com returned 403"）。vercel.json 因此把 regions 釘在
 // sin1（新加坡）。那個設定看起來與行情無關，很容易在日後被當成多餘的東西刪掉，
 // 所以把理由寫在這裡——真正依賴它的是這一行 host。
 //
@@ -207,14 +207,14 @@ async function fetchBybit(
 
   // retCode 0 才是成功；其餘情況 result.list 根本不存在。
   if (json.retCode !== 0) {
-    throw new Error(`retCode ${json.retCode}: ${json.retMsg ?? "未知錯誤"}`);
+    throw new Error(`retCode ${json.retCode}: ${json.retMsg ?? "unknown error"}`);
   }
   const list = json.result?.list;
   // 往回翻頁時，空陣列代表「沒有更早的了」，是正常結果；只有查最新時空陣列才
   // 算異常（那代表這個交易對有問題）。丟錯會讓退場機制誤以為 Bybit 掛了。
   if (!list?.length) {
     if (end) return [];
-    throw new Error("回應沒有 K 線資料");
+    throw new Error("Response has no candle data");
   }
 
   const out: Candle[] = [];
@@ -407,7 +407,7 @@ async function fetchYahoo(
   }
 
   if (json.chart?.error) {
-    throw new Error(json.chart.error.description ?? "Yahoo 回報錯誤");
+    throw new Error(json.chart.error.description ?? "Yahoo reported an error");
   }
   const result = json.chart?.result?.[0];
   const ts = result?.timestamp;
@@ -415,7 +415,7 @@ async function fetchYahoo(
   // 休市時段的區間會回 200 但沒有 timestamp——同樣是「這段沒有資料」而非失敗。
   if (!ts?.length || !q) {
     if (end) return [];
-    throw new Error("Yahoo 回應沒有 K 線資料");
+    throw new Error("Yahoo response has no candle data");
   }
 
   const out: Candle[] = [];
@@ -553,8 +553,8 @@ const HISTORY_TTL_MS = 10 * 60_000;
 // ── 對外 ─────────────────────────────────────────────────────────────────────
 
 const DISCLAIMER =
-  "示範資料。圖表為外部公開來源的參考行情，非本平台成交紀錄；" +
-  "開倉 / 平倉 / 清算一律以鏈上 oracle index 價結算。";
+  "Demo data. The chart shows reference pricing from external public sources, not this platform's own trade records; " +
+  "opening, closing, and liquidation always settle at the on-chain oracle index price.";
 
 export class UnknownMarketError extends Error {}
 export class BadIntervalError extends Error {}
@@ -626,12 +626,12 @@ export async function getCandles(
           kind: "exchange",
           name: "Bybit",
           url: `https://www.bybit.com/trade/usdt/${meta.bybit}`,
-          attribution: `Bybit · ${meta.bybit} 永續合約`,
+          attribution: `Bybit · ${meta.bybit} perpetual contract`,
           reference: "perpetual",
           fetchedAt: now,
         };
       } else {
-        sourceError = "Bybit 回應沒有可用蠟燭";
+        sourceError = "Bybit returned no usable candles";
       }
     } catch (err) {
       sourceError = `Bybit: ${(err as Error).message}`;
@@ -653,12 +653,12 @@ export async function getCandles(
           kind: "exchange",
           name: "Coinbase Exchange",
           url: `https://exchange.coinbase.com/trade/${meta.coinbase}`,
-          attribution: `Coinbase Exchange · ${meta.coinbase} 現貨`,
+          attribution: `Coinbase Exchange · ${meta.coinbase} spot`,
           reference: "spot",
           fetchedAt: now,
         };
       } else {
-        sourceError = "Coinbase 回應沒有可用蠟燭";
+        sourceError = "Coinbase returned no usable candles";
       }
     } catch (err) {
       sourceError = `Coinbase: ${(err as Error).message}`;
@@ -678,12 +678,12 @@ export async function getCandles(
           kind: "delayed",
           name: "Yahoo Finance",
           url: `https://finance.yahoo.com/quote/${encodeURIComponent(meta.yahoo)}`,
-          attribution: `Yahoo Finance · ${meta.underlying}（非官方端點，報價可能延遲）`,
+          attribution: `Yahoo Finance · ${meta.underlying} (unofficial endpoint, quotes may be delayed)`,
           reference: "delayed quote",
           fetchedAt: now,
         };
       } else {
-        sourceError = "Yahoo 回應沒有可用蠟燭";
+        sourceError = "Yahoo returned no usable candles";
       }
     } catch (err) {
       sourceError = `Yahoo: ${(err as Error).message}`;
@@ -707,9 +707,9 @@ export async function getCandles(
       candles = [];
       source = {
         kind: "none",
-        name: "無更早資料",
+        name: "No earlier data",
         url: "",
-        attribution: "已到達此來源的歷史保留上限",
+        attribution: "Reached this source's historical retention limit",
         reference: "none",
         fetchedAt: now,
       };
@@ -718,9 +718,9 @@ export async function getCandles(
       candles = simulate(meta, interval, limit, end);
       source = {
         kind: "simulated",
-        name: "模擬資料",
+        name: "Simulated data",
         url: "",
-        attribution: "SIMULATED — 外部行情來源無法取得，此圖為程式生成，非真實市場價格",
+        attribution: "SIMULATED — external market data unavailable; this chart is programmatically generated, not a real market price",
         reference: "simulated",
         fetchedAt: now,
       };

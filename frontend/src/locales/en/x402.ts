@@ -1,7 +1,7 @@
 import type { Catalog } from '../zh-TW';
 
 /**
- * 見 `../zh-TW/x402.ts`。搬移階段逐字複製原文。
+ * 見 `../zh-TW/x402.ts`。
  */
 export const x402: Catalog['x402'] = {
   docs: {
@@ -10,32 +10,33 @@ export const x402: Catalog['x402'] = {
     commerceChip: 'agent-native commerce',
 
     /** #36：開頭這句夾了兩段 `<b>`，拆成 bold 前後的三個片段。 */
-    introBold1: '開發者 / AI agent 專用',
-    introMid: '的按次付費交易訊號 API。',
-    introBold2: '端點本身就是商品',
-    introAfter: '——任何在 Base Sepolia 上持有 Circle USDC 的 agent / CLI 都能直接付費購買，收入經 FeeRouter 70/20/10 上鏈分潤。',
+    introBold1: 'Built for developers / AI agents',
+    introMid: ', this is a pay-per-call trading signal API. ',
+    introBold2: 'The endpoint itself is the product',
+    introAfter:
+      ' — any agent / CLI holding Circle USDC on Base Sepolia can pay to buy directly, with revenue split 70/20/10 on-chain via FeeRouter.',
 
     fact: {
       baseUrl: 'Base URL',
       network: 'Network',
       asset: 'Asset',
       assetValue: 'Circle USDC {address} (6-dec, EIP-3009)',
-      router: 'x402 分潤 router',
-      pricing: '定價',
+      router: 'x402 router',
+      pricing: 'Pricing',
       pricingValue: 'GET /signals/:trader → $0.01 · GET /oracle/:asset → $0.005',
     },
 
     product: {
       heading: 'Endpoints = Products',
       perCall: '/ call',
-      signals: '指定交易者的下一步訊號（方向 / 標的 / 信心度）。',
-      oracle: '單一標的的即時預言機快照（index / mark / funding）。',
+      signals: "A specified trader's next move (direction / asset / confidence).",
+      oracle: 'A live oracle snapshot for a single asset (index / mark / funding).',
     },
 
     split: {
-      title: '即時 70/20/10 分潤',
-      accrued: '鏈上累計收入',
-      calls: '{count} calls',
+      title: 'Live 70/20/10 Revenue Split',
+      accrued: 'On-chain accrued revenue',
+      calls: 'Calls: {count}',
       traders: 'Traders',
       platform: 'Platform',
       vault: 'Vault',
@@ -44,26 +45,27 @@ export const x402: Catalog['x402'] = {
     },
 
     tryBuy: {
-      title: '互動試買（訪客免錢包）',
+      title: 'Try It Live (no wallet needed)',
       description:
-        '按下後由伺服器 demo 錢包代付一筆 $0.01 並在鏈上跑 70/20/10，回傳真實 settlement tx。 （真實外部 agent 則自帶錢包，見下方範例。）',
-      busy: '購買中…（送鏈，約數秒）',
-      cta: '試買一筆訊號 ($0.01)',
+        "Click to have the server's demo wallet cover a $0.01 payment and run the 70/20/10 split on-chain, returning a real settlement tx. (A real external agent brings its own wallet instead — see the example below.)",
+      busy: 'Buying… (broadcasting, a few seconds)',
+      cta: 'Try buying a signal ($0.01)',
       failed: 'demo buy failed',
       networkError: 'network error — is the API deployed / VITE_SIGNAL_API_URL set?',
-      settled: '70/20/10 已上鏈 · ',
-      viewSettlement: '在 BaseScan 看 settlement tx ↗',
+      settled: '70/20/10 settled on-chain · ',
+      viewSettlement: 'View settlement tx on BaseScan ↗',
     },
 
     external: {
-      divider: '外部 agent 自帶錢包付費',
-      step1: '1) 探索（免費）',
-      step2: '2) 付費購買（x402-fetch + viem）',
-      flow: '流程：GET → 收 402（含 accepts: network/asset/payTo/price）→ 用 Circle USDC 簽 EIP-3009 transferWithAuthorization → 重送帶 X-PAYMENT → 200 + 訊號 + settlement tx。',
+      divider: 'External agents bring their own wallet',
+      step1: '1) Explore (free)',
+      step2: '2) Pay to buy (x402-fetch + viem)',
+      flow:
+        'Flow: GET → receive a 402 (with accepts: network/asset/payTo/price) → sign an EIP-3009 transferWithAuthorization with Circle USDC → resend with X-PAYMENT → 200 + signal + settlement tx.',
     },
 
     footer:
-      '測試網展示環境（Base Sepolia）；結算金鑰僅供 demo，不涉及真實資產。鏈上分潤數字為即時讀取。',
+      'Testnet demo environment (Base Sepolia); the settlement key is for demo purposes only and holds no real assets. The on-chain revenue-split figures are read live.',
   },
 
   /** 首頁那張把人帶到文件頁的卡片。 */
@@ -71,13 +73,13 @@ export const x402: Catalog['x402'] = {
     title: '⚡ x402 Signal Marketplace',
     chip: 'pay-per-call',
     description:
-      '任何 agent 只要在 Base Sepolia 持有 Circle USDC 即可付費購買訊號（$0.01/$0.005），收入 70/20/10 上鏈分潤。',
-    accrued: '鏈上累計：${feeUsd} 收入 · ${traderShare} 歸 traders (70%)',
-    busy: '購買中…',
-    tryBuy: '試買 ($0.01)',
-    docs: 'API 文件',
-    settled: '✓ 已上鏈：',
+      'Any agent holding Circle USDC on Base Sepolia can pay to buy signals ($0.01/$0.005), with revenue split 70/20/10 on-chain.',
+    accrued: 'On-chain accrued: ${feeUsd} in revenue · ${traderShare} to traders (70%)',
+    busy: 'Buying…',
+    tryBuy: 'Try buying ($0.01)',
+    docs: 'API Docs',
+    settled: '✓ Settled on-chain:',
     viewSettlement: 'BaseScan settlement tx ↗',
-    apiUnreachable: 'API 未連上（VITE_SIGNAL_API_URL?）',
+    apiUnreachable: 'API not reachable (VITE_SIGNAL_API_URL?)',
   },
 };

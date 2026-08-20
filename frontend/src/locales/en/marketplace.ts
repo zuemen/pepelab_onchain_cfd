@@ -1,14 +1,14 @@
 import type { Catalog } from '../zh-TW';
 
 /**
- * 見 `../zh-TW/marketplace.ts`。搬移階段逐字複製原文。
+ * 見 `../zh-TW/marketplace.ts`。
  */
 export const marketplace: Catalog['marketplace'] = {
   title: '⭐ Star Trader Leaderboard',
   subtitle: 'Browse and copy on-chain verified strategies',
 
-  esgFiltered: '已篩選',
-  esgAll: '全部',
+  esgFiltered: 'Filtered',
+  esgAll: 'All',
   esgButton: 'ESG {state}',
 
   sort: {
@@ -19,7 +19,7 @@ export const marketplace: Catalog['marketplace'] = {
     esg: 'Sort: ESG Score',
   },
 
-  refreshAria: '重新整理市集資料',
+  refreshAria: 'Refresh marketplace data',
 
   livePrices: 'Live Prices',
   loadFailed: 'Failed to load:',

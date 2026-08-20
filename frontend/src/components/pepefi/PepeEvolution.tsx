@@ -17,7 +17,7 @@ export interface PepeEvolutionStage {
   minLevel: number;
   /** Title shown in the stats bar. */
   title: string;
-  /** Short Chinese label used on the roadmap strip. */
+  /** Short label used on the roadmap strip. */
   label: string;
   desc: string;
   /** Accent colour used for glow / borders at this stage. */

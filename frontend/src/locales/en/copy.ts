@@ -1,7 +1,7 @@
 import type { Catalog } from '../zh-TW';
 
 /**
- * 見 `../zh-TW/copy.ts`。搬移階段逐字複製原文。
+ * 見 `../zh-TW/copy.ts`。
  */
 export const copy: Catalog['copy'] = {
   invalidAddress: 'Invalid trader address.',
@@ -86,20 +86,20 @@ export const copy: Catalog['copy'] = {
     approveStep: 'Approve {token} to CopyTracker',
     followStep: 'Follow Trader',
 
-    staleTitle: '價格過期 — 暫停跟單',
+    staleTitle: 'Price stale — copying paused',
     staleExplain:
-      '跟單是一筆交易開 {count} 個倉位，只要有一檔過期整筆都會被拒絕，而 {count} 份 execution fee 的 gas 已經付出去了。',
+      "Copying opens {count} positions in one transaction — if even one asset's price is stale, the whole thing gets rejected, and the gas for {count} execution fees is already spent.",
 
     kycRequired:
-      '🔒 此策略包含股票 / 債券資產，需通過 KYC 審核才能跟單（送出申請後需等審核人員核准）。',
-    kycSubmit: '送出 KYC 申請',
+      '🔒 This strategy includes stock / bond assets and requires KYC review before you can copy it (approval is required after submitting).',
+    kycSubmit: 'Submit KYC Application',
 
     approving: 'Approving…',
     approved: 'Approved',
     approveCta: 'Step 1 · Approve',
 
     following: 'Following…',
-    stalePrice: '⛔ {asset} 價格過期',
+    stalePrice: '⛔ {asset} price is stale',
     followCta: 'Step 2 · Follow Trader',
 
     noStrategy: '⚠ Trader has no published strategy. Copy is disabled.',
@@ -115,8 +115,9 @@ export const copy: Catalog['copy'] = {
 
   /** #36：KYC 待審核那句夾了 `<b>`，拆成前後片段。 */
   markup: {
-    kycPendingBefore: '⏳ 你的 KYC 申請',
-    kycPendingBold: '已送出，正在等待審核',
-    kycPendingAfter: '。審核人員核准後才能跟單含股票 / 債券的策略，不需要重複送出。',
+    kycPendingBefore: '⏳ Your KYC application ',
+    kycPendingBold: 'has been submitted and is under review',
+    kycPendingAfter:
+      ' — copying strategies with stocks / bonds unlocks once a reviewer approves it; no need to resubmit.',
   },
 };

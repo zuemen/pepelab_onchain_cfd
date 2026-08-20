@@ -1,56 +1,56 @@
 import type { Catalog } from '../zh-TW';
 
 /**
- * 見 `../zh-TW/common.ts`。搬移階段逐字複製原文。
+ * 見 `../zh-TW/common.ts`。
  */
 export const common: Catalog['common'] = {
   /** 錢包連線視窗。 */
   wallet: {
-    dialogTitle: '連接帳號 / Connect Wallet',
-    closeAria: '關閉錢包連線視窗',
-    intro: '選擇您的登入通道以進入 PepeLab 鏈上衍生品系統。',
+    dialogTitle: 'Connect Wallet',
+    closeAria: 'Close wallet connection dialog',
+    intro: 'Choose your sign-in channel to enter the PepeLab on-chain derivatives platform.',
 
-    metamaskTitle: 'MetaMask 錢包連線',
-    metamaskDesc: '透過 MetaMask 瀏覽器擴充功能連線 (Base Sepolia)',
-    installMetamask: '前往安裝 MetaMask 擴充功能 ↗',
+    metamaskTitle: 'Connect with MetaMask',
+    metamaskDesc: 'Connect via the MetaMask browser extension (Base Sepolia)',
+    installMetamask: 'Install the MetaMask extension ↗',
 
-    mockTitle: 'Pepe 簡報測試通道 (模擬 Web3)',
-    mockDesc: '無須錢包即可一鍵進入系統、切換 Pepe 蛙頭像與測試跟單',
+    mockTitle: 'Pepe Demo Channel (Mock Web3)',
+    mockDesc: 'No wallet needed — jump straight in, switch Pepe avatars, and try copy trading',
   },
 
   /** 確認對話框的預設按鈕文字，呼叫端可以各自覆寫。 */
   dialog: {
-    cancel: '取消',
-    confirm: '確認',
+    cancel: 'Cancel',
+    confirm: 'Confirm',
   },
 
   paperTrading: {
     tooltip:
-      '本平台運行於測試網，所有資產與資金皆為模擬，不涉及真實金錢。等同 TradingView 的 Paper Trading 模式。',
+      "This platform runs on a testnet — every asset and balance is simulated, no real money involved. Equivalent to TradingView's Paper Trading mode.",
     compactLabel: 'PAPER TRADING',
-    label: 'PAPER TRADING · 測試網模擬交易',
+    label: 'PAPER TRADING · Simulated testnet trading',
   },
 
   avatarPicker: {
-    title: '選擇頭像',
+    title: 'Choose an avatar',
   },
 
   layout: {
-    skipToContent: '跳到主要內容',
-    expertHint: '切換到專家模式看全部 {count} 個功能 →',
-    simple: '簡單',
-    expert: '專家',
-    toExpertAria: '切換到專家模式',
-    toSimpleAria: '切換到簡單模式',
+    skipToContent: 'Skip to main content',
+    expertHint: 'Switch to Expert Mode to see all {count} features →',
+    simple: 'Simple',
+    expert: 'Expert',
+    toExpertAria: 'Switch to Expert Mode',
+    toSimpleAria: 'Switch to Simple Mode',
 
     /** #36：網路不符的橫幅，句中夾了兩段 `<b>`。 */
     networkMismatch: {
-      before: '目前連線於 ',
-      mid: '。正式部署鏈是',
-      primaryBefore: 'Base Sepolia（',
-      primaryAfter: '）',
-      after: ' —— 交易、agent session 與 x402 只在那裡。',
-      sepoliaExtra: '　Sepolia 保留的是代幣化資產與 V2 金庫展示。',
+      before: 'Currently connected to ',
+      mid: '. The chain this app is deployed on is ',
+      primaryBefore: 'Base Sepolia (',
+      primaryAfter: ')',
+      after: ' — trading, agent sessions, and x402 only work there.',
+      sepoliaExtra: ' Sepolia is kept around for the tokenized-assets and V2 vault demos.',
     },
   },
 
@@ -60,14 +60,15 @@ export const common: Catalog['common'] = {
   },
 
   /**
-   * 交易者等級。名稱刻意是「英文 中文」的雙語形式，逐字保留——英文那一半是
-   * 排行榜與合約事件裡用的名字，中文那一半是給讀者的。
+   * 交易者等級。zh-TW 是「英文 中文」的雙語形式——英文那一半是排行榜與合約事件裡用
+   * 的名字，中文那一半是給讀者的說明。en 版讀者已經看得懂那個英文名字本身，不需要
+   * 再翻出第二份說明，所以就是單一個字。
    */
   tier: {
-    diamond: 'Diamond 鑽石',
-    gold: 'Gold 黃金',
-    silver: 'Silver 白銀',
-    bronze: 'Bronze 青銅',
+    diamond: 'Diamond',
+    gold: 'Gold',
+    silver: 'Silver',
+    bronze: 'Bronze',
   },
 
   /** x402 結算用的 Circle 官方 USDC。發行方名字是和平台模擬幣唯一的區別，不可省略。 */
@@ -96,9 +97,9 @@ export const common: Catalog['common'] = {
     potionBold: 'Golden Elixir',
     potionAfter: ' purchase was successful! (-300 PEPE)',
 
-    skinBefore: '👑 穿戴變更成功！您已換上最新的 ',
+    skinBefore: '👑 Outfit changed! You just equipped the latest ',
     skinBold: 'Astronaut Suit',
-    skinAfter: ' 華麗衣裝！',
+    skinAfter: ' look!',
 
     whaleAlertBefore: '💰 ',
     whaleAlertBold1: 'Whale Alert',
@@ -107,18 +108,18 @@ export const common: Catalog['common'] = {
     whaleAlertAfter: ' to follow your strategy!',
 
     checkinBefore: '📅 ',
-    checkinBold1: '每日簽到提醒',
-    checkinMid: '：您今天還沒簽到喔！點擊去領取今日 ',
+    checkinBold1: 'Daily check-in reminder',
+    checkinMid: ": you haven't checked in today! Tap to claim today's ",
     checkinBold2: '+50 PEPE',
-    checkinAfter: ' 激勵！',
+    checkinAfter: ' bonus!',
 
-    tierUpBefore: '📈 您的交易量突破等級閾值，成功解鎖 ',
+    tierUpBefore: '📈 Your trading volume crossed a tier threshold and unlocked ',
     tierUpBold: 'Gold 🥇',
-    tierUpAfter: ' 等級，並獲得一次性獎勵 10,000 PEPE！',
+    tierUpAfter: ' tier, plus a one-time 10,000 PEPE reward!',
 
-    miningBefore: '⛏️ 您開倉的槓桿交易頭寸已累積可申領 ',
+    miningBefore: '⛏️ Your leveraged open positions have accumulated ',
     miningBold: '4,200 PEPE',
-    miningAfter: ' 交易挖礦獎勵！',
+    miningAfter: ' in trade-mining rewards, ready to claim!',
 
     vaultRebalancedBefore: '🛡️ ',
     vaultRebalancedBold: 'Insurance Vault',

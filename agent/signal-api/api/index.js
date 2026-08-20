@@ -58451,7 +58451,7 @@ async function getOnchainRevenue(trader) {
 var MARKETS = {
   sBTC: {
     symbol: "sBTC",
-    underlying: "BTC \u6C38\u7E8C",
+    underlying: "BTC Perpetual",
     category: "crypto",
     bybit: "BTCUSDT",
     coinbase: "BTC-USD",
@@ -58459,7 +58459,7 @@ var MARKETS = {
   },
   sETH: {
     symbol: "sETH",
-    underlying: "ETH \u6C38\u7E8C",
+    underlying: "ETH Perpetual",
     category: "crypto",
     bybit: "ETHUSDT",
     coinbase: "ETH-USD",
@@ -58593,7 +58593,7 @@ async function getJson(url, timeoutMs = 8e3) {
     signal: AbortSignal.timeout(timeoutMs)
   });
   if (!res.ok) {
-    throw new Error(`${new URL(url).host} \u56DE ${res.status}`);
+    throw new Error(`${new URL(url).host} returned ${res.status}`);
   }
   return res.json();
 }
@@ -58613,12 +58613,12 @@ async function fetchBybit(symbol, interval, need, end) {
   (end ? `&end=${end * 1e3}` : "");
   const json = await getJson(url);
   if (json.retCode !== 0) {
-    throw new Error(`retCode ${json.retCode}: ${json.retMsg ?? "\u672A\u77E5\u932F\u8AA4"}`);
+    throw new Error(`retCode ${json.retCode}: ${json.retMsg ?? "unknown error"}`);
   }
   const list2 = json.result?.list;
   if (!list2?.length) {
     if (end) return [];
-    throw new Error("\u56DE\u61C9\u6C92\u6709 K \u7DDA\u8CC7\u6599");
+    throw new Error("Response has no candle data");
   }
   const out = [];
   for (const row of list2) {
@@ -58706,14 +58706,14 @@ async function fetchYahoo(ticker, interval, need, end) {
     throw err;
   }
   if (json.chart?.error) {
-    throw new Error(json.chart.error.description ?? "Yahoo \u56DE\u5831\u932F\u8AA4");
+    throw new Error(json.chart.error.description ?? "Yahoo reported an error");
   }
   const result = json.chart?.result?.[0];
   const ts = result?.timestamp;
   const q = result?.indicators?.quote?.[0];
   if (!ts?.length || !q) {
     if (end) return [];
-    throw new Error("Yahoo \u56DE\u61C9\u6C92\u6709 K \u7DDA\u8CC7\u6599");
+    throw new Error("Yahoo response has no candle data");
   }
   const out = [];
   for (let i = 0; i < ts.length; i += 1) {
@@ -58785,7 +58785,7 @@ var TTL_MS = {
   "1d": 6e4
 };
 var HISTORY_TTL_MS = 10 * 6e4;
-var DISCLAIMER = "\u793A\u7BC4\u8CC7\u6599\u3002\u5716\u8868\u70BA\u5916\u90E8\u516C\u958B\u4F86\u6E90\u7684\u53C3\u8003\u884C\u60C5\uFF0C\u975E\u672C\u5E73\u53F0\u6210\u4EA4\u7D00\u9304\uFF1B\u958B\u5009 / \u5E73\u5009 / \u6E05\u7B97\u4E00\u5F8B\u4EE5\u93C8\u4E0A oracle index \u50F9\u7D50\u7B97\u3002";
+var DISCLAIMER = "Demo data. The chart shows reference pricing from external public sources, not this platform's own trade records; opening, closing, and liquidation always settle at the on-chain oracle index price.";
 var UnknownMarketError = class extends Error {
 };
 var BadIntervalError = class extends Error {
@@ -58827,12 +58827,12 @@ async function getCandles(rawSymbol, rawInterval = "1h", rawLimit, rawEnd) {
           kind: "exchange",
           name: "Bybit",
           url: `https://www.bybit.com/trade/usdt/${meta.bybit}`,
-          attribution: `Bybit \xB7 ${meta.bybit} \u6C38\u7E8C\u5408\u7D04`,
+          attribution: `Bybit \xB7 ${meta.bybit} perpetual contract`,
           reference: "perpetual",
           fetchedAt: now
         };
       } else {
-        sourceError = "Bybit \u56DE\u61C9\u6C92\u6709\u53EF\u7528\u881F\u71ED";
+        sourceError = "Bybit returned no usable candles";
       }
     } catch (err) {
       sourceError = `Bybit: ${err.message}`;
@@ -58851,12 +58851,12 @@ async function getCandles(rawSymbol, rawInterval = "1h", rawLimit, rawEnd) {
           kind: "exchange",
           name: "Coinbase Exchange",
           url: `https://exchange.coinbase.com/trade/${meta.coinbase}`,
-          attribution: `Coinbase Exchange \xB7 ${meta.coinbase} \u73FE\u8CA8`,
+          attribution: `Coinbase Exchange \xB7 ${meta.coinbase} spot`,
           reference: "spot",
           fetchedAt: now
         };
       } else {
-        sourceError = "Coinbase \u56DE\u61C9\u6C92\u6709\u53EF\u7528\u881F\u71ED";
+        sourceError = "Coinbase returned no usable candles";
       }
     } catch (err) {
       sourceError = `Coinbase: ${err.message}`;
@@ -58874,12 +58874,12 @@ async function getCandles(rawSymbol, rawInterval = "1h", rawLimit, rawEnd) {
           kind: "delayed",
           name: "Yahoo Finance",
           url: `https://finance.yahoo.com/quote/${encodeURIComponent(meta.yahoo)}`,
-          attribution: `Yahoo Finance \xB7 ${meta.underlying}\uFF08\u975E\u5B98\u65B9\u7AEF\u9EDE\uFF0C\u5831\u50F9\u53EF\u80FD\u5EF6\u9072\uFF09`,
+          attribution: `Yahoo Finance \xB7 ${meta.underlying} (unofficial endpoint, quotes may be delayed)`,
           reference: "delayed quote",
           fetchedAt: now
         };
       } else {
-        sourceError = "Yahoo \u56DE\u61C9\u6C92\u6709\u53EF\u7528\u881F\u71ED";
+        sourceError = "Yahoo returned no usable candles";
       }
     } catch (err) {
       sourceError = `Yahoo: ${err.message}`;
@@ -58893,9 +58893,9 @@ async function getCandles(rawSymbol, rawInterval = "1h", rawLimit, rawEnd) {
       candles = [];
       source = {
         kind: "none",
-        name: "\u7121\u66F4\u65E9\u8CC7\u6599",
+        name: "No earlier data",
         url: "",
-        attribution: "\u5DF2\u5230\u9054\u6B64\u4F86\u6E90\u7684\u6B77\u53F2\u4FDD\u7559\u4E0A\u9650",
+        attribution: "Reached this source's historical retention limit",
         reference: "none",
         fetchedAt: now
       };
@@ -58904,9 +58904,9 @@ async function getCandles(rawSymbol, rawInterval = "1h", rawLimit, rawEnd) {
       candles = simulate(meta, interval, limit, end);
       source = {
         kind: "simulated",
-        name: "\u6A21\u64EC\u8CC7\u6599",
+        name: "Simulated data",
         url: "",
-        attribution: "SIMULATED \u2014 \u5916\u90E8\u884C\u60C5\u4F86\u6E90\u7121\u6CD5\u53D6\u5F97\uFF0C\u6B64\u5716\u70BA\u7A0B\u5F0F\u751F\u6210\uFF0C\u975E\u771F\u5BE6\u5E02\u5834\u50F9\u683C",
+        attribution: "SIMULATED \u2014 external market data unavailable; this chart is programmatically generated, not a real market price",
         reference: "simulated",
         fetchedAt: now
       };

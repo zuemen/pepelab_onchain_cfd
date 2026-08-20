@@ -1,7 +1,7 @@
 import type { Catalog } from '../zh-TW';
 
 /**
- * 見 `../zh-TW/esg.ts`。搬移階段逐字複製原文。
+ * 見 `../zh-TW/esg.ts`。
  */
 export const esg: Catalog['esg'] = {
   title: '🌱 ESG Asset Explorer',
@@ -10,11 +10,11 @@ export const esg: Catalog['esg'] = {
   connectWallet: 'Connect wallet to load live ESG scores from the on-chain ESGRegistry.',
   wrongNetwork:
     'ESGRegistry is only deployed on Ethereum Sepolia. Connect to Ethereum Sepolia to see live on-chain scores.',
-  loadFailed: 'ESG 資料載入失敗，請重新整理頁面。',
+  loadFailed: 'Failed to load ESG data — refresh the page.',
 
   methodology: {
-    title: 'A · ESG 評分方法論',
-    ratingTable: '七級評級對照表',
+    title: 'A · ESG Scoring Methodology',
+    ratingTable: 'Seven-Tier Rating Table',
   },
 
   /** 三個維度的名稱，以及各自的檢查項目。 */
@@ -67,13 +67,13 @@ export const esg: Catalog['esg'] = {
   },
 
   ranking: {
-    title: 'B · 11 資產 ESG 排行（composite 由高到低）',
+    title: 'B · 11-Asset ESG Ranking (composite, high to low)',
     rank: '#{n}',
     outOf: '/ 100',
   },
 
   radar: {
-    title: 'C · E/S/G 雷達圖',
+    title: 'C · E/S/G Radar Chart',
     noData: 'No data — connect wallet on Ethereum Sepolia',
     composite: 'Composite',
     hint: 'Click any asset card on the left to update the radar',

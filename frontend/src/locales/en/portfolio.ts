@@ -1,7 +1,7 @@
 import type { Catalog } from '../zh-TW';
 
 /**
- * 見 `../zh-TW/portfolio.ts`。搬移階段逐字複製原文。
+ * 見 `../zh-TW/portfolio.ts`。
  */
 export const portfolio: Catalog['portfolio'] = {
   netWorth: {
@@ -108,7 +108,7 @@ export const portfolio: Catalog['portfolio'] = {
       actions: 'Actions',
     },
     unfollow: 'Unfollow',
-    unfollowStale: '價格過期',
+    unfollowStale: 'Price stale',
     unfollowedOk: 'Unfollowed and all positions closed ✓',
 
     openPositions: 'Open Positions',

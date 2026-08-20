@@ -1,7 +1,7 @@
 import type { Catalog } from '../zh-TW';
 
 /**
- * 見 `../zh-TW/admin.ts`。搬移階段逐字複製原文。
+ * 見 `../zh-TW/admin.ts`。
  */
 export const admin: Catalog['admin'] = {
   oracle: {
@@ -56,7 +56,7 @@ export const admin: Catalog['admin'] = {
     },
 
     comparison: {
-      title: 'Oracle 來源比較',
+      title: 'Oracle Source Comparison',
       refresh: '↺ Refresh',
 
       /**
@@ -64,21 +64,22 @@ export const admin: Catalog['admin'] = {
        * 間距來自 CSS 而不是空白字元——攤平成單一字串就得無中生有兩個空格。
        */
       engineNoteBefore:
-        '交易引擎目前使用 MockOracle（由 keeper 從真實市場抓價寫入）。 Chainlink / Pyth adapter 已部署並可即時查詢（如下表）， 但尚未接入交易引擎 —— PerpetualExchange 的 oracle 位址是',
-      engineNoteAfter: '且無 setter，切換來源需重新部署，故整合列為下一階段。',
+        "The trading engine currently uses MockOracle (fed by the keeper from real market prices). Chainlink / Pyth adapters are deployed and queryable live (see the table below), but not yet wired into the trading engine — PerpetualExchange's oracle address is",
+      engineNoteAfter:
+        'and has no setter — switching sources requires a redeploy, so integration is planned for a later phase.',
 
       wrongNetwork:
-        'Chainlink / Pyth adapter 僅部署於 Base Sepolia（chainId 84532）。 請切換網路以查看三來源即時比較；本網路僅顯示 MockOracle 價格。',
+        'Chainlink / Pyth adapters are only deployed on Base Sepolia (chainId 84532). Switch networks to see the live three-source comparison; this network only shows the MockOracle price.',
 
       column: {
-        asset: '資產',
-        mock: 'MockOracle（引擎使用）',
+        asset: 'Asset',
+        mock: 'MockOracle (used by engine)',
         chainlink: 'Chainlink',
         pyth: 'Pyth',
       },
 
       dashNote:
-        '「—」表示該 adapter 這一刻拿不到可信報價，有兩種原因：(1) 未提供此資產的 feed （多為股票／ETF，Chainlink 與 Pyth 測試網僅涵蓋主流加密資產）；(2) 報價已過期或不完整—— adapter 現在採 fail-closed，staleThreshold（預設 1 小時）內沒更新、round 不完整、 或 Pyth 信賴區間過寬時會直接 revert，不會再回傳舊價。所以同一列從有數字變成「—」 代表該來源劣化了，不是 feed 被移除。',
+        '"—" means that adapter can\'t provide a trusted price right now, for one of two reasons: (1) no feed exists for this asset (mostly stocks/ETFs — the Chainlink and Pyth testnets only cover mainstream crypto assets); (2) the price is stale or incomplete — the adapter is now fail-closed, so it reverts outright rather than returning a stale price when staleThreshold (1 hour by default) has elapsed without an update, the round is incomplete, or the Pyth confidence interval is too wide. So a row going from a number to "—" means that source degraded, not that its feed was removed.',
     },
 
     prices: {
@@ -99,12 +100,13 @@ export const admin: Catalog['admin'] = {
     viewOnEtherscan: 'View on Etherscan ↗',
 
     /** 權限閘門。「還在讀鏈上 treasury」和「確定不是你」要說不同的話。 */
-    checkingAuth: '確認權限中…',
-    checkingAuthBody: '正在讀取鏈上的 feeRouter.platformTreasury()。讀不到就不放行。',
+    checkingAuth: 'Checking permissions…',
+    checkingAuthBody:
+      "Reading feeRouter.platformTreasury() on-chain — if it can't be read, access stays denied.",
     notAuthorized: 'Not authorized',
     notAuthorizedBody: 'This page is restricted to the wallet set as feeRouter.platformTreasury().',
-    treasuryFallbackLabel: 'Treasury（後備顯示值）:',
-    treasuryOnChainLabel: 'Treasury（鏈上）:',
+    treasuryFallbackLabel: 'Treasury (fallback display value):',
+    treasuryOnChainLabel: 'Treasury (on-chain):',
 
     title: 'Treasury Admin',
     subtitle: 'Cash out accumulated platform fees → ETH',
@@ -156,12 +158,12 @@ export const admin: Catalog['admin'] = {
     incentives: {
       title: '🎁 PepeLab Incentives Pool Refill',
       description:
-        '跟單獎勵、每日簽到、等級晉級與交易挖礦均由 PEPE 代幣激勵。為防止用戶領取時發生 revert InsufficientPool 錯誤，請確保此激勵合約中有足夠的 PEPE 儲備。',
-      walletBalance: '我的錢包 PEPE 餘額',
-      poolBalance: '激勵合約 PEPE 儲備',
-      placeholder: '注資 PEPE 數量 (例如 100000)',
-      funding: '注資中…',
-      cta: '確認注資',
+        'Copy rewards, daily check-in, tier upgrades, and trade mining are all incentivized with PEPE. Keep this incentives contract stocked with enough PEPE to avoid a revert InsufficientPool error when users claim.',
+      walletBalance: 'My Wallet PEPE Balance',
+      poolBalance: 'Incentives Contract PEPE Reserve',
+      placeholder: 'PEPE amount to fund (e.g. 100000)',
+      funding: 'Funding…',
+      cta: 'Confirm Funding',
       done: 'Successfully funded Incentives Pool with {amount} PEPE ✓',
     },
 
@@ -179,7 +181,7 @@ export const admin: Catalog['admin'] = {
     info: {
       revenueModelLabel: 'Revenue model:',
       revenueModelBody:
-        'Each copy-trade or performance fee is split 70% trader / 20% platform / 10% insurance vault. Platform fees accumulate in FeeRouter until this admin claims them.',
+        'Each copy-trade or performance fee is split 70% trader / 20% platform / 10% Insurance Vault. Platform fees accumulate in FeeRouter until this admin claims them.',
       swapNote:
         "After claiming USDC, use the swap above to convert to ETH at the mock rate (1 ETH = 3000 USDC). In production, you'd use a real DEX.",
     },
@@ -189,10 +191,11 @@ export const admin: Catalog['admin'] = {
     connectWallet: 'Connect wallet to view the agent monitor.',
     title: '📊 Agent Risk Monitor',
     live: 'LIVE',
-    subtitle: '監控 AI agent 經濟：委派 session 的限額使用、x402 收入分潤、預言機健康度。唯讀。',
+    subtitle:
+      'Monitor the AI agent economy: delegated session budget usage, x402 revenue split, oracle health. Read-only.',
 
     disclosure:
-      '償付後盾揭露：ADL（自動減倉）與組合保證金已實作、由旗標控管，本測試網部署 目前預設關閉（線上跑逐倉清算 + 保險金庫 bailout）。極端行情下，在 ADL 啟用前協議 作為對手方仍有償付風險——本頁數據不代表線上償付無虞。詳見 docs/RISK_NOTES.md。',
+      'Solvency backstop disclosure: ADL (auto-deleveraging) and cross margin are implemented and flag-gated; this testnet deployment currently has them disabled by default (production runs isolated-margin liquidation + Insurance Vault bailout). In extreme markets, the protocol carries solvency risk as counterparty before ADL is enabled — the numbers on this page do not guarantee solvency in production. See docs/RISK_NOTES.md.',
 
     kpi: {
       chain: 'Chain',
@@ -207,9 +210,9 @@ export const admin: Catalog['admin'] = {
       title: 'Delegated Sessions',
       refresh: '↺ Refresh',
       wrongNetwork:
-        '請切換到 Base Sepolia（chainId 84532）以檢視 agent sessions。目前網路：{chain}。',
-      notConnected: '未連線',
-      empty: '尚無 session。',
+        'Switch to Base Sepolia (chainId 84532) to view agent sessions. Current network: {chain}.',
+      notConnected: 'Not connected',
+      empty: 'No sessions yet.',
 
       column: {
         id: '#',
@@ -233,17 +236,17 @@ export const admin: Catalog['admin'] = {
     verification: {
       title: 'Agent Verification (ERC-8126)',
       description:
-        '「這個 agent 可不可信？」— ETV / SCV / WAV / WV 四項檢查 + 統一 0–100 風險分數（越低越安全），verifier 簽章。',
-      inputLabel: 'agent 地址或 did:pkh',
-      inputPlaceholder: '0x… 或 did:pkh:eip155:84532:0x…',
-      enterQuery: '請輸入 agent 地址或 did:pkh',
-      verifying: '驗證中…',
+        '"Can this agent be trusted?" — four checks (ETV / SCV / WAV / WV) plus a unified 0–100 risk score (lower is safer), signed by a verifier.',
+      inputLabel: 'Agent address or did:pkh',
+      inputPlaceholder: '0x… or did:pkh:eip155:84532:0x…',
+      enterQuery: 'Enter an agent address or did:pkh',
+      verifying: 'Verifying…',
       verify: 'Verify',
       failed:
-        '無法取得驗證（{error}）。請確認 signal-api URL，並見 docs/AGENT_ECONOMY_STANDARDS.md。',
+        'Verification failed ({error}). Check the signal-api URL, and see docs/AGENT_ECONOMY_STANDARDS.md.',
       fetchFailed: 'fetch failed',
 
-      riskChip: '風險 {score}/100 · {tier}',
+      riskChip: 'Risk {score}/100 · {tier}',
       checkChip: '{type} {score}',
       checkNotApplicable: 'N/A',
       checkTooltip: '{name}: {details}',
@@ -254,7 +257,7 @@ export const admin: Catalog['admin'] = {
       title: 'x402 Revenue (70/20/10)',
       urlLabel: 'signal-api URL',
       fetch: 'Fetch',
-      failed: '無法連到 signal-api（{error}）。請先 npm run signal-api。',
+      failed: 'Failed to connect to signal-api ({error}). Run npm run signal-api first.',
       callsTotal: 'Calls / Total',
       traderShare: 'Trader 70%',
       platformShare: 'Platform 20%',

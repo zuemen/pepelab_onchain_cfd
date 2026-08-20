@@ -1,7 +1,7 @@
 import type { Catalog } from '../zh-TW';
 
 /**
- * 見 `../zh-TW/traderProfile.ts`。搬移階段逐字複製原文。
+ * 見 `../zh-TW/traderProfile.ts`。
  */
 export const traderProfile: Catalog['traderProfile'] = {
   invalidAddress: 'Invalid address.',

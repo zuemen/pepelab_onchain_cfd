@@ -28,20 +28,6 @@ function allSourceFiles(): string[] {
     });
 }
 
-/**
- * `en` catalog 裡尚未翻譯的中文字數（不含註解）。
- *
- * 搬移階段兩份 catalog 寫入同一份原文，所以 `en` 一開始就帶著中文。這個數字**只能
- * 下降**：歸零代表英文版翻完了。
- *
- * 每批遷移都會把它推高——那是預期行為，不是退步：字串搬進 catalog 時 `en` 拿到的是
- * 中文原文。真正的退步是「翻譯過的字又變回中文」，而那會讓這條斷言失敗。
- * 目前：errors 1388、pepe 1386、exchange 966、terminal 685、sessions 657、pepelab 596、
- * tokens 543、admin 491、landing 327、kyc 319、common 313、pepeStageSkins 264、x402 250、
- * stake 236、freshness 146、copy 122、rewards 102、esg 42、nav 38、marketplace 13、meta 12、portfolio 4。
- */
-const EN_HAN_BASELINE = 8900;
-
 /** 傳目錄就回它底下所有原始碼檔案，傳單一檔案就回那一個。測試檔一律排除。 */
 function sourceFilesIn(pathish: string): string[] {
   const abs = path.resolve(FRONTEND_ROOT, pathish);
@@ -173,12 +159,23 @@ describe('migration ratchets', () => {
     expect(isAssetPathOnly(`  imagePath: '/skins/03_忍者蛙戰士.png',`)).toBe(true);
   });
 
-  it('never lets the untranslated Chinese in the en catalog grow', () => {
-    const remaining = sourceFilesIn('src/locales/en')
-      .flatMap((file) => findInlineDisplayStrings(fs.readFileSync(file, 'utf8')))
-      .reduce((sum, hit) => sum + countHan(hit.text), 0);
+  /**
+   * #55：翻譯全部完成後，逐檔案天花板（見 #42/#41 的歷史）功成身退，換成單一的
+   * 完成態斷言——`en` catalog 不該有任何顯示字串帶中文。這條斷言只描述終態，
+   * 不像天花板那樣需要為進行中的翻譯留退路，也就不會逐檔漂移。
+   */
+  it('keeps the en catalog free of Han characters outside comments', () => {
+    const offenders = sourceFilesIn('src/locales/en').flatMap((file) => {
+      const name = path.basename(file);
+      const remaining = findInlineDisplayStrings(fs.readFileSync(file, 'utf8'))
+        .filter((hit) => !isAssetPathOnly(hit.text))
+        .filter((hit) => !isLineException(file, hit.text))
+        .reduce((sum, hit) => sum + countHan(hit.text), 0);
 
-    expect(remaining).toBeLessThanOrEqual(EN_HAN_BASELINE);
+      return remaining > 0 ? [`${name}: ${remaining} Han chars`] : [];
+    });
+
+    expect(offenders).toEqual([]);
   });
 });
 
