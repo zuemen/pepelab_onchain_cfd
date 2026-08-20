@@ -55,7 +55,7 @@ const EN_HAN_BASELINES: Record<string, number> = {
   'admin.ts': 486,
   'landing.ts': 327,
   'kyc.ts': 0,
-  'pepeStageSkins.ts': 264,
+  'pepeStageSkins.ts': 0,
   'x402.ts': 251,
   'stake.ts': 0,
   'copy.ts': 0,
