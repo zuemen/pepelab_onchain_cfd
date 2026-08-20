@@ -36,7 +36,7 @@ export interface MarketMeta {
 export const MARKETS: Record<string, MarketMeta> = {
   sBTC: {
     symbol: "sBTC",
-    underlying: "BTC 永續",
+    underlying: "BTC Perpetual",
     category: "crypto",
     bybit: "BTCUSDT",
     coinbase: "BTC-USD",
@@ -44,7 +44,7 @@ export const MARKETS: Record<string, MarketMeta> = {
   },
   sETH: {
     symbol: "sETH",
-    underlying: "ETH 永續",
+    underlying: "ETH Perpetual",
     category: "crypto",
     bybit: "ETHUSDT",
     coinbase: "ETH-USD",
