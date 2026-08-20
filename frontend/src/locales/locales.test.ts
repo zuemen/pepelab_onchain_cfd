@@ -52,7 +52,7 @@ const EN_HAN_BASELINES: Record<string, number> = {
   'sessions.ts': 657,
   'pepelab.ts': 0,
   'tokens.ts': 0,
-  'admin.ts': 486,
+  'admin.ts': 0,
   'landing.ts': 327,
   'kyc.ts': 0,
   'pepeStageSkins.ts': 0,
