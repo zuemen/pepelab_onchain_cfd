@@ -1,7 +1,7 @@
 import type { Catalog } from '../zh-TW';
 
 /**
- * 見 `../zh-TW/vault.ts`。搬移階段逐字複製原文。
+ * 見 `../zh-TW/vault.ts`。
  */
 export const vault: Catalog['vault'] = {
   connectWallet: 'Connect wallet to use the LP Vault.',

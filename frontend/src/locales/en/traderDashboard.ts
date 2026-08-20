@@ -1,7 +1,7 @@
 import type { Catalog } from '../zh-TW';
 
 /**
- * 見 `../zh-TW/traderDashboard.ts`。搬移階段逐字複製原文。
+ * 見 `../zh-TW/traderDashboard.ts`。
  */
 export const traderDashboard: Catalog['traderDashboard'] = {
   connectWallet: 'Connect wallet to access Trader Dashboard.',
