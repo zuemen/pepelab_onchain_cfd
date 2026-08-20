@@ -49,7 +49,7 @@ const EN_HAN_BASELINES: Record<string, number> = {
   'pepe.ts': 0,
   'exchange.ts': 0,
   'terminal.ts': 0,
-  'sessions.ts': 657,
+  'sessions.ts': 0,
   'pepelab.ts': 0,
   'tokens.ts': 0,
   'admin.ts': 0,
