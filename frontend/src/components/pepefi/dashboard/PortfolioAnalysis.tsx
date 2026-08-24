@@ -11,6 +11,7 @@ import Typography from '@mui/material/Typography';
 import { t } from 'src/locales';
 import { MONO } from 'src/components/pepefi/brandKit';
 import { ASSET_META } from 'src/lib/pepefi/assetMeta';
+import { assetClassOf, ASSET_CLASSES, ASSET_CLASS_CONFIG, type AssetClass } from 'src/lib/pepefi/assetClass';
 
 // ----------------------------------------------------------------------
 // 「為什麼會長成這樣」——配置佔比、分類損益、ESG 加權分數。
@@ -23,25 +24,6 @@ import { ASSET_META } from 'src/lib/pepefi/assetMeta';
 //
 // Dashboard 上還有一個四資產趨勢圖與一塊鯨魚動向。兩者都沒有跟過來：趨勢圖
 // 畫的是市場價格（不是你的部位），鯨魚動向則是 /whale 整頁的縮小重複版。
-
-type DisplayCat = 'crypto' | 'equity' | 'commodity' | 'bond';
-
-const DISPLAY_CATS: DisplayCat[] = ['crypto', 'equity', 'commodity', 'bond'];
-
-const CAT_CONFIG: Record<DisplayCat, { label: string; icon: string; color: string }> = {
-  crypto:    { label: t.portfolio.analysis.cat.crypto,    icon: '₿', color: '#6366f1' },
-  equity:    { label: t.portfolio.analysis.cat.equity,    icon: '◈', color: '#a855f7' },
-  commodity: { label: t.portfolio.analysis.cat.commodity, icon: '◆', color: '#f59e0b' },
-  bond:      { label: t.portfolio.analysis.cat.bond,      icon: '◉', color: '#10b981' },
-};
-
-const displayCatOf = (assetId: string): DisplayCat => {
-  const cat = ASSET_META[assetId]?.category;
-  if (cat === 'equity') return 'equity';
-  if (cat === 'bond') return 'bond';
-  if (cat === 'commodity' || cat === 'etf') return 'commodity';
-  return 'crypto';
-};
 
 const fUsd = (v: bigint) =>
   `$${(Number(v) / 1e18).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -64,14 +46,14 @@ type Props = {
 
 export default function PortfolioAnalysis({ rows, esg }: Props) {
   const byCat = useMemo(() => {
-    const out: Record<DisplayCat, { value: bigint; pnl: bigint; symbols: string[] }> = {
+    const out: Record<AssetClass, { value: bigint; pnl: bigint; symbols: string[] }> = {
       crypto:    { value: 0n, pnl: 0n, symbols: [] },
       equity:    { value: 0n, pnl: 0n, symbols: [] },
       commodity: { value: 0n, pnl: 0n, symbols: [] },
       bond:      { value: 0n, pnl: 0n, symbols: [] },
     };
     for (const row of rows) {
-      const cat = displayCatOf(row.asset);
+      const cat = assetClassOf(row.asset);
       out[cat].value += row.currentValue;
       out[cat].pnl += row.unrealizedPnL;
       const sym = ASSET_META[row.asset]?.symbol ?? '?';
@@ -82,10 +64,10 @@ export default function PortfolioAnalysis({ rows, esg }: Props) {
 
   const pieData = useMemo(
     () =>
-      DISPLAY_CATS.filter((c) => byCat[c].value > 0n).map((c) => ({
-        name: CAT_CONFIG[c].label,
+      ASSET_CLASSES.filter((c) => byCat[c].value > 0n).map((c) => ({
+        name: ASSET_CLASS_CONFIG[c].label,
         value: Number(byCat[c].value) / 1e18,
-        color: CAT_CONFIG[c].color,
+        color: ASSET_CLASS_CONFIG[c].color,
       })),
     [byCat]
   );
@@ -150,9 +132,9 @@ export default function PortfolioAnalysis({ rows, esg }: Props) {
           </Typography>
 
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' }, gap: 2 }}>
-            {DISPLAY_CATS.map((cat) => {
+            {ASSET_CLASSES.map((cat) => {
               const summary = byCat[cat];
-              const config = CAT_CONFIG[cat];
+              const config = ASSET_CLASS_CONFIG[cat];
               return (
                 <Box
                   key={cat}
