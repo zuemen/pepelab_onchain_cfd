@@ -34,6 +34,53 @@ export const portfolio = {
     },
   },
 
+  /**
+   * RWA 資產配置——見 CONTEXT.md 的 RWA／Asset Class 詞條。刻意跟 netWorth
+   * 分開：這裡的分母是交易部位的保證金，不是淨資產，兩個數字不會對得起來，
+   * 用同一個 title 或同一組詞會讓讀者以為算法一樣。
+   */
+  allocation: {
+    title: 'RWA 資產配置',
+    subtitle: '依未平倉部位的保證金計算，不含錢包現金、質押與 LP 金庫——不是淨資產的配置。',
+    noPositions: '尚無部位',
+
+    /**
+     * 對照指數（Benchmark，見 CONTEXT.md）——刻意不叫「指數」，避免跟永續
+     * 合約自己的 index price 混用。名稱固定用這裡的翻譯，不信任後端 API
+     * 回傳的英文 name 欄位：那是給非中文語境用的，這個 app 的顯示字一律
+     * 走 catalog（ADR 0002），不能讓一個外部服務決定畫面上出現什麼語言。
+     */
+    benchmark: {
+      heading: '對照指數',
+      names: {
+        spx: '標普 500',
+        gold: '黃金',
+        btc: '比特幣',
+      },
+      itemUnavailable: '暫時無法取得',
+      unreachable: '無法連線到指數 API（{url}）。',
+      unreachableDev:
+        '無法連線到指數 API（{url}）。請先啟動 signal-api：cd agent/signal-api && npx tsx src/index.ts',
+      httpError: '指數 API 回 {status}（{url}）',
+      httpError404:
+        '指數 API 回 {status}（{url}） — 該部署可能尚未包含 /benchmarks 路由，需重新部署 signal-api',
+    },
+
+    /**
+     * 「你 vs 大盤」，見 CONTEXT.md 的 Anchor Date 詞條。youHint 一定要講清楚
+     * 分母是名目——上面配置環用保證金，這裡用名目，不解釋這個落差會被讀成
+     * bug，不是刻意的設計。
+     */
+    comparison: {
+      heading: '你 vs 大盤',
+      since: '自 {date}（你最早持倉的開倉日）起',
+      youLabel: '你（去槓桿）',
+      youHint:
+        '未實現損益 ÷ 名目——已去除槓桿倍數，才能跟未槓桿的指數公平比較。上方配置環的分母是保證金，這裡不同，是刻意的。',
+      noPositions: '尚無持倉',
+    },
+  },
+
   quickAction: {
     trade: '交易',
     copyTrader: '跟單交易者',
@@ -132,13 +179,16 @@ export const portfolio = {
     autoRefresh: '每 30 秒自動更新 · 兩點式檢視（初始 vs 目前）',
   },
 
+  /**
+   * 配置佔比與分類損益已搬到上面的 allocation（issue #66）。這裡只剩
+   * ESG 分數，cat 仍留著——assetClass.ts 的 ASSET_CLASS_CONFIG 還在用它。
+   */
   analysis: {
-    allocation: '資產配置',
-    noBreakdown: '無部位可供分析。',
-    byAssetClass: '依資產類別',
-    noPositions: '無部位',
     esgScore: 'ESG 評分（依價值加權）',
+    esgMethodology:
+      '每個持倉的市值當權重，加權平均出這個分數；任一標的缺 ESG 資料，整個分數就不顯示，不用半套資料湊一個看起來正常的數字。',
     esgIncomplete: '並非所有持倉都有 ESG 資料。',
+    byAsset: '各標的貢獻',
 
     cat: {
       crypto: '加密貨幣',

@@ -28,6 +28,7 @@ import { COLUMN_LABELS, openPositionColumnsForMode, type OpenPositionColumnKey }
 import StatCard from 'src/components/pepefi/StatCard';
 import ESGBadge from 'src/components/pepefi/ESGBadge';
 import NetWorthHero from 'src/components/pepefi/dashboard/NetWorthHero';
+import RwaAllocation from 'src/components/pepefi/dashboard/RwaAllocation';
 import QuickActions from 'src/components/pepefi/dashboard/QuickActions';
 import PortfolioAnalysis from 'src/components/pepefi/dashboard/PortfolioAnalysis';
 import EmptyState from 'src/components/pepefi/EmptyState';
@@ -77,6 +78,7 @@ interface RawPos {
   entryPrice:  bigint;
   margin:      bigint;
   leverage:    bigint;
+  openedAt:    bigint;
   copiedFrom:  string;
 }
 
@@ -97,6 +99,7 @@ interface PosRow {
   currentPrice:  bigint;    // 18-dec
   margin:        bigint;    // 18-dec
   leverage:      bigint;
+  openedAt:      bigint;    // unix seconds
   unrealizedPnL: bigint;    // signed 18-dec
   currentValue:  bigint;    // 18-dec ≥ 0
   copiedFrom:    string;    // address(0) for self-opened
@@ -320,6 +323,7 @@ export default function PortfolioPage() {
               currentPrice:   pr[0] * 10n ** 10n,
               margin:         raw.margin,
               leverage:       raw.leverage,
+              openedAt:       raw.openedAt,
               unrealizedPnL:  pnl as bigint,
               currentValue:   val as bigint,
               copiedFrom:     raw.copiedFrom,
@@ -591,6 +595,10 @@ export default function PortfolioPage() {
           discovering there is a second page. Aave's dashboard is the same
           shape — net worth on top, positions and their actions below. */}
       <NetWorthHero parts={netWorthParts} pnlPct={pnlPctStr} loading={!isLoaded} />
+
+      {/* RWA 是本平台的最大賣點，緊接在淨值 hero 之後、任何操作之前——見
+          RwaAllocation.tsx 頂部註解。Simple／Expert 皆顯示，零持倉也照樣顯示。 */}
+      <RwaAllocation rows={positions} />
 
       <QuickActions mode={mode} />
 

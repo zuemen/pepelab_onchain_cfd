@@ -46,3 +46,37 @@ export function assetClassOf(assetId: string): AssetClass {
   const cat = ASSET_META[assetId]?.category
   return cat ? CATEGORY_TO_CLASS[cat] : 'crypto'
 }
+
+// ── 依 Asset Class 彙總 ──────────────────────────────────────────────────────
+
+export interface MarginRow {
+  asset: string
+  margin: bigint
+  unrealizedPnL: bigint
+}
+
+export interface AssetClassSummary {
+  margin: bigint
+  pnl: bigint
+}
+
+/**
+ * 依 Asset Class 加總一組未平倉部位的保證金與未實現損益。
+ *
+ * 四類永遠都在回傳裡，即使輸入是空陣列——RWA 配置區塊零持倉時要顯示四類
+ * 皆 $0，不是整塊消失（issue #64），呼叫端不必自己補零或另外判斷。
+ */
+export function groupMarginByAssetClass(rows: MarginRow[]): Record<AssetClass, AssetClassSummary> {
+  const out: Record<AssetClass, AssetClassSummary> = {
+    crypto: { margin: 0n, pnl: 0n },
+    equity: { margin: 0n, pnl: 0n },
+    commodity: { margin: 0n, pnl: 0n },
+    bond: { margin: 0n, pnl: 0n },
+  }
+  for (const row of rows) {
+    const cls = assetClassOf(row.asset)
+    out[cls].margin += row.margin
+    out[cls].pnl += row.unrealizedPnL
+  }
+  return out
+}

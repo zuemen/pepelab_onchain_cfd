@@ -33,6 +33,48 @@ export const portfolio: Catalog['portfolio'] = {
     },
   },
 
+  /**
+   * RWA 資產配置——見 CONTEXT.md 的 RWA／Asset Class 詞條。刻意跟 netWorth
+   * 分開：這裡的分母是交易部位的保證金，不是淨資產，兩個數字不會對得起來，
+   * 用同一個 title 或同一組詞會讓讀者以為算法一樣。
+   */
+  allocation: {
+    title: 'RWA Allocation',
+    subtitle: 'Based on margin in open positions — excludes wallet cash, staking, and the LP vault. Not a breakdown of Net Worth.',
+    noPositions: 'No positions yet',
+
+    /**
+     * 見 `../zh-TW/portfolio.ts`。
+     */
+    benchmark: {
+      heading: 'Benchmarks',
+      names: {
+        spx: 'S&P 500',
+        gold: 'Gold',
+        btc: 'Bitcoin',
+      },
+      itemUnavailable: 'Currently unavailable',
+      unreachable: "Can't reach the benchmarks API ({url}).",
+      unreachableDev:
+        "Can't reach the benchmarks API ({url}). Start signal-api first: cd agent/signal-api && npx tsx src/index.ts",
+      httpError: 'Benchmarks API returned {status} ({url})',
+      httpError404:
+        'Benchmarks API returned {status} ({url}) — this deployment may not have the /benchmarks route yet; redeploy signal-api',
+    },
+
+    /**
+     * See `../zh-TW/portfolio.ts`.
+     */
+    comparison: {
+      heading: 'You vs the Market',
+      since: "Since {date} (your oldest position's open date)",
+      youLabel: 'You (deleveraged)',
+      youHint:
+        'Unrealised PnL ÷ notional — leverage stripped out so this is comparable to the unleveraged benchmarks. The allocation ring above uses margin as its denominator; that difference is intentional.',
+      noPositions: 'No positions yet',
+    },
+  },
+
   quickAction: {
     trade: 'Trade',
     copyTrader: 'Copy a trader',
@@ -132,13 +174,15 @@ export const portfolio: Catalog['portfolio'] = {
     autoRefresh: 'Auto-refreshes every 30 s · Two-point view (initial vs current)',
   },
 
+  /**
+   * See `../zh-TW/portfolio.ts`.
+   */
   analysis: {
-    allocation: 'Allocation',
-    noBreakdown: 'No positions to break down.',
-    byAssetClass: 'By asset class',
-    noPositions: 'No positions',
     esgScore: 'ESG score (value-weighted)',
+    esgMethodology:
+      "Each holding's market value is the weight in this average. If any holding is missing ESG data, no score shows at all — half the data isn't enough to fake a normal-looking number.",
     esgIncomplete: 'Not all holdings have ESG data yet.',
+    byAsset: 'Contribution by asset',
 
     cat: {
       crypto: 'Crypto',
