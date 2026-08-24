@@ -179,7 +179,10 @@ export const portfolio: Catalog['portfolio'] = {
    */
   analysis: {
     esgScore: 'ESG score (value-weighted)',
+    esgMethodology:
+      "Each holding's market value is the weight in this average. If any holding is missing ESG data, no score shows at all — half the data isn't enough to fake a normal-looking number.",
     esgIncomplete: 'Not all holdings have ESG data yet.',
+    byAsset: 'Contribution by asset',
 
     cat: {
       crypto: 'Crypto',
