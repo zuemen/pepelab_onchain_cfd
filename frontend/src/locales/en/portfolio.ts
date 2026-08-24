@@ -143,7 +143,7 @@ export const portfolio: Catalog['portfolio'] = {
     cat: {
       crypto: 'Crypto',
       equity: 'Equity',
-      commodity: 'Commodity & ETF',
+      commodity: 'Commodity',
       bond: 'Bond',
     },
   },

@@ -143,7 +143,7 @@ export const portfolio = {
     cat: {
       crypto: '加密貨幣',
       equity: '股票',
-      commodity: '商品與 ETF',
+      commodity: '商品',
       bond: '債券',
     },
   },
