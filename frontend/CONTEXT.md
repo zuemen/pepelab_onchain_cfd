@@ -57,6 +57,9 @@ The `en` catalog translates the trading domain's recurring terms, not just indiv
 | 未實現損益 | Unrealised PnL |
 | 預言機報價 | Oracle price |
 | 滑價 | Slippage |
+| 名目曝險 | Notional Exposure |
+| 資產類別 | Asset Class |
+| 對照指數 | Benchmark |
 
 `PnL` follows the ADR-0002 abbreviation rule: spelled out on first appearance on a screen, bare afterward. Everything else in this table is a full word, not an abbreviation, so it doesn't get the parenthetical treatment.
 
@@ -71,6 +74,24 @@ _Avoid_: total assets, balance, total value
 **Unread Balance**:
 A balance the app tried and failed to read on-chain. Distinct from a balance that was read successfully and is zero — an unread balance makes Net Worth incomplete and is reported as such.
 _Avoid_: missing balance, empty balance
+
+### Asset classes and RWA
+
+**RWA**:
+Two meanings that deliberately coexist — which one applies depends on whether you're reading a screen or a contract. On screen, it's the umbrella term for everything tradable on the platform, spanning all four Asset Classes including crypto, and it's the platform's core pitch. In the contracts, `PerpetualExchange.rwaAsset` and `KYCRegistry` use it narrowly: only the KYC-gated regulated markets (equity, bond, ETF), explicitly excluding crypto and gold. Neither sense implies the other — a screen calling something "RWA" says nothing about whether the contract's KYC gate applies to it. See [ADR 0003](./docs/adr/0003-rwa-dual-meaning.md) for why the two were kept apart rather than merged.
+_Avoid_: assuming the display sense and the contract `rwaAsset` sense are the same set of assets
+
+**Asset Class**:
+One of the four categories a screen groups holdings into: Equity (股, including ETF), Bond (債), Commodity (金), Crypto (幣). Distinct from `AssetCategory` in `assetMeta.ts`, which keeps `etf` as its own fifth value — an Asset Class display always folds ETF into Equity.
+_Avoid_: category, bucket, sector
+
+**Benchmark**:
+A reference price series shown purely for comparison — S&P 500, gold, Bitcoin. Never settles a position and is never itself a tradable market.
+_Avoid_: index (collides with a perpetual's index price)
+
+**Anchor Date**:
+The start of a "you vs Benchmark" comparison window: the `openedAt` of a user's oldest open position. No open position means no Anchor Date, and the comparison does not render.
+_Avoid_: start date, since, inception
 
 ### Wallet
 
