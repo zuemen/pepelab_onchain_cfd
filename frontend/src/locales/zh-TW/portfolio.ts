@@ -43,6 +43,28 @@ export const portfolio = {
     title: 'RWA 資產配置',
     subtitle: '依未平倉部位的保證金計算，不含錢包現金、質押與 LP 金庫——不是淨資產的配置。',
     noPositions: '尚無部位',
+
+    /**
+     * 對照指數（Benchmark，見 CONTEXT.md）——刻意不叫「指數」，避免跟永續
+     * 合約自己的 index price 混用。名稱固定用這裡的翻譯，不信任後端 API
+     * 回傳的英文 name 欄位：那是給非中文語境用的，這個 app 的顯示字一律
+     * 走 catalog（ADR 0002），不能讓一個外部服務決定畫面上出現什麼語言。
+     */
+    benchmark: {
+      heading: '對照指數',
+      names: {
+        spx: '標普 500',
+        gold: '黃金',
+        btc: '比特幣',
+      },
+      itemUnavailable: '暫時無法取得',
+      unreachable: '無法連線到指數 API（{url}）。',
+      unreachableDev:
+        '無法連線到指數 API（{url}）。請先啟動 signal-api：cd agent/signal-api && npx tsx src/index.ts',
+      httpError: '指數 API 回 {status}（{url}）',
+      httpError404:
+        '指數 API 回 {status}（{url}） — 該部署可能尚未包含 /benchmarks 路由，需重新部署 signal-api',
+    },
   },
 
   quickAction: {

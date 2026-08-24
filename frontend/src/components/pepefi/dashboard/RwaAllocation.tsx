@@ -8,6 +8,8 @@ import { t } from 'src/locales';
 import { MONO } from 'src/components/pepefi/brandKit';
 import { ASSET_CLASSES, ASSET_CLASS_CONFIG, groupMarginByAssetClass, type MarginRow } from 'src/lib/pepefi/assetClass';
 
+import BenchmarkStrip from './BenchmarkStrip';
+
 // ----------------------------------------------------------------------
 // RWA 是本平台的核心賣點（frontend/CONTEXT.md 的 RWA 詞條）：股債金幣四大類
 // 都能在同一個投資組合裡持有。這個區塊把它放上第一屏，緊接在淨值 hero 之後
@@ -92,6 +94,8 @@ export default function RwaAllocation({ rows }: Props) {
           {t.portfolio.allocation.noPositions}
         </Typography>
       )}
+
+      <BenchmarkStrip />
     </Card>
   );
 }

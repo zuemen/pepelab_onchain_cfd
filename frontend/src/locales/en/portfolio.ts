@@ -42,6 +42,25 @@ export const portfolio: Catalog['portfolio'] = {
     title: 'RWA Allocation',
     subtitle: 'Based on margin in open positions — excludes wallet cash, staking, and the LP vault. Not a breakdown of Net Worth.',
     noPositions: 'No positions yet',
+
+    /**
+     * 見 `../zh-TW/portfolio.ts`。
+     */
+    benchmark: {
+      heading: 'Benchmarks',
+      names: {
+        spx: 'S&P 500',
+        gold: 'Gold',
+        btc: 'Bitcoin',
+      },
+      itemUnavailable: 'Currently unavailable',
+      unreachable: "Can't reach the benchmarks API ({url}).",
+      unreachableDev:
+        "Can't reach the benchmarks API ({url}). Start signal-api first: cd agent/signal-api && npx tsx src/index.ts",
+      httpError: 'Benchmarks API returned {status} ({url})',
+      httpError404:
+        'Benchmarks API returned {status} ({url}) — this deployment may not have the /benchmarks route yet; redeploy signal-api',
+    },
   },
 
   quickAction: {
