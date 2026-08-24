@@ -33,6 +33,17 @@ export const portfolio: Catalog['portfolio'] = {
     },
   },
 
+  /**
+   * RWA 資產配置——見 CONTEXT.md 的 RWA／Asset Class 詞條。刻意跟 netWorth
+   * 分開：這裡的分母是交易部位的保證金，不是淨資產，兩個數字不會對得起來，
+   * 用同一個 title 或同一組詞會讓讀者以為算法一樣。
+   */
+  allocation: {
+    title: 'RWA Allocation',
+    subtitle: 'Based on margin in open positions — excludes wallet cash, staking, and the LP vault. Not a breakdown of Net Worth.',
+    noPositions: 'No positions yet',
+  },
+
   quickAction: {
     trade: 'Trade',
     copyTrader: 'Copy a trader',
