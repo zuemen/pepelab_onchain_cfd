@@ -2,6 +2,7 @@ import type { ESGInfo } from 'src/hooks/useESG';
 
 import { useMemo } from 'react';
 
+import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
 import Typography from '@mui/material/Typography';
 
@@ -35,22 +36,38 @@ export default function PortfolioAnalysis({ rows, esg }: Props) {
   // 價值加權，不是簡單平均：$10,000 的部位跟 $10 的部位對整體責任的影響
   // 顯然不一樣。任何一個標的缺 ESG 資料就整個不算——用一半的資料算出來的
   // 分數會比沒有分數更容易誤導。
+  //
+  // 環境／社會／治理三個子分數用同一套加權法，跟 composite 是同一組資料
+  // （ESGRegistry 每個標的本來就回三個維度，composite 只是三者平均）——單獨
+  // 顯示 composite 卻不顯示子分數，等於把已經有的資料丟掉不用。
   const portfolioESG = useMemo(() => {
     if (rows.length === 0) return null;
     let totalVal = 0;
-    let weighted = 0;
+    let weightedComposite = 0;
+    let weightedE = 0;
+    let weightedS = 0;
+    let weightedG = 0;
     for (const row of rows) {
       const info = esg[row.asset];
       if (!info) return null;
       const val = Number(row.currentValue) / 1e18;
       totalVal += val;
-      weighted += info.composite * val;
+      weightedComposite += info.composite * val;
+      weightedE += info.environmental * val;
+      weightedS += info.social * val;
+      weightedG += info.governance * val;
     }
     if (totalVal === 0) return null;
-    const composite = Math.round(weighted / totalVal);
+    const composite = Math.round(weightedComposite / totalVal);
     const rating =
       composite >= 80 ? 'AAA' : composite >= 70 ? 'AA' : composite >= 60 ? 'A' : composite >= 50 ? 'BBB' : 'CCC';
-    return { composite, rating };
+    return {
+      composite,
+      rating,
+      environmental: Math.round(weightedE / totalVal),
+      social: Math.round(weightedS / totalVal),
+      governance: Math.round(weightedG / totalVal),
+    };
   }, [rows, esg]);
 
   if (rows.length === 0) return null;
@@ -70,12 +87,31 @@ export default function PortfolioAnalysis({ rows, esg }: Props) {
           {t.portfolio.analysis.esgIncomplete}
         </Typography>
       ) : (
-        <Typography sx={{ fontWeight: 800, fontFamily: MONO, fontSize: '1.5rem' }}>
-          {portfolioESG.composite}{' '}
-          <Typography component="span" variant="caption" color="text.secondary">
-            {portfolioESG.rating}
+        <>
+          <Typography sx={{ fontWeight: 800, fontFamily: MONO, fontSize: '1.5rem' }}>
+            {portfolioESG.composite}{' '}
+            <Typography component="span" variant="caption" color="text.secondary">
+              {portfolioESG.rating}
+            </Typography>
           </Typography>
-        </Typography>
+
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 2, mt: 2 }}>
+            {(
+              [
+                ['environmental', t.esg.dimension.environmental, portfolioESG.environmental],
+                ['social', t.esg.dimension.social, portfolioESG.social],
+                ['governance', t.esg.dimension.governance, portfolioESG.governance],
+              ] as const
+            ).map(([key, label, score]) => (
+              <Box key={key}>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                  {label}
+                </Typography>
+                <Typography sx={{ fontFamily: MONO, fontWeight: 700 }}>{score}</Typography>
+              </Box>
+            ))}
+          </Box>
+        </>
       )}
     </Card>
   );
