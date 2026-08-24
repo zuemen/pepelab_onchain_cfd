@@ -138,10 +138,10 @@ function sane(k: Candle): boolean {
 
 // ── HTTP ─────────────────────────────────────────────────────────────────────
 
-const UA =
+export const UA =
   "Mozilla/5.0 (compatible; pepelab-signal-api/1.0; +https://github.com/pepelab)";
 
-async function getJson(url: string, timeoutMs = 8000): Promise<unknown> {
+export async function getJson(url: string, timeoutMs = 8000): Promise<unknown> {
   const res = await fetch(url, {
     headers: { "User-Agent": UA, Accept: "application/json" },
     signal: AbortSignal.timeout(timeoutMs),

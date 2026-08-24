@@ -37,6 +37,7 @@ import {
   UnknownMarketError,
   BadIntervalError,
 } from "./candles.ts";
+import { getBenchmarks, BadDateError } from "./benchmarks.ts";
 
 const NETWORK = (process.env.X402_NETWORK ?? "base-sepolia") as Network;
 const FACILITATOR_URL =
@@ -257,6 +258,13 @@ export function createApp(): Hono {
             `${MAX_LIMIT}）。回應帶 source 出處，圖表須標示。`,
           intervals: INTERVAL_KEYS,
         },
+        "GET /benchmarks": {
+          price: "free",
+          desc:
+            "對照指數：S&P 500／黃金／比特幣，同一來源（Yahoo Finance）。" +
+            "?date=YYYY-MM-DD 加碼回該日或之前最近一個交易日的收盤。不做模擬保底，" +
+            "上游拿不到就在該指數的 error 欄位標明。",
+        },
         "GET /agent/:did/verification": { price: "free", desc: "ERC-8126 agent 驗證（ETV/SCV/WAV/WV + 0–100 風險分數，verifier 簽章）" },
         "POST /demo/buy-signal": { price: "free", desc: "訪客試買（免費回訊號；真實 70/20/10 分潤見付費 x402 端點 + /revenue 累計）" },
       },
@@ -297,6 +305,25 @@ export function createApp(): Hono {
         return c.json({ ok: false, error: (err as Error).message }, 400);
       }
       // getCandles 內部有模擬保底，走到這裡代表是預期外的錯誤。
+      return c.json({ ok: false, error: (err as Error).message }, 502);
+    }
+  });
+
+  // ── 免費：對照指數（S&P 500／黃金／比特幣）──────────────────────────────
+  //
+  // Portfolio 頁「你 vs 大盤」與常駐指數列用。位置理由同 /candles：必須留在
+  // paymentMiddleware 之前，這是免費公開資料，不是付費商品。
+  //
+  // 跟 /candles 不同：這裡**不模擬保底**。一個標的失敗只讓那個標的的
+  // current/atDate 帶 error，不影響另外兩個；絕不落回假數字（見 benchmarks.ts）。
+  app.get("/benchmarks", async (c) => {
+    try {
+      const data = await getBenchmarks(c.req.query("date"));
+      return c.json(data);
+    } catch (err) {
+      if (err instanceof BadDateError) {
+        return c.json({ ok: false, error: (err as Error).message }, 400);
+      }
       return c.json({ ok: false, error: (err as Error).message }, 502);
     }
   });
