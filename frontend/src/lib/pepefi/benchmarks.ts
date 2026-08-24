@@ -120,3 +120,8 @@ export function formatBenchmarkValue(key: BenchmarkKey, value: number): string {
   const num = value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   return key === 'spx' ? num : `$${num}`
 }
+
+/** 帶正負號的百分比,小數點後兩位——BenchmarkStrip 與「你 vs 大盤」共用同一種格式。 */
+export function formatPct(pct: number): string {
+  return (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%'
+}

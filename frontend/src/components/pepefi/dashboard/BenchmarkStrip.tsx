@@ -5,7 +5,7 @@ import { t } from 'src/locales';
 import { useBenchmarks } from 'src/hooks/useBenchmarks';
 import { MONO } from 'src/components/pepefi/brandKit';
 import Skeleton from 'src/components/pepefi/Skeleton';
-import { BENCHMARK_KEYS, pctChangeOf, formatBenchmarkValue } from 'src/lib/pepefi/benchmarks';
+import { BENCHMARK_KEYS, pctChangeOf, formatBenchmarkValue, formatPct } from 'src/lib/pepefi/benchmarks';
 
 // ----------------------------------------------------------------------
 // 對照指數列（Benchmark，見 frontend/CONTEXT.md）：S&P 500／黃金／比特幣的
@@ -60,7 +60,7 @@ export default function BenchmarkStrip() {
                         color: pct === null ? 'text.disabled' : pct >= 0 ? 'success.main' : 'error.main',
                       }}
                     >
-                      {pct === null ? '—' : (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%'}
+                      {pct === null ? '—' : formatPct(pct)}
                     </Typography>
                   </>
                 ) : (

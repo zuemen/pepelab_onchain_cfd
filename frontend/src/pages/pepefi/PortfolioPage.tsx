@@ -78,6 +78,7 @@ interface RawPos {
   entryPrice:  bigint;
   margin:      bigint;
   leverage:    bigint;
+  openedAt:    bigint;
   copiedFrom:  string;
 }
 
@@ -98,6 +99,7 @@ interface PosRow {
   currentPrice:  bigint;    // 18-dec
   margin:        bigint;    // 18-dec
   leverage:      bigint;
+  openedAt:      bigint;    // unix seconds
   unrealizedPnL: bigint;    // signed 18-dec
   currentValue:  bigint;    // 18-dec ≥ 0
   copiedFrom:    string;    // address(0) for self-opened
@@ -321,6 +323,7 @@ export default function PortfolioPage() {
               currentPrice:   pr[0] * 10n ** 10n,
               margin:         raw.margin,
               leverage:       raw.leverage,
+              openedAt:       raw.openedAt,
               unrealizedPnL:  pnl as bigint,
               currentValue:   val as bigint,
               copiedFrom:     raw.copiedFrom,

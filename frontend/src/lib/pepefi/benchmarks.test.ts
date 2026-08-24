@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 
-import { pctChangeOf, formatBenchmarkValue, yesterdayUtc } from './benchmarks'
+import { pctChangeOf, formatBenchmarkValue, formatPct, yesterdayUtc } from './benchmarks'
 
 describe('pctChangeOf', () => {
   it('漲跌算對:現價高於前收 → 正百分比', () => {
@@ -40,6 +40,20 @@ describe('formatBenchmarkValue', () => {
 
   it('btc 帶 $ 且千分位正確', () => {
     expect(formatBenchmarkValue('btc', 77105.95)).toBe('$77,105.95')
+  })
+})
+
+describe('formatPct', () => {
+  it('正數帶 + 號', () => {
+    expect(formatPct(1.4)).toBe('+1.40%')
+  })
+
+  it('負數帶原生的 - 號,不重複加號', () => {
+    expect(formatPct(-2.5)).toBe('-2.50%')
+  })
+
+  it('0 視為非負,帶 + 號', () => {
+    expect(formatPct(0)).toBe('+0.00%')
   })
 })
 

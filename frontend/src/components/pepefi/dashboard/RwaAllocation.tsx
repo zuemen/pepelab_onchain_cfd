@@ -6,9 +6,10 @@ import Typography from '@mui/material/Typography';
 
 import { t } from 'src/locales';
 import { MONO } from 'src/components/pepefi/brandKit';
-import { ASSET_CLASSES, ASSET_CLASS_CONFIG, groupMarginByAssetClass, type MarginRow } from 'src/lib/pepefi/assetClass';
+import { ASSET_CLASSES, ASSET_CLASS_CONFIG, groupMarginByAssetClass } from 'src/lib/pepefi/assetClass';
 
 import BenchmarkStrip from './BenchmarkStrip';
+import AnchoredComparison, { type ComparisonRow } from './AnchoredComparison';
 
 // ----------------------------------------------------------------------
 // RWA 是本平台的核心賣點（frontend/CONTEXT.md 的 RWA 詞條）：股債金幣四大類
@@ -24,7 +25,7 @@ import BenchmarkStrip from './BenchmarkStrip';
 // 的配置（兩個分母不同，湊巧顯示在同一個數字旁邊會被當成同一件事）。
 
 type Props = {
-  rows: MarginRow[];
+  rows: ComparisonRow[];
 };
 
 const fUsd = (v: bigint) =>
@@ -96,6 +97,7 @@ export default function RwaAllocation({ rows }: Props) {
       )}
 
       <BenchmarkStrip />
+      <AnchoredComparison rows={rows} />
     </Card>
   );
 }

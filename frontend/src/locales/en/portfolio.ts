@@ -61,6 +61,18 @@ export const portfolio: Catalog['portfolio'] = {
       httpError404:
         'Benchmarks API returned {status} ({url}) — this deployment may not have the /benchmarks route yet; redeploy signal-api',
     },
+
+    /**
+     * See `../zh-TW/portfolio.ts`.
+     */
+    comparison: {
+      heading: 'You vs the Market',
+      since: "Since {date} (your oldest position's open date)",
+      youLabel: 'You (deleveraged)',
+      youHint:
+        'Unrealised PnL ÷ notional — leverage stripped out so this is comparable to the unleveraged benchmarks. The allocation ring above uses margin as its denominator; that difference is intentional.',
+      noPositions: 'No positions yet',
+    },
   },
 
   quickAction: {

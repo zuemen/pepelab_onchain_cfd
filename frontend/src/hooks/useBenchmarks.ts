@@ -21,21 +21,37 @@ export interface BenchmarksState {
   error: string | null
 }
 
+const IDLE: BenchmarksState = { benchmarks: null, loading: false, error: null }
+
 /**
- * 取得三個對照指數，並持續輪詢更新。不吃任何跟持倉相關的參數——這一列
- * 零持倉、甚至從未開過倉的使用者也照常顯示（issue #65）。
+ * 取得三個對照指數，並持續輪詢更新。
+ *
+ * `date` 有三種意義,對應兩個呼叫端：
+ *   - 省略（undefined）→ 每次輪詢都重新算「昨天」，當「當日漲跌」的比較基準
+ *     （BenchmarkStrip，issue #65）。不吃任何跟持倉相關的參數，零持倉、甚至
+ *     從未開過倉的使用者也照常顯示。
+ *   - 一個固定的 YYYY-MM-DD → 「你 vs 大盤」的錨定日比較（issue #67），date
+ *     變動（使用者的最早持倉換了）才重新抓，不是每次輪詢都换。
+ *   - null → 沒有錨定日可比（零持倉）,完全不打 API,直接回 idle 狀態——這是
+ *     跟「省略」刻意不同的第三種狀態,不能把「沒有基準日」誤當成「用預設的
+ *     昨天」，那會讓零持倉的使用者看到一個跟他無關的比較。
  */
-export function useBenchmarks(): BenchmarksState {
-  const [state, setState] = useState<BenchmarksState>({ benchmarks: null, loading: true, error: null })
+export function useBenchmarks(date?: string | null): BenchmarksState {
+  const [state, setState] = useState<BenchmarksState>(date === null ? IDLE : { ...IDLE, loading: true })
 
   useEffect(() => {
+    if (date === null) {
+      setState(IDLE)
+      return
+    }
+
     const ac = new AbortController()
     let timer: ReturnType<typeof setInterval> | undefined
     let hasData = false
 
     const load = async () => {
       try {
-        const res = await fetchBenchmarks(yesterdayUtc(), ac.signal)
+        const res = await fetchBenchmarks(date ?? yesterdayUtc(), ac.signal)
         if (ac.signal.aborted) return
         setState({ benchmarks: res.benchmarks, loading: false, error: null })
         hasData = true
@@ -48,6 +64,7 @@ export function useBenchmarks(): BenchmarksState {
       }
     }
 
+    setState((prev) => ({ ...prev, loading: true }))
     void load()
     timer = setInterval(() => void load(), POLL_MS)
 
@@ -55,7 +72,7 @@ export function useBenchmarks(): BenchmarksState {
       ac.abort()
       if (timer) clearInterval(timer)
     }
-  }, [])
+  }, [date])
 
   return state
 }

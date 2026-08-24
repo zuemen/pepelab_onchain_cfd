@@ -65,6 +65,20 @@ export const portfolio = {
       httpError404:
         '指數 API 回 {status}（{url}） — 該部署可能尚未包含 /benchmarks 路由，需重新部署 signal-api',
     },
+
+    /**
+     * 「你 vs 大盤」，見 CONTEXT.md 的 Anchor Date 詞條。youHint 一定要講清楚
+     * 分母是名目——上面配置環用保證金，這裡用名目，不解釋這個落差會被讀成
+     * bug，不是刻意的設計。
+     */
+    comparison: {
+      heading: '你 vs 大盤',
+      since: '自 {date}（你最早持倉的開倉日）起',
+      youLabel: '你（去槓桿）',
+      youHint:
+        '未實現損益 ÷ 名目——已去除槓桿倍數，才能跟未槓桿的指數公平比較。上方配置環的分母是保證金，這裡不同，是刻意的。',
+      noPositions: '尚無持倉',
+    },
   },
 
   quickAction: {
