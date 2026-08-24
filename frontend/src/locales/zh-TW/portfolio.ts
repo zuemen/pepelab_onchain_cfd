@@ -165,11 +165,11 @@ export const portfolio = {
     autoRefresh: '每 30 秒自動更新 · 兩點式檢視（初始 vs 目前）',
   },
 
+  /**
+   * 配置佔比與分類損益已搬到上面的 allocation（issue #66）。這裡只剩
+   * ESG 分數，cat 仍留著——assetClass.ts 的 ASSET_CLASS_CONFIG 還在用它。
+   */
   analysis: {
-    allocation: '資產配置',
-    noBreakdown: '無部位可供分析。',
-    byAssetClass: '依資產類別',
-    noPositions: '無部位',
     esgScore: 'ESG 評分（依價值加權）',
     esgIncomplete: '並非所有持倉都有 ESG 資料。',
 

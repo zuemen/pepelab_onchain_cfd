@@ -162,11 +162,10 @@ export const portfolio: Catalog['portfolio'] = {
     autoRefresh: 'Auto-refreshes every 30 s · Two-point view (initial vs current)',
   },
 
+  /**
+   * See `../zh-TW/portfolio.ts`.
+   */
   analysis: {
-    allocation: 'Allocation',
-    noBreakdown: 'No positions to break down.',
-    byAssetClass: 'By asset class',
-    noPositions: 'No positions',
     esgScore: 'ESG score (value-weighted)',
     esgIncomplete: 'Not all holdings have ESG data yet.',
 
