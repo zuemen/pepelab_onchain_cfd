@@ -60415,6 +60415,10 @@ async function getCandles(rawSymbol, rawInterval = "1h", rawLimit, rawEnd) {
 // src/benchmarks.ts
 var BENCHMARKS = {
   spx: { key: "spx", name: "S&P 500", yahoo: "^GSPC" },
+  // 債：用 TLT（20 年期以上公債 ETF），跟 symbols.ts 裡 sBOND 的代理標的同一個。
+  // 刻意不用 ^TNX（10 年期殖利率）——那是「殖利率」不是「價格」，殖利率漲 2%
+  // 跟價格漲 2% 是相反的意思，混在一排價格漲跌裡會直接誤導。
+  bond: { key: "bond", name: "US Treasury", yahoo: "TLT" },
   // GC=F，不是 XAUUSD=X：後者在 Yahoo 的 chart API 回 404（symbol may be
   // delisted），且 symbols.ts 的 sGOLD 本來就是用 GC=F，理由同上。
   gold: { key: "gold", name: "Gold", yahoo: "GC=F" },
@@ -60480,10 +60484,15 @@ async function fetchYahooCloses(ticker, params) {
   if (!out.length) throw new Error("Yahoo response has no usable close prices");
   return out.sort((a, b2) => a.t - b2.t);
 }
-async function fetchCurrent(ticker) {
-  const points = await fetchYahooCloses(ticker, "interval=1d&range=5d");
+async function fetchRecent(ticker) {
+  const points = await fetchYahooCloses(ticker, "interval=1d&range=1mo");
   const last = points[points.length - 1];
-  return { value: last.c, at: last.t };
+  const prev = points.length >= 2 ? points[points.length - 2] : void 0;
+  return {
+    current: { value: last.c, at: last.t },
+    previousClose: prev ? { value: prev.c, at: prev.t } : void 0,
+    series: points.map((p) => p.c)
+  };
 }
 async function fetchAtDate(ticker, date) {
   const targetSec = dateToUnixSec(date);
@@ -60513,14 +60522,16 @@ async function getBenchmarks(rawDate) {
       const def = BENCHMARKS[key];
       const result = { ok: true, key, name: def.name, symbol: def.yahoo };
       const errors = [];
-      const [currentR, atDateR] = await Promise.allSettled([
-        cached(`${key}:current`, CURRENT_TTL_MS, () => fetchCurrent(def.yahoo)),
+      const [recentR, atDateR] = await Promise.allSettled([
+        cached(`${key}:recent`, CURRENT_TTL_MS, () => fetchRecent(def.yahoo)),
         date ? cached(`${key}:atDate:${date}`, HISTORY_TTL_MS2, () => fetchAtDate(def.yahoo, date)) : Promise.resolve(void 0)
       ]);
-      if (currentR.status === "fulfilled") {
-        result.current = currentR.value;
+      if (recentR.status === "fulfilled") {
+        result.current = recentR.value.current;
+        result.previousClose = recentR.value.previousClose;
+        result.series = recentR.value.series;
       } else {
-        errors.push(`current: ${currentR.reason?.message ?? String(currentR.reason)}`);
+        errors.push(`current: ${recentR.reason?.message ?? String(recentR.reason)}`);
       }
       if (date) {
         if (atDateR.status === "fulfilled" && atDateR.value) {

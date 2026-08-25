@@ -50,6 +50,7 @@ export const portfolio: Catalog['portfolio'] = {
       heading: 'Benchmarks',
       names: {
         spx: 'S&P 500',
+        bond: 'US Treasury',
         gold: 'Gold',
         btc: 'Bitcoin',
       },

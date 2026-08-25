@@ -1,31 +1,45 @@
 import { describe, it, expect } from 'vitest'
 
-import { pctChangeOf, formatBenchmarkValue, formatPct, yesterdayUtc } from './benchmarks'
+import {
+  pctChangeOf,
+  formatBenchmarkValue,
+  formatPct,
+  sparklinePoints,
+  BENCHMARK_KEYS,
+  type BenchmarkAtDatePoint,
+} from './benchmarks'
 
 describe('pctChangeOf', () => {
-  it('漲跌算對:現價高於前收 → 正百分比', () => {
-    const pct = pctChangeOf({ value: 110, at: 100 }, { value: 100, at: 0, date: '2026-07-10' })
+  it('漲跌算對:現價高於基準 → 正百分比', () => {
+    const pct = pctChangeOf({ value: 110, at: 100 }, { value: 100, at: 0 })
     expect(pct).toBeCloseTo(10)
   })
 
-  it('現價低於前收 → 負百分比', () => {
-    const pct = pctChangeOf({ value: 90, at: 100 }, { value: 100, at: 0, date: '2026-07-10' })
+  it('現價低於基準 → 負百分比', () => {
+    const pct = pctChangeOf({ value: 90, at: 100 }, { value: 100, at: 0 })
     expect(pct).toBeCloseTo(-10)
   })
 
   it('current 缺資料 → null,不是 0 或 NaN', () => {
-    expect(pctChangeOf(undefined, { value: 100, at: 0, date: '2026-07-10' })).toBeNull()
+    expect(pctChangeOf(undefined, { value: 100, at: 0 })).toBeNull()
   })
 
-  it('atDate 缺資料 → null', () => {
+  it('基準缺資料 → null（previousClose 只有一根資料時就是這種情況）', () => {
     expect(pctChangeOf({ value: 100, at: 0 }, undefined)).toBeNull()
   })
 
-  // 這是最重要的一條:atDate.value === 0 直接除下去會是 Infinity,絕不能算出來
-  // 顯示在畫面上當成一個看似真實的百分比。
-  it('atDate 是 0 → null,不是 Infinity', () => {
-    const pct = pctChangeOf({ value: 100, at: 0 }, { value: 0, at: 0, date: '2026-07-10' })
+  // 這是最重要的一條:基準值為 0 直接除下去會是 Infinity,絕不能算出來顯示在
+  // 畫面上當成一個看似真實的百分比。
+  it('基準是 0 → null,不是 Infinity', () => {
+    const pct = pctChangeOf({ value: 100, at: 0 }, { value: 0, at: 0 })
     expect(pct).toBeNull()
+  })
+
+  // 兩種基準共用同一個函式:當日漲跌傳 previousClose(BenchmarkPoint)、
+  // 「你 vs 大盤」傳錨定日的 atDate(BenchmarkAtDatePoint,多一個 date 欄位)。
+  it('帶 date 欄位的錨定點也照樣收（你 vs 大盤那條路徑）', () => {
+    const anchor: BenchmarkAtDatePoint = { value: 100, at: 0, date: '2026-07-10' }
+    expect(pctChangeOf({ value: 120, at: 100 }, anchor)).toBeCloseTo(20)
   })
 })
 
@@ -57,19 +71,43 @@ describe('formatPct', () => {
   })
 })
 
-describe('yesterdayUtc', () => {
-  it('永遠早於傳入的 now,不會撞到後端「不可為未來日期」的驗證', () => {
-    const now = Date.UTC(2026, 6, 12, 3, 0, 0) // 2026-07-12 03:00 UTC
-    expect(yesterdayUtc(now)).toBe('2026-07-11')
-  })
-
-  it('跨月邊界算對', () => {
-    const now = Date.UTC(2026, 7, 1, 0, 30, 0) // 2026-08-01 00:30 UTC
-    expect(yesterdayUtc(now)).toBe('2026-07-31')
-  })
-
-  it('跨年邊界算對', () => {
-    const now = Date.UTC(2027, 0, 1, 0, 0, 0) // 2027-01-01 00:00 UTC
-    expect(yesterdayUtc(now)).toBe('2026-12-31')
+describe('BENCHMARK_KEYS', () => {
+  it('四個指數對應四個 Asset Class（股債金幣）', () => {
+    expect(BENCHMARK_KEYS).toEqual(['spx', 'bond', 'gold', 'btc'])
   })
 })
+
+describe('sparklinePoints', () => {
+  it('空序列 → 空字串,呼叫端據此不畫圖', () => {
+    expect(sparklinePoints([], 100, 20)).toBe('')
+  })
+
+  it('單點 → 一條水平線,不是壞掉的路徑', () => {
+    expect(sparklinePoints([5], 100, 20)).toBe('0,10 100,10')
+  })
+
+  // 這條是重點:整段沒動時 (v-min)/(max-min) 會是 0/0 = NaN,一個 NaN 就讓
+  // 整條 polyline 消失。必須畫在正中央。
+  it('整段價格完全沒動 → 畫在垂直正中央,不是 NaN', () => {
+    const pts = sparklinePoints([7, 7, 7], 100, 20)
+    expect(pts).not.toMatch(/NaN/)
+    expect(pts).toBe('0.00,10.00 50.00,10.00 100.00,10.00')
+  })
+
+  it('上漲的序列:最後一點比第一點高 → y 較小（SVG y 軸向下）', () => {
+    const pts = sparklinePoints([1, 2, 3], 100, 20).split(' ').map((p) => p.split(',').map(Number))
+    expect(pts[0][1]).toBeGreaterThan(pts[2][1])
+  })
+
+  it('最高點貼上緣 y=0、最低點貼下緣 y=height', () => {
+    const pts = sparklinePoints([10, 30, 20], 100, 20).split(' ').map((p) => p.split(',').map(Number))
+    expect(pts[0][1]).toBeCloseTo(20) // 最低 → 底
+    expect(pts[1][1]).toBeCloseTo(0)  // 最高 → 頂
+  })
+
+  it('x 座標均分整個寬度', () => {
+    const pts = sparklinePoints([1, 2, 3, 4, 5], 100, 20).split(' ').map((p) => Number(p.split(',')[0]))
+    expect(pts).toEqual([0, 25, 50, 75, 100])
+  })
+})
+

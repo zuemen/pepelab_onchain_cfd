@@ -54,6 +54,8 @@ export const portfolio = {
       heading: '對照指數',
       names: {
         spx: '標普 500',
+        // TLT（20 年期以上公債 ETF）,不是殖利率——見後端 benchmarks.ts 的說明。
+        bond: '美國公債',
         gold: '黃金',
         btc: '比特幣',
       },

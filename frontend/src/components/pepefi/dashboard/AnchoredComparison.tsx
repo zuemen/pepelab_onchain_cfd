@@ -65,10 +65,11 @@ export default function AnchoredComparison({ rows }: Props) {
             {interpolate(t.portfolio.allocation.comparison.since, { date: anchorDate })}
           </Typography>
 
+          {/* 你 + 四個指數 = 五欄。欄數跟著 BENCHMARK_KEYS 走,加減指數不必再改這裡。 */}
           <Box
             sx={{
               display: 'grid',
-              gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(4, 1fr)' },
+              gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: `repeat(${BENCHMARK_KEYS.length + 1}, 1fr)` },
               gap: 2,
             }}
           >
