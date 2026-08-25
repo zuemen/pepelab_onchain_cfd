@@ -16,7 +16,7 @@ import { getJson } from "./candles.ts";
 
 // ── 指數定義 ─────────────────────────────────────────────────────────────────
 
-export type BenchmarkKey = "spx" | "gold" | "btc";
+export type BenchmarkKey = "spx" | "bond" | "gold" | "btc";
 
 interface BenchmarkDef {
   key: BenchmarkKey;
@@ -25,8 +25,15 @@ interface BenchmarkDef {
   yahoo: string;
 }
 
+// 四個指數一對一對應畫面上的四個 Asset Class：每一類都有一個可以對照的外部
+// 標的，不是隨便挑幾個有名的指數。畫面上的左到右順序由前端的 BENCHMARK_KEYS
+// 決定（前端會自己照那份清單迭代），這裡的順序不影響顯示。
 export const BENCHMARKS: Record<BenchmarkKey, BenchmarkDef> = {
   spx: { key: "spx", name: "S&P 500", yahoo: "^GSPC" },
+  // 債：用 TLT（20 年期以上公債 ETF），跟 symbols.ts 裡 sBOND 的代理標的同一個。
+  // 刻意不用 ^TNX（10 年期殖利率）——那是「殖利率」不是「價格」，殖利率漲 2%
+  // 跟價格漲 2% 是相反的意思，混在一排價格漲跌裡會直接誤導。
+  bond: { key: "bond", name: "US Treasury", yahoo: "TLT" },
   // GC=F，不是 XAUUSD=X：後者在 Yahoo 的 chart API 回 404（symbol may be
   // delisted），且 symbols.ts 的 sGOLD 本來就是用 GC=F，理由同上。
   gold: { key: "gold", name: "Gold", yahoo: "GC=F" },
@@ -41,6 +48,12 @@ export interface BenchmarkPoint {
   value: number;
   /** unix 秒，這個收盤價實際的時間戳（不是查詢時間）。 */
   at: number;
+}
+
+/** 走勢圖的一個點：unix 秒 + 收盤價。 */
+export interface SeriesPoint {
+  t: number;
+  c: number;
 }
 
 export interface AtDatePoint extends BenchmarkPoint {
@@ -58,6 +71,21 @@ export interface BenchmarkResult {
   name: string;
   symbol: string;
   current?: BenchmarkPoint;
+  /**
+   * 比 current 更早的那一根收盤，用來算「當日漲跌」。
+   *
+   * 刻意不讓呼叫端用「昨天的日期」去查：股票只在盤中交易，美股收盤後最新的
+   * 日線就是「昨天」那根，於是「現在」與「不晚於昨天的收盤」會解析到**同一根
+   * K 棒**，漲跌算出來永遠是 0.00%——線上實測就是這樣（spx current 與 atDate
+   * 的時間戳完全相同）。改成「相對最新那根的前一根」，無論市場開不開都有意義。
+   */
+  previousClose?: BenchmarkPoint;
+  /**
+   * 近一個月的日收盤，舊→新。給前端畫走勢圖用。
+   *
+   * 帶時間戳而不是純數值陣列：圖上有橫軸日期，光有價格排不出「哪一天」。
+   */
+  series?: SeriesPoint[];
   atDate?: AtDatePoint;
   error?: string;
 }
@@ -177,12 +205,31 @@ async function fetchYahooCloses(ticker: string, params: string): Promise<ClosePo
   return out.sort((a, b) => a.t - b.t);
 }
 
-async function fetchCurrent(ticker: string): Promise<BenchmarkPoint> {
-  // range=5d 而非 1d：週末／假日時 1d 常常整段沒資料。5d 保證跨過至少一個
-  // 交易日，最後仍只取最新一筆，不影響「當前值」的意義。
-  const points = await fetchYahooCloses(ticker, "interval=1d&range=5d");
+/** 近一個月的日線一次拿回來：最新收盤、前一根收盤、以及整串序列。 */
+interface RecentResult {
+  current: BenchmarkPoint;
+  previousClose?: BenchmarkPoint;
+  series: SeriesPoint[];
+}
+
+/**
+ * range=1mo 而非 5d：同一個請求就同時供應三件事——「當前值」、「當日漲跌的
+ * 基準（前一根收盤）」、以及走勢縮圖需要的序列。抓一個月不比抓五天貴，卻省掉
+ * 另外兩次往返。
+ *
+ * previousClose 在只有一根資料時是 undefined（新上市／資料異常），此時呼叫端
+ * 顯示「—」而不是拿 current 跟自己比生出一個 0.00%。
+ */
+async function fetchRecent(ticker: string): Promise<RecentResult> {
+  const points = await fetchYahooCloses(ticker, "interval=1d&range=1mo");
   const last = points[points.length - 1];
-  return { value: last.c, at: last.t };
+  const prev = points.length >= 2 ? points[points.length - 2] : undefined;
+  return {
+    current: { value: last.c, at: last.t },
+    previousClose: prev ? { value: prev.c, at: prev.t } : undefined,
+    // ClosePoint 的形狀（t/c）就是前端要的，直接透出去，不再多一層對應。
+    series: points,
+  };
 }
 
 async function fetchAtDate(ticker: string, date: string): Promise<AtDatePoint> {
@@ -221,10 +268,10 @@ async function cached<T>(key: string, ttl: number, fn: () => Promise<T>): Promis
 // ── 對外 ─────────────────────────────────────────────────────────────────────
 
 /**
- * 取得三個對照指數的當前值，以及（給了 date 時）指定日期或之前最近一個
- * 交易日的收盤值。
+ * 取得四個對照指數的當前值、當日漲跌基準（前一根收盤）、近一個月走勢，
+ * 以及（給了 date 時）指定日期或之前最近一個交易日的收盤值。
  *
- * 三個指數各自獨立成功/失敗：一個上游掛掉不連累另外兩個，也不連累同一個
+ * 四個指數各自獨立成功/失敗：一個上游掛掉不連累另外三個，也不連累同一個
  * 指數裡已經拿到的 current／atDate 其中一項。任何一項失敗都不落回假數字，
  * 只在該欄位標 error，由呼叫端決定怎麼呈現。
  *
@@ -239,17 +286,19 @@ export async function getBenchmarks(rawDate?: string): Promise<BenchmarksRespons
       const result: BenchmarkResult = { ok: true, key, name: def.name, symbol: def.yahoo };
       const errors: string[] = [];
 
-      const [currentR, atDateR] = await Promise.allSettled([
-        cached(`${key}:current`, CURRENT_TTL_MS, () => fetchCurrent(def.yahoo)),
+      const [recentR, atDateR] = await Promise.allSettled([
+        cached(`${key}:recent`, CURRENT_TTL_MS, () => fetchRecent(def.yahoo)),
         date
           ? cached(`${key}:atDate:${date}`, HISTORY_TTL_MS, () => fetchAtDate(def.yahoo, date))
           : Promise.resolve(undefined),
       ]);
 
-      if (currentR.status === "fulfilled") {
-        result.current = currentR.value;
+      if (recentR.status === "fulfilled") {
+        result.current = recentR.value.current;
+        result.previousClose = recentR.value.previousClose;
+        result.series = recentR.value.series;
       } else {
-        errors.push(`current: ${(currentR.reason as Error)?.message ?? String(currentR.reason)}`);
+        errors.push(`current: ${(recentR.reason as Error)?.message ?? String(recentR.reason)}`);
       }
 
       if (date) {

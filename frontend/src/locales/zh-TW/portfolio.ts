@@ -54,9 +54,15 @@ export const portfolio = {
       heading: '對照指數',
       names: {
         spx: '標普 500',
+        // TLT（20 年期以上公債 ETF）,不是殖利率——見後端 benchmarks.ts 的說明。
+        bond: '美國公債',
         gold: '黃金',
         btc: '比特幣',
       },
+      dayChange: '當日漲跌',
+      /** 走勢圖的區間說明,以及 tooltip 裡價格那一列的名稱。 */
+      chartRange: '近一個月',
+      chartPrice: '收盤價',
       itemUnavailable: '暫時無法取得',
       unreachable: '無法連線到指數 API（{url}）。',
       unreachableDev:
@@ -73,7 +79,19 @@ export const portfolio = {
      */
     comparison: {
       heading: '你 vs 大盤',
-      since: '自 {date}（你最早持倉的開倉日）起',
+      since: '自 {date}（你最早持倉的開倉日）起 · {days} 天',
+      /** 分母只算真的拿到報酬率的指數,見 beatCountOf。 */
+      beatSummary: '在 {total} 個對照指數中領先 {beat} 個',
+      beatSummaryNone: '尚無可比較的指數資料',
+      /**
+       * 兩個百分比相減的單位是「百分點」不是「%」——寫成 % 會讓人以為是
+       * 相對變化（例如 24% 比 23% 高 4%）,那是另一個數字。
+       *
+       * 中文寫全「百分點」而不是縮寫 pp：pp 在中文語境不是通用縮寫,讀者
+       * 得先知道它代表什麼才看得懂。英文那份保留 pp,那在英文裡是標準寫法。
+       */
+      aheadBy: '領先 {pp} 百分點',
+      behindBy: '落後 {pp} 百分點',
       youLabel: '你（去槓桿）',
       youHint:
         '未實現損益 ÷ 名目——已去除槓桿倍數，才能跟未槓桿的指數公平比較。上方配置環的分母是保證金，這裡不同，是刻意的。',
