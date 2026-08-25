@@ -19,10 +19,10 @@ const BENCHMARKS_API_URL: string = (import.meta.env.VITE_SIGNAL_API_URL as strin
 export type BenchmarkKey = 'spx' | 'bond' | 'gold' | 'btc'
 
 /**
- * 顯示順序,跟後端 BENCHMARK_KEYS 分開維護——兩個 workspace 沒有共用型別的管道。
- * 順序刻意對齊四個 Asset Class（股債金幣）。
+ * 畫面上由左到右的顯示順序。這份清單就是唯一的順序來源——對照指數列與
+ * 「你 vs 大盤」都照它迭代,改這裡兩邊會同步變動,後端不參與排序。
  */
-export const BENCHMARK_KEYS: BenchmarkKey[] = ['spx', 'bond', 'gold', 'btc']
+export const BENCHMARK_KEYS: BenchmarkKey[] = ['btc', 'spx', 'gold', 'bond']
 
 export interface BenchmarkPoint {
   value: number
@@ -33,6 +33,12 @@ export interface BenchmarkAtDatePoint extends BenchmarkPoint {
   date: string
 }
 
+/** 走勢圖的一個點：unix 秒 + 收盤價。 */
+export interface SeriesPoint {
+  t: number
+  c: number
+}
+
 export interface BenchmarkResult {
   ok: boolean
   key: BenchmarkKey
@@ -41,8 +47,8 @@ export interface BenchmarkResult {
   current?: BenchmarkPoint
   /** 當日漲跌的基準：比 current 更早的那一根收盤。見後端同名欄位的註解。 */
   previousClose?: BenchmarkPoint
-  /** 近一個月日收盤,舊→新。走勢縮圖用。 */
-  series?: number[]
+  /** 近一個月日收盤,舊→新。走勢圖用,帶時間戳供橫軸使用。 */
+  series?: SeriesPoint[]
   atDate?: BenchmarkAtDatePoint
   error?: string
 }
@@ -135,31 +141,47 @@ export function formatPct(pct: number): string {
 }
 
 /**
- * 把一串收盤價轉成 SVG polyline 的 points 字串。
+ * 縱軸的價格刻度。四個指數的量級差三個數量級（美債 ~82、比特幣 ~80,000）,
+ * 同一個格式套下去不是刻度擠成一團就是精度全失,所以依量級縮寫。
  *
- * 走勢縮圖只有一條線,沒有座標軸、tooltip、legend,所以不走 recharts——那些
- * 功能在這裡的價值是零,而純 SVG 讓「幾何怎麼算」變成一個可以被測試釘住的
- * 純函式,跟這個目錄其他計算一致。
- *
- * 空序列回空字串（呼叫端據此不畫圖）。整段價格完全沒動時(max === min)畫在
- * 垂直正中央,而不是讓 (v - min) / 0 變成 NaN 汙染整條路徑。
+ * 用 UTC 無關的純數值運算,結果只由輸入決定,可以被測試釘住。
  */
-export function sparklinePoints(values: number[], width: number, height: number): string {
-  if (values.length === 0) return ''
-  if (values.length === 1) {
-    const mid = height / 2
-    return `0,${mid} ${width},${mid}`
-  }
+export function formatAxisPrice(value: number): string {
+  const abs = Math.abs(value)
+  if (abs >= 10_000) return `${(value / 1000).toFixed(0)}k`
+  if (abs >= 1_000) return `${(value / 1000).toFixed(1)}k`
+  if (abs >= 100) return value.toFixed(0)
+  return value.toFixed(1)
+}
+
+/**
+ * 橫軸的日期刻度：unix 秒 → MM/DD。
+ *
+ * 固定用 UTC,不看瀏覽器時區——收盤時間戳本來就是以交易日為單位,讓它隨使用者
+ * 時區前後跳一天，會出現「某一天憑空消失或重複」的刻度。
+ */
+export function formatAxisDate(unixSec: number): string {
+  const d = new Date(unixSec * 1000)
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(d.getUTCDate()).padStart(2, '0')
+  return `${mm}/${dd}`
+}
+
+/**
+ * 縱軸的範圍。刻意不從 0 起算:這是走勢圖不是量體圖,從 0 起算會把一個月的
+ * 波動壓成一條直線。上下各留 5% 餘裕,線才不會貼著邊框。
+ *
+ * 整段價格完全沒動時(max === min)強制撐開一個區間,否則 recharts 會拿到
+ * 上下界相同的 domain,整條線畫不出來。
+ */
+export function priceDomainOf(values: number[]): [number, number] {
+  if (values.length === 0) return [0, 1]
   const min = Math.min(...values)
   const max = Math.max(...values)
-  const span = max - min
-  const stepX = width / (values.length - 1)
-  return values
-    .map((v, i) => {
-      const x = i * stepX
-      // SVG 的 y 軸向下,所以價格高 = y 小。
-      const y = span === 0 ? height / 2 : height - ((v - min) / span) * height
-      return `${x.toFixed(2)},${y.toFixed(2)}`
-    })
-    .join(' ')
+  if (min === max) {
+    const pad = Math.abs(min) * 0.05 || 1
+    return [min - pad, max + pad]
+  }
+  const pad = (max - min) * 0.05
+  return [min - pad, max + pad]
 }

@@ -59,6 +59,10 @@ export const portfolio = {
         gold: '黃金',
         btc: '比特幣',
       },
+      dayChange: '當日漲跌',
+      /** 走勢圖的區間說明,以及 tooltip 裡價格那一列的名稱。 */
+      chartRange: '近一個月',
+      chartPrice: '收盤價',
       itemUnavailable: '暫時無法取得',
       unreachable: '無法連線到指數 API（{url}）。',
       unreachableDev:

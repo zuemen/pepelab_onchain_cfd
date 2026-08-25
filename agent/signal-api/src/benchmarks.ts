@@ -25,8 +25,9 @@ interface BenchmarkDef {
   yahoo: string;
 }
 
-// 四個指數刻意對應畫面上的四個 Asset Class（股債金幣）：每一類都有一個可以
-// 對照的外部標的，不是隨便挑三個有名的指數。
+// 四個指數一對一對應畫面上的四個 Asset Class：每一類都有一個可以對照的外部
+// 標的，不是隨便挑幾個有名的指數。畫面上的左到右順序由前端的 BENCHMARK_KEYS
+// 決定（前端會自己照那份清單迭代），這裡的順序不影響顯示。
 export const BENCHMARKS: Record<BenchmarkKey, BenchmarkDef> = {
   spx: { key: "spx", name: "S&P 500", yahoo: "^GSPC" },
   // 債：用 TLT（20 年期以上公債 ETF），跟 symbols.ts 裡 sBOND 的代理標的同一個。
@@ -47,6 +48,12 @@ export interface BenchmarkPoint {
   value: number;
   /** unix 秒，這個收盤價實際的時間戳（不是查詢時間）。 */
   at: number;
+}
+
+/** 走勢圖的一個點：unix 秒 + 收盤價。 */
+export interface SeriesPoint {
+  t: number;
+  c: number;
 }
 
 export interface AtDatePoint extends BenchmarkPoint {
@@ -73,8 +80,12 @@ export interface BenchmarkResult {
    * 的時間戳完全相同）。改成「相對最新那根的前一根」，無論市場開不開都有意義。
    */
   previousClose?: BenchmarkPoint;
-  /** 近一個月的日收盤，舊→新。給前端畫走勢縮圖用，不含時間軸。 */
-  series?: number[];
+  /**
+   * 近一個月的日收盤，舊→新。給前端畫走勢圖用。
+   *
+   * 帶時間戳而不是純數值陣列：圖上有橫軸日期，光有價格排不出「哪一天」。
+   */
+  series?: SeriesPoint[];
   atDate?: AtDatePoint;
   error?: string;
 }
@@ -198,7 +209,7 @@ async function fetchYahooCloses(ticker: string, params: string): Promise<ClosePo
 interface RecentResult {
   current: BenchmarkPoint;
   previousClose?: BenchmarkPoint;
-  series: number[];
+  series: SeriesPoint[];
 }
 
 /**
@@ -216,7 +227,8 @@ async function fetchRecent(ticker: string): Promise<RecentResult> {
   return {
     current: { value: last.c, at: last.t },
     previousClose: prev ? { value: prev.c, at: prev.t } : undefined,
-    series: points.map((p) => p.c),
+    // ClosePoint 的形狀（t/c）就是前端要的，直接透出去，不再多一層對應。
+    series: points,
   };
 }
 

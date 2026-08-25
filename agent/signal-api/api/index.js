@@ -60491,7 +60491,8 @@ async function fetchRecent(ticker) {
   return {
     current: { value: last.c, at: last.t },
     previousClose: prev ? { value: prev.c, at: prev.t } : void 0,
-    series: points.map((p) => p.c)
+    // ClosePoint 的形狀（t/c）就是前端要的，直接透出去，不再多一層對應。
+    series: points
   };
 }
 async function fetchAtDate(ticker, date) {

@@ -4,7 +4,9 @@ import {
   pctChangeOf,
   formatBenchmarkValue,
   formatPct,
-  sparklinePoints,
+  formatAxisPrice,
+  formatAxisDate,
+  priceDomainOf,
   BENCHMARK_KEYS,
   type BenchmarkAtDatePoint,
 } from './benchmarks'
@@ -72,42 +74,78 @@ describe('formatPct', () => {
 })
 
 describe('BENCHMARK_KEYS', () => {
-  it('四個指數對應四個 Asset Class（股債金幣）', () => {
-    expect(BENCHMARK_KEYS).toEqual(['spx', 'bond', 'gold', 'btc'])
+  it('畫面由左到右的顯示順序:幣、股、金、債', () => {
+    expect(BENCHMARK_KEYS).toEqual(['btc', 'spx', 'gold', 'bond'])
   })
 })
 
-describe('sparklinePoints', () => {
-  it('空序列 → 空字串,呼叫端據此不畫圖', () => {
-    expect(sparklinePoints([], 100, 20)).toBe('')
+describe('formatAxisPrice', () => {
+  // 四個指數量級差三個數量級,同一種格式套下去不是擠成一團就是精度全失。
+  it('比特幣量級（~80,000）縮成 k,不留小數', () => {
+    expect(formatAxisPrice(79977.52)).toBe('80k')
   })
 
-  it('單點 → 一條水平線,不是壞掉的路徑', () => {
-    expect(sparklinePoints([5], 100, 20)).toBe('0,10 100,10')
+  it('標普量級（~7,600）縮成 k,留一位小數才分得出刻度', () => {
+    expect(formatAxisPrice(7652.86)).toBe('7.7k')
   })
 
-  // 這條是重點:整段沒動時 (v-min)/(max-min) 會是 0/0 = NaN,一個 NaN 就讓
-  // 整條 polyline 消失。必須畫在正中央。
-  it('整段價格完全沒動 → 畫在垂直正中央,不是 NaN', () => {
-    const pts = sparklinePoints([7, 7, 7], 100, 20)
-    expect(pts).not.toMatch(/NaN/)
-    expect(pts).toBe('0.00,10.00 50.00,10.00 100.00,10.00')
+  it('黃金量級（~4,700）同樣留一位小數', () => {
+    expect(formatAxisPrice(4678.8)).toBe('4.7k')
   })
 
-  it('上漲的序列:最後一點比第一點高 → y 較小（SVG y 軸向下）', () => {
-    const pts = sparklinePoints([1, 2, 3], 100, 20).split(' ').map((p) => p.split(',').map(Number))
-    expect(pts[0][1]).toBeGreaterThan(pts[2][1])
+  it('美債量級（~82）不縮寫,留一位小數', () => {
+    expect(formatAxisPrice(82.56)).toBe('82.6')
   })
 
-  it('最高點貼上緣 y=0、最低點貼下緣 y=height', () => {
-    const pts = sparklinePoints([10, 30, 20], 100, 20).split(' ').map((p) => p.split(',').map(Number))
-    expect(pts[0][1]).toBeCloseTo(20) // 最低 → 底
-    expect(pts[1][1]).toBeCloseTo(0)  // 最高 → 頂
+  it('三位數不留小數', () => {
+    expect(formatAxisPrice(199.34)).toBe('199')
   })
 
-  it('x 座標均分整個寬度', () => {
-    const pts = sparklinePoints([1, 2, 3, 4, 5], 100, 20).split(' ').map((p) => Number(p.split(',')[0]))
-    expect(pts).toEqual([0, 25, 50, 75, 100])
+  it('負值也照量級處理,不會變成 NaN 或掉負號', () => {
+    expect(formatAxisPrice(-7652.86)).toBe('-7.7k')
+  })
+})
+
+describe('formatAxisDate', () => {
+  it('unix 秒 → MM/DD,固定 UTC', () => {
+    expect(formatAxisDate(Date.UTC(2026, 7, 24, 13, 30) / 1000)).toBe('08/24')
+  })
+
+  it('個位數的月與日補零,刻度寬度才一致', () => {
+    expect(formatAxisDate(Date.UTC(2026, 0, 5, 0, 0) / 1000)).toBe('01/05')
+  })
+
+  // 不看瀏覽器時區:UTC 當天稍晚的時間戳仍屬同一天,不會前後跳一天。
+  it('UTC 深夜的時間戳不會跨到隔天', () => {
+    expect(formatAxisDate(Date.UTC(2026, 7, 24, 23, 59) / 1000)).toBe('08/24')
+  })
+})
+
+describe('priceDomainOf', () => {
+  it('空序列 → 一個安全的預設區間,不是 NaN', () => {
+    expect(priceDomainOf([])).toEqual([0, 1])
+  })
+
+  it('不從 0 起算——從 0 起算會把一個月的波動壓成一條直線', () => {
+    const [lo, hi] = priceDomainOf([100, 110])
+    expect(lo).toBeGreaterThan(0)
+    expect(lo).toBeLessThan(100)
+    expect(hi).toBeGreaterThan(110)
+  })
+
+  it('上下各留 5% 餘裕', () => {
+    expect(priceDomainOf([100, 200])).toEqual([95, 205])
+  })
+
+  // 這條是重點:上下界相同時 recharts 畫不出線,必須強制撐開。
+  it('整段價格完全沒動 → 仍撐開一個區間,上下界不相等', () => {
+    const [lo, hi] = priceDomainOf([50, 50, 50])
+    expect(hi).toBeGreaterThan(lo)
+  })
+
+  it('價格為 0 且完全沒動也要撐開,不能回 [0, 0]', () => {
+    const [lo, hi] = priceDomainOf([0, 0])
+    expect(hi).toBeGreaterThan(lo)
   })
 })
 

@@ -54,6 +54,9 @@ export const portfolio: Catalog['portfolio'] = {
         gold: 'Gold',
         btc: 'Bitcoin',
       },
+      dayChange: 'Day change',
+      chartRange: 'Past month',
+      chartPrice: 'Close',
       itemUnavailable: 'Currently unavailable',
       unreachable: "Can't reach the benchmarks API ({url}).",
       unreachableDev:
