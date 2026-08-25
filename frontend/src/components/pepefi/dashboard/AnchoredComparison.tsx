@@ -87,15 +87,16 @@ function ComparisonRowView({
 
   return (
     <Stack direction="row" alignItems="center" spacing={1.5}>
-      <Box sx={{ width: { xs: 92, sm: 116 }, flexShrink: 0 }}>
+      <Box sx={{ width: { xs: 92, sm: 116 }, flexShrink: 0, whiteSpace: 'nowrap' }}>
         {labelHint ? <Tooltip title={labelHint}>{nameNode}</Tooltip> : nameNode}
       </Box>
 
       <Typography
         sx={{
-          width: 82,
+          width: 92,
           flexShrink: 0,
           textAlign: 'right',
+          whiteSpace: 'nowrap',
           fontFamily: MONO,
           fontWeight: emphasis ? 800 : 700,
           fontSize: emphasis ? '1rem' : '0.875rem',
@@ -124,9 +125,20 @@ function ComparisonRowView({
         )}
       </Box>
 
+      {/* 固定寬度 + nowrap：差距文字長度隨數值變動（「領先 1.08 百分點」vs
+          「領先 25.56 百分點」），不釘住寬度就會換行，把那一列撐高、五列的
+          基線就對不齊了。xs 藏起來——這一列在手機上已經很擠，而差距本來就
+          能從左邊兩個百分比看出來，長條也還在。 */}
       <Typography
         variant="caption"
-        sx={{ width: { xs: 76, sm: 92 }, flexShrink: 0, textAlign: 'right', color: 'text.disabled' }}
+        sx={{
+          display: { xs: 'none', sm: 'block' },
+          width: 112,
+          flexShrink: 0,
+          textAlign: 'right',
+          whiteSpace: 'nowrap',
+          color: 'text.disabled',
+        }}
       >
         {gapPp === null || gapPp === undefined
           ? ''
