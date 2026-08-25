@@ -14071,14 +14071,14 @@ var Response2 = class _Response {
     }
   }
   get headers() {
-    const cache2 = this[cacheKey];
-    if (cache2) {
-      if (!(cache2[2] instanceof Headers)) {
-        cache2[2] = new Headers(
-          cache2[2] || { "content-type": "text/plain; charset=UTF-8" }
+    const cache3 = this[cacheKey];
+    if (cache3) {
+      if (!(cache3[2] instanceof Headers)) {
+        cache3[2] = new Headers(
+          cache3[2] || { "content-type": "text/plain; charset=UTF-8" }
         );
       }
-      return cache2[2];
+      return cache3[2];
     }
     return this[getResponseCache]().headers;
   }
@@ -42834,10 +42834,10 @@ init_stringify();
 var promiseCache = /* @__PURE__ */ new Map();
 var responseCache2 = /* @__PURE__ */ new Map();
 function getCache(cacheKey3) {
-  const buildCache = (cacheKey4, cache2) => ({
-    clear: () => cache2.delete(cacheKey4),
-    get: () => cache2.get(cacheKey4),
-    set: (data4) => cache2.set(cacheKey4, data4)
+  const buildCache = (cacheKey4, cache3) => ({
+    clear: () => cache3.delete(cacheKey4),
+    get: () => cache3.get(cacheKey4),
+    set: (data4) => cache3.set(cacheKey4, data4)
   });
   const promise = buildCache(cacheKey3, promiseCache);
   const response = buildCache(cacheKey3, responseCache2);
@@ -42851,24 +42851,24 @@ function getCache(cacheKey3) {
   };
 }
 async function withCache(fn, { cacheKey: cacheKey3, cacheTime = Number.POSITIVE_INFINITY }) {
-  const cache2 = getCache(cacheKey3);
-  const response = cache2.response.get();
+  const cache3 = getCache(cacheKey3);
+  const response = cache3.response.get();
   if (response && cacheTime > 0) {
     const age = Date.now() - response.created.getTime();
     if (age < cacheTime)
       return response.data;
   }
-  let promise = cache2.promise.get();
+  let promise = cache3.promise.get();
   if (!promise) {
     promise = fn();
-    cache2.promise.set(promise);
+    cache3.promise.set(promise);
   }
   try {
     const data4 = await promise;
-    cache2.response.set({ created: /* @__PURE__ */ new Date(), data: data4 });
+    cache3.response.set({ created: /* @__PURE__ */ new Date(), data: data4 });
     return data4;
   } finally {
-    cache2.promise.clear();
+    cache3.promise.clear();
   }
 }
 
@@ -58932,6 +58932,138 @@ async function getCandles(rawSymbol, rawInterval = "1h", rawLimit, rawEnd) {
   return payload;
 }
 
+// src/benchmarks.ts
+var BENCHMARKS = {
+  spx: { key: "spx", name: "S&P 500", yahoo: "^GSPC" },
+  // GC=F，不是 XAUUSD=X：後者在 Yahoo 的 chart API 回 404（symbol may be
+  // delisted），且 symbols.ts 的 sGOLD 本來就是用 GC=F，理由同上。
+  gold: { key: "gold", name: "Gold", yahoo: "GC=F" },
+  btc: { key: "btc", name: "Bitcoin", yahoo: "BTC-USD" }
+};
+var BENCHMARK_KEYS = Object.keys(BENCHMARKS);
+var BadDateError = class extends Error {
+};
+var DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+function isValidCalendarDate(y, mo, d) {
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return false;
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d;
+}
+function dateToUnixSec(date) {
+  return Math.floor(Date.parse(`${date}T00:00:00Z`) / 1e3);
+}
+function parseDateParam(raw2) {
+  if (raw2 === void 0 || raw2 === "") return void 0;
+  const trimmed = raw2.trim();
+  const m = DATE_RE.exec(trimmed);
+  if (!m) {
+    throw new BadDateError(`date \u53C3\u6578\u683C\u5F0F\u932F\u8AA4\uFF1A"${raw2}"\uFF0C\u9700\u70BA YYYY-MM-DD`);
+  }
+  const [, yStr, moStr, dStr] = m;
+  if (!isValidCalendarDate(Number(yStr), Number(moStr), Number(dStr))) {
+    throw new BadDateError(`date \u53C3\u6578\u4E0D\u662F\u5408\u6CD5\u65E5\u671F\uFF1A"${raw2}"`);
+  }
+  const sec = dateToUnixSec(trimmed);
+  if (sec > Math.floor(Date.now() / 1e3)) {
+    throw new BadDateError(`date \u53C3\u6578\u4E0D\u53EF\u70BA\u672A\u4F86\u65E5\u671F\uFF1A"${raw2}"`);
+  }
+  return trimmed;
+}
+function pickCloseAtOrBefore(points, targetDateSec) {
+  const targetDay = Math.floor(targetDateSec / 86400);
+  let best;
+  for (const p of points) {
+    const day = Math.floor(p.t / 86400);
+    if (day <= targetDay && (!best || p.t > best.t)) best = p;
+  }
+  return best;
+}
+var YAHOO_HOST2 = "https://query1.finance.yahoo.com";
+async function fetchYahooCloses(ticker, params) {
+  const url = `${YAHOO_HOST2}/v8/finance/chart/${encodeURIComponent(ticker)}?${params}`;
+  const json = await getJson(url);
+  if (json.chart?.error) {
+    throw new Error(json.chart.error.description ?? "Yahoo reported an error");
+  }
+  const result = json.chart?.result?.[0];
+  const ts = result?.timestamp;
+  const close = result?.indicators?.quote?.[0]?.close;
+  if (!ts?.length || !close) {
+    throw new Error("Yahoo response has no data for this range");
+  }
+  const out = [];
+  for (let i = 0; i < ts.length; i += 1) {
+    const c = close[i];
+    if (c == null || !Number.isFinite(c) || c <= 0) continue;
+    out.push({ t: Number(ts[i]), c });
+  }
+  if (!out.length) throw new Error("Yahoo response has no usable close prices");
+  return out.sort((a, b2) => a.t - b2.t);
+}
+async function fetchCurrent(ticker) {
+  const points = await fetchYahooCloses(ticker, "interval=1d&range=5d");
+  const last = points[points.length - 1];
+  return { value: last.c, at: last.t };
+}
+async function fetchAtDate(ticker, date) {
+  const targetSec = dateToUnixSec(date);
+  const period1 = targetSec - 10 * 86400;
+  const period2 = targetSec + 86400;
+  const points = await fetchYahooCloses(ticker, `interval=1d&period1=${period1}&period2=${period2}`);
+  const hit = pickCloseAtOrBefore(points, targetSec);
+  if (!hit) {
+    throw new Error(`no close on or before ${date} within the lookback window`);
+  }
+  return { value: hit.c, at: hit.t, date: new Date(hit.t * 1e3).toISOString().slice(0, 10) };
+}
+var CURRENT_TTL_MS = 5 * 6e4;
+var HISTORY_TTL_MS2 = 24 * 36e5;
+var cache2 = /* @__PURE__ */ new Map();
+async function cached(key, ttl, fn) {
+  const hit = cache2.get(key);
+  if (hit && Date.now() - hit.at < ttl) return hit.value;
+  const value = await fn();
+  cache2.set(key, { at: Date.now(), value });
+  return value;
+}
+async function getBenchmarks(rawDate) {
+  const date = parseDateParam(rawDate);
+  const entries = await Promise.all(
+    BENCHMARK_KEYS.map(async (key) => {
+      const def = BENCHMARKS[key];
+      const result = { ok: true, key, name: def.name, symbol: def.yahoo };
+      const errors = [];
+      const [currentR, atDateR] = await Promise.allSettled([
+        cached(`${key}:current`, CURRENT_TTL_MS, () => fetchCurrent(def.yahoo)),
+        date ? cached(`${key}:atDate:${date}`, HISTORY_TTL_MS2, () => fetchAtDate(def.yahoo, date)) : Promise.resolve(void 0)
+      ]);
+      if (currentR.status === "fulfilled") {
+        result.current = currentR.value;
+      } else {
+        errors.push(`current: ${currentR.reason?.message ?? String(currentR.reason)}`);
+      }
+      if (date) {
+        if (atDateR.status === "fulfilled" && atDateR.value) {
+          result.atDate = atDateR.value;
+        } else if (atDateR.status === "rejected") {
+          errors.push(`atDate: ${atDateR.reason?.message ?? String(atDateR.reason)}`);
+        }
+      }
+      if (errors.length) {
+        result.ok = false;
+        result.error = errors.join("; ");
+      }
+      return [key, result];
+    })
+  );
+  return {
+    ok: true,
+    asOf: Math.floor(Date.now() / 1e3),
+    requestedDate: date ?? null,
+    benchmarks: Object.fromEntries(entries)
+  };
+}
+
 // src/app.ts
 var NETWORK = process.env.X402_NETWORK ?? "base-sepolia";
 var FACILITATOR_URL = process.env.X402_FACILITATOR_URL ?? "https://x402.org/facilitator";
@@ -59069,6 +59201,10 @@ function createApp() {
           desc: `K \u7DDA OHLCV\u3002?interval= \u9810\u8A2D 1h\uFF0C?limit= \u9810\u8A2D 300\uFF08\u4E0A\u9650 ${MAX_LIMIT}\uFF09\u3002\u56DE\u61C9\u5E36 source \u51FA\u8655\uFF0C\u5716\u8868\u9808\u6A19\u793A\u3002`,
           intervals: INTERVAL_KEYS
         },
+        "GET /benchmarks": {
+          price: "free",
+          desc: "\u5C0D\u7167\u6307\u6578\uFF1AS&P 500\uFF0F\u9EC3\u91D1\uFF0F\u6BD4\u7279\u5E63\uFF0C\u540C\u4E00\u4F86\u6E90\uFF08Yahoo Finance\uFF09\u3002?date=YYYY-MM-DD \u52A0\u78BC\u56DE\u8A72\u65E5\u6216\u4E4B\u524D\u6700\u8FD1\u4E00\u500B\u4EA4\u6613\u65E5\u7684\u6536\u76E4\u3002\u4E0D\u505A\u6A21\u64EC\u4FDD\u5E95\uFF0C\u4E0A\u6E38\u62FF\u4E0D\u5230\u5C31\u5728\u8A72\u6307\u6578\u7684 error \u6B04\u4F4D\u6A19\u660E\u3002"
+        },
         "GET /agent/:did/verification": { price: "free", desc: "ERC-8126 agent \u9A57\u8B49\uFF08ETV/SCV/WAV/WV + 0\u2013100 \u98A8\u96AA\u5206\u6578\uFF0Cverifier \u7C3D\u7AE0\uFF09" },
         "POST /demo/buy-signal": { price: "free", desc: "\u8A2A\u5BA2\u8A66\u8CB7\uFF08\u514D\u8CBB\u56DE\u8A0A\u865F\uFF1B\u771F\u5BE6 70/20/10 \u5206\u6F64\u898B\u4ED8\u8CBB x402 \u7AEF\u9EDE + /revenue \u7D2F\u8A08\uFF09" }
       },
@@ -59098,6 +59234,17 @@ function createApp() {
       return c.json(data4);
     } catch (err) {
       if (err instanceof UnknownMarketError || err instanceof BadIntervalError) {
+        return c.json({ ok: false, error: err.message }, 400);
+      }
+      return c.json({ ok: false, error: err.message }, 502);
+    }
+  });
+  app2.get("/benchmarks", async (c) => {
+    try {
+      const data4 = await getBenchmarks(c.req.query("date"));
+      return c.json(data4);
+    } catch (err) {
+      if (err instanceof BadDateError) {
         return c.json({ ok: false, error: err.message }, 400);
       }
       return c.json({ ok: false, error: err.message }, 502);
