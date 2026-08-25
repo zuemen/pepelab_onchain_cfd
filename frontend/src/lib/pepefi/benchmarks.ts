@@ -168,6 +168,19 @@ export function formatAxisDate(unixSec: number): string {
 }
 
 /**
+ * 走勢線本身的方向:月末收盤高於月初就是上漲。
+ *
+ * 圖的顏色跟著這個走,而不是跟著當日漲跌——線畫的是一個月,用「今天漲跌」
+ * 決定整條線的顏色,會出現「綠色但整體向下」這種自我矛盾的圖。
+ *
+ * 資料不足兩點時回 null:一個點沒有方向可言,呼叫端應退回中性色而不是猜。
+ */
+export function seriesDirection(series: SeriesPoint[]): boolean | null {
+  if (series.length < 2) return null
+  return series[series.length - 1].c >= series[0].c
+}
+
+/**
  * 縱軸的範圍。刻意不從 0 起算:這是走勢圖不是量體圖,從 0 起算會把一個月的
  * 波動壓成一條直線。上下各留 5% 餘裕,線才不會貼著邊框。
  *

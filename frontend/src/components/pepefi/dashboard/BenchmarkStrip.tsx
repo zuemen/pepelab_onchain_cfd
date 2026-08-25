@@ -16,6 +16,7 @@ import {
   formatAxisPrice,
   formatAxisDate,
   priceDomainOf,
+  seriesDirection,
   type BenchmarkKey,
   type SeriesPoint,
 } from 'src/lib/pepefi/benchmarks';
@@ -40,10 +41,19 @@ import {
 
 const CHART_H = 128;
 
-function BenchmarkChart({ series, positive }: { series: SeriesPoint[]; positive: boolean }) {
+function BenchmarkChart({ series }: { series: SeriesPoint[] }) {
   if (series.length === 0) return null;
 
-  const color = positive ? 'var(--palette-success-main)' : 'var(--palette-error-main)';
+  // 顏色跟著線自己的方向（月初 vs 月末），不是跟著當日漲跌——用「今天漲跌」
+  // 決定一整個月的線色，會畫出「綠色但整體向下」這種自相矛盾的圖。
+  // 資料不足兩點時沒有方向可言，退回中性色而不是猜一個。
+  const rising = seriesDirection(series);
+  const color =
+    rising === null
+      ? 'var(--palette-text-disabled)'
+      : rising
+        ? 'var(--palette-success-main)'
+        : 'var(--palette-error-main)';
   const domain = priceDomainOf(series.map((p) => p.c));
 
   return (
@@ -158,7 +168,7 @@ export default function BenchmarkStrip() {
                         {t.portfolio.allocation.benchmark.dayChange}
                       </Typography>
                     </Stack>
-                    <BenchmarkChart series={series} positive={(pct ?? 0) >= 0} />
+                    <BenchmarkChart series={series} />
                   </>
                 ) : (
                   <Typography variant="caption" color="text.disabled">

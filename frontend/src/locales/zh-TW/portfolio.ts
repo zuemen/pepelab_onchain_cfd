@@ -79,7 +79,16 @@ export const portfolio = {
      */
     comparison: {
       heading: '你 vs 大盤',
-      since: '自 {date}（你最早持倉的開倉日）起',
+      since: '自 {date}（你最早持倉的開倉日）起 · {days} 天',
+      /** 分母只算真的拿到報酬率的指數,見 beatCountOf。 */
+      beatSummary: '在 {total} 個對照指數中領先 {beat} 個',
+      beatSummaryNone: '尚無可比較的指數資料',
+      /**
+       * 兩個百分比相減的單位是「百分點」不是「%」——寫成 % 會讓人以為是
+       * 相對變化（例如 24% 比 23% 高 4%）,那是另一個數字。
+       */
+      aheadBy: '領先 {pp}pp',
+      behindBy: '落後 {pp}pp',
       youLabel: '你（去槓桿）',
       youHint:
         '未實現損益 ÷ 名目——已去除槓桿倍數，才能跟未槓桿的指數公平比較。上方配置環的分母是保證金，這裡不同，是刻意的。',

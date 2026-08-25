@@ -71,7 +71,11 @@ export const portfolio: Catalog['portfolio'] = {
      */
     comparison: {
       heading: 'You vs the Market',
-      since: "Since {date} (your oldest position's open date)",
+      since: "Since {date} (your oldest position's open date) · {days} days",
+      beatSummary: 'Ahead of {beat} of {total} benchmarks',
+      beatSummaryNone: 'No benchmark data to compare against yet',
+      aheadBy: 'ahead by {pp}pp',
+      behindBy: 'behind by {pp}pp',
       youLabel: 'You (deleveraged)',
       youHint:
         'Unrealised PnL ÷ notional — leverage stripped out so this is comparable to the unleveraged benchmarks. The allocation ring above uses margin as its denominator; that difference is intentional.',

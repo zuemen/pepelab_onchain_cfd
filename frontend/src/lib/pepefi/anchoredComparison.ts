@@ -46,3 +46,56 @@ export function notionalReturnPct(rows: NotionalRow[]): number | null {
   }
   return notional > 0n ? (Number(pnl) / Number(notional)) * 100 : null
 }
+
+// ── 比較的呈現 ───────────────────────────────────────────────────────────────
+
+/** 錨定日到現在經過幾個日曆天。無條件捨去,不足一天顯示 0。 */
+export function daysSince(anchorSec: bigint, nowSec: number = Math.floor(Date.now() / 1000)): number {
+  return Math.max(0, Math.floor((nowSec - Number(anchorSec)) / 86400))
+}
+
+/**
+ * 「你贏過幾個指數」。
+ *
+ * 分母只算**真的拿到報酬率**的指數:某個指數的歷史值抓不到時,把它算進分母
+ * 等於憑空宣稱一場沒有發生的比較。四個指數只回來三個,答案就是「N / 3」。
+ */
+export function beatCountOf(userPct: number | null, benchmarkPcts: (number | null)[]): { beat: number; total: number } {
+  const known = benchmarkPcts.filter((p): p is number => p !== null)
+  if (userPct === null) return { beat: 0, total: known.length }
+  return { beat: known.filter((p) => userPct > p).length, total: known.length }
+}
+
+/**
+ * 一根「發散長條」在共用刻度上的位置與寬度,單位是百分比(0–100)。
+ *
+ * 五個項目共用同一個刻度才比得出長短,而刻度必須包含 0——負報酬要能從零線
+ * 往左長出去。回傳的 leftPct 是長條起點(零線或負值端),widthPct 是長度。
+ *
+ * lo === hi(全部項目都一樣,含全為 0)時回寬度 0:與其畫一根長度隨機的長條,
+ * 不如什麼都不畫,數字本身仍在旁邊。
+ */
+export function divergingBarOf(value: number, lo: number, hi: number): { leftPct: number; widthPct: number } {
+  const span = hi - lo
+  if (span <= 0) return { leftPct: 0, widthPct: 0 }
+  const toPct = (v: number) => ((v - lo) / span) * 100
+  const zero = toPct(0)
+  const point = toPct(value)
+  return value >= 0
+    ? { leftPct: zero, widthPct: point - zero }
+    : { leftPct: point, widthPct: zero - point }
+}
+
+/**
+ * 五個項目共用的刻度範圍。一定包含 0(零線要在圖上),並在兩端留 8% 餘裕,
+ * 最長的那根才不會頂到邊。
+ */
+export function comparisonScaleOf(values: number[]): [number, number] {
+  const withZero = [0, ...values]
+  const min = Math.min(...withZero)
+  const max = Math.max(...withZero)
+  const span = max - min
+  if (span === 0) return [0, 1]
+  const pad = span * 0.08
+  return [min - pad, max + pad]
+}
