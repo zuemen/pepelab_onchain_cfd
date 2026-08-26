@@ -29,6 +29,7 @@ import StatCard from 'src/components/pepefi/StatCard';
 import ESGBadge from 'src/components/pepefi/ESGBadge';
 import NetWorthHero from 'src/components/pepefi/dashboard/NetWorthHero';
 import RwaAllocation from 'src/components/pepefi/dashboard/RwaAllocation';
+import KYCStatusCard from 'src/components/pepefi/dashboard/KYCStatusCard';
 import QuickActions from 'src/components/pepefi/dashboard/QuickActions';
 import PortfolioAnalysis from 'src/components/pepefi/dashboard/PortfolioAnalysis';
 import EmptyState from 'src/components/pepefi/EmptyState';
@@ -599,6 +600,11 @@ export default function PortfolioPage() {
       {/* RWA 是本平台的最大賣點，緊接在淨值 hero 之後、任何操作之前——見
           RwaAllocation.tsx 頂部註解。Simple／Expert 皆顯示，零持倉也照樣顯示。 */}
       <RwaAllocation rows={positions} />
+
+      {/* KYC 是 RwaAllocation 剛講的「四大類都能配置」背後那道閘門——緊接在它
+          後面，讓「這個平台讓你配什麼」和「我現在能不能配」連在一起讀。常駐
+          卡片，不是撞到閘門才出現的 Modal：見 KYCStatusCard.tsx 頂部註解。 */}
+      <KYCStatusCard kycRegistry={contracts?.kycRegistry ?? null} userAddress={wallet.address ?? null} />
 
       <QuickActions mode={mode} />
 

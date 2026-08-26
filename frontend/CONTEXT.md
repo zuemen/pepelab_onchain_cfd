@@ -93,6 +93,32 @@ _Avoid_: index (collides with a perpetual's index price)
 The start of a "you vs Benchmark" comparison window: the `openedAt` of a user's oldest open position. No open position means no Anchor Date, and the comparison does not render.
 _Avoid_: start date, since, inception
 
+### KYC
+
+**KYC Verification**:
+An address's standing with the compliance registry: cleared, or not. Granted by a reviewer, never by the applicant. Checked at one single moment — when a position is opened on a regulated market. Never on close, and never retroactively, so withdrawing verification shuts the door on new positions without touching positions already open or rewards already claimed.
+_Avoid_: KYC'd, whitelisted, approved (approval is the reviewer's action; verification is the standing it produces)
+
+**KYC Status**:
+What the app currently knows about an address's KYC Verification — which is not the same thing as the verification itself. Five values, deliberately kept apart because each one calls for different words on screen and a different next step: `verified` (cleared; regulated markets are open), `pending` (submitted and waiting — re-sending the form achieves nothing but burnt gas), `unverified` (the chain says plainly that nothing was ever submitted), `not-required` (no registry on this chain, so there is no gate here at all), `unknown` (the read failed). `unknown` is not a soft `verified`: the gate is fail-closed, so the screen says "cannot confirm", never "you have not done KYC".
+_Avoid_: collapsing `unknown` into `unverified`, treating `not-required` as a kind of `verified`
+
+**Submission**:
+The applicant's own act — recording their data and joining the review queue. Grants nothing on its own.
+_Avoid_: doing KYC, registering, signing up (all three read as though something already completed)
+
+**Reviewer**:
+Whoever the registry lets approve or revoke: the owner, plus every address the owner has appointed. Deliberately wider than the contract's `verifiers` mapping, which holds only the appointed ones and never the owner — a screen asking "may this person review?" has to check both, the way `onlyVerifier` does.
+_Avoid_: admin, compliance officer, verifier (that word names the mapping, not the role)
+
+**Screening**:
+An automated pre-check run over a Submission — blocked jurisdiction, name against a watchlist — that produces a *recommendation* for a Reviewer and never a decision. Nothing it concludes reaches the chain on its own; a Reviewer still presses approve. The watchlist it checks against is fictional.
+_Avoid_: verification, auto-approval, AML check
+
+**Review Queue**:
+The Reviewer's view of every Submission the registry has ever seen, in three parts — awaiting review, verified, revoked — rebuilt from the registry's events rather than read from a list the contract keeps, because it keeps none.
+_Avoid_: pending list (that is one of its three parts), applications table
+
 ### Wallet
 
 **Mock Wallet**:

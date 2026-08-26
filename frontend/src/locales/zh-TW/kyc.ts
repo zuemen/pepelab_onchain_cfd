@@ -18,12 +18,12 @@ export const kyc = {
   noticeBodyAwaitingReview:
     '你的 KYC 申請已上鏈記錄（KYCSubmitted）。審核人員核准（approveKYC）後，受管制標的才會解鎖；在那之前下單仍會被合約擋下（NotKycVerified）。可以先關掉這個視窗，稍後回來重新整理查看狀態。',
 
-  demoTitle: 'Demo KYC — 不會儲存真實個資',
+  demoTitle: '⚠️ 你填的姓名會永久公開在區塊鏈上',
   demoBody:
-    '此為學術展示系統。填入的姓名與國籍僅儲存在智能合約上作為 PoC 示範，請勿填入真實個人資訊。',
+    '這是學術展示系統，不是真的合規流程。送出後，姓名與國籍會寫進公開的智能合約，任何人都讀得到、永遠刪不掉。請勿填入真實姓名——填一個假名即可。',
 
-  nameLabel: '姓名（示範用）',
-  namePlaceholder: '例如：王小明',
+  nameLabel: '姓名（請填假名，會永久公開上鏈）',
+  namePlaceholder: '例如：路人甲',
   nameRequired: '請輸入姓名',
   nationalityLabel: '國籍',
   /** 下拉選項是「代號 — 國名」。代號是資料，國名是文字。 */
@@ -33,6 +33,27 @@ export const kyc = {
   close: '關閉',
   submit: '送出 KYC 申請',
   submitting: '送出中…',
+
+  /**
+   * Portfolio 頁常駐的驗證狀態卡。跟 Modal 分開一組 key，因為讀者情境不同：
+   * Modal 是「我正要填表」，這裡是「我隨時想知道自己站在哪」——五態每一態
+   * 都要給出「發生了什麼」與「接下來能做什麼」，不是同一句話換個顏色。
+   */
+  status: {
+    cardTitle: 'KYC 驗證狀態',
+    verifiedTitle: '已通過驗證',
+    verifiedBody: '你可以交易受管制的 RWA 標的（如 sAAPL、sTSLA）。',
+    pendingTitle: '審核中',
+    pendingBody: '申請已送出，正在等待審核員核准，無需重新送出。',
+    unverifiedTitle: '尚未驗證',
+    unverifiedBody: '交易受管制的 RWA 標的（如 sAAPL、sTSLA）前，需要先通過 KYC 驗證。',
+    unverifiedAction: '送出 KYC 申請',
+    notRequiredTitle: '此鏈無需驗證',
+    notRequiredBody: '目前連線的鏈上沒有部署 KYC 閘門，交易任何標的都不需要驗證。',
+    unknownTitle: '無法確認',
+    unknownBody: '讀取鏈上驗證狀態失敗，暫時無法確認狀態。這不代表「未通過」，請稍後重試。',
+    unknownAction: '重新讀取',
+  },
 
   country: {
     TW: '台灣',

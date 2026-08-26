@@ -180,17 +180,26 @@ export async function getLogsChunked(
 }
 
 /**
+ * 一段查詢失敗時回報，讓呼叫端可以決定「靜默丟棄可以接受」還是「必須讓使用者
+ * 知道結果不完整」——兩種呼叫端都存在，所以這是選擇性的，不是強制的。
+ */
+export type ChunkFailure = (from: number, to: number, error: unknown) => void
+
+/**
  * 分段掃 getLogs，單段不超過 CHUNK_SIZE。
  * 單段失敗只丟掉那一段（節點暫時性錯誤很常見），不讓整次查詢歸零。
+ * 呼叫端若在乎「掉了幾段」（例如結果會拿去判斷某個清單是否完整），
+ * 傳 onChunkFailed 取得每一段失敗的通知；不傳就是舊行為，只印 console.warn。
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function queryLogsChunked(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   contract: { queryFilter: (f: any, from: number, to: number) => Promise<any[]> },
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   filter: any,
   fromBlock: number,
   toBlock: number,
   onChunk?: ChunkProgress,
+  onChunkFailed?: ChunkFailure,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<any[]> {
   const ranges = chunkRanges(fromBlock, toBlock)
@@ -202,6 +211,7 @@ export async function queryLogsChunked(
       all.push(...(await contract.queryFilter(filter, from, to)))
     } catch (e) {
       console.warn('[queryLogsChunked] chunk failed', from, '-', to, e)
+      onChunkFailed?.(from, to, e)
     }
     done += 1
     onChunk?.(done, ranges.length)
