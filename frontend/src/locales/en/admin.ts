@@ -187,6 +187,92 @@ export const admin: Catalog['admin'] = {
     },
   },
 
+  kyc: {
+    connectWallet: 'Connect a wallet to use the review page.',
+
+    checkingAuth: 'Checking permissions…',
+    checkingAuthBody: 'Reading owner() and verifiers() on-chain. Access is denied until this resolves.',
+    notAuthorized: 'Not authorized',
+    notAuthorizedBody: 'This page is restricted to the KYCRegistry owner or an appointed reviewer.',
+
+    roleOwner: 'You are here as the owner',
+    roleVerifier: 'You are here as an appointed reviewer',
+
+    /** Owner-only — see KYCRegistry.sol's setVerifier and docs/ROLE_SEPARATION.md. */
+    verifierAdmin: {
+      title: 'Appoint a Reviewer',
+      body: 'An appointed address can approve/revoke KYC as a reviewer — the owner does not need to stay online.',
+      addressLabel: 'Reviewer address',
+      addressPlaceholder: '0x…',
+      invalidAddress: 'Enter a valid address',
+      assign: 'Appoint',
+      assigning: 'Appointing…',
+      assigned: 'Reviewer appointed ✓',
+      revoke: 'Revoke appointment',
+      revoking: 'Revoking…',
+      revoked: 'Reviewer appointment revoked ✓',
+    },
+
+    title: 'KYC Review',
+    subtitle: 'Review pending applications, check verification status, revoke verification.',
+
+    notSecrecyNotice:
+      "This page gates applicant data behind a permission check to avoid actively compiling it into a list — not because the data is secret. KYCRegistry is a public contract; anyone can scan the same on-chain events themselves.",
+
+    queue: {
+      readErrorSome: '{count} application(s) could not be read and are left out of the list — refresh to retry.',
+      readErrorAll: 'Failed to load the review queue, possibly RPC rate-limiting. Refresh to retry.',
+      /** A failed KYCSubmitted scan chunk is worse than a few unreadable rows — the queue itself may be missing applicants. */
+      scanIncomplete: '{count} chunk(s) of the on-chain event scan failed — the queue may be incomplete (some applicants may be missing). Refresh to retry.',
+      refresh: '↺ Refresh',
+      scanRange: 'Scanned range: block {from} – {to}',
+      scanning: 'Scanning on-chain events… ({done}/{total})',
+
+      pendingTitle: 'Pending Applications',
+      pendingEmpty: 'No pending applications right now.',
+
+      /** See ADR 0005: accounts created via batchVerify never called submitKYC, so this list can't see them. */
+      verifiedTitle: 'Verified (via review flow)',
+      verifiedCaveat: 'Only addresses verified through the review flow (submit → approve) are listed. Seed accounts written directly via batchVerify never appear here, even though isVerified() is true for them.',
+      verifiedEmpty: 'No addresses verified through the review flow yet.',
+
+      revokedTitle: 'Revoked',
+      revokedEmpty: 'No revoked addresses right now.',
+      revokedNote: 'Revoking only blocks new regulated positions — existing positions can still be closed normally.',
+
+      column: {
+        address: 'Address',
+        name: 'Name',
+        nationality: 'Nationality',
+        submitted: 'Submitted',
+        screening: 'Screening',
+        action: '',
+      },
+
+      approve: 'Approve',
+      approving: 'Approving…',
+      approved: 'Approved ✓',
+      approveAllClean: 'Approve all clean applications ({count})',
+      approveAllCleanBusy: 'Batch approving…',
+      approveAllCleanDone: 'Batch-approved {count} application(s) ✓',
+      /** approveKYCBatch has no per-item try/catch — one failure takes the whole batch down. */
+      approveAllCleanFailedHint: 'Batch approval has no per-item fallback — one failure means none of the batch got approved. Use each row’s own "Approve" button to process them individually instead.',
+
+      revoke: 'Revoke',
+      revoking: 'Revoking…',
+      revoked: 'Revoked ✓',
+
+      /** See ADR 0004: this group only ever produces a recommendation — approveKYC is always a human's action. */
+      screening: {
+        disclaimer: 'Recommendations below come from a fictional demo policy (see kycScreening.ts) — they do not correspond to any real sanctions list or real jurisdiction risk, and exist only to demonstrate the review workflow.',
+        clean: 'Clean',
+        needsReview: 'Needs review',
+        reasonUnclearJurisdiction: 'Jurisdiction not on the platform list',
+        reasonWatchlistNameMatch: 'Name matches fictional watchlist',
+      },
+    },
+  },
+
   agent: {
     connectWallet: 'Connect wallet to view the agent monitor.',
     title: '📊 Agent Risk Monitor',

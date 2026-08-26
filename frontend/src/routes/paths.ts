@@ -65,6 +65,7 @@ export const paths = {
     whale: '/whale',
     adminOracle: '/admin/oracle',
     adminTreasury: '/admin/treasury',
+    adminKyc: '/admin/kyc',
     rewards: '/rewards',
     sessions: '/sessions',
     agentMonitor: '/agent-monitor',

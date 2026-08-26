@@ -194,6 +194,96 @@ export const admin = {
     },
   },
 
+  kyc: {
+    connectWallet: '連接錢包以使用審核頁。',
+
+    /** 權限閘門。跟 treasury 同一套姿態：還在讀鏈上、和確定不是你，要說不同的話。 */
+    checkingAuth: '確認權限中…',
+    checkingAuthBody: '正在讀取鏈上的 owner() 與 verifiers()。讀不到就不放行。',
+    notAuthorized: '無權限',
+    notAuthorizedBody: '此頁面僅限 KYCRegistry 的 owner 或已指派的審核員存取。',
+
+    /** 進得去之後，講清楚是以哪個身分——owner 和 verifier 權限相同，但意義不同。 */
+    roleOwner: '你是以 owner 身分進入',
+    roleVerifier: '你是以已指派審核員身分進入',
+
+    /** 只有 owner 看得到——見 KYCRegistry.sol 的 setVerifier，讓 owner 能冷藏、
+     *  審核交給熱錢包，見 docs/ROLE_SEPARATION.md。 */
+    verifierAdmin: {
+      title: '指派審核員',
+      body: '被指派的地址能以審核員身分核准／撤銷 KYC，owner 不必上線。',
+      addressLabel: '審核員地址',
+      addressPlaceholder: '0x…',
+      invalidAddress: '請輸入合法的地址',
+      assign: '指派',
+      assigning: '指派中…',
+      assigned: '已指派審核員 ✓',
+      revoke: '撤銷指派',
+      revoking: '撤銷中…',
+      revoked: '已撤銷審核員 ✓',
+    },
+
+    title: 'KYC 審核',
+    subtitle: '審核待審申請、查看驗證狀態、撤銷驗證。',
+
+    /** 硬擋不是保密，是「不主動幫人彙整」——資料本來就在公開鏈上，誰都能自己掃 log。 */
+    notSecrecyNotice:
+      '這個頁面把申請人資料擋在權限之後，是為了不主動幫人彙整成一份清單，不是因為資料是保密的——KYCRegistry 是公開合約，任何人都能自己掃鏈上事件看到同樣的內容。',
+
+    queue: {
+      readErrorSome: '{count} 筆申請的狀態讀取失敗，未列入清單，可重新整理再試。',
+      readErrorAll: '讀取審核佇列失敗，可能是 RPC 節點限流，請重新整理再試。',
+      /** 掃描 KYCSubmitted 掉段，比某幾筆讀不到更嚴重——佇列本身可能漏了申請人。 */
+      scanIncomplete: '掃描鏈上事件時有 {count} 段失敗，佇列可能不完整（部分申請人未列出），可重新整理再試。',
+      refresh: '↺ 重新整理',
+      scanRange: '掃描範圍：區塊 {from} – {to}',
+      scanning: '掃描鏈上事件中…（{done}/{total}）',
+
+      pendingTitle: '待審申請',
+      pendingEmpty: '目前沒有待審申請。',
+
+      /** 見 ADR 0005：batchVerify 造出的帳號從沒呼叫過 submitKYC，這份清單看不到它們。 */
+      verifiedTitle: '已驗證（經審核流程通過）',
+      verifiedCaveat: '只列出經審核流程（送出 → 核准）通過的地址。透過 batchVerify 直接寫入的種子帳號不會出現在這裡，即使 isVerified() 對它們也是 true。',
+      verifiedEmpty: '目前沒有經審核流程通過的地址。',
+
+      revokedTitle: '已撤銷',
+      revokedEmpty: '目前沒有被撤銷的地址。',
+      revokedNote: '撤銷只擋新開的受管制倉位，既有倉位仍可正常平倉。',
+
+      column: {
+        address: '地址',
+        name: '姓名',
+        nationality: '國籍',
+        submitted: '送出於',
+        screening: '建議',
+        action: '',
+      },
+
+      approve: '核准',
+      approving: '核准中…',
+      approved: '已核准 ✓',
+      approveAllClean: '一次核准所有乾淨申請（{count}）',
+      approveAllCleanBusy: '批次核准中…',
+      approveAllCleanDone: '已批次核准 {count} 筆 ✓',
+      /** approveKYCBatch 沒有逐筆 try/catch，一筆失敗整批一起倒——要講清楚退路。 */
+      approveAllCleanFailedHint: '批次核准沒有逐筆容錯，一筆失敗會讓整批都沒核准到。請改用清單裡每一筆自己的「核准」鍵逐一處理。',
+
+      revoke: '撤銷',
+      revoking: '撤銷中…',
+      revoked: '已撤銷 ✓',
+
+      /** 見 ADR 0004：這一組只產出建議，approveKYC 永遠是人按下去的。 */
+      screening: {
+        disclaimer: '以下建議由虛構的示範規則產生（見 kycScreening.ts），不對應任何真實制裁名單或真實轄區風險，僅供展示審核流程使用。',
+        clean: '乾淨',
+        needsReview: '需人工複核',
+        reasonUnclearJurisdiction: '轄區未列於平台清單',
+        reasonWatchlistNameMatch: '姓名命中虛構 watchlist',
+      },
+    },
+  },
+
   agent: {
     connectWallet: '連接錢包以查看 agent 監控。',
     title: '📊 Agent 風險監控',
