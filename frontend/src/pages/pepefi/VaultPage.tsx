@@ -4,12 +4,12 @@ import type { Contract, EventLog } from 'ethers'
 import { parseUnits, formatUnits } from 'ethers'
 import { useContracts } from 'src/hooks/useContracts'
 import { usePepefiWallet } from 'src/layouts/pepefi'
-import { explorerTx } from 'src/lib/pepefi/notify'
 import { t, interpolate } from 'src/locales'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { safeRead } from 'src/lib/pepefi/safeRead'
 import Skeleton from 'src/components/pepefi/Skeleton'
 import EmptyState from 'src/components/pepefi/EmptyState'
+import { useToast } from 'src/components/pepefi/ToastProvider'
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -19,9 +19,6 @@ import Grid from '@mui/material/Grid';
 import Stack from '@mui/material/Stack';
 import Button from '@mui/material/Button';
 import TextField from '@mui/material/TextField';
-import Snackbar from '@mui/material/Snackbar';
-import Alert from '@mui/material/Alert';
-import Link from '@mui/material/Link';
 import TableContainer from '@mui/material/TableContainer';
 import Table from '@mui/material/Table';
 import TableHead from '@mui/material/TableHead';
@@ -105,12 +102,8 @@ export default function VaultPage() {
   const [depositAmt, setDepositAmt] = useState('')
   const [withdrawAmt, setWithdrawAmt] = useState('')
   const [busy, setBusy]           = useState(false)
-  const [toast, setToast]         = useState<{ msg: string; ok: boolean; hash?: string } | null>(null)
 
-  const notify = (msg: string, ok: boolean, hash?: string) => {
-    setToast({ msg, ok, hash })
-    setTimeout(() => setToast(null), 6000)
-  }
+  const { notify } = useToast()
 
   const fetchStats = useCallback(async () => {
     if (!vault || !wallet.address) return
@@ -375,35 +368,6 @@ export default function VaultPage() {
           </Card>
         </Grid>
       </Grid>
-
-      {/* Toast Notification */}
-      <Snackbar
-        open={!!toast}
-        autoHideDuration={6000}
-        onClose={() => setToast(null)}
-        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
-      >
-        {toast ? (
-          <Alert
-            severity={toast.ok ? 'success' : 'error'}
-            onClose={() => setToast(null)}
-            sx={{ width: '100%' }}
-          >
-            {toast.msg}
-            {toast.hash && explorerTx(toast.hash, wallet.chainId) && (
-              <Link
-                href={explorerTx(toast.hash, wallet.chainId)!}
-                target="_blank"
-                rel="noopener noreferrer"
-                color="inherit"
-                sx={{ display: 'block', mt: 0.5, typography: 'caption', textDecoration: 'underline' }}
-              >
-                {t.vault.viewOnEtherscan}
-              </Link>
-            )}
-          </Alert>
-        ) : undefined}
-      </Snackbar>
 
       {/* Activity Feed */}
       <Card>

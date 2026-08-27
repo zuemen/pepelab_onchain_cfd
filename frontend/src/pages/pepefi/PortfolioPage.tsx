@@ -45,7 +45,6 @@ import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
 import Chip from '@mui/material/Chip';
 import Divider from '@mui/material/Divider';
-import Alert from '@mui/material/Alert';
 import TableContainer from '@mui/material/TableContainer';
 import Table from '@mui/material/Table';
 import TableHead from '@mui/material/TableHead';
@@ -53,10 +52,8 @@ import TableBody from '@mui/material/TableBody';
 import TableRow from '@mui/material/TableRow';
 import TableCell from '@mui/material/TableCell';
 import TextField from '@mui/material/TextField';
-import Snackbar from '@mui/material/Snackbar';
-import Link from '@mui/material/Link';
 import { Icon } from '@iconify/react';
-import { explorerTx, explorerName } from 'src/lib/pepefi/notify'
+import { useToast } from 'src/components/pepefi/ToastProvider'
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
@@ -230,12 +227,9 @@ export default function PortfolioPage() {
   const [freeMarginOk, setFreeMarginOk] = useState(false);
 
   const [busy,  setBusy]  = useState<Record<string, boolean>>({});
-  const [toast, setToast] = useState<{ msg: string; ok: boolean; hash?: string } | null>(null);
+  const { notify } = useToast();
 
   const setLoad = (k: string, v: boolean) => setBusy(p => ({ ...p, [k]: v }));
-  const notify  = useCallback((msg: string, ok: boolean, hash?: string) => {
-    setToast({ msg, ok, hash });
-  }, []);
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
   const fetchAll = useCallback(async () => {
@@ -551,29 +545,6 @@ export default function PortfolioPage() {
 
   return (
     <Container maxWidth="lg" sx={{ py: 3, display: 'flex', flexDirection: 'column', gap: 4 }}>
-      {/* Toast Alert */}
-      <Snackbar
-        open={!!toast}
-        autoHideDuration={6000}
-        onClose={() => setToast(null)}
-        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
-        message={toast?.msg}
-        action={
-          toast?.hash && explorerTx(toast.hash, wallet.chainId) ? (
-            <Button
-              color="primary"
-              size="small"
-              component="a"
-              href={explorerTx(toast.hash, wallet.chainId)!}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {explorerName(wallet.chainId)}
-            </Button>
-          ) : null
-        }
-      />
-
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Typography variant="h4" sx={{ fontWeight: 'bold' }}>{t.portfolio.page.title}</Typography>
         <Button

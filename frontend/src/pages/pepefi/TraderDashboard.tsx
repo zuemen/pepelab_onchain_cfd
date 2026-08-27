@@ -10,6 +10,7 @@ import { ASSETS_LIST, ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
 import { getPepeAvatar } from 'src/utils/pepefi-assets'
 import { t, locale, interpolate } from 'src/locales'
 import TraderRankBadge from 'src/components/pepefi/TraderRankBadge'
+import { useToast } from 'src/components/pepefi/ToastProvider'
 import Avatar from '@mui/material/Avatar'
 
 import Box from '@mui/material/Box';
@@ -20,7 +21,6 @@ import Grid from '@mui/material/Grid';
 import Stack from '@mui/material/Stack';
 import Button from '@mui/material/Button';
 import TextField from '@mui/material/TextField';
-import Snackbar from '@mui/material/Snackbar';
 import Alert from '@mui/material/Alert';
 import Link from '@mui/material/Link';
 import TableContainer from '@mui/material/TableContainer';
@@ -32,7 +32,6 @@ import TableCell from '@mui/material/TableCell';
 import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
 import Chip from '@mui/material/Chip';
-import { explorerTx, explorerName } from 'src/lib/pepefi/notify'
 
 // ── Config ─────────────────────────────────────────────────────────────────
 type AssetId = `0x${string}`
@@ -102,13 +101,9 @@ export default function TraderDashboard() {
   const [earnings,       setEarnings]       = useState<bigint | null>(null)
 
   const [busy,  setBusy]  = useState<Record<string, boolean>>({})
-  const [toast, setToast] = useState<{ msg: string; ok: boolean; hash?: string } | null>(null)
+  const { notify } = useToast()
 
   const setLoad = (k: string, v: boolean) => setBusy(p => ({ ...p, [k]: v }))
-  const notify  = useCallback((msg: string, ok: boolean, hash?: string) => {
-    setToast({ msg, ok, hash })
-    setTimeout(() => setToast(null), 6000)
-  }, [])
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
   const fetchTrader = useCallback(async () => {
@@ -285,35 +280,6 @@ export default function TraderDashboard() {
 
   return (
     <Container maxWidth="md" sx={{ py: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
-
-      {/* Snackbar notification */}
-      <Snackbar
-        open={!!toast}
-        autoHideDuration={6000}
-        onClose={() => setToast(null)}
-        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
-      >
-        {toast ? (
-          <Alert
-            severity={toast.ok ? 'success' : 'error'}
-            onClose={() => setToast(null)}
-            sx={{ width: '100%' }}
-          >
-            {toast.msg}
-            {toast.hash && explorerTx(toast.hash, wallet.chainId) && (
-              <Link
-                href={explorerTx(toast.hash, wallet.chainId)!}
-                target="_blank"
-                rel="noopener noreferrer"
-                color="inherit"
-                sx={{ display: 'block', mt: 0.5, typography: 'caption', textDecoration: 'underline' }}
-              >
-                {interpolate(t.traderDashboard.viewOn, { explorer: explorerName(wallet.chainId) })}
-              </Link>
-            )}
-          </Alert>
-        ) : undefined}
-      </Snackbar>
 
       {/* ─── Personal Profile Header (Only shown if registered) ─── */}
       {traderInfo?.isRegistered && (

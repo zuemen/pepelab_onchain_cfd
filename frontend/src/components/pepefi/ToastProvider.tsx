@@ -20,7 +20,7 @@
 // `notify(msg, ok, hash?)` intentionally mirrors the signature the pages
 // already use, so migrating one is deleting its local state and importing this.
 
-import { useState, useMemo, useCallback, useContext, createContext } from 'react';
+import { useRef, useState, useMemo, useCallback, useContext, createContext } from 'react';
 
 import { t } from 'src/locales';
 
@@ -76,16 +76,19 @@ export function useToast(): ToastContextValue {
 
 // ----------------------------------------------------------------------
 
-type ToastState = { msg: string; ok: boolean; hash?: string };
+// `seq` bumps on every notify() so the <Snackbar> below can key off it.
+type ToastState = { msg: string; ok: boolean; hash?: string; seq: number };
 type DialogState = ConfirmOptions & { resolve: (v: boolean) => void };
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toast, setToast] = useState<ToastState | null>(null);
   const [dialog, setDialog] = useState<DialogState | null>(null);
+  const toastSeq = useRef(0);
   const wallet = useWalletContext();
 
   const notify = useCallback((msg: string, ok: boolean, hash?: string) => {
-    setToast({ msg, ok, hash });
+    toastSeq.current += 1;
+    setToast({ msg, ok, hash, seq: toastSeq.current });
   }, []);
 
   const confirm = useCallback(
@@ -118,6 +121,13 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       {children}
 
       <Snackbar
+        // Keyed on the notify() sequence, not just mounted once: MUI only (re)arms
+        // its auto-hide timer when `open` or `autoHideDuration` changes, never when
+        // the message swaps while it is already open. Without a changing key, a
+        // second notify() shows its message but the *first* toast's 6s timer is
+        // still the one running — the new message gets cleared early. Bumping the
+        // key remounts the Snackbar so the timer restarts from the new message.
+        key={toast?.seq}
         open={!!toast}
         // 6s: long enough to read a two-line Chinese message and reach for the
         // explorer link, short enough not to sit over the UI.

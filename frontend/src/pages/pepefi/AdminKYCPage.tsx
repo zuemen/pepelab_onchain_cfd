@@ -7,16 +7,16 @@ import { useKYCReviewQueue, type ReviewApplication } from 'src/hooks/useKYCRevie
 import { screenApplication, type ScreeningResult, type ScreeningReasonCode } from 'src/lib/pepefi/kycScreening'
 import { t, interpolate } from 'src/locales'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
-import { explorerTx, explorerName } from 'src/lib/pepefi/notify'
+import { explorerTx } from 'src/lib/pepefi/notify'
 import { TableSkeleton } from 'src/components/pepefi/Skeleton'
 import EmptyState from 'src/components/pepefi/EmptyState'
+import { useToast } from 'src/components/pepefi/ToastProvider'
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
 import Alert from '@mui/material/Alert';
 import Button from '@mui/material/Button';
-import Snackbar from '@mui/material/Snackbar';
 import Link from '@mui/material/Link';
 import TableContainer from '@mui/material/TableContainer';
 import Table from '@mui/material/Table';
@@ -220,15 +220,7 @@ export default function AdminKYCPage() {
   }, [authorized, contracts?.kycRegistry, wallet.chainId])
 
   const [busy, setBusy] = useState<Record<string, boolean>>({})
-  const [toast, setToast] = useState<{ msg: string; ok: boolean; hash?: string } | null>(null)
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const notify = (msg: string, ok: boolean, hash?: string) => {
-    // 前一顆 toast 的計時器若還沒到，先取消——不然它會準時把這一顆新的
-    // toast 提早清掉，讓兩個動作連續發生時，第二個的訊息一閃就不見。
-    if (toastTimer.current) clearTimeout(toastTimer.current)
-    setToast({ msg, ok, hash })
-    toastTimer.current = setTimeout(() => setToast(null), 6000)
-  }
+  const { notify } = useToast()
 
   const doApprove = async (app: ReviewApplication) => {
     if (!contracts) return
@@ -337,36 +329,6 @@ export default function AdminKYCPage() {
 
   return (
     <Container maxWidth="md" sx={{ py: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
-      <Snackbar
-        open={!!toast}
-        autoHideDuration={6000}
-        onClose={() => setToast(null)}
-        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
-      >
-        {toast ? (
-          <Alert
-            severity={toast.ok ? 'success' : 'error'}
-            onClose={() => setToast(null)}
-            action={
-              toast.hash && explorerTx(toast.hash, wallet.chainId) ? (
-                <Button
-                  color="inherit"
-                  size="small"
-                  component="a"
-                  href={explorerTx(toast.hash, wallet.chainId)!}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  {explorerName(wallet.chainId)}
-                </Button>
-              ) : null
-            }
-          >
-            {toast.msg}
-          </Alert>
-        ) : <div />}
-      </Snackbar>
-
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <Box>
           <Typography variant="h4" sx={{ fontWeight: 'bold' }}>{t.admin.kyc.title}</Typography>

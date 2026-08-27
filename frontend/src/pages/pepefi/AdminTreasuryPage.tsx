@@ -9,6 +9,7 @@ import { t, interpolate } from 'src/locales'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import EmptyState from 'src/components/pepefi/EmptyState'
 import StatCard from 'src/components/pepefi/StatCard'
+import { useToast } from 'src/components/pepefi/ToastProvider'
 import { Iconify } from 'src/components/iconify'
 
 import Box from '@mui/material/Box';
@@ -19,7 +20,6 @@ import Grid from '@mui/material/Grid';
 import Stack from '@mui/material/Stack';
 import Button from '@mui/material/Button';
 import TextField from '@mui/material/TextField';
-import Snackbar from '@mui/material/Snackbar';
 import Alert from '@mui/material/Alert';
 import Link from '@mui/material/Link';
 import TableContainer from '@mui/material/TableContainer';
@@ -76,7 +76,6 @@ export default function AdminTreasuryPage() {
   const [fundAmt,         setFundAmt]         = useState('')
   const [history,         setHistory]         = useState<CashOutRecord[]>([])
   const [busy,            setBusy]            = useState<Record<string, boolean>>({})
-  const [toast,           setToast]           = useState<{ msg: string; ok: boolean; hash?: string } | null>(null)
 
   const [walletPepeBal,   setWalletPepeBal]   = useState<bigint | null>(null)
   const [contractPepeBal, setContractPepeBal] = useState<bigint | null>(null)
@@ -92,10 +91,7 @@ export default function AdminTreasuryPage() {
   const treasuryUnknown = platformTreasury === null
 
   const setLoad = (k: string, v: boolean) => setBusy(p => ({ ...p, [k]: v }))
-  const notify  = (msg: string, ok: boolean, hash?: string) => {
-    setToast({ msg, ok, hash })
-    setTimeout(() => setToast(null), 6000)
-  }
+  const { notify } = useToast()
 
   // ── Fetch stats ───────────────────────────────────────────────────────────
   const fetchStats = useCallback(async () => {
@@ -305,35 +301,6 @@ export default function AdminTreasuryPage() {
 
   return (
     <Container maxWidth="md" sx={{ py: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
-
-      {/* Snackbar notification */}
-      <Snackbar
-        open={!!toast}
-        autoHideDuration={6000}
-        onClose={() => setToast(null)}
-        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
-      >
-        {toast ? (
-          <Alert
-            severity={toast.ok ? 'success' : 'error'}
-            onClose={() => setToast(null)}
-            sx={{ width: '100%' }}
-          >
-            {toast.msg}
-            {toast.hash && explorerTx(toast.hash, wallet.chainId) && (
-              <Link
-                href={explorerTx(toast.hash, wallet.chainId)!}
-                target="_blank"
-                rel="noopener noreferrer"
-                color="inherit"
-                sx={{ display: 'block', mt: 0.5, typography: 'caption', textDecoration: 'underline' }}
-              >
-                {t.admin.treasury.viewOnEtherscan}
-              </Link>
-            )}
-          </Alert>
-        ) : undefined}
-      </Snackbar>
 
       {/* Header */}
       <Box sx={{ mb: 1 }}>

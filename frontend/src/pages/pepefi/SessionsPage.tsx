@@ -5,14 +5,12 @@ import { parseUnits, formatUnits, Wallet, getAddress } from 'ethers'
 
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
-import Link from '@mui/material/Link'
 import Chip from '@mui/material/Chip'
 import Stack from '@mui/material/Stack'
 import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Divider from '@mui/material/Divider'
 import Dialog from '@mui/material/Dialog'
-import Snackbar from '@mui/material/Snackbar'
 import TextField from '@mui/material/TextField'
 import Container from '@mui/material/Container'
 import Typography from '@mui/material/Typography'
@@ -32,8 +30,8 @@ import TableContainer from '@mui/material/TableContainer'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { t, locale, interpolate } from 'src/locales'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
-import { explorerTx, explorerName } from 'src/lib/pepefi/notify'
 import { agentDid, shortDid } from 'src/lib/pepefi/did'
+import { useToast } from 'src/components/pepefi/ToastProvider'
 import { CHAIN_NAMES } from 'src/contracts/addresses'
 import {
   getSessionManager,
@@ -99,7 +97,7 @@ export default function SessionsPage() {
   const [sessions, setSessions] = useState<SessionRow[]>([])
   const [loading,  setLoading]  = useState(false)
   const [busy,     setBusy]     = useState<Record<string, boolean>>({})
-  const [toast,    setToast]    = useState<{ msg: string; ok: boolean; hash?: string } | null>(null)
+  const { notify } = useToast()
 
   // Create-session form
   const [agent,    setAgent]    = useState('')
@@ -146,10 +144,6 @@ export default function SessionsPage() {
     }
   }, [vcStorageKey])
 
-  const notify = (msg: string, ok: boolean, hash?: string) => {
-    setToast({ msg, ok, hash })
-    setTimeout(() => setToast(null), 6000)
-  }
 
   // ── Export helpers ──────────────────────────────────────────────────────────
   const copyText = async (label: string, text: string) => {
@@ -324,27 +318,6 @@ export default function SessionsPage() {
 
   return (
     <Container maxWidth="md" sx={{ py: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
-      <Snackbar
-        open={!!toast}
-        autoHideDuration={6000}
-        onClose={() => setToast(null)}
-        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
-      >
-        {toast ? (
-          <Alert severity={toast.ok ? 'success' : 'error'} onClose={() => setToast(null)} sx={{ width: '100%' }}>
-            {toast.msg}
-            {toast.hash && explorerTx(toast.hash, wallet.chainId) && (
-              <Link
-                href={explorerTx(toast.hash, wallet.chainId)!}
-                target="_blank" rel="noopener noreferrer" color="inherit"
-                sx={{ display: 'block', mt: 0.5, typography: 'caption', textDecoration: 'underline' }}
-              >
-                {interpolate(t.sessions.viewOn, { explorer: explorerName(wallet.chainId) })}
-              </Link>
-            )}
-          </Alert>
-        ) : undefined}
-      </Snackbar>
 
       {/* Header */}
       <Box>
