@@ -16,6 +16,7 @@ import CircularProgress from '@mui/material/CircularProgress';
 import { useContracts } from 'src/hooks/useContracts';
 import { usePepefiWallet } from 'src/layouts/pepefi';
 import PepeTokenCard from 'src/components/pepefi/PepeTokenCard';
+import { useToast } from 'src/components/pepefi/ToastProvider';
 import { t, interpolate } from 'src/locales';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
 import { toStrictlyIncreasingIds } from 'src/lib/pepefi/positionIds';
@@ -73,11 +74,7 @@ export default function RewardsPage() {
        !== '0x0000000000000000000000000000000000000000';
   const INCENTIVES_OFFLINE_MSG = t.rewards.offline;
 
-  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
-  const notify = (msg: string, ok: boolean) => {
-    setToast({ msg, ok });
-    setTimeout(() => setToast(null), 5000);
-  };
+  const { notify } = useToast();
 
   // ── Trade Mining ────────────────────────────────────────────────────────────
   const [positions,   setPositions]   = useState<OpenPosition[]>([]);
@@ -256,18 +253,6 @@ export default function RewardsPage() {
 
   return (
     <Container maxWidth="md" sx={{ py: 4 }}>
-      {/* Toast */}
-      {toast && (
-        <Box sx={{
-          position: 'fixed', top: 80, right: 24, zIndex: 9999,
-          bgcolor: toast.ok ? 'success.dark' : 'error.dark',
-          color: '#fff', px: 3, py: 1.5, borderRadius: 2,
-          boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
-        }}>
-          {toast.msg}
-        </Box>
-      )}
-
       <Typography variant="h4" sx={{ fontWeight: 900, mb: 1 }}>{t.rewards.title}</Typography>
       <Typography color="text.secondary" sx={{ mb: 4 }}>
         {t.rewards.subtitle}

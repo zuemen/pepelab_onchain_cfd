@@ -4,7 +4,6 @@ import { Contract, parseEther, type ContractTransactionResponse } from 'ethers'
 import { useContracts } from 'src/hooks/useContracts'
 import { useV2Contracts } from 'src/hooks/useV2Contracts'
 import { usePepefiWallet } from 'src/layouts/pepefi'
-import { explorerTx, explorerName } from 'src/lib/pepefi/notify'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { safeRead } from 'src/lib/pepefi/safeRead'
 import { fNum, fUsd, fromUnits } from 'src/lib/pepefi/format'
@@ -17,6 +16,7 @@ import SyntheticAssetABI   from 'src/contracts/abi/SyntheticAsset.json'
 import SyntheticAssetV2ABI from 'src/contracts/abi/SyntheticAssetV2.json'
 import AssetIcon from 'src/components/pepefi/AssetIcon'
 import Skeleton from 'src/components/pepefi/Skeleton'
+import { useToast } from 'src/components/pepefi/ToastProvider'
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -32,7 +32,6 @@ import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
 import TextField from '@mui/material/TextField';
-import Snackbar from '@mui/material/Snackbar';
 import InputAdornment from '@mui/material/InputAdornment';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
@@ -148,11 +147,8 @@ export default function TokenizedAssetsPage() {
   const [amount, setAmount]   = useState('')
   const [quote, setQuote]     = useState<{ out: bigint; fee: bigint } | null>(null)
   const [busy, setBusy]       = useState(false)
-  const [toast, setToast]     = useState<{ msg: string; ok: boolean; hash?: string } | null>(null)
 
-  const notify = useCallback((msg: string, ok: boolean, hash?: string) => {
-    setToast({ msg, ok, hash })
-  }, [])
+  const { notify } = useToast()
 
   const refresh = useCallback(async () => {
     if (!contracts || !vaultReady || !wallet.address || !activeVault || !activeOracle) {
@@ -637,25 +633,6 @@ export default function TokenizedAssetsPage() {
           </Button>
         </DialogActions>
       </Dialog>
-
-      <Snackbar
-        open={!!toast}
-        autoHideDuration={6000}
-        onClose={() => setToast(null)}
-        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
-        message={toast?.msg}
-        action={
-          toast?.hash && explorerTx(toast.hash, wallet.chainId) ? (
-            <Button
-              color="primary" size="small" component="a"
-              href={explorerTx(toast.hash, wallet.chainId)!}
-              target="_blank" rel="noopener noreferrer"
-            >
-              {explorerName(wallet.chainId)}
-            </Button>
-          ) : null
-        }
-      />
     </Container>
   )
 }

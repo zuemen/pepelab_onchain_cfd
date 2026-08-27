@@ -3,7 +3,6 @@ import type { AssetId, LivePos } from './types'
 import { useMemo, useState, useCallback } from 'react'
 
 import Box from '@mui/material/Box'
-import Snackbar from '@mui/material/Snackbar'
 
 import { useKYC } from 'src/hooks/useKYC'
 import { useCandles } from 'src/hooks/useCandles'
@@ -23,6 +22,7 @@ import { ASSET_META } from 'src/lib/pepefi/assetMeta'
 import { stalenessNotice } from 'src/lib/pepefi/priceFreshness'
 import { type Interval, DEFAULT_INTERVAL } from 'src/lib/pepefi/candles'
 
+import { useToast } from 'src/components/pepefi/ToastProvider'
 import PaperTradingBadge from 'src/components/pepefi/PaperTradingBadge'
 
 import { BookPanel } from './book/BookPanel'
@@ -32,8 +32,8 @@ import { MarketSelector } from './MarketSelector'
 import { MarketStatsBar } from './MarketStatsBar'
 import { OrderTicket } from './ticket/OrderTicket'
 import { AccountPanel } from './ticket/AccountPanel'
+import { C, panel, labelCss } from './terminal-theme'
 import { PositionsPanel } from './positions/PositionsPanel'
-import { C, panel, monoCss, labelCss } from './terminal-theme'
 
 /**
  * 終端機版面骨架與共用狀態的擁有者。
@@ -49,7 +49,7 @@ export function TerminalView() {
 
   const [selAsset, setSelAsset] = useState<AssetId>(ASSET_IDS.sBTC)
   const [interval, setInterval] = useState<Interval>(DEFAULT_INTERVAL)
-  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
+  const { notify } = useToast()
 
   const layout = useTerminalLayout()
 
@@ -77,11 +77,6 @@ export function TerminalView() {
   // 這個標的在鏈上的實際部位活動（全平台，不只自己的），取代原本借用的 Bybit 盤口。
   const activity = useMarketActivity(contracts, selAsset)
   const { assets: vaultAssets } = useVaultBacking(contracts)
-
-  const notify = useCallback((msg: string, ok: boolean) => {
-    setToast({ msg, ok })
-    setTimeout(() => setToast(null), 5000)
-  }, [])
 
   const livePx = live[selAsset]?.usd
 
@@ -141,23 +136,6 @@ export function TerminalView() {
         fontFamily: '"Satoshi", system-ui, sans-serif',
       }}
     >
-      <Snackbar open={!!toast} anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>
-        <Box
-          sx={{
-            ...panel,
-            px: 2,
-            py: 1.2,
-            borderColor: toast?.ok ? C.line2 : C.redDim,
-            bgcolor: C.panel2,
-            ...monoCss,
-            fontSize: 13,
-            color: toast?.ok ? C.green : C.red,
-          }}
-        >
-          {toast?.msg}
-        </Box>
-      </Snackbar>
-
       <Box sx={{ display: 'flex', mb: 1.5 }}>
         <PaperTradingBadge />
       </Box>

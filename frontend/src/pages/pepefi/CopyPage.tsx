@@ -17,6 +17,7 @@ import ESGBadge from 'src/components/pepefi/ESGBadge'
 import KYCModal from 'src/components/pepefi/KYCModal'
 import { getPepeAvatar } from 'src/utils/pepefi-assets'
 import TraderRankBadge from 'src/components/pepefi/TraderRankBadge'
+import { useToast } from 'src/components/pepefi/ToastProvider'
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -26,7 +27,6 @@ import Grid from '@mui/material/Grid';
 import Stack from '@mui/material/Stack';
 import Button from '@mui/material/Button';
 import TextField from '@mui/material/TextField';
-import Snackbar from '@mui/material/Snackbar';
 import Alert from '@mui/material/Alert';
 import Link from '@mui/material/Link';
 import TableContainer from '@mui/material/TableContainer';
@@ -38,7 +38,6 @@ import TableCell from '@mui/material/TableCell';
 import Chip from '@mui/material/Chip';
 import Breadcrumbs from '@mui/material/Breadcrumbs';
 import Avatar from '@mui/material/Avatar';
-import { explorerTx, explorerName } from 'src/lib/pepefi/notify'
 
 interface TraderStakeData {
   stake:        bigint
@@ -93,7 +92,6 @@ export default function CopyPage() {
   const [totalMargin,      setTotalMargin]      = useState('1000')
   const [approved,         setApproved]         = useState(false)
   const [busy,             setBusy]             = useState<Record<string, boolean>>({})
-  const [toast,            setToast]            = useState<{ msg: string; ok: boolean; hash?: string } | null>(null)
   const [preview,          setPreview]          = useState<CopyPreview | null>(null)
   const [showKYCModal,     setShowKYCModal]     = useState(false)
 
@@ -106,10 +104,7 @@ export default function CopyPage() {
   const execFee = useExecutionFee(contracts?.exchange ?? null)
 
   const setLoad = (k: string, v: boolean) => setBusy(p => ({ ...p, [k]: v }))
-  const notify  = (msg: string, ok: boolean, hash?: string) => {
-    setToast({ msg, ok, hash })
-    setTimeout(() => setToast(null), 6000)
-  }
+  const { notify } = useToast()
 
   useEffect(() => {
     if (!contracts || !traderAddress) return
@@ -275,35 +270,6 @@ export default function CopyPage() {
 
   return (
     <Container maxWidth="md" sx={{ py: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
-
-      {/* Snackbar notification */}
-      <Snackbar
-        open={!!toast}
-        autoHideDuration={6000}
-        onClose={() => setToast(null)}
-        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
-      >
-        {toast ? (
-          <Alert
-            severity={toast.ok ? 'success' : 'error'}
-            onClose={() => setToast(null)}
-            sx={{ width: '100%' }}
-          >
-            {toast.msg}
-            {toast.hash && explorerTx(toast.hash, wallet.chainId) && (
-              <Link
-                href={explorerTx(toast.hash, wallet.chainId)!}
-                target="_blank"
-                rel="noopener noreferrer"
-                color="inherit"
-                sx={{ display: 'block', mt: 0.5, typography: 'caption', textDecoration: 'underline' }}
-              >
-                {interpolate(t.copy.viewOn, { explorer: explorerName(wallet.chainId) })}
-              </Link>
-            )}
-          </Alert>
-        ) : undefined}
-      </Snackbar>
 
       {/* Load error banner */}
       {loadError && (

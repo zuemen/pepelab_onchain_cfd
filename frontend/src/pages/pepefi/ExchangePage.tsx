@@ -33,6 +33,7 @@ import KYCModal from 'src/components/pepefi/KYCModal';
 import Skeleton from 'src/components/pepefi/Skeleton';
 import PaperTradingBadge from 'src/components/pepefi/PaperTradingBadge';
 import AssetIcon from 'src/components/pepefi/AssetIcon';
+import { useToast } from 'src/components/pepefi/ToastProvider';
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -54,7 +55,6 @@ import LinearProgress from '@mui/material/LinearProgress';
 import Link from '@mui/material/Link';
 import Backdrop from '@mui/material/Backdrop';
 import CircularProgress from '@mui/material/CircularProgress';
-import Snackbar from '@mui/material/Snackbar';
 import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
 import FormControl from '@mui/material/FormControl';
@@ -66,7 +66,6 @@ import FormControlLabel from '@mui/material/FormControlLabel';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import { Icon } from '@iconify/react';
-import { explorerTx, explorerName } from 'src/lib/pepefi/notify'
 
 // ── Config ────────────────────────────────────────────────────────────────────
 type AssetId = `0x${string}`;
@@ -175,7 +174,6 @@ export default function ExchangePage() {
   const [history,     setHistory]     = useState<{ time: string; price: number }[]>([]);
 
   const [busy,         setBusy]        = useState<Record<string, boolean>>({});
-  const [toast,        setToast]       = useState<{ msg: string; ok: boolean; hash?: string } | null>(null);
   const [showKYCModal, setShowKYCModal] = useState(false);
   const [esgConfirmed, setEsgConfirmed] = useState(false);
 
@@ -192,9 +190,7 @@ export default function ExchangePage() {
   } = useKYC(contracts?.kycRegistry ?? null, wallet.address ?? null);
 
   const setLoad = (k: string, v: boolean) => setBusy(p => ({ ...p, [k]: v }));
-  const notify  = useCallback((msg: string, ok: boolean, hash?: string) => {
-    setToast({ msg, ok, hash });
-  }, []);
+  const { notify } = useToast();
 
   // ── F-1 · stale 擋單 ───────────────────────────────────────────────────────
   // 這一頁是最大的下單路徑，卻是唯一沒接 stale 擋單的：顯示價來自 CoinGecko，
@@ -793,29 +789,6 @@ export default function ExchangePage() {
           </Typography>
         </Box>
       </Backdrop>
-
-      {/* Toast Notification */}
-      <Snackbar
-        open={!!toast}
-        autoHideDuration={6000}
-        onClose={() => setToast(null)}
-        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
-        message={toast?.msg}
-        action={
-          toast?.hash && explorerTx(toast.hash, wallet.chainId) ? (
-            <Button
-              color="primary"
-              size="small"
-              component="a"
-              href={explorerTx(toast.hash, wallet.chainId)!}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {explorerName(wallet.chainId)}
-            </Button>
-          ) : null
-        }
-      />
 
       <Box sx={{ display: 'flex', mb: 1 }}>
         <PaperTradingBadge />

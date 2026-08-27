@@ -9,6 +9,7 @@ import MockOracleABI from 'src/contracts/abi/MockOracle.json'
 import { t, locale, interpolate } from 'src/locales'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { TableSkeleton } from 'src/components/pepefi/Skeleton'
+import { useToast } from 'src/components/pepefi/ToastProvider'
 import { ASSETS_LIST } from 'src/lib/pepefi/assetMeta'
 
 import Box from '@mui/material/Box';
@@ -17,9 +18,7 @@ import Typography from '@mui/material/Typography';
 import Card from '@mui/material/Card';
 import Button from '@mui/material/Button';
 import TextField from '@mui/material/TextField';
-import Snackbar from '@mui/material/Snackbar';
 import Alert from '@mui/material/Alert';
-import Link from '@mui/material/Link';
 import TableContainer from '@mui/material/TableContainer';
 import Table from '@mui/material/Table';
 import TableHead from '@mui/material/TableHead';
@@ -32,7 +31,6 @@ import Stack from '@mui/material/Stack';
 import Accordion from '@mui/material/Accordion';
 import AccordionSummary from '@mui/material/AccordionSummary';
 import AccordionDetails from '@mui/material/AccordionDetails';
-import { explorerTx, explorerName } from 'src/lib/pepefi/notify'
 
 // ── Config ────────────────────────────────────────────────────────────────────
 type AssetId = `0x${string}`
@@ -101,7 +99,6 @@ export default function AdminOraclePage() {
   const [oracleOwner,    setOracleOwner]    = useState<string | null>(null)
   const [ownerCheckError, setOwnerCheckError] = useState<string | null>(null)
   const [busy,           setBusy]           = useState<Record<string, boolean>>({})
-  const [toast,          setToast]          = useState<{ msg: string; ok: boolean; hash?: string } | null>(null)
   const [autoSettle,     setAutoSettle]     = useState(false)
   const [fundingSettleBusy, setFundingSettleBusy] = useState<Record<string, boolean>>({})
   const [, setTick]   = useState(0)  // force re-render for countdown
@@ -121,10 +118,7 @@ export default function AdminOraclePage() {
     oracleOwner.toLowerCase() === wallet.address.toLowerCase()
 
   const setLoad = (k: string, v: boolean) => setBusy(p => ({ ...p, [k]: v }))
-  const notify  = (msg: string, ok: boolean, hash?: string) => {
-    setToast({ msg, ok, hash })
-    setTimeout(() => setToast(null), 6000)
-  }
+  const { notify } = useToast()
 
   // Countdown ticker。分頁在背景時完全不跑——沒人在看的倒數不需要重繪。
   useEffect(() => {
@@ -290,35 +284,6 @@ export default function AdminOraclePage() {
 
   return (
     <Container maxWidth="md" sx={{ py: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
-
-      {/* Snackbar notification */}
-      <Snackbar
-        open={!!toast}
-        autoHideDuration={6000}
-        onClose={() => setToast(null)}
-        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
-      >
-        {toast ? (
-          <Alert
-            severity={toast.ok ? 'success' : 'error'}
-            onClose={() => setToast(null)}
-            sx={{ width: '100%' }}
-          >
-            {toast.msg}
-            {toast.hash && explorerTx(toast.hash, wallet.chainId) && (
-              <Link
-                href={explorerTx(toast.hash, wallet.chainId)!}
-                target="_blank"
-                rel="noopener noreferrer"
-                color="inherit"
-                sx={{ display: 'block', mt: 0.5, typography: 'caption', textDecoration: 'underline' }}
-              >
-                {interpolate(t.admin.oracle.viewOn, { explorer: explorerName(wallet.chainId) })}
-              </Link>
-            )}
-          </Alert>
-        ) : undefined}
-      </Snackbar>
 
       {/* Header */}
       <Box sx={{ mb: 1 }}>

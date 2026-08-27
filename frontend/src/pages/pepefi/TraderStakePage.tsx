@@ -16,11 +16,10 @@ import Grid from '@mui/material/Grid'
 import Stack from '@mui/material/Stack'
 import Button from '@mui/material/Button'
 import TextField from '@mui/material/TextField'
-import Snackbar from '@mui/material/Snackbar'
 import Alert from '@mui/material/Alert'
 import Link from '@mui/material/Link'
 import Chip from '@mui/material/Chip'
-import { explorerTx, explorerName } from 'src/lib/pepefi/notify'
+import { useToast } from 'src/components/pepefi/ToastProvider'
 
 type TxResp = { wait(): Promise<unknown>; hash: string }
 const asTx = (v: unknown) => v as TxResp
@@ -46,7 +45,7 @@ export default function TraderStakePage() {
   const [stakeInput, setStakeInput] = useState('100')
   const [unstakeAmt, setUnstakeAmt] = useState('')
   const [busy,  setBusy]  = useState<Record<string, boolean>>({})
-  const [toast, setToast] = useState<{ msg: string; ok: boolean; hash?: string } | null>(null)
+  const { notify } = useToast()
 
   // ── PEPE Yield Farm State ──────────────────────────────────────────────────
   const [onChainPepeBalance, setOnChainPepeBalance] = useState<bigint | null>(null)
@@ -121,10 +120,6 @@ export default function TraderStakePage() {
   }
 
   const setLoad = (k: string, v: boolean) => setBusy(p => ({ ...p, [k]: v }))
-  const notify  = useCallback((msg: string, ok: boolean, hash?: string) => {
-    setToast({ msg, ok, hash })
-    setTimeout(() => setToast(null), 6000)
-  }, [])
 
   const fetchAll = useCallback(async () => {
     if (!contracts || !wallet.address) return
@@ -232,35 +227,6 @@ export default function TraderStakePage() {
 
   return (
     <Container maxWidth="sm" sx={{ py: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
-
-      {/* Snackbar notification */}
-      <Snackbar
-        open={!!toast}
-        autoHideDuration={6000}
-        onClose={() => setToast(null)}
-        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
-      >
-        {toast ? (
-          <Alert
-            severity={toast.ok ? 'success' : 'error'}
-            onClose={() => setToast(null)}
-            sx={{ width: '100%' }}
-          >
-            {toast.msg}
-            {toast.hash && explorerTx(toast.hash, wallet.chainId) && (
-              <Link
-                href={explorerTx(toast.hash, wallet.chainId)!}
-                target="_blank"
-                rel="noopener noreferrer"
-                color="inherit"
-                sx={{ display: 'block', mt: 0.5, typography: 'caption', textDecoration: 'underline' }}
-              >
-                {interpolate(t.stake.viewOn, { explorer: explorerName(wallet.chainId) })}
-              </Link>
-            )}
-          </Alert>
-        ) : undefined}
-      </Snackbar>
 
       {/* ─── A. Current Stake ────────────────────────────────────────────── */}
       <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
