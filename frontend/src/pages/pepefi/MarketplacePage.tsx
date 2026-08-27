@@ -4,7 +4,7 @@ import { Link as RouterLink } from 'react-router';
 import { useContracts } from 'src/hooks/useContracts';
 import { usePepefiWallet } from 'src/layouts/pepefi';
 import { useLivePrices } from 'src/hooks/useLivePrices';
-import { ASSET_IDS } from 'src/contracts/addresses';
+import { ASSET_IDS, CHAIN_NAMES } from 'src/contracts/addresses';
 import Skeleton from 'src/components/pepefi/Skeleton';
 import EmptyState from 'src/components/pepefi/EmptyState';
 import { useESG } from 'src/hooks/useESG';
@@ -368,9 +368,16 @@ export default function MarketplacePage() {
         <EmptyState
           icon="🎯"
           title={t.marketplace.empty.title}
-          description={t.marketplace.empty.description}
+          description={interpolate(t.marketplace.empty.description, {
+            chain: wallet.chainId !== null
+              ? (CHAIN_NAMES[wallet.chainId] ?? interpolate(t.marketplace.empty.unknownChain, { chainId: wallet.chainId }))
+              : interpolate(t.marketplace.empty.unknownChain, { chainId: '—' }),
+            blocks: FETCH_BLOCKS_VOLUME.toLocaleString(),
+          })}
           ctaText={t.marketplace.empty.cta}
           ctaHref="/trader"
+          secondaryCtaText={t.marketplace.empty.secondaryCta}
+          secondaryCtaHref="/x402"
         />
       ) : (
         <>

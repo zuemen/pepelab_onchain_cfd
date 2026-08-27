@@ -25,10 +25,12 @@ export const marketplace: Catalog['marketplace'] = {
   loadFailed: 'Failed to load:',
 
   empty: {
-    title: 'No traders yet',
+    title: 'No traders with a published strategy on this chain yet',
     description:
-      'Run SeedWhales to populate the leaderboard, or register a strategy on the Trader page.',
+      'The leaderboard is computed live from on-chain events. Currently connected to {chain}, scanning the last {blocks} blocks. If you expected to see traders, check your wallet is on the right chain.',
+    unknownChain: 'Unknown network (chainId {chainId})',
     cta: 'Become a Trader',
+    secondaryCta: 'View x402 Docs',
   },
 
   card: {

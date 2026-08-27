@@ -27,9 +27,12 @@ export const marketplace = {
   loadFailed: '載入失敗：',
 
   empty: {
-    title: '尚無交易者',
-    description: '執行 SeedWhales 來產生排行榜資料，或到交易者頁面註冊策略。',
+    title: '這條鏈上還沒有已發布策略的交易者',
+    /** 排行榜是即時算的,不是「還沒有人」——講清楚資料怎麼來的,讓人自己判斷是連錯鏈還是真的沒人。 */
+    description: '排行榜由鏈上事件即時計算,目前連線到 {chain},掃描了最近 {blocks} 個區塊。如果預期會看到交易者,先確認錢包連的是正確的鏈。',
+    unknownChain: '未知網路（chainId {chainId}）',
     cta: '成為交易者',
+    secondaryCta: '看 x402 文件',
   },
 
   card: {
