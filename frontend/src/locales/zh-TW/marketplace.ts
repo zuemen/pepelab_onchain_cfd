@@ -18,12 +18,28 @@ export const marketplace = {
     followers: '排序：跟隨者',
     volume: '排序：交易量（7 天）',
     pnl: '排序：PnL（7 天）',
+    stake: '排序：質押',
     esg: '排序：ESG 評分',
   },
 
   refreshAria: '重新整理市集資料',
 
-  livePrices: '即時價格',
+  search: {
+    placeholder: '搜尋名稱或地址…',
+    /** 這條鏈上有交易者,只是搜尋詞沒比對到——跟「這條鏈真的沒人」是不同的空狀態。 */
+    noResults: '沒有符合「{query}」的交易者',
+  },
+
+  /** 表格欄位標頭。金額類欄位(量、PnL、質押)沿用 card.* 裡已經有的字串,單一來源不重複定義。 */
+  table: {
+    rank: '#',
+    trader: '交易者',
+    reputation: '聲譽',
+    strategy: '策略',
+    esg: 'ESG',
+    actions: '操作',
+  },
+
   loadFailed: '載入失敗：',
 
   empty: {
@@ -63,10 +79,5 @@ export const marketplace = {
     starTraderOne: '{count} 位明星交易者',
     starTraderMany: '{count} 位明星交易者',
     volumeWindow: '交易量與 PnL 統計來自最近 ~{blocks} 個區塊（約 7 天）',
-  },
-
-  rawData: {
-    summary: '原始策略資料',
-    noStrategy: '尚無策略',
   },
 };

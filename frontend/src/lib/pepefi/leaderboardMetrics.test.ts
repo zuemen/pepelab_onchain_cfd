@@ -5,6 +5,9 @@ import {
   buildVolumeMap,
   buildPnlMap,
   buildTraderCard,
+  cmpBigDesc,
+  cmpNullableBigDesc,
+  matchesSearch,
   type TraderRawInput,
 } from './leaderboardMetrics'
 
@@ -110,5 +113,54 @@ describe('buildTraderCard', () => {
     expect(card.totalSlashed).toBeNull()
     expect(card.address).toBe('0xAAA')
     expect(card.displayName).toBe('Demo Alpha')
+  })
+})
+
+describe('cmpBigDesc', () => {
+  it('大到小排序', () => {
+    expect(cmpBigDesc(100n, 50n)).toBeLessThan(0)
+    expect(cmpBigDesc(50n, 100n)).toBeGreaterThan(0)
+  })
+
+  it('平手回傳 0', () => {
+    expect(cmpBigDesc(10n, 10n)).toBe(0)
+  })
+})
+
+describe('cmpNullableBigDesc', () => {
+  it('兩個都有資料時等同 cmpBigDesc', () => {
+    expect(cmpNullableBigDesc(100n, 50n)).toBeLessThan(0)
+  })
+
+  it('null 一律墊底,不當成 0——質押 0n 的人要排在 null(沒讀到)前面', () => {
+    expect(cmpNullableBigDesc(0n, null)).toBeLessThan(0)
+    expect(cmpNullableBigDesc(null, 0n)).toBeGreaterThan(0)
+  })
+
+  it('兩個都是 null → 0(順序不變)', () => {
+    expect(cmpNullableBigDesc(null, null)).toBe(0)
+  })
+})
+
+describe('matchesSearch', () => {
+  const trader = { displayName: 'Demo Alpha', address: '0xAbCdEf0123456789' }
+
+  it('空白查詢(含只有空白)永遠放行', () => {
+    expect(matchesSearch(trader, '')).toBe(true)
+    expect(matchesSearch(trader, '   ')).toBe(true)
+  })
+
+  it('比對名稱,大小寫不敏感', () => {
+    expect(matchesSearch(trader, 'alpha')).toBe(true)
+    expect(matchesSearch(trader, 'ALPHA')).toBe(true)
+  })
+
+  it('比對地址子字串,大小寫不敏感', () => {
+    expect(matchesSearch(trader, 'abcdef')).toBe(true)
+    expect(matchesSearch(trader, '0xABCDEF')).toBe(true)
+  })
+
+  it('沒比對到 → false', () => {
+    expect(matchesSearch(trader, 'beta')).toBe(false)
   })
 })

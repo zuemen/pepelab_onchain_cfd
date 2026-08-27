@@ -16,12 +16,26 @@ export const marketplace: Catalog['marketplace'] = {
     followers: 'Sort: Followers',
     volume: 'Sort: Volume (7d)',
     pnl: 'Sort: PnL (7d)',
+    stake: 'Sort: Stake',
     esg: 'Sort: ESG Score',
   },
 
   refreshAria: 'Refresh marketplace data',
 
-  livePrices: 'Live Prices',
+  search: {
+    placeholder: 'Search name or address…',
+    noResults: 'No traders match "{query}"',
+  },
+
+  table: {
+    rank: '#',
+    trader: 'Trader',
+    reputation: 'Reputation',
+    strategy: 'Strategy',
+    esg: 'ESG',
+    actions: 'Actions',
+  },
+
   loadFailed: 'Failed to load:',
 
   empty: {
@@ -61,10 +75,5 @@ export const marketplace: Catalog['marketplace'] = {
     starTraderOne: '{count} star trader',
     starTraderMany: '{count} star traders',
     volumeWindow: 'Volume + PnL from last ~{blocks} blocks (~7d)',
-  },
-
-  rawData: {
-    summary: 'Raw strategy data',
-    noStrategy: 'no strategy',
   },
 };

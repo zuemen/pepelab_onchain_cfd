@@ -96,3 +96,30 @@ export const buildTraderCard = (
     pnl7d:       pnlMap[key]    ?? 0n,
   };
 };
+
+// ── 排行榜表格用的排序/篩選 ─────────────────────────────────────────────────
+// 表格式排行榜(#85)把「怎麼比較兩個 bigint」跟「使用者打的搜尋字要怎麼比對」
+// 從 MarketplacePage 搬到這裡:同一批純函式,同一套測試覆蓋。
+
+/** 大到小排序,平手不改變相對順序。 */
+export const cmpBigDesc = (a: bigint, b: bigint): number =>
+  a === b ? 0 : b > a ? 1 : -1;
+
+/**
+ * 兩個都可能沒讀到的 bigint 欄位(聲譽、質押)共用同一種排序:有資料的在前,
+ * 沒資料的一律墊底,不當成 0——0n 是「質押了 0」,null 是「根本沒讀到」,
+ * 排序上不能混為一談。
+ */
+export const cmpNullableBigDesc = (a: bigint | null, b: bigint | null): number => {
+  if (a === null && b === null) return 0;
+  if (a === null) return 1;
+  if (b === null) return -1;
+  return cmpBigDesc(a, b);
+};
+
+/** 名稱或地址子字串比對,大小寫不敏感。空白查詢(含只有空白)永遠放行。 */
+export const matchesSearch = (trader: Pick<TraderCard, 'displayName' | 'address'>, query: string): boolean => {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  return trader.displayName.toLowerCase().includes(needle) || trader.address.toLowerCase().includes(needle);
+};
