@@ -434,10 +434,18 @@ export default function MarketplacePage() {
         </Typography>
       ) : (
         <>
-          <Podium
-            podium={podium}
-            onScoreClick={(el, trader) => setScorePopover({ anchorEl: el, trader })}
-          />
+          {podium.length > 0 ? (
+            <Podium
+              podium={podium}
+              onScoreClick={(el, trader) => setScorePopover({ anchorEl: el, trader })}
+            />
+          ) : (
+            // 領獎台把「資料不足」(平倉 <5 筆)的人排除在外,人數不夠時 Podium 直接
+            // return null——這裡不能讓它就這樣悄悄消失,不然看起來像壞掉,要講清楚為什麼。
+            <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 2 }}>
+              {t.marketplace.podium.noneQualified}
+            </Typography>
+          )}
 
           {/* 容器限高、內部自己上下捲——不然橫向捲軸會被推到 51 列那麼高的表格最底部,
               使用者得先把整個頁面捲到底才摸得到它。stickyHeader 讓標頭在容器內垂直
