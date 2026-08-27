@@ -14,6 +14,7 @@ export const marketplace = {
   esgButton: 'ESG {state}',
 
   sort: {
+    score: '排序：TraderScore',
     reputation: '排序：聲譽',
     followers: '排序：跟隨者',
     volume: '排序：交易量（7 天）',
@@ -34,10 +35,28 @@ export const marketplace = {
   table: {
     rank: '#',
     trader: '交易者',
+    score: 'TraderScore',
+    trend: '7 日走勢',
     reputation: '聲譽',
     strategy: '策略',
+    winRate: '勝率',
     esg: 'ESG',
     actions: '操作',
+    /** 平倉少於 5 筆時掛在勝率旁邊的灰標,不是紅色警告——只是不夠準,不是壞消息。 */
+    insufficientSample: '資料不足',
+  },
+
+  /**
+   * TraderScore 算式攤開的 popover。不是展示公式長什麼樣子,是把這位交易者
+   * 自己五行的實際數字與各自拿到幾分秀出來。
+   */
+  scoreBreakdown: {
+    returnLabel: '報酬率',
+    winRateLabel: '勝率',
+    slashLabel: '罰沒扣分',
+    totalLabel: '總分',
+    totalValue: '{total} / 100',
+    insufficientNote: '平倉少於 5 筆,勝率僅供參考',
   },
 
   loadFailed: '載入失敗：',

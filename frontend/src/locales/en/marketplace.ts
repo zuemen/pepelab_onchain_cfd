@@ -12,6 +12,7 @@ export const marketplace: Catalog['marketplace'] = {
   esgButton: 'ESG {state}',
 
   sort: {
+    score: 'Sort: TraderScore',
     reputation: 'Sort: Reputation',
     followers: 'Sort: Followers',
     volume: 'Sort: Volume (7d)',
@@ -30,10 +31,23 @@ export const marketplace: Catalog['marketplace'] = {
   table: {
     rank: '#',
     trader: 'Trader',
+    score: 'TraderScore',
+    trend: 'Trend (7d)',
     reputation: 'Reputation',
     strategy: 'Strategy',
+    winRate: 'Win Rate',
     esg: 'ESG',
     actions: 'Actions',
+    insufficientSample: 'Insufficient sample',
+  },
+
+  scoreBreakdown: {
+    returnLabel: 'Return',
+    winRateLabel: 'Win Rate',
+    slashLabel: 'Slash Penalty',
+    totalLabel: 'Total',
+    totalValue: '{total} / 100',
+    insufficientNote: 'Fewer than 5 closed trades — win rate is indicative only',
   },
 
   loadFailed: 'Failed to load:',

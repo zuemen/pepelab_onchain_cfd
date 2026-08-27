@@ -1,6 +1,7 @@
-import { MONO, LiveDot } from 'src/components/pepefi/brandKit'
+import { MONO, LiveDot, PEPE } from 'src/components/pepefi/brandKit'
 import { useState, useEffect, useCallback } from 'react';
 import { Link as RouterLink } from 'react-router';
+import { Line, LineChart, ResponsiveContainer } from 'recharts';
 import { useContracts } from 'src/hooks/useContracts';
 import { usePepefiWallet } from 'src/layouts/pepefi';
 import { ASSET_IDS, CHAIN_NAMES } from 'src/contracts/addresses';
@@ -8,6 +9,7 @@ import Skeleton, { TableSkeleton } from 'src/components/pepefi/Skeleton';
 import EmptyState from 'src/components/pepefi/EmptyState';
 import { useESG } from 'src/hooks/useESG';
 import ESGBadge from 'src/components/pepefi/ESGBadge';
+import ScoreBreakdownPopover from 'src/components/pepefi/ScoreBreakdownPopover';
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta';
 import { getPepeAvatar } from 'src/utils/pepefi-assets';
 import TraderRankBadge from 'src/components/pepefi/TraderRankBadge';
@@ -15,7 +17,9 @@ import { t, interpolate } from 'src/locales';
 import {
   parseAllocs,
   buildVolumeMap,
+  buildMarginMap,
   buildPnlMap,
+  groupClosedEventsByOwner,
   buildTraderCard,
   cmpBigDesc,
   cmpNullableBigDesc,
@@ -56,7 +60,7 @@ import { Icon } from '@iconify/react';
 const FETCH_BLOCKS_VOLUME = 50_000;   // ~7 days on Sepolia
 
 // ── Types ────────────────────────────────────────────────────────────────────
-type SortKey = 'reputation' | 'followers' | 'volume' | 'pnl' | 'stake' | 'esg';
+type SortKey = 'score' | 'reputation' | 'followers' | 'volume' | 'pnl' | 'stake' | 'esg';
 
 const ESG_FRIENDLY_THRESHOLD = 60;   // weighted composite ≥ 60
 
@@ -82,6 +86,49 @@ const repBadgeColor = (score: bigint) =>
   : score >= 60n ? 'warning'
   : 'error';
 
+const scoreChipColor = (total: number) =>
+  total >= 80 ? 'success'
+  : total >= 60 ? 'warning'
+  : 'error';
+
+/** 「62% (21)」的形式:百分比永遠附帶樣本數,不裸露一個看起來很篤定的百分比。 */
+const fWinRate = (wins: number, trades: number): string =>
+  trades === 0 ? '—' : `${Math.round((wins / trades) * 100)}% (${trades})`;
+
+const SPARKLINE_W = 72;
+const SPARKLINE_H = 28;
+
+/** 跟 PnL 數字用同一套三態色階(見下方 PnL TableCell):>0 綠、<0 紅、剛好 0 中性灰。 */
+const SPARKLINE_NEUTRAL = '#919EAB'; // 跟本檔 MEDAL_ROW_TINT 的銀牌灰同一個顏色
+
+/**
+ * 7 天權益曲線,無軸線無 tooltip——51 條同時渲染,任何一條額外的互動判定都是
+ * 白白的效能負擔。顏色跟著這一列的 PnL 正負走,不是跟著曲線自己起訖,好跟旁邊
+ * 的 PnL 數字同一套顏色語言,不會一邊綠一邊紅看起來自相矛盾——剛好打平(pnl7d
+ * 精確等於 0)兩邊都當中性色,不能只顧多數情況而漏了這個邊界。
+ */
+function EquitySparkline({ curve, pnl }: { curve: bigint[]; pnl: bigint }) {
+  if (curve.length === 0) return <>—</>;
+  const data = curve.map((c, i) => ({ i, c: Number(c) / 1e18 }));
+  const stroke = pnl > 0n ? PEPE.long : pnl < 0n ? PEPE.short : SPARKLINE_NEUTRAL;
+  return (
+    <Box sx={{ width: SPARKLINE_W, height: SPARKLINE_H }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={data} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+          <Line
+            type="monotone"
+            dataKey="c"
+            stroke={stroke}
+            strokeWidth={1.5}
+            dot={false}
+            isAnimationActive={false}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </Box>
+  );
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 export default function MarketplacePage() {
   const wallet = usePepefiWallet();
@@ -91,9 +138,10 @@ export default function MarketplacePage() {
   const [traders,    setTraders]    = useState<TraderCard[]>([]);
   const [isLoading,  setIsLoading]  = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
-  const [sortKey,    setSortKey]    = useState<SortKey>('reputation');
+  const [sortKey,    setSortKey]    = useState<SortKey>('score');
   const [esgOnly,    setEsgOnly]    = useState(false);
   const [search,     setSearch]     = useState('');
+  const [scorePopover, setScorePopover] = useState<{ anchorEl: HTMLElement; trader: TraderCard } | null>(null);
 
   const fetchAll = useCallback(async () => {
     if (!contracts || !wallet.provider) return;
@@ -121,8 +169,12 @@ export default function MarketplacePage() {
         owner: log.args.owner as string,
         pnl:   log.args.pnl as bigint,
       }));
-      const volumeMap = buildVolumeMap(openedEvents);
-      const pnlMap    = buildPnlMap(closedEvents);
+      const aggregates = {
+        volumeMap:           buildVolumeMap(openedEvents),
+        marginMap:           buildMarginMap(openedEvents),
+        pnlMap:              buildPnlMap(closedEvents),
+        closedEventsByOwner: groupClosedEventsByOwner(closedEvents),
+      };
 
       const cards = await Promise.all(
         (addresses as string[]).map(async (addr): Promise<TraderCard> => {
@@ -167,8 +219,7 @@ export default function MarketplacePage() {
               stake,
               totalSlashed,
             },
-            volumeMap,
-            pnlMap,
+            aggregates,
           );
         })
       );
@@ -213,14 +264,15 @@ export default function MarketplacePage() {
         case 'volume':    return cmpBigDesc(a.totalVolume, b.totalVolume);
         case 'pnl':       return cmpBigDesc(a.pnl7d, b.pnl7d);
         case 'stake':     return cmpNullableBigDesc(a.stake, b.stake);
+        case 'reputation': return cmpNullableBigDesc(a.reputation, b.reputation);
         case 'esg': {
           const ea = getEsgComposite(a) ?? -1;
           const eb = getEsgComposite(b) ?? -1;
           return eb - ea;
         }
-        case 'reputation':
+        case 'score':
         default:
-          return cmpNullableBigDesc(a.reputation, b.reputation);
+          return b.score.total - a.score.total;
       }
     });
 
@@ -315,6 +367,7 @@ export default function MarketplacePage() {
               onChange={e => setSortKey(e.target.value as SortKey)}
               sx={{ borderRadius: 1 }}
             >
+              <MenuItem value="score">{t.marketplace.sort.score}</MenuItem>
               <MenuItem value="reputation">{t.marketplace.sort.reputation}</MenuItem>
               <MenuItem value="followers">{t.marketplace.sort.followers}</MenuItem>
               <MenuItem value="volume">{t.marketplace.sort.volume}</MenuItem>
@@ -344,7 +397,7 @@ export default function MarketplacePage() {
       {/* Leaderboard table */}
       {isLoading ? (
         <Card>
-          <TableSkeleton rows={8} cols={9} />
+          <TableSkeleton rows={8} cols={13} />
         </Card>
       ) : filtered.length === 0 ? (
         <EmptyState
@@ -375,10 +428,13 @@ export default function MarketplacePage() {
                 <TableRow sx={{ bgcolor: 'background.neutral' }}>
                   <TableCell sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{t.marketplace.table.rank}</TableCell>
                   <TableCell sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{t.marketplace.table.trader}</TableCell>
+                  {sortableHeader('score', t.marketplace.table.score)}
+                  <TableCell align="center" sx={{ color: 'text.secondary', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{t.marketplace.table.trend}</TableCell>
                   {sortableHeader('reputation', t.marketplace.table.reputation)}
                   <TableCell sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{t.marketplace.table.strategy}</TableCell>
                   {sortableHeader('volume', t.marketplace.card.volLabel)}
                   {sortableHeader('pnl', t.marketplace.card.pnlLabel)}
+                  <TableCell align="right" sx={{ color: 'text.secondary', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{t.marketplace.table.winRate}</TableCell>
                   {sortableHeader('followers', t.marketplace.card.followersLabel)}
                   {sortableHeader('stake', t.marketplace.card.stakeLabel)}
                   {sortableHeader('esg', t.marketplace.table.esg)}
@@ -457,6 +513,20 @@ export default function MarketplacePage() {
                       </TableCell>
 
                       <TableCell align="right">
+                        <Chip
+                          label={trader.score.total.toFixed(0)}
+                          size="small"
+                          color={scoreChipColor(trader.score.total)}
+                          onClick={e => setScorePopover({ anchorEl: e.currentTarget, trader })}
+                          sx={{ fontWeight: 'bold', fontSize: '0.75rem', height: 22, fontFamily: MONO, cursor: 'pointer' }}
+                        />
+                      </TableCell>
+
+                      <TableCell align="center">
+                        <EquitySparkline curve={trader.equityCurve} pnl={trader.pnl7d} />
+                      </TableCell>
+
+                      <TableCell align="right">
                         {trader.reputation !== null ? (
                           <Chip
                             label={`◆ ${String(trader.reputation)}`}
@@ -518,6 +588,22 @@ export default function MarketplacePage() {
                         }}
                       >
                         {trader.pnl7d !== 0n ? fPnL(trader.pnl7d) : '—'}
+                      </TableCell>
+
+                      <TableCell align="right" sx={{ fontFamily: MONO }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
+                          {fWinRate(trader.wins, trader.trades)}
+                          {trader.score.insufficientSample && (
+                            <Tooltip title={t.marketplace.scoreBreakdown.insufficientNote}>
+                              <Chip
+                                label={t.marketplace.table.insufficientSample}
+                                size="small"
+                                variant="outlined"
+                                sx={{ height: 16, fontSize: '0.5625rem', color: 'text.secondary', borderColor: 'divider' }}
+                              />
+                            </Tooltip>
+                          )}
+                        </Box>
                       </TableCell>
 
                       <TableCell align="right" sx={{ fontFamily: MONO }}>
@@ -608,6 +694,12 @@ export default function MarketplacePage() {
           </Box>
         </>
       )}
+
+      <ScoreBreakdownPopover
+        anchorEl={scorePopover?.anchorEl ?? null}
+        score={scorePopover?.trader.score ?? null}
+        onClose={() => setScorePopover(null)}
+      />
     </Container>
   );
 }
