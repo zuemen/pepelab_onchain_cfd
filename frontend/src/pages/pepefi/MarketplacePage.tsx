@@ -62,6 +62,15 @@ import { Icon } from '@iconify/react';
 // ── Config ───────────────────────────────────────────────────────────────────
 const FETCH_BLOCKS_VOLUME = 50_000;   // ~7 days on Sepolia
 
+// Expert Mode 有 12 欄,單一螢幕寬度塞不下——固定「#」「交易者」在左、「操作」在
+// 右,中間的指標欄自己橫向捲動。兩顆固定不動的欄位讓使用者橫向捲動時永遠知道
+// 這一列是誰、永遠按得到跟單鈕,不用捲到底才找得到。
+const STICKY_RANK_W   = 56;
+const STICKY_TRADER_W = 220;
+/** 左側固定欄與可捲動區交界處的陰影,提示「這裡還有內容,可以往右滑」。 */
+const STICKY_LEFT_EDGE_SHADOW  = '6px 0 6px -6px rgba(0,0,0,0.35)';
+const STICKY_RIGHT_EDGE_SHADOW = '-6px 0 6px -6px rgba(0,0,0,0.35)';
+
 // ── Types ────────────────────────────────────────────────────────────────────
 type SortKey = 'score' | 'reputation' | 'followers' | 'volume' | 'pnl' | 'stake' | 'esg';
 
@@ -421,11 +430,28 @@ export default function MarketplacePage() {
           />
 
           <TableContainer component={Card} sx={{ overflowX: 'auto' }}>
-            <Table size="small">
+            {/* borderCollapse:'separate' — MUI's default 'collapse' clips box-shadow on <td>,
+                which would silently hide the sticky-column scroll-affordance shadows below. */}
+            <Table size="small" sx={{ borderCollapse: 'separate', borderSpacing: 0 }}>
               <TableHead>
                 <TableRow sx={{ bgcolor: 'background.neutral' }}>
-                  <TableCell sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{t.marketplace.table.rank}</TableCell>
-                  <TableCell sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{t.marketplace.table.trader}</TableCell>
+                  <TableCell
+                    sx={{
+                      position: 'sticky', left: 0, zIndex: 3, minWidth: STICKY_RANK_W,
+                      bgcolor: 'background.neutral', color: 'text.secondary', fontWeight: 'bold',
+                    }}
+                  >
+                    {t.marketplace.table.rank}
+                  </TableCell>
+                  <TableCell
+                    sx={{
+                      position: 'sticky', left: STICKY_RANK_W, zIndex: 3, minWidth: STICKY_TRADER_W,
+                      bgcolor: 'background.neutral', color: 'text.secondary', fontWeight: 'bold',
+                      boxShadow: STICKY_LEFT_EDGE_SHADOW,
+                    }}
+                  >
+                    {t.marketplace.table.trader}
+                  </TableCell>
                   {sortableHeader('score', t.marketplace.table.score)}
                   <TableCell align="center" sx={{ color: 'text.secondary', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{t.marketplace.table.trend}</TableCell>
                   {mode === 'expert' && (
@@ -439,7 +465,16 @@ export default function MarketplacePage() {
                   {mode === 'expert' && sortableHeader('followers', t.marketplace.card.followersLabel)}
                   {mode === 'expert' && sortableHeader('stake', t.marketplace.card.stakeLabel)}
                   {mode === 'expert' && sortableHeader('esg', t.marketplace.table.esg)}
-                  <TableCell align="center" sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{t.marketplace.table.actions}</TableCell>
+                  <TableCell
+                    align="center"
+                    sx={{
+                      position: 'sticky', right: 0, zIndex: 3,
+                      bgcolor: 'background.neutral', color: 'text.secondary', fontWeight: 'bold',
+                      boxShadow: STICKY_RIGHT_EDGE_SHADOW,
+                    }}
+                  >
+                    {t.marketplace.table.actions}
+                  </TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -459,11 +494,22 @@ export default function MarketplacePage() {
 
                   return (
                     <TableRow key={trader.address} hover>
-                      <TableCell sx={{ fontFamily: MONO, color: 'text.secondary', fontWeight: 'bold' }}>
+                      <TableCell
+                        sx={{
+                          position: 'sticky', left: 0, zIndex: 1, minWidth: STICKY_RANK_W,
+                          bgcolor: 'background.paper', fontFamily: MONO, color: 'text.secondary', fontWeight: 'bold',
+                        }}
+                      >
                         #{rank}
                       </TableCell>
 
-                      <TableCell sx={{ maxWidth: 220 }}>
+                      <TableCell
+                        sx={{
+                          position: 'sticky', left: STICKY_RANK_W, zIndex: 1, minWidth: STICKY_TRADER_W,
+                          maxWidth: STICKY_TRADER_W, bgcolor: 'background.paper',
+                          boxShadow: STICKY_LEFT_EDGE_SHADOW,
+                        }}
+                      >
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                           <Avatar
                             src={getPepeAvatar(trader.reputation, trader.address)}
@@ -626,7 +672,13 @@ export default function MarketplacePage() {
                         </TableCell>
                       )}
 
-                      <TableCell align="center">
+                      <TableCell
+                        align="center"
+                        sx={{
+                          position: 'sticky', right: 0, zIndex: 1,
+                          bgcolor: 'background.paper', boxShadow: STICKY_RIGHT_EDGE_SHADOW,
+                        }}
+                      >
                         <Stack direction="row" spacing={1} justifyContent="center">
                           {mode === 'expert' && (
                             <Button
