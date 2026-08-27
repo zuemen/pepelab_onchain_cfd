@@ -13,6 +13,16 @@ import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta';
 import { getPepeAvatar } from 'src/utils/pepefi-assets';
 import TraderRankBadge from 'src/components/pepefi/TraderRankBadge';
 import { t, interpolate } from 'src/locales';
+import {
+  parseAllocs,
+  buildVolumeMap,
+  buildPnlMap,
+  buildTraderCard,
+  type RawAlloc,
+  type TraderCard,
+  type OpenedEvent,
+  type ClosedEvent,
+} from 'src/lib/pepefi/leaderboardMetrics';
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -40,33 +50,7 @@ type SortKey = 'reputation' | 'followers' | 'volume' | 'pnl' | 'esg';
 
 const ESG_FRIENDLY_THRESHOLD = 60;   // weighted composite ≥ 60
 
-interface RawAlloc {
-  asset:    string;
-  weight:   bigint;
-  isLong:   boolean;
-  leverage: bigint;
-}
-
-interface TraderCard {
-  address:       string;
-  displayName:   string;
-  allocs:        RawAlloc[];
-  followerCount: bigint;
-  hasStrategy:   boolean;
-  reputation:    bigint | null;
-  stake:         bigint | null;
-  totalSlashed:  bigint | null;
-  totalVolume:   bigint;   // margin × leverage, last 7d
-  pnl7d:         bigint;   // sum realizedPnL from PositionClosed, last 7d
-}
-
 // ── Helpers ──────────────────────────────────────────────────────────────────
-const parseAllocs = (arr: unknown[]): RawAlloc[] =>
-  arr.map(a => {
-    const x = a as { asset: string; weight: bigint; isLong: boolean; leverage: bigint };
-    return { asset: x.asset, weight: x.weight, isLong: x.isLong, leverage: x.leverage };
-  });
-
 const shortAddr = (addr: string) => `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 
 const summarize = (allocs: RawAlloc[]): string =>
@@ -134,17 +118,17 @@ export default function MarketplacePage() {
       const allClosed  = closedRes.status    === 'fulfilled' ? closedRes.value    : [];
       const addresses  = addressesRes.status === 'fulfilled' ? addressesRes.value : [];
 
-      const volumeMap: Record<string, bigint> = {};
-      for (const log of allOpened as any[]) {
-        const owner = (log.args.owner as string).toLowerCase();
-        const vol   = (log.args.margin as bigint) * (log.args.leverage as bigint);
-        volumeMap[owner] = (volumeMap[owner] ?? 0n) + vol;
-      }
-      const pnlMap: Record<string, bigint> = {};
-      for (const log of allClosed as any[]) {
-        const owner = (log.args.owner as string).toLowerCase();
-        pnlMap[owner] = (pnlMap[owner] ?? 0n) + (log.args.pnl as bigint);
-      }
+      const openedEvents: OpenedEvent[] = (allOpened as any[]).map(log => ({
+        owner:    log.args.owner as string,
+        margin:   log.args.margin as bigint,
+        leverage: log.args.leverage as bigint,
+      }));
+      const closedEvents: ClosedEvent[] = (allClosed as any[]).map(log => ({
+        owner: log.args.owner as string,
+        pnl:   log.args.pnl as bigint,
+      }));
+      const volumeMap = buildVolumeMap(openedEvents);
+      const pnlMap    = buildPnlMap(closedEvents);
 
       const cards = await Promise.all(
         (addresses as string[]).map(async (addr): Promise<TraderCard> => {
@@ -160,11 +144,9 @@ export default function MarketplacePage() {
           } catch { /* unregistered or unavailable */ }
 
           let allocs: RawAlloc[] = [];
-          let hasStrategy = false;
           try {
             const stratRaw = (await contracts.registry.getLatestStrategy(addr)) as unknown as [unknown[], bigint];
-            allocs      = parseAllocs(stratRaw[0] as unknown[]);
-            hasStrategy = allocs.length > 0;
+            allocs = parseAllocs(stratRaw[0] as unknown[]);
           } catch { /* no strategy yet */ }
 
           let reputation:   bigint | null = null;
@@ -181,19 +163,19 @@ export default function MarketplacePage() {
             totalSlashed = s.totalSlashed;
           } catch { /* TraderStake not deployed */ }
 
-          const key = addr.toLowerCase();
-          return {
-            address:      addr,
-            displayName:  tRaw[1],
-            allocs,
-            followerCount: fc,
-            hasStrategy,
-            reputation,
-            stake,
-            totalSlashed,
-            totalVolume: volumeMap[key] ?? 0n,
-            pnl7d:       pnlMap[key]    ?? 0n,
-          };
+          return buildTraderCard(
+            {
+              address:      addr,
+              displayName:  tRaw[1],
+              allocs,
+              followerCount: fc,
+              reputation,
+              stake,
+              totalSlashed,
+            },
+            volumeMap,
+            pnlMap,
+          );
         })
       );
 
