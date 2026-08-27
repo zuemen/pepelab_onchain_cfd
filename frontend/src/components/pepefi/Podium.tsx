@@ -12,7 +12,7 @@ import { t } from 'src/locales';
 import { MONO, shortAddr } from 'src/components/pepefi/brandKit';
 import { getPepeAvatar } from 'src/utils/pepefi-assets';
 import EquitySparkline from 'src/components/pepefi/EquitySparkline';
-import { scoreChipColor, type TraderCard } from 'src/lib/pepefi/leaderboardMetrics';
+import { scoreChipColor, fPnL, type TraderCard } from 'src/lib/pepefi/leaderboardMetrics';
 
 const MEDALS = ['🥇', '🥈', '🥉'];
 const MEDAL_GLOW = [
@@ -33,57 +33,62 @@ interface Props {
 }
 
 /**
- * 領獎台:中間第一名視覺上最大,兩側第二、三名——跟著目前排序走,而不是固定按
- * TraderScore。交易者少於 3 位時,對應的格子就不畫,不補空卡片。
+ * 領獎台:三張等大的卡片由左到右照名次排(參考 Hyperdash 排行榜前三名的排法),
+ * 不是「第一名置中放大」的傳統頒獎台造型——填色的權益曲線是卡片的視覺主體,
+ * 名次徽章縮小放右上角。跟著目前排序走,而不是固定按 TraderScore。交易者少於
+ * 3 位時,對應的格子就不畫,不補空卡片。
  */
 export default function Podium({ podium, onScoreClick }: Props) {
   if (podium.length === 0) return null;
 
-  const card = (trader: TraderCard, rank: number) => {
-    const big = rank === 1;
-    return (
-      <Card
-        key={trader.address}
-        sx={{
-          p: big ? 3 : 2.5,
-          width: big ? 220 : 188,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: 1.5,
-          textAlign: 'center',
-          border: '1px solid',
-          borderColor: MEDAL_BORDER[rank - 1],
-          boxShadow: MEDAL_GLOW[rank - 1],
-          order: rank === 1 ? 0 : rank === 2 ? -1 : 1,
-        }}
-      >
-        <Typography sx={{ fontSize: big ? '2rem' : '1.5rem', lineHeight: 1 }}>{MEDALS[rank - 1]}</Typography>
-
-        <Avatar
-          src={getPepeAvatar(trader.reputation, trader.address)}
-          sx={{
-            width: big ? 64 : 48,
-            height: big ? 64 : 48,
-            border: '2px solid',
-            borderColor: MEDAL_BORDER[rank - 1],
-            bgcolor: 'rgba(255, 255, 255, 0.05)',
-            '& .MuiAvatar-img': { objectFit: 'contain', padding: '3px' },
-          }}
-        />
-
-        <Box sx={{ minWidth: 0, width: '100%' }}>
-          <Typography
-            noWrap
-            sx={{ fontWeight: 'bold', fontSize: big ? '0.9375rem' : '0.8125rem' }}
-          >
-            {trader.displayName || t.marketplace.card.noName}
-          </Typography>
-          <Typography variant="caption" sx={{ fontFamily: MONO, color: 'text.secondary' }}>
-            {shortAddr(trader.address)}
-          </Typography>
+  const card = (trader: TraderCard, rank: number) => (
+    <Card
+      key={trader.address}
+      sx={{
+        flex: '1 1 240px',
+        minWidth: 240,
+        maxWidth: 340,
+        p: 2,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 1,
+        border: '1px solid',
+        borderColor: MEDAL_BORDER[rank - 1],
+        boxShadow: MEDAL_GLOW[rank - 1],
+      }}
+    >
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+          <Avatar
+            src={getPepeAvatar(trader.reputation, trader.address)}
+            sx={{
+              width: 36,
+              height: 36,
+              flexShrink: 0,
+              border: '1px solid',
+              borderColor: MEDAL_BORDER[rank - 1],
+              bgcolor: 'rgba(255, 255, 255, 0.05)',
+              '& .MuiAvatar-img': { objectFit: 'contain', padding: '2px' },
+            }}
+          />
+          <Box sx={{ minWidth: 0 }}>
+            <Typography noWrap sx={{ fontWeight: 'bold', fontSize: '0.8125rem' }}>
+              {trader.displayName || t.marketplace.card.noName}
+            </Typography>
+            <Typography variant="caption" sx={{ fontFamily: MONO, color: 'text.secondary' }}>
+              {shortAddr(trader.address)}
+            </Typography>
+          </Box>
         </Box>
+        <Typography sx={{ fontSize: '1.375rem', lineHeight: 1, flexShrink: 0 }} title={`#${rank}`}>
+          {MEDALS[rank - 1]}
+        </Typography>
+      </Box>
 
+      {/* 填色區域圖是卡片的視覺主體,不是表格那種塞在角落的小折線——variant="lg"。 */}
+      <EquitySparkline curve={trader.equityCurve} pnl={trader.pnl7d} variant="lg" />
+
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <Chip
           label={trader.score.total.toFixed(0)}
           size="small"
@@ -91,42 +96,50 @@ export default function Podium({ podium, onScoreClick }: Props) {
           onClick={e => onScoreClick(e.currentTarget, trader)}
           sx={{ fontWeight: 'bold', fontFamily: MONO, cursor: 'pointer' }}
         />
+        <Typography
+          sx={{
+            fontFamily: MONO,
+            fontWeight: 'bold',
+            fontSize: '0.875rem',
+            color: trader.pnl7d > 0n ? 'success.main' : trader.pnl7d < 0n ? 'error.main' : 'text.primary',
+          }}
+        >
+          {trader.pnl7d !== 0n ? fPnL(trader.pnl7d) : '—'}
+        </Typography>
+      </Box>
 
-        <EquitySparkline curve={trader.equityCurve} pnl={trader.pnl7d} />
-
-        {trader.hasStrategy ? (
-          <Button
-            fullWidth
-            variant="contained"
-            size="small"
-            color="primary"
-            component={RouterLink}
-            to={`/copy/${trader.address}`}
-            sx={{ textTransform: 'none', fontWeight: 'bold', fontSize: '0.75rem', mt: 0.5 }}
-          >
-            {t.marketplace.card.copy}
-          </Button>
-        ) : (
-          <Button
-            fullWidth
-            disabled
-            variant="contained"
-            size="small"
-            sx={{ textTransform: 'none', fontWeight: 'bold', fontSize: '0.75rem', mt: 0.5 }}
-          >
-            {t.marketplace.card.noStrategyButton}
-          </Button>
-        )}
-      </Card>
-    );
-  };
+      {trader.hasStrategy ? (
+        <Button
+          fullWidth
+          variant="contained"
+          size="small"
+          color="primary"
+          component={RouterLink}
+          to={`/copy/${trader.address}`}
+          sx={{ textTransform: 'none', fontWeight: 'bold', fontSize: '0.75rem' }}
+        >
+          {t.marketplace.card.copy}
+        </Button>
+      ) : (
+        <Button
+          fullWidth
+          disabled
+          variant="contained"
+          size="small"
+          sx={{ textTransform: 'none', fontWeight: 'bold', fontSize: '0.75rem' }}
+        >
+          {t.marketplace.card.noStrategyButton}
+        </Button>
+      )}
+    </Card>
+  );
 
   return (
     <Box>
       <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold', letterSpacing: 1.5, display: 'block', mb: 1.5 }}>
         {t.marketplace.podium.heading}
       </Typography>
-      <Stack direction="row" spacing={2} justifyContent="center" alignItems="flex-end" flexWrap="wrap">
+      <Stack direction="row" spacing={2} flexWrap="wrap">
         {podium.map((trader, idx) => card(trader, idx + 1))}
       </Stack>
     </Box>

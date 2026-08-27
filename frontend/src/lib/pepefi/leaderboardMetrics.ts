@@ -208,6 +208,14 @@ export const computeTraderScore = (input: TraderScoreInput): TraderScoreBreakdow
 export const scoreChipColor = (total: number): 'success' | 'warning' | 'error' =>
   total >= 80 ? 'success' : total >= 60 ? 'warning' : 'error';
 
+/** 「+2.1k」/「-340.0」的形式——符號永遠顯示,千位用 k 縮寫。表格跟領獎台卡片共用。 */
+export const fPnL = (v: bigint): string => {
+  const n = Number(v) / 1e18;
+  const prefix = n >= 0 ? '+' : '';
+  if (Math.abs(n) >= 1_000) return prefix + (n / 1_000).toFixed(1) + 'k';
+  return prefix + n.toFixed(1);
+};
+
 /** 逐位交易者從 registry/copyTracker/traderStake 抓回來、尚未併入事件指標的原始資料。 */
 export interface TraderRawInput {
   address:       string;

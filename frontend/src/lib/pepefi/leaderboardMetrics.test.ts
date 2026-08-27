@@ -10,6 +10,7 @@ import {
   computeEquityCurve,
   computeTraderScore,
   scoreChipColor,
+  fPnL,
   buildTraderCard,
   cmpBigDesc,
   cmpNullableBigDesc,
@@ -233,6 +234,22 @@ describe('scoreChipColor', () => {
     expect(scoreChipColor(60)).toBe('warning')
     expect(scoreChipColor(59)).toBe('error')
     expect(scoreChipColor(0)).toBe('error')
+  })
+})
+
+describe('fPnL', () => {
+  const wei = (n: number) => BigInt(Math.round(n * 1e18))
+
+  it('正數帶正號,千位用 k 縮寫', () => {
+    expect(fPnL(wei(2_100))).toBe('+2.1k')
+  })
+
+  it('負數帶負號', () => {
+    expect(fPnL(wei(-340))).toBe('-340.0')
+  })
+
+  it('0 也帶正號,不是特例', () => {
+    expect(fPnL(0n)).toBe('+0.0')
   })
 })
 

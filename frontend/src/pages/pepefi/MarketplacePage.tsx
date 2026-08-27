@@ -28,6 +28,7 @@ import {
   cmpNullableBigDesc,
   matchesSearch,
   scoreChipColor,
+  fPnL,
   type RawAlloc,
   type TraderCard,
   type OpenedEvent,
@@ -93,13 +94,6 @@ const fVol = (v: bigint): string => {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
   if (n >= 1_000)     return (n / 1_000).toFixed(1) + 'k';
   return n.toFixed(0);
-};
-
-const fPnL = (v: bigint): string => {
-  const n = Number(v) / 1e18;
-  const prefix = n >= 0 ? '+' : '';
-  if (Math.abs(n) >= 1_000) return prefix + (n / 1_000).toFixed(1) + 'k';
-  return prefix + n.toFixed(1);
 };
 
 const repBadgeColor = (score: bigint) =>
