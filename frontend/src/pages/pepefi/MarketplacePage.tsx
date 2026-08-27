@@ -506,7 +506,7 @@ export default function MarketplacePage() {
                       <TableCell
                         sx={{
                           position: 'sticky', left: STICKY_RANK_W, zIndex: 1, minWidth: STICKY_TRADER_W,
-                          maxWidth: STICKY_TRADER_W, bgcolor: 'background.paper',
+                          maxWidth: STICKY_TRADER_W, overflow: 'hidden', bgcolor: 'background.paper',
                           boxShadow: STICKY_LEFT_EDGE_SHADOW,
                         }}
                       >
@@ -516,13 +516,16 @@ export default function MarketplacePage() {
                             sx={{
                               width: 32,
                               height: 32,
+                              flexShrink: 0,
                               border: '1px solid',
                               borderColor: trader.reputation && trader.reputation >= 80n ? 'warning.main' : 'rgba(255,255,255,0.1)',
                               bgcolor: 'rgba(255, 255, 255, 0.05)',
                               '& .MuiAvatar-img': { objectFit: 'contain', padding: '2px' },
                             }}
                           />
-                          <Box sx={{ minWidth: 0 }}>
+                          {/* 名稱、地址、RANK 徽章各自獨立一行——固定寬度的 sticky 欄位裡沒有
+                              足夠的水平空間讓地址跟徽章擠在同一行,用垂直空間換,不硬疊。 */}
+                          <Box sx={{ minWidth: 0, overflow: 'hidden' }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                               <Link
                                 component={RouterLink}
@@ -546,12 +549,15 @@ export default function MarketplacePage() {
                                 </Tooltip>
                               )}
                             </Box>
-                            <Stack direction="row" spacing={1} alignItems="center">
-                              <Typography variant="caption" sx={{ fontFamily: MONO, color: 'text.secondary' }}>
-                                {shortAddr(trader.address)}
-                              </Typography>
+                            <Typography
+                              variant="caption"
+                              sx={{ fontFamily: MONO, color: 'text.secondary', display: 'block', lineHeight: 1.6 }}
+                            >
+                              {shortAddr(trader.address)}
+                            </Typography>
+                            <Box sx={{ mt: 0.25 }}>
                               <TraderRankBadge reputation={trader.reputation} />
-                            </Stack>
+                            </Box>
                           </Box>
                         </Box>
                       </TableCell>
