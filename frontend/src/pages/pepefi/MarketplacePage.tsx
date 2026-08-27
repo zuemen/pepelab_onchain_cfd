@@ -9,6 +9,7 @@ import Skeleton, { TableSkeleton } from 'src/components/pepefi/Skeleton';
 import EmptyState from 'src/components/pepefi/EmptyState';
 import { useESG } from 'src/hooks/useESG';
 import ESGBadge from 'src/components/pepefi/ESGBadge';
+import AssetIcon from 'src/components/pepefi/AssetIcon';
 import Podium from 'src/components/pepefi/Podium';
 import EquitySparkline from 'src/components/pepefi/EquitySparkline';
 import ScoreBreakdownPopover from 'src/components/pepefi/ScoreBreakdownPopover';
@@ -472,7 +473,7 @@ export default function MarketplacePage() {
                   >
                     {t.marketplace.table.trader}
                   </TableCell>
-                  {sortableHeader('score', t.marketplace.table.score)}
+                  {sortableHeader('score', t.marketplace.table.score, 'left')}
                   <TableCell
                     align="center"
                     sx={{ position: 'sticky', top: 0, zIndex: 2, bgcolor: 'background.neutral', color: 'text.secondary', fontWeight: 'bold', whiteSpace: 'nowrap' }}
@@ -594,7 +595,7 @@ export default function MarketplacePage() {
                         </Box>
                       </TableCell>
 
-                      <TableCell align="right">
+                      <TableCell align="left">
                         <Chip
                           label={trader.score.total.toFixed(0)}
                           size="small"
@@ -610,9 +611,9 @@ export default function MarketplacePage() {
 
                       {mode === 'expert' && (
                         <TableCell sx={{ maxWidth: 260 }}>
-                          {/* 籌碼一行、ESG 徽章另一行——兩者擠在同一行常常加起來超過欄寬,
-                              overflow:hidden 會把超出的部分整個切掉(通常是 ESG 徽章)。分兩行
-                              後,籌碼那行仍然 nowrap+省略,但 ESG 徽章不用跟它搶空間。 */}
+                          {/* 一排小圓形資產圖示疊在一起,方向用邊框顏色標(綠多紅空),細節在
+                              hover 的 tooltip 裡——參考 Hyperdash 排行榜的持倉欄位做法,文字
+                              chip 再怎麼縮都比一排疊起來的頭像佔空間,而且籌碼數一多就得省略。 */}
                           <Stack spacing={0.5}>
                             {!trader.hasStrategy ? (
                               <Chip
@@ -622,37 +623,24 @@ export default function MarketplacePage() {
                                 sx={{ color: 'text.secondary', borderColor: 'divider', alignSelf: 'flex-start' }}
                               />
                             ) : (
-                              <Box sx={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'center', gap: 0.5, overflow: 'hidden' }}>
-                                {trader.allocs.slice(0, 2).map((a, i) => (
-                                  <Chip
-                                    key={i}
-                                    label={allocLabel(a)}
-                                    size="small"
-                                    sx={{
-                                      fontSize: '0.625rem',
-                                      height: 20,
-                                      fontWeight: 'bold',
-                                      flexShrink: 0,
-                                      bgcolor: a.isLong ? 'rgba(34, 197, 94, 0.08)' : 'rgba(255, 86, 48, 0.08)',
-                                      color: a.isLong ? 'success.main' : 'error.main',
-                                      borderColor: a.isLong ? 'rgba(34, 197, 94, 0.24)' : 'rgba(255, 86, 48, 0.24)',
-                                      border: '1px solid',
-                                    }}
-                                  />
-                                ))}
-                                {trader.allocs.length > 2 && (
-                                  <Tooltip title={trader.allocs.slice(2).map(allocLabel).join(' | ')}>
-                                    <Chip
-                                      label={`+${trader.allocs.length - 2}`}
-                                      size="small"
-                                      variant="outlined"
+                              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                {trader.allocs.map((a, i) => (
+                                  <Tooltip key={i} title={allocLabel(a)}>
+                                    <Box
                                       sx={{
-                                        fontSize: '0.625rem', height: 20, fontWeight: 'bold', flexShrink: 0,
-                                        color: 'text.secondary', borderColor: 'divider', cursor: 'default',
+                                        ml: i === 0 ? 0 : -1,
+                                        zIndex: trader.allocs.length - i,
+                                        position: 'relative',
+                                        lineHeight: 0,
+                                        borderRadius: '50%',
+                                        border: '2px solid',
+                                        borderColor: a.isLong ? 'success.main' : 'error.main',
                                       }}
-                                    />
+                                    >
+                                      <AssetIcon symbol={ASSET_LABEL[a.asset] ?? '?'} size={22} />
+                                    </Box>
                                   </Tooltip>
-                                )}
+                                ))}
                               </Box>
                             )}
                             {esgComposite && (
