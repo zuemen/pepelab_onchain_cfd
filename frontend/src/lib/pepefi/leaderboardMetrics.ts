@@ -201,6 +201,13 @@ export const computeTraderScore = (input: TraderScoreInput): TraderScoreBreakdow
   };
 };
 
+/**
+ * TraderScore 總分 → Chip 色階,跟 MarketplacePage 裡聲譽分用的門檻(80/60)
+ * 是同一組,兩種分數雖然算法不同,但「多高算好」對使用者該是同一套直覺。
+ */
+export const scoreChipColor = (total: number): 'success' | 'warning' | 'error' =>
+  total >= 80 ? 'success' : total >= 60 ? 'warning' : 'error';
+
 /** 逐位交易者從 registry/copyTracker/traderStake 抓回來、尚未併入事件指標的原始資料。 */
 export interface TraderRawInput {
   address:       string;

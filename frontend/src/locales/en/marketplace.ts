@@ -50,6 +50,10 @@ export const marketplace: Catalog['marketplace'] = {
     insufficientNote: 'Fewer than 5 closed trades — win rate is indicative only',
   },
 
+  podium: {
+    heading: '🏆 Top 3 by Current Sort',
+  },
+
   loadFailed: 'Failed to load:',
 
   empty: {

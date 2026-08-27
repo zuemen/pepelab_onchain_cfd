@@ -59,6 +59,11 @@ export const marketplace = {
     insufficientNote: '平倉少於 5 筆,勝率僅供參考',
   },
 
+  /** 領獎台跟著目前排序走——這句標題是唯一提醒使用者這件事的地方。 */
+  podium: {
+    heading: '🏆 目前排序前三名',
+  },
+
   loadFailed: '載入失敗：',
 
   empty: {

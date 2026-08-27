@@ -9,6 +9,7 @@ import {
   computeWinRate,
   computeEquityCurve,
   computeTraderScore,
+  scoreChipColor,
   buildTraderCard,
   cmpBigDesc,
   cmpNullableBigDesc,
@@ -223,6 +224,15 @@ describe('computeTraderScore', () => {
     expect(s.reputationScore).toBeCloseTo(9) // 60/100 * 15
     expect(s.stakeAmount).toBe(2_500)
     expect(s.stakeScore).toBeCloseTo(10) // 2500/5000 * 20
+  })
+})
+
+describe('scoreChipColor', () => {
+  it('>=80 success,>=60 warning,其餘 error', () => {
+    expect(scoreChipColor(80)).toBe('success')
+    expect(scoreChipColor(60)).toBe('warning')
+    expect(scoreChipColor(59)).toBe('error')
+    expect(scoreChipColor(0)).toBe('error')
   })
 })
 
