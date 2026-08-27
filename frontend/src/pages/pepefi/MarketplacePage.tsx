@@ -110,6 +110,15 @@ const repBadgeColor = (score: bigint) =>
 const fWinRate = (wins: number, trades: number): string =>
   trades === 0 ? '—' : `${Math.round((wins / trades) * 100)}% (${trades})`;
 
+/** 單一配置籌碼的標籤文字,表格 chip 跟「+N」的 tooltip 內文共用同一個格式。 */
+const allocLabel = (a: RawAlloc): string =>
+  interpolate(t.marketplace.card.allocChip, {
+    side: a.isLong ? '↑' : '↓',
+    asset: ASSET_LABEL[a.asset] ?? '?',
+    weight: (Number(a.weight) / 100).toFixed(0),
+    leverage: String(a.leverage),
+  });
+
 // ── Component ────────────────────────────────────────────────────────────────
 export default function MarketplacePage() {
   const wallet = usePepefiWallet();
@@ -295,7 +304,13 @@ export default function MarketplacePage() {
   const sortOptions = allSortOptions.filter(opt => mode === 'expert' || !EXPERT_ONLY_SORT_KEYS.has(opt.key));
 
   const sortableHeader = (key: SortKey, label: string, align: 'left' | 'right' = 'right') => (
-    <TableCell align={align} sx={{ color: 'text.secondary', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
+    <TableCell
+      align={align}
+      sx={{
+        position: 'sticky', top: 0, zIndex: 2,
+        bgcolor: 'background.neutral', color: 'text.secondary', fontWeight: 'bold', whiteSpace: 'nowrap',
+      }}
+    >
       <TableSortLabel
         active={sortKey === key}
         direction="desc"
@@ -429,15 +444,20 @@ export default function MarketplacePage() {
             onScoreClick={(el, trader) => setScorePopover({ anchorEl: el, trader })}
           />
 
-          <TableContainer component={Card} sx={{ overflowX: 'auto' }}>
+          {/* 容器限高、內部自己上下捲——不然橫向捲軸會被推到 51 列那麼高的表格最底部,
+              使用者得先把整個頁面捲到底才摸得到它。stickyHeader 讓標頭在容器內垂直
+              捲動時留在原地,跟横向的 sticky 欄位互不衝突(CSS sticky 本來就吃多方向)。 */}
+          <TableContainer component={Card} sx={{ overflowX: 'auto', overflowY: 'auto', maxHeight: '65vh' }}>
             {/* borderCollapse:'separate' — MUI's default 'collapse' clips box-shadow on <td>,
-                which would silently hide the sticky-column scroll-affordance shadows below. */}
-            <Table size="small" sx={{ borderCollapse: 'separate', borderSpacing: 0 }}>
+                which would silently hide the sticky-column scroll-affordance shadows below.
+                stickyHeader also needs 'separate' internally; setting it explicitly here removes
+                any doubt regardless of which MUI version's default the prop assumes. */}
+            <Table stickyHeader size="small" sx={{ borderCollapse: 'separate', borderSpacing: 0 }}>
               <TableHead>
                 <TableRow sx={{ bgcolor: 'background.neutral' }}>
                   <TableCell
                     sx={{
-                      position: 'sticky', left: 0, zIndex: 3, minWidth: STICKY_RANK_W,
+                      position: 'sticky', top: 0, left: 0, zIndex: 3, minWidth: STICKY_RANK_W,
                       bgcolor: 'background.neutral', color: 'text.secondary', fontWeight: 'bold',
                     }}
                   >
@@ -445,7 +465,7 @@ export default function MarketplacePage() {
                   </TableCell>
                   <TableCell
                     sx={{
-                      position: 'sticky', left: STICKY_RANK_W, zIndex: 3, minWidth: STICKY_TRADER_W,
+                      position: 'sticky', top: 0, left: STICKY_RANK_W, zIndex: 3, minWidth: STICKY_TRADER_W,
                       bgcolor: 'background.neutral', color: 'text.secondary', fontWeight: 'bold',
                       boxShadow: STICKY_LEFT_EDGE_SHADOW,
                     }}
@@ -453,14 +473,26 @@ export default function MarketplacePage() {
                     {t.marketplace.table.trader}
                   </TableCell>
                   {sortableHeader('score', t.marketplace.table.score)}
-                  <TableCell align="center" sx={{ color: 'text.secondary', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{t.marketplace.table.trend}</TableCell>
+                  <TableCell
+                    align="center"
+                    sx={{ position: 'sticky', top: 0, zIndex: 2, bgcolor: 'background.neutral', color: 'text.secondary', fontWeight: 'bold', whiteSpace: 'nowrap' }}
+                  >
+                    {t.marketplace.table.trend}
+                  </TableCell>
                   {mode === 'expert' && (
-                    <TableCell sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{t.marketplace.table.strategy}</TableCell>
+                    <TableCell sx={{ position: 'sticky', top: 0, zIndex: 2, bgcolor: 'background.neutral', color: 'text.secondary', fontWeight: 'bold' }}>
+                      {t.marketplace.table.strategy}
+                    </TableCell>
                   )}
                   {mode === 'expert' && sortableHeader('volume', t.marketplace.card.volLabel)}
                   {sortableHeader('pnl', t.marketplace.card.pnlLabel)}
                   {mode === 'expert' && (
-                    <TableCell align="right" sx={{ color: 'text.secondary', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{t.marketplace.table.winRate}</TableCell>
+                    <TableCell
+                      align="right"
+                      sx={{ position: 'sticky', top: 0, zIndex: 2, bgcolor: 'background.neutral', color: 'text.secondary', fontWeight: 'bold', whiteSpace: 'nowrap' }}
+                    >
+                      {t.marketplace.table.winRate}
+                    </TableCell>
                   )}
                   {mode === 'expert' && sortableHeader('followers', t.marketplace.card.followersLabel)}
                   {mode === 'expert' && sortableHeader('stake', t.marketplace.card.stakeLabel)}
@@ -468,7 +500,7 @@ export default function MarketplacePage() {
                   <TableCell
                     align="center"
                     sx={{
-                      position: 'sticky', right: 0, zIndex: 3,
+                      position: 'sticky', top: 0, right: 0, zIndex: 3,
                       bgcolor: 'background.neutral', color: 'text.secondary', fontWeight: 'bold',
                       boxShadow: STICKY_RIGHT_EDGE_SHADOW,
                     }}
@@ -577,40 +609,55 @@ export default function MarketplacePage() {
                       </TableCell>
 
                       {mode === 'expert' && (
-                        <TableCell sx={{ maxWidth: 260 }}>
-                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        <TableCell sx={{ maxWidth: 260, overflow: 'hidden' }}>
+                          {/* 最多顯示 2 個配置籌碼,單行、列高固定——其餘的收進「+N」,滑鼠移
+                              上去用 tooltip 看,不再靠疊行把每一列撐得高矮不一。 */}
+                          <Box sx={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'center', gap: 0.5, overflow: 'hidden' }}>
                             {!trader.hasStrategy ? (
                               <Chip
                                 label={t.marketplace.card.noStrategy}
                                 size="small"
                                 variant="outlined"
-                                sx={{ color: 'text.secondary', borderColor: 'divider' }}
+                                sx={{ color: 'text.secondary', borderColor: 'divider', flexShrink: 0 }}
                               />
                             ) : (
-                              trader.allocs.map((a, i) => (
-                                <Chip
-                                  key={i}
-                                  label={interpolate(t.marketplace.card.allocChip, {
-                                    side: a.isLong ? '↑' : '↓',
-                                    asset: ASSET_LABEL[a.asset] ?? '?',
-                                    weight: (Number(a.weight) / 100).toFixed(0),
-                                    leverage: String(a.leverage),
-                                  })}
-                                  size="small"
-                                  sx={{
-                                    fontSize: '0.625rem',
-                                    height: 20,
-                                    fontWeight: 'bold',
-                                    bgcolor: a.isLong ? 'rgba(34, 197, 94, 0.08)' : 'rgba(255, 86, 48, 0.08)',
-                                    color: a.isLong ? 'success.main' : 'error.main',
-                                    borderColor: a.isLong ? 'rgba(34, 197, 94, 0.24)' : 'rgba(255, 86, 48, 0.24)',
-                                    border: '1px solid',
-                                  }}
-                                />
-                              ))
+                              <>
+                                {trader.allocs.slice(0, 2).map((a, i) => (
+                                  <Chip
+                                    key={i}
+                                    label={allocLabel(a)}
+                                    size="small"
+                                    sx={{
+                                      fontSize: '0.625rem',
+                                      height: 20,
+                                      fontWeight: 'bold',
+                                      flexShrink: 0,
+                                      bgcolor: a.isLong ? 'rgba(34, 197, 94, 0.08)' : 'rgba(255, 86, 48, 0.08)',
+                                      color: a.isLong ? 'success.main' : 'error.main',
+                                      borderColor: a.isLong ? 'rgba(34, 197, 94, 0.24)' : 'rgba(255, 86, 48, 0.24)',
+                                      border: '1px solid',
+                                    }}
+                                  />
+                                ))}
+                                {trader.allocs.length > 2 && (
+                                  <Tooltip title={trader.allocs.slice(2).map(allocLabel).join(' | ')}>
+                                    <Chip
+                                      label={`+${trader.allocs.length - 2}`}
+                                      size="small"
+                                      variant="outlined"
+                                      sx={{
+                                        fontSize: '0.625rem', height: 20, fontWeight: 'bold', flexShrink: 0,
+                                        color: 'text.secondary', borderColor: 'divider', cursor: 'default',
+                                      }}
+                                    />
+                                  </Tooltip>
+                                )}
+                              </>
                             )}
                             {esgComposite && (
-                              <ESGBadge composite={esgComposite.composite} rating={esgComposite.rating} size="sm" />
+                              <Box sx={{ flexShrink: 0 }}>
+                                <ESGBadge composite={esgComposite.composite} rating={esgComposite.rating} size="sm" />
+                              </Box>
                             )}
                           </Box>
                         </TableCell>
@@ -685,18 +732,23 @@ export default function MarketplacePage() {
                           bgcolor: 'background.paper', boxShadow: STICKY_RIGHT_EDGE_SHADOW,
                         }}
                       >
-                        <Stack direction="row" spacing={1} justifyContent="center">
+                        {/* Profile 是次要動作,擠在密集表格裡用一顆小圖示按鈕就好,不用一顆
+                            完整文字按鈕搶跟單的視覺份量——文字按鈕在窄欄位裡還會逐字換行,
+                            圖示按鈕天生沒有這個問題。 */}
+                        <Stack direction="row" spacing={0.75} alignItems="center" justifyContent="center">
                           {mode === 'expert' && (
-                            <Button
-                              variant="outlined"
-                              size="small"
-                              color="inherit"
-                              component={RouterLink}
-                              to={`/trader/${trader.address}`}
-                              sx={{ textTransform: 'none', fontWeight: 'bold', fontSize: '0.6875rem', minWidth: 0, px: 1 }}
-                            >
-                              {t.marketplace.card.profile}
-                            </Button>
+                            <Tooltip title={t.marketplace.card.profile}>
+                              <IconButton
+                                size="small"
+                                color="inherit"
+                                component={RouterLink}
+                                to={`/trader/${trader.address}`}
+                                aria-label={t.marketplace.card.profile}
+                                sx={{ border: '1px solid', borderColor: 'divider' }}
+                              >
+                                <Icon icon="solar:user-bold" width={14} />
+                              </IconButton>
+                            </Tooltip>
                           )}
                           {trader.hasStrategy ? (
                             <Button
@@ -705,7 +757,7 @@ export default function MarketplacePage() {
                               color="primary"
                               component={RouterLink}
                               to={`/copy/${trader.address}`}
-                              sx={{ textTransform: 'none', fontWeight: 'bold', fontSize: '0.6875rem', minWidth: 0, px: 1 }}
+                              sx={{ textTransform: 'none', fontWeight: 'bold', fontSize: '0.6875rem', minWidth: 0, px: 1, whiteSpace: 'nowrap' }}
                             >
                               {t.marketplace.card.copy}
                             </Button>
@@ -714,7 +766,7 @@ export default function MarketplacePage() {
                               disabled
                               variant="contained"
                               size="small"
-                              sx={{ textTransform: 'none', fontWeight: 'bold', fontSize: '0.6875rem', minWidth: 0, px: 1 }}
+                              sx={{ textTransform: 'none', fontWeight: 'bold', fontSize: '0.6875rem', minWidth: 0, px: 1, whiteSpace: 'nowrap' }}
                             >
                               {t.marketplace.card.noStrategyButton}
                             </Button>
