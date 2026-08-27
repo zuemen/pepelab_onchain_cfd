@@ -211,7 +211,7 @@ export default function WalletButton({ wallet }: Props) {
         }}
       >
         <DialogTitle sx={{ m: 0, p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Typography variant="h5" sx={{ fontWeight: 800, background: 'linear-gradient(90deg, #34d399 0%, #a3e635 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+          <Typography component="span" variant="h5" sx={{ fontWeight: 800, background: 'linear-gradient(90deg, #34d399 0%, #a3e635 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
             {t.common.wallet.dialogTitle}
           </Typography>
           <IconButton
