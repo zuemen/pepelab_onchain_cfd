@@ -609,19 +609,20 @@ export default function MarketplacePage() {
                       </TableCell>
 
                       {mode === 'expert' && (
-                        <TableCell sx={{ maxWidth: 260, overflow: 'hidden' }}>
-                          {/* 最多顯示 2 個配置籌碼,單行、列高固定——其餘的收進「+N」,滑鼠移
-                              上去用 tooltip 看,不再靠疊行把每一列撐得高矮不一。 */}
-                          <Box sx={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'center', gap: 0.5, overflow: 'hidden' }}>
+                        <TableCell sx={{ maxWidth: 260 }}>
+                          {/* 籌碼一行、ESG 徽章另一行——兩者擠在同一行常常加起來超過欄寬,
+                              overflow:hidden 會把超出的部分整個切掉(通常是 ESG 徽章)。分兩行
+                              後,籌碼那行仍然 nowrap+省略,但 ESG 徽章不用跟它搶空間。 */}
+                          <Stack spacing={0.5}>
                             {!trader.hasStrategy ? (
                               <Chip
                                 label={t.marketplace.card.noStrategy}
                                 size="small"
                                 variant="outlined"
-                                sx={{ color: 'text.secondary', borderColor: 'divider', flexShrink: 0 }}
+                                sx={{ color: 'text.secondary', borderColor: 'divider', alignSelf: 'flex-start' }}
                               />
                             ) : (
-                              <>
+                              <Box sx={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'center', gap: 0.5, overflow: 'hidden' }}>
                                 {trader.allocs.slice(0, 2).map((a, i) => (
                                   <Chip
                                     key={i}
@@ -652,14 +653,14 @@ export default function MarketplacePage() {
                                     />
                                   </Tooltip>
                                 )}
-                              </>
+                              </Box>
                             )}
                             {esgComposite && (
-                              <Box sx={{ flexShrink: 0 }}>
+                              <Box sx={{ alignSelf: 'flex-start' }}>
                                 <ESGBadge composite={esgComposite.composite} rating={esgComposite.rating} size="sm" />
                               </Box>
                             )}
-                          </Box>
+                          </Stack>
                         </TableCell>
                       )}
 
