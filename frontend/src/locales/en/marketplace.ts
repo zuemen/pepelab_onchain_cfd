@@ -12,23 +12,58 @@ export const marketplace: Catalog['marketplace'] = {
   esgButton: 'ESG {state}',
 
   sort: {
+    score: 'Sort: TraderScore',
     reputation: 'Sort: Reputation',
     followers: 'Sort: Followers',
     volume: 'Sort: Volume (7d)',
     pnl: 'Sort: PnL (7d)',
+    stake: 'Sort: Stake',
     esg: 'Sort: ESG Score',
   },
 
   refreshAria: 'Refresh marketplace data',
 
-  livePrices: 'Live Prices',
+  search: {
+    placeholder: 'Search name or address…',
+    noResults: 'No traders match "{query}"',
+  },
+
+  table: {
+    rank: '#',
+    trader: 'Trader',
+    score: 'TraderScore',
+    trend: 'Trend (7d)',
+    reputation: 'Reputation',
+    strategy: 'Strategy',
+    winRate: 'Win Rate',
+    esg: 'ESG',
+    actions: 'Actions',
+    insufficientSample: 'Insufficient sample',
+  },
+
+  scoreBreakdown: {
+    returnLabel: 'Return',
+    winRateLabel: 'Win Rate',
+    slashLabel: 'Slash Penalty',
+    totalLabel: 'Total',
+    totalValue: '{total} / 100',
+    insufficientNote: 'Fewer than 5 closed trades — win rate is indicative only',
+  },
+
+  podium: {
+    heading: '🏆 Top 3 by Current Sort',
+    noneQualified: 'No trader has 5+ closed trades yet, so there are no podium finishers — they\'re still in the table below.',
+  },
+
   loadFailed: 'Failed to load:',
 
   empty: {
-    title: 'No traders yet',
+    title: 'No traders with a published strategy on this chain yet',
     description:
-      'Run SeedWhales to populate the leaderboard, or register a strategy on the Trader page.',
+      'The leaderboard is computed live from on-chain events. Currently connected to {chain}, scanning the last {blocks} blocks. If you expected to see traders, check your wallet is on the right chain.',
+    unknownChain: 'Unknown network (chainId {chainId})',
     cta: 'Become a Trader',
+    secondaryCta: 'View x402 Docs',
   },
 
   card: {
@@ -46,7 +81,6 @@ export const marketplace: Catalog['marketplace'] = {
 
     slashed: '⚠ {amount} USDC slashed',
 
-    profile: 'Profile',
     copy: 'Copy →',
     noStrategyButton: 'No Strategy',
   },
@@ -59,10 +93,5 @@ export const marketplace: Catalog['marketplace'] = {
     starTraderOne: '{count} star trader',
     starTraderMany: '{count} star traders',
     volumeWindow: 'Volume + PnL from last ~{blocks} blocks (~7d)',
-  },
-
-  rawData: {
-    summary: 'Raw strategy data',
-    noStrategy: 'no strategy',
   },
 };

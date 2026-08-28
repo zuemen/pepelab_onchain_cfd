@@ -14,22 +14,67 @@ export const marketplace = {
   esgButton: 'ESG {state}',
 
   sort: {
+    score: '排序：TraderScore',
     reputation: '排序：聲譽',
     followers: '排序：跟隨者',
     volume: '排序：交易量（7 天）',
     pnl: '排序：PnL（7 天）',
+    stake: '排序：質押',
     esg: '排序：ESG 評分',
   },
 
   refreshAria: '重新整理市集資料',
 
-  livePrices: '即時價格',
+  search: {
+    placeholder: '搜尋名稱或地址…',
+    /** 這條鏈上有交易者,只是搜尋詞沒比對到——跟「這條鏈真的沒人」是不同的空狀態。 */
+    noResults: '沒有符合「{query}」的交易者',
+  },
+
+  /** 表格欄位標頭。金額類欄位(量、PnL、質押)沿用 card.* 裡已經有的字串,單一來源不重複定義。 */
+  table: {
+    rank: '#',
+    trader: '交易者',
+    score: 'TraderScore',
+    trend: '7 日走勢',
+    reputation: '聲譽',
+    strategy: '策略',
+    winRate: '勝率',
+    esg: 'ESG',
+    actions: '操作',
+    /** 平倉少於 5 筆時掛在勝率旁邊的灰標,不是紅色警告——只是不夠準,不是壞消息。 */
+    insufficientSample: '資料不足',
+  },
+
+  /**
+   * TraderScore 算式攤開的 popover。不是展示公式長什麼樣子,是把這位交易者
+   * 自己五行的實際數字與各自拿到幾分秀出來。
+   */
+  scoreBreakdown: {
+    returnLabel: '報酬率',
+    winRateLabel: '勝率',
+    slashLabel: '罰沒扣分',
+    totalLabel: '總分',
+    totalValue: '{total} / 100',
+    insufficientNote: '平倉少於 5 筆,勝率僅供參考',
+  },
+
+  /** 領獎台跟著目前排序走——這句標題是唯一提醒使用者這件事的地方。 */
+  podium: {
+    heading: '🏆 目前排序前三名',
+    /** 平倉 <5 筆的人被排除在領獎台之外,人數不夠時要講清楚為什麼消失,不能悄悄空白。 */
+    noneQualified: '還沒有交易者平倉滿 5 筆,暫時沒有領獎台名次——這些人仍然在下面的表格裡。',
+  },
+
   loadFailed: '載入失敗：',
 
   empty: {
-    title: '尚無交易者',
-    description: '執行 SeedWhales 來產生排行榜資料，或到交易者頁面註冊策略。',
+    title: '這條鏈上還沒有已發布策略的交易者',
+    /** 排行榜是即時算的,不是「還沒有人」——講清楚資料怎麼來的,讓人自己判斷是連錯鏈還是真的沒人。 */
+    description: '排行榜由鏈上事件即時計算,目前連線到 {chain},掃描了最近 {blocks} 個區塊。如果預期會看到交易者,先確認錢包連的是正確的鏈。',
+    unknownChain: '未知網路（chainId {chainId}）',
     cta: '成為交易者',
+    secondaryCta: '看 x402 文件',
   },
 
   card: {
@@ -47,7 +92,6 @@ export const marketplace = {
 
     slashed: '⚠ 已罰沒 {amount} USDC',
 
-    profile: '個人首頁',
     copy: '跟單 →',
     noStrategyButton: '尚無策略',
   },
@@ -60,10 +104,5 @@ export const marketplace = {
     starTraderOne: '{count} 位明星交易者',
     starTraderMany: '{count} 位明星交易者',
     volumeWindow: '交易量與 PnL 統計來自最近 ~{blocks} 個區塊（約 7 天）',
-  },
-
-  rawData: {
-    summary: '原始策略資料',
-    noStrategy: '尚無策略',
   },
 };
