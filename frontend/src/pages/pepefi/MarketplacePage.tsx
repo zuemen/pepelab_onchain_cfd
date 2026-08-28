@@ -624,7 +624,10 @@ export default function MarketplacePage() {
                                 sx={{ color: 'text.secondary', borderColor: 'divider', alignSelf: 'flex-start' }}
                               />
                             ) : (
-                              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                              // isolation:isolate 開一個新的 stacking context——不然這排圖示
+                              // 疊放用的 zIndex(最高到 allocs.length)沒有邊界,會直接跟表格
+                              // sticky header 的 zIndex(2)比大小,滾動時圖示會蓋到表頭上面。
+                              <Box sx={{ display: 'flex', alignItems: 'center', isolation: 'isolate' }}>
                                 {trader.allocs.map((a, i) => (
                                   <Tooltip key={i} title={allocLabel(a)}>
                                     <Box
