@@ -71,7 +71,7 @@ export const marketplace = {
   empty: {
     title: '這條鏈上還沒有已發布策略的交易者',
     /** 排行榜是即時算的,不是「還沒有人」——講清楚資料怎麼來的,讓人自己判斷是連錯鏈還是真的沒人。 */
-    description: '排行榜由鏈上事件即時計算,目前連線到 {chain},掃描了最近 {blocks} 個區塊。如果預期會看到交易者,先確認錢包連的是正確的鏈。',
+    description: '排行榜由鏈上事件即時計算,目前連線到 {chain},掃描了最近 {blocks} 個區塊（約 {window}）。如果預期會看到交易者,先確認錢包連的是正確的鏈。',
     unknownChain: '未知網路（chainId {chainId}）',
     cta: '成為交易者',
     secondaryCta: '看 x402 文件',
@@ -103,6 +103,9 @@ export const marketplace = {
     followersTotal: '共 {count} 位跟隨者',
     starTraderOne: '{count} 位明星交易者',
     starTraderMany: '{count} 位明星交易者',
-    volumeWindow: '交易量與 PnL 統計來自最近 ~{blocks} 個區塊（約 7 天）',
+    volumeWindow: '交易量與 PnL 統計來自最近 ~{blocks} 個區塊（約 {window}）',
+    /** 視窗長度的兩種單位。不足兩天講小時,否則講天。 */
+    windowHours: '{hours} 小時',
+    windowDays: '{days} 天',
   },
 };

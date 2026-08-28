@@ -60,7 +60,7 @@ export const marketplace: Catalog['marketplace'] = {
   empty: {
     title: 'No traders with a published strategy on this chain yet',
     description:
-      'The leaderboard is computed live from on-chain events. Currently connected to {chain}, scanning the last {blocks} blocks. If you expected to see traders, check your wallet is on the right chain.',
+      'The leaderboard is computed live from on-chain events. Currently connected to {chain}, scanning the last {blocks} blocks (~{window}). If you expected to see traders, check your wallet is on the right chain.',
     unknownChain: 'Unknown network (chainId {chainId})',
     cta: 'Become a Trader',
     secondaryCta: 'View x402 Docs',
@@ -92,6 +92,8 @@ export const marketplace: Catalog['marketplace'] = {
     followersTotal: '{count} total followers',
     starTraderOne: '{count} star trader',
     starTraderMany: '{count} star traders',
-    volumeWindow: 'Volume + PnL from last ~{blocks} blocks (~7d)',
+    volumeWindow: 'Volume + PnL from last ~{blocks} blocks (~{window})',
+    windowHours: '{hours}h',
+    windowDays: '{days}d',
   },
 };
