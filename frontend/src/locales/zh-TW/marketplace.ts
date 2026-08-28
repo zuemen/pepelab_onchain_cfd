@@ -68,6 +68,9 @@ export const marketplace = {
 
   loadFailed: '載入失敗：',
 
+  /** 排行榜掃描鏈上事件的進度。7 天視窗在 Base 上是 31 段,不講進度會像當掉。 */
+  scanProgress: '掃描鏈上事件… {done}/{total}',
+
   empty: {
     title: '這條鏈上還沒有已發布策略的交易者',
     /** 排行榜是即時算的,不是「還沒有人」——講清楚資料怎麼來的,讓人自己判斷是連錯鏈還是真的沒人。 */

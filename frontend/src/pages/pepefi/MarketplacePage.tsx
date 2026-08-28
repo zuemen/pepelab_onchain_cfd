@@ -154,6 +154,9 @@ export default function MarketplacePage() {
   // 實際掃了幾塊、換算成多久。寫死的常數不能再拿來當文案,因為同一個數字在
   // 不同鏈上代表的時間差六倍——footer 與空狀態都要講真話。
   const [scan, setScan] = useState<{ blocks: number; hours: number }>({ blocks: 0, hours: 0 });
+  // 7 天的視窗在 Base 上是 31 段序列 getLogs,實測 12 秒。骨架屏撐 12 秒看起來
+  // 像當掉了——把段數進度講出來,等待才是「在做事」而不是「壞了」。
+  const [progress, setProgress] = useState<{ done: number; total: number }>({ done: 0, total: 0 });
 
   // Expert 專屬排序鍵在 Simple 底下沒有對應欄位可看——切回 Simple 時退回預設的
   // score,不要停在一個看不見的欄位上(見 #89 acceptance criteria)。
@@ -181,6 +184,9 @@ export default function MarketplacePage() {
       const iface    = contracts.exchange.interface;
       const topicOf  = (name: string) => iface.getEvent(name)!.topicHash;
       const chunks   = chunkRanges(fromBlock, currentBlock).length;
+      setProgress({ done: 0, total: chunks });
+      let doneChunks = 0;
+      const tick = () => { doneChunks += 1; setProgress({ done: doneChunks, total: chunks }); };
 
       const [logsRes, addressesRes] = await Promise.allSettled([
         getLogsChunked(
@@ -191,6 +197,7 @@ export default function MarketplacePage() {
           },
           fromBlock,
           currentBlock,
+          tick,
         ),
         contracts.registry.getAllTraders() as Promise<string[]>,
       ]);
@@ -466,6 +473,18 @@ export default function MarketplacePage() {
       {/* Leaderboard table */}
       {isLoading ? (
         <Card>
+          {progress.total > 0 && (
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ display: 'block', px: 2, pt: 2, fontFamily: MONO }}
+            >
+              {interpolate(t.marketplace.scanProgress, {
+                done: String(progress.done),
+                total: String(progress.total),
+              })}
+            </Typography>
+          )}
           <TableSkeleton rows={8} cols={mode === 'expert' ? 12 : 6} />
         </Card>
       ) : filtered.length === 0 ? (

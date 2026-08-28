@@ -57,6 +57,8 @@ export const marketplace: Catalog['marketplace'] = {
 
   loadFailed: 'Failed to load:',
 
+  scanProgress: 'Scanning on-chain events... {done}/{total}',
+
   empty: {
     title: 'No traders with a published strategy on this chain yet',
     description:
