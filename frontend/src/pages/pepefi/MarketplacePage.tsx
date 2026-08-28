@@ -298,7 +298,7 @@ export default function MarketplacePage() {
   ];
   const sortOptions = allSortOptions.filter(opt => mode === 'expert' || !EXPERT_ONLY_SORT_KEYS.has(opt.key));
 
-  const sortableHeader = (key: SortKey, label: string, align: 'left' | 'right' = 'right') => (
+  const sortableHeader = (key: SortKey, label: string, align: 'left' | 'center' | 'right' = 'right') => (
     <TableCell
       align={align}
       sx={{
@@ -475,7 +475,7 @@ export default function MarketplacePage() {
                   >
                     {t.marketplace.table.trader}
                   </TableCell>
-                  {sortableHeader('score', t.marketplace.table.score, 'left')}
+                  {sortableHeader('score', t.marketplace.table.score, 'center')}
                   <TableCell
                     align="center"
                     sx={{ position: 'sticky', top: 0, zIndex: 2, bgcolor: 'background.neutral', color: 'text.secondary', fontWeight: 'bold', whiteSpace: 'nowrap' }}
@@ -597,13 +597,12 @@ export default function MarketplacePage() {
                         </Box>
                       </TableCell>
 
-                      <TableCell align="left">
+                      <TableCell align="center">
                         <Chip
                           label={trader.score.total.toFixed(0)}
-                          size="small"
                           color={scoreChipColor(trader.score.total)}
                           onClick={e => setScorePopover({ anchorEl: e.currentTarget, trader })}
-                          sx={{ fontWeight: 'bold', fontSize: '0.75rem', height: 22, fontFamily: MONO, cursor: 'pointer' }}
+                          sx={{ fontWeight: 'bold', fontSize: '0.9375rem', height: 30, px: 0.5, fontFamily: MONO, cursor: 'pointer' }}
                         />
                       </TableCell>
 
@@ -723,24 +722,9 @@ export default function MarketplacePage() {
                           bgcolor: 'background.paper', boxShadow: STICKY_RIGHT_EDGE_SHADOW,
                         }}
                       >
-                        {/* Profile 是次要動作,擠在密集表格裡用一顆小圖示按鈕就好,不用一顆
-                            完整文字按鈕搶跟單的視覺份量——文字按鈕在窄欄位裡還會逐字換行,
-                            圖示按鈕天生沒有這個問題。 */}
+                        {/* 個人首頁按鈕拿掉了——交易者名稱本來就連到 /trader/:address(見上面
+                            identity 欄的 Link),不需要操作欄再重複一個入口跟跟單搶版面。 */}
                         <Stack direction="row" spacing={0.75} alignItems="center" justifyContent="center">
-                          {mode === 'expert' && (
-                            <Tooltip title={t.marketplace.card.profile}>
-                              <IconButton
-                                size="small"
-                                color="inherit"
-                                component={RouterLink}
-                                to={`/trader/${trader.address}`}
-                                aria-label={t.marketplace.card.profile}
-                                sx={{ border: '1px solid', borderColor: 'divider' }}
-                              >
-                                <Icon icon="solar:user-bold" width={14} />
-                              </IconButton>
-                            </Tooltip>
-                          )}
                           {trader.hasStrategy ? (
                             <Button
                               variant="contained"

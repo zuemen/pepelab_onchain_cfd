@@ -92,7 +92,6 @@ export const marketplace = {
 
     slashed: '⚠ 已罰沒 {amount} USDC',
 
-    profile: '個人首頁',
     copy: '跟單 →',
     noStrategyButton: '尚無策略',
   },

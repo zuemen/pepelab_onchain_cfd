@@ -81,7 +81,6 @@ export const marketplace: Catalog['marketplace'] = {
 
     slashed: '⚠ {amount} USDC slashed',
 
-    profile: 'Profile',
     copy: 'Copy →',
     noStrategyButton: 'No Strategy',
   },
