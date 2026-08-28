@@ -19,13 +19,14 @@ export interface MarketMeta {
   underlying: string;
   category: AssetCategory;
   /**
-   * Bybit 永續合約的 symbol；加密貨幣的首選來源。
+   * Bybit 永續合約的 symbol；加密貨幣的 **fallback** 來源。
    *
-   * 用永續而非現貨是刻意的：我們賣的就是永續，拿別人的永續 K 線當參考，比拿
-   * 現貨貼切——現貨跟永續之間本來就有基差，圖表與成交價對不上會被當成 bug。
+   * 曾經是首選，理由是「我們賣的就是永續」。平台改以代幣化 RWA 現貨為門面之後
+   * 首選換成 Coinbase 現貨（見 candles.ts 的來源順序），永續退居備援——它仍然
+   * 有價值：Coinbase 掛掉時，有永續 K 線總比只剩模擬資料好。
    */
   bybit?: string;
-  /** Coinbase Exchange 的 product_id；加密貨幣的備援（現貨）。 */
+  /** Coinbase Exchange 的 product_id；加密貨幣的**首選**來源（現貨）。 */
   coinbase?: string;
   /** Yahoo Finance 的 ticker；股票 / ETF / 商品 / 債券走這個。 */
   yahoo?: string;
@@ -36,7 +37,7 @@ export interface MarketMeta {
 export const MARKETS: Record<string, MarketMeta> = {
   sBTC: {
     symbol: "sBTC",
-    underlying: "BTC Perpetual",
+    underlying: "BTC Spot",
     category: "crypto",
     bybit: "BTCUSDT",
     coinbase: "BTC-USD",
@@ -44,7 +45,7 @@ export const MARKETS: Record<string, MarketMeta> = {
   },
   sETH: {
     symbol: "sETH",
-    underlying: "ETH Perpetual",
+    underlying: "ETH Spot",
     category: "crypto",
     bybit: "ETHUSDT",
     coinbase: "ETH-USD",

@@ -11,9 +11,9 @@ export const nav: Catalog['nav'] = {
   item: {
     portfolio: '🏠 Portfolio',
     pepe: '🐸 Pepe Growth Center',
-    exchange: 'Exchange',
-    tokens: '🪙 Tokenized Assets',
-    terminal: 'Pro Terminal',
+    exchange: 'Funding & Swap',
+    tokens: '🪙 Trade Assets',
+    terminal: 'Pro Terminal (advanced)',
     x402: 'x402 Signal API',
     marketplace: 'Marketplace',
     vault: 'Vault',

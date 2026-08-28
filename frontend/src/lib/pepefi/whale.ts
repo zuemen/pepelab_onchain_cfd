@@ -19,7 +19,7 @@
 
 // ── 門檻 ──────────────────────────────────────────────────────────────────────
 
-/** 單筆 notional ≥ 5,000 mUSDC 才進 whale feed。18-dec。 */
+/** 單筆 notional ≥ 5,000 USDC 才進 whale feed。18-dec。 */
 export const WHALE_THRESHOLD = 5_000n * 10n ** 18n
 
 /**
@@ -44,7 +44,7 @@ export const WHALE_THRESHOLD_OPTIONS: ReadonlyArray<{ label: string; value: bigi
   { label: '$25k',  value: 25_000n * 10n ** 18n },
 ]
 
-/** 單筆 notional ≥ 50,000 mUSDC 掛 Mega 標籤。18-dec。 */
+/** 單筆 notional ≥ 50,000 USDC 掛 Mega 標籤。18-dec。 */
 export const MEGA_THRESHOLD = 50_000n * 10n ** 18n
 
 /** 槓桿 ≥ 20× 視為高風險，值得在 feed 上點名。 */

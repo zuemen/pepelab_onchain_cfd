@@ -6,13 +6,18 @@ import Button from '@mui/material/Button'
 import { t } from 'src/locales'
 import { ASSET_META } from 'src/lib/pepefi/assetMeta'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
+import { SHOW_LEVERAGE } from 'src/lib/pepefi/featureFlags'
 import { fUsd, fNum, fromUnits } from 'src/lib/pepefi/format'
 
 import { C, monoCss, labelCss } from '../terminal-theme'
 import { asTx, type LivePos, type TerminalContracts } from '../types'
 
 /** 欄寬定義只寫一次，表頭與資料列共用——分開寫就會慢慢對不齊。 */
-const COLS = '1fr .7fr 1fr 1fr 1fr .6fr 1.1fr .9fr'
+// 槓桿欄跟著 SHOW_LEVERAGE 走。表頭、資料列、以及這條 grid template 三者必須
+// 同進退——少改一個就會整排錯位，而錯位在示範時比多一個欄位更難看。
+const COLS = SHOW_LEVERAGE
+  ? '1fr .7fr 1fr 1fr 1fr .6fr 1.1fr .9fr'
+  : '1fr .7fr 1fr 1fr 1fr 1.1fr .9fr'
 
 export function PositionsTable({
   contracts,
@@ -78,7 +83,7 @@ export function PositionsTable({
               t.terminal.positions.column.entry,
               t.terminal.positions.column.mark,
               t.terminal.positions.column.margin,
-              t.terminal.positions.column.leverage,
+              ...(SHOW_LEVERAGE ? [t.terminal.positions.column.leverage] : []),
               t.terminal.positions.column.pnl,
               '',
             ].map((h, i) => (
@@ -118,7 +123,7 @@ export function PositionsTable({
                   <Box>{fUsd(fromUnits(p.entryPrice, 18))}</Box>
                   <Box>{fUsd(fromUnits(p.cur, 18))}</Box>
                   <Box>{fNum(fromUnits(p.margin, 18))}</Box>
-                  <Box>{String(p.leverage)}×</Box>
+                  {SHOW_LEVERAGE && <Box>{String(p.leverage)}×</Box>}
                   <Box sx={{ color: pnl >= 0 ? C.green : C.red, fontWeight: 700 }}>
                     {fNum(pnl, { dp: 4, signed: true })}
                   </Box>

@@ -70,11 +70,11 @@ export default function TraderStakePage() {
     }
 
     const stakedUSDC = Number(info.amount) / 1e18
-    // Reward Rate: 1 mUSDC staked yields 0.02 PEPE tokens per day (slowed down and authentic!)
+    // Reward Rate: 1 USDC staked yields 0.02 PEPE tokens per day (slowed down and authentic!)
     const rewardRatePerSecond = (stakedUSDC * 0.02) / 86400
 
     // 每 100ms 重繪一次整頁只為了讓小數點跳動——手機上這是純粹的耗電，桌機上
-    // 它把 React 的 commit 排滿。收益率是「每天 0.02 PEPE / mUSDC」，1 秒的
+    // 它把 React 的 commit 排滿。收益率是「每天 0.02 PEPE / USDC」，1 秒的
     // 解析度已經遠超過肉眼能分辨的變化。
     const interval = setInterval(() => {
       const elapsedSeconds = (Date.now() - lastClaimedAt) / 1000

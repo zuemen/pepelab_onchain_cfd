@@ -18,7 +18,14 @@ contract MockUSDC is ERC20, Ownable {
     error NotMinter(address caller);
     error FaucetCallerMustBeEOA();
 
-    constructor() ERC20("Mock USDC", "mUSDC") Ownable(msg.sender) {}
+    /// @dev The on-chain symbol is a plain "USDC", matching MockUSDT's plain
+    ///      "USDT" and the UI's single-source label in
+    ///      frontend/src/lib/pepefi/tokenLabel.ts (ADR-0002 rule 1). It used to
+    ///      be "mUSDC", which showed up raw in MetaMask and on BaseScan and had
+    ///      people asking what a third stablecoin was. The `name()` still says
+    ///      "Mock" so a wallet never confuses this with Circle's real USDC —
+    ///      that one is the x402 settlement token and is a different address.
+    constructor() ERC20("Mock USD Coin", "USDC") Ownable(msg.sender) {}
 
     /// @dev Owner-only: previously anyone could front-run deployment and claim
     ///      the router slot, gaining the right to burn arbitrary balances.
@@ -32,7 +39,7 @@ contract MockUSDC is ERC20, Ownable {
         _burn(from, amount);
     }
 
-    /// @notice One call per 24 h, mints 1 000 mUSDC.
+    /// @notice One call per 24 h, mints 1 000 USDC.
     /// @dev M9: the cooldown is per-address, so a contract could deploy N
     ///      children (or loop `new`) and drain N × FAUCET_AMOUNT in a single
     ///      transaction — the audit PoC did 50 claims at once. Requiring
@@ -54,11 +61,11 @@ contract MockUSDC is ERC20, Ownable {
 
     /// @notice Mint for deploy scripts, seeds, and the swap router.
     /// @dev PA-3: this used to be callable by anyone. The audit PoC minted
-    ///      30,000 mUSDC to itself and swapped it through MockSwapRouter to
+    ///      30,000 USDC to itself and swapped it through MockSwapRouter to
     ///      take the router's entire 10 ETH for free — and it made the
     ///      owner-only `setSwapRouter` guard pointless, since guarding the burn
     ///      side is worthless while the supply side is open.
-    ///      `swapRouter` keeps mint rights because its ETH→mUSDC leg mints at a
+    ///      `swapRouter` keeps mint rights because its ETH→USDC leg mints at a
     ///      fixed rate against ETH actually received, and it already holds the
     ///      matching burn right.
     function mint(address to, uint256 amount) external {

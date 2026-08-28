@@ -371,7 +371,7 @@ function renderDetails(e: ChainEvent): ReactNode {
   const d = e.details
   switch (e.type) {
     case 'Swap':
-      return d.direction === 'ETH→mUSDC'
+      return d.direction === 'ETH→USDC'
         ? <span><Typography variant="body2" component="span" color="text.secondary">{fEth(d.ethIn as bigint)} ETH</Typography> → <Typography variant="body2" component="span" color="success.main" sx={{ fontWeight: 'semibold' }}>{f18(d.usdcOut as bigint)} USDC</Typography></span>
         : <span><Typography variant="body2" component="span" color="text.secondary">{f18(d.usdcIn as bigint)} USDC</Typography> → <Typography variant="body2" component="span" color="success.main" sx={{ fontWeight: 'semibold' }}>{fEth(d.ethOut as bigint)} ETH</Typography></span>
 
@@ -489,9 +489,9 @@ export default function HistoryPage() {
     const empty = Promise.resolve({ logs: [] as any[], errors: [] as string[] })
 
     const results = await Promise.all([
-      // [0] ETH→mUSDC swaps
+      // [0] ETH→USDC swaps
       chunked(contracts.swapRouter, uf ? contracts.swapRouter.filters.SwapEthToUsdc(uf) : contracts.swapRouter.filters.SwapEthToUsdc()),
-      // [1] mUSDC→ETH swaps
+      // [1] USDC→ETH swaps
       chunked(contracts.swapRouter, uf ? contracts.swapRouter.filters.SwapUsdcToEth(uf) : contracts.swapRouter.filters.SwapUsdcToEth()),
       // [2] PositionOpened
       chunked(contracts.exchange, uf ? contracts.exchange.filters.PositionOpened(null, uf) : contracts.exchange.filters.PositionOpened()),
@@ -521,19 +521,19 @@ export default function HistoryPage() {
 
     const evs: ChainEvent[] = []
 
-    // 0 — ETH→mUSDC
+    // 0 — ETH→USDC
     for (const log of getLogs(0)) {
       const a = log.args
       evs.push({ type: 'Swap', user: a.user, txHash: log.transactionHash, logIndex: log.index, blockNumber: log.blockNumber,
         timestamp: Number(a.timestamp ?? 0),
-        details: { direction: 'ETH→mUSDC', ethIn: a.ethIn as bigint, usdcOut: a.usdcOut as bigint } })
+        details: { direction: 'ETH→USDC', ethIn: a.ethIn as bigint, usdcOut: a.usdcOut as bigint } })
     }
-    // 1 — mUSDC→ETH
+    // 1 — USDC→ETH
     for (const log of getLogs(1)) {
       const a = log.args
       evs.push({ type: 'Swap', user: a.user, txHash: log.transactionHash, logIndex: log.index, blockNumber: log.blockNumber,
         timestamp: Number(a.timestamp ?? 0),
-        details: { direction: 'mUSDC→ETH', usdcIn: a.usdcIn as bigint, ethOut: a.ethOut as bigint } })
+        details: { direction: 'USDC→ETH', usdcIn: a.usdcIn as bigint, ethOut: a.ethOut as bigint } })
     }
     // 2 — PositionOpened
     for (const log of getLogs(2)) {

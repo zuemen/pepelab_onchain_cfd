@@ -7,8 +7,10 @@ import { t } from 'src/locales';
 // 同一顆 MockUSDC。它們現在都必須走這裡。
 //
 // 三顆幣是真的不一樣，不要合併：
-//   STABLE_LABEL       → MockUSDC，平台保證金（測試代幣。鏈上 symbol 是 mUSDC，
-//                         但依 ADR-0002 規則 1，畫面一律顯示「USDC」）
+//   STABLE_LABEL       → MockUSDC，平台保證金（測試代幣。合約的 on-chain symbol
+//                         現在也是「USDC」——name() 才是「Mock USD Coin」——所以
+//                         畫面、MetaMask、BaseScan 三邊一致。已部署的舊實例仍是
+//                         「mUSDC」，要重新部署才會換過來，見 ADR-0002 規則 1）
 //   ALT_STABLE_LABEL   → MockUSDT，只能持有／兌換，PerpetualExchange 不收
 //   X402_STABLE_LABEL  → Circle 官方 USDC（EIP-3009），x402 付費 API 的結算幣
 //
@@ -20,7 +22,7 @@ import { t } from 'src/locales';
 // 反過來也一樣：平台保證金永遠是裸的「USDC」，不可以加「測試 / 模擬」前綴，
 // 否則「裸 USDC = 測試幣、Circle USDC = 真錢」這條規則就不成立了。
 
-/** 平台保證金（MockUSDC）。鏈上 symbol 是 mUSDC，畫面顯示則統一用 USDC。 */
+/** 平台保證金（MockUSDC）。合約 symbol 與畫面都是 USDC；name() 為 Mock USD Coin。 */
 export const STABLE_LABEL = 'USDC';
 
 /** 第二顆模擬穩定幣（MockUSDT）。持有／兌換用，不是保證金。 */

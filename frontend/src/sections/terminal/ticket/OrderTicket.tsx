@@ -11,6 +11,7 @@ import { STABLE_LABEL } from 'src/lib/pepefi/tokenLabel'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { estimateLiquidationPrice } from 'src/lib/pepefi/liquidation'
 import { fUsd, fNum, fToken, fromUnits } from 'src/lib/pepefi/format'
+import { SHOW_LEVERAGE, FIXED_LEVERAGE } from 'src/lib/pepefi/featureFlags'
 
 import { Row } from '../Atoms'
 import { C, panel, monoCss, labelCss } from '../terminal-theme'
@@ -58,7 +59,8 @@ export function OrderTicket({
   onFilled: () => Promise<void>
 }) {
   const [isLong, setIsLong] = useState(true)
-  const [lev, setLev] = useState(2)
+  // 旗標關閉時鎖在 1×：畫面不露出選擇器，送單也只送 1，鏈上行為等同現貨。
+  const [lev, setLev] = useState(SHOW_LEVERAGE ? 2 : FIXED_LEVERAGE)
   const [margin, setMargin] = useState('')
   const [busy, setBusy] = useState(false)
   const [riskOpen, setRiskOpen] = useState(true)
@@ -149,7 +151,8 @@ export function OrderTicket({
         })}
       </Box>
 
-      {/* leverage */}
+      {/* leverage —— SHOW_LEVERAGE 關閉時整塊不渲染，lev 固定 FIXED_LEVERAGE */}
+      {SHOW_LEVERAGE && (
       <Box>
         <Box sx={{ ...labelCss, mb: 0.7 }}>{t.terminal.ticket.leverage}</Box>
         <Box sx={{ display: 'flex', gap: 0.8 }}>
@@ -179,6 +182,7 @@ export function OrderTicket({
           })}
         </Box>
       </Box>
+      )}
 
       {/* margin input */}
       <Box>

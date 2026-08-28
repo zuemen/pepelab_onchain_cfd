@@ -14,6 +14,7 @@ import { t, interpolate } from 'src/locales';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
 import { safeRead } from 'src/lib/pepefi/safeRead';
 import { STABLE_LABEL, ALT_STABLE_LABEL, X402_STABLE_LABEL } from 'src/lib/pepefi/tokenLabel';
+import { SHOW_LEVERAGE, FIXED_LEVERAGE } from 'src/lib/pepefi/featureFlags';
 import { estimateLiquidationPrice } from 'src/lib/pepefi/liquidation';
 import { blocksTrading, stalenessNotice } from 'src/lib/pepefi/priceFreshness';
 import {
@@ -167,7 +168,8 @@ export default function ExchangePage() {
   const [withdrawAmt, setWithdrawAmt] = useState('');
   const [selAsset,    setSelAsset]    = useState<AssetId>(ASSET_IDS.sBTC);
   const [isLong,      setIsLong]      = useState(true);
-  const [leverage,    setLeverage]    = useState(1);
+  // SHOW_LEVERAGE 關閉時鎖 1×（現貨等價）；選擇器不渲染，送單一樣送這個值。
+  const [leverage,    setLeverage]    = useState(FIXED_LEVERAGE);
   const [maxLev,      setMaxLev]      = useState(5); // N3: per-asset leverage cap
   const [openMgn,     setOpenMgn]     = useState('');
   const [riskOpen,    setRiskOpen]    = useState(true); // 測試網/ADL/oracle 風險提示（可收合）
@@ -1439,7 +1441,8 @@ export default function ExchangePage() {
             </Stack>
           </Grid>
 
-          {/* Leverage */}
+          {/* Leverage —— 旗標關閉時整格不渲染 */}
+          {SHOW_LEVERAGE && (
           <Grid size={{ xs: 12, sm: 6, md: 3 }}>
             <Stack spacing={1}>
               <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', fontWeight: 'bold' }}>
@@ -1467,6 +1470,7 @@ export default function ExchangePage() {
               )}
             </Stack>
           </Grid>
+          )}
 
           {/* Margin Input */}
           <Grid size={{ xs: 12, sm: 6, md: 3 }}>
@@ -1719,7 +1723,9 @@ export default function ExchangePage() {
                     t.exchange.positions.column.current,
                     t.exchange.positions.column.size,
                     t.exchange.positions.column.margin,
-                    t.exchange.positions.column.leverage,
+                    // 槓桿欄跟著旗標走——1× 固定值的欄位只是噪音，但表頭與
+                    // 表格列必須同一個條件，否則欄數會對不上。
+                    ...(SHOW_LEVERAGE ? [t.exchange.positions.column.leverage] : []),
                     t.exchange.positions.column.pnl,
                     '',
                   ].map(h => (
@@ -1765,7 +1771,7 @@ export default function ExchangePage() {
                       <TableCell sx={{ fontFamily: MONO }}>{fUsd(row.currentLivePrice)}</TableCell>
                       <TableCell sx={{ fontFamily: MONO, color: 'text.secondary' }}>{f18(size, 6)}</TableCell>
                       <TableCell sx={{ fontFamily: MONO }}>{f18(row.margin)}</TableCell>
-                      <TableCell>{String(row.leverage)}×</TableCell>
+                      {SHOW_LEVERAGE && <TableCell>{String(row.leverage)}×</TableCell>}
                       <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: pnlColor(row.livePnL) }}>
                         {fPnL(row.livePnL)}
                       </TableCell>
