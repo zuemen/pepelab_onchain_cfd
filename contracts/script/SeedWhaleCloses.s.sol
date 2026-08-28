@@ -93,18 +93,35 @@ contract SeedWhaleCloses is Script {
             console.log("--- whale index", indices[n]);
             console.log("    address", trader);
 
-            uint256 open = exchange.getUserPositions(trader).length;
-            console.log("    open positions now:", open);
+            uint256[] memory existing = exchange.getUserPositions(trader);
+            console.log("    positions listed on chain:", existing.length);
 
             // Nothing derived here belongs to the chain we are pointing at -
             // almost always the wrong SEED_MNEMONIC. Say so instead of
             // broadcasting a deposit into an address nobody controls.
-            if (open == 0 && usdc.balanceOf(trader) == 0 && trader.balance == 0) {
+            if (existing.length == 0 && usdc.balanceOf(trader) == 0 && trader.balance == 0) {
                 console.log("    SKIPPED: empty address - wrong SEED_MNEMONIC?");
                 continue;
             }
 
-            uint256 need = target > open ? target - open : 0;
+            // 先關掉「目前列出來的」部位,並**數成功幾筆**——不能拿
+            // getUserPositions().length 當「未平倉數」。線上 0xEf75… 那版比
+            // src/ 舊,它的 getUserPositions 是 append-only(平倉不會從陣列移
+            // 除,實測 55/56 平掉之後仍然列在裡面)。照長度算 need,第二次跑就
+            // 會算出 need=0,然後對五筆已平倉的 id 再送五筆必然 revert 的交易,
+            // 一筆新的平倉都不會產生。數「成功」而不是數「長度」,兩個版本的
+            // 合約都對。
+            _nudge(true);
+
+            uint256 closed = 0;
+            vm.startBroadcast(pk);
+            for (uint256 k = 0; k < existing.length; k++) {
+                if (_close(exchange, existing[k])) closed++;
+            }
+            vm.stopBroadcast();
+            console.log("    closed from existing:", closed);
+
+            uint256 need = target > closed ? target - closed : 0;
 
             if (need > 0) {
                 vm.startBroadcast(pk);
@@ -117,9 +134,7 @@ contract SeedWhaleCloses is Script {
                         exchange.depositMargin(gap);
                         console.log("    deposited extra margin:", gap);
                     }
-                    // Alternate side and asset so the batch is not one
-                    // directional bet: with the nudge below, about half of them
-                    // close green.
+                    // 多空交錯,配合下面的反向調價,大約一半會是獲利平倉。
                     for (uint256 k = 0; k < need; k++) {
                         bool    isLong = (k % 2 == 0);
                         bytes32 asset  = (k % 4 < 2) ? SBTC : SETH;
@@ -132,41 +147,38 @@ contract SeedWhaleCloses is Script {
                     }
                 }
                 vm.stopBroadcast();
+
+                _nudge(false);
+
+                // 新開的一定排在陣列尾端,兩種合約版本皆然:swap-pop 版此時陣列
+                // 只剩新的這幾筆,append-only 版則是舊的在前、新的在後。取尾端
+                // need 筆,不用管前面那些已經平掉的。
+                uint256[] memory after_ = exchange.getUserPositions(trader);
+                uint256 start = after_.length > need ? after_.length - need : 0;
+
+                vm.startBroadcast(pk);
+                for (uint256 k = start; k < after_.length; k++) {
+                    if (_close(exchange, after_[k])) closed++;
+                }
+                vm.stopBroadcast();
             }
 
-            _nudge(true);
-
-            // Snapshot the ids first: _closePosition swap-pops the array, so
-            // iterating it live skips every other entry.
-            uint256[] memory ids = exchange.getUserPositions(trader);
-            uint256 half = ids.length / 2;
-
-            vm.startBroadcast(pk);
-            for (uint256 k = 0; k < half; k++) {
-                _close(exchange, ids[k]);
-            }
-            vm.stopBroadcast();
-
-            _nudge(false);
-
-            vm.startBroadcast(pk);
-            for (uint256 k = half; k < ids.length; k++) {
-                _close(exchange, ids[k]);
-            }
-            vm.stopBroadcast();
-
-            console.log("    closes attempted:", ids.length);
+            console.log("    closes landed this run:", closed);
         }
 
         console.log("Done. Reload /marketplace - the podium needs >= 5 closes per trader.");
     }
 
-    function _close(PerpetualExchange exchange, uint256 id) internal {
+    /// @dev Returns whether the close actually landed. Already-closed ids
+    ///      revert PositionAlreadyClosed and are expected on a re-run, so they
+    ///      are counted as "not landed" rather than aborting the batch.
+    function _close(PerpetualExchange exchange, uint256 id) internal returns (bool) {
         try exchange.closePosition(id) {
             console.log("    closed position", id);
-        } catch (bytes memory reason) {
-            console.log("    close failed", id);
-            console.logBytes(reason);
+            return true;
+        } catch {
+            console.log("    already closed / not closable:", id);
+            return false;
         }
     }
 
