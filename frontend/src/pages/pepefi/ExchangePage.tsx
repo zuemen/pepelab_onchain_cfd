@@ -799,12 +799,17 @@ export default function ExchangePage() {
       {/* Pointer to the ERC-20 layer. Positions opened here are ledger entries
           on PerpetualExchange, so nothing lands in the wallet; /tokens is where
           real transferable tokens are minted. */}
+      {/* 「本頁開倉為合成持倉」——存在的目的是解釋這一頁的部位與 ERC-20 代幣
+          的差別。SHOW_PERPETUALS 關閉時這一頁沒有部位可解釋,留著只會憑空
+          introduce 一個看不到的概念。 */}
+      {SHOW_PERPETUALS && (
       <Alert severity="info" sx={{ mb: 2 }}>
         {t.exchange.markup.syntheticPositionBefore}<b>{t.exchange.markup.syntheticPositionBold}</b>{t.exchange.markup.syntheticPositionAfter}
         <Link component={RouterLink} to={paths.pepefi.tokens} sx={{ ml: 0.5, fontWeight: 'bold' }}>
           {t.exchange.markup.tokenizedAssetsLink}
         </Link>
       </Alert>
+      )}
 
       {/* Onboarding guide */}
       <Alert
@@ -818,13 +823,25 @@ export default function ExchangePage() {
         }}
       >
         <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
-          {t.exchange.guide.title}
+          {SHOW_PERPETUALS ? t.exchange.guide.title : t.exchange.guide.spotTitle}
         </Typography>
         <Typography variant="body2" component="ol" sx={{ pl: 2, m: 0, '& li': { mb: 0.5 } }}>
+          {/* 兩條路線的步驟不一樣,不是同一份文字加減幾句:現貨的流程是
+              領幣 → 到資產交易頁買 → 回投資組合看配置,中間沒有「保證金帳戶」
+              也沒有「開倉」。 */}
           <li><strong>{t.exchange.markup.stepGetTokensLabel}</strong> {interpolate(t.exchange.markup.stepGetTokensBody, { token: STABLE_LABEL })}</li>
-          <li><strong>{t.exchange.markup.stepMarginLabel}</strong> {interpolate(t.exchange.markup.stepMarginBody, { token: STABLE_LABEL })}</li>
-          <li><strong>{t.exchange.markup.stepOpenLabel}</strong> {t.exchange.markup.stepOpenBody}</li>
-          <li><strong>{t.exchange.markup.stepPnlLabel}</strong> {t.exchange.markup.stepPnlBody}</li>
+          {SHOW_PERPETUALS ? (
+            <>
+              <li><strong>{t.exchange.markup.stepMarginLabel}</strong> {interpolate(t.exchange.markup.stepMarginBody, { token: STABLE_LABEL })}</li>
+              <li><strong>{t.exchange.markup.stepOpenLabel}</strong> {t.exchange.markup.stepOpenBody}</li>
+              <li><strong>{t.exchange.markup.stepPnlLabel}</strong> {t.exchange.markup.stepPnlBody}</li>
+            </>
+          ) : (
+            <>
+              <li><strong>{t.exchange.markup.stepBuyLabel}</strong> {interpolate(t.exchange.markup.stepBuyBody, { token: STABLE_LABEL })}</li>
+              <li><strong>{t.exchange.markup.stepPortfolioLabel}</strong> {t.exchange.markup.stepPortfolioBody}</li>
+            </>
+          )}
         </Typography>
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
           {t.exchange.markup.currencyNoteLine1Before}<b>{STABLE_LABEL}</b>{t.exchange.markup.currencyNoteLine1After}

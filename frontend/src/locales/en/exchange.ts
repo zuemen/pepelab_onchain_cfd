@@ -65,6 +65,7 @@ export const exchange: Catalog['exchange'] = {
    */
   guide: {
     title: 'How CFD trading works on PepeLab',
+    spotTitle: 'How to buy and sell tokenized assets on PepeLab',
   },
 
   /** 水龍頭區塊。三種代幣共用同一組「領取中／領取 X／尚未部署」的字。 */
@@ -268,6 +269,11 @@ export const exchange: Catalog['exchange'] = {
     syntheticPositionAfter:
       ' (recorded in PerpetualExchange — no token ever appears in your wallet). Want to actually hold ERC-20 tokens? ',
     tokenizedAssetsLink: 'Go to the Tokenized Assets page →',
+
+    stepBuyLabel: 'Buy assets:',
+    stepBuyBody: 'Go to Trade Assets and buy tokenized equities, bonds, gold, and crypto with {token} — the tokens land directly in your wallet.',
+    stepPortfolioLabel: 'Check your allocation:',
+    stepPortfolioBody: 'Go to Portfolio — the share, value, and PnL of all four classes are there.',
 
     stepGetTokensLabel: 'Get tokens:',
     stepGetTokensBody: 'Claim test {token} (and PEPE) from the faucet — no swap needed.',

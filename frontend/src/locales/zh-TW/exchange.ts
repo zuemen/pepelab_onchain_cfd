@@ -73,6 +73,8 @@ export const exchange = {
    */
   guide: {
     title: 'PepeLab 上的 CFD 交易如何運作',
+    /** SHOW_PERPETUALS 關閉時的版本——那時這一頁沒有開倉面板,教 CFD 只會讓人去找一個不存在的東西。 */
+    spotTitle: '在 PepeLab 上買賣代幣化資產',
   },
 
   /** 水龍頭區塊。三種代幣共用同一組「領取中／領取 X／尚未部署」的字。 */
@@ -269,6 +271,11 @@ export const exchange = {
     syntheticPositionAfter:
       '（記錄在 PerpetualExchange，錢包內不會出現代幣）。 想要真正持有 ERC-20 代幣？',
     tokenizedAssetsLink: '前往代幣化資產頁 →',
+
+    stepBuyLabel: '買入資產：',
+    stepBuyBody: '到「資產交易」頁,用 {token} 買進代幣化的股、債、金、幣——代幣會直接進到你的錢包。',
+    stepPortfolioLabel: '看配置：',
+    stepPortfolioBody: '回「投資組合」頁,四大類的佔比、市值與損益都在那裡。',
 
     stepGetTokensLabel: '取得代幣：',
     stepGetTokensBody: '從水龍頭領取測試用 {token}（以及 PEPE）——不需要兌換。',
