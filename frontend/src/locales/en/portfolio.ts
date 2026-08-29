@@ -40,8 +40,9 @@ export const portfolio: Catalog['portfolio'] = {
    */
   allocation: {
     title: 'RWA Allocation',
-    subtitle: 'Based on margin in open positions — excludes wallet cash, staking, and the LP vault. Not a breakdown of Net Worth.',
-    noPositions: 'No positions yet',
+    subtitle: 'Tokenized asset holdings at mark plus margin in open positions — excludes wallet cash, staking, and the LP vault. Not a breakdown of Net Worth.',
+    noPositions: 'Nothing held yet',
+    holdingsOnlyNote: 'The PnL column covers trading positions only — spot holdings have no on-chain cost basis.',
 
     /**
      * 見 `../zh-TW/portfolio.ts`。

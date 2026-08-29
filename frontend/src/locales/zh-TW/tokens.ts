@@ -7,6 +7,14 @@
  *
  */
 export const tokens = {
+  /** TradingView 外嵌圖表區。報價基準刻意寫死 Coinbase 現貨,見元件註解。 */
+  chart: {
+    title: '市場行情',
+    source: '報價來源：Coinbase 現貨（{symbol}）· 由 TradingView 提供圖表',
+    btc: '比特幣',
+    eth: '以太幣',
+    unavailable: '圖表由 TradingView 外部載入,若此處空白代表外部資源未載入,不影響下方的買賣功能。',
+  },
   title: '代幣化資產',
 
   version: {

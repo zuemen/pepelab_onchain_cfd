@@ -56,27 +56,78 @@ export interface MarginRow {
 }
 
 export interface AssetClassSummary {
+  /** 交易部位投入的保證金。 */
   margin: bigint
+  /** 持有的代幣化資產市值（18-dec USD）。 */
+  holdings: bigint
+  /** 未實現損益，只有交易部位有——現貨持倉沒有鏈上成本基礎可算。 */
   pnl: bigint
+  /** 這一類在配置圖裡的總量：保證金 + 持倉市值。 */
+  value: bigint
 }
 
 /**
- * 依 Asset Class 加總一組未平倉部位的保證金與未實現損益。
- *
- * 四類永遠都在回傳裡，即使輸入是空陣列——RWA 配置區塊零持倉時要顯示四類
- * 皆 $0，不是整塊消失（issue #64），呼叫端不必自己補零或另外判斷。
+ * 一筆代幣化資產持倉。價格用 8-dec（oracle 原生刻度）、餘額用 18-dec，
+ * 與 TokenizedAssetsPage 讀回來的形狀一致，呼叫端不必先換算。
  */
-export function groupMarginByAssetClass(rows: MarginRow[]): Record<AssetClass, AssetClassSummary> {
+export interface HoldingRow {
+  asset: string
+  /** 代幣餘額，18-dec。 */
+  balance: bigint
+  /** oracle 價格，8-dec。 */
+  price: bigint
+}
+
+/**
+ * 持倉市值，回 18-dec USD。
+ *
+ * balance(18) × price(8) 會得到 26 位小數，除 1e8 收回 18 位。全程走 bigint：
+ * 中途轉 Number 會在部位大到 2^53 之後開始掉精度，而這個值會被拿去算佔比。
+ */
+export function holdingValue(row: HoldingRow): bigint {
+  return (row.balance * row.price) / 100_000_000n
+}
+
+/**
+ * 依 Asset Class 加總一組未平倉部位與代幣化資產持倉。
+ *
+ * 四類永遠都在回傳裡，即使兩邊都是空的——RWA 配置區塊零持倉時要顯示四類皆 $0，
+ * 不是整塊消失（issue #64），呼叫端不必自己補零或另外判斷。
+ *
+ * 為什麼要同時吃兩種來源：平台把門面改成代幣化 RWA 現貨之後，一般使用者的資產
+ * 是 /tokens 買來的合成代幣，不是永續部位的保證金。只算保證金的話，一個買了
+ * sGOLD 與 sBOND 的人在配置圖上會是四類皆 0%——正好是這個區塊要證明的事情的反面。
+ */
+export function groupByAssetClass(
+  positions: MarginRow[],
+  holdings: HoldingRow[] = [],
+): Record<AssetClass, AssetClassSummary> {
   const out: Record<AssetClass, AssetClassSummary> = {
-    crypto: { margin: 0n, pnl: 0n },
-    equity: { margin: 0n, pnl: 0n },
-    commodity: { margin: 0n, pnl: 0n },
-    bond: { margin: 0n, pnl: 0n },
+    crypto:    { margin: 0n, holdings: 0n, pnl: 0n, value: 0n },
+    equity:    { margin: 0n, holdings: 0n, pnl: 0n, value: 0n },
+    commodity: { margin: 0n, holdings: 0n, pnl: 0n, value: 0n },
+    bond:      { margin: 0n, holdings: 0n, pnl: 0n, value: 0n },
   }
-  for (const row of rows) {
+  for (const row of positions) {
     const cls = assetClassOf(row.asset)
     out[cls].margin += row.margin
-    out[cls].pnl += row.unrealizedPnL
+    out[cls].pnl    += row.unrealizedPnL
+  }
+  for (const row of holdings) {
+    const cls = assetClassOf(row.asset)
+    out[cls].holdings += holdingValue(row)
+  }
+  for (const cls of ASSET_CLASSES) {
+    out[cls].value = out[cls].margin + out[cls].holdings
   }
   return out
 }
+
+/**
+ * 舊名，只吃部位。保留是因為它已經是公開 API 且語意仍然正確；新的呼叫端請用
+ * `groupByAssetClass`，它多帶持倉。
+ */
+export function groupMarginByAssetClass(rows: MarginRow[]): Record<AssetClass, AssetClassSummary> {
+  return groupByAssetClass(rows)
+}
+

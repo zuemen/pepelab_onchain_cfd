@@ -6,7 +6,12 @@ import Typography from '@mui/material/Typography';
 
 import { t } from 'src/locales';
 import { MONO } from 'src/components/pepefi/brandKit';
-import { ASSET_CLASSES, ASSET_CLASS_CONFIG, groupMarginByAssetClass } from 'src/lib/pepefi/assetClass';
+import {
+  ASSET_CLASSES,
+  ASSET_CLASS_CONFIG,
+  groupByAssetClass,
+  type HoldingRow,
+} from 'src/lib/pepefi/assetClass';
 
 import BenchmarkStrip from './BenchmarkStrip';
 import AnchoredComparison, { type ComparisonRow } from './AnchoredComparison';
@@ -26,6 +31,12 @@ import AnchoredComparison, { type ComparisonRow } from './AnchoredComparison';
 
 type Props = {
   rows: ComparisonRow[];
+  /**
+   * 使用者持有的代幣化資產。平台改以現貨為門面之後，一般使用者的資產在這裡，
+   * 不在 `rows`（永續部位的保證金）——只算 rows 的話，買了 sGOLD 與 sBOND、
+   * 一張永續都沒開的人會看到四類皆 0%，正好是這個區塊要證明的事情的反面。
+   */
+  holdings?: HoldingRow[];
 };
 
 const fUsd = (v: bigint) =>
@@ -33,10 +44,15 @@ const fUsd = (v: bigint) =>
 
 const fSignedUsd = (v: bigint) => (v >= 0n ? '+' : '') + fUsd(v);
 
-export default function RwaAllocation({ rows }: Props) {
-  const byClass = useMemo(() => groupMarginByAssetClass(rows), [rows]);
+export default function RwaAllocation({ rows, holdings = [] }: Props) {
+  const byClass = useMemo(() => groupByAssetClass(rows, holdings), [rows, holdings]);
 
-  const totalMargin = useMemo(() => rows.reduce((s, r) => s + r.margin, 0n), [rows]);
+  // 分母是四類的合計，不是 rows 的保證金合計——加進持倉之後兩者不再相等，
+  // 用舊的分母會讓百分比加起來超過 100%。
+  const total = useMemo(
+    () => ASSET_CLASSES.reduce((sum, cls) => sum + byClass[cls].value, 0n),
+    [byClass],
+  );
 
   return (
     <Card sx={{ p: { xs: 2.5, sm: 3.5 }, border: '1px solid', borderColor: 'divider' }}>
@@ -60,9 +76,9 @@ export default function RwaAllocation({ rows }: Props) {
         {ASSET_CLASSES.map((cls) => {
           const cfg = ASSET_CLASS_CONFIG[cls];
           const summary = byClass[cls];
-          // totalMargin === 0n → 0%，不是 NaN／Infinity：零持倉時四類都要看得懂,
+          // total === 0n → 0%，不是 NaN／Infinity：零持倉時四類都要看得懂,
           // 不是顯示一個算式壞掉的痕跡。
-          const pct = totalMargin > 0n ? (Number(summary.margin) / Number(totalMargin)) * 100 : 0;
+          const pct = total > 0n ? (Number(summary.value) / Number(total)) * 100 : 0;
 
           return (
             <Box key={cls}>
@@ -73,7 +89,7 @@ export default function RwaAllocation({ rows }: Props) {
                 {pct.toFixed(0)}%
               </Typography>
               <Typography variant="caption" sx={{ fontFamily: MONO, color: 'text.secondary', display: 'block' }}>
-                {fUsd(summary.margin)}
+                {fUsd(summary.value)}
               </Typography>
               <Typography
                 variant="caption"
@@ -90,9 +106,17 @@ export default function RwaAllocation({ rows }: Props) {
         })}
       </Box>
 
-      {totalMargin === 0n && (
+      {total === 0n && (
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 2.5 }}>
           {t.portfolio.allocation.noPositions}
+        </Typography>
+      )}
+
+      {/* 只有現貨持倉、一張部位都沒有時，四個「損益」都會是「—」。不解釋的話
+          那看起來像壞掉，而它其實是「現貨沒有鏈上成本基礎可算」的正確結果。 */}
+      {total > 0n && rows.length === 0 && (
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 2.5 }}>
+          {t.portfolio.allocation.holdingsOnlyNote}
         </Typography>
       )}
 

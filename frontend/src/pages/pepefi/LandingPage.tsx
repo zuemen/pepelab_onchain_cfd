@@ -3,6 +3,7 @@ import { usePepefiWallet } from 'src/layouts/pepefi';
 import { t } from 'src/locales';
 import WalletButton from 'src/components/pepefi/WalletButton';
 import HeroKpiStrip from 'src/components/pepefi/HeroKpiStrip';
+import { SHOW_PERPETUALS } from 'src/lib/pepefi/featureFlags';
 import BenchmarkStrip from 'src/components/pepefi/dashboard/BenchmarkStrip';
 import PaperTradingBadge from 'src/components/pepefi/PaperTradingBadge';
 import { MONO } from 'src/components/pepefi/brandKit';
@@ -23,21 +24,31 @@ const FEATURES = [
   // so these six drew at six different weights and baselines depending on the
   // machine, and none of them could inherit the panel's colour. The mascot 🐸
   // stays — that is brand, not an icon.
-  // RWA 現貨排第一、永續排最後，是刻意的：評審看的是「這是不是 RWA 平台」，
-  // 而第一張卡就是答案。永續沒有被拿掉，只是不再當門面。
+  // RWA 現貨排第一，是刻意的：教授看的是「這是不是 RWA 平台」，而第一張卡就是
+  // 答案。永續那張已經移出這個陣列——SHOW_PERPETUALS 預設關的時候，首頁介紹一個
+  // 側邊欄上不存在的功能只會讓人去找它。要展示永續時打開旗標，PERPETUAL_FEATURE
+  // 會接回去。
   { icon: 'solar:case-minimalistic-bold',          title: t.landing.features.rwaTitle,        desc: t.landing.features.rwaDesc },
   { icon: 'solar:copy-bold',                       title: t.landing.features.copyTitle,       desc: t.landing.features.copyDesc },
   { icon: 'solar:verified-check-bold',             title: t.landing.features.esgTitle,        desc: t.landing.features.esgDesc },
   { icon: 'solar:shield-keyhole-bold-duotone',     title: t.landing.features.vaultTitle,      desc: t.landing.features.vaultDesc },
   { icon: 'solar:wad-of-money-bold',               title: t.landing.features.x402Title,       desc: t.landing.features.x402Desc },
   { icon: 'solar:atom-bold-duotone',               title: t.landing.features.agentTitle,      desc: t.landing.features.agentDesc },
-  { icon: 'solar:chart-square-outline',            title: t.landing.features.perpetualsTitle, desc: t.landing.features.perpetualsDesc },
   // `as const` so the icon strings keep their literal types. Iconify's `icon`
   // prop is a union of the 206 names registered in components/iconify/icon-sets
   // (which inlines each SVG body, so icons ship with the bundle rather than
   // being fetched). Without this the array widens to `string` and the check
   // that catches a typo'd or unregistered icon at compile time is lost.
 ] as const;
+
+/** 只有 SHOW_PERPETUALS 打開時才接回功能卡的那一張。 */
+const PERPETUAL_FEATURE = {
+  icon: 'solar:chart-square-outline',
+  title: t.landing.features.perpetualsTitle,
+  desc: t.landing.features.perpetualsDesc,
+} as const;
+
+const VISIBLE_FEATURES = SHOW_PERPETUALS ? [...FEATURES, PERPETUAL_FEATURE] : FEATURES;
 
 const STEPS = [
   { n: '01', text: t.landing.steps.one },
@@ -309,7 +320,7 @@ export default function LandingPage() {
             {t.landing.features.heading}
           </Typography>
           <Grid container spacing={2.5}>
-            {FEATURES.map((f) => (
+            {VISIBLE_FEATURES.map((f) => (
               <Grid size={{ xs: 12, sm: 6 }} key={f.title}>
                 <Card
                   sx={{

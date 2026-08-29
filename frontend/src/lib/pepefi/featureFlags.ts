@@ -24,4 +24,20 @@ export const SHOW_LEVERAGE = readFlag(import.meta.env.VITE_SHOW_LEVERAGE, false)
 /** 旗標關閉時強制的槓桿倍數——1× 就是「保證金 = 部位大小」。 */
 export const FIXED_LEVERAGE = 1;
 
+/**
+ * 要不要露出永續合約的**入口**。
+ *
+ * 預設 **關**。平台呈現的主要動作是在 /tokens 用 USDC 買賣代幣化的股債金幣
+ * （AssetVault mint/redeem），那是現貨；永續是進階功能。旗標關閉時收起來的是
+ * 三個入口：側邊欄的專業終端、首頁的永續功能卡、/exchange 的開倉面板。
+ *
+ * **收的是入口，不是路徑**——`/terminal` 直接打網址仍然到得了，既有部位也照樣
+ * 看得到、平得掉。把路徑鎖起來會變成一套假的權限系統：擋不住真的要繞過的人
+ * （前端路由本來就攔不住），卻會擋到照著舊連結進來的正常使用者，而且會讓已經
+ * 開著的部位無法平倉——那比多一個入口糟得多。
+ *
+ * 合約完全沒有改動。要展示永續時設 `VITE_SHOW_PERPETUALS=1`。
+ */
+export const SHOW_PERPETUALS = readFlag(import.meta.env.VITE_SHOW_PERPETUALS, false);
+
 export const __test__ = { readFlag };

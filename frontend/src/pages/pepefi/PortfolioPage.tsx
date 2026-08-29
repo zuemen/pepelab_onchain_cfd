@@ -29,6 +29,7 @@ import StatCard from 'src/components/pepefi/StatCard';
 import ESGBadge from 'src/components/pepefi/ESGBadge';
 import NetWorthHero from 'src/components/pepefi/dashboard/NetWorthHero';
 import RwaAllocation from 'src/components/pepefi/dashboard/RwaAllocation';
+import { useSynthHoldings } from 'src/hooks/useSynthHoldings';
 import KYCStatusCard from 'src/components/pepefi/dashboard/KYCStatusCard';
 import QuickActions from 'src/components/pepefi/dashboard/QuickActions';
 import PortfolioAnalysis from 'src/components/pepefi/dashboard/PortfolioAnalysis';
@@ -207,6 +208,8 @@ export default function PortfolioPage() {
   const contracts  = useContracts(wallet.provider, wallet.signer, wallet.chainId);
   const livePrices = useLivePrices();
   const { data: esg } = useESG(contracts?.esgRegistry ?? null);
+  // 代幣化資產持倉——RWA 配置環的另一半來源，見 RwaAllocation 的 props 註解。
+  const synthHoldings = useSynthHoldings();
 
   // 錢包／質押／金庫。這一頁本來只讀 freeMargin，因為它只管交易帳戶；淨值
   // hero 從 Dashboard 併過來之後就需要另外三桶錢。
@@ -570,7 +573,7 @@ export default function PortfolioPage() {
 
       {/* RWA 是本平台的最大賣點，緊接在淨值 hero 之後、任何操作之前——見
           RwaAllocation.tsx 頂部註解。Simple／Expert 皆顯示，零持倉也照樣顯示。 */}
-      <RwaAllocation rows={positions} />
+      <RwaAllocation rows={positions} holdings={synthHoldings.rows} />
 
       {/* KYC 是 RwaAllocation 剛講的「四大類都能配置」背後那道閘門——緊接在它
           後面，讓「這個平台讓你配什麼」和「我現在能不能配」連在一起讀。常駐

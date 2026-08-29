@@ -4,6 +4,13 @@ import type { Catalog } from '../zh-TW';
  * 見 `../zh-TW/tokens.ts`。
  */
 export const tokens: Catalog['tokens'] = {
+  chart: {
+    title: 'Market',
+    source: 'Quotes: Coinbase spot ({symbol}) · chart by TradingView',
+    btc: 'Bitcoin',
+    eth: 'Ether',
+    unavailable: 'The chart loads from TradingView. A blank panel here means that external resource did not load; it does not affect buying or selling below.',
+  },
   title: 'Tokenized Assets',
 
   version: {

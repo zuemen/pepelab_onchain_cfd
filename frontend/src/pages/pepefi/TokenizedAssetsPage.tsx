@@ -15,6 +15,7 @@ import { ASSET_META } from 'src/lib/pepefi/assetMeta'
 import SyntheticAssetABI   from 'src/contracts/abi/SyntheticAsset.json'
 import SyntheticAssetV2ABI from 'src/contracts/abi/SyntheticAssetV2.json'
 import AssetIcon from 'src/components/pepefi/AssetIcon'
+import TradingViewChart from 'src/components/pepefi/TradingViewChart'
 import Skeleton from 'src/components/pepefi/Skeleton'
 import { useToast } from 'src/components/pepefi/ToastProvider'
 
@@ -51,6 +52,16 @@ import TableContainer from '@mui/material/TableContainer';
 import { Icon } from '@iconify/react';
 
 const ZERO_ADDR = '0x0000000000000000000000000000000000000000'
+
+/**
+ * 圖表能顯示哪些 symbol。刻意只有兩個、而且都是 Coinbase **現貨**：
+ * 這一頁賣的是代幣化的現貨資產，掛一張永續合約的圖會自打嘴巴。
+ */
+const CHART_SYMBOLS = {
+  btc: 'COINBASE:BTCUSD',
+  eth: 'COINBASE:ETHUSD',
+} as const
+type ChartKey = keyof typeof CHART_SYMBOLS
 const VERSION_KEY = 'pepefi:vaultVersion'
 
 type VaultVersion = 'v1' | 'v2'
@@ -147,6 +158,7 @@ export default function TokenizedAssetsPage() {
   const [amount, setAmount]   = useState('')
   const [quote, setQuote]     = useState<{ out: bigint; fee: bigint } | null>(null)
   const [busy, setBusy]       = useState(false)
+  const [chartKey, setChartKey] = useState<ChartKey>('btc')
 
   const { notify } = useToast()
 
@@ -386,6 +398,34 @@ export default function TokenizedAssetsPage() {
       </Box>
 
       {versionSwitcher}
+
+      {/* ── 市場行情（TradingView，Coinbase 現貨報價） ──────────────────────
+          教授回饋第 5 點指名「加密貨幣的 TradingView 畫面建議用 Coinbase 的
+          BTC Spot USD 報價為準」。symbol 寫死在 CHART_SYMBOLS，不開放自由輸入
+          ——放開的話畫面上會出現永續合約的 symbol，跟這一頁「現貨」的定位打架。 */}
+      <Card sx={{ p: { xs: 2, sm: 3 }, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
+          <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 1 }}>
+            {t.tokens.chart.title}
+          </Typography>
+          <ToggleButtonGroup
+            size="small"
+            exclusive
+            value={chartKey}
+            onChange={(_, v) => { if (v) setChartKey(v as ChartKey) }}
+          >
+            <ToggleButton value="btc">{t.tokens.chart.btc}</ToggleButton>
+            <ToggleButton value="eth">{t.tokens.chart.eth}</ToggleButton>
+          </ToggleButtonGroup>
+        </Box>
+        <TradingViewChart symbol={CHART_SYMBOLS[chartKey]} height={380} />
+        <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
+          {interpolate(t.tokens.chart.source, { symbol: CHART_SYMBOLS[chartKey] })}
+        </Typography>
+        <Typography variant="caption" color="text.disabled">
+          {t.tokens.chart.unavailable}
+        </Typography>
+      </Card>
 
       <Alert severity="info">
         {t.tokens.markup.introBefore}<b>{t.tokens.markup.introBold1}</b>{t.tokens.markup.introMid1}<b>{t.tokens.markup.introBold2}</b>{t.tokens.markup.introMid2}<b>USDC</b>{t.tokens.markup.introAfter}

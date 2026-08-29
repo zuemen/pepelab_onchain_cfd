@@ -14,7 +14,7 @@ import { t, interpolate } from 'src/locales';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
 import { safeRead } from 'src/lib/pepefi/safeRead';
 import { STABLE_LABEL, ALT_STABLE_LABEL, X402_STABLE_LABEL } from 'src/lib/pepefi/tokenLabel';
-import { SHOW_LEVERAGE, FIXED_LEVERAGE } from 'src/lib/pepefi/featureFlags';
+import { SHOW_LEVERAGE, SHOW_PERPETUALS, FIXED_LEVERAGE } from 'src/lib/pepefi/featureFlags';
 import { estimateLiquidationPrice } from 'src/lib/pepefi/liquidation';
 import { blocksTrading, stalenessNotice } from 'src/lib/pepefi/priceFreshness';
 import {
@@ -1226,7 +1226,10 @@ export default function ExchangePage() {
         </Grid>
       </Grid>
 
-      {/* C. Open Position */}
+      {/* C. Open Position —— 永續開倉面板，跟著 SHOW_PERPETUALS 走。
+          旗標關閉時這一頁只剩「入金與兌換」：水龍頭、ETH↔USDC、保證金。
+          買賣資產走 /tokens 的 AssetVault mint/redeem，那是現貨。 */}
+      {SHOW_PERPETUALS && (
       <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 3.5 }}>
         <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 1 }}>
           {t.exchange.open.title}
@@ -1620,6 +1623,7 @@ export default function ExchangePage() {
           </Button>
         </Box>
       </Card>
+      )}
 
       {/* KYC Modal Dialog */}
       <KYCModal

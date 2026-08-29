@@ -41,8 +41,10 @@ export const portfolio = {
    */
   allocation: {
     title: 'RWA 資產配置',
-    subtitle: '依未平倉部位的保證金計算，不含錢包現金、質押與 LP 金庫——不是淨資產的配置。',
-    noPositions: '尚無部位',
+    subtitle: '持有的代幣化資產市值 ＋ 未平倉部位保證金；不含錢包現金、質押與 LP 金庫——不是淨資產的配置。',
+    noPositions: '尚無持倉',
+    /** 只有現貨持倉、沒有任何部位時的說明——那一欄的損益是「—」而不是 $0。 */
+    holdingsOnlyNote: '損益欄只涵蓋交易部位；現貨持倉沒有鏈上成本基礎可算。',
 
     /**
      * 對照指數（Benchmark，見 CONTEXT.md）——刻意不叫「指數」，避免跟永續
