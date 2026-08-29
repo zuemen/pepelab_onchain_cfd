@@ -51,7 +51,11 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
         with:
-          version: stable
+          # 釘版本,不用 `stable`:2026-08-28 stable 從 forge 1.7.1 滾到 1.8.0,gas
+          # 計價跟著變,test_C3_accountHealthGasDoesNotGrowWithChurn 在沒有任何
+          # 合約變更的情況下由綠轉紅。工具鏈自己升版不該讓 CI 說謊 —— 升版要是
+          # 一個看得見的 commit。
+          version: v1.8.0
 
       - name: Show versions
         run: forge --version
@@ -94,7 +98,11 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
         with:
-          version: stable
+          # 釘版本,不用 `stable`:2026-08-28 stable 從 forge 1.7.1 滾到 1.8.0,gas
+          # 計價跟著變,test_C3_accountHealthGasDoesNotGrowWithChurn 在沒有任何
+          # 合約變更的情況下由綠轉紅。工具鏈自己升版不該讓 CI 說謊 —— 升版要是
+          # 一個看得見的 commit。
+          version: v1.8.0
 
       # Writes .gas-snapshot if absent, otherwise fails when gas moves beyond
       # tolerance. Informational for now — flip continue-on-error off once the
