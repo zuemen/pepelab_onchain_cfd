@@ -3,6 +3,9 @@
 // 故執行期不需解析 .ts 副檔名或 workspace symlink，且格式與 package.json
 // "type":"module" 一致（不會再噴 "exports is not defined"）。
 import { build } from "esbuild";
+import { writeFile } from "node:fs/promises";
+
+import { fingerprintSources } from "./src/bundleFingerprint.mjs";
 
 await build({
   entryPoints: ["src/vercel-entry.ts"],
@@ -24,3 +27,12 @@ await build({
 });
 
 console.log("✓ bundled api/index.js (self-contained ESM)");
+
+// 把「這份 bundle 是從哪些來源打出來的」一起寫下來。bundle:check 比對的是這個，
+// 不是重新 esbuild 一次的輸出——見 src/bundleFingerprint.mjs 開頭的說明。
+const fp = await fingerprintSources("src");
+await writeFile(
+  "api/.bundle-sources.json",
+  `${JSON.stringify({ digest: fp.digest, files: fp.files }, null, 2)}\n`,
+);
+console.log(`✓ wrote api/.bundle-sources.json (${fp.digest})`);

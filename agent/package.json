@@ -24,7 +24,7 @@
     "test:core": "tsx examples/freshness.test.ts && tsx examples/edge-policy.test.ts && tsx examples/decide.test.ts",
     "test:agent": "tsx examples/audit-trail.test.ts && tsx examples/verification.test.ts && tsx examples/write-gate.test.ts && tsx examples/agent-identity.ts && tsx examples/agent-onboarding.ts",
     "test:api": "tsx examples/api-gate.test.ts",
-    "test:signal-api": "tsx signal-api/src/benchmarks.test.ts"
+    "test:signal-api": "tsx signal-api/src/benchmarks.test.ts && node --test signal-api/src/bundleFingerprint.test.mjs"
   },
   "engines": {
     "node": ">=20"
