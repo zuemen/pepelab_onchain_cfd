@@ -30,6 +30,7 @@ import ESGBadge from 'src/components/pepefi/ESGBadge';
 import NetWorthHero from 'src/components/pepefi/dashboard/NetWorthHero';
 import RwaAllocation from 'src/components/pepefi/dashboard/RwaAllocation';
 import { useSynthHoldings } from 'src/hooks/useSynthHoldings';
+import { SHOW_PERPETUALS } from 'src/lib/pepefi/featureFlags';
 import KYCStatusCard from 'src/components/pepefi/dashboard/KYCStatusCard';
 import QuickActions from 'src/components/pepefi/dashboard/QuickActions';
 import PortfolioAnalysis from 'src/components/pepefi/dashboard/PortfolioAnalysis';
@@ -714,7 +715,11 @@ export default function PortfolioPage() {
         )}
       </Card>
 
-      {/* ─── B. Open Positions ──────────────────────────────────────────── */}
+      {/* ─── B. Open Positions ──────────────────────────────────────────────
+          旗標關著時只有真的還有部位才顯示。與 /exchange 的同一個判斷同源:全部
+          隱藏會讓既有部位平不掉,無條件顯示則讓一個只買現貨的人對著「0 筆未平倉」
+          的空表——而他在這個版本裡根本沒有辦法開出部位。 */}
+      {(SHOW_PERPETUALS || positions.length > 0) && (
       <Card sx={{ border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
         <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 1 }}>
@@ -880,6 +885,7 @@ export default function PortfolioPage() {
           </TableContainer>
         )}
       </Card>
+      )}
 
       {/* ─── Analysis (expert only) ─────────────────────────────────────── */}
       {mode === 'expert' && <PortfolioAnalysis rows={positions} esg={esg} />}
