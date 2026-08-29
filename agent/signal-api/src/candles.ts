@@ -616,29 +616,12 @@ export async function getCandles(
   let source: SourceInfo | null = null;
   let sourceError: string | undefined;
 
-  // ── 第一級：加密貨幣走 Bybit 永續 ──
-  if (meta.bybit) {
-    try {
-      const raw = await fetchBybit(meta.bybit, interval, limit, end);
-      if (raw.length) {
-        candles = raw;
-        source = {
-          kind: "exchange",
-          name: "Bybit",
-          url: `https://www.bybit.com/trade/usdt/${meta.bybit}`,
-          attribution: `Bybit · ${meta.bybit} perpetual contract`,
-          reference: "perpetual",
-          fetchedAt: now,
-        };
-      } else {
-        sourceError = "Bybit returned no usable candles";
-      }
-    } catch (err) {
-      sourceError = `Bybit: ${(err as Error).message}`;
-    }
-  }
-
-  // ── 第二級：加密貨幣退到 Coinbase 現貨 ──
+  // ── 第一級：加密貨幣走 Coinbase 現貨 ──
+  //
+  // 首選是**現貨**，不是永續。這裡原本相反，理由是「我們賣的就是永續，拿別人
+  // 的永續當參考比較誠實」——那個理由在平台把門面改成代幣化 RWA 現貨、下單面板
+  // 預設關掉槓桿之後就不成立了：圖表下方掛著「Bybit perpetual contract」的出處，
+  // 會跟畫面上其他每一句話打架。Bybit 沒有被刪掉，退居 fallback。
   if (!source && meta.coinbase) {
     try {
       const native = COINBASE_GRANULARITIES.includes(seconds);
@@ -662,6 +645,34 @@ export async function getCandles(
       }
     } catch (err) {
       sourceError = `Coinbase: ${(err as Error).message}`;
+    }
+  }
+
+  // ── 第二級：Coinbase 拿不到時退到 Bybit 永續 ──
+  //
+  // 參考標的從現貨變成永續，會有基差；下面的 degraded 旗標正是要讓前端知道
+  // 「這不是第一順位來源」。
+  //
+  // `!source` 這個條件是必要的，不是多餘的防禦：這塊以前排在第一順位所以不需要
+  // 守衛，換順序後少了它，Bybit 會直接覆寫剛剛抓到的 Coinbase 結果。
+  if (!source && meta.bybit) {
+    try {
+      const raw = await fetchBybit(meta.bybit, interval, limit, end);
+      if (raw.length) {
+        candles = raw;
+        source = {
+          kind: "exchange",
+          name: "Bybit",
+          url: `https://www.bybit.com/trade/usdt/${meta.bybit}`,
+          attribution: `Bybit · ${meta.bybit} perpetual contract`,
+          reference: "perpetual",
+          fetchedAt: now,
+        };
+      } else {
+        sourceError = "Bybit returned no usable candles";
+      }
+    } catch (err) {
+      sourceError = `Bybit: ${(err as Error).message}`;
     }
   }
 
@@ -691,8 +702,8 @@ export async function getCandles(
   }
 
   // ── 保底：模擬 ──
-  // degraded 的定義是「沒拿到第一順位的來源」，不是「只剩模擬」。Bybit 掛掉退到
-  // Coinbase 時 kind 一樣是 exchange，但參考標的從永續變成現貨、價格會有基差，
+  // degraded 的定義是「沒拿到第一順位的來源」，不是「只剩模擬」。Coinbase 掛掉退到
+  // Bybit 時 kind 一樣是 exchange，但參考標的從現貨變成永續、價格會有基差，
   // 那也該讓前端知道。sourceError 只在某一級失敗時才會被設，正好等價。
   let degraded = sourceError !== undefined;
   let exhausted = false;

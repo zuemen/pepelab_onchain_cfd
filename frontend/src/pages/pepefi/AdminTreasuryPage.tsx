@@ -366,7 +366,7 @@ export default function AdminTreasuryPage() {
         </Typography>
       </Card>
 
-      {/* C. Step 2: Convert mUSDC → ETH */}
+      {/* C. Step 2: Convert USDC → ETH */}
       <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
           <Chip label="2" size="small" color="primary" sx={{ fontWeight: 'bold' }} />

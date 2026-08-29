@@ -53,18 +53,21 @@ export const navData: NavSectionProps['data'] = [
   {
     subheader: t.nav.section.pepelab,
     items: [
+      // 順序＝平台想被理解的順序：先看自己的資產配置，再去買賣代幣化資產，
+      // 然後才是跟單與其他。永續終端機（terminal）排到最後、緊鄰 agent 工具，
+      // 因為它現在是進階功能，不是門面。
       { title: t.nav.item.portfolio, path: paths.pepefi.portfolio, icon: ICONS.analytics },
-      { title: t.nav.item.pepe, path: paths.pepefi.pepe, icon: ICONS.blog },
-      { title: t.nav.item.exchange, path: paths.pepefi.exchange, icon: ICONS.ecommerce },
       { title: t.nav.item.tokens, path: paths.pepefi.tokens, icon: ICONS.product },
+      { title: t.nav.item.exchange, path: paths.pepefi.exchange, icon: ICONS.ecommerce },
+      { title: t.nav.item.marketplace, path: paths.pepefi.marketplace, icon: ICONS.invoice },
+      { title: t.nav.item.history, path: paths.pepefi.history, icon: ICONS.order },
+      { title: t.nav.item.vault, path: paths.pepefi.vault, icon: ICONS.file },
+      { title: t.nav.item.esg, path: paths.pepefi.esg, icon: ICONS.tour },
+      { title: t.nav.item.whale, path: paths.pepefi.whale, icon: ICONS.label },
+      { title: t.nav.item.pepe, path: paths.pepefi.pepe, icon: ICONS.blog },
+      { title: t.nav.item.rewards, path: paths.pepefi.rewards, icon: ICONS.booking },
       { title: t.nav.item.terminal, path: paths.pepefi.terminal, icon: ICONS.dashboard },
       { title: t.nav.item.x402, path: paths.pepefi.x402, icon: ICONS.external },
-      { title: t.nav.item.marketplace, path: paths.pepefi.marketplace, icon: ICONS.invoice },
-      { title: t.nav.item.vault, path: paths.pepefi.vault, icon: ICONS.file },
-      { title: t.nav.item.history, path: paths.pepefi.history, icon: ICONS.order },
-      { title: t.nav.item.whale, path: paths.pepefi.whale, icon: ICONS.label },
-      { title: t.nav.item.esg, path: paths.pepefi.esg, icon: ICONS.tour },
-      { title: t.nav.item.rewards, path: paths.pepefi.rewards, icon: ICONS.booking },
       { title: t.nav.item.sessions, path: paths.pepefi.sessions, icon: ICONS.lock },
       { title: t.nav.item.agentMonitor, path: paths.pepefi.agentMonitor, icon: ICONS.analytics },
     ],
@@ -90,10 +93,14 @@ export const navData: NavSectionProps['data'] = [
 // 第一個訊號，而不是要使用者先點開每一項才知道自己用不到。
 //
 // 照使用順序排：先看自己的錢與持倉（Portfolio，前身的 Dashboard 已併入），
-// 再去下單（Exchange），然後看大戶動向（Whale Tracker），Pepe 養成中心放
-// 最後，因為它是遊戲化的附加內容。
+// 再去買代幣化資產（Tokens——simple 模式的主要動作就是這個，它本來被漏掉，
+// 於是簡化版反而只剩永續入口），接著是現金／水龍頭（Exchange），然後看大戶
+// 動向（Whale Tracker），Pepe 養成中心放最後，因為它是遊戲化的附加內容。
+//
+// terminal 不在這裡，而且是刻意的：simple 模式就是「沒有槓桿的那一版」。
 const SIMPLE_NAV_PATHS: readonly string[] = [
   paths.pepefi.portfolio,
+  paths.pepefi.tokens,
   paths.pepefi.exchange,
   paths.pepefi.whale,
   paths.pepefi.pepe,

@@ -3,6 +3,7 @@ import { usePepefiWallet } from 'src/layouts/pepefi';
 import { t } from 'src/locales';
 import WalletButton from 'src/components/pepefi/WalletButton';
 import HeroKpiStrip from 'src/components/pepefi/HeroKpiStrip';
+import BenchmarkStrip from 'src/components/pepefi/dashboard/BenchmarkStrip';
 import PaperTradingBadge from 'src/components/pepefi/PaperTradingBadge';
 import { MONO } from 'src/components/pepefi/brandKit';
 import { Iconify } from 'src/components/iconify';
@@ -22,12 +23,15 @@ const FEATURES = [
   // so these six drew at six different weights and baselines depending on the
   // machine, and none of them could inherit the panel's colour. The mascot 🐸
   // stays — that is brand, not an icon.
-  { icon: 'solar:chart-square-outline',            title: t.landing.features.perpetualsTitle, desc: t.landing.features.perpetualsDesc },
+  // RWA 現貨排第一、永續排最後，是刻意的：評審看的是「這是不是 RWA 平台」，
+  // 而第一張卡就是答案。永續沒有被拿掉，只是不再當門面。
+  { icon: 'solar:case-minimalistic-bold',          title: t.landing.features.rwaTitle,        desc: t.landing.features.rwaDesc },
   { icon: 'solar:copy-bold',                       title: t.landing.features.copyTitle,       desc: t.landing.features.copyDesc },
   { icon: 'solar:verified-check-bold',             title: t.landing.features.esgTitle,        desc: t.landing.features.esgDesc },
   { icon: 'solar:shield-keyhole-bold-duotone',     title: t.landing.features.vaultTitle,      desc: t.landing.features.vaultDesc },
   { icon: 'solar:wad-of-money-bold',               title: t.landing.features.x402Title,       desc: t.landing.features.x402Desc },
   { icon: 'solar:atom-bold-duotone',               title: t.landing.features.agentTitle,      desc: t.landing.features.agentDesc },
+  { icon: 'solar:chart-square-outline',            title: t.landing.features.perpetualsTitle, desc: t.landing.features.perpetualsDesc },
   // `as const` so the icon strings keep their literal types. Iconify's `icon`
   // prop is a union of the 206 names registered in components/iconify/icon-sets
   // (which inlines each SVG body, so icons ship with the bundle rather than
@@ -274,6 +278,23 @@ export default function LandingPage() {
           >
             {t.landing.markup.paperBefore}<b>{t.landing.markup.paperBold1}</b>{t.landing.markup.paperMid}<b>{t.landing.markup.paperBold2}</b>{t.landing.markup.paperAfter}
           </Typography>
+        </Box>
+
+        {/* ── Divider ── */}
+        <Divider sx={{ my: 6, opacity: 0.15 }} />
+
+        {/* ── 幣股金債四個對照指數 ──
+            這塊本來只有登入後、進到 /portfolio 才看得到，但平台最想被記住的
+            一句話（「這裡配置的是股債金幣，不是只有幣」）正是它在講的。
+            BenchmarkStrip 不吃任何持倉 props、自己打 signal-api，所以沒連錢包
+            的訪客也照樣看到即時數字。 */}
+        <Box sx={{ mb: 6 }}>
+          <Typography variant="overline" component="h2" color="text.secondary" align="center" display="block" sx={{ mb: 3, fontWeight: 'bold', letterSpacing: 3, fontSize: '1rem' }}>
+            {t.portfolio.allocation.benchmark.heading}
+          </Typography>
+          <Card sx={{ p: { xs: 2.5, sm: 3.5 }, border: '1px solid', borderColor: 'divider' }}>
+            <BenchmarkStrip />
+          </Card>
         </Box>
 
         {/* ── Divider ── */}

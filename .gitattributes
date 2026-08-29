@@ -7,6 +7,11 @@
 *.yml text eol=lf
 *.yaml text eol=lf
 
+# TypeScript 來源:signal-api 的 bundle 來源指紋會讀這些檔案的內容,CRLF/LF 混用
+# 會讓同一份原始碼在 Windows 與 Linux 得到不同答案。指紋函式本身也做換行正規化,
+# 這是兩層保險裡的第一層。
+*.ts text eol=lf
+
 # Binary assets — never touch line endings
 *.png binary
 *.jpg binary

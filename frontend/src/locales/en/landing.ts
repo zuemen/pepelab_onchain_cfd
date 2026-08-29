@@ -4,7 +4,7 @@ import type { Catalog } from '../zh-TW';
  * 見 `../zh-TW/landing.ts`。
  */
 export const landing: Catalog['landing'] = {
-  tagline: 'DeFi · SocialFi · GameFi · MemeFi 🐸',
+  tagline: 'RWA · Tokenized Assets · Social Copy Trading 🐸',
   enterDashboard: '🐸 Enter Dashboard',
   viewTraders: 'View Traders',
   connectHint: 'Connect to browse every feature directly — no account required.',
@@ -16,9 +16,13 @@ export const landing: Catalog['landing'] = {
   features: {
     heading: 'Core Features',
 
-    perpetualsTitle: 'Synthetic CFD Perpetuals',
+    rwaTitle: 'Tokenized RWA Spot',
+    rwaDesc:
+      'Buy and sell tokenized equities, bonds, gold, and crypto with USDC — minted and redeemed on-chain, with the reserve ratio always visible.',
+
+    perpetualsTitle: 'Advanced: Synthetic Perpetuals (optional)',
     perpetualsDesc:
-      'Synthetic derivative perpetuals, fully transparent on-chain, with no centralized exchange required.',
+      'Synthetic perpetuals for anyone who wants to hedge long against short. Leverage is off by default, and everything settles transparently on-chain.',
 
     copyTitle: 'One-Click Copy Trading',
     copyDesc:
@@ -43,8 +47,8 @@ export const landing: Catalog['landing'] = {
     heading: 'How to Get Started',
     one: 'Install MetaMask and switch to the Base Sepolia testnet',
     two: 'Go to Exchange and click "Get 1000 USDC" for test funds',
-    three: "Go to Marketplace and copy the Demo Alpha trader's strategy",
-    four: '(Optional) Register as a trader on the Trader page and publish your strategy',
+    three: 'Go to Assets, buy sGOLD and sBOND, then check Portfolio for the allocation and PnL across all four classes',
+    four: '(Optional) Copy a trader on Marketplace, or register as one on the Trader page',
   },
 
   oracleDisclosure: 'Oracle prices are controlled by the deployer (admin) and updated live during the demo to show PnL changes',
@@ -61,7 +65,7 @@ export const landing: Catalog['landing'] = {
   /** #36：主視覺介紹與 Paper Trading 說明，各自拆成 `<b>` 前後的片段。 */
   markup: {
     heroBefore:
-      'On-chain perpetuals + an agent economy, built to rival Hyperliquid. 5x leverage synthetic/RWA perpetuals, social copy trading, market-making vaults, plus ',
+      'One wallet, four asset classes: tokenized equities, bonds, gold, and crypto. On-chain mint and redeem, social copy trading, benchmark comparison, plus ',
     heroBold: 'x402 paid signals',
     heroAfter: ' — letting AI agents bring their own wallet, pay, and trade autonomously. Fully transparent on-chain.',
 

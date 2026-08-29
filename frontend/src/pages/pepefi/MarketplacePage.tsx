@@ -8,6 +8,12 @@ import { ASSET_IDS, CHAIN_NAMES } from 'src/contracts/addresses';
 import Skeleton, { TableSkeleton } from 'src/components/pepefi/Skeleton';
 import EmptyState from 'src/components/pepefi/EmptyState';
 import { useESG } from 'src/hooks/useESG';
+import {
+  avgBlockTime,
+  chunkRanges,
+  getLogsChunked,
+  scanFromBlock,
+} from 'src/lib/pepefi/chainLogs';
 import ESGBadge from 'src/components/pepefi/ESGBadge';
 import AssetIcon from 'src/components/pepefi/AssetIcon';
 import Podium from 'src/components/pepefi/Podium';
@@ -62,7 +68,15 @@ import TableSortLabel from '@mui/material/TableSortLabel';
 import { Icon } from '@iconify/react';
 
 // ── Config ───────────────────────────────────────────────────────────────────
-const FETCH_BLOCKS_VOLUME = 50_000;   // ~7 days on Sepolia
+// 掃描視窗不再寫死。原本是 `const FETCH_BLOCKS_VOLUME = 50_000; // ~7 days on
+// Sepolia`——那個「7 天」算的是 **Ethereum** Sepolia 的 12 秒出塊。正式站在
+// Base Sepolia 上（2 秒一塊），同樣 50,000 塊只有 **27 小時**，而畫面上還寫著
+// 「約 7 天」。後果不是數字難看而已：領獎台資格要求 7 天內平倉滿 5 筆，種完
+// 資料的隔天下午，那些平倉就滑出視窗、領獎台重新變空。
+//
+// 改用 lib/pepefi/chainLogs 的 scanFromBlock——它依 chainId 查出塊時間、夾住
+// 部署塊、套用分段上限,whale tracker 與 exchange activity 已經在用同一份。
+// 50,000 塊一次 getLogs 也超過多數公開節點 10,000 的上限,一併改成分段查詢。
 
 // Expert Mode 有 12 欄,單一螢幕寬度塞不下——固定「#」「交易者」在左、「操作」在
 // 右,中間的指標欄自己橫向捲動。兩顆固定不動的欄位讓使用者橫向捲動時永遠知道
@@ -105,6 +119,15 @@ const repBadgeColor = (score: bigint) =>
 const fWinRate = (wins: number, trades: number): string =>
   trades === 0 ? '—' : `${Math.round((wins / trades) * 100)}% (${trades})`;
 
+/**
+ * 掃描視窗的長度說明。同樣 50,000 塊在 Ethereum Sepolia 是 7 天、在 Base 是
+ * 27 小時,所以文案只能講算出來的時間,不能講寫死的「約 7 天」。
+ */
+const fWindow = (hours: number): string =>
+  hours <= 0 ? '—'
+  : hours < 48 ? interpolate(t.marketplace.footer.windowHours, { hours: hours.toFixed(0) })
+  : interpolate(t.marketplace.footer.windowDays, { days: (hours / 24).toFixed(1) });
+
 /** 單一配置籌碼的標籤文字,表格 chip 跟「+N」的 tooltip 內文共用同一個格式。 */
 const allocLabel = (a: RawAlloc): string =>
   interpolate(t.marketplace.card.allocChip, {
@@ -128,6 +151,12 @@ export default function MarketplacePage() {
   const [esgOnly,    setEsgOnly]    = useState(false);
   const [search,     setSearch]     = useState('');
   const [scorePopover, setScorePopover] = useState<{ anchorEl: HTMLElement; trader: TraderCard } | null>(null);
+  // 實際掃了幾塊、換算成多久。寫死的常數不能再拿來當文案,因為同一個數字在
+  // 不同鏈上代表的時間差六倍——footer 與空狀態都要講真話。
+  const [scan, setScan] = useState<{ blocks: number; hours: number }>({ blocks: 0, hours: 0 });
+  // 7 天的視窗在 Base 上是 31 段序列 getLogs,實測 12 秒。骨架屏撐 12 秒看起來
+  // 像當掉了——把段數進度講出來,等待才是「在做事」而不是「壞了」。
+  const [progress, setProgress] = useState<{ done: number; total: number }>({ done: 0, total: 0 });
 
   // Expert 專屬排序鍵在 Simple 底下沒有對應欄位可看——切回 Simple 時退回預設的
   // score,不要停在一個看不見的欄位上(見 #89 acceptance criteria)。
@@ -143,26 +172,61 @@ export default function MarketplacePage() {
     setFetchError(null);
     try {
       const currentBlock = await wallet.provider.getBlockNumber();
-      const fromBlock    = Math.max(0, currentBlock - FETCH_BLOCKS_VOLUME);
+      const fromBlock    = scanFromBlock({ chainId: wallet.chainId, currentBlock });
+      const scannedBlocks = currentBlock - fromBlock + 1;
+      setScan({
+        blocks: scannedBlocks,
+        hours:  (scannedBlocks * avgBlockTime(wallet.chainId)) / 3600,
+      });
 
-      const [openedRes, closedRes, addressesRes] = await Promise.allSettled([
-        contracts.exchange.queryFilter(contracts.exchange.filters.PositionOpened(), fromBlock, 'latest'),
-        contracts.exchange.queryFilter(contracts.exchange.filters.PositionClosed(), fromBlock, 'latest'),
+      // 兩種事件合成**一趟**掃描:topics[0] 傳陣列就是 OR。分開查等於同樣的
+      // 答案付兩倍的 getLogs,而 7 天的視窗在 Base 上已經是 31 段。
+      const iface    = contracts.exchange.interface;
+      const topicOf  = (name: string) => iface.getEvent(name)!.topicHash;
+      const chunks   = chunkRanges(fromBlock, currentBlock).length;
+      setProgress({ done: 0, total: chunks });
+      let doneChunks = 0;
+      const tick = () => { doneChunks += 1; setProgress({ done: doneChunks, total: chunks }); };
+
+      const [logsRes, addressesRes] = await Promise.allSettled([
+        getLogsChunked(
+          wallet.provider,
+          {
+            address: contracts.exchange.target as string,
+            topics:  [[topicOf('PositionOpened'), topicOf('PositionClosed')]],
+          },
+          fromBlock,
+          currentBlock,
+          tick,
+        ),
         contracts.registry.getAllTraders() as Promise<string[]>,
       ]);
-      const allOpened  = openedRes.status    === 'fulfilled' ? openedRes.value    : [];
-      const allClosed  = closedRes.status    === 'fulfilled' ? closedRes.value    : [];
-      const addresses  = addressesRes.status === 'fulfilled' ? addressesRes.value : [];
+      const rawLogs   = logsRes.status      === 'fulfilled' ? logsRes.value      : [];
+      const addresses = addressesRes.status === 'fulfilled' ? addressesRes.value : [];
+      if (logsRes.status === 'rejected') {
+        console.warn('[marketplace] 事件掃描失敗,指標以 0 呈現', chunks, logsRes.reason);
+      }
 
-      const openedEvents: OpenedEvent[] = (allOpened as any[]).map(log => ({
-        owner:    log.args.owner as string,
-        margin:   log.args.margin as bigint,
-        leverage: log.args.leverage as bigint,
-      }));
-      const closedEvents: ClosedEvent[] = (allClosed as any[]).map(log => ({
-        owner: log.args.owner as string,
-        pnl:   log.args.pnl as bigint,
-      }));
+      const openedEvents: OpenedEvent[] = [];
+      const closedEvents: ClosedEvent[] = [];
+      for (const log of rawLogs as any[]) {
+        const parsed = iface.parseLog({ topics: [...log.topics], data: log.data });
+        if (!parsed) continue;
+        if (parsed.name === 'PositionOpened') {
+          openedEvents.push({
+            owner:    parsed.args.owner as string,
+            margin:   parsed.args.margin as bigint,
+            leverage: parsed.args.leverage as bigint,
+          });
+        } else if (parsed.name === 'PositionClosed') {
+          // 清算走的是 PositionLiquidated + PositionClosed 兩個事件,所以被清算
+          // 的部位在這裡也會被算成一筆平倉——它確實是一筆已實現損益。
+          closedEvents.push({
+            owner: parsed.args.owner as string,
+            pnl:   parsed.args.pnl as bigint,
+          });
+        }
+      }
       const aggregates = {
         volumeMap:           buildVolumeMap(openedEvents),
         marginMap:           buildMarginMap(openedEvents),
@@ -409,6 +473,18 @@ export default function MarketplacePage() {
       {/* Leaderboard table */}
       {isLoading ? (
         <Card>
+          {progress.total > 0 && (
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ display: 'block', px: 2, pt: 2, fontFamily: MONO }}
+            >
+              {interpolate(t.marketplace.scanProgress, {
+                done: String(progress.done),
+                total: String(progress.total),
+              })}
+            </Typography>
+          )}
           <TableSkeleton rows={8} cols={mode === 'expert' ? 12 : 6} />
         </Card>
       ) : filtered.length === 0 ? (
@@ -419,7 +495,8 @@ export default function MarketplacePage() {
             chain: wallet.chainId !== null
               ? (CHAIN_NAMES[wallet.chainId] ?? interpolate(t.marketplace.empty.unknownChain, { chainId: wallet.chainId }))
               : interpolate(t.marketplace.empty.unknownChain, { chainId: '—' }),
-            blocks: FETCH_BLOCKS_VOLUME.toLocaleString(),
+            blocks: scan.blocks.toLocaleString(),
+            window: fWindow(scan.hours),
           })}
           ctaText={t.marketplace.empty.cta}
           ctaHref="/trader"
@@ -777,7 +854,8 @@ export default function MarketplacePage() {
             </Typography>
             <Typography variant="caption" color="text.secondary">
               {interpolate(t.marketplace.footer.volumeWindow, {
-                blocks: FETCH_BLOCKS_VOLUME.toLocaleString(),
+                blocks: scan.blocks.toLocaleString(),
+                window: fWindow(scan.hours),
               })}
             </Typography>
           </Box>

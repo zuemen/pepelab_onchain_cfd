@@ -25,7 +25,7 @@ import { dailyRewardFor, TODAY_INDEX } from 'src/lib/pepefi/achievements';
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const TIER_NAMES  = [t.rewards.tier.bronze, t.rewards.tier.silver, t.rewards.tier.gold, t.rewards.tier.diamond];
-const TIER_THRESHOLD = [10_000, 50_000, 200_000, 1_000_000]; // in mUSDC (18-dec /1e18)
+const TIER_THRESHOLD = [10_000, 50_000, 200_000, 1_000_000]; // in USDC (18-dec /1e18)
 const TIER_REWARD    = [500,    2_000,  10_000,  50_000];    // PEPE
 
 const fmt18 = (v: bigint) => Number(v) / 1e18;
