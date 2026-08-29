@@ -294,6 +294,8 @@ export const exchange = {
 
     ethBalanceBefore: 'ETH 餘額：',
     ethBalanceAfter: '（開倉需少量 ETH 付執行費）',
+    /** SHOW_PERPETUALS 關閉時的版本:這一頁沒有開倉,ETH 只用來付 gas。 */
+    ethBalanceAfterSpot: '（鏈上交易需少量 ETH 付 gas）',
 
     faucetEoaLine1: '🔑 水龍頭只開放',
     faucetEoaBold1: '一般錢包（EOA）',

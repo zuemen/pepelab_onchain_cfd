@@ -952,7 +952,7 @@ export default function ExchangePage() {
             )}
 
             <Typography variant="caption" color="text.secondary">
-              {t.exchange.markup.ethBalanceBefore}<Box component="span" sx={{ fontFamily: MONO, color: 'text.primary' }}>{ethBal}</Box>{t.exchange.markup.ethBalanceAfter}
+              {t.exchange.markup.ethBalanceBefore}<Box component="span" sx={{ fontFamily: MONO, color: 'text.primary' }}>{ethBal}</Box>{SHOW_PERPETUALS ? t.exchange.markup.ethBalanceAfter : t.exchange.markup.ethBalanceAfterSpot}
             </Typography>
 
             {/* faucet() 現在要求 msg.sender == tx.origin：合約錢包按下去必定
@@ -1710,7 +1710,10 @@ export default function ExchangePage() {
         </Card>
       )}
 
-      {/* D. Open Positions */}
+      {/* D. Open Positions —— 旗標關著時只有「真的還有部位」才顯示。
+          全部隱藏會讓既有部位平不掉;無條件顯示則會讓一個只買現貨的人對著一張
+          標題寫「未平倉部位」的空表,而這一頁已經沒有任何地方能開出部位來。 */}
+      {(SHOW_PERPETUALS || positions.length > 0) && (
       <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 1 }}>
@@ -1913,6 +1916,7 @@ export default function ExchangePage() {
           </TableContainer>
         )}
       </Card>
+      )}
     </Container>
   );
 }

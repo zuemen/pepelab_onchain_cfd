@@ -294,6 +294,7 @@ export const exchange: Catalog['exchange'] = {
 
     ethBalanceBefore: 'ETH balance: ',
     ethBalanceAfter: ' (opening a position needs a small amount of ETH for the execution fee)',
+    ethBalanceAfterSpot: ' (on-chain transactions need a little ETH for gas)',
 
     faucetEoaLine1: '🔑 The faucet only pays out to ',
     faucetEoaBold1: 'regular wallets (EOAs)',
