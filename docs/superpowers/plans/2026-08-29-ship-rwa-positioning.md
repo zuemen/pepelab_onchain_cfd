@@ -10,6 +10,26 @@
 
 **Spec:** 本計畫實作的「規格」是評審在 2026-08-27 給的七點回饋（已逐條處理，見 PR #91 說明），以及原始任務單「讓正式站排行榜前三名上榜」。兩者都完整轉錄在 `docs/superpowers/plans/2026-07-26-pepefi-professor-requirements.md` 的後續與 PR #91 的描述中。
 
+## 執行結果（2026-08-29）
+
+全部五個 Task 已完成，PR #91 於 `8e37a0a` 合併進 master 並部署。
+
+| Task | 結果 |
+|---|---|
+| 1 gas 斷言 + 釘 foundry | `a497aa5`。反證的結果與預期不同——拿掉 C-3 修復後先掛的是長度斷言（`401 != 1`），gas 斷言根本沒跑到，所以真正的守門是那條精確斷言。註解已改成寫實測到的事實 |
+| 2 bundle 指紋 | `dae2d06`。8 條測試，並實測反證：附加一行到 `symbols.ts` → exit 1 且印出「新增或修改：symbols.ts」 |
+| 3 合併與部署 | `8e37a0a`。CI 九項全綠後合併；Vercel production 資產由 `index-IsL6pQ5_.js` 換成 `index-CQ0_0765.js` |
+| 4 領獎台驗收 | 7 天視窗內 15 筆平倉，ESG Master / Tesla Maxi / Macro Trader 各 5 筆、3 勝，全部通過 `trades >= 5`。**不需要重跑腳本** |
+| 5 健康檢查清單 | `03766c6`，`docs/RUNBOOK_SITE_HEALTH.md`，每段指令都實跑過 |
+
+線上驗證用字串比對確認（新 bundle：`RWA 現貨` ✓ `進階：合成永續` ✓ `資產交易` ✓
+`個區塊（約 {window}）` ✓；舊 bundle 的 `5x 槓桿`、`個區塊（約 7 天）` 皆為 0）。
+**尚未用瀏覽器實際點過**——Chrome 擴充功能未連線，`tabs_context_mcp` 回報
+extension not connected。槓桿隱藏是編譯期旗標（預設 false，有單元測試釘住）且 JSX
+包在 `SHOW_LEVERAGE &&` 之下，但「畫面上真的看不到」這件事還沒被人眼確認過。
+
+---
+
 ## Global Constraints
 
 - **鏈：** 只有 Base Sepolia，chainId `84532`。出塊時間 **2 秒**（不是 Ethereum Sepolia 的 12 秒——本專案已經被這個假設咬過兩次）。
