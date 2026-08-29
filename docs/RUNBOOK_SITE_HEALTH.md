@@ -105,7 +105,9 @@ forge script script/SeedWhaleCloses.s.sol --rpc-url "$BASE_SEPOLIA_RPC_URL" --br
 |---|---|
 | `/` | 第一張功能卡是「代幣化 RWA 現貨」；幣股金債四個指數有數字；tagline 沒有 MemeFi |
 | `/marketplace` | 載入時有「掃描鏈上事件… N/31」（約 12 秒）；領獎台三位；頁尾寫約 7 天而不是 27 小時 |
-| `/exchange` | **看不到任何槓桿倍數按鈕**；「Get Test Tokens」卡在；儲備率有數字 |
+| `/exchange` | **看不到槓桿倍數按鈕，也看不到「開倉」面板**；只剩水龍頭 / 兌換 / 保證金 |
+| `/tokens` | TradingView 圖表載得出來且 symbol 是 `COINBASE:BTCUSD`；儲備率有數字；買賣按鈕在 |
+| 側邊欄 | **沒有「專業終端（進階）」**——它跟著 `VITE_SHOW_PERPETUALS` 走，預設關 |
 
 頁尾那行字是分辨新舊版前端最快的方法：舊版寫死「~50,000 個區塊（約 7 天）」，
 新版印的是實際掃描量與換算後的時間。
@@ -118,17 +120,21 @@ forge script script/SeedWhaleCloses.s.sol --rpc-url "$BASE_SEPOLIA_RPC_URL" --br
   規則寫在 `frontend/src/lib/pepefi/tokenLabel.ts`（ADR-0002 規則 1）。
 - **K 線的報價來源是 Coinbase BTC-USD 現貨**，Bybit 永續只是 fallback。
   出處會直接標在圖表下方，說錯會被對照出來。
-- **為什麼預設沒有槓桿。**《虛擬資產服務法》2026/6/30 三讀通過：母法規範托管型服務，
+- **為什麼預設沒有槓桿、也沒有永續入口。**《虛擬資產服務法》2026/6/30 三讀通過：母法規範托管型服務，
   **衍生性商品未納入主文**（金管會以附帶決議要求一年內提出辦法與時程），而**股票代幣與
   RWA 在現行架構下保留發展空間**。所以「先做現貨、把槓桿收起來」是主動的合規判斷，
-  不是功能沒做完。槓桿本身沒有被刪掉，是 `VITE_SHOW_LEVERAGE` 旗標控制的（預設關），
-  合約完全沒動。
+  不是功能沒做完。永續本身沒有被刪掉，是 `VITE_SHOW_LEVERAGE` 與 `VITE_SHOW_PERPETUALS`
+  兩個旗標控制的（都預設關），合約完全沒動；`/terminal` 直接打網址仍然到得了，既有
+  部位看得到也平得掉——收的是入口，不是路徑。
 
 ## 5. 已知的、刻意不修的事
 
 - 已部署的 MockUSDC 實例鏈上 symbol 仍是 `mUSDC`；原始碼已改成 `USDC`，但要重新部署
   整套才會生效（會清掉現有餘額與部位）。畫面一律顯示 `USDC`，只有進 BaseScan 或把代幣
   加進錢包才看得到差異。
+- RWA 配置環算的是「代幣持倉市值 ＋ 部位保證金」，但**損益欄只涵蓋部位**——現貨沒有
+  鏈上成本基礎可算。只有現貨持倉時四個損益都會是「—」，那是正確結果，畫面上也有一
+  行字說明。
 - 線上 `PerpetualExchange`（`0xEf75…c072`）比 `src/` 舊：它的 `getUserPositions` 是
   append-only，平倉後 id 仍留在陣列裡。讀這個回傳值判斷「未平倉數」會得到錯的答案——
   `SeedWhaleCloses.s.sol` 因此改成數「成功平倉幾筆」。
