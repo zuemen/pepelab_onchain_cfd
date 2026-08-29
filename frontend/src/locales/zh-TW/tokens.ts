@@ -134,6 +134,12 @@ export const tokens = {
     introBefore: '本頁展示',
     introBold1: '代幣化資產（ERC-20）',
     introMid1: '。與交易頁的合成持倉不同，這裡買入的資產會以 ERC-20 token 形式',
+    /**
+     * SHOW_PERPETUALS 關閉時的版本。原句拿「交易頁的合成持倉」當對照，但旗標關著
+     * 的時候那個東西在畫面上不存在——用一個看不到的概念解釋看得到的概念，只會讓
+     * 讀的人去找它。
+     */
+    introMid1Spot: '。買入的資產會以 ERC-20 token 形式',
     introBold2: '出現在你的錢包中',
     introMid2: '，可加入 MetaMask 檢視、可轉帳給他人。 買賣以 ',
     introAfter: ' 結算，價格取自鏈上 oracle（無滑價）。',

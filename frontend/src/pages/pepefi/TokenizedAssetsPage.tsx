@@ -16,6 +16,7 @@ import SyntheticAssetABI   from 'src/contracts/abi/SyntheticAsset.json'
 import SyntheticAssetV2ABI from 'src/contracts/abi/SyntheticAssetV2.json'
 import AssetIcon from 'src/components/pepefi/AssetIcon'
 import TradingViewChart from 'src/components/pepefi/TradingViewChart'
+import { SHOW_PERPETUALS } from 'src/lib/pepefi/featureFlags'
 import Skeleton from 'src/components/pepefi/Skeleton'
 import { useToast } from 'src/components/pepefi/ToastProvider'
 
@@ -428,7 +429,7 @@ export default function TokenizedAssetsPage() {
       </Card>
 
       <Alert severity="info">
-        {t.tokens.markup.introBefore}<b>{t.tokens.markup.introBold1}</b>{t.tokens.markup.introMid1}<b>{t.tokens.markup.introBold2}</b>{t.tokens.markup.introMid2}<b>USDC</b>{t.tokens.markup.introAfter}
+        {t.tokens.markup.introBefore}<b>{t.tokens.markup.introBold1}</b>{SHOW_PERPETUALS ? t.tokens.markup.introMid1 : t.tokens.markup.introMid1Spot}<b>{t.tokens.markup.introBold2}</b>{t.tokens.markup.introMid2}<b>USDC</b>{t.tokens.markup.introAfter}
       </Alert>
 
       {/* ── V2 hardening panel ─────────────────────────────────────────────── */}

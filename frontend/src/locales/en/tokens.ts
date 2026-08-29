@@ -133,6 +133,7 @@ export const tokens: Catalog['tokens'] = {
     introBold1: 'tokenized assets (ERC-20)',
     introMid1:
       '. Unlike the synthetic positions on the trading page, assets bought here arrive as ERC-20 tokens ',
+    introMid1Spot: '. Assets bought here arrive as ERC-20 tokens ',
     introBold2: 'right in your wallet',
     introMid2: ', where you can add it to MetaMask or send it to someone else. Trading settles in ',
     introAfter: ', with pricing pulled from the on-chain oracle (no slippage).',
