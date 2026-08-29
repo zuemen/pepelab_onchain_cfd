@@ -1,8 +1,8 @@
-# Demo Day Readiness Implementation Plan
+# 上線前收尾 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 讓 PR #91 的 CI 轉綠、合併上線，使 8/31 Demo Day 當天正式站的領獎台、RWA 定位與無槓桿介面都是活的。
+**Goal:** 讓 PR #91 的 CI 轉綠、合併上線，使正式站的領獎台、RWA 定位與無槓桿介面都是活的，並留下一份任何人都能照著跑的健康檢查清單。
 
 **Architecture:** 四段獨立可測的修復，順序有依賴：先讓兩個紅燈的 CI 檢查變綠（它們擋住合併），再合併觸發 Vercel 部署，最後在正式站上驗收並補一次鏈上種資料。CI 的兩個失敗都**不是**功能問題——一個是 foundry 版本漂移撞到過緊的 gas 斷言，一個是 `bundle:check` 用「重建後比對雜湊」這種對環境敏感的方式驗證同步性。
 
@@ -18,7 +18,7 @@
 - **祕密：** `contracts/.env.roles`（含 `SEED_MNEMONIC`、`KEEPER_PK`）已被 `.gitignore` 的 `.env.*.local` 與 `.env` 規則涵蓋。**任何情況下不得 commit、不得印在終端機輸出裡。**
 - **語系：** 所有顯示字串走 `frontend/src/locales/`，zh-TW 與 en **必須同步**，否則 `locales.test.ts` 的 ratchet 會擋 build。
 - **分支：** 工作分支 `feat/rwa-first-positioning`（已推上 origin，PR #91）。正式站的 Vercel Production 分支是 `master`。
-- **時間盒：** Demo Day 8/31。正式站領獎台目前跑的是舊版前端（27 小時視窗），**最後一批平倉在 block 46063334，視窗在 block 46113334 失效**——約 2026-08-29 中午前後。
+- **會自己過期的資料：** 正式站目前跑的是舊版前端（27 小時視窗）。最後一批平倉在 block 46063334，在舊視窗下於 block 46113334 失效；合併部署後視窗變成 7 天（302,400 塊），同一批資料就還在窗內。這是本計畫要合併的主要理由。
 
 ---
 
@@ -34,11 +34,11 @@
 | `agent/signal-api/src/bundleFingerprint.mjs` | 新增 | 指紋計算的單一真相來源，build 與 check 共用 |
 | `agent/signal-api/src/bundleFingerprint.test.mjs` | 新增 | 指紋函式的測試（換行正規化、檔案順序無關） |
 | `.gitattributes` | 修改 | 把 `*.ts` 釘成 LF，讓跨平台的來源雜湊一致 |
-| `docs/RUNBOOK_DEMO_DAY.md` | 新增 | Demo 當天的 pre-flight 檢查清單 |
+| `docs/RUNBOOK_SITE_HEALTH.md` | 新增 | 正式站健康檢查清單（兩個會隨時間自己壞掉的地方） |
 
 ---
 
-## Task 1: 讓 gas 斷言不再因為 foundry 版本而誤報
+## Task 1: 讓 gas 斷言不再因為 foundry 版本而誤報 ✅ 已完成（a497aa5）
 
 **Files:**
 - Modify: `contracts/test/AuditFixesCore.t.sol:233-258`
@@ -102,7 +102,7 @@ cd contracts
 forge test --match-test test_C3_accountHealthGasDoesNotGrowWithChurn -vv
 ```
 
-Expected: **FAIL**，且 dirty 會大到十萬以上——證明 20,000 的容差仍然守得住原本的漏洞。確認後把那一行還原：
+Expected: **FAIL**。實測結果與預期不同，值得記下來：先掛掉的是上面那條 `getUserPositions(alice).length == 1`（`401 != 1`），根本走不到 gas 斷言。也就是說真正守住 C-3 的是那條精確的長度斷言，gas 斷言只是「成本有沒有爆掉」的粗略後備——這正是容差可以放寬的理由。確認後把那一行還原：
 
 ```bash
 git checkout -- src/PerpetualExchange.sol
@@ -153,7 +153,7 @@ gas、400 筆約 237,000」的漏洞,容差本來就不該窄到工具鏈升版�
 
 ---
 
-## Task 2: 讓 bundle 同步檢查不再因為 esbuild 環境而誤報
+## Task 2: 讓 bundle 同步檢查不再因為 esbuild 環境而誤報 ✅ 已完成（dae2d06）
 
 **Files:**
 - Create: `agent/signal-api/src/bundleFingerprint.mjs`
@@ -621,25 +621,25 @@ Expected:
 
 ---
 
-## Task 5: 寫下 Demo 當天的 pre-flight 清單
+## Task 5: 寫下正式站健康檢查清單
 
 **Files:**
-- Create: `docs/RUNBOOK_DEMO_DAY.md`
+- Create: `docs/RUNBOOK_SITE_HEALTH.md`
 
 **Interfaces:**
 - Consumes: Task 4 驗收過的正式站
 - Produces: 一份任何人照著跑就能在上台前確認系統是活的清單
 
-**背景：** 這個系統有兩個會隨時間自己壞掉的地方——oracle 價格超過 6 小時就擋交易、平倉資料滑出 7 天視窗領獎台就變空。上台前十分鐘才發現來不及修，所以要有清單。
+**背景：** 這個系統有兩個會隨時間自己壞掉的地方——oracle 價格超過 6 小時就擋交易、平倉資料滑出 7 天視窗領獎台就變空。兩個都不會報錯，只會表現成「東西不見了」，所以要有清單。
 
 - [ ] **Step 1: 建立 runbook**
 
-Create `docs/RUNBOOK_DEMO_DAY.md`:
+Create `docs/RUNBOOK_SITE_HEALTH.md`:
 
 ````markdown
-# Demo Day Pre-flight（上台前 30 分鐘執行）
+# 正式站健康檢查
 
-這個系統有兩個會隨時間自己壞掉的地方，兩個都會在畫面上表現成「東西不見了」而不是報錯：
+這個系統有兩個會隨時間自己壞掉的地方，兩個都會在畫面上表現成「東西不見了」而不是報錯。要展示或驗收之前先跑一遍：
 
 1. **Oracle 價格超過 6 小時**（`maxPriceAge = 21600`）→ 開倉與平倉一律 revert `StalePrice`，
    `/exchange` 與 `/terminal` 的下單按鈕會擋住。
@@ -693,7 +693,7 @@ forge script script/SeedWhaleCloses.s.sol --rpc-url "$BASE_SEPOLIA_RPC_URL" --br
 | `/marketplace` | 載入時有「掃描鏈上事件… N/31」；領獎台三位；頁尾寫約 7 天 |
 | `/exchange` | **沒有任何槓桿倍數按鈕**；Get Test Tokens 卡在 |
 
-## 4. 講稿裡的三個數字（講錯會被抓）
+## 4. 對外說明時容易講錯的三個點
 
 - 平台保證金畫面上叫 **USDC**（合約 symbol 也是 USDC，`name()` 是 Mock USD Coin）；
   x402 付費用的是 **Circle USDC**，兩者是不同地址，講的時候不要省略「Circle」。
@@ -724,7 +724,7 @@ Expected: 六個資產都印出 `age_h=` 且數字 < 6。指令有錯就當場�
 - [ ] **Step 3: Commit**
 
 ```bash
-git add docs/RUNBOOK_DEMO_DAY.md
+git add docs/RUNBOOK_SITE_HEALTH.md
 git commit -m "docs: 新增 Demo Day pre-flight 清單
 
 這個系統有兩個會隨時間自己壞掉、而且壞掉時只表現成「東西不見了」的地方:
@@ -744,7 +744,3 @@ oracle 價格超過 6 小時會擋住所有開平倉,平倉資料滑出 7 天視
 - **`/tokens` 加儲備率卡。** 已經有了——`reserveRatioBps()` 顯示在 health 區塊，含「低於下限拒絕 mint」的說明。要做的只是在 demo 時記得講它。
 
 ---
-
-## 與程式無關但有期限的事
-
-主辦方要求回覆 8/31 Demo Day 的出席方式（上台但不計分／只當來賓／不出席），**期限是 8/29，也就是今天**。這件事不在任何一個 Task 裡，但它決定上面所有工作有沒有舞台。
