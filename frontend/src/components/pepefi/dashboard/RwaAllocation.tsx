@@ -5,6 +5,7 @@ import Card from '@mui/material/Card';
 import Typography from '@mui/material/Typography';
 
 import { t } from 'src/locales';
+import { SHOW_PERPETUALS } from 'src/lib/pepefi/featureFlags';
 import { MONO } from 'src/components/pepefi/brandKit';
 import {
   ASSET_CLASSES,
@@ -63,7 +64,7 @@ export default function RwaAllocation({ rows, holdings = [] }: Props) {
         {t.portfolio.allocation.title}
       </Typography>
       <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2.5 }}>
-        {t.portfolio.allocation.subtitle}
+        {SHOW_PERPETUALS ? t.portfolio.allocation.subtitle : t.portfolio.allocation.subtitleSpot}
       </Typography>
 
       <Box
