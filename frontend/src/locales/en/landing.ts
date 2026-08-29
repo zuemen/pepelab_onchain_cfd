@@ -5,6 +5,7 @@ import type { Catalog } from '../zh-TW';
  */
 export const landing: Catalog['landing'] = {
   tagline: 'RWA · Tokenized Assets · Social Copy Trading 🐸',
+  brandLine: 'agent-native tokenized RWA · on Base',
   enterDashboard: '🐸 Enter Dashboard',
   viewTraders: 'View Traders',
   connectHint: 'Connect to browse every feature directly — no account required.',

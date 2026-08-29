@@ -122,7 +122,10 @@ export default function LandingPage() {
                 textTransform: 'uppercase',
                 mb: 2.5,
               }}>
-                {'>'} agent-native RWA perpetuals · on Base
+                {/* 這行是 ASCII，所以「不准硬編顯示字串」的 ratchet（只掃 CJK）
+                    抓不到它，它就這樣掛在 logo 底下寫著 perpetuals，與整站改成
+                    現貨門面之後的每一句話打架。改成 catalog 的 brandLine。 */}
+                {'>'} {t.landing.brandLine}
               </Typography>
 
               {/* Meme energy tagline */}

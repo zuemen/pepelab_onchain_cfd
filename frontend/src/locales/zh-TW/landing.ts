@@ -5,6 +5,8 @@
  */
 export const landing = {
   tagline: 'RWA · 代幣化資產 · 社交跟單 🐸',
+  /** logo 下面那一行。刻意不提永續——那是預設關閉的進階功能。 */
+  brandLine: 'agent 原生代幣化 RWA · on Base',
   enterDashboard: '🐸 進入 Dashboard',
   viewTraders: '查看交易者',
   connectHint: '連線後可直接瀏覽所有功能，無需註冊帳號',
