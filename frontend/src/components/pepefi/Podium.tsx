@@ -13,7 +13,6 @@ import { t } from 'src/locales';
 import { MONO, shortAddr } from 'src/components/pepefi/brandKit';
 import { getPepeAvatar } from 'src/utils/pepefi-assets';
 import AllocationRow from 'src/components/pepefi/AllocationRow';
-import TradeResultStrip from 'src/components/pepefi/TradeResultStrip';
 import { scoreChipColor, fPnL, fWinRate, fReturnPct, type TraderCard } from 'src/lib/pepefi/leaderboardMetrics';
 
 const MEDALS = ['🥇', '🥈', '🥉'];
@@ -62,9 +61,9 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: 'up
 /**
  * 領獎台:三張等大的卡片由左到右照名次排(參考 Hyperdash 排行榜前三名的排法),
  * 不是「第一名置中放大」的傳統頒獎台造型。卡片的主體是**策略配置與關鍵數字**——
- * 使用者要決定跟不跟單,看的是這個人押什麼、賺得穩不穩,不是一條沒有刻度的曲線。
- * 近 7 日的每一筆平倉用一格勝負方塊呈現(綠賺紅賠),樣本再少也看得懂。跟著目前
- * 排序走,而不是固定按 TraderScore。交易者少於 3 位時,對應的格子就不畫。
+ * 使用者要決定跟不跟單,看的是這個人押什麼、報酬率多少、勝率穩不穩。試過的
+ * 權益曲線(擠成平線)與勝負方塊列(跟勝率重複)都拿掉了,數字本身就是答案。
+ * 跟著目前排序走,而不是固定按 TraderScore。交易者少於 3 位時,對應的格子就不畫。
  */
 export default function Podium({ podium, onScoreClick }: Props) {
   if (podium.length === 0) return null;
@@ -117,23 +116,10 @@ export default function Podium({ podium, onScoreClick }: Props) {
       {/* 策略配置:這個人押什麼、做多還做空——卡片的主角。 */}
       <AllocationRow allocs={trader.allocs} hasStrategy={trader.hasStrategy} size={26} />
 
-      {/* 勝負方塊列:一筆平倉一格,綠賺紅賠——直接對應下面的「勝率 (樣本數)」,
-          樣本再少也看得懂,不像累積曲線 5 個點就擠成一條沒變動的平線。 */}
-      <Box>
-        <Typography
-          variant="caption"
-          sx={{ color: 'text.secondary', display: 'block', fontSize: '0.6875rem', lineHeight: 1.4, mb: 0.5 }}
-        >
-          {t.marketplace.podium.recentTradesLabel}
-        </Typography>
-        <Box sx={{ minHeight: 14, display: 'flex', alignItems: 'center' }}>
-          <TradeResultStrip pnls={trader.closedPnls} />
-        </Box>
-      </Box>
-
       <Divider sx={{ borderColor: 'divider' }} />
 
-      {/* 關鍵數字:報酬率、勝率(含樣本數)、跟隨者。 */}
+      {/* 關鍵數字:報酬率、勝率(含樣本數)、跟隨者。這三個數字本身就是「賺多少、
+          穩不穩」的答案,不再另外畫一條擠成平線的曲線或跟勝率重複的方塊列。 */}
       <Stack direction="row" spacing={1}>
         <Stat
           label={t.marketplace.scoreBreakdown.returnLabel}

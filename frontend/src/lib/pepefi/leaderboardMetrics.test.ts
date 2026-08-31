@@ -350,25 +350,14 @@ describe('buildTraderCard', () => {
     expect(card.wins).toBe(2)
     expect(card.trades).toBe(2)
     expect(card.equityCurve).toEqual([10n, 30n])
-    expect(card.closedPnls).toEqual([10n, 20n])
     expect(card.score.total).toBeGreaterThanOrEqual(0)
   })
 
-  it('closedPnls 依時序保留每一筆平倉損益,單筆也不清空(不像 equityCurve <2 筆給空陣列)', () => {
-    const card = buildTraderCard(base, {
-      volumeMap: {}, marginMap: {}, pnlMap: { '0xaaa': 42n },
-      closedEventsByOwner: { '0xaaa': [{ owner: '0xAAA', pnl: 42n }] },
-    })
-    expect(card.closedPnls).toEqual([42n])
-    expect(card.equityCurve).toEqual([]) // <2 筆,曲線仍為空
-  })
-
-  it('這位交易者沒有平倉紀錄 → wins/trades 是 0,equityCurve/closedPnls 是空陣列,不拋錯', () => {
+  it('這位交易者沒有平倉紀錄 → wins/trades 是 0,equityCurve 是空陣列,不拋錯', () => {
     const card = buildTraderCard(base, emptyAggregates)
     expect(card.wins).toBe(0)
     expect(card.trades).toBe(0)
     expect(card.equityCurve).toEqual([])
-    expect(card.closedPnls).toEqual([])
   })
 })
 

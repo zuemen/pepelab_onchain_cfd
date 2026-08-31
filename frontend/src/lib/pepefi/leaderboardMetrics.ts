@@ -28,9 +28,6 @@ export interface TraderCard {
   trades:         number;   // PositionClosed 總筆數,last 7d
   /** 依平倉時序累加的損益。少於 2 筆平倉時為空陣列——沒有方向可言,不畫線。 */
   equityCurve:    bigint[];
-  /** 每一筆平倉的已實現損益,依時序(舊→新)。領獎台卡片的勝負方塊列用——一筆一格,
-   *  綠賺紅賠。跟 equityCurve 不同,單筆也留著,不會因為 <2 筆就整個清空。 */
-  closedPnls:     bigint[];
   score:          TraderScoreBreakdown;
 }
 
@@ -278,7 +275,6 @@ export const buildTraderCard = (
     wins,
     trades,
     equityCurve: computeEquityCurve(closedEvents),
-    closedPnls: closedEvents.map(e => e.pnl),
     score: computeTraderScore({
       pnl7d,
       marginDeployed,
