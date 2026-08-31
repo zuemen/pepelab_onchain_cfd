@@ -84,9 +84,21 @@ export default function Podium({ podium, onScoreClick }: Props) {
         boxShadow: MEDAL_GLOW[rank - 1],
       }}
     >
-      {/* 身分列 */}
+      {/* 身分列——頭貼與名稱是通往個人首頁的連結。 */}
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+        <Box
+          component={RouterLink}
+          to={`/trader/${trader.address}`}
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+            minWidth: 0,
+            textDecoration: 'none',
+            color: 'inherit',
+            '&:hover .podium-trader-name': { textDecoration: 'underline' },
+          }}
+        >
           <Avatar
             src={getPepeAvatar(trader.reputation, trader.address)}
             sx={{
@@ -100,7 +112,7 @@ export default function Podium({ podium, onScoreClick }: Props) {
             }}
           />
           <Box sx={{ minWidth: 0 }}>
-            <Typography noWrap sx={{ fontWeight: 'bold', fontSize: '0.8125rem' }}>
+            <Typography className="podium-trader-name" noWrap sx={{ fontWeight: 'bold', fontSize: '0.8125rem' }}>
               {trader.displayName || t.marketplace.card.noName}
             </Typography>
             <Typography variant="caption" sx={{ fontFamily: MONO, color: 'text.secondary' }}>
@@ -144,16 +156,26 @@ export default function Podium({ podium, onScoreClick }: Props) {
         />
       </Stack>
 
-      {/* TraderScore + 7 日 PnL */}
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Chip
-          label={trader.score.total.toFixed(0)}
-          size="small"
-          color={scoreChipColor(trader.score.total)}
-          onClick={e => onScoreClick(e.currentTarget, trader)}
-          sx={{ fontWeight: 'bold', fontFamily: MONO, cursor: 'pointer' }}
-        />
+      {/* TraderScore(左邊帶標題)+ 7 日 PnL(帶結算幣別) */}
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0 }}>
+          <Typography
+            variant="caption"
+            noWrap
+            sx={{ color: 'text.secondary', fontSize: '0.6875rem', fontWeight: 'bold' }}
+          >
+            {t.marketplace.table.score}
+          </Typography>
+          <Chip
+            label={trader.score.total.toFixed(0)}
+            size="small"
+            color={scoreChipColor(trader.score.total)}
+            onClick={e => onScoreClick(e.currentTarget, trader)}
+            sx={{ fontWeight: 'bold', fontFamily: MONO, cursor: 'pointer' }}
+          />
+        </Box>
         <Typography
+          noWrap
           sx={{
             fontFamily: MONO,
             fontWeight: 'bold',
@@ -161,7 +183,7 @@ export default function Podium({ podium, onScoreClick }: Props) {
             color: trader.pnl7d > 0n ? 'success.main' : trader.pnl7d < 0n ? 'error.main' : 'text.primary',
           }}
         >
-          {trader.pnl7d !== 0n ? fPnL(trader.pnl7d) : '—'}
+          {trader.pnl7d !== 0n ? `${fPnL(trader.pnl7d)} USDC` : '—'}
         </Typography>
       </Box>
 

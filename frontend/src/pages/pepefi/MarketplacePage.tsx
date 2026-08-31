@@ -17,7 +17,6 @@ import {
 import ESGBadge from 'src/components/pepefi/ESGBadge';
 import AllocationRow from 'src/components/pepefi/AllocationRow';
 import Podium from 'src/components/pepefi/Podium';
-import EquitySparkline from 'src/components/pepefi/EquitySparkline';
 import ScoreBreakdownPopover from 'src/components/pepefi/ScoreBreakdownPopover';
 import { getPepeAvatar } from 'src/utils/pepefi-assets';
 import TraderRankBadge from 'src/components/pepefi/TraderRankBadge';
@@ -472,7 +471,7 @@ export default function MarketplacePage() {
               })}
             </Typography>
           )}
-          <TableSkeleton rows={8} cols={mode === 'expert' ? 12 : 6} />
+          <TableSkeleton rows={8} cols={mode === 'expert' ? 11 : 5} />
         </Card>
       ) : filtered.length === 0 ? (
         <EmptyState
@@ -540,12 +539,6 @@ export default function MarketplacePage() {
                     {t.marketplace.table.trader}
                   </TableCell>
                   {sortableHeader('score', t.marketplace.table.score, 'center')}
-                  <TableCell
-                    align="center"
-                    sx={{ position: 'sticky', top: 0, zIndex: 2, bgcolor: 'background.neutral', color: 'text.secondary', fontWeight: 'bold', whiteSpace: 'nowrap' }}
-                  >
-                    {t.marketplace.table.trend}
-                  </TableCell>
                   {mode === 'expert' && (
                     <TableCell sx={{ position: 'sticky', top: 0, zIndex: 2, bgcolor: 'background.neutral', color: 'text.secondary', fontWeight: 'bold' }}>
                       {t.marketplace.table.strategy}
@@ -668,10 +661,6 @@ export default function MarketplacePage() {
                           onClick={e => setScorePopover({ anchorEl: e.currentTarget, trader })}
                           sx={{ fontWeight: 'bold', fontSize: '0.9375rem', height: 30, px: 0.5, fontFamily: MONO, cursor: 'pointer' }}
                         />
-                      </TableCell>
-
-                      <TableCell align="center">
-                        <EquitySparkline curve={trader.equityCurve} pnl={trader.pnl7d} />
                       </TableCell>
 
                       {mode === 'expert' && (

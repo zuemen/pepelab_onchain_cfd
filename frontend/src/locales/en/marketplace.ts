@@ -32,7 +32,6 @@ export const marketplace: Catalog['marketplace'] = {
     rank: '#',
     trader: 'Trader',
     score: 'TraderScore',
-    trend: 'Trend (7d)',
     reputation: 'Reputation',
     strategy: 'Strategy',
     winRate: 'Win Rate',
