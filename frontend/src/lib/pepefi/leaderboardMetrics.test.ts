@@ -17,6 +17,8 @@ import {
   cmpBigDesc,
   cmpNullableBigDesc,
   matchesSearch,
+  makeTraderComparator,
+  type TraderCard,
   type TraderRawInput,
   type TraderEventAggregates,
 } from './leaderboardMetrics'
@@ -384,6 +386,66 @@ describe('cmpNullableBigDesc', () => {
 
   it('兩個都是 null → 0(順序不變)', () => {
     expect(cmpNullableBigDesc(null, null)).toBe(0)
+  })
+})
+
+describe('makeTraderComparator', () => {
+  const card = (over: Partial<TraderCard>): TraderCard => ({
+    address: '0x0', displayName: '', allocs: [], followerCount: 0n, hasStrategy: true,
+    reputation: null, stake: null, totalSlashed: null, totalVolume: 0n, pnl7d: 0n,
+    marginDeployed: 0n, wins: 0, trades: 0, equityCurve: [],
+    score: {
+      total: 0, insufficientSample: false, returnPct: null, returnScore: 0,
+      winRate: null, winRateScore: 0, stakeAmount: 0, stakeScore: 0,
+      reputationValue: 0, reputationScore: 0, slashRatio: 0, slashPenalty: 0,
+    },
+    ...over,
+  })
+  type EsgOf = Parameters<typeof makeTraderComparator>[1]
+  const noEsg: EsgOf = () => null
+  const names = (cards: TraderCard[], key: Parameters<typeof makeTraderComparator>[0], esg: EsgOf = noEsg) =>
+    [...cards].sort(makeTraderComparator(key, esg)).map(c => c.displayName)
+
+  it('主要欄位大在前', () => {
+    const cards = [
+      card({ displayName: 'lo', totalVolume: 100n }),
+      card({ displayName: 'hi', totalVolume: 900n }),
+    ]
+    expect(names(cards, 'volume')).toEqual(['hi', 'lo'])
+  })
+
+  it('7 日量相同 → 改依 TraderScore 高分在前', () => {
+    const cards = [
+      card({ displayName: 'weak',   totalVolume: 250n, score: { ...card({}).score, total: 20 } }),
+      card({ displayName: 'strong', totalVolume: 250n, score: { ...card({}).score, total: 55 } }),
+    ]
+    expect(names(cards, 'volume')).toEqual(['strong', 'weak'])
+  })
+
+  it('PnL 相同 → 也是改依 TraderScore', () => {
+    const cards = [
+      card({ displayName: 'a', pnl7d: 5n, score: { ...card({}).score, total: 10 } }),
+      card({ displayName: 'b', pnl7d: 5n, score: { ...card({}).score, total: 90 } }),
+    ]
+    expect(names(cards, 'pnl')).toEqual(['b', 'a'])
+  })
+
+  it('連 TraderScore 也相同 → 維持原本相對順序(stable)', () => {
+    const cards = [
+      card({ displayName: 'first',  pnl7d: 5n, score: { ...card({}).score, total: 42 } }),
+      card({ displayName: 'second', pnl7d: 5n, score: { ...card({}).score, total: 42 } }),
+    ]
+    expect(names(cards, 'pnl')).toEqual(['first', 'second'])
+  })
+
+  it('esg 排序用外部傳進來的加權分,平手一樣退回 TraderScore', () => {
+    const esgMap: Record<string, number> = { hi: 80, tie1: 50, tie2: 50 }
+    const cards = [
+      card({ displayName: 'tie1', score: { ...card({}).score, total: 30 } }),
+      card({ displayName: 'hi',   score: { ...card({}).score, total: 10 } }),
+      card({ displayName: 'tie2', score: { ...card({}).score, total: 70 } }),
+    ]
+    expect(names(cards, 'esg', (c) => esgMap[c.displayName] ?? null)).toEqual(['hi', 'tie2', 'tie1'])
   })
 })
 

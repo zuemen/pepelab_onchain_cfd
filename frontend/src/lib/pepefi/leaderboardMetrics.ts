@@ -313,3 +313,32 @@ export const matchesSearch = (trader: Pick<TraderCard, 'displayName' | 'address'
   if (!needle) return true;
   return trader.displayName.toLowerCase().includes(needle) || trader.address.toLowerCase().includes(needle);
 };
+
+/** 排行榜排序鍵——跟 MarketplacePage 的排序下拉、可點欄頭共用同一組。 */
+export type LeaderboardSortKey =
+  | 'score' | 'pnl' | 'reputation' | 'followers' | 'volume' | 'stake' | 'esg';
+
+/**
+ * 依 sortKey 產生 Array.sort 的比較函式,所有欄位都是「大在前」。
+ *
+ * 平手時一律再比 TraderScore(高分在前)——種子資料裡好幾位交易者的 7 日量、
+ * PnL 完全相同,少了 tie-break 順序就落在資料抓回來的先後,看起來像沒排序。
+ * ESG 綜合分要另外傳進來:它是把持倉的 ESG 依權重加權算出來的,不在 TraderCard 上。
+ */
+export const makeTraderComparator = (
+  sortKey: LeaderboardSortKey,
+  esgCompositeOf: (t: TraderCard) => number | null,
+) => (a: TraderCard, b: TraderCard): number => {
+  let primary: number;
+  switch (sortKey) {
+    case 'followers':  primary = cmpBigDesc(a.followerCount, b.followerCount); break;
+    case 'volume':     primary = cmpBigDesc(a.totalVolume, b.totalVolume); break;
+    case 'pnl':        primary = cmpBigDesc(a.pnl7d, b.pnl7d); break;
+    case 'stake':      primary = cmpNullableBigDesc(a.stake, b.stake); break;
+    case 'reputation': primary = cmpNullableBigDesc(a.reputation, b.reputation); break;
+    case 'esg':        primary = (esgCompositeOf(b) ?? -1) - (esgCompositeOf(a) ?? -1); break;
+    case 'score':
+    default:           primary = b.score.total - a.score.total; break;
+  }
+  return primary !== 0 ? primary : b.score.total - a.score.total;
+};

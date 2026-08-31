@@ -28,9 +28,8 @@ import {
   buildPnlMap,
   groupClosedEventsByOwner,
   buildTraderCard,
-  cmpBigDesc,
-  cmpNullableBigDesc,
   matchesSearch,
+  makeTraderComparator,
   scoreChipColor,
   fPnL,
   fWinRate,
@@ -38,6 +37,7 @@ import {
   type TraderCard,
   type OpenedEvent,
   type ClosedEvent,
+  type LeaderboardSortKey,
 } from 'src/lib/pepefi/leaderboardMetrics';
 
 import Box from '@mui/material/Box';
@@ -87,7 +87,7 @@ const STICKY_LEFT_EDGE_SHADOW  = '6px 0 6px -6px rgba(0,0,0,0.35)';
 const STICKY_RIGHT_EDGE_SHADOW = '-6px 0 6px -6px rgba(0,0,0,0.35)';
 
 // ── Types ────────────────────────────────────────────────────────────────────
-type SortKey = 'score' | 'reputation' | 'followers' | 'volume' | 'pnl' | 'stake' | 'esg';
+type SortKey = LeaderboardSortKey;
 
 const ESG_FRIENDLY_THRESHOLD = 60;   // weighted composite ≥ 60
 
@@ -310,25 +310,11 @@ export default function MarketplacePage() {
     return score !== null && score >= ESG_FRIENDLY_THRESHOLD;
   });
 
+  // 平手時再比 TraderScore——見 makeTraderComparator。種子資料裡好幾位的 7 日量、
+  // PnL 完全一樣,少了 tie-break 順序就只是資料抓回來的先後,看起來像沒排序。
   const visible = [...filtered]
     .filter(tr => matchesSearch(tr, search))
-    .sort((a, b) => {
-      switch (sortKey) {
-        case 'followers': return cmpBigDesc(a.followerCount, b.followerCount);
-        case 'volume':    return cmpBigDesc(a.totalVolume, b.totalVolume);
-        case 'pnl':       return cmpBigDesc(a.pnl7d, b.pnl7d);
-        case 'stake':     return cmpNullableBigDesc(a.stake, b.stake);
-        case 'reputation': return cmpNullableBigDesc(a.reputation, b.reputation);
-        case 'esg': {
-          const ea = getEsgComposite(a) ?? -1;
-          const eb = getEsgComposite(b) ?? -1;
-          return eb - ea;
-        }
-        case 'score':
-        default:
-          return b.score.total - a.score.total;
-      }
-    });
+    .sort(makeTraderComparator(sortKey, getEsgComposite));
 
   // 領獎台跟著目前排序走,取 visible 的前三名——但「資料不足」(平倉 <5 筆)的
   // 交易者排除在外,不讓僥倖的少量樣本登上榜首。這些人仍然留在下面的表格裡,
