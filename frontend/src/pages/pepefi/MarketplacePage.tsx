@@ -102,6 +102,10 @@ const EXPERT_ONLY_SORT_KEYS = new Set<SortKey>(['reputation', 'followers', 'volu
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const shortAddr = (addr: string) => `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 
+/** 加權後的 ESG 綜合分 → 評等字母。門檻跟 PortfolioAnalysis / CopyPage 同一組。 */
+const esgRatingOf = (composite: number): string =>
+  composite >= 80 ? 'AAA' : composite >= 70 ? 'AA' : composite >= 60 ? 'A' : composite >= 50 ? 'BBB' : 'CCC';
+
 const fVol = (v: bigint): string => {
   const n = Number(v) / 1e18;
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
@@ -288,6 +292,12 @@ export default function MarketplacePage() {
       wavg += info.composite * Number(a.weight);
     }
     return Math.round(wavg / totalW);
+  };
+
+  /** 交易者的加權 ESG {分數, 評等},缺資料時為 null。表格「策略」欄與領獎台卡片共用。 */
+  const esgFor = (t: TraderCard): { composite: number; rating: string } | null => {
+    const c = getEsgComposite(t);
+    return c === null ? null : { composite: c, rating: esgRatingOf(c) };
   };
 
   // 有策略、且(若開了 ESG 篩選)通過門檻的交易者——這是「排行榜裡本來就有的人」。
@@ -500,6 +510,7 @@ export default function MarketplacePage() {
           {podium.length > 0 ? (
             <Podium
               podium={podium}
+              esgOf={esgFor}
               onScoreClick={(el, trader) => setScorePopover({ anchorEl: el, trader })}
             />
           ) : (
@@ -576,13 +587,7 @@ export default function MarketplacePage() {
 
                   // esgComposite only feeds the strategy/ESG cells below, both Expert-only — skip the
                   // work entirely in Simple Mode instead of computing it for every row and discarding it.
-                  const esgScore = mode === 'expert' ? getEsgComposite(trader) : null;
-                  const esgComposite = esgScore !== null
-                    ? {
-                        composite: esgScore,
-                        rating: esgScore >= 80 ? 'AAA' : esgScore >= 70 ? 'AA' : esgScore >= 60 ? 'A' : esgScore >= 50 ? 'BBB' : 'CCC',
-                      }
-                    : null;
+                  const esgComposite = mode === 'expert' ? esgFor(trader) : null;
 
                   return (
                     <TableRow key={trader.address} hover>

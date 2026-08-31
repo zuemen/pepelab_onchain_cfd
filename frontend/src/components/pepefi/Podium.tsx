@@ -12,6 +12,7 @@ import Typography from '@mui/material/Typography';
 import { t } from 'src/locales';
 import { MONO, shortAddr } from 'src/components/pepefi/brandKit';
 import { getPepeAvatar } from 'src/utils/pepefi-assets';
+import ESGBadge from 'src/components/pepefi/ESGBadge';
 import AllocationRow from 'src/components/pepefi/AllocationRow';
 import { scoreChipColor, fPnL, fWinRate, fReturnPct, type TraderCard } from 'src/lib/pepefi/leaderboardMetrics';
 
@@ -30,6 +31,8 @@ const MEDAL_BORDER = [
 interface Props {
   /** 目前排序下,排除「資料不足」交易者後的前三名——已經是最終要顯示的那三位,不在這裡再篩一次。 */
   podium: TraderCard[];
+  /** 交易者的加權 ESG {分數, 評等},缺資料時回傳 null——由 MarketplacePage 帶著 useESG 的資料算。 */
+  esgOf: (trader: TraderCard) => { composite: number; rating: string } | null;
   onScoreClick: (el: HTMLElement, trader: TraderCard) => void;
 }
 
@@ -65,10 +68,12 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: 'up
  * 權益曲線(擠成平線)與勝負方塊列(跟勝率重複)都拿掉了,數字本身就是答案。
  * 跟著目前排序走,而不是固定按 TraderScore。交易者少於 3 位時,對應的格子就不畫。
  */
-export default function Podium({ podium, onScoreClick }: Props) {
+export default function Podium({ podium, esgOf, onScoreClick }: Props) {
   if (podium.length === 0) return null;
 
-  const card = (trader: TraderCard, rank: number) => (
+  const card = (trader: TraderCard, rank: number) => {
+    const esg = esgOf(trader);
+    return (
     <Card
       key={trader.address}
       sx={{
@@ -125,8 +130,12 @@ export default function Podium({ podium, onScoreClick }: Props) {
         </Typography>
       </Box>
 
-      {/* 策略配置:這個人押什麼、做多還做空——卡片的主角。 */}
-      <AllocationRow allocs={trader.allocs} hasStrategy={trader.hasStrategy} size={26} />
+      {/* 策略配置:這個人押什麼、做多還做空——卡片的主角。ESG 評等接在後面,
+          跟表格「策略」欄的排法一致。 */}
+      <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+        <AllocationRow allocs={trader.allocs} hasStrategy={trader.hasStrategy} size={26} />
+        {esg && <ESGBadge composite={esg.composite} rating={esg.rating} size="sm" />}
+      </Box>
 
       <Divider sx={{ borderColor: 'divider' }} />
 
@@ -211,7 +220,8 @@ export default function Podium({ podium, onScoreClick }: Props) {
         </Button>
       )}
     </Card>
-  );
+    );
+  };
 
   return (
     <Box>
