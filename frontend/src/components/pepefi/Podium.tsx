@@ -13,7 +13,7 @@ import { t } from 'src/locales';
 import { MONO, shortAddr } from 'src/components/pepefi/brandKit';
 import { getPepeAvatar } from 'src/utils/pepefi-assets';
 import AllocationRow from 'src/components/pepefi/AllocationRow';
-import EquitySparkline from 'src/components/pepefi/EquitySparkline';
+import TradeResultStrip from 'src/components/pepefi/TradeResultStrip';
 import { scoreChipColor, fPnL, fWinRate, fReturnPct, type TraderCard } from 'src/lib/pepefi/leaderboardMetrics';
 
 const MEDALS = ['🥇', '🥈', '🥉'];
@@ -63,7 +63,7 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: 'up
  * 領獎台:三張等大的卡片由左到右照名次排(參考 Hyperdash 排行榜前三名的排法),
  * 不是「第一名置中放大」的傳統頒獎台造型。卡片的主體是**策略配置與關鍵數字**——
  * 使用者要決定跟不跟單,看的是這個人押什麼、賺得穩不穩,不是一條沒有刻度的曲線。
- * 7 日權益曲線縮成一條加了標籤的小折線,只回答「這 7 天大致往哪走」。跟著目前
+ * 近 7 日的每一筆平倉用一格勝負方塊呈現(綠賺紅賠),樣本再少也看得懂。跟著目前
  * 排序走,而不是固定按 TraderScore。交易者少於 3 位時,對應的格子就不畫。
  */
 export default function Podium({ podium, onScoreClick }: Props) {
@@ -117,16 +117,17 @@ export default function Podium({ podium, onScoreClick }: Props) {
       {/* 策略配置:這個人押什麼、做多還做空——卡片的主角。 */}
       <AllocationRow allocs={trader.allocs} hasStrategy={trader.hasStrategy} size={26} />
 
-      {/* 7 日權益曲線:縮成加了標籤的小折線,只回答「往哪走」,不搶版面。 */}
+      {/* 勝負方塊列:一筆平倉一格,綠賺紅賠——直接對應下面的「勝率 (樣本數)」,
+          樣本再少也看得懂,不像累積曲線 5 個點就擠成一條沒變動的平線。 */}
       <Box>
         <Typography
           variant="caption"
-          sx={{ color: 'text.secondary', display: 'block', fontSize: '0.6875rem', lineHeight: 1.4, mb: 0.25 }}
+          sx={{ color: 'text.secondary', display: 'block', fontSize: '0.6875rem', lineHeight: 1.4, mb: 0.5 }}
         >
-          {t.marketplace.podium.equityLabel}
+          {t.marketplace.podium.recentTradesLabel}
         </Typography>
-        <Box sx={{ minHeight: 40, display: 'flex', alignItems: 'center', color: 'text.secondary' }}>
-          <EquitySparkline curve={trader.equityCurve} pnl={trader.pnl7d} variant="lg" />
+        <Box sx={{ minHeight: 14, display: 'flex', alignItems: 'center' }}>
+          <TradeResultStrip pnls={trader.closedPnls} />
         </Box>
       </Box>
 
