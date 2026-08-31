@@ -52,6 +52,7 @@ export const marketplace: Catalog['marketplace'] = {
 
   podium: {
     heading: '🏆 Top 3 by Current Sort',
+    equityLabel: '7d equity trend',
     noneQualified: 'No trader has 5+ closed trades yet, so there are no podium finishers — they\'re still in the table below.',
   },
 

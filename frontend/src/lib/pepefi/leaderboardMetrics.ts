@@ -216,6 +216,20 @@ export const fPnL = (v: bigint): string => {
   return prefix + n.toFixed(1);
 };
 
+/**
+ * 「62% (21)」的形式:百分比永遠附帶樣本數,不裸露一個看起來很篤定的百分比。
+ * 0 筆平倉給破折號,不是 `0% (0)` 也不是 `NaN%`。表格勝率欄與領獎台卡片共用。
+ */
+export const fWinRate = (wins: number, trades: number): string =>
+  trades === 0 ? '—' : `${Math.round((wins / trades) * 100)}% (${trades})`;
+
+/**
+ * TraderScore 的報酬率(`computeTraderScore` 回傳的 `returnPct`)→「+12.4%」/
+ * 「-4.2%」。符號永遠顯示,跟 fPnL 同一套語言;沒投入保證金(null)給破折號。
+ */
+export const fReturnPct = (pct: number | null): string =>
+  pct === null ? '—' : `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
+
 /** 逐位交易者從 registry/copyTracker/traderStake 抓回來、尚未併入事件指標的原始資料。 */
 export interface TraderRawInput {
   address:       string;

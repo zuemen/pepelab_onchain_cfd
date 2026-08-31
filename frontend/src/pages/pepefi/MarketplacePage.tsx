@@ -15,11 +15,10 @@ import {
   scanFromBlock,
 } from 'src/lib/pepefi/chainLogs';
 import ESGBadge from 'src/components/pepefi/ESGBadge';
-import AssetIcon from 'src/components/pepefi/AssetIcon';
+import AllocationRow from 'src/components/pepefi/AllocationRow';
 import Podium from 'src/components/pepefi/Podium';
 import EquitySparkline from 'src/components/pepefi/EquitySparkline';
 import ScoreBreakdownPopover from 'src/components/pepefi/ScoreBreakdownPopover';
-import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta';
 import { getPepeAvatar } from 'src/utils/pepefi-assets';
 import TraderRankBadge from 'src/components/pepefi/TraderRankBadge';
 import { t, interpolate } from 'src/locales';
@@ -35,6 +34,7 @@ import {
   matchesSearch,
   scoreChipColor,
   fPnL,
+  fWinRate,
   type RawAlloc,
   type TraderCard,
   type OpenedEvent,
@@ -115,10 +115,6 @@ const repBadgeColor = (score: bigint) =>
   : score >= 60n ? 'warning'
   : 'error';
 
-/** 「62% (21)」的形式:百分比永遠附帶樣本數,不裸露一個看起來很篤定的百分比。 */
-const fWinRate = (wins: number, trades: number): string =>
-  trades === 0 ? '—' : `${Math.round((wins / trades) * 100)}% (${trades})`;
-
 /**
  * 掃描視窗的長度說明。同樣 50,000 塊在 Ethereum Sepolia 是 7 天、在 Base 是
  * 27 小時,所以文案只能講算出來的時間,不能講寫死的「約 7 天」。
@@ -127,15 +123,6 @@ const fWindow = (hours: number): string =>
   hours <= 0 ? '—'
   : hours < 48 ? interpolate(t.marketplace.footer.windowHours, { hours: hours.toFixed(0) })
   : interpolate(t.marketplace.footer.windowDays, { days: (hours / 24).toFixed(1) });
-
-/** 單一配置籌碼的標籤文字,表格 chip 跟「+N」的 tooltip 內文共用同一個格式。 */
-const allocLabel = (a: RawAlloc): string =>
-  interpolate(t.marketplace.card.allocChip, {
-    side: a.isLong ? '↑' : '↓',
-    asset: ASSET_LABEL[a.asset] ?? '?',
-    weight: (Number(a.weight) / 100).toFixed(0),
-    leverage: String(a.leverage),
-  });
 
 // ── Component ────────────────────────────────────────────────────────────────
 export default function MarketplacePage() {
@@ -689,41 +676,8 @@ export default function MarketplacePage() {
 
                       {mode === 'expert' && (
                         <TableCell sx={{ maxWidth: 260 }}>
-                          {/* 一排小圓形資產圖示疊在一起,方向用邊框顏色標(綠多紅空),細節在
-                              hover 的 tooltip 裡——參考 Hyperdash 排行榜的持倉欄位做法,文字
-                              chip 再怎麼縮都比一排疊起來的頭像佔空間,而且籌碼數一多就得省略。 */}
                           <Stack spacing={0.5}>
-                            {!trader.hasStrategy ? (
-                              <Chip
-                                label={t.marketplace.card.noStrategy}
-                                size="small"
-                                variant="outlined"
-                                sx={{ color: 'text.secondary', borderColor: 'divider', alignSelf: 'flex-start' }}
-                              />
-                            ) : (
-                              // isolation:isolate 開一個新的 stacking context——不然這排圖示
-                              // 疊放用的 zIndex(最高到 allocs.length)沒有邊界,會直接跟表格
-                              // sticky header 的 zIndex(2)比大小,滾動時圖示會蓋到表頭上面。
-                              <Box sx={{ display: 'flex', alignItems: 'center', isolation: 'isolate' }}>
-                                {trader.allocs.map((a, i) => (
-                                  <Tooltip key={i} title={allocLabel(a)}>
-                                    <Box
-                                      sx={{
-                                        ml: i === 0 ? 0 : -1,
-                                        zIndex: trader.allocs.length - i,
-                                        position: 'relative',
-                                        lineHeight: 0,
-                                        borderRadius: '50%',
-                                        border: '2px solid',
-                                        borderColor: a.isLong ? 'success.main' : 'error.main',
-                                      }}
-                                    >
-                                      <AssetIcon symbol={ASSET_LABEL[a.asset] ?? '?'} size={22} />
-                                    </Box>
-                                  </Tooltip>
-                                ))}
-                              </Box>
-                            )}
+                            <AllocationRow allocs={trader.allocs} hasStrategy={trader.hasStrategy} />
                             {esgComposite && (
                               <Box sx={{ alignSelf: 'flex-start' }}>
                                 <ESGBadge composite={esgComposite.composite} rating={esgComposite.rating} size="sm" />

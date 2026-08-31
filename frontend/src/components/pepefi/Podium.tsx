@@ -6,13 +6,15 @@ import Chip from '@mui/material/Chip';
 import Stack from '@mui/material/Stack';
 import Button from '@mui/material/Button';
 import Avatar from '@mui/material/Avatar';
+import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
 
 import { t } from 'src/locales';
 import { MONO, shortAddr } from 'src/components/pepefi/brandKit';
 import { getPepeAvatar } from 'src/utils/pepefi-assets';
+import AllocationRow from 'src/components/pepefi/AllocationRow';
 import EquitySparkline from 'src/components/pepefi/EquitySparkline';
-import { scoreChipColor, fPnL, type TraderCard } from 'src/lib/pepefi/leaderboardMetrics';
+import { scoreChipColor, fPnL, fWinRate, fReturnPct, type TraderCard } from 'src/lib/pepefi/leaderboardMetrics';
 
 const MEDALS = ['🥇', '🥈', '🥉'];
 const MEDAL_GLOW = [
@@ -32,11 +34,37 @@ interface Props {
   onScoreClick: (el: HTMLElement, trader: TraderCard) => void;
 }
 
+/** 小標籤 + mono 數值的一格統計,三格並排。 */
+function Stat({ label, value, tone }: { label: string; value: string; tone?: 'up' | 'down' }) {
+  return (
+    <Box sx={{ minWidth: 0, flex: 1 }}>
+      <Typography
+        variant="caption"
+        sx={{ color: 'text.secondary', display: 'block', fontSize: '0.6875rem', lineHeight: 1.4 }}
+      >
+        {label}
+      </Typography>
+      <Typography
+        noWrap
+        sx={{
+          fontFamily: MONO,
+          fontWeight: 'bold',
+          fontSize: '0.8125rem',
+          color: tone === 'up' ? 'success.main' : tone === 'down' ? 'error.main' : 'text.primary',
+        }}
+      >
+        {value}
+      </Typography>
+    </Box>
+  );
+}
+
 /**
  * 領獎台:三張等大的卡片由左到右照名次排(參考 Hyperdash 排行榜前三名的排法),
- * 不是「第一名置中放大」的傳統頒獎台造型——填色的權益曲線是卡片的視覺主體,
- * 名次徽章縮小放右上角。跟著目前排序走,而不是固定按 TraderScore。交易者少於
- * 3 位時,對應的格子就不畫,不補空卡片。
+ * 不是「第一名置中放大」的傳統頒獎台造型。卡片的主體是**策略配置與關鍵數字**——
+ * 使用者要決定跟不跟單,看的是這個人押什麼、賺得穩不穩,不是一條沒有刻度的曲線。
+ * 7 日權益曲線縮成一條加了標籤的小折線,只回答「這 7 天大致往哪走」。跟著目前
+ * 排序走,而不是固定按 TraderScore。交易者少於 3 位時,對應的格子就不畫。
  */
 export default function Podium({ podium, onScoreClick }: Props) {
   if (podium.length === 0) return null;
@@ -51,12 +79,13 @@ export default function Podium({ podium, onScoreClick }: Props) {
         p: 2,
         display: 'flex',
         flexDirection: 'column',
-        gap: 1,
+        gap: 1.25,
         border: '1px solid',
         borderColor: MEDAL_BORDER[rank - 1],
         boxShadow: MEDAL_GLOW[rank - 1],
       }}
     >
+      {/* 身分列 */}
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
           <Avatar
@@ -85,9 +114,50 @@ export default function Podium({ podium, onScoreClick }: Props) {
         </Typography>
       </Box>
 
-      {/* 填色區域圖是卡片的視覺主體,不是表格那種塞在角落的小折線——variant="lg"。 */}
-      <EquitySparkline curve={trader.equityCurve} pnl={trader.pnl7d} variant="lg" />
+      {/* 策略配置:這個人押什麼、做多還做空——卡片的主角。 */}
+      <AllocationRow allocs={trader.allocs} hasStrategy={trader.hasStrategy} size={26} />
 
+      {/* 7 日權益曲線:縮成加了標籤的小折線,只回答「往哪走」,不搶版面。 */}
+      <Box>
+        <Typography
+          variant="caption"
+          sx={{ color: 'text.secondary', display: 'block', fontSize: '0.6875rem', lineHeight: 1.4, mb: 0.25 }}
+        >
+          {t.marketplace.podium.equityLabel}
+        </Typography>
+        <Box sx={{ minHeight: 40, display: 'flex', alignItems: 'center', color: 'text.secondary' }}>
+          <EquitySparkline curve={trader.equityCurve} pnl={trader.pnl7d} variant="lg" />
+        </Box>
+      </Box>
+
+      <Divider sx={{ borderColor: 'divider' }} />
+
+      {/* 關鍵數字:報酬率、勝率(含樣本數)、跟隨者。 */}
+      <Stack direction="row" spacing={1}>
+        <Stat
+          label={t.marketplace.scoreBreakdown.returnLabel}
+          value={fReturnPct(trader.score.returnPct)}
+          tone={
+            trader.score.returnPct === null
+              ? undefined
+              : trader.score.returnPct > 0
+                ? 'up'
+                : trader.score.returnPct < 0
+                  ? 'down'
+                  : undefined
+          }
+        />
+        <Stat
+          label={t.marketplace.scoreBreakdown.winRateLabel}
+          value={fWinRate(trader.wins, trader.trades)}
+        />
+        <Stat
+          label={t.marketplace.card.followersLabel}
+          value={String(trader.followerCount)}
+        />
+      </Stack>
+
+      {/* TraderScore + 7 日 PnL */}
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <Chip
           label={trader.score.total.toFixed(0)}

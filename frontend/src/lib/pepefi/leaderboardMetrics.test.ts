@@ -11,6 +11,8 @@ import {
   computeTraderScore,
   scoreChipColor,
   fPnL,
+  fWinRate,
+  fReturnPct,
   buildTraderCard,
   cmpBigDesc,
   cmpNullableBigDesc,
@@ -250,6 +252,38 @@ describe('fPnL', () => {
 
   it('0 也帶正號,不是特例', () => {
     expect(fPnL(0n)).toBe('+0.0')
+  })
+})
+
+describe('fWinRate', () => {
+  it('百分比四捨五入,永遠附帶樣本數', () => {
+    expect(fWinRate(13, 21)).toBe('62% (21)')
+  })
+
+  it('全勝', () => {
+    expect(fWinRate(4, 4)).toBe('100% (4)')
+  })
+
+  it('零平倉 → 破折號,不是 0% (0) 也不是 NaN', () => {
+    expect(fWinRate(0, 0)).toBe('—')
+  })
+})
+
+describe('fReturnPct', () => {
+  it('正報酬率帶正號,一位小數', () => {
+    expect(fReturnPct(12.37)).toBe('+12.4%')
+  })
+
+  it('負報酬率帶負號', () => {
+    expect(fReturnPct(-4.2)).toBe('-4.2%')
+  })
+
+  it('剛好 0 帶正號,跟 fPnL 同一套符號語言', () => {
+    expect(fReturnPct(0)).toBe('+0.0%')
+  })
+
+  it('沒有投入保證金(returnPct 為 null)→ 破折號', () => {
+    expect(fReturnPct(null)).toBe('—')
   })
 })
 
