@@ -36,7 +36,6 @@ export const marketplace = {
     rank: '#',
     trader: '交易者',
     score: 'TraderScore',
-    trend: '7 日走勢',
     reputation: '聲譽',
     strategy: '策略',
     winRate: '勝率',

@@ -216,6 +216,20 @@ export const fPnL = (v: bigint): string => {
   return prefix + n.toFixed(1);
 };
 
+/**
+ * 「62% (21)」的形式:百分比永遠附帶樣本數,不裸露一個看起來很篤定的百分比。
+ * 0 筆平倉給破折號,不是 `0% (0)` 也不是 `NaN%`。表格勝率欄與領獎台卡片共用。
+ */
+export const fWinRate = (wins: number, trades: number): string =>
+  trades === 0 ? '—' : `${Math.round((wins / trades) * 100)}% (${trades})`;
+
+/**
+ * TraderScore 的報酬率(`computeTraderScore` 回傳的 `returnPct`)→「+12.4%」/
+ * 「-4.2%」。符號永遠顯示,跟 fPnL 同一套語言;沒投入保證金(null)給破折號。
+ */
+export const fReturnPct = (pct: number | null): string =>
+  pct === null ? '—' : `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
+
 /** 逐位交易者從 registry/copyTracker/traderStake 抓回來、尚未併入事件指標的原始資料。 */
 export interface TraderRawInput {
   address:       string;
@@ -298,4 +312,33 @@ export const matchesSearch = (trader: Pick<TraderCard, 'displayName' | 'address'
   const needle = query.trim().toLowerCase();
   if (!needle) return true;
   return trader.displayName.toLowerCase().includes(needle) || trader.address.toLowerCase().includes(needle);
+};
+
+/** 排行榜排序鍵——跟 MarketplacePage 的排序下拉、可點欄頭共用同一組。 */
+export type LeaderboardSortKey =
+  | 'score' | 'pnl' | 'reputation' | 'followers' | 'volume' | 'stake' | 'esg';
+
+/**
+ * 依 sortKey 產生 Array.sort 的比較函式,所有欄位都是「大在前」。
+ *
+ * 平手時一律再比 TraderScore(高分在前)——種子資料裡好幾位交易者的 7 日量、
+ * PnL 完全相同,少了 tie-break 順序就落在資料抓回來的先後,看起來像沒排序。
+ * ESG 綜合分要另外傳進來:它是把持倉的 ESG 依權重加權算出來的,不在 TraderCard 上。
+ */
+export const makeTraderComparator = (
+  sortKey: LeaderboardSortKey,
+  esgCompositeOf: (t: TraderCard) => number | null,
+) => (a: TraderCard, b: TraderCard): number => {
+  let primary: number;
+  switch (sortKey) {
+    case 'followers':  primary = cmpBigDesc(a.followerCount, b.followerCount); break;
+    case 'volume':     primary = cmpBigDesc(a.totalVolume, b.totalVolume); break;
+    case 'pnl':        primary = cmpBigDesc(a.pnl7d, b.pnl7d); break;
+    case 'stake':      primary = cmpNullableBigDesc(a.stake, b.stake); break;
+    case 'reputation': primary = cmpNullableBigDesc(a.reputation, b.reputation); break;
+    case 'esg':        primary = (esgCompositeOf(b) ?? -1) - (esgCompositeOf(a) ?? -1); break;
+    case 'score':
+    default:           primary = b.score.total - a.score.total; break;
+  }
+  return primary !== 0 ? primary : b.score.total - a.score.total;
 };

@@ -15,11 +15,9 @@ import {
   scanFromBlock,
 } from 'src/lib/pepefi/chainLogs';
 import ESGBadge from 'src/components/pepefi/ESGBadge';
-import AssetIcon from 'src/components/pepefi/AssetIcon';
+import AllocationRow from 'src/components/pepefi/AllocationRow';
 import Podium from 'src/components/pepefi/Podium';
-import EquitySparkline from 'src/components/pepefi/EquitySparkline';
 import ScoreBreakdownPopover from 'src/components/pepefi/ScoreBreakdownPopover';
-import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta';
 import { getPepeAvatar } from 'src/utils/pepefi-assets';
 import TraderRankBadge from 'src/components/pepefi/TraderRankBadge';
 import { t, interpolate } from 'src/locales';
@@ -30,15 +28,16 @@ import {
   buildPnlMap,
   groupClosedEventsByOwner,
   buildTraderCard,
-  cmpBigDesc,
-  cmpNullableBigDesc,
   matchesSearch,
+  makeTraderComparator,
   scoreChipColor,
   fPnL,
+  fWinRate,
   type RawAlloc,
   type TraderCard,
   type OpenedEvent,
   type ClosedEvent,
+  type LeaderboardSortKey,
 } from 'src/lib/pepefi/leaderboardMetrics';
 
 import Box from '@mui/material/Box';
@@ -88,7 +87,7 @@ const STICKY_LEFT_EDGE_SHADOW  = '6px 0 6px -6px rgba(0,0,0,0.35)';
 const STICKY_RIGHT_EDGE_SHADOW = '-6px 0 6px -6px rgba(0,0,0,0.35)';
 
 // ── Types ────────────────────────────────────────────────────────────────────
-type SortKey = 'score' | 'reputation' | 'followers' | 'volume' | 'pnl' | 'stake' | 'esg';
+type SortKey = LeaderboardSortKey;
 
 const ESG_FRIENDLY_THRESHOLD = 60;   // weighted composite ≥ 60
 
@@ -103,6 +102,10 @@ const EXPERT_ONLY_SORT_KEYS = new Set<SortKey>(['reputation', 'followers', 'volu
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const shortAddr = (addr: string) => `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 
+/** 加權後的 ESG 綜合分 → 評等字母。門檻跟 PortfolioAnalysis / CopyPage 同一組。 */
+const esgRatingOf = (composite: number): string =>
+  composite >= 80 ? 'AAA' : composite >= 70 ? 'AA' : composite >= 60 ? 'A' : composite >= 50 ? 'BBB' : 'CCC';
+
 const fVol = (v: bigint): string => {
   const n = Number(v) / 1e18;
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
@@ -115,10 +118,6 @@ const repBadgeColor = (score: bigint) =>
   : score >= 60n ? 'warning'
   : 'error';
 
-/** 「62% (21)」的形式:百分比永遠附帶樣本數,不裸露一個看起來很篤定的百分比。 */
-const fWinRate = (wins: number, trades: number): string =>
-  trades === 0 ? '—' : `${Math.round((wins / trades) * 100)}% (${trades})`;
-
 /**
  * 掃描視窗的長度說明。同樣 50,000 塊在 Ethereum Sepolia 是 7 天、在 Base 是
  * 27 小時,所以文案只能講算出來的時間,不能講寫死的「約 7 天」。
@@ -127,15 +126,6 @@ const fWindow = (hours: number): string =>
   hours <= 0 ? '—'
   : hours < 48 ? interpolate(t.marketplace.footer.windowHours, { hours: hours.toFixed(0) })
   : interpolate(t.marketplace.footer.windowDays, { days: (hours / 24).toFixed(1) });
-
-/** 單一配置籌碼的標籤文字,表格 chip 跟「+N」的 tooltip 內文共用同一個格式。 */
-const allocLabel = (a: RawAlloc): string =>
-  interpolate(t.marketplace.card.allocChip, {
-    side: a.isLong ? '↑' : '↓',
-    asset: ASSET_LABEL[a.asset] ?? '?',
-    weight: (Number(a.weight) / 100).toFixed(0),
-    leverage: String(a.leverage),
-  });
 
 // ── Component ────────────────────────────────────────────────────────────────
 export default function MarketplacePage() {
@@ -304,6 +294,12 @@ export default function MarketplacePage() {
     return Math.round(wavg / totalW);
   };
 
+  /** 交易者的加權 ESG {分數, 評等},缺資料時為 null。表格「策略」欄與領獎台卡片共用。 */
+  const esgFor = (t: TraderCard): { composite: number; rating: string } | null => {
+    const c = getEsgComposite(t);
+    return c === null ? null : { composite: c, rating: esgRatingOf(c) };
+  };
+
   // 有策略、且(若開了 ESG 篩選)通過門檻的交易者——這是「排行榜裡本來就有的人」。
   // 搜尋框再篩一層在下面的 visible,兩者分開算是為了區分「這條鏈真的沒人」跟
   // 「有人,只是搜尋詞沒有比對到」這兩種完全不同的空狀態。
@@ -314,25 +310,11 @@ export default function MarketplacePage() {
     return score !== null && score >= ESG_FRIENDLY_THRESHOLD;
   });
 
+  // 平手時再比 TraderScore——見 makeTraderComparator。種子資料裡好幾位的 7 日量、
+  // PnL 完全一樣,少了 tie-break 順序就只是資料抓回來的先後,看起來像沒排序。
   const visible = [...filtered]
     .filter(tr => matchesSearch(tr, search))
-    .sort((a, b) => {
-      switch (sortKey) {
-        case 'followers': return cmpBigDesc(a.followerCount, b.followerCount);
-        case 'volume':    return cmpBigDesc(a.totalVolume, b.totalVolume);
-        case 'pnl':       return cmpBigDesc(a.pnl7d, b.pnl7d);
-        case 'stake':     return cmpNullableBigDesc(a.stake, b.stake);
-        case 'reputation': return cmpNullableBigDesc(a.reputation, b.reputation);
-        case 'esg': {
-          const ea = getEsgComposite(a) ?? -1;
-          const eb = getEsgComposite(b) ?? -1;
-          return eb - ea;
-        }
-        case 'score':
-        default:
-          return b.score.total - a.score.total;
-      }
-    });
+    .sort(makeTraderComparator(sortKey, getEsgComposite));
 
   // 領獎台跟著目前排序走,取 visible 的前三名——但「資料不足」(平倉 <5 筆)的
   // 交易者排除在外,不讓僥倖的少量樣本登上榜首。這些人仍然留在下面的表格裡,
@@ -485,7 +467,7 @@ export default function MarketplacePage() {
               })}
             </Typography>
           )}
-          <TableSkeleton rows={8} cols={mode === 'expert' ? 12 : 6} />
+          <TableSkeleton rows={8} cols={mode === 'expert' ? 11 : 5} />
         </Card>
       ) : filtered.length === 0 ? (
         <EmptyState
@@ -514,6 +496,7 @@ export default function MarketplacePage() {
           {podium.length > 0 ? (
             <Podium
               podium={podium}
+              esgOf={esgFor}
               onScoreClick={(el, trader) => setScorePopover({ anchorEl: el, trader })}
             />
           ) : (
@@ -553,12 +536,6 @@ export default function MarketplacePage() {
                     {t.marketplace.table.trader}
                   </TableCell>
                   {sortableHeader('score', t.marketplace.table.score, 'center')}
-                  <TableCell
-                    align="center"
-                    sx={{ position: 'sticky', top: 0, zIndex: 2, bgcolor: 'background.neutral', color: 'text.secondary', fontWeight: 'bold', whiteSpace: 'nowrap' }}
-                  >
-                    {t.marketplace.table.trend}
-                  </TableCell>
                   {mode === 'expert' && (
                     <TableCell sx={{ position: 'sticky', top: 0, zIndex: 2, bgcolor: 'background.neutral', color: 'text.secondary', fontWeight: 'bold' }}>
                       {t.marketplace.table.strategy}
@@ -596,13 +573,7 @@ export default function MarketplacePage() {
 
                   // esgComposite only feeds the strategy/ESG cells below, both Expert-only — skip the
                   // work entirely in Simple Mode instead of computing it for every row and discarding it.
-                  const esgScore = mode === 'expert' ? getEsgComposite(trader) : null;
-                  const esgComposite = esgScore !== null
-                    ? {
-                        composite: esgScore,
-                        rating: esgScore >= 80 ? 'AAA' : esgScore >= 70 ? 'AA' : esgScore >= 60 ? 'A' : esgScore >= 50 ? 'BBB' : 'CCC',
-                      }
-                    : null;
+                  const esgComposite = mode === 'expert' ? esgFor(trader) : null;
 
                   return (
                     <TableRow key={trader.address} hover>
@@ -683,47 +654,10 @@ export default function MarketplacePage() {
                         />
                       </TableCell>
 
-                      <TableCell align="center">
-                        <EquitySparkline curve={trader.equityCurve} pnl={trader.pnl7d} />
-                      </TableCell>
-
                       {mode === 'expert' && (
                         <TableCell sx={{ maxWidth: 260 }}>
-                          {/* 一排小圓形資產圖示疊在一起,方向用邊框顏色標(綠多紅空),細節在
-                              hover 的 tooltip 裡——參考 Hyperdash 排行榜的持倉欄位做法,文字
-                              chip 再怎麼縮都比一排疊起來的頭像佔空間,而且籌碼數一多就得省略。 */}
                           <Stack spacing={0.5}>
-                            {!trader.hasStrategy ? (
-                              <Chip
-                                label={t.marketplace.card.noStrategy}
-                                size="small"
-                                variant="outlined"
-                                sx={{ color: 'text.secondary', borderColor: 'divider', alignSelf: 'flex-start' }}
-                              />
-                            ) : (
-                              // isolation:isolate 開一個新的 stacking context——不然這排圖示
-                              // 疊放用的 zIndex(最高到 allocs.length)沒有邊界,會直接跟表格
-                              // sticky header 的 zIndex(2)比大小,滾動時圖示會蓋到表頭上面。
-                              <Box sx={{ display: 'flex', alignItems: 'center', isolation: 'isolate' }}>
-                                {trader.allocs.map((a, i) => (
-                                  <Tooltip key={i} title={allocLabel(a)}>
-                                    <Box
-                                      sx={{
-                                        ml: i === 0 ? 0 : -1,
-                                        zIndex: trader.allocs.length - i,
-                                        position: 'relative',
-                                        lineHeight: 0,
-                                        borderRadius: '50%',
-                                        border: '2px solid',
-                                        borderColor: a.isLong ? 'success.main' : 'error.main',
-                                      }}
-                                    >
-                                      <AssetIcon symbol={ASSET_LABEL[a.asset] ?? '?'} size={22} />
-                                    </Box>
-                                  </Tooltip>
-                                ))}
-                              </Box>
-                            )}
+                            <AllocationRow allocs={trader.allocs} hasStrategy={trader.hasStrategy} />
                             {esgComposite && (
                               <Box sx={{ alignSelf: 'flex-start' }}>
                                 <ESGBadge composite={esgComposite.composite} rating={esgComposite.rating} size="sm" />
