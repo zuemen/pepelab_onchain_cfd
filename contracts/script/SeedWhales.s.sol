@@ -160,16 +160,22 @@ contract SeedWhales is Script {
         returns (StrategyRegistry.Allocation[] memory allocs)
     {
         if (i == 0) {
-            // Whale Alpha — BTC + ETH crypto long
-            allocs = new StrategyRegistry.Allocation[](2);
-            allocs[0] = StrategyRegistry.Allocation(SBTC,  6000, true,  2);
-            allocs[1] = StrategyRegistry.Allocation(SETH,  4000, true,  2);
+            // Whale Alpha — BTC + ETH crypto long, small gold hedge.
+            // #97: StrategyRegistry now requires >=3 distinct assets and
+            // caps any one at 50% — this used to be a 2-asset 60/40 split.
+            allocs = new StrategyRegistry.Allocation[](3);
+            allocs[0] = StrategyRegistry.Allocation(SBTC,  5000, true,  2);
+            allocs[1] = StrategyRegistry.Allocation(SETH,  3000, true,  2);
+            allocs[2] = StrategyRegistry.Allocation(SGOLD, 2000, true,  1);
 
         } else if (i == 1) {
-            // Gold Bull — Gold heavy + Bond buffer
-            allocs = new StrategyRegistry.Allocation[](2);
-            allocs[0] = StrategyRegistry.Allocation(SGOLD, 7000, true,  1);
+            // Gold Bull — Gold heavy (at the new 50% cap) + Bond buffer + a
+            // small crypto leg. #97: the original 70% Gold leg alone exceeded
+            // the new per-asset cap, independent of the asset-count question.
+            allocs = new StrategyRegistry.Allocation[](3);
+            allocs[0] = StrategyRegistry.Allocation(SGOLD, 5000, true,  1);
             allocs[1] = StrategyRegistry.Allocation(SBOND, 3000, true,  1);
+            allocs[2] = StrategyRegistry.Allocation(SETH,  2000, true,  1);
 
         } else if (i == 2) {
             // ESG Master — AAPL + Bond + ETH, ESG friendly
@@ -179,22 +185,29 @@ contract SeedWhales is Script {
             allocs[2] = StrategyRegistry.Allocation(SETH,  2000, true,  1);
 
         } else if (i == 3) {
-            // Crypto Degen — high leverage long BTC + short ETH
-            allocs = new StrategyRegistry.Allocation[](2);
-            allocs[0] = StrategyRegistry.Allocation(SBTC,  5000, true,  5);
-            allocs[1] = StrategyRegistry.Allocation(SETH,  5000, false, 5);
+            // Crypto Degen — high leverage long BTC + short ETH + a small
+            // speculative equity leg. #97: was 2 assets, 50/50.
+            allocs = new StrategyRegistry.Allocation[](3);
+            allocs[0] = StrategyRegistry.Allocation(SBTC,  4000, true,  5);
+            allocs[1] = StrategyRegistry.Allocation(SETH,  4000, false, 5);
+            allocs[2] = StrategyRegistry.Allocation(STSLA, 2000, true,  5);
 
         } else if (i == 4) {
-            // Bond Steady — defensive bond + gold
-            allocs = new StrategyRegistry.Allocation[](2);
-            allocs[0] = StrategyRegistry.Allocation(SBOND, 6000, true,  1);
-            allocs[1] = StrategyRegistry.Allocation(SGOLD, 4000, true,  1);
+            // Bond Steady — defensive bond + gold + a small equity leg.
+            // #97: was 2 assets, 60/40.
+            allocs = new StrategyRegistry.Allocation[](3);
+            allocs[0] = StrategyRegistry.Allocation(SBOND, 5000, true,  1);
+            allocs[1] = StrategyRegistry.Allocation(SGOLD, 3000, true,  1);
+            allocs[2] = StrategyRegistry.Allocation(SAAPL, 2000, true,  1);
 
         } else if (i == 5) {
-            // Tesla Maxi — equity growth
-            allocs = new StrategyRegistry.Allocation[](2);
-            allocs[0] = StrategyRegistry.Allocation(STSLA, 7000, true,  2);
+            // Tesla Maxi — equity growth, Tesla at the new 50% cap + Apple +
+            // a small crypto growth leg. #97: the original 70% Tesla leg
+            // alone exceeded the new per-asset cap.
+            allocs = new StrategyRegistry.Allocation[](3);
+            allocs[0] = StrategyRegistry.Allocation(STSLA, 5000, true,  2);
             allocs[1] = StrategyRegistry.Allocation(SAAPL, 3000, true,  1);
+            allocs[2] = StrategyRegistry.Allocation(SETH,  2000, true,  1);
 
         } else if (i == 6) {
             // Diamond Hands — diversified long hold
@@ -212,10 +225,13 @@ contract SeedWhales is Script {
             allocs[3] = StrategyRegistry.Allocation(STSLA, 2500, true,  1);
 
         } else if (i == 8) {
-            // Macro Trader — gold + bond leveraged inflation hedge
-            allocs = new StrategyRegistry.Allocation[](2);
-            allocs[0] = StrategyRegistry.Allocation(SGOLD, 5000, true,  2);
-            allocs[1] = StrategyRegistry.Allocation(SBOND, 5000, true,  2);
+            // Macro Trader — gold + bond leveraged inflation hedge, plus a
+            // small BTC leg (also commonly framed as an inflation hedge).
+            // #97: was 2 assets, 50/50.
+            allocs = new StrategyRegistry.Allocation[](3);
+            allocs[0] = StrategyRegistry.Allocation(SGOLD, 4000, true,  2);
+            allocs[1] = StrategyRegistry.Allocation(SBOND, 4000, true,  2);
+            allocs[2] = StrategyRegistry.Allocation(SBTC,  2000, true,  1);
 
         } else if (i == 9) {
             // Quant Bot — stat-arb: long BTC, short ETH, long TSLA, long GOLD
@@ -226,16 +242,20 @@ contract SeedWhales is Script {
             allocs[3] = StrategyRegistry.Allocation(SGOLD, 2000, true,  1);
 
         } else if (i == 10) {
-            // Green Investor — ESG bond + AAPL
-            allocs = new StrategyRegistry.Allocation[](2);
-            allocs[0] = StrategyRegistry.Allocation(SBOND, 6000, true,  1);
-            allocs[1] = StrategyRegistry.Allocation(SAAPL, 4000, true,  1);
+            // Green Investor — ESG bond + AAPL + a small gold hedge.
+            // #97: was 2 assets, 60/40.
+            allocs = new StrategyRegistry.Allocation[](3);
+            allocs[0] = StrategyRegistry.Allocation(SBOND, 5000, true,  1);
+            allocs[1] = StrategyRegistry.Allocation(SAAPL, 3000, true,  1);
+            allocs[2] = StrategyRegistry.Allocation(SGOLD, 2000, true,  1);
 
         } else {
-            // i == 11 Apple Holder — equity concentrated
-            allocs = new StrategyRegistry.Allocation[](2);
-            allocs[0] = StrategyRegistry.Allocation(SAAPL, 6000, true,  2);
-            allocs[1] = StrategyRegistry.Allocation(STSLA, 4000, true,  2);
+            // i == 11 Apple Holder — equity concentrated, Apple at the new
+            // 50% cap + Tesla + a small crypto leg. #97: was 2 assets, 60/40.
+            allocs = new StrategyRegistry.Allocation[](3);
+            allocs[0] = StrategyRegistry.Allocation(SAAPL, 5000, true,  2);
+            allocs[1] = StrategyRegistry.Allocation(STSLA, 3000, true,  2);
+            allocs[2] = StrategyRegistry.Allocation(SETH,  2000, true,  1);
         }
     }
 

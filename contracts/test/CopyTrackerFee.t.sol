@@ -25,7 +25,11 @@ contract CopyTrackerFeeTest is Test {
     address bob      = makeAddr("bob");     // follower
 
     bytes32 constant BTC = keccak256("BTC");
+    bytes32 constant ETH = keccak256("ETH"); // #97: StrategyRegistry rejects a repeated asset
+    bytes32 constant SOL = keccak256("SOL");
     uint256 constant BTC_PRICE = 100_000e8;
+    uint256 constant ETH_PRICE =   4_000e8;
+    uint256 constant SOL_PRICE =   1_000e8;
 
     function setUp() public {
         usdc      = new MockUSDC();
@@ -48,13 +52,23 @@ contract CopyTrackerFeeTest is Test {
         feeRouter.setCopyTracker(address(ct));
 
         oracle.addAsset(BTC, BTC_PRICE);
+        oracle.addAsset(ETH, ETH_PRICE);
+        oracle.addAsset(SOL, SOL_PRICE);
 
-        // Register trader and publish single-asset strategy (100 % BTC long, 1×)
+        // Register trader and publish a 3-asset, fully-deployed (100 % total
+        // weight) strategy — #97: StrategyRegistry now requires at least 3
+        // DISTINCT assets and caps any one at 50 %, so a single 100 % BTC leg
+        // is no longer publishable. Every assertion in this file sums across
+        // all legs rather than assuming one position holds the whole margin,
+        // so which three assets they are doesn't matter to what's tested here
+        // (the copy fee, not cross-asset allocation).
         vm.prank(alice);
         registry.registerTrader("Alice");
 
-        StrategyRegistry.Allocation[] memory allocs = new StrategyRegistry.Allocation[](1);
-        allocs[0] = StrategyRegistry.Allocation(BTC, 10_000, true, 1);
+        StrategyRegistry.Allocation[] memory allocs = new StrategyRegistry.Allocation[](3);
+        allocs[0] = StrategyRegistry.Allocation(BTC, 4_000, true, 1);
+        allocs[1] = StrategyRegistry.Allocation(ETH, 3_000, true, 1);
+        allocs[2] = StrategyRegistry.Allocation(SOL, 3_000, true, 1);
         vm.prank(alice);
         registry.publishStrategy(allocs);
 
@@ -81,14 +95,16 @@ contract CopyTrackerFeeTest is Test {
         vm.prank(bob);
         ct.followTrader(alice, total);
 
-        // freeMargin credited = netMargin (all goes into one 100 % BTC position → 0 free)
-        // 100 % weight: portion = net * 10000 / 10000 = net, all used for the position
+        // freeMargin credited = netMargin (weights sum to 100 % across 3 legs → 0 free)
         assertEq(exchange.freeMargin(bob), 0);
 
-        // Position margin = net
+        // Summed across all three legs, position margin = net
         CopyTracker.CopyRecord[] memory recs = ct.getCopyRecords(bob);
-        PerpetualExchange.Position memory pos = exchange.getPosition(recs[0].positionIds[0]);
-        assertEq(pos.margin, net);
+        uint256 totalMargin;
+        for (uint256 i; i < recs[0].positionIds.length; ++i) {
+            totalMargin += exchange.getPosition(recs[0].positionIds[i]).margin;
+        }
+        assertEq(totalMargin, net);
     }
 
     function test_fee_forwardedToFeeRouter() public {
@@ -155,9 +171,12 @@ contract CopyTrackerFeeTest is Test {
         vm.prank(bob);
         ct2.followTrader(alice, 10_000e18);
 
-        // Full 10_000e18 used as netMargin (no fee deducted)
+        // Full 10_000e18 used as netMargin (no fee deducted), summed across all legs
         CopyTracker.CopyRecord[] memory recs = ct2.getCopyRecords(bob);
-        PerpetualExchange.Position memory pos = exchange.getPosition(recs[0].positionIds[0]);
-        assertEq(pos.margin, 10_000e18);
+        uint256 totalMargin;
+        for (uint256 i; i < recs[0].positionIds.length; ++i) {
+            totalMargin += exchange.getPosition(recs[0].positionIds[i]).margin;
+        }
+        assertEq(totalMargin, 10_000e18);
     }
 }

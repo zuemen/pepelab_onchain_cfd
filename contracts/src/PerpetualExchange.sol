@@ -1093,6 +1093,29 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         return _maintenanceMarginBps(asset);
     }
 
+    /// @notice Effective trading fee (bps) for an asset — the same per-asset
+    ///         carbon-tier rate `_openPosition` actually charges. When
+    ///         `esgRegistry` is unset (legacy mode), this is the global
+    ///         `TRADING_FEE_BPS` verbatim, applied uniformly to every asset —
+    ///         see `_carbonParamsFor`'s own NatSpec for that fallback branch.
+    /// @dev Exists so a caller opening several positions across different
+    ///      assets in one call (CopyTracker.followTrader, #97) can size its
+    ///      fee buffer per allocation instead of assuming one global rate
+    ///      applies to every asset — which stopped being true once fees
+    ///      became carbon-tier-derived (#96).
+    function tradingFeeBpsForAsset(bytes32 asset) external view returns (uint256) {
+        return _tradingFeeBps(asset);
+    }
+
+    /// @dev Delegation point for `tradingFeeBpsForAsset`, matching the
+    ///      `maxLeverageForAsset` -> `_maxLeverage` and
+    ///      `maintenanceMarginBpsForAsset` -> `_maintenanceMarginBps` pattern
+    ///      those two getters already use.
+    function _tradingFeeBps(bytes32 asset) internal view returns (uint256) {
+        (, uint256 tradingFeeBps, , ) = _carbonParamsFor(asset);
+        return tradingFeeBps;
+    }
+
     /// @notice P3-2: account-level health across all of `owner`'s open positions.
     ///         equity      = freeMargin + Σ (margin + unrealized PnL − funding)
     ///         maintenance = Σ (notional × maintenance-bps)

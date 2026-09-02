@@ -6,6 +6,21 @@ interface ITraderStakeForReg {
 }
 
 contract StrategyRegistry {
+    // ── Constants ────────────────────────────────────────────────────────────
+
+    /// @notice A published strategy must spread across at least this many
+    ///         assets. Below this, "diversified configuration" is just a
+    ///         word — nothing stops a single-asset bet from being published
+    ///         under it.
+    uint256 public constant MIN_ALLOCATION_ASSETS = 3;
+
+    /// @notice No single asset may carry more than this share of a published
+    ///         strategy. Paired with MIN_ALLOCATION_ASSETS: 3 assets alone
+    ///         doesn't stop one of them being a 98% bet dressed up as a
+    ///         "diversified" strategy — the two constants together are what
+    ///         make the word mean something.
+    uint256 public constant MAX_ALLOCATION_WEIGHT_BPS = 5_000; // 50%
+
     // ── Data types ──────────────────────────────────────────────────────────
 
     struct Allocation {
@@ -48,8 +63,11 @@ contract StrategyRegistry {
     error AlreadyRegistered();
     error NotRegistered();
     error EmptyAllocations();
+    error TooFewAssets(uint256 got);
+    error DuplicateAsset(uint256 firstIndex, uint256 secondIndex);
     error InvalidWeightSum(uint256 got);
     error ZeroWeight(uint256 index);
+    error WeightExceedsMax(uint256 index, uint256 weight);
     error InvalidLeverage(uint256 index, uint256 leverage);
     error InsufficientStake();
 
@@ -83,6 +101,11 @@ contract StrategyRegistry {
 
     function publishStrategy(Allocation[] memory allocations) external onlyRegistered {
         if (allocations.length == 0) revert EmptyAllocations();
+        // Checked separately from EmptyAllocations rather than folded into a
+        // single "< MIN_ALLOCATION_ASSETS" test — a caller who published
+        // nothing gets a distinct, more specific error than one who published
+        // too little.
+        if (allocations.length < MIN_ALLOCATION_ASSETS) revert TooFewAssets(allocations.length);
 
         // Stake eligibility gate — bypassed when stakeContract == address(0)
         if (address(stakeContract) != address(0)) {
@@ -92,7 +115,17 @@ contract StrategyRegistry {
         uint256 totalWeight;
         for (uint256 i; i < allocations.length; ++i) {
             if (allocations[i].weight == 0) revert ZeroWeight(i);
+            if (allocations[i].weight > MAX_ALLOCATION_WEIGHT_BPS) revert WeightExceedsMax(i, allocations[i].weight);
             if (!_validLeverage(allocations[i].leverage)) revert InvalidLeverage(i, allocations[i].leverage);
+            // MIN_ALLOCATION_ASSETS counts array length, not distinct assets —
+            // without this check, three line items on the same asset (even
+            // split long/short) would pass every check above and be accepted
+            // as "diversified". Pairwise against everything already seen;
+            // O(n^2) is fine at the handful-of-assets scale this is meant for
+            // (same assumption ESGRegistryV2's attestor sort already makes).
+            for (uint256 j; j < i; ++j) {
+                if (allocations[j].asset == allocations[i].asset) revert DuplicateAsset(j, i);
+            }
             totalWeight += allocations[i].weight;
         }
         if (totalWeight != 10_000) revert InvalidWeightSum(totalWeight);

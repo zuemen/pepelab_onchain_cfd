@@ -143,7 +143,11 @@ contract AuditFixesAgentTest is Test {
     address agent   = makeAddr("agent");
 
     bytes32 constant BTC = keccak256("BTC");
+    bytes32 constant ETH = keccak256("ETH"); // #97: StrategyRegistry now rejects a repeated asset
+    bytes32 constant SOL = keccak256("SOL");
     uint256 constant BTC_PRICE = 100_000e8;
+    uint256 constant ETH_PRICE =   4_000e8;
+    uint256 constant SOL_PRICE =   1_000e8;
 
     function setUp() public {
         usdc     = new MockUSDC();
@@ -154,6 +158,8 @@ contract AuditFixesAgentTest is Test {
         manager  = new AgentSessionManager(address(exchange));
 
         oracle.addAsset(BTC, BTC_PRICE);
+        oracle.addAsset(ETH, ETH_PRICE);
+        oracle.addAsset(SOL, SOL_PRICE);
 
         exchange.setCopyTracker(address(ct));
         exchange.setAgentAuthorized(address(manager), true);
@@ -167,13 +173,26 @@ contract AuditFixesAgentTest is Test {
         vm.prank(alice); usdc.approve(address(ct), type(uint256).max);
     }
 
+    /// @dev #97: StrategyRegistry now requires at least 3 DISTINCT assets and
+    ///      rejects the same asset appearing twice AT ALL — including the
+    ///      original long+short-on-the-same-asset pair this helper used to
+    ///      publish (code review caught this: a long/short pair on one asset
+    ///      is still 100% exposed to that one asset's price series, exactly
+    ///      the concentration this rule exists to block). Legs 1 and 2 are
+    ///      now genuinely different, unrelated assets whose price this file
+    ///      never moves — low-risk, unaffected positions that none of this
+    ///      file's assertions inspect beyond confirming they stay open. Only
+    ///      index 0 (5x long on `asset`, the one that gets crashed) keeps its
+    ///      original role; direction on legs 1/2 was never asserted on, so it
+    ///      isn't preserved as meaningful.
     function _publish(bytes32 asset) internal {
         vm.prank(trader);
         registry.registerTrader("Trader");
 
-        StrategyRegistry.Allocation[] memory a = new StrategyRegistry.Allocation[](2);
-        a[0] = StrategyRegistry.Allocation({asset: asset, weight: 5_000, isLong: true,  leverage: 5});
-        a[1] = StrategyRegistry.Allocation({asset: asset, weight: 5_000, isLong: false, leverage: 1});
+        StrategyRegistry.Allocation[] memory a = new StrategyRegistry.Allocation[](3);
+        a[0] = StrategyRegistry.Allocation({asset: asset, weight: 4_000, isLong: true, leverage: 5});
+        a[1] = StrategyRegistry.Allocation({asset: ETH,   weight: 3_000, isLong: true, leverage: 1});
+        a[2] = StrategyRegistry.Allocation({asset: SOL,   weight: 3_000, isLong: true, leverage: 1});
         vm.prank(trader);
         registry.publishStrategy(a);
     }
@@ -199,6 +218,10 @@ contract AuditFixesAgentTest is Test {
         oracle.updatePrice(BTC, 70_000e8);
         exchange.liquidatePosition(recs[0].positionIds[0]);
         assertFalse(exchange.getPosition(recs[0].positionIds[0]).isOpen);
+        // The ETH leg's price never moved, so it must not have been swept up
+        // by the BTC-only crash — asserted, not just claimed in _publish's
+        // doc comment (code review flagged the comment-only version).
+        assertTrue(exchange.getPosition(recs[0].positionIds[2]).isOpen, "ETH leg unaffected by the BTC crash");
 
         vm.prank(alice);
         ct.unfollowAndCloseAll(0);                 // used to revert forever
@@ -206,6 +229,7 @@ contract AuditFixesAgentTest is Test {
         recs = ct.getCopyRecords(alice);
         assertFalse(recs[0].active, "record must be releasable");
         assertFalse(exchange.getPosition(recs[0].positionIds[1]).isOpen, "other legs still close");
+        assertFalse(exchange.getPosition(recs[0].positionIds[2]).isOpen, "ETH leg closes too on unfollow");
     }
 
     // ── M-8: a session may only close what it opened ──────────────────────────
@@ -266,12 +290,13 @@ contract AuditFixesAgentTest is Test {
         vm.deal(alice, 1 ether);
         uint256 balBefore = alice.balance;
 
-        // 3 wei over two allocations → 1 wei per position, 1 wei remainder.
+        // 4 wei over three allocations (#97: _publish now opens 3 legs) →
+        // 1 wei per position (3 spent), 1 wei remainder.
         vm.prank(alice);
-        ct.followTrader{value: 3}(trader, 10_000e18);
+        ct.followTrader{value: 4}(trader, 10_000e18);
 
         assertEq(address(ct).balance, 0, "no ETH may be stranded in the tracker");
-        assertEq(balBefore - alice.balance, 2, "only the two execution fees are spent");
+        assertEq(balBefore - alice.balance, 3, "only the three execution fees are spent");
     }
 
     // ── CopyTracker (Low): slash basis must exclude protocol fees ─────────────
