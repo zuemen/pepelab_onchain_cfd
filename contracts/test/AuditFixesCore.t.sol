@@ -43,7 +43,7 @@ contract AuditFixesCoreTest is Test {
     function setUp() public {
         usdc     = new MockUSDC();
         oracle   = new MockOracle();
-        exchange = new PerpetualExchange(address(usdc), address(oracle));
+        exchange = new PerpetualExchange(address(usdc), address(oracle), address(0));
         vault    = new InsuranceVault(address(usdc));
 
         oracle.addAsset(BTC, BTC_PRICE);
@@ -544,7 +544,7 @@ contract AuditFixesCoreTest is Test {
 
     function test_low_zeroOraclePriceIsRejected() public {
         ZeroPriceOracle zero = new ZeroPriceOracle();
-        PerpetualExchange ex = new PerpetualExchange(address(usdc), address(zero));
+        PerpetualExchange ex = new PerpetualExchange(address(usdc), address(zero), address(0));
         ex.setExecutionFee(0);
         usdc.mint(address(alice), 10_000e18);
         vm.prank(alice); usdc.approve(address(ex), type(uint256).max);
@@ -558,13 +558,13 @@ contract AuditFixesCoreTest is Test {
     function test_low_constructorRejectsWrongDecimalCollateral() public {
         SixDecimalToken six = new SixDecimalToken();
         vm.expectRevert(PerpetualExchange.InvalidParam.selector);
-        new PerpetualExchange(address(six), address(oracle));
+        new PerpetualExchange(address(six), address(oracle), address(0));
     }
 
     function test_low_constructorRejectsZeroAddresses() public {
         vm.expectRevert(PerpetualExchange.InvalidParam.selector);
-        new PerpetualExchange(address(0), address(oracle));
+        new PerpetualExchange(address(0), address(oracle), address(0));
         vm.expectRevert(PerpetualExchange.InvalidParam.selector);
-        new PerpetualExchange(address(usdc), address(0));
+        new PerpetualExchange(address(usdc), address(0), address(0));
     }
 }

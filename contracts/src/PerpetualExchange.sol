@@ -7,6 +7,8 @@ import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
+import "./CarbonTiers.sol";
+
 interface IOracle {
     function getPrice(bytes32 assetId) external view returns (uint256 price, uint256 updatedAt);
 }
@@ -23,6 +25,16 @@ interface IInsuranceVaultPerp {
 
 interface IKyc {
     function isVerified(address user) external view returns (bool);
+}
+
+/// @dev Matches ESGRegistryV2.medianCarbonIntensity's exact signature. Declared
+///     locally (not imported as the concrete contract) so this file depends on
+///     an interface shape, not on ESGRegistryV2's implementation — the same
+///     pattern IOracle/IKyc already use here for their own dependencies.
+interface IEsgRegistryForPricing {
+    function medianCarbonIntensity(bytes32 assetId)
+        external view
+        returns (uint256 median, uint256 count, uint256 dispersion, bool isRated);
 }
 
 contract PerpetualExchange is Ownable, ReentrancyGuard {
@@ -119,6 +131,17 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     IERC20  public immutable usdc;
     IOracle public immutable oracle;
 
+    /// @notice Optional. address(0) means carbon pricing is not active on this
+    ///         deployment AT ALL — every asset uses the legacy global
+    ///         TRADING_FEE_BPS / BORROW_FEE_BPS_PER_HOUR / MAX_LEVERAGE exactly
+    ///         as before this feature existed. This is an all-or-nothing
+    ///         deployment switch, the same optional-wiring convention `kyc`
+    ///         already uses below — it is NOT a per-asset or per-user carve-out.
+    ///         Once wired, an asset with no attestation in the registry still
+    ///         falls to the most conservative tier via CarbonTiers itself
+    ///         (Tier.Unrated), so there is no unpriced gap once the switch is on.
+    IEsgRegistryForPricing public immutable esgRegistry;
+
     // ── Data types ───────────────────────────────────────────────────────────
 
     struct Position {
@@ -135,6 +158,38 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         bool    isOpen;
         address copiedFrom;        // address(0) for self-opened positions
         int256  entryFundingIndex; // locked per-side cumulative funding index at open
+        // ── Appended, not inserted ──────────────────────────────────────────
+        // Existing external readers (PepeIncentives.IPerpExchange.Position,
+        // EsgRewardDistributor.IExchangeForReward.Position) redeclare this
+        // struct with only the 13 original fields, to decode getPosition()'s
+        // return data. Appending fields at the end keeps their positional ABI
+        // decode correct — inserting anywhere earlier would silently shift
+        // every field after it and corrupt what those two contracts read.
+        // Empirically checked (not just reasoned about): a caller declaring
+        // only the old 13-field struct against this contract's real ABI still
+        // decodes every original field correctly once the tuple grows.
+        //
+        // Frozen at open time, never re-derived on close/liquidation — see
+        // ADR-003: a later change to an asset's carbon rating must not
+        // retroactively change what an already-open position costs.
+        //
+        // Both fee fields are kept as real, independent numbers rather than
+        // recomputed from `carbonTier` on read — that recomputation (via the
+        // inlined, free `CarbonTiers.paramsFor`) is only valid once carbon
+        // pricing is actually active. In the legacy/no-registry deployment
+        // mode (`esgRegistry == address(0)`), the fee is the operator's own
+        // independently-configurable global rate at the moment this position
+        // opened, which has no relationship to CarbonTiers' fixed tier table
+        // at all — `carbonTier` alone cannot reconstruct it. `uint16` is a
+        // deliberate width, not a default: both fields are bounded by
+        // MAX_TRADING_FEE_BPS (100) / MAX_BORROW_FEE_BPS_PER_HOUR (10), which
+        // can only change via a full redeploy (they're constants), so
+        // `uint16` has headroom to spare for the life of this contract, and
+        // packs both fields plus `carbonTier` into a single new storage slot
+        // instead of three.
+        uint16 tradingFeeBps;
+        uint16 borrowFeeBpsPerHour;
+        CarbonTiers.Tier carbonTier; // observability only — never branched on
     }
 
     // ── State ────────────────────────────────────────────────────────────────
@@ -314,7 +369,12 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
-    constructor(address _usdc, address _oracle) Ownable(msg.sender) {
+    /// @param _esgRegistry Optional — address(0) disables carbon pricing for
+    ///        this whole deployment (see the field's own NatSpec above). Unlike
+    ///        `_usdc`/`_oracle` it is never validated against address(0),
+    ///        because address(0) is its intended "not active" state, not an
+    ///        error.
+    constructor(address _usdc, address _oracle, address _esgRegistry) Ownable(msg.sender) {
         if (_usdc == address(0) || _oracle == address(0)) revert InvalidParam();
         // Low: MIN_MARGIN (10e18) and the `rawPrice * 1e10` index scaling both
         // hard-code an 18-decimal collateral token, while `usdc` is immutable —
@@ -324,8 +384,9 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         try IERC20Metadata(_usdc).decimals() returns (uint8 d) {
             if (d != 18) revert InvalidParam();
         } catch {}
-        usdc   = IERC20(_usdc);
-        oracle = IOracle(_oracle);
+        usdc        = IERC20(_usdc);
+        oracle      = IOracle(_oracle);
+        esgRegistry = IEsgRegistryForPricing(_esgRegistry);
     }
 
     // ── Admin ────────────────────────────────────────────────────────────────
@@ -371,6 +432,25 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     /// @notice M-3: bounded at 1% per side. The old setter was unbounded, so
     ///         `setTradingFeeBps(100000)` would have swallowed every open
     ///         position's entire margin at close time.
+    /// @dev Legacy/no-registry lever only. Once `esgRegistry` is wired
+    ///      (carbon pricing active — see that field's NatSpec), every
+    ///      position's fee is frozen at open from `CarbonTiers` instead, and
+    ///      this setter's new value has NO EFFECT on any position's actual
+    ///      cost, existing or future, on any asset. It still succeeds and
+    ///      still emits `TradingFeeBpsSet` — code review flagged this as a
+    ///      real risk of a runbook or dashboard assuming this call changed
+    ///      something it did not, on a carbon-active deployment.
+    ///
+    ///      Even on a legacy (no-registry) deployment, calling this after a
+    ///      position is already open does not change that position's fee —
+    ///      every position's rate is frozen at its own open time now, in
+    ///      both modes, not read live off this variable at close/liquidation
+    ///      the way it was before carbon pricing existed. This is a
+    ///      deliberate side effect (a predictable, non-retroactive cost is
+    ///      the same principle ADR-003 argues for carbon ratings), not a
+    ///      preserved byte-for-byte legacy behaviour — flagged here because
+    ///      code review found no test exercising "change this mid-lifecycle,
+    ///      then close" to catch the difference on its own.
     function setTradingFeeBps(uint256 _bps) external onlyOwner {
         require(_bps <= MAX_TRADING_FEE_BPS, "fee>1%");
         TRADING_FEE_BPS = _bps;
@@ -380,6 +460,8 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     /// @notice M-3: bounded at 0.10%/hour (~876%/yr) — an absolute ceiling, not
     ///         a target. Previously unbounded and applied to elapsed hours, so
     ///         it was an even more direct confiscation lever than the trade fee.
+    /// @dev Legacy/no-registry lever only — see `setTradingFeeBps`'s NatSpec:
+    ///      the exact same caveat applies here once `esgRegistry` is wired.
     function setBorrowFeePerHour(uint256 _bps) external onlyOwner {
         require(_bps <= MAX_BORROW_FEE_BPS_PER_HOUR, "borrow fee too high");
         BORROW_FEE_BPS_PER_HOUR = _bps;
@@ -426,6 +508,15 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     }
 
     /// @notice N3: per-asset max leverage override (0 = use global MAX_LEVERAGE).
+    /// @dev This bound is checked only against the global ceiling, not
+    ///      against the asset's own carbon-tier ceiling. `_effectiveMaxLeverage`
+    ///      still takes `min(this override, carbon cap)`, so setting a value
+    ///      here above what the asset's current tier permits succeeds, emits
+    ///      `MaxLeverageSet`, and reads back as the value passed — but has NO
+    ///      EFFECT on the leverage any position on that asset can actually
+    ///      use until the tier itself improves. `maxLeverageForAsset` returns
+    ///      the real, carbon-aware effective value; this function's own
+    ///      getter-equivalent (`maxLeverageOf`) does not.
     function setMaxLeverageFor(bytes32 asset, uint256 maxLev) external onlyOwner {
         require(maxLev <= MAX_LEVERAGE, "above global cap");
         maxLeverageOf[asset] = maxLev;
@@ -585,10 +676,10 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         int256 pnl = _calcPnL(pos);
         
         uint256 notional     = pos.margin * pos.leverage;
-        uint256 tradingFee   = notional * TRADING_FEE_BPS / 10000;
+        uint256 tradingFee   = notional * uint256(pos.tradingFeeBps) / 10000; // frozen at open — see Position.tradingFeeBps
         uint256 borrowed     = pos.margin * (pos.leverage - 1);
         uint256 hoursElapsed = (block.timestamp - pos.openedAt) / 3600;
-        uint256 borrowFee    = borrowed * BORROW_FEE_BPS_PER_HOUR * hoursElapsed / 10000;
+        uint256 borrowFee    = borrowed * uint256(pos.borrowFeeBpsPerHour) * hoursElapsed / 10000; // frozen at open
         
         int256 totalFees      = int256(tradingFee + borrowFee);
         int256 fundingPayment = _calcFunding(pos);
@@ -966,10 +1057,10 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         if (!pos.isOpen) return 0;
 
         uint256 notional     = pos.margin * pos.leverage;
-        uint256 tradingFee   = notional * TRADING_FEE_BPS / 10000;
+        uint256 tradingFee   = notional * uint256(pos.tradingFeeBps) / 10000; // frozen at open — see Position.tradingFeeBps
         uint256 borrowed     = pos.margin * (pos.leverage - 1);
         uint256 hoursElapsed = (block.timestamp - pos.openedAt) / 3600;
-        uint256 borrowFee    = borrowed * BORROW_FEE_BPS_PER_HOUR * hoursElapsed / 10000;
+        uint256 borrowFee    = borrowed * uint256(pos.borrowFeeBpsPerHour) * hoursElapsed / 10000; // frozen at open
 
         int256 val = int256(pos.margin) + _calcPnL(pos)
                    - int256(tradingFee + borrowFee) - _calcFunding(pos);
@@ -988,7 +1079,11 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         return positions[positionId];
     }
 
-    /// @notice N3: effective max leverage for an asset (override or global).
+    /// @notice Effective max leverage for an asset: the tighter of the N3
+    ///         owner override (or global `MAX_LEVERAGE` default) and the
+    ///         asset's carbon-tier ceiling. This is the real, currently
+    ///         tradable leverage — `maxLeverageOf[asset]` alone is not,
+    ///         once carbon pricing is active (see `setMaxLeverageFor`).
     function maxLeverageForAsset(bytes32 asset) external view returns (uint256) {
         return _maxLeverage(asset);
     }
@@ -1039,9 +1134,72 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         }
     }
 
+    /// @notice Resolves an asset's carbon tier and the fee/leverage params
+    ///         that follow from it, from a single call site every other
+    ///         function in this contract goes through.
+    /// @dev When `esgRegistry` is unset, this returns today's legacy global
+    ///      defaults verbatim — an all-or-nothing deployment switch, not a
+    ///      per-asset carve-out (see `esgRegistry`'s own NatSpec). The `tier`
+    ///      returned in that branch is `Tier.Unrated`, not a real
+    ///      classification — carbon pricing was never evaluated for this
+    ///      position at all, which is what `Unrated` means. Nothing branches
+    ///      on the stored tier in either mode; it is pure observability, so
+    ///      an inaccurate label here would cost nothing functionally but
+    ///      would still be a needless small dishonesty.
+    ///
+    ///      Once `esgRegistry` IS wired, an asset with no fresh attestation
+    ///      correctly resolves to `Tier.Unrated` via `CarbonTiers` itself —
+    ///      fail-closed, not a gap this function has to special-case.
+    /// @dev Called at most once per `_openPosition` (threaded through as a
+    ///      local, not re-fetched by `_maxLeverage`'s own call inside the
+    ///      leverage check — see `_openPosition`). `_maxLeverage` still calls
+    ///      this on its own when used standalone (the public
+    ///      `maxLeverageForAsset` getter, or any other caller outside
+    ///      `_openPosition`), where there is no larger call already holding
+    ///      the result to reuse.
+    function _carbonParamsFor(bytes32 asset)
+        internal
+        view
+        returns (CarbonTiers.Tier tier, uint256 tradingFeeBps, uint256 borrowFeeBpsPerHour, uint256 maxLev)
+    {
+        if (address(esgRegistry) == address(0)) {
+            return (CarbonTiers.Tier.Unrated, TRADING_FEE_BPS, BORROW_FEE_BPS_PER_HOUR, MAX_LEVERAGE);
+        }
+        (uint256 median, , , bool isRated) = esgRegistry.medianCarbonIntensity(asset);
+        return CarbonTiers.paramsForIntensity(median, isRated);
+    }
+
+    /// @notice Effective max leverage for an asset: the tighter of the owner's
+    ///         own per-asset override (`maxLeverageOf`, N3, defaulting to the
+    ///         global `MAX_LEVERAGE`) and the carbon-tier ceiling.
+    /// @dev `setMaxLeverageFor` still lets the owner tighten an asset further
+    ///      for any reason — that path is untouched. What it can no longer do
+    ///      is LOOSEN a high-carbon asset back up past its tier's ceiling:
+    ///      `min()` means the carbon cap is a floor of strictness the owner
+    ///      cannot override upward. That is the concrete shape of "no per-user
+    ///      or per-asset fee/leverage exemption path" this ticket requires —
+    ///      see CarbonPricing.t.sol's fuzz/negative tests for the direct proof.
+    ///
+    ///      Split from `_effectiveMaxLeverage` below so `_openPosition` can
+    ///      fetch `_carbonParamsFor` exactly once and feed its `maxLev` into
+    ///      the shared formula, instead of this function re-fetching the same
+    ///      registry data `_openPosition` already has in hand.
     function _maxLeverage(bytes32 asset) internal view returns (uint256) {
+        (, , , uint256 carbonCap) = _carbonParamsFor(asset);
+        return _effectiveMaxLeverage(asset, carbonCap);
+    }
+
+    /// @dev The `min(ownerCap, carbonCap)` formula on its own, taking an
+    ///      already-fetched carbon cap rather than fetching it itself — the
+    ///      single source of truth for "how do owner override and carbon
+    ///      ceiling combine", shared by `_maxLeverage` (which fetches its own
+    ///      carbon cap for standalone callers) and `_openPosition` (which
+    ///      already has one in hand from its own single `_carbonParamsFor`
+    ///      call, and would otherwise have to fetch it a second time).
+    function _effectiveMaxLeverage(bytes32 asset, uint256 carbonCap) internal view returns (uint256) {
         uint256 o = maxLeverageOf[asset];
-        return o == 0 ? MAX_LEVERAGE : o;
+        uint256 ownerCap = o == 0 ? MAX_LEVERAGE : o;
+        return ownerCap < carbonCap ? ownerCap : carbonCap;
     }
 
     function _maintenanceMarginBps(bytes32 asset) internal view returns (uint256) {
@@ -1087,8 +1245,20 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         address copiedFrom,
         address agent
     ) internal returns (uint256 positionId) {
-        if (margin < MIN_MARGIN)                       revert MarginTooLow();
-        if (leverage == 0 || leverage > _maxLeverage(asset)) revert InvalidLeverage();
+        if (margin < MIN_MARGIN) revert MarginTooLow();
+
+        // Read once, at open, and freeze into the position below — a later
+        // change to this asset's carbon rating must never retroactively
+        // change what an already-open position costs (ADR-003). This single
+        // call feeds BOTH the leverage check just below and the frozen fee
+        // fields further down — code review caught an earlier version of
+        // this function calling `_carbonParamsFor` a second time (once
+        // indirectly via `_maxLeverage`, once directly) purely to re-fetch
+        // data already in hand, doubling this function's registry reads for
+        // no behavioral difference.
+        (CarbonTiers.Tier carbonTier, uint256 tradingFeeBps, uint256 borrowFeeBpsPerHour, uint256 carbonMaxLev) =
+            _carbonParamsFor(asset);
+        if (leverage == 0 || leverage > _effectiveMaxLeverage(asset, carbonMaxLev)) revert InvalidLeverage();
 
         // RWA compliance: gated only when both the asset is flagged and a KYC
         // registry is wired (otherwise this is a no-op for backward compat).
@@ -1101,7 +1271,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         _pokeFunding(asset);
 
         uint256 notional   = margin * leverage;
-        uint256 tradingFee = notional * TRADING_FEE_BPS / 10000;
+        uint256 tradingFee = notional * tradingFeeBps / 10000;
 
         if (freeMargin[owner] < margin + tradingFee)   revert InsufficientFreeMargin();
 
@@ -1139,7 +1309,13 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
             copiedFrom:       copiedFrom,
             entryFundingIndex: isLong
                 ? cumulativeFundingIndexLong[asset]
-                : cumulativeFundingIndexShort[asset]
+                : cumulativeFundingIndexShort[asset],
+            // Safe narrowing: bounded by MAX_TRADING_FEE_BPS(100) /
+            // MAX_BORROW_FEE_BPS_PER_HOUR(10), both far under uint16's range —
+            // see Position.tradingFeeBps's own NatSpec for why uint16 here.
+            tradingFeeBps:        uint16(tradingFeeBps),
+            borrowFeeBpsPerHour:  uint16(borrowFeeBpsPerHour),
+            carbonTier:           carbonTier
         });
         userPositions[owner].push(positionId);
         _userPosIndex[positionId] = userPositions[owner].length;   // 1-based
@@ -1167,11 +1343,11 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
 
         // DeFi Mechanics: Trading Fee (Uniswap) + Borrow Fee (Aave)
         uint256 notional     = pos.margin * pos.leverage;
-        uint256 tradingFee   = notional * TRADING_FEE_BPS / 10000;
+        uint256 tradingFee   = notional * uint256(pos.tradingFeeBps) / 10000; // frozen at open — see Position.tradingFeeBps
 
         uint256 borrowed     = pos.margin * (pos.leverage - 1);
         uint256 hoursElapsed = (block.timestamp - pos.openedAt) / 3600;
-        uint256 borrowFee    = borrowed * BORROW_FEE_BPS_PER_HOUR * hoursElapsed / 10000;
+        uint256 borrowFee    = borrowed * uint256(pos.borrowFeeBpsPerHour) * hoursElapsed / 10000; // frozen at open
 
         int256 totalFees      = int256(tradingFee + borrowFee);
         int256 fundingPayment = _calcFunding(pos); // positive = trader pays, negative = trader receives

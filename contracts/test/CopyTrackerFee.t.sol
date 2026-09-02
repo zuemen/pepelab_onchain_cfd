@@ -33,7 +33,7 @@ contract CopyTrackerFeeTest is Test {
         registry  = new StrategyRegistry(address(0));
         vault     = new InsuranceVault(address(usdc));
         feeRouter = new FeeRouter(address(usdc), platform, address(vault));
-        exchange  = new PerpetualExchange(address(usdc), address(oracle));
+        exchange  = new PerpetualExchange(address(usdc), address(oracle), address(0));
         ct        = new CopyTracker(
             address(usdc),
             address(exchange),

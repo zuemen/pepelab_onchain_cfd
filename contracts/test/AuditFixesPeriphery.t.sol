@@ -148,7 +148,7 @@ contract AuditFixesAgentTest is Test {
     function setUp() public {
         usdc     = new MockUSDC();
         oracle   = new MockOracle();
-        exchange = new PerpetualExchange(address(usdc), address(oracle));
+        exchange = new PerpetualExchange(address(usdc), address(oracle), address(0));
         registry = new StrategyRegistry(address(0));
         ct       = new CopyTracker(address(usdc), address(exchange), address(registry), address(0), address(0));
         manager  = new AgentSessionManager(address(exchange));
@@ -336,7 +336,7 @@ contract AuditFixesSafeErc20Test is Test {
         bytes32 BTC = keccak256("BTC");
         oracle.addAsset(BTC, 100_000e8);
 
-        PerpetualExchange ex = new PerpetualExchange(address(tok), address(oracle));
+        PerpetualExchange ex = new PerpetualExchange(address(tok), address(oracle), address(0));
         ex.setExecutionFee(0);
         ex.setTradingFeeBps(0);
         ex.setBorrowFeePerHour(0);

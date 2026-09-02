@@ -34,7 +34,7 @@ contract CopyTrackerFeeBufferTest is Test {
         usdc     = new MockUSDC();
         oracle   = new MockOracle();
         registry = new StrategyRegistry(address(0));
-        exchange = new PerpetualExchange(address(usdc), address(oracle));
+        exchange = new PerpetualExchange(address(usdc), address(oracle), address(0));
         ct       = new CopyTracker(address(usdc), address(exchange), address(registry), address(0), address(0));
 
         exchange.setCopyTracker(address(ct));

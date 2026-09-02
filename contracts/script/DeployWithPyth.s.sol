@@ -189,7 +189,7 @@ contract DeployWithPyth is Script {
         TraderStake traderStake = new TraderStake(address(usdc));
         InsuranceVault vault = new InsuranceVault(address(usdc));
         FeeRouter feeRouter = new FeeRouter(address(usdc), deployer, address(vault));
-        PerpetualExchange exchange = new PerpetualExchange(address(usdc), address(aggOracle));
+        PerpetualExchange exchange = new PerpetualExchange(address(usdc), address(aggOracle), address(0));
         StrategyRegistry registry = new StrategyRegistry(address(traderStake));
         CopyTracker ct = new CopyTracker(
             address(usdc), address(exchange), address(registry), address(feeRouter), address(traderStake)

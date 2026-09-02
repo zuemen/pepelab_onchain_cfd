@@ -28,7 +28,7 @@ contract SlashTriggerTest is Test {
         oracle   = new MockOracle();
         ts       = new TraderStake(address(usdc));
         registry = new StrategyRegistry(address(ts));
-        exchange = new PerpetualExchange(address(usdc), address(oracle));
+        exchange = new PerpetualExchange(address(usdc), address(oracle), address(0));
         ct       = new CopyTracker(
             address(usdc), address(exchange), address(registry), address(0), address(ts)
         );

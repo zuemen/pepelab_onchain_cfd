@@ -56,7 +56,7 @@ contract Deploy is Script {
         FeeRouter feeRouter = new FeeRouter(address(usdc), deployer, address(vault));
 
         // 8. PerpetualExchange
-        PerpetualExchange exchange = new PerpetualExchange(address(usdc), address(oracle));
+        PerpetualExchange exchange = new PerpetualExchange(address(usdc), address(oracle), address(0));
 
         // 9. StrategyRegistry (with stake gate)
         StrategyRegistry registry = new StrategyRegistry(address(traderStake));

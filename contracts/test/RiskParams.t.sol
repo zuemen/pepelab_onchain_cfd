@@ -21,7 +21,7 @@ contract RiskParamsTest is Test {
     function setUp() public {
         usdc     = new MockUSDC();
         oracle   = new MockOracle();
-        exchange = new PerpetualExchange(address(usdc), address(oracle));
+        exchange = new PerpetualExchange(address(usdc), address(oracle), address(0));
 
         oracle.addAsset(XAU, 2_000e8);
         oracle.addAsset(BTC, 100_000e8);

@@ -93,7 +93,7 @@ contract ChainlinkOracleAdapterTest is Test {
     function test_dropIn_perpetualExchangeOpensPosition() public {
         MockUSDC usdc = new MockUSDC();
         // deploy exchange against the Chainlink adapter instead of MockOracle
-        PerpetualExchange exchange = new PerpetualExchange(address(usdc), address(adapter));
+        PerpetualExchange exchange = new PerpetualExchange(address(usdc), address(adapter), address(0));
 
         MockAggregatorV3 feed = new MockAggregatorV3(8, 100_000e8);
         adapter.setFeed(BTC, address(feed));

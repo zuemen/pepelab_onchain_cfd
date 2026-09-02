@@ -33,7 +33,7 @@ contract AgentSessionAssetWhitelistTest is Test {
     function setUp() public {
         usdc     = new MockUSDC();
         oracle   = new MockOracle();
-        exchange = new PerpetualExchange(address(usdc), address(oracle));
+        exchange = new PerpetualExchange(address(usdc), address(oracle), address(0));
         manager  = new AgentSessionManager(address(exchange));
 
         oracle.addAsset(BTC,  100_000e8);

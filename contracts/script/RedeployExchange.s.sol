@@ -179,7 +179,7 @@ contract RedeployExchange is Script {
         );
 
         // ── 1. The exchange itself ───────────────────────────────────────────
-        PerpetualExchange exchange = new PerpetualExchange(USDC, ORACLE);
+        PerpetualExchange exchange = new PerpetualExchange(USDC, ORACLE, address(0));
         require(exchange.FUNDING_INTERVAL() == 8 hours, "new exchange still has the old cadence");
 
         exchange.setMaxPriceAge(MAX_PRICE_AGE);

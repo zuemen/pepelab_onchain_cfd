@@ -147,7 +147,7 @@ contract AggregatorOracleTest is Test {
 
     function test_dropIn_exchangeRejectsDivergentFeed() public {
         MockUSDC usdc = new MockUSDC();
-        PerpetualExchange exchange = new PerpetualExchange(address(usdc), address(agg));
+        PerpetualExchange exchange = new PerpetualExchange(address(usdc), address(agg), address(0));
         exchange.setExecutionFee(0);
         exchange.setTradingFeeBps(0);
         exchange.setBorrowFeePerHour(0);
@@ -180,7 +180,7 @@ contract AggregatorOracleTest is Test {
     ///      conditions that produced the divergence.
     function test_M1_softDivergenceStillAllowsClosingRisk() public {
         MockUSDC usdc = new MockUSDC();
-        PerpetualExchange exchange = new PerpetualExchange(address(usdc), address(agg));
+        PerpetualExchange exchange = new PerpetualExchange(address(usdc), address(agg), address(0));
         exchange.setExecutionFee(0);
         exchange.setTradingFeeBps(0);
         exchange.setBorrowFeePerHour(0);
