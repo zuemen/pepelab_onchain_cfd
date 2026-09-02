@@ -135,6 +135,13 @@
   },
   {
     "type": "function",
+    "name": "clearMintingHalt",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "exposureOf",
     "inputs": [
       {
@@ -311,6 +318,52 @@
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "mintingHalted",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "observeReserve",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "reserve_",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "liability",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "ratioBps",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "unpriced",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "halted",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -568,6 +621,44 @@
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "reserveStatus",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "reserve_",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "liability",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "ratioBps",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "unpriced",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "stale",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "halted",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "stateMutability": "view"
@@ -872,6 +963,31 @@
   },
   {
     "type": "event",
+    "name": "MintingHaltCleared",
+    "inputs": [
+      {
+        "name": "operator",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "ratioBps",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "unpriced",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "OracleChanged",
     "inputs": [
       {
@@ -932,6 +1048,87 @@
       },
       {
         "name": "fee",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "ReserveBreached",
+    "inputs": [
+      {
+        "name": "ratioBps",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "minRatioBps",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "unpriced",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "ReserveObserved",
+    "inputs": [
+      {
+        "name": "reserve",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "liability",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "ratioBps",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "unpriced",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "timestamp",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "ReserveRestored",
+    "inputs": [
+      {
+        "name": "ratioBps",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "minRatioBps",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -1209,6 +1406,11 @@
   {
     "type": "error",
     "name": "InvalidParam",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "MintingHalted",
     "inputs": []
   },
   {

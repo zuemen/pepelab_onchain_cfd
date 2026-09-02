@@ -56,6 +56,12 @@ export const errors: Catalog['errors'] = {
     NotPositionAgent:
       'This position was opened by a different agent session — only the agent that opened it can close it on your behalf.',
 
+    // ── AssetVaultV2 (#99: reserve-ratio observation and auto-halt on breach) ──
+    MintingHalted:
+      "Minting is paused — an on-chain observation found the reserve ratio below the floor. New buys need a later observation to show it's recovered. Redemption is unaffected — you can still sell.",
+    ReserveRatioTooLow:
+      "This buy would leave the vault's reserve ratio below the floor, so it was rejected. Try a smaller amount, or wait and try again.",
+
     // ── PepeAMM (constant-product pool: swaps slip, and are bounded by an oracle guard rail) ──
     StaleOraclePrice:
       "The swap pool's reference oracle price is stale (past maxOracleAge) — swaps are paused to prevent arbitrage on a stale price. Wait for the keeper to update it and try again.",

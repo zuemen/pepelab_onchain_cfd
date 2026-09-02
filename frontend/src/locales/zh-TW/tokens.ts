@@ -78,10 +78,15 @@ export const tokens = {
     title: '🛡️ V2 硬化特性（鏈上即時數值）',
     reserveRatio: '儲備率',
     reserveRatioInfinite: '∞（尚無發行）',
+    /** #99：儲備率過期時顯示這個而不是一個樂觀數字，比照 kyc.ts 的 unknownTitle。 */
+    reserveRatioUnknown: '無法確認',
     reserveRatioNote: '金庫 USDC 儲備 / 已發行代幣總值。低於下限時 mint 會被拒絕。',
+    reserveRatioNoteStale: '至少一項資產的價格已過期，此數字可能被低估負債、讀起來比實際樂觀——視為「未知」而非「健康」，在有新報價之前。',
     status: '運作狀態',
     paused: '已暫停',
     running: '運作中',
+    /** #99：AssetVaultV2_3.mintingHalted() 的鎖存狀態，與 paused（PAUSER_ROLE 手動）是不同的鎖。 */
+    mintingHalted: '鑄造已暫停',
     pausableNote: 'Pausable：緊急時可由 PAUSER_ROLE 停止買賣。',
     accruedFees: '累積手續費',
     guardedOracle: 'GuardedOracle',
@@ -144,11 +149,19 @@ export const tokens = {
     introMid2: '，可加入 MetaMask 檢視、可轉帳給他人。 買賣以 ',
     introAfter: ' 結算，價格取自鏈上 oracle（無滑價）。',
 
-    staleOracleBold: 'GuardedOracle 價格已過期',
-    staleOracleMid1:
-      '，買賣暫時無法執行。 這是 fail-closed 的預期行為：預言機拒絕提供過期報價，而金庫的儲備率計算 會直接呼叫它，所以 ',
-    staleOracleMid2: ' 與 ',
-    staleOracleAfter: ' 會一起 revert。 需由 KEEPER_ROLE 重新餵價後恢復。',
+    /** #99：ratioIsStale() 的讀者。買入因此暫停——過期的資產會被
+     *  outstandingValueDetailed() 排除在負債之外，讓儲備率（連帶 mintingHalted
+     *  的觸發條件）比實際樂觀，所以擋的是「整個金庫」的買入，不只是那一項過期
+     *  的資產。賣出不受影響：個別資產若自己的價格過期，redeem 送出時會被合約
+     *  以 StalePrice 擋下，走的是另一條路徑，與這裡的儲備率無關。 */
+    staleRatioBold: '儲備率無法確認',
+    staleRatioBody:
+      '——至少一項已發行資產的價格已過期，儲備率的計算會低估負債、讀起來比實際樂觀。上方數字在有新報價之前不代表金庫是否足額——買入已暫停以策安全。贖回不受影響：無關資產的過期價格不該擋住你賣出。',
+
+    /** #99：AssetVaultV2_3 observeReserve() 鎖存的破線狀態，只擋新的 mint。 */
+    mintingHaltedBold: '鑄造已暫停',
+    mintingHaltedBody:
+      '——鏈上觀測到儲備率跌破門檻（市場價格波動即可觸發，不代表有人操作）。新的買入已暫停，直到下一次觀測顯示已恢復。贖回不受影響，任何時候都可以賣出。',
 
     vaultDryBefore: '提示：賣出由金庫的 USDC 儲備支付。若儲備不足會顯示「vault dry」， 需由管理者呼叫 ',
     vaultDryAfter: ' 補充。',

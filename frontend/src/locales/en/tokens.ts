@@ -74,11 +74,15 @@ export const tokens: Catalog['tokens'] = {
     title: '🛡️ V2 Hardened Features (live on-chain values)',
     reserveRatio: 'Reserve ratio',
     reserveRatioInfinite: '∞ (nothing issued yet)',
+    reserveRatioUnknown: 'Cannot confirm',
     reserveRatioNote:
       "The vault's USDC reserve divided by the total value of issued tokens. Mint is rejected below the floor.",
+    reserveRatioNoteStale:
+      "At least one asset's price is stale, so this number may understate the liability and read more optimistic than reality — treat it as unknown, not healthy, until a fresh price arrives.",
     status: 'Status',
     paused: 'Paused',
     running: 'Running',
+    mintingHalted: 'Minting halted',
     pausableNote: 'Pausable: PAUSER_ROLE can halt buying and selling in an emergency.',
     accruedFees: 'Accrued fees',
     guardedOracle: 'GuardedOracle',
@@ -138,11 +142,13 @@ export const tokens: Catalog['tokens'] = {
     introMid2: ', where you can add it to MetaMask or send it to someone else. Trading settles in ',
     introAfter: ', with pricing pulled from the on-chain oracle (no slippage).',
 
-    staleOracleBold: 'GuardedOracle price is stale',
-    staleOracleMid1:
-      " — buying and selling are temporarily disabled. This is expected fail-closed behavior: the oracle refuses to serve a stale price, and the vault's reserve-ratio calculation calls it directly, so ",
-    staleOracleMid2: ' and ',
-    staleOracleAfter: ' both revert. It recovers once KEEPER_ROLE feeds a fresh price.',
+    staleRatioBold: 'Reserve ratio cannot be confirmed',
+    staleRatioBody:
+      " — at least one issued asset's price is stale, so the reserve ratio understates the liability and reads more optimistic than reality. The number above doesn't reflect whether the reserve covers what's owed until a fresh price arrives — buying is paused as a precaution. Redemption is unaffected: a stale price on an unrelated asset should never stop you from selling.",
+
+    mintingHaltedBold: 'Minting paused',
+    mintingHaltedBody:
+      " — an on-chain observation found the reserve ratio below the floor (a market move alone can trigger this; nobody has to be transacting). New buys are paused until a later observation shows it has recovered. Redemption is unaffected — you can sell at any time.",
 
     vaultDryBefore:
       'Note: sells are paid from the vault\'s USDC reserve. If the reserve runs low, you\'ll see "vault dry" — an admin needs to call ',

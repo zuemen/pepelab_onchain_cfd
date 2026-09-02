@@ -9,6 +9,10 @@
 //   cd agent
 //   KEEPER_CHAIN=base-sepolia npx tsx keeper/run.ts
 //   KEEPER_CHAIN=base-sepolia DRY_RUN=1 npx tsx keeper/run.ts   # 只讀不寫
+//
+// 選用：設定 KEEPER_VAULT_ADDRESS 指向 AssetVaultV2（.3+）就會在價格寫完後呼叫
+// observeReserve()，把儲備率釘進可重播的 ReserveObserved 事件（#99）。不設就
+// 完全跳過，不影響價格寫入。
 import { ethers } from "ethers";
 import {
   toPrice8,
@@ -43,6 +47,10 @@ const RPC_URL = (process.env.KEEPER_RPC_URL ?? "").trim();
 const PRIVATE_KEY = (process.env.KEEPER_PRIVATE_KEY ?? "").trim();
 const ORACLE_ADDR = (process.env.KEEPER_ORACLE_ADDRESS ?? "").trim();
 const GUARDED_ADDR = (process.env.KEEPER_GUARDED_ORACLE ?? "").trim();
+// #99：讓 AssetVaultV2(.3+) 的儲備率變成可重播的時間序列。選用 —— 沒設就跳過,
+// 不影響價格寫入這個 keeper 的主要職責。observeReserve() 本身是 permissionless
+// 的一般交易,不需要任何角色,用同一把 keeper 金鑰送即可。
+const VAULT_ADDR = (process.env.KEEPER_VAULT_ADDRESS ?? "").trim();
 
 // PerpetualExchange.oracle 是 immutable，永遠不可能指向 Chainlink/Pyth，除非重新
 // 部署交易所而毀掉所有未平倉部位。但它可以「被它們餵」：設定 RELAY_SOURCE 指向
@@ -82,6 +90,13 @@ const AGGREGATOR_ABI = [
   "function getPrice(bytes32 assetId) view returns (uint256 price, uint256 updatedAt)",
   "function isStale(bytes32 assetId) view returns (bool)",
 ];
+const VAULT_ABI = [
+  "function observeReserve() external returns (uint256 reserve_, uint256 liability, uint256 ratioBps, uint256 unpriced, bool halted)",
+  "event ReserveObserved(uint256 reserve, uint256 liability, uint256 ratioBps, uint256 unpriced, uint256 timestamp)",
+  "event ReserveBreached(uint256 ratioBps, uint256 minRatioBps, uint256 unpriced)",
+  "event ReserveRestored(uint256 ratioBps, uint256 minRatioBps)",
+];
+const VAULT_IFACE = new ethers.Interface(VAULT_ABI);
 
 /**
  * 從鏈上的參考聚合器讀一個價。拿不到就回 null —— 多數股票在測試網上沒有
@@ -246,6 +261,13 @@ async function main(): Promise<void> {
     }
   }
 
+  // #99: reuses the same failed-counter/exit(1) mechanism every other genuine
+  // problem in this file already goes through, rather than a separate,
+  // always-::warning:: path — see observeVaultReserve()'s own docstring.
+  if (VAULT_ADDR && !(await observeVaultReserve(provider, signer))) {
+    failed += 1;
+  }
+
   console.log(
     `\navailable=${available} skipped=${skipped} rejected=${rejected} clamped=${clamped} wrote=${wrote} failed=${failed}`,
   );
@@ -280,6 +302,93 @@ async function main(): Promise<void> {
     console.error(`::error::寫入 ${wrote} 筆，${failed} 筆失敗。`);
     process.exit(1);
   }
+}
+
+/**
+ * 呼叫 AssetVaultV2(.3+) 的 observeReserve()，把儲備率釘進 ReserveObserved 事件
+ * 的時間序列。#99：這是 README 早就自豪「每個狀態改變都發事件、/history 可重
+ * 播」唯獨漏掉的那個數字。
+ *
+ * 回傳比照 mirror()：true 代表這輪沒問題，false 代表真的失敗（RPC 抖動、gas
+ * 估算失敗、地址設錯）——呼叫端把 false 計進 failed，讓既有的「failed > 0 就
+ * exit(1)」機制接管，而不是另外發明一條「永遠只 warning、CI 永遠綠」的例外
+ * 路徑。observeReserve() 是選用功能（KEEPER_VAULT_ADDRESS 沒設就完全不會呼叫
+ * 到這裡），但一旦設了，它失敗就跟其他任何價格寫入失敗一樣該讓 CI 變紅——不然
+ * 「可重播的儲備歷史」會在沒人發現的情況下停止累積。
+ *
+ * 只送一次交易，不額外做 staticCall 預覽（DRY_RUN 除外，那是唯一不送真交易的
+ * 模式，此時只能用 staticCall 才看得到會發生什麼）：reserve/liability/ratio/
+ * unpriced 這些數字直接從交易收據裡的 ReserveObserved 事件解出來 log，不用再
+ * 打第二次 RPC、跑第二次 O(n) 的 oracle 掃描，也不會有「staticCall 快照」與
+ * 「實際上鏈結果」中間夾了別筆交易而兜不起來的問題。
+ *
+ * ReserveBreached 出現時回傳 false（連同一個獨立的 log 訊息），讓呼叫端也計進
+ * failed——這不是「keeper 壞了」，是「儲備率真的跌破門檻」，但兩者都值得讓這次
+ * 排程執行在 CI 上顯眼地標紅，而不是全綠地滑過去。
+ */
+async function observeVaultReserve(
+  provider: ethers.JsonRpcProvider,
+  signer: ethers.Wallet | null,
+): Promise<boolean> {
+  if (!ethers.isAddress(VAULT_ADDR)) {
+    console.error(`::error::KEEPER_VAULT_ADDRESS 不是合法地址`);
+    return false;
+  }
+  const vault = new ethers.Contract(VAULT_ADDR, VAULT_ABI, signer ?? provider);
+
+  if (DRY_RUN) {
+    try {
+      const [reserve, liability, ratioBps, unpriced, halted] =
+        (await vault.observeReserve.staticCall()) as [bigint, bigint, bigint, bigint, boolean];
+      console.log(`\n${_fmtReserveLine(reserve, liability, ratioBps, unpriced, halted)}`);
+      console.log("  → observeReserve() 略過（DRY_RUN，以上為預覽值）");
+      return true;
+    } catch (e) {
+      console.error(`::error::observeReserve 預覽失敗：${(e as Error).message.slice(0, 140)}`);
+      return false;
+    }
+  }
+
+  try {
+    const tx = await vault.observeReserve();
+    const receipt = await tx.wait();
+    console.log(`  → observeReserve() ✓ ${tx.hash}`);
+
+    let breached = false;
+    for (const log of receipt.logs) {
+      if (log.address.toLowerCase() !== VAULT_ADDR.toLowerCase()) continue;
+      let parsed;
+      try { parsed = VAULT_IFACE.parseLog(log); } catch { continue; } // not one of ours
+      if (parsed?.name === "ReserveObserved") {
+        const [reserve, liability, ratioBps, unpriced] = parsed.args as unknown as
+          [bigint, bigint, bigint, bigint, bigint];
+        console.log(`\n${_fmtReserveLine(reserve, liability, ratioBps, unpriced, null)}`);
+      } else if (parsed?.name === "ReserveBreached") {
+        breached = true;
+      } else if (parsed?.name === "ReserveRestored") {
+        console.log("  → ReserveRestored —— 儲備率已恢復，mint() 重新開放。");
+      }
+    }
+    if (breached) {
+      console.error(
+        `::error::ReserveBreached —— 儲備率跌破門檻，mint() 已暫停（redeem 不受影響）。`,
+      );
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error(`::error::observeReserve 失敗：${(e as Error).message.slice(0, 140)}`);
+    return false;
+  }
+}
+
+function _fmtReserveLine(
+  reserve: bigint, liability: bigint, ratioBps: bigint, unpriced: bigint, halted: boolean | null,
+): string {
+  const ratioTxt = ratioBps === ethers.MaxUint256 ? "∞" : `${(Number(ratioBps) / 100).toFixed(1)}%`;
+  const haltedTxt = halted === null ? "" : ` halted=${halted}`;
+  return `reserve=$${(Number(reserve) / 1e18).toFixed(2)} ` +
+    `liability=$${(Number(liability) / 1e18).toFixed(2)} ratio=${ratioTxt} unpriced=${unpriced}${haltedTxt}`;
 }
 
 /**
