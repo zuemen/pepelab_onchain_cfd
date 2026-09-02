@@ -165,4 +165,31 @@ contract CarbonTiersTest is Test {
         assertEq(borrowA, borrowB);
         assertEq(levA, levB);
     }
+
+    // ── qualifiesAtOrBelow: #98's "does this qualify under a ceiling" seam ───
+
+    function testQualifiesAtOrBelow_ratedBelowCeiling_true() public {
+        assertTrue(CarbonTiers.qualifiesAtOrBelow(0.150e18, true, CarbonTiers.Tier.Low)); // sAAPL, Low <= Low
+        assertTrue(CarbonTiers.qualifiesAtOrBelow(4.34e18, true, CarbonTiers.Tier.Mid)); // sESGU, Mid <= Mid
+    }
+
+    function testQualifiesAtOrBelow_ratedAboveCeiling_false() public {
+        assertFalse(CarbonTiers.qualifiesAtOrBelow(4.34e18, true, CarbonTiers.Tier.Low)); // Mid > Low ceiling
+        assertFalse(CarbonTiers.qualifiesAtOrBelow(10.021e18, true, CarbonTiers.Tier.Mid)); // High > Mid ceiling
+    }
+
+    /// @dev The exact trap this helper exists to close: Unrated sits at enum
+    ///      value 0, below every real tier, so a bare ordinal `tierOf(...) <=
+    ///      ceiling` would let an unrated asset satisfy ANY ceiling — even
+    ///      the strictest one (Low). This must stay false no matter how low
+    ///      the ceiling is set.
+    function testQualifiesAtOrBelow_unrated_neverQualifies_evenAtLowestCeiling() public {
+        assertFalse(CarbonTiers.qualifiesAtOrBelow(0, false, CarbonTiers.Tier.Low));
+        assertFalse(CarbonTiers.qualifiesAtOrBelow(0, false, CarbonTiers.Tier.High));
+        assertFalse(CarbonTiers.qualifiesAtOrBelow(0, false, CarbonTiers.Tier.Unrated));
+    }
+
+    function testQualifiesAtOrBelow_exactlyAtCeiling_true() public {
+        assertTrue(CarbonTiers.qualifiesAtOrBelow(8e18, true, CarbonTiers.Tier.Mid)); // boundary: 8e18 is Mid
+    }
 }
