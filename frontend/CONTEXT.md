@@ -65,6 +65,19 @@ The `en` catalog translates the trading domain's recurring terms, not just indiv
 
 British spelling (`Unrealised`, `realise`) is the convention, matching the files that reached zero Han characters first. `exchange.ts` and `terminal.ts` still carry a few pre-existing American spellings (`Unrealized`, `realize`) left from before this glossary existed; normalise them to British spelling as those files are translated, rather than treating the American spelling as a second accepted form.
 
+That table is now **contract-layer vocabulary**. It pins one English rendering per Chinese term wherever the mechanism is discussed — Solidity, tests, engineering conversation, and Expert Mode screens, which deliberately keep the trading desk's language. It no longer governs Simple Mode, where the mechanism is never named ([ADR 0006](./docs/adr/0006-sustainability-owns-the-word-yongxu.md)). A term appearing in both places is rendered by whichever table applies to the screen at hand, and the two never appear together.
+
+| Mechanism (contract layer) | Simple Mode says |
+|---|---|
+| 開倉 / 平倉 · Open / Close a position | 買進 / 贖回 |
+| 未實現損益 · Unrealised PnL | 持有期報酬 |
+| 保證金 · Margin | 投入金額 |
+| 槓桿 · Leverage | *(absent)* |
+| 強制平倉 · Liquidation | *(absent)* |
+| 資金費率 · Funding rate | *(absent)* |
+
+An entry marked *(absent)* has no Simple Mode rendering on purpose. A screen that finds it needs one is a signal that the mechanism has leaked into the display layer, and the fix is to remove the leak rather than to invent a word.
+
 ### Portfolio
 
 **Net Worth**:
@@ -74,6 +87,80 @@ _Avoid_: total assets, balance, total value
 **Unread Balance**:
 A balance the app tried and failed to read on-chain. Distinct from a balance that was read successfully and is zero — an unread balance makes Net Worth incomplete and is reported as such.
 _Avoid_: missing balance, empty balance
+
+**Reserve Ratio**:
+What the vault holds against what it owes, as one figure anyone can compute from chain state. Both halves are on chain — the holding is the vault's own stablecoin balance, the owing is every outstanding position priced by the oracle — so it is verified rather than attested. Falling below the floor stops new minting; it never stops redemption, because blocking exits under stress is the bank run rather than a defence against it.
+_Avoid_: backing, collateralisation, proof of reserves (that name implies an off-chain asset and an attestor, and there is neither)
+
+**Unknown Ratio**:
+A Reserve Ratio computed while some position could not be priced. The figure that comes back is optimistic, not wrong-but-close, so a screen reports it as "cannot confirm" and never as a number. The same distinction the KYC gate draws between `unknown` and `unverified`.
+_Avoid_: stale ratio, approximate ratio, treating an unknown ratio as a healthy one
+
+### Sustainability
+
+**Sustainability (永續)**:
+The platform's core pitch and the only thing the Chinese word 永續 is allowed to mean on screen: investing with regard for a holding's environmental, social and governance conduct. Every user-facing use of 永續 carries this sense and no other.
+_Avoid_: ESG as a synonym (ESG names the measured dimensions; Sustainability names the stance), green, responsible, impact
+
+**Perpetual**:
+The contract-layer mechanism that settles positions without an expiry date — funding rate, mark price, liquidation. A pure implementation detail: it never appears in display text, and it is never rendered into Chinese, because 永續合約 on a screen would collide head-on with Sustainability. A user learns what they own and what it costs; they never learn that a perpetual is what carries it.
+_Avoid_: 永續合約 or any Chinese rendering in display text, perp, swap
+
+Both senses of 永續 exist in this repo the way both senses of RWA do, and for the same reason — the display language and the contract language answer to different audiences. The difference is that the two RWA senses can safely sit on one screen, while the two 永續 senses cannot, so the perpetual sense is barred from the display layer entirely rather than merely kept distinct from it.
+
+### Carbon and attestation
+
+**Carbon Intensity**:
+How much greenhouse gas a holding is responsible for per unit of economic activity, sourced from the issuer's own published reporting. The one sustainability measure this platform prices on, chosen because it carries a unit and an auditable source — which an aggregate ESG score does not. Distinct from the E/S/G scores, which are kept for display and never reach pricing.
+_Avoid_: ESG score, carbon footprint (that names a total, not an intensity), emissions
+
+**Carbon Tier**:
+The band a Carbon Intensity falls into, and the only thing pricing actually reads: it fixes an asset's holding cost and its leverage ceiling. Derived by one pure function shared by contracts, screens and analysis, from thresholds that are constants rather than settable parameters — a threshold an operator could adjust is a discretionary policy, and non-discretion is the whole point.
+_Avoid_: carbon rating, grade, band, risk level
+
+**Unrated Asset**:
+An asset with no usable Carbon Intensity — never attested, or every attestation expired. Priced at the most conservative Tier, which is neither a refusal to trade nor a concession: absence of data is not absence of exposure.
+_Avoid_: neutral, default, exempt
+
+**Attestation**:
+One party's recorded claim about an asset's Carbon Intensity, carrying who said it, when they observed it, and a hash of the source they read. Expires; a lapsed attestation stops counting rather than lingering as an old number.
+_Avoid_: rating, score, reading, oracle update
+
+**Attestor**:
+Whoever may record an Attestation. Deliberately a different role from the KYC Reviewer and from the contract's `verifiers` mapping — an Attestor speaks about an asset, a Reviewer decides about a person, and neither implies the other.
+_Avoid_: verifier, reviewer, rater, auditor
+
+**Dispersion**:
+How far the Attestations for one asset sit from each other. A first-class figure shown on screen rather than an error to be averaged away, because rating agencies disagreeing about the same company is the condition this platform exists to make visible.
+_Avoid_: variance, error, spread, confidence
+
+### Allocation and sharing
+
+**Allocation**:
+A weighted mix of assets that sums to the whole — the thing a user adopts and holds. Versioned, published openly, and constrained so that a mix concentrated in one asset cannot be published under the name.
+_Avoid_: strategy, portfolio (that is what a user ends up with, not what a publisher writes), basket, signal
+
+**Allocation Publisher**:
+Someone who publishes an Allocation and earns a share of the profit their adopters make. Puts up a stake first, so the reputation has a cost. Never called a trader — the word names the activity this platform moved away from.
+_Avoid_: trader, strategist, manager, influencer
+
+**Adopt**:
+To put your own money to work following an Allocation. Your positions, your wallet, your risk — nothing is pooled, and the publisher never holds your funds.
+_Avoid_: copy, follow, mirror, subscribe (all four describe the trading-desk product this replaced)
+
+**Diversification**:
+How spread out a holding is across its assets. Measured and shown for a user's own holdings, never enforced on them; enforced only on a published Allocation, where the word is a claim being made to other people.
+_Avoid_: spread, concentration (that names the opposite), balance
+
+### Achievements
+
+**Achievement**:
+A permanent, non-transferable mark that a user sustained some behaviour the platform wants to encourage — holding for a long time, keeping a spread of assets, keeping a low-carbon mix. Non-transferability is the whole design: anything transferable acquires a price, and anything with a price gets farmed.
+_Avoid_: reward, prize, points, badge NFT
+
+**Streak**:
+Consecutive days a user has stayed engaged. Counted, but never the thing that decides a level — a level bought by holding tokens is not a level earned.
+_Avoid_: login bonus, daily reward
 
 ### Asset classes and RWA
 
