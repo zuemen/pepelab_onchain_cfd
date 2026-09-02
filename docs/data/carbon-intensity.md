@@ -66,9 +66,27 @@ Source: [iShares ICLN fact sheet](https://www.ishares.com/us/literature/fact-she
 Weighted average over the ≈24.4% of the fund with intensity data collected here: **≈4.34 tCO2e/$M revenue** (partial coverage — the remaining ≈75.6% of the fund, including the rest of the top-10 and the long tail of smaller holdings, is not reflected in this figure and could shift it materially in either direction). **Provisionally placed in Mid; flagged as a partial estimate.**
 Source: holdings via [stockanalysis.com](https://stockanalysis.com/etf/esgu/holdings/) and a second independent search, [iShares ESGU fact sheet](https://www.ishares.com/us/literature/fact-sheet/esgu-ishares-esg-aware-msci-usa-etf-fund-fact-sheet-en-us.pdf), retrieved 2026-09-02.
 
-### Green bond ETF (sBOND replacement)
+### sBOND replacement — candidate researched, does not cleanly pass the #106 test
 
-Deferred to [#106](https://github.com/zuemen/pepelab_onchain_cfd/issues/106) — sBOND's replacement asset has not been finalized, so no carbon figure is collected here. #106 is blocked on this issue for methodology and tier thresholds, not for sBOND's own data.
+**Name correction first:** the candidate named in earlier drafts of this work, "iShares Global Green Bond ETF (BGRN)," has been renamed by the issuer. The ticker BGRN now trades as **iShares USD Green Bond ETF** — narrower scope (USD-denominated only), same underlying strategy. Every reference to "Global Green Bond ETF (BGRN)" elsewhere in this repo's docs refers to this same fund under its old name.
+
+**Fund facts** (iShares USD Green Bond ETF fact sheet, retrieved 2026-09-02): AUM ≈$445.89M, **329 holdings**, top-10 holdings are only **13.5%** of assets, largest single holding is the European Investment Bank at **3.75%**. Source: [iShares BGRN fact sheet](https://www.ishares.com/us/literature/fact-sheet/bgrn-ishares-usd-green-bond-etf-fund-fact-sheet-en-us.pdf), holdings breakdown corroborated across two independent searches.
+
+**Why this fails the criteria as scoped, and it isn't a data-availability problem:**
+
+1. **Too diffuse for the method used on sESGU.** sESGU's top-10 already carried 35.8% of the fund, enough to make a partial weighted estimate meaningful. BGRN's top-10 is 13.5% with no holding above 3.75% — reaching even 50% coverage means pricing dozens of individual bond issuers, not a handful.
+2. **Most of those issuers don't have "revenue" in a comparable sense.** The largest holdings are supranationals — European Investment Bank, and (per further search, unconfirmed at exact weight) World Bank/IBRD and KfW. These institutions don't file a 10-K or report commercial revenue; the `tCO2e / $M revenue` metric used for the five equities in this table doesn't apply to them at all, not even in principle.
+3. **A green bond's "greenness" is a property of the specific bond, not the issuer.** This is the structural issue, and it would remain even with unlimited research time. Green bonds fund an earmarked project (a solar farm, a green building); an issuer that is carbon-intensive overall can still issue one green bond for one project. Reading BGRN's constituents through the equities' "issuer-level operating carbon intensity" lens measures the wrong thing — the number that actually describes a green bond fund is **portfolio-level avoided-emissions impact reporting**, which is a different kind of statistic entirely and is reported by the issuer, not derived by dividing two numbers.
+
+**That correct metric exists but I could not verify it first-hand.** iShares publishes an annual *"iShares USD Green Bond ETF Impact Report"* with fund-level avoided-emissions figures — exactly the right number for this asset class. Both hosts serving it (`ishares.com`, `blackrock.com`) returned `403 Forbidden` to automated fetch in this session. Secondary search results reference figures from it (e.g. one funded project category "≈670,000 tCO2e/yr avoided" from energy-efficient data centers) but not in a form I'm willing to transcribe as a verified, dated, fund-level figure — the summaries read as loosely paraphrased, not quoted, and I could not confirm which reporting year they belong to. Per this table's own standard (every number traces to a source I actually read), I am not writing that number in.
+
+**Recommendation — three paths, in order of preference:**
+
+1. **(Best, needs a human)** Someone with normal browser access downloads the BGRN Impact Report PDF directly and extracts the fund-level avoided-emissions-per-$M-invested figure. That is the methodologically correct number for this asset and this table should be updated with it once available.
+2. **(Fallback, buildable now)** Treat BGRN like sICLN: place it by **asset-class benchmark rather than a computed number** — a diversified investment-grade green bond fund is, by the Green Bond Principles' own eligibility criteria, structurally lower-carbon-*intent* than an unscreened bond index, and gets a qualitative **Low** placement, flagged exactly as approximate as sICLN's is. Zero additional research cost; ships within this ticket's remaining budget.
+3. **(Alternative asset)** Replace the ETF wrapper with a small basket of individually well-documented supranational green bonds instead — e.g. KfW's own disclosure (a real, sourced figure surfaced in this research: "EUR 12.2bn net 2024 green bond proceeds → ≈2.3 million tCO2e/yr avoided," [ESG Today](https://www.esgtoday.com/blackrock-launches-green-bond-and-climate-risk-focused-global-government-bond-etfs/)) is exactly the single-issuer, well-reported kind of instrument this table's method actually works for. This is a bigger change — it swaps "an ETF" for "a small set of named bonds" as the product — so it needs sign-off, not a silent substitution.
+
+**Working default for this ticket:** option 2 (qualitative Low, same treatment as sICLN). Someone should still pursue option 1 before #95 is implemented, since it would replace an approximation with a real number at near-zero cost if it succeeds.
 
 ## Proposed carbon tiers
 
@@ -93,6 +111,7 @@ This places the five equities as a natural bimodal split: {AAPL 0.150, NVDA 0.09
 | sESGU | **Mid** | partial weighted computation, ≈4.34 tCO2e/$M revenue-equivalent, ≈24% coverage |
 | sGOLD | **High** | 0.85 tCO2e/oz industry benchmark; >100 Mt CO2e/yr sector-wide |
 | sBTC | **High** | ≈39.8 Mt CO2e/yr absolute — comparable to a small country's annual emissions |
+| sBOND replacement (iShares USD Green Bond ETF, BGRN) | **Low** (working default) | sector/instrument-class benchmark, qualitative — see full writeup below; not a computed number |
 
 ## Open questions for #95
 
@@ -109,3 +128,4 @@ Recommendation: (1). It matches this table's own reasoning, requires no new on-c
 - sESGU's intensity is a ≈24%-coverage partial estimate, not a full fund computation.
 - sICLN's Low placement is qualitative (sector composition), not computed from constituent data.
 - Alphabet and Tesla emissions are FY2024; Microsoft and Nvidia are FY2025 (their most recently completed fiscal years as of collection date) — the four companies do not all share a fiscal year, which is disclosed per-row above rather than normalized away.
+- The sBOND replacement (BGRN) has **no computed intensity at all** — its Low placement is a sector-benchmark judgment call, not arithmetic, and the fund's own Impact Report (which would supply a real number) could not be fetched in this session. This is the least-verified row in the table and should be the first one revisited.
