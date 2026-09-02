@@ -287,8 +287,15 @@ contract ESGRegistryV2Test is Test {
     }
 
     function testGrantAttestorRole_byNonAdmin_reverts() public {
+        // `registry.ATTESTOR_ROLE()` is itself an external call. Inlined
+        // inside grantRole's argument list, it would be evaluated first and
+        // consume vm.prank's single-call effect — grantRole would then run
+        // as the test contract (admin), succeed, and this test would pass
+        // for the wrong reason. Reading the role into a local first ensures
+        // the prank lands on the call this test actually means to check.
+        bytes32 role = registry.ATTESTOR_ROLE();
         vm.prank(nonAttestor);
         vm.expectRevert();
-        registry.grantRole(registry.ATTESTOR_ROLE(), nonAttestor);
+        registry.grantRole(role, nonAttestor);
     }
 }
