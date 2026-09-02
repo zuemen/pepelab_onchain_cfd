@@ -146,4 +146,22 @@ library CarbonTiers {
         tier = tierOf(carbonIntensity, isRated);
         (tradingFeeBps, borrowFeeBpsPerHour, maxLeverage) = paramsFor(tier);
     }
+
+    /// @notice Whether a carbon intensity qualifies at or below a ceiling
+    ///         tier — e.g. "is this asset Low enough to earn a reward gated
+    ///         at Low".
+    /// @dev Centralizes a trap that is easy to reproduce ad hoc: `Tier`'s
+    ///      ordinal values put `Unrated` at 0, below every real tier, so a
+    ///      bare `tierOf(intensity, isRated) <= ceiling` comparison lets an
+    ///      unrated asset satisfy any ceiling by numeric accident — the same
+    ///      "zero sits in the cheap bucket" trap `tierOf` itself exists to
+    ///      close for its own callers. Any consumer that needs "does this
+    ///      asset qualify under a settable tier cap" (#98's
+    ///      EsgRewardDistributor today; plausibly more later, per this
+    ///      library's own mandate to be the single place this logic lives)
+    ///      should call this rather than re-deriving the guard.
+    function qualifiesAtOrBelow(uint256 carbonIntensity, bool isRated, Tier ceiling) internal pure returns (bool) {
+        if (!isRated) return false;
+        return tierOf(carbonIntensity, isRated) <= ceiling;
+    }
 }
