@@ -30,7 +30,7 @@ contract PerformanceFeeTest is Test {
         oracle    = new MockOracle();
         vault     = new InsuranceVault(address(usdc));
         feeRouter = new FeeRouter(address(usdc), platform, address(vault));
-        exchange  = new PerpetualExchange(address(usdc), address(oracle));
+        exchange  = new PerpetualExchange(address(usdc), address(oracle), address(0));
 
         // Wire: exchange authorized to call feeRouter.receivePerformanceFee
         vault.setFeeRouter(address(feeRouter));
@@ -163,7 +163,7 @@ contract PerformanceFeeTest is Test {
     // ── No fee when feeRouter not set ─────────────────────────────────────────
 
     function test_performanceFee_skippedWhenFeeRouterNotSet() public {
-        PerpetualExchange exchangeNoFee = new PerpetualExchange(address(usdc), address(oracle));
+        PerpetualExchange exchangeNoFee = new PerpetualExchange(address(usdc), address(oracle), address(0));
         exchangeNoFee.setCopyTracker(tracker);
         exchangeNoFee.setExecutionFee(0);
         exchangeNoFee.setTradingFeeBps(0);

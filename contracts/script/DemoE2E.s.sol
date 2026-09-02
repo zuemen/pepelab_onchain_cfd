@@ -74,7 +74,7 @@ contract DemoE2E is Script {
     function _deployAndConfigure() internal {
         usdc     = new MockUSDC();
         oracle   = new MockOracle();
-        exchange = new PerpetualExchange(address(usdc), address(oracle));
+        exchange = new PerpetualExchange(address(usdc), address(oracle), address(0));
         vault    = new InsuranceVault(address(usdc));
         kyc      = new KYCRegistry();
         sessions = new AgentSessionManager(address(exchange));

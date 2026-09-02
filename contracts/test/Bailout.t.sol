@@ -23,7 +23,7 @@ contract BailoutTest is Test {
         usdc     = new MockUSDC();
         oracle   = new MockOracle();
         vault    = new InsuranceVault(address(usdc));
-        exchange = new PerpetualExchange(address(usdc), address(oracle));
+        exchange = new PerpetualExchange(address(usdc), address(oracle), address(0));
 
         vault.setExchange(address(exchange));
         exchange.setInsuranceVault(address(vault));

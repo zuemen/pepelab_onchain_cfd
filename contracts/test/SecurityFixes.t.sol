@@ -30,7 +30,7 @@ contract SecurityFixesTest is Test {
     function setUp() public {
         usdc     = new MockUSDC();
         oracle   = new MockOracle();
-        exchange = new PerpetualExchange(address(usdc), address(oracle));
+        exchange = new PerpetualExchange(address(usdc), address(oracle), address(0));
         vault    = new InsuranceVault(address(usdc));
 
         vault.setExchange(address(exchange));
@@ -242,7 +242,7 @@ contract SecurityFixesTest is Test {
 
     function test_withdrawMargin_reentrancyBlocked() public {
         ReentrantToken evil = new ReentrantToken();
-        PerpetualExchange ex2 = new PerpetualExchange(address(evil), address(oracle));
+        PerpetualExchange ex2 = new PerpetualExchange(address(evil), address(oracle), address(0));
         evil.setTarget(address(ex2));
 
         evil.mint(address(this), 100e18);

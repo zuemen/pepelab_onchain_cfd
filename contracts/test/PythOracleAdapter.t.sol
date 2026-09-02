@@ -94,7 +94,7 @@ contract PythOracleAdapterTest is Test {
 
     function test_dropIn_perpetualExchangeOpensPosition() public {
         MockUSDC usdc = new MockUSDC();
-        PerpetualExchange exchange = new PerpetualExchange(address(usdc), address(adapter));
+        PerpetualExchange exchange = new PerpetualExchange(address(usdc), address(adapter), address(0));
 
         pyth.setPrice(AAPL_PYTH_ID, int64(uint64(200e8)), -8);
         adapter.setPriceId(AAPL, AAPL_PYTH_ID);
