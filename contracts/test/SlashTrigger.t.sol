@@ -21,7 +21,11 @@ contract SlashTriggerTest is Test {
     address bob   = makeAddr("bob");    // follower
 
     bytes32 constant BTC       = keccak256("BTC");
+    bytes32 constant ETH       = keccak256("ETH"); // #97: flat leg, StrategyRegistry rejects a repeated asset
+    bytes32 constant SOL       = keccak256("SOL"); // #97: flat leg
     uint256 constant BTC_PRICE = 100_000e8;
+    uint256 constant ETH_PRICE =   4_000e8;
+    uint256 constant SOL_PRICE =   1_000e8;
 
     function setUp() public {
         usdc     = new MockUSDC();
@@ -37,6 +41,8 @@ contract SlashTriggerTest is Test {
         exchange.setCopyTracker(address(ct));
 
         oracle.addAsset(BTC, BTC_PRICE);
+        oracle.addAsset(ETH, ETH_PRICE);
+        oracle.addAsset(SOL, SOL_PRICE);
 
         // Alice: stake 500 → register → publish
         usdc.mint(alice, 10_000e18);
@@ -44,8 +50,21 @@ contract SlashTriggerTest is Test {
         usdc.approve(address(ts), type(uint256).max);
         ts.stake(500e18);
         registry.registerTrader("Alice");
-        StrategyRegistry.Allocation[] memory allocs = new StrategyRegistry.Allocation[](1);
-        allocs[0] = StrategyRegistry.Allocation(BTC, 10_000, true, 1);
+        // #97: StrategyRegistry now requires >=3 DISTINCT assets and caps any
+        // one at 50% — a single 100%-weight BTC leg (the original design) is
+        // no longer publishable, and repeating BTC across legs (an earlier,
+        // wrong fix — see #97's own code review) doesn't satisfy "distinct"
+        // either. Reconstructed instead via LEVERAGE: BTC at the 50% cap with
+        // 2x leverage has notional = (0.5 * margin) * 2 = margin, identical to
+        // the original 100%-weight, 1x leg's notional. ETH and SOL fill the
+        // remaining 50% at 1x each and their price is never updated anywhere
+        // in this file, so they never move and contribute zero PnL. Net
+        // effect: every percentage-based PnL/slash assertion below, and every
+        // BTC price point, is IDENTICAL to the pre-#97 single-asset design.
+        StrategyRegistry.Allocation[] memory allocs = new StrategyRegistry.Allocation[](3);
+        allocs[0] = StrategyRegistry.Allocation(BTC, 5_000, true, 2);
+        allocs[1] = StrategyRegistry.Allocation(ETH, 3_000, true, 1);
+        allocs[2] = StrategyRegistry.Allocation(SOL, 2_000, true, 1);
         registry.publishStrategy(allocs);
         vm.stopPrank();
 

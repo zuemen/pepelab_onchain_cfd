@@ -122,13 +122,8 @@ contract CopyTracker is ReentrancyGuard {
             feeRouter.distributeCopyFee(trader, fee);
         }
 
-        // 4. Calculate total trading fee buffer (exchange deducts tradingFee per position)
-        uint256 tradingFeeBps  = exchange.TRADING_FEE_BPS();
-        uint256 totalTradingFee = 0;
-        for (uint256 i; i < allocations.length; ++i) {
-            uint256 weightedNotional = netMargin * allocations[i].weight * allocations[i].leverage / 10_000;
-            totalTradingFee += weightedNotional * tradingFeeBps / 10_000;
-        }
+        // 4. Calculate total trading fee buffer (exchange deducts tradingFee per position).
+        uint256 totalTradingFee = _totalTradingFee(allocations, netMargin);
         if (totalTradingFee >= netMargin) revert TradingFeeExceedsMargin(totalTradingFee, netMargin);
         uint256 marginForPositions = netMargin - totalTradingFee;
 
@@ -259,14 +254,9 @@ contract CopyTracker is ReentrancyGuard {
 
         copyFee = address(feeRouter) != address(0) ? totalMargin * COPY_FEE_BPS / 10_000 : 0;
         uint256 netMargin    = totalMargin - copyFee;
-        uint256 tradingFeeBps = exchange.TRADING_FEE_BPS();
 
         portions = new uint256[](allocs.length);
-        totalTradingFee = 0;
-        for (uint256 i; i < allocs.length; ++i) {
-            uint256 wNotional = netMargin * allocs[i].weight * allocs[i].leverage / 10_000;
-            totalTradingFee += wNotional * tradingFeeBps / 10_000;
-        }
+        totalTradingFee = _totalTradingFee(allocs, netMargin);
 
         if (totalTradingFee >= netMargin) {
             marginForPositions = 0;
@@ -276,6 +266,31 @@ contract CopyTracker is ReentrancyGuard {
         marginForPositions = netMargin - totalTradingFee;
         for (uint256 i; i < allocs.length; ++i) {
             portions[i] = marginForPositions * allocs[i].weight / 10_000;
+        }
+    }
+
+    // ── Internal ─────────────────────────────────────────────────────────────
+
+    /// @notice Sums each allocation's own trading fee, looked up per-asset,
+    ///         rather than assuming one global rate applies to every asset in
+    ///         the strategy. Shared by `followTrader` and
+    ///         `previewCopyAllocation` (#97) so the two can't independently
+    ///         drift on how this is computed.
+    /// @dev #96 made `PerpetualExchange`'s trading fee carbon-tier-derived and
+    ///      therefore per-asset — a strategy mixing a high-carbon asset (up
+    ///      to 100 bps) with a low-carbon one (as low as 10 bps) would be
+    ///      under-reserved by a single global rate, and a later allocation in
+    ///      `followTrader`'s open loop would fail `InsufficientFreeMargin`
+    ///      even though the follower supplied enough total margin.
+    function _totalTradingFee(StrategyRegistry.Allocation[] memory allocations, uint256 netMargin)
+        internal
+        view
+        returns (uint256 totalTradingFee)
+    {
+        for (uint256 i; i < allocations.length; ++i) {
+            uint256 weightedNotional = netMargin * allocations[i].weight * allocations[i].leverage / 10_000;
+            uint256 tradingFeeBps = exchange.tradingFeeBpsForAsset(allocations[i].asset);
+            totalTradingFee += weightedNotional * tradingFeeBps / 10_000;
         }
     }
 }

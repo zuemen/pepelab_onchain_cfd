@@ -81,9 +81,13 @@ contract Seed is Script {
             try ts.stake(500e18) {} catch {}
             try registry.registerTrader("Demo Beta") {} catch {}
 
-            StrategyRegistry.Allocation[] memory allocs2 = new StrategyRegistry.Allocation[](2);
-            allocs2[0] = StrategyRegistry.Allocation({asset: SETH,  weight: 6000, isLong: true, leverage: 5});
-            allocs2[1] = StrategyRegistry.Allocation({asset: STSLA, weight: 4000, isLong: true, leverage: 2});
+            // #97: StrategyRegistry now requires >=3 distinct assets and caps
+            // any one at 50% — the original 60/40 two-asset split put ETH
+            // above the cap on its own, independent of the asset-count rule.
+            StrategyRegistry.Allocation[] memory allocs2 = new StrategyRegistry.Allocation[](3);
+            allocs2[0] = StrategyRegistry.Allocation({asset: SETH,  weight: 5000, isLong: true, leverage: 5});
+            allocs2[1] = StrategyRegistry.Allocation({asset: STSLA, weight: 3000, isLong: true, leverage: 2});
+            allocs2[2] = StrategyRegistry.Allocation({asset: SBTC,  weight: 2000, isLong: true, leverage: 2});
             try registry.publishStrategy(allocs2) {} catch {}
 
             vm.stopBroadcast();
@@ -110,9 +114,12 @@ contract Seed is Script {
             try ts.stake(500e18) {} catch {}
             try registry.registerTrader("Demo Gamma") {} catch {}
 
-            StrategyRegistry.Allocation[] memory allocs3 = new StrategyRegistry.Allocation[](2);
-            allocs3[0] = StrategyRegistry.Allocation({asset: SAAPL, weight: 7000, isLong: true,  leverage: 1});
+            // #97: same fix as Trader 2 — the original 70/30 split put AAPL
+            // above the new 50% per-asset cap on its own.
+            StrategyRegistry.Allocation[] memory allocs3 = new StrategyRegistry.Allocation[](3);
+            allocs3[0] = StrategyRegistry.Allocation({asset: SAAPL, weight: 5000, isLong: true,  leverage: 1});
             allocs3[1] = StrategyRegistry.Allocation({asset: SBTC,  weight: 3000, isLong: false, leverage: 2});
+            allocs3[2] = StrategyRegistry.Allocation({asset: SETH,  weight: 2000, isLong: true,  leverage: 1});
             try registry.publishStrategy(allocs3) {} catch {}
 
             vm.stopBroadcast();
