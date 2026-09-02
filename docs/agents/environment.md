@@ -47,6 +47,8 @@ for Write/Edit there, not a shell heredoc, and the change is real.
 Everything under the repo: `git submodule update --init --recursive`,
 `yarn install` in `frontend/`, `npm ci` in `agent/`, `forge build`, test runs,
 dev server. These are real and worth doing — they are also the slow parts.
+(On a machine where Smart App Control blocks Foundry, `forge` goes through WSL —
+see below.)
 
 ## Bootstrap order
 
@@ -56,7 +58,7 @@ dev server. These are real and worth doing — they are also the slow parts.
 winget install --id OpenJS.NodeJS.LTS --source winget   # Node >=20 (engines field)
 npm i -g yarn@1.22.22                                   # after reopening the shell
 winget install --id GitHub.cli --source winget          # CLAUDE.md routes issues through gh
-curl -L https://foundry.paradigm.xyz | bash && foundryup # only if touching contracts/
+curl -L https://foundry.paradigm.xyz | bash && foundryup   # contracts/ only — on Windows read the SAC note first
 ```
 
 The first `git push` also needs the user: `credential.helper` is `manager`, and on
@@ -82,6 +84,80 @@ cd ../agent && npm ci && npm test
 - **`contracts/`** — Foundry. `lib/forge-std` is vendored as plain files despite
   appearing in `.gitmodules`; only the two OpenZeppelin libs are real submodules
   and they are empty until `git submodule update --init`.
+
+## Foundry on Windows: Smart App Control may block it
+
+**Windows only, and only some Windows machines** — check before assuming:
+
+```bash
+powershell -c "(Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy').VerifiedAndReputablePolicyState"
+```
+
+- `0`, or the key missing → SAC is off. The native `foundryup` in the bootstrap
+  block above works; **skip the rest of this section.**
+- `1` (enforced) or `2` (evaluation) → the Foundry binaries are unsigned, SAC kills
+  them, and you need the WSL route below.
+
+macOS and Linux are unaffected. SAC defaults on for clean Windows 11 installs and
+off on machines upgraded into it, so this differs per contributor — never assume
+from someone else's notes which side a machine is on.
+
+### What it looks like when it hits
+
+Observed 2026-09-02, one contributor's Win11 Pro box with SAC = `1`: `foundryup`
+printed `forge verified ✓`, `cast verified ✓`, `anvil verified ✓`, then died with
+
+```
+Error: failed to run anvil in version v1.8.1
+       應用程式控制原則已封鎖此檔案。 (os error 4551)
+```
+
+`verified ✓` is an attestation **hash** check, not an execution test — the first
+real `anvil --version` is what SAC kills. The aborted install leaves
+`~/.foundry/bin` holding `foundryup.exe` and nothing else, so `forge` is simply
+absent from PATH. Re-running `foundryup` cannot help.
+
+SAC has **no per-app allowlist**, and turning it off is one-way — re-enabling it
+requires reinstalling Windows. Don't propose that to the user.
+
+### The WSL route (only if SAC is on)
+
+Linux binaries are outside SAC's reach. Substitute your own distro for `Ubuntu`
+in every command below; `wsl -l -v` lists them.
+
+**User runs** (writes to `~/.foundry` inside WSL — outside the repo, so it is
+theirs per the sandbox boundary above):
+
+```bash
+wsl -d Ubuntu -- bash -lc 'curl -L https://foundry.paradigm.xyz | bash && foundryup'
+```
+
+**Then the PATH gotcha.** foundryup appends its `export PATH=...` to `~/.bashrc`,
+below Ubuntu's `case $- in *i*) ;; *) return;; esac` guard — so a non-interactive
+`bash -lc` (which is how every agent call enters WSL) never sees it. Append to
+`~/.profile` instead, which login shells read regardless:
+
+```bash
+wsl -d Ubuntu -- bash -lc 'echo "export PATH=\$HOME/.foundry/bin:\$PATH" >> ~/.profile'
+```
+
+Until that is done, call the binaries by absolute path: `~/.foundry/bin/forge`.
+
+**Agent runs.** `wsl.exe` inherits the Windows cwd, so from the repo root:
+
+```bash
+wsl.exe -d Ubuntu -- bash -lc 'cd contracts && forge build'
+```
+
+Verified 2026-09-02 with forge 1.7.1: cold `forge build` over `/mnt/c` takes
+~1m45s, warm prints `No files changed`.
+
+- `/mnt/c` I/O is slow — `forge test` is noticeably slower than a native Linux run.
+- Use the `Bash` tool, not `PowerShell`, to drive `wsl.exe`: PowerShell mangles
+  `|` and `;` inside the quoted command string before wsl ever sees them. (True on
+  any Windows machine, SAC or not.)
+- `out/` and `cache/` are gitignored and shared with anything on the Windows side;
+  don't build from both at once.
 
 ## Windows / Git Bash gotchas
 
