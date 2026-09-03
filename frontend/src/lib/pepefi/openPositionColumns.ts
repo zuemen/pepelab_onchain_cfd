@@ -19,10 +19,19 @@ const EXPERT_COLUMNS: OpenPositionColumnKey[] = [
   'margin', 'leverage', 'copiedFrom', 'unrealizedPnl', 'accruedFunding', 'value',
 ]
 
-// 用字跟 expert 共用同一份 COLUMN_LABELS——決定的只有「哪幾欄看得到」，
-// 不重新命名任何一欄。改用字是另一個問題，這次刻意不動。
 const SIMPLE_COLUMNS: OpenPositionColumnKey[] = ['asset', 'side', 'value', 'unrealizedPnl']
 
 export function openPositionColumnsForMode(mode: Mode): OpenPositionColumnKey[] {
   return mode === 'simple' ? SIMPLE_COLUMNS : EXPERT_COLUMNS
+}
+
+// issue #100 ② / #101 — Simple Mode 換掉交易桌的用字。這裡本來刻意不動用字，
+// 只決定「哪幾欄看得到」；現在 Simple Mode 的欄名改用投資人的說法（未實現損益
+// → 持有期報酬、保證金 → 投入金額），其餘欄位沿用同一份 COLUMN_LABELS。
+// Expert Mode 一個字都不動。
+const SIMPLE_COLUMN_LABELS: Partial<Record<OpenPositionColumnKey, string>> = t.portfolio.columnSimple
+
+export function columnLabelForMode(key: OpenPositionColumnKey, mode: Mode): string {
+  if (mode === 'simple') return SIMPLE_COLUMN_LABELS[key] ?? COLUMN_LABELS[key]
+  return COLUMN_LABELS[key]
 }

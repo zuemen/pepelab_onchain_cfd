@@ -133,6 +133,17 @@ export const portfolio = {
     value: '價值',
   },
 
+  /**
+   * issue #100 ② / #101：Simple Mode 換掉交易桌的用字。同一批欄位，只換名字——
+   * 未實現損益 → 持有期報酬、保證金 → 投入金額。沒有覆寫的欄位沿用上面的 column。
+   * 見 frontend/CONTEXT.md 的詞彙表。
+   */
+  columnSimple: {
+    unrealizedPnl: '持有期報酬',
+    margin: '投入金額',
+    value: '目前價值',
+  },
+
   /** 欄位的 tooltip。只有會被誤讀的欄位需要——兩個價格擺在一起且幾乎不相等。 */
   columnHint: {
     entry: '你的開倉價格',
@@ -189,7 +200,14 @@ export const portfolio = {
     noOpenPositions: '無未平倉部位。',
     total: '總計',
 
+    // issue #101：Simple Mode 的說法。這些部位是既有的（可能在 Expert 開的），
+    // Simple Mode 仍要能看到、平掉它們，只是不用交易桌的字。
+    openPositionsSimple: '我的部位',
+    openCountSimple: '{count} 個部位',
+
     freeMargin: '可用保證金',
+    /** issue #100 ②：Simple Mode 不出現「保證金」。這是可以提領回錢包的餘額。 */
+    freeMarginSimple: '可提領餘額',
     amountPlaceholder: '金額',
     withdraw: '提領',
     withdrawnOk: '已提領 {amount} {token} ✓',

@@ -111,6 +111,12 @@ export const portfolio: Catalog['portfolio'] = {
     value: 'Value',
   },
 
+  columnSimple: {
+    unrealizedPnl: 'Holding return',
+    margin: 'Amount invested',
+    value: 'Current value',
+  },
+
   /** 欄位的 tooltip。只有會被誤讀的欄位需要——兩個價格擺在一起且幾乎不相等。 */
   columnHint: {
     entry: 'Price you opened at',
@@ -168,7 +174,11 @@ export const portfolio: Catalog['portfolio'] = {
     noOpenPositions: 'No open positions.',
     total: 'Total',
 
+    openPositionsSimple: 'My positions',
+    openCountSimple: '{count} positions',
+
     freeMargin: 'Free Margin',
+    freeMarginSimple: 'Withdrawable balance',
     amountPlaceholder: 'Amount',
     withdraw: 'Withdraw',
     withdrawnOk: 'Withdrew {amount} {token} ✓',
