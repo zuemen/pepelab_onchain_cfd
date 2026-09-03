@@ -15,10 +15,10 @@ export const errors = {
   contract: {
     // Selectors (0x + 4-byte hex)
     '0xbb90b0d9': '需要先批准 USDC 給 Swap Router，請點擊 Approve',
-    '0xe450d38c': '您的 Web3 錢包 USDC 餘額不足，請先前往【首頁/水龍頭】免費領取 USDC 測試幣 🚰',
+    '0xe450d38c': '您的 Web3 錢包 USDC 餘額不足，請先到【入金與兌換】頁面用水龍頭免費領取 USDC 測試幣 🚰',
     // Keyword matches (case-insensitive)
     ERC20InsufficientBalance:
-      '您的 Web3 錢包 USDC 餘額不足，請先前往【首頁/水龍頭】免費領取 USDC 測試幣 🚰',
+      '您的 Web3 錢包 USDC 餘額不足，請先到【入金與兌換】頁面用水龍頭免費領取 USDC 測試幣 🚰',
     'no strategies': '該交易員目前尚未發布任何跟單策略！',
     FaucetCooldown: 'Faucet 24h 內只能領一次，請等待 cooldown',
     NoStrategyPublished: '此 trader 尚未發布策略',
