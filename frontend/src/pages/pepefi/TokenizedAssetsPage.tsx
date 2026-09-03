@@ -15,6 +15,7 @@ import { ASSET_META } from 'src/lib/pepefi/assetMeta'
 import SyntheticAssetABI   from 'src/contracts/abi/SyntheticAsset.json'
 import SyntheticAssetV2ABI from 'src/contracts/abi/SyntheticAssetV2.json'
 import AssetIcon from 'src/components/pepefi/AssetIcon'
+import { AssetProvenanceCard, WhoRunsWhat } from 'src/components/pepefi/AssetProvenance'
 import TradingViewChart from 'src/components/pepefi/TradingViewChart'
 import { SHOW_PERPETUALS } from 'src/lib/pepefi/featureFlags'
 import Skeleton from 'src/components/pepefi/Skeleton'
@@ -82,10 +83,11 @@ const f18 = (v: bigint, d = 4) => fNum(fromUnits(v, 18), { dp: d })
 const asTx = (t: unknown) => t as ContractTransactionResponse
 
 interface Row {
-  price:   bigint   // 8-dec oracle price
-  balance: bigint   // 18-dec token balance
-  cap:     bigint   // V2 only: per-asset issuance ceiling
-  issued:  bigint   // V2 only: currently outstanding
+  price:     bigint // 8-dec oracle price
+  updatedAt: bigint // oracle updatedAt (sec) — #100: feeds the provenance card's freshness
+  balance:   bigint // 18-dec token balance
+  cap:       bigint // V2 only: per-asset issuance ceiling
+  issued:    bigint // V2 only: currently outstanding
 }
 
 interface V2Health {
@@ -195,7 +197,7 @@ export default function TokenizedAssetsPage() {
           isV2 ? safeRead(activeVault.assetCap(id) as Promise<bigint>, 0n) : Promise.resolve(0n),
           isV2 ? safeRead(activeVault.exposureOf(id) as Promise<bigint>, 0n) : Promise.resolve(0n),
         ])
-        next[sym] = { price: priceRes[0], balance, cap, issued }
+        next[sym] = { price: priceRes[0], updatedAt: priceRes[1], balance, cap, issued }
       })
     )
     setRows(next)
@@ -466,6 +468,11 @@ export default function TokenizedAssetsPage() {
         {t.tokens.markup.introBefore}<b>{t.tokens.markup.introBold1}</b>{SHOW_PERPETUALS ? t.tokens.markup.introMid1 : t.tokens.markup.introMid1Spot}<b>{t.tokens.markup.introBold2}</b>{t.tokens.markup.introMid2}<b>USDC</b>{t.tokens.markup.introAfter}
       </Alert>
 
+      {/* #100 ③：誰提供價格、誰見證碳資料、誰營運儲備、誰稽核程式。 */}
+      <Card sx={{ p: 2.5 }}>
+        <WhoRunsWhat />
+      </Card>
+
       {/* ── V2 hardening panel ─────────────────────────────────────────────── */}
       {isV2 ? (
         <Card sx={{ p: 2.5 }}>
@@ -660,6 +667,13 @@ export default function TokenizedAssetsPage() {
                 >
                   {t.tokens.card.addToWallet}
                 </Button>
+
+                {/* #100 ①④：代號卡 → 身世卡。追蹤標的、免責、碳強度與出處、KYC 理由、見證日。 */}
+                <Divider sx={{ mt: 0.5 }} />
+                <AssetProvenanceCard
+                  meta={ASSET_META[ASSET_IDS[sym]]}
+                  priceUpdatedAtSec={row ? Number(row.updatedAt) : undefined}
+                />
               </Card>
             </Grid>
           )
