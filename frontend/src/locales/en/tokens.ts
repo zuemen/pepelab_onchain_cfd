@@ -199,10 +199,11 @@ export const tokens: Catalog['tokens'] = {
           '0.85 tCO2e/oz (2019 global average mining emissions), sector-wide >100 Mt CO2e/yr; per-ounce basis, not on the revenue scale used for equities.',
       },
       sBOND: {
-        underlying: 'iShares 20+ Year Treasury Bond ETF (TLT), listed on NASDAQ.',
-        carbonSource: 'No auditable issuer-level carbon-intensity source yet',
+        underlying:
+          'iShares USD Green Bond ETF (BGRN), listed on NASDAQ — investment-grade green bonds screened against the Green Bond Principles.',
+        carbonSource: 'iShares BGRN fact sheet + holdings disclosure',
         carbonCaveat:
-          "US Treasuries' carbon intensity is a sovereign-level question with no comparable issuer filing; #93 plans to replace this with a green bond ETF that discloses its holdings — until then it is priced at the most conservative tier.",
+          "Placed Low qualitatively — an investment-grade green bond fund is, by the Green Bond Principles' eligibility criteria, structurally lower-carbon-intent than an unscreened bond index (same treatment as sICLN). The real per-holding avoided-emissions figure needs the BGRN Impact Report; the issuer's hosts return 403 to automated fetch, so it awaits a human download (see the carbon data table).",
       },
       sNVDA: {
         underlying: 'NVIDIA Corporation common stock, listed on NASDAQ.',

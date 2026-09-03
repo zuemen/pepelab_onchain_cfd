@@ -19,7 +19,9 @@ export const SOURCES: Record<string, Source> = {
   sMSFT: { kind: "yahoo", symbol: "MSFT" },
   sGOOGL: { kind: "yahoo", symbol: "GOOGL" },
   sGOLD: { kind: "yahoo", symbol: "GC=F" },
-  sBOND: { kind: "yahoo", symbol: "TLT" },
+  // #106：sBOND 追蹤標的從 TLT（美國公債，無可稽核的發行方碳強度來源）換成
+  // BGRN（iShares USD Green Bond ETF，持股公開揭露、依 Green Bond Principles 篩選）。
+  sBOND: { kind: "yahoo", symbol: "BGRN" },
   sICLN: { kind: "yahoo", symbol: "ICLN" },
   sESGU: { kind: "yahoo", symbol: "ESGU" },
 };

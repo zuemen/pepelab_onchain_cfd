@@ -63,8 +63,9 @@ contract SeedESG is Script {
         esg.setESG(SGOLD, 40, 50, 55, "BBB");    // composite 48
 
         // ── Bond ─────────────────────────────────────────────────────────────
-        // sBOND: US Treasuries — stable governance, no direct env/social harm
-        esg.setESG(SBOND, 65, 70, 80, "AA");     // composite 72
+        // sBOND: iShares USD Green Bond ETF (BGRN) — holdings are Green Bond
+        // Principles-screened, proceeds earmarked for environmental projects (#106)
+        esg.setESG(SBOND, 86, 74, 80, "AAA");    // composite 80
 
         // ── ESG ETFs ─────────────────────────────────────────────────────────
         // sICLN: clean-energy focused; land use & grid stability concerns

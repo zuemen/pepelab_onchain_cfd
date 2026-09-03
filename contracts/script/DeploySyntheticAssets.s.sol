@@ -34,7 +34,7 @@ contract DeploySyntheticAssets is Script {
             "Synthetic Apple",
             "Synthetic Tesla",
             "Synthetic Gold",
-            "Synthetic Bond",
+            "Synthetic Green Bond ETF",
             "Synthetic Nvidia",
             "Synthetic Microsoft",
             "Synthetic Alphabet",

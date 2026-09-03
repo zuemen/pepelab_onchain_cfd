@@ -30,7 +30,9 @@ interface BenchmarkDef {
 // 決定（前端會自己照那份清單迭代），這裡的順序不影響顯示。
 export const BENCHMARKS: Record<BenchmarkKey, BenchmarkDef> = {
   spx: { key: "spx", name: "S&P 500", yahoo: "^GSPC" },
-  // 債：用 TLT（20 年期以上公債 ETF），跟 symbols.ts 裡 sBOND 的代理標的同一個。
+  // 債：用 TLT（20 年期以上公債 ETF）當「整體債市」的對照。#106 之後 sBOND
+  // 本身追蹤 BGRN（綠色債券 ETF）——對照指數刻意留用寬基的 TLT，這樣「你 vs
+  // 大盤」比的是「綠色債券 vs 整體債市」而不是拿 BGRN 跟自己比（那會是一條直線）。
   // 刻意不用 ^TNX（10 年期殖利率）——那是「殖利率」不是「價格」，殖利率漲 2%
   // 跟價格漲 2% 是相反的意思，混在一排價格漲跌裡會直接誤導。
   bond: { key: "bond", name: "US Treasury", yahoo: "TLT" },

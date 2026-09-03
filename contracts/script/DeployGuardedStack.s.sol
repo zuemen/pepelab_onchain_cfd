@@ -85,7 +85,7 @@ contract DeployGuardedStack is Script {
         ];
         names = [
             "Synthetic Bitcoin", "Synthetic Ether", "Synthetic Apple",
-            "Synthetic Tesla", "Synthetic Gold", "Synthetic Bond",
+            "Synthetic Tesla", "Synthetic Gold", "Synthetic Green Bond ETF",
             "Synthetic Nvidia", "Synthetic Microsoft", "Synthetic Alphabet",
             "Synthetic Clean Energy ETF", "Synthetic ESG ETF"
         ];

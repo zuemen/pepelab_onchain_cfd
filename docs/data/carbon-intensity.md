@@ -66,7 +66,10 @@ Source: [iShares ICLN fact sheet](https://www.ishares.com/us/literature/fact-she
 Weighted average over the ≈24.4% of the fund with intensity data collected here: **≈4.34 tCO2e/$M revenue** (partial coverage — the remaining ≈75.6% of the fund, including the rest of the top-10 and the long tail of smaller holdings, is not reflected in this figure and could shift it materially in either direction). **Provisionally placed in Mid; flagged as a partial estimate.**
 Source: holdings via [stockanalysis.com](https://stockanalysis.com/etf/esgu/holdings/) and a second independent search, [iShares ESGU fact sheet](https://www.ishares.com/us/literature/fact-sheet/esgu-ishares-esg-aware-msci-usa-etf-fund-fact-sheet-en-us.pdf), retrieved 2026-09-02.
 
-### sBOND replacement — candidate researched, does not cleanly pass the #106 test
+### sBOND replacement — BGRN, placed qualitatively (decided in #106)
+
+> The research below concluded BGRN does not cleanly pass this table's *computed*-intensity method, for structural reasons (a green bond's greenness is the bond's property, not the issuer's). #106 adopted **option 2**: keep the ETF, place it qualitative **Low**, same as sICLN. See "Decision (#106)" at the end of this section.
+
 
 **Name correction first:** the candidate named in earlier drafts of this work, "iShares Global Green Bond ETF (BGRN)," has been renamed by the issuer. The ticker BGRN now trades as **iShares USD Green Bond ETF** — narrower scope (USD-denominated only), same underlying strategy. Every reference to "Global Green Bond ETF (BGRN)" elsewhere in this repo's docs refers to this same fund under its old name.
 
@@ -87,6 +90,8 @@ Source: holdings via [stockanalysis.com](https://stockanalysis.com/etf/esgu/hold
 3. **(Alternative asset)** Replace the ETF wrapper with a small basket of individually well-documented supranational green bonds instead — e.g. KfW's own disclosure (a real, sourced figure surfaced in this research: "EUR 12.2bn net 2024 green bond proceeds → ≈2.3 million tCO2e/yr avoided," [ESG Today](https://www.esgtoday.com/blackrock-launches-green-bond-and-climate-risk-focused-global-government-bond-etfs/)) is exactly the single-issuer, well-reported kind of instrument this table's method actually works for. This is a bigger change — it swaps "an ETF" for "a small set of named bonds" as the product — so it needs sign-off, not a silent substitution.
 
 **Working default for this ticket:** option 2 (qualitative Low, same treatment as sICLN). Someone should still pursue option 1 before #95 is implemented, since it would replace an approximation with a real number at near-zero cost if it succeeds.
+
+**Decision (#106):** option 2. `sBOND` now tracks **BGRN (iShares USD Green Bond ETF)** — keeper feed, `symbols.ts`, frontend `assetMeta`/`tokens`/`esg`, and the deploy/seed script name strings all updated. The market **symbol stays `sBOND`** (a generic "synthetic bond exposure" name): renaming it would change the `keccak256` asset id and cascade through the four-contract rewiring, and #102's redeploy registers the same id against the new BGRN feed. The initial oracle / candle seed price moved from ~$100 (TLT) to ~$48 (BGRN) so the keeper's first real fetch clears the deviation guard. Option 1 (the BGRN Impact Report's fund-level avoided-emissions figure) is still the number this row should eventually carry.
 
 ## Proposed carbon tiers
 
@@ -111,7 +116,7 @@ This places the five equities as a natural bimodal split: {AAPL 0.150, NVDA 0.09
 | sESGU | **Mid** | partial weighted computation, ≈4.34 tCO2e/$M revenue-equivalent, ≈24% coverage |
 | sGOLD | **High** | 0.85 tCO2e/oz industry benchmark; >100 Mt CO2e/yr sector-wide |
 | sBTC | **High** | ≈39.8 Mt CO2e/yr absolute — comparable to a small country's annual emissions |
-| sBOND replacement (iShares USD Green Bond ETF, BGRN) | **Low** (working default) | sector/instrument-class benchmark, qualitative — see full writeup below; not a computed number |
+| sBOND → iShares USD Green Bond ETF (BGRN) | **Low** (decided, #106) | sector/instrument-class benchmark, qualitative — see full writeup below; not a computed number |
 
 ## Open questions for #95
 

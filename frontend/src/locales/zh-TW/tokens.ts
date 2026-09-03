@@ -203,9 +203,9 @@ export const tokens = {
         carbonCaveat: '0.85 tCO2e／盎司（2019 全球平均開採排放），產業年排放超過 100 Mt CO2e；每盎司基準，不與股票的營收基準同尺度。',
       },
       sBOND: {
-        underlying: '在 NASDAQ 掛牌的 iShares 20+ 年期美國公債 ETF（TLT）。',
-        carbonSource: '尚無可稽核的發行方碳強度來源',
-        carbonCaveat: '美國公債的碳強度是主權層級的問題，沒有可比的發行方申報；#93 規劃替換為公開揭露持股的綠色債券 ETF，在替換前以最保守級計價。',
+        underlying: '在 NASDAQ 掛牌的 iShares USD Green Bond ETF（BGRN），持有依 Green Bond Principles 篩選的投資等級綠色債券。',
+        carbonSource: 'iShares BGRN Fact Sheet + 持股揭露',
+        carbonCaveat: '定性判為低碳——投資等級綠色債券基金依 Green Bond Principles 的准入標準，結構性地低於未篩選的債券指數（比照 sICLN）。逐檔避免排放量的真數字需自 BGRN Impact Report 取得（發行方 host 對自動抓取回 403，待真人下載，見碳資料表）。',
       },
       sNVDA: {
         underlying: '在 NASDAQ 掛牌的 NVIDIA Corporation 普通股。',
