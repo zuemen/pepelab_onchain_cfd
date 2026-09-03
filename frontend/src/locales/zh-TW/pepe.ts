@@ -178,21 +178,20 @@ export const pepe = {
     imageAlt: '{label} — 進化 Lv.{stage}',
   },
 
+  /** issue #101：成就由持有時間、組合碳足跡、分散度、未操作天數解鎖，不再由買了多少決定。 */
   achievement: {
-    ach_first_stake: { title: '初次質押', desc: '持有任何 PEPE' },
-    ach_streak3: { title: '3 天連到', desc: '連續簽到 3 天' },
-    ach_streak7: { title: '週簽神人', desc: '連續簽到 7 天' },
-    ach_first_trade: { title: '首筆交易', desc: '開過至少一筆倉' },
-    ach_whale: { title: 'Whale 降臨', desc: '持有 100,000 PEPE' },
-    ach_collector: { title: '收藏家', desc: '收藏至少 3 件 Pepe 道具' },
-    ach_degen: { title: '重倉狂人', desc: '持有 1,000,000 PEPE' },
-    ach_legend: { title: '傳說 Pepe', desc: '所有成就解鎖' },
+    ach_hold_30: { title: '持有滿月', desc: '同一個部位持有滿 30 天' },
+    ach_hold_90: { title: '一季不動', desc: '同一個部位持有滿 90 天' },
+    ach_low_carbon: { title: '低碳組合', desc: '投資組合的加權碳強度低於 1 tCO2e／百萬美元營收' },
+    ach_diversified: { title: '分散配置', desc: '持倉分散度達 0.7 以上' },
+    ach_steady: { title: '穩定的手', desc: '連續 30 天沒有任何買賣操作' },
+    ach_steward: { title: '長期守護者', desc: '持有滿 90 天，且組合低碳、夠分散' },
   },
 
   /** 每日任務。獎勵金額會變的那一條用具名佔位符。 */
   quest: {
-    q_checkin: { title: '每日簽到', reward: '+{amount} PEPE' },
-    q_trade: { title: '開一筆新倉', reward: '+25 PEPE' },
+    q_checkin: { title: '每日簽到', reward: '+{amount} 成就點數' },
+    q_trade: { title: '開一筆新倉', reward: '+25 成就點數' },
     q_balance: { title: '持有 100 PEPE', reward: '達成成就' },
     q_streak3: { title: '連簽 3 天', reward: '解鎖成就' },
   },

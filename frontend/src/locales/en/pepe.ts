@@ -174,21 +174,20 @@ export const pepe: Catalog['pepe'] = {
     imageAlt: '{label} — Evolution Lv.{stage}',
   },
 
+  /** issue #101: achievements unlock on holding time, portfolio carbon, diversification and days untouched — not on how much was bought. */
   achievement: {
-    ach_first_stake: { title: 'First Stake', desc: 'Hold any PEPE' },
-    ach_streak3: { title: '3-Day Streak', desc: 'Check in 3 days in a row' },
-    ach_streak7: { title: 'Weekly Legend', desc: 'Check in 7 days in a row' },
-    ach_first_trade: { title: 'First Trade', desc: 'Opened at least one position' },
-    ach_whale: { title: 'Whale Has Arrived', desc: 'Hold 100,000 PEPE' },
-    ach_collector: { title: 'Collector', desc: 'Collect at least 3 Pepe items' },
-    ach_degen: { title: 'Degen', desc: 'Hold 1,000,000 PEPE' },
-    ach_legend: { title: 'Legendary Pepe', desc: 'All achievements unlocked' },
+    ach_hold_30: { title: 'Held a Month', desc: 'Hold one position for 30 days' },
+    ach_hold_90: { title: 'A Quarter Untouched', desc: 'Hold one position for 90 days' },
+    ach_low_carbon: { title: 'Low-Carbon Portfolio', desc: 'Weighted carbon intensity below 1 tCO2e/$M revenue' },
+    ach_diversified: { title: 'Diversified', desc: 'Holdings diversification of 0.7 or higher' },
+    ach_steady: { title: 'Steady Hand', desc: '30 days with no buy or sell' },
+    ach_steward: { title: 'Long-Term Steward', desc: 'Held for 90 days, low-carbon and well diversified' },
   },
 
   /** 每日任務。獎勵金額會變的那一條用具名佔位符。 */
   quest: {
-    q_checkin: { title: 'Daily Check-in', reward: '+{amount} PEPE' },
-    q_trade: { title: 'Open a New Position', reward: '+25 PEPE' },
+    q_checkin: { title: 'Daily Check-in', reward: '+{amount} achievement points' },
+    q_trade: { title: 'Open a New Position', reward: '+25 achievement points' },
     q_balance: { title: 'Hold 100 PEPE', reward: 'Unlocks achievement' },
     q_streak3: { title: '3-Day Check-in Streak', reward: 'Unlocks achievement' },
   },
