@@ -56,3 +56,7 @@ agent/tg-bot/vc.json
 # from these by frontend/scripts/import-skins.py. Keeping the originals out of
 # git history — they live in the artist's own folders.
 frontend/assets-src/
+
+# #102 cutover wizard scratch
+scripts/.deploy-102-addresses.env
+scripts/.log-*.txt
