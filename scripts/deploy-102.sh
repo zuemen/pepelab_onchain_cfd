@@ -195,14 +195,26 @@ TOTAL_STAGES=12
 #
 #  在哪跑：WSL，倉庫根目錄底下：   bash scripts/deploy-102.sh
 #  先決：  foundry(forge/cast)、jq、以及環境變數
-#           export PRIVATE_KEY=0x…            （= 現在的 owner 金鑰）
+#           export PRIVATE_KEY=0x…            （見下方「金鑰」）
 #           export BASE_SEPOLIA_RPC_URL=…
 #           export BASESCAN_API_KEY=…          （選用，開 --verify）
 #
+#  金鑰：合約的現任 owner 是 0x27C21324D101e867E0634bf2ebe3F9Dcf3ACA585
+#        （2026-08-07 輪替，見 docs/KEY_ROTATION_20260807.md）。它的私鑰
+#        **不在 git 裡**、也不是舊的洩漏金鑰；當初存在 contracts/.env.rotation
+#        （gitignored），計畫移進密碼管理器。跟執行輪替的組員 / 團隊密碼管理器要。
+#        ⚠ contracts/.env.example 裡的 PRIVATE_KEY 是 Anvil 本機測試假金鑰
+#          （地址 0xf39Fd6…），不要用。
+#        該錢包要有 Base Sepolia ETH 付 gas。
+#
 #  ⚠ 這個 wizard 與它呼叫的三個 forge 腳本是在沒有 foundry 的環境寫的，
-#    沒有實際編譯/執行過。每個 forge 步驟都對應 docs/DEPLOY_102_CUTOVER.md
-#    裡的手動指令 —— 卡住就翻那份、手動跑。保護不可逆步驟的是 Stage 4 的
-#    dry-run 閘門（純讀取），那個一定會如實反映鏈上狀態。
+#    forge build 有過（CI），但沒對鏈實際執行過。每個 forge 步驟都對應
+#    docs/DEPLOY_102_CUTOVER.md 裡的手動指令 —— 卡住就翻那份、手動跑。
+#    保護不可逆步驟的是 Stage 4 的 dry-run 閘門（純讀取），一定如實反映鏈上狀態。
+#
+#  forge 廣播都帶 --slow（每筆等 receipt）。若 owner 帳號有 EIP-7702 delegation，
+#  Base 會拒絕 forge 預派的 gapped nonce；--slow 讓 nonce 嚴格遞增。
+#  （見 docs/KEY_ROTATION_20260807.md 的同一個教訓。）
 # ==========================================================================
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -264,20 +276,30 @@ banner "#102 四合約連鎖重部署"
 stage "環境檢查"
 say "確認工具、金鑰、餘額、以及你這把金鑰真的是合約 owner。"
 for c in forge cast jq git awk; do command -v "$c" >/dev/null || die "找不到 $c —— 先裝好（foundry / apt install jq）"; done
-[[ -n "${PRIVATE_KEY:-}" ]] || die "沒設 PRIVATE_KEY。 export PRIVATE_KEY=0x…（現在的 owner 金鑰，見 docs/DEPLOY_102_CUTOVER.md §0.3）"
+[[ -n "${PRIVATE_KEY:-}" ]] || die "沒設 PRIVATE_KEY。現任 owner 是 0x27C21324D101e867E0634bf2ebe3F9Dcf3ACA585（2026-08-07 輪替，key 在 contracts/.env.rotation / 密碼管理器 / 組員手上，見 docs/KEY_ROTATION_20260807.md）。contracts/.env.example 的那把是 Anvil 假金鑰，不要用。"
 [[ -n "$RPC" ]] || die "沒設 BASE_SEPOLIA_RPC_URL"
 DEPLOYER="$(cast wallet address --private-key "$PRIVATE_KEY")" || die "PRIVATE_KEY 格式不對"
 ok "部署者地址：$DEPLOYER"
+EXPECTED_OWNER="0x27C21324D101e867E0634bf2ebe3F9Dcf3ACA585"
+if [[ "${DEPLOYER,,}" == "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266" ]]; then
+  die "這是 Anvil 測試帳號 #0（contracts/.env.example 的預設值）—— 它不擁有任何 Base Sepolia 合約。換成 $EXPECTED_OWNER 的真金鑰。"
+fi
 CID="$(cast chain-id --rpc-url "$RPC")"; [[ "$CID" == "$CHAIN" ]] || die "RPC 指向 chain $CID，不是 Base Sepolia（$CHAIN）"
 BAL_WEI="$(cast balance "$DEPLOYER" --rpc-url "$RPC")"
 BAL_ETH="$(cast from-wei "$BAL_WEI")"
 say "ETH 餘額：$BAL_ETH"
 awk -v b="$BAL_ETH" 'BEGIN{ if (b+0 < 0.05) exit 1 }' || warn "餘額偏低，部署約需 15–20 筆交易 —— 先去水龍頭領 ETH：https://docs.base.org/chain/network-faucets"
 OWNER_EX="$(cast call 0xEf75ECA6514cE96B18382E921aC6190a0cF8c072 'owner()(address)' --rpc-url "$RPC")"
-if [[ "${OWNER_EX,,}" != "${DEPLOYER,,}" ]]; then
+if [[ "${OWNER_EX,,}" == "${DEPLOYER,,}" ]]; then
+  ok "你這把金鑰是舊 PerpetualExchange 的 owner"
+else
   warn "舊 PerpetualExchange 的 owner 是 $OWNER_EX，不是你（$DEPLOYER）。"
-  warn "§5 那些 onlyOwner 的重接線會失敗。確定要繼續？"
-  confirm "繼續" || die "換一把正確的 owner 金鑰再來"
+  if [[ "${OWNER_EX,,}" == "${EXPECTED_OWNER,,}" ]]; then
+    warn "鏈上 owner 就是輪替後的 $EXPECTED_OWNER —— 你手上這把不是它。"
+    warn "跟執行 2026-08-07 輪替的組員 / 密碼管理器要那把 key。"
+  fi
+  warn "§5 那些 onlyOwner 的重接線（setExchange / setCopyTracker / setRwaAsset / 撤舊 session manager）會 revert。"
+  confirm "還是要繼續（不建議）" || die "換成 owner 金鑰再來"
 fi
 if [[ -s "$SCRATCH" ]]; then
   say "偵測到上次執行的 scratch 檔：$SCRATCH"
@@ -310,7 +332,7 @@ say "碳強度數字對齊 docs/data/carbon-intensity.md（非營收資產是分
 say "見腳本 NatSpec —— 口試前要組員點頭）。"
 confirm "開始部署碳見證合約？" || die "已中止"
 L1="$REPO_ROOT/scripts/.log-carbon.txt"
-forge_run "Deploy102CarbonRegistry.s.sol:Deploy102CarbonRegistry" "$L1" --private-key "$PRIVATE_KEY" --broadcast $FORGE_VERIFY \
+forge_run "Deploy102CarbonRegistry.s.sol:Deploy102CarbonRegistry" "$L1" --private-key "$PRIVATE_KEY" --broadcast --slow $FORGE_VERIFY \
   || die "碳見證部署失敗 —— 看 $L1，別重跑整段（會 fork）；可用 cast 補完"
 ESG_REGISTRY_V2="$(grab_addr 'ESGRegistryV2' "$L1")";  [[ -n "$ESG_REGISTRY_V2" ]] || die "撈不到 ESGRegistryV2 位址，看 $L1"
 SUSTAINABILITY_BADGE="$(grab_addr 'SustainabilityBadge' "$L1")"; [[ -n "$SUSTAINABILITY_BADGE" ]] || die "撈不到 SustainabilityBadge 位址"
@@ -349,7 +371,7 @@ warn "這一步的最後兩個呼叫（InsuranceVault/FeeRouter.setExchange）�
 warn "虧損部位就平不掉了。確定舊 exchange 已清空、前面兩天緩衝還在。"
 confirm "廣播四合約重部署？" || die "已中止（什麼都沒送）"
 L3="$REPO_ROOT/scripts/.log-chain.txt"
-forge_run "Redeploy102Exchange.s.sol:Redeploy102Exchange" "$L3" --private-key "$PRIVATE_KEY" --broadcast $FORGE_VERIFY \
+forge_run "Redeploy102Exchange.s.sol:Redeploy102Exchange" "$L3" --private-key "$PRIVATE_KEY" --broadcast --slow $FORGE_VERIFY \
   || die "重部署跑到一半失敗 —— 看 $L3 與 contracts/broadcast/Redeploy102Exchange.s.sol/$CHAIN/run-latest.json。別重跑整段；用 cast 補完剩下的 onlyOwner setter。"
 EXCHANGE_NEW="$(grab_addr 'PerpetualExchange_NEW' "$L3")"
 STRATEGY_REGISTRY_NEW="$(grab_addr 'StrategyRegistry_NEW' "$L3")"
@@ -374,7 +396,7 @@ if [[ -n "${ESG_REWARD_DISTRIBUTOR_NEW:-}" ]]; then
 else
 confirm "部署 reward distributor？" || die "已中止"
 L4="$REPO_ROOT/scripts/.log-reward.txt"
-forge_run "Deploy102RewardDistributor.s.sol:Deploy102RewardDistributor" "$L4" --private-key "$PRIVATE_KEY" --broadcast $FORGE_VERIFY \
+forge_run "Deploy102RewardDistributor.s.sol:Deploy102RewardDistributor" "$L4" --private-key "$PRIVATE_KEY" --broadcast --slow $FORGE_VERIFY \
   || die "distributor 部署失敗，看 $L4"
 ESG_REWARD_DISTRIBUTOR_NEW="$(grab_addr 'EsgRewardDistributor' "$L4")"
 [[ -n "$ESG_REWARD_DISTRIBUTOR_NEW" ]] || die "撈不到 EsgRewardDistributor 位址"
