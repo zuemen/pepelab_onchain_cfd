@@ -90,11 +90,16 @@ describe('ASSET_META · 碳強度（carbon）', () => {
     expect(ASSET_META[ASSET_IDS.sETH].carbon!.tier).toBe('low')
   })
 
-  it('sBOND 尚無可稽核來源 → 見證日為破折號、落到未評等最保守級', () => {
-    const c = ASSET_META[ASSET_IDS.sBOND].carbon!
-    expect(c.observed).toBe('—')
-    expect(c.tier).toBe('unrated')
+  it('sBOND 追蹤綠色債券 ETF（BGRN），碳分級為定性「低」（#106）', () => {
+    const m = ASSET_META[ASSET_IDS.sBOND]
+    expect(m.provenance!.priceSymbol).toBe('BGRN')
+    expect(m.provenance!.referenceId).toContain('BGRN')
+    const c = m.carbon!
     expect(c.basis).toBe('qualitative')
+    expect(c.tier).toBe('low')
+    expect(c.intensity).toBeNull()
+    expect(c.observed).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(c.sourceUrl).toContain('ishares.com')
   })
 })
 

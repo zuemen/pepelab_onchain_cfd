@@ -90,7 +90,7 @@ export const esg: Catalog['esg'] = {
     sGOLD:
       'Mining causes significant land disruption and CO₂; adoption of Responsible Mining standards remains uneven across producers.',
     sBOND:
-      'US Treasuries carry no direct environmental impact and are backed by top-tier sovereign governance and social-stability mandates.',
+      'Tracks the iShares USD Green Bond ETF: every holding is an investment-grade green bond screened against the Green Bond Principles, funding earmarked environmental projects, with issuer-level ESG data available.',
     sNVDA:
       'Data-center GPU power demand is high, offset by an AI-efficiency roadmap; semiconductor-industry governance standards are above average.',
     sMSFT:

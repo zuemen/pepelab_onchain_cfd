@@ -169,7 +169,7 @@ export const INITIAL_PRICES: Partial<Record<keyof typeof ASSET_IDS, bigint>> = {
   sAAPL:     200n * 10n ** 8n,
   sTSLA:     250n * 10n ** 8n,
   sGOLD:   2_650n * 10n ** 8n,
-  sBOND:     100n * 10n ** 8n,
+  sBOND:      48n * 10n ** 8n,  // #106: now tracks BGRN (green bond ETF), ~$48; was TLT ~$100
   sNVDA:     135n * 10n ** 8n,
   sMSFT:     420n * 10n ** 8n,
   sGOOGL:    175n * 10n ** 8n,

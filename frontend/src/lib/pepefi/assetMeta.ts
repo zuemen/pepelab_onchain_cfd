@@ -77,8 +77,6 @@ export const CATEGORY_LABEL: Record<AssetCategory, string> = {
 //
 // referenceId 只放可自行查證的識別碼（交易所 + 代號、加密網路），不放中文——
 // 顯示用的標的說明、出處名稱、已知限制在 catalog 的 tokens.provenance.assets。
-const CARBON_DOC =
-  'https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/data/carbon-intensity.md'
 
 export const ASSET_META: Record<string, AssetMeta> = {
   [ASSET_IDS.sBTC]: {
@@ -178,21 +176,26 @@ export const ASSET_META: Record<string, AssetMeta> = {
   },
   [ASSET_IDS.sBOND]: {
     symbol:    'sBOND',
-    name:      'Synthetic US Treasury Bond ETF (TLT)',
+    name:      'Synthetic Green Bond ETF (BGRN)',
     category:  'bond',
     regulated: true,
     icon:      '📜',
     provenance: {
-      referenceId: 'NASDAQ: TLT · iShares 20+ Year Treasury Bond ETF',
+      referenceId: 'NASDAQ: BGRN · iShares USD Green Bond ETF',
       priceFeed:   'yahoo',
-      priceSymbol: 'TLT',
+      priceSymbol: 'BGRN',
     },
     carbon: {
+      // #106：從追蹤美國公債（無可稽核發行方碳強度來源）換成綠色債券 ETF。
+      // 碳資料表的工作預設值是「依資產類別基準的定性判斷」——投資等級綠色債券
+      // 基金依 Green Bond Principles 的准入標準，在碳排意圖上結構性地低於未篩選
+      // 的債券指數（比照 sICLN 的處理）。逐檔避免排放量的真數字要靠 BGRN Impact
+      // Report，須真人下載，見 docs/data/carbon-intensity.md。
       intensity: null,
       basis:     'qualitative',
-      tier:      'unrated',
-      observed:  '—',
-      sourceUrl: CARBON_DOC,
+      tier:      'low',
+      observed:  '2026-09-02',
+      sourceUrl: 'https://www.ishares.com/us/literature/fact-sheet/bgrn-ishares-usd-green-bond-etf-fund-fact-sheet-en-us.pdf',
     },
   },
   [ASSET_IDS.sNVDA]: {

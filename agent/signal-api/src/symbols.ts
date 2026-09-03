@@ -1,7 +1,7 @@
 // 合成資產 → 外部行情來源的對照表。
 //
 // 這份 mapping 原本只存在於 .github/workflows/price-keeper.yml 的 bash 裡
-// （sGOLD 對 GC=F、sBOND 對 TLT 這種不直觀的對應），keeper 以外沒有人看得到。
+// （sGOLD 對 GC=F、sBOND 對 BGRN 這種不直觀的對應），keeper 以外沒有人看得到。
 // K 線 API 需要同一份對應，複製第二份遲早會走鐘，所以在這裡建立單一來源；
 // keeper 之後要收斂過來也有東西可以指。
 //
@@ -96,12 +96,15 @@ export const MARKETS: Record<string, MarketMeta> = {
     seed: 2_650,
   },
   sBOND: {
-    // 沒有「美國公債」這個可交易報價，用 TLT（20+ 年期公債 ETF）當代理標的。
+    // #106：追蹤標的從 TLT（美國公債，無可稽核碳強度來源）換成 BGRN
+    // （iShares USD Green Bond ETF，持股公開揭露）。symbol 保留 sBOND——
+    // 它是「合成債券曝險」的通稱，換 symbol 會連鎖動到 keccak 出來的 assetId
+    // 與四合約重接線；#102 的重部署直接以新的 BGRN 餵價註冊同一個 id。
     symbol: "sBOND",
-    underlying: "TLT (iShares 20+ Year Treasury ETF)",
+    underlying: "BGRN (iShares USD Green Bond ETF)",
     category: "bond",
-    yahoo: "TLT",
-    seed: 100,
+    yahoo: "BGRN",
+    seed: 48,
   },
   sICLN: {
     symbol: "sICLN",
