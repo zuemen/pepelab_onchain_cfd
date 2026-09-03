@@ -21,11 +21,11 @@ var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, { get: all[name], enumerable: true });
 };
-var __copyProps = (to, from14, except, desc) => {
-  if (from14 && typeof from14 === "object" || typeof from14 === "function") {
-    for (let key of __getOwnPropNames(from14))
+var __copyProps = (to, from16, except, desc) => {
+  if (from16 && typeof from16 === "object" || typeof from16 === "function") {
+    for (let key of __getOwnPropNames(from16))
       if (!__hasOwnProp.call(to, key) && key !== except)
-        __defProp(to, key, { get: () => from14[key], enumerable: !(desc = __getOwnPropDesc(from14, key)) || desc.enumerable });
+        __defProp(to, key, { get: () => from16[key], enumerable: !(desc = __getOwnPropDesc(from16, key)) || desc.enumerable });
   }
   return to;
 };
@@ -396,111 +396,19 @@ var require_main = __commonJS({
   }
 });
 
-// ../node_modules/ws/lib/stream.js
-var require_stream = __commonJS({
-  "../node_modules/ws/lib/stream.js"(exports, module) {
-    "use strict";
-    var { Duplex } = __require("stream");
-    function emitClose(stream) {
-      stream.emit("close");
-    }
-    function duplexOnEnd() {
-      if (!this.destroyed && this._writableState.finished) {
-        this.destroy();
-      }
-    }
-    function duplexOnError(err) {
-      this.removeListener("error", duplexOnError);
-      this.destroy();
-      if (this.listenerCount("error") === 0) {
-        this.emit("error", err);
-      }
-    }
-    function createWebSocketStream2(ws, options) {
-      let terminateOnDestroy = true;
-      const duplex = new Duplex({
-        ...options,
-        autoDestroy: false,
-        emitClose: false,
-        objectMode: false,
-        writableObjectMode: false
-      });
-      ws.on("message", function message(msg, isBinary) {
-        const data4 = !isBinary && duplex._readableState.objectMode ? msg.toString() : msg;
-        if (!duplex.push(data4)) ws.pause();
-      });
-      ws.once("error", function error(err) {
-        if (duplex.destroyed) return;
-        terminateOnDestroy = false;
-        duplex.destroy(err);
-      });
-      ws.once("close", function close() {
-        if (duplex.destroyed) return;
-        duplex.push(null);
-      });
-      duplex._destroy = function(err, callback) {
-        if (ws.readyState === ws.CLOSED) {
-          callback(err);
-          process.nextTick(emitClose, duplex);
-          return;
-        }
-        let called = false;
-        ws.once("error", function error(err2) {
-          called = true;
-          callback(err2);
-        });
-        ws.once("close", function close() {
-          if (!called) callback(err);
-          process.nextTick(emitClose, duplex);
-        });
-        if (terminateOnDestroy) ws.terminate();
-      };
-      duplex._final = function(callback) {
-        if (ws.readyState === ws.CONNECTING) {
-          ws.once("open", function open() {
-            duplex._final(callback);
-          });
-          return;
-        }
-        if (ws._socket === null) return;
-        if (ws._socket._writableState.finished) {
-          callback();
-          if (duplex._readableState.endEmitted) duplex.destroy();
-        } else {
-          ws._socket.once("finish", function finish() {
-            callback();
-          });
-          ws.close();
-        }
-      };
-      duplex._read = function() {
-        if (ws.isPaused) ws.resume();
-      };
-      duplex._write = function(chunk, encoding, callback) {
-        if (ws.readyState === ws.CONNECTING) {
-          ws.once("open", function open() {
-            duplex._write(chunk, encoding, callback);
-          });
-          return;
-        }
-        ws.send(chunk, callback);
-      };
-      duplex.on("end", duplexOnEnd);
-      duplex.on("error", duplexOnError);
-      return duplex;
-    }
-    module.exports = createWebSocketStream2;
-  }
-});
-
 // ../node_modules/ws/lib/constants.js
 var require_constants = __commonJS({
   "../node_modules/ws/lib/constants.js"(exports, module) {
     "use strict";
+    var BINARY_TYPES = ["nodebuffer", "arraybuffer", "fragments"];
+    var hasBlob = typeof Blob !== "undefined";
+    if (hasBlob) BINARY_TYPES.push("blob");
     module.exports = {
-      BINARY_TYPES: ["nodebuffer", "arraybuffer", "fragments"],
+      BINARY_TYPES,
+      CLOSE_TIMEOUT: 3e4,
       EMPTY_BUFFER: Buffer.alloc(0),
       GUID: "258EAFA5-E914-47DA-95CA-C5AB0DC85B11",
+      hasBlob,
       kForOnEventAttribute: Symbol("kIsForOnEventAttribute"),
       kListener: Symbol("kListener"),
       kStatusCode: Symbol("status-code"),
@@ -609,9 +517,9 @@ var require_node_gyp_build = __commonJS({
     }
     function parseTags(file) {
       var arr = file.split(".");
-      var extension = arr.pop();
+      var extension2 = arr.pop();
       var tags = { file, specificity: 0 };
-      if (extension !== "node") return;
+      if (extension2 !== "node") return;
       for (var i = 0; i < arr.length; i++) {
         var tag = arr[i];
         if (tag === "node" || tag === "electron" || tag === "node-webkit") {
@@ -864,7 +772,7 @@ var require_permessage_deflate = __commonJS({
     var kBuffers = Symbol("buffers");
     var kError = Symbol("error");
     var zlibLimiter;
-    var PerMessageDeflate = class {
+    var PerMessageDeflate2 = class {
       /**
        * Creates a PerMessageDeflate instance.
        *
@@ -875,6 +783,9 @@ var require_permessage_deflate = __commonJS({
        *     acknowledge disabling of client context takeover
        * @param {Number} [options.concurrencyLimit=10] The number of concurrent
        *     calls to zlib
+       * @param {Boolean} [options.isServer=false] Create the instance in either
+       *     server or client mode
+       * @param {Number} [options.maxPayload=0] The maximum allowed message length
        * @param {(Boolean|Number)} [options.serverMaxWindowBits] Request/confirm the
        *     use of a custom server window size
        * @param {Boolean} [options.serverNoContextTakeover=false] Request/accept
@@ -885,15 +796,12 @@ var require_permessage_deflate = __commonJS({
        *     deflate
        * @param {Object} [options.zlibInflateOptions] Options to pass to zlib on
        *     inflate
-       * @param {Boolean} [isServer=false] Create the instance in either server or
-       *     client mode
-       * @param {Number} [maxPayload=0] The maximum allowed message length
        */
-      constructor(options, isServer, maxPayload) {
-        this._maxPayload = maxPayload | 0;
+      constructor(options) {
         this._options = options || {};
         this._threshold = this._options.threshold !== void 0 ? this._options.threshold : 1024;
-        this._isServer = !!isServer;
+        this._maxPayload = this._options.maxPayload | 0;
+        this._isServer = !!this._options.isServer;
         this._deflate = null;
         this._inflate = null;
         this.params = null;
@@ -1202,7 +1110,7 @@ var require_permessage_deflate = __commonJS({
         });
       }
     };
-    module.exports = PerMessageDeflate;
+    module.exports = PerMessageDeflate2;
     function deflateOnData(chunk) {
       this[kBuffers].push(chunk);
       this[kTotalLength] += chunk.length;
@@ -1221,6 +1129,10 @@ var require_permessage_deflate = __commonJS({
     }
     function inflateOnError(err) {
       this[kPerMessageDeflate]._inflate = null;
+      if (this[kError]) {
+        this[kCallback](this[kError]);
+        return;
+      }
       err[kStatusCode] = 1007;
       this[kCallback](err);
     }
@@ -1281,6 +1193,7 @@ var require_validation = __commonJS({
   "../node_modules/ws/lib/validation.js"(exports, module) {
     "use strict";
     var { isUtf8 } = __require("buffer");
+    var { hasBlob } = require_constants();
     var tokenChars = [
       0,
       0,
@@ -1451,7 +1364,11 @@ var require_validation = __commonJS({
       }
       return true;
     }
+    function isBlob(value) {
+      return hasBlob && typeof value === "object" && typeof value.arrayBuffer === "function" && typeof value.type === "string" && typeof value.stream === "function" && (value[Symbol.toStringTag] === "Blob" || value[Symbol.toStringTag] === "File");
+    }
     module.exports = {
+      isBlob,
       isValidStatusCode,
       isValidUTF8: _isValidUTF8,
       tokenChars
@@ -1477,7 +1394,7 @@ var require_receiver = __commonJS({
   "../node_modules/ws/lib/receiver.js"(exports, module) {
     "use strict";
     var { Writable } = __require("stream");
-    var PerMessageDeflate = require_permessage_deflate();
+    var PerMessageDeflate2 = require_permessage_deflate();
     var {
       BINARY_TYPES,
       EMPTY_BUFFER,
@@ -1507,6 +1424,10 @@ var require_receiver = __commonJS({
        *     extensions
        * @param {Boolean} [options.isServer=false] Specifies whether to operate in
        *     client or server mode
+       * @param {Number} [options.maxBufferedChunks=0] The maximum number of
+       *     buffered data chunks
+       * @param {Number} [options.maxFragments=0] The maximum number of message
+       *     fragments
        * @param {Number} [options.maxPayload=0] The maximum allowed message length
        * @param {Boolean} [options.skipUTF8Validation=false] Specifies whether or
        *     not to skip UTF-8 validation for text and close messages
@@ -1517,6 +1438,8 @@ var require_receiver = __commonJS({
         this._binaryType = options.binaryType || BINARY_TYPES[0];
         this._extensions = options.extensions || {};
         this._isServer = !!options.isServer;
+        this._maxBufferedChunks = options.maxBufferedChunks | 0;
+        this._maxFragments = options.maxFragments | 0;
         this._maxPayload = options.maxPayload | 0;
         this._skipUTF8Validation = !!options.skipUTF8Validation;
         this[kWebSocket] = void 0;
@@ -1546,6 +1469,18 @@ var require_receiver = __commonJS({
        */
       _write(chunk, encoding, cb) {
         if (this._opcode === 8 && this._state == GET_INFO) return cb();
+        if (this._maxBufferedChunks > 0 && this._buffers.length >= this._maxBufferedChunks) {
+          cb(
+            this.createError(
+              RangeError,
+              "Too many buffered chunks",
+              false,
+              1008,
+              "WS_ERR_TOO_MANY_BUFFERED_PARTS"
+            )
+          );
+          return;
+        }
         this._bufferedBytes += chunk.length;
         this._buffers.push(chunk);
         this.startLoop(cb);
@@ -1644,7 +1579,7 @@ var require_receiver = __commonJS({
           return;
         }
         const compressed = (buf[0] & 64) === 64;
-        if (compressed && !this._extensions[PerMessageDeflate.extensionName]) {
+        if (compressed && !this._extensions[PerMessageDeflate2.extensionName]) {
           const error = this.createError(
             RangeError,
             "RSV1 must be clear",
@@ -1875,6 +1810,17 @@ var require_receiver = __commonJS({
           return;
         }
         if (data4.length) {
+          if (this._maxFragments > 0 && this._fragments.length >= this._maxFragments) {
+            const error = this.createError(
+              RangeError,
+              "Too many message fragments",
+              false,
+              1008,
+              "WS_ERR_TOO_MANY_BUFFERED_PARTS"
+            );
+            cb(error);
+            return;
+          }
           this._messageLength = this._totalPayloadLength;
           this._fragments.push(data4);
         }
@@ -1888,7 +1834,7 @@ var require_receiver = __commonJS({
        * @private
        */
       decompress(data4, cb) {
-        const perMessageDeflate = this._extensions[PerMessageDeflate.extensionName];
+        const perMessageDeflate = this._extensions[PerMessageDeflate2.extensionName];
         perMessageDeflate.decompress(data4, this._fin, (err, buf) => {
           if (err) return cb(err);
           if (buf.length) {
@@ -1900,6 +1846,17 @@ var require_receiver = __commonJS({
                 false,
                 1009,
                 "WS_ERR_UNSUPPORTED_MESSAGE_LENGTH"
+              );
+              cb(error);
+              return;
+            }
+            if (this._maxFragments > 0 && this._fragments.length >= this._maxFragments) {
+              const error = this.createError(
+                RangeError,
+                "Too many message fragments",
+                false,
+                1008,
+                "WS_ERR_TOO_MANY_BUFFERED_PARTS"
               );
               cb(error);
               return;
@@ -1933,6 +1890,8 @@ var require_receiver = __commonJS({
             data4 = concat4(fragments, messageLength);
           } else if (this._binaryType === "arraybuffer") {
             data4 = toArrayBuffer(concat4(fragments, messageLength));
+          } else if (this._binaryType === "blob") {
+            data4 = new Blob(fragments);
           } else {
             data4 = fragments;
           }
@@ -2068,15 +2027,21 @@ var require_sender = __commonJS({
     "use strict";
     var { Duplex } = __require("stream");
     var { randomFillSync } = __require("crypto");
-    var PerMessageDeflate = require_permessage_deflate();
-    var { EMPTY_BUFFER } = require_constants();
-    var { isValidStatusCode } = require_validation();
+    var {
+      types: { isUint8Array }
+    } = __require("util");
+    var PerMessageDeflate2 = require_permessage_deflate();
+    var { EMPTY_BUFFER, kWebSocket, NOOP } = require_constants();
+    var { isBlob, isValidStatusCode } = require_validation();
     var { mask: applyMask, toBuffer } = require_buffer_util();
     var kByteLength = Symbol("kByteLength");
     var maskBuffer = Buffer.alloc(4);
     var RANDOM_POOL_SIZE = 8 * 1024;
     var randomPool;
     var randomPoolPointer = RANDOM_POOL_SIZE;
+    var DEFAULT = 0;
+    var DEFLATING = 1;
+    var GET_BLOB_DATA = 2;
     var Sender2 = class _Sender {
       /**
        * Creates a Sender instance.
@@ -2096,8 +2061,10 @@ var require_sender = __commonJS({
         this._firstFragment = true;
         this._compress = false;
         this._bufferedBytes = 0;
-        this._deflating = false;
         this._queue = [];
+        this._state = DEFAULT;
+        this.onerror = NOOP;
+        this[kWebSocket] = void 0;
       }
       /**
        * Frames a piece of data according to the HyBi WebSocket protocol.
@@ -2216,8 +2183,10 @@ var require_sender = __commonJS({
           buf.writeUInt16BE(code, 0);
           if (typeof data4 === "string") {
             buf.write(data4, 2);
-          } else {
+          } else if (isUint8Array(data4)) {
             buf.set(data4, 2);
+          } else {
+            throw new TypeError("Second argument must be a string or a Uint8Array");
           }
         }
         const options = {
@@ -2230,7 +2199,7 @@ var require_sender = __commonJS({
           readOnly: false,
           rsv1: false
         };
-        if (this._deflating) {
+        if (this._state !== DEFAULT) {
           this.enqueue([this.dispatch, buf, false, options, cb]);
         } else {
           this.sendFrame(_Sender.frame(buf, options), cb);
@@ -2250,6 +2219,9 @@ var require_sender = __commonJS({
         if (typeof data4 === "string") {
           byteLength = Buffer.byteLength(data4);
           readOnly = false;
+        } else if (isBlob(data4)) {
+          byteLength = data4.size;
+          readOnly = false;
         } else {
           data4 = toBuffer(data4);
           byteLength = data4.length;
@@ -2268,7 +2240,13 @@ var require_sender = __commonJS({
           readOnly,
           rsv1: false
         };
-        if (this._deflating) {
+        if (isBlob(data4)) {
+          if (this._state !== DEFAULT) {
+            this.enqueue([this.getBlobData, data4, false, options, cb]);
+          } else {
+            this.getBlobData(data4, false, options, cb);
+          }
+        } else if (this._state !== DEFAULT) {
           this.enqueue([this.dispatch, data4, false, options, cb]);
         } else {
           this.sendFrame(_Sender.frame(data4, options), cb);
@@ -2288,6 +2266,9 @@ var require_sender = __commonJS({
         if (typeof data4 === "string") {
           byteLength = Buffer.byteLength(data4);
           readOnly = false;
+        } else if (isBlob(data4)) {
+          byteLength = data4.size;
+          readOnly = false;
         } else {
           data4 = toBuffer(data4);
           byteLength = data4.length;
@@ -2306,7 +2287,13 @@ var require_sender = __commonJS({
           readOnly,
           rsv1: false
         };
-        if (this._deflating) {
+        if (isBlob(data4)) {
+          if (this._state !== DEFAULT) {
+            this.enqueue([this.getBlobData, data4, false, options, cb]);
+          } else {
+            this.getBlobData(data4, false, options, cb);
+          }
+        } else if (this._state !== DEFAULT) {
           this.enqueue([this.dispatch, data4, false, options, cb]);
         } else {
           this.sendFrame(_Sender.frame(data4, options), cb);
@@ -2329,13 +2316,16 @@ var require_sender = __commonJS({
        * @public
        */
       send(data4, options, cb) {
-        const perMessageDeflate = this._extensions[PerMessageDeflate.extensionName];
+        const perMessageDeflate = this._extensions[PerMessageDeflate2.extensionName];
         let opcode = options.binary ? 2 : 1;
         let rsv1 = options.compress;
         let byteLength;
         let readOnly;
         if (typeof data4 === "string") {
           byteLength = Buffer.byteLength(data4);
+          readOnly = false;
+        } else if (isBlob(data4)) {
+          byteLength = data4.size;
           readOnly = false;
         } else {
           data4 = toBuffer(data4);
@@ -2353,37 +2343,74 @@ var require_sender = __commonJS({
           opcode = 0;
         }
         if (options.fin) this._firstFragment = true;
-        if (perMessageDeflate) {
-          const opts = {
-            [kByteLength]: byteLength,
-            fin: options.fin,
-            generateMask: this._generateMask,
-            mask: options.mask,
-            maskBuffer: this._maskBuffer,
-            opcode,
-            readOnly,
-            rsv1
-          };
-          if (this._deflating) {
-            this.enqueue([this.dispatch, data4, this._compress, opts, cb]);
+        const opts = {
+          [kByteLength]: byteLength,
+          fin: options.fin,
+          generateMask: this._generateMask,
+          mask: options.mask,
+          maskBuffer: this._maskBuffer,
+          opcode,
+          readOnly,
+          rsv1
+        };
+        if (isBlob(data4)) {
+          if (this._state !== DEFAULT) {
+            this.enqueue([this.getBlobData, data4, this._compress, opts, cb]);
           } else {
-            this.dispatch(data4, this._compress, opts, cb);
+            this.getBlobData(data4, this._compress, opts, cb);
           }
+        } else if (this._state !== DEFAULT) {
+          this.enqueue([this.dispatch, data4, this._compress, opts, cb]);
         } else {
-          this.sendFrame(
-            _Sender.frame(data4, {
-              [kByteLength]: byteLength,
-              fin: options.fin,
-              generateMask: this._generateMask,
-              mask: options.mask,
-              maskBuffer: this._maskBuffer,
-              opcode,
-              readOnly,
-              rsv1: false
-            }),
-            cb
-          );
+          this.dispatch(data4, this._compress, opts, cb);
         }
+      }
+      /**
+       * Gets the contents of a blob as binary data.
+       *
+       * @param {Blob} blob The blob
+       * @param {Boolean} [compress=false] Specifies whether or not to compress
+       *     the data
+       * @param {Object} options Options object
+       * @param {Boolean} [options.fin=false] Specifies whether or not to set the
+       *     FIN bit
+       * @param {Function} [options.generateMask] The function used to generate the
+       *     masking key
+       * @param {Boolean} [options.mask=false] Specifies whether or not to mask
+       *     `data`
+       * @param {Buffer} [options.maskBuffer] The buffer used to store the masking
+       *     key
+       * @param {Number} options.opcode The opcode
+       * @param {Boolean} [options.readOnly=false] Specifies whether `data` can be
+       *     modified
+       * @param {Boolean} [options.rsv1=false] Specifies whether or not to set the
+       *     RSV1 bit
+       * @param {Function} [cb] Callback
+       * @private
+       */
+      getBlobData(blob, compress, options, cb) {
+        this._bufferedBytes += options[kByteLength];
+        this._state = GET_BLOB_DATA;
+        blob.arrayBuffer().then((arrayBuffer) => {
+          if (this._socket.destroyed) {
+            const err = new Error(
+              "The socket was closed while the blob was being read"
+            );
+            process.nextTick(callCallbacks, this, err, cb);
+            return;
+          }
+          this._bufferedBytes -= options[kByteLength];
+          const data4 = toBuffer(arrayBuffer);
+          if (!compress) {
+            this._state = DEFAULT;
+            this.sendFrame(_Sender.frame(data4, options), cb);
+            this.dequeue();
+          } else {
+            this.dispatch(data4, compress, options, cb);
+          }
+        }).catch((err) => {
+          process.nextTick(onError, this, err, cb);
+        });
       }
       /**
        * Dispatches a message.
@@ -2413,24 +2440,19 @@ var require_sender = __commonJS({
           this.sendFrame(_Sender.frame(data4, options), cb);
           return;
         }
-        const perMessageDeflate = this._extensions[PerMessageDeflate.extensionName];
+        const perMessageDeflate = this._extensions[PerMessageDeflate2.extensionName];
         this._bufferedBytes += options[kByteLength];
-        this._deflating = true;
+        this._state = DEFLATING;
         perMessageDeflate.compress(data4, options.fin, (_, buf) => {
           if (this._socket.destroyed) {
             const err = new Error(
               "The socket was closed while data was being compressed"
             );
-            if (typeof cb === "function") cb(err);
-            for (let i = 0; i < this._queue.length; i++) {
-              const params = this._queue[i];
-              const callback = params[params.length - 1];
-              if (typeof callback === "function") callback(err);
-            }
+            callCallbacks(this, err, cb);
             return;
           }
           this._bufferedBytes -= options[kByteLength];
-          this._deflating = false;
+          this._state = DEFAULT;
           options.readOnly = false;
           this.sendFrame(_Sender.frame(buf, options), cb);
           this.dequeue();
@@ -2442,7 +2464,7 @@ var require_sender = __commonJS({
        * @private
        */
       dequeue() {
-        while (!this._deflating && this._queue.length) {
+        while (this._state === DEFAULT && this._queue.length) {
           const params = this._queue.shift();
           this._bufferedBytes -= params[3][kByteLength];
           Reflect.apply(params[0], this, params.slice(1));
@@ -2461,7 +2483,7 @@ var require_sender = __commonJS({
       /**
        * Sends a frame.
        *
-       * @param {Buffer[]} list The frame to send
+       * @param {(Buffer | String)[]} list The frame to send
        * @param {Function} [cb] Callback
        * @private
        */
@@ -2477,6 +2499,18 @@ var require_sender = __commonJS({
       }
     };
     module.exports = Sender2;
+    function callCallbacks(sender, err, cb) {
+      if (typeof cb === "function") cb(err);
+      for (let i = 0; i < sender._queue.length; i++) {
+        const params = sender._queue[i];
+        const callback = params[params.length - 1];
+        if (typeof callback === "function") callback(err);
+      }
+    }
+    function onError(sender, err, cb) {
+      callCallbacks(sender, err, cb);
+      sender.onerror(err);
+    }
   }
 });
 
@@ -2843,12 +2877,12 @@ var require_extension = __commonJS({
       }
       return offers;
     }
-    function format(extensions) {
-      return Object.keys(extensions).map((extension) => {
-        let configurations = extensions[extension];
+    function format2(extensions) {
+      return Object.keys(extensions).map((extension2) => {
+        let configurations = extensions[extension2];
         if (!Array.isArray(configurations)) configurations = [configurations];
         return configurations.map((params) => {
-          return [extension].concat(
+          return [extension2].concat(
             Object.keys(params).map((k) => {
               let values = params[k];
               if (!Array.isArray(values)) values = [values];
@@ -2858,7 +2892,7 @@ var require_extension = __commonJS({
         }).join(", ");
       }).join(", ");
     }
-    module.exports = { format, parse };
+    module.exports = { format: format2, parse };
   }
 });
 
@@ -2874,11 +2908,13 @@ var require_websocket = __commonJS({
     var { randomBytes: randomBytes6, createHash: createHash2 } = __require("crypto");
     var { Duplex, Readable: Readable2 } = __require("stream");
     var { URL: URL2 } = __require("url");
-    var PerMessageDeflate = require_permessage_deflate();
+    var PerMessageDeflate2 = require_permessage_deflate();
     var Receiver2 = require_receiver();
     var Sender2 = require_sender();
+    var { isBlob } = require_validation();
     var {
       BINARY_TYPES,
+      CLOSE_TIMEOUT,
       EMPTY_BUFFER,
       GUID,
       kForOnEventAttribute,
@@ -2890,9 +2926,8 @@ var require_websocket = __commonJS({
     var {
       EventTarget: { addEventListener: addEventListener2, removeEventListener }
     } = require_event_target();
-    var { format, parse } = require_extension();
+    var { format: format2, parse } = require_extension();
     var { toBuffer } = require_buffer_util();
-    var closeTimeout = 30 * 1e3;
     var kAborted = Symbol("kAborted");
     var protocolVersions = [8, 13];
     var readyStates = ["CONNECTING", "OPEN", "CLOSING", "CLOSED"];
@@ -2913,6 +2948,7 @@ var require_websocket = __commonJS({
         this._closeFrameSent = false;
         this._closeMessage = EMPTY_BUFFER;
         this._closeTimer = null;
+        this._errorEmitted = false;
         this._extensions = {};
         this._paused = false;
         this._protocol = "";
@@ -2937,13 +2973,13 @@ var require_websocket = __commonJS({
           initAsClient(this, address, protocols, options);
         } else {
           this._autoPong = options.autoPong;
+          this._closeTimeout = options.closeTimeout;
           this._isServer = true;
         }
       }
       /**
-       * This deviates from the WHATWG interface since ws doesn't support the
-       * required default "blob" type (instead we define a custom "nodebuffer"
-       * type).
+       * For historical reasons, the custom "nodebuffer" type is used by the default
+       * instead of "blob".
        *
        * @type {String}
        */
@@ -3031,6 +3067,10 @@ var require_websocket = __commonJS({
        *     multiple times in the same tick
        * @param {Function} [options.generateMask] The function used to generate the
        *     masking key
+       * @param {Number} [options.maxBufferedChunks=0] The maximum number of
+       *     buffered data chunks
+       * @param {Number} [options.maxFragments=0] The maximum number of message
+       *     fragments
        * @param {Number} [options.maxPayload=0] The maximum allowed message size
        * @param {Boolean} [options.skipUTF8Validation=false] Specifies whether or
        *     not to skip UTF-8 validation for text and close messages
@@ -3042,13 +3082,17 @@ var require_websocket = __commonJS({
           binaryType: this.binaryType,
           extensions: this._extensions,
           isServer: this._isServer,
+          maxBufferedChunks: options.maxBufferedChunks,
+          maxFragments: options.maxFragments,
           maxPayload: options.maxPayload,
           skipUTF8Validation: options.skipUTF8Validation
         });
-        this._sender = new Sender2(socket, this._extensions, options.generateMask);
+        const sender = new Sender2(socket, this._extensions, options.generateMask);
         this._receiver = receiver;
+        this._sender = sender;
         this._socket = socket;
         receiver[kWebSocket] = this;
+        sender[kWebSocket] = this;
         socket[kWebSocket] = this;
         receiver.on("conclude", receiverOnConclude);
         receiver.on("drain", receiverOnDrain);
@@ -3056,6 +3100,7 @@ var require_websocket = __commonJS({
         receiver.on("message", receiverOnMessage);
         receiver.on("ping", receiverOnPing);
         receiver.on("pong", receiverOnPong);
+        sender.onerror = senderOnError;
         if (socket.setTimeout) socket.setTimeout(0);
         if (socket.setNoDelay) socket.setNoDelay();
         if (head.length > 0) socket.unshift(head);
@@ -3077,8 +3122,8 @@ var require_websocket = __commonJS({
           this.emit("close", this._closeCode, this._closeMessage);
           return;
         }
-        if (this._extensions[PerMessageDeflate.extensionName]) {
-          this._extensions[PerMessageDeflate.extensionName].cleanup();
+        if (this._extensions[PerMessageDeflate2.extensionName]) {
+          this._extensions[PerMessageDeflate2.extensionName].cleanup();
         }
         this._receiver.removeAllListeners();
         this._readyState = _WebSocket.CLOSED;
@@ -3125,10 +3170,7 @@ var require_websocket = __commonJS({
             this._socket.end();
           }
         });
-        this._closeTimer = setTimeout(
-          this._socket.destroy.bind(this._socket),
-          closeTimeout
-        );
+        setCloseTimer(this);
       }
       /**
        * Pause the socket.
@@ -3243,7 +3285,7 @@ var require_websocket = __commonJS({
           fin: true,
           ...options
         };
-        if (!this._extensions[PerMessageDeflate.extensionName]) {
+        if (!this._extensions[PerMessageDeflate2.extensionName]) {
           opts.compress = false;
         }
         this._sender.send(data4 || EMPTY_BUFFER, opts, cb);
@@ -3339,7 +3381,10 @@ var require_websocket = __commonJS({
       const opts = {
         allowSynchronousEvents: true,
         autoPong: true,
+        closeTimeout: CLOSE_TIMEOUT,
         protocolVersion: protocolVersions[1],
+        maxBufferedChunks: 1024 * 1024,
+        maxFragments: 128 * 1024,
         maxPayload: 100 * 1024 * 1024,
         skipUTF8Validation: false,
         perMessageDeflate: true,
@@ -3356,6 +3401,7 @@ var require_websocket = __commonJS({
         port: void 0
       };
       websocket._autoPong = opts.autoPong;
+      websocket._closeTimeout = opts.closeTimeout;
       if (!protocolVersions.includes(opts.protocolVersion)) {
         throw new RangeError(
           `Unsupported protocol version: ${opts.protocolVersion} (supported versions: ${protocolVersions.join(", ")})`
@@ -3367,7 +3413,7 @@ var require_websocket = __commonJS({
       } else {
         try {
           parsedUrl = new URL2(address);
-        } catch (e) {
+        } catch {
           throw new SyntaxError(`Invalid URL: ${address}`);
         }
       }
@@ -3381,7 +3427,7 @@ var require_websocket = __commonJS({
       const isIpcUrl = parsedUrl.protocol === "ws+unix:";
       let invalidUrlMessage;
       if (parsedUrl.protocol !== "ws:" && !isSecure && !isIpcUrl) {
-        invalidUrlMessage = `The URL's protocol must be one of "ws:", "wss:", "http:", "https", or "ws+unix:"`;
+        invalidUrlMessage = `The URL's protocol must be one of "ws:", "wss:", "http:", "https:", or "ws+unix:"`;
       } else if (isIpcUrl && !parsedUrl.pathname) {
         invalidUrlMessage = "The URL's pathname is empty";
       } else if (parsedUrl.hash) {
@@ -3415,13 +3461,13 @@ var require_websocket = __commonJS({
       opts.path = parsedUrl.pathname + parsedUrl.search;
       opts.timeout = opts.handshakeTimeout;
       if (opts.perMessageDeflate) {
-        perMessageDeflate = new PerMessageDeflate(
-          opts.perMessageDeflate !== true ? opts.perMessageDeflate : {},
-          false,
-          opts.maxPayload
-        );
-        opts.headers["Sec-WebSocket-Extensions"] = format({
-          [PerMessageDeflate.extensionName]: perMessageDeflate.offer()
+        perMessageDeflate = new PerMessageDeflate2({
+          ...opts.perMessageDeflate,
+          isServer: false,
+          maxPayload: opts.maxPayload
+        });
+        opts.headers["Sec-WebSocket-Extensions"] = format2({
+          [PerMessageDeflate2.extensionName]: perMessageDeflate.offer()
         });
       }
       if (protocols.length) {
@@ -3564,23 +3610,25 @@ var require_websocket = __commonJS({
             return;
           }
           const extensionNames = Object.keys(extensions);
-          if (extensionNames.length !== 1 || extensionNames[0] !== PerMessageDeflate.extensionName) {
+          if (extensionNames.length !== 1 || extensionNames[0] !== PerMessageDeflate2.extensionName) {
             const message = "Server indicated an extension that was not requested";
             abortHandshake(websocket, socket, message);
             return;
           }
           try {
-            perMessageDeflate.accept(extensions[PerMessageDeflate.extensionName]);
+            perMessageDeflate.accept(extensions[PerMessageDeflate2.extensionName]);
           } catch (err) {
             const message = "Invalid Sec-WebSocket-Extensions header";
             abortHandshake(websocket, socket, message);
             return;
           }
-          websocket._extensions[PerMessageDeflate.extensionName] = perMessageDeflate;
+          websocket._extensions[PerMessageDeflate2.extensionName] = perMessageDeflate;
         }
         websocket.setSocket(socket, head, {
           allowSynchronousEvents: opts.allowSynchronousEvents,
           generateMask: opts.generateMask,
+          maxBufferedChunks: opts.maxBufferedChunks,
+          maxFragments: opts.maxFragments,
           maxPayload: opts.maxPayload,
           skipUTF8Validation: opts.skipUTF8Validation
         });
@@ -3593,6 +3641,7 @@ var require_websocket = __commonJS({
     }
     function emitErrorAndClose(websocket, err) {
       websocket._readyState = WebSocket2.CLOSING;
+      websocket._errorEmitted = true;
       websocket.emit("error", err);
       websocket.emitClose();
     }
@@ -3626,7 +3675,7 @@ var require_websocket = __commonJS({
     }
     function sendAfterClose(websocket, data4, cb) {
       if (data4) {
-        const length = toBuffer(data4).length;
+        const length = isBlob(data4) ? data4.size : toBuffer(data4).length;
         if (websocket._socket) websocket._sender._bufferedBytes += length;
         else websocket._bufferedAmount += length;
       }
@@ -3659,7 +3708,10 @@ var require_websocket = __commonJS({
         process.nextTick(resume, websocket._socket);
         websocket.close(err[kStatusCode]);
       }
-      websocket.emit("error", err);
+      if (!websocket._errorEmitted) {
+        websocket._errorEmitted = true;
+        websocket.emit("error", err);
+      }
     }
     function receiverOnFinish() {
       this[kWebSocket].emitClose();
@@ -3678,14 +3730,33 @@ var require_websocket = __commonJS({
     function resume(stream) {
       stream.resume();
     }
+    function senderOnError(err) {
+      const websocket = this[kWebSocket];
+      if (websocket.readyState === WebSocket2.CLOSED) return;
+      if (websocket.readyState === WebSocket2.OPEN) {
+        websocket._readyState = WebSocket2.CLOSING;
+        setCloseTimer(websocket);
+      }
+      this._socket.end();
+      if (!websocket._errorEmitted) {
+        websocket._errorEmitted = true;
+        websocket.emit("error", err);
+      }
+    }
+    function setCloseTimer(websocket) {
+      websocket._closeTimer = setTimeout(
+        websocket._socket.destroy.bind(websocket._socket),
+        websocket._closeTimeout
+      );
+    }
     function socketOnClose() {
       const websocket = this[kWebSocket];
       this.removeListener("close", socketOnClose);
       this.removeListener("data", socketOnData);
       this.removeListener("end", socketOnEnd);
       websocket._readyState = WebSocket2.CLOSING;
-      let chunk;
-      if (!this._readableState.endEmitted && !websocket._closeFrameReceived && !websocket._receiver._writableState.errorEmitted && (chunk = websocket._socket.read()) !== null) {
+      if (!this._readableState.endEmitted && !websocket._closeFrameReceived && !websocket._receiver._writableState.errorEmitted && this._readableState.length !== 0) {
+        const chunk = this.read(this._readableState.length);
         websocket._receiver.write(chunk);
       }
       websocket._receiver.end();
@@ -3718,6 +3789,104 @@ var require_websocket = __commonJS({
         this.destroy();
       }
     }
+  }
+});
+
+// ../node_modules/ws/lib/stream.js
+var require_stream = __commonJS({
+  "../node_modules/ws/lib/stream.js"(exports, module) {
+    "use strict";
+    var WebSocket2 = require_websocket();
+    var { Duplex } = __require("stream");
+    function emitClose(stream) {
+      stream.emit("close");
+    }
+    function duplexOnEnd() {
+      if (!this.destroyed && this._writableState.finished) {
+        this.destroy();
+      }
+    }
+    function duplexOnError(err) {
+      this.removeListener("error", duplexOnError);
+      this.destroy();
+      if (this.listenerCount("error") === 0) {
+        this.emit("error", err);
+      }
+    }
+    function createWebSocketStream2(ws, options) {
+      let terminateOnDestroy = true;
+      const duplex = new Duplex({
+        ...options,
+        autoDestroy: false,
+        emitClose: false,
+        objectMode: false,
+        writableObjectMode: false
+      });
+      ws.on("message", function message(msg, isBinary) {
+        const data4 = !isBinary && duplex._readableState.objectMode ? msg.toString() : msg;
+        if (!duplex.push(data4)) ws.pause();
+      });
+      ws.once("error", function error(err) {
+        if (duplex.destroyed) return;
+        terminateOnDestroy = false;
+        duplex.destroy(err);
+      });
+      ws.once("close", function close() {
+        if (duplex.destroyed) return;
+        duplex.push(null);
+      });
+      duplex._destroy = function(err, callback) {
+        if (ws.readyState === ws.CLOSED) {
+          callback(err);
+          process.nextTick(emitClose, duplex);
+          return;
+        }
+        let called = false;
+        ws.once("error", function error(err2) {
+          called = true;
+          callback(err2);
+        });
+        ws.once("close", function close() {
+          if (!called) callback(err);
+          process.nextTick(emitClose, duplex);
+        });
+        if (terminateOnDestroy) ws.terminate();
+      };
+      duplex._final = function(callback) {
+        if (ws.readyState === ws.CONNECTING) {
+          ws.once("open", function open() {
+            duplex._final(callback);
+          });
+          return;
+        }
+        if (ws._socket === null) return;
+        if (ws._socket._writableState.finished) {
+          callback();
+          if (duplex._readableState.endEmitted) duplex.destroy();
+        } else {
+          ws._socket.once("finish", function finish() {
+            callback();
+          });
+          ws.close();
+        }
+      };
+      duplex._read = function() {
+        if (ws.isPaused) ws.resume();
+      };
+      duplex._write = function(chunk, encoding, callback) {
+        if (ws.readyState === ws.CONNECTING) {
+          ws.once("open", function open() {
+            duplex._write(chunk, encoding, callback);
+          });
+          return;
+        }
+        ws.send(chunk, callback);
+      };
+      duplex.on("end", duplexOnEnd);
+      duplex.on("error", duplexOnError);
+      return duplex;
+    }
+    module.exports = createWebSocketStream2;
   }
 });
 
@@ -3774,11 +3943,11 @@ var require_websocket_server = __commonJS({
     var http3 = __require("http");
     var { Duplex } = __require("stream");
     var { createHash: createHash2 } = __require("crypto");
-    var extension = require_extension();
-    var PerMessageDeflate = require_permessage_deflate();
-    var subprotocol = require_subprotocol();
+    var extension2 = require_extension();
+    var PerMessageDeflate2 = require_permessage_deflate();
+    var subprotocol2 = require_subprotocol();
     var WebSocket2 = require_websocket();
-    var { GUID, kWebSocket } = require_constants();
+    var { CLOSE_TIMEOUT, GUID, kWebSocket } = require_constants();
     var keyRegex = /^[+/0-9A-Za-z]{22}==$/;
     var RUNNING = 0;
     var CLOSING = 1;
@@ -3797,8 +3966,15 @@ var require_websocket_server = __commonJS({
        *     pending connections
        * @param {Boolean} [options.clientTracking=true] Specifies whether or not to
        *     track clients
+       * @param {Number} [options.closeTimeout=30000] Duration in milliseconds to
+       *     wait for the closing handshake to finish after `websocket.close()` is
+       *     called
        * @param {Function} [options.handleProtocols] A hook to handle protocols
        * @param {String} [options.host] The hostname where to bind the server
+       * @param {Number} [options.maxBufferedChunks=1048576] The maximum number of
+       *     buffered data chunks
+       * @param {Number} [options.maxFragments=131072] The maximum number of message
+       *     fragments
        * @param {Number} [options.maxPayload=104857600] The maximum allowed message
        *     size
        * @param {Boolean} [options.noServer=false] Enable no server mode
@@ -3820,11 +3996,14 @@ var require_websocket_server = __commonJS({
         options = {
           allowSynchronousEvents: true,
           autoPong: true,
+          maxBufferedChunks: 1024 * 1024,
+          maxFragments: 128 * 1024,
           maxPayload: 100 * 1024 * 1024,
           skipUTF8Validation: false,
           perMessageDeflate: false,
           handleProtocols: null,
           clientTracking: true,
+          closeTimeout: CLOSE_TIMEOUT,
           verifyClient: null,
           noServer: false,
           backlog: null,
@@ -3980,9 +4159,11 @@ var require_websocket_server = __commonJS({
           abortHandshakeOrEmitwsClientError(this, req, socket, 400, message);
           return;
         }
-        if (version5 !== 8 && version5 !== 13) {
+        if (version5 !== 13 && version5 !== 8) {
           const message = "Missing or invalid Sec-WebSocket-Version header";
-          abortHandshakeOrEmitwsClientError(this, req, socket, 400, message);
+          abortHandshakeOrEmitwsClientError(this, req, socket, 400, message, {
+            "Sec-WebSocket-Version": "13, 8"
+          });
           return;
         }
         if (!this.shouldHandle(req)) {
@@ -3993,7 +4174,7 @@ var require_websocket_server = __commonJS({
         let protocols = /* @__PURE__ */ new Set();
         if (secWebSocketProtocol !== void 0) {
           try {
-            protocols = subprotocol.parse(secWebSocketProtocol);
+            protocols = subprotocol2.parse(secWebSocketProtocol);
           } catch (err) {
             const message = "Invalid Sec-WebSocket-Protocol header";
             abortHandshakeOrEmitwsClientError(this, req, socket, 400, message);
@@ -4003,16 +4184,16 @@ var require_websocket_server = __commonJS({
         const secWebSocketExtensions = req.headers["sec-websocket-extensions"];
         const extensions = {};
         if (this.options.perMessageDeflate && secWebSocketExtensions !== void 0) {
-          const perMessageDeflate = new PerMessageDeflate(
-            this.options.perMessageDeflate,
-            true,
-            this.options.maxPayload
-          );
+          const perMessageDeflate = new PerMessageDeflate2({
+            ...this.options.perMessageDeflate,
+            isServer: true,
+            maxPayload: this.options.maxPayload
+          });
           try {
-            const offers = extension.parse(secWebSocketExtensions);
-            if (offers[PerMessageDeflate.extensionName]) {
-              perMessageDeflate.accept(offers[PerMessageDeflate.extensionName]);
-              extensions[PerMessageDeflate.extensionName] = perMessageDeflate;
+            const offers = extension2.parse(secWebSocketExtensions);
+            if (offers[PerMessageDeflate2.extensionName]) {
+              perMessageDeflate.accept(offers[PerMessageDeflate2.extensionName]);
+              extensions[PerMessageDeflate2.extensionName] = perMessageDeflate;
             }
           } catch (err) {
             const message = "Invalid or unacceptable Sec-WebSocket-Extensions header";
@@ -4083,10 +4264,10 @@ var require_websocket_server = __commonJS({
             ws._protocol = protocol;
           }
         }
-        if (extensions[PerMessageDeflate.extensionName]) {
-          const params = extensions[PerMessageDeflate.extensionName].params;
-          const value = extension.format({
-            [PerMessageDeflate.extensionName]: [params]
+        if (extensions[PerMessageDeflate2.extensionName]) {
+          const params = extensions[PerMessageDeflate2.extensionName].params;
+          const value = extension2.format({
+            [PerMessageDeflate2.extensionName]: [params]
           });
           headers.push(`Sec-WebSocket-Extensions: ${value}`);
           ws._extensions = extensions;
@@ -4096,6 +4277,8 @@ var require_websocket_server = __commonJS({
         socket.removeListener("error", socketOnError);
         ws.setSocket(socket, head, {
           allowSynchronousEvents: this.options.allowSynchronousEvents,
+          maxBufferedChunks: this.options.maxBufferedChunks,
+          maxFragments: this.options.maxFragments,
           maxPayload: this.options.maxPayload,
           skipUTF8Validation: this.options.skipUTF8Validation
         });
@@ -4141,25 +4324,28 @@ var require_websocket_server = __commonJS({
 ` + Object.keys(headers).map((h) => `${h}: ${headers[h]}`).join("\r\n") + "\r\n\r\n" + message
       );
     }
-    function abortHandshakeOrEmitwsClientError(server, req, socket, code, message) {
+    function abortHandshakeOrEmitwsClientError(server, req, socket, code, message, headers) {
       if (server.listenerCount("wsClientError")) {
         const err = new Error(message);
         Error.captureStackTrace(err, abortHandshakeOrEmitwsClientError);
         server.emit("wsClientError", err, socket, req);
       } else {
-        abortHandshake(socket, code, message);
+        abortHandshake(socket, code, message, headers);
       }
     }
   }
 });
 
 // ../node_modules/ws/wrapper.mjs
-var import_stream2, import_receiver, import_sender, import_websocket, import_websocket_server;
+var import_stream2, import_extension, import_permessage_deflate, import_receiver, import_sender, import_subprotocol, import_websocket, import_websocket_server;
 var init_wrapper = __esm({
   "../node_modules/ws/wrapper.mjs"() {
     import_stream2 = __toESM(require_stream(), 1);
+    import_extension = __toESM(require_extension(), 1);
+    import_permessage_deflate = __toESM(require_permessage_deflate(), 1);
     import_receiver = __toESM(require_receiver(), 1);
     import_sender = __toESM(require_sender(), 1);
+    import_subprotocol = __toESM(require_subprotocol(), 1);
     import_websocket = __toESM(require_websocket(), 1);
     import_websocket_server = __toESM(require_websocket_server(), 1);
   }
@@ -5144,7 +5330,7 @@ var init_size = __esm({
 var version3;
 var init_version2 = __esm({
   "../node_modules/viem/_esm/errors/version.js"() {
-    version3 = "2.52.2";
+    version3 = "2.55.19";
   }
 });
 
@@ -6542,10 +6728,7 @@ function encodeAbiParameters(params, values) {
     params,
     values
   });
-  const data4 = encodeParams(preparedParams);
-  if (data4.length === 0)
-    return "0x";
-  return data4;
+  return encodeParams(preparedParams);
 }
 function prepareParams({ params, values }) {
   const preparedParams = [];
@@ -6611,7 +6794,7 @@ function encodeParams(preparedParams) {
       staticParams.push(encoded);
     }
   }
-  return concat2([...staticParams, ...dynamicParams]);
+  return concatHex([...staticParams, ...dynamicParams]);
 }
 function encodeAddress(value) {
   if (!isAddress2(value))
@@ -6628,7 +6811,7 @@ function encodeArray(value, { length, param }) {
       givenLength: value.length,
       type: `${param.type}[${length}]`
     });
-  let dynamicChild = false;
+  let dynamicChild = value.length === 0 && isDynamicType(param);
   const preparedParams = [];
   for (let i = 0; i < value.length; i++) {
     const preparedParam = prepareParam({ param, value: value[i] });
@@ -6642,7 +6825,7 @@ function encodeArray(value, { length, param }) {
       const length2 = numberToHex(preparedParams.length, { size: 32 });
       return {
         dynamic: true,
-        encoded: preparedParams.length > 0 ? concat2([length2, data4]) : length2
+        encoded: concatHex([length2, data4])
       };
     }
     if (dynamicChild)
@@ -6650,7 +6833,7 @@ function encodeArray(value, { length, param }) {
   }
   return {
     dynamic: false,
-    encoded: concat2(preparedParams.map(({ encoded }) => encoded))
+    encoded: concatHex(preparedParams.map(({ encoded }) => encoded))
   };
 }
 function encodeBytes2(value, { param }) {
@@ -6665,7 +6848,10 @@ function encodeBytes2(value, { param }) {
       });
     return {
       dynamic: true,
-      encoded: concat2([padHex(numberToHex(bytesSize, { size: 32 })), value_])
+      encoded: concatHex([
+        padHex(numberToHex(bytesSize, { size: 32 })),
+        value_
+      ])
     };
   }
   if (bytesSize !== Number.parseInt(paramSize, 10))
@@ -6712,7 +6898,7 @@ function encodeString(value) {
   }
   return {
     dynamic: true,
-    encoded: concat2([
+    encoded: concatHex([
       padHex(numberToHex(size(hexValue), { size: 32 })),
       ...parts
     ])
@@ -6734,7 +6920,7 @@ function encodeTuple(value, { param }) {
   }
   return {
     dynamic,
-    encoded: dynamic ? encodeParams(preparedParams) : concat2(preparedParams.map(({ encoded }) => encoded))
+    encoded: dynamic ? encodeParams(preparedParams) : concatHex(preparedParams.map(({ encoded }) => encoded))
   };
 }
 function getArrayComponents(type) {
@@ -6743,6 +6929,21 @@ function getArrayComponents(type) {
     // Return `null` if the array is dynamic.
     [matches[2] ? Number(matches[2]) : null, matches[1]]
   ) : void 0;
+}
+function isDynamicType(param) {
+  const { type } = param;
+  if (type === "string")
+    return true;
+  if (type === "bytes")
+    return true;
+  if (type.endsWith("[]"))
+    return true;
+  if (type === "tuple")
+    return param.components.some(isDynamicType);
+  const arrayComponents = getArrayComponents(type);
+  if (arrayComponents)
+    return isDynamicType({ ...param, type: arrayComponents[1] });
+  return false;
 }
 var init_encodeAbiParameters = __esm({
   "../node_modules/viem/_esm/utils/abi/encodeAbiParameters.js"() {
@@ -7197,7 +7398,7 @@ var init_cursor2 = __esm({
 function bytesToBigInt(bytes2, opts = {}) {
   if (typeof opts.size !== "undefined")
     assertSize(bytes2, { size: opts.size });
-  const hex2 = bytesToHex2(bytes2, opts);
+  const hex2 = bytesToHex2(bytes2);
   return hexToBigInt(hex2, opts);
 }
 function bytesToBool(bytes_, opts = {}) {
@@ -7213,7 +7414,7 @@ function bytesToBool(bytes_, opts = {}) {
 function bytesToNumber(bytes2, opts = {}) {
   if (typeof opts.size !== "undefined")
     assertSize(bytes2, { size: opts.size });
-  const hex2 = bytesToHex2(bytes2, opts);
+  const hex2 = bytesToHex2(bytes2);
   return hexToNumber2(hex2, opts);
 }
 function bytesToString(bytes_, opts = {}) {
@@ -7249,7 +7450,8 @@ function decodeAbiParameters(params, data4) {
   const values = [];
   for (let i = 0; i < params.length; ++i) {
     const param = params[i];
-    cursor.setPosition(consumed);
+    if (consumed < bytes2.length)
+      cursor.setPosition(consumed);
     const [data5, consumed_] = decodeParameter(cursor, param, {
       staticPosition: 0
     });
@@ -7285,7 +7487,7 @@ function decodeAddress(cursor) {
   return [checksumAddress(bytesToHex2(sliceBytes(value, -20))), 32];
 }
 function decodeArray(cursor, param, { length, staticPosition }) {
-  if (!length) {
+  if (length === null) {
     const offset = bytesToNumber(cursor.readBytes(sizeOfOffset));
     const start = staticPosition + offset;
     const startOfData = start + sizeOfLength;
@@ -7301,6 +7503,10 @@ function decodeArray(cursor, param, { length, staticPosition }) {
       });
       consumed2 += consumed_;
       value2.push(data4);
+      if (consumed_ === 0) {
+        cursor.assertReadLimit();
+        cursor._touch();
+      }
     }
     cursor.setPosition(staticPosition + 32);
     return [value2, 32];
@@ -7327,6 +7533,10 @@ function decodeArray(cursor, param, { length, staticPosition }) {
     });
     consumed += consumed_;
     value.push(data4);
+    if (consumed_ === 0) {
+      cursor.assertReadLimit();
+      cursor._touch();
+    }
   }
   return [value, consumed];
 }
@@ -7398,7 +7608,7 @@ function decodeString(cursor, { staticPosition }) {
     return ["", 32];
   }
   const data4 = cursor.readBytes(length, 32);
-  const value = bytesToString(trim(data4));
+  const value = bytesToString(data4);
   cursor.setPosition(staticPosition + 32);
   return [value, 32];
 }
@@ -7425,7 +7635,6 @@ var init_decodeAbiParameters = __esm({
     init_cursor2();
     init_size();
     init_slice();
-    init_trim();
     init_fromBytes();
     init_toBytes();
     init_toHex();
@@ -7492,23 +7701,10 @@ var init_formatAbiItemWithArgs = __esm({
   }
 });
 
-// ../node_modules/viem/_esm/constants/unit.js
-var etherUnits, gweiUnits;
-var init_unit = __esm({
-  "../node_modules/viem/_esm/constants/unit.js"() {
-    etherUnits = {
-      gwei: 9,
-      wei: 18
-    };
-    gweiUnits = {
-      ether: -9,
-      wei: 9
-    };
-  }
-});
-
-// ../node_modules/viem/_esm/utils/unit/formatUnits.js
-function formatUnits2(value, decimals) {
+// ../node_modules/viem/_esm/utils/unit/Value.js
+function format(value, decimals = 0) {
+  if (!Number.isInteger(decimals) || decimals < 0)
+    throw new InvalidDecimalsError({ decimals });
   let display = value.toString();
   const negative = display.startsWith("-");
   if (negative)
@@ -7521,30 +7717,113 @@ function formatUnits2(value, decimals) {
   fraction = fraction.replace(/(0+)$/, "");
   return `${negative ? "-" : ""}${integer || "0"}${fraction ? `.${fraction}` : ""}`;
 }
-var init_formatUnits = __esm({
-  "../node_modules/viem/_esm/utils/unit/formatUnits.js"() {
+function formatEther2(wei, unit = "wei") {
+  return format(wei, exponents.ether - exponents[unit]);
+}
+function formatGwei(wei, unit = "wei") {
+  return format(wei, exponents.gwei - exponents[unit]);
+}
+function from(value, decimals = 0) {
+  if (!Number.isInteger(decimals) || decimals < 0)
+    throw new InvalidDecimalsError({ decimals });
+  if (!/^-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)$/.test(value))
+    throw new InvalidDecimalNumberError({ value });
+  let [integer = "", fraction = "0"] = value.split(".");
+  const negative = integer.startsWith("-");
+  if (negative)
+    integer = integer.slice(1);
+  if (integer === "")
+    integer = "0";
+  fraction = fraction.replace(/(0+)$/, "");
+  if (decimals === 0) {
+    if (fraction.length > 0 && Number.parseInt(fraction[0], 10) >= 5)
+      integer = `${BigInt(integer) + 1n}`;
+    fraction = "";
+  } else if (fraction.length > decimals) {
+    const left = fraction.slice(0, decimals);
+    const roundDigit = Number.parseInt(fraction.slice(decimals, decimals + 1), 10);
+    if (roundDigit >= 5) {
+      const carried = carry(left);
+      if (carried.length > decimals) {
+        fraction = carried.slice(1);
+        integer = `${BigInt(integer) + 1n}`;
+      } else {
+        fraction = carried;
+      }
+    } else {
+      fraction = left;
+    }
+  } else {
+    fraction = fraction.padEnd(decimals, "0");
+  }
+  return BigInt(`${negative ? "-" : ""}${integer}${fraction}`);
+}
+function carry(digits) {
+  const out = digits.split("");
+  let i = out.length - 1;
+  while (i >= 0) {
+    const d = Number.parseInt(out[i], 10) + 1;
+    if (d < 10) {
+      out[i] = String(d);
+      return out.join("");
+    }
+    out[i] = "0";
+    i--;
+  }
+  return `1${out.join("")}`;
+}
+var exponents, InvalidDecimalNumberError, InvalidDecimalsError;
+var init_Value = __esm({
+  "../node_modules/viem/_esm/utils/unit/Value.js"() {
+    exponents = {
+      wei: 0,
+      gwei: 9,
+      szabo: 12,
+      finney: 15,
+      ether: 18
+    };
+    InvalidDecimalNumberError = class extends Error {
+      constructor({ value }) {
+        super(`Value \`${value}\` is not a valid decimal number.`);
+        Object.defineProperty(this, "name", {
+          enumerable: true,
+          configurable: true,
+          writable: true,
+          value: "Value.InvalidDecimalNumberError"
+        });
+      }
+    };
+    InvalidDecimalsError = class extends Error {
+      constructor({ decimals }) {
+        super(`\`decimals\` must be a non-negative integer. Got \`${decimals}\`.`);
+        Object.defineProperty(this, "name", {
+          enumerable: true,
+          configurable: true,
+          writable: true,
+          value: "Value.InvalidDecimalsError"
+        });
+      }
+    };
   }
 });
 
 // ../node_modules/viem/_esm/utils/unit/formatEther.js
-function formatEther2(wei, unit = "wei") {
-  return formatUnits2(wei, etherUnits[unit]);
+function formatEther3(wei, unit = "wei") {
+  return formatEther2(wei, unit);
 }
 var init_formatEther = __esm({
   "../node_modules/viem/_esm/utils/unit/formatEther.js"() {
-    init_unit();
-    init_formatUnits();
+    init_Value();
   }
 });
 
 // ../node_modules/viem/_esm/utils/unit/formatGwei.js
-function formatGwei(wei, unit = "wei") {
-  return formatUnits2(wei, gweiUnits[unit]);
+function formatGwei2(wei, unit = "wei") {
+  return formatGwei(wei, unit);
 }
 var init_formatGwei = __esm({
   "../node_modules/viem/_esm/utils/unit/formatGwei.js"() {
-    init_unit();
-    init_formatUnits();
+    init_Value();
   }
 });
 
@@ -7610,12 +7889,23 @@ function prettyPrint(args) {
   const maxLength = entries.reduce((acc, [key]) => Math.max(acc, key.length), 0);
   return entries.map(([key, value]) => `  ${`${key}:`.padEnd(maxLength + 1)}  ${value}`).join("\n");
 }
-var InvalidLegacyVError, InvalidSerializableTransactionError, InvalidStorageKeySizeError, TransactionExecutionError, TransactionNotFoundError, TransactionReceiptNotFoundError, TransactionReceiptRevertedError, WaitForTransactionReceiptTimeoutError;
+var FeePayerNonceMismatchError, InvalidLegacyVError, InvalidSerializableTransactionError, InvalidStorageKeySizeError, TransactionExecutionError, TransactionNotFoundError, TransactionReceiptNotFoundError, TransactionReceiptRevertedError, WaitForTransactionReceiptTimeoutError;
 var init_transaction = __esm({
   "../node_modules/viem/_esm/errors/transaction.js"() {
     init_formatEther();
     init_formatGwei();
     init_base();
+    FeePayerNonceMismatchError = class extends BaseError2 {
+      constructor({ filledNonce, requestedNonce }) {
+        super("The filled transaction nonce does not match the requested nonce.", {
+          metaMessages: [
+            `Requested Nonce: ${requestedNonce}`,
+            `Filled Nonce: ${filledNonce}`
+          ],
+          name: "FeePayerNonceMismatchError"
+        });
+      }
+    };
     InvalidLegacyVError = class extends BaseError2 {
       constructor({ v }) {
         super(`Invalid \`v\` value "${v}". Expected 27 or 28.`, {
@@ -7655,12 +7945,12 @@ var init_transaction = __esm({
           chain: chain2 && `${chain2?.name} (id: ${chain2?.id})`,
           from: account?.address,
           to,
-          value: typeof value !== "undefined" && `${formatEther2(value)} ${chain2?.nativeCurrency?.symbol || "ETH"}`,
+          value: typeof value !== "undefined" && `${formatEther3(value)} ${chain2?.nativeCurrency?.symbol || "ETH"}`,
           data: data4,
           gas,
-          gasPrice: typeof gasPrice !== "undefined" && `${formatGwei(gasPrice)} gwei`,
-          maxFeePerGas: typeof maxFeePerGas !== "undefined" && `${formatGwei(maxFeePerGas)} gwei`,
-          maxPriorityFeePerGas: typeof maxPriorityFeePerGas !== "undefined" && `${formatGwei(maxPriorityFeePerGas)} gwei`,
+          gasPrice: typeof gasPrice !== "undefined" && `${formatGwei2(gasPrice)} gwei`,
+          maxFeePerGas: typeof maxFeePerGas !== "undefined" && `${formatGwei2(maxFeePerGas)} gwei`,
+          maxPriorityFeePerGas: typeof maxPriorityFeePerGas !== "undefined" && `${formatGwei2(maxPriorityFeePerGas)} gwei`,
           nonce
         });
         super(cause.shortMessage, {
@@ -7789,12 +8079,12 @@ var init_contract = __esm({
         let prettyArgs = prettyPrint({
           from: account?.address,
           to,
-          value: typeof value !== "undefined" && `${formatEther2(value)} ${chain2?.nativeCurrency?.symbol || "ETH"}`,
+          value: typeof value !== "undefined" && `${formatEther3(value)} ${chain2?.nativeCurrency?.symbol || "ETH"}`,
           data: data4,
           gas,
-          gasPrice: typeof gasPrice !== "undefined" && `${formatGwei(gasPrice)} gwei`,
-          maxFeePerGas: typeof maxFeePerGas !== "undefined" && `${formatGwei(maxFeePerGas)} gwei`,
-          maxPriorityFeePerGas: typeof maxPriorityFeePerGas !== "undefined" && `${formatGwei(maxPriorityFeePerGas)} gwei`,
+          gasPrice: typeof gasPrice !== "undefined" && `${formatGwei2(gasPrice)} gwei`,
+          maxFeePerGas: typeof maxFeePerGas !== "undefined" && `${formatGwei2(maxFeePerGas)} gwei`,
+          maxPriorityFeePerGas: typeof maxPriorityFeePerGas !== "undefined" && `${formatGwei2(maxPriorityFeePerGas)} gwei`,
           nonce
         });
         if (stateOverride) {
@@ -8024,7 +8314,7 @@ ${prettyStateOverride(stateOverride)}`;
 });
 
 // ../node_modules/viem/_esm/errors/request.js
-var HttpRequestError, RpcRequestError, TimeoutError;
+var HttpRequestError, ResponseBodyTooLargeError, RpcRequestError, TimeoutError;
 var init_request = __esm({
   "../node_modules/viem/_esm/errors/request.js"() {
     init_stringify();
@@ -8070,6 +8360,28 @@ var init_request = __esm({
         this.headers = headers;
         this.status = status;
         this.url = url;
+      }
+    };
+    ResponseBodyTooLargeError = class extends BaseError2 {
+      constructor({ maxSize, size: size5 }) {
+        super("HTTP response body exceeded the size limit.", {
+          metaMessages: [`Max: ${maxSize} bytes`, `Received: ${size5} bytes`],
+          name: "ResponseBodyTooLargeError"
+        });
+        Object.defineProperty(this, "maxSize", {
+          enumerable: true,
+          configurable: true,
+          writable: true,
+          value: void 0
+        });
+        Object.defineProperty(this, "size", {
+          enumerable: true,
+          configurable: true,
+          writable: true,
+          value: void 0
+        });
+        this.maxSize = maxSize;
+        this.size = size5;
       }
     };
     RpcRequestError = class extends BaseError2 {
@@ -8699,7 +9011,7 @@ var init_md = __esm({
 });
 
 // ../node_modules/viem/node_modules/@noble/hashes/esm/sha2.js
-var SHA256_K2, SHA256_W2, SHA2562, sha2563;
+var SHA256_K2, SHA256_W2, SHA2562, sha2564;
 var init_sha2 = __esm({
   "../node_modules/viem/node_modules/@noble/hashes/esm/sha2.js"() {
     init_md();
@@ -8841,7 +9153,7 @@ var init_sha2 = __esm({
         clean(this.buffer);
       }
     };
-    sha2563 = /* @__PURE__ */ createHasher(() => new SHA2562());
+    sha2564 = /* @__PURE__ */ createHasher(() => new SHA2562());
   }
 });
 
@@ -10184,7 +10496,7 @@ function weierstrass2(curveDef) {
   function normalizeS(s) {
     return isBiggerThanHalfOrder(s) ? modN2(-s) : s;
   }
-  const slcNum = (b2, from14, to) => bytesToNumberBE2(b2.slice(from14, to));
+  const slcNum = (b2, from16, to) => bytesToNumberBE2(b2.slice(from16, to));
   class Signature2 {
     constructor(r, s, recovery) {
       aInRange("r", r, _1n11, CURVE_ORDER);
@@ -10387,14 +10699,14 @@ function weierstrass2(curveDef) {
     const sg = signature;
     msgHash = ensureBytes2("msgHash", msgHash);
     publicKey = ensureBytes2("publicKey", publicKey);
-    const { lowS, prehash, format } = opts;
+    const { lowS, prehash, format: format2 } = opts;
     validateSigVerOpts(opts);
     if ("strict" in opts)
       throw new Error("options.strict was renamed to lowS");
-    if (format !== void 0 && format !== "compact" && format !== "der")
+    if (format2 !== void 0 && format2 !== "compact" && format2 !== "der")
       throw new Error("format must be compact or der");
     const isHex2 = typeof sg === "string" || isBytes2(sg);
-    const isObj = !isHex2 && !format && typeof sg === "object" && sg !== null && typeof sg.r === "bigint" && typeof sg.s === "bigint";
+    const isObj = !isHex2 && !format2 && typeof sg === "object" && sg !== null && typeof sg.r === "bigint" && typeof sg.s === "bigint";
     if (!isHex2 && !isObj)
       throw new Error("invalid signature, expected Uint8Array, hex string or Signature instance");
     let _sig = void 0;
@@ -10404,13 +10716,13 @@ function weierstrass2(curveDef) {
         _sig = new Signature2(sg.r, sg.s);
       if (isHex2) {
         try {
-          if (format !== "compact")
+          if (format2 !== "compact")
             _sig = Signature2.fromDER(sg);
         } catch (derError) {
           if (!(derError instanceof DER2.Err))
             throw derError;
         }
-        if (!_sig && format !== "der")
+        if (!_sig && format2 !== "der")
           _sig = Signature2.fromCompact(sg);
       }
       P = Point3.fromHex(publicKey);
@@ -10873,11 +11185,11 @@ function sqrtMod2(y) {
 function taggedHash(tag, ...messages) {
   let tagP = TAGGED_HASH_PREFIXES[tag];
   if (tagP === void 0) {
-    const tagH = sha2563(Uint8Array.from(tag, (c) => c.charCodeAt(0)));
+    const tagH = sha2564(Uint8Array.from(tag, (c) => c.charCodeAt(0)));
     tagP = concatBytes5(tagH, tagH);
     TAGGED_HASH_PREFIXES[tag] = tagP;
   }
-  return sha2563(concatBytes5(tagP, ...messages));
+  return sha2564(concatBytes5(tagP, ...messages));
 }
 function schnorrGetExtPubKey(priv) {
   let d_ = secp256k12.utils.normPrivateKeyToScalar(priv);
@@ -10994,7 +11306,7 @@ var init_secp256k1 = __esm({
           return { k1neg, k1, k2neg, k2 };
         }
       }
-    }, sha2563);
+    }, sha2564);
     TAGGED_HASH_PREFIXES = {};
     pointToBytes = (point) => point.toRawBytes(true).slice(1);
     numTo32b = (n2) => numberToBytesBE2(n2, 32);
@@ -11063,7 +11375,7 @@ var init_secp256k1 = __esm({
       m: 1,
       k: 128,
       expand: "xmd",
-      hash: sha2563
+      hash: sha2564
     }))();
     hashToCurve = /* @__PURE__ */ (() => secp256k1_hasher.hashToCurve)();
     encodeToCurve = /* @__PURE__ */ (() => secp256k1_hasher.encodeToCurve)();
@@ -11099,7 +11411,7 @@ var init_node = __esm({
     });
     FeeCapTooHighError = class extends BaseError2 {
       constructor({ cause, maxFeePerGas } = {}) {
-        super(`The fee cap (\`maxFeePerGas\`${maxFeePerGas ? ` = ${formatGwei(maxFeePerGas)} gwei` : ""}) cannot be higher than the maximum allowed value (2^256-1).`, {
+        super(`The fee cap (\`maxFeePerGas\`${maxFeePerGas ? ` = ${formatGwei2(maxFeePerGas)} gwei` : ""}) cannot be higher than the maximum allowed value (2^256-1).`, {
           cause,
           name: "FeeCapTooHighError"
         });
@@ -11113,7 +11425,7 @@ var init_node = __esm({
     });
     FeeCapTooLowError = class extends BaseError2 {
       constructor({ cause, maxFeePerGas } = {}) {
-        super(`The fee cap (\`maxFeePerGas\`${maxFeePerGas ? ` = ${formatGwei(maxFeePerGas)}` : ""} gwei) cannot be lower than the block base fee.`, {
+        super(`The fee cap (\`maxFeePerGas\`${maxFeePerGas ? ` = ${formatGwei2(maxFeePerGas)}` : ""} gwei) cannot be lower than the block base fee.`, {
           cause,
           name: "FeeCapTooLowError"
         });
@@ -11232,7 +11544,7 @@ var init_node = __esm({
     TipAboveFeeCapError = class extends BaseError2 {
       constructor({ cause, maxPriorityFeePerGas, maxFeePerGas } = {}) {
         super([
-          `The provided tip (\`maxPriorityFeePerGas\`${maxPriorityFeePerGas ? ` = ${formatGwei(maxPriorityFeePerGas)} gwei` : ""}) cannot be higher than the fee cap (\`maxFeePerGas\`${maxFeePerGas ? ` = ${formatGwei(maxFeePerGas)} gwei` : ""}).`
+          `The provided tip (\`maxPriorityFeePerGas\`${maxPriorityFeePerGas ? ` = ${formatGwei2(maxPriorityFeePerGas)} gwei` : ""}) cannot be higher than the fee cap (\`maxFeePerGas\`${maxFeePerGas ? ` = ${formatGwei2(maxFeePerGas)} gwei` : ""}).`
         ].join("\n"), {
           cause,
           name: "TipAboveFeeCapError"
@@ -11312,8 +11624,8 @@ var init_getNodeError = __esm({
 });
 
 // ../node_modules/viem/_esm/utils/formatters/extract.js
-function extract(value_, { format }) {
-  if (!format)
+function extract(value_, { format: format2 }) {
+  if (!format2)
     return {};
   const value = {};
   function extract_(formatted2) {
@@ -11325,7 +11637,7 @@ function extract(value_, { format }) {
         extract_(formatted2[key]);
     }
   }
-  const formatted = format(value_ || {});
+  const formatted = format2(value_ || {});
   extract_(formatted);
   return value;
 }
@@ -11335,12 +11647,12 @@ var init_extract = __esm({
 });
 
 // ../node_modules/viem/_esm/utils/formatters/formatter.js
-function defineFormatter(type, format) {
+function defineFormatter(type, format2) {
   return ({ exclude, format: overrides }) => {
     return {
       exclude,
       format: (args, action) => {
-        const formatted = format(args, action);
+        const formatted = format2(args, action);
         if (exclude) {
           for (const key of exclude) {
             delete formatted[key];
@@ -12225,7 +12537,7 @@ function assert2(value) {
   if (value.BYTES_PER_ELEMENT !== 1 || value.constructor.name !== "Uint8Array")
     throw new InvalidBytesTypeError(value);
 }
-function from(value) {
+function from2(value) {
   if (value instanceof Uint8Array)
     return value;
   if (typeof value === "string")
@@ -12419,7 +12731,7 @@ function assert3(value, options = {}) {
 function concat3(...values) {
   return `0x${values.reduce((acc, x) => acc + x.replace("0x", ""), "")}`;
 }
-function from2(value) {
+function from3(value) {
   if (value instanceof Uint8Array)
     return fromBytes(value);
   if (Array.isArray(value))
@@ -12661,7 +12973,7 @@ var init_BlockOverrides = __esm({
 });
 
 // ../node_modules/viem/_esm/constants/abis.js
-var multicall3Abi, batchGatewayAbi, universalResolverErrors, universalResolverResolveAbi, universalResolverReverseAbi, textResolverAbi, addressResolverAbi, erc1271Abi, erc6492SignatureValidatorAbi;
+var multicall3Abi, batchGatewayAbi, universalResolverErrors, universalResolverResolveAbi, universalResolverReverseAbi, textResolverAbi, addressResolverAbi, erc1271Abi, erc6492SignatureValidatorAbi, erc20Abi;
 var init_abis = __esm({
   "../node_modules/viem/_esm/constants/abis.js"() {
     multicall3Abi = [
@@ -13013,6 +13325,194 @@ var init_abis = __esm({
         stateMutability: "nonpayable",
         type: "function",
         name: "isValidSig"
+      }
+    ];
+    erc20Abi = [
+      {
+        type: "event",
+        name: "Approval",
+        inputs: [
+          {
+            indexed: true,
+            name: "owner",
+            type: "address"
+          },
+          {
+            indexed: true,
+            name: "spender",
+            type: "address"
+          },
+          {
+            indexed: false,
+            name: "value",
+            type: "uint256"
+          }
+        ]
+      },
+      {
+        type: "event",
+        name: "Transfer",
+        inputs: [
+          {
+            indexed: true,
+            name: "from",
+            type: "address"
+          },
+          {
+            indexed: true,
+            name: "to",
+            type: "address"
+          },
+          {
+            indexed: false,
+            name: "value",
+            type: "uint256"
+          }
+        ]
+      },
+      {
+        type: "function",
+        name: "allowance",
+        stateMutability: "view",
+        inputs: [
+          {
+            name: "owner",
+            type: "address"
+          },
+          {
+            name: "spender",
+            type: "address"
+          }
+        ],
+        outputs: [
+          {
+            type: "uint256"
+          }
+        ]
+      },
+      {
+        type: "function",
+        name: "approve",
+        stateMutability: "nonpayable",
+        inputs: [
+          {
+            name: "spender",
+            type: "address"
+          },
+          {
+            name: "amount",
+            type: "uint256"
+          }
+        ],
+        outputs: [
+          {
+            type: "bool"
+          }
+        ]
+      },
+      {
+        type: "function",
+        name: "balanceOf",
+        stateMutability: "view",
+        inputs: [
+          {
+            name: "account",
+            type: "address"
+          }
+        ],
+        outputs: [
+          {
+            type: "uint256"
+          }
+        ]
+      },
+      {
+        type: "function",
+        name: "decimals",
+        stateMutability: "view",
+        inputs: [],
+        outputs: [
+          {
+            type: "uint8"
+          }
+        ]
+      },
+      {
+        type: "function",
+        name: "name",
+        stateMutability: "view",
+        inputs: [],
+        outputs: [
+          {
+            type: "string"
+          }
+        ]
+      },
+      {
+        type: "function",
+        name: "symbol",
+        stateMutability: "view",
+        inputs: [],
+        outputs: [
+          {
+            type: "string"
+          }
+        ]
+      },
+      {
+        type: "function",
+        name: "totalSupply",
+        stateMutability: "view",
+        inputs: [],
+        outputs: [
+          {
+            type: "uint256"
+          }
+        ]
+      },
+      {
+        type: "function",
+        name: "transfer",
+        stateMutability: "nonpayable",
+        inputs: [
+          {
+            name: "recipient",
+            type: "address"
+          },
+          {
+            name: "amount",
+            type: "uint256"
+          }
+        ],
+        outputs: [
+          {
+            type: "bool"
+          }
+        ]
+      },
+      {
+        type: "function",
+        name: "transferFrom",
+        stateMutability: "nonpayable",
+        inputs: [
+          {
+            name: "sender",
+            type: "address"
+          },
+          {
+            name: "recipient",
+            type: "address"
+          },
+          {
+            name: "amount",
+            type: "uint256"
+          }
+        ],
+        outputs: [
+          {
+            type: "bool"
+          }
+        ]
       }
     ];
   }
@@ -13608,8 +14108,8 @@ async function call(client, args) {
     const rpcBlockOverrides = blockOverrides ? toRpc2(blockOverrides) : void 0;
     const rpcStateOverride = serializeStateOverride(stateOverride);
     const chainFormat = client.chain?.formatters?.transactionRequest?.format;
-    const format = chainFormat || formatTransactionRequest;
-    const request = format({
+    const format2 = chainFormat || formatTransactionRequest;
+    const request = format2({
       // Pick out extra data that might exist on the chain's transaction request type.
       ...extract(rest, { format: chainFormat }),
       accessList,
@@ -14572,7 +15072,8 @@ var INITIAL_PRICES = {
   sAAPL: 200n * 10n ** 8n,
   sTSLA: 250n * 10n ** 8n,
   sGOLD: 2650n * 10n ** 8n,
-  sBOND: 100n * 10n ** 8n,
+  sBOND: 48n * 10n ** 8n,
+  // #106: now tracks BGRN (green bond ETF), ~$48; was TLT ~$100
   sNVDA: 135n * 10n ** 8n,
   sMSFT: 420n * 10n ** 8n,
   sGOOGL: 175n * 10n ** 8n,
@@ -14835,7 +15336,7 @@ __export(ethers_exports, {
 });
 
 // ../node_modules/ethers/lib.esm/_version.js
-var version = "6.16.0";
+var version = "6.17.0";
 
 // ../node_modules/ethers/lib.esm/utils/properties.js
 function checkType(value, type, name) {
@@ -16054,7 +16555,7 @@ var FetchRequest = class _FetchRequest {
     }
     const resp = await this.getUrlFunc(req, checkSignal(_request.#signal));
     let response = new FetchResponse(resp.statusCode, resp.statusMessage, resp.headers, resp.body, _request);
-    if (response.statusCode === 301 || response.statusCode === 302) {
+    if ([301, 302, 307, 308].indexOf(response.statusCode) >= 0) {
       try {
         const location = response.headers.location || "";
         return req.redirect(location).#send(attempt + 1, expires, 0, _request, response);
@@ -16116,11 +16617,11 @@ var FetchRequest = class _FetchRequest {
   redirect(location) {
     const current = this.url.split(":")[0].toLowerCase();
     const target = location.split(":")[0].toLowerCase();
-    assert(this.method === "GET" && (current !== "https" || target !== "http") && location.match(/^https?:/), `unsupported redirect`, "UNSUPPORTED_OPERATION", {
+    assert((current !== "https" || target !== "http") && location.match(/^https?:/), `unsupported redirect`, "UNSUPPORTED_OPERATION", {
       operation: `redirect(${this.method} ${JSON.stringify(this.url)} => ${JSON.stringify(location)})`
     });
     const req = new _FetchRequest(location);
-    req.method = "GET";
+    req.method = this.method;
     req.allowGzip = this.allowGzip;
     req.timeout = this.timeout;
     req.#headers = Object.assign({}, this.#headers);
@@ -16354,14 +16855,14 @@ var FetchResponse = class _FetchResponse {
    *  call, causes the request to retry as if throttled for %%stall%%
    *  milliseconds.
    */
-  throwThrottleError(message, stall5) {
-    if (stall5 == null) {
-      stall5 = -1;
+  throwThrottleError(message, stall6) {
+    if (stall6 == null) {
+      stall6 = -1;
     } else {
-      assertArgument(Number.isInteger(stall5) && stall5 >= 0, "invalid stall timeout", "stall", stall5);
+      assertArgument(Number.isInteger(stall6) && stall6 >= 0, "invalid stall timeout", "stall", stall6);
     }
     const error = new Error(message || "throttling requests");
-    defineProperties(error, { stall: stall5, throttle: true });
+    defineProperties(error, { stall: stall6, throttle: true });
     throw error;
   }
   /**
@@ -16451,9 +16952,9 @@ function getTens(decimals) {
   }
   return BigInt("1" + result.substring(0, decimals));
 }
-function checkValue(val, format, safeOp) {
-  const width = BigInt(format.width);
-  if (format.signed) {
+function checkValue(val, format2, safeOp) {
+  const width = BigInt(format2.width);
+  if (format2.signed) {
     const limit = BN_12 << width - BN_12;
     assert(safeOp == null || val >= -limit && val < limit, "overflow", "NUMERIC_FAULT", {
       operation: safeOp,
@@ -16557,13 +17058,13 @@ var FixedNumber = class _FixedNumber {
   /**
    *  @private
    */
-  constructor(guard, value, format) {
+  constructor(guard, value, format2) {
     assertPrivate(guard, _guard, "FixedNumber");
     this.#val = value;
-    this.#format = format;
-    const _value = toString(value, format.decimals);
-    defineProperties(this, { format: format.name, _value });
-    this.#tens = getTens(format.decimals);
+    this.#format = format2;
+    const _value = toString(value, format2.decimals);
+    defineProperties(this, { format: format2.name, _value });
+    this.#tens = getTens(format2.decimals);
   }
   /**
    *  If true, negative values are permitted, otherwise only
@@ -16849,8 +17350,8 @@ var FixedNumber = class _FixedNumber {
    *
    *  This will throw if the value cannot fit into %%format%%.
    */
-  toFormat(format) {
-    return _FixedNumber.fromString(this.toString(), format);
+  toFormat(format2) {
+    return _FixedNumber.fromString(this.toString(), format2);
   }
   /**
    *  Creates a new [[FixedNumber]] for %%value%% divided by
@@ -16862,9 +17363,9 @@ var FixedNumber = class _FixedNumber {
    */
   static fromValue(_value, _decimals, _format) {
     const decimals = _decimals == null ? 0 : getNumber(_decimals);
-    const format = getFormat(_format);
+    const format2 = getFormat(_format);
     let value = getBigInt(_value, "value");
-    const delta = decimals - format.decimals;
+    const delta = decimals - format2.decimals;
     if (delta > 0) {
       const tens = getTens(delta);
       assert(value % tens === BN_03, "value loses precision for format", "NUMERIC_FAULT", {
@@ -16876,8 +17377,8 @@ var FixedNumber = class _FixedNumber {
     } else if (delta < 0) {
       value *= getTens(-delta);
     }
-    checkValue(value, format, "fromValue");
-    return new _FixedNumber(_guard, value, format);
+    checkValue(value, format2, "fromValue");
+    return new _FixedNumber(_guard, value, format2);
   }
   /**
    *  Creates a new [[FixedNumber]] for %%value%% with %%format%%.
@@ -16888,20 +17389,20 @@ var FixedNumber = class _FixedNumber {
   static fromString(_value, _format) {
     const match2 = _value.match(/^(-?)([0-9]*)\.?([0-9]*)$/);
     assertArgument(match2 && match2[2].length + match2[3].length > 0, "invalid FixedNumber string value", "value", _value);
-    const format = getFormat(_format);
+    const format2 = getFormat(_format);
     let whole = match2[2] || "0", decimal = match2[3] || "";
-    while (decimal.length < format.decimals) {
+    while (decimal.length < format2.decimals) {
       decimal += Zeros;
     }
-    assert(decimal.substring(format.decimals).match(/^0*$/), "too many decimals for format", "NUMERIC_FAULT", {
+    assert(decimal.substring(format2.decimals).match(/^0*$/), "too many decimals for format", "NUMERIC_FAULT", {
       operation: "fromString",
       fault: "underflow",
       value: _value
     });
-    decimal = decimal.substring(0, format.decimals);
+    decimal = decimal.substring(0, format2.decimals);
     const value = BigInt(match2[1] + whole + decimal);
-    checkValue(value, format, "fromString");
-    return new _FixedNumber(_guard, value, format);
+    checkValue(value, format2, "fromString");
+    return new _FixedNumber(_guard, value, format2);
   }
   /**
    *  Creates a new [[FixedNumber]] with the big-endian representation
@@ -16912,12 +17413,12 @@ var FixedNumber = class _FixedNumber {
    */
   static fromBytes(_value, _format) {
     let value = toBigInt(getBytes(_value, "value"));
-    const format = getFormat(_format);
-    if (format.signed) {
-      value = fromTwos(value, format.width);
+    const format2 = getFormat(_format);
+    if (format2.signed) {
+      value = fromTwos(value, format2.width);
     }
-    checkValue(value, format, "fromBytes");
-    return new _FixedNumber(_guard, value, format);
+    checkValue(value, format2, "fromBytes");
+    return new _FixedNumber(_guard, value, format2);
   }
 };
 
@@ -19812,7 +20313,7 @@ function weierstrass(curveDef) {
   function normalizeS(s) {
     return isBiggerThanHalfOrder(s) ? modN2(-s) : s;
   }
-  const slcNum = (b2, from14, to) => bytesToNumberBE(b2.slice(from14, to));
+  const slcNum = (b2, from16, to) => bytesToNumberBE(b2.slice(from16, to));
   class Signature2 {
     constructor(r, s, recovery) {
       this.r = r;
@@ -20769,7 +21270,7 @@ function getIcapAddress(address) {
 
 // ../node_modules/ethers/lib.esm/address/contract-address.js
 function getCreateAddress(tx) {
-  const from14 = getAddress(tx.from);
+  const from16 = getAddress(tx.from);
   const nonce = getBigInt(tx.nonce, "tx.nonce");
   let nonceHex = nonce.toString(16);
   if (nonceHex === "0") {
@@ -20779,15 +21280,15 @@ function getCreateAddress(tx) {
   } else {
     nonceHex = "0x" + nonceHex;
   }
-  return getAddress(dataSlice(keccak256(encodeRlp([from14, nonceHex])), 12));
+  return getAddress(dataSlice(keccak256(encodeRlp([from16, nonceHex])), 12));
 }
 function getCreate2Address(_from, _salt, _initCodeHash) {
-  const from14 = getAddress(_from);
+  const from16 = getAddress(_from);
   const salt = getBytes(_salt, "salt");
   const initCodeHash = getBytes(_initCodeHash, "initCodeHash");
   assertArgument(salt.length === 32, "salt must be 32 bytes", "salt", _salt);
   assertArgument(initCodeHash.length === 32, "initCodeHash must be 32 bytes", "initCodeHash", _initCodeHash);
-  return getAddress(dataSlice(keccak256(concat(["0xff", from14, salt, initCodeHash])), 12));
+  return getAddress(dataSlice(keccak256(concat(["0xff", from16, salt, initCodeHash])), 12));
 }
 
 // ../node_modules/ethers/lib.esm/address/checks.js
@@ -23261,7 +23762,7 @@ function id(value) {
 }
 
 // ../node_modules/@adraffy/ens-normalize/dist/index.mjs
-var COMPRESSED$1 = "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";
+var COMPRESSED$1 = "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";
 var FENCED = /* @__PURE__ */ new Map([[8217, "apostrophe"], [8260, "fraction slash"], [12539, "middle dot"]]);
 var NSM_MAX = 4;
 function decode_arithmetic(bytes2) {
@@ -23352,11 +23853,11 @@ function unsafe_atob(s) {
   [..."ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"].forEach((c, i) => lookup[c.charCodeAt(0)] = i);
   let n2 = s.length;
   let ret = new Uint8Array(6 * n2 >> 3);
-  for (let i = 0, pos = 0, width = 0, carry = 0; i < n2; i++) {
-    carry = carry << 6 | lookup[s.charCodeAt(i)];
+  for (let i = 0, pos = 0, width = 0, carry2 = 0; i < n2; i++) {
+    carry2 = carry2 << 6 | lookup[s.charCodeAt(i)];
     width += 6;
     if (width >= 8) {
-      ret[pos++] = carry >> (width -= 8);
+      ret[pos++] = carry2 >> (width -= 8);
     }
   }
   return ret;
@@ -23492,7 +23993,7 @@ function compare_arrays(a, b2) {
   for (let i = 0; c == 0 && i < n2; i++) c = a[i] - b2[i];
   return c;
 }
-var COMPRESSED = "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";
+var COMPRESSED = "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";
 var S0 = 44032;
 var L0 = 4352;
 var V0 = 4449;
@@ -23844,9 +24345,9 @@ function safe_str_from_cps(cps, max = Infinity, quoter = quote_cp) {
   buf.push(str_from_cps(cps.slice(prev, n2)));
   return buf.join("");
 }
-function is_combining_mark(cp) {
+function is_combining_mark(cp, only_nsm) {
   init();
-  return CM.has(cp);
+  return only_nsm ? NSM.has(cp) : CM.has(cp);
 }
 function should_escape(cp) {
   init();
@@ -24718,12 +25219,12 @@ var TokenString = class _TokenString {
   reset() {
     this.#offset = 0;
   }
-  #subTokenString(from14 = 0, to = 0) {
-    return new _TokenString(this.#tokens.slice(from14, to).map((t) => {
+  #subTokenString(from16 = 0, to = 0) {
+    return new _TokenString(this.#tokens.slice(from16, to).map((t) => {
       return Object.freeze(Object.assign({}, t, {
-        match: t.match - from14,
-        linkBack: t.linkBack - from14,
-        linkNext: t.linkNext - from14
+        match: t.match - from16,
+        linkBack: t.linkBack - from16,
+        linkNext: t.linkNext - from16
       }));
     }));
   }
@@ -25068,11 +25569,11 @@ var ParamType = class _ParamType {
    *
    *  ``"full" => "tuple(uint256 foo, address bar) indexed baz"``
    */
-  format(format) {
-    if (format == null) {
-      format = "sighash";
+  format(format2) {
+    if (format2 == null) {
+      format2 = "sighash";
     }
-    if (format === "json") {
+    if (format2 === "json") {
       const name = this.name || "";
       if (this.isArray()) {
         const result3 = JSON.parse(this.arrayChildren.format("json"));
@@ -25088,26 +25589,26 @@ var ParamType = class _ParamType {
         result2.indexed = this.indexed;
       }
       if (this.isTuple()) {
-        result2.components = this.components.map((c) => JSON.parse(c.format(format)));
+        result2.components = this.components.map((c) => JSON.parse(c.format(format2)));
       }
       return JSON.stringify(result2);
     }
     let result = "";
     if (this.isArray()) {
-      result += this.arrayChildren.format(format);
+      result += this.arrayChildren.format(format2);
       result += `[${this.arrayLength < 0 ? "" : String(this.arrayLength)}]`;
     } else {
       if (this.isTuple()) {
-        result += "(" + this.components.map((comp) => comp.format(format)).join(format === "full" ? ", " : ",") + ")";
+        result += "(" + this.components.map((comp) => comp.format(format2)).join(format2 === "full" ? ", " : ",") + ")";
       } else {
         result += this.type;
       }
     }
-    if (format !== "sighash") {
+    if (format2 !== "sighash") {
       if (this.indexed === true) {
         result += " indexed";
       }
-      if (format === "full" && this.name) {
+      if (format2 === "full" && this.name) {
         result += " " + this.name;
       }
     }
@@ -25445,8 +25946,8 @@ var NamedFragment = class extends Fragment {
     defineProperties(this, { name });
   }
 };
-function joinParams(format, params) {
-  return "(" + params.map((p) => p.format(format)).join(format === "full" ? ", " : ",") + ")";
+function joinParams(format2, params) {
+  return "(" + params.map((p) => p.format(format2)).join(format2 === "full" ? ", " : ",") + ")";
 }
 var ErrorFragment = class _ErrorFragment extends NamedFragment {
   /**
@@ -25465,22 +25966,22 @@ var ErrorFragment = class _ErrorFragment extends NamedFragment {
   /**
    *  Returns a string representation of this fragment as %%format%%.
    */
-  format(format) {
-    if (format == null) {
-      format = "sighash";
+  format(format2) {
+    if (format2 == null) {
+      format2 = "sighash";
     }
-    if (format === "json") {
+    if (format2 === "json") {
       return JSON.stringify({
         type: "error",
         name: this.name,
-        inputs: this.inputs.map((input) => JSON.parse(input.format(format)))
+        inputs: this.inputs.map((input) => JSON.parse(input.format(format2)))
       });
     }
     const result = [];
-    if (format !== "sighash") {
+    if (format2 !== "sighash") {
       result.push("error");
     }
-    result.push(this.name + joinParams(format, this.inputs));
+    result.push(this.name + joinParams(format2, this.inputs));
     return result.join(" ");
   }
   /**
@@ -25530,24 +26031,24 @@ var EventFragment = class _EventFragment extends NamedFragment {
   /**
    *  Returns a string representation of this event as %%format%%.
    */
-  format(format) {
-    if (format == null) {
-      format = "sighash";
+  format(format2) {
+    if (format2 == null) {
+      format2 = "sighash";
     }
-    if (format === "json") {
+    if (format2 === "json") {
       return JSON.stringify({
         type: "event",
         anonymous: this.anonymous,
         name: this.name,
-        inputs: this.inputs.map((i) => JSON.parse(i.format(format)))
+        inputs: this.inputs.map((i) => JSON.parse(i.format(format2)))
       });
     }
     const result = [];
-    if (format !== "sighash") {
+    if (format2 !== "sighash") {
       result.push("event");
     }
-    result.push(this.name + joinParams(format, this.inputs));
-    if (format !== "sighash" && this.anonymous) {
+    result.push(this.name + joinParams(format2, this.inputs));
+    if (format2 !== "sighash" && this.anonymous) {
       result.push("anonymous");
     }
     return result.join(" ");
@@ -25610,18 +26111,18 @@ var ConstructorFragment = class _ConstructorFragment extends Fragment {
   /**
    *  Returns a string representation of this constructor as %%format%%.
    */
-  format(format) {
-    assert(format != null && format !== "sighash", "cannot format a constructor for sighash", "UNSUPPORTED_OPERATION", { operation: "format(sighash)" });
-    if (format === "json") {
+  format(format2) {
+    assert(format2 != null && format2 !== "sighash", "cannot format a constructor for sighash", "UNSUPPORTED_OPERATION", { operation: "format(sighash)" });
+    if (format2 === "json") {
       return JSON.stringify({
         type: "constructor",
         stateMutability: this.payable ? "payable" : "undefined",
         payable: this.payable,
         gas: this.gas != null ? this.gas : void 0,
-        inputs: this.inputs.map((i) => JSON.parse(i.format(format)))
+        inputs: this.inputs.map((i) => JSON.parse(i.format(format2)))
       });
     }
-    const result = [`constructor${joinParams(format, this.inputs)}`];
+    const result = [`constructor${joinParams(format2, this.inputs)}`];
     if (this.payable) {
       result.push("payable");
     }
@@ -25674,9 +26175,9 @@ var FallbackFragment = class _FallbackFragment extends Fragment {
   /**
    *  Returns a string representation of this fallback as %%format%%.
    */
-  format(format) {
+  format(format2) {
     const type = this.inputs.length === 0 ? "receive" : "fallback";
-    if (format === "json") {
+    if (format2 === "json") {
       const stateMutability = this.payable ? "payable" : "nonpayable";
       return JSON.stringify({ type, stateMutability });
     }
@@ -25782,11 +26283,11 @@ var FunctionFragment = class _FunctionFragment extends NamedFragment {
   /**
    *  Returns a string representation of this function as %%format%%.
    */
-  format(format) {
-    if (format == null) {
-      format = "sighash";
+  format(format2) {
+    if (format2 == null) {
+      format2 = "sighash";
     }
-    if (format === "json") {
+    if (format2 === "json") {
       return JSON.stringify({
         type: "function",
         name: this.name,
@@ -25794,22 +26295,22 @@ var FunctionFragment = class _FunctionFragment extends NamedFragment {
         stateMutability: this.stateMutability !== "nonpayable" ? this.stateMutability : void 0,
         payable: this.payable,
         gas: this.gas != null ? this.gas : void 0,
-        inputs: this.inputs.map((i) => JSON.parse(i.format(format))),
-        outputs: this.outputs.map((o) => JSON.parse(o.format(format)))
+        inputs: this.inputs.map((i) => JSON.parse(i.format(format2))),
+        outputs: this.outputs.map((o) => JSON.parse(o.format(format2)))
       });
     }
     const result = [];
-    if (format !== "sighash") {
+    if (format2 !== "sighash") {
       result.push("function");
     }
-    result.push(this.name + joinParams(format, this.inputs));
-    if (format !== "sighash") {
+    result.push(this.name + joinParams(format2, this.inputs));
+    if (format2 !== "sighash") {
       if (this.stateMutability !== "nonpayable") {
         result.push(this.stateMutability);
       }
       if (this.outputs && this.outputs.length) {
         result.push("returns");
-        result.push(joinParams(format, this.outputs));
+        result.push(joinParams(format2, this.outputs));
       }
       if (this.gas != null) {
         result.push(`@${this.gas.toString()}`);
@@ -26378,8 +26879,8 @@ var Interface = class _Interface {
    *  removes parameter names and unneceesary spaces.
    */
   format(minimal) {
-    const format = minimal ? "minimal" : "full";
-    const abi2 = this.fragments.map((f2) => f2.format(format));
+    const format2 = minimal ? "minimal" : "full";
+    const abi2 = this.fragments.map((f2) => f2.format(format2));
     return abi2;
   }
   /**
@@ -27310,6 +27811,10 @@ var Block = class {
    */
   receiptsRoot;
   /**
+   *  The hash of the transactions.
+   */
+  transactionsRoot;
+  /**
    *  The total amount of blob gas consumed by the transactions
    *  within the block. See [[link-eip-4844]].
    */
@@ -27373,7 +27878,8 @@ var Block = class {
       extraData: block.extraData,
       baseFeePerGas: getValue2(block.baseFeePerGas),
       stateRoot: block.stateRoot,
-      receiptsRoot: block.receiptsRoot
+      receiptsRoot: block.receiptsRoot,
+      transactionsRoot: block.transactionsRoot
     });
   }
   /**
@@ -27410,7 +27916,7 @@ var Block = class {
    *  Returns a JSON-friendly value.
    */
   toJSON() {
-    const { baseFeePerGas, difficulty, extraData, gasLimit, gasUsed, hash: hash4, miner, prevRandao, nonce, number: number2, parentHash, parentBeaconBlockRoot, stateRoot, receiptsRoot, timestamp, transactions } = this;
+    const { baseFeePerGas, difficulty, extraData, gasLimit, gasUsed, hash: hash4, miner, prevRandao, nonce, number: number2, parentHash, parentBeaconBlockRoot, stateRoot, receiptsRoot, transactionsRoot, timestamp, transactions } = this;
     return {
       _type: "Block",
       baseFeePerGas: toJson(baseFeePerGas),
@@ -27430,6 +27936,7 @@ var Block = class {
       parentBeaconBlockRoot,
       stateRoot,
       receiptsRoot,
+      transactionsRoot,
       transactions
     };
   }
@@ -27805,7 +28312,7 @@ var TransactionReceipt = class {
   toJSON() {
     const {
       to,
-      from: from14,
+      from: from16,
       contractAddress,
       hash: hash4,
       index: index2,
@@ -27824,7 +28331,7 @@ var TransactionReceipt = class {
       //byzantium, 
       contractAddress,
       cumulativeGasUsed: toJson(this.cumulativeGasUsed),
-      from: from14,
+      from: from16,
       gasPrice: toJson(this.gasPrice),
       blobGasUsed: toJson(this.blobGasUsed),
       blobGasPrice: toJson(this.blobGasPrice),
@@ -28061,7 +28568,7 @@ var TransactionResponse = class _TransactionResponse {
    *  Returns a JSON-compatible representation of this transaction.
    */
   toJSON() {
-    const { blockNumber, blockHash, index: index2, hash: hash4, type, to, from: from14, nonce, data: data4, signature, accessList, blobVersionedHashes } = this;
+    const { blockNumber, blockHash, index: index2, hash: hash4, type, to, from: from16, nonce, data: data4, signature, accessList, blobVersionedHashes } = this;
     return {
       _type: "TransactionResponse",
       accessList,
@@ -28070,7 +28577,7 @@ var TransactionResponse = class _TransactionResponse {
       blobVersionedHashes,
       chainId: toJson(this.chainId),
       data: data4,
-      from: from14,
+      from: from16,
       gasLimit: toJson(this.gasLimit),
       gasPrice: toJson(this.gasPrice),
       hash: hash4,
@@ -29545,6 +30052,7 @@ var ContractFactory = class _ContractFactory {
 };
 
 // ../node_modules/ethers/lib.esm/providers/ens-resolver.js
+var BN_60 = BigInt(60);
 function getIpfsLink(link) {
   if (link.match(/^ipfs:\/\/ipfs\//i)) {
     link = link.substring(12);
@@ -29566,7 +30074,7 @@ var MulticoinProviderPlugin = class {
   constructor(name) {
     defineProperties(this, { name });
   }
-  connect(proivder) {
+  connect(provider2) {
     return this;
   }
   /**
@@ -29595,6 +30103,9 @@ var matchers = [
   matcherIpfs,
   new RegExp("^eip155:[0-9]+/(erc[0-9]+):(.*)$", "i")
 ];
+function isEvmCoinType(coinType) {
+  return coinType === BN_60 || coinType >= 2147483648 && coinType <= 4294967295;
+}
 var EnsResolver = class _EnsResolver {
   /**
    *  The connected provider.
@@ -29611,16 +30122,17 @@ var EnsResolver = class _EnsResolver {
   // For EIP-2544 names, the ancestor that provided the resolver
   #supports2544;
   #resolver;
-  constructor(provider2, address, name) {
+  constructor(provider2, address, name, supportsWildcard) {
     defineProperties(this, { provider: provider2, address, name });
-    this.#supports2544 = null;
+    this.#supports2544 = supportsWildcard != null ? Promise.resolve(supportsWildcard) : null;
     this.#resolver = new Contract(address, [
       "function supportsInterface(bytes4) view returns (bool)",
       "function resolve(bytes, bytes) view returns (bytes)",
       "function addr(bytes32) view returns (address)",
       "function addr(bytes32, uint) view returns (bytes)",
       "function text(bytes32, string) view returns (string)",
-      "function contenthash(bytes32) view returns (bytes)"
+      "function contenthash(bytes32) view returns (bytes)",
+      "function name(bytes32) view returns (string)"
     ], provider2);
   }
   /**
@@ -29658,9 +30170,7 @@ var EnsResolver = class _EnsResolver {
       ];
       funcName = "resolve(bytes,bytes)";
     }
-    params.push({
-      enableCcipRead: true
-    });
+    params.push({ enableCcipRead: true });
     try {
       const result = await this.#resolver[funcName](...params);
       if (fragment) {
@@ -29678,11 +30188,9 @@ var EnsResolver = class _EnsResolver {
    *  Resolves to the address for %%coinType%% or null if the
    *  provided %%coinType%% has not been configured.
    */
-  async getAddress(coinType) {
-    if (coinType == null) {
-      coinType = 60;
-    }
-    if (coinType === 60) {
+  async getAddress(_coinType) {
+    const coinType = _coinType == null ? BN_60 : getBigInt(_coinType);
+    if (coinType === BN_60) {
       try {
         const result = await this.#fetch("addr(bytes32)");
         if (result == null || result === ZeroAddress) {
@@ -29696,8 +30204,15 @@ var EnsResolver = class _EnsResolver {
         throw error;
       }
     }
+    if (isEvmCoinType(coinType)) {
+      const data5 = await this.#fetch("addr(bytes32,uint)", [coinType]);
+      if (isHexString(data5, 20)) {
+        return getAddress(data5);
+      }
+      return null;
+    }
     if (coinType >= 0 && coinType < 2147483648) {
-      let ethCoinType = coinType + 2147483648;
+      let ethCoinType = coinType + BigInt(2147483648);
       const data5 = await this.#fetch("addr(bytes32,uint)", [ethCoinType]);
       if (isHexString(data5, 20)) {
         return getAddress(data5);
@@ -29708,7 +30223,7 @@ var EnsResolver = class _EnsResolver {
       if (!(plugin instanceof MulticoinProviderPlugin)) {
         continue;
       }
-      if (plugin.supportsCoinType(coinType)) {
+      if (coinType <= 2147483648 && plugin.supportsCoinType(Number(coinType))) {
         coinPlugin = plugin;
         break;
       }
@@ -29720,9 +30235,11 @@ var EnsResolver = class _EnsResolver {
     if (data4 == null || data4 === "0x") {
       return null;
     }
-    const address = await coinPlugin.decodeAddress(coinType, data4);
-    if (address != null) {
-      return address;
+    if (coinType < 2147483648) {
+      const address = await coinPlugin.decodeAddress(Number(coinType), data4);
+      if (address != null) {
+        return address;
+      }
     }
     assert(false, `invalid coin data`, "UNSUPPORTED_OPERATION", {
       operation: `getAddress(${coinType})`,
@@ -29764,6 +30281,9 @@ var EnsResolver = class _EnsResolver {
       operation: "getContentHash()",
       info: { data: data4 }
     });
+  }
+  async getName() {
+    return await this.#fetch("name(bytes32)");
   }
   /**
    *  Resolves to the avatar url or ``null`` if the avatar is either
@@ -29918,6 +30438,14 @@ var EnsResolver = class _EnsResolver {
     });
     return ensPlugin.address;
   }
+  static async getUniversalResolverAddress(provider2) {
+    const network = await provider2.getNetwork();
+    const ensPlugin = network.getPlugin("org.ethers.plugins.network.Ens");
+    if (ensPlugin && ensPlugin.universalResolver) {
+      return ensPlugin.universalResolver;
+    }
+    return null;
+  }
   static async #getResolver(provider2, name) {
     const ensAddr = await _EnsResolver.getEnsAddress(provider2);
     try {
@@ -29936,11 +30464,72 @@ var EnsResolver = class _EnsResolver {
     }
     return null;
   }
+  static async lookupAddress(provider2, address, _coinType) {
+    const coinType = _coinType == null ? BN_60 : getBigInt(_coinType);
+    if (isEvmCoinType(coinType)) {
+      address = getAddress(address);
+    }
+    const universal = await createUniversal(provider2);
+    if (universal) {
+      try {
+        const result = await universal.reverse(address, coinType, {
+          enableCcipRead: true
+        });
+        const addr = result.primary;
+        if (!isValidName(addr)) {
+          return null;
+        }
+        return addr;
+      } catch (e) {
+        if (isError(e, "CALL_EXCEPTION") && e.reason === "ResolverNotFound(bytes)") {
+          return null;
+        }
+        throw e;
+      }
+    }
+    assert(coinType === BN_60, "lookupAddress coinType requires ENS Universal Resolver", "UNSUPPORTED_OPERATION", {
+      operation: "lookupAddress"
+    });
+    try {
+      const resolver = await _EnsResolver.fromName(provider2, `${address.toLowerCase().substring(2)}.addr.reverse`);
+      if (!resolver) {
+        return null;
+      }
+      const name = await resolver.getName();
+      if (name == null || !isValidName(name)) {
+        return null;
+      }
+      const check = await provider2.resolveName(name);
+      if (check !== address) {
+        return null;
+      }
+      return name;
+    } catch (error) {
+      if (isError(error, "BAD_DATA") && error.value === "0x") {
+        return null;
+      }
+      if (isError(error, "CALL_EXCEPTION")) {
+        return null;
+      }
+      throw error;
+    }
+  }
   /**
    *  Resolve to the ENS resolver for %%name%% using %%provider%% or
    *  ``null`` if unconfigured.
    */
   static async fromName(provider2, name) {
+    const universal = await createUniversal(provider2);
+    if (universal) {
+      let dnsName;
+      try {
+        dnsName = dnsEncode(ensNormalize(name), 255);
+      } catch (error) {
+        return null;
+      }
+      const result = await universal.requireResolver(dnsName);
+      return new _EnsResolver(provider2, result.resolver, name, result.extended);
+    }
     let currentName = name;
     while (true) {
       if (currentName === "" || currentName === ".") {
@@ -29961,18 +30550,34 @@ var EnsResolver = class _EnsResolver {
     }
   }
 };
+async function createUniversal(provider2) {
+  const address = await EnsResolver.getUniversalResolverAddress(provider2);
+  if (!address) {
+    return null;
+  }
+  return new Contract(address, [
+    "function requireResolver(bytes) view returns ((bytes name, uint256 offset, bytes32 node, address resolver, bool extended))",
+    "function findResolver(bytes) view returns (address resolver, bytes32 node, uint offset)",
+    "function resolve(bytes name, bytes data) view returns (bytes result, address resolver)",
+    "function reverse(bytes name, uint coinType) view returns (string primary, address resolver, address reverseResolver)",
+    "error ResolverNotFound(bytes name)",
+    "error ResolverNotContract(bytes name, address resolver)",
+    "error ReverseAddressMismatch(string primary, bytes primaryAddress)",
+    "error HttpError(uint16 statusCode, string statusMessage)"
+  ], provider2);
+}
 
 // ../node_modules/ethers/lib.esm/providers/format.js
 var BN_011 = BigInt(0);
-function allowNull(format, nullValue) {
+function allowNull(format2, nullValue) {
   return function(value) {
     if (value == null) {
       return nullValue;
     }
-    return format(value);
+    return format2(value);
   };
 }
-function arrayOf(format, allowNull2) {
+function arrayOf(format2, allowNull2) {
   return (array) => {
     if (allowNull2 && array == null) {
       return null;
@@ -29980,13 +30585,13 @@ function arrayOf(format, allowNull2) {
     if (!Array.isArray(array)) {
       throw new Error("not an array");
     }
-    return array.map((i) => format(i));
+    return array.map((i) => format2(i));
   };
 }
-function object(format, altNames) {
+function object(format2, altNames) {
   return (value) => {
     const result = {};
-    for (const key in format) {
+    for (const key in format2) {
       let srcKey = key;
       if (altNames && key in altNames && !(srcKey in value)) {
         for (const altKey of altNames[key]) {
@@ -29997,7 +30602,7 @@ function object(format, altNames) {
         }
       }
       try {
-        const nv = format[key](value[srcKey]);
+        const nv = format2[key](value[srcKey]);
         if (nv !== void 0) {
           result[key] = nv;
         }
@@ -30056,6 +30661,7 @@ var _formatBlock = object({
   gasUsed: getBigInt,
   stateRoot: allowNull(formatHash, null),
   receiptsRoot: allowNull(formatHash, null),
+  transactionsRoot: allowNull(formatHash, null),
   blobGasUsed: allowNull(getBigInt, null),
   excessBlobGas: allowNull(getBigInt, null),
   miner: allowNull(getAddress),
@@ -30200,6 +30806,7 @@ function formatTransactionResponse(value) {
 
 // ../node_modules/ethers/lib.esm/providers/plugins-network.js
 var EnsAddress = "0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e";
+var inspect3 = Symbol.for("nodejs.util.inspect.custom");
 var NetworkPlugin = class _NetworkPlugin {
   /**
    *  The name of the plugin.
@@ -30213,6 +30820,12 @@ var NetworkPlugin = class _NetworkPlugin {
    */
   constructor(name) {
     defineProperties(this, { name });
+  }
+  [inspect3]() {
+    return this.toString();
+  }
+  toString() {
+    return `${this.name} { }`;
   }
   /**
    *  Creates a copy of this plugin.
@@ -30280,6 +30893,9 @@ var GasCostPlugin = class _GasCostPlugin extends NetworkPlugin {
     set("txAccessListAddress", 2400);
     defineProperties(this, props);
   }
+  toString() {
+    return `${this.name} { txBase: ${this.txBase}, txCreate: ${this.txCreate}, txDataZero: ${this.txDataZero}, txAccessListStorageKey: ${this.txAccessListStorageKey}, txAccessListAddress: ${this.txAccessListAddress} }`;
+  }
   clone() {
     return new _GasCostPlugin(this.effectiveBlock, this);
   }
@@ -30294,19 +30910,27 @@ var EnsPlugin = class _EnsPlugin extends NetworkPlugin {
    */
   targetNetwork;
   /**
+   *  The Universal Resolver Contract Address.
+   */
+  universalResolver;
+  /**
    *  Creates a new **EnsPlugin** connected to %%address%% on the
    *  %%targetNetwork%%. The default ENS address and mainnet is used
    *  if unspecified.
    */
-  constructor(address, targetNetwork) {
+  constructor(address, targetNetwork, universalResolver) {
     super("org.ethers.plugins.network.Ens");
     defineProperties(this, {
       address: address || EnsAddress,
-      targetNetwork: targetNetwork == null ? 1 : targetNetwork
+      targetNetwork: targetNetwork == null ? 1 : targetNetwork,
+      universalResolver
     });
   }
+  toString() {
+    return `${this.name} { address: ${this.address}, targetNetwork: ${this.targetNetwork}, universalResolver: ${this.universalResolver} }`;
+  }
   clone() {
-    return new _EnsPlugin(this.address, this.targetNetwork);
+    return new _EnsPlugin(this.address, this.targetNetwork, this.universalResolver);
   }
 };
 var FeeDataNetworkPlugin = class _FeeDataNetworkPlugin extends NetworkPlugin {
@@ -30358,6 +30982,9 @@ var FetchUrlFeeDataNetworkPlugin = class extends NetworkPlugin {
     this.#url = url;
     this.#processFunc = processFunc;
   }
+  toString() {
+    return `${this.name} { url: ${this.url} }`;
+  }
   // We are immutable, so we can serve as our own clone
   clone() {
     return this;
@@ -30365,6 +30992,7 @@ var FetchUrlFeeDataNetworkPlugin = class extends NetworkPlugin {
 };
 
 // ../node_modules/ethers/lib.esm/providers/network.js
+var inspect4 = Symbol.for("nodejs.util.inspect.custom");
 var Networks = /* @__PURE__ */ new Map();
 var Network = class _Network {
   #name;
@@ -30377,6 +31005,16 @@ var Network = class _Network {
     this.#name = name;
     this.#chainId = getBigInt(chainId);
     this.#plugins = /* @__PURE__ */ new Map();
+  }
+  [inspect4]() {
+    return this.toString();
+  }
+  toString() {
+    const plugins = [];
+    for (const plugin of this.#plugins.values()) {
+      plugins.push(plugin.toString());
+    }
+    return `Network { name: ${this.name}, chainId: ${this.chainId}, plugins: [ ${plugins.join(", ")} ] }`;
   }
   /**
    *  Returns a JSON-compatible representation of a Network.
@@ -30544,8 +31182,9 @@ var Network = class _Network {
     if (typeof network === "object") {
       assertArgument(typeof network.name === "string" && typeof network.chainId === "number", "invalid network object name or chainId", "network", network);
       const custom2 = new _Network(network.name, network.chainId);
-      if (network.ensAddress || network.ensNetwork != null) {
-        custom2.attachPlugin(new EnsPlugin(network.ensAddress, network.ensNetwork));
+      const n2 = network;
+      if (n2.ensAddress || n2.ensNetwork != null || n2.ensUniversalResolver) {
+        custom2.attachPlugin(new EnsPlugin(n2.ensAddress, n2.ensNetwork, n2.ensUniversalResolver));
       }
       return custom2;
     }
@@ -30622,7 +31261,7 @@ function injectCommonNetworks() {
     const func = function() {
       const network = new Network(name, chainId);
       if (options.ensNetwork != null) {
-        network.attachPlugin(new EnsPlugin(null, options.ensNetwork));
+        network.attachPlugin(new EnsPlugin(null, options.ensNetwork, options.ensUniversalResolver));
       }
       network.attachPlugin(new GasCostPlugin());
       (options.plugins || []).forEach((plugin) => {
@@ -30638,12 +31277,20 @@ function injectCommonNetworks() {
       });
     }
   }
-  registerEth("mainnet", 1, { ensNetwork: 1, altNames: ["homestead"] });
+  const ensUniversalResolver = "0xeEeEEEeE14D718C2B47D9923Deab1335E144EeEe";
+  registerEth("mainnet", 1, {
+    ensUniversalResolver,
+    ensNetwork: 1,
+    altNames: ["homestead"]
+  });
   registerEth("ropsten", 3, { ensNetwork: 3 });
   registerEth("rinkeby", 4, { ensNetwork: 4 });
   registerEth("goerli", 5, { ensNetwork: 5 });
   registerEth("kovan", 42, { ensNetwork: 42 });
-  registerEth("sepolia", 11155111, { ensNetwork: 11155111 });
+  registerEth("sepolia", 11155111, {
+    ensUniversalResolver,
+    ensNetwork: 11155111
+  });
   registerEth("holesky", 17e3, { ensNetwork: 17e3 });
   registerEth("classic", 61, {});
   registerEth("classicKotti", 6, {});
@@ -30928,6 +31575,11 @@ var PollingEventSubscriber = class {
 // ../node_modules/ethers/lib.esm/providers/abstract-provider.js
 var BN_23 = BigInt(2);
 var MAX_CCIP_REDIRECTS = 10;
+function stall(duration) {
+  return new Promise((resolve2) => {
+    setTimeout(resolve2, duration);
+  });
+}
 function isPromise2(value) {
   return value && typeof value.then === "function";
 }
@@ -31069,6 +31721,8 @@ var AbstractProvider = class {
   #nextTimer;
   #timers;
   #disableCcipRead;
+  #requestRate;
+  #requestTimes;
   #options;
   /**
    *  Create a new **AbstractProvider** connected to %%network%%, or
@@ -31100,6 +31754,24 @@ var AbstractProvider = class {
     this.#nextTimer = 1;
     this.#timers = /* @__PURE__ */ new Map();
     this.#disableCcipRead = false;
+    this.#requestRate = 0;
+    this.#requestTimes = [];
+  }
+  /**
+   *  Limit the number of requests per second. (default: no limit)
+   */
+  get _requestRate() {
+    const value = this.#requestRate;
+    if (value == 0) {
+      return null;
+    }
+    return value;
+  }
+  set _requestRate(value) {
+    if (value == null || value < 0) {
+      value = 0;
+    }
+    this.#requestRate = getNumber(value);
   }
   get pollingInterval() {
     return this.#options.pollingInterval;
@@ -31143,15 +31815,40 @@ var AbstractProvider = class {
   set disableCcipRead(value) {
     this.#disableCcipRead = !!value;
   }
+  #getDelay() {
+    let requestRate = this.#requestRate;
+    if (requestRate === 0) {
+      return 0;
+    }
+    const requests = this.#requestTimes;
+    const now = getTime2();
+    requests.push(now);
+    const scanTime = now - 1e3;
+    while (requests.length && requests[0] < scanTime) {
+      requests.shift();
+    }
+    if (requests.length < requestRate) {
+      return 0;
+    }
+    return requests[0] + 1e3 - now;
+  }
   // Shares multiple identical requests made during the same 250ms
   async #perform(req) {
     const timeout = this.#options.cacheTimeout;
     if (timeout < 0) {
+      const delay = this.#getDelay();
+      if (delay) {
+        await stall(delay);
+      }
       return await this._perform(req);
     }
     const tag = getTag(req.method, req);
     let perform = this.#performCache.get(tag);
     if (!perform) {
+      const delay = this.#getDelay();
+      if (delay) {
+        await stall(delay);
+      }
       perform = this._perform(req);
       this.#performCache.set(tag, perform);
       setTimeout(() => {
@@ -31526,6 +32223,10 @@ var AbstractProvider = class {
     });
     const transaction = copyRequest(tx);
     try {
+      const delay = this.#getDelay();
+      if (delay) {
+        await stall(delay);
+      }
       return hexlify(await this._perform({ method: "call", transaction, blockTag }));
     } catch (error) {
       if (!this.disableCcipRead && isCallException(error) && error.data && attempt >= 0 && blockTag === "latest" && transaction.to != null && dataSlice(error.data, 0, 4) === "0x556f1830") {
@@ -31722,44 +32423,15 @@ var AbstractProvider = class {
     }
     return null;
   }
-  async resolveName(name) {
+  async resolveName(name, coinType) {
     const resolver = await this.getResolver(name);
     if (resolver) {
-      return await resolver.getAddress();
+      return await resolver.getAddress(coinType);
     }
     return null;
   }
-  async lookupAddress(address) {
-    address = getAddress(address);
-    const node = namehash(address.substring(2).toLowerCase() + ".addr.reverse");
-    try {
-      const ensAddr = await EnsResolver.getEnsAddress(this);
-      const ensContract = new Contract(ensAddr, [
-        "function resolver(bytes32) view returns (address)"
-      ], this);
-      const resolver = await ensContract.resolver(node);
-      if (resolver == null || resolver === ZeroAddress) {
-        return null;
-      }
-      const resolverContract = new Contract(resolver, [
-        "function name(bytes32) view returns (string)"
-      ], this);
-      const name = await resolverContract.name(node);
-      const check = await this.resolveName(name);
-      if (check !== address) {
-        return null;
-      }
-      return name;
-    } catch (error) {
-      if (isError(error, "BAD_DATA") && error.value === "0x") {
-        return null;
-      }
-      if (isError(error, "CALL_EXCEPTION")) {
-        return null;
-      }
-      throw error;
-    }
-    return null;
+  async lookupAddress(address, coinType) {
+    return await EnsResolver.lookupAddress(this, address, coinType);
   }
   async waitForTransaction(hash4, _confirms, timeout) {
     const confirms = _confirms != null ? _confirms : 1;
@@ -32267,12 +32939,12 @@ async function populate(signer, tx) {
     pop.to = resolveAddress(pop.to, signer);
   }
   if (pop.from != null) {
-    const from14 = pop.from;
+    const from16 = pop.from;
     pop.from = Promise.all([
       signer.getAddress(),
-      resolveAddress(from14, signer)
-    ]).then(([address, from15]) => {
-      assertArgument(address.toLowerCase() === from15.toLowerCase(), "transaction from mismatch", "tx.from", from15);
+      resolveAddress(from16, signer)
+    ]).then(([address, from17]) => {
+      assertArgument(address.toLowerCase() === from17.toLowerCase(), "transaction from mismatch", "tx.from", from17);
       return address;
     });
   } else {
@@ -32631,7 +33303,7 @@ function deepCopy(value) {
   }
   throw new Error(`should not happen: ${value} (${typeof value})`);
 }
-function stall(duration) {
+function stall2(duration) {
   return new Promise((resolve2) => {
     setTimeout(resolve2, duration);
   });
@@ -32681,9 +33353,9 @@ var JsonRpcSigner = class extends AbstractSigner {
     if (tx.from) {
       const _from = tx.from;
       promises.push((async () => {
-        const from14 = await resolveAddress(_from, this.provider);
-        assertArgument(from14 != null && from14.toLowerCase() === this.address.toLowerCase(), "from address mismatch", "transaction", _tx);
-        tx.from = from14;
+        const from16 = await resolveAddress(_from, this.provider);
+        assertArgument(from16 != null && from16.toLowerCase() === this.address.toLowerCase(), "from address mismatch", "transaction", _tx);
+        tx.from = from16;
       })());
     } else {
       tx.from = this.address;
@@ -32750,9 +33422,9 @@ var JsonRpcSigner = class extends AbstractSigner {
   async signTransaction(_tx) {
     const tx = deepCopy(_tx);
     if (tx.from) {
-      const from14 = await resolveAddress(tx.from, this.provider);
-      assertArgument(from14 != null && from14.toLowerCase() === this.address.toLowerCase(), "from address mismatch", "transaction", _tx);
-      tx.from = from14;
+      const from16 = await resolveAddress(tx.from, this.provider);
+      assertArgument(from16 != null && from16.toLowerCase() === this.address.toLowerCase(), "from address mismatch", "transaction", _tx);
+      tx.from = from16;
     } else {
       tx.from = this.address;
     }
@@ -33013,7 +33685,7 @@ var JsonRpcApiProvider = class extends AbstractProvider {
           }
           console.log("JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)");
           this.emit("error", makeError("failed to bootstrap network detection", "NETWORK_ERROR", { event: "initial-network-discovery", info: { error } }));
-          await stall(1e3);
+          await stall2(1e3);
         }
       }
       this.#scheduleDrain();
@@ -33591,6 +34263,10 @@ function getHost2(name) {
       return "base-goerli.g.alchemy.com";
     case "base-sepolia":
       return "base-sepolia.g.alchemy.com";
+    case "bnb":
+      return "bnb-mainnet.g.alchemy.com";
+    case "bnbt":
+      return "bnb-testnet.g.alchemy.com";
     case "matic":
       return "polygon-mainnet.g.alchemy.com";
     case "matic-amoy":
@@ -33992,7 +34668,7 @@ var EtherscanProvider = class extends AbstractProvider {
       if (key === "blockTag" && value === "latest") {
         continue;
       }
-      if ({ type: true, gasLimit: true, gasPrice: true, maxFeePerGs: true, maxPriorityFeePerGas: true, nonce: true, value: true }[key]) {
+      if ({ type: true, gasLimit: true, gasPrice: true, maxFeePerGas: true, maxPriorityFeePerGas: true, nonce: true, value: true }[key]) {
         value = toQuantity(value);
       } else if (key === "accessList") {
         value = "[" + accessListify(value).map((set) => {
@@ -34851,7 +35527,7 @@ function shuffle(array) {
     array[j] = tmp;
   }
 }
-function stall2(duration) {
+function stall3(duration) {
   return new Promise((resolve2) => {
     setTimeout(resolve2, duration);
   });
@@ -35192,7 +35868,7 @@ var FallbackProvider = class extends AbstractProvider {
       runner.perform = null;
     })();
     runner.staller = (async () => {
-      await stall2(config3.stallTimeout);
+      await stall3(config3.stallTimeout);
       runner.staller = null;
     })();
     running.add(runner);
@@ -35766,6 +36442,7 @@ function getUrl(name) {
   }
   assertArgument(false, "unsupported network", "network", name);
 }
+var defaultApiKey3 = "proapi_gwcAAagyQKJ4r2KrAATyyCshiyUEpWfr2x7aKDOWFc56ZY8mBFcT9KZuP5Ce2jIfr_kHzUm";
 var BlockscoutProvider = class _BlockscoutProvider extends JsonRpcProvider {
   /**
    *  The API key.
@@ -35780,7 +36457,7 @@ var BlockscoutProvider = class _BlockscoutProvider extends JsonRpcProvider {
     }
     const network = Network.from(_network);
     if (apiKey == null) {
-      apiKey = null;
+      apiKey = defaultApiKey3;
     }
     const request = _BlockscoutProvider.getRequest(network);
     super(request, network, { staticNetwork: network });
@@ -36026,15 +36703,15 @@ var BaseWallet = class _BaseWallet extends AbstractSigner {
   }
   async signTransaction(tx) {
     tx = copyRequest(tx);
-    const { to, from: from14 } = await resolveProperties({
+    const { to, from: from16 } = await resolveProperties({
       to: tx.to ? resolveAddress(tx.to, this) : void 0,
       from: tx.from ? resolveAddress(tx.from, this) : void 0
     });
     if (to != null) {
       tx.to = to;
     }
-    if (from14 != null) {
-      tx.from = from14;
+    if (from16 != null) {
+      tx.from = from16;
     }
     if (tx.from != null) {
       assertArgument(getAddress(tx.from) === this.address, "transaction from address mismatch", "tx.from", tx.from);
@@ -36928,7 +37605,7 @@ function decryptKeystoreJsonSync(json, _password) {
   const key = scryptSync(password, salt, N3, r, p, dkLen);
   return getAccount(data4, key);
 }
-function stall3(duration) {
+function stall4(duration) {
   return new Promise((resolve2) => {
     setTimeout(() => {
       resolve2();
@@ -36942,13 +37619,13 @@ async function decryptKeystoreJson(json, _password, progress) {
   if (params.name === "pbkdf2") {
     if (progress) {
       progress(0);
-      await stall3(0);
+      await stall4(0);
     }
     const { salt: salt2, count, dkLen: dkLen2, algorithm } = params;
     const key2 = pbkdf2(password, salt2, count, dkLen2, algorithm);
     if (progress) {
       progress(1);
-      await stall3(0);
+      await stall4(0);
     }
     return getAccount(data4, key2);
   }
@@ -37514,7 +38191,7 @@ function decryptCrowdsaleJson(json, _password) {
 }
 
 // ../node_modules/ethers/lib.esm/wallet/wallet.js
-function stall4(duration) {
+function stall5(duration) {
   return new Promise((resolve2) => {
     setTimeout(() => {
       resolve2();
@@ -37589,12 +38266,12 @@ var Wallet = class _Wallet extends BaseWallet {
     } else if (isCrowdsaleJson(json)) {
       if (progress) {
         progress(0);
-        await stall4(0);
+        await stall5(0);
       }
       account = decryptCrowdsaleJson(json, password);
       if (progress) {
         progress(1);
-        await stall4(0);
+        await stall5(0);
       }
     }
     return _Wallet.#fromAccount(account);
@@ -38907,18 +39584,43 @@ var compose = (middleware, onError, onNotFound) => {
 // ../node_modules/hono/dist/request/constants.js
 var GET_MATCH_RESULT = /* @__PURE__ */ Symbol();
 
+// ../node_modules/hono/dist/utils/buffer.js
+var bufferToFormData = (arrayBuffer, contentType) => {
+  const response = new Response(arrayBuffer, {
+    headers: {
+      // Normalize the media type (case-insensitive) while keeping parameters like the boundary
+      "Content-Type": contentType.replace(/^[^;]+/, (mediaType) => mediaType.toLowerCase())
+    }
+  });
+  return response.formData();
+};
+
 // ../node_modules/hono/dist/utils/body.js
+var isRawRequest = (request) => "headers" in request;
 var parseBody = async (request, options = /* @__PURE__ */ Object.create(null)) => {
   const { all = false, dot = false } = options;
-  const headers = request instanceof HonoRequest ? request.raw.headers : request.headers;
+  const headers = isRawRequest(request) ? request.headers : request.raw.headers;
   const contentType = headers.get("Content-Type");
-  if (contentType?.startsWith("multipart/form-data") || contentType?.startsWith("application/x-www-form-urlencoded")) {
+  const mediaType = contentType?.split(";")[0].trim().toLowerCase();
+  if (mediaType === "multipart/form-data" || mediaType === "application/x-www-form-urlencoded") {
     return parseFormData(request, { all, dot });
   }
   return {};
 };
 async function parseFormData(request, options) {
-  const formData = await request.formData();
+  if (!isRawRequest(request) && request.bodyCache.formData) {
+    return convertFormDataToBodyData(
+      await request.bodyCache.formData,
+      options
+    );
+  }
+  const headers = isRawRequest(request) ? request.headers : request.raw.headers;
+  const arrayBuffer = await request.arrayBuffer();
+  const formDataPromise = bufferToFormData(arrayBuffer, headers.get("Content-Type") || "");
+  if (!isRawRequest(request)) {
+    request.bodyCache.formData = formDataPromise;
+  }
+  const formData = await formDataPromise;
   if (formData) {
     return convertFormDataToBodyData(formData, options);
   }
@@ -39085,13 +39787,13 @@ var checkOptionalParameter = (path) => {
     if (segment !== "" && !/\:/.test(segment)) {
       basePath += "/" + segment;
     } else if (/\:/.test(segment)) {
-      if (/\?/.test(segment)) {
+      if (segment.charCodeAt(segment.length - 1) === 63) {
         if (results.length === 0 && basePath === "") {
           results.push("/");
         } else {
           results.push(basePath);
         }
-        const optionalSegment = segment.replace("?", "");
+        const optionalSegment = segment.slice(0, -1);
         basePath += "/" + optionalSegment;
         results.push(basePath);
       } else {
@@ -39101,18 +39803,16 @@ var checkOptionalParameter = (path) => {
   });
   return results.filter((v, i, a) => a.indexOf(v) === i);
 };
+var tryDecodeURIComponent = (str) => str.indexOf("%") !== -1 ? tryDecode(str, decodeURIComponent_) : str;
 var _decodeURI = (value) => {
-  if (!/[%+]/.test(value)) {
-    return value;
-  }
   if (value.indexOf("+") !== -1) {
     value = value.replace(/\+/g, " ");
   }
-  return value.indexOf("%") !== -1 ? tryDecode(value, decodeURIComponent_) : value;
+  return tryDecodeURIComponent(value);
 };
 var _getQueryParam = (url, key, multiple) => {
   let encoded;
-  if (!multiple && key && !/[%+]/.test(key)) {
+  if (!multiple && key && key.indexOf("%") === -1 && key.indexOf("+") === -1) {
     let keyIndex2 = url.indexOf("?", 8);
     if (keyIndex2 === -1) {
       return void 0;
@@ -39136,7 +39836,7 @@ var _getQueryParam = (url, key, multiple) => {
       return void 0;
     }
   }
-  const results = {};
+  const results = /* @__PURE__ */ Object.create(null);
   encoded ??= /[%+]/.test(url);
   let keyIndex = url.indexOf("?", 8);
   while (keyIndex !== -1) {
@@ -39184,7 +39884,6 @@ var getQueryParams = (url, key) => {
 var decodeURIComponent_ = decodeURIComponent;
 
 // ../node_modules/hono/dist/request.js
-var tryDecodeURIComponent = (str) => tryDecode(str, decodeURIComponent_);
 var HonoRequest = class {
   /**
    * `.raw` can get the raw Request object.
@@ -39223,7 +39922,6 @@ var HonoRequest = class {
     this.raw = request;
     this.path = path;
     this.#matchResult = matchResult;
-    this.#validatedData = {};
   }
   param(key) {
     return key ? this.#getDecodedParam(key) : this.#getAllDecodedParams();
@@ -39231,7 +39929,7 @@ var HonoRequest = class {
   #getDecodedParam(key) {
     const paramKey = this.#matchResult[0][this.routeIndex][1][key];
     const param = this.#getParamValue(paramKey);
-    return param && /\%/.test(param) ? tryDecodeURIComponent(param) : param;
+    return param && tryDecodeURIComponent(param);
   }
   #getAllDecodedParams() {
     const decoded = {};
@@ -39239,7 +39937,7 @@ var HonoRequest = class {
     for (const key of keys) {
       const value = this.#getParamValue(this.#matchResult[0][this.routeIndex][1][key]);
       if (value !== void 0) {
-        decoded[key] = /\%/.test(value) ? tryDecodeURIComponent(value) : value;
+        decoded[key] = tryDecodeURIComponent(value);
       }
     }
     return decoded;
@@ -39257,7 +39955,7 @@ var HonoRequest = class {
     if (name) {
       return this.raw.headers.get(name) ?? void 0;
     }
-    const headerData = {};
+    const headerData = /* @__PURE__ */ Object.create(null);
     this.raw.headers.forEach((value, key) => {
       headerData[key] = value;
     });
@@ -39272,8 +39970,7 @@ var HonoRequest = class {
     if (cachedBody) {
       return cachedBody;
     }
-    const anyCachedKey = Object.keys(bodyCache)[0];
-    if (anyCachedKey) {
+    for (const anyCachedKey in bodyCache) {
       return bodyCache[anyCachedKey].then((body) => {
         if (anyCachedKey === "json") {
           body = JSON.stringify(body);
@@ -39376,10 +40073,11 @@ var HonoRequest = class {
    * @param data - The validated data to add.
    */
   addValidatedData(target, data4) {
-    this.#validatedData[target] = data4;
+    ;
+    (this.#validatedData ??= {})[target] = data4;
   }
   valid(target) {
-    return this.#validatedData[target];
+    return this.#validatedData?.[target];
   }
   /**
    * `.url()` can get the request url strings.
@@ -39710,6 +40408,10 @@ var Context = class {
    *   c.header('X-Message', 'Hello!')
    *   c.header('Content-Type', 'text/plain')
    *
+   *   // Append multiple headers using the append option (e.g. Vary)
+   *   c.header('Vary', 'Accept-Encoding', { append: true })
+   *   c.header('Vary', 'User-Agent', { append: true })
+   *
    *   return c.body('Thank you for coming')
    * })
    * ```
@@ -39781,11 +40483,11 @@ var Context = class {
     return Object.fromEntries(this.#var);
   }
   #newResponse(data4, arg, headers) {
-    const responseHeaders = this.#res ? new Headers(this.#res.headers) : this.#preparedHeaders ?? new Headers();
-    if (typeof arg === "object" && "headers" in arg) {
-      const argHeaders = arg.headers instanceof Headers ? arg.headers : new Headers(arg.headers);
-      for (const [key, value] of argHeaders) {
-        if (key.toLowerCase() === "set-cookie") {
+    let responseHeaders = this.#res ? new Headers(this.#res.headers) : this.#preparedHeaders;
+    if (typeof arg === "object" && arg.headers) {
+      responseHeaders ??= new Headers();
+      for (const [key, value] of new Headers(arg.headers)) {
+        if (key === "set-cookie") {
           responseHeaders.append(key, value);
         } else {
           responseHeaders.set(key, value);
@@ -39793,19 +40495,34 @@ var Context = class {
       }
     }
     if (headers) {
-      for (const [k, v] of Object.entries(headers)) {
-        if (typeof v === "string") {
-          responseHeaders.set(k, v);
-        } else {
-          responseHeaders.delete(k);
-          for (const v2 of v) {
-            responseHeaders.append(k, v2);
+      if (!responseHeaders) {
+        let count = 0;
+        for (const k in headers) {
+          if (++count > 1 || typeof headers[k] !== "string") {
+            responseHeaders = new Headers();
+            break;
+          }
+        }
+      }
+      if (responseHeaders) {
+        for (const k in headers) {
+          const v = headers[k];
+          if (typeof v === "string") {
+            responseHeaders.set(k, v);
+          } else {
+            responseHeaders.delete(k);
+            for (const v2 of v) {
+              responseHeaders.append(k, v2);
+            }
           }
         }
       }
     }
     const status = typeof arg === "number" ? arg : arg?.status ?? this.#status;
-    return createResponseInstance(data4, { status, headers: responseHeaders });
+    return createResponseInstance(data4, {
+      status,
+      headers: responseHeaders ?? headers
+    });
   }
   newResponse = (...args) => this.#newResponse(...args);
   /**
@@ -39918,7 +40635,7 @@ var Context = class {
 // ../node_modules/hono/dist/router.js
 var METHOD_NAME_ALL = "ALL";
 var METHOD_NAME_ALL_LOWERCASE = "all";
-var METHODS = ["get", "post", "put", "delete", "options", "patch"];
+var METHODS = ["get", "post", "put", "delete", "options", "patch", "query"];
 var MESSAGE_MATCHER_IS_ALREADY_BUILT = "Can not add a route since the matcher is already built.";
 var UnsupportedPathError = class extends Error {
 };
@@ -39945,6 +40662,7 @@ var Hono = class _Hono {
   delete;
   options;
   patch;
+  query;
   all;
   on;
   use;
@@ -40244,8 +40962,8 @@ var Hono = class _Hono {
    * @see {@link https://hono.dev/docs/api/hono#fetch}
    *
    * @param {Request} request - request Object of request
-   * @param {Env} Env - env Object
-   * @param {ExecutionContext} - context of execution
+   * @param {Env} env - env Object
+   * @param {ExecutionContext} executionCtx - context of execution
    * @returns {Response | Promise<Response>} response of request
    *
    */
@@ -40337,7 +41055,7 @@ function compareKey(a, b2) {
     return 1;
   }
   if (a === ONLY_WILDCARD_REG_EXP_STR || a === TAIL_WILDCARD_REG_EXP_STR) {
-    return 1;
+    return b2 === TAIL_WILDCARD_REG_EXP_STR ? -1 : 1;
   } else if (b2 === ONLY_WILDCARD_REG_EXP_STR || b2 === TAIL_WILDCARD_REG_EXP_STR) {
     return -1;
   }
@@ -40349,76 +41067,75 @@ function compareKey(a, b2) {
   return a.length === b2.length ? a < b2 ? -1 : 1 : b2.length - a.length;
 }
 var Node = class _Node {
+  // handler index of a dynamic path, or -1 for a static path terminal
   #index;
   #varIndex;
   #children = /* @__PURE__ */ Object.create(null);
-  insert(tokens, index2, paramMap, context, pathErrorCheckOnly) {
-    if (tokens.length === 0) {
-      if (this.#index !== void 0) {
-        throw PATH_ERROR;
-      }
-      if (pathErrorCheckOnly) {
-        return;
-      }
-      this.#index = index2;
-      return;
-    }
-    const [token, ...restTokens] = tokens;
-    const pattern = token === "*" ? restTokens.length === 0 ? ["", "", ONLY_WILDCARD_REG_EXP_STR] : ["", "", LABEL_REG_EXP_STR] : token === "/*" ? ["", "", TAIL_WILDCARD_REG_EXP_STR] : token.match(/^\:([^\{\}]+)(?:\{(.+)\})?$/);
-    let node;
-    if (pattern) {
-      const name = pattern[1];
-      let regexpStr = pattern[2] || LABEL_REG_EXP_STR;
-      if (name && pattern[2]) {
-        if (regexpStr === ".*") {
-          throw PATH_ERROR;
+  insert(tokens, index2, paramMap, context, isStatic) {
+    let node = this;
+    for (let i = 0, len = tokens.length; i < len; i++) {
+      const token = tokens[i];
+      const pattern = token.length === 1 ? token === "*" ? i === len - 1 ? ["", "", ONLY_WILDCARD_REG_EXP_STR] : ["", "", LABEL_REG_EXP_STR] : null : token === "/*" ? ["", "", TAIL_WILDCARD_REG_EXP_STR] : token.match(/^\:([^\{\}]+)(?:\{(.+)\})?$/);
+      let nextNode;
+      if (pattern) {
+        const name = pattern[1];
+        let regexpStr = pattern[2] || LABEL_REG_EXP_STR;
+        if (name && pattern[2]) {
+          if (regexpStr === ".*") {
+            throw PATH_ERROR;
+          }
+          regexpStr = regexpStr.replace(/^\((?!\?:)(?=[^)]+\)$)/, "(?:");
+          if (/\((?!\?:)/.test(regexpStr)) {
+            throw PATH_ERROR;
+          }
+          if (regexpStr.length === 1 && regExpMetaChars.has(regexpStr)) {
+            throw PATH_ERROR;
+          }
         }
-        regexpStr = regexpStr.replace(/^\((?!\?:)(?=[^)]+\)$)/, "(?:");
-        if (/\((?!\?:)/.test(regexpStr)) {
-          throw PATH_ERROR;
+        nextNode = node.#children[regexpStr];
+        if (!nextNode) {
+          if (regexpStr !== ONLY_WILDCARD_REG_EXP_STR && regexpStr !== TAIL_WILDCARD_REG_EXP_STR) {
+            for (const k in node.#children) {
+              if (
+                // a single-char pattern coexists with single-char literals as a literal does
+                (regexpStr.length > 1 || k.length > 1) && k !== ONLY_WILDCARD_REG_EXP_STR && k !== TAIL_WILDCARD_REG_EXP_STR
+              ) {
+                throw PATH_ERROR;
+              }
+            }
+          }
+          nextNode = node.#children[regexpStr] = new _Node();
         }
-      }
-      node = this.#children[regexpStr];
-      if (!node) {
-        if (Object.keys(this.#children).some(
-          (k) => k !== ONLY_WILDCARD_REG_EXP_STR && k !== TAIL_WILDCARD_REG_EXP_STR
-        )) {
-          throw PATH_ERROR;
-        }
-        if (pathErrorCheckOnly) {
-          return;
-        }
-        node = this.#children[regexpStr] = new _Node();
         if (name !== "") {
-          node.#varIndex = context.varIndex++;
+          nextNode.#varIndex ??= context.varIndex++;
+          paramMap.push([name, nextNode.#varIndex]);
+        }
+      } else {
+        nextNode = node.#children[token];
+        if (!nextNode) {
+          for (const k in node.#children) {
+            if (k.length > 1 && k !== ONLY_WILDCARD_REG_EXP_STR && k !== TAIL_WILDCARD_REG_EXP_STR) {
+              throw PATH_ERROR;
+            }
+          }
+          nextNode = node.#children[token] = new _Node();
         }
       }
-      if (!pathErrorCheckOnly && name !== "") {
-        paramMap.push([name, node.#varIndex]);
-      }
-    } else {
-      node = this.#children[token];
-      if (!node) {
-        if (Object.keys(this.#children).some(
-          (k) => k.length > 1 && k !== ONLY_WILDCARD_REG_EXP_STR && k !== TAIL_WILDCARD_REG_EXP_STR
-        )) {
-          throw PATH_ERROR;
-        }
-        if (pathErrorCheckOnly) {
-          return;
-        }
-        node = this.#children[token] = new _Node();
-      }
+      node = nextNode;
     }
-    node.insert(restTokens, index2, paramMap, context, pathErrorCheckOnly);
+    if (node.#index !== void 0) {
+      throw PATH_ERROR;
+    }
+    node.#index = isStatic ? -1 : index2;
   }
   buildRegExpStr() {
     const childKeys = Object.keys(this.#children).sort(compareKey);
     const strList = childKeys.map((k) => {
       const c = this.#children[k];
-      return (typeof c.#varIndex === "number" ? `(${k})@${c.#varIndex}` : regExpMetaChars.has(k) ? `\\${k}` : k) + c.buildRegExpStr();
-    });
-    if (typeof this.#index === "number") {
+      const childStr = c.buildRegExpStr();
+      return childStr === "" ? "" : (typeof c.#varIndex === "number" ? `(${k})@${c.#varIndex}` : regExpMetaChars.has(k) ? `\\${k}` : k) + childStr;
+    }).filter(Boolean);
+    if (typeof this.#index === "number" && this.#index !== -1) {
       strList.unshift(`#${this.#index}`);
     }
     if (strList.length === 0) {
@@ -40435,12 +41152,20 @@ var Node = class _Node {
 var Trie = class {
   #context = { varIndex: 0 };
   #root = new Node();
-  insert(path, index2, pathErrorCheckOnly) {
+  #index = 0;
+  // dynamic path -> [handler index, param assoc]; static paths are not registered
+  paths = /* @__PURE__ */ Object.create(null);
+  insert(path, isStatic) {
+    if (isStatic) {
+      this.#root.insert(path.split(""), 0, [], this.#context, true);
+      return;
+    }
     const paramAssoc = [];
     const groups = [];
+    let markedPath = path;
     for (let i = 0; ; ) {
       let replaced = false;
-      path = path.replace(/\{[^}]+\}/g, (m) => {
+      markedPath = markedPath.replace(/\{[^}]+\}/g, (m) => {
         const mark = `@\\${i}`;
         groups[i] = [mark, m];
         i++;
@@ -40451,7 +41176,7 @@ var Trie = class {
         break;
       }
     }
-    const tokens = path.match(/(?::[^\/]+)|(?:\/\*$)|./g) || [];
+    const tokens = markedPath.match(/(?::[^\/]+)|(?:\/\*$)|./g) || [];
     for (let i = groups.length - 1; i >= 0; i--) {
       const [mark] = groups[i];
       for (let j = tokens.length - 1; j >= 0; j--) {
@@ -40461,8 +41186,8 @@ var Trie = class {
         }
       }
     }
-    this.#root.insert(tokens, index2, paramAssoc, this.#context, pathErrorCheckOnly);
-    return paramAssoc;
+    this.#root.insert(tokens, this.#index, paramAssoc, this.#context, false);
+    this.paths[path] = [this.#index++, paramAssoc];
   }
   buildRegExp() {
     let regexp = this.#root.buildRegExpStr();
@@ -40488,7 +41213,6 @@ var Trie = class {
 };
 
 // ../node_modules/hono/dist/router/reg-exp-router/router.js
-var nullMatcher = [/^$/, [], /* @__PURE__ */ Object.create(null)];
 var wildcardRegExpCache = /* @__PURE__ */ Object.create(null);
 function buildWildcardRegExp(path) {
   return wildcardRegExpCache[path] ??= new RegExp(
@@ -40500,63 +41224,6 @@ function buildWildcardRegExp(path) {
 }
 function clearWildcardRegExpCache() {
   wildcardRegExpCache = /* @__PURE__ */ Object.create(null);
-}
-function buildMatcherFromPreprocessedRoutes(routes) {
-  const trie = new Trie();
-  const handlerData = [];
-  if (routes.length === 0) {
-    return nullMatcher;
-  }
-  const routesWithStaticPathFlag = routes.map(
-    (route) => [!/\*|\/:/.test(route[0]), ...route]
-  ).sort(
-    ([isStaticA, pathA], [isStaticB, pathB]) => isStaticA ? 1 : isStaticB ? -1 : pathA.length - pathB.length
-  );
-  const staticMap = /* @__PURE__ */ Object.create(null);
-  for (let i = 0, j = -1, len = routesWithStaticPathFlag.length; i < len; i++) {
-    const [pathErrorCheckOnly, path, handlers] = routesWithStaticPathFlag[i];
-    if (pathErrorCheckOnly) {
-      staticMap[path] = [handlers.map(([h]) => [h, /* @__PURE__ */ Object.create(null)]), emptyParam];
-    } else {
-      j++;
-    }
-    let paramAssoc;
-    try {
-      paramAssoc = trie.insert(path, j, pathErrorCheckOnly);
-    } catch (e) {
-      throw e === PATH_ERROR ? new UnsupportedPathError(path) : e;
-    }
-    if (pathErrorCheckOnly) {
-      continue;
-    }
-    handlerData[j] = handlers.map(([h, paramCount]) => {
-      const paramIndexMap = /* @__PURE__ */ Object.create(null);
-      paramCount -= 1;
-      for (; paramCount >= 0; paramCount--) {
-        const [key, value] = paramAssoc[paramCount];
-        paramIndexMap[key] = value;
-      }
-      return [h, paramIndexMap];
-    });
-  }
-  const [regexp, indexReplacementMap, paramReplacementMap] = trie.buildRegExp();
-  for (let i = 0, len = handlerData.length; i < len; i++) {
-    for (let j = 0, len2 = handlerData[i].length; j < len2; j++) {
-      const map = handlerData[i][j]?.[1];
-      if (!map) {
-        continue;
-      }
-      const keys = Object.keys(map);
-      for (let k = 0, len3 = keys.length; k < len3; k++) {
-        map[keys[k]] = paramReplacementMap[map[keys[k]]];
-      }
-    }
-  }
-  const handlerMap = [];
-  for (const i in indexReplacementMap) {
-    handlerMap[i] = handlerData[indexReplacementMap[i]];
-  }
-  return [regexp, handlerMap, staticMap];
 }
 function findMiddleware(middleware, path) {
   if (!middleware) {
@@ -40573,9 +41240,18 @@ var RegExpRouter = class {
   name = "RegExpRouter";
   #middleware;
   #routes;
+  #tries;
   constructor() {
     this.#middleware = { [METHOD_NAME_ALL]: /* @__PURE__ */ Object.create(null) };
     this.#routes = { [METHOD_NAME_ALL]: /* @__PURE__ */ Object.create(null) };
+    this.#tries = { [METHOD_NAME_ALL]: new Trie() };
+  }
+  #insertPath(method, path) {
+    try {
+      this.#tries[method].insert(path, !/\*|\/:/.test(path));
+    } catch (e) {
+      throw e === PATH_ERROR ? new UnsupportedPathError(path) : e;
+    }
   }
   add(method, path, handler2) {
     const middleware = this.#middleware;
@@ -40584,11 +41260,12 @@ var RegExpRouter = class {
       throw new Error(MESSAGE_MATCHER_IS_ALREADY_BUILT);
     }
     if (!middleware[method]) {
-      ;
+      this.#tries[method] = new Trie();
       [middleware, routes].forEach((handlerMap) => {
         handlerMap[method] = /* @__PURE__ */ Object.create(null);
         Object.keys(handlerMap[METHOD_NAME_ALL]).forEach((p) => {
           handlerMap[method][p] = [...handlerMap[METHOD_NAME_ALL][p]];
+          this.#insertPath(method, p);
         });
       });
     }
@@ -40598,13 +41275,12 @@ var RegExpRouter = class {
     const paramCount = (path.match(/\/:/g) || []).length;
     if (/\*$/.test(path)) {
       const re = buildWildcardRegExp(path);
-      if (method === METHOD_NAME_ALL) {
-        Object.keys(middleware).forEach((m) => {
-          middleware[m][path] ||= findMiddleware(middleware[m], path) || findMiddleware(middleware[METHOD_NAME_ALL], path) || [];
-        });
-      } else {
-        middleware[method][path] ||= findMiddleware(middleware[method], path) || findMiddleware(middleware[METHOD_NAME_ALL], path) || [];
-      }
+      Object.keys(middleware).forEach((m) => {
+        if ((method === METHOD_NAME_ALL || method === m) && !middleware[m][path]) {
+          this.#insertPath(m, path);
+          middleware[m][path] = findMiddleware(middleware[m], path) || findMiddleware(middleware[METHOD_NAME_ALL], path) || [];
+        }
+      });
       Object.keys(middleware).forEach((m) => {
         if (method === METHOD_NAME_ALL || method === m) {
           Object.keys(middleware[m]).forEach((p) => {
@@ -40626,9 +41302,12 @@ var RegExpRouter = class {
       const path2 = paths[i];
       Object.keys(routes).forEach((m) => {
         if (method === METHOD_NAME_ALL || method === m) {
-          routes[m][path2] ||= [
-            ...findMiddleware(middleware[m], path2) || findMiddleware(middleware[METHOD_NAME_ALL], path2) || []
-          ];
+          if (!routes[m][path2]) {
+            this.#insertPath(m, path2);
+            routes[m][path2] = [
+              ...findMiddleware(middleware[m], path2) || findMiddleware(middleware[METHOD_NAME_ALL], path2) || []
+            ];
+          }
           routes[m][path2].push([handler2, paramCount - len + i + 1]);
         }
       });
@@ -40640,29 +41319,54 @@ var RegExpRouter = class {
     Object.keys(this.#routes).concat(Object.keys(this.#middleware)).forEach((method) => {
       matchers2[method] ||= this.#buildMatcher(method);
     });
-    this.#middleware = this.#routes = void 0;
+    this.#middleware = this.#routes = this.#tries = void 0;
     clearWildcardRegExpCache();
     return matchers2;
   }
   #buildMatcher(method) {
-    const routes = [];
-    let hasOwnRoute = method === METHOD_NAME_ALL;
-    [this.#middleware, this.#routes].forEach((r) => {
-      const ownRoute = r[method] ? Object.keys(r[method]).map((path) => [path, r[method][path]]) : [];
-      if (ownRoute.length !== 0) {
-        hasOwnRoute ||= true;
-        routes.push(...ownRoute);
-      } else if (method !== METHOD_NAME_ALL) {
-        routes.push(
-          ...Object.keys(r[METHOD_NAME_ALL]).map((path) => [path, r[METHOD_NAME_ALL][path]])
-        );
+    const middleware = this.#middleware[method];
+    const routes = this.#routes[method];
+    const trie = this.#tries[method];
+    const staticMap = /* @__PURE__ */ Object.create(null);
+    const handlerData = [];
+    [middleware, routes].forEach((r) => {
+      for (const path in r) {
+        const handlers = r[path];
+        const pathData = trie.paths[path];
+        if (!pathData) {
+          staticMap[path] = [handlers.map(([h]) => [h, /* @__PURE__ */ Object.create(null)]), emptyParam];
+          continue;
+        }
+        const paramAssoc = pathData[1];
+        handlerData[pathData[0]] = handlers.map(([h, paramCount]) => {
+          const paramIndexMap = /* @__PURE__ */ Object.create(null);
+          paramCount -= 1;
+          for (; paramCount >= 0; paramCount--) {
+            const [key, value] = paramAssoc[paramCount];
+            paramIndexMap[key] = value;
+          }
+          return [h, paramIndexMap];
+        });
       }
     });
-    if (!hasOwnRoute) {
-      return null;
-    } else {
-      return buildMatcherFromPreprocessedRoutes(routes);
+    const [regexp, indexReplacementMap, paramReplacementMap] = trie.buildRegExp();
+    for (let i = 0, len = handlerData.length; i < len; i++) {
+      for (let j = 0, len2 = handlerData[i].length; j < len2; j++) {
+        const map = handlerData[i][j]?.[1];
+        if (!map) {
+          continue;
+        }
+        const keys = Object.keys(map);
+        for (let k = 0, len3 = keys.length; k < len3; k++) {
+          map[keys[k]] = paramReplacementMap[map[keys[k]]];
+        }
+      }
     }
+    const handlerMap = [];
+    for (const i in indexReplacementMap) {
+      handlerMap[i] = handlerData[indexReplacementMap[i]];
+    }
+    return [regexp, handlerMap, staticMap];
   }
 };
 
@@ -40723,76 +41427,51 @@ var SmartRouter = class {
 
 // ../node_modules/hono/dist/router/trie-router/node.js
 var emptyParams = /* @__PURE__ */ Object.create(null);
-var hasChildren = (children) => {
-  for (const _ in children) {
-    return true;
-  }
-  return false;
-};
+var order = 0;
 var Node2 = class _Node2 {
-  #methods;
-  #children;
-  #patterns;
-  #order = 0;
+  #methods = [];
+  #children = /* @__PURE__ */ Object.create(null);
+  #patterns = [];
+  #pattern;
   #params = emptyParams;
-  constructor(method, handler2, children) {
-    this.#children = children || /* @__PURE__ */ Object.create(null);
-    this.#methods = [];
-    if (method && handler2) {
-      const m = /* @__PURE__ */ Object.create(null);
-      m[method] = { handler: handler2, possibleKeys: [], score: 0 };
-      this.#methods = [m];
-    }
-    this.#patterns = [];
-  }
   insert(method, path, handler2) {
-    this.#order = ++this.#order;
     let curNode = this;
     const parts = splitRoutingPath(path);
-    const possibleKeys = [];
-    for (let i = 0, len = parts.length; i < len; i++) {
-      const p = parts[i];
-      const nextP = parts[i + 1];
-      const pattern = getPattern(p, nextP);
-      const key = Array.isArray(pattern) ? pattern[0] : p;
-      if (key in curNode.#children) {
-        curNode = curNode.#children[key];
-        if (pattern) {
-          possibleKeys.push(pattern[1]);
-        }
-        continue;
+    const possibleKeys = /* @__PURE__ */ new Set();
+    let i = 0;
+    for (const p of parts) {
+      const nextP = parts[++i];
+      const pattern = getPattern(p, nextP) || (nextP === void 0 && p && p.indexOf("*") === p.length - 1 ? p : null);
+      const isParam = Array.isArray(pattern);
+      const key = isParam ? pattern[0] : pattern || p;
+      const child = curNode.#children[key] ||= new _Node2();
+      if (pattern && !child.#pattern) {
+        child.#pattern = pattern;
+        curNode.#patterns.push(child);
       }
-      curNode.#children[key] = new _Node2();
-      if (pattern) {
-        curNode.#patterns.push(pattern);
-        possibleKeys.push(pattern[1]);
+      curNode = child;
+      if (isParam) {
+        possibleKeys.add(pattern[1]);
       }
-      curNode = curNode.#children[key];
     }
     curNode.#methods.push({
       [method]: {
         handler: handler2,
-        possibleKeys: possibleKeys.filter((v, i, a) => a.indexOf(v) === i),
-        score: this.#order
+        possibleKeys: [...possibleKeys],
+        score: ++order
       }
     });
-    return curNode;
   }
   #pushHandlerSets(handlerSets, node, method, nodeParams, params) {
     for (let i = 0, len = node.#methods.length; i < len; i++) {
       const m = node.#methods[i];
       const handlerSet = m[method] || m[METHOD_NAME_ALL];
-      const processedSet = {};
-      if (handlerSet !== void 0) {
+      if (handlerSet) {
         handlerSet.params = /* @__PURE__ */ Object.create(null);
         handlerSets.push(handlerSet);
-        if (nodeParams !== emptyParams || params && params !== emptyParams) {
-          for (let i2 = 0, len2 = handlerSet.possibleKeys.length; i2 < len2; i2++) {
-            const key = handlerSet.possibleKeys[i2];
-            const processed = processedSet[handlerSet.score];
-            handlerSet.params[key] = params?.[key] && !processed ? params[key] : nodeParams[key] ?? params?.[key];
-            processedSet[handlerSet.score] = true;
-          }
+        for (let i2 = 0, len2 = handlerSet.possibleKeys.length; i2 < len2; i2++) {
+          const key = handlerSet.possibleKeys[i2];
+          handlerSet.params[key] = params?.[key] && !i2 ? params[key] : nodeParams[key] ?? params?.[key];
         }
       }
     }
@@ -40824,42 +41503,52 @@ var Node2 = class _Node2 {
             tempNodes.push(nextNode);
           }
         }
-        for (let k = 0, len3 = node.#patterns.length; k < len3; k++) {
-          const pattern = node.#patterns[k];
+        for (const child of node.#patterns) {
+          const pattern = child.#pattern;
           const params = node.#params === emptyParams ? {} : { ...node.#params };
-          if (pattern === "*") {
-            const astNode = node.#children["*"];
-            if (astNode) {
-              this.#pushHandlerSets(handlerSets, astNode, method, node.#params);
-              astNode.#params = params;
-              tempNodes.push(astNode);
+          if (typeof pattern === "string") {
+            if (pattern === "*" || part.startsWith(pattern.slice(0, -1))) {
+              this.#pushHandlerSets(handlerSets, child, method, node.#params);
+              if (pattern === "*") {
+                child.#params = params;
+                tempNodes.push(child);
+              }
             }
             continue;
           }
-          const [key, name, matcher] = pattern;
-          if (!part && !(matcher instanceof RegExp)) {
+          const [, name, matcher] = pattern;
+          if (!part && matcher === true) {
             continue;
           }
-          const child = node.#children[key];
-          if (matcher instanceof RegExp) {
-            if (partOffsets === null) {
-              partOffsets = new Array(len);
+          if (matcher !== true) {
+            if (!partOffsets) {
+              partOffsets = [];
               let offset = path[0] === "/" ? 1 : 0;
               for (let p = 0; p < len; p++) {
                 partOffsets[p] = offset;
                 offset += parts[p].length + 1;
               }
             }
-            const restPathString = path.substring(partOffsets[i]);
+            const restPathString = path.slice(partOffsets[i]);
             const m = matcher.exec(restPathString);
             if (m) {
               params[name] = m[0];
               this.#pushHandlerSets(handlerSets, child, method, node.#params, params);
-              if (hasChildren(child.#children)) {
+              if (m[0].length === restPathString.length && child.#children["*"]) {
+                this.#pushHandlerSets(
+                  handlerSets,
+                  child.#children["*"],
+                  method,
+                  node.#params,
+                  params
+                );
+              }
+              for (const _ in child.#children) {
                 child.#params = params;
-                const componentCount = m[0].match(/\//)?.length ?? 0;
+                const componentCount = m[0].match(/\//g)?.length ?? 0;
                 const targetCurNodes = curNodesQueue[componentCount] ||= [];
                 targetCurNodes.push(child);
+                break;
               }
               continue;
             }
@@ -40887,7 +41576,7 @@ var Node2 = class _Node2 {
       const shifted = curNodesQueue.shift();
       curNodes = shifted ? tempNodes.concat(shifted) : tempNodes;
     }
-    if (handlerSets.length > 1) {
+    if (handlerSets[1]) {
       handlerSets.sort((a, b2) => {
         return a.score - b2.score;
       });
@@ -40899,19 +41588,11 @@ var Node2 = class _Node2 {
 // ../node_modules/hono/dist/router/trie-router/router.js
 var TrieRouter = class {
   name = "TrieRouter";
-  #node;
-  constructor() {
-    this.#node = new Node2();
-  }
+  #node = new Node2();
   add(method, path, handler2) {
-    const results = checkOptionalParameter(path);
-    if (results) {
-      for (let i = 0, len = results.length; i < len; i++) {
-        this.#node.insert(method, results[i], handler2);
-      }
-      return;
+    for (const result of checkOptionalParameter(path) || [path]) {
+      this.#node.insert(method, result, handler2);
     }
-    this.#node.insert(method, path, handler2);
   }
   match(method, path) {
     return this.#node.search(method, path);
@@ -40937,11 +41618,13 @@ var Hono2 = class extends Hono {
 var cors = (options) => {
   const opts = {
     origin: "*",
-    allowMethods: ["GET", "HEAD", "PUT", "POST", "DELETE", "PATCH"],
+    allowMethods: ["GET", "HEAD", "PUT", "POST", "DELETE", "PATCH", "QUERY"],
     allowHeaders: [],
     exposeHeaders: [],
     ...options
   };
+  const exposeHeadersStr = opts.exposeHeaders?.length ? opts.exposeHeaders.join(",") : void 0;
+  const allowHeadersStr = opts.allowHeaders?.length ? opts.allowHeaders.join(",") : void 0;
   const findAllowOrigin = ((optsOrigin) => {
     if (typeof optsOrigin === "string") {
       if (optsOrigin === "*") {
@@ -40957,11 +41640,12 @@ var cors = (options) => {
   })(opts.origin);
   const findAllowMethods = ((optsAllowMethods) => {
     if (typeof optsAllowMethods === "function") {
-      return optsAllowMethods;
+      return async (origin, c) => (await optsAllowMethods(origin, c)).join(",");
     } else if (Array.isArray(optsAllowMethods)) {
-      return () => optsAllowMethods;
+      const methodsStr = optsAllowMethods.join(",");
+      return () => methodsStr;
     } else {
-      return () => [];
+      return () => "";
     }
   })(opts.allowMethods);
   return async function cors2(c, next) {
@@ -40975,29 +41659,29 @@ var cors = (options) => {
     if (opts.credentials) {
       set("Access-Control-Allow-Credentials", "true");
     }
-    if (opts.exposeHeaders?.length) {
-      set("Access-Control-Expose-Headers", opts.exposeHeaders.join(","));
+    if (exposeHeadersStr) {
+      set("Access-Control-Expose-Headers", exposeHeadersStr);
     }
     if (c.req.method === "OPTIONS") {
       if (opts.origin !== "*") {
-        set("Vary", "Origin");
+        c.res.headers.append("Vary", "Origin");
       }
       if (opts.maxAge != null) {
         set("Access-Control-Max-Age", opts.maxAge.toString());
       }
       const allowMethods = await findAllowMethods(c.req.header("origin") || "", c);
-      if (allowMethods.length) {
-        set("Access-Control-Allow-Methods", allowMethods.join(","));
+      if (allowMethods) {
+        set("Access-Control-Allow-Methods", allowMethods);
       }
-      let headers = opts.allowHeaders;
-      if (!headers?.length) {
+      let headersStr = allowHeadersStr;
+      if (!headersStr) {
         const requestHeaders = c.req.header("Access-Control-Request-Headers");
         if (requestHeaders) {
-          headers = requestHeaders.split(/\s*,\s*/);
+          headersStr = requestHeaders.split(",").map((h) => h.trim()).join(",");
         }
       }
-      if (headers?.length) {
-        set("Access-Control-Allow-Headers", headers.join(","));
+      if (headersStr) {
+        set("Access-Control-Allow-Headers", headersStr);
         c.res.headers.append("Vary", "Access-Control-Request-Headers");
       }
       c.res.headers.delete("Content-Length");
@@ -41359,12 +42043,12 @@ var EstimateGasExecutionError = class extends BaseError2 {
     const prettyArgs = prettyPrint({
       from: account?.address,
       to,
-      value: typeof value !== "undefined" && `${formatEther2(value)} ${chain2?.nativeCurrency?.symbol || "ETH"}`,
+      value: typeof value !== "undefined" && `${formatEther3(value)} ${chain2?.nativeCurrency?.symbol || "ETH"}`,
       data: data4,
       gas,
-      gasPrice: typeof gasPrice !== "undefined" && `${formatGwei(gasPrice)} gwei`,
-      maxFeePerGas: typeof maxFeePerGas !== "undefined" && `${formatGwei(maxFeePerGas)} gwei`,
-      maxPriorityFeePerGas: typeof maxPriorityFeePerGas !== "undefined" && `${formatGwei(maxPriorityFeePerGas)} gwei`,
+      gasPrice: typeof gasPrice !== "undefined" && `${formatGwei2(gasPrice)} gwei`,
+      maxFeePerGas: typeof maxFeePerGas !== "undefined" && `${formatGwei2(maxFeePerGas)} gwei`,
+      maxPriorityFeePerGas: typeof maxPriorityFeePerGas !== "undefined" && `${formatGwei2(maxPriorityFeePerGas)} gwei`,
       nonce
     });
     super(cause.shortMessage, {
@@ -41431,7 +42115,7 @@ var Eip1559FeesNotSupportedError = class extends BaseError2 {
 };
 var MaxFeePerGasTooLowError = class extends BaseError2 {
   constructor({ maxPriorityFeePerGas }) {
-    super(`\`maxFeePerGas\` cannot be less than the \`maxPriorityFeePerGas\` (${formatGwei(maxPriorityFeePerGas)} gwei).`, { name: "MaxFeePerGasTooLowError" });
+    super(`\`maxFeePerGas\` cannot be less than the \`maxPriorityFeePerGas\` (${formatGwei2(maxPriorityFeePerGas)} gwei).`, { name: "MaxFeePerGasTooLowError" });
   }
 };
 
@@ -41577,8 +42261,8 @@ async function getBlock(client, { blockHash, blockNumber, blockTag = client.expe
   }
   if (!block)
     throw new BlockNotFoundError({ blockHash, blockNumber });
-  const format = client.chain?.formatters?.block?.format || formatBlock2;
-  return format(block, "getBlock");
+  const format2 = client.chain?.formatters?.block?.format || formatBlock2;
+  return format2(block, "getBlock");
 }
 
 // ../node_modules/viem/_esm/actions/public/getGasPrice.js
@@ -41647,7 +42331,7 @@ async function internal_estimateFeesPerGas(client, args) {
     throw new BaseFeeScalarError();
   const decimals = baseFeeMultiplier.toString().split(".")[1]?.length ?? 0;
   const denominator = 10 ** decimals;
-  const multiply = (base2) => base2 * BigInt(Math.ceil(baseFeeMultiplier * denominator)) / BigInt(denominator);
+  const multiply = (base2) => base2 * BigInt(Math.round(baseFeeMultiplier * denominator)) / BigInt(denominator);
   const block = block_ ? block_ : await getAction(client, getBlock, "getBlock")({});
   if (typeof chain2?.fees?.estimateFeesPerGas === "function") {
     const fees = await chain2.fees.estimateFeesPerGas({
@@ -41700,6 +42384,9 @@ async function getTransactionCount(client, { address, blockHash, blockNumber, bl
   return hexToNumber2(count);
 }
 
+// ../node_modules/viem/_esm/actions/wallet/prepareTransactionRequest.js
+init_transaction();
+
 // ../node_modules/viem/_esm/utils/blob/blobsToCommitments.js
 init_toBytes();
 init_toHex();
@@ -41735,15 +42422,15 @@ init_toHex();
 
 // ../node_modules/viem/node_modules/@noble/hashes/esm/sha256.js
 init_sha2();
-var sha2564 = sha2563;
+var sha2565 = sha2564;
 
 // ../node_modules/viem/_esm/utils/hash/sha256.js
 init_isHex();
 init_toBytes();
 init_toHex();
-function sha2565(value, to_) {
+function sha2566(value, to_) {
   const to = to_ || "hex";
-  const bytes2 = sha2564(isHex(value, { strict: false }) ? toBytes2(value) : value);
+  const bytes2 = sha2565(isHex(value, { strict: false }) ? toBytes2(value) : value);
   if (to === "bytes")
     return bytes2;
   return toHex(bytes2);
@@ -41753,7 +42440,7 @@ function sha2565(value, to_) {
 function commitmentToVersionedHash(parameters) {
   const { commitment, version: version5 = 1 } = parameters;
   const to = parameters.to ?? (typeof commitment === "string" ? "hex" : "bytes");
-  const versionedHash = sha2565(commitment, "bytes");
+  const versionedHash = sha2566(commitment, "bytes");
   versionedHash.set([version5], 0);
   return to === "bytes" ? versionedHash : bytesToHex2(versionedHash);
 }
@@ -41901,6 +42588,7 @@ function getTransactionType(transaction) {
 
 // ../node_modules/viem/_esm/actions/public/fillTransaction.js
 init_parseAccount();
+init_transaction();
 
 // ../node_modules/viem/_esm/utils/errors/getTransactionError.js
 init_node();
@@ -41953,8 +42641,8 @@ async function fillTransaction(client, parameters) {
   })();
   assertRequest(parameters);
   const chainFormat = chain2?.formatters?.transactionRequest?.format;
-  const format = chainFormat || formatTransactionRequest;
-  const request = format({
+  const format2 = chainFormat || formatTransactionRequest;
+  const request = format2({
     // Pick out extra data that might exist on the chain's transaction request type.
     ...extract(rest, { format: chainFormat }),
     account: account ? parseAccount(account) : void 0,
@@ -41978,8 +42666,8 @@ async function fillTransaction(client, parameters) {
       method: "eth_fillTransaction",
       params: [request]
     });
-    const format2 = chain2?.formatters?.transaction?.format || formatTransaction;
-    const transaction = format2(response.tx);
+    const format3 = chain2?.formatters?.transaction?.format || formatTransaction;
+    const transaction = format3(response.tx);
     delete transaction.blockHash;
     delete transaction.blockNumber;
     delete transaction.r;
@@ -41988,35 +42676,41 @@ async function fillTransaction(client, parameters) {
     delete transaction.v;
     delete transaction.yParity;
     transaction.data = transaction.input;
-    if (transaction.gas)
-      transaction.gas = parameters.gas ?? transaction.gas;
-    if (transaction.gasPrice)
-      transaction.gasPrice = parameters.gasPrice ?? transaction.gasPrice;
-    if (transaction.maxFeePerBlobGas)
-      transaction.maxFeePerBlobGas = parameters.maxFeePerBlobGas ?? transaction.maxFeePerBlobGas;
-    if (transaction.maxFeePerGas)
-      transaction.maxFeePerGas = parameters.maxFeePerGas ?? transaction.maxFeePerGas;
-    if (transaction.maxPriorityFeePerGas)
-      transaction.maxPriorityFeePerGas = parameters.maxPriorityFeePerGas ?? transaction.maxPriorityFeePerGas;
-    if (typeof transaction.nonce !== "undefined")
-      transaction.nonce = parameters.nonce ?? transaction.nonce;
-    const feeMultiplier = await (async () => {
-      if (typeof chain2?.fees?.baseFeeMultiplier === "function") {
-        const block = await getAction(client, getBlock, "getBlock")({});
-        return chain2.fees.baseFeeMultiplier({
-          block,
-          client,
-          request: parameters
-        });
-      }
-      return chain2?.fees?.baseFeeMultiplier ?? 1.2;
-    })();
-    if (feeMultiplier < 1)
-      throw new BaseFeeScalarError();
-    const decimals = feeMultiplier.toString().split(".")[1]?.length ?? 0;
-    const denominator = 10 ** decimals;
-    const multiplyFee = (base2) => base2 * BigInt(Math.ceil(feeMultiplier * denominator)) / BigInt(denominator);
-    if (!transaction.feePayerSignature) {
+    const hasFeePayerSignature = typeof transaction.feePayerSignature !== "undefined" && transaction.feePayerSignature !== null;
+    if (hasFeePayerSignature && typeof nonce !== "undefined" && transaction.nonce !== nonce)
+      throw new FeePayerNonceMismatchError({
+        filledNonce: transaction.nonce,
+        requestedNonce: nonce
+      });
+    if (!hasFeePayerSignature) {
+      if (transaction.gas)
+        transaction.gas = parameters.gas ?? transaction.gas;
+      if (transaction.gasPrice)
+        transaction.gasPrice = parameters.gasPrice ?? transaction.gasPrice;
+      if (transaction.maxFeePerBlobGas)
+        transaction.maxFeePerBlobGas = parameters.maxFeePerBlobGas ?? transaction.maxFeePerBlobGas;
+      if (transaction.maxFeePerGas)
+        transaction.maxFeePerGas = parameters.maxFeePerGas ?? transaction.maxFeePerGas;
+      if (transaction.maxPriorityFeePerGas)
+        transaction.maxPriorityFeePerGas = parameters.maxPriorityFeePerGas ?? transaction.maxPriorityFeePerGas;
+      if (typeof transaction.nonce !== "undefined")
+        transaction.nonce = parameters.nonce ?? transaction.nonce;
+      const feeMultiplier = await (async () => {
+        if (typeof chain2?.fees?.baseFeeMultiplier === "function") {
+          const block = await getAction(client, getBlock, "getBlock")({});
+          return chain2.fees.baseFeeMultiplier({
+            block,
+            client,
+            request: parameters
+          });
+        }
+        return chain2?.fees?.baseFeeMultiplier ?? 1.2;
+      })();
+      if (feeMultiplier < 1)
+        throw new BaseFeeScalarError();
+      const decimals = feeMultiplier.toString().split(".")[1]?.length ?? 0;
+      const denominator = 10 ** decimals;
+      const multiplyFee = (base2) => base2 * BigInt(Math.round(feeMultiplier * denominator)) / BigInt(denominator);
       if (transaction.maxFeePerGas && !parameters.maxFeePerGas)
         transaction.maxFeePerGas = multiplyFee(transaction.maxFeePerGas);
       if (transaction.gasPrice && !parameters.gasPrice)
@@ -42079,8 +42773,17 @@ async function prepareTransactionRequest(client, args) {
     chainId = chainId_;
     return chainId;
   }
-  const account = account_ ? parseAccount(account_) : account_;
+  let account = account_ ? parseAccount(account_) : account_;
   let nonce = request.nonce;
+  if (prepareTransactionRequest2?.fn && prepareTransactionRequest2.runAt?.includes("beforeFillTransaction")) {
+    request = await prepareTransactionRequest2.fn({ ...request, chain: chain2 }, {
+      client,
+      phase: "beforeFillTransaction"
+    });
+    nonce ??= request.nonce;
+    const sender = request.account ?? request.from;
+    account = sender ? parseAccount(sender) : void 0;
+  }
   if (parameters.includes("nonce") && typeof nonce === "undefined" && account && nonceManager) {
     const chainId2 = await getChainId2();
     nonce = await nonceManager.consume({
@@ -42089,16 +42792,11 @@ async function prepareTransactionRequest(client, args) {
       client
     });
   }
-  if (prepareTransactionRequest2?.fn && prepareTransactionRequest2.runAt?.includes("beforeFillTransaction")) {
-    request = await prepareTransactionRequest2.fn({ ...request, chain: chain2 }, {
-      client,
-      phase: "beforeFillTransaction"
-    });
-    nonce ??= request.nonce;
-  }
   const attemptFill = (() => {
     if ((parameters.includes("blobVersionedHashes") || parameters.includes("sidecars")) && request.kzg && request.blobs)
       return false;
+    if (parameters.length > 0 && "feePayer" in request && request.feePayer && !("feePayerSignature" in request && request.feePayerSignature))
+      return true;
     if (supportsFillTransaction.get(client.uid) === false)
       return false;
     const shouldAttempt = ["fees", "gas"].some((parameter) => parameters.includes(parameter));
@@ -42115,11 +42813,14 @@ async function prepareTransactionRequest(client, args) {
     return false;
   })();
   const fillResult = attemptFill ? await getAction(client, fillTransaction, "fillTransaction")({ ...request, nonce }).then((result) => {
-    const { chainId: chainId2, from: from14, gas: gas2, gasPrice, nonce: nonce2, maxFeePerBlobGas, maxFeePerGas, maxPriorityFeePerGas, type: type2, ...rest } = result.transaction;
+    const { chainId: chainId2, from: from16, gas: gas2, gasPrice, nonce: nonce2, maxFeePerBlobGas, maxFeePerGas, maxPriorityFeePerGas, type: type2, ...rest } = result.transaction;
+    const feeToken = "feeToken" in rest ? rest.feeToken : void 0;
+    const hasFilledFeePayerSignature = "feePayerSignature" in rest && rest.feePayerSignature !== null && typeof rest.feePayerSignature !== "undefined";
+    const shouldUseFilledFeeToken = typeof feeToken !== "undefined" && feeToken !== null && (!("feeToken" in request) || hasFilledFeePayerSignature);
     supportsFillTransaction.set(client.uid, true);
     return {
       ...request,
-      ...from14 ? { from: from14 } : {},
+      ...from16 ? { from: from16 } : {},
       ...type2 && !request.type ? { type: type2 } : {},
       ...typeof chainId2 !== "undefined" ? { chainId: chainId2 } : {},
       ...typeof gas2 !== "undefined" ? { gas: gas2 } : {},
@@ -42131,13 +42832,16 @@ async function prepareTransactionRequest(client, args) {
       ..."nonceKey" in rest && typeof rest.nonceKey !== "undefined" ? { nonceKey: rest.nonceKey } : {},
       ..."keyAuthorization" in rest && typeof rest.keyAuthorization !== "undefined" && rest.keyAuthorization !== null && !("keyAuthorization" in request) ? { keyAuthorization: rest.keyAuthorization } : {},
       ..."feePayerSignature" in rest && typeof rest.feePayerSignature !== "undefined" && rest.feePayerSignature !== null ? { feePayerSignature: rest.feePayerSignature } : {},
-      ..."feeToken" in rest && typeof rest.feeToken !== "undefined" && rest.feeToken !== null && !("feeToken" in request) ? { feeToken: rest.feeToken } : {},
+      ...shouldUseFilledFeeToken ? { feeToken } : {},
       ...result.capabilities ? { _capabilities: result.capabilities } : {}
     };
   }).catch((e) => {
     const error = e;
     if (error.name !== "TransactionExecutionError")
       return request;
+    const nonceMismatch = error.walk?.((error2) => error2 instanceof FeePayerNonceMismatchError);
+    if (nonceMismatch)
+      throw e;
     const executionReverted = error.walk?.((e2) => {
       const error2 = e2;
       return error2.name === "ExecutionRevertedError";
@@ -42294,8 +42998,8 @@ async function estimateGas(client, args) {
     const rpcStateOverride = serializeStateOverride(stateOverride);
     assertRequest(args);
     const chainFormat = client.chain?.formatters?.transactionRequest?.format;
-    const format = chainFormat || formatTransactionRequest;
-    const request = format({
+    const format2 = chainFormat || formatTransactionRequest;
+    const request = format2({
       // Pick out extra data that might exist on the chain's transaction request type.
       ...extract(rest, { format: chainFormat }),
       account,
@@ -43178,8 +43882,8 @@ async function sendTransaction(client, parameters) {
           });
       }
       const chainFormat = client.chain?.formatters?.transactionRequest?.format;
-      const format = chainFormat || formatTransactionRequest;
-      const request = format({
+      const format2 = chainFormat || formatTransactionRequest;
+      const request = format2({
         // Pick out extra data that might exist on the chain's transaction request type.
         ...extract(rest, { format: chainFormat }),
         accessList,
@@ -43229,17 +43933,29 @@ async function sendTransaction(client, parameters) {
       }
     }
     if (account?.type === "local") {
-      if (account.nonceManager && typeof nonce === "undefined") {
-        const requestChainId = rest.chainId;
-        const chainId = await (async () => {
-          if (typeof requestChainId === "number")
-            return requestChainId;
-          if (chain2)
-            return chain2.id;
-          return getAction(client, getChainId, "getChainId")({});
-        })();
-        nonceManagerParameters = { address: account.address, chainId };
-      }
+      const nonceManager = (() => {
+        if (!account.nonceManager || typeof nonce !== "undefined")
+          return account.nonceManager;
+        const nonceManager2 = account.nonceManager;
+        return {
+          consume(parameters2) {
+            nonceManagerParameters = {
+              address: parameters2.address,
+              chainId: parameters2.chainId
+            };
+            return nonceManager2.consume(parameters2);
+          },
+          get(parameters2) {
+            return nonceManager2.get(parameters2);
+          },
+          increment(parameters2) {
+            return nonceManager2.increment(parameters2);
+          },
+          reset(parameters2) {
+            return nonceManager2.reset(parameters2);
+          }
+        };
+      })();
       const request = await getAction(client, prepareTransactionRequest, "prepareTransactionRequest")({
         account,
         accessList,
@@ -43253,7 +43969,7 @@ async function sendTransaction(client, parameters) {
         maxFeePerGas,
         maxPriorityFeePerGas,
         nonce,
-        nonceManager: account.nonceManager,
+        nonceManager,
         parameters: [...defaultParameters, "sidecars"],
         type,
         value,
@@ -43373,7 +44089,7 @@ function withRetry(fn, { delay: delay_ = 100, retryCount = 2, shouldRetry: shoul
             return;
           }
         }
-        attemptRetry({ count: count + 1 });
+        return attemptRetry({ count: count + 1 });
       };
       try {
         const data4 = await fn();
@@ -43392,7 +44108,7 @@ function withRetry(fn, { delay: delay_ = 100, retryCount = 2, shouldRetry: shoul
         reject(err);
       }
     };
-    attemptRetry();
+    void attemptRetry().catch(reject);
   });
 }
 
@@ -43698,7 +44414,7 @@ function uid(length = 11) {
 
 // ../node_modules/viem/_esm/clients/createClient.js
 function createClient(parameters) {
-  const { batch, chain: chain2, ccipRead, dataSuffix, key = "base", name = "Base Client", type = "base" } = parameters;
+  const { batch, chain: chain2, ccipRead, dataSuffix, key = "base", name = "Base Client", tokens, type = "base" } = parameters;
   const experimental_blockTag = parameters.experimental_blockTag ?? (typeof chain2?.experimental_preconfirmationTime === "number" ? "pending" : void 0);
   const blockTime = chain2?.blockTime ?? 12e3;
   const defaultPollingInterval = Math.min(Math.max(Math.floor(blockTime / 2), 500), 4e3);
@@ -43722,6 +44438,7 @@ function createClient(parameters) {
     name,
     pollingInterval,
     request,
+    tokens,
     transport,
     type,
     uid: uid(),
@@ -43733,10 +44450,47 @@ function createClient(parameters) {
       for (const key2 in client)
         delete extended[key2];
       const combined = { ...base2, ...extended };
+      for (const key2 in extended) {
+        const a = base2[key2];
+        const b2 = extended[key2];
+        if (isPlainObject(a) && isPlainObject(b2))
+          combined[key2] = { ...a, ...b2 };
+      }
       return Object.assign(combined, { extend: extend(combined) });
     };
   }
   return Object.assign(client, { extend: extend(client) });
+}
+function isPlainObject(value) {
+  if (typeof value !== "object" || value === null)
+    return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+function bindActionDecorators(client, action) {
+  const wrapped = (parameters = {}) => action(client, parameters);
+  for (const key of [
+    "call",
+    "calls",
+    "callWithPeriod",
+    "estimateGas",
+    "prepare",
+    "prepareRecipient",
+    "predict",
+    "simulate"
+  ])
+    if (Object.hasOwn(action, key)) {
+      const helper = action[key];
+      wrapped[key] = (args = {}) => {
+        if (helper.length === 1)
+          return helper(args);
+        return helper(client, args);
+      };
+    }
+  for (const key of ["extractEvent", "extractEvents"])
+    if (Object.hasOwn(action, key))
+      wrapped[key] = action[key];
+  return wrapped;
 }
 
 // ../node_modules/viem/_esm/actions/ens/getEnsAddress.js
@@ -44345,8 +45099,8 @@ async function createAccessList(client, args) {
     const blockNumberHex = typeof blockNumber === "bigint" ? numberToHex(blockNumber) : void 0;
     const block = blockNumberHex || blockTag;
     const chainFormat = client.chain?.formatters?.transactionRequest?.format;
-    const format = chainFormat || formatTransactionRequest;
-    const request = format({
+    const format2 = chainFormat || formatTransactionRequest;
+    const request = format2({
       // Pick out extra data that might exist on the chain's transaction request type.
       ...extract(rest, { format: chainFormat }),
       account,
@@ -44503,8 +45257,8 @@ async function getBlockReceipts(client, { blockHash, blockNumber, blockTag = cli
   }, { dedupe: Boolean(blockHash || blockNumberHex) });
   if (!receipts)
     throw new BlockNotFoundError({ blockHash, blockNumber });
-  const format = client.chain?.formatters?.transactionReceipt?.format || formatTransactionReceipt2;
-  return receipts.map((receipt) => format(receipt, "getBlockReceipts"));
+  const format2 = client.chain?.formatters?.transactionReceipt?.format || formatTransactionReceipt2;
+  return receipts.map((receipt) => format2(receipt, "getBlockReceipts"));
 }
 
 // ../node_modules/viem/_esm/actions/public/getBlockTransactionCount.js
@@ -44675,6 +45429,9 @@ async function getFilterLogs(_client, { filter }) {
 
 // ../node_modules/viem/_esm/actions/public/getProof.js
 init_formatBlockParameter();
+
+// ../node_modules/viem/_esm/utils/index.js
+init_encodeFunctionData();
 
 // ../node_modules/viem/_esm/utils/authorization/serializeAuthorizationList.js
 init_toHex();
@@ -45295,11 +46052,12 @@ function createIdStore() {
 var idCache = /* @__PURE__ */ createIdStore();
 
 // ../node_modules/viem/_esm/utils/rpc/http.js
+var defaultMaxResponseBodySize = 10485760;
 function getHttpRpcClient(url_, options = {}) {
   const { url, headers: headers_url } = parseUrl(url_);
   return {
     async request(params) {
-      const { body, fetchFn = options.fetchFn ?? fetch, onRequest = options.onRequest, onResponse = options.onResponse, timeout = options.timeout ?? 1e4 } = params;
+      const { body, fetchFn = options.fetchFn ?? fetch, maxResponseBodySize = options.maxResponseBodySize ?? defaultMaxResponseBodySize, onRequest = options.onRequest, onResponse = options.onResponse, timeout = options.timeout ?? 1e4 } = params;
       const fetchOptions = {
         ...options.fetchOptions ?? {},
         ...params.fetchOptions ?? {}
@@ -45338,10 +46096,13 @@ function getHttpRpcClient(url_, options = {}) {
         if (onResponse)
           await onResponse(response);
         let data4;
+        const responseBody = await readResponseBody(response, {
+          maxResponseBodySize
+        });
         if (response.headers.get("Content-Type")?.startsWith("application/json"))
-          data4 = await response.json();
+          data4 = JSON.parse(responseBody);
         else {
-          data4 = await response.text();
+          data4 = responseBody;
           try {
             data4 = JSON.parse(data4 || "{}");
           } catch (err) {
@@ -45369,6 +46130,8 @@ function getHttpRpcClient(url_, options = {}) {
           throw err;
         if (err instanceof HttpRequestError)
           throw err;
+        if (err instanceof ResponseBodyTooLargeError)
+          throw err;
         if (err instanceof TimeoutError)
           throw err;
         throw new HttpRequestError({
@@ -45379,6 +46142,53 @@ function getHttpRpcClient(url_, options = {}) {
       }
     }
   };
+}
+async function readResponseBody(response, { maxResponseBodySize }) {
+  if (maxResponseBodySize === false)
+    return response.text();
+  const contentLength = response.headers.get("Content-Length");
+  if (contentLength) {
+    const size6 = Number(contentLength);
+    if (size6 > maxResponseBodySize)
+      throw new ResponseBodyTooLargeError({
+        maxSize: maxResponseBodySize,
+        size: size6
+      });
+  }
+  if (!response.body) {
+    const body2 = await response.text();
+    const size6 = new TextEncoder().encode(body2).length;
+    if (size6 > maxResponseBodySize)
+      throw new ResponseBodyTooLargeError({
+        maxSize: maxResponseBodySize,
+        size: size6
+      });
+    return body2;
+  }
+  const reader = response.body.getReader();
+  const decoder2 = new TextDecoder();
+  let body = "";
+  let size5 = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done)
+        break;
+      size5 += value.byteLength;
+      if (size5 > maxResponseBodySize) {
+        await reader.cancel();
+        throw new ResponseBodyTooLargeError({
+          maxSize: maxResponseBodySize,
+          size: size5
+        });
+      }
+      body += decoder2.decode(value, { stream: true });
+    }
+    body += decoder2.decode();
+    return body;
+  } finally {
+    reader.releaseLock();
+  }
 }
 function parseUrl(url_) {
   try {
@@ -45464,6 +46274,15 @@ var InvalidStructTypeError = class extends BaseError2 {
     });
   }
 };
+var InvalidTypedDataTypeError = class extends BaseError2 {
+  constructor({ type }) {
+    const canonicalType = type.replace(/^(u?int)/, "$&256");
+    super(`Type "${type}" is not a valid EIP-712 type.`, {
+      metaMessages: [`Use "${canonicalType}" instead.`],
+      name: "InvalidTypedDataTypeError"
+    });
+  }
+};
 
 // ../node_modules/viem/_esm/utils/typedData.js
 init_isAddress();
@@ -45502,6 +46321,9 @@ function validateTypedData(parameters) {
     for (const param of struct) {
       const { name, type } = param;
       const value = data4[name];
+      const baseType = type.replace(/(\[[0-9]*\])+$/, "");
+      if (baseType === "int" || baseType === "uint")
+        throw new InvalidTypedDataTypeError({ type });
       const integerMatch = type.match(integerRegex2);
       if (integerMatch && (typeof value === "number" || typeof value === "bigint")) {
         const [_type, base2, size_] = integerMatch;
@@ -45684,7 +46506,7 @@ var SignatureErc8010_exports = {};
 __export(SignatureErc8010_exports, {
   InvalidWrappedSignatureError: () => InvalidWrappedSignatureError,
   assert: () => assert7,
-  from: () => from9,
+  from: () => from10,
   magicBytes: () => magicBytes,
   suffixParameters: () => suffixParameters,
   unwrap: () => unwrap,
@@ -46376,14 +47198,14 @@ var SHA2563 = class extends HashMD2 {
     clean2(this.buffer);
   }
 };
-var sha2566 = /* @__PURE__ */ createHasher3(() => new SHA2563());
+var sha2567 = /* @__PURE__ */ createHasher3(() => new SHA2563());
 
 // ../node_modules/ox/_esm/core/Hash.js
 init_Bytes();
 init_Hex();
 function keccak2563(value, options = {}) {
   const { as = typeof value === "string" ? "Hex" : "Bytes" } = options;
-  const bytes2 = keccak_2563(from(value));
+  const bytes2 = keccak_2563(from2(value));
   if (as === "Bytes")
     return bytes2;
   return fromBytes(bytes2);
@@ -46415,7 +47237,7 @@ function assert4(publicKey, options = {}) {
   }
   throw new InvalidError({ publicKey });
 }
-function from3(value) {
+function from4(value) {
   const publicKey = (() => {
     if (validate2(value))
       return fromHex2(value);
@@ -46530,7 +47352,7 @@ var InvalidSerializedSizeError = class extends BaseError3 {
     super(`Value \`${publicKey}\` is an invalid public key size.`, {
       metaMessages: [
         "Expected: 33 bytes (compressed + prefix), 64 bytes (uncompressed) or 65 bytes (uncompressed + prefix).",
-        `Received ${size3(from2(publicKey))} bytes.`
+        `Received ${size3(from3(publicKey))} bytes.`
       ]
     });
     Object.defineProperty(this, "name", {
@@ -46580,7 +47402,7 @@ function checksum8(address) {
   checksum7.set(address, result);
   return result;
 }
-function from4(address, options = {}) {
+function from5(address, options = {}) {
   const { checksum: checksumVal = false } = options;
   assert5(address);
   if (checksumVal)
@@ -46589,7 +47411,7 @@ function from4(address, options = {}) {
 }
 function fromPublicKey(publicKey, options = {}) {
   const address = keccak2563(`0x${toHex2(publicKey).slice(4)}`).substring(26);
-  return from4(`0x${address}`, options);
+  return from5(`0x${address}`, options);
 }
 function validate3(address, options = {}) {
   const { strict = true } = options ?? {};
@@ -46782,7 +47604,7 @@ function decodeAddress3(cursor, options = {}) {
 }
 function decodeArray2(cursor, param, options) {
   const { checksumAddress: checksumAddress2, length, staticPosition } = options;
-  if (!length) {
+  if (length === null) {
     const offset = toNumber3(cursor.readBytes(sizeOfOffset2));
     const start = staticPosition + offset;
     const startOfData = start + sizeOfLength2;
@@ -46799,6 +47621,10 @@ function decodeArray2(cursor, param, options) {
       });
       consumed2 += consumed_;
       value2.push(data4);
+      if (consumed_ === 0) {
+        cursor.assertReadLimit();
+        cursor._touch();
+      }
     }
     cursor.setPosition(staticPosition + 32);
     return [value2, 32];
@@ -46827,6 +47653,10 @@ function decodeArray2(cursor, param, options) {
     });
     consumed += consumed_;
     value.push(data4);
+    if (consumed_ === 0) {
+      cursor.assertReadLimit();
+      cursor._touch();
+    }
   }
   return [value, consumed];
 }
@@ -47003,7 +47833,7 @@ function encodeArray2(value, options) {
       givenLength: value.length,
       type: `${parameter.type}[${length}]`
     });
-  let dynamicChild = false;
+  let dynamicChild = value.length === 0 && hasDynamicChild2(parameter);
   const preparedParameters = [];
   for (let i = 0; i < value.length; i++) {
     const preparedParam = prepareParameter({
@@ -47356,7 +48186,8 @@ function decode2(parameters, data4, options = {}) {
   const values = as === "Array" ? [] : {};
   for (let i = 0; i < parameters.length; ++i) {
     const param = parameters[i];
-    cursor.setPosition(consumed);
+    if (consumed < bytes2.length)
+      cursor.setPosition(consumed);
     const [data5, consumed_] = decodeParameter2(cursor, param, {
       checksumAddress: checksumAddress2,
       staticPosition: 0
@@ -47447,7 +48278,7 @@ function encodePacked(types, values) {
   }
   encodePacked2.encode = encode4;
 })(encodePacked || (encodePacked = {}));
-function from5(parameters) {
+function from6(parameters) {
   if (Array.isArray(parameters) && typeof parameters[0] === "string")
     return parseAbiParameters(parameters);
   if (typeof parameters === "string")
@@ -47548,7 +48379,7 @@ init_Hex();
 init_Bytes();
 init_Errors();
 init_Hex();
-function from6(value, options) {
+function from7(value, options) {
   const { as } = options;
   const encodable = getEncodable2(value);
   const cursor = create(new Uint8Array(encodable.length));
@@ -47559,7 +48390,7 @@ function from6(value, options) {
 }
 function fromHex3(hex2, options = {}) {
   const { as = "Hex" } = options;
-  return from6(hex2, { as });
+  return from7(hex2, { as });
 }
 function getEncodable2(bytes2) {
   if (Array.isArray(bytes2))
@@ -48776,7 +49607,7 @@ function weierstrass3(curveDef) {
   function normalizeS(s) {
     return isBiggerThanHalfOrder(s) ? modN2(-s) : s;
   }
-  const slcNum = (b2, from14, to) => bytesToNumberBE3(b2.slice(from14, to));
+  const slcNum = (b2, from16, to) => bytesToNumberBE3(b2.slice(from16, to));
   class Signature2 {
     constructor(r, s, recovery) {
       aInRange2("r", r, _1n17, CURVE_ORDER);
@@ -48979,14 +49810,14 @@ function weierstrass3(curveDef) {
     const sg = signature;
     msgHash = ensureBytes3("msgHash", msgHash);
     publicKey = ensureBytes3("publicKey", publicKey);
-    const { lowS, prehash, format } = opts;
+    const { lowS, prehash, format: format2 } = opts;
     validateSigVerOpts2(opts);
     if ("strict" in opts)
       throw new Error("options.strict was renamed to lowS");
-    if (format !== void 0 && format !== "compact" && format !== "der")
+    if (format2 !== void 0 && format2 !== "compact" && format2 !== "der")
       throw new Error("format must be compact or der");
     const isHex2 = typeof sg === "string" || isBytes3(sg);
-    const isObj = !isHex2 && !format && typeof sg === "object" && sg !== null && typeof sg.r === "bigint" && typeof sg.s === "bigint";
+    const isObj = !isHex2 && !format2 && typeof sg === "object" && sg !== null && typeof sg.r === "bigint" && typeof sg.s === "bigint";
     if (!isHex2 && !isObj)
       throw new Error("invalid signature, expected Uint8Array, hex string or Signature instance");
     let _sig = void 0;
@@ -48996,13 +49827,13 @@ function weierstrass3(curveDef) {
         _sig = new Signature2(sg.r, sg.s);
       if (isHex2) {
         try {
-          if (format !== "compact")
+          if (format2 !== "compact")
             _sig = Signature2.fromDER(sg);
         } catch (derError) {
           if (!(derError instanceof DER3.Err))
             throw derError;
         }
-        if (!_sig && format !== "der")
+        if (!_sig && format2 !== "der")
           _sig = Signature2.fromCompact(sg);
       }
       P = Point3.fromHex(publicKey);
@@ -49117,7 +49948,7 @@ var secp256k13 = createCurve3({
       return { k1neg, k1, k2neg, k2 };
     }
   }
-}, sha2566);
+}, sha2567);
 
 // ../node_modules/ox/_esm/core/Signature.js
 init_Errors();
@@ -49172,9 +50003,9 @@ function extract2(value) {
     return void 0;
   if (typeof value.s === "undefined")
     return void 0;
-  return from7(value);
+  return from8(value);
 }
-function from7(signature) {
+function from8(signature) {
   const signature_ = (() => {
     if (typeof signature === "string")
       return fromHex4(signature);
@@ -49238,7 +50069,7 @@ var InvalidSerializedSizeError2 = class extends BaseError3 {
     super(`Value \`${signature}\` is an invalid signature size.`, {
       metaMessages: [
         "Expected: 64 bytes or 65 bytes.",
-        `Received ${size3(from2(signature))} bytes.`
+        `Received ${size3(from3(signature))} bytes.`
       ]
     });
     Object.defineProperty(this, "name", {
@@ -49306,7 +50137,7 @@ var InvalidVError = class extends BaseError3 {
 };
 
 // ../node_modules/ox/_esm/core/Authorization.js
-function from8(authorization, options = {}) {
+function from9(authorization, options = {}) {
   if (typeof authorization.chainId === "string")
     return fromRpc3(authorization);
   return { ...authorization, ...options.signature };
@@ -49356,13 +50187,13 @@ function recoverPublicKey2(options) {
   const { payload, signature } = options;
   const { r, s, yParity } = signature;
   const signature_ = new secp256k13.Signature(BigInt(r), BigInt(s)).addRecoveryBit(yParity);
-  const point = signature_.recoverPublicKey(from2(payload).substring(2));
-  return from3(point);
+  const point = signature_.recoverPublicKey(from3(payload).substring(2));
+  return from4(point);
 }
 
 // ../node_modules/ox/_esm/erc8010/SignatureErc8010.js
 var magicBytes = "0x8010801080108010801080108010801080108010801080108010801080108010";
-var suffixParameters = from5("(uint256 chainId, address delegation, uint256 nonce, uint8 yParity, uint256 r, uint256 s), address to, bytes data");
+var suffixParameters = from6("(uint256 chainId, address delegation, uint256 nonce, uint8 yParity, uint256 r, uint256 s), address to, bytes data");
 function assert7(value) {
   if (typeof value === "string") {
     if (slice3(value, -32) !== magicBytes)
@@ -49370,7 +50201,7 @@ function assert7(value) {
   } else
     assert6(value.authorization);
 }
-function from9(value) {
+function from10(value) {
   if (typeof value === "string")
     return unwrap(value);
   return value;
@@ -49381,7 +50212,7 @@ function unwrap(wrapped) {
   const suffix = slice3(wrapped, -suffixLength - 64, -64);
   const signature = slice3(wrapped, 0, -suffixLength - 64);
   const [auth, to, data4] = decode2(suffixParameters, suffix);
-  const authorization = from8({
+  const authorization = from9({
     address: auth.delegation,
     chainId: Number(auth.chainId),
     nonce: auth.nonce,
@@ -49400,7 +50231,7 @@ function wrap(value) {
   assert7(value);
   const self = recoverAddress3({
     payload: getSignPayload(value.authorization),
-    signature: from7(value.authorization)
+    signature: from8(value.authorization)
   });
   const suffix = encode2(suffixParameters, [
     {
@@ -49443,6 +50274,18 @@ function parseErc6492Signature(signature) {
   return { address, data: data4, signature: signature_ };
 }
 
+// ../node_modules/viem/_esm/utils/unit/formatUnits.js
+init_Value();
+function formatUnits2(value, decimals) {
+  return format(value, decimals);
+}
+
+// ../node_modules/viem/_esm/utils/unit/parseUnits.js
+init_Value();
+function parseUnits3(value, decimals) {
+  return from(value, decimals);
+}
+
 // ../node_modules/viem/_esm/utils/formatters/proof.js
 function formatStorageProof(storageProof) {
   return storageProof.map((proof) => ({
@@ -49472,6 +50315,18 @@ async function getProof(client, { address, blockHash, blockNumber, blockTag = "l
     params: [address, storageKeys, block]
   });
   return formatProof(proof);
+}
+
+// ../node_modules/viem/_esm/actions/public/getRawTransaction.js
+init_transaction();
+async function getRawTransaction(client, { hash: hash4 }) {
+  const rawTransaction = await client.request({
+    method: "eth_getRawTransactionByHash",
+    params: [hash4]
+  }, { dedupe: true });
+  if (!rawTransaction)
+    throw new TransactionNotFoundError({ hash: hash4 });
+  return rawTransaction;
 }
 
 // ../node_modules/viem/_esm/actions/public/getStorageAt.js
@@ -49526,8 +50381,8 @@ async function getTransaction(client, { blockHash, blockNumber, blockTag: blockT
       hash: hash4,
       index: index2
     });
-  const format = client.chain?.formatters?.transaction?.format || formatTransaction;
-  return format(transaction, "getTransaction");
+  const format2 = client.chain?.formatters?.transaction?.format || formatTransaction;
+  return format2(transaction, "getTransaction");
 }
 
 // ../node_modules/viem/_esm/actions/public/getTransactionConfirmations.js
@@ -49551,8 +50406,8 @@ async function getTransactionReceipt(client, { hash: hash4 }) {
   }, { dedupe: true });
   if (!receipt)
     throw new TransactionReceiptNotFoundError({ hash: hash4 });
-  const format = client.chain?.formatters?.transactionReceipt?.format || formatTransactionReceipt2;
-  return format(receipt, "getTransactionReceipt");
+  const format2 = client.chain?.formatters?.transactionReceipt?.format || formatTransactionReceipt2;
+  return format2(receipt, "getTransactionReceipt");
 }
 
 // ../node_modules/viem/_esm/actions/public/multicall.js
@@ -49564,10 +50419,14 @@ init_contract();
 init_decodeFunctionResult();
 init_encodeFunctionData();
 init_getChainContractAddress();
+init_createBatchScheduler();
+init_stringify();
 async function multicall(client, parameters) {
   const { account, authorizationList, allowFailure = true, blockHash, blockNumber, blockOverrides, blockTag, requireCanonical, stateOverride } = parameters;
   const contracts3 = parameters.contracts;
-  const { batchSize = parameters.batchSize ?? 1024, deployless = parameters.deployless ?? false } = typeof client.batch?.multicall === "object" ? client.batch.multicall : {};
+  const batch = typeof client.batch?.multicall === "object" ? client.batch.multicall : {};
+  const batchSize = parameters.batchSize ?? batch.batchSize ?? 1024;
+  const deployless = parameters.deployless ?? batch.deployless ?? false;
   const multicallAddress = (() => {
     if (parameters.multicallAddress)
       return parameters.multicallAddress;
@@ -49629,27 +50488,45 @@ async function multicall(client, parameters) {
       ];
     }
   }
-  const aggregate3Results = await Promise.allSettled(chunkedCalls.map((calls) => getAction(client, readContract, "readContract")({
-    ...multicallAddress === null ? { code: multicall3Bytecode } : { address: multicallAddress },
-    abi: multicall3Abi,
-    account,
-    args: [calls],
-    authorizationList,
-    blockHash,
-    blockNumber,
-    blockOverrides,
-    blockTag,
-    functionName: "aggregate3",
-    requireCanonical,
-    stateOverride
-  })));
+  const batching = Boolean(client.batch?.multicall);
+  const batches = batching ? chunkedCalls.flatMap((calls) => calls.map((call2) => [call2])) : chunkedCalls;
+  const aggregate3Results = await Promise.allSettled(batches.map((calls) => {
+    if (batching)
+      return scheduleMulticall2(client, {
+        account,
+        authorizationList,
+        batchSize,
+        blockHash,
+        blockNumber,
+        blockOverrides,
+        blockTag,
+        call: calls[0],
+        multicallAddress,
+        requireCanonical,
+        stateOverride
+      }).then((result) => [result]);
+    return getAction(client, readContract, "readContract")({
+      ...multicallAddress === null ? { code: multicall3Bytecode } : { address: multicallAddress },
+      abi: multicall3Abi,
+      account,
+      args: [calls],
+      authorizationList,
+      blockHash,
+      blockNumber,
+      blockOverrides,
+      blockTag,
+      functionName: "aggregate3",
+      requireCanonical,
+      stateOverride
+    });
+  }));
   const results = [];
   for (let i = 0; i < aggregate3Results.length; i++) {
     const result = aggregate3Results[i];
     if (result.status === "rejected") {
       if (!allowFailure)
         throw result.reason;
-      for (let j = 0; j < chunkedCalls[i].length; j++) {
+      for (let j = 0; j < batches[i].length; j++) {
         results.push({
           status: "failure",
           error: result.reason,
@@ -49661,7 +50538,7 @@ async function multicall(client, parameters) {
     const aggregate3Result = result.value;
     for (let j = 0; j < aggregate3Result.length; j++) {
       const { returnData, success } = aggregate3Result[j];
-      const { callData } = chunkedCalls[i][j];
+      const { callData } = batches[i][j];
       const { abi: abi2, address, functionName, args } = contracts3[results.length];
       try {
         if (callData === "0x")
@@ -49692,6 +50569,29 @@ async function multicall(client, parameters) {
   if (results.length !== contracts3.length)
     throw new BaseError2("multicall results mismatch");
   return results;
+}
+async function scheduleMulticall2(client, parameters) {
+  const { batchSize, call: call2, multicallAddress, ...rest } = parameters;
+  const { wait: wait3 = 0 } = typeof client.batch?.multicall === "object" ? client.batch.multicall : {};
+  const { schedule } = createBatchScheduler({
+    id: stringify3(["multicall", client.uid, batchSize, multicallAddress, rest]),
+    wait: wait3,
+    shouldSplitBatch(calls) {
+      if (batchSize === 0)
+        return false;
+      const size5 = calls.reduce((size6, { callData }) => size6 + (callData.length - 2) / 2, 0);
+      return size5 > batchSize;
+    },
+    fn: (calls) => getAction(client, readContract, "readContract")({
+      ...multicallAddress === null ? { code: multicall3Bytecode } : { address: multicallAddress },
+      ...rest,
+      abi: multicall3Abi,
+      args: [calls],
+      functionName: "aggregate3"
+    })
+  });
+  const [result] = await schedule(call2);
+  return result;
 }
 
 // ../node_modules/viem/_esm/actions/public/simulateBlocks.js
@@ -49903,7 +50803,7 @@ function getAmbiguousTypes2(sourceParameters, targetParameters, args) {
 }
 
 // ../node_modules/ox/_esm/core/AbiItem.js
-function from10(abiItem, options = {}) {
+function from11(abiItem, options = {}) {
   const { prepare = true } = options;
   const item = (() => {
     if (Array.isArray(abiItem))
@@ -50078,8 +50978,8 @@ function encode3(...parameters) {
   const { bytecode, args } = options;
   return concat3(bytecode, abiConstructor.inputs?.length && args?.length ? encode2(abiConstructor.inputs, args) : "0x");
 }
-function from11(abiConstructor) {
-  return from10(abiConstructor);
+function from12(abiConstructor) {
+  return from11(abiConstructor);
 }
 function fromAbi2(abi2) {
   const item = abi2.find((item2) => item2.type === "constructor");
@@ -50088,8 +50988,34 @@ function fromAbi2(abi2) {
   return item;
 }
 
+// ../node_modules/ox/_esm/core/AbiEvent.js
+function from13(abiEvent, options = {}) {
+  return from11(abiEvent, options);
+}
+function getSelector2(abiItem) {
+  return getSignatureHash(abiItem);
+}
+
 // ../node_modules/ox/_esm/core/AbiFunction.js
 init_Hex();
+function decodeResult(...parameters) {
+  const [abiFunction, data4, options = {}] = (() => {
+    if (Array.isArray(parameters[0])) {
+      const [abi2, name, data5, options2] = parameters;
+      return [fromAbi3(abi2, name), data5, options2];
+    }
+    return parameters;
+  })();
+  const values = decode2(abiFunction.outputs, data4, options);
+  if (values && Object.keys(values).length === 0)
+    return void 0;
+  if (values && Object.keys(values).length === 1) {
+    if (Array.isArray(values))
+      return values[0];
+    return Object.values(values)[0];
+  }
+  return values;
+}
 function encodeData2(...parameters) {
   const [abiFunction, args = []] = (() => {
     if (Array.isArray(parameters[0])) {
@@ -50103,12 +51029,12 @@ function encodeData2(...parameters) {
   const item = overloads ? fromAbi3([abiFunction, ...overloads], abiFunction.name, {
     args
   }) : abiFunction;
-  const selector = getSelector2(item);
+  const selector = getSelector3(item);
   const data4 = args.length > 0 ? encode2(item.inputs, args) : void 0;
   return data4 ? concat3(selector, data4) : selector;
 }
-function from12(abiFunction, options = {}) {
-  return from10(abiFunction, options);
+function from14(abiFunction, options = {}) {
+  return from11(abiFunction, options);
 }
 function fromAbi3(abi2, name, options) {
   const item = fromAbi(abi2, name, options);
@@ -50116,7 +51042,7 @@ function fromAbi3(abi2, name, options) {
     throw new NotFoundError({ name, type: "function" });
   return item;
 }
-function getSelector2(abiItem) {
+function getSelector3(abiItem) {
   return getSelector(abiItem);
 }
 
@@ -50130,165 +51056,167 @@ var zeroAddress = "0x0000000000000000000000000000000000000000";
 // ../node_modules/viem/_esm/actions/public/simulateCalls.js
 init_contracts();
 init_base();
-init_encodeFunctionData();
+init_contract();
+init_node();
+init_pad();
+init_fromHex();
+init_call();
 var getBalanceCode = "0x6080604052348015600e575f80fd5b5061016d8061001c5f395ff3fe608060405234801561000f575f80fd5b5060043610610029575f3560e01c8063f8b2cb4f1461002d575b5f80fd5b610047600480360381019061004291906100db565b61005d565b604051610054919061011e565b60405180910390f35b5f8173ffffffffffffffffffffffffffffffffffffffff16319050919050565b5f80fd5b5f73ffffffffffffffffffffffffffffffffffffffff82169050919050565b5f6100aa82610081565b9050919050565b6100ba816100a0565b81146100c4575f80fd5b50565b5f813590506100d5816100b1565b92915050565b5f602082840312156100f0576100ef61007d565b5b5f6100fd848285016100c7565b91505092915050565b5f819050919050565b61011881610106565b82525050565b5f6020820190506101315f83018461010f565b9291505056fea26469706673582212203b9fe929fe995c7cf9887f0bdba8a36dd78e8b73f149b17d2d9ad7cd09d2dc6264736f6c634300081a0033";
+var staticCallCode = "0x608060405234801561000f575f5ffd5b5060043610610029575f3560e01c8063fd00430c1461002d575b5f5ffd5b6100476004803603810190610042919061012b565b610049565b005b80825f375f5f825f865afa610060573d5f5f3e3d5ffd5b3d5f5f3e3d5ff35b5f5ffd5b5f5ffd5b5f73ffffffffffffffffffffffffffffffffffffffff82169050919050565b5f61009982610070565b9050919050565b6100a98161008f565b81146100b3575f5ffd5b50565b5f813590506100c4816100a0565b92915050565b5f5ffd5b5f5ffd5b5f5ffd5b5f5f83601f8401126100eb576100ea6100ca565b5b8235905067ffffffffffffffff811115610108576101076100ce565b5b602083019150836001820283011115610124576101236100d2565b5b9250929050565b5f5f5f6040848603121561014257610141610068565b5b5f61014f868287016100b6565b935050602084013567ffffffffffffffff8111156101705761016f61006c565b5b61017c868287016100d6565b9250925050925092509256fea2646970667358221220635ed99185cacf3f2acba6921f23687c969cec2bbaf5f9ad599f507e6e105e6964736f6c63430008230033";
+var staticCallAddressBase = 0x00000000000000000000000000000000deadbeefn;
+var transferEventSelector = getSelector2(from13("event Transfer(address indexed from, address indexed to, uint256 value)"));
+var balanceOfFunction = from14("function balanceOf(address) returns (uint256)");
+var decimalsFunction = from14("function decimals() returns (uint256)");
+var tokenUriFunction = from14("function tokenURI(uint256) returns (string)");
+var symbolFunction = from14("function symbol() returns (string)");
+var staticCallFunction = from14("function query(address target, bytes data)");
 async function simulateCalls(client, parameters) {
   const { blockNumber, blockTag, calls, stateOverrides, traceAssetChanges, traceTransfers, validation } = parameters;
   const account = parameters.account ? parseAccount(parameters.account) : void 0;
   if (traceAssetChanges && !account)
     throw new BaseError2("`account` is required when `traceAssetChanges` is true");
-  const getBalanceData = account ? encode3(from11("constructor(bytes, bytes)"), {
+  const getBalanceData = account ? encode3(from12("constructor(bytes, bytes)"), {
     bytecode: deploylessCallViaBytecodeBytecode,
     args: [
       getBalanceCode,
-      encodeData2(from12("function getBalance(address)"), [account.address])
+      encodeData2(from14("function getBalance(address)"), [account.address])
     ]
   }) : void 0;
-  const assetAddresses = traceAssetChanges ? await Promise.all(parameters.calls.map(async (call2) => {
-    if (!call2.data && !call2.abi)
-      return;
-    const { accessList } = await createAccessList(client, {
-      account: account.address,
-      ...call2,
-      data: call2.abi ? encodeFunctionData(call2) : call2.data
-    });
-    return accessList.map(({ address, storageKeys }) => storageKeys.length > 0 ? address : null);
-  })).then((x) => x.flat().filter(Boolean)) : [];
-  const blocks = await simulateBlocks(client, {
-    blockNumber,
-    blockTag,
+  const blockTag_ = blockTag ?? client.experimental_blockTag ?? "latest";
+  let baseBlockNumber = blockNumber;
+  if (traceAssetChanges && typeof baseBlockNumber !== "bigint" && blockTag_ !== "earliest" && blockTag_ !== "pending") {
+    if (blockTag_ === "latest")
+      baseBlockNumber = await getBlockNumber(client, { cacheTime: 0 });
+    else {
+      const block2 = await getBlock(client, { blockTag: blockTag_ });
+      if (typeof block2.number !== "bigint")
+        throw new BaseError2(`Block tag \`${blockTag_}\` did not resolve to a number.`);
+      baseBlockNumber = block2.number;
+    }
+  }
+  const block_ = typeof baseBlockNumber === "bigint" ? { blockNumber: baseBlockNumber } : { blockTag: blockTag_ };
+  const discovery = traceAssetChanges ? await simulateBlocks(client, {
+    ...block_,
     blocks: [
-      ...traceAssetChanges ? [
-        // ETH pre balances
-        {
-          calls: [{ data: getBalanceData }],
-          stateOverrides
-        },
-        // Asset pre balances
-        {
-          calls: assetAddresses.map((address, i) => ({
-            abi: [
-              from12("function balanceOf(address) returns (uint256)")
-            ],
-            functionName: "balanceOf",
-            args: [account.address],
-            to: address,
-            from: zeroAddress,
-            nonce: i
-          })),
-          stateOverrides: [
-            {
-              address: zeroAddress,
-              nonce: 0
-            }
-          ]
-        }
-      ] : [],
       {
-        calls: [...calls, { to: zeroAddress }].map((call2) => ({
+        calls: calls.map((call2) => ({
           ...call2,
-          from: account?.address
+          from: account.address
         })),
         stateOverrides
-      },
-      ...traceAssetChanges ? [
-        // ETH post balances
-        {
-          calls: [{ data: getBalanceData }]
-        },
-        // Asset post balances
-        {
-          calls: assetAddresses.map((address, i) => ({
-            abi: [
-              from12("function balanceOf(address) returns (uint256)")
-            ],
-            functionName: "balanceOf",
-            args: [account.address],
-            to: address,
-            from: zeroAddress,
-            nonce: i
-          })),
-          stateOverrides: [
-            {
-              address: zeroAddress,
-              nonce: 0
-            }
-          ]
-        },
-        // Decimals
-        {
-          calls: assetAddresses.map((address, i) => ({
-            to: address,
-            abi: [
-              from12("function decimals() returns (uint256)")
-            ],
-            functionName: "decimals",
-            from: zeroAddress,
-            nonce: i
-          })),
-          stateOverrides: [
-            {
-              address: zeroAddress,
-              nonce: 0
-            }
-          ]
-        },
-        // Token URI
-        {
-          calls: assetAddresses.map((address, i) => ({
-            to: address,
-            abi: [
-              from12("function tokenURI(uint256) returns (string)")
-            ],
-            functionName: "tokenURI",
-            args: [0n],
-            from: zeroAddress,
-            nonce: i
-          })),
-          stateOverrides: [
-            {
-              address: zeroAddress,
-              nonce: 0
-            }
-          ]
-        },
-        // Symbols
-        {
-          calls: assetAddresses.map((address, i) => ({
-            to: address,
-            abi: [from12("function symbol() returns (string)")],
-            functionName: "symbol",
-            from: zeroAddress,
-            nonce: i
-          })),
-          stateOverrides: [
-            {
-              address: zeroAddress,
-              nonce: 0
-            }
-          ]
-        }
-      ] : []
+      }
     ],
     traceTransfers,
     validation
-  });
-  const block_results = traceAssetChanges ? blocks[2] : blocks[0];
-  const [block_ethPre, block_assetsPre, , block_ethPost, block_assetsPost, block_decimals, block_tokenURI, block_symbols] = traceAssetChanges ? blocks : [];
+  }) : void 0;
+  const assetAddresses = discovery ? [
+    .../* @__PURE__ */ new Set([
+      ...tokensFromLogs(discovery[0].calls.flatMap((call2) => call2.logs ?? []), account.address),
+      // Included even for calls without data: contracts that mint on receiving
+      // native value (WETH) emit `Deposit`, not a `Transfer` the logs would catch.
+      // Candidates without code fall out at `isBalance`.
+      ...parameters.calls.map((call2) => call2.to?.toLowerCase())
+    ])
+  ].filter((address) => Boolean(address) && address !== ethAddress && address !== zeroAddress) : [];
+  const staticCallAddress = getStaticCallAddress([
+    ...account ? [account.address] : [],
+    ...assetAddresses,
+    ...stateOverrides?.map(({ address }) => address) ?? []
+  ]);
+  const staticCallStateOverrides = [
+    { address: staticCallAddress, code: staticCallCode }
+  ];
+  const [balanceCallsPre, blocks] = await Promise.all([
+    traceAssetChanges ? Promise.all([
+      readBalance(client, {
+        account: account.address,
+        ...block_,
+        data: getBalanceData,
+        stateOverride: stateOverrides
+      }),
+      ...assetAddresses.map((address) => readBalance(client, {
+        account: account.address,
+        address,
+        ...block_,
+        data: encodeData2(balanceOfFunction, [
+          account.address
+        ]),
+        staticCallAddress,
+        stateOverride: stateOverrides
+      }))
+    ]) : [],
+    simulateBlocks(client, {
+      ...block_,
+      blocks: [
+        {
+          calls: [...calls, { to: zeroAddress }].map((call2) => ({
+            ...call2,
+            from: account?.address
+          })),
+          stateOverrides
+        },
+        ...traceAssetChanges ? [
+          // ETH post balances
+          {
+            calls: [{ data: getBalanceData }]
+          },
+          // Asset post balances
+          {
+            calls: assetAddresses.map((address) => ({
+              to: staticCallAddress,
+              data: encodeStaticCall(address, encodeData2(balanceOfFunction, [
+                account.address
+              ]))
+            })),
+            stateOverrides: staticCallStateOverrides
+          },
+          // Decimals
+          {
+            calls: assetAddresses.map((address) => ({
+              to: staticCallAddress,
+              data: encodeStaticCall(address, encodeData2(decimalsFunction))
+            })),
+            stateOverrides: staticCallStateOverrides
+          },
+          // Token URI
+          {
+            calls: assetAddresses.map((address) => ({
+              to: staticCallAddress,
+              data: encodeStaticCall(address, encodeData2(tokenUriFunction, [0n]))
+            })),
+            stateOverrides: staticCallStateOverrides
+          },
+          // Symbols
+          {
+            calls: assetAddresses.map((address) => ({
+              to: staticCallAddress,
+              data: encodeStaticCall(address, encodeData2(symbolFunction))
+            })),
+            stateOverrides: staticCallStateOverrides
+          }
+        ] : []
+      ],
+      traceTransfers,
+      validation
+    })
+  ]);
+  const block_results = blocks[0];
+  const [block_ethPost, block_assetsPost, block_decimals, block_tokenURI, block_symbols] = traceAssetChanges ? blocks.slice(1) : [];
   const { calls: block_calls, ...block } = block_results;
-  const results = block_calls.slice(0, -1) ?? [];
-  const ethPre = block_ethPre?.calls ?? [];
-  const assetsPre = block_assetsPre?.calls ?? [];
-  const balancesPre = [...ethPre, ...assetsPre].map((call2) => call2.status === "success" ? hexToBigInt(call2.data) : null);
+  const results = block_calls.slice(0, -1);
+  const balancesPre = balanceCallsPre.map((call2) => isBalance(call2) ? hexToBigInt(call2.data) : null);
   const ethPost = block_ethPost?.calls ?? [];
   const assetsPost = block_assetsPost?.calls ?? [];
-  const balancesPost = [...ethPost, ...assetsPost].map((call2) => call2.status === "success" ? hexToBigInt(call2.data) : null);
-  const decimals = (block_decimals?.calls ?? []).map((x) => x.status === "success" ? x.result : null);
-  const symbols = (block_symbols?.calls ?? []).map((x) => x.status === "success" ? x.result : null);
-  const tokenURI = (block_tokenURI?.calls ?? []).map((x) => x.status === "success" ? x.result : null);
+  const balanceCallsPost = [...ethPost, ...assetsPost];
+  const balancesPost = balanceCallsPost.map((call2) => isBalance(call2) ? hexToBigInt(call2.data) : null);
+  const decimals = (block_decimals?.calls ?? []).map((call2) => decodeAssetResult(call2, decimalsFunction));
+  const symbols = (block_symbols?.calls ?? []).map((call2) => decodeAssetResult(call2, symbolFunction));
+  const tokenURI = (block_tokenURI?.calls ?? []).map((call2) => decodeAssetResult(call2, tokenUriFunction));
   const changes = [];
   for (const [i, balancePost] of balancesPost.entries()) {
-    const balancePre = balancesPre[i];
+    const balancePre_ = balancesPre[i];
+    const preCall = balanceCallsPre[i];
+    const balancePre = typeof balancePre_ === "bigint" ? balancePre_ : i > 0 && preCall?.status === "success" && preCall.data === "0x" ? 0n : null;
     if (typeof balancePost !== "bigint")
       continue;
     if (typeof balancePre !== "bigint")
@@ -50309,8 +51237,6 @@ async function simulateCalls(client, parameters) {
         symbol: symbol_ ?? void 0
       };
     })();
-    if (changes.some((change) => change.token.address === token.address))
-      continue;
     changes.push({
       token,
       value: {
@@ -50326,13 +51252,65 @@ async function simulateCalls(client, parameters) {
     results
   };
 }
+function encodeStaticCall(address, data4) {
+  return encodeData2(staticCallFunction, [address, data4]);
+}
+function tokensFromLogs(logs, account) {
+  const account_ = pad(account.toLowerCase(), { size: 32 });
+  return logs.filter((log) => {
+    if (log.topics[0]?.toLowerCase() !== transferEventSelector)
+      return false;
+    if (log.address.toLowerCase() === ethAddress)
+      return false;
+    return log.topics[1]?.toLowerCase() === account_ || log.topics[2]?.toLowerCase() === account_;
+  }).map((log) => log.address.toLowerCase());
+}
+function isBalance(call2) {
+  return call2.status === "success" && /^0x[\da-f]{64}$/i.test(call2.data);
+}
+function decodeAssetResult(call2, abiFunction) {
+  if (call2.status === "failure" || call2.data === "0x")
+    return null;
+  try {
+    return decodeResult(abiFunction, call2.data);
+  } catch {
+    return null;
+  }
+}
+async function readBalance(client, parameters) {
+  const { account, address, blockNumber, blockTag, data: data4, staticCallAddress, stateOverride } = parameters;
+  try {
+    const result = await call({ ...client, ccipRead: false }, {
+      account: address ? zeroAddress : account,
+      data: address ? encodeStaticCall(address, data4) : data4,
+      stateOverride: address && staticCallAddress ? [
+        ...stateOverride ?? [],
+        { address: staticCallAddress, code: staticCallCode }
+      ] : stateOverride,
+      ...address ? { to: staticCallAddress } : {},
+      ...typeof blockNumber === "bigint" ? { blockNumber } : { blockTag }
+    });
+    return { data: result.data ?? "0x", status: "success" };
+  } catch (error) {
+    if (!(error instanceof CallExecutionError) || !(error.cause instanceof ExecutionRevertedError))
+      throw error;
+    return { data: "0x", status: "failure" };
+  }
+}
+function getStaticCallAddress(addresses) {
+  const occupied = new Set(addresses.map((address) => address.toLowerCase()));
+  let value = staticCallAddressBase;
+  while (occupied.has(`0x${value.toString(16).padStart(40, "0")}`))
+    value++;
+  return `0x${value.toString(16).padStart(40, "0")}`;
+}
 
 // ../node_modules/ox/_esm/erc6492/SignatureErc6492.js
 var SignatureErc6492_exports = {};
 __export(SignatureErc6492_exports, {
   InvalidWrappedSignatureError: () => InvalidWrappedSignatureError2,
   assert: () => assert8,
-  from: () => from13,
+  from: () => from15,
   magicBytes: () => magicBytes2,
   universalSignatureValidatorAbi: () => universalSignatureValidatorAbi,
   universalSignatureValidatorBytecode: () => universalSignatureValidatorBytecode,
@@ -50392,19 +51370,19 @@ function assert8(wrapped) {
   if (slice3(wrapped, -32) !== magicBytes2)
     throw new InvalidWrappedSignatureError2(wrapped);
 }
-function from13(wrapped) {
+function from15(wrapped) {
   if (typeof wrapped === "string")
     return unwrap2(wrapped);
   return wrapped;
 }
 function unwrap2(wrapped) {
   assert8(wrapped);
-  const [to, data4, signature] = decode2(from5("address, bytes, bytes"), wrapped);
+  const [to, data4, signature] = decode2(from6("address, bytes, bytes"), wrapped);
   return { data: data4, signature, to };
 }
 function wrap2(value) {
   const { data: data4, signature, to } = value;
-  return concat3(encode2(from5("address, bytes, bytes"), [
+  return concat3(encode2(from6("address, bytes, bytes"), [
     to,
     data4,
     signature
@@ -50511,19 +51489,18 @@ async function verifyHash(client, parameters) {
   }
 }
 async function verifyErc8010(client, parameters) {
-  const { address, blockNumber, blockTag, hash: hash4, multicallAddress } = parameters;
+  const { address, blockHash, blockNumber, blockTag, hash: hash4, multicallAddress, requireCanonical } = parameters;
   const { authorization: authorization_ox, data: initData, signature, to } = SignatureErc8010_exports.unwrap(parameters.signature);
   const code = await getCode(client, {
     address,
+    blockHash,
     blockNumber,
-    blockTag
+    blockTag,
+    requireCanonical
   });
   if (code === concatHex(["0xef0100", authorization_ox.address]))
     return await verifyErc1271(client, {
-      address,
-      blockNumber,
-      blockTag,
-      hash: hash4,
+      ...parameters,
       signature
     });
   const authorization = {
@@ -50544,9 +51521,11 @@ async function verifyErc8010(client, parameters) {
     ...multicallAddress ? { address: multicallAddress } : { code: multicall3Bytecode },
     authorizationList: [authorization],
     abi: multicall3Abi,
+    blockHash,
     blockNumber,
     blockTag: "pending",
     functionName: "aggregate3",
+    requireCanonical,
     args: [
       [
         ...initData ? [
@@ -50612,14 +51591,16 @@ async function verifyErc6492(client, parameters) {
   throw new VerificationError();
 }
 async function verifyErc1271(client, parameters) {
-  const { address, blockNumber, blockTag, hash: hash4, signature } = parameters;
+  const { address, blockHash, blockNumber, blockTag, hash: hash4, requireCanonical, signature } = parameters;
   const result = await getAction(client, readContract, "readContract")({
     address,
     abi: erc1271Abi,
     args: [hash4, signature],
+    blockHash,
     blockNumber,
     blockTag,
-    functionName: "isValidSignature"
+    functionName: "isValidSignature",
+    requireCanonical
   }).catch((error) => {
     if (error instanceof ContractFunctionExecutionError)
       throw new VerificationError();
@@ -50761,7 +51742,7 @@ function watchBlockNumber(client, { emitOnBegin = false, emitMissed = false, onB
 // ../node_modules/viem/_esm/actions/public/waitForTransactionReceipt.js
 async function waitForTransactionReceipt(client, parameters) {
   const {
-    checkReplacement = true,
+    checkReplacement = client.chain?.supportsTransactionReplacementDetection ?? true,
     confirmations = 1,
     hash: hash4,
     onReplaced,
@@ -50854,7 +51835,7 @@ async function waitForTransactionReceipt(client, parameters) {
                 shouldRetry: ({ error }) => error instanceof BlockNotFoundError
               });
               retrying = false;
-              const replacementTransaction = block.transactions.find(({ from: from14, nonce }) => from14 === replacedTransaction.from && nonce === replacedTransaction.nonce);
+              const replacementTransaction = block.transactions.find(({ from: from16, nonce }) => from16 === replacedTransaction.from && nonce === replacedTransaction.nonce);
               if (!replacementTransaction)
                 return;
               receipt = await getAction(client, getTransactionReceipt, "getTransactionReceipt")({
@@ -50888,6 +51869,61 @@ async function waitForTransactionReceipt(client, parameters) {
     });
   });
   return promise;
+}
+
+// ../node_modules/viem/_esm/actions/public/watchBlockHeaders.js
+init_stringify();
+var blockFields = [
+  "size",
+  "totalDifficulty",
+  "transactions",
+  "uncles",
+  "withdrawals"
+];
+function watchBlockHeaders(client, { onBlockHeader, onError }) {
+  let prevBlockHeader;
+  const observerId = stringify3(["watchBlockHeaders", client.uid]);
+  return observe(observerId, { onBlockHeader, onError }, (emit2) => {
+    let active = true;
+    let subscribed = false;
+    let unsubscribe = () => active = false;
+    (async () => {
+      try {
+        const transport = (() => {
+          if (client.transport.type === "fallback") {
+            const transport2 = client.transport.transports.find((transport3) => transport3.config.type === "webSocket" || transport3.config.type === "ipc");
+            if (!transport2)
+              return client.transport;
+            return transport2.value;
+          }
+          return client.transport;
+        })();
+        const { unsubscribe: unsubscribe_ } = await transport.subscribe({
+          params: ["newHeads"],
+          onData(data4) {
+            if (!active)
+              return;
+            const blockHeader = (client.chain?.formatters?.block?.format || formatBlock2)(data4.result, "watchBlockHeaders");
+            for (const field of blockFields)
+              delete blockHeader[field];
+            emit2.onBlockHeader(blockHeader, prevBlockHeader);
+            prevBlockHeader = blockHeader;
+          },
+          onError(error) {
+            if (subscribed)
+              emit2.onError?.(error);
+          }
+        });
+        subscribed = true;
+        unsubscribe = unsubscribe_;
+        if (!active)
+          unsubscribe();
+      } catch (err) {
+        emit2.onError?.(err);
+      }
+    })();
+    return () => unsubscribe();
+  });
 }
 
 // ../node_modules/viem/_esm/actions/public/watchBlocks.js
@@ -51254,6 +52290,17 @@ function watchPendingTransactions(client, { batch = true, onError, onTransaction
 }
 
 // ../node_modules/viem/_esm/utils/siwe/parseSiweMessage.js
+var siweDateTimeRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+function isValidSiweDateTime(value) {
+  if (!siweDateTimeRegex.test(value))
+    return false;
+  return !Number.isNaN(new Date(value).getTime());
+}
+function parseSiweDateTime(value) {
+  if (!isValidSiweDateTime(value))
+    return new Date(Number.NaN);
+  return new Date(value);
+}
 function parseSiweMessage(message) {
   const { scheme, statement, ...prefix } = message.match(prefixRegex)?.groups ?? {};
   const { chainId, expirationTime, issuedAt, notBefore, requestId, ...suffix } = message.match(suffixRegex)?.groups ?? {};
@@ -51262,9 +52309,9 @@ function parseSiweMessage(message) {
     ...prefix,
     ...suffix,
     ...chainId ? { chainId: Number(chainId) } : {},
-    ...expirationTime ? { expirationTime: new Date(expirationTime) } : {},
-    ...issuedAt ? { issuedAt: new Date(issuedAt) } : {},
-    ...notBefore ? { notBefore: new Date(notBefore) } : {},
+    ...expirationTime ? { expirationTime: parseSiweDateTime(expirationTime) } : {},
+    ...issuedAt ? { issuedAt: parseSiweDateTime(issuedAt) } : {},
+    ...notBefore ? { notBefore: parseSiweDateTime(notBefore) } : {},
     ...requestId ? { requestId } : {},
     ...resources ? { resources } : {},
     ...scheme ? { scheme } : {},
@@ -51285,10 +52332,20 @@ function validateSiweMessage(parameters) {
     return false;
   if (scheme && message.scheme !== scheme)
     return false;
-  if (message.expirationTime && time >= message.expirationTime)
+  if (Number.isNaN(time.getTime()))
     return false;
-  if (message.notBefore && time < message.notBefore)
-    return false;
+  if (message.expirationTime) {
+    if (Number.isNaN(message.expirationTime.getTime()))
+      return false;
+    if (time >= message.expirationTime)
+      return false;
+  }
+  if (message.notBefore) {
+    if (Number.isNaN(message.notBefore.getTime()))
+      return false;
+    if (time < message.notBefore)
+      return false;
+  }
   try {
     if (!message.address)
       return false;
@@ -51327,6 +52384,184 @@ async function verifySiweMessage(client, parameters) {
   });
 }
 
+// ../node_modules/viem/_esm/actions/token/approve.js
+init_abis();
+
+// ../node_modules/viem/_esm/actions/token/internal.js
+init_abis();
+init_isAddress();
+init_isAddressEqual();
+function toAmount(amount, decimals) {
+  return { amount, decimals, formatted: formatUnits2(amount, decimals) };
+}
+function toBaseUnits(amount, decimals) {
+  if (typeof amount === "bigint")
+    return amount;
+  const resolved = amount.decimals ?? decimals;
+  return parseUnits3(amount.formatted, requireTokenDecimals(resolved));
+}
+function requireTokenDecimals(decimals) {
+  if (decimals === void 0)
+    throw new Error("Token decimals are required. Pass `amount.decimals` or select a declared token.");
+  return decimals;
+}
+function resolveAmountDecimals(amount, decimals) {
+  if (typeof amount === "bigint")
+    return decimals;
+  return amount.decimals ?? decimals;
+}
+function resolveToken(client, parameters) {
+  const { decimals, token } = parameters;
+  const declared = findDeclaredToken(client, token);
+  if (declared)
+    return {
+      address: declared.address,
+      decimals: decimals ?? declared.decimals
+    };
+  if (isAddress2(token, { strict: false }))
+    return {
+      address: token,
+      decimals: decimals ?? inferDecimals(client, token)
+    };
+  throw new Error(`Token "${token}" is not a declared ERC-20 token on the client's \`tokens\` array (with an address for the client's chain), and is not a valid address.`);
+}
+function findDeclaredToken(client, token) {
+  const tokens = client.tokens;
+  const chainId = client.chain?.id;
+  if (!tokens || chainId === void 0)
+    return void 0;
+  const bySymbol = findTokenBySymbol(tokens, token);
+  if (bySymbol)
+    return resolveTokenForChain(bySymbol, chainId);
+  if (isAddress2(token, { strict: false }))
+    for (const token_ of tokens) {
+      const resolved = resolveTokenForChain(token_, chainId);
+      if (resolved && isAddressEqual(resolved.address, token))
+        return resolved;
+    }
+  return void 0;
+}
+function resolveTokenForChain(token, chainId) {
+  const address = token.addresses[chainId];
+  if (!address)
+    return void 0;
+  return {
+    address,
+    currency: token.currency,
+    decimals: token.decimals,
+    name: token.name,
+    popular: token.popular,
+    symbol: token.symbol
+  };
+}
+function findTokenBySymbol(tokens, symbol) {
+  const lowerSymbol = symbol.toLowerCase();
+  for (const token of tokens) {
+    if (token.symbol?.toLowerCase() === lowerSymbol)
+      return token;
+  }
+  return void 0;
+}
+function inferDecimals(client, address) {
+  const tokens = client.tokens;
+  const chainId = client.chain?.id;
+  if (tokens && chainId !== void 0)
+    for (const token of tokens) {
+      const resolved = resolveTokenForChain(token, chainId);
+      if (resolved && isAddressEqual(resolved.address, address))
+        return resolved.decimals;
+    }
+  return void 0;
+}
+async function resolveTokenWithDecimals(client, parameters) {
+  const { address, decimals } = resolveToken(client, parameters);
+  if (decimals !== void 0)
+    return { address, decimals };
+  return {
+    address,
+    decimals: await readContract(client, {
+      abi: erc20Abi,
+      address,
+      functionName: "decimals"
+    })
+  };
+}
+function pickWriteParameters(parameters) {
+  const { account, chain: chain2, gas, maxFeePerGas, maxPriorityFeePerGas, nonce } = parameters;
+  return { account, chain: chain2, gas, maxFeePerGas, maxPriorityFeePerGas, nonce };
+}
+function defineCall(call2) {
+  return {
+    ...call2,
+    data: encodeFunctionData(call2),
+    to: call2.address
+  };
+}
+
+// ../node_modules/viem/_esm/actions/token/approve.js
+async function approve(client, parameters) {
+  return approve.inner(writeContract, client, parameters);
+}
+(function(approve2) {
+  async function inner2(action, client, parameters) {
+    return await action(client, {
+      ...parameters,
+      ...approve2.call(client, parameters)
+    });
+  }
+  approve2.inner = inner2;
+  function call2(client, parameters) {
+    return defineCall(getCall(client, parameters));
+  }
+  approve2.call = call2;
+  async function estimateGas2(client, parameters) {
+    return estimateContractGas(client, {
+      ...pickWriteParameters(parameters),
+      ...approve2.call(client, parameters)
+    });
+  }
+  approve2.estimateGas = estimateGas2;
+  async function simulate2(client, parameters) {
+    return simulateContract(client, {
+      ...pickWriteParameters(parameters),
+      ...approve2.call(client, parameters)
+    });
+  }
+  approve2.simulate = simulate2;
+  function extractEvent(logs) {
+    const [log] = parseEventLogs({
+      abi: erc20Abi,
+      logs,
+      eventName: "Approval",
+      strict: true
+    });
+    if (!log)
+      throw new Error("`Approval` event not found.");
+    return log;
+  }
+  approve2.extractEvent = extractEvent;
+})(approve || (approve = {}));
+function getCall(client, parameters) {
+  const { amount, spender, token } = parameters;
+  const { address, decimals } = resolveToken(client, { token });
+  return {
+    abi: erc20Abi,
+    address,
+    args: [spender, toBaseUnits(amount, decimals)],
+    functionName: "approve"
+  };
+}
+
+// ../node_modules/viem/_esm/actions/wallet/sendTransactionSync.js
+init_parseAccount();
+init_base();
+init_transaction();
+init_concat();
+init_extract();
+init_transactionRequest();
+init_lru();
+init_assertRequest();
+
 // ../node_modules/viem/_esm/actions/wallet/sendRawTransactionSync.js
 init_transaction();
 async function sendRawTransactionSync(client, { serializedTransaction, throwOnReceiptRevert, timeout }) {
@@ -51334,11 +52569,415 @@ async function sendRawTransactionSync(client, { serializedTransaction, throwOnRe
     method: "eth_sendRawTransactionSync",
     params: timeout ? [serializedTransaction, timeout] : [serializedTransaction]
   }, { retryCount: 0 });
-  const format = client.chain?.formatters?.transactionReceipt?.format || formatTransactionReceipt2;
-  const formatted = format(receipt);
+  const format2 = client.chain?.formatters?.transactionReceipt?.format || formatTransactionReceipt2;
+  const formatted = format2(receipt);
   if (formatted.status === "reverted" && throwOnReceiptRevert)
     throw new TransactionReceiptRevertedError({ receipt: formatted });
   return formatted;
+}
+
+// ../node_modules/viem/_esm/actions/wallet/sendTransactionSync.js
+var supportsWalletNamespace2 = new LruMap(128);
+async function sendTransactionSync(client, parameters) {
+  const { account: account_ = client.account, assertChainId = true, chain: chain2 = client.chain, accessList, authorizationList, blobs, data: data4, dataSuffix = typeof client.dataSuffix === "string" ? client.dataSuffix : client.dataSuffix?.value, gas, gasPrice, maxFeePerBlobGas, maxFeePerGas, maxPriorityFeePerGas, nonce, pollingInterval, throwOnReceiptRevert, type, value, ...rest } = parameters;
+  const timeout = parameters.timeout ?? Math.max((chain2?.blockTime ?? 0) * 3, 5e3);
+  if (typeof account_ === "undefined")
+    throw new AccountNotFoundError({
+      docsPath: "/docs/actions/wallet/sendTransactionSync"
+    });
+  const account = account_ ? parseAccount(account_) : null;
+  let nonceManagerParameters;
+  try {
+    assertRequest(parameters);
+    const to = await (async () => {
+      if (parameters.to)
+        return parameters.to;
+      if (parameters.to === null)
+        return void 0;
+      if (authorizationList && authorizationList.length > 0)
+        return await recoverAuthorizationAddress({
+          authorization: authorizationList[0]
+        }).catch(() => {
+          throw new BaseError2("`to` is required. Could not infer from `authorizationList`.");
+        });
+      return void 0;
+    })();
+    if (account?.type === "json-rpc" || account === null) {
+      let chainId;
+      if (chain2 !== null) {
+        chainId = await getAction(client, getChainId, "getChainId")({});
+        if (assertChainId)
+          assertCurrentChain({
+            currentChainId: chainId,
+            chain: chain2
+          });
+      }
+      const chainFormat = client.chain?.formatters?.transactionRequest?.format;
+      const format2 = chainFormat || formatTransactionRequest;
+      const request = format2({
+        // Pick out extra data that might exist on the chain's transaction request type.
+        ...extract(rest, { format: chainFormat }),
+        accessList,
+        account,
+        authorizationList,
+        blobs,
+        chainId,
+        data: dataSuffix ? concat2([data4 ?? "0x", dataSuffix]) : data4,
+        gas,
+        gasPrice,
+        maxFeePerBlobGas,
+        maxFeePerGas,
+        maxPriorityFeePerGas,
+        nonce,
+        to,
+        type,
+        value
+      }, "sendTransaction");
+      const isWalletNamespaceSupported = supportsWalletNamespace2.get(client.uid);
+      const method = isWalletNamespaceSupported ? "wallet_sendTransaction" : "eth_sendTransaction";
+      const hash4 = await (async () => {
+        try {
+          return await client.request({
+            method,
+            params: [request]
+          }, { retryCount: 0 });
+        } catch (e) {
+          if (isWalletNamespaceSupported === false)
+            throw e;
+          const error = e;
+          if (error.name === "InvalidInputRpcError" || error.name === "InvalidParamsRpcError" || error.name === "MethodNotFoundRpcError" || error.name === "MethodNotSupportedRpcError") {
+            return await client.request({
+              method: "wallet_sendTransaction",
+              params: [request]
+            }, { retryCount: 0 }).then((hash5) => {
+              supportsWalletNamespace2.set(client.uid, true);
+              return hash5;
+            }).catch((e2) => {
+              const walletNamespaceError = e2;
+              if (walletNamespaceError.name === "MethodNotFoundRpcError" || walletNamespaceError.name === "MethodNotSupportedRpcError") {
+                supportsWalletNamespace2.set(client.uid, false);
+                throw error;
+              }
+              throw walletNamespaceError;
+            });
+          }
+          throw error;
+        }
+      })();
+      const receipt = await getAction(client, waitForTransactionReceipt, "waitForTransactionReceipt")({
+        checkReplacement: false,
+        hash: hash4,
+        pollingInterval,
+        timeout
+      });
+      if (throwOnReceiptRevert && receipt.status === "reverted")
+        throw new TransactionReceiptRevertedError({ receipt });
+      return receipt;
+    }
+    if (account?.type === "local") {
+      const nonceManager = (() => {
+        if (!account.nonceManager || typeof nonce !== "undefined")
+          return account.nonceManager;
+        const nonceManager2 = account.nonceManager;
+        return {
+          consume(parameters2) {
+            nonceManagerParameters = {
+              address: parameters2.address,
+              chainId: parameters2.chainId
+            };
+            return nonceManager2.consume(parameters2);
+          },
+          get(parameters2) {
+            return nonceManager2.get(parameters2);
+          },
+          increment(parameters2) {
+            return nonceManager2.increment(parameters2);
+          },
+          reset(parameters2) {
+            return nonceManager2.reset(parameters2);
+          }
+        };
+      })();
+      const request = await getAction(client, prepareTransactionRequest, "prepareTransactionRequest")({
+        account,
+        accessList,
+        authorizationList,
+        blobs,
+        chain: chain2,
+        data: dataSuffix ? concat2([data4 ?? "0x", dataSuffix]) : data4,
+        gas,
+        gasPrice,
+        maxFeePerBlobGas,
+        maxFeePerGas,
+        maxPriorityFeePerGas,
+        nonce,
+        nonceManager,
+        parameters: [...defaultParameters, "sidecars"],
+        type,
+        value,
+        ...rest,
+        to
+      });
+      const serializer = chain2?.serializers?.transaction;
+      const serializedTransaction = await account.signTransaction(request, {
+        serializer
+      });
+      return await getAction(client, sendRawTransactionSync, "sendRawTransactionSync")({
+        serializedTransaction,
+        throwOnReceiptRevert,
+        timeout: parameters.timeout
+      });
+    }
+    if (account?.type === "smart")
+      throw new AccountTypeNotSupportedError({
+        metaMessages: [
+          "Consider using the `sendUserOperation` Action instead."
+        ],
+        docsPath: "/docs/actions/bundler/sendUserOperation",
+        type: "smart"
+      });
+    throw new AccountTypeNotSupportedError({
+      docsPath: "/docs/actions/wallet/sendTransactionSync",
+      type: account?.type
+    });
+  } catch (err) {
+    if (err instanceof AccountTypeNotSupportedError)
+      throw err;
+    if (nonceManagerParameters && !(err instanceof TransactionReceiptRevertedError))
+      account?.nonceManager?.reset(nonceManagerParameters);
+    throw getTransactionError(err, {
+      ...parameters,
+      account,
+      chain: parameters.chain || void 0
+    });
+  }
+}
+
+// ../node_modules/viem/_esm/actions/wallet/writeContractSync.js
+async function writeContractSync(client, parameters) {
+  return writeContract.internal(client, sendTransactionSync, "sendTransactionSync", parameters);
+}
+
+// ../node_modules/viem/_esm/actions/token/approveSync.js
+async function approveSync(client, parameters) {
+  const { amount, token, throwOnReceiptRevert = true } = parameters;
+  const { decimals } = resolveToken(client, { token });
+  const resolved = resolveAmountDecimals(amount, decimals);
+  const receipt = await approve.inner(writeContractSync, client, {
+    ...parameters,
+    throwOnReceiptRevert
+  });
+  const { args } = approve.extractEvent(receipt.logs);
+  return {
+    ...args,
+    ...resolved === void 0 ? {} : { decimals: resolved, formatted: formatUnits2(args.value, resolved) },
+    receipt
+  };
+}
+
+// ../node_modules/viem/_esm/actions/token/getAllowance.js
+init_abis();
+async function getAllowance(client, parameters) {
+  const { account, decimals, spender, token, ...rest } = parameters;
+  const [amount, { decimals: resolved }] = await Promise.all([
+    readContract(client, {
+      ...rest,
+      ...getAllowance.call(client, { account, spender, token })
+    }),
+    resolveTokenWithDecimals(client, {
+      decimals,
+      token
+    })
+  ]);
+  return toAmount(amount, resolved);
+}
+(function(getAllowance2) {
+  function call2(client, args) {
+    return defineCall({
+      address: resolveToken(client, args).address,
+      abi: erc20Abi,
+      functionName: "allowance",
+      args: [args.account, args.spender]
+    });
+  }
+  getAllowance2.call = call2;
+})(getAllowance || (getAllowance = {}));
+
+// ../node_modules/viem/_esm/actions/token/getBalance.js
+init_parseAccount();
+init_abis();
+async function getBalance2(client, parameters) {
+  const { account: account_ = client.account, decimals, token, ...rest } = parameters;
+  if (!account_)
+    throw new AccountNotFoundError();
+  const account = parseAccount(account_).address;
+  const [amount, { decimals: resolved }] = await Promise.all([
+    readContract(client, {
+      ...rest,
+      ...getBalance2.call(client, { account, token })
+    }),
+    resolveTokenWithDecimals(client, {
+      decimals,
+      token
+    })
+  ]);
+  return toAmount(amount, resolved);
+}
+(function(getBalance3) {
+  function call2(client, args) {
+    const account_ = args.account ?? client.account;
+    if (!account_)
+      throw new AccountNotFoundError();
+    const account = parseAccount(account_).address;
+    return defineCall({
+      address: resolveToken(client, args).address,
+      abi: erc20Abi,
+      functionName: "balanceOf",
+      args: [account]
+    });
+  }
+  getBalance3.call = call2;
+})(getBalance2 || (getBalance2 = {}));
+
+// ../node_modules/viem/_esm/actions/token/getMetadata.js
+init_abis();
+async function getMetadata(client, parameters) {
+  const { token, ...rest } = parameters;
+  const { address } = resolveToken(client, { token });
+  const declared = findDeclaredToken(client, token);
+  const [decimals_, name, symbol] = await Promise.all([
+    declared?.decimals ?? readContract(client, {
+      ...rest,
+      abi: erc20Abi,
+      address,
+      functionName: "decimals"
+    }),
+    declared?.name ?? readContract(client, {
+      ...rest,
+      abi: erc20Abi,
+      address,
+      functionName: "name"
+    }),
+    declared?.symbol ?? readContract(client, {
+      ...rest,
+      abi: erc20Abi,
+      address,
+      functionName: "symbol"
+    })
+  ]);
+  return {
+    decimals: decimals_,
+    name,
+    symbol
+  };
+}
+
+// ../node_modules/viem/_esm/actions/token/getTotalSupply.js
+init_abis();
+async function getTotalSupply(client, parameters) {
+  const { decimals, token, ...rest } = parameters;
+  const [amount, { decimals: resolved }] = await Promise.all([
+    readContract(client, {
+      ...rest,
+      ...getTotalSupply.call(client, { token })
+    }),
+    resolveTokenWithDecimals(client, {
+      decimals,
+      token
+    })
+  ]);
+  return toAmount(amount, resolved);
+}
+(function(getTotalSupply2) {
+  function call2(client, args) {
+    return defineCall({
+      address: resolveToken(client, args).address,
+      abi: erc20Abi,
+      args: [],
+      functionName: "totalSupply"
+    });
+  }
+  getTotalSupply2.call = call2;
+})(getTotalSupply || (getTotalSupply = {}));
+
+// ../node_modules/viem/_esm/actions/token/transfer.js
+init_abis();
+async function transfer(client, parameters) {
+  return transfer.inner(writeContract, client, parameters);
+}
+(function(transfer2) {
+  async function inner2(action, client, parameters) {
+    return await action(client, {
+      ...parameters,
+      ...transfer2.call(client, parameters)
+    });
+  }
+  transfer2.inner = inner2;
+  function call2(client, parameters) {
+    return defineCall(getCall2(client, parameters));
+  }
+  transfer2.call = call2;
+  async function estimateGas2(client, parameters) {
+    return estimateContractGas(client, {
+      ...pickWriteParameters(parameters),
+      ...transfer2.call(client, parameters)
+    });
+  }
+  transfer2.estimateGas = estimateGas2;
+  async function simulate2(client, parameters) {
+    return simulateContract(client, {
+      ...pickWriteParameters(parameters),
+      ...transfer2.call(client, parameters)
+    });
+  }
+  transfer2.simulate = simulate2;
+  function extractEvent(logs) {
+    const [log] = parseEventLogs({
+      abi: erc20Abi,
+      logs,
+      eventName: "Transfer",
+      strict: true
+    });
+    if (!log)
+      throw new Error("`Transfer` event not found.");
+    return log;
+  }
+  transfer2.extractEvent = extractEvent;
+})(transfer || (transfer = {}));
+function getCall2(client, parameters) {
+  const { amount, from: from16, to, token } = parameters;
+  const { address, decimals } = resolveToken(client, { token });
+  const value = toBaseUnits(amount, decimals);
+  if (from16)
+    return {
+      abi: erc20Abi,
+      address,
+      args: [from16, to, value],
+      functionName: "transferFrom"
+    };
+  return {
+    abi: erc20Abi,
+    address,
+    args: [to, value],
+    functionName: "transfer"
+  };
+}
+
+// ../node_modules/viem/_esm/actions/token/transferSync.js
+async function transferSync(client, parameters) {
+  const { amount, token, throwOnReceiptRevert = true } = parameters;
+  const { decimals } = resolveToken(client, { token });
+  const resolved = resolveAmountDecimals(amount, decimals);
+  const receipt = await transfer.inner(writeContractSync, client, {
+    ...parameters,
+    throwOnReceiptRevert
+  });
+  const { args } = transfer.extractEvent(receipt.logs);
+  return {
+    ...args,
+    ...resolved === void 0 ? {} : { decimals: resolved, formatted: formatUnits2(args.value, resolved) },
+    receipt
+  };
 }
 
 // ../node_modules/viem/_esm/clients/decorators/public.js
@@ -51378,6 +53017,7 @@ function publicActions(client) {
     getProof: (args) => getProof(client, args),
     estimateMaxPriorityFeePerGas: (args) => estimateMaxPriorityFeePerGas(client, args),
     fillTransaction: (args) => fillTransaction(client, args),
+    getRawTransaction: (args) => getRawTransaction(client, args),
     getStorageAt: (args) => getStorageAt(client, args),
     getTransaction: (args) => getTransaction(client, args),
     getTransactionConfirmations: (args) => getTransactionConfirmations(client, args),
@@ -51398,11 +53038,21 @@ function publicActions(client) {
     verifyTypedData: (args) => verifyTypedData2(client, args),
     uninstallFilter: (args) => uninstallFilter(client, args),
     waitForTransactionReceipt: (args) => waitForTransactionReceipt(client, args),
+    watchBlockHeaders: (args) => watchBlockHeaders(client, args),
     watchBlocks: (args) => watchBlocks(client, args),
     watchBlockNumber: (args) => watchBlockNumber(client, args),
     watchContractEvent: (args) => watchContractEvent(client, args),
     watchEvent: (args) => watchEvent(client, args),
-    watchPendingTransactions: (args) => watchPendingTransactions(client, args)
+    watchPendingTransactions: (args) => watchPendingTransactions(client, args),
+    token: bindPublicToken(client)
+  };
+}
+function bindPublicToken(client) {
+  return {
+    getAllowance: bindActionDecorators(client, getAllowance),
+    getBalance: bindActionDecorators(client, getBalance2),
+    getMetadata: bindActionDecorators(client, getMetadata),
+    getTotalSupply: bindActionDecorators(client, getTotalSupply)
   };
 }
 
@@ -51549,179 +53199,6 @@ async function sendCallsSync(client, parameters) {
   return status;
 }
 
-// ../node_modules/viem/_esm/actions/wallet/sendTransactionSync.js
-init_parseAccount();
-init_base();
-init_transaction();
-init_concat();
-init_extract();
-init_transactionRequest();
-init_lru();
-init_assertRequest();
-var supportsWalletNamespace2 = new LruMap(128);
-async function sendTransactionSync(client, parameters) {
-  const { account: account_ = client.account, assertChainId = true, chain: chain2 = client.chain, accessList, authorizationList, blobs, data: data4, dataSuffix = typeof client.dataSuffix === "string" ? client.dataSuffix : client.dataSuffix?.value, gas, gasPrice, maxFeePerBlobGas, maxFeePerGas, maxPriorityFeePerGas, nonce, pollingInterval, throwOnReceiptRevert, type, value, ...rest } = parameters;
-  const timeout = parameters.timeout ?? Math.max((chain2?.blockTime ?? 0) * 3, 5e3);
-  if (typeof account_ === "undefined")
-    throw new AccountNotFoundError({
-      docsPath: "/docs/actions/wallet/sendTransactionSync"
-    });
-  const account = account_ ? parseAccount(account_) : null;
-  let nonceManagerParameters;
-  try {
-    assertRequest(parameters);
-    const to = await (async () => {
-      if (parameters.to)
-        return parameters.to;
-      if (parameters.to === null)
-        return void 0;
-      if (authorizationList && authorizationList.length > 0)
-        return await recoverAuthorizationAddress({
-          authorization: authorizationList[0]
-        }).catch(() => {
-          throw new BaseError2("`to` is required. Could not infer from `authorizationList`.");
-        });
-      return void 0;
-    })();
-    if (account?.type === "json-rpc" || account === null) {
-      let chainId;
-      if (chain2 !== null) {
-        chainId = await getAction(client, getChainId, "getChainId")({});
-        if (assertChainId)
-          assertCurrentChain({
-            currentChainId: chainId,
-            chain: chain2
-          });
-      }
-      const chainFormat = client.chain?.formatters?.transactionRequest?.format;
-      const format = chainFormat || formatTransactionRequest;
-      const request = format({
-        // Pick out extra data that might exist on the chain's transaction request type.
-        ...extract(rest, { format: chainFormat }),
-        accessList,
-        account,
-        authorizationList,
-        blobs,
-        chainId,
-        data: dataSuffix ? concat2([data4 ?? "0x", dataSuffix]) : data4,
-        gas,
-        gasPrice,
-        maxFeePerBlobGas,
-        maxFeePerGas,
-        maxPriorityFeePerGas,
-        nonce,
-        to,
-        type,
-        value
-      }, "sendTransaction");
-      const isWalletNamespaceSupported = supportsWalletNamespace2.get(client.uid);
-      const method = isWalletNamespaceSupported ? "wallet_sendTransaction" : "eth_sendTransaction";
-      const hash4 = await (async () => {
-        try {
-          return await client.request({
-            method,
-            params: [request]
-          }, { retryCount: 0 });
-        } catch (e) {
-          if (isWalletNamespaceSupported === false)
-            throw e;
-          const error = e;
-          if (error.name === "InvalidInputRpcError" || error.name === "InvalidParamsRpcError" || error.name === "MethodNotFoundRpcError" || error.name === "MethodNotSupportedRpcError") {
-            return await client.request({
-              method: "wallet_sendTransaction",
-              params: [request]
-            }, { retryCount: 0 }).then((hash5) => {
-              supportsWalletNamespace2.set(client.uid, true);
-              return hash5;
-            }).catch((e2) => {
-              const walletNamespaceError = e2;
-              if (walletNamespaceError.name === "MethodNotFoundRpcError" || walletNamespaceError.name === "MethodNotSupportedRpcError") {
-                supportsWalletNamespace2.set(client.uid, false);
-                throw error;
-              }
-              throw walletNamespaceError;
-            });
-          }
-          throw error;
-        }
-      })();
-      const receipt = await getAction(client, waitForTransactionReceipt, "waitForTransactionReceipt")({
-        checkReplacement: false,
-        hash: hash4,
-        pollingInterval,
-        timeout
-      });
-      if (throwOnReceiptRevert && receipt.status === "reverted")
-        throw new TransactionReceiptRevertedError({ receipt });
-      return receipt;
-    }
-    if (account?.type === "local") {
-      if (account.nonceManager && typeof nonce === "undefined") {
-        const requestChainId = rest.chainId;
-        const chainId = await (async () => {
-          if (typeof requestChainId === "number")
-            return requestChainId;
-          if (chain2)
-            return chain2.id;
-          return getAction(client, getChainId, "getChainId")({});
-        })();
-        nonceManagerParameters = { address: account.address, chainId };
-      }
-      const request = await getAction(client, prepareTransactionRequest, "prepareTransactionRequest")({
-        account,
-        accessList,
-        authorizationList,
-        blobs,
-        chain: chain2,
-        data: dataSuffix ? concat2([data4 ?? "0x", dataSuffix]) : data4,
-        gas,
-        gasPrice,
-        maxFeePerBlobGas,
-        maxFeePerGas,
-        maxPriorityFeePerGas,
-        nonce,
-        nonceManager: account.nonceManager,
-        parameters: [...defaultParameters, "sidecars"],
-        type,
-        value,
-        ...rest,
-        to
-      });
-      const serializer = chain2?.serializers?.transaction;
-      const serializedTransaction = await account.signTransaction(request, {
-        serializer
-      });
-      return await getAction(client, sendRawTransactionSync, "sendRawTransactionSync")({
-        serializedTransaction,
-        throwOnReceiptRevert,
-        timeout: parameters.timeout
-      });
-    }
-    if (account?.type === "smart")
-      throw new AccountTypeNotSupportedError({
-        metaMessages: [
-          "Consider using the `sendUserOperation` Action instead."
-        ],
-        docsPath: "/docs/actions/bundler/sendUserOperation",
-        type: "smart"
-      });
-    throw new AccountTypeNotSupportedError({
-      docsPath: "/docs/actions/wallet/sendTransactionSync",
-      type: account?.type
-    });
-  } catch (err) {
-    if (err instanceof AccountTypeNotSupportedError)
-      throw err;
-    if (nonceManagerParameters && !(err instanceof TransactionReceiptRevertedError))
-      account?.nonceManager?.reset(nonceManagerParameters);
-    throw getTransactionError(err, {
-      ...parameters,
-      account,
-      chain: parameters.chain || void 0
-    });
-  }
-}
-
 // ../node_modules/viem/_esm/actions/wallet/showCallsStatus.js
 async function showCallsStatus(client, parameters) {
   const { id: id2 } = parameters;
@@ -51800,7 +53277,7 @@ async function signTransaction(client, parameters) {
       chain: chain2
     });
   const formatters2 = chain2?.formatters || client.chain?.formatters;
-  const format = formatters2?.transactionRequest?.format || formatTransactionRequest;
+  const format2 = formatters2?.transactionRequest?.format || formatTransactionRequest;
   if (account.signTransaction)
     return account.signTransaction({
       ...transaction,
@@ -51811,7 +53288,7 @@ async function signTransaction(client, parameters) {
     method: "eth_signTransaction",
     params: [
       {
-        ...format({
+        ...format2({
           ...transaction,
           account
         }, "signTransaction"),
@@ -51867,11 +53344,6 @@ async function watchAsset(client, params) {
   return added;
 }
 
-// ../node_modules/viem/_esm/actions/wallet/writeContractSync.js
-async function writeContractSync(client, parameters) {
-  return writeContract.internal(client, sendTransactionSync, "sendTransactionSync", parameters);
-}
-
 // ../node_modules/viem/_esm/clients/decorators/wallet.js
 function walletActions(client) {
   return {
@@ -51902,7 +53374,13 @@ function walletActions(client) {
     waitForCallsStatus: (args) => waitForCallsStatus(client, args),
     watchAsset: (args) => watchAsset(client, args),
     writeContract: (args) => writeContract(client, args),
-    writeContractSync: (args) => writeContractSync(client, args)
+    writeContractSync: (args) => writeContractSync(client, args),
+    token: {
+      approve: bindActionDecorators(client, approve),
+      approveSync: bindActionDecorators(client, approveSync),
+      transfer: bindActionDecorators(client, transfer),
+      transferSync: bindActionDecorators(client, transferSync)
+    }
   };
 }
 
@@ -51967,7 +53445,7 @@ function getSignalId(signal) {
   return nextId2;
 }
 function http2(url, config3 = {}) {
-  const { batch, fetchFn, fetchOptions, key = "http", methods, name = "HTTP JSON-RPC", onFetchRequest, onFetchResponse, retryDelay, raw: raw2 } = config3;
+  const { batch, fetchFn, fetchOptions, key = "http", maxResponseBodySize, methods, name = "HTTP JSON-RPC", onFetchRequest, onFetchResponse, retryDelay, raw: raw2 } = config3;
   return ({ chain: chain2, retryCount: retryCount_, timeout: timeout_ }) => {
     const { batchSize = 1e3, wait: wait3 = 0 } = typeof batch === "object" ? batch : {};
     const retryCount = config3.retryCount ?? retryCount_;
@@ -51978,6 +53456,7 @@ function http2(url, config3 = {}) {
     const rpcClient = getHttpRpcClient(url_, {
       fetchFn,
       fetchOptions,
+      maxResponseBodySize,
       onRequest: onFetchRequest,
       onResponse: onFetchResponse,
       timeout
@@ -56944,6 +58423,8 @@ var formatters = {
   transactionReceipt: /* @__PURE__ */ defineTransactionReceipt({
     format(args) {
       return {
+        ...args.depositNonce ? { depositNonce: hexToBigInt(args.depositNonce) } : {},
+        ...args.depositReceiptVersion ? { depositReceiptVersion: hexToNumber2(args.depositReceiptVersion) } : {},
         l1GasPrice: args.l1GasPrice ? hexToBigInt(args.l1GasPrice) : null,
         l1GasUsed: args.l1GasUsed ? hexToBigInt(args.l1GasUsed) : null,
         l1Fee: args.l1Fee ? hexToBigInt(args.l1Fee) : null,
@@ -56968,10 +58449,10 @@ var serializers = {
 };
 function serializeTransactionDeposit(transaction) {
   assertTransactionDeposit(transaction);
-  const { sourceHash, data: data4, from: from14, gas, isSystemTx, mint, to, value } = transaction;
+  const { sourceHash, data: data4, from: from16, gas, isSystemTx, mint, to, value } = transaction;
   const serializedTransaction = [
     sourceHash,
-    from14,
+    from16,
     to ?? "0x",
     mint ? toHex(mint) : "0x",
     value ? toHex(value) : "0x",
@@ -56992,9 +58473,9 @@ function isDeposit(transaction) {
   return false;
 }
 function assertTransactionDeposit(transaction) {
-  const { from: from14, to } = transaction;
-  if (from14 && !isAddress2(from14))
-    throw new InvalidAddressError({ address: from14 });
+  const { from: from16, to } = transaction;
+  if (from16 && !isAddress2(from16))
+    throw new InvalidAddressError({ address: from16 });
   if (to && !isAddress2(to))
     throw new InvalidAddressError({ address: to });
 }
@@ -57791,7 +59272,7 @@ function decodePayment(payment) {
   const validated = PaymentPayloadSchema.parse(obj);
   return validated;
 }
-async function signAuthorization3(walletClient, { from: from14, to, value, validAfter, validBefore, nonce }, { asset, network, extra }) {
+async function signAuthorization3(walletClient, { from: from16, to, value, validAfter, validBefore, nonce }, { asset, network, extra }) {
   const chainId = getNetworkId(network);
   const name = extra?.name;
   const version5 = extra?.version;
@@ -57805,7 +59286,7 @@ async function signAuthorization3(walletClient, { from: from14, to, value, valid
     },
     primaryType: "TransferWithAuthorization",
     message: {
-      from: getAddress2(from14),
+      from: getAddress2(from16),
       to: getAddress2(to),
       value,
       validAfter,
@@ -57835,7 +59316,7 @@ function createNonce() {
   );
   return toHex(cryptoObj.getRandomValues(new Uint8Array(32)));
 }
-function preparePaymentHeader(from14, x402Version, paymentRequirements) {
+function preparePaymentHeader(from16, x402Version, paymentRequirements) {
   const nonce = createNonce();
   const validAfter = BigInt(
     Math.floor(Date.now() / 1e3) - 600
@@ -57851,7 +59332,7 @@ function preparePaymentHeader(from14, x402Version, paymentRequirements) {
     payload: {
       signature: void 0,
       authorization: {
-        from: from14,
+        from: from16,
         to: paymentRequirements.payTo,
         value: paymentRequirements.maxAmountRequired,
         validAfter: validAfter.toString(),
@@ -57876,8 +59357,8 @@ async function signPaymentHeader(client, paymentRequirements, unsignedPaymentHea
   };
 }
 async function createPayment(client, x402Version, paymentRequirements) {
-  const from14 = isSignerWallet(client) ? client.account.address : client.address;
-  const unsignedPaymentHeader = preparePaymentHeader(from14, x402Version, paymentRequirements);
+  const from16 = isSignerWallet(client) ? client.account.address : client.address;
+  const unsignedPaymentHeader = preparePaymentHeader(from16, x402Version, paymentRequirements);
   return signPaymentHeader(client, paymentRequirements, unsignedPaymentHeader);
 }
 async function createPaymentHeader(client, x402Version, paymentRequirements) {
@@ -58510,12 +59991,15 @@ var MARKETS = {
     seed: 2650
   },
   sBOND: {
-    // 沒有「美國公債」這個可交易報價，用 TLT（20+ 年期公債 ETF）當代理標的。
+    // #106：追蹤標的從 TLT（美國公債，無可稽核碳強度來源）換成 BGRN
+    // （iShares USD Green Bond ETF，持股公開揭露）。symbol 保留 sBOND——
+    // 它是「合成債券曝險」的通稱，換 symbol 會連鎖動到 keccak 出來的 assetId
+    // 與四合約重接線；#102 的重部署直接以新的 BGRN 餵價註冊同一個 id。
     symbol: "sBOND",
-    underlying: "TLT (iShares 20+ Year Treasury ETF)",
+    underlying: "BGRN (iShares USD Green Bond ETF)",
     category: "bond",
-    yahoo: "TLT",
-    seed: 100
+    yahoo: "BGRN",
+    seed: 48
   },
   sICLN: {
     symbol: "sICLN",
@@ -58935,7 +60419,9 @@ async function getCandles(rawSymbol, rawInterval = "1h", rawLimit, rawEnd) {
 // src/benchmarks.ts
 var BENCHMARKS = {
   spx: { key: "spx", name: "S&P 500", yahoo: "^GSPC" },
-  // 債：用 TLT（20 年期以上公債 ETF），跟 symbols.ts 裡 sBOND 的代理標的同一個。
+  // 債：用 TLT（20 年期以上公債 ETF）當「整體債市」的對照。#106 之後 sBOND
+  // 本身追蹤 BGRN（綠色債券 ETF）——對照指數刻意留用寬基的 TLT，這樣「你 vs
+  // 大盤」比的是「綠色債券 vs 整體債市」而不是拿 BGRN 跟自己比（那會是一條直線）。
   // 刻意不用 ^TNX（10 年期殖利率）——那是「殖利率」不是「價格」，殖利率漲 2%
   // 跟價格漲 2% 是相反的意思，混在一排價格漲跌裡會直接誤導。
   bond: { key: "bond", name: "US Treasury", yahoo: "TLT" },
