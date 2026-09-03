@@ -1,6 +1,16 @@
 import { describe, it, expect } from 'vitest'
 
-import { tierOf, paramsFor, paramsForIntensity, Tier } from './carbon'
+import {
+  tierOf,
+  paramsFor,
+  paramsForIntensity,
+  Tier,
+  attestationAgeDays,
+  attestationExpired,
+  nextAttestationDue,
+  portfolioCarbon,
+  MAX_ATTESTATION_AGE_DAYS,
+} from './carbon'
 
 // 這些門檻與逐級參數是 contracts/src/CarbonTiers.sol 的鏡射，兩邊沒有編譯期
 // 連結——改一邊的門檻沒有改另一邊，兩邊的測試都還是會過，數字會悄悄漂移。
@@ -104,5 +114,121 @@ describe('Tier（型別匯出，供畫面直接使用）', () => {
   it('四個值與 tierOf 回傳的字串一致', () => {
     const all: Tier[] = ['unrated', 'low', 'mid', 'high']
     expect(all).toContain(tierOf(0.5, true))
+  })
+})
+
+// ── 見證新鮮度 ──────────────────────────────────────────────────────────────
+
+describe('attestationAgeDays', () => {
+  const now = Date.parse('2026-09-03T00:00:00Z')
+
+  it('同一天為 0 天', () => {
+    expect(attestationAgeDays('2026-09-03', now)).toBe(0)
+  })
+
+  it('一天前為 1 天', () => {
+    expect(attestationAgeDays('2026-09-02', now)).toBe(1)
+  })
+
+  it('未來日期夾成 0,不產生負數年齡', () => {
+    expect(attestationAgeDays('2027-01-01', now)).toBe(0)
+  })
+
+  it('無法解析的日期回 Infinity——「不知道」要能被 fail-closed', () => {
+    expect(attestationAgeDays('not a date', now)).toBe(Number.POSITIVE_INFINITY)
+  })
+})
+
+describe('attestationExpired', () => {
+  const now = Date.parse('2026-09-03T00:00:00Z')
+
+  it('最大見證年齡是一年——對齊發行方的年度申報週期', () => {
+    expect(MAX_ATTESTATION_AGE_DAYS).toBe(365)
+  })
+
+  it('碳資料蒐集當天（2026-09-02）現在還沒過期', () => {
+    expect(attestationExpired('2026-09-02', now)).toBe(false)
+  })
+
+  it('剛好一年不算過期,超過一年才算', () => {
+    const oneYearAgo = Date.parse('2025-09-03T00:00:00Z')
+    expect(attestationExpired('2025-09-03', oneYearAgo + 365 * 86_400_000)).toBe(false)
+    expect(attestationExpired('2025-09-02', now)).toBe(true)
+  })
+
+  it('無法解析的日期一律當成過期', () => {
+    expect(attestationExpired('', now)).toBe(true)
+  })
+})
+
+describe('nextAttestationDue', () => {
+  it('見證日加一年', () => {
+    expect(nextAttestationDue('2026-09-02')).toBe('2027-09-02')
+  })
+
+  it('無法解析的日期回破折號', () => {
+    expect(nextAttestationDue('nope')).toBe('—')
+  })
+})
+
+// ── 組合加權碳強度 ──────────────────────────────────────────────────────────
+
+describe('portfolioCarbon', () => {
+  it('空組合:強度 null,兩個百分比都是 0', () => {
+    expect(portfolioCarbon([])).toEqual({ intensity: null, ratedWeightPct: 0, unratedWeightPct: 0 })
+  })
+
+  it('單一已評等持倉:強度就是它自己,100% 已評等', () => {
+    const r = portfolioCarbon([{ carbonIntensity: 0.15, isRated: true, weight: 100 }])
+    expect(r.intensity).toBe(0.15)
+    expect(r.ratedWeightPct).toBe(100)
+    expect(r.unratedWeightPct).toBe(0)
+  })
+
+  it('依權重加權,不是算術平均', () => {
+    // sNVDA 0.099 佔 1、sMSFT 10.226 佔 3 → (0.099 + 30.678) / 4
+    const r = portfolioCarbon([
+      { carbonIntensity: 0.099, isRated: true, weight: 1 },
+      { carbonIntensity: 10.226, isRated: true, weight: 3 },
+    ])
+    expect(r.intensity).toBeCloseTo((0.099 + 10.226 * 3) / 4, 10)
+  })
+
+  it('未評等持倉不進平均值,只進 unratedWeightPct——「沒有資料不會被當成 0」', () => {
+    const r = portfolioCarbon([
+      { carbonIntensity: 0.15, isRated: true, weight: 1 },
+      { carbonIntensity: null, isRated: false, weight: 1 },
+    ])
+    expect(r.intensity).toBe(0.15) // 只有已評等那一半
+    expect(r.ratedWeightPct).toBe(50)
+    expect(r.unratedWeightPct).toBe(50)
+  })
+
+  it('全部未評等:強度 null,100% 未評等', () => {
+    const r = portfolioCarbon([
+      { carbonIntensity: null, isRated: false, weight: 2 },
+      { carbonIntensity: null, isRated: false, weight: 3 },
+    ])
+    expect(r.intensity).toBeNull()
+    expect(r.unratedWeightPct).toBe(100)
+  })
+
+  it('零與負權重的持倉被忽略,不影響百分比分母', () => {
+    const r = portfolioCarbon([
+      { carbonIntensity: 0.15, isRated: true, weight: 100 },
+      { carbonIntensity: 999, isRated: true, weight: 0 },
+      { carbonIntensity: 999, isRated: true, weight: -5 },
+    ])
+    expect(r.intensity).toBe(0.15)
+    expect(r.ratedWeightPct).toBe(100)
+  })
+
+  it('isRated 為 true 但碳強度是 null（非營收基準資產）時當成未評等', () => {
+    const r = portfolioCarbon([
+      { carbonIntensity: 0.15, isRated: true, weight: 1 },
+      { carbonIntensity: null, isRated: true, weight: 1 },
+    ])
+    expect(r.intensity).toBe(0.15)
+    expect(r.unratedWeightPct).toBe(50)
   })
 })

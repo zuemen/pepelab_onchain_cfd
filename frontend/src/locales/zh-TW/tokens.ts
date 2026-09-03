@@ -100,17 +100,19 @@ export const tokens = {
     myBalance: '我的餘額',
     issuedOverCap: '發行量 / 上限',
     capClosed: '0（已關閉）',
-    buy: '買入',
-    sell: '賣出',
+    // issue #100 ②：Simple Mode 的詞彙——開倉/平倉 → 買進/贖回。贖回是金庫實際
+    // 執行的動作（redeem），不是把代幣賣給別人。見 frontend/CONTEXT.md 的詞彙表。
+    buy: '買進',
+    sell: '贖回',
     addToWallet: '➕ 加入 MetaMask',
   },
 
   /** 買賣對話框。 */
   dialog: {
-    buyTitle: '買入 {symbol}',
-    sellTitle: '賣出 {symbol}',
+    buyTitle: '買進 {symbol}',
+    sellTitle: '贖回 {symbol}',
     buyAmountLabel: '支付 USDC 金額',
-    sellAmountLabel: '賣出 {symbol} 數量',
+    sellAmountLabel: '贖回 {symbol} 數量',
     needAmount: '輸入金額以取得報價',
     buyQuote: '你將獲得 ≈ {amount} {symbol}',
     sellQuote: '你將收到 ≈ {amount} USDC',
@@ -125,9 +127,128 @@ export const tokens = {
     amountTooSmall: '請輸入大於 0 的金額',
     badQuantity: '數量格式不正確',
     quantityTooSmall: '請輸入大於 0 的數量',
-    bought: '已買入 {symbol} ✓ — 代幣已進入你的錢包',
-    sold: '已賣出 {symbol} ✓ — USDC 已退回錢包',
+    bought: '已買進 {symbol} ✓ — 代幣已進入你的錢包',
+    sold: '已贖回 {symbol} ✓ — USDC 已退回錢包',
     noWallet: '找不到錢包擴充功能',
+  },
+
+  /**
+   * issue #100 ①③④：資產身世卡、「誰負責什麼」、時間尺度。
+   * 逐檔的事實（識別碼、碳強度數字、出處網址）在 lib/pepefi/assetMeta.ts；
+   * 這裡是那張卡上的顯示字串（比照 esg.ts 把每檔一句話的理由放 catalog）。
+   */
+  provenance: {
+    sectionTitle: '資產身世',
+    underlyingLabel: '追蹤標的',
+    referenceIdLabel: '參考識別碼',
+    priceSourceLabel: '價格來源',
+    priceFeedName: {
+      coingecko: 'CoinGecko 現貨',
+      yahoo: 'Yahoo Finance chart',
+    },
+    freshnessLabel: '價格新鮮度',
+    disclaimer: '本代幣以合成價格追蹤上述標的，不代表對該標的的所有權、股東權利或任何請求權。',
+
+    carbonTitle: '碳強度',
+    carbonTier: {
+      unrated: '未評等',
+      low: '低碳',
+      mid: '中碳',
+      high: '高碳',
+    },
+    carbonBasis: {
+      revenue: 'tCO2e ／ 每百萬美元營收',
+      absolute: '絕對年排放量基準（不與營收基準同尺度）',
+      qualitative: '依類別組成質性判定，非計算值',
+    },
+    carbonUnratedNote: '目前沒有未過期的碳見證資料，此資產一律以最保守級計價。',
+    observedLabel: '上次見證',
+    nextDueLabel: '下次見證',
+    sourceLabel: '出處',
+    caveatLabel: '已知限制',
+
+    kycTitle: '為什麼需要 KYC',
+    kycReason: '這個資產追蹤在受監管市場掛牌的證券。開立槓桿部位前會檢查 KYC 狀態；直接買進與贖回代幣不受影響。',
+    kycNotGated: '這個資產不追蹤受監管證券，不需要 KYC。',
+
+    heldDaysLabel: '你已持有',
+    heldDaysValue: '{n} 天',
+    sinceLabel: '自 {date} 起見證',
+
+    /** 逐檔一句話的標的說明、碳資料出處名稱、已知限制。數字與網址在 assetMeta.ts。 */
+    assets: {
+      sBTC: {
+        underlying: '比特幣主網的原生資產，以工作量證明挖礦產生。',
+        carbonSource: 'Cambridge CBECI — 2025 Digital Mining Industry Report',
+        carbonCaveat: '絕對年排放量約 39.8 Mt CO2e，與一個中等國家的全年排放量相當；絕對基準，不與股票的營收基準同尺度。',
+      },
+      sETH: {
+        underlying: '以太坊主網的原生資產，2022 年合併後改為權益證明。',
+        carbonSource: 'Cambridge — 2026 Ethereum climate-footprint report',
+        carbonCaveat: '權益證明後絕對年排放量約 2,370 tCO2e，比本表中任一家公司的 Scope 1 都小；絕對基準，不與股票同尺度。',
+      },
+      sAAPL: {
+        underlying: '在 NASDAQ 掛牌的 Apple Inc. 普通股。',
+        carbonSource: 'Apple Environmental Progress Report 2024（經 Tracenable）· FY2024',
+        carbonCaveat: 'Scope 1+2（市場法），不含 Scope 3；對 Apple 而言 Scope 3 是 Scope 1+2 的十餘倍。',
+      },
+      sTSLA: {
+        underlying: '在 NASDAQ 掛牌的 Tesla, Inc. 普通股。',
+        carbonSource: 'Tesla Impact Report 2024（經 Tracenable）· FY2024',
+        carbonCaveat: 'Scope 1+2（市場法），不含 Scope 3。',
+      },
+      sGOLD: {
+        underlying: 'COMEX 黃金近月期貨結算的現貨黃金價格（XAU/USD）。',
+        carbonSource: 'S&P Global Market Intelligence — Greenhouse gas and gold mines',
+        carbonCaveat: '0.85 tCO2e／盎司（2019 全球平均開採排放），產業年排放超過 100 Mt CO2e；每盎司基準，不與股票的營收基準同尺度。',
+      },
+      sBOND: {
+        underlying: '在 NASDAQ 掛牌的 iShares 20+ 年期美國公債 ETF（TLT）。',
+        carbonSource: '尚無可稽核的發行方碳強度來源',
+        carbonCaveat: '美國公債的碳強度是主權層級的問題，沒有可比的發行方申報；#93 規劃替換為公開揭露持股的綠色債券 ETF，在替換前以最保守級計價。',
+      },
+      sNVDA: {
+        underlying: '在 NASDAQ 掛牌的 NVIDIA Corporation 普通股。',
+        carbonSource: 'NVIDIA Sustainability Report 2025（經 Tracenable）· FY2025',
+        carbonCaveat: 'Scope 2（市場法）為零，是 100% 再生能源憑證／PPA 採購的結果，不代表資料中心實體用電為零；不含 Scope 3。',
+      },
+      sMSFT: {
+        underlying: '在 NASDAQ 掛牌的 Microsoft Corporation 普通股。',
+        carbonSource: 'Microsoft 2025 Environmental Sustainability Report（經 DitchCarbon 交叉核對）· FY2025',
+        carbonCaveat: 'Scope 1+2（市場法），不含 Scope 3。',
+      },
+      sGOOGL: {
+        underlying: '在 NASDAQ 掛牌的 Alphabet Inc. Class A 普通股。',
+        carbonSource: 'Alphabet Environmental Report 2025（涵蓋 FY2024，經 Tracenable）',
+        carbonCaveat: 'Scope 1+2（市場法），不含 Scope 3。',
+      },
+      sICLN: {
+        underlying: 'iShares Global Clean Energy ETF，持有全球再生能源發電與設備公司。',
+        carbonSource: 'iShares ICLN Fact Sheet + 持股（stockanalysis.com）',
+        carbonCaveat: '依前十大持股的產業組成質性判為低碳，非逐檔碳強度計算。',
+      },
+      sESGU: {
+        underlying: 'iShares ESG Aware MSCI USA ETF，經 ESG 篩選的美國大型股組合。',
+        carbonSource: 'iShares ESGU Fact Sheet + 持股（stockanalysis.com）',
+        carbonCaveat: '僅約 24% 持股涵蓋率的加權部分估計，其餘約 76% 未反映，可能顯著改變此數字。',
+      },
+    },
+  },
+
+  /** issue #100 ③：誰提供價格、誰見證碳資料、誰營運儲備、誰稽核程式。 */
+  who: {
+    title: '誰負責什麼',
+    intro: 'RWA 的價值在於知道誰在線上。匿名是加密的價值，不是 RWA 的。',
+    priceRole: '價格',
+    priceWho: 'keeper 從 CoinGecko／Yahoo Finance 取價，寫進 GuardedOracle（多 keeper、單次偏差上限）。過期報價不寫上鏈。',
+    carbonRole: '碳資料見證',
+    carbonWho: '碳強度取自發行方的公開申報（永續報告、10-K），來源網址與擷取日期記錄於 docs/data/carbon-intensity.md。',
+    reserveRole: '儲備營運',
+    reserveWho: 'AssetVault 營運方持有 USDC 儲備；儲備率由 keeper 定期寫成鏈上觀測事件，跌破門檻自動暫停鑄造。',
+    auditRole: '程式稽核',
+    auditWho: '合約經逐次稽核，修補紀錄見 docs/；所有部署位址可在區塊瀏覽器查證。',
+    disclosureTitle: '誠實聲明',
+    disclosure: 'demo 中的碳見證由專案團隊自行安排，尚非機構獨立性。多方見證與歧見可見減輕但不解決「資料本身是否屬實」。',
   },
 
   /** #36：四段句中夾標記的說明，各自拆成標記前後的片段。 */

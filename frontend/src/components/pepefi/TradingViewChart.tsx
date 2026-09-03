@@ -19,11 +19,17 @@ export interface TradingViewChartProps {
   symbol: string;
   /** 容器高度（px）。 */
   height?: number;
+  /**
+   * 預設時間範圍。issue #100 ④：資產頁用「投資的時間尺度」開場，而不是「交易的」
+   * ——所以預設一年，不是內建的當日。可接受的值同 TradingView：`1D` `1M` `12M`
+   * `60M` `ALL` 等。
+   */
+  range?: string;
 }
 
 const SCRIPT_SRC = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js';
 
-export default function TradingViewChart({ symbol, height = 420 }: TradingViewChartProps) {
+export default function TradingViewChart({ symbol, height = 420, range = '12M' }: TradingViewChartProps) {
   const holder = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -50,7 +56,8 @@ export default function TradingViewChart({ symbol, height = 420 }: TradingViewCh
     script.innerHTML = JSON.stringify({
       symbol,
       autosize: true,
-      interval: '60',
+      interval: 'D',
+      range,
       timezone: 'Asia/Taipei',
       theme: 'dark',
       style: '1',
