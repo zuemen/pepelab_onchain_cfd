@@ -39,20 +39,34 @@
 ### 0.3 Secrets（只放環境變數 —— 絕不 commit）
 
 ```bash
-export PRIVATE_KEY=0x…                 # 有錢的 Base Sepolia 部署者金鑰（= 下列每個合約現在的 owner）
+export PRIVATE_KEY=0x…                 # 合約現任 owner 的金鑰（見下）
 export BASE_SEPOLIA_RPC_URL=https://sepolia.base.org   # 或 Alchemy / Infura 的 Base Sepolia 端點
-export BASESCAN_API_KEY=…              # 選用，開啟 --verify
+export BASESCAN_API_KEY=…              # 選用，開啟 --verify（不要照抄 "…"，沒 key 就整行刪掉）
 ```
 
-**金鑰在哪：** owner/deployer 地址是 `0xE80A81360608C1342e66743F70a00f75d792Eb93`，私鑰在這個 public repo 的 git 歷史裡（見 `docs/RUNBOOK_KEY_ROTATION.md`）：
+**金鑰在哪：** 舊的洩漏金鑰（`0xE80A8136…`）**已於 2026-08-07 輪替掉**（見 `docs/KEY_ROTATION_20260807.md`）—— 那把已被 sweeper bot 接管、現在什麼都不擁有。
+
+- **合約現任 owner：`0x27C21324D101e867E0634bf2ebe3F9Dcf3ACA585`**
+- 它的私鑰**不在 git 裡**（輪替的重點就是換一把沒 commit 的）。當初 `rotate-key.sh` 把它寫進 `contracts/.env.rotation`（mode 600、gitignored），計畫是移進團隊密碼管理器後刪掉該檔。
+- **要這把 key：找 2026-08-07 執行輪替的組員，或團隊密碼管理器。**
+- ⚠️ `contracts/.env.example` 裡的 `PRIVATE_KEY`（`0xac09…`）是 **Anvil 本機測試假金鑰**（地址 `0xf39Fd6…`），它不擁有任何 Base Sepolia 合約 —— 不要用。
+
+驗證你手上這把對不對：
 
 ```bash
-git show e912bff:contracts/.env.example | grep -iE "PRIVATE_KEY|DEPLOYER"
+cast wallet address --private-key "$PRIVATE_KEY"
+# 應該印出 0x27C21324D101e867E0634bf2ebe3F9Dcf3ACA585
+cast call 0xEf75ECA6514cE96B18382E921aC6190a0cF8c072 "owner()(address)" --rpc-url "$BASE_SEPOLIA_RPC_URL"
+# 鏈上 owner，兩個要一致
 ```
 
-> ⚠️ 這把金鑰已公開，輪替（`RotateOwnership.s.sol`）尚未執行。拿它跑 #102，代表新部署的整套 stack 的 owner **還是一把公開金鑰** —— testnet demo 可接受，但口試會被問。理想順序是先 `RotateOwnership` 換一把乾淨金鑰再做 #102；輪替本身也要用**現在**這把金鑰發起。這把金鑰永遠不碰主網。
+> 這把新金鑰是單一 EOA、不是 multisig（`KNOWN_LIMITATIONS.md` #13 記的限制）。#102 之後整套 stack 的 owner 仍是這把 EOA —— 可接受，但論文/口試提一句。
 
-部署者金鑰**必須是**下列每個合約現在的 `owner()`：`PerpetualExchange`、`FeeRouter`、`InsuranceVault`、`StrategyRegistry`、`AgentSessionManager`、`EsgRewardDistributor`、`PepeIncentives`、`TraderStake` —— 下面每個 `onlyOwner` 呼叫都以它的身分執行。不確定就 `cast call <addr> "owner()(address)" --rpc-url $BASE_SEPOLIA_RPC_URL` 查。
+部署者金鑰**必須是**下列每個合約現在的 `owner()`：`PerpetualExchange`、`FeeRouter`、`InsuranceVault`、`StrategyRegistry`、`AgentSessionManager`、`EsgRewardDistributor`、`PepeIncentives`、`TraderStake` —— 下面每個 `onlyOwner` 呼叫都以它的身分執行。
+
+> `MockOracle` 的 owner 是**另一把 keeper 金鑰**（輪替時刻意沒動）。§10 那個「用 `cast send $ORACLE setPrice` 拉近 sBOND 價」要用 keeper 金鑰，不是這把部署者金鑰。
+
+forge 廣播記得加 `--slow`（wizard 已內建）：Base 對 7702-delegated 帳號會拒絕 forge 預派的 gapped nonce，`--slow` 讓每筆等 receipt、nonce 嚴格遞增。
 
 部署者錢包要有 **Base Sepolia ETH** 付 gas —— 抓多一點，這輪大約 15–20 筆部署/setter 交易。水龍頭：<https://docs.base.org/chain/network-faucets>。
 
