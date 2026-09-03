@@ -93,13 +93,25 @@ interface V2Health {
   paused:          boolean | null
   accruedFees:     bigint | null
   /**
-   * GuardedOracle fails closed on a stale price — getPrice reverts rather than
-   * returning old data. AssetVaultV2.outstandingValue() calls it directly, so
-   * once any price ages past maxPriceAge both reserveRatioBps() AND mint()
-   * revert. Surfaced here so the page explains it instead of showing a bare "—"
-   * and letting the user hit a confusing revert on Buy.
+   * #99: mirrors `ratioIsStale()` — true when at least one outstanding asset's
+   * price could not be priced, which means the liability sum UNDER-counts and
+   * `reserveRatioBps` reads optimistic. This is a VAULT-WIDE signal about
+   * whether the ratio can be trusted, not a per-asset "this price is old" flag
+   * — a single stale sBOND quote sets it even while sAAPL's own price is
+   * perfectly fresh. It gates the reserve-ratio DISPLAY only; it must never
+   * gate redeem, and it does not gate buy either (mint() prices the specific
+   * asset itself and reverts StalePrice on its own if that one is old —
+   * `mintingHalted` below is the only vault-wide gate on buy).
    */
-  oracleStale: boolean
+  stale: boolean
+  /**
+   * #99 `AssetVaultV2_3.mintingHalted()`: latched by `observeReserve()` when a
+   * snapshot found the reserve ratio under the operator's floor — including a
+   * pure price move with nobody minting. Blocks NEW MINTS ONLY; false on a
+   * pre-V2.3 proxy (the field does not exist there yet, so `reserveStatus()`
+   * fails over to the individual-view fallback below).
+   */
+  mintingHalted: boolean
 }
 
 export default function TokenizedAssetsPage() {
@@ -152,7 +164,7 @@ export default function TokenizedAssetsPage() {
 
   const [rows, setRows]       = useState<Record<string, Row>>({})
   const [health, setHealth]   = useState<V2Health>({
-    reserveRatioBps: null, paused: null, accruedFees: null, oracleStale: false,
+    reserveRatioBps: null, paused: null, accruedFees: null, stale: false, mintingHalted: false,
   })
   const [loading, setLoading] = useState(true)
   const [dlg, setDlg]         = useState<{ sym: AssetSymbol; mode: 'buy' | 'sell' } | null>(null)
@@ -189,24 +201,46 @@ export default function TokenizedAssetsPage() {
     setRows(next)
 
     if (isV2) {
-      const [ratio, paused, fees] = await Promise.all([
-        safeRead(activeVault.reserveRatioBps() as Promise<bigint>, -1n),
+      // #99: reserveStatus() reads the ratio and its trustworthiness together
+      // so they can't disagree — prefer it. It only exists from V2.3 onward, so
+      // also fetch the two views it wraps (reserveRatioBps/ratioIsStale) plus
+      // mintingHalted directly, in the SAME Promise.all rather than a second,
+      // sequential round-trip: `status` wins when it resolves, but if only that
+      // one call fails (a transient RPC hiccup on a real V2.3 proxy, not
+      // necessarily "this is an old V2.2 proxy"), the parallel mintingHalted()
+      // read still reports the true halt state instead of silently assuming
+      // false — a false "not halted" is the one wrong answer that lets someone
+      // submit a buy the chain will actually reject.
+      const [paused, fees, status, ratio, staleFallback, haltedFallback] = await Promise.all([
         safeRead(activeVault.paused() as Promise<boolean>, null as unknown as boolean),
         safeRead(activeVault.accruedFees() as Promise<bigint>, -1n),
+        safeRead(
+          activeVault.reserveStatus() as Promise<
+            [bigint, bigint, bigint, bigint, boolean, boolean]
+          >,
+          null,
+        ),
+        safeRead(activeVault.reserveRatioBps() as Promise<bigint>, -1n),
+        safeRead(activeVault.ratioIsStale() as Promise<boolean>, false),
+        safeRead(activeVault.mintingHalted() as Promise<boolean>, false),
       ])
-      // reserveRatioBps failing while accruedFees succeeds points at the oracle
-      // rather than at the vault being unreachable — accruedFees touches no
-      // price, reserveRatioBps prices every outstanding asset.
-      const ratioFailed = ratio < 0n
-      const vaultReachable = fees >= 0n
-      setHealth({
-        reserveRatioBps: ratio >= 0n ? ratio : null,
-        paused: typeof paused === 'boolean' ? paused : null,
-        accruedFees: fees >= 0n ? fees : null,
-        oracleStale: ratioFailed && vaultReachable,
-      })
+      const pausedVal = typeof paused === 'boolean' ? paused : null
+      const feesVal   = fees >= 0n ? fees : null
+
+      if (status) {
+        const [, , ratioBps, , stale, halted] = status
+        setHealth({
+          reserveRatioBps: ratioBps, paused: pausedVal, accruedFees: feesVal,
+          stale, mintingHalted: halted,
+        })
+      } else {
+        setHealth({
+          reserveRatioBps: ratio >= 0n ? ratio : null, paused: pausedVal, accruedFees: feesVal,
+          stale: staleFallback, mintingHalted: haltedFallback,
+        })
+      }
     } else {
-      setHealth({ reserveRatioBps: null, paused: null, accruedFees: null, oracleStale: false })
+      setHealth({ reserveRatioBps: null, paused: null, accruedFees: null, stale: false, mintingHalted: false })
     }
 
     setLoading(false)
@@ -439,42 +473,68 @@ export default function TokenizedAssetsPage() {
             {t.tokens.health.title}
           </Typography>
 
-          {health.oracleStale && (
+          {/* #99: `stale` (ratioIsStale()) means at least one outstanding asset
+              couldn't be priced, so the ratio below UNDER-counts the liability
+              and reads optimistic — never trade that number for a healthy one.
+              It disables Buy (below) but never Sell — redemption is never
+              gated on the ratio (see docs/RISK_MODEL.md). This is the reader
+              ratioIsStale() was missing before #99. */}
+          {health.stale && (
             <Alert severity="warning" variant="outlined" sx={{ mb: 2 }}>
-              <b>{t.tokens.markup.staleOracleBold}</b>{t.tokens.markup.staleOracleMid1}<code>reserveRatioBps()</code>{t.tokens.markup.staleOracleMid2}<code>mint()</code>{t.tokens.markup.staleOracleAfter}
+              <b>{t.tokens.markup.staleRatioBold}</b>{t.tokens.markup.staleRatioBody}
+            </Alert>
+          )}
+          {/* mintingHalted is the vault-wide breach latch — buying is blocked
+              until an observation finds the book healthy again; selling never
+              is (docs/RISK_MODEL.md: redemption is never ratio-gated). */}
+          {health.mintingHalted && (
+            <Alert severity="error" variant="outlined" sx={{ mb: 2 }}>
+              <b>{t.tokens.markup.mintingHaltedBold}</b>{t.tokens.markup.mintingHaltedBody}
             </Alert>
           )}
           <Grid container spacing={2.5}>
             <Grid size={{ xs: 12, md: 4 }}>
               <Typography variant="caption" color="text.secondary" display="block">{t.tokens.health.reserveRatio}</Typography>
               <Typography sx={{ fontFamily: MONO, fontWeight: 'bold', fontSize: '1.15rem' }}>
-                {ratioPct === null
+                {health.stale
+                  ? t.tokens.health.reserveRatioUnknown
+                  : ratioPct === null
                   ? '—'
                   : ratioPct > 100000 ? t.tokens.health.reserveRatioInfinite : ratioPct.toFixed(1) + '%'}
               </Typography>
               <LinearProgress
                 variant="determinate"
-                value={ratioPct === null ? 0 : Math.min(100, ratioPct / 2)}
-                color={ratioPct !== null && ratioPct < 110 ? 'error' : 'success'}
+                value={health.stale || ratioPct === null ? 0 : Math.min(100, ratioPct / 2)}
+                color={health.stale ? 'warning' : ratioPct !== null && ratioPct < 110 ? 'error' : 'success'}
                 sx={{ mt: 0.75, height: 6, borderRadius: 3 }}
               />
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
-                {t.tokens.health.reserveRatioNote}
+                {health.stale ? t.tokens.health.reserveRatioNoteStale : t.tokens.health.reserveRatioNote}
               </Typography>
             </Grid>
 
             <Grid size={{ xs: 12, md: 4 }}>
               <Typography variant="caption" color="text.secondary" display="block">{t.tokens.health.status}</Typography>
-              {health.paused === null ? (
-                <Typography sx={{ fontFamily: MONO }}>—</Typography>
-              ) : (
-                <Chip
-                  size="small"
-                  color={health.paused ? 'error' : 'success'}
-                  label={health.paused ? t.tokens.health.paused : t.tokens.health.running}
-                  sx={{ fontWeight: 'bold', mt: 0.5 }}
-                />
-              )}
+              <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
+                {health.paused === null ? (
+                  <Typography sx={{ fontFamily: MONO }}>—</Typography>
+                ) : (
+                  <Chip
+                    size="small"
+                    color={health.paused ? 'error' : 'success'}
+                    label={health.paused ? t.tokens.health.paused : t.tokens.health.running}
+                    sx={{ fontWeight: 'bold' }}
+                  />
+                )}
+                {health.mintingHalted && (
+                  <Chip
+                    size="small"
+                    color="error"
+                    label={t.tokens.health.mintingHalted}
+                    sx={{ fontWeight: 'bold' }}
+                  />
+                )}
+              </Stack>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
                 {t.tokens.health.pausableNote}
               </Typography>
@@ -565,7 +625,17 @@ export default function TokenizedAssetsPage() {
                 <Stack direction="row" spacing={1} sx={{ mt: 'auto', pt: 0.5 }}>
                   <Button
                     size="small" variant="contained" fullWidth
-                    disabled={isV2 && (health.paused === true || health.oracleStale)}
+                    // #99: `stale` gates buy too, not just `mintingHalted`. A
+                    // stale asset makes reserveRatioBps() UNDER-count liability
+                    // (that asset drops out of the sum), so the ratio — and
+                    // mintingHalted's own trigger — can read healthy even while
+                    // the true, unknown ratio has already breached. Blocking
+                    // buy on ANY unpriced asset, not just the one being traded,
+                    // is what "cannot confirm the ratio" (docs/RISK_MODEL.md,
+                    // frontend/CONTEXT.md's Unknown Ratio) means in practice.
+                    // A specific asset's own stale price still separately
+                    // reverts via mint()'s _price() call regardless.
+                    disabled={isV2 && (health.paused === true || health.mintingHalted || health.stale)}
                     onClick={() => setDlg({ sym, mode: 'buy' })}
                     sx={{ textTransform: 'none', fontWeight: 'bold' }}
                   >
@@ -573,7 +643,9 @@ export default function TokenizedAssetsPage() {
                   </Button>
                   <Button
                     size="small" variant="outlined" fullWidth
-                    disabled={bal === 0n || (isV2 && (health.paused === true || health.oracleStale))}
+                    // #99: redemption is never gated by the reserve ratio or by
+                    // mintingHalted (docs/RISK_MODEL.md) — only paused stops it.
+                    disabled={bal === 0n || (isV2 && health.paused === true)}
                     onClick={() => setDlg({ sym, mode: 'sell' })}
                     sx={{ textTransform: 'none', fontWeight: 'bold' }}
                   >

@@ -53,6 +53,11 @@ export const errors = {
     FundingIntervalNotElapsed: 'Funding 結算間隔（8 小時）尚未到，無需手動結算',
     NotPositionAgent: '這個倉位是由另一個 agent session 開的，只有當初開倉的那個 agent 能代為平倉',
 
+    // ── AssetVaultV2（#99：儲備率觀測與破線自動暫停）─────────────────────────
+    MintingHalted:
+      '鑄造已暫停——鏈上觀測到儲備率跌破門檻，新的買入需要等下一次觀測顯示已恢復。贖回不受影響，可以正常賣出。',
+    ReserveRatioTooLow: '這筆買入會讓金庫儲備率低於門檻，已被拒絕。可以嘗試更小的金額，或稍後再試。',
+
     // ── PepeAMM（恆定乘積池：swap 會有滑點，且受 oracle 護欄限制）─────────────
     StaleOraclePrice:
       '兌換池的參考預言機報價已過期（超過 maxOracleAge），為避免被過期價格套利，兌換暫停。請等 keeper 更新價格後再試',
