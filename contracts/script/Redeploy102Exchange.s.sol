@@ -14,6 +14,33 @@ interface ISettableExchange {
     function setExchange(address) external;
 }
 
+/// @dev The live old exchange (deployed 2026-06-14) predates #96, so its
+///      `getPosition` returns the ORIGINAL 13-field Position tuple. Decoding
+///      that into the current `PerpetualExchange.Position` (which #96 grew
+///      with `carbonTier` etc.) reverts — 13 fields of data cannot fill the
+///      wider struct. The survey below reads the old exchange through this
+///      13-field mirror instead. `setAgentAuthorized` / `authorizedAgents` /
+///      `nextPositionId` are unchanged, so those still go through the real
+///      `PerpetualExchange` type.
+interface IOldExchange {
+    struct OldPosition {
+        uint256 id;
+        address owner;
+        bytes32 asset;
+        bool    isLong;
+        uint256 entryPrice;
+        uint256 margin;
+        uint256 leverage;
+        uint256 openedAt;
+        uint256 closedAt;
+        int256  realizedPnL;
+        bool    isOpen;
+        address copiedFrom;
+        int256  entryFundingIndex;
+    }
+    function getPosition(uint256) external view returns (OldPosition memory);
+}
+
 /// @notice #102 step 2 — redeploy the four-contract chain onto the
 ///         carbon-pricing PerpetualExchange (#96), and rewire everything that
 ///         holds the old exchange address as `immutable`.
@@ -198,7 +225,7 @@ contract Redeploy102Exchange is Script {
         console.log("nextPositionId :", next);
 
         for (uint256 i = 0; i < limit; i++) {
-            PerpetualExchange.Position memory p = PerpetualExchange(OLD_EXCHANGE).getPosition(i);
+            IOldExchange.OldPosition memory p = IOldExchange(OLD_EXCHANGE).getPosition(i);
             if (!p.isOpen) continue;
             openCount++;
             openMargin += p.margin;

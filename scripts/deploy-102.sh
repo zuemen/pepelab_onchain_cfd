@@ -354,11 +354,23 @@ unset DRY_RUN   # ← 一定要 unset，否則 Stage 5 的廣播也會變成 dry
 if grep -q "0 open positions on the old exchange" "$L2"; then
   ok "舊 exchange 0 未平倉 —— 可以切換"
 else
-  warn "舊 exchange 還有未平倉部位（見上方 survey 印出的 id / owner）。"
-  say  "請每個 owner 先平倉，並提出可用保證金："
-  say  "  cast send <OLD_EXCHANGE> 'withdrawMargin(uint256)' <amount> --private-key <owner> --rpc-url \$BASE_SEPOLIA_RPC_URL"
-  say  "全部清乾淨後，重跑這個 wizard（會 source 回 $SCRATCH 裡的位址接續）。"
-  die "尚有未平倉部位 —— 先清空"
+  OPENCNT="$(grep -oiE 'open positions[[:space:]:]+[0-9]+' "$L2" | grep -oE '[0-9]+' | tail -1)"
+  warn "舊 exchange 還有 ${OPENCNT:-一些} 個未平倉部位（上方 survey 有 id / owner）。"
+  say  ""
+  say  "理想做法：每個 owner 自己平倉 + 提保證金，把數字清到 0，然後重跑本 wizard"
+  say  "  cast send $OLD_EXCHANGE 'closePosition(uint256)' <id> --private-key <owner_key> --rpc-url \$BASE_SEPOLIA_RPC_URL"
+  say  "  cast send $OLD_EXCHANGE 'withdrawMargin(uint256)' <amount> --private-key <owner_key> --rpc-url \$BASE_SEPOLIA_RPC_URL"
+  say  ""
+  warn "但如果部位的 owner 是已失控/sweeper 佔用的金鑰（例如舊的 0xE80A8136…），"
+  warn "沒人能平它 —— 只能等它被清算，或帶著它切換。"
+  warn "帶著未平倉切換的後果：Stage 5 的 InsuranceVault.setExchange 之後，"
+  warn "那些部位在舊 exchange 上需要 bailout 時會 revert，平不掉也清算不了。"
+  say  ""
+  if confirm "我了解風險，仍要帶著這 ${OPENCNT:-?} 個未平倉部位繼續切換"; then
+    warn "已選擇帶著未平倉部位繼續 —— Stage 5 的腳本會把這記成一個刻意的選擇。"
+  else
+    die "先去清空未平倉部位，再重跑本 wizard（會從 $SCRATCH 接續已完成的部署）"
+  fi
 fi
 pause "Enter 進入不可逆的部署階段"
 
