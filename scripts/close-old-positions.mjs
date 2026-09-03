@@ -81,19 +81,35 @@ async function main() {
   if (process.env.OLD_DEPLOYER_PK) console.log('  ' + addKey(process.env.OLD_DEPLOYER_PK, '舊 deployer'));
   else console.log('  舊 deployer: 未提供 OLD_DEPLOYER_PK');
 
-  if (process.env.SEED_MNEMONIC) {
-    // SeedWhales.s.sol uses vm.deriveKey(mnemonic, i + 1) for i in 0..11,
-    // i.e. account indices 1..12 on the standard path.
+  // Derive a generous index range, not just 1..12.
+  //
+  // SeedWhales.s.sol uses vm.deriveKey(mnemonic, i + 1), so 1..12 is the range
+  // the current script produces. But the old exchange holds positions from
+  // earlier runs too, and one owner (0x858b36…0ba972) sits outside that window
+  // — a narrow range silently reports "no key" for an account the mnemonic
+  // actually controls. Deriving 0..24 is free and covers re-runs that used a
+  // different offset.
+  const deriveInto = (phrase, label) => {
     let n = 0;
-    for (let i = 1; i <= 12; i++) {
-      const w = ethers.HDNodeWallet.fromPhrase(process.env.SEED_MNEMONIC, undefined, `m/44'/60'/0'/0/${i}`);
-      signers.set(w.address.toLowerCase(), new ethers.Wallet(w.privateKey, provider));
-      n++;
+    for (let i = 0; i <= 24; i++) {
+      try {
+        const w = ethers.HDNodeWallet.fromPhrase(phrase, undefined, `m/44'/60'/0'/0/${i}`);
+        signers.set(w.address.toLowerCase(), new ethers.Wallet(w.privateKey, provider));
+        n++;
+      } catch { /* bad phrase — reported by the caller */ }
     }
-    console.log(`  demo 交易者: 由 SEED_MNEMONIC 衍生 ${n} 個 (index 1..12)`);
-  } else {
-    console.log('  demo 交易者: 未提供 SEED_MNEMONIC');
-  }
+    console.log(`  ${label}: 衍生 ${n} 個 (index 0..24)`);
+  };
+
+  if (process.env.SEED_MNEMONIC) deriveInto(process.env.SEED_MNEMONIC, 'demo 交易者 (SEED_MNEMONIC)');
+  else console.log('  demo 交易者: 未提供 SEED_MNEMONIC');
+
+  // Anvil's default phrase is published in Foundry's own docs, so this is not a
+  // secret being embedded. SeedWhales originally derived its traders from it —
+  // that is the bug KEY_ROTATION_20260807.md describes — and positions opened
+  // during those runs are still owned by those accounts. 0x709979…dc79c8 is
+  // Anvil index 1, confirmed by derivation.
+  deriveInto('test test test test test test test test test test test junk', 'Anvil 預設帳號');
 
   // ── Survey ────────────────────────────────────────────────────────────────
   const next = Number(await ex.nextPositionId());
