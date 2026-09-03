@@ -93,21 +93,29 @@ export const navData: NavSectionProps['data'] = [
 // Simple 模式的側邊欄。
 //
 // 全站 17 個項目對新手是雜訊，不是選項——切到 simple 模式之前，mode 這個
-// 狀態存在了，但從沒改變過側邊欄一個字。這裡把它接上：simple 只留使用流程
-// 上真的用得到的五個入口，其餘收起來，讓側邊欄本身變成「這是簡化版」的
-// 第一個訊號，而不是要使用者先點開每一項才知道自己用不到。
+// 狀態存在了，但從沒改變過側邊欄一個字。這裡把它接上：simple 只留一個
+// 「我擁有什麼、表現如何」的投資人視角需要的入口，其餘收進 Expert。
 //
-// 照使用順序排：先看自己的錢與持倉（Portfolio，前身的 Dashboard 已併入），
-// 再去買代幣化資產（Tokens——simple 模式的主要動作就是這個，它本來被漏掉，
-// 於是簡化版反而只剩永續入口），接著是現金／水龍頭（Exchange），然後看大戶
-// 動向（Whale Tracker），Pepe 養成中心放最後，因為它是遊戲化的附加內容。
+// issue #101 — Mode 分流 11 / 11。Simple 的 11 個頁面裡，LandingPage 是
+// `/`（不在側邊欄），CopyPage 與 TraderProfilePage 是帶參數的路徑（從配置
+// 市集點進去），所以側邊欄上是這 8 個。被藏起來的是入口不是路徑——
+// WhaleTracker、TradeTerminal、各 Admin 頁直接打網址仍然到得了，口試時
+// Expert Mode 也照常可用。
+//
+// 照使用順序排：先看自己的資產配置（Portfolio），再逛別人發布的配置
+// （Marketplace），去買賣代幣化資產（Tokens），看碳強度與見證歧見（ESG），
+// 翻自己的歷史（History），管理 agent session（Sessions），現金／水龍頭
+// （Exchange），養成中心（PepeLab）放最後——遊戲化元素只出現在它自己的頁。
 //
 // terminal 不在這裡，而且是刻意的：simple 模式就是「沒有槓桿的那一版」。
 const SIMPLE_NAV_PATHS: readonly string[] = [
   paths.pepefi.portfolio,
+  paths.pepefi.marketplace,
   paths.pepefi.tokens,
+  paths.pepefi.esg,
+  paths.pepefi.history,
+  paths.pepefi.sessions,
   paths.pepefi.exchange,
-  paths.pepefi.whale,
   paths.pepefi.pepe,
 ];
 

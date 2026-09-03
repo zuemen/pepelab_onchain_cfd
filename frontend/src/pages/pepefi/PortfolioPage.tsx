@@ -23,7 +23,7 @@ import { firstBlocking, stalenessNotice } from 'src/lib/pepefi/priceFreshness';
 import { useMode } from 'src/contexts/mode-context';
 import { useAccountBalances } from 'src/hooks/useAccountBalances';
 import { isPortfolioProvablyEmpty, type NetWorthParts, type PortfolioEmptinessCheck } from 'src/lib/pepefi/portfolio';
-import { COLUMN_LABELS, openPositionColumnsForMode, type OpenPositionColumnKey } from 'src/lib/pepefi/openPositionColumns';
+import { COLUMN_LABELS, columnLabelForMode, openPositionColumnsForMode, type OpenPositionColumnKey } from 'src/lib/pepefi/openPositionColumns';
 
 import StatCard from 'src/components/pepefi/StatCard';
 import ESGBadge from 'src/components/pepefi/ESGBadge';
@@ -723,12 +723,14 @@ export default function PortfolioPage() {
       <Card sx={{ border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
         <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 1 }}>
-            {t.portfolio.page.openPositions}
+            {mode === 'simple' ? t.portfolio.page.openPositionsSimple : t.portfolio.page.openPositions}
           </Typography>
           {/* The count lives here now rather than in its own card above a table
               that already shows every row. */}
           <Typography variant="caption" color="text.secondary">
-            {interpolate(t.portfolio.page.openCount, { count: positions.length })}
+            {mode === 'simple'
+              ? interpolate(t.portfolio.page.openCountSimple, { count: positions.length })
+              : interpolate(t.portfolio.page.openCount, { count: positions.length })}
           </Typography>
         </Box>
 
@@ -746,7 +748,7 @@ export default function PortfolioPage() {
                 <TableRow sx={{ bgcolor: 'background.neutral' }}>
                   {openPositionColumnsForMode('simple').map(key => (
                     <TableCell key={key} sx={{ color: 'text.secondary', fontWeight: 'bold', fontSize: '0.75rem', py: 1.5 }}>
-                      {COLUMN_LABELS[key]}
+                      {columnLabelForMode(key, 'simple')}
                     </TableCell>
                   ))}
                 </TableRow>
@@ -896,7 +898,7 @@ export default function PortfolioPage() {
         <Grid size={{ xs: 12, md: hasCopyHistory ? 6 : 12 }}>
           <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5, height: '100%' }}>
             <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 1 }}>
-              {t.portfolio.page.freeMargin}
+              {mode === 'simple' ? t.portfolio.page.freeMarginSimple : t.portfolio.page.freeMargin}
             </Typography>
             <Box>
               <Typography variant="h3" sx={{ fontWeight: 800, fontFamily: MONO, color: 'primary.light' }}>

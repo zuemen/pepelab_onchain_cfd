@@ -11,10 +11,10 @@ export const errors: Catalog['errors'] = {
     // Selectors (0x + 4-byte hex)
     '0xbb90b0d9': 'Click Approve to let the SwapRouter spend your USDC.',
     '0xe450d38c':
-      'Your wallet is short on USDC — grab free test USDC from the faucet on the home page first 🚰',
+      'Your wallet is short on USDC — grab free test USDC from the faucet on the Funding & Swap page first 🚰',
     // Keyword matches (case-insensitive)
     ERC20InsufficientBalance:
-      'Your wallet is short on USDC — grab free test USDC from the faucet on the home page first 🚰',
+      'Your wallet is short on USDC — grab free test USDC from the faucet on the Funding & Swap page first 🚰',
     'no strategies': "This trader hasn't published a copy-trading strategy yet!",
     FaucetCooldown: 'The faucet only pays out once every 24h — wait for the cooldown to end.',
     NoStrategyPublished: "This trader hasn't published a strategy",

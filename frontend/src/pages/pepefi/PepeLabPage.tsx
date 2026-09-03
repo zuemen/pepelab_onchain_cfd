@@ -18,7 +18,12 @@ import { RouterLink } from 'src/routes/components';
 
 import { useWalletContext } from 'src/contexts/wallet-context';
 import { useContracts } from 'src/hooks/useContracts';
+import { useSynthHoldings } from 'src/hooks/useSynthHoldings';
 import { Iconify } from 'src/components/iconify';
+import { ASSET_META } from 'src/lib/pepefi/assetMeta';
+import { holdingValue } from 'src/lib/pepefi/assetClass';
+import { portfolioCarbon, attestationExpired } from 'src/lib/pepefi/carbon';
+import { diversificationByValue } from 'src/lib/pepefi/diversification';
 import { BURN_ADDRESS, loadGamefiState, saveGamefiState, GAMEFI_DEFAULT_STATE } from 'src/lib/pepefi/gamefi';
 import { ACHIEVEMENTS, buildQuests, TODAY_INDEX, type AchCtx } from 'src/lib/pepefi/achievements';
 import { useToast } from 'src/components/pepefi/ToastProvider';
@@ -73,6 +78,12 @@ export default function PepeLabPage() {
   const [streak, setStreak] = useState(0);
   const [lastDay, setLastDay] = useState(0);
   const [positions, setPositions] = useState(0);
+  // issue #101 — 成就輸入反轉. holdingDays / untouchedDays come from open
+  // positions the way Anchor Date does (oldest / newest openedAt); carbon and
+  // diversification come from the tokenized holdings below.
+  const [oldestOpenedAt, setOldestOpenedAt] = useState(0);
+  const [newestOpenedAt, setNewestOpenedAt] = useState(0);
+  const { rows: synthHoldings } = useSynthHoldings();
 
   // Sync real-time on-chain PEPE balance
   useEffect(() => {
@@ -100,6 +111,19 @@ export default function PepeLabPage() {
       try {
         const ids = (await contracts.exchange.getUserPositions(wallet.address)) as bigint[];
         setPositions(ids.length);
+        const times = await Promise.all(
+          ids.map(async (id) => {
+            try {
+              const p = (await contracts.exchange.getPosition(id)) as { openedAt: bigint };
+              return Number(p.openedAt);
+            } catch {
+              return 0;
+            }
+          }),
+        );
+        const open = times.filter((s) => s > 0);
+        setOldestOpenedAt(open.length ? Math.min(...open) : 0);
+        setNewestOpenedAt(open.length ? Math.max(...open) : 0);
       } catch { /* exchange not deployed on this chain */ }
     })();
   }, [contracts, wallet.address]);
@@ -392,13 +416,26 @@ export default function PepeLabPage() {
   // Same definitions the Dashboard renders, so a badge cannot unlock in one
   // place and stay locked in the other.
   const checkedToday = lastDay === TODAY_INDEX();
+
+  // issue #101 — 成就輸入反轉. streak · pepeNum · positions · owned →
+  // holdingDays · portfolioCarbon · diversification · untouchedDays.
+  const nowSec = Math.floor(Date.now() / 1000);
+  const daysSince = (sec: number) => (sec > 0 ? Math.floor((nowSec - sec) / 86400) : 0);
+  const carbonWeights = synthHoldings.map((h) => {
+    const c = ASSET_META[h.asset]?.carbon;
+    const rated =
+      !!c && c.basis === 'revenue' && c.intensity !== null && !attestationExpired(c.observed, Date.now());
+    return {
+      carbonIntensity: c?.intensity ?? null,
+      isRated: rated,
+      weight: Number(holdingValue(h)) / 1e18,
+    };
+  });
   const achCtx: AchCtx = {
-    streak,
-    pepeNum: finalPepeBal,
-    positions,
-    // Live state rather than a re-read of localStorage: a skin unlocked this
-    // session should light 收藏家 immediately.
-    owned: unlockedSkins.length,
+    holdingDays: daysSince(oldestOpenedAt),
+    portfolioCarbon: portfolioCarbon(carbonWeights).intensity,
+    diversification: diversificationByValue(synthHoldings.map(holdingValue)).score,
+    untouchedDays: daysSince(newestOpenedAt),
   };
   const quests = buildQuests({ streak, pepeNum: finalPepeBal, positions, checkedToday });
 

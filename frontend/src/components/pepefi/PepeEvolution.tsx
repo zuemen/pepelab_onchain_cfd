@@ -55,6 +55,46 @@ export function getEvolutionStage(level: number): PepeEvolutionStage {
   return current;
 }
 
+// ── issue #101 — 進化改由「組合加權碳強度 + 持有時長」驅動 ────────────────────
+//
+// 舊的驅動是 `level`，而 level 是拿 PEPE 買藥水堆 XP 換來的——「用買的，不是
+// 賺的」。同一套七階段美術、同一個 PEPE_EVOLUTION_STAGES 陣列，只換掉輸入：
+// 持有得越久往上爬，但組合碳排越高、封頂越低。高碳組合再怎麼放著也到不了
+// 蛙神，這正是平台的主張句在遊戲化層的樣子。
+
+/** 每一階需要的最短持有天數，index = stage。 */
+export const EVOLUTION_HOLDING_DAYS = [0, 7, 30, 90, 180, 365, 730];
+
+/**
+ * 碳強度封頂：未評等或高碳(>8，對齊 carbon.ts 的 mid 上限)最多到「新銳蛙」
+ * (stage 3)；中碳(1–8)最多到「蛙皇」(stage 5)；低碳(<1)不設限。
+ */
+function carbonCeiling(portfolioCarbon: number | null): number {
+  if (portfolioCarbon === null) return 3;
+  if (portfolioCarbon > 8) return 3;
+  if (portfolioCarbon >= 1) return 5;
+  return 6;
+}
+
+/**
+ * 由組合加權碳強度與最久持有天數決定進化階段。
+ *
+ * `portfolioCarbon` 來自 lib/pepefi/carbon.ts 的 `portfolioCarbon().intensity`
+ * (沒有已評等持倉時為 null)；`holdingDays` 是最久未平倉部位的天數(Anchor
+ * Date 的天數)。
+ */
+export function evolutionStageFor(
+  portfolioCarbon: number | null,
+  holdingDays: number,
+): PepeEvolutionStage {
+  let byHolding = 0;
+  EVOLUTION_HOLDING_DAYS.forEach((d, i) => {
+    if (holdingDays >= d) byHolding = i;
+  });
+  const stage = Math.max(0, Math.min(byHolding, carbonCeiling(portfolioCarbon)));
+  return PEPE_EVOLUTION_STAGES[stage];
+}
+
 /** Next form the player is working towards, or null once fully evolved. */
 export function getNextEvolutionStage(level: number): PepeEvolutionStage | null {
   return PEPE_EVOLUTION_STAGES.find((s) => level < s.minLevel) || null;
