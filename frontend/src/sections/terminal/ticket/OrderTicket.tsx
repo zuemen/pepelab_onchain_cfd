@@ -1,6 +1,6 @@
 import type { AssetMeta } from 'src/lib/pepefi/assetMeta'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 import Box from '@mui/material/Box'
 import Alert from '@mui/material/Alert'
@@ -12,6 +12,7 @@ import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { estimateLiquidationPrice } from 'src/lib/pepefi/liquidation'
 import { fUsd, fNum, fToken, fromUnits } from 'src/lib/pepefi/format'
 import { SHOW_LEVERAGE, FIXED_LEVERAGE } from 'src/lib/pepefi/featureFlags'
+import { paramsFor, attestationExpired, type Tier } from 'src/lib/pepefi/carbon'
 
 import { Row } from '../Atoms'
 import { C, panel, monoCss, labelCss } from '../terminal-theme'
@@ -61,6 +62,19 @@ export function OrderTicket({
   const [isLong, setIsLong] = useState(true)
   // 旗標關閉時鎖在 1×：畫面不露出選擇器，送單也只送 1，鏈上行為等同現貨。
   const [lev, setLev] = useState(SHOW_LEVERAGE ? 2 : FIXED_LEVERAGE)
+
+  // 碳分級的槓桿上限。合約 openPosition 會用 CarbonTiers 推導的上限擋，這裡
+  // 先把選擇器夾住，讓使用者在按下去之前就看到「這個資產只能到 N×」，而不是
+  // 送出後吃一個 revert。見證過期一律當未評等（1×）。
+  const carbonTier: Tier = meta?.carbon
+    ? attestationExpired(meta.carbon.observed, Date.now())
+      ? 'unrated'
+      : meta.carbon.tier
+    : 'unrated'
+  const carbonMaxLev = meta?.carbon ? paramsFor(carbonTier).maxLeverage : 5
+  useEffect(() => {
+    if (lev > carbonMaxLev) setLev(carbonMaxLev)
+  }, [carbonMaxLev, lev])
   const [margin, setMargin] = useState('')
   const [busy, setBusy] = useState(false)
   const [riskOpen, setRiskOpen] = useState(true)
@@ -151,12 +165,24 @@ export function OrderTicket({
         })}
       </Box>
 
-      {/* leverage —— SHOW_LEVERAGE 關閉時整塊不渲染，lev 固定 FIXED_LEVERAGE */}
+      {/* leverage —— SHOW_LEVERAGE 關閉時整塊不渲染，lev 固定 FIXED_LEVERAGE。
+          碳分級上限之上的倍數不給選（合約也會擋，這裡先攔）。 */}
       {SHOW_LEVERAGE && (
       <Box>
-        <Box sx={{ ...labelCss, mb: 0.7 }}>{t.terminal.ticket.leverage}</Box>
+        <Box sx={{ ...labelCss, mb: 0.7, display: 'flex', justifyContent: 'space-between' }}>
+          <span>{t.terminal.ticket.leverage}</span>
+          {meta?.carbon && carbonMaxLev < 5 && (
+            <Box component="span" sx={{ ...monoCss, fontSize: 10, color: C.mut }}>
+              {interpolate(t.terminal.stats.carbonValue, {
+                tier: t.tokens.provenance.carbonTier[carbonTier],
+                fee: paramsFor(carbonTier).tradingFeeBps,
+                lev: carbonMaxLev,
+              })}
+            </Box>
+          )}
+        </Box>
         <Box sx={{ display: 'flex', gap: 0.8 }}>
-          {[1, 2, 5].map((l) => {
+          {[1, 2, 5].filter((l) => l <= carbonMaxLev).map((l) => {
             const on = lev === l
             return (
               <Box

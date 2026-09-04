@@ -6,6 +6,7 @@ import Box from '@mui/material/Box'
 
 import { t, interpolate } from 'src/locales'
 import { fUsd, fNum, fromUnits } from 'src/lib/pepefi/format'
+import { paramsFor, attestationExpired, type Tier } from 'src/lib/pepefi/carbon'
 
 import { Stat } from './Atoms'
 import { C, panel, monoCss, labelCss } from './terminal-theme'
@@ -96,6 +97,27 @@ export function MarketStatsBar({
         v={`${rate >= 0 ? '+' : ''}${fNum(rate / 100, { dp: 4 })}%`}
         color={rate > 0 ? C.red : rate < 0 ? C.green : C.mut}
       />
+
+      {/* 碳分級 → 費率 + 槓桿上限。規則寫死在 CarbonTiers 合約，這裡照 assetMeta
+          的分級與 carbon.ts 的鏡射顯示；見證過期一律當未評等（最保守級）。 */}
+      {meta?.carbon && (() => {
+        const tier: Tier = attestationExpired(meta.carbon.observed, Date.now())
+          ? 'unrated'
+          : meta.carbon.tier
+        const p = paramsFor(tier)
+        return (
+          <Stat
+            label={t.terminal.stats.carbon}
+            hint={t.terminal.stats.carbonHint}
+            v={interpolate(t.terminal.stats.carbonValue, {
+              tier: t.tokens.provenance.carbonTier[tier],
+              fee: p.tradingFeeBps,
+              lev: p.maxLeverage,
+            })}
+            color={tier === 'high' || tier === 'unrated' ? C.red : tier === 'mid' ? undefined : C.green}
+          />
+        )
+      })()}
       <Stat
         label={t.terminal.stats.openInterest}
         hint={t.terminal.stats.openInterestHint}
