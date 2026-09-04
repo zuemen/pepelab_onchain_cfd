@@ -12,6 +12,32 @@
   },
   {
     "type": "function",
+    "name": "MAX_ALLOCATION_WEIGHT_BPS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MIN_ALLOCATION_ASSETS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "getAllTraders",
     "inputs": [],
     "outputs": [
@@ -318,6 +344,22 @@
   },
   {
     "type": "error",
+    "name": "DuplicateAsset",
+    "inputs": [
+      {
+        "name": "firstIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "secondIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "EmptyAllocations",
     "inputs": []
   },
@@ -357,6 +399,33 @@
     "type": "error",
     "name": "NotRegistered",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TooFewAssets",
+    "inputs": [
+      {
+        "name": "got",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "WeightExceedsMax",
+    "inputs": [
+      {
+        "name": "index",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "weight",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "error",

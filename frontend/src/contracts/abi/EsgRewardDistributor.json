@@ -3,11 +3,6 @@
     "type": "constructor",
     "inputs": [
       {
-        "name": "_pepe",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
         "name": "_exchange",
         "type": "address",
         "internalType": "address"
@@ -16,9 +11,27 @@
         "name": "_esgRegistry",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "_badge",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "badge",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IBadgeForReward"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -30,7 +43,13 @@
         "internalType": "uint256"
       }
     ],
-    "outputs": [],
+    "outputs": [
+      {
+        "name": "badgeTokenId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
     "stateMutability": "nonpayable"
   },
   {
@@ -61,26 +80,13 @@
   },
   {
     "type": "function",
-    "name": "highEsgThreshold",
+    "name": "maxRewardTier",
     "inputs": [],
     "outputs": [
       {
         "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "maxRewardPerClaim",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
+        "type": "uint8",
+        "internalType": "enum CarbonTiers.Tier"
       }
     ],
     "stateMutability": "view"
@@ -113,19 +119,6 @@
   },
   {
     "type": "function",
-    "name": "pepe",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "contract IERC20"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "previewReward",
     "inputs": [
       {
@@ -136,9 +129,9 @@
     ],
     "outputs": [
       {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
+        "name": "claimable",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "stateMutability": "view"
@@ -152,16 +145,21 @@
   },
   {
     "type": "function",
-    "name": "rewardRateBps",
-    "inputs": [],
-    "outputs": [
+    "name": "rescueERC20",
+    "inputs": [
       {
-        "name": "",
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
         "type": "uint256",
         "internalType": "uint256"
       }
     ],
-    "stateMutability": "view"
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -184,25 +182,12 @@
   },
   {
     "type": "function",
-    "name": "setHighEsgThreshold",
+    "name": "setMaxRewardTier",
     "inputs": [
       {
-        "name": "threshold",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setMaxRewardPerClaim",
-    "inputs": [
-      {
-        "name": "maxReward",
-        "type": "uint256",
-        "internalType": "uint256"
+        "name": "tier",
+        "type": "uint8",
+        "internalType": "enum CarbonTiers.Tier"
       }
     ],
     "outputs": [],
@@ -223,38 +208,12 @@
   },
   {
     "type": "function",
-    "name": "setRewardRateBps",
-    "inputs": [
-      {
-        "name": "rateBps",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "transferOwnership",
     "inputs": [
       {
         "name": "newOwner",
         "type": "address",
         "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "withdraw",
-    "inputs": [
-      {
-        "name": "amount",
-        "type": "uint256",
-        "internalType": "uint256"
       }
     ],
     "outputs": [],
@@ -277,10 +236,29 @@
         "internalType": "uint256"
       },
       {
-        "name": "reward",
+        "name": "badgeTokenId",
         "type": "uint256",
-        "indexed": false,
+        "indexed": true,
         "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "MaxRewardTierSet",
+    "inputs": [
+      {
+        "name": "oldValue",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "enum CarbonTiers.Tier"
+      },
+      {
+        "name": "newValue",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "enum CarbonTiers.Tier"
       }
     ],
     "anonymous": false
@@ -330,17 +308,12 @@
   },
   {
     "type": "error",
-    "name": "AssetNotHighEsg",
+    "name": "AssetNotLowCarbon",
     "inputs": []
   },
   {
     "type": "error",
     "name": "HoldTooShort",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "InsufficientBalance",
     "inputs": []
   },
   {

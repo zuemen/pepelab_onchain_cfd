@@ -11,6 +11,11 @@
         "name": "_oracle",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "_esgRegistry",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "nonpayable"
@@ -433,6 +438,19 @@
   },
   {
     "type": "function",
+    "name": "esgRegistry",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IEsgRegistryForPricing"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "executionFee",
     "inputs": [],
     "outputs": [
@@ -623,6 +641,21 @@
             "name": "entryFundingIndex",
             "type": "int256",
             "internalType": "int256"
+          },
+          {
+            "name": "tradingFeeBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "borrowFeeBpsPerHour",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "carbonTier",
+            "type": "uint8",
+            "internalType": "enum CarbonTiers.Tier"
           }
         ]
       }
@@ -1159,6 +1192,21 @@
         "name": "entryFundingIndex",
         "type": "int256",
         "internalType": "int256"
+      },
+      {
+        "name": "tradingFeeBps",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "borrowFeeBpsPerHour",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "carbonTier",
+        "type": "uint8",
+        "internalType": "enum CarbonTiers.Tier"
       }
     ],
     "stateMutability": "view"
@@ -1442,6 +1490,25 @@
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "tradingFeeBpsForAsset",
+    "inputs": [
+      {
+        "name": "asset",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
