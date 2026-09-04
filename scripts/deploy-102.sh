@@ -441,10 +441,17 @@ patch_addr StrategyRegistry    "$STRATEGY_REGISTRY_NEW"
 patch_addr CopyTracker         "$COPY_TRACKER_NEW"
 patch_addr ESGRegistry         "$ESG_REGISTRY_V2"
 patch_addr EsgRewardDistributor "$ESG_REWARD_DISTRIBUTOR_NEW"
-say "複製新 ABI："
+say "複製新 ABI（只取 .abi 陣列 —— 前端要的是 [ ... ] 不是整份 forge artifact，同 deploy-anvil.sh）："
 for n in PerpetualExchange CopyTracker StrategyRegistry AgentSessionManager ESGRegistryV2 SustainabilityBadge EsgRewardDistributor; do
   src="$CONTRACTS/out/$n.sol/$n.json"; dst="$REPO_ROOT/frontend/src/contracts/abi/$n.json"
-  if [[ -f "$src" ]]; then run cp "$src" "$dst"; else warn "找不到 $src（前端可能不需要這個 ABI）"; fi
+  if [[ ! -f "$src" ]]; then warn "找不到 $src（前端可能不需要這個 ABI）"; continue; fi
+  if command -v jq >/dev/null 2>&1; then
+    jq '.abi' "$src" > "$dst" && ok "abi/$n.json"
+  elif command -v node >/dev/null 2>&1; then
+    node -e "require('fs').writeFileSync('$dst', JSON.stringify(JSON.parse(require('fs').readFileSync('$src','utf8')).abi,null,2)+'\n')" && ok "abi/$n.json"
+  else
+    warn "沒有 jq 也沒有 node —— 手動：jq '.abi' $src > $dst"
+  fi
 done
 warn "AgentSessionManager 位址不在 addresses.ts —— 在 agent/.env 設："
 say  "  SESSION_MANAGER_ADDRESS=$SESSION_MANAGER_NEW"
