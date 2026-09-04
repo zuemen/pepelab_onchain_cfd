@@ -28,6 +28,11 @@ export const terminal: Catalog['terminal'] = {
     fundingHint:
       'A periodic payment between longs and shorts that pulls the price back toward the index.\n\nPositive = longs pay shorts (longs are crowded); negative is the reverse. While you hold a position, this rate accrues as a cost or a gain.',
 
+    carbon: 'Carbon tier · fee · max leverage',
+    carbonHint:
+      "Which carbon-intensity band this asset falls in, and the trading fee and leverage ceiling that follow from it.\n\nThe rule is fixed in the CarbonTiers contract, not a settable parameter: the higher the carbon, the more it costs to hold here and the less leverage it can carry. Unrated (no unexpired attestation) always falls to the most conservative tier — top fee, 1x.",
+    carbonValue: '{tier} · {fee} bps · ≤{lev}×',
+
     openInterest: 'Open interest L/S',
     openInterestHint:
       'The notional value of this asset\'s open long / short positions on-chain right now.\n\nThe bigger the gap between the two, the more one-sided the market is, and the funding rate grows with it. A "—" means the on-chain read failed, not that there are no positions.',
