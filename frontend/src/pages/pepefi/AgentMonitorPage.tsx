@@ -54,7 +54,10 @@ interface OracleRow {
   rate:   bigint // funding bps
 }
 interface Revenue {
-  totals: { count: number; feeUsd: number; traderShare: number; platformShare: number; vaultShare: number }
+  // count is null when the fee router only accumulates an amount on-chain and
+  // there is no event scan to count calls — `countNote` on the payload explains
+  // it. Not the same as 0.
+  totals: { count: number | null; feeUsd: number; traderShare: number; platformShare: number; vaultShare: number }
   // 鏈上讀的 /revenue 不一定帶 byBeneficiary（舊鏈下帳務才有）→ optional + guard。
   byBeneficiary?: Record<string, number> | null
 }
@@ -87,7 +90,7 @@ function isRevenueShape(v: unknown): v is Revenue {
   if (typeof t !== 'object' || t === null) return false
   const n = t as Record<string, unknown>
   return (
-    typeof n.count === 'number' &&
+    (typeof n.count === 'number' || n.count === null) &&
     typeof n.feeUsd === 'number' &&
     typeof n.traderShare === 'number' &&
     typeof n.platformShare === 'number' &&
@@ -443,7 +446,7 @@ export default function AgentMonitorPage() {
               <Stack spacing={1}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                   <Typography variant="body2" color="text.secondary">{t.admin.agent.revenue.callsTotal}</Typography>
-                  <Typography variant="body2" sx={{ fontFamily: MONO }}>{revenue.totals.count} / ${revenue.totals.feeUsd.toFixed(3)}</Typography>
+                  <Typography variant="body2" sx={{ fontFamily: MONO }}>{revenue.totals.count ?? '—'} / ${revenue.totals.feeUsd.toFixed(3)}</Typography>
                 </Box>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                   <Typography variant="body2" color="success.main">{t.admin.agent.revenue.traderShare}</Typography>
