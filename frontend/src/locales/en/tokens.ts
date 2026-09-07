@@ -6,72 +6,35 @@ import type { Catalog } from '../zh-TW';
 export const tokens: Catalog['tokens'] = {
   chart: {
     title: 'Market',
-    source: 'Quotes: Coinbase spot ({symbol}) · chart by TradingView',
+    source: 'Quotes: Coinbase ({symbol}) · chart by TradingView',
     btc: 'Bitcoin',
     eth: 'Ether',
     unavailable: 'The chart loads from TradingView. A blank panel here means that external resource did not load; it does not affect buying or selling below.',
   },
   title: 'Tokenized Assets',
+  subtitle: 'ERC-20 Tokenized Assets',
 
-  version: {
-    v1: 'V1 (original)',
-    v2: 'V2 (hardened)',
-    v2Unavailable: 'V2 is not deployed on this network',
-    v2Chip: 'SafeERC20 · Reentrancy-guarded · Pausable',
+  /** Which protections this vault has — a single-column list, shown only when the hardened vault is actually deployed (see the component). */
+  protections: {
+    title: 'What this vault protects against',
+    items: [
+      { label: 'ERC-20 transfer', detail: 'SafeERC20' },
+      { label: 'Reentrancy protection', detail: 'ReentrancyGuard' },
+      { label: 'Pause mechanism', detail: 'Pausable' },
+      { label: 'Access model', detail: 'AccessControl (role separation)' },
+      { label: 'Upgradeability', detail: 'UUPS proxy' },
+      { label: 'Oracle', detail: 'GuardedOracle (multiple keepers + deviation cap)' },
+      { label: 'Issuance cap', detail: 'Per-asset cap' },
+      { label: 'Reserve-ratio protection', detail: 'Rejects mint below the floor' },
+      { label: 'Fee', detail: 'Mint fee' },
+    ],
   },
 
-  /** V1 / V2 差異對照。 */
-  diff: {
-    title: 'V1 / V2 Differences',
-    columnItem: 'Feature',
-    columnV1: 'V1',
-    columnV2: 'V2',
+  notDeployed: 'Tokenized assets are not enabled on this network (AssetVault not deployed).',
 
-    transfer: 'ERC-20 transfer',
-    transferV1: 'Bare transfer',
-    transferV2: 'SafeERC20',
-
-    reentrancy: 'Reentrancy protection',
-    reentrancyV1: 'None',
-    reentrancyV2: 'ReentrancyGuard',
-
-    pausable: 'Pause mechanism',
-    pausableV1: 'None',
-    pausableV2: 'Pausable',
-
-    access: 'Access model',
-    accessV1: 'Ownable (single owner)',
-    accessV2: 'AccessControl (role separation)',
-
-    upgradeable: 'Upgradeability',
-    upgradeableV1: 'Not upgradeable',
-    upgradeableV2: 'UUPS proxy',
-
-    oracle: 'Oracle',
-    oracleV1: 'MockOracle (single key)',
-    oracleV2: 'GuardedOracle (multiple keepers + deviation cap)',
-
-    cap: 'Issuance cap',
-    capV1: 'None',
-    capV2: 'Per-asset cap',
-
-    reserve: 'Reserve-ratio protection',
-    reserveV1: 'None',
-    reserveV2: 'Rejects mint below the floor',
-
-    fee: 'Fee',
-    feeV1: 'None',
-    feeV2: 'Mint fee',
-  },
-
-  notDeployed: {
-    v2: 'The V2 hardened vault is not deployed on this network.',
-    vault: 'Tokenized assets are not enabled on this network (AssetVault not deployed).',
-  },
-
-  /** V2 健康度面板。 */
+  /** Hardened-features health panel. */
   health: {
-    title: '🛡️ V2 Hardened Features (live on-chain values)',
+    title: '🛡️ Vault protections & health (live on-chain values)',
     reserveRatio: 'Reserve ratio',
     reserveRatioInfinite: '∞ (nothing issued yet)',
     reserveRatioUnknown: 'Cannot confirm',
@@ -88,8 +51,9 @@ export const tokens: Catalog['tokens'] = {
     guardedOracle: 'GuardedOracle',
     guardedOracleNote:
       'A multi-keeper oracle — any single update that deviates past the cap is rejected.',
-    v1Notice:
-      "V1 is the original implementation — it has no SafeERC20, reserve-ratio protection, or pause mechanism. A deployed contract's bytecode can't be changed, so V1 stays on-chain as a reference point for how the architecture evolved; V2 is recommended.",
+    /** This chain runs the original implementation, without these protections — no version number named. */
+    notHardened:
+      "The vault on this network has no SafeERC20, reserve-ratio protection, or pause mechanism yet. A deployed contract's bytecode can't be changed; these protections are already live on other deployments, and when this network catches up is the operator's call.",
   },
 
   card: {
@@ -133,7 +97,7 @@ export const tokens: Catalog['tokens'] = {
     referenceIdLabel: 'Reference ID',
     priceSourceLabel: 'Price source',
     priceFeedName: {
-      coingecko: 'CoinGecko spot',
+      coingecko: 'CoinGecko',
       yahoo: 'Yahoo Finance chart',
     },
     freshnessLabel: 'Price freshness',
@@ -261,9 +225,9 @@ export const tokens: Catalog['tokens'] = {
 
   /** #36：四段句中夾標記的說明，各自拆成標記前後的片段。 */
   markup: {
-    diffNoteBefore: 'Both implementations coexist on-chain — V1 is kept as a reference. See ',
-    diffNoteMid: ' and',
-    diffNoteAfter: '.',
+    protectionsNoteBefore: 'See ',
+    protectionsNoteMid: ' and',
+    protectionsNoteAfter: '.',
 
     introBefore: 'This page showcases ',
     introBold1: 'tokenized assets (ERC-20)',

@@ -1,81 +1,45 @@
 /**
- * 代幣化資產（Tokenized Assets）頁：V1／V2 金庫切換、健康度、買賣對話框。
+ * 代幣化資產（Tokenized Assets）頁：買賣對話框、金庫防護、健康度。
  *
- * V1/V2 差異對照表整份搬進來——那是一張給人讀的比較表，不是設定。表格右兩欄
- * 的內容多半是合約與函式名（SafeERC20、ReentrancyGuard、UUPS proxy），逐字保留，
- * 它們和合約錯誤代號同一類。
+ * 這條鏈上有沒有硬化版金庫是鏈上事實，不是使用者的選擇——見
+ * frontend/CONTEXT.md 的 The Vault 詞條。畫面上不出現版本編號，`protections`
+ * 只在硬化版真的部署了才顯示；欄位內容多半是合約與函式名（SafeERC20、
+ * ReentrancyGuard、UUPS proxy），逐字保留，它們和合約錯誤代號同一類。
  *
  */
 export const tokens = {
-  /** TradingView 外嵌圖表區。報價基準刻意寫死 Coinbase 現貨,見元件註解。 */
+  /** TradingView 外嵌圖表區。symbol 寫死,見元件註解。 */
   chart: {
     title: '市場行情',
-    source: '報價來源：Coinbase 現貨（{symbol}）· 由 TradingView 提供圖表',
+    source: '報價來源：Coinbase（{symbol}）· 由 TradingView 提供圖表',
     btc: '比特幣',
     eth: '以太幣',
     unavailable: '圖表由 TradingView 外部載入,若此處空白代表外部資源未載入,不影響下方的買賣功能。',
   },
   title: '代幣化資產',
+  subtitle: 'ERC-20 代幣化資產',
 
-  version: {
-    v1: 'V1（原始版）',
-    v2: 'V2（硬化版）',
-    v2Unavailable: '此網路尚未部署 V2',
-    v2Chip: 'SafeERC20 · 重入保護 · 可暫停',
+  /** 這個金庫有哪些防護——單欄清單，只在硬化版金庫真的部署時才顯示（見元件）。 */
+  protections: {
+    title: '這個金庫有哪些防護',
+    items: [
+      { label: 'ERC-20 轉帳', detail: 'SafeERC20' },
+      { label: '重入保護', detail: 'ReentrancyGuard' },
+      { label: '暫停機制', detail: 'Pausable' },
+      { label: '權限模型', detail: 'AccessControl（角色分離）' },
+      { label: '可升級性', detail: 'UUPS proxy' },
+      { label: '預言機', detail: 'GuardedOracle（多 keeper + 偏差上限）' },
+      { label: '發行上限', detail: '每資產 cap' },
+      { label: '儲備率保護', detail: '低於下限拒絕 mint' },
+      { label: '手續費', detail: 'mint 手續費' },
+    ],
   },
 
-  /** V1 / V2 差異對照。 */
-  diff: {
-    title: 'V1 / V2 差異對照',
-    columnItem: '項目',
-    columnV1: 'V1',
-    columnV2: 'V2',
+  notDeployed: '代幣化資產尚未在此網路啟用（AssetVault 未部署）。',
 
-    transfer: 'ERC-20 轉帳',
-    transferV1: '裸 transfer',
-    transferV2: 'SafeERC20',
-
-    reentrancy: '重入保護',
-    reentrancyV1: '無',
-    reentrancyV2: 'ReentrancyGuard',
-
-    pausable: '暫停機制',
-    pausableV1: '無',
-    pausableV2: 'Pausable',
-
-    access: '權限模型',
-    accessV1: 'Ownable（單一 owner）',
-    accessV2: 'AccessControl（角色分離）',
-
-    upgradeable: '可升級性',
-    upgradeableV1: '不可升級',
-    upgradeableV2: 'UUPS proxy',
-
-    oracle: '預言機',
-    oracleV1: 'MockOracle（單一 key）',
-    oracleV2: 'GuardedOracle（多 keeper + 偏差上限）',
-
-    cap: '發行上限',
-    capV1: '無',
-    capV2: '每資產 cap',
-
-    reserve: '儲備率保護',
-    reserveV1: '無',
-    reserveV2: '低於下限拒絕 mint',
-
-    fee: '手續費',
-    feeV1: '無',
-    feeV2: 'mint 手續費',
-  },
-
-  notDeployed: {
-    v2: '此網路尚未部署 V2 硬化版金庫。',
-    vault: '代幣化資產尚未在此網路啟用（AssetVault 未部署）。',
-  },
-
-  /** V2 健康度面板。 */
+  /** 硬化特性健康度面板。 */
   health: {
-    title: '🛡️ V2 硬化特性（鏈上即時數值）',
+    title: '🛡️ 金庫防護與健康度（鏈上即時數值）',
     reserveRatio: '儲備率',
     reserveRatioInfinite: '∞（尚無發行）',
     /** #99：儲備率過期時顯示這個而不是一個樂觀數字，比照 kyc.ts 的 unknownTitle。 */
@@ -91,8 +55,9 @@ export const tokens = {
     accruedFees: '累積手續費',
     guardedOracle: 'GuardedOracle',
     guardedOracleNote: '多 keeper 預言機，單次更新偏差超過上限會被拒絕。',
-    v1Notice:
-      'V1 為初版實作，未包含 SafeERC20、儲備率保護與暫停機制。已部署合約的 bytecode 無法修改，因此 V1 保留於鏈上作為架構演進的對照組，建議使用 V2。',
+    /** 這條鏈上跑的是尚未加上這些防護的原始實作，不點名版本編號。 */
+    notHardened:
+      '這條鏈上的金庫尚未包含 SafeERC20、儲備率保護與暫停機制。已部署合約的 bytecode 無法修改；這些防護已經在其他部署上線，此網路何時跟上由營運方決定。',
   },
 
   card: {
@@ -143,7 +108,7 @@ export const tokens = {
     referenceIdLabel: '參考識別碼',
     priceSourceLabel: '價格來源',
     priceFeedName: {
-      coingecko: 'CoinGecko 現貨',
+      coingecko: 'CoinGecko',
       yahoo: 'Yahoo Finance chart',
     },
     freshnessLabel: '價格新鮮度',
@@ -253,9 +218,9 @@ export const tokens = {
 
   /** #36：四段句中夾標記的說明，各自拆成標記前後的片段。 */
   markup: {
-    diffNoteBefore: '兩套實作並存於鏈上，V1 保留作為對照組。詳見 ',
-    diffNoteMid: ' 與',
-    diffNoteAfter: '。',
+    protectionsNoteBefore: '詳見 ',
+    protectionsNoteMid: ' 與',
+    protectionsNoteAfter: '。',
 
     introBefore: '本頁展示',
     introBold1: '代幣化資產（ERC-20）',

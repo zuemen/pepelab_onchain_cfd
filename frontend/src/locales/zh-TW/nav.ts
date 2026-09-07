@@ -14,7 +14,7 @@ export const nav = {
     portfolio: '🏠 投資組合',
     pepe: '🐸 Pepe 養成中心',
     exchange: '入金與兌換',
-    tokens: '🪙 資產交易',
+    tokens: '🪙 資產',
     terminal: '專業終端（進階）',
     x402: 'x402 訊號 API',
     marketplace: '交易市集',

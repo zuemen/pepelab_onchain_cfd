@@ -12,7 +12,7 @@ export const nav: Catalog['nav'] = {
     portfolio: '🏠 Portfolio',
     pepe: '🐸 Pepe Growth Center',
     exchange: 'Funding & Swap',
-    tokens: '🪙 Trade Assets',
+    tokens: '🪙 Assets',
     terminal: 'Pro Terminal (advanced)',
     x402: 'x402 Signal API',
     marketplace: 'Marketplace',
