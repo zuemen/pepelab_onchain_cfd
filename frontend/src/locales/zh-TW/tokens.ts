@@ -72,6 +72,25 @@ export const tokens = {
     addToWallet: '➕ 加入 MetaMask',
   },
 
+  /** issue #133：卡片牆 → 資產表。欄位標籤與排序控制的顯示字串。 */
+  table: {
+    column: {
+      asset: '資產',
+      provenance: '身世',
+      tradingFee: '買入費率',
+      price: 'Oracle 價格',
+      balance: '我的餘額',
+      actions: '操作',
+    },
+    sort: {
+      label: '排序',
+      tier: '碳分級',
+      price: '價格',
+      balance: '我的持有',
+      name: '名稱',
+    },
+  },
+
   /** 買賣對話框。 */
   dialog: {
     buyTitle: '買進 {symbol}',
