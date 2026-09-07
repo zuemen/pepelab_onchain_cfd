@@ -4,13 +4,6 @@ import type { Catalog } from '../zh-TW';
  * 見 `../zh-TW/tokens.ts`。
  */
 export const tokens: Catalog['tokens'] = {
-  chart: {
-    title: 'Market',
-    source: 'Quotes: Coinbase ({symbol}) · chart by TradingView',
-    btc: 'Bitcoin',
-    eth: 'Ether',
-    unavailable: 'The chart loads from TradingView. A blank panel here means that external resource did not load; it does not affect buying or selling below.',
-  },
   title: 'Tokenized Assets',
   subtitle: 'ERC-20 Tokenized Assets',
 
@@ -87,8 +80,6 @@ export const tokens: Catalog['tokens'] = {
 
   /** 買賣對話框。 */
   dialog: {
-    buyTitle: 'Buy {symbol}',
-    sellTitle: 'Redeem {symbol}',
     buyAmountLabel: 'USDC amount to pay',
     sellAmountLabel: '{symbol} amount to redeem',
     needAmount: 'Enter an amount to get a quote',
@@ -98,6 +89,9 @@ export const tokens: Catalog['tokens'] = {
     cancel: 'Cancel',
     confirm: 'Confirm',
     working: 'Processing…',
+    buyDisabledNotice: "Can't buy right now — see “Vault protections & health” above.",
+    sellDisabledNotice: "Can't redeem right now — this vault is paused.",
+    noBalanceNotice: "You don't hold any of this asset — there's nothing to redeem.",
   },
 
   tx: {
@@ -111,7 +105,6 @@ export const tokens: Catalog['tokens'] = {
   },
 
   provenance: {
-    sectionTitle: 'Asset provenance',
     underlyingLabel: 'Tracks',
     referenceIdLabel: 'Reference ID',
     priceSourceLabel: 'Price source',

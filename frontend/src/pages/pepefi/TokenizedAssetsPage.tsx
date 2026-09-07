@@ -6,7 +6,7 @@ import { useV2Contracts } from 'src/hooks/useV2Contracts'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { safeRead } from 'src/lib/pepefi/safeRead'
-import { fNum, fUsd, fromUnits } from 'src/lib/pepefi/format'
+import { fUsd, fromUnits, f18 } from 'src/lib/pepefi/format'
 import {
   ASSET_IDS, getAddresses, getSynthTokens, type AssetSymbol,
 } from 'src/contracts/addresses'
@@ -19,8 +19,8 @@ import {
 import SyntheticAssetABI   from 'src/contracts/abi/SyntheticAsset.json'
 import SyntheticAssetV2ABI from 'src/contracts/abi/SyntheticAssetV2.json'
 import AssetIcon from 'src/components/pepefi/AssetIcon'
-import { WhoRunsWhat, TIER_COLOR, FRESHNESS_COLOR } from 'src/components/pepefi/AssetProvenance'
-import TradingViewChart from 'src/components/pepefi/TradingViewChart'
+import { WhoRunsWhat, AssetProvenanceSummary } from 'src/components/pepefi/AssetProvenance'
+import { AssetDetailPanel } from 'src/components/pepefi/AssetDetailPanel'
 import { SHOW_PERPETUALS } from 'src/lib/pepefi/featureFlags'
 import Skeleton from 'src/components/pepefi/Skeleton'
 import { useToast } from 'src/components/pepefi/ToastProvider'
@@ -34,12 +34,7 @@ import Stack from '@mui/material/Stack';
 import Button from '@mui/material/Button';
 import Alert from '@mui/material/Alert';
 import Chip from '@mui/material/Chip';
-import Dialog from '@mui/material/Dialog';
-import DialogTitle from '@mui/material/DialogTitle';
-import DialogContent from '@mui/material/DialogContent';
-import DialogActions from '@mui/material/DialogActions';
-import TextField from '@mui/material/TextField';
-import InputAdornment from '@mui/material/InputAdornment';
+import Drawer from '@mui/material/Drawer';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import LinearProgress from '@mui/material/LinearProgress';
@@ -53,29 +48,19 @@ import TableBody from '@mui/material/TableBody';
 import TableRow from '@mui/material/TableRow';
 import TableCell from '@mui/material/TableCell';
 import TableContainer from '@mui/material/TableContainer';
+import { useTheme } from '@mui/material/styles';
+import useMediaQuery from '@mui/material/useMediaQuery';
 import { Icon } from '@iconify/react';
 
 const ZERO_ADDR = '0x0000000000000000000000000000000000000000'
 
-/**
- * 圖表能顯示哪些 symbol。刻意只有兩個、而且都是 Coinbase **現貨**：
- * 這一頁賣的是代幣化的現貨資產，掛一張永續合約的圖會自打嘴巴。
- */
-const CHART_SYMBOLS = {
-  btc: 'COINBASE:BTCUSD',
-  eth: 'COINBASE:ETHUSD',
-} as const
-type ChartKey = keyof typeof CHART_SYMBOLS
-
-// These two were declared locally here (and again, slightly differently, on
-// other pages) — which is the duplication lib/pepefi/format.ts exists to stop.
-// The local fUsd also pinned 'en-US' on a Traditional Chinese interface; the
-// shared one follows the user's locale. For zh-Hant the grouping and decimal
-// separators are the same, so the rendered output does not change.
-//
-// f18 gains thousands separators, which toFixed did not produce: a balance now
-// reads 1,234.5678 instead of 1234.5678.
-const f18 = (v: bigint, d = 4) => fNum(fromUnits(v, 18), { dp: d })
+// f18/fUsd used to be declared locally here (and again, slightly differently,
+// on other pages, and a third time in AssetDetailPanel.tsx) — the exact
+// duplication lib/pepefi/format.ts exists to stop; f18 is now a proper named
+// export there instead of a fourth copy. The local fUsd also used to pin
+// 'en-US' on a Traditional Chinese interface; the shared one follows the
+// user's locale. For zh-Hant the grouping and decimal separators are the
+// same, so the rendered output does not change.
 
 // Contract methods come off a JSON ABI, so ethers types them loosely. Narrow to
 // the transaction shape we actually use rather than casting through `any`.
@@ -143,14 +128,19 @@ export default function TokenizedAssetsPage() {
     reserveRatioBps: null, paused: null, accruedFees: null, stale: false, mintingHalted: false,
   })
   const [loading, setLoading] = useState(true)
-  const [dlg, setDlg]         = useState<{ sym: AssetSymbol; mode: 'buy' | 'sell' } | null>(null)
+  // #134：詳情層取代了買賣對話框——selected 現在同時是「哪一列被點開」跟
+  // 「詳情層裡買進／贖回哪個分頁」，一份狀態，不是兩份各自要對齊的狀態。
+  const [selected, setSelected] = useState<{ sym: AssetSymbol; mode: 'buy' | 'sell' } | null>(null)
   const [amount, setAmount]   = useState('')
   const [quote, setQuote]     = useState<{ out: bigint; fee: bigint } | null>(null)
   const [busy, setBusy]       = useState(false)
-  const [chartKey, setChartKey] = useState<ChartKey>('btc')
   const [sortKey, setSortKey] = useState<AssetSortKey>('tier')
 
   const { notify } = useToast()
+  const theme = useTheme()
+  // #134：桌面是側邊欄（表格保持可見），手機是全螢幕 Drawer——這裡只決定
+  // 外殼，內容（AssetDetailPanel）兩邊共用同一份。
+  const isDesktop = useMediaQuery(theme.breakpoints.up('md'))
 
   const refresh = useCallback(async () => {
     if (!contracts || !vaultReady || !wallet.address || !activeVault || !activeOracle) {
@@ -238,16 +228,16 @@ export default function TokenizedAssetsPage() {
   // the ABI, not assumed.
   useEffect(() => {
     let cancelled = false
-    if (!dlg || !activeVault || !amount) { setQuote(null); return undefined }
+    if (!selected || !activeVault || !amount) { setQuote(null); return undefined }
 
     void (async () => {
       let parsed: bigint
       try { parsed = parseEther(amount) } catch { setQuote(null); return }
       if (parsed <= 0n) { setQuote(null); return }
 
-      const id = ASSET_IDS[dlg.sym]
+      const id = ASSET_IDS[selected.sym]
       try {
-        const raw = dlg.mode === 'buy'
+        const raw = selected.mode === 'buy'
           ? await activeVault.previewMint(id, parsed)
           : await activeVault.previewRedeem(id, parsed)
         if (cancelled) return
@@ -263,9 +253,9 @@ export default function TokenizedAssetsPage() {
     })()
 
     return () => { cancelled = true }
-  }, [dlg, amount, activeVault, isV2])
+  }, [selected, amount, activeVault, isV2])
 
-  const closeDlg = () => { setDlg(null); setAmount(''); setQuote(null) }
+  const closePanel = () => { setSelected(null); setAmount(''); setQuote(null) }
 
   const doBuy = async (sym: AssetSymbol) => {
     if (!contracts || !activeVault || !activeVaultAddr) return
@@ -282,7 +272,7 @@ export default function TokenizedAssetsPage() {
       const tx = asTx(await activeVault.mint(ASSET_IDS[sym], usdcAmt))
       await tx.wait()
       notify(interpolate(t.tokens.tx.bought, { symbol: sym }), true, tx.hash)
-      closeDlg()
+      closePanel()
       await refresh()
     } catch (e) {
       notify(prettyError(e), false)
@@ -300,7 +290,7 @@ export default function TokenizedAssetsPage() {
       const tx = asTx(await activeVault.redeem(ASSET_IDS[sym], tokenAmt))
       await tx.wait()
       notify(interpolate(t.tokens.tx.sold, { symbol: sym }), true, tx.hash)
-      closeDlg()
+      closePanel()
       await refresh()
     } catch (e) {
       notify(prettyError(e), false)
@@ -389,40 +379,40 @@ export default function TokenizedAssetsPage() {
     sortKey,
   )
 
+  // #134：詳情層的內容只算一次——桌面的側邊欄跟手機的 Drawer 只是不同的
+  // 外殼，內容元件與它的整份 props 不該在兩個分支各寫一遍（那正是這一頁
+  // 其餘條件渲染的既有寫法，比照 protectionsList 這個變數）。
+  const selectedRow = selected ? displayRows.find((r) => r.symbol === selected.sym) : undefined
+  const selectedMeta = selected ? ASSET_META[ASSET_IDS[selected.sym]] : undefined
+  const detailPanel = selected && selectedRow && selectedMeta ? (
+    <AssetDetailPanel
+      sym={selected.sym}
+      assetRow={selectedRow}
+      meta={selectedMeta}
+      price={rows[selected.sym]?.price ?? 0n}
+      isV2={isV2}
+      mode={selected.mode}
+      onModeChange={(mode) => setSelected({ sym: selected.sym, mode })}
+      amount={amount}
+      onAmountChange={setAmount}
+      quote={quote}
+      busy={busy}
+      onConfirm={() => void (selected.mode === 'buy' ? doBuy(selected.sym) : doSell(selected.sym))}
+      onAddToWallet={() => void addToWallet(selected.sym)}
+      onClose={closePanel}
+    />
+  ) : null
+
   return (
-    <Container maxWidth="lg" sx={{ py: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
+    <Container maxWidth="xl" sx={{ py: 3 }}>
+    {/* #134：桌面版詳情層是右側面板、表格保持可見——外層開一個橫向 flex，
+        主欄放原本整頁的內容，詳情層是它的旁邊那一欄，不是蓋在上面的遮罩。 */}
+    <Box sx={{ display: 'flex', gap: 3, alignItems: 'flex-start' }}>
+    <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
       <Box>
         <Typography variant="h4" sx={{ fontWeight: 800 }}>{t.tokens.title}</Typography>
         <Typography variant="body2" color="text.secondary">{t.tokens.subtitle}</Typography>
       </Box>
-
-      {/* ── 市場行情（TradingView，Coinbase 現貨報價） ──────────────────────
-          教授回饋第 5 點指名「加密貨幣的 TradingView 畫面建議用 Coinbase 的
-          BTC Spot USD 報價為準」。symbol 寫死在 CHART_SYMBOLS，不開放自由輸入
-          ——放開的話畫面上會出現永續合約的 symbol，跟這一頁「現貨」的定位打架。 */}
-      <Card sx={{ p: { xs: 2, sm: 3 }, display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
-          <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 1 }}>
-            {t.tokens.chart.title}
-          </Typography>
-          <ToggleButtonGroup
-            size="small"
-            exclusive
-            value={chartKey}
-            onChange={(_, v) => { if (v) setChartKey(v as ChartKey) }}
-          >
-            <ToggleButton value="btc">{t.tokens.chart.btc}</ToggleButton>
-            <ToggleButton value="eth">{t.tokens.chart.eth}</ToggleButton>
-          </ToggleButtonGroup>
-        </Box>
-        <TradingViewChart symbol={CHART_SYMBOLS[chartKey]} height={380} />
-        <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
-          {interpolate(t.tokens.chart.source, { symbol: CHART_SYMBOLS[chartKey] })}
-        </Typography>
-        <Typography variant="caption" color="text.disabled">
-          {t.tokens.chart.unavailable}
-        </Typography>
-      </Card>
 
       <Alert severity="info">
         {t.tokens.markup.introBefore}<b>{t.tokens.markup.introBold1}</b>{SHOW_PERPETUALS ? t.tokens.markup.introMid1 : t.tokens.markup.introMid1Spot}<b>{t.tokens.markup.introBold2}</b>{t.tokens.markup.introMid2}<b>USDC</b>{t.tokens.markup.introAfter}
@@ -510,7 +500,7 @@ export default function TokenizedAssetsPage() {
                 {t.tokens.health.accruedFees}
               </Typography>
               <Typography sx={{ fontFamily: MONO }}>
-                {health.accruedFees === null ? '—' : f18(health.accruedFees, 2) + ' USDC'}
+                {health.accruedFees === null ? '—' : f18(health.accruedFees, { dp: 2 }) + ' USDC'}
               </Typography>
             </Grid>
 
@@ -586,19 +576,8 @@ export default function TokenizedAssetsPage() {
                   </TableCell>
 
                   <TableCell>
-                    <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
-                      <Chip
-                        size="small"
-                        color={TIER_COLOR[assetRow.tier]}
-                        label={t.tokens.provenance.carbonTier[assetRow.tier]}
-                      />
-                      <Chip
-                        size="small"
-                        variant="outlined"
-                        color={FRESHNESS_COLOR[assetRow.freshness.level]}
-                        label={assetRow.freshness.label}
-                      />
-                    </Stack>
+                    {/* #134：跟詳情層標題共用同一個摘要元件，不是長得像的兩份。 */}
+                    <AssetProvenanceSummary tier={assetRow.tier} freshness={assetRow.freshness} />
                   </TableCell>
 
                   <TableCell sx={{ fontFamily: MONO }}>
@@ -632,7 +611,7 @@ export default function TokenizedAssetsPage() {
                         // lib/pepefi/assetRows.ts——暫停／鑄造停止／比率不可信
                         // 任一為真就擋買進，理由見那個模組自己的註解。
                         disabled={!assetRow.canBuy}
-                        onClick={() => setDlg({ sym, mode: 'buy' })}
+                        onClick={() => setSelected({ sym, mode: 'buy' })}
                         sx={{ textTransform: 'none', fontWeight: 'bold' }}
                       >
                         {t.tokens.card.buy}
@@ -641,7 +620,7 @@ export default function TokenizedAssetsPage() {
                         size="small" variant="outlined"
                         // #99：只有暫停擋得住贖回，見 assetRows.ts 的 canSell。
                         disabled={!assetRow.canSell}
-                        onClick={() => setDlg({ sym, mode: 'sell' })}
+                        onClick={() => setSelected({ sym, mode: 'sell' })}
                         sx={{ textTransform: 'none', fontWeight: 'bold' }}
                       >
                         {t.tokens.card.sell}
@@ -665,79 +644,31 @@ export default function TokenizedAssetsPage() {
       <Typography variant="caption" color="text.secondary">
         {t.tokens.markup.vaultDryBefore}<Box component="code" sx={{ fontFamily: MONO }}>fundVault()</Box>{t.tokens.markup.vaultDryAfter}
       </Typography>
+    </Box>
 
-      {/* buy / sell dialog */}
-      <Dialog open={!!dlg} onClose={closeDlg} maxWidth="xs" fullWidth>
-        <DialogTitle sx={{ fontWeight: 'bold' }}>
-          {interpolate(dlg?.mode === 'buy' ? t.tokens.dialog.buyTitle : t.tokens.dialog.sellTitle, {
-            symbol: dlg?.sym ?? '',
-          })}
-        </DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ mt: 1 }}>
-            <Chip
-              size="small"
-              variant="outlined"
-              label={`Oracle: ${
-                dlg && (rows[dlg.sym]?.price ?? 0n) > 0n
-                  ? fUsd(Number(rows[dlg.sym].price) / 1e8)
-                  : '—'
-              }`}
-              sx={{ alignSelf: 'flex-start', fontFamily: MONO }}
-            />
-            <TextField
-              autoFocus fullWidth type="number" size="small"
-              label={
-                dlg?.mode === 'buy'
-                  ? t.tokens.dialog.buyAmountLabel
-                  : interpolate(t.tokens.dialog.sellAmountLabel, { symbol: dlg?.sym ?? '' })
-              }
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              disabled={busy}
-              slotProps={{
-                input: {
-                  endAdornment: (
-                    <InputAdornment position="end">
-                      {dlg?.mode === 'buy' ? 'USDC' : dlg?.sym}
-                    </InputAdornment>
-                  ),
-                },
-              }}
-            />
-            <Box>
-              <Typography variant="caption" color="text.secondary" display="block">
-                {quote === null
-                  ? t.tokens.dialog.needAmount
-                  : dlg?.mode === 'buy'
-                    ? interpolate(t.tokens.dialog.buyQuote, {
-                        amount: f18(quote.out),
-                        symbol: dlg?.sym ?? '',
-                      })
-                    : interpolate(t.tokens.dialog.sellQuote, {
-                        amount: fUsd(Number(quote.out) / 1e18),
-                      })}
-              </Typography>
-              {isV2 && quote !== null && quote.fee > 0n && (
-                <Typography variant="caption" color="warning.main" display="block">
-                  {interpolate(t.tokens.dialog.fee, { amount: f18(quote.fee, 4) })}
-                </Typography>
-              )}
-            </Box>
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={closeDlg} disabled={busy} sx={{ textTransform: 'none' }}>{t.tokens.dialog.cancel}</Button>
-          <Button
-            variant="contained"
-            disabled={busy || !amount}
-            onClick={() => dlg && void (dlg.mode === 'buy' ? doBuy(dlg.sym) : doSell(dlg.sym))}
-            sx={{ textTransform: 'none', fontWeight: 'bold' }}
-          >
-            {busy ? t.tokens.dialog.working : t.tokens.dialog.confirm}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {/* #134：桌面版詳情層——側邊欄，表格保持可見。sticky 讓面板跟著捲動，
+          maxHeight 留一點邊界並讓面板內容自己捲（AssetDetailPanel 的
+          overflowY: auto）。 */}
+      {isDesktop && detailPanel && (
+        <Box sx={{ width: 420, flexShrink: 0, position: 'sticky', top: 16 }}>
+          <Card sx={{ maxHeight: 'calc(100vh - 32px)', overflow: 'hidden' }}>
+            {detailPanel}
+          </Card>
+        </Box>
+      )}
+    </Box>
+
+      {/* 手機版詳情層——全螢幕 Drawer，桌面版的側邊欄在窄螢幕上放不下。 */}
+      {!isDesktop && (
+        <Drawer
+          anchor="bottom"
+          open={!!detailPanel}
+          onClose={closePanel}
+          slotProps={{ paper: { sx: { height: '100%', maxHeight: '100%' } } }}
+        >
+          {detailPanel}
+        </Drawer>
+      )}
     </Container>
   )
 }

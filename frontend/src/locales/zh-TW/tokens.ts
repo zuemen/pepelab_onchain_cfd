@@ -9,13 +9,6 @@
  */
 export const tokens = {
   /** TradingView 外嵌圖表區。symbol 寫死,見元件註解。 */
-  chart: {
-    title: '市場行情',
-    source: '報價來源：Coinbase（{symbol}）· 由 TradingView 提供圖表',
-    btc: '比特幣',
-    eth: '以太幣',
-    unavailable: '圖表由 TradingView 外部載入,若此處空白代表外部資源未載入,不影響下方的買賣功能。',
-  },
   title: '代幣化資產',
   subtitle: 'ERC-20 代幣化資產',
 
@@ -93,8 +86,6 @@ export const tokens = {
 
   /** 買賣對話框。 */
   dialog: {
-    buyTitle: '買進 {symbol}',
-    sellTitle: '贖回 {symbol}',
     buyAmountLabel: '支付 USDC 金額',
     sellAmountLabel: '贖回 {symbol} 數量',
     needAmount: '輸入金額以取得報價',
@@ -104,6 +95,14 @@ export const tokens = {
     cancel: '取消',
     confirm: '確認',
     working: '處理中…',
+    // #134：按鈕停用時要說明原因，不能只是變灰。贖回唯一會被擋的原因就是
+    // 金庫暫停，可以直接講死；買進的原因（暫停／鑄造停止／比率不可信）已經
+    // 在上面「金庫防護與健康度」區塊逐一解釋過，這裡指回去而不是重講一次。
+    buyDisabledNotice: '目前無法買進——原因見上方「金庫防護與健康度」。',
+    sellDisabledNotice: '目前無法贖回——這個金庫已暫停。',
+    // #134：canSell 是「金庫暫停」跟「餘額為零」的 OR，兩者要分開講，
+    // 不然沒有餘額的人會被誤導成「金庫壞了」。
+    noBalanceNotice: '你目前沒有持有這項資產，沒有可以贖回的數量。',
   },
 
   tx: {
@@ -122,7 +121,6 @@ export const tokens = {
    * 這裡是那張卡上的顯示字串（比照 esg.ts 把每檔一句話的理由放 catalog）。
    */
   provenance: {
-    sectionTitle: '資產身世',
     underlyingLabel: '追蹤標的',
     referenceIdLabel: '參考識別碼',
     priceSourceLabel: '價格來源',

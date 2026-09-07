@@ -9,7 +9,7 @@ import { holdingValue } from './assetClass'
 import { attestationExpired, paramsFor, type Tier } from './carbon'
 import { classifyFreshness, type Freshness } from './priceFreshness'
 
-/** 合約的 maxPriceAge；預設 Base Sepolia 的 6 小時，對齊 AssetProvenanceCard。 */
+/** 合約的 maxPriceAge；預設 Base Sepolia 的 6 小時，對齊 AssetProvenanceBody。 */
 export const DEFAULT_MAX_PRICE_AGE_SEC = 21600
 
 /** 一顆資產從鏈上讀回來的原始資料——這個模組唯一需要的輸入。 */
@@ -62,7 +62,7 @@ export interface AssetRow {
  * 一顆資產現在的碳分級。
  *
  * 見證過期（或根本沒有 carbon 資料）一律 fail-closed 回 unrated——「沒有
- * 資料」不能被當成「沒有問題」。這是唯一的定義；AssetProvenanceCard 的
+ * 資料」不能被當成「沒有問題」。這是唯一的定義；AssetProvenanceBody 的
  * shownTier 呼叫這個函式，不是自己重算一次。
  */
 export function tierForAsset(meta: AssetMeta | undefined, nowMs: number): Tier {
