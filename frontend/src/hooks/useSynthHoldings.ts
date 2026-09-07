@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { safeRead } from 'src/lib/pepefi/safeRead'
-import { ASSET_IDS, getSynthTokens, getV2Stack, type AssetSymbol } from 'src/contracts/addresses'
+import { ASSET_IDS, getSynthTokens, type AssetSymbol } from 'src/contracts/addresses'
 import type { HoldingRow } from 'src/lib/pepefi/assetClass'
 import SyntheticAssetABI from 'src/contracts/abi/SyntheticAsset.json'
 import SyntheticAssetV2ABI from 'src/contracts/abi/SyntheticAssetV2.json'
@@ -19,20 +19,10 @@ import { useV2Contracts } from './useV2Contracts'
 // 於是一個買了 sGOLD 與 sBOND、一張永續都沒開的人，在配置圖上會是四類皆 0%
 // ——正好是那個區塊要證明的事情的反面。
 //
-// 讀法與 TokenizedAssetsPage 一致（V1/V2 兩套 vault 並存，預設 V2、使用者的
-// 明確選擇優先），差別是這裡**只讀不寫**，也不提供版本切換：切換的 UI 只該有
-// 一個入口，多一個就會出現「兩個地方顯示不同版本」的狀態。
-
-const VERSION_KEY = 'pepefi:vaultVersion'
-
-function storedVersion(): 'v1' | 'v2' | null {
-  try {
-    const saved = localStorage.getItem(VERSION_KEY)
-    return saved === 'v1' || saved === 'v2' ? saved : null
-  } catch {
-    return null // private mode
-  }
-}
+// 哪一套金庫在這條鏈上可用是鏈上事實，不是使用者的選擇（見
+// TokenizedAssetsPage 同一段判斷、CONTEXT.md 的 The Vault 詞條）：
+// useV2Contracts 回傳非 null 就代表這條鏈有硬化版，回傳 null 就代表沒有，
+// 沒有第三種狀態需要使用者自己選。這裡**只讀不寫**，也沒有任何切換 UI。
 
 export interface SynthHoldings {
   /** 餘額為 0 的資產不會出現在這裡——配置圖的四類補零由 groupByAssetClass 負責。 */
@@ -50,7 +40,7 @@ export function useSynthHoldings(): SynthHoldings {
   const [rows, setRows] = useState<HoldingRow[]>([])
   const [loading, setLoading] = useState(true)
 
-  const isV2 = (storedVersion() ?? (getV2Stack(wallet.chainId) ? 'v2' : 'v1')) === 'v2' && !!v2
+  const isV2 = !!v2
 
   const tokens = isV2 ? v2!.tokens : getSynthTokens(wallet.chainId)
   const vault = isV2 ? v2!.vault : contracts?.assetVault

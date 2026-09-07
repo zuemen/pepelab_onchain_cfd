@@ -8,7 +8,7 @@ import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { safeRead } from 'src/lib/pepefi/safeRead'
 import { fNum, fUsd, fromUnits } from 'src/lib/pepefi/format'
 import {
-  ASSET_IDS, getAddresses, getSynthTokens, getV2Stack, type AssetSymbol,
+  ASSET_IDS, getAddresses, getSynthTokens, type AssetSymbol,
 } from 'src/contracts/addresses'
 import { t, interpolate } from 'src/locales'
 import { ASSET_META } from 'src/lib/pepefi/assetMeta'
@@ -38,7 +38,6 @@ import TextField from '@mui/material/TextField';
 import InputAdornment from '@mui/material/InputAdornment';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
-import Tooltip from '@mui/material/Tooltip';
 import LinearProgress from '@mui/material/LinearProgress';
 import Link from '@mui/material/Link';
 import Divider from '@mui/material/Divider';
@@ -46,7 +45,6 @@ import Accordion from '@mui/material/Accordion';
 import AccordionSummary from '@mui/material/AccordionSummary';
 import AccordionDetails from '@mui/material/AccordionDetails';
 import Table from '@mui/material/Table';
-import TableHead from '@mui/material/TableHead';
 import TableBody from '@mui/material/TableBody';
 import TableRow from '@mui/material/TableRow';
 import TableCell from '@mui/material/TableCell';
@@ -64,9 +62,6 @@ const CHART_SYMBOLS = {
   eth: 'COINBASE:ETHUSD',
 } as const
 type ChartKey = keyof typeof CHART_SYMBOLS
-const VERSION_KEY = 'pepefi:vaultVersion'
-
-type VaultVersion = 'v1' | 'v2'
 
 // These two were declared locally here (and again, slightly differently, on
 // other pages) — which is the duplication lib/pepefi/format.ts exists to stop.
@@ -122,36 +117,11 @@ export default function TokenizedAssetsPage() {
   const v2        = useV2Contracts(wallet.provider, wallet.signer, wallet.chainId)
   const addr      = getAddresses(wallet.chainId)
 
-  const v2Available = !!getV2Stack(wallet.chainId)
-
-  // Default to V2 where it exists: V1 is deployed bytecode that cannot be given
-  // SafeERC20, so it stays reachable as a comparison case rather than the path
-  // a new user lands on. An explicit stored choice always wins.
-  const [version, setVersion] = useState<VaultVersion>(() => {
-    try {
-      const saved = localStorage.getItem(VERSION_KEY) as VaultVersion | null
-      if (saved === 'v1' || saved === 'v2') return saved
-    } catch { /* private mode */ }
-    return getV2Stack(wallet.chainId) ? 'v2' : 'v1'
-  })
-  const switchVersion = (v: VaultVersion) => {
-    setVersion(v)
-    try { localStorage.setItem(VERSION_KEY, v) } catch { /* private mode */ }
-  }
-
-  // The initializer above runs before the wallet reports a chain, so a first
-  // visitor would be stuck on V1 until they touched the switch. Promote once the
-  // chain resolves — but never over an explicit stored choice.
-  useEffect(() => {
-    let stored: string | null = null
-    try { stored = localStorage.getItem(VERSION_KEY) } catch { /* private mode */ }
-    if (stored === 'v1' || stored === 'v2') return
-    if (v2Available) setVersion('v2')
-  }, [v2Available])
-
-  // If the stored preference is v2 but this chain has no V2, fall back rather
-  // than rendering an empty page.
-  const isV2 = version === 'v2' && !!v2
+  // 哪一套金庫在這條鏈上可用是鏈上事實，不是使用者的選擇——見 CONTEXT.md
+  // 的 The Vault 詞條。useV2Contracts 已經把「這條鏈有沒有硬化版」這個判斷
+  // 做完了（沒有就回傳 null），這裡不再需要 localStorage、不再需要使用者
+  // 自己挑，也就沒有「按錯鍵、餘額看起來歸零」這種陷阱。
+  const isV2 = !!v2
 
   // One set of "active" handles so the logic below never branches on version.
   const activeTokens    = isV2 ? v2!.tokens : getSynthTokens(wallet.chainId)
@@ -246,9 +216,9 @@ export default function TokenizedAssetsPage() {
     }
 
     setLoading(false)
-    // symbols/activeTokens derive from chainId + version, both dependencies below
+    // symbols/activeTokens derive from chainId + isV2, both dependencies below
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contracts, vaultReady, wallet.address, wallet.chainId, version, isV2])
+  }, [contracts, vaultReady, wallet.address, wallet.chainId, isV2])
 
   useEffect(() => { void refresh() }, [refresh])
 
@@ -342,65 +312,30 @@ export default function TokenizedAssetsPage() {
     }
   }
 
-  const versionSwitcher = (
-    <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexWrap: 'wrap' }}>
-      <ToggleButtonGroup
-        size="small" exclusive value={version}
-        onChange={(_, v) => v && switchVersion(v)}
-      >
-        <ToggleButton value="v1" sx={{ textTransform: 'none', px: 2 }}>{t.tokens.version.v1}</ToggleButton>
-        <Tooltip title={v2Available ? '' : t.tokens.version.v2Unavailable} arrow>
-          {/* span keeps the tooltip alive on a disabled control */}
-          <span>
-            <ToggleButton value="v2" disabled={!v2Available} sx={{ textTransform: 'none', px: 2 }}>
-              {t.tokens.version.v2}
-            </ToggleButton>
-          </span>
-        </Tooltip>
-      </ToggleButtonGroup>
-      {isV2 && <Chip size="small" color="success" variant="outlined" label={t.tokens.version.v2Chip} />}
-    </Stack>
-  )
-
-  const diffTable = (
+  // 這個金庫有哪些防護——單欄清單，只有硬化版金庫真的有這些防護時才顯示。
+  // 舊版金庫（isV2 為 false）沒有這九項裡的大多數，把這張清單套在它頭上會是
+  // 一個站不住的宣稱，所以呼叫端必須只在 isV2 時 render 它，不能無條件顯示。
+  const protectionsList = (
     <Accordion sx={{ mt: 1 }}>
       <AccordionSummary expandIcon={<Icon icon="solar:alt-arrow-down-linear" />}>
-        <Typography sx={{ fontWeight: 'bold' }}>{t.tokens.diff.title}</Typography>
+        <Typography sx={{ fontWeight: 'bold' }}>{t.tokens.protections.title}</Typography>
       </AccordionSummary>
       <AccordionDetails>
         <TableContainer>
           <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>{t.tokens.diff.columnItem}</TableCell>
-                <TableCell>{t.tokens.diff.columnV1}</TableCell>
-                <TableCell>{t.tokens.diff.columnV2}</TableCell>
-              </TableRow>
-            </TableHead>
             <TableBody>
-              {[
-                [t.tokens.diff.transfer, t.tokens.diff.transferV1, t.tokens.diff.transferV2],
-                [t.tokens.diff.reentrancy, t.tokens.diff.reentrancyV1, t.tokens.diff.reentrancyV2],
-                [t.tokens.diff.pausable, t.tokens.diff.pausableV1, t.tokens.diff.pausableV2],
-                [t.tokens.diff.access, t.tokens.diff.accessV1, t.tokens.diff.accessV2],
-                [t.tokens.diff.upgradeable, t.tokens.diff.upgradeableV1, t.tokens.diff.upgradeableV2],
-                [t.tokens.diff.oracle, t.tokens.diff.oracleV1, t.tokens.diff.oracleV2],
-                [t.tokens.diff.cap, t.tokens.diff.capV1, t.tokens.diff.capV2],
-                [t.tokens.diff.reserve, t.tokens.diff.reserveV1, t.tokens.diff.reserveV2],
-                [t.tokens.diff.fee, t.tokens.diff.feeV1, t.tokens.diff.feeV2],
-              ].map(([k, a, b]) => (
-                <TableRow key={k}>
-                  <TableCell sx={{ fontWeight: 'bold' }}>{k}</TableCell>
-                  <TableCell sx={{ color: 'text.secondary' }}>{a}</TableCell>
-                  <TableCell sx={{ color: 'success.main' }}>{b}</TableCell>
+              {t.tokens.protections.items.map(({ label, detail }) => (
+                <TableRow key={label}>
+                  <TableCell sx={{ fontWeight: 'bold' }}>{label}</TableCell>
+                  <TableCell sx={{ color: 'success.main' }}>{detail}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         </TableContainer>
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
-          {t.tokens.markup.diffNoteBefore}<b>docs/RISK_MODEL.md</b>{t.tokens.markup.diffNoteMid}{' '}
-          <b>docs/KNOWN_LIMITATIONS.md</b>{t.tokens.markup.diffNoteAfter}
+          {t.tokens.markup.protectionsNoteBefore}<b>docs/RISK_MODEL.md</b>{t.tokens.markup.protectionsNoteMid}{' '}
+          <b>docs/KNOWN_LIMITATIONS.md</b>{t.tokens.markup.protectionsNoteAfter}
         </Typography>
       </AccordionDetails>
     </Accordion>
@@ -412,13 +347,9 @@ export default function TokenizedAssetsPage() {
       <Container maxWidth="md" sx={{ py: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
         <Box>
           <Typography variant="h4" sx={{ fontWeight: 800 }}>{t.tokens.title}</Typography>
-          <Typography variant="body2" color="text.secondary">ERC-20 Tokenized Assets</Typography>
+          <Typography variant="body2" color="text.secondary">{t.tokens.subtitle}</Typography>
         </Box>
-        {versionSwitcher}
-        <Alert severity="info">
-          {isV2 ? t.tokens.notDeployed.v2 : t.tokens.notDeployed.vault}
-        </Alert>
-        {diffTable}
+        <Alert severity="info">{t.tokens.notDeployed}</Alert>
       </Container>
     )
   }
@@ -431,10 +362,8 @@ export default function TokenizedAssetsPage() {
     <Container maxWidth="lg" sx={{ py: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
       <Box>
         <Typography variant="h4" sx={{ fontWeight: 800 }}>{t.tokens.title}</Typography>
-        <Typography variant="body2" color="text.secondary">ERC-20 Tokenized Assets</Typography>
+        <Typography variant="body2" color="text.secondary">{t.tokens.subtitle}</Typography>
       </Box>
-
-      {versionSwitcher}
 
       {/* ── 市場行情（TradingView，Coinbase 現貨報價） ──────────────────────
           教授回饋第 5 點指名「加密貨幣的 TradingView 畫面建議用 Coinbase 的
@@ -571,9 +500,11 @@ export default function TokenizedAssetsPage() {
         </Card>
       ) : (
         <Alert severity="warning" variant="outlined">
-          {t.tokens.health.v1Notice}
+          {t.tokens.health.notHardened}
         </Alert>
       )}
+
+      {isV2 && protectionsList}
 
       <Grid container spacing={2}>
         {symbols.map((sym) => {
@@ -684,16 +615,12 @@ export default function TokenizedAssetsPage() {
         {t.tokens.markup.vaultDryBefore}<Box component="code" sx={{ fontFamily: MONO }}>fundVault()</Box>{t.tokens.markup.vaultDryAfter}
       </Typography>
 
-      <Divider />
-      {diffTable}
-
       {/* buy / sell dialog */}
       <Dialog open={!!dlg} onClose={closeDlg} maxWidth="xs" fullWidth>
         <DialogTitle sx={{ fontWeight: 'bold' }}>
           {interpolate(dlg?.mode === 'buy' ? t.tokens.dialog.buyTitle : t.tokens.dialog.sellTitle, {
             symbol: dlg?.sym ?? '',
           })}
-          <Chip size="small" label={isV2 ? 'V2' : 'V1'} sx={{ ml: 1 }} />
         </DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
