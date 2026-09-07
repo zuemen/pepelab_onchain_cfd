@@ -2,6 +2,8 @@
 // 買賣可用性全部擠進這個純函式,元件退化成渲染器。前端測試跑在
 // `environment: 'node'`,不渲染元件,所以這裡是唯一測得到這些判斷的地方。
 
+import type { Mode } from 'src/contexts/mode-context'
+
 import { t } from 'src/locales'
 
 import type { AssetMeta } from './assetMeta'
@@ -22,6 +24,13 @@ export interface AssetRowChainData {
   updatedAtSec: number
   /** 18-dec 代幣餘額。 */
   balance: bigint
+  /**
+   * #136：Expert 專屬的 issuedOverCap 欄要用。舊版金庫沒有這個概念，
+   * 呼叫端已經把它們正規化成 0n（跟 refresh() 對 V1 的既有作法一致）——
+   * 這裡原樣帶到 AssetRow，不重新判斷「這是不是硬化版金庫」。
+   */
+  cap: bigint
+  issued: bigint
 }
 
 /**
@@ -56,6 +65,10 @@ export interface AssetRow {
   freshness: Freshness
   canBuy: boolean
   canSell: boolean
+  /** #136：Expert 專屬欄位的原始資料，逐字帶過來，見 AssetRowChainData。 */
+  cap: bigint
+  issued: bigint
+  updatedAtSec: number
 }
 
 /**
@@ -109,6 +122,9 @@ export function buildAssetRows(
       freshness,
       canBuy: !buyBlocked,
       canSell: !sellBlockedByVault && input.balance > 0n,
+      cap: input.cap,
+      issued: input.issued,
+      updatedAtSec: input.updatedAtSec,
     }
   })
 }
@@ -149,18 +165,33 @@ export function sortAssetRows(rows: readonly AssetRow[], sortKey: AssetSortKey):
 
 // ── 欄位集 ───────────────────────────────────────────────────────────────────
 //
-// #136（Mode 分流）會把這份清單拆成 Simple／Expert 兩份,比照
-// openPositionColumns.ts 的 openPositionColumnsForMode 作法；這一張票只需要
-// 一份，先把「欄位是什麼、標籤在哪」的判斷擠進這裡,元件不必自己決定表格
-// 長什麼樣。
+// issue #136：Mode 分流。比照 openPositionColumns.ts 的
+// openPositionColumnsForMode 作法——欄位是什麼、標籤在哪、哪個模式看得到,
+// 判斷全部擠進這裡,元件不必自己決定表格長什麼樣。
+//
+// Expert 多出來的三欄是工程證據（發行量／上限、預言機更新時間、資產
+// id）,Simple 不需要知道這些機制細節就能決定要不要買。見證筆數與離散度
+// （#93 user story 14）目前沒有資料來源——ESGRegistryV2 的多見證者讀取是
+// #128 才會接上的東西,frontend 現在的碳資料是單一解析後的分級,不是原始
+// 見證紀錄——所以這裡先不放這一欄，而不是塞一個編出來的數字。
 
 export type AssetRowColumnKey =
   | 'asset' | 'provenance' | 'tradingFee' | 'price' | 'balance' | 'actions'
+  | 'issuedOverCap' | 'priceUpdatedAt' | 'assetId'
 
 /** 資產／身世／買入費率三欄相鄰且順序固定——碳分級決定買入費率這件事,
- *  版面上必須是看得出來的因果,不是兩個各自獨立的欄位。 */
-export const ASSET_ROW_COLUMNS: AssetRowColumnKey[] = [
+ *  版面上必須是看得出來的因果,不是兩個各自獨立的欄位。操作欄固定排最後。 */
+const SIMPLE_COLUMNS: AssetRowColumnKey[] = [
   'asset', 'provenance', 'tradingFee', 'price', 'balance', 'actions',
 ]
+
+const EXPERT_COLUMNS: AssetRowColumnKey[] = [
+  'asset', 'provenance', 'tradingFee', 'price', 'balance',
+  'issuedOverCap', 'priceUpdatedAt', 'assetId', 'actions',
+]
+
+export function assetRowColumnsForMode(mode: Mode): AssetRowColumnKey[] {
+  return mode === 'simple' ? SIMPLE_COLUMNS : EXPERT_COLUMNS
+}
 
 export const ASSET_ROW_COLUMN_LABELS: Record<AssetRowColumnKey, string> = t.tokens.table.column

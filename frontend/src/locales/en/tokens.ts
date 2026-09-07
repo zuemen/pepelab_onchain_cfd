@@ -5,6 +5,7 @@ import type { Catalog } from '../zh-TW';
  */
 export const tokens: Catalog['tokens'] = {
   title: 'Tokenized Assets',
+  titleSimple: 'Assets',
   subtitle: 'ERC-20 Tokenized Assets',
 
   /** Which protections this vault has — a single-column list, shown only when the hardened vault is actually deployed (see the component). */
@@ -47,6 +48,8 @@ export const tokens: Catalog['tokens'] = {
     /** This chain runs the original implementation, without these protections — no version number named. */
     notHardened:
       "The vault on this network has no SafeERC20, reserve-ratio protection, or pause mechanism yet. A deployed contract's bytecode can't be changed; these protections are already live on other deployments, and when this network catches up is the operator's call.",
+    simpleNote: 'Reserve {ratio} — redeem any time.',
+    simpleNotConnected: "This chain's vault reserve isn't hooked up to automated verification yet.",
   },
 
   card: {
@@ -68,6 +71,10 @@ export const tokens: Catalog['tokens'] = {
       price: 'Oracle Price',
       balance: 'My Balance',
       actions: 'Actions',
+      // #136: Expert-only columns.
+      issuedOverCap: 'Issued / Cap',
+      priceUpdatedAt: 'Oracle Updated',
+      assetId: 'Asset ID',
     },
     sort: {
       label: 'Sort by',

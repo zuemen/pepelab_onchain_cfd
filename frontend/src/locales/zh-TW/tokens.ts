@@ -10,6 +10,9 @@
 export const tokens = {
   /** TradingView 外嵌圖表區。symbol 寫死,見元件註解。 */
   title: '代幣化資產',
+  // #136：Simple Mode 用「資產」——不需要知道底層是代幣化的 ERC-20 機制
+  // 才能決定要不要買。Expert 維持原本的標題，工程細節是它的賣點。
+  titleSimple: '資產',
   subtitle: 'ERC-20 代幣化資產',
 
   /** 這個金庫有哪些防護——單欄清單，只在硬化版金庫真的部署時才顯示（見元件）。 */
@@ -51,6 +54,11 @@ export const tokens = {
     /** 這條鏈上跑的是尚未加上這些防護的原始實作，不點名版本編號。 */
     notHardened:
       '這條鏈上的金庫尚未包含 SafeERC20、儲備率保護與暫停機制。已部署合約的 bytecode 無法修改；這些防護已經在其他部署上線，此網路何時跟上由營運方決定。',
+    // #136：Simple Mode 的一句話版——收起來的是四格儀表板跟預言機的機制
+    // 細節，不是「儲備率」這個事實本身（#93 user story 5、6）。不可信時要
+    // 講「無法確認」，直接沿用 reserveRatioUnknown，不要另造一個「無法確認」。
+    simpleNote: '儲備 {ratio}，可隨時贖回',
+    simpleNotConnected: '這條鏈的金庫儲備尚未接上自動驗證機制。',
   },
 
   card: {
@@ -74,6 +82,10 @@ export const tokens = {
       price: 'Oracle 價格',
       balance: '我的餘額',
       actions: '操作',
+      // #136：Expert 專屬欄位。
+      issuedOverCap: '發行量 / 上限',
+      priceUpdatedAt: '預言機更新時間',
+      assetId: '資產 ID',
     },
     sort: {
       label: '排序',

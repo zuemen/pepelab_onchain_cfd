@@ -6,7 +6,7 @@ import {
   buildAssetRows,
   sortAssetRows,
   tierForAsset,
-  ASSET_ROW_COLUMNS,
+  assetRowColumnsForMode,
   ASSET_ROW_COLUMN_LABELS,
   type AssetRowChainData,
   type VaultGateState,
@@ -52,6 +52,8 @@ function chainRow(over: Partial<AssetRowChainData> = {}): AssetRowChainData {
     price: 100_00000000n, // 8-dec
     updatedAtSec: Math.floor(NOW_MS / 1000) - 60, // 1 分鐘前
     balance: 0n,
+    cap: 0n,
+    issued: 0n,
     ...over,
   }
 }
@@ -255,16 +257,53 @@ describe('sortAssetRows · 預設排序（依碳分級）', () => {
   })
 })
 
-describe('ASSET_ROW_COLUMNS / ASSET_ROW_COLUMN_LABELS · 欄位集', () => {
-  it('每一欄都有非空標籤', () => {
-    for (const key of ASSET_ROW_COLUMNS) {
-      expect(ASSET_ROW_COLUMN_LABELS[key].length, key).toBeGreaterThan(0)
+describe('buildAssetRows · 逐字傳遞給 Expert 專屬欄位用的原始資料', () => {
+  it('cap / issued / updatedAtSec 原樣帶到 AssetRow 上，不重新計算', () => {
+    const [row] = buildAssetRows(
+      [chainRow({ cap: 500_000000000000000000n, issued: 120_000000000000000000n, updatedAtSec: 12345 })],
+      OPEN_GATE,
+      { nowMs: NOW_MS },
+    )
+    expect(row.cap).toBe(500_000000000000000000n)
+    expect(row.issued).toBe(120_000000000000000000n)
+    expect(row.updatedAtSec).toBe(12345)
+  })
+})
+
+describe('assetRowColumnsForMode · issue #136 Mode 分流', () => {
+  it('Simple 只有六欄：資產／身世／買入費率／價格／持有／操作', () => {
+    expect(assetRowColumnsForMode('simple')).toEqual([
+      'asset', 'provenance', 'tradingFee', 'price', 'balance', 'actions',
+    ])
+  })
+
+  it('Expert 在 Simple 的基礎上多發行量／上限、預言機更新時間、資產 id 三欄', () => {
+    const expert = assetRowColumnsForMode('expert')
+    const simple = assetRowColumnsForMode('simple')
+    for (const key of simple) expect(expert).toContain(key)
+    expect(expert).toEqual(expect.arrayContaining(['issuedOverCap', 'priceUpdatedAt', 'assetId']))
+    expect(expert.length).toBe(simple.length + 3)
+  })
+
+  it('操作欄永遠排最後', () => {
+    expect(assetRowColumnsForMode('simple').at(-1)).toBe('actions')
+    expect(assetRowColumnsForMode('expert').at(-1)).toBe('actions')
+  })
+
+  it('兩個模式都是資產、身世、買入費率三欄相鄰（碳分級與費率不能被拆開）', () => {
+    for (const mode of ['simple', 'expert'] as const) {
+      const cols = assetRowColumnsForMode(mode)
+      const provenanceIdx = cols.indexOf('provenance')
+      const feeIdx = cols.indexOf('tradingFee')
+      expect(feeIdx, mode).toBe(provenanceIdx + 1)
     }
   })
 
-  it('資產、身世、買入費率三欄相鄰（碳分級與費率不能被拆開）', () => {
-    const provenanceIdx = ASSET_ROW_COLUMNS.indexOf('provenance')
-    const feeIdx = ASSET_ROW_COLUMNS.indexOf('tradingFee')
-    expect(feeIdx).toBe(provenanceIdx + 1)
+  it('每一欄都有非空標籤，兩個模式各自的欄位集都涵蓋', () => {
+    for (const mode of ['simple', 'expert'] as const) {
+      for (const key of assetRowColumnsForMode(mode)) {
+        expect(ASSET_ROW_COLUMN_LABELS[key].length, key).toBeGreaterThan(0)
+      }
+    }
   })
 })
