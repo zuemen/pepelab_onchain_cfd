@@ -12,10 +12,14 @@ import {
 } from 'src/contracts/addresses'
 import { t, interpolate } from 'src/locales'
 import { ASSET_META } from 'src/lib/pepefi/assetMeta'
+import {
+  buildAssetRows, sortAssetRows, ASSET_ROW_COLUMNS, ASSET_ROW_COLUMN_LABELS,
+  type AssetRowChainData, type AssetSortKey,
+} from 'src/lib/pepefi/assetRows'
 import SyntheticAssetABI   from 'src/contracts/abi/SyntheticAsset.json'
 import SyntheticAssetV2ABI from 'src/contracts/abi/SyntheticAssetV2.json'
 import AssetIcon from 'src/components/pepefi/AssetIcon'
-import { AssetProvenanceCard, WhoRunsWhat } from 'src/components/pepefi/AssetProvenance'
+import { WhoRunsWhat, TIER_COLOR, FRESHNESS_COLOR } from 'src/components/pepefi/AssetProvenance'
 import TradingViewChart from 'src/components/pepefi/TradingViewChart'
 import { SHOW_PERPETUALS } from 'src/lib/pepefi/featureFlags'
 import Skeleton from 'src/components/pepefi/Skeleton'
@@ -40,11 +44,11 @@ import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import LinearProgress from '@mui/material/LinearProgress';
 import Link from '@mui/material/Link';
-import Divider from '@mui/material/Divider';
 import Accordion from '@mui/material/Accordion';
 import AccordionSummary from '@mui/material/AccordionSummary';
 import AccordionDetails from '@mui/material/AccordionDetails';
 import Table from '@mui/material/Table';
+import TableHead from '@mui/material/TableHead';
 import TableBody from '@mui/material/TableBody';
 import TableRow from '@mui/material/TableRow';
 import TableCell from '@mui/material/TableCell';
@@ -144,6 +148,7 @@ export default function TokenizedAssetsPage() {
   const [quote, setQuote]     = useState<{ out: bigint; fee: bigint } | null>(null)
   const [busy, setBusy]       = useState(false)
   const [chartKey, setChartKey] = useState<ChartKey>('btc')
+  const [sortKey, setSortKey] = useState<AssetSortKey>('tier')
 
   const { notify } = useToast()
 
@@ -164,6 +169,11 @@ export default function TokenizedAssetsPage() {
           ),
           // V2-only views; on V1 these reject and fall back, which is why each
           // read is isolated rather than batched into one try.
+          //
+          // #133：cap/issued 還是讀進來，但資產表目前不顯示發行量／上限這一
+          // 欄（那張卡片牆版本有的 t.tokens.card.issuedOverCap）——Expert
+          // Mode 專屬的欄位由 #136 補回來，讀取先留著，免得那張票還要重新
+          // 接一次資料源。
           isV2 ? safeRead(activeVault.assetCap(id) as Promise<bigint>, 0n) : Promise.resolve(0n),
           isV2 ? safeRead(activeVault.exposureOf(id) as Promise<bigint>, 0n) : Promise.resolve(0n),
         ])
@@ -358,6 +368,27 @@ export default function TokenizedAssetsPage() {
     ? Number(health.reserveRatioBps) / 100
     : null
 
+  // #133：資產表的每一列由 assetRows 這個純函式算出來——分級解析、費率
+  // 推導、排序、買賣可用性全部在那邊測過，這裡只是把鏈上讀回來的原始資料
+  // 餵進去。
+  const assetRowInputs: AssetRowChainData[] = symbols.map((sym) => ({
+    symbol: sym,
+    meta: ASSET_META[ASSET_IDS[sym]],
+    price: rows[sym]?.price ?? 0n,
+    updatedAtSec: rows[sym] ? Number(rows[sym].updatedAt) : 0,
+    balance: rows[sym]?.balance ?? 0n,
+  }))
+  // isV2 由 useV2Contracts 的 useMemo 同步跟著 chainId 變，但 health 是
+  // refresh() 的非同步 effect 才會重設——兩者之間有一段 health 還沒被
+  // 正規化、卻已經換了鏈的空檔。舊版卡片牆的寫法是 `isV2 && (health...)`，
+  // isV2 一變就整條表達式立刻短路，不會被上一條鏈殘留的 health 值影響；
+  // 這裡照抄同一個安全性質，而不是信任 health 已經被正規化過。
+  const gate = isV2 ? health : { paused: null, mintingHalted: false, stale: false }
+  const displayRows = sortAssetRows(
+    buildAssetRows(assetRowInputs, gate, { nowMs: Date.now() }),
+    sortKey,
+  )
+
   return (
     <Container maxWidth="lg" sx={{ py: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
       <Box>
@@ -506,110 +537,130 @@ export default function TokenizedAssetsPage() {
 
       {isV2 && protectionsList}
 
-      <Grid container spacing={2}>
-        {symbols.map((sym) => {
-          const row = rows[sym]
-          const price = row?.price ?? 0n
-          const bal   = row?.balance ?? 0n
-          const usd   = (Number(bal) / 1e18) * (Number(price) / 1e8)
+      {/* #133：卡片牆 → 資產表。碳分級決定買入費率——兩欄相鄰，順序由
+          buildAssetRows/sortAssetRows 這個純函式決定，元件只管渲染。
+          身世卡的完整內容（追蹤標的、KYC 理由、出處網址…）搬進詳情層是
+          下一張票（#134）的事，這裡先只留分級與新鮮度兩顆摘要 chip。 */}
+      <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexWrap: 'wrap' }}>
+        <Typography variant="body2" color="text.secondary">{t.tokens.table.sort.label}</Typography>
+        <ToggleButtonGroup
+          size="small"
+          exclusive
+          value={sortKey}
+          onChange={(_, v) => { if (v) setSortKey(v as AssetSortKey) }}
+        >
+          <ToggleButton value="tier" sx={{ textTransform: 'none', px: 1.5 }}>{t.tokens.table.sort.tier}</ToggleButton>
+          <ToggleButton value="price" sx={{ textTransform: 'none', px: 1.5 }}>{t.tokens.table.sort.price}</ToggleButton>
+          <ToggleButton value="balance" sx={{ textTransform: 'none', px: 1.5 }}>{t.tokens.table.sort.balance}</ToggleButton>
+          <ToggleButton value="name" sx={{ textTransform: 'none', px: 1.5 }}>{t.tokens.table.sort.name}</ToggleButton>
+        </ToggleButtonGroup>
+      </Stack>
 
-          return (
-            <Grid size={{ xs: 12, sm: 6, md: 4 }} key={sym}>
-              <Card sx={{ p: 2.5, height: '100%', display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                  <AssetIcon symbol={sym} size={36} />
-                  <Box sx={{ minWidth: 0 }}>
-                    <Typography variant="subtitle1" sx={{ fontWeight: 'bold', lineHeight: 1.2 }}>{sym}</Typography>
-                    <Typography variant="caption" color="text.secondary" noWrap>
-                      {ASSET_META[ASSET_IDS[sym]]?.name ?? sym}
-                    </Typography>
-                  </Box>
-                </Box>
+      <TableContainer component={Card}>
+        <Table>
+          <TableHead>
+            <TableRow>
+              {ASSET_ROW_COLUMNS.map((col) => (
+                <TableCell key={col} sx={{ fontWeight: 'bold' }}>{ASSET_ROW_COLUMN_LABELS[col]}</TableCell>
+              ))}
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {displayRows.map((assetRow) => {
+              const sym = assetRow.symbol as AssetSymbol
 
-                <Box>
-                  <Typography variant="caption" color="text.secondary" display="block">{t.tokens.card.oraclePrice}</Typography>
-                  {loading ? (
-                    <Skeleton height={24} sx={{ width: '60%' }} />
-                  ) : (
-                    <Typography sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
-                      {price > 0n ? fUsd(Number(price) / 1e8) : '—'}
-                    </Typography>
-                  )}
-                </Box>
+              return (
+                <TableRow key={assetRow.symbol}>
+                  <TableCell>
+                    <Stack direction="row" spacing={1.25} alignItems="center">
+                      <AssetIcon symbol={assetRow.symbol} size={28} />
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 'bold', lineHeight: 1.2 }}>
+                          {assetRow.symbol}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" noWrap>
+                          {assetRow.name}
+                        </Typography>
+                      </Box>
+                    </Stack>
+                  </TableCell>
 
-                <Box>
-                  <Typography variant="caption" color="text.secondary" display="block">{t.tokens.card.myBalance}</Typography>
-                  {loading ? (
-                    <Skeleton height={24} sx={{ width: '70%' }} />
-                  ) : (
-                    <Typography sx={{ fontFamily: MONO }}>
-                      {f18(bal)} {sym}
-                      <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.75 }}>
-                        ≈ {fUsd(usd)}
-                      </Typography>
-                    </Typography>
-                  )}
-                </Box>
+                  <TableCell>
+                    <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
+                      <Chip
+                        size="small"
+                        color={TIER_COLOR[assetRow.tier]}
+                        label={t.tokens.provenance.carbonTier[assetRow.tier]}
+                      />
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        color={FRESHNESS_COLOR[assetRow.freshness.level]}
+                        label={assetRow.freshness.label}
+                      />
+                    </Stack>
+                  </TableCell>
 
-                {isV2 && (
-                  <Box>
-                    <Typography variant="caption" color="text.secondary" display="block">{t.tokens.card.issuedOverCap}</Typography>
-                    <Typography variant="caption" sx={{ fontFamily: MONO }}>
-                      {f18(row?.issued ?? 0n, 2)} / {(row?.cap ?? 0n) === 0n ? t.tokens.card.capClosed : f18(row?.cap ?? 0n, 2)}
-                    </Typography>
-                  </Box>
-                )}
+                  <TableCell sx={{ fontFamily: MONO }}>
+                    {(assetRow.tradingFeeBps / 100).toFixed(2)}%
+                  </TableCell>
 
-                <Stack direction="row" spacing={1} sx={{ mt: 'auto', pt: 0.5 }}>
-                  <Button
-                    size="small" variant="contained" fullWidth
-                    // #99: `stale` gates buy too, not just `mintingHalted`. A
-                    // stale asset makes reserveRatioBps() UNDER-count liability
-                    // (that asset drops out of the sum), so the ratio — and
-                    // mintingHalted's own trigger — can read healthy even while
-                    // the true, unknown ratio has already breached. Blocking
-                    // buy on ANY unpriced asset, not just the one being traded,
-                    // is what "cannot confirm the ratio" (docs/RISK_MODEL.md,
-                    // frontend/CONTEXT.md's Unknown Ratio) means in practice.
-                    // A specific asset's own stale price still separately
-                    // reverts via mint()'s _price() call regardless.
-                    disabled={isV2 && (health.paused === true || health.mintingHalted || health.stale)}
-                    onClick={() => setDlg({ sym, mode: 'buy' })}
-                    sx={{ textTransform: 'none', fontWeight: 'bold' }}
-                  >
-                    {t.tokens.card.buy}
-                  </Button>
-                  <Button
-                    size="small" variant="outlined" fullWidth
-                    // #99: redemption is never gated by the reserve ratio or by
-                    // mintingHalted (docs/RISK_MODEL.md) — only paused stops it.
-                    disabled={bal === 0n || (isV2 && health.paused === true)}
-                    onClick={() => setDlg({ sym, mode: 'sell' })}
-                    sx={{ textTransform: 'none', fontWeight: 'bold' }}
-                  >
-                    {t.tokens.card.sell}
-                  </Button>
-                </Stack>
+                  <TableCell sx={{ fontFamily: MONO }}>
+                    {loading ? (
+                      <Skeleton height={20} sx={{ width: 64 }} />
+                    ) : assetRow.price > 0n ? fUsd(Number(assetRow.price) / 1e8) : '—'}
+                  </TableCell>
 
-                <Button
-                  size="small" variant="text"
-                  onClick={() => void addToWallet(sym)}
-                  sx={{ textTransform: 'none', fontSize: '0.75rem', color: 'info.main', alignSelf: 'flex-start' }}
-                >
-                  {t.tokens.card.addToWallet}
-                </Button>
+                  <TableCell sx={{ fontFamily: MONO }}>
+                    {loading ? (
+                      <Skeleton height={20} sx={{ width: 88 }} />
+                    ) : (
+                      <>
+                        {f18(assetRow.balance)} {assetRow.symbol}
+                        <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
+                          ≈ {fUsd(fromUnits(assetRow.usdValue, 18))}
+                        </Typography>
+                      </>
+                    )}
+                  </TableCell>
 
-                {/* #100 ①④：代號卡 → 身世卡。追蹤標的、免責、碳強度與出處、KYC 理由、見證日。 */}
-                <Divider sx={{ mt: 0.5 }} />
-                <AssetProvenanceCard
-                  meta={ASSET_META[ASSET_IDS[sym]]}
-                  priceUpdatedAtSec={row ? Number(row.updatedAt) : undefined}
-                />
-              </Card>
-            </Grid>
-          )
-        })}
-      </Grid>
+                  <TableCell>
+                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                      <Button
+                        size="small" variant="contained"
+                        // #99：這三個條件是 assetRow.canBuy 的定義本身，見
+                        // lib/pepefi/assetRows.ts——暫停／鑄造停止／比率不可信
+                        // 任一為真就擋買進，理由見那個模組自己的註解。
+                        disabled={!assetRow.canBuy}
+                        onClick={() => setDlg({ sym, mode: 'buy' })}
+                        sx={{ textTransform: 'none', fontWeight: 'bold' }}
+                      >
+                        {t.tokens.card.buy}
+                      </Button>
+                      <Button
+                        size="small" variant="outlined"
+                        // #99：只有暫停擋得住贖回，見 assetRows.ts 的 canSell。
+                        disabled={!assetRow.canSell}
+                        onClick={() => setDlg({ sym, mode: 'sell' })}
+                        sx={{ textTransform: 'none', fontWeight: 'bold' }}
+                      >
+                        {t.tokens.card.sell}
+                      </Button>
+                      <Button
+                        size="small" variant="text"
+                        onClick={() => void addToWallet(sym)}
+                        sx={{ textTransform: 'none', fontSize: '0.7rem', color: 'info.main' }}
+                      >
+                        {t.tokens.card.addToWallet}
+                      </Button>
+                    </Stack>
+                  </TableCell>
+                </TableRow>
+              )
+            })}
+          </TableBody>
+        </Table>
+      </TableContainer>
 
       <Typography variant="caption" color="text.secondary">
         {t.tokens.markup.vaultDryBefore}<Box component="code" sx={{ fontFamily: MONO }}>fundVault()</Box>{t.tokens.markup.vaultDryAfter}

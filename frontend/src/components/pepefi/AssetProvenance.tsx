@@ -28,15 +28,18 @@ import {
   type Tier,
 } from 'src/lib/pepefi/carbon'
 import { classifyFreshness, type Freshness } from 'src/lib/pepefi/priceFreshness'
+import { tierForAsset } from 'src/lib/pepefi/assetRows'
 
-const TIER_COLOR: Record<Tier, 'default' | 'success' | 'warning' | 'error'> = {
+// 導出給 assetRows 表格的身世摘要 chip 用——分級與新鮮度的顏色只該有一份
+// 定義，這裡跟身世卡的完整內容共用同一份，不在表格那邊重寫一次。
+export const TIER_COLOR: Record<Tier, 'default' | 'success' | 'warning' | 'error'> = {
   unrated: 'warning',
   low: 'success',
   mid: 'warning',
   high: 'error',
 }
 
-const FRESHNESS_COLOR: Record<Freshness['level'], 'success' | 'warning' | 'error' | 'default'> = {
+export const FRESHNESS_COLOR: Record<Freshness['level'], 'success' | 'warning' | 'error' | 'default'> = {
   live: 'success',
   aging: 'warning',
   stale: 'error',
@@ -89,7 +92,9 @@ export function AssetProvenanceCard({
 
   const expired = attestationExpired(c.observed, nowMs)
   // 見證過期 → 這顆資產視同未評等（詞彙表 Attestation：lapsed 就停止計數）。
-  const shownTier: Tier = expired ? 'unrated' : c.tier
+  // 這條規則只有一個定義，在 assetRows.ts 的 tierForAsset——資產表跟這張卡
+  // 不能對同一顆資產算出不同的分級。
+  const shownTier: Tier = tierForAsset(meta, nowMs)
   const heldDays =
     heldSinceSec !== undefined ? Math.max(0, Math.floor((nowSec - heldSinceSec) / 86400)) : null
 

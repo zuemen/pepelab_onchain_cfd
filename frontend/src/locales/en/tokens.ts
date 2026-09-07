@@ -66,6 +66,25 @@ export const tokens: Catalog['tokens'] = {
     addToWallet: '➕ Add to MetaMask',
   },
 
+  /** issue #133: card wall → asset table. Column labels and sort control strings. */
+  table: {
+    column: {
+      asset: 'Asset',
+      provenance: 'Provenance',
+      tradingFee: 'Buy Fee',
+      price: 'Oracle Price',
+      balance: 'My Balance',
+      actions: 'Actions',
+    },
+    sort: {
+      label: 'Sort by',
+      tier: 'Carbon Tier',
+      price: 'Price',
+      balance: 'My Holdings',
+      name: 'Name',
+    },
+  },
+
   /** 買賣對話框。 */
   dialog: {
     buyTitle: 'Buy {symbol}',
