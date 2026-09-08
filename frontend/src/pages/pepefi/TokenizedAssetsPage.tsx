@@ -1,4 +1,4 @@
-import { MONO } from 'src/components/pepefi/brandKit'
+import { MONO, shortAddr } from 'src/components/pepefi/brandKit'
 import { useState, useEffect, useCallback } from 'react'
 import { Contract, parseEther, type ContractTransactionResponse } from 'ethers'
 import { useContracts } from 'src/hooks/useContracts'
@@ -6,21 +6,22 @@ import { useV2Contracts } from 'src/hooks/useV2Contracts'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { safeRead } from 'src/lib/pepefi/safeRead'
-import { fNum, fUsd, fromUnits } from 'src/lib/pepefi/format'
+import { fUsd, fromUnits, f18 } from 'src/lib/pepefi/format'
 import {
   ASSET_IDS, getAddresses, getSynthTokens, type AssetSymbol,
 } from 'src/contracts/addresses'
 import { t, interpolate } from 'src/locales'
+import { useMode } from 'src/contexts/mode-context'
 import { ASSET_META } from 'src/lib/pepefi/assetMeta'
 import {
-  buildAssetRows, sortAssetRows, ASSET_ROW_COLUMNS, ASSET_ROW_COLUMN_LABELS,
-  type AssetRowChainData, type AssetSortKey,
+  buildAssetRows, sortAssetRows, assetRowColumnsForMode, assetRowColumnLabelForMode,
+  type AssetRow, type AssetRowChainData, type AssetRowColumnKey, type AssetSortKey,
 } from 'src/lib/pepefi/assetRows'
 import SyntheticAssetABI   from 'src/contracts/abi/SyntheticAsset.json'
 import SyntheticAssetV2ABI from 'src/contracts/abi/SyntheticAssetV2.json'
 import AssetIcon from 'src/components/pepefi/AssetIcon'
-import { WhoRunsWhat, TIER_COLOR, FRESHNESS_COLOR } from 'src/components/pepefi/AssetProvenance'
-import TradingViewChart from 'src/components/pepefi/TradingViewChart'
+import { WhoRunsWhat, AssetProvenanceSummary } from 'src/components/pepefi/AssetProvenance'
+import { AssetDetailPanel } from 'src/components/pepefi/AssetDetailPanel'
 import { SHOW_PERPETUALS } from 'src/lib/pepefi/featureFlags'
 import Skeleton from 'src/components/pepefi/Skeleton'
 import { useToast } from 'src/components/pepefi/ToastProvider'
@@ -34,12 +35,7 @@ import Stack from '@mui/material/Stack';
 import Button from '@mui/material/Button';
 import Alert from '@mui/material/Alert';
 import Chip from '@mui/material/Chip';
-import Dialog from '@mui/material/Dialog';
-import DialogTitle from '@mui/material/DialogTitle';
-import DialogContent from '@mui/material/DialogContent';
-import DialogActions from '@mui/material/DialogActions';
-import TextField from '@mui/material/TextField';
-import InputAdornment from '@mui/material/InputAdornment';
+import Drawer from '@mui/material/Drawer';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import LinearProgress from '@mui/material/LinearProgress';
@@ -53,33 +49,29 @@ import TableBody from '@mui/material/TableBody';
 import TableRow from '@mui/material/TableRow';
 import TableCell from '@mui/material/TableCell';
 import TableContainer from '@mui/material/TableContainer';
+import { useTheme } from '@mui/material/styles';
+import useMediaQuery from '@mui/material/useMediaQuery';
 import { Icon } from '@iconify/react';
 
 const ZERO_ADDR = '0x0000000000000000000000000000000000000000'
 
-/**
- * 圖表能顯示哪些 symbol。刻意只有兩個、而且都是 Coinbase **現貨**：
- * 這一頁賣的是代幣化的現貨資產，掛一張永續合約的圖會自打嘴巴。
- */
-const CHART_SYMBOLS = {
-  btc: 'COINBASE:BTCUSD',
-  eth: 'COINBASE:ETHUSD',
-} as const
-type ChartKey = keyof typeof CHART_SYMBOLS
-
-// These two were declared locally here (and again, slightly differently, on
-// other pages) — which is the duplication lib/pepefi/format.ts exists to stop.
-// The local fUsd also pinned 'en-US' on a Traditional Chinese interface; the
-// shared one follows the user's locale. For zh-Hant the grouping and decimal
-// separators are the same, so the rendered output does not change.
-//
-// f18 gains thousands separators, which toFixed did not produce: a balance now
-// reads 1,234.5678 instead of 1234.5678.
-const f18 = (v: bigint, d = 4) => fNum(fromUnits(v, 18), { dp: d })
+// f18/fUsd used to be declared locally here (and again, slightly differently,
+// on other pages, and a third time in AssetDetailPanel.tsx) — the exact
+// duplication lib/pepefi/format.ts exists to stop; f18 is now a proper named
+// export there instead of a fourth copy. The local fUsd also used to pin
+// 'en-US' on a Traditional Chinese interface; the shared one follows the
+// user's locale. For zh-Hant the grouping and decimal separators are the
+// same, so the rendered output does not change.
 
 // Contract methods come off a JSON ABI, so ethers types them loosely. Narrow to
 // the transaction shape we actually use rather than casting through `any`.
 const asTx = (t: unknown) => t as ContractTransactionResponse
+
+// #136：哪些欄是數字/雜湊，該用等寬字體——查表而不是一長串 ===，跟
+// assetRows.ts 自己的 TIER_RANK 同一種寫法。加一欄數字欄只改這裡一處。
+const MONO_COLUMNS = new Set<AssetRowColumnKey>([
+  'tradingFee', 'price', 'balance', 'issuedOverCap', 'assetId',
+])
 
 interface Row {
   price:     bigint // 8-dec oracle price
@@ -143,14 +135,20 @@ export default function TokenizedAssetsPage() {
     reserveRatioBps: null, paused: null, accruedFees: null, stale: false, mintingHalted: false,
   })
   const [loading, setLoading] = useState(true)
-  const [dlg, setDlg]         = useState<{ sym: AssetSymbol; mode: 'buy' | 'sell' } | null>(null)
+  // #134：詳情層取代了買賣對話框——selected 現在同時是「哪一列被點開」跟
+  // 「詳情層裡買進／贖回哪個分頁」，一份狀態，不是兩份各自要對齊的狀態。
+  const [selected, setSelected] = useState<{ sym: AssetSymbol; mode: 'buy' | 'sell' } | null>(null)
   const [amount, setAmount]   = useState('')
   const [quote, setQuote]     = useState<{ out: bigint; fee: bigint } | null>(null)
   const [busy, setBusy]       = useState(false)
-  const [chartKey, setChartKey] = useState<ChartKey>('btc')
   const [sortKey, setSortKey] = useState<AssetSortKey>('tier')
 
   const { notify } = useToast()
+  const { mode } = useMode()
+  const theme = useTheme()
+  // #134：桌面是側邊欄（表格保持可見），手機是全螢幕 Drawer——這裡只決定
+  // 外殼，內容（AssetDetailPanel）兩邊共用同一份。
+  const isDesktop = useMediaQuery(theme.breakpoints.up('md'))
 
   const refresh = useCallback(async () => {
     if (!contracts || !vaultReady || !wallet.address || !activeVault || !activeOracle) {
@@ -238,16 +236,16 @@ export default function TokenizedAssetsPage() {
   // the ABI, not assumed.
   useEffect(() => {
     let cancelled = false
-    if (!dlg || !activeVault || !amount) { setQuote(null); return undefined }
+    if (!selected || !activeVault || !amount) { setQuote(null); return undefined }
 
     void (async () => {
       let parsed: bigint
       try { parsed = parseEther(amount) } catch { setQuote(null); return }
       if (parsed <= 0n) { setQuote(null); return }
 
-      const id = ASSET_IDS[dlg.sym]
+      const id = ASSET_IDS[selected.sym]
       try {
-        const raw = dlg.mode === 'buy'
+        const raw = selected.mode === 'buy'
           ? await activeVault.previewMint(id, parsed)
           : await activeVault.previewRedeem(id, parsed)
         if (cancelled) return
@@ -263,9 +261,9 @@ export default function TokenizedAssetsPage() {
     })()
 
     return () => { cancelled = true }
-  }, [dlg, amount, activeVault, isV2])
+  }, [selected, amount, activeVault, isV2])
 
-  const closeDlg = () => { setDlg(null); setAmount(''); setQuote(null) }
+  const closePanel = () => { setSelected(null); setAmount(''); setQuote(null) }
 
   const doBuy = async (sym: AssetSymbol) => {
     if (!contracts || !activeVault || !activeVaultAddr) return
@@ -282,7 +280,7 @@ export default function TokenizedAssetsPage() {
       const tx = asTx(await activeVault.mint(ASSET_IDS[sym], usdcAmt))
       await tx.wait()
       notify(interpolate(t.tokens.tx.bought, { symbol: sym }), true, tx.hash)
-      closeDlg()
+      closePanel()
       await refresh()
     } catch (e) {
       notify(prettyError(e), false)
@@ -300,7 +298,7 @@ export default function TokenizedAssetsPage() {
       const tx = asTx(await activeVault.redeem(ASSET_IDS[sym], tokenAmt))
       await tx.wait()
       notify(interpolate(t.tokens.tx.sold, { symbol: sym }), true, tx.hash)
-      closeDlg()
+      closePanel()
       await refresh()
     } catch (e) {
       notify(prettyError(e), false)
@@ -356,7 +354,7 @@ export default function TokenizedAssetsPage() {
     return (
       <Container maxWidth="md" sx={{ py: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
         <Box>
-          <Typography variant="h4" sx={{ fontWeight: 800 }}>{t.tokens.title}</Typography>
+          <Typography variant="h4" sx={{ fontWeight: 800 }}>{mode === 'simple' ? t.tokens.titleSimple : t.tokens.title}</Typography>
           <Typography variant="body2" color="text.secondary">{t.tokens.subtitle}</Typography>
         </Box>
         <Alert severity="info">{t.tokens.notDeployed}</Alert>
@@ -377,6 +375,8 @@ export default function TokenizedAssetsPage() {
     price: rows[sym]?.price ?? 0n,
     updatedAtSec: rows[sym] ? Number(rows[sym].updatedAt) : 0,
     balance: rows[sym]?.balance ?? 0n,
+    cap: rows[sym]?.cap ?? 0n,
+    issued: rows[sym]?.issued ?? 0n,
   }))
   // isV2 由 useV2Contracts 的 useMemo 同步跟著 chainId 變，但 health 是
   // refresh() 的非同步 effect 才會重設——兩者之間有一段 health 還沒被
@@ -389,40 +389,174 @@ export default function TokenizedAssetsPage() {
     sortKey,
   )
 
+  // #136：欄位集由 assetRows 回答，不是散在元件裡的條件判斷——這裡只問
+  // 「這個 Mode 看得到哪些欄」，不重新決定欄位長什麼樣。
+  const columns = assetRowColumnsForMode(mode)
+
+  // Expert 的三格網格跟 Simple 的一句話都要講同一件事：儲備率現在讀起來
+  // 是多少。算一次、兩邊引用，不要各自重算一次同一個三分支判斷。
+  const reserveRatioText = health.stale
+    ? t.tokens.health.reserveRatioUnknown
+    : ratioPct === null
+    ? '—'
+    : ratioPct > 100000 ? t.tokens.health.reserveRatioInfinite : ratioPct.toFixed(1) + '%'
+
+  // #136 code review：Simple 的一句話版不能只判斷「過不過期」——鑄造暫停、
+  // 儲備率跌破下限都是投資人該知道的事（#93 user story 5、6），Expert 的
+  // 三格網格已經分別處理這三種狀態,Simple 只是換一句話講同一組事實,不能
+  // 漏掉其中兩種。severity 同理跟著真正的健康狀況走,不是固定給 'info'。
+  const simpleReserve: { severity: 'info' | 'warning' | 'error'; message: string } = !isV2
+    ? { severity: 'info', message: t.tokens.health.simpleNotConnected }
+    : health.stale
+      ? { severity: 'warning', message: reserveRatioText }
+      : health.mintingHalted
+        ? { severity: 'error', message: interpolate(t.tokens.health.simpleMintingHalted, { ratio: reserveRatioText }) }
+        : {
+            // 對齊 Expert 網格用同一個門檻判斷顏色（LinearProgress 的
+            // color）：ratioPct < 110 讀成 'error'。
+            severity: ratioPct !== null && ratioPct < 110 ? 'error' : 'info',
+            message: interpolate(t.tokens.health.simpleNote, { ratio: reserveRatioText }),
+          }
+
+  // #136：一列的每一格由欄位 key 決定內容——表頭跟表身共用同一份 columns
+  // 清單，不會有「表頭多一欄、表身忘了補」這種兩邊各寫一次才會出現的漂移
+  // （#134 detailPanel 的重複剛好是這個問題的前車之鑑）。只定義一次（不在
+  // displayRows.map() 裡面重新宣告），每列呼叫時傳 assetRow 進來。
+  // `never` 分支是編譯期的窮舉檢查——AssetRowColumnKey 多一個值卻忘了在這裡
+  // 加對應的 case，會在這裡直接編譯失敗，不會等到執行期才發現少畫一欄。
+  const renderAssetCell = (col: AssetRowColumnKey, assetRow: AssetRow) => {
+    const sym = assetRow.symbol as AssetSymbol
+    switch (col) {
+      case 'asset':
+        return (
+          <Stack direction="row" spacing={1.25} alignItems="center">
+            <AssetIcon symbol={assetRow.symbol} size={28} />
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 'bold', lineHeight: 1.2 }}>
+                {assetRow.symbol}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" noWrap>
+                {assetRow.name}
+              </Typography>
+            </Box>
+          </Stack>
+        )
+      case 'provenance':
+        // #134：跟詳情層標題共用同一個摘要元件，不是長得像的兩份。
+        return <AssetProvenanceSummary tier={assetRow.tier} freshness={assetRow.freshness} />
+      case 'tradingFee':
+        return `${(assetRow.tradingFeeBps / 100).toFixed(2)}%`
+      case 'price':
+        return loading
+          ? <Skeleton height={20} sx={{ width: 64 }} />
+          : assetRow.price > 0n ? fUsd(Number(assetRow.price) / 1e8) : '—'
+      case 'balance':
+        return loading ? (
+          <Skeleton height={20} sx={{ width: 88 }} />
+        ) : (
+          <>
+            {f18(assetRow.balance)} {assetRow.symbol}
+            <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
+              ≈ {fUsd(fromUnits(assetRow.usdValue, 18))}
+            </Typography>
+          </>
+        )
+      case 'issuedOverCap':
+        // 舊版金庫沒有發行上限這個概念——cap/issued 在那裡永遠是 refresh()
+        // 塞進去的 0n，不是鏈上真的讀到「已關閉」，跟卡片牆版本（#133 之前）
+        // 同一條規則：這一欄只在硬化版金庫上有意義。
+        return !isV2 ? '—' : (
+          <>
+            {f18(assetRow.issued, { dp: 2 })} / {assetRow.cap === 0n ? t.tokens.card.capClosed : f18(assetRow.cap, { dp: 2 })}
+          </>
+        )
+      case 'priceUpdatedAt':
+        return assetRow.freshness.label
+      case 'assetId': {
+        const id = ASSET_IDS[sym]
+        return <span title={id}>{shortAddr(id, 8, 6)}</span>
+      }
+      case 'actions':
+        return (
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            <Button
+              size="small" variant="contained"
+              // #99：這三個條件是 assetRow.canBuy 的定義本身，見
+              // lib/pepefi/assetRows.ts——暫停／鑄造停止／比率不可信
+              // 任一為真就擋買進，理由見那個模組自己的註解。
+              disabled={!assetRow.canBuy}
+              onClick={() => setSelected({ sym, mode: 'buy' })}
+              sx={{ textTransform: 'none', fontWeight: 'bold' }}
+            >
+              {t.tokens.card.buy}
+            </Button>
+            <Button
+              size="small" variant="outlined"
+              // #99：只有暫停擋得住贖回，見 assetRows.ts 的 canSell。
+              disabled={!assetRow.canSell}
+              onClick={() => setSelected({ sym, mode: 'sell' })}
+              sx={{ textTransform: 'none', fontWeight: 'bold' }}
+            >
+              {t.tokens.card.sell}
+            </Button>
+            {/* #136：加入錢包在表格列上是 Expert 專屬的快捷方式——Simple
+                使用者一樣按得到，就是走詳情層那個共用的按鈕（見
+                AssetDetailPanel，兩個模式的詳情層內容相同）。這是「一個
+                按鈕在既有欄位裡看不看得到」的判斷，跟 assetRowColumnsForMode
+                「這個模式有沒有這一欄」是不同層級的問題，所以刻意不透過
+                欄位集機制處理。 */}
+            {mode === 'expert' && (
+              <Button
+                size="small" variant="text"
+                onClick={() => void addToWallet(sym)}
+                sx={{ textTransform: 'none', fontSize: '0.7rem', color: 'info.main' }}
+              >
+                {t.tokens.card.addToWallet}
+              </Button>
+            )}
+          </Stack>
+        )
+      default: {
+        const exhaustive: never = col
+        return exhaustive
+      }
+    }
+  }
+
+  // #134：詳情層的內容只算一次——桌面的側邊欄跟手機的 Drawer 只是不同的
+  // 外殼，內容元件與它的整份 props 不該在兩個分支各寫一遍（那正是這一頁
+  // 其餘條件渲染的既有寫法，比照 protectionsList 這個變數）。
+  const selectedRow = selected ? displayRows.find((r) => r.symbol === selected.sym) : undefined
+  const selectedMeta = selected ? ASSET_META[ASSET_IDS[selected.sym]] : undefined
+  const detailPanel = selected && selectedRow && selectedMeta ? (
+    <AssetDetailPanel
+      sym={selected.sym}
+      assetRow={selectedRow}
+      meta={selectedMeta}
+      price={rows[selected.sym]?.price ?? 0n}
+      isV2={isV2}
+      mode={selected.mode}
+      onModeChange={(mode) => setSelected({ sym: selected.sym, mode })}
+      amount={amount}
+      onAmountChange={setAmount}
+      quote={quote}
+      busy={busy}
+      onConfirm={() => void (selected.mode === 'buy' ? doBuy(selected.sym) : doSell(selected.sym))}
+      onAddToWallet={() => void addToWallet(selected.sym)}
+      onClose={closePanel}
+    />
+  ) : null
+
   return (
-    <Container maxWidth="lg" sx={{ py: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
+    <Container maxWidth="xl" sx={{ py: 3 }}>
+    {/* #134：桌面版詳情層是右側面板、表格保持可見——外層開一個橫向 flex，
+        主欄放原本整頁的內容，詳情層是它的旁邊那一欄，不是蓋在上面的遮罩。 */}
+    <Box sx={{ display: 'flex', gap: 3, alignItems: 'flex-start' }}>
+    <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
       <Box>
-        <Typography variant="h4" sx={{ fontWeight: 800 }}>{t.tokens.title}</Typography>
+        <Typography variant="h4" sx={{ fontWeight: 800 }}>{mode === 'simple' ? t.tokens.titleSimple : t.tokens.title}</Typography>
         <Typography variant="body2" color="text.secondary">{t.tokens.subtitle}</Typography>
       </Box>
-
-      {/* ── 市場行情（TradingView，Coinbase 現貨報價） ──────────────────────
-          教授回饋第 5 點指名「加密貨幣的 TradingView 畫面建議用 Coinbase 的
-          BTC Spot USD 報價為準」。symbol 寫死在 CHART_SYMBOLS，不開放自由輸入
-          ——放開的話畫面上會出現永續合約的 symbol，跟這一頁「現貨」的定位打架。 */}
-      <Card sx={{ p: { xs: 2, sm: 3 }, display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
-          <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 1 }}>
-            {t.tokens.chart.title}
-          </Typography>
-          <ToggleButtonGroup
-            size="small"
-            exclusive
-            value={chartKey}
-            onChange={(_, v) => { if (v) setChartKey(v as ChartKey) }}
-          >
-            <ToggleButton value="btc">{t.tokens.chart.btc}</ToggleButton>
-            <ToggleButton value="eth">{t.tokens.chart.eth}</ToggleButton>
-          </ToggleButtonGroup>
-        </Box>
-        <TradingViewChart symbol={CHART_SYMBOLS[chartKey]} height={380} />
-        <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
-          {interpolate(t.tokens.chart.source, { symbol: CHART_SYMBOLS[chartKey] })}
-        </Typography>
-        <Typography variant="caption" color="text.disabled">
-          {t.tokens.chart.unavailable}
-        </Typography>
-      </Card>
 
       <Alert severity="info">
         {t.tokens.markup.introBefore}<b>{t.tokens.markup.introBold1}</b>{SHOW_PERPETUALS ? t.tokens.markup.introMid1 : t.tokens.markup.introMid1Spot}<b>{t.tokens.markup.introBold2}</b>{t.tokens.markup.introMid2}<b>USDC</b>{t.tokens.markup.introAfter}
@@ -433,8 +567,18 @@ export default function TokenizedAssetsPage() {
         <WhoRunsWhat />
       </Card>
 
-      {/* ── V2 hardening panel ─────────────────────────────────────────────── */}
-      {isV2 ? (
+      {/* #136：儲備率是給投資人的事實（#93 user story 5、6），不能整塊收進
+          Expert——Simple 收起來的是四格儀表板跟預言機的機制細節,不是這件事
+          本身。不可信時講「無法確認」,不接「，可隨時贖回」那句尾巴,那句
+          在不可信的狀態下講不通。 */}
+      {mode === 'simple' && (
+        <Alert severity={simpleReserve.severity} variant="outlined">
+          {simpleReserve.message}
+        </Alert>
+      )}
+
+      {/* ── V2 hardening panel（Expert 專屬——工程證據，不是 Simple 該看的東西）── */}
+      {mode === 'expert' && (isV2 ? (
         <Card sx={{ p: 2.5 }}>
           <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 2 }}>
             {t.tokens.health.title}
@@ -463,11 +607,7 @@ export default function TokenizedAssetsPage() {
             <Grid size={{ xs: 12, md: 4 }}>
               <Typography variant="caption" color="text.secondary" display="block">{t.tokens.health.reserveRatio}</Typography>
               <Typography sx={{ fontFamily: MONO, fontWeight: 'bold', fontSize: '1.15rem' }}>
-                {health.stale
-                  ? t.tokens.health.reserveRatioUnknown
-                  : ratioPct === null
-                  ? '—'
-                  : ratioPct > 100000 ? t.tokens.health.reserveRatioInfinite : ratioPct.toFixed(1) + '%'}
+                {reserveRatioText}
               </Typography>
               <LinearProgress
                 variant="determinate"
@@ -510,7 +650,7 @@ export default function TokenizedAssetsPage() {
                 {t.tokens.health.accruedFees}
               </Typography>
               <Typography sx={{ fontFamily: MONO }}>
-                {health.accruedFees === null ? '—' : f18(health.accruedFees, 2) + ' USDC'}
+                {health.accruedFees === null ? '—' : f18(health.accruedFees, { dp: 2 }) + ' USDC'}
               </Typography>
             </Grid>
 
@@ -533,9 +673,9 @@ export default function TokenizedAssetsPage() {
         <Alert severity="warning" variant="outlined">
           {t.tokens.health.notHardened}
         </Alert>
-      )}
+      ))}
 
-      {isV2 && protectionsList}
+      {mode === 'expert' && isV2 && protectionsList}
 
       {/* #133：卡片牆 → 資產表。碳分級決定買入費率——兩欄相鄰，順序由
           buildAssetRows/sortAssetRows 這個純函式決定，元件只管渲染。
@@ -560,184 +700,55 @@ export default function TokenizedAssetsPage() {
         <Table>
           <TableHead>
             <TableRow>
-              {ASSET_ROW_COLUMNS.map((col) => (
-                <TableCell key={col} sx={{ fontWeight: 'bold' }}>{ASSET_ROW_COLUMN_LABELS[col]}</TableCell>
+              {columns.map((col) => (
+                <TableCell key={col} sx={{ fontWeight: 'bold' }}>{assetRowColumnLabelForMode(col, mode)}</TableCell>
               ))}
             </TableRow>
           </TableHead>
           <TableBody>
-            {displayRows.map((assetRow) => {
-              const sym = assetRow.symbol as AssetSymbol
-
-              return (
-                <TableRow key={assetRow.symbol}>
-                  <TableCell>
-                    <Stack direction="row" spacing={1.25} alignItems="center">
-                      <AssetIcon symbol={assetRow.symbol} size={28} />
-                      <Box sx={{ minWidth: 0 }}>
-                        <Typography variant="subtitle2" sx={{ fontWeight: 'bold', lineHeight: 1.2 }}>
-                          {assetRow.symbol}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary" noWrap>
-                          {assetRow.name}
-                        </Typography>
-                      </Box>
-                    </Stack>
+            {displayRows.map((assetRow) => (
+              <TableRow key={assetRow.symbol}>
+                {columns.map((col) => (
+                  <TableCell key={col} sx={MONO_COLUMNS.has(col) ? { fontFamily: MONO } : undefined}>
+                    {renderAssetCell(col, assetRow)}
                   </TableCell>
-
-                  <TableCell>
-                    <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
-                      <Chip
-                        size="small"
-                        color={TIER_COLOR[assetRow.tier]}
-                        label={t.tokens.provenance.carbonTier[assetRow.tier]}
-                      />
-                      <Chip
-                        size="small"
-                        variant="outlined"
-                        color={FRESHNESS_COLOR[assetRow.freshness.level]}
-                        label={assetRow.freshness.label}
-                      />
-                    </Stack>
-                  </TableCell>
-
-                  <TableCell sx={{ fontFamily: MONO }}>
-                    {(assetRow.tradingFeeBps / 100).toFixed(2)}%
-                  </TableCell>
-
-                  <TableCell sx={{ fontFamily: MONO }}>
-                    {loading ? (
-                      <Skeleton height={20} sx={{ width: 64 }} />
-                    ) : assetRow.price > 0n ? fUsd(Number(assetRow.price) / 1e8) : '—'}
-                  </TableCell>
-
-                  <TableCell sx={{ fontFamily: MONO }}>
-                    {loading ? (
-                      <Skeleton height={20} sx={{ width: 88 }} />
-                    ) : (
-                      <>
-                        {f18(assetRow.balance)} {assetRow.symbol}
-                        <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
-                          ≈ {fUsd(fromUnits(assetRow.usdValue, 18))}
-                        </Typography>
-                      </>
-                    )}
-                  </TableCell>
-
-                  <TableCell>
-                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                      <Button
-                        size="small" variant="contained"
-                        // #99：這三個條件是 assetRow.canBuy 的定義本身，見
-                        // lib/pepefi/assetRows.ts——暫停／鑄造停止／比率不可信
-                        // 任一為真就擋買進，理由見那個模組自己的註解。
-                        disabled={!assetRow.canBuy}
-                        onClick={() => setDlg({ sym, mode: 'buy' })}
-                        sx={{ textTransform: 'none', fontWeight: 'bold' }}
-                      >
-                        {t.tokens.card.buy}
-                      </Button>
-                      <Button
-                        size="small" variant="outlined"
-                        // #99：只有暫停擋得住贖回，見 assetRows.ts 的 canSell。
-                        disabled={!assetRow.canSell}
-                        onClick={() => setDlg({ sym, mode: 'sell' })}
-                        sx={{ textTransform: 'none', fontWeight: 'bold' }}
-                      >
-                        {t.tokens.card.sell}
-                      </Button>
-                      <Button
-                        size="small" variant="text"
-                        onClick={() => void addToWallet(sym)}
-                        sx={{ textTransform: 'none', fontSize: '0.7rem', color: 'info.main' }}
-                      >
-                        {t.tokens.card.addToWallet}
-                      </Button>
-                    </Stack>
-                  </TableCell>
-                </TableRow>
-              )
-            })}
+                ))}
+              </TableRow>
+            ))}
           </TableBody>
         </Table>
       </TableContainer>
 
-      <Typography variant="caption" color="text.secondary">
-        {t.tokens.markup.vaultDryBefore}<Box component="code" sx={{ fontFamily: MONO }}>fundVault()</Box>{t.tokens.markup.vaultDryAfter}
-      </Typography>
+      {mode === 'expert' && (
+        <Typography variant="caption" color="text.secondary">
+          {t.tokens.markup.vaultDryBefore}<Box component="code" sx={{ fontFamily: MONO }}>fundVault()</Box>{t.tokens.markup.vaultDryAfter}
+        </Typography>
+      )}
+    </Box>
 
-      {/* buy / sell dialog */}
-      <Dialog open={!!dlg} onClose={closeDlg} maxWidth="xs" fullWidth>
-        <DialogTitle sx={{ fontWeight: 'bold' }}>
-          {interpolate(dlg?.mode === 'buy' ? t.tokens.dialog.buyTitle : t.tokens.dialog.sellTitle, {
-            symbol: dlg?.sym ?? '',
-          })}
-        </DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ mt: 1 }}>
-            <Chip
-              size="small"
-              variant="outlined"
-              label={`Oracle: ${
-                dlg && (rows[dlg.sym]?.price ?? 0n) > 0n
-                  ? fUsd(Number(rows[dlg.sym].price) / 1e8)
-                  : '—'
-              }`}
-              sx={{ alignSelf: 'flex-start', fontFamily: MONO }}
-            />
-            <TextField
-              autoFocus fullWidth type="number" size="small"
-              label={
-                dlg?.mode === 'buy'
-                  ? t.tokens.dialog.buyAmountLabel
-                  : interpolate(t.tokens.dialog.sellAmountLabel, { symbol: dlg?.sym ?? '' })
-              }
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              disabled={busy}
-              slotProps={{
-                input: {
-                  endAdornment: (
-                    <InputAdornment position="end">
-                      {dlg?.mode === 'buy' ? 'USDC' : dlg?.sym}
-                    </InputAdornment>
-                  ),
-                },
-              }}
-            />
-            <Box>
-              <Typography variant="caption" color="text.secondary" display="block">
-                {quote === null
-                  ? t.tokens.dialog.needAmount
-                  : dlg?.mode === 'buy'
-                    ? interpolate(t.tokens.dialog.buyQuote, {
-                        amount: f18(quote.out),
-                        symbol: dlg?.sym ?? '',
-                      })
-                    : interpolate(t.tokens.dialog.sellQuote, {
-                        amount: fUsd(Number(quote.out) / 1e18),
-                      })}
-              </Typography>
-              {isV2 && quote !== null && quote.fee > 0n && (
-                <Typography variant="caption" color="warning.main" display="block">
-                  {interpolate(t.tokens.dialog.fee, { amount: f18(quote.fee, 4) })}
-                </Typography>
-              )}
-            </Box>
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={closeDlg} disabled={busy} sx={{ textTransform: 'none' }}>{t.tokens.dialog.cancel}</Button>
-          <Button
-            variant="contained"
-            disabled={busy || !amount}
-            onClick={() => dlg && void (dlg.mode === 'buy' ? doBuy(dlg.sym) : doSell(dlg.sym))}
-            sx={{ textTransform: 'none', fontWeight: 'bold' }}
-          >
-            {busy ? t.tokens.dialog.working : t.tokens.dialog.confirm}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {/* #134：桌面版詳情層——側邊欄，表格保持可見。sticky 讓面板跟著捲動，
+          maxHeight 留一點邊界並讓面板內容自己捲（AssetDetailPanel 的
+          overflowY: auto）。 */}
+      {isDesktop && detailPanel && (
+        <Box sx={{ width: 420, flexShrink: 0, position: 'sticky', top: 16 }}>
+          <Card sx={{ maxHeight: 'calc(100vh - 32px)', overflow: 'hidden' }}>
+            {detailPanel}
+          </Card>
+        </Box>
+      )}
+    </Box>
+
+      {/* 手機版詳情層——全螢幕 Drawer，桌面版的側邊欄在窄螢幕上放不下。 */}
+      {!isDesktop && (
+        <Drawer
+          anchor="bottom"
+          open={!!detailPanel}
+          onClose={closePanel}
+          slotProps={{ paper: { sx: { height: '100%', maxHeight: '100%' } } }}
+        >
+          {detailPanel}
+        </Drawer>
+      )}
     </Container>
   )
 }

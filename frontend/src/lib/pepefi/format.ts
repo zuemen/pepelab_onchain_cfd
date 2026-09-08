@@ -51,6 +51,14 @@ export function fNum(n: number, { dp = 2, signed }: NumOpts = {}): string {
   return sign(n, signed) + nf(n, dp);
 }
 
+/** An 18-dec bigint quantity (a token balance, a mint/redeem amount…) as a
+ *  grouped number: `fromUnits` + `fNum` composed, because this exact
+ *  one-liner had been independently reimplemented as a local `f18` in half
+ *  a dozen files before landing here — see the pages that now import it. */
+export function f18(v: bigint, { dp = 4, signed }: NumOpts = {}): string {
+  return fNum(fromUnits(v, 18), { dp, signed });
+}
+
 /** USD-denominated value: `$1,234.56`, or `-$1,234.56` (minus outside the $,
  *  which is how finance writes it — `$-1,234.56` looks like a typo). */
 export function fUsd(n: number, { dp = 2, signed }: NumOpts = {}): string {

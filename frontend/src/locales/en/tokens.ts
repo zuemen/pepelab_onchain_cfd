@@ -4,14 +4,8 @@ import type { Catalog } from '../zh-TW';
  * 見 `../zh-TW/tokens.ts`。
  */
 export const tokens: Catalog['tokens'] = {
-  chart: {
-    title: 'Market',
-    source: 'Quotes: Coinbase ({symbol}) · chart by TradingView',
-    btc: 'Bitcoin',
-    eth: 'Ether',
-    unavailable: 'The chart loads from TradingView. A blank panel here means that external resource did not load; it does not affect buying or selling below.',
-  },
   title: 'Tokenized Assets',
+  titleSimple: 'Assets',
   subtitle: 'ERC-20 Tokenized Assets',
 
   /** Which protections this vault has — a single-column list, shown only when the hardened vault is actually deployed (see the component). */
@@ -54,6 +48,9 @@ export const tokens: Catalog['tokens'] = {
     /** This chain runs the original implementation, without these protections — no version number named. */
     notHardened:
       "The vault on this network has no SafeERC20, reserve-ratio protection, or pause mechanism yet. A deployed contract's bytecode can't be changed; these protections are already live on other deployments, and when this network catches up is the operator's call.",
+    simpleNote: 'Reserve {ratio} — redeem any time.',
+    simpleNotConnected: "This chain's vault reserve isn't hooked up to automated verification yet.",
+    simpleMintingHalted: 'New buying is paused (reserve {ratio}) — redemption is unaffected.',
   },
 
   card: {
@@ -75,6 +72,10 @@ export const tokens: Catalog['tokens'] = {
       price: 'Oracle Price',
       balance: 'My Balance',
       actions: 'Actions',
+      // #136: Expert-only columns.
+      issuedOverCap: 'Issued / Cap',
+      priceUpdatedAt: 'Oracle Updated',
+      assetId: 'Asset ID',
     },
     sort: {
       label: 'Sort by',
@@ -87,8 +88,6 @@ export const tokens: Catalog['tokens'] = {
 
   /** 買賣對話框。 */
   dialog: {
-    buyTitle: 'Buy {symbol}',
-    sellTitle: 'Redeem {symbol}',
     buyAmountLabel: 'USDC amount to pay',
     sellAmountLabel: '{symbol} amount to redeem',
     needAmount: 'Enter an amount to get a quote',
@@ -98,6 +97,9 @@ export const tokens: Catalog['tokens'] = {
     cancel: 'Cancel',
     confirm: 'Confirm',
     working: 'Processing…',
+    buyDisabledNotice: "Can't buy right now — see “Vault protections & health” above.",
+    sellDisabledNotice: "Can't redeem right now — this vault is paused.",
+    noBalanceNotice: "You don't hold any of this asset — there's nothing to redeem.",
   },
 
   tx: {
@@ -111,7 +113,6 @@ export const tokens: Catalog['tokens'] = {
   },
 
   provenance: {
-    sectionTitle: 'Asset provenance',
     underlyingLabel: 'Tracks',
     referenceIdLabel: 'Reference ID',
     priceSourceLabel: 'Price source',
