@@ -8,7 +8,7 @@ import "../src/CarbonTiers.sol";
 import "../src/ESGRegistryV2.sol";
 import "../src/MockUSDC.sol";
 import "../src/MockOracle.sol";
-import "../src/v2/AssetVaultV2_3.sol";
+import "../src/v2/AssetVaultV2_4.sol";
 import "../src/v2/SyntheticAssetV2.sol";
 
 /// @notice #96: PerpetualExchange's trading fee, borrow fee, and max leverage
@@ -254,7 +254,7 @@ contract CarbonPricingTest is Test {
 ///         whichever contract is the caller, so it lives in this file rather
 ///         than a second one. ADR-005: redemption is NOT carbon-priced.
 contract CarbonPricingVaultTest is Test {
-    AssetVaultV2_3   vault;
+    AssetVaultV2_4   vault;
     MockUSDC         usdc;
     MockOracle       oracle;
     ESGRegistryV2    esg;
@@ -280,10 +280,10 @@ contract CarbonPricingVaultTest is Test {
         oracle = new MockOracle();
         esg    = new ESGRegistryV2(admin);
 
-        AssetVaultV2_3 impl = new AssetVaultV2_3();
-        vault = AssetVaultV2_3(address(new ERC1967Proxy(
+        AssetVaultV2_4 impl = new AssetVaultV2_4();
+        vault = AssetVaultV2_4(address(new ERC1967Proxy(
             address(impl),
-            abi.encodeCall(AssetVaultV2_3.initialize, (address(usdc), address(oracle), admin))
+            abi.encodeCall(AssetVaultV2_4.initialize, (address(usdc), address(oracle), admin))
         )));
         vault.setEsgRegistry(address(esg));
 
@@ -380,9 +380,9 @@ contract CarbonPricingVaultTest is Test {
     // ── registry unset: fail closed to the ceiling, not the old cheap default ─
 
     function test_vault_registryUnset_mintFeeFailsClosed_notLegacy30() public {
-        AssetVaultV2_3 bare = AssetVaultV2_3(address(new ERC1967Proxy(
-            address(new AssetVaultV2_3()),
-            abi.encodeCall(AssetVaultV2_3.initialize, (address(usdc), address(oracle), admin))
+        AssetVaultV2_4 bare = AssetVaultV2_4(address(new ERC1967Proxy(
+            address(new AssetVaultV2_4()),
+            abi.encodeCall(AssetVaultV2_4.initialize, (address(usdc), address(oracle), admin))
         )));
         // esgRegistry deliberately left unset.
         assertEq(bare.esgRegistry(), address(0));

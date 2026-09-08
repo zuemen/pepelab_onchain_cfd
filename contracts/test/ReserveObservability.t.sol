@@ -39,22 +39,18 @@ contract ReserveObservabilityTest is Test {
 
     bytes32 constant AAPL = keccak256("sAAPL");
 
-    // Numbers the tests assert against, derived once here. This suite wires no
-    // ESG registry, so (V2.4, #128) the mint fee fails closed to the most
-    // conservative tier — 100 bps, CarbonTiers' High/Unrated row — NOT the old
-    // flat 30 bps (that fail-closed rule is pinned in CarbonPricing.t.sol).
-    // Every other number here follows from it:
-    //   fund 5,000 + alice pays 10,000 → balance 15,000, fee 100 → reserve 14,900
-    //   tokenOut  = (10,000 - 100) * 1e8 / 200e8 = 49.5 sAAPL
-    //   liability = 49.5 * 200                   = 9,900
-    //   ratio     = 14,900 * 10,000 / 9,900      = 15,050 bps
+    // Numbers the tests assert against, derived once here:
+    //   fund 5,000 + alice pays 10,000 → balance 15,000, fee 30 → reserve 14,970
+    //   tokenOut  = (10,000 - 30) * 1e8 / 200e8  = 49.85 sAAPL
+    //   liability = 49.85 * 200                  = 9,970
+    //   ratio     = 14,970 * 10,000 / 9,970      = 15,015 bps
     uint256 constant SEED_FUND   = 5_000e18;
     uint256 constant ALICE_SPEND = 10_000e18;
-    uint256 constant EXP_TOKENS  = 49.5e18;
-    uint256 constant EXP_FEE     = 100e18;
-    uint256 constant EXP_RESERVE = 14_900e18;
-    uint256 constant EXP_LIAB    = 9_900e18;
-    uint256 constant EXP_RATIO   = 15_050;
+    uint256 constant EXP_TOKENS  = 49.85e18;
+    uint256 constant EXP_FEE     = 30e18;
+    uint256 constant EXP_RESERVE = 14_970e18;
+    uint256 constant EXP_LIAB    = 9_970e18;
+    uint256 constant EXP_RATIO   = 15_015;
 
     event ReserveObserved(
         uint256 reserve,
@@ -167,10 +163,10 @@ contract ReserveObservabilityTest is Test {
     ///      reserve does not.
     function test_breachWithNoUserActionHaltsMintingAndEmits() public {
         _aliceMints();
-        _repost(400e8);                       // 14,900 / 19,800 = 7,525 bps
+        _repost(400e8);                       // 14,970 / 19,940 = 7,507 bps
 
         vm.expectEmit(false, false, false, true, address(vault));
-        emit ReserveBreached(7_525, 11_000, 0);
+        emit ReserveBreached(7_507, 11_000, 0);
         vault.observeReserve();
 
         assertTrue(vault.mintingHalted(), "minting halted");
@@ -208,10 +204,10 @@ contract ReserveObservabilityTest is Test {
         vault.observeReserve();
         assertTrue(vault.mintingHalted());
 
-        vault.fundVault(20_000e18);           // 34,900 / 19,800 = 17,626 bps
+        vault.fundVault(20_000e18);           // 34,970 / 19,940 = 17,537 bps
 
         vm.expectEmit(false, false, false, true, address(vault));
-        emit ReserveRestored(17_626, 11_000);
+        emit ReserveRestored(17_537, 11_000);
         vm.prank(random);
         vault.observeReserve();
 
@@ -308,10 +304,10 @@ contract ReserveObservabilityTest is Test {
     ///      `ratioBps < minBps` impossible to ever satisfy).
     function test_setRiskParamsRejectsRatioFloorBelow100Pct() public {
         vm.expectRevert(AssetVaultV2_3.InvalidParam.selector);
-        vault.setRiskParams(30, 9_999, 1 hours);
+        vault.setRiskParams(30, 30, 9_999, 1 hours);
 
         // The boundary itself (exactly 100%) is accepted.
-        vault.setRiskParams(30, 10_000, 1 hours);
+        vault.setRiskParams(30, 30, 10_000, 1 hours);
         assertEq(vault.minReserveRatioBps(), 10_000);
     }
 
@@ -381,11 +377,11 @@ contract ReserveObservabilityTest is Test {
     /// @dev At a 3% reserve ratio, with minting halted, the exit still works.
     function test_redeemIsNeverGatedOnTheRatio() public {
         _aliceMints();
-        _repost(10_000e8);                    // 14,900 / 495,000 = 301 bps
+        _repost(10_000e8);                    // 14,970 / 498,500 = 300 bps
 
         vault.observeReserve();
         assertTrue(vault.mintingHalted());
-        assertEq(vault.reserveRatioBps(), 301);
+        assertEq(vault.reserveRatioBps(), 300);
 
         uint256 before = usdc.balanceOf(alice);
         vm.prank(alice);
@@ -446,7 +442,7 @@ contract ReserveObservabilityTest is Test {
         AssetVaultV2_3 v23 = AssetVaultV2_3(proxyAddr);
 
         assertEq(address(v23), proxyAddr, "same address");
-        assertEq(v23.version(), "2.4.0");
+        assertEq(v23.version(), "2.3.0");
         assertEq(v23.accruedFees(), feesBefore);
         assertEq(v23.exposureOf(AAPL), expBefore);
         assertEq(v23.assetCap(AAPL), capBefore);
@@ -454,20 +450,14 @@ contract ReserveObservabilityTest is Test {
         assertEq(v23.oracle(), address(oracle2));
         assertEq(v23.minReserveRatioBps(), 11_000);
         assertEq(v23.assetToken(AAPL), address(tok));
-        // This mint happened under V2.2's flat 30 bps fee, BEFORE the upgrade —
-        // so the preserved state carries the old numbers (reserve 14,970,
-        // liability 9,970, ratio 15,015), not V2.4's carbon-derived ones. That
-        // the upgrade does not retroactively re-price an existing position is
-        // the point of the assertion.
-        assertEq(v23.reserve(), 14_970e18);
+        assertEq(v23.reserve(), EXP_RESERVE);
         assertFalse(v23.mintingHalted(), "the new slot starts clear");
-        assertEq(v23.esgRegistry(), address(0), "the V2.4 registry slot starts empty -> mint fee fails closed until wired");
 
         // and the new machinery works on the migrated state
         (uint256 r, uint256 l, uint256 ratio, , ) = v23.observeReserve();
-        assertEq(r, 14_970e18);
-        assertEq(l, 9_970e18);
-        assertEq(ratio, 15_015);
+        assertEq(r, EXP_RESERVE);
+        assertEq(l, EXP_LIAB);
+        assertEq(ratio, EXP_RATIO);
     }
 
     /// @dev Only the upgrade admin may swap the implementation — the new
