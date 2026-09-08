@@ -7,6 +7,7 @@ import {
   sortAssetRows,
   tierForAsset,
   assetRowColumnsForMode,
+  assetRowColumnLabelForMode,
   ASSET_ROW_COLUMN_LABELS,
   type AssetRowChainData,
   type VaultGateState,
@@ -305,5 +306,21 @@ describe('assetRowColumnsForMode · issue #136 Mode 分流', () => {
         expect(ASSET_ROW_COLUMN_LABELS[key].length, key).toBeGreaterThan(0)
       }
     }
+  })
+})
+
+describe('assetRowColumnLabelForMode · Simple 不點名機制', () => {
+  it('Simple 的價格欄叫「價格」，不是「Oracle 價格」——機制詞不該出現在 Simple', () => {
+    expect(assetRowColumnLabelForMode('price', 'simple')).not.toBe(ASSET_ROW_COLUMN_LABELS.price)
+    expect(assetRowColumnLabelForMode('price', 'simple').length).toBeGreaterThan(0)
+  })
+
+  it('Expert 的價格欄維持原本的標籤，一個字不動', () => {
+    expect(assetRowColumnLabelForMode('price', 'expert')).toBe(ASSET_ROW_COLUMN_LABELS.price)
+  })
+
+  it('沒有 Simple 專屬覆寫的欄位沿用同一份標籤（例如資產、操作）', () => {
+    expect(assetRowColumnLabelForMode('asset', 'simple')).toBe(ASSET_ROW_COLUMN_LABELS.asset)
+    expect(assetRowColumnLabelForMode('actions', 'simple')).toBe(ASSET_ROW_COLUMN_LABELS.actions)
   })
 })

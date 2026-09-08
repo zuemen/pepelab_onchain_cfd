@@ -195,3 +195,19 @@ export function assetRowColumnsForMode(mode: Mode): AssetRowColumnKey[] {
 }
 
 export const ASSET_ROW_COLUMN_LABELS: Record<AssetRowColumnKey, string> = t.tokens.table.column
+
+// issue #136 code review：ticket 原文列 Simple 的欄位是「資產、價格、碳分級、
+// 買入費率、我的持有」——是「價格」，不是「Oracle 價格」。Simple Mode 的
+// 整條原則是機制不點名（CONTEXT.md 的 Perpetual 詞條、Simple Mode 定義都是
+// 同一句話），Expert 才刻意保留交易桌的用字。比照 openPositionColumns.ts 的
+// columnLabelForMode：沒有 Simple 專屬覆寫的欄位沿用同一份標籤。
+// t.tokens.table.sort.price 已經是「價格」/「Price」，直接借用，不重新定義
+// 第二個同樣意思的字串。
+const SIMPLE_COLUMN_LABELS: Partial<Record<AssetRowColumnKey, string>> = {
+  price: t.tokens.table.sort.price,
+}
+
+export function assetRowColumnLabelForMode(key: AssetRowColumnKey, mode: Mode): string {
+  if (mode === 'simple') return SIMPLE_COLUMN_LABELS[key] ?? ASSET_ROW_COLUMN_LABELS[key]
+  return ASSET_ROW_COLUMN_LABELS[key]
+}

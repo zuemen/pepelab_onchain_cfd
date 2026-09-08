@@ -14,8 +14,8 @@ import { t, interpolate } from 'src/locales'
 import { useMode } from 'src/contexts/mode-context'
 import { ASSET_META } from 'src/lib/pepefi/assetMeta'
 import {
-  buildAssetRows, sortAssetRows, assetRowColumnsForMode, ASSET_ROW_COLUMN_LABELS,
-  type AssetRowChainData, type AssetRowColumnKey, type AssetSortKey,
+  buildAssetRows, sortAssetRows, assetRowColumnsForMode, assetRowColumnLabelForMode,
+  type AssetRow, type AssetRowChainData, type AssetRowColumnKey, type AssetSortKey,
 } from 'src/lib/pepefi/assetRows'
 import SyntheticAssetABI   from 'src/contracts/abi/SyntheticAsset.json'
 import SyntheticAssetV2ABI from 'src/contracts/abi/SyntheticAssetV2.json'
@@ -401,6 +401,128 @@ export default function TokenizedAssetsPage() {
     ? '—'
     : ratioPct > 100000 ? t.tokens.health.reserveRatioInfinite : ratioPct.toFixed(1) + '%'
 
+  // #136 code review：Simple 的一句話版不能只判斷「過不過期」——鑄造暫停、
+  // 儲備率跌破下限都是投資人該知道的事（#93 user story 5、6），Expert 的
+  // 三格網格已經分別處理這三種狀態,Simple 只是換一句話講同一組事實,不能
+  // 漏掉其中兩種。severity 同理跟著真正的健康狀況走,不是固定給 'info'。
+  const simpleReserve: { severity: 'info' | 'warning' | 'error'; message: string } = !isV2
+    ? { severity: 'info', message: t.tokens.health.simpleNotConnected }
+    : health.stale
+      ? { severity: 'warning', message: reserveRatioText }
+      : health.mintingHalted
+        ? { severity: 'error', message: interpolate(t.tokens.health.simpleMintingHalted, { ratio: reserveRatioText }) }
+        : {
+            // 對齊 Expert 網格用同一個門檻判斷顏色（LinearProgress 的
+            // color）：ratioPct < 110 讀成 'error'。
+            severity: ratioPct !== null && ratioPct < 110 ? 'error' : 'info',
+            message: interpolate(t.tokens.health.simpleNote, { ratio: reserveRatioText }),
+          }
+
+  // #136：一列的每一格由欄位 key 決定內容——表頭跟表身共用同一份 columns
+  // 清單，不會有「表頭多一欄、表身忘了補」這種兩邊各寫一次才會出現的漂移
+  // （#134 detailPanel 的重複剛好是這個問題的前車之鑑）。只定義一次（不在
+  // displayRows.map() 裡面重新宣告），每列呼叫時傳 assetRow 進來。
+  // `never` 分支是編譯期的窮舉檢查——AssetRowColumnKey 多一個值卻忘了在這裡
+  // 加對應的 case，會在這裡直接編譯失敗，不會等到執行期才發現少畫一欄。
+  const renderAssetCell = (col: AssetRowColumnKey, assetRow: AssetRow) => {
+    const sym = assetRow.symbol as AssetSymbol
+    switch (col) {
+      case 'asset':
+        return (
+          <Stack direction="row" spacing={1.25} alignItems="center">
+            <AssetIcon symbol={assetRow.symbol} size={28} />
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 'bold', lineHeight: 1.2 }}>
+                {assetRow.symbol}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" noWrap>
+                {assetRow.name}
+              </Typography>
+            </Box>
+          </Stack>
+        )
+      case 'provenance':
+        // #134：跟詳情層標題共用同一個摘要元件，不是長得像的兩份。
+        return <AssetProvenanceSummary tier={assetRow.tier} freshness={assetRow.freshness} />
+      case 'tradingFee':
+        return `${(assetRow.tradingFeeBps / 100).toFixed(2)}%`
+      case 'price':
+        return loading
+          ? <Skeleton height={20} sx={{ width: 64 }} />
+          : assetRow.price > 0n ? fUsd(Number(assetRow.price) / 1e8) : '—'
+      case 'balance':
+        return loading ? (
+          <Skeleton height={20} sx={{ width: 88 }} />
+        ) : (
+          <>
+            {f18(assetRow.balance)} {assetRow.symbol}
+            <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
+              ≈ {fUsd(fromUnits(assetRow.usdValue, 18))}
+            </Typography>
+          </>
+        )
+      case 'issuedOverCap':
+        // 舊版金庫沒有發行上限這個概念——cap/issued 在那裡永遠是 refresh()
+        // 塞進去的 0n，不是鏈上真的讀到「已關閉」，跟卡片牆版本（#133 之前）
+        // 同一條規則：這一欄只在硬化版金庫上有意義。
+        return !isV2 ? '—' : (
+          <>
+            {f18(assetRow.issued, { dp: 2 })} / {assetRow.cap === 0n ? t.tokens.card.capClosed : f18(assetRow.cap, { dp: 2 })}
+          </>
+        )
+      case 'priceUpdatedAt':
+        return assetRow.freshness.label
+      case 'assetId': {
+        const id = ASSET_IDS[sym]
+        return <span title={id}>{shortAddr(id, 8, 6)}</span>
+      }
+      case 'actions':
+        return (
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            <Button
+              size="small" variant="contained"
+              // #99：這三個條件是 assetRow.canBuy 的定義本身，見
+              // lib/pepefi/assetRows.ts——暫停／鑄造停止／比率不可信
+              // 任一為真就擋買進，理由見那個模組自己的註解。
+              disabled={!assetRow.canBuy}
+              onClick={() => setSelected({ sym, mode: 'buy' })}
+              sx={{ textTransform: 'none', fontWeight: 'bold' }}
+            >
+              {t.tokens.card.buy}
+            </Button>
+            <Button
+              size="small" variant="outlined"
+              // #99：只有暫停擋得住贖回，見 assetRows.ts 的 canSell。
+              disabled={!assetRow.canSell}
+              onClick={() => setSelected({ sym, mode: 'sell' })}
+              sx={{ textTransform: 'none', fontWeight: 'bold' }}
+            >
+              {t.tokens.card.sell}
+            </Button>
+            {/* #136：加入錢包在表格列上是 Expert 專屬的快捷方式——Simple
+                使用者一樣按得到，就是走詳情層那個共用的按鈕（見
+                AssetDetailPanel，兩個模式的詳情層內容相同）。這是「一個
+                按鈕在既有欄位裡看不看得到」的判斷，跟 assetRowColumnsForMode
+                「這個模式有沒有這一欄」是不同層級的問題，所以刻意不透過
+                欄位集機制處理。 */}
+            {mode === 'expert' && (
+              <Button
+                size="small" variant="text"
+                onClick={() => void addToWallet(sym)}
+                sx={{ textTransform: 'none', fontSize: '0.7rem', color: 'info.main' }}
+              >
+                {t.tokens.card.addToWallet}
+              </Button>
+            )}
+          </Stack>
+        )
+      default: {
+        const exhaustive: never = col
+        return exhaustive
+      }
+    }
+  }
+
   // #134：詳情層的內容只算一次——桌面的側邊欄跟手機的 Drawer 只是不同的
   // 外殼，內容元件與它的整份 props 不該在兩個分支各寫一遍（那正是這一頁
   // 其餘條件渲染的既有寫法，比照 protectionsList 這個變數）。
@@ -450,12 +572,8 @@ export default function TokenizedAssetsPage() {
           本身。不可信時講「無法確認」,不接「，可隨時贖回」那句尾巴,那句
           在不可信的狀態下講不通。 */}
       {mode === 'simple' && (
-        <Alert severity={health.stale ? 'warning' : 'info'} variant="outlined">
-          {!isV2
-            ? t.tokens.health.simpleNotConnected
-            : health.stale
-              ? reserveRatioText
-              : interpolate(t.tokens.health.simpleNote, { ratio: reserveRatioText })}
+        <Alert severity={simpleReserve.severity} variant="outlined">
+          {simpleReserve.message}
         </Alert>
       )}
 
@@ -583,7 +701,7 @@ export default function TokenizedAssetsPage() {
           <TableHead>
             <TableRow>
               {columns.map((col) => (
-                <TableCell key={col} sx={{ fontWeight: 'bold' }}>{ASSET_ROW_COLUMN_LABELS[col]}</TableCell>
+                <TableCell key={col} sx={{ fontWeight: 'bold' }}>{assetRowColumnLabelForMode(col, mode)}</TableCell>
               ))}
             </TableRow>
           </TableHead>

@@ -50,6 +50,7 @@ export const tokens: Catalog['tokens'] = {
       "The vault on this network has no SafeERC20, reserve-ratio protection, or pause mechanism yet. A deployed contract's bytecode can't be changed; these protections are already live on other deployments, and when this network catches up is the operator's call.",
     simpleNote: 'Reserve {ratio} — redeem any time.',
     simpleNotConnected: "This chain's vault reserve isn't hooked up to automated verification yet.",
+    simpleMintingHalted: 'New buying is paused (reserve {ratio}) — redemption is unaffected.',
   },
 
   card: {

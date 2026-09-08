@@ -59,6 +59,10 @@ export const tokens = {
     // 講「無法確認」，直接沿用 reserveRatioUnknown，不要另造一個「無法確認」。
     simpleNote: '儲備 {ratio}，可隨時贖回',
     simpleNotConnected: '這條鏈的金庫儲備尚未接上自動驗證機制。',
+    // #136 code review：一句話版不能只講「過不過期」，鑄造暫停也是投資人
+    // 該知道的事（#93 user story 5、6）——跟 Expert 的三格網格是同一組事實，
+    // 只是換一句話講。
+    simpleMintingHalted: '新的買進已暫停（儲備 {ratio}）——贖回不受影響。',
   },
 
   card: {
