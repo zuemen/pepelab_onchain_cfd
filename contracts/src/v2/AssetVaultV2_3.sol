@@ -11,9 +11,20 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import "./SyntheticAssetV2.sol";
 import "./IAssetVaultV2.sol";
+import "../CarbonTiers.sol";
 // IAssetOracleV2 is declared in AssetVaultV2.sol — import rather than redeclare,
 // so both can be compiled into the same test or script.
 import { IAssetOracleV2 } from "./AssetVaultV2.sol";
+
+/// @dev Matches `ESGRegistryV2.medianCarbonTier`'s signature. Declared locally
+///      (not the concrete contract) so the vault depends on an interface
+///      shape, the same way `IAssetOracleV2` is used here for the oracle —
+///      and the same way `PerpetualExchange`'s `IEsgRegistryForPricing` does.
+interface IEsgRegistryForVault {
+    function medianCarbonTier(bytes32 assetId)
+        external view
+        returns (CarbonTiers.Tier tier, uint256 count, uint256 dispersion, bool isRated);
+}
 
 
 /// @notice Upgradeable mint/redeem vault for tokenized synthetic assets.
@@ -48,6 +59,20 @@ import { IAssetOracleV2 } from "./AssetVaultV2.sol";
 ///         ratio are on-chain and independently verifiable; inserting someone
 ///         who has to be trusted into a system that does not require trust
 ///         would be a downgrade.
+///
+///         V2.4 (#128, ADR-005/006) prices the MINT (spot buy). The mint fee
+///         stops being a settable scalar and is derived per-asset from the
+///         asset's witnessed carbon tier (`ESGRegistryV2.medianCarbonTier` →
+///         `CarbonTiers.paramsFor`), so buying a high-carbon asset costs
+///         visibly more than a low-carbon one, and no operator path — no
+///         per-asset, no per-user knob — can move a single asset's buy fee.
+///         The `setRiskParams` mint-fee argument and the `mintFeeBps` storage
+///         slot's public getter are gone; the slot itself is retained for
+///         layout. Redeem stays a flat settable fee: taxing a high-carbon
+///         EXIT would push the wrong way (ADR-005). Unlike the reserve ratio,
+///         the carbon registry IS an off-chain input — the fail-closed
+///         default (most conservative tier when unset or unattested) is how
+///         that trust is bounded.
 contract AssetVaultV2_3 is
     Initializable,
     UUPSUpgradeable,
@@ -91,7 +116,14 @@ contract AssetVaultV2_3 is
     /// @notice Max token units mintable per asset. 0 = asset closed to new mints.
     mapping(bytes32 => uint256) public assetCap;
 
-    uint256 public mintFeeBps;
+    /// @dev V2.4 (#128, ADR-006): the mint fee is no longer a settable
+    ///      scalar. It is derived per-asset from the asset's witnessed carbon
+    ///      tier — see `mintFeeBpsForAsset`. This slot is RETAINED, not
+    ///      removed, so every field below keeps its storage position on the
+    ///      in-place upgrade. It keeps whatever value it held pre-upgrade
+    ///      (the old default was 30) and is never read again — no getter, no
+    ///      setter, no code path touches it.
+    uint256 private __deprecated_mintFeeBps;
     uint256 public redeemFeeBps;
     uint256 public minReserveRatioBps;
     uint256 public maxPriceAge;
@@ -106,12 +138,26 @@ contract AssetVaultV2_3 is
     ///      below, so the layout above is untouched.
     bool public mintingHalted;
 
+    /// @notice The carbon-attestation registry the per-asset mint fee is
+    ///         derived from (`ESGRegistryV2.medianCarbonTier`). `address(0)`
+    ///         means carbon pricing is not wired on this vault yet — mint then
+    ///         falls back to the MOST CONSERVATIVE tier's fee (see
+    ///         `mintFeeBpsForAsset`), never to a cheaper default.
+    /// @dev V2.4 (#128), consumed from the front of __gap (44 → 43 slots),
+    ///      the same precedent V2.3 set for `mintingHalted` — the layout above
+    ///      is untouched. Settable by DEFAULT_ADMIN_ROLE via `setEsgRegistry`,
+    ///      on the same trust basis as `setOracle`: whoever can move this
+    ///      pointer can influence pricing, so hold that role in a multisig.
+    ///      It is a vault-wide switch, NOT a per-asset or per-user lever —
+    ///      there is deliberately no path that changes one asset's mint fee.
+    address private _esgRegistry;
+
     /// @dev Reserved slots so a future version can add state without colliding
     ///      with anything a new parent contract introduces. OZ 5.x parents use
     ///      ERC-7201 namespaced storage and won't collide on their own, but this
     ///      contract's own layout is plain — consume from the front when adding
     ///      variables and shrink the gap by the same amount.
-    uint256[44] private __gap;
+    uint256[43] private __gap;
 
     // ── V2.3 events ──────────────────────────────────────────────────────────
     // Declared here rather than in IAssetVaultV2 so V2.0–V2.2's ABIs do not
@@ -142,6 +188,11 @@ contract AssetVaultV2_3 is
     /// @notice Emitted by `clearMintingHalt()` — an operator override, distinct
     ///         from `ReserveRestored`'s automatic, fully-priced recovery.
     event MintingHaltCleared(address indexed operator, uint256 ratioBps, uint256 unpriced);
+
+    /// @notice The carbon-attestation registry backing the per-asset mint fee
+    ///         changed. `address(0)` → fee falls back to the most conservative
+    ///         tier (see `mintFeeBpsForAsset`).
+    event EsgRegistrySet(address indexed oldRegistry, address indexed newRegistry);
 
     // ── errors ───────────────────────────────────────────────────────────────
     error StalePrice(bytes32 assetId, uint256 updatedAt);
@@ -180,18 +231,20 @@ contract AssetVaultV2_3 is
         _grantRole(PAUSER_ROLE, admin_);
 
         // Conservative defaults. The operator's risk committee overrides these.
-        mintFeeBps         = 30;      // 0.30%
+        // The mint fee is NOT among them any more (V2.4): it is derived from
+        // each asset's witnessed carbon tier, not configured here.
         redeemFeeBps       = 30;      // 0.30%
         minReserveRatioBps = 11_000;  // require 110% reserve coverage to mint
         maxPriceAge        = 1 hours; // matches keeper cadence with headroom
     }
 
     function version() public pure virtual returns (string memory) {
-        return "2.3.0";
+        return "2.4.0";
     }
 
     function usdc() public view returns (address) { return _usdc; }
     function oracle() public view returns (address) { return _oracle; }
+    function esgRegistry() public view returns (address) { return _esgRegistry; }
     function assetToken(bytes32 assetId) public view returns (address) { return _assetToken[assetId]; }
     function exposureOf(bytes32 assetId) public view returns (uint256) { return _outstanding[assetId]; }
 
@@ -285,8 +338,30 @@ contract AssetVaultV2_3 is
     {
         if (_assetToken[assetId] == address(0)) revert AssetNotRegistered(assetId);
         uint256 price = _price(assetId);
-        feePaid  = usdcAmount * mintFeeBps / BPS_DENOM;
+        feePaid  = usdcAmount * mintFeeBpsForAsset(assetId) / BPS_DENOM;
         tokenOut = (usdcAmount - feePaid) * 1e8 / price;
+    }
+
+    /// @notice The mint fee, in bps, that applies to `assetId` right now —
+    ///         derived from the asset's witnessed carbon tier, not a stored
+    ///         scalar. Readable before minting so a buyer sees the fee their
+    ///         carbon choice carries (ADR-006, user story 2).
+    /// @dev Fail-closed in two places, both deliberate:
+    ///        - registry unset → the MOST CONSERVATIVE tier's fee, not the
+    ///          old cheap 0.30% default. "Carbon pricing isn't wired" must
+    ///          cost the buyer more, never less.
+    ///        - registry wired but the asset has no fresh attestation →
+    ///          `medianCarbonTier` returns `Tier.Unrated`, and
+    ///          `CarbonTiers.paramsFor(Tier.Unrated)` is that same
+    ///          most-conservative row.
+    ///      Redemption never consults this — a high-carbon exit is not
+    ///      penalised (ADR-005). There is no per-asset override anywhere.
+    function mintFeeBpsForAsset(bytes32 assetId) public view returns (uint256 feeBps) {
+        CarbonTiers.Tier tier = CarbonTiers.Tier.Unrated;
+        if (_esgRegistry != address(0)) {
+            (tier, , ,) = IEsgRegistryForVault(_esgRegistry).medianCarbonTier(assetId);
+        }
+        (feeBps, ,) = CarbonTiers.paramsFor(tier);
     }
 
     function previewRedeem(bytes32 assetId, uint256 tokenAmount)
@@ -299,16 +374,34 @@ contract AssetVaultV2_3 is
         usdcOut = gross - feePaid;
     }
 
+    /// @notice Point the vault at a carbon-attestation registry (or clear it
+    ///         with `address(0)`, which fails the mint fee closed to the most
+    ///         conservative tier).
+    /// @dev DEFAULT_ADMIN_ROLE, same trust basis as `setOracle`: whoever can
+    ///      move this pointer can influence what every mint is charged. It is
+    ///      a vault-wide switch — there is deliberately no per-asset or
+    ///      per-user variant (ADR-006). Hold this role in a multisig.
+    function setEsgRegistry(address newRegistry) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        emit EsgRegistrySet(_esgRegistry, newRegistry);
+        _esgRegistry = newRegistry;
+    }
+
     /// @notice Operator risk knobs. Separate RISK_ROLE from upgrade authority so
     ///         a risk committee can retune without holding upgrade power.
+    /// @dev V2.4: the mint fee is no longer here — it is derived per-asset
+    ///      from the witnessed carbon tier (`mintFeeBpsForAsset`). Removing
+    ///      the parameter, not just leaving it unused, is the point: "no path
+    ///      changes a single asset's buy fee" is a tested absence (ADR-006).
+    ///      The redeem fee stays a flat, settable scalar — a high-carbon exit
+    ///      must not cost more (ADR-005).
     function setRiskParams(
-        uint256 mintFeeBps_,
         uint256 redeemFeeBps_,
         uint256 minReserveRatioBps_,
         uint256 maxPriceAge_
     ) external onlyRole(RISK_ROLE) {
-        // Cap fees at 10% so a compromised risk key cannot confiscate deposits.
-        if (mintFeeBps_ > 1_000 || redeemFeeBps_ > 1_000) revert InvalidParam();
+        // Cap the redeem fee at 10% so a compromised risk key cannot confiscate
+        // deposits on the way out.
+        if (redeemFeeBps_ > 1_000) revert InvalidParam();
         if (maxPriceAge_ == 0) revert InvalidParam();
         // V2.3: a floor below 100% (BPS_DENOM) would make `ratioBps < minBps`
         // (both in mint() and in observeReserve()'s breach latch) impossible to
@@ -321,12 +414,14 @@ contract AssetVaultV2_3 is
         // is above that, matching the 110% default below.
         if (minReserveRatioBps_ < BPS_DENOM) revert InvalidParam();
 
-        mintFeeBps         = mintFeeBps_;
         redeemFeeBps       = redeemFeeBps_;
         minReserveRatioBps = minReserveRatioBps_;
         maxPriceAge        = maxPriceAge_;
 
-        emit RiskParamsUpdated(mintFeeBps_, redeemFeeBps_, minReserveRatioBps_, maxPriceAge_);
+        // The `IAssetVaultV2.RiskParamsUpdated` event keeps its shape (V2.0–V2.2
+        // still emit all four fields); V2.4 reports 0 in the mint-fee slot to
+        // say "not configurable here any more" rather than break the ABI.
+        emit RiskParamsUpdated(0, redeemFeeBps_, minReserveRatioBps_, maxPriceAge_);
     }
 
     /// @notice USDC available to pay redeemers. Excludes accrued fees, which

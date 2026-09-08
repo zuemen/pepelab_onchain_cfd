@@ -46,6 +46,18 @@ pragma solidity ^0.8.20;
 ///         number in will not revert; it will silently produce a tier that
 ///         is numerically consistent and substantively wrong, which is
 ///         exactly the failure mode this NatSpec exists to prevent.
+///
+///         RESOLVED (#128, ADR-006): that direct assignment now happens at
+///         the source. `ESGRegistryV2` attestations carry an explicit `tier`
+///         and a `basis` (Revenue / Absolute / Qualitative); the exchange and
+///         the vault price against `ESGRegistryV2.medianCarbonTier` — the
+///         aggregated WITNESSED tier — not a tier re-derived from an
+///         intensity through `tierOf`. `tierOf` is retained for two jobs
+///         only: the submission-time invariant that a `Basis.Revenue`
+///         attestation's declared tier equals `tierOf(its intensity)`, and
+///         off-chain revenue-basis analysis. It is no longer on any pricing
+///         path — if you are reaching for it to price something, you want
+///         `medianCarbonTier`.
 library CarbonTiers {
     /// @notice `Unrated` is reachable only through the explicit `isRated`
     ///         flag on `tierOf`/`paramsForIntensity`, never by a carbon
@@ -163,5 +175,20 @@ library CarbonTiers {
     function qualifiesAtOrBelow(uint256 carbonIntensity, bool isRated, Tier ceiling) internal pure returns (bool) {
         if (!isRated) return false;
         return tierOf(carbonIntensity, isRated) <= ceiling;
+    }
+
+    /// @notice Tier-domain sibling of `qualifiesAtOrBelow`, for a caller that
+    ///         already holds a resolved tier (typically
+    ///         `ESGRegistryV2.medianCarbonTier`, ADR-006) rather than a raw
+    ///         intensity.
+    /// @dev Same trap, closed the same way: `Unrated`'s ordinal is 0, below
+    ///      every real tier, so a bare `tier <= ceiling` would let an unrated
+    ///      asset satisfy any ceiling by numeric accident. Both `!isRated`
+    ///      (the registry's fail-closed "no fresh attestation") and an
+    ///      explicitly witnessed `Tier.Unrated` are rejected outright.
+    function tierQualifiesAtOrBelow(Tier tier, bool isRated, Tier ceiling) internal pure returns (bool) {
+        if (!isRated) return false;
+        if (tier == Tier.Unrated) return false;
+        return tier <= ceiling;
     }
 }

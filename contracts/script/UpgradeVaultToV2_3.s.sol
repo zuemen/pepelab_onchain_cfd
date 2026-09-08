@@ -10,6 +10,12 @@ interface IUpgradeable {
 
 /// @notice Upgrades the deployed AssetVaultV2 proxy to V2.3.
 ///
+///         DEPRECATED (#128): `AssetVaultV2_3.sol` now carries the V2.4
+///         carbon-priced mint (`version()` == "2.4.0"). This script was
+///         written for the historical V2.2→V2.3 hop and is kept only so that
+///         hop stays reproducible. The V2.4 cutover — new impl, re-pointing
+///         `esgRegistry`, re-attesting — is the deployment spec's, not here.
+///
 ///         #99: reserve-ratio observability. V2.2 had reserve(), outstandingValue(),
 ///         reserveRatioBps() and ratioIsStale() — all public, all independently
 ///         verifiable — but no event to replay the ratio as history, no reaction
@@ -42,7 +48,6 @@ contract UpgradeVaultToV2_3 is Script {
         uint256 feesBefore      = v.accruedFees();
         address oracleBefore    = v.oracle();
         address usdcBefore      = v.usdc();
-        uint256 mintFeeBefore   = v.mintFeeBps();
         uint256 redeemFeeBefore = v.redeemFeeBps();
         uint256 minRatioBefore  = v.minReserveRatioBps();
         uint256 maxAgeBefore    = v.maxPriceAge();
@@ -68,17 +73,20 @@ contract UpgradeVaultToV2_3 is Script {
 
         // Verify on chain. A silent state loss here is the failure mode that
         // matters, so assert rather than print and hope someone reads it.
-        if (keccak256(bytes(v.version())) != keccak256(bytes("2.3.0"))) {
+        // NOTE (#128): AssetVaultV2_3.sol now carries the V2.4 carbon-priced
+        // mint (version "2.4.0"). This script only checked storage preservation
+        // for the V2.2→V2.3 hop; the full V2.4 cutover — deploying the impl,
+        // re-pointing `esgRegistry` at the new ESGRegistryV2, and re-attesting —
+        // belongs to the deployment spec, not here.
+        if (keccak256(bytes(v.version())) != keccak256(bytes("2.4.0"))) {
             revert StatePreservationFailed("version");
         }
         if (v.accruedFees()  != feesBefore)    revert StatePreservationFailed("accruedFees");
         if (v.oracle()       != oracleBefore)  revert StatePreservationFailed("oracle");
         if (v.usdc()         != usdcBefore)    revert StatePreservationFailed("usdc");
-        if (v.mintFeeBps()   != mintFeeBefore) revert StatePreservationFailed("mintFeeBps");
-        // Both were missing from V2.2's own upgrade-script assertions and
-        // inherited that gap here until code review caught it: redeemFeeBps is
-        // ordinary operator revenue config, but minReserveRatioBps is the exact
-        // threshold V2.3's whole breach/halt mechanism gates on — a silent
+        // The mint fee is no longer a stored scalar (V2.4) — nothing to preserve.
+        // redeemFeeBps is ordinary operator revenue config, but minReserveRatioBps
+        // is the exact threshold the breach/halt mechanism gates on — a silent
         // storage-layout mistake shifting either one would otherwise print
         // "state preserved" while actually changing what redeemers pay or when
         // minting halts.

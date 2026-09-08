@@ -32,9 +32,9 @@ interface IKyc {
 ///     an interface shape, not on ESGRegistryV2's implementation — the same
 ///     pattern IOracle/IKyc already use here for their own dependencies.
 interface IEsgRegistryForPricing {
-    function medianCarbonIntensity(bytes32 assetId)
+    function medianCarbonTier(bytes32 assetId)
         external view
-        returns (uint256 median, uint256 count, uint256 dispersion, bool isRated);
+        returns (CarbonTiers.Tier tier, uint256 count, uint256 dispersion, bool isRated);
 }
 
 contract PerpetualExchange is Ownable, ReentrancyGuard {
@@ -1170,9 +1170,14 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     ///      an inaccurate label here would cost nothing functionally but
     ///      would still be a needless small dishonesty.
     ///
-    ///      Once `esgRegistry` IS wired, an asset with no fresh attestation
-    ///      correctly resolves to `Tier.Unrated` via `CarbonTiers` itself —
-    ///      fail-closed, not a gap this function has to special-case.
+    ///      Once `esgRegistry` IS wired, the tier is the WITNESSED median
+    ///      tier (`medianCarbonTier`, ADR-006), not one re-derived from a
+    ///      carbon-intensity number through `tierOf` — that derivation is
+    ///      only valid for revenue-basis assets. An asset with no fresh
+    ///      attestation resolves to `Tier.Unrated` inside the registry's own
+    ///      fail-closed read, and `CarbonTiers.paramsFor(Tier.Unrated)` is
+    ///      the most conservative row — fail-closed, not a gap this function
+    ///      has to special-case.
     /// @dev Called at most once per `_openPosition` (threaded through as a
     ///      local, not re-fetched by `_maxLeverage`'s own call inside the
     ///      leverage check — see `_openPosition`). `_maxLeverage` still calls
@@ -1188,8 +1193,8 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         if (address(esgRegistry) == address(0)) {
             return (CarbonTiers.Tier.Unrated, TRADING_FEE_BPS, BORROW_FEE_BPS_PER_HOUR, MAX_LEVERAGE);
         }
-        (uint256 median, , , bool isRated) = esgRegistry.medianCarbonIntensity(asset);
-        return CarbonTiers.paramsForIntensity(median, isRated);
+        (tier, , ,) = esgRegistry.medianCarbonTier(asset);
+        (tradingFeeBps, borrowFeeBpsPerHour, maxLev) = CarbonTiers.paramsFor(tier);
     }
 
     /// @notice Effective max leverage for an asset: the tighter of the owner's

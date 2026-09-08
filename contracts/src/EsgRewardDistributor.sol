@@ -26,14 +26,17 @@ interface IExchangeForReward {
     function getPosition(uint256 positionId) external view returns (Position memory);
 }
 
-/// @dev Same shape as ESGRegistryV2.medianCarbonIntensity — a narrow
-///      interface here (rather than importing ESGRegistryV2 itself) so this
-///      contract only depends on the one read it actually needs.
+/// @dev Same shape as ESGRegistryV2.medianCarbonTier — a narrow interface
+///      here (rather than importing ESGRegistryV2 itself) so this contract
+///      only depends on the one read it actually needs. Post-#128 (ADR-006)
+///      the gate reads the WITNESSED tier, not a tier re-derived from a
+///      carbon-intensity number through `tierOf` — the same read
+///      `PerpetualExchange` and `AssetVault` price against.
 interface IESGRegistryForReward {
-    function medianCarbonIntensity(bytes32 assetId)
+    function medianCarbonTier(bytes32 assetId)
         external
         view
-        returns (uint256 median, uint256 count, uint256 dispersion, bool isRated);
+        returns (CarbonTiers.Tier tier, uint256 count, uint256 dispersion, bool isRated);
 }
 
 /// @dev Narrowed to the one call this contract makes, matching the same
@@ -111,10 +114,9 @@ contract EsgRewardDistributor is Ownable {
     ///      been for `minHoldSeconds`". Unchanged by #98.
     ///
     ///      The registry is read exactly once here (not once for the
-    ///      eligibility check and again for the badge's reason text) — both
-    ///      derive from the same `median`/`isRated` pair via CarbonTiers'
-    ///      pure functions, so there is only one external call to
-    ///      `esgRegistry` per claim.
+    ///      eligibility check and again for the badge's reason text) — the
+    ///      single `medianCarbonTier` call yields both the gate and the tier
+    ///      name.
     function claimEsgReward(uint256 positionId) external returns (uint256 badgeTokenId) {
         IExchangeForReward.Position memory pos = exchange.getPosition(positionId);
         if (pos.owner != msg.sender) revert NotPositionOwner();
@@ -124,8 +126,8 @@ contract EsgRewardDistributor is Ownable {
         uint256 heldFor = block.timestamp - pos.openedAt;
         if (heldFor < minHoldSeconds) revert HoldTooShort();
 
-        (uint256 median, , , bool isRated) = esgRegistry.medianCarbonIntensity(pos.asset);
-        if (!CarbonTiers.qualifiesAtOrBelow(median, isRated, maxRewardTier)) revert AssetNotLowCarbon();
+        (CarbonTiers.Tier tier, , , bool isRated) = esgRegistry.medianCarbonTier(pos.asset);
+        if (!CarbonTiers.tierQualifiesAtOrBelow(tier, isRated, maxRewardTier)) revert AssetNotLowCarbon();
 
         rewarded[positionId] = true;
 
@@ -135,7 +137,6 @@ contract EsgRewardDistributor is Ownable {
         // owner-tunable, and SustainabilityBadge.reasonFor has no setter,
         // so a hardcoded "Low-carbon-tier, 30+ days" string would go
         // permanently, unfixably stale the moment either parameter changed.
-        CarbonTiers.Tier tier = CarbonTiers.tierOf(median, isRated);
         string memory reason = string.concat(
             "Held a ", _tierName(tier), "-carbon-tier position for ", Strings.toString(heldFor / 1 days), "+ days"
         );
@@ -164,8 +165,8 @@ contract EsgRewardDistributor is Ownable {
     // ── Internal ─────────────────────────────────────────────────────────────────
 
     function _qualifies(bytes32 asset) internal view returns (bool) {
-        (uint256 median, , , bool isRated) = esgRegistry.medianCarbonIntensity(asset);
-        return CarbonTiers.qualifiesAtOrBelow(median, isRated, maxRewardTier);
+        (CarbonTiers.Tier tier, , , bool isRated) = esgRegistry.medianCarbonTier(asset);
+        return CarbonTiers.tierQualifiesAtOrBelow(tier, isRated, maxRewardTier);
     }
 
     function _tierName(CarbonTiers.Tier tier) internal pure returns (string memory) {

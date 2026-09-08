@@ -264,9 +264,9 @@ contract CopyTrackerFeeBufferTest is Test {
 
         esg2.grantRole(esg2.ATTESTOR_ROLE(), attestor);
         vm.startPrank(attestor);
-        esg2.attest(HIGH, 20e18, 10, 10, 10, src);  // > 8 tCO2e/$M -> High tier, 100 bps
-        esg2.attest(LOW, 0.2e18, 10, 10, 10, src);  // < 1 tCO2e/$M -> Low tier, 10 bps
-        esg2.attest(LOW2, 0.2e18, 10, 10, 10, src); // < 1 tCO2e/$M -> Low tier, 10 bps
+        esg2.attest(HIGH, 20e18, CarbonTiers.Tier.High, ESGRegistryV2.Basis.Revenue, 10, 10, 10, src);  // > 8 tCO2e/$M -> High tier, 100 bps
+        esg2.attest(LOW, 0.2e18, CarbonTiers.Tier.Low, ESGRegistryV2.Basis.Revenue, 10, 10, 10, src);   // < 1 tCO2e/$M -> Low tier, 10 bps
+        esg2.attest(LOW2, 0.2e18, CarbonTiers.Tier.Low, ESGRegistryV2.Basis.Revenue, 10, 10, 10, src);  // < 1 tCO2e/$M -> Low tier, 10 bps
         vm.stopPrank();
 
         assertEq(exchange2.tradingFeeBpsForAsset(HIGH), 100, "sanity: HIGH really is High tier");
