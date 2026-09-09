@@ -225,7 +225,7 @@ export const getSynthTokens = (
 ): Partial<Record<AssetSymbol, string>> =>
   chainId === null ? {} : (SYNTH_TOKENS[chainId] ?? {})
 
-// ── V2 hardened stack (deployed Sepolia 2026-07-27) ───────────────────────────
+// ── V2 hardened stack ────────────────────────────────────────────────────────
 // Runs ALONGSIDE V1, which stays deployed and untouched. Differences that matter:
 //   - GuardedOracle replaces MockOracle's single owner key with N keepers plus a
 //     per-update deviation cap, freeze, and pause. Verified on chain: a post of
@@ -233,12 +233,20 @@ export const getSynthTokens = (
 //   - AssetVaultV2 is a UUPS proxy whose oracle is ordinary storage, so it can
 //     be repointed with setOracle — the exchange cannot, its oracle is immutable.
 //   - SafeERC20, reentrancy guards, per-asset caps, and a reserve-ratio gate.
-// See docs/RISK_MODEL.md and docs/KNOWN_LIMITATIONS.md.
+//   - V2.4 (#128, ADR-006): the mint fee is per-asset, derived from the asset's
+//     WITNESSED carbon tier via ESGRegistryV2.medianCarbonTier. `ESGRegistryV2`
+//     and `SustainabilityBadge` are part of this stack from #129 onward.
+// See docs/RISK_MODEL.md, docs/KNOWN_LIMITATIONS.md, docs/DEPLOY_129_CUTOVER.md.
 export const V2_STACK: Record<number, {
-  GuardedOracle: string
-  AssetVaultV2:  string
+  GuardedOracle:        string
+  AssetVaultV2:         string
+  /** #128/#129 — carbon-tier attestation registry (medianCarbonTier). */
+  ESGRegistryV2?:       string
+  /** #98/#129 — non-transferable achievement token minted by EsgRewardDistributor. */
+  SustainabilityBadge?: string
   tokens: Partial<Record<AssetSymbol, string>>
 }> = {
+  // ── Sepolia (11155111) — deployed 2026-07-27, comparison showcase ──────────
   11155111: {
     GuardedOracle: "0x32A19D04ef2ca5A7DA02Df39419729fA745749A1",
     AssetVaultV2:  "0x3a37415981F6f4fC27FA6c8C62F1d4e47115fD17",
@@ -256,7 +264,30 @@ export const V2_STACK: Record<number, {
       sESGU:  "0x3f89C2Fd5e7222012d563ecC67e41De02ad746e7",
     },
   },
+  // ── Base Sepolia (84532) — the canonical chain, hardened by #129 ───────────
+  // Base Sepolia never had a hardened vault: its mint/redeem path is still the
+  // V1 AssetVault (no fee, no reserve ratio, no pause). #129 deploys this stack
+  // alongside V1, exactly as Sepolia's was. Addresses below are filled by
+  // docs/DEPLOY_129_CUTOVER.md as each phase lands; while any is 0x0 the
+  // frontend's "not deployed" guard keeps rendering the legacy path.
+  84532: {
+    GuardedOracle:       "0x0000000000000000000000000000000000000000",
+    AssetVaultV2:        "0x0000000000000000000000000000000000000000",
+    ESGRegistryV2:       "0x0000000000000000000000000000000000000000",
+    SustainabilityBadge: "0x0000000000000000000000000000000000000000",
+    tokens: {
+      // sBTC, sETH, sAAPL, sTSLA, sGOLD, sBOND, sNVDA, sMSFT, sGOOGL, sICLN, sESGU
+      // — 11 SyntheticAssetV2 addresses from phase A's output.
+    },
+  },
 }
 
 export const getV2Stack = (chainId: number | null) =>
   chainId === null ? undefined : V2_STACK[chainId]
+
+/** True once a chain's hardened stack has real (non-zero) core addresses. */
+export const hasV2Stack = (chainId: number | null): boolean => {
+  const s = getV2Stack(chainId)
+  const ZERO = "0x0000000000000000000000000000000000000000"
+  return !!s && s.GuardedOracle !== ZERO && s.AssetVaultV2 !== ZERO
+}
