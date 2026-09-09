@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import "forge-std/Script.sol";
 import "forge-std/console.sol";
 import "../src/ESGRegistryV2.sol";
+import "../src/CarbonTiers.sol";
 import "../src/SustainabilityBadge.sol";
 
 /// @notice #102 step 1 — deploy the carbon-attestation stack and seed it.
@@ -17,21 +18,23 @@ import "../src/SustainabilityBadge.sol";
 ///         exchange deploys, or every asset prices at the most conservative
 ///         tier (`Unrated`).
 ///
-///         ## About the intensity numbers
+///         ## About the tier + basis (ADR-006)
 ///
-///         `ESGRegistryV2.medianCarbonIntensity` feeds straight into
-///         `CarbonTiers.tierOf`, which only understands a **revenue-basis**
-///         intensity (tCO2e per $1M trailing revenue, 1e18-scaled). The five
-///         equities and sESGU have a real such figure — pinned in
-///         `docs/data/carbon-intensity.md`. The commodity and the two crypto
-///         assets do NOT: gold and BTC/ETH have no revenue. For those, and
-///         for the two ETFs placed qualitatively, this script attests an
-///         intensity **chosen to land the asset in the tier its
-///         absolute-emissions / sector basis warrants** — BTC and gold in
-///         High, ETH / sICLN / sBOND(green bond, #106) in Low. That is a
-///         placement decision, documented in carbon-intensity.md's "Open
-///         questions for #95", not a $/M-revenue measurement. Flagged here
-///         and on screen; needs team sign-off before the defence.
+///         Each attestation carries the WITNESSED `tier` (the on-chain fact
+///         the exchange and vault price against, via `medianCarbonTier`) and
+///         the `basis` it was determined on:
+///           - `Revenue`     — the five equities and sESGU have a real
+///             tCO2e/$1M-revenue figure (pinned in
+///             docs/data/carbon-intensity.md). The registry cross-checks
+///             `tier == tierOf(intensity)` on submission, so both are filled.
+///           - `Absolute`    — gold and BTC/ETH have no revenue; placed by
+///             absolute annualized emissions + sector benchmark. `intensity`
+///             is left 0 — there is no comparable number to record.
+///           - `Qualitative` — sICLN and sBOND (green bond ETF, #106) placed
+///             by sector / instrument class. Also `intensity` 0.
+///         The absolute / qualitative placements are decisions, documented in
+///         carbon-intensity.md and ADR-006, not measurements. Flagged on
+///         screen; needs team sign-off before the defence.
 ///
 ///         ## Multi-attestor "agencies disagree" demo
 ///
@@ -51,27 +54,37 @@ contract Deploy102CarbonRegistry is Script {
 
     struct A {
         string  symbol;
-        uint256 intensity1e18; // revenue-basis figure, OR a placement value (see NatSpec)
+        uint256 intensity1e18; // revenue-basis figure; 0 (or any value) when basis != Revenue
+        CarbonTiers.Tier tier; // the witnessed tier — the on-chain fact (ADR-006)
+        ESGRegistryV2.Basis basis;
         uint8   e;
         uint8   s;
         uint8   g;
-        bool    revenueBasis;  // false = intensity is a tier-placement value, not a measurement
     }
 
     function _assets() internal pure returns (A[11] memory a) {
-        // intensity numbers: docs/data/carbon-intensity.md "Proposed carbon tiers".
-        // *1e15 lets us write 3-decimal figures without float.
-        a[0]  = A("sBTC",   9_000 * 1e15,   15, 40, 60, false); // High  (absolute-basis placement)
-        a[1]  = A("sETH",     500 * 1e15,   35, 55, 70, false); // Low   (absolute-basis placement)
-        a[2]  = A("sAAPL",    150 * 1e15,   72, 78, 85, true);  // 0.150 -> Low
-        a[3]  = A("sTSLA", 10_021 * 1e15,   60, 52, 65, true);  // 10.021 -> High
-        a[4]  = A("sGOLD",  9_000 * 1e15,   40, 50, 55, false); // High  (per-ounce basis placement)
-        a[5]  = A("sBOND",    500 * 1e15,   86, 74, 80, false); // Low   (#106 green bond ETF, qualitative)
-        a[6]  = A("sNVDA",     99 * 1e15,   55, 60, 75, true);  // 0.099 -> Low
-        a[7]  = A("sMSFT", 10_226 * 1e15,   78, 72, 88, true);  // 10.226 -> High
-        a[8]  = A("sGOOGL", 8_949 * 1e15,   68, 65, 80, true);  // 8.949 -> High
-        a[9]  = A("sICLN",    500 * 1e15,   90, 75, 78, false); // Low   (sector-composition placement)
-        a[10] = A("sESGU",  4_340 * 1e15,   88, 80, 82, true);  // 4.34 (partial estimate) -> Mid
+        // Tier + basis: docs/data/carbon-intensity.md "Proposed carbon tiers",
+        // aligned with frontend/src/lib/pepefi/assetMeta.ts. *1e15 writes
+        // 3-decimal revenue-basis figures without float. For Basis.Revenue the
+        // registry cross-checks tier == tierOf(intensity); the others carry no
+        // comparable intensity, so the tier is asserted directly.
+        CarbonTiers.Tier L = CarbonTiers.Tier.Low;
+        CarbonTiers.Tier M = CarbonTiers.Tier.Mid;
+        CarbonTiers.Tier H = CarbonTiers.Tier.High;
+        ESGRegistryV2.Basis REV = ESGRegistryV2.Basis.Revenue;
+        ESGRegistryV2.Basis ABS = ESGRegistryV2.Basis.Absolute;
+        ESGRegistryV2.Basis QUA = ESGRegistryV2.Basis.Qualitative;
+        a[0]  = A("sBTC",        0,        H, ABS, 15, 40, 60); // ~39.8 Mt CO2e/yr absolute
+        a[1]  = A("sETH",        0,        L, ABS, 35, 55, 70); // ~2,370 tCO2e/yr absolute
+        a[2]  = A("sAAPL",    150 * 1e15,  L, REV, 72, 78, 85); // 0.150 -> Low
+        a[3]  = A("sTSLA", 10_021 * 1e15,  H, REV, 60, 52, 65); // 10.021 -> High
+        a[4]  = A("sGOLD",       0,        H, ABS, 40, 50, 55); // 0.85 tCO2e/oz sector benchmark
+        a[5]  = A("sBOND",       0,        L, QUA, 86, 74, 80); // #106 green bond ETF, qualitative
+        a[6]  = A("sNVDA",     99 * 1e15,  L, REV, 55, 60, 75); // 0.099 -> Low
+        a[7]  = A("sMSFT", 10_226 * 1e15,  H, REV, 78, 72, 88); // 10.226 -> High
+        a[8]  = A("sGOOGL", 8_949 * 1e15,  H, REV, 68, 65, 80); // 8.949 -> High
+        a[9]  = A("sICLN",       0,        L, QUA, 90, 75, 78); // sector composition, qualitative
+        a[10] = A("sESGU",  4_340 * 1e15,  M, REV, 88, 80, 82); // 4.34 (partial estimate) -> Mid
     }
 
     function run() external {
@@ -118,7 +131,9 @@ contract Deploy102CarbonRegistry is Script {
             bytes32 sourceHash = keccak256(
                 abi.encodePacked(list[i].symbol, "|2026-09-02|docs/data/carbon-intensity.md")
             );
-            registry.attest(id, list[i].intensity1e18, list[i].e, list[i].s, list[i].g, sourceHash);
+            registry.attest(
+                id, list[i].intensity1e18, list[i].tier, list[i].basis, list[i].e, list[i].s, list[i].g, sourceHash
+            );
         }
 
         vm.stopBroadcast();
@@ -134,11 +149,14 @@ contract Deploy102CarbonRegistry is Script {
         console.log("  export SUSTAINABILITY_BADGE=", address(badge));
         console.log("");
 
-        // Read a couple back so a silent mis-attestation surfaces now.
-        (uint256 mBtc, , , bool rBtc)  = registry.medianCarbonIntensity(keccak256("sBTC"));
-        (uint256 mNvda, , , bool rNvda) = registry.medianCarbonIntensity(keccak256("sNVDA"));
-        console.log("sBTC  median :", mBtc);
-        console.log("sNVDA median :", mNvda);
+        // Read a couple back so a silent mis-attestation surfaces now. sBTC is
+        // an absolute-basis placement (High), sNVDA a revenue-basis measurement
+        // (Low) — check the tier read the exchange and vault actually price on.
+        (CarbonTiers.Tier tBtc, , , bool rBtc)  = registry.medianCarbonTier(keccak256("sBTC"));
+        (CarbonTiers.Tier tNvda, , , bool rNvda) = registry.medianCarbonTier(keccak256("sNVDA"));
+        console.log("sBTC  tier (want High=3) :", uint256(tBtc));
+        console.log("sNVDA tier (want Low=1)  :", uint256(tNvda));
         require(rBtc && rNvda, "attestations did not land");
+        require(tBtc == CarbonTiers.Tier.High && tNvda == CarbonTiers.Tier.Low, "tier readback wrong");
     }
 }

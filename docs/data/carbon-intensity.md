@@ -107,7 +107,7 @@ Fixed thresholds, not settable parameters — per ADR-003, an adjustable thresho
 
 This places the five equities as a natural bimodal split: {AAPL 0.150, NVDA 0.099} → Low; {GOOGL 8.949, TSLA 10.021, MSFT 10.226} → High. Nothing currently lands in Mid among the five — that band exists for assets added later, and is where sESGU's partial estimate (≈4.34) provisionally sits.
 
-**For non-revenue assets (commodities, crypto), placed by absolute annualized emissions and sector benchmark rather than a $-normalized figure, per the rejections documented above:**
+**For non-revenue assets (commodities, crypto), placed by absolute annualized emissions and sector benchmark rather than a $-normalized figure, per the rejections documented above.** On-chain (#128) these are attested with `tier` set directly and `basis` = `Absolute` (gold, BTC, ETH) or `Qualitative` (sICLN, sBOND); the "Basis" column below is that same distinction:
 
 | Asset | Tier | Basis |
 |---|---|---|
@@ -118,14 +118,14 @@ This places the five equities as a natural bimodal split: {AAPL 0.150, NVDA 0.09
 | sBTC | **High** | ≈39.8 Mt CO2e/yr absolute — comparable to a small country's annual emissions |
 | sBOND → iShares USD Green Bond ETF (BGRN) | **Low** (decided, #106) | sector/instrument-class benchmark, qualitative — see full writeup below; not a computed number |
 
-## Open questions for #95
+## Open questions for #95 — RESOLVED (#128, ADR-006)
 
-This table deliberately does not force one $-normalized number across every asset class, because doing so (market-cap normalization for crypto, spot-price normalization for gold) produces results that are numerically consistent but substantively misleading — see the rejections above. `ESGRegistryV2` / `CarbonTiers` need one of:
+This table deliberately does not force one $-normalized number across every asset class, because doing so (market-cap normalization for crypto, spot-price normalization for gold) produces results that are numerically consistent but substantively misleading — see the rejections above. `ESGRegistryV2` / `CarbonTiers` needed one of:
 
-1. **Two parallel bases, unified only at the tier label** (recommended): store the tier assignment (Low/Mid/High) as the on-chain fact for every asset, computed off whichever basis is defensible for that asset class (revenue-intensity for equities/ETFs, absolute-emissions benchmark for commodities/crypto). `CarbonTiers` then consumes the tier, not a single raw intensity number. This keeps the pricing/leverage logic asset-class-agnostic while keeping each tier assignment individually defensible.
+1. **Two parallel bases, unified only at the tier label**: store the tier assignment (Low/Mid/High) as the on-chain fact for every asset, computed off whichever basis is defensible for that asset class (revenue-intensity for equities/ETFs, absolute-emissions benchmark for commodities/crypto). `CarbonTiers` then consumes the tier, not a single raw intensity number. This keeps the pricing/leverage logic asset-class-agnostic while keeping each tier assignment individually defensible.
 2. **A single normalized score** (e.g., percentile rank across all registered assets) computed at attestation time. More elegant on-chain, but harder to defend in the open — "why is this asset's score 62" is a harder question to answer than "this asset's tier is High because its absolute annual emissions exceed X."
 
-Recommendation: (1). It matches this table's own reasoning, requires no new on-chain math beyond storing an enum, and keeps every tier assignment traceable to a specific, stated justification rather than a formula that has to be defended as a whole.
+**Decision (#128): option 1.** `ESGRegistryV2` attestations now carry an explicit `tier` (the `CarbonTiers.Tier` enum) and a three-value `basis` (Revenue / Absolute / Qualitative, matching the frontend's `AssetCarbon.basis`). `PerpetualExchange` and `AssetVault` price against `medianCarbonTier` — the aggregated *witnessed* tier — not a tier re-derived from an intensity number through `tierOf`. For `Basis.Revenue` attestations the registry enforces `tier == tierOf(carbonIntensity, true)` on submission, so the two representations cannot drift apart; `tierOf` survives as that gate (and for off-chain revenue-basis analysis), not as a pricing path. The absolute / qualitative placements in "Proposed carbon tiers" below are now attested directly, with `basis` recording which kind of judgement each was — no reverse-engineered intensity number stands in for them any more. Full rationale and the redeployment consequences: [ADR-006](../ADR-006-carbon-tier-is-a-witnessed-fact.md).
 
 ## Coverage gaps, stated plainly
 

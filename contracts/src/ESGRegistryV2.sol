@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
+import "./CarbonTiers.sol";
 
 /// @title ESGRegistryV2
 /// @notice Multi-attestor ESG and carbon-intensity registry, replacing
@@ -37,6 +38,17 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 ///         see its own NatSpec before wiring a commodity or crypto asset's
 ///         median through it.
 ///
+///         WHICH READ TO PRICE AGAINST (ADR-006): consumers that turn carbon
+///         into a fee or a leverage cap (`PerpetualExchange`, `AssetVault`)
+///         read `medianCarbonTier`, which aggregates the tier the attestor
+///         DECLARED — an honest representation for every asset class. They do
+///         not re-derive a tier from `medianCarbonIntensity` through
+///         `tierOf`, because that path is only valid for revenue-basis
+///         assets. `attest` enforces the two agree for `Basis.Revenue`
+///         submissions, so `tierOf` survives as the gate on that invariant
+///         (and for any off-chain revenue-basis analysis), not as a pricing
+///         path.
+///
 ///         WHAT THIS DOES NOT SOLVE: an attestation is only as honest as
 ///         the attestor submitting it. If every ATTESTOR_ROLE holder is
 ///         controlled by the same operator, "three sources disagree" is
@@ -49,11 +61,39 @@ contract ESGRegistryV2 is AccessControl {
 
     // ── Data types ───────────────────────────────────────────────────────────
 
+    /// @notice How the attestor arrived at the `tier` they are declaring.
+    /// @dev Deliberately a three-value enum, not a `revenueBasis` boolean:
+    ///      "placed by absolute annualized emissions" and "placed by
+    ///      qualitative sector judgement" are not equally auditable —
+    ///      docs/data/carbon-intensity.md sources gold and Bitcoin against
+    ///      published sector energy statistics, while sICLN's Low placement
+    ///      is "this is a clean-energy ETF". The frontend's own carbon model
+    ///      (frontend/src/lib/pepefi/assetMeta.ts `AssetCarbon.basis`) has
+    ///      always split these three; the chain should not be coarser than
+    ///      the screen. Ordinals match that TS union's order exactly.
+    enum Basis {
+        Revenue, // tCO2e per $1M trailing revenue — comparable, feeds tierOf
+        Absolute, // absolute annualized emissions + sector benchmark
+        Qualitative // sector / instrument-class judgement, no computed number
+    }
+
     struct Attestation {
         address attestor;
         /// @dev Fixed-point, 1e18-scaled. Unit is whatever the attestor's
-        ///      basis is for this asset class — see contract NatSpec.
+        ///      basis is for this asset class — see contract NatSpec. Still
+        ///      required for `Basis.Revenue` (it is an auditable quantity and
+        ///      is cross-checked against `tier` on submission); for the other
+        ///      two bases it may be 0 — the tier is the fact, not this number.
         uint256 carbonIntensity;
+        /// @dev The attestor's declared carbon tier for this asset. This is
+        ///      the on-chain fact consumers price against — not a number
+        ///      re-derived from `carbonIntensity` through a unit that does
+        ///      not apply to every asset class. See ADR-006.
+        CarbonTiers.Tier tier;
+        /// @dev Which basis `tier` was determined on. `Basis.Revenue`
+        ///      additionally pins `tier == CarbonTiers.tierOf(carbonIntensity,
+        ///      true)` at submission time.
+        Basis basis;
         uint8 environmental; // 0-100
         uint8 social; // 0-100
         uint8 governance; // 0-100
@@ -94,6 +134,8 @@ contract ESGRegistryV2 is AccessControl {
         bytes32 indexed assetId,
         address indexed attestor,
         uint256 carbonIntensity,
+        CarbonTiers.Tier tier,
+        Basis basis,
         uint8 environmental,
         uint8 social,
         uint8 governance,
@@ -106,6 +148,16 @@ contract ESGRegistryV2 is AccessControl {
 
     error ScoreOutOfRange();
     error MissingSourceHash();
+    /// @notice A `Basis.Revenue` attestation with no carbon-intensity figure.
+    ///         Revenue-basis attestations must carry the auditable quantity
+    ///         (docs/data/carbon-intensity.md); only `Absolute` / `Qualitative`
+    ///         may omit it.
+    error MissingIntensity();
+    /// @notice A `Basis.Revenue` attestation whose declared `tier` disagrees
+    ///         with `CarbonTiers.tierOf(carbonIntensity, true)`. The two
+    ///         on-chain representations of "how carbon-intensive is this
+    ///         asset" must not be allowed to diverge again — see ADR-006.
+    error TierIntensityMismatch(CarbonTiers.Tier declared, CarbonTiers.Tier fromIntensity);
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
@@ -122,9 +174,19 @@ contract ESGRegistryV2 is AccessControl {
 
     // ── Write ────────────────────────────────────────────────────────────────
 
+    /// @param tier   The attestor's declared carbon tier for this asset.
+    /// @param basis  Which basis `tier` was determined on. When it is
+    ///               `Basis.Revenue`, `tier` must equal
+    ///               `CarbonTiers.tierOf(carbonIntensity, true)` or the call
+    ///               reverts `TierIntensityMismatch` — the gate that stops the
+    ///               tier and the intensity from drifting apart. The other two
+    ///               bases carry no such check: `carbonIntensity` has no
+    ///               comparable meaning for them.
     function attest(
         bytes32 assetId,
         uint256 carbonIntensity,
+        CarbonTiers.Tier tier,
+        Basis basis,
         uint8 environmental,
         uint8 social,
         uint8 governance,
@@ -133,11 +195,19 @@ contract ESGRegistryV2 is AccessControl {
         if (environmental > 100 || social > 100 || governance > 100) revert ScoreOutOfRange();
         if (sourceHash == bytes32(0)) revert MissingSourceHash();
 
+        if (basis == Basis.Revenue) {
+            if (carbonIntensity == 0) revert MissingIntensity();
+            CarbonTiers.Tier fromIntensity = CarbonTiers.tierOf(carbonIntensity, true);
+            if (fromIntensity != tier) revert TierIntensityMismatch(tier, fromIntensity);
+        }
+
         bool firstTimeForThisAttestor = !_attestations[assetId][msg.sender].exists;
 
         _attestations[assetId][msg.sender] = Attestation({
             attestor: msg.sender,
             carbonIntensity: carbonIntensity,
+            tier: tier,
+            basis: basis,
             environmental: environmental,
             social: social,
             governance: governance,
@@ -152,7 +222,9 @@ contract ESGRegistryV2 is AccessControl {
             _attestedAssets.push(assetId);
         }
 
-        emit Attested(assetId, msg.sender, carbonIntensity, environmental, social, governance, sourceHash, block.timestamp);
+        emit Attested(
+            assetId, msg.sender, carbonIntensity, tier, basis, environmental, social, governance, sourceHash, block.timestamp
+        );
     }
 
     // ── Admin ────────────────────────────────────────────────────────────────
@@ -216,6 +288,37 @@ contract ESGRegistryV2 is AccessControl {
         (median, dispersion) = _medianAndRange(fresh);
     }
 
+    /// @notice Median carbon TIER across every currently-fresh attestation for
+    ///         `assetId` — the read `PerpetualExchange` and `AssetVault` price
+    ///         against (see ADR-006). The median is taken over the tier
+    ///         enum's ordinals ({Unrated:0, Low:1, Mid:2, High:3}); an even
+    ///         count averages the two middle ordinals and floors, matching
+    ///         `medianCarbonIntensity`'s own even-count rule.
+    /// @dev Fails closed exactly like `medianCarbonIntensity`: an asset with
+    ///      no attestation, or one whose attestations are all stale, returns
+    ///      `(Tier.Unrated, 0, 0, false)` rather than reverting. Consumers
+    ///      feed the returned `tier` straight into `CarbonTiers.paramsFor` —
+    ///      `paramsFor(Tier.Unrated)` is the most conservative row, so "no
+    ///      data" and "rated High" both price at the ceiling, which is the
+    ///      intended fail-closed behaviour.
+    /// @return tier       Median tier, or `Tier.Unrated` when `!isRated`.
+    /// @return count      How many fresh attestations the median spans.
+    /// @return dispersion Spread of tier ordinals (max - min); 0 when the
+    ///                    fresh attestations all agree or there is at most one.
+    /// @return isRated    `count > 0` — whether any fresh attestation exists.
+    function medianCarbonTier(bytes32 assetId)
+        external
+        view
+        returns (CarbonTiers.Tier tier, uint256 count, uint256 dispersion, bool isRated)
+    {
+        uint256[] memory fresh = _freshTierOrdinals(assetId);
+        count = fresh.length;
+        isRated = count > 0;
+        if (!isRated) return (CarbonTiers.Tier.Unrated, 0, 0, false);
+        (uint256 medianOrdinal, uint256 range) = _medianAndRange(fresh);
+        return (CarbonTiers.Tier(medianOrdinal), count, range, true);
+    }
+
     /// @notice Median E/S/G across every currently-fresh attestation.
     ///         Symmetric to `medianCarbonIntensity`; no dispersion is
     ///         reported here — nothing downstream currently consumes
@@ -265,6 +368,28 @@ contract ESGRegistryV2 is AccessControl {
             address who = attestors[i];
             if (!isAttestationFresh(assetId, who)) continue;
             tmp[n] = _attestations[assetId][who].carbonIntensity;
+            n++;
+        }
+
+        fresh = new uint256[](n);
+        for (uint256 i = 0; i < n; i++) {
+            fresh[i] = tmp[i];
+        }
+    }
+
+    /// @dev The `tier` field of every currently-fresh attestation, as its
+    ///      enum ordinal, so `_medianAndRange` can be reused unchanged.
+    ///      Parallel to `_freshCarbonIntensities`.
+    function _freshTierOrdinals(bytes32 assetId) internal view returns (uint256[] memory fresh) {
+        address[] storage attestors = _attestorsOf[assetId];
+        uint256 len = attestors.length;
+
+        uint256[] memory tmp = new uint256[](len);
+        uint256 n = 0;
+        for (uint256 i = 0; i < len; i++) {
+            address who = attestors[i];
+            if (!isAttestationFresh(assetId, who)) continue;
+            tmp[n] = uint256(_attestations[assetId][who].tier);
             n++;
         }
 

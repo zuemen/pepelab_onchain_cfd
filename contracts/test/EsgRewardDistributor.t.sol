@@ -65,27 +65,29 @@ contract ExchangeStub {
     }
 }
 
-/// @dev Minimal ESG registry stub — mirrors ESGRegistryV2.medianCarbonIntensity's
-///      shape (median, count, dispersion, isRated) so the distributor's real
+/// @dev Minimal ESG registry stub — mirrors ESGRegistryV2.medianCarbonTier's
+///      shape (tier, count, dispersion, isRated) so the distributor's real
 ///      interface is exercised, without pulling in the full attestor registry.
+///      Post-#128 the distributor gates on the witnessed tier, not an
+///      intensity number (ADR-006).
 contract EsgRegistryStub {
     struct Reading {
-        uint256 median;
-        bool    isRated;
+        CarbonTiers.Tier tier;
+        bool             isRated;
     }
     mapping(bytes32 => Reading) public readings;
 
-    function setRating(bytes32 assetId, uint256 median, bool isRated) external {
-        readings[assetId] = Reading(median, isRated);
+    function setTier(bytes32 assetId, CarbonTiers.Tier tier, bool isRated) external {
+        readings[assetId] = Reading(tier, isRated);
     }
 
-    function medianCarbonIntensity(bytes32 assetId)
+    function medianCarbonTier(bytes32 assetId)
         external
         view
-        returns (uint256 median, uint256 count, uint256 dispersion, bool isRated)
+        returns (CarbonTiers.Tier tier, uint256 count, uint256 dispersion, bool isRated)
     {
         Reading memory r = readings[assetId];
-        return (r.median, r.isRated ? 1 : 0, 0, r.isRated);
+        return (r.tier, r.isRated ? 1 : 0, 0, r.isRated);
     }
 }
 
@@ -110,10 +112,6 @@ contract EsgRewardDistributorTest is Test {
     bytes32 constant DIRTY = keccak256("sBTC");    // High carbon tier
     bytes32 constant UNRATED = keccak256("sNEW");  // never attested
 
-    uint256 constant LOW_INTENSITY  = 0.5e18; // < 1e18 -> Low
-    uint256 constant MID_INTENSITY  = 4e18;   // 1e18-8e18 -> Mid
-    uint256 constant HIGH_INTENSITY = 20e18;  // > 8e18 -> High
-
     function setUp() public {
         // The stub back-dates positions by a year; move off block.timestamp==1
         // so that subtraction is well defined.
@@ -125,9 +123,9 @@ contract EsgRewardDistributorTest is Test {
         dist     = new EsgRewardDistributor(address(exchange), address(registry), address(badge));
         badge.grantRole(badge.MINTER_ROLE(), address(dist));
 
-        registry.setRating(GREEN, LOW_INTENSITY, true);
-        registry.setRating(MID, MID_INTENSITY, true);
-        registry.setRating(DIRTY, HIGH_INTENSITY, true);
+        registry.setTier(GREEN, CarbonTiers.Tier.Low, true);
+        registry.setTier(MID, CarbonTiers.Tier.Mid, true);
+        registry.setTier(DIRTY, CarbonTiers.Tier.High, true);
         // UNRATED left at its zero-value default: isRated == false.
 
         // alice: 1000 margin at 5x on a Low-tier asset
@@ -231,6 +229,19 @@ contract EsgRewardDistributorTest is Test {
     function test_previewReturnsFalseForUnratedAsset() public {
         exchange.setPosition(3, alice, UNRATED, 1_000e18, 5);
         assertFalse(dist.previewReward(3));
+    }
+
+    /// @dev Post-#128 the gate reads the witnessed tier directly, so an
+    ///      attestor could in principle submit `Tier.Unrated` with
+    ///      isRated == true. `Unrated`'s ordinal is 0 — below Low — so a bare
+    ///      `tier <= maxRewardTier` would let it through. It must not.
+    function test_explicitlyWitnessedUnratedTierCannotClaim() public {
+        bytes32 witnessedUnrated = keccak256("sWITNESSED_UNRATED");
+        registry.setTier(witnessedUnrated, CarbonTiers.Tier.Unrated, true);
+        exchange.setPosition(9, alice, witnessedUnrated, 1_000e18, 5);
+        vm.prank(alice);
+        vm.expectRevert(EsgRewardDistributor.AssetNotLowCarbon.selector);
+        dist.claimEsgReward(9);
     }
 
     // ── admin ────────────────────────────────────────────────────────────────
