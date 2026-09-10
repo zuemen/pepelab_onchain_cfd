@@ -87,7 +87,7 @@
     "typescript-eslint": "^8.44.1",
     "vite": "^7.3.6",
     "vite-plugin-checker": "^0.11.0",
-    "vitest": "^2"
+    "vitest": "^4"
   },
   "resolutions": {
     "//": "Security pins for transitive dependencies (2026-08-06 audit, O-7). yarn-only: npm ignores this field, which is one more reason package-lock.json is not kept here.",
