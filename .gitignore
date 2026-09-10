@@ -57,6 +57,8 @@ agent/tg-bot/vc.json
 # git history — they live in the artist's own folders.
 frontend/assets-src/
 
-# #102 cutover wizard scratch
+# #102 / #129 cutover wizard scratch
 scripts/.deploy-102-addresses.env
+scripts/.deploy-129-addresses.env
+scripts/.tokens-129.txt
 scripts/.log-*.txt
