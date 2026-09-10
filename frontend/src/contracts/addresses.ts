@@ -79,16 +79,16 @@ const BASE_SEPOLIA: ChainAddresses = {
   TraderStake:       "0x01aEB530bcFc69f036309ffe55acc7eA6C5a28Fe",
   InsuranceVault:    "0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812",
   FeeRouter:         "0x00f6cf0113399a7A451c7f85fe094a28092d3e0c",
-  PerpetualExchange: "0xfAEf549C687C37064cEaB5728989a839B08955cf",
-  StrategyRegistry:  "0xB92A47fb7E0AE7b87E159cCf56e98cB40f9c0539",
-  CopyTracker:       "0x8c35FA2967b3cC716940656a510b2aCa4e1b5b7D",
+  PerpetualExchange: "0x827eA0c62a32e995927101259042F8A27D99124D",
+  StrategyRegistry:  "0xA103de184A5C76d7b70fB4e908F252199e004b95",
+  CopyTracker:       "0xC9e91f7D36e910C58042164032c625427b23CCB2",
   MockSwapRouter:    "0xC9b0e5C219AA1B3eB00E92Fd9a883B182F0AE8Ae",
-  ESGRegistry:       "0x285C16bf8160bD1343a9409445a4Ad4A8C5E2879",
+  ESGRegistry:       "0xBF5B9cD78566791d79c687A732b4ed5bc3E95dFf",
   KYCRegistry:       "0x5D95fD9e7a5f80E5369e24783F1f98E0f952360d",
   PepeAMM:           "0x93be44a81a2796d378f65ebcc8d5f8b40166ad63",
   PepeToken:              "0xccd05cbdc2f7961a4c27d3633694022722786a0f",
   PepeClaim:              "0x459d238aC61eC4A0E08608FBcd363227B860CF34",
-  EsgRewardDistributor:   "0xceD347341eF54046352E05f5fec70DD6F5D23150",
+  EsgRewardDistributor:   "0x44a8E5195E168e5AdcCa4343Bd8B399B49D5609F",
   PepeIncentives:         "0xEBfA1dc7dDea032ac6242cB619d982e543A23c12",
   PepeStaking:            "0xC78D68cA1B217ba241c23Ebad3118c6ec0dc0D34",
   AssetVault:             "0xC30DFe1C9EBb47197b785995aA9Cd0F5B89557A5",
@@ -225,7 +225,7 @@ export const getSynthTokens = (
 ): Partial<Record<AssetSymbol, string>> =>
   chainId === null ? {} : (SYNTH_TOKENS[chainId] ?? {})
 
-// ── V2 hardened stack (deployed Sepolia 2026-07-27) ───────────────────────────
+// ── V2 hardened stack ────────────────────────────────────────────────────────
 // Runs ALONGSIDE V1, which stays deployed and untouched. Differences that matter:
 //   - GuardedOracle replaces MockOracle's single owner key with N keepers plus a
 //     per-update deviation cap, freeze, and pause. Verified on chain: a post of
@@ -233,12 +233,20 @@ export const getSynthTokens = (
 //   - AssetVaultV2 is a UUPS proxy whose oracle is ordinary storage, so it can
 //     be repointed with setOracle — the exchange cannot, its oracle is immutable.
 //   - SafeERC20, reentrancy guards, per-asset caps, and a reserve-ratio gate.
-// See docs/RISK_MODEL.md and docs/KNOWN_LIMITATIONS.md.
+//   - V2.4 (#128, ADR-006): the mint fee is per-asset, derived from the asset's
+//     WITNESSED carbon tier via ESGRegistryV2.medianCarbonTier. `ESGRegistryV2`
+//     and `SustainabilityBadge` are part of this stack from #129 onward.
+// See docs/RISK_MODEL.md, docs/KNOWN_LIMITATIONS.md, docs/DEPLOY_129_CUTOVER.md.
 export const V2_STACK: Record<number, {
-  GuardedOracle: string
-  AssetVaultV2:  string
+  GuardedOracle:        string
+  AssetVaultV2:         string
+  /** #128/#129 — carbon-tier attestation registry (medianCarbonTier). */
+  ESGRegistryV2?:       string
+  /** #98/#129 — non-transferable achievement token minted by EsgRewardDistributor. */
+  SustainabilityBadge?: string
   tokens: Partial<Record<AssetSymbol, string>>
 }> = {
+  // ── Sepolia (11155111) — deployed 2026-07-27, comparison showcase ──────────
   11155111: {
     GuardedOracle: "0x32A19D04ef2ca5A7DA02Df39419729fA745749A1",
     AssetVaultV2:  "0x3a37415981F6f4fC27FA6c8C62F1d4e47115fD17",
@@ -256,7 +264,39 @@ export const V2_STACK: Record<number, {
       sESGU:  "0x3f89C2Fd5e7222012d563ecC67e41De02ad746e7",
     },
   },
+  // ── Base Sepolia (84532) — the canonical chain, hardened by #129 ───────────
+  // Base Sepolia never had a hardened vault: its mint/redeem path is still the
+  // V1 AssetVault (no fee, no reserve ratio, no pause). #129 deploys this stack
+  // alongside V1, exactly as Sepolia's was. Addresses below are filled by
+  // docs/DEPLOY_129_CUTOVER.md as each phase lands; while any is 0x0 the
+  // frontend's "not deployed" guard keeps rendering the legacy path.
+  84532: {
+    GuardedOracle:       "0x8E9e59BE9589Ad88EC14F3ef6bdcc43E8B76f842",
+    AssetVaultV2:        "0x916D7Fc399d9afd23BAa113E2c2Cc601341ff10a",
+    ESGRegistryV2:       "0xBF5B9cD78566791d79c687A732b4ed5bc3E95dFf",
+    SustainabilityBadge: "0x0a4aE14a413a03c20ccF43E8134BfbD7bCB89820",
+    tokens: {
+      sBTC:   "0x0aF44425ADC54fdBcB084611Ca82beFb91DDb1b6",
+      sETH:   "0xc81Bc66656E7d32A570895B7ba8a3Fc9aa9997f1",
+      sAAPL:  "0x4f36CBc3321b47327407C0eD116188A21ec4da28",
+      sTSLA:  "0xD816E621849eb8849D032dc39dD37e39cd668144",
+      sGOLD:  "0xd74aE712B412488Bb18F604052B232fea22270DA",
+      sBOND:  "0x14496785f82F691656691486C49c3b8fB78BF770",
+      sNVDA:  "0x881a8B8b4eacf7103078d6d5e81bfB4E344f3003",
+      sMSFT:  "0x893a8F9Fd92110EBcAbB8855223CF184B54a7166",
+      sGOOGL: "0xaD7348198fdbb89eEeAC4E607E917DE8A91CD834",
+      sICLN:  "0xcb3069C32188Fd92376d1ba53F08D733451e9175",
+      sESGU:  "0x510D59b33C04164596D2601B57a154dF31914C23",
+    },
+  },
 }
 
 export const getV2Stack = (chainId: number | null) =>
   chainId === null ? undefined : V2_STACK[chainId]
+
+/** True once a chain's hardened stack has real (non-zero) core addresses. */
+export const hasV2Stack = (chainId: number | null): boolean => {
+  const s = getV2Stack(chainId)
+  const ZERO = "0x0000000000000000000000000000000000000000"
+  return !!s && s.GuardedOracle !== ZERO && s.AssetVaultV2 !== ZERO
+}

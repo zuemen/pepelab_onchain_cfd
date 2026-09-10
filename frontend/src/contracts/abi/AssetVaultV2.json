@@ -142,6 +142,19 @@
   },
   {
     "type": "function",
+    "name": "esgRegistry",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "exposureOf",
     "inputs": [
       {
@@ -308,11 +321,17 @@
   },
   {
     "type": "function",
-    "name": "mintFeeBps",
-    "inputs": [],
+    "name": "mintFeeBpsForAsset",
+    "inputs": [
+      {
+        "name": "assetId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
     "outputs": [
       {
-        "name": "",
+        "name": "feeBps",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -701,6 +720,19 @@
   },
   {
     "type": "function",
+    "name": "setEsgRegistry",
+    "inputs": [
+      {
+        "name": "newRegistry",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setOracle",
     "inputs": [
       {
@@ -716,11 +748,6 @@
     "type": "function",
     "name": "setRiskParams",
     "inputs": [
-      {
-        "name": "mintFeeBps_",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
       {
         "name": "redeemFeeBps_",
         "type": "uint256",
@@ -888,6 +915,25 @@
         "type": "bytes32",
         "indexed": true,
         "internalType": "bytes32"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "EsgRegistrySet",
+    "inputs": [
+      {
+        "name": "oldRegistry",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "newRegistry",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
       }
     ],
     "anonymous": false
@@ -1129,6 +1175,31 @@
       },
       {
         "name": "minRatioBps",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "RiskParamsChanged",
+    "inputs": [
+      {
+        "name": "redeemFeeBps",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "minReserveRatioBps",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "maxPriceAge",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"

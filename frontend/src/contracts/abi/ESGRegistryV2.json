@@ -51,6 +51,16 @@
         "internalType": "uint256"
       },
       {
+        "name": "tier",
+        "type": "uint8",
+        "internalType": "enum CarbonTiers.Tier"
+      },
+      {
+        "name": "basis",
+        "type": "uint8",
+        "internalType": "enum ESGRegistryV2.Basis"
+      },
+      {
         "name": "environmental",
         "type": "uint8",
         "internalType": "uint8"
@@ -117,6 +127,16 @@
             "name": "carbonIntensity",
             "type": "uint256",
             "internalType": "uint256"
+          },
+          {
+            "name": "tier",
+            "type": "uint8",
+            "internalType": "enum CarbonTiers.Tier"
+          },
+          {
+            "name": "basis",
+            "type": "uint8",
+            "internalType": "enum ESGRegistryV2.Basis"
           },
           {
             "name": "environmental",
@@ -330,6 +350,40 @@
   },
   {
     "type": "function",
+    "name": "medianCarbonTier",
+    "inputs": [
+      {
+        "name": "assetId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "tier",
+        "type": "uint8",
+        "internalType": "enum CarbonTiers.Tier"
+      },
+      {
+        "name": "count",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "dispersion",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "isRated",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "medianESG",
     "inputs": [
       {
@@ -456,6 +510,18 @@
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
+      },
+      {
+        "name": "tier",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "enum CarbonTiers.Tier"
+      },
+      {
+        "name": "basis",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "enum ESGRegistryV2.Basis"
       },
       {
         "name": "environmental",
@@ -607,6 +673,11 @@
   },
   {
     "type": "error",
+    "name": "MissingIntensity",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "MissingSourceHash",
     "inputs": []
   },
@@ -614,5 +685,21 @@
     "type": "error",
     "name": "ScoreOutOfRange",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TierIntensityMismatch",
+    "inputs": [
+      {
+        "name": "declared",
+        "type": "uint8",
+        "internalType": "enum CarbonTiers.Tier"
+      },
+      {
+        "name": "fromIntensity",
+        "type": "uint8",
+        "internalType": "enum CarbonTiers.Tier"
+      }
+    ]
   }
 ]
