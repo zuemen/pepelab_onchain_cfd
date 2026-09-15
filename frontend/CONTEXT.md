@@ -78,6 +78,8 @@ That table is now **contract-layer vocabulary**. It pins one English rendering p
 
 An entry marked *(absent)* has no Simple Mode rendering on purpose. A screen that finds it needs one is a signal that the mechanism has leaked into the display layer, and the fix is to remove the leak rather than to invent a word.
 
+**買進 / 贖回 is the exception that is not a rendering.** On the Spot path the contract's own actions are mint and redeem, which is a different mechanism from opening and closing a position — 贖回 is simply the right Chinese for redeem, not a gentler word chosen for beginners. So both Modes say 買進 / 贖回 there, and the row above governs only the perpetual path, where Expert Mode keeps 開倉 / 平倉. Anyone "restoring" a spot screen's buttons to 開倉 / 平倉 on the strength of that row is making it wrong.
+
 ### Portfolio
 
 **Net Worth**:
@@ -96,6 +98,10 @@ _Avoid_: backing, collateralisation, proof of reserves (that name implies an off
 A Reserve Ratio computed while some position could not be priced. The figure that comes back is optimistic, not wrong-but-close, so a screen reports it as "cannot confirm" and never as a number. The same distinction the KYC gate draws between `unknown` and `unverified`.
 _Avoid_: stale ratio, approximate ratio, treating an unknown ratio as a healthy one
 
+**The Vault**:
+One thing, singular, wherever a user can see it. Which deployed vault a chain actually carries is resolved at runtime and never surfaced: no version switch, no version badge, no "not deployed yet on this network" notice. A version is not a choice a user is equipped to make, and offering it as one is worse than useless here, because two vaults issue two separate sets of tokens — picking the other one makes a holding appear to vanish. The rule binds Display Strings only: identifiers, hook names, address-table keys and ABI filenames keep their version suffixes, and a contract's block-explorer link stays exactly as the chain has it, because what a user finds when they go and check is part of being checkable.
+_Avoid_: V1/V2 or any version number in display text, letting a user choose a vault
+
 ### Sustainability
 
 **Sustainability (永續)**:
@@ -106,6 +112,10 @@ _Avoid_: ESG as a synonym (ESG names the measured dimensions; Sustainability nam
 The contract-layer mechanism that settles positions without an expiry date — funding rate, mark price, liquidation. A pure implementation detail: it never appears in display text, and it is never rendered into Chinese, because 永續合約 on a screen would collide head-on with Sustainability. A user learns what they own and what it costs; they never learn that a perpetual is what carries it.
 _Avoid_: 永續合約 or any Chinese rendering in display text, perp, swap
 
+**Spot (現貨)**:
+The path where a user's money buys a token outright — the vault's mint and redeem — with no position, no margin and no recurring charge. Engineering and product vocabulary only: the word means nothing except as the opposite of a perpetual, and a screen never admits a perpetual exists, so a screen that says 現貨 is pointing at something the reader has no way to see. On screen a user simply buys an asset; there is no second kind to distinguish it from.
+_Avoid_: 現貨 in display text, cash market, physical
+
 Both senses of 永續 exist in this repo the way both senses of RWA do, and for the same reason — the display language and the contract language answer to different audiences. The difference is that the two RWA senses can safely sit on one screen, while the two 永續 senses cannot, so the perpetual sense is barred from the display layer entirely rather than merely kept distinct from it.
 
 ### Carbon and attestation
@@ -115,8 +125,14 @@ How much greenhouse gas a holding is responsible for per unit of economic activi
 _Avoid_: ESG score, carbon footprint (that names a total, not an intensity), emissions
 
 **Carbon Tier**:
-The band a Carbon Intensity falls into, and the only thing pricing actually reads: it fixes an asset's holding cost and its leverage ceiling. Derived by one pure function shared by contracts, screens and analysis, from thresholds that are constants rather than settable parameters — a threshold an operator could adjust is a discretionary policy, and non-discretion is the whole point.
-_Avoid_: carbon rating, grade, band, risk level
+The band an asset sits in, and the only thing pricing actually reads. What it fixes depends on the path: on the perpetual path, the holding cost and the leverage ceiling; on the spot path, the cost of buying in — a spot holding has no recurring charge, so the Tier prices entry and never tenure ([ADR 0007](./docs/adr/0007-spot-carbon-prices-entry-not-tenure.md)). Redemption is never priced on Tier at all, for the same reason the Reserve Ratio never gates it: the exit stays clear.
+
+The Tier is itself the attested fact, recorded by an Attestor alongside the Carbon Basis it was reached on, not a number derived at read time ([ADR 0008](./docs/adr/0008-attested-tier-is-the-onchain-fact.md)). `tierOf` still maps an intensity to a Tier, but only for revenue-basis assets, and only to check that an attestation does not contradict itself. Per-tier params and thresholds stay constants rather than settable parameters — a threshold an operator could adjust is a discretionary policy, and non-discretion is the whole point.
+_Avoid_: carbon rating, grade, band, risk level; deriving a Tier from an intensity whose Basis is not `revenue`
+
+**Carbon Basis**:
+What kind of claim an Attestation's figure is: `revenue` (tCO2e per $1M of trailing revenue — a measurement with a unit and an auditable source), `absolute` (placed against a sector or network-level emissions benchmark, for assets that have no revenue to normalise by), or `qualitative` (placed on what the holding is composed of). Recorded on chain per attestation, because the three differ in how far a reader can go and check — and a screen that shows a placement next to a source URL, with nothing marking it as a placement, is making a promise it cannot keep.
+_Avoid_: collapsing `absolute` and `qualitative` into one "not measured" flag, presenting a placement value as an intensity
 
 **Unrated Asset**:
 An asset with no usable Carbon Intensity — never attested, or every attestation expired. Priced at the most conservative Tier, which is neither a refusal to trade nor a concession: absence of data is not absence of exposure.
