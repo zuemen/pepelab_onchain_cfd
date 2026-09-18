@@ -10,17 +10,10 @@ export const exchange: Catalog['exchange'] = {
   /** 全域交易覆蓋層上，標題底下那句固定的說明。 */
   confirmInWallet: 'Please confirm the transaction in your wallet and wait for block confirmation.',
 
-  side: {
-    long: 'Long',
-    short: 'Short',
-  },
-
   /** 送出交易前後對使用者說的話。 */
   tx: {
     enterValidAmount: 'Enter a valid amount',
-    enterValidMargin: 'Enter a valid margin',
-    insufficientMargin:
-      'Insufficient margin — Approve & Deposit in the Margin Account section first',
+    insufficientBalance: 'Not enough {token} — your balance is {balance} {token}.',
 
     /**
      * 兌換池的 oracle 過期。這句話在按下去之前就要說——合約會 revert
@@ -38,12 +31,7 @@ export const exchange: Catalog['exchange'] = {
     faucetAltStable: 'Claimed test {alt} ✓ — hold or swap it; use {token} for margin',
     faucetPepe: 'Claimed test PEPE ✓',
 
-    deposited: 'Deposited {amount} {token} ✓',
-    withdrew: 'Withdrew {amount} {token} ✓',
 
-    positionOpened: '{side} {asset} opened ✓',
-    positionClosed: 'Position closed ✓',
-    esgClaimed: '🌱 ESG reward claimed!',
   },
 
   /** 全域交易覆蓋層上的字，依當下進行中的動作切換。 */
@@ -53,10 +41,6 @@ export const exchange: Catalog['exchange'] = {
     swapTokenToEth: 'Swapping {token} to ETH…',
     faucetStable: 'Claiming test {token}…',
     faucetPepe: 'Claiming test PEPE…',
-    deposit: 'Depositing Margin...',
-    withdraw: 'Withdrawing Margin...',
-    open: 'Opening Position...',
-    close: 'Closing Position...',
   },
 
   /**
@@ -121,128 +105,8 @@ export const exchange: Catalog['exchange'] = {
     tokenToEth: 'Swap {token} → ETH',
   },
 
-  /** 保證金帳戶區塊。 */
-  margin: {
-    accountEquity: 'Account Equity',
-    equityUnit: '{token} (Testnet)',
-    freeMargin: 'Free Margin',
-    unrealizedPnl: 'Unrealised PnL',
-
-    stablecoin: 'Stablecoin',
-    balance: 'Balance {token}',
-
-    depositPlaceholder: 'Amount to deposit',
-    approveDeposit: 'Approve & Deposit',
-    withdrawPlaceholder: 'Amount to withdraw',
-    withdraw: 'Withdraw',
-  },
-
-  /** 下單表單。 */
-  open: {
-    title: 'Open Position',
-
-    riskNotice:
-      '⚠️ Testnet: this platform is an oracle-priced perpetual — PnL settles at mark price (including OI imbalance); in extreme one-sided markets, paper profit may be adjusted by ADL auto-deleveraging; margin is a test token.',
-    showRiskNotice: '⚠️ Show risk notice',
-
-    staleTitle: 'Price stale — orders paused',
-    staleIndexAge:
-      'Index price age: {age} · The "Live market" price above comes from CoinGecko — it\'s not the settlement price. When they disagree, the on-chain oracle wins.',
-    ageUnknown: 'unknown',
-
-    kycUnknown:
-      '⚠ Can\'t confirm your KYC status (on-chain read failed) — this is not the same as "not verified." The compliance gate is fail-closed, so trading in regulated assets is paused until we can confirm. Check your network or try again shortly.',
-    kycSubmit: 'Submit KYC application',
-
-    esgWarningTitle: '⚠ ESG warning: this asset scores low ({composite}/100 · {rating})',
-    esgWarningBody:
-      "This asset's ESG score is low, which may carry higher environmental, social, or governance risk. Weigh the sustainability risk carefully, then decide whether to open a position.",
-    esgConfirm: "I understand this asset's ESG risk and want to trade anyway",
-
-    asset: 'Asset',
-    esgHighRating: 'High sustainability rating',
-    esgLowRating: 'Low sustainability rating',
-    esgUnavailable: "ESG data isn't available on this chain (ESGRegistry not deployed)",
-    esgLoading: 'Loading ESG data…',
-    esgNone: 'This asset has no ESG rating',
-
-    direction: 'Direction',
-    long: 'LONG ↑',
-    short: 'SHORT ↓',
-    orderType: 'Order Type: Market',
-    executionFee: 'Execution Fee: {fee} ETH',
-    executionFeeDefault: '(default)',
-
-    leverage: 'Leverage',
-    maxLeverage: '⚠ Max {max}× — tighter risk cap for this asset class',
-
-    marginLabel: 'Margin',
-    marginPlaceholder: 'e.g. 100',
-
-    entryOracle: 'Entry (oracle)',
-    liveMarket: 'Live market',
-    simulated: '(simulated)',
-    notional: 'Notional',
-
-    fundingRate: 'Funding rate (8h)',
-    fundingLongsPay: '(longs pay)',
-    fundingShortsPay: '(shorts pay)',
-    fundingBalanced: '(balanced)',
-
-    estLiquidation: 'Est. Liquidation: {price}',
-    liquidationTooltip:
-      "When the price hits the liquidation price, the position is force-closed. What's left of your margin after losses, fees, the liquidator's reward, and the liquidation penalty (liquidationPenaltyBps) is refunded to you — it's not a full forfeiture.",
-
-    freeMargin: 'Free Margin',
-    insufficient: '⚠ Insufficient — deposit at least {amount} more {token} first',
-
-    /** 下單鈕的每一種狀態都是完整的一句話，不是拼接出來的。 */
-    submitting: 'Opening…',
-    ctaStale: "⛔ Price stale — can't submit order",
-    ctaKycUnknown: "⚠ Can't confirm KYC status",
-    ctaKycPending: '⏳ KYC under review — not yet approved',
-    ctaKycRequired: '🔒 Submit a KYC application to trade {asset}',
-    ctaEsgUnconfirmed: 'Confirm the ESG risk first',
-    ctaOpen: 'Open {side} {asset}',
-  },
-
   esgLeaderboard: {
     title: 'ESG Leaderboard',
-  },
-
-  /** 持倉表。 */
-  positions: {
-    title: 'Open Positions',
-    refresh: 'Refresh',
-    empty: 'No open positions.',
-
-    column: {
-      asset: 'Asset',
-      side: 'Side',
-      entry: 'Entry',
-      current: 'Current',
-      size: 'Size',
-      margin: 'Margin',
-      leverage: 'Lev',
-      pnl: 'PnL',
-    },
-
-    long: 'LONG',
-    short: 'SHORT',
-
-    close: 'Close',
-    stale: 'Price stale',
-    staleNote:
-      'Index price {age} — closing will be rejected with StalePrice. Wait for the keeper to update and try again.',
-    staleAgeUnknown: 'Age unknown',
-
-    esgRewarded: '✓ ESG reward claimed',
-    esgHoldLonger: '🌱 ESG reward: hold {days} more days',
-    esgIneligible: '🌱 ESG reward: not yet eligible',
-    esgHoldLongerTooltip:
-      'ESG rewards require holding the position for {days} days and it must still be open',
-    esgIneligibleTooltip:
-      'previewReward returned 0 — the position must still be open and must have met the minimum holding period',
   },
 
   /** 按鈕正在跑交易的時候，格子裡顯示的字。 */
@@ -313,28 +177,9 @@ export const exchange: Catalog['exchange'] = {
     priceImpactCode: 'PriceOutOfBand',
     priceImpactLine2After: ' (the pool price would be pushed too far from the oracle).',
 
-    marginNoteBefore: '⚠ Trading margin currently uses ',
-    marginNoteAfter:
-      '; {altToken} supports holding and swapping — margin support is planned for a later phase.',
 
-    noFreeMarginBefore: 'You have no free margin. Deposit {token} in the ',
-    noFreeMarginBold: 'Margin Account',
-    noFreeMarginAfter: ' section above first.',
 
-    kycPendingBefore: '⏳ Your KYC application ',
-    kycPendingBold: 'has been submitted and is under review',
-    kycPendingMid:
-      ' (KYCSubmitted is recorded on-chain). Once a reviewer approves it (approveKYC), ',
-    kycPendingLine2After:
-      ' will unlock; until then, orders are still blocked by the contract. No need to resubmit.',
 
-    kycRequiredBefore: '🔒 ',
-    kycRequiredAfter:
-      " is a stock / bond / ETF asset — it requires KYC review before you can trade it. After you submit, you'll need reviewer approval; it's not instant.",
 
-    oracleAdminBefore:
-      'PnL is calculated using on-chain oracle price. Live market shown for reference. Admin can sync oracle to live market on the',
-    oracleAdminLink: 'Oracle Admin',
-    oracleAdminAfter: 'page.',
   },
 };
