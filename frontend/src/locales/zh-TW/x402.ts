@@ -64,7 +64,7 @@ export const x402 = {
     },
 
     footer:
-      '測試網展示環境（Base Sepolia）；結算金鑰僅供 demo，不涉及真實資產。鏈上分潤數字為即時讀取。',
+      '測試網展示環境（Base Sepolia）；結算金鑰僅供 demo，不涉及真實資產。鏈上分潤數字為即時讀取。付款由公開的 x402.org facilitator 結算並由它支付 gas；本專案未自架 facilitator。',
   },
 
   /** 首頁那張把人帶到文件頁的卡片。 */

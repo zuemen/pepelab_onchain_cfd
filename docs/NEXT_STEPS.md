@@ -242,6 +242,15 @@ the actual stooq 404 body.
 **Frontend `any` escapes: 19 remaining** (down from 42). Mostly ethers return
 values. `KNOWN_LIMITATIONS.md` #12 has the detail.
 
+**x402 revenue split is not atomic with the payment.** The buyer's USDC lands
+in `payTo` via the facilitator; the settlement worker later routes an equal
+amount out of the treasury wallet (`KNOWN_LIMITATIONS.md` §14). To make it one
+transaction, `payTo` would have to be a contract that splits on receipt, which
+the x402 v1 `exact` scheme does not support — `transferWithAuthorization` moves
+tokens without calling the recipient. Options: an EIP-3009 `receiveWithAuthorization`
+based scheme, or keep the two-step flow and reconcile `payTo` inflows against
+routed totals. Not started.
+
 **Not in this workstream** — K-line chart (TradingView `lightweight-charts`) and
 the tadpole → frog → frog-king progression are owned by another team member.
 

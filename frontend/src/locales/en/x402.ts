@@ -65,7 +65,7 @@ export const x402: Catalog['x402'] = {
     },
 
     footer:
-      'Testnet demo environment (Base Sepolia); the settlement key is for demo purposes only and holds no real assets. The on-chain revenue-split figures are read live.',
+      'Testnet demo environment (Base Sepolia); the settlement key is for demo purposes only and holds no real assets. The on-chain revenue-split figures are read live. Payments are settled by the public x402.org facilitator, which pays that gas; this project does not run its own facilitator.',
   },
 
   /** 首頁那張把人帶到文件頁的卡片。 */
