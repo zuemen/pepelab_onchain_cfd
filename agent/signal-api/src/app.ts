@@ -337,11 +337,13 @@ export function createApp(): Hono<{ Variables: AppVariables }> {
       // 誠實描述金流：x402 的付款直接進 payTo，70/20/10 是平台事後另外送的一筆
       // 交易。把兩者寫成同一件事會讓讀者以為買方付的那筆錢就是被分潤的那筆錢。
       revenueModel:
-        `x402 付款直接進 payTo（${PAY_TO}）；70/20/10 分潤是平台另外的一筆交易，` +
-        `經 FeeRouter.routeExternalRevenue 上鏈，累計可於 /revenue 查詢。` +
+        `x402 付款直接進 payTo（${PAY_TO}），這筆 EIP-3009 交易由 facilitator（${FACILITATOR_URL}）` +
+        `送出並支付 gas。70/20/10 分潤是平台另外的一筆 FeeRouter.routeExternalRevenue 交易，` +
+        `由結算錢包（FEE_SETTLEMENT_PRIVATE_KEY）送出並支付 gas，累計可於 /revenue 查詢。` +
         `兩者是不同的兩筆交易。` +
         `2026-09-17 起分潤改為非同步：回應裡的 settled 代表「已排入結算佇列」，` +
-        `不代表已經上鏈；由單一 worker 定期批次結算（見 docs/KNOWN_LIMITATIONS.md §14）。`,
+        `不代表已經上鏈；由單一 worker 定期取出，每筆各送一筆交易` +
+        `（見 docs/KNOWN_LIMITATIONS.md §14、docs/COST_MODEL.md）。`,
       endpoints: {
         "GET /signals/:trader": { price: `$${PRICE_SIGNALS}`, paid: true, desc: "trader 績效 + 開倉建議" },
         "GET /oracle/:asset": { price: `$${PRICE_ORACLE}`, paid: true, desc: "決策級快照：價格 / funding / OI 失衡 / 預估清算價 / edge 建議（long·short·no_trade）。與 /signals 一樣：收到款後把分潤記進結算佇列，回應帶 settled（是否成功排入佇列，不代表已上鏈）" },
