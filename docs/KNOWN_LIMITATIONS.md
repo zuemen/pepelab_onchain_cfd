@@ -622,6 +622,10 @@ wallet and spends test USDC on every sample, so it was left for a human to run,
 for example with `agent/examples/buy-signal.ts` in a loop. Until then no P95 for
 the paid path is claimed here.
 
+**2026-09-24:** a concurrency run of the 402 challenge (1/5/10 concurrent) and
+the settlement worker's throughput ceiling (150/hour at default settings) are in
+[COST_MODEL.md](COST_MODEL.md#capacity). The paid path is still unmeasured.
+
 ## 19. No self-hosted facilitator — settlement gas is paid by x402.org
 
 `app.ts:44-45` defaults `X402_FACILITATOR_URL` to `https://x402.org/facilitator`,

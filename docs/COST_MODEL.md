@@ -120,4 +120,109 @@ proposal.
 
 ## Capacity
 
-Filled in by the concurrency run in Task 4.
+**Not load-tested to 100 TPS.** The bottleneck is this service's serialized
+settlement, not the Base chain.
+
+### Settlement worker ceiling (from configuration, not measured)
+
+The worker takes at most `SETTLEMENT_BATCH_SIZE` entries per run (default 25,
+`settlement-worker.ts:43`) and runs on `*/10 * * * *` (§14): **150 settled
+payments per hour ≈ 0.04 per second.** Above that sustained rate the queue grows
+without bound — entries are not lost, they wait. Raising the batch size does not
+remove the ceiling: entries are processed one after another, each awaiting its
+own receipt (`settlement.ts:154`), so one signer cannot exceed roughly one
+settlement per Base block (≈2 s), i.e. ≈0.5/s, before counting RPC round-trips.
+100 TPS would be ~200× that.
+
+### Request path
+
+Every paid request also waits for the facilitator's `/settle`, which waits for
+the EIP-3009 receipt (x402-hono `index.mjs:155`), so a paid call cannot return
+faster than one Base block. The facilitator's own rate limit is unknown (§16).
+
+Concurrency run, 2026-09-24, `probe-facilitator.ts MODE=concurrency`, 20
+requests per level, unpaid `GET /oracle/sBTC` against a local server (this is
+the freshness gate's 2 RPC reads + the 402 challenge; no payment, no USDC moved).
+Ran against `npm run start` in `agent/signal-api` on localhost, `/healthz`
+returned 200 before the run. `agent/.env` had a working RPC: `makeProvider()`
+is called at module load (`app.ts:69`) and throws synchronously if
+`BASE_SEPOLIA_RPC_URL`/`SEPOLIA_RPC_URL` is unset (`provider.ts:17-21`), so a
+missing RPC URL would have crashed the process before it ever bound port 4021
+— it didn't. Every sample returned 402, never 503 `price_stale`, and never a
+connection failure (`status:0`), consistent with the freshness gate's `eth_call`s
+succeeding and reading a fresh price on every request (a stale on-chain price
+would have shown as 503 with `ageSec`/`maxPriceAgeSec` fields — `app.ts:606-621`
+— which none of these samples did).
+
+| Concurrency | n | p50 | p95 | Throughput | Status distribution |
+|---|---|---|---|---|---|
+| 1 | 20 | 302 ms | 346 ms | 3.19 req/s | {"402":20} |
+| 5 | 20 | 335 ms | 941 ms | 8.62 req/s | {"402":20} |
+| 10 | 20 | 286 ms | 1438 ms | 10.79 req/s | {"402":20} |
+
+`settleError` is not counted: since §14 the request path sends no transactions,
+so `nonce too low` / `replacement transaction underpriced` cannot occur there.
+The only `settleError` the request path can produce is an Upstash write failure.
+
+### Alchemy CU per request
+
+`batchMaxCount: 1` (`provider.ts:33`) sends every call as its own HTTP request;
+`staticNetwork: true` means no `eth_chainId` probe.
+
+**Request path, one paid `/oracle` call** (the 402 challenge plus the paid retry):
+
+| Step | Method | Count | Source |
+|---|---|---|---|
+| Freshness gate on the 402 challenge | eth_call | 2 | `app.ts:595-598` |
+| Freshness gate again on the paid retry | eth_call | 2 | same middleware, every request |
+| `getOracleSnapshot` | eth_call | 6 | `aggregate.ts:239-246` |
+| `resolveTrader` (only if `DEMO_TRADER_ADDRESS` is unset) | eth_call | 0–1 | `app.ts:132` |
+| **Total** | | **10–11 × 26 = 260–286 CU** | |
+
+**Request path, one paid `/signals` call:** `/signals/*` has no freshness gate —
+its middleware (`app.ts:567-590`) only regex-validates the trader address, no
+RPC. The count is entirely `getTraderPerformance`'s (`aggregate.ts:333-429`)
+calls:
+
+| Step | Method | Count | Source |
+|---|---|---|---|
+| Trader profile + eligibility + strategy count | `traders`, `isEligibleTrader`, `getStrategyCount` | 3 | `aggregate.ts:342-344` |
+| `getUserPositions` | `getUserPositions` | 1 | `aggregate.ts:366` |
+| `getLatestStrategy` (only if `getStrategyCount` > 0) | `getLatestStrategy` | 0–1 | `aggregate.ts:353` |
+| `getFundingRate` per strategy leg (only if a strategy exists) | `getFundingRate` | 0–L | `aggregate.ts:390` |
+| `getPositionDetail` per position | `getPosition`, `getUnrealizedPnL`, `pendingFunding` | 3 × positions | `aggregate.ts:308-312` |
+| **Total** | | **(4 + s×(1+L) + 3×positions) eth_calls**, s∈{0,1} = has a registered strategy, L = that strategy's leg count | |
+
+CU = eth_calls × 26. For a trader with no strategy and 0 positions: 4 × 26 =
+**104 CU**. For a trader with a 2-leg strategy and 3 open/closed positions:
+(4 + 1×(1+2) + 3×3) × 26 = 16 × 26 = **416 CU**.
+
+**Settlement worker, per entry** (steady state: allowance already set):
+
+| Method | Count | CU |
+|---|---|---|
+| eth_call (`decimals`, `balanceOf`, `allowance`) | 3 | 78 |
+| eth_sendRawTransaction | 1 | 40 |
+| eth_getTransactionReceipt | ≥ 1 | ≥ 20 |
+| `eth_getTransactionCount`, `eth_estimateGas`, `eth_getBlockByNumber`, `eth_gasPrice`, `eth_maxPriorityFeePerGas`, `eth_blockNumber` | 1 each | not priced by the sheet |
+| **Lower bound** | | **≥ 138 CU** |
+
+Confirmed by reading `agent/node_modules/ethers/lib.esm/providers/abstract-signer.js`
+(`populateTransaction`, lines 62–171: `getNonce` → `eth_getTransactionCount` at
+line 66, `estimateGas` → `eth_estimateGas` at line 69, `getFeeData` at lines 95
+and 106; `sendTransaction`, lines 194–200) and
+`agent/node_modules/ethers/lib.esm/providers/abstract-provider.js`
+(`getFeeData`, lines 639–679: `eth_getBlockByNumber` via `#getBlock("latest", …)`
+at line 643, `eth_gasPrice` at line 646, `eth_maxPriorityFeePerGas` at line 654;
+`broadcastTransaction`, lines 790–804: `eth_blockNumber` via `getBlockNumber()`
+at line 792, `eth_sendRawTransaction` via `_perform({ method:
+"broadcastTransaction" })` at line 794). `staticNetwork: true` means
+`getNetwork()` inside `populateTransaction` does not add an `eth_chainId` call.
+These six methods are marked "not priced by the sheet" — not counted in the
+lower bound, treated as a gap.
+
+Plus one `FeeRouter.usdc()` eth_call per worker run (`settlement.ts:89`, cached).
+
+**At 10 paid `/oracle` calls per second:** request path 2,600–2,860 CUPS. The
+worker could not keep up at that rate (ceiling above); if it could, it would
+add ≥ 1,380 CUPS.

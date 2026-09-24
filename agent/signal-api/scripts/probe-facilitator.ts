@@ -3,12 +3,16 @@
 //   cd agent && npx tsx signal-api/scripts/probe-facilitator.ts            # validity（預設）
 //   cd agent && MODE=verify-latency SAMPLES=30 npx tsx signal-api/scripts/probe-facilitator.ts
 //   cd agent && MODE=challenge-latency SAMPLES=30 API_URL=https://… npx tsx signal-api/scripts/probe-facilitator.ts
+//   cd agent && MODE=concurrency SAMPLES=20 API_URL=http://localhost:4021 npx tsx signal-api/scripts/probe-facilitator.ts
 //
 // validity：驗證時間窗的判讀（見下）。
 // verify-latency：/verify 的往返延遲（循序、每筆間隔 500ms，刻意不是壓測——這是別人的
 //   公開服務，找它的 RPS 上限需要對它施壓，不做）。
 // challenge-latency：部署中的付費端點「未付款 → 402」的往返延遲。這是付費請求在
 //   verify / handler / settle 之前的那一段，**不是**完整的付費請求 P95。
+// concurrency：對 /oracle/sBTC（可用 BENCH_PATH 覆寫）以 1、5、10 併發各打 SAMPLES 次，
+//   **不帶 X-PAYMENT**——量的是「新鮮度閘門 2 次 RPC + 402 挑戰」這段在併發下的表現，
+//   不付款、不動任何 USDC。完整付費請求與結算 worker 的容量見 docs/COST_MODEL.md。
 //
 // 只打 /verify，不打 /settle：用一把**隨機、零餘額**的錢包簽名，所以任何一個
 // case 都不可能真的轉帳。時間檢查若通過，預期的下一個失敗是 insufficient_funds
@@ -133,6 +137,35 @@ if (MODE === "challenge-latency") {
       await sleep(500);
     }
     summarize(`402 challenge ${api}${path}`, out);
+  }
+  process.exit(0);
+}
+
+if (MODE === "concurrency") {
+  const api = (process.env.API_URL ?? "http://localhost:4021").replace(/\/$/, "");
+  const path = process.env.BENCH_PATH ?? "/oracle/sBTC";
+  for (const level of [1, 5, 10]) {
+    const out: { status: number; ms: number }[] = [];
+    let issued = 0;
+    const t0All = performance.now();
+    await Promise.all(
+      Array.from({ length: level }, async () => {
+        while (issued < SAMPLES) {
+          issued += 1;
+          const t0 = performance.now();
+          try {
+            const res = await fetch(api + path, { headers: { Accept: "application/json" } });
+            await res.arrayBuffer();
+            out.push({ status: res.status, ms: Math.round(performance.now() - t0) });
+          } catch {
+            out.push({ status: 0, ms: Math.round(performance.now() - t0) });
+          }
+        }
+      }),
+    );
+    const wallSec = (performance.now() - t0All) / 1000;
+    summarize(`concurrency=${level} ${api}${path}`, out);
+    console.log(`  throughput=${(out.length / wallSec).toFixed(2)} req/s wall=${wallSec.toFixed(2)}s`);
   }
   process.exit(0);
 }
