@@ -9,7 +9,7 @@ export const SIGNAL_API_URL: string = (
   DEFAULT_SIGNAL_API_URL
 ).replace(/\/$/, '')
 
-/** 訪客試買：呼叫伺服器端 demo 購買（伺服器代付 x402，回真實 settlement tx）。 */
+/** 訪客試用：呼叫伺服器端免費 demo（不付款、不結算，只回真實訊號；settlementTx 永遠為空）。 */
 export async function demoBuySignal(trader?: string): Promise<{
   ok: boolean
   error?: string

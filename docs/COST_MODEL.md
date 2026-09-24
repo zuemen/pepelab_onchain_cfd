@@ -171,7 +171,7 @@ The only `settleError` the request path can produce is an Upstash write failure.
 
 | Step | Method | Count | Source |
 |---|---|---|---|
-| Freshness gate on the 402 challenge | eth_call | 2 | `app.ts:595-598` |
+| Freshness gate on the 402 challenge | eth_call | 2 | `app.ts:597-600` |
 | Freshness gate again on the paid retry | eth_call | 2 | same middleware, every request |
 | `getOracleSnapshot` | eth_call | 6 | `aggregate.ts:239-246` |
 | `resolveTrader` (only if `DEMO_TRADER_ADDRESS` is unset) | eth_call | 0–1 | `app.ts:132` |

@@ -423,7 +423,7 @@ FeeRouter recorded two routes for external buyer `0x858b36C7…0bA972` on
 seconds before the payment it was splitting** — exactly the ordering described
 above. Both routes also used trader `0x0`, so their 70% (2 × $0.007 test USDC)
 sits in `traderEarnings[address(0)]` and can never be withdrawn. The zero-address
-check in `app.ts:577-586` now blocks that input on `/signals`; `FeeRouter` itself
+check in `app.ts:579-588` now blocks that input on `/signals`; `FeeRouter` itself
 still accepts it.
 
 **Where the split's money comes from.** It is still not the buyer's payment
@@ -490,7 +490,7 @@ our own clients would not have exposed that bug.
 **Why 60 s and not something derived from `maxPriceAge`.** The two limits
 protect different things. `maxPriceAge` (read live from
 `PerpetualExchange.maxPriceAge()`, 21600 s (6 h) on 2026-09-23) decides whether a price
-is still tradable. The `/oracle/*` freshness gate (`app.ts:590-624`) runs
+is still tradable. The `/oracle/*` freshness gate (`app.ts:592-626`) runs
 before `paymentMiddleware` on **every** request, including the paid retry that
 carries `X-PAYMENT`. So a buyer holding a 60-second authorization cannot be
 sold a price older than `maxPriceAge`: if the price went stale in between, the
@@ -673,7 +673,7 @@ from June 15–16 name the treasury itself as trader; whether an external paymen
 preceded them was not checked (the transfer listing read on 2026-09-23 did not
 reach back that far). Separately, many `/oracle` payments on 2026-06-22/23
 were the treasury paying itself through x402 and were never routed at all
-(`/oracle` did not settle then — `app.ts:710-711`). So the headline "x402
+(`/oracle` did not settle then — `app.ts:712-714`). So the headline "x402
 Revenue" mixes self-paid demo activity with real external revenue, and the
 number of paid calls is unknown.
 
