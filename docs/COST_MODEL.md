@@ -32,7 +32,7 @@ every transaction: 0.006 gwei.
 |---|---|---|---|---|
 | EIP-3009 settle, $0.005 | facilitator `0xd407…f1bf` | 83,648 – 83,672 | 513.2 – 530.0 gwei | 11.3 – 28.0 gwei |
 | EIP-3009 settle, $0.01 | facilitator `0xd407…f1bf` | 91,272 | 559.3 – 560.7 gwei | 11.6 – 13.1 gwei |
-| `routeExternalRevenue`, known trader | treasury | 96,671 – 96,911 | 586.1 – 587.4 gwei | 5.7 – 6.1 gwei |
+| `routeExternalRevenue`, known trader | treasury | 96,671 – 96,911 | 586.1 – 587.4 gwei | 5.9 – 6.1 gwei |
 | `routeExternalRevenue`, new trader slot | treasury | 113,771 | 688.4 gwei | 5.7 gwei |
 | `routeExternalRevenue`, first ever call | treasury | 182,411 | 1,187.3 gwei | 92.8 gwei |
 
@@ -76,7 +76,7 @@ below scales linearly with it.
 | EIP-3009 settle (budget) | 120,000 × 0.0078 + 8 | 944.0 | 9.44E-07 | 0.0737 | 0.00200 |
 | `routeExternalRevenue` (budget) | 96,911 × 0.0078 + 8 | 763.9 | 7.64E-07 | 0.0596 | 0.00162 |
 | EIP-3009 settle (measured max, no buffer) | — | 560.7 | 5.61E-07 | 0.0438 | 0.00119 |
-| `routeExternalRevenue` (measured, no buffer) | — | 587.4 | 5.87E-07 | 0.0458 | 0.00124 |
+| `routeExternalRevenue` (measured, no buffer) | — | 587.4 | 5.87E-07 | 0.0459 | 0.00124 |
 | Ethereum L1 EIP-3009, for comparison | 180,000 × 0.889 × 1.3 | 208,026 | 2.08E-04 | 16.24 | 0.441 |
 
 Ethereum is ≈220× the Base budget (208,026 / 944). Nothing below assumes Ethereum.
