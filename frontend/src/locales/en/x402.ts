@@ -48,10 +48,10 @@ export const x402: Catalog['x402'] = {
     tryBuy: {
       title: 'Try It Live (no wallet needed)',
       description:
-        'Click to fetch a live signal for free. The demo pays nothing and settles nothing: no USDC moves and no 70/20/10 transaction is sent. Real revenue comes only from the paid x402 endpoints below, and its on-chain total is shown above. (A real external agent brings its own wallet — see the example below.)',
+        'Click to fetch a live signal for free. The demo pays nothing and settles nothing: no USDC moves and no 70/20/10 transaction is sent. Real revenue comes only from the paid x402 endpoints priced above, and its on-chain total is also shown above. (A real external agent brings its own wallet — see the example below.)',
       busy: 'Fetching…',
       cta: 'Try a signal (free)',
-      failed: 'demo buy failed',
+      failed: 'demo fetch failed',
       networkError: 'network error — is the API deployed / VITE_SIGNAL_API_URL set?',
       settled: '70/20/10 settled on-chain · ',
       viewSettlement: 'View settlement tx on BaseScan ↗',

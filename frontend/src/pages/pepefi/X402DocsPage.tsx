@@ -72,9 +72,11 @@ function SplitBar({ rev }: { rev: RevenueTotals | null }) {
           {t.x402.docs.split.accrued}{' '}
           <Num tone="green">${(rev?.feeUsd ?? 0).toFixed(3)}</Num>{' · '}
           <Num tone="muted">
-            {rev?.count == null
-              ? t.x402.docs.split.callsUnknown
-              : interpolate(t.x402.docs.split.calls, { count: rev.count })}
+            {rev == null
+              ? '—'
+              : rev.count == null
+                ? t.x402.docs.split.callsUnknown
+                : interpolate(t.x402.docs.split.calls, { count: rev.count })}
           </Num>
         </Typography>
       </Stack>

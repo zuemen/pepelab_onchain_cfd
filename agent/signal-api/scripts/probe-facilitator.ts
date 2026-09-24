@@ -154,7 +154,10 @@ if (MODE === "concurrency") {
           issued += 1;
           const t0 = performance.now();
           try {
-            const res = await fetch(api + path, { headers: { Accept: "application/json" } });
+            const res = await fetch(api + path, {
+              headers: { Accept: "application/json" },
+              signal: AbortSignal.timeout(Number(process.env.TIMEOUT_MS ?? "15000")),
+            });
             await res.arrayBuffer();
             out.push({ status: res.status, ms: Math.round(performance.now() - t0) });
           } catch {

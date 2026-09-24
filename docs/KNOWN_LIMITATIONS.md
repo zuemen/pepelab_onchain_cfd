@@ -26,7 +26,7 @@ was not, the reason is given rather than glossed over.
 | 16 | Public facilitator: unknown rate limit, errors surfaced as 500 | **Partly fixed** — verify-phase errors now 429/502; limit still unknown |
 | 17 | No KYT/KYA screening of counterparty addresses | **Open** — not implemented, budget sketched |
 | 18 | No latency / success-rate acceptance thresholds | **Partly measured** — facilitator + 402 challenge measured; paid path not |
-| 19 | No self-hosted facilitator; x402.org pays the settlement gas | **By design (testnet)** — no SLA, no visibility into its wallet |
+| 19 | No self-hosted facilitator; x402.org pays the settlement gas | **By design (testnet)** — no SLA, we don't control or fund its wallet and have no alert on it |
 | 20 | On-chain revenue totals cannot separate demo self-payments from external ones | **Open** — documented; needs an event scan |
 
 ---
@@ -291,7 +291,10 @@ Items 14–20 cover `agent/signal-api`. Everything stated as measured was measur
 on 2026-09-17 with `agent/signal-api/scripts/probe-facilitator.ts`, from a client
 in Taiwan. The Vercel function runs in `sin1`, so its round-trip to the
 facilitator will differ from these figures. They are an order of magnitude, not
-an SLA.
+an SLA. The §19/§20 on-chain figures are a separate, later measurement: public
+Blockscout API reads from 2026-09-23. The settlement worker's capacity ceiling
+is a separate run again, dated 2026-09-24, in
+[COST_MODEL.md](COST_MODEL.md#capacity).
 
 ## 14. The 70/20/10 revenue split is an on-chain transaction inside the paid request — fixed with a ledger + single-signer worker
 
@@ -433,8 +436,10 @@ moving through the router. The facilitator settles the buyer's USDC into `payTo`
 which `safeTransferFrom`s an equal amount out of that same wallet
 (`FeeRouter.sol:129`, `settlement.ts:116`). The amounts match and the order is
 now correct, but it is two transactions minutes apart, not one atomic route.
-If `PAY_TO` is ever set to an address other than the settlement wallet, the
-worker pays the split from a balance the buyer never touched.
+If `PAY_TO` is unset, it falls back to the FeeRouter address itself
+(`resolvePayTo`, `agent/shared/src/env.ts:14-17`); if it is ever set to some
+other address than the settlement wallet, the worker pays the split from a
+balance the buyer never touched either way.
 
 **2026-09-23:** evidence and funding source recorded. No code change: the
 ordering was already fixed on 2026-09-17, and making the route atomic is a
@@ -493,8 +498,10 @@ protect different things. `maxPriceAge` (read live from
 is still tradable. The `/oracle/*` freshness gate (`app.ts:592-626`) runs
 before `paymentMiddleware` on **every** request, including the paid retry that
 carries `X-PAYMENT`. So a buyer holding a 60-second authorization cannot be
-sold a price older than `maxPriceAge`: if the price went stale in between, the
-paid retry gets `503 price_stale` before `/verify` is ever called. The
+sold a price older than `maxPriceAge`, unless the gate's own read fails (it
+fails open — `app.ts:622-624` swallows the error and calls `next()`): if the
+price went stale in between, the paid retry gets `503 price_stale` before
+`/verify` is ever called. The
 requirement "no longer than the staleness threshold" holds because 60 s is far
 below `maxPriceAge`; 60 was chosen from the response time of a single GET.
 
@@ -647,7 +654,7 @@ tests on 2026-06-22/23 at 83,648–83,672 gas. Full list in
   commitment to rely on.
 - **Testnet only.** It settles Base Sepolia. Nothing in this repository has been
   run against a mainnet facilitator.
-- **We cannot monitor its wallet.** If `0xd407…f1bf` runs out of ETH, `/settle`
+- **We don't control or fund it and have no alert on it.** If `0xd407…f1bf` runs out of ETH, `/settle`
   fails. x402-hono then throws inside its settle block
   (`index.mjs:155-162`) and replaces our response with a 402: the buyer is not
   charged, and because the ledger only records on `X-PAYMENT-RESPONSE` (§14),
@@ -667,21 +674,24 @@ It has no event scan, so it cannot say which routes came from whom, and it
 reports `count: null` rather than a number.
 
 **What the total contains.** The x402 FeeRouter has four `routeExternalRevenue`
-calls, all $0.01, all sent by the treasury (see [COST_MODEL.md](COST_MODEL.md#measured-on-chain)).
-Two match external payments from `0x858b36C7…0bA972` on 2026-07-15. The two
-from June 15–16 name the treasury itself as trader; whether an external payment
-preceded them was not checked (the transfer listing read on 2026-09-23 did not
-reach back that far). Separately, many `/oracle` payments on 2026-06-22/23
-were the treasury paying itself through x402 and were never routed at all
-(`/oracle` did not settle then — `app.ts:712-714`). So the headline "x402
-Revenue" mixes self-paid demo activity with real external revenue, and the
-number of paid calls is unknown.
+calls totalling $0.04, all $0.01, all sent by the treasury (see
+[COST_MODEL.md](COST_MODEL.md#measured-on-chain)): 2 match external payments
+from `0x858b36C7…0bA972` on 2026-07-15, and 2 are of unverified origin
+(2026-06-15/16, trader = treasury — whether an external payment preceded them
+was not checked; the transfer listing read on 2026-09-23 did not reach back
+that far). Separately, at least two `/oracle` payments on 2026-06-22/23 were
+the treasury paying itself through x402 and were never routed at all (`/oracle`
+did not settle then — `app.ts:712-714`). So the headline "x402 Revenue" may mix
+self-paid demo activity with real external revenue, and the number of paid
+calls is unknown: those unrouted June 22/23 payments are themselves the
+evidence that payments and routes are not the same count, so the call count
+cannot be inferred from routes either.
 
 **Why filtering by sender does not work.** Every route, demo or real, is sent by
 the same treasury key; the current worker uses it too (`settlement.ts:44`).
 
 **What is no longer true.** `/demo/buy-signal` no longer settles anything
-(`app.ts:500-508`), so it cannot add to the total going forward. The docs page
+(`app.ts:502-508`), so it cannot add to the total going forward. The docs page
 and README used to say it paid $0.01 and returned a real settlement tx; that
 copy was wrong and is fixed.
 

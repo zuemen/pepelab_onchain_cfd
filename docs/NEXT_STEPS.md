@@ -260,8 +260,10 @@ USDC, with a block cursor so it is incremental. Not started.
 
 **x402 settlement is one transaction per payment — deliberately, for now.** The
 worker drains the queue in batches but still sends one `routeExternalRevenue`
-per entry (`settlement-worker.ts:114-115`). In the PoC that is on purpose: the
-demo can point at one settlement transaction per sale. `FeeRouter` does not
+per entry (`settlement-worker.ts:114-115`). In the PoC that is on purpose: each
+sale maps to exactly one `routeExternalRevenue` on BaseScan (the worker logs
+entry → tx, `settlement-worker.ts:58-60`), which keeps reconciliation trivial.
+`FeeRouter` does not
 need to change to batch — `routeExternalRevenue(trader, fee)` accepts any fee,
 so entries can be summed per trader and routed once every N entries or T
 seconds.

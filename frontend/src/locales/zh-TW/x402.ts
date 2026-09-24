@@ -46,12 +46,12 @@ export const x402 = {
     },
 
     tryBuy: {
-      title: '互動試買（訪客免錢包）',
+      title: '互動試用（訪客免錢包）',
       description:
-        '免費取得一筆即時訊號。demo 不付款、也不結算：不動任何 USDC、不送 70/20/10 交易。真實收入只來自下方的付費 x402 端點，其鏈上累計即上方數字。（真實外部 agent 則自帶錢包，見下方範例。）',
+        '免費取得一筆即時訊號。demo 不付款、也不結算：不動任何 USDC、不送 70/20/10 交易。真實收入只來自上方的付費 x402 端點，其鏈上累計亦見上方數字。（真實外部 agent 則自帶錢包，見下方範例。）',
       busy: '讀取中…',
       cta: '免費試用一筆訊號',
-      failed: '示範購買失敗',
+      failed: '示範讀取失敗',
       networkError: '網路錯誤——API 是否已部署 / 是否已設定 VITE_SIGNAL_API_URL？',
       settled: '70/20/10 已上鏈 · ',
       viewSettlement: '在 BaseScan 看 settlement tx ↗',

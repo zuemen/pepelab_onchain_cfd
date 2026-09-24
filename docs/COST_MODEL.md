@@ -100,6 +100,13 @@ Seller gas per paid call:
 | Platform net per call on mainnet (20% − gas, budget) | **−$0.00162** | **−$0.00262** |
 | Same, measured fees without buffers (1,148.1 gwei = $0.00243) | −$0.00043 | −$0.00143 |
 
+The "measured fees without buffers" row uses the $0.01 EIP-3009 settle's
+measured max (560.7 gwei) for both columns, even though `/oracle`'s own
+measured settle was lower (513.2–530.0 gwei, $0.005 row above). That is
+deliberate — one shared, conservative figure rather than a second table — so
+`/oracle`'s measured-fees number in that row is a slight overstatement of its
+actual gas cost.
+
 The seller absorbs all gas while keeping only 20% of the price, because the
 split routes the full amount (`settlement.ts:116`). **At these assumptions, a
 self-hosted mainnet deployment loses money on every paid call on both
@@ -112,7 +119,7 @@ proposal.
   Base faucet (ETH) and Circle's faucet (USDC). On mainnet both are bought, so
   that operational limit goes away.
 - **Both transactions become real costs.** Using the public facilitator is a
-  testnet-only option (§19); self-hosting means paying the EIP-3009 gas in the
+  testnet-only option (KNOWN_LIMITATIONS.md §19); self-hosting means paying the EIP-3009 gas in the
   table above in addition to the router gas we already pay.
 - **Batching helps only the router half.** See `NEXT_STEPS.md`, "x402 settlement
   is one transaction per payment". The EIP-3009 transaction is per payment by
@@ -126,8 +133,11 @@ settlement, not the Base chain.
 ### Settlement worker ceiling (from configuration, not measured)
 
 The worker takes at most `SETTLEMENT_BATCH_SIZE` entries per run (default 25,
-`settlement-worker.ts:43`) and runs on `*/10 * * * *` (§14): **150 settled
-payments per hour ≈ 0.04 per second.** Above that sustained rate the queue grows
+`settlement-worker.ts:43`) and runs on `*/10 * * * *` (KNOWN_LIMITATIONS.md §14): **150 settled
+payments per hour ≈ 0.04 per second, as an upper bound.** GitHub Actions cron
+triggers are best-effort — runs can be delayed or dropped under load — so
+150/hour assumes every scheduled run fires on time; the real sustained rate can
+only be lower. Above that rate the queue grows
 without bound — entries are not lost, they wait. Raising the batch size does not
 remove the ceiling: entries are processed one after another, each awaiting its
 own receipt (`settlement.ts:154`), so one signer cannot exceed roughly one
@@ -138,7 +148,7 @@ settlement per Base block (≈2 s), i.e. ≈0.5/s, before counting RPC round-tri
 
 Every paid request also waits for the facilitator's `/settle`, which waits for
 the EIP-3009 receipt (x402-hono `index.mjs:155`), so a paid call cannot return
-faster than one Base block. The facilitator's own rate limit is unknown (§16).
+faster than one Base block. The facilitator's own rate limit is unknown (KNOWN_LIMITATIONS.md §16).
 
 Concurrency run, 2026-09-24, `probe-facilitator.ts MODE=concurrency`, 20
 requests per level, unpaid `GET /oracle/sBTC` against a local server (this is
@@ -158,7 +168,7 @@ through to 402 on any read failure (`app.ts:622-624`).
 | 5 | 20 | 335 ms | 941 ms | 8.62 req/s | {"402":20} |
 | 10 | 20 | 286 ms | 1438 ms | 10.79 req/s | {"402":20} |
 
-`settleError` is not counted: since §14 the request path sends no transactions,
+`settleError` is not counted: since KNOWN_LIMITATIONS.md §14 the request path sends no transactions,
 so `nonce too low` / `replacement transaction underpriced` cannot occur there.
 The only `settleError` the request path can produce is an Upstash write failure.
 
