@@ -144,15 +144,13 @@ Concurrency run, 2026-09-24, `probe-facilitator.ts MODE=concurrency`, 20
 requests per level, unpaid `GET /oracle/sBTC` against a local server (this is
 the freshness gate's 2 RPC reads + the 402 challenge; no payment, no USDC moved).
 Ran against `npm run start` in `agent/signal-api` on localhost, `/healthz`
-returned 200 before the run. `agent/.env` had a working RPC: `makeProvider()`
-is called at module load (`app.ts:69`) and throws synchronously if
-`BASE_SEPOLIA_RPC_URL`/`SEPOLIA_RPC_URL` is unset (`provider.ts:17-21`), so a
-missing RPC URL would have crashed the process before it ever bound port 4021
-— it didn't. Every sample returned 402, never 503 `price_stale`, and never a
-connection failure (`status:0`), consistent with the freshness gate's `eth_call`s
-succeeding and reading a fresh price on every request (a stale on-chain price
-would have shown as 503 with `ageSec`/`maxPriceAgeSec` fields — `app.ts:606-621`
-— which none of these samples did).
+returned 200 before the run. Every sample returned 402, never 503
+`price_stale`, never a connection failure (`status:0`). A direct read of the
+same two calls the gate makes (`oracle.getPrice(sBTC)`, `perp.maxPriceAge()`)
+through the same RPC on 2026-09-24 succeeded (price age 5,611 s < maxPriceAge
+21,600 s), consistent with the gate reading a fresh price. The probe itself
+cannot distinguish that from a swallowed RPC error, because the gate falls
+through to 402 on any read failure (`app.ts:622-624`).
 
 | Concurrency | n | p50 | p95 | Throughput | Status distribution |
 |---|---|---|---|---|---|
