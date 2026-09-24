@@ -37,6 +37,7 @@ export const x402: Catalog['x402'] = {
       title: 'Live 70/20/10 Revenue Split',
       accrued: 'On-chain accrued revenue',
       calls: 'Calls: {count}',
+      callsUnknown: 'call count not tracked on-chain',
       traders: 'Traders',
       platform: 'Platform',
       vault: 'Vault',
@@ -47,9 +48,9 @@ export const x402: Catalog['x402'] = {
     tryBuy: {
       title: 'Try It Live (no wallet needed)',
       description:
-        "Click to have the server's demo wallet cover a $0.01 payment and run the 70/20/10 split on-chain, returning a real settlement tx. (A real external agent brings its own wallet instead — see the example below.)",
-      busy: 'Buying… (broadcasting, a few seconds)',
-      cta: 'Try buying a signal ($0.01)',
+        'Click to fetch a live signal for free. The demo pays nothing and settles nothing: no USDC moves and no 70/20/10 transaction is sent. Real revenue comes only from the paid x402 endpoints below, and its on-chain total is shown above. (A real external agent brings its own wallet — see the example below.)',
+      busy: 'Fetching…',
+      cta: 'Try a signal (free)',
       failed: 'demo buy failed',
       networkError: 'network error — is the API deployed / VITE_SIGNAL_API_URL set?',
       settled: '70/20/10 settled on-chain · ',
@@ -75,8 +76,8 @@ export const x402: Catalog['x402'] = {
     description:
       'Any agent holding Circle USDC on Base Sepolia can pay to buy signals ($0.01/$0.005), with revenue split 70/20/10 on-chain.',
     accrued: 'On-chain accrued: ${feeUsd} in revenue · ${traderShare} to traders (70%)',
-    busy: 'Buying…',
-    tryBuy: 'Try buying ($0.01)',
+    busy: 'Fetching…',
+    tryBuy: 'Try free',
     docs: 'API Docs',
     settled: '✓ Settled on-chain:',
     viewSettlement: 'BaseScan settlement tx ↗',

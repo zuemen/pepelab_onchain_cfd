@@ -27,6 +27,7 @@ was not, the reason is given rather than glossed over.
 | 17 | No KYT/KYA screening of counterparty addresses | **Open** — not implemented, budget sketched |
 | 18 | No latency / success-rate acceptance thresholds | **Partly measured** — facilitator + 402 challenge measured; paid path not |
 | 19 | No self-hosted facilitator; x402.org pays the settlement gas | **By design (testnet)** — no SLA, no visibility into its wallet |
+| 20 | On-chain revenue totals cannot separate demo self-payments from external ones | **Open** — documented; needs an event scan |
 
 ---
 
@@ -658,6 +659,37 @@ tests on 2026-06-22/23 at 83,648–83,672 gas. Full list in
 
 **2026-09-23:** entry added; the `/x402` docs page footer now names the
 facilitator and who pays its gas (`frontend/src/locales/{en,zh-TW}/x402.ts`).
+
+## 20. On-chain revenue totals cannot separate demo self-payments from external ones
+
+`/revenue` reads `FeeRouter.platformEarnings()` and multiplies (`onchainRevenue.ts:40-73`).
+It has no event scan, so it cannot say which routes came from whom, and it
+reports `count: null` rather than a number.
+
+**What the total contains.** The x402 FeeRouter has four `routeExternalRevenue`
+calls, all $0.01, all sent by the treasury (see [COST_MODEL.md](COST_MODEL.md#measured-on-chain)).
+Two match external payments from `0x858b36C7…0bA972` on 2026-07-15. The two
+from June 15–16 name the treasury itself as trader; whether an external payment
+preceded them was not checked (the transfer listing read on 2026-09-23 did not
+reach back that far). Separately, many `/oracle` payments on 2026-06-22/23
+were the treasury paying itself through x402 and were never routed at all
+(`/oracle` did not settle then — `app.ts:710-711`). So the headline "x402
+Revenue" mixes self-paid demo activity with real external revenue, and the
+number of paid calls is unknown.
+
+**Why filtering by sender does not work.** Every route, demo or real, is sent by
+the same treasury key; the current worker uses it too (`settlement.ts:44`).
+
+**What is no longer true.** `/demo/buy-signal` no longer settles anything
+(`app.ts:500-508`), so it cannot add to the total going forward. The docs page
+and README used to say it paid $0.01 and returned a real settlement tx; that
+copy was wrong and is fixed.
+
+**2026-09-23:** demo copy corrected in `frontend/src/locales/{en,zh-TW}/x402.ts`,
+`agent/README.md` and the `/demo/buy-signal` comment and `paymentInfo.note`. The
+home-page KPI and the docs page showed `count: null` as "0 calls"; they now show
+"—" / "call count not tracked on-chain". No attribution field was added to
+`/revenue`: doing it honestly needs an event scan (`NEXT_STEPS.md`).
 
 ---
 

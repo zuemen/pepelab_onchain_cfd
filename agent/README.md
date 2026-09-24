@@ -145,7 +145,7 @@ npx tsx examples/buy-signal.ts
 
 ## 訪客試買（免錢包）
 
-`POST /demo/buy-signal`：伺服器以 settlement 錢包代付一筆並在鏈上跑 70/20/10，回 `{signal, paymentInfo, settlementTx}`。前端 `/x402` 文件頁與 Marketplace 卡片都接這支（含簡易速率限制 `DEMO_COOLDOWN_MS`，預設 15s/IP，避免測試 USDC 被刷乾）。
+`POST /demo/buy-signal`：免費 demo，**不付款、不結算**——只回真實訊號；`settlementTx` 永遠為空（在請求內上鏈會讓 serverless 逾時，見 `app.ts` 該路由註解）。真實 70/20/10 分潤只來自付費 x402 端點，累計見 `/revenue`。前端 `/x402` 文件頁與 Marketplace 卡片都接這支（含簡易速率限制 `DEMO_COOLDOWN_MS`，預設 15s/IP）。
 
 > ⚠️ **安全**：`FEE_SETTLEMENT_PRIVATE_KEY` 放公開 serverless = 視為**半公開測試金鑰**，只放極少量測試資產，絕不重用到任何有價值錢包。capstone 後若上 mainnet，改用受控 signer / KMS。x402 付費牆本身天然抗刷；`/demo/buy-signal` 額外加速率限制。
 

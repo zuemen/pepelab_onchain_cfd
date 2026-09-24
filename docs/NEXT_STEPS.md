@@ -251,6 +251,13 @@ tokens without calling the recipient. Options: an EIP-3009 `receiveWithAuthoriza
 based scheme, or keep the two-step flow and reconcile `payTo` inflows against
 routed totals. Not started.
 
+**Attribute x402 revenue by payer.** `/revenue` cannot tell demo self-payments
+from external ones (`KNOWN_LIMITATIONS.md` §20). The workable signal is not the
+router's `msg.sender` (always the treasury) but whether each
+`ExternalRevenueRouted` event has a matching `transferWithAuthorization` into
+`payTo` from a non-treasury address. That needs a log scan over the router and
+USDC, with a block cursor so it is incremental. Not started.
+
 **Not in this workstream** — K-line chart (TradingView `lightweight-charts`) and
 the tadpole → frog → frog-king progression are owned by another team member.
 

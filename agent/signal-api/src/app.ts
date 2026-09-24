@@ -465,7 +465,7 @@ export function createApp(): Hono<{ Variables: AppVariables }> {
     }
   });
 
-  // ── 免費 demo：訪客不需自帶錢包；伺服器以 settlement 錢包代付並回真實 tx ──
+  // ── 免費 demo：訪客不需自帶錢包；不付款、不結算，只回真實訊號（原因見下方註解） ──
   app.post("/demo/buy-signal", async (c) => {
     const ip = clientIp(c);
     const now = Date.now();
@@ -515,7 +515,7 @@ export function createApp(): Hono<{ Variables: AppVariables }> {
             model: "x402 70/20/10 on-chain",
             priceUsd: PRICE_SIGNALS,
             asset: SETTLEMENT_TOKEN,
-            note: "demo: 伺服器代付；真實外部 agent 自帶錢包經 x402 付費（見 /）",
+            note: "demo：免費、不付款、不結算；真實外部 agent 自帶錢包經 x402 付費（見 /）",
           },
           settlementTx,
           settleError,

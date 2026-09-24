@@ -16,7 +16,7 @@ import { SIGNAL_API_URL, demoBuySignal } from 'src/lib/pepefi/signalApi'
 import { Mono as Num, LiveDot, PEPE, MONO, hexA } from 'src/components/pepefi/brandKit'
 
 interface RevenueTotals {
-  count: number
+  count: number | null
   feeUsd: number
   traderShare: number
   platformShare: number
@@ -72,7 +72,9 @@ function SplitBar({ rev }: { rev: RevenueTotals | null }) {
           {t.x402.docs.split.accrued}{' '}
           <Num tone="green">${(rev?.feeUsd ?? 0).toFixed(3)}</Num>{' · '}
           <Num tone="muted">
-            {interpolate(t.x402.docs.split.calls, { count: rev?.count ?? 0 })}
+            {rev?.count == null
+              ? t.x402.docs.split.callsUnknown
+              : interpolate(t.x402.docs.split.calls, { count: rev.count })}
           </Num>
         </Typography>
       </Stack>

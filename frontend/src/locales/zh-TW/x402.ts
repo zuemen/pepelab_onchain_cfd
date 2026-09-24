@@ -37,6 +37,7 @@ export const x402 = {
       title: '即時 70/20/10 分潤',
       accrued: '鏈上累計收入',
       calls: '{count} 次呼叫',
+      callsUnknown: '鏈上未記錄呼叫次數',
       traders: '交易者',
       platform: '平台',
       vault: '金庫',
@@ -47,9 +48,9 @@ export const x402 = {
     tryBuy: {
       title: '互動試買（訪客免錢包）',
       description:
-        '按下後由伺服器 demo 錢包代付一筆 $0.01 並在鏈上跑 70/20/10，回傳真實 settlement tx。 （真實外部 agent 則自帶錢包，見下方範例。）',
-      busy: '購買中…（送鏈，約數秒）',
-      cta: '試買一筆訊號 ($0.01)',
+        '免費取得一筆即時訊號。demo 不付款、也不結算：不動任何 USDC、不送 70/20/10 交易。真實收入只來自下方的付費 x402 端點，其鏈上累計即上方數字。（真實外部 agent 則自帶錢包，見下方範例。）',
+      busy: '讀取中…',
+      cta: '免費試用一筆訊號',
       failed: '示範購買失敗',
       networkError: '網路錯誤——API 是否已部署 / 是否已設定 VITE_SIGNAL_API_URL？',
       settled: '70/20/10 已上鏈 · ',
@@ -74,8 +75,8 @@ export const x402 = {
     description:
       '任何 agent 只要在 Base Sepolia 持有 Circle USDC 即可付費購買訊號（$0.01/$0.005），收入 70/20/10 上鏈分潤。',
     accrued: '鏈上累計：${feeUsd} 收入 · ${traderShare} 歸 traders (70%)',
-    busy: '購買中…',
-    tryBuy: '試買 ($0.01)',
+    busy: '讀取中…',
+    tryBuy: '免費試用',
     docs: 'API 文件',
     settled: '✓ 已上鏈：',
     viewSettlement: '在 BaseScan 看 settlement tx ↗',
