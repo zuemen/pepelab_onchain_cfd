@@ -4,6 +4,8 @@ import { ethers } from 'ethers';
 
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
+import Alert from '@mui/material/Alert';
+import AlertTitle from '@mui/material/AlertTitle';
 import Grid from '@mui/material/Grid';
 import Chip from '@mui/material/Chip';
 import Stack from '@mui/material/Stack';
@@ -48,15 +50,58 @@ interface CopyEntry {
 
 // ── Section Card wrapper ───────────────────────────────────────────────────────
 
-function SectionCard({ title, emoji, children }: {
-  title: string; emoji: string; children: React.ReactNode;
+/**
+ * #153：一張卡片現在講三件事：這是什麼、規則是什麼、**你現在有沒有事可做**。
+ *
+ * 第三件是重點。四塊機制原本長得一模一樣,要把每一列的按鈕逐個讀完才知道自己
+ * 在哪裡;狀態提到標題旁邊之後,掃一眼就看得出哪張卡需要動作。可領取的卡片同時
+ * 描邊。顏色是次要線索,文字才是主要的,但兩者一起掃起來更快。
+ */
+type SectionStatus =
+  | { kind: 'loading' }
+  | { kind: 'offline' }
+  | { kind: 'claimable'; count: number }
+  | { kind: 'allClaimed' }
+  | { kind: 'none' };
+
+function SectionCard({ title, emoji, description, status, children }: {
+  title: string; emoji: string; description: string;
+  status: SectionStatus; children: React.ReactNode;
 }) {
+  const labels = t.rewards.status;
+  const claimable = status.kind === 'claimable';
+  const label =
+    status.kind === 'loading'     ? labels.loading
+    : status.kind === 'offline'   ? labels.offline
+    : status.kind === 'claimable' ? interpolate(labels.claimable, { n: String(status.count) })
+    : status.kind === 'allClaimed' ? labels.allClaimed
+    : labels.none;
+
   return (
-    <Card sx={{ p: 3, bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider' }}>
-      <Typography variant="h6" sx={{ fontWeight: 900, mb: 2, fontSize: 20 }}>
-        {emoji} {title}
+    <Card sx={{
+      p: 3, height: '100%', display: 'flex', flexDirection: 'column',
+      bgcolor: 'background.paper', border: '1px solid',
+      borderColor: claimable ? 'success.main' : 'divider',
+    }}>
+      <Stack
+        direction="row" spacing={1} sx={{ mb: 1 }}
+        alignItems="flex-start" justifyContent="space-between"
+      >
+        <Typography variant="h6" sx={{ fontWeight: 900, fontSize: 20 }}>
+          {emoji} {title}
+        </Typography>
+        <Chip
+          size="small"
+          label={label}
+          color={claimable ? 'success' : 'default'}
+          variant={claimable ? 'filled' : 'outlined'}
+          sx={{ flexShrink: 0 }}
+        />
+      </Stack>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        {description}
       </Typography>
-      {children}
+      <Box sx={{ flex: 1 }}>{children}</Box>
     </Card>
   );
 }
@@ -79,6 +124,12 @@ export default function RewardsPage() {
   // ── Trade Mining ────────────────────────────────────────────────────────────
   const [positions,   setPositions]   = useState<OpenPosition[]>([]);
   const [posLoading,  setPosLoading]  = useState(false);
+  /**
+   * #153：第一輪讀取有沒有回來。狀態 chip 不能在資料到齊前就下結論。簽到那張卡
+   * 在 fetchCheckin 回來之前 lastDay 是 0,checkedInToday 因此是 false,會對一個
+   * 今天已經簽過的人顯示綠色的「1 項可領取」。
+   */
+  const [initialLoaded, setInitialLoaded] = useState(false);
   const [miningBusy,  setMiningBusy]  = useState<Record<string, boolean>>({});
 
   const fetchPositions = useCallback(async () => {
@@ -232,10 +283,10 @@ export default function RewardsPage() {
   // ── Load all ────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!wallet.isConnected) return;
-    void fetchPositions();
-    void fetchTier();
-    void fetchCopy();
-    void fetchCheckin();
+    // 四個 fetch 各自吞掉自己的錯誤(catch /* not deployed */),所以這裡只關心
+    // 「都跑完了沒」,不關心成敗。狀態 chip 要的是「資料到齊了嗎」。
+    void Promise.all([fetchPositions(), fetchTier(), fetchCopy(), fetchCheckin()])
+      .finally(() => setInitialLoaded(true));
   }, [fetchPositions, fetchTier, fetchCopy, fetchCheckin, wallet.isConnected]);
 
   // ── Daily state ─────────────────────────────────────────────────────────────
@@ -250,6 +301,44 @@ export default function RewardsPage() {
       </Container>
     );
   }
+
+  // #153：把每一塊「還剩幾項可領」彙總成一個數字。判斷式與下面每一列用的完全
+  // 相同（mined / tierClaimed 位元 + 門檻 / claimed / checkedInToday）。這裡只是
+  // 把畫面上本來就逐項算過的條件數一遍,沒有新增規則,也沒有改變任何領取條件。
+  /**
+   * 一個等級的「領過沒／達標沒」只定義在這裡,計數與下面每一列共用同一份。
+   * 兩邊各寫一次的版本已經出過錯（四個等級全部未達標,卡片卻顯示「已全部領取」）,
+   * 靠註解寫「判斷式相同」是約束不住的。
+   */
+  const tierState = (i: number) => ({
+    claimed:  (tierClaimed & (1 << i)) !== 0,
+    eligible: fmt18(cumNotional) >= TIER_THRESHOLD[i],
+  });
+
+  const miningClaimable = positions.filter(p => !p.mined).length;
+  const miningClaimed   = positions.filter(p => p.mined).length;
+  const tierClaimableCount = TIER_NAMES.filter((_, i) => {
+    const st = tierState(i);
+    return !st.claimed && st.eligible;
+  }).length;
+  const tierClaimedCount = TIER_NAMES.filter((_, i) => tierState(i).claimed).length;
+  const copyClaimable = copyEntries.filter(e => !e.claimed).length;
+  const copyClaimed   = copyEntries.filter(e => e.claimed).length;
+
+  /**
+   * offline 壓過其他狀態：合約不在這條鏈上時,「還有 3 項可領」是誤導。那 3 項
+   * 在這裡誰也領不走。
+   *
+   * 「已全部領取」要看**實際領過幾項**,不是「總共有幾項」。等級那一塊永遠有四個
+   * 等級,拿 total > 0 判斷的話,一個都還沒達標時也會說「已全部領取」，那是相反
+   * 的意思。沒領過、也沒得領,是「目前沒有可領取的項目」。
+   */
+  const statusFor = (claimable: number, claimed: number, total: number): SectionStatus =>
+    !initialLoaded                     ? { kind: 'loading' }
+    : !incentivesLive                  ? { kind: 'offline' }
+    : claimable > 0                    ? { kind: 'claimable', count: claimable }
+    : total > 0 && claimed === total   ? { kind: 'allClaimed' }
+    :                                    { kind: 'none' };
 
   return (
     <Container maxWidth="md" sx={{ py: 4 }}>
@@ -266,13 +355,30 @@ export default function RewardsPage() {
         <PepeTokenCard />
       </Box>
 
+      {/* #153：offline 原本只有「按下去才跳的 toast」一種表達,使用者得先按一次
+          失敗一次才知道為什麼。
+
+          位置在 PepeTokenCard **之下**是刻意的:這張卡判斷的是 pepeIncentives,
+          而上面那張判斷的是 pepeToken + pepeClaim，三個獨立的合約。只缺
+          pepeIncentives 的鏈上,上面那顆空投按鈕是能按的,把警告擺在它上面會變成
+          「這個網路沒有 PEPE」蓋在一顆可用的領取鈕上。擺在這裡,「下面四項」
+          才字面成立。 */}
+      {!incentivesLive && (
+        <Alert severity="info" variant="outlined" sx={{ mb: 3 }}>
+          <AlertTitle>{t.rewards.offlineTitle}</AlertTitle>
+          {t.rewards.offlineBody}
+        </Alert>
+      )}
+
       <Grid container spacing={3}>
         {/* A — Trade Mining */}
         <Grid size={{ xs: 12 }}>
-          <SectionCard title={t.rewards.mining.title} emoji="⛏️">
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              {t.rewards.mining.description}
-            </Typography>
+          <SectionCard
+            title={t.rewards.mining.title}
+            emoji="⛏️"
+            description={t.rewards.mining.description}
+            status={statusFor(miningClaimable, miningClaimed, positions.length)}
+          >
             {posLoading ? (
               <CircularProgress size={24} />
             ) : positions.length === 0 ? (
@@ -282,7 +388,7 @@ export default function RewardsPage() {
                 {positions.map(p => (
                   <Box key={p.id.toString()} sx={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    p: 1.5, borderRadius: 1, bgcolor: 'rgba(255,255,255,0.04)',
+                    p: 1.5, borderRadius: 1, bgcolor: 'background.neutral',
                   }}>
                     <Box>
                       <Typography variant="body2" sx={{ fontWeight: 700 }}>
@@ -317,10 +423,12 @@ export default function RewardsPage() {
 
         {/* B — Tier Upgrade */}
         <Grid size={{ xs: 12, md: 6 }}>
-          <SectionCard title={t.rewards.tierSection.title} emoji="🏆">
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              {t.rewards.tierSection.description}
-            </Typography>
+          <SectionCard
+            title={t.rewards.tierSection.title}
+            emoji="🏆"
+            description={t.rewards.tierSection.description}
+            status={statusFor(tierClaimableCount, tierClaimedCount, TIER_NAMES.length)}
+          >
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
               {interpolate(t.rewards.tierSection.cumulative, {
                 amount: fmt18(cumNotional).toLocaleString(undefined, { maximumFractionDigits: 0 }),
@@ -328,8 +436,7 @@ export default function RewardsPage() {
             </Typography>
             <Stack spacing={1.5}>
               {TIER_NAMES.map((name, i) => {
-                const claimed  = (tierClaimed & (1 << i)) !== 0;
-                const eligible = fmt18(cumNotional) >= TIER_THRESHOLD[i];
+                const { claimed, eligible } = tierState(i);
                 const progress = Math.min(100, (fmt18(cumNotional) / TIER_THRESHOLD[i]) * 100);
                 return (
                   <Box key={i}>
@@ -376,10 +483,12 @@ export default function RewardsPage() {
 
         {/* C — Copy Reward */}
         <Grid size={{ xs: 12, md: 6 }}>
-          <SectionCard title={t.rewards.copy.title} emoji="🤝">
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              {t.rewards.copy.description}
-            </Typography>
+          <SectionCard
+            title={t.rewards.copy.title}
+            emoji="🤝"
+            description={t.rewards.copy.description}
+            status={statusFor(copyClaimable, copyClaimed, copyEntries.length)}
+          >
             {copyEntries.length === 0 ? (
               <Typography color="text.secondary" variant="body2">{t.rewards.copy.empty}</Typography>
             ) : (
@@ -387,7 +496,7 @@ export default function RewardsPage() {
                 {copyEntries.map(e => (
                   <Box key={e.trader} sx={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    p: 1.5, borderRadius: 1, bgcolor: 'rgba(255,255,255,0.04)',
+                    p: 1.5, borderRadius: 1, bgcolor: 'background.neutral',
                   }}>
                     <Typography variant="body2" sx={{ fontFamily: MONO, fontSize: 12 }}>
                       {e.trader.slice(0, 8)}…{e.trader.slice(-6)}
@@ -413,12 +522,14 @@ export default function RewardsPage() {
 
         {/* D — Daily Check-in */}
         <Grid size={{ xs: 12 }}>
-          <SectionCard title={t.rewards.checkIn.title} emoji="📅">
+          <SectionCard
+            title={t.rewards.checkIn.title}
+            emoji="📅"
+            description={t.rewards.checkIn.description}
+            status={statusFor(checkedInToday ? 0 : 1, checkedInToday ? 1 : 0, 1)}
+          >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap' }}>
               <Box sx={{ flex: 1, minWidth: 200 }}>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                  {t.rewards.checkIn.description}
-                </Typography>
                 <Stack direction="row" spacing={1} alignItems="center">
                   <Chip
                     label={interpolate(t.rewards.checkIn.streak, { days: myStreak })}

@@ -14,6 +14,28 @@ export const rewards = {
   /** 合約沒部署在這條鏈上時，四個領取動作共用的同一句話。 */
   offline: 'PEPE 獎勵系統尚未部署在此網路，暫時無法領取',
 
+  /**
+   * #153：offline 的頁面級說明。原本這個狀態只有「按下去才跳的 toast」一種表達
+   * 使用者得先按一次、失敗一次，才知道為什麼按了沒反應。標題講結論，內文講
+   * 這對他有什麼影響（進度照算、但沒有可做的動作），而不是只丟一個合約名。
+   */
+  offlineTitle: '這個網路沒有交易挖礦、等級、跟單與簽到',
+  offlineBody:
+    '這四項的合約不在這條鏈上，所以既領不到、也讀不到你的進度。下面顯示的 0 是「讀不到」，不是「你真的沒有累積」。切換到有這些功能的網路就能正常使用。上方的 PEPE 代幣與空投是另一組合約，不受影響。',
+
+  /**
+   * #153：每張卡片右上角的狀態。四塊機制原本長得一模一樣，要逐項讀完按鈕才知道
+   * 自己在哪裡；把「現在有沒有事可做」提到卡片標題旁邊。
+   */
+  status: {
+    /** 第一輪讀取還沒回來。和「讀完了，沒有可領的」是兩件事。 */
+    loading: '讀取中…',
+    claimable: '{n} 項可領取',
+    allClaimed: '已全部領取',
+    none: '目前沒有可領取的項目',
+    offline: '本網路暫停發放',
+  },
+
   tier: {
     bronze: 'Bronze 青銅 🥉',
     silver: 'Silver 白銀 🥈',
@@ -58,11 +80,17 @@ export const rewards = {
     title: '每日簽到',
     description: '每日簽到領 50 PEPE，連續簽到每天 +10 PEPE，7 天封頂 110 PEPE。',
     streak: '🔥 連續簽到 {days} 天',
-    todayReward: '今日獎勵: {reward} PEPE',
+    /**
+     * #153：CONTEXT.md 的 Streak 詞條 `_Avoid_: login bonus, daily reward`，
+     * 「今日/明日獎勵」正是被避免的講法。改成陳述「今天能領多少」這個事實,
+     * 不把連續簽到框成一套 bonus 制度。金額仍是 PEPE:合約
+     * （PepeIncentives.dailyCheckIn）最後一行就是 pepe.safeTransfer,寫別的會不實。
+     */
+    todayReward: '今日可領：{reward} PEPE',
     /** 按鈕的兩種狀態各自是完整的一句話，不是「簽到 +」加金額。 */
     alreadyCheckedIn: '✓ 今天已簽到',
     checkIn: '🐸 簽到 +{reward} PEPE',
-    comeBack: '明天再來！明日獎勵: {reward} PEPE',
+    comeBack: '明天再來！明日可領：{reward} PEPE',
     done: '簽到成功！🐸',
   },
 

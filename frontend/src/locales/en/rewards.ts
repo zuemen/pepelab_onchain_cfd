@@ -14,6 +14,19 @@ export const rewards: Catalog['rewards'] = {
   offline:
     "The PEPE rewards system isn't deployed on this network — claiming is temporarily unavailable.",
 
+  /** 見 `../zh-TW/rewards.ts`。 */
+  offlineTitle: 'Trade mining, tiers, copy and check-in are not on this network',
+  offlineBody:
+    "Those four contracts aren't on this chain, so there is nothing to claim and no progress to read — the zeros below mean \"could not read\", not \"you have none\". Switch to a network that runs them. The PEPE token and airdrop above are a separate contract and are unaffected.",
+
+  status: {
+    loading: 'Reading…',
+    claimable: '{n} to claim',
+    allClaimed: 'All claimed',
+    none: 'Nothing to claim yet',
+    offline: 'Paused on this network',
+  },
+
   tier: {
     bronze: 'Bronze 🥉',
     silver: 'Silver 🥈',
@@ -61,11 +74,12 @@ export const rewards: Catalog['rewards'] = {
     description:
       'Check in daily for 50 PEPE; each consecutive day adds +10 PEPE, capped at 110 PEPE after 7 days.',
     streak: '🔥 {days} day streak',
-    todayReward: "Today's reward: {reward} PEPE",
+    /** 見 `../zh-TW/rewards.ts`。 */
+    todayReward: 'Claimable today: {reward} PEPE',
     /** 按鈕的兩種狀態各自是完整的一句話，不是「簽到 +」加金額。 */
     alreadyCheckedIn: '✓ Checked in today',
     checkIn: '🐸 Check in +{reward} PEPE',
-    comeBack: "Come back tomorrow! Tomorrow's reward: {reward} PEPE",
+    comeBack: 'Come back tomorrow! Claimable then: {reward} PEPE',
     done: 'Checked in! 🐸',
   },
 
