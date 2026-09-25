@@ -56,6 +56,17 @@ import { Icon } from '@iconify/react';
 
 const ZERO_ADDR = '0x0000000000000000000000000000000000000000'
 
+// 桌面版詳情側邊欄的 sticky 位置：header 高度 + 16px 間距。header 在 lg 才換成
+// 桌面高度，面板卻從 md 就出現，所以兩段都要寫。
+const PANEL_TOP = {
+  xs: 'calc(var(--layout-header-mobile-height) + 16px)',
+  lg: 'calc(var(--layout-header-desktop-height) + 16px)',
+}
+const PANEL_MAX_HEIGHT = {
+  xs: 'calc(100vh - var(--layout-header-mobile-height) - 32px)',
+  lg: 'calc(100vh - var(--layout-header-desktop-height) - 32px)',
+}
+
 // f18/fUsd used to be declared locally here (and again, slightly differently,
 // on other pages, and a third time in AssetDetailPanel.tsx) — the exact
 // duplication lib/pepefi/format.ts exists to stop; f18 is now a proper named
@@ -806,10 +817,13 @@ export default function TokenizedAssetsPage() {
 
       {/* #134：桌面版詳情層——側邊欄，表格保持可見。sticky 讓面板跟著捲動，
           maxHeight 留一點邊界並讓面板內容自己捲（AssetDetailPanel 的
-          overflowY: auto）。 */}
+          overflowY: auto）。
+          top 要讓過 layout 的 sticky header（lg 以下 64px、lg 以上 72px），
+          只寫 16 的話面板頂端的標題與 chip 會被 header 蓋掉；maxHeight 同步
+          扣掉 header，面板底部才不會超出視窗。 */}
       {isDesktop && detailPanel && (
-        <Box sx={{ width: 420, flexShrink: 0, position: 'sticky', top: 16 }}>
-          <Card sx={{ maxHeight: 'calc(100vh - 32px)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <Box sx={{ width: 420, flexShrink: 0, position: 'sticky', top: PANEL_TOP }}>
+          <Card sx={{ maxHeight: PANEL_MAX_HEIGHT, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {detailPanel}
           </Card>
         </Box>
