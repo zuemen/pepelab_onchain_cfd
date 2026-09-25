@@ -20,7 +20,7 @@ import { SIGNAL_API_URL } from 'src/lib/pepefi/signalApi'
 import { Mono, LiveDot, PEPE, hexA } from './brandKit'
 
 interface RevenueTotals {
-  count: number
+  count: number | null
   feeUsd: number
 }
 
@@ -144,7 +144,7 @@ export default function HeroKpiStrip() {
       </Grid>
       <Grid size={{ xs: 6, md: 3 }}>
         <KpiTile label={t.landing.heroKpi.agentCallsPaid} live={!!rev}>
-          <Mono tone="gold">{Math.round(calls).toLocaleString()}</Mono>
+          <Mono tone="gold">{rev?.count == null ? '—' : Math.round(calls).toLocaleString()}</Mono>
         </KpiTile>
       </Grid>
       <Grid size={{ xs: 6, md: 3 }}>

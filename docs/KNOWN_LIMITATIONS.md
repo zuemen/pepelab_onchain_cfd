@@ -26,6 +26,8 @@ was not, the reason is given rather than glossed over.
 | 16 | Public facilitator: unknown rate limit, errors surfaced as 500 | **Partly fixed** — verify-phase errors now 429/502; limit still unknown |
 | 17 | No KYT/KYA screening of counterparty addresses | **Open** — not implemented, budget sketched |
 | 18 | No latency / success-rate acceptance thresholds | **Partly measured** — facilitator + 402 challenge measured; paid path not |
+| 19 | No self-hosted facilitator; x402.org pays the settlement gas | **By design (testnet)** — no SLA, we don't control or fund its wallet and have no alert on it |
+| 20 | On-chain revenue totals cannot separate demo self-payments from external ones | **Open** — documented; needs an event scan |
 
 ---
 
@@ -285,11 +287,14 @@ Procedure in [KEY_MANAGEMENT.md](KEY_MANAGEMENT.md).
 
 ## x402 payment layer (added 2026-09-17)
 
-Items 14–18 cover `agent/signal-api`. Everything stated as measured was measured
+Items 14–20 cover `agent/signal-api`. Everything stated as measured was measured
 on 2026-09-17 with `agent/signal-api/scripts/probe-facilitator.ts`, from a client
 in Taiwan. The Vercel function runs in `sin1`, so its round-trip to the
 facilitator will differ from these figures. They are an order of magnitude, not
-an SLA.
+an SLA. The §19/§20 on-chain figures are a separate, later measurement: public
+Blockscout API reads from 2026-09-23. The settlement worker's capacity ceiling
+is a separate run again, dated 2026-09-24, in
+[COST_MODEL.md](COST_MODEL.md#capacity).
 
 ## 14. The 70/20/10 revenue split is an on-chain transaction inside the paid request — fixed with a ledger + single-signer worker
 
@@ -414,6 +419,32 @@ code until this merges.
   already processes entries in a sequential loop, but harmless, so it was left
   rather than touched for its own sake.
 
+**On-chain evidence of the old ordering.** Before the ledger change, the x402
+FeeRouter recorded two routes for external buyer `0x858b36C7…0bA972` on
+2026-07-15: `routeExternalRevenue` at 13:08:30 and 13:12:12 UTC, the buyer's
+`transferWithAuthorization` at 13:08:34 and 13:12:16. **The split landed four
+seconds before the payment it was splitting** — exactly the ordering described
+above. Both routes also used trader `0x0`, so their 70% (2 × $0.007 test USDC)
+sits in `traderEarnings[address(0)]` and can never be withdrawn. The zero-address
+check in `app.ts:579-588` now blocks that input on `/signals`; `FeeRouter` itself
+still accepts it.
+
+**Where the split's money comes from.** It is still not the buyer's payment
+moving through the router. The facilitator settles the buyer's USDC into `payTo`
+(per `.env.example:21-25`, the treasury EOA that also holds
+`FEE_SETTLEMENT_PRIVATE_KEY`). Later, the worker calls `routeExternalRevenue`,
+which `safeTransferFrom`s an equal amount out of that same wallet
+(`FeeRouter.sol:129`, `settlement.ts:116`). The amounts match and the order is
+now correct, but it is two transactions minutes apart, not one atomic route.
+If `PAY_TO` is unset, it falls back to the FeeRouter address itself
+(`resolvePayTo`, `agent/shared/src/env.ts:14-17`); if it is ever set to some
+other address than the settlement wallet, the worker pays the split from a
+balance the buyer never touched either way.
+
+**2026-09-23:** evidence and funding source recorded. No code change: the
+ordering was already fixed on 2026-09-17, and making the route atomic is a
+`NEXT_STEPS.md` item, not a patch.
+
 **What batching did not fix, because it can't from our side.** The facilitator
 step is untouched: x402-hono still awaits the facilitator's `/settle`, which
 waits for the `transferWithAuthorization` receipt, before releasing the
@@ -461,6 +492,21 @@ Note also that the installed x402 client (0.5.3) signs `validAfter = now − 600
 not 0. A facilitator of the broken variant would reject case B but accept A, so
 our own clients would not have exposed that bug.
 
+**Why 60 s and not something derived from `maxPriceAge`.** The two limits
+protect different things. `maxPriceAge` (read live from
+`PerpetualExchange.maxPriceAge()`, 21600 s (6 h) on 2026-09-23) decides whether a price
+is still tradable. The `/oracle/*` freshness gate (`app.ts:592-626`) runs
+before `paymentMiddleware` on **every** request, including the paid retry that
+carries `X-PAYMENT`. So a buyer holding a 60-second authorization cannot be
+sold a price older than `maxPriceAge`, unless the gate's own read fails (it
+fails open — `app.ts:622-624` swallows the error and calls `next()`): if the
+price went stale in between, the paid retry gets `503 price_stale` before
+`/verify` is ever called. The
+requirement "no longer than the staleness threshold" holds because 60 s is far
+below `maxPriceAge`; 60 was chosen from the response time of a single GET.
+
+**2026-09-23:** rationale recorded; value unchanged.
+
 ## 16. Public facilitator: rate limit unknown, errors used to surface as 500
 
 **Limit.** `docs.x402.org` publishes no RPS or quota for `x402.org/facilitator`.
@@ -506,7 +552,8 @@ stub facilitator in `signal-api/src/facilitatorErrors.test.ts`, which runs in
   object itself into the 402 body, which serialises to `{}`. The reason is lost
   before our wrapper sees it, so a settle-phase 429 still reaches the buyer as a
   bare 402. Fixing it means patching or replacing the middleware. The buyer is
-  not charged in this case, but see §14 on our revenue split having already run.
+  not charged in this case, and since §14's ledger change no revenue split is
+  queued either (the entry is only recorded when `X-PAYMENT-RESPONSE` is present).
 - **Detection is string-based.** It matches `statusText` ("Too Many Requests")
   and reason strings. If the facilitator changes wording, recognition degrades
   back to the old behaviour. The test pins the shapes we know about.
@@ -582,6 +629,77 @@ price is refused before payment.
 wallet and spends test USDC on every sample, so it was left for a human to run,
 for example with `agent/examples/buy-signal.ts` in a loop. Until then no P95 for
 the paid path is claimed here.
+
+**2026-09-24:** a concurrency run of the 402 challenge (1/5/10 concurrent) and
+the settlement worker's throughput ceiling (150/hour at default settings) are in
+[COST_MODEL.md](COST_MODEL.md#capacity). The paid path is still unmeasured.
+
+## 19. No self-hosted facilitator — settlement gas is paid by x402.org
+
+`app.ts:44-45` defaults `X402_FACILITATOR_URL` to `https://x402.org/facilitator`,
+and no deployment overrides it. That facilitator, not us, submits the buyer's
+EIP-3009 `transferWithAuthorization` and pays its gas.
+
+**On-chain evidence.** Every x402 payment into our `payTo` checked on Base
+Sepolia was sent by `0xd407e409E34E0b9afb99EcCeb609bDbcD5e7f1bf`, not by any
+key we hold — for example `0x2590feb2…6d4` and `0x9e0a6a04…90f81` (2026-07-15,
+external buyer `0x858b36C7…0bA972`), gasUsed 91,272 each, and treasury self-pay
+tests on 2026-06-22/23 at 83,648–83,672 gas. Full list in
+[COST_MODEL.md](COST_MODEL.md#measured-on-chain).
+
+**What that means:**
+
+- **No SLA.** `docs.x402.org` describes the public facilitator as intended for
+  development and testnet workflows (see §16). There is no uptime or latency
+  commitment to rely on.
+- **Testnet only.** It settles Base Sepolia. Nothing in this repository has been
+  run against a mainnet facilitator.
+- **We don't control or fund it and have no alert on it.** If `0xd407…f1bf` runs out of ETH, `/settle`
+  fails. x402-hono then throws inside its settle block
+  (`index.mjs:155-162`) and replaces our response with a 402: the buyer is not
+  charged, and because the ledger only records on `X-PAYMENT-RESPONSE` (§14),
+  no revenue split is queued either. The failure is safe, but we would only see
+  it as a wave of 402s after valid payments — we have no balance alert on a
+  wallet we do not own.
+- **The cost is hidden, not zero.** On mainnet with a self-hosted facilitator,
+  this gas becomes ours. [COST_MODEL.md](COST_MODEL.md) prices it.
+
+**2026-09-23:** entry added; the `/x402` docs page footer now names the
+facilitator and who pays its gas (`frontend/src/locales/{en,zh-TW}/x402.ts`).
+
+## 20. On-chain revenue totals cannot separate demo self-payments from external ones
+
+`/revenue` reads `FeeRouter.platformEarnings()` and multiplies (`onchainRevenue.ts:40-73`).
+It has no event scan, so it cannot say which routes came from whom, and it
+reports `count: null` rather than a number.
+
+**What the total contains.** The x402 FeeRouter has four `routeExternalRevenue`
+calls totalling $0.04, all $0.01, all sent by the treasury (see
+[COST_MODEL.md](COST_MODEL.md#measured-on-chain)): 2 match external payments
+from `0x858b36C7…0bA972` on 2026-07-15, and 2 are of unverified origin
+(2026-06-15/16, trader = treasury — whether an external payment preceded them
+was not checked; the transfer listing read on 2026-09-23 did not reach back
+that far). Separately, at least two `/oracle` payments on 2026-06-22/23 were
+the treasury paying itself through x402 and were never routed at all (`/oracle`
+did not settle then — `app.ts:712-714`). So the headline "x402 Revenue" may mix
+self-paid demo activity with real external revenue, and the number of paid
+calls is unknown: those unrouted June 22/23 payments are themselves the
+evidence that payments and routes are not the same count, so the call count
+cannot be inferred from routes either.
+
+**Why filtering by sender does not work.** Every route, demo or real, is sent by
+the same treasury key; the current worker uses it too (`settlement.ts:44`).
+
+**What is no longer true.** `/demo/buy-signal` no longer settles anything
+(`app.ts:502-508`), so it cannot add to the total going forward. The docs page
+and README used to say it paid $0.01 and returned a real settlement tx; that
+copy was wrong and is fixed.
+
+**2026-09-23:** demo copy corrected in `frontend/src/locales/{en,zh-TW}/x402.ts`,
+`agent/README.md` and the `/demo/buy-signal` comment and `paymentInfo.note`. The
+home-page KPI and the docs page showed `count: null` as "0 calls"; they now show
+"—" / "call count not tracked on-chain". No attribution field was added to
+`/revenue`: doing it honestly needs an event scan (`NEXT_STEPS.md`).
 
 ---
 

@@ -242,6 +242,47 @@ the actual stooq 404 body.
 **Frontend `any` escapes: 19 remaining** (down from 42). Mostly ethers return
 values. `KNOWN_LIMITATIONS.md` #12 has the detail.
 
+**x402 revenue split is not atomic with the payment.** The buyer's USDC lands
+in `payTo` via the facilitator; the settlement worker later routes an equal
+amount out of the treasury wallet (`KNOWN_LIMITATIONS.md` §14). To make it one
+transaction, `payTo` would have to be a contract that splits on receipt, which
+the x402 v1 `exact` scheme does not support — `transferWithAuthorization` moves
+tokens without calling the recipient. Options: an EIP-3009 `receiveWithAuthorization`
+based scheme, or keep the two-step flow and reconcile `payTo` inflows against
+routed totals. Not started.
+
+**Attribute x402 revenue by payer.** `/revenue` cannot tell demo self-payments
+from external ones (`KNOWN_LIMITATIONS.md` §20). The workable signal is not the
+router's `msg.sender` (always the treasury) but whether each
+`ExternalRevenueRouted` event has a matching `transferWithAuthorization` into
+`payTo` from a non-treasury address. That needs a log scan over the router and
+USDC, with a block cursor so it is incremental. Not started.
+
+**x402 settlement is one transaction per payment — deliberately, for now.** The
+worker drains the queue in batches but still sends one `routeExternalRevenue`
+per entry (`settlement-worker.ts:114-115`). In the PoC that is on purpose: each
+sale maps to exactly one `routeExternalRevenue` on BaseScan (the worker logs
+entry → tx, `settlement-worker.ts:58-60`), which keeps reconciliation trivial.
+`FeeRouter` does not
+need to change to batch — `routeExternalRevenue(trader, fee)` accepts any fee,
+so entries can be summed per trader and routed once every N entries or T
+seconds.
+
+When it is worth doing, from [COST_MODEL.md](COST_MODEL.md): per paid call the
+router transaction costs 763.9 gwei (budget) against an EIP-3009 settle of
+944.0 gwei. Batching N entries for one trader divides only the router part by N;
+the EIP-3009 part is per payment. On a self-hosted mainnet deployment:
+
+- `/signals` (platform keeps $0.002 ≈ 944 gwei): with measured, unbuffered fees
+  (EIP-3009 560.7 + router 587.4/N gwei) it breaks even at **N ≥ 2**; at budget
+  figures it never does.
+- `/oracle` (platform keeps $0.001 ≈ 472 gwei): the EIP-3009 settle alone
+  exceeds it, so **no batch size breaks even**.
+
+Batch once paid volume exceeds the worker ceiling (150/hour, COST_MODEL
+"Capacity") or before any mainnet deployment, whichever comes first. Batching
+routes per trader, so it helps least when every call names a different trader.
+
 **Not in this workstream** — K-line chart (TradingView `lightweight-charts`) and
 the tadpole → frog → frog-king progression are owned by another team member.
 
@@ -291,3 +332,4 @@ cast call 0x3a37415981F6f4fC27FA6c8C62F1d4e47115fD17 'paused()(bool)' \
 - `docs/audit/aderyn-v2-report.md` — raw Aderyn output
 - `docs/KEY_MANAGEMENT.md` — key handling procedure
 - `contracts/script/HandoverRoles.s.sol` — the handover script itself
+- `docs/COST_MODEL.md` — x402 gas per paid call, testnet vs mainnet, CU and capacity
