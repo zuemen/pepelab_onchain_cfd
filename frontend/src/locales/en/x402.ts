@@ -5,64 +5,123 @@ import type { Catalog } from '../zh-TW';
  */
 export const x402: Catalog['x402'] = {
   docs: {
-    title: 'x402 Signal API',
-    audienceChip: 'Developers / Agents',
-    commerceChip: 'agent-native commerce',
+    title: 'x402: let your AI assistant pay for trading data on its own',
+    testnetChip: 'Testnet · no real money',
+    lead: 'When your AI trading assistant needs data, there is no account to sign up for and no monthly subscription — each time it wants one piece, it pays a few cents from its own wallet (from $0.01) and gets the data on the spot.',
 
-    /** #36：開頭這句夾了兩段 `<b>`，拆成 bold 前後的三個片段。 */
-    introBold1: 'Built for developers / AI agents',
-    introMid: ', this is a pay-per-call trading signal API. ',
-    introBold2: 'The endpoint itself is the product',
-    introAfter:
-      ' — any agent / CLI holding Circle USDC on Base Sepolia can pay to buy directly, with revenue split 70/20/10 on-chain via FeeRouter.',
+    benefits: {
+      payPerUse: {
+        title: 'Pay only for what you use',
+        body: 'A trader signal costs $0.01 and a live market snapshot $0.005. No monthly fee, no minimum spend.',
+      },
+      autonomous: {
+        title: 'Your assistant handles it',
+        body: 'Paying, fetching the data and deciding whether to trade all happen automatically. When a signal is too weak, the assistant can choose not to trade and only spends the data fee.',
+      },
+      transparent: {
+        title: 'Where the money goes is public',
+        body: 'Of every payment, 70% goes to the trader who provided the signal, 20% to the platform and 10% to the insurance vault. The split is recorded on-chain for anyone to check.',
+      },
+    },
 
-    fact: {
-      baseUrl: 'Base URL',
-      network: 'Network',
-      asset: 'Asset',
-      assetValue: 'Circle USDC {address} (6-dec, EIP-3009)',
-      router: 'x402 router',
-      pricing: 'Pricing',
-      pricingValue: 'GET /signals/:trader → $0.01 · GET /oracle/:asset → $0.005',
+    how: {
+      heading: 'How one purchase works',
+      ask: { title: 'The assistant asks', body: 'Your assistant asks PepeLab for a piece of data, such as a trader’s next move.' },
+      quote: { title: 'PepeLab quotes a price', body: 'The service replies: "This one is $0.01, payable in Circle USDC."' },
+      pay: {
+        title: 'It pays and gets the data',
+        body: 'The assistant signs a payment from its own wallet and receives the data as soon as the payment is confirmed. It takes a few seconds and nobody has to click anything.',
+      },
     },
 
     product: {
-      heading: 'Endpoints = Products',
+      heading: 'What you can buy',
       perCall: '/ call',
-      signals: "A specified trader's next move (direction / asset / confidence).",
-      oracle: 'A live oracle snapshot for a single asset (index / mark / funding).',
+      signalsName: 'Trader signal',
+      signals: 'Pick a trader and get their next move: direction, asset and confidence.',
+      oracleName: 'Live market snapshot',
+      oracle: 'An asset’s current index price, mark price and funding rate.',
     },
 
     split: {
-      title: 'Live 70/20/10 Revenue Split',
+      title: 'How revenue is split (live on-chain figures)',
       accrued: 'On-chain accrued revenue',
-      calls: 'Calls: {count}',
-      callsUnknown: 'call count not tracked on-chain',
+      calls: 'Purchases: {count}',
+      callsUnknown: 'purchase count not tracked on-chain',
       traders: 'Traders',
       platform: 'Platform',
-      vault: 'Vault',
+      vault: 'Insurance vault',
       /** 圖例是「名稱 + 百分比」，百分比是資料不是文字，所以只留名稱。 */
       share: '{label} {pct}%',
     },
 
     tryBuy: {
-      title: 'Try It Live (no wallet needed)',
+      title: 'Try it free first (no wallet needed)',
       description:
-        'Click to fetch a live signal for free. The demo pays nothing and settles nothing: no USDC moves and no 70/20/10 transaction is sent. Real revenue comes only from the paid x402 endpoints priced above, and its on-chain total is also shown above. (A real external agent brings its own wallet — see the example below.)',
+        'Click the button to see what a real, live signal looks like, for free. The trial pays nothing and moves no money; the revenue figures above come only from real paid purchases.',
       busy: 'Fetching…',
-      cta: 'Try a signal (free)',
-      failed: 'demo fetch failed',
-      networkError: 'network error — is the API deployed / VITE_SIGNAL_API_URL set?',
+      cta: 'See a signal for free',
+      resultCaption: 'The raw data your assistant would receive:',
+      failed: 'The trial fetch failed',
+      networkError: 'Could not reach the signal service. Please try again later.',
       settled: '70/20/10 settled on-chain · ',
-      viewSettlement: 'View settlement tx on BaseScan ↗',
+      viewSettlement: 'View this split on BaseScan ↗',
     },
 
-    external: {
-      divider: 'External agents bring their own wallet',
+    start: {
+      heading: 'How to get started',
+      note: 'For now, step 3 needs a friend or developer who can run a script; enabling an assistant with one click inside the app is still being planned.',
+      wallet: {
+        title: 'Set up a test wallet',
+        body: 'Install a wallet such as MetaMask, create a brand-new account and switch it to the Base Sepolia testnet. Don’t use a wallet that holds real assets.',
+      },
+      fund: {
+        title: 'Get free test tokens',
+        body: 'At Circle’s testnet faucet, choose Base Sepolia and claim Circle USDC to pay for data. Then claim a little ETH from any Base Sepolia faucet to cover on-chain fees (gas).',
+        link: 'Open the Circle faucet ↗',
+      },
+      connect: {
+        title: 'Hand the wallet to your assistant',
+        body: 'A developer follows the example in the "For developers" section below to give this wallet to the assistant program. From then on, the assistant pays for data by itself.',
+      },
+      track: {
+        title: 'Check spending any time',
+        body: 'Every payment leaves a public record. Paste the wallet address into BaseScan to see each one your assistant made.',
+      },
+    },
+
+    faq: {
+      heading: 'Common questions',
+      spend: {
+        q: 'Could my assistant overspend?',
+        a: 'It can only spend what is in that wallet. Put in just the amount you’re comfortable with — 1 Circle USDC already buys 100 signals.',
+      },
+      trade: {
+        q: 'Will my assistant trade for me?',
+        a: 'It can be set up to. Trades use your margin on the exchange and stay within limits you authorise in advance: a per-trade cap, a total budget, a leverage cap and an expiry date, all enforced by the contract. Anything beyond them is rejected.',
+      },
+      real: {
+        q: 'Is this real money?',
+        a: 'No. It runs on the Base Sepolia testnet, and test tokens from a faucet have no real value.',
+      },
+    },
+
+    advanced: {
+      summary: 'For developers: technical parameters and code examples',
+      hint: 'Everyday users can skip this section.',
+      fact: {
+        baseUrl: 'Base URL',
+        network: 'Network',
+        asset: 'Asset',
+        assetValue: 'Circle USDC {address} (6-dec, EIP-3009)',
+        router: 'x402 router',
+        pricing: 'Pricing',
+        pricingValue: 'GET /signals/:trader → $0.01 · GET /oracle/:asset → $0.005',
+      },
       step1: '1) Explore (free)',
       step2: '2) Pay to buy (x402-fetch + viem)',
-      flow:
-        'Flow: GET → receive a 402 (with accepts: network/asset/payTo/price) → sign an EIP-3009 transferWithAuthorization with Circle USDC → resend with X-PAYMENT → 200 + signal + settlement tx.',
+      flow: 'Flow: GET → receive a 402 (with accepts: network/asset/payTo/price) → sign an EIP-3009 transferWithAuthorization with Circle USDC → resend with X-PAYMENT → 200 + signal + settlement tx.',
+      networkErrorHint: 'If the free trial cannot connect, check that the API is deployed and VITE_SIGNAL_API_URL is set.',
     },
 
     footer:
