@@ -26,9 +26,8 @@ export const exchange: Catalog['exchange'] = {
     swappedEthForToken: 'Swapped {amount} ETH for ~{received} {token} ✓',
     swappedTokenForEth: 'Swapped {amount} {token} for ~{received} ETH ✓',
 
-    faucetStable:
-      'Claimed test {token} ✓ — deposit it as margin using Approve & Deposit in the Margin Account panel on the right',
-    faucetAltStable: 'Claimed test {alt} ✓ — hold or swap it; use {token} for margin',
+    faucetStable: 'Claimed test {token} ✓ — buy tokenized assets with it on Trade Assets',
+    faucetAltStable: 'Claimed test {alt} ✓ — hold or swap it; use {token} to buy assets',
     faucetPepe: 'Claimed test PEPE ✓',
 
 
@@ -48,7 +47,6 @@ export const exchange: Catalog['exchange'] = {
    * `<strong>前綴：</strong> 說明` 的句中夾標記，和幣別說明那段一起留給 #36。
    */
   guide: {
-    title: 'How CFD trading works on PepeLab',
     spotTitle: 'How to buy and sell tokenized assets on PepeLab',
   },
 
@@ -56,9 +54,9 @@ export const exchange: Catalog['exchange'] = {
   faucet: {
     title: '🚰 Get Test Tokens',
     intro:
-      'PEPE is the platform token (testnet mock) — claim it free from the faucet. {stable} is the mock margin stablecoin. x402 payments settle in {x402Stable}.',
+      'PEPE is the platform token (testnet mock) — claim it free from the faucet. {stable} is the mock stablecoin for buying assets and swaps. x402 payments settle in {x402Stable}.',
 
-    stableNote: '· Mock margin',
+    stableNote: '· Mock stablecoin (buy assets / swap)',
     altStableNote: '· Mock stablecoin (hold / swap)',
     pepeNote: '· Platform token',
 
@@ -128,12 +126,6 @@ export const exchange: Catalog['exchange'] = {
    * 組出來的句子會黏成一個字。
    */
   markup: {
-    syntheticPositionBefore: 'Positions opened on this page are ',
-    syntheticPositionBold: 'synthetic positions',
-    syntheticPositionAfter:
-      ' (recorded in PerpetualExchange — no token ever appears in your wallet). Want to actually hold ERC-20 tokens? ',
-    tokenizedAssetsLink: 'Go to the Tokenized Assets page →',
-
     stepBuyLabel: 'Buy assets:',
     stepBuyBody: 'Go to Trade Assets and buy tokenized equities, bonds, gold, and crypto with {token} — the tokens land directly in your wallet.',
     stepPortfolioLabel: 'Check your allocation:',
@@ -141,23 +133,14 @@ export const exchange: Catalog['exchange'] = {
 
     stepGetTokensLabel: 'Get tokens:',
     stepGetTokensBody: 'Claim test {token} (and PEPE) from the faucet — no swap needed.',
-    stepMarginLabel: 'Margin Account:',
-    stepMarginBody:
-      'Approve & deposit {token} into PerpetualExchange. This becomes your free margin.',
-    stepOpenLabel: 'Open Position:',
-    stepOpenBody:
-      'Use free margin to open long/short on 11 synthetic assets — crypto (sBTC, sETH), equity (sAAPL, sTSLA, sNVDA, sMSFT, sGOOGL), commodity (sGOLD), bond (sBOND), and ESG ETFs (sICLN, sESGU). 🔒 = KYC required.',
-    stepPnlLabel: 'PnL:',
-    stepPnlBody: 'Price moves → position value changes → close to realise PnL.',
 
-    currencyNoteLine1Before: '💱 Currency: platform margin and swaps use ',
+    currencyNoteLine1Before: '💱 Currency: buying assets and swaps use ',
     currencyNoteLine1After: ' (testnet mock — free from the Faucet); ',
     currencyNoteLine2After: ' payments settle in ',
     currencyNoteLine2End:
       " (EIP-3009, real asset). The two serve different purposes — don't mix them up.",
 
     ethBalanceBefore: 'ETH balance: ',
-    ethBalanceAfter: ' (opening a position needs a small amount of ETH for the execution fee)',
     ethBalanceAfterSpot: ' (on-chain transactions need a little ETH for gas)',
 
     faucetEoaLine1: '🔑 The faucet only pays out to ',
