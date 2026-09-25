@@ -1,15 +1,12 @@
 import { MONO } from 'src/components/pepefi/brandKit'
 import { useState, useEffect, useCallback } from 'react';
-import { Link as RouterLink } from 'react-router';
 import { parseEther } from 'ethers';
 import { useContracts } from 'src/hooks/useContracts';
 import { usePepefiWallet } from 'src/layouts/pepefi';
-import { paths } from 'src/routes/paths';
 import { t, interpolate } from 'src/locales';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
 import { safeRead } from 'src/lib/pepefi/safeRead';
 import { STABLE_LABEL, ALT_STABLE_LABEL, X402_STABLE_LABEL } from 'src/lib/pepefi/tokenLabel';
-import { SHOW_PERPETUALS } from 'src/lib/pepefi/featureFlags';
 import {
   isOracleStale,
   priceImpactBps,
@@ -36,7 +33,6 @@ import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
 import Alert from '@mui/material/Alert';
 import LinearProgress from '@mui/material/LinearProgress';
-import Link from '@mui/material/Link';
 import Backdrop from '@mui/material/Backdrop';
 import CircularProgress from '@mui/material/CircularProgress';
 import { Icon } from '@iconify/react';
@@ -508,22 +504,10 @@ export default function ExchangePage() {
         <PaperTradingBadge />
       </Box>
 
-      {/* Pointer to the ERC-20 layer. Positions opened here are ledger entries
-          on PerpetualExchange, so nothing lands in the wallet; /tokens is where
-          real transferable tokens are minted. */}
-      {/* 「本頁開倉為合成持倉」——存在的目的是解釋這一頁的部位與 ERC-20 代幣
-          的差別。SHOW_PERPETUALS 關閉時這一頁沒有部位可解釋,留著只會憑空
-          introduce 一個看不到的概念。 */}
-      {SHOW_PERPETUALS && (
-      <Alert severity="info" sx={{ mb: 2 }}>
-        {t.exchange.markup.syntheticPositionBefore}<b>{t.exchange.markup.syntheticPositionBold}</b>{t.exchange.markup.syntheticPositionAfter}
-        <Link component={RouterLink} to={paths.pepefi.tokens} sx={{ ml: 0.5, fontWeight: 'bold' }}>
-          {t.exchange.markup.tokenizedAssetsLink}
-        </Link>
-      </Alert>
-      )}
-
-      {/* Onboarding guide */}
+      {/* Onboarding guide.
+          #148 之後這一頁不論 SHOW_PERPETUALS 開關都沒有開倉面板(開倉在 /terminal),
+          所以只剩現貨這一條路線:領幣 → 到資產交易頁買 → 回投資組合看配置,
+          中間沒有「保證金帳戶」也沒有「開倉」。 */}
       <Alert
         severity="info"
         variant="outlined"
@@ -535,25 +519,12 @@ export default function ExchangePage() {
         }}
       >
         <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
-          {SHOW_PERPETUALS ? t.exchange.guide.title : t.exchange.guide.spotTitle}
+          {t.exchange.guide.spotTitle}
         </Typography>
         <Typography variant="body2" component="ol" sx={{ pl: 2, m: 0, '& li': { mb: 0.5 } }}>
-          {/* 兩條路線的步驟不一樣,不是同一份文字加減幾句:現貨的流程是
-              領幣 → 到資產交易頁買 → 回投資組合看配置,中間沒有「保證金帳戶」
-              也沒有「開倉」。 */}
           <li><strong>{t.exchange.markup.stepGetTokensLabel}</strong> {interpolate(t.exchange.markup.stepGetTokensBody, { token: STABLE_LABEL })}</li>
-          {SHOW_PERPETUALS ? (
-            <>
-              <li><strong>{t.exchange.markup.stepMarginLabel}</strong> {interpolate(t.exchange.markup.stepMarginBody, { token: STABLE_LABEL })}</li>
-              <li><strong>{t.exchange.markup.stepOpenLabel}</strong> {t.exchange.markup.stepOpenBody}</li>
-              <li><strong>{t.exchange.markup.stepPnlLabel}</strong> {t.exchange.markup.stepPnlBody}</li>
-            </>
-          ) : (
-            <>
-              <li><strong>{t.exchange.markup.stepBuyLabel}</strong> {interpolate(t.exchange.markup.stepBuyBody, { token: STABLE_LABEL })}</li>
-              <li><strong>{t.exchange.markup.stepPortfolioLabel}</strong> {t.exchange.markup.stepPortfolioBody}</li>
-            </>
-          )}
+          <li><strong>{t.exchange.markup.stepBuyLabel}</strong> {interpolate(t.exchange.markup.stepBuyBody, { token: STABLE_LABEL })}</li>
+          <li><strong>{t.exchange.markup.stepPortfolioLabel}</strong> {t.exchange.markup.stepPortfolioBody}</li>
         </Typography>
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
           {t.exchange.markup.currencyNoteLine1Before}<b>{STABLE_LABEL}</b>{t.exchange.markup.currencyNoteLine1After}
@@ -664,7 +635,7 @@ export default function ExchangePage() {
             )}
 
             <Typography variant="caption" color="text.secondary">
-              {t.exchange.markup.ethBalanceBefore}<Box component="span" sx={{ fontFamily: MONO, color: 'text.primary' }}>{ethBal}</Box>{SHOW_PERPETUALS ? t.exchange.markup.ethBalanceAfter : t.exchange.markup.ethBalanceAfterSpot}
+              {t.exchange.markup.ethBalanceBefore}<Box component="span" sx={{ fontFamily: MONO, color: 'text.primary' }}>{ethBal}</Box>{t.exchange.markup.ethBalanceAfterSpot}
             </Typography>
 
             {/* faucet() 現在要求 msg.sender == tx.origin：合約錢包按下去必定

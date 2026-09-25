@@ -97,8 +97,8 @@ export const navData: NavSectionProps['data'] = [
 // 「我擁有什麼、表現如何」的投資人視角需要的入口，其餘收進 Expert。
 //
 // issue #101 — Mode 分流 11 / 11。Simple 的 11 個頁面裡，LandingPage 是
-// `/`（不在側邊欄），CopyPage 與 TraderProfilePage 是帶參數的路徑（從配置
-// 市集點進去），所以側邊欄上是這 8 個。被藏起來的是入口不是路徑——
+// `/`（不在側邊欄），CopyPage 與 TraderProfilePage 是帶參數的路徑（#150 起
+// 只從 Expert 的交易者排行榜點進去），所以側邊欄上是這 8 個。被藏起來的是入口不是路徑——
 // WhaleTracker、TradeTerminal、各 Admin 頁直接打網址仍然到得了，口試時
 // Expert Mode 也照常可用。
 //

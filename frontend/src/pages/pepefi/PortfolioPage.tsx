@@ -31,6 +31,7 @@ import NetWorthHero from 'src/components/pepefi/dashboard/NetWorthHero';
 import RwaAllocation from 'src/components/pepefi/dashboard/RwaAllocation';
 import { useSynthHoldings } from 'src/hooks/useSynthHoldings';
 import { SHOW_PERPETUALS } from 'src/lib/pepefi/featureFlags';
+import { copyDeskVisibility } from 'src/lib/pepefi/copyDeskVisibility';
 import KYCStatusCard from 'src/components/pepefi/dashboard/KYCStatusCard';
 import QuickActions from 'src/components/pepefi/dashboard/QuickActions';
 import PortfolioAnalysis from 'src/components/pepefi/dashboard/PortfolioAnalysis';
@@ -453,7 +454,8 @@ export default function PortfolioPage() {
   // 原本的 fallback 是畫一個點、而且畫的是自由保證金——標題寫 Performance、
   // 副標寫 initial vs current，畫面上卻是一顆跟績效無關的孤點。整張卡不顯示
   // 才是誠實的做法，跟 hero 不顯示算不出來的「今日變化」是同一個理由。
-  const hasCopyHistory = totalInitial > 0n;
+  const copyDesk = copyDeskVisibility(mode, copyRecs.length);
+  const showCopyPerformance = copyDesk.performance && totalInitial > 0n;
 
   const chartData = [
     { name: t.portfolio.page.chart.deposited, value: initVal },
@@ -626,8 +628,10 @@ export default function PortfolioPage() {
           directly above a Copy Positions panel already saying the same thing
           in words: three ways of being told you have not done something yet,
           for a feature you may never want. The panel below keeps the one
-          version that also offers a way in. */}
-      {copyRecs.length > 0 && (
+          version that also offers a way in.
+
+          #150：哪個模式看得到哪一塊跟單 UI，由 copyDeskVisibility 決定。 */}
+      {copyDesk.stats && (
         <Grid container spacing={2}>
           <Grid size={{ xs: 12, sm: 6 }}>
             <StatCard
@@ -652,6 +656,7 @@ export default function PortfolioPage() {
       )}
 
       {/* ─── A. Copy Records ────────────────────────────────────────────── */}
+      {copyDesk.records && (
       <Card sx={{ border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
         <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
           <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 1 }}>
@@ -744,6 +749,7 @@ export default function PortfolioPage() {
           </TableContainer>
         )}
       </Card>
+      )}
 
       {/* ─── B. Open Positions ──────────────────────────────────────────────
           旗標關著時只有真的還有部位才顯示。與 /exchange 的同一個判斷同源:全部
@@ -925,7 +931,7 @@ export default function PortfolioPage() {
       {/* ─── C + D side-by-side ─────────────────────────────────────────── */}
       <Grid container spacing={3}>
         {/* C. Free Margin */}
-        <Grid size={{ xs: 12, md: hasCopyHistory ? 6 : 12 }}>
+        <Grid size={{ xs: 12, md: showCopyPerformance ? 6 : 12 }}>
           <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5, height: '100%' }}>
             <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 1 }}>
               {mode === 'simple' ? t.portfolio.page.freeMarginSimple : t.portfolio.page.freeMargin}
@@ -960,7 +966,7 @@ export default function PortfolioPage() {
         </Grid>
 
         {/* D. Performance Chart — only when there are two real points to plot. */}
-        {hasCopyHistory && (
+        {showCopyPerformance && (
         <Grid size={{ xs: 12, md: 6 }}>
           <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5, height: '100%' }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

@@ -36,8 +36,8 @@ export const exchange = {
     swappedEthForToken: '已用 {amount} ETH 兌換約 {received} {token} ✓',
     swappedTokenForEth: '已用 {amount} {token} 兌換約 {received} ETH ✓',
 
-    faucetStable: '已領取測試 {token} ✓ — 可在右側 Margin Account「Approve & Deposit」作為保證金',
-    faucetAltStable: '已領取測試 {alt} ✓ — 可持有與兌換；保證金請用 {token}',
+    faucetStable: '已領取測試 {token} ✓ — 可到「資產交易」頁買進代幣化資產',
+    faucetAltStable: '已領取測試 {alt} ✓ — 可持有與兌換；買進資產請用 {token}',
     faucetPepe: '已領取測試 PEPE ✓',
 
 
@@ -57,8 +57,7 @@ export const exchange = {
    * `<strong>前綴：</strong> 說明` 的句中夾標記，和幣別說明那段一起留給 #36。
    */
   guide: {
-    title: 'PepeLab 上的 CFD 交易如何運作',
-    /** SHOW_PERPETUALS 關閉時的版本——那時這一頁沒有開倉面板,教 CFD 只會讓人去找一個不存在的東西。 */
+    /** #148 起這一頁沒有開倉面板,教 CFD 只會讓人去找一個不存在的東西——只剩現貨版本。 */
     spotTitle: '在 PepeLab 上買賣代幣化資產',
   },
 
@@ -66,9 +65,9 @@ export const exchange = {
   faucet: {
     title: '🚰 取得測試代幣',
     intro:
-      'PEPE 是平台幣（測試網模擬），用水龍頭免費領取；{stable} 為模擬保證金穩定幣；x402 付費用 {x402Stable}。',
+      'PEPE 是平台幣（測試網模擬），用水龍頭免費領取；{stable} 為模擬穩定幣，用來買進資產與兌換；x402 付費用 {x402Stable}。',
 
-    stableNote: '· 模擬保證金',
+    stableNote: '· 模擬穩定幣（買資產／兌換）',
     altStableNote: '· 模擬穩定幣（持有／兌換）',
     pepeNote: '· 平台幣',
 
@@ -134,12 +133,6 @@ export const exchange = {
    * 這樣拆過幾句，實測畫面上少了空格，才改成現在這個規則。
    */
   markup: {
-    syntheticPositionBefore: '本頁開倉為',
-    syntheticPositionBold: '合成持倉',
-    syntheticPositionAfter:
-      '（記錄在 PerpetualExchange，錢包內不會出現代幣）。 想要真正持有 ERC-20 代幣？',
-    tokenizedAssetsLink: '前往代幣化資產頁 →',
-
     stepBuyLabel: '買入資產：',
     stepBuyBody: '到「資產交易」頁,用 {token} 買進代幣化的股、債、金、幣——代幣會直接進到你的錢包。',
     stepPortfolioLabel: '看配置：',
@@ -147,22 +140,14 @@ export const exchange = {
 
     stepGetTokensLabel: '取得代幣：',
     stepGetTokensBody: '從水龍頭領取測試用 {token}（以及 PEPE）——不需要兌換。',
-    stepMarginLabel: '保證金帳戶：',
-    stepMarginBody: '批准並將 {token} 存入 PerpetualExchange，這將成為你的可用保證金。',
-    stepOpenLabel: '開倉：',
-    stepOpenBody:
-      '使用可用保證金在 11 種合成資產上做多/做空——加密貨幣（sBTC、sETH）、股票（sAAPL、sTSLA、sNVDA、sMSFT、sGOOGL）、商品（sGOLD）、債券（sBOND），以及 ESG ETF（sICLN、sESGU）。🔒 = 需要 KYC。',
-    stepPnlLabel: 'PnL：',
-    stepPnlBody: '價格變動 → 部位價值改變 → 平倉即可實現 PnL。',
 
-    currencyNoteLine1Before: '💱 幣別：平台保證金與兌換用 ',
+    currencyNoteLine1Before: '💱 幣別：買進資產與兌換用 ',
     currencyNoteLine1After: '（測試網模擬幣，可用 Faucet 免費領）；',
     currencyNoteLine2After: ' 付費 API 結算用 ',
     currencyNoteLine2End: '（EIP-3009，真實資產）。兩者用途不同、勿混用。',
 
     ethBalanceBefore: 'ETH 餘額：',
-    ethBalanceAfter: '（開倉需少量 ETH 付執行費）',
-    /** SHOW_PERPETUALS 關閉時的版本:這一頁沒有開倉,ETH 只用來付 gas。 */
+    /** 這一頁沒有開倉,ETH 只用來付 gas。 */
     ethBalanceAfterSpot: '（鏈上交易需少量 ETH 付 gas）',
 
     faucetEoaLine1: '🔑 水龍頭只開放',

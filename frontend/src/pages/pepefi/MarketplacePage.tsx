@@ -92,14 +92,6 @@ type SortKey = LeaderboardSortKey;
 
 const ESG_FRIENDLY_THRESHOLD = 60;   // weighted composite ≥ 60
 
-/**
- * Simple Mode 只留「# · 交易者 · TraderScore · 7d 曲線 · 7d 損益 · 跟單」——
- * 這些排序鍵在 Simple 沒有對應欄位,選了也看不出差異,所以 Simple 底下的
- * Select 選單直接不給選;若在 Expert 用其中一種排序後切回 Simple,見下面
- * 的 mode-reset effect,退回預設的 score。
- */
-const EXPERT_ONLY_SORT_KEYS = new Set<SortKey>(['reputation', 'followers', 'volume', 'stake', 'esg']);
-
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const shortAddr = (addr: string) => `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 
@@ -143,7 +135,6 @@ function TraderLeaderboard() {
   const wallet = usePepefiWallet();
   const contracts  = useContracts(wallet.provider, wallet.signer, wallet.chainId);
   const { data: esg } = useESG(contracts?.esgRegistry ?? null);
-  const { mode } = useMode();
 
   const [traders,    setTraders]    = useState<TraderCard[]>([]);
   const [isLoading,  setIsLoading]  = useState(false);
@@ -158,14 +149,6 @@ function TraderLeaderboard() {
   // 7 天的視窗在 Base 上是 31 段序列 getLogs,實測 12 秒。骨架屏撐 12 秒看起來
   // 像當掉了——把段數進度講出來,等待才是「在做事」而不是「壞了」。
   const [progress, setProgress] = useState<{ done: number; total: number }>({ done: 0, total: 0 });
-
-  // Expert 專屬排序鍵在 Simple 底下沒有對應欄位可看——切回 Simple 時退回預設的
-  // score,不要停在一個看不見的欄位上(見 #89 acceptance criteria)。
-  useEffect(() => {
-    if (mode === 'simple' && EXPERT_ONLY_SORT_KEYS.has(sortKey)) {
-      setSortKey('score');
-    }
-  }, [mode, sortKey]);
 
   const fetchAll = useCallback(async () => {
     if (!contracts || !wallet.provider) return;
@@ -344,7 +327,7 @@ function TraderLeaderboard() {
 
   const starTraderCount = visible.filter(isStarTrader).length;
 
-  const allSortOptions: Array<{ key: SortKey; label: string }> = [
+  const sortOptions: Array<{ key: SortKey; label: string }> = [
     { key: 'score', label: t.marketplace.sort.score },
     { key: 'pnl', label: t.marketplace.sort.pnl },
     { key: 'reputation', label: t.marketplace.sort.reputation },
@@ -353,7 +336,6 @@ function TraderLeaderboard() {
     { key: 'stake', label: t.marketplace.sort.stake },
     { key: 'esg', label: t.marketplace.sort.esg },
   ];
-  const sortOptions = allSortOptions.filter(opt => mode === 'expert' || !EXPERT_ONLY_SORT_KEYS.has(opt.key));
 
   const sortableHeader = (key: SortKey, label: string, align: 'left' | 'center' | 'right' = 'right') => (
     <TableCell
@@ -478,7 +460,7 @@ function TraderLeaderboard() {
               })}
             </Typography>
           )}
-          <TableSkeleton rows={8} cols={mode === 'expert' ? 11 : 5} />
+          <TableSkeleton rows={8} cols={11} />
         </Card>
       ) : filtered.length === 0 ? (
         <EmptyState
@@ -547,24 +529,20 @@ function TraderLeaderboard() {
                     {t.marketplace.table.trader}
                   </TableCell>
                   {sortableHeader('score', t.marketplace.table.score, 'center')}
-                  {mode === 'expert' && (
-                    <TableCell sx={{ position: 'sticky', top: 0, zIndex: 2, bgcolor: 'background.neutral', color: 'text.secondary', fontWeight: 'bold' }}>
-                      {t.marketplace.table.strategy}
-                    </TableCell>
-                  )}
-                  {mode === 'expert' && sortableHeader('volume', t.marketplace.card.volLabel)}
+                  <TableCell sx={{ position: 'sticky', top: 0, zIndex: 2, bgcolor: 'background.neutral', color: 'text.secondary', fontWeight: 'bold' }}>
+                    {t.marketplace.table.strategy}
+                  </TableCell>
+                  {sortableHeader('volume', t.marketplace.card.volLabel)}
                   {sortableHeader('pnl', t.marketplace.card.pnlLabel)}
-                  {mode === 'expert' && (
-                    <TableCell
-                      align="right"
-                      sx={{ position: 'sticky', top: 0, zIndex: 2, bgcolor: 'background.neutral', color: 'text.secondary', fontWeight: 'bold', whiteSpace: 'nowrap' }}
-                    >
-                      {t.marketplace.table.winRate}
-                    </TableCell>
-                  )}
-                  {mode === 'expert' && sortableHeader('followers', t.marketplace.card.followersLabel)}
-                  {mode === 'expert' && sortableHeader('stake', t.marketplace.card.stakeLabel)}
-                  {mode === 'expert' && sortableHeader('esg', t.marketplace.table.esg)}
+                  <TableCell
+                    align="right"
+                    sx={{ position: 'sticky', top: 0, zIndex: 2, bgcolor: 'background.neutral', color: 'text.secondary', fontWeight: 'bold', whiteSpace: 'nowrap' }}
+                  >
+                    {t.marketplace.table.winRate}
+                  </TableCell>
+                  {sortableHeader('followers', t.marketplace.card.followersLabel)}
+                  {sortableHeader('stake', t.marketplace.card.stakeLabel)}
+                  {sortableHeader('esg', t.marketplace.table.esg)}
                   <TableCell
                     align="center"
                     sx={{
@@ -581,10 +559,7 @@ function TraderLeaderboard() {
                 {tableRows.map(trader => {
                   const rank = rankOf.get(trader.address) ?? 0;
                   const star = isStarTrader(trader);
-
-                  // esgComposite only feeds the strategy/ESG cells below, both Expert-only — skip the
-                  // work entirely in Simple Mode instead of computing it for every row and discarding it.
-                  const esgComposite = mode === 'expert' ? esgFor(trader) : null;
+                  const esgComposite = esgFor(trader);
 
                   return (
                     <TableRow key={trader.address} hover>
@@ -665,24 +640,20 @@ function TraderLeaderboard() {
                         />
                       </TableCell>
 
-                      {mode === 'expert' && (
-                        <TableCell sx={{ maxWidth: 260 }}>
-                          <Stack spacing={0.5}>
-                            <AllocationRow allocs={trader.allocs} hasStrategy={trader.hasStrategy} />
-                            {esgComposite && (
-                              <Box sx={{ alignSelf: 'flex-start' }}>
-                                <ESGBadge composite={esgComposite.composite} rating={esgComposite.rating} size="sm" />
-                              </Box>
-                            )}
-                          </Stack>
-                        </TableCell>
-                      )}
+                      <TableCell sx={{ maxWidth: 260 }}>
+                        <Stack spacing={0.5}>
+                          <AllocationRow allocs={trader.allocs} hasStrategy={trader.hasStrategy} />
+                          {esgComposite && (
+                            <Box sx={{ alignSelf: 'flex-start' }}>
+                              <ESGBadge composite={esgComposite.composite} rating={esgComposite.rating} size="sm" />
+                            </Box>
+                          )}
+                        </Stack>
+                      </TableCell>
 
-                      {mode === 'expert' && (
-                        <TableCell align="right" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
-                          {trader.totalVolume > 0n ? fVol(trader.totalVolume) : '—'}
-                        </TableCell>
-                      )}
+                      <TableCell align="right" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
+                        {trader.totalVolume > 0n ? fVol(trader.totalVolume) : '—'}
+                      </TableCell>
 
                       <TableCell
                         align="right"
@@ -695,50 +666,42 @@ function TraderLeaderboard() {
                         {trader.pnl7d !== 0n ? fPnL(trader.pnl7d) : '—'}
                       </TableCell>
 
-                      {mode === 'expert' && (
-                        <TableCell align="right" sx={{ fontFamily: MONO }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
-                            {fWinRate(trader.wins, trader.trades)}
-                            {trader.score.insufficientSample && (
-                              <Tooltip title={t.marketplace.scoreBreakdown.insufficientNote}>
-                                <Chip
-                                  label={t.marketplace.table.insufficientSample}
-                                  size="small"
-                                  variant="outlined"
-                                  sx={{ height: 16, fontSize: '0.5625rem', color: 'text.secondary', borderColor: 'divider' }}
-                                />
-                              </Tooltip>
-                            )}
-                          </Box>
-                        </TableCell>
-                      )}
+                      <TableCell align="right" sx={{ fontFamily: MONO }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
+                          {fWinRate(trader.wins, trader.trades)}
+                          {trader.score.insufficientSample && (
+                            <Tooltip title={t.marketplace.scoreBreakdown.insufficientNote}>
+                              <Chip
+                                label={t.marketplace.table.insufficientSample}
+                                size="small"
+                                variant="outlined"
+                                sx={{ height: 16, fontSize: '0.5625rem', color: 'text.secondary', borderColor: 'divider' }}
+                              />
+                            </Tooltip>
+                          )}
+                        </Box>
+                      </TableCell>
 
-                      {mode === 'expert' && (
-                        <TableCell align="right" sx={{ fontFamily: MONO }}>
-                          {String(trader.followerCount)}
-                        </TableCell>
-                      )}
+                      <TableCell align="right" sx={{ fontFamily: MONO }}>
+                        {String(trader.followerCount)}
+                      </TableCell>
 
-                      {mode === 'expert' && (
-                        <TableCell align="right" sx={{ fontFamily: MONO }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
-                            {trader.stake !== null && trader.stake > 0n ? fVol(trader.stake) : '—'}
-                            {trader.totalSlashed !== null && trader.totalSlashed > 0n && (
-                              <Tooltip title={interpolate(t.marketplace.card.slashed, {
-                                amount: (Number(trader.totalSlashed) / 1e18).toFixed(0),
-                              })}>
-                                <Box component="span" sx={{ color: 'error.main', fontSize: '0.75rem', cursor: 'default' }}>⚠</Box>
-                              </Tooltip>
-                            )}
-                          </Box>
-                        </TableCell>
-                      )}
+                      <TableCell align="right" sx={{ fontFamily: MONO }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
+                          {trader.stake !== null && trader.stake > 0n ? fVol(trader.stake) : '—'}
+                          {trader.totalSlashed !== null && trader.totalSlashed > 0n && (
+                            <Tooltip title={interpolate(t.marketplace.card.slashed, {
+                              amount: (Number(trader.totalSlashed) / 1e18).toFixed(0),
+                            })}>
+                              <Box component="span" sx={{ color: 'error.main', fontSize: '0.75rem', cursor: 'default' }}>⚠</Box>
+                            </Tooltip>
+                          )}
+                        </Box>
+                      </TableCell>
 
-                      {mode === 'expert' && (
-                        <TableCell align="right">
-                          {esgComposite ? `${esgComposite.composite}` : '—'}
-                        </TableCell>
-                      )}
+                      <TableCell align="right">
+                        {esgComposite ? `${esgComposite.composite}` : '—'}
+                      </TableCell>
 
                       <TableCell
                         align="center"
