@@ -123,10 +123,11 @@ describe('KYC 收據（localStorage）', () => {
       expect(savePendingKycReceipt(first)).toBe(true)
       expect(promoteKycReceipt({ ...first, txHash: TX1 })).toBe(true)
       // 第二次：送出前寫 pending，然後錢包取消 → 只刪 pending
-      savePendingKycReceipt(receipt('Alice', '0x' + '22'.repeat(32), null, 2))
-      clearPendingKycReceipt(LOC)
+      const salt2 = '0x' + '22'.repeat(32)
+      savePendingKycReceipt(receipt('Alice', salt2, null, 2))
+      clearPendingKycReceipt(LOC, salt2)
       const got = loadKycReceipts(LOC)
-      expect(got.pending).toBeNull()
+      expect(got.pending).toEqual([])
       expect(got.history.map((r) => r.txHash)).toEqual([TX1])
       expect(got.history[0].salt).toBe(SALT)
     })
@@ -145,7 +146,7 @@ describe('KYC 收據（localStorage）', () => {
   it('沒拿到 tx hash 的 pending 會被讀出來（頁面在錢包彈窗時被關掉）', () => {
     withFakeStorage(() => {
       savePendingKycReceipt(receipt('A', SALT, null, 9))
-      expect(loadKycReceipts(LOC).pending?.salt).toBe(SALT)
+      expect(loadKycReceipts(LOC).pending.map((r) => r.salt)).toEqual([SALT])
     })
   })
 
@@ -158,6 +159,34 @@ describe('KYC 收據（localStorage）', () => {
       expect(Object.keys(got.history[0])).not.toContain('fullName')
       expect(store.has(legacyReceiptKey(LOC))).toBe(false)
       expect([...store.values()].join()).not.toMatch(/alice/i)
+    })
+  })
+
+  it('pending 以 salt 為索引：clearPending 只刪 salt 相符的那一筆', () => {
+    withFakeStorage(() => {
+      const s2 = '0x' + '44'.repeat(32)
+      savePendingKycReceipt(receipt('A', SALT, null, 1))
+      savePendingKycReceipt(receipt('B', s2, null, 2))
+      clearPendingKycReceipt(LOC, SALT)
+      expect(loadKycReceipts(LOC).pending.map((r) => r.salt)).toEqual([s2])
+      // 升格只清同 salt 的 pending
+      promoteKycReceipt({ ...receipt('C', '0x' + '55'.repeat(32), null, 3), txHash: TX2 })
+      expect(loadKycReceipts(LOC).pending.map((r) => r.salt)).toEqual([s2])
+    })
+  })
+
+  it('舊版單一 key 沒有 txHash：清洗後放進 pending，不刪除 salt', () => {
+    withFakeStorage((store) => {
+      const old = { ...receipt('Alice', SALT, null, 7), fullName: 'Alice', nationality: 'TW' }
+      store.set(legacyReceiptKey(LOC), JSON.stringify(old))
+      const got = loadKycReceipts(LOC)
+      expect(got.history).toEqual([])
+      expect(got.pending.map((r) => r.salt)).toEqual([SALT])
+      expect(Object.keys(got.pending[0])).not.toContain('fullName')
+      expect(store.has(legacyReceiptKey(LOC))).toBe(false)
+      expect([...store.values()].join()).not.toMatch(/alice/i)
+      // 再讀一次仍在（沒有被刪）
+      expect(loadKycReceipts(LOC).pending.map((r) => r.salt)).toEqual([SALT])
     })
   })
 
@@ -175,8 +204,8 @@ describe('KYC 收據（localStorage）', () => {
     g.localStorage = undefined
     try {
       expect(savePendingKycReceipt(receipt('A', SALT, null, 1))).toBe(false)
-      expect(loadKycReceipts(LOC)).toEqual({ history: [], pending: null })
-      expect(() => clearPendingKycReceipt(LOC)).not.toThrow()
+      expect(loadKycReceipts(LOC)).toEqual({ history: [], pending: [] })
+      expect(() => clearPendingKycReceipt(LOC, SALT)).not.toThrow()
     } finally { g.localStorage = prev }
   })
 })

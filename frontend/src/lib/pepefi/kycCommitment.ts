@@ -98,7 +98,8 @@ export function verifyKycCommitment(a: {
 // 把明文放在這裡等於在本機又留一份個資。使用者出示時自己提供原始資料即可。
 //
 // 兩個 key，刻意分開：
-//   pending  — 送交易「之前」寫入的那一份（還沒有 tx hash）。只有一份；錢包取消或
+//   pending  — 送交易「之前」寫入的收據（還沒有 tx hash），以 salt 為索引可有多份
+//              （例如兩個分頁同時送出）；錢包取消或
 //              送出失敗時只刪它。
 //   history  — 拿到 tx hash 之後升格進來，以 txHash 為索引保存多份。重送、取消都
 //              不會動到這裡的舊收據——每一份都可能對應一筆已上鏈的申請。
@@ -199,46 +200,83 @@ function readHistory(l: ReceiptLocation): KycReceipt[] {
   return Array.isArray(raw) ? raw.map(sanitizeKycReceipt).filter((r): r is KycReceipt => !!r && !!r.txHash) : []
 }
 
-/** 送交易前寫入 pending。回 false 代表寫不進去（私密模式／空間滿）。 */
+const sameSalt = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
+
+function readPending(l: ReceiptLocation): KycReceipt[] {
+  const raw = readJson(pendingReceiptKey(l))
+  // 相容前一版：pending 曾是單一物件。
+  const list = Array.isArray(raw) ? raw : raw ? [raw] : []
+  return list
+    .map(sanitizeKycReceipt)
+    .filter((r): r is KycReceipt => !!r)
+    .map((r) => ({ ...r, txHash: null }))
+}
+
+/** 送交易前寫入 pending（以 salt 為索引，同 salt 覆寫）。回 false 代表寫不進去。 */
 export function savePendingKycReceipt(r: KycReceipt): boolean {
-  return writeJson(pendingReceiptKey(r), { ...r, txHash: null })
+  const list = readPending(r).filter((x) => !sameSalt(x.salt, r.salt))
+  list.push({ ...sanitizeKycReceipt(r)!, txHash: null })
+  return writeJson(pendingReceiptKey(r), list)
 }
 
-/** 錢包取消或送出失敗：只刪 pending，history 裡的舊收據不動。 */
-export function clearPendingKycReceipt(l: ReceiptLocation): void {
-  removeKey(pendingReceiptKey(l))
+/**
+ * 錢包取消或送出失敗：只刪 salt 相符的那一筆 pending。
+ * 其他 pending（另一個分頁正在送的那筆）與 history 裡的舊收據都不動。
+ */
+export function clearPendingKycReceipt(l: ReceiptLocation, salt: string): void {
+  const all = readPending(l)
+  const rest = all.filter((x) => !sameSalt(x.salt, salt))
+  if (rest.length === all.length) return
+  if (rest.length === 0) removeKey(pendingReceiptKey(l))
+  else writeJson(pendingReceiptKey(l), rest)
 }
 
-/** 拿到 tx hash 後升格進 history（同一個 txHash 覆寫），並清掉 pending。 */
+/** 拿到 tx hash 後升格進 history（同一個 txHash 覆寫），並清掉同 salt 的 pending。 */
 export function promoteKycReceipt(r: KycReceipt & { txHash: string }): boolean {
   const list = readHistory(r).filter((x) => x.txHash!.toLowerCase() !== r.txHash.toLowerCase())
   list.push(sanitizeKycReceipt(r)!)
   const ok = writeJson(historyReceiptKey(r), list)
-  if (ok) clearPendingKycReceipt(r)
+  if (ok) clearPendingKycReceipt(r, r.salt)
   return ok
 }
 
 export interface StoredKycReceipts {
   /** 帶 tx hash 的收據，新到舊。 */
   history: KycReceipt[]
-  /** 送出前留下、但沒拿到 tx hash 的那一份（例如頁面在錢包彈窗時被關掉）。 */
-  pending: KycReceipt | null
+  /** 送出前留下、但沒拿到 tx hash 的收據（例如頁面在錢包彈窗時被關掉），新到舊。 */
+  pending: KycReceipt[]
 }
 
 /**
- * 讀出這個位置的所有收據。順便做遷移：舊版單一 key 的收據清洗後（有 txHash）併進
- * history，舊 key 刪除；history 也以清洗後的內容覆寫回去，確保明文不殘留。
+ * 讀出這個位置的所有收據。順便做遷移：
+ *  - 舊版單一 key 的收據一律先白名單清洗（清掉可能存下的明文）。有 txHash 的併進
+ *    history；沒有 txHash 的放進 pending（同 salt 已存在就不重複）——**不刪除**，
+ *    那可能是使用者唯一的一份 salt。遷移寫入成功後才刪舊 key。
+ *  - history / pending 也以清洗後的內容覆寫回去，確保明文不殘留。
  */
 export function loadKycReceipts(l: ReceiptLocation): StoredKycReceipts {
-  const legacy = sanitizeKycReceipt(readJson(legacyReceiptKey(l)))
+  const legacyRaw = readJson(legacyReceiptKey(l))
+  const legacy = sanitizeKycReceipt(legacyRaw)
   let history = readHistory(l)
-  if (legacy?.txHash && !history.some((x) => x.txHash!.toLowerCase() === legacy.txHash!.toLowerCase())) {
-    history = [...history, legacy]
+  let pending = readPending(l)
+
+  if (legacy?.txHash) {
+    if (!history.some((x) => x.txHash!.toLowerCase() === legacy.txHash!.toLowerCase())) {
+      history = [...history, legacy]
+    }
+  } else if (legacy && !pending.some((x) => sameSalt(x.salt, legacy.salt))) {
+    pending = [...pending, { ...legacy, txHash: null }]
   }
-  if (readJson(legacyReceiptKey(l)) !== null || readJson(historyReceiptKey(l)) !== null) {
-    if (writeJson(historyReceiptKey(l), history)) removeKey(legacyReceiptKey(l))
+
+  let migrated = true
+  if (legacyRaw !== null || readJson(historyReceiptKey(l)) !== null) {
+    migrated = writeJson(historyReceiptKey(l), history) && migrated
   }
-  const pending = sanitizeKycReceipt(readJson(pendingReceiptKey(l)))
-  if (pending) writeJson(pendingReceiptKey(l), pending)
-  return { history: [...history].sort((a, b) => b.createdAt - a.createdAt), pending }
+  if (legacyRaw !== null || readJson(pendingReceiptKey(l)) !== null) {
+    migrated = (pending.length > 0 ? writeJson(pendingReceiptKey(l), pending) : (removeKey(pendingReceiptKey(l)), true)) && migrated
+  }
+  if (legacyRaw !== null && migrated) removeKey(legacyReceiptKey(l))
+
+  const newestFirst = (a: KycReceipt, b: KycReceipt) => b.createdAt - a.createdAt
+  return { history: [...history].sort(newestFirst), pending: [...pending].sort(newestFirst) }
 }
