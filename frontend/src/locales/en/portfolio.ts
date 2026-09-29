@@ -18,6 +18,7 @@ export const portfolio: Catalog['portfolio'] = {
     incompleteMany: '{count} balances could not be read — this total is incomplete.',
 
     part: {
+      spot: 'Tokenized assets',
       wallet: 'Wallet',
       trading: 'Trading',
       staked: 'Staked',
@@ -26,6 +27,7 @@ export const portfolio: Catalog['portfolio'] = {
 
     /** 某一項讀不到時的說明（Unread Balance，見 CONTEXT.md）。 */
     unread: {
+      spot: 'Some tokenized-asset balances or prices could not be read',
       wallet: 'Wallet balance could not be read',
       trading: 'Trading account could not be read',
       staked: 'Stake could not be read',

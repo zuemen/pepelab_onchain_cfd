@@ -19,6 +19,7 @@ export const portfolio = {
     incompleteMany: '{count} 筆餘額無法讀取——此總額不完整。',
 
     part: {
+      spot: '代幣化資產',
       wallet: '錢包',
       trading: '交易帳戶',
       staked: '已質押',
@@ -27,6 +28,7 @@ export const portfolio = {
 
     /** 某一項讀不到時的說明（Unread Balance，見 CONTEXT.md）。 */
     unread: {
+      spot: '部分代幣化資產的餘額或價格無法讀取',
       wallet: '錢包餘額無法讀取',
       trading: '交易帳戶無法讀取',
       staked: '質押金額無法讀取',

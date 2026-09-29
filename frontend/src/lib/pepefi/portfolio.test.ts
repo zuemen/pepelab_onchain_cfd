@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 
-import { netWorthOf, type NetWorthParts, isPortfolioProvablyEmpty, type PortfolioEmptinessCheck } from './portfolio'
+import { netWorthOf, spotValueOf, type NetWorthParts, isPortfolioProvablyEmpty, type PortfolioEmptinessCheck } from './portfolio'
 
 /** 把人看得懂的美金金額變成 18-dec。 */
 const usd = (n: number): bigint => BigInt(Math.round(n * 1e6)) * 10n ** 12n
@@ -12,6 +12,7 @@ const parts = (over: Partial<NetWorthParts> = {}): NetWorthParts => ({
   unrealisedPnl: 0n,
   staked:        usd(300),
   vault:         usd(200),
+  spotHoldings:  0n,
   ...over,
 })
 
@@ -39,7 +40,7 @@ describe('netWorthOf', () => {
   it('虧損大於本金時可以是負的,不會夾成 0', () => {
     const wiped = netWorthOf({
       walletCash: 0n, freeMargin: 0n, lockedMargin: usd(100),
-      unrealisedPnl: usd(-500), staked: 0n, vault: 0n,
+      unrealisedPnl: usd(-500), staked: 0n, vault: 0n, spotHoldings: 0n,
     })
     expect(wiped.total).toBe(usd(-400))
   })
@@ -63,17 +64,62 @@ describe('netWorthOf', () => {
   it('全部讀不到時回 0 並標記不完整,而不是假裝使用者身無分文', () => {
     const r = netWorthOf({
       walletCash: null, freeMargin: null, lockedMargin: null,
-      unrealisedPnl: null, staked: null, vault: null,
+      unrealisedPnl: null, staked: null, vault: null, spotHoldings: null,
     })
     expect(r.total).toBe(0n)
     expect(r.incomplete).toBe(true)
-    expect(r.missing).toHaveLength(6)
+    expect(r.missing).toHaveLength(7)
+  })
+
+  it('現貨代幣以 oracle 價計入淨值——只買現貨的人淨值不能只剩找零', () => {
+    const r = netWorthOf(parts({ walletCash: usd(10), freeMargin: 0n, lockedMargin: 0n, staked: 0n, vault: 0n, spotHoldings: usd(2_500) }))
+    expect(r.total).toBe(usd(2_510))
+    expect(r.incomplete).toBe(false)
+  })
+
+  it('有現貨缺價時，有價的照算、總額標為不完整', () => {
+    const r = netWorthOf(parts({ spotHoldings: usd(100), spotUnpriced: 1 }))
+    expect(r.total).toBe(usd(4_100))
+    expect(r.incomplete).toBe(true)
+    expect(r.missing).toEqual(['spotHoldings'])
+  })
+})
+
+/** 8-dec oracle 價。 */
+const px = (n: number): bigint => BigInt(Math.round(n * 1e8))
+const bal = (n: number): bigint => BigInt(Math.round(n * 1e6)) * 10n ** 12n
+
+describe('spotValueOf', () => {
+  it('Σ balance × oracle 價，回 18-dec USD', () => {
+    const r = spotValueOf([
+      { asset: 'sGOLD', balance: bal(2), price: px(2_000) },
+      { asset: 'sBOND', balance: bal(10), price: px(98.5) },
+    ])
+    expect(r).toEqual({ value: usd(4_985), unpriced: 0 })
+  })
+
+  it('沒有持倉是 0，不是 null', () => {
+    expect(spotValueOf([])).toEqual({ value: 0n, unpriced: 0 })
+  })
+
+  it('讀不到價格（0）的那檔不計入、算進 unpriced', () => {
+    const r = spotValueOf([
+      { asset: 'sGOLD', balance: bal(1), price: px(2_000) },
+      { asset: 'sAAPL', balance: bal(5), price: 0n },
+    ])
+    expect(r).toEqual({ value: usd(2_000), unpriced: 1 })
+  })
+
+  it('還沒讀完（null）或有餘額讀失敗 → value 為 null，不猜', () => {
+    expect(spotValueOf(null).value).toBeNull()
+    expect(spotValueOf([{ asset: 'sGOLD', balance: bal(1), price: px(1) }], 1).value).toBeNull()
   })
 })
 
 const usd18 = (n: number): bigint => BigInt(Math.round(n * 1e6)) * 10n ** 12n
 
 const allEmpty = (over: Partial<PortfolioEmptinessCheck> = {}): PortfolioEmptinessCheck => ({
+  spotHoldingsCount: 0,
   copyRecordsCount: 0,
   positionsCount:   0,
   freeMargin:       0n,
@@ -95,6 +141,7 @@ describe('isPortfolioProvablyEmpty', () => {
     expect(isPortfolioProvablyEmpty(allEmpty({ walletCash: null }))).toBe(false)
     expect(isPortfolioProvablyEmpty(allEmpty({ staked: null }))).toBe(false)
     expect(isPortfolioProvablyEmpty(allEmpty({ vault: null }))).toBe(false)
+    expect(isPortfolioProvablyEmpty(allEmpty({ spotHoldingsCount: null }))).toBe(false)
   })
 
   it('任何一項讀到但不是空的,就不算空', () => {
@@ -104,6 +151,10 @@ describe('isPortfolioProvablyEmpty', () => {
     expect(isPortfolioProvablyEmpty(allEmpty({ walletCash: usd18(1_000) }))).toBe(false)
     expect(isPortfolioProvablyEmpty(allEmpty({ staked: usd18(5) }))).toBe(false)
     expect(isPortfolioProvablyEmpty(allEmpty({ vault: usd18(5) }))).toBe(false)
+  })
+
+  it('只持有現貨代幣（其餘全 0）不算空——不能把現貨投資人推去 /exchange', () => {
+    expect(isPortfolioProvablyEmpty(allEmpty({ spotHoldingsCount: 2 }))).toBe(false)
   })
 
   it('混合案例:有些讀不到、有些不是空的,都不算空', () => {

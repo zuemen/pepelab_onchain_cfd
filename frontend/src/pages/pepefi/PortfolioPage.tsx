@@ -22,7 +22,7 @@ import { firstBlocking, stalenessNotice } from 'src/lib/pepefi/priceFreshness';
 
 import { useMode } from 'src/contexts/mode-context';
 import { useAccountBalances } from 'src/hooks/useAccountBalances';
-import { isPortfolioProvablyEmpty, type NetWorthParts, type PortfolioEmptinessCheck } from 'src/lib/pepefi/portfolio';
+import { spotValueOf, isPortfolioProvablyEmpty, type NetWorthParts, type PortfolioEmptinessCheck } from 'src/lib/pepefi/portfolio';
 import { COLUMN_LABELS, columnLabelForMode, openPositionColumnsForMode, type OpenPositionColumnKey } from 'src/lib/pepefi/openPositionColumns';
 
 import StatCard from 'src/components/pepefi/StatCard';
@@ -429,6 +429,13 @@ export default function PortfolioPage() {
   const lockedMargin = positions.reduce((s, p) => s + p.margin, 0n);
   const unrealisedPnl = positions.reduce((s, p) => s + p.unrealizedPnL, 0n);
 
+  // 現貨代幣（/tokens 買的 sGOLD、sBOND…）以 oracle 價計入淨值。讀取中當成 null
+  // （不完整），讀到餘額但缺價的那幾檔由 spotUnpriced 帶出「此總額不完整」。
+  const spot = spotValueOf(
+    synthHoldings.loading ? null : synthHoldings.rows,
+    synthHoldings.readFailures
+  );
+
   const netWorthParts: NetWorthParts = {
     walletCash:    balances.walletCash,
     freeMargin,
@@ -436,6 +443,8 @@ export default function PortfolioPage() {
     unrealisedPnl,
     staked:        balances.staked,
     vault:         balances.vault,
+    spotHoldings:  spot.value,
+    spotUnpriced:  spot.unpriced,
   };
 
   const notionalTotal = positions.reduce((s, p) => s + p.margin * p.leverage, 0n);
@@ -508,7 +517,7 @@ export default function PortfolioPage() {
   // 只等前者,skeleton 可能在 balances 還在讀的時候就放行——那正是後面
   // isPortfolioProvablyEmpty 拿到「還沒讀到」被誤判方向的老問題,只是換了
   // 一個更早的入口。兩邊都跑完才算真的 loaded。
-  if (!isLoaded || !balances.settled) {
+  if (!isLoaded || !balances.settled || synthHoldings.loading) {
     return (
       <Container maxWidth="lg" sx={{ py: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
         <Grid container spacing={2}>
@@ -538,6 +547,7 @@ export default function PortfolioPage() {
   // 上線過的那個 bug。任何一項是 null／還沒讀成功,就不能算是「證實是空的」，
   // 見 lib/pepefi/portfolio.ts 的 isPortfolioProvablyEmpty。
   const emptinessCheck: PortfolioEmptinessCheck = {
+    spotHoldingsCount: synthHoldings.readFailures === 0 ? synthHoldings.rows.length : null,
     copyRecordsCount: copyRecsOk   ? copyRecs.length  : null,
     positionsCount:   positionsOk  ? positions.length : null,
     freeMargin:       freeMarginOk ? freeMargin       : null,
