@@ -86,6 +86,10 @@ assert.equal(classifyProbeError({ code: "CALL_EXCEPTION", data: null }), "missin
 assert.equal(classifyProbeError({ code: "CALL_EXCEPTION" }), "missing");
 // AssetModeChangeNotAllowed(...) 之類的 custom error → 函式存在但被拒。
 assert.equal(classifyProbeError({ code: "CALL_EXCEPTION", data: "0x1234abcd0000" }), "denied");
+// assetMode() 已讀成功後，setAssetMode 的空 revert → denied（記 failed），不是 missing。
+assert.equal(classifyProbeError({ code: "CALL_EXCEPTION", data: "0x" }, { functionExists: true }), "denied");
+assert.equal(classifyProbeError({ code: "CALL_EXCEPTION" }, { functionExists: true }), "denied");
+assert.equal(classifyProbeError({ code: "TIMEOUT" }, { functionExists: true }), "error");
 // 網路／逾時 → 不下結論。
 assert.equal(classifyProbeError({ code: "TIMEOUT" }), "error");
 assert.equal(classifyProbeError({ code: "SERVER_ERROR", data: "0x" }), "error");

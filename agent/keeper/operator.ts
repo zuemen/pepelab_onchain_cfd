@@ -95,9 +95,15 @@ export type ProbeResult = "missing" | "denied" | "error";
  *             金鑰不是 marketOperator，或模式轉換不被允許。
  *   error   — 其他（網路、逾時、RPC 限流）：這輪不確定，不下結論。
  */
-export function classifyProbeError(e: { code?: unknown; data?: unknown } | null | undefined): ProbeResult {
+export function classifyProbeError(
+  e: { code?: unknown; data?: unknown } | null | undefined,
+  opts: { functionExists?: boolean } = {},
+): ProbeResult {
   if (!e || e.code !== "CALL_EXCEPTION") return "error";
   const d = e.data;
-  if (d === undefined || d === null || d === "" || d === "0x") return "missing";
+  const empty = d === undefined || d === null || d === "" || d === "0x";
+  // assetMode() 已讀成功 = 這是新 exchange，setAssetMode 一定存在；此時的空 revert
+  // 不能解讀成「舊合約沒有函式」而靜默略過（審查 Low），一律算被拒 → 呼叫端記 failed。
+  if (empty) return opts.functionExists ? "denied" : "missing";
   return "denied";
 }

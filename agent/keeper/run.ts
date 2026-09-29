@@ -401,11 +401,9 @@ async function applyMarketMode(
   try {
     await exchange.setAssetMode.staticCall(assetId, d.mode);
   } catch (e) {
-    const kind = classifyProbeError(revertInfo(e));
-    if (kind === "missing") {
-      console.log(`  → marketOperator：exchange 沒有 setAssetMode()（舊合約），本輪略過休市切換`);
-      return "missing";
-    }
+    // assetMode() 已讀成功 → 新 exchange，setAssetMode 必定存在；空 revert 算 denied
+    // 並記 failed，不能當成「舊合約」靜默略過。
+    const kind = classifyProbeError(revertInfo(e), { functionExists: true });
     if (DRY_RUN && kind === "denied") {
       // DRY_RUN 沒有 signer，staticCall 的 from 是零位址，被拒是預期的。
       console.log(`  → marketOperator ${symbol}: 會 ${d.reason}（DRY_RUN，權限未驗證）`);
