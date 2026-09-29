@@ -205,12 +205,14 @@ jobs:
           echo "keeper=${KEEPER_ADDR} 起始 nonce=${NONCE}"
 
           # 複審 Medium：被熔斷拒寫的資產，價格是已知錯誤的舊值 —— 不以它結算 funding。
-          # 清單由 keeper/run.ts 寫出（一行一個 symbol）；檔案不存在代表喂價 step 沒跑到
-          # 寫報告那一步，無從得知哪些資產可信，保守起見全部跳過。
+          # 清單由 keeper/run.ts 在 runRound 回傳後立刻寫出（一行一個 symbol，含本輪沒判斷到的資產）。
           REFUSED_FILE="${RUNNER_TEMP}/keeper-refused.txt"
+          # 窄複審 5：清單不存在＝喂價 step 在 runRound 回傳前就中止，無從判斷哪些價格
+          # 可信 —— 不 crank，且讓這個 step 失敗（連續失敗會由 oracle-health 的 funding
+          # 延遲檢查開 issue）。
           if [ ! -f "$REFUSED_FILE" ]; then
-            echo "::warning::找不到 $REFUSED_FILE（喂價 step 未完成），本輪不 crank funding。"
-            exit 0
+            echo "::error::找不到 $REFUSED_FILE（喂價 step 未完成），本輪不 crank funding。"
+            exit 1
           fi
 
           FAILURES=0

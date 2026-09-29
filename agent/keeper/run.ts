@@ -252,6 +252,7 @@ async function main(): Promise<void> {
         }
       : undefined,
   });
+  writeRefusedList(round);
   const { available, skipped, rejected, confirmed, wrote } = round;
   let failed = round.failed;
 
@@ -314,7 +315,23 @@ async function main(): Promise<void> {
   if (verdict.exitCode !== 0) process.exit(verdict.exitCode);
 }
 
-/** 熔斷報告（給 alert-run.ts）與拒寫清單（給 funding crank）。 */
+/**
+ * 拒寫清單（給 funding crank）。窄複審 5：runRound 一回傳就寫，不等停單與報告 ——
+ * 後面任何一步丟例外都不能讓清單消失（清單不存在時 crank 會失敗）。
+ * 「沒判斷到」的資產（skippedSymbols：來源無效、RPC 失敗、寫入停止）也列入：
+ * 無法確認它們的價格可信，同樣不該拿來結算 funding。
+ */
+function writeRefusedList(round: RoundResult): void {
+  if (!REFUSED_PATH) return;
+  const syms = [...new Set([...round.refused.map((r) => r.symbol), ...round.skippedSymbols])];
+  try {
+    writeFileSync(REFUSED_PATH, syms.map((s) => `${s}\n`).join(""), "utf8");
+  } catch (e) {
+    console.error(`::error::寫不出拒寫清單 ${REFUSED_PATH}：${(e as Error).message}`);
+  }
+}
+
+/** 熔斷報告（給 alert-run.ts）。 */
 function writeRefusal(
   round: RoundResult,
   notes: string[],
@@ -322,9 +339,6 @@ function writeRefusal(
   exchangeMaxAge: number | null,
 ): void {
   try {
-    if (REFUSED_PATH) {
-      writeFileSync(REFUSED_PATH, round.refused.map((r) => r.symbol).join("\n") + (round.refused.length ? "\n" : ""), "utf8");
-    }
     if (REPORT_PATH) {
       const report: HealthReport = {
         kind: "breaker",

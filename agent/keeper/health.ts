@@ -11,7 +11,7 @@ import { writeFileSync } from "node:fs";
 import { ethers } from "ethers";
 import type { HealthReport } from "./alert.ts";
 import { fetchMarketSession } from "./feeds.ts";
-import { checkHealth } from "./health-check.ts";
+import { checkFunding, checkHealth } from "./health-check.ts";
 
 const SYMBOLS = [
   "sBTC", "sETH", "sAAPL", "sTSLA", "sNVDA",
@@ -29,14 +29,26 @@ const EXCHANGE_ADDR = (process.env.KEEPER_EXCHANGE_ADDRESS ?? "").trim();
 const FALLBACK_MAX_AGE_SEC = Number(process.env.HEALTH_MAX_AGE ?? "10800");
 // 選用：把結果寫成 JSON，給 alert-run.ts 決定要不要開／更新／關 issue。
 const REPORT_PATH = (process.env.HEALTH_REPORT_PATH ?? "").trim();
+// 窄複審 5：funding 結算延遲的報告（給第二個告警 step）。
+const FUNDING_REPORT_PATH = (process.env.HEALTH_FUNDING_REPORT_PATH ?? "").trim();
+// 與 base-sepolia-keeper.yml 的 crank 迴圈同一組資產。
+const FUNDING_SYMBOLS = (process.env.HEALTH_FUNDING_SYMBOLS ?? "sBTC,sETH,sAAPL,sTSLA")
+  .split(",").map((s) => s.trim()).filter(Boolean);
+const FUNDING_ABI = [
+  "function FUNDING_INTERVAL() view returns (uint256)",
+  "function lastFundingUpdateAt(bytes32 asset) view returns (uint256)",
+];
 
-function writeReport(r: HealthReport): void {
-  if (!REPORT_PATH) return;
+function writeReportTo(path: string, r: HealthReport): void {
+  if (!path) return;
   try {
-    writeFileSync(REPORT_PATH, JSON.stringify(r, null, 2), "utf8");
+    writeFileSync(path, JSON.stringify(r, null, 2), "utf8");
   } catch (e) {
-    console.error(`::warning::寫不出健檢報告 ${REPORT_PATH}：${(e as Error).message}`);
+    console.error(`::warning::寫不出健檢報告 ${path}：${(e as Error).message}`);
   }
+}
+function writeReport(r: HealthReport): void {
+  writeReportTo(REPORT_PATH, r);
 }
 
 const ORACLE_ABI = [
@@ -75,7 +87,24 @@ async function main(): Promise<void> {
   });
   writeReport(report);
 
-  let bad = false;
+  // 窄複審 5：funding 結算延遲（只在有 exchange 位址時）。報告另寫一份，由獨立的告警
+  // step 開「funding 未結算」issue；價格健檢壞了也照樣檢查。
+  let fundingBad = false;
+  if (ethers.isAddress(EXCHANGE_ADDR)) {
+    const funding = await checkFundingOnChain(provider);
+    if (funding) {
+      writeReportTo(FUNDING_REPORT_PATH, funding);
+      if (funding.status !== "ok" || funding.unreadable?.length) {
+        console.error(
+          `::error::funding 結算延遲：${funding.stale.join(", ") || "—"}` +
+            `${funding.unreadable?.length ? `；讀不到：${funding.unreadable.join(", ")}` : ""}`,
+        );
+        fundingBad = true;
+      }
+    }
+  }
+
+  let bad = fundingBad;
   if (report.status === "error") {
     console.error(`::error::健康檢查無法完成：${report.error}`);
     process.exit(1);
@@ -98,6 +127,29 @@ async function main(): Promise<void> {
     console.log(`休市中、依市場時段放寬（未告警）：${report.closed.join(", ")}`);
   }
   console.log("所有資產都在 maxPriceAge 之內（或休市中合理未更新） ✓");
+}
+
+/** 讀 FUNDING_INTERVAL 與各資產 lastFundingUpdateAt；讀不到 interval 就回 error 報告。 */
+async function checkFundingOnChain(provider: ethers.JsonRpcProvider): Promise<HealthReport | null> {
+  const exchange = new ethers.Contract(EXCHANGE_ADDR, FUNDING_ABI, provider);
+  const nowSec = Math.floor(Date.now() / 1000);
+  let interval: number;
+  try {
+    interval = Number(await exchange.FUNDING_INTERVAL());
+  } catch (e) {
+    return {
+      kind: "funding", chain: CHAIN, status: "error", checkedAtSec: nowSec, maxAgeSec: 0,
+      stale: [], lines: [], error: `讀不到 FUNDING_INTERVAL：${(e as Error).message.slice(0, 120)}`,
+    };
+  }
+  console.log(`funding: FUNDING_INTERVAL=${interval}s，上限 2×=${2 * interval}s`);
+  return checkFunding({
+    chain: CHAIN,
+    symbols: FUNDING_SYMBOLS,
+    nowSec,
+    intervalSec: interval,
+    lastFundingAt: async (s) => Number(await exchange.lastFundingUpdateAt(ethers.id(s))),
+  });
 }
 
 main().catch((e) => {

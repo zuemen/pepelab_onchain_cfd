@@ -12,7 +12,7 @@ export type HealthStatus = "ok" | "stale" | "error";
 /** health.ts 寫出的報告（HEALTH_REPORT_PATH）。 */
 export interface HealthReport {
   /** health = oracle-health 的過期告警（預設）；breaker = keeper 的價格熔斷告警（複審 H2 (c)）。 */
-  kind?: "health" | "breaker";
+  kind?: "health" | "breaker" | "funding";
   /** breaker：停單動作的結果與「需人工處置」的說明。 */
   notes?: string[];
   chain: string;
@@ -202,6 +202,25 @@ function iso(sec: number): string {
 /** 新開 issue 與留言共用的內文。runUrl 是這次 Actions run 的連結。 */
 export function renderBody(report: HealthReport, runUrl?: string): string {
   if (report.kind === "breaker") return renderBreakerBody(report, runUrl);
+  if (report.kind === "funding") {
+    return [
+      `**鏈**：${report.chain}　**檢查時間**：${iso(report.checkedAtSec)}　**上限**：${(report.maxAgeSec / 3600).toFixed(1)}h（2 × FUNDING_INTERVAL）`,
+      "",
+      `**funding 未結算資產（${report.stale.length}）**：${report.stale.join(", ") || "—"}`,
+      ...(report.unreadable?.length ? [`**讀不到**：${report.unreadable.join(", ")}`] : []),
+      "",
+      "lastFundingUpdateAt 超過 2 × FUNDING_INTERVAL：持倉的 funding 沒有在結算。",
+      "處置：看 base-sepolia-keeper 的「Crank settleFunding」step —— 是否因熔斷跳過該資產、",
+      "拒寫清單不存在、或 settleFunding 本身失敗（log 會印 revert 原文）。",
+      "",
+      "```",
+      ...report.lines,
+      "```",
+      ...(runUrl ? ["", `Run：${runUrl}`] : []),
+      "",
+      `<!-- oracle-health:stale=${signatureOf(report.stale)} -->`,
+    ].join("\n");
+  }
   const out = [
     `**鏈**：${report.chain}　**檢查時間**：${iso(report.checkedAtSec)}　**門檻**：${(report.maxAgeSec / 3600).toFixed(1)}h`,
     "",

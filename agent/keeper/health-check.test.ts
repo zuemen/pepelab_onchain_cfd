@@ -7,7 +7,7 @@ import assert from "node:assert";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { ethers } from "ethers";
-import { checkHealth, isMajorityUnreadable } from "./health-check.ts";
+import { checkFunding, checkHealth, isMajorityUnreadable } from "./health-check.ts";
 import { decideAlert } from "./alert.ts";
 
 const SYMBOLS = ["sBTC", "sETH", "sAAPL", "sTSLA", "sNVDA"] as const;
@@ -102,5 +102,36 @@ assert.equal(isMajorityUnreadable(6, 11), true);
 assert.equal(isMajorityUnreadable(5, 11), false);
 assert.equal(isMajorityUnreadable(11, 11), true);
 assert.equal(isMajorityUnreadable(0, 0), false);
+
+// ── 4. funding 結算延遲：超過 2 × FUNDING_INTERVAL 就 stale（窄複審 5） ───────────
+{
+  const INTERVAL = 8 * 3600;
+  const last: Record<string, number | Error> = {
+    sBTC: NOW - 9 * 3600, // 正常（< 16h）
+    sETH: NOW - 17 * 3600, // 超過 2×
+    sAAPL: 0, // 未初始化，不算延遲
+    sTSLA: new Error("429"),
+  };
+  const rep = await checkFunding({
+    chain: "base-sepolia", symbols: ["sBTC", "sETH", "sAAPL", "sTSLA"], nowSec: NOW, intervalSec: INTERVAL, log: quiet,
+    lastFundingAt: async (s) => {
+      const v = last[s];
+      if (v instanceof Error) throw v;
+      return v;
+    },
+  });
+  assert.equal(rep.kind, "funding");
+  assert.equal(rep.status, "stale");
+  assert.deepEqual(rep.stale, ["sETH(17.0h)"]);
+  assert.deepEqual(rep.unreadable, ["sTSLA"]);
+  assert.equal(rep.maxAgeSec, 2 * INTERVAL);
+  assert.equal(decideAlert({ report: rep, open: null, nowSec: NOW }).action, "create");
+  // 全部正常 → ok
+  const ok = await checkFunding({
+    chain: "base-sepolia", symbols: ["sBTC"], nowSec: NOW, intervalSec: INTERVAL, log: quiet,
+    lastFundingAt: async () => NOW - 3600,
+  });
+  assert.equal(ok.status, "ok");
+}
 
 console.log("health-check.test.ts ✓ all assertions passed");
