@@ -1,5 +1,5 @@
 import { MONO, LiveDot } from 'src/components/pepefi/brandKit'
-import { useState, useEffect, useCallback } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import { Link as RouterLink } from 'react-router';
 import { useContracts } from 'src/hooks/useContracts';
 import { usePepefiWallet } from 'src/layouts/pepefi';
@@ -13,6 +13,8 @@ import {
   chunkRanges,
   getLogsChunked,
   scanFromBlock,
+  UI_RETRIES,
+  isChunkScanAborted,
 } from 'src/lib/pepefi/chainLogs';
 import ESGBadge from 'src/components/pepefi/ESGBadge';
 import AllocationRow from 'src/components/pepefi/AllocationRow';
@@ -87,6 +89,17 @@ const STICKY_TRADER_W = 220;
 const STICKY_LEFT_EDGE_SHADOW  = '6px 0 6px -6px rgba(0,0,0,0.35)';
 const STICKY_RIGHT_EDGE_SHADOW = '-6px 0 6px -6px rgba(0,0,0,0.35)';
 
+/**
+ * 排行榜的「7 日量／7 日 PnL」與領獎台資格（7 天內平倉滿 5 筆）都是 7 天的定義，
+ * 所以這裡單獨掃 7 天，不吃全站 24 小時的預設視窗。
+ *
+ * 成本（2026-09-29 對 sepolia.base.org 實測）：7 天 = 302,401 塊 = 379 段 × 800 塊，
+ * 併發 3、每段重試 2 次，約 40 秒、0 段失敗。畫面上有段數進度條。
+ */
+const LEADERBOARD_WINDOW_SEC   = 7 * 24 * 3600;
+const LEADERBOARD_MAX_CHUNKS   = 400;
+const LEADERBOARD_CONCURRENCY  = 3;
+
 // ── Types ────────────────────────────────────────────────────────────────────
 type SortKey = LeaderboardSortKey;
 
@@ -124,7 +137,7 @@ const fWindow = (hours: number): string =>
 /**
  * #149 / ADR-007：Simple Mode 看到的是配置市集（無槓桿的現貨採用），Expert Mode
  * 才是交易者排行榜（CopyTracker 的槓桿跟單）。兩個是不同的商品，不是同一個畫面
- * 換兩套詞——拆成兩個元件，Simple Mode 也就不會去掃排行榜那 31 段 getLogs。
+ * 換兩套詞——拆成兩個元件，Simple Mode 也就不會去掃排行榜那 379 段 getLogs。
  */
 export default function MarketplacePage() {
   const { mode } = useMode();
@@ -146,17 +159,28 @@ function TraderLeaderboard() {
   // 實際掃了幾塊、換算成多久。寫死的常數不能再拿來當文案,因為同一個數字在
   // 不同鏈上代表的時間差六倍——footer 與空狀態都要講真話。
   const [scan, setScan] = useState<{ blocks: number; hours: number }>({ blocks: 0, hours: 0 });
-  // 7 天的視窗在 Base 上是 31 段序列 getLogs,實測 12 秒。骨架屏撐 12 秒看起來
-  // 像當掉了——把段數進度講出來,等待才是「在做事」而不是「壞了」。
+  // 7 天的視窗在 Base 上是 379 段 getLogs（公開節點單次上限 1,000 塊），併發 3 實測約
+  // 40 秒。骨架屏撐 40 秒看起來像當掉了——把段數進度講出來,等待才是「在做事」。
   const [progress, setProgress] = useState<{ done: number; total: number }>({ done: 0, total: 0 });
+  // 重新整理或離開頁面時中止還在跑的掃描，避免舊結果蓋掉新結果、也不再白打 RPC。
+  const abortRef = useRef<AbortController | null>(null);
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const fetchAll = useCallback(async () => {
     if (!contracts || !wallet.provider) return;
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
     setIsLoading(true);
     setFetchError(null);
     try {
       const currentBlock = await wallet.provider.getBlockNumber();
-      const fromBlock    = scanFromBlock({ chainId: wallet.chainId, currentBlock });
+      const fromBlock    = scanFromBlock({
+        chainId: wallet.chainId,
+        currentBlock,
+        windowSec: LEADERBOARD_WINDOW_SEC,
+        maxChunks: LEADERBOARD_MAX_CHUNKS,
+      });
       const scannedBlocks = currentBlock - fromBlock + 1;
       setScan({
         blocks: scannedBlocks,
@@ -164,7 +188,7 @@ function TraderLeaderboard() {
       });
 
       // 兩種事件合成**一趟**掃描:topics[0] 傳陣列就是 OR。分開查等於同樣的
-      // 答案付兩倍的 getLogs,而 7 天的視窗在 Base 上已經是 31 段。
+      // 答案付兩倍的 getLogs,而 7 天的視窗在 Base 上已經是 379 段。
       const iface    = contracts.exchange.interface;
       const topicOf  = (name: string) => iface.getEvent(name)!.topicHash;
       const chunks   = chunkRanges(fromBlock, currentBlock).length;
@@ -185,9 +209,11 @@ function TraderLeaderboard() {
           currentBlock,
           tick,
           () => { failedChunks += 1; },
+          { retries: UI_RETRIES, concurrency: LEADERBOARD_CONCURRENCY, signal: ac.signal },
         ),
         contracts.registry.getAllTraders() as Promise<string[]>,
       ]);
+      if (ac.signal.aborted) return;
       const rawLogs   = logsRes.status      === 'fulfilled' ? logsRes.value      : [];
       const addresses = addressesRes.status === 'fulfilled' ? addressesRes.value : [];
       if (failedChunks > 0) {
@@ -272,11 +298,13 @@ function TraderLeaderboard() {
         })
       );
 
+      if (ac.signal.aborted) return;
       setTraders(cards);
     } catch (e) {
+      if (ac.signal.aborted || isChunkScanAborted(e)) return;
       console.error('[marketplace fetch]', e);
       setFetchError(e instanceof Error ? e.message.slice(0, 140) : 'Network error — check wallet');
-    } finally { setIsLoading(false); }
+    } finally { if (!ac.signal.aborted) setIsLoading(false); }
   }, [contracts, wallet.provider]);
 
   useEffect(() => { void fetchAll() }, [fetchAll]);

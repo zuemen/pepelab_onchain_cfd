@@ -69,7 +69,7 @@ export const marketplace = {
   /** 分段掃描有段落失敗：交易量／PnL 不完整，不能讀成「沒人交易」。 */
   scanIncomplete: '{count}／{total} 個區塊範圍讀取失敗，下方交易量與 PnL 可能偏低、不完整。',
 
-  /** 排行榜掃描鏈上事件的進度。7 天視窗在 Base 上是 31 段,不講進度會像當掉。 */
+  /** 排行榜掃描鏈上事件的進度。7 天視窗在 Base 上是 379 段（併發 3 約 40 秒），不講進度會像當掉。 */
   scanProgress: '掃描鏈上事件… {done}/{total}',
 
   empty: {
