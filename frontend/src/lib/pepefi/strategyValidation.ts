@@ -45,12 +45,18 @@ export function validateStrategy(rows: readonly { asset: string; weight: string 
   const roundedSum = bps.reduce((s, v) => s + v, 0)
   if (roundedSum !== TOTAL_WEIGHT_BPS && Math.abs(exactSum - TOTAL_WEIGHT_BPS) < 0.5 && bps.length > 0) {
     const diff = TOTAL_WEIGHT_BPS - roundedSum
-    let largest = 0
+    // 只補到「補完之後仍在 (0, 5000] 之內」的最大那一檔——把差額塞進一檔剛好 50% 的，
+    // 只會把一個四捨五入問題變成 WeightExceedsMax。沒有任何一檔容得下就不補，照實報
+    // InvalidWeightSum。
+    let target = -1
     bps.forEach((v, i) => {
-      if (v > bps[largest]) largest = i
+      const after = v + diff
+      if (after > 0 && after <= MAX_ALLOCATION_WEIGHT_BPS && (target === -1 || v > bps[target])) target = i
     })
-    bps[largest] += diff
-    roundingAdjust = diff
+    if (target !== -1) {
+      bps[target] += diff
+      roundingAdjust = diff
+    }
   }
 
   if (rows.length < MIN_ALLOCATION_ASSETS) issues.push({ code: 'TooFewAssets', got: rows.length })

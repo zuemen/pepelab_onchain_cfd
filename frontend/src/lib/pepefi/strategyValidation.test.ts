@@ -39,6 +39,21 @@ describe('validateStrategy', () => {
     expect(r.issues).toEqual([])
   })
 
+  it('差額為正、最大那檔剛好 50% → 不補給它（否則 5001 超過上限），改補到下一檔', () => {
+    // exact：5000 + 1666.4 + 1666.4 + 1667.2 = 10000；四捨五入：5000 + 1666 + 1666 + 1667 = 9999，差 +1
+    const r = validateStrategy([row('a', '50'), row('b', '16.664'), row('c', '16.664'), row('d', '16.672')])
+    expect(r.bps).toEqual([5000, 1666, 1666, 1668])
+    expect(r.roundingAdjust).toBe(1)
+    expect(r.issues).toEqual([])
+  })
+
+  it('差額為負時最大那檔仍可以吸收（補完 4999 ≤ 上限）', () => {
+    // exact：5000 + 1666.66 + 1666.66 + 1666.68 = 10000；四捨五入 5000 + 1667×3 = 10001，差 -1
+    const r = validateStrategy([row('a', '50'), row('b', '16.6666'), row('c', '16.6666'), row('d', '16.6668')])
+    expect(r.bps).toEqual([4999, 1667, 1667, 1667])
+    expect(r.issues).toEqual([])
+  })
+
   it('原始輸入本來就不是 100% → InvalidWeightSum，不幫使用者猜', () => {
     const r = validateStrategy([row('a', '30'), row('b', '30'), row('c', '30')])
     expect(r.issues).toContainEqual({ code: 'InvalidWeightSum', bps: 9000 })
