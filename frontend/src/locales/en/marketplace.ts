@@ -29,6 +29,7 @@ export const marketplace: Catalog['marketplace'] = {
   },
 
   table: {
+    provisional: 'provisional',
     rank: '#',
     trader: 'Trader',
     score: 'TraderScore',
@@ -50,11 +51,16 @@ export const marketplace: Catalog['marketplace'] = {
   },
 
   podium: {
+    hiddenIncomplete: 'Some block ranges could not be read, so the 7-day metrics are incomplete; the podium is withheld until a refresh succeeds.',
     heading: '🏆 Top 3 by Current Sort',
     noneQualified: 'No trader has 5+ closed trades yet, so there are no podium finishers — they\'re still in the table below.',
   },
 
   loadFailed: 'Failed to load:',
+  tradersReadFailed: {
+    title: 'Read failed',
+    description: 'The trader list could not be read from the chain — an empty list here does not mean there are no traders. Please refresh later.',
+  },
   scanIncomplete: '{count}/{total} block ranges could not be read; volume and PnL below may be understated.',
 
   scanProgress: 'Scanning on-chain events... {done}/{total}',

@@ -151,6 +151,10 @@ function TraderLeaderboard() {
 
   const [traders,    setTraders]    = useState<TraderCard[]>([]);
   const [isLoading,  setIsLoading]  = useState(false);
+  /** 事件掃描讀不到的段數（整趟被拒時＝全部段數）。> 0 時排名只是暫定、不選領獎台。 */
+  const [scanFailedChunks, setScanFailedChunks] = useState(0);
+  /** getAllTraders 讀取失敗：空清單不能說成「沒有交易者」。 */
+  const [tradersReadFailed, setTradersReadFailed] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [sortKey,    setSortKey]    = useState<SortKey>('score');
   const [esgOnly,    setEsgOnly]    = useState(false);
@@ -173,6 +177,8 @@ function TraderLeaderboard() {
     abortRef.current = ac;
     setIsLoading(true);
     setFetchError(null);
+    setScanFailedChunks(0);
+    setTradersReadFailed(false);
     try {
       const currentBlock = await wallet.provider.getBlockNumber();
       const fromBlock    = scanFromBlock({
@@ -194,7 +200,12 @@ function TraderLeaderboard() {
       const chunks   = chunkRanges(fromBlock, currentBlock).length;
       setProgress({ done: 0, total: chunks });
       let doneChunks = 0;
-      const tick = () => { doneChunks += 1; setProgress({ done: doneChunks, total: chunks }); };
+      // 已中止的掃描不再回寫進度（新的一輪可能已經在跑）。
+      const tick = () => {
+        if (ac.signal.aborted) return;
+        doneChunks += 1;
+        setProgress({ done: doneChunks, total: chunks });
+      };
 
       // 掉的段不能悄悄變成 0 交易量／0 PnL——那會讓排行榜看起來「沒人交易」。
       let failedChunks = 0;
@@ -216,11 +227,14 @@ function TraderLeaderboard() {
       if (ac.signal.aborted) return;
       const rawLogs   = logsRes.status      === 'fulfilled' ? logsRes.value      : [];
       const addresses = addressesRes.status === 'fulfilled' ? addressesRes.value : [];
-      if (failedChunks > 0) {
-        setFetchError(interpolate(t.marketplace.scanIncomplete, { count: failedChunks, total: chunks }));
+      const scanFailed = logsRes.status === 'rejected' ? chunks : failedChunks;
+      setScanFailedChunks(scanFailed);
+      setTradersReadFailed(addressesRes.status === 'rejected');
+      if (scanFailed > 0) {
+        setFetchError(interpolate(t.marketplace.scanIncomplete, { count: scanFailed, total: chunks }));
       }
       if (logsRes.status === 'rejected') {
-        console.warn('[marketplace] 事件掃描失敗,指標以 0 呈現', chunks, logsRes.reason);
+        console.warn('[marketplace] 事件掃描失敗', chunks, logsRes.reason);
       }
 
       const openedEvents: OpenedEvent[] = [];
@@ -465,6 +479,8 @@ function TraderLeaderboard() {
           <IconButton
             size="small"
             onClick={() => void fetchAll()}
+            // 載入中停用：40 秒的 7 天掃描不該被連點重啟。
+            disabled={isLoading}
             color="inherit"
             aria-label={t.marketplace.refreshAria}
           >
@@ -496,6 +512,13 @@ function TraderLeaderboard() {
           )}
           <TableSkeleton rows={8} cols={11} />
         </Card>
+      ) : tradersReadFailed && filtered.length === 0 ? (
+        // 交易者清單讀不到，不是「這條鏈上沒有交易者」。
+        <EmptyState
+          icon="⚠️"
+          title={t.marketplace.tradersReadFailed.title}
+          description={t.marketplace.tradersReadFailed.description}
+        />
       ) : filtered.length === 0 ? (
         <EmptyState
           icon="🎯"
@@ -520,7 +543,12 @@ function TraderLeaderboard() {
         </Typography>
       ) : (
         <>
-          {podium.length > 0 ? (
+          {scanFailedChunks > 0 ? (
+            // 有段落讀不到時 7 日指標偏低、不完整，不能據此頒領獎台。
+            <Alert severity="warning" variant="outlined">
+              {t.marketplace.podium.hiddenIncomplete}
+            </Alert>
+          ) : podium.length > 0 ? (
             <Podium
               podium={podium}
               esgOf={esgFor}
@@ -552,6 +580,11 @@ function TraderLeaderboard() {
                     }}
                   >
                     {t.marketplace.table.rank}
+                    {scanFailedChunks > 0 && (
+                      <Box component="span" sx={{ display: 'block', fontSize: 10, color: 'warning.main' }}>
+                        {t.marketplace.table.provisional}
+                      </Box>
+                    )}
                   </TableCell>
                   <TableCell
                     sx={{
