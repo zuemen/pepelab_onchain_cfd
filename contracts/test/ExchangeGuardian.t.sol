@@ -775,4 +775,76 @@ contract ExchangeGuardianTest is Test {
         exchange.setAssetMode(BTC, ACTIVE);
         assertEq(exchange.lastFundingUpdateAt(BTC), clock);
     }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // Guardian lock — the operator cannot undo an emergency restriction
+    // ═════════════════════════════════════════════════════════════════════════
+
+    event AssetGuardianLockSet(bytes32 indexed asset, bool locked);
+
+    function test_guardianLock_operatorCannotLoosenGuardianReduceOnly() public {
+        vm.expectEmit(true, false, false, true, address(exchange));
+        emit AssetGuardianLockSet(BTC, true);
+        vm.prank(guardian);
+        exchange.setAssetMode(BTC, REDUCE_ONLY);
+        assertTrue(exchange.guardianLocked(BTC));
+
+        vm.prank(operator);
+        vm.expectRevert(_modeChangeError(BTC, REDUCE_ONLY, ACTIVE, operator));
+        exchange.setAssetMode(BTC, ACTIVE);
+        assertEq(uint8(exchange.assetMode(BTC)), uint8(REDUCE_ONLY));
+
+        vm.prank(operator); // idempotent / non-loosening sets are still fine
+        exchange.setAssetMode(BTC, REDUCE_ONLY);
+        assertTrue(exchange.guardianLocked(BTC));
+    }
+
+    function test_guardianLock_ownerSetClearsLock() public {
+        vm.prank(guardian);
+        exchange.setAssetMode(BTC, REDUCE_ONLY);
+
+        vm.expectEmit(true, false, false, true, address(exchange));
+        emit AssetGuardianLockSet(BTC, false);
+        exchange.setAssetMode(BTC, ACTIVE);
+        assertFalse(exchange.guardianLocked(BTC));
+
+        vm.prank(operator); // operator regains its normal toggle
+        exchange.setAssetMode(BTC, REDUCE_ONLY);
+        vm.prank(operator);
+        exchange.setAssetMode(BTC, ACTIVE);
+    }
+
+    function test_guardianLock_ownerSetWithSameModeAlsoClears() public {
+        vm.prank(guardian);
+        exchange.setAssetMode(BTC, REDUCE_ONLY);
+        exchange.setAssetMode(BTC, REDUCE_ONLY);
+        assertFalse(exchange.guardianLocked(BTC));
+    }
+
+    function test_guardianLock_operatorTighteningDoesNotLock() public {
+        vm.prank(operator);
+        exchange.setAssetMode(BTC, REDUCE_ONLY);
+        assertFalse(exchange.guardianLocked(BTC));
+        vm.prank(operator);
+        exchange.setAssetMode(BTC, ACTIVE);
+    }
+
+    function test_guardianLock_isPerAsset() public {
+        vm.prank(guardian);
+        exchange.setAssetMode(BTC, REDUCE_ONLY);
+        vm.prank(operator);
+        exchange.setAssetMode(ETH, REDUCE_ONLY);
+        vm.prank(operator);
+        exchange.setAssetMode(ETH, ACTIVE);
+        assertFalse(exchange.guardianLocked(ETH));
+    }
+
+    function test_guardianLock_dualRoleAddressCannotLoosenItsOwnLock() public {
+        exchange.setMarketOperator(guardian);
+        vm.prank(guardian);
+        exchange.setAssetMode(BTC, REDUCE_ONLY); // guardian right -> locks
+        vm.prank(guardian);
+        vm.expectRevert(_modeChangeError(BTC, REDUCE_ONLY, ACTIVE, guardian));
+        exchange.setAssetMode(BTC, ACTIVE);
+    }
 }

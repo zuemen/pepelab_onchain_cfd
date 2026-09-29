@@ -342,6 +342,12 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
     ///         every existing market behaves exactly as before this feature.
     mapping(bytes32 => AssetMode) public assetMode;
 
+    /// @notice Set when the guardian tightens an asset: from then on only the
+    ///         owner may loosen it (the market operator's Active <-> ReduceOnly
+    ///         toggle can no longer undo an emergency restriction). Cleared by
+    ///         any owner `setAssetMode` on that asset.
+    mapping(bytes32 => bool) public guardianLocked;
+
     // ── P1: open-interest and profit caps ────────────────────────────────────
     //
     // Together these bound the exchange's worst-case liability to the open
@@ -452,6 +458,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
     event GuardianSet(address indexed guardian);
     event MarketOperatorSet(address indexed marketOperator);
     event AssetModeSet(bytes32 indexed asset, AssetMode mode, address indexed by);
+    event AssetGuardianLockSet(bytes32 indexed asset, bool locked);
 
     // P1: risk caps.
     event MaxOpenInterestSet(bytes32 indexed asset, uint256 maxLong, uint256 maxShort);
@@ -749,7 +756,10 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
     ///        owner          — any transition, including lifting a Halt.
     ///        guardian       — strictly tighter only (mode > current).
     ///        marketOperator — only while neither side is Halted, i.e.
-    ///                         Active <-> ReduceOnly (idempotent sets allowed).
+    ///                         Active <-> ReduceOnly (idempotent sets allowed),
+    ///                         and never loosening an asset the guardian has
+    ///                         tightened (`guardianLocked`) until the owner
+    ///                         sets its mode, which clears the lock.
     ///      An address holding several roles gets the union of their rights.
     ///      Allowed while paused, so the guardian can pre-position halts.
     ///
@@ -762,7 +772,17 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
     ///      exactly like the H-2 catch-up clamp.
     function setAssetMode(bytes32 asset, AssetMode mode) external {
         AssetMode current = assetMode[asset];
-        if (!_canSetAssetMode(msg.sender, current, mode)) {
+        bool locked = guardianLocked[asset];
+
+        bool byOwner    = msg.sender == owner();
+        bool byGuardian = !byOwner && msg.sender == guardian && uint8(mode) > uint8(current);
+        bool byOperator = !byOwner && !byGuardian
+            && msg.sender == marketOperator
+            && current != AssetMode.Halted
+            && mode != AssetMode.Halted
+            // guardian lock: the operator may no longer loosen this asset
+            && (!locked || uint8(mode) >= uint8(current));
+        if (!(byOwner || byGuardian || byOperator)) {
             revert AssetModeChangeNotAllowed(asset, current, mode, msg.sender);
         }
 
@@ -772,23 +792,16 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
             if (lastFundingUpdateAt[asset] != 0) lastFundingUpdateAt[asset] = block.timestamp;
         }
 
+        if (byOwner && locked) {
+            guardianLocked[asset] = false;
+            emit AssetGuardianLockSet(asset, false);
+        } else if (byGuardian && !locked) {
+            guardianLocked[asset] = true;
+            emit AssetGuardianLockSet(asset, true);
+        }
+
         assetMode[asset] = mode;
         emit AssetModeSet(asset, mode, msg.sender);
-    }
-
-    function _canSetAssetMode(address caller, AssetMode current, AssetMode next)
-        internal
-        view
-        returns (bool)
-    {
-        if (caller == owner()) return true;
-        if (caller == guardian && uint8(next) > uint8(current)) return true;
-        if (
-            caller == marketOperator
-                && current != AssetMode.Halted
-                && next != AssetMode.Halted
-        ) return true;
-        return false;
     }
 
     /// @dev New exposure (every open path) requires Active.
