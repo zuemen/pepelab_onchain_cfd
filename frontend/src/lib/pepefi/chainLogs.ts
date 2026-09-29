@@ -244,7 +244,8 @@ async function scanChunks<T>(
       let ok = false
       for (let attempt = 0; attempt <= retries && !ok; attempt++) {
         if (attempt > 0) {
-          if (baseDelay > 0) await sleep(baseDelay * 2 ** (attempt - 1))
+          // 指數退避加 jitter（×0.5–1.5）：併發的幾個 worker 同時被 429 時不會同步重試、再一起被擋。
+          if (baseDelay > 0) await sleep(baseDelay * 2 ** (attempt - 1) * (0.5 + Math.random()))
           checkAbort()
         }
         try {
@@ -254,6 +255,8 @@ async function scanChunks<T>(
           lastErr = e
         }
       }
+      // 已中止的掃描不再記錄結果、不再回報進度（呼叫端可能已經開了新的一輪）。
+      checkAbort()
       if (!ok) {
         perRange[i] = []
         failedChunks += 1

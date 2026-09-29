@@ -364,6 +364,16 @@ describe('ChunkScanOptions — signal / concurrency / retries', () => {
     expect(p.getLogs).toHaveBeenCalledTimes(2)
   })
 
+  it('請求在飛時被中止:回來後不再回報進度', async () => {
+    const ac = new AbortController()
+    const provider = { getLogs: vi.fn(async () => { ac.abort(); return [1] }) }
+    const seen: number[] = []
+    await expect(
+      getLogsChunkedDetailed(provider, {}, 0, CHUNK_SIZE * 2 - 1, { signal: ac.signal, onChunk: (d) => seen.push(d) }),
+    ).rejects.toSatisfy(isChunkScanAborted)
+    expect(seen).toEqual([])
+  })
+
   it('併發度有上限,結果仍依區塊順序串接', async () => {
     const p = okProvider(5)
     const r = await getLogsChunkedDetailed(p, {}, 0, CHUNK_SIZE * 7 - 1, { concurrency: 3 })
