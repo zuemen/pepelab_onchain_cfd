@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import type { Contract } from 'ethers';
 import { t, interpolate } from 'src/locales';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
+import { withRetry } from 'src/lib/pepefi/rpcBatch';
+import { settle, isMissingFunctionError, decideKycSubmitGate } from 'src/lib/pepefi/kycSubmitGate';
 import {
   toKycReceipt,
   kycSubmitArgs,
@@ -59,19 +61,28 @@ type TxResp = { wait(): Promise<unknown>; hash: string }
 const asTx = (tx: unknown): TxResp => tx as TxResp
 
 /** 收據在 localStorage 的定位：鏈、KYCRegistry 位址、使用者位址。拿不到就回 null。 */
+/**
+ * 收據位置的嚴格版：null＝沒有 signer（送不出交易）；查詢失敗則丟出——呼叫端要能
+ * 分辨兩者，後者必須 fail-closed。
+ */
+async function receiptLocationStrict(kycRegistry: Contract): Promise<ReceiptLocation | null> {
+  const runner = kycRegistry.runner as {
+    getAddress?: () => Promise<string>
+    provider?: { getNetwork?: () => Promise<{ chainId: bigint }> }
+  } | null;
+  if (!runner?.getAddress) return null;
+  const [user, net, registry] = await Promise.all([
+    runner.getAddress(),
+    runner.provider?.getNetwork ? runner.provider.getNetwork() : Promise.resolve(null),
+    kycRegistry.getAddress(),
+  ]);
+  return { chainId: net ? Number(net.chainId) : null, registry, user };
+}
+
+/** 寬鬆版：只用來決定收據存在哪裡，失敗就不存（送出流程本身不受影響）。 */
 async function receiptLocation(kycRegistry: Contract): Promise<ReceiptLocation | null> {
   try {
-    const runner = kycRegistry.runner as {
-      getAddress?: () => Promise<string>
-      provider?: { getNetwork?: () => Promise<{ chainId: bigint }> }
-    } | null;
-    if (!runner?.getAddress) return null;
-    const [user, net, registry] = await Promise.all([
-      runner.getAddress(),
-      runner.provider?.getNetwork ? runner.provider.getNetwork() : Promise.resolve(null),
-      kycRegistry.getAddress(),
-    ]);
-    return { chainId: net ? Number(net.chainId) : null, registry, user };
+    return await receiptLocationStrict(kycRegistry);
   } catch {
     return null;
   }
@@ -127,46 +138,64 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPe
    *   checkFailed  查不到（停用，附重試）
    *   clear        沒有上一筆、上一筆 receipt 為失敗（status 0），或已不在待審（例如已撤銷）
    */
-  const [prevTx, setPrevTx] = useState<'checking' | 'unconfirmed' | 'underReview' | 'checkFailed' | 'clear'>('clear');
+  // 初始值是 checking：第一次繪製時送出鍵就是停用的，查完才可能解鎖。
+  const [prevTx, setPrevTx] = useState<'checking' | 'unconfirmed' | 'underReview' | 'checkFailed' | 'clear'>('checking');
+  const [prevTxReason, setPrevTxReason] = useState<string | null>(null);
   const [prevTxRun, setPrevTxRun] = useState(0);
 
   // 每次開啟：清掉上一輪的錯誤與「確認失敗」，改由鏈上查詢決定能不能重送。
+  // 關閉時把 prevTx 設回 checking，下次開啟的第一幀不會殘留上一次的「可送出」。
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setPrevTx('checking');
+      setPrevTxReason(null);
+      return;
+    }
     setError(null);
     setConfirmFailed(false);
   }, [isOpen]);
+
+  // 換帳號／換鏈（kycRegistry 會跟著 signer 重建）：上一個帳號這一輪的送出結果不能留著。
+  useEffect(() => {
+    setSubmitted(false);
+    setReceipt(null);
+    setConfirmFailed(false);
+  }, [kycRegistry]);
 
   useEffect(() => {
     if (!isOpen || !kycRegistry) return;
     let cancelled = false;
     setPrevTx('checking');
+    setPrevTxReason(null);
     void (async () => {
-      const loc = await receiptLocation(kycRegistry);
+      // 讀取出錯一律 fail-closed；只有「確定函式不存在」才走舊版合約的退回路徑。
+      // 判斷規則集中在 decideKycSubmitGate（純函式，有測試）。
+      const location = await settle(receiptLocationStrict(kycRegistry));
       if (cancelled) return;
-      const latest = loc ? loadKycReceipts(loc).history[0] : undefined;
-      if (!loc || !latest?.txHash) { setPrevTx('clear'); return; }
-      try {
+      const loc = location.ok ? location.value : null;
+      const latest = loc ? (loadKycReceipts(loc).history[0] ?? null) : null;
+      const input: Parameters<typeof decideKycSubmitGate>[0] = { location, latestReceipt: latest };
+      if (loc && latest?.txHash) {
         const provider = (kycRegistry.runner as { provider?: { getTransactionReceipt: (h: string) => Promise<{ status: number | null } | null> } } | null)?.provider;
-        if (!provider) throw new Error('no provider');
-        const rc = await provider.getTransactionReceipt(latest.txHash);
+        input.receiptLookup = provider
+          ? await settle(withRetry(() => provider.getTransactionReceipt(latest.txHash!)))
+          : { ok: false, error: new Error('no provider') };
         if (cancelled) return;
-        if (!rc) { setPrevTx('unconfirmed'); return; }
-        if (rc.status === 0) { setPrevTx('clear'); return; }
-        // 交易成功：鏈上仍在待審就不能重送；已核准或已撤銷才放行（撤銷後需要能重新申請）。
-        let pendingNow: boolean;
-        try {
-          pendingNow = (await kycRegistry.isPending(loc.user)) as boolean;
-        } catch {
-          // 線上 Base Sepolia 的舊版 KYCRegistry 沒有 isPending（missing revert data）：
-          // 那一版沒有審核佇列，submitKYC 上鏈即完成。確認合約讀得到（isVerified）就放行，
-          // 讀不到才當成查詢失敗。
-          await kycRegistry.isVerified(loc.user);
-          pendingNow = false;
+        if (input.receiptLookup.ok && input.receiptLookup.value?.status === 1) {
+          input.isPendingResult = await settle(withRetry(() => kycRegistry.isPending(loc.user) as Promise<boolean>));
+          if (cancelled) return;
+          if (!input.isPendingResult.ok && isMissingFunctionError(input.isPendingResult.error)) {
+            input.isVerifiedResult = await settle(withRetry(() => kycRegistry.isVerified(loc.user) as Promise<boolean>));
+            if (cancelled) return;
+          }
         }
-        if (!cancelled) setPrevTx(pendingNow ? 'underReview' : 'clear');
-      } catch {
-        if (!cancelled) setPrevTx('checkFailed');
+      }
+      const g = decideKycSubmitGate(input);
+      if (g.kind === 'clear') setPrevTx('clear');
+      else if (g.kind === 'blocked') setPrevTx(g.reason);
+      else {
+        setPrevTx('checkFailed');
+        setPrevTxReason(g.reason);
       }
     })();
     return () => { cancelled = true; };
@@ -368,6 +397,11 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPe
             ) : undefined}
           >
             {t.kyc.prevTx[prevTx]}
+            {prevTx === 'checkFailed' && prevTxReason && (
+              <Typography variant="caption" display="block" sx={{ mt: 0.5, fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                {prevTxReason}
+              </Typography>
+            )}
           </Alert>
         )}
 
