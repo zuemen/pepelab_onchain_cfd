@@ -11,6 +11,7 @@ loadEnv();
 const FEE_ROUTER_ABI = [
   "function routeExternalRevenue(address trader, uint256 fee)",
   "function usdc() view returns (address)",
+  "function platformTreasury() view returns (address)",
 ];
 const USDC_ABI = [
   "function decimals() view returns (uint8)",
@@ -38,9 +39,10 @@ const MINTABLE_MOCK_USDC = ADDRESSES.MockUSDC;
 let wallet: ethers.Wallet | null = null;
 let feeRouter: ethers.Contract | null = null;
 let usdc: ethers.Contract | null = null;
+let provider: ethers.JsonRpcProvider | null = null;
 
 if (PK && PK.startsWith("0x") && PK.length === 66) {
-  const provider = makeProvider();
+  provider = makeProvider();
   wallet = new ethers.Wallet(PK, provider);
   feeRouter = new ethers.Contract(SETTLEMENT_ROUTER, FEE_ROUTER_ABI, wallet);
   usdc = new ethers.Contract(SETTLEMENT_TOKEN, USDC_ABI, wallet);
@@ -48,6 +50,26 @@ if (PK && PK.startsWith("0x") && PK.length === 66) {
 
 export function isSettlementEnabled(): boolean {
   return wallet !== null;
+}
+
+/** 結算 signer 的**地址**（只給地址，私鑰不外流）。未啟用時 undefined。 */
+export function settlementSignerAddress(): string | undefined {
+  return wallet?.address;
+}
+
+export function settlementRouterAddress(): string {
+  return SETTLEMENT_ROUTER;
+}
+
+/** 給 payTo/signer/treasury 安全檢查用的唯讀 provider（只用 getCode）。 */
+export function settlementProvider(): ethers.JsonRpcProvider | null {
+  return provider;
+}
+
+/** 讀 FeeRouter.platformTreasury()（immutable；20% 平台分潤的去向）。 */
+export async function readPlatformTreasury(): Promise<string> {
+  if (!feeRouter) throw new Error("settlement disabled");
+  return (await feeRouter.platformTreasury()) as string;
 }
 
 export interface SettlementResult {

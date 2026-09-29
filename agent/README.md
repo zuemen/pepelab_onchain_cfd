@@ -120,7 +120,9 @@ maxLeverage / expiry** 限額內開倉 → 印出 **tx hash 與 positionId**。�
 2. Environment Variables（**不要 commit**）：
    `BASE_SEPOLIA_RPC_URL`、`X402_NETWORK=base-sepolia`、`X402_FACILITATOR_URL=https://x402.org/facilitator`、
    `X402_SETTLEMENT_TOKEN=0x036CbD…CF7e`、`X402_FEE_ROUTER=0x29e5732A…B57d`、
-   `PAY_TO=0xE80A…Eb93`（treasury EOA）、`FEE_SETTLEMENT_PRIVATE_KEY=0x…`（半公開測試金鑰，僅放極少量）。
+   `PAY_TO=<FEE_SETTLEMENT_PRIVATE_KEY 的 EOA 地址>`（**不可**用 Safe／合約，**不可**用 2026-08-06 稽核的外洩
+   deployer `0xE80A…Eb93`——它已被 EIP-7702 sweeper 接管，signal-api 會回 503 `payto_unsafe`）、
+   `FEE_SETTLEMENT_PRIVATE_KEY=0x…`（新產生的測試金鑰，僅放極少量）、`ORACLE_BENEFICIARY_ADDRESS`（/oracle 收入 70% 歸屬）。
 3. Deploy。`vercel.json` 已設 `installCommand: cd .. && npm install`（在 `agent/` 跑、建 `@pepelab/shared` workspace symlink）+ rewrite 全路徑到 function、`api/index.ts` 走 `@vercel/node`（Node runtime）。
 
 > **function 是預打包的自包 ESM**：`src/vercel-entry.ts` 經 `npm run bundle:vercel`（esbuild，
@@ -179,7 +181,8 @@ npm run typecheck             # tsc --noEmit（涵蓋所有 workspace）
 | `BASE_SEPOLIA_RPC_URL` | Base Sepolia RPC（讀合約狀態 + x402 結算同鏈） |
 | `X402_NETWORK` | x402 結算網路，預設 `base-sepolia` |
 | `X402_FACILITATOR_URL` | x402 facilitator，預設 `https://x402.org/facilitator` |
-| `PAY_TO` | 收款地址；留空則回退到 FeeRouter |
+| `PAY_TO` | 收款地址；**必須**是 `FEE_SETTLEMENT_PRIVATE_KEY` 的 EOA。外洩清單／EIP-7702 委派／合約（含留空時回退的 FeeRouter）一律 503 `payto_unsafe`，不發 402 |
+| `ORACLE_BENEFICIARY_ADDRESS` | `/oracle` 收入 70% 的受益人；未設則該筆收入不排入分潤 |
 | `AGENT_PRIVATE_KEY` | demo agent 自管 EOA / session key（付 x402 費用 + 經 session 下單，僅限測試錢包） |
 | `SESSION_MANAGER_ADDRESS` | `AgentSessionManager` 位址（Deploy 印出；啟用 write path） |
 | `DEMO_SESSION_ID` | demo agent 下單用的 session id（`createSession` 取得） |

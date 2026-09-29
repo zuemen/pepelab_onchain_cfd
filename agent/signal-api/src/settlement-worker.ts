@@ -25,7 +25,15 @@
 // ——任何時刻至多一個 process 持有這把私鑰在送交易，nonce 序列只有一條。
 import { fileURLToPath } from "node:url";
 import { resolve as resolvePath } from "node:path";
-import { isSettlementEnabled, settleRevenue } from "./settlement.ts";
+import { assessPayoutAddress, type CodeReader } from "@pepelab/shared";
+import {
+  isSettlementEnabled,
+  settleRevenue,
+  settlementSignerAddress,
+  settlementRouterAddress,
+  settlementProvider,
+  readPlatformTreasury,
+} from "./settlement.ts";
 import {
   isLedgerEnabled,
   dequeueBatch,
@@ -45,6 +53,70 @@ export const MAX_RETRY_ATTEMPTS = Number(process.env.SETTLEMENT_MAX_RETRIES ?? "
 // 部分失敗門檻：沿用 keeper 系列 workflow 的慣例（MAX_FAIL_PCT），失敗率超過
 // 這個百分比就讓 CI job 變紅，不要讓「11 筆壞 7 筆」看起來像成功。
 const MAX_FAIL_PCT = Number(process.env.SETTLEMENT_MAX_FAIL_PCT ?? "30");
+
+export interface PreflightDeps {
+  codeReader: CodeReader;
+  payTo: string | undefined;
+  signerAddress: string | undefined;
+  routerAddress: string;
+  readPlatformTreasury: () => Promise<string>;
+}
+
+/**
+ * P0 收款地址守門（fail-closed）：在碰佇列之前檢查三個「錢會流過去」的地址。
+ *   - PAY_TO（x402 收款）：必須是 EOA，且不是外洩／EIP-7702 委派地址。
+ *   - 結算 signer：同上（它就是要 approve + routeExternalRevenue 的那個 EOA）。
+ *   - FeeRouter.platformTreasury()：20% 平台分潤的去向，不可是外洩／委派地址。
+ * 回傳 problems（任何一個 → worker 以非零結束，佇列原封不動）與 warnings。
+ */
+export async function payoutPreflight(d: PreflightDeps): Promise<{ problems: string[]; warnings: string[] }> {
+  const problems: string[] = [];
+  const warnings: string[] = [];
+
+  if (!d.payTo?.trim()) {
+    problems.push("PAY_TO 未設：無法確認 x402 收款地址是否安全（必須 = FEE_SETTLEMENT_PRIVATE_KEY 的 EOA）。");
+  } else {
+    const a = await assessPayoutAddress(d.codeReader, d.payTo, { requireEoa: true });
+    if (!a.safe) problems.push(`PAY_TO unsafe：${a.reason}`);
+  }
+
+  if (!d.signerAddress) {
+    problems.push("結算 signer 未設定。");
+  } else {
+    const a = await assessPayoutAddress(d.codeReader, d.signerAddress, { requireEoa: true });
+    if (!a.safe) problems.push(`結算 signer unsafe：${a.reason}`);
+  }
+
+  let treasury: string | undefined;
+  try {
+    treasury = await d.readPlatformTreasury();
+  } catch (err) {
+    problems.push(
+      `讀不到 FeeRouter(${d.routerAddress}).platformTreasury()，fail-closed：${(err as Error).message}`,
+    );
+  }
+  if (treasury) {
+    const a = await assessPayoutAddress(d.codeReader, treasury);
+    if (!a.safe) {
+      problems.push(
+        `FeeRouter(${d.routerAddress}).platformTreasury unsafe：${a.reason}` +
+          "（platformTreasury 是 immutable，只能重新部署 FeeRouter 並更新 X402_FEE_ROUTER）",
+      );
+    }
+  }
+
+  if (
+    d.payTo?.trim() &&
+    d.signerAddress &&
+    d.payTo.trim().toLowerCase() !== d.signerAddress.toLowerCase()
+  ) {
+    warnings.push(
+      `PAY_TO(${d.payTo}) ≠ 結算 signer(${d.signerAddress})：x402 收入不會進 signer，` +
+        "worker 會用 signer 自己的餘額分潤（見 agent/README.md）。",
+    );
+  }
+  return { problems, warnings };
+}
 
 export type ProcessOutcome = { outcome: "settled"; tx: string } | { outcome: "retry" | "dead"; error: string };
 
@@ -88,6 +160,21 @@ async function main(): Promise<void> {
     console.error(
       "::error::UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN 未設 —— 沒有佇列可以讀。",
     );
+    process.exit(1);
+  }
+
+  // P0：碰佇列之前先確認錢流經的地址都安全；不安全就整批不動，交人工處理。
+  const pre = await payoutPreflight({
+    codeReader: settlementProvider()!,
+    payTo: process.env.PAY_TO,
+    signerAddress: settlementSignerAddress(),
+    routerAddress: settlementRouterAddress(),
+    readPlatformTreasury,
+  });
+  for (const w of pre.warnings) console.warn(`::warning::${w}`);
+  if (pre.problems.length > 0) {
+    for (const p of pre.problems) console.error(`::error::${p}`);
+    console.error("::error::收款地址守門未通過 —— 佇列原封不動，這次不處理任何項目。");
     process.exit(1);
   }
 

@@ -19,7 +19,11 @@ process.env.CORS_ALLOWED_ORIGINS = "http://localhost:5173";
 const { createApp } = await import("../signal-api/src/app.ts");
 
 async function main() {
-  const app = createApp();
+  // P0：payTo 守門在 402 前檢查收款地址；這裡給安全 EOA + 假 getCode（無 code），不打 RPC。
+  const app = createApp({
+    payTo: "0x4444444444444444444444444444444444444444",
+    payoutCodeReader: { getCode: async () => "0x" },
+  });
   const get = (path: string, headers: Record<string, string> = {}) =>
     app.fetch(new Request("http://localhost" + path, { headers }));
 
@@ -43,9 +47,17 @@ async function main() {
     console.log("✓ /signals/<零地址> → 400（未付款）");
   }
 
+  {
+    // 外洩地址當 trader：70% 分潤會落到攻擊者手上 → 付費前 400。
+    const res = await get("/signals/0xE80A81360608C1342e66743F70a00f75d792Eb93");
+    assert.equal(res.status, 400);
+    assert.equal(((await res.json()) as any).error, "trader_compromised");
+    console.log("✓ /signals/<外洩地址> → 400 trader_compromised（未付款）");
+  }
+
   // ── 合法輸入仍然要撞到付費牆（別把付費牆改掉了）─────────────────────────
   {
-    const res = await get("/signals/0xE80A81360608C1342e66743F70a00f75d792Eb93");
+    const res = await get("/signals/0x5555555555555555555555555555555555555555");
     assert.equal(res.status, 402, `合法 trader 應回 402，實得 ${res.status}`);
     console.log("✓ /signals/<合法地址> → 402（付費牆仍在）");
   }

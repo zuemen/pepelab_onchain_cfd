@@ -45,7 +45,10 @@ process.env.X402_NETWORK = "base-sepolia";
 // 的慣例：假 RPC，反正這支測試從不真的打鏈上。
 process.env.BASE_SEPOLIA_RPC_URL ??= "http://127.0.0.1:1";
 const { createApp, classifyFacilitatorFailure } = await import("./app.ts");
-const app = createApp();
+// P0：payTo 守門會在 402 前檢查收款地址。這支測的是 facilitator 錯誤，所以給一個
+// 「安全的 EOA」payTo 與假 getCode（回 "0x" = 無 code），不打 RPC。
+const PAYTO_EOA = "0x4444444444444444444444444444444444444444";
+const app = createApp({ payTo: PAYTO_EOA, payoutCodeReader: { getCode: async () => "0x" } });
 
 // ── 純函式 ───────────────────────────────────────────────────────────────────
 assert.equal(classifyFacilitatorFailure("Failed to verify payment: Too Many Requests")?.status, 429);
@@ -59,7 +62,7 @@ assert.equal(classifyFacilitatorFailure(undefined), null);
 console.log("classifyFacilitatorFailure ✓");
 
 // ── 經過真正的 paymentMiddleware ─────────────────────────────────────────────
-const trader = "0xE80A81360608C1342e66743F70a00f75d792Eb93";
+const trader = "0x5555555555555555555555555555555555555555";
 const now = Math.floor(Date.now() / 1000);
 const xPayment = Buffer.from(
   JSON.stringify({
@@ -70,7 +73,7 @@ const xPayment = Buffer.from(
       signature: "0x" + "ab".repeat(65),
       authorization: {
         from: "0x1111111111111111111111111111111111111111",
-        to: trader,
+        to: PAYTO_EOA,
         value: "10000",
         validAfter: String(now - 600),
         validBefore: String(now + 60),

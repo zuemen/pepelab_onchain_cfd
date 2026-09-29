@@ -5,7 +5,7 @@
 //   - 結算（routeExternalRevenue）在回應前 **await**，並把 tx 一起回傳——serverless
 //     不保證「回應後背景跑」，fire-and-forget 會被砍掉。
 //   - /revenue 直接讀鏈上（X402 FeeRouter），因 in-memory 帳務每次 invocation 歸零。
-import { Hono } from "hono";
+import { Hono, type Context, type Next } from "hono";
 import { cors } from "hono/cors";
 import { paymentMiddleware, type Network } from "x402-hono";
 import { ethers } from "ethers";
@@ -26,6 +26,10 @@ import {
   buildAgentVerification,
   resolveSettlementToken,
   ASSET_IDS,
+  assessPayoutAddress,
+  isCompromisedAddress,
+  type CodeReader,
+  type PayoutAssessment,
   type ContractTarget,
 } from "@pepelab/shared";
 import { isSettlementEnabled } from "./settlement.ts";
@@ -61,10 +65,11 @@ export const PRICE_ORACLE = 0.005; // USDC
 // 見 docs/KNOWN_LIMITATIONS.md §15 與 signal-api/scripts/probe-facilitator.ts。
 export const MAX_TIMEOUT_SECONDS = 60;
 
-// 免費 demo 的預設分析對象：當未帶 trader、未設 DEMO_TRADER_ADDRESS 且鏈上
-// registry 尚無註冊 trader 時，退回這個已知有鏈上活動的地址（treasury/deployer），
-// 讓「訪客試買」仍能回真實訊號。可用 DEMO_TRADER_ADDRESS env 覆寫。
-const DEFAULT_DEMO_TRADER = "0xE80A81360608C1342e66743F70a00f75d792Eb93";
+// 2026-09-29（P0）：以前這裡有一個 DEFAULT_DEMO_TRADER，寫死成舊 deployer 地址
+// —— 那正是 2026-08-06 稽核確認私鑰外洩、鏈上已被 EIP-7702 sweeper 接管的地址，
+// 而 /oracle 的 70% 分潤就落在 resolveTrader() 的回傳值上。
+// 現在：demo 只用 DEMO_TRADER_ADDRESS 或鏈上第一個已註冊 trader，都沒有就明說；
+// /oracle 的受益人改由 ORACLE_BENEFICIARY_ADDRESS 明確指定（見下方 handler）。
 
 const provider = makeProvider();
 const contracts = makeContracts(provider);
@@ -124,15 +129,36 @@ const SCV_TARGETS: ContractTarget[] = [
   { label: "AgentSessionManager", address: getSessionManagerAddress() },
 ];
 
-// 解析分析對象（demo 用）：env 優先，否則鏈上第一個已註冊 trader。
-async function resolveTrader(want?: string): Promise<string> {
+// 解析分析對象（demo 用）：明確指定 > DEMO_TRADER_ADDRESS > 鏈上第一個已註冊 trader。
+// 都沒有 → 回 null，由呼叫端優雅回應；**不再**退回任何寫死的地址。
+async function resolveTrader(want?: string): Promise<string | null> {
   if (want && /^0x[0-9a-fA-F]{40}$/.test(want)) return want;
   const envT = process.env.DEMO_TRADER_ADDRESS?.trim();
   if (envT && /^0x[0-9a-fA-F]{40}$/.test(envT)) return envT;
   const list = (await contracts.registry.getAllTraders()) as string[];
-  if (list.length) return list[0];
-  // registry 尚無註冊 trader → 退回已知有鏈上活動的 demo 地址，免費試買仍可回真實訊號。
-  return DEFAULT_DEMO_TRADER;
+  return list.length ? list[0] : null;
+}
+
+/**
+ * /oracle 收入的 70% 受益人。只認 env `ORACLE_BENEFICIARY_ADDRESS`，而且不可是
+ * 已知外洩地址。沒設（或設錯）→ 回 reason，這筆收入就不排入分潤（款項留在 payTo）。
+ */
+export function resolveOracleBeneficiary(): { address: string } | { reason: string } {
+  const raw = process.env.ORACLE_BENEFICIARY_ADDRESS?.trim();
+  if (!raw) {
+    return {
+      reason:
+        "未設 ORACLE_BENEFICIARY_ADDRESS：這筆 /oracle 收入不排入 70/20/10 分潤" +
+        "（款項已進 payTo，未分配）。",
+    };
+  }
+  if (!/^0x[0-9a-fA-F]{40}$/.test(raw) || /^0x0{40}$/.test(raw)) {
+    return { reason: `ORACLE_BENEFICIARY_ADDRESS 不是合法地址（${raw}），不排入分潤。` };
+  }
+  if (isCompromisedAddress(raw)) {
+    return { reason: `ORACLE_BENEFICIARY_ADDRESS=${raw} 是已知外洩地址，拒絕把 70% 分潤送過去。` };
+  }
+  return { address: raw };
 }
 
 // /demo/buy-signal 速率限制（best-effort）：per-IP 冷卻 + per-instance 硬上限。
@@ -283,8 +309,21 @@ export async function applyLedgerRecording(
   });
 }
 
-export function createApp(): Hono<{ Variables: AppVariables }> {
+export interface CreateAppOptions {
+  /** 覆寫 payTo（測試用；正式環境一律走 PAY_TO env）。 */
+  payTo?: string;
+  /** 覆寫 payTo 安全檢查用的 getCode 來源（測試用；預設是 app 的 provider）。 */
+  payoutCodeReader?: CodeReader;
+}
+
+export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVariables }> {
   const app = new Hono<{ Variables: AppVariables }>();
+  const payTo = opts.payTo ?? PAY_TO;
+  const codeReader: CodeReader = opts.payoutCodeReader ?? provider;
+  // payTo 必須是 EOA（= FEE_SETTLEMENT_PRIVATE_KEY 的地址）：外洩清單、EIP-7702 委派、
+  // 合約（含未設 PAY_TO 時回退的 FeeRouter）一律 unsafe。結果快取 10 分鐘、fail-closed。
+  const checkPayTo = (): Promise<PayoutAssessment> =>
+    assessPayoutAddress(codeReader, payTo, { requireEoa: true });
 
   // GET 資料端點對所有來源開放（瀏覽器 demo + 外部 agent 都要用）。
   app.use("*", cors({ origin: "*", allowMethods: ["GET", "POST", "OPTIONS"] }));
@@ -324,8 +363,9 @@ export function createApp(): Hono<{ Variables: AppVariables }> {
   });
 
   // ── 免費：可被發現的服務目錄（agent/CLI 先探索） ─────────────────────────
-  app.get("/", (c) =>
-    c.json({
+  app.get("/", async (c) => {
+    const payToSafety = await checkPayTo();
+    return c.json({
       service: "pepelab-signal-api",
       discoverable: true,
       description:
@@ -333,11 +373,20 @@ export function createApp(): Hono<{ Variables: AppVariables }> {
         "any agent with a Base Sepolia USDC wallet can pay and consume directly.",
       network: NETWORK,
       asset: SETTLEMENT_TOKEN,
-      payTo: PAY_TO,
+      payTo,
+      payToSafety: {
+        safe: payToSafety.safe,
+        reason: payToSafety.reason,
+        source: payToSafety.source,
+        checkedAt: payToSafety.checkedAt ? new Date(payToSafety.checkedAt).toISOString() : null,
+        note: payToSafety.safe
+          ? undefined
+          : "付費端點目前回 503 payto_unsafe，不發出任何 402 付款要求（沒人會付錢進這個地址）。",
+      },
       // 誠實描述金流：x402 的付款直接進 payTo，70/20/10 是平台事後另外送的一筆
       // 交易。把兩者寫成同一件事會讓讀者以為買方付的那筆錢就是被分潤的那筆錢。
       revenueModel:
-        `x402 付款直接進 payTo（${PAY_TO}），這筆 EIP-3009 交易由 facilitator（${FACILITATOR_URL}）` +
+        `x402 付款直接進 payTo（${payTo}），這筆 EIP-3009 交易由 facilitator（${FACILITATOR_URL}）` +
         `送出並支付 gas。70/20/10 分潤是平台另外的一筆 FeeRouter.routeExternalRevenue 交易，` +
         `由結算錢包（FEE_SETTLEMENT_PRIVATE_KEY）送出並支付 gas，累計可於 /revenue 查詢。` +
         `兩者是不同的兩筆交易。` +
@@ -369,8 +418,8 @@ export function createApp(): Hono<{ Variables: AppVariables }> {
         curl: "curl -s <BASE_URL>/  # discover, then pay with any x402 client",
         node: "see agent/examples/buy-signal.ts (x402-fetch + viem)",
       },
-    }),
-  );
+    });
+  });
 
   // ── 免費：鏈上收入（X402 FeeRouter 真實累計） ────────────────────────────
   app.get("/revenue", async (c) => {
@@ -497,6 +546,18 @@ export function createApp(): Hono<{ Variables: AppVariables }> {
         new Promise<Record<string, never>>((r) => setTimeout(() => r({}), 1500)),
       ])) as { trader?: string };
       const trader = await resolveTrader(body.trader ?? c.req.query("trader"));
+      if (!trader) {
+        return c.json(
+          {
+            ok: false,
+            error: "no_demo_trader",
+            message:
+              "沒有可分析的 trader：請帶 ?trader=0x…，或由營運方設定 DEMO_TRADER_ADDRESS" +
+              "（鏈上 StrategyRegistry 目前也沒有已註冊的 trader）。",
+          },
+          404,
+        );
+      }
       const signal = await getTraderPerformance(contracts, trader);
 
       // 免費 demo：**不在請求內做鏈上結算**。理由——鏈上結算要 mint→approve→
@@ -586,8 +647,45 @@ export function createApp(): Hono<{ Variables: AppVariables }> {
         400,
       );
     }
+    if (isCompromisedAddress(trader)) {
+      return c.json(
+        {
+          ok: false,
+          error: "trader_compromised",
+          message: `${trader} 是已知外洩地址，70% 分潤會落到攻擊者手上，不販售。`,
+          note: "未付款：在 x402 付費牆之前就被擋下。",
+        },
+        400,
+      );
+    }
     return next();
   });
+
+  // ── 付費前的收款地址守門（P0，fail-closed）──────────────────────────────────
+  //
+  // payTo 被接管（外洩清單、EIP-7702 委派）或不是 EOA 時，**在發出 402 之前**就回
+  // 503：402 本身就是「請把錢付到 payTo」的指示，發出去就等於請買方付錢給攻擊者。
+  // 註冊順序有意義：必須在 paymentMiddleware 之前，也在任何會打 RPC 的閘門之前。
+  const payToGuard = async (c: Context, next: Next) => {
+    const a = await checkPayTo();
+    if (!a.safe) {
+      console.error(`[payto] unsafe payTo=${payTo} source=${a.source} reason=${a.reason}`);
+      return c.json(
+        {
+          ok: false,
+          error: "payto_unsafe",
+          reason: a.reason,
+          payTo,
+          note: "未發出付款要求（402）：收款地址未通過安全檢查，請營運方更換 PAY_TO。",
+        },
+        503,
+        { "Retry-After": "600" },
+      );
+    }
+    return next();
+  };
+  app.use("/signals/*", payToGuard);
+  app.use("/oracle/*", payToGuard);
 
   app.use("/oracle/*", async (c, next) => {
     const asset = c.req.path.split("/")[2];
@@ -632,7 +730,7 @@ export function createApp(): Hono<{ Variables: AppVariables }> {
   // <statusText>`），沒有 catch —— 於是 facilitator 限流時買方拿到的是 Hono 的通用
   // 500，看不出是誰的問題、該不該重試。這裡把它轉成明確的 429 / 502。
   const x402 = paymentMiddleware(
-    PAY_TO as `0x${string}`,
+    payTo as `0x${string}`,
     {
       "GET /signals/[trader]": {
         price: `$${PRICE_SIGNALS}`,
@@ -712,9 +810,19 @@ export function createApp(): Hono<{ Variables: AppVariables }> {
       // 稽核（四·Medium）：/oracle 以前**完全沒有結算** —— 自主 agent 打的正是這個
       // 端點，那筆錢從未進 FeeRouter，而 `GET /` 卻宣稱 70/20/10。現在與 /signals
       // 一致：留下 ledgerEntry，交由 middleware 在確認收到款後記帳。
-      const beneficiary = await resolveTrader();
+      //
+      // 2026-09-29（P0）：受益人以前是 resolveTrader() —— 沒設 env、registry 又空時
+      // 會退回寫死的外洩 deployer 地址。現在只認 ORACLE_BENEFICIARY_ADDRESS；
+      // 沒設就不排入分潤，並在回應與 log 裡講清楚（款項仍在 payTo，未分配）。
+      const beneficiary = resolveOracleBeneficiary();
+      if (!("address" in beneficiary)) {
+        console.warn(`[oracle] 不排入分潤：${beneficiary.reason}`);
+        return c.json(
+          jsonSafe({ ok: true, settled: false, settleError: beneficiary.reason, data: snap }),
+        );
+      }
       c.set("ledgerEntry", {
-        trader: beneficiary,
+        trader: beneficiary.address,
         feeUsd: PRICE_ORACLE,
         at: Math.floor(Date.now() / 1000),
         source: "oracle",
