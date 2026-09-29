@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 
 import "./CarbonTiers.sol";
 
@@ -37,7 +38,7 @@ interface IEsgRegistryForPricing {
         returns (CarbonTiers.Tier tier, uint256 count, uint256 dispersion, bool isRated);
 }
 
-contract PerpetualExchange is Ownable, ReentrancyGuard {
+contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
     /// @dev M-4: non-standard ERC20s (mainnet USDT and friends) return no bool
     ///      from transfer/approve, so a bare `usdc.transfer(...)` against an
     ///      interface declaring a bool either reverts on ABI decode or, worse,
@@ -279,6 +280,51 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     ///         buffer — money the trader posted precisely to absorb this event.
     uint256 public liquidationPenaltyBps = 2_000; // 20% of remaining collateral
 
+    // ── P1: emergency controls ───────────────────────────────────────────────
+    //
+    // Two independent brakes, modelled on SEAL's guardian pattern and on the
+    // halt / reduce-only market states of Hyperliquid HIP-3 and Orderly:
+    //
+    //  1. A GLOBAL pause (OpenZeppelin `Pausable`). `pause()` may be called by
+    //     the guardian or the owner; `unpause()` only by the owner. While paused
+    //     every function that moves value or changes a position reverts —
+    //     including deposits and withdrawals. See `pause()` for the rationale.
+    //
+    //  2. A PER-ASSET mode (`assetMode`):
+    //       Active     — everything allowed (default for every asset).
+    //       ReduceOnly — no new exposure: every open path (direct, agent,
+    //                    copy) reverts; closes and liquidations still run.
+    //                    This is the market-closed state for RWA/equity
+    //                    feeds: keepers keep refreshing the timestamp at the
+    //                    closing price, so exits settle at the close.
+    //       Halted     — the market is frozen: opens, closes, liquidations and
+    //                    funding settlement on this asset all revert.
+    //
+    // Who may change a mode (see `setAssetMode`):
+    //   owner          — any transition.
+    //   guardian       — tighten only (Active -> ReduceOnly -> Halted).
+    //   marketOperator — Active <-> ReduceOnly only; never sets or lifts Halted.
+    //
+    // Neither brake relaxes the oracle freshness checks; they are additive.
+
+    /// @notice Trading state of a single asset. The numeric order is the
+    ///         strictness order — a guardian may only move an asset upward.
+    enum AssetMode { Active, ReduceOnly, Halted }
+
+    /// @notice Emergency responder. May `pause()` and may tighten any asset's
+    ///         mode, but can never unpause, loosen a mode, move funds or change
+    ///         a risk parameter. address(0) = no guardian configured.
+    address public guardian;
+
+    /// @notice Day-to-day market operator (e.g. session open/close for RWA
+    ///         feeds). May only toggle an asset between Active and ReduceOnly.
+    ///         address(0) = no operator configured.
+    address public marketOperator;
+
+    /// @notice Per-asset trading mode. Defaults to Active (enum value 0), so
+    ///         every existing market behaves exactly as before this feature.
+    mapping(bytes32 => AssetMode) public assetMode;
+
     // ── Events ───────────────────────────────────────────────────────────────
 
     event PositionOpened(
@@ -348,6 +394,11 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     /// @notice H-2: emitted when a settlement had to skip un-accrued intervals.
     event FundingCatchupClamped(bytes32 indexed asset, uint256 elapsed, uint256 accrued);
 
+    // P1: emergency controls.
+    event GuardianSet(address indexed guardian);
+    event MarketOperatorSet(address indexed marketOperator);
+    event AssetModeSet(bytes32 indexed asset, AssetMode mode, address indexed by);
+
     // ── Errors ───────────────────────────────────────────────────────────────
 
     error NotCopyTracker();
@@ -366,6 +417,15 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     ///         this particular position.
     error NotPositionAgent(uint256 positionId, address caller);
     error InvalidParam();
+    /// @notice P1: caller is neither the guardian nor the owner.
+    error NotGuardianOrOwner(address caller);
+    /// @notice P1: `caller` may not move `asset` from `current` to `requested`
+    ///         (see `setAssetMode` for the permission matrix).
+    error AssetModeChangeNotAllowed(bytes32 asset, AssetMode current, AssetMode requested, address caller);
+    /// @notice P1: opening new exposure requires the asset to be Active.
+    error AssetNotActive(bytes32 asset, AssetMode mode);
+    /// @notice P1: the asset is Halted — no open, close, liquidation or funding.
+    error AssetHalted(bytes32 asset);
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
@@ -563,7 +623,111 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         emit MarkPremiumCapBpsSet(_bps);
     }
 
-    function withdrawExecutionFees() external onlyOwner nonReentrant {
+    // ── P1: emergency controls ───────────────────────────────────────────────
+
+    /// @notice Set (or clear with address(0)) the guardian.
+    function setGuardian(address _guardian) external onlyOwner {
+        guardian = _guardian;
+        emit GuardianSet(_guardian);
+    }
+
+    /// @notice Set (or clear with address(0)) the market operator.
+    function setMarketOperator(address _marketOperator) external onlyOwner {
+        marketOperator = _marketOperator;
+        emit MarketOperatorSet(_marketOperator);
+    }
+
+    /// @notice Stop every value-moving and position-changing function at once.
+    /// @dev Callable by the guardian or the owner. The brake is deliberately
+    ///      total — it also blocks `depositMargin`, `withdrawMargin`, closes and
+    ///      liquidations — because it exists for the case where something is
+    ///      wrong and nobody yet knows what. Under an unknown bug any function
+    ///      that moves USDC may be the extraction route (a withdrawal that skips
+    ///      a health check, a close that mis-prices PnL, a liquidation that
+    ///      mis-pays), so letting "only the safe ones" keep running presumes a
+    ///      diagnosis that has not happened yet. Stopping everything first and
+    ///      re-opening deliberately is the conservative order.
+    ///
+    ///      The cost is accepted knowingly: while paused, traders cannot exit
+    ///      and underwater positions cannot be liquidated. Funding keeps being
+    ///      measured in wall-clock time and is caught up (bounded by
+    ///      MAX_FUNDING_CATCHUP_INTERVALS) on the first settlement after
+    ///      unpause; a per-asset Halt is the tool when funding must freeze.
+    ///
+    ///      Owner-only parameter setters and every view keep working, so the
+    ///      owner can repair configuration while the market is stopped.
+    function pause() external {
+        if (msg.sender != guardian && msg.sender != owner()) revert NotGuardianOrOwner(msg.sender);
+        _pause();
+    }
+
+    /// @notice Resume trading. Owner only: the guardian can stop the system but
+    ///         never restart it, so a compromised guardian key can at worst
+    ///         cause downtime — never re-open a market the owner has frozen.
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+
+    /// @notice Change `asset`'s trading mode.
+    /// @dev Permission matrix (`current` -> `mode`):
+    ///        owner          — any transition, including lifting a Halt.
+    ///        guardian       — strictly tighter only (mode > current).
+    ///        marketOperator — only while neither side is Halted, i.e.
+    ///                         Active <-> ReduceOnly (idempotent sets allowed).
+    ///      An address holding several roles gets the union of their rights.
+    ///      Allowed while paused, so the guardian can pre-position halts.
+    ///
+    ///      Funding while Halted: entering Halted first settles funding up to
+    ///      now; leaving Halted restarts the funding clock at the current time.
+    ///      The halted period therefore accrues no funding for either side —
+    ///      nobody can act on the market, so nobody should be charged for
+    ///      holding it. The forgiveness is symmetric (neither side's index
+    ///      moves), so the long/short conservation identity is untouched,
+    ///      exactly like the H-2 catch-up clamp.
+    function setAssetMode(bytes32 asset, AssetMode mode) external {
+        AssetMode current = assetMode[asset];
+        if (!_canSetAssetMode(msg.sender, current, mode)) {
+            revert AssetModeChangeNotAllowed(asset, current, mode, msg.sender);
+        }
+
+        if (mode == AssetMode.Halted && current != AssetMode.Halted) {
+            _pokeFunding(asset);
+        } else if (current == AssetMode.Halted && mode != AssetMode.Halted) {
+            if (lastFundingUpdateAt[asset] != 0) lastFundingUpdateAt[asset] = block.timestamp;
+        }
+
+        assetMode[asset] = mode;
+        emit AssetModeSet(asset, mode, msg.sender);
+    }
+
+    function _canSetAssetMode(address caller, AssetMode current, AssetMode next)
+        internal
+        view
+        returns (bool)
+    {
+        if (caller == owner()) return true;
+        if (caller == guardian && uint8(next) > uint8(current)) return true;
+        if (
+            caller == marketOperator
+                && current != AssetMode.Halted
+                && next != AssetMode.Halted
+        ) return true;
+        return false;
+    }
+
+    /// @dev New exposure (every open path) requires Active.
+    function _requireActive(bytes32 asset) internal view {
+        AssetMode m = assetMode[asset];
+        if (m != AssetMode.Active) revert AssetNotActive(asset, m);
+    }
+
+    /// @dev Reducing exposure (close, liquidation and the ADL it triggers) and
+    ///      funding settlement run in Active and ReduceOnly; Halted refuses.
+    function _requireNotHalted(bytes32 asset) internal view {
+        if (assetMode[asset] == AssetMode.Halted) revert AssetHalted(asset);
+    }
+
+    function withdrawExecutionFees() external onlyOwner whenNotPaused nonReentrant {
         uint256 balance = address(this).balance;
         (bool success, ) = msg.sender.call{value: balance}("");
         require(success, "ETH transfer failed");
@@ -571,21 +735,21 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
 
     // ── Margin management ────────────────────────────────────────────────────
 
-    function depositMargin(uint256 amount) external nonReentrant {
+    function depositMargin(uint256 amount) external whenNotPaused nonReentrant {
         usdc.safeTransferFrom(msg.sender, address(this), amount);
         freeMargin[msg.sender] += amount;
         emit MarginDeposited(msg.sender, amount);
     }
 
     /// @dev CopyTracker pulls USDC from itself, credits freeMargin to `user`.
-    function depositMarginFor(address user, uint256 amount) external nonReentrant {
+    function depositMarginFor(address user, uint256 amount) external whenNotPaused nonReentrant {
         if (!authorizedAgents[msg.sender]) revert NotCopyTracker();
         usdc.safeTransferFrom(msg.sender, address(this), amount);
         freeMargin[user] += amount;
         emit MarginDeposited(user, amount);
     }
 
-    function withdrawMargin(uint256 amount) external nonReentrant {
+    function withdrawMargin(uint256 amount) external whenNotPaused nonReentrant {
         if (freeMargin[msg.sender] < amount) revert InsufficientFreeMargin();
         freeMargin[msg.sender] -= amount;
         usdc.safeTransfer(msg.sender, amount);
@@ -599,7 +763,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         bool    isLong,
         uint256 margin,
         uint256 leverage
-    ) external payable nonReentrant returns (uint256 positionId) {
+    ) external payable whenNotPaused nonReentrant returns (uint256 positionId) {
         require(msg.value >= executionFee, "Insufficient execution fee");
         positionId = _openPosition(msg.sender, asset, isLong, margin, leverage, address(0), address(0));
         // Low: refund execution-fee overpayment instead of silently keeping it.
@@ -613,7 +777,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         uint256 margin,
         uint256 leverage,
         address copiedFrom
-    ) external payable nonReentrant returns (uint256 positionId) {
+    ) external payable whenNotPaused nonReentrant returns (uint256 positionId) {
         require(msg.value >= executionFee, "Insufficient execution fee");
         if (copyTracker == address(0)) revert CopyTrackerNotSet();
         if (!authorizedAgents[msg.sender]) revert NotCopyTracker();
@@ -621,7 +785,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         _refundExcessFee();
     }
 
-    function closePosition(uint256 positionId) external nonReentrant {
+    function closePosition(uint256 positionId) external whenNotPaused nonReentrant {
         _closePosition(msg.sender, positionId);
     }
 
@@ -641,7 +805,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     ///      AgentSessionManager closing the positions it created in a session —
     ///      with no new user-facing approval state to manage or revoke, and it
     ///      revokes automatically when the owner's agent authorization is pulled.
-    function closePositionFor(address owner, uint256 positionId) external nonReentrant {
+    function closePositionFor(address owner, uint256 positionId) external whenNotPaused nonReentrant {
         if (!authorizedAgents[msg.sender]) revert NotCopyTracker();
         if (positionAgent[positionId] != msg.sender) {
             revert NotPositionAgent(positionId, msg.sender);
@@ -666,9 +830,14 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     /// @notice Anyone can call this to liquidate an underwater position and protect the protocol.
     /// @dev If (margin + PnL - fees) < Maintenance Margin (5% of notional), the position is liquidated.
     ///      The caller earns LIQUIDATION_REWARD_BPS of the remaining collateral as incentive.
-    function liquidatePosition(uint256 positionId) external nonReentrant {
+    function liquidatePosition(uint256 positionId) external whenNotPaused nonReentrant {
         Position storage pos = positions[positionId];
         if (!pos.isOpen) revert PositionAlreadyClosed();
+        // P1: allowed in Active and ReduceOnly (a closed market must still be
+        // able to liquidate at the closing price); refused when Halted. ADL
+        // only ever runs inside this call or `_closePosition` and only touches
+        // positions of the same asset, so this gate covers it too.
+        _requireNotHalted(pos.asset);
 
         _pokeFunding(pos.asset);
         _requireFresh(pos.asset);
@@ -926,7 +1095,8 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     /// @dev Kept permissionless as a public crank, but funding is also settled
     ///      automatically whenever a position is opened/closed/liquidated, so the
     ///      mechanism no longer depends on altruistic callers.
-    function settleFunding(bytes32 asset) external {
+    function settleFunding(bytes32 asset) external whenNotPaused {
+        _requireNotHalted(asset);
         uint256 last = lastFundingUpdateAt[asset];
         if (block.timestamp < last + FUNDING_INTERVAL)
             revert FundingIntervalNotElapsed();
@@ -1273,6 +1443,10 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         address copiedFrom,
         address agent
     ) internal returns (uint256 positionId) {
+        // P1: every open path — openPosition, and openPositionFor from both
+        // CopyTracker and AgentSessionManager — funnels through here, so this
+        // is the single place new exposure is refused.
+        _requireActive(asset);
         if (margin < MIN_MARGIN) revert MarginTooLow();
 
         // Read once, at open, and freeze into the position below — a later
@@ -1362,6 +1536,8 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         Position storage pos = positions[positionId];
         if (caller != pos.owner) revert NotPositionOwner();
         if (!pos.isOpen)         revert PositionAlreadyClosed();
+        // P1: closing is allowed in ReduceOnly, refused only when Halted.
+        _requireNotHalted(pos.asset);
 
         // Settle funding up to now so the position pays/receives the full accrual.
         _pokeFunding(pos.asset);

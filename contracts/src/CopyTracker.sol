@@ -85,6 +85,9 @@ contract CopyTracker is ReentrancyGuard {
     error InvalidRecordIndex();
     error RecordAlreadyInactive();
     error TradingFeeExceedsMargin(uint256 fee, uint256 margin);
+    /// @notice A copied position could not be closed on unfollow and is still
+    ///         open (exchange paused, asset halted, stale price, ...).
+    error PositionStillOpen(uint256 positionId);
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
@@ -195,6 +198,16 @@ contract CopyTracker is ReentrancyGuard {
             try exchange.closePositionFor(msg.sender, rec.positionIds[i]) {
                 // closed
             } catch {
+                // Only a position that is ALREADY closed (liquidated or
+                // auto-deleveraged) may be skipped. One that is still open
+                // failed for a transient reason — exchange paused, asset
+                // halted, stale oracle — and scoring it as a total loss below
+                // would slash the trader for an outage and deactivate a record
+                // whose positions are still live. Refuse instead; the follower
+                // retries once the market is back.
+                if (exchange.getPosition(rec.positionIds[i]).isOpen) {
+                    revert PositionStillOpen(rec.positionIds[i]);
+                }
                 emit PositionCloseSkipped(msg.sender, rec.positionIds[i]);
             }
         }
