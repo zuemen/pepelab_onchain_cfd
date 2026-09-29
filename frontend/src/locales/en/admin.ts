@@ -225,6 +225,23 @@ export const admin: Catalog['admin'] = {
     hashedNotice:
       'Name and nationality go on-chain only as hashes, so review requires off-chain comparison: for applications marked "hash", the chain only holds keccak256(salt ‖ normalized name) and keccak256(salt ‖ nationality code). Ask the applicant to present the salt and raw details off-chain, recompute, and approve only if they match the hashes shown here. Older applications without the mark were written on-chain in plain text at the time.',
 
+    verifyTool: {
+      title: 'Off-chain check (recompute hashes)',
+      body: 'Ask the applicant to present the salt, name and nationality code off-chain and paste them below; the browser recomputes keccak256(salt ‖ normalized value) and compares it with the on-chain hashes. Nothing is sent or stored.',
+      address: 'Applicant address',
+      salt: 'Salt (0x + 64 hex)',
+      name: 'Name',
+      nationality: 'Nationality code (e.g. TW)',
+      submit: 'Compare',
+      notFound: 'No application from this address in the queue (refresh the queue or check the address).',
+      notHashed: 'This is a legacy plaintext application — no recomputation needed; compare against the table directly.',
+      invalidSalt: 'Invalid salt: it must be 0x followed by 32 bytes of hex.',
+      nameMatch: 'Name hash matches',
+      nameMismatch: 'Name hash does not match',
+      nationalityMatch: 'Nationality hash matches',
+      nationalityMismatch: 'Nationality hash does not match',
+    },
+
     queue: {
       readErrorSome: '{count} application(s) could not be read and are left out of the list — refresh to retry.',
       readErrorAll: 'Failed to load the review queue, possibly RPC rate-limiting. Refresh to retry.',

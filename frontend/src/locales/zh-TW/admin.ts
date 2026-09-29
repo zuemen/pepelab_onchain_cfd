@@ -237,6 +237,24 @@ export const admin = {
     hashedNotice:
       '姓名與國籍只以雜湊上鏈，審核需線下比對：標示「雜湊」的申請，鏈上只有 keccak256(salt ‖ 正規化姓名) 與 keccak256(salt ‖ 國籍代碼)。請申請人線下出示 salt 與原始資料，重算後與此處的雜湊比對一致才核准。未標示雜湊的舊申請是當時以明文上鏈的資料。',
 
+    /** 線下比對工具：申請人出示 salt 與原始資料，審核員在瀏覽器內重算。 */
+    verifyTool: {
+      title: '線下比對（重算雜湊）',
+      body: '請申請人線下出示 salt、姓名與國籍代碼，貼到下方即可在瀏覽器內重算 keccak256(salt ‖ 正規化值) 並與鏈上雜湊比對。不會送出或保存任何資料。',
+      address: '申請人地址',
+      salt: 'Salt（0x 開頭 64 位 hex）',
+      name: '姓名',
+      nationality: '國籍代碼（例如 TW）',
+      submit: '比對',
+      notFound: '佇列中找不到這個地址的申請（請先重新整理佇列，或確認地址）。',
+      notHashed: '這筆申請是舊版明文上鏈，不需要重算，直接對照表格即可。',
+      invalidSalt: 'Salt 格式不正確，必須是 0x 開頭的 32 bytes hex。',
+      nameMatch: '姓名雜湊相符',
+      nameMismatch: '姓名雜湊不符',
+      nationalityMatch: '國籍雜湊相符',
+      nationalityMismatch: '國籍雜湊不符',
+    },
+
     queue: {
       readErrorSome: '{count} 筆申請的狀態讀取失敗，未列入清單，可重新整理再試。',
       readErrorAll: '讀取審核佇列失敗，可能是 RPC 節點限流，請重新整理再試。',

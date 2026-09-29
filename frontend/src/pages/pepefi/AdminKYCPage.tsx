@@ -5,7 +5,7 @@ import { useContracts } from 'src/hooks/useContracts'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { useKYCReviewQueue, type ReviewApplication } from 'src/hooks/useKYCReviewQueue'
 import { screenApplication, type ScreeningResult, type ScreeningReasonCode } from 'src/lib/pepefi/kycScreening'
-import { isCommitmentHash } from 'src/lib/pepefi/kycCommitment'
+import { isCommitmentHash, verifyKycCommitment } from 'src/lib/pepefi/kycCommitment'
 import { t, interpolate } from 'src/locales'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { explorerTx } from 'src/lib/pepefi/notify'
@@ -90,6 +90,80 @@ function ScreeningChip({ result }: { result: ScreeningResult }) {
     <Tooltip title={reasonText}>
       <Chip size="small" color="warning" label={t.admin.kyc.queue.screening.needsReview} />
     </Tooltip>
+  )
+}
+
+// ── 線下比對工具 ──────────────────────────────────────────────────────────────
+// 新版申請在鏈上只有 keccak256(salt ‖ 值)。申請人線下出示 salt 與原始資料後，審核員
+// 在這裡重算比對。全部在瀏覽器內計算，不送出任何東西、不寫入任何地方。
+
+type CheckResult =
+  | { kind: 'notFound' | 'notHashed' | 'invalidSalt' }
+  | { kind: 'compared'; nameMatches: boolean; nationalityMatches: boolean }
+
+function CommitmentChecker({ apps }: { apps: ReviewApplication[] }) {
+  const [address, setAddress] = useState('')
+  const [salt, setSalt] = useState('')
+  const [name, setName] = useState('')
+  const [nationality, setNationality] = useState('')
+  const [result, setResult] = useState<CheckResult | null>(null)
+  const vt = t.admin.kyc.verifyTool
+
+  const check = () => {
+    const app = apps.find(a => a.address.toLowerCase() === address.trim().toLowerCase())
+    if (!app) { setResult({ kind: 'notFound' }); return }
+    if (!isCommitmentHash(app.fullName) || !isCommitmentHash(app.nationality)) { setResult({ kind: 'notHashed' }); return }
+    try {
+      const r = verifyKycCommitment({
+        salt: salt.trim(),
+        fullName: name,
+        nationality,
+        onChainName: app.fullName,
+        onChainNationality: app.nationality,
+      })
+      setResult({ kind: 'compared', ...r })
+    } catch {
+      setResult({ kind: 'invalidSalt' })
+    }
+  }
+
+  const line = (ok: boolean, yes: string, no: string) => (
+    <Typography variant="body2" sx={{ color: ok ? 'success.main' : 'error.main', fontWeight: 700 }}>
+      {ok ? `✓ ${yes}` : `✗ ${no}`}
+    </Typography>
+  )
+
+  return (
+    <Card sx={{ p: { xs: 2.5, sm: 3.5 } }}>
+      <Typography variant="overline" sx={{ color: 'text.secondary', fontWeight: 700, letterSpacing: 1, display: 'block' }}>
+        {vt.title}
+      </Typography>
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+        {vt.body}
+      </Typography>
+      <Box sx={{ display: 'grid', gap: 1.5, gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' } }}>
+        <TextField size="small" label={vt.address} value={address} onChange={e => { setAddress(e.target.value); setResult(null) }}
+          slotProps={{ htmlInput: { style: { fontFamily: MONO } } }} />
+        <TextField size="small" label={vt.salt} value={salt} onChange={e => { setSalt(e.target.value); setResult(null) }}
+          slotProps={{ htmlInput: { style: { fontFamily: MONO } } }} />
+        <TextField size="small" label={vt.name} value={name} onChange={e => { setName(e.target.value); setResult(null) }} />
+        <TextField size="small" label={vt.nationality} value={nationality} onChange={e => { setNationality(e.target.value); setResult(null) }} />
+      </Box>
+      <Box sx={{ mt: 1.5, display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+        <Button variant="outlined" onClick={check} disabled={!address.trim() || !salt.trim() || !name.trim() || !nationality.trim()}>
+          {vt.submit}
+        </Button>
+        {result?.kind === 'notFound' && <Typography variant="body2" color="warning.main">{vt.notFound}</Typography>}
+        {result?.kind === 'notHashed' && <Typography variant="body2" color="warning.main">{vt.notHashed}</Typography>}
+        {result?.kind === 'invalidSalt' && <Typography variant="body2" color="error.main">{vt.invalidSalt}</Typography>}
+        {result?.kind === 'compared' && (
+          <Box>
+            {line(result.nameMatches, vt.nameMatch, vt.nameMismatch)}
+            {line(result.nationalityMatches, vt.nationalityMatch, vt.nationalityMismatch)}
+          </Box>
+        )}
+      </Box>
+    </Card>
   )
 }
 
@@ -376,6 +450,8 @@ export default function AdminKYCPage() {
       <Alert severity="warning" variant="outlined">
         {t.admin.kyc.hashedNotice}
       </Alert>
+
+      <CommitmentChecker apps={[...queue.pending, ...queue.verified, ...queue.revoked]} />
 
       {isOwner && (
         <Card sx={{ p: { xs: 2.5, sm: 3.5 } }}>
