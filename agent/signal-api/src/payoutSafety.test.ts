@@ -147,19 +147,27 @@ const codes = {
   console.log("PAYOUT_DENYLIST 格式錯誤 → 警告並列出無效項目 ✓");
 }
 
-// ── 5d) redactSecrets：遮掉帶憑證的 env 值與 requestUrl ─────────────────────
+// ── 5d) redactSecrets：秘密值、URL 的 userinfo / query 值、*_PRIVATE_KEY（含/不含 0x）──
 {
   const { redactSecrets } = await import("@pepelab/shared");
-  const prev = process.env.UPSTASH_REDIS_REST_TOKEN;
+  const saved = { ...process.env };
   process.env.UPSTASH_REDIS_REST_TOKEN = "tok_ABCDEFGH12345678";
+  process.env.X402_FACILITATOR_URL = "https://fac.example.com/x402?apikey=FACKEY998877&v=1";
+  process.env.SEPOLIA_RPC_URL = "https://alice:PASSW0RD55@rpc.example.org/path";
+  const pk = "ab".repeat(32);
+  process.env.TEST_DUMMY_PRIVATE_KEY = `0x${pk}`; // 測試用假值，不是任何真實金鑰
   const s = redactSecrets(
-    'x tok_ABCDEFGH12345678 y {"requestUrl":"https://base-sepolia.g.alchemy.com/v2/abcdefghijklmnop1234"}',
+    `x tok_ABCDEFGH12345678 y {"requestUrl":"https://base-sepolia.g.alchemy.com/v2/abcdefghijklmnop1234"} ` +
+      `fac=https://fac.example.com/x402?apikey=FACKEY998877 rpc=https://alice:PASSW0RD55@rpc.example.org ` +
+      `k1=0x${pk} k2=${pk} k3=0x${pk.toUpperCase()}`,
   );
-  assert.ok(!s.includes("tok_ABCDEFGH12345678"));
-  assert.ok(!s.includes("abcdefghijklmnop1234"));
-  if (prev === undefined) delete process.env.UPSTASH_REDIS_REST_TOKEN;
-  else process.env.UPSTASH_REDIS_REST_TOKEN = prev;
-  console.log("redactSecrets 遮掉 token 與 requestUrl ✓");
+  for (const bad of ["tok_ABCDEFGH12345678", "abcdefghijklmnop1234", "FACKEY998877", "PASSW0RD55", pk, pk.toUpperCase()]) {
+    assert.ok(!s.includes(bad), `不可殘留 ${bad}：${s}`);
+  }
+  assert.ok(s.includes("https://fac.example.com/x402"), "facilitator 的公開 host/path 保留");
+  for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k];
+  Object.assign(process.env, saved);
+  console.log("redactSecrets 遮掉 token、requestUrl、URL userinfo/query、私鑰（含/不含 0x）✓");
 }
 
 // ── 6) requireEoa：合約 code（Safe / FeeRouter）→ unsafe；不要求時 safe ─────
