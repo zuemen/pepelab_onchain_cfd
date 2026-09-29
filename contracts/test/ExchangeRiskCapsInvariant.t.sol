@@ -60,6 +60,9 @@ contract ExchangeCapsHandler is Test {
     uint256 public expectedReverts;
     uint256 public rejectedByOICap;
     uint256 public pauses;
+    uint256 public takeovers;
+    uint256 public lapsedUnpauseAttempts;
+    uint256 public lapsesClosed;
     uint256 public modeChanges;
     uint256 public capChanges;
     uint256 public warps;
@@ -292,8 +295,10 @@ contract ExchangeCapsHandler is Test {
     /// Advances time by up to 12h (so funding intervals and borrow hours
     /// elapse, and guardian pauses can lapse), then refreshes both feeds at
     /// their current price so they never go stale.
+    /// Advances time by up to 12h; one call in ten jumps 80h so a guardian
+    /// pause (72h) can lapse inside a single step.
     function warp(uint256 secs) external {
-        secs = bound(secs, 1 minutes, 12 hours);
+        secs = secs % 10 == 0 ? 80 hours : bound(secs, 1 minutes, 12 hours);
         vm.warp(vm.getBlockTimestamp() + secs);
         for (uint256 i; i < assets.length; ++i) {
             (uint256 p,) = oracle.getPrice(assets[i]);
@@ -341,16 +346,63 @@ contract ExchangeCapsHandler is Test {
 
     /// Rare on purpose (1 in 8 calls acts): a pause stops most other actions,
     /// and the run should spend most of its time trading.
+    /// Covers: guardian or owner starting a pause, the guardian refused while
+    /// a pause runs or during its 24h cooldown, and the owner taking over a
+    /// running guardian pause.
     function pause(uint256 seed, bool byGuardian) external {
-        if (seed % 8 != 0 || exchange.paused()) return;
+        // Starting a pause is rare (1 in 8) so the run mostly trades; calls
+        // made while a pause runs always go through, to reach the takeover
+        // and refusal paths.
+        if (seed % 8 != 0 && !exchange.paused()) return;
+        bytes memory expected;
+        bool takeover;
+        if (exchange.paused()) {
+            if (!byGuardian && exchange.pauseExpiresAt() != 0) takeover = true;
+            else expected = abi.encodeWithSelector(PerpetualExchange.EnforcedPause.selector);
+        } else if (byGuardian) {
+            // pause() first closes a lapsed guardian window, which starts the
+            // cooldown from that window's expiry.
+            uint256 allowedAt = exchange.pausedAt() != 0
+                ? exchange.pauseExpiresAt() + exchange.GUARDIAN_PAUSE_COOLDOWN()
+                : exchange.guardianPauseAllowedAt();
+            if (vm.getBlockTimestamp() < allowedAt) {
+                expected = abi.encodeWithSelector(PerpetualExchange.GuardianPauseCooldown.selector, allowedAt);
+            }
+        }
+        if (expected.length != 0) {
+            _expectRevert(expected);
+            vm.prank(byGuardian ? guardian : admin);
+            exchange.pause();
+            return;
+        }
         vm.prank(byGuardian ? guardian : admin);
-        try exchange.pause() { ++pauses; } catch (bytes memory reason) { _unexpected(reason); }
+        try exchange.pause() {
+            if (takeover) ++takeovers; else ++pauses;
+        } catch (bytes memory reason) { _unexpected(reason); }
     }
 
+    /// Covers the owner unpausing a running pause, and calling unpause on a
+    /// guardian pause that already lapsed (or none) — which must revert.
     function unpause() external {
-        if (!exchange.paused()) return;
+        if (!exchange.paused()) {
+            if (exchange.pausedAt() != 0) ++lapsedUnpauseAttempts;
+            _expectRevert(abi.encodeWithSelector(PerpetualExchange.ExpectedPause.selector));
+            vm.prank(admin);
+            exchange.unpause();
+            return;
+        }
         vm.prank(admin);
         try exchange.unpause() {} catch (bytes memory reason) { _unexpected(reason); }
+    }
+
+    /// Anyone may record a lapsed guardian pause.
+    function closeLapsedPause() external {
+        if (exchange.pausedAt() == 0 || exchange.paused()) {
+            _expectRevert(abi.encodeWithSelector(PerpetualExchange.NoLapsedPause.selector));
+            exchange.closeLapsedPause();
+            return;
+        }
+        try exchange.closeLapsedPause() { ++lapsesClosed; } catch (bytes memory reason) { _unexpected(reason); }
     }
 
     function setMode(uint256 assetSeed, uint256 modeSeed) external {
@@ -531,6 +583,8 @@ contract ExchangeRiskCapsInvariantTest is Test {
         console.log("pauses", handler.pauses(), "modeChanges", handler.modeChanges());
         console.log("capChanges", handler.capChanges(), "warps", handler.warps());
         console.log("rejectedByOICap", handler.rejectedByOICap());
+        console.log("takeovers", handler.takeovers(), "lapsesClosed", handler.lapsesClosed());
+        console.log("lapsedUnpauseAttempts", handler.lapsedUnpauseAttempts());
         console.log("settledAtCap", handler.settledAtCap(), "fundingReceived", handler.ghostFundingReceived());
     }
 }
