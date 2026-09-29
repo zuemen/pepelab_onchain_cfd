@@ -233,6 +233,8 @@ export const ROLE_OF_KEY = {
   AGENT_SESSION_MANAGER: "AgentSessionManager",
   // x402 分潤用的 FeeRouter（frontend/src/contracts/x402.ts），不是 V1 的 ChainAddresses.FeeRouter。
   X402_FEE_ROUTER: "X402FeeRouter",
+  // agent/.env.example 用的鍵名。
+  PERP_ADDRESS: "PerpetualExchange",
   // admin-base-sepolia.yml 的 workflow_dispatch input；描述寫明預設是 PerpetualExchange。
   "input:target": "PerpetualExchange",
 };
@@ -340,13 +342,42 @@ export function loadChains({ addressesFile, sessionFile, x402File }) {
   );
 }
 
-export function run({ workflowsDir, addressesFile, sessionFile, x402File, log = console.log }) {
+/**
+ * 掃 dotenv 範本（agent/.env.example，複審 Low）：非註解行的 `KEY=0x…`，只檢查
+ * ROLE_OF_KEY 認得的鍵（範本裡還有 PAY_TO、官方 USDC 等前端不管的位址，不算錯）。
+ * 範本描述的是正式鏈 Base Sepolia（84532）。
+ */
+export function checkEnvFile({ file, text, chains, chainId = "84532" }) {
+  const problems = [];
+  let checked = 0;
+  text.split(/\r?\n/).forEach((line, idx) => {
+    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*["']?(0x[0-9a-fA-F]{40})["']?\s*(#.*)?$/);
+    if (!m) return;
+    const role = ROLE_OF_KEY[m[1]];
+    if (!role) return;
+    checked += 1;
+    const expected = chains[chainId]?.roles[role];
+    const where = `${basename(file)}:${idx + 1} ${m[1]}=${m[2]}`;
+    if (!expected) problems.push(`${where} —— 前端設定裡 chain ${chainId} 沒有 ${role}`);
+    else if (expected.toLowerCase() !== m[2].toLowerCase()) {
+      problems.push(`${where} —— chain ${chainId} 的 ${role} 應為 ${expected}`);
+    }
+  });
+  return { problems, checked };
+}
+
+export function run({ workflowsDir, addressesFile, sessionFile, x402File, envFiles = [], log = console.log }) {
   const chains = loadChains({ addressesFile, sessionFile, x402File });
   const files = readdirSync(workflowsDir).filter((f) => /\.ya?ml$/.test(f)).sort();
   let problems = [];
   let checked = 0;
   for (const f of files) {
     const r = checkWorkflow({ file: f, text: readFileSync(join(workflowsDir, f), "utf8"), chains });
+    problems = problems.concat(r.problems);
+    checked += r.checked;
+  }
+  for (const f of envFiles) {
+    const r = checkEnvFile({ file: f, text: readFileSync(f, "utf8"), chains });
     problems = problems.concat(r.problems);
     checked += r.checked;
   }
@@ -390,7 +421,11 @@ function main() {
     process.exit(0);
   }
 
-  const problems = run({ workflowsDir: opt("--workflows", join(root, ".github/workflows")), ...files });
+  const problems = run({
+    workflowsDir: opt("--workflows", join(root, ".github/workflows")),
+    envFiles: [opt("--env", join(root, "agent/.env.example"))],
+    ...files,
+  });
   process.exit(problems.length ? 1 : 0);
 }
 

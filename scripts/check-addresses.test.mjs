@@ -114,6 +114,16 @@ test("run: 與 with: 的位址依 job 的鏈檢查（單元）", () => {
   assert.ok(problems.some((p) => p.includes("0x17CA20A3") && p.includes("with.address")));
 });
 
+test("agent/.env.example 也要與設定來源一致（複審 Low）", () => {
+  const bad = join(here, "fixtures/check-addresses/bad.env.example");
+  const r = spawnSync(process.execPath, [script, "--env", bad], { encoding: "utf8" });
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stdout, /X402_FEE_ROUTER=0xeD90.*X402FeeRouter 應為 0x29e5732A/);
+  assert.match(r.stdout, /PERP_ADDRESS=0xEf75.*PerpetualExchange 應為 0x827eA0c6/);
+  assert.doesNotMatch(r.stdout, /SESSION_MANAGER_ADDRESS|X402_SETTLEMENT_TOKEN|:2 /, "正確的鍵、前端不管的鍵、註解都不報");
+  assert.match(r.stdout, /2 個位址與 frontend\/src\/contracts 不一致/);
+});
+
 test("--print 給 workflow 做執行期斷言", () => {
   const ok = spawnSync(process.execPath, [script, "--print", "84532", "X402FeeRouter"], { encoding: "utf8" });
   assert.equal(ok.status, 0);
