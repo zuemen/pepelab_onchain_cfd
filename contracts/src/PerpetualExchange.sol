@@ -7,6 +7,7 @@ import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 import "./CarbonTiers.sol";
 
@@ -111,6 +112,17 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
     uint256 public constant BAILOUT_FLOOR_BPS       = 1000;  // 10% of margin
 
     uint256 public constant DEFAULT_MAINTENANCE_MARGIN_BPS = 500;  // 5% of notional
+
+    /// @notice P1: bounds on the per-asset single-position profit cap
+    ///         (`maxProfitBps`, in bps of the position's margin; 0 = off).
+    ///         Floor 100% of margin: below that a 5x position would be capped
+    ///         at a 20% move, which stops being a risk limit and starts being
+    ///         a different product. Ceiling 2,500% of margin, the top of the
+    ///         range live perp venues use (Avantis / Veranta: 500%-2,500%);
+    ///         above it the cap no longer bounds anything a 5x book can reach
+    ///         in practice.
+    uint256 public constant MIN_PROFIT_CAP_BPS = 10_000;   // 100% of margin
+    uint256 public constant MAX_PROFIT_CAP_BPS = 250_000;  // 2,500% of margin
     uint256 public constant MAX_ADL_SCAN            = 128;   // bound ADL gas
 
     uint256 public executionFee = 0.001 ether; // Fee paid in native ETH to cover platform/Keeper gas
@@ -325,6 +337,34 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
     ///         every existing market behaves exactly as before this feature.
     mapping(bytes32 => AssetMode) public assetMode;
 
+    // ── P1: open-interest and profit caps ────────────────────────────────────
+    //
+    // Together these bound the exchange's worst-case liability to the open
+    // book, which is what a pool-backed venue has to size its reserves
+    // against (GMX v2 reserve factor / max OI; Avantis & Veranta max profit):
+    //   Σ_open profit cap = Σ margin × maxProfitBps ≤ (longOI + shortOI) × maxProfitBps
+    //                     ≤ (maxLongOI + maxShortOI) × maxProfitBps
+    // (margin ≤ notional because leverage ≥ 1). All default to 0 = off.
+
+    /// @notice Per-asset ceiling on long / short open interest, in 18-decimal
+    ///         USDC notional (margin × leverage at open — the same unit as
+    ///         `globalLongNotional` / `globalShortNotional`). 0 = unlimited.
+    mapping(bytes32 => uint256) public maxLongOI;
+    mapping(bytes32 => uint256) public maxShortOI;
+
+    /// @notice Per-asset maximum profit a single position may realize, in bps
+    ///         of its margin (e.g. 50_000 = 5x margin). 0 = no cap.
+    mapping(bytes32 => uint256) public maxProfitBps;
+
+    /// @notice Absolute profit cap (18-dec USDC) frozen into each position at
+    ///         open from `maxProfitBps`; 0 = uncapped. Frozen for the same
+    ///         reason fees are (ADR-003): a later owner change must never
+    ///         retroactively cut what an already-open position can realize.
+    ///         An asset whose risk has changed is handled prospectively
+    ///         (lower the cap, tighten OI, or set ReduceOnly), not by
+    ///         clawing back open winners.
+    mapping(uint256 => uint256) public profitCapOf;
+
     // ── Events ───────────────────────────────────────────────────────────────
 
     event PositionOpened(
@@ -399,6 +439,13 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
     event MarketOperatorSet(address indexed marketOperator);
     event AssetModeSet(bytes32 indexed asset, AssetMode mode, address indexed by);
 
+    // P1: risk caps.
+    event MaxOpenInterestSet(bytes32 indexed asset, uint256 maxLong, uint256 maxShort);
+    event MaxProfitBpsSet(bytes32 indexed asset, uint256 bps);
+    /// @notice A settlement (close, liquidation or ADL) paid `paidPnl` instead
+    ///         of the position's mark-to-market `rawPnl` because of its cap.
+    event ProfitCapped(uint256 indexed positionId, int256 rawPnl, int256 paidPnl);
+
     // ── Errors ───────────────────────────────────────────────────────────────
 
     error NotCopyTracker();
@@ -426,6 +473,8 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
     error AssetNotActive(bytes32 asset, AssetMode mode);
     /// @notice P1: the asset is Halted — no open, close, liquidation or funding.
     error AssetHalted(bytes32 asset);
+    /// @notice P1: opening would lift this side's open interest above its cap.
+    error OpenInterestCapExceeded(bytes32 asset, bool isLong, uint256 resultingOI, uint256 cap);
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
@@ -727,6 +776,29 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
         if (assetMode[asset] == AssetMode.Halted) revert AssetHalted(asset);
     }
 
+    /// @notice P1: per-side open-interest ceilings for `asset` (18-dec USDC
+    ///         notional; 0 = unlimited). Lowering a cap below the current OI
+    ///         is allowed: nothing is force-closed, new opens on that side are
+    ///         simply refused until OI falls back under the cap.
+    function setMaxOpenInterest(bytes32 asset, uint256 maxLong, uint256 maxShort) external onlyOwner {
+        maxLongOI[asset]  = maxLong;
+        maxShortOI[asset] = maxShort;
+        emit MaxOpenInterestSet(asset, maxLong, maxShort);
+    }
+
+    /// @notice P1: single-position profit cap for `asset`, in bps of margin.
+    ///         0 disables; otherwise within [MIN_PROFIT_CAP_BPS,
+    ///         MAX_PROFIT_CAP_BPS]. Applies to positions opened afterwards
+    ///         only — see `profitCapOf`.
+    function setMaxProfitBps(bytes32 asset, uint256 bps) external onlyOwner {
+        require(
+            bps == 0 || (bps >= MIN_PROFIT_CAP_BPS && bps <= MAX_PROFIT_CAP_BPS),
+            "profit cap out of range"
+        );
+        maxProfitBps[asset] = bps;
+        emit MaxProfitBpsSet(asset, bps);
+    }
+
     function withdrawExecutionFees() external onlyOwner whenNotPaused nonReentrant {
         uint256 balance = address(this).balance;
         (bool success, ) = msg.sender.call{value: balance}("");
@@ -842,7 +914,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
         _pokeFunding(pos.asset);
         _requireFresh(pos.asset);
 
-        int256 pnl = _calcPnL(pos);
+        int256 pnl = _settlementPnL(pos);
         
         uint256 notional     = pos.margin * pos.leverage;
         uint256 tradingFee   = notional * uint256(pos.tradingFeeBps) / 10000; // frozen at open — see Position.tradingFeeBps
@@ -1015,7 +1087,11 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
             if (!cp.isOpen)               { ++i; continue; }
             if (cp.isLong == loserIsLong) { ++i; continue; } // want the winning side
 
-            int256 cpnl = _calcPnL(cp);
+            // P1: the haircut is taken from the CAPPED profit. The part above
+            // the cap was never owed, so haircutting it would "cover" the
+            // shortfall with money that does not exist and leave the real
+            // hole open. Capped profit > 0 iff raw profit > 0.
+            int256 cpnl = _settlementPnL(cp);
             if (cpnl <= 0)                { ++i; continue; } // only profitable counterparties
 
             uint256 profit  = uint256(cpnl);
@@ -1211,10 +1287,13 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
 
     // ── Views ────────────────────────────────────────────────────────────────
 
+    /// @notice Open: PnL as it would settle right now (mark-to-market, clamped
+    ///         to the position's profit cap if it has one). Closed: realized.
     function getUnrealizedPnL(uint256 positionId) external view returns (int256) {
         Position storage pos = positions[positionId];
         if (!pos.isOpen) return pos.realizedPnL;
-        return _calcPnL(pos);
+        (int256 pnl, ) = _cappedPnL(pos);
+        return pnl;
     }
 
     /// @notice What the position would actually be worth if closed right now.
@@ -1232,7 +1311,8 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
         uint256 hoursElapsed = (block.timestamp - pos.openedAt) / 3600;
         uint256 borrowFee    = borrowed * uint256(pos.borrowFeeBpsPerHour) * hoursElapsed / 10000; // frozen at open
 
-        int256 val = int256(pos.margin) + _calcPnL(pos)
+        (int256 pnl, ) = _cappedPnL(pos);
+        int256 val = int256(pos.margin) + pnl
                    - int256(tradingFee + borrowFee) - _calcFunding(pos);
         return val > 0 ? uint256(val) : 0;
     }
@@ -1322,7 +1402,10 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
         for (uint256 i = 0; i < n; ++i) {
             Position storage p = positions[ids[i]];
             if (!p.isOpen) continue;
-            equity     += int256(p.margin) + _calcPnL(p) - _calcFunding(p);
+            // P1: capped, so portfolio equity never counts profit the
+            // exchange will not pay as collateral for another leg.
+            (int256 pnl, ) = _cappedPnL(p);
+            equity     += int256(p.margin) + pnl - _calcFunding(p);
             maintenance += (p.margin * p.leverage) * _maintenanceMarginBps(p.asset) / 10000;
         }
     }
@@ -1476,6 +1559,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
         uint256 tradingFee = notional * tradingFeeBps / 10000;
 
         if (freeMargin[owner] < margin + tradingFee)   revert InsufficientFreeMargin();
+        _checkOpenInterestCap(asset, isLong, notional);
 
         // C-1: entry is booked at the MARK price the book shows *before* this
         // position exists — not the raw index. Together with `_calcPnL` excluding
@@ -1525,6 +1609,10 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
         _assetPosIndex[positionId] = assetPositionIds[asset].length;
         // H-6: remember which agent (if any) is allowed to close this position.
         if (agent != address(0)) positionAgent[positionId] = agent;
+        // P1: freeze the profit cap (0 = uncapped). margin >= MIN_MARGIN and
+        // bps >= MIN_PROFIT_CAP_BPS, so an enabled cap is never rounded to 0.
+        uint256 capBps = maxProfitBps[asset];
+        if (capBps != 0) profitCapOf[positionId] = margin * capBps / 10_000;
 
         emit PositionOpened(positionId, owner, asset, isLong, entryPrice, margin, leverage);
 
@@ -1543,7 +1631,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
         _pokeFunding(pos.asset);
         _requireFresh(pos.asset);
 
-        int256 pnl = _calcPnL(pos);
+        int256 pnl = _settlementPnL(pos);
 
         // DeFi Mechanics: Trading Fee (Uniswap) + Borrow Fee (Aave)
         uint256 notional     = pos.margin * pos.leverage;
@@ -1630,6 +1718,32 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
         _routeVaultFee(_collectedTradingFee(pos.margin, pnl, fundingPayment, tradingFee));
 
         emit PositionClosed(positionId, pos.owner, pnl, uint256(closeAmount));
+    }
+
+    /// @dev P1: refuse an open that would lift this side's OI above its cap.
+    function _checkOpenInterestCap(bytes32 asset, bool isLong, uint256 notional) internal view {
+        uint256 cap = isLong ? maxLongOI[asset] : maxShortOI[asset];
+        if (cap == 0) return;
+        uint256 resulting = (isLong ? globalLongNotional[asset] : globalShortNotional[asset]) + notional;
+        if (resulting > cap) revert OpenInterestCapExceeded(asset, isLong, resulting, cap);
+    }
+
+    /// @dev P1: mark-to-market PnL clamped to the position's frozen profit
+    ///      cap. Losses are never touched. Returns the raw value alongside.
+    function _cappedPnL(Position storage pos) internal view returns (int256 pnl, int256 rawPnl) {
+        rawPnl = _calcPnL(pos);
+        pnl    = rawPnl;
+        uint256 cap = profitCapOf[pos.id];
+        if (cap == 0) return (pnl, rawPnl);
+        int256 capSigned = SafeCast.toInt256(cap);
+        if (rawPnl > capSigned) pnl = capSigned;
+    }
+
+    /// @dev P1: the PnL every settlement path (close, liquidation, ADL) books.
+    function _settlementPnL(Position storage pos) internal returns (int256 pnl) {
+        int256 rawPnl;
+        (pnl, rawPnl) = _cappedPnL(pos);
+        if (pnl != rawPnl) emit ProfitCapped(pos.id, rawPnl, pnl);
     }
 
     /// PnL math (all values in 18-decimal USDC):
