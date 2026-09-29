@@ -88,8 +88,10 @@ export function planUpdate(a: {
 //   • 偏離 > breakerDeviation：
 //       – 多源確認通過（≥2 個新鮮的獨立來源、彼此差距 ≤ confirmTolerance、方向一致）
 //         → 寫入完整的共識價（各來源中位數）。
-//       – 否則拒寫：讓價格變舊，交易所的 maxPriceAge 自然停單（開倉／平倉／清算都
-//         revert StalePrice），run.ts 輸出 ::error:: 並讓 job 失敗。這是熔斷，不是故障。
+//       – 否則拒寫，run.ts 輸出 ::error:: 並讓 job 失敗。注意：拒寫**不等於停單** ——
+//         交易所要等 maxPriceAge（Base 為 6 小時）到期才會 revert StalePrice，在那之前
+//         仍以舊價成交。所以拒寫後 keeper 會依權限嘗試凍結 GuardedOracle／切 ReduceOnly
+//         並開 issue（protect.ts，複審 H2）；做不到的部分明寫「需人工處置」。
 //         股票只有單一來源（Yahoo），所以拆股、財報跳空這類 >20% 的真實變動一律
 //         需要人工處置，步驟見 docs/RUNBOOK_KEEPER.md「價格熔斷」。
 
@@ -252,7 +254,8 @@ export function guardDeviation(a: {
   }
   return no(
     deviation,
-    `${head}—— 熔斷：拒絕寫入，價格將變舊、交易所以 maxPriceAge 停單。多源確認未通過：` +
+    `${head}—— 熔斷：拒絕寫入（價格停在舊值；交易所在 maxPriceAge 到期前仍以舊價成交，` +
+      `keeper 會嘗試凍結／切 ReduceOnly，見停單結果）。多源確認未通過：` +
       (c.confirmed ? "共識方向與目標相反" : c.reason) +
       `。若行情屬實（拆股／財報跳空），依 docs/RUNBOOK_KEEPER.md「價格熔斷」人工處置`,
   );

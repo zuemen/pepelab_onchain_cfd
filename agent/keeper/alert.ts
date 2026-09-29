@@ -11,6 +11,10 @@ export type HealthStatus = "ok" | "stale" | "error";
 
 /** health.ts 寫出的報告（HEALTH_REPORT_PATH）。 */
 export interface HealthReport {
+  /** health = oracle-health 的過期告警（預設）；breaker = keeper 的價格熔斷告警（複審 H2 (c)）。 */
+  kind?: "health" | "breaker";
+  /** breaker：停單動作的結果與「需人工處置」的說明。 */
+  notes?: string[];
   chain: string;
   status: HealthStatus;
   checkedAtSec: number;
@@ -197,6 +201,7 @@ function iso(sec: number): string {
 
 /** 新開 issue 與留言共用的內文。runUrl 是這次 Actions run 的連結。 */
 export function renderBody(report: HealthReport, runUrl?: string): string {
+  if (report.kind === "breaker") return renderBreakerBody(report, runUrl);
   const out = [
     `**鏈**：${report.chain}　**檢查時間**：${iso(report.checkedAtSec)}　**門檻**：${(report.maxAgeSec / 3600).toFixed(1)}h`,
     "",
@@ -222,7 +227,41 @@ export function renderBody(report: HealthReport, runUrl?: string): string {
   return out.join("\n");
 }
 
+/** keeper 價格熔斷的 issue 內文：哪些資產被拒寫、停單做到哪、哪裡需要人工。 */
+function renderBreakerBody(report: HealthReport, runUrl?: string): string {
+  const age = report.maxAgeSec > 0 ? `${(report.maxAgeSec / 3600).toFixed(1)}h` : "maxPriceAge";
+  const out = [
+    `**鏈**：${report.chain}　**時間**：${iso(report.checkedAtSec)}　**交易所 maxPriceAge**：${age}`,
+    "",
+    `**熔斷拒寫資產（${report.stale.length}）**：${report.stale.join(", ") || "—"}`,
+    "",
+    "MockOracle 與 GuardedOracle 都沒有寫入。價格停在舊值；在 maxPriceAge 到期前，",
+    "交易所仍會以這個舊價成交。停單動作與結果：",
+    "",
+    ...(report.notes ?? []).map((n) => `- ${n}`),
+    "",
+    "處置步驟：docs/RUNBOOK_KEEPER.md「價格熔斷」。",
+    "",
+    "```",
+    ...report.lines,
+    "```",
+  ];
+  if (report.unreadable?.length) out.push("", `**本輪來源無效（未判斷）**：${report.unreadable.join(", ")}`);
+  if (runUrl) out.push("", `Run：${runUrl}`);
+  out.push("", `<!-- oracle-health:stale=${signatureOf(report.stale)} -->`);
+  return out.join("\n");
+}
+
 export function renderCloseComment(report: HealthReport, runUrl?: string): string {
+  if (report.kind === "breaker") {
+    return [
+      `已恢復：${iso(report.checkedAtSec)} 這一輪沒有資產被熔斷拒寫，自動關閉。`,
+      "若先前有凍結 GuardedOracle 或切 ReduceOnly，需人工確認後解除（keeper 不會自動解除）。",
+      ...(runUrl ? ["", `Run：${runUrl}`] : []),
+      "",
+      "<!-- oracle-health:stale= -->",
+    ].join("\n");
+  }
   return [
     `已恢復：${iso(report.checkedAtSec)} 檢查時所有資產都在 ${(report.maxAgeSec / 3600).toFixed(1)}h 門檻內，自動關閉。`,
     ...(report.closed?.length ? [`（休市中、依市場時段放寬：${report.closed.join(", ")}）`] : []),

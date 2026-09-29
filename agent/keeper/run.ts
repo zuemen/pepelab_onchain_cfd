@@ -23,7 +23,10 @@ import {
   parseRatioEnv,
 } from "./core.ts";
 import { fetchMarketSession, fetchPrice, fetchSecondaryPrice } from "./feeds.ts";
-import { runRound } from "./round.ts";
+import { runRound, type RoundResult } from "./round.ts";
+import { describeProtection, type ProtectionResult } from "./protect.ts";
+import type { HealthReport } from "./alert.ts";
+import { writeFileSync } from "node:fs";
 import { classifyProbeError, decideAssetMode, modeName, switchesMode } from "./operator.ts";
 import type { MarketSession } from "./market.ts";
 
@@ -81,6 +84,10 @@ const RELAY_SOURCE = (
 // setMarketOperator(keeper 地址)。線上舊 exchange 沒有這個函式 → 探測後略過並記錄。
 const MARKET_OPERATOR = process.env.KEEPER_MARKET_OPERATOR === "1";
 const EXCHANGE_ADDR = (process.env.KEEPER_EXCHANGE_ADDRESS ?? process.env.EXCHANGE ?? "").trim();
+// 選用：熔斷報告（alert.ts 的 HealthReport 形狀）與拒寫清單（一行一個 symbol，
+// funding crank 據此跳過）。workflow 設在 $RUNNER_TEMP。
+const REPORT_PATH = (process.env.KEEPER_REPORT_PATH ?? "").trim();
+const REFUSED_PATH = (process.env.KEEPER_REFUSED_PATH ?? "").trim();
 
 if (!RPC_URL) {
   console.error("::error::KEEPER_RPC_URL 未設");
@@ -103,6 +110,17 @@ const GUARDED_ABI = [
   "function updatePrice(bytes32 assetId, uint256 newPrice) external",
   "function peek(bytes32 assetId) view returns (uint256 price, uint256 updatedAt, bool exists, bool frozen)",
   "function maxDeviationBps() view returns (uint256)",
+  // 熔斷停單（複審 H2 (a)）：只有 keeper 持有 GUARDIAN_ROLE 時才會呼叫。
+  "function hasRole(bytes32 role, address account) view returns (bool)",
+  "function setAssetFrozen(bytes32 assetId, bool frozen) external",
+];
+const GUARDIAN_ROLE = ethers.id("GUARDIAN_ROLE");
+// 熔斷停單（複審 H2 (b)）與訊息用的 maxPriceAge；舊 exchange 沒有前三個函式。
+const EXCHANGE_PROTECT_ABI = [
+  "function marketOperator() view returns (address)",
+  "function assetMode(bytes32 asset) view returns (uint8)",
+  "function setAssetMode(bytes32 asset, uint8 mode) external",
+  "function maxPriceAge() view returns (uint256)",
 ];
 const AGGREGATOR_ABI = [
   "function getPrice(bytes32 assetId) view returns (uint256 price, uint256 updatedAt)",
@@ -225,6 +243,31 @@ async function main(): Promise<void> {
   const { available, skipped, rejected, confirmed, wrote } = round;
   let failed = round.failed;
 
+  // 複審 H2：拒寫的資產立刻嘗試停單，做不到的部分明寫。
+  const exchangeView = ethers.isAddress(EXCHANGE_ADDR)
+    ? new ethers.Contract(EXCHANGE_ADDR, EXCHANGE_PROTECT_ABI, signer ?? provider)
+    : null;
+  let exchangeMaxAge: number | null = null;
+  if (exchangeView && round.refused.length > 0) {
+    try {
+      exchangeMaxAge = Number(await exchangeView.maxPriceAge());
+    } catch {
+      exchangeMaxAge = null;
+    }
+  }
+  const protectionNotes: string[] = [];
+  for (const ref of round.refused) {
+    const res = await protectAsset(ref.symbol, ref.assetId, guarded, exchangeView, signer);
+    const { notes, exchangeStillTrading } = describeProtection(res, exchangeMaxAge);
+    for (const n of notes) {
+      if (exchangeStillTrading) console.error(`::error::${n}`);
+      else console.log(`::warning::${n}`);
+    }
+    if (res.freeze === "failed" || res.mode === "failed") failed += 1;
+    protectionNotes.push(...notes);
+  }
+  writeRefusal(round, protectionNotes, nowSec, exchangeMaxAge);
+
   // #99: reuses the same failed-counter/exit(1) mechanism every other genuine
   // problem in this file already goes through, rather than a separate,
   // always-::warning:: path — see observeVaultReserve()'s own docstring.
@@ -244,6 +287,102 @@ async function main(): Promise<void> {
   );
   for (const msg of verdict.errors) console.error(`::error::${msg}`);
   if (verdict.exitCode !== 0) process.exit(verdict.exitCode);
+}
+
+/**
+ * 複審 H2：對一個被熔斷拒寫的資產依序嘗試 (a) 凍結 GuardedOracle、(b) 交易所切
+ * ReduceOnly。每一步都先用 view／staticCall 探測權限，沒有權限就記錄、不送交易。
+ */
+async function protectAsset(
+  symbol: string,
+  assetId: string,
+  guarded: ethers.Contract | null,
+  exchange: ethers.Contract | null,
+  signer: ethers.Wallet | null,
+): Promise<ProtectionResult> {
+  const res: ProtectionResult = { symbol, freeze: "no-guarded", mode: "no-exchange" };
+  const details: string[] = [];
+
+  if (guarded) {
+    try {
+      const [, , exists, frozen] = (await guarded.peek(assetId)) as [bigint, bigint, boolean, boolean];
+      if (!exists) res.freeze = "no-guarded";
+      else if (frozen) res.freeze = "already";
+      else if (!signer) res.freeze = "dry-run";
+      else if (!((await guarded.hasRole(GUARDIAN_ROLE, signer.address)) as boolean)) res.freeze = "no-role";
+      else {
+        await guarded.setAssetFrozen.staticCall(assetId, true);
+        const tx = await guarded.setAssetFrozen(assetId, true);
+        await tx.wait();
+        res.freeze = "done";
+        details.push(`freeze tx ${tx.hash}`);
+      }
+    } catch (e) {
+      res.freeze = "failed";
+      details.push(`freeze: ${(e as Error).message.slice(0, 80)}`);
+    }
+  }
+
+  if (exchange) {
+    let operator: string | null = null;
+    try {
+      operator = (await exchange.marketOperator()) as string;
+    } catch (e) {
+      res.mode = classifyProbeError(revertInfo(e)) === "missing" ? "unsupported" : "failed";
+      if (res.mode === "failed") details.push(`marketOperator(): ${(e as Error).message.slice(0, 80)}`);
+    }
+    if (operator !== null) {
+      try {
+        const current = Number(await exchange.assetMode(assetId));
+        if (current !== 0) res.mode = "already";
+        else if (!signer) res.mode = "dry-run";
+        else if (operator.toLowerCase() !== signer.address.toLowerCase()) res.mode = "not-operator";
+        else {
+          await exchange.setAssetMode.staticCall(assetId, 1);
+          const tx = await exchange.setAssetMode(assetId, 1);
+          await tx.wait();
+          res.mode = "done";
+          details.push(`reduce-only tx ${tx.hash}`);
+        }
+      } catch (e) {
+        res.mode = "failed";
+        details.push(`setAssetMode: ${(e as Error).message.slice(0, 80)}`);
+      }
+    }
+  }
+  if (details.length) res.detail = details.join("; ");
+  return res;
+}
+
+/** 熔斷報告（給 alert-run.ts）與拒寫清單（給 funding crank）。 */
+function writeRefusal(
+  round: RoundResult,
+  notes: string[],
+  nowSec: number,
+  exchangeMaxAge: number | null,
+): void {
+  try {
+    if (REFUSED_PATH) {
+      writeFileSync(REFUSED_PATH, round.refused.map((r) => r.symbol).join("\n") + (round.refused.length ? "\n" : ""), "utf8");
+    }
+    if (REPORT_PATH) {
+      const report: HealthReport = {
+        kind: "breaker",
+        chain: CHAIN,
+        status: round.refused.length > 0 ? "stale" : "ok",
+        checkedAtSec: nowSec,
+        maxAgeSec: exchangeMaxAge ?? 0,
+        stale: round.refused.map((r) => r.symbol),
+        // 這一輪來源無效而沒判斷到的資產：不能證明熔斷已解除，擋住自動關閉。
+        unreadable: round.skippedSymbols,
+        notes,
+        lines: round.refused.map((r) => `${r.symbol}: ${r.reason}`),
+      };
+      writeFileSync(REPORT_PATH, JSON.stringify(report, null, 2), "utf8");
+    }
+  } catch (e) {
+    console.log(`::warning::寫不出熔斷報告：${(e as Error).message}`);
+  }
 }
 
 function revertInfo(e: unknown): { code?: unknown; data?: unknown } {
