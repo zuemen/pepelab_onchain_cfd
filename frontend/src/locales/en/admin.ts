@@ -198,7 +198,7 @@ export const admin: Catalog['admin'] = {
     notAuthorized: 'Not authorized',
     notAuthorizedBody: 'This page is restricted to the KYCRegistry owner or an appointed reviewer.',
     authFailed: "Couldn't confirm permissions",
-    authFailedBody: "KYCRegistry.owner() could not be read, so we can't confirm whether you may review. Access is denied until it can be read — please retry later.",
+    authFailedBody: "KYCRegistry permission data (owner() or verifiers()) could not be read, so we can't confirm whether you may review. Access is denied until it can be read — please retry later.",
     authRetry: 'Retry',
     legacyRegistryNotice: 'The KYCRegistry on this chain is a legacy contract without verifier appointment (verifiers), so access is decided by owner() only and the verifier section is hidden.',
 

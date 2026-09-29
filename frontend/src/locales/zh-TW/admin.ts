@@ -206,7 +206,7 @@ export const admin = {
     notAuthorized: '無權限',
     notAuthorizedBody: '此頁面僅限 KYCRegistry 的 owner 或已指派的審核員存取。',
     authFailed: '無法確認權限',
-    authFailedBody: '讀不到 KYCRegistry 的 owner()，因此無法確認你是否有審核權限。讀不到就不放行——請稍後重試。',
+    authFailedBody: '讀不到 KYCRegistry 的權限資料（owner() 或 verifiers()），因此無法確認你是否有審核權限。讀不到就不放行——請稍後重試。',
     authRetry: '重試',
     /** 線上舊版 KYCRegistry 沒有 verifiers()／pending()。 */
     legacyRegistryNotice: '這條鏈上的 KYCRegistry 是舊版合約，沒有審核員指派（verifiers）功能，權限只以 owner() 判斷，審核員指派區塊已隱藏。',

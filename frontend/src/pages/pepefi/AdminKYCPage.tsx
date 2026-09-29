@@ -9,6 +9,7 @@ import { isCommitmentHash, verifyKycCommitment } from 'src/lib/pepefi/kycCommitm
 import { t, interpolate } from 'src/locales'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { withRetry } from 'src/lib/pepefi/rpcBatch'
+import { isMissingFunctionError } from 'src/lib/pepefi/kycSubmitGate'
 import { explorerTx } from 'src/lib/pepefi/notify'
 import { TableSkeleton } from 'src/components/pepefi/Skeleton'
 import EmptyState from 'src/components/pepefi/EmptyState'
@@ -279,7 +280,7 @@ export default function AdminKYCPage() {
     // 讓 owner 的判斷失效。
     const [ownerRes, appointedRes] = await Promise.allSettled([
       withRetry(() => contracts.kycRegistry.owner() as Promise<string>),
-      contracts.kycRegistry.verifiers(wallet.address) as Promise<boolean>,
+      withRetry(() => contracts.kycRegistry.verifiers(wallet.address) as Promise<boolean>),
     ])
     if (authRunId.current !== myRun) return
 
@@ -293,20 +294,40 @@ export default function AdminKYCPage() {
       return
     }
     setRegistryOwner(ownerRes.value)
+    const iAmOwner = ownerRes.value.toLowerCase() === wallet.address.toLowerCase()
     if (appointedRes.status === 'fulfilled') {
       setIsAppointedVerifier(appointedRes.value)
       setVerifiersSupported(true)
-    } else {
-      // 舊版合約沒有 verifiers()：退回只認 owner（fail-closed，非 owner 一律不放行）。
-      console.warn('[kyc auth] verifiers() unavailable, falling back to owner-only', appointedRes.reason)
+    } else if (isMissingFunctionError(appointedRes.reason)) {
+      // 確定函式不存在（舊版合約：CALL_EXCEPTION 且 revert data 為空）：退回只認 owner。
+      console.warn('[kyc auth] verifiers() not implemented, falling back to owner-only')
       setIsAppointedVerifier(false)
       setVerifiersSupported(false)
+    } else if (!iAmOwner) {
+      // 暫時錯誤（429、逾時…）且不是 owner：無法確認是不是審核員 → 不放行，說明原因並給重試。
+      console.error('[kyc auth] verifiers()', appointedRes.reason)
+      setIsAppointedVerifier(null)
+      setAuthError(prettyError(appointedRes.reason))
+      setAuthStatus('error')
+      return
+    } else {
+      // owner 本身就有權限；verifiers 暫時讀不到不影響放行，但不改動「是否支援」的判斷。
+      setIsAppointedVerifier(null)
     }
     setAuthError(null)
     setAuthStatus('ready')
   }, [contracts, wallet.address])
 
-  useEffect(() => { void fetchAuth() }, [fetchAuth])
+  // fetchAuth 的識別隨 contracts／wallet.address 改變：換帳號或換鏈時先把權限狀態全部
+  // 重設成「確認中」，不讓上一個帳號的審核員資格在新帳號底下停留任何一幀。
+  useEffect(() => {
+    setRegistryOwner(null)
+    setIsAppointedVerifier(null)
+    setVerifiersSupported(true)
+    setAuthError(null)
+    setAuthStatus('checking')
+    void fetchAuth()
+  }, [fetchAuth])
 
   // 比照 AdminTreasuryPage：權限不是一次讀完就不變的——owner 可能在別的
   // session 撤銷這個審核員的資格，這個分頁還開著就該在短時間內反映出來，
