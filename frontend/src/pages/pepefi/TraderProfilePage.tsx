@@ -67,7 +67,16 @@ const shortAddr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 const fmtDate = (ts: bigint) =>
   new Date(Number(ts) * 1000).toLocaleString(locale, { dateStyle: 'short', timeStyle: 'short' })
 
+/**
+ * 以位址當 key 重新掛載整頁：從 A 切到 B 時，A 的名稱、質押、信用分數、收益、
+ * 罰沒紀錄等所有欄位一次清空，不會在 B 的資料讀完前殘留 A 的財務與信用資料。
+ */
 export default function TraderProfilePage() {
+  const { address } = useParams<{ address: string }>()
+  return <TraderProfileView key={address?.toLowerCase() ?? ''} />
+}
+
+function TraderProfileView() {
   const wallet = usePepefiWallet()
   const { mode } = useMode()
   const { address: traderAddr } = useParams<{ address: string }>()
