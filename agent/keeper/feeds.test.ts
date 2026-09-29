@@ -1,7 +1,7 @@
 // 純函式測試：價格來源回應的萃取與拒絕。
 //   cd agent && npx tsx keeper/feeds.test.ts
 import assert from "node:assert";
-import { extractCoinGecko, extractYahoo, SOURCES } from "./feeds.ts";
+import { extractCoinGecko, extractYahoo, SOURCES, SECONDARY_SOURCES } from "./feeds.ts";
 
 // ── CoinGecko simple/price ──────────────────────────────────────────────
 assert.equal(extractCoinGecko({ bitcoin: { usd: 64578 } }, "bitcoin").value, 64578);
@@ -80,6 +80,12 @@ assert.deepEqual(Object.keys(SOURCES).sort(), [...EXPECTED].sort());
 // 沒有任何資產可以落到「隨機漫步」——那是被刪掉的舊行為。
 for (const [sym, src] of Object.entries(SOURCES)) {
   assert.ok(src.kind === "coingecko" || src.kind === "yahoo", `${sym} 來源不明`);
+}
+
+// ── 第二來源必須與主要來源「獨立」（不同供應商），否則多源確認形同虛設 ──────
+for (const [sym, second] of Object.entries(SECONDARY_SOURCES)) {
+  assert.ok(SOURCES[sym], `${sym} 沒有主要來源`);
+  assert.notEqual(second.kind, SOURCES[sym].kind, `${sym} 的第二來源與主要來源同一家`);
 }
 
 console.log("feeds.test.ts ✓ all assertions passed");

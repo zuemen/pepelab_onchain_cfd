@@ -27,6 +27,16 @@ export const SOURCES: Record<string, Source> = {
   sESGU: { kind: "yahoo", symbol: "ESGU" },
 };
 
+/**
+ * 第二個獨立來源（只在偏離超過拒寫門檻、需要多源確認時才抓，見 core.ts
+ * confirmLargeMove）。加密資產用 Yahoo 的 BTC-USD／ETH-USD 與 CoinGecko 互相印證；
+ * 股票／ETF／期貨沒有第二個獨立的免費來源（Yahoo 的 query2 不算獨立），刻意不列。
+ */
+export const SECONDARY_SOURCES: Record<string, Source> = {
+  sBTC: { kind: "yahoo", symbol: "BTC-USD" },
+  sETH: { kind: "yahoo", symbol: "ETH-USD" },
+};
+
 export function extractCoinGecko(json: unknown, id: string): ParsedFeed {
   if (typeof json !== "object" || json === null) {
     return { value: null, reason: "coingecko: non-object response" };
@@ -129,7 +139,23 @@ export async function fetchPrice(
 ): Promise<ParsedFeed & QuoteMeta & { source: string }> {
   const src = SOURCES[symbol];
   if (!src) return { value: null, reason: `unknown symbol ${symbol}`, source: "none" };
+  return fetchFromSource(src, fetchImpl);
+}
 
+/** 第二個獨立來源；沒有就回 value:null（reason 說明）。 */
+export async function fetchSecondaryPrice(
+  symbol: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<ParsedFeed & QuoteMeta & { source: string }> {
+  const src = SECONDARY_SOURCES[symbol];
+  if (!src) return { value: null, reason: `no secondary source for ${symbol}`, source: "none" };
+  return fetchFromSource(src, fetchImpl);
+}
+
+async function fetchFromSource(
+  src: Source,
+  fetchImpl: typeof fetch,
+): Promise<ParsedFeed & QuoteMeta & { source: string }> {
   try {
     if (src.kind === "coingecko") {
       const res = await fetchImpl(

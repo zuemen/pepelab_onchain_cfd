@@ -80,15 +80,80 @@ export function planUpdate(a: {
 //   • 偏離 ≤ maxDeviation        → 原樣寫入。
 //   • maxDeviation < 偏離 ≤ rejectDeviation → 夾到上限邊緣，分段逼近，下一輪繼續。
 //     真實的大行情會在數輪內追上；假價格則不會，而且人有時間看到警告。
-//   • 偏離 > rejectDeviation     → 完全不寫並大聲報錯。這種幅度多半是來源壞了
+//   • 偏離 > rejectDeviation     → 預設完全不寫並大聲報錯。這種幅度多半是來源壞了
 //     （換 ticker、拆股、幣別跑掉），寧可讓價格變舊（交易所有 maxPriceAge 會擋交易）
 //     也不要寫一個會清算所有人的數字。
+//     例外（偏離死鎖的解法）：同一輪至少兩個**獨立**來源彼此差距 ≤ confirmTolerance
+//     （預設 2%）、且相對鏈上價格方向一致，才以 stepTowards 的步幅分段逼近。
+//     否則真實的大行情（或鏈上價格本身就是錯的）會讓資產永遠卡在拒寫：拒寫不更新
+//     → 偏離永遠 > 50% → 永遠拒寫，與舊 GuardedOracle 的死鎖同形。
 //   • 鏈上還沒有價格（current ≤ 0）→ seed，沒有可比較的基準，原樣寫入。
 
 /** 每輪允許的最大偏離（比例）。可用 KEEPER_MAX_DEVIATION 覆寫。 */
 export const DEFAULT_MAX_DEVIATION = 0.1; // 10%
 /** 超過這個幅度視為來源壞掉，完全拒寫。可用 KEEPER_REJECT_DEVIATION 覆寫。 */
 export const DEFAULT_REJECT_DEVIATION = 0.5; // 50%
+/** 多源確認：獨立來源彼此的最大差距（(max−min)/min）。可用 KEEPER_CONFIRM_TOLERANCE 覆寫。 */
+export const DEFAULT_CONFIRM_TOLERANCE = 0.02; // 2%
+
+/** 同一輪從某個來源拿到的價格。source 相同視為同一來源（不算獨立）。 */
+export interface SourceQuote {
+  source: string;
+  value: number;
+}
+
+export interface LargeMoveConfirmation {
+  confirmed: boolean;
+  /** 各來源的中位數（兩個來源時為平均）；confirmed=false 時無意義。 */
+  consensus: number;
+  reason: string;
+}
+
+/**
+ * 偏離超過拒寫門檻時的多源確認。要全部成立才 confirmed：
+ *   1. 至少兩個不同 source 的合法報價（同名來源只取第一筆）。
+ *   2. 彼此差距 (max−min)/min ≤ tolerance。
+ *   3. 每個報價相對鏈上 current 的方向一致（全部高於或全部低於）。
+ */
+export function confirmLargeMove(a: {
+  current: number;
+  quotes: SourceQuote[];
+  tolerance?: number;
+}): LargeMoveConfirmation {
+  const tol = a.tolerance ?? DEFAULT_CONFIRM_TOLERANCE;
+  const seen = new Set<string>();
+  const qs: SourceQuote[] = [];
+  for (const q of a.quotes) {
+    if (!Number.isFinite(q.value) || q.value <= 0 || seen.has(q.source)) continue;
+    seen.add(q.source);
+    qs.push(q);
+  }
+  const list = qs.map((q) => `${q.source}=$${q.value}`).join(", ") || "無";
+  if (qs.length < 2) {
+    return { confirmed: false, consensus: 0, reason: `只有 ${qs.length} 個獨立來源（${list}），至少需要 2 個` };
+  }
+  const vals = qs.map((q) => q.value).sort((x, y) => x - y);
+  const spread = (vals[vals.length - 1] - vals[0]) / vals[0];
+  if (spread > tol) {
+    return {
+      confirmed: false,
+      consensus: 0,
+      reason: `來源彼此差距 ${(spread * 100).toFixed(2)}% > ${(tol * 100).toFixed(1)}%（${list}）`,
+    };
+  }
+  const up = vals.every((v) => v > a.current);
+  const down = vals.every((v) => v < a.current);
+  if (!up && !down) {
+    return { confirmed: false, consensus: 0, reason: `來源方向不一致（鏈上 $${a.current}；${list}）` };
+  }
+  const mid = Math.floor(vals.length / 2);
+  const consensus = vals.length % 2 ? vals[mid] : (vals[mid - 1] + vals[mid]) / 2;
+  return {
+    confirmed: true,
+    consensus,
+    reason: `${qs.length} 個獨立來源一致（${list}，差距 ${(spread * 100).toFixed(2)}%，方向${up ? "向上" : "向下"}）`,
+  };
+}
 
 export interface DeviationGuard {
   /** 這一輪實際該寫進 MockOracle 的價格（USD）；write=false 時無意義。 */
@@ -96,6 +161,8 @@ export interface DeviationGuard {
   write: boolean;
   /** 是否被夾到上限邊緣（未寫入全額目標）。 */
   clamped: boolean;
+  /** 偏離超過拒寫門檻、但經多源確認而分段逼近。 */
+  confirmed?: boolean;
   /** |target−current|/current；current≤0 時為 0。 */
   deviation: number;
   reason: string;
@@ -106,6 +173,9 @@ export function guardDeviation(a: {
   current: number;
   maxDeviation?: number;
   rejectDeviation?: number;
+  /** 同一輪的獨立來源報價（含 target 本身的來源）；只在偏離 > rejectDeviation 時使用。 */
+  quotes?: SourceQuote[];
+  confirmTolerance?: number;
 }): DeviationGuard {
   const maxDev = a.maxDeviation ?? DEFAULT_MAX_DEVIATION;
   const rejectDev = a.rejectDeviation ?? DEFAULT_REJECT_DEVIATION;
@@ -122,14 +192,41 @@ export function guardDeviation(a: {
     return { value: a.target, write: true, clamped: false, deviation, reason: "在偏離上限內" };
   }
   if (deviation > rejectDev) {
+    const head =
+      `偏離 ${(deviation * 100).toFixed(1)}% 超過拒寫門檻 ${(rejectDev * 100).toFixed(0)}%` +
+      `（$${a.current} → $${a.target}）`;
+    const c = confirmLargeMove({
+      current: a.current,
+      quotes: a.quotes ?? [],
+      tolerance: a.confirmTolerance,
+    });
+    const targetUp = a.target > a.current;
+    if (c.confirmed && (c.consensus > a.current) === targetUp) {
+      // 用既有 stepTowards 的步幅（含 50 bps 安全緩衝），朝多源共識價走一步。
+      const stepped8 = stepTowards(
+        toPrice8(a.current),
+        toPrice8(c.consensus),
+        BigInt(Math.round(maxDev * 10_000)),
+      );
+      const stepped = Number(stepped8) / 1e8;
+      return {
+        value: stepped,
+        write: true,
+        clamped: true,
+        confirmed: true,
+        deviation,
+        reason: `${head}，但${c.reason}，以 stepTowards 步幅逼近到 $${stepped.toFixed(2)}（下一輪繼續）`,
+      };
+    }
     return {
       value: 0,
       write: false,
       clamped: false,
       deviation,
       reason:
-        `偏離 ${(deviation * 100).toFixed(1)}% 超過拒寫門檻 ${(rejectDev * 100).toFixed(0)}%` +
-        `（$${a.current} → $${a.target}）—— 來源可能已壞（拆股/換約/幣別），拒絕寫入`,
+        `${head}—— 來源可能已壞（拆股/換約/幣別），拒絕寫入；多源確認未通過：` +
+        (c.confirmed ? "共識方向與目標相反" : c.reason) +
+        `。若行情屬實，需第二個獨立來源（≤${((a.confirmTolerance ?? DEFAULT_CONFIRM_TOLERANCE) * 100).toFixed(0)}%）或人工處置`,
     };
   }
   const stepped =

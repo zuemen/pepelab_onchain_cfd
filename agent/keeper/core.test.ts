@@ -8,6 +8,7 @@ import {
   stepTowards,
   deviationAccepted,
   guardDeviation,
+  confirmLargeMove,
 } from "./core.ts";
 
 // ── parseFeedValue：拒絕垃圾,不夾擠 ──────────────────────────────────────
@@ -158,5 +159,117 @@ assert.equal(guardDeviation({ target: 933, current: 311 }).write, false);
 // 非法 target 一律不寫。
 assert.equal(guardDeviation({ target: 0, current: 100 }).write, false);
 assert.equal(guardDeviation({ target: Number.NaN, current: 100 }).write, false);
+
+// ── 偏離死鎖：> 50% 時「多源一致確認才分段逼近」 ─────────────────────────
+// 死鎖形狀：鏈上價格本身是錯的（或真實行情一次跳超過 50%），舊邏輯每輪都拒寫，
+// 拒寫 → 不更新 → 偏離永遠 > 50% → 永遠拒寫。
+
+// confirmLargeMove：兩個獨立來源、差距 ≤ 2%、方向一致 → 確認，共識取平均。
+{
+  const c = confirmLargeMove({
+    current: 40_000,
+    quotes: [{ source: "chainlink/pyth relay", value: 83_100 }, { source: "coingecko", value: 83_000 }],
+  });
+  assert.equal(c.confirmed, true, c.reason);
+  assert.ok(Math.abs(c.consensus - 83_050) < 1e-9);
+}
+// 只有一個來源（或同名來源重複）→ 不確認。
+assert.equal(confirmLargeMove({ current: 100, quotes: [{ source: "yahoo", value: 300 }] }).confirmed, false);
+assert.equal(
+  confirmLargeMove({ current: 100, quotes: [{ source: "yahoo", value: 300 }, { source: "yahoo", value: 300 }] }).confirmed,
+  false,
+  "同一個來源抓兩次不算獨立",
+);
+// 差距 > 2% → 不確認。
+{
+  const c = confirmLargeMove({ current: 100, quotes: [{ source: "a", value: 300 }, { source: "b", value: 310 }] });
+  assert.equal(c.confirmed, false);
+  assert.ok(c.reason.includes("差距"), c.reason);
+}
+// 方向不一致（一個說漲一個說跌；差距檢查前就會被擋，這裡用差距內的構造）。
+{
+  const c = confirmLargeMove({ current: 100, quotes: [{ source: "a", value: 99.5 }, { source: "b", value: 100.5 }] });
+  assert.equal(c.confirmed, false);
+  assert.ok(c.reason.includes("方向"), c.reason);
+}
+// 非法報價不算數。
+assert.equal(
+  confirmLargeMove({ current: 100, quotes: [{ source: "a", value: 300 }, { source: "b", value: Number.NaN }] }).confirmed,
+  false,
+);
+
+// guardDeviation：多源確認通過 → 以 stepTowards 的步幅逼近（不是全額、不是拒寫）。
+{
+  const g = guardDeviation({
+    target: 83_100,
+    current: 40_000,
+    quotes: [{ source: "chainlink/pyth relay", value: 83_100 }, { source: "coingecko", value: 83_000 }],
+  });
+  assert.equal(g.write, true, g.reason);
+  assert.equal(g.clamped, true);
+  assert.equal(g.confirmed, true);
+  const expected = Number(stepTowards(toPrice8(40_000), toPrice8(83_050), 1000n)) / 1e8;
+  assert.equal(g.value, expected, "步幅必須與 stepTowards（10% cap、50 bps 緩衝）一致");
+  assert.ok(g.value > 40_000 && g.value <= 44_000, `一步最多 +10%，得到 ${g.value}`);
+}
+// 向下同理。
+{
+  const g = guardDeviation({
+    target: 100,
+    current: 311,
+    quotes: [{ source: "yahoo", value: 100 }, { source: "relay", value: 101 }],
+  });
+  assert.equal(g.write, true, g.reason);
+  assert.ok(g.value < 311 && g.value >= 311 / 1.1, `一步最多 −10%，得到 ${g.value}`);
+}
+// 單一來源（拆股日的 Yahoo）→ 維持拒寫，reason 說明缺第二來源。
+{
+  const g = guardDeviation({ target: 77.75, current: 311, quotes: [{ source: "yahoo", value: 77.75 }] });
+  assert.equal(g.write, false);
+  assert.ok(g.reason.includes("多源確認未通過") && g.reason.includes("至少需要 2 個"), g.reason);
+}
+// 兩來源差距 > 2% → 拒寫。
+assert.equal(
+  guardDeviation({
+    target: 300, current: 100,
+    quotes: [{ source: "a", value: 300 }, { source: "b", value: 320 }],
+  }).write,
+  false,
+);
+// 共識方向與 target 相反（target 說漲、其他來源一致說跌）→ 拒寫。
+{
+  const g = guardDeviation({
+    target: 300, current: 100,
+    quotes: [{ source: "b", value: 40 }, { source: "c", value: 40.2 }],
+  });
+  assert.equal(g.write, false, g.reason);
+}
+// 容許度可調。
+assert.equal(
+  guardDeviation({
+    target: 300, current: 100, confirmTolerance: 0.1,
+    quotes: [{ source: "a", value: 300 }, { source: "b", value: 320 }],
+  }).write,
+  true,
+);
+// 死鎖真的解得開：每輪都有兩個一致來源 → 有限輪數內回到正常區間並收斂。
+{
+  let p = 40_000;
+  const truth = 83_000;
+  let rounds = 0;
+  while (Math.abs(p - truth) / p > 1e-9 && rounds < 40) {
+    const g = guardDeviation({
+      target: truth,
+      current: p,
+      quotes: [{ source: "relay", value: truth }, { source: "coingecko", value: truth * 1.001 }],
+    });
+    assert.equal(g.write, true, `第 ${rounds} 輪：${g.reason}`);
+    assert.notEqual(g.value, p, "不得原地踏步");
+    p = g.value;
+    rounds += 1;
+  }
+  assert.ok(Math.abs(p - truth) / truth < 1e-6, `應收斂到 ${truth}，停在 ${p}`);
+  assert.ok(rounds <= 12, `收斂太慢：${rounds} 輪`);
+}
 
 console.log("core.test.ts ✓ all assertions passed");

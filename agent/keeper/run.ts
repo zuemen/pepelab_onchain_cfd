@@ -22,9 +22,11 @@ import {
   guardDeviation,
   DEFAULT_MAX_DEVIATION,
   DEFAULT_REJECT_DEVIATION,
+  DEFAULT_CONFIRM_TOLERANCE,
   type ParsedFeed,
+  type SourceQuote,
 } from "./core.ts";
-import { fetchPrice, type QuoteMeta } from "./feeds.ts";
+import { fetchPrice, fetchSecondaryPrice, type QuoteMeta } from "./feeds.ts";
 
 const SYMBOLS = [
   "sBTC", "sETH", "sAAPL", "sTSLA", "sNVDA",
@@ -37,6 +39,10 @@ const DRY_RUN = process.env.DRY_RUN === "1";
 // A-5：寫進 MockOracle（交易所實際讀的那顆）的偏離上限與拒寫門檻。
 const MAX_DEVIATION = Number(process.env.KEEPER_MAX_DEVIATION ?? String(DEFAULT_MAX_DEVIATION));
 const REJECT_DEVIATION = Number(process.env.KEEPER_REJECT_DEVIATION ?? String(DEFAULT_REJECT_DEVIATION));
+// 偏離死鎖：超過拒寫門檻時，獨立來源彼此差距 ≤ 這個比例且方向一致才分段逼近。
+const CONFIRM_TOLERANCE = Number(
+  process.env.KEEPER_CONFIRM_TOLERANCE ?? String(DEFAULT_CONFIRM_TOLERANCE),
+);
 // 部分失敗門檻：超過這個比例的資產無法更新就讓 CI 變紅（預設 30%）。
 const MAX_DEGRADED_RATIO = Number(process.env.KEEPER_MAX_DEGRADED_RATIO ?? "0.3");
 
@@ -224,11 +230,27 @@ async function main(): Promise<void> {
 
     // A-5：偏離上限。MockOracle 是交易所實際結算/清算所讀的那顆，沒有任何鏈上
     // 保護，所以「離譜但合法」的價格必須在這裡就被擋下或夾住。
+    // 偏離超過拒寫門檻時才去湊第二個獨立來源（正常路徑不多打任何請求）：
+    // relay（Pyth）、主要外部 API（CoinGecko/Yahoo）、次要外部 API（Yahoo BTC-USD…）。
+    const quotes: SourceQuote[] = [{ source: feed.source, value: feed.value }];
+    if (current > 0 && Math.abs(feed.value - current) / current > REJECT_DEVIATION) {
+      if (relayed !== null) {
+        const api = await fetchPrice(symbol);
+        if (api.value !== null) quotes.push({ source: api.source, value: api.value });
+      }
+      const second = await fetchSecondaryPrice(symbol);
+      if (second.value !== null) quotes.push({ source: `${second.source}(secondary)`, value: second.value });
+      console.log(
+        `  多源確認：${quotes.map((q) => `${q.source}=$${q.value.toFixed(2)}`).join(", ")}`,
+      );
+    }
     const guard = guardDeviation({
       target: feed.value,
       current,
       maxDeviation: MAX_DEVIATION,
       rejectDeviation: REJECT_DEVIATION,
+      quotes,
+      confirmTolerance: CONFIRM_TOLERANCE,
     });
     if (!guard.write) {
       rejected += 1;
