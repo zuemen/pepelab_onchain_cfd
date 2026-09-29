@@ -68,3 +68,50 @@ test("改動只會反映在被改的那個檔案上,方便 CI 指出是誰變了
   assert.equal(f1["a.ts"], f2["a.ts"]);
   assert.notEqual(f1["b.ts"], f2["b.ts"]);
 });
+
+// ── 2026-09-29：bundle 指紋涵蓋 esbuild 實際內聯的所有來源 ─────────────────────
+import { fingerprintBundle, bundleInputs, SIGNAL_API_DIR, REPO_ROOT } from "./bundleFingerprint.mjs";
+
+async function bundleFixture(sharedBody) {
+  return fixture({
+    "app/entry.ts": 'import { x } from "../shared/lib.ts";\nexport default x;\n',
+    "shared/lib.ts": sharedBody,
+    "shared/unused.ts": "export const y = 1\n",
+  });
+}
+
+test("改動被內聯的 shared 檔案 → 指紋改變", async () => {
+  const a = await bundleFixture("export const x = 1\n");
+  const b = await bundleFixture("export const x = 2\n");
+  const fa = await fingerprintBundle({ entry: "entry.ts", cwd: join(a, "app"), root: a });
+  const fb = await fingerprintBundle({ entry: "entry.ts", cwd: join(b, "app"), root: b });
+  assert.deepEqual(Object.keys(fa.files).sort(), ["app/entry.ts", "shared/lib.ts"]);
+  assert.notEqual(fa.digest, fb.digest);
+  assert.equal(fa.files["app/entry.ts"], fb.files["app/entry.ts"]);
+  assert.notEqual(fa.files["shared/lib.ts"], fb.files["shared/lib.ts"]);
+});
+
+test("沒被 import 的檔案不影響指紋", async () => {
+  const a = await bundleFixture("export const x = 1\n");
+  const before = await fingerprintBundle({ entry: "entry.ts", cwd: join(a, "app"), root: a });
+  await writeFile(join(a, "shared/unused.ts"), "export const y = 999\n");
+  const after = await fingerprintBundle({ entry: "entry.ts", cwd: join(a, "app"), root: a });
+  assert.equal(before.digest, after.digest);
+});
+
+test("真實 signal-api bundle 的來源涵蓋 shared 與 frontend 合約檔", async () => {
+  const inputs = (await bundleInputs("src/vercel-entry.ts", SIGNAL_API_DIR)).map((p) =>
+    p.slice(REPO_ROOT.length + 1).split("\\").join("/"),
+  );
+  for (const must of [
+    "agent/signal-api/src/app.ts",
+    "agent/shared/src/index.ts",
+    "agent/shared/src/payoutSafety.ts",
+    "frontend/src/contracts/addresses.ts",
+    "frontend/src/contracts/agentAuth.ts",
+  ]) {
+    assert.ok(inputs.includes(must), `bundle 來源應包含 ${must}；實得 ${inputs.join(", ")}`);
+  }
+  assert.ok(!inputs.some((p) => p.includes("node_modules")), "node_modules 不列入");
+  assert.ok(!inputs.some((p) => p.endsWith(".test.ts")), "測試檔不在 bundle 內");
+});

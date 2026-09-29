@@ -394,12 +394,18 @@ As of this writing the GitHub Actions workflow has the four secrets it needs
 Actions' `workflow_dispatch` API refuses to run a workflow that only exists on
 a feature branch (`HTTP 404: workflow ... not found on the default branch`),
 so the first real run will be either the first scheduled tick after this PR
-merges to `master`, or a manual dispatch right after that merge. A local run of
-`settlement-worker.ts` against the real Upstash instance and the real
-`FEE_SETTLEMENT_PRIVATE_KEY` signer did succeed (2026-09-17): it connected,
-read an empty queue, and exited 0 — the credentials work, there was just
-nothing to settle yet, since the deployed API is still running the pre-ledger
-code until this merges.
+merges to `master`, or a manual dispatch right after that merge. As of
+2026-09-29 the worker refuses to run outside GitHub Actions (`GITHUB_ACTIONS`
+must be `true`): the CI job's 20-minute timeout is what guarantees the Redis
+lease lock (1500 s) cannot expire mid-run, and a local process has no such
+bound, so a local run could overlap the CI worker and pay twice. Locally only
+`settlement-worker.ts --dry-run` is allowed, which reads the queue without
+taking the lock, claiming keys or signing. (A local run against the real
+Upstash instance on 2026-09-17, before this restriction, connected, read an
+empty queue and exited 0.) The `GITHUB_ACTIONS` check is a speed bump, not a
+security boundary — anyone can set that variable locally. The actual boundary
+is that `FEE_SETTLEMENT_PRIVATE_KEY` exists only in GitHub secrets, together
+with the workflow's concurrency group and the Redis lease lock.
 
 **Left open:**
 

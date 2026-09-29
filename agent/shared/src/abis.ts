@@ -23,6 +23,15 @@ export const AGENT_SESSION_MANAGER_ABI = [
   "function sessions(uint256) view returns (address user, address agent, uint256 maxMarginPerTrade, uint256 totalMarginBudget, uint256 spentMargin, uint256 maxLeverage, uint256 expiry, bool revoked)",
   "function openPositionForSession(uint256 sessionId, bytes32 asset, bool isLong, uint256 margin, uint256 leverage, address copiedFrom) payable returns (uint256 positionId)",
   "function closePositionForSession(uint256 sessionId, uint256 positionId)",
+  // 2026-09-29（P0）：事件以前不在這裡。write.ts 用這份 ABI 建的 Contract 去
+  // `interface.parseLog(log)`，ethers v6 對「ABI 裡沒有的事件」是回 null（不丟錯），
+  // 於是 SessionOpenedPosition 永遠解不出來 → positionId 永遠 undefined →
+  // audit-verify 判定「opened=true 但 positionId 無法解析」。完整 JSON ABI
+  // （frontend/.../AgentSessionManager.json）雖然有這個事件，但 agent 端從沒用它。
+  // 簽章必須與 contracts/src/AgentSessionManager.sol 完全一致（indexed 也算）。
+  "event SessionCreated(uint256 indexed sessionId, address indexed user, address indexed agent, uint256 totalMarginBudget, uint256 expiry)",
+  "event SessionOpenedPosition(uint256 indexed sessionId, address indexed agent, uint256 positionId, uint256 margin)",
+  "event SessionClosedPosition(uint256 indexed sessionId, address indexed agent, uint256 positionId)",
 ] as const;
 
 export const MOCK_ORACLE_ABI = [

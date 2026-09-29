@@ -57,7 +57,7 @@ const { applyLedgerRecording } = await import("./app.ts");
 const { QUEUE_KEY } = await import("./ledger.ts");
 
 const entry = {
-  trader: "0xE80A81360608C1342e66743F70a00f75d792Eb93",
+  trader: "0x5555555555555555555555555555555555555555",
   feeUsd: 0.01,
   at: 0,
   source: "signals" as const,
@@ -121,6 +121,27 @@ function paidResponse(body: Record<string, unknown>, extraHeaders?: Record<strin
   assert.equal(pushed.feeUsd, entry.feeUsd);
   assert.equal(pushed.source, entry.source);
   console.log("settle 成功 + ledger 已設定 → 記帳一筆，settled:true ✓");
+}
+
+// ── 4b) 冪等鍵：X-PAYMENT-RESPONSE 的結算 tx hash 優先，其次付款人 + EIP-3009 nonce ──
+{
+  const txHash = "0x" + "ab".repeat(32);
+  const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64");
+  const xPaymentResponse = b64({ success: true, transaction: txHash, network: "base-sepolia", payer: "0x1" });
+  const xPayment = b64({ payload: { authorization: { from: "0x" + "11".repeat(20), nonce: "0x" + "cd".repeat(32) } } });
+
+  await applyLedgerRecording(entry, paidResponse({ ok: true }, { "X-PAYMENT-RESPONSE": xPaymentResponse }), xPayment);
+  let pushed = JSON.parse(listFor(QUEUE_KEY).at(-1)!) as { idempotencyKey?: string };
+  assert.equal(pushed.idempotencyKey, `tx:${txHash}`, "有結算 tx hash 時用它當冪等鍵");
+
+  await applyLedgerRecording(entry, paidResponse({ ok: true }, { "X-PAYMENT-RESPONSE": "fake" }), xPayment);
+  pushed = JSON.parse(listFor(QUEUE_KEY).at(-1)!) as { idempotencyKey?: string };
+  assert.equal(pushed.idempotencyKey, `auth:0x${"11".repeat(20)}:0x${"cd".repeat(32)}`, "退而求其次：付款人 + nonce");
+
+  await applyLedgerRecording(entry, paidResponse({ ok: true }, { "X-PAYMENT-RESPONSE": "fake" }));
+  pushed = JSON.parse(listFor(QUEUE_KEY).at(-1)!) as { idempotencyKey?: string };
+  assert.match(pushed.idempotencyKey ?? "", /^req:/, "都解不出來仍要有唯一鍵");
+  console.log("冪等鍵：tx hash > 付款人+nonce > 隨機 id ✓");
 }
 
 // ── 5) ledger 未設定（沒有 UPSTASH env）→ 資料照給，settled:false + 明確 settleError ──
