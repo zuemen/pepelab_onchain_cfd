@@ -37,7 +37,15 @@ export const SECONDARY_SOURCES: Record<string, Source> = {
   sETH: { kind: "yahoo", symbol: "ETH-USD" },
 };
 
-export function extractCoinGecko(json: unknown, id: string): ParsedFeed {
+/**
+ * CoinGecko simple/price（帶 include_last_updated_at=true）。有 last_updated_at 時
+ * 一併回傳 quoteAgeSec —— 多源確認只接受新鮮的報價（見 core.ts confirmLargeMove）。
+ */
+export function extractCoinGecko(
+  json: unknown,
+  id: string,
+  opts: { nowSec?: number } = {},
+): ParsedFeed & { quoteAgeSec?: number } {
   if (typeof json !== "object" || json === null) {
     return { value: null, reason: "coingecko: non-object response" };
   }
@@ -45,7 +53,11 @@ export function extractCoinGecko(json: unknown, id: string): ParsedFeed {
   if (typeof entry !== "object" || entry === null) {
     return { value: null, reason: `coingecko: no entry for ${id}` };
   }
-  return parseFeedValue((entry as Record<string, unknown>).usd);
+  const parsed = parseFeedValue((entry as Record<string, unknown>).usd);
+  const t = (entry as Record<string, unknown>).last_updated_at;
+  if (typeof t !== "number" || !Number.isFinite(t) || t <= 0) return parsed;
+  const nowSec = opts.nowSec ?? Math.floor(Date.now() / 1000);
+  return { ...parsed, quoteAgeSec: Math.max(0, nowSec - t) };
 }
 
 /** Yahoo 回應的附加中繼資料（幣別 / 報價時間），讓 keeper 能誠實回報偽新鮮度。 */
@@ -159,7 +171,8 @@ async function fetchFromSource(
   try {
     if (src.kind === "coingecko") {
       const res = await fetchImpl(
-        `https://api.coingecko.com/api/v3/simple/price?ids=${src.id}&vs_currencies=usd`,
+        `https://api.coingecko.com/api/v3/simple/price?ids=${src.id}&vs_currencies=usd` +
+          `&include_last_updated_at=true`,
         { signal: AbortSignal.timeout(15_000) },
       );
       if (!res.ok) {

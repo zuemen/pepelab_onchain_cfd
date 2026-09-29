@@ -79,7 +79,7 @@ assert.equal(deviationAccepted(100n, 999n, 0n), true);      // cap 0 → 不限�
 
 // 必要案例：+15%（單一來源、門檻 20% 內）→ 直接寫入完整價格，不夾限。
 {
-  const g = guardDeviation({ target: 115, current: 100, quotes: [{ source: "yahoo", value: 115 }] });
+  const g = guardDeviation({ target: 115, current: 100, quotes: [{ source: "yahoo", value: 115, ageSec: 60 }] });
   assert.equal(g.write, true, g.reason);
   assert.equal(g.value, 115, "必須是完整價格，不是夾到某個邊緣");
   assert.equal(g.confirmed, false);
@@ -89,13 +89,13 @@ assert.equal(guardDeviation({ target: 82, current: 100 }).value, 82);
 
 // 必要案例：單源 +30% → 拒寫（熔斷），reason 指向 runbook。
 {
-  const g = guardDeviation({ target: 130, current: 100, quotes: [{ source: "yahoo", value: 130 }] });
+  const g = guardDeviation({ target: 130, current: 100, quotes: [{ source: "yahoo", value: 130, ageSec: 60 }] });
   assert.equal(g.write, false, g.reason);
   assert.ok(g.reason.includes("熔斷") && g.reason.includes("RUNBOOK_KEEPER"), g.reason);
 }
 // 拆股日 Yahoo 回 1/4 的價格（−75%），單一來源 → 拒寫。
 {
-  const split = guardDeviation({ target: 77.75, current: 311, quotes: [{ source: "yahoo", value: 77.75 }] });
+  const split = guardDeviation({ target: 77.75, current: 311, quotes: [{ source: "yahoo", value: 77.75, ageSec: 60 }] });
   assert.equal(split.write, false);
   assert.ok(split.reason.includes("至少需要 2 個"), split.reason);
 }
@@ -106,7 +106,7 @@ assert.equal(guardDeviation({ target: 933, current: 311 }).write, false);
   const g = guardDeviation({
     target: 83_100,
     current: 40_000,
-    quotes: [{ source: "chainlink/pyth relay", value: 83_100 }, { source: "coingecko", value: 83_000 }],
+    quotes: [{ source: "chainlink/pyth relay", value: 83_100, ageSec: 60 }, { source: "coingecko", value: 83_000, ageSec: 60 }],
   });
   assert.equal(g.write, true, g.reason);
   assert.equal(g.confirmed, true);
@@ -116,23 +116,23 @@ assert.equal(guardDeviation({ target: 933, current: 311 }).write, false);
 assert.equal(
   guardDeviation({
     target: 83_100, current: 40_000,
-    quotes: [{ source: "a", value: 83_100 }, { source: "b", value: 83_000 }, { source: "c", value: 83_900 }],
+    quotes: [{ source: "a", value: 83_100, ageSec: 60 }, { source: "b", value: 83_000, ageSec: 60 }, { source: "c", value: 83_900, ageSec: 60 }],
   }).value,
   83_100,
 );
 // 向下同理。
 assert.equal(
-  guardDeviation({ target: 100, current: 311, quotes: [{ source: "yahoo", value: 100 }, { source: "relay", value: 101 }] }).value,
+  guardDeviation({ target: 100, current: 311, quotes: [{ source: "yahoo", value: 100, ageSec: 60 }, { source: "relay", value: 101, ageSec: 60 }] }).value,
   100.5,
 );
 // 兩來源差距 > 2% → 拒寫。
 assert.equal(
-  guardDeviation({ target: 300, current: 100, quotes: [{ source: "a", value: 300 }, { source: "b", value: 320 }] }).write,
+  guardDeviation({ target: 300, current: 100, quotes: [{ source: "a", value: 300, ageSec: 60 }, { source: "b", value: 320, ageSec: 60 }] }).write,
   false,
 );
 // 共識方向與 target 相反 → 拒寫。
 assert.equal(
-  guardDeviation({ target: 300, current: 100, quotes: [{ source: "b", value: 40 }, { source: "c", value: 40.2 }] }).write,
+  guardDeviation({ target: 300, current: 100, quotes: [{ source: "b", value: 40, ageSec: 60 }, { source: "c", value: 40.2, ageSec: 60 }] }).write,
   false,
 );
 // 門檻與容許度可調。
@@ -140,7 +140,7 @@ assert.equal(guardDeviation({ target: 130, current: 100, breakerDeviation: 0.35 
 assert.equal(
   guardDeviation({
     target: 300, current: 100, confirmTolerance: 0.1,
-    quotes: [{ source: "a", value: 300 }, { source: "b", value: 320 }],
+    quotes: [{ source: "a", value: 300, ageSec: 60 }, { source: "b", value: 320, ageSec: 60 }],
   }).value,
   310,
 );
@@ -153,36 +153,73 @@ assert.equal(guardDeviation({ target: Number.NaN, current: 100 }).write, false);
 {
   const c = confirmLargeMove({
     current: 40_000,
-    quotes: [{ source: "chainlink/pyth relay", value: 83_100 }, { source: "coingecko", value: 83_000 }],
+    quotes: [{ source: "chainlink/pyth relay", value: 83_100, ageSec: 60 }, { source: "coingecko", value: 83_000, ageSec: 60 }],
   });
   assert.equal(c.confirmed, true, c.reason);
   assert.ok(Math.abs(c.consensus - 83_050) < 1e-9);
 }
 // 只有一個來源（或同名來源重複）→ 不確認。
-assert.equal(confirmLargeMove({ current: 100, quotes: [{ source: "yahoo", value: 300 }] }).confirmed, false);
+assert.equal(confirmLargeMove({ current: 100, quotes: [{ source: "yahoo", value: 300, ageSec: 60 }] }).confirmed, false);
 assert.equal(
-  confirmLargeMove({ current: 100, quotes: [{ source: "yahoo", value: 300 }, { source: "yahoo", value: 300 }] }).confirmed,
+  confirmLargeMove({ current: 100, quotes: [{ source: "yahoo", value: 300, ageSec: 60 }, { source: "yahoo", value: 300, ageSec: 60 }] }).confirmed,
   false,
   "同一個來源抓兩次不算獨立",
 );
 // 差距 > 2% → 不確認。
 {
-  const c = confirmLargeMove({ current: 100, quotes: [{ source: "a", value: 300 }, { source: "b", value: 310 }] });
+  const c = confirmLargeMove({ current: 100, quotes: [{ source: "a", value: 300, ageSec: 60 }, { source: "b", value: 310, ageSec: 60 }] });
   assert.equal(c.confirmed, false);
   assert.ok(c.reason.includes("差距"), c.reason);
 }
 // 方向不一致（一個說漲一個說跌；差距檢查前就會被擋，這裡用差距內的構造）。
 {
-  const c = confirmLargeMove({ current: 100, quotes: [{ source: "a", value: 99.5 }, { source: "b", value: 100.5 }] });
+  const c = confirmLargeMove({ current: 100, quotes: [{ source: "a", value: 99.5, ageSec: 60 }, { source: "b", value: 100.5, ageSec: 60 }] });
   assert.equal(c.confirmed, false);
   assert.ok(c.reason.includes("方向"), c.reason);
 }
 // 非法報價不算數。
 assert.equal(
-  confirmLargeMove({ current: 100, quotes: [{ source: "a", value: 300 }, { source: "b", value: Number.NaN }] }).confirmed,
+  confirmLargeMove({ current: 100, quotes: [{ source: "a", value: 300, ageSec: 60 }, { source: "b", value: Number.NaN, ageSec: 60 }] }).confirmed,
   false,
 );
 
+
+// ── 多源確認的每一票必須新鮮（審查 Medium 1） ─────────────────────────────
+{
+  const fresh = { source: "chainlink/pyth relay", value: 83_100, ageSec: 120 };
+  // 第二票 2 小時前（> 1h）→ 不算，確認失敗 → 熔斷拒寫。
+  const old = confirmLargeMove({ current: 40_000, quotes: [fresh, { source: "coingecko", value: 83_000, ageSec: 7200 }] });
+  assert.equal(old.confirmed, false);
+  assert.ok(old.reason.includes("不新鮮") && old.reason.includes("7200s"), old.reason);
+  // Yahoo 標記 quoteStale（休市收盤價）→ 不算。
+  assert.equal(
+    confirmLargeMove({ current: 40_000, quotes: [fresh, { source: "yahoo", value: 83_000, ageSec: 60, stale: true }] }).confirmed,
+    false,
+  );
+  // 沒有時間戳 → 新鮮度不明，不算。
+  {
+    const c = confirmLargeMove({ current: 40_000, quotes: [fresh, { source: "coingecko", value: 83_000 }] });
+    assert.equal(c.confirmed, false);
+    assert.ok(c.reason.includes("無時間戳"), c.reason);
+  }
+  // 剛好 3600s 仍算；上限可調。
+  assert.equal(
+    confirmLargeMove({ current: 40_000, quotes: [fresh, { source: "coingecko", value: 83_000, ageSec: 3600 }] }).confirmed,
+    true,
+  );
+  assert.equal(
+    confirmLargeMove({
+      current: 40_000, maxQuoteAgeSec: 60,
+      quotes: [fresh, { source: "coingecko", value: 83_000, ageSec: 61 }],
+    }).confirmed,
+    false,
+  );
+  // guardDeviation 走同一條：不新鮮的第二票 → 拒寫。
+  assert.equal(
+    guardDeviation({ target: 83_100, current: 40_000, quotes: [fresh, { source: "coingecko", value: 83_000, ageSec: 7200 }] }).write,
+    false,
+  );
+}
 
 // ── planMirror：GuardedOracle 只寫完整價格 ─────────────────────────────────
 // 必要案例：鏈上步進上限拒絕完整價格 → reject，不寫部分價格。

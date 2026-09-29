@@ -124,13 +124,14 @@ const EXCHANGE_MODE_ABI = [
 async function fetchFromRelay(
   agg: ethers.Contract | null,
   assetId: string,
-): Promise<number | null> {
+): Promise<{ price: number; updatedAt: number } | null> {
   if (!agg) return null;
   try {
     if ((await agg.isStale(assetId)) as boolean) return null;
-    const [raw] = (await agg.getPrice(assetId)) as [bigint, bigint];
+    const [raw, at] = (await agg.getPrice(assetId)) as [bigint, bigint];
     const p = Number(raw) / 1e8;
-    return Number.isFinite(p) && p > 0 ? p : null;
+    // updatedAt 給多源確認判斷新鮮度（鏈上時間戳，不是 keeper 讀取的時間）。
+    return Number.isFinite(p) && p > 0 ? { price: p, updatedAt: Number(at) } : null;
   } catch {
     return null;
   }
@@ -203,7 +204,12 @@ async function main(): Promise<void> {
     const relayed = await fetchFromRelay(relay, assetId);
     const feed: ParsedFeed & QuoteMeta & { source: string } =
       relayed !== null
-        ? { value: relayed, reason: "ok", source: "chainlink/pyth relay" }
+        ? {
+            value: relayed.price,
+            reason: "ok",
+            source: "chainlink/pyth relay",
+            quoteAgeSec: Math.max(0, nowSec - relayed.updatedAt),
+          }
         : await fetchPrice(symbol);
 
     // 休市切換放在價格判斷之前：價格來源壞了不影響「現在是不是休市」。
@@ -262,16 +268,26 @@ async function main(): Promise<void> {
     // 保護，所以「離譜但合法」的價格必須在這裡擋下 —— 只寫完整價格或不寫。
     // 偏離超過熔斷門檻時才去湊第二個獨立來源（正常路徑不多打任何請求）：
     // relay（Pyth）、主要外部 API（CoinGecko/Yahoo）、次要外部 API（Yahoo BTC-USD…）。
-    const quotes: SourceQuote[] = [{ source: feed.source, value: feed.value }];
+    // 每一票都帶報價年齡：relay 用鏈上 updatedAt、CoinGecko 用 last_updated_at、
+    // Yahoo 用 regularMarketTime；年齡不明或過舊的票在 confirmLargeMove 裡不算數。
+    const asQuote = (f: ParsedFeed & QuoteMeta, source: string): SourceQuote => ({
+      source,
+      value: f.value as number,
+      ageSec: f.quoteAgeSec,
+      stale: f.quoteStale === true,
+    });
+    const quotes: SourceQuote[] = [asQuote(feed, feed.source)];
     if (current > 0 && Math.abs(feed.value - current) / current > BREAKER_DEVIATION) {
       if (relayed !== null) {
         const api = await fetchPrice(symbol);
-        if (api.value !== null) quotes.push({ source: api.source, value: api.value });
+        if (api.value !== null) quotes.push(asQuote(api, api.source));
       }
       const second = await fetchSecondaryPrice(symbol);
-      if (second.value !== null) quotes.push({ source: `${second.source}(secondary)`, value: second.value });
+      if (second.value !== null) quotes.push(asQuote(second, `${second.source}(secondary)`));
       console.log(
-        `  多源確認：${quotes.map((q) => `${q.source}=$${q.value.toFixed(2)}`).join(", ")}`,
+        `  多源確認：${quotes
+          .map((q) => `${q.source}=$${q.value.toFixed(2)}(age ${q.ageSec ?? "?"}s${q.stale ? ",stale" : ""})`)
+          .join(", ")}`,
       );
     }
     const guard = guardDeviation({

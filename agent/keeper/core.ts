@@ -102,7 +102,14 @@ export const DEFAULT_CONFIRM_TOLERANCE = 0.02; // 2%
 export interface SourceQuote {
   source: string;
   value: number;
+  /** 報價本身的年齡（秒）。多源確認時缺漏＝新鮮度不明，不算一票。 */
+  ageSec?: number;
+  /** 來源自己標記為過時（例如 Yahoo 的 quoteStale）。 */
+  stale?: boolean;
 }
+
+/** 多源確認：每一票的報價年齡上限（秒）。 */
+export const DEFAULT_CONFIRM_MAX_AGE_SEC = 3600;
 
 export interface LargeMoveConfirmation {
   confirmed: boolean;
@@ -113,6 +120,9 @@ export interface LargeMoveConfirmation {
 
 /**
  * 偏離超過熔斷門檻時的多源確認。要全部成立才 confirmed：
+ *   0. 每一票必須新鮮：ageSec 存在且 ≤ maxQuoteAgeSec（預設 1 小時），且不是 stale。
+ *      休市時的 Yahoo 收盤價、凍結的 relay、沒有時間戳的報價都不算一票 ——
+ *      兩個「一致但都是昨天」的價格不能證明今天的大幅變動。
  *   1. 至少兩個不同 source 的合法報價（同名來源只取第一筆）。
  *   2. 彼此差距 (max−min)/min ≤ tolerance。
  *   3. 每個報價相對鏈上 current 的方向一致（全部高於或全部低於）。
@@ -121,18 +131,30 @@ export function confirmLargeMove(a: {
   current: number;
   quotes: SourceQuote[];
   tolerance?: number;
+  maxQuoteAgeSec?: number;
 }): LargeMoveConfirmation {
   const tol = a.tolerance ?? DEFAULT_CONFIRM_TOLERANCE;
+  const maxAge = a.maxQuoteAgeSec ?? DEFAULT_CONFIRM_MAX_AGE_SEC;
   const seen = new Set<string>();
   const qs: SourceQuote[] = [];
+  const dropped: string[] = [];
   for (const q of a.quotes) {
     if (!Number.isFinite(q.value) || q.value <= 0 || seen.has(q.source)) continue;
+    if (q.stale || typeof q.ageSec !== "number" || !Number.isFinite(q.ageSec) || q.ageSec > maxAge) {
+      dropped.push(`${q.source}(${q.stale ? "stale" : q.ageSec === undefined ? "無時間戳" : `${q.ageSec}s`})`);
+      continue;
+    }
     seen.add(q.source);
     qs.push(q);
   }
   const list = qs.map((q) => `${q.source}=$${q.value}`).join(", ") || "無";
   if (qs.length < 2) {
-    return { confirmed: false, consensus: 0, reason: `只有 ${qs.length} 個獨立來源（${list}），至少需要 2 個` };
+    const why = dropped.length ? `；不新鮮而不計：${dropped.join(", ")}` : "";
+    return {
+      confirmed: false,
+      consensus: 0,
+      reason: `只有 ${qs.length} 個新鮮的獨立來源（${list}${why}），至少需要 2 個`,
+    };
   }
   const vals = qs.map((q) => q.value).sort((x, y) => x - y);
   const spread = (vals[vals.length - 1] - vals[0]) / vals[0];

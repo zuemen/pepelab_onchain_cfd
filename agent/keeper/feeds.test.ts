@@ -82,6 +82,22 @@ for (const [sym, src] of Object.entries(SOURCES)) {
   assert.ok(src.kind === "coingecko" || src.kind === "yahoo", `${sym} 來源不明`);
 }
 
+// ── CoinGecko include_last_updated_at → quoteAgeSec（多源確認的新鮮度） ──────
+{
+  const r = extractCoinGecko({ bitcoin: { usd: 64578, last_updated_at: 1_000_000 } }, "bitcoin", { nowSec: 1_000_600 });
+  assert.equal(r.value, 64578);
+  assert.equal(r.quoteAgeSec, 600);
+  assert.equal(extractCoinGecko({ bitcoin: { usd: 64578 } }, "bitcoin").quoteAgeSec, undefined, "沒有時間戳就不編造");
+}
+// Yahoo 的 quoteAgeSec 來自 regularMarketTime。
+assert.equal(
+  extractYahoo(
+    { chart: { result: [{ meta: { currency: "USD", regularMarketPrice: 1, regularMarketTime: 1_000_000 } }] } },
+    { nowSec: 1_000_300 },
+  ).quoteAgeSec,
+  300,
+);
+
 // ── 第二來源必須與主要來源「獨立」（不同供應商），否則多源確認形同虛設 ──────
 for (const [sym, second] of Object.entries(SECONDARY_SOURCES)) {
   assert.ok(SOURCES[sym], `${sym} 沒有主要來源`);
