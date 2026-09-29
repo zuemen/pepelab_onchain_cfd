@@ -138,9 +138,21 @@ payments per hour ≈ 0.04 per second, as an upper bound.** GitHub Actions cron
 triggers are best-effort — runs can be delayed or dropped under load — so
 150/hour assumes every scheduled run fires on time; the real sustained rate can
 only be lower. Above that rate the queue grows
-without bound — entries are not lost, they wait. Raising the batch size does not
+without bound and entries wait. The worker takes entries with `LMOVE` into a
+processing list and removes them only after they are handled; a worker that
+crashes mid-run leaves them there, and the next run moves them back to the queue
+first (`ledger.ts` `recoverProcessing`). Each entry carries an idempotency key
+(the x402 settlement tx hash, else payer + EIP-3009 nonce), claimed with
+`SET settle:<key> NX` before any transaction is signed, so a repeated key is
+skipped instead of paid twice. When a receipt does not arrive in time the entry
+is marked UNKNOWN with its tx hash and is **never re-sent**: later runs check the
+receipt first and send nothing new while any transaction is unconfirmed. Success
+marks it done, a revert moves it to the dead-letter list, and no receipt after
+30 minutes marks it STUCK and fails the job for a human to resolve. Entries are
+therefore not silently dropped, but ones in the dead-letter list or marked STUCK
+are not settled until someone acts. Raising the batch size does not
 remove the ceiling: entries are processed one after another, each awaiting its
-own receipt (`settlement.ts:154`), so one signer cannot exceed roughly one
+own receipt (`settlement.ts`, `waitForTransaction`), so one signer cannot exceed roughly one
 settlement per Base block (≈2 s), i.e. ≈0.5/s, before counting RPC round-trips.
 100 TPS would be ~200× that.
 

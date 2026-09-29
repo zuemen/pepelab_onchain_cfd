@@ -33,7 +33,13 @@ import {
   type ContractTarget,
 } from "@pepelab/shared";
 import { isSettlementEnabled } from "./settlement.ts";
-import { isLedgerEnabled, enqueueSettlement, type LedgerEntry } from "./ledger.ts";
+import { randomUUID } from "node:crypto";
+import {
+  isLedgerEnabled,
+  enqueueSettlement,
+  deriveIdempotencyKey,
+  type LedgerEntry,
+} from "./ledger.ts";
 import { getOnchainRevenue, isOnchainRevenueEnabled } from "./onchainRevenue.ts";
 import {
   getCandles,
@@ -271,10 +277,16 @@ type AppVariables = { ledgerEntry?: LedgerEntry };
  * @param res   付費牆（含 facilitator settle）處理完之後的 Response。只有
  *              status < 400 且帶 `X-PAYMENT-RESPONSE`（facilitator settle 真的
  *              成功的證明）才會記帳；否則原樣回傳，不動它。
+ * @param paymentHeader 請求的 X-PAYMENT（base64），冪等鍵的第二順位來源。
+ *
+ * 冪等鍵（2026-09-29 P0）：優先用 X-PAYMENT-RESPONSE 裡 facilitator 的結算 tx hash，
+ * 其次 X-PAYMENT 的「付款人 + EIP-3009 nonce」；兩者都解不出來（理論上不會）才用
+ * 隨機 id——至少保證 worker 端同一筆不會被送兩次。
  */
 export async function applyLedgerRecording(
   entry: LedgerEntry | undefined,
   res: Response,
+  paymentHeader?: string | null,
 ): Promise<Response> {
   if (!entry || res.status >= 400 || !res.headers.has("X-PAYMENT-RESPONSE")) {
     return res;
@@ -290,7 +302,10 @@ export async function applyLedgerRecording(
       // 必須 await：serverless 不保證回應後還能背景跑，fire-and-forget 會被砍掉
       // ——跟這份檔案開頭那條舊註解講的是同一件事，只是現在等的是一次 KV 寫入
       // （通常 <150ms），不再是一筆鏈上交易的 tx.wait()（≥2 秒起跳）。
-      await enqueueSettlement(entry);
+      const idempotencyKey =
+        deriveIdempotencyKey(res.headers.get("X-PAYMENT-RESPONSE"), paymentHeader) ??
+        `req:${randomUUID()}`;
+      await enqueueSettlement({ ...entry, idempotencyKey });
       queued = true;
     } catch (err) {
       settleError = (err as Error).message;
@@ -777,7 +792,7 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
     // 換成 402，這個 middleware 看到的 res 就不會帶那個 header，也就不會走進這裡
     // ——買方沒被扣款，我們就不能記一筆分潤（這正是舊版「先記帳後結算失敗」那個
     // 順序問題的修法：把「記帳」的時間點往後移到「確定收到錢」之後）。
-    c.res = await applyLedgerRecording(c.get("ledgerEntry"), c.res);
+    c.res = await applyLedgerRecording(c.get("ledgerEntry"), c.res, c.req.header("X-PAYMENT"));
   });
 
   // ── 付費後才會執行到這裡 ─────────────────────────────────────────────────

@@ -1,4 +1,4 @@
-// x402 結算 worker：把 ledger.ts 佇列裡「已收款、待分潤」的項目批次送上鏈。
+// x402 結算 worker：把 ledger.ts 佇列裡「已收款、待分潤」的項目送上鏈。
 //
 // 優先序 1（x402 硬化）的第二半：app.ts 的付費端點只記帳（推進 Upstash 佇列），
 // 不再送任何交易；上鏈這件事全部集中在這支腳本，用單一 signer 依序處理。
@@ -7,45 +7,65 @@
 // settlement.ts / ledger.ts（都是 signal-api 的模組），放進 keeper/ 會變成跨
 // workspace 的相對路徑匯入，徒增匯入路徑的脆弱性。**執行模型**沿用
 // agent/keeper 的既有 pattern——單一 CLI 腳本、單一 signer、GitHub Actions cron、
-// 缺 secret 直接 fail fast、印一行摘要讓 workflow 用門檻判斷成功與否——只是
-// 檔案實際放在跟它依賴的程式碼同一個目錄。
+// 缺 secret 直接 fail fast、印一行摘要讓 workflow 用門檻判斷成功與否。
 //
 // 用法：
 //   cd agent
 //   npx tsx signal-api/src/settlement-worker.ts
 //
 // 需要的 env（見 .env.example）：
-//   FEE_SETTLEMENT_PRIVATE_KEY  單一 signer，跟以前一樣（settlement.ts 沒變）
+//   FEE_SETTLEMENT_PRIVATE_KEY  單一 signer
 //   UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN   佇列
+//   PAY_TO / X402_FEE_ROUTER    收款守門（payoutPreflight）
 //
-// 為什麼「單一 signer」就讓 nonce 衝突在設計上消失：以前是「每個 Vercel 實例各自
-// 在請求路徑裡送交易」，跨實例並發、共用同一把私鑰，nonce 序列互相打架。現在
-// 送交易的地方只剩這一支 process、由 GitHub Actions cron 觸發、用 concurrency
-// group 防止同一支 workflow 重疊執行（見 .github/workflows/x402-settlement-worker.yml）
-// ——任何時刻至多一個 process 持有這把私鑰在送交易，nonce 序列只有一條。
+// 為什麼「單一 signer」就讓 nonce 衝突在設計上消失：送交易的地方只剩這一支 process、
+// 由 GitHub Actions cron 觸發、用 concurrency group 防止重疊執行
+// （見 .github/workflows/x402-settlement-worker.yml）。
+//
+// 2026-09-29（P0）可靠性：
+//   1. 可靠佇列：LMOVE main/retry → processing，完成才 LREM；啟動時先把 processing
+//      的遺留項目搬回 main（上一輪崩潰可回收）。
+//   2. 冪等：每筆的 idempotencyKey 在上鏈前 `SET settle:<key> NX` 佔位；DONE 的鍵
+//      再出現直接跳過。
+//   3. 未確定狀態：routeExternalRevenue 先簽、先記 hash、再廣播。等 receipt 逾時 →
+//      UNKNOWN，**絕不自動重送**；下一輪用 receipt 對帳：成功 → DONE；revert → 死信；
+//      超過 STUCK_AFTER_MS（30 分鐘）仍查不到 → STUCK，job 失敗，交人工處理。
+//      UNKNOWN 的項目放進 unconfirmed 佇列，每輪最先對帳；只要還有未確認的交易，
+//      本輪就不送任何新交易（後面的 nonce 會卡在它後面，且避免盲目堆疊）。
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { resolve as resolvePath } from "node:path";
 import { assessPayoutAddress, type CodeReader } from "@pepelab/shared";
 import {
   isSettlementEnabled,
   settleRevenue,
+  getReceiptStatus,
   settlementSignerAddress,
   settlementRouterAddress,
   settlementProvider,
   readPlatformTreasury,
+  type SettlementResult,
+  type SettleHooks,
 } from "./settlement.ts";
 import {
   isLedgerEnabled,
-  dequeueBatch,
-  dequeueRetryBatch,
-  pushRetry,
-  pushDead,
+  claimNext,
+  ackProcessing,
+  moveProcessingTo,
+  recoverProcessing,
   queueDepth,
+  getSettleState,
+  claimSettleKey,
+  setSettleState,
+  releaseSettleKey,
   QUEUE_KEY,
+  PROCESSING_KEY,
   RETRY_KEY,
+  UNCONFIRMED_KEY,
   DEAD_KEY,
   type LedgerEntry,
   type RetryEntry,
+  type SettleState,
 } from "./ledger.ts";
 
 const BATCH_SIZE = Number(process.env.SETTLEMENT_BATCH_SIZE ?? "25");
@@ -53,6 +73,8 @@ export const MAX_RETRY_ATTEMPTS = Number(process.env.SETTLEMENT_MAX_RETRIES ?? "
 // 部分失敗門檻：沿用 keeper 系列 workflow 的慣例（MAX_FAIL_PCT），失敗率超過
 // 這個百分比就讓 CI job 變紅，不要讓「11 筆壞 7 筆」看起來像成功。
 const MAX_FAIL_PCT = Number(process.env.SETTLEMENT_MAX_FAIL_PCT ?? "30");
+/** 簽出後超過這麼久仍查不到 receipt → STUCK（交人工）。 */
+export const STUCK_AFTER_MS = Number(process.env.SETTLEMENT_STUCK_AFTER_MS ?? String(30 * 60 * 1000));
 
 export interface PreflightDeps {
   codeReader: CodeReader;
@@ -118,37 +140,259 @@ export async function payoutPreflight(d: PreflightDeps): Promise<{ problems: str
   return { problems, warnings };
 }
 
-export type ProcessOutcome = { outcome: "settled"; tx: string } | { outcome: "retry" | "dead"; error: string };
 
-/**
- * 處理單一筆待結算項目，回傳結果而不是直接改 module 級計數器——讓 main() 之外
- * 的呼叫端（測試）可以直接驅動這個函式並檢查結果，不需要先通過 main() 開頭那段
- * 「沒 signer/沒佇列就直接 exit(1)」的前置檢查。
- */
-export async function processOne(entry: LedgerEntry, priorAttempts: number): Promise<ProcessOutcome> {
-  const r = await settleRevenue(entry.trader, entry.feeUsd);
-  if (r.status === "settled") {
-    console.log(
-      `settled trader=${entry.trader} feeUsd=${entry.feeUsd} source=${entry.source} tx=${r.tx}`,
-    );
-    return { outcome: "settled", tx: r.tx! };
-  }
-  const attempts = priorAttempts + 1;
-  const error = r.error ?? "unknown error";
-  const retryEntry: RetryEntry = { entry, attempts, lastError: error };
+// ── 單筆處理 ─────────────────────────────────────────────────────────────────
+
+export type ProcessOutcome =
+  | { outcome: "settled"; tx: string }
+  | { outcome: "duplicate"; key: string }
+  | { outcome: "pending"; tx?: string; error: string }
+  | { outcome: "retry" | "dead"; error: string }
+  | { outcome: "stuck"; tx?: string; error: string };
+
+/** 可注入的外部依賴——測試用假的 settle / receipt / 時鐘，不碰任何鏈。 */
+export interface WorkerDeps {
+  settle: (trader: string, feeUsd: number, hooks: SettleHooks) => Promise<SettlementResult>;
+  receiptStatus: (txHash: string) => Promise<"success" | "reverted" | null>;
+  now: () => number;
+}
+
+export const defaultDeps: WorkerDeps = {
+  settle: settleRevenue,
+  receiptStatus: getReceiptStatus,
+  now: () => Date.now(),
+};
+
+interface Parsed {
+  entry: LedgerEntry;
+  attempts: number;
+  key: string;
+  legacyKey: boolean;
+}
+
+/** processing 裡的原始字串可能是 LedgerEntry（來自 main）或 RetryEntry（來自 retry）。 */
+export function parseItem(raw: string): Parsed {
+  const obj = JSON.parse(raw) as LedgerEntry | RetryEntry;
+  const isRetry = typeof (obj as RetryEntry).entry === "object" && (obj as RetryEntry).entry !== null;
+  const entry = isRetry ? (obj as RetryEntry).entry : (obj as LedgerEntry);
+  const attempts = isRetry ? (obj as RetryEntry).attempts ?? 0 : 0;
+  if (entry.idempotencyKey) return { entry, attempts, key: entry.idempotencyKey, legacyKey: false };
+  // 舊資料（2026-09-29 前入列）沒有冪等鍵：以 entry 內容雜湊補上。穩定（重試包裝不影響），
+  // 代價是「同一 trader、同金額、同一秒、同端點」的兩筆真付款會被當成同一筆——可接受的邊界。
+  const legacy = createHash("sha256")
+    .update(JSON.stringify([entry.trader.toLowerCase(), entry.feeUsd, entry.at, entry.source]))
+    .digest("hex");
+  return { entry, attempts, key: `legacy:${legacy}`, legacyKey: true };
+}
+
+const tag = (e: LedgerEntry, key: string) =>
+  `trader=${e.trader} feeUsd=${e.feeUsd} source=${e.source} key=${key}`;
+
+async function failOrRetry(raw: string, p: Parsed, error: string): Promise<ProcessOutcome> {
+  const attempts = p.attempts + 1;
+  const retryEntry: RetryEntry = { entry: p.entry, attempts, lastError: error };
   if (attempts >= MAX_RETRY_ATTEMPTS) {
-    await pushDead(retryEntry);
-    console.error(
-      `::error::dead-lettered trader=${entry.trader} feeUsd=${entry.feeUsd} ` +
-        `attempts=${attempts} error=${error}`,
-    );
+    await moveProcessingTo(raw, DEAD_KEY, JSON.stringify(retryEntry));
+    console.error(`::error::dead-lettered ${tag(p.entry, p.key)} attempts=${attempts} error=${error}`);
     return { outcome: "dead", error };
   }
-  await pushRetry(retryEntry);
-  console.warn(
-    `retry trader=${entry.trader} feeUsd=${entry.feeUsd} attempts=${attempts} error=${error}`,
-  );
+  await moveProcessingTo(raw, RETRY_KEY, JSON.stringify(retryEntry));
+  console.warn(`retry ${tag(p.entry, p.key)} attempts=${attempts} error=${error}`);
   return { outcome: "retry", error };
+}
+
+/** 對一個已經簽出過 tx 的鍵做 receipt 對帳。 */
+async function reconcile(raw: string, p: Parsed, st: SettleState, deps: WorkerDeps): Promise<ProcessOutcome> {
+  const now = deps.now();
+  const since = st.sentAt ?? st.claimedAt;
+  if (!st.txHash) {
+    // PENDING 且沒有 hash：上一輪在「佔位之後、簽出之前」崩潰，或正在簽。簽出前一定
+    // 會先記 hash，所以沒有 hash 代表 routeExternalRevenue 應該沒送出——但無法 100%
+    // 排除（例如 hash 寫入後 Redis 回應遺失）。保守：未滿時限先放回，超過就交人工。
+    if (now - since > STUCK_AFTER_MS) {
+      await setSettleState(p.key, { ...st, status: "STUCK", note: "PENDING 無 tx hash 超過時限" });
+      await moveProcessingTo(raw, DEAD_KEY, JSON.stringify({ entry: p.entry, attempts: p.attempts, lastError: "STUCK: PENDING without tx hash" }));
+      console.error(`::error::STUCK（佔位後無 tx hash）${tag(p.entry, p.key)} —— 請人工確認 signer 的交易紀錄`);
+      return { outcome: "stuck", error: "PENDING without tx hash" };
+    }
+    await moveProcessingTo(raw, UNCONFIRMED_KEY);
+    return { outcome: "pending", error: "PENDING（尚未簽出），留待下一輪" };
+  }
+
+  let status: "success" | "reverted" | null;
+  try {
+    status = await deps.receiptStatus(st.txHash);
+  } catch (err) {
+    // 查不到 receipt 本身失敗（RPC）→ 狀態不變，放回佇列，下一輪再查；不重送。
+    await moveProcessingTo(raw, UNCONFIRMED_KEY);
+    return { outcome: "pending", tx: st.txHash, error: `receipt 查詢失敗：${(err as Error).message}` };
+  }
+  if (status === "success") {
+    await setSettleState(p.key, { ...st, status: "DONE" });
+    await ackProcessing(raw);
+    console.log(`reconciled settled ${tag(p.entry, p.key)} tx=${st.txHash}`);
+    return { outcome: "settled", tx: st.txHash };
+  }
+  if (status === "reverted") {
+    await setSettleState(p.key, { ...st, status: "FAILED", note: "reverted" });
+    await moveProcessingTo(raw, DEAD_KEY, JSON.stringify({ entry: p.entry, attempts: p.attempts + 1, lastError: `reverted tx=${st.txHash}` }));
+    console.error(`::error::dead-lettered（對帳：revert）${tag(p.entry, p.key)} tx=${st.txHash}`);
+    return { outcome: "dead", error: `reverted tx=${st.txHash}` };
+  }
+  if (now - since > STUCK_AFTER_MS) {
+    await setSettleState(p.key, { ...st, status: "STUCK", note: `${Math.round((now - since) / 60000)} 分鐘仍無 receipt` });
+    await moveProcessingTo(raw, DEAD_KEY, JSON.stringify({ entry: p.entry, attempts: p.attempts, lastError: `STUCK tx=${st.txHash}` }));
+    console.error(
+      `::error::STUCK ${tag(p.entry, p.key)} tx=${st.txHash} —— 簽出超過 ${Math.round(STUCK_AFTER_MS / 60000)} 分鐘仍查不到 receipt，` +
+        "不自動重送，請人工確認（交易可能被丟棄、nonce 卡住、或 RPC 不同步）。",
+    );
+    return { outcome: "stuck", tx: st.txHash, error: "no receipt" };
+  }
+  await moveProcessingTo(raw, UNCONFIRMED_KEY);
+  console.warn(`pending（等待 receipt）${tag(p.entry, p.key)} tx=${st.txHash}`);
+  return { outcome: "pending", tx: st.txHash, error: "尚無 receipt" };
+}
+
+/**
+ * 處理 processing 裡的一筆原始項目。所有結果都會把這筆從 processing 移走
+ * （ack / 搬去 retry / dead / 放回 main），不會留在 processing。
+ */
+export async function processOne(raw: string, deps: WorkerDeps = defaultDeps): Promise<ProcessOutcome> {
+  let p: Parsed;
+  try {
+    p = parseItem(raw);
+  } catch (err) {
+    await moveProcessingTo(raw, DEAD_KEY, JSON.stringify({ raw, attempts: 0, lastError: `unparseable: ${(err as Error).message}` }));
+    console.error(`::error::無法解析的佇列項目已移入死信：${raw.slice(0, 200)}`);
+    return { outcome: "dead", error: "unparseable" };
+  }
+  if (p.legacyKey) console.warn(`legacy entry（無 idempotencyKey）→ 以內容雜湊作鍵 ${p.key}`);
+
+  const existing = await getSettleState(p.key);
+  if (existing) {
+    if (existing.status === "DONE") {
+      await ackProcessing(raw);
+      console.log(`skip duplicate（已結算）${tag(p.entry, p.key)} tx=${existing.txHash ?? "?"}`);
+      return { outcome: "duplicate", key: p.key };
+    }
+    if (existing.status === "FAILED" || existing.status === "STUCK") {
+      await moveProcessingTo(raw, DEAD_KEY, JSON.stringify({ entry: p.entry, attempts: p.attempts, lastError: `duplicate of ${existing.status} key` }));
+      console.error(`::error::同一鍵已是 ${existing.status}，重複項目移入死信 ${tag(p.entry, p.key)}`);
+      return { outcome: existing.status === "STUCK" ? "stuck" : "dead", error: `key already ${existing.status}` };
+    }
+    return reconcile(raw, p, existing, deps);
+  }
+
+  const claimedAt = deps.now();
+  const claimed = await claimSettleKey(p.key, { status: "PENDING", claimedAt });
+  if (!claimed) {
+    // 另一個 process 剛佔走（理論上 concurrency group 下不會發生）→ 放回，下一輪看狀態。
+    await moveProcessingTo(raw, QUEUE_KEY);
+    return { outcome: "pending", error: "冪等鍵已被佔用" };
+  }
+
+  let signedHash: string | undefined;
+  const r = await deps.settle(p.entry.trader, p.entry.feeUsd, {
+    onSigned: async (txHash) => {
+      signedHash = txHash;
+      await setSettleState(p.key, { status: "UNKNOWN", claimedAt, txHash, sentAt: deps.now() });
+    },
+  });
+
+  switch (r.status) {
+    case "settled":
+      await setSettleState(p.key, { status: "DONE", claimedAt, txHash: r.tx, sentAt: claimedAt });
+      await ackProcessing(raw);
+      console.log(`settled ${tag(p.entry, p.key)} tx=${r.tx}`);
+      return { outcome: "settled", tx: r.tx };
+    case "reverted":
+      await setSettleState(p.key, { status: "FAILED", claimedAt, txHash: r.tx, note: r.error });
+      await moveProcessingTo(raw, DEAD_KEY, JSON.stringify({ entry: p.entry, attempts: p.attempts + 1, lastError: `${r.error} tx=${r.tx}` }));
+      console.error(`::error::dead-lettered（revert）${tag(p.entry, p.key)} tx=${r.tx}`);
+      return { outcome: "dead", error: r.error };
+    case "unknown":
+      // 狀態已在 onSigned 寫成 UNKNOWN + hash；項目進 unconfirmed，下一輪最先對帳。
+      await moveProcessingTo(raw, UNCONFIRMED_KEY);
+      console.warn(`::warning::UNKNOWN ${tag(p.entry, p.key)} tx=${r.tx} —— ${r.error}；不重送，下一輪對帳`);
+      return { outcome: "pending", tx: r.tx, error: r.error };
+    case "failed":
+      if (signedHash) {
+        // onSigned 已跑過但 settle 判定「確定沒送出」（節點明確拒絕）→ 可釋放。
+        console.warn(`已簽 ${signedHash} 但節點明確拒絕，釋放佔位`);
+      }
+      await releaseSettleKey(p.key);
+      return failOrRetry(raw, p, r.error);
+  }
+}
+
+// ── 一輪 ─────────────────────────────────────────────────────────────────────
+
+export interface RunSummary {
+  recovered: number;
+  available: number;
+  settled: number;
+  duplicate: number;
+  pending: number;
+  retried: number;
+  dead: number;
+  stuck: number;
+  failed: number;
+}
+
+/**
+ * 跑一輪：
+ *   0. 回收 processing 遺留項目（上一輪崩潰）。
+ *   1. 對帳 unconfirmed（已簽出、未確認）；還有未確認的 → 本輪不送任何新交易。
+ *   2. retry，3. main —— 各自只處理「開始時」已在裡面的項目（以開始時長度為上限），
+ *      本輪新放回的項目留給下一輪。
+ * 一旦出現新的未確認交易，立刻停止送新交易（後面的 nonce 會卡在它後面）。
+ */
+export async function runWorker(deps: WorkerDeps = defaultDeps, batchSize = BATCH_SIZE): Promise<RunSummary> {
+  const s: RunSummary = { recovered: 0, available: 0, settled: 0, duplicate: 0, pending: 0, retried: 0, dead: 0, stuck: 0, failed: 0 };
+  s.recovered = await recoverProcessing();
+  if (s.recovered > 0) console.warn(`::warning::回收 processing 遺留項目 ${s.recovered} 筆（上一輪可能中途中止）`);
+
+  const tally = (o: ProcessOutcome) => {
+    if (o.outcome === "settled") s.settled += 1;
+    else if (o.outcome === "duplicate") s.duplicate += 1;
+    else if (o.outcome === "pending") s.pending += 1;
+    else if (o.outcome === "retry") (s.retried += 1), (s.failed += 1);
+    else if (o.outcome === "dead") (s.dead += 1), (s.failed += 1);
+    else if (o.outcome === "stuck") (s.stuck += 1), (s.failed += 1);
+  };
+
+  // 1) 對帳：不花 batch 預算（對帳只讀 receipt，不送交易）。
+  let halted = false;
+  for (let n = await queueDepth(UNCONFIRMED_KEY); n > 0; n -= 1) {
+    const raw = await claimNext(UNCONFIRMED_KEY);
+    if (raw === null || raw === undefined) break;
+    const o = await processOne(raw, deps);
+    tally(o);
+    if (o.outcome === "pending") halted = true;
+  }
+  if (halted) {
+    console.warn("::warning::仍有已簽出但未確認的交易 —— 本輪不送任何新交易，等它們有結果。");
+    return s;
+  }
+
+  // 2) 3) 送新交易。
+  let budget = batchSize;
+  for (const src of [RETRY_KEY, QUEUE_KEY]) {
+    let n = Math.min(budget, await queueDepth(src));
+    while (n-- > 0 && budget > 0) {
+      const raw = await claimNext(src);
+      if (raw === null || raw === undefined) break;
+      budget -= 1;
+      s.available += 1;
+      const o = await processOne(raw, deps);
+      tally(o);
+      if (o.outcome === "pending") {
+        console.warn("::warning::出現未確認的交易，本輪停止送出新交易（避免 nonce 堆疊）。");
+        return s;
+      }
+    }
+  }
+  return s;
 }
 
 async function main(): Promise<void> {
@@ -178,65 +422,43 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  let settled = 0;
-  let retried = 0;
-  let dead = 0;
-  let failed = 0;
-
-  // 先處理重試佇列：這些已經失敗過至少一次，優先清掉避免無限期卡在佇列尾端。
-  const retryBatch = await dequeueRetryBatch(BATCH_SIZE);
-  for (const r of retryBatch) {
-    const o = await processOne(r.entry, r.attempts);
-    if (o.outcome === "settled") settled += 1;
-    else {
-      failed += 1;
-      if (o.outcome === "dead") dead += 1;
-      else retried += 1;
-    }
-  }
-
-  // 剩餘預算才處理新項目；批次上限是「一次 cron 觸發最多處理幾筆」，不是佇列容量。
-  const remaining = Math.max(0, BATCH_SIZE - retryBatch.length);
-  const mainBatch = remaining > 0 ? await dequeueBatch(QUEUE_KEY, remaining) : [];
-  for (const entry of mainBatch) {
-    const o = await processOne(entry, 0);
-    if (o.outcome === "settled") settled += 1;
-    else {
-      failed += 1;
-      if (o.outcome === "dead") dead += 1;
-      else retried += 1;
-    }
-  }
-
-  const available = retryBatch.length + mainBatch.length;
-  const [queueRemaining, retryRemaining, deadTotal] = await Promise.all([
+  const s = await runWorker();
+  const [queueRemaining, retryRemaining, unconfirmed, processingRemaining, deadTotal] = await Promise.all([
     queueDepth(QUEUE_KEY),
     queueDepth(RETRY_KEY),
+    queueDepth(UNCONFIRMED_KEY),
+    queueDepth(PROCESSING_KEY),
     queueDepth(DEAD_KEY),
   ]);
 
   console.log(
-    `available=${available} settled=${settled} failed=${failed} retried=${retried} dead=${dead} ` +
-      `queueRemaining=${queueRemaining} retryRemaining=${retryRemaining} deadTotal=${deadTotal}`,
+    `recovered=${s.recovered} available=${s.available} settled=${s.settled} duplicate=${s.duplicate} ` +
+      `pending=${s.pending} failed=${s.failed} retried=${s.retried} dead=${s.dead} stuck=${s.stuck} ` +
+      `queueRemaining=${queueRemaining} retryRemaining=${retryRemaining} unconfirmed=${unconfirmed} ` +
+      `processingRemaining=${processingRemaining} deadTotal=${deadTotal}`,
   );
 
   if (deadTotal > 0) {
     console.warn(
-      `::warning::死信佇列（${DEAD_KEY}）目前有 ${deadTotal} 筆，重試 ${MAX_RETRY_ATTEMPTS} 次仍失敗，需要人工介入。`,
+      `::warning::死信佇列（${DEAD_KEY}）目前有 ${deadTotal} 筆（重試用盡／revert／STUCK），需要人工介入。`,
     );
   }
+  if (s.stuck > 0) {
+    console.error(`::error::${s.stuck} 筆 STUCK（簽出超過 ${Math.round(STUCK_AFTER_MS / 60000)} 分鐘仍無 receipt），交人工處理。`);
+    process.exit(1);
+  }
 
-  if (available === 0) {
+  if (s.available === 0) {
     console.log("佇列淨空，這次沒有要處理的項目。");
     return;
   }
 
-  if (failed > 0) {
-    const pct = Math.round((failed / available) * 100);
+  if (s.failed > 0) {
+    const pct = Math.round((s.failed / s.available) * 100);
     console.log(`失敗率 ${pct}%（門檻 ${MAX_FAIL_PCT}%）`);
     if (pct > MAX_FAIL_PCT) {
       console.error(
-        `::error::${available} 筆中有 ${failed} 筆失敗（${pct}% > ${MAX_FAIL_PCT}%），不要當成成功。`,
+        `::error::${s.available} 筆中有 ${s.failed} 筆失敗（${pct}% > ${MAX_FAIL_PCT}%），不要當成成功。`,
       );
       process.exit(1);
     }
@@ -244,8 +466,7 @@ async function main(): Promise<void> {
 }
 
 // 只有直接跑這支腳本（`npx tsx signal-api/src/settlement-worker.ts`）才自動執行
-// main()；被 import 時不執行（settlement-worker.test.ts 要 import processOne，
-// 不能一 import 就因為測試環境沒有 signer/佇列而 process.exit(1)）。
+// main()；被 import 時不執行（測試要 import processOne / runWorker）。
 const isMain = !!process.argv[1] && fileURLToPath(import.meta.url) === resolvePath(process.argv[1]);
 if (isMain) {
   await main();
