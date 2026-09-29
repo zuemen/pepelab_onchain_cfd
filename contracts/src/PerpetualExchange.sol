@@ -408,15 +408,34 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     // Together these bound the exchange's worst-case liability to the open
     // book, which is what a pool-backed venue has to size its reserves
     // against (GMX v2 reserve factor / max OI; Avantis & Veranta max profit):
-    //   Σ_open profit cap = Σ margin × maxProfitBps ≤ (longOI + shortOI) × maxProfitBps
-    //                     ≤ (maxLongOI + maxShortOI) × maxProfitBps
-    // (margin ≤ notional because leverage ≥ 1). All default to 0 = off.
+    //   Σ_open profit cap = Σ margin × maxProfitBps ≤ Σ entry notional × maxProfitBps
+    // (margin ≤ notional because leverage ≥ 1), and each side's entry notional
+    // is held under its OI cap at the price of every open. At a steady price
+    // the book's worst case is therefore ≈ (maxLongOI + maxShortOI) ×
+    // maxProfitBps; after a price fall more entry notional fits under the same
+    // cap, so reserves are sized with that in mind. All default to 0 = off.
 
     /// @notice Per-asset ceiling on long / short open interest, in 18-decimal
-    ///         USDC notional (margin × leverage at open — the same unit as
-    ///         `globalLongNotional` / `globalShortNotional`). 0 = unlimited.
+    ///         USDC valued at the CURRENT index price: Σ open size × price,
+    ///         not the notional booked at entry. Entry notional understates
+    ///         exposure after a rally (price ×3 → real exposure 3× the cap),
+    ///         so the check re-prices the whole side on every open. 0 = no cap.
+    ///         Checked on opens only: a price move can lift a side above its
+    ///         cap without forcing anyone out; it only refuses new exposure.
+    ///         Griefing: anyone can fill both sides up to the caps with a
+    ///         hedged pair, paying 2× the trading fee plus borrow fees and
+    ///         funding while it sits there. Caps are therefore sized with
+    ///         headroom and watched, not set at the edge of what the pool can
+    ///         bear.
     mapping(bytes32 => uint256) public maxLongOI;
     mapping(bytes32 => uint256) public maxShortOI;
+
+    /// @notice Σ size (base units, 18-dec) of open longs / shorts per asset,
+    ///         size = margin × leverage × 1e18 / entryPrice — the same size
+    ///         `_calcPnL` uses. Added at open and subtracted with the SAME
+    ///         formula on close, liquidation and ADL, so it cannot drift.
+    mapping(bytes32 => uint256) public longOpenSize;
+    mapping(bytes32 => uint256) public shortOpenSize;
 
     /// @notice Per-asset maximum profit a single position may realize, in bps
     ///         of its margin (e.g. 50_000 = 5x margin). 0 = no cap.
@@ -1183,6 +1202,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         } else {
             globalShortNotional[pos.asset] -= notional;
         }
+        _removeOpenSize(pos);
         // C-3 / H-1: drop the id from the owner's list now. The per-asset ADL
         // index is compacted AFTER _autoDeleverage so the scan still sees this
         // slot and keeps its insertion-order victim selection.
@@ -1385,6 +1405,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
             } else {
                 globalShortNotional[asset] -= cnotional;
             }
+            _removeOpenSize(cp);
 
             freeMargin[cp.owner] += uint256(payout);
 
@@ -1850,7 +1871,6 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         uint256 tradingFee = notional * tradingFeeBps / 10000;
 
         if (freeMargin[owner] < margin + tradingFee)   revert InsufficientFreeMargin();
-        _checkOpenInterestCap(asset, isLong, notional);
 
         // C-1: entry is booked at the MARK price the book shows *before* this
         // position exists — not the raw index. Together with `_calcPnL` excluding
@@ -1860,7 +1880,9 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         // opening and immediately closing a one-sided position minted free money
         // (1% premium against 0.2% round-trip fees). OI is incremented below, so
         // `_markPrice` here is by construction "excluding self".
-        uint256 entryPrice = _markPrice(asset, _freshPrice(asset));
+        uint256 indexPrice = _freshPrice(asset);
+        uint256 entryPrice = _markPrice(asset, indexPrice);
+        _addOpenSize(asset, isLong, notional * 1e18 / entryPrice, indexPrice);
 
         freeMargin[owner] -= (margin + tradingFee);
 
@@ -1985,6 +2007,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         } else {
             globalShortNotional[pos.asset] -= notional;
         }
+        _removeOpenSize(pos);
         // C-3 / H-1: compact both indices (asset index last, as in liquidation).
         _removeUserPosition(pos.owner, positionId);
 
@@ -2025,12 +2048,34 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         return borrowed * uint256(pos.borrowFeeBpsPerHour) * (active / 3600) / 10000;
     }
 
-    /// @dev P1: refuse an open that would lift this side's OI above its cap.
-    function _checkOpenInterestCap(bytes32 asset, bool isLong, uint256 notional) internal view {
+    /// @dev P1: book a new position's size, refusing it if this side's open
+    ///      interest valued at the current index price would exceed its cap.
+    function _addOpenSize(bytes32 asset, bool isLong, uint256 size, uint256 indexPrice) internal {
+        uint256 sideSize = (isLong ? longOpenSize[asset] : shortOpenSize[asset]) + size;
         uint256 cap = isLong ? maxLongOI[asset] : maxShortOI[asset];
-        if (cap == 0) return;
-        uint256 resulting = (isLong ? globalLongNotional[asset] : globalShortNotional[asset]) + notional;
-        if (resulting > cap) revert OpenInterestCapExceeded(asset, isLong, resulting, cap);
+        if (cap != 0) {
+            uint256 resulting = sideSize * indexPrice / 1e18;
+            if (resulting > cap) revert OpenInterestCapExceeded(asset, isLong, resulting, cap);
+        }
+        if (isLong) longOpenSize[asset] = sideSize;
+        else        shortOpenSize[asset] = sideSize;
+    }
+
+    /// @dev Subtracts exactly what `_addOpenSize` added for this position.
+    function _removeOpenSize(Position storage pos) internal {
+        uint256 size = pos.margin * pos.leverage * 1e18 / pos.entryPrice;
+        if (pos.isLong) longOpenSize[pos.asset]  -= size;
+        else            shortOpenSize[pos.asset] -= size;
+    }
+
+    /// @notice Open interest of `asset` valued at the current oracle index
+    ///         price — the quantity `maxLongOI` / `maxShortOI` bound at open.
+    ///         Returns zeros while the feed reports a zero price.
+    function openInterestValue(bytes32 asset) external view returns (uint256 longValue, uint256 shortValue) {
+        (uint256 rawPrice,) = oracle.getPrice(asset);
+        uint256 price = rawPrice * 1e10;
+        longValue  = longOpenSize[asset]  * price / 1e18;
+        shortValue = shortOpenSize[asset] * price / 1e18;
     }
 
     /// @dev P1: mark-to-market PnL clamped to the position's frozen profit

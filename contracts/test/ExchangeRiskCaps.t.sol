@@ -350,4 +350,62 @@ contract ExchangeRiskCapsTest is Test {
         oracle.updatePrice(BTC, 300_000e8); // raw +1,000 on 500 margin
         assertEq(exchange.getUnrealizedPnL(id), 500e18);
     }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // OI caps are valued at the current price, not at entry notional
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /// After BTC triples, 5,000 of entry notional is 15,000 of exposure: a
+    /// 10,000 cap refuses any further long even though entry notional is
+    /// only half of it.
+    function test_oiCap_valuedAtCurrentPrice_rallyBlocksNewExposure() public {
+        exchange.setMaxOpenInterest(BTC, 10_000e18, 0);
+        _open(user, BTC, true, 1_000e18, 5);         // size 0.05 BTC
+        oracle.updatePrice(BTC, 300_000e8);
+        (uint256 longValue, ) = exchange.openInterestValue(BTC);
+        assertEq(longValue, 15_000e18);
+
+        // 10 × 1 at 300k = 0.0000333.. BTC; side = 0.0500333.. BTC → 15,010
+        uint256 price = 300_000e18;
+        uint256 size = uint256(10e18) * 1e18 / price;
+        uint256 resulting = (5e16 + size) * price / 1e18;
+        vm.prank(user);
+        vm.expectRevert(_oiError(BTC, true, resulting, 10_000e18));
+        exchange.openPosition(BTC, true, 10e18, 1);
+    }
+
+    /// After a fall, the same cap admits more entry notional.
+    function test_oiCap_valuedAtCurrentPrice_fallFreesCapacity() public {
+        exchange.setMaxOpenInterest(BTC, 10_000e18, 0);
+        _open(user, BTC, true, 2_000e18, 5);          // 10,000 at 100k: full
+        vm.prank(user);
+        vm.expectRevert(_oiError(BTC, true, 10_050e18, 10_000e18));
+        exchange.openPosition(BTC, true, 10e18, 5);
+
+        oracle.updatePrice(BTC, 50_000e8);            // book now worth 5,000
+        _open(other, BTC, true, 1_000e18, 5);         // +5,000 → 10,000
+        (uint256 longValue, ) = exchange.openInterestValue(BTC);
+        assertEq(longValue, 10_000e18);
+    }
+
+    /// Size is removed with the same formula it was added with, on every
+    /// settlement path, so the per-side totals return to exactly zero.
+    function test_openSize_noDriftAcrossCloseLiquidationAndAdl() public {
+        exchange.setAdlEnabled(true);
+        uint256 a = _open(user, BTC, true, 777e18, 3);
+        uint256 b = _open(other, BTC, false, 333e18, 5);
+        uint256 c = _open(user, BTC, true, 1_000e18, 5);
+        assertGt(exchange.longOpenSize(BTC), 0);
+
+        vm.prank(user);
+        exchange.closePosition(a);                    // close
+        oracle.updatePrice(BTC, 70_000e8);            // c: -1,500 on 1,000
+        exchange.liquidatePosition(c);                // liquidation + ADL of b
+        assertFalse(exchange.getPosition(b).isOpen);
+
+        assertEq(exchange.longOpenSize(BTC), 0);
+        assertEq(exchange.shortOpenSize(BTC), 0);
+        assertEq(exchange.globalLongNotional(BTC), 0);
+        assertEq(exchange.globalShortNotional(BTC), 0);
+    }
 }

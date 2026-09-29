@@ -33,6 +33,11 @@ contract ExchangeCapsHandler is Test {
     /// closed) — never read from the exchange's own OI counters.
     uint256 public ghostLongOI;
     uint256 public ghostShortOI;
+    uint256 public ghostLongSize;
+    uint256 public ghostShortSize;
+    /// Successful opens after which the side's OI, valued at the index,
+    /// exceeded its cap (must stay 0).
+    uint256 public ghostOpensAboveCap;
     uint256 public ghostOpenCaps;
     /// Positions whose frozen cap did not equal margin × maxProfitBps at open.
     uint256 public ghostCapMismatches;
@@ -68,9 +73,14 @@ contract ExchangeCapsHandler is Test {
         if (exchange.freeMargin(who) < margin * 2) return; // margin + fee, generously
 
         // Predict the OI cap independently and require the exact revert.
+        // OI is capped on size × current index price; the new position's size
+        // is booked at the mark the book shows before it opens.
         uint256 notional  = margin * leverage;
+        uint256 size      = notional * 1e18 / exchange.getMarkPrice(asset);
+        (uint256 raw,)    = oracle.getPrice(asset);
+        uint256 index     = raw * 1e10;
         uint256 cap       = isLong ? exchange.maxLongOI(asset) : exchange.maxShortOI(asset);
-        uint256 resulting = (isLong ? ghostLongOI : ghostShortOI) + notional;
+        uint256 resulting = ((isLong ? ghostLongSize : ghostShortSize) + size) * index / 1e18;
         if (cap != 0 && resulting > cap) {
             vm.prank(who);
             vm.expectRevert(abi.encodeWithSelector(
@@ -86,7 +96,10 @@ contract ExchangeCapsHandler is Test {
             allIds.push(id);
             openIds.push(id);
             ++opens;
-            if (isLong) ghostLongOI += notional; else ghostShortOI += notional;
+            if (isLong) { ghostLongOI += notional; ghostLongSize += size; }
+            else        { ghostShortOI += notional; ghostShortSize += size; }
+            (uint256 lv, uint256 sv) = exchange.openInterestValue(asset);
+            if (cap != 0 && (isLong ? lv : sv) > cap) ++ghostOpensAboveCap;
             uint256 profitCap = exchange.profitCapOf(id);
             ghostOpenCaps += profitCap;
             if (profitCap != margin * profitBps / 10_000) ++ghostCapMismatches;
@@ -138,8 +151,9 @@ contract ExchangeCapsHandler is Test {
             if (p.realizedPnL == SafeCast.toInt256(cap)) ++settledAtCap;
             if (id != _lastTarget) ++settledByAdl;
             ghostOpenCaps    -= cap;
-            if (p.isLong) ghostLongOI -= p.margin * p.leverage;
-            else          ghostShortOI -= p.margin * p.leverage;
+            uint256 psize = p.margin * p.leverage * 1e18 / p.entryPrice;
+            if (p.isLong) { ghostLongOI -= p.margin * p.leverage; ghostLongSize -= psize; }
+            else          { ghostShortOI -= p.margin * p.leverage; ghostShortSize -= psize; }
             openIds[i] = openIds[openIds.length - 1];
             openIds.pop();
         }
@@ -197,14 +211,15 @@ contract ExchangeRiskCapsInvariantTest is Test {
         targetContract(address(handler));
     }
 
-    // ── 1. OI never exceeds its cap ─────────────────────────────────────────
+    // ── 1. No open ever leaves its side above the cap ───────────────────────
+    //
+    // The cap is on size × current index price and is enforced at open: a
+    // later price move may lift a side above it (that refuses new exposure,
+    // it does not force anyone out), so the property is checked right after
+    // every successful open rather than as a standing state predicate.
 
-    function invariant_longOpenInterestWithinCap() public view {
-        assertLe(exchange.globalLongNotional(BTC), MAX_LONG_OI);
-    }
-
-    function invariant_shortOpenInterestWithinCap() public view {
-        assertLe(exchange.globalShortNotional(BTC), MAX_SHORT_OI);
+    function invariant_opensNeverLeaveSideAboveCap() public view {
+        assertEq(handler.ghostOpensAboveCap(), 0);
     }
 
     // ── 2. OI accounting equals the sum of open positions ───────────────────
@@ -217,6 +232,8 @@ contract ExchangeRiskCapsInvariantTest is Test {
         assertEq(exchange.globalLongNotional(BTC), handler.ghostLongOI(), "long OI != sum of open longs");
         assertEq(exchange.globalShortNotional(BTC), handler.ghostShortOI(), "short OI != sum of open shorts");
         assertEq(exchange.openPositionCountFor(BTC), handler.openCount(), "ADL index != open positions");
+        assertEq(exchange.longOpenSize(BTC), handler.ghostLongSize(), "long size != sum of open longs");
+        assertEq(exchange.shortOpenSize(BTC), handler.ghostShortSize(), "short size != sum of open shorts");
     }
 
     // ── 3. Solvency: the pool can lose at most the settled positions' caps ──
@@ -245,8 +262,9 @@ contract ExchangeRiskCapsInvariantTest is Test {
     // WHAT IT DOES NOT PROVE:
     //   • that B ≥ C at all times — a long enough run of capped winners can
     //     still exhaust any finite reserve; that is market risk, sized by the
-    //     operator using the OI caps (worst case of the open book is
-    //     (maxLongOI + maxShortOI) × maxProfitBps);
+    //     operator using the OI caps (at a given price level the open book's
+    //     worst case is about (maxLongOI + maxShortOI) × maxProfitBps / price
+    //     move; after a fall, more entry notional fits under the same cap);
     //   • anything about funding: time is frozen, so no funding accrues. A
     //     funding RECEIVER is paid margin + pnl + receipt, which can exceed
     //     margin + cap; including funding needs an extra receipt term;
@@ -260,15 +278,6 @@ contract ExchangeRiskCapsInvariantTest is Test {
         }
         // B − C ≥ R − G, rearranged so every term stays unsigned: B + G ≥ C + R.
         assertGe(b + handler.ghostSettledCaps(), c + RESERVE);
-    }
-
-    // ── 4. Worst-case open-book liability is bounded by the two caps ────────
-    //
-    // Σ_open profitCapOf ≤ (maxLongOI + maxShortOI) × maxProfitBps / 10_000,
-    // because cap = margin × bps and margin ≤ notional. This is the number an
-    // operator sizes the reserve against; checked directly on real positions.
-    function invariant_openBookProfitCapsBoundedByOICaps() public view {
-        assertLe(handler.ghostOpenCaps(), (MAX_LONG_OI + MAX_SHORT_OI) * PROFIT_BPS / 10_000);
     }
 
     /// Every position in the run was opened with cap = margin × maxProfitBps
