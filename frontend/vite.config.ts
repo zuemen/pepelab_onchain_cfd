@@ -1,16 +1,18 @@
+import fs from 'fs';
 import path from 'path';
 import checker from 'vite-plugin-checker';
 import { loadEnv, defineConfig } from 'vite';
 import react from '@vitejs/plugin-react-swc';
 
 import { readFlag } from './src/lib/pepefi/flagParse';
+import { checkSignalApiUrl } from './src/lib/pepefi/cspConnect';
 import { LOCALES, pickLocale } from './src/locales/catalogs';
 
 // ----------------------------------------------------------------------
 
 const PORT = 8081;
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
   // 這個 build 出貨的語言。VITE_LOCALE 可能來自 shell / Vercel 的環境變數，也可能來自
   // .env* 檔案，兩邊都要看：app 讀的是 import.meta.env（Vite 會把兩種來源都注入），
   // 如果這裡只看 process.env，一個寫在 .env.local 的 VITE_LOCALE 就會讓 index.html 的
@@ -27,6 +29,15 @@ export default defineConfig(({ mode }) => {
   const envOf = (key: string): string | undefined => process.env[key] ?? fileEnv[key];
   const copyTrading = readFlag(envOf('VITE_FEATURE_COPY_TRADING'), false);
   const metaDescription = copyTrading ? catalog.meta.description : catalog.meta.descriptionNoCopy;
+
+  // 正式 build：可覆寫的 signal-api 網址必須在 vercel.json 的 CSP connect-src 裡，
+  // 否則瀏覽器會擋掉所有請求而 build／部署仍是綠的。對不上就讓 build 失敗。
+  // dev server 不檢查——本機常打 http://localhost:4021，而 dev 的 CSP 在下面 server.headers。
+  if (command === 'build') {
+    const vercel = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), 'vercel.json'), 'utf8'));
+    const problem = checkSignalApiUrl(envOf('VITE_SIGNAL_API_URL'), vercel);
+    if (problem) throw new Error(`\n[pepefi-csp] ${problem}\n`);
+  }
 
   return {
     plugins: [

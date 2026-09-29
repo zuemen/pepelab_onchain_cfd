@@ -386,6 +386,7 @@ export const admin = {
     revenue: {
       title: 'x402 收益（70/20/10）',
       urlLabel: 'signal-api URL',
+      cspNote: '受 CSP 限制，只能連到白名單網域（vercel.json 的 connect-src）；填其他網址會被瀏覽器擋下。',
       fetch: '讀取',
       failed: '無法連到 signal-api（{error}）。請先 npm run signal-api。',
       callsTotal: '呼叫次數 / 總計',
