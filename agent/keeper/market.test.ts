@@ -6,6 +6,7 @@ import {
   calendarOpen,
   extractMarketSession,
   judgeStaleness,
+  lastScheduledClose,
   marketOpen,
   MAX_CLOSED_AGE_SEC,
   type MarketSession,
@@ -114,6 +115,50 @@ assert.equal(
   judgeStaleness({ symbol: "sGOLD", updatedAtSec: utc(2026, 10, 2, 21, 0), nowSec: SAT_NOON, maxAgeSec: MAX_AGE }).stale,
   false,
 );
+
+// ── fail-closed（審查 Medium 3） ────────────────────────────────────────────
+// 行事曆後備：用「上一次排定收盤」判斷，不再直接容忍 4 天。
+{
+  const v = judgeStaleness({
+    symbol: "sAAPL", updatedAtSec: utc(2026, 10, 2, 20, 10), nowSec: SAT_NOON, maxAgeSec: MAX_AGE, session: null,
+  });
+  assert.equal(v.tolerated, true);
+  assert.equal(v.viaFallback, true, "只靠後備的放寬必須標記");
+}
+assert.equal(
+  judgeStaleness({ symbol: "sAAPL", updatedAtSec: utc(2026, 10, 2, 12, 0), nowSec: SAT_NOON, maxAgeSec: MAX_AGE }).stale,
+  true,
+  "後備：週五收盤前 8h 就停更 → 過期",
+);
+assert.equal(
+  judgeStaleness({ symbol: "sAAPL", updatedAtSec: utc(2026, 9, 30, 20, 0), nowSec: SAT_NOON, maxAgeSec: MAX_AGE }).stale,
+  true,
+  "後備：週三之後就沒更新（< 4 天）→ 仍要告警，不能直接容忍",
+);
+// Yahoo 說休市（例如 Yahoo 回的是前一天的時段）、行事曆說開盤 → 當開盤，嚴格。
+{
+  const MON: MarketSession = {
+    regularStart: utc(2026, 9, 28, 13, 30), regularEnd: utc(2026, 9, 28, 20, 0), regularMarketTime: utc(2026, 9, 28, 20, 0),
+  };
+  const v = judgeStaleness({
+    symbol: "sAAPL", updatedAtSec: TUE_MIDDAY - 6 * H, nowSec: TUE_MIDDAY, maxAgeSec: MAX_AGE, session: MON,
+  });
+  assert.equal(v.stale, true, v.reason);
+  assert.equal(marketOpen("sAAPL", TUE_MIDDAY, MON), true);
+}
+// 有 Yahoo 時段的放寬不標記 viaFallback。
+assert.ok(
+  !judgeStaleness({ symbol: "sAAPL", updatedAtSec: utc(2026, 10, 2, 20, 10), nowSec: SAT_NOON, maxAgeSec: MAX_AGE, session: FRI })
+    .viaFallback,
+);
+// 上一次排定收盤（含 DST／EST）。
+assert.equal(lastScheduledClose("equity", SAT_NOON), utc(2026, 10, 2, 20, 0));
+assert.equal(lastScheduledClose("equity", TUE_MIDDAY), utc(2026, 9, 28, 20, 0), "盤中 → 前一個交易日收盤");
+assert.equal(lastScheduledClose("equity", utc(2026, 9, 29, 21, 0)), utc(2026, 9, 29, 20, 0));
+assert.equal(lastScheduledClose("equity", utc(2026, 12, 1, 22, 0)), utc(2026, 12, 1, 21, 0), "EST 16:00 = 21:00 UTC");
+assert.equal(lastScheduledClose("equity", utc(2026, 10, 5, 10, 0)), utc(2026, 10, 2, 20, 0), "週一盤前 → 上週五");
+assert.equal(lastScheduledClose("future", SAT_NOON), utc(2026, 10, 2, 21, 0));
+assert.equal(lastScheduledClose("crypto", SAT_NOON), null);
 
 // ── 行事曆後備 ───────────────────────────────────────────────────────────
 assert.equal(calendarOpen("equity", TUE_MIDDAY), true);

@@ -92,6 +92,15 @@ const ok: HealthReport = { ...base, status: "ok", stale: [] };
   assert.ok(d.reason.includes("#7"));
 }
 assert.equal(decideAlert({ report: ok, open: null, nowSec: NOW }).action, "none");
+// 只靠行事曆後備被放寬的資產 → 不自動關閉（審查 Medium 3）。
+assert.equal(
+  decideAlert({
+    report: { ...ok, fallbackTolerated: ["sAAPL(19.0h)"] },
+    open: { number: 7, lastSignature: "sAAPL", lastUpdatedSec: 0 },
+    nowSec: NOW,
+  }).action,
+  "none",
+);
 
 // ── 健檢本身失敗（RPC／secret）→ 不開、不關，避免把兩種事故混在一起 ─────────
 const err: HealthReport = { ...base, status: "error", stale: [], error: "could not detect network" };

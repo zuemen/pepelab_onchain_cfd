@@ -21,6 +21,8 @@ export interface HealthReport {
   closed?: string[];
   /** RPC 讀不到的資產 —— 不算過期，但也不能證明已恢復，所以會擋住自動關閉。 */
   unreadable?: string[];
+  /** 只靠行事曆後備（沒有 Yahoo 時段）被放寬的資產 —— 同樣擋住自動關閉。 */
+  fallbackTolerated?: string[];
   /** 每個資產一行的人類可讀輸出。 */
   lines: string[];
   error?: string;
@@ -80,6 +82,13 @@ export function decideAlert(a: {
       return {
         action: "none",
         reason: `仍有資產讀不到（${report.unreadable.join(", ")}），無法確認恢復，不關閉 #${open.number}`,
+      };
+    }
+    // 只靠行事曆後備判「休市」的資產：Yahoo 拿不到，無法確認真的休市，不據此關閉。
+    if (report.fallbackTolerated?.length) {
+      return {
+        action: "none",
+        reason: `${report.fallbackTolerated.join(", ")} 僅靠行事曆後備判為休市，無法確認恢復，不關閉 #${open.number}`,
       };
     }
     return { action: "close", reason: `全部資產恢復，關閉 #${open.number}` };

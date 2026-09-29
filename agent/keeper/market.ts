@@ -92,17 +92,57 @@ export function calendarOpen(cls: AssetClass, nowSec: number): boolean {
   return min < 17 * 60 || min >= 18 * 60;
 }
 
-/** 資產此刻是否在交易時段內。session 優先，拿不到才用行事曆。 */
+/**
+ * 健檢用的「是否在交易時段內」—— fail-closed（審查 Medium 3）：Yahoo 與行事曆
+ * **任一**說開盤就當開盤（嚴格判斷）。只有兩者都說休市（或沒有 Yahoo、行事曆說休市）
+ * 才放寬。代價是美股假日會被當成開盤而告警；那是可以接受的誤報，漏報不行。
+ */
 export function marketOpen(symbol: string, nowSec: number, session?: MarketSession | null): boolean {
   const cls = assetClassOf(symbol);
   if (cls === "crypto") return true;
-  return session ? isSessionOpen(session, nowSec) : calendarOpen(cls, nowSec);
+  if (calendarOpen(cls, nowSec)) return true;
+  return session ? isSessionOpen(session, nowSec) : false;
+}
+
+/** 某個 UTC 時刻在 America/New_York 的 UTC 偏移（秒，EDT = −14400）。 */
+function nyOffsetSec(tSec: number): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+  }).formatToParts(new Date(tSec * 1000));
+  const g = (t: string) => Number(parts.find((p) => p.type === t)?.value);
+  const wall = Date.UTC(g("year"), g("month") - 1, g("day"), g("hour"), g("minute"), g("second")) / 1000;
+  return wall - tSec;
+}
+
+/**
+ * 行事曆上「最近一次排定收盤」的 UTC 時間（≤ nowSec）。不含假日。
+ *   equity — 週一至週五 16:00 ET
+ *   future — 週一至週五 17:00 ET（週一至週四是每日休息的開始，週五是週末休市的開始）
+ */
+export function lastScheduledClose(cls: AssetClass, nowSec: number): number | null {
+  if (cls === "crypto") return null;
+  const closeMin = cls === "equity" ? 16 * 60 : 17 * 60;
+  for (let k = 0; k <= 8; k++) {
+    const t = nowSec - k * 86_400;
+    const off = nyOffsetSec(t);
+    const local = new Date((t + off) * 1000); // 以 UTC 欄位表示 NY 牆上時間
+    const dow = local.getUTCDay();
+    if (dow === 0 || dow === 6) continue;
+    const wallClose = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate()) / 1000 + closeMin * 60;
+    const close = wallClose - nyOffsetSec(wallClose - off);
+    if (close <= nowSec) return close;
+  }
+  return null;
 }
 
 export interface StaleVerdict {
   stale: boolean;
   /** 休市中、依市場時段放寬而沒有告警（照一般門檻其實已超齡）。 */
   tolerated: boolean;
+  /** 放寬只靠行事曆後備（沒有 Yahoo 時段）—— 告警端不據此自動關閉 issue。 */
+  viaFallback?: boolean;
   reason: string;
 }
 
@@ -114,7 +154,9 @@ export interface StaleVerdict {
  *   休市中，有 Yahoo 時段 → 看「鏈上價格落後最後一筆正規盤成交多久」：
  *                          regularMarketTime − updatedAt > maxAge 才算過期
  *                          （keeper 在收盤前就掛了）；休市期間沒有新成交，不更新是合理的。
- *   休市中，只有行事曆   → 放寬到 MAX_CLOSED_AGE_SEC（沒有最後成交時間可比）。
+ *   休市中，只有行事曆   → 用行事曆算出的「上一次排定收盤」代替最後成交時間：
+ *                          lastClose − updatedAt > maxAge 才算過期；並標記 viaFallback。
+ *   「休市」必須 Yahoo 與行事曆都同意（見 marketOpen），任一說開盤就嚴格判斷。
  *   任何情況下 age > MAX_CLOSED_AGE_SEC 都算過期：休市不會超過 4 天，
  *   超過代表來源凍結或 ticker 下市，不能無限期以「休市」為由靜默。
  */
@@ -150,5 +192,22 @@ export function judgeStaleness(a: {
     }
     return { stale: false, tolerated: true, reason: `休市（最後成交後未再更新屬正常），age ${h(age)}` };
   }
-  return { stale: false, tolerated: true, reason: `休市（行事曆後備），age ${h(age)} ≤ ${h(MAX_CLOSED_AGE_SEC)}` };
+  const lastClose = lastScheduledClose(cls, a.nowSec);
+  if (lastClose === null) {
+    return { stale: true, tolerated: false, reason: `休市但算不出上一次收盤，age ${h(age)} > ${h(a.maxAgeSec)}` };
+  }
+  const lag = lastClose - a.updatedAtSec;
+  if (lag > a.maxAgeSec) {
+    return {
+      stale: true,
+      tolerated: false,
+      reason: `休市（行事曆後備），但鏈上價格落後上一次排定收盤 ${h(lag)} > ${h(a.maxAgeSec)}`,
+    };
+  }
+  return {
+    stale: false,
+    tolerated: true,
+    viaFallback: true,
+    reason: `休市（行事曆後備，無 Yahoo 時段），收盤前已更新，age ${h(age)}`,
+  };
 }

@@ -29,6 +29,7 @@ export function isMajorityUnreadable(unreadable: number, total: number): boolean
 export async function checkHealth(d: HealthDeps): Promise<HealthReport> {
   const stale: string[] = [];
   const closed: string[] = [];
+  const fallbackTolerated: string[] = [];
   const unreadable: string[] = [];
   const lines: string[] = [];
   const log = (line: string) => {
@@ -55,6 +56,7 @@ export async function checkHealth(d: HealthDeps): Promise<HealthReport> {
     const tag = `${symbol}(${(age / 3600).toFixed(1)}h)`;
     if (v.stale) stale.push(tag);
     if (v.tolerated) closed.push(tag);
+    if (v.tolerated && v.viaFallback) fallbackTolerated.push(tag);
     log(
       `${v.stale ? "STALE" : v.tolerated ? "closd" : "  ok "} ${symbol.padEnd(6)} ` +
         `$${(Number(price) / 1e8).toFixed(2).padStart(10)} age=${(age / 3600).toFixed(1)}h` +
@@ -68,6 +70,7 @@ export async function checkHealth(d: HealthDeps): Promise<HealthReport> {
     maxAgeSec: d.maxAgeSec,
     stale,
     closed,
+    fallbackTolerated,
     unreadable,
     lines,
   };
