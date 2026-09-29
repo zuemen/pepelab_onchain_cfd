@@ -43,6 +43,7 @@ type MedianTuple = [bigint, bigint, bigint, bigint, boolean]
 // revert、ESG 頁雷達圖永遠「No data」。這裡對同一個位址補讀 medianESG。
 const MEDIAN_ESG_ABI = [
   'function medianESG(bytes32) view returns (uint8 environmental, uint8 social, uint8 governance, uint256 count, bool isRated)',
+  'function maxAttestationAge() view returns (uint256)',
 ]
 
 /** V2 沒有存評等字串，由綜合分推導——門檻與 ESGPage 的 RATING_TABLE 一致。 */
@@ -91,23 +92,46 @@ export function useESG(esgRegistry: Contract | null): UseESGResult {
 
     const v2 = new Contract(esgRegistry.target, MEDIAN_ESG_ABI, esgRegistry.runner)
 
-    const readOne = async (id: string): Promise<ESGTuple | null> => {
-      const v1 = await safeRead<ESGTuple | null>(esgRegistry.getESG(id) as Promise<ESGTuple>, null)
-      if (v1) return v1
+    // 先用 V2 才有的 maxAttestationAge() 判斷一次合約版本，之後每檔只打對的那個
+    // 函式。舊版每檔先打一次注定 revert 的 getESG 再補 medianESG，11 檔變 22 筆
+    // 同時經 MetaMask 的 RPC 送出，排在後面的幾檔會被限流、整頁永遠缺那幾格。
+    const readV1 = async (id: string): Promise<ESGTuple | 'failed'> =>
+      (await safeRead<ESGTuple | null>(esgRegistry.getESG(id) as Promise<ESGTuple>, null)) ?? 'failed'
+
+    // null = 讀到了、但沒有新鮮見證（未評等）；'failed' = 讀取本身失敗，值得重試。
+    const readV2 = async (id: string): Promise<ESGTuple | null | 'failed'> => {
       const m = await safeRead<MedianTuple | null>(v2.medianESG(id) as Promise<MedianTuple>, null)
-      if (!m || !m[4]) return null // V2 上也沒有新鮮的見證 → 視為未評等
+      if (!m) return 'failed'
+      if (!m[4]) return null
       const [environmental, social, governance] = m
       const composite = Math.round((Number(environmental) + Number(social) + Number(governance)) / 3)
       return { environmental, social, governance, rating: ratingFor(composite) }
     }
 
     void (async () => {
-      const rows = await Promise.all(ASSETS.map(async id => ({ id, d: await readOne(id) })))
+      const probe = await safeRead<bigint | null>(v2.maxAttestationAge() as Promise<bigint>, null)
+      const isV2 = probe !== null
+      const readOne = async (id: string) => {
+        if (isV2) return readV2(id)
+        const d = await readV1(id)
+        // 探測本身失敗時不確定版本，V1 讀不到就再試 V2。
+        return d === 'failed' ? readV2(id) : d
+      }
+
+      const results = new Map<string, ESGTuple | null | 'failed'>()
+      let pending = ASSETS
+      for (const delayMs of [0, 800, 2000]) {
+        if (pending.length === 0 || cancelled) break
+        if (delayMs) await new Promise(r => setTimeout(r, delayMs))
+        const round = await Promise.all(pending.map(async id => ({ id, d: await readOne(id) })))
+        for (const { id, d } of round) results.set(id, d)
+        pending = round.filter(r => r.d === 'failed').map(r => r.id)
+      }
       if (cancelled) return
 
       const out: Record<string, ESGInfo> = {}
-      for (const { id, d } of rows) {
-        if (!d) continue // 這檔沒有評級，或該筆讀取失敗
+      for (const [id, d] of results) {
+        if (!d || d === 'failed') continue // 這檔沒有評級，或重試後仍讀取失敗
         const e = Number(d.environmental)
         const s = Number(d.social)
         const g = Number(d.governance)
