@@ -230,25 +230,75 @@ export async function acquireWorkerLock(token: string, ttlSec = WORKER_LOCK_TTL_
   return r === "OK";
 }
 
-/** 只有鎖的值等於自己的 token 才刪（先 GET 比對再 DEL）。 */
+/** 原子的「值等於 token 才刪」（Lua，Upstash REST 支援 EVAL）。 */
+export const RELEASE_LOCK_SCRIPT =
+  "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end";
+
+/** 只有鎖的值等於自己的 token 才刪（EVAL 原子比對，不會刪到別人剛取得的鎖）。 */
 export async function releaseWorkerLock(token: string): Promise<boolean> {
-  const cur = await command<string | null>(["GET", WORKER_LOCK_KEY]);
-  if (cur !== token) return false;
-  await command(["DEL", WORKER_LOCK_KEY]);
-  return true;
+  const r = await command<number>(["EVAL", RELEASE_LOCK_SCRIPT, 1, WORKER_LOCK_KEY, token]);
+  return Number(r) === 1;
 }
 
-// ── nonce 不一致（blocked）持續時間 ─────────────────────────────────────────────
+// ── 全域停機旗標（STUCK 之後交人工）────────────────────────────────────────────
+
+/**
+ * 任何一筆轉 STUCK 就設這個旗標（**不設 TTL**）：之後每一輪都拒跑，直到人工確認原交易的
+ * 最終狀態並手動 DEL。值是 JSON：{ reason, txHash, nonce, key, at }。
+ */
+export const HALT_KEY = "x402:settlement:halt";
+
+export interface HaltInfo {
+  reason: string;
+  key: string;
+  txHash?: string;
+  nonce?: number;
+  at: string;
+}
+
+/** 設定停機旗標（已存在就保留第一個原因）。 */
+export async function setHalt(info: HaltInfo): Promise<void> {
+  await command(["SET", HALT_KEY, JSON.stringify(info), "NX"]);
+}
+
+export async function getHalt(): Promise<HaltInfo | null> {
+  const v = await command<string | null>(["GET", HALT_KEY]);
+  if (!v) return null;
+  try {
+    return JSON.parse(v) as HaltInfo;
+  } catch {
+    return { reason: v, key: "?", at: "?" };
+  }
+}
+
+/** 只讀：讀一個字串鍵（--dry-run 用）。 */
+export async function readString(key: string): Promise<string | null> {
+  return command<string | null>(["GET", key]);
+}
+
+/** 只讀：看佇列前 n 筆（--dry-run 用）。 */
+export async function peekQueue(key: string, n: number): Promise<string[]> {
+  return (await command<string[] | null>(["LRANGE", key, 0, Math.max(0, n - 1)])) ?? [];
+}
+
+// ── 持續狀態計時（blocked / trader 檢查 no-data）────────────────────────────────
 
 export const BLOCKED_SINCE_KEY = "x402:settlement:blocked_since";
+export const NODATA_SINCE_KEY = "x402:settlement:nodata_since";
+/** 計時紀錄的 TTL：每次看到都刷新；超過這麼久沒再看到就自然消失，不會殘留過時的起點。 */
+export const CONDITION_TTL_SEC = 2 * 60 * 60;
 
-/** 記錄第一次 blocked 的時間（已有就不覆蓋），回傳第一次的時間（ms）。 */
-export async function markBlocked(nowMs: number): Promise<number> {
-  await command(["SET", BLOCKED_SINCE_KEY, String(nowMs), "NX"]);
-  const v = await command<string | null>(["GET", BLOCKED_SINCE_KEY]);
-  return v ? Number(v) : nowMs;
+/**
+ * 記錄某個狀態「第一次看到」的時間並刷新 TTL，回傳第一次的時間（ms）。
+ * 狀態中斷超過 CONDITION_TTL_SEC 沒再出現 → 紀錄過期，下次從頭計時。
+ */
+export async function markCondition(key: string, nowMs: number): Promise<number> {
+  const cur = await command<string | null>(["GET", key]);
+  const first = cur && Number.isFinite(Number(cur)) ? Number(cur) : nowMs;
+  await command(["SET", key, String(first), "EX", CONDITION_TTL_SEC]);
+  return first;
 }
 
-export async function clearBlocked(): Promise<void> {
-  await command(["DEL", BLOCKED_SINCE_KEY]);
+export async function clearCondition(key: string): Promise<void> {
+  await command(["DEL", key]);
 }

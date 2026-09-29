@@ -48,7 +48,7 @@ jobs:
       PAY_TO: ${{ vars.PAY_TO }}
       X402_FEE_ROUTER: ${{ vars.X402_FEE_ROUTER }}
       # 線上 signal-api 的 base URL：worker 會讀它 `GET /` 公布的 payTo，必須 = 結算 signer。
-      # 未設 → 跳過這項比對並發 warning。
+      # CI 上是必填（GITHUB_ACTIONS=true 時未設 → preflight 失敗），下方 fail-fast 也會先檢查。
       SIGNAL_API_URL: ${{ vars.SIGNAL_API_URL }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -63,8 +63,9 @@ jobs:
           [ -z "${UPSTASH_REDIS_REST_TOKEN:-}" ] && missing+=(UPSTASH_REDIS_REST_TOKEN)
           [ -z "${PAY_TO:-}" ] && missing+=("PAY_TO (repository variable)")
           [ -z "${X402_FEE_ROUTER:-}" ] && missing+=("X402_FEE_ROUTER (repository variable)")
+          [ -z "${SIGNAL_API_URL:-}" ] && missing+=("SIGNAL_API_URL (repository variable)")
           if [ "${#missing[@]}" -gt 0 ]; then
-            echo "::error::缺少 secrets：${missing[*]} —— 結算 worker 無法運作。"
+            echo "::error::缺少 secrets / repository variables：${missing[*]} —— 結算 worker 無法運作。"
             exit 1
           fi
 

@@ -10,8 +10,8 @@
 // 缺 secret 直接 fail fast、印一行摘要讓 workflow 用門檻判斷成功與否。
 //
 // 用法：
-//   cd agent
-//   npx tsx signal-api/src/settlement-worker.ts
+//   只由 .github/workflows/x402-settlement-worker.yml 執行（GITHUB_ACTIONS=true，否則拒跑）。
+//   本機只讀檢視佇列：cd agent && npx tsx signal-api/src/settlement-worker.ts --dry-run
 //
 // 需要的 env（見 .env.example）：
 //   FEE_SETTLEMENT_PRIVATE_KEY  單一 signer
@@ -47,6 +47,14 @@
 //      - UNKNOWN 查不到 receipt 時**不**依 nonce 推論「已被替換」而自動重結算：公共節點會
 //        回落後狀態，分不出「已上鏈只是查不到」與「被替換」。一律 30 分鐘後 STUCK 交人工，
 //        保存 txHash / nonce / rawTx 的狀態絕不刪除。
+//   5. 結構收斂（第三次審查）：
+//      - **只准在 CI 內執行**（GITHUB_ACTIONS=true）：job 有 20 分鐘 timeout，租約鎖
+//        （1500 秒）不會在途中過期；本機的 process 可以跑任意久，鎖過期後第二個 worker
+//        就能進來。本機只允許 `--dry-run`（只讀，不佔位、不簽章）。
+//      - **出現 STUCK 就全域停機**：設 x402:settlement:halt（不設 TTL），本輪立即停止；
+//        之後每一輪看到旗標就拒跑，直到人工確認原交易的最終狀態後手動清除。
+//      - blocked 與 trader 檢查 no-data 連續超過 30 分鐘 → job 失敗（計時紀錄每次刷新
+//        2 小時 TTL，中斷夠久就自然重新計時）。
 import { createHash, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { resolve as resolvePath } from "node:path";
@@ -82,8 +90,17 @@ import {
   incrLegacyCollisions,
   acquireWorkerLock,
   releaseWorkerLock,
-  markBlocked,
-  clearBlocked,
+  markCondition,
+  clearCondition,
+  setHalt,
+  getHalt,
+  peekQueue,
+  readString,
+  BLOCKED_SINCE_KEY,
+  NODATA_SINCE_KEY,
+  HALT_KEY,
+  WORKER_LOCK_KEY,
+  type HaltInfo,
   QUEUE_KEY,
   PROCESSING_KEY,
   RETRY_KEY,
@@ -104,7 +121,7 @@ const MAX_FAIL_PCT = Number(process.env.SETTLEMENT_MAX_FAIL_PCT ?? "30");
 export const STUCK_AFTER_MS = Number(process.env.SETTLEMENT_STUCK_AFTER_MS ?? String(30 * 60 * 1000));
 /** PENDING（無 hash）的佔位要超過這麼久（> job timeout 20 分鐘）才可能是遺留的。 */
 export const ORPHAN_CLAIM_AFTER_MS = 25 * 60 * 1000;
-/** nonce 不一致（blocked）連續超過這麼久 → job 失敗。 */
+/** nonce 不一致（blocked）或 trader 檢查 no-data 連續超過這麼久 → job 失敗。 */
 export const BLOCKED_ESCALATE_MS = 30 * 60 * 1000;
 
 // ── 收款守門 ─────────────────────────────────────────────────────────────────
@@ -265,6 +282,24 @@ export interface RunContext {
   lockHeld: boolean;
   /** 本輪是否有一次 nonce 檢查通過（latest == pending）。 */
   nonceCheckPassed?: boolean;
+  /** 本輪是否有一次 trader 檢查拿到確定結果（非 no-data）。 */
+  traderCheckPassed?: boolean;
+}
+
+/** 轉 STUCK 時設全域停機旗標。 */
+async function haltFor(p: Parsed, st: SettleState | undefined, reason: string, deps: WorkerDeps): Promise<void> {
+  const info: HaltInfo = {
+    reason,
+    key: p.key,
+    txHash: st?.txHash,
+    nonce: st?.nonce,
+    at: new Date(deps.now()).toISOString(),
+  };
+  await setHalt(info);
+  console.error(
+    `::error::已設定全域停機旗標 ${HALT_KEY}（${JSON.stringify(info)}）。之後每一輪都會拒跑，` +
+      "直到人工到 explorer 確認原交易的最終狀態後手動清除（agent/README.md「結算交易卡住」）。",
+  );
 }
 
 interface Parsed {
@@ -340,6 +375,7 @@ async function reconcile(raw: string, p: Parsed, st: SettleState, deps: WorkerDe
   // 雙付。一律維持 UNKNOWN，逾時轉 STUCK 交人工（agent/README.md「結算交易卡住」）。
   if (now - since > STUCK_AFTER_MS) {
     await setSettleState(p.key, { ...st, status: "STUCK", note: `${Math.round((now - since) / 60000)} 分鐘仍無 receipt` });
+    await haltFor(p, st, `STUCK：簽出超過 ${Math.round(STUCK_AFTER_MS / 60000)} 分鐘仍查不到 receipt`, deps);
     await moveProcessingTo(raw, DEAD_KEY, deadLetter(p, `STUCK tx=${st.txHash}${nonceNote}`));
     console.error(
       `::error::STUCK ${tag(p.entry, p.key)} tx=${st.txHash}${nonceNote} —— 簽出超過 ` +
@@ -391,6 +427,7 @@ export async function processOne(
       return { outcome: "duplicate", key: p.key };
     }
     if (existing.status === "FAILED" || existing.status === "STUCK") {
+      if (existing.status === "STUCK") await haltFor(p, existing, "重複項目指向 STUCK 的鍵", deps);
       await moveProcessingTo(raw, DEAD_KEY, deadLetter(p, `duplicate of ${existing.status} key`));
       console.error(`::error::同一鍵已是 ${existing.status}，重複項目移入死信 ${tag(p.entry, p.key)}`);
       return { outcome: existing.status === "STUCK" ? "stuck" : "dead", error: `key already ${existing.status}` };
@@ -410,6 +447,7 @@ export async function processOne(
 
   // claim 前檢查受益 trader（審查 High-2）：舊項目的受益人可能是外洩地址。
   const ta = await deps.assessTrader(p.entry.trader);
+  if (ta.source !== "no-data") ctx.traderCheckPassed = true;
   if (!ta.safe) {
     if (ta.source === "no-data") {
       // 暫時查不到（RPC）→ 不能判定。不消耗重試次數：放回佇列、停止本輪。
@@ -506,6 +544,11 @@ export interface RunSummary {
   blockedTooLong: boolean;
   /** 第一次 blocked 的時間（ms），沒有則 undefined。 */
   blockedSince?: number;
+  /** trader 檢查 no-data 已連續超過 BLOCKED_ESCALATE_MS。 */
+  nodataTooLong: boolean;
+  nodataSince?: number;
+  /** 全域停機旗標（本輪開始時已存在，或本輪有項目轉 STUCK）。 */
+  globalHalt?: HaltInfo;
 }
 
 /**
@@ -520,7 +563,7 @@ export async function runWorker(deps: WorkerDeps = defaultDeps, batchSize = BATC
   const s: RunSummary = {
     recovered: 0, available: 0, settled: 0, duplicate: 0, pending: 0, retried: 0,
     dead: 0, stuck: 0, failed: 0, review: 0, blocked: 0, errors: 0, halted: 0,
-    skippedLocked: false, blockedTooLong: false,
+    skippedLocked: false, blockedTooLong: false, nodataTooLong: false,
   };
   // 租約鎖（第二道防線）：另一個 worker 還在跑 → 什麼都不做。
   const token = randomUUID();
@@ -530,19 +573,33 @@ export async function runWorker(deps: WorkerDeps = defaultDeps, batchSize = BATC
     return s;
   }
   try {
+    // 全域停機旗標：STUCK 之後交人工，清除前一律不處理。
+    const halt = await getHalt();
+    if (halt) {
+      s.globalHalt = halt;
+      console.error(`::error::全域停機旗標 ${HALT_KEY} 存在（${JSON.stringify(halt)}），本輪不處理任何項目。`);
+      return s;
+    }
     const ctx: RunContext = { runStartedAt: deps.now(), lockHeld: true };
     await runLocked(deps, batchSize, s, ctx);
-    // blocked 持續時間：有 blocked → 記錄第一次的時間；有一次 nonce 檢查通過 → 清除。
+    if (s.stuck > 0) s.globalHalt = (await getHalt()) ?? undefined;
+    // 持續狀態計時：看到就記錄／刷新；確定恢復就清除。
     try {
       if (s.blocked > 0) {
-        s.blockedSince = await markBlocked(deps.now());
+        s.blockedSince = await markCondition(BLOCKED_SINCE_KEY, deps.now());
         s.blockedTooLong = deps.now() - s.blockedSince > BLOCKED_ESCALATE_MS;
       } else if (ctx.nonceCheckPassed) {
-        await clearBlocked();
+        await clearCondition(BLOCKED_SINCE_KEY);
+      }
+      if (s.halted > 0) {
+        s.nodataSince = await markCondition(NODATA_SINCE_KEY, deps.now());
+        s.nodataTooLong = deps.now() - s.nodataSince > BLOCKED_ESCALATE_MS;
+      } else if (ctx.traderCheckPassed) {
+        await clearCondition(NODATA_SINCE_KEY);
       }
     } catch (err) {
       s.errors += 1;
-      console.error(`::error::記錄 blocked 狀態失敗：${(err as Error).message}`);
+      console.error(`::error::記錄持續狀態失敗：${(err as Error).message}`);
     }
     return s;
   } finally {
@@ -590,6 +647,10 @@ async function runLocked(deps: WorkerDeps, batchSize: number, s: RunSummary, ctx
     const o = await safeProcess(raw);
     if (!o) return s;
     tally(o);
+    if (o.outcome === "stuck") {
+      console.error("::error::出現 STUCK —— 本輪立即停止，不進入送交易階段。");
+      return s;
+    }
     if (o.outcome === "pending" || o.outcome === "blocked" || o.outcome === "halted") halted = true;
   }
   if (halted) {
@@ -609,6 +670,10 @@ async function runLocked(deps: WorkerDeps, batchSize: number, s: RunSummary, ctx
       const o = await safeProcess(raw);
       if (!o) return s;
       tally(o);
+      if (o.outcome === "stuck") {
+        console.error("::error::出現 STUCK —— 本輪立即停止。");
+        return s;
+      }
       if (o.outcome === "blocked" || o.outcome === "halted") {
         console.warn(`::warning::${o.error}`);
         return s;
@@ -622,7 +687,50 @@ async function runLocked(deps: WorkerDeps, batchSize: number, s: RunSummary, ctx
   return s;
 }
 
+/** --dry-run：只讀。不取鎖、不佔位、不簽章、不動任何佇列。 */
+async function dryRun(): Promise<void> {
+  if (!isLedgerEnabled()) {
+    console.error("::error::UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN 未設 —— 沒有佇列可以讀。");
+    process.exit(1);
+  }
+  console.log("── dry-run（只讀：不取鎖、不佔位、不簽章）──");
+  const halt = await getHalt();
+  console.log(`全域停機旗標 ${HALT_KEY}：${halt ? JSON.stringify(halt) : "（無）"}`);
+  for (const k of [WORKER_LOCK_KEY, BLOCKED_SINCE_KEY, NODATA_SINCE_KEY]) {
+    const v = await readString(k);
+    const shown = v && /^\d{12,}$/.test(v) ? `${v}（${new Date(Number(v)).toISOString()}）` : v;
+    console.log(`${k}：${shown ?? "（無）"}`);
+  }
+  for (const key of [UNCONFIRMED_KEY, PROCESSING_KEY, RETRY_KEY, QUEUE_KEY, DEAD_KEY, LEGACY_REVIEW_KEY]) {
+    const depth = await queueDepth(key);
+    console.log(`${key}：${depth} 筆`);
+    for (const raw of await peekQueue(key, 5)) {
+      try {
+        const p = parseItem(raw);
+        const st = await getSettleState(p.key);
+        console.log(`  - ${tag(p.entry, p.key)} attempts=${p.attempts} state=${st ? JSON.stringify({ status: st.status, txHash: st.txHash, nonce: st.nonce }) : "（無）"}`);
+      } catch {
+        console.log(`  - （無法解析）${raw.slice(0, 120)}`);
+      }
+    }
+  }
+}
+
 async function main(): Promise<void> {
+  if (process.argv.includes("--dry-run")) {
+    await dryRun();
+    return;
+  }
+  // 只准在 CI 內執行：GitHub Actions job 有 20 分鐘 timeout，租約鎖（1500 秒）不會在
+  // 途中過期；本機 process 可以跑任意久（例如卡在 RPC），鎖過期後第二個 worker 就能進來。
+  if (process.env.GITHUB_ACTIONS !== "true") {
+    console.error(
+      "::error::settlement-worker 只准在 GitHub Actions 內執行（GITHUB_ACTIONS=true）：CI job 有 20 分鐘 " +
+        "timeout，租約鎖（1500 秒）不會在途中過期；本機執行無此保證，可能與 CI 的 worker 並行而雙付。" +
+        "本機請用 `--dry-run` 只讀檢視佇列。",
+    );
+    process.exit(1);
+  }
   if (!isSettlementEnabled()) {
     console.error("::error::FEE_SETTLEMENT_PRIVATE_KEY 未設 —— worker 沒有 signer 可以送交易。");
     process.exit(1);
@@ -630,6 +738,19 @@ async function main(): Promise<void> {
   if (!isLedgerEnabled()) {
     console.error(
       "::error::UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN 未設 —— 沒有佇列可以讀。",
+    );
+    process.exit(1);
+  }
+
+  // STUCK 之後的全域停機：清除前一律拒跑（runWorker 取鎖後會再檢查一次）。
+  const halt = await getHalt().catch((err) => {
+    console.error(`::error::讀不到全域停機旗標，fail-closed：${(err as Error).message}`);
+    process.exit(1);
+  });
+  if (halt) {
+    console.error(
+      `::error::全域停機旗標 ${HALT_KEY} 存在：${JSON.stringify(halt)}。請到 explorer 確認原交易的最終狀態，` +
+        "依 agent/README.md「結算交易卡住」處理後手動清除，否則可能雙付。",
     );
     process.exit(1);
   }
@@ -661,6 +782,10 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   if (s.skippedLocked) return; // 另一個 worker 在跑：exit 0
+  if (s.globalHalt && s.available + s.pending + s.stuck === 0) {
+    console.error(`::error::全域停機旗標存在，本輪未處理任何項目。`);
+    process.exit(1);
+  }
   const [queueRemaining, retryRemaining, unconfirmed, processingRemaining, deadTotal, reviewTotal] = await Promise.all([
     queueDepth(QUEUE_KEY),
     queueDepth(RETRY_KEY),
@@ -695,6 +820,13 @@ async function main(): Promise<void> {
       `::error::signer 的 nonce 不一致（mempool 有未上鏈交易）已持續 ` +
         `${Math.round((Date.now() - (s.blockedSince ?? Date.now())) / 60000)} 分鐘，結算停擺。` +
         "請依 agent/README.md「結算交易卡住」處理。",
+    );
+    process.exit(1);
+  }
+  if (s.nodataTooLong) {
+    console.error(
+      `::error::trader 安全檢查查不到資料（RPC）已持續 ` +
+        `${Math.round((Date.now() - (s.nodataSince ?? Date.now())) / 60000)} 分鐘，結算停擺。`,
     );
     process.exit(1);
   }

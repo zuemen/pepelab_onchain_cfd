@@ -11,8 +11,8 @@ export interface FakeUpstash {
   list(key: string): string[];
   /** 記錄每個指令名稱，方便斷言「有沒有呼叫某指令」。 */
   log: string[];
-  /** 讓下一次符合的指令以連線中斷失敗（模擬 process 在那一步崩潰）。 */
-  failNext(cmd: string): void;
+  /** 讓第 (skip+1) 次符合的指令以連線中斷失敗（模擬 process 在那一步崩潰）。 */
+  failNext(cmd: string, skip?: number): void;
   close(): Promise<void>;
 }
 
@@ -20,7 +20,7 @@ export async function startFakeUpstash(): Promise<FakeUpstash> {
   const lists = new Map<string, string[]>();
   const strings = new Map<string, string>();
   const log: string[] = [];
-  const failing = new Set<string>();
+  const failing = new Map<string, number>(); // cmd → 還要放行幾次
   const list = (k: string) => {
     let l = lists.get(k);
     if (!l) {
@@ -37,9 +37,13 @@ export async function startFakeUpstash(): Promise<FakeUpstash> {
     const cmd = String(args[0]).toUpperCase();
     log.push(cmd);
     if (failing.has(cmd)) {
-      failing.delete(cmd);
-      res.destroy();
-      return;
+      const left = failing.get(cmd)!;
+      if (left <= 0) {
+        failing.delete(cmd);
+        res.destroy();
+        return;
+      }
+      failing.set(cmd, left - 1);
     }
     const ok = (result: unknown) =>
       res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ result }));
@@ -87,6 +91,26 @@ export async function startFakeUpstash(): Promise<FakeUpstash> {
         strings.set(k, String(args[2]));
         return ok("OK");
       }
+      case "LRANGE": {
+        const l = list(k);
+        const start = Number(args[2]);
+        const stop = Number(args[3]);
+        return ok(l.slice(start, stop < 0 ? l.length + stop + 1 : stop + 1));
+      }
+      case "EVAL": {
+        // 只實作 ledger.ts 用到的那一支：GET KEYS[1] == ARGV[1] 才 DEL。
+        const script = String(args[1]);
+        const key = String(args[3]);
+        const argv1 = String(args[4]);
+        if (!/redis\.call\('GET', KEYS\[1\]\) == ARGV\[1\].*redis\.call\('DEL', KEYS\[1\]\)/.test(script)) {
+          return void res.writeHead(400).end(JSON.stringify({ error: "unsupported script" }));
+        }
+        if (strings.get(key) === argv1) {
+          strings.delete(key);
+          return ok(1);
+        }
+        return ok(0);
+      }
       case "INCR": {
         const v = Number(strings.get(k) ?? "0") + 1;
         strings.set(k, String(v));
@@ -108,7 +132,7 @@ export async function startFakeUpstash(): Promise<FakeUpstash> {
     strings,
     list,
     log,
-    failNext: (c) => failing.add(c.toUpperCase()),
+    failNext: (c, skip = 0) => void failing.set(c.toUpperCase(), skip),
     close: () => new Promise<void>((r) => server.close(() => r())),
   };
 }

@@ -183,12 +183,30 @@ function reset() {
   await runWorker(deps);
   clock += STUCK_AFTER_MS + 60_000;
   receipt = null;
+  mode = "ok";
+  chain.latest = chain.pending; // 讓 nonce 檢查不擋：驗證的是「STUCK 本身」讓本輪停止
+  await enqueueSettlement(entry("k-after-stuck")); // 同一輪若進 phase 2 就會被送出
   const s = await runWorker(deps);
   assert.equal(s.stuck, 1);
   assert.equal((await getSettleState("k-stuck"))?.status, "STUCK");
   assert.equal(fake.list(DEAD_KEY).length, 1);
+  assert.equal(settleCalls, 1, "STUCK 後同一輪不可再送任何交易");
+  assert.equal(s.available, 0, "不進入送交易階段");
+  const halt = JSON.parse(fake.strings.get(ledger.HALT_KEY) ?? "null") as { txHash?: string; nonce?: number } | null;
+  assert.ok(halt?.txHash && halt.nonce === 0, "停機旗標記錄 hash 與 nonce");
+  // 旗標存在：下一輪拒跑
+  const s2 = await runWorker(deps);
+  assert.ok(s2.globalHalt, "旗標存在 → 拒跑");
+  assert.equal(s2.available + s2.recovered, 0);
   assert.equal(settleCalls, 1);
-  console.log("UNKNOWN 超過 30 分鐘 → STUCK（死信 + stuck 計數讓 job 失敗）、不重送 ✓");
+  assert.equal(fake.list(QUEUE_KEY).length, 1, "待結算項目原封不動");
+  // 人工確認後清除旗標 → 恢復
+  fake.strings.delete(ledger.HALT_KEY);
+  const s3 = await runWorker(deps);
+  assert.equal(s3.globalHalt, undefined);
+  assert.equal(s3.settled, 1);
+  assert.equal(settleCalls, 2);
+  console.log("STUCK → 同輪停止、設全域停機旗標；旗標在就拒跑；人工清除後恢復 ✓");
 }
 
 // ── 7) UNKNOWN 對帳發現 revert → 死信 ───────────────────────────────────────
@@ -291,7 +309,7 @@ function reset() {
 {
   reset();
   await enqueueSettlement(entry("k-redis"));
-  fake.failNext("GET");
+  fake.failNext("GET", 1); // 第 1 個 GET 是停機旗標；第 2 個是 processOne 讀冪等狀態
   const s = await runWorker(deps);
   assert.equal(s.errors, 1);
   assert.equal(settleCalls, 0);
@@ -404,10 +422,16 @@ function reset() {
   assert.equal(fake.list(RETRY_KEY).length, 0);
   assert.equal(fake.list(QUEUE_KEY).length, 1, "項目原樣放回佇列");
   assert.equal(settleCalls, 0);
+  assert.equal(s.nodataTooLong, false);
+  clock += 20 * 60_000;
+  assert.equal((await runWorker(noData)).nodataTooLong, false);
+  clock += 11 * 60_000;
+  assert.equal((await runWorker(noData)).nodataTooLong, true, "no-data 連續 31 分鐘 → job 應失敗");
   clearPayoutSafetyCache();
   const s2 = await runWorker(deps);
   assert.equal(s2.settled, 1);
-  console.log("trader 檢查 no-data → halt、不消耗重試；恢復後結算 ✓");
+  assert.equal(fake.strings.has(ledger.NODATA_SINCE_KEY), false, "恢復後清除計時");
+  console.log("trader 檢查 no-data → halt、不消耗重試；連續 31 分鐘 → 失敗；恢復後清除並結算 ✓");
 }
 
 // ── 10) 無法解析的項目 → 死信，不卡住佇列 ───────────────────────────────────
@@ -419,6 +443,39 @@ function reset() {
   assert.equal(o.outcome, "dead");
   assert.equal(fake.list(PROCESSING_KEY).length, 0);
   console.log("無法解析的項目 → 死信 ✓");
+}
+
+// ── 19) 只准在 CI 內執行；本機只能 --dry-run（只讀）─────────────────────────────
+{
+  reset();
+  await enqueueSettlement(entry("k-dry"));
+  const { fileURLToPath } = await import("node:url");
+  const worker = fileURLToPath(new URL("./settlement-worker.ts", import.meta.url));
+  const env: NodeJS.ProcessEnv = { ...process.env, UPSTASH_REDIS_REST_URL: fake.url, UPSTASH_REDIS_REST_TOKEN: "t" };
+  delete env.GITHUB_ACTIONS;
+  delete env.FEE_SETTLEMENT_PRIVATE_KEY;
+  const run = (args: string[]) =>
+    new Promise<{ status: number | null; out: string }>((resolve) => {
+      // 非同步執行：子行程要連回本 process 的假 Upstash，同步執行會卡住事件迴圈。
+      import("node:child_process").then(({ spawn }) => {
+        const c = spawn(process.execPath, ["--import", "tsx", worker, ...args], { env });
+        let out = "";
+        c.stdout.on("data", (d) => (out += d));
+        c.stderr.on("data", (d) => (out += d));
+        c.on("close", (status) => resolve({ status, out }));
+      });
+    });
+  const refused = await run([]);
+  assert.equal(refused.status, 1, "本機（無 GITHUB_ACTIONS）必須拒跑");
+  assert.match(refused.out, /只准在 GitHub Actions 內執行/);
+  const dry = await run(["--dry-run"]);
+  assert.equal(dry.status, 0, dry.out);
+  assert.match(dry.out, /dry-run/);
+  assert.match(dry.out, /k-dry/);
+  assert.equal(fake.list(QUEUE_KEY).length, 1, "dry-run 不動佇列");
+  assert.equal(fake.strings.has(SETTLE_STATE_PREFIX + "k-dry"), false, "dry-run 不佔位");
+  assert.equal(fake.strings.has(ledger.WORKER_LOCK_KEY), false, "dry-run 不取鎖");
+  console.log("本機無 GITHUB_ACTIONS → 拒跑（exit 1）；--dry-run 只讀、不佔位不取鎖 ✓");
 }
 
 await fake.close();

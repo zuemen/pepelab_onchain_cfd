@@ -88,18 +88,32 @@ forge script script/DeployX402Router.s.sol:DeployX402Router \
 合約端：`FeeRouterExternalRevenue.t.sol`（18-dec）+ `FeeRouterX402Usdc.t.sol`（6-dec）共覆蓋。
 未設 `X402_FEE_ROUTER` 則回退到 MockUSDC FeeRouter（舊行為）。
 
+### 結算 worker 只在 CI 內執行
+
+`signal-api/src/settlement-worker.ts` **只准在 GitHub Actions 內執行**（`x402-settlement-worker.yml`；
+沒有 `GITHUB_ACTIONS=true` 就拒跑、非零結束）。理由：CI job 有 20 分鐘 timeout，租約鎖
+`x402:settlement:lock`（1500 秒）不會在途中過期；本機 process 可以跑任意久，鎖一過期，CI 的 worker
+就能同時進來，兩邊一起送交易就是雙付。本機只能用只讀模式檢視佇列（不取鎖、不佔位、不簽章）：
+
+```bash
+cd agent && npx tsx signal-api/src/settlement-worker.ts --dry-run
+```
+
 ### 結算交易卡住（STUCK / nonce 不一致）怎麼處理
 
 worker 每一筆 `routeExternalRevenue` 都是「先簽、先把 hash / nonce / 已簽 raw tx 寫進
-`settle:<冪等鍵>`、再廣播」，而且**絕不自動重送**。會停下來交給人的兩種情況：
+`settle:<冪等鍵>`、再廣播」，而且**絕不自動重送**。會停下來交給人的情況：
 
 - log 出現 `signer 有未上鏈的交易（nonce latest=L pending=P）`：mempool 裡有這個 signer
   還沒上鏈的交易，worker 不會再送新交易；連續超過 30 分鐘（`x402:settlement:blocked_since`）
   job 會變紅。
 - 另外，worker 啟動時會取 Redis 租約鎖 `x402:settlement:lock`（1500 秒）；取不到代表另一個
   worker 還在跑，這一輪什麼都不做（exit 0）。
+- trader 安全檢查連續查不到資料（RPC）超過 30 分鐘（`x402:settlement:nodata_since`）→ job 變紅。
 - log 出現 `::error::STUCK … tx=0x… nonce=N`：簽出超過 30 分鐘仍查不到 receipt，該筆已移進
-  `x402:settlement:dead`，`settle:<鍵>` 標成 `STUCK`。
+  `x402:settlement:dead`，`settle:<鍵>` 標成 `STUCK`，並設定**全域停機旗標**
+  `x402:settlement:halt`（不設 TTL，值記錄原因、鍵、hash、nonce、時間）。旗標存在時每一輪都
+  `::error::` 並 exit 1、不處理任何項目，直到人工清除。
 
 處理步驟（`$RPC` 用 Base Sepolia RPC、`$SIGNER` 是結算 signer 地址；需要 Upstash REST 權限）：
 
@@ -122,6 +136,11 @@ worker 每一筆 `routeExternalRevenue` 都是「先簽、先把 hash / nonce / 
    - worker **不會**自己依 nonce 推論「原交易已被替換」而重新結算（公共節點會回落後狀態，
      猜錯就是雙付）；尚未標 STUCK 的 UNKNOWN 也一樣，只會等到 30 分鐘後轉 STUCK。取消後請照上面
      的步驟處理，`settle:<鍵>` 裡的 txHash / nonce / rawTx 在確認前不要刪。
+5. **清除全域停機旗標**（最後一步）。⚠ **清除前必須先確認原交易的最終狀態**：到 explorer
+   （`https://sepolia.basescan.org/tx/<txHash>`）查 hash，並確認同一個 nonce 上最終上鏈的是哪一筆；
+   第 4 步的 Redis 狀態也要照這個結果改好。**沒確認就清除，worker 可能把同一筆分潤再送一次（雙付）。**
+   確認後：`curl -s -H "Authorization: Bearer $UPSTASH_REDIS_REST_TOKEN"
+   "$UPSTASH_REDIS_REST_URL/del/x402:settlement:halt"`。先用 `--dry-run` 看一次佇列與各鍵的狀態再清。
 
 ## 「付費 → 自主下單」一鍵 demo（北極星）
 
