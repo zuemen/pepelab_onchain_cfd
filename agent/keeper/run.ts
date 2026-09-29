@@ -236,6 +236,8 @@ async function main(): Promise<void> {
     guarded: guarded
       ? {
           peek: async (id) => (await guarded.peek(id)) as [bigint, bigint, boolean, boolean],
+          // guarded 以 signer 建立，staticCall 的 from 就是 keeper —— role 也一併預檢。
+          checkUpdate: (id, p) => guarded.updatePrice.staticCall(id, p),
           updatePrice: (id, p) => guarded.updatePrice(id, p),
         }
       : null,

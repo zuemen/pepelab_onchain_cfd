@@ -190,6 +190,11 @@ min(`KEEPER_BREAKER_DEVIATION`, Guarded 該方向上限)**,實際上是 +10% / �
 | Guarded 讀不到 | 兩顆都不寫(fail-closed);記 failed |
 | Guarded 已凍結 | 兩顆都不寫(fail-closed,凍結是 guardian 的決定);列為熔斷 |
 | Guarded 沒有此資產 | 只寫 MockOracle,但門檻**仍是** Guarded 上限(不放寬回 20%) |
+| Guarded `updatePrice` 的 staticCall 預檢 revert(paused／role／cap／reference) | 兩顆都不寫;列為熔斷 |
+| 兩顆價格不一致(例如上一輪 Mock 寫失敗) | 即使價格沒動也走補寫,讓兩顆收斂;超限時訊息寫「兩顆已不一致」 |
+
+**寫入順序**:預檢通過後**先寫 GuardedOracle,成功才寫 MockOracle**。Guarded 有上限、Mock
+沒有:Guarded 寫失敗 → Mock 不寫,兩顆仍一致;Mock 寫失敗 → 下一輪的不一致補寫自然補上。
 
 **拒寫不等於停單。** 價格停在舊值,但交易所(`0x827e…124D`)的 `maxPriceAge` 是
 **6 小時**(21600,2026-09-29 唯讀核對):在那之前,交易所仍會以已知錯誤的舊價開倉、

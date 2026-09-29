@@ -32,8 +32,12 @@ export interface OracleLike {
 }
 export interface GuardedLike {
   peek: (assetId: string) => Promise<[bigint, bigint, boolean, boolean]>;
+  /** 以 signer 對 updatePrice 做 staticCall 預檢（paused／role／cap／reference 一次涵蓋）。 */
+  checkUpdate: (assetId: string, price8: bigint) => Promise<unknown>;
   updatePrice: (assetId: string, price8: bigint) => Promise<TxLike>;
 }
+
+const fmt8 = (p: bigint): string => `$${(Number(p) / 1e8).toFixed(2)}`;
 
 export interface RefusedAsset {
   symbol: string;
@@ -122,9 +126,11 @@ export async function runRound(ctx: RoundCtx): Promise<RoundResult> {
     r.available += 1;
 
     let current = 0;
+    let mockPrice8 = 0n;
     let lastUpdated = 0;
     try {
       const [raw, at] = await ctx.oracle.getPrice(assetId);
+      mockPrice8 = raw;
       current = Number(raw) / 1e8;
       lastUpdated = Number(at);
     } catch (e) {
@@ -163,9 +169,8 @@ export async function runRound(ctx: RoundCtx): Promise<RoundResult> {
           `（可能是週末/假日收盤價）—— 鏈上 updatedAt 會顯示新鮮，但價格並非即時。`,
       );
     }
-    if (!plan.write) continue;
 
-    // Guarded 的現況要在寫 Mock 之前讀：兩顆要嘛都寫、要嘛都不寫。
+    // Guarded 的現況要在判斷之前讀：兩顆要嘛都寫、要嘛都不寫，且不一致時要補寫。
     // 窄複審 2：Guarded 被凍結或讀不到 → Mock 也拒寫（fail-closed）。凍結是 guardian
     // 的人工決定，keeper 不能把它當成「少一道限制、Mock 可以照寫」。
     let guardedState: { price8: bigint; exists: boolean } | null = null;
@@ -186,6 +191,14 @@ export async function runRound(ctx: RoundCtx): Promise<RoundResult> {
         );
         continue;
       }
+    }
+
+    // 窄複審 3：兩顆不一致（例如上一輪 Guarded 寫成功、Mock 失敗）時，即使 planUpdate
+    // 說不用寫也要走補寫，讓兩顆收斂。
+    const diverged = !!guardedState?.exists && mockPrice8 > 0n && guardedState.price8 !== mockPrice8;
+    if (!plan.write && !diverged) continue;
+    if (diverged) {
+      log(`::warning::${symbol} 兩顆 oracle 不一致（Guarded ${fmt8(guardedState!.price8)} ≠ Mock ${fmt8(mockPrice8)}），本輪補寫`);
     }
 
     // 有效熔斷門檻 = min(KEEPER_BREAKER_DEVIATION, Guarded 在這個方向的上限)。
@@ -234,8 +247,13 @@ export async function runRound(ctx: RoundCtx): Promise<RoundResult> {
     if (guardedState?.exists) {
       mirrorPlan = planMirror(guardedState.price8, price8, ctx.guardedCap);
       if (mirrorPlan.action === "reject") {
-        // 多源確認通過也一樣：Guarded 會拒絕的價格，Mock 也不寫。
-        refuse(symbol, assetId, `${mirrorPlan.reason} —— 兩顆 oracle 必須一致，MockOracle 也不寫`);
+        // 多源確認通過也一樣：Guarded 會拒絕的價格，Mock 也不寫。reject 訊息區分兩種成因。
+        const why =
+          guardedState.price8 !== mockPrice8
+            ? `兩顆已不一致（Guarded ${fmt8(guardedState.price8)} ≠ Mock ${fmt8(mockPrice8)}）：` +
+              `完整價格 ${fmt8(price8)} 超出 Guarded 相對其自身價格的上限 ${ctx.guardedCap} bps`
+            : `變動超過 GuardedOracle 上限 ${ctx.guardedCap} bps（${fmt8(guardedState.price8)} → ${fmt8(price8)}）`;
+        refuse(symbol, assetId, `${why} —— 不寫部分步進，兩顆都不寫`);
         continue;
       }
     }
@@ -244,8 +262,46 @@ export async function runRound(ctx: RoundCtx): Promise<RoundResult> {
       log(`::warning::${symbol} ${guard.reason}`);
     }
 
-    if (ctx.dryRun) continue;
+    if (ctx.dryRun) {
+      if (mirrorPlan?.action === "write") log(`  → (DRY_RUN) GuardedOracle 預檢略過（沒有 signer）`);
+      continue;
+    }
 
+    // 窄複審 3：先以 signer 對 Guarded 做 staticCall 預檢，一次涵蓋 paused、role、cap、
+    // reference 等所有 revert 條件；預檢失敗就兩顆都不寫。
+    if (ctx.guarded && mirrorPlan?.action === "write") {
+      try {
+        await ctx.guarded.checkUpdate(assetId, mirrorPlan.value);
+      } catch (e) {
+        refuse(
+          symbol,
+          assetId,
+          `GuardedOracle.updatePrice 預檢 revert（paused／role／cap／reference…）：` +
+            `${(e as Error).message.slice(0, 120)} —— 兩顆都不寫`,
+        );
+        continue;
+      }
+      // 預檢通過後**先寫 Guarded**，成功才寫 Mock。Guarded 有上限、Mock 沒有：
+      // Mock 失敗時下一輪的「不一致補寫」會自然補上；反過來則會把 Mock 寫成 Guarded
+      // 接受不了的價格。
+      try {
+        const tx = await ctx.guarded.updatePrice(assetId, mirrorPlan.value);
+        await tx.wait();
+        log(`  → GuardedOracle ✓ ${tx.hash}`);
+      } catch (e) {
+        r.failed += 1;
+        error(`::error::${symbol} GuardedOracle 寫入失敗（MockOracle 未寫，兩顆仍一致）：${(e as Error).message.slice(0, 120)}`);
+        continue;
+      }
+    } else if (mirrorPlan?.action === "skip") {
+      log(`  → GuardedOracle ${mirrorPlan.reason}`);
+    }
+
+    if (mockPrice8 === price8) {
+      log(`  → MockOracle 已是目標值`);
+      r.wrote += 1;
+      continue;
+    }
     try {
       const tx = await ctx.oracle.updatePrice(assetId, price8);
       await tx.wait();
@@ -253,25 +309,10 @@ export async function runRound(ctx: RoundCtx): Promise<RoundResult> {
       log(`  → MockOracle ✓ ${tx.hash}`);
     } catch (e) {
       r.failed += 1;
-      error(`::error::${symbol} MockOracle 寫入失敗：${(e as Error).message.slice(0, 140)}`);
-      continue;
-    }
-
-    if (ctx.guarded && mirrorPlan?.action === "write") {
-      try {
-        const tx = await ctx.guarded.updatePrice(assetId, mirrorPlan.value);
-        await tx.wait();
-        log(`  → GuardedOracle ✓ ${mirrorPlan.value}`);
-      } catch (e) {
-        // 預檢已確認會被接受，到這裡多半是 RPC／nonce／權限。兩顆此刻不一致，必須大聲。
-        r.failed += 1;
-        error(
-          `::error::${symbol} GuardedOracle 寫入失敗（MockOracle 已寫，兩顆暫時不一致）：` +
-            `${(e as Error).message.slice(0, 120)}`,
-        );
-      }
-    } else if (mirrorPlan?.action === "skip") {
-      log(`  → GuardedOracle ${mirrorPlan.reason}`);
+      error(
+        `::error::${symbol} MockOracle 寫入失敗（GuardedOracle 已寫，下一輪會補寫收斂）：` +
+          `${(e as Error).message.slice(0, 140)}`,
+      );
     }
   }
   return r;

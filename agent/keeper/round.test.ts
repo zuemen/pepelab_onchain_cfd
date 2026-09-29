@@ -7,27 +7,47 @@ import { effectiveBreaker, isRevertWith, ASSET_NOT_FOUND_SELECTOR } from "./core
 const P = (usd: number) => BigInt(Math.round(usd * 1e8));
 const NOW = 1_790_000_000;
 
-function fakeOracle(price: number) {
+// 所有寫入依序記在同一條時間線上，用來驗證「先 Guarded、後 Mock」。
+let timeline: string[] = [];
+
+function fakeOracle(price: number, opts: { updateThrows?: Error } = {}) {
   const writes: bigint[] = [];
+  const state = { price: P(price), at: BigInt(NOW - 3600) };
   return {
     writes,
-    getPrice: async () => [P(price), BigInt(NOW - 3600)] as [bigint, bigint],
+    state,
+    getPrice: async () => [state.price, state.at] as [bigint, bigint],
     updatePrice: async (_id: string, p: bigint) => {
+      if (opts.updateThrows) throw opts.updateThrows;
       writes.push(p);
+      timeline.push(`mock:${p}`);
+      state.price = p;
+      state.at = BigInt(NOW);
       return { hash: "0xmock", wait: async () => undefined };
     },
   };
 }
-function fakeGuarded(price: number, opts: { frozen?: boolean; exists?: boolean; peekThrows?: boolean } = {}) {
+function fakeGuarded(
+  price: number,
+  opts: { frozen?: boolean; exists?: boolean; peekThrows?: boolean; checkThrows?: Error; updateThrows?: Error } = {},
+) {
   const writes: bigint[] = [];
+  const state = { price: P(price) };
   return {
     writes,
+    state,
     peek: async () => {
       if (opts.peekThrows) throw new Error("rpc 429");
-      return [P(price), BigInt(NOW - 3600), opts.exists ?? true, opts.frozen ?? false] as [bigint, bigint, boolean, boolean];
+      return [state.price, BigInt(NOW - 3600), opts.exists ?? true, opts.frozen ?? false] as [bigint, bigint, boolean, boolean];
+    },
+    checkUpdate: async () => {
+      if (opts.checkThrows) throw opts.checkThrows;
     },
     updatePrice: async (_id: string, p: bigint) => {
+      if (opts.updateThrows) throw opts.updateThrows;
       writes.push(p);
+      timeline.push(`guarded:${p}`);
+      state.price = p;
       return { hash: "0xguarded", wait: async () => undefined };
     },
   };
@@ -183,6 +203,92 @@ for (const target of [101, 112]) {
   const o3 = mk(notFound);
   await runRound(ctx({ oracle: o3, fetchPrice: async () => yahoo(311) }));
   assert.equal(o3.writes.length, 0);
+}
+
+// ── 窄複審 3：寫入順序 —— 先 Guarded、成功才 Mock ─────────────────────────────
+{
+  timeline = [];
+  const oracle = fakeOracle(100);
+  const guarded = fakeGuarded(100);
+  await runRound(ctx({ oracle, guarded, fetchPrice: async () => yahoo(105) }));
+  assert.deepEqual(timeline, [`guarded:${P(105)}`, `mock:${P(105)}`]);
+}
+
+// ── 窄複審 3／7：Guarded updatePrice 丟錯 → Mock 不寫、記 failed、兩顆仍一致 ──────
+{
+  const oracle = fakeOracle(100);
+  const guarded = fakeGuarded(100, { updateThrows: new Error("nonce too low") });
+  const r = await runRound(ctx({ oracle, guarded, fetchPrice: async () => yahoo(105) }));
+  assert.equal(oracle.writes.length, 0, "Guarded 沒寫成就不寫 Mock");
+  assert.equal(r.failed, 1);
+  assert.equal(oracle.state.price, guarded.state.price);
+}
+
+// ── 窄複審 3：staticCall 預檢失敗（paused／role…）→ 兩顆都不寫、列入熔斷 ─────────
+{
+  const oracle = fakeOracle(100);
+  const guarded = fakeGuarded(100, { checkThrows: new Error("IsPaused()") });
+  const r = await runRound(ctx({ oracle, guarded, fetchPrice: async () => yahoo(101) }));
+  assert.equal(oracle.writes.length + guarded.writes.length, 0);
+  assert.equal(r.rejected, 1);
+  assert.ok(r.refused[0].reason.includes("預檢") && r.refused[0].reason.includes("IsPaused"), r.refused[0].reason);
+}
+
+// ── 窄複審 3／7：初始兩顆不一致，即使 planUpdate 說不用寫也會收斂 ──────────────────
+{
+  const oracle = fakeOracle(100);
+  oracle.state.at = BigInt(NOW - 60); // 剛寫過、價格沒動 → planUpdate.write=false
+  const guarded = fakeGuarded(105);
+  await runRound(ctx({ oracle, guarded, heartbeatSec: 7200, fetchPrice: async () => yahoo(100) }));
+  assert.deepEqual(guarded.writes, [P(100)], "Guarded 補寫到目標");
+  assert.equal(oracle.writes.length, 0, "Mock 已是目標值，不重寫");
+  assert.equal(oracle.state.price, guarded.state.price, "兩顆收斂");
+}
+// 不一致且超過 Guarded 上限 → 拒寫，訊息要寫「兩顆已不一致」（與真的超限區分）。
+{
+  const oracle = fakeOracle(100);
+  oracle.state.at = BigInt(NOW - 60);
+  const guarded = fakeGuarded(120);
+  const r = await runRound(ctx({ oracle, guarded, heartbeatSec: 7200, fetchPrice: async () => yahoo(100) }));
+  assert.equal(r.rejected, 1);
+  assert.ok(r.refused[0].reason.includes("兩顆已不一致"), r.refused[0].reason);
+  const r2 = await runRound(ctx({ oracle: fakeOracle(100), guarded: fakeGuarded(100), fetchPrice: async () => yahoo(109.9) }));
+  assert.equal(r2.rejected, 0);
+  const r3 = await runRound(
+    ctx({
+      oracle: fakeOracle(100),
+      guarded: fakeGuarded(100),
+      fetchPrice: async () => yahoo(115),
+      fetchSecondary: async () => ({ value: 115.2, reason: "ok", source: "yahoo2", quoteAgeSec: 60 }),
+    }),
+  );
+  assert.ok(r3.refused[0].reason.includes("變動超過 GuardedOracle 上限") || r3.refused[0].reason.includes("熔斷"), r3.refused[0].reason);
+}
+
+// ── 窄複審 7：連續情境 —— Mock 寫失敗 → 下一輪補上；拒寫 → 下一輪行情回來就寫 ────
+{
+  const guarded = fakeGuarded(100);
+  const flaky = fakeOracle(100, { updateThrows: new Error("replacement underpriced") });
+  const r1 = await runRound(ctx({ oracle: flaky, guarded, fetchPrice: async () => yahoo(105) }));
+  assert.equal(r1.failed, 1);
+  assert.equal(guarded.state.price, P(105), "Guarded 已寫");
+  // 下一輪：同一顆 Mock（狀態仍是 100）、這次寫得進去；Guarded 已是目標 → 只補 Mock。
+  const healthy = fakeOracle(100);
+  healthy.state.at = BigInt(NOW - 60);
+  const g2writes = guarded.writes.length;
+  await runRound(ctx({ oracle: healthy, guarded, heartbeatSec: 7200, fetchPrice: async () => yahoo(105) }));
+  assert.deepEqual(healthy.writes, [P(105)]);
+  assert.equal(guarded.writes.length, g2writes, "Guarded 不重寫");
+  assert.equal(healthy.state.price, guarded.state.price);
+}
+{
+  const oracle = fakeOracle(100);
+  const guarded = fakeGuarded(100);
+  const r1 = await runRound(ctx({ oracle, guarded, fetchPrice: async () => yahoo(112) }));
+  assert.equal(r1.rejected, 1);
+  const r2 = await runRound(ctx({ oracle, guarded, fetchPrice: async () => yahoo(108) }));
+  assert.equal(r2.rejected, 0);
+  assert.deepEqual([oracle.state.price, guarded.state.price], [P(108), P(108)]);
 }
 
 // ── effectiveBreaker ─────────────────────────────────────────────────────
