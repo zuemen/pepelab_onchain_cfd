@@ -247,7 +247,10 @@ GuardedOracle 的 `GUARDIAN_ROLE`(理由見上)。在 cutover 之前,停單只�
    - **GuardedOracle 拒絕完整價格**:由 GuardedOracle 的 admin 依 2026-07-27 的做法
      (見 [ROLE_SEPARATION.md](ROLE_SEPARATION.md))暫時調整 `maxDeviationBps`、寫入
      完整價格、再設回原值;三筆交易都要記錄 tx hash。
-4. **驗證**:手動觸發 `oracle-health.yml`,確認該資產 `ok`、告警 issue 自動關閉;
+4. **驗證**:手動觸發 `oracle-health.yml`,確認該資產 `ok`、價格過期 issue 自動關閉;
+   「[keeper] 價格熔斷」issue 要連續 4 輪正常、且交易所沒有保護中(ReduceOnly)的資產
+   才會自動關 —— ReduceOnly 需人工解除;crank 清單缺失或 funding 延遲超過
+   2 × FUNDING_INTERVAL 另有「funding 未結算」issue;
    下一輪 keeper 摘要行 `rejected=0 failed=0`。
 
 ## 已知未解:單一資產可能無聲漏掉一輪
