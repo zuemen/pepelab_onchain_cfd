@@ -47,7 +47,7 @@ jobs:
       # 信，連續數小時。訊息裡沒有一個字提到餘額——症狀是「交易送不出去」，原因是
       # 「沒錢付 gas」，兩者隔了好幾層。先檢查餘額就能把那幾小時變成一行警告。
       - name: Check keeper gas balance
-        uses: foundry-rs/foundry-toolchain@v1
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
       - name: Warn before the tank runs dry
         env:
           RPC_URL: ${{ secrets.KEEPER_RPC_URL }}
