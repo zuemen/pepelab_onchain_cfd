@@ -8,6 +8,7 @@ import "../src/PerpetualExchange.sol";
 import "../src/StrategyRegistry.sol";
 import "../src/MockUSDC.sol";
 import "../src/MockOracle.sol";
+import "../src/InsuranceVault.sol";
 
 contract SlashTriggerTest is Test {
     MockUSDC          usdc;
@@ -16,6 +17,7 @@ contract SlashTriggerTest is Test {
     StrategyRegistry  registry;
     PerpetualExchange exchange;
     CopyTracker       ct;
+    InsuranceVault    vault;
 
     address alice = makeAddr("alice");  // trader
     address bob   = makeAddr("bob");    // follower
@@ -39,6 +41,11 @@ contract SlashTriggerTest is Test {
 
         ts.setCopyTracker(address(ct));
         exchange.setCopyTracker(address(ct));
+        // Slashed stake goes to the InsuranceVault, never to the follower.
+        vault = new InsuranceVault(address(usdc));
+        vault.setExchange(address(exchange));
+        vault.setCopyTracker(address(ct));
+        exchange.setInsuranceVault(address(vault));
 
         oracle.addAsset(BTC, BTC_PRICE);
         oracle.addAsset(ETH, ETH_PRICE);
@@ -126,33 +133,43 @@ contract SlashTriggerTest is Test {
         assertEq(slashed, cap, "slash capped at MAX_SLASH_BPS of stake");
     }
 
-    // ── Test 4: slash USDC transferred directly to follower ─────────────────
-    function testSlashTransfersToFollower() public {
+    // ── Test 4: slash USDC goes to the InsuranceVault, not the follower ─────
+    function testSlashGoesToInsuranceVault_notFollower() public {
         _follow(1_000e18);
         oracle.updatePrice(BTC, 60_000e8);   // 40% drop → slash triggered
 
         uint256 bobBefore = usdc.balanceOf(bob);
         _unfollow();
-        assertGt(usdc.balanceOf(bob), bobBefore, "follower receives compensation");
+        assertEq(usdc.balanceOf(bob), bobBefore, "follower is not paid the slash");
+        assertGt(vault.totalAssets(), 0, "vault received it");
     }
 
-    // ── Test 5: follower receives loss-based compensation amount ─────────────
-    function testFollowerReceivesCompensation() public {
-        uint256 followAmt = 1_000e18;
-        _follow(followAmt);
-        // BTC 40% drop: loss ≈ 400e18, slashAmt = 400e18 * 50% = 200e18, cap = 500e18*50%=250e18
+    // ── Test 5: the vault receives exactly the slashed amount ───────────────
+    function testInsuranceVaultReceivesExactlyTheSlash() public {
+        _follow(1_000e18);
+        // BTC 40% drop at 2x on 500: loss 400; slash = 50% = 200 (cap 250)
         oracle.updatePrice(BTC, 60_000e8);
 
-        uint256 bobBefore   = usdc.balanceOf(bob);
+        uint256 vaultBefore = vault.totalAssets();
         uint256 stakeBefore = ts.getStake(alice).amount;
         _unfollow();
-        uint256 bobReceived = usdc.balanceOf(bob) - bobBefore;
-        uint256 slashed     = stakeBefore - ts.getStake(alice).amount;
+        uint256 slashed = stakeBefore - ts.getStake(alice).amount;
+        assertEq(slashed, 200e18);
+        assertEq(vault.totalAssets() - vaultBefore, slashed, "vault accounting == slash");
+        assertEq(usdc.balanceOf(address(ct)), 0, "nothing stranded in the tracker");
+    }
 
-        // Both should be the same value (slash goes to bob)
-        assertEq(bobReceived, slashed, "USDC slash == follower receipt");
-        // Slash is 50% of 40% loss = 200e18 (approximate — PnL rounding may vary)
-        assertGt(slashed, 0, "some slash occurred");
+    // ── Test 5b: no vault accepting the tracker → slash skipped, not stranded
+    function testSlashSkippedWhenVaultDoesNotAcceptTracker() public {
+        vault.setCopyTracker(address(0));
+        _follow(1_000e18);
+        oracle.updatePrice(BTC, 60_000e8);
+        uint256 stakeBefore = ts.getStake(alice).amount;
+        vm.expectEmit(true, true, false, true, address(ct));
+        emit CopyTracker.SlashSkippedNoVault(alice, bob, 200e18);
+        _unfollow();
+        assertEq(ts.getStake(alice).amount, stakeBefore);
+        assertEq(usdc.balanceOf(address(ct)), 0);
     }
 
     // ── Test 6: slash skipped when traderStake == address(0) ────────────────

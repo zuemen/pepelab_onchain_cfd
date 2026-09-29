@@ -12,6 +12,11 @@ interface IFeeRouterCopy {
     function distributeCopyFee(address trader, uint256 fee) external;
 }
 
+interface IInsuranceVaultForCT {
+    function copyTracker() external view returns (address);
+    function depositFromProtocol(uint256 amount) external;
+}
+
 interface ITraderStakeForCT {
     function slash(address trader, uint256 amount, address recipient) external;
     function stakedAmount(address trader) external view returns (uint256);
@@ -82,6 +87,9 @@ contract CopyTracker is ReentrancyGuard {
     /// @notice The follower closed at least one leg of this record themselves,
     ///         so the record was released without scoring the trader.
     event SlashScoringWaived(address indexed follower, uint256 indexed recordIdx);
+    /// @notice A slash was due but no InsuranceVault accepting CopyTracker
+    ///         deposits is wired to the exchange, so it was not taken.
+    event SlashSkippedNoVault(address indexed trader, address indexed follower, uint256 amount);
     /// @notice The follower released a record without closing its legs and
     ///         without scoring the trader (see `deactivateWithoutScoring`).
     event RecordDeactivatedWithoutScoring(address indexed follower, uint256 indexed recordIdx);
@@ -199,14 +207,24 @@ contract CopyTracker is ReentrancyGuard {
     ///          strategy: the record is released and NOT scored at all. Any
     ///          partial scoring would let the follower choose which legs count
     ///          (self-close the winners, let the tracker close the losers);
-    ///          waiving is the only rule neither side can game, and it can
-    ///          only cost the follower their own remedy;
+    ///          waiving closes that particular lever, and it can only cost
+    ///          the follower their own remedy;
     ///        • legs closed now by this tracker, and legs that were liquidated
     ///          or auto-deleveraged (outcomes of the strategy, not of the
     ///          follower's choices), are scored on their realized PnL
     ///          (`Position.realizedPnL`, capped, before fees and funding —
     ///          the trader is judged on the price call, not on protocol fees);
     ///        • basis = Σ margin of the scored legs; loss is capped at it.
+    ///
+    ///      Where a slash goes: to the InsuranceVault wired to the exchange,
+    ///      NEVER to the follower who triggered it. The score is still not
+    ///      manipulation-proof — a follower can, for example, push the mark
+    ///      against their own copied legs with an opposite position (the mark
+    ///      premium is capped, but at 5x it can move a leg by ~10% of margin)
+    ///      and tip a 20% loss over the 30% trigger. Paying the slash to the
+    ///      pool removes the payoff: the follower earns nothing from a slash,
+    ///      so hedging to force one only costs them fees. Copy trading ships
+    ///      disabled by default in the commercial build.
     ///      A leg that is still open and cannot be closed now (exchange
     ///      paused, asset halted, stale price, tracker replaced) reverts
     ///      `PositionStillOpen`; `deactivateWithoutScoring` is the exit.
@@ -265,11 +283,7 @@ contract CopyTracker is ReentrancyGuard {
                     uint256 slashAmt = loss * SLASH_RATIO_BPS / 10_000;
                     uint256 cap      = staked * MAX_SLASH_BPS / 10_000;
                     if (slashAmt > cap) slashAmt = cap;
-                    if (slashAmt > 0) {
-                        try traderStake.slash(rec.trader, slashAmt, msg.sender) {
-                            emit TraderSlashed(rec.trader, msg.sender, slashAmt);
-                        } catch {}
-                    }
+                    if (slashAmt > 0) _slashToInsurance(rec.trader, slashAmt);
                 }
             }
         }
@@ -277,6 +291,32 @@ contract CopyTracker is ReentrancyGuard {
         rec.active = false;
 
         emit TraderUnfollowed(msg.sender, rec.trader, recordIdx);
+    }
+
+    /// @dev Takes `amount` of `trader`'s stake into this contract and deposits
+    ///      it into the exchange's InsuranceVault. Skipped (with an event)
+    ///      when no vault is wired or the vault does not accept deposits from
+    ///      this tracker, so a misconfiguration can never strand slashed USDC
+    ///      here or brick unfollow. `TraderSlashed.follower` is the account
+    ///      whose unfollow triggered the slash, not a recipient.
+    function _slashToInsurance(address trader, uint256 amount) internal {
+        address vault = address(exchange.insuranceVault());
+        bool accepts;
+        if (vault != address(0)) {
+            // try: a vault without `copyTracker()` must not brick unfollow
+            try IInsuranceVaultForCT(vault).copyTracker() returns (address ct) {
+                accepts = ct == address(this);
+            } catch {}
+        }
+        if (!accepts) {
+            emit SlashSkippedNoVault(trader, msg.sender, amount);
+            return;
+        }
+        try traderStake.slash(trader, amount, address(this)) {
+            usdc.forceApprove(vault, amount);
+            IInsuranceVaultForCT(vault).depositFromProtocol(amount);
+            emit TraderSlashed(trader, msg.sender, amount);
+        } catch {}
     }
 
     /// @notice Release a copy record without closing its legs and without

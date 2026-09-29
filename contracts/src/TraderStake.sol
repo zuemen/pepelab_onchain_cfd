@@ -103,6 +103,11 @@ contract TraderStake is Ownable, ReentrancyGuard {
     }
 
     // ── Slash (called by CopyTracker only) ───────────────────────────────────
+    /// @notice Moves `amount` of `trader`'s stake to `recipient`.
+    /// @dev The CopyTracker passes ITSELF as `recipient` and forwards the USDC
+    ///      into the exchange's InsuranceVault — a slash is never paid to the
+    ///      follower who triggered it, so no follower can profit from forcing
+    ///      one (see `CopyTracker.unfollowAndCloseAll`).
     function slash(address trader, uint256 amount, address recipient) external nonReentrant {
         if (msg.sender != copyTracker) revert NotCopyTracker();
         StakeInfo storage s = stakes[trader];

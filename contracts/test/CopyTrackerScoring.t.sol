@@ -9,6 +9,7 @@ import "../src/StrategyRegistry.sol";
 import "../src/AgentSessionManager.sol";
 import "../src/MockUSDC.sol";
 import "../src/MockOracle.sol";
+import "../src/InsuranceVault.sol";
 
 /// @notice Slash scoring on unfollow is taken from the exchange's per-position
 ///         records (realized PnL + close reason), never from the follower's
@@ -21,6 +22,7 @@ contract CopyTrackerScoringTest is Test {
     StrategyRegistry  registry;
     PerpetualExchange exchange;
     CopyTracker       ct;
+    InsuranceVault    vault;
 
     address alice = makeAddr("alice"); // trader
     address bob   = makeAddr("bob");   // follower
@@ -42,6 +44,11 @@ contract CopyTrackerScoringTest is Test {
         ct       = new CopyTracker(address(usdc), address(exchange), address(registry), address(0), address(ts));
         ts.setCopyTracker(address(ct));
         exchange.setCopyTracker(address(ct));
+        // Slashed stake goes to the InsuranceVault, never to the follower.
+        vault = new InsuranceVault(address(usdc));
+        vault.setExchange(address(exchange));
+        vault.setCopyTracker(address(ct));
+        exchange.setInsuranceVault(address(vault));
         exchange.setExecutionFee(0);
         exchange.setTradingFeeBps(0);
         exchange.setBorrowFeePerHour(0);
@@ -134,7 +141,8 @@ contract CopyTrackerScoringTest is Test {
         emit TraderSlashed(alice, bob, 200e18); // 50% of the 400 loss
         _unfollow();
         assertEq(ts.getStake(alice).amount, 300e18);
-        assertEq(usdc.balanceOf(bob) - bobUsdc, 200e18);
+        assertEq(usdc.balanceOf(bob), bobUsdc, "slash is not paid to the follower");
+        assertEq(vault.totalAssets(), 200e18, "it goes to the InsuranceVault");
     }
 
     function test_unfollow_flatMarketWithFees_noSlash() public {
@@ -157,6 +165,37 @@ contract CopyTrackerScoringTest is Test {
         oracle.updatePrice(BTC, 100_000e8);
         _unfollow(); // realized -500 on basis 1,000 = 50% -> slash 250
         assertEq(ts.getStake(alice).amount, 250e18);
+    }
+
+    /// Review scenario: the follower opens a large opposite BTC position to
+    /// drag the mark 2% below index, tipping a 29% loss over the 30% trigger.
+    /// The slash still fires — but it is paid to the InsuranceVault, so the
+    /// follower gains nothing from forcing it.
+    function test_unfollow_markPushedByFollowerHedge_slashNotPaidToFollower() public {
+        exchange.setMarkPremiumCapBps(200);
+        // Re-follow so the legs open with the premium configured (record 1).
+        vm.prank(bob);
+        ct.followTrader(alice, 1_000e18);
+
+        oracle.updatePrice(BTC, 71_000e8); // index loss on the 2x BTC leg: 29%
+        vm.startPrank(bob);
+        usdc.approve(address(exchange), type(uint256).max);
+        exchange.depositMargin(10_000e18);
+        exchange.openPosition(BTC, false, 10_000e18, 5); // 50k short drags the mark
+        vm.stopPrank();
+
+        vm.prank(bob);
+        ct.deactivateWithoutScoring(0); // the first record is not part of this scenario
+
+        uint256 bobUsdc = usdc.balanceOf(bob);
+        uint256 stakeBefore = ts.getStake(alice).amount;
+        vm.prank(bob);
+        ct.unfollowAndCloseAll(1);
+
+        uint256 slashed = stakeBefore - ts.getStake(alice).amount;
+        assertGt(slashed, 0, "the pushed mark did trip the trigger");
+        assertEq(usdc.balanceOf(bob), bobUsdc, "the follower receives nothing from it");
+        assertEq(vault.totalAssets(), slashed, "the pool does");
     }
 
     // ── exit for records the tracker cannot close ───────────────────────────
