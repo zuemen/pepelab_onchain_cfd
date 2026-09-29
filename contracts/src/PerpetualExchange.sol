@@ -70,6 +70,11 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
     uint256 public constant MAX_MAINTENANCE_MARGIN_BPS   = 9_999;  // must stay < 100%
     uint256 public constant MAX_PRICE_AGE_LIMIT          = 7 days;
     uint256 public constant MAX_EXECUTION_FEE            = 1 ether;
+    /// @notice M4: ceiling on the mark-price premium (10% of index). The
+    ///         premium moves every position's PnL and liquidation price, so
+    ///         an unbounded setter let the owner mark the whole book to an
+    ///         arbitrary price; above 10% it stops being a premium at all.
+    uint256 public constant MAX_MARK_PREMIUM_CAP_BPS     = 1_000;
 
     // ── Funding (multi/short imbalance) ──────────────────────────────────────
     // Funding charges the crowded side and pays the other; it is NOT a financing
@@ -445,6 +450,9 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
     /// @notice A settlement (close, liquidation or ADL) paid `paidPnl` instead
     ///         of the position's mark-to-market `rawPnl` because of its cap.
     event ProfitCapped(uint256 indexed positionId, int256 rawPnl, int256 paidPnl);
+    /// @notice H3: in portfolio mode, part of a position's shortfall was paid
+    ///         out of its owner's free margin before any pool backstop.
+    event ShortfallChargedToAccount(uint256 indexed positionId, address indexed owner, uint256 amount);
 
     // ── Errors ───────────────────────────────────────────────────────────────
 
@@ -475,6 +483,12 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
     error AssetHalted(bytes32 asset);
     /// @notice P1: opening would lift this side's open interest above its cap.
     error OpenInterestCapExceeded(bytes32 asset, bool isLong, uint256 resultingOI, uint256 cap);
+    /// @notice H3: portfolio mode — the withdrawal would leave the account
+    ///         below its maintenance requirement.
+    error AccountUnhealthy(address owner, int256 equity, uint256 maintenance);
+    /// @notice M1: only the CopyTracker may attribute a position to a leader
+    ///         (`copiedFrom`), because that address is paid a performance fee.
+    error CopiedFromNotAllowed(address caller);
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
@@ -667,7 +681,11 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
 
     /// @notice Set the mark-price premium cap (bps of index). 0 disables the
     ///         premium so mark == index (legacy pricing).
+    /// @dev M4: bounded by MAX_MARK_PREMIUM_CAP_BPS, like every other risk knob
+    ///      (M-3). An unbounded value let the owner push the mark far from the
+    ///      index and liquidate or enrich one side of the book at will.
     function setMarkPremiumCapBps(uint256 _bps) external onlyOwner {
+        require(_bps <= MAX_MARK_PREMIUM_CAP_BPS, "premium cap>10%");
         markPremiumCapBps = _bps;
         emit MarkPremiumCapBpsSet(_bps);
     }
@@ -821,9 +839,17 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
         emit MarginDeposited(user, amount);
     }
 
+    /// @dev H3: in portfolio mode free margin is collateral — `_accountState`
+    ///      counts it as equity and it is what keeps an underwater leg from
+    ///      being liquidated. Withdrawing it used to be unchecked, so an account
+    ///      could let free margin shield a losing leg and then walk away with
+    ///      it, leaving the loss to the pool. A withdrawal must now leave the
+    ///      account at or above maintenance, valued on fresh prices. Isolated
+    ///      mode is unchanged: there free margin backs nothing.
     function withdrawMargin(uint256 amount) external whenNotPaused nonReentrant {
         if (freeMargin[msg.sender] < amount) revert InsufficientFreeMargin();
         freeMargin[msg.sender] -= amount;
+        if (portfolioMarginEnabled) _requireHealthyAccount(msg.sender);
         usdc.safeTransfer(msg.sender, amount);
         emit MarginWithdrawn(msg.sender, amount);
     }
@@ -853,6 +879,12 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
         require(msg.value >= executionFee, "Insufficient execution fee");
         if (copyTracker == address(0)) revert CopyTrackerNotSet();
         if (!authorizedAgents[msg.sender]) revert NotCopyTracker();
+        // M1: `copiedFrom` is paid PERFORMANCE_FEE_BPS of the position's
+        // profit on close. Any other authorized agent (AgentSessionManager
+        // forwards it straight from the session agent) could name itself and
+        // skim 10% of its principal's winnings. Only the CopyTracker, which
+        // sets it from the followed trader's published strategy, may attribute.
+        if (copiedFrom != address(0) && msg.sender != copyTracker) revert CopiedFromNotAllowed(msg.sender);
         positionId = _openPosition(user, asset, isLong, margin, leverage, copiedFrom, msg.sender);
         _refundExcessFee();
     }
@@ -966,6 +998,11 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
         uint256 refund;
         uint256 reward;
         uint256 toVault;
+        uint256 shortfall;
+        if (closeAmount < 0) {
+            // H3: portfolio mode charges the owner's free margin first.
+            shortfall = _chargeAccountForShortfall(positionId, pos.owner, uint256(-closeAmount));
+        }
         if (closeAmount > 0) {
             // M-2: the remaining collateral is no longer swept wholesale. The
             // liquidator is paid, the protocol keeps its penalty, and the rest —
@@ -987,13 +1024,14 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
                 usdc.forceApprove(address(insuranceVault), toVault);
                 insuranceVault.depositFromProtocol(toVault);
             }
-        } else if (closeAmount < 0) {
-            // N2: the position is underwater beyond its collateral, so the
-            // protocol is short uint(-closeAmount). Insurance fund first — draw
-            // what the vault can into the exchange's reserves to fill the hole —
-            // then auto-deleverage profitable counterparties for whatever the
-            // vault could not cover, keeping the system solvent.
-            _absorbShortfall(positionId, pos.asset, pos.isLong, uint256(-closeAmount));
+        } else if (shortfall > 0) {
+            // N2: the position is underwater beyond its collateral (and, in
+            // portfolio mode, beyond its owner's free margin), so the protocol
+            // is short `shortfall`. Insurance fund first — draw what the vault
+            // can into the exchange's reserves to fill the hole — then
+            // auto-deleverage profitable counterparties for whatever the vault
+            // could not cover, keeping the system solvent.
+            _absorbShortfall(positionId, pos.asset, pos.isLong, shortfall);
         }
 
         // N2 / C-3: compact the per-asset ADL index last, so _autoDeleverage
@@ -1007,6 +1045,47 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
 
         emit PositionLiquidated(positionId, pos.owner, msg.sender, pnl);
         emit PositionClosed(positionId, pos.owner, pnl, refund);
+    }
+
+    /// @dev H3: portfolio (cross) margin means the whole account backs every
+    ///      leg — that is exactly why `_accountState` counts free margin as
+    ///      equity and why an underwater leg is not liquidated while free
+    ///      margin covers it. The same free margin must therefore pay when the
+    ///      leg is finally settled below zero; previously the loss went
+    ///      straight to the InsuranceVault / ADL / bad debt while the owner
+    ///      kept the free margin that had been shielding it. Isolated mode is
+    ///      untouched: there a position can never lose more than its margin.
+    ///      Unrealized profit on the owner's OTHER open legs is not touched
+    ///      (it cannot be taken without closing them); whatever free margin
+    ///      cannot cover still goes to the normal backstops.
+    /// @return remaining the part of `shortfall` the account could not cover.
+    function _chargeAccountForShortfall(uint256 positionId, address owner, uint256 shortfall)
+        internal
+        returns (uint256 remaining)
+    {
+        remaining = shortfall;
+        if (!portfolioMarginEnabled) return remaining;
+        uint256 fm = freeMargin[owner];
+        uint256 charged = fm < remaining ? fm : remaining;
+        if (charged == 0) return remaining;
+        freeMargin[owner] = fm - charged;
+        remaining -= charged;
+        emit ShortfallChargedToAccount(positionId, owner, charged);
+    }
+
+    /// @dev H3: reverts unless `owner`'s account is at or above maintenance,
+    ///      valued on fresh, non-zero prices for every asset it holds (a stale
+    ///      or broken feed could otherwise overstate equity and release
+    ///      collateral that is actually needed).
+    function _requireHealthyAccount(address owner) internal view {
+        uint256[] storage ids = userPositions[owner];
+        uint256 n = ids.length;
+        if (n == 0) return;
+        for (uint256 i = 0; i < n; ++i) {
+            _requireFresh(positions[ids[i]].asset);
+        }
+        (int256 eq, uint256 mm) = _accountState(owner);
+        if (eq < SafeCast.toInt256(mm)) revert AccountUnhealthy(owner, eq, mm);
     }
 
     /// @dev C-2: the single bad-debt path shared by `liquidatePosition` and
@@ -1512,9 +1591,15 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
         return rawPrice * 1e10;
     }
 
+    /// @dev Freshness gate for close / liquidation / withdrawal health.
+    ///      M8: also refuses a zero price, like `_freshPrice` does for opens.
+    ///      A fresh zero used to pass here, and `_calcPnL` then valued every
+    ///      long at a total loss and every short at a windfall, so a single
+    ///      bad print could liquidate the whole long book and pay out shorts.
     function _requireFresh(bytes32 asset) internal view {
-        (, uint256 updatedAt) = oracle.getPrice(asset);
+        (uint256 rawPrice, uint256 updatedAt) = oracle.getPrice(asset);
         if (block.timestamp > updatedAt + maxPriceAge) revert StalePrice(asset, updatedAt);
+        if (rawPrice == 0) revert InvalidPrice(asset);
     }
 
     function _openPosition(
@@ -1661,9 +1746,12 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
         uint256 shortfall;
         uint256 bailoutFloor;
         if (closeAmount < 0) {
-            shortfall = uint256(-closeAmount);
+            // H3: portfolio mode charges the owner's free margin first; only
+            // what it cannot cover reaches the pool backstops (and only then
+            // is the owner "wiped out" for the bailout-floor rule below).
+            shortfall = _chargeAccountForShortfall(positionId, pos.owner, uint256(-closeAmount));
             closeAmount = 0;
-            if (address(insuranceVault) != address(0)) {
+            if (shortfall > 0 && address(insuranceVault) != address(0)) {
                 uint256 avail = insuranceVault.totalAssets();
                 uint256 floor = pos.margin * BAILOUT_FLOOR_BPS / 10_000;
                 if (avail >= shortfall + floor) bailoutFloor = floor;
@@ -1754,6 +1842,9 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
     ///   if short:   pnl = -pnl
     function _calcPnL(Position storage pos) internal view returns (int256) {
         (uint256 rawPrice,) = oracle.getPrice(pos.asset);
+        // M8: never value a position at a zero price — fail closed, in views
+        // and in portfolio-health checks alike (see `_requireFresh`).
+        if (rawPrice == 0) revert InvalidPrice(pos.asset);
         // Value PnL (and therefore liquidation) on the mark price, not the raw
         // index, so OI imbalance is reflected the way a real perp does.
         //
