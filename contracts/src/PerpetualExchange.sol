@@ -1098,7 +1098,8 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     }
 
     /// @dev CopyTracker pulls USDC from itself, credits freeMargin to `user`.
-    function depositMarginFor(address user, uint256 amount) external whenNotPaused nonReentrant {
+    ///      Like `depositMargin`, deliberately NOT paused: value only moves in.
+    function depositMarginFor(address user, uint256 amount) external nonReentrant {
         if (!authorizedAgents[msg.sender]) revert NotCopyTracker();
         usdc.safeTransferFrom(msg.sender, address(this), amount);
         freeMargin[user] += amount;

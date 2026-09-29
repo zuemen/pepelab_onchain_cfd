@@ -374,9 +374,22 @@ contract ExchangeGuardianTest is Test {
         exchange.withdrawMargin(1e18);
     }
 
-    function test_paused_depositMarginFor_reverts() public {
+    /// Like depositMargin, the agent deposit path only moves value in and
+    /// stays open during a pause.
+    function test_paused_depositMarginFor_allowed() public {
         exchange.pause();
-        // followTrader's first exchange call is depositMarginFor.
+        usdc.mint(address(sessions), 1_000e18);
+        vm.startPrank(address(sessions));
+        usdc.approve(address(exchange), 1_000e18);
+        uint256 before = exchange.freeMargin(user);
+        exchange.depositMarginFor(user, 1_000e18);
+        vm.stopPrank();
+        assertEq(exchange.freeMargin(user), before + 1_000e18);
+    }
+
+    /// A follow still reverts as a whole during a pause: its opens do.
+    function test_paused_copyFollow_reverts() public {
+        exchange.pause();
         vm.prank(follower);
         vm.expectRevert(PerpetualExchange.EnforcedPause.selector);
         copyTracker.followTrader(trader, 1_000e18);
