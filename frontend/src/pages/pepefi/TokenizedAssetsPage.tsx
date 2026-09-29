@@ -179,16 +179,26 @@ export default function TokenizedAssetsPage() {
     if (!contracts || !vaultReady || !wallet.address || !activeVault || !activeOracle) {
       setLoading(false); return
     }
-    const next: Record<string, Row> = {}
+    // 一輪要對公共 RPC 同時送出 40 多筆讀取，偶爾有幾筆被限流或逾時。舊版把失敗
+    // 的那筆當成 0 寫進去，於是價格變「—」、新鮮度變「年齡未知」、餘額變 0，
+    // 而且每輪隨機換一顆資產中獎。現在失敗的欄位回 null，合併時沿用上一輪讀到的
+    // 值；getPrice 另外重試一次，因為它決定整列能不能交易。
+    const readPrice = async (id: string) =>
+      (await safeRead<[bigint, bigint] | null>(activeOracle.getPrice(id) as Promise<[bigint, bigint]>, null)) ??
+      safeRead<[bigint, bigint] | null>(activeOracle.getPrice(id) as Promise<[bigint, bigint]>, null)
+
+    const fresh: Record<string, {
+      price: [bigint, bigint] | null; balance: bigint | null; cap: bigint | null; issued: bigint | null
+    }> = {}
     await Promise.all(
       symbols.map(async (sym) => {
         const id = ASSET_IDS[sym]
         const [priceRes, balance, cap, issued] = await Promise.all([
-          safeRead(activeOracle.getPrice(id) as Promise<[bigint, bigint]>, [0n, 0n] as [bigint, bigint]),
-          safeRead(
+          readPrice(id),
+          safeRead<bigint | null>(
             new Contract(activeTokens[sym]!, activeTokenAbi, contracts.usdc.runner)
               .balanceOf(wallet.address) as Promise<bigint>,
-            0n,
+            null,
           ),
           // V2-only views; on V1 these reject and fall back, which is why each
           // read is isolated rather than batched into one try.
@@ -197,13 +207,26 @@ export default function TokenizedAssetsPage() {
           // 欄（那張卡片牆版本有的 t.tokens.card.issuedOverCap）——Expert
           // Mode 專屬的欄位由 #136 補回來，讀取先留著，免得那張票還要重新
           // 接一次資料源。
-          isV2 ? safeRead(activeVault.assetCap(id) as Promise<bigint>, 0n) : Promise.resolve(0n),
-          isV2 ? safeRead(activeVault.exposureOf(id) as Promise<bigint>, 0n) : Promise.resolve(0n),
+          isV2 ? safeRead<bigint | null>(activeVault.assetCap(id) as Promise<bigint>, null) : Promise.resolve(0n),
+          isV2 ? safeRead<bigint | null>(activeVault.exposureOf(id) as Promise<bigint>, null) : Promise.resolve(0n),
         ])
-        next[sym] = { price: priceRes[0], updatedAt: priceRes[1], balance, cap, issued }
+        fresh[sym] = { price: priceRes, balance, cap, issued }
       })
     )
-    setRows(next)
+    setRows(prev => {
+      const next: Record<string, Row> = {}
+      for (const [sym, f] of Object.entries(fresh)) {
+        const old = prev[sym]
+        next[sym] = {
+          price:     f.price?.[0] ?? old?.price ?? 0n,
+          updatedAt: f.price?.[1] ?? old?.updatedAt ?? 0n,
+          balance:   f.balance ?? old?.balance ?? 0n,
+          cap:       f.cap ?? old?.cap ?? 0n,
+          issued:    f.issued ?? old?.issued ?? 0n,
+        }
+      }
+      return next
+    })
 
     if (isV2) {
       // #99: reserveStatus() reads the ratio and its trustworthiness together
@@ -253,6 +276,9 @@ export default function TokenizedAssetsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contracts, vaultReady, wallet.address, wallet.chainId, isV2])
 
+  // 換錢包或換鏈時先清空——refresh 讀取失敗會沿用上一輪的值，不能沿用到別的
+  // 錢包的餘額或別條鏈的價格。
+  useEffect(() => { setRows({}) }, [wallet.address, wallet.chainId, isV2])
   useEffect(() => { void refresh() }, [refresh])
 
   // Live quote from the contract rather than client-side arithmetic, so the V2

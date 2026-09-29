@@ -1,5 +1,4 @@
-import type { Contract } from 'ethers'
-
+import { Contract } from 'ethers'
 import { useState, useEffect } from 'react'
 
 import { ASSET_IDS } from 'src/contracts/addresses'
@@ -37,6 +36,25 @@ export interface UseESGResult {
 }
 
 type ESGTuple = { environmental: bigint; social: bigint; governance: bigint; rating: string }
+type MedianTuple = [bigint, bigint, bigint, bigint, boolean]
+
+// Base Sepolia 的 addresses.ESGRegistry 指向的是 ESGRegistryV2——它沒有 V1 的
+// getESG，只有 medianESG（見證人中位數）。舊版只打 getESG，於是 11 筆全部
+// revert、ESG 頁雷達圖永遠「No data」。這裡對同一個位址補讀 medianESG。
+const MEDIAN_ESG_ABI = [
+  'function medianESG(bytes32) view returns (uint8 environmental, uint8 social, uint8 governance, uint256 count, bool isRated)',
+]
+
+/** V2 沒有存評等字串，由綜合分推導——門檻與 ESGPage 的 RATING_TABLE 一致。 */
+export function ratingFor(composite: number): string {
+  if (composite >= 80) return 'AAA'
+  if (composite >= 70) return 'AA'
+  if (composite >= 60) return 'A'
+  if (composite >= 50) return 'BBB'
+  if (composite >= 40) return 'BB'
+  if (composite >= 30) return 'B'
+  return 'CCC'
+}
 
 /**
  * 讀 ESGRegistry 的 11 檔評級。
@@ -71,16 +89,20 @@ export function useESG(esgRegistry: Contract | null): UseESGResult {
     setError(false)
     setUnavailable(false)
 
+    const v2 = new Contract(esgRegistry.target, MEDIAN_ESG_ABI, esgRegistry.runner)
+
+    const readOne = async (id: string): Promise<ESGTuple | null> => {
+      const v1 = await safeRead<ESGTuple | null>(esgRegistry.getESG(id) as Promise<ESGTuple>, null)
+      if (v1) return v1
+      const m = await safeRead<MedianTuple | null>(v2.medianESG(id) as Promise<MedianTuple>, null)
+      if (!m || !m[4]) return null // V2 上也沒有新鮮的見證 → 視為未評等
+      const [environmental, social, governance] = m
+      const composite = Math.round((Number(environmental) + Number(social) + Number(governance)) / 3)
+      return { environmental, social, governance, rating: ratingFor(composite) }
+    }
+
     void (async () => {
-      const rows = await Promise.all(
-        ASSETS.map(async id => {
-          const d = await safeRead<ESGTuple | null>(
-            esgRegistry.getESG(id) as Promise<ESGTuple>,
-            null,
-          )
-          return { id, d }
-        }),
-      )
+      const rows = await Promise.all(ASSETS.map(async id => ({ id, d: await readOne(id) })))
       if (cancelled) return
 
       const out: Record<string, ESGInfo> = {}

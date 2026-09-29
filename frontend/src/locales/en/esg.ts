@@ -28,7 +28,7 @@ export const esg: Catalog['esg'] = {
 
   connectWallet: 'Connect wallet to load live ESG scores from the on-chain ESGRegistry.',
   wrongNetwork:
-    'ESGRegistry is only deployed on Ethereum Sepolia. Connect to Ethereum Sepolia to see live on-chain scores.',
+    'No ESGRegistry is deployed on this network. Switch to Base Sepolia or Ethereum Sepolia to see live on-chain scores.',
   loadFailed: 'Failed to load ESG data — refresh the page.',
 
   methodology: {
@@ -93,7 +93,7 @@ export const esg: Catalog['esg'] = {
 
   radar: {
     title: 'C · E/S/G Radar Chart',
-    noData: 'No data — connect wallet on Ethereum Sepolia',
+    noData: 'No on-chain score for this asset yet',
     composite: 'Composite',
     hint: 'Click any asset card on the left to update the radar',
   },
