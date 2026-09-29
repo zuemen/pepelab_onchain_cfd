@@ -4,6 +4,7 @@ import {
   __test__,
   FEATURES,
   isPathEnabled,
+  mockWalletEnabled,
   FIXED_LEVERAGE,
   SHOW_LEVERAGE,
   FEATURE_GAMEFI,
@@ -11,6 +12,18 @@ import {
   FEATURE_COPY_TRADING,
   FEATURE_PEPE_REWARDS,
 } from './featureFlags'
+
+describe('mockWalletEnabled', () => {
+  it('開發環境一律開', () => {
+    expect(mockWalletEnabled(true, undefined)).toBe(true)
+  })
+  it('正式 build 預設關，只有明確設旗標才開', () => {
+    expect(mockWalletEnabled(false, undefined)).toBe(false)
+    expect(mockWalletEnabled(false, '')).toBe(false)
+    expect(mockWalletEnabled(false, 'yes')).toBe(false)
+    expect(mockWalletEnabled(false, '1')).toBe(true)
+  })
+})
 
 const ALL_OFF = { gamefi: false, pepeRewards: false, copyTrading: false }
 const ALL_ON = { gamefi: true, pepeRewards: true, copyTrading: true }

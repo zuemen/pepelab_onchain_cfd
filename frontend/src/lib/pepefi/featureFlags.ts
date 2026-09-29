@@ -101,4 +101,20 @@ export function isPathEnabled(path: string, flags: FeatureFlags = FEATURES): boo
   return true;
 }
 
+/**
+ * Mock Wallet（無錢包的簡報測試通道）要不要出現。
+ *
+ * `yarn dev` 一律出現（開發與簡報排練用）；正式 build 只有明確設
+ * `VITE_ENABLE_MOCK_WALLET=1` 才出現。正式站不該有一顆「不用錢包就能進站」的按鈕——
+ * 它登入的是一個假位址，所有鏈上讀取都會是空的，做 DD 的人看到只會以為系統壞了。
+ */
+export function mockWalletEnabled(dev: boolean, raw: unknown): boolean {
+  return dev || readFlag(raw, false);
+}
+
+export const MOCK_WALLET_ENABLED = mockWalletEnabled(
+  import.meta.env.DEV,
+  import.meta.env.VITE_ENABLE_MOCK_WALLET
+);
+
 export const __test__ = { readFlag };
