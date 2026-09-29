@@ -15,20 +15,15 @@
 // 完全跳過，不影響價格寫入。
 import { ethers } from "ethers";
 import {
-  toPrice8,
-  planUpdate,
-  guardDeviation,
-  planMirror,
   runVerdict,
   DEFAULT_BREAKER_DEVIATION,
   DEFAULT_CONFIRM_TOLERANCE,
   BREAKER_RANGE,
   CONFIRM_TOLERANCE_RANGE,
   parseRatioEnv,
-  type ParsedFeed,
-  type SourceQuote,
 } from "./core.ts";
-import { fetchMarketSession, fetchPrice, fetchSecondaryPrice, type QuoteMeta } from "./feeds.ts";
+import { fetchMarketSession, fetchPrice, fetchSecondaryPrice } from "./feeds.ts";
+import { runRound } from "./round.ts";
 import { classifyProbeError, decideAssetMode, modeName, switchesMode } from "./operator.ts";
 import type { MarketSession } from "./market.ts";
 
@@ -197,144 +192,38 @@ async function main(): Promise<void> {
   }
 
   const nowSec = Math.floor(Date.now() / 1000);
-  let wrote = 0;
-  let failed = 0;
-  let available = 0;   // 拿到合法價格的資產數
-  let skipped = 0;     // 來源壞掉而跳過的資產數
-  let rejected = 0;    // 觸發價格熔斷、被拒寫的資產數（A-5）
-  let confirmed = 0;   // 超過熔斷門檻但多源確認通過、寫入共識價的資產數
-
-  for (const symbol of SYMBOLS) {
-    const assetId = ethers.id(symbol); // == cast keccak "$SYM"
-
-    // 優先中繼鏈上的去中心化聚合價；聚合器沒有這個資產的 feed（測試網上多數股票
-    // 都是如此）或自報過期時，才退回外部 API。
-    const relayed = await fetchFromRelay(relay, assetId);
-    const feed: ParsedFeed & QuoteMeta & { source: string } =
-      relayed !== null
-        ? {
-            value: relayed.price,
-            reason: "ok",
-            source: "chainlink/pyth relay",
-            quoteAgeSec: Math.max(0, nowSec - relayed.updatedAt),
-          }
-        : await fetchPrice(symbol);
-
-    // 休市切換放在價格判斷之前：價格來源壞了不影響「現在是不是休市」。
-    if (exchange) {
-      const r = await applyMarketMode(exchange, assetId, symbol, nowSec);
-      if (r === "missing") exchange = null; // 舊 exchange：整輪不再探測
-      if (r === "failed") failed += 1;
-    }
-
-    if (feed.value === null) {
-      // 拒絕而不是夾擠：夾擠出來的價格讀者無法分辨真假。
-      console.log(`${symbol.padEnd(6)} 來源無效，跳過 (${feed.source}: ${feed.reason})`);
-      skipped += 1;
-      continue;
-    }
-    available += 1;
-
-    let current = 0;
-    let lastUpdated = 0;
-    try {
-      const [raw, at] = (await oracle.getPrice(assetId)) as [bigint, bigint];
-      current = Number(raw) / 1e8;
-      lastUpdated = Number(at);
-    } catch {
-      // 資產還沒被 addAsset：current 留 0，planUpdate 會判為 seed。
-    }
-
-    const plan = planUpdate({
-      target: feed.value,
-      current,
-      lastUpdatedSec: lastUpdated,
-      nowSec,
-      deviationThreshold: DEVIATION_THRESHOLD,
-      heartbeatSec: HEARTBEAT_SEC,
-    });
-
-    const ageMin = lastUpdated > 0 ? ((nowSec - lastUpdated) / 60).toFixed(1) : "n/a";
-    const quoteAge =
-      typeof feed.quoteAgeSec === "number" ? ` quote=${(feed.quoteAgeSec / 3600).toFixed(1)}h` : "";
-    console.log(
-      `${symbol.padEnd(6)} [${feed.source.padEnd(20)}] live=$${feed.value.toFixed(2).padStart(10)} ` +
-      `chain=$${current.toFixed(2).padStart(10)} age=${ageMin}m${quoteAge} → ${plan.write ? "WRITE" : "skip"} (${plan.reason})`,
-    );
-    // 偽新鮮度：報價本身很舊（週末收盤價/來源凍結），寫上鏈會讓 updatedAt 看起來
-    // 新鮮但價格是好幾天前的。價格照寫（否則週末會全部跳過），但必須說出來。
-    if (feed.quoteStale) {
-      console.log(
-        `::warning::${symbol} 來源報價已 ${((feed.quoteAgeSec ?? 0) / 3600).toFixed(1)} 小時未更新` +
-          `（可能是週末/假日收盤價）—— 鏈上 updatedAt 會顯示新鮮，但價格並非即時。`,
-      );
-    }
-
-    if (!plan.write) continue;
-
-    // A-5：價格熔斷。MockOracle 是交易所實際結算/清算所讀的那顆，沒有任何鏈上
-    // 保護，所以「離譜但合法」的價格必須在這裡擋下 —— 只寫完整價格或不寫。
-    // 偏離超過熔斷門檻時才去湊第二個獨立來源（正常路徑不多打任何請求）：
-    // relay（Pyth）、主要外部 API（CoinGecko/Yahoo）、次要外部 API（Yahoo BTC-USD…）。
-    // 每一票都帶報價年齡：relay 用鏈上 updatedAt、CoinGecko 用 last_updated_at、
-    // Yahoo 用 regularMarketTime；年齡不明或過舊的票在 confirmLargeMove 裡不算數。
-    const asQuote = (f: ParsedFeed & QuoteMeta, source: string): SourceQuote => ({
-      source,
-      value: f.value as number,
-      ageSec: f.quoteAgeSec,
-      stale: f.quoteStale === true,
-    });
-    const quotes: SourceQuote[] = [asQuote(feed, feed.source)];
-    if (current > 0 && Math.abs(feed.value - current) / current > BREAKER_DEVIATION) {
-      if (relayed !== null) {
-        const api = await fetchPrice(symbol);
-        if (api.value !== null) quotes.push(asQuote(api, api.source));
-      }
-      const second = await fetchSecondaryPrice(symbol);
-      if (second.value !== null) quotes.push(asQuote(second, `${second.source}(secondary)`));
-      console.log(
-        `  多源確認：${quotes
-          .map((q) => `${q.source}=$${q.value.toFixed(2)}(age ${q.ageSec ?? "?"}s${q.stale ? ",stale" : ""})`)
-          .join(", ")}`,
-      );
-    }
-    const guard = guardDeviation({
-      target: feed.value,
-      current,
-      breakerDeviation: BREAKER_DEVIATION,
-      quotes,
-      confirmTolerance: CONFIRM_TOLERANCE,
-    });
-    if (!guard.write) {
-      rejected += 1;
-      console.error(`::error::${symbol} ${guard.reason}`);
-      continue;
-    }
-    if (guard.confirmed) {
-      confirmed += 1;
-      console.log(`::warning::${symbol} ${guard.reason}`);
-    }
-
-    if (DRY_RUN) continue;
-
-    const price8 = toPrice8(guard.value);
-    try {
-      const tx = await oracle.updatePrice(assetId, price8);
-      await tx.wait();
-      wrote += 1;
-      console.log(`  → MockOracle ✓ ${tx.hash}`);
-    } catch (e) {
-      failed += 1;
-      console.error(`::error::${symbol} MockOracle 寫入失敗：${(e as Error).message.slice(0, 140)}`);
-      continue;
-    }
-
-    if (guarded && !(await mirror(guarded, assetId, symbol, price8, guardedCap))) {
-      // 鏡射失敗以前是完全靜默的 console.log。GuardedOracle 追不上就等於那條
-      // 「有保護的價格路徑」實際上是死的，必須算進 failed 並讓 CI 看得到。
-      failed += 1;
-    }
-  }
+  const round = await runRound({
+    symbols: SYMBOLS,
+    nowSec,
+    dryRun: DRY_RUN,
+    deviationThreshold: DEVIATION_THRESHOLD,
+    heartbeatSec: HEARTBEAT_SEC,
+    breakerDeviation: BREAKER_DEVIATION,
+    confirmTolerance: CONFIRM_TOLERANCE,
+    assetIdOf: (symbol) => ethers.id(symbol), // == cast keccak "$SYM"
+    oracle: {
+      getPrice: async (id) => (await oracle.getPrice(id)) as [bigint, bigint],
+      updatePrice: (id, p) => oracle.updatePrice(id, p),
+    },
+    guarded: guarded
+      ? {
+          peek: async (id) => (await guarded.peek(id)) as [bigint, bigint, boolean, boolean],
+          updatePrice: (id, p) => guarded.updatePrice(id, p),
+        }
+      : null,
+    guardedCap,
+    fetchRelay: (id) => fetchFromRelay(relay, id),
+    fetchPrice: (symbol) => fetchPrice(symbol),
+    fetchSecondary: (symbol) => fetchSecondaryPrice(symbol),
+    beforeAsset: exchange
+      ? async (symbol, id) => {
+          const r = await applyMarketMode(exchange!, id, symbol, nowSec);
+          return r === "missing" ? "stop" : r;
+        }
+      : undefined,
+  });
+  const { available, skipped, rejected, confirmed, wrote } = round;
+  let failed = round.failed;
 
   // #99: reuses the same failed-counter/exit(1) mechanism every other genuine
   // problem in this file already goes through, rather than a separate,
@@ -515,52 +404,6 @@ function _fmtReserveLine(
   const haltedTxt = halted === null ? "" : ` halted=${halted}`;
   return `reserve=$${(Number(reserve) / 1e18).toFixed(2)} ` +
     `liability=$${(Number(liability) / 1e18).toFixed(2)} ratio=${ratioTxt} unpriced=${unpriced}${haltedTxt}`;
-}
-
-/**
- * 把完整價格鏡射進 GuardedOracle。鏈上 maxDeviationBps 不接受完整價格時**不寫部分
- * 步進**（那是明知錯誤的價格，2026-09-29 審查移除 stepTowards），記為 failed 並
- * 輸出 ::error::，由人依 RUNBOOK_KEEPER.md「價格熔斷」處置。
- *
- * 回 true 代表「這一輪沒有問題」（含：資產不存在、已凍結、已是目標值）；
- * 回 false 代表真的失敗 —— 呼叫端會計進 failed 讓 CI 變紅。舊版把失敗寫成
- * `console.log` 完全靜默，於是「有保護的價格路徑」死掉也沒人知道。
- */
-async function mirror(
-  guarded: ethers.Contract,
-  assetId: string,
-  symbol: string,
-  target8: bigint,
-  cap: bigint,
-): Promise<boolean> {
-  try {
-    const [price, , exists, frozen] = (await guarded.peek(assetId)) as [
-      bigint, bigint, boolean, boolean,
-    ];
-    if (!exists) return true;
-    if (frozen) {
-      console.log(`  → GuardedOracle 已凍結，略過鏡射`);
-      return true;
-    }
-
-    const plan = planMirror(price, target8, cap);
-    if (plan.action === "skip") {
-      console.log(`  → GuardedOracle ${plan.reason}`);
-      return true;
-    }
-    if (plan.action === "reject") {
-      console.error(`::error::${symbol} GuardedOracle ${plan.reason}`);
-      return false;
-    }
-
-    const tx = await guarded.updatePrice(assetId, plan.value);
-    await tx.wait();
-    console.log(`  → GuardedOracle ✓ ${plan.value}`);
-    return true;
-  } catch (e) {
-    console.error(`::error::${symbol} GuardedOracle 鏡射失敗：${(e as Error).message.slice(0, 120)}`);
-    return false;
-  }
 }
 
 main().catch((e) => {

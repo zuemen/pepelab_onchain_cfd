@@ -258,6 +258,18 @@ export function guardDeviation(a: {
   );
 }
 
+/**
+ * 有效熔斷門檻 = min(breaker, GuardedOracle 在這個方向的上限)（審查 H1）。
+ * Guarded 以「兩者中較小值」為分母：向上容許 cap/10000，向下只容許 cap/(10000+cap)
+ * （cap=1000 → +10% / −9.09%）。cap=0 代表 Guarded 不限制。
+ */
+export function effectiveBreaker(breaker: number, maxDeviationBps: bigint, up: boolean): number {
+  if (maxDeviationBps <= 0n) return breaker;
+  const cap = Number(maxDeviationBps);
+  const guardedLimit = up ? cap / 10_000 : cap / (10_000 + cap);
+  return Math.min(breaker, guardedLimit);
+}
+
 export type MirrorPlan =
   | { action: "write"; value: bigint }
   | { action: "skip"; reason: string }
