@@ -27,6 +27,8 @@ import {
   type SourceQuote,
 } from "./core.ts";
 import { fetchPrice, fetchSecondaryPrice, type QuoteMeta } from "./feeds.ts";
+import { classifyProbeError, decideAssetMode, modeName, switchesMode } from "./operator.ts";
+import type { MarketSession } from "./market.ts";
 
 const SYMBOLS = [
   "sBTC", "sETH", "sAAPL", "sTSLA", "sNVDA",
@@ -70,6 +72,12 @@ const RELAY_SOURCE = (
   process.env.KEEPER_RELAY_SOURCE ?? process.env.RELAY_SOURCE ?? ""
 ).trim();
 
+// 選用（預設關閉）：marketOperator 休市切換，見 keeper/operator.ts。
+// 需要 exchange 已部署 setAssetMode（contracts/p1-guardian-market-modes）且 owner 已
+// setMarketOperator(keeper 地址)。線上舊 exchange 沒有這個函式 → 探測後略過並記錄。
+const MARKET_OPERATOR = process.env.KEEPER_MARKET_OPERATOR === "1";
+const EXCHANGE_ADDR = (process.env.KEEPER_EXCHANGE_ADDRESS ?? process.env.EXCHANGE ?? "").trim();
+
 if (!RPC_URL) {
   console.error("::error::KEEPER_RPC_URL 未設");
   process.exit(1);
@@ -103,6 +111,10 @@ const VAULT_ABI = [
   "event ReserveRestored(uint256 ratioBps, uint256 minRatioBps)",
 ];
 const VAULT_IFACE = new ethers.Interface(VAULT_ABI);
+const EXCHANGE_MODE_ABI = [
+  "function assetMode(bytes32 asset) view returns (uint8)",
+  "function setAssetMode(bytes32 asset, uint8 mode) external",
+];
 
 /**
  * 從鏈上的參考聚合器讀一個價。拿不到就回 null —— 多數股票在測試網上沒有
@@ -164,6 +176,16 @@ async function main(): Promise<void> {
       : null;
   if (relay) console.log(`relay source: ${RELAY_SOURCE}（優先於外部 API）`);
 
+  let exchange: ethers.Contract | null = null;
+  if (MARKET_OPERATOR) {
+    if (!ethers.isAddress(EXCHANGE_ADDR)) {
+      console.log("::warning::KEEPER_MARKET_OPERATOR=1 但 KEEPER_EXCHANGE_ADDRESS/EXCHANGE 未設，略過休市切換");
+    } else {
+      exchange = new ethers.Contract(EXCHANGE_ADDR, EXCHANGE_MODE_ABI, signer ?? provider);
+      console.log(`marketOperator: 啟用（exchange ${EXCHANGE_ADDR}）`);
+    }
+  }
+
   const nowSec = Math.floor(Date.now() / 1000);
   let wrote = 0;
   let failed = 0;
@@ -182,6 +204,13 @@ async function main(): Promise<void> {
       relayed !== null
         ? { value: relayed, reason: "ok", source: "chainlink/pyth relay" }
         : await fetchPrice(symbol);
+
+    // 休市切換放在價格判斷之前：價格來源壞了不影響「現在是不是休市」。
+    if (exchange) {
+      const r = await applyMarketMode(exchange, assetId, symbol, nowSec, feed.session ?? null);
+      if (r === "missing") exchange = null; // 舊 exchange：整輪不再探測
+      if (r === "failed") failed += 1;
+    }
 
     if (feed.value === null) {
       // 拒絕而不是夾擠：夾擠出來的價格讀者無法分辨真假。
@@ -323,6 +352,79 @@ async function main(): Promise<void> {
   if (failed > 0) {
     console.error(`::error::寫入 ${wrote} 筆，${failed} 筆失敗。`);
     process.exit(1);
+  }
+}
+
+function revertInfo(e: unknown): { code?: unknown; data?: unknown } {
+  const x = e as { code?: unknown; data?: unknown; info?: { error?: { data?: unknown } } };
+  return { code: x?.code, data: x?.data ?? x?.info?.error?.data };
+}
+
+/**
+ * marketOperator：讀 assetMode → decideAssetMode → staticCall 探測 → 送出。
+ *   "missing" — exchange 沒有 assetMode/setAssetMode（線上舊合約），略過並記錄；
+ *               呼叫端整輪停用，不算失敗。
+ *   "failed"  — 已確定要切換卻送不出去（權限、RPC），計入 failed 讓 CI 變紅。
+ *   "ok"      — 其他（含 skip、DRY_RUN）。
+ */
+async function applyMarketMode(
+  exchange: ethers.Contract,
+  assetId: string,
+  symbol: string,
+  nowSec: number,
+  session: MarketSession | null,
+): Promise<"ok" | "missing" | "failed"> {
+  // 加密／期貨不做休市切換：連 RPC 都不打。
+  if (!switchesMode(symbol)) return "ok";
+
+  let current: number;
+  try {
+    current = Number(await exchange.assetMode(assetId));
+  } catch (e) {
+    const kind = classifyProbeError(revertInfo(e));
+    if (kind === "missing") {
+      console.log(`  → marketOperator：exchange 沒有 assetMode()（舊合約），本輪略過休市切換`);
+      return "missing";
+    }
+    console.log(`::warning::${symbol} 讀 assetMode 失敗（${kind}）：${(e as Error).message.slice(0, 100)}`);
+    return "ok";
+  }
+
+  const d = decideAssetMode({ symbol, nowSec, currentMode: current, session });
+  if (d.action === "skip") {
+    console.log(`  → marketOperator ${symbol}: skip（${d.reason}）`);
+    return "ok";
+  }
+
+  try {
+    await exchange.setAssetMode.staticCall(assetId, d.mode);
+  } catch (e) {
+    const kind = classifyProbeError(revertInfo(e));
+    if (kind === "missing") {
+      console.log(`  → marketOperator：exchange 沒有 setAssetMode()（舊合約），本輪略過休市切換`);
+      return "missing";
+    }
+    if (DRY_RUN && kind === "denied") {
+      // DRY_RUN 沒有 signer，staticCall 的 from 是零位址，被拒是預期的。
+      console.log(`  → marketOperator ${symbol}: 會 ${d.reason}（DRY_RUN，權限未驗證）`);
+      return "ok";
+    }
+    console.error(`::error::${symbol} setAssetMode(${modeName(d.mode)}) 預檢失敗（${kind}）：${(e as Error).message.slice(0, 140)}`);
+    return "failed";
+  }
+
+  if (DRY_RUN) {
+    console.log(`  → marketOperator ${symbol}: 會 ${d.reason}（DRY_RUN）`);
+    return "ok";
+  }
+  try {
+    const tx = await exchange.setAssetMode(assetId, d.mode);
+    await tx.wait();
+    console.log(`  → marketOperator ${symbol}: ${d.reason} ✓ ${tx.hash}`);
+    return "ok";
+  } catch (e) {
+    console.error(`::error::${symbol} setAssetMode(${modeName(d.mode)}) 失敗：${(e as Error).message.slice(0, 140)}`);
+    return "failed";
   }
 }
 
