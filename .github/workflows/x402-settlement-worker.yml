@@ -99,6 +99,19 @@ jobs:
           cache: npm
           cache-dependency-path: agent/package-lock.json
 
+      # vars.X402_FEE_ROUTER 是 repository variable，靜態檢查（consistency.yml）看不到
+      # 它的值，所以在執行期比對設定來源 frontend/src/contracts/x402.ts。填成 MockOracle、
+      # V1 FeeRouter 或舊部署都會在送任何交易之前失敗。
+      - name: Assert X402_FEE_ROUTER matches frontend config
+        run: |
+          set -euo pipefail
+          EXPECTED=$(node scripts/check-addresses.mjs --print 84532 X402FeeRouter)
+          if [ "$(printf '%s' "$X402_FEE_ROUTER" | tr 'A-F' 'a-f')" != "$(printf '%s' "$EXPECTED" | tr 'A-F' 'a-f')" ]; then
+            echo "::error::vars.X402_FEE_ROUTER=$X402_FEE_ROUTER 與 frontend/src/contracts/x402.ts 的 $EXPECTED 不一致 —— 分潤會送進錯的合約。"
+            exit 1
+          fi
+          echo "X402_FEE_ROUTER=$X402_FEE_ROUTER 與設定來源一致 ✓"
+
       - name: Install agent deps
         working-directory: agent
         run: npm ci --no-audit --no-fund

@@ -7,6 +7,7 @@
 //   - frontend/src/contracts/addresses.ts   CHAIN_MAP（11155111 / 84532）、
 //                                           BASE_SEPOLIA_ORACLE_SHOWCASE、V2_STACK
 //   - frontend/src/contracts/sessionManager.ts  SESSION_MANAGER_ADDRESS
+//   - frontend/src/contracts/x402.ts            X402_FEE_ROUTER（官方 USDC 的 FeeRouter）
 // 這支腳本把兩邊對起來，對不上就列出並以非零結束。
 //
 // 零依賴（只用 node 內建模組）：CI 不需要 npm install，也不會因為依賴壞掉而沉默。
@@ -80,7 +81,7 @@ function blockAfter(src, marker) {
  * roles 是可以精確比對的角色（MockOracle、PerpetualExchange…）；known 是該鏈
  * 前端認得的所有位址（含代幣），給沒有角色對應的 workflow 鍵做寬鬆比對。
  */
-export function parseFrontendConfig(addressesSrc, sessionSrc = "") {
+export function parseFrontendConfig(addressesSrc, sessionSrc = "", x402Src = "") {
   const chainVar = {};
   const chainMap = braceBlock(addressesSrc, addressesSrc.indexOf("CHAIN_MAP"));
   for (const m of (chainMap ?? "").matchAll(/(\d+)\s*:\s*([A-Z_]+)/g)) chainVar[m[1]] = m[2];
@@ -128,6 +129,12 @@ export function parseFrontendConfig(addressesSrc, sessionSrc = "") {
   for (const m of sessionSrc.matchAll(/^\s*(\d+)\s*:\s*['"](0x[0-9a-fA-F]{40})['"]/gm)) {
     if (chains[m[1]]) add(m[1], "AgentSessionManager", m[2]);
   }
+
+  // x402.ts：X402_FEE_ROUTER（官方 USDC 的 FeeRouter，不是 ChainAddresses.FeeRouter）。
+  const x402Block = blockAfter(x402Src, "X402_FEE_ROUTER");
+  for (const m of (x402Block ?? "").matchAll(/^\s*(\d+)\s*:\s*['"](0x[0-9a-fA-F]{40})['"]/gm)) {
+    if (chains[m[1]]) add(m[1], "X402FeeRouter", m[2]);
+  }
   return chains;
 }
 
@@ -155,7 +162,8 @@ export function scanWorkflow(text) {
       if (indent > blockScalarIndent) {
         if (/^\s*#/.test(line)) return;
         const code = line.replace(/(^|\s)#.*$/, "");
-        for (const m of code.matchAll(ADDR)) raw.push({ line: lineNo, value: m[0] });
+        const where = stack.map((s) => s.key);
+        for (const m of code.matchAll(ADDR)) raw.push({ line: lineNo, value: m[0], path: where });
         return;
       }
       blockScalarIndent = -1;
@@ -172,7 +180,8 @@ export function scanWorkflow(text) {
 
     const m = body.match(/^("[^"]*"|'[^']*'|[^\s:#][^:#]*?)\s*:(\s+(.*))?$/);
     if (!m) {
-      for (const a of body.replace(/(^|\s)#.*$/, "").matchAll(ADDR)) raw.push({ line: lineNo, value: a[0] });
+      const where = stack.map((s) => s.key);
+      for (const a of body.replace(/(^|\s)#.*$/, "").matchAll(ADDR)) raw.push({ line: lineNo, value: a[0], path: where });
       return;
     }
     const key = m[1].replace(/^["']|["']$/g, "");
@@ -198,7 +207,7 @@ export function scanWorkflow(text) {
     if (ADDR_EXACT.test(rest)) {
       entries.push({ line: lineNo, path, key, value: rest });
     } else {
-      for (const a of rest.matchAll(ADDR)) raw.push({ line: lineNo, value: a[0] });
+      for (const a of rest.matchAll(ADDR)) raw.push({ line: lineNo, value: a[0], path });
     }
   });
   return { entries, raw };
@@ -222,6 +231,8 @@ export const ROLE_OF_KEY = {
   SESSION_MANAGER: "AgentSessionManager",
   SESSION_MANAGER_ADDRESS: "AgentSessionManager",
   AGENT_SESSION_MANAGER: "AgentSessionManager",
+  // x402 分潤用的 FeeRouter（frontend/src/contracts/x402.ts），不是 V1 的 ChainAddresses.FeeRouter。
+  X402_FEE_ROUTER: "X402FeeRouter",
   // admin-base-sepolia.yml 的 workflow_dispatch input；描述寫明預設是 PerpetualExchange。
   "input:target": "PerpetualExchange",
 };
@@ -272,7 +283,7 @@ export function checkWorkflow({ file, text, chains, allowlist = ALLOWLIST }) {
     const inputIdx = e.path.indexOf("inputs");
     const isInputDefault = inputIdx >= 0 && e.key === "default";
     if (!inEnv && !isInputDefault) {
-      raw.push({ line: e.line, value: e.value });
+      raw.push({ line: e.line, value: e.value, path: e.path });
       continue;
     }
     const label = isInputDefault ? `inputs.${e.path[inputIdx + 1]}.default` : e.key;
@@ -304,18 +315,33 @@ export function checkWorkflow({ file, text, chains, allowlist = ALLOWLIST }) {
     }
   }
 
+  // run:／with:／其他非 env 位置的位址：也依 job 的鏈檢查（審查 Medium 4）——
+  // 在 Base Sepolia 的 job 裡對 Sepolia exchange 下 cast send，位址「認得」但鏈錯了。
   for (const r of raw) {
-    if (r.value.toLowerCase() === ZERO || isAllowed(r.value) || knownAnywhere(r.value)) continue;
-    problems.push(`${name}:${r.line} ${r.value} —— 寫死在非 env 位置，且前端設定不認得`);
+    if (r.value.toLowerCase() === ZERO || isAllowed(r.value)) continue;
+    const where = `${name}:${r.line} ${r.value}${r.path?.length ? `（${r.path.join(".")}）` : ""}`;
+    const chainId = chainOf(r.path ?? []);
+    if (chainId) {
+      if (!chains[chainId].known.has(r.value.toLowerCase())) {
+        problems.push(`${where} —— 寫死在非 env 位置，chain ${chainId} 的前端設定裡沒有這個位址`);
+      }
+    } else if (!knownAnywhere(r.value)) {
+      problems.push(`${where} —— 寫死在非 env 位置，且前端設定不認得`);
+    }
   }
   return { problems, checked: entries.length + raw.length };
 }
 
-export function run({ workflowsDir, addressesFile, sessionFile, log = console.log }) {
-  const chains = parseFrontendConfig(
+export function loadChains({ addressesFile, sessionFile, x402File }) {
+  return parseFrontendConfig(
     readFileSync(addressesFile, "utf8"),
     sessionFile ? readFileSync(sessionFile, "utf8") : "",
+    x402File ? readFileSync(x402File, "utf8") : "",
   );
+}
+
+export function run({ workflowsDir, addressesFile, sessionFile, x402File, log = console.log }) {
+  const chains = loadChains({ addressesFile, sessionFile, x402File });
   const files = readdirSync(workflowsDir).filter((f) => /\.ya?ml$/.test(f)).sort();
   let problems = [];
   let checked = 0;
@@ -344,11 +370,27 @@ function main() {
     const i = args.indexOf(name);
     return i >= 0 ? resolve(args[i + 1]) : def;
   };
-  const problems = run({
-    workflowsDir: opt("--workflows", join(root, ".github/workflows")),
+  const files = {
     addressesFile: opt("--addresses", join(root, "frontend/src/contracts/addresses.ts")),
     sessionFile: opt("--session", join(root, "frontend/src/contracts/sessionManager.ts")),
-  });
+    x402File: opt("--x402", join(root, "frontend/src/contracts/x402.ts")),
+  };
+
+  // --print <chainId> <role>：印出設定來源裡的位址，給 workflow 做執行期斷言
+  // （例如 x402-settlement-worker.yml 比對 vars.X402_FEE_ROUTER）。找不到就 exit 1。
+  const p = args.indexOf("--print");
+  if (p >= 0) {
+    const [chainId, role] = [args[p + 1], args[p + 2]];
+    const addr = loadChains(files)[chainId]?.roles[role];
+    if (!addr) {
+      console.error(`::error::設定來源裡沒有 chain ${chainId} 的 ${role}`);
+      process.exit(1);
+    }
+    console.log(addr);
+    process.exit(0);
+  }
+
+  const problems = run({ workflowsDir: opt("--workflows", join(root, ".github/workflows")), ...files });
   process.exit(problems.length ? 1 : 0);
 }
 

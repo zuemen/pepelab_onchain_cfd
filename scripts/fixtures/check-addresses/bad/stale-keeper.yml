@@ -25,10 +25,19 @@ jobs:
       KEEPER_ORACLE_ADDRESS: "0x17CA20A37Cf04F2f589B2573EC95f1411D29d958"
       # 對：現行 Base Sepolia GuardedOracle
       KEEPER_GUARDED_ORACLE: "0x8E9e59BE9589Ad88EC14F3ef6bdcc43E8B76f842"
+      # 錯 6：X402_FEE_ROUTER 填成 MockOracle（位址「認得」，但角色錯了）
+      X402_FEE_ROUTER: "0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3"
     steps:
       - run: |
           # 錯 3：寫死在 run 腳本裡、前端設定不認得的位址
           cast call 0x4E7cC1B79B72ab72531a6C790e14304370f70764 "exchange()(address)"
+      - run: |
+          # 錯 7：在 Base Sepolia 的 job 裡對 Sepolia exchange 下 cast send（位址認得、鏈錯了）
+          cast send 0x0c6459d38617E60017bDc4ed69ec26137DA5c32b "settleFunding(bytes32)" 0x00
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # 錯 8：with: 帶 Sepolia 位址（Sepolia GuardedOracle）
+          address: "0x32A19D04ef2ca5A7DA02Df39419729fA745749A1"
 
   sepolia:
     runs-on: ubuntu-latest
