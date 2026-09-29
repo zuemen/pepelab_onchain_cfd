@@ -177,11 +177,24 @@ export type ChunkFailure = (from: number, to: number, error: unknown) => void
 export interface ChunkScanOptions {
   onChunk?: ChunkProgress
   onChunkFailed?: ChunkFailure
-  /** 單段失敗後再試幾次（預設 0）。公開 RPC 的 429 很常見，UI 讀取建議 2。 */
+  /** 單段失敗後再試幾次（預設 0）。公開 RPC 的 429 很常見，UI 呼叫端統一用 UI_RETRIES。 */
   retries?: number
   /** 第一次重試前等多久，之後每次加倍。預設 400ms。 */
   retryDelayMs?: number
+  /**
+   * 同時在飛的段數（預設 1＝序列）。公開節點對突發請求會回 429，UI 建議 2–3。
+   * 結果仍依區塊順序串接，與併發度無關。
+   */
+  concurrency?: number
+  /** 中止訊號。每一段開始前（含重試前）檢查；中止時整個掃描以 ChunkScanAbortedError 結束。 */
+  signal?: AbortSignal
 }
+
+/** 每段查詢以外的選項（給 getLogsChunked / queryLogsChunked 這種位置參數介面用）。 */
+export type ChunkRunOptions = Pick<ChunkScanOptions, 'retries' | 'retryDelayMs' | 'concurrency' | 'signal'>
+
+/** UI 呼叫端統一的重試次數。 */
+export const UI_RETRIES = 2
 
 export interface ChunkScanResult<T> {
   logs: T[]
@@ -189,6 +202,16 @@ export interface ChunkScanResult<T> {
   failedChunks: number
   totalChunks: number
 }
+
+/** 掃描被 AbortSignal 中止。呼叫端通常直接忽略（元件已卸載或查詢已過期）。 */
+export class ChunkScanAbortedError extends Error {
+  constructor() {
+    super('chunk scan aborted')
+    this.name = 'ChunkScanAbortedError'
+  }
+}
+
+export const isChunkScanAborted = (e: unknown): boolean => e instanceof ChunkScanAbortedError
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
@@ -200,32 +223,51 @@ async function scanChunks<T>(
   opts: ChunkScanOptions,
 ): Promise<ChunkScanResult<T>> {
   const ranges = chunkRanges(fromBlock, toBlock)
-  const logs: T[] = []
+  const perRange: T[][] = new Array(ranges.length)
   const retries = Math.max(0, opts.retries ?? 0)
   const baseDelay = opts.retryDelayMs ?? 400
+  const checkAbort = () => {
+    if (opts.signal?.aborted) throw new ChunkScanAbortedError()
+  }
   let failedChunks = 0
   let done = 0
-  for (const [from, to] of ranges) {
-    let lastErr: unknown
-    let ok = false
-    for (let attempt = 0; attempt <= retries && !ok; attempt++) {
-      if (attempt > 0 && baseDelay > 0) await sleep(baseDelay * 2 ** (attempt - 1))
-      try {
-        logs.push(...(await fetchRange(from, to)))
-        ok = true
-      } catch (e) {
-        lastErr = e
+  let next = 0
+
+  const worker = async () => {
+    for (;;) {
+      checkAbort()
+      const i = next
+      next += 1
+      if (i >= ranges.length) return
+      const [from, to] = ranges[i]
+      let lastErr: unknown
+      let ok = false
+      for (let attempt = 0; attempt <= retries && !ok; attempt++) {
+        if (attempt > 0) {
+          if (baseDelay > 0) await sleep(baseDelay * 2 ** (attempt - 1))
+          checkAbort()
+        }
+        try {
+          perRange[i] = await fetchRange(from, to)
+          ok = true
+        } catch (e) {
+          lastErr = e
+        }
       }
+      if (!ok) {
+        perRange[i] = []
+        failedChunks += 1
+        console.warn(`[${tag}] chunk failed`, from, '-', to, lastErr)
+        opts.onChunkFailed?.(from, to, lastErr)
+      }
+      done += 1
+      opts.onChunk?.(done, ranges.length)
     }
-    if (!ok) {
-      failedChunks += 1
-      console.warn(`[${tag}] chunk failed`, from, '-', to, lastErr)
-      opts.onChunkFailed?.(from, to, lastErr)
-    }
-    done += 1
-    opts.onChunk?.(done, ranges.length)
   }
-  return { logs, failedChunks, totalChunks: ranges.length }
+
+  const n = Math.max(1, Math.min(Math.floor(opts.concurrency ?? 1), ranges.length || 1))
+  await Promise.all(Array.from({ length: n }, () => worker()))
+  return { logs: perRange.flat(), failedChunks, totalChunks: ranges.length }
 }
 
 /**
@@ -271,9 +313,10 @@ export async function getLogsChunked(
   toBlock: number,
   onChunk?: ChunkProgress,
   onChunkFailed?: ChunkFailure,
+  run: ChunkRunOptions = {},
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<any[]> {
-  const r = await getLogsChunkedDetailed(provider, filter, fromBlock, toBlock, { onChunk, onChunkFailed })
+  const r = await getLogsChunkedDetailed(provider, filter, fromBlock, toBlock, { ...run, onChunk, onChunkFailed })
   return r.logs
 }
 
@@ -291,6 +334,7 @@ export async function queryLogsChunked(
   toBlock: number,
   onChunk?: ChunkProgress,
   onChunkFailed?: ChunkFailure,
+  run: ChunkRunOptions = {},
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<any[]> {
   const r = await scanChunks(
@@ -298,7 +342,7 @@ export async function queryLogsChunked(
     toBlock,
     (from, to) => contract.queryFilter(filter, from, to),
     'queryLogsChunked',
-    { onChunk, onChunkFailed },
+    { ...run, onChunk, onChunkFailed },
   )
   return r.logs
 }

@@ -16,6 +16,9 @@ import {
   getLogsChunkedDetailed,
   scanContractEventsStrict,
   MEASURED_GETLOGS_MAX_BLOCKS,
+  UI_RETRIES,
+  isChunkScanAborted,
+  ChunkScanAbortedError,
   describeScanWindow,
   DEFAULT_AVG_BLOCK_TIME,
   DEFAULT_SCAN_WINDOW_SEC,
@@ -321,5 +324,60 @@ describe('scanContractEvents', () => {
     await expect(
       scanContractEventsStrict(provider, contract, [filter('0xa')], 0, CHUNK_SIZE * 2 - 1, { retryDelayMs: 0 }),
     ).rejects.toBeInstanceOf(ChunkedLogsError)
+  })
+})
+
+describe('ChunkScanOptions — signal / concurrency / retries', () => {
+  const okProvider = (delayMs = 0) => {
+    let inFlight = 0
+    let maxInFlight = 0
+    return {
+      get maxInFlight() { return maxInFlight },
+      getLogs: vi.fn(async (f: { fromBlock: number }) => {
+        inFlight += 1
+        maxInFlight = Math.max(maxInFlight, inFlight)
+        await new Promise((r) => setTimeout(r, delayMs))
+        inFlight -= 1
+        return [{ from: f.fromBlock }]
+      }),
+    }
+  }
+
+  it('已中止的 signal:一段都不查,以 ChunkScanAbortedError 結束', async () => {
+    const p = okProvider()
+    const ac = new AbortController()
+    ac.abort()
+    await expect(
+      getLogsChunkedDetailed(p, {}, 0, CHUNK_SIZE * 3 - 1, { signal: ac.signal }),
+    ).rejects.toBeInstanceOf(ChunkScanAbortedError)
+    expect(p.getLogs).not.toHaveBeenCalled()
+  })
+
+  it('掃到一半中止:下一段開始前就停下', async () => {
+    const p = okProvider()
+    const ac = new AbortController()
+    const run = getLogsChunkedDetailed(p, {}, 0, CHUNK_SIZE * 5 - 1, {
+      signal: ac.signal,
+      onChunk: (done) => { if (done === 2) ac.abort() },
+    })
+    await expect(run).rejects.toSatisfy(isChunkScanAborted)
+    expect(p.getLogs).toHaveBeenCalledTimes(2)
+  })
+
+  it('併發度有上限,結果仍依區塊順序串接', async () => {
+    const p = okProvider(5)
+    const r = await getLogsChunkedDetailed(p, {}, 0, CHUNK_SIZE * 7 - 1, { concurrency: 3 })
+    expect(p.maxInFlight).toBeLessThanOrEqual(3)
+    expect(p.maxInFlight).toBeGreaterThan(1)
+    expect(r.logs.map((l: { from: number }) => l.from)).toEqual([0, 1, 2, 3, 4, 5, 6].map((i) => i * CHUNK_SIZE))
+  })
+
+  it('getLogsChunked / queryLogsChunked 開放 retries', async () => {
+    let n = 0
+    const flakyProvider = { getLogs: vi.fn(async () => { n += 1; if (n === 1) throw new Error('429'); return [1] }) }
+    expect(await getLogsChunked(flakyProvider, {}, 0, CHUNK_SIZE - 1, undefined, undefined, { retries: UI_RETRIES, retryDelayMs: 0 })).toEqual([1])
+    let m = 0
+    const flakyContract = { queryFilter: vi.fn(async () => { m += 1; if (m === 1) throw new Error('429'); return [2] }) }
+    expect(await queryLogsChunked(flakyContract, null, 0, CHUNK_SIZE - 1, undefined, undefined, { retries: UI_RETRIES, retryDelayMs: 0 })).toEqual([2])
   })
 })
