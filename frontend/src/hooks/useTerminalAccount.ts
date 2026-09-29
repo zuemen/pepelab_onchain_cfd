@@ -23,6 +23,9 @@ export interface TerminalAccount {
   refresh: () => Promise<void>
 }
 
+/** 指數價讀取失敗後多久重試一次（直到成功或切換標的）。 */
+const PRICE_RETRY_MS = 10_000
+
 export function useTerminalAccount(
   contracts: Contracts,
   address: string | null,
@@ -32,8 +35,12 @@ export function useTerminalAccount(
   const [usdtBal, setUsdtBal] = useState(0n)
   const [freeMgn, setFreeMgn] = useState(0n)
   const [positions, setPositions] = useState<Pos[]>([])
-  const [curPrice, setCurPrice] = useState(0n)
-  const [markPrice, setMarkPrice] = useState(0n)
+  // 價格連同它屬於哪個標的一起存：render 時比對 selAsset，換標的的那一幀不會
+  // 拿到上一個標的的價格（setState 要等 effect 跑完才生效）。
+  const [indexQuote, setIndexQuote] = useState<{ asset: string; price: bigint } | null>(null)
+  const [markQuote, setMarkQuote] = useState<{ asset: string; price: bigint } | null>(null)
+  const curPrice = indexQuote && indexQuote.asset === selAsset ? indexQuote.price : 0n
+  const markPrice = markQuote && markQuote.asset === selAsset ? markQuote.price : 0n
 
   const refresh = useCallback(async () => {
     if (!contracts || !address) return
@@ -93,30 +100,40 @@ export function useTerminalAccount(
   }, [refresh])
 
   useEffect(() => {
-    // 換標的時先清成 0n（＝無價格，下單鍵因此停用），不能讓上一個標的的價格
-    // 在新標的的進場價／清算價上殘留到讀取完成——或讀取失敗後永遠殘留。
-    setCurPrice(0n)
-    setMarkPrice(0n)
+    // 換標的時先清成 null（＝無價格，下單鍵因此停用）。
+    setIndexQuote(null)
+    setMarkQuote(null)
     if (!contracts) return
     let cancelled = false
-    void (async () => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+
+    const load = async () => {
+      let ok = true
       try {
         const pr = (await contracts.oracle.getPrice(selAsset)) as unknown as [bigint, bigint]
-        if (!cancelled) setCurPrice(pr[0] * 10n ** 10n)
+        if (cancelled) return
+        setIndexQuote({ asset: selAsset, price: pr[0] * 10n ** 10n })
       } catch {
-        // 該標的不在 oracle 上或讀取失敗：無價格。
-        if (!cancelled) setCurPrice(0n)
+        // 該標的不在 oracle 上或讀取失敗：無價格，稍後重試——不能一次失敗就永遠無法下單。
+        ok = false
+        if (!cancelled) setIndexQuote(null)
       }
       // G6 mark 價：盡力而為，舊 ABI 沒有 getMarkPrice 就退回 index。
       try {
         const mp = (await contracts.exchange.getMarkPrice(selAsset)) as bigint
-        if (!cancelled) setMarkPrice(mp)
+        if (!cancelled) setMarkQuote({ asset: selAsset, price: mp })
       } catch {
-        if (!cancelled) setMarkPrice(0n)
+        if (!cancelled) setMarkQuote(null)
       }
-    })()
-    // 快速切換標的時，較慢回來的舊請求不能蓋掉新標的的價格。
-    return () => { cancelled = true }
+      if (!ok && !cancelled) timer = setTimeout(() => { void load() }, PRICE_RETRY_MS)
+    }
+    void load()
+
+    // 切換標的或卸載：停止重試，較慢回來的舊請求也不會寫入。
+    return () => {
+      cancelled = true
+      if (timer) clearTimeout(timer)
+    }
   }, [contracts, selAsset])
 
   return { usdcBal, usdtBal, freeMgn, positions, curPrice, markPrice, refresh }
