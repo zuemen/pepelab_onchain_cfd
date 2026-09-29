@@ -445,6 +445,74 @@ function reset() {
   console.log("無法解析的項目 → 死信 ✓");
 }
 
+// ── 20) setHalt 那次寫入失敗 → 狀態仍是 UNKNOWN；下一輪先處理回收項目、設旗標，不送任何交易 ──
+{
+  reset();
+  mode = "timeout";
+  await enqueueSettlement(entry("k-haltfail"));
+  await runWorker(deps); // UNKNOWN
+  mode = "ok";
+  chain.latest = chain.pending; // nonce 檢查不擋：驗證的是順序本身
+  fake.list(RETRY_KEY).push(JSON.stringify({ entry: entry("k-other"), attempts: 1, lastError: "x" }));
+  clock += STUCK_AFTER_MS + 60_000;
+  fake.failNext("SET", 1); // 第 1 個 SET 是租約鎖；第 2 個是停機旗標
+  const s1 = await runWorker(deps);
+  assert.equal(s1.errors, 1);
+  assert.equal(fake.strings.has(ledger.HALT_KEY), false, "旗標沒寫進去");
+  assert.equal((await getSettleState("k-haltfail"))?.status, "UNKNOWN", "先設旗標再寫 STUCK：狀態未被改成 STUCK");
+  assert.equal(settleCalls, 1);
+  const s2 = await runWorker(deps);
+  assert.equal(s2.recovered, 1);
+  assert.equal(s2.stuck, 1, "回收項目最先處理 → 轉 STUCK");
+  assert.ok(fake.strings.has(ledger.HALT_KEY), "這次旗標寫入成功");
+  assert.equal(settleCalls, 1, "retry 裡的項目不可在 STUCK 之前被送出");
+  const s3 = await runWorker(deps);
+  assert.ok(s3.globalHalt);
+  assert.equal(settleCalls, 1, "旗標存在 → 不送任何交易");
+  console.log("setHalt 寫入失敗 → 狀態仍 UNKNOWN；下一輪先處理回收項目設旗標，全程不送交易 ✓");
+}
+
+// ── 21) 停機旗標是空字串也算「有旗標」──────────────────────────────────────────
+{
+  reset();
+  await enqueueSettlement(entry("k-empty-halt"));
+  fake.strings.set(ledger.HALT_KEY, "");
+  const s = await runWorker(deps);
+  assert.ok(s.globalHalt, "空字串也要拒跑");
+  assert.equal(settleCalls, 0);
+  console.log("停機旗標為空字串 → 仍視為有旗標、拒跑 ✓");
+}
+
+// ── 22) nonce 查詢 RPC 失敗與 nonce 不一致分開計時 ──────────────────────────────
+{
+  reset();
+  await enqueueSettlement(entry("k-rpc"));
+  const rpcDown = { ...deps, nonceStatus: async () => { throw new Error("rpc down"); } };
+  const a = await runWorker(rpcDown);
+  assert.equal(a.blockedRpc, 1);
+  assert.ok(fake.strings.has(ledger.NONCE_RPC_SINCE_KEY));
+  assert.equal(fake.strings.has(ledger.BLOCKED_SINCE_KEY), false, "RPC 失敗不可記成 nonce 不一致");
+  clock += 31 * 60_000;
+  const b = await runWorker(rpcDown);
+  assert.equal(b.nonceRpcTooLong, true);
+  assert.equal(b.blockedTooLong, false);
+  const c = await runWorker(deps); // RPC 恢復
+  assert.equal(c.settled, 1);
+  assert.equal(fake.strings.has(ledger.NONCE_RPC_SINCE_KEY), false, "查得到 nonce 就清除 RPC 計時");
+  console.log("nonce RPC 失敗 / nonce 不一致：兩個計時鍵分開、訊息分開 ✓");
+}
+
+// ── 23) unconfirmed 項目缺少狀態 → 死信，不重新結算 ─────────────────────────────
+{
+  reset();
+  fake.list(UNCONFIRMED_KEY).push(JSON.stringify(entry("k-nostate")));
+  const s = await runWorker(deps);
+  assert.equal(s.dead, 1);
+  assert.equal(settleCalls, 0, "無法對帳就不可重新結算");
+  assert.ok(fake.list(DEAD_KEY)[0]!.includes("without settle state"));
+  console.log("unconfirmed 缺少狀態 → 死信、不重新結算 ✓");
+}
+
 // ── 19) 只准在 CI 內執行；本機只能 --dry-run（只讀）─────────────────────────────
 {
   reset();
@@ -468,14 +536,22 @@ function reset() {
   const refused = await run([]);
   assert.equal(refused.status, 1, "本機（無 GITHUB_ACTIONS）必須拒跑");
   assert.match(refused.out, /只准在 GitHub Actions 內執行/);
+  const logStart = fake.log.length;
   const dry = await run(["--dry-run"]);
   assert.equal(dry.status, 0, dry.out);
+  const cmds = new Set(fake.log.slice(logStart));
+  for (const c of cmds) assert.ok(["GET", "LLEN", "LRANGE"].includes(c), `dry-run 只准讀取指令，卻送了 ${c}`);
   assert.match(dry.out, /dry-run/);
   assert.match(dry.out, /k-dry/);
   assert.equal(fake.list(QUEUE_KEY).length, 1, "dry-run 不動佇列");
   assert.equal(fake.strings.has(SETTLE_STATE_PREFIX + "k-dry"), false, "dry-run 不佔位");
   assert.equal(fake.strings.has(ledger.WORKER_LOCK_KEY), false, "dry-run 不取鎖");
-  console.log("本機無 GITHUB_ACTIONS → 拒跑（exit 1）；--dry-run 只讀、不佔位不取鎖 ✓");
+  // 讀停機旗標的第一個 GET 失敗 → exit 1（不可當成「沒有旗標」繼續）
+  fake.failNext("GET");
+  const dryFail = await run(["--dry-run"]);
+  assert.equal(dryFail.status, 1, dryFail.out);
+  assert.match(dryFail.out, /讀不到全域停機旗標/);
+  console.log("本機無 GITHUB_ACTIONS → 拒跑；--dry-run 只送 GET/LLEN/LRANGE、不佔位不取鎖；讀旗標失敗 → exit 1 ✓");
 }
 
 await fake.close();

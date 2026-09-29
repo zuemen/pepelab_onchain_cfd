@@ -99,6 +99,10 @@ forge script script/DeployX402Router.s.sol:DeployX402Router \
 cd agent && npx tsx signal-api/src/settlement-worker.ts --dry-run
 ```
 
+> ⚠ `GITHUB_ACTIONS` 檢查只是**減速帶，不是安全邊界**——任何人都能在本機設這個環境變數。
+> 真正的邊界是：`FEE_SETTLEMENT_PRIVATE_KEY` **只存在 GitHub secrets**（本機與其他環境都不該有這把
+> 金鑰），加上 workflow 的 `concurrency` group 與 Redis 租約鎖。沒有金鑰的地方跑不了真正的結算。
+
 ### 結算交易卡住（STUCK / nonce 不一致）怎麼處理
 
 worker 每一筆 `routeExternalRevenue` 都是「先簽、先把 hash / nonce / 已簽 raw tx 寫進
@@ -107,6 +111,8 @@ worker 每一筆 `routeExternalRevenue` 都是「先簽、先把 hash / nonce / 
 - log 出現 `signer 有未上鏈的交易（nonce latest=L pending=P）`：mempool 裡有這個 signer
   還沒上鏈的交易，worker 不會再送新交易；連續超過 30 分鐘（`x402:settlement:blocked_since`）
   job 會變紅。
+- log 出現 `nonce 查詢失敗（RPC）`：這是 RPC 問題、不是交易卡住，另外計時
+  （`x402:settlement:nonce_rpc_since`），連續超過 30 分鐘 job 變紅；請檢查 RPC 供應商。
 - 另外，worker 啟動時會取 Redis 租約鎖 `x402:settlement:lock`（1500 秒）；取不到代表另一個
   worker 還在跑，這一輪什麼都不做（exit 0）。
 - trader 安全檢查連續查不到資料（RPC）超過 30 分鐘（`x402:settlement:nodata_since`）→ job 變紅。
@@ -136,7 +142,11 @@ worker 每一筆 `routeExternalRevenue` 都是「先簽、先把 hash / nonce / 
    - worker **不會**自己依 nonce 推論「原交易已被替換」而重新結算（公共節點會回落後狀態，
      猜錯就是雙付）；尚未標 STUCK 的 UNKNOWN 也一樣，只會等到 30 分鐘後轉 STUCK。取消後請照上面
      的步驟處理，`settle:<鍵>` 裡的 txHash / nonce / rawTx 在確認前不要刪。
-5. **清除全域停機旗標**（最後一步）。⚠ **清除前必須先確認原交易的最終狀態**：到 explorer
+5. **halt 期間超過 90 天**（`settle:<鍵>` 冪等狀態的 TTL）：狀態可能已過期消失。清除旗標**之前**，
+   先把 `x402:settlement:unconfirmed` 裡的每一筆逐一到 explorer 確認並手動處理（已上鏈的移除、
+   確定未上鏈的才搬回佇列）。worker 對「unconfirmed 裡缺少狀態的項目」一律送進死信、不重新結算，
+   但 processing / dead 裡的舊項目沒有這層保護，所以一樣要先人工處理。
+6. **清除全域停機旗標**（最後一步）。⚠ **清除前必須先確認原交易的最終狀態**：到 explorer
    （`https://sepolia.basescan.org/tx/<txHash>`）查 hash，並確認同一個 nonce 上最終上鏈的是哪一筆；
    第 4 步的 Redis 狀態也要照這個結果改好。**沒確認就清除，worker 可能把同一筆分潤再送一次（雙付）。**
    確認後：`curl -s -H "Authorization: Bearer $UPSTASH_REDIS_REST_TOKEN"

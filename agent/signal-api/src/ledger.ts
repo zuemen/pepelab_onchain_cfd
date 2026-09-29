@@ -263,11 +263,12 @@ export async function setHalt(info: HaltInfo): Promise<void> {
 
 export async function getHalt(): Promise<HaltInfo | null> {
   const v = await command<string | null>(["GET", HALT_KEY]);
-  if (!v) return null;
+  // 只有 null / undefined 代表沒有旗標；空字串（人工誤設）也當成「有旗標」。
+  if (v === null || v === undefined) return null;
   try {
     return JSON.parse(v) as HaltInfo;
   } catch {
-    return { reason: v, key: "?", at: "?" };
+    return { reason: v || "(empty halt flag)", key: "?", at: "?" };
   }
 }
 
@@ -285,6 +286,8 @@ export async function peekQueue(key: string, n: number): Promise<string[]> {
 
 export const BLOCKED_SINCE_KEY = "x402:settlement:blocked_since";
 export const NODATA_SINCE_KEY = "x402:settlement:nodata_since";
+/** nonce 查詢（RPC）連續失敗的起點——與「nonce 不一致」分開計時，處理方向不同。 */
+export const NONCE_RPC_SINCE_KEY = "x402:settlement:nonce_rpc_since";
 /** 計時紀錄的 TTL：每次看到都刷新；超過這麼久沒再看到就自然消失，不會殘留過時的起點。 */
 export const CONDITION_TTL_SEC = 2 * 60 * 60;
 

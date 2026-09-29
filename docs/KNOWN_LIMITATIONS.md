@@ -402,7 +402,10 @@ bound, so a local run could overlap the CI worker and pay twice. Locally only
 `settlement-worker.ts --dry-run` is allowed, which reads the queue without
 taking the lock, claiming keys or signing. (A local run against the real
 Upstash instance on 2026-09-17, before this restriction, connected, read an
-empty queue and exited 0.)
+empty queue and exited 0.) The `GITHUB_ACTIONS` check is a speed bump, not a
+security boundary — anyone can set that variable locally. The actual boundary
+is that `FEE_SETTLEMENT_PRIVATE_KEY` exists only in GitHub secrets, together
+with the workflow's concurrency group and the Redis lease lock.
 
 **Left open:**
 

@@ -97,6 +97,7 @@ import {
   peekQueue,
   readString,
   BLOCKED_SINCE_KEY,
+  NONCE_RPC_SINCE_KEY,
   NODATA_SINCE_KEY,
   HALT_KEY,
   WORKER_LOCK_KEY,
@@ -252,7 +253,7 @@ export type ProcessOutcome =
   | { outcome: "pending"; tx?: string; error: string }
   | { outcome: "retry" | "dead"; error: string }
   | { outcome: "stuck"; tx?: string; error: string }
-  | { outcome: "blocked"; error: string }
+  | { outcome: "blocked"; error: string; kind: "nonce_mismatch" | "rpc" }
   | { outcome: "halted"; error: string }
   | { outcome: "review"; key: string };
 
@@ -282,6 +283,8 @@ export interface RunContext {
   lockHeld: boolean;
   /** 本輪是否有一次 nonce 檢查通過（latest == pending）。 */
   nonceCheckPassed?: boolean;
+  /** 本輪是否有一次成功查到 nonce（不論是否一致）。 */
+  nonceQueried?: boolean;
   /** 本輪是否有一次 trader 檢查拿到確定結果（非 no-data）。 */
   traderCheckPassed?: boolean;
 }
@@ -374,8 +377,10 @@ async function reconcile(raw: string, p: Parsed, st: SettleState, deps: WorkerDe
   // 狀態，「已上鏈只是查不到 receipt」與「被別的交易替換」在這裡分不出來，猜錯就是
   // 雙付。一律維持 UNKNOWN，逾時轉 STUCK 交人工（agent/README.md「結算交易卡住」）。
   if (now - since > STUCK_AFTER_MS) {
-    await setSettleState(p.key, { ...st, status: "STUCK", note: `${Math.round((now - since) / 60000)} 分鐘仍無 receipt` });
+    // 先設全域停機旗標、再寫 STUCK：旗標那次寫入失敗時，狀態仍是 UNKNOWN、項目留在
+    // processing，下一輪（回收項目最先處理）會再走到這裡——不會有「已 STUCK 卻沒停機」。
     await haltFor(p, st, `STUCK：簽出超過 ${Math.round(STUCK_AFTER_MS / 60000)} 分鐘仍查不到 receipt`, deps);
+    await setSettleState(p.key, { ...st, status: "STUCK", note: `${Math.round((now - since) / 60000)} 分鐘仍無 receipt` });
     await moveProcessingTo(raw, DEAD_KEY, deadLetter(p, `STUCK tx=${st.txHash}${nonceNote}`));
     console.error(
       `::error::STUCK ${tag(p.entry, p.key)} tx=${st.txHash}${nonceNote} —— 簽出超過 ` +
@@ -398,6 +403,7 @@ export async function processOne(
   raw: string,
   deps: WorkerDeps = defaultDeps,
   ctx: RunContext = { runStartedAt: deps.now(), lockHeld: false },
+  source?: string,
 ): Promise<ProcessOutcome> {
   let p: Parsed;
   try {
@@ -410,6 +416,13 @@ export async function processOne(
   if (p.legacyKey) console.warn(`legacy entry（無 idempotencyKey）→ 以內容雜湊作鍵 ${p.key}`);
 
   const existing = await getSettleState(p.key);
+  if (!existing && source === UNCONFIRMED_KEY) {
+    // unconfirmed 的項目一定簽出過交易；狀態不見了（例如 halt 超過 90 天、冪等狀態過期）
+    // 就無法對帳——重新結算可能雙付。一律死信交人工。
+    await moveProcessingTo(raw, DEAD_KEY, deadLetter(p, "unconfirmed item without settle state"));
+    console.error(`::error::unconfirmed 項目缺少結算狀態，無法對帳，移入死信（不重新結算）${tag(p.entry, p.key)}`);
+    return { outcome: "dead", error: "unconfirmed without state" };
+  }
   if (existing) {
     if (existing.status === "DONE") {
       if (p.legacyKey) {
@@ -465,13 +478,15 @@ export async function processOne(
     n = await deps.nonceStatus();
   } catch (err) {
     await moveProcessingTo(raw, QUEUE_KEY);
-    return { outcome: "blocked", error: `nonce 查詢失敗，不送新交易：${(err as Error).message}` };
+    return { outcome: "blocked", kind: "rpc", error: `nonce 查詢失敗（RPC），不送新交易：${(err as Error).message}` };
   }
+  ctx.nonceQueried = true;
   if (n.pending === n.latest) ctx.nonceCheckPassed = true;
   if (n.pending !== n.latest) {
     await moveProcessingTo(raw, QUEUE_KEY);
     return {
       outcome: "blocked",
+      kind: "nonce_mismatch",
       error:
         `signer 有未上鏈的交易（nonce latest=${n.latest} pending=${n.pending}）——不送新交易，` +
         "等它上鏈或依 agent/README.md「結算交易卡住」處理。",
@@ -534,6 +549,8 @@ export interface RunSummary {
   review: number;
   /** 因 nonce 不一致（或查不到）而沒有送新交易。 */
   blocked: number;
+  /** 其中：nonce 查詢本身失敗（RPC）。 */
+  blockedRpc: number;
   /** 處理單筆時遇到的 Redis / 未預期例外（本輪因此提前停止）。 */
   errors: number;
   /** trader 檢查的 RPC 暫時失敗等原因而提前停止（不算失敗）。 */
@@ -544,6 +561,9 @@ export interface RunSummary {
   blockedTooLong: boolean;
   /** 第一次 blocked 的時間（ms），沒有則 undefined。 */
   blockedSince?: number;
+  /** nonce 查詢（RPC）連續失敗已超過 BLOCKED_ESCALATE_MS。 */
+  nonceRpcTooLong: boolean;
+  nonceRpcSince?: number;
   /** trader 檢查 no-data 已連續超過 BLOCKED_ESCALATE_MS。 */
   nodataTooLong: boolean;
   nodataSince?: number;
@@ -562,8 +582,8 @@ export interface RunSummary {
 export async function runWorker(deps: WorkerDeps = defaultDeps, batchSize = BATCH_SIZE): Promise<RunSummary> {
   const s: RunSummary = {
     recovered: 0, available: 0, settled: 0, duplicate: 0, pending: 0, retried: 0,
-    dead: 0, stuck: 0, failed: 0, review: 0, blocked: 0, errors: 0, halted: 0,
-    skippedLocked: false, blockedTooLong: false, nodataTooLong: false,
+    dead: 0, stuck: 0, failed: 0, review: 0, blocked: 0, blockedRpc: 0, errors: 0, halted: 0,
+    skippedLocked: false, blockedTooLong: false, nonceRpcTooLong: false, nodataTooLong: false,
   };
   // 租約鎖（第二道防線）：另一個 worker 還在跑 → 什麼都不做。
   const token = randomUUID();
@@ -585,11 +605,19 @@ export async function runWorker(deps: WorkerDeps = defaultDeps, batchSize = BATC
     if (s.stuck > 0) s.globalHalt = (await getHalt()) ?? undefined;
     // 持續狀態計時：看到就記錄／刷新；確定恢復就清除。
     try {
-      if (s.blocked > 0) {
+      // 兩種 blocked 分開計時：「nonce 不一致」要處理的是 mempool 裡的交易；「nonce 查詢
+      // 失敗」要處理的是 RPC。混在一起會讓處理方向錯誤。
+      if (s.blocked - s.blockedRpc > 0) {
         s.blockedSince = await markCondition(BLOCKED_SINCE_KEY, deps.now());
         s.blockedTooLong = deps.now() - s.blockedSince > BLOCKED_ESCALATE_MS;
       } else if (ctx.nonceCheckPassed) {
         await clearCondition(BLOCKED_SINCE_KEY);
+      }
+      if (s.blockedRpc > 0) {
+        s.nonceRpcSince = await markCondition(NONCE_RPC_SINCE_KEY, deps.now());
+        s.nonceRpcTooLong = deps.now() - s.nonceRpcSince > BLOCKED_ESCALATE_MS;
+      } else if (ctx.nonceQueried) {
+        await clearCondition(NONCE_RPC_SINCE_KEY);
       }
       if (s.halted > 0) {
         s.nodataSince = await markCondition(NODATA_SINCE_KEY, deps.now());
@@ -618,7 +646,7 @@ async function runLocked(deps: WorkerDeps, batchSize: number, s: RunSummary, ctx
     else if (o.outcome === "duplicate") s.duplicate += 1;
     else if (o.outcome === "pending") s.pending += 1;
     else if (o.outcome === "review") s.review += 1;
-    else if (o.outcome === "blocked") s.blocked += 1;
+    else if (o.outcome === "blocked") (s.blocked += 1), (s.blockedRpc += o.kind === "rpc" ? 1 : 0);
     else if (o.outcome === "halted") s.halted += 1;
     else if (o.outcome === "retry") (s.retried += 1), (s.failed += 1);
     else if (o.outcome === "dead") (s.dead += 1), (s.failed += 1);
@@ -626,9 +654,9 @@ async function runLocked(deps: WorkerDeps, batchSize: number, s: RunSummary, ctx
   };
 
   /** 單筆處理；例外（多半是 Redis 暫時故障）攔下來，回 null 代表要停止本輪。 */
-  const safeProcess = async (raw: string): Promise<ProcessOutcome | null> => {
+  const safeProcess = async (raw: string, source?: string): Promise<ProcessOutcome | null> => {
     try {
-      return await processOne(raw, deps, ctx);
+      return await processOne(raw, deps, ctx, source);
     } catch (err) {
       s.errors += 1;
       console.error(
@@ -644,7 +672,7 @@ async function runLocked(deps: WorkerDeps, batchSize: number, s: RunSummary, ctx
   for (let n = await queueDepth(UNCONFIRMED_KEY); n > 0; n -= 1) {
     const raw = await claimNext(UNCONFIRMED_KEY);
     if (raw === null || raw === undefined) break;
-    const o = await safeProcess(raw);
+    const o = await safeProcess(raw, UNCONFIRMED_KEY);
     if (!o) return s;
     tally(o);
     if (o.outcome === "stuck") {
@@ -658,10 +686,17 @@ async function runLocked(deps: WorkerDeps, batchSize: number, s: RunSummary, ctx
     return s;
   }
 
-  // 2) 3) 送新交易。
+  // 2) 回收的項目（已在 main 最前面）最先處理：它們可能是上一輪中途中止、狀態已是
+  //    UNKNOWN 待轉 STUCK 的項目，必須在任何新交易之前先處理（例如設停機旗標）。
+  // 3) retry，4) main —— 送新交易。
   let budget = batchSize;
-  for (const src of [RETRY_KEY, QUEUE_KEY]) {
-    let n = Math.min(budget, await queueDepth(src));
+  const phases: Array<[string, number]> = [
+    [QUEUE_KEY, s.recovered],
+    [RETRY_KEY, Number.POSITIVE_INFINITY],
+    [QUEUE_KEY, Number.POSITIVE_INFINITY],
+  ];
+  for (const [src, cap] of phases) {
+    let n = Math.min(budget, cap, await queueDepth(src));
     while (n-- > 0 && budget > 0) {
       const raw = await claimNext(src);
       if (raw === null || raw === undefined) break;
@@ -694,9 +729,12 @@ async function dryRun(): Promise<void> {
     process.exit(1);
   }
   console.log("── dry-run（只讀：不取鎖、不佔位、不簽章）──");
-  const halt = await getHalt();
+  const halt = await getHalt().catch((err) => {
+    console.error(`::error::讀不到全域停機旗標 ${HALT_KEY}：${(err as Error).message}`);
+    process.exit(1);
+  });
   console.log(`全域停機旗標 ${HALT_KEY}：${halt ? JSON.stringify(halt) : "（無）"}`);
-  for (const k of [WORKER_LOCK_KEY, BLOCKED_SINCE_KEY, NODATA_SINCE_KEY]) {
+  for (const k of [WORKER_LOCK_KEY, BLOCKED_SINCE_KEY, NONCE_RPC_SINCE_KEY, NODATA_SINCE_KEY]) {
     const v = await readString(k);
     const shown = v && /^\d{12,}$/.test(v) ? `${v}（${new Date(Number(v)).toISOString()}）` : v;
     console.log(`${k}：${shown ?? "（無）"}`);
@@ -820,6 +858,14 @@ async function main(): Promise<void> {
       `::error::signer 的 nonce 不一致（mempool 有未上鏈交易）已持續 ` +
         `${Math.round((Date.now() - (s.blockedSince ?? Date.now())) / 60000)} 分鐘，結算停擺。` +
         "請依 agent/README.md「結算交易卡住」處理。",
+    );
+    process.exit(1);
+  }
+  if (s.nonceRpcTooLong) {
+    console.error(
+      `::error::查詢 signer nonce 的 RPC 已連續失敗 ` +
+        `${Math.round((Date.now() - (s.nonceRpcSince ?? Date.now())) / 60000)} 分鐘，結算停擺。` +
+        "這是 RPC 問題（檢查 BASE_SEPOLIA_RPC_URL / 供應商狀態），不是 mempool 裡有交易卡住。",
     );
     process.exit(1);
   }
