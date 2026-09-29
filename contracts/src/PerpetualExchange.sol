@@ -525,6 +525,11 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     /// @notice C-2 / Low: bad debt that neither the closing position's collateral
     ///         nor the InsuranceVault nor ADL could cover. Previously silent.
     event BadDebt(uint256 indexed positionId, bytes32 indexed asset, uint256 amount);
+    /// @notice Funding settled by a position when it closed (positive = paid
+    ///         by the position, negative = received). Emitted on every
+    ///         settlement path (close, liquidation, ADL) so indexers and
+    ///         solvency checks can separate funding from trading PnL.
+    event FundingRealized(uint256 indexed positionId, int256 amount);
     /// @notice H-2: emitted when a settlement had to skip un-accrued intervals.
     event FundingCatchupClamped(bytes32 indexed asset, uint256 elapsed, uint256 accrued);
 
@@ -1256,6 +1261,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         // and must therefore not push protocol reserves into the vault.
         _routeVaultFee(_collectedTradingFee(pos.margin, pnl, fundingPayment, tradingFee));
 
+        emit FundingRealized(positionId, fundingPayment);
         emit PositionLiquidated(positionId, pos.owner, msg.sender, pnl);
         emit PositionClosed(positionId, pos.owner, pnl, refund);
     }
@@ -1391,7 +1397,9 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
             remaining -= haircut;
 
             // Force-close the counterparty at mark, minus the haircut.
-            int256 payout = int256(cp.margin) + cpnl - int256(haircut) - _calcFunding(cp);
+            int256 cfunding = _calcFunding(cp);
+            int256 payout = int256(cp.margin) + cpnl - int256(haircut) - cfunding;
+            emit FundingRealized(cid, cfunding);
             if (payout < 0) payout = 0;
 
             cp.isOpen      = false;
@@ -2034,6 +2042,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         // N1 / M-1: only the trading fee this close could actually pay.
         _routeVaultFee(_collectedTradingFee(pos.margin, pnl, fundingPayment, tradingFee));
 
+        emit FundingRealized(positionId, fundingPayment);
         emit PositionClosed(positionId, pos.owner, pnl, uint256(closeAmount));
     }
 
