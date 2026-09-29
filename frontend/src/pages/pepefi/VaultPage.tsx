@@ -130,9 +130,10 @@ export default function VaultPage() {
   const activityRun = useRef(0)
 
   const refreshActivity = useCallback(async () => {
-    if (!vault || !wallet.provider) { setActivityLoading(false); return }
+    // 早退也要遞增：讓還在飛的舊掃描回來時被丟棄。
     activityRun.current += 1
     const myRun = activityRun.current
+    if (!vault || !wallet.provider) { setActivityLoading(false); return }
     setActivityLoading(true)
     const res = await fetchActivity(vault, wallet.provider, wallet.chainId)
     if (myRun !== activityRun.current) return

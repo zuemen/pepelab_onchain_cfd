@@ -126,10 +126,16 @@ export default function AdminTreasuryPage() {
   /** 掃描進行中。載入中不能顯示「尚無兌現紀錄」。 */
   const [historyLoading, setHistoryLoading] = useState(true)
   const historyRun = useRef(0)
+  // 換帳號（或換鏈）時先清空：上一個帳號的兌現紀錄不能掛在新帳號底下。
+  useEffect(() => {
+    setHistory([])
+    setHistoryFailed(false)
+  }, [wallet.address, wallet.chainId])
   const fetchHistory = useCallback(async () => {
-    if (!contracts || !wallet.address || !wallet.provider) { setHistoryLoading(false); return }
+    // 早退也要遞增：讓還在飛的舊掃描（例如換帳號前那一輪）回來時被丟棄。
     historyRun.current += 1
     const myRun = historyRun.current
+    if (!contracts || !wallet.address || !wallet.provider) { setHistoryLoading(false); return }
     const isStale = () => myRun !== historyRun.current
     setHistoryLoading(true)
     try {
