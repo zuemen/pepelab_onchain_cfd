@@ -2,7 +2,7 @@
 //
 //   cd agent && npx tsx signal-api/scripts/probe-facilitator.ts            # validity（預設）
 //   cd agent && MODE=verify-latency SAMPLES=30 npx tsx signal-api/scripts/probe-facilitator.ts
-//   cd agent && MODE=challenge-latency SAMPLES=30 API_URL=https://… npx tsx signal-api/scripts/probe-facilitator.ts
+//   cd agent && MODE=challenge-latency SAMPLES=30 API_URL=https://… PROBE_TRADER=0x… npx tsx signal-api/scripts/probe-facilitator.ts
 //   cd agent && MODE=concurrency SAMPLES=20 API_URL=http://localhost:4021 npx tsx signal-api/scripts/probe-facilitator.ts
 //
 // validity：驗證時間窗的判讀（見下）。
@@ -127,7 +127,13 @@ if (MODE === "verify-latency") {
 if (MODE === "challenge-latency") {
   const api = (process.env.API_URL ?? "").replace(/\/$/, "");
   if (!api) throw new Error("challenge-latency 需要 API_URL");
-  for (const path of ["/oracle/sBTC", "/signals/0xE80A81360608C1342e66743F70a00f75d792Eb93"]) {
+  // /signals 的測試目標由 PROBE_TRADER 指定（必須是已註冊 trader，否則付款前就回 400）。
+  // 以前寫死的是 2026-08-06 稽核確認外洩的舊 deployer——不要再拿它當測試目標。
+  const probeTrader = process.env.PROBE_TRADER?.trim();
+  const paths = ["/oracle/sBTC"];
+  if (probeTrader && /^0x[0-9a-fA-F]{40}$/.test(probeTrader)) paths.push(`/signals/${probeTrader}`);
+  else console.warn("未設 PROBE_TRADER（已註冊 trader 地址）→ 只量 /oracle/sBTC。");
+  for (const path of paths) {
     const out = [];
     for (let i = 0; i < SAMPLES; i += 1) {
       const t0 = performance.now();
