@@ -12,6 +12,7 @@ import { createWalletClient, http, publicActions, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
 import { wrapFetchWithPayment } from "x402-fetch";
+import { resolveX402MaxValue } from "@pepelab/shared";
 
 const API = (process.env.X402_API_URL ?? "http://localhost:4021").replace(/\/$/, "");
 const PK = process.env.AGENT_PRIVATE_KEY?.trim();
@@ -62,9 +63,11 @@ async function main() {
 
   // 3) 包裝 fetch：遇 402 自動用官方 USDC 簽 transferWithAuthorization 並重送。
   //    注意 init 不可省略（x402-fetch 在 402 重送時需要它）。
+  // 單筆付款上限明確傳入（X402_MAX_PAYMENT_USDC，預設 0.02 USDC），不吃套件預設 0.10。
   const payFetch = wrapFetchWithPayment(
     fetch,
     wallet as unknown as Parameters<typeof wrapFetchWithPayment>[1],
+    resolveX402MaxValue(),
   );
 
   console.log(`\n③ 付費購買 GET /signals/${TRADER} …（402 → 簽章 → 200）`);

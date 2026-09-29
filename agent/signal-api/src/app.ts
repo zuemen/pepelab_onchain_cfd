@@ -49,6 +49,7 @@ import {
   BadIntervalError,
 } from "./candles.ts";
 import { getBenchmarks, BadDateError } from "./benchmarks.ts";
+import { LruCache } from "./lru.ts";
 
 const NETWORK = (process.env.X402_NETWORK ?? "base-sepolia") as Network;
 const FACILITATOR_URL =
@@ -324,11 +325,28 @@ export async function applyLedgerRecording(
   });
 }
 
+// /signals/:trader 付款前的「已註冊」檢查結果快取（有上界；5 分鐘）。
+const REGISTRY_CACHE_TTL_MS = 5 * 60_000;
+const registryCache = new LruCache<{ at: number; registered: boolean }>(1_000);
+
+/** 預設：讀鏈上 StrategyRegistry.traders(addr).isRegistered，結果快取 5 分鐘。 */
+async function isRegisteredOnchain(trader: string): Promise<boolean> {
+  const key = trader.toLowerCase();
+  const hit = registryCache.get(key);
+  if (hit && Date.now() - hit.at < REGISTRY_CACHE_TTL_MS) return hit.registered;
+  const t = (await contracts.registry.traders(trader)) as { isRegistered: boolean } & unknown[];
+  const registered = Boolean(t?.isRegistered ?? t?.[0]);
+  registryCache.set(key, { at: Date.now(), registered });
+  return registered;
+}
+
 export interface CreateAppOptions {
   /** 覆寫 payTo（測試用；正式環境一律走 PAY_TO env）。 */
   payTo?: string;
   /** 覆寫 payTo 安全檢查用的 getCode 來源（測試用；預設是 app 的 provider）。 */
   payoutCodeReader?: CodeReader;
+  /** 覆寫「trader 是否已註冊」的查詢（測試用；預設讀鏈上 StrategyRegistry）。 */
+  isRegisteredTrader?: (trader: string) => Promise<boolean>;
 }
 
 export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVariables }> {
@@ -701,6 +719,42 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
   };
   app.use("/signals/*", payToGuard);
   app.use("/oracle/*", payToGuard);
+
+  // ── /signals/:trader 付款前確認 trader 已註冊（2026-09-29 P0）──────────────
+  //
+  // 以前任何合法地址都能買：付了 $0.01 之後 handler 才發現這個地址根本沒有策略，
+  // 70% 分潤還會記給一個不是 trader 的地址。x402 沒有退費——必須在 402 之前擋。
+  // 讀不到 registry（RPC 失敗）→ 503、不收錢：無法確認就不該賣。
+  const isRegistered = opts.isRegisteredTrader ?? isRegisteredOnchain;
+  app.use("/signals/*", async (c, next) => {
+    const trader = decodeURIComponent(c.req.path.split("/")[2] ?? "");
+    let registered: boolean;
+    try {
+      registered = await isRegistered(trader);
+    } catch (err) {
+      return c.json(
+        {
+          ok: false,
+          error: "registry_unavailable",
+          message: `無法確認 ${trader} 是否為已註冊 trader：${(err as Error).message}`,
+          note: "未付款：無法確認就不發出付款要求。",
+        },
+        503,
+      );
+    }
+    if (!registered) {
+      return c.json(
+        {
+          ok: false,
+          error: "trader_not_registered",
+          message: `${trader} 不是 StrategyRegistry 上已註冊的 trader，沒有可販售的訊號。`,
+          note: "未付款：在 x402 付費牆之前就被擋下（x402 無退費機制）。",
+        },
+        400,
+      );
+    }
+    return next();
+  });
 
   app.use("/oracle/*", async (c, next) => {
     const asset = c.req.path.split("/")[2];

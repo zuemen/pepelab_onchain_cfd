@@ -48,7 +48,11 @@ const { createApp, classifyFacilitatorFailure } = await import("./app.ts");
 // P0：payTo 守門會在 402 前檢查收款地址。這支測的是 facilitator 錯誤，所以給一個
 // 「安全的 EOA」payTo 與假 getCode（回 "0x" = 無 code），不打 RPC。
 const PAYTO_EOA = "0x4444444444444444444444444444444444444444";
-const app = createApp({ payTo: PAYTO_EOA, payoutCodeReader: { getCode: async () => "0x" } });
+const app = createApp({
+  payTo: PAYTO_EOA,
+  payoutCodeReader: { getCode: async () => "0x" },
+  isRegisteredTrader: async () => true, // 這支不測 registry 閘門
+});
 
 // ── 純函式 ───────────────────────────────────────────────────────────────────
 assert.equal(classifyFacilitatorFailure("Failed to verify payment: Too Many Requests")?.status, 429);

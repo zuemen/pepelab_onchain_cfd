@@ -8,12 +8,21 @@
 //   A-3（High）VC 從「有路徑才帶」改成必要：缺 VC 直接拒絕啟動，不可能靜默無授權下單。
 //   Low  槓桿／保證金補上界；所有 sendMessage 都 await + catch（未攔截的 rejection
 //     會讓 polling 程序整個掛掉）。
+//
+// 2026-09-29（P0）：
+//   - 啟動時先載入 agent/.env（以前沒呼叫 loadEnv，只能靠外部 export 環境變數）。
+//   - 除了 chat id，發訊者 from.id 也必須在 TELEGRAM_ALLOWED_USERS（必填）。
+//   - 下單前二次確認：回 6 位數確認碼，60 秒內 `/confirm <碼>` 才送鏈。
+//   - 每人頻率限制（TG_RATE_MAX 次 / TG_RATE_WINDOW_MS）。
+// 必須是第一個 import：在 @pepelab/shared 其他模組求值前載入 agent/.env。
+import "@pepelab/shared/autoload-env";
 import fs from "node:fs";
 import TelegramBot from "node-telegram-bot-api";
 
 /** sendMessage 的選項型別（隨套件版本而異，這裡取其宣告以免版本升級就編不過）。 */
 type SendMessageOptions = Parameters<TelegramBot["sendMessage"]>[2];
 import { openPositionForSession, getSession, verifyAuthorizationVC, type AuthorizationVC } from "@pepelab/shared";
+import { parseIdList, isAuthorized, ConfirmationStore, RateLimiter } from "./guard.ts";
 
 function req(k: string, hint = ""): string {
   const v = process.env[k]?.trim();
@@ -35,18 +44,41 @@ const ALLOWED_CHATS = (() => {
       "  取得方式：對 bot 傳任意訊息後開 https://api.telegram.org/bot<TOKEN>/getUpdates，\n" +
       "  取 message.chat.id。多個以逗號分隔，例如 TELEGRAM_ALLOWED_CHAT=123456789,-1001234567890",
   );
-  const ids = raw.split(",").map((s) => s.trim()).filter(Boolean);
-  const bad = ids.filter((s) => !/^-?\d+$/.test(s));
-  if (bad.length) {
-    console.error(`✗ TELEGRAM_ALLOWED_CHAT 含非法 chat id：${bad.join(", ")}（必須是整數）`);
+  const r = parseIdList(raw);
+  if ("error" in r) {
+    console.error(`✗ TELEGRAM_ALLOWED_CHAT ${r.error}`);
     process.exit(1);
   }
-  if (!ids.length) {
-    console.error("✗ TELEGRAM_ALLOWED_CHAT 解析後為空。");
-    process.exit(1);
-  }
-  return new Set(ids);
+  return r.ids;
 })();
+
+// 2026-09-29：發訊者白名單（from.id）也必填。只驗 chat id 時，白名單群組裡的任何
+// 成員都能用 session key 下單。
+const ALLOWED_USERS = (() => {
+  const raw = req(
+    "TELEGRAM_ALLOWED_USERS",
+    "允許下單的 Telegram user id（message.from.id），多個以逗號分隔。\n" +
+      "  chat 白名單之外，發訊者本人也必須在這份名單裡。",
+  );
+  const r = parseIdList(raw);
+  if ("error" in r) {
+    console.error(`✗ TELEGRAM_ALLOWED_USERS ${r.error}`);
+    process.exit(1);
+  }
+  return r.ids;
+})();
+
+const CONFIRM_TTL_MS = 60_000;
+const RATE_MAX = Number(process.env.TG_RATE_MAX ?? "5");
+const RATE_WINDOW_MS = Number(process.env.TG_RATE_WINDOW_MS ?? "600000");
+interface Order {
+  symbol: string;
+  isLong: boolean;
+  leverage: number;
+  marginUsdc: number;
+}
+const confirmations = new ConfirmationStore<Order>(CONFIRM_TTL_MS);
+const limiter = new RateLimiter(RATE_MAX, RATE_WINDOW_MS);
 
 const SESSION_ID = Number(process.env.DEMO_SESSION_ID ?? "0");
 if (!Number.isInteger(SESSION_ID) || SESSION_ID < 0) {
@@ -121,7 +153,8 @@ export function checkBounds(leverage: number, marginUsdc: number): string | null
 const bot = new TelegramBot(TOKEN, { polling: true });
 const HELP =
   "PepeLab 交易 agent。自然語言下單，例如：\n• 做多 sBTC 3x 保證金 50\n• 做空 sETH 槓桿2 保證金 40\n" +
-  "指令：/pos 查 session ・ /help 說明\n" +
+  "指令：/pos 查 session ・ /help 說明 ・ /confirm <確認碼> 確認下單\n" +
+  `每筆下單都會先回一個確認碼，${CONFIRM_TTL_MS / 1000} 秒內回 /confirm <碼> 才會上鏈。\n` +
   `限額：槓桿 ≤ ${MAX_LEVERAGE}x、保證金 ${MIN_MARGIN}–${MAX_MARGIN}；另受 session 與 VC 約束，超過會被拒絕。`;
 
 /** 所有對外送訊都必須 await + catch：未攔截的 rejection 會殺掉 polling 程序。 */
@@ -135,14 +168,41 @@ async function say(chatId: string, text: string, opts?: SendMessageOptions) {
 
 bot.on("polling_error", (e) => console.error(`polling_error：${(e as Error).message}`));
 
+async function execute(chatId: string, o: Order) {
+  await say(chatId, `確認 → ${o.isLong ? "做多" : "做空"} ${o.symbol}　${o.leverage}x　保證金 ${o.marginUsdc} USDT\n上鏈中…⏳`);
+  try {
+    const res: any = await openPositionForSession({
+      sessionId: SESSION_ID, symbol: o.symbol, isLong: o.isLong,
+      marginUsdc: o.marginUsdc, leverage: o.leverage, authVc: VC,
+    });
+    if (!res?.ok) return void (await say(chatId, `❌ 被拒絕：${res?.error ?? "未知錯誤"}`));
+    const hash = res.txHash ?? res.hash ?? res.tx;
+    await say(chatId, `✅ 已開倉\nposition #${res.positionId ?? "?"}\n${hash ? `https://sepolia.basescan.org/tx/${hash}` : "(無 tx hash)"}`);
+  } catch (e) {
+    await say(chatId, `❌ 失敗：${(e as Error).message}`);
+  }
+}
+
 bot.on("message", async (msg) => {
   const chatId = String(msg.chat.id);
-  // A-2：白名單是唯一入口，未列入者連 /help 都不回（不洩漏 bot 存在與 session 內容）。
-  if (!ALLOWED_CHATS.has(chatId)) {
-    console.warn(`拒絕未授權 chat ${chatId}`);
+  const fromId = msg.from?.id !== undefined ? String(msg.from.id) : undefined;
+  // A-2 + 2026-09-29：chat 與發訊者都必須在白名單；未列入者連 /help 都不回
+  // （不洩漏 bot 存在與 session 內容）。
+  if (!isAuthorized(chatId, fromId, ALLOWED_CHATS, ALLOWED_USERS)) {
+    console.warn(`拒絕未授權 chat ${chatId} / user ${fromId ?? "(無 from)"}`);
     return;
   }
+  const userId = fromId!;
   const text = (msg.text ?? "").trim(); if (!text) return;
+  const confirm = text.match(/^\/confirm(?:@\w+)?\s+(\d{6})$/i) ?? text.match(/^確認\s*(\d{6})$/);
+  if (confirm) {
+    const r = confirmations.consume(chatId, userId, confirm[1]!);
+    if (!r.ok) {
+      const why = r.reason === "expired" ? "確認碼已過期" : r.reason === "mismatch" ? "確認碼不符（已作廢）" : "沒有待確認的下單";
+      return void (await say(chatId, `❌ ${why}，請重新下指令。`));
+    }
+    return void (await execute(chatId, r.order));
+  }
   if (text === "/start" || text === "/help") return void (await say(chatId, HELP));
   if (text === "/pos" || text === "/status" || text === "/session") {
     const r: any = await getSession(SESSION_ID);
@@ -159,20 +219,20 @@ bot.on("message", async (msg) => {
   const bounds = checkBounds(leverage!, marginUsdc!);
   if (bounds) return void (await say(chatId, `❌ 超出限額：${bounds}`));
 
-  await say(chatId, `收到 → ${isLong ? "做多" : "做空"} ${symbol}　${leverage}x　保證金 ${marginUsdc} USDT\n上鏈中…⏳`);
-  try {
-    const res: any = await openPositionForSession({
-      sessionId: SESSION_ID, symbol: symbol!, isLong: isLong!,
-      marginUsdc: marginUsdc!, leverage: leverage!, authVc: VC,
-    });
-    if (!res?.ok) return void (await say(chatId, `❌ 被拒絕：${res?.error ?? "未知錯誤"}`));
-    const hash = res.txHash ?? res.hash ?? res.tx;
-    await say(chatId, `✅ 已開倉\nposition #${res.positionId ?? "?"}\n${hash ? `https://sepolia.basescan.org/tx/${hash}` : "(無 tx hash)"}`);
-  } catch (e) {
-    await say(chatId, `❌ 失敗：${(e as Error).message}`);
+  const rl = limiter.hit(userId);
+  if (!rl.allowed) {
+    return void (await say(chatId, `❌ 下單太頻繁（每 ${RATE_WINDOW_MS / 60000} 分鐘上限 ${RATE_MAX} 筆），請 ${rl.retryAfterSec} 秒後再試。`));
   }
+
+  const p = confirmations.create(chatId, userId, { symbol: symbol!, isLong: isLong!, leverage: leverage!, marginUsdc: marginUsdc! });
+  await say(
+    chatId,
+    `收到 → ${isLong ? "做多" : "做空"} ${symbol}　${leverage}x　保證金 ${marginUsdc} USDT\n` +
+      `⚠ 尚未下單。${CONFIRM_TTL_MS / 1000} 秒內回覆  /confirm ${p.code}  才會上鏈。`,
+  );
 });
 
 console.log(
-  `PepeLab TG agent 上線。session #${SESSION_ID}，VC 已驗證，允許 chat：${[...ALLOWED_CHATS].join(", ")}。`,
+  `PepeLab TG agent 上線。session #${SESSION_ID}，VC 已驗證，允許 chat：${[...ALLOWED_CHATS].join(", ")}，` +
+    `允許 user：${[...ALLOWED_USERS].join(", ")}。`,
 );

@@ -25,7 +25,7 @@ import { baseSepolia } from "viem/chains";
 import { config as dotenvConfig } from "dotenv";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { openPositionForSession } from "@pepelab/shared";
+import { openPositionForSession, resolveX402MaxValue } from "@pepelab/shared";
 import { loadVc, localVerifyVc } from "./examples/vc-gate.ts";
 
 // ── Load env from agent/.env ───────────────────────────────────────────────
@@ -139,9 +139,11 @@ async function fetchPaidSignal(
   }
 
   // Wrap fetch to auto-handle 402 → sign USDC → retry
+  // 單筆付款上限明確傳入（X402_MAX_PAYMENT_USDC，預設 0.02 USDC），不吃套件預設 0.10。
   const payFetch = wrapFetchWithPayment(
     fetch,
-    walletClient as Parameters<typeof wrapFetchWithPayment>[1]
+    walletClient as Parameters<typeof wrapFetchWithPayment>[1],
+    resolveX402MaxValue(),
   );
 
   console.log("  Sending request (will auto-handle 402 challenge)...");

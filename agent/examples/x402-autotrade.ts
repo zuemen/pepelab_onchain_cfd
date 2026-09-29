@@ -25,7 +25,7 @@ import { createWalletClient, http, publicActions, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
 import { wrapFetchWithPayment } from "x402-fetch";
-import { openPositionForSession } from "@pepelab/shared";
+import { openPositionForSession, resolveX402MaxValue } from "@pepelab/shared";
 import { loadVc, localVerifyVc } from "./vc-gate.ts";
 import { parseOracleBody } from "./x402-autonomous.ts";
 
@@ -81,9 +81,11 @@ async function main() {
   // ── 建 viem walletClient + x402 付費 fetch（遇 402 自動用官方 USDC 簽 EIP-3009 重送）──
   const account = privateKeyToAccount(PK as Hex);
   const wallet = createWalletClient({ account, chain: baseSepolia, transport: http(RPC) }).extend(publicActions);
+  // 單筆付款上限明確傳入（X402_MAX_PAYMENT_USDC，預設 0.02 USDC），不吃套件預設 0.10。
   const payFetch = wrapFetchWithPayment(
     fetch,
     wallet as unknown as Parameters<typeof wrapFetchWithPayment>[1],
+    resolveX402MaxValue(),
   );
   console.log("付款錢包（官方 USDC）：", account.address);
 

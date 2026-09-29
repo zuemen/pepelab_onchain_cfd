@@ -23,6 +23,11 @@ async function main() {
   const app = createApp({
     payTo: "0x4444444444444444444444444444444444444444",
     payoutCodeReader: { getCode: async () => "0x" },
+    // 只有 0x5555… 是「已註冊 trader」；0x6666… 讓 registry 查詢失敗。
+    isRegisteredTrader: async (t) => {
+      if (t.toLowerCase() === "0x" + "66".repeat(20)) throw new Error("rpc down (fake)");
+      return t.toLowerCase() === "0x" + "55".repeat(20);
+    },
   });
   const get = (path: string, headers: Record<string, string> = {}) =>
     app.fetch(new Request("http://localhost" + path, { headers }));
@@ -53,6 +58,23 @@ async function main() {
     assert.equal(res.status, 400);
     assert.equal(((await res.json()) as any).error, "trader_compromised");
     console.log("✓ /signals/<外洩地址> → 400 trader_compromised（未付款）");
+  }
+
+  {
+    // 未註冊的 trader：付款前 400，不發 402（以前是先收 $0.01 才發現沒有訊號可賣）。
+    const res = await get("/signals/0x7777777777777777777777777777777777777777");
+    assert.equal(res.status, 400, `未註冊 trader 應在付費前回 400，實得 ${res.status}`);
+    const j = (await res.json()) as any;
+    assert.equal(j.error, "trader_not_registered");
+    assert.equal(j.accepts, undefined, "不可帶任何付款要求");
+    console.log("✓ /signals/<未註冊 trader> → 400 trader_not_registered（未付款）");
+  }
+  {
+    // 讀不到 registry：無法確認就不賣 → 503（未付款）。
+    const res = await get("/signals/0x6666666666666666666666666666666666666666");
+    assert.equal(res.status, 503);
+    assert.equal(((await res.json()) as any).error, "registry_unavailable");
+    console.log("✓ /signals/<registry 查詢失敗> → 503（未付款）");
   }
 
   // ── 合法輸入仍然要撞到付費牆（別把付費牆改掉了）─────────────────────────

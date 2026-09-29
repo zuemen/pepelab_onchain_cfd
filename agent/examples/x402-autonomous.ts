@@ -26,6 +26,7 @@ import { pathToFileURL } from "node:url";
 import {
   openPositionForSession, getSession, agentDid, appendAudit,
   parseOracleBody as parseOracle, type Recommendation, type AuditRecord,
+  resolveX402MaxValue,
 } from "@pepelab/shared";
 import { loadVc, localVerifyVc, fetchAgentVerification, AUDIT_PATH } from "./vc-gate.ts";
 
@@ -134,7 +135,12 @@ async function main() {
   // ① x402 付費取 enriched 資料
   const account = privateKeyToAccount(PK as Hex);
   const wallet = createWalletClient({ account, chain: baseSepolia, transport: http(RPC) }).extend(publicActions);
-  const payFetch = wrapFetchWithPayment(fetch, wallet as unknown as Parameters<typeof wrapFetchWithPayment>[1]);
+  // 單筆付款上限明確傳入（X402_MAX_PAYMENT_USDC，預設 0.02 USDC），不吃套件預設 0.10。
+  const payFetch = wrapFetchWithPayment(
+    fetch,
+    wallet as unknown as Parameters<typeof wrapFetchWithPayment>[1],
+    resolveX402MaxValue(),
+  );
   console.log("付款錢包（官方 USDC）：", account.address);
 
   console.log(`\n① x402 付費 0.005 USDC → GET /oracle/${symbol}（402 → 簽 EIP-3009 → 200）`);
