@@ -35,7 +35,7 @@ export const esg = {
   subtitle: '環境 · 社會 · 治理 — 11 項合成資產，鏈上登記',
 
   connectWallet: '連接錢包以從鏈上 ESGRegistry 載入即時 ESG 評分。',
-  wrongNetwork: 'ESGRegistry 僅部署於 Ethereum Sepolia。請連接 Ethereum Sepolia 以查看即時鏈上評分。',
+  wrongNetwork: '這條鏈沒有部署 ESGRegistry。請切換到 Base Sepolia 或 Ethereum Sepolia 以查看即時鏈上評分。',
   loadFailed: 'ESG 資料載入失敗，請重新整理頁面。',
 
   methodology: {
@@ -100,7 +100,7 @@ export const esg = {
 
   radar: {
     title: 'C · E/S/G 雷達圖',
-    noData: '尚無資料 — 請在 Ethereum Sepolia 連接錢包',
+    noData: '這檔資產目前沒有鏈上評分',
     composite: '綜合分數',
     hint: '點擊左側任一資產卡片即可更新雷達圖',
   },

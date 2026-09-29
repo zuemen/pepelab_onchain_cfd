@@ -119,14 +119,14 @@ const DIMS = [
 export default function ESGPage() {
   const wallet = usePepefiWallet();
   const contracts   = useContracts(wallet.provider, wallet.signer, wallet.chainId);
-  const { data: esg, loaded: esgLoaded, error: esgFailed } = useESG(contracts?.esgRegistry ?? null);
+  const { data: esg, loaded: esgLoaded, error: esgFailed, unavailable: esgUnavailable } = useESG(contracts?.esgRegistry ?? null);
   // #152：見證碳等級來自 V2 stack 的 ESGRegistryV2,跟上面那份舊評等是兩個不同
   // 的合約、兩套不同的資料。刻意各自讀取、各自呈現,不在這裡合併成一個物件。
   const v2 = useV2Contracts(wallet.provider, wallet.signer, wallet.chainId);
   const carbonTiers = useCarbonTiers(v2?.esgRegistryV2 ?? null);
   const [selected, setSelected] = useState<string>(ASSET_IDS.sESGU);
 
-  const isLoading = wallet.isConnected && wallet.chainId === 11155111 && !esgLoaded;
+  const isLoading = wallet.isConnected && !esgUnavailable && !esgLoaded;
 
   const sorted = useMemo(
     () =>
@@ -163,12 +163,12 @@ export default function ESGPage() {
           {t.esg.connectWallet}
         </Alert>
       )}
-      {wallet.isConnected && wallet.chainId !== 11155111 && (
+      {wallet.isConnected && esgUnavailable && (
         <Alert severity="warning" variant="outlined" sx={{ py: 0 }}>
           {t.esg.wrongNetwork}
         </Alert>
       )}
-      {wallet.isConnected && wallet.chainId === 11155111 && esgFailed && (
+      {wallet.isConnected && !esgUnavailable && esgFailed && (
         <Alert severity="error" variant="outlined" sx={{ py: 0 }}>
           {t.esg.loadFailed}
         </Alert>
