@@ -29,7 +29,7 @@ import {
 } from "./core.ts";
 import { fetchMarketSession, fetchPrice, fetchSecondaryPrice } from "./feeds.ts";
 import { runRound, type RoundResult } from "./round.ts";
-import { describeProtection, type ProtectionResult } from "./protect.ts";
+import { describeProtection, protectAsset } from "./protect.ts";
 import type { HealthReport } from "./alert.ts";
 import { writeFileSync } from "node:fs";
 import { classifyProbeError, decideAssetMode, modeName, switchesMode } from "./operator.ts";
@@ -122,12 +122,9 @@ const GUARDED_ABI = [
   "function updatePrice(bytes32 assetId, uint256 newPrice) external",
   "function peek(bytes32 assetId) view returns (uint256 price, uint256 updatedAt, bool exists, bool frozen)",
   "function maxDeviationBps() view returns (uint256)",
-  // 熔斷停單（複審 H2 (a)）：只有 keeper 持有 GUARDIAN_ROLE 時才會呼叫。
-  "function hasRole(bytes32 role, address account) view returns (bool)",
-  "function setAssetFrozen(bytes32 assetId, bool frozen) external",
 ];
-const GUARDIAN_ROLE = ethers.id("GUARDIAN_ROLE");
-// 熔斷停單（複審 H2 (b)）與訊息用的 maxPriceAge；舊 exchange 沒有前三個函式。
+// 熔斷停單（切 ReduceOnly）與訊息用的 maxPriceAge；舊 exchange 沒有前三個函式。
+// keeper 不再凍結 GuardedOracle（窄複審 1，見 protect.ts）。
 const EXCHANGE_PROTECT_ABI = [
   "function marketOperator() view returns (address)",
   "function assetMode(bytes32 asset) view returns (uint8)",
@@ -270,13 +267,26 @@ async function main(): Promise<void> {
   }
   const protectionNotes: string[] = [];
   for (const ref of round.refused) {
-    const res = await protectAsset(ref.symbol, ref.assetId, guarded, exchangeView, signer);
+    const res = await protectAsset({
+      symbol: ref.symbol,
+      assetId: ref.assetId,
+      exchange: exchangeView
+        ? {
+            marketOperator: async () => (await exchangeView.marketOperator()) as string,
+            assetMode: async (id) => (await exchangeView.assetMode(id)) as bigint,
+            checkSetAssetMode: (id, mode) => exchangeView.setAssetMode.staticCall(id, mode),
+            setAssetMode: (id, mode) => exchangeView.setAssetMode(id, mode),
+          }
+        : null,
+      signerAddress: signer?.address ?? null,
+      isMissingFunction: (e) => classifyProbeError(revertInfo(e)) === "missing",
+    });
     const { notes, exchangeStillTrading } = describeProtection(res, exchangeMaxAge);
     for (const n of notes) {
       if (exchangeStillTrading) console.error(`::error::${n}`);
       else console.log(`::warning::${n}`);
     }
-    if (res.freeze === "failed" || res.mode === "failed") failed += 1;
+    if (res.mode === "failed") failed += 1;
     protectionNotes.push(...notes);
   }
   writeRefusal(round, protectionNotes, nowSec, exchangeMaxAge);
@@ -300,71 +310,6 @@ async function main(): Promise<void> {
   );
   for (const msg of verdict.errors) console.error(`::error::${msg}`);
   if (verdict.exitCode !== 0) process.exit(verdict.exitCode);
-}
-
-/**
- * 複審 H2：對一個被熔斷拒寫的資產依序嘗試 (a) 凍結 GuardedOracle、(b) 交易所切
- * ReduceOnly。每一步都先用 view／staticCall 探測權限，沒有權限就記錄、不送交易。
- */
-async function protectAsset(
-  symbol: string,
-  assetId: string,
-  guarded: ethers.Contract | null,
-  exchange: ethers.Contract | null,
-  signer: ethers.Wallet | null,
-): Promise<ProtectionResult> {
-  const res: ProtectionResult = { symbol, freeze: "no-guarded", mode: "no-exchange" };
-  const details: string[] = [];
-
-  if (guarded) {
-    try {
-      const [, , exists, frozen] = (await guarded.peek(assetId)) as [bigint, bigint, boolean, boolean];
-      if (!exists) res.freeze = "no-guarded";
-      else if (frozen) res.freeze = "already";
-      else if (!signer) res.freeze = "dry-run";
-      else if (!((await guarded.hasRole(GUARDIAN_ROLE, signer.address)) as boolean)) res.freeze = "no-role";
-      else {
-        await guarded.setAssetFrozen.staticCall(assetId, true);
-        const tx = await guarded.setAssetFrozen(assetId, true);
-        await tx.wait();
-        res.freeze = "done";
-        details.push(`freeze tx ${tx.hash}`);
-      }
-    } catch (e) {
-      res.freeze = "failed";
-      details.push(`freeze: ${(e as Error).message.slice(0, 80)}`);
-    }
-  }
-
-  if (exchange) {
-    let operator: string | null = null;
-    try {
-      operator = (await exchange.marketOperator()) as string;
-    } catch (e) {
-      res.mode = classifyProbeError(revertInfo(e)) === "missing" ? "unsupported" : "failed";
-      if (res.mode === "failed") details.push(`marketOperator(): ${(e as Error).message.slice(0, 80)}`);
-    }
-    if (operator !== null) {
-      try {
-        const current = Number(await exchange.assetMode(assetId));
-        if (current !== 0) res.mode = "already";
-        else if (!signer) res.mode = "dry-run";
-        else if (operator.toLowerCase() !== signer.address.toLowerCase()) res.mode = "not-operator";
-        else {
-          await exchange.setAssetMode.staticCall(assetId, 1);
-          const tx = await exchange.setAssetMode(assetId, 1);
-          await tx.wait();
-          res.mode = "done";
-          details.push(`reduce-only tx ${tx.hash}`);
-        }
-      } catch (e) {
-        res.mode = "failed";
-        details.push(`setAssetMode: ${(e as Error).message.slice(0, 80)}`);
-      }
-    }
-  }
-  if (details.length) res.detail = details.join("; ");
-  return res;
 }
 
 /** 熔斷報告（給 alert-run.ts）與拒寫清單（給 funding crank）。 */

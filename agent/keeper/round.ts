@@ -23,7 +23,8 @@ import type { QuoteMeta } from "./feeds.ts";
 export type Feed = ParsedFeed & QuoteMeta & { source: string };
 export interface TxLike {
   hash: string;
-  wait: () => Promise<unknown>;
+  /** ethers v6：wait(confirms, timeoutMs)，逾時丟 code=TIMEOUT。 */
+  wait: (confirms?: number, timeoutMs?: number) => Promise<unknown>;
 }
 export interface OracleLike {
   getPrice: (assetId: string) => Promise<[bigint, bigint]>;

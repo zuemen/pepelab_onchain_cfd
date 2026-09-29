@@ -192,31 +192,30 @@ min(`KEEPER_BREAKER_DEVIATION`, Guarded 該方向上限)**,實際上是 +10% / �
 
 **拒寫不等於停單。** 價格停在舊值,但交易所(`0x827e…124D`)的 `maxPriceAge` 是
 **6 小時**(21600,2026-09-29 唯讀核對):在那之前,交易所仍會以已知錯誤的舊價開倉、
-平倉、清算。所以拒寫時 keeper 依序嘗試(`agent/keeper/protect.ts`):
+平倉、清算。所以拒寫時 keeper(`agent/keeper/protect.ts`):
 
-1. keeper 有 GuardedOracle 的 `GUARDIAN_ROLE` → `setAssetFrozen(asset, true)`,金庫立刻
-   fail-closed(只影響金庫,不影響交易所)。
-2. 交易所支援 `setAssetMode` 且 keeper 是 `marketOperator` → 切 ReduceOnly(停止新開倉;
+1. 交易所支援 `setAssetMode` 且 keeper 是 `marketOperator` → 切 ReduceOnly(停止新開倉;
    平倉與清算仍用舊價)。
-3. 開 issue「[keeper] Base Sepolia 價格熔斷」(或在已開的那張留言),內文列出上面兩步的
+2. 開 issue「[keeper] Base Sepolia 價格熔斷」(或在已開的那張留言),內文列出第 1 步的
    結果。做不到的部分會寫「交易所將以舊價繼續成交，直到 maxPriceAge（6h）；需人工處置」。
 
-keeper 不會自動解除凍結或 ReduceOnly;解除一律人工。funding crank 會讀
+**keeper 不凍結 GuardedOracle。** 2026-09-29 窄複審移除了 keeper 自動 `setAssetFrozen`
+的路徑:凍結後下一輪 Mock 的門檻會從 10% 放寬回 20%,保護動作反而開洞。凍結一律由
+guardian(人)決定;Guarded 被凍結時 keeper 對 Mock 也拒寫(fail-closed)。
+
+keeper 不會自動解除 ReduceOnly;解除一律人工。funding crank 會讀
 `$RUNNER_TEMP/keeper-refused.txt` 跳過被拒寫的資產(不以已知錯誤的價格結算 funding)。
 
-### 目前做不到停單 —— 需要使用者授權
+### 目前做不到停單 —— 建議的授權
 
-2026-09-29 鏈上核對:keeper(`0x540a…ef17`)在 Base GuardedOracle **只有 KEEPER_ROLE**
-(`hasRole(GUARDIAN_ROLE, keeper) == false`),線上交易所**沒有 `setAssetMode`**。
-也就是上面 1、2 兩步目前都會記錄為「做不到」,只剩告警。Base GuardedOracle 的
-`maxPriceAge` 是 **30 天**(2592000),金庫在這段時間內也不會自己 fail-closed。
-要真正關閉這個窗口,需要使用者做以下其一:
+2026-09-29 鏈上核對:線上交易所(`0x827e…124D`)**沒有 `setAssetMode`**,所以第 1 步
+目前一律記錄為「做不到」,只剩告警。Base GuardedOracle 的 `maxPriceAge` 是 **30 天**
+(2592000),金庫在這段時間內也不會自己 fail-closed。
 
-- 由 GuardedOracle 的 admin 授予 keeper `GUARDIAN_ROLE`
-  (`grantRole(keccak256("GUARDIAN_ROLE"), 0x540aECD37E7A7885824e7b7e996eBddfb842ef17)`)。
-  代價:keeper 金鑰外洩時,攻擊者可凍結資產或暫停 Guarded(只能停,不能改價)。
-- 完成新交易所 cutover(`contracts/p1-guardian-market-modes`)後,由 owner
-  `setMarketOperator(keeper)`。代價:keeper 可在 Active↔ReduceOnly 間切換(碰不到 Halted)。
+**唯一建議**:完成新交易所 cutover(`contracts/p1-guardian-market-modes`)後,由 owner
+`setMarketOperator(0x540aECD37E7A7885824e7b7e996eBddfb842ef17)`。代價:keeper 可在
+Active↔ReduceOnly 間切換,碰不到 Halted,也改不了價格。**不建議**授予 keeper
+GuardedOracle 的 `GUARDIAN_ROLE`(理由見上)。在 cutover 之前,停單只能靠人工。
 
 **股票只有單一來源(Yahoo)**,所以拆股、財報跳空這類 >20% 的真實變動**一定**會
 熔斷,需要人工處置。加密資產有 Pyth relay + CoinGecko + Yahoo(BTC-USD/ETH-USD)
