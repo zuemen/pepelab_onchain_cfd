@@ -5,7 +5,7 @@ import { paths } from 'src/routes/paths';
 
 import { t } from 'src/locales';
 import { CONFIG } from 'src/global-config';
-import { SHOW_PERPETUALS } from 'src/lib/pepefi/featureFlags';
+import { isPathEnabled, SHOW_PERPETUALS } from 'src/lib/pepefi/featureFlags';
 
 import { SvgColor } from 'src/components/svg-color';
 
@@ -47,7 +47,16 @@ const ICONS = {
 
 // ----------------------------------------------------------------------
 
-export const navData: NavSectionProps['data'] = [
+/**
+ * 商業版旗標（featureFlags.ts）關掉的功能不出現在側邊欄、手機選單與 ⌘K 搜尋——
+ * 三者都吃這一份 navData，所以在這裡過濾一次就全部收齊。
+ */
+const byFeatureFlags = (data: NavSectionProps['data']): NavSectionProps['data'] =>
+  data
+    .map((section) => ({ ...section, items: section.items.filter((item) => isPathEnabled(item.path)) }))
+    .filter((section) => section.items.length > 0);
+
+export const navData: NavSectionProps['data'] = byFeatureFlags([
   /**
    * PepeLab
    */
@@ -87,7 +96,7 @@ export const navData: NavSectionProps['data'] = [
       { title: t.nav.item.stake, path: paths.pepefi.stake, icon: ICONS.booking },
     ],
   },
-];
+]);
 
 // ----------------------------------------------------------------------
 // Simple 模式的側邊欄。

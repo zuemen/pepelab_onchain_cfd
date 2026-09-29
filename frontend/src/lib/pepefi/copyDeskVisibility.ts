@@ -17,9 +17,17 @@ export interface CopyDeskVisibility {
   performance: boolean
 }
 
-export function copyDeskVisibility(mode: Mode, copyCount: number): CopyDeskVisibility {
+/**
+ * `copyEnabled` 是商業版旗標 FEATURE_COPY_TRADING。關閉時 Expert 也退回跟 Simple
+ * 一樣的規則：只有「已經有跟單」才顯示跟單部位卡（讓使用者平得掉），其餘全收。
+ */
+export function copyDeskVisibility(
+  mode: Mode,
+  copyCount: number,
+  copyEnabled = true
+): CopyDeskVisibility {
   const hasCopies = copyCount > 0
-  if (mode === 'expert') {
+  if (mode === 'expert' && copyEnabled) {
     return { records: true, stats: hasCopies, performance: true }
   }
   return { records: hasCopies, stats: false, performance: false }

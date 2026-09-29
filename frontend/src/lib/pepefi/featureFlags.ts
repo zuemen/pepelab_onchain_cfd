@@ -40,4 +40,65 @@ export const FIXED_LEVERAGE = 1;
  */
 export const SHOW_PERPETUALS = readFlag(import.meta.env.VITE_SHOW_PERPETUALS, false);
 
+// ── 商業版（B2B 白標）功能旗標 ────────────────────────────────────────────────
+//
+// 以下三個旗標收的是「零售／遊戲化」功能。平台定位是賣給持牌金融機構的白標引擎，
+// 盡職調查（DD）時看到的站不該出現養成遊戲、平台幣獎勵或槓桿跟單。程式碼全部保留，
+// 改一個環境變數就能打開。
+//
+// 與上面 SHOW_* 的差別：SHOW_* 收的是入口、路徑仍到得了；FEATURE_* 關閉時**連路由
+// 也收起來**——直接打網址會看到「此功能未啟用」。唯一例外是既有部位：使用者已經
+// 開著的跟單，Portfolio 仍然顯示並可以取消（見 copyDeskVisibility.ts），不能讓旗標
+// 把別人的錢鎖在看不到的地方。
+
+/**
+ * GameFi：Pepe 養成中心／PepeLab 扭蛋（`/pepe`、帳戶選單的藥水／坐騎／外觀）。
+ * 預設 **關**。開啟：`VITE_FEATURE_GAMEFI=1`。
+ */
+export const FEATURE_GAMEFI = readFlag(import.meta.env.VITE_FEATURE_GAMEFI, false);
+
+/**
+ * PEPE 平台幣獎勵：`/rewards`、帳戶選單的獎勵入口、Exchange 的 PEPE 水龍頭卡片。
+ * 預設 **關**。開啟：`VITE_FEATURE_PEPE_REWARDS=1`。
+ */
+export const FEATURE_PEPE_REWARDS = readFlag(import.meta.env.VITE_FEATURE_PEPE_REWARDS, false);
+
+/**
+ * Expert 跟單（CopyTracker 的槓桿跟單）：Expert 模式的交易者排行榜、`/copy/:addr`、
+ * 交易者頁與巨鯨動態上的「跟單」按鈕、首頁的跟單功能卡。
+ * 預設 **關**。開啟：`VITE_FEATURE_COPY_TRADING=1`。
+ */
+export const FEATURE_COPY_TRADING = readFlag(import.meta.env.VITE_FEATURE_COPY_TRADING, false);
+
+export interface FeatureFlags {
+  gamefi: boolean;
+  pepeRewards: boolean;
+  copyTrading: boolean;
+}
+
+export const FEATURES: FeatureFlags = {
+  gamefi: FEATURE_GAMEFI,
+  pepeRewards: FEATURE_PEPE_REWARDS,
+  copyTrading: FEATURE_COPY_TRADING,
+};
+
+/**
+ * 路徑 → 需要的旗標。只列「整條路由屬於某個功能」的路徑；`/marketplace`、
+ * `/trader/:addr` 這類頁面本身是商業版的一部分，只有頁內的跟單入口跟著旗標走。
+ */
+const GATED_PREFIXES: ReadonlyArray<{ prefix: string; flag: keyof FeatureFlags }> = [
+  { prefix: '/pepe', flag: 'gamefi' },
+  { prefix: '/rewards', flag: 'pepeRewards' },
+  { prefix: '/copy', flag: 'copyTrading' },
+];
+
+/** 這條路徑在給定旗標下是否可用。比對到路徑段為止，`/pepelab` 不會被 `/pepe` 吃掉。 */
+export function isPathEnabled(path: string, flags: FeatureFlags = FEATURES): boolean {
+  const clean = path.split(/[?#]/)[0];
+  for (const { prefix, flag } of GATED_PREFIXES) {
+    if (clean === prefix || clean.startsWith(`${prefix}/`)) return flags[flag];
+  }
+  return true;
+}
+
 export const __test__ = { readFlag };

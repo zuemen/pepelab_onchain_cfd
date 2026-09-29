@@ -30,7 +30,7 @@ import ESGBadge from 'src/components/pepefi/ESGBadge';
 import NetWorthHero from 'src/components/pepefi/dashboard/NetWorthHero';
 import RwaAllocation from 'src/components/pepefi/dashboard/RwaAllocation';
 import { useSynthHoldings } from 'src/hooks/useSynthHoldings';
-import { SHOW_PERPETUALS } from 'src/lib/pepefi/featureFlags';
+import { SHOW_PERPETUALS, FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags';
 import { copyDeskVisibility } from 'src/lib/pepefi/copyDeskVisibility';
 import KYCStatusCard from 'src/components/pepefi/dashboard/KYCStatusCard';
 import QuickActions from 'src/components/pepefi/dashboard/QuickActions';
@@ -454,7 +454,7 @@ export default function PortfolioPage() {
   // 原本的 fallback 是畫一個點、而且畫的是自由保證金——標題寫 Performance、
   // 副標寫 initial vs current，畫面上卻是一顆跟績效無關的孤點。整張卡不顯示
   // 才是誠實的做法，跟 hero 不顯示算不出來的「今日變化」是同一個理由。
-  const copyDesk = copyDeskVisibility(mode, copyRecs.length);
+  const copyDesk = copyDeskVisibility(mode, copyRecs.length, FEATURE_COPY_TRADING);
   const showCopyPerformance = copyDesk.performance && totalInitial > 0n;
 
   const chartData = [

@@ -55,6 +55,13 @@ export const common = {
     },
   },
 
+  /** 商業版旗標關閉時，直接打網址看到的頁面（見 lib/pepefi/featureFlags.ts）。 */
+  featureDisabled: {
+    title: '此功能未啟用',
+    body: '這個部署沒有開啟此功能。如需使用，請聯繫平台營運方。',
+    backHome: '回到首頁',
+  },
+
   account: {
     displayNameLabel: '編輯暱稱',
     saveName: '儲存變更',

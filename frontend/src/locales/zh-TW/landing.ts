@@ -48,6 +48,15 @@ export const landing = {
     four: '（可選）到 Marketplace 跟單，或在 Trader 頁登記成為交易者',
   },
 
+  /** 跟單旗標關閉時（商業版預設）替換掉的字串——不介紹一個看不到的功能。 */
+  copyOff: {
+    tagline: 'RWA · 代幣化資產 · Agent 原生 🐸',
+    viewMarketplace: '瀏覽配置市集',
+    stepFour: '（可選）到 Marketplace 瀏覽他人發布的資產配置，或在 Trader 頁登記並發布策略',
+    heroBefore: '一個錢包，配置股、債、金、幣四大類代幣化資產。鏈上鑄造與贖回、配置市集、大盤對照，外加 ',
+    paperMid: '進行模擬交易，讓使用者無風險體驗 RWA 投資與 AI 代理交易。',
+  },
+
   oracleDisclosure: 'Oracle 價格由部署者（admin）控制，Demo 期間會即時更新以展示 PnL 變化',
 
   /** 首頁最上方的即時 KPI 條（HeroKpiStrip）。網路名稱、chainId 是技術識別碼，不譯。 */

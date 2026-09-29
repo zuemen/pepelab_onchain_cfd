@@ -55,6 +55,7 @@ export const exchange: Catalog['exchange'] = {
     title: '🚰 Get Test Tokens',
     intro:
       'PEPE is the platform token (testnet mock) — claim it free from the faucet. {stable} is the mock stablecoin for buying assets and swaps. x402 payments settle in {x402Stable}.',
+    introNoPepe: '{stable} is the mock stablecoin for buying assets and swaps. x402 payments settle in {x402Stable}.',
 
     stableNote: '· Mock stablecoin (buy assets / swap)',
     altStableNote: '· Mock stablecoin (hold / swap)',

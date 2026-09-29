@@ -4,6 +4,7 @@ import { Link as RouterLink } from 'react-router';
 import { useContracts } from 'src/hooks/useContracts';
 import { usePepefiWallet } from 'src/layouts/pepefi';
 import { useMode } from 'src/contexts/mode-context';
+import { FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags';
 import { ASSET_IDS, CHAIN_NAMES } from 'src/contracts/addresses';
 import Skeleton, { TableSkeleton } from 'src/components/pepefi/Skeleton';
 import EmptyState from 'src/components/pepefi/EmptyState';
@@ -141,7 +142,8 @@ const fWindow = (hours: number): string =>
  */
 export default function MarketplacePage() {
   const { mode } = useMode();
-  return mode === 'simple' ? <AllocationMarketplace /> : <TraderLeaderboard />;
+  // 跟單排行榜跟著 FEATURE_COPY_TRADING 走（商業版預設關）——關閉時兩個模式都是配置市集。
+  return mode === 'expert' && FEATURE_COPY_TRADING ? <TraderLeaderboard /> : <AllocationMarketplace />;
 }
 
 function TraderLeaderboard() {

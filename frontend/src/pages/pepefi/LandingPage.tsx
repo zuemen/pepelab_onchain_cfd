@@ -3,7 +3,7 @@ import { usePepefiWallet } from 'src/layouts/pepefi';
 import { t } from 'src/locales';
 import WalletButton from 'src/components/pepefi/WalletButton';
 import HeroKpiStrip from 'src/components/pepefi/HeroKpiStrip';
-import { SHOW_PERPETUALS } from 'src/lib/pepefi/featureFlags';
+import { SHOW_PERPETUALS, FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags';
 import BenchmarkStrip from 'src/components/pepefi/dashboard/BenchmarkStrip';
 import PaperTradingBadge from 'src/components/pepefi/PaperTradingBadge';
 import { MONO } from 'src/components/pepefi/brandKit';
@@ -48,13 +48,34 @@ const PERPETUAL_FEATURE = {
   desc: t.landing.features.perpetualsDesc,
 } as const;
 
-const VISIBLE_FEATURES = SHOW_PERPETUALS ? [...FEATURES, PERPETUAL_FEATURE] : FEATURES;
+// 跟單卡跟著 FEATURE_COPY_TRADING 走（商業版預設關）：首頁不介紹一個看不到的功能。
+const BASE_FEATURES = FEATURE_COPY_TRADING
+  ? FEATURES
+  : FEATURES.filter((f) => f.title !== t.landing.features.copyTitle);
+const VISIBLE_FEATURES = SHOW_PERPETUALS ? [...BASE_FEATURES, PERPETUAL_FEATURE] : BASE_FEATURES;
+
+// 同一個旗標也決定首頁文案裡提不提「社交跟單」。
+const COPY = FEATURE_COPY_TRADING
+  ? {
+      tagline: t.landing.tagline,
+      viewCta: t.landing.viewTraders,
+      stepFour: t.landing.steps.four,
+      heroBefore: t.landing.markup.heroBefore,
+      paperMid: t.landing.markup.paperMid,
+    }
+  : {
+      tagline: t.landing.copyOff.tagline,
+      viewCta: t.landing.copyOff.viewMarketplace,
+      stepFour: t.landing.copyOff.stepFour,
+      heroBefore: t.landing.copyOff.heroBefore,
+      paperMid: t.landing.copyOff.paperMid,
+    };
 
 const STEPS = [
   { n: '01', text: t.landing.steps.one },
   { n: '02', text: t.landing.steps.two },
   { n: '03', text: t.landing.steps.three },
-  { n: '04', text: t.landing.steps.four },
+  { n: '04', text: COPY.stepFour },
 ];
 
 export default function LandingPage() {
@@ -137,7 +158,7 @@ export default function LandingPage() {
                 textTransform: 'uppercase',
                 mb: 3,
               }}>
-                {t.landing.tagline}
+                {COPY.tagline}
               </Typography>
 
               <Typography variant="body1" sx={{
@@ -148,7 +169,7 @@ export default function LandingPage() {
                 mb: 4,
                 mx: { xs: 'auto', md: 0 },
               }}>
-                {t.landing.markup.heroBefore}<b style={{ color: 'var(--palette-primary-main)' }}>{t.landing.markup.heroBold}</b>{t.landing.markup.heroAfter}
+                {COPY.heroBefore}<b style={{ color: 'var(--palette-primary-main)' }}>{t.landing.markup.heroBold}</b>{t.landing.markup.heroAfter}
               </Typography>
 
               <Stack direction="row" spacing={2} justifyContent={{ xs: 'center', md: 'flex-start' }} flexWrap="wrap">
@@ -173,7 +194,7 @@ export default function LandingPage() {
                   size="large"
                   sx={{ borderColor: 'var(--palette-primary-main)', color: 'var(--palette-primary-main)', '&:hover': { bgcolor: 'rgba(124,193,74,0.1)' } }}
                 >
-                  {t.landing.viewTraders}
+                  {COPY.viewCta}
                 </Button>
               </Stack>
             </Box>
@@ -290,7 +311,7 @@ export default function LandingPage() {
             variant="body1"
             sx={{ maxWidth: 680, mx: 'auto', color: 'text.secondary', lineHeight: 1.9 }}
           >
-            {t.landing.markup.paperBefore}<b>{t.landing.markup.paperBold1}</b>{t.landing.markup.paperMid}<b>{t.landing.markup.paperBold2}</b>{t.landing.markup.paperAfter}
+            {t.landing.markup.paperBefore}<b>{t.landing.markup.paperBold1}</b>{COPY.paperMid}<b>{t.landing.markup.paperBold2}</b>{t.landing.markup.paperAfter}
           </Typography>
         </Box>
 

@@ -54,6 +54,12 @@ export const common: Catalog['common'] = {
     },
   },
 
+  featureDisabled: {
+    title: 'This feature is not enabled',
+    body: 'This deployment does not have this feature turned on. Contact the platform operator if you need it.',
+    backHome: 'Back to home',
+  },
+
   account: {
     displayNameLabel: 'Display Name',
     saveName: 'Save Name',

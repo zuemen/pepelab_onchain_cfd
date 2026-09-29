@@ -12,6 +12,7 @@ import { getPepeAvatar } from 'src/utils/pepefi-assets'
 import TraderRankBadge from 'src/components/pepefi/TraderRankBadge'
 import TraderActivity from 'src/components/pepefi/TraderActivity'
 import { useMode } from 'src/contexts/mode-context'
+import { FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags'
 import { useAddressActivity } from 'src/hooks/useAddressActivity'
 
 import Box from '@mui/material/Box';
@@ -354,6 +355,8 @@ function TraderProfileView() {
               </Box>
             </Stack>
 
+            {/* 跟單按鈕跟著 FEATURE_COPY_TRADING 走（商業版預設關）。 */}
+            {FEATURE_COPY_TRADING && (
             <Button
               component={RouterLink}
               to={`/copy/${traderAddr}`}
@@ -365,6 +368,7 @@ function TraderProfileView() {
             >
               {!hasStrategy ? t.traderProfile.header.noStrategy : t.traderProfile.header.copyThisTrader}
             </Button>
+            )}
           </Card>
 
           {/* ─── B. Stats grid (4 cards) ──────────────────────────── */}

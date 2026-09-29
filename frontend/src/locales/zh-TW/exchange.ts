@@ -67,6 +67,9 @@ export const exchange = {
     intro:
       'PEPE 是平台幣（測試網模擬），用水龍頭免費領取；{stable} 為模擬穩定幣，用來買進資產與兌換；x402 付費用 {x402Stable}。',
 
+    /** PEPE 獎勵旗標關閉時（商業版預設）的說明，不提平台幣。 */
+    introNoPepe: '{stable} 為模擬穩定幣，用來買進資產與兌換；x402 付費用 {x402Stable}。',
+
     stableNote: '· 模擬穩定幣（買資產／兌換）',
     altStableNote: '· 模擬穩定幣（持有／兌換）',
     pepeNote: '· 平台幣',
