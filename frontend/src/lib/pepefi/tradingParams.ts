@@ -8,7 +8,15 @@
 // 5× / 10 bps、sBTC 1× / 100 bps）。所以這裡先讀鏈上，讀不到才用靜態表，並把來源
 // 標出來——畫面上的「≤5×」要讓人知道是合約說的，還是前端推估的。
 
-export type ParamsSource = 'chain' | 'static'
+import type { AssetMeta } from './assetMeta'
+
+import { paramsFor, attestationExpired, type Tier } from './carbon'
+
+/** chain = 鏈上讀到；static = 讀不到、退回碳分級靜態表；pending = 還在讀。 */
+export type ParamsSource = 'chain' | 'static' | 'pending'
+
+/** 讀取中的槓桿上限：最保守的 1×，不先露出靜態表的上限再往下修。 */
+export const PENDING_MAX_LEVERAGE = 1
 
 export interface TradingParams {
   maxLeverage: number
@@ -18,8 +26,13 @@ export interface TradingParams {
 
 export function resolveTradingParams(
   chain: { maxLeverage: bigint | null; tradingFeeBps: bigint | null } | null,
-  fallback: { maxLeverage: number; tradingFeeBps: number }
+  fallback: { maxLeverage: number; tradingFeeBps: number },
+  /** 讀取是否已經結束（成功或失敗）。false 時一律回保守的 pending。 */
+  settled = true
 ): TradingParams {
+  if (!settled) {
+    return { maxLeverage: PENDING_MAX_LEVERAGE, tradingFeeBps: fallback.tradingFeeBps, source: 'pending' }
+  }
   // 兩個都要讀到才算鏈上來源；混用一半鏈上、一半靜態會讓來源標示說謊。
   if (chain && chain.maxLeverage !== null && chain.tradingFeeBps !== null && chain.maxLeverage > 0n) {
     return {
@@ -29,4 +42,18 @@ export function resolveTradingParams(
     }
   }
   return { ...fallback, source: 'static' }
+}
+
+/** 碳分級靜態表（carbon.ts 的鏡像）給出的參數與分級；見證過期一律當未評等。 */
+export function staticTradingParams(meta: AssetMeta | undefined, nowMs: number): {
+  tier: Tier
+  maxLeverage: number
+  tradingFeeBps: number
+} {
+  if (!meta?.carbon) {
+    return { tier: 'unrated', maxLeverage: 5, tradingFeeBps: paramsFor('low').tradingFeeBps }
+  }
+  const tier: Tier = attestationExpired(meta.carbon.observed, nowMs) ? 'unrated' : meta.carbon.tier
+  const p = paramsFor(tier)
+  return { tier, maxLeverage: p.maxLeverage, tradingFeeBps: p.tradingFeeBps }
 }

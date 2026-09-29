@@ -6,15 +6,13 @@ import Box from '@mui/material/Box'
 import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 
-import { useAssetTradingParams } from 'src/hooks/useAssetTradingParams'
-
 import { t, interpolate } from 'src/locales'
 import { STABLE_LABEL } from 'src/lib/pepefi/tokenLabel'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
+import { type TradingParams } from 'src/lib/pepefi/tradingParams'
 import { estimateLiquidationPrice } from 'src/lib/pepefi/liquidation'
 import { fUsd, fNum, fToken, fromUnits } from 'src/lib/pepefi/format'
 import { SHOW_LEVERAGE, FIXED_LEVERAGE } from 'src/lib/pepefi/featureFlags'
-import { type Tier, paramsFor, attestationExpired } from 'src/lib/pepefi/carbon'
 
 import { Row } from '../Atoms'
 import { C, panel, monoCss, labelCss } from '../terminal-theme'
@@ -37,6 +35,7 @@ export function OrderTicket({
   kycUnknown,
   kycPending,
   staleNotice,
+  tradingParams,
   notify,
   onFilled,
 }: {
@@ -58,6 +57,11 @@ export function OrderTicket({
    * 價齡：擋單理由全站只有一份文案，終端機自己再寫一句就會跟其他頁面分岔。
    */
   staleNotice: string | null
+  /**
+   * 這個資產的槓桿上限與費率（TerminalView 的 useAssetTradingParams，與統計列共用同一次讀取）。
+   * 鏈上值讀回來之前是 pending：上限先鎖在 1×。
+   */
+  tradingParams: TradingParams
   notify: (msg: string, ok: boolean) => void
   onFilled: () => Promise<void>
 }) {
@@ -66,18 +70,9 @@ export function OrderTicket({
   const [lev, setLev] = useState(SHOW_LEVERAGE ? 2 : FIXED_LEVERAGE)
 
   // 碳分級的槓桿上限與費率。合約 openPosition 用的是 exchange 自己的
-  // maxLeverageForAsset / tradingFeeBpsForAsset——這裡直接讀那兩個 view，讓選擇器
-  // 的上限與顯示的費率就是鏈上會用的數字；讀不到才退回前端的碳分級靜態表，並標
-  // 「來源：靜態表」。靜態表的見證過期一律當未評等（1×）。
-  const carbonTier: Tier = meta?.carbon
-    ? attestationExpired(meta.carbon.observed, Date.now())
-      ? 'unrated'
-      : meta.carbon.tier
-    : 'unrated'
-  const staticParams = meta?.carbon
-    ? { maxLeverage: paramsFor(carbonTier).maxLeverage, tradingFeeBps: paramsFor(carbonTier).tradingFeeBps }
-    : { maxLeverage: 5, tradingFeeBps: paramsFor('low').tradingFeeBps }
-  const tradingParams = useAssetTradingParams(contracts?.exchange, selAsset, staticParams)
+  // maxLeverageForAsset / tradingFeeBpsForAsset——上層讀那兩個 view 傳進來，讓選擇器
+  // 的上限與顯示的費率就是鏈上會用的數字；讀不到才退回碳分級靜態表並標「來源：靜態表」，
+  // 還在讀時上限先鎖 1×。
   const carbonMaxLev = tradingParams.maxLeverage
   useEffect(() => {
     if (lev > carbonMaxLev) setLev(carbonMaxLev)
@@ -277,7 +272,7 @@ export function OrderTicket({
             lev: tradingParams.maxLeverage,
             source: t.terminal.ticket.paramsSource[tradingParams.source],
           })}
-          color={tradingParams.source === 'static' ? C.mut : undefined}
+          color={tradingParams.source === 'chain' ? undefined : C.mut}
         />
       </Box>
 

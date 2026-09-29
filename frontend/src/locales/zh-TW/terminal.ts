@@ -86,6 +86,7 @@ export const terminal = {
     paramsSource: {
       chain: '來源：鏈上',
       static: '來源：靜態表',
+      pending: '讀取中（暫以 1× 為上限）',
     },
 
     enterMargin: '輸入保證金',

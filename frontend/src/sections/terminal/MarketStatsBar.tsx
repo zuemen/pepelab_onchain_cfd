@@ -6,7 +6,7 @@ import Box from '@mui/material/Box'
 
 import { t, interpolate } from 'src/locales'
 import { fUsd, fNum, fromUnits } from 'src/lib/pepefi/format'
-import { paramsFor, type Tier, attestationExpired } from 'src/lib/pepefi/carbon'
+import { type TradingParams, staticTradingParams } from 'src/lib/pepefi/tradingParams'
 
 import { Stat } from './Atoms'
 import { C, panel, monoCss, labelCss } from './terminal-theme'
@@ -23,6 +23,7 @@ export function MarketStatsBar({
   funding,
   priceInfo,
   vaultAssets,
+  tradingParams,
 }: {
   meta?: AssetMeta
   livePx?: number
@@ -36,6 +37,8 @@ export function MarketStatsBar({
   priceInfo?: LivePrice
   /** InsuranceVault 資產（18 dp）。null = 讀不到或未部署。 */
   vaultAssets?: bigint | null
+  /** 與下單面板共用的鏈上交易參數（useAssetTradingParams）。 */
+  tradingParams: TradingParams
 }) {
   return (
     <Box
@@ -102,22 +105,20 @@ export function MarketStatsBar({
         color={rate > 0 ? C.red : rate < 0 ? C.green : C.mut}
       />
 
-      {/* 碳分級 → 費率 + 槓桿上限。規則寫死在 CarbonTiers 合約，這裡照 assetMeta
-          的分級與 carbon.ts 的鏡射顯示；見證過期一律當未評等（最保守級）。 */}
+      {/* 碳分級 → 費率 + 槓桿上限。分級照 assetMeta（見證過期一律當未評等）；
+          費率與上限用鏈上 maxLeverageForAsset / tradingFeeBpsForAsset（與下單面板
+          同一次讀取），讀不到才是靜態表，並標出來源。 */}
       {meta?.carbon && (() => {
-        const tier: Tier = attestationExpired(meta.carbon.observed, Date.now())
-          ? 'unrated'
-          : meta.carbon.tier
-        const p = paramsFor(tier)
+        const { tier } = staticTradingParams(meta, Date.now())
         return (
           <Stat
             label={t.terminal.stats.carbon}
             hint={t.terminal.stats.carbonHint}
-            v={interpolate(t.terminal.stats.carbonValue, {
+            v={`${interpolate(t.terminal.stats.carbonValue, {
               tier: t.tokens.provenance.carbonTier[tier],
-              fee: p.tradingFeeBps,
-              lev: p.maxLeverage,
-            })}
+              fee: tradingParams.tradingFeeBps,
+              lev: tradingParams.maxLeverage,
+            })} · ${t.terminal.ticket.paramsSource[tradingParams.source]}`}
             color={tier === 'high' || tier === 'unrated' ? C.red : tier === 'mid' ? undefined : C.green}
           />
         )

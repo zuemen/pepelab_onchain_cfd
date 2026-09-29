@@ -33,6 +33,10 @@ export function useAssetTradingParams(
     }
   }, [exchange, asset])
 
-  // 換資產的那一刻 state 還是上一檔的值——只接受同一檔的結果。
-  return resolveTradingParams(chain && chain.asset === asset ? chain : null, fallback)
+  // 換資產的那一刻 state 還是上一檔的值——只接受同一檔的結果。還沒讀回來（settled =
+  // false）時回 pending：槓桿上限先鎖在 1×，不先露出靜態表的上限、讀到後再往下修。
+  // 沒有 exchange（未連線、未部署）就不會有鏈上值，直接視為讀完、退回靜態表。
+  const mine = chain && chain.asset === asset ? chain : null
+  const settled = !exchange || mine !== null
+  return resolveTradingParams(mine, fallback, settled)
 }

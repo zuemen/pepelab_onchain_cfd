@@ -77,6 +77,7 @@ export const terminal: Catalog['terminal'] = {
     paramsSource: {
       chain: 'source: on-chain',
       static: 'source: static table',
+      pending: 'loading (capped at 1× for now)',
     },
 
     enterMargin: 'Enter margin',

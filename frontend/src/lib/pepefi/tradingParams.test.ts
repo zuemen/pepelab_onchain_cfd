@@ -22,7 +22,23 @@ describe('resolveTradingParams', () => {
     expect(resolveTradingParams({ maxLeverage: null, tradingFeeBps: 10n }, fallback).source).toBe('static')
   })
 
+  it('還沒讀回來（settled=false）→ pending，上限鎖 1×，不先露出靜態表的上限', () => {
+    const r = resolveTradingParams(null, { maxLeverage: 5, tradingFeeBps: 10 }, false)
+    expect(r).toEqual({ maxLeverage: 1, tradingFeeBps: 10, source: 'pending' })
+  })
+
+  it('讀完但失敗（settled=true、chain=null）才退回靜態表', () => {
+    expect(resolveTradingParams(null, { maxLeverage: 5, tradingFeeBps: 10 }, true).source).toBe('static')
+  })
+
   it('鏈上回 0 倍槓桿視為異常，退回靜態表', () => {
     expect(resolveTradingParams({ maxLeverage: 0n, tradingFeeBps: 10n }, fallback).source).toBe('static')
+  })
+})
+
+describe('staticTradingParams', () => {
+  it('沒有碳資料 → 預設 5× 與 low 費率（未評等標籤）', async () => {
+    const { staticTradingParams } = await import('./tradingParams')
+    expect(staticTradingParams(undefined, Date.now())).toMatchObject({ tier: 'unrated', maxLeverage: 5 })
   })
 })
