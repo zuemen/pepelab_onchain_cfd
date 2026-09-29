@@ -1,5 +1,5 @@
 import { MONO } from 'src/components/pepefi/brandKit'
-import { useState, useEffect, useCallback } from 'react'
+import { useRef, useState, useEffect, useCallback } from 'react'
 import type { Contract } from 'ethers'
 import { parseUnits, formatUnits } from 'ethers'
 import { useContracts } from 'src/hooks/useContracts'
@@ -8,8 +8,8 @@ import { t, interpolate } from 'src/locales'
 import { useMode } from 'src/contexts/mode-context'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { safeRead } from 'src/lib/pepefi/safeRead'
-import { scanFromBlock, scanContractEvents } from 'src/lib/pepefi/chainLogs'
-import Skeleton from 'src/components/pepefi/Skeleton'
+import { UI_RETRIES, scanFromBlock, scanContractEvents } from 'src/lib/pepefi/chainLogs'
+import Skeleton, { TableSkeleton } from 'src/components/pepefi/Skeleton'
 import EmptyState from 'src/components/pepefi/EmptyState'
 import { useToast } from 'src/components/pepefi/ToastProvider'
 
@@ -85,7 +85,7 @@ async function fetchActivity(
       [vault.filters.Deposited(), vault.filters.Withdrawn(), vault.filters.ProtocolDeposit(), vault.filters.Bailout()],
       from,
       latest,
-      { retries: 2 },
+      { retries: UI_RETRIES },
     )
     for (const e of r.events) {
       const args = e.args
@@ -124,6 +124,21 @@ export default function VaultPage() {
   const [stats, setStats]         = useState<VaultStats | null>(null)
   const [activityRes, setActivityRes] = useState<ActivityResult>({ entries: [], failed: false, blocks: 0 })
   const activity = activityRes.entries
+  /** 活動掃描進行中。載入中不能顯示「尚無活動」。 */
+  const [activityLoading, setActivityLoading] = useState(true)
+  // 只採用最後一次發出的掃描結果：存入後的刷新與首次載入可能同時在飛。
+  const activityRun = useRef(0)
+
+  const refreshActivity = useCallback(async () => {
+    if (!vault || !wallet.provider) { setActivityLoading(false); return }
+    activityRun.current += 1
+    const myRun = activityRun.current
+    setActivityLoading(true)
+    const res = await fetchActivity(vault, wallet.provider, wallet.chainId)
+    if (myRun !== activityRun.current) return
+    setActivityRes(res)
+    setActivityLoading(false)
+  }, [vault, wallet.provider, wallet.chainId])
   const [depositAmt, setDepositAmt] = useState('')
   const [withdrawAmt, setWithdrawAmt] = useState('')
   const [busy, setBusy]           = useState(false)
@@ -162,10 +177,10 @@ export default function VaultPage() {
 
   useEffect(() => {
     void fetchStats()
-    if (vault && wallet.provider) void fetchActivity(vault, wallet.provider, wallet.chainId).then(setActivityRes)
+    void refreshActivity()
     const t = setInterval(() => { void fetchStats() }, 15_000)
     return () => clearInterval(t)
-  }, [fetchStats, vault, wallet.provider, wallet.chainId])
+  }, [fetchStats, refreshActivity])
 
   const doDeposit = async () => {
     if (!vault || !usdc || !wallet.signer) return
@@ -179,7 +194,8 @@ export default function VaultPage() {
       notify(interpolate(t.vault.deposit.done, { amount: depositAmt }), true, tx.hash)
       setDepositAmt('')
       await fetchStats()
-      if (vault && wallet.provider) setActivityRes(await fetchActivity(vault, wallet.provider, wallet.chainId))
+      // 活動掃描要幾十段 getLogs，不能擋住按鈕解鎖——背景刷新即可。
+      void refreshActivity()
     } catch (e) {
       notify(prettyError(e), false)
     } finally {
@@ -197,7 +213,8 @@ export default function VaultPage() {
       notify(interpolate(t.vault.withdraw.done, { amount: withdrawAmt }), true, tx.hash)
       setWithdrawAmt('')
       await fetchStats()
-      if (vault && wallet.provider) setActivityRes(await fetchActivity(vault, wallet.provider, wallet.chainId))
+      // 活動掃描要幾十段 getLogs，不能擋住按鈕解鎖——背景刷新即可。
+      void refreshActivity()
     } catch (e) {
       notify(prettyError(e), false)
     } finally {
@@ -425,7 +442,9 @@ export default function VaultPage() {
         {activityRes.failed && activity.length > 0 && (
           <Alert severity="warning" sx={{ m: 2 }}>{t.vault.activity.partial}</Alert>
         )}
-        {activity.length === 0 && activityRes.failed ? (
+        {activityLoading && activity.length === 0 ? (
+          <TableSkeleton rows={4} cols={4} />
+        ) : activity.length === 0 && activityRes.failed ? (
           // 讀取失敗不是「尚無活動」。
           <EmptyState
             icon="⚠️"

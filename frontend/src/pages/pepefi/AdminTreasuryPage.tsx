@@ -1,6 +1,7 @@
 import { MONO } from 'src/components/pepefi/brandKit'
-import { scanFromBlock, scanContractEvents } from 'src/lib/pepefi/chainLogs'
-import { useState, useEffect, useCallback } from 'react'
+import { UI_RETRIES, scanFromBlock, scanContractEvents } from 'src/lib/pepefi/chainLogs'
+import { TableSkeleton } from 'src/components/pepefi/Skeleton'
+import { useRef, useState, useEffect, useCallback } from 'react'
 import { parseEther, formatEther, formatUnits } from 'ethers'
 import { useContracts } from 'src/hooks/useContracts'
 import { usePepefiWallet } from 'src/layouts/pepefi'
@@ -122,8 +123,15 @@ export default function AdminTreasuryPage() {
   // 回看 scanFromBlock 的預設視窗，走分段 getLogs（公開節點單次上限 1,000 塊，
   // 以前單發 10,000 塊必定失敗、再被 catch 吞成「尚無兌現紀錄」）。
   const [historyFailed, setHistoryFailed] = useState(false)
+  /** 掃描進行中。載入中不能顯示「尚無兌現紀錄」。 */
+  const [historyLoading, setHistoryLoading] = useState(true)
+  const historyRun = useRef(0)
   const fetchHistory = useCallback(async () => {
-    if (!contracts || !wallet.address || !wallet.provider) return
+    if (!contracts || !wallet.address || !wallet.provider) { setHistoryLoading(false); return }
+    historyRun.current += 1
+    const myRun = historyRun.current
+    const isStale = () => myRun !== historyRun.current
+    setHistoryLoading(true)
     try {
       const current   = await wallet.provider.getBlockNumber()
       const fromBlock = scanFromBlock({ chainId: wallet.chainId, currentBlock: current })
@@ -133,13 +141,13 @@ export default function AdminTreasuryPage() {
           wallet.provider,
           contracts.feeRouter,
           [contracts.feeRouter.filters.PlatformFeesWithdrawn(wallet.address)],
-          fromBlock, current, { retries: 2 },
+          fromBlock, current, { retries: UI_RETRIES },
         ),
         scanContractEvents(
           wallet.provider,
           contracts.swapRouter,
           [contracts.swapRouter.filters.SwapUsdcToEth(wallet.address)],
-          fromBlock, current, { retries: 2 },
+          fromBlock, current, { retries: UI_RETRIES },
         ),
       ])
 
@@ -164,11 +172,14 @@ export default function AdminTreasuryPage() {
         })
       }
       records.sort((a, b) => b.blockNumber - a.blockNumber)
+      if (isStale()) return
       setHistory(records)
       setHistoryFailed(claimScan.failedChunks + swapScan.failedChunks > 0)
     } catch (e) {
       console.error('[history fetch]', e)
-      setHistoryFailed(true)
+      if (!isStale()) setHistoryFailed(true)
+    } finally {
+      if (!isStale()) setHistoryLoading(false)
     }
   }, [contracts, wallet.address, wallet.provider, wallet.chainId])
 
@@ -207,7 +218,8 @@ export default function AdminTreasuryPage() {
       await tx.wait()
       notify(t.admin.treasury.claim.done, true, tx.hash)
       await fetchStats()
-      await fetchHistory()
+      // 紀錄掃描要幾十段 getLogs，不擋按鈕解鎖——背景刷新即可。
+      void fetchHistory()
     } catch (e) {
       notify(prettyError(e), false)
     } finally { setLoad('claim', false) }
@@ -237,7 +249,8 @@ export default function AdminTreasuryPage() {
       notify(interpolate(t.admin.treasury.swap.done, { amount: swapAmt, eth: ethOut }), true, tx.hash)
       setSwapAmt('')
       await fetchStats()
-      await fetchHistory()
+      // 紀錄掃描要幾十段 getLogs，不擋按鈕解鎖——背景刷新即可。
+      void fetchHistory()
     } catch (e) {
       notify(prettyError(e), false)
     } finally { setLoad('swap', false) }
@@ -551,7 +564,9 @@ export default function AdminTreasuryPage() {
         {historyFailed && history.length > 0 && (
           <Alert severity="warning" sx={{ mb: 2 }}>{t.admin.treasury.history.partial}</Alert>
         )}
-        {history.length === 0 && historyFailed ? (
+        {historyLoading && history.length === 0 ? (
+          <TableSkeleton rows={3} cols={3} />
+        ) : history.length === 0 && historyFailed ? (
           // 讀取失敗不是「尚無兌現紀錄」。
           <EmptyState
             icon="⚠️"
