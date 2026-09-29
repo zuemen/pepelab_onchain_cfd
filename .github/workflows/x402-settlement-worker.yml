@@ -63,7 +63,7 @@ jobs:
       # 筆（預設 25），每筆最多 3 個 tx（mint/approve/route），比喂價單筆更耗 gas，
       # 門檻相應調高。
       - name: Check settlement signer gas balance
-        uses: foundry-rs/foundry-toolchain@v1
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
       - name: Warn before the tank runs dry
         env:
           RPC_URL: ${{ secrets.BASE_SEPOLIA_RPC_URL }}

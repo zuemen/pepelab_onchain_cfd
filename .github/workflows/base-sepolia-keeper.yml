@@ -44,7 +44,7 @@ jobs:
       KEEPER_RPC_URL: ${{ secrets.BASE_SEPOLIA_RPC_URL }}
       KEEPER_PRIVATE_KEY: ${{ secrets.KEEPER_PRIVATE_KEY }}
       KEEPER_ORACLE_ADDRESS: "0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3"
-      EXCHANGE: "0xEf75ECA6514cE96B18382E921aC6190a0cF8c072"
+      EXCHANGE: "0x827eA0c62a32e995927101259042F8A27D99124D"
       # 部分失敗容忍度：失敗筆數 / 有價可寫筆數 超過這個百分比就讓 job 失敗。
       MAX_FAIL_PCT: "30"
       # AggregatorOracleAdapter（Chainlink + Pyth）。Pyth 在 Base Sepolia 是活的：
@@ -55,6 +55,12 @@ jobs:
       # 這是受信任的中繼，不是無信任的整合：keeper 的金鑰仍可寫任何值。它拿掉的是
       # 對中心化交易所 API 的依賴，不是對 keeper 的依賴。
       KEEPER_RELAY_SOURCE: "0x8215158642350a3f329aB9597186d21f957A813D"
+      # #129 硬化版 V2 stack（2026-09-10 上鏈）。之前沒設，GuardedOracle 自 9/10 起
+      # 沒人餵價；vault 的 maxPriceAge 是 30 天，2026-10-10 03:17 UTC 就會讓
+      # mint／redeem 全面 StalePrice。keeper key 已有 GuardedOracle 的 KEEPER_ROLE
+      # （2026-09-29 鏈上 hasRole 核對）；observeReserve() 是 permissionless。
+      KEEPER_GUARDED_ORACLE: "0x8E9e59BE9589Ad88EC14F3ef6bdcc43E8B76f842"
+      KEEPER_VAULT_ADDRESS: "0x916D7Fc399d9afd23BAa113E2c2Cc601341ff10a"
     steps:
       # 第三方 action 一律 pin 到 commit SHA：tag 是可移動的，供應鏈攻擊只要把
       # tag 重指到惡意 commit，這個持有 KEEPER_PRIVATE_KEY 的 job 就會執行它。
@@ -71,7 +77,7 @@ jobs:
       # 見 price-keeper.yml 的同名步驟：keeper 燒完 gas 時，失敗訊息不會提到餘額，
       # 所以先自己講清楚。Base 的 gas 便宜得多，門檻相應調低。
       - name: Check keeper gas balance
-        uses: foundry-rs/foundry-toolchain@v1
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
       - name: Warn before the tank runs dry
         env:
           RPC_URL: ${{ secrets.BASE_SEPOLIA_RPC_URL }}
@@ -138,7 +144,10 @@ jobs:
             fi
           fi
 
+      # 喂價步驟部分失敗（例如某一個資產偏離過大被拒寫）時仍要 crank funding：
+      # 兩件事互相獨立，不能讓一個資產的喂價問題連帶停掉整條 funding 結算。
       - name: Install Foundry
+        if: ${{ !cancelled() }}
         uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
         with:
           version: stable
@@ -148,9 +157,10 @@ jobs:
       # lastFundingUpdateAt + FUNDING_INTERVAL 判斷是否真的還沒到時間；
       # 到時間了還送不出去，就是真的壞了。
       #
-      # FUNDING_INTERVAL 從鏈上讀而不是寫死：已部署的 bytecode 是 300 秒，
-      # source 已改成 8 小時但尚未重部署（見 docs/audit/AUDIT_2026-08-06.md）。
+      # FUNDING_INTERVAL 從鏈上讀而不是寫死：目標是 #129 的 exchange（8 小時）；
+      # 2026-09-29 之前這裡仍指向兩次 cutover 前的舊 exchange 0xEf75…（300 秒）。
       - name: Crank settleFunding
+        if: ${{ !cancelled() }}
         run: |
           set -uo pipefail
           INTERVAL=$(cast call "$EXCHANGE" "FUNDING_INTERVAL()(uint256)" --rpc-url "$KEEPER_RPC_URL" | awk '{print $1}')
