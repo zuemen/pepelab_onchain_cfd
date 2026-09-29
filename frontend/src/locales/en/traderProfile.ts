@@ -61,6 +61,7 @@ export const traderProfile: Catalog['traderProfile'] = {
   },
 
   slashHistory: {
+    loading: 'Loading slash history…',
     titleOne: 'Slash History ({count} event)',
     titleMany: 'Slash History ({count} events)',
     readFailedTitle: 'Could not read slash history',

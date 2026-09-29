@@ -59,6 +59,7 @@ export const traderProfile = {
   },
 
   slashHistory: {
+    loading: '罰沒紀錄讀取中…',
     titleOne: '罰沒紀錄（{count} 筆）',
     titleMany: '罰沒紀錄（{count} 筆）',
     readFailedTitle: '罰沒紀錄讀取失敗',

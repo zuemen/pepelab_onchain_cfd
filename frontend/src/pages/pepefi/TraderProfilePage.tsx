@@ -35,7 +35,7 @@ import Avatar from '@mui/material/Avatar';
 
 import { t, locale, interpolate } from 'src/locales';
 import { explorerTx, explorerName } from 'src/lib/pepefi/notify';
-import { scanFromBlock, describeScanWindow, scanContractEventsStrict } from 'src/lib/pepefi/chainLogs';
+import { UI_RETRIES, scanFromBlock, isChunkScanAborted, describeScanWindow, scanContractEventsStrict } from 'src/lib/pepefi/chainLogs';
 
 interface StakeInfo {
   amount:             bigint
@@ -105,6 +105,9 @@ export default function TraderProfilePage() {
 
   useEffect(() => {
     if (!contracts || !traderAddr) return
+    // 從 A 的頁面切到 B 時，A 還在飛的讀取回來後不能寫進 B 的畫面。
+    let cancelled = false
+    const alive = () => !cancelled
     setLoading(true)
     setError(null)
     const go = async () => {
@@ -113,12 +116,12 @@ export default function TraderProfilePage() {
         traderRaw = (await contracts.registry.traders(traderAddr)) as unknown as [boolean, string, bigint]
       } catch { traderRaw = null }
       if (traderRaw) {
-        setName(traderRaw[1])
-        setRegistered(traderRaw[0])
+        if (alive()) setName(traderRaw[1])
+        if (alive()) setRegistered(traderRaw[0])
       }
       try {
         const fc = await contracts.copyTracker.getFollowerCount(traderAddr)
-        setFollowers(fc as bigint)
+        if (alive()) setFollowers(fc as bigint)
       } catch { /* no follower data */ }
 
       // followersByTrader (first 10)
@@ -130,7 +133,7 @@ export default function TraderProfilePage() {
             list.push(addr as string)
           } catch { break }
         }
-        setFollowerList(list)
+        if (alive()) setFollowerList(list)
       } catch { /* no followers */ }
 
       // strategy + history
@@ -138,7 +141,7 @@ export default function TraderProfilePage() {
       try {
         count = Number((await contracts.registry.getStrategyCount(traderAddr)) as bigint)
       } catch { count = 0 }
-      setStratCount(count)
+      if (alive()) setStratCount(count)
       if (count > 0) {
         try {
           const vers = await Promise.all(
@@ -156,12 +159,12 @@ export default function TraderProfilePage() {
             }),
           )
           const sorted = [...vers].reverse()
-          setStratHistory(sorted)
-          setAllocs(sorted[0]?.allocs ?? [])
-          setHasStrategy(sorted[0]?.allocs.length > 0)
-        } catch { setHasStrategy(false) }
+          if (alive()) setStratHistory(sorted)
+          if (alive()) setAllocs(sorted[0]?.allocs ?? [])
+          if (alive()) setHasStrategy(sorted[0]?.allocs.length > 0)
+        } catch { if (alive()) setHasStrategy(false) }
       } else {
-        setHasStrategy(false)
+        if (alive()) setHasStrategy(false)
       }
 
       // stake + reputation
@@ -171,33 +174,47 @@ export default function TraderProfilePage() {
           contracts.traderStake.reputationScore(traderAddr),
           contracts.traderStake.isEligible(traderAddr),
         ])
-        setStakeInfo(si as unknown as StakeInfo)
-        setRepScore(score as bigint)
-        setEligible(elig as boolean)
+        if (alive()) setStakeInfo(si as unknown as StakeInfo)
+        if (alive()) setRepScore(score as bigint)
+        if (alive()) setEligible(elig as boolean)
       } catch { /* TraderStake not deployed */ }
 
       // fee earnings
       try {
         const raw = (await contracts.feeRouter.traderEarnings(traderAddr)) as bigint
-        setEarnings(raw)
+        if (alive()) setEarnings(raw)
       } catch { /* FeeRouter not deployed */ }
 
-      // slash history from Slashed events —— 分段 getLogs（公開節點上限 1,000 塊），
-      // 任何一段讀不到就整個標成讀取失敗：部分結果在這裡會被讀成「沒有罰沒」。
-      setSlashRead('pending')
+      if (alive()) setLoading(false)
+    }
+    void go()
+    return () => { cancelled = true }
+  }, [contracts, traderAddr])
+
+  // 罰沒紀錄獨立一個 effect：它是幾十段 getLogs，不該拖住整頁的 loading；
+  // 換頁或卸載時以 AbortController 中止，過期結果一律丟棄。
+  useEffect(() => {
+    if (!contracts || !traderAddr) return
+    const ac = new AbortController()
+    setSlashRead('pending')
+    setSlashHistory([])
+    void (async () => {
       try {
         const provider = contracts.traderStake.runner?.provider
         if (!provider) throw new Error('no provider')
         const latest = Number(await provider.getBlockNumber())
+        if (ac.signal.aborted) return
         const from = scanFromBlock({ chainId: wallet.chainId, currentBlock: latest })
+        // 任何一段讀不到就整個標成讀取失敗：部分結果在這裡會被讀成「沒有罰沒」。
         const events = await scanContractEventsStrict(
           provider,
           contracts.traderStake,
           [contracts.traderStake.filters.Slashed(traderAddr, null)],
           from,
           latest,
-          { retries: 2 },
+          { retries: UI_RETRIES, signal: ac.signal },
         )
+        if (ac.signal.aborted) return
         setSlashHistory(events.map((ev) => ({
           trader:    ev.args.trader as string,
           amount:    ev.args.amount as bigint,
@@ -207,14 +224,13 @@ export default function TraderProfilePage() {
         setSlashBlocks(latest - from + 1)
         setSlashRead('ok')
       } catch (err) {
+        if (ac.signal.aborted || isChunkScanAborted(err)) return
         console.warn('[traderProfile] slash history read failed', err)
         setSlashHistory([])
         setSlashRead('failed')
       }
-
-      setLoading(false)
-    }
-    void go()
+    })()
+    return () => ac.abort()
   }, [contracts, traderAddr, wallet.chainId])
 
   if (!traderAddr) return <Box sx={{ p: 4 }}><Typography color="text.secondary">{t.traderProfile.invalidAddress}</Typography></Box>
@@ -524,6 +540,11 @@ export default function TraderProfilePage() {
           {/* ─── E. Slash History ──────────────────────────────────── */}
           {/* 讀取失敗：明說無法確認，絕不顯示成「沒有罰沒」。合約 storage 的
               totalSlashed 是完整的累計值（不受掃描範圍限制），讀得到就一併列出。 */}
+          {slashRead === 'pending' && (
+            <Typography variant="caption" color="text.secondary">
+              {t.traderProfile.slashHistory.loading}
+            </Typography>
+          )}
           {slashRead === 'failed' && (
             <Alert severity="error">
               <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
