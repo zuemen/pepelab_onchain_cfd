@@ -3,6 +3,13 @@ import { describe, it, expect } from 'vitest'
 import { screenApplication } from './kycScreening'
 
 describe('screenApplication', () => {
+  it('雜湊上鏈的申請一律轉人工（無法自動比對），不能被當成乾淨批次核准', () => {
+    const h = '0x' + 'ab'.repeat(32)
+    const result = screenApplication({ fullName: h, nationality: '0x' + 'cd'.repeat(32) })
+    expect(result.verdict).toBe('needsReview')
+    expect(result.reasons).toEqual(['hashedOffChainCheck'])
+  })
+
   it('is clean for an ordinary name and a listed nationality', () => {
     const result = screenApplication({ fullName: '路人甲', nationality: 'TW' })
     expect(result.verdict).toBe('clean')

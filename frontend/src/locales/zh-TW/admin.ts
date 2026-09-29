@@ -233,6 +233,10 @@ export const admin = {
     notSecrecyNotice:
       '這個頁面把申請人資料擋在權限之後，是為了不主動幫人彙整成一份清單，不是因為資料是保密的——KYCRegistry 是公開合約，任何人都能自己掃鏈上事件看到同樣的內容。',
 
+    /** 新版 KYC 只以加鹽雜湊上鏈（見 lib/pepefi/kycCommitment.ts）。 */
+    hashedNotice:
+      '姓名與國籍只以雜湊上鏈，審核需線下比對：標示「雜湊」的申請，鏈上只有 keccak256(salt ‖ 正規化姓名) 與 keccak256(salt ‖ 國籍代碼)。請申請人線下出示 salt 與原始資料，重算後與此處的雜湊比對一致才核准。未標示雜湊的舊申請是當時以明文上鏈的資料。',
+
     queue: {
       readErrorSome: '{count} 筆申請的狀態讀取失敗，未列入清單，可重新整理再試。',
       readErrorAll: '讀取審核佇列失敗，可能是 RPC 節點限流，請重新整理再試。',
@@ -241,6 +245,8 @@ export const admin = {
       refresh: '↺ 重新整理',
       scanRange: '掃描範圍：區塊 {from} – {to}',
       scanning: '掃描鏈上事件中…（{done}/{total}）',
+      /** 表格中姓名／國籍欄位是雜湊時的標記。 */
+      hashedLabel: '雜湊',
 
       pendingTitle: '待審申請',
       pendingEmpty: '目前沒有待審申請。',
@@ -283,6 +289,7 @@ export const admin = {
         needsReview: '需人工複核',
         reasonUnclearJurisdiction: '轄區未列於平台清單',
         reasonWatchlistNameMatch: '姓名命中虛構 watchlist',
+        reasonHashedOffChainCheck: '姓名與國籍以雜湊上鏈，需線下比對',
       },
     },
   },

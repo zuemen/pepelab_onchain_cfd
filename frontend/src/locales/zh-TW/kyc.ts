@@ -18,16 +18,33 @@ export const kyc = {
   noticeBodyAwaitingReview:
     '你的 KYC 申請已上鏈記錄（KYCSubmitted）。審核人員核准（approveKYC）後，受管制標的才會解鎖；在那之前下單仍會被合約擋下（NotKycVerified）。可以先關掉這個視窗，稍後回來重新整理查看狀態。',
 
-  demoTitle: '⚠️ 你填的姓名會永久公開在區塊鏈上',
+  demoTitle: '⚠️ 這是學術展示系統',
   demoBody:
-    '這是學術展示系統，不是真的合規流程。送出後，姓名與國籍會寫進公開的智能合約，任何人都讀得到、永遠刪不掉。請勿填入真實姓名——填一個假名即可。',
+    '這不是真的合規流程。送出時姓名與國籍不會以明文上鏈：前端會產生隨機 salt，只把 keccak256(salt ‖ 姓名) 與 keccak256(salt ‖ 國籍) 兩個雜湊寫進公開合約。salt 與原始資料只留在你這一端，審核員需要你線下出示才能比對。仍建議填假名。',
 
-  nameLabel: '姓名（請填假名，會永久公開上鏈）',
+  nameLabel: '姓名（只以加鹽雜湊上鏈，建議填假名）',
   namePlaceholder: '例如：路人甲',
   nameRequired: '請輸入姓名',
   nationalityLabel: '國籍',
   /** 下拉選項是「代號 — 國名」。代號是資料，國名是文字。 */
   nationalityOption: '{code} — {name}',
+
+  /** 揭露：舊版把明文寫上鏈，那些資料刪不掉。 */
+  legacyPlaintextNotice:
+    '注意：在這次更新之前送出的 KYC 申請，姓名與國籍是以明文寫進公開的區塊鏈，這些舊資料已永久公開、無法刪除。',
+
+  /** 送出後顯示的使用者端收據。salt 只存在使用者這一端。 */
+  receipt: {
+    title: '請保存以下資料（審核時需要出示）',
+    savedLocally:
+      '姓名與國籍只以加鹽雜湊上鏈。salt 與原始資料已存在這台瀏覽器的本機儲存空間，但清除網站資料就會消失——請另外抄下或截圖保存。遺失 salt 將無法向審核員證明雜湊對應的內容。',
+    notSaved:
+      '姓名與國籍只以加鹽雜湊上鏈。這台瀏覽器無法寫入本機儲存空間，請立刻抄下以下 salt 與雜湊——關掉視窗後就找不回來。',
+    salt: 'Salt（請保密）',
+    nameHash: '姓名雜湊（已上鏈）',
+    nationalityHash: '國籍雜湊（已上鏈）',
+    scheme: '雜湊方式：keccak256(salt ‖ 正規化值)；正規化姓名「{name}」，國籍代碼「{code}」。',
+  },
 
   cancel: '取消',
   close: '關閉',

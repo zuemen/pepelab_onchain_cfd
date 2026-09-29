@@ -222,6 +222,9 @@ export const admin: Catalog['admin'] = {
     notSecrecyNotice:
       "This page gates applicant data behind a permission check to avoid actively compiling it into a list — not because the data is secret. KYCRegistry is a public contract; anyone can scan the same on-chain events themselves.",
 
+    hashedNotice:
+      'Name and nationality go on-chain only as hashes, so review requires off-chain comparison: for applications marked "hash", the chain only holds keccak256(salt ‖ normalized name) and keccak256(salt ‖ nationality code). Ask the applicant to present the salt and raw details off-chain, recompute, and approve only if they match the hashes shown here. Older applications without the mark were written on-chain in plain text at the time.',
+
     queue: {
       readErrorSome: '{count} application(s) could not be read and are left out of the list — refresh to retry.',
       readErrorAll: 'Failed to load the review queue, possibly RPC rate-limiting. Refresh to retry.',
@@ -230,6 +233,7 @@ export const admin: Catalog['admin'] = {
       refresh: '↺ Refresh',
       scanRange: 'Scanned range: block {from} – {to}',
       scanning: 'Scanning on-chain events… ({done}/{total})',
+      hashedLabel: 'hash',
 
       pendingTitle: 'Pending Applications',
       pendingEmpty: 'No pending applications right now.',
@@ -272,6 +276,7 @@ export const admin: Catalog['admin'] = {
         needsReview: 'Needs review',
         reasonUnclearJurisdiction: 'Jurisdiction not on the platform list',
         reasonWatchlistNameMatch: 'Name matches fictional watchlist',
+        reasonHashedOffChainCheck: 'Name and nationality are on-chain as hashes; compare off-chain',
       },
     },
   },

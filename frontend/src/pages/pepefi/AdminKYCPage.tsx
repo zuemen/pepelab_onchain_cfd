@@ -5,6 +5,7 @@ import { useContracts } from 'src/hooks/useContracts'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { useKYCReviewQueue, type ReviewApplication } from 'src/hooks/useKYCReviewQueue'
 import { screenApplication, type ScreeningResult, type ScreeningReasonCode } from 'src/lib/pepefi/kycScreening'
+import { isCommitmentHash } from 'src/lib/pepefi/kycCommitment'
 import { t, interpolate } from 'src/locales'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { explorerTx } from 'src/lib/pepefi/notify'
@@ -61,6 +62,23 @@ type RowAction = {
 const REASON_LABEL: Record<ScreeningReasonCode, string> = {
   unclearJurisdiction: t.admin.kyc.queue.screening.reasonUnclearJurisdiction,
   watchlistNameMatch: t.admin.kyc.queue.screening.reasonWatchlistNameMatch,
+  hashedOffChainCheck: t.admin.kyc.queue.screening.reasonHashedOffChainCheck,
+}
+
+/**
+ * 新版申請的姓名／國籍欄位在鏈上是 keccak256(salt ‖ 值)。完整值放 tooltip 方便複製
+ * 比對，表格裡只顯示縮短版加一個「雜湊」標記，不讓它看起來像一個（很怪的）姓名。
+ */
+function HashOrPlain({ value, plain }: { value: string; plain?: string }) {
+  if (!isCommitmentHash(value)) return <>{plain ?? value}</>
+  return (
+    <Tooltip title={value}>
+      <Box component="span" sx={{ fontFamily: MONO, fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
+        {`${value.slice(0, 10)}…${value.slice(-6)}`}{' '}
+        <Chip size="small" variant="outlined" label={t.admin.kyc.queue.hashedLabel} sx={{ height: 18, fontSize: 10 }} />
+      </Box>
+    </Tooltip>
+  )
 }
 
 function ScreeningChip({ result }: { result: ScreeningResult }) {
@@ -115,8 +133,8 @@ function ApplicationTable({
                   </Link>
                 ) : SHORT_ADDR(app.address)}
               </TableCell>
-              <TableCell>{app.fullName}</TableCell>
-              <TableCell>{COUNTRY_NAMES[app.nationality] ?? app.nationality}</TableCell>
+              <TableCell><HashOrPlain value={app.fullName} /></TableCell>
+              <TableCell><HashOrPlain value={app.nationality} plain={COUNTRY_NAMES[app.nationality] ?? app.nationality} /></TableCell>
               <TableCell sx={{ fontFamily: MONO, color: 'text.secondary' }}>#{app.submittedBlock}</TableCell>
               {screeningByAddress && (
                 <TableCell>
@@ -352,6 +370,11 @@ export default function AdminKYCPage() {
 
       <Alert severity="info" variant="outlined">
         {t.admin.kyc.notSecrecyNotice}
+      </Alert>
+
+      {/* 新版申請只把雜湊上鏈：審核員看不到姓名與國籍，必須線下比對。 */}
+      <Alert severity="warning" variant="outlined">
+        {t.admin.kyc.hashedNotice}
       </Alert>
 
       {isOwner && (
