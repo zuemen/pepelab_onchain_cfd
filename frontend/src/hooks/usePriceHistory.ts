@@ -3,12 +3,17 @@ import type { Contract } from 'ethers'
 import type { BrowserProvider } from 'ethers'
 import type { LivePrice } from './useLivePrices'
 
+import { CHUNK_SIZE, scanContractEvents } from 'src/lib/pepefi/chainLogs'
+
 export interface PricePoint { time: number; price: number }
 export type PriceHistory = Record<string, PricePoint[]>
 
 const LS_KEY      = 'ph-snapshots-v1'
 const MAX_SNAPS   = 200
-const FETCH_BLOCKS = 50_000
+// 回看塊數。以前是單次 queryFilter 掃 50,000 塊——公開節點的 getLogs 上限只有
+// 1,000 塊（見 chainLogs.ts 的實測），那一發請求必定失敗、被 catch 吞成「沒有鏈上歷史」。
+// 現在走分段掃描，30 段 × CHUNK_SIZE。
+const FETCH_BLOCKS = 30 * CHUNK_SIZE
 
 type SnapStore = Record<string, PricePoint[]>
 
@@ -35,9 +40,11 @@ export function usePriceHistory(
   provider:   BrowserProvider | null,
   assetIds:   string[],
   livePrices: Record<string, LivePrice>,
-): { history: PriceHistory; loading: boolean } {
+): { history: PriceHistory; loading: boolean; failed: boolean } {
   const [history, setHistory] = useState<PriceHistory>({})
   const [loading, setLoading] = useState(false)
+  /** 鏈上事件讀取失敗（或不完整）。此時 history 只有本機快照，不代表「沒有鏈上歷史」。 */
+  const [failed, setFailed] = useState(false)
 
   // Persist a snapshot on every live-price tick (rate-limited inside saveSnap)
   useEffect(() => {
@@ -54,45 +61,54 @@ export function usePriceHistory(
   const assetKey = assetIds.join(',')
 
   const fetchHistory = useCallback(async () => {
-    if (!oracle) return
+    if (!oracle || !provider) return
     setLoading(true)
+    const snapStore = loadSnaps()
+    const chainPts: Record<string, PricePoint[]> = {}
+    let readFailed = false
     try {
-      let fromBlock = 0
-      if (provider) {
-        const cur = await provider.getBlockNumber()
-        fromBlock = Math.max(0, cur - FETCH_BLOCKS)
-      }
-      const snapStore = loadSnaps()
-      const out: PriceHistory = {}
-
-      await Promise.all(
-        assetIds.map(async (id) => {
-          try {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const logs = await oracle.queryFilter(oracle.filters.PriceUpdated(id), fromBlock, 'latest') as any[]
-            const chainPts: PricePoint[] = logs.map(log => ({
-              time:  Number(log.args.timestamp as bigint),
-              // Oracle stores price with 8 decimals
-              price: Number(log.args.newPrice as bigint) / 1e8,
-            }))
-            const merged = [...(snapStore[id] ?? []), ...chainPts].sort((a, b) => a.time - b.time)
-            const seen = new Set<number>()
-            const deduped: PricePoint[] = []
-            for (const pt of merged) {
-              if (!seen.has(pt.time)) { seen.add(pt.time); deduped.push(pt) }
-            }
-            out[id] = deduped
-          } catch {
-            out[id] = snapStore[id] ?? []
-          }
-        }),
+      const cur = await provider.getBlockNumber()
+      const fromBlock = Math.max(0, cur - FETCH_BLOCKS + 1)
+      // 一趟掃所有標的的 PriceUpdated（不帶 assetId 條件），在本地分桶——
+      // 每個標的各掃一遍等於同樣的答案付 N 倍的 getLogs。
+      const r = await scanContractEvents(
+        provider,
+        oracle,
+        [oracle.filters.PriceUpdated()],
+        fromBlock,
+        cur,
+        { retries: 2 },
       )
-      setHistory(out)
-    } finally { setLoading(false) }
+      readFailed = r.failedChunks > 0
+      for (const log of r.events) {
+        const id = String(log.args.assetId)
+        ;(chainPts[id] ??= []).push({
+          time:  Number(log.args.timestamp as bigint),
+          // Oracle stores price with 8 decimals
+          price: Number(log.args.newPrice as bigint) / 1e8,
+        })
+      }
+    } catch {
+      readFailed = true
+    }
+
+    const out: PriceHistory = {}
+    for (const id of assetIds) {
+      const merged = [...(snapStore[id] ?? []), ...(chainPts[id] ?? [])].sort((a, b) => a.time - b.time)
+      const seen = new Set<number>()
+      const deduped: PricePoint[] = []
+      for (const pt of merged) {
+        if (!seen.has(pt.time)) { seen.add(pt.time); deduped.push(pt) }
+      }
+      out[id] = deduped
+    }
+    setHistory(out)
+    setFailed(readFailed)
+    setLoading(false)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [oracle, provider, assetKey])
 
   useEffect(() => { void fetchHistory() }, [fetchHistory])
 
-  return { history, loading }
+  return { history, loading, failed }
 }

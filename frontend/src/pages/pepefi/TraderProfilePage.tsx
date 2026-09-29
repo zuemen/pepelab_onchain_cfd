@@ -35,6 +35,7 @@ import Avatar from '@mui/material/Avatar';
 
 import { t, locale, interpolate } from 'src/locales';
 import { explorerTx, explorerName } from 'src/lib/pepefi/notify';
+import { scanFromBlock, describeScanWindow, scanContractEventsStrict } from 'src/lib/pepefi/chainLogs';
 
 interface StakeInfo {
   amount:             bigint
@@ -87,6 +88,12 @@ export default function TraderProfilePage() {
   const [earnings,      setEarnings]      = useState<bigint | null>(null)
   const [stratCount,    setStratCount]    = useState<number | null>(null)
   const [slashHistory,  setSlashHistory]  = useState<SlashEvent[]>([])
+  /**
+   * 罰沒事件讀取狀態。'failed' 時**絕不能**顯示成「沒有罰沒」——讀不到和沒有是兩件事。
+   * 'pending' = 還沒讀完；'ok' 時 slashBlocks = 實際掃描的塊數。
+   */
+  const [slashRead,     setSlashRead]     = useState<'pending' | 'ok' | 'failed'>('pending')
+  const [slashBlocks,   setSlashBlocks]   = useState(0)
   const [loading,       setLoading]       = useState(true)
   const [error,         setError]         = useState<string | null>(null)
 
@@ -175,25 +182,40 @@ export default function TraderProfilePage() {
         setEarnings(raw)
       } catch { /* FeeRouter not deployed */ }
 
-      // slash history from Slashed events
+      // slash history from Slashed events —— 分段 getLogs（公開節點上限 1,000 塊），
+      // 任何一段讀不到就整個標成讀取失敗：部分結果在這裡會被讀成「沒有罰沒」。
+      setSlashRead('pending')
       try {
-        const filter = contracts.traderStake.filters['Slashed'](traderAddr, null)
-        const events = await contracts.traderStake.queryFilter(filter, -10000)
-        setSlashHistory(events.map((e: unknown) => {
-          const ev = e as { args: { trader: string; amount: bigint; recipient: string }; transactionHash: string }
-          return {
-            trader:    ev.args.trader,
-            amount:    ev.args.amount,
-            recipient: ev.args.recipient,
-            txHash:    ev.transactionHash,
-          }
-        }))
-      } catch { /* events not available */ }
+        const provider = contracts.traderStake.runner?.provider
+        if (!provider) throw new Error('no provider')
+        const latest = Number(await provider.getBlockNumber())
+        const from = scanFromBlock({ chainId: wallet.chainId, currentBlock: latest })
+        const events = await scanContractEventsStrict(
+          provider,
+          contracts.traderStake,
+          [contracts.traderStake.filters.Slashed(traderAddr, null)],
+          from,
+          latest,
+          { retries: 2 },
+        )
+        setSlashHistory(events.map((ev) => ({
+          trader:    ev.args.trader as string,
+          amount:    ev.args.amount as bigint,
+          recipient: ev.args.recipient as string,
+          txHash:    ev.transactionHash,
+        })).reverse())
+        setSlashBlocks(latest - from + 1)
+        setSlashRead('ok')
+      } catch (err) {
+        console.warn('[traderProfile] slash history read failed', err)
+        setSlashHistory([])
+        setSlashRead('failed')
+      }
 
       setLoading(false)
     }
     void go()
-  }, [contracts, traderAddr])
+  }, [contracts, traderAddr, wallet.chainId])
 
   if (!traderAddr) return <Box sx={{ p: 4 }}><Typography color="text.secondary">{t.traderProfile.invalidAddress}</Typography></Box>
 
@@ -500,6 +522,29 @@ export default function TraderProfilePage() {
           )}
 
           {/* ─── E. Slash History ──────────────────────────────────── */}
+          {/* 讀取失敗：明說無法確認，絕不顯示成「沒有罰沒」。合約 storage 的
+              totalSlashed 是完整的累計值（不受掃描範圍限制），讀得到就一併列出。 */}
+          {slashRead === 'failed' && (
+            <Alert severity="error">
+              <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+                {t.traderProfile.slashHistory.readFailedTitle}
+              </Typography>
+              {t.traderProfile.slashHistory.readFailedBody}
+              {stakeInfo && (
+                <Box sx={{ mt: 0.5 }}>
+                  {interpolate(t.traderProfile.slashHistory.totalFromContract, { amount: f18(stakeInfo.totalSlashed) })}
+                </Box>
+              )}
+            </Alert>
+          )}
+          {slashRead === 'ok' && slashHistory.length === 0 && stakeInfo && stakeInfo.totalSlashed > 0n && (
+            <Alert severity="warning">
+              {interpolate(t.traderProfile.slashHistory.outsideWindow, {
+                span: describeScanWindow(wallet.chainId, slashBlocks),
+                amount: f18(stakeInfo.totalSlashed),
+              })}
+            </Alert>
+          )}
           {slashHistory.length > 0 && (
             <Card sx={{ p: 3, border: '1px solid', borderColor: 'error.main', bgcolor: 'rgba(255, 86, 48, 0.08)', display: 'flex', flexDirection: 'column', gap: 2 }}>
               <Typography variant="subtitle1" color="error.main" sx={{ fontWeight: 'bold' }}>

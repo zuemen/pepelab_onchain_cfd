@@ -1,6 +1,6 @@
 import { MONO } from 'src/components/pepefi/brandKit'
+import { scanFromBlock, scanContractEvents } from 'src/lib/pepefi/chainLogs'
 import { useState, useEffect, useCallback } from 'react'
-import type { EventLog } from 'ethers'
 import { parseEther, formatEther, formatUnits } from 'ethers'
 import { useContracts } from 'src/hooks/useContracts'
 import { usePepefiWallet } from 'src/layouts/pepefi'
@@ -119,26 +119,33 @@ export default function AdminTreasuryPage() {
   }, [contracts, wallet.address, wallet.provider])
 
   // ── Fetch history ─────────────────────────────────────────────────────────
+  // 回看 scanFromBlock 的預設視窗，走分段 getLogs（公開節點單次上限 1,000 塊，
+  // 以前單發 10,000 塊必定失敗、再被 catch 吞成「尚無兌現紀錄」）。
+  const [historyFailed, setHistoryFailed] = useState(false)
   const fetchHistory = useCallback(async () => {
     if (!contracts || !wallet.address || !wallet.provider) return
     try {
       const current   = await wallet.provider.getBlockNumber()
-      const fromBlock = Math.max(0, current - 10000)
+      const fromBlock = scanFromBlock({ chainId: wallet.chainId, currentBlock: current })
 
-      const [claimLogs, swapLogs] = await Promise.all([
-        contracts.feeRouter.queryFilter(
-          contracts.feeRouter.filters.PlatformFeesWithdrawn(wallet.address),
-          fromBlock, 'latest',
+      const [claimScan, swapScan] = await Promise.all([
+        scanContractEvents(
+          wallet.provider,
+          contracts.feeRouter,
+          [contracts.feeRouter.filters.PlatformFeesWithdrawn(wallet.address)],
+          fromBlock, current, { retries: 2 },
         ),
-        contracts.swapRouter.queryFilter(
-          contracts.swapRouter.filters.SwapUsdcToEth(wallet.address),
-          fromBlock, 'latest',
+        scanContractEvents(
+          wallet.provider,
+          contracts.swapRouter,
+          [contracts.swapRouter.filters.SwapUsdcToEth(wallet.address)],
+          fromBlock, current, { retries: 2 },
         ),
       ])
 
       const records: CashOutRecord[] = []
-      for (const log of claimLogs) {
-        const args = (log as EventLog).args
+      for (const log of claimScan.events) {
+        const args = log.args
         records.push({
           type:        'claim',
           amount:      (args.amount ?? args[1] ?? 0n) as bigint,
@@ -146,8 +153,8 @@ export default function AdminTreasuryPage() {
           blockNumber: log.blockNumber,
         })
       }
-      for (const log of swapLogs) {
-        const args = (log as EventLog).args
+      for (const log of swapScan.events) {
+        const args = log.args
         records.push({
           type:        'swap',
           amount:      (args.ethOut ?? args[2] ?? 0n) as bigint,
@@ -158,10 +165,12 @@ export default function AdminTreasuryPage() {
       }
       records.sort((a, b) => b.blockNumber - a.blockNumber)
       setHistory(records)
+      setHistoryFailed(claimScan.failedChunks + swapScan.failedChunks > 0)
     } catch (e) {
       console.error('[history fetch]', e)
+      setHistoryFailed(true)
     }
-  }, [contracts, wallet.address, wallet.provider])
+  }, [contracts, wallet.address, wallet.provider, wallet.chainId])
 
   // ── Fetch PEPE balances ────────────────────────────────────────────────────
   const fetchPepeBalances = useCallback(async () => {
@@ -539,7 +548,17 @@ export default function AdminTreasuryPage() {
           </Button>
         </Box>
 
-        {history.length === 0 ? (
+        {historyFailed && history.length > 0 && (
+          <Alert severity="warning" sx={{ mb: 2 }}>{t.admin.treasury.history.partial}</Alert>
+        )}
+        {history.length === 0 && historyFailed ? (
+          // 讀取失敗不是「尚無兌現紀錄」。
+          <EmptyState
+            icon="⚠️"
+            title={t.admin.treasury.history.readFailedTitle}
+            description={t.admin.treasury.history.readFailedDescription}
+          />
+        ) : history.length === 0 ? (
           <EmptyState
             icon="📋"
             title={t.admin.treasury.history.emptyTitle}

@@ -55,6 +55,7 @@ export const marketplace: Catalog['marketplace'] = {
   },
 
   loadFailed: 'Failed to load:',
+  scanIncomplete: '{count}/{total} block ranges could not be read; volume and PnL below may be understated.',
 
   scanProgress: 'Scanning on-chain events... {done}/{total}',
 

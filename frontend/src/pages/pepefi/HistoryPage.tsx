@@ -10,6 +10,11 @@ import EmptyState from 'src/components/pepefi/EmptyState'
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
 import { t, interpolate } from 'src/locales'
 import { mapLimit, withRetry, RPC_CONCURRENCY } from 'src/lib/pepefi/rpcBatch'
+import {
+  scanContractEvents,
+  type ParsedEventLog,
+  type DeferredTopicFilterLike,
+} from 'src/lib/pepefi/chainLogs'
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -31,12 +36,11 @@ import Link from '@mui/material/Link';
 import Tooltip from '@mui/material/Tooltip';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-// Base Sepolia blocks every ~2s, and its public RPC (sepolia.base.org) rejects
-// eth_getLogs ranges over 2000 blocks ("query exceeds max block range 2000").
-// FETCH_BLOCKS is the total lookback; CHUNK_SIZE keeps every single request
-// under that cap — queryFilterChunked() below splits the range accordingly.
+// Base Sepolia blocks every ~2s. FETCH_BLOCKS is the total lookback per
+// refresh / "load older" step; every scan goes through scanContractEvents →
+// getLogsChunked, whose CHUNK_SIZE is set from a measured node limit (the public
+// RPC rejects eth_getLogs spans over 1,000 blocks — see chainLogs.ts).
 const FETCH_BLOCKS = 9000   // ~5 h on Base Sepolia (2 s/block)
-const CHUNK_SIZE    = 1800
 
 // Events are cached client-side so history survives past the scan window — the
 // chain keeps everything forever, but a fixed lookback can only ever see the
@@ -78,8 +82,6 @@ interface ChainEvent {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
 // ── Merge / cache ─────────────────────────────────────────────────────────────
 
@@ -163,44 +165,61 @@ function saveCache(key: string, events: ChainEvent[], scannedFrom: number | null
   } catch { /* quota exceeded or private mode — cache is best-effort */ }
 }
 
-/**
- * Splits [fromBlock, toBlock] into <= chunkSize windows before calling
- * contract.queryFilter — a single call spanning the whole range silently
- * fails on RPCs that cap eth_getLogs (e.g. Base Sepolia's public RPC caps at
- * 2000 blocks and throws "query exceeds max block range"). With 12 event
- * types firing chunks in parallel, the same public RPC also rate-limits
- * bursts (HTTP 429) — each chunk gets a couple of backoff retries before
- * being counted as a real failure, which is reported instead of swallowed
- * so partial data doesn't silently look like "no data".
- */
-async function queryFilterChunked(
-  contract: Contract,
-  filter: unknown,
-  fromBlock: number,
-  toBlock: number,
-  chunkSize: number,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-): Promise<{ logs: any[]; errors: string[] }> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const logs:   any[]    = []
-  const errors: string[] = []
-  for (let start = fromBlock; start <= toBlock; start += chunkSize) {
-    const end = Math.min(start + chunkSize - 1, toBlock)
-    let lastErr: unknown
-    let ok = false
-    for (let attempt = 0; attempt < 3 && !ok; attempt++) {
-      if (attempt > 0) await sleep(400 * 2 ** (attempt - 1))  // 400ms, 800ms
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        logs.push(...(await contract.queryFilter(filter as any, start, end)))
-        ok = true
-      } catch (err) {
-        lastErr = err
-      }
-    }
-    if (!ok) errors.push(lastErr instanceof Error ? lastErr.message : String(lastErr))
+// ── Event scan sources ───────────────────────────────────────────────────────
+
+/** 一個合約與要在它上面掃的事件。key 用來分派解析（不同合約可能有同名事件）。 */
+interface EventSource {
+  key: string
+  contract: Contract
+  filters: DeferredTopicFilterLike[]
+}
+
+const logBase = (log: ParsedEventLog) => ({
+  txHash: log.transactionHash,
+  logIndex: log.index,
+  blockNumber: log.blockNumber,
+})
+
+/** 把解析後的 log 轉成頁面的一列。不認得的 (source, event) 回 null。 */
+function toChainEvent(source: string, log: ParsedEventLog): ChainEvent | null {
+  const a = log.args
+  switch (`${source}:${log.eventName}`) {
+    case 'swapRouter:SwapEthToUsdc':
+      return { type: 'Swap', user: a.user, ...logBase(log), timestamp: Number(a.timestamp ?? 0),
+        details: { direction: 'ETH→USDC', ethIn: a.ethIn as bigint, usdcOut: a.usdcOut as bigint } }
+    case 'swapRouter:SwapUsdcToEth':
+      return { type: 'Swap', user: a.user, ...logBase(log), timestamp: Number(a.timestamp ?? 0),
+        details: { direction: 'USDC→ETH', usdcIn: a.usdcIn as bigint, ethOut: a.ethOut as bigint } }
+    case 'exchange:PositionOpened':
+      return { type: 'PositionOpened', user: a.owner, ...logBase(log), timestamp: 0,
+        details: { positionId: a.positionId as bigint, asset: a.asset as string, isLong: a.isLong as boolean,
+          entryPrice: a.entryPrice as bigint, margin: a.margin as bigint, leverage: a.leverage as bigint } }
+    case 'exchange:PositionClosed':
+      return { type: 'PositionClosed', user: a.owner, ...logBase(log), timestamp: 0,
+        details: { positionId: a.positionId as bigint, pnl: a.pnl as bigint, closeAmount: a.closeAmount as bigint } }
+    case 'exchange:MarginDeposited':
+      return { type: 'MarginDeposited', user: a.user, ...logBase(log), timestamp: 0, details: { amount: a.amount as bigint } }
+    case 'exchange:MarginWithdrawn':
+      return { type: 'MarginWithdrawn', user: a.user, ...logBase(log), timestamp: 0, details: { amount: a.amount as bigint } }
+    case 'copyTracker:TraderFollowed':
+      return { type: 'TraderFollowed', user: a.follower, ...logBase(log), timestamp: 0,
+        details: { trader: a.trader as string, totalMargin: a.totalMargin as bigint } }
+    case 'copyTracker:TraderUnfollowed':
+      return { type: 'TraderUnfollowed', user: a.follower, ...logBase(log), timestamp: 0, details: { trader: a.trader as string } }
+    case 'feeRouter:CopyFeeDistributed':
+      return { type: 'CopyFee', user: a.trader, ...logBase(log), timestamp: 0,
+        details: { fee: a.fee as bigint, traderShare: a.traderShare as bigint } }
+    case 'oracle:PriceUpdated':
+      return { type: 'PriceUpdated', user: undefined, ...logBase(log), timestamp: Number(a.timestamp ?? 0),
+        details: { assetId: a.assetId as string, oldPrice: a.oldPrice as bigint, newPrice: a.newPrice as bigint } }
+    case 'traderStake:Staked':
+      return { type: 'Stake', user: a.trader, ...logBase(log), timestamp: 0, details: { amount: a.amount as bigint } }
+    case 'traderStake:Slashed':
+      return { type: 'Slash', user: a.trader, ...logBase(log), timestamp: 0,
+        details: { amount: a.amount as bigint, recipient: a.recipient as string } }
+    default:
+      return null
   }
-  return { logs, errors }
 }
 
 /**
@@ -483,119 +502,85 @@ export default function HistoryPage() {
   ): Promise<{ evs: ChainEvent[]; failedChunks: number }> => {
     if (!contracts || !wallet.provider) return { evs: [], failedChunks: 0 }
     const uf = tab === 'mine' ? (wallet.address ?? null) : null
-    const chunked = (contract: Contract, filter: unknown) =>
-      queryFilterChunked(contract, filter, fromBlock, toBlock, CHUNK_SIZE)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const empty = Promise.resolve({ logs: [] as any[], errors: [] as string[] })
+    const provider = wallet.provider
 
-    const results = await Promise.all([
-      // [0] ETH→USDC swaps
-      chunked(contracts.swapRouter, uf ? contracts.swapRouter.filters.SwapEthToUsdc(uf) : contracts.swapRouter.filters.SwapEthToUsdc()),
-      // [1] USDC→ETH swaps
-      chunked(contracts.swapRouter, uf ? contracts.swapRouter.filters.SwapUsdcToEth(uf) : contracts.swapRouter.filters.SwapUsdcToEth()),
-      // [2] PositionOpened
-      chunked(contracts.exchange, uf ? contracts.exchange.filters.PositionOpened(null, uf) : contracts.exchange.filters.PositionOpened()),
-      // [3] PositionClosed
-      chunked(contracts.exchange, uf ? contracts.exchange.filters.PositionClosed(null, uf) : contracts.exchange.filters.PositionClosed()),
-      // [4] MarginDeposited
-      chunked(contracts.exchange, uf ? contracts.exchange.filters.MarginDeposited(uf) : contracts.exchange.filters.MarginDeposited()),
-      // [5] MarginWithdrawn
-      chunked(contracts.exchange, uf ? contracts.exchange.filters.MarginWithdrawn(uf) : contracts.exchange.filters.MarginWithdrawn()),
-      // [6] TraderFollowed (mine: as follower; all: everyone)
-      chunked(contracts.copyTracker, uf ? contracts.copyTracker.filters.TraderFollowed(uf, null) : contracts.copyTracker.filters.TraderFollowed()),
-      // [7] TraderUnfollowed (mine only)
-      uf ? chunked(contracts.copyTracker, contracts.copyTracker.filters.TraderUnfollowed(uf, null)) : empty,
-      // [8] CopyFeeDistributed (mine: as trader)
-      chunked(contracts.feeRouter, uf ? contracts.feeRouter.filters.CopyFeeDistributed(uf) : contracts.feeRouter.filters.CopyFeeDistributed()),
-      // [9] PriceUpdated (all mode only — too noisy for "mine")
-      tab === 'all' ? chunked(contracts.oracle, contracts.oracle.filters.PriceUpdated()) : empty,
-      // [10] Staked
-      chunked(contracts.traderStake, uf ? contracts.traderStake.filters.Staked(uf) : contracts.traderStake.filters.Staked()),
-      // [11] Slashed
-      chunked(contracts.traderStake, uf ? contracts.traderStake.filters.Slashed(uf, null) : contracts.traderStake.filters.Slashed()),
-    ])
+    // 每個合約一組 filter；scanContractEvents 會把「topic0 以外條件相同」的事件
+    // 合成一趟分段 getLogs（CHUNK_SIZE 依實測上限，見 chainLogs.ts）。以前 12 種
+    // 事件各自一趟、而且用自己的 1,800 塊分段——公開節點上限是 1,000 塊，每一段都
+    // 被拒，最後整頁只剩從 storage 重建的部位。
+    const sources: EventSource[] = [
+      {
+        key: 'swapRouter',
+        contract: contracts.swapRouter,
+        filters: [
+          uf ? contracts.swapRouter.filters.SwapEthToUsdc(uf) : contracts.swapRouter.filters.SwapEthToUsdc(),
+          uf ? contracts.swapRouter.filters.SwapUsdcToEth(uf) : contracts.swapRouter.filters.SwapUsdcToEth(),
+        ],
+      },
+      {
+        key: 'exchange',
+        contract: contracts.exchange,
+        filters: [
+          uf ? contracts.exchange.filters.PositionOpened(null, uf) : contracts.exchange.filters.PositionOpened(),
+          uf ? contracts.exchange.filters.PositionClosed(null, uf) : contracts.exchange.filters.PositionClosed(),
+          uf ? contracts.exchange.filters.MarginDeposited(uf) : contracts.exchange.filters.MarginDeposited(),
+          uf ? contracts.exchange.filters.MarginWithdrawn(uf) : contracts.exchange.filters.MarginWithdrawn(),
+        ],
+      },
+      {
+        key: 'copyTracker',
+        contract: contracts.copyTracker,
+        filters: [
+          // mine: as follower; all: everyone. Unfollow is mine-only.
+          uf ? contracts.copyTracker.filters.TraderFollowed(uf, null) : contracts.copyTracker.filters.TraderFollowed(),
+          ...(uf ? [contracts.copyTracker.filters.TraderUnfollowed(uf, null)] : []),
+        ],
+      },
+      {
+        key: 'feeRouter',
+        contract: contracts.feeRouter,
+        // mine: as trader
+        filters: [uf ? contracts.feeRouter.filters.CopyFeeDistributed(uf) : contracts.feeRouter.filters.CopyFeeDistributed()],
+      },
+      {
+        key: 'oracle',
+        contract: contracts.oracle,
+        // all mode only — too noisy for "mine"
+        filters: tab === 'all' ? [contracts.oracle.filters.PriceUpdated()] : [],
+      },
+      {
+        key: 'traderStake',
+        contract: contracts.traderStake,
+        filters: [
+          uf ? contracts.traderStake.filters.Staked(uf) : contracts.traderStake.filters.Staked(),
+          uf ? contracts.traderStake.filters.Slashed(uf, null) : contracts.traderStake.filters.Slashed(),
+        ],
+      },
+    ]
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const getLogs = (i: number): any[] => results[i].logs
-    const failedChunks = results.reduce((n, r) => n + r.errors.length, 0)
+    // 併發 2：公開 RPC 對 getLogs 的突發請求會回 429；每段另有兩次退避重試。
+    const results = await mapLimit(
+      sources.filter(s => s.contract && s.filters.length > 0),
+      2,
+      async (s) => {
+        try {
+          const r = await scanContractEvents(provider, s.contract, s.filters, fromBlock, toBlock, { retries: 2 })
+          return { key: s.key, events: r.events, failedChunks: r.failedChunks }
+        } catch (err) {
+          console.warn('[history] scan failed', s.key, err)
+          // 連 topic filter 都組不出來 = 整個來源讀不到，至少算一段失敗，不能變成「沒有資料」。
+          return { key: s.key, events: [] as ParsedEventLog[], failedChunks: 1 }
+        }
+      },
+    )
+    const failedChunks = results.reduce((n, r) => n + r.failedChunks, 0)
 
     const evs: ChainEvent[] = []
-
-    // 0 — ETH→USDC
-    for (const log of getLogs(0)) {
-      const a = log.args
-      evs.push({ type: 'Swap', user: a.user, txHash: log.transactionHash, logIndex: log.index, blockNumber: log.blockNumber,
-        timestamp: Number(a.timestamp ?? 0),
-        details: { direction: 'ETH→USDC', ethIn: a.ethIn as bigint, usdcOut: a.usdcOut as bigint } })
-    }
-    // 1 — USDC→ETH
-    for (const log of getLogs(1)) {
-      const a = log.args
-      evs.push({ type: 'Swap', user: a.user, txHash: log.transactionHash, logIndex: log.index, blockNumber: log.blockNumber,
-        timestamp: Number(a.timestamp ?? 0),
-        details: { direction: 'USDC→ETH', usdcIn: a.usdcIn as bigint, ethOut: a.ethOut as bigint } })
-    }
-    // 2 — PositionOpened
-    for (const log of getLogs(2)) {
-      const a = log.args
-      evs.push({ type: 'PositionOpened', user: a.owner, txHash: log.transactionHash, logIndex: log.index, blockNumber: log.blockNumber, timestamp: 0,
-        details: { positionId: a.positionId as bigint, asset: a.asset as string, isLong: a.isLong as boolean,
-          entryPrice: a.entryPrice as bigint, margin: a.margin as bigint, leverage: a.leverage as bigint } })
-    }
-    // 3 — PositionClosed
-    for (const log of getLogs(3)) {
-      const a = log.args
-      evs.push({ type: 'PositionClosed', user: a.owner, txHash: log.transactionHash, logIndex: log.index, blockNumber: log.blockNumber, timestamp: 0,
-        details: { positionId: a.positionId as bigint, pnl: a.pnl as bigint, closeAmount: a.closeAmount as bigint } })
-    }
-    // 4 — MarginDeposited
-    for (const log of getLogs(4)) {
-      const a = log.args
-      evs.push({ type: 'MarginDeposited', user: a.user, txHash: log.transactionHash, logIndex: log.index, blockNumber: log.blockNumber, timestamp: 0,
-        details: { amount: a.amount as bigint } })
-    }
-    // 5 — MarginWithdrawn
-    for (const log of getLogs(5)) {
-      const a = log.args
-      evs.push({ type: 'MarginWithdrawn', user: a.user, txHash: log.transactionHash, logIndex: log.index, blockNumber: log.blockNumber, timestamp: 0,
-        details: { amount: a.amount as bigint } })
-    }
-    // 6 — TraderFollowed
-    for (const log of getLogs(6)) {
-      const a = log.args
-      evs.push({ type: 'TraderFollowed', user: a.follower, txHash: log.transactionHash, logIndex: log.index, blockNumber: log.blockNumber, timestamp: 0,
-        details: { trader: a.trader as string, totalMargin: a.totalMargin as bigint } })
-    }
-    // 7 — TraderUnfollowed
-    for (const log of getLogs(7)) {
-      const a = log.args
-      evs.push({ type: 'TraderUnfollowed', user: a.follower, txHash: log.transactionHash, logIndex: log.index, blockNumber: log.blockNumber, timestamp: 0,
-        details: { trader: a.trader as string } })
-    }
-    // 8 — CopyFeeDistributed
-    for (const log of getLogs(8)) {
-      const a = log.args
-      evs.push({ type: 'CopyFee', user: a.trader, txHash: log.transactionHash, logIndex: log.index, blockNumber: log.blockNumber, timestamp: 0,
-        details: { fee: a.fee as bigint, traderShare: a.traderShare as bigint } })
-    }
-    // 9 — PriceUpdated
-    for (const log of getLogs(9)) {
-      const a = log.args
-      evs.push({ type: 'PriceUpdated', user: undefined, txHash: log.transactionHash, logIndex: log.index, blockNumber: log.blockNumber,
-        timestamp: Number(a.timestamp ?? 0),
-        details: { assetId: a.assetId as string, oldPrice: a.oldPrice as bigint, newPrice: a.newPrice as bigint } })
-    }
-    // 10 — Staked
-    for (const log of getLogs(10)) {
-      const a = log.args
-      evs.push({ type: 'Stake', user: a.trader, txHash: log.transactionHash, logIndex: log.index, blockNumber: log.blockNumber, timestamp: 0,
-        details: { amount: a.amount as bigint } })
-    }
-    // 11 — Slashed
-    for (const log of getLogs(11)) {
-      const a = log.args
-      evs.push({ type: 'Slash', user: a.trader, txHash: log.transactionHash, logIndex: log.index, blockNumber: log.blockNumber, timestamp: 0,
-        details: { amount: a.amount as bigint, recipient: a.recipient as string } })
+    for (const r of results) {
+      for (const log of r.events) {
+        const ev = toChainEvent(r.key, log)
+        if (ev) evs.push(ev)
+      }
     }
 
     // Batch-fetch timestamps for events without embedded timestamp
@@ -807,6 +792,13 @@ export default function HistoryPage() {
           {/* Cached rows stay on screen while refreshing — only a cold load blanks out. */}
           {loading && events.length === 0 ? (
             <TableSkeleton rows={5} cols={6} />
+          ) : visible.length === 0 && error ? (
+            // 讀取失敗（或不完整）時的空白不是「沒有活動」——不能套用空狀態文案。
+            <EmptyState
+              icon="⚠️"
+              title={t.history.readFailed.title}
+              description={t.history.readFailed.description}
+            />
           ) : visible.length === 0 ? (
             <EmptyState
               icon="📜"

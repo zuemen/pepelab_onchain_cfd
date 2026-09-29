@@ -100,6 +100,12 @@ export const history: Catalog['history'] = {
     refreshToRetry: '{notes}. Refresh to retry.',
   },
 
+  /** 掃描失敗時取代空狀態——失敗絕不能顯示成「沒有資料」。 */
+  readFailed: {
+    title: 'Read failed',
+    description:
+      "On-chain events could not be read (or were only partly read) — an empty list here does not mean there was no activity. Press Refresh to retry.",
+  },
   fetchFailed: 'Failed to fetch events',
   fetchOlderFailed: 'Failed to fetch older events',
 

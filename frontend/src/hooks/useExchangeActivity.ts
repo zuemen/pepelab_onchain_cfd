@@ -180,14 +180,20 @@ export function useExchangeActivity(
         if (!isStale()) setProgress({ done: doneChunks, total: totalChunks })
       }
 
+      // 掉的段不能悄悄丟掉：少一段就是少一批部位，畫面會把缺漏讀成「沒有活動」。
+      let failedChunks = 0
       const rawLogs = await getLogsChunked(
         provider,
         { address: exchange.target as string, topics: [eventTopics] },
         from,
         latestNum,
         tick,
+        () => { failedChunks += 1 },
       )
       if (isStale()) return
+      if (failedChunks > 0) {
+        setError(`${failedChunks} block range(s) could not be read — this list may be incomplete. The RPC node may be rate-limiting.`)
+      }
 
       const openedLogs:     Array<{ args: any; blockNumber: number; transactionHash: string; index: number }> = []
       const closedLogs:     Array<{ args: any; blockNumber: number; transactionHash: string }> = []

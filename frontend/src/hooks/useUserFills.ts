@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 
 import { t } from 'src/locales'
+import { scanContractEvents } from 'src/lib/pepefi/chainLogs'
 
 // 使用者在鏈上的成交紀錄（開倉 / 平倉 / 被清算）。
 //
@@ -15,7 +16,11 @@ import { t } from 'src/locales'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Contracts = any
 
-/** 回溯多少個 block。Base Sepolia 約 2 秒一個 block，5000 ≈ 2.8 小時。 */
+/**
+ * 回溯多少個 block。Base Sepolia 約 2 秒一個 block，5000 ≈ 2.8 小時。
+ * 公開節點單次 getLogs 只接受 1,000 塊（chainLogs.ts 實測），所以走分段掃描；
+ * 以前單發 5,000 塊的 queryFilter 在公開節點上必定失敗。
+ */
 const FETCH_BLOCKS = 5_000
 
 export type FillKind = 'opened' | 'closed' | 'liquidated'
@@ -59,50 +64,56 @@ export function useUserFills(contracts: Contracts, address: string | null): User
       const current = Number(await ex.runner.provider.getBlockNumber())
       const fromBlock = Math.max(0, current - FETCH_BLOCKS)
 
-      // 三種事件各自查，其中一種失敗不該讓整張表空掉。
-      const settled = await Promise.allSettled([
-        ex.queryFilter(ex.filters.PositionOpened(null, address), fromBlock, 'latest'),
-        ex.queryFilter(ex.filters.PositionClosed(null, address), fromBlock, 'latest'),
-        ex.queryFilter(ex.filters.PositionLiquidated(null, address), fromBlock, 'latest'),
-      ])
+      // 三種事件的 owner 都在第 2 個 indexed 參數，topic 條件相同 → 分段掃描時
+      // 合成一趟（topic0 = OR）。任何一段讀不到就是「讀取失敗」，不是「沒有成交」。
+      const scan = await scanContractEvents(
+        ex.runner.provider,
+        ex,
+        [
+          ex.filters.PositionOpened(null, address),
+          ex.filters.PositionClosed(null, address),
+          ex.filters.PositionLiquidated(null, address),
+        ],
+        fromBlock,
+        current,
+        { retries: 2 },
+      )
 
       const rows: Fill[] = []
-      const kinds: FillKind[] = ['opened', 'closed', 'liquidated']
+      const kindOf: Record<string, FillKind> = {
+        PositionOpened: 'opened',
+        PositionClosed: 'closed',
+        PositionLiquidated: 'liquidated',
+      }
 
-      settled.forEach((res, i) => {
-        if (res.status !== 'fulfilled') return
-        const kind = kinds[i]
-        for (const log of res.value as {
-          args: Record<string, unknown>
-          blockNumber: number
-          transactionHash: string
-          index?: number
-        }[]) {
-          const a = log.args
-          rows.push({
-            key: `${log.transactionHash}-${log.index ?? 0}-${kind}`,
-            kind,
-            positionId: a.positionId as bigint,
-            asset: kind === 'opened' ? (a.asset as string) : undefined,
-            isLong: kind === 'opened' ? (a.isLong as boolean) : undefined,
-            price: kind === 'opened' ? (a.entryPrice as bigint) : undefined,
-            margin: kind === 'opened' ? (a.margin as bigint) : undefined,
-            leverage: kind === 'opened' ? (a.leverage as bigint) : undefined,
-            pnl: kind === 'opened' ? undefined : (a.pnl as bigint),
-            blockNumber: log.blockNumber,
-            txHash: log.transactionHash,
-          })
-        }
-      })
+      for (const log of scan.events) {
+        const kind = kindOf[log.eventName]
+        if (!kind) continue
+        const a = log.args
+        rows.push({
+          key: `${log.transactionHash}-${log.index}-${kind}`,
+          kind,
+          positionId: a.positionId as bigint,
+          asset: kind === 'opened' ? (a.asset as string) : undefined,
+          isLong: kind === 'opened' ? (a.isLong as boolean) : undefined,
+          price: kind === 'opened' ? (a.entryPrice as bigint) : undefined,
+          margin: kind === 'opened' ? (a.margin as bigint) : undefined,
+          leverage: kind === 'opened' ? (a.leverage as bigint) : undefined,
+          pnl: kind === 'opened' ? undefined : (a.pnl as bigint),
+          blockNumber: log.blockNumber,
+          txHash: log.transactionHash,
+        })
+      }
 
-      if (settled.every((r) => r.status === 'rejected')) {
+      // 部分段落失敗 = 表格不完整，必須說出來；不能讓缺漏看起來像「沒有成交」。
+      if (scan.failedChunks > 0) {
         setError(t.terminal.fills.readError)
       }
 
       rows.sort((x, y) => y.blockNumber - x.blockNumber)
       setFills(rows)
-    } catch (e) {
-      setError((e as Error).message)
+    } catch {
+      setError(t.terminal.fills.readError)
     } finally {
       setLoading(false)
     }

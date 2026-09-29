@@ -76,7 +76,7 @@ import { Icon } from '@iconify/react';
 //
 // 改用 lib/pepefi/chainLogs 的 scanFromBlock——它依 chainId 查出塊時間、夾住
 // 部署塊、套用分段上限,whale tracker 與 exchange activity 已經在用同一份。
-// 50,000 塊一次 getLogs 也超過多數公開節點 10,000 的上限,一併改成分段查詢。
+// 50,000 塊一次 getLogs 也超過公開節點的上限（Base Sepolia 實測 1,000 塊,見 chainLogs.ts）,一併改成分段查詢。
 
 // Expert Mode 有 12 欄,單一螢幕寬度塞不下——固定「#」「交易者」在左、「操作」在
 // 右,中間的指標欄自己橫向捲動。兩顆固定不動的欄位讓使用者橫向捲動時永遠知道
@@ -172,6 +172,8 @@ function TraderLeaderboard() {
       let doneChunks = 0;
       const tick = () => { doneChunks += 1; setProgress({ done: doneChunks, total: chunks }); };
 
+      // 掉的段不能悄悄變成 0 交易量／0 PnL——那會讓排行榜看起來「沒人交易」。
+      let failedChunks = 0;
       const [logsRes, addressesRes] = await Promise.allSettled([
         getLogsChunked(
           wallet.provider,
@@ -182,11 +184,15 @@ function TraderLeaderboard() {
           fromBlock,
           currentBlock,
           tick,
+          () => { failedChunks += 1; },
         ),
         contracts.registry.getAllTraders() as Promise<string[]>,
       ]);
       const rawLogs   = logsRes.status      === 'fulfilled' ? logsRes.value      : [];
       const addresses = addressesRes.status === 'fulfilled' ? addressesRes.value : [];
+      if (failedChunks > 0) {
+        setFetchError(interpolate(t.marketplace.scanIncomplete, { count: failedChunks, total: chunks }));
+      }
       if (logsRes.status === 'rejected') {
         console.warn('[marketplace] 事件掃描失敗,指標以 0 呈現', chunks, logsRes.reason);
       }

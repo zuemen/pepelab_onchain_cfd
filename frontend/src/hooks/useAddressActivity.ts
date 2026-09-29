@@ -142,10 +142,15 @@ export function useAddressActivity(
       }
 
       const ifaceFor = [exchange.interface, traderStake.interface, copyTracker.interface, copyTracker.interface]
+      // 掉的段不能悄悄丟掉——例如 Slashed 那一段讀不到，畫面就會像「從未被罰沒」。
+      let failedChunks = 0
       const logSets = await Promise.all(
-        queries.map(q => getLogsChunked(provider, q, from, latestNum, tick)),
+        queries.map(q => getLogsChunked(provider, q, from, latestNum, tick, () => { failedChunks += 1 })),
       )
       if (isStale()) return
+      if (failedChunks > 0) {
+        setError(`${failedChunks} block range(s) could not be read — this history may be incomplete. The RPC node may be rate-limiting.`)
+      }
 
       const lowerAddr = address.toLowerCase()
       const rows: AddressEvent[] = []

@@ -99,6 +99,12 @@ export const history = {
     refreshToRetry: '{notes}。重新整理以再試一次。',
   },
 
+  /** 掃描失敗時取代空狀態——失敗絕不能顯示成「沒有資料」。 */
+  readFailed: {
+    title: '讀取失敗',
+    description:
+      '鏈上事件讀取失敗或不完整，這裡的空白不代表沒有活動。請按「重新整理」重試。',
+  },
   fetchFailed: '事件讀取失敗',
   fetchOlderFailed: '較舊事件讀取失敗',
 

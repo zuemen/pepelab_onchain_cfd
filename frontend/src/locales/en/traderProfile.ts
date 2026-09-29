@@ -63,6 +63,10 @@ export const traderProfile: Catalog['traderProfile'] = {
   slashHistory: {
     titleOne: 'Slash History ({count} event)',
     titleMany: 'Slash History ({count} events)',
+    readFailedTitle: 'Could not read slash history',
+    readFailedBody: "The on-chain Slashed events could not be read, so this page cannot tell whether this trader has ever been slashed. Please refresh later.",
+    totalFromContract: 'Cumulative slashed amount recorded by the contract: {amount} USDC',
+    outsideWindow: 'No Slashed events in the last {span}, but the contract records a cumulative {amount} USDC slashed — it happened before the scan window.',
   },
 
   actions: {

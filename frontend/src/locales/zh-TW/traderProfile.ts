@@ -61,6 +61,10 @@ export const traderProfile = {
   slashHistory: {
     titleOne: '罰沒紀錄（{count} 筆）',
     titleMany: '罰沒紀錄（{count} 筆）',
+    readFailedTitle: '罰沒紀錄讀取失敗',
+    readFailedBody: '無法讀取鏈上的罰沒事件，因此不能據此判斷此交易員是否曾被罰沒。請稍後重新整理。',
+    totalFromContract: '合約記錄的累計罰沒：{amount} USDC',
+    outsideWindow: '最近 {span} 內沒有罰沒事件，但合約記錄的累計罰沒為 {amount} USDC——罰沒發生在掃描範圍之前。',
   },
 
   actions: {

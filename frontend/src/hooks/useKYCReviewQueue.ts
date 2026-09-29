@@ -22,6 +22,11 @@ import { latestSubmissionByAddress, bucketOf, type ReviewBucket } from 'src/lib/
 
 export type { ReviewBucket }
 
+/** 審核佇列的回看視窗：7 天。 */
+const KYC_SCAN_WINDOW_SEC = 7 * 24 * 3600;
+/** 7 天 ÷ 2 秒 ÷ CHUNK_SIZE(800) ≈ 378 段；留一點餘裕。 */
+const KYC_SCAN_MAX_CHUNKS = 400;
+
 export interface ReviewApplication {
   address:         string
   fullName:        string
@@ -81,7 +86,14 @@ export function useKYCReviewQueue(
       const latest = await withRetry(() => provider.getBlockNumber());
       if (isStale()) return;
 
-      const from = scanFromBlock({ chainId, currentBlock: latest });
+      // 審核佇列刻意維持 7 天視窗（全站預設已降為 24 小時）：漏掉一段就是漏掉一位
+      // 申請人。公開節點 getLogs 上限 1,000 塊，7 天在 Base 上約 378 段，較慢但有進度條。
+      const from = scanFromBlock({
+        chainId,
+        currentBlock: latest,
+        windowSec: KYC_SCAN_WINDOW_SEC,
+        maxChunks: KYC_SCAN_MAX_CHUNKS,
+      });
       setScanRange({ from, to: latest });
 
       const onChunk: ChunkProgress = (done, total) => { if (!isStale()) setProgress({ done, total }); };

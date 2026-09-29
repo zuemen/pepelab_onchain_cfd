@@ -1,6 +1,6 @@
 import { MONO } from 'src/components/pepefi/brandKit'
 import { useState, useEffect, useCallback } from 'react'
-import type { Contract, EventLog } from 'ethers'
+import type { Contract } from 'ethers'
 import { parseUnits, formatUnits } from 'ethers'
 import { useContracts } from 'src/hooks/useContracts'
 import { usePepefiWallet } from 'src/layouts/pepefi'
@@ -8,6 +8,7 @@ import { t, interpolate } from 'src/locales'
 import { useMode } from 'src/contexts/mode-context'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { safeRead } from 'src/lib/pepefi/safeRead'
+import { scanFromBlock, scanContractEvents } from 'src/lib/pepefi/chainLogs'
 import Skeleton from 'src/components/pepefi/Skeleton'
 import EmptyState from 'src/components/pepefi/EmptyState'
 import { useToast } from 'src/components/pepefi/ToastProvider'
@@ -55,41 +56,62 @@ function f18(v: bigint, dec = 2): string {
   })
 }
 
-async function fetchActivity(vault: Contract): Promise<ActivityEntry[]> {
+interface ActivityResult {
+  entries: ActivityEntry[]
+  /** 掃描有任何一段讀不到。true 時空白不代表「沒有活動」。 */
+  failed: boolean
+  /** 實際回看了幾塊，顯示給使用者。 */
+  blocks: number
+}
+
+/**
+ * 金庫近期活動。以前只查最近 200 塊（Base 上約 7 分鐘），幾乎永遠是空的，
+ * 而且任何錯誤都被吞成「尚無活動」。現在回看 scanFromBlock 的預設視窗
+ * （24 小時，並以部署塊為下限），走分段 getLogs，失敗就明說。
+ */
+async function fetchActivity(
+  vault: Contract,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  provider: { getBlockNumber: () => Promise<number>; getLogs: (f: any) => Promise<any[]> },
+  chainId: number | null | undefined,
+): Promise<ActivityResult> {
   const events: ActivityEntry[] = []
   try {
-    const filter1 = vault.filters.Deposited()
-    const filter2 = vault.filters.Withdrawn()
-    const filter3 = vault.filters.ProtocolDeposit()
-    const filter4 = vault.filters.Bailout()
-
-    const [dep, wit, pro, bai] = await Promise.all([
-      vault.queryFilter(filter1, -200),
-      vault.queryFilter(filter2, -200),
-      vault.queryFilter(filter3, -200),
-      vault.queryFilter(filter4, -200),
-    ])
-
-    for (const e of dep) {
-      const args = (e as EventLog).args
-      events.push({ type: 'Deposited', label: t.vault.activity.deposited, amount: f18(args.usdcAmount) + ' USDC', from: args.user, block: e.blockNumber ?? 0 })
+    const latest = await provider.getBlockNumber()
+    const from = scanFromBlock({ chainId, currentBlock: latest })
+    const r = await scanContractEvents(
+      provider,
+      vault,
+      [vault.filters.Deposited(), vault.filters.Withdrawn(), vault.filters.ProtocolDeposit(), vault.filters.Bailout()],
+      from,
+      latest,
+      { retries: 2 },
+    )
+    for (const e of r.events) {
+      const args = e.args
+      switch (e.eventName) {
+        case 'Deposited':
+          events.push({ type: 'Deposited', label: t.vault.activity.deposited, amount: f18(args.usdcAmount) + ' USDC', from: args.user, block: e.blockNumber })
+          break
+        case 'Withdrawn':
+          events.push({ type: 'Withdrawn', label: t.vault.activity.withdrawn, amount: f18(args.usdcAmount) + ' USDC', from: args.user, block: e.blockNumber })
+          break
+        case 'ProtocolDeposit':
+          events.push({ type: 'ProtocolDeposit', label: t.vault.activity.protocolDeposit, amount: f18(args.amount) + ' USDC', from: args.from, block: e.blockNumber })
+          break
+        case 'Bailout':
+          events.push({ type: 'Bailout', label: t.vault.activity.bailout, amount: f18(args.amount) + ' USDC', from: args.trader, block: e.blockNumber })
+          break
+        default:
+          break
+      }
     }
-    for (const e of wit) {
-      const args = (e as EventLog).args
-      events.push({ type: 'Withdrawn', label: t.vault.activity.withdrawn, amount: f18(args.usdcAmount) + ' USDC', from: args.user, block: e.blockNumber ?? 0 })
-    }
-    for (const e of pro) {
-      const args = (e as EventLog).args
-      events.push({ type: 'ProtocolDeposit', label: t.vault.activity.protocolDeposit, amount: f18(args.amount) + ' USDC', from: args.from, block: e.blockNumber ?? 0 })
-    }
-    for (const e of bai) {
-      const args = (e as EventLog).args
-      events.push({ type: 'Bailout', label: t.vault.activity.bailout, amount: f18(args.amount) + ' USDC', from: args.trader, block: e.blockNumber ?? 0 })
-    }
-
-    events.sort((a, b) => b.block - a.block)
-  } catch { /* ignore */ }
-  return events
+    events.sort((x, y) => y.block - x.block)
+    return { entries: events, failed: r.failedChunks > 0, blocks: latest - from + 1 }
+  } catch (err) {
+    console.warn('[vault] activity read failed', err)
+    return { entries: events, failed: true, blocks: 0 }
+  }
 }
 
 export default function VaultPage() {
@@ -100,7 +122,8 @@ export default function VaultPage() {
   const exchange  = contracts?.exchange ?? null
 
   const [stats, setStats]         = useState<VaultStats | null>(null)
-  const [activity, setActivity]   = useState<ActivityEntry[]>([])
+  const [activityRes, setActivityRes] = useState<ActivityResult>({ entries: [], failed: false, blocks: 0 })
+  const activity = activityRes.entries
   const [depositAmt, setDepositAmt] = useState('')
   const [withdrawAmt, setWithdrawAmt] = useState('')
   const [busy, setBusy]           = useState(false)
@@ -139,10 +162,10 @@ export default function VaultPage() {
 
   useEffect(() => {
     void fetchStats()
-    if (vault) void fetchActivity(vault).then(setActivity)
+    if (vault && wallet.provider) void fetchActivity(vault, wallet.provider, wallet.chainId).then(setActivityRes)
     const t = setInterval(() => { void fetchStats() }, 15_000)
     return () => clearInterval(t)
-  }, [fetchStats, vault])
+  }, [fetchStats, vault, wallet.provider, wallet.chainId])
 
   const doDeposit = async () => {
     if (!vault || !usdc || !wallet.signer) return
@@ -156,7 +179,7 @@ export default function VaultPage() {
       notify(interpolate(t.vault.deposit.done, { amount: depositAmt }), true, tx.hash)
       setDepositAmt('')
       await fetchStats()
-      if (vault) setActivity(await fetchActivity(vault))
+      if (vault && wallet.provider) setActivityRes(await fetchActivity(vault, wallet.provider, wallet.chainId))
     } catch (e) {
       notify(prettyError(e), false)
     } finally {
@@ -174,7 +197,7 @@ export default function VaultPage() {
       notify(interpolate(t.vault.withdraw.done, { amount: withdrawAmt }), true, tx.hash)
       setWithdrawAmt('')
       await fetchStats()
-      if (vault) setActivity(await fetchActivity(vault))
+      if (vault && wallet.provider) setActivityRes(await fetchActivity(vault, wallet.provider, wallet.chainId))
     } catch (e) {
       notify(prettyError(e), false)
     } finally {
@@ -399,7 +422,17 @@ export default function VaultPage() {
             {t.vault.activity.title}
           </Typography>
         </Box>
-        {activity.length === 0 ? (
+        {activityRes.failed && activity.length > 0 && (
+          <Alert severity="warning" sx={{ m: 2 }}>{t.vault.activity.partial}</Alert>
+        )}
+        {activity.length === 0 && activityRes.failed ? (
+          // 讀取失敗不是「尚無活動」。
+          <EmptyState
+            icon="⚠️"
+            title={t.vault.activity.readFailedTitle}
+            description={t.vault.activity.readFailedDescription}
+          />
+        ) : activity.length === 0 ? (
           <EmptyState
             icon="🏦"
             title={t.vault.activity.emptyTitle}
