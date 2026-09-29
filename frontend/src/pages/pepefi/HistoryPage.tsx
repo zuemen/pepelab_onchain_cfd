@@ -3,6 +3,8 @@ import type { Contract } from 'ethers'
 import { MONO } from 'src/components/pepefi/brandKit'
 import { useRef, useState, useEffect, useCallback, type ReactNode } from 'react'
 import { useContracts } from 'src/hooks/useContracts'
+import { useV2Contracts } from 'src/hooks/useV2Contracts'
+import { isDeployed } from 'src/lib/pepefi/safeRead'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { explorerTx } from 'src/lib/pepefi/notify'
 import { TableSkeleton } from 'src/components/pepefi/Skeleton'
@@ -65,8 +67,11 @@ type EventType =
   | 'MarginDeposited' | 'MarginWithdrawn'
   | 'TraderFollowed' | 'TraderUnfollowed'
   | 'CopyFee' | 'PriceUpdated' | 'Stake' | 'Slash'
+  // F3：V2 AssetVault 鑄造／贖回、PepeAMM 兌換、InsuranceVault 存入／提領。
+  // 'Swap' 是舊版 MockSwapRouter 的事件，保留但標為 legacy。
+  | 'AssetMint' | 'AssetRedeem' | 'AmmSwap' | 'VaultDeposit' | 'VaultWithdraw'
 
-type FilterKey = 'all' | 'Swap' | 'Position' | 'Margin' | 'Social' | 'Fee' | 'Price' | 'Stake'
+type FilterKey = 'all' | 'Swap' | 'Asset' | 'Vault' | 'Position' | 'Margin' | 'Social' | 'Fee' | 'Price' | 'Stake'
 
 interface ChainEvent {
   type:        EventType
@@ -217,6 +222,21 @@ function toChainEvent(source: string, log: ParsedEventLog): ChainEvent | null {
     case 'traderStake:Slashed':
       return { type: 'Slash', user: a.trader, ...logBase(log), timestamp: 0,
         details: { amount: a.amount as bigint, recipient: a.recipient as string } }
+    case 'assetVaultV2:Minted':
+      return { type: 'AssetMint', user: a.user, ...logBase(log), timestamp: 0,
+        details: { assetId: a.assetId as string, usdcIn: a.usdcIn as bigint, tokenOut: a.tokenOut as bigint, fee: a.fee as bigint } }
+    case 'assetVaultV2:Redeemed':
+      return { type: 'AssetRedeem', user: a.user, ...logBase(log), timestamp: 0,
+        details: { assetId: a.assetId as string, tokenIn: a.tokenIn as bigint, usdcOut: a.usdcOut as bigint, fee: a.fee as bigint } }
+    case 'pepeAMM:Swap':
+      return { type: 'AmmSwap', user: a.user, ...logBase(log), timestamp: 0,
+        details: { ethToUsdc: a.ethToUsdc as boolean, amountIn: a.amountIn as bigint, amountOut: a.amountOut as bigint } }
+    case 'insuranceVault:Deposited':
+      return { type: 'VaultDeposit', user: a.user, ...logBase(log), timestamp: 0,
+        details: { usdcAmount: a.usdcAmount as bigint, shares: a.shares as bigint } }
+    case 'insuranceVault:Withdrawn':
+      return { type: 'VaultWithdraw', user: a.user, ...logBase(log), timestamp: 0,
+        details: { usdcAmount: a.usdcAmount as bigint, shares: a.shares as bigint } }
     default:
       return null
   }
@@ -348,10 +368,15 @@ const TYPE_STYLE: Record<EventType, any> = {
   PriceUpdated:     { bgcolor: 'rgba(34, 197, 94, 0.16)', color: '#22c55e', border: '1px solid', borderColor: 'rgba(34, 197, 94, 0.24)' },
   Stake:            { bgcolor: 'rgba(255, 171, 0, 0.16)', color: '#ffab00', border: '1px solid', borderColor: 'rgba(255, 171, 0, 0.24)' },
   Slash:            { bgcolor: 'rgba(255, 86, 48, 0.16)', color: '#ff5630', border: '1px solid', borderColor: 'rgba(255, 86, 48, 0.24)' },
+  AssetMint:        { bgcolor: 'rgba(34, 197, 94, 0.16)', color: '#22c55e', border: '1px solid', borderColor: 'rgba(34, 197, 94, 0.24)' },
+  AssetRedeem:      { bgcolor: 'rgba(255, 171, 0, 0.16)', color: '#ffab00', border: '1px solid', borderColor: 'rgba(255, 171, 0, 0.24)' },
+  AmmSwap:          { bgcolor: 'rgba(0, 184, 217, 0.16)', color: '#00b8d9', border: '1px solid', borderColor: 'rgba(0, 184, 217, 0.24)' },
+  VaultDeposit:     { bgcolor: 'rgba(142, 51, 255, 0.16)', color: '#8e33ff', border: '1px solid', borderColor: 'rgba(142, 51, 255, 0.24)' },
+  VaultWithdraw:    { bgcolor: 'rgba(145, 158, 171, 0.16)', color: '#919eab', border: '1px solid', borderColor: 'rgba(145, 158, 171, 0.24)' },
 }
 
 const TYPE_LABEL: Partial<Record<EventType, string>> = {
-  Swap:             t.history.eventType.swap,
+  Swap:             t.history.eventType.swapLegacy,
   PositionOpened:   t.history.eventType.opened,
   PositionClosed:   t.history.eventType.closed,
   MarginDeposited:  t.history.eventType.deposit,
@@ -362,11 +387,18 @@ const TYPE_LABEL: Partial<Record<EventType, string>> = {
   PriceUpdated:     t.history.eventType.priceUpdated,
   Stake:            t.history.eventType.stake,
   Slash:            t.history.eventType.slash,
+  AssetMint:        t.history.eventType.mint,
+  AssetRedeem:      t.history.eventType.redeem,
+  AmmSwap:          t.history.eventType.ammSwap,
+  VaultDeposit:     t.history.eventType.vaultDeposit,
+  VaultWithdraw:    t.history.eventType.vaultWithdraw,
 }
 
 const FILTERS: { key: FilterKey; label: string }[] = [
   { key: 'all',      label: t.history.filter.all },
   { key: 'Swap',     label: t.history.filter.swap },
+  { key: 'Asset',    label: t.history.filter.asset },
+  { key: 'Vault',    label: t.history.filter.vault },
   { key: 'Position', label: t.history.filter.position },
   { key: 'Margin',   label: t.history.filter.margin },
   { key: 'Social',   label: t.history.filter.social },
@@ -376,7 +408,9 @@ const FILTERS: { key: FilterKey; label: string }[] = [
 ]
 
 const FILTER_TYPES: Partial<Record<FilterKey, EventType[]>> = {
-  Swap:     ['Swap'],
+  Swap:     ['Swap', 'AmmSwap'],
+  Asset:    ['AssetMint', 'AssetRedeem'],
+  Vault:    ['VaultDeposit', 'VaultWithdraw'],
   Position: ['PositionOpened', 'PositionClosed'],
   Margin:   ['MarginDeposited', 'MarginWithdrawn'],
   Social:   ['TraderFollowed', 'TraderUnfollowed'],
@@ -448,6 +482,33 @@ function renderDetails(e: ChainEvent): ReactNode {
       return <span>{t.history.detail.slashed} <Box component="span" sx={{ color: 'error.main', fontWeight: 'semibold' }}>{f18(d.amount as bigint)}</Box> USDC → <Box component="span" sx={{ fontFamily: MONO }}>{shortAddr(recipient)}</Box></span>
     }
 
+    case 'AmmSwap':
+      return (d.ethToUsdc as boolean)
+        ? <span><Typography variant="body2" component="span" color="text.secondary">{fEth(d.amountIn as bigint)} ETH</Typography> → <Typography variant="body2" component="span" color="success.main" sx={{ fontWeight: 'semibold' }}>{f18(d.amountOut as bigint)} USDC</Typography></span>
+        : <span><Typography variant="body2" component="span" color="text.secondary">{f18(d.amountIn as bigint)} USDC</Typography> → <Typography variant="body2" component="span" color="success.main" sx={{ fontWeight: 'semibold' }}>{fEth(d.amountOut as bigint)} ETH</Typography></span>
+
+    case 'AssetMint':
+      return <span>{interpolate(t.history.detail.mint, {
+        amount: fEth(d.tokenOut as bigint),
+        asset:  ASSET_LABEL[d.assetId as string] ?? '?',
+        usdc:   f18(d.usdcIn as bigint),
+        fee:    f18(d.fee as bigint),
+      })}</span>
+
+    case 'AssetRedeem':
+      return <span>{interpolate(t.history.detail.redeem, {
+        amount: fEth(d.tokenIn as bigint),
+        asset:  ASSET_LABEL[d.assetId as string] ?? '?',
+        usdc:   f18(d.usdcOut as bigint),
+        fee:    f18(d.fee as bigint),
+      })}</span>
+
+    case 'VaultDeposit':
+      return <Box component="span" sx={{ color: 'success.main' }}>{interpolate(t.history.detail.vaultDeposit, { usdc: f18(d.usdcAmount as bigint), shares: f18(d.shares as bigint) })}</Box>
+
+    case 'VaultWithdraw':
+      return <Box component="span" sx={{ color: 'warning.main' }}>{interpolate(t.history.detail.vaultWithdraw, { usdc: f18(d.usdcAmount as bigint), shares: f18(d.shares as bigint) })}</Box>
+
     default:
       return <Typography variant="caption" color="text.secondary">{JSON.stringify(d).slice(0, 80)}</Typography>
   }
@@ -457,6 +518,7 @@ function renderDetails(e: ChainEvent): ReactNode {
 export default function HistoryPage() {
   const wallet = usePepefiWallet()
   const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId)
+  const v2 = useV2Contracts(wallet.provider, wallet.signer, wallet.chainId)
 
   const [tab,        setTab]        = useState<'mine' | 'all'>('mine')
   const [events,     setEvents]     = useState<ChainEvent[]>([])
@@ -508,8 +570,9 @@ export default function HistoryPage() {
     // 合成一趟分段 getLogs（CHUNK_SIZE 依實測上限，見 chainLogs.ts）。以前 12 種
     // 事件各自一趟、而且用自己的 1,800 塊分段——公開節點上限是 1,000 塊，每一段都
     // 被拒，最後整頁只剩從 storage 重建的部位。
-    const sources: EventSource[] = [
+    const sources: Array<Omit<EventSource, 'contract'> & { contract: Contract | null | undefined }> = [
       {
+        // Legacy：舊版 MockSwapRouter（已由 PepeAMM 取代），保留以顯示歷史兌換。
         key: 'swapRouter',
         contract: contracts.swapRouter,
         filters: [
@@ -549,6 +612,31 @@ export default function HistoryPage() {
         filters: tab === 'all' ? [contracts.oracle.filters.PriceUpdated()] : [],
       },
       {
+        // V2 AssetVault（位址來自 addresses.ts 的 V2_STACK；該鏈沒有 V2 時為 null）。
+        // Minted/Redeemed 的 user 是第 1 個 indexed 參數。
+        key: 'assetVaultV2',
+        contract: v2?.vault,
+        filters: v2
+          ? [
+              uf ? v2.vault.filters.Minted(uf) : v2.vault.filters.Minted(),
+              uf ? v2.vault.filters.Redeemed(uf) : v2.vault.filters.Redeemed(),
+            ]
+          : [],
+      },
+      {
+        key: 'pepeAMM',
+        contract: contracts.pepeAMM,
+        filters: [uf ? contracts.pepeAMM.filters.Swap(uf) : contracts.pepeAMM.filters.Swap()],
+      },
+      {
+        key: 'insuranceVault',
+        contract: contracts.insuranceVault,
+        filters: [
+          uf ? contracts.insuranceVault.filters.Deposited(uf) : contracts.insuranceVault.filters.Deposited(),
+          uf ? contracts.insuranceVault.filters.Withdrawn(uf) : contracts.insuranceVault.filters.Withdrawn(),
+        ],
+      },
+      {
         key: 'traderStake',
         contract: contracts.traderStake,
         filters: [
@@ -560,7 +648,9 @@ export default function HistoryPage() {
 
     // 併發 2：公開 RPC 對 getLogs 的突發請求會回 429；每段另有兩次退避重試。
     const results = await mapLimit(
-      sources.filter(s => s.contract && s.filters.length > 0),
+      // 位址為 0x0（該鏈未部署）的來源直接略過，不去撥 0x0。
+      sources.filter((s): s is EventSource =>
+        !!s.contract && isDeployed(String(s.contract.target)) && s.filters.length > 0),
       2,
       async (s) => {
         try {
@@ -599,7 +689,7 @@ export default function HistoryPage() {
     }
 
     return { evs, failedChunks }
-  }, [contracts, tab, wallet.address, wallet.provider])
+  }, [contracts, v2, tab, wallet.address, wallet.provider])
 
   /** Says which part is incomplete, so a gap is never mistaken for "no data". */
   const reportScanIssues = (failedChunks: number, missedPositions = 0) => {
@@ -847,16 +937,18 @@ export default function HistoryPage() {
                         ) : '—'}
                       </TableCell>
                       <TableCell>
-                        <Chip
-                          label={TYPE_LABEL[e.type] ?? e.type}
-                          size="small"
-                          sx={{
-                            fontWeight: 'bold',
-                            minWidth: 76,
-                            justifyContent: 'center',
-                            ...TYPE_STYLE[e.type]
-                          }}
-                        />
+                        <Tooltip title={e.type === 'Swap' ? t.history.legacySwapTooltip : ''}>
+                          <Chip
+                            label={TYPE_LABEL[e.type] ?? e.type}
+                            size="small"
+                            sx={{
+                              fontWeight: 'bold',
+                              minWidth: 76,
+                              justifyContent: 'center',
+                              ...TYPE_STYLE[e.type]
+                            }}
+                          />
+                        </Tooltip>
                       </TableCell>
                       <TableCell sx={{ fontFamily: MONO, fontSize: '0.75rem', color: 'text.secondary' }}>
                         {shortAddr(e.user)}

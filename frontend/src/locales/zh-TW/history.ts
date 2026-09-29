@@ -30,6 +30,8 @@ export const history = {
   filter: {
     all: '全部',
     swap: '兌換',
+    asset: '代幣化資產',
+    vault: '保險金庫',
     position: '部位',
     margin: '保證金',
     social: '社交',
@@ -59,6 +61,13 @@ export const history = {
 
   eventType: {
     swap: '兌換',
+    /** 舊版 MockSwapRouter 的兌換事件（已由 PepeAMM 取代）。 */
+    swapLegacy: '兌換（舊版）',
+    ammSwap: '兌換（AMM）',
+    mint: '鑄造',
+    redeem: '贖回',
+    vaultDeposit: '金庫存入',
+    vaultWithdraw: '金庫提領',
     opened: '開倉',
     closed: '平倉',
     deposit: '存入',
@@ -71,6 +80,8 @@ export const history = {
     slash: '罰沒',
   },
 
+  /** 舊版兌換（MockSwapRouter）類型標籤的說明。 */
+  legacySwapTooltip: '舊版 MockSwapRouter 的兌換紀錄（該路由已由 PepeAMM 取代，保留以供查閱）。',
   storageTooltip:
     '從合約儲存讀取——永久保存，但不對應單一交易。可用 getPosition() 在 BaseScan 上驗證。',
   storageLabel: '儲存',
@@ -91,8 +102,8 @@ export const history = {
 
   /** 掃描不完整時的說明——缺口不該被誤讀成「沒有資料」。 */
   scanIssue: {
-    failedChunkOne: '{count} 個區塊範圍查詢失敗（兌換、保證金、手續費與質押資料可能不完整）',
-    failedChunkMany: '{count} 個區塊範圍查詢失敗（兌換、保證金、手續費與質押資料可能不完整）',
+    failedChunkOne: '{count} 個區塊範圍查詢失敗（事件日誌——兌換、鑄造／贖回、保證金、金庫、手續費與質押——可能不完整）',
+    failedChunkMany: '{count} 個區塊範圍查詢失敗（事件日誌——兌換、鑄造／贖回、保證金、金庫、手續費與質押——可能不完整）',
     positionIndexUnreadable: '無法讀取部位索引——下方部位資料可能有缺漏',
     missedPositionOne: '{count} 筆部位無法讀取',
     missedPositionMany: '{count} 筆部位無法讀取',
@@ -122,5 +133,9 @@ export const history = {
     /** 開倉明細行首的方向色塊。 */
     sideLong: '做多',
     sideShort: '做空',
+    mint: '鑄造 {amount} {asset}，支付 {usdc} USDC（手續費 {fee} USDC）',
+    redeem: '贖回 {amount} {asset}，取回 {usdc} USDC（手續費 {fee} USDC）',
+    vaultDeposit: '存入 {usdc} USDC，取得 {shares} 份額',
+    vaultWithdraw: '贖回 {shares} 份額，取回 {usdc} USDC',
   },
 };

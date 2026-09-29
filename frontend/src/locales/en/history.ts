@@ -28,6 +28,8 @@ export const history: Catalog['history'] = {
   filter: {
     all: 'All',
     swap: 'Swap',
+    asset: 'Tokenized assets',
+    vault: 'Insurance vault',
     position: 'Positions',
     margin: 'Margin',
     social: 'Social',
@@ -57,6 +59,12 @@ export const history: Catalog['history'] = {
 
   eventType: {
     swap: 'Swap',
+    swapLegacy: 'Swap (legacy)',
+    ammSwap: 'Swap (AMM)',
+    mint: 'Mint',
+    redeem: 'Redeem',
+    vaultDeposit: 'Vault deposit',
+    vaultWithdraw: 'Vault withdraw',
     opened: 'Opened',
     closed: 'Closed',
     deposit: 'Deposit',
@@ -69,6 +77,7 @@ export const history: Catalog['history'] = {
     slash: 'Slash',
   },
 
+  legacySwapTooltip: 'Legacy MockSwapRouter swap (the router has been superseded by PepeAMM; kept for reference).',
   storageTooltip:
     'Read from contract storage — permanent, but not tied to a single transaction. Verify with getPosition() on BaseScan.',
   storageLabel: 'storage',
@@ -90,9 +99,9 @@ export const history: Catalog['history'] = {
   /** 掃描不完整時的說明——缺口不該被誤讀成「沒有資料」。 */
   scanIssue: {
     failedChunkOne:
-      '{count} block-range query failed (swaps, margin, fees and stakes may be incomplete)',
+      '{count} block-range query failed (event logs — swaps, mint/redeem, margin, vault, fees and stakes — may be incomplete)',
     failedChunkMany:
-      '{count} block-range queries failed (swaps, margin, fees and stakes may be incomplete)',
+      '{count} block-range queries failed (event logs — swaps, mint/redeem, margin, vault, fees and stakes — may be incomplete)',
     positionIndexUnreadable:
       'the position index could not be read — positions below may be missing',
     missedPositionOne: '{count} position could not be read',
@@ -123,5 +132,9 @@ export const history: Catalog['history'] = {
     /** 開倉明細行首的方向色塊。 */
     sideLong: 'LONG',
     sideShort: 'SHORT',
+    mint: 'Minted {amount} {asset} for {usdc} USDC (fee {fee} USDC)',
+    redeem: 'Redeemed {amount} {asset} for {usdc} USDC (fee {fee} USDC)',
+    vaultDeposit: 'Deposited {usdc} USDC for {shares} shares',
+    vaultWithdraw: 'Redeemed {shares} shares for {usdc} USDC',
   },
 };
