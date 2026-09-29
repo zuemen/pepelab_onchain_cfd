@@ -152,15 +152,20 @@ export function useExchangeActivity(
   useEffect(() => () => { abortRef.current?.abort(); runId.current += 1 }, [])
 
   const fetchActivity = useCallback(async () => {
-    if (!exchange || !provider) return
-
+    // 先遞增、先中止，再判斷能不能開始：早退（例如 provider 變成 null）時，
+    // 上一輪還在飛的掃描也要被中止、結果被丟棄。
     runId.current += 1
     const myRun = runId.current
     const isStale = () => runId.current !== myRun
-    // 新的一輪開始就中止上一輪的分段掃描，不讓它繼續打 RPC。
     abortRef.current?.abort()
     const ac = new AbortController()
     abortRef.current = ac
+    if (!exchange || !provider) {
+      // 上一輪可能還掛著 loading：它的 finally 因 run id 不符不會收尾，這裡收。
+      setLoading(false)
+      setProgress(null)
+      return
+    }
 
     setLoading(true)
     setError(null)

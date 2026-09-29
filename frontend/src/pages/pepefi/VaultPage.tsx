@@ -133,7 +133,12 @@ export default function VaultPage() {
     // 早退也要遞增：讓還在飛的舊掃描回來時被丟棄。
     activityRun.current += 1
     const myRun = activityRun.current
-    if (!vault || !wallet.provider) { setActivityLoading(false); return }
+    if (!vault || !wallet.provider) {
+      // 沒有金庫或 provider（例如斷線、換到未部署的鏈）：上一個狀態的活動不能留在畫面上。
+      setActivityRes({ entries: [], failed: false, blocks: 0 })
+      setActivityLoading(false)
+      return
+    }
     setActivityLoading(true)
     const res = await fetchActivity(vault, wallet.provider, wallet.chainId)
     if (myRun !== activityRun.current) return
