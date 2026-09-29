@@ -54,6 +54,18 @@ export const common: Catalog['common'] = {
     },
   },
 
+  disclosure: {
+    title: 'Important disclosure: testnet research prototype — no real assets',
+    summary: 'Every asset, balance and trade on this site is simulated on a testnet and has no real-world value.',
+    prototype:
+      'This site is a research prototype deployed on the Base Sepolia testnet. All tokens, funds and trades are simulated; no real assets or money are involved.',
+    synthetic:
+      'Tokenized equities and bonds (e.g. sAAPL, sBOND) are under-collateralized synthetic exposures. They track the underlying through an oracle price only; the platform holds no underlying securities and keeps no one-to-one reserve. Holders have no shareholder or creditor rights (including voting, dividend or coupon rights) and no claim against any issuer; redemption depends on the liquidity of the platform vault.',
+    noAdvice: 'Nothing on this site constitutes investment advice, an offer, or a solicitation.',
+    expand: 'Expand',
+    collapse: 'Collapse',
+  },
+
   featureDisabled: {
     title: 'This feature is not enabled',
     body: 'This deployment does not have this feature turned on. Contact the platform operator if you need it.',

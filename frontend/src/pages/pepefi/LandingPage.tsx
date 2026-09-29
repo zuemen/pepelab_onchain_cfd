@@ -6,6 +6,7 @@ import HeroKpiStrip from 'src/components/pepefi/HeroKpiStrip';
 import { SHOW_PERPETUALS, FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags';
 import BenchmarkStrip from 'src/components/pepefi/dashboard/BenchmarkStrip';
 import PaperTradingBadge from 'src/components/pepefi/PaperTradingBadge';
+import { SyntheticDisclosure } from 'src/components/pepefi/SyntheticDisclosure';
 import { MONO } from 'src/components/pepefi/brandKit';
 import { Iconify } from 'src/components/iconify';
 
@@ -94,6 +95,8 @@ export default function LandingPage() {
       }}
     >
       <Container maxWidth="md">
+        <SyntheticDisclosure sx={{ mb: 4 }} />
+
         {/* ── HERO ── */}
         <Box sx={{ position: 'relative', mb: 6 }}>
           {/* Six floating emoji (🚀 💰 ✨ 🌙 ⚡ 🔥) used to bob around the hero

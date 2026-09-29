@@ -7,6 +7,7 @@ import { t, interpolate } from 'src/locales';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
 import { safeRead } from 'src/lib/pepefi/safeRead';
 import { FEATURE_PEPE_REWARDS } from 'src/lib/pepefi/featureFlags';
+import { SyntheticDisclosure } from 'src/components/pepefi/SyntheticDisclosure';
 import { STABLE_LABEL, ALT_STABLE_LABEL, X402_STABLE_LABEL } from 'src/lib/pepefi/tokenLabel';
 import {
   isOracleStale,
@@ -463,6 +464,8 @@ export default function ExchangePage() {
 
   return (
     <Container maxWidth="lg" sx={{ py: 3, display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <SyntheticDisclosure />
+
       {/* Global Transaction Overlay */}
       <Backdrop
         open={isBusy}
