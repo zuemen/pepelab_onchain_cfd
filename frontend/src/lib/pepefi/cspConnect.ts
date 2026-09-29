@@ -44,16 +44,18 @@ export function checkSignalApiUrl(url: string | undefined, config: VercelConfig)
   if (!url) return null;
   const connectSrc = connectSrcOf(config);
   if (isConnectAllowed(url, connectSrc)) return null;
+  // 這是給部署的人看的 build 錯誤（終端機／CI log），不是介面顯示字串，所以不進 catalog、
+  // 用英文寫——locales.test.ts 的掃描器也因此不會把它當成漏搬的顯示字串。
+  let origin = url;
+  try {
+    origin = new URL(url).origin;
+  } catch {
+    /* 不是合法 URL：照原字串報 */
+  }
   return [
-    `VITE_SIGNAL_API_URL=${url} 不在 frontend/vercel.json 的 CSP connect-src 白名單裡。`,
-    '正式站的瀏覽器會擋掉所有打到它的請求（K 線、Benchmark、x402 試買會靜默失效）。',
-    `請把 ${(() => {
-      try {
-        return new URL(url).origin;
-      } catch {
-        return url;
-      }
-    })()} 加進 vercel.json 的 connect-src，或改用白名單內的網址。`,
-    `目前的 connect-src：${connectSrc.join(' ') || '（找不到）'}`,
+    `VITE_SIGNAL_API_URL=${url} is not in the CSP connect-src allow-list of frontend/vercel.json.`,
+    'Browsers on the production site would block every request to it (K-line, benchmarks and the x402 trial fail silently).',
+    `Add ${origin} to connect-src in vercel.json, or use an allow-listed URL.`,
+    `Current connect-src: ${connectSrc.join(' ') || '(not found)'}`,
   ].join('\n');
 }
