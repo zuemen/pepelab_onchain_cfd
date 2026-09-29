@@ -381,4 +381,58 @@ contract ExchangeDowntimeTest is Test {
         exchange.pause();
         assertTrue(exchange.paused());
     }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // Lapsed pauses are made visible
+    // ═════════════════════════════════════════════════════════════════════════
+
+    event PauseLapsed(uint256 at);
+    event Unpaused(address account);
+
+    function test_closeLapsedPause_emitsUnpausedAndIsPermissionless() public {
+        vm.prank(guardian);
+        exchange.pause();
+        uint256 lapse = vm.getBlockTimestamp() + 72 hours;
+        _elapse(80 hours);
+
+        vm.expectEmit(false, false, false, true, address(exchange));
+        emit PauseLapsed(lapse);
+        vm.expectEmit(false, false, false, true, address(exchange));
+        emit Unpaused(address(0));
+        vm.prank(user);
+        exchange.closeLapsedPause();
+
+        assertEq(exchange.pausedAt(), 0);
+        assertEq(exchange.lastResumedAt(), lapse);
+        assertEq(exchange.downtimeOf(BTC), 72 hours);
+    }
+
+    function test_closeLapsedPause_revertsWhenNothingLapsed() public {
+        vm.expectRevert(PerpetualExchange.NoLapsedPause.selector);
+        exchange.closeLapsedPause();          // never paused
+        vm.prank(guardian);
+        exchange.pause();
+        vm.expectRevert(PerpetualExchange.NoLapsedPause.selector);
+        exchange.closeLapsedPause();          // still running
+        exchange.pause();                     // owner takeover: never lapses
+        _elapse(100 hours);
+        vm.expectRevert(PerpetualExchange.NoLapsedPause.selector);
+        exchange.closeLapsedPause();
+    }
+
+    /// If nobody closed the lapsed window, the next pause() does it and emits
+    /// the same events before opening its own window.
+    function test_pause_closesLapsedWindowWithEvents() public {
+        vm.prank(guardian);
+        exchange.pause();
+        uint256 lapse = vm.getBlockTimestamp() + 72 hours;
+        _elapse(80 hours);
+        vm.expectEmit(false, false, false, true, address(exchange));
+        emit PauseLapsed(lapse);
+        vm.expectEmit(false, false, false, true, address(exchange));
+        emit Unpaused(address(0));
+        exchange.pause(); // owner
+        assertTrue(exchange.paused());
+        assertEq(exchange.pauseExpiresAt(), 0);
+    }
 }

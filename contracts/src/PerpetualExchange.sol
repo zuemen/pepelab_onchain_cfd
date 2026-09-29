@@ -564,6 +564,10 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     /// @notice The owner took over a running guardian pause; it no longer
     ///         lapses on its own.
     event PauseExpiryCleared(address indexed by);
+    /// @notice A guardian pause lapsed at `at`. Emitted together with
+    ///         `Unpaused(address(0))` (address(0) = no caller ended it) when the
+    ///         lapsed window is closed, so indexers see every pause end.
+    event PauseLapsed(uint256 at);
 
     // P1: risk caps.
     event MaxOpenInterestSet(bytes32 indexed asset, uint256 maxLong, uint256 maxShort);
@@ -612,6 +616,8 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     /// @notice P1: the guardian's previous pause ended less than
     ///         GUARDIAN_PAUSE_COOLDOWN ago; it may pause again at `allowedAt`.
     error GuardianPauseCooldown(uint256 allowedAt);
+    /// @notice P1: there is no lapsed pause window to close.
+    error NoLapsedPause();
     /// @notice P1: inside the post-pause (asset == 0) or post-halt grace
     ///         period; liquidations and new opens resume at `until`.
     error GracePeriodActive(bytes32 asset, uint256 until);
@@ -882,7 +888,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         if (!byOwner && msg.sender != guardian) revert NotGuardianOrOwner(msg.sender);
 
         // A guardian window that already lapsed is closed at its expiry.
-        if (pausedAt != 0 && !paused()) _closePauseWindow(pauseExpiresAt);
+        if (pausedAt != 0 && !paused()) _closeLapsedWindow();
 
         if (paused()) {
             if (!byOwner || pauseExpiresAt == 0) revert EnforcedPause();
@@ -920,6 +926,24 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     modifier whenNotPaused() {
         if (paused()) revert EnforcedPause();
         _;
+    }
+
+    /// @notice Record the end of a guardian pause that lapsed on its own.
+    ///         Permissionless: the lapse already took effect (`paused()` is
+    ///         false from `pauseExpiresAt`); this only writes it to storage and
+    ///         emits `PauseLapsed` + `Unpaused(address(0))` so off-chain
+    ///         indexers see it. `pause()` does the same lazily if nobody
+    ///         calls this first.
+    function closeLapsedPause() external {
+        if (pausedAt == 0 || paused()) revert NoLapsedPause();
+        _closeLapsedWindow();
+    }
+
+    function _closeLapsedWindow() internal {
+        uint256 end = pauseExpiresAt;
+        _closePauseWindow(end);
+        emit PauseLapsed(end);
+        emit Unpaused(address(0));
     }
 
     function _closePauseWindow(uint256 end) internal {
