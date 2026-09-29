@@ -165,6 +165,21 @@ const codes = {
     assert.ok(!s.includes(bad), `不可殘留 ${bad}：${s}`);
   }
   assert.ok(s.includes("https://fac.example.com/x402"), "facilitator 的公開 host/path 保留");
+  // 複審 2：path 型 key（QuickNode / Ankr / Chainstack）與任意 *_RPC_URL
+  process.env.BASE_SEPOLIA_RPC_URL = "https://nd-123.quiknode.pro/QNKEY0123456789abcdef/";
+  process.env.KEEPER_RPC_URL = "https://rpc.ankr.com/base_sepolia/ANKRKEY9876543210fedcba";
+  const s2 = redactSecrets(
+    "a https://nd-123.quiknode.pro/QNKEY0123456789abcdef/ b /QNKEY0123456789abcdef/ " +
+      "c https://rpc.ankr.com/base_sepolia/ANKRKEY9876543210fedcba",
+  );
+  for (const bad of ["QNKEY0123456789abcdef", "ANKRKEY9876543210fedcba"]) {
+    assert.ok(!s2.includes(bad), `path 型 key 不可殘留 ${bad}：${s2}`);
+  }
+  // URL 解析失敗 → 整個值遮掉
+  process.env.WEIRD_RPC_URL = "not a url but SECRETVALUE42";
+  process.env.X402_FACILITATOR_URL = "::bad facilitator FACBAD777";
+  const s3 = redactSecrets("x not a url but SECRETVALUE42 y ::bad facilitator FACBAD777 z");
+  assert.ok(!s3.includes("SECRETVALUE42") && !s3.includes("FACBAD777"), s3);
   for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k];
   Object.assign(process.env, saved);
   console.log("redactSecrets 遮掉 token、requestUrl、URL userinfo/query、私鑰（含/不含 0x）✓");
