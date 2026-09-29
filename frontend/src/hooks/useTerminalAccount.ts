@@ -23,8 +23,9 @@ export interface TerminalAccount {
   refresh: () => Promise<void>
 }
 
-/** 指數價讀取失敗後多久重試一次（直到成功或切換標的）。 */
-const PRICE_RETRY_MS = 10_000
+/** 指數價讀取失敗後的重試：10 秒起跳、每次加倍、上限 60 秒；分頁在背景時暫停。 */
+const PRICE_RETRY_BASE_MS = 10_000
+const PRICE_RETRY_MAX_MS = 60_000
 
 export function useTerminalAccount(
   contracts: Contracts,
@@ -106,6 +107,9 @@ export function useTerminalAccount(
     if (!contracts) return
     let cancelled = false
     let timer: ReturnType<typeof setTimeout> | undefined
+    let failures = 0
+    let onVisible: (() => void) | undefined
+    const isHidden = () => typeof document !== 'undefined' && document.visibilityState === 'hidden'
 
     const load = async () => {
       let ok = true
@@ -125,7 +129,25 @@ export function useTerminalAccount(
       } catch {
         if (!cancelled) setMarkQuote(null)
       }
-      if (!ok && !cancelled) timer = setTimeout(() => { void load() }, PRICE_RETRY_MS)
+      if (ok) { failures = 0; return }
+      if (cancelled) return
+      failures += 1
+      const delay = Math.min(PRICE_RETRY_BASE_MS * 2 ** (failures - 1), PRICE_RETRY_MAX_MS)
+      timer = setTimeout(() => {
+        if (cancelled) return
+        // 背景分頁不打 RPC：等切回前景再重試一次。
+        if (isHidden()) {
+          onVisible = () => {
+            if (isHidden()) return
+            document.removeEventListener('visibilitychange', onVisible!)
+            onVisible = undefined
+            void load()
+          }
+          document.addEventListener('visibilitychange', onVisible)
+          return
+        }
+        void load()
+      }, delay)
     }
     void load()
 
@@ -133,6 +155,7 @@ export function useTerminalAccount(
     return () => {
       cancelled = true
       if (timer) clearTimeout(timer)
+      if (onVisible) document.removeEventListener('visibilitychange', onVisible)
     }
   }, [contracts, selAsset])
 
