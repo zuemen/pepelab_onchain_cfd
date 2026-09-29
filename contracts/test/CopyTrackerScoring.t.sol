@@ -198,6 +198,41 @@ contract CopyTrackerScoringTest is Test {
         assertEq(vault.totalAssets(), slashed, "the pool does");
     }
 
+    /// Each leg is floored at −margin before summing: a BTC leg that went 200
+    /// into bad debt counts as −500, not −700, so it cannot outweigh two
+    /// winning legs into a slash (floored 25% loss vs 45% unfloored).
+    function test_unfollow_legLossFlooredAtMargin() public {
+        oracle.updatePrice(BTC, 30_000e8);  // 2x leg: −700 on 500 margin
+        oracle.updatePrice(ETH, 6_000e8);   // +150
+        oracle.updatePrice(SOL, 1_500e8);   // +100
+        _unfollow();
+        assertEq(ts.getStake(alice).amount, 500e18, "25% after flooring: no slash");
+    }
+
+    /// An ADL haircut is a solvency levy on the winning leg, not the
+    /// trader's call: the leg is scored on its pre-haircut PnL.
+    function test_unfollow_adlLegScoredBeforeHaircut() public {
+        exchange.setAdlEnabled(true);
+        address other = makeAddr("other");
+        usdc.mint(other, 10_000e18);
+        vm.startPrank(other);
+        usdc.approve(address(exchange), type(uint256).max);
+        exchange.depositMargin(10_000e18);
+        uint256 loser = exchange.openPosition(ETH, false, 1_000e18, 5);
+        vm.stopPrank();
+        uint256 ethLeg = _ids()[1];
+
+        oracle.updatePrice(ETH, 6_000e8);   // bob's ETH leg +150, then haircut 150
+        exchange.liquidatePosition(loser);
+        assertEq(exchange.adlHaircutOf(ethLeg), 150e18);
+        assertEq(exchange.getPosition(ethLeg).realizedPnL, 0);
+
+        oracle.updatePrice(BTC, 70_000e8);  // BTC leg −300
+        _unfollow();
+        // pre-haircut: −300 + 150 = −150 (15%); net of haircut it would be 30%
+        assertEq(ts.getStake(alice).amount, 500e18);
+    }
+
     // ── exit for records the tracker cannot close ───────────────────────────
 
     function test_deactivateWithoutScoring_whenLegHalted() public {

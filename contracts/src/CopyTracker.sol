@@ -214,7 +214,8 @@ contract CopyTracker is ReentrancyGuard {
     ///          follower's choices), are scored on their realized PnL
     ///          (`Position.realizedPnL`, capped, before fees and funding —
     ///          the trader is judged on the price call, not on protocol fees);
-    ///        • basis = Σ margin of the scored legs; loss is capped at it.
+    ///        • each leg is floored at −margin and ADL legs use their pre-haircut
+    ///          PnL (see `_scoredLegPnl`); basis = Σ margin of the scored legs.
     ///
     ///      Where a slash goes: to the InsuranceVault wired to the exchange,
     ///      NEVER to the follower who triggered it. The score is still not
@@ -267,7 +268,7 @@ contract CopyTracker is ReentrancyGuard {
             }
             PerpetualExchange.Position memory p = exchange.getPosition(id);
             basis    += p.margin;
-            realized += p.realizedPnL;
+            realized += _scoredLegPnl(id, p);
         }
 
         if (followerClosed) {
@@ -291,6 +292,21 @@ contract CopyTracker is ReentrancyGuard {
         rec.active = false;
 
         emit TraderUnfollowed(msg.sender, rec.trader, recordIdx);
+    }
+
+    /// @dev One leg's contribution to the trader's score:
+    ///        • ADL legs are scored BEFORE the haircut (a solvency levy on the
+    ///          winner, not a result of the trader's call);
+    ///        • each leg is floored at −margin before summing, so a leg that
+    ///          went into bad debt counts as a total loss of that leg, not
+    ///          more — one blown-up leg cannot overweight the others.
+    function _scoredLegPnl(uint256 id, PerpetualExchange.Position memory p) internal view returns (int256 pnl) {
+        pnl = p.realizedPnL;
+        if (exchange.closeReasonOf(id) == PerpetualExchange.CloseReason.Deleveraged) {
+            pnl += SafeCast.toInt256(exchange.adlHaircutOf(id));
+        }
+        int256 floor = -SafeCast.toInt256(p.margin);
+        if (pnl < floor) pnl = floor;
     }
 
     /// @dev Takes `amount` of `trader`'s stake into this contract and deposits

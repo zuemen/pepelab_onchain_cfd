@@ -462,6 +462,12 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     /// @notice Settlement path of each closed position (None while open).
     mapping(uint256 => CloseReason) public closeReasonOf;
 
+    /// @notice ADL haircut taken from each auto-deleveraged position's profit
+    ///         (0 for every other position). `realizedPnL` is net of it; this
+    ///         lets integrators recover the pre-haircut result — the haircut is
+    ///         a solvency levy, not an outcome of the position's price call.
+    mapping(uint256 => uint256) public adlHaircutOf;
+
     // ── Events ───────────────────────────────────────────────────────────────
 
     event PositionOpened(
@@ -1477,6 +1483,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
             cp.closedAt    = block.timestamp;
             cp.realizedPnL = cpnl - int256(haircut);
             closeReasonOf[cid] = CloseReason.Deleveraged;
+            adlHaircutOf[cid]  = haircut;
 
             uint256 cnotional = cp.margin * cp.leverage;
             if (cp.isLong) {
