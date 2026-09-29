@@ -295,6 +295,14 @@ export function planMirror(current8: bigint, target8: bigint, maxDeviationBps: b
   return { action: "write", value: target8 };
 }
 
+/** MockOracle／GuardedOracle 的 `AssetNotFound(bytes32)` custom error selector。 */
+export const ASSET_NOT_FOUND_SELECTOR = "0x0a2de0f3"; // cast sig "AssetNotFound(bytes32)"
+
+/** revert data 是否是指定的 custom error（比對前 4 bytes selector）。 */
+export function isRevertWith(data: unknown, selector: string): boolean {
+  return typeof data === "string" && data.toLowerCase().startsWith(selector.toLowerCase());
+}
+
 /** run.ts 一輪結束後的計數。 */
 export interface RunCounters {
   total: number;

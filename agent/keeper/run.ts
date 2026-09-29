@@ -16,6 +16,8 @@
 import { ethers } from "ethers";
 import {
   runVerdict,
+  isRevertWith,
+  ASSET_NOT_FOUND_SELECTOR,
   DEFAULT_BREAKER_DEVIATION,
   DEFAULT_CONFIRM_TOLERANCE,
   BREAKER_RANGE,
@@ -219,6 +221,7 @@ async function main(): Promise<void> {
     breakerDeviation: BREAKER_DEVIATION,
     confirmTolerance: CONFIRM_TOLERANCE,
     assetIdOf: (symbol) => ethers.id(symbol), // == cast keccak "$SYM"
+    isAssetNotFound: (e) => isRevertWith(revertInfo(e).data, ASSET_NOT_FOUND_SELECTOR),
     oracle: {
       getPrice: async (id) => (await oracle.getPrice(id)) as [bigint, bigint],
       updatePrice: (id, p) => oracle.updatePrice(id, p),

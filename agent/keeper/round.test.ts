@@ -2,7 +2,7 @@
 //   cd agent && npx tsx keeper/round.test.ts
 import assert from "node:assert";
 import { runRound, type Feed, type RoundCtx } from "./round.ts";
-import { effectiveBreaker } from "./core.ts";
+import { effectiveBreaker, isRevertWith, ASSET_NOT_FOUND_SELECTOR } from "./core.ts";
 
 const P = (usd: number) => BigInt(Math.round(usd * 1e8));
 const NOW = 1_790_000_000;
@@ -138,6 +138,40 @@ function ctx(over: Partial<RoundCtx> & Pick<RoundCtx, "oracle">): RoundCtx {
   const guarded = fakeGuarded(100);
   await runRound(ctx({ oracle, guarded, dryRun: true, fetchPrice: async () => yahoo(108) }));
   assert.equal(oracle.writes.length + guarded.writes.length, 0);
+}
+
+// ── seed 只限明確的 AssetNotFound；429／逾時不寫（複審 Medium） ────────────────
+{
+  const notFound = Object.assign(new Error("execution reverted"), { data: ASSET_NOT_FOUND_SELECTOR + "00".repeat(32) });
+  const rateLimited = Object.assign(new Error("429 Too Many Requests"), { code: "SERVER_ERROR" });
+  const mk = (err: Error) => {
+    const writes: bigint[] = [];
+    return {
+      writes,
+      getPrice: async (): Promise<[bigint, bigint]> => { throw err; },
+      updatePrice: async (_id: string, p: bigint) => {
+        writes.push(p);
+        return { hash: "0x", wait: async () => undefined };
+      },
+    };
+  };
+  const isNF = (e: unknown) => isRevertWith((e as { data?: unknown }).data, ASSET_NOT_FOUND_SELECTOR);
+
+  const o1 = mk(notFound);
+  const r1 = await runRound(ctx({ oracle: o1, isAssetNotFound: isNF, fetchPrice: async () => yahoo(311) }));
+  assert.deepEqual(o1.writes, [P(311)], "AssetNotFound → seed");
+  assert.equal(r1.failed, 0);
+
+  const o2 = mk(rateLimited);
+  const r2 = await runRound(ctx({ oracle: o2, isAssetNotFound: isNF, fetchPrice: async () => yahoo(311) }));
+  assert.equal(o2.writes.length, 0, "429 不得當 seed 寫入");
+  assert.equal(r2.failed, 1);
+  assert.deepEqual(r2.skippedSymbols, ["sAAPL"]);
+
+  // 沒有提供判斷函式 → 一律不當 seed（fail-closed）。
+  const o3 = mk(notFound);
+  await runRound(ctx({ oracle: o3, fetchPrice: async () => yahoo(311) }));
+  assert.equal(o3.writes.length, 0);
 }
 
 // ── effectiveBreaker ─────────────────────────────────────────────────────

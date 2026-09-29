@@ -126,8 +126,16 @@ export async function runRound(ctx: RoundCtx): Promise<RoundResult> {
       const [raw, at] = await ctx.oracle.getPrice(assetId);
       current = Number(raw) / 1e8;
       lastUpdated = Number(at);
-    } catch {
-      // 資產還沒被 addAsset：current 留 0，planUpdate 會判為 seed。
+    } catch (e) {
+      // 只有明確的 AssetNotFound revert（資產還沒 addAsset）才當 seed。429、逾時、
+      // RPC 故障時 current 未知 —— 當成 0 會跳過所有熔斷檢查直接寫入，必須不寫。
+      if (!ctx.isAssetNotFound?.(e)) {
+        r.failed += 1;
+        r.skippedSymbols.push(symbol);
+        error(`::error::${symbol} 讀不到鏈上價格（${(e as Error).message.slice(0, 100)}）—— 不是 AssetNotFound，不寫入`);
+        continue;
+      }
+      log(`  ${symbol} 鏈上尚無此資產（AssetNotFound），視為 seed`);
     }
 
     const plan = planUpdate({
