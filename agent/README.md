@@ -120,6 +120,10 @@ worker 每一筆 `routeExternalRevenue` 都是「先簽、先把 hash / nonce / 
   `x402:settlement:dead`，`settle:<鍵>` 標成 `STUCK`，並設定**全域停機旗標**
   `x402:settlement:halt`（不設 TTL，值記錄原因、鍵、hash、nonce、時間）。旗標存在時每一輪都
   `::error::` 並 exit 1、不處理任何項目，直到人工清除。
+- 每個來源各有一條 processing 清單（`x402:settlement:processing:main|retry|unconfirmed`），
+  回收時依 `settle:<鍵>` 的狀態分流（已簽出 → unconfirmed 對帳；無狀態且來自 unconfirmed 或
+  舊的單一清單 → 死信）。**毒項目**（例如回收時每次都讓 Redis 指令失敗的項目）會在回收階段
+  卡住整個佇列：這是刻意的 fail-closed，job 會一直變紅，直到人工把它從 processing 清單移走。
 
 處理步驟（`$RPC` 用 Base Sepolia RPC、`$SIGNER` 是結算 signer 地址；需要 Upstash REST 權限）：
 
