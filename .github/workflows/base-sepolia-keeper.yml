@@ -202,8 +202,21 @@ jobs:
           NONCE=$(cast nonce "$KEEPER_ADDR" --rpc-url "$KEEPER_RPC_URL")
           echo "keeper=${KEEPER_ADDR} 起始 nonce=${NONCE}"
 
+          # 複審 Medium：被熔斷拒寫的資產，價格是已知錯誤的舊值 —— 不以它結算 funding。
+          # 清單由 keeper/run.ts 寫出（一行一個 symbol）；檔案不存在代表喂價 step 沒跑到
+          # 寫報告那一步，無從得知哪些資產可信，保守起見全部跳過。
+          REFUSED_FILE="${RUNNER_TEMP}/keeper-refused.txt"
+          if [ ! -f "$REFUSED_FILE" ]; then
+            echo "::warning::找不到 $REFUSED_FILE（喂價 step 未完成），本輪不 crank funding。"
+            exit 0
+          fi
+
           FAILURES=0
           for SYM in sBTC sETH sAAPL sTSLA; do
+            if grep -qx "$SYM" "$REFUSED_FILE"; then
+              echo "::warning::$SYM: 本輪價格被熔斷拒寫，跳過 settleFunding（不以錯誤舊價結算）。"
+              continue
+            fi
             KEY=$(cast keccak "$SYM")
 
             LAST=$(cast call "$EXCHANGE" "lastFundingUpdateAt(bytes32)(uint256)" "$KEY" \
