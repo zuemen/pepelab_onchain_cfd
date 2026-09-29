@@ -370,6 +370,15 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
     ///         clawing back open winners.
     mapping(uint256 => uint256) public profitCapOf;
 
+    /// @notice How a closed position was settled. Lets integrators (the
+    ///         CopyTracker's slash scoring in particular) tell a discretionary
+    ///         close by the owner apart from a forced one, without trusting
+    ///         balance deltas that the owner can influence.
+    enum CloseReason { None, Owner, Agent, Liquidated, Deleveraged }
+
+    /// @notice Settlement path of each closed position (None while open).
+    mapping(uint256 => CloseReason) public closeReasonOf;
+
     // ── Events ───────────────────────────────────────────────────────────────
 
     event PositionOpened(
@@ -890,7 +899,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
     }
 
     function closePosition(uint256 positionId) external whenNotPaused nonReentrant {
-        _closePosition(msg.sender, positionId);
+        _closePosition(msg.sender, positionId, CloseReason.Owner);
     }
 
     /// @notice Lets an agent close a position it opened on the owner's behalf.
@@ -914,7 +923,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
         if (positionAgent[positionId] != msg.sender) {
             revert NotPositionAgent(positionId, msg.sender);
         }
-        _closePosition(owner, positionId);
+        _closePosition(owner, positionId, CloseReason.Agent);
     }
 
     /// @dev Returns any execution fee paid above the current `executionFee`.
@@ -984,6 +993,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
         pos.isOpen      = false;
         pos.closedAt    = block.timestamp;
         pos.realizedPnL = pnl;
+        closeReasonOf[positionId] = CloseReason.Liquidated;
 
         if (pos.isLong) {
             globalLongNotional[pos.asset]  -= notional;
@@ -1184,6 +1194,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
             cp.isOpen      = false;
             cp.closedAt    = block.timestamp;
             cp.realizedPnL = cpnl - int256(haircut);
+            closeReasonOf[cid] = CloseReason.Deleveraged;
 
             uint256 cnotional = cp.margin * cp.leverage;
             if (cp.isLong) {
@@ -1705,7 +1716,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
         _routeVaultFee(tradingFee);
     }
 
-    function _closePosition(address caller, uint256 positionId) internal {
+    function _closePosition(address caller, uint256 positionId, CloseReason reason) internal {
         Position storage pos = positions[positionId];
         if (caller != pos.owner) revert NotPositionOwner();
         if (!pos.isOpen)         revert PositionAlreadyClosed();
@@ -1773,6 +1784,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
         pos.isOpen      = false;
         pos.closedAt    = block.timestamp;
         pos.realizedPnL = pnl;
+        closeReasonOf[positionId] = reason;
 
         if (pos.isLong) {
             globalLongNotional[pos.asset] -= notional;
