@@ -31,6 +31,7 @@ was not, the reason is given rather than glossed over.
 | 21 | No delisting / final-settlement function in `PerpetualExchange` | **Open** — positions on a permanently dead feed cannot close |
 | 22 | Guardian pause expiry bounds each pause, not the number of pauses | **By design** — owner rotates a misbehaving guardian |
 | 23 | Global pause blocks exits and liquidations | **By design** — deposits stay open; funding/borrow frozen; grace period after |
+| 24 | Portfolio margin has no account-level net liquidation | **Open** — `portfolioMarginEnabled` must stay **off** in production until implemented and audited (off on the live deployment) |
 
 ---
 
@@ -732,6 +733,28 @@ liquidated; only `depositMargin` stays open. Funding and borrow fees do not
 accrue over paused (or Halted) time, and liquidations, new opens and
 withdrawals wait out `LIQUIDATION_GRACE_PERIOD` (30 min) after the pause ends;
 after a Halt is lifted, liquidations and opens on that asset wait likewise.
+
+## 24. Portfolio margin has no account-level net liquidation — keep it off
+
+`setPortfolioMarginEnabled` switches the liquidation GATE to account level
+(a leg is liquidatable only when it and the whole account are underwater),
+but settlement is still per leg. When a losing leg is finally liquidated,
+its shortfall is charged only to the owner's free margin; the margin and
+unrealized profit of the owner's other open legs — which kept the account
+healthy and the loser alive — are not taken. The pool (InsuranceVault, ADL,
+bad debt) absorbs the rest, after which the owner can close the other leg and
+withdraw. An independent review reproduced this with a 1,750 USDC shortfall.
+
+Guards added on 2026-09-29 narrow the window without closing it: no new opens
+while the account is below maintenance; withdrawals only while equity stays at
+or above the SUM OF INITIAL margin; profit on ReduceOnly / Halted legs and on
+zero-price legs counts as 0 (and a zero-price leg's loss as its whole margin);
+no withdrawals while holding a Halted asset; every leg must be on a fresh feed
+for withdrawals, opens and liquidations.
+
+**Portfolio margin must remain disabled in production** until account-level
+netting (settling the whole account against its combined equity) is
+implemented and audited. It is off on the live deployment.
 
 ## Frontend
 

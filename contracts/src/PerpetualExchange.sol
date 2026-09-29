@@ -592,6 +592,8 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     error OpenInterestCapExceeded(bytes32 asset, bool isLong, uint256 resultingOI, uint256 cap);
     /// @notice H3: portfolio mode — the withdrawal would leave the account
     ///         below its maintenance requirement.
+    /// @dev `maintenance` is the requirement that was not met: maintenance
+    ///      margin for opens, Σ initial margin for withdrawals.
     error AccountUnhealthy(address owner, int256 equity, uint256 maintenance);
     /// @notice M1: only the CopyTracker may attribute a position to a leader
     ///         (`copiedFrom`), because that address is paid a performance fee.
@@ -771,6 +773,18 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
 
     /// @notice P3-2: enable/disable account-level (portfolio) margin. Off by
     ///         default → legacy per-position isolated liquidation.
+    /// @dev KNOWN LIMITATION — DO NOT ENABLE IN PRODUCTION. Account-level net
+    ///      liquidation is not implemented: legs are still liquidated one at a
+    ///      time, and a leg's shortfall is charged only to the owner's FREE
+    ///      margin. Another open leg's margin (or unrealized profit) that kept
+    ///      the account healthy is not taken when the losing leg settles, so
+    ///      the pool can absorb a loss the account could have covered, after
+    ///      which the owner closes the other leg and withdraws. The guards in
+    ///      place (no opens while unhealthy, withdrawals only above Σ initial
+    ///      margin, conservative valuation of non-Active / zero-price legs,
+    ///      freshness on every leg) narrow this but do not close it. Portfolio
+    ///      margin must stay off until account-level netting is implemented
+    ///      and audited. See docs/KNOWN_LIMITATIONS.md #24.
     function setPortfolioMarginEnabled(bool enabled) external onlyOwner {
         portfolioMarginEnabled = enabled;
         emit PortfolioMarginEnabledSet(enabled);
@@ -1059,14 +1073,16 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     ///      counts it as equity and it is what keeps an underwater leg from
     ///      being liquidated. Withdrawing it used to be unchecked, so an account
     ///      could let free margin shield a losing leg and then walk away with
-    ///      it, leaving the loss to the pool. A withdrawal must now leave the
-    ///      account at or above maintenance, valued on fresh prices. Isolated
-    ///      mode is unchanged: there free margin backs nothing.
+    ///      it, leaving the loss to the pool. A withdrawal must now leave
+    ///      account equity at or above Σ INITIAL margin of the open legs (not
+    ///      just maintenance), with every leg on a fresh price, non-Active
+    ///      legs' profit ignored, and no leg on a Halted asset. Isolated mode
+    ///      is unchanged: there free margin backs nothing.
     function withdrawMargin(uint256 amount) external whenNotPaused nonReentrant {
         _requireNoGlobalGrace();
         if (freeMargin[msg.sender] < amount) revert InsufficientFreeMargin();
         freeMargin[msg.sender] -= amount;
-        if (portfolioMarginEnabled) _requireHealthyAccount(msg.sender);
+        if (portfolioMarginEnabled) _requireWithdrawableAccount(msg.sender);
         usdc.safeTransfer(msg.sender, amount);
         emit MarginWithdrawn(msg.sender, amount);
     }
@@ -1183,6 +1199,9 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         // winning leg cannot be griefed. Only the GATE differs — settlement below
         // is the same per-position, conservation-proven path in both modes.
         if (portfolioMarginEnabled) {
+            // Same freshness policy as withdrawals: every leg of the account
+            // must be on a fresh feed before the account can be judged.
+            _requireAccountFresh(pos.owner);
             (int256 eq, uint256 mm) = _accountState(pos.owner);
             // Test this leg on the SAME fee-excluded basis as account equity
             // (legEquity = margin + pnl − funding = closeAmount + fees), so the
@@ -1292,17 +1311,46 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         emit ShortfallChargedToAccount(positionId, owner, charged);
     }
 
-    /// @dev H3: reverts unless `owner`'s account is at or above maintenance,
-    ///      valued on fresh, non-zero prices for every asset it holds (a stale
-    ///      or broken feed could otherwise overstate equity and release
-    ///      collateral that is actually needed).
-    function _requireHealthyAccount(address owner) internal view {
+    /// @dev Freshness policy shared by portfolio-mode withdrawals, opens and
+    ///      liquidations: every open leg's feed must be within `maxPriceAge`.
+    ///      A zero price is NOT a revert here — `_accountState` values such a
+    ///      leg conservatively — so one broken feed cannot block every account
+    ///      that holds it from being liquidated.
+    function _requireAccountFresh(address owner) internal view {
+        uint256[] storage ids = userPositions[owner];
+        uint256 n = ids.length;
+        for (uint256 i = 0; i < n; ++i) {
+            bytes32 a = positions[ids[i]].asset;
+            (, uint256 updatedAt) = oracle.getPrice(a);
+            // Same staleness rule as `_requireFresh` (hour-scale window).
+            // forge-lint: disable-next-line(block-timestamp)
+            if (block.timestamp > updatedAt + maxPriceAge) revert StalePrice(a, updatedAt);
+        }
+    }
+
+    /// @dev Portfolio mode, after a withdrawal: no leg on a Halted asset,
+    ///      every leg fresh, and conservative equity ≥ Σ initial margin.
+    function _requireWithdrawableAccount(address owner) internal view {
         uint256[] storage ids = userPositions[owner];
         uint256 n = ids.length;
         if (n == 0) return;
+        uint256 initialMargin;
         for (uint256 i = 0; i < n; ++i) {
-            _requireFresh(positions[ids[i]].asset);
+            Position storage p = positions[ids[i]];
+            if (assetMode[p.asset] == AssetMode.Halted) revert AssetHalted(p.asset);
+            initialMargin += p.margin;
         }
+        _requireAccountFresh(owner);
+        (int256 eq, ) = _accountState(owner);
+        if (eq < SafeCast.toInt256(initialMargin)) revert AccountUnhealthy(owner, eq, initialMargin);
+    }
+
+    /// @dev Portfolio mode, before an open: the account must be at or above
+    ///      maintenance (fresh, conservative) — an underwater account may not
+    ///      add exposure while it waits to be liquidated.
+    function _requireHealthyForOpen(address owner) internal view {
+        if (userPositions[owner].length == 0) return;
+        _requireAccountFresh(owner);
         (int256 eq, uint256 mm) = _accountState(owner);
         if (eq < SafeCast.toInt256(mm)) revert AccountUnhealthy(owner, eq, mm);
     }
@@ -1604,9 +1652,13 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
 
     /// @notice Open: PnL as it would settle right now (mark-to-market, clamped
     ///         to the position's profit cap if it has one). Closed: realized.
+    ///         M8: on a zero price this returns −margin (the conservative
+    ///         reading) instead of reverting; see `hasValidPrice`.
     function getUnrealizedPnL(uint256 positionId) external view returns (int256) {
         Position storage pos = positions[positionId];
         if (!pos.isOpen) return pos.realizedPnL;
+        (uint256 rawPrice,) = oracle.getPrice(pos.asset);
+        if (rawPrice == 0) return -int256(pos.margin);
         (int256 pnl, ) = _cappedPnL(pos);
         return pnl;
     }
@@ -1616,9 +1668,12 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     ///      and the fees the close path deducts, so the UI over-stated every
     ///      position — badly so for one that had been open for months. It now
     ///      mirrors `_closePosition`'s arithmetic exactly.
+    ///      M8: 0 on a zero price instead of reverting; see `hasValidPrice`.
     function getPositionValue(uint256 positionId) external view returns (uint256) {
         Position storage pos = positions[positionId];
         if (!pos.isOpen) return 0;
+        (uint256 rawPrice,) = oracle.getPrice(pos.asset);
+        if (rawPrice == 0) return 0;
 
         uint256 notional     = pos.margin * pos.leverage;
         uint256 tradingFee   = notional * uint256(pos.tradingFeeBps) / 10000; // frozen at open — see Position.tradingFeeBps
@@ -1715,12 +1770,37 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         for (uint256 i = 0; i < n; ++i) {
             Position storage p = positions[ids[i]];
             if (!p.isOpen) continue;
-            // P1: capped, so portfolio equity never counts profit the
-            // exchange will not pay as collateral for another leg.
-            (int256 pnl, ) = _cappedPnL(p);
-            equity     += int256(p.margin) + pnl - _calcFunding(p);
+            equity      += _conservativeLegEquity(p);
             maintenance += (p.margin * p.leverage) * _maintenanceMarginBps(p.asset) / 10000;
         }
+    }
+
+    /// @dev A leg's contribution to account equity, never optimistic:
+    ///        • zero price (broken feed): positive PnL counts as 0 and the loss
+    ///          as the whole margin — the leg contributes only what it owes in
+    ///          funding (never reverts, so health checks and liquidations of
+    ///          other legs keep working);
+    ///        • asset not Active (ReduceOnly / Halted): profit counts as 0,
+    ///          losses in full — a market you cannot freely trade must not
+    ///          collateralize another leg;
+    ///        • otherwise margin + capped PnL − funding.
+    function _conservativeLegEquity(Position storage p) internal view returns (int256) {
+        int256 funding = _calcFunding(p);
+        (uint256 rawPrice,) = oracle.getPrice(p.asset);
+        if (rawPrice == 0) return funding > 0 ? -funding : int256(0);
+        (int256 pnl, ) = _cappedPnL(p);
+        if (pnl > 0 && assetMode[p.asset] != AssetMode.Active) pnl = 0;
+        return int256(p.margin) + pnl - funding;
+    }
+
+    /// @notice True when `asset`'s feed is non-zero and within `maxPriceAge`.
+    ///         Views return conservative values instead of reverting when it
+    ///         is not (a zero price reads as a total loss, never a gain); this
+    ///         is the flag that tells a caller which it is looking at.
+    function hasValidPrice(bytes32 asset) external view returns (bool) {
+        (uint256 rawPrice, uint256 updatedAt) = oracle.getPrice(asset);
+        // forge-lint: disable-next-line(block-timestamp)
+        return rawPrice != 0 && block.timestamp <= updatedAt + maxPriceAge;
     }
 
     /// @notice Resolves an asset's carbon tier and the fee/leverage params
@@ -1850,6 +1930,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         // is the single place new exposure is refused.
         _requireActive(asset);
         _requireNoGrace(asset);
+        if (portfolioMarginEnabled) _requireHealthyForOpen(owner);
         if (margin < MIN_MARGIN) revert MarginTooLow();
 
         // Read once, at open, and freeze into the position below — a later
@@ -2140,6 +2221,8 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     /// @notice Mark price for an asset (18-dec): the oracle index adjusted by an
     ///         OI-imbalance premium, bounded by `markPremiumCapBps`. Longs-heavy
     ///         books trade at a premium to index, shorts-heavy at a discount.
+    ///         Returns 0 (never reverts) when the index is 0 — the same "no
+    ///         valid price" reading `hasValidPrice` reports as false.
     function getMarkPrice(bytes32 asset) external view returns (uint256) {
         (uint256 rawPrice,) = oracle.getPrice(asset);
         return _markPrice(asset, rawPrice * 1e10);

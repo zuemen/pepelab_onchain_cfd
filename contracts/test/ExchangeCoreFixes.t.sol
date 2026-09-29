@@ -89,27 +89,28 @@ contract ExchangeCoreFixesTest is Test {
 
         vm.prank(carol);
         vm.expectRevert(abi.encodeWithSelector(
-            PerpetualExchange.AccountUnhealthy.selector, carol, int256(-500e18), uint256(250e18)
+            PerpetualExchange.AccountUnhealthy.selector, carol, int256(-500e18), uint256(1_000e18)
         ));
         exchange.withdrawMargin(9_000e18);
         assertEq(exchange.freeMargin(carol), 9_000e18);
     }
 
-    /// Exactly the excess over maintenance is withdrawable; one wei more is not.
-    function test_portfolio_withdrawUpToMaintenance_succeeds() public {
+    /// Exactly the excess over Σ INITIAL margin (not maintenance) is
+    /// withdrawable; one wei more is not.
+    function test_portfolio_withdrawUpToInitialMargin_succeeds() public {
         exchange.setPortfolioMarginEnabled(true);
         _deposit(10_000e18);
         _long(1_000e18);
-        oracle.updatePrice(BTC, 70_000e8); // equity 9,000 - 500 = 8,500; mm 250
+        oracle.updatePrice(BTC, 70_000e8); // equity 9,000 - 500 = 8,500; initial margin 1,000
 
         vm.prank(carol);
         vm.expectRevert(abi.encodeWithSelector(
-            PerpetualExchange.AccountUnhealthy.selector, carol, int256(250e18 - 1), uint256(250e18)
+            PerpetualExchange.AccountUnhealthy.selector, carol, int256(1_000e18 - 1), uint256(1_000e18)
         ));
-        exchange.withdrawMargin(8_250e18 + 1);
+        exchange.withdrawMargin(7_500e18 + 1);
 
         vm.prank(carol);
-        exchange.withdrawMargin(8_250e18);
+        exchange.withdrawMargin(7_500e18);
         (, , bool healthy) = exchange.getAccountHealth(carol);
         assertTrue(healthy);
     }
@@ -363,11 +364,17 @@ contract ExchangeCoreFixesTest is Test {
         ex.liquidatePosition(longId); // a zero print must not wipe out longs
     }
 
-    function test_views_zeroPrice_revert() public {
-        (PerpetualExchange ex, , uint256 longId, ) = _zeroPriceFixture();
-        vm.expectRevert(abi.encodeWithSelector(PerpetualExchange.InvalidPrice.selector, BTC));
-        ex.getUnrealizedPnL(longId);
-        vm.expectRevert(abi.encodeWithSelector(PerpetualExchange.InvalidPrice.selector, BTC));
-        ex.getPositionValue(longId);
+    /// Views never revert on a zero price; they report the conservative value
+    /// and `hasValidPrice` flags it.
+    function test_views_zeroPrice_reportConservativeValues() public {
+        (PerpetualExchange ex, , uint256 longId, uint256 shortId) = _zeroPriceFixture();
+        assertFalse(ex.hasValidPrice(BTC));
+        assertEq(ex.getUnrealizedPnL(longId), -int256(1_000e18));
+        assertEq(ex.getUnrealizedPnL(shortId), -int256(1_000e18)); // no windfall either
+        assertEq(ex.getPositionValue(longId), 0);
+        assertEq(ex.getPositionValue(shortId), 0);
+        assertEq(ex.getMarkPrice(BTC), 0);
+        (int256 eq, , ) = ex.getAccountHealth(carol);
+        assertEq(eq, int256(ex.freeMargin(carol))); // both legs count as 0
     }
 }
