@@ -8,7 +8,7 @@ import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
 import { notionalOf } from 'src/lib/pepefi/whale'
 import { mapLimit, withRetry, RPC_CONCURRENCY } from 'src/lib/pepefi/rpcBatch'
 import { t, interpolate } from 'src/locales'
-import { UI_RETRIES, avgBlockTime, chunkRanges, scanFromBlock, getLogsChunked } from 'src/lib/pepefi/chainLogs'
+import { UI_RETRIES, avgBlockTime, chunkRanges, scanFromBlock, getLogsChunked, isChunkScanAborted } from 'src/lib/pepefi/chainLogs'
 
 // 單一地址的鏈上足跡：跨 Exchange / CopyTracker / TraderStake 的事件時間軸，
 // 加上目前還開著的部位。
@@ -94,6 +94,9 @@ export function useAddressActivity(
   const [failedChunks, setFailedChunks] = useState(0)
 
   const runId = useRef(0)
+  const abortRef = useRef<AbortController | null>(null)
+  // 卸載時中止還在跑的掃描，並讓在飛的其他讀取回來後被丟棄。
+  useEffect(() => () => { abortRef.current?.abort(); runId.current += 1 }, [])
 
   const fetchActivity = useCallback(async () => {
     if (!contracts || !provider || !address) return
@@ -101,6 +104,10 @@ export function useAddressActivity(
     runId.current += 1
     const myRun = runId.current
     const isStale = () => runId.current !== myRun
+    // 新的一輪開始就中止上一輪的分段掃描，不讓它繼續打 RPC。
+    abortRef.current?.abort()
+    const ac = new AbortController()
+    abortRef.current = ac
 
     setLoading(true)
     setError(null)
@@ -150,7 +157,7 @@ export function useAddressActivity(
       // 掉的段不能悄悄丟掉——例如 Slashed 那一段讀不到，畫面就會像「從未被罰沒」。
       let failedChunks = 0
       const logSets = await Promise.all(
-        queries.map(q => getLogsChunked(provider, q, from, latestNum, tick, () => { failedChunks += 1 }, { retries: UI_RETRIES })),
+        queries.map(q => getLogsChunked(provider, q, from, latestNum, tick, () => { failedChunks += 1 }, { retries: UI_RETRIES, signal: ac.signal })),
       )
       if (isStale()) return
       setFailedChunks(failedChunks)
@@ -265,6 +272,7 @@ export function useAddressActivity(
         pnl:        pnls[i],
       })))
     } catch (e) {
+      if (isChunkScanAborted(e)) return
       console.error('[useAddressActivity]', e)
       if (runId.current === myRun) setError(t.traderProfile.activity.readError)
     } finally {

@@ -6,7 +6,7 @@ import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
 import { notionalOf, isWhaleTrade, WHALE_THRESHOLD } from 'src/lib/pepefi/whale'
 import { mapLimit, withRetry, RPC_CONCURRENCY } from 'src/lib/pepefi/rpcBatch'
 import { t as tr, interpolate } from 'src/locales'
-import { UI_RETRIES, avgBlockTime, chunkRanges, scanFromBlock, getLogsChunked } from 'src/lib/pepefi/chainLogs'
+import { UI_RETRIES, avgBlockTime, chunkRanges, scanFromBlock, getLogsChunked, isChunkScanAborted } from 'src/lib/pepefi/chainLogs'
 
 // 交易所活動的單一掃描來源。
 //
@@ -147,6 +147,9 @@ export function useExchangeActivity(
   // 一次掃描是幾十次序列 RPC，期間使用者可能換鏈或按了 Refresh。沒有這個
   // 版本號的話，先發出的舊掃描會在新掃描之後才回來，用過期的資料蓋掉新的。
   const runId = useRef(0)
+  const abortRef = useRef<AbortController | null>(null)
+  // 卸載時中止還在跑的掃描，並讓在飛的其他讀取回來後被丟棄。
+  useEffect(() => () => { abortRef.current?.abort(); runId.current += 1 }, [])
 
   const fetchActivity = useCallback(async () => {
     if (!exchange || !provider) return
@@ -154,6 +157,10 @@ export function useExchangeActivity(
     runId.current += 1
     const myRun = runId.current
     const isStale = () => runId.current !== myRun
+    // 新的一輪開始就中止上一輪的分段掃描，不讓它繼續打 RPC。
+    abortRef.current?.abort()
+    const ac = new AbortController()
+    abortRef.current = ac
 
     setLoading(true)
     setError(null)
@@ -197,7 +204,7 @@ export function useExchangeActivity(
         latestNum,
         tick,
         () => { failedChunks += 1 },
-        { retries: UI_RETRIES },
+        { retries: UI_RETRIES, signal: ac.signal },
       )
       if (isStale()) return
       setFailedChunks(failedChunks)
@@ -313,6 +320,7 @@ export function useExchangeActivity(
       setOpened(rows)
       setExits(exitRows.sort((a, b) => b.blockNumber - a.blockNumber))
     } catch (e) {
+      if (isChunkScanAborted(e)) return
       console.error('[useExchangeActivity]', e)
       if (runId.current === myRun) setError(tr.whale.page.readError)
     } finally {
