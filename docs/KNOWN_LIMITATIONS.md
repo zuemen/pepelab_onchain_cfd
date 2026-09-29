@@ -32,6 +32,7 @@ was not, the reason is given rather than glossed over.
 | 22 | Guardian pause expiry bounds each pause, not the number of pauses | **By design** — owner rotates a misbehaving guardian |
 | 23 | Global pause blocks exits and liquidations | **By design** — deposits stay open; funding/borrow frozen; grace period after |
 | 24 | Portfolio margin has no account-level net liquidation | **Open** — `portfolioMarginEnabled` must stay **off** in production until implemented and audited (off on the live deployment) |
+| 25 | InsuranceVault has no virtual shares (first-depositor inflation) | **Mitigated** — zero-share deposits revert; attack profitability not removed |
 
 ---
 
@@ -763,6 +764,17 @@ for withdrawals, opens and liquidations.
 **Portfolio margin must remain disabled in production** until account-level
 netting (settling the whole account against its combined equity) is
 implemented and audited. It is off on the live deployment.
+
+## 25. InsuranceVault has no virtual shares
+
+The vault mints `shares = amount × supply / totalAssets` with no virtual
+shares or dead-share offset. A first depositor who mints 1 share and then
+inflates `totalAssets` (any protocol inflow counts) can make later deposits
+round down. Since 2026-09-29 a deposit that would mint **0 shares reverts**
+(`ZeroShares`), so a victim's USDC can no longer be silently absorbed; a
+deposit that rounds to a *small* number of shares still loses the rounding
+remainder to existing holders. Virtual shares (ERC-4626-style offset) would
+remove the attack's profitability and are the intended follow-up.
 
 ## Frontend
 

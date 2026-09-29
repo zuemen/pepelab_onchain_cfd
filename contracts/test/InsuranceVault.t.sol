@@ -140,4 +140,32 @@ contract InsuranceVaultTest is Test {
         vm.expectRevert(InsuranceVault.InsufficientVault.selector);
         vault.bailout(100e18, traderAddr);
     }
+
+    // ── First-depositor inflation: a deposit worth 0 shares is refused ──────
+
+    function test_deposit_revertsWhenItWouldMintZeroShares() public {
+        vm.prank(alice);
+        vault.deposit(1);                       // 1 share for 1 wei
+        vm.prank(feeRtr);
+        vault.depositFromProtocol(1_000e18);    // share price pushed to ~1e21
+        uint256 aliceShares = vault.balanceOf(alice);
+
+        vm.prank(bob);
+        vm.expectRevert(InsuranceVault.ZeroShares.selector);
+        vault.deposit(500e18);                  // would round to 0 shares
+
+        assertEq(vault.balanceOf(bob), 0);
+        assertEq(vault.balanceOf(alice), aliceShares);
+        assertEq(vault.totalAssets(), 1_000e18 + 1, "bob's USDC was not absorbed");
+    }
+
+    function test_deposit_largeEnoughStillMintsAtInflatedPrice() public {
+        vm.prank(alice);
+        vault.deposit(1);
+        vm.prank(feeRtr);
+        vault.depositFromProtocol(1_000e18);
+        vm.prank(bob);
+        uint256 shares = vault.deposit(2_000e18 + 2);
+        assertGt(shares, 0);
+    }
 }
