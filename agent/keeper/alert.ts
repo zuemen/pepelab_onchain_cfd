@@ -37,7 +37,73 @@ export interface OpenIssue {
   lastUpdatedSec: number;
 }
 
-export type AlertAction = "create" | "comment" | "close" | "none";
+export type AlertAction = "create" | "reopen" | "comment" | "close" | "none";
+
+// ── 公開 repo 上的 issue 偽造防護（審查 Medium 5）──────────────────────────
+// 任何人都能在公開 repo 開一張同標題的 issue，或在告警 issue 底下留一則帶簽章的
+// 留言，讓 keeper 以為「已經告警過／集合沒變」而靜默。所以：
+//   • 只認 github-actions 開的、帶 ALERT_LABEL 的 issue（label 只有 triage 以上權限
+//     能加，外部使用者加不上；author 在用戶端再檢查一次）。
+//   • 節流簽章只從 github-actions 的留言解析。
+//   • 24 小時內關閉過的同標題 issue 用 reopen，不另開新的（時間線留在同一張）。
+
+export const ALERT_LABEL = "oracle-health";
+/** 恢復後多久內再壞就 reopen 同一張，而不是開新的。 */
+export const REOPEN_WINDOW_SEC = 24 * 3600;
+
+/** gh 的 GraphQL 回 "github-actions"，REST 回 "github-actions[bot]"；兩者都認。 */
+const BOT_LOGINS = new Set(["github-actions", "github-actions[bot]", "app/github-actions"]);
+export const isBotAuthor = (login: string | undefined | null): boolean => !!login && BOT_LOGINS.has(login);
+
+/** `gh issue list/view --json …` 回來的形狀（只列用得到的欄位）。 */
+export interface GhIssue {
+  number: number;
+  title: string;
+  author?: { login?: string } | null;
+  body?: string;
+  createdAt?: string;
+  closedAt?: string | null;
+  comments?: { author?: { login?: string } | null; body: string; createdAt: string }[];
+}
+
+const toSec = (iso: string | null | undefined): number => {
+  const t = iso ? Date.parse(iso) : NaN;
+  return Number.isFinite(t) ? Math.floor(t / 1000) : 0;
+};
+
+/** 同標題、github-actions 開的 issue 中取最舊的（其他視為重複）。 */
+export function pickOwnIssue(list: GhIssue[], title: string): GhIssue | null {
+  return (
+    list
+      .filter((i) => i.title === title && isBotAuthor(i.author?.login))
+      .sort((a, b) => a.number - b.number)[0] ?? null
+  );
+}
+
+/** 由 issue 詳情組出 OpenIssue；簽章只從 github-actions 的留言（或本文）取。 */
+export function toOpenIssue(view: GhIssue): OpenIssue {
+  for (const c of [...(view.comments ?? [])].reverse()) {
+    if (!isBotAuthor(c.author?.login)) continue;
+    const sig = parseSignature(c.body);
+    if (sig !== null) return { number: view.number, lastSignature: sig, lastUpdatedSec: toSec(c.createdAt) };
+  }
+  return { number: view.number, lastSignature: parseSignature(view.body), lastUpdatedSec: toSec(view.createdAt) };
+}
+
+/** window 內關閉過、github-actions 開的同標題 issue（取最近關閉的）。 */
+export function pickRecentlyClosed(
+  list: GhIssue[],
+  title: string,
+  nowSec: number,
+  windowSec = REOPEN_WINDOW_SEC,
+): { number: number; closedAtSec: number } | null {
+  const hits = list
+    .filter((i) => i.title === title && isBotAuthor(i.author?.login))
+    .map((i) => ({ number: i.number, closedAtSec: toSec(i.closedAt) }))
+    .filter((i) => i.closedAtSec > 0 && nowSec - i.closedAtSec <= windowSec)
+    .sort((a, b) => b.closedAtSec - a.closedAtSec);
+  return hits[0] ?? null;
+}
 
 export interface AlertDecision {
   action: AlertAction;
@@ -63,6 +129,8 @@ export function parseSignature(text: string | null | undefined): string | null {
 export function decideAlert(a: {
   report: HealthReport;
   open: OpenIssue | null;
+  /** 24 小時內關閉過的同一張告警（沒有開著的時才看）。 */
+  recentlyClosed?: { number: number; closedAtSec: number } | null;
   nowSec: number;
   repeatSec?: number;
 }): AlertDecision {
@@ -95,6 +163,12 @@ export function decideAlert(a: {
   }
 
   // stale
+  if (!open && a.recentlyClosed) {
+    return {
+      action: "reopen",
+      reason: `#${a.recentlyClosed.number} 關閉後 ${((a.nowSec - a.recentlyClosed.closedAtSec) / 3600).toFixed(1)}h 又過期，reopen：${signatureOf(report.stale)}`,
+    };
+  }
   if (!open) return { action: "create", reason: `新的過期事件：${signatureOf(report.stale)}` };
 
   const sig = signatureOf(report.stale);

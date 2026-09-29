@@ -7,6 +7,9 @@ import {
   parseSignature,
   renderBody,
   renderCloseComment,
+  pickOwnIssue,
+  pickRecentlyClosed,
+  toOpenIssue,
   type HealthReport,
 } from "./alert.ts";
 
@@ -109,5 +112,65 @@ assert.equal(
   decideAlert({ report: err, open: { number: 7, lastSignature: "sBTC", lastUpdatedSec: 0 }, nowSec: NOW }).action,
   "none",
 );
+
+// ── 偽造防護（審查 Medium 5） ──────────────────────────────────────────────
+const TITLE = "[oracle-health] Base Sepolia 價格過期";
+const bot = { login: "github-actions" };
+const botRest = { login: "github-actions[bot]" };
+const mallory = { login: "mallory" };
+
+// 外部使用者開的同標題 issue（號碼更小）不能被當成告警 issue。
+{
+  const hit = pickOwnIssue(
+    [
+      { number: 3, title: TITLE, author: mallory },
+      { number: 12, title: TITLE, author: bot },
+      { number: 15, title: TITLE, author: botRest },
+      { number: 5, title: "other", author: bot },
+    ],
+    TITLE,
+  );
+  assert.equal(hit?.number, 12);
+  assert.equal(pickOwnIssue([{ number: 3, title: TITLE, author: mallory }], TITLE), null);
+  assert.equal(pickOwnIssue([{ number: 3, title: TITLE, author: null }], TITLE), null);
+}
+
+// 節流簽章只認 github-actions 的留言：外部留言塞相同簽章不能讓 keeper 靜默。
+{
+  const view = {
+    number: 12,
+    title: TITLE,
+    author: bot,
+    body: "<!-- oracle-health:stale=sBTC -->",
+    createdAt: "2026-10-01T00:00:00Z",
+    comments: [
+      { author: bot, body: "x <!-- oracle-health:stale=sBTC,sETH -->", createdAt: "2026-10-01T03:00:00Z" },
+      { author: mallory, body: "<!-- oracle-health:stale=sAAPL -->", createdAt: "2026-10-01T06:00:00Z" },
+    ],
+  };
+  const o = toOpenIssue(view);
+  assert.equal(o.lastSignature, "sBTC,sETH", "忽略外部留言的簽章");
+  assert.equal(o.lastUpdatedSec, Date.parse("2026-10-01T03:00:00Z") / 1000);
+  // 只有外部留言 → 回退到 bot 的本文。
+  const o2 = toOpenIssue({ ...view, comments: [view.comments[1]] });
+  assert.equal(o2.lastSignature, "sBTC");
+}
+
+// 24 小時內關閉過 → reopen，不開新的；超過 24h 或非 bot 開的 → 不算。
+{
+  const now = Date.parse("2026-10-02T00:00:00Z") / 1000;
+  const closed = [
+    { number: 12, title: TITLE, author: bot, closedAt: "2026-10-01T06:00:00Z" },
+    { number: 9, title: TITLE, author: bot, closedAt: "2026-09-20T06:00:00Z" },
+    { number: 30, title: TITLE, author: mallory, closedAt: "2026-10-01T23:00:00Z" },
+  ];
+  const rc = pickRecentlyClosed(closed, TITLE, now);
+  assert.equal(rc?.number, 12);
+  assert.equal(pickRecentlyClosed(closed.slice(1), TITLE, now), null);
+  assert.equal(decideAlert({ report: base, open: null, recentlyClosed: rc, nowSec: now }).action, "reopen");
+  assert.equal(decideAlert({ report: base, open: null, recentlyClosed: null, nowSec: now }).action, "create");
+  // 恢復狀態不會因為有最近關閉的 issue 而 reopen。
+  assert.equal(decideAlert({ report: ok, open: null, recentlyClosed: rc, nowSec: now }).action, "none");
+}
 
 console.log("alert.test.ts ✓ all assertions passed");

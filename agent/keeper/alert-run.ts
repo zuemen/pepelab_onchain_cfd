@@ -11,6 +11,10 @@
 //   ALERT_DRY_RUN=1 HEALTH_REPORT_PATH=keeper/fixtures/health-ok.json \
 //     ALERT_FAKE_OPEN_ISSUE='{"number":7,"lastSignature":"sBTC","lastUpdatedSec":0}' \
 //     npx tsx keeper/alert-run.ts
+//   ALERT_FAKE_RECENTLY_CLOSED='{"number":7,"closedAtSec":…}' 模擬 24h 內關閉過 → reopen。
+//
+// 偽造防護（審查 Medium 5）：只認 label=oracle-health 且作者是 github-actions 的 issue，
+// 節流簽章只取 github-actions 的留言，見 alert.ts。
 //
 // 所有 gh 呼叫都用 execFileSync 傳陣列參數、內文走 --body-file：不經過 shell，
 // 報告內容（來自外部 API 的錯誤訊息）無法注入指令。
@@ -20,10 +24,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   decideAlert,
-  parseSignature,
+  pickOwnIssue,
+  pickRecentlyClosed,
   renderBody,
   renderCloseComment,
+  toOpenIssue,
+  ALERT_LABEL,
   DEFAULT_REPEAT_SEC,
+  type GhIssue,
   type HealthReport,
   type OpenIssue,
 } from "./alert.ts";
@@ -49,35 +57,35 @@ function bodyFile(body: string): string {
   return f;
 }
 
-function toSec(iso: string | undefined): number {
-  const t = iso ? Date.parse(iso) : NaN;
-  return Number.isFinite(t) ? Math.floor(t / 1000) : 0;
+// 只列 ALERT_LABEL 的 issue（label 只有 triage 以上權限能加，外部使用者偽造不了），
+// 作者再於用戶端檢查必須是 github-actions。label 過濾後數量很小，--limit 50 不會漏抓。
+// 不用 --search：搜尋索引有延遲，也會把 `[oracle-health]` 的中括號斷詞。
+function listOwn(state: "open" | "closed"): GhIssue[] {
+  return JSON.parse(
+    gh([
+      "issue", "list", "--state", state, "--label", ALERT_LABEL, "--limit", "50",
+      "--json", "number,title,author,closedAt",
+    ]),
+  ) as GhIssue[];
 }
 
-/** 找同標題、開著的 issue（多個就取最舊的那個，其他視為人為重複）。 */
+/** 找 github-actions 開的、同標題、開著的告警 issue。 */
 function findOpen(): OpenIssue | null {
   const fake = process.env.ALERT_FAKE_OPEN_ISSUE;
   if (fake !== undefined) return fake === "none" ? null : (JSON.parse(fake) as OpenIssue);
 
-  // 不用 --search：搜尋索引有延遲，也會把 `[oracle-health]` 的中括號斷詞。
-  const list = JSON.parse(
-    gh(["issue", "list", "--state", "open", "--limit", "200", "--json", "number,title"]),
-  ) as { number: number; title: string }[];
-  const hit = list.filter((i) => i.title === TITLE).sort((a, b) => a.number - b.number)[0];
+  const hit = pickOwnIssue(listOwn("open"), TITLE);
   if (!hit) return null;
-
   const view = JSON.parse(
-    gh(["issue", "view", String(hit.number), "--json", "body,createdAt,comments"]),
-  ) as { body: string; createdAt: string; comments: { body: string; createdAt: string }[] };
-  for (const c of [...view.comments].reverse()) {
-    const sig = parseSignature(c.body);
-    if (sig !== null) return { number: hit.number, lastSignature: sig, lastUpdatedSec: toSec(c.createdAt) };
-  }
-  return {
-    number: hit.number,
-    lastSignature: parseSignature(view.body),
-    lastUpdatedSec: toSec(view.createdAt),
-  };
+    gh(["issue", "view", String(hit.number), "--json", "number,title,author,body,createdAt,comments"]),
+  ) as GhIssue;
+  return toOpenIssue(view);
+}
+
+function findRecentlyClosed(nowSec: number): { number: number; closedAtSec: number } | null {
+  const fake = process.env.ALERT_FAKE_RECENTLY_CLOSED;
+  if (fake !== undefined) return fake === "none" ? null : JSON.parse(fake);
+  return pickRecentlyClosed(listOwn("closed"), TITLE, nowSec);
 }
 
 function loadReport(): HealthReport {
@@ -101,8 +109,11 @@ function main(): void {
   }
 
   const report = loadReport();
+  const nowSec = Math.floor(Date.now() / 1000);
   const open = findOpen();
-  const d = decideAlert({ report, open, nowSec: Math.floor(Date.now() / 1000), repeatSec: REPEAT_SEC });
+  // 只有「要開新告警」時才需要查最近關閉的那張。
+  const recentlyClosed = !open && report.status === "stale" ? findRecentlyClosed(nowSec) : null;
+  const d = decideAlert({ report, open, recentlyClosed, nowSec, repeatSec: REPEAT_SEC });
   console.log(`[${TITLE}] status=${report.status} open=${open ? `#${open.number}` : "none"} → ${d.action}：${d.reason}`);
 
   const run = (args: string[]) => {
@@ -117,7 +128,16 @@ function main(): void {
     case "create": {
       const body = renderBody(report, RUN_URL);
       if (DRY_RUN) console.log(body);
-      run(["issue", "create", "--title", TITLE, "--body-file", bodyFile(body)]);
+      // label 不存在時 issue create 會失敗；--force 讓它冪等（已存在就只更新顏色/說明）。
+      run(["label", "create", ALERT_LABEL, "--color", "B60205", "--description", "oracle-health 自動告警（勿手動加）", "--force"]);
+      run(["issue", "create", "--title", TITLE, "--label", ALERT_LABEL, "--body-file", bodyFile(body)]);
+      break;
+    }
+    case "reopen": {
+      const body = renderBody(report, RUN_URL);
+      if (DRY_RUN) console.log(body);
+      run(["issue", "reopen", String(recentlyClosed!.number)]);
+      run(["issue", "comment", String(recentlyClosed!.number), "--body-file", bodyFile(body)]);
       break;
     }
     case "comment": {
