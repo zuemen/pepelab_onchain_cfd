@@ -39678,30 +39678,51 @@ async function assessPayoutAddress(provider3, addr, opts = {}) {
 
 // ../shared/src/redact.ts
 var SECRET_VALUE_ENV_KEYS = ["UPSTASH_REDIS_REST_TOKEN", "ETHERSCAN_API_KEY", "BASESCAN_API_KEY"];
-var URL_ENV_KEYS = [
-  "BASE_SEPOLIA_RPC_URL",
-  "SEPOLIA_RPC_URL",
-  "UPSTASH_REDIS_REST_URL",
-  "X402_FACILITATOR_URL"
-];
+var SECRET_URL_ENV_KEYS = ["UPSTASH_REDIS_REST_URL"];
+var isSecretUrlEnv = (k) => k.endsWith("_RPC_URL") || SECRET_URL_ENV_KEYS.includes(k);
+var PUBLIC_URL_ENV_KEYS = ["X402_FACILITATOR_URL"];
 var MIN_SECRET_LEN = 6;
+function tryDecode(s) {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+}
 function secretValues() {
   const out = [];
   const push = (v) => {
     if (v && v.length >= MIN_SECRET_LEN) out.push(v);
   };
+  const pushUrlParts = (u) => {
+    for (const part of [u.username, u.password]) {
+      push(part);
+      push(tryDecode(part));
+    }
+    for (const val of u.searchParams.values()) push(val);
+  };
   for (const k of SECRET_VALUE_ENV_KEYS) push(process.env[k]?.trim());
-  for (const k of URL_ENV_KEYS) {
+  for (const k of Object.keys(process.env).filter(isSecretUrlEnv)) {
+    const v = process.env[k]?.trim();
+    if (!v) continue;
+    push(v);
+    try {
+      const u = new URL(v);
+      if (u.pathname.length > 1) {
+        push(u.pathname);
+        push(tryDecode(u.pathname));
+      }
+      pushUrlParts(u);
+    } catch {
+    }
+  }
+  for (const k of PUBLIC_URL_ENV_KEYS) {
     const v = process.env[k]?.trim();
     if (!v) continue;
     try {
-      const u = new URL(v);
-      push(decodeURIComponent(u.username));
-      push(decodeURIComponent(u.password));
-      push(u.username);
-      push(u.password);
-      for (const val of u.searchParams.values()) push(val);
+      pushUrlParts(new URL(v));
     } catch {
+      push(v);
     }
   }
   for (const k of Object.keys(process.env).filter((n2) => n2.endsWith("_PRIVATE_KEY"))) {
@@ -39924,7 +39945,7 @@ var getPattern = (label, next) => {
   }
   return null;
 };
-var tryDecode = (str, decoder2) => {
+var tryDecode2 = (str, decoder2) => {
   try {
     return decoder2(str);
   } catch {
@@ -39937,7 +39958,7 @@ var tryDecode = (str, decoder2) => {
     });
   }
 };
-var tryDecodeURI = (str) => tryDecode(str, decodeURI);
+var tryDecodeURI = (str) => tryDecode2(str, decodeURI);
 var getPath = (request) => {
   const url = request.url;
   const start = url.indexOf("/", url.indexOf(":") + 4);
@@ -39993,7 +40014,7 @@ var checkOptionalParameter = (path) => {
   });
   return results.filter((v, i, a) => a.indexOf(v) === i);
 };
-var tryDecodeURIComponent = (str) => str.indexOf("%") !== -1 ? tryDecode(str, decodeURIComponent_) : str;
+var tryDecodeURIComponent = (str) => str.indexOf("%") !== -1 ? tryDecode2(str, decodeURIComponent_) : str;
 var _decodeURI = (value) => {
   if (value.indexOf("+") !== -1) {
     value = value.replace(/\+/g, " ");
