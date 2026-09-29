@@ -1,6 +1,6 @@
 import { MONO } from 'src/components/pepefi/brandKit'
 import { parseEther } from 'ethers';
-import { useState, useEffect, useCallback } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import { Link as RouterLink, useNavigate } from 'react-router';
 import {
   Line, XAxis, YAxis, Tooltip, LineChart,
@@ -32,7 +32,7 @@ import RwaAllocation from 'src/components/pepefi/dashboard/RwaAllocation';
 import { useSynthHoldings } from 'src/hooks/useSynthHoldings';
 import { SHOW_PERPETUALS, FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags';
 import { copyDeskVisibility } from 'src/lib/pepefi/copyDeskVisibility';
-import { readAssetMode, closeBlockReason } from 'src/lib/pepefi/closeGuard';
+import { readAssetMode, closeBlockReason, closeAvailability } from 'src/lib/pepefi/closeGuard';
 import { SwitchChainButton } from 'src/components/pepefi/SwitchChainButton';
 import KYCStatusCard from 'src/components/pepefi/dashboard/KYCStatusCard';
 import QuickActions from 'src/components/pepefi/dashboard/QuickActions';
@@ -98,6 +98,8 @@ interface CopyRec {
   initialAmount: bigint;    // 18-dec
   copiedAt:      bigint;
   currentValue:  bigint;    // sum of getPositionValue for all positionIds
+  /** 這筆 active 跟單底下的部位——平倉按鈕據此判斷哪些部位要走「取消跟單」。 */
+  positionIds:   bigint[];
 }
 
 interface PosRow {
@@ -290,6 +292,7 @@ export default function PortfolioPage() {
             initialAmount: rec.initialAmount,
             copiedAt:      rec.copiedAt,
             currentValue:  vals.reduce((s, v) => s + v, 0n),
+            positionIds:   [...rec.positionIds],
           };
         })
       );
@@ -408,49 +411,74 @@ export default function PortfolioPage() {
   // 自己的部位直接在這裡平倉。SHOW_PERPETUALS 關閉時終端機沒有入口，這是使用者
   // 唯一看得到、按得到的平倉路徑。送出前先檢查價格新鮮度與 AssetMode（新版合約
   // 才有；舊合約讀不到就略過），兩者在鏈上都會 revert，先擋才能把原因講清楚。
+  // 雙擊防護：setLoad 是 state，要等重繪按鈕才變 disabled；同一個 tick 的第二下
+  // 會穿過去。ref 是同步的，第一下進來就先佔位，檢查失敗再放開。
+  const closingRef = useRef<Set<string>>(new Set());
   const doClose = async (row: PosRow) => {
     if (!contracts) return;
-    const label = ASSET_LABEL[row.asset] ?? row.asset.slice(0, 8);
-    const mode = await readAssetMode(
-      String(contracts.exchange.target),
-      wallet.provider ?? contracts.exchange.runner,
-      row.asset
-    );
-    const blocked = closeBlockReason({ freshness: livePrices[row.asset]?.freshness, assetLabel: label, assetMode: mode });
-    if (blocked) { notify(blocked, false); return; }
     const key = `close_${String(row.id)}`;
+    if (closingRef.current.has(key)) return;
+    closingRef.current.add(key);
     setLoad(key, true);
     try {
+      const label = ASSET_LABEL[row.asset] ?? row.asset.slice(0, 8);
+      const mode = await readAssetMode(
+        String(contracts.exchange.target),
+        wallet.provider ?? contracts.exchange.runner,
+        row.asset
+      );
+      const blocked = closeBlockReason({ freshness: livePrices[row.asset]?.freshness, assetLabel: label, assetMode: mode });
+      if (blocked) { notify(blocked, false); return; }
       const tx = asTx(await contracts.exchange.closePosition(row.id));
       await tx.wait();
       notify(t.portfolio.close.closed, true, tx.hash);
       await fetchAll();
     } catch (e) {
       notify(prettyError(e), false);
-    } finally { setLoad(key, false); }
+    } finally {
+      closingRef.current.delete(key);
+      setLoad(key, false);
+    }
   };
 
-  const isCopyPosition = (row: PosRow) =>
-    !!row.copiedFrom && row.copiedFrom !== '0x0000000000000000000000000000000000000000';
+  // 仍 active 的跟單紀錄底下的部位 id。跟單紀錄讀取失敗時是 null——不知道哪些
+  // 該走「取消跟單」，就一筆都不擋（見 closeAvailability）。
+  const activeCopyPositionIds: ReadonlySet<string> | null = copyRecsOk
+    ? new Set(copyRecs.flatMap(r => r.positionIds.map(String)))
+    : null;
 
-  const renderCloseCell = (row: PosRow) => (
-    <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
-      {isCopyPosition(row) ? (
-        <Typography variant="caption" color="text.secondary" title={t.portfolio.close.copyManaged}>—</Typography>
-      ) : (
+  const renderCloseCell = (row: PosRow) => {
+    const availability = closeAvailability(row, activeCopyPositionIds);
+    if (availability === 'managed') {
+      return (
+        <TableCell align="right" sx={{ maxWidth: 220 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', whiteSpace: 'normal' }}>
+            {t.portfolio.close.copyManaged}
+          </Typography>
+        </TableCell>
+      );
+    }
+    const busyNow = !!busy[`close_${String(row.id)}`];
+    return (
+      <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
         <Button
           size="small"
           variant="outlined"
           color="error"
-          disabled={!!busy[`close_${String(row.id)}`]}
+          disabled={busyNow}
           onClick={() => void doClose(row)}
           sx={{ textTransform: 'none', minWidth: 64 }}
         >
-          {busy[`close_${String(row.id)}`] ? t.portfolio.close.closing : t.portfolio.close.button}
+          {busyNow ? t.portfolio.close.closing : t.portfolio.close.button}
         </Button>
-      )}
-    </TableCell>
-  );
+        {availability === 'leftover' && (
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', whiteSpace: 'normal', mt: 0.5 }}>
+            {t.portfolio.close.leftover}
+          </Typography>
+        )}
+      </TableCell>
+    );
+  };
 
   const doWithdraw = async () => {
     if (!contracts) return;

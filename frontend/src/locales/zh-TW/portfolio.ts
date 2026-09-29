@@ -161,7 +161,8 @@ export const portfolio = {
     closing: '平倉中…',
     closed: '已平倉',
     halted: '{asset} 市場目前暫停（Halted），暫時無法平倉。',
-    copyManaged: '這筆是跟單部位，請從「跟單部位」取消跟單以一併平倉。',
+    copyManaged: '此部位屬於進行中的跟單，請在上方「跟單部位」取消跟單以一併平倉。',
+    leftover: '此為先前跟單留下的部位，可直接平倉。',
   },
 
   page: {

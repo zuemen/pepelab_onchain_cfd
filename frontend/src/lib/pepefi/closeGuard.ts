@@ -30,7 +30,33 @@ export function closeBlockReason(a: {
   return stalenessNotice(a.freshness, a.assetLabel)
 }
 
-const ASSET_MODE_ABI = ['function assetMode(bytes32) view returns (uint8)']
+const ZERO_ADDR = '0x0000000000000000000000000000000000000000'
+
+/**
+ * 這一列部位要怎麼平倉。
+ *
+ * - `managed`：屬於一筆**仍 active** 的跟單紀錄——單筆平倉會讓 CopyTracker 的紀錄與
+ *   實際部位對不上，要走「取消跟單」一次平掉。不顯示平倉按鈕，原因直接寫在列上。
+ * - `leftover`：帶 copiedFrom、但不在任何 active 紀錄裡（紀錄已 inactive、跟單紀錄
+ *   讀取失敗、或根本找不到對應紀錄）。這種部位沒有別的出口，一律給平倉按鈕，
+ *   並說明「此為先前跟單留下的部位」——寧可多給一個按鈕，也不能讓錢卡住。
+ * - `own`：自己開的部位。
+ *
+ * `activeCopyPositionIds === null` 代表跟單紀錄讀取失敗：不知道哪些是 managed，
+ * 就不擋任何一筆。
+ */
+export type CloseAvailability = 'own' | 'managed' | 'leftover'
+
+export function closeAvailability(
+  row: { id: bigint; copiedFrom?: string | null },
+  activeCopyPositionIds: ReadonlySet<string> | null
+): CloseAvailability {
+  const fromCopy = !!row.copiedFrom && row.copiedFrom.toLowerCase() !== ZERO_ADDR
+  if (activeCopyPositionIds?.has(String(row.id))) return 'managed'
+  return fromCopy ? 'leftover' : 'own'
+}
+
+const ASSET_MODE_ABI =['function assetMode(bytes32) view returns (uint8)']
 
 /**
  * 讀 exchange 的 `assetMode(asset)`。舊合約沒有這個函式、或 RPC 失敗，一律回 null

@@ -1,6 +1,33 @@
 import { it, expect, describe } from 'vitest'
 
-import { ASSET_MODE, closeBlockReason } from './closeGuard'
+import { ASSET_MODE, closeBlockReason, closeAvailability } from './closeGuard'
+
+const TRADER = '0x1111111111111111111111111111111111111111'
+const ZERO = '0x0000000000000000000000000000000000000000'
+
+describe('closeAvailability — 跟單部位不能卡住', () => {
+  it('屬於仍 active 的跟單紀錄 → managed（走取消跟單）', () => {
+    expect(closeAvailability({ id: 7n, copiedFrom: TRADER }, new Set(['7']))).toBe('managed')
+  })
+
+  it('跟單紀錄已 inactive（不在 active 集合裡）→ leftover，給平倉按鈕', () => {
+    expect(closeAvailability({ id: 7n, copiedFrom: TRADER }, new Set(['8', '9']))).toBe('leftover')
+  })
+
+  it('跟單紀錄讀取失敗（null）→ leftover，不擋', () => {
+    expect(closeAvailability({ id: 7n, copiedFrom: TRADER }, null)).toBe('leftover')
+  })
+
+  it('沒有任何跟單紀錄 → leftover', () => {
+    expect(closeAvailability({ id: 7n, copiedFrom: TRADER }, new Set())).toBe('leftover')
+  })
+
+  it('自己開的部位 → own；零位址、大小寫不影響', () => {
+    expect(closeAvailability({ id: 1n, copiedFrom: ZERO }, new Set())).toBe('own')
+    expect(closeAvailability({ id: 1n, copiedFrom: '' }, null)).toBe('own')
+    expect(closeAvailability({ id: 1n }, null)).toBe('own')
+  })
+})
 import { classifyFreshness } from './priceFreshness'
 
 const now = 1_800_000_000

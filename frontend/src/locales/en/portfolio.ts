@@ -133,7 +133,8 @@ export const portfolio: Catalog['portfolio'] = {
     closing: 'Closing…',
     closed: 'Position closed',
     halted: 'The {asset} market is halted; positions cannot be closed right now.',
-    copyManaged: 'This is a copy-trade position. Unfollow the trader under Copy Positions to close it.',
+    copyManaged: 'This position belongs to an active copy. Unfollow the trader under Copy Positions above to close it.',
+    leftover: 'Left over from an earlier copy; you can close it directly.',
   },
 
   page: {
