@@ -39677,37 +39677,50 @@ async function assessPayoutAddress(provider3, addr, opts = {}) {
 }
 
 // ../shared/src/redact.ts
-var SECRET_ENV_KEYS = [
+var SECRET_VALUE_ENV_KEYS = ["UPSTASH_REDIS_REST_TOKEN", "ETHERSCAN_API_KEY", "BASESCAN_API_KEY"];
+var URL_ENV_KEYS = [
   "BASE_SEPOLIA_RPC_URL",
   "SEPOLIA_RPC_URL",
   "UPSTASH_REDIS_REST_URL",
-  "UPSTASH_REDIS_REST_TOKEN",
-  "ETHERSCAN_API_KEY",
-  "BASESCAN_API_KEY"
+  "X402_FACILITATOR_URL"
 ];
+var MIN_SECRET_LEN = 6;
 function secretValues() {
   const out = [];
-  const keys = [
-    ...SECRET_ENV_KEYS,
-    ...Object.keys(process.env).filter((k) => k.endsWith("_PRIVATE_KEY"))
-  ];
-  for (const k of keys) {
+  const push = (v) => {
+    if (v && v.length >= MIN_SECRET_LEN) out.push(v);
+  };
+  for (const k of SECRET_VALUE_ENV_KEYS) push(process.env[k]?.trim());
+  for (const k of URL_ENV_KEYS) {
     const v = process.env[k]?.trim();
-    if (!v || v.length < 8) continue;
-    out.push(v);
+    if (!v) continue;
     try {
       const u = new URL(v);
-      if (u.pathname.length > 1) out.push(u.pathname);
-      if (u.search) out.push(u.search.slice(1));
+      push(decodeURIComponent(u.username));
+      push(decodeURIComponent(u.password));
+      push(u.username);
+      push(u.password);
+      for (const val of u.searchParams.values()) push(val);
     } catch {
     }
+  }
+  for (const k of Object.keys(process.env).filter((n2) => n2.endsWith("_PRIVATE_KEY"))) {
+    const v = process.env[k]?.trim();
+    if (!v) continue;
+    const bare = v.replace(/^0x/i, "");
+    push(bare);
+    push(`0x${bare}`);
   }
   return out.sort((a, b2) => b2.length - a.length);
 }
 function redactSecrets(text) {
   let s = text;
-  for (const v of secretValues()) {
-    if (v.length >= 8) s = s.split(v).join("[redacted]");
+  for (const v of secretValues()) s = s.split(v).join("[redacted]");
+  for (const k of Object.keys(process.env).filter((n2) => n2.endsWith("_PRIVATE_KEY"))) {
+    const bare = process.env[k]?.trim().replace(/^0x/i, "");
+    if (bare && bare.length >= 32 && /^[0-9a-f]+$/i.test(bare)) {
+      s = s.replace(new RegExp(bare, "gi"), "[redacted]");
+    }
   }
   s = s.replace(/("?requestUrl"?\s*[:=]\s*\\?"?)[^"\s,}\\]+/g, "$1[redacted]");
   s = s.replace(/(\/v[23]\/)[A-Za-z0-9_-]{16,}/g, "$1[redacted]");
@@ -60041,6 +60054,7 @@ function deriveIdempotencyKey(paymentResponseHeader, paymentHeader) {
   }
   return void 0;
 }
+var CONDITION_TTL_SEC = 2 * 60 * 60;
 
 // src/onchainRevenue.ts
 var FEE_ROUTER_READ_ABI = [
