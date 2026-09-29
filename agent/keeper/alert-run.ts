@@ -100,12 +100,10 @@ function loadReport(): HealthReport {
 
 function main(): void {
   if (!TITLE) {
-    console.error("::error::ALERT_TITLE 未設");
-    process.exit(1);
+    throw new Error("ALERT_TITLE 未設");
   }
   if (!DRY_RUN && !REPO) {
-    console.error("::error::GITHUB_REPOSITORY 未設");
-    process.exit(1);
+    throw new Error("GITHUB_REPOSITORY 未設");
   }
 
   const report = loadReport();
@@ -161,7 +159,8 @@ function main(): void {
 try {
   main();
 } catch (e) {
-  // 告警失敗不該蓋掉健檢結果：印 error 讓人看到，但 exit 1 只代表「告警壞了」。
-  console.error(`::error::oracle-health 告警失敗：${(e as Error).message.slice(0, 300)}`);
-  process.exit(1);
+  // 告警步驟本身失敗（gh 限流、權限、label）只發 warning 並 exit 0：job 的紅綠只
+  // 代表健檢結果（health step），不能被「告警壞了」蓋掉或混淆。
+  console.log(`::warning::oracle-health 告警步驟失敗（健檢結果不受影響）：${(e as Error).message.slice(0, 300)}`);
+  process.exit(0);
 }
