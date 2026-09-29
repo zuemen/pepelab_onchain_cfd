@@ -240,6 +240,34 @@ const codes = {
     assert.equal((await safe.request("//ORACLE/sBTC")).status, 402);
     assert.equal((await safe.request(`/SIGNALS/${DELEGATED}`)).status, 400, "registry 閘門對變體同樣生效");
     assert.equal((await safe.request("/ORACLE/sDOGE")).status, 400, "輸入驗證對變體同樣生效");
+    // 複審 5：%2F / %2f 一次解碼後走同一條路由；解不開或解完仍含 % → 400
+    assert.equal((await safe.request(`/signals%2F${EOA}`)).status, 402, "%2F 解碼後是合法付費路由");
+    assert.equal((await safe.request(`/signals%2f${EOA}`)).status, 402, "%2f 同上");
+    assert.equal((await safe.request("/oracle%2fsBTC")).status, 402);
+    assert.equal((await safe.request(`/signals%2F${DELEGATED}`)).status, 400, "解碼後照樣經過 registry 閘門");
+    for (const bad of ["/oracle/%25zz", "/signals/%25zz", "/oracle/%zz", "/%zz"]) {
+      const r = await safe.request(bad);
+      assert.equal(r.status, 400, `${bad} 應 400，got ${r.status}`);
+      assert.equal(r.headers.get("X-PAYMENT-RESPONSE"), null);
+    }
+    // 複審 6：付費路徑上的 HEAD → 405，不執行 handler（連 registry 閘門都不會碰到）
+    let registryCalls = 0;
+    const headApp = createApp({
+      payTo: EOA,
+      payoutCodeReader: fakeReader(codes),
+      isRegisteredTrader: async () => {
+        registryCalls += 1;
+        return true;
+      },
+    });
+    for (const p of [`/signals/${EOA}`, "/oracle/sBTC", "/ORACLE/sBTC", `//signals/${EOA}`]) {
+      const r = await headApp.request(p, { method: "HEAD" });
+      assert.equal(r.status, 405, `HEAD ${p} 應 405，got ${r.status}`);
+      assert.equal(r.headers.get("Allow"), "GET");
+    }
+    assert.equal(registryCalls, 0, "HEAD 不可執行任何付費路徑的後續邏輯");
+    assert.equal((await headApp.request("/healthz", { method: "HEAD" })).status, 200, "免費端點的 HEAD 不受影響");
+    console.log("%2F/%2f → 402、%25zz → 400；付費路徑 HEAD → 405 不執行 handler ✓");
     console.log(`路徑變體 ${variants.length} 種（大小寫 / // / %2F / 結尾 /）→ 一律 503，不發 402 ✓`);
   }
 
@@ -321,6 +349,28 @@ const codes = {
   const q4 = await payoutPreflight({ ...base, fetchPublishedPayTo: undefined });
   assert.deepEqual(q4.problems, []);
   assert.ok(q4.warnings.some((w) => w.includes("SIGNAL_API_URL 未設")));
+  // 複審 9：CI（GITHUB_ACTIONS=true）沒設 SIGNAL_API_URL → problem
+  clearPayoutSafetyCache();
+  const q5 = await payoutPreflight({ ...base, fetchPublishedPayTo: undefined, requirePublishedPayTo: true });
+  assert.ok(q5.problems.some((p) => p.includes("SIGNAL_API_URL 未設")), JSON.stringify(q5.problems));
+  // 線上 GET / 被限流 429 → 重試 2 次
+  {
+    const { createServer } = await import("node:http");
+    let hits = 0;
+    const srv = createServer((_q, r) => {
+      hits += 1;
+      if (hits <= 2) return void r.writeHead(429).end("slow down");
+      r.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ payTo: EOA }));
+    });
+    await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r));
+    const url = `http://127.0.0.1:${(srv.address() as { port: number }).port}`;
+    const { fetchPublishedPayTo } = await import("./settlement-worker.ts");
+    assert.equal(await fetchPublishedPayTo(url, { delayMs: 10 }), EOA);
+    assert.equal(hits, 3, "429 兩次後第三次成功");
+    hits = -10; // 之後一直 429
+    await assert.rejects(fetchPublishedPayTo(url, { delayMs: 10 }), /429/);
+    await new Promise<void>((r) => srv.close(() => r()));
+  }
   console.log("worker preflight：PAY_TO≠signer、線上 payTo≠signer、讀不到 → problem；未設 URL → 警告 ✓");
 
   clearPayoutSafetyCache();

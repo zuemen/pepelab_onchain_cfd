@@ -13,12 +13,16 @@ const SECRET_ENV_KEYS = [
   "UPSTASH_REDIS_REST_TOKEN",
   "ETHERSCAN_API_KEY",
   "BASESCAN_API_KEY",
-  "X402_FACILITATOR_URL",
 ];
 
 function secretValues(): string[] {
   const out: string[] = [];
-  for (const k of SECRET_ENV_KEYS) {
+  // 安全網：所有 *_PRIVATE_KEY 也一併遮掉（理論上不該出現在任何回應裡）。
+  const keys = [
+    ...SECRET_ENV_KEYS,
+    ...Object.keys(process.env).filter((k) => k.endsWith("_PRIVATE_KEY")),
+  ];
+  for (const k of keys) {
     const v = process.env[k]?.trim();
     if (!v || v.length < 8) continue;
     out.push(v);

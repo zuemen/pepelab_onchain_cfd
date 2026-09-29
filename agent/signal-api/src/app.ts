@@ -374,15 +374,25 @@ export function normalizeRequestPath(req: Request): string {
   const start = url.indexOf("/", url.indexOf("://") + 3);
   let path = start === -1 ? "/" : url.slice(start);
   path = path.split(/[?#]/)[0] ?? "/";
+  // 與 x402 相同：一次做完 decodeURIComponent（%2F → /）。解不開（例如 /%zz）→ 哨兵
+  // 路徑，由最前面的 middleware 回 400。解完仍含 `%`（例如 %25zz → %zz）也當成無效：
+  // 下游若再解碼一次，各層看到的路徑就會不一致——正是路徑繞過的根源。
   try {
-    path = decodeURI(path);
+    path = decodeURIComponent(path);
   } catch {
-    /* 保留原字串 */
+    return INVALID_PATH;
   }
+  if (path.includes("%")) return INVALID_PATH;
   path = path.replace(/\\/g, "/").replace(/\/{2,}/g, "/");
   if (path.length > 1) path = path.replace(/\/+$/, "");
   return path.replace(/^\/([^/]+)/, (_m, seg: string) => `/${seg.toLowerCase()}`) || "/";
 }
+
+/** 無法解碼的請求路徑（getPath 不能直接回應，改用哨兵路徑交給 middleware 回 400）。 */
+const INVALID_PATH = "/__invalid_path__";
+
+/** 付費端點實際存在的 handler 路徑（正規化後）。 */
+const PAID_HANDLER_PATHS = [/^\/signals\/[^/]+$/, /^\/oracle\/[^/]+$/];
 
 /** x402 付費路由（付費牆與「是否為付費路由」的判斷共用同一份設定）。 */
 function paidRoutes() {
@@ -456,6 +466,26 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
 
   // ── 極簡 liveness（隔離進入點/adapter 問題用，立即回 200） ────────────────
   app.get("/healthz", (c) => c.text("ok"));
+
+  // ── 路徑與方法的前置檢查（複審 5、6）──────────────────────────────────────
+  const rawPathOf = (c: Context) => c.req.raw.url.replace(/^[a-z]+:\/\/[^/]+/i, "");
+  app.use("*", async (c, next) => {
+    if (c.req.path === INVALID_PATH) {
+      return c.json({ ok: false, error: "bad_path", message: "請求路徑無法解碼。" }, 400);
+    }
+    // HEAD 會被 Hono 路由到 GET handler，但 x402 只認 GET——付費路徑上的 HEAD 等於
+    // 免費執行 handler。直接 405，不執行 handler。
+    if (
+      c.req.method === "HEAD" &&
+      (PAID_HANDLER_PATHS.some((re) => re.test(c.req.path)) ||
+        findMatchingRoute(PAID_ROUTE_PATTERNS, rawPathOf(c), "GET"))
+    ) {
+      return c.json({ ok: false, error: "method_not_allowed", message: "付費端點只接受 GET。" }, 405, {
+        Allow: "GET",
+      });
+    }
+    return next();
+  });
 
   // ── 免費端點節流（healthz 除外，它必須永遠即時回應）──────────────────────
   app.use("*", async (c, next) => {
@@ -724,7 +754,7 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
   // 丟錯回 400 —— 錢已經進了 payTo，買方拿到的是一個錯誤訊息。
   // 註冊順序有意義：這段必須在 paymentMiddleware 之前。
   app.use("/oracle/*", async (c, next) => {
-    const asset = decodeURIComponent(c.req.path.split("/")[2] ?? "");
+    const asset = c.req.path.split("/")[2] ?? ""; // 已在 normalizeRequestPath 解碼
     if (!asset) {
       return c.json({ ok: false, error: "缺少資產代號，例如 /oracle/sBTC" }, 400);
     }
@@ -743,7 +773,7 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
   });
 
   app.use("/signals/*", async (c, next) => {
-    const trader = decodeURIComponent(c.req.path.split("/")[2] ?? "");
+    const trader = c.req.path.split("/")[2] ?? ""; // 已在 normalizeRequestPath 解碼
     if (!/^0x[0-9a-fA-F]{40}$/.test(trader)) {
       return c.json(
         {
@@ -811,7 +841,7 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
   // 讀不到 registry（RPC 失敗）→ 503、不收錢：無法確認就不該賣。
   const isRegistered = opts.isRegisteredTrader ?? isRegisteredOnchain;
   app.use("/signals/*", async (c, next) => {
-    const trader = decodeURIComponent(c.req.path.split("/")[2] ?? "");
+    const trader = c.req.path.split("/")[2] ?? "";
     let registered: boolean;
     try {
       registered = await isRegistered(trader);
@@ -892,7 +922,12 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
     // 縱深防禦（審查 High-1）：不論前面的路徑閘門有沒有被繞過（大小寫、`//`、
     // %2F 編碼…），只要 x402 會把這個請求當成付費路由，就先確認 payTo 安全。
     // 用 x402 自己的 findMatchingRoute，保證判斷與付費牆完全一致。
-    if (findMatchingRoute(PAID_ROUTE_PATTERNS, c.req.raw.url.replace(/^[a-z]+:\/\/[^/]+/i, ""), c.req.method.toUpperCase())) {
+    if (findMatchingRoute(PAID_ROUTE_PATTERNS, rawPathOf(c), c.req.method.toUpperCase())) {
+      // x402 認為是付費路由、但沒有對應的實際 handler（Hono 路徑對不上）→ 付款前 404，
+      // 不發 402（否則買方付了錢拿到的是 404）。
+      if (!(c.req.method === "GET" && PAID_HANDLER_PATHS.some((re) => re.test(c.req.path)))) {
+        return c.json({ ok: false, error: "not_found", note: "未付款：沒有對應的付費端點。" }, 404);
+      }
       const blocked = await payToGuard(c, async () => {});
       if (blocked) return blocked;
     }
