@@ -43,7 +43,8 @@ export function usePriceHistory(
   useEffect(() => {
     for (const id of assetIds) {
       const lp = livePrices[id]
-      if (lp) saveSnap(id, lp.usd)
+      // 無價格（null）不寫快照——否則歷史圖會被 0 或假值污染。
+      if (lp && lp.usd !== null) saveSnap(id, lp.usd)
     }
   // assetIds is a module-level constant — omitting from deps is safe
   // eslint-disable-next-line react-hooks/exhaustive-deps

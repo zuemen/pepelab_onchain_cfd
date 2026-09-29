@@ -51,7 +51,7 @@ export const terminal = {
 
     sourceCoingecko: '參考 · coingecko',
     sourceOracle: '參考 · 鏈上 oracle',
-    sourceSimulated: '模擬報價',
+    sourceNone: '尚無價格',
 
     /**
      * 接在報價來源後面的價齡。前導空白是值的一部分：畫面上本來就是
@@ -74,6 +74,8 @@ export const terminal = {
 
     notional: '名義價值',
     entryOracle: '進場價（oracle）',
+    noPriceNotice:
+      '⛔ 讀不到鏈上指數價，無法計算進場與清算價。在讀到價格之前不送單。',
     estLiquidation: '預估清算價',
     onLiquidation: '清算時',
     onLiquidationValue: '殘值退還（扣罰金）',

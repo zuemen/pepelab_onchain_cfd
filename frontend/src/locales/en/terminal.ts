@@ -43,7 +43,7 @@ export const terminal: Catalog['terminal'] = {
 
     sourceCoingecko: 'display · coingecko',
     sourceOracle: 'display · on-chain oracle',
-    sourceSimulated: 'simulated feed',
+    sourceNone: 'no price',
 
     /**
      * 接在報價來源後面的價齡。前導空白是值的一部分：畫面上本來就是
@@ -66,6 +66,8 @@ export const terminal: Catalog['terminal'] = {
 
     notional: 'Notional',
     entryOracle: 'Entry (oracle)',
+    noPriceNotice:
+      "⛔ Can't read the on-chain index price, so entry and liquidation prices can't be computed. Orders are disabled until a price is available.",
     estLiquidation: 'Est. Liquidation',
     onLiquidation: 'On liquidation',
     onLiquidationValue: 'Refunded minus penalty',

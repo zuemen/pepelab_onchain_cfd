@@ -78,7 +78,8 @@ export function TerminalView() {
   const activity = useMarketActivity(contracts, selAsset)
   const { assets: vaultAssets } = useVaultBacking(contracts)
 
-  const livePx = live[selAsset]?.usd
+  // null = 兩個來源都讀不到。不補任何替代數字，下游一律顯示「—」。
+  const livePx = live[selAsset]?.usd ?? undefined
 
   // 給 Activity 面板算未實現損益用。刻意用即時價（CoinGecko/live）而不是 oracle
   // index：跟下方自己持倉表的算法一致，同一個標的的損益在兩個地方不該不一樣。
