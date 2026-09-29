@@ -62,3 +62,17 @@ updates:
         update-types: [minor, patch]
     commit-message:
       prefix: "chore(frontend-deps)"
+
+  # contracts/lib/：forge-std、openzeppelin-contracts(-upgradeable) 是 git submodule，
+  # 合約的安全修補（OZ advisory）只會從這裡進來。每週檢查一次；submodule 升級會改
+  # 已部署合約的編譯結果，必須人工讀 changelog 並跑 contracts-ci，所以上限 2、不 group。
+  - package-ecosystem: gitsubmodule
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Taipei
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: "chore(contracts-deps)"
