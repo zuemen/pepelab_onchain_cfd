@@ -6,11 +6,8 @@
 //
 // 值的解析規則統一：`VITE_X=1` / `true` / `on` 才算開，其餘（含未設定）都算關。
 
-function readFlag(raw: unknown, fallback: boolean): boolean {
-  if (raw === undefined || raw === null || raw === '') return fallback;
-  const v = String(raw).trim().toLowerCase();
-  return v === '1' || v === 'true' || v === 'on';
-}
+// 解析規則在 flagParse.ts（vite.config.ts 也要用，不能碰 import.meta.env）。
+import { readFlag } from './flagParse';
 
 /**
  * 下單面板要不要露出槓桿選擇器。
@@ -66,7 +63,8 @@ export const FEATURE_PEPE_REWARDS = readFlag(import.meta.env.VITE_FEATURE_PEPE_R
 
 /**
  * Expert 跟單（CopyTracker 的槓桿跟單）：Expert 模式的交易者排行榜、`/copy/:addr`、
- * 交易者頁與巨鯨動態上的「跟單」按鈕、首頁的跟單功能卡。
+ * 交易者頁與巨鯨動態上的「跟單」按鈕與跟隨者統計、首頁的跟單功能卡與文案、
+ * 交易員信譽質押 `/stake`（與跟單的罰沒機制綁在一起）、meta description。
  * 預設 **關**。開啟：`VITE_FEATURE_COPY_TRADING=1`。
  */
 export const FEATURE_COPY_TRADING = readFlag(import.meta.env.VITE_FEATURE_COPY_TRADING, false);
@@ -91,6 +89,9 @@ const GATED_PREFIXES: ReadonlyArray<{ prefix: string; flag: keyof FeatureFlags }
   { prefix: '/pepe', flag: 'gamefi' },
   { prefix: '/rewards', flag: 'pepeRewards' },
   { prefix: '/copy', flag: 'copyTrading' },
+  // /stake 是交易員的信譽質押（TraderStake）：質押的意義是「策略害跟單者虧損時可被
+  // 罰沒」，和跟單綁在一起，所以跟著同一個旗標收。
+  { prefix: '/stake', flag: 'copyTrading' },
 ];
 
 /** 這條路徑在給定旗標下是否可用。比對到路徑段為止，`/pepelab` 不會被 `/pepe` 吃掉。 */

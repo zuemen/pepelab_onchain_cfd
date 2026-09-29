@@ -41,6 +41,10 @@ describe('商業版功能旗標', () => {
     expect(isPathEnabled('/pepe?tab=skins', ALL_OFF)).toBe(false)
     expect(isPathEnabled('/rewards', ALL_OFF)).toBe(false)
     expect(isPathEnabled('/copy/0xabc', ALL_OFF)).toBe(false)
+    // 交易員信譽質押與跟單的罰沒機制綁在一起，跟著跟單旗標收。
+    expect(isPathEnabled('/stake', ALL_OFF)).toBe(false)
+    expect(isPathEnabled('/stake', { ...ALL_OFF, copyTrading: true })).toBe(true)
+    expect(isPathEnabled('/stakeholders', ALL_OFF)).toBe(true)
   })
 
   it('旗標打開時路由恢復', () => {

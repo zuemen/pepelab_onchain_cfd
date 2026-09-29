@@ -3,6 +3,7 @@ import type { Mode } from 'src/contexts/mode-context';
 import { Link as RouterLink } from 'react-router';
 
 import { t } from 'src/locales';
+import { FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags';
 
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -31,7 +32,12 @@ type Action = {
 // 沒有 "Positions"：這一列現在長在 Portfolio 頁上，連回自己是死連結。
 const ACTIONS: Action[] = [
   { label: t.portfolio.quickAction.trade,       to: '/exchange',    icon: 'solar:chart-square-bold-duotone', primary: true },
-  { label: t.portfolio.quickAction.copyTrader,  to: '/marketplace', icon: 'solar:users-group-rounded-bold-duotone' },
+  // 跟單旗標關閉時（商業版預設）同一個入口叫「瀏覽配置市集」——/marketplace 那時只剩配置市集。
+  {
+    label: FEATURE_COPY_TRADING ? t.portfolio.quickAction.copyTrader : t.portfolio.quickAction.marketplace,
+    to: '/marketplace',
+    icon: 'solar:users-group-rounded-bold-duotone',
+  },
   { label: t.portfolio.quickAction.history,     to: '/history',     icon: 'solar:clock-circle-bold-duotone' },
   { label: t.portfolio.quickAction.proTerminal, to: '/terminal',    icon: 'solar:programming-bold-duotone', expertOnly: true },
 ];

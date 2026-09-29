@@ -5,6 +5,7 @@ import { parseUnits, formatUnits } from 'ethers'
 import { useContracts } from 'src/hooks/useContracts'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { t, interpolate } from 'src/locales'
+import { FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags'
 import { useMode } from 'src/contexts/mode-context'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { safeRead } from 'src/lib/pepefi/safeRead'
@@ -509,7 +510,7 @@ export default function VaultPage() {
         <Card sx={{ p: 2.5, bgcolor: 'background.neutral' }}>
           <Stack spacing={1}>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-              <Box component="span" sx={{ color: 'text.primary', fontWeight: 'bold' }}>{t.vault.markup.howItWorksLabel}</Box>{t.vault.markup.howItWorksBody}<Box component="span" sx={{ fontWeight: 'bold' }}>{t.vault.markup.liquidationPenaltyLabel}</Box>{t.vault.markup.howItWorksCodeWrap}<code>liquidationPenaltyBps</code>{t.vault.markup.howItWorksTail}
+              <Box component="span" sx={{ color: 'text.primary', fontWeight: 'bold' }}>{t.vault.markup.howItWorksLabel}</Box>{FEATURE_COPY_TRADING ? t.vault.markup.howItWorksBody : t.vault.markup.howItWorksBodyNoCopy}<Box component="span" sx={{ fontWeight: 'bold' }}>{t.vault.markup.liquidationPenaltyLabel}</Box>{t.vault.markup.howItWorksCodeWrap}<code>liquidationPenaltyBps</code>{t.vault.markup.howItWorksTail}
             </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
               {t.vault.markup.badDebtBefore}<code>BadDebt</code>{t.vault.markup.badDebtMid}<code>recapitalize()</code>{t.vault.markup.badDebtAfter}

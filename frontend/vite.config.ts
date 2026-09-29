@@ -3,6 +3,7 @@ import checker from 'vite-plugin-checker';
 import { loadEnv, defineConfig } from 'vite';
 import react from '@vitejs/plugin-react-swc';
 
+import { readFlag } from './src/lib/pepefi/flagParse';
 import { LOCALES, pickLocale } from './src/locales/catalogs';
 
 // ----------------------------------------------------------------------
@@ -19,6 +20,14 @@ export default defineConfig(({ mode }) => {
   );
   const { htmlLang, catalog } = LOCALES[locale];
 
+  // 同一個理由，env 兩種來源都要看。app 內的旗標在 featureFlags.ts；index.html 在建置時
+  // 就寫死了，所以 meta description 要在這裡依 FEATURE_COPY_TRADING 選字串——否則商業版
+  // 的搜尋結果與分享預覽仍在介紹「社交跟單」。
+  const fileEnv = loadEnv(mode, process.cwd(), 'VITE_');
+  const envOf = (key: string): string | undefined => process.env[key] ?? fileEnv[key];
+  const copyTrading = readFlag(envOf('VITE_FEATURE_COPY_TRADING'), false);
+  const metaDescription = copyTrading ? catalog.meta.description : catalog.meta.descriptionNoCopy;
+
   return {
     plugins: [
       react(),
@@ -33,7 +42,7 @@ export default defineConfig(({ mode }) => {
             html
               .replace('__LOCALE_HTML_LANG__', () => htmlLang)
               .replace('__APP_TITLE__', () => catalog.meta.title)
-              .replace('__APP_DESCRIPTION__', () => catalog.meta.description),
+              .replace('__APP_DESCRIPTION__', () => metaDescription),
         },
       },
       checker({

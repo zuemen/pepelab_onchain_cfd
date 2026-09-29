@@ -90,6 +90,7 @@ export const portfolio: Catalog['portfolio'] = {
   quickAction: {
     trade: 'Trade',
     copyTrader: 'Copy a trader',
+    marketplace: 'Browse marketplace',
     history: 'History',
     proTerminal: 'Pro Terminal',
   },
@@ -163,6 +164,8 @@ export const portfolio: Catalog['portfolio'] = {
     emptyTitle: 'Your portfolio is empty',
     emptyDescription:
       'Start by getting test {token}, then copy a trader or open positions yourself.',
+    emptyDescriptionNoCopy:
+      'Start by getting test {token}, then buy tokenized assets on the Assets page or browse published allocations on the marketplace.',
     emptyCta: 'Get {token}',
 
     side: {
@@ -193,6 +196,7 @@ export const portfolio: Catalog['portfolio'] = {
 
     openPositions: 'Open Positions',
     openCount: '{count} open · manual + copied',
+    openCountNoCopy: '{count} open',
     noOpenPositions: 'No open positions.',
     total: 'Total',
 

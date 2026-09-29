@@ -112,6 +112,8 @@ export const portfolio = {
   quickAction: {
     trade: '交易',
     copyTrader: '跟單交易者',
+    /** 跟單旗標關閉時同一顆按鈕的說法（仍連到 /marketplace 的配置市集）。 */
+    marketplace: '瀏覽配置市集',
     history: '歷史記錄',
     proTerminal: '專業交易終端',
   },
@@ -194,6 +196,8 @@ export const portfolio = {
 
     emptyTitle: '你的投資組合是空的',
     emptyDescription: '先取得測試用 {token}，接著可以跟單交易者或自行開倉。',
+    /** 跟單旗標關閉時。 */
+    emptyDescriptionNoCopy: '先取得測試用 {token}，接著到「資產」頁買進代幣化資產，或到配置市集參考他人發布的配置。',
     emptyCta: '取得 {token}',
 
     side: {
@@ -224,6 +228,7 @@ export const portfolio = {
 
     openPositions: '未平倉部位',
     openCount: '{count} 筆未平倉 · 手動 + 跟單',
+    openCountNoCopy: '{count} 筆未平倉',
     noOpenPositions: '無未平倉部位。',
     total: '總計',
 

@@ -447,6 +447,12 @@ export default function PortfolioPage() {
     ? new Set(copyRecs.flatMap(r => r.positionIds.map(String)))
     : null;
 
+  // 「跟單來源」欄：跟單旗標關閉時，只有真的有跟單留下的部位才顯示——否則一整欄
+  // 的「—」只是在商業版畫面上介紹一個不存在的功能。
+  const showCopiedFrom =
+    FEATURE_COPY_TRADING ||
+    positions.some(p => !!p.copiedFrom && p.copiedFrom !== '0x0000000000000000000000000000000000000000');
+
   const renderCloseCell = (row: PosRow) => {
     const availability = closeAvailability(row, activeCopyPositionIds);
     if (availability === 'managed') {
@@ -640,7 +646,10 @@ export default function PortfolioPage() {
         <EmptyState
           icon="💼"
           title={t.portfolio.page.emptyTitle}
-          description={interpolate(t.portfolio.page.emptyDescription, { token: STABLE_LABEL })}
+          description={interpolate(
+            FEATURE_COPY_TRADING ? t.portfolio.page.emptyDescription : t.portfolio.page.emptyDescriptionNoCopy,
+            { token: STABLE_LABEL }
+          )}
           ctaText={interpolate(t.portfolio.page.emptyCta, { token: STABLE_LABEL })}
           onClick={() => navigate('/exchange')}
         />
@@ -854,7 +863,7 @@ export default function PortfolioPage() {
           <Typography variant="caption" color="text.secondary">
             {mode === 'simple'
               ? interpolate(t.portfolio.page.openCountSimple, { count: positions.length })
-              : interpolate(t.portfolio.page.openCount, { count: positions.length })}
+              : interpolate(FEATURE_COPY_TRADING ? t.portfolio.page.openCount : t.portfolio.page.openCountNoCopy, { count: positions.length })}
           </Typography>
         </Box>
 
@@ -922,7 +931,7 @@ export default function PortfolioPage() {
                     [t.portfolio.column.liveMarket, t.portfolio.columnHint.liveMarket],
                     [t.portfolio.column.margin, ''],
                     [t.portfolio.column.leverage, ''],
-                    [t.portfolio.column.copiedFrom, ''],
+                    ...(showCopiedFrom ? [[t.portfolio.column.copiedFrom, ''] as const] : []),
                     [t.portfolio.column.unrealizedPnl, t.portfolio.columnHint.unrealizedPnl],
                     [t.portfolio.column.accruedFunding, ''],
                     [t.portfolio.column.value, ''],
@@ -994,11 +1003,13 @@ export default function PortfolioPage() {
                     </TableCell>
                     <TableCell sx={{ fontFamily: MONO, fontSize: '0.8125rem' }}>{f18(row.margin)}</TableCell>
                     <TableCell sx={{ fontSize: '0.8125rem' }}>{String(row.leverage)}×</TableCell>
+                    {showCopiedFrom && (
                     <TableCell sx={{ fontFamily: MONO, fontSize: '0.75rem', color: 'text.secondary' }}>
                       {row.copiedFrom === '0x0000000000000000000000000000000000000000' ? (
                         <Typography component="span" variant="caption" color="text.disabled">—</Typography>
                       ) : SHORT_ADDR(row.copiedFrom)}
                     </TableCell>
+                    )}
                     <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', fontSize: '0.8125rem', color: pnlColor(row.unrealizedPnL) }}>
                       {fPnL(row.unrealizedPnL)}
                     </TableCell>
@@ -1014,7 +1025,7 @@ export default function PortfolioPage() {
               </TableBody>
               <tfoot style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
                 <TableRow sx={{ bgcolor: 'background.neutral' }}>
-                  <TableCell colSpan={9} sx={{ fontWeight: 'bold', color: 'text.primary' }}>{t.portfolio.page.total}</TableCell>
+                  <TableCell colSpan={showCopiedFrom ? 9 : 8} sx={{ fontWeight: 'bold', color: 'text.primary' }}>{t.portfolio.page.total}</TableCell>
                   <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: pnlColor(positions.reduce((s, p) => s + p.unrealizedPnL, 0n)) }}>
                     {fPnL(positions.reduce((s, p) => s + p.unrealizedPnL, 0n))}
                   </TableCell>

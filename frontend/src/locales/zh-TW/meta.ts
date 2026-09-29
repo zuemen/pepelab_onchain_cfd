@@ -8,4 +8,7 @@ export const meta = {
   title: 'PepeLab · Agent 原生代幣化 RWA',
   description:
     'PepeLab — 基於 Base 鏈的 Agent 原生代幣化 RWA 平台。鏈上買賣股債金幣 + x402 付費訊號 + 社交跟單。',
+  /** 跟單旗標關閉時（商業版預設）建置進 index.html 的版本，由 vite.config.ts 選用。 */
+  descriptionNoCopy:
+    'PepeLab — 基於 Base 鏈的 Agent 原生代幣化資產引擎（測試網研究原型）。鏈上鑄造與贖回合成股債金幣 + x402 付費訊號 + agent session 委任。',
 };

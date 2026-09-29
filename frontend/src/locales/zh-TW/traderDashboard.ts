@@ -26,6 +26,8 @@ export const traderDashboard = {
 
     stakeRequiredTitle: '發布策略需先質押',
     stakeRequiredBody: '發布策略前需先質押至少 100 USDC。這能讓跟隨者相信你也承擔風險。',
+    /** 跟單旗標關閉時（交易員質押未開放）。 */
+    stakeUnavailable: '這個部署未開放交易員信譽質押，因此暫時無法發布策略。如需開通，請聯繫平台營運方。',
     goToStake: '前往交易者質押 →',
 
     empty: '點擊「+ 新增標的」以建立策略。',
@@ -72,6 +74,9 @@ export const traderDashboard = {
     claiming: '領取中…',
     claimAll: '全部領取',
     note: '當跟隨者支付 0.3% 跟單費，或平倉獲利的跟單部位產生 10% 績效費時，即會累積收益。你可分得每筆費用的 70%。',
+    /** 跟單旗標關閉時的中性說法——既有收益仍可領取。 */
+    claimableNeutral: '可領取的交易員收益',
+    noteNeutral: '交易員收益由 FeeRouter 依鏈上規則累積，你可分得每筆費用的 70%。',
     claimed: '收益已領取 ✓',
   },
 

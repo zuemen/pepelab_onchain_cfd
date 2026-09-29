@@ -13,6 +13,9 @@ import TraderRankBadge from 'src/components/pepefi/TraderRankBadge'
 import TraderActivity from 'src/components/pepefi/TraderActivity'
 import { useMode } from 'src/contexts/mode-context'
 import { FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags'
+
+// 統計卡：跟單旗標關閉時少了「跟隨者」那張，剩三張各佔三分之一。
+const STAT_SIZE = FEATURE_COPY_TRADING ? { xs: 6, md: 3 } : { xs: 12, sm: 4 }
 import { useAddressActivity } from 'src/hooks/useAddressActivity'
 
 import Box from '@mui/material/Box';
@@ -327,12 +330,15 @@ function TraderProfileView() {
                 </Box>
 
                 <Stack direction="row" spacing={2} sx={{ flexWrap: 'wrap', gap: 1, mt: 1.5, alignItems: 'center' }}>
+                  {/* 跟隨者數與跟隨者清單跟著 FEATURE_COPY_TRADING 走（商業版預設關）。 */}
+                  {FEATURE_COPY_TRADING && (
                   <Typography variant="body2" color="text.secondary">
                     <Box component="span" sx={{ fontWeight: 'bold', color: 'text.primary' }}>{String(followers)}</Box>{' '}
                     {followers === 1n
                       ? t.traderProfile.header.followerSingular
                       : t.traderProfile.header.followerPlural}
                   </Typography>
+                  )}
                   {registered && (
                     <Chip
                       label={t.traderProfile.header.registered}
@@ -373,16 +379,18 @@ function TraderProfileView() {
 
           {/* ─── B. Stats grid (4 cards) ──────────────────────────── */}
           <Grid container spacing={2}>
-            <Grid size={{ xs: 6, md: 3 }}>
+            <Grid size={STAT_SIZE}>
               <StatCard title={t.traderProfile.stats.staked} value={stakeInfo ? f18(stakeInfo.amount) : '—'} sub="USDC" />
             </Grid>
-            <Grid size={{ xs: 6, md: 3 }}>
+            {FEATURE_COPY_TRADING && (
+            <Grid size={STAT_SIZE}>
               <StatCard title={t.traderProfile.stats.followers} value={String(followers)} sub={t.traderProfile.stats.copiers} />
             </Grid>
-            <Grid size={{ xs: 6, md: 3 }}>
+            )}
+            <Grid size={STAT_SIZE}>
               <StatCard title={t.traderProfile.stats.earnings} value={earnings !== null ? f18(earnings, 4) : '—'} sub="USDC" valueColor="success.main" />
             </Grid>
-            <Grid size={{ xs: 6, md: 3 }}>
+            <Grid size={STAT_SIZE}>
               <StatCard title={t.traderProfile.stats.strategies} value={stratCount !== null ? String(stratCount) : '—'} sub={t.traderProfile.stats.versions} />
             </Grid>
           </Grid>
@@ -526,7 +534,7 @@ function TraderProfileView() {
           )}
 
           {/* ─── D. Followers ──────────────────────────────────────── */}
-          {followerList.length > 0 && (
+          {FEATURE_COPY_TRADING && followerList.length > 0 && (
             <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
                 {interpolate(t.traderProfile.followers.titleFirst, { count: followerList.length })}

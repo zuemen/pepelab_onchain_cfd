@@ -6,6 +6,7 @@ import { usePepefiWallet } from 'src/layouts/pepefi'
 import { ASSET_IDS } from 'src/contracts/addresses'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { validateStrategy, MIN_ALLOCATION_ASSETS, type StrategyIssue } from 'src/lib/pepefi/strategyValidation'
+import { FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags'
 import { TableSkeleton } from 'src/components/pepefi/Skeleton'
 import { ASSETS_LIST, ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
 import { getPepeAvatar } from 'src/utils/pepefi-assets'
@@ -410,7 +411,17 @@ export default function TraderDashboard() {
           </Button>
         </Box>
 
-        {eligible === false && (
+        {/* 跟單旗標關閉時 /stake 不開放（信譽質押與跟單罰沒綁在一起），只說明原因、
+            不給一個會進到「此功能未啟用」的按鈕。 */}
+        {eligible === false && !FEATURE_COPY_TRADING && (
+          <Alert severity="warning">
+            <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+              {t.traderDashboard.publish.stakeRequiredTitle}
+            </Typography>
+            {t.traderDashboard.publish.stakeUnavailable}
+          </Alert>
+        )}
+        {eligible === false && FEATURE_COPY_TRADING && (
           <Alert severity="warning" action={
             <Button
               color="inherit"
@@ -611,7 +622,7 @@ export default function TraderDashboard() {
             {t.traderDashboard.publish.registerFirst}
           </Typography>
         )}
-        {traderInfo?.isRegistered && eligible === false && (
+        {traderInfo?.isRegistered && eligible === false && FEATURE_COPY_TRADING && (
           <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center', display: 'block' }}>
             {t.traderDashboard.publish.stakeToUnlockBefore}<Link component={RouterLink} to="/stake" color="primary.main">{t.traderDashboard.publish.stakeToUnlockLink}</Link>{t.traderDashboard.publish.stakeToUnlockAfter}
           </Typography>
@@ -637,7 +648,7 @@ export default function TraderDashboard() {
         <Card sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', bgcolor: 'background.neutral' }}>
           <Box>
             <Typography variant="caption" color="text.secondary">
-              {t.traderDashboard.earnings.claimable}
+              {FEATURE_COPY_TRADING ? t.traderDashboard.earnings.claimable : t.traderDashboard.earnings.claimableNeutral}
             </Typography>
             <Typography variant="h5" color="success.main" sx={{ fontFamily: MONO, fontWeight: 'bold', display: 'flex', alignItems: 'baseline' }}>
               {earnings === null ? '…' : (Number(earnings) / 1e18).toFixed(4)}
@@ -657,7 +668,7 @@ export default function TraderDashboard() {
         </Card>
 
         <Typography variant="caption" color="text.secondary">
-          {t.traderDashboard.earnings.note}
+          {FEATURE_COPY_TRADING ? t.traderDashboard.earnings.note : t.traderDashboard.earnings.noteNeutral}
         </Typography>
       </Card>
 
