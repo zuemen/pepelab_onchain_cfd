@@ -69,11 +69,14 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     uint256 public constant MAX_MAINTENANCE_MARGIN_BPS   = 9_999;  // must stay < 100%
     uint256 public constant MAX_PRICE_AGE_LIMIT          = 7 days;
     uint256 public constant MAX_EXECUTION_FEE            = 1 ether;
-    /// @notice M4: ceiling on the mark-price premium (10% of index). The
+    /// @notice M4: ceiling on the mark-price premium (2% of index). The
     ///         premium moves every position's PnL and liquidation price, so
     ///         an unbounded setter let the owner mark the whole book to an
-    ///         arbitrary price; above 10% it stops being a premium at all.
-    uint256 public constant MAX_MARK_PREMIUM_CAP_BPS     = 1_000;
+    ///         arbitrary price. At 5x leverage a 2% premium already moves
+    ///         equity by 10% of margin — twice the default maintenance
+    ///         buffer — so anything wider stops being a premium and becomes a
+    ///         liquidation lever.
+    uint256 public constant MAX_MARK_PREMIUM_CAP_BPS     = 200;
 
     // ── Funding (multi/short imbalance) ──────────────────────────────────────
     // Funding charges the crowded side and pays the other; it is NOT a financing
@@ -553,6 +556,9 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     /// @notice H3: in portfolio mode, part of a position's shortfall was paid
     ///         out of its owner's free margin before any pool backstop.
     event ShortfallChargedToAccount(uint256 indexed positionId, address indexed owner, uint256 amount);
+    /// @notice Portfolio mode: the liquidator of a leg that settled below zero
+    ///         was paid out of the owner's free margin (after the shortfall).
+    event LiquidationRewardFromAccount(uint256 indexed positionId, address indexed owner, uint256 amount);
 
     // ── Errors ───────────────────────────────────────────────────────────────
 
@@ -806,7 +812,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     ///      (M-3). An unbounded value let the owner push the mark far from the
     ///      index and liquidate or enrich one side of the book at will.
     function setMarkPremiumCapBps(uint256 _bps) external onlyOwner {
-        require(_bps <= MAX_MARK_PREMIUM_CAP_BPS, "premium cap>10%");
+        require(_bps <= MAX_MARK_PREMIUM_CAP_BPS, "premium cap>2%");
         markPremiumCapBps = _bps;
         emit MarkPremiumCapBpsSet(_bps);
     }
@@ -1239,6 +1245,21 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         if (closeAmount < 0) {
             // H3: portfolio mode charges the owner's free margin first.
             shortfall = _chargeAccountForShortfall(positionId, pos.owner, uint256(-closeAmount));
+            // A leg that settles below zero leaves no collateral to pay the
+            // liquidator from. In portfolio mode the account's free margin
+            // backed it, so once the shortfall is fully covered the reward
+            // (LIQUIDATION_REWARD_BPS of the leg's maintenance requirement)
+            // comes from what is left of that free margin — never from the
+            // pool, and never ahead of the shortfall.
+            if (shortfall == 0 && portfolioMarginEnabled) {
+                uint256 want = maintenanceMargin * LIQUIDATION_REWARD_BPS / 10_000;
+                uint256 fm   = freeMargin[pos.owner];
+                reward = want < fm ? want : fm;
+                if (reward > 0) {
+                    freeMargin[pos.owner] = fm - reward;
+                    emit LiquidationRewardFromAccount(positionId, pos.owner, reward);
+                }
+            }
         }
         if (closeAmount > 0) {
             // M-2: the remaining collateral is no longer swept wholesale. The
@@ -1261,6 +1282,8 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
                 usdc.forceApprove(address(insuranceVault), toVault);
                 insuranceVault.depositFromProtocol(toVault);
             }
+        } else if (reward > 0) {
+            usdc.safeTransfer(msg.sender, reward); // portfolio reward, see above
         } else if (shortfall > 0) {
             // N2: the position is underwater beyond its collateral (and, in
             // portfolio mode, beyond its owner's free margin), so the protocol

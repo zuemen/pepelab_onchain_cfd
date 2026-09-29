@@ -186,4 +186,65 @@ contract ExchangePortfolioGuardsTest is Test {
         vm.expectRevert(stale);
         exchange.liquidatePosition(btcId);
     }
+
+    // ── 5. liquidator reward for a below-zero leg comes from free margin ────
+
+    event LiquidationRewardFromAccount(uint256 indexed positionId, address indexed owner, uint256 amount);
+    event BadDebt(uint256 indexed positionId, bytes32 indexed asset, uint256 amount);
+
+    address liquidator = makeAddr("liquidator");
+
+    /// Leg at -500 beyond its margin, 600 free: 500 covers the shortfall, the
+    /// liquidator gets 5% of the 250 maintenance requirement (12.5).
+    function test_portfolio_belowZeroLeg_liquidatorPaidFromFreeMargin() public {
+        _deposit(1_600e18);
+        uint256 id = _open(BTC, true, 1_000e18);     // 600 free
+        oracle.set(BTC, 70_000e8);                    // leg -500; equity 100 < 250
+        uint256 poolBefore = usdc.balanceOf(address(exchange));
+
+        vm.expectEmit(true, true, false, true, address(exchange));
+        emit LiquidationRewardFromAccount(id, carol, 12.5e18);
+        vm.prank(liquidator);
+        exchange.liquidatePosition(id);
+
+        assertEq(usdc.balanceOf(liquidator), 12.5e18);
+        assertEq(exchange.freeMargin(carol), 87.5e18);
+        // The pool pays nothing: the reward left as USDC, and exactly that
+        // much was taken from the owner's claim.
+        assertEq(poolBefore - usdc.balanceOf(address(exchange)), 12.5e18);
+    }
+
+    function test_portfolio_belowZeroLeg_rewardCappedAtRemainingFreeMargin() public {
+        _deposit(1_505e18);
+        uint256 id = _open(BTC, true, 1_000e18);     // 505 free
+        oracle.set(BTC, 70_000e8);
+        vm.prank(liquidator);
+        exchange.liquidatePosition(id);
+        assertEq(usdc.balanceOf(liquidator), 5e18);
+        assertEq(exchange.freeMargin(carol), 0);
+    }
+
+    /// If free margin cannot cover the shortfall, the liquidator is not paid
+    /// ahead of the pool.
+    function test_portfolio_belowZeroLeg_noRewardWhileShortfallRemains() public {
+        _deposit(1_100e18);
+        uint256 id = _open(BTC, true, 1_000e18);     // 100 free
+        oracle.set(BTC, 70_000e8);
+        vm.expectEmit(true, true, false, true, address(exchange));
+        emit BadDebt(id, BTC, 400e18);
+        vm.prank(liquidator);
+        exchange.liquidatePosition(id);
+        assertEq(usdc.balanceOf(liquidator), 0);
+    }
+
+    function test_isolated_belowZeroLeg_noRewardAndFreeMarginUntouched() public {
+        exchange.setPortfolioMarginEnabled(false);
+        _deposit(1_600e18);
+        uint256 id = _open(BTC, true, 1_000e18);
+        oracle.set(BTC, 70_000e8);
+        vm.prank(liquidator);
+        exchange.liquidatePosition(id);
+        assertEq(usdc.balanceOf(liquidator), 0);
+        assertEq(exchange.freeMargin(carol), 600e18);
+    }
 }
