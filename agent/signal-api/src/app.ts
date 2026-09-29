@@ -8,6 +8,7 @@
 import { Hono, type Context, type Next } from "hono";
 import { cors } from "hono/cors";
 import { paymentMiddleware, type Network } from "x402-hono";
+import { computeRoutePatterns, findMatchingRoute } from "x402/shared";
 import { ethers } from "ethers";
 import {
   resolvePayTo,
@@ -28,6 +29,8 @@ import {
   ASSET_IDS,
   assessPayoutAddress,
   isCompromisedAddress,
+  checkPayoutDenylistEnv,
+  redactSecrets,
   type CodeReader,
   type PayoutAssessment,
   type ContractTarget,
@@ -303,13 +306,20 @@ export async function applyLedgerRecording(
       // 必須 await：serverless 不保證回應後還能背景跑，fire-and-forget 會被砍掉
       // ——跟這份檔案開頭那條舊註解講的是同一件事，只是現在等的是一次 KV 寫入
       // （通常 <150ms），不再是一筆鏈上交易的 tx.wait()（≥2 秒起跳）。
-      const idempotencyKey =
-        deriveIdempotencyKey(res.headers.get("X-PAYMENT-RESPONSE"), paymentHeader) ??
-        `req:${randomUUID()}`;
+      let idempotencyKey = deriveIdempotencyKey(res.headers.get("X-PAYMENT-RESPONSE"), paymentHeader);
+      if (!idempotencyKey) {
+        idempotencyKey = `req:${randomUUID()}`;
+        // 理論上不會發生（X-PAYMENT-RESPONSE 應帶結算 tx hash）。隨機鍵只防 worker 端
+        // 重送，**無法**辨認同一筆付款的重複入列，所以要留下痕跡。
+        console.warn(
+          `[ledger] 無法從 X-PAYMENT-RESPONSE / X-PAYMENT 推導冪等鍵，改用隨機鍵 ${idempotencyKey}：` +
+            JSON.stringify(entry),
+        );
+      }
       await enqueueSettlement({ ...entry, idempotencyKey });
       queued = true;
     } catch (err) {
-      settleError = (err as Error).message;
+      settleError = "ledger_enqueue_failed：已收款但分潤紀錄未能排入佇列（已記錄於伺服器 log）";
       // 買方已經拿到資料且已扣款，這筆分潤紀錄卻可能遺失——沒有其他地方會
       // 保留這筆待結算的原始資料，所以至少留在 log 裡供人工回補。
       console.error(`[ledger] enqueue 失敗，entry 可能遺失：${JSON.stringify(entry)}`, err);
@@ -349,8 +359,77 @@ export interface CreateAppOptions {
   isRegisteredTrader?: (trader: string) => Promise<boolean>;
 }
 
+/**
+ * 路由用的正規化路徑（2026-09-29 審查 High-1）。
+ *
+ * x402 的 findMatchingRoute 以**不分大小寫**的 regex 比對、先 decodeURIComponent、
+ * 並把連續的 `/` 合併；Hono 預設的路由卻是分大小寫、不合併 `//`。於是
+ * `/SIGNALS/0x…`、`//signals/…` 會繞過所有 `app.use("/signals/*")` 閘門（輸入驗證、
+ * payTo、registry），卻仍被 x402 當成付費路由發出 402。這裡讓 Hono 看到的路徑與
+ * x402 一致：合併 `//`、去掉結尾 `/`、第一段轉小寫（第二段保留原樣——資產代號
+ * `sBTC` 分大小寫）。
+ */
+export function normalizeRequestPath(req: Request): string {
+  const url = req.url;
+  const start = url.indexOf("/", url.indexOf("://") + 3);
+  let path = start === -1 ? "/" : url.slice(start);
+  path = path.split(/[?#]/)[0] ?? "/";
+  try {
+    path = decodeURI(path);
+  } catch {
+    /* 保留原字串 */
+  }
+  path = path.replace(/\\/g, "/").replace(/\/{2,}/g, "/");
+  if (path.length > 1) path = path.replace(/\/+$/, "");
+  return path.replace(/^\/([^/]+)/, (_m, seg: string) => `/${seg.toLowerCase()}`) || "/";
+}
+
+/** x402 付費路由（付費牆與「是否為付費路由」的判斷共用同一份設定）。 */
+function paidRoutes() {
+  return {
+    "GET /signals/[trader]": {
+      price: `$${PRICE_SIGNALS}`,
+      network: NETWORK,
+      config: { description: "Trader 即時績效摘要 + 開倉建議", maxTimeoutSeconds: MAX_TIMEOUT_SECONDS },
+    },
+    "GET /oracle/[asset]": {
+      price: `$${PRICE_ORACLE}`,
+      network: NETWORK,
+      config: {
+        description: "決策級快照：價格 + funding + OI 失衡 + 預估清算價 + edge 建議",
+        maxTimeoutSeconds: MAX_TIMEOUT_SECONDS,
+      },
+    },
+  };
+}
+
+/** 對外錯誤：完整錯誤只寫 log（可能含 RPC URL / API key），回應只給原因代碼。 */
+function internalError(where: string, err: unknown): string {
+  console.error(`[${where}]`, err);
+  return `${where}_unavailable`;
+}
+
 export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVariables }> {
-  const app = new Hono<{ Variables: AppVariables }>();
+  const app = new Hono<{ Variables: AppVariables }>({ getPath: normalizeRequestPath });
+  checkPayoutDenylistEnv();
+  const PAID_ROUTE_PATTERNS = computeRoutePatterns(paidRoutes());
+
+  // ── 對外回應的秘密遮蔽（審查 Medium-3）：最外層，涵蓋所有路由。────────────
+  // 個別 catch 已改成只回原因代碼；這一層是安全網——例如 ERC-8126 驗證結果的
+  // evidence 裡會帶 RPC 錯誤字串（shared/verification.ts），ethers 的錯誤訊息含
+  // requestUrl。凡是 JSON 回應，一律把帶憑證的 env 值與 requestUrl 遮掉。
+  app.use("*", async (c, next) => {
+    await next();
+    const ct = c.res.headers.get("content-type") ?? "";
+    if (!ct.includes("json")) return;
+    const text = await c.res.clone().text();
+    const clean = redactSecrets(text);
+    if (clean !== text) {
+      const headers = new Headers(c.res.headers);
+      headers.delete("content-length");
+      c.res = new Response(clean, { status: c.res.status, headers });
+    }
+  });
   const payTo = opts.payTo ?? PAY_TO;
   const codeReader: CodeReader = opts.payoutCodeReader ?? provider;
   // payTo 必須是 EOA（= FEE_SETTLEMENT_PRIVATE_KEY 的地址）：外洩清單、EIP-7702 委派、
@@ -460,7 +539,7 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
       const trader = c.req.query("trader");
       return c.json(jsonSafe(await getOnchainRevenue(trader)));
     } catch (err) {
-      return c.json({ ok: false, error: (err as Error).message }, 502);
+      return c.json({ ok: false, error: internalError("revenue", err) }, 502);
     }
   });
 
@@ -484,7 +563,7 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
         return c.json({ ok: false, error: (err as Error).message }, 400);
       }
       // getCandles 內部有模擬保底，走到這裡代表是預期外的錯誤。
-      return c.json({ ok: false, error: (err as Error).message }, 502);
+      return c.json({ ok: false, error: internalError("candles", err) }, 502);
     }
   });
 
@@ -503,17 +582,22 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
       if (err instanceof BadDateError) {
         return c.json({ ok: false, error: (err as Error).message }, 400);
       }
-      return c.json({ ok: false, error: (err as Error).message }, 502);
+      return c.json({ ok: false, error: internalError("benchmarks", err) }, 502);
     }
   });
 
   // ── 免費：ERC-8126 agent 驗證層（對手方/marketplace 可查「這個 agent 可不可信」）──
   app.get("/agent/:did/verification", async (c) => {
     const raw = c.req.param("did");
+    let did: string;
     try {
       // 接受 did:pkh 或裸 0x 地址；裸地址轉成 did:pkh。
-      const did = raw.startsWith("did:") ? raw : agentDid(raw);
-      parseDidPkh(did); // 驗證格式；malformed 直接丟錯 → 400
+      did = raw.startsWith("did:") ? raw : agentDid(raw);
+      parseDidPkh(did); // 驗證格式；malformed 直接丟錯 → 400（我們自己的訊息，可以回）
+    } catch (err) {
+      return c.json({ ok: false, error: (err as Error).message }, 400);
+    }
+    try {
       const av = await buildAgentVerification({
         did,
         verifier: VERIFIER_WALLET,
@@ -543,7 +627,7 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
       });
       return c.json(jsonSafe({ ok: true, verification: av }));
     } catch (err) {
-      return c.json({ ok: false, error: (err as Error).message }, 400);
+      return c.json({ ok: false, error: internalError("verification", err) }, 502);
     }
   });
 
@@ -618,7 +702,7 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
         }),
       );
     } catch (err) {
-      return c.json({ ok: false, error: (err as Error).message }, 400);
+      return c.json({ ok: false, error: internalError("demo_signal", err) }, 502);
     }
   });
 
@@ -732,11 +816,12 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
     try {
       registered = await isRegistered(trader);
     } catch (err) {
+      console.error(`[registry] traders(${trader}) 失敗：`, err);
       return c.json(
         {
           ok: false,
           error: "registry_unavailable",
-          message: `無法確認 ${trader} 是否為已註冊 trader：${(err as Error).message}`,
+          message: `無法確認 ${trader} 是否為已註冊 trader（RPC 暫時無法使用）。`,
           note: "未付款：無法確認就不發出付款要求。",
         },
         503,
@@ -800,24 +885,17 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
   // 500，看不出是誰的問題、該不該重試。這裡把它轉成明確的 429 / 502。
   const x402 = paymentMiddleware(
     payTo as `0x${string}`,
-    {
-      "GET /signals/[trader]": {
-        price: `$${PRICE_SIGNALS}`,
-        network: NETWORK,
-        config: { description: "Trader 即時績效摘要 + 開倉建議", maxTimeoutSeconds: MAX_TIMEOUT_SECONDS },
-      },
-      "GET /oracle/[asset]": {
-        price: `$${PRICE_ORACLE}`,
-        network: NETWORK,
-        config: {
-          description: "決策級快照：價格 + funding + OI 失衡 + 預估清算價 + edge 建議",
-          maxTimeoutSeconds: MAX_TIMEOUT_SECONDS,
-        },
-      },
-    },
+    paidRoutes(),
     { url: FACILITATOR_URL as `${string}://${string}` },
   );
   app.use(async (c, next) => {
+    // 縱深防禦（審查 High-1）：不論前面的路徑閘門有沒有被繞過（大小寫、`//`、
+    // %2F 編碼…），只要 x402 會把這個請求當成付費路由，就先確認 payTo 安全。
+    // 用 x402 自己的 findMatchingRoute，保證判斷與付費牆完全一致。
+    if (findMatchingRoute(PAID_ROUTE_PATTERNS, c.req.raw.url.replace(/^[a-z]+:\/\/[^/]+/i, ""), c.req.method.toUpperCase())) {
+      const blocked = await payToGuard(c, async () => {});
+      if (blocked) return blocked;
+    }
     let res: Response | void;
     try {
       // 必須接住回傳值：付費牆在 402 時是 **return** 一個 Response，不是寫進 c.res。
@@ -868,7 +946,8 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
       // 形狀在 middleware 沒跑到的路徑（理論上不會，防禦性寫法）下缺欄位。
       return c.json(jsonSafe({ ok: true, settled: false, data: perf }));
     } catch (err) {
-      return c.json({ ok: false, error: (err as Error).message }, 400);
+      // status ≥ 400 → x402-hono 不會 settle，買方不被扣款。
+      return c.json({ ok: false, error: internalError("signals", err) }, 400);
     }
   });
 
@@ -898,7 +977,8 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
       } satisfies LedgerEntry);
       return c.json(jsonSafe({ ok: true, settled: false, data: snap }));
     } catch (err) {
-      return c.json({ ok: false, error: (err as Error).message }, 400);
+      // status ≥ 400 → x402-hono 不會 settle，買方不被扣款。
+      return c.json({ ok: false, error: internalError("oracle", err) }, 400);
     }
   });
 

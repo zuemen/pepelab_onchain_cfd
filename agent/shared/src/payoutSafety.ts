@@ -50,6 +50,8 @@ export interface AssessOptions {
   ttlMs?: number;
   /** 單次 getCode 的逾時（預設 5s）：卡住的 RPC 不能把付費路由一起拖到 function timeout。 */
   timeoutMs?: number;
+  /** RPC 失敗時，上次結果最多可沿用多久（預設 1 小時）。 */
+  staleMaxMs?: number;
 }
 
 const codeCache = new Map<string, { code: string; at: number }>();
@@ -59,12 +61,48 @@ export function clearPayoutSafetyCache(): void {
   codeCache.clear();
 }
 
+/** stale 快取（RPC 失敗時沿用的上次結果）最多可信多久；超過就改判 unsafe。 */
+export const PAYOUT_STALE_MAX_MS = 60 * 60 * 1000;
+
+/**
+ * 解析 env `PAYOUT_DENYLIST`。回傳合法地址與格式錯誤的項目——錯誤項目**不可**
+ * 默默忽略（營運方以為封鎖了，其實沒有），呼叫端要在啟動時警告。
+ */
+export function parsePayoutDenylist(raw = process.env.PAYOUT_DENYLIST ?? ""): {
+  addresses: string[];
+  invalid: string[];
+} {
+  const items = raw.split(",").map((s) => s.trim()).filter(Boolean);
+  const addresses: string[] = [];
+  const invalid: string[] = [];
+  for (const it of items) {
+    if (/^0x[0-9a-fA-F]{40}$/.test(it)) addresses.push(it.toLowerCase());
+    else invalid.push(it);
+  }
+  return { addresses, invalid };
+}
+
+let warnedDenylistRaw: string | null = null;
+/**
+ * 啟動時呼叫：PAYOUT_DENYLIST 有格式錯誤的項目就 console.warn（同一個值只警告一次），
+ * 回傳錯誤項目供呼叫端決定是否拒絕啟動。
+ */
+export function checkPayoutDenylistEnv(): string[] {
+  const raw = process.env.PAYOUT_DENYLIST ?? "";
+  const { invalid } = parsePayoutDenylist(raw);
+  if (invalid.length && warnedDenylistRaw !== raw) {
+    warnedDenylistRaw = raw;
+    console.warn(
+      `::warning::PAYOUT_DENYLIST 有 ${invalid.length} 個格式錯誤的項目被忽略（必須是 0x + 40 hex）：` +
+        invalid.join(", "),
+    );
+  }
+  return invalid;
+}
+
 function denylist(): Set<string> {
-  const extra = (process.env.PAYOUT_DENYLIST ?? "")
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter((s) => /^0x[0-9a-f]{40}$/.test(s));
-  return new Set([...COMPROMISED_ADDRESSES, ...extra]);
+  checkPayoutDenylistEnv();
+  return new Set([...COMPROMISED_ADDRESSES, ...parsePayoutDenylist().addresses]);
 }
 
 export function isCompromisedAddress(addr: string): boolean {
@@ -146,25 +184,36 @@ export async function assessPayoutAddress(
     codeCache.set(key, { code, at: now });
     return { address, source: "rpc", checkedAt: now, ...classifyCode(address, code, requireEoa) };
   } catch (err) {
-    if (cached) {
+    // 完整錯誤只進 log：ethers 的 RPC 錯誤訊息會帶 requestUrl（可能含 API key），
+    // 而 reason 會被 signal-api 原樣回給公開使用者。對外只給原因代碼。
+    console.error(`[payoutSafety] getCode(${address}) 失敗：`, err);
+    const staleMax = opts.staleMaxMs ?? PAYOUT_STALE_MAX_MS;
+    if (cached && now - cached.at <= staleMax) {
       const r = classifyCode(address, cached.code, requireEoa);
       return {
         address,
         source: "stale-cache",
         checkedAt: cached.at,
         safe: r.safe,
+        reason: `${r.reason}（rpc_unavailable：沿用 ${Math.round((now - cached.at) / 1000)}s 前的結果）`,
+      };
+    }
+    if (cached) {
+      return {
+        address,
+        safe: false,
+        source: "no-data",
+        checkedAt: cached.at,
         reason:
-          `${r.reason}（RPC 失敗，沿用 ${Math.round((now - cached.at) / 1000)}s 前的結果：` +
-          `${(err as Error)?.message ?? err}）`,
+          `rpc_unavailable：無法讀取 ${address} 的 code，上次成功檢查已超過 ` +
+          `${Math.round(staleMax / 60000)} 分鐘，fail-closed 視為不安全。`,
       };
     }
     return {
       address,
       safe: false,
       source: "no-data",
-      reason:
-        `rpc_unavailable：無法讀取 ${address} 的 code 且從未成功檢查過，` +
-        `fail-closed 視為不安全（${(err as Error)?.message ?? err}）。`,
+      reason: `rpc_unavailable：無法讀取 ${address} 的 code 且從未成功檢查過，fail-closed 視為不安全。`,
     };
   }
 }
