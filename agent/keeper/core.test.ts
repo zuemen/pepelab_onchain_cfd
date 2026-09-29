@@ -10,6 +10,9 @@ import {
   confirmLargeMove,
   planMirror,
   runVerdict,
+  parseRatioEnv,
+  BREAKER_RANGE,
+  CONFIRM_TOLERANCE_RANGE,
 } from "./core.ts";
 
 // ── parseFeedValue：拒絕垃圾,不夾擠 ──────────────────────────────────────
@@ -245,5 +248,17 @@ assert.equal(runVerdict({ total: 11, available: 11, skipped: 0, rejected: 0, wro
 assert.equal(runVerdict({ total: 11, available: 11, skipped: 0, rejected: 0, wrote: 10, failed: 1 }, 0.3).exitCode, 1);
 assert.equal(runVerdict({ total: 11, available: 7, skipped: 4, rejected: 0, wrote: 7, failed: 0 }, 0.3).exitCode, 1);
 assert.equal(runVerdict({ total: 11, available: 0, skipped: 11, rejected: 0, wrote: 0, failed: 0 }, 0.3).exitCode, 1);
+
+// ── 比例型環境變數驗證（審查 Low） ───────────────────────────────────────
+assert.deepEqual(parseRatioEnv("X", undefined, 0.2, 0, 1), { value: 0.2 });
+assert.deepEqual(parseRatioEnv("X", "", 0.2, 0, 1), { value: 0.2 });
+assert.deepEqual(parseRatioEnv("X", "0.3", 0.2, 0, 1), { value: 0.3 });
+assert.deepEqual(parseRatioEnv("X", "1", 0.2, 0, 1), { value: 1 });
+for (const bad of ["abc", "NaN", "Infinity", "0", "-0.1", "1.5", "0x10"]) {
+  const r = parseRatioEnv("KEEPER_BREAKER_DEVIATION", bad, 0.2, ...BREAKER_RANGE);
+  assert.ok(r.error?.includes("KEEPER_BREAKER_DEVIATION"), `${bad} 應被拒：${JSON.stringify(r)}`);
+}
+assert.ok(parseRatioEnv("KEEPER_CONFIRM_TOLERANCE", "0.5", 0.02, ...CONFIRM_TOLERANCE_RANGE).error);
+assert.deepEqual(parseRatioEnv("KEEPER_CONFIRM_TOLERANCE", "0.05", 0.02, ...CONFIRM_TOLERANCE_RANGE), { value: 0.05 });
 
 console.log("core.test.ts ✓ all assertions passed");

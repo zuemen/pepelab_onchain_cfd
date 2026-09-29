@@ -98,6 +98,31 @@ export const DEFAULT_BREAKER_DEVIATION = 0.2; // 20%
 /** 多源確認：獨立來源彼此的最大差距（(max−min)/min）。可用 KEEPER_CONFIRM_TOLERANCE 覆寫。 */
 export const DEFAULT_CONFIRM_TOLERANCE = 0.02; // 2%
 
+/**
+ * 解析比例型環境變數（審查 Low）：未設用預設值；設了就必須是有限數、且落在
+ * (min, max] 內，否則回 error，由呼叫端 exit 1。`KEEPER_BREAKER_DEVIATION=abc`
+ * 變成 NaN 會讓所有比較都是 false —— 熔斷形同關閉，這種設定錯誤必須大聲失敗。
+ */
+export function parseRatioEnv(
+  name: string,
+  raw: string | undefined,
+  def: number,
+  min: number,
+  max: number,
+): { value: number; error?: undefined } | { value?: undefined; error: string } {
+  if (raw === undefined || raw.trim() === "") return { value: def };
+  const v = Number(raw.trim());
+  if (!Number.isFinite(v) || v <= min || v > max) {
+    return { error: `${name}=${JSON.stringify(raw)} 不合法：必須是 (${min}, ${max}] 內的有限數` };
+  }
+  return { value: v };
+}
+
+/** KEEPER_BREAKER_DEVIATION 的合理範圍：(0, 1]。 */
+export const BREAKER_RANGE = [0, 1] as const;
+/** KEEPER_CONFIRM_TOLERANCE 的合理範圍：(0, 0.1] —— 超過 10% 的「一致」不算確認。 */
+export const CONFIRM_TOLERANCE_RANGE = [0, 0.1] as const;
+
 /** 同一輪從某個來源拿到的價格。source 相同視為同一來源（不算獨立）。 */
 export interface SourceQuote {
   source: string;

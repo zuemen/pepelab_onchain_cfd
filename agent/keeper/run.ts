@@ -22,6 +22,9 @@ import {
   runVerdict,
   DEFAULT_BREAKER_DEVIATION,
   DEFAULT_CONFIRM_TOLERANCE,
+  BREAKER_RANGE,
+  CONFIRM_TOLERANCE_RANGE,
+  parseRatioEnv,
   type ParsedFeed,
   type SourceQuote,
 } from "./core.ts";
@@ -39,13 +42,18 @@ const HEARTBEAT_SEC = Number(process.env.KEEPER_HEARTBEAT ?? "900");         // 
 const DRY_RUN = process.env.DRY_RUN === "1";
 // A-5：寫進 MockOracle（交易所實際讀的那顆）的熔斷門檻；超過就需要多源確認，
 // 確認不過就拒寫（熔斷語意，見 core.ts guardDeviation）。
-const BREAKER_DEVIATION = Number(
-  process.env.KEEPER_BREAKER_DEVIATION ?? String(DEFAULT_BREAKER_DEVIATION),
-);
 // 多源確認：獨立來源彼此差距 ≤ 這個比例且方向一致，才寫入共識價。
-const CONFIRM_TOLERANCE = Number(
-  process.env.KEEPER_CONFIRM_TOLERANCE ?? String(DEFAULT_CONFIRM_TOLERANCE),
-);
+// 兩者都驗證是有限數且在合理範圍內，否則 exit 1（NaN 會讓熔斷形同關閉）。
+function ratioEnvOrDie(name: string, def: number, range: readonly [number, number]): number {
+  const r = parseRatioEnv(name, process.env[name], def, range[0], range[1]);
+  if (r.error !== undefined) {
+    console.error(`::error::${r.error}`);
+    process.exit(1);
+  }
+  return r.value;
+}
+const BREAKER_DEVIATION = ratioEnvOrDie("KEEPER_BREAKER_DEVIATION", DEFAULT_BREAKER_DEVIATION, BREAKER_RANGE);
+const CONFIRM_TOLERANCE = ratioEnvOrDie("KEEPER_CONFIRM_TOLERANCE", DEFAULT_CONFIRM_TOLERANCE, CONFIRM_TOLERANCE_RANGE);
 // 部分失敗門檻：超過這個比例的資產無法更新就讓 CI 變紅（預設 30%）。
 const MAX_DEGRADED_RATIO = Number(process.env.KEEPER_MAX_DEGRADED_RATIO ?? "0.3");
 
