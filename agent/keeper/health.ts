@@ -11,7 +11,7 @@ import { writeFileSync } from "node:fs";
 import { ethers } from "ethers";
 import type { HealthReport } from "./alert.ts";
 import { fetchMarketSession } from "./feeds.ts";
-import { assetClassOf, judgeStaleness } from "./market.ts";
+import { checkHealth } from "./health-check.ts";
 
 const SYMBOLS = [
   "sBTC", "sETH", "sAAPL", "sTSLA", "sNVDA",
@@ -64,57 +64,38 @@ async function main(): Promise<void> {
   }
 
   const oracle = new ethers.Contract(ORACLE_ADDR, ORACLE_ABI, provider);
-  const now = Math.floor(Date.now() / 1000);
-  const stale: string[] = [];
-  const closed: string[] = [];
-  const lines: string[] = [];
-  const log = (line: string) => {
-    lines.push(line);
-    console.log(line);
-  };
-
   console.log(`chain=${CHAIN} oracle=${ORACLE_ADDR} maxPriceAge=${maxAge}s`);
-  for (const symbol of SYMBOLS) {
-    try {
-      const [price, at] = (await oracle.getPrice(ethers.id(symbol))) as [bigint, bigint];
-      const age = now - Number(at);
-      // 股票／ETF／期貨只在「照一般門檻已超齡」時才去問 Yahoo 是否休市，
-      // 正常情況一個外部請求都不多打；加密資產永遠嚴格，不問。
-      const session =
-        age > maxAge && assetClassOf(symbol) !== "crypto" ? await fetchMarketSession(symbol) : null;
-      const v = judgeStaleness({ symbol, updatedAtSec: Number(at), nowSec: now, maxAgeSec: maxAge, session });
-      if (v.stale) stale.push(`${symbol}(${(age / 3600).toFixed(1)}h)`);
-      if (v.tolerated) closed.push(`${symbol}(${(age / 3600).toFixed(1)}h)`);
-      log(
-        `${v.stale ? "STALE" : v.tolerated ? "closd" : "  ok "} ${symbol.padEnd(6)} ` +
-          `$${(Number(price) / 1e8).toFixed(2).padStart(10)} age=${(age / 3600).toFixed(1)}h` +
-          (v.stale || v.tolerated ? `  ${v.reason}` : ""),
-      );
-    } catch (e) {
-      stale.push(`${symbol}(unreadable)`);
-      log(`STALE ${symbol.padEnd(6)} 讀取失敗：${(e as Error).message.slice(0, 80)}`);
-    }
-  }
-
-  writeReport({
+  const report = await checkHealth({
     chain: CHAIN,
-    status: stale.length > 0 ? "stale" : "ok",
-    checkedAtSec: now,
+    symbols: SYMBOLS,
+    nowSec: Math.floor(Date.now() / 1000),
     maxAgeSec: maxAge,
-    stale,
-    closed,
-    lines,
+    getPrice: async (symbol) => (await oracle.getPrice(ethers.id(symbol))) as [bigint, bigint],
+    fetchSession: (symbol) => fetchMarketSession(symbol),
   });
+  writeReport(report);
 
-  if (stale.length > 0) {
-    console.error(
-      `::error::${stale.length}/${SYMBOLS.length} 個資產超過 maxPriceAge：${stale.join(", ")}。` +
-      `交易所會對這些資產 revert StalePrice —— 開倉、平倉、清算全部無法執行。`,
-    );
+  let bad = false;
+  if (report.status === "error") {
+    console.error(`::error::健康檢查無法完成：${report.error}`);
     process.exit(1);
   }
-  if (closed.length > 0) {
-    console.log(`休市中、依市場時段放寬（未告警）：${closed.join(", ")}`);
+  if (report.stale.length > 0) {
+    console.error(
+      `::error::${report.stale.length}/${SYMBOLS.length} 個資產超過 maxPriceAge：${report.stale.join(", ")}。` +
+      `交易所會對這些資產 revert StalePrice —— 開倉、平倉、清算全部無法執行。`,
+    );
+    bad = true;
+  }
+  if (report.unreadable?.length) {
+    console.error(
+      `::error::${report.unreadable.length} 個資產讀不到（RPC 問題，未算過期）：${report.unreadable.join(", ")}`,
+    );
+    bad = true;
+  }
+  if (bad) process.exit(1);
+  if (report.closed?.length) {
+    console.log(`休市中、依市場時段放寬（未告警）：${report.closed.join(", ")}`);
   }
   console.log("所有資產都在 maxPriceAge 之內（或休市中合理未更新） ✓");
 }

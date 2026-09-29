@@ -20,7 +20,7 @@
     "bundle:check": "npm run bundle:check -w signal-api",
     "//test": "稽核 2026-08-06：agent 的測試以前沒有任何一支在 CI 跑（package.json 根本沒有 test script）。以下全部離線可跑、不需金鑰、不送任何交易。",
     "test": "npm run test:keeper && npm run test:core && npm run test:agent && npm run test:api && npm run test:signal-api",
-    "test:keeper": "tsx keeper/core.test.ts && tsx keeper/feeds.test.ts && tsx keeper/alert.test.ts && tsx keeper/market.test.ts && tsx keeper/operator.test.ts",
+    "test:keeper": "tsx keeper/core.test.ts && tsx keeper/feeds.test.ts && tsx keeper/alert.test.ts && tsx keeper/market.test.ts && tsx keeper/operator.test.ts && tsx keeper/health-check.test.ts",
     "test:core": "tsx examples/freshness.test.ts && tsx examples/edge-policy.test.ts && tsx examples/decide.test.ts",
     "test:agent": "tsx examples/session-events.test.ts && tsx examples/audit-trail.test.ts && tsx examples/verification.test.ts && tsx examples/write-gate.test.ts && tsx examples/agent-identity.ts && tsx examples/agent-onboarding.ts",
     "test:api": "tsx examples/api-gate.test.ts && tsx examples/x402-client.test.ts && tsx tg-bot/guard.test.ts",

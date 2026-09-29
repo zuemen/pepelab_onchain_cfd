@@ -19,6 +19,8 @@ export interface HealthReport {
   stale: string[];
   /** 休市中、依市場時段放寬而未告警的資產（第 4 項）。 */
   closed?: string[];
+  /** RPC 讀不到的資產 —— 不算過期，但也不能證明已恢復，所以會擋住自動關閉。 */
+  unreadable?: string[];
   /** 每個資產一行的人類可讀輸出。 */
   lines: string[];
   error?: string;
@@ -72,9 +74,15 @@ export function decideAlert(a: {
   }
 
   if (report.status === "ok") {
-    return open
-      ? { action: "close", reason: `全部資產恢復，關閉 #${open.number}` }
-      : { action: "none", reason: "全部資產正常，且沒有開著的告警" };
+    if (!open) return { action: "none", reason: "全部資產正常，且沒有開著的告警" };
+    // 讀不到的資產不能證明已恢復；關掉 issue 會讓「仍在壞」的事故從時間線上消失。
+    if (report.unreadable?.length) {
+      return {
+        action: "none",
+        reason: `仍有資產讀不到（${report.unreadable.join(", ")}），無法確認恢復，不關閉 #${open.number}`,
+      };
+    }
+    return { action: "close", reason: `全部資產恢復，關閉 #${open.number}` };
   }
 
   // stale
@@ -113,6 +121,9 @@ export function renderBody(report: HealthReport, runUrl?: string): string {
   ];
   if (report.closed?.length) {
     out.push(`**休市中、未告警**：${report.closed.join(", ")}`);
+  }
+  if (report.unreadable?.length) {
+    out.push(`**讀不到（RPC，未算過期）**：${report.unreadable.join(", ")}`);
   }
   out.push(
     "",
