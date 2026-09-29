@@ -46,8 +46,9 @@ export const kyc = {
     txHash: '交易 hash',
     /** tx.wait() 失敗但交易已送出：收據保留。 */
     confirmFailed: '交易已送出，但等待確認時發生錯誤——交易可能已經上鏈。收據已保留，請用交易 hash 到區塊瀏覽器確認狀態，確認前不要重送。',
-    viewMine: '查看我的收據',
     hideMine: '收起收據',
+    viewMineCount: '查看我的收據（{count}）',
+    pendingStoredAt: '{time} 送出前保存、但沒有拿到交易 hash 的收據（交易可能沒有送出，請到區塊瀏覽器確認）：',
     storedAt: '這台瀏覽器於 {time} 保存的收據（只有 salt 與雜湊，沒有姓名與國籍明文）：',
     scheme: '雜湊方式：keccak256(salt ‖ 正規化值)；正規化姓名「{name}」，國籍代碼「{code}」。',
   },

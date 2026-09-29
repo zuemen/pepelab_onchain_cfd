@@ -3,9 +3,12 @@ import { it, expect, describe } from 'vitest'
 import {
   toKycReceipt,
   kycSubmitArgs,
-  loadKycReceipt,
-  saveKycReceipt,
-  removeKycReceipt,
+  loadKycReceipts,
+  legacyReceiptKey,
+  promoteKycReceipt,
+  sanitizeKycReceipt,
+  savePendingKycReceipt,
+  clearPendingKycReceipt,
   generateSalt,
   normalizeName,
   isCommitmentHash,
@@ -85,6 +88,8 @@ describe('isCommitmentHash', () => {
 
 describe('KYC 收據（localStorage）', () => {
   const LOC = { chainId: 84532, registry: '0xAbC0000000000000000000000000000000000001', user: '0xDef0000000000000000000000000000000000002' }
+  const TX1 = '0x' + '1'.repeat(64)
+  const TX2 = '0x' + '2'.repeat(64)
 
   const withFakeStorage = (fn: (store: Map<string, string>) => void) => {
     const store = new Map<string, string>()
@@ -98,39 +103,80 @@ describe('KYC 收據（localStorage）', () => {
     try { fn(store) } finally { g.localStorage = prev }
   }
 
+  const receipt = (name: string, salt: string, txHash: string | null, createdAt: number) =>
+    toKycReceipt(buildKycSubmission(name, 'TW', salt), { ...LOC, txHash, createdAt })
+
   it('只存 salt 與兩個雜湊，不存明文姓名與國籍', () => {
-    const s = buildKycSubmission('Alice Chen 陳小美', 'TW', SALT)
-    const r = toKycReceipt(s, { ...LOC, txHash: null })
+    const r = toKycReceipt(buildKycSubmission('Alice Chen 陳小美', 'TW', SALT), { ...LOC, txHash: null })
     const json = JSON.stringify(r)
     expect(json).not.toMatch(/alice/i)
     expect(json).not.toContain('陳小美')
     expect(json).not.toContain('"TW"')
     expect(Object.keys(r)).not.toContain('fullName')
     expect(Object.keys(r)).not.toContain('normalizedName')
-    expect(r.salt).toBe(SALT)
   })
 
-  it('存、讀、刪（交易取消時刪除）', () => {
-    withFakeStorage((store) => {
-      const r = toKycReceipt(buildKycSubmission('Alice', 'TW', SALT), { ...LOC, txHash: '0x' + '9'.repeat(64) })
-      expect(saveKycReceipt(r)).toBe(true)
-      // 位址大小寫不同也找得到同一份
-      expect(loadKycReceipt(84532, LOC.registry.toLowerCase(), LOC.user.toUpperCase().replace('0X', '0x'))).toEqual(r)
-      expect([...store.values()].join()).not.toMatch(/alice/i)
-      removeKycReceipt(84532, LOC.registry, LOC.user)
-      expect(loadKycReceipt(84532, LOC.registry, LOC.user)).toBeNull()
+  it('舊收據在「重送＋取消」之後仍在（pending 與 history 分開）', () => {
+    withFakeStorage(() => {
+      // 第一次：送出成功，升格進 history
+      const first = receipt('Alice', SALT, null, 1)
+      expect(savePendingKycReceipt(first)).toBe(true)
+      expect(promoteKycReceipt({ ...first, txHash: TX1 })).toBe(true)
+      // 第二次：送出前寫 pending，然後錢包取消 → 只刪 pending
+      savePendingKycReceipt(receipt('Alice', '0x' + '22'.repeat(32), null, 2))
+      clearPendingKycReceipt(LOC)
+      const got = loadKycReceipts(LOC)
+      expect(got.pending).toBeNull()
+      expect(got.history.map((r) => r.txHash)).toEqual([TX1])
+      expect(got.history[0].salt).toBe(SALT)
     })
   })
 
+  it('以 txHash 保存多份，新到舊；同一個 txHash 覆寫；位址大小寫不影響', () => {
+    withFakeStorage(() => {
+      promoteKycReceipt({ ...receipt('A', SALT, null, 1), txHash: TX1 })
+      promoteKycReceipt({ ...receipt('B', '0x' + '33'.repeat(32), null, 5), txHash: TX2 })
+      promoteKycReceipt({ ...receipt('A', SALT, null, 3), txHash: TX1.toUpperCase().replace('0X', '0x') })
+      const got = loadKycReceipts({ ...LOC, user: LOC.user.toLowerCase(), registry: LOC.registry.toUpperCase().replace('0X', '0x') })
+      expect(got.history.map((r) => r.createdAt)).toEqual([5, 3])
+    })
+  })
+
+  it('沒拿到 tx hash 的 pending 會被讀出來（頁面在錢包彈窗時被關掉）', () => {
+    withFakeStorage(() => {
+      savePendingKycReceipt(receipt('A', SALT, null, 9))
+      expect(loadKycReceipts(LOC).pending?.salt).toBe(SALT)
+    })
+  })
+
+  it('讀取舊版單一 key：白名單清洗（清掉明文）、搬進 history、刪除舊 key', () => {
+    withFakeStorage((store) => {
+      const old = { ...receipt('Alice', SALT, TX1, 7), fullName: 'Alice', nationality: 'TW', normalizedName: 'alice' }
+      store.set(legacyReceiptKey(LOC), JSON.stringify(old))
+      const got = loadKycReceipts(LOC)
+      expect(got.history).toHaveLength(1)
+      expect(Object.keys(got.history[0])).not.toContain('fullName')
+      expect(store.has(legacyReceiptKey(LOC))).toBe(false)
+      expect([...store.values()].join()).not.toMatch(/alice/i)
+    })
+  })
+
+  it('sanitizeKycReceipt 丟掉白名單以外的欄位、格式錯誤回 null', () => {
+    expect(sanitizeKycReceipt({ salt: 1 })).toBeNull()
+    const s = sanitizeKycReceipt({ ...receipt('A', SALT, TX1, 1), fullName: 'A' })
+    expect(s && Object.keys(s).sort()).toEqual(
+      ['chainId', 'createdAt', 'nameHash', 'nationalityHash', 'registry', 'salt', 'scheme', 'txHash', 'user'],
+    )
+  })
+
   it('沒有 localStorage（私密模式、node）時不丟例外', () => {
-    const r = toKycReceipt(buildKycSubmission('Alice', 'TW', SALT), { ...LOC, txHash: null })
     const g = globalThis as { localStorage?: unknown }
     const prev = g.localStorage
     g.localStorage = undefined
     try {
-      expect(saveKycReceipt(r)).toBe(false)
-      expect(loadKycReceipt(84532, LOC.registry, LOC.user)).toBeNull()
-      expect(() => removeKycReceipt(84532, LOC.registry, LOC.user)).not.toThrow()
+      expect(savePendingKycReceipt(receipt('A', SALT, null, 1))).toBe(false)
+      expect(loadKycReceipts(LOC)).toEqual({ history: [], pending: null })
+      expect(() => clearPendingKycReceipt(LOC)).not.toThrow()
     } finally { g.localStorage = prev }
   })
 })
