@@ -39683,12 +39683,15 @@ var SECRET_ENV_KEYS = [
   "UPSTASH_REDIS_REST_URL",
   "UPSTASH_REDIS_REST_TOKEN",
   "ETHERSCAN_API_KEY",
-  "BASESCAN_API_KEY",
-  "X402_FACILITATOR_URL"
+  "BASESCAN_API_KEY"
 ];
 function secretValues() {
   const out = [];
-  for (const k of SECRET_ENV_KEYS) {
+  const keys = [
+    ...SECRET_ENV_KEYS,
+    ...Object.keys(process.env).filter((k) => k.endsWith("_PRIVATE_KEY"))
+  ];
+  for (const k of keys) {
     const v = process.env[k]?.trim();
     if (!v || v.length < 8) continue;
     out.push(v);
@@ -60952,13 +60955,17 @@ function normalizeRequestPath(req) {
   let path = start === -1 ? "/" : url.slice(start);
   path = path.split(/[?#]/)[0] ?? "/";
   try {
-    path = decodeURI(path);
+    path = decodeURIComponent(path);
   } catch {
+    return INVALID_PATH;
   }
+  if (path.includes("%")) return INVALID_PATH;
   path = path.replace(/\\/g, "/").replace(/\/{2,}/g, "/");
   if (path.length > 1) path = path.replace(/\/+$/, "");
   return path.replace(/^\/([^/]+)/, (_m, seg) => `/${seg.toLowerCase()}`) || "/";
 }
+var INVALID_PATH = "/__invalid_path__";
+var PAID_HANDLER_PATHS = [/^\/signals\/[^/]+$/, /^\/oracle\/[^/]+$/];
 function paidRoutes() {
   return {
     "GET /signals/[trader]": {
@@ -61009,6 +61016,18 @@ function createApp(opts = {}) {
     return next();
   });
   app2.get("/healthz", (c) => c.text("ok"));
+  const rawPathOf = (c) => c.req.raw.url.replace(/^[a-z]+:\/\/[^/]+/i, "");
+  app2.use("*", async (c, next) => {
+    if (c.req.path === INVALID_PATH) {
+      return c.json({ ok: false, error: "bad_path", message: "\u8ACB\u6C42\u8DEF\u5F91\u7121\u6CD5\u89E3\u78BC\u3002" }, 400);
+    }
+    if (c.req.method === "HEAD" && (PAID_HANDLER_PATHS.some((re) => re.test(c.req.path)) || findMatchingRoute(PAID_ROUTE_PATTERNS, rawPathOf(c), "GET"))) {
+      return c.json({ ok: false, error: "method_not_allowed", message: "\u4ED8\u8CBB\u7AEF\u9EDE\u53EA\u63A5\u53D7 GET\u3002" }, 405, {
+        Allow: "GET"
+      });
+    }
+    return next();
+  });
   app2.use("*", async (c, next) => {
     const p = c.req.path;
     if (p === "/healthz") return next();
@@ -61196,7 +61215,7 @@ function createApp(opts = {}) {
     }
   });
   app2.use("/oracle/*", async (c, next) => {
-    const asset = decodeURIComponent(c.req.path.split("/")[2] ?? "");
+    const asset = c.req.path.split("/")[2] ?? "";
     if (!asset) {
       return c.json({ ok: false, error: "\u7F3A\u5C11\u8CC7\u7522\u4EE3\u865F\uFF0C\u4F8B\u5982 /oracle/sBTC" }, 400);
     }
@@ -61214,7 +61233,7 @@ function createApp(opts = {}) {
     return next();
   });
   app2.use("/signals/*", async (c, next) => {
-    const trader = decodeURIComponent(c.req.path.split("/")[2] ?? "");
+    const trader = c.req.path.split("/")[2] ?? "";
     if (!/^0x[0-9a-fA-F]{40}$/.test(trader)) {
       return c.json(
         {
@@ -61270,7 +61289,7 @@ function createApp(opts = {}) {
   app2.use("/oracle/*", payToGuard);
   const isRegistered = opts.isRegisteredTrader ?? isRegisteredOnchain;
   app2.use("/signals/*", async (c, next) => {
-    const trader = decodeURIComponent(c.req.path.split("/")[2] ?? "");
+    const trader = c.req.path.split("/")[2] ?? "";
     let registered;
     try {
       registered = await isRegistered(trader);
@@ -61336,7 +61355,10 @@ function createApp(opts = {}) {
     { url: FACILITATOR_URL }
   );
   app2.use(async (c, next) => {
-    if (findMatchingRoute(PAID_ROUTE_PATTERNS, c.req.raw.url.replace(/^[a-z]+:\/\/[^/]+/i, ""), c.req.method.toUpperCase())) {
+    if (findMatchingRoute(PAID_ROUTE_PATTERNS, rawPathOf(c), c.req.method.toUpperCase())) {
+      if (!(c.req.method === "GET" && PAID_HANDLER_PATHS.some((re) => re.test(c.req.path)))) {
+        return c.json({ ok: false, error: "not_found", note: "\u672A\u4ED8\u6B3E\uFF1A\u6C92\u6709\u5C0D\u61C9\u7684\u4ED8\u8CBB\u7AEF\u9EDE\u3002" }, 404);
+      }
       const blocked = await payToGuard(c, async () => {
       });
       if (blocked) return blocked;
