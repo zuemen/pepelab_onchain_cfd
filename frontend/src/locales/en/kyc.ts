@@ -54,6 +54,14 @@ export const kyc: Catalog['kyc'] = {
   submit: 'Submit KYC Application',
   submitting: 'Submitting…',
 
+  prevTx: {
+    checking: 'Checking the status of your previous KYC transaction…',
+    unconfirmed: 'Your previous KYC transaction has no confirmed result yet, so resubmitting is disabled. Check its hash (in your receipt) on a block explorer first.',
+    underReview: 'Your previous KYC application is on-chain and awaiting review — no need to resubmit.',
+    checkFailed: "Couldn't confirm the status of your previous KYC transaction (RPC read failed); submitting is disabled to avoid a duplicate.",
+    retry: 'Retry',
+  },
+
   /** See `../zh-TW/kyc.ts` for why this is a separate key group from the modal copy. */
   status: {
     cardTitle: 'KYC Verification Status',

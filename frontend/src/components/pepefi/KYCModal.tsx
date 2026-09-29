@@ -118,10 +118,52 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPe
   const [stored,        setStored]        = useState<StoredKycReceipts | null>(null);
   const [showStored,    setShowStored]    = useState(false);
 
-  // 每次開啟都重設「確認失敗」：它只描述上一次開啟時那筆交易的狀態。
+  /**
+   * 上一筆送出的交易（history 最新一筆）目前的狀態。關掉再開時父層不一定已 refetch，
+   * 所以開啟時自己查：只有確定可以重送才解鎖送出鍵。
+   *   checking     查詢中（停用）
+   *   unconfirmed  交易還沒有 receipt（停用）
+   *   underReview  交易成功且鏈上 isPending(user) 為真（停用）
+   *   checkFailed  查不到（停用，附重試）
+   *   clear        沒有上一筆、上一筆 receipt 為失敗（status 0），或已不在待審（例如已撤銷）
+   */
+  const [prevTx, setPrevTx] = useState<'checking' | 'unconfirmed' | 'underReview' | 'checkFailed' | 'clear'>('clear');
+  const [prevTxRun, setPrevTxRun] = useState(0);
+
+  // 每次開啟：清掉上一輪的錯誤與「確認失敗」，改由鏈上查詢決定能不能重送。
   useEffect(() => {
-    if (isOpen) setConfirmFailed(false);
+    if (!isOpen) return;
+    setError(null);
+    setConfirmFailed(false);
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || !kycRegistry) return;
+    let cancelled = false;
+    setPrevTx('checking');
+    void (async () => {
+      const loc = await receiptLocation(kycRegistry);
+      if (cancelled) return;
+      const latest = loc ? loadKycReceipts(loc).history[0] : undefined;
+      if (!loc || !latest?.txHash) { setPrevTx('clear'); return; }
+      try {
+        const provider = (kycRegistry.runner as { provider?: { getTransactionReceipt: (h: string) => Promise<{ status: number | null } | null> } } | null)?.provider;
+        if (!provider) throw new Error('no provider');
+        const rc = await provider.getTransactionReceipt(latest.txHash);
+        if (cancelled) return;
+        if (!rc) { setPrevTx('unconfirmed'); return; }
+        if (rc.status === 0) { setPrevTx('clear'); return; }
+        // 交易成功：鏈上仍在待審就不能重送；已核准或已撤銷才放行（撤銷後需要能重新申請）。
+        const pendingNow = (await kycRegistry.isPending(loc.user)) as boolean;
+        if (!cancelled) setPrevTx(pendingNow ? 'underReview' : 'clear');
+      } catch {
+        if (!cancelled) setPrevTx('checkFailed');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isOpen, kycRegistry, prevTxRun]);
+
+  const prevTxBlocks = prevTx !== 'clear';
 
   useEffect(() => {
     if (!isOpen || !kycRegistry) return;
@@ -171,6 +213,8 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPe
         show(txHash, saved);
         setConfirmFailed(true);
         setError(prettyError(waitErr));
+        // 父層也要 refetch：交易可能已上鏈，關掉再開時要看到「審核中」而不是能重送。
+        onSuccess();
         return;
       }
       show(txHash, saved);
@@ -181,7 +225,7 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPe
       onSuccess();
     } catch (e) {
       // 錢包取消或送出前就失敗（沒有 tx hash）：只刪這一次的 pending，歷史收據不動。
-      if (loc && !txHash) clearPendingKycReceipt(loc);
+      if (loc && !txHash) clearPendingKycReceipt(loc, submission.salt);
       setReceipt(null);
       setError(prettyError(e));
     } finally {
@@ -265,35 +309,57 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPe
           </Typography>
         )}
 
-        {/* 查看這台瀏覽器先前存下的收據（只有 salt 與雜湊，沒有明文），新到舊。 */}
-        {stored && (stored.history.length > 0 || stored.pending) && (
-          <Box>
-            <Button size="small" variant="text" onClick={() => setShowStored((v) => !v)} sx={{ px: 0 }}>
-              {showStored
-                ? t.kyc.receipt.hideMine
-                : interpolate(t.kyc.receipt.viewMineCount, { count: stored.history.length + (stored.pending ? 1 : 0) })}
-            </Button>
-            {showStored && (
-              <Box sx={{ mt: 1 }}>
-                {stored.history.map((r) => (
-                  <Box key={r.txHash} sx={{ mb: 1.5 }}>
-                    <Typography variant="caption" display="block" color="text.secondary" sx={{ mb: 1 }}>
-                      {interpolate(t.kyc.receipt.storedAt, { time: new Date(r.createdAt).toLocaleString() })}
-                    </Typography>
-                    <ReceiptFields r={r} />
-                  </Box>
-                ))}
-                {stored.pending && (
-                  <Box>
-                    <Typography variant="caption" display="block" color="warning.main" sx={{ mb: 1 }}>
-                      {interpolate(t.kyc.receipt.pendingStoredAt, { time: new Date(stored.pending.createdAt).toLocaleString() })}
-                    </Typography>
-                    <ReceiptFields r={stored.pending} />
-                  </Box>
-                )}
-              </Box>
-            )}
-          </Box>
+        {/* 查看這台瀏覽器先前存下的收據（只有 salt 與雜湊，沒有明文），新到舊。
+            剛送出、上方已經顯示的那一筆不重複列出。 */}
+        {(() => {
+          if (!stored) return null;
+          const shownSalt = receipt && (submitted || confirmFailed) ? receipt.salt.toLowerCase() : null;
+          const history = stored.history.filter((r) => r.salt.toLowerCase() !== shownSalt);
+          const pending = stored.pending.filter((r) => r.salt.toLowerCase() !== shownSalt);
+          if (history.length + pending.length === 0) return null;
+          return (
+            <Box>
+              <Button size="small" variant="text" onClick={() => setShowStored((v) => !v)} sx={{ px: 0 }}>
+                {showStored
+                  ? t.kyc.receipt.hideMine
+                  : interpolate(t.kyc.receipt.viewMineCount, { count: history.length + pending.length })}
+              </Button>
+              {showStored && (
+                <Box sx={{ mt: 1 }}>
+                  {history.map((r) => (
+                    <Box key={r.txHash} sx={{ mb: 1.5 }}>
+                      <Typography variant="caption" display="block" color="text.secondary" sx={{ mb: 1 }}>
+                        {interpolate(t.kyc.receipt.storedAt, { time: new Date(r.createdAt).toLocaleString() })}
+                      </Typography>
+                      <ReceiptFields r={r} />
+                    </Box>
+                  ))}
+                  {pending.map((r) => (
+                    <Box key={r.salt} sx={{ mb: 1.5 }}>
+                      <Typography variant="caption" display="block" color="warning.main" sx={{ mb: 1 }}>
+                        {interpolate(t.kyc.receipt.pendingStoredAt, { time: new Date(r.createdAt).toLocaleString() })}
+                      </Typography>
+                      <ReceiptFields r={r} />
+                    </Box>
+                  ))}
+                </Box>
+              )}
+            </Box>
+          );
+        })()}
+
+        {/* 上一筆交易的狀態：不能重送時說明原因（查詢失敗附重試）。 */}
+        {!awaitingReview && prevTxBlocks && !confirmFailed && (
+          <Alert
+            severity={prevTx === 'checking' ? 'info' : 'warning'}
+            action={prevTx === 'checkFailed' ? (
+              <Button color="inherit" size="small" onClick={() => setPrevTxRun((n) => n + 1)}>
+                {t.kyc.prevTx.retry}
+              </Button>
+            ) : undefined}
+          >
+            {t.kyc.prevTx[prevTx]}
+          </Alert>
         )}
 
         {/* 送出後：salt 與雜湊只在這裡出現一次，請使用者自行保存。 */}
@@ -376,7 +442,7 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPe
             color="primary"
             onClick={() => void handleSubmit()}
             // confirmFailed：上一筆交易可能已上鏈，先到區塊瀏覽器確認，不要重送。
-            disabled={busy || !fullName.trim() || !kycRegistry || confirmFailed}
+            disabled={busy || !fullName.trim() || !kycRegistry || confirmFailed || prevTxBlocks}
             fullWidth
             sx={{ py: 1.2, fontWeight: 'bold' }}
           >

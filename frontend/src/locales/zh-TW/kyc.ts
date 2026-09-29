@@ -58,6 +58,15 @@ export const kyc = {
   submit: '送出 KYC 申請',
   submitting: '送出中…',
 
+  /** 開啟時查上一筆送出的交易，決定能不能重送。 */
+  prevTx: {
+    checking: '正在確認上一筆 KYC 交易的狀態…',
+    unconfirmed: '上一筆 KYC 交易還沒有確認結果，暫時不能重送。請先用收據裡的交易 hash 到區塊瀏覽器確認。',
+    underReview: '上一筆 KYC 申請已上鏈、正在等待審核，不需要重送。',
+    checkFailed: '無法確認上一筆 KYC 交易的狀態（RPC 讀取失敗），為避免重複送出暫時停用。',
+    retry: '重試',
+  },
+
   /**
    * Portfolio 頁常駐的驗證狀態卡。跟 Modal 分開一組 key，因為讀者情境不同：
    * Modal 是「我正要填表」，這裡是「我隨時想知道自己站在哪」——五態每一態
