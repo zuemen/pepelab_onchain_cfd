@@ -19,7 +19,8 @@ process.env.BASE_SEPOLIA_RPC_URL ??= "http://127.0.0.1:1";
 
 const { runWorker, processOne, MAX_RETRY_ATTEMPTS, STUCK_AFTER_MS } = await import("./settlement-worker.ts");
 const ledger = await import("./ledger.ts");
-const { QUEUE_KEY, PROCESSING_KEY, RETRY_KEY, DEAD_KEY, SETTLE_STATE_PREFIX, enqueueSettlement, claimNext, getSettleState } = ledger;
+const { QUEUE_KEY, PROCESSING_KEY, RETRY_KEY, DEAD_KEY, SETTLE_STATE_PREFIX, LEGACY_REVIEW_KEY, UNCONFIRMED_KEY, enqueueSettlement, claimNext, getSettleState } = ledger;
+const { assessPayoutAddress, clearPayoutSafetyCache } = await import("@pepelab/shared");
 type SettlementResult = Awaited<ReturnType<(typeof import("./settlement.ts"))["settleRevenue"]>>;
 type SettleHooks = NonNullable<Parameters<(typeof import("./settlement.ts"))["settleRevenue"]>[2]>;
 
@@ -33,15 +34,30 @@ type Mode = "ok" | "fail" | "timeout";
 let mode: Mode = "ok";
 let hashSeq = 0;
 
+// 假鏈上 nonce：latest = 已上鏈，pending = 含 mempool。
+const chain = { latest: 0, pending: 0 };
+const LEAKED = "0xE80A81360608C1342e66743F70a00f75d792Eb93";
+const DELEGATED = "0x2222222222222222222222222222222222222222";
+const fakeCode: Record<string, string> = { [DELEGATED.toLowerCase()]: "0xef0100" + "ab".repeat(20) };
+
 const deps = {
   now: () => clock,
-  receiptStatus: async () => receipt,
+  receiptStatus: async () => {
+    if (receipt === "success") chain.latest = chain.pending; // 上鏈了
+    return receipt;
+  },
+  assessTrader: (t: string) =>
+    assessPayoutAddress({ getCode: async (a: string) => fakeCode[a.toLowerCase()] ?? "0x" }, t),
+  nonceStatus: async () => ({ ...chain }),
   settle: async (_t: string, _f: number, hooks: SettleHooks): Promise<SettlementResult> => {
     settleCalls += 1;
     if (mode === "fail") return { status: "failed", error: "boom (fake)" };
     const tx = "0x" + String(++hashSeq).padStart(64, "0");
-    await hooks.onSigned?.(tx);
+    const nonce = chain.pending;
+    await hooks.onSigned?.({ txHash: tx, nonce, rawTx: "0x02raw" });
+    chain.pending += 1;
     if (mode === "timeout") return { status: "unknown", tx, error: "timeout (fake)" };
+    chain.latest = chain.pending;
     return { status: "settled", tx };
   },
 };
@@ -49,9 +65,11 @@ const deps = {
 function reset() {
   fake.lists.clear();
   fake.strings.clear();
+  clearPayoutSafetyCache();
   settleCalls = 0;
   receipt = null;
   mode = "ok";
+  chain.latest = chain.pending = 0;
 }
 
 // ── 1) 失敗重試 → 死信；失敗時釋放佔位 ─────────────────────────────────────
@@ -132,6 +150,8 @@ function reset() {
   const st = await getSettleState("k-timeout");
   assert.equal(st?.status, "UNKNOWN");
   assert.ok(st?.txHash, "UNKNOWN 必須記下 tx hash");
+  assert.equal(st?.nonce, 0, "UNKNOWN 必須記下 nonce");
+  assert.equal(st?.rawTx, "0x02raw", "UNKNOWN 必須記下已簽 raw tx（人工可重播）");
   assert.equal(fake.list(PROCESSING_KEY).length, 0);
   assert.equal(fake.list(QUEUE_KEY).length, 1, "第二筆仍在主佇列（沒有遺失）");
   assert.equal(fake.list(ledger.UNCONFIRMED_KEY).length, 1, "UNKNOWN 那筆進 unconfirmed");
@@ -189,15 +209,16 @@ function reset() {
 {
   reset();
   await enqueueSettlement(entry("k-ack"));
-  fake.failNext("LREM"); // ack 那一步連線中斷 = process 在結算後、移除前死掉
-  await assert.rejects(runWorker(deps));
+  fake.failNext("LREM"); // ack 那一步 Redis 連線中斷
+  const s0 = await runWorker(deps); // 例外被攔下，不讓 process 崩潰
+  assert.equal(s0.errors, 1);
   assert.equal(settleCalls, 1);
   assert.equal(fake.list(PROCESSING_KEY).length, 1, "項目仍在 processing");
   const s = await runWorker(deps);
   assert.equal(s.recovered, 1);
   assert.equal(s.duplicate, 1);
   assert.equal(settleCalls, 1, "回收後不可再送");
-  console.log("結算後、ack 前崩潰 → 回收後視為重複，不重送 ✓");
+  console.log("結算後、ack 前 Redis 故障 → 例外被攔下（errors=1）；回收後視為重複，不重送 ✓");
 }
 
 // ── 9) 舊資料（無 idempotencyKey）與重試包裝 → 以內容雜湊作穩定的鍵 ───────────
@@ -208,9 +229,94 @@ function reset() {
   fake.list(RETRY_KEY).push(JSON.stringify({ entry: legacy, attempts: 1, lastError: "x" }));
   const s = await runWorker(deps);
   assert.equal(s.settled, 1);
-  assert.equal(s.duplicate, 1, "同一筆 legacy entry 的重試包裝要被認成同一鍵");
+  assert.equal(s.review, 1, "同一雜湊第二次出現：不結算、不丟棄，交人工");
   assert.equal(settleCalls, 1);
-  console.log("legacy entry 以內容雜湊作鍵，重試包裝不改變鍵 ✓");
+  assert.equal(fake.list(LEGACY_REVIEW_KEY).length, 1);
+  assert.equal(fake.strings.get(ledger.LEGACY_COLLISIONS_KEY), "1", "衝突筆數要累計");
+  console.log("legacy entry 以內容雜湊作鍵；雜湊衝突 → legacy_review + 計數，不重複結算 ✓");
+}
+
+// ── 11) 受益 trader 是外洩地址 / EIP-7702 委派 → 死信，不送交易 ───────────────
+{
+  reset();
+  await enqueueSettlement({ ...entry("k-leak"), trader: LEAKED });
+  await enqueueSettlement({ ...entry("k-7702"), trader: DELEGATED });
+  const s = await runWorker(deps);
+  assert.equal(s.dead, 2);
+  assert.equal(settleCalls, 0, "不安全的受益人一筆都不能送");
+  assert.equal(fake.list(DEAD_KEY).length, 2);
+  assert.ok(fake.list(DEAD_KEY).every((d) => d.includes("trader_unsafe")));
+  assert.equal(await getSettleState("k-leak"), null, "不佔位");
+  console.log("受益 trader 外洩 / 7702 委派 → 死信、不送交易 ✓");
+}
+
+// ── 12) signer 有未上鏈交易（pending ≠ latest）→ 不送新交易 ───────────────────
+{
+  reset();
+  chain.latest = 3;
+  chain.pending = 4;
+  await enqueueSettlement(entry("k-gap"));
+  const s = await runWorker(deps);
+  assert.equal(s.blocked, 1);
+  assert.equal(settleCalls, 0);
+  assert.equal(fake.list(QUEUE_KEY).length, 1, "項目放回佇列，沒有遺失");
+  assert.equal(await getSettleState("k-gap"), null);
+  chain.latest = 4;
+  const s2 = await runWorker(deps);
+  assert.equal(s2.settled, 1);
+  console.log("nonce latest ≠ pending → 不送新交易；恢復後照常結算 ✓");
+}
+
+// ── 13) 上一輪「佔位後、簽出前」中止 → 下一輪釋放佔位重試，不停擺、不判 STUCK ──
+{
+  reset();
+  await enqueueSettlement(entry("k-orphan"));
+  const raw = await claimNext(QUEUE_KEY);
+  await ledger.claimSettleKey("k-orphan", { status: "PENDING", claimedAt: clock }); // 佔位後就死了
+  void raw;
+  clock += 60_000;
+  const s = await runWorker(deps);
+  assert.equal(s.recovered, 1);
+  assert.equal(s.settled, 1, "直接釋放後重試，不必等 30 分鐘");
+  assert.equal(s.stuck, 0);
+  assert.equal(settleCalls, 1);
+  console.log("PENDING 無 hash（上一輪遺留）→ 釋放佔位、本輪即結算 ✓");
+}
+
+// ── 14) processOne 內 Redis 故障（GET）→ 攔截，不崩潰，項目留在 processing ────
+{
+  reset();
+  await enqueueSettlement(entry("k-redis"));
+  fake.failNext("GET");
+  const s = await runWorker(deps);
+  assert.equal(s.errors, 1);
+  assert.equal(settleCalls, 0);
+  assert.equal(fake.list(PROCESSING_KEY).length, 1);
+  const s2 = await runWorker(deps);
+  assert.equal(s2.settled, 1);
+  assert.equal(settleCalls, 1);
+  console.log("Redis 暫時故障 → 例外攔下、下一輪回收結算 ✓");
+}
+
+// ── 15) UNKNOWN 交易的 nonce 已被別的交易用掉（人工取消）→ 釋放並重新結算 ────
+{
+  reset();
+  mode = "timeout";
+  await enqueueSettlement(entry("k-replaced"));
+  await runWorker(deps); // 簽出 nonce 0，卡在 mempool
+  assert.equal(fake.list(UNCONFIRMED_KEY).length, 1);
+  chain.latest = chain.pending; // 人工用同 nonce 送了取消交易並上鏈
+  receipt = null; // 原交易永遠查不到 receipt
+  clock += 6 * 60_000;
+  mode = "ok";
+  const s = await runWorker(deps);
+  assert.equal(s.retried, 1, "原交易已不可能上鏈 → 釋放並排入重試");
+  assert.equal(s.settled, 1, "同一輪的 retry 階段（nonce 已一致）重新結算");
+  assert.equal((await getSettleState("k-replaced"))?.status, "DONE");
+  assert.equal(settleCalls, 2, "只在確定原交易不可能上鏈後才重送一次");
+  const s2 = await runWorker(deps);
+  assert.equal(s2.available + s2.pending, 0);
+  console.log("nonce 已被替換交易用掉 → 釋放佔位、重新結算一次 ✓");
 }
 
 // ── 10) 無法解析的項目 → 死信，不卡住佇列 ───────────────────────────────────

@@ -17,29 +17,47 @@
 //   FEE_SETTLEMENT_PRIVATE_KEY  單一 signer
 //   UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN   佇列
 //   PAY_TO / X402_FEE_ROUTER    收款守門（payoutPreflight）
+//   SIGNAL_API_URL              （選用）線上 signal-api，比對它公布的 payTo 是否 = signer
 //
 // 為什麼「單一 signer」就讓 nonce 衝突在設計上消失：送交易的地方只剩這一支 process、
 // 由 GitHub Actions cron 觸發、用 concurrency group 防止重疊執行
-// （見 .github/workflows/x402-settlement-worker.yml）。
+// （見 .github/workflows/x402-settlement-worker.yml）。這個前提也被下面第 4 點使用：
+// 「上一輪留下的佔位」一定不屬於任何還活著的 worker。
 //
 // 2026-09-29（P0）可靠性：
 //   1. 可靠佇列：LMOVE main/retry → processing，完成才 LREM；啟動時先把 processing
 //      的遺留項目搬回 main（上一輪崩潰可回收）。
 //   2. 冪等：每筆的 idempotencyKey 在上鏈前 `SET settle:<key> NX` 佔位；DONE 的鍵
 //      再出現直接跳過。
-//   3. 未確定狀態：routeExternalRevenue 先簽、先記 hash、再廣播。等 receipt 逾時 →
-//      UNKNOWN，**絕不自動重送**；下一輪用 receipt 對帳：成功 → DONE；revert → 死信；
-//      超過 STUCK_AFTER_MS（30 分鐘）仍查不到 → STUCK，job 失敗，交人工處理。
-//      UNKNOWN 的項目放進 unconfirmed 佇列，每輪最先對帳；只要還有未確認的交易，
-//      本輪就不送任何新交易（後面的 nonce 會卡在它後面，且避免盲目堆疊）。
+//   3. 未確定狀態：routeExternalRevenue 先簽、先記 hash / nonce / raw tx、再廣播。
+//      等 receipt 逾時 → UNKNOWN，**絕不自動重送**；下一輪用 receipt 對帳：成功 → DONE；
+//      revert → 死信；超過 STUCK_AFTER_MS（30 分鐘）仍查不到 → STUCK，job 失敗，交人工
+//      （agent/README.md「結算交易卡住」）。UNKNOWN 的項目放進 unconfirmed 佇列，每輪
+//      最先對帳；還有未確認的交易時本輪不送新交易。
+//   4. 審查修正：
+//      - 送出新交易前比對 signer 的 nonce（latest vs pending），mempool 裡有未上鏈的
+//        交易就不送（避免連鎖卡住）。
+//      - PENDING 且沒有 tx hash、佔位時間早於本輪開始 → 上一輪在「佔位後、簽出前」
+//        中止（簽出前一定先記 hash）→ 直接釋放佔位重試，不停擺、不誤判 STUCK。
+//      - 處理單筆時的 Redis 例外個別攔截：停止本輪、job 失敗，但不讓 process 崩潰；
+//        項目留在 processing，下一輪回收。
+//      - claim 前檢查受益 trader：外洩清單 / EIP-7702 委派 → 直接死信，不送交易。
+//      - UNKNOWN 的交易查不到 receipt、而 signer 的 nonce 已經被別的交易用掉（例如人工
+//        取消）超過 5 分鐘 → 原交易永遠不可能上鏈 → 釋放佔位重試。
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { resolve as resolvePath } from "node:path";
-import { assessPayoutAddress, type CodeReader } from "@pepelab/shared";
+import {
+  assessPayoutAddress,
+  checkPayoutDenylistEnv,
+  type CodeReader,
+  type PayoutAssessment,
+} from "@pepelab/shared";
 import {
   isSettlementEnabled,
   settleRevenue,
   getReceiptStatus,
+  getNonceStatus,
   settlementSignerAddress,
   settlementRouterAddress,
   settlementProvider,
@@ -58,11 +76,13 @@ import {
   claimSettleKey,
   setSettleState,
   releaseSettleKey,
+  incrLegacyCollisions,
   QUEUE_KEY,
   PROCESSING_KEY,
   RETRY_KEY,
   UNCONFIRMED_KEY,
   DEAD_KEY,
+  LEGACY_REVIEW_KEY,
   type LedgerEntry,
   type RetryEntry,
   type SettleState,
@@ -75,6 +95,10 @@ export const MAX_RETRY_ATTEMPTS = Number(process.env.SETTLEMENT_MAX_RETRIES ?? "
 const MAX_FAIL_PCT = Number(process.env.SETTLEMENT_MAX_FAIL_PCT ?? "30");
 /** 簽出後超過這麼久仍查不到 receipt → STUCK（交人工）。 */
 export const STUCK_AFTER_MS = Number(process.env.SETTLEMENT_STUCK_AFTER_MS ?? String(30 * 60 * 1000));
+/** nonce 已被別的交易用掉、且原交易查不到 receipt 超過這麼久 → 視為被替換／丟棄。 */
+export const REPLACED_GRACE_MS = 5 * 60 * 1000;
+
+// ── 收款守門 ─────────────────────────────────────────────────────────────────
 
 export interface PreflightDeps {
   codeReader: CodeReader;
@@ -82,18 +106,29 @@ export interface PreflightDeps {
   signerAddress: string | undefined;
   routerAddress: string;
   readPlatformTreasury: () => Promise<string>;
+  /**
+   * 讀線上 signal-api `GET /` 公布的 payTo。undefined = 未設定 SIGNAL_API_URL
+   * （跳過並警告）；丟錯 = 讀不到（fail-closed）。
+   */
+  fetchPublishedPayTo?: () => Promise<string>;
 }
 
 /**
- * P0 收款地址守門（fail-closed）：在碰佇列之前檢查三個「錢會流過去」的地址。
+ * P0 收款地址守門（fail-closed）：在碰佇列之前檢查「錢會流過去」的地址。
  *   - PAY_TO（x402 收款）：必須是 EOA，且不是外洩／EIP-7702 委派地址。
- *   - 結算 signer：同上（它就是要 approve + routeExternalRevenue 的那個 EOA）。
+ *   - 結算 signer：同上，且**必須等於 PAY_TO**（worker 用 signer 的餘額分潤，
+ *     x402 收入必須進同一個帳戶）。
+ *   - 線上 signal-api 公布的 payTo 必須 = signer（Vercel 的 PAY_TO 可能跟這裡不同步）。
  *   - FeeRouter.platformTreasury()：20% 平台分潤的去向，不可是外洩／委派地址。
  * 回傳 problems（任何一個 → worker 以非零結束，佇列原封不動）與 warnings。
  */
 export async function payoutPreflight(d: PreflightDeps): Promise<{ problems: string[]; warnings: string[] }> {
   const problems: string[] = [];
   const warnings: string[] = [];
+
+  if (checkPayoutDenylistEnv().length) {
+    warnings.push("PAYOUT_DENYLIST 有格式錯誤的項目（見上方警告），那些項目沒有生效。");
+  }
 
   if (!d.payTo?.trim()) {
     problems.push("PAY_TO 未設：無法確認 x402 收款地址是否安全（必須 = FEE_SETTLEMENT_PRIVATE_KEY 的 EOA）。");
@@ -107,6 +142,29 @@ export async function payoutPreflight(d: PreflightDeps): Promise<{ problems: str
   } else {
     const a = await assessPayoutAddress(d.codeReader, d.signerAddress, { requireEoa: true });
     if (!a.safe) problems.push(`結算 signer unsafe：${a.reason}`);
+  }
+
+  if (d.payTo?.trim() && d.signerAddress && d.payTo.trim().toLowerCase() !== d.signerAddress.toLowerCase()) {
+    problems.push(
+      `PAY_TO(${d.payTo}) ≠ 結算 signer(${d.signerAddress})：x402 收入不會進 signer，` +
+        "worker 會拿 signer 自己的餘額分潤。PAY_TO 必須是 FEE_SETTLEMENT_PRIVATE_KEY 的地址。",
+    );
+  }
+
+  if (!d.fetchPublishedPayTo) {
+    warnings.push("SIGNAL_API_URL 未設：跳過「線上 signal-api 公布的 payTo = signer」比對。");
+  } else if (d.signerAddress) {
+    try {
+      const published = (await d.fetchPublishedPayTo()).trim();
+      if (published.toLowerCase() !== d.signerAddress.toLowerCase()) {
+        problems.push(
+          `線上 signal-api 公布的 payTo(${published}) ≠ 結算 signer(${d.signerAddress})：` +
+            "買方的錢沒有進 signer。請先更新 Vercel 的 PAY_TO。",
+        );
+      }
+    } catch (err) {
+      problems.push(`讀不到線上 signal-api 公布的 payTo，fail-closed：${(err as Error).message}`);
+    }
   }
 
   let treasury: string | undefined;
@@ -126,20 +184,17 @@ export async function payoutPreflight(d: PreflightDeps): Promise<{ problems: str
       );
     }
   }
-
-  if (
-    d.payTo?.trim() &&
-    d.signerAddress &&
-    d.payTo.trim().toLowerCase() !== d.signerAddress.toLowerCase()
-  ) {
-    warnings.push(
-      `PAY_TO(${d.payTo}) ≠ 結算 signer(${d.signerAddress})：x402 收入不會進 signer，` +
-        "worker 會用 signer 自己的餘額分潤（見 agent/README.md）。",
-    );
-  }
   return { problems, warnings };
 }
 
+/** 讀 `${baseUrl}/` 的 payTo 欄位（10 秒逾時）。 */
+export async function fetchPublishedPayTo(baseUrl: string): Promise<string> {
+  const res = await fetch(`${baseUrl.replace(/\/$/, "")}/`, { signal: AbortSignal.timeout(10_000) });
+  if (!res.ok) throw new Error(`GET / 回 ${res.status}`);
+  const j = (await res.json()) as { payTo?: unknown };
+  if (typeof j.payTo !== "string") throw new Error("GET / 回應沒有 payTo 欄位");
+  return j.payTo;
+}
 
 // ── 單筆處理 ─────────────────────────────────────────────────────────────────
 
@@ -148,20 +203,33 @@ export type ProcessOutcome =
   | { outcome: "duplicate"; key: string }
   | { outcome: "pending"; tx?: string; error: string }
   | { outcome: "retry" | "dead"; error: string }
-  | { outcome: "stuck"; tx?: string; error: string };
+  | { outcome: "stuck"; tx?: string; error: string }
+  | { outcome: "blocked"; error: string }
+  | { outcome: "review"; key: string };
 
 /** 可注入的外部依賴——測試用假的 settle / receipt / 時鐘，不碰任何鏈。 */
 export interface WorkerDeps {
   settle: (trader: string, feeUsd: number, hooks: SettleHooks) => Promise<SettlementResult>;
   receiptStatus: (txHash: string) => Promise<"success" | "reverted" | null>;
   now: () => number;
+  /** 受益 trader 的安全檢查（外洩清單 / EIP-7702 委派）。 */
+  assessTrader: (trader: string) => Promise<PayoutAssessment>;
+  /** signer 的 nonce（latest / pending）。 */
+  nonceStatus: () => Promise<{ latest: number; pending: number }>;
 }
 
 export const defaultDeps: WorkerDeps = {
   settle: settleRevenue,
   receiptStatus: getReceiptStatus,
   now: () => Date.now(),
+  assessTrader: (t) => assessPayoutAddress(settlementProvider()!, t),
+  nonceStatus: getNonceStatus,
 };
+
+export interface RunContext {
+  /** 本輪開始時間（ms）。早於它的 PENDING 佔位一定屬於已結束的 worker。 */
+  runStartedAt: number;
+}
 
 interface Parsed {
   entry: LedgerEntry;
@@ -177,8 +245,8 @@ export function parseItem(raw: string): Parsed {
   const entry = isRetry ? (obj as RetryEntry).entry : (obj as LedgerEntry);
   const attempts = isRetry ? (obj as RetryEntry).attempts ?? 0 : 0;
   if (entry.idempotencyKey) return { entry, attempts, key: entry.idempotencyKey, legacyKey: false };
-  // 舊資料（2026-09-29 前入列）沒有冪等鍵：以 entry 內容雜湊補上。穩定（重試包裝不影響），
-  // 代價是「同一 trader、同金額、同一秒、同端點」的兩筆真付款會被當成同一筆——可接受的邊界。
+  // 舊資料（2026-09-29 前入列）沒有冪等鍵：以 entry 內容雜湊補上。穩定（重試包裝不影響）。
+  // 同一雜湊已結算過又出現 → 無法分辨是重複還是另一筆真付款 → 進 legacy_review 交人工。
   const legacy = createHash("sha256")
     .update(JSON.stringify([entry.trader.toLowerCase(), entry.feeUsd, entry.at, entry.source]))
     .digest("hex");
@@ -201,27 +269,18 @@ async function failOrRetry(raw: string, p: Parsed, error: string): Promise<Proce
   return { outcome: "retry", error };
 }
 
+const deadLetter = (p: Parsed, lastError: string) =>
+  JSON.stringify({ entry: p.entry, attempts: p.attempts, lastError });
+
 /** 對一個已經簽出過 tx 的鍵做 receipt 對帳。 */
 async function reconcile(raw: string, p: Parsed, st: SettleState, deps: WorkerDeps): Promise<ProcessOutcome> {
   const now = deps.now();
   const since = st.sentAt ?? st.claimedAt;
-  if (!st.txHash) {
-    // PENDING 且沒有 hash：上一輪在「佔位之後、簽出之前」崩潰，或正在簽。簽出前一定
-    // 會先記 hash，所以沒有 hash 代表 routeExternalRevenue 應該沒送出——但無法 100%
-    // 排除（例如 hash 寫入後 Redis 回應遺失）。保守：未滿時限先放回，超過就交人工。
-    if (now - since > STUCK_AFTER_MS) {
-      await setSettleState(p.key, { ...st, status: "STUCK", note: "PENDING 無 tx hash 超過時限" });
-      await moveProcessingTo(raw, DEAD_KEY, JSON.stringify({ entry: p.entry, attempts: p.attempts, lastError: "STUCK: PENDING without tx hash" }));
-      console.error(`::error::STUCK（佔位後無 tx hash）${tag(p.entry, p.key)} —— 請人工確認 signer 的交易紀錄`);
-      return { outcome: "stuck", error: "PENDING without tx hash" };
-    }
-    await moveProcessingTo(raw, UNCONFIRMED_KEY);
-    return { outcome: "pending", error: "PENDING（尚未簽出），留待下一輪" };
-  }
+  const nonceNote = st.nonce !== undefined ? ` nonce=${st.nonce}` : "";
 
   let status: "success" | "reverted" | null;
   try {
-    status = await deps.receiptStatus(st.txHash);
+    status = await deps.receiptStatus(st.txHash!);
   } catch (err) {
     // 查不到 receipt 本身失敗（RPC）→ 狀態不變，放回佇列，下一輪再查；不重送。
     await moveProcessingTo(raw, UNCONFIRMED_KEY);
@@ -231,33 +290,58 @@ async function reconcile(raw: string, p: Parsed, st: SettleState, deps: WorkerDe
     await setSettleState(p.key, { ...st, status: "DONE" });
     await ackProcessing(raw);
     console.log(`reconciled settled ${tag(p.entry, p.key)} tx=${st.txHash}`);
-    return { outcome: "settled", tx: st.txHash };
+    return { outcome: "settled", tx: st.txHash! };
   }
   if (status === "reverted") {
     await setSettleState(p.key, { ...st, status: "FAILED", note: "reverted" });
-    await moveProcessingTo(raw, DEAD_KEY, JSON.stringify({ entry: p.entry, attempts: p.attempts + 1, lastError: `reverted tx=${st.txHash}` }));
+    await moveProcessingTo(raw, DEAD_KEY, deadLetter(p, `reverted tx=${st.txHash}`));
     console.error(`::error::dead-lettered（對帳：revert）${tag(p.entry, p.key)} tx=${st.txHash}`);
     return { outcome: "dead", error: `reverted tx=${st.txHash}` };
   }
+
+  // 查不到 receipt。若 signer 的 nonce 已被別的交易用掉（人工取消／替換），這筆
+  // 永遠不可能上鏈 → 釋放佔位、重新結算。留 REPLACED_GRACE_MS 避免 receipt 索引延遲。
+  if (st.nonce !== undefined && now - since > REPLACED_GRACE_MS) {
+    try {
+      const n = await deps.nonceStatus();
+      if (n.latest > st.nonce) {
+        await releaseSettleKey(p.key);
+        console.warn(
+          `::warning::tx=${st.txHash}${nonceNote} 查不到 receipt，但 signer 已上鏈 nonce ${n.latest - 1} ≥ ${st.nonce} ` +
+            `→ 原交易已被替換／取消，釋放佔位重新結算 ${tag(p.entry, p.key)}`,
+        );
+        return failOrRetry(raw, p, `replaced/dropped tx=${st.txHash}${nonceNote}`);
+      }
+    } catch (err) {
+      console.warn(`nonce 查詢失敗（不影響對帳）：${(err as Error).message}`);
+    }
+  }
+
   if (now - since > STUCK_AFTER_MS) {
     await setSettleState(p.key, { ...st, status: "STUCK", note: `${Math.round((now - since) / 60000)} 分鐘仍無 receipt` });
-    await moveProcessingTo(raw, DEAD_KEY, JSON.stringify({ entry: p.entry, attempts: p.attempts, lastError: `STUCK tx=${st.txHash}` }));
+    await moveProcessingTo(raw, DEAD_KEY, deadLetter(p, `STUCK tx=${st.txHash}${nonceNote}`));
     console.error(
-      `::error::STUCK ${tag(p.entry, p.key)} tx=${st.txHash} —— 簽出超過 ${Math.round(STUCK_AFTER_MS / 60000)} 分鐘仍查不到 receipt，` +
-        "不自動重送，請人工確認（交易可能被丟棄、nonce 卡住、或 RPC 不同步）。",
+      `::error::STUCK ${tag(p.entry, p.key)} tx=${st.txHash}${nonceNote} —— 簽出超過 ` +
+        `${Math.round(STUCK_AFTER_MS / 60000)} 分鐘仍查不到 receipt，不自動重送。請依 agent/README.md` +
+        "「結算交易卡住」用同一個 nonce 重播或取消。",
     );
     return { outcome: "stuck", tx: st.txHash, error: "no receipt" };
   }
   await moveProcessingTo(raw, UNCONFIRMED_KEY);
-  console.warn(`pending（等待 receipt）${tag(p.entry, p.key)} tx=${st.txHash}`);
+  console.warn(`pending（等待 receipt）${tag(p.entry, p.key)} tx=${st.txHash}${nonceNote}`);
   return { outcome: "pending", tx: st.txHash, error: "尚無 receipt" };
 }
 
 /**
- * 處理 processing 裡的一筆原始項目。所有結果都會把這筆從 processing 移走
- * （ack / 搬去 retry / dead / 放回 main），不會留在 processing。
+ * 處理 processing 裡的一筆原始項目。正常結果都會把這筆從 processing 移走
+ * （ack / 搬去 retry / dead / review / 放回 main 或 unconfirmed）。Redis 例外會往外丟，
+ * 由 runWorker 攔截——此時項目留在 processing，下一輪回收。
  */
-export async function processOne(raw: string, deps: WorkerDeps = defaultDeps): Promise<ProcessOutcome> {
+export async function processOne(
+  raw: string,
+  deps: WorkerDeps = defaultDeps,
+  ctx: RunContext = { runStartedAt: deps.now() },
+): Promise<ProcessOutcome> {
   let p: Parsed;
   try {
     p = parseItem(raw);
@@ -271,16 +355,65 @@ export async function processOne(raw: string, deps: WorkerDeps = defaultDeps): P
   const existing = await getSettleState(p.key);
   if (existing) {
     if (existing.status === "DONE") {
+      if (p.legacyKey) {
+        // 舊格式：同一雜湊已結算過。可能是重複，也可能是另一筆真實付款——交人工。
+        const total = await incrLegacyCollisions();
+        await moveProcessingTo(raw, LEGACY_REVIEW_KEY);
+        console.warn(
+          `::warning::legacy 雜湊衝突（累計 ${total} 筆）${tag(p.entry, p.key)} —— 不結算、不丟棄，` +
+            `已移入 ${LEGACY_REVIEW_KEY} 交人工核對是否為另一筆真實付款。`,
+        );
+        return { outcome: "review", key: p.key };
+      }
       await ackProcessing(raw);
       console.log(`skip duplicate（已結算）${tag(p.entry, p.key)} tx=${existing.txHash ?? "?"}`);
       return { outcome: "duplicate", key: p.key };
     }
     if (existing.status === "FAILED" || existing.status === "STUCK") {
-      await moveProcessingTo(raw, DEAD_KEY, JSON.stringify({ entry: p.entry, attempts: p.attempts, lastError: `duplicate of ${existing.status} key` }));
+      await moveProcessingTo(raw, DEAD_KEY, deadLetter(p, `duplicate of ${existing.status} key`));
       console.error(`::error::同一鍵已是 ${existing.status}，重複項目移入死信 ${tag(p.entry, p.key)}`);
       return { outcome: existing.status === "STUCK" ? "stuck" : "dead", error: `key already ${existing.status}` };
     }
-    return reconcile(raw, p, existing, deps);
+    if (existing.txHash) return reconcile(raw, p, existing, deps);
+    // PENDING 且沒有 hash。簽出前一定先記 hash，所以沒有 hash = 還沒簽。佔位早於本輪
+    // 開始 → 屬於已結束的 worker（concurrency group 保證單一 worker）→ 釋放後照常處理。
+    if (existing.claimedAt < ctx.runStartedAt) {
+      console.warn(`釋放上一輪遺留的佔位（PENDING、無 tx hash）${tag(p.entry, p.key)}`);
+      await releaseSettleKey(p.key);
+    } else {
+      await moveProcessingTo(raw, QUEUE_KEY);
+      return { outcome: "pending", error: "本輪已有佔位（PENDING），留待下一輪" };
+    }
+  }
+
+  // claim 前檢查受益 trader（審查 High-2）：舊項目的受益人可能是外洩地址。
+  const ta = await deps.assessTrader(p.entry.trader);
+  if (!ta.safe) {
+    if (ta.source === "no-data") {
+      // 暫時查不到（RPC）→ 不能判定，當成一般失敗重試。
+      return failOrRetry(raw, p, `trader 安全檢查暫時失敗：${ta.reason}`);
+    }
+    await moveProcessingTo(raw, DEAD_KEY, deadLetter(p, `trader_unsafe: ${ta.reason}`));
+    console.error(`::error::受益 trader 不安全，不結算、移入死信 ${tag(p.entry, p.key)}：${ta.reason}`);
+    return { outcome: "dead", error: `trader_unsafe: ${ta.reason}` };
+  }
+
+  // 送新交易前確認 mempool 裡沒有這個 signer 未上鏈的交易（審查 Medium-5）。
+  let n: { latest: number; pending: number };
+  try {
+    n = await deps.nonceStatus();
+  } catch (err) {
+    await moveProcessingTo(raw, QUEUE_KEY);
+    return { outcome: "blocked", error: `nonce 查詢失敗，不送新交易：${(err as Error).message}` };
+  }
+  if (n.pending !== n.latest) {
+    await moveProcessingTo(raw, QUEUE_KEY);
+    return {
+      outcome: "blocked",
+      error:
+        `signer 有未上鏈的交易（nonce latest=${n.latest} pending=${n.pending}）——不送新交易，` +
+        "等它上鏈或依 agent/README.md「結算交易卡住」處理。",
+    };
   }
 
   const claimedAt = deps.now();
@@ -293,9 +426,9 @@ export async function processOne(raw: string, deps: WorkerDeps = defaultDeps): P
 
   let signedHash: string | undefined;
   const r = await deps.settle(p.entry.trader, p.entry.feeUsd, {
-    onSigned: async (txHash) => {
+    onSigned: async ({ txHash, nonce, rawTx }) => {
       signedHash = txHash;
-      await setSettleState(p.key, { status: "UNKNOWN", claimedAt, txHash, sentAt: deps.now() });
+      await setSettleState(p.key, { status: "UNKNOWN", claimedAt, txHash, nonce, rawTx, sentAt: deps.now() });
     },
   });
 
@@ -337,6 +470,11 @@ export interface RunSummary {
   dead: number;
   stuck: number;
   failed: number;
+  review: number;
+  /** 因 nonce 不一致（或查不到）而沒有送新交易。 */
+  blocked: number;
+  /** 處理單筆時遇到的 Redis / 未預期例外（本輪因此提前停止）。 */
+  errors: number;
 }
 
 /**
@@ -345,10 +483,14 @@ export interface RunSummary {
  *   1. 對帳 unconfirmed（已簽出、未確認）；還有未確認的 → 本輪不送任何新交易。
  *   2. retry，3. main —— 各自只處理「開始時」已在裡面的項目（以開始時長度為上限），
  *      本輪新放回的項目留給下一輪。
- * 一旦出現新的未確認交易，立刻停止送新交易（後面的 nonce 會卡在它後面）。
+ * 出現新的未確認交易、nonce 不一致、或單筆處理丟出例外 → 立刻停止本輪。
  */
 export async function runWorker(deps: WorkerDeps = defaultDeps, batchSize = BATCH_SIZE): Promise<RunSummary> {
-  const s: RunSummary = { recovered: 0, available: 0, settled: 0, duplicate: 0, pending: 0, retried: 0, dead: 0, stuck: 0, failed: 0 };
+  const s: RunSummary = {
+    recovered: 0, available: 0, settled: 0, duplicate: 0, pending: 0, retried: 0,
+    dead: 0, stuck: 0, failed: 0, review: 0, blocked: 0, errors: 0,
+  };
+  const ctx: RunContext = { runStartedAt: deps.now() };
   s.recovered = await recoverProcessing();
   if (s.recovered > 0) console.warn(`::warning::回收 processing 遺留項目 ${s.recovered} 筆（上一輪可能中途中止）`);
 
@@ -356,9 +498,25 @@ export async function runWorker(deps: WorkerDeps = defaultDeps, batchSize = BATC
     if (o.outcome === "settled") s.settled += 1;
     else if (o.outcome === "duplicate") s.duplicate += 1;
     else if (o.outcome === "pending") s.pending += 1;
+    else if (o.outcome === "review") s.review += 1;
+    else if (o.outcome === "blocked") s.blocked += 1;
     else if (o.outcome === "retry") (s.retried += 1), (s.failed += 1);
     else if (o.outcome === "dead") (s.dead += 1), (s.failed += 1);
     else if (o.outcome === "stuck") (s.stuck += 1), (s.failed += 1);
+  };
+
+  /** 單筆處理；例外（多半是 Redis 暫時故障）攔下來，回 null 代表要停止本輪。 */
+  const safeProcess = async (raw: string): Promise<ProcessOutcome | null> => {
+    try {
+      return await processOne(raw, deps, ctx);
+    } catch (err) {
+      s.errors += 1;
+      console.error(
+        `::error::處理佇列項目時發生例外（多半是 Redis 暫時故障），停止本輪；項目留在 processing，` +
+          `下一輪回收：${(err as Error).message}`,
+      );
+      return null;
+    }
   };
 
   // 1) 對帳：不花 batch 預算（對帳只讀 receipt，不送交易）。
@@ -366,9 +524,10 @@ export async function runWorker(deps: WorkerDeps = defaultDeps, batchSize = BATC
   for (let n = await queueDepth(UNCONFIRMED_KEY); n > 0; n -= 1) {
     const raw = await claimNext(UNCONFIRMED_KEY);
     if (raw === null || raw === undefined) break;
-    const o = await processOne(raw, deps);
+    const o = await safeProcess(raw);
+    if (!o) return s;
     tally(o);
-    if (o.outcome === "pending") halted = true;
+    if (o.outcome === "pending" || o.outcome === "blocked") halted = true;
   }
   if (halted) {
     console.warn("::warning::仍有已簽出但未確認的交易 —— 本輪不送任何新交易，等它們有結果。");
@@ -384,9 +543,14 @@ export async function runWorker(deps: WorkerDeps = defaultDeps, batchSize = BATC
       if (raw === null || raw === undefined) break;
       budget -= 1;
       s.available += 1;
-      const o = await processOne(raw, deps);
+      const o = await safeProcess(raw);
+      if (!o) return s;
       tally(o);
-      if (o.outcome === "pending") {
+      if (o.outcome === "blocked") {
+        console.warn(`::warning::${o.error}`);
+        return s;
+      }
+      if (o.outcome === "pending" && "tx" in o && o.tx) {
         console.warn("::warning::出現未確認的交易，本輪停止送出新交易（避免 nonce 堆疊）。");
         return s;
       }
@@ -408,12 +572,14 @@ async function main(): Promise<void> {
   }
 
   // P0：碰佇列之前先確認錢流經的地址都安全；不安全就整批不動，交人工處理。
+  const apiUrl = process.env.SIGNAL_API_URL?.trim();
   const pre = await payoutPreflight({
     codeReader: settlementProvider()!,
     payTo: process.env.PAY_TO,
     signerAddress: settlementSignerAddress(),
     routerAddress: settlementRouterAddress(),
     readPlatformTreasury,
+    fetchPublishedPayTo: apiUrl ? () => fetchPublishedPayTo(apiUrl) : undefined,
   });
   for (const w of pre.warnings) console.warn(`::warning::${w}`);
   if (pre.problems.length > 0) {
@@ -422,26 +588,42 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const s = await runWorker();
-  const [queueRemaining, retryRemaining, unconfirmed, processingRemaining, deadTotal] = await Promise.all([
+  let s: RunSummary;
+  try {
+    s = await runWorker();
+  } catch (err) {
+    // recoverProcessing / queueDepth 等整輪層級的 Redis 失敗：不崩潰、明確失敗。
+    console.error(`::error::本輪無法開始或中途失敗（Redis？）：${(err as Error).message}`);
+    process.exit(1);
+  }
+  const [queueRemaining, retryRemaining, unconfirmed, processingRemaining, deadTotal, reviewTotal] = await Promise.all([
     queueDepth(QUEUE_KEY),
     queueDepth(RETRY_KEY),
     queueDepth(UNCONFIRMED_KEY),
     queueDepth(PROCESSING_KEY),
     queueDepth(DEAD_KEY),
-  ]);
+    queueDepth(LEGACY_REVIEW_KEY),
+  ]).catch(() => [-1, -1, -1, -1, -1, -1]);
 
   console.log(
     `recovered=${s.recovered} available=${s.available} settled=${s.settled} duplicate=${s.duplicate} ` +
-      `pending=${s.pending} failed=${s.failed} retried=${s.retried} dead=${s.dead} stuck=${s.stuck} ` +
+      `pending=${s.pending} blocked=${s.blocked} review=${s.review} failed=${s.failed} retried=${s.retried} ` +
+      `dead=${s.dead} stuck=${s.stuck} errors=${s.errors} ` +
       `queueRemaining=${queueRemaining} retryRemaining=${retryRemaining} unconfirmed=${unconfirmed} ` +
-      `processingRemaining=${processingRemaining} deadTotal=${deadTotal}`,
+      `processingRemaining=${processingRemaining} deadTotal=${deadTotal} legacyReview=${reviewTotal}`,
   );
 
   if (deadTotal > 0) {
     console.warn(
-      `::warning::死信佇列（${DEAD_KEY}）目前有 ${deadTotal} 筆（重試用盡／revert／STUCK），需要人工介入。`,
+      `::warning::死信佇列（${DEAD_KEY}）目前有 ${deadTotal} 筆（重試用盡／revert／STUCK／trader 不安全），需要人工介入。`,
     );
+  }
+  if (reviewTotal > 0) {
+    console.warn(`::warning::${LEGACY_REVIEW_KEY} 有 ${reviewTotal} 筆舊格式雜湊衝突待人工核對。`);
+  }
+  if (s.errors > 0) {
+    console.error(`::error::本輪有 ${s.errors} 次處理例外（見上方），提前停止。`);
+    process.exit(1);
   }
   if (s.stuck > 0) {
     console.error(`::error::${s.stuck} 筆 STUCK（簽出超過 ${Math.round(STUCK_AFTER_MS / 60000)} 分鐘仍無 receipt），交人工處理。`);
@@ -449,7 +631,7 @@ async function main(): Promise<void> {
   }
 
   if (s.available === 0) {
-    console.log("佇列淨空，這次沒有要處理的項目。");
+    console.log("這次沒有送出新交易的項目。");
     return;
   }
 

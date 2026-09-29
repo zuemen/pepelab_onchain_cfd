@@ -87,6 +87,11 @@ export async function startFakeUpstash(): Promise<FakeUpstash> {
         strings.set(k, String(args[2]));
         return ok("OK");
       }
+      case "INCR": {
+        const v = Number(strings.get(k) ?? "0") + 1;
+        strings.set(k, String(v));
+        return ok(v);
+      }
       case "DEL":
         return ok(strings.delete(k) ? 1 : 0);
       default:

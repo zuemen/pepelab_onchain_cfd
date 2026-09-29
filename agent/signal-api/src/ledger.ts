@@ -33,6 +33,13 @@ export const RETRY_KEY = "x402:settlement:retry";
 /** 已簽出、尚未確認（UNKNOWN）的項目：每輪最先對帳；還有未確認的就不送新交易。 */
 export const UNCONFIRMED_KEY = "x402:settlement:unconfirmed";
 export const DEAD_KEY = "x402:settlement:dead";
+/**
+ * 舊格式項目（沒有冪等鍵）以內容雜湊作鍵時，同一個雜湊第二次出現：可能是同一筆的重複，
+ * 也可能是「同 trader、同金額、同一秒、同端點」的另一筆真實付款——無法分辨。
+ * 不結算、不丟棄，放進這裡交人工核對，並累計衝突筆數。
+ */
+export const LEGACY_REVIEW_KEY = "x402:settlement:legacy_review";
+export const LEGACY_COLLISIONS_KEY = "x402:settlement:legacy_collisions";
 /** 冪等狀態：`settle:<idempotencyKey>` → SettleState JSON。 */
 export const SETTLE_STATE_PREFIX = "settle:";
 /** 冪等狀態保留 90 天：這段期間內同一鍵再出現都會被認出來。 */
@@ -68,6 +75,10 @@ export interface SettleState {
   txHash?: string;
   /** 簽出／送出的時間（ms），對帳逾時用。 */
   sentAt?: number;
+  /** 已簽交易的 nonce（STUCK 時人工用同 nonce 替換／取消）。 */
+  nonce?: number;
+  /** 已簽的 raw tx（可 `cast publish` 重播；已簽交易不是秘密）。 */
+  rawTx?: string;
   note?: string;
 }
 
@@ -200,4 +211,9 @@ export async function setSettleState(key: string, state: SettleState): Promise<v
 /** 確定**沒有**送出任何交易時才可呼叫：釋放佔位，讓下次重試可以再佔。 */
 export async function releaseSettleKey(key: string): Promise<void> {
   await command(["DEL", SETTLE_STATE_PREFIX + key]);
+}
+
+/** 舊格式雜湊衝突：累計並回傳目前總數。 */
+export async function incrLegacyCollisions(): Promise<number> {
+  return command<number>(["INCR", LEGACY_COLLISIONS_KEY]);
 }

@@ -88,6 +88,36 @@ forge script script/DeployX402Router.s.sol:DeployX402Router \
 合約端：`FeeRouterExternalRevenue.t.sol`（18-dec）+ `FeeRouterX402Usdc.t.sol`（6-dec）共覆蓋。
 未設 `X402_FEE_ROUTER` 則回退到 MockUSDC FeeRouter（舊行為）。
 
+### 結算交易卡住（STUCK / nonce 不一致）怎麼處理
+
+worker 每一筆 `routeExternalRevenue` 都是「先簽、先把 hash / nonce / 已簽 raw tx 寫進
+`settle:<冪等鍵>`、再廣播」，而且**絕不自動重送**。會停下來交給人的兩種情況：
+
+- log 出現 `signer 有未上鏈的交易（nonce latest=L pending=P）`：mempool 裡有這個 signer
+  還沒上鏈的交易，worker 不會再送新交易。
+- log 出現 `::error::STUCK … tx=0x… nonce=N`：簽出超過 30 分鐘仍查不到 receipt，該筆已移進
+  `x402:settlement:dead`，`settle:<鍵>` 標成 `STUCK`。
+
+處理步驟（`$RPC` 用 Base Sepolia RPC、`$SIGNER` 是結算 signer 地址；需要 Upstash REST 權限）：
+
+1. 讀出卡住那筆的狀態：`curl -s -H "Authorization: Bearer $UPSTASH_REDIS_REST_TOKEN"
+   "$UPSTASH_REDIS_REST_URL/get/settle:<鍵>"`，取得 `txHash`、`nonce`、`rawTx`。
+2. 確認鏈上狀態：`cast receipt <txHash> --rpc-url $RPC`（有 receipt 就不是卡住，下一輪會自動對帳），
+   `cast nonce $SIGNER --rpc-url $RPC`（latest）與 `cast nonce $SIGNER --block pending --rpc-url $RPC`。
+3. 二選一，**兩者都用同一個 nonce N**，所以最多只會有一筆上鏈：
+   - **讓原交易上鏈**：`cast publish <rawTx> --rpc-url $RPC` 重播（節點丟掉時有用）；若是 gas 太低，
+     只能改走下一個選項。
+   - **取消**：送一筆同 nonce、較高手續費、0 value 給自己的交易：
+     `cast send $SIGNER --value 0 --nonce N --priority-gas-price <高於原交易> --gas-price <高於原交易>
+     --rpc-url $RPC --private-key "$FEE_SETTLEMENT_PRIVATE_KEY"`（在持有金鑰的環境執行，不要貼到聊天或 log）。
+4. 等它上鏈後：
+   - 原交易上鏈了 → **不要** `DEL settle:<鍵>`。把 `settle:<鍵>` 的 `status` 改回 `UNKNOWN`
+     （保留 txHash / nonce），再把 dead 裡那筆搬回佇列（`RPUSH x402:settlement:queue <項目>`，
+     然後 `LREM x402:settlement:dead 1 <項目>`）；下一輪對帳會標成 DONE，不會重送。
+   - 取消成功（原交易永遠不會上鏈）→ `DEL settle:<鍵>`，再用同樣方式把 dead 裡那筆搬回佇列，
+     下一輪會重新結算一次。尚未標 STUCK 的 UNKNOWN 項目不必手動處理：worker 發現 nonce N 已被別的交易
+     用掉超過 5 分鐘，會自動釋放佔位重新結算。
+
 ## 「付費 → 自主下單」一鍵 demo（北極星）
 
 ```bash
