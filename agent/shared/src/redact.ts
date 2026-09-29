@@ -52,6 +52,12 @@ function secretValues(): string[] {
       if (u.pathname.length > 1) {
         push(u.pathname);
         push(tryDecode(u.pathname));
+        // 逐段遮：env 有結尾斜線、log 裡沒有（或反過來）時，整段 pathname 比對不到，
+        // 但 key 所在的那一段仍然會被遮掉。
+        for (const seg of u.pathname.split("/")) {
+          push(seg);
+          push(tryDecode(seg));
+        }
       }
       pushUrlParts(u);
     } catch {

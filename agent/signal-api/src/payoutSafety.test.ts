@@ -175,6 +175,10 @@ const codes = {
   for (const bad of ["QNKEY0123456789abcdef", "ANKRKEY9876543210fedcba"]) {
     assert.ok(!s2.includes(bad), `path 型 key 不可殘留 ${bad}：${s2}`);
   }
+  // env 有結尾斜線、log 裡沒有 → 仍要逐段遮掉 path 裡的 key
+  process.env.BASE_SEPOLIA_RPC_URL = "https://base-sepolia.chainstacklabs.com/CSKEY0123456789xyz/";
+  const s4 = redactSecrets('{"requestUrl" missing} url=https://base-sepolia.chainstacklabs.com/CSKEY0123456789xyz?x=1 end');
+  assert.ok(!s4.includes("CSKEY0123456789xyz"), `結尾斜線不同時也要遮：${s4}`);
   // URL 解析失敗 → 整個值遮掉
   process.env.WEIRD_RPC_URL = "not a url but SECRETVALUE42";
   process.env.X402_FACILITATOR_URL = "::bad facilitator FACBAD777";
