@@ -28,7 +28,7 @@ import {
   type ParsedFeed,
   type SourceQuote,
 } from "./core.ts";
-import { fetchPrice, fetchSecondaryPrice, type QuoteMeta } from "./feeds.ts";
+import { fetchMarketSession, fetchPrice, fetchSecondaryPrice, type QuoteMeta } from "./feeds.ts";
 import { classifyProbeError, decideAssetMode, modeName, switchesMode } from "./operator.ts";
 import type { MarketSession } from "./market.ts";
 
@@ -222,7 +222,7 @@ async function main(): Promise<void> {
 
     // 休市切換放在價格判斷之前：價格來源壞了不影響「現在是不是休市」。
     if (exchange) {
-      const r = await applyMarketMode(exchange, assetId, symbol, nowSec, feed.session ?? null);
+      const r = await applyMarketMode(exchange, assetId, symbol, nowSec);
       if (r === "missing") exchange = null; // 舊 exchange：整輪不再探測
       if (r === "failed") failed += 1;
     }
@@ -374,10 +374,12 @@ async function applyMarketMode(
   assetId: string,
   symbol: string,
   nowSec: number,
-  session: MarketSession | null,
 ): Promise<"ok" | "missing" | "failed"> {
   // 加密／期貨不做休市切換：連 RPC 都不打。
   if (!switchesMode(symbol)) return "ok";
+  // 市場時段獨立取得（審查 Low），不依賴價格來源：價格改走 relay、或 Yahoo 價格因
+  // 報價過舊被拒時，feed 上都不會帶 session。拿不到就是 null → 行事曆只准收緊。
+  const session: MarketSession | null = await fetchMarketSession(symbol);
 
   let current: number;
   try {
