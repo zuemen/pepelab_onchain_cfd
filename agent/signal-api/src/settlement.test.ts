@@ -99,17 +99,20 @@ function makeDeps(opts: {
   console.log("✓ onSigned 丟錯 → 不廣播、failed");
 }
 
-// ── 3) 廣播被節點明確拒絕（NONCE_EXPIRED）→ failed（確定沒送出，可重試）──────
+// ── 3) 廣播回 NONCE_EXPIRED（nonce too low）→ unknown：可能其實已上鏈，交給對帳 ──
 {
-  const { deps, calls } = makeDeps({
-    broadcast: async () => {
-      throw Object.assign(new Error("nonce has already been used"), { code: "NONCE_EXPIRED" });
-    },
-  });
-  const r = await settleWith(deps, TRADER, 0.01);
-  assert.equal(r.status, "failed");
-  assert.equal(calls.wait, 0);
-  console.log("✓ broadcast NONCE_EXPIRED → failed");
+  for (const code of ["NONCE_EXPIRED", "INSUFFICIENT_FUNDS", "REPLACEMENT_UNDERPRICED"]) {
+    const { deps, calls } = makeDeps({
+      broadcast: async () => {
+        throw Object.assign(new Error("rejected (fake)"), { code });
+      },
+    });
+    const r = await settleWith(deps, TRADER, 0.01);
+    assert.equal(r.status, "unknown", `${code} 必須是 unknown（不可判 failed 後重試）`);
+    assert.ok(r.tx);
+    assert.equal(calls.wait, 0);
+  }
+  console.log("✓ broadcast NONCE_EXPIRED / 其他拒絕 → unknown（不重試）");
 }
 
 // ── 4) 廣播遇到網路錯誤 → unknown（可能已送出，絕不重送）──────────────────

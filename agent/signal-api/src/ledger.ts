@@ -217,3 +217,38 @@ export async function releaseSettleKey(key: string): Promise<void> {
 export async function incrLegacyCollisions(): Promise<number> {
   return command<number>(["INCR", LEGACY_COLLISIONS_KEY]);
 }
+
+// ── worker 租約鎖（第二道防線；第一道是 workflow 的 concurrency group）──────────
+
+export const WORKER_LOCK_KEY = "x402:settlement:lock";
+/** 1500 秒 = 25 分鐘，大於 job timeout（20 分鐘）。 */
+export const WORKER_LOCK_TTL_SEC = 1500;
+
+/** `SET lock <token> NX EX ttl`。回傳是否取得。 */
+export async function acquireWorkerLock(token: string, ttlSec = WORKER_LOCK_TTL_SEC): Promise<boolean> {
+  const r = await command<string | null>(["SET", WORKER_LOCK_KEY, token, "NX", "EX", ttlSec]);
+  return r === "OK";
+}
+
+/** 只有鎖的值等於自己的 token 才刪（先 GET 比對再 DEL）。 */
+export async function releaseWorkerLock(token: string): Promise<boolean> {
+  const cur = await command<string | null>(["GET", WORKER_LOCK_KEY]);
+  if (cur !== token) return false;
+  await command(["DEL", WORKER_LOCK_KEY]);
+  return true;
+}
+
+// ── nonce 不一致（blocked）持續時間 ─────────────────────────────────────────────
+
+export const BLOCKED_SINCE_KEY = "x402:settlement:blocked_since";
+
+/** 記錄第一次 blocked 的時間（已有就不覆蓋），回傳第一次的時間（ms）。 */
+export async function markBlocked(nowMs: number): Promise<number> {
+  await command(["SET", BLOCKED_SINCE_KEY, String(nowMs), "NX"]);
+  const v = await command<string | null>(["GET", BLOCKED_SINCE_KEY]);
+  return v ? Number(v) : nowMs;
+}
+
+export async function clearBlocked(): Promise<void> {
+  await command(["DEL", BLOCKED_SINCE_KEY]);
+}

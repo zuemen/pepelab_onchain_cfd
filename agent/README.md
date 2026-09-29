@@ -94,7 +94,10 @@ worker 每一筆 `routeExternalRevenue` 都是「先簽、先把 hash / nonce / 
 `settle:<冪等鍵>`、再廣播」，而且**絕不自動重送**。會停下來交給人的兩種情況：
 
 - log 出現 `signer 有未上鏈的交易（nonce latest=L pending=P）`：mempool 裡有這個 signer
-  還沒上鏈的交易，worker 不會再送新交易。
+  還沒上鏈的交易，worker 不會再送新交易；連續超過 30 分鐘（`x402:settlement:blocked_since`）
+  job 會變紅。
+- 另外，worker 啟動時會取 Redis 租約鎖 `x402:settlement:lock`（1500 秒）；取不到代表另一個
+  worker 還在跑，這一輪什麼都不做（exit 0）。
 - log 出現 `::error::STUCK … tx=0x… nonce=N`：簽出超過 30 分鐘仍查不到 receipt，該筆已移進
   `x402:settlement:dead`，`settle:<鍵>` 標成 `STUCK`。
 
@@ -115,8 +118,10 @@ worker 每一筆 `routeExternalRevenue` 都是「先簽、先把 hash / nonce / 
      （保留 txHash / nonce），再把 dead 裡那筆搬回佇列（`RPUSH x402:settlement:queue <項目>`，
      然後 `LREM x402:settlement:dead 1 <項目>`）；下一輪對帳會標成 DONE，不會重送。
    - 取消成功（原交易永遠不會上鏈）→ `DEL settle:<鍵>`，再用同樣方式把 dead 裡那筆搬回佇列，
-     下一輪會重新結算一次。尚未標 STUCK 的 UNKNOWN 項目不必手動處理：worker 發現 nonce N 已被別的交易
-     用掉超過 5 分鐘，會自動釋放佔位重新結算。
+     下一輪會重新結算一次。
+   - worker **不會**自己依 nonce 推論「原交易已被替換」而重新結算（公共節點會回落後狀態，
+     猜錯就是雙付）；尚未標 STUCK 的 UNKNOWN 也一樣，只會等到 30 分鐘後轉 STUCK。取消後請照上面
+     的步驟處理，`settle:<鍵>` 裡的 txHash / nonce / rawTx 在確認前不要刪。
 
 ## 「付費 → 自主下單」一鍵 demo（北極星）
 

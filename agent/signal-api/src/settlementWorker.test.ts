@@ -267,20 +267,24 @@ function reset() {
   console.log("nonce latest ≠ pending → 不送新交易；恢復後照常結算 ✓");
 }
 
-// ── 13) 上一輪「佔位後、簽出前」中止 → 下一輪釋放佔位重試，不停擺、不判 STUCK ──
+// ── 13) 「佔位後、簽出前」中止的遺留佔位：25 分鐘內不釋放，超過且持有鎖才釋放 ───
 {
   reset();
   await enqueueSettlement(entry("k-orphan"));
-  const raw = await claimNext(QUEUE_KEY);
+  await claimNext(QUEUE_KEY);
   await ledger.claimSettleKey("k-orphan", { status: "PENDING", claimedAt: clock }); // 佔位後就死了
-  void raw;
   clock += 60_000;
   const s = await runWorker(deps);
   assert.equal(s.recovered, 1);
-  assert.equal(s.settled, 1, "直接釋放後重試，不必等 30 分鐘");
-  assert.equal(s.stuck, 0);
+  assert.equal(s.settled, 0, "25 分鐘內不釋放（佔位的 worker 可能還活著）");
+  assert.equal(settleCalls, 0);
+  assert.equal((await getSettleState("k-orphan"))?.status, "PENDING");
+  clock += 25 * 60_000;
+  const s2 = await runWorker(deps);
+  assert.equal(s2.settled, 1, "超過 25 分鐘、持有租約鎖 → 釋放後結算");
+  assert.equal(s2.stuck, 0);
   assert.equal(settleCalls, 1);
-  console.log("PENDING 無 hash（上一輪遺留）→ 釋放佔位、本輪即結算 ✓");
+  console.log("PENDING 無 hash：25 分鐘內不動；超過且持有鎖 → 釋放、結算一次 ✓");
 }
 
 // ── 14) processOne 內 Redis 故障（GET）→ 攔截，不崩潰，項目留在 processing ────
@@ -298,25 +302,112 @@ function reset() {
   console.log("Redis 暫時故障 → 例外攔下、下一輪回收結算 ✓");
 }
 
-// ── 15) UNKNOWN 交易的 nonce 已被別的交易用掉（人工取消）→ 釋放並重新結算 ────
+// ── 15) UNKNOWN 查不到 receipt、signer nonce 已前進（latest > nonce）→ **不**重結算 ──
+//        公共節點會回落後狀態，分不出「已上鏈只是查不到」與「被替換」。一律交人工。
 {
   reset();
   mode = "timeout";
   await enqueueSettlement(entry("k-replaced"));
-  await runWorker(deps); // 簽出 nonce 0，卡在 mempool
+  await runWorker(deps); // 簽出 nonce 0，結果不明
   assert.equal(fake.list(UNCONFIRMED_KEY).length, 1);
-  chain.latest = chain.pending; // 人工用同 nonce 送了取消交易並上鏈
-  receipt = null; // 原交易永遠查不到 receipt
-  clock += 6 * 60_000;
+  chain.latest = chain.pending = 5; // latest > 0：可能已上鏈、也可能被替換——分不出來
+  receipt = null;
   mode = "ok";
+  for (const dt of [6, 10, 10]) {
+    clock += dt * 60_000;
+    const s = await runWorker(deps);
+    assert.equal(s.settled + s.retried, 0, "絕不因 nonce 前進而重結算");
+    assert.equal(settleCalls, 1, "settleCalls 不可增加");
+    const st = await getSettleState("k-replaced");
+    assert.ok(st?.txHash && st.nonce === 0 && st.rawTx, "txHash / nonce / rawTx 必須保留");
+  }
+  clock += 10 * 60_000; // 累計 > 30 分鐘
   const s = await runWorker(deps);
-  assert.equal(s.retried, 1, "原交易已不可能上鏈 → 釋放並排入重試");
-  assert.equal(s.settled, 1, "同一輪的 retry 階段（nonce 已一致）重新結算");
-  assert.equal((await getSettleState("k-replaced"))?.status, "DONE");
-  assert.equal(settleCalls, 2, "只在確定原交易不可能上鏈後才重送一次");
+  assert.equal(s.stuck, 1, "逾時轉 STUCK 交人工");
+  const st = await getSettleState("k-replaced");
+  assert.equal(st?.status, "STUCK");
+  assert.ok(st?.txHash && st.nonce === 0 && st.rawTx, "STUCK 仍保留 txHash / nonce / rawTx");
+  assert.equal(settleCalls, 1);
+  console.log("UNKNOWN + latest > nonce → 不重結算、狀態保留，30 分鐘後 STUCK ✓");
+}
+
+// ── 16) 並行 worker：租約鎖讓第二個 worker 什麼都不做 ─────────────────────────
+{
+  reset();
+  await enqueueSettlement(entry("k-par-1"));
+  await enqueueSettlement(entry("k-par-2"));
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const slowDeps = {
+    ...deps,
+    settle: async (t: string, f: number, h: SettleHooks) => {
+      await gate; // 第一個 worker 卡在送交易
+      return deps.settle(t, f, h);
+    },
+  };
+  const first = runWorker(slowDeps);
+  await new Promise((r) => setTimeout(r, 200));
+  const second = await runWorker(deps);
+  assert.equal(second.skippedLocked, true, "第二個 worker 取不到租約鎖");
+  assert.equal(second.available, 0);
+  release();
+  const s1 = await first;
+  assert.equal(s1.settled, 2);
+  assert.equal(settleCalls, 2, "每筆只結算一次");
+  assert.equal(fake.strings.has(ledger.WORKER_LOCK_KEY), false, "結束時釋放自己的鎖");
+  // 鎖被別人持有時，結束時不可刪別人的鎖
+  fake.strings.set(ledger.WORKER_LOCK_KEY, "someone-else");
+  assert.equal(await ledger.releaseWorkerLock("my-token"), false);
+  assert.equal(fake.strings.get(ledger.WORKER_LOCK_KEY), "someone-else");
+  console.log("並行 worker：租約鎖 → 第二個不處理、不雙付；只刪自己的鎖 ✓");
+}
+
+// ── 17) blocked 連續超過 30 分鐘 → blockedTooLong；恢復後清除 ──────────────────
+{
+  reset();
+  chain.latest = 1;
+  chain.pending = 2;
+  await enqueueSettlement(entry("k-blk"));
+  const a = await runWorker(deps);
+  assert.equal(a.blocked, 1);
+  assert.equal(a.blockedTooLong, false);
+  clock += 20 * 60_000;
+  const b = await runWorker(deps);
+  assert.equal(b.blockedTooLong, false, "20 分鐘還不到門檻");
+  clock += 11 * 60_000;
+  const c = await runWorker(deps);
+  assert.equal(c.blockedTooLong, true, "連續 31 分鐘 → job 應失敗");
+  chain.latest = 2; // 恢復
+  const d = await runWorker(deps);
+  assert.equal(d.settled, 1);
+  assert.equal(fake.strings.has(ledger.BLOCKED_SINCE_KEY), false, "恢復正常時清除紀錄");
+  chain.pending = 4; // 再次 blocked：重新計時
+  await enqueueSettlement(entry("k-blk2"));
+  const e = await runWorker(deps);
+  assert.equal(e.blocked, 1);
+  assert.equal(e.blockedTooLong, false, "新的一次 blocked 從頭計時");
+  console.log("blocked 多輪：31 分鐘 → blockedTooLong；恢復清除、再發生重新計時 ✓");
+}
+
+// ── 18) trader 安全檢查 RPC 查不到（no-data）→ 停止本輪，不消耗重試次數 ──────────
+{
+  reset();
+  await enqueueSettlement(entry("k-nodata"));
+  const noData = {
+    ...deps,
+    assessTrader: (t: string) =>
+      assessPayoutAddress({ getCode: async () => { throw new Error("rpc down"); } }, t),
+  };
+  const s = await runWorker(noData);
+  assert.equal(s.halted, 1);
+  assert.equal(s.retried + s.failed, 0, "不算失敗、不消耗重試");
+  assert.equal(fake.list(RETRY_KEY).length, 0);
+  assert.equal(fake.list(QUEUE_KEY).length, 1, "項目原樣放回佇列");
+  assert.equal(settleCalls, 0);
+  clearPayoutSafetyCache();
   const s2 = await runWorker(deps);
-  assert.equal(s2.available + s2.pending, 0);
-  console.log("nonce 已被替換交易用掉 → 釋放佔位、重新結算一次 ✓");
+  assert.equal(s2.settled, 1);
+  console.log("trader 檢查 no-data → halt、不消耗重試；恢復後結算 ✓");
 }
 
 // ── 10) 無法解析的項目 → 死信，不卡住佇列 ───────────────────────────────────

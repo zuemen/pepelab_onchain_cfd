@@ -77,7 +77,8 @@ export async function readPlatformTreasury(): Promise<string> {
  *   - "unknown"：routeExternalRevenue 已簽出（可能已廣播）但沒在時限內拿到 receipt。
  *     **絕不可自動重送**——worker 記下 tx hash，下一輪用 receipt 對帳。
  *   - "reverted"：拿到 receipt 且 status=0。
- * "failed" 只用在**確定沒有送出** routeExternalRevenue 的情況（可安全重試）。
+ * "failed" 只用在**確定沒有廣播** routeExternalRevenue 的情況（簽出前失敗，或 onSigned
+ * 記錄失敗而未廣播），可安全重試。簽出並嘗試廣播之後的任何錯誤都是 "unknown"。
  */
 export type SettlementResult =
   | { status: "settled"; tx: string }
@@ -193,17 +194,13 @@ async function _assertCurrencyMatch(): Promise<string | null> {
   }
 }
 
-/**
- * 廣播被節點**明確拒絕**（交易確定沒有進 mempool）的錯誤碼。其餘錯誤（網路逾時、
- * 5xx…）都可能是「其實已經送出去了」，只能當 unknown 處理。
+/*
+ * 2026-09-29 複審：以前這裡有一份「節點明確拒絕」的錯誤碼（NONCE_EXPIRED 等），命中就回
+ * failed、由 worker 釋放佔位重試。但 NONCE_EXPIRED（nonce too low）也可能代表「這筆
+ * 其實已經上鏈了」（例如上一輪已廣播、公共節點回落後狀態），重試就是雙付。原則：任何
+ * 可能造成雙付的判斷都不自動化——**簽出之後的廣播錯誤一律當 unknown**，交給 receipt
+ * 對帳；對帳不出來 30 分鐘後轉 STUCK 交人工。
  */
-const DEFINITE_REJECTION_CODES = new Set([
-  "INSUFFICIENT_FUNDS",
-  "NONCE_EXPIRED",
-  "REPLACEMENT_UNDERPRICED",
-  "TRANSACTION_REPLACED",
-  "INVALID_ARGUMENT",
-]);
 
 async function _settle(trader: string, feeUsd: number, hooks: SettleHooks): Promise<SettlementResult> {
   if (!wallet || !feeRouter || !usdc || !provider) {
@@ -292,10 +289,11 @@ export async function settleWith(
     await d.provider.broadcastTransaction(signed);
   } catch (err) {
     const code = (err as { code?: string }).code ?? "";
-    if (DEFINITE_REJECTION_CODES.has(code)) {
-      return { status: "failed", error: `節點拒絕廣播（${code}）：${(err as Error).message}` };
-    }
-    return { status: "unknown", tx: info.txHash, error: `廣播結果不明：${(err as Error).message}` };
+    return {
+      status: "unknown",
+      tx: info.txHash,
+      error: `廣播失敗（${code || "unknown"}），結果不明、不重送：${(err as Error).message}`,
+    };
   }
 
   try {
