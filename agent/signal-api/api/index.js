@@ -39562,9 +39562,32 @@ var COMPROMISED_ADDRESSES = [
 var EIP7702_DELEGATION_PREFIX = "0xef0100";
 var PAYOUT_CACHE_TTL_MS = 10 * 60 * 1e3;
 var codeCache = /* @__PURE__ */ new Map();
+var PAYOUT_STALE_MAX_MS = 60 * 60 * 1e3;
+function parsePayoutDenylist(raw2 = process.env.PAYOUT_DENYLIST ?? "") {
+  const items = raw2.split(",").map((s) => s.trim()).filter(Boolean);
+  const addresses = [];
+  const invalid = [];
+  for (const it of items) {
+    if (/^0x[0-9a-fA-F]{40}$/.test(it)) addresses.push(it.toLowerCase());
+    else invalid.push(it);
+  }
+  return { addresses, invalid };
+}
+var warnedDenylistRaw = null;
+function checkPayoutDenylistEnv() {
+  const raw2 = process.env.PAYOUT_DENYLIST ?? "";
+  const { invalid } = parsePayoutDenylist(raw2);
+  if (invalid.length && warnedDenylistRaw !== raw2) {
+    warnedDenylistRaw = raw2;
+    console.warn(
+      `::warning::PAYOUT_DENYLIST \u6709 ${invalid.length} \u500B\u683C\u5F0F\u932F\u8AA4\u7684\u9805\u76EE\u88AB\u5FFD\u7565\uFF08\u5FC5\u9808\u662F 0x + 40 hex\uFF09\uFF1A` + invalid.join(", ")
+    );
+  }
+  return invalid;
+}
 function denylist() {
-  const extra = (process.env.PAYOUT_DENYLIST ?? "").split(",").map((s) => s.trim().toLowerCase()).filter((s) => /^0x[0-9a-f]{40}$/.test(s));
-  return /* @__PURE__ */ new Set([...COMPROMISED_ADDRESSES, ...extra]);
+  checkPayoutDenylistEnv();
+  return /* @__PURE__ */ new Set([...COMPROMISED_ADDRESSES, ...parsePayoutDenylist().addresses]);
 }
 function isCompromisedAddress(addr) {
   return denylist().has(addr.trim().toLowerCase());
@@ -39623,23 +39646,69 @@ async function assessPayoutAddress(provider3, addr, opts = {}) {
     codeCache.set(key, { code, at: now });
     return { address, source: "rpc", checkedAt: now, ...classifyCode(address, code, requireEoa) };
   } catch (err) {
-    if (cached2) {
+    console.error(`[payoutSafety] getCode(${address}) \u5931\u6557\uFF1A`, err);
+    const staleMax = opts.staleMaxMs ?? PAYOUT_STALE_MAX_MS;
+    if (cached2 && now - cached2.at <= staleMax) {
       const r = classifyCode(address, cached2.code, requireEoa);
       return {
         address,
         source: "stale-cache",
         checkedAt: cached2.at,
         safe: r.safe,
-        reason: `${r.reason}\uFF08RPC \u5931\u6557\uFF0C\u6CBF\u7528 ${Math.round((now - cached2.at) / 1e3)}s \u524D\u7684\u7D50\u679C\uFF1A${err?.message ?? err}\uFF09`
+        reason: `${r.reason}\uFF08rpc_unavailable\uFF1A\u6CBF\u7528 ${Math.round((now - cached2.at) / 1e3)}s \u524D\u7684\u7D50\u679C\uFF09`
+      };
+    }
+    if (cached2) {
+      return {
+        address,
+        safe: false,
+        source: "no-data",
+        checkedAt: cached2.at,
+        reason: `rpc_unavailable\uFF1A\u7121\u6CD5\u8B80\u53D6 ${address} \u7684 code\uFF0C\u4E0A\u6B21\u6210\u529F\u6AA2\u67E5\u5DF2\u8D85\u904E ${Math.round(staleMax / 6e4)} \u5206\u9418\uFF0Cfail-closed \u8996\u70BA\u4E0D\u5B89\u5168\u3002`
       };
     }
     return {
       address,
       safe: false,
       source: "no-data",
-      reason: `rpc_unavailable\uFF1A\u7121\u6CD5\u8B80\u53D6 ${address} \u7684 code \u4E14\u5F9E\u672A\u6210\u529F\u6AA2\u67E5\u904E\uFF0Cfail-closed \u8996\u70BA\u4E0D\u5B89\u5168\uFF08${err?.message ?? err}\uFF09\u3002`
+      reason: `rpc_unavailable\uFF1A\u7121\u6CD5\u8B80\u53D6 ${address} \u7684 code \u4E14\u5F9E\u672A\u6210\u529F\u6AA2\u67E5\u904E\uFF0Cfail-closed \u8996\u70BA\u4E0D\u5B89\u5168\u3002`
     };
   }
+}
+
+// ../shared/src/redact.ts
+var SECRET_ENV_KEYS = [
+  "BASE_SEPOLIA_RPC_URL",
+  "SEPOLIA_RPC_URL",
+  "UPSTASH_REDIS_REST_URL",
+  "UPSTASH_REDIS_REST_TOKEN",
+  "ETHERSCAN_API_KEY",
+  "BASESCAN_API_KEY",
+  "X402_FACILITATOR_URL"
+];
+function secretValues() {
+  const out = [];
+  for (const k of SECRET_ENV_KEYS) {
+    const v = process.env[k]?.trim();
+    if (!v || v.length < 8) continue;
+    out.push(v);
+    try {
+      const u = new URL(v);
+      if (u.pathname.length > 1) out.push(u.pathname);
+      if (u.search) out.push(u.search.slice(1));
+    } catch {
+    }
+  }
+  return out.sort((a, b2) => b2.length - a.length);
+}
+function redactSecrets(text) {
+  let s = text;
+  for (const v of secretValues()) {
+    if (v.length >= 8) s = s.split(v).join("[redacted]");
+  }
+  s = s.replace(/("?requestUrl"?\s*[:=]\s*\\?"?)[^"\s,}\\]+/g, "$1[redacted]");
+  s = s.replace(/(\/v[23]\/)[A-Za-z0-9_-]{16,}/g, "$1[redacted]");
+  return s;
 }
 
 // ../node_modules/hono/dist/compose.js
@@ -60845,11 +60914,17 @@ async function applyLedgerRecording(entry, res, paymentHeader) {
     settleError = "settlement disabled\uFF1A\u672A\u8A2D\u5B9A UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN\uFF08\u50C5\u4FDD\u7559\u93C8\u4E0B\u5E33\u52D9 /revenue\uFF09";
   } else {
     try {
-      const idempotencyKey = deriveIdempotencyKey(res.headers.get("X-PAYMENT-RESPONSE"), paymentHeader) ?? `req:${randomUUID()}`;
+      let idempotencyKey = deriveIdempotencyKey(res.headers.get("X-PAYMENT-RESPONSE"), paymentHeader);
+      if (!idempotencyKey) {
+        idempotencyKey = `req:${randomUUID()}`;
+        console.warn(
+          `[ledger] \u7121\u6CD5\u5F9E X-PAYMENT-RESPONSE / X-PAYMENT \u63A8\u5C0E\u51AA\u7B49\u9375\uFF0C\u6539\u7528\u96A8\u6A5F\u9375 ${idempotencyKey}\uFF1A` + JSON.stringify(entry)
+        );
+      }
       await enqueueSettlement({ ...entry, idempotencyKey });
       queued = true;
     } catch (err) {
-      settleError = err.message;
+      settleError = "ledger_enqueue_failed\uFF1A\u5DF2\u6536\u6B3E\u4F46\u5206\u6F64\u7D00\u9304\u672A\u80FD\u6392\u5165\u4F47\u5217\uFF08\u5DF2\u8A18\u9304\u65BC\u4F3A\u670D\u5668 log\uFF09";
       console.error(`[ledger] enqueue \u5931\u6557\uFF0Centry \u53EF\u80FD\u907A\u5931\uFF1A${JSON.stringify(entry)}`, err);
     }
   }
@@ -60871,8 +60946,56 @@ async function isRegisteredOnchain(trader) {
   registryCache.set(key, { at: Date.now(), registered });
   return registered;
 }
+function normalizeRequestPath(req) {
+  const url = req.url;
+  const start = url.indexOf("/", url.indexOf("://") + 3);
+  let path = start === -1 ? "/" : url.slice(start);
+  path = path.split(/[?#]/)[0] ?? "/";
+  try {
+    path = decodeURI(path);
+  } catch {
+  }
+  path = path.replace(/\\/g, "/").replace(/\/{2,}/g, "/");
+  if (path.length > 1) path = path.replace(/\/+$/, "");
+  return path.replace(/^\/([^/]+)/, (_m, seg) => `/${seg.toLowerCase()}`) || "/";
+}
+function paidRoutes() {
+  return {
+    "GET /signals/[trader]": {
+      price: `$${PRICE_SIGNALS}`,
+      network: NETWORK,
+      config: { description: "Trader \u5373\u6642\u7E3E\u6548\u6458\u8981 + \u958B\u5009\u5EFA\u8B70", maxTimeoutSeconds: MAX_TIMEOUT_SECONDS }
+    },
+    "GET /oracle/[asset]": {
+      price: `$${PRICE_ORACLE}`,
+      network: NETWORK,
+      config: {
+        description: "\u6C7A\u7B56\u7D1A\u5FEB\u7167\uFF1A\u50F9\u683C + funding + OI \u5931\u8861 + \u9810\u4F30\u6E05\u7B97\u50F9 + edge \u5EFA\u8B70",
+        maxTimeoutSeconds: MAX_TIMEOUT_SECONDS
+      }
+    }
+  };
+}
+function internalError(where, err) {
+  console.error(`[${where}]`, err);
+  return `${where}_unavailable`;
+}
 function createApp(opts = {}) {
-  const app2 = new Hono2();
+  const app2 = new Hono2({ getPath: normalizeRequestPath });
+  checkPayoutDenylistEnv();
+  const PAID_ROUTE_PATTERNS = computeRoutePatterns(paidRoutes());
+  app2.use("*", async (c, next) => {
+    await next();
+    const ct = c.res.headers.get("content-type") ?? "";
+    if (!ct.includes("json")) return;
+    const text = await c.res.clone().text();
+    const clean3 = redactSecrets(text);
+    if (clean3 !== text) {
+      const headers = new Headers(c.res.headers);
+      headers.delete("content-length");
+      c.res = new Response(clean3, { status: c.res.status, headers });
+    }
+  });
   const payTo = opts.payTo ?? PAY_TO;
   const codeReader = opts.payoutCodeReader ?? provider2;
   const checkPayTo = () => assessPayoutAddress(codeReader, payTo, { requireEoa: true });
@@ -60946,7 +61069,7 @@ function createApp(opts = {}) {
       const trader = c.req.query("trader");
       return c.json(jsonSafe(await getOnchainRevenue(trader)));
     } catch (err) {
-      return c.json({ ok: false, error: err.message }, 502);
+      return c.json({ ok: false, error: internalError("revenue", err) }, 502);
     }
   });
   app2.get("/candles/:symbol", async (c) => {
@@ -60963,7 +61086,7 @@ function createApp(opts = {}) {
       if (err instanceof UnknownMarketError || err instanceof BadIntervalError) {
         return c.json({ ok: false, error: err.message }, 400);
       }
-      return c.json({ ok: false, error: err.message }, 502);
+      return c.json({ ok: false, error: internalError("candles", err) }, 502);
     }
   });
   app2.get("/benchmarks", async (c) => {
@@ -60974,14 +61097,19 @@ function createApp(opts = {}) {
       if (err instanceof BadDateError) {
         return c.json({ ok: false, error: err.message }, 400);
       }
-      return c.json({ ok: false, error: err.message }, 502);
+      return c.json({ ok: false, error: internalError("benchmarks", err) }, 502);
     }
   });
   app2.get("/agent/:did/verification", async (c) => {
     const raw2 = c.req.param("did");
+    let did;
     try {
-      const did = raw2.startsWith("did:") ? raw2 : agentDid(raw2);
+      did = raw2.startsWith("did:") ? raw2 : agentDid(raw2);
       parseDidPkh(did);
+    } catch (err) {
+      return c.json({ ok: false, error: err.message }, 400);
+    }
+    try {
       const av = await buildAgentVerification({
         did,
         verifier: VERIFIER_WALLET,
@@ -61007,7 +61135,7 @@ function createApp(opts = {}) {
       });
       return c.json(jsonSafe({ ok: true, verification: av }));
     } catch (err) {
-      return c.json({ ok: false, error: err.message }, 400);
+      return c.json({ ok: false, error: internalError("verification", err) }, 502);
     }
   });
   app2.post("/demo/buy-signal", async (c) => {
@@ -61064,7 +61192,7 @@ function createApp(opts = {}) {
         })
       );
     } catch (err) {
-      return c.json({ ok: false, error: err.message }, 400);
+      return c.json({ ok: false, error: internalError("demo_signal", err) }, 502);
     }
   });
   app2.use("/oracle/*", async (c, next) => {
@@ -61147,11 +61275,12 @@ function createApp(opts = {}) {
     try {
       registered = await isRegistered(trader);
     } catch (err) {
+      console.error(`[registry] traders(${trader}) \u5931\u6557\uFF1A`, err);
       return c.json(
         {
           ok: false,
           error: "registry_unavailable",
-          message: `\u7121\u6CD5\u78BA\u8A8D ${trader} \u662F\u5426\u70BA\u5DF2\u8A3B\u518A trader\uFF1A${err.message}`,
+          message: `\u7121\u6CD5\u78BA\u8A8D ${trader} \u662F\u5426\u70BA\u5DF2\u8A3B\u518A trader\uFF08RPC \u66AB\u6642\u7121\u6CD5\u4F7F\u7528\uFF09\u3002`,
           note: "\u672A\u4ED8\u6B3E\uFF1A\u7121\u6CD5\u78BA\u8A8D\u5C31\u4E0D\u767C\u51FA\u4ED8\u6B3E\u8981\u6C42\u3002"
         },
         503
@@ -61203,24 +61332,15 @@ function createApp(opts = {}) {
   });
   const x402 = paymentMiddleware(
     payTo,
-    {
-      "GET /signals/[trader]": {
-        price: `$${PRICE_SIGNALS}`,
-        network: NETWORK,
-        config: { description: "Trader \u5373\u6642\u7E3E\u6548\u6458\u8981 + \u958B\u5009\u5EFA\u8B70", maxTimeoutSeconds: MAX_TIMEOUT_SECONDS }
-      },
-      "GET /oracle/[asset]": {
-        price: `$${PRICE_ORACLE}`,
-        network: NETWORK,
-        config: {
-          description: "\u6C7A\u7B56\u7D1A\u5FEB\u7167\uFF1A\u50F9\u683C + funding + OI \u5931\u8861 + \u9810\u4F30\u6E05\u7B97\u50F9 + edge \u5EFA\u8B70",
-          maxTimeoutSeconds: MAX_TIMEOUT_SECONDS
-        }
-      }
-    },
+    paidRoutes(),
     { url: FACILITATOR_URL }
   );
   app2.use(async (c, next) => {
+    if (findMatchingRoute(PAID_ROUTE_PATTERNS, c.req.raw.url.replace(/^[a-z]+:\/\/[^/]+/i, ""), c.req.method.toUpperCase())) {
+      const blocked = await payToGuard(c, async () => {
+      });
+      if (blocked) return blocked;
+    }
     let res;
     try {
       res = await x402(c, next);
@@ -61249,7 +61369,7 @@ function createApp(opts = {}) {
       });
       return c.json(jsonSafe({ ok: true, settled: false, data: perf }));
     } catch (err) {
-      return c.json({ ok: false, error: err.message }, 400);
+      return c.json({ ok: false, error: internalError("signals", err) }, 400);
     }
   });
   app2.get("/oracle/:asset", async (c) => {
@@ -61271,7 +61391,7 @@ function createApp(opts = {}) {
       });
       return c.json(jsonSafe({ ok: true, settled: false, data: snap }));
     } catch (err) {
-      return c.json({ ok: false, error: err.message }, 400);
+      return c.json({ ok: false, error: internalError("oracle", err) }, 400);
     }
   });
   return app2;
