@@ -127,6 +127,15 @@ export const portfolio: Catalog['portfolio'] = {
     unrealizedPnl: 'Unrealised, from the Oracle price',
   },
 
+  close: {
+    column: 'Actions',
+    button: 'Close',
+    closing: 'Closing…',
+    closed: 'Position closed',
+    halted: 'The {asset} market is halted; positions cannot be closed right now.',
+    copyManaged: 'This is a copy-trade position. Unfollow the trader under Copy Positions to close it.',
+  },
+
   page: {
     title: 'My Portfolio',
     refresh: 'Refresh',

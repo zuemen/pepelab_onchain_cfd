@@ -79,7 +79,7 @@ export const pepefiRoutes: RouteObject[] = [
         element: <DashboardShell />,
         children: [
           // /dashboard 併進 /portfolio。兩頁本來都在回答「我現在怎麼樣」，
-          // 但只有 Portfolio 有動作（平倉、提領、停止跟單），Dashboard 是它的
+          // 但只有 Portfolio 有動作（部位頁籤逐筆平倉、提領、停止跟單），Dashboard 是它的
           // 唯讀分身。轉址而不是移除，舊連結與書籤才不會壞掉。
           { path: 'dashboard', element: <Navigate to="/portfolio" replace /> },
           { path: 'exchange', element: <ExchangePage /> },

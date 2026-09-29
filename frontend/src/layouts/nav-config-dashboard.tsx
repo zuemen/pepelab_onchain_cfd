@@ -77,7 +77,7 @@ export const navData: NavSectionProps['data'] = byFeatureFlags([
       { title: t.nav.item.pepe, path: paths.pepefi.pepe, icon: ICONS.blog },
       { title: t.nav.item.rewards, path: paths.pepefi.rewards, icon: ICONS.booking },
       // 專業終端是永續的入口,跟著 SHOW_PERPETUALS 走。收的是入口不是路徑——
-      // 直接打 /terminal 仍然到得了,既有部位照樣平得掉。
+      // 直接打 /terminal 仍然到得了;既有部位在 Portfolio「部位」頁籤就能平倉。
       ...(SHOW_PERPETUALS
         ? [{ title: t.nav.item.terminal, path: paths.pepefi.terminal, icon: ICONS.dashboard }]
         : []),

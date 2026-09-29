@@ -32,6 +32,7 @@ import RwaAllocation from 'src/components/pepefi/dashboard/RwaAllocation';
 import { useSynthHoldings } from 'src/hooks/useSynthHoldings';
 import { SHOW_PERPETUALS, FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags';
 import { copyDeskVisibility } from 'src/lib/pepefi/copyDeskVisibility';
+import { readAssetMode, closeBlockReason } from 'src/lib/pepefi/closeGuard';
 import KYCStatusCard from 'src/components/pepefi/dashboard/KYCStatusCard';
 import QuickActions from 'src/components/pepefi/dashboard/QuickActions';
 import PortfolioAnalysis from 'src/components/pepefi/dashboard/PortfolioAnalysis';
@@ -402,6 +403,53 @@ export default function PortfolioPage() {
       notify(prettyError(e), false);
     } finally { setLoad(key, false); }
   };
+
+  // 自己的部位直接在這裡平倉。SHOW_PERPETUALS 關閉時終端機沒有入口，這是使用者
+  // 唯一看得到、按得到的平倉路徑。送出前先檢查價格新鮮度與 AssetMode（新版合約
+  // 才有；舊合約讀不到就略過），兩者在鏈上都會 revert，先擋才能把原因講清楚。
+  const doClose = async (row: PosRow) => {
+    if (!contracts) return;
+    const label = ASSET_LABEL[row.asset] ?? row.asset.slice(0, 8);
+    const mode = await readAssetMode(
+      String(contracts.exchange.target),
+      wallet.provider ?? contracts.exchange.runner,
+      row.asset
+    );
+    const blocked = closeBlockReason({ freshness: livePrices[row.asset]?.freshness, assetLabel: label, assetMode: mode });
+    if (blocked) { notify(blocked, false); return; }
+    const key = `close_${String(row.id)}`;
+    setLoad(key, true);
+    try {
+      const tx = asTx(await contracts.exchange.closePosition(row.id));
+      await tx.wait();
+      notify(t.portfolio.close.closed, true, tx.hash);
+      await fetchAll();
+    } catch (e) {
+      notify(prettyError(e), false);
+    } finally { setLoad(key, false); }
+  };
+
+  const isCopyPosition = (row: PosRow) =>
+    !!row.copiedFrom && row.copiedFrom !== '0x0000000000000000000000000000000000000000';
+
+  const renderCloseCell = (row: PosRow) => (
+    <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+      {isCopyPosition(row) ? (
+        <Typography variant="caption" color="text.secondary" title={t.portfolio.close.copyManaged}>—</Typography>
+      ) : (
+        <Button
+          size="small"
+          variant="outlined"
+          color="error"
+          disabled={!!busy[`close_${String(row.id)}`]}
+          onClick={() => void doClose(row)}
+          sx={{ textTransform: 'none', minWidth: 64 }}
+        >
+          {busy[`close_${String(row.id)}`] ? t.portfolio.close.closing : t.portfolio.close.button}
+        </Button>
+      )}
+    </TableCell>
+  );
 
   const doWithdraw = async () => {
     if (!contracts) return;
@@ -797,12 +845,16 @@ export default function PortfolioPage() {
                       {columnLabelForMode(key, 'simple')}
                     </TableCell>
                   ))}
+                  <TableCell align="right" sx={{ color: 'text.secondary', fontWeight: 'bold', fontSize: '0.75rem', py: 1.5 }}>
+                    {t.portfolio.close.column}
+                  </TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {positions.map(row => (
                   <TableRow key={String(row.id)} sx={{ '&:hover': { bgcolor: 'action.hover' } }}>
                     {openPositionColumnsForMode('simple').map(key => renderSimplePositionCell(key, row))}
+                    {renderCloseCell(row)}
                   </TableRow>
                 ))}
               </TableBody>
@@ -815,6 +867,7 @@ export default function PortfolioPage() {
                   <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: pnlColor(positions.reduce((s, p) => s + p.unrealizedPnL, 0n)) }}>
                     {fPnL(positions.reduce((s, p) => s + p.unrealizedPnL, 0n))}
                   </TableCell>
+                  <TableCell />
                 </TableRow>
               </tfoot>
             </Table>
@@ -843,6 +896,7 @@ export default function PortfolioPage() {
                     [t.portfolio.column.unrealizedPnl, t.portfolio.columnHint.unrealizedPnl],
                     [t.portfolio.column.accruedFunding, ''],
                     [t.portfolio.column.value, ''],
+                    [t.portfolio.close.column, ''],
                   ] as const).map(([h, hint]) => (
                     <TableCell
                       key={h}
@@ -924,12 +978,13 @@ export default function PortfolioPage() {
                     <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', fontSize: '0.8125rem', color: pnlColor(row.currentValue - row.margin) }}>
                       {f18(row.currentValue)}
                     </TableCell>
+                    {renderCloseCell(row)}
                   </TableRow>
                 ))}
               </TableBody>
               <tfoot style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
                 <TableRow sx={{ bgcolor: 'background.neutral' }}>
-                  <TableCell colSpan={8} sx={{ fontWeight: 'bold', color: 'text.primary' }}>{t.portfolio.page.total}</TableCell>
+                  <TableCell colSpan={9} sx={{ fontWeight: 'bold', color: 'text.primary' }}>{t.portfolio.page.total}</TableCell>
                   <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: pnlColor(positions.reduce((s, p) => s + p.unrealizedPnL, 0n)) }}>
                     {fPnL(positions.reduce((s, p) => s + p.unrealizedPnL, 0n))}
                   </TableCell>
@@ -939,6 +994,7 @@ export default function PortfolioPage() {
                   <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'text.primary' }}>
                     {f18(positions.reduce((s, p) => s + p.currentValue, 0n))}
                   </TableCell>
+                  <TableCell />
                 </TableRow>
               </tfoot>
             </Table>

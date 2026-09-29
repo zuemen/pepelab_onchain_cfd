@@ -154,6 +154,16 @@ export const portfolio = {
     unrealizedPnl: '未實現損益，依預言機價格計算',
   },
 
+  /** 部位頁籤的平倉按鈕（見 lib/pepefi/closeGuard.ts）。 */
+  close: {
+    column: '操作',
+    button: '平倉',
+    closing: '平倉中…',
+    closed: '已平倉',
+    halted: '{asset} 市場目前暫停（Halted），暫時無法平倉。',
+    copyManaged: '這筆是跟單部位，請從「跟單部位」取消跟單以一併平倉。',
+  },
+
   page: {
     title: '我的投資組合',
     refresh: '重新整理',

@@ -667,7 +667,8 @@ export default function ExchangePage() {
       </Card>
 
       {/* Swap (ETH ↔ USDC via PepeAMM) —— #148 之後這一頁只剩水龍頭與兌換。
-          開倉與平倉走 /terminal（ticket/OrderTicket、positions/PositionsTable），
+          開倉走 /terminal（ticket/OrderTicket）；平倉在 /terminal 的 PositionsTable 或
+          /portfolio 的部位頁籤（SHOW_PERPETUALS 關閉時後者是唯一入口），
           保證金存入同樣在那裡（ticket/AccountPanel），提領在 /portfolio 的部位頁。
           這一頁不再是「交易」入口，而是「拿到測試幣、換成 USDC」那一段。 */}
       <Card
