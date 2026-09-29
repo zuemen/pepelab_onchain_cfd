@@ -8,6 +8,7 @@
 export const marketplace = {
   title: '⭐ 明星交易者排行榜',
   subtitle: '瀏覽並跟單鏈上驗證過的策略',
+  networkError: '網路錯誤——請檢查錢包連線',
 
   esgFiltered: '已篩選',
   esgAll: '全部',

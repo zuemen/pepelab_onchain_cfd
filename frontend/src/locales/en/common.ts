@@ -16,6 +16,23 @@ export const common: Catalog['common'] = {
 
     mockTitle: 'Pepe Demo Channel (Mock Web3)',
     mockDesc: 'No wallet needed — jump straight in, switch Pepe avatars, and try copy trading',
+
+    error: {
+      notDetected: 'MetaMask not detected — please install the extension.',
+      pending: 'MetaMask has a pending request — open MetaMask and approve it.',
+      rejected: 'Connection rejected — please approve in MetaMask.',
+      failed: 'Connection failed',
+    },
+
+    connectPrompt: {
+      marketplace: 'Connect wallet to browse the marketplace.',
+      stake: 'Connect wallet to manage your stake.',
+      sessions: 'Connect wallet to manage agent sessions.',
+    },
+  },
+
+  search: {
+    placeholder: 'Search…',
   },
 
   /** 確認對話框的預設按鈕文字，呼叫端可以各自覆寫。 */

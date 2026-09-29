@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { BrowserProvider, type Eip1193Provider, type Signer } from 'ethers'
 
+import { t } from 'src/locales'
 import { MOCK_WALLET_ENABLED } from 'src/lib/pepefi/featureFlags'
 
 // Augment Window so TypeScript knows about window.ethereum
@@ -91,7 +92,7 @@ export function useWallet(): WalletAPI {
 
   const connect = useCallback(async () => {
     if (!window.ethereum) {
-      setState(s => ({ ...s, error: 'MetaMask not detected — please install the extension.' }))
+      setState(s => ({ ...s, error: t.common.wallet.error.notDetected }))
       return
     }
     if (isConnectingRef.current) return  // prevent duplicate eth_requestAccounts
@@ -119,9 +120,9 @@ export function useWallet(): WalletAPI {
     } catch (err) {
       const code = (err as { code?: number }).code
       const msg =
-        code === -32002 ? 'MetaMask has a pending request — open MetaMask and approve it.' :
-        code === 4001   ? 'Connection rejected — please approve in MetaMask.' :
-        err instanceof Error ? err.message : 'Connection failed'
+        code === -32002 ? t.common.wallet.error.pending :
+        code === 4001   ? t.common.wallet.error.rejected :
+        err instanceof Error ? err.message : t.common.wallet.error.failed
       setState(s => ({ ...s, isConnecting: false, error: msg }))
     } finally {
       isConnectingRef.current = false

@@ -25,8 +25,8 @@ const FEATURES = [
   // so these six drew at six different weights and baselines depending on the
   // machine, and none of them could inherit the panel's colour. The mascot 🐸
   // stays — that is brand, not an icon.
-  // RWA 現貨排第一，是刻意的：教授看的是「這是不是 RWA 平台」，而第一張卡就是
-  // 答案。永續那張已經移出這個陣列——SHOW_PERPETUALS 預設關的時候，首頁介紹一個
+  // RWA 現貨排第一，是刻意的：來評估的機構第一個問題是「這是不是代幣化資產引擎」，
+  // 第一張卡就是答案。永續那張已經移出這個陣列——SHOW_PERPETUALS 預設關的時候，首頁介紹一個
   // 側邊欄上不存在的功能只會讓人去找它。要展示永續時打開旗標，PERPETUAL_FEATURE
   // 會接回去。
   { icon: 'solar:case-minimalistic-bold',          title: t.landing.features.rwaTitle,        desc: t.landing.features.rwaDesc },

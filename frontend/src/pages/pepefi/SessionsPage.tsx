@@ -327,7 +327,7 @@ export default function SessionsPage() {
   if (!wallet.isConnected) {
     return (
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-        <Typography color="text.secondary">Connect wallet to manage agent sessions.</Typography>
+        <Typography color="text.secondary">{t.common.wallet.connectPrompt.sessions}</Typography>
       </Box>
     )
   }

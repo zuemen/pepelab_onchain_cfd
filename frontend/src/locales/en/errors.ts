@@ -27,7 +27,7 @@ export const errors: Catalog['errors'] = {
     PositionAlreadyClosed: 'This position is already closed.',
     NotCopyTracker: 'Only CopyTracker can call this function.',
     CopyTrackerNotSet: 'CopyTracker is not set yet — contact an admin.',
-    'Insufficient execution fee': 'Needs 0.001 ETH as the execution fee — top up your ETH.',
+    'Insufficient execution fee': 'Not enough ETH attached for the execution fee (the on-chain executionFee sets the amount) — top up your Base Sepolia ETH.',
     AlreadyRegistered: "You're already a trader — no need to register again.",
     NotRegistered: 'Register as a trader first.',
     EmptyAllocations: 'A strategy needs at least one allocation — it cannot be empty.',

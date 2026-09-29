@@ -30,7 +30,7 @@ export const errors = {
     PositionAlreadyClosed: '此 position 已平倉',
     NotCopyTracker: '此 function 只有 CopyTracker 能呼叫',
     CopyTrackerNotSet: 'CopyTracker 尚未設定，請聯絡管理員',
-    'Insufficient execution fee': '需要 0.001 ETH 作為執行費，請補充 ETH',
+    'Insufficient execution fee': '附帶的 ETH 不足以支付執行費（金額以鏈上 executionFee 為準），請補充 Base Sepolia ETH',
     AlreadyRegistered: '你已經是 trader，不需要重新註冊',
     NotRegistered: '請先註冊為 trader',
     EmptyAllocations: '策略不能為空，至少要有一個 allocation',

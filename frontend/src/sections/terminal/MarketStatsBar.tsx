@@ -6,7 +6,7 @@ import Box from '@mui/material/Box'
 
 import { t, interpolate } from 'src/locales'
 import { fUsd, fNum, fromUnits } from 'src/lib/pepefi/format'
-import { paramsFor, attestationExpired, type Tier } from 'src/lib/pepefi/carbon'
+import { paramsFor, type Tier, attestationExpired } from 'src/lib/pepefi/carbon'
 
 import { Stat } from './Atoms'
 import { C, panel, monoCss, labelCss } from './terminal-theme'

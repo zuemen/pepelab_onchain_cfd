@@ -6,6 +6,7 @@ import type { Catalog } from '../zh-TW';
 export const marketplace: Catalog['marketplace'] = {
   title: '⭐ Star Trader Leaderboard',
   subtitle: 'Browse and copy on-chain verified strategies',
+  networkError: 'Network error — check wallet',
 
   esgFiltered: 'Filtered',
   esgAll: 'All',

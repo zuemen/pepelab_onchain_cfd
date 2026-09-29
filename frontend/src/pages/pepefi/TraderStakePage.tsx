@@ -146,7 +146,7 @@ export default function TraderStakePage() {
   if (!wallet.isConnected) {
     return (
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-        <Typography color="text.secondary">Connect wallet to manage your stake.</Typography>
+        <Typography color="text.secondary">{t.common.wallet.connectPrompt.stake}</Typography>
       </Box>
     )
   }

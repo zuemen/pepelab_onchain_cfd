@@ -33,7 +33,7 @@ export function AccountButton({ photoURL, displayName, address, sx, ...other }: 
           secondaryBorder: { sx: { color: 'warning.main' } },
         }}
       >
-        <PepeAvatar address={address || 'mock_user'} size={34} />
+        <PepeAvatar address={address ?? undefined} size={34} />
       </AnimateBorder>
     </IconButton>
   );

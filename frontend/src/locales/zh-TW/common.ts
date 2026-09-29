@@ -17,6 +17,26 @@ export const common = {
 
     mockTitle: 'Pepe 簡報測試通道 (模擬 Web3)',
     mockDesc: '無須錢包即可一鍵進入系統、切換 Pepe 蛙頭像與測試跟單',
+
+    /** useWallet 連線失敗的原因。 */
+    error: {
+      notDetected: '未偵測到 MetaMask，請先安裝瀏覽器擴充功能。',
+      pending: 'MetaMask 有一個尚未處理的請求，請打開 MetaMask 並核准。',
+      rejected: '連線已被拒絕，請在 MetaMask 中核准。',
+      failed: '連線失敗',
+    },
+
+    /** 需要錢包的頁面在未連線時的提示。 */
+    connectPrompt: {
+      marketplace: '連接錢包以瀏覽市集。',
+      stake: '連接錢包以管理你的質押。',
+      sessions: '連接錢包以管理 agent session。',
+    },
+  },
+
+  /** ⌘K 搜尋框。 */
+  search: {
+    placeholder: '搜尋功能…',
   },
 
   /** 確認對話框的預設按鈕文字，呼叫端可以各自覆寫。 */

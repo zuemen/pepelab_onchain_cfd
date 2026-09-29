@@ -107,9 +107,10 @@ export const navData: NavSectionProps['data'] = byFeatureFlags([
 //
 // issue #101 — Mode 分流 11 / 11。Simple 的 11 個頁面裡，LandingPage 是
 // `/`（不在側邊欄），CopyPage 與 TraderProfilePage 是帶參數的路徑（#150 起
-// 只從 Expert 的交易者排行榜點進去），所以側邊欄上是這 8 個。被藏起來的是入口不是路徑——
-// WhaleTracker、TradeTerminal、各 Admin 頁直接打網址仍然到得了，口試時
-// Expert Mode 也照常可用。
+// 只從 Expert 的交易者排行榜點進去），所以側邊欄上是這 8 個（GameFi 旗標關閉時少
+// /pepe，是 7 個）。被藏起來的是入口不是路徑——WhaleTracker、TradeTerminal、各 Admin
+// 頁直接打網址仍然到得了。商業版旗標（featureFlags.ts 的 FEATURE_*）不同：那些是連
+// 路由一起收，已在上面的 byFeatureFlags 過濾掉。
 //
 // 照使用順序排：先看自己的資產配置（Portfolio），再逛別人發布的配置
 // （Marketplace），去買賣代幣化資產（Tokens），看碳強度與見證歧見（ESG），

@@ -319,7 +319,7 @@ function TraderLeaderboard() {
     } catch (e) {
       if (ac.signal.aborted || isChunkScanAborted(e)) return;
       console.error('[marketplace fetch]', e);
-      setFetchError(e instanceof Error ? e.message.slice(0, 140) : 'Network error — check wallet');
+      setFetchError(e instanceof Error ? e.message.slice(0, 140) : t.marketplace.networkError);
     } finally { if (!ac.signal.aborted) setIsLoading(false); }
   }, [contracts, wallet.provider]);
 
@@ -408,7 +408,7 @@ function TraderLeaderboard() {
   if (!wallet.isConnected) {
     return (
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-        <Typography color="text.secondary">Connect wallet to browse the marketplace.</Typography>
+        <Typography color="text.secondary">{t.common.wallet.connectPrompt.marketplace}</Typography>
       </Box>
     );
   }
