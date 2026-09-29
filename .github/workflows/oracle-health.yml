@@ -40,14 +40,20 @@ jobs:
       # 低於這個值只會製造被無視的假警報，而被無視的警報等於沒有警報。
       HEALTH_MAX_AGE: "18000"
     steps:
+      # persist-credentials: false —— 這個 job 有 issues: write；不把 GITHUB_TOKEN 留在
+      # .git/config，npm 套件或任何後續步驟都讀不到它（gh 只在告警 step 經 GH_TOKEN 拿到）。
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20
           cache: npm
           cache-dependency-path: agent/package-lock.json
+      # --ignore-scripts：唯讀健檢不需要任何 install script（esbuild 的平台二進位走
+      # optionalDependencies、ws 的原生加速有純 JS 後備），不給依賴樹執行任意程式碼的機會。
       - working-directory: agent
-        run: npm ci --no-audit --no-fund
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - id: health
         working-directory: agent
         env:
@@ -74,14 +80,20 @@ jobs:
       # 同上：原本是 10800，正好等於巡檢間隔，單次排程延遲就會誤報。
       HEALTH_MAX_AGE: "18000"
     steps:
+      # persist-credentials: false —— 這個 job 有 issues: write；不把 GITHUB_TOKEN 留在
+      # .git/config，npm 套件或任何後續步驟都讀不到它（gh 只在告警 step 經 GH_TOKEN 拿到）。
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20
           cache: npm
           cache-dependency-path: agent/package-lock.json
+      # --ignore-scripts：唯讀健檢不需要任何 install script（esbuild 的平台二進位走
+      # optionalDependencies、ws 的原生加速有純 JS 後備），不給依賴樹執行任意程式碼的機會。
       - working-directory: agent
-        run: npm ci --no-audit --no-fund
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - id: health
         working-directory: agent
         env:
