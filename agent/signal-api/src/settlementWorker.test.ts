@@ -24,6 +24,10 @@ const { assessPayoutAddress, clearPayoutSafetyCache } = await import("@pepelab/s
 type SettlementResult = Awaited<ReturnType<(typeof import("./settlement.ts"))["settleRevenue"]>>;
 type SettleHooks = NonNullable<Parameters<(typeof import("./settlement.ts"))["settleRevenue"]>[2]>;
 
+/** 所有 processing 清單（各來源 + 舊的單一清單）的總筆數。 */
+const procLen = () =>
+  [PROCESSING_KEY, ...Object.values(ledger.PROCESSING_KEYS)].reduce((n, k) => n + fake.list(k).length, 0);
+
 const TRADER = "0x5555555555555555555555555555555555555555";
 const entry = (key: string) => ({ trader: TRADER, feeUsd: 0.01, at: 1, source: "signals" as const, idempotencyKey: key });
 
@@ -92,7 +96,7 @@ function reset() {
   }
   assert.equal(fake.list(RETRY_KEY).length, 0);
   assert.equal(fake.list(DEAD_KEY).length, 1);
-  assert.equal(fake.list(PROCESSING_KEY).length, 0);
+  assert.equal(procLen(), 0);
   assert.equal(settleCalls, MAX_RETRY_ATTEMPTS);
   console.log(`失敗 ${MAX_RETRY_ATTEMPTS} 次 → 死信；每次失敗都釋放冪等佔位 ✓`);
 }
@@ -104,13 +108,13 @@ function reset() {
   const raw = await claimNext(QUEUE_KEY); // 模擬：搬進 processing 後 process 就死了
   assert.ok(raw);
   assert.equal(fake.list(QUEUE_KEY).length, 0);
-  assert.equal(fake.list(PROCESSING_KEY).length, 1, "項目在 processing，沒有遺失");
+  assert.equal(procLen(), 1, "項目在 processing，沒有遺失");
 
   const s = await runWorker(deps);
   assert.equal(s.recovered, 1);
   assert.equal(s.settled, 1);
   assert.equal(settleCalls, 1);
-  assert.equal(fake.list(PROCESSING_KEY).length, 0);
+  assert.equal(procLen(), 0);
   assert.equal((await getSettleState("k-crash"))?.status, "DONE");
   console.log("LMOVE 後崩潰 → 下一輪回收並結算一次 ✓");
 
@@ -134,7 +138,7 @@ function reset() {
   assert.equal(s.settled, 1);
   assert.equal(s.duplicate, 1);
   assert.equal(settleCalls, 1);
-  assert.equal(fake.list(QUEUE_KEY).length + fake.list(PROCESSING_KEY).length, 0);
+  assert.equal(fake.list(QUEUE_KEY).length + procLen(), 0);
   console.log("同一鍵重複入列兩次 → 只結算一次 ✓");
 }
 
@@ -152,7 +156,7 @@ function reset() {
   assert.ok(st?.txHash, "UNKNOWN 必須記下 tx hash");
   assert.equal(st?.nonce, 0, "UNKNOWN 必須記下 nonce");
   assert.equal(st?.rawTx, "0x02raw", "UNKNOWN 必須記下已簽 raw tx（人工可重播）");
-  assert.equal(fake.list(PROCESSING_KEY).length, 0);
+  assert.equal(procLen(), 0);
   assert.equal(fake.list(QUEUE_KEY).length, 1, "第二筆仍在主佇列（沒有遺失）");
   assert.equal(fake.list(ledger.UNCONFIRMED_KEY).length, 1, "UNKNOWN 那筆進 unconfirmed");
 
@@ -231,7 +235,7 @@ function reset() {
   const s0 = await runWorker(deps); // 例外被攔下，不讓 process 崩潰
   assert.equal(s0.errors, 1);
   assert.equal(settleCalls, 1);
-  assert.equal(fake.list(PROCESSING_KEY).length, 1, "項目仍在 processing");
+  assert.equal(procLen(), 1, "項目仍在 processing");
   const s = await runWorker(deps);
   assert.equal(s.recovered, 1);
   assert.equal(s.duplicate, 1);
@@ -313,7 +317,7 @@ function reset() {
   const s = await runWorker(deps);
   assert.equal(s.errors, 1);
   assert.equal(settleCalls, 0);
-  assert.equal(fake.list(PROCESSING_KEY).length, 1);
+  assert.equal(procLen(), 1);
   const s2 = await runWorker(deps);
   assert.equal(s2.settled, 1);
   assert.equal(settleCalls, 1);
@@ -511,6 +515,87 @@ function reset() {
   assert.equal(settleCalls, 0, "無法對帳就不可重新結算");
   assert.ok(fake.list(DEAD_KEY)[0]!.includes("without settle state"));
   console.log("unconfirmed 缺少狀態 → 死信、不重新結算 ✓");
+}
+
+// ── 24) 回收的 UNKNOWN 一律走 phase 1 對帳；retry 項目不可搶先送出 ─────────────────
+//        含「回收當輪 phase 1 因 STUCK 提早 return、隔一輪（清旗標後）才處理」的情況。
+{
+  reset();
+  mode = "timeout";
+  await enqueueSettlement(entry("k-s")); // 會先轉 STUCK 的那筆
+  await runWorker(deps); // k-s UNKNOWN（sentAt = t0）
+  clock += 10 * 60_000;
+  chain.latest = chain.pending; // nonce 檢查不擋：驗證的是分流與順序本身
+  await enqueueSettlement(entry("k-r"));
+  receipt = null;
+  // 手動造出「k-r 已簽出、狀態 UNKNOWN、卡在 processing:main」（上一輪簽出後就中止）
+  await claimNext(QUEUE_KEY);
+  await ledger.setSettleState("k-r", { status: "UNKNOWN", claimedAt: clock, txHash: "0x" + "ee".repeat(32), nonce: 9, rawTx: "0x02", sentAt: clock });
+  fake.list(RETRY_KEY).push(JSON.stringify({ entry: entry("k-x"), attempts: 1, lastError: "x" }));
+  mode = "ok";
+  clock += 21 * 60_000; // k-s 超過 30 分鐘；k-r 才 21 分鐘
+  const s1 = await runWorker(deps);
+  assert.equal(s1.recovered, 1);
+  assert.equal(s1.stuck, 1, "phase 1 先遇到 k-s → STUCK → 提早 return");
+  assert.equal(fake.list(UNCONFIRMED_KEY).length, 1, "回收的 k-r 進了 unconfirmed，本輪未處理");
+  assert.equal(settleCalls, 1, "retry 的 k-x 不可被送出");
+  fake.strings.delete(ledger.HALT_KEY); // 人工確認後清旗標
+  const s2 = await runWorker(deps);
+  assert.equal(s2.pending, 1, "隔一輪 k-r 在 phase 1 對帳（仍無 receipt）");
+  assert.equal(settleCalls, 1, "phase 1 仍有未確認交易 → retry 項目照樣不送");
+  receipt = "success";
+  const s3 = await runWorker(deps);
+  assert.equal((await getSettleState("k-r"))?.status, "DONE");
+  assert.equal(s3.settled, 2, "k-r 對帳成功、k-x 之後才送出");
+  assert.equal(settleCalls, 2, "k-r 從未重送");
+  console.log("回收的 UNKNOWN 走 phase 1；STUCK 提早 return 時隔輪才處理；retry 不搶先 ✓");
+}
+
+// ── 25) 從 processing:unconfirmed 回收、狀態已過期（不存在）→ 死信 ────────────────
+{
+  reset();
+  fake.list(ledger.PROCESSING_KEYS.unconfirmed).push(JSON.stringify(entry("k-expired")));
+  const s = await runWorker(deps);
+  assert.equal(s.recovered, 1);
+  assert.equal(settleCalls, 0, "不可重新結算");
+  assert.equal(fake.list(DEAD_KEY).length, 1);
+  assert.ok(fake.list(DEAD_KEY)[0]!.includes("recovered unconfirmed item without state"));
+  console.log("processing:unconfirmed 回收、狀態過期 → 死信、不重新結算 ✓");
+}
+
+// ── 26) 舊的單一 processing 清單：第一次執行時依狀態分流，來源不明且無狀態 → 死信 ──
+{
+  reset();
+  const legacy = fake.list(PROCESSING_KEY);
+  legacy.push(JSON.stringify(entry("m-done")));
+  legacy.push(JSON.stringify(entry("m-unknown")));
+  legacy.push(JSON.stringify(entry("m-nostate")));
+  await ledger.setSettleState("m-done", { status: "DONE", claimedAt: clock, txHash: "0x" + "aa".repeat(32) });
+  await ledger.setSettleState("m-unknown", { status: "UNKNOWN", claimedAt: clock, txHash: "0x" + "bb".repeat(32), nonce: 3, sentAt: clock });
+  receipt = "success";
+  const s = await runWorker(deps);
+  assert.equal(s.recovered, 3);
+  assert.equal(fake.list(PROCESSING_KEY).length, 0, "舊清單清空");
+  assert.equal(s.duplicate, 1, "DONE → ack");
+  assert.equal((await getSettleState("m-unknown"))?.status, "DONE", "有 hash → unconfirmed 對帳");
+  assert.equal(fake.list(DEAD_KEY).length, 1, "來源不明且無狀態 → 死信");
+  assert.ok(fake.list(DEAD_KEY)[0]!.includes("legacy processing list"));
+  assert.equal(settleCalls, 0, "遷移過程不送任何新交易");
+  console.log("舊單一 processing 清單遷移：DONE→ack、有 hash→對帳、無狀態→死信 ✓");
+}
+
+// ── 27) halt 旗標的值不是物件（"null"、"0"、"false"、數字、字串）→ 仍視為有旗標 ────
+{
+  for (const v of ["null", "0", "false", "42", '"stop"', "[]"]) {
+    reset();
+    await enqueueSettlement(entry("k-halt-" + v));
+    fake.strings.set(ledger.HALT_KEY, v);
+    const s = await runWorker(deps);
+    assert.ok(s.globalHalt, `旗標值 ${v} 也要拒跑`);
+    assert.equal(s.globalHalt?.reason, v);
+    assert.equal(settleCalls, 0);
+  }
+  console.log("halt 旗標值為 null/0/false/數字/字串/陣列 → 仍拒跑 ✓");
 }
 
 // ── 19) 只准在 CI 內執行；本機只能 --dry-run（只讀）─────────────────────────────

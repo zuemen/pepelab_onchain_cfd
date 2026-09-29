@@ -81,7 +81,9 @@ import {
   claimNext,
   ackProcessing,
   moveProcessingTo,
-  recoverProcessing,
+  processingFor,
+  peekHead,
+  PROCESSING_KEYS,
   queueDepth,
   getSettleState,
   claimSettleKey,
@@ -330,15 +332,28 @@ export function parseItem(raw: string): Parsed {
 const tag = (e: LedgerEntry, key: string) =>
   `trader=${e.trader} feeUsd=${e.feeUsd} source=${e.source} key=${key}`;
 
-async function failOrRetry(raw: string, p: Parsed, error: string): Promise<ProcessOutcome> {
+/** 單筆項目在它自己的 processing 清單上的操作（先寫目的地、再從 processing 移除）。 */
+interface ItemIO {
+  move(dest: string, value?: string): Promise<void>;
+  ack(): Promise<void>;
+}
+
+function itemIO(raw: string, proc: string): ItemIO {
+  return {
+    move: (dest, value) => moveProcessingTo(raw, dest, value ?? raw, proc),
+    ack: () => ackProcessing(raw, proc),
+  };
+}
+
+async function failOrRetry(io: ItemIO, p: Parsed, error: string): Promise<ProcessOutcome> {
   const attempts = p.attempts + 1;
   const retryEntry: RetryEntry = { entry: p.entry, attempts, lastError: error };
   if (attempts >= MAX_RETRY_ATTEMPTS) {
-    await moveProcessingTo(raw, DEAD_KEY, JSON.stringify(retryEntry));
+    await io.move(DEAD_KEY, JSON.stringify(retryEntry));
     console.error(`::error::dead-lettered ${tag(p.entry, p.key)} attempts=${attempts} error=${error}`);
     return { outcome: "dead", error };
   }
-  await moveProcessingTo(raw, RETRY_KEY, JSON.stringify(retryEntry));
+  await io.move(RETRY_KEY, JSON.stringify(retryEntry));
   console.warn(`retry ${tag(p.entry, p.key)} attempts=${attempts} error=${error}`);
   return { outcome: "retry", error };
 }
@@ -347,7 +362,7 @@ const deadLetter = (p: Parsed, lastError: string) =>
   JSON.stringify({ entry: p.entry, attempts: p.attempts, lastError });
 
 /** 對一個已經簽出過 tx 的鍵做 receipt 對帳。 */
-async function reconcile(raw: string, p: Parsed, st: SettleState, deps: WorkerDeps): Promise<ProcessOutcome> {
+async function reconcile(io: ItemIO, p: Parsed, st: SettleState, deps: WorkerDeps): Promise<ProcessOutcome> {
   const now = deps.now();
   const since = st.sentAt ?? st.claimedAt;
   const nonceNote = st.nonce !== undefined ? ` nonce=${st.nonce}` : "";
@@ -357,18 +372,18 @@ async function reconcile(raw: string, p: Parsed, st: SettleState, deps: WorkerDe
     status = await deps.receiptStatus(st.txHash!);
   } catch (err) {
     // 查不到 receipt 本身失敗（RPC）→ 狀態不變，放回佇列，下一輪再查；不重送。
-    await moveProcessingTo(raw, UNCONFIRMED_KEY);
+    await io.move(UNCONFIRMED_KEY);
     return { outcome: "pending", tx: st.txHash, error: `receipt 查詢失敗：${(err as Error).message}` };
   }
   if (status === "success") {
     await setSettleState(p.key, { ...st, status: "DONE" });
-    await ackProcessing(raw);
+    await io.ack();
     console.log(`reconciled settled ${tag(p.entry, p.key)} tx=${st.txHash}`);
     return { outcome: "settled", tx: st.txHash! };
   }
   if (status === "reverted") {
     await setSettleState(p.key, { ...st, status: "FAILED", note: "reverted" });
-    await moveProcessingTo(raw, DEAD_KEY, deadLetter(p, `reverted tx=${st.txHash}`));
+    await io.move(DEAD_KEY, deadLetter(p, `reverted tx=${st.txHash}`));
     console.error(`::error::dead-lettered（對帳：revert）${tag(p.entry, p.key)} tx=${st.txHash}`);
     return { outcome: "dead", error: `reverted tx=${st.txHash}` };
   }
@@ -381,7 +396,7 @@ async function reconcile(raw: string, p: Parsed, st: SettleState, deps: WorkerDe
     // processing，下一輪（回收項目最先處理）會再走到這裡——不會有「已 STUCK 卻沒停機」。
     await haltFor(p, st, `STUCK：簽出超過 ${Math.round(STUCK_AFTER_MS / 60000)} 分鐘仍查不到 receipt`, deps);
     await setSettleState(p.key, { ...st, status: "STUCK", note: `${Math.round((now - since) / 60000)} 分鐘仍無 receipt` });
-    await moveProcessingTo(raw, DEAD_KEY, deadLetter(p, `STUCK tx=${st.txHash}${nonceNote}`));
+    await io.move(DEAD_KEY, deadLetter(p, `STUCK tx=${st.txHash}${nonceNote}`));
     console.error(
       `::error::STUCK ${tag(p.entry, p.key)} tx=${st.txHash}${nonceNote} —— 簽出超過 ` +
         `${Math.round(STUCK_AFTER_MS / 60000)} 分鐘仍查不到 receipt，不自動重送。請依 agent/README.md` +
@@ -389,7 +404,7 @@ async function reconcile(raw: string, p: Parsed, st: SettleState, deps: WorkerDe
     );
     return { outcome: "stuck", tx: st.txHash, error: "no receipt" };
   }
-  await moveProcessingTo(raw, UNCONFIRMED_KEY);
+  await io.move(UNCONFIRMED_KEY);
   console.warn(`pending（等待 receipt）${tag(p.entry, p.key)} tx=${st.txHash}${nonceNote}`);
   return { outcome: "pending", tx: st.txHash, error: "尚無 receipt" };
 }
@@ -405,11 +420,12 @@ export async function processOne(
   ctx: RunContext = { runStartedAt: deps.now(), lockHeld: false },
   source?: string,
 ): Promise<ProcessOutcome> {
+  const io = itemIO(raw, processingFor(source));
   let p: Parsed;
   try {
     p = parseItem(raw);
   } catch (err) {
-    await moveProcessingTo(raw, DEAD_KEY, JSON.stringify({ raw, attempts: 0, lastError: `unparseable: ${(err as Error).message}` }));
+    await io.move(DEAD_KEY, JSON.stringify({ raw, attempts: 0, lastError: `unparseable: ${(err as Error).message}` }));
     console.error(`::error::無法解析的佇列項目已移入死信：${raw.slice(0, 200)}`);
     return { outcome: "dead", error: "unparseable" };
   }
@@ -419,7 +435,7 @@ export async function processOne(
   if (!existing && source === UNCONFIRMED_KEY) {
     // unconfirmed 的項目一定簽出過交易；狀態不見了（例如 halt 超過 90 天、冪等狀態過期）
     // 就無法對帳——重新結算可能雙付。一律死信交人工。
-    await moveProcessingTo(raw, DEAD_KEY, deadLetter(p, "unconfirmed item without settle state"));
+    await io.move(DEAD_KEY, deadLetter(p, "unconfirmed item without settle state"));
     console.error(`::error::unconfirmed 項目缺少結算狀態，無法對帳，移入死信（不重新結算）${tag(p.entry, p.key)}`);
     return { outcome: "dead", error: "unconfirmed without state" };
   }
@@ -428,24 +444,24 @@ export async function processOne(
       if (p.legacyKey) {
         // 舊格式：同一雜湊已結算過。可能是重複，也可能是另一筆真實付款——交人工。
         const total = await incrLegacyCollisions();
-        await moveProcessingTo(raw, LEGACY_REVIEW_KEY);
+        await io.move(LEGACY_REVIEW_KEY);
         console.warn(
           `::warning::legacy 雜湊衝突（累計 ${total} 筆）${tag(p.entry, p.key)} —— 不結算、不丟棄，` +
             `已移入 ${LEGACY_REVIEW_KEY} 交人工核對是否為另一筆真實付款。`,
         );
         return { outcome: "review", key: p.key };
       }
-      await ackProcessing(raw);
+      await io.ack();
       console.log(`skip duplicate（已結算）${tag(p.entry, p.key)} tx=${existing.txHash ?? "?"}`);
       return { outcome: "duplicate", key: p.key };
     }
     if (existing.status === "FAILED" || existing.status === "STUCK") {
       if (existing.status === "STUCK") await haltFor(p, existing, "重複項目指向 STUCK 的鍵", deps);
-      await moveProcessingTo(raw, DEAD_KEY, deadLetter(p, `duplicate of ${existing.status} key`));
+      await io.move(DEAD_KEY, deadLetter(p, `duplicate of ${existing.status} key`));
       console.error(`::error::同一鍵已是 ${existing.status}，重複項目移入死信 ${tag(p.entry, p.key)}`);
       return { outcome: existing.status === "STUCK" ? "stuck" : "dead", error: `key already ${existing.status}` };
     }
-    if (existing.txHash) return reconcile(raw, p, existing, deps);
+    if (existing.txHash) return reconcile(io, p, existing, deps);
     // PENDING 且沒有 hash。簽出前一定先記 hash，所以沒有 hash = 還沒簽。但佔位的
     // worker 可能還活著（例如 concurrency group 失效時的並行 worker）——只有佔位超過
     // ORPHAN_CLAIM_AFTER_MS（> job timeout）且本輪持有租約鎖時，才確定它已經結束。
@@ -453,7 +469,7 @@ export async function processOne(
       console.warn(`釋放遺留的佔位（PENDING、無 tx hash、超過 25 分鐘）${tag(p.entry, p.key)}`);
       await releaseSettleKey(p.key);
     } else {
-      await moveProcessingTo(raw, QUEUE_KEY);
+      await io.move(QUEUE_KEY);
       return { outcome: "pending", error: "已有佔位（PENDING、無 hash）且未逾時，留待之後處理" };
     }
   }
@@ -464,10 +480,10 @@ export async function processOne(
   if (!ta.safe) {
     if (ta.source === "no-data") {
       // 暫時查不到（RPC）→ 不能判定。不消耗重試次數：放回佇列、停止本輪。
-      await moveProcessingTo(raw, QUEUE_KEY);
+      await io.move(QUEUE_KEY);
       return { outcome: "halted", error: `trader 安全檢查暫時無法完成：${ta.reason}` };
     }
-    await moveProcessingTo(raw, DEAD_KEY, deadLetter(p, `trader_unsafe: ${ta.reason}`));
+    await io.move(DEAD_KEY, deadLetter(p, `trader_unsafe: ${ta.reason}`));
     console.error(`::error::受益 trader 不安全，不結算、移入死信 ${tag(p.entry, p.key)}：${ta.reason}`);
     return { outcome: "dead", error: `trader_unsafe: ${ta.reason}` };
   }
@@ -477,13 +493,13 @@ export async function processOne(
   try {
     n = await deps.nonceStatus();
   } catch (err) {
-    await moveProcessingTo(raw, QUEUE_KEY);
+    await io.move(QUEUE_KEY);
     return { outcome: "blocked", kind: "rpc", error: `nonce 查詢失敗（RPC），不送新交易：${(err as Error).message}` };
   }
   ctx.nonceQueried = true;
   if (n.pending === n.latest) ctx.nonceCheckPassed = true;
   if (n.pending !== n.latest) {
-    await moveProcessingTo(raw, QUEUE_KEY);
+    await io.move(QUEUE_KEY);
     return {
       outcome: "blocked",
       kind: "nonce_mismatch",
@@ -497,7 +513,7 @@ export async function processOne(
   const claimed = await claimSettleKey(p.key, { status: "PENDING", claimedAt });
   if (!claimed) {
     // 另一個 process 剛佔走（理論上 concurrency group 下不會發生）→ 放回，下一輪看狀態。
-    await moveProcessingTo(raw, QUEUE_KEY);
+    await io.move(QUEUE_KEY);
     return { outcome: "pending", error: "冪等鍵已被佔用" };
   }
 
@@ -512,17 +528,17 @@ export async function processOne(
   switch (r.status) {
     case "settled":
       await setSettleState(p.key, { status: "DONE", claimedAt, txHash: r.tx, sentAt: claimedAt });
-      await ackProcessing(raw);
+      await io.ack();
       console.log(`settled ${tag(p.entry, p.key)} tx=${r.tx}`);
       return { outcome: "settled", tx: r.tx };
     case "reverted":
       await setSettleState(p.key, { status: "FAILED", claimedAt, txHash: r.tx, note: r.error });
-      await moveProcessingTo(raw, DEAD_KEY, JSON.stringify({ entry: p.entry, attempts: p.attempts + 1, lastError: `${r.error} tx=${r.tx}` }));
+      await io.move(DEAD_KEY, JSON.stringify({ entry: p.entry, attempts: p.attempts + 1, lastError: `${r.error} tx=${r.tx}` }));
       console.error(`::error::dead-lettered（revert）${tag(p.entry, p.key)} tx=${r.tx}`);
       return { outcome: "dead", error: r.error };
     case "unknown":
       // 狀態已在 onSigned 寫成 UNKNOWN + hash；項目進 unconfirmed，下一輪最先對帳。
-      await moveProcessingTo(raw, UNCONFIRMED_KEY);
+      await io.move(UNCONFIRMED_KEY);
       console.warn(`::warning::UNKNOWN ${tag(p.entry, p.key)} tx=${r.tx} —— ${r.error}；不重送，下一輪對帳`);
       return { outcome: "pending", tx: r.tx, error: r.error };
     case "failed":
@@ -530,7 +546,7 @@ export async function processOne(
       // 簽出並嘗試廣播之後的任何錯誤都是 unknown，不會走到這裡。
       if (signedHash) console.warn(`已簽 ${signedHash} 但 onSigned 記錄失敗、未廣播，釋放佔位`);
       await releaseSettleKey(p.key);
-      return failOrRetry(raw, p, r.error);
+      return failOrRetry(io, p, r.error);
   }
 }
 
@@ -637,8 +653,63 @@ export async function runWorker(deps: WorkerDeps = defaultDeps, batchSize = BATC
   }
 }
 
+/**
+ * 回收 processing 遺留項目（上一輪中途中止）。**依冪等狀態分流，不依位置**：
+ *   - DONE → ack（舊格式雜湊鍵 → legacy_review，可能是另一筆真付款）
+ *   - 有 txHash（UNKNOWN / STUCK / FAILED）→ unconfirmed，交給 phase 1 對帳，永不重送
+ *   - 沒有狀態、來自 processing:unconfirmed → 死信（簽出過卻查不到狀態，無法對帳）
+ *   - 沒有狀態、來源不明（舊的單一 processing 清單）→ 死信（保守：寧可人工，不冒重付）
+ *   - 其他（沒有狀態且來自 main/retry、或 PENDING 無 hash）→ 放回原來源，照現有規則處理
+ * 每一筆都是「先寫目的地、再從 processing 移除」；毒項目（例如 Redis 一直失敗）會讓這裡
+ * 丟例外 → 整輪失敗、job 變紅（fail-closed）。
+ */
+export async function recoverAll(s: RunSummary, max = 10_000): Promise<void> {
+  const sources: Array<[string, string | undefined]> = [
+    [PROCESSING_KEYS.unconfirmed, UNCONFIRMED_KEY],
+    [PROCESSING_KEYS.retry, RETRY_KEY],
+    [PROCESSING_KEYS.main, QUEUE_KEY],
+    [PROCESSING_KEY, undefined], // 舊的單一清單：來源不明
+  ];
+  for (const [proc, src] of sources) {
+    for (let i = 0; i < max; i += 1) {
+      const raw = await peekHead(proc);
+      if (raw === null) break;
+      s.recovered += 1;
+      const io = itemIO(raw, proc);
+      let p: Parsed;
+      try {
+        p = parseItem(raw);
+      } catch {
+        await io.move(DEAD_KEY, JSON.stringify({ raw, attempts: 0, lastError: "unparseable (recovered)" }));
+        continue;
+      }
+      const st = await getSettleState(p.key);
+      if (st?.status === "DONE") {
+        if (p.legacyKey) await io.move(LEGACY_REVIEW_KEY);
+        else {
+          await io.ack();
+          s.duplicate += 1;
+        }
+        continue;
+      }
+      if (st?.txHash) {
+        await io.move(UNCONFIRMED_KEY);
+        console.warn(`::warning::回收：${tag(p.entry, p.key)} 已簽出 tx=${st.txHash} → unconfirmed 對帳（不重送）`);
+        continue;
+      }
+      if (!st && (src === UNCONFIRMED_KEY || src === undefined)) {
+        const why = src === undefined ? "recovered from legacy processing list without state" : "recovered unconfirmed item without state";
+        await io.move(DEAD_KEY, deadLetter(p, why));
+        console.error(`::error::回收：${tag(p.entry, p.key)} ${why} → 死信（不重新結算，交人工）`);
+        continue;
+      }
+      await io.move(src ?? QUEUE_KEY);
+    }
+  }
+}
+
 async function runLocked(deps: WorkerDeps, batchSize: number, s: RunSummary, ctx: RunContext): Promise<RunSummary> {
-  s.recovered = await recoverProcessing();
+  await recoverAll(s);
   if (s.recovered > 0) console.warn(`::warning::回收 processing 遺留項目 ${s.recovered} 筆（上一輪可能中途中止）`);
 
   const tally = (o: ProcessOutcome) => {
@@ -686,23 +757,17 @@ async function runLocked(deps: WorkerDeps, batchSize: number, s: RunSummary, ctx
     return s;
   }
 
-  // 2) 回收的項目（已在 main 最前面）最先處理：它們可能是上一輪中途中止、狀態已是
-  //    UNKNOWN 待轉 STUCK 的項目，必須在任何新交易之前先處理（例如設停機旗標）。
-  // 3) retry，4) main —— 送新交易。
+  // 2) retry，3) main —— 送新交易。（已簽出過的回收項目在回收時就進了 unconfirmed，
+  //    一定先經 phase 1 對帳，不需要特別排序。）
   let budget = batchSize;
-  const phases: Array<[string, number]> = [
-    [QUEUE_KEY, s.recovered],
-    [RETRY_KEY, Number.POSITIVE_INFINITY],
-    [QUEUE_KEY, Number.POSITIVE_INFINITY],
-  ];
-  for (const [src, cap] of phases) {
-    let n = Math.min(budget, cap, await queueDepth(src));
+  for (const src of [RETRY_KEY, QUEUE_KEY]) {
+    let n = Math.min(budget, await queueDepth(src));
     while (n-- > 0 && budget > 0) {
       const raw = await claimNext(src);
       if (raw === null || raw === undefined) break;
       budget -= 1;
       s.available += 1;
-      const o = await safeProcess(raw);
+      const o = await safeProcess(raw, src);
       if (!o) return s;
       tally(o);
       if (o.outcome === "stuck") {
@@ -739,7 +804,17 @@ async function dryRun(): Promise<void> {
     const shown = v && /^\d{12,}$/.test(v) ? `${v}（${new Date(Number(v)).toISOString()}）` : v;
     console.log(`${k}：${shown ?? "（無）"}`);
   }
-  for (const key of [UNCONFIRMED_KEY, PROCESSING_KEY, RETRY_KEY, QUEUE_KEY, DEAD_KEY, LEGACY_REVIEW_KEY]) {
+  for (const key of [
+    UNCONFIRMED_KEY,
+    PROCESSING_KEYS.unconfirmed,
+    PROCESSING_KEYS.retry,
+    PROCESSING_KEYS.main,
+    PROCESSING_KEY,
+    RETRY_KEY,
+    QUEUE_KEY,
+    DEAD_KEY,
+    LEGACY_REVIEW_KEY,
+  ]) {
     const depth = await queueDepth(key);
     console.log(`${key}：${depth} 筆`);
     for (const raw of await peekQueue(key, 5)) {
@@ -828,7 +903,9 @@ async function main(): Promise<void> {
     queueDepth(QUEUE_KEY),
     queueDepth(RETRY_KEY),
     queueDepth(UNCONFIRMED_KEY),
-    queueDepth(PROCESSING_KEY),
+    Promise.all(
+      [PROCESSING_KEY, ...Object.values(PROCESSING_KEYS)].map((k) => queueDepth(k)),
+    ).then((a) => a.reduce((x, y) => x + y, 0)),
     queueDepth(DEAD_KEY),
     queueDepth(LEGACY_REVIEW_KEY),
   ]).catch(() => [-1, -1, -1, -1, -1, -1]);

@@ -150,34 +150,49 @@ export function deriveIdempotencyKey(
 
 // ── 可靠佇列 ─────────────────────────────────────────────────────────────────
 
-/** 原子地把 `src` 最前面一筆搬到 processing 尾端，回傳原始字串（空了回 null）。 */
-export async function claimNext(src: string): Promise<string | null> {
-  return command<string | null>(["LMOVE", src, PROCESSING_KEY, "LEFT", "RIGHT"]);
+/**
+ * 每個來源各自一條 processing 清單（2026-09-29 結構修正）：回收時才知道項目從哪裡來。
+ * 舊的單一清單 PROCESSING_KEY 只在回收時讀取，視為「來源不明」。
+ */
+export const PROCESSING_KEYS = {
+  main: "x402:settlement:processing:main",
+  retry: "x402:settlement:processing:retry",
+  unconfirmed: "x402:settlement:processing:unconfirmed",
+} as const;
+
+/** 來源佇列 → 它的 processing 清單。未知來源 → 舊的單一清單（來源不明）。 */
+export function processingFor(src: string | undefined): string {
+  if (src === QUEUE_KEY) return PROCESSING_KEYS.main;
+  if (src === RETRY_KEY) return PROCESSING_KEYS.retry;
+  if (src === UNCONFIRMED_KEY) return PROCESSING_KEYS.unconfirmed;
+  return PROCESSING_KEY;
 }
 
-/** 處理完成：從 processing 移除這一筆（以原始字串比對）。 */
-export async function ackProcessing(raw: string): Promise<void> {
-  await command(["LREM", PROCESSING_KEY, 1, raw]);
+/** 原子地把 `src` 最前面一筆搬到該來源的 processing 尾端，回傳原始字串（空了回 null）。 */
+export async function claimNext(src: string): Promise<string | null> {
+  return command<string | null>(["LMOVE", src, processingFor(src), "LEFT", "RIGHT"]);
+}
+
+/** 處理完成：從 processing 清單移除這一筆（以原始字串比對）。 */
+export async function ackProcessing(raw: string, proc: string = PROCESSING_KEY): Promise<void> {
+  await command(["LREM", proc, 1, raw]);
 }
 
 /** 先寫入目的地、再從 processing 移除（崩潰最多造成重複，由冪等鍵吸收）。 */
-export async function moveProcessingTo(raw: string, dest: string, value: string = raw): Promise<void> {
+export async function moveProcessingTo(
+  raw: string,
+  dest: string,
+  value: string = raw,
+  proc: string = PROCESSING_KEY,
+): Promise<void> {
   await command(["RPUSH", dest, value]);
-  await ackProcessing(raw);
+  await ackProcessing(raw, proc);
 }
 
-/**
- * worker 啟動時呼叫：把 processing 的遺留項目（上一輪崩潰留下的）原序搬回 main 最前面。
- * 回傳搬回的筆數。
- */
-export async function recoverProcessing(max = 10_000): Promise<number> {
-  let n = 0;
-  while (n < max) {
-    const moved = await command<string | null>(["LMOVE", PROCESSING_KEY, QUEUE_KEY, "RIGHT", "LEFT"]);
-    if (moved === null || moved === undefined) break;
-    n += 1;
-  }
-  return n;
+/** 只讀：processing 清單最前面一筆（回收用；搬走後才會看到下一筆）。 */
+export async function peekHead(key: string): Promise<string | null> {
+  const r = await command<string[] | null>(["LRANGE", key, 0, 0]);
+  return r && r.length ? r[0]! : null;
 }
 
 export async function queueDepth(key: string): Promise<number> {
@@ -266,7 +281,12 @@ export async function getHalt(): Promise<HaltInfo | null> {
   // 只有 null / undefined 代表沒有旗標；空字串（人工誤設）也當成「有旗標」。
   if (v === null || v === undefined) return null;
   try {
-    return JSON.parse(v) as HaltInfo;
+    const parsed: unknown = JSON.parse(v);
+    // 只有非 null 物件才是正常格式；"null"、"0"、"false"、數字、字串都視為「有旗標」。
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { reason: v, key: "?", at: "?" };
+    }
+    return parsed as HaltInfo;
   } catch {
     return { reason: v || "(empty halt flag)", key: "?", at: "?" };
   }
