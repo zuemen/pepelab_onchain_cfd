@@ -48,6 +48,13 @@ export const traderDashboard: Catalog['traderDashboard'] = {
     weightTarget: '{state} 100%',
     autoFix: 'Auto-fix to 100%',
 
+    issue: {
+      tooFew: 'A strategy needs at least {min} assets (currently {got}).',
+      exceedsMax: 'Row {row} weight {pct}% exceeds the 50% single-asset cap.',
+      zeroWeight: 'Row {row} weight cannot be 0.',
+      roundingAdjusted: 'A {bps} bps rounding difference was added to the largest weight so the total is 100.00%.',
+    },
+
     publishing: 'Publishing…',
     cta: 'Publish Strategy',
     done: 'Strategy published ✓',

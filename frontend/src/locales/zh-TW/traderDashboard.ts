@@ -45,6 +45,14 @@ export const traderDashboard = {
     weightTarget: '{state} 100%',
     autoFix: '自動修正為 100%',
 
+    /** 對齊 StrategyRegistry 的 revert（見 lib/pepefi/strategyValidation.ts）。 */
+    issue: {
+      tooFew: '策略至少要有 {min} 檔標的（目前 {got} 檔）。',
+      exceedsMax: '第 {row} 列權重 {pct}% 超過單一標的上限 50%。',
+      zeroWeight: '第 {row} 列權重不能為 0。',
+      roundingAdjusted: '已將四捨五入差額 {bps} bps 補到權重最大的標的，總和為 100.00%。',
+    },
+
     publishing: '發布中…',
     cta: '發布策略',
     done: '策略已發布 ✓',
