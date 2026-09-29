@@ -95,6 +95,8 @@ export function useAddressActivity(
 
   const runId = useRef(0)
   const abortRef = useRef<AbortController | null>(null)
+  /** 上一次抓取的 chainId:address，用來判斷是不是換了地址。 */
+  const lastIdentity = useRef<string | null>(null)
   // 卸載時中止還在跑的掃描，並讓在飛的其他讀取回來後被丟棄。
   useEffect(() => () => { abortRef.current?.abort(); runId.current += 1 }, [])
 
@@ -107,12 +109,26 @@ export function useAddressActivity(
     abortRef.current?.abort()
     const ac = new AbortController()
     abortRef.current = ac
+    // 換了地址（或鏈／合約）：上一個地址的事件與部位不能掛在新地址底下，等新資料時先清空。
+    // 同一個地址的重新整理則保留舊資料，避免畫面閃空。
+    const identity = `${chainId ?? 0}:${address?.toLowerCase() ?? ''}`
+    const identityChanged = lastIdentity.current !== identity
+    lastIdentity.current = identity
+    const clearData = () => {
+      setEvents([])
+      setPositions([])
+      setScanRange(null)
+      setMissing(0)
+      setFailedChunks(0)
+    }
     if (!contracts || !provider || !address) {
       // 上一輪可能還掛著 loading：它的 finally 因 run id 不符不會收尾，這裡收。
+      clearData()
       setLoading(false)
       setProgress(null)
       return
     }
+    if (identityChanged) clearData()
 
     setLoading(true)
     setError(null)
