@@ -10,6 +10,8 @@ import {
   pickOwnIssue,
   pickRecentlyClosed,
   toOpenIssue,
+  renderRecovering,
+  parseOkStreak,
   type HealthReport,
 } from "./alert.ts";
 
@@ -171,6 +173,42 @@ const mallory = { login: "mallory" };
   assert.equal(decideAlert({ report: base, open: null, recentlyClosed: null, nowSec: now }).action, "create");
   // 恢復狀態不會因為有最近關閉的 issue 而 reopen。
   assert.equal(decideAlert({ report: ok, open: null, recentlyClosed: rc, nowSec: now }).action, "none");
+}
+
+// ── 窄複審 4：連續 N 輪正常才關；保護中不關；恢復中又壞要歸零 ──────────────────
+{
+  const now = 1_790_000_000;
+  const openAt = (okStreak: number) => ({ number: 7, lastSignature: "sAAPL", lastUpdatedSec: now - 3600, okStreak });
+  // 第 1～3 輪正常 → recovering（計數 1,2,3），第 4 輪 → close。
+  for (const [prev, want] of [[0, 1], [1, 2], [2, 3]] as const) {
+    const d = decideAlert({ report: ok, open: openAt(prev), nowSec: now, closeAfterOk: 4 });
+    assert.equal(d.action, "recovering", d.reason);
+    assert.equal(d.okStreak, want);
+  }
+  assert.equal(decideAlert({ report: ok, open: openAt(3), nowSec: now, closeAfterOk: 4 }).action, "close");
+  // 還有保護中的資產（ReduceOnly）→ 不關，即使已連續 4 輪。
+  assert.equal(
+    decideAlert({ report: { ...ok, protected: ["sAAPL(ReduceOnly)"] }, open: openAt(3), nowSec: now, closeAfterOk: 4 }).action,
+    "none",
+  );
+  // 恢復中又壞 → 一定留言（計數歸零），即使簽章相同、24h 內更新過。
+  {
+    const d = decideAlert({ report: { ...base, stale: ["sAAPL(6h)"] }, open: openAt(2), nowSec: now });
+    assert.equal(d.action, "comment", d.reason);
+  }
+  // 從 issue 留言解析 okStreak：最近的 bot 標記留言決定；過期留言在後 → 0。
+  const view = (comments: { body: string; author: { login: string } }[]) =>
+    toOpenIssue({
+      number: 7, title: "t", author: bot, body: "<!-- oracle-health:stale=sAAPL -->", createdAt: "2026-10-01T00:00:00Z",
+      comments: comments.map((c, i) => ({ ...c, createdAt: `2026-10-01T0${i + 1}:00:00Z` })),
+    });
+  const stale = { author: bot, body: "x <!-- oracle-health:stale=sAAPL -->" };
+  const rec = (n: number) => ({ author: bot, body: renderRecovering(ok, n, 4) });
+  assert.equal(view([stale, rec(1), rec(2)]).okStreak, 2);
+  assert.equal(view([rec(1), rec(2), stale]).okStreak, 0);
+  assert.equal(view([stale, rec(1), { author: mallory, body: "<!-- oracle-health:ok-streak=99 -->" }]).okStreak, 1, "外部留言不算");
+  assert.equal(view([stale, rec(1)]).lastSignature, "sAAPL", "恢復中留言不影響過期簽章");
+  assert.equal(parseOkStreak(renderRecovering(ok, 3, 4)), 3);
 }
 
 console.log("alert.test.ts ✓ all assertions passed");

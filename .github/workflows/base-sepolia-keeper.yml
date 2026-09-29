@@ -165,6 +165,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           HEALTH_REPORT_PATH: ${{ runner.temp }}/keeper-report.json
           ALERT_TITLE: "[keeper] Base Sepolia 價格熔斷"
+          # 窄複審 4：連續 4 輪正常（名目 15 分鐘 × 4 ≈ 1 小時）才自動關 issue。
+          ALERT_CLOSE_AFTER: "4"
         run: npx tsx keeper/alert-run.ts
 
       # 喂價步驟部分失敗（例如某一個資產偏離過大被拒寫）時仍要 crank funding：

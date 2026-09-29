@@ -28,6 +28,8 @@ import {
   pickRecentlyClosed,
   renderBody,
   renderCloseComment,
+  renderRecovering,
+  DEFAULT_CLOSE_AFTER_OK,
   toOpenIssue,
   ALERT_LABEL,
   DEFAULT_REPEAT_SEC,
@@ -41,6 +43,11 @@ const TITLE = (process.env.ALERT_TITLE ?? "").trim();
 const REPO = (process.env.GITHUB_REPOSITORY ?? "").trim();
 const REPORT_PATH = (process.env.HEALTH_REPORT_PATH ?? "").trim();
 const REPEAT_SEC = Number(process.env.ALERT_REPEAT_SEC ?? String(DEFAULT_REPEAT_SEC));
+// 窄複審 4：連續幾輪正常才關 issue。非正整數一律退回預設（告警步驟不因設定錯而中止）。
+const CLOSE_AFTER_OK = (() => {
+  const n = Number(process.env.ALERT_CLOSE_AFTER ?? String(DEFAULT_CLOSE_AFTER_OK));
+  return Number.isInteger(n) && n >= 1 && n <= 100 ? n : DEFAULT_CLOSE_AFTER_OK;
+})();
 const RUN_URL =
   process.env.GITHUB_SERVER_URL && process.env.GITHUB_RUN_ID
     ? `${process.env.GITHUB_SERVER_URL}/${REPO}/actions/runs/${process.env.GITHUB_RUN_ID}`
@@ -111,7 +118,7 @@ function main(): void {
   const open = findOpen();
   // 只有「要開新告警」時才需要查最近關閉的那張。
   const recentlyClosed = !open && report.status === "stale" ? findRecentlyClosed(nowSec) : null;
-  const d = decideAlert({ report, open, recentlyClosed, nowSec, repeatSec: REPEAT_SEC });
+  const d = decideAlert({ report, open, recentlyClosed, nowSec, repeatSec: REPEAT_SEC, closeAfterOk: CLOSE_AFTER_OK });
   console.log(`[${TITLE}] status=${report.status} open=${open ? `#${open.number}` : "none"} → ${d.action}：${d.reason}`);
 
   const run = (args: string[]) => {
@@ -140,6 +147,12 @@ function main(): void {
     }
     case "comment": {
       const body = renderBody(report, RUN_URL);
+      if (DRY_RUN) console.log(body);
+      run(["issue", "comment", String(open!.number), "--body-file", bodyFile(body)]);
+      break;
+    }
+    case "recovering": {
+      const body = renderRecovering(report, d.okStreak ?? 1, CLOSE_AFTER_OK, RUN_URL);
       if (DRY_RUN) console.log(body);
       run(["issue", "comment", String(open!.number), "--body-file", bodyFile(body)]);
       break;

@@ -27,6 +27,8 @@ export interface HealthReport {
   unreadable?: string[];
   /** 只靠行事曆後備（沒有 Yahoo 時段）被放寬的資產 —— 同樣擋住自動關閉。 */
   fallbackTolerated?: string[];
+  /** 交易所上仍在保護中（ReduceOnly／Halted）的資產 —— 擋住自動關閉（窄複審 4）。 */
+  protected?: string[];
   /** 每個資產一行的人類可讀輸出。 */
   lines: string[];
   error?: string;
@@ -39,9 +41,19 @@ export interface OpenIssue {
   lastSignature: string | null;
   /** 最近一次（本文或留言）的時間。 */
   lastUpdatedSec: number;
+  /** 目前連續正常的輪數（最近一則 bot 標記留言的 ok-streak；過期留言歸零）。 */
+  okStreak?: number;
 }
 
-export type AlertAction = "create" | "reopen" | "comment" | "close" | "none";
+export type AlertAction = "create" | "reopen" | "comment" | "recovering" | "close" | "none";
+
+/** 窄複審 4：連續幾輪正常才自動關 issue（keeper 設 4 ≈ 1 小時；預設 1）。 */
+export const DEFAULT_CLOSE_AFTER_OK = 1;
+const STREAK_RE = /<!--\s*oracle-health:ok-streak=(\d+)\s*-->/;
+export function parseOkStreak(text: string | null | undefined): number | null {
+  const m = (text ?? "").match(STREAK_RE);
+  return m ? Number(m[1]) : null;
+}
 
 // ── 公開 repo 上的 issue 偽造防護（審查 Medium 5）──────────────────────────
 // 任何人都能在公開 repo 開一張同標題的 issue，或在告警 issue 底下留一則帶簽章的
@@ -86,12 +98,22 @@ export function pickOwnIssue(list: GhIssue[], title: string): GhIssue | null {
 
 /** 由 issue 詳情組出 OpenIssue；簽章只從 github-actions 的留言（或本文）取。 */
 export function toOpenIssue(view: GhIssue): OpenIssue {
-  for (const c of [...(view.comments ?? [])].reverse()) {
-    if (!isBotAuthor(c.author?.login)) continue;
-    const sig = parseSignature(c.body);
-    if (sig !== null) return { number: view.number, lastSignature: sig, lastUpdatedSec: toSec(c.createdAt) };
+  const bot = [...(view.comments ?? [])].filter((c) => isBotAuthor(c.author?.login)).reverse();
+  // okStreak：最近一則帶任一標記的 bot 留言；是「恢復中」就取其計數，是過期留言就歸零。
+  let okStreak = 0;
+  for (const c of bot) {
+    const n = parseOkStreak(c.body);
+    if (n !== null) {
+      okStreak = n;
+      break;
+    }
+    if (parseSignature(c.body) !== null) break;
   }
-  return { number: view.number, lastSignature: parseSignature(view.body), lastUpdatedSec: toSec(view.createdAt) };
+  for (const c of bot) {
+    const sig = parseSignature(c.body);
+    if (sig !== null) return { number: view.number, lastSignature: sig, lastUpdatedSec: toSec(c.createdAt), okStreak };
+  }
+  return { number: view.number, lastSignature: parseSignature(view.body), lastUpdatedSec: toSec(view.createdAt), okStreak };
 }
 
 /** window 內關閉過、github-actions 開的同標題 issue（取最近關閉的）。 */
@@ -112,6 +134,8 @@ export function pickRecentlyClosed(
 export interface AlertDecision {
   action: AlertAction;
   reason: string;
+  /** recovering：這一輪之後的連續正常輪數。 */
+  okStreak?: number;
 }
 
 /** 過期集合相同、且距上次更新未滿這麼久，就不重複留言（避免每 3 小時洗版）。 */
@@ -137,6 +161,7 @@ export function decideAlert(a: {
   recentlyClosed?: { number: number; closedAtSec: number } | null;
   nowSec: number;
   repeatSec?: number;
+  closeAfterOk?: number;
 }): AlertDecision {
   const repeat = a.repeatSec ?? DEFAULT_REPEAT_SEC;
   const { report, open } = a;
@@ -163,7 +188,21 @@ export function decideAlert(a: {
         reason: `${report.fallbackTolerated.join(", ")} 僅靠行事曆後備判為休市，無法確認恢復，不關閉 #${open.number}`,
       };
     }
-    return { action: "close", reason: `全部資產恢復，關閉 #${open.number}` };
+    // 窄複審 4：還有資產在保護中（交易所 ReduceOnly／Halted）就不關 —— 事故沒結束，
+    // 只是被人或 keeper 擋住了，解除是人工步驟。
+    if (report.protected?.length) {
+      return {
+        action: "none",
+        reason: `仍有保護中的資產（${report.protected.join(", ")}），不關閉 #${open.number}`,
+      };
+    }
+    // 窄複審 4：連續 N 輪正常才關（keeper N=4 ≈ 1 小時），避免在門檻邊緣反覆開關。
+    const need = Math.max(1, a.closeAfterOk ?? DEFAULT_CLOSE_AFTER_OK);
+    const streak = (open.okStreak ?? 0) + 1;
+    if (streak < need) {
+      return { action: "recovering", okStreak: streak, reason: `恢復中 ${streak}/${need} 輪，暫不關閉 #${open.number}` };
+    }
+    return { action: "close", reason: `連續 ${streak} 輪正常，關閉 #${open.number}` };
   }
 
   // stale
@@ -174,6 +213,10 @@ export function decideAlert(a: {
     };
   }
   if (!open) return { action: "create", reason: `新的過期事件：${signatureOf(report.stale)}` };
+  // 恢復中又壞：一定要留言，讓連續正常計數歸零。
+  if ((open.okStreak ?? 0) > 0) {
+    return { action: "comment", reason: `恢復中（${open.okStreak} 輪）又過期，計數歸零，留言更新 #${open.number}` };
+  }
 
   const sig = signatureOf(report.stale);
   if (open.lastSignature !== sig) {
@@ -269,6 +312,16 @@ function renderBreakerBody(report: HealthReport, runUrl?: string): string {
   if (runUrl) out.push("", `Run：${runUrl}`);
   out.push("", `<!-- oracle-health:stale=${signatureOf(report.stale)} -->`);
   return out.join("\n");
+}
+
+/** 恢復中（未達連續 N 輪）的簡短留言；帶 ok-streak 標記供下一輪累計。 */
+export function renderRecovering(report: HealthReport, streak: number, need: number, runUrl?: string): string {
+  return [
+    `恢復中：${iso(report.checkedAtSec)} 這一輪正常（連續 ${streak}/${need} 輪）；連續 ${need} 輪正常後自動關閉。`,
+    ...(runUrl ? ["", `Run：${runUrl}`] : []),
+    "",
+    `<!-- oracle-health:ok-streak=${streak} -->`,
+  ].join("\n");
 }
 
 export function renderCloseComment(report: HealthReport, runUrl?: string): string {

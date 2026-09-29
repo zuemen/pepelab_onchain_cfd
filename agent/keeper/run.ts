@@ -292,7 +292,10 @@ async function main(): Promise<void> {
     if (res.mode === "failed") failed += 1;
     protectionNotes.push(...notes);
   }
-  writeRefusal(round, protectionNotes, nowSec, exchangeMaxAge);
+  // 窄複審 4：報告帶上交易所目前仍在保護中（非 Active）的資產；有就不自動關 issue。
+  const protectedAssets = exchangeView ? await readProtected(exchangeView) : [];
+  if (protectedAssets.length) console.log(`::warning::交易所保護中的資產：${protectedAssets.join(", ")}（解除需人工）`);
+  writeRefusal(round, protectionNotes, nowSec, exchangeMaxAge, protectedAssets);
 
   // #99: reuses the same failed-counter/exit(1) mechanism every other genuine
   // problem in this file already goes through, rather than a separate,
@@ -331,12 +334,32 @@ function writeRefusedList(round: RoundResult): void {
   }
 }
 
+/**
+ * 讀每個資產在交易所的 assetMode，回傳非 Active 的（例如 "sAAPL(ReduceOnly)"）。
+ * 舊 exchange 沒有 assetMode → 回空陣列（沒有保護機制可言）；單一資產讀失敗時保守
+ * 地列為 "(unknown)"，一樣會擋住自動關閉。
+ */
+async function readProtected(exchange: ethers.Contract): Promise<string[]> {
+  const out: string[] = [];
+  for (const symbol of SYMBOLS) {
+    try {
+      const m = Number(await exchange.assetMode(ethers.id(symbol)));
+      if (m !== 0) out.push(`${symbol}(${modeName(m)})`);
+    } catch (e) {
+      if (classifyProbeError(revertInfo(e)) === "missing") return [];
+      out.push(`${symbol}(unknown)`);
+    }
+  }
+  return out;
+}
+
 /** 熔斷報告（給 alert-run.ts）。 */
 function writeRefusal(
   round: RoundResult,
   notes: string[],
   nowSec: number,
   exchangeMaxAge: number | null,
+  protectedAssets: string[],
 ): void {
   try {
     if (REPORT_PATH) {
@@ -350,6 +373,7 @@ function writeRefusal(
         // 這一輪來源無效而沒判斷到的資產：不能證明熔斷已解除，擋住自動關閉。
         unreadable: round.skippedSymbols,
         notes,
+        protected: protectedAssets,
         lines: round.refused.map((r) => `${r.symbol}: ${r.reason}`),
       };
       writeFileSync(REPORT_PATH, JSON.stringify(report, null, 2), "utf8");
