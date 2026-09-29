@@ -13,6 +13,9 @@ import {
   parseRatioEnv,
   BREAKER_RANGE,
   CONFIRM_TOLERANCE_RANGE,
+  DEVIATION_THRESHOLD_RANGE,
+  HEARTBEAT_RANGE,
+  DEGRADED_RATIO_RANGE,
 } from "./core.ts";
 
 // ── parseFeedValue：拒絕垃圾,不夾擠 ──────────────────────────────────────
@@ -254,10 +257,26 @@ assert.deepEqual(parseRatioEnv("X", undefined, 0.2, 0, 1), { value: 0.2 });
 assert.deepEqual(parseRatioEnv("X", "", 0.2, 0, 1), { value: 0.2 });
 assert.deepEqual(parseRatioEnv("X", "0.3", 0.2, 0, 1), { value: 0.3 });
 assert.deepEqual(parseRatioEnv("X", "1", 0.2, 0, 1), { value: 1 });
-for (const bad of ["abc", "NaN", "Infinity", "0", "-0.1", "1.5", "0x10"]) {
+for (const bad of ["abc", "NaN", "Infinity", "0", "-0.1", "1.5", "0x10", "0.25"]) {
   const r = parseRatioEnv("KEEPER_BREAKER_DEVIATION", bad, 0.2, ...BREAKER_RANGE);
   assert.ok(r.error?.includes("KEEPER_BREAKER_DEVIATION"), `${bad} 應被拒：${JSON.stringify(r)}`);
 }
+assert.deepEqual(parseRatioEnv("KEEPER_BREAKER_DEVIATION", "0.2", 0.2, ...BREAKER_RANGE), { value: 0.2 });
+// KEEPER_DEVIATION / KEEPER_HEARTBEAT / KEEPER_MAX_DEGRADED_RATIO（複審 Low）
+assert.ok(parseRatioEnv("KEEPER_DEVIATION", "abc", 0.001, ...DEVIATION_THRESHOLD_RANGE).error);
+assert.ok(parseRatioEnv("KEEPER_DEVIATION", "0.5", 0.001, ...DEVIATION_THRESHOLD_RANGE).error);
+assert.deepEqual(parseRatioEnv("KEEPER_DEVIATION", "0.002", 0.001, ...DEVIATION_THRESHOLD_RANGE), { value: 0.002 });
+assert.ok(parseRatioEnv("KEEPER_HEARTBEAT", "NaN", 900, ...HEARTBEAT_RANGE).error);
+assert.ok(parseRatioEnv("KEEPER_HEARTBEAT", "0", 900, ...HEARTBEAT_RANGE).error);
+assert.ok(parseRatioEnv("KEEPER_HEARTBEAT", "86400", 900, ...HEARTBEAT_RANGE).error, "超過交易所 maxPriceAge");
+assert.deepEqual(parseRatioEnv("KEEPER_HEARTBEAT", "1800", 900, ...HEARTBEAT_RANGE), { value: 1800 });
+assert.deepEqual(
+  parseRatioEnv("KEEPER_MAX_DEGRADED_RATIO", "0", 0.3, ...DEGRADED_RATIO_RANGE, { minInclusive: true }),
+  { value: 0 },
+  "0 = 任一資產無法更新就失敗，合法",
+);
+assert.ok(parseRatioEnv("KEEPER_MAX_DEGRADED_RATIO", "-0.1", 0.3, ...DEGRADED_RATIO_RANGE, { minInclusive: true }).error);
+assert.ok(parseRatioEnv("KEEPER_MAX_DEGRADED_RATIO", "x", 0.3, ...DEGRADED_RATIO_RANGE, { minInclusive: true }).error);
 assert.ok(parseRatioEnv("KEEPER_CONFIRM_TOLERANCE", "0.5", 0.02, ...CONFIRM_TOLERANCE_RANGE).error);
 assert.deepEqual(parseRatioEnv("KEEPER_CONFIRM_TOLERANCE", "0.05", 0.02, ...CONFIRM_TOLERANCE_RANGE), { value: 0.05 });
 

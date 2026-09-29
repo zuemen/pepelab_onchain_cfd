@@ -111,17 +111,29 @@ export function parseRatioEnv(
   def: number,
   min: number,
   max: number,
+  opts: { minInclusive?: boolean } = {},
 ): { value: number; error?: undefined } | { value?: undefined; error: string } {
   if (raw === undefined || raw.trim() === "") return { value: def };
   const v = Number(raw.trim());
-  if (!Number.isFinite(v) || v <= min || v > max) {
-    return { error: `${name}=${JSON.stringify(raw)} 不合法：必須是 (${min}, ${max}] 內的有限數` };
+  const belowMin = opts.minInclusive ? v < min : v <= min;
+  if (!Number.isFinite(v) || belowMin || v > max) {
+    const lo = opts.minInclusive ? "[" : "(";
+    return { error: `${name}=${JSON.stringify(raw)} 不合法：必須是 ${lo}${min}, ${max}] 內的有限數` };
   }
   return { value: v };
 }
 
-/** KEEPER_BREAKER_DEVIATION 的合理範圍：(0, 1]。 */
-export const BREAKER_RANGE = [0, 1] as const;
+/**
+ * KEEPER_BREAKER_DEVIATION 的合理範圍：(0, 0.2]（複審 Low）。實際使用時還會再被
+ * GuardedOracle 的上限壓低（effectiveBreaker，+10% / −9.09%）。
+ */
+export const BREAKER_RANGE = [0, 0.2] as const;
+/** KEEPER_DEVIATION（觸發寫入的最小偏離）：(0, 0.1]。 */
+export const DEVIATION_THRESHOLD_RANGE = [0, 0.1] as const;
+/** KEEPER_HEARTBEAT（秒）：(0, 21600] —— 超過交易所 maxPriceAge（Base 6h）價格就會過期。 */
+export const HEARTBEAT_RANGE = [0, 21_600] as const;
+/** KEEPER_MAX_DEGRADED_RATIO：[0, 1]（0 = 任一資產無法更新就讓 job 失敗）。 */
+export const DEGRADED_RATIO_RANGE = [0, 1] as const;
 /** KEEPER_CONFIRM_TOLERANCE 的合理範圍：(0, 0.1] —— 超過 10% 的「一致」不算確認。 */
 export const CONFIRM_TOLERANCE_RANGE = [0, 0.1] as const;
 

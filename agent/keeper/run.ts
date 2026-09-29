@@ -22,6 +22,9 @@ import {
   DEFAULT_CONFIRM_TOLERANCE,
   BREAKER_RANGE,
   CONFIRM_TOLERANCE_RANGE,
+  DEVIATION_THRESHOLD_RANGE,
+  HEARTBEAT_RANGE,
+  DEGRADED_RATIO_RANGE,
   parseRatioEnv,
 } from "./core.ts";
 import { fetchMarketSession, fetchPrice, fetchSecondaryPrice } from "./feeds.ts";
@@ -37,25 +40,32 @@ const SYMBOLS = [
   "sMSFT", "sGOOGL", "sGOLD", "sBOND", "sICLN", "sESGU",
 ] as const;
 
-const DEVIATION_THRESHOLD = Number(process.env.KEEPER_DEVIATION ?? "0.001"); // 0.1%
-const HEARTBEAT_SEC = Number(process.env.KEEPER_HEARTBEAT ?? "900");         // 15 分鐘
-const DRY_RUN = process.env.DRY_RUN === "1";
-// A-5：寫進 MockOracle（交易所實際讀的那顆）的熔斷門檻；超過就需要多源確認，
-// 確認不過就拒寫（熔斷語意，見 core.ts guardDeviation）。
-// 多源確認：獨立來源彼此差距 ≤ 這個比例且方向一致，才寫入共識價。
-// 兩者都驗證是有限數且在合理範圍內，否則 exit 1（NaN 會讓熔斷形同關閉）。
-function ratioEnvOrDie(name: string, def: number, range: readonly [number, number]): number {
-  const r = parseRatioEnv(name, process.env[name], def, range[0], range[1]);
+// 所有數值型環境變數都驗證是有限數且在合理範圍內，否則 exit 1（複審 Low）：
+// NaN 會讓每個比較都是 false —— 熔斷形同關閉、heartbeat 永不觸發、降級門檻失效。
+function numEnvOrDie(
+  name: string,
+  def: number,
+  range: readonly [number, number],
+  opts: { minInclusive?: boolean } = {},
+): number {
+  const r = parseRatioEnv(name, process.env[name], def, range[0], range[1], opts);
   if (r.error !== undefined) {
     console.error(`::error::${r.error}`);
     process.exit(1);
   }
   return r.value;
 }
-const BREAKER_DEVIATION = ratioEnvOrDie("KEEPER_BREAKER_DEVIATION", DEFAULT_BREAKER_DEVIATION, BREAKER_RANGE);
-const CONFIRM_TOLERANCE = ratioEnvOrDie("KEEPER_CONFIRM_TOLERANCE", DEFAULT_CONFIRM_TOLERANCE, CONFIRM_TOLERANCE_RANGE);
+const DEVIATION_THRESHOLD = numEnvOrDie("KEEPER_DEVIATION", 0.001, DEVIATION_THRESHOLD_RANGE); // 0.1%
+const HEARTBEAT_SEC = numEnvOrDie("KEEPER_HEARTBEAT", 900, HEARTBEAT_RANGE);                   // 15 分鐘
+const DRY_RUN = process.env.DRY_RUN === "1";
+// A-5：寫進 MockOracle（交易所實際讀的那顆）的熔斷門檻；超過就需要多源確認，
+// 確認不過就拒寫（熔斷語意，見 core.ts guardDeviation）。實際使用時再被 GuardedOracle
+// 的上限壓低（round.ts effectiveBreaker）。
+const BREAKER_DEVIATION = numEnvOrDie("KEEPER_BREAKER_DEVIATION", DEFAULT_BREAKER_DEVIATION, BREAKER_RANGE);
+// 多源確認：獨立來源彼此差距 ≤ 這個比例且方向一致，才寫入共識價。
+const CONFIRM_TOLERANCE = numEnvOrDie("KEEPER_CONFIRM_TOLERANCE", DEFAULT_CONFIRM_TOLERANCE, CONFIRM_TOLERANCE_RANGE);
 // 部分失敗門檻：超過這個比例的資產無法更新就讓 CI 變紅（預設 30%）。
-const MAX_DEGRADED_RATIO = Number(process.env.KEEPER_MAX_DEGRADED_RATIO ?? "0.3");
+const MAX_DEGRADED_RATIO = numEnvOrDie("KEEPER_MAX_DEGRADED_RATIO", 0.3, DEGRADED_RATIO_RANGE, { minInclusive: true });
 
 const CHAIN = (process.env.KEEPER_CHAIN ?? "base-sepolia").trim();
 const CHAIN_ID = CHAIN === "sepolia" ? 11155111 : 84532;
