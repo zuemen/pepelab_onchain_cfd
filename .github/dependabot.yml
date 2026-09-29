@@ -66,6 +66,14 @@ updates:
   # contracts/lib/：forge-std、openzeppelin-contracts(-upgradeable) 是 git submodule，
   # 合約的安全修補（OZ advisory）只會從這裡進來。每週檢查一次；submodule 升級會改
   # 已部署合約的編譯結果，必須人工讀 changelog 並跑 contracts-ci，所以上限 2、不 group。
+  #
+  # OpenZeppelin 兩個 submodule 刻意 ignore，改為人工依 release tag 升級（複審 Medium）：
+  #   • gitsubmodule 更新追的是預設分支的最新 commit，不是 release tag —— 會把未發版、
+  #     未經 audit 的 OZ master 程式碼帶進合約。
+  #   • AssetVaultV2 是 UUPS proxy，OZ upgradeable 的 storage layout 變動會毀掉既有部署；
+  #     升級前必須跑 storage layout 比對，不能交給機器人。
+  #   • OZ 的安全公告（GHSA）仍會觸發 Dependabot alerts；收到後人工 checkout 對應 tag。
+  # forge-std 只用在測試，不進部署的 bytecode，保留自動更新。
   - package-ecosystem: gitsubmodule
     directory: /
     schedule:
@@ -74,5 +82,8 @@ updates:
       time: "09:00"
       timezone: Asia/Taipei
     open-pull-requests-limit: 2
+    ignore:
+      - dependency-name: "contracts/lib/openzeppelin-contracts"
+      - dependency-name: "contracts/lib/openzeppelin-contracts-upgradeable"
     commit-message:
       prefix: "chore(contracts-deps)"
