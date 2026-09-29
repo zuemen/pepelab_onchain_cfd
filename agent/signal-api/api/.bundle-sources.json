@@ -1,5 +1,5 @@
 {
-  "digest": "f5a7c12ece577e7d",
+  "digest": "3d90c899c102b79b",
   "files": {
     "agent/shared/src/abis.ts": "872c3136604d6584",
     "agent/shared/src/addresses.ts": "2d73d040b5fb1895",
@@ -13,14 +13,14 @@
     "agent/shared/src/index.ts": "c75e682d0c52dccf",
     "agent/shared/src/payoutSafety.ts": "d0869fc6928709f5",
     "agent/shared/src/provider.ts": "f9afc554fef62759",
-    "agent/shared/src/redact.ts": "abfdd14753a397f8",
+    "agent/shared/src/redact.ts": "36892c597bec44d0",
     "agent/shared/src/verification.ts": "c7823c4dc411e59a",
     "agent/shared/src/write.ts": "ae7bb9a384d54807",
     "agent/shared/src/x402Client.ts": "4c45a8a83b171017",
     "agent/signal-api/src/app.ts": "dab73d6a9c290ec0",
     "agent/signal-api/src/benchmarks.ts": "bac063beeb2f0f45",
     "agent/signal-api/src/candles.ts": "1fd61b7585fca322",
-    "agent/signal-api/src/ledger.ts": "5be4267c755a6e11",
+    "agent/signal-api/src/ledger.ts": "f63a388eabdb7965",
     "agent/signal-api/src/lru.ts": "32e45fb037d32c24",
     "agent/signal-api/src/onchainRevenue.ts": "c369334c41ba8fe5",
     "agent/signal-api/src/settlement.ts": "5f2049831b4e989b",

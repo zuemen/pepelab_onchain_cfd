@@ -39711,6 +39711,10 @@ function secretValues() {
       if (u.pathname.length > 1) {
         push(u.pathname);
         push(tryDecode(u.pathname));
+        for (const seg of u.pathname.split("/")) {
+          push(seg);
+          push(tryDecode(seg));
+        }
       }
       pushUrlParts(u);
     } catch {
