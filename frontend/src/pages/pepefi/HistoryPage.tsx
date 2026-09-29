@@ -13,7 +13,15 @@ import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
 import { t, interpolate } from 'src/locales'
 import { mapLimit, withRetry, RPC_CONCURRENCY } from 'src/lib/pepefi/rpcBatch'
 import {
+  canLoadOlder,
+  coverageAfterRefresh,
+  coverageAfterLoadOlder,
+  lowestContiguousFromTop,
+  type Coverage,
+} from 'src/lib/pepefi/historyCoverage'
+import {
   UI_RETRIES,
+  chunkRanges,
   scanContractEvents,
   type ParsedEventLog,
   type DeferredTopicFilterLike,
@@ -146,30 +154,49 @@ const jsonReviver = (_k: string, v: unknown) =>
 
 interface CachedHistory {
   events: ChainEvent[]
-  /** Oldest block this browser has scanned — where "load more" resumes. */
-  scannedFrom: number | null
+  /**
+   * 日誌確實讀成功過的區塊範圍（見 lib/pepefi/historyCoverage.ts）。
+   * 「載入較舊」從 coverage.from − 1 往下走。
+   */
+  coverage: Coverage | null
 }
 
-// v2（2026-09-29）：舊版快取是在 getLogs 分段全數被公開節點拒絕的時期寫下的——
-// scannedFrom 已推進到「看似掃過」的區塊，但那些區塊其實一筆也沒讀到。升版讓它們
-// 全部失效，重新掃描。
+// v3（2026-09-29）：v1（無版本字串）與 v2 的快取只記一個 scannedFrom，會把失敗段或
+// 缺口當成已掃過，而且 v1 是在 getLogs 分段全數被公開節點拒絕的時期寫下的。升版讓
+// 它們全部失效，並在頁面載入時刪掉（purgeStaleHistoryCaches）。
+const CACHE_PREFIX = 'pepefi:history:'
+const CACHE_VERSION = 'v3'
 const cacheKeyFor = (chainId: number | null, tab: string, address: string | null) =>
-  `pepefi:history:v2:${chainId ?? 0}:${tab}:${address?.toLowerCase() ?? 'all'}`
+  `${CACHE_PREFIX}${CACHE_VERSION}:${chainId ?? 0}:${tab}:${address?.toLowerCase() ?? 'all'}`
+
+/** 刪掉所有非現行版本的 History 快取（v1 無版本字串、v2）。 */
+function purgeStaleHistoryCaches() {
+  try {
+    const stale: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (k && k.startsWith(CACHE_PREFIX) && !k.startsWith(`${CACHE_PREFIX}${CACHE_VERSION}:`)) stale.push(k)
+    }
+    for (const k of stale) localStorage.removeItem(k)
+  } catch { /* private mode */ }
+}
 
 function loadCache(key: string): CachedHistory {
   try {
     const raw = localStorage.getItem(key)
-    if (!raw) return { events: [], scannedFrom: null }
+    if (!raw) return { events: [], coverage: null }
     const parsed = JSON.parse(raw, jsonReviver) as CachedHistory
-    return { events: parsed.events ?? [], scannedFrom: parsed.scannedFrom ?? null }
+    const c = parsed.coverage
+    const coverage = c && Number.isFinite(c.from) && Number.isFinite(c.to) ? { from: c.from, to: c.to } : null
+    return { events: parsed.events ?? [], coverage }
   } catch {
-    return { events: [], scannedFrom: null }   // corrupt / private mode
+    return { events: [], coverage: null }   // corrupt / private mode
   }
 }
 
-function saveCache(key: string, events: ChainEvent[], scannedFrom: number | null) {
+function saveCache(key: string, events: ChainEvent[], coverage: Coverage | null) {
   try {
-    const payload: CachedHistory = { events: events.slice(0, MAX_CACHED), scannedFrom }
+    const payload: CachedHistory = { events: events.slice(0, MAX_CACHED), coverage }
     localStorage.setItem(key, JSON.stringify(payload, jsonReplacer))
   } catch { /* quota exceeded or private mode — cache is best-effort */ }
 }
@@ -530,8 +557,11 @@ export default function HistoryPage() {
   const [loadingMore, setLoadingMore] = useState(false)
   const [error,      setError]      = useState<string | null>(null)
   const [filterKey,  setFilterKey]  = useState<FilterKey>('all')
-  /** Oldest block scanned so far — the resume point for "load older". */
-  const [scannedFrom, setScannedFrom] = useState<number | null>(null)
+  /** 日誌確實讀成功過的區塊範圍；「載入較舊」從它的下緣往下走。 */
+  const [coverage, setCoverage] = useState<Coverage | null>(null)
+  const scannedFrom = coverage ? coverage.from : null
+
+  useEffect(() => { purgeStaleHistoryCaches() }, [])
 
   const cacheKey = cacheKeyFor(wallet.chainId, tab, tab === 'mine' ? wallet.address : null)
 
@@ -540,14 +570,14 @@ export default function HistoryPage() {
   // pre-restore values — which would reset a previous session's "load older"
   // progress back to the top window on every reload.
   const eventsRef      = useRef<ChainEvent[]>([])
-  const scannedFromRef = useRef<number | null>(null)
+  const coverageRef    = useRef<Coverage | null>(null)
 
-  const commit = useCallback((next: ChainEvent[], nextScannedFrom: number | null) => {
-    eventsRef.current      = next
-    scannedFromRef.current = nextScannedFrom
+  const commit = useCallback((next: ChainEvent[], nextCoverage: Coverage | null) => {
+    eventsRef.current   = next
+    coverageRef.current = nextCoverage
     setEvents(next)
-    setScannedFrom(nextScannedFrom)
-    saveCache(cacheKey, next, nextScannedFrom)
+    setCoverage(nextCoverage)
+    saveCache(cacheKey, next, nextCoverage)
   }, [cacheKey])
 
   // Paint whatever this browser already knows before touching the network, and
@@ -555,9 +585,9 @@ export default function HistoryPage() {
   useEffect(() => {
     const cached = loadCache(cacheKey)
     eventsRef.current      = cached.events
-    scannedFromRef.current = cached.scannedFrom
+    coverageRef.current    = cached.coverage
     setEvents(cached.events)
-    setScannedFrom(cached.scannedFrom)
+    setCoverage(cached.coverage)
   }, [cacheKey])
 
   // ── Event fetcher ───────────────────────────────────────────────────────
@@ -565,8 +595,8 @@ export default function HistoryPage() {
   const scanRange = useCallback(async (
     fromBlock: number,
     toBlock: number,
-  ): Promise<{ evs: ChainEvent[]; failedChunks: number }> => {
-    if (!contracts || !wallet.provider) return { evs: [], failedChunks: 0 }
+  ): Promise<{ evs: ChainEvent[]; failedChunks: number; contiguousLow: number | null }> => {
+    if (!contracts || !wallet.provider) return { evs: [], failedChunks: 0, contiguousLow: null }
     const uf = tab === 'mine' ? (wallet.address ?? null) : null
     const provider = wallet.provider
 
@@ -650,6 +680,10 @@ export default function HistoryPage() {
       },
     ]
 
+    // 每一段只要有任何一個來源讀不到，那一段就不算覆蓋（見 historyCoverage.ts）。
+    const ranges = chunkRanges(fromBlock, toBlock)
+    const failedStarts = new Set<number>()
+
     // 併發 2：公開 RPC 對 getLogs 的突發請求會回 429；每段另有兩次退避重試。
     const results = await mapLimit(
       // 位址為 0x0（該鏈未部署）的來源直接略過，不去撥 0x0。
@@ -658,12 +692,16 @@ export default function HistoryPage() {
       2,
       async (s) => {
         try {
-          const r = await scanContractEvents(provider, s.contract, s.filters, fromBlock, toBlock, { retries: UI_RETRIES })
+          const r = await scanContractEvents(provider, s.contract, s.filters, fromBlock, toBlock, {
+            retries: UI_RETRIES,
+            onChunkFailed: (from) => { failedStarts.add(from) },
+          })
           return { key: s.key, events: r.events, failedChunks: r.failedChunks }
         } catch (err) {
           console.warn('[history] scan failed', s.key, err)
-          // 連 topic filter 都組不出來 = 整個來源讀不到，至少算一段失敗，不能變成「沒有資料」。
-          return { key: s.key, events: [] as ParsedEventLog[], failedChunks: 1 }
+          // 連 topic filter 都組不出來 = 整個來源讀不到：每一段都算失敗，不能變成「沒有資料」。
+          for (const [from] of ranges) failedStarts.add(from)
+          return { key: s.key, events: [] as ParsedEventLog[], failedChunks: Math.max(1, ranges.length) }
         }
       },
     )
@@ -692,7 +730,7 @@ export default function HistoryPage() {
       if (e.timestamp === 0) e.timestamp = blockTsMap[e.blockNumber] ?? 0
     }
 
-    return { evs, failedChunks }
+    return { evs, failedChunks, contiguousLow: lowestContiguousFromTop(ranges, failedStarts) }
   }, [contracts, v2, tab, wallet.address, wallet.provider])
 
   /** Says which part is incomplete, so a gap is never mistaken for "no data". */
@@ -741,25 +779,18 @@ export default function HistoryPage() {
           return { evs: [], missed: -1 }   // -1 = the index read itself failed
         })
 
-      // If the cache's newest log-derived event predates this window, the blocks
-      // in between were never scanned. Restarting `scannedFrom` at the window
-      // floor lets "load older" walk backwards through that gap. Storage rows
-      // are excluded: they carry no block number, and counting their 0 as
-      // "newest seen" would report a gap on every single refresh.
-      const prevFrom = scannedFromRef.current
-      const newestSeen = eventsRef.current.reduce((max, e) => Math.max(max, e.blockNumber), -1)
-      const hasGap   = newestSeen > 0 && newestSeen < windowStart - 1
-      const nextFrom = hasGap || prevFrom === null
-        ? windowStart
-        : Math.min(prevFrom, windowStart)
+      const prev = coverageRef.current
 
-      // 部位來自 storage，和日誌掃描範圍無關——先顯示，但掃描起點維持原值。
-      commit(mergeEvents(eventsRef.current, posResult.evs), prevFrom)
+      // 部位來自 storage，和日誌掃描範圍無關——先顯示，覆蓋範圍維持原值。
+      commit(mergeEvents(eventsRef.current, posResult.evs), prev)
 
-      const { evs, failedChunks } = await scanRange(windowStart, currentBlock)
-      // 有段落讀不到時不推進 scannedFrom：推進就等於宣稱那些區塊已經掃過，
-      // 之後「載入較舊資料」會跳過它們，缺口永遠補不回來。
-      commit(mergeEvents(eventsRef.current, evs), failedChunks > 0 ? prevFrom : nextFrom)
+      const { evs, failedChunks, contiguousLow } = await scanRange(windowStart, currentBlock)
+      // 只把「從最新塊往下連續成功」的那一段算進覆蓋；與舊覆蓋不相接（隔天回訪的
+      // 缺口、失敗段）就以新的一段為準，「載入較舊」會從它的下緣往下補。
+      commit(
+        mergeEvents(eventsRef.current, evs),
+        coverageAfterRefresh(prev, { from: windowStart, to: currentBlock }, contiguousLow),
+      )
       reportScanIssues(failedChunks, posResult.missed)
     } catch (err) {
       console.error('[history]', err)
@@ -771,16 +802,16 @@ export default function HistoryPage() {
 
   /** Extends the scan one window further back, below everything seen so far. */
   const loadOlder = useCallback(async () => {
-    const from = scannedFromRef.current
-    if (!contracts || !wallet.provider || from === null || from <= 0) return
+    const prev = coverageRef.current
+    if (!contracts || !wallet.provider || !prev || !canLoadOlder(prev)) return
     setLoadingMore(true)
     setError(null)
     try {
-      const toBlock   = from - 1
+      const toBlock   = prev.from - 1
       const fromBlock = Math.max(0, toBlock - FETCH_BLOCKS + 1)
-      const { evs, failedChunks } = await scanRange(fromBlock, toBlock)
-      // 同上：這一段沒有完整讀到，就不把起點往回推，下次「載入較舊」會重掃同一段。
-      commit(mergeEvents(eventsRef.current, evs), failedChunks > 0 ? from : fromBlock)
+      const { evs, failedChunks, contiguousLow } = await scanRange(fromBlock, toBlock)
+      // 只推到「緊貼舊下緣、連續成功」的最低塊；失敗段留在下緣之下，下次重掃。
+      commit(mergeEvents(eventsRef.current, evs), coverageAfterLoadOlder(prev, contiguousLow))
       reportScanIssues(failedChunks)
     } catch (err) {
       console.error('[history:older]', err)
@@ -1027,7 +1058,7 @@ export default function HistoryPage() {
         )}{' '}
         ·{' '}
         {t.history.footer.positionsFull}
-        {scannedFrom !== null &&
+        {scannedFrom !== null && coverage !== null && coverage.from <= coverage.to &&
           ` ${interpolate(t.history.footer.scannedBackTo, { block: scannedFrom.toLocaleString() })}`}{' '}
         {t.history.footer.cacheNote}
       </Typography>
