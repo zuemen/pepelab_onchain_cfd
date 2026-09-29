@@ -199,7 +199,9 @@ jobs:
           # 「replacement transaction underpriced」。實測就是這樣掛的：sBTC 成功、
           # sETH 與 sTSLA 直接撞。失敗時不遞增，因為那個 nonce 沒有被消耗。
           KEEPER_ADDR=$(cast wallet address --private-key "$KEEPER_PRIVATE_KEY")
-          NONCE=$(cast nonce "$KEEPER_ADDR" --rpc-url "$KEEPER_RPC_URL")
+          # --block pending（窄複審 6）：喂價 step 若留下還沒上鏈的交易，latest 的 nonce 會
+          # 撞上它；pending 會把 mempool 裡屬於這把金鑰的交易算進去。
+          NONCE=$(cast nonce "$KEEPER_ADDR" --block pending --rpc-url "$KEEPER_RPC_URL")
           echo "keeper=${KEEPER_ADDR} 起始 nonce=${NONCE}"
 
           # 複審 Medium：被熔斷拒寫的資產，價格是已知錯誤的舊值 —— 不以它結算 funding。

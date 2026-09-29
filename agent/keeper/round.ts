@@ -37,6 +37,9 @@ export interface GuardedLike {
   updatePrice: (assetId: string, price8: bigint) => Promise<TxLike>;
 }
 
+/** ethers v6 的 wait 逾時丟 code=TIMEOUT。 */
+export const isTimeout = (e: unknown): boolean => (e as { code?: unknown })?.code === "TIMEOUT";
+
 const fmt8 = (p: bigint): string => `$${(Number(p) / 1e8).toFixed(2)}`;
 
 export interface RefusedAsset {
@@ -51,6 +54,8 @@ export interface RoundCtx {
   dryRun: boolean;
   deviationThreshold: number;
   heartbeatSec: number;
+  /** tx.wait(1, timeout) 的逾時（毫秒），預設 120_000。 */
+  txTimeoutMs?: number;
   breakerDeviation: number;
   confirmTolerance: number;
   oracle: OracleLike;
@@ -77,6 +82,8 @@ export interface RoundResult {
   failed: number;
   refused: RefusedAsset[];
   skippedSymbols: string[];
+  /** 等確認逾時、狀態未知的交易數（窄複審 6）。 */
+  unknown: number;
 }
 
 export async function runRound(ctx: RoundCtx): Promise<RoundResult> {
@@ -84,9 +91,19 @@ export async function runRound(ctx: RoundCtx): Promise<RoundResult> {
   const error = ctx.error ?? console.error;
   const r: RoundResult = {
     available: 0, skipped: 0, rejected: 0, confirmed: 0, wrote: 0, failed: 0,
-    refused: [], skippedSymbols: [],
+    refused: [], skippedSymbols: [], unknown: 0,
   };
   let beforeAsset = ctx.beforeAsset;
+  let writesHalted = false;
+  const waitTx = (tx: TxLike) => tx.wait(1, ctx.txTimeoutMs ?? 120_000);
+  const haltWrites = (symbol: string, which: string, e: unknown) => {
+    r.unknown += 1;
+    writesHalted = true;
+    error(
+      `::error::${symbol} ${which} 交易等確認逾時，狀態未知（${(e as Error).message.slice(0, 80)}）` +
+        `—— 本輪停止後續寫入，請查 explorer 確認是否上鏈`,
+    );
+  };
   const refuse = (symbol: string, assetId: string, reason: string) => {
     r.rejected += 1;
     r.refused.push({ symbol, assetId, reason });
@@ -262,6 +279,14 @@ export async function runRound(ctx: RoundCtx): Promise<RoundResult> {
       log(`::warning::${symbol} ${guard.reason}`);
     }
 
+    // 窄複審 6：前一筆交易等確認逾時（狀態未知）→ 本輪不再送任何交易。nonce 可能已被
+    // 佔用，繼續送只會 replacement underpriced 或排在一筆可能被丟棄的交易後面。
+    if (writesHalted) {
+      r.skippedSymbols.push(symbol);
+      log(`  → ${symbol} 本輪已停止寫入（前一筆交易狀態未知），下一輪再處理`);
+      continue;
+    }
+
     if (ctx.dryRun) {
       if (mirrorPlan?.action === "write") log(`  → (DRY_RUN) GuardedOracle 預檢略過（沒有 signer）`);
       continue;
@@ -286,11 +311,15 @@ export async function runRound(ctx: RoundCtx): Promise<RoundResult> {
       // 接受不了的價格。
       try {
         const tx = await ctx.guarded.updatePrice(assetId, mirrorPlan.value);
-        await tx.wait();
+        await waitTx(tx);
         log(`  → GuardedOracle ✓ ${tx.hash}`);
       } catch (e) {
         r.failed += 1;
-        error(`::error::${symbol} GuardedOracle 寫入失敗（MockOracle 未寫，兩顆仍一致）：${(e as Error).message.slice(0, 120)}`);
+        if (isTimeout(e)) {
+          haltWrites(symbol, "GuardedOracle", e);
+        } else {
+          error(`::error::${symbol} GuardedOracle 寫入失敗（MockOracle 未寫，兩顆仍一致）：${(e as Error).message.slice(0, 120)}`);
+        }
         continue;
       }
     } else if (mirrorPlan?.action === "skip") {
@@ -304,11 +333,15 @@ export async function runRound(ctx: RoundCtx): Promise<RoundResult> {
     }
     try {
       const tx = await ctx.oracle.updatePrice(assetId, price8);
-      await tx.wait();
+      await waitTx(tx);
       r.wrote += 1;
       log(`  → MockOracle ✓ ${tx.hash}`);
     } catch (e) {
       r.failed += 1;
+      if (isTimeout(e)) {
+        haltWrites(symbol, "MockOracle", e);
+        continue;
+      }
       error(
         `::error::${symbol} MockOracle 寫入失敗（GuardedOracle 已寫，下一輪會補寫收斂）：` +
           `${(e as Error).message.slice(0, 140)}`,

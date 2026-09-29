@@ -291,6 +291,29 @@ for (const target of [101, 112]) {
   assert.deepEqual([oracle.state.price, guarded.state.price], [P(108), P(108)]);
 }
 
+// ── 窄複審 6：tx.wait 逾時 → 記 unknown，本輪停止後續寫入 ─────────────────────
+{
+  const waits: unknown[][] = [];
+  const guarded = {
+    ...fakeGuarded(100),
+    updatePrice: async () => ({
+      hash: "0xslow",
+      wait: async (...args: unknown[]) => {
+        waits.push(args);
+        throw Object.assign(new Error("timeout"), { code: "TIMEOUT" });
+      },
+    }),
+  };
+  const oracle = fakeOracle(100);
+  const r = await runRound(
+    ctx({ symbols: ["sAAPL", "sTSLA"], oracle, guarded, fetchPrice: async () => yahoo(105) }),
+  );
+  assert.equal(r.unknown, 1);
+  assert.equal(oracle.writes.length, 0, "Guarded 狀態未知 → 同資產不寫 Mock，下一個資產也不寫");
+  assert.deepEqual(waits, [[1, 120_000]], "wait(1, 120_000)，第二個資產沒送交易");
+  assert.ok(r.skippedSymbols.includes("sTSLA"));
+}
+
 // ── effectiveBreaker ─────────────────────────────────────────────────────
 assert.equal(effectiveBreaker(0.2, 1000n, true), 0.1);
 assert.ok(Math.abs(effectiveBreaker(0.2, 1000n, false) - 1000 / 11000) < 1e-12);
