@@ -63,6 +63,9 @@ export const common: Catalog['common'] = {
   account: {
     displayNameLabel: 'Display Name',
     saveName: 'Save Name',
+    closeAria: 'Close account menu',
+    notConnected: 'Wallet not connected',
+    nicknamePlaceholder: 'Enter nickname…',
   },
 
   /**

@@ -13,11 +13,8 @@ import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 
-import { paths } from 'src/routes/paths';
-import { usePathname } from 'src/routes/hooks';
 import { RouterLink } from 'src/routes/components';
 
-import { useUserAvatar } from 'src/hooks/useUserAvatar';
 import { useDisplayName } from 'src/hooks/useDisplayName';
 
 import { t } from 'src/locales';
@@ -28,8 +25,6 @@ import { Iconify } from 'src/components/iconify';
 import { Scrollbar } from 'src/components/scrollbar';
 import { AnimateBorder } from 'src/components/animate';
 import { PepeAvatar } from 'src/components/pepefi/PepeAvatar';
-
-import { useMockedUser } from 'src/auth/hooks';
 
 import { AccountButton } from './account-button';
 import { SignOutButton } from './sign-out-button';
@@ -46,14 +41,13 @@ export type AccountDrawerProps = IconButtonProps & {
 };
 
 export function AccountDrawer({ data = [], sx, ...other }: AccountDrawerProps) {
-  const pathname = usePathname();
-
-  const { user } = useMockedUser();
+  // 範本原本在這裡掛一個寫死的假使用者（_mock 的示範人物與 email）當作
+  // 沒連錢包時的名字與 email。帳戶的唯一身分是連線中的錢包位址；沒連就什麼都不顯示。
   const wallet = useWalletContext();
-  const { src: avatarUrl } = useUserAvatar(wallet.address || 'mock_user');
+  const shortAddr = wallet.address ? `${wallet.address.slice(0, 6)}…${wallet.address.slice(-4)}` : '';
 
   const { value: open, onFalse: onClose, onTrue: onOpen } = useBoolean();
-  const [displayName, saveDisplayName] = useDisplayName(wallet.address || 'mock_user');
+  const [displayName, saveDisplayName] = useDisplayName(wallet.address);
   const [nameInput, setNameInput] = useState('');
   useEffect(() => { if (open) setNameInput(displayName); }, [open, displayName]);
 
@@ -64,7 +58,7 @@ export function AccountDrawer({ data = [], sx, ...other }: AccountDrawerProps) {
         primaryBorder: { size: 120, sx: { color: 'primary.main' } },
       }}
     >
-      <PepeAvatar address={wallet.address || 'mock_user'} size={84} editable />
+      <PepeAvatar address={wallet.address ?? undefined} size={84} editable={!!wallet.address} />
     </AnimateBorder>
   );
 
@@ -81,21 +75,11 @@ export function AccountDrawer({ data = [], sx, ...other }: AccountDrawerProps) {
         }),
       ]}
     >
-      {data.map((option) => {
-        const rootLabel = pathname.includes('/dashboard') ? 'Home' : 'Dashboard';
-        const rootHref = pathname.includes('/dashboard') ? '/' : paths.dashboard.root;
-
-        // Dynamic profile link
-        let targetHref = option.href;
-        if (option.label.includes('Profile') && wallet.address) {
-          targetHref = `/trader/${wallet.address}`;
-        }
-
-        return (
+      {data.map((option) => (
           <MenuItem key={option.label}>
             <Link
               component={RouterLink}
-              href={option.label === 'Home' ? rootHref : targetHref}
+              href={option.href}
               onClick={onClose}
               color="inherit"
               underline="none"
@@ -114,7 +98,7 @@ export function AccountDrawer({ data = [], sx, ...other }: AccountDrawerProps) {
               {option.icon}
 
               <Box component="span" sx={{ ml: 2 }}>
-                {option.label === 'Home' ? rootLabel : option.label}
+                {option.label}
               </Box>
 
               {option.info && (
@@ -124,8 +108,7 @@ export function AccountDrawer({ data = [], sx, ...other }: AccountDrawerProps) {
               )}
             </Link>
           </MenuItem>
-        );
-      })}
+      ))}
     </MenuList>
   );
 
@@ -134,7 +117,7 @@ export function AccountDrawer({ data = [], sx, ...other }: AccountDrawerProps) {
       <AccountButton
         onClick={onOpen}
         address={wallet.address}
-        displayName={displayName || user?.displayName || ''}
+        displayName={displayName}
         sx={sx}
         {...other}
       />
@@ -150,7 +133,7 @@ export function AccountDrawer({ data = [], sx, ...other }: AccountDrawerProps) {
       >
         <IconButton
           onClick={onClose}
-          aria-label="Close account menu"
+          aria-label={t.common.account.closeAria}
           sx={{
             top: 12,
             left: 12,
@@ -173,11 +156,11 @@ export function AccountDrawer({ data = [], sx, ...other }: AccountDrawerProps) {
             {renderAvatar()}
 
             <Typography variant="subtitle1" noWrap sx={{ mt: 2 }}>
-              {displayName || (wallet.address ? `${wallet.address.slice(0, 6)}…${wallet.address.slice(-4)}` : user?.displayName)}
+              {displayName || shortAddr || t.common.account.notConnected}
             </Typography>
 
             <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.5 }} noWrap>
-              {wallet.address || user?.email}
+              {wallet.address}
             </Typography>
           </Box>
 
@@ -192,7 +175,8 @@ export function AccountDrawer({ data = [], sx, ...other }: AccountDrawerProps) {
               size="small"
               fullWidth
               inputProps={{ maxLength: 20 }}
-              placeholder={wallet.address ? (wallet.address.slice(0, 6) + '…' + wallet.address.slice(-4)) : 'Enter nickname...'}
+              disabled={!wallet.address}
+              placeholder={shortAddr || t.common.account.nicknamePlaceholder}
             />
             <Button
               variant="contained"

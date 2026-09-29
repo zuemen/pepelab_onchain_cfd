@@ -65,6 +65,9 @@ export const common = {
   account: {
     displayNameLabel: '編輯暱稱',
     saveName: '儲存變更',
+    closeAria: '關閉帳戶選單',
+    notConnected: '尚未連接錢包',
+    nicknamePlaceholder: '輸入暱稱…',
   },
 
   /**
