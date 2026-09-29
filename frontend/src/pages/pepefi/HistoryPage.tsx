@@ -150,8 +150,11 @@ interface CachedHistory {
   scannedFrom: number | null
 }
 
+// v2（2026-09-29）：舊版快取是在 getLogs 分段全數被公開節點拒絕的時期寫下的——
+// scannedFrom 已推進到「看似掃過」的區塊，但那些區塊其實一筆也沒讀到。升版讓它們
+// 全部失效，重新掃描。
 const cacheKeyFor = (chainId: number | null, tab: string, address: string | null) =>
-  `pepefi:history:${chainId ?? 0}:${tab}:${address?.toLowerCase() ?? 'all'}`
+  `pepefi:history:v2:${chainId ?? 0}:${tab}:${address?.toLowerCase() ?? 'all'}`
 
 function loadCache(key: string): CachedHistory {
   try {
@@ -750,10 +753,13 @@ export default function HistoryPage() {
         ? windowStart
         : Math.min(prevFrom, windowStart)
 
-      commit(mergeEvents(eventsRef.current, posResult.evs), nextFrom)
+      // 部位來自 storage，和日誌掃描範圍無關——先顯示，但掃描起點維持原值。
+      commit(mergeEvents(eventsRef.current, posResult.evs), prevFrom)
 
       const { evs, failedChunks } = await scanRange(windowStart, currentBlock)
-      commit(mergeEvents(eventsRef.current, evs), nextFrom)
+      // 有段落讀不到時不推進 scannedFrom：推進就等於宣稱那些區塊已經掃過，
+      // 之後「載入較舊資料」會跳過它們，缺口永遠補不回來。
+      commit(mergeEvents(eventsRef.current, evs), failedChunks > 0 ? prevFrom : nextFrom)
       reportScanIssues(failedChunks, posResult.missed)
     } catch (err) {
       console.error('[history]', err)
@@ -773,7 +779,8 @@ export default function HistoryPage() {
       const toBlock   = from - 1
       const fromBlock = Math.max(0, toBlock - FETCH_BLOCKS + 1)
       const { evs, failedChunks } = await scanRange(fromBlock, toBlock)
-      commit(mergeEvents(eventsRef.current, evs), fromBlock)
+      // 同上：這一段沒有完整讀到，就不把起點往回推，下次「載入較舊」會重掃同一段。
+      commit(mergeEvents(eventsRef.current, evs), failedChunks > 0 ? from : fromBlock)
       reportScanIssues(failedChunks)
     } catch (err) {
       console.error('[history:older]', err)
