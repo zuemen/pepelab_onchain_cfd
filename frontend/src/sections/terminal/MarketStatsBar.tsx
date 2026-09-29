@@ -61,7 +61,11 @@ export function MarketStatsBar({
 
       <Box>
         <Box sx={{ ...monoCss, fontSize: 26, fontWeight: 700 }}>
-          {livePx !== undefined ? fUsd(livePx) : fUsd(fromUnits(curPrice, 18))}
+          {livePx !== undefined
+            ? fUsd(livePx)
+            : curPrice > 0n
+              ? fUsd(fromUnits(curPrice, 18))
+              : '—'}
         </Box>
         <Box sx={{ ...monoCss, fontSize: 13, color: chg >= 0 ? C.green : C.red }}>
           {chg >= 0 ? '▲' : '▼'} {fNum(Math.abs(chg))}%
@@ -76,7 +80,7 @@ export function MarketStatsBar({
 
       <Stat
         label={t.terminal.stats.index}
-        v={fUsd(fromUnits(curPrice, 18))}
+        v={curPrice > 0n ? fUsd(fromUnits(curPrice, 18)) : '—'}
         hint={t.terminal.stats.indexHint}
       />
       <Stat
@@ -151,7 +155,7 @@ export function MarketStatsBar({
               ? C.red
               : priceInfo?.freshness.level === 'aging'
                 ? C.lime
-                : priceInfo?.isMock
+                : !priceInfo || priceInfo.source === 'none'
                   ? C.mut
                   : C.green,
         }}
@@ -161,7 +165,7 @@ export function MarketStatsBar({
           ? t.terminal.stats.sourceCoingecko
           : priceInfo?.source === 'oracle'
             ? t.terminal.stats.sourceOracle
-            : t.terminal.stats.sourceSimulated}
+            : t.terminal.stats.sourceNone}
         {priceInfo?.freshness
           ? interpolate(t.terminal.stats.indexAge, { age: priceInfo.freshness.label })
           : ''}

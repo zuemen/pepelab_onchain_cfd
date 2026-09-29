@@ -880,11 +880,23 @@ export default function PortfolioPage() {
                     <TableCell sx={{ fontFamily: MONO, fontSize: '0.8125rem' }}>{fUsd(row.entryPrice)}</TableCell>
                     <TableCell sx={{ fontFamily: MONO, fontSize: '0.8125rem' }}>{fUsd(row.currentPrice)}</TableCell>
                     <TableCell sx={{ fontFamily: MONO, fontSize: '0.8125rem' }}>
-                      {livePrices[row.asset] ? (
-                        <Typography component="span" sx={{ fontSize: '0.8125rem', fontFamily: MONO, color: livePrices[row.asset].isMock ? 'warning.main' : 'success.main' }}>
-                          ${livePrices[row.asset].usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </Typography>
-                      ) : <Typography variant="caption" color="text.secondary">—</Typography>}
+                      {(() => {
+                        // 讀不到價格就是「—」，不再以黃色顯示模擬價；有價格時標出來源。
+                        const lp = livePrices[row.asset]
+                        if (!lp || lp.usd === null) {
+                          return <Typography variant="caption" color="text.secondary">—</Typography>
+                        }
+                        return (
+                          <>
+                            <Typography component="span" sx={{ fontSize: '0.8125rem', fontFamily: MONO, color: 'success.main' }}>
+                              ${lp.usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </Typography>
+                            <Typography component="div" variant="caption" color="text.secondary" sx={{ fontSize: '0.6875rem' }}>
+                              {t.freshness.priceSource[lp.source]}
+                            </Typography>
+                          </>
+                        )
+                      })()}
                     </TableCell>
                     <TableCell sx={{ fontFamily: MONO, fontSize: '0.8125rem' }}>{f18(row.margin)}</TableCell>
                     <TableCell sx={{ fontSize: '0.8125rem' }}>{String(row.leverage)}×</TableCell>

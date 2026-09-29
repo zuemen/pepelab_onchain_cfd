@@ -61,8 +61,13 @@ export const traderProfile: Catalog['traderProfile'] = {
   },
 
   slashHistory: {
+    loading: 'Loading slash history…',
     titleOne: 'Slash History ({count} event)',
     titleMany: 'Slash History ({count} events)',
+    readFailedTitle: 'Could not read slash history',
+    readFailedBody: "The on-chain Slashed events could not be read, so this page cannot tell whether this trader has ever been slashed. Please refresh later.",
+    totalFromContract: 'Cumulative slashed amount recorded by the contract: {amount} USDC',
+    outsideWindow: 'No Slashed events in the last {span}, but the contract records a cumulative {amount} USDC slashed — it happened before the scan window.',
   },
 
   actions: {
@@ -82,6 +87,8 @@ export const traderProfile: Catalog['traderProfile'] = {
    * 不在這裡另造一份。
    */
   activity: {
+    readError: "Could not read this address's on-chain history. The RPC node may be rate-limiting.",
+    scanIncomplete: '{count} block range(s) could not be read — the timeline may be incomplete. Please refresh.',
     openPositions: {
       title: 'Current Open Positions',
       subtitle: 'read live from the exchange · includes positions older than the scan window',
@@ -105,6 +112,8 @@ export const traderProfile: Catalog['traderProfile'] = {
       emptyTitle: 'No activity found',
       emptyRange: 'No events in blocks {range}.',
       emptyNone: 'Nothing to show yet.',
+      readFailedTitle: 'Read failed',
+      readFailedBody: 'On-chain events could not be read (or were only partly read) — an empty timeline here does not mean there was no activity. Please refresh.',
       column: { when: 'When', event: 'Event', detail: 'Detail', tx: 'Tx' },
 
       kind: {

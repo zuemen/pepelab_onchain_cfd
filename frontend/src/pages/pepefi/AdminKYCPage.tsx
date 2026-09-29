@@ -5,8 +5,11 @@ import { useContracts } from 'src/hooks/useContracts'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { useKYCReviewQueue, type ReviewApplication } from 'src/hooks/useKYCReviewQueue'
 import { screenApplication, type ScreeningResult, type ScreeningReasonCode } from 'src/lib/pepefi/kycScreening'
+import { isCommitmentHash, verifyKycCommitment } from 'src/lib/pepefi/kycCommitment'
 import { t, interpolate } from 'src/locales'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
+import { withRetry } from 'src/lib/pepefi/rpcBatch'
+import { isMissingFunctionError } from 'src/lib/pepefi/kycSubmitGate'
 import { explorerTx } from 'src/lib/pepefi/notify'
 import { TableSkeleton } from 'src/components/pepefi/Skeleton'
 import EmptyState from 'src/components/pepefi/EmptyState'
@@ -28,6 +31,7 @@ import Card from '@mui/material/Card';
 import Chip from '@mui/material/Chip';
 import Tooltip from '@mui/material/Tooltip';
 import TextField from '@mui/material/TextField';
+import LinearProgress from '@mui/material/LinearProgress';
 
 // ── Component ─────────────────────────────────────────────────────────────────
 //
@@ -61,6 +65,23 @@ type RowAction = {
 const REASON_LABEL: Record<ScreeningReasonCode, string> = {
   unclearJurisdiction: t.admin.kyc.queue.screening.reasonUnclearJurisdiction,
   watchlistNameMatch: t.admin.kyc.queue.screening.reasonWatchlistNameMatch,
+  hashedOffChainCheck: t.admin.kyc.queue.screening.reasonHashedOffChainCheck,
+}
+
+/**
+ * 新版申請的姓名／國籍欄位在鏈上是 keccak256(salt ‖ 值)。完整值放 tooltip 方便複製
+ * 比對，表格裡只顯示縮短版加一個「雜湊」標記，不讓它看起來像一個（很怪的）姓名。
+ */
+function HashOrPlain({ value, plain }: { value: string; plain?: string }) {
+  if (!isCommitmentHash(value)) return <>{plain ?? value}</>
+  return (
+    <Tooltip title={value}>
+      <Box component="span" sx={{ fontFamily: MONO, fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
+        {`${value.slice(0, 10)}…${value.slice(-6)}`}{' '}
+        <Chip size="small" variant="outlined" label={t.admin.kyc.queue.hashedLabel} sx={{ height: 18, fontSize: 10 }} />
+      </Box>
+    </Tooltip>
+  )
 }
 
 function ScreeningChip({ result }: { result: ScreeningResult }) {
@@ -72,6 +93,80 @@ function ScreeningChip({ result }: { result: ScreeningResult }) {
     <Tooltip title={reasonText}>
       <Chip size="small" color="warning" label={t.admin.kyc.queue.screening.needsReview} />
     </Tooltip>
+  )
+}
+
+// ── 線下比對工具 ──────────────────────────────────────────────────────────────
+// 新版申請在鏈上只有 keccak256(salt ‖ 值)。申請人線下出示 salt 與原始資料後，審核員
+// 在這裡重算比對。全部在瀏覽器內計算，不送出任何東西、不寫入任何地方。
+
+type CheckResult =
+  | { kind: 'notFound' | 'notHashed' | 'invalidSalt' }
+  | { kind: 'compared'; nameMatches: boolean; nationalityMatches: boolean }
+
+function CommitmentChecker({ apps }: { apps: ReviewApplication[] }) {
+  const [address, setAddress] = useState('')
+  const [salt, setSalt] = useState('')
+  const [name, setName] = useState('')
+  const [nationality, setNationality] = useState('')
+  const [result, setResult] = useState<CheckResult | null>(null)
+  const vt = t.admin.kyc.verifyTool
+
+  const check = () => {
+    const app = apps.find(a => a.address.toLowerCase() === address.trim().toLowerCase())
+    if (!app) { setResult({ kind: 'notFound' }); return }
+    if (!isCommitmentHash(app.fullName) || !isCommitmentHash(app.nationality)) { setResult({ kind: 'notHashed' }); return }
+    try {
+      const r = verifyKycCommitment({
+        salt: salt.trim(),
+        fullName: name,
+        nationality,
+        onChainName: app.fullName,
+        onChainNationality: app.nationality,
+      })
+      setResult({ kind: 'compared', ...r })
+    } catch {
+      setResult({ kind: 'invalidSalt' })
+    }
+  }
+
+  const line = (ok: boolean, yes: string, no: string) => (
+    <Typography variant="body2" sx={{ color: ok ? 'success.main' : 'error.main', fontWeight: 700 }}>
+      {ok ? `✓ ${yes}` : `✗ ${no}`}
+    </Typography>
+  )
+
+  return (
+    <Card sx={{ p: { xs: 2.5, sm: 3.5 } }}>
+      <Typography variant="overline" sx={{ color: 'text.secondary', fontWeight: 700, letterSpacing: 1, display: 'block' }}>
+        {vt.title}
+      </Typography>
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+        {vt.body}
+      </Typography>
+      <Box sx={{ display: 'grid', gap: 1.5, gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' } }}>
+        <TextField size="small" autoComplete="off" label={vt.address} value={address} onChange={e => { setAddress(e.target.value); setResult(null) }}
+          slotProps={{ htmlInput: { style: { fontFamily: MONO } } }} />
+        <TextField size="small" autoComplete="off" label={vt.salt} value={salt} onChange={e => { setSalt(e.target.value); setResult(null) }}
+          slotProps={{ htmlInput: { style: { fontFamily: MONO } } }} />
+        <TextField size="small" autoComplete="off" label={vt.name} value={name} onChange={e => { setName(e.target.value); setResult(null) }} />
+        <TextField size="small" autoComplete="off" label={vt.nationality} value={nationality} onChange={e => { setNationality(e.target.value); setResult(null) }} />
+      </Box>
+      <Box sx={{ mt: 1.5, display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+        <Button variant="outlined" onClick={check} disabled={!address.trim() || !salt.trim() || !name.trim() || !nationality.trim()}>
+          {vt.submit}
+        </Button>
+        {result?.kind === 'notFound' && <Typography variant="body2" color="warning.main">{vt.notFound}</Typography>}
+        {result?.kind === 'notHashed' && <Typography variant="body2" color="warning.main">{vt.notHashed}</Typography>}
+        {result?.kind === 'invalidSalt' && <Typography variant="body2" color="error.main">{vt.invalidSalt}</Typography>}
+        {result?.kind === 'compared' && (
+          <Box>
+            {line(result.nameMatches, vt.nameMatch, vt.nameMismatch)}
+            {line(result.nationalityMatches, vt.nationalityMatch, vt.nationalityMismatch)}
+          </Box>
+        )}
+      </Box>
+    </Card>
   )
 }
 
@@ -115,8 +210,8 @@ function ApplicationTable({
                   </Link>
                 ) : SHORT_ADDR(app.address)}
               </TableCell>
-              <TableCell>{app.fullName}</TableCell>
-              <TableCell>{COUNTRY_NAMES[app.nationality] ?? app.nationality}</TableCell>
+              <TableCell><HashOrPlain value={app.fullName} /></TableCell>
+              <TableCell><HashOrPlain value={app.nationality} plain={COUNTRY_NAMES[app.nationality] ?? app.nationality} /></TableCell>
               <TableCell sx={{ fontFamily: MONO, color: 'text.secondary' }}>#{app.submittedBlock}</TableCell>
               {screeningByAddress && (
                 <TableCell>
@@ -153,6 +248,18 @@ export default function AdminKYCPage() {
 
   const [registryOwner, setRegistryOwner] = useState<string | null>(null)
   const [isAppointedVerifier, setIsAppointedVerifier] = useState<boolean | null>(null)
+  /**
+   * 權限讀取的結果。'error' = owner() 也讀不到：顯示「無法確認權限」＋原因＋重試，
+   * 不能無限停在「確認權限中…」。仍然 fail-closed：讀不到就不放行。
+   */
+  const [authStatus, setAuthStatus] = useState<'checking' | 'ready' | 'error'>('checking')
+  const [authError, setAuthError] = useState<string | null>(null)
+  /**
+   * 線上 Base Sepolia 的 KYCRegistry（0x5D95…360d）是舊版：沒有 verifiers(address)
+   * （也沒有 pending/isPending），呼叫回 missing revert data。這時只以 owner() 判斷權限，
+   * 並隱藏審核員指派功能。
+   */
+  const [verifiersSupported, setVerifiersSupported] = useState(true)
 
   // runId 防止舊的請求晚回來蓋掉新的——例如切換錢包／換鏈時，前一次
   // fetchAuth 還沒回來，若晚於新的那次落地會把已經正確的「無權限」蓋回
@@ -166,26 +273,61 @@ export default function AdminKYCPage() {
     if (!contracts || !wallet.address) {
       setRegistryOwner(null)
       setIsAppointedVerifier(null)
+      setAuthStatus('checking')
       return
     }
-    try {
-      const [owner, appointed] = await Promise.all([
-        contracts.kycRegistry.owner() as Promise<string>,
-        contracts.kycRegistry.verifiers(wallet.address) as Promise<boolean>,
-      ])
-      if (authRunId.current !== myRun) return
-      setRegistryOwner(owner)
-      setIsAppointedVerifier(appointed)
-    } catch (e) {
-      console.error('[kyc auth]', e)
-      if (authRunId.current !== myRun) return
-      // 讀取失敗一律當作沒權限，不留在舊值上。
+    // owner() 與 verifiers() 分開讀：verifiers 讀不到（舊版合約沒有這個函式）不該連帶
+    // 讓 owner 的判斷失效。
+    const [ownerRes, appointedRes] = await Promise.allSettled([
+      withRetry(() => contracts.kycRegistry.owner() as Promise<string>),
+      withRetry(() => contracts.kycRegistry.verifiers(wallet.address) as Promise<boolean>),
+    ])
+    if (authRunId.current !== myRun) return
+
+    if (ownerRes.status === 'rejected') {
+      console.error('[kyc auth] owner()', ownerRes.reason)
+      // 讀取失敗一律當作沒權限，不留在舊值上；但要說出原因並給重試，不能無限轉圈。
       setRegistryOwner(null)
       setIsAppointedVerifier(null)
+      setAuthError(prettyError(ownerRes.reason))
+      setAuthStatus('error')
+      return
     }
+    setRegistryOwner(ownerRes.value)
+    const iAmOwner = ownerRes.value.toLowerCase() === wallet.address.toLowerCase()
+    if (appointedRes.status === 'fulfilled') {
+      setIsAppointedVerifier(appointedRes.value)
+      setVerifiersSupported(true)
+    } else if (isMissingFunctionError(appointedRes.reason)) {
+      // 確定函式不存在（舊版合約：CALL_EXCEPTION 且 revert data 為空）：退回只認 owner。
+      console.warn('[kyc auth] verifiers() not implemented, falling back to owner-only')
+      setIsAppointedVerifier(false)
+      setVerifiersSupported(false)
+    } else if (!iAmOwner) {
+      // 暫時錯誤（429、逾時…）且不是 owner：無法確認是不是審核員 → 不放行，說明原因並給重試。
+      console.error('[kyc auth] verifiers()', appointedRes.reason)
+      setIsAppointedVerifier(null)
+      setAuthError(prettyError(appointedRes.reason))
+      setAuthStatus('error')
+      return
+    } else {
+      // owner 本身就有權限；verifiers 暫時讀不到不影響放行，但不改動「是否支援」的判斷。
+      setIsAppointedVerifier(null)
+    }
+    setAuthError(null)
+    setAuthStatus('ready')
   }, [contracts, wallet.address])
 
-  useEffect(() => { void fetchAuth() }, [fetchAuth])
+  // fetchAuth 的識別隨 contracts／wallet.address 改變：換帳號或換鏈時先把權限狀態全部
+  // 重設成「確認中」，不讓上一個帳號的審核員資格在新帳號底下停留任何一幀。
+  useEffect(() => {
+    setRegistryOwner(null)
+    setIsAppointedVerifier(null)
+    setVerifiersSupported(true)
+    setAuthError(null)
+    setAuthStatus('checking')
+    void fetchAuth()
+  }, [fetchAuth])
 
   // 比照 AdminTreasuryPage：權限不是一次讀完就不變的——owner 可能在別的
   // session 撤銷這個審核員的資格，這個分頁還開著就該在短時間內反映出來，
@@ -195,8 +337,7 @@ export default function AdminKYCPage() {
     return () => clearInterval(id)
   }, [fetchAuth])
 
-  const authUnknown =
-    registryOwner === null && isAppointedVerifier === null
+  const authUnknown = authStatus === 'checking'
 
   const isOwner =
     registryOwner !== null &&
@@ -313,6 +454,22 @@ export default function AdminKYCPage() {
     )
   }
 
+  if (!authorized && authStatus === 'error') {
+    return (
+      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', gap: 2, px: 2, textAlign: 'center' }}>
+        <Typography variant="h2">🔒</Typography>
+        <Typography variant="h5" sx={{ fontWeight: 'bold' }}>{t.admin.kyc.authFailed}</Typography>
+        <Typography color="text.secondary">{t.admin.kyc.authFailedBody}</Typography>
+        {authError && (
+          <Typography variant="caption" color="error.main" sx={{ fontFamily: MONO }}>{authError}</Typography>
+        )}
+        <Button variant="outlined" onClick={() => { setAuthStatus('checking'); void fetchAuth() }}>
+          {t.admin.kyc.authRetry}
+        </Button>
+      </Box>
+    )
+  }
+
   if (!authorized) {
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', gap: 2 }}>
@@ -354,7 +511,18 @@ export default function AdminKYCPage() {
         {t.admin.kyc.notSecrecyNotice}
       </Alert>
 
-      {isOwner && (
+      {/* 新版申請只把雜湊上鏈：審核員看不到姓名與國籍，必須線下比對。 */}
+      <Alert severity="warning" variant="outlined">
+        {t.admin.kyc.hashedNotice}
+      </Alert>
+
+      <CommitmentChecker apps={[...queue.pending, ...queue.verified, ...queue.revoked]} />
+
+      {!verifiersSupported && (
+        <Alert severity="info" variant="outlined">{t.admin.kyc.legacyRegistryNotice}</Alert>
+      )}
+
+      {isOwner && verifiersSupported && (
         <Card sx={{ p: { xs: 2.5, sm: 3.5 } }}>
           <Typography variant="overline" sx={{ color: 'text.secondary', fontWeight: 700, letterSpacing: 1, display: 'block' }}>
             {t.admin.kyc.verifierAdmin.title}
@@ -398,10 +566,21 @@ export default function AdminKYCPage() {
         <Alert severity="warning">{queue.error}</Alert>
       )}
 
+      {/* 7 天視窗在公共 RPC 上是數百段 getLogs，可能要幾十秒到數分鐘——進度一定要看得到。 */}
       {queue.loading && queue.progress && (
-        <Typography variant="caption" color="text.secondary">
-          {interpolate(t.admin.kyc.queue.scanning, queue.progress)}
-        </Typography>
+        <Box>
+          <Typography variant="caption" color="text.secondary">
+            {interpolate(t.admin.kyc.queue.scanning, queue.progress)}
+          </Typography>
+          <LinearProgress
+            variant="determinate"
+            value={queue.progress.total > 0 ? (queue.progress.done / queue.progress.total) * 100 : 0}
+            sx={{ mt: 0.5, height: 4, borderRadius: 2 }}
+          />
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+            {t.admin.kyc.queue.scanningHint}
+          </Typography>
+        </Box>
       )}
 
       {/* 待審 */}

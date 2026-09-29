@@ -172,6 +172,9 @@ export const admin: Catalog['admin'] = {
       refresh: '↺ Refresh',
       emptyTitle: 'No cash out history yet',
       emptyDescription: 'Fee claims and USDC→ETH swaps will appear here.',
+      readFailedTitle: 'Read failed',
+      readFailedDescription: 'On-chain cash-out records could not be read — an empty list here does not mean there are none. Press Refresh to retry.',
+      partial: 'Some block ranges could not be read; the records below may be incomplete.',
       claimed: 'Claimed',
       swapped: 'Swapped',
       claimAmount: '{amount} USDC',
@@ -194,6 +197,10 @@ export const admin: Catalog['admin'] = {
     checkingAuthBody: 'Reading owner() and verifiers() on-chain. Access is denied until this resolves.',
     notAuthorized: 'Not authorized',
     notAuthorizedBody: 'This page is restricted to the KYCRegistry owner or an appointed reviewer.',
+    authFailed: "Couldn't confirm permissions",
+    authFailedBody: "KYCRegistry permission data (owner() or verifiers()) could not be read, so we can't confirm whether you may review. Access is denied until it can be read — please retry later.",
+    authRetry: 'Retry',
+    legacyRegistryNotice: 'The KYCRegistry on this chain is a legacy contract without verifier appointment (verifiers), so access is decided by owner() only and the verifier section is hidden.',
 
     roleOwner: 'You are here as the owner',
     roleVerifier: 'You are here as an appointed reviewer',
@@ -219,6 +226,26 @@ export const admin: Catalog['admin'] = {
     notSecrecyNotice:
       "This page gates applicant data behind a permission check to avoid actively compiling it into a list — not because the data is secret. KYCRegistry is a public contract; anyone can scan the same on-chain events themselves.",
 
+    hashedNotice:
+      'Name and nationality go on-chain only as hashes, so review requires off-chain comparison: for applications marked "hash", the chain only holds keccak256(salt ‖ normalized name) and keccak256(salt ‖ nationality code). Ask the applicant to present the salt and raw details off-chain, recompute, and approve only if they match the hashes shown here. Older applications without the mark were written on-chain in plain text at the time.',
+
+    verifyTool: {
+      title: 'Off-chain check (recompute hashes)',
+      body: 'Ask the applicant to present the salt, name and nationality code off-chain and paste them below; the browser recomputes keccak256(salt ‖ normalized value) and compares it with the on-chain hashes. It compares against the latest application from that address within the scan window of the queue (the last 7 days); earlier submissions are not checked. Nothing is sent or stored.',
+      address: 'Applicant address',
+      salt: 'Salt (0x + 64 hex)',
+      name: 'Name',
+      nationality: 'Nationality code (e.g. TW)',
+      submit: 'Compare',
+      notFound: 'No application from this address in the queue (refresh the queue or check the address).',
+      notHashed: 'This is a legacy plaintext application — no recomputation needed; compare against the table directly.',
+      invalidSalt: 'Invalid salt: it must be 0x followed by 32 bytes of hex.',
+      nameMatch: 'Name hash matches',
+      nameMismatch: 'Name hash does not match',
+      nationalityMatch: 'Nationality hash matches',
+      nationalityMismatch: 'Nationality hash does not match',
+    },
+
     queue: {
       readErrorSome: '{count} application(s) could not be read and are left out of the list — refresh to retry.',
       readErrorAll: 'Failed to load the review queue, possibly RPC rate-limiting. Refresh to retry.',
@@ -227,6 +254,8 @@ export const admin: Catalog['admin'] = {
       refresh: '↺ Refresh',
       scanRange: 'Scanned range: block {from} – {to}',
       scanning: 'Scanning on-chain events… ({done}/{total})',
+      scanningHint: 'The queue looks back 7 days and the public RPC allows only 1,000 blocks per query, so this takes hundreds of requests and may take several minutes.',
+      hashedLabel: 'hash',
 
       pendingTitle: 'Pending Applications',
       pendingEmpty: 'No pending applications right now.',
@@ -269,6 +298,7 @@ export const admin: Catalog['admin'] = {
         needsReview: 'Needs review',
         reasonUnclearJurisdiction: 'Jurisdiction not on the platform list',
         reasonWatchlistNameMatch: 'Name matches fictional watchlist',
+        reasonHashedOffChainCheck: 'Name and nationality are on-chain as hashes; compare off-chain',
       },
     },
   },

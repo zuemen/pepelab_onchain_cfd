@@ -59,8 +59,13 @@ export const traderProfile = {
   },
 
   slashHistory: {
+    loading: '罰沒紀錄讀取中…',
     titleOne: '罰沒紀錄（{count} 筆）',
     titleMany: '罰沒紀錄（{count} 筆）',
+    readFailedTitle: '罰沒紀錄讀取失敗',
+    readFailedBody: '無法讀取鏈上的罰沒事件，因此不能據此判斷此交易員是否曾被罰沒。請稍後重新整理。',
+    totalFromContract: '合約記錄的累計罰沒：{amount} USDC',
+    outsideWindow: '最近 {span} 內沒有罰沒事件，但合約記錄的累計罰沒為 {amount} USDC——罰沒發生在掃描範圍之前。',
   },
 
   actions: {
@@ -80,6 +85,9 @@ export const traderProfile = {
    * 不在這裡另造一份。
    */
   activity: {
+    /** useAddressActivity 的錯誤訊息（以前寫死英文）。 */
+    readError: '無法讀取此地址的鏈上紀錄，RPC 節點可能正在限流。',
+    scanIncomplete: '{count} 個區塊範圍讀取失敗，動態時間軸可能不完整——請重新整理。',
     openPositions: {
       title: '目前未平倉部位',
       subtitle: '即時讀取交易所資料 · 亦包含早於掃描視窗的部位',
@@ -103,6 +111,8 @@ export const traderProfile = {
       emptyTitle: '尚無動態',
       emptyRange: '區塊 {range} 內無事件。',
       emptyNone: '目前沒有內容可顯示。',
+      readFailedTitle: '讀取失敗',
+      readFailedBody: '鏈上事件讀取失敗或不完整，這裡的空白不代表沒有動態。請重新整理再試。',
       column: { when: '時間', event: '事件', detail: '詳情', tx: '交易' },
 
       kind: {

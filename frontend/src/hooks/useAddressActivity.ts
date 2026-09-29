@@ -7,7 +7,8 @@ import { zeroPadValue } from 'ethers'
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
 import { notionalOf } from 'src/lib/pepefi/whale'
 import { mapLimit, withRetry, RPC_CONCURRENCY } from 'src/lib/pepefi/rpcBatch'
-import { avgBlockTime, chunkRanges, scanFromBlock, getLogsChunked } from 'src/lib/pepefi/chainLogs'
+import { t, interpolate } from 'src/locales'
+import { UI_RETRIES, avgBlockTime, chunkRanges, scanFromBlock, getLogsChunked, isChunkScanAborted } from 'src/lib/pepefi/chainLogs'
 
 // 單一地址的鏈上足跡：跨 Exchange / CopyTracker / TraderStake 的事件時間軸，
 // 加上目前還開著的部位。
@@ -58,6 +59,8 @@ export interface AddressActivity {
   missing:   number
   loading:   boolean
   error:     string | null
+  /** 重試後仍讀不到的區塊段數。> 0 時時間軸不完整，空結果必須顯示「讀取失敗」。 */
+  failedChunks: number
   refetch:   () => void
 }
 
@@ -88,18 +91,48 @@ export function useAddressActivity(
   const [missing,   setMissing]   = useState(0)
   const [loading,   setLoading]   = useState(false)
   const [error,     setError]     = useState<string | null>(null)
+  const [failedChunks, setFailedChunks] = useState(0)
 
   const runId = useRef(0)
+  const abortRef = useRef<AbortController | null>(null)
+  /** 上一次抓取的 chainId:address，用來判斷是不是換了地址。 */
+  const lastIdentity = useRef<string | null>(null)
+  // 卸載時中止還在跑的掃描，並讓在飛的其他讀取回來後被丟棄。
+  useEffect(() => () => { abortRef.current?.abort(); runId.current += 1 }, [])
 
   const fetchActivity = useCallback(async () => {
-    if (!contracts || !provider || !address) return
-
+    // 先遞增、先中止，再判斷能不能開始：早退（例如 provider 變成 null）時，
+    // 上一輪還在飛的掃描也要被中止、結果被丟棄。
     runId.current += 1
     const myRun = runId.current
     const isStale = () => runId.current !== myRun
+    abortRef.current?.abort()
+    const ac = new AbortController()
+    abortRef.current = ac
+    // 換了地址（或鏈／合約）：上一個地址的事件與部位不能掛在新地址底下，等新資料時先清空。
+    // 同一個地址的重新整理則保留舊資料，避免畫面閃空。
+    const identity = `${chainId ?? 0}:${address?.toLowerCase() ?? ''}`
+    const identityChanged = lastIdentity.current !== identity
+    lastIdentity.current = identity
+    const clearData = () => {
+      setEvents([])
+      setPositions([])
+      setScanRange(null)
+      setMissing(0)
+      setFailedChunks(0)
+    }
+    if (!contracts || !provider || !address) {
+      // 上一輪可能還掛著 loading：它的 finally 因 run id 不符不會收尾，這裡收。
+      clearData()
+      setLoading(false)
+      setProgress(null)
+      return
+    }
+    if (identityChanged) clearData()
 
     setLoading(true)
     setError(null)
+    setFailedChunks(0)
 
     try {
       // 同 useExchangeActivity：這一發被擠掉的話整頁沒有掃描範圍。
@@ -142,10 +175,16 @@ export function useAddressActivity(
       }
 
       const ifaceFor = [exchange.interface, traderStake.interface, copyTracker.interface, copyTracker.interface]
+      // 掉的段不能悄悄丟掉——例如 Slashed 那一段讀不到，畫面就會像「從未被罰沒」。
+      let failedChunks = 0
       const logSets = await Promise.all(
-        queries.map(q => getLogsChunked(provider, q, from, latestNum, tick)),
+        queries.map(q => getLogsChunked(provider, q, from, latestNum, tick, () => { failedChunks += 1 }, { retries: UI_RETRIES, signal: ac.signal })),
       )
       if (isStale()) return
+      setFailedChunks(failedChunks)
+      if (failedChunks > 0) {
+        setError(interpolate(t.traderProfile.activity.scanIncomplete, { count: failedChunks }))
+      }
 
       const lowerAddr = address.toLowerCase()
       const rows: AddressEvent[] = []
@@ -254,8 +293,9 @@ export function useAddressActivity(
         pnl:        pnls[i],
       })))
     } catch (e) {
+      if (isChunkScanAborted(e)) return
       console.error('[useAddressActivity]', e)
-      if (runId.current === myRun) setError('Could not read this address’s on-chain history. The RPC node may be rate-limiting.')
+      if (runId.current === myRun) setError(t.traderProfile.activity.readError)
     } finally {
       if (runId.current === myRun) {
         setLoading(false)
@@ -266,5 +306,5 @@ export function useAddressActivity(
 
   useEffect(() => { void fetchActivity() }, [fetchActivity])
 
-  return { events, positions, scanRange, progress, missing, loading, error, refetch: fetchActivity }
+  return { events, positions, scanRange, progress, missing, loading, error, failedChunks, refetch: fetchActivity }
 }

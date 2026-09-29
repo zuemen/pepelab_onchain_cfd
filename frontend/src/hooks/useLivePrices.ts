@@ -1,14 +1,10 @@
 import { useState, useEffect } from 'react'
 
-import { t } from 'src/locales'
 import { useContracts } from 'src/hooks/useContracts'
 import { safeRead } from 'src/lib/pepefi/safeRead'
 import { useWalletContext } from 'src/contexts/wallet-context'
 import { ASSET_IDS, getAddresses } from 'src/contracts/addresses'
-import { classifyFreshness, type Freshness } from 'src/lib/pepefi/priceFreshness'
-
-/** 模擬價格沒有鏈上年齡可言。 */
-const MOCK_FRESHNESS: Freshness = { level: 'unknown', ageSec: null, label: t.freshness.mockLabel }
+import { type LivePrice, buildLivePrices, emptyLivePrices } from 'src/lib/pepefi/livePrices'
 
 /** 讀不到 exchange.maxPriceAge() 時的後備值 = Base Sepolia 上實際部署的 6 小時。 */
 const FALLBACK_MAX_PRICE_AGE_SEC = 21600
@@ -28,20 +24,6 @@ const READ_TIMEOUT_MS = 6_000
 const isPageVisible = () =>
   typeof document === 'undefined' || document.visibilityState !== 'hidden'
 
-const MOCK_INITIAL: Record<string, number> = {
-  [ASSET_IDS.sBTC]:   50000,
-  [ASSET_IDS.sETH]:   3000,
-  [ASSET_IDS.sAAPL]:  200,
-  [ASSET_IDS.sTSLA]:  250,
-  [ASSET_IDS.sGOLD]:  2650,
-  [ASSET_IDS.sBOND]:  100,
-  [ASSET_IDS.sNVDA]:  135,
-  [ASSET_IDS.sMSFT]:  420,
-  [ASSET_IDS.sGOOGL]: 175,
-  [ASSET_IDS.sICLN]:  14,
-  [ASSET_IDS.sESGU]:  120,
-}
-
 // Display-only live quotes from the free, keyless CoinGecko simple-price API.
 // These keep the UI alive even when the on-chain keeper is idle. Settlement
 // (open/close/liquidation) always uses the on-chain oracle — see `settlementUsd`.
@@ -50,33 +32,7 @@ const COINGECKO_IDS: Record<string, string> = {
   [ASSET_IDS.sETH]: 'ethereum',
 }
 
-export type PriceSource = 'coingecko' | 'oracle' | 'mock'
-
-export interface LivePrice {
-  usd:       number        // best display price (live source preferred)
-  fetchedAt: number
-  isMock:    boolean
-  source:    PriceSource
-  /** On-chain oracle price = the actual settlement/index price (if available). */
-  settlementUsd?: number
-  /** 結算價的鏈上 updatedAt（秒）。沒有它就無法判斷「即時」是不是真的即時。 */
-  settlementUpdatedAt?: number
-  /** 以交易所自己的 maxPriceAge 為準的新鮮度分級。 */
-  freshness: Freshness
-}
-
-function wiggleMock(pepeAddr?: string | null): Record<string, LivePrice> {
-  const out: Record<string, LivePrice> = {}
-  for (const [id, base] of Object.entries(MOCK_INITIAL)) {
-    const w = 1 + (Math.random() - 0.5) * 0.004
-    out[id] = { usd: base * w, fetchedAt: Date.now(), isMock: true, source: 'mock', freshness: MOCK_FRESHNESS }
-  }
-  if (pepeAddr) {
-    const w = 1 + (Math.random() - 0.5) * 0.004
-    out[pepeAddr] = { usd: 0.00001337 * w, fetchedAt: Date.now(), isMock: true, source: 'mock', freshness: MOCK_FRESHNESS }
-  }
-  return out
-}
+export type { LivePrice, PriceSource } from 'src/lib/pepefi/livePrices'
 
 /** Fetch free CoinGecko spot prices for the display-tracked crypto ids + PEPE. */
 async function fetchCoinGecko(pepeAddr?: string | null): Promise<Record<string, number>> {
@@ -93,7 +49,7 @@ async function fetchCoinGecko(pepeAddr?: string | null): Promise<Record<string, 
     }
     if (pepeAddr && json.pepe?.usd) out[pepeAddr] = json.pepe.usd
   } catch {
-    /* offline / rate-limited → caller falls back to oracle/mock */
+    /* offline / rate-limited → caller falls back to oracle, or no price at all */
   }
   return out
 }
@@ -105,14 +61,15 @@ export function useLivePrices(): Record<string, LivePrice> {
   const addr = getAddresses(chainId)
   const pepeAddr = addr?.PepeToken ? addr.PepeToken.toLowerCase() : null
 
-  const [prices, setPrices] = useState<Record<string, LivePrice>>(() => wiggleMock(pepeAddr))
+  // 第一次輪詢之前：每個標的都是「無價格」（usd = null、freshness unknown ⇒ 擋單）。
+  // 以前這裡先塞一份隨機抖動的模擬價，使用者會先看到一閃而過的假數字。
+  const [prices, setPrices] = useState<Record<string, LivePrice>>(() =>
+    emptyLivePrices(Object.values(ASSET_IDS), pepeAddr),
+  )
 
   useEffect(() => {
     if (!pepeAddr) return
-    setPrices(prev => {
-      if (prev[pepeAddr]) return prev
-      return wiggleMock(pepeAddr)
-    })
+    setPrices(prev => (prev[pepeAddr] ? prev : { ...prev, ...emptyLivePrices([], pepeAddr) }))
   }, [pepeAddr])
 
   useEffect(() => {
@@ -121,7 +78,6 @@ export function useLivePrices(): Record<string, LivePrice> {
     const tick = async () => {
       // 1) Free, keyless display quotes (crypto + PEPE) — always tries to be live.
       const cg = await fetchCoinGecko(pepeAddr)
-      const next: Record<string, LivePrice> = {}
       const nowSec = Math.floor(Date.now() / 1000)
 
       // 交易所自己的 maxPriceAge 才是「可不可以交易」的真相 —— 顯示價來自
@@ -150,37 +106,14 @@ export function useLivePrices(): Record<string, LivePrice> {
       // 舊部署沒有這個 getter、或讀取逾時 → 保留後備值。
       const maxPriceAgeSec = maxAgeRaw === null ? FALLBACK_MAX_PRICE_AGE_SEC : Number(maxAgeRaw)
 
-      for (const [i, id] of assetIds.entries()) {
-        // On-chain oracle = settlement price (source of truth for open/close).
-        const raw = oracleRaw[i]
-        const settlement = raw ? Number(raw[0]) / 1e8 : undefined
-        const settlementAt = raw ? Number(raw[1]) : undefined
-
-        const freshness = classifyFreshness({ updatedAtSec: settlementAt, nowSec, maxPriceAgeSec })
-
-        const cgPrice = cg[id]
-        if (cgPrice !== undefined) {
-          // Crypto with a live CoinGecko quote → show it; keep oracle as settlement.
-          next[id] = { usd: cgPrice, fetchedAt: Date.now(), isMock: false, source: 'coingecko', settlementUsd: settlement, settlementUpdatedAt: settlementAt, freshness }
-        } else if (settlement !== undefined) {
-          // Stocks / RWA → on-chain oracle is the live display + settlement.
-          next[id] = { usd: settlement, fetchedAt: Date.now(), isMock: false, source: 'oracle', settlementUsd: settlement, settlementUpdatedAt: settlementAt, freshness }
-        } else {
-          const fallback = MOCK_INITIAL[id] ?? 100
-          const w = 1 + (Math.random() - 0.5) * 0.004
-          next[id] = { usd: fallback * w, fetchedAt: Date.now(), isMock: true, source: 'mock', freshness: MOCK_FRESHNESS }
-        }
-      }
-
-      if (pepeAddr) {
-        const cgPepe = cg[pepeAddr]
-        if (cgPepe !== undefined) {
-          next[pepeAddr] = { usd: cgPepe, fetchedAt: Date.now(), isMock: false, source: 'coingecko', freshness: MOCK_FRESHNESS }
-        } else {
-          const w = 1 + (Math.random() - 0.5) * 0.004
-          next[pepeAddr] = { usd: 0.00001337 * w, fetchedAt: Date.now(), isMock: true, source: 'mock', freshness: MOCK_FRESHNESS }
-        }
-      }
+      const next = buildLivePrices({
+        assetIds,
+        cg,
+        oracleRaw,
+        maxPriceAgeSec,
+        nowSec,
+        pepeAddr,
+      })
 
       if (!cancelled) setPrices(next)
     }

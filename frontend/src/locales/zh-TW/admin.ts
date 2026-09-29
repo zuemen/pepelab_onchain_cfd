@@ -179,6 +179,9 @@ export const admin = {
       refresh: '↺ 重新整理',
       emptyTitle: '尚無兌現紀錄',
       emptyDescription: '手續費領取與 USDC→ETH 兌換紀錄將顯示於此。',
+      readFailedTitle: '讀取失敗',
+      readFailedDescription: '鏈上兌現紀錄讀取失敗，這裡的空白不代表沒有紀錄。請按重新整理重試。',
+      partial: '部分區塊範圍讀取失敗，下方紀錄可能不完整。',
       claimed: '已領取',
       swapped: '已兌換',
       claimAmount: '{amount} USDC',
@@ -202,6 +205,11 @@ export const admin = {
     checkingAuthBody: '正在讀取鏈上的 owner() 與 verifiers()。讀不到就不放行。',
     notAuthorized: '無權限',
     notAuthorizedBody: '此頁面僅限 KYCRegistry 的 owner 或已指派的審核員存取。',
+    authFailed: '無法確認權限',
+    authFailedBody: '讀不到 KYCRegistry 的權限資料（owner() 或 verifiers()），因此無法確認你是否有審核權限。讀不到就不放行——請稍後重試。',
+    authRetry: '重試',
+    /** 線上舊版 KYCRegistry 沒有 verifiers()／pending()。 */
+    legacyRegistryNotice: '這條鏈上的 KYCRegistry 是舊版合約，沒有審核員指派（verifiers）功能，權限只以 owner() 判斷，審核員指派區塊已隱藏。',
 
     /** 進得去之後，講清楚是以哪個身分——owner 和 verifier 權限相同，但意義不同。 */
     roleOwner: '你是以 owner 身分進入',
@@ -230,6 +238,28 @@ export const admin = {
     notSecrecyNotice:
       '這個頁面把申請人資料擋在權限之後，是為了不主動幫人彙整成一份清單，不是因為資料是保密的——KYCRegistry 是公開合約，任何人都能自己掃鏈上事件看到同樣的內容。',
 
+    /** 新版 KYC 只以加鹽雜湊上鏈（見 lib/pepefi/kycCommitment.ts）。 */
+    hashedNotice:
+      '姓名與國籍只以雜湊上鏈，審核需線下比對：標示「雜湊」的申請，鏈上只有 keccak256(salt ‖ 正規化姓名) 與 keccak256(salt ‖ 國籍代碼)。請申請人線下出示 salt 與原始資料，重算後與此處的雜湊比對一致才核准。未標示雜湊的舊申請是當時以明文上鏈的資料。',
+
+    /** 線下比對工具：申請人出示 salt 與原始資料，審核員在瀏覽器內重算。 */
+    verifyTool: {
+      title: '線下比對（重算雜湊）',
+      body: '請申請人線下出示 salt、姓名與國籍代碼，貼到下方即可在瀏覽器內重算 keccak256(salt ‖ 正規化值) 並與鏈上雜湊比對。比對對象是該地址在審核佇列掃描範圍（最近 7 天）內最新的一筆申請；更早送出的申請不在比對範圍內。不會送出或保存任何資料。',
+      address: '申請人地址',
+      salt: 'Salt（0x 開頭 64 位 hex）',
+      name: '姓名',
+      nationality: '國籍代碼（例如 TW）',
+      submit: '比對',
+      notFound: '佇列中找不到這個地址的申請（請先重新整理佇列，或確認地址）。',
+      notHashed: '這筆申請是舊版明文上鏈，不需要重算，直接對照表格即可。',
+      invalidSalt: 'Salt 格式不正確，必須是 0x 開頭的 32 bytes hex。',
+      nameMatch: '姓名雜湊相符',
+      nameMismatch: '姓名雜湊不符',
+      nationalityMatch: '國籍雜湊相符',
+      nationalityMismatch: '國籍雜湊不符',
+    },
+
     queue: {
       readErrorSome: '{count} 筆申請的狀態讀取失敗，未列入清單，可重新整理再試。',
       readErrorAll: '讀取審核佇列失敗，可能是 RPC 節點限流，請重新整理再試。',
@@ -238,6 +268,9 @@ export const admin = {
       refresh: '↺ 重新整理',
       scanRange: '掃描範圍：區塊 {from} – {to}',
       scanning: '掃描鏈上事件中…（{done}/{total}）',
+      scanningHint: '審核佇列回看 7 天，公共 RPC 單次只能查 1,000 個區塊，需要數百次查詢，可能要花上數分鐘。',
+      /** 表格中姓名／國籍欄位是雜湊時的標記。 */
+      hashedLabel: '雜湊',
 
       pendingTitle: '待審申請',
       pendingEmpty: '目前沒有待審申請。',
@@ -280,6 +313,7 @@ export const admin = {
         needsReview: '需人工複核',
         reasonUnclearJurisdiction: '轄區未列於平台清單',
         reasonWatchlistNameMatch: '姓名命中虛構 watchlist',
+        reasonHashedOffChainCheck: '姓名與國籍以雜湊上鏈，需線下比對',
       },
     },
   },

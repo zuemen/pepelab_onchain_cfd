@@ -23,6 +23,10 @@ export interface TerminalAccount {
   refresh: () => Promise<void>
 }
 
+/** 指數價讀取失敗後的重試：10 秒起跳、每次加倍、上限 60 秒；分頁在背景時暫停。 */
+const PRICE_RETRY_BASE_MS = 10_000
+const PRICE_RETRY_MAX_MS = 60_000
+
 export function useTerminalAccount(
   contracts: Contracts,
   address: string | null,
@@ -32,8 +36,12 @@ export function useTerminalAccount(
   const [usdtBal, setUsdtBal] = useState(0n)
   const [freeMgn, setFreeMgn] = useState(0n)
   const [positions, setPositions] = useState<Pos[]>([])
-  const [curPrice, setCurPrice] = useState(0n)
-  const [markPrice, setMarkPrice] = useState(0n)
+  // 價格連同它屬於哪個標的一起存：render 時比對 selAsset，換標的的那一幀不會
+  // 拿到上一個標的的價格（setState 要等 effect 跑完才生效）。
+  const [indexQuote, setIndexQuote] = useState<{ asset: string; price: bigint } | null>(null)
+  const [markQuote, setMarkQuote] = useState<{ asset: string; price: bigint } | null>(null)
+  const curPrice = indexQuote && indexQuote.asset === selAsset ? indexQuote.price : 0n
+  const markPrice = markQuote && markQuote.asset === selAsset ? markQuote.price : 0n
 
   const refresh = useCallback(async () => {
     if (!contracts || !address) return
@@ -93,21 +101,62 @@ export function useTerminalAccount(
   }, [refresh])
 
   useEffect(() => {
+    // 換標的時先清成 null（＝無價格，下單鍵因此停用）。
+    setIndexQuote(null)
+    setMarkQuote(null)
     if (!contracts) return
-    void (async () => {
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let failures = 0
+    let onVisible: (() => void) | undefined
+    const isHidden = () => typeof document !== 'undefined' && document.visibilityState === 'hidden'
+
+    const load = async () => {
+      let ok = true
       try {
         const pr = (await contracts.oracle.getPrice(selAsset)) as unknown as [bigint, bigint]
-        setCurPrice(pr[0] * 10n ** 10n)
+        if (cancelled) return
+        setIndexQuote({ asset: selAsset, price: pr[0] * 10n ** 10n })
       } catch {
-        /* 該標的不在 oracle 上 */
+        // 該標的不在 oracle 上或讀取失敗：無價格，稍後重試——不能一次失敗就永遠無法下單。
+        ok = false
+        if (!cancelled) setIndexQuote(null)
       }
       // G6 mark 價：盡力而為，舊 ABI 沒有 getMarkPrice 就退回 index。
       try {
-        setMarkPrice((await contracts.exchange.getMarkPrice(selAsset)) as bigint)
+        const mp = (await contracts.exchange.getMarkPrice(selAsset)) as bigint
+        if (!cancelled) setMarkQuote({ asset: selAsset, price: mp })
       } catch {
-        setMarkPrice(0n)
+        if (!cancelled) setMarkQuote(null)
       }
-    })()
+      if (ok) { failures = 0; return }
+      if (cancelled) return
+      failures += 1
+      const delay = Math.min(PRICE_RETRY_BASE_MS * 2 ** (failures - 1), PRICE_RETRY_MAX_MS)
+      timer = setTimeout(() => {
+        if (cancelled) return
+        // 背景分頁不打 RPC：等切回前景再重試一次。
+        if (isHidden()) {
+          onVisible = () => {
+            if (isHidden()) return
+            document.removeEventListener('visibilitychange', onVisible!)
+            onVisible = undefined
+            void load()
+          }
+          document.addEventListener('visibilitychange', onVisible)
+          return
+        }
+        void load()
+      }, delay)
+    }
+    void load()
+
+    // 切換標的或卸載：停止重試，較慢回來的舊請求也不會寫入。
+    return () => {
+      cancelled = true
+      if (timer) clearTimeout(timer)
+      if (onVisible) document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [contracts, selAsset])
 
   return { usdcBal, usdtBal, freeMgn, positions, curPrice, markPrice, refresh }

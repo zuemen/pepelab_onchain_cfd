@@ -3,6 +3,8 @@ import type { Contract } from 'ethers'
 import { useState, useEffect, useCallback } from 'react'
 
 import { safeRead } from 'src/lib/pepefi/safeRead'
+import { withRetry } from 'src/lib/pepefi/rpcBatch'
+import { settle, isMissingFunctionError } from 'src/lib/pepefi/kycSubmitGate'
 
 const ZERO = '0x0000000000000000000000000000000000000000'
 
@@ -71,13 +73,19 @@ export function useKYC(kycRegistry: Contract | null, userAddress: string | null)
       setStatus('verified')
       return
     }
-    // 還沒通過 → 分辨「送出待審」與「根本沒送」。isPending 讀不到就退回
-    // unverified：它只影響文案，不影響放行，所以不需要 fail-closed 到 unknown。
-    const p = await safeRead<boolean | null>(
-      kycRegistry.isPending(userAddress) as Promise<boolean>,
-      null,
-    )
-    setStatus(p === true ? 'pending' : 'unverified')
+    // 還沒通過 → 分辨「送出待審」與「根本沒送」。
+    // 讀取出錯一律 fail-closed 到 unknown（「無法確認」），不可當成 unverified——
+    // 那會叫一個其實在待審的使用者再送一次。只有「確定函式不存在」（線上舊版
+    // KYCRegistry 沒有 isPending：CALL_EXCEPTION 且 revert data 為空）才是 unverified：
+    // 那一版沒有審核佇列，未通過就是沒送。
+    const p = await settle(withRetry(() => kycRegistry.isPending(userAddress) as Promise<boolean>))
+    if (p.ok) {
+      setStatus(p.value ? 'pending' : 'unverified')
+    } else if (isMissingFunctionError(p.error)) {
+      setStatus('unverified')
+    } else {
+      setStatus('unknown')
+    }
   }, [kycRegistry, userAddress])
 
   useEffect(() => { void refetch() }, [refetch])

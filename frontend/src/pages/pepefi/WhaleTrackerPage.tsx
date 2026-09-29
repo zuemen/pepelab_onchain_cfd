@@ -116,6 +116,9 @@ export default function WhaleTrackerPage() {
   // 「沒讀到」不是「沒有」。實測就撞到過：getBlock 被擠掉之後畫面停在
   // scanning… 而 KPI 顯示 0 筆、$0 成交量，看起來像鏈上真的沒人在交易。
   const scanFailed = Boolean(activity.error) && !scanRange
+  // 「讀取失敗」不綁 scanRange：範圍拿到了、但有段落讀不到，空的 feed 一樣不能說成
+  // 「沒有交易」，KPI 也不能把不完整的加總當成答案。
+  const readFailed = Boolean(activity.error) || activity.failedChunks > 0
   const windowLabel = !ready
     ? t.whale.page.windowUnavailable
     : scanFailed
@@ -238,7 +241,7 @@ export default function WhaleTrackerPage() {
         openInterest={ready && !(sentiment.loading && sentiment.total === 0n) ? sentiment.total : null}
         windowLabel={windowLabel}
         thresholdLabel={thresholdLabel}
-        ready={ready && !scanFailed}
+        ready={ready && !readFailed}
         loading={ready && activity.loading && activity.opened.length === 0}
       />
 
@@ -252,11 +255,11 @@ export default function WhaleTrackerPage() {
             loading={activity.loading}
             progress={activity.progress}
             registered={registered}
-            emptyTitle={scanFailed ? t.whale.page.scanFailedTitle : undefined}
+            emptyTitle={readFailed ? t.whale.page.scanFailedTitle : undefined}
             emptyHint={
               !ready
                 ? t.whale.page.emptyDisconnected
-                : scanFailed
+                : readFailed
                   ? t.whale.page.emptyScanFailed
                   // 掃到了交易、只是都在門檻以下，跟「這段時間沒有人交易」是
                   // 兩件不同的事。把數字說出來，使用者才知道該調門檻而不是

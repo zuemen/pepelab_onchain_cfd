@@ -1,5 +1,5 @@
 import { MONO, LiveDot } from 'src/components/pepefi/brandKit'
-import { useState, useEffect, useCallback } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import { Link as RouterLink } from 'react-router';
 import { useContracts } from 'src/hooks/useContracts';
 import { usePepefiWallet } from 'src/layouts/pepefi';
@@ -13,6 +13,8 @@ import {
   chunkRanges,
   getLogsChunked,
   scanFromBlock,
+  UI_RETRIES,
+  isChunkScanAborted,
 } from 'src/lib/pepefi/chainLogs';
 import ESGBadge from 'src/components/pepefi/ESGBadge';
 import AllocationRow from 'src/components/pepefi/AllocationRow';
@@ -76,7 +78,7 @@ import { Icon } from '@iconify/react';
 //
 // 改用 lib/pepefi/chainLogs 的 scanFromBlock——它依 chainId 查出塊時間、夾住
 // 部署塊、套用分段上限,whale tracker 與 exchange activity 已經在用同一份。
-// 50,000 塊一次 getLogs 也超過多數公開節點 10,000 的上限,一併改成分段查詢。
+// 50,000 塊一次 getLogs 也超過公開節點的上限（Base Sepolia 實測 1,000 塊,見 chainLogs.ts）,一併改成分段查詢。
 
 // Expert Mode 有 12 欄,單一螢幕寬度塞不下——固定「#」「交易者」在左、「操作」在
 // 右,中間的指標欄自己橫向捲動。兩顆固定不動的欄位讓使用者橫向捲動時永遠知道
@@ -86,6 +88,17 @@ const STICKY_TRADER_W = 220;
 /** 左側固定欄與可捲動區交界處的陰影,提示「這裡還有內容,可以往右滑」。 */
 const STICKY_LEFT_EDGE_SHADOW  = '6px 0 6px -6px rgba(0,0,0,0.35)';
 const STICKY_RIGHT_EDGE_SHADOW = '-6px 0 6px -6px rgba(0,0,0,0.35)';
+
+/**
+ * 排行榜的「7 日量／7 日 PnL」與領獎台資格（7 天內平倉滿 5 筆）都是 7 天的定義，
+ * 所以這裡單獨掃 7 天，不吃全站 24 小時的預設視窗。
+ *
+ * 成本（2026-09-29 對 sepolia.base.org 實測）：7 天 = 302,401 塊 = 379 段 × 800 塊，
+ * 併發 3、每段重試 2 次，約 40 秒、0 段失敗。畫面上有段數進度條。
+ */
+const LEADERBOARD_WINDOW_SEC   = 7 * 24 * 3600;
+const LEADERBOARD_MAX_CHUNKS   = 400;
+const LEADERBOARD_CONCURRENCY  = 3;
 
 // ── Types ────────────────────────────────────────────────────────────────────
 type SortKey = LeaderboardSortKey;
@@ -124,7 +137,7 @@ const fWindow = (hours: number): string =>
 /**
  * #149 / ADR-007：Simple Mode 看到的是配置市集（無槓桿的現貨採用），Expert Mode
  * 才是交易者排行榜（CopyTracker 的槓桿跟單）。兩個是不同的商品，不是同一個畫面
- * 換兩套詞——拆成兩個元件，Simple Mode 也就不會去掃排行榜那 31 段 getLogs。
+ * 換兩套詞——拆成兩個元件，Simple Mode 也就不會去掃排行榜那 379 段 getLogs。
  */
 export default function MarketplacePage() {
   const { mode } = useMode();
@@ -138,6 +151,10 @@ function TraderLeaderboard() {
 
   const [traders,    setTraders]    = useState<TraderCard[]>([]);
   const [isLoading,  setIsLoading]  = useState(false);
+  /** 事件掃描讀不到的段數（整趟被拒時＝全部段數）。> 0 時排名只是暫定、不選領獎台。 */
+  const [scanFailedChunks, setScanFailedChunks] = useState(0);
+  /** getAllTraders 讀取失敗：空清單不能說成「沒有交易者」。 */
+  const [tradersReadFailed, setTradersReadFailed] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [sortKey,    setSortKey]    = useState<SortKey>('score');
   const [esgOnly,    setEsgOnly]    = useState(false);
@@ -146,17 +163,30 @@ function TraderLeaderboard() {
   // 實際掃了幾塊、換算成多久。寫死的常數不能再拿來當文案,因為同一個數字在
   // 不同鏈上代表的時間差六倍——footer 與空狀態都要講真話。
   const [scan, setScan] = useState<{ blocks: number; hours: number }>({ blocks: 0, hours: 0 });
-  // 7 天的視窗在 Base 上是 31 段序列 getLogs,實測 12 秒。骨架屏撐 12 秒看起來
-  // 像當掉了——把段數進度講出來,等待才是「在做事」而不是「壞了」。
+  // 7 天的視窗在 Base 上是 379 段 getLogs（公開節點單次上限 1,000 塊），併發 3 實測約
+  // 40 秒。骨架屏撐 40 秒看起來像當掉了——把段數進度講出來,等待才是「在做事」。
   const [progress, setProgress] = useState<{ done: number; total: number }>({ done: 0, total: 0 });
+  // 重新整理或離開頁面時中止還在跑的掃描，避免舊結果蓋掉新結果、也不再白打 RPC。
+  const abortRef = useRef<AbortController | null>(null);
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const fetchAll = useCallback(async () => {
     if (!contracts || !wallet.provider) return;
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
     setIsLoading(true);
     setFetchError(null);
+    setScanFailedChunks(0);
+    setTradersReadFailed(false);
     try {
       const currentBlock = await wallet.provider.getBlockNumber();
-      const fromBlock    = scanFromBlock({ chainId: wallet.chainId, currentBlock });
+      const fromBlock    = scanFromBlock({
+        chainId: wallet.chainId,
+        currentBlock,
+        windowSec: LEADERBOARD_WINDOW_SEC,
+        maxChunks: LEADERBOARD_MAX_CHUNKS,
+      });
       const scannedBlocks = currentBlock - fromBlock + 1;
       setScan({
         blocks: scannedBlocks,
@@ -164,14 +194,21 @@ function TraderLeaderboard() {
       });
 
       // 兩種事件合成**一趟**掃描:topics[0] 傳陣列就是 OR。分開查等於同樣的
-      // 答案付兩倍的 getLogs,而 7 天的視窗在 Base 上已經是 31 段。
+      // 答案付兩倍的 getLogs,而 7 天的視窗在 Base 上已經是 379 段。
       const iface    = contracts.exchange.interface;
       const topicOf  = (name: string) => iface.getEvent(name)!.topicHash;
       const chunks   = chunkRanges(fromBlock, currentBlock).length;
       setProgress({ done: 0, total: chunks });
       let doneChunks = 0;
-      const tick = () => { doneChunks += 1; setProgress({ done: doneChunks, total: chunks }); };
+      // 已中止的掃描不再回寫進度（新的一輪可能已經在跑）。
+      const tick = () => {
+        if (ac.signal.aborted) return;
+        doneChunks += 1;
+        setProgress({ done: doneChunks, total: chunks });
+      };
 
+      // 掉的段不能悄悄變成 0 交易量／0 PnL——那會讓排行榜看起來「沒人交易」。
+      let failedChunks = 0;
       const [logsRes, addressesRes] = await Promise.allSettled([
         getLogsChunked(
           wallet.provider,
@@ -182,13 +219,22 @@ function TraderLeaderboard() {
           fromBlock,
           currentBlock,
           tick,
+          () => { failedChunks += 1; },
+          { retries: UI_RETRIES, concurrency: LEADERBOARD_CONCURRENCY, signal: ac.signal },
         ),
         contracts.registry.getAllTraders() as Promise<string[]>,
       ]);
+      if (ac.signal.aborted) return;
       const rawLogs   = logsRes.status      === 'fulfilled' ? logsRes.value      : [];
       const addresses = addressesRes.status === 'fulfilled' ? addressesRes.value : [];
+      const scanFailed = logsRes.status === 'rejected' ? chunks : failedChunks;
+      setScanFailedChunks(scanFailed);
+      setTradersReadFailed(addressesRes.status === 'rejected');
+      if (scanFailed > 0) {
+        setFetchError(interpolate(t.marketplace.scanIncomplete, { count: scanFailed, total: chunks }));
+      }
       if (logsRes.status === 'rejected') {
-        console.warn('[marketplace] 事件掃描失敗,指標以 0 呈現', chunks, logsRes.reason);
+        console.warn('[marketplace] 事件掃描失敗', chunks, logsRes.reason);
       }
 
       const openedEvents: OpenedEvent[] = [];
@@ -266,11 +312,13 @@ function TraderLeaderboard() {
         })
       );
 
+      if (ac.signal.aborted) return;
       setTraders(cards);
     } catch (e) {
+      if (ac.signal.aborted || isChunkScanAborted(e)) return;
       console.error('[marketplace fetch]', e);
       setFetchError(e instanceof Error ? e.message.slice(0, 140) : 'Network error — check wallet');
-    } finally { setIsLoading(false); }
+    } finally { if (!ac.signal.aborted) setIsLoading(false); }
   }, [contracts, wallet.provider]);
 
   useEffect(() => { void fetchAll() }, [fetchAll]);
@@ -431,6 +479,8 @@ function TraderLeaderboard() {
           <IconButton
             size="small"
             onClick={() => void fetchAll()}
+            // 載入中停用：40 秒的 7 天掃描不該被連點重啟。
+            disabled={isLoading}
             color="inherit"
             aria-label={t.marketplace.refreshAria}
           >
@@ -462,6 +512,13 @@ function TraderLeaderboard() {
           )}
           <TableSkeleton rows={8} cols={11} />
         </Card>
+      ) : tradersReadFailed && filtered.length === 0 ? (
+        // 交易者清單讀不到，不是「這條鏈上沒有交易者」。
+        <EmptyState
+          icon="⚠️"
+          title={t.marketplace.tradersReadFailed.title}
+          description={t.marketplace.tradersReadFailed.description}
+        />
       ) : filtered.length === 0 ? (
         <EmptyState
           icon="🎯"
@@ -486,7 +543,12 @@ function TraderLeaderboard() {
         </Typography>
       ) : (
         <>
-          {podium.length > 0 ? (
+          {scanFailedChunks > 0 ? (
+            // 有段落讀不到時 7 日指標偏低、不完整，不能據此頒領獎台。
+            <Alert severity="warning" variant="outlined">
+              {t.marketplace.podium.hiddenIncomplete}
+            </Alert>
+          ) : podium.length > 0 ? (
             <Podium
               podium={podium}
               esgOf={esgFor}
@@ -518,6 +580,11 @@ function TraderLeaderboard() {
                     }}
                   >
                     {t.marketplace.table.rank}
+                    {scanFailedChunks > 0 && (
+                      <Box component="span" sx={{ display: 'block', fontSize: 10, color: 'warning.main' }}>
+                        {t.marketplace.table.provisional}
+                      </Box>
+                    )}
                   </TableCell>
                   <TableCell
                     sx={{

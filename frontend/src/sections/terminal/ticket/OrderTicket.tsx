@@ -86,6 +86,9 @@ export function OrderTicket({
   // 比實際更寬鬆——正好是會害人的那個方向。
   const liq = estimateLiquidationPrice({ entryPrice: curPrice, isLong, leverage: BigInt(lev) })
   const overFree = marginBig !== null && marginBig > freeMgn
+  // 讀不到鏈上指數價（0 = 未讀到或從未寫入）時不讓送單：清算價算不出來，
+  // 鏈上也會 revert。原因寫在按鈕上方，不只是把按鈕變灰。
+  const noPrice = curPrice <= 0n
   const staleBlocked = staleNotice !== null
 
   const openPosition = async () => {
@@ -102,6 +105,10 @@ export function OrderTicket({
     // 按鈕已經 disabled，這裡是第二道防線：鍵盤送出或狀態剛好在重繪的空窗。
     if (staleNotice) {
       notify(staleNotice, false)
+      return
+    }
+    if (noPrice) {
+      notify(t.terminal.ticket.noPriceNotice, false)
       return
     }
     setBusy(true)
@@ -250,10 +257,10 @@ export function OrderTicket({
           k={t.terminal.ticket.notional}
           v={fToken(fromUnits(notional, 18), STABLE_LABEL, { dp: 2 })}
         />
-        <Row k={t.terminal.ticket.entryOracle} v={fUsd(fromUnits(curPrice, 18))} />
+        <Row k={t.terminal.ticket.entryOracle} v={noPrice ? '—' : fUsd(fromUnits(curPrice, 18))} />
         {/* 清算 = 強制平倉，但殘值（扣掉虧損／費用／清算獎勵／liquidationPenaltyBps）
             會退還給倉位所有者，不再是 100% 沒收。 */}
-        <Row k={t.terminal.ticket.estLiquidation} v={fUsd(fromUnits(liq, 18))} color={C.red} />
+        <Row k={t.terminal.ticket.estLiquidation} v={noPrice ? '—' : fUsd(fromUnits(liq, 18))} color={C.red} />
         <Row
           k={t.terminal.ticket.onLiquidation}
           v={t.terminal.ticket.onLiquidationValue}
@@ -287,6 +294,12 @@ export function OrderTicket({
         </Box>
       )}
 
+      {!staleNotice && noPrice && (
+        <Box sx={{ ...monoCss, fontSize: 11.5, color: C.red, ...panel, borderColor: C.line2, p: 1 }}>
+          {t.terminal.ticket.noPriceNotice}
+        </Box>
+      )}
+
       {riskOpen ? (
         <Alert
           severity="info"
@@ -309,7 +322,7 @@ export function OrderTicket({
 
       <Button
         onClick={() => void openPosition()}
-        disabled={busy || !margin || overFree || kycBlocked || staleBlocked}
+        disabled={busy || !margin || overFree || kycBlocked || staleBlocked || noPrice}
         sx={{
           py: 1.4,
           borderRadius: '10px',
