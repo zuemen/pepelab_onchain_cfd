@@ -2,7 +2,8 @@ name: Oracle Health
 
 # 獨立於 keeper 的鏈上事實檢查。keeper 沒被排到、被停用、或悄悄寫入 0 筆時，
 # 它自己不會發出訊號；這個 job 只看鏈上的 updatedAt，所以上述任何一種都會被抓到。
-# job 失敗會觸發 GitHub 對 repo 管理者的預設通知。
+# job 失敗會觸發 GitHub 對 repo 管理者的預設通知；另外 STALE 時會開／更新一張固定
+# 標題的 issue，恢復後自動關閉（見 keeper/alert.ts）。
 #
 # 這個 job **不持有私鑰**、只讀鏈上狀態，所以不需要與 keeper 互斥。
 on:
@@ -12,6 +13,11 @@ on:
 
 permissions:
   contents: read
+  # 唯一新增的權限：STALE 時開 issue、已開著就留言、恢復後關閉（keeper/alert-run.ts）。
+  # 理由：排程 job 失敗的預設通知只寄給最後改這支 workflow 的人，且不帶「哪些資產、
+  # 從何時開始、何時恢復」；issue 是可稽核的事故時間線。GITHUB_TOKEN 只拿到
+  # issues，不拿 contents: write / actions / pull-requests，這個 job 也不持有任何私鑰。
+  issues: write
 
 # 巡檢彼此互斥即可（避免排程與手動 dispatch 疊在一起送出兩份重複告警），
 # 但不與 keeper 共用 group —— 健檢被 keeper 擋住就失去「獨立第二道網」的意義。
@@ -42,8 +48,21 @@ jobs:
           cache-dependency-path: agent/package-lock.json
       - working-directory: agent
         run: npm ci --no-audit --no-fund
-      - working-directory: agent
+      - id: health
+        working-directory: agent
+        env:
+          HEALTH_REPORT_PATH: ${{ runner.temp }}/oracle-health.json
         run: npx tsx keeper/health.ts
+      # 健檢成功或失敗都要跑（失敗＝STALE 或健檢本身壞了，由報告的 status 區分）；
+      # 前面的 npm ci 失敗時 health 是 skipped，不動 issue。標題固定，靠它找回同一張 issue。
+      - name: Alert via issue
+        if: always() && (steps.health.outcome == 'success' || steps.health.outcome == 'failure')
+        working-directory: agent
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEALTH_REPORT_PATH: ${{ runner.temp }}/oracle-health.json
+          ALERT_TITLE: "[oracle-health] Base Sepolia 價格過期"
+        run: npx tsx keeper/alert-run.ts
 
   sepolia:
     runs-on: ubuntu-latest
@@ -63,5 +82,18 @@ jobs:
           cache-dependency-path: agent/package-lock.json
       - working-directory: agent
         run: npm ci --no-audit --no-fund
-      - working-directory: agent
+      - id: health
+        working-directory: agent
+        env:
+          HEALTH_REPORT_PATH: ${{ runner.temp }}/oracle-health.json
         run: npx tsx keeper/health.ts
+      # 健檢成功或失敗都要跑（失敗＝STALE 或健檢本身壞了，由報告的 status 區分）；
+      # 前面的 npm ci 失敗時 health 是 skipped，不動 issue。標題固定，靠它找回同一張 issue。
+      - name: Alert via issue
+        if: always() && (steps.health.outcome == 'success' || steps.health.outcome == 'failure')
+        working-directory: agent
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEALTH_REPORT_PATH: ${{ runner.temp }}/oracle-health.json
+          ALERT_TITLE: "[oracle-health] Sepolia 價格過期"
+        run: npx tsx keeper/alert-run.ts
