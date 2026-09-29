@@ -32,22 +32,27 @@ Source of truth: `frontend/src/contracts/addresses.ts`
 
 | Contract | Address |
 |---|---|
-| PerpetualExchange | `0xef75eca6514ce96b18382e921ac6190a0cf8c072` |
+| PerpetualExchange | `0x827eA0c62a32e995927101259042F8A27D99124D` |
 | MockOracle | `0xed90c4f3b48213888870c1fc8486921cb0990aa3` |
 | InsuranceVault | `0xb364e2e3e1e7a2b033ef03a4accef42066f3d812` |
 | FeeRouter | `0x00f6cf0113399a7a451c7f85fe094a28092d3e0c` |
 | MockUSDC | `0x69fd695bc7c3afdb35aba35cd6890c506400b035` |
 | MockSwapRouter | `0xc9b0e5c219aa1b3eb00e92fd9a883b182f0ae8ae` |
-| CopyTracker | `0x96357144fe56c5e0e33e8046be2a63f45528b210` |
-| StrategyRegistry | `0x54e8c43f9eb151bb8dd6e61d16a969c4d0e73915` |
+| CopyTracker | `0xC9e91f7D36e910C58042164032c625427b23CCB2` |
+| StrategyRegistry | `0xA103de184A5C76d7b70fB4e908F252199e004b95` |
 | TraderStake | `0x01aeb530bcfc69f036309ffe55acc7ea6c5a28fe` |
-| AgentSessionManager | `0x4E7cC1B79B72ab72531a6C790e14304370f70764` |
+| AgentSessionManager | `0xdF9C1E53523568709f65Afe3C4AD2E6a6D99d14B` |
 | KYCRegistry | `0x5d95fd9e7a5f80e5369e24783f1f98e0f952360d` |
 
 > **AgentSessionManager 位址更正（2026-08-06）**：本表先前寫舊的
 > `0x5Ebcc64C712C5a26119789dCbD0753981dc518E8`，與前端／agent 實際使用的位址不符。
 > 舊 manager **沒有 per-session 資產白名單**，照舊值建 session 等於少一道資產閘門。
 > 舊 manager 目前仍在 exchange 的 `authorizedAgents` 名單中且從未撤權。
+>
+> **2026-09-29 再更新**：PerpetualExchange / StrategyRegistry / CopyTracker / AgentSessionManager
+> 已隨 `Redeploy129Exchange` 重新部署（來源 `contracts/broadcast/Redeploy129Exchange.s.sol/84532/run-latest.json`，
+> 與 `frontend/src/contracts/addresses.ts` 一致）。上一版的 manager `0x4E7cC1B7…` 綁的是已退役的
+> exchange `0xEf75…c072`，不要再用。
 
 ## Features
 

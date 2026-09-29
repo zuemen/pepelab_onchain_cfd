@@ -32,9 +32,9 @@ import { parseOracleBody } from "./x402-autonomous.ts";
 const API = (process.env.X402_API_URL ?? "https://agent-git-master-zuemens-projects.vercel.app").replace(/\/$/, "");
 const PK = process.env.AGENT_PRIVATE_KEY?.trim();
 const RPC = process.env.BASE_SEPOLIA_RPC_URL?.trim() || "https://sepolia.base.org";
-// session id 是每個 manager 各自獨立的。新的 AgentSessionManager
-// (0x4E7cC1B7…) 目前只有 #0：到期 2027-07、白名單 sBTC+sETH。#6 只存在於
-// 舊的 0x5Ebcc64C…（無資產白名單），兩者不可混用。
+// session id 是每個 manager 各自獨立的。現行 AgentSessionManager
+// (0xdF9C1E53523568709f65Afe3C4AD2E6a6D99d14B，綁現行 exchange）目前只有 #0（到期 2027-07）。
+// 舊的 0x4E7cC1B7… / 0x5Ebcc64C… 上的 session id 在這裡無效，不可混用。
 const SESSION_ID = Number(process.env.DEMO_SESSION_ID ?? "0");
 
 // 常見輸入正規化成鏈上資產代號（sBTC…）。

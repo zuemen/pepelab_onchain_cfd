@@ -13,6 +13,7 @@ import {
   getSessionManagerAddress,
 } from "./provider.ts";
 import { ADDRESSES, assetIdOf } from "./addresses.ts";
+import { AGENT_SESSION_MANAGER_ABI } from "./abis.ts";
 import { resolveSettlementToken } from "./env.ts";
 import {
   verifyAuthorizationVC,
@@ -101,6 +102,30 @@ export interface WriteResult {
   agent?: string;
   sessionId?: number;
   detail?: Record<string, unknown>;
+}
+
+const SESSION_MANAGER_IFACE = new ethers.Interface(AGENT_SESSION_MANAGER_ABI);
+
+/**
+ * 從 receipt logs 解出 `SessionOpenedPosition.positionId`。只接受 `managerAddress`
+ * 發出的 log（別的合約剛好有同名同簽章的事件也不會被誤認）。找不到回 undefined。
+ */
+export function parseSessionOpenedPositionId(
+  logs: ReadonlyArray<{ address: string; topics: ReadonlyArray<string>; data: string }>,
+  managerAddress: string,
+): string | undefined {
+  const mgr = managerAddress.toLowerCase();
+  for (const log of logs) {
+    if (log.address.toLowerCase() !== mgr) continue;
+    let parsed: ethers.LogDescription | null = null;
+    try {
+      parsed = SESSION_MANAGER_IFACE.parseLog({ topics: [...log.topics], data: log.data });
+    } catch {
+      parsed = null;
+    }
+    if (parsed?.name === "SessionOpenedPosition") return parsed.args.positionId.toString();
+  }
+  return undefined;
 }
 
 /** 取得綁 signer 的 session manager；缺金鑰/位址時回結構化錯誤。 */
@@ -252,19 +277,11 @@ export async function openPositionForSession(params: {
     );
     const receipt = await tx.wait();
 
-    // 從 SessionOpenedPosition 事件解出 positionId。
-    let positionId: string | undefined;
-    for (const log of receipt?.logs ?? []) {
-      try {
-        const parsed = mgr.interface.parseLog(log);
-        if (parsed?.name === "SessionOpenedPosition") {
-          positionId = parsed.args.positionId.toString();
-          break;
-        }
-      } catch {
-        /* 非本合約事件，略過 */
-      }
-    }
+    // 從 SessionOpenedPosition 事件解出 positionId（只認本 manager 發出的）。
+    const positionId = parseSessionOpenedPositionId(
+      receipt?.logs ?? [],
+      await mgr.getAddress(),
+    );
 
     return {
       ok: true,
