@@ -142,12 +142,12 @@ function CommitmentChecker({ apps }: { apps: ReviewApplication[] }) {
         {vt.body}
       </Typography>
       <Box sx={{ display: 'grid', gap: 1.5, gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' } }}>
-        <TextField size="small" label={vt.address} value={address} onChange={e => { setAddress(e.target.value); setResult(null) }}
+        <TextField size="small" autoComplete="off" label={vt.address} value={address} onChange={e => { setAddress(e.target.value); setResult(null) }}
           slotProps={{ htmlInput: { style: { fontFamily: MONO } } }} />
-        <TextField size="small" label={vt.salt} value={salt} onChange={e => { setSalt(e.target.value); setResult(null) }}
+        <TextField size="small" autoComplete="off" label={vt.salt} value={salt} onChange={e => { setSalt(e.target.value); setResult(null) }}
           slotProps={{ htmlInput: { style: { fontFamily: MONO } } }} />
-        <TextField size="small" label={vt.name} value={name} onChange={e => { setName(e.target.value); setResult(null) }} />
-        <TextField size="small" label={vt.nationality} value={nationality} onChange={e => { setNationality(e.target.value); setResult(null) }} />
+        <TextField size="small" autoComplete="off" label={vt.name} value={name} onChange={e => { setName(e.target.value); setResult(null) }} />
+        <TextField size="small" autoComplete="off" label={vt.nationality} value={nationality} onChange={e => { setNationality(e.target.value); setResult(null) }} />
       </Box>
       <Box sx={{ mt: 1.5, display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
         <Button variant="outlined" onClick={check} disabled={!address.trim() || !salt.trim() || !name.trim() || !nationality.trim()}>

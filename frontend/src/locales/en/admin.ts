@@ -227,7 +227,7 @@ export const admin: Catalog['admin'] = {
 
     verifyTool: {
       title: 'Off-chain check (recompute hashes)',
-      body: 'Ask the applicant to present the salt, name and nationality code off-chain and paste them below; the browser recomputes keccak256(salt ‖ normalized value) and compares it with the on-chain hashes. Nothing is sent or stored.',
+      body: 'Ask the applicant to present the salt, name and nationality code off-chain and paste them below; the browser recomputes keccak256(salt ‖ normalized value) and compares it with the on-chain hashes. It compares against the latest application from that address within the scan window of the queue (the last 7 days); earlier submissions are not checked. Nothing is sent or stored.',
       address: 'Applicant address',
       salt: 'Salt (0x + 64 hex)',
       name: 'Name',
