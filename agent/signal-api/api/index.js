@@ -15125,6 +15125,21 @@ var PERPETUAL_EXCHANGE_ABI = [
   "function freeMargin(address) view returns (uint256)",
   "function getPosition(uint256 positionId) view returns (tuple(uint256 id, address owner, bytes32 asset, bool isLong, uint256 entryPrice, uint256 margin, uint256 leverage, uint256 openedAt, uint256 closedAt, int256 realizedPnL, bool isOpen, address copiedFrom, int256 entryFundingIndex))"
 ];
+var AGENT_SESSION_MANAGER_ABI = [
+  "function nextSessionId() view returns (uint256)",
+  "function sessions(uint256) view returns (address user, address agent, uint256 maxMarginPerTrade, uint256 totalMarginBudget, uint256 spentMargin, uint256 maxLeverage, uint256 expiry, bool revoked)",
+  "function openPositionForSession(uint256 sessionId, bytes32 asset, bool isLong, uint256 margin, uint256 leverage, address copiedFrom) payable returns (uint256 positionId)",
+  "function closePositionForSession(uint256 sessionId, uint256 positionId)",
+  // 2026-09-29（P0）：事件以前不在這裡。write.ts 用這份 ABI 建的 Contract 去
+  // `interface.parseLog(log)`，ethers v6 對「ABI 裡沒有的事件」是回 null（不丟錯），
+  // 於是 SessionOpenedPosition 永遠解不出來 → positionId 永遠 undefined →
+  // audit-verify 判定「opened=true 但 positionId 無法解析」。完整 JSON ABI
+  // （frontend/.../AgentSessionManager.json）雖然有這個事件，但 agent 端從沒用它。
+  // 簽章必須與 contracts/src/AgentSessionManager.sol 完全一致（indexed 也算）。
+  "event SessionCreated(uint256 indexed sessionId, address indexed user, address indexed agent, uint256 totalMarginBudget, uint256 expiry)",
+  "event SessionOpenedPosition(uint256 indexed sessionId, address indexed agent, uint256 positionId, uint256 margin)",
+  "event SessionClosedPosition(uint256 indexed sessionId, address indexed agent, uint256 positionId)"
+];
 var MOCK_ORACLE_ABI = [
   "function getPrice(bytes32 assetId) view returns (uint256 price, uint256 updatedAt)",
   "function isStale(bytes32 assetId) view returns (bool)"
@@ -27853,15 +27868,15 @@ var Block = class {
    *  This should generally not be necessary as the unless implementing a
    *  low-level library.
    */
-  constructor(block, provider2) {
+  constructor(block, provider3) {
     this.#transactions = block.transactions.map((tx) => {
       if (typeof tx !== "string") {
-        return new TransactionResponse(tx, provider2);
+        return new TransactionResponse(tx, provider3);
       }
       return tx;
     });
     defineProperties(this, {
-      provider: provider2,
+      provider: provider3,
       hash: getValue2(block.hash),
       number: block.number,
       timestamp: block.timestamp,
@@ -28104,8 +28119,8 @@ var Log = class {
   /**
    *  @_ignore:
    */
-  constructor(log, provider2) {
-    this.provider = provider2;
+  constructor(log, provider3) {
+    this.provider = provider3;
     const topics = Object.freeze(log.topics.slice());
     defineProperties(this, {
       transactionHash: log.transactionHash,
@@ -28269,9 +28284,9 @@ var TransactionReceipt = class {
   /**
    *  @_ignore:
    */
-  constructor(tx, provider2) {
+  constructor(tx, provider3) {
     this.#logs = Object.freeze(tx.logs.map((log) => {
-      return new Log(log, provider2);
+      return new Log(log, provider3);
     }));
     let gasPrice = BN_09;
     if (tx.effectiveGasPrice != null) {
@@ -28280,7 +28295,7 @@ var TransactionReceipt = class {
       gasPrice = tx.gasPrice;
     }
     defineProperties(this, {
-      provider: provider2,
+      provider: provider3,
       to: tx.to,
       from: tx.from,
       contractAddress: tx.contractAddress,
@@ -28540,8 +28555,8 @@ var TransactionResponse = class _TransactionResponse {
   /**
    *  @_ignore:
    */
-  constructor(tx, provider2) {
-    this.provider = provider2;
+  constructor(tx, provider3) {
+    this.provider = provider3;
     this.blockNumber = tx.blockNumber != null ? tx.blockNumber : null;
     this.blockHash = tx.blockHash != null ? tx.blockHash : null;
     this.hash = tx.hash;
@@ -28969,8 +28984,8 @@ var ContractTransactionReceipt = class extends TransactionReceipt {
   /**
    *  @_ignore:
    */
-  constructor(iface, provider2, tx) {
-    super(tx, provider2);
+  constructor(iface, provider3, tx) {
+    super(tx, provider3);
     this.#iface = iface;
   }
   /**
@@ -28996,8 +29011,8 @@ var ContractTransactionResponse = class extends TransactionResponse {
   /**
    *  @_ignore:
    */
-  constructor(iface, provider2, tx) {
-    super(tx, provider2);
+  constructor(iface, provider3, tx) {
+    super(tx, provider3);
     this.#iface = iface;
   }
   /**
@@ -29207,8 +29222,8 @@ function buildWrappedFallback(contract) {
     const runner = contract.runner;
     assert(canSend(runner), "contract runner does not support sending transactions", "UNSUPPORTED_OPERATION", { operation: "sendTransaction" });
     const tx = await runner.sendTransaction(await populateTransaction(overrides));
-    const provider2 = getProvider(contract.runner);
-    return new ContractTransactionResponse(contract.interface, provider2, tx);
+    const provider3 = getProvider(contract.runner);
+    return new ContractTransactionResponse(contract.interface, provider3, tx);
   };
   const estimateGas2 = async function(overrides) {
     const runner = getRunner(contract.runner, "estimateGas");
@@ -29265,8 +29280,8 @@ function buildWrappedMethod(contract, key) {
     const runner = contract.runner;
     assert(canSend(runner), "contract runner does not support sending transactions", "UNSUPPORTED_OPERATION", { operation: "sendTransaction" });
     const tx = await runner.sendTransaction(await populateTransaction(...args));
-    const provider2 = getProvider(contract.runner);
-    return new ContractTransactionResponse(contract.interface, provider2, tx);
+    const provider3 = getProvider(contract.runner);
+    return new ContractTransactionResponse(contract.interface, provider3, tx);
   };
   const estimateGas2 = async function(...args) {
     const runner = getRunner(contract.runner, "estimateGas");
@@ -29433,8 +29448,8 @@ async function hasSub(contract, event) {
   return subs.get((await getSubInfo(contract, event)).tag) || null;
 }
 async function getSub(contract, operation, event) {
-  const provider2 = getProvider(contract.runner);
-  assert(provider2, "contract runner does not support subscribing", "UNSUPPORTED_OPERATION", { operation });
+  const provider3 = getProvider(contract.runner);
+  assert(provider3, "contract runner does not support subscribing", "UNSUPPORTED_OPERATION", { operation });
   const { fragment, tag, topics } = await getSubInfo(contract, event);
   const { addr, subs } = getInternal(contract);
   let sub = subs.get(tag);
@@ -29466,7 +29481,7 @@ async function getSub(contract, operation, event) {
       if (starting.length) {
         return;
       }
-      starting.push(provider2.on(filter, listener));
+      starting.push(provider3.on(filter, listener));
     };
     const stop = async () => {
       if (starting.length == 0) {
@@ -29475,7 +29490,7 @@ async function getSub(contract, operation, event) {
       let started = starting;
       starting = [];
       await Promise.all(started);
-      provider2.off(filter, listener);
+      provider3.off(filter, listener);
     };
     sub = { tag, listeners: [], start, stop };
     subs.set(tag, sub);
@@ -29567,8 +29582,8 @@ var BaseContract = class _BaseContract {
     let addr = null;
     let deployTx = null;
     if (_deployTx) {
-      const provider2 = getProvider(runner);
-      deployTx = new ContractTransactionResponse(this.interface, provider2, _deployTx);
+      const provider3 = getProvider(runner);
+      deployTx = new ContractTransactionResponse(this.interface, provider3, _deployTx);
     }
     let subs = /* @__PURE__ */ new Map();
     if (typeof target === "string") {
@@ -29673,9 +29688,9 @@ var BaseContract = class _BaseContract {
    *  Return the deployed bytecode or null if no bytecode is found.
    */
   async getDeployedCode() {
-    const provider2 = getProvider(this.runner);
-    assert(provider2, "runner does not support .provider", "UNSUPPORTED_OPERATION", { operation: "getDeployedCode" });
-    const code = await provider2.getCode(await this.getAddress());
+    const provider3 = getProvider(this.runner);
+    assert(provider3, "runner does not support .provider", "UNSUPPORTED_OPERATION", { operation: "getDeployedCode" });
+    const code = await provider3.getCode(await this.getAddress());
     if (code === "0x") {
       return null;
     }
@@ -29695,8 +29710,8 @@ var BaseContract = class _BaseContract {
     if (code != null) {
       return this;
     }
-    const provider2 = getProvider(this.runner);
-    assert(provider2 != null, "contract runner does not support .provider", "UNSUPPORTED_OPERATION", { operation: "waitForDeployment" });
+    const provider3 = getProvider(this.runner);
+    assert(provider3 != null, "contract runner does not support .provider", "UNSUPPORTED_OPERATION", { operation: "waitForDeployment" });
     return new Promise((resolve2, reject) => {
       const checkCode = async () => {
         try {
@@ -29704,7 +29719,7 @@ var BaseContract = class _BaseContract {
           if (code2 != null) {
             return resolve2(this);
           }
-          provider2.once("block", checkCode);
+          provider3.once("block", checkCode);
         } catch (error) {
           reject(error);
         }
@@ -29781,9 +29796,9 @@ var BaseContract = class _BaseContract {
     const address = addr ? addr : await addrPromise;
     const { fragment, topics } = await getSubInfo(this, event);
     const filter = { address, topics, fromBlock, toBlock };
-    const provider2 = getProvider(this.runner);
-    assert(provider2, "contract runner does not have a provider", "UNSUPPORTED_OPERATION", { operation: "queryFilter" });
-    return (await provider2.getLogs(filter)).map((log) => {
+    const provider3 = getProvider(this.runner);
+    assert(provider3, "contract runner does not have a provider", "UNSUPPORTED_OPERATION", { operation: "queryFilter" });
+    return (await provider3.getLogs(filter)).map((log) => {
       let foundFragment = fragment;
       if (foundFragment == null) {
         try {
@@ -29798,7 +29813,7 @@ var BaseContract = class _BaseContract {
           return new UndecodedEventLog(log, error);
         }
       }
-      return new Log(log, provider2);
+      return new Log(log, provider3);
     });
   }
   /**
@@ -30074,7 +30089,7 @@ var MulticoinProviderPlugin = class {
   constructor(name) {
     defineProperties(this, { name });
   }
-  connect(provider2) {
+  connect(provider3) {
     return this;
   }
   /**
@@ -30122,8 +30137,8 @@ var EnsResolver = class _EnsResolver {
   // For EIP-2544 names, the ancestor that provided the resolver
   #supports2544;
   #resolver;
-  constructor(provider2, address, name, supportsWildcard) {
-    defineProperties(this, { provider: provider2, address, name });
+  constructor(provider3, address, name, supportsWildcard) {
+    defineProperties(this, { provider: provider3, address, name });
     this.#supports2544 = supportsWildcard != null ? Promise.resolve(supportsWildcard) : null;
     this.#resolver = new Contract(address, [
       "function supportsInterface(bytes4) view returns (bool)",
@@ -30133,7 +30148,7 @@ var EnsResolver = class _EnsResolver {
       "function text(bytes32, string) view returns (string)",
       "function contenthash(bytes32) view returns (bytes)",
       "function name(bytes32) view returns (string)"
-    ], provider2);
+    ], provider3);
   }
   /**
    *  Resolves to true if the resolver supports wildcard resolution.
@@ -30429,8 +30444,8 @@ var EnsResolver = class _EnsResolver {
     }
     return { linkage, url: null };
   }
-  static async getEnsAddress(provider2) {
-    const network = await provider2.getNetwork();
+  static async getEnsAddress(provider3) {
+    const network = await provider3.getNetwork();
     const ensPlugin = network.getPlugin("org.ethers.plugins.network.Ens");
     assert(ensPlugin, "network does not support ENS", "UNSUPPORTED_OPERATION", {
       operation: "getEnsAddress",
@@ -30438,20 +30453,20 @@ var EnsResolver = class _EnsResolver {
     });
     return ensPlugin.address;
   }
-  static async getUniversalResolverAddress(provider2) {
-    const network = await provider2.getNetwork();
+  static async getUniversalResolverAddress(provider3) {
+    const network = await provider3.getNetwork();
     const ensPlugin = network.getPlugin("org.ethers.plugins.network.Ens");
     if (ensPlugin && ensPlugin.universalResolver) {
       return ensPlugin.universalResolver;
     }
     return null;
   }
-  static async #getResolver(provider2, name) {
-    const ensAddr = await _EnsResolver.getEnsAddress(provider2);
+  static async #getResolver(provider3, name) {
+    const ensAddr = await _EnsResolver.getEnsAddress(provider3);
     try {
       const contract = new Contract(ensAddr, [
         "function resolver(bytes32) view returns (address)"
-      ], provider2);
+      ], provider3);
       const addr = await contract.resolver(namehash(name), {
         enableCcipRead: true
       });
@@ -30464,12 +30479,12 @@ var EnsResolver = class _EnsResolver {
     }
     return null;
   }
-  static async lookupAddress(provider2, address, _coinType) {
+  static async lookupAddress(provider3, address, _coinType) {
     const coinType = _coinType == null ? BN_60 : getBigInt(_coinType);
     if (isEvmCoinType(coinType)) {
       address = getAddress(address);
     }
-    const universal = await createUniversal(provider2);
+    const universal = await createUniversal(provider3);
     if (universal) {
       try {
         const result = await universal.reverse(address, coinType, {
@@ -30491,7 +30506,7 @@ var EnsResolver = class _EnsResolver {
       operation: "lookupAddress"
     });
     try {
-      const resolver = await _EnsResolver.fromName(provider2, `${address.toLowerCase().substring(2)}.addr.reverse`);
+      const resolver = await _EnsResolver.fromName(provider3, `${address.toLowerCase().substring(2)}.addr.reverse`);
       if (!resolver) {
         return null;
       }
@@ -30499,7 +30514,7 @@ var EnsResolver = class _EnsResolver {
       if (name == null || !isValidName(name)) {
         return null;
       }
-      const check = await provider2.resolveName(name);
+      const check = await provider3.resolveName(name);
       if (check !== address) {
         return null;
       }
@@ -30518,8 +30533,8 @@ var EnsResolver = class _EnsResolver {
    *  Resolve to the ENS resolver for %%name%% using %%provider%% or
    *  ``null`` if unconfigured.
    */
-  static async fromName(provider2, name) {
-    const universal = await createUniversal(provider2);
+  static async fromName(provider3, name) {
+    const universal = await createUniversal(provider3);
     if (universal) {
       let dnsName;
       try {
@@ -30528,7 +30543,7 @@ var EnsResolver = class _EnsResolver {
         return null;
       }
       const result = await universal.requireResolver(dnsName);
-      return new _EnsResolver(provider2, result.resolver, name, result.extended);
+      return new _EnsResolver(provider3, result.resolver, name, result.extended);
     }
     let currentName = name;
     while (true) {
@@ -30538,9 +30553,9 @@ var EnsResolver = class _EnsResolver {
       if (name !== "eth" && currentName === "eth") {
         return null;
       }
-      const addr = await _EnsResolver.#getResolver(provider2, currentName);
+      const addr = await _EnsResolver.#getResolver(provider3, currentName);
       if (addr != null) {
-        const resolver = new _EnsResolver(provider2, addr, name);
+        const resolver = new _EnsResolver(provider3, addr, name);
         if (currentName !== name && !await resolver.supportsWildcard()) {
           return null;
         }
@@ -30550,8 +30565,8 @@ var EnsResolver = class _EnsResolver {
     }
   }
 };
-async function createUniversal(provider2) {
-  const address = await EnsResolver.getUniversalResolverAddress(provider2);
+async function createUniversal(provider3) {
+  const address = await EnsResolver.getUniversalResolverAddress(provider3);
   if (!address) {
     return null;
   }
@@ -30564,7 +30579,7 @@ async function createUniversal(provider2) {
     "error ResolverNotContract(bytes name, address resolver)",
     "error ReverseAddressMismatch(string primary, bytes primaryAddress)",
     "error HttpError(uint16 statusCode, string statusMessage)"
-  ], provider2);
+  ], provider3);
 }
 
 // ../node_modules/ethers/lib.esm/providers/format.js
@@ -30951,8 +30966,8 @@ var FeeDataNetworkPlugin = class _FeeDataNetworkPlugin extends NetworkPlugin {
   /**
    *  Resolves to the fee data.
    */
-  async getFeeData(provider2) {
-    return await this.#feeDataFunc(provider2);
+  async getFeeData(provider3) {
+    return await this.#feeDataFunc(provider3);
   }
   clone() {
     return new _FeeDataNetworkPlugin(this.#feeDataFunc);
@@ -31230,7 +31245,7 @@ function parseUnits2(_value, decimals) {
   return BigInt(comps[0] + comps[1]);
 }
 function getGasStationPlugin(url) {
-  return new FetchUrlFeeDataNetworkPlugin(url, async (fetchFeeData, provider2, request) => {
+  return new FetchUrlFeeDataNetworkPlugin(url, async (fetchFeeData, provider3, request) => {
     request.setHeader("User-Agent", "ethers");
     let response;
     try {
@@ -31345,8 +31360,8 @@ var PollingBlockSubscriber = class {
   /**
    *  Create a new **PollingBlockSubscriber** attached to %%provider%%.
    */
-  constructor(provider2) {
-    this.#provider = provider2;
+  constructor(provider3) {
+    this.#provider = provider3;
     this.#poller = null;
     this.#interval = 4e3;
     this.#blockNumber = -2;
@@ -31414,8 +31429,8 @@ var OnBlockSubscriber = class {
   /**
    *  Create a new **OnBlockSubscriber** attached to %%provider%%.
    */
-  constructor(provider2) {
-    this.#provider = provider2;
+  constructor(provider3) {
+    this.#provider = provider3;
     this.#running = false;
     this.#poll = (blockNumber) => {
       this._poll(blockNumber, this.#provider);
@@ -31424,7 +31439,7 @@ var OnBlockSubscriber = class {
   /**
    *  Called on every new block.
    */
-  async _poll(blockNumber, provider2) {
+  async _poll(blockNumber, provider3) {
     throw new Error("sub-classes must override this");
   }
   start() {
@@ -31452,8 +31467,8 @@ var OnBlockSubscriber = class {
 var PollingBlockTagSubscriber = class extends OnBlockSubscriber {
   #tag;
   #lastBlock;
-  constructor(provider2, tag) {
-    super(provider2);
+  constructor(provider3, tag) {
+    super(provider3);
     this.#tag = tag;
     this.#lastBlock = -2;
   }
@@ -31463,26 +31478,26 @@ var PollingBlockTagSubscriber = class extends OnBlockSubscriber {
     }
     super.pause(dropWhilePaused);
   }
-  async _poll(blockNumber, provider2) {
-    const block = await provider2.getBlock(this.#tag);
+  async _poll(blockNumber, provider3) {
+    const block = await provider3.getBlock(this.#tag);
     if (block == null) {
       return;
     }
     if (this.#lastBlock === -2) {
       this.#lastBlock = block.number;
     } else if (block.number > this.#lastBlock) {
-      provider2.emit(this.#tag, block.number);
+      provider3.emit(this.#tag, block.number);
       this.#lastBlock = block.number;
     }
   }
 };
 var PollingOrphanSubscriber = class extends OnBlockSubscriber {
   #filter;
-  constructor(provider2, filter) {
-    super(provider2);
+  constructor(provider3, filter) {
+    super(provider3);
     this.#filter = copy(filter);
   }
-  async _poll(blockNumber, provider2) {
+  async _poll(blockNumber, provider3) {
     throw new Error("@TODO");
     console.log(this.#filter);
   }
@@ -31493,14 +31508,14 @@ var PollingTransactionSubscriber = class extends OnBlockSubscriber {
    *  Create a new **PollingTransactionSubscriber** attached to
    *  %%provider%%, listening for %%hash%%.
    */
-  constructor(provider2, hash4) {
-    super(provider2);
+  constructor(provider3, hash4) {
+    super(provider3);
     this.#hash = hash4;
   }
-  async _poll(blockNumber, provider2) {
-    const tx = await provider2.getTransactionReceipt(this.#hash);
+  async _poll(blockNumber, provider3) {
+    const tx = await provider3.getTransactionReceipt(this.#hash);
     if (tx) {
-      provider2.emit(this.#hash, tx);
+      provider3.emit(this.#hash, tx);
     }
   }
 };
@@ -31516,8 +31531,8 @@ var PollingEventSubscriber = class {
    *  Create a new **PollingTransactionSubscriber** attached to
    *  %%provider%%, listening for %%filter%%.
    */
-  constructor(provider2, filter) {
-    this.#provider = provider2;
+  constructor(provider3, filter) {
+    this.#provider = provider3;
     this.#filter = copy(filter);
     this.#poller = this.#poll.bind(this);
     this.#running = false;
@@ -31633,7 +31648,7 @@ function concisify(items) {
   items.sort();
   return items;
 }
-async function getSubscription(_event, provider2) {
+async function getSubscription(_event, provider3) {
   if (_event == null) {
     throw new Error("invalid event");
   }
@@ -31682,7 +31697,7 @@ async function getSubscription(_event, provider2) {
           addresses.push(addr);
         } else {
           promises.push((async () => {
-            addresses.push(await resolveAddress(addr, provider2));
+            addresses.push(await resolveAddress(addr, provider3));
           })());
         }
       };
@@ -32960,8 +32975,8 @@ var AbstractSigner = class {
   /**
    *  Creates a new Signer connected to %%provider%%.
    */
-  constructor(provider2) {
-    defineProperties(this, { provider: provider2 || null });
+  constructor(provider3) {
+    defineProperties(this, { provider: provider3 || null });
   }
   async getNonce(blockTag) {
     return checkProvider(this, "getTransactionCount").getTransactionCount(await this.getAddress(), blockTag);
@@ -32971,7 +32986,7 @@ var AbstractSigner = class {
     return pop;
   }
   async populateTransaction(tx) {
-    const provider2 = checkProvider(this, "populateTransaction");
+    const provider3 = checkProvider(this, "populateTransaction");
     const pop = await populate(this, tx);
     if (pop.nonce == null) {
       pop.nonce = await this.getNonce("pending");
@@ -32995,7 +33010,7 @@ var AbstractSigner = class {
     if ((pop.type === 2 || pop.type == null) && (pop.maxFeePerGas != null && pop.maxPriorityFeePerGas != null)) {
       pop.type = 2;
     } else if (pop.type === 0 || pop.type === 1) {
-      const feeData = await provider2.getFeeData();
+      const feeData = await provider3.getFeeData();
       assert(feeData.gasPrice != null, "network does not support gasPrice", "UNSUPPORTED_OPERATION", {
         operation: "getGasPrice"
       });
@@ -33003,7 +33018,7 @@ var AbstractSigner = class {
         pop.gasPrice = feeData.gasPrice;
       }
     } else {
-      const feeData = await provider2.getFeeData();
+      const feeData = await provider3.getFeeData();
       if (pop.type == null) {
         if (feeData.maxFeePerGas != null && feeData.maxPriorityFeePerGas != null) {
           if (pop.authorizationList && pop.authorizationList.length) {
@@ -33065,15 +33080,15 @@ var AbstractSigner = class {
     return checkProvider(this, "call").call(await this.populateCall(tx));
   }
   async resolveName(name) {
-    const provider2 = checkProvider(this, "resolveName");
-    return await provider2.resolveName(name);
+    const provider3 = checkProvider(this, "resolveName");
+    return await provider3.resolveName(name);
   }
   async sendTransaction(tx) {
-    const provider2 = checkProvider(this, "sendTransaction");
+    const provider3 = checkProvider(this, "sendTransaction");
     const pop = await this.populateTransaction(tx);
     delete pop.from;
     const txObj = Transaction.from(pop);
-    return await provider2.broadcastTransaction(await this.signTransaction(txObj));
+    return await provider3.broadcastTransaction(await this.signTransaction(txObj));
   }
   // @TODO: in v7 move this to be abstract
   authorize(authorization) {
@@ -33089,15 +33104,15 @@ var VoidSigner = class _VoidSigner extends AbstractSigner {
    *  Creates a new **VoidSigner** with %%address%% attached to
    *  %%provider%%.
    */
-  constructor(address, provider2) {
-    super(provider2);
+  constructor(address, provider3) {
+    super(provider3);
     defineProperties(this, { address });
   }
   async getAddress() {
     return this.address;
   }
-  connect(provider2) {
-    return new _VoidSigner(this.address, provider2);
+  connect(provider3) {
+    return new _VoidSigner(this.address, provider3);
   }
   #throwUnsupported(suffix, operation) {
     assert(false, `VoidSigner cannot sign ${suffix}`, "UNSUPPORTED_OPERATION", { operation });
@@ -33150,8 +33165,8 @@ var FilterIdSubscriber = class {
    *  and [[_emitResults]] to setup the subscription and provide the event
    *  to the %%provider%%.
    */
-  constructor(provider2) {
-    this.#provider = provider2;
+  constructor(provider3) {
+    this.#provider = provider3;
     this.#filterIdPromise = null;
     this.#poller = this.#poll.bind(this);
     this.#running = false;
@@ -33161,19 +33176,19 @@ var FilterIdSubscriber = class {
   /**
    *  Sub-classes **must** override this to begin the subscription.
    */
-  _subscribe(provider2) {
+  _subscribe(provider3) {
     throw new Error("subclasses must override this");
   }
   /**
    *  Sub-classes **must** override this handle the events.
    */
-  _emitResults(provider2, result) {
+  _emitResults(provider3, result) {
     throw new Error("subclasses must override this");
   }
   /**
    *  Sub-classes **must** override this handle recovery on errors.
    */
-  _recover(provider2) {
+  _recover(provider3) {
     throw new Error("subclasses must override this");
   }
   async #poll(blockNumber) {
@@ -33255,30 +33270,30 @@ var FilterIdEventSubscriber = class extends FilterIdSubscriber {
    *  Creates a new **FilterIdEventSubscriber** attached to %%provider%%
    *  listening for %%filter%%.
    */
-  constructor(provider2, filter) {
-    super(provider2);
+  constructor(provider3, filter) {
+    super(provider3);
     this.#event = copy3(filter);
   }
-  _recover(provider2) {
-    return new PollingEventSubscriber(provider2, this.#event);
+  _recover(provider3) {
+    return new PollingEventSubscriber(provider3, this.#event);
   }
-  async _subscribe(provider2) {
-    const filterId = await provider2.send("eth_newFilter", [this.#event]);
+  async _subscribe(provider3) {
+    const filterId = await provider3.send("eth_newFilter", [this.#event]);
     return filterId;
   }
-  async _emitResults(provider2, results) {
+  async _emitResults(provider3, results) {
     for (const result of results) {
-      provider2.emit(this.#event, provider2._wrapLog(result, provider2._network));
+      provider3.emit(this.#event, provider3._wrapLog(result, provider3._network));
     }
   }
 };
 var FilterIdPendingSubscriber = class extends FilterIdSubscriber {
-  async _subscribe(provider2) {
-    return await provider2.send("eth_newPendingTransactionFilter", []);
+  async _subscribe(provider3) {
+    return await provider3.send("eth_newPendingTransactionFilter", []);
   }
-  async _emitResults(provider2, results) {
+  async _emitResults(provider3, results) {
     for (const result of results) {
-      provider2.emit("pending", result);
+      provider3.emit("pending", result);
     }
   }
 };
@@ -33328,12 +33343,12 @@ var defaultOptions2 = {
 };
 var JsonRpcSigner = class extends AbstractSigner {
   address;
-  constructor(provider2, address) {
-    super(provider2);
+  constructor(provider3, address) {
+    super(provider3);
     address = getAddress(address);
     defineProperties(this, { address });
   }
-  connect(provider2) {
+  connect(provider3) {
     assert(false, "cannot reconnect JsonRpcSigner", "UNSUPPORTED_OPERATION", {
       operation: "signer.connect"
     });
@@ -34986,8 +35001,8 @@ var SocketSubscriber = class {
    *  Creates a new **SocketSubscriber** attached to %%provider%% listening
    *  to %%filter%%.
    */
-  constructor(provider2, filter) {
-    this.#provider = provider2;
+  constructor(provider3, filter) {
+    this.#provider = provider3;
     this.#filter = JSON.stringify(filter);
     this.#filterId = null;
     this.#paused = null;
@@ -35045,7 +35060,7 @@ var SocketSubscriber = class {
    *  Sub-classes **must** override this to emit the events on the
    *  provider.
    */
-  async _emit(provider2, message) {
+  async _emit(provider3, message) {
     throw new Error("sub-classes must implemente this; _emit");
   }
 };
@@ -35053,22 +35068,22 @@ var SocketBlockSubscriber = class extends SocketSubscriber {
   /**
    *  @_ignore:
    */
-  constructor(provider2) {
-    super(provider2, ["newHeads"]);
+  constructor(provider3) {
+    super(provider3, ["newHeads"]);
   }
-  async _emit(provider2, message) {
-    provider2.emit("block", parseInt(message.number));
+  async _emit(provider3, message) {
+    provider3.emit("block", parseInt(message.number));
   }
 };
 var SocketPendingSubscriber = class extends SocketSubscriber {
   /**
    *  @_ignore:
    */
-  constructor(provider2) {
-    super(provider2, ["newPendingTransactions"]);
+  constructor(provider3) {
+    super(provider3, ["newPendingTransactions"]);
   }
-  async _emit(provider2, message) {
-    provider2.emit("pending", message);
+  async _emit(provider3, message) {
+    provider3.emit("pending", message);
   }
 };
 var SocketEventSubscriber = class extends SocketSubscriber {
@@ -35082,12 +35097,12 @@ var SocketEventSubscriber = class extends SocketSubscriber {
   /**
    *  @_ignore:
    */
-  constructor(provider2, filter) {
-    super(provider2, ["logs", filter]);
+  constructor(provider3, filter) {
+    super(provider3, ["logs", filter]);
     this.#logFilter = JSON.stringify(filter);
   }
-  async _emit(provider2, message) {
-    provider2.emit(this.logFilter, provider2._wrapLog(message, provider2._network));
+  async _emit(provider3, message) {
+    provider3.emit(this.logFilter, provider3._wrapLog(message, provider3._network));
   }
 };
 var SocketProvider = class extends JsonRpcApiProvider {
@@ -35337,14 +35352,14 @@ var InfuraWebSocketProvider = class extends WebSocketProvider {
    *  Creates a new **InfuraWebSocketProvider**.
    */
   constructor(network, projectId) {
-    const provider2 = new InfuraProvider(network, projectId);
-    const req = provider2._getConnection();
+    const provider3 = new InfuraProvider(network, projectId);
+    const req = provider3._getConnection();
     assert(!req.credentials, "INFURA WebSocket project secrets unsupported", "UNSUPPORTED_OPERATION", { operation: "InfuraProvider.getWebSocketProvider()" });
     const url = req.url.replace(/^http/i, "ws").replace("/v3/", "/ws/v3/");
-    super(url, provider2._network);
+    super(url, provider3._network);
     defineProperties(this, {
-      projectId: provider2.projectId,
-      projectSecret: provider2.projectSecret
+      projectId: provider3.projectId,
+      projectSecret: provider3.projectSecret
     });
   }
   isCommunityResource() {
@@ -35784,42 +35799,42 @@ var FallbackProvider = class extends AbstractProvider {
   /**
    *  Transforms a %%req%% into the correct method call on %%provider%%.
    */
-  async _translatePerform(provider2, req) {
+  async _translatePerform(provider3, req) {
     switch (req.method) {
       case "broadcastTransaction":
-        return await provider2.broadcastTransaction(req.signedTransaction);
+        return await provider3.broadcastTransaction(req.signedTransaction);
       case "call":
-        return await provider2.call(Object.assign({}, req.transaction, { blockTag: req.blockTag }));
+        return await provider3.call(Object.assign({}, req.transaction, { blockTag: req.blockTag }));
       case "chainId":
-        return (await provider2.getNetwork()).chainId;
+        return (await provider3.getNetwork()).chainId;
       case "estimateGas":
-        return await provider2.estimateGas(req.transaction);
+        return await provider3.estimateGas(req.transaction);
       case "getBalance":
-        return await provider2.getBalance(req.address, req.blockTag);
+        return await provider3.getBalance(req.address, req.blockTag);
       case "getBlock": {
         const block = "blockHash" in req ? req.blockHash : req.blockTag;
-        return await provider2.getBlock(block, req.includeTransactions);
+        return await provider3.getBlock(block, req.includeTransactions);
       }
       case "getBlockNumber":
-        return await provider2.getBlockNumber();
+        return await provider3.getBlockNumber();
       case "getCode":
-        return await provider2.getCode(req.address, req.blockTag);
+        return await provider3.getCode(req.address, req.blockTag);
       case "getGasPrice":
-        return (await provider2.getFeeData()).gasPrice;
+        return (await provider3.getFeeData()).gasPrice;
       case "getPriorityFee":
-        return (await provider2.getFeeData()).maxPriorityFeePerGas;
+        return (await provider3.getFeeData()).maxPriorityFeePerGas;
       case "getLogs":
-        return await provider2.getLogs(req.filter);
+        return await provider3.getLogs(req.filter);
       case "getStorage":
-        return await provider2.getStorage(req.address, req.position, req.blockTag);
+        return await provider3.getStorage(req.address, req.position, req.blockTag);
       case "getTransaction":
-        return await provider2.getTransaction(req.hash);
+        return await provider3.getTransaction(req.hash);
       case "getTransactionCount":
-        return await provider2.getTransactionCount(req.address, req.blockTag);
+        return await provider3.getTransactionCount(req.address, req.blockTag);
       case "getTransactionReceipt":
-        return await provider2.getTransactionReceipt(req.hash);
+        return await provider3.getTransactionReceipt(req.hash);
       case "getTransactionResult":
-        return await provider2.getTransactionResult(req.hash);
+        return await provider3.getTransactionResult(req.hash);
     }
   }
   // Grab the next (random) config that is not already part of
@@ -36003,9 +36018,9 @@ var FallbackProvider = class extends AbstractProvider {
   async _perform(req) {
     if (req.method === "broadcastTransaction") {
       const results = this.#configs.map((c) => null);
-      const broadcasts = this.#configs.map(async ({ provider: provider2, weight }, index2) => {
+      const broadcasts = this.#configs.map(async ({ provider: provider3, weight }, index2) => {
         try {
-          const result3 = await provider2._perform(req);
+          const result3 = await provider3._perform(req);
           results[index2] = Object.assign(normalizeResult(req.method, { result: result3 }), { weight });
         } catch (error) {
           results[index2] = Object.assign(normalizeResult(req.method, { error }), { weight });
@@ -36060,8 +36075,8 @@ var FallbackProvider = class extends AbstractProvider {
     return result;
   }
   async destroy() {
-    for (const { provider: provider2 } of this.#configs) {
-      provider2.destroy();
+    for (const { provider: provider3 } of this.#configs) {
+      provider3.destroy();
     }
     super.destroy();
   }
@@ -36195,8 +36210,8 @@ var NonceManager = class _NonceManager extends AbstractSigner {
   async getAddress() {
     return this.signer.getAddress();
   }
-  connect(provider2) {
-    return new _NonceManager(this.signer.connect(provider2));
+  connect(provider3) {
+    return new _NonceManager(this.signer.connect(provider3));
   }
   async getNonce(blockTag) {
     if (blockTag === "pending") {
@@ -36384,8 +36399,8 @@ var BrowserProvider = class _BrowserProvider extends JsonRpcApiPollingProvider {
                 match2 = matches[0];
               }
               if (match2) {
-                const { provider: provider2, info } = match2;
-                resolve2(new _BrowserProvider(provider2, void 0, {
+                const { provider: provider3, info } = match2;
+                resolve2(new _BrowserProvider(provider3, void 0, {
                   providerInfo: info
                 }));
               } else {
@@ -36395,8 +36410,8 @@ var BrowserProvider = class _BrowserProvider extends JsonRpcApiPollingProvider {
               }
             }
           } else {
-            const { provider: provider2, info } = found[0];
-            resolve2(new _BrowserProvider(provider2, void 0, {
+            const { provider: provider3, info } = found[0];
+            resolve2(new _BrowserProvider(provider3, void 0, {
               providerInfo: info
             }));
           }
@@ -36674,8 +36689,8 @@ var BaseWallet = class _BaseWallet extends AbstractSigner {
    *  If %%provider%% is not specified, only offline methods can
    *  be used.
    */
-  constructor(privateKey, provider2) {
-    super(provider2);
+  constructor(privateKey, provider3) {
+    super(provider3);
     assertArgument(privateKey && typeof privateKey.sign === "function", "invalid private key", "privateKey", "[ REDACTED ]");
     this.#signingKey = privateKey;
     const address = computeAddress(this.signingKey.publicKey);
@@ -36698,8 +36713,8 @@ var BaseWallet = class _BaseWallet extends AbstractSigner {
   async getAddress() {
     return this.address;
   }
-  connect(provider2) {
-    return new _BaseWallet(this.#signingKey, provider2);
+  connect(provider3) {
+    return new _BaseWallet(this.#signingKey, provider3);
   }
   async signTransaction(tx) {
     tx = copyRequest(tx);
@@ -37842,8 +37857,8 @@ var HDNodeWallet = class _HDNodeWallet extends BaseWallet {
   /**
    *  @private
    */
-  constructor(guard, signingKey, parentFingerprint, chainCode, path, index2, depth, mnemonic, provider2) {
-    super(signingKey, provider2);
+  constructor(guard, signingKey, parentFingerprint, chainCode, path, index2, depth, mnemonic, provider3) {
+    super(signingKey, provider3);
     assertPrivate(guard, _guard6, "HDNodeWallet");
     defineProperties(this, { publicKey: signingKey.compressedPublicKey });
     const fingerprint = dataSlice(ripemd1602(sha2562(this.publicKey)), 0, 4);
@@ -37857,8 +37872,8 @@ var HDNodeWallet = class _HDNodeWallet extends BaseWallet {
     });
     defineProperties(this, { mnemonic });
   }
-  connect(provider2) {
-    return new _HDNodeWallet(_guard6, this.signingKey, this.parentFingerprint, this.chainCode, this.path, this.index, this.depth, this.mnemonic, provider2);
+  connect(provider3) {
+    return new _HDNodeWallet(_guard6, this.signingKey, this.parentFingerprint, this.chainCode, this.path, this.index, this.depth, this.mnemonic, provider3);
   }
   #account() {
     const account = { address: this.address, privateKey: this.privateKey };
@@ -38083,8 +38098,8 @@ var HDNodeVoidWallet = class _HDNodeVoidWallet extends VoidSigner {
   /**
    *  @private
    */
-  constructor(guard, address, publicKey, parentFingerprint, chainCode, path, index2, depth, provider2) {
-    super(address, provider2);
+  constructor(guard, address, publicKey, parentFingerprint, chainCode, path, index2, depth, provider3) {
+    super(address, provider3);
     assertPrivate(guard, _guard6, "HDNodeVoidWallet");
     defineProperties(this, { publicKey });
     const fingerprint = dataSlice(ripemd1602(sha2562(publicKey)), 0, 4);
@@ -38098,8 +38113,8 @@ var HDNodeVoidWallet = class _HDNodeVoidWallet extends VoidSigner {
       depth
     });
   }
-  connect(provider2) {
-    return new _HDNodeVoidWallet(_guard6, this.address, this.publicKey, this.parentFingerprint, this.chainCode, this.path, this.index, this.depth, provider2);
+  connect(provider3) {
+    return new _HDNodeVoidWallet(_guard6, this.address, this.publicKey, this.parentFingerprint, this.chainCode, this.path, this.index, this.depth, provider3);
   }
   /**
    *  The extended key.
@@ -38203,15 +38218,15 @@ var Wallet = class _Wallet extends BaseWallet {
    *  Create a new wallet for the private %%key%%, optionally connected
    *  to %%provider%%.
    */
-  constructor(key, provider2) {
+  constructor(key, provider3) {
     if (typeof key === "string" && !key.startsWith("0x")) {
       key = "0x" + key;
     }
     let signingKey = typeof key === "string" ? new SigningKey(key) : key;
-    super(signingKey, provider2);
+    super(signingKey, provider3);
   }
-  connect(provider2) {
-    return new _Wallet(this.signingKey, provider2);
+  connect(provider3) {
+    return new _Wallet(this.signingKey, provider3);
   }
   /**
    *  Resolves to a [JSON Keystore Wallet](json-wallets) encrypted with
@@ -38300,20 +38315,20 @@ var Wallet = class _Wallet extends BaseWallet {
    *
    *  If there is no crytographic random source, this will throw.
    */
-  static createRandom(provider2) {
+  static createRandom(provider3) {
     const wallet2 = HDNodeWallet.createRandom();
-    if (provider2) {
-      return wallet2.connect(provider2);
+    if (provider3) {
+      return wallet2.connect(provider3);
     }
     return wallet2;
   }
   /**
    *  Creates a [[HDNodeWallet]] for %%phrase%%.
    */
-  static fromPhrase(phrase, provider2) {
+  static fromPhrase(phrase, provider3) {
     const wallet2 = HDNodeWallet.fromPhrase(phrase);
-    if (provider2) {
-      return wallet2.connect(provider2);
+    if (provider3) {
+      return wallet2.connect(provider3);
     }
     return wallet2;
   }
@@ -38858,26 +38873,26 @@ function makeProvider(rpcUrl) {
     { batchMaxCount: 1, staticNetwork: true }
   );
 }
-function makeContracts(provider2) {
+function makeContracts(provider3) {
   return {
     perp: new ethers_exports.Contract(
       ADDRESSES.PerpetualExchange,
       PERPETUAL_EXCHANGE_ABI,
-      provider2
+      provider3
     ),
-    oracle: new ethers_exports.Contract(ADDRESSES.MockOracle, MOCK_ORACLE_ABI, provider2),
+    oracle: new ethers_exports.Contract(ADDRESSES.MockOracle, MOCK_ORACLE_ABI, provider3),
     registry: new ethers_exports.Contract(
       ADDRESSES.StrategyRegistry,
       STRATEGY_REGISTRY_ABI,
-      provider2
+      provider3
     )
   };
 }
 var ZERO = "0x0000000000000000000000000000000000000000";
-function makeSigner(provider2) {
+function makeSigner(provider3) {
   const pk = process.env.AGENT_PRIVATE_KEY?.trim();
   if (!pk || !pk.startsWith("0x") || pk.length !== 66) return null;
-  return new ethers_exports.Wallet(pk, provider2 ?? makeProvider());
+  return new ethers_exports.Wallet(pk, provider3 ?? makeProvider());
 }
 function getSessionManagerAddress() {
   return process.env.SESSION_MANAGER_ADDRESS?.trim() || ZERO;
@@ -39263,13 +39278,13 @@ function verifierValue(p) {
     nonce: p.nonce
   };
 }
-async function checkETV(provider2, targets) {
+async function checkETV(provider3, targets) {
   const evidence = {};
   let missing = 0;
   const live = targets.filter((t) => t.address && t.address !== ZERO3);
   for (const t of live) {
     try {
-      const code = await provider2.getCode(t.address);
+      const code = await provider3.getCode(t.address);
       const hasCode = code && code !== "0x";
       evidence[t.label] = { address: t.address, hasCode: !!hasCode };
       if (!hasCode) missing += 1;
@@ -39290,7 +39305,7 @@ async function checkETV(provider2, targets) {
     evidence
   };
 }
-async function checkSCV(provider2, targets, opts = {}) {
+async function checkSCV(provider3, targets, opts = {}) {
   const chainId = opts.chainId ?? AGENT_CHAIN_ID;
   const apiKey = opts.apiKey?.trim();
   const evidence = {};
@@ -39310,7 +39325,7 @@ async function checkSCV(provider2, targets, opts = {}) {
   for (const t of live) {
     let codePresent = false;
     try {
-      const code = await provider2.getCode(t.address);
+      const code = await provider3.getCode(t.address);
       codePresent = !!code && code !== "0x";
     } catch {
       codePresent = false;
@@ -39408,7 +39423,7 @@ async function checkWAV(apiBaseUrl, opts = {}) {
     evidence
   };
 }
-async function checkWV(provider2, agentAddress, opts = {}) {
+async function checkWV(provider3, agentAddress, opts = {}) {
   const evidence = { agentAddress };
   const checks = [];
   const nonZero = !!agentAddress && agentAddress !== ZERO3;
@@ -39416,7 +39431,7 @@ async function checkWV(provider2, agentAddress, opts = {}) {
   checks.push(nonZero);
   let isEoa = false;
   try {
-    const code = await provider2.getCode(agentAddress);
+    const code = await provider3.getCode(agentAddress);
     isEoa = code === "0x";
     evidence.isEOA = isEoa;
   } catch (err) {
@@ -39425,7 +39440,7 @@ async function checkWV(provider2, agentAddress, opts = {}) {
   checks.push(isEoa);
   let hasHistory = false;
   try {
-    const txCount = await provider2.getTransactionCount(agentAddress);
+    const txCount = await provider3.getTransactionCount(agentAddress);
     hasHistory = txCount > 0;
     evidence.txCount = txCount;
   } catch (err) {
@@ -39535,6 +39550,96 @@ async function buildAgentVerification(params) {
       proofValue
     }
   };
+}
+
+// ../shared/src/write.ts
+var SESSION_MANAGER_IFACE = new ethers_exports.Interface(AGENT_SESSION_MANAGER_ABI);
+
+// ../shared/src/payoutSafety.ts
+var COMPROMISED_ADDRESSES = [
+  "0xe80a81360608c1342e66743f70a00f75d792eb93"
+];
+var EIP7702_DELEGATION_PREFIX = "0xef0100";
+var PAYOUT_CACHE_TTL_MS = 10 * 60 * 1e3;
+var codeCache = /* @__PURE__ */ new Map();
+function denylist() {
+  const extra = (process.env.PAYOUT_DENYLIST ?? "").split(",").map((s) => s.trim().toLowerCase()).filter((s) => /^0x[0-9a-f]{40}$/.test(s));
+  return /* @__PURE__ */ new Set([...COMPROMISED_ADDRESSES, ...extra]);
+}
+function isCompromisedAddress(addr) {
+  return denylist().has(addr.trim().toLowerCase());
+}
+function classifyCode(address, code, requireEoa) {
+  const c = (code ?? "0x").toLowerCase();
+  if (c.startsWith(EIP7702_DELEGATION_PREFIX)) {
+    return {
+      safe: false,
+      reason: `eip7702_delegated\uFF1A${address} \u5E36 EIP-7702 \u59D4\u6D3E\u78BC\uFF08${c.slice(0, 48)}\u2026\uFF09\uFF0C\u8CC7\u7522\u6703\u88AB\u59D4\u6D3E\u5408\u7D04\u4EE3\u7BA1\uFF0F\u6383\u8D70\uFF0C\u4E0D\u53EF\u6536\u6B3E\u3002`
+    };
+  }
+  if (requireEoa && c !== "0x" && c !== "0x0") {
+    return {
+      safe: false,
+      reason: `not_eoa\uFF1A${address} \u6709\u5408\u7D04 code\uFF0C\u4F46\u6536\u6B3E\u5730\u5740\u5FC5\u9808\u662F\u6301\u6709 FEE_SETTLEMENT_PRIVATE_KEY \u7684 EOA\uFF08\u4E0D\u53EF\u7528 Safe\uFF0FFeeRouter \u7B49\u5408\u7D04\uFF09\u3002`
+    };
+  }
+  return { safe: true, reason: "ok" };
+}
+async function assessPayoutAddress(provider3, addr, opts = {}) {
+  const address = (addr ?? "").trim();
+  if (!/^0x[0-9a-fA-F]{40}$/.test(address) || /^0x0{40}$/.test(address)) {
+    return {
+      address,
+      safe: false,
+      source: "invalid",
+      reason: `invalid_address\uFF1A\u300C${address || "(\u7A7A)"}\u300D\u4E0D\u662F\u53EF\u6536\u6B3E\u7684 EVM \u5730\u5740\u3002`
+    };
+  }
+  if (isCompromisedAddress(address)) {
+    return {
+      address,
+      safe: false,
+      source: "denylist",
+      reason: `compromised\uFF1A${address} \u5728\u5DF2\u77E5\u5916\u6D29\u5730\u5740\u6E05\u55AE\uFF082026-08-06 \u7A3D\u6838\u7684\u5916\u6D29 deployer\uFF09\uFF0C\u79C1\u9470\u5DF2\u516C\u958B\uFF0C\u7D55\u4E0D\u53EF\u518D\u6536\u6B3E\u3002`
+    };
+  }
+  const key = address.toLowerCase();
+  const now = opts.now ?? Date.now();
+  const ttl = opts.ttlMs ?? PAYOUT_CACHE_TTL_MS;
+  const requireEoa = opts.requireEoa ?? false;
+  const cached2 = codeCache.get(key);
+  if (cached2 && now - cached2.at < ttl) {
+    return { address, source: "cache", checkedAt: cached2.at, ...classifyCode(address, cached2.code, requireEoa) };
+  }
+  try {
+    const timeoutMs = opts.timeoutMs ?? 5e3;
+    let timer;
+    const code = await Promise.race([
+      provider3.getCode(address),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`getCode \u903E\u6642 ${timeoutMs}ms`)), timeoutMs);
+      })
+    ]).finally(() => clearTimeout(timer));
+    codeCache.set(key, { code, at: now });
+    return { address, source: "rpc", checkedAt: now, ...classifyCode(address, code, requireEoa) };
+  } catch (err) {
+    if (cached2) {
+      const r = classifyCode(address, cached2.code, requireEoa);
+      return {
+        address,
+        source: "stale-cache",
+        checkedAt: cached2.at,
+        safe: r.safe,
+        reason: `${r.reason}\uFF08RPC \u5931\u6557\uFF0C\u6CBF\u7528 ${Math.round((now - cached2.at) / 1e3)}s \u524D\u7684\u7D50\u679C\uFF1A${err?.message ?? err}\uFF09`
+      };
+    }
+    return {
+      address,
+      safe: false,
+      source: "no-data",
+      reason: `rpc_unavailable\uFF1A\u7121\u6CD5\u8B80\u53D6 ${address} \u7684 code \u4E14\u5F9E\u672A\u6210\u529F\u6AA2\u67E5\u904E\uFF0Cfail-closed \u8996\u70BA\u4E0D\u5B89\u5168\uFF08${err?.message ?? err}\uFF09\u3002`
+    };
+  }
 }
 
 // ../node_modules/hono/dist/compose.js
@@ -59775,7 +59880,8 @@ function paymentMiddleware(payTo, routes, facilitator, paywall) {
 loadEnv();
 var FEE_ROUTER_ABI = [
   "function routeExternalRevenue(address trader, uint256 fee)",
-  "function usdc() view returns (address)"
+  "function usdc() view returns (address)",
+  "function platformTreasury() view returns (address)"
 ];
 var USDC_ABI = [
   "function decimals() view returns (uint8)",
@@ -59792,16 +59898,21 @@ var MINTABLE_MOCK_USDC = ADDRESSES.MockUSDC;
 var wallet = null;
 var feeRouter = null;
 var usdc = null;
+var provider = null;
 if (PK && PK.startsWith("0x") && PK.length === 66) {
-  const provider2 = makeProvider();
-  wallet = new ethers_exports.Wallet(PK, provider2);
+  provider = makeProvider();
+  wallet = new ethers_exports.Wallet(PK, provider);
   feeRouter = new ethers_exports.Contract(SETTLEMENT_ROUTER, FEE_ROUTER_ABI, wallet);
   usdc = new ethers_exports.Contract(SETTLEMENT_TOKEN, USDC_ABI, wallet);
 }
 function isSettlementEnabled() {
   return wallet !== null;
 }
+var WAIT_TIMEOUT_MS = Number(process.env.SETTLEMENT_WAIT_TIMEOUT_MS ?? "90000");
 var queue = Promise.resolve();
+
+// src/app.ts
+import { randomUUID } from "node:crypto";
 
 // src/ledger.ts
 function credentials() {
@@ -59810,6 +59921,7 @@ function credentials() {
   return url && token ? { url, token } : null;
 }
 var QUEUE_KEY = "x402:settlement:queue";
+var SETTLE_STATE_TTL_SEC = 90 * 24 * 60 * 60;
 function isLedgerEnabled() {
   return credentials() !== null;
 }
@@ -59834,6 +59946,28 @@ async function command(cmd) {
 }
 async function enqueueSettlement(entry) {
   await command(["RPUSH", QUEUE_KEY, JSON.stringify(entry)]);
+}
+function deriveIdempotencyKey(paymentResponseHeader, paymentHeader) {
+  const decode3 = (h) => {
+    try {
+      return JSON.parse(Buffer.from(h, "base64").toString("utf8"));
+    } catch {
+      return null;
+    }
+  };
+  if (paymentResponseHeader) {
+    const tx = decode3(paymentResponseHeader)?.transaction;
+    if (typeof tx === "string" && /^0x[0-9a-fA-F]{64}$/.test(tx)) return `tx:${tx.toLowerCase()}`;
+  }
+  if (paymentHeader) {
+    const auth = decode3(paymentHeader)?.payload?.authorization;
+    const from16 = auth?.from;
+    const nonce = auth?.nonce;
+    if (typeof from16 === "string" && /^0x[0-9a-fA-F]{40}$/.test(from16) && typeof nonce === "string" && nonce) {
+      return `auth:${from16.toLowerCase()}:${nonce.toLowerCase()}`;
+    }
+  }
+  return void 0;
 }
 
 // src/onchainRevenue.ts
@@ -59863,14 +59997,14 @@ async function getOnchainRevenue(trader) {
       }
     };
   }
-  const provider2 = makeProvider();
-  const router = new ethers_exports.Contract(ROUTER, FEE_ROUTER_READ_ABI, provider2);
+  const provider3 = makeProvider();
+  const router = new ethers_exports.Contract(ROUTER, FEE_ROUTER_READ_ABI, provider3);
   const [usdcAddr, platformRaw] = await Promise.all([
     router.usdc(),
     router.platformEarnings()
   ]);
   const decimals = Number(
-    await new ethers_exports.Contract(usdcAddr, ERC20_READ_ABI, provider2).decimals()
+    await new ethers_exports.Contract(usdcAddr, ERC20_READ_ABI, provider3).decimals()
   );
   const P = Number(ethers_exports.formatUnits(platformRaw, decimals));
   let traderEarnings;
@@ -60008,6 +60142,36 @@ function resolveMarket(raw2) {
 function assetIdFor(symbol) {
   return ASSET_IDS[symbol];
 }
+
+// src/lru.ts
+var LruCache = class {
+  constructor(max) {
+    this.max = max;
+    if (!Number.isInteger(max) || max < 1) throw new Error(`LruCache max \u5FC5\u9808\u662F\u6B63\u6574\u6578\uFF08\u6536\u5230 ${max}\uFF09`);
+  }
+  map = /* @__PURE__ */ new Map();
+  get(key) {
+    const v = this.map.get(key);
+    if (v === void 0) return void 0;
+    this.map.delete(key);
+    this.map.set(key, v);
+    return v;
+  }
+  set(key, value) {
+    if (this.map.has(key)) this.map.delete(key);
+    this.map.set(key, value);
+    while (this.map.size > this.max) {
+      const oldest = this.map.keys().next().value;
+      this.map.delete(oldest);
+    }
+  }
+  delete(key) {
+    this.map.delete(key);
+  }
+  get size() {
+    return this.map.size;
+  }
+};
 
 // src/candles.ts
 var INTERVALS = {
@@ -60232,7 +60396,21 @@ function simulate(meta, interval, need, end) {
   }
   return out;
 }
-var cache = /* @__PURE__ */ new Map();
+var CANDLE_CACHE_MAX = Math.max(1, Number(process.env.CANDLE_CACHE_MAX ?? "500") || 500);
+var cache = new LruCache(CANDLE_CACHE_MAX);
+var MIN_END_SEC = 1230768e3;
+function normalizeEnd(rawEnd, nowSec) {
+  if (rawEnd === void 0) return void 0;
+  const n2 = Number(rawEnd);
+  if (!Number.isFinite(n2) || n2 <= 0) return void 0;
+  const e = Math.floor(n2);
+  if (e >= nowSec) return void 0;
+  return Math.max(e, MIN_END_SEC);
+}
+function normalizeLimit(rawLimit) {
+  const parsed = Number(rawLimit ?? DEFAULT_LIMIT);
+  return Number.isFinite(parsed) ? Math.max(1, Math.min(Math.floor(parsed), MAX_LIMIT)) : DEFAULT_LIMIT;
+}
 var TTL_MS = {
   "1m": 3e3,
   "5m": 5e3,
@@ -60260,10 +60438,8 @@ async function getCandles(rawSymbol, rawInterval = "1h", rawLimit, rawEnd) {
     );
   }
   const interval = rawInterval;
-  const parsed = Number(rawLimit ?? DEFAULT_LIMIT);
-  const limit = Number.isFinite(parsed) ? Math.max(1, Math.min(Math.floor(parsed), MAX_LIMIT)) : DEFAULT_LIMIT;
-  const parsedEnd = Number(rawEnd);
-  const end = rawEnd !== void 0 && Number.isFinite(parsedEnd) && parsedEnd > 0 ? Math.floor(parsedEnd) : void 0;
+  const limit = normalizeLimit(rawLimit);
+  const end = normalizeEnd(rawEnd, Math.floor(Date.now() / 1e3));
   const key = `${meta.symbol}:${interval}:${limit}:${end ?? "now"}`;
   const hit = cache.get(key);
   const ttl = end === void 0 ? TTL_MS[interval] : HISTORY_TTL_MS;
@@ -60543,9 +60719,8 @@ var SETTLEMENT_TOKEN2 = resolveSettlementToken();
 var PRICE_SIGNALS = 0.01;
 var PRICE_ORACLE = 5e-3;
 var MAX_TIMEOUT_SECONDS = 60;
-var DEFAULT_DEMO_TRADER = "0xE80A81360608C1342e66743F70a00f75d792Eb93";
-var provider = makeProvider();
-var contracts2 = makeContracts(provider);
+var provider2 = makeProvider();
+var contracts2 = makeContracts(provider2);
 var VERIFIER_IS_EPHEMERAL = (() => {
   const pk = process.env.VERIFIER_PRIVATE_KEY?.trim();
   return !(pk && pk.startsWith("0x") && pk.length === 66);
@@ -60584,8 +60759,22 @@ async function resolveTrader(want) {
   const envT = process.env.DEMO_TRADER_ADDRESS?.trim();
   if (envT && /^0x[0-9a-fA-F]{40}$/.test(envT)) return envT;
   const list2 = await contracts2.registry.getAllTraders();
-  if (list2.length) return list2[0];
-  return DEFAULT_DEMO_TRADER;
+  return list2.length ? list2[0] : null;
+}
+function resolveOracleBeneficiary() {
+  const raw2 = process.env.ORACLE_BENEFICIARY_ADDRESS?.trim();
+  if (!raw2) {
+    return {
+      reason: "\u672A\u8A2D ORACLE_BENEFICIARY_ADDRESS\uFF1A\u9019\u7B46 /oracle \u6536\u5165\u4E0D\u6392\u5165 70/20/10 \u5206\u6F64\uFF08\u6B3E\u9805\u5DF2\u9032 payTo\uFF0C\u672A\u5206\u914D\uFF09\u3002"
+    };
+  }
+  if (!/^0x[0-9a-fA-F]{40}$/.test(raw2) || /^0x0{40}$/.test(raw2)) {
+    return { reason: `ORACLE_BENEFICIARY_ADDRESS \u4E0D\u662F\u5408\u6CD5\u5730\u5740\uFF08${raw2}\uFF09\uFF0C\u4E0D\u6392\u5165\u5206\u6F64\u3002` };
+  }
+  if (isCompromisedAddress(raw2)) {
+    return { reason: `ORACLE_BENEFICIARY_ADDRESS=${raw2} \u662F\u5DF2\u77E5\u5916\u6D29\u5730\u5740\uFF0C\u62D2\u7D55\u628A 70% \u5206\u6F64\u9001\u904E\u53BB\u3002` };
+  }
+  return { address: raw2 };
 }
 var DEMO_COOLDOWN_MS = Number(process.env.DEMO_COOLDOWN_MS ?? "15000");
 var DEMO_MAX_BUYS = Number(process.env.DEMO_MAX_BUYS ?? "50");
@@ -60646,7 +60835,7 @@ function classifyFacilitatorFailure(message) {
   }
   return null;
 }
-async function applyLedgerRecording(entry, res) {
+async function applyLedgerRecording(entry, res, paymentHeader) {
   if (!entry || res.status >= 400 || !res.headers.has("X-PAYMENT-RESPONSE")) {
     return res;
   }
@@ -60656,7 +60845,8 @@ async function applyLedgerRecording(entry, res) {
     settleError = "settlement disabled\uFF1A\u672A\u8A2D\u5B9A UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN\uFF08\u50C5\u4FDD\u7559\u93C8\u4E0B\u5E33\u52D9 /revenue\uFF09";
   } else {
     try {
-      await enqueueSettlement(entry);
+      const idempotencyKey = deriveIdempotencyKey(res.headers.get("X-PAYMENT-RESPONSE"), paymentHeader) ?? `req:${randomUUID()}`;
+      await enqueueSettlement({ ...entry, idempotencyKey });
       queued = true;
     } catch (err) {
       settleError = err.message;
@@ -60670,8 +60860,22 @@ async function applyLedgerRecording(entry, res) {
     headers
   });
 }
-function createApp() {
+var REGISTRY_CACHE_TTL_MS = 5 * 6e4;
+var registryCache = new LruCache(1e3);
+async function isRegisteredOnchain(trader) {
+  const key = trader.toLowerCase();
+  const hit = registryCache.get(key);
+  if (hit && Date.now() - hit.at < REGISTRY_CACHE_TTL_MS) return hit.registered;
+  const t = await contracts2.registry.traders(trader);
+  const registered = Boolean(t?.isRegistered ?? t?.[0]);
+  registryCache.set(key, { at: Date.now(), registered });
+  return registered;
+}
+function createApp(opts = {}) {
   const app2 = new Hono2();
+  const payTo = opts.payTo ?? PAY_TO;
+  const codeReader = opts.payoutCodeReader ?? provider2;
+  const checkPayTo = () => assessPayoutAddress(codeReader, payTo, { requireEoa: true });
   app2.use("*", cors({ origin: "*", allowMethods: ["GET", "POST", "OPTIONS"] }));
   app2.use("/demo/*", async (c, next) => {
     if (c.req.method === "OPTIONS") return next();
@@ -60696,18 +60900,25 @@ function createApp() {
     }
     return next();
   });
-  app2.get(
-    "/",
-    (c) => c.json({
+  app2.get("/", async (c) => {
+    const payToSafety = await checkPayTo();
+    return c.json({
       service: "pepelab-signal-api",
       discoverable: true,
       description: "Pay-per-call trading signals over x402. The endpoint IS the product \u2014 any agent with a Base Sepolia USDC wallet can pay and consume directly.",
       network: NETWORK,
       asset: SETTLEMENT_TOKEN2,
-      payTo: PAY_TO,
+      payTo,
+      payToSafety: {
+        safe: payToSafety.safe,
+        reason: payToSafety.reason,
+        source: payToSafety.source,
+        checkedAt: payToSafety.checkedAt ? new Date(payToSafety.checkedAt).toISOString() : null,
+        note: payToSafety.safe ? void 0 : "\u4ED8\u8CBB\u7AEF\u9EDE\u76EE\u524D\u56DE 503 payto_unsafe\uFF0C\u4E0D\u767C\u51FA\u4EFB\u4F55 402 \u4ED8\u6B3E\u8981\u6C42\uFF08\u6C92\u4EBA\u6703\u4ED8\u9322\u9032\u9019\u500B\u5730\u5740\uFF09\u3002"
+      },
       // 誠實描述金流：x402 的付款直接進 payTo，70/20/10 是平台事後另外送的一筆
       // 交易。把兩者寫成同一件事會讓讀者以為買方付的那筆錢就是被分潤的那筆錢。
-      revenueModel: `x402 \u4ED8\u6B3E\u76F4\u63A5\u9032 payTo\uFF08${PAY_TO}\uFF09\uFF0C\u9019\u7B46 EIP-3009 \u4EA4\u6613\u7531 facilitator\uFF08${FACILITATOR_URL}\uFF09\u9001\u51FA\u4E26\u652F\u4ED8 gas\u300270/20/10 \u5206\u6F64\u662F\u5E73\u53F0\u53E6\u5916\u7684\u4E00\u7B46 FeeRouter.routeExternalRevenue \u4EA4\u6613\uFF0C\u7531\u7D50\u7B97\u9322\u5305\uFF08FEE_SETTLEMENT_PRIVATE_KEY\uFF09\u9001\u51FA\u4E26\u652F\u4ED8 gas\uFF0C\u7D2F\u8A08\u53EF\u65BC /revenue \u67E5\u8A62\u3002\u5169\u8005\u662F\u4E0D\u540C\u7684\u5169\u7B46\u4EA4\u6613\u30022026-09-17 \u8D77\u5206\u6F64\u6539\u70BA\u975E\u540C\u6B65\uFF1A\u56DE\u61C9\u88E1\u7684 settled \u4EE3\u8868\u300C\u5DF2\u6392\u5165\u7D50\u7B97\u4F47\u5217\u300D\uFF0C\u4E0D\u4EE3\u8868\u5DF2\u7D93\u4E0A\u93C8\uFF1B\u7531\u55AE\u4E00 worker \u5B9A\u671F\u53D6\u51FA\uFF0C\u6BCF\u7B46\u5404\u9001\u4E00\u7B46\u4EA4\u6613\uFF08\u898B docs/KNOWN_LIMITATIONS.md \xA714\u3001docs/COST_MODEL.md\uFF09\u3002`,
+      revenueModel: `x402 \u4ED8\u6B3E\u76F4\u63A5\u9032 payTo\uFF08${payTo}\uFF09\uFF0C\u9019\u7B46 EIP-3009 \u4EA4\u6613\u7531 facilitator\uFF08${FACILITATOR_URL}\uFF09\u9001\u51FA\u4E26\u652F\u4ED8 gas\u300270/20/10 \u5206\u6F64\u662F\u5E73\u53F0\u53E6\u5916\u7684\u4E00\u7B46 FeeRouter.routeExternalRevenue \u4EA4\u6613\uFF0C\u7531\u7D50\u7B97\u9322\u5305\uFF08FEE_SETTLEMENT_PRIVATE_KEY\uFF09\u9001\u51FA\u4E26\u652F\u4ED8 gas\uFF0C\u7D2F\u8A08\u53EF\u65BC /revenue \u67E5\u8A62\u3002\u5169\u8005\u662F\u4E0D\u540C\u7684\u5169\u7B46\u4EA4\u6613\u30022026-09-17 \u8D77\u5206\u6F64\u6539\u70BA\u975E\u540C\u6B65\uFF1A\u56DE\u61C9\u88E1\u7684 settled \u4EE3\u8868\u300C\u5DF2\u6392\u5165\u7D50\u7B97\u4F47\u5217\u300D\uFF0C\u4E0D\u4EE3\u8868\u5DF2\u7D93\u4E0A\u93C8\uFF1B\u7531\u55AE\u4E00 worker \u5B9A\u671F\u53D6\u51FA\uFF0C\u6BCF\u7B46\u5404\u9001\u4E00\u7B46\u4EA4\u6613\uFF08\u898B docs/KNOWN_LIMITATIONS.md \xA714\u3001docs/COST_MODEL.md\uFF09\u3002`,
       endpoints: {
         "GET /signals/:trader": { price: `$${PRICE_SIGNALS}`, paid: true, desc: "trader \u7E3E\u6548 + \u958B\u5009\u5EFA\u8B70" },
         "GET /oracle/:asset": { price: `$${PRICE_ORACLE}`, paid: true, desc: "\u6C7A\u7B56\u7D1A\u5FEB\u7167\uFF1A\u50F9\u683C / funding / OI \u5931\u8861 / \u9810\u4F30\u6E05\u7B97\u50F9 / edge \u5EFA\u8B70\uFF08long\xB7short\xB7no_trade\uFF09\u3002\u8207 /signals \u4E00\u6A23\uFF1A\u6536\u5230\u6B3E\u5F8C\u628A\u5206\u6F64\u8A18\u9032\u7D50\u7B97\u4F47\u5217\uFF0C\u56DE\u61C9\u5E36 settled\uFF08\u662F\u5426\u6210\u529F\u6392\u5165\u4F47\u5217\uFF0C\u4E0D\u4EE3\u8868\u5DF2\u4E0A\u93C8\uFF09" },
@@ -60728,8 +60939,8 @@ function createApp() {
         curl: "curl -s <BASE_URL>/  # discover, then pay with any x402 client",
         node: "see agent/examples/buy-signal.ts (x402-fetch + viem)"
       }
-    })
-  );
+    });
+  });
   app2.get("/revenue", async (c) => {
     try {
       const trader = c.req.query("trader");
@@ -60774,7 +60985,7 @@ function createApp() {
       const av = await buildAgentVerification({
         did,
         verifier: VERIFIER_WALLET,
-        provider,
+        provider: provider2,
         apiBaseUrl: resolveApiBaseUrl(c.req.url),
         etvTargets: ETV_TARGETS,
         scvTargets: SCV_TARGETS,
@@ -60785,7 +60996,7 @@ function createApp() {
         verifierEphemeral: VERIFIER_IS_EPHEMERAL,
         // 若伺服器持有的 session key 正好是此 agent，附上持有證明（WV）。
         holderSigner: (() => {
-          const s = makeSigner(provider);
+          const s = makeSigner(provider2);
           if (!s) return void 0;
           try {
             return ethers_exports.getAddress(s.address) === parseDidPkh(did).address ? s : void 0;
@@ -60824,6 +61035,16 @@ function createApp() {
         new Promise((r) => setTimeout(() => r({}), 1500))
       ]);
       const trader = await resolveTrader(body.trader ?? c.req.query("trader"));
+      if (!trader) {
+        return c.json(
+          {
+            ok: false,
+            error: "no_demo_trader",
+            message: "\u6C92\u6709\u53EF\u5206\u6790\u7684 trader\uFF1A\u8ACB\u5E36 ?trader=0x\u2026\uFF0C\u6216\u7531\u71DF\u904B\u65B9\u8A2D\u5B9A DEMO_TRADER_ADDRESS\uFF08\u93C8\u4E0A StrategyRegistry \u76EE\u524D\u4E5F\u6C92\u6709\u5DF2\u8A3B\u518A\u7684 trader\uFF09\u3002"
+          },
+          404
+        );
+      }
       const signal = await getTraderPerformance(contracts2, trader);
       const settlementTx = void 0;
       const settleError = isSettlementEnabled() ? "demo \u514D\u8CBB\u8A66\u8CB7\u4E0D\u5373\u6642\u7D50\u7B97\uFF08\u907F\u514D serverless \u903E\u6642\uFF09\uFF1B\u771F\u5BE6\u5206\u6F64\u898B\u4ED8\u8CBB x402 \u7AEF\u9EDE + /revenue \u93C8\u4E0A\u7D2F\u8A08" : void 0;
@@ -60886,6 +61107,67 @@ function createApp() {
         400
       );
     }
+    if (isCompromisedAddress(trader)) {
+      return c.json(
+        {
+          ok: false,
+          error: "trader_compromised",
+          message: `${trader} \u662F\u5DF2\u77E5\u5916\u6D29\u5730\u5740\uFF0C70% \u5206\u6F64\u6703\u843D\u5230\u653B\u64CA\u8005\u624B\u4E0A\uFF0C\u4E0D\u8CA9\u552E\u3002`,
+          note: "\u672A\u4ED8\u6B3E\uFF1A\u5728 x402 \u4ED8\u8CBB\u7246\u4E4B\u524D\u5C31\u88AB\u64CB\u4E0B\u3002"
+        },
+        400
+      );
+    }
+    return next();
+  });
+  const payToGuard = async (c, next) => {
+    const a = await checkPayTo();
+    if (!a.safe) {
+      console.error(`[payto] unsafe payTo=${payTo} source=${a.source} reason=${a.reason}`);
+      return c.json(
+        {
+          ok: false,
+          error: "payto_unsafe",
+          reason: a.reason,
+          payTo,
+          note: "\u672A\u767C\u51FA\u4ED8\u6B3E\u8981\u6C42\uFF08402\uFF09\uFF1A\u6536\u6B3E\u5730\u5740\u672A\u901A\u904E\u5B89\u5168\u6AA2\u67E5\uFF0C\u8ACB\u71DF\u904B\u65B9\u66F4\u63DB PAY_TO\u3002"
+        },
+        503,
+        { "Retry-After": "600" }
+      );
+    }
+    return next();
+  };
+  app2.use("/signals/*", payToGuard);
+  app2.use("/oracle/*", payToGuard);
+  const isRegistered = opts.isRegisteredTrader ?? isRegisteredOnchain;
+  app2.use("/signals/*", async (c, next) => {
+    const trader = decodeURIComponent(c.req.path.split("/")[2] ?? "");
+    let registered;
+    try {
+      registered = await isRegistered(trader);
+    } catch (err) {
+      return c.json(
+        {
+          ok: false,
+          error: "registry_unavailable",
+          message: `\u7121\u6CD5\u78BA\u8A8D ${trader} \u662F\u5426\u70BA\u5DF2\u8A3B\u518A trader\uFF1A${err.message}`,
+          note: "\u672A\u4ED8\u6B3E\uFF1A\u7121\u6CD5\u78BA\u8A8D\u5C31\u4E0D\u767C\u51FA\u4ED8\u6B3E\u8981\u6C42\u3002"
+        },
+        503
+      );
+    }
+    if (!registered) {
+      return c.json(
+        {
+          ok: false,
+          error: "trader_not_registered",
+          message: `${trader} \u4E0D\u662F StrategyRegistry \u4E0A\u5DF2\u8A3B\u518A\u7684 trader\uFF0C\u6C92\u6709\u53EF\u8CA9\u552E\u7684\u8A0A\u865F\u3002`,
+          note: "\u672A\u4ED8\u6B3E\uFF1A\u5728 x402 \u4ED8\u8CBB\u7246\u4E4B\u524D\u5C31\u88AB\u64CB\u4E0B\uFF08x402 \u7121\u9000\u8CBB\u6A5F\u5236\uFF09\u3002"
+        },
+        400
+      );
+    }
     return next();
   });
   app2.use("/oracle/*", async (c, next) => {
@@ -60920,7 +61202,7 @@ function createApp() {
     return next();
   });
   const x402 = paymentMiddleware(
-    PAY_TO,
+    payTo,
     {
       "GET /signals/[trader]": {
         price: `$${PRICE_SIGNALS}`,
@@ -60953,7 +61235,7 @@ function createApp() {
       const f2 = typeof body?.error === "string" ? classifyFacilitatorFailure(body.error) : null;
       if (f2?.status === 429) c.res = c.json(f2.body, f2.status, f2.headers);
     }
-    c.res = await applyLedgerRecording(c.get("ledgerEntry"), c.res);
+    c.res = await applyLedgerRecording(c.get("ledgerEntry"), c.res, c.req.header("X-PAYMENT"));
   });
   app2.get("/signals/:trader", async (c) => {
     const trader = c.req.param("trader");
@@ -60974,9 +61256,15 @@ function createApp() {
     const asset = c.req.param("asset");
     try {
       const snap = await getOracleSnapshot(contracts2, asset);
-      const beneficiary = await resolveTrader();
+      const beneficiary = resolveOracleBeneficiary();
+      if (!("address" in beneficiary)) {
+        console.warn(`[oracle] \u4E0D\u6392\u5165\u5206\u6F64\uFF1A${beneficiary.reason}`);
+        return c.json(
+          jsonSafe({ ok: true, settled: false, settleError: beneficiary.reason, data: snap })
+        );
+      }
       c.set("ledgerEntry", {
-        trader: beneficiary,
+        trader: beneficiary.address,
         feeUsd: PRICE_ORACLE,
         at: Math.floor(Date.now() / 1e3),
         source: "oracle"
