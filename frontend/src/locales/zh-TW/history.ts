@@ -89,6 +89,8 @@ export const history = {
   loadOlder: {
     scanning: '正在掃描較舊的區塊…',
     cta: '↓ 載入較舊資料（區塊 {from}–{to}）',
+    /** 還沒有任何確定讀到的區塊時（例如首次讀取最新一段就失敗）。 */
+    ctaStart: '↻ 開始讀取日誌（區塊 {from}–{to}）',
   },
 
   footer: {

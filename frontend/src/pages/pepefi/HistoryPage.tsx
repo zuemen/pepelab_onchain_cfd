@@ -1042,7 +1042,8 @@ export default function HistoryPage() {
           >
             {loadingMore
               ? t.history.loadOlder.scanning
-              : interpolate(t.history.loadOlder.cta, {
+              // 空覆蓋（這個瀏覽器還沒有任何確定讀到的區塊）：這不是「較舊」，是從頭開始讀。
+              : interpolate(coverage !== null && coverage.from > coverage.to ? t.history.loadOlder.ctaStart : t.history.loadOlder.cta, {
                   from: Math.max(0, scannedFrom - FETCH_BLOCKS).toLocaleString(),
                   to: (scannedFrom - 1).toLocaleString(),
                 })}

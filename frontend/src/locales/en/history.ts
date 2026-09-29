@@ -85,6 +85,7 @@ export const history: Catalog['history'] = {
   loadOlder: {
     scanning: 'Scanning older blocks…',
     cta: '↓ Load older (blocks {from}–{to})',
+    ctaStart: '↻ Start reading logs (blocks {from}–{to})',
   },
 
   footer: {
