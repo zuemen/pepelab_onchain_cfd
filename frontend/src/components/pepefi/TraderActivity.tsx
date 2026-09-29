@@ -138,7 +138,9 @@ function EventDetail({ event }: { event: AddressEvent }) {
 }
 
 export default function TraderActivity({ activity, chainId, mode }: Props) {
-  const { events, positions, scanRange, progress, missing, loading, error } = activity
+  const { events, positions, scanRange, progress, missing, loading, error, failedChunks } = activity
+  // 讀取失敗（整體錯誤或有段落讀不到）時，空的時間軸不能說成「尚無動態」。
+  const timelineReadFailed = Boolean(error) || failedChunks > 0
 
   const rangeText = scanRange
     ? `#${scanRange.from.toLocaleString()}–#${scanRange.to.toLocaleString()}`
@@ -257,6 +259,12 @@ export default function TraderActivity({ activity, chainId, mode }: Props) {
 
         {loading && events.length === 0 ? (
           <TableSkeleton rows={6} cols={4} />
+        ) : events.length === 0 && timelineReadFailed ? (
+          <EmptyState
+            icon="⚠️"
+            title={t.traderProfile.activity.timeline.readFailedTitle}
+            description={t.traderProfile.activity.timeline.readFailedBody}
+          />
         ) : events.length === 0 ? (
           <EmptyState
             icon="📭"

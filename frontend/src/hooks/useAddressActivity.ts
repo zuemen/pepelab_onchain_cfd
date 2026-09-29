@@ -7,7 +7,8 @@ import { zeroPadValue } from 'ethers'
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
 import { notionalOf } from 'src/lib/pepefi/whale'
 import { mapLimit, withRetry, RPC_CONCURRENCY } from 'src/lib/pepefi/rpcBatch'
-import { avgBlockTime, chunkRanges, scanFromBlock, getLogsChunked } from 'src/lib/pepefi/chainLogs'
+import { t, interpolate } from 'src/locales'
+import { UI_RETRIES, avgBlockTime, chunkRanges, scanFromBlock, getLogsChunked } from 'src/lib/pepefi/chainLogs'
 
 // 單一地址的鏈上足跡：跨 Exchange / CopyTracker / TraderStake 的事件時間軸，
 // 加上目前還開著的部位。
@@ -58,6 +59,8 @@ export interface AddressActivity {
   missing:   number
   loading:   boolean
   error:     string | null
+  /** 重試後仍讀不到的區塊段數。> 0 時時間軸不完整，空結果必須顯示「讀取失敗」。 */
+  failedChunks: number
   refetch:   () => void
 }
 
@@ -88,6 +91,7 @@ export function useAddressActivity(
   const [missing,   setMissing]   = useState(0)
   const [loading,   setLoading]   = useState(false)
   const [error,     setError]     = useState<string | null>(null)
+  const [failedChunks, setFailedChunks] = useState(0)
 
   const runId = useRef(0)
 
@@ -100,6 +104,7 @@ export function useAddressActivity(
 
     setLoading(true)
     setError(null)
+    setFailedChunks(0)
 
     try {
       // 同 useExchangeActivity：這一發被擠掉的話整頁沒有掃描範圍。
@@ -145,11 +150,12 @@ export function useAddressActivity(
       // 掉的段不能悄悄丟掉——例如 Slashed 那一段讀不到，畫面就會像「從未被罰沒」。
       let failedChunks = 0
       const logSets = await Promise.all(
-        queries.map(q => getLogsChunked(provider, q, from, latestNum, tick, () => { failedChunks += 1 })),
+        queries.map(q => getLogsChunked(provider, q, from, latestNum, tick, () => { failedChunks += 1 }, { retries: UI_RETRIES })),
       )
       if (isStale()) return
+      setFailedChunks(failedChunks)
       if (failedChunks > 0) {
-        setError(`${failedChunks} block range(s) could not be read — this history may be incomplete. The RPC node may be rate-limiting.`)
+        setError(interpolate(t.traderProfile.activity.scanIncomplete, { count: failedChunks }))
       }
 
       const lowerAddr = address.toLowerCase()
@@ -260,7 +266,7 @@ export function useAddressActivity(
       })))
     } catch (e) {
       console.error('[useAddressActivity]', e)
-      if (runId.current === myRun) setError('Could not read this address’s on-chain history. The RPC node may be rate-limiting.')
+      if (runId.current === myRun) setError(t.traderProfile.activity.readError)
     } finally {
       if (runId.current === myRun) {
         setLoading(false)
@@ -271,5 +277,5 @@ export function useAddressActivity(
 
   useEffect(() => { void fetchActivity() }, [fetchActivity])
 
-  return { events, positions, scanRange, progress, missing, loading, error, refetch: fetchActivity }
+  return { events, positions, scanRange, progress, missing, loading, error, failedChunks, refetch: fetchActivity }
 }
