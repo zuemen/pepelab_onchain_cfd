@@ -93,21 +93,30 @@ export function useTerminalAccount(
   }, [refresh])
 
   useEffect(() => {
+    // 換標的時先清成 0n（＝無價格，下單鍵因此停用），不能讓上一個標的的價格
+    // 在新標的的進場價／清算價上殘留到讀取完成——或讀取失敗後永遠殘留。
+    setCurPrice(0n)
+    setMarkPrice(0n)
     if (!contracts) return
+    let cancelled = false
     void (async () => {
       try {
         const pr = (await contracts.oracle.getPrice(selAsset)) as unknown as [bigint, bigint]
-        setCurPrice(pr[0] * 10n ** 10n)
+        if (!cancelled) setCurPrice(pr[0] * 10n ** 10n)
       } catch {
-        /* 該標的不在 oracle 上 */
+        // 該標的不在 oracle 上或讀取失敗：無價格。
+        if (!cancelled) setCurPrice(0n)
       }
       // G6 mark 價：盡力而為，舊 ABI 沒有 getMarkPrice 就退回 index。
       try {
-        setMarkPrice((await contracts.exchange.getMarkPrice(selAsset)) as bigint)
+        const mp = (await contracts.exchange.getMarkPrice(selAsset)) as bigint
+        if (!cancelled) setMarkPrice(mp)
       } catch {
-        setMarkPrice(0n)
+        if (!cancelled) setMarkPrice(0n)
       }
     })()
+    // 快速切換標的時，較慢回來的舊請求不能蓋掉新標的的價格。
+    return () => { cancelled = true }
   }, [contracts, selAsset])
 
   return { usdcBal, usdtBal, freeMgn, positions, curPrice, markPrice, refresh }
