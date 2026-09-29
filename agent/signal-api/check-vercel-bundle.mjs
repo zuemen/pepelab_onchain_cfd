@@ -1,4 +1,7 @@
-// 檢查 commit 進 repo 的 api/index.js 是否從目前的 src/*.ts 打包而來。
+// 檢查 commit 進 repo 的 api/index.js 是否從目前的來源打包而來。
+// 2026-09-29：「來源」= bundle 實際內聯的所有非 node_modules 檔案（esbuild metafile），
+// 包含 agent/shared/src/**、frontend/src/contracts/addresses.ts、agentAuth.ts，
+// 不再只看 signal-api/src。
 //
 // 稽核 2026-08-06（四·Medium）：Vercel 服務的是 commit 進 repo 的 4.8MB bundle，
 // **沒有 build step** —— 改了 src/*.ts 忘記重打包，線上跑的就是舊碼，而且沒有任何
@@ -13,7 +16,7 @@
 //   npm run bundle:check -w signal-api     # 不一致 → exit 1
 import { readFile, access } from "node:fs/promises";
 
-import { fingerprintSources } from "./src/bundleFingerprint.mjs";
+import { fingerprintBundle } from "./src/bundleFingerprint.mjs";
 
 const OUT = "api/index.js";
 const MANIFEST = "api/.bundle-sources.json";
@@ -37,7 +40,7 @@ try {
   process.exit(1);
 }
 
-const fresh = await fingerprintSources("src");
+const fresh = await fingerprintBundle();
 
 if (fresh.digest !== manifest.digest) {
   // 指出「哪幾個檔案變了」，而不是只丟兩個對不起來的 hash——後者只能告訴你
@@ -46,7 +49,7 @@ if (fresh.digest !== manifest.digest) {
   const changed = Object.keys(fresh.files).filter((f) => fresh.files[f] !== known[f]);
   const removed = Object.keys(known).filter((f) => !(f in fresh.files));
   console.error(
-    `::error::${OUT} 不是從目前的 src/*.ts 打包出來的` +
+    `::error::${OUT} 不是從目前的來源打包出來的` +
       `（manifest ${manifest.digest} ≠ 現在 ${fresh.digest}）。\n` +
       (changed.length ? `新增或修改：${changed.join(", ")}\n` : "") +
       (removed.length ? `已刪除：${removed.join(", ")}\n` : "") +
@@ -56,4 +59,4 @@ if (fresh.digest !== manifest.digest) {
   process.exit(1);
 }
 
-console.log(`✓ ${OUT} 與 src/ 同步（${fresh.digest}）`);
+console.log(`✓ ${OUT} 與 ${Object.keys(fresh.files).length} 個來源檔同步（${fresh.digest}）`);

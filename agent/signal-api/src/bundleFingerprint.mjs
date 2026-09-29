@@ -9,22 +9,37 @@
 //   GitHub Actions                                  → 945cfee402b45c74
 //
 // 於是 CI 紅燈講的是「你的 esbuild 跟我的不一樣」，而不是這個檢查真正要防的
-// 「你改了 src 卻忘記重新打包」。後者才是它存在的理由（稽核 2026-08-06 四·Medium：
-// Vercel 直接服務 commit 進 repo 的 bundle，**沒有 build step**）。
+// 「你改了 src 卻忘記重新打包」。改成記錄「這份 bundle 是從哪些來源打出來的」。
 //
-// 改成記錄「這份 bundle 是從哪些來源打出來的」，就與工具鏈版本無關了。
+// 2026-09-29（P0）：以前只 hash `signal-api/src/*.ts`，但 bundle 實際內聯的還有
+// `agent/shared/src/**`、`frontend/src/contracts/addresses.ts`、`agentAuth.ts`……
+// 改了 shared（例如收款守門、ABI）卻忘記重打包，檢查照樣綠燈。現在來源清單取自
+// esbuild 的 metafile（`write: false`，只要 import 圖、不看輸出位元組）——bundle 內聯
+// 了哪些非 node_modules 檔案，指紋就涵蓋哪些，新增的 import 也會自動納入。
+// 輸入清單只取決於 import 圖，與 esbuild 版本無關。
 import { readdir, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { join, relative, sep } from "node:path";
+import { join, relative, resolve, sep, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 /**
  * 換行正規化。Windows checkout 是 CRLF、Linux 是 LF，同一份原始碼不該有兩個指紋。
- * .gitattributes 另外把 *.ts 釘成 LF 當第一層保險，這裡是第二層——只靠 git 設定的話，
- * 一個 core.autocrlf 設錯的開發環境就會讓 CI 對著一份無害的差異亮紅燈。
  */
 const normalize = (s) => s.replace(/\r\n/g, "\n");
 
 const sha = (s) => createHash("sha256").update(s).digest("hex").slice(0, 16);
+
+const toPosix = (p) => p.split(sep).join("/");
+
+function digestOf(files) {
+  // 排序後才組合：順序不保證，不排序 digest 會隨檔案系統而變。
+  return sha(
+    Object.keys(files)
+      .sort()
+      .map((k) => `${k}:${files[k]}`)
+      .join("\n"),
+  );
+}
 
 async function collect(dir, base, out) {
   for (const entry of await readdir(dir, { withFileTypes: true })) {
@@ -32,29 +47,80 @@ async function collect(dir, base, out) {
     if (entry.isDirectory()) {
       await collect(full, base, out);
     } else if (entry.name.endsWith(".ts")) {
-      // 路徑一律用 "/"：Windows 的 "\" 會讓同一份原始碼在兩個平台得到不同 digest。
-      const key = relative(base, full).split(sep).join("/");
-      out[key] = sha(normalize(await readFile(full, "utf8")));
+      out[toPosix(relative(base, full))] = sha(normalize(await readFile(full, "utf8")));
     }
   }
   return out;
 }
 
 /**
- * 掃描一個來源目錄，回傳每個 .ts 檔的內容雜湊與整體指紋。
+ * 掃描一個來源目錄，回傳每個 .ts 檔的內容雜湊與整體指紋。（目錄版，保留給測試與
+ * 舊呼叫端；bundle 檢查改用 fingerprintBundle。）
  *
- * @param {string} dir 要掃描的來源目錄（signal-api 用 "src"）
+ * @param {string} dir
  * @returns {Promise<{ files: Record<string, string>, digest: string }>}
- *   `files` 是「相對路徑 → 內容 sha256 前 16 碼」，`digest` 是整體指紋。
- *   保留 `files` 而不只給一個 digest，是為了讓 check 失敗時能指出**是哪幾個檔案變了**——
- *   只丟兩個對不起來的 hash 只能說「有東西不對」，不能說要去看哪裡。
  */
 export async function fingerprintSources(dir) {
   const files = await collect(dir, dir, {});
-  // 排序後才組合：readdir 的順序不保證，不排序 digest 會隨檔案系統而變。
-  const canonical = Object.keys(files)
-    .sort()
-    .map((k) => `${k}:${files[k]}`)
-    .join("\n");
-  return { files, digest: sha(canonical) };
+  return { files, digest: digestOf(files) };
+}
+
+/**
+ * 對一組檔案算指紋。鍵是相對 `root` 的 "/" 路徑。
+ *
+ * @param {string} root
+ * @param {string[]} absPaths
+ */
+export async function fingerprintFiles(root, absPaths) {
+  const files = {};
+  for (const p of absPaths) {
+    files[toPosix(relative(root, p))] = sha(normalize(await readFile(p, "utf8")));
+  }
+  return { files, digest: digestOf(files) };
+}
+
+/**
+ * 用 esbuild metafile 取得 entry 實際打包進去的**非 node_modules** 來源檔（絕對路徑）。
+ * 不寫檔（write:false），只看 import 圖。
+ *
+ * @param {string} entry 入口檔（絕對或相對 cwd）
+ * @param {string} cwd   esbuild 的工作目錄
+ */
+export async function bundleInputs(entry, cwd) {
+  const { build } = await import("esbuild");
+  const r = await build({
+    entryPoints: [entry],
+    absWorkingDir: resolve(cwd),
+    bundle: true,
+    platform: "node",
+    format: "esm",
+    target: "node20",
+    write: false,
+    metafile: true,
+    outfile: "__fingerprint__.js",
+    logLevel: "silent",
+  });
+  return Object.keys(r.metafile.inputs)
+    .filter((k) => !k.split(/[\\/]/).includes("node_modules"))
+    .map((k) => resolve(cwd, k))
+    .sort();
+}
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+/** signal-api 目錄（本檔在 signal-api/src/）。 */
+export const SIGNAL_API_DIR = resolve(HERE, "..");
+/** repo 根目錄：manifest 的鍵以它為基準（例如 `agent/shared/src/env.ts`）。 */
+export const REPO_ROOT = resolve(SIGNAL_API_DIR, "../..");
+export const VERCEL_ENTRY = "src/vercel-entry.ts";
+
+/**
+ * Vercel bundle 的來源指紋：entry 內聯的所有非 node_modules 檔案。
+ *
+ * @param {{ entry?: string, cwd?: string, root?: string }} [opts]
+ */
+export async function fingerprintBundle(opts = {}) {
+  const cwd = opts.cwd ?? SIGNAL_API_DIR;
+  const root = opts.root ?? REPO_ROOT;
+  const inputs = await bundleInputs(opts.entry ?? VERCEL_ENTRY, cwd);
+  return fingerprintFiles(root, inputs);
 }
