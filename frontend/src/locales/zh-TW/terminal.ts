@@ -80,6 +80,13 @@ export const terminal = {
     onLiquidation: '清算時',
     onLiquidationValue: '殘值退還（扣罰金）',
     funding8h: '資金費率（8 小時）',
+    /** 交易費與槓桿上限：優先讀 exchange 的 per-asset view，讀不到才用碳分級靜態表。 */
+    tradingParams: '交易費 · 槓桿上限',
+    tradingParamsValue: '{fee} bps · ≤{lev}× · {source}',
+    paramsSource: {
+      chain: '來源：鏈上',
+      static: '來源：靜態表',
+    },
 
     enterMargin: '輸入保證金',
     insufficientFreeMargin: '可用保證金不足——請先存入',

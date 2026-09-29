@@ -6,13 +6,15 @@ import Box from '@mui/material/Box'
 import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 
+import { useAssetTradingParams } from 'src/hooks/useAssetTradingParams'
+
 import { t, interpolate } from 'src/locales'
 import { STABLE_LABEL } from 'src/lib/pepefi/tokenLabel'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { estimateLiquidationPrice } from 'src/lib/pepefi/liquidation'
 import { fUsd, fNum, fToken, fromUnits } from 'src/lib/pepefi/format'
 import { SHOW_LEVERAGE, FIXED_LEVERAGE } from 'src/lib/pepefi/featureFlags'
-import { paramsFor, attestationExpired, type Tier } from 'src/lib/pepefi/carbon'
+import { type Tier, paramsFor, attestationExpired } from 'src/lib/pepefi/carbon'
 
 import { Row } from '../Atoms'
 import { C, panel, monoCss, labelCss } from '../terminal-theme'
@@ -63,15 +65,20 @@ export function OrderTicket({
   // 旗標關閉時鎖在 1×：畫面不露出選擇器，送單也只送 1，鏈上行為等同現貨。
   const [lev, setLev] = useState(SHOW_LEVERAGE ? 2 : FIXED_LEVERAGE)
 
-  // 碳分級的槓桿上限。合約 openPosition 會用 CarbonTiers 推導的上限擋，這裡
-  // 先把選擇器夾住，讓使用者在按下去之前就看到「這個資產只能到 N×」，而不是
-  // 送出後吃一個 revert。見證過期一律當未評等（1×）。
+  // 碳分級的槓桿上限與費率。合約 openPosition 用的是 exchange 自己的
+  // maxLeverageForAsset / tradingFeeBpsForAsset——這裡直接讀那兩個 view，讓選擇器
+  // 的上限與顯示的費率就是鏈上會用的數字；讀不到才退回前端的碳分級靜態表，並標
+  // 「來源：靜態表」。靜態表的見證過期一律當未評等（1×）。
   const carbonTier: Tier = meta?.carbon
     ? attestationExpired(meta.carbon.observed, Date.now())
       ? 'unrated'
       : meta.carbon.tier
     : 'unrated'
-  const carbonMaxLev = meta?.carbon ? paramsFor(carbonTier).maxLeverage : 5
+  const staticParams = meta?.carbon
+    ? { maxLeverage: paramsFor(carbonTier).maxLeverage, tradingFeeBps: paramsFor(carbonTier).tradingFeeBps }
+    : { maxLeverage: 5, tradingFeeBps: paramsFor('low').tradingFeeBps }
+  const tradingParams = useAssetTradingParams(contracts?.exchange, selAsset, staticParams)
+  const carbonMaxLev = tradingParams.maxLeverage
   useEffect(() => {
     if (lev > carbonMaxLev) setLev(carbonMaxLev)
   }, [carbonMaxLev, lev])
@@ -178,15 +185,7 @@ export function OrderTicket({
       <Box>
         <Box sx={{ ...labelCss, mb: 0.7, display: 'flex', justifyContent: 'space-between' }}>
           <span>{t.terminal.ticket.leverage}</span>
-          {meta?.carbon && carbonMaxLev < 5 && (
-            <Box component="span" sx={{ ...monoCss, fontSize: 10, color: C.mut }}>
-              {interpolate(t.terminal.stats.carbonValue, {
-                tier: t.tokens.provenance.carbonTier[carbonTier],
-                fee: paramsFor(carbonTier).tradingFeeBps,
-                lev: carbonMaxLev,
-              })}
-            </Box>
-          )}
+
         </Box>
         <Box sx={{ display: 'flex', gap: 0.8 }}>
           {[1, 2, 5].filter((l) => l <= carbonMaxLev).map((l) => {
@@ -270,6 +269,15 @@ export function OrderTicket({
           k={t.terminal.ticket.funding8h}
           v={`${rate >= 0 ? '+' : ''}${fNum(rate / 100, { dp: 4 })}%`}
           color={rate > 0 ? C.red : rate < 0 ? C.green : C.mut}
+        />
+        <Row
+          k={t.terminal.ticket.tradingParams}
+          v={interpolate(t.terminal.ticket.tradingParamsValue, {
+            fee: tradingParams.tradingFeeBps,
+            lev: tradingParams.maxLeverage,
+            source: t.terminal.ticket.paramsSource[tradingParams.source],
+          })}
+          color={tradingParams.source === 'static' ? C.mut : undefined}
         />
       </Box>
 

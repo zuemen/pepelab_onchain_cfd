@@ -72,6 +72,12 @@ export const terminal: Catalog['terminal'] = {
     onLiquidation: 'On liquidation',
     onLiquidationValue: 'Refunded minus penalty',
     funding8h: 'Funding rate (8h)',
+    tradingParams: 'Trading fee · max leverage',
+    tradingParamsValue: '{fee} bps · ≤{lev}× · {source}',
+    paramsSource: {
+      chain: 'source: on-chain',
+      static: 'source: static table',
+    },
 
     enterMargin: 'Enter margin',
     insufficientFreeMargin: 'Insufficient free margin — deposit first',
