@@ -51,7 +51,9 @@ describe('closeBlockReason', () => {
 
   it('價格過期或未知 → 擋，理由含標的', () => {
     expect(closeBlockReason({ freshness: stale, assetLabel: 'sGOLD', assetMode: null })).toContain('sGOLD')
-    expect(closeBlockReason({ freshness: undefined, assetLabel: 'sGOLD', assetMode: null })).toBeNull()
+    // 價格還沒讀到 → 視為 unknown 擋下，不放行。
+    expect(closeBlockReason({ freshness: undefined, assetLabel: 'sGOLD', assetMode: null })).toContain('sGOLD')
+    expect(closeBlockReason({ freshness: null, assetLabel: 'sGOLD', assetMode: null })).toContain('sGOLD')
     const unknown = classifyFreshness({ updatedAtSec: 0, nowSec: now, maxPriceAgeSec: 3600 })
     expect(closeBlockReason({ freshness: unknown, assetLabel: 'sGOLD', assetMode: null })).toContain('sGOLD')
   })

@@ -27,7 +27,10 @@ export function closeBlockReason(a: {
   if (a.assetMode === ASSET_MODE.Halted) {
     return interpolate(t.portfolio.close.halted, { asset: a.assetLabel })
   }
-  return stalenessNotice(a.freshness, a.assetLabel)
+  // 價格還沒讀到（undefined / null）一律當成 unknown 擋下——不知道新不新鮮，就不該
+  // 讓使用者簽一筆可能 revert StalePrice 的交易。
+  const freshness: Freshness = a.freshness ?? { level: 'unknown', ageSec: null, label: t.freshness.unknownAge }
+  return stalenessNotice(freshness, a.assetLabel)
 }
 
 const ZERO_ADDR = '0x0000000000000000000000000000000000000000'
