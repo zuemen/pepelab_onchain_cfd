@@ -187,8 +187,9 @@ min(`KEEPER_BREAKER_DEVIATION`, Guarded 該方向上限)**,實際上是 +10% / �
 | 變動 ≤ 有效門檻 | 兩顆都寫入同一個完整價格 |
 | 變動 > 有效門檻,≥2 個新鮮獨立來源彼此差距 ≤ 2%、方向一致,且 Guarded 接受 | 兩顆都寫入完整的共識價(中位數) |
 | 多源確認不通過,**或** Guarded 會拒絕完整價格(即使多源確認通過) | **兩顆都不寫**(熔斷);`::error::`、job 失敗、嘗試停單、開 issue |
-| Guarded 讀不到 | 兩顆都不寫;記 failed |
-| Guarded 已凍結或沒有此資產 | 只寫 MockOracle |
+| Guarded 讀不到 | 兩顆都不寫(fail-closed);記 failed |
+| Guarded 已凍結 | 兩顆都不寫(fail-closed,凍結是 guardian 的決定);列為熔斷 |
+| Guarded 沒有此資產 | 只寫 MockOracle,但門檻**仍是** Guarded 上限(不放寬回 20%) |
 
 **拒寫不等於停單。** 價格停在舊值,但交易所(`0x827e…124D`)的 `maxPriceAge` 是
 **6 小時**(21600,2026-09-29 唯讀核對):在那之前,交易所仍會以已知錯誤的舊價開倉、

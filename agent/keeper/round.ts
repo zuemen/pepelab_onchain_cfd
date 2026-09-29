@@ -166,28 +166,34 @@ export async function runRound(ctx: RoundCtx): Promise<RoundResult> {
     if (!plan.write) continue;
 
     // Guarded 的現況要在寫 Mock 之前讀：兩顆要嘛都寫、要嘛都不寫。
-    let guardedState: { price8: bigint; active: boolean } | null = null;
+    // 窄複審 2：Guarded 被凍結或讀不到 → Mock 也拒寫（fail-closed）。凍結是 guardian
+    // 的人工決定，keeper 不能把它當成「少一道限制、Mock 可以照寫」。
+    let guardedState: { price8: bigint; exists: boolean } | null = null;
     if (ctx.guarded) {
       try {
         const [gp, , exists, frozen] = await ctx.guarded.peek(assetId);
-        guardedState = { price8: gp, active: exists && !frozen };
-        if (exists && frozen) log(`  → GuardedOracle 已凍結，這一輪只寫 MockOracle`);
+        if (exists && frozen) {
+          refuse(symbol, assetId, "GuardedOracle 此資產已凍結（guardian 決定）—— fail-closed，MockOracle 也不寫");
+          continue;
+        }
+        guardedState = { price8: gp, exists };
       } catch (e) {
         r.failed += 1;
+        r.skippedSymbols.push(symbol);
         error(
           `::error::${symbol} 讀不到 GuardedOracle（${(e as Error).message.slice(0, 100)}）` +
-            `—— 無法確認兩顆會一致，兩顆都不寫`,
+            `—— fail-closed，兩顆都不寫`,
         );
         continue;
       }
     }
 
     // 有效熔斷門檻 = min(KEEPER_BREAKER_DEVIATION, Guarded 在這個方向的上限)。
+    // 窄複審 2：只要有設定 Guarded 就一律套用，不看資產狀態 —— 門檻不能因任何狀態放寬。
     const up = feed.value > current;
-    const breaker =
-      guardedState?.active && ctx.guardedCap > 0n
-        ? effectiveBreaker(ctx.breakerDeviation, ctx.guardedCap, up)
-        : ctx.breakerDeviation;
+    const breaker = ctx.guarded
+      ? effectiveBreaker(ctx.breakerDeviation, ctx.guardedCap, up)
+      : ctx.breakerDeviation;
 
     // A-5：價格熔斷。偏離超過有效門檻時才去湊第二個獨立來源（正常路徑不多打請求）。
     // 每一票都帶報價年齡；年齡不明或過舊的票在 confirmLargeMove 裡不算數。
@@ -225,7 +231,7 @@ export async function runRound(ctx: RoundCtx): Promise<RoundResult> {
 
     const price8 = toPrice8(guard.value);
     let mirrorPlan: MirrorPlan | null = null;
-    if (guardedState?.active) {
+    if (guardedState?.exists) {
       mirrorPlan = planMirror(guardedState.price8, price8, ctx.guardedCap);
       if (mirrorPlan.action === "reject") {
         // 多源確認通過也一樣：Guarded 會拒絕的價格，Mock 也不寫。

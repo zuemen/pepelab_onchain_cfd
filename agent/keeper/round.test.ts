@@ -116,13 +116,24 @@ function ctx(over: Partial<RoundCtx> & Pick<RoundCtx, "oracle">): RoundCtx {
   assert.equal(r.failed, 1);
 }
 
-// ── Guarded 已凍結／資產不存在 → 只寫 Mock（照熔斷門檻 20%） ──────────────────
-{
+// ── Guarded 已凍結 → fail-closed，兩顆都不寫（窄複審 2；即使變動很小） ────────────
+for (const target of [101, 112]) {
   const oracle = fakeOracle(100);
   const guarded = fakeGuarded(100, { frozen: true });
-  await runRound(ctx({ oracle, guarded, fetchPrice: async () => yahoo(112) }));
-  assert.deepEqual(oracle.writes, [P(112)]);
+  const r = await runRound(ctx({ oracle, guarded, fetchPrice: async () => yahoo(target) }));
+  assert.equal(oracle.writes.length, 0, `凍結時 Mock 不得寫（${target}）`);
   assert.equal(guarded.writes.length, 0);
+  assert.equal(r.rejected, 1);
+  assert.ok(r.refused[0].reason.includes("已凍結"), r.refused[0].reason);
+}
+// ── Guarded 沒有此資產 → 門檻仍是 Guarded 上限（10%），不放寬回 20% ─────────────
+{
+  const o1 = fakeOracle(100);
+  await runRound(ctx({ oracle: o1, guarded: fakeGuarded(0, { exists: false }), fetchPrice: async () => yahoo(112) }));
+  assert.equal(o1.writes.length, 0, "12% 超過有效門檻 10%，拒寫");
+  const o2 = fakeOracle(100);
+  await runRound(ctx({ oracle: o2, guarded: fakeGuarded(0, { exists: false }), fetchPrice: async () => yahoo(108) }));
+  assert.deepEqual(o2.writes, [P(108)], "8% 在門檻內，只寫 Mock（Guarded 沒有此資產）");
 }
 
 // ── 沒有 GuardedOracle → 門檻就是 KEEPER_BREAKER_DEVIATION ───────────────────
