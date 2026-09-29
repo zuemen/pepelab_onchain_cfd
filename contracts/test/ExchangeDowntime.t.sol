@@ -321,4 +321,64 @@ contract ExchangeDowntimeTest is Test {
         _elapse(1 hours);
         assertEq(exchange.downtimeOf(BTC), 73 hours);
     }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // Guardian pause cooldown
+    // ═════════════════════════════════════════════════════════════════════════
+
+    function _cooldown(uint256 allowedAt) internal pure returns (bytes memory) {
+        return abi.encodeWithSelector(PerpetualExchange.GuardianPauseCooldown.selector, allowedAt);
+    }
+
+    /// pause → lapse → (grace) → pause again was a way to hold withdrawals
+    /// shut forever; the guardian must now wait 24h after its pause ends.
+    function test_guardianPause_cannotChainAfterLapse() public {
+        vm.prank(guardian);
+        exchange.pause();
+        uint256 lapse = vm.getBlockTimestamp() + 72 hours;
+        _elapse(72 hours + exchange.LIQUIDATION_GRACE_PERIOD());
+
+        vm.prank(guardian);
+        vm.expectRevert(_cooldown(lapse + 24 hours));
+        exchange.pause();
+
+        vm.prank(user); // the window is real: withdrawals work
+        exchange.withdrawMargin(1e18);
+
+        vm.warp(lapse + 24 hours);
+        vm.prank(guardian);
+        exchange.pause();
+        assertTrue(exchange.paused());
+    }
+
+    function test_guardianPause_cooldownAfterOwnerLiftsIt() public {
+        vm.prank(guardian);
+        exchange.pause();
+        _elapse(1 hours);
+        exchange.unpause();
+        uint256 lifted = vm.getBlockTimestamp();
+        vm.prank(guardian);
+        vm.expectRevert(_cooldown(lifted + 24 hours));
+        exchange.pause();
+    }
+
+    function test_guardianPause_cooldownDoesNotBindOwner() public {
+        vm.prank(guardian);
+        exchange.pause();
+        _elapse(72 hours);
+        exchange.pause(); // owner, inside the guardian's cooldown
+        assertTrue(exchange.paused());
+    }
+
+    /// Once the owner has taken a guardian pause over it is the owner's pause:
+    /// lifting it starts no guardian cooldown.
+    function test_guardianPause_takenOverByOwner_noCooldown() public {
+        vm.prank(guardian);
+        exchange.pause();
+        exchange.pause();   // owner takeover
+        exchange.unpause();
+        vm.prank(guardian);
+        exchange.pause();
+        assertTrue(exchange.paused());
+    }
 }

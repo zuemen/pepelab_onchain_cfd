@@ -347,6 +347,15 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     ///         that keeps re-pausing is removed by the owner (`setGuardian`).
     uint256 public constant GUARDIAN_PAUSE_DURATION = 72 hours;
 
+    /// @notice After a guardian pause ends (lapses or is lifted by the owner),
+    ///         the guardian may not pause again for this long; the owner is
+    ///         never subject to it. Without it a guardian could chain pauses
+    ///         (pause → lapse → pause) and hold withdrawals shut indefinitely.
+    ///         With it, a guardian acting alone can freeze withdrawals for at
+    ///         most 72h + LIQUIDATION_GRACE_PERIOD (30 min) at a stretch, and
+    ///         every such stretch is followed by ≥ 23.5h of open withdrawals.
+    uint256 public constant GUARDIAN_PAUSE_COOLDOWN = 24 hours;
+
     /// @notice After a pause ends, or an asset leaves Halted, liquidations and
     ///         new opens are refused for this long (closes and deposits work),
     ///         so traders can react to the reopening price before anyone can
@@ -389,6 +398,9 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     uint256 public cumulativePausedTime;
     /// @notice When the last explicitly closed pause window ended.
     uint256 public lastResumedAt;
+    /// @notice Earliest time the guardian may pause again (see
+    ///         GUARDIAN_PAUSE_COOLDOWN). 0 = no cooldown running.
+    uint256 public guardianPauseAllowedAt;
 
     /// @notice When `asset` entered Halted (0 = not halted).
     mapping(bytes32 => uint256) public haltedAt;
@@ -597,6 +609,9 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     error EnforcedPause();
     /// @notice P1: `unpause` while not paused.
     error ExpectedPause();
+    /// @notice P1: the guardian's previous pause ended less than
+    ///         GUARDIAN_PAUSE_COOLDOWN ago; it may pause again at `allowedAt`.
+    error GuardianPauseCooldown(uint256 allowedAt);
     /// @notice P1: inside the post-pause (asset == 0) or post-halt grace
     ///         period; liquidations and new opens resume at `until`.
     error GracePeriodActive(bytes32 asset, uint256 until);
@@ -855,7 +870,8 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     ///
     ///      Expiry: a GUARDIAN pause lapses on its own after
     ///      GUARDIAN_PAUSE_DURATION (72h). The guardian cannot extend it —
-    ///      calling `pause()` again while it runs reverts. The OWNER may call
+    ///      calling `pause()` again while it runs reverts — and cannot start
+    ///      another for GUARDIAN_PAUSE_COOLDOWN (24h) after it ends. The OWNER may call
     ///      `pause()` during a guardian pause to take it over (no expiry). An
     ///      owner pause never lapses; only `unpause()` ends it.
     ///
@@ -873,6 +889,11 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
             pauseExpiresAt = 0; // owner takes over the guardian's pause
             emit PauseExpiryCleared(msg.sender);
             return;
+        }
+        // Day-scale cooldown: validator timestamp drift (seconds) is immaterial.
+        // forge-lint: disable-next-line(block-timestamp)
+        if (!byOwner && block.timestamp < guardianPauseAllowedAt) {
+            revert GuardianPauseCooldown(guardianPauseAllowedAt);
         }
         pausedAt       = block.timestamp;
         pauseExpiresAt = byOwner ? 0 : block.timestamp + GUARDIAN_PAUSE_DURATION;
@@ -902,6 +923,9 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     }
 
     function _closePauseWindow(uint256 end) internal {
+        // A window with an expiry is a guardian pause the owner did not take
+        // over: start the guardian's cooldown from its end.
+        if (pauseExpiresAt != 0) guardianPauseAllowedAt = end + GUARDIAN_PAUSE_COOLDOWN;
         cumulativePausedTime += end - pausedAt;
         lastResumedAt  = end;
         pausedAt       = 0;

@@ -726,6 +726,14 @@ cannot extend a running pause but can start a new one after it lapses; the
 owner removes a misbehaving guardian with `setGuardian`. The owner may take
 over a running guardian pause (it then never lapses). Owner pauses never lapse.
 
+**Update (2026-09-29, later the same day):** the chaining gap above is closed.
+After a guardian pause ends — by lapsing or by the owner lifting it — the
+guardian may not pause again for `GUARDIAN_PAUSE_COOLDOWN` (24h); the owner is
+not bound by it. A guardian acting alone can therefore freeze withdrawals for
+at most **72h 30min** at a stretch (72h pause + 30min post-pause grace), and
+every such stretch is followed by at least **23h 30min** in which withdrawals
+work. Only the owner can hold the market shut longer.
+
 ## 23. Global pause blocks exits and liquidations
 
 While paused, traders cannot close and underwater positions cannot be
