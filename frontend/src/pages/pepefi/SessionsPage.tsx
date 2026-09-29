@@ -32,6 +32,7 @@ import { t, locale, interpolate } from 'src/locales'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { agentDid, shortDid } from 'src/lib/pepefi/did'
 import { useToast } from 'src/components/pepefi/ToastProvider'
+import { SwitchChainButton } from 'src/components/pepefi/SwitchChainButton'
 import { ASSET_IDS, CHAIN_NAMES } from 'src/contracts/addresses'
 import { ASSETS_LIST } from 'src/lib/pepefi/assetMeta'
 import { BASE_SEPOLIA_RPC_URL } from 'src/lib/pepefi/chains'
@@ -365,6 +366,9 @@ export default function SessionsPage() {
           {t.sessions.markup.wrongNetBefore}<b>Base Sepolia</b>{t.sessions.markup.wrongNetMid}{' '}
           <b>{wallet.chainId !== null ? (CHAIN_NAMES[wallet.chainId] ?? `chainId ${wallet.chainId}`) : t.sessions.wrongNetwork.unknownChain}</b>
           {t.sessions.markup.wrongNetAfter}
+          <Box sx={{ mt: 1 }}>
+            <SwitchChainButton />
+          </Box>
         </Alert>
       ) : (
         <>

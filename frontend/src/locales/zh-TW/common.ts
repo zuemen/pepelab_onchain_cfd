@@ -71,6 +71,14 @@ export const common = {
     collapse: '收合',
   },
 
+  /** 錢包在錯的鏈上時的切鏈按鈕（lib/pepefi/switchChain.ts）。 */
+  switchChain: {
+    cta: '切換到 Base Sepolia',
+    switching: '切換中…',
+    rejected: '已在錢包中取消切換。',
+    failed: '錢包無法切換網路，請在錢包中手動切到 Base Sepolia（chainId 84532）。',
+  },
+
   /** 商業版旗標關閉時，直接打網址看到的頁面（見 lib/pepefi/featureFlags.ts）。 */
   featureDisabled: {
     title: '此功能未啟用',

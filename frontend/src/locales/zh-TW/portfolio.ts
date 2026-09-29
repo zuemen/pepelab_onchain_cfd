@@ -180,6 +180,10 @@ export const portfolio = {
     connectWallet: '連接錢包以查看你的投資組合。',
 
     unsupportedNetwork: '不支援的網路',
+    connectedTo: '目前連線於 ',
+    connectedToAfter: '。',
+    switchTo: '請切換到 ',
+    switchToAfter: ' 測試網。',
     unknownChain: '未知',
     chainNumber: '鏈 {id}',
 

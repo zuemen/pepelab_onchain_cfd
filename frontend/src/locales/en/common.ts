@@ -66,6 +66,13 @@ export const common: Catalog['common'] = {
     collapse: 'Collapse',
   },
 
+  switchChain: {
+    cta: 'Switch to Base Sepolia',
+    switching: 'Switching…',
+    rejected: 'The switch was cancelled in your wallet.',
+    failed: 'Your wallet could not switch networks. Switch to Base Sepolia (chainId 84532) manually in your wallet.',
+  },
+
   featureDisabled: {
     title: 'This feature is not enabled',
     body: 'This deployment does not have this feature turned on. Contact the platform operator if you need it.',

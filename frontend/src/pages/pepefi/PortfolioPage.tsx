@@ -33,6 +33,7 @@ import { useSynthHoldings } from 'src/hooks/useSynthHoldings';
 import { SHOW_PERPETUALS, FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags';
 import { copyDeskVisibility } from 'src/lib/pepefi/copyDeskVisibility';
 import { readAssetMode, closeBlockReason } from 'src/lib/pepefi/closeGuard';
+import { SwitchChainButton } from 'src/components/pepefi/SwitchChainButton';
 import KYCStatusCard from 'src/components/pepefi/dashboard/KYCStatusCard';
 import QuickActions from 'src/components/pepefi/dashboard/QuickActions';
 import PortfolioAnalysis from 'src/components/pepefi/dashboard/PortfolioAnalysis';
@@ -538,9 +539,10 @@ export default function PortfolioPage() {
         <Typography sx={{ fontSize: '2.5rem' }}>⛓️</Typography>
         <Typography variant="h6" sx={{ fontWeight: 'bold' }}>{t.portfolio.page.unsupportedNetwork}</Typography>
         <Typography variant="body2" color="text.secondary" align="center">
-          Connected to <Typography component="span" sx={{ color: 'warning.main', fontFamily: MONO }}>{name}</Typography>.<br />
-          Please switch to <Typography component="span" sx={{ color: 'primary.main', fontFamily: MONO }}>Base Sepolia</Typography> testnet.
+          {t.portfolio.page.connectedTo}<Typography component="span" sx={{ color: 'warning.main', fontFamily: MONO }}>{name}</Typography>{t.portfolio.page.connectedToAfter}<br />
+          {t.portfolio.page.switchTo}<Typography component="span" sx={{ color: 'primary.main', fontFamily: MONO }}>Base Sepolia</Typography>{t.portfolio.page.switchToAfter}
         </Typography>
+        <SwitchChainButton />
       </Box>
     );
   }

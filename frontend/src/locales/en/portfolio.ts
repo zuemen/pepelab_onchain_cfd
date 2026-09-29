@@ -148,6 +148,10 @@ export const portfolio: Catalog['portfolio'] = {
     connectWallet: 'Connect wallet to view your portfolio.',
 
     unsupportedNetwork: 'Unsupported Network',
+    connectedTo: 'Connected to ',
+    connectedToAfter: '.',
+    switchTo: 'Please switch to ',
+    switchToAfter: ' testnet.',
     unknownChain: 'unknown',
     chainNumber: 'Chain {id}',
 

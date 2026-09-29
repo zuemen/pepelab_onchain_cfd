@@ -12,6 +12,7 @@ import { useWalletContext } from 'src/contexts/wallet-context';
 import { CHAIN_NAMES, isPrimaryChain, PRIMARY_CHAIN_ID } from 'src/contracts/addresses';
 
 import { LoadingScreen } from 'src/components/loading-screen';
+import { SwitchChainButton } from 'src/components/pepefi/SwitchChainButton';
 
 // ----------------------------------------------------------------------
 // PepefiLayout: 只呼叫一次 useWallet()，透過 outlet context 傳給所有子頁面
@@ -110,6 +111,9 @@ function ChainNotice({ chainId }: { chainId: number | null }) {
       {t.common.layout.networkMismatch.before}<b>{known ?? `chainId ${chainId}`}</b>{t.common.layout.networkMismatch.mid}{' '}
       <b>{t.common.layout.networkMismatch.primaryBefore}{PRIMARY_CHAIN_ID}{t.common.layout.networkMismatch.primaryAfter}</b>{t.common.layout.networkMismatch.after}
       {chainId === 11155111 && t.common.layout.networkMismatch.sepoliaExtra}
+      <Box component="span" sx={{ display: 'inline-block', ml: 1.5, verticalAlign: 'middle' }}>
+        <SwitchChainButton />
+      </Box>
     </Box>
   );
 }
