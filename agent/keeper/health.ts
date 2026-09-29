@@ -3,9 +3,15 @@
 // 為什麼獨立於 keeper：keeper 沒被排到、被 GitHub 靜默跳過、或整個 workflow 被
 // 停用時，它自己不會發出任何訊號。這支腳本只看鏈上事實，所以上述任何一種失敗
 // 都會被它抓到。
+//
+// 休市（第 4 項）：股票／ETF／期貨在休市期間沒有新成交，不更新是合理的；只有在
+// 「照一般門檻已超齡」時才向 Yahoo 問 currentTradingPeriod／regularMarketTime，
+// 由 market.ts 的 judgeStaleness 判斷。加密資產（sBTC、sETH）維持 24/7 嚴格。
 import { writeFileSync } from "node:fs";
 import { ethers } from "ethers";
 import type { HealthReport } from "./alert.ts";
+import { fetchMarketSession } from "./feeds.ts";
+import { assetClassOf, judgeStaleness } from "./market.ts";
 
 const SYMBOLS = [
   "sBTC", "sETH", "sAAPL", "sTSLA", "sNVDA",
@@ -60,6 +66,7 @@ async function main(): Promise<void> {
   const oracle = new ethers.Contract(ORACLE_ADDR, ORACLE_ABI, provider);
   const now = Math.floor(Date.now() / 1000);
   const stale: string[] = [];
+  const closed: string[] = [];
   const lines: string[] = [];
   const log = (line: string) => {
     lines.push(line);
@@ -71,10 +78,17 @@ async function main(): Promise<void> {
     try {
       const [price, at] = (await oracle.getPrice(ethers.id(symbol))) as [bigint, bigint];
       const age = now - Number(at);
-      const bad = age > maxAge;
-      if (bad) stale.push(`${symbol}(${(age / 3600).toFixed(1)}h)`);
+      // 股票／ETF／期貨只在「照一般門檻已超齡」時才去問 Yahoo 是否休市，
+      // 正常情況一個外部請求都不多打；加密資產永遠嚴格，不問。
+      const session =
+        age > maxAge && assetClassOf(symbol) !== "crypto" ? await fetchMarketSession(symbol) : null;
+      const v = judgeStaleness({ symbol, updatedAtSec: Number(at), nowSec: now, maxAgeSec: maxAge, session });
+      if (v.stale) stale.push(`${symbol}(${(age / 3600).toFixed(1)}h)`);
+      if (v.tolerated) closed.push(`${symbol}(${(age / 3600).toFixed(1)}h)`);
       log(
-        `${bad ? "STALE" : "  ok "} ${symbol.padEnd(6)} $${(Number(price) / 1e8).toFixed(2).padStart(10)} age=${(age / 3600).toFixed(1)}h`,
+        `${v.stale ? "STALE" : v.tolerated ? "closd" : "  ok "} ${symbol.padEnd(6)} ` +
+          `$${(Number(price) / 1e8).toFixed(2).padStart(10)} age=${(age / 3600).toFixed(1)}h` +
+          (v.stale || v.tolerated ? `  ${v.reason}` : ""),
       );
     } catch (e) {
       stale.push(`${symbol}(unreadable)`);
@@ -88,6 +102,7 @@ async function main(): Promise<void> {
     checkedAtSec: now,
     maxAgeSec: maxAge,
     stale,
+    closed,
     lines,
   });
 
@@ -98,7 +113,10 @@ async function main(): Promise<void> {
     );
     process.exit(1);
   }
-  console.log("所有資產都在 maxPriceAge 之內 ✓");
+  if (closed.length > 0) {
+    console.log(`休市中、依市場時段放寬（未告警）：${closed.join(", ")}`);
+  }
+  console.log("所有資產都在 maxPriceAge 之內（或休市中合理未更新） ✓");
 }
 
 main().catch((e) => {
