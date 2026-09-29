@@ -2,7 +2,6 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
-import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "../src/PerpetualExchange.sol";
 import "../src/CopyTracker.sol";
@@ -227,7 +226,7 @@ contract ExchangeGuardianTest is Test {
     function test_pause_whenAlreadyPaused_reverts() public {
         exchange.pause();
         vm.prank(guardian);
-        vm.expectRevert(Pausable.EnforcedPause.selector);
+        vm.expectRevert(PerpetualExchange.EnforcedPause.selector);
         exchange.pause();
     }
 
@@ -250,7 +249,7 @@ contract ExchangeGuardianTest is Test {
     }
 
     function test_unpause_whenNotPaused_reverts() public {
-        vm.expectRevert(Pausable.ExpectedPause.selector);
+        vm.expectRevert(PerpetualExchange.ExpectedPause.selector);
         exchange.unpause();
     }
 
@@ -358,17 +357,20 @@ contract ExchangeGuardianTest is Test {
     // Global pause — every value-moving entry point reverts
     // ═════════════════════════════════════════════════════════════════════════
 
-    function test_paused_depositMargin_reverts() public {
+    /// Deposits only move value in, so they stay open during a pause and let
+    /// traders top up before trading and liquidation resume.
+    function test_paused_depositMargin_allowed() public {
         exchange.pause();
+        uint256 before = exchange.freeMargin(user);
         vm.prank(user);
-        vm.expectRevert(Pausable.EnforcedPause.selector);
         exchange.depositMargin(1e18);
+        assertEq(exchange.freeMargin(user), before + 1e18);
     }
 
     function test_paused_withdrawMargin_reverts() public {
         exchange.pause();
         vm.prank(user);
-        vm.expectRevert(Pausable.EnforcedPause.selector);
+        vm.expectRevert(PerpetualExchange.EnforcedPause.selector);
         exchange.withdrawMargin(1e18);
     }
 
@@ -376,28 +378,28 @@ contract ExchangeGuardianTest is Test {
         exchange.pause();
         // followTrader's first exchange call is depositMarginFor.
         vm.prank(follower);
-        vm.expectRevert(Pausable.EnforcedPause.selector);
+        vm.expectRevert(PerpetualExchange.EnforcedPause.selector);
         copyTracker.followTrader(trader, 1_000e18);
     }
 
     function test_paused_openPosition_reverts() public {
         exchange.pause();
         vm.prank(user);
-        vm.expectRevert(Pausable.EnforcedPause.selector);
+        vm.expectRevert(PerpetualExchange.EnforcedPause.selector);
         exchange.openPosition(BTC, true, 1_000e18, 5);
     }
 
     function test_paused_openPositionFor_agent_reverts() public {
         exchange.pause();
         vm.prank(agent);
-        vm.expectRevert(Pausable.EnforcedPause.selector);
+        vm.expectRevert(PerpetualExchange.EnforcedPause.selector);
         sessions.openPositionForSession(sessionId, BTC, true, 1_000e18, 5, address(0));
     }
 
     function test_paused_openPositionFor_direct_reverts() public {
         exchange.pause();
         vm.prank(address(sessions));
-        vm.expectRevert(Pausable.EnforcedPause.selector);
+        vm.expectRevert(PerpetualExchange.EnforcedPause.selector);
         exchange.openPositionFor(user, BTC, true, 1_000e18, 5, address(0));
     }
 
@@ -405,7 +407,7 @@ contract ExchangeGuardianTest is Test {
         uint256 id = _open(user, BTC, true, 1_000e18);
         exchange.pause();
         vm.prank(user);
-        vm.expectRevert(Pausable.EnforcedPause.selector);
+        vm.expectRevert(PerpetualExchange.EnforcedPause.selector);
         exchange.closePosition(id);
     }
 
@@ -413,7 +415,7 @@ contract ExchangeGuardianTest is Test {
         uint256 id = _openViaAgent(BTC);
         exchange.pause();
         vm.prank(agent);
-        vm.expectRevert(Pausable.EnforcedPause.selector);
+        vm.expectRevert(PerpetualExchange.EnforcedPause.selector);
         sessions.closePositionForSession(sessionId, id);
     }
 
@@ -421,7 +423,7 @@ contract ExchangeGuardianTest is Test {
         uint256 id = _underwaterLong();
         exchange.pause();
         vm.prank(liquidator);
-        vm.expectRevert(Pausable.EnforcedPause.selector);
+        vm.expectRevert(PerpetualExchange.EnforcedPause.selector);
         exchange.liquidatePosition(id);
     }
 
@@ -433,7 +435,7 @@ contract ExchangeGuardianTest is Test {
         exchange.withdrawMargin(cushion); // no cushion left
         oracle.updatePrice(BTC, 80_000e8);
         exchange.pause();
-        vm.expectRevert(Pausable.EnforcedPause.selector);
+        vm.expectRevert(PerpetualExchange.EnforcedPause.selector);
         exchange.liquidatePosition(id);
     }
 
@@ -442,14 +444,14 @@ contract ExchangeGuardianTest is Test {
         _open(other, BTC, false, 1_000e18);
         _warpBy(8 hours);
         exchange.pause();
-        vm.expectRevert(Pausable.EnforcedPause.selector);
+        vm.expectRevert(PerpetualExchange.EnforcedPause.selector);
         exchange.settleFunding(BTC);
     }
 
     function test_paused_withdrawExecutionFees_reverts() public {
         vm.deal(address(exchange), 1 ether);
         exchange.pause();
-        vm.expectRevert(Pausable.EnforcedPause.selector);
+        vm.expectRevert(PerpetualExchange.EnforcedPause.selector);
         exchange.withdrawExecutionFees();
     }
 
@@ -504,11 +506,12 @@ contract ExchangeGuardianTest is Test {
         exchange.unpause();
 
         vm.prank(user);
-        exchange.closePosition(id);
+        exchange.closePosition(id);       // closes work inside the grace period
+        vm.prank(user);
+        exchange.depositMargin(1_000e18); // so do deposits
+        _warpBy(exchange.LIQUIDATION_GRACE_PERIOD());
         vm.prank(user);
         exchange.withdrawMargin(1_000e18);
-        vm.prank(user);
-        exchange.depositMargin(1_000e18);
         _open(user, BTC, false, 1_000e18);
     }
 
@@ -731,6 +734,7 @@ contract ExchangeGuardianTest is Test {
         _setMode(BTC, ACTIVE);
         vm.prank(user);
         exchange.closePosition(id);
+        _warpBy(exchange.LIQUIDATION_GRACE_PERIOD()); // opens wait out the grace period
         _open(user, BTC, true, 1_000e18);
     }
 

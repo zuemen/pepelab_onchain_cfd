@@ -6,7 +6,6 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 import "./CarbonTiers.sol";
@@ -39,7 +38,7 @@ interface IEsgRegistryForPricing {
         returns (CarbonTiers.Tier tier, uint256 count, uint256 dispersion, bool isRated);
 }
 
-contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
+contract PerpetualExchange is Ownable, ReentrancyGuard {
     /// @dev M-4: non-standard ERC20s (mainnet USDT and friends) return no bool
     ///      from transfer/approve, so a bare `usdc.transfer(...)` against an
     ///      interface declaring a bool either reverts on ABI decode or, worse,
@@ -302,10 +301,12 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
     // Two independent brakes, modelled on SEAL's guardian pattern and on the
     // halt / reduce-only market states of Hyperliquid HIP-3 and Orderly:
     //
-    //  1. A GLOBAL pause (OpenZeppelin `Pausable`). `pause()` may be called by
-    //     the guardian or the owner; `unpause()` only by the owner. While paused
-    //     every function that moves value or changes a position reverts —
-    //     including deposits and withdrawals. See `pause()` for the rationale.
+    //  1. A GLOBAL pause. `pause()` may be called by the guardian or the
+    //     owner; `unpause()` only by the owner. A guardian pause expires on its
+    //     own after GUARDIAN_PAUSE_DURATION; an owner pause does not. While
+    //     paused every function that moves value out or changes a position
+    //     reverts; `depositMargin` stays open so traders can top up. See
+    //     `pause()` for the rationale.
     //
     //  2. A PER-ASSET mode (`assetMode`):
     //       Active     — everything allowed (default for every asset).
@@ -323,6 +324,31 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
     //   marketOperator — Active <-> ReduceOnly only; never sets or lifts Halted.
     //
     // Neither brake relaxes the oracle freshness checks; they are additive.
+    //
+    // Fairness while a market is stopped (nobody can act, so nobody pays):
+    //   • funding does not accrue over paused or Halted time;
+    //   • borrow fees do not accrue over paused or Halted time;
+    //   • for LIQUIDATION_GRACE_PERIOD after a pause ends (or after an asset
+    //     leaves Halted) liquidations and new opens are refused, so traders
+    //     get a window to close or top up at the reopening price first.
+    //
+    // KNOWN LIMITATION: there is no delisting / final-settlement function. An
+    // asset whose oracle stops updating for good leaves its positions unable
+    // to close or be liquidated (stale-price revert) until the owner restores
+    // a feed. See docs/KNOWN_LIMITATIONS.md #21.
+
+    /// @notice A guardian pause lapses automatically after this long unless
+    ///         the owner takes it over (see `pause`), so a guardian acting
+    ///         without the owner cannot hold the market shut indefinitely in
+    ///         one pause. It bounds each pause, not their number: a guardian
+    ///         that keeps re-pausing is removed by the owner (`setGuardian`).
+    uint256 public constant GUARDIAN_PAUSE_DURATION = 72 hours;
+
+    /// @notice After a pause ends, or an asset leaves Halted, liquidations and
+    ///         new opens are refused for this long (closes and deposits work),
+    ///         so traders can react to the reopening price before anyone can
+    ///         liquidate them at it.
+    uint256 public constant LIQUIDATION_GRACE_PERIOD = 30 minutes;
 
     /// @notice Trading state of a single asset. The numeric order is the
     ///         strictness order — a guardian may only move an asset upward.
@@ -347,6 +373,35 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
     ///         toggle can no longer undo an emergency restriction). Cleared by
     ///         any owner `setAssetMode` on that asset.
     mapping(bytes32 => bool) public guardianLocked;
+
+    // ── Pause / halt clocks ─────────────────────────────────────────────────
+    /// @notice Start of the current pause window (0 = none open). A guardian
+    ///         window stays "open" in storage after it lapses; `paused()` and
+    ///         every clock below treat it as ended at `pauseExpiresAt`.
+    uint256 public pausedAt;
+    /// @notice When the current pause lapses on its own (0 = owner pause,
+    ///         no expiry).
+    uint256 public pauseExpiresAt;
+    /// @notice Total seconds of pause windows already closed.
+    uint256 public cumulativePausedTime;
+    /// @notice When the last explicitly closed pause window ended.
+    uint256 public lastResumedAt;
+
+    /// @notice When `asset` entered Halted (0 = not halted).
+    mapping(bytes32 => uint256) public haltedAt;
+    /// @notice Halted seconds of `asset` that did NOT overlap a global pause
+    ///         (so pause + halt downtime is a union, never double-counted).
+    mapping(bytes32 => uint256) public cumulativeHaltedTime;
+    /// @notice When `asset` last left Halted (start of its grace period).
+    mapping(bytes32 => uint256) public haltLiftedAt;
+    /// @dev `_pausedTime()` when `asset` entered Halted.
+    mapping(bytes32 => uint256) internal _haltPausedSnap;
+    /// @dev `_pausedTime()` when `lastFundingUpdateAt[asset]` was last written;
+    ///      pause time accumulated since is shifted out of the funding clock.
+    mapping(bytes32 => uint256) internal _fundingPausedSnap;
+    /// @notice `_downtime(asset)` at the moment each position opened; the
+    ///         borrow fee charges only for time the market was actually open.
+    mapping(uint256 => uint256) public downtimeAtOpen;
 
     // ── P1: open-interest and profit caps ────────────────────────────────────
     //
@@ -459,6 +514,11 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
     event MarketOperatorSet(address indexed marketOperator);
     event AssetModeSet(bytes32 indexed asset, AssetMode mode, address indexed by);
     event AssetGuardianLockSet(bytes32 indexed asset, bool locked);
+    event Paused(address account);
+    event Unpaused(address account);
+    /// @notice The owner took over a running guardian pause; it no longer
+    ///         lapses on its own.
+    event PauseExpiryCleared(address indexed by);
 
     // P1: risk caps.
     event MaxOpenInterestSet(bytes32 indexed asset, uint256 maxLong, uint256 maxShort);
@@ -497,6 +557,13 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
     error AssetNotActive(bytes32 asset, AssetMode mode);
     /// @notice P1: the asset is Halted — no open, close, liquidation or funding.
     error AssetHalted(bytes32 asset);
+    /// @notice P1: the system is paused.
+    error EnforcedPause();
+    /// @notice P1: `unpause` while not paused.
+    error ExpectedPause();
+    /// @notice P1: inside the post-pause (asset == 0) or post-halt grace
+    ///         period; liquidations and new opens resume at `until`.
+    error GracePeriodActive(bytes32 asset, uint256 until);
     /// @notice P1: opening would lift this side's open interest above its cap.
     error OpenInterestCapExceeded(bytes32 asset, bool isLong, uint256 resultingOI, uint256 cap);
     /// @notice H3: portfolio mode — the withdrawal would leave the account
@@ -722,33 +789,126 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
 
     /// @notice Stop every value-moving and position-changing function at once.
     /// @dev Callable by the guardian or the owner. The brake is deliberately
-    ///      total — it also blocks `depositMargin`, `withdrawMargin`, closes and
-    ///      liquidations — because it exists for the case where something is
-    ///      wrong and nobody yet knows what. Under an unknown bug any function
-    ///      that moves USDC may be the extraction route (a withdrawal that skips
-    ///      a health check, a close that mis-prices PnL, a liquidation that
+    ///      broad — it blocks withdrawals, opens, closes and liquidations —
+    ///      because it exists for the case where something is wrong and
+    ///      nobody yet knows what. Under an unknown bug any function that moves
+    ///      USDC out may be the extraction route (a withdrawal that skips a
+    ///      health check, a close that mis-prices PnL, a liquidation that
     ///      mis-pays), so letting "only the safe ones" keep running presumes a
-    ///      diagnosis that has not happened yet. Stopping everything first and
-    ///      re-opening deliberately is the conservative order.
+    ///      diagnosis that has not happened yet. `depositMargin` is the one
+    ///      exception: it only moves value IN, and lets traders pre-fund
+    ///      before trading resumes.
     ///
-    ///      The cost is accepted knowingly: while paused, traders cannot exit
-    ///      and underwater positions cannot be liquidated. Funding keeps being
-    ///      measured in wall-clock time and is caught up (bounded by
-    ///      MAX_FUNDING_CATCHUP_INTERVALS) on the first settlement after
-    ///      unpause; a per-asset Halt is the tool when funding must freeze.
+    ///      Fairness: paused time accrues neither funding nor borrow fees, and
+    ///      liquidations stay refused for LIQUIDATION_GRACE_PERIOD after the
+    ///      pause ends.
+    ///
+    ///      Expiry: a GUARDIAN pause lapses on its own after
+    ///      GUARDIAN_PAUSE_DURATION (72h). The guardian cannot extend it —
+    ///      calling `pause()` again while it runs reverts. The OWNER may call
+    ///      `pause()` during a guardian pause to take it over (no expiry). An
+    ///      owner pause never lapses; only `unpause()` ends it.
     ///
     ///      Owner-only parameter setters and every view keep working, so the
     ///      owner can repair configuration while the market is stopped.
     function pause() external {
-        if (msg.sender != guardian && msg.sender != owner()) revert NotGuardianOrOwner(msg.sender);
-        _pause();
+        bool byOwner = msg.sender == owner();
+        if (!byOwner && msg.sender != guardian) revert NotGuardianOrOwner(msg.sender);
+
+        // A guardian window that already lapsed is closed at its expiry.
+        if (pausedAt != 0 && !paused()) _closePauseWindow(pauseExpiresAt);
+
+        if (paused()) {
+            if (!byOwner || pauseExpiresAt == 0) revert EnforcedPause();
+            pauseExpiresAt = 0; // owner takes over the guardian's pause
+            emit PauseExpiryCleared(msg.sender);
+            return;
+        }
+        pausedAt       = block.timestamp;
+        pauseExpiresAt = byOwner ? 0 : block.timestamp + GUARDIAN_PAUSE_DURATION;
+        emit Paused(msg.sender);
     }
 
     /// @notice Resume trading. Owner only: the guardian can stop the system but
-    ///         never restart it, so a compromised guardian key can at worst
-    ///         cause downtime — never re-open a market the owner has frozen.
+    ///         never restart it early, so a compromised guardian key can at
+    ///         worst cause bounded downtime. Starts the liquidation grace
+    ///         period.
     function unpause() external onlyOwner {
-        _unpause();
+        if (!paused()) revert ExpectedPause();
+        _closePauseWindow(block.timestamp);
+        emit Unpaused(msg.sender);
+    }
+
+    /// @notice True while a pause window is open and has not lapsed.
+    function paused() public view returns (bool) {
+        // Hour-scale windows: validator timestamp drift (seconds) is immaterial.
+        // forge-lint: disable-next-line(block-timestamp)
+        return pausedAt != 0 && (pauseExpiresAt == 0 || block.timestamp < pauseExpiresAt);
+    }
+
+    modifier whenNotPaused() {
+        if (paused()) revert EnforcedPause();
+        _;
+    }
+
+    function _closePauseWindow(uint256 end) internal {
+        cumulativePausedTime += end - pausedAt;
+        lastResumedAt  = end;
+        pausedAt       = 0;
+        pauseExpiresAt = 0;
+    }
+
+    /// @dev Total paused seconds up to now, including an open (or lapsed but
+    ///      not yet closed) window.
+    function _pausedTime() internal view returns (uint256 t) {
+        t = cumulativePausedTime;
+        if (pausedAt != 0) {
+            uint256 end = block.timestamp;
+            if (pauseExpiresAt != 0 && end > pauseExpiresAt) end = pauseExpiresAt;
+            t += end - pausedAt;
+        }
+    }
+
+    /// @dev Seconds `asset` has been Halted outside of any global pause.
+    function _haltedTime(bytes32 asset) internal view returns (uint256 t) {
+        t = cumulativeHaltedTime[asset];
+        uint256 since = haltedAt[asset];
+        if (since != 0) {
+            t += (block.timestamp - since) - (_pausedTime() - _haltPausedSnap[asset]);
+        }
+    }
+
+    /// @notice Seconds during which `asset` could not be traded (paused or
+    ///         Halted, counted once when both). Monotone in time.
+    function downtimeOf(bytes32 asset) public view returns (uint256) {
+        return _pausedTime() + _haltedTime(asset);
+    }
+
+    /// @dev End of the most recent pause window (explicit or lapsed).
+    function _resumedAt() internal view returns (uint256) {
+        if (pausedAt != 0 && !paused()) return pauseExpiresAt;
+        return lastResumedAt;
+    }
+
+    /// @dev Refuses liquidations and new opens during the grace period that
+    ///      follows a pause (global) or a Halt of `asset`.
+    function _requireNoGrace(bytes32 asset) internal view {
+        _requireNoGlobalGrace();
+        uint256 lifted = haltLiftedAt[asset];
+        // 30-minute window: validator timestamp drift (seconds) is immaterial.
+        // forge-lint: disable-next-line(block-timestamp)
+        if (lifted != 0 && block.timestamp < lifted + LIQUIDATION_GRACE_PERIOD) {
+            revert GracePeriodActive(asset, lifted + LIQUIDATION_GRACE_PERIOD);
+        }
+    }
+
+    function _requireNoGlobalGrace() internal view {
+        uint256 resumed = _resumedAt();
+        // 30-minute window: validator timestamp drift (seconds) is immaterial.
+        // forge-lint: disable-next-line(block-timestamp)
+        if (resumed != 0 && block.timestamp < resumed + LIQUIDATION_GRACE_PERIOD) {
+            revert GracePeriodActive(bytes32(0), resumed + LIQUIDATION_GRACE_PERIOD);
+        }
     }
 
     /// @notice Change `asset`'s trading mode.
@@ -788,8 +948,16 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
 
         if (mode == AssetMode.Halted && current != AssetMode.Halted) {
             _pokeFunding(asset);
+            haltedAt[asset]        = block.timestamp;
+            _haltPausedSnap[asset] = _pausedTime();
         } else if (current == AssetMode.Halted && mode != AssetMode.Halted) {
-            if (lastFundingUpdateAt[asset] != 0) lastFundingUpdateAt[asset] = block.timestamp;
+            if (lastFundingUpdateAt[asset] != 0) {
+                lastFundingUpdateAt[asset] = block.timestamp;
+                _fundingPausedSnap[asset]  = _pausedTime();
+            }
+            cumulativeHaltedTime[asset] = _haltedTime(asset);
+            haltedAt[asset]     = 0;
+            haltLiftedAt[asset] = block.timestamp;
         }
 
         if (byOwner && locked) {
@@ -847,7 +1015,9 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
 
     // ── Margin management ────────────────────────────────────────────────────
 
-    function depositMargin(uint256 amount) external whenNotPaused nonReentrant {
+    /// @dev Deliberately NOT paused: it only moves value in, and lets traders
+    ///      top up margin before trading (and liquidation) resumes.
+    function depositMargin(uint256 amount) external nonReentrant {
         usdc.safeTransferFrom(msg.sender, address(this), amount);
         freeMargin[msg.sender] += amount;
         emit MarginDeposited(msg.sender, amount);
@@ -869,6 +1039,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
     ///      account at or above maintenance, valued on fresh prices. Isolated
     ///      mode is unchanged: there free margin backs nothing.
     function withdrawMargin(uint256 amount) external whenNotPaused nonReentrant {
+        _requireNoGlobalGrace();
         if (freeMargin[msg.sender] < amount) revert InsufficientFreeMargin();
         freeMargin[msg.sender] -= amount;
         if (portfolioMarginEnabled) _requireHealthyAccount(msg.sender);
@@ -964,6 +1135,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
         // only ever runs inside this call or `_closePosition` and only touches
         // positions of the same asset, so this gate covers it too.
         _requireNotHalted(pos.asset);
+        _requireNoGrace(pos.asset);
 
         _pokeFunding(pos.asset);
         _requireFresh(pos.asset);
@@ -972,9 +1144,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
         
         uint256 notional     = pos.margin * pos.leverage;
         uint256 tradingFee   = notional * uint256(pos.tradingFeeBps) / 10000; // frozen at open — see Position.tradingFeeBps
-        uint256 borrowed     = pos.margin * (pos.leverage - 1);
-        uint256 hoursElapsed = (block.timestamp - pos.openedAt) / 3600;
-        uint256 borrowFee    = borrowed * uint256(pos.borrowFeeBpsPerHour) * hoursElapsed / 10000; // frozen at open
+        uint256 borrowFee    = _borrowFee(pos); // rate frozen at open; paused / Halted time excluded
         
         int256 totalFees      = int256(tradingFee + borrowFee);
         int256 fundingPayment = _calcFunding(pos);
@@ -1286,12 +1456,25 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
     ///      First touch of an asset only initializes the clock (no retroactive accrual).
     function _pokeFunding(bytes32 asset) internal {
         uint256 last = lastFundingUpdateAt[asset];
+        uint256 pausedNow = _pausedTime();
         if (last == 0) {
             // Never touched before: just start the clock. On a live chain
             // block.timestamp is huge, so accruing from 0 would be catastrophic.
             // OI is necessarily 0 here because every open pokes first.
             lastFundingUpdateAt[asset] = block.timestamp;
+            _fundingPausedSnap[asset]  = pausedNow;
             return;
+        }
+
+        // P1: paused time accrues no funding. Rather than loop every asset on
+        // unpause, each asset lazily shifts its own clock forward by the pause
+        // time accumulated since it last wrote the clock. The shifted clock is
+        // never past now (the shift is time that elapsed after `last`).
+        uint256 snap = _fundingPausedSnap[asset];
+        if (pausedNow > snap) {
+            last += pausedNow - snap;
+            lastFundingUpdateAt[asset] = last;
+            _fundingPausedSnap[asset]  = pausedNow;
         }
 
         uint256 intervals = (block.timestamp - last) / FUNDING_INTERVAL;
@@ -1410,9 +1593,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
 
         uint256 notional     = pos.margin * pos.leverage;
         uint256 tradingFee   = notional * uint256(pos.tradingFeeBps) / 10000; // frozen at open — see Position.tradingFeeBps
-        uint256 borrowed     = pos.margin * (pos.leverage - 1);
-        uint256 hoursElapsed = (block.timestamp - pos.openedAt) / 3600;
-        uint256 borrowFee    = borrowed * uint256(pos.borrowFeeBpsPerHour) * hoursElapsed / 10000; // frozen at open
+        uint256 borrowFee    = _borrowFee(pos); // rate frozen at open; paused / Halted time excluded
 
         (int256 pnl, ) = _cappedPnL(pos);
         int256 val = int256(pos.margin) + pnl
@@ -1639,6 +1820,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
         // CopyTracker and AgentSessionManager — funnels through here, so this
         // is the single place new exposure is refused.
         _requireActive(asset);
+        _requireNoGrace(asset);
         if (margin < MIN_MARGIN) revert MarginTooLow();
 
         // Read once, at open, and freeze into the position below — a later
@@ -1718,6 +1900,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
         _assetPosIndex[positionId] = assetPositionIds[asset].length;
         // H-6: remember which agent (if any) is allowed to close this position.
         if (agent != address(0)) positionAgent[positionId] = agent;
+        downtimeAtOpen[positionId] = downtimeOf(asset);
         // P1: freeze the profit cap (0 = uncapped). margin >= MIN_MARGIN and
         // bps >= MIN_PROFIT_CAP_BPS, so an enabled cap is never rounded to 0.
         uint256 capBps = maxProfitBps[asset];
@@ -1746,9 +1929,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
         uint256 notional     = pos.margin * pos.leverage;
         uint256 tradingFee   = notional * uint256(pos.tradingFeeBps) / 10000; // frozen at open — see Position.tradingFeeBps
 
-        uint256 borrowed     = pos.margin * (pos.leverage - 1);
-        uint256 hoursElapsed = (block.timestamp - pos.openedAt) / 3600;
-        uint256 borrowFee    = borrowed * uint256(pos.borrowFeeBpsPerHour) * hoursElapsed / 10000; // frozen at open
+        uint256 borrowFee    = _borrowFee(pos); // rate frozen at open; paused / Halted time excluded
 
         int256 totalFees      = int256(tradingFee + borrowFee);
         int256 fundingPayment = _calcFunding(pos); // positive = trader pays, negative = trader receives
@@ -1831,6 +2012,17 @@ contract PerpetualExchange is Ownable, ReentrancyGuard, Pausable {
         _routeVaultFee(_collectedTradingFee(pos.margin, pnl, fundingPayment, tradingFee));
 
         emit PositionClosed(positionId, pos.owner, pnl, uint256(closeAmount));
+    }
+
+    /// @dev Borrow fee on the protocol-supplied notional, charged per full
+    ///      hour the market was actually tradable since open: paused and
+    ///      Halted time (`downtimeOf`) is excluded.
+    function _borrowFee(Position storage pos) internal view returns (uint256) {
+        uint256 borrowed = pos.margin * (pos.leverage - 1);
+        uint256 elapsed  = block.timestamp - pos.openedAt;
+        uint256 down     = downtimeOf(pos.asset) - downtimeAtOpen[pos.id];
+        uint256 active   = elapsed > down ? elapsed - down : 0;
+        return borrowed * uint256(pos.borrowFeeBpsPerHour) * (active / 3600) / 10000;
     }
 
     /// @dev P1: refuse an open that would lift this side's OI above its cap.

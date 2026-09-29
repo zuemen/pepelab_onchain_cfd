@@ -28,6 +28,9 @@ was not, the reason is given rather than glossed over.
 | 18 | No latency / success-rate acceptance thresholds | **Partly measured** — facilitator + 402 challenge measured; paid path not |
 | 19 | No self-hosted facilitator; x402.org pays the settlement gas | **By design (testnet)** — no SLA, we don't control or fund its wallet and have no alert on it |
 | 20 | On-chain revenue totals cannot separate demo self-payments from external ones | **Open** — documented; needs an event scan |
+| 21 | No delisting / final-settlement function in `PerpetualExchange` | **Open** — positions on a permanently dead feed cannot close |
+| 22 | Guardian pause expiry bounds each pause, not the number of pauses | **By design** — owner rotates a misbehaving guardian |
+| 23 | Global pause blocks exits and liquidations | **By design** — deposits stay open; funding/borrow frozen; grace period after |
 
 ---
 
@@ -702,6 +705,33 @@ home-page KPI and the docs page showed `count: null` as "0 calls"; they now show
 `/revenue`: doing it honestly needs an event scan (`NEXT_STEPS.md`).
 
 ---
+
+## PerpetualExchange emergency controls (added 2026-09-29)
+
+## 21. No delisting / final-settlement function
+
+There is no function that settles every open position of an asset at a final
+price. If an asset's oracle stops updating for good, `closePosition`,
+`liquidatePosition` and (in portfolio mode) `withdrawMargin` for accounts
+holding it revert with `StalePrice` until the owner restores a feed. Setting
+the asset to `Halted` stops new damage but does not release the positions.
+Until a settlement function exists, markets being retired must be wound down
+while a keeper still refreshes their last price (the ReduceOnly flow).
+
+## 22. Guardian pause expiry bounds each pause, not the number of pauses
+
+A guardian pause lapses after `GUARDIAN_PAUSE_DURATION` (72h). The guardian
+cannot extend a running pause but can start a new one after it lapses; the
+owner removes a misbehaving guardian with `setGuardian`. The owner may take
+over a running guardian pause (it then never lapses). Owner pauses never lapse.
+
+## 23. Global pause blocks exits and liquidations
+
+While paused, traders cannot close and underwater positions cannot be
+liquidated; only `depositMargin` stays open. Funding and borrow fees do not
+accrue over paused (or Halted) time, and liquidations, new opens and
+withdrawals wait out `LIQUIDATION_GRACE_PERIOD` (30 min) after the pause ends;
+after a Halt is lifted, liquidations and opens on that asset wait likewise.
 
 ## Frontend
 
