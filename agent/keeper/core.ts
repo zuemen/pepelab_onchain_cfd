@@ -76,23 +76,25 @@ export function planUpdate(a: {
 // （parseFeedValue 擋不住——它只擋 HTML 與非數值），下一輪交易所就會依此清算所有
 // 部位。core.ts 開頭那段註解宣稱要防的正是這類事故，但當時只擋住了「HTML 混進來」。
 //
-// 策略（與 stepTowards 同精神，但作用在 MockOracle）：
-//   • 偏離 ≤ maxDeviation        → 原樣寫入。
-//   • maxDeviation < 偏離 ≤ rejectDeviation → 夾到上限邊緣，分段逼近，下一輪繼續。
-//     真實的大行情會在數輪內追上；假價格則不會，而且人有時間看到警告。
-//   • 偏離 > rejectDeviation     → 預設完全不寫並大聲報錯。這種幅度多半是來源壞了
-//     （換 ticker、拆股、幣別跑掉），寧可讓價格變舊（交易所有 maxPriceAge 會擋交易）
-//     也不要寫一個會清算所有人的數字。
-//     例外（偏離死鎖的解法）：同一輪至少兩個**獨立**來源彼此差距 ≤ confirmTolerance
-//     （預設 2%）、且相對鏈上價格方向一致，才以 stepTowards 的步幅分段逼近。
-//     否則真實的大行情（或鏈上價格本身就是錯的）會讓資產永遠卡在拒寫：拒寫不更新
-//     → 偏離永遠 > 50% → 永遠拒寫，與舊 GuardedOracle 的死鎖同形。
+// 策略：熔斷語意（2026-09-29 審查後改寫）。
+//
+// 原則：**絕不寫入明知不是最佳估計的價格。** 舊版在 10–50% 區間「夾到上限邊緣、
+// 分段逼近」，>50% 經多源確認後也用 stepTowards 分段逼近 —— 兩者都會把一個已知
+// 錯誤的價格帶著新的時間戳寫上鏈，任何人都能對著這個錯價開倉（價格看起來新鮮，
+// 交易所的 maxPriceAge 也擋不住）。所以現在只有「寫完整價格」或「不寫」兩種結果：
+//
 //   • 鏈上還沒有價格（current ≤ 0）→ seed，沒有可比較的基準，原樣寫入。
+//   • 偏離 ≤ breakerDeviation（預設 20%）→ 照常寫入完整價格。
+//   • 偏離 > breakerDeviation：
+//       – 多源確認通過（≥2 個新鮮的獨立來源、彼此差距 ≤ confirmTolerance、方向一致）
+//         → 寫入完整的共識價（各來源中位數）。
+//       – 否則拒寫：讓價格變舊，交易所的 maxPriceAge 自然停單（開倉／平倉／清算都
+//         revert StalePrice），run.ts 輸出 ::error:: 並讓 job 失敗。這是熔斷，不是故障。
+//         股票只有單一來源（Yahoo），所以拆股、財報跳空這類 >20% 的真實變動一律
+//         需要人工處置，步驟見 docs/RUNBOOK_KEEPER.md「價格熔斷」。
 
-/** 每輪允許的最大偏離（比例）。可用 KEEPER_MAX_DEVIATION 覆寫。 */
-export const DEFAULT_MAX_DEVIATION = 0.1; // 10%
-/** 超過這個幅度視為來源壞掉，完全拒寫。可用 KEEPER_REJECT_DEVIATION 覆寫。 */
-export const DEFAULT_REJECT_DEVIATION = 0.5; // 50%
+/** 熔斷門檻：單一來源變動超過這個比例就需要多源確認。可用 KEEPER_BREAKER_DEVIATION 覆寫。 */
+export const DEFAULT_BREAKER_DEVIATION = 0.2; // 20%
 /** 多源確認：獨立來源彼此的最大差距（(max−min)/min）。可用 KEEPER_CONFIRM_TOLERANCE 覆寫。 */
 export const DEFAULT_CONFIRM_TOLERANCE = 0.02; // 2%
 
@@ -110,7 +112,7 @@ export interface LargeMoveConfirmation {
 }
 
 /**
- * 偏離超過拒寫門檻時的多源確認。要全部成立才 confirmed：
+ * 偏離超過熔斷門檻時的多源確認。要全部成立才 confirmed：
  *   1. 至少兩個不同 source 的合法報價（同名來源只取第一筆）。
  *   2. 彼此差距 (max−min)/min ≤ tolerance。
  *   3. 每個報價相對鏈上 current 的方向一致（全部高於或全部低於）。
@@ -159,10 +161,8 @@ export interface DeviationGuard {
   /** 這一輪實際該寫進 MockOracle 的價格（USD）；write=false 時無意義。 */
   value: number;
   write: boolean;
-  /** 是否被夾到上限邊緣（未寫入全額目標）。 */
-  clamped: boolean;
-  /** 偏離超過拒寫門檻、但經多源確認而分段逼近。 */
-  confirmed?: boolean;
+  /** 偏離超過熔斷門檻、經多源確認後寫入共識價。 */
+  confirmed: boolean;
   /** |target−current|/current；current≤0 時為 0。 */
   deviation: number;
   reason: string;
@@ -171,75 +171,99 @@ export interface DeviationGuard {
 export function guardDeviation(a: {
   target: number;
   current: number;
-  maxDeviation?: number;
-  rejectDeviation?: number;
-  /** 同一輪的獨立來源報價（含 target 本身的來源）；只在偏離 > rejectDeviation 時使用。 */
+  breakerDeviation?: number;
+  /** 同一輪的獨立來源報價（含 target 本身的來源）；只在偏離 > breakerDeviation 時使用。 */
   quotes?: SourceQuote[];
   confirmTolerance?: number;
 }): DeviationGuard {
-  const maxDev = a.maxDeviation ?? DEFAULT_MAX_DEVIATION;
-  const rejectDev = a.rejectDeviation ?? DEFAULT_REJECT_DEVIATION;
+  const breaker = a.breakerDeviation ?? DEFAULT_BREAKER_DEVIATION;
+  const no = (deviation: number, reason: string): DeviationGuard =>
+    ({ value: 0, write: false, confirmed: false, deviation, reason });
 
-  if (!Number.isFinite(a.target) || a.target <= 0) {
-    return { value: 0, write: false, clamped: false, deviation: 0, reason: "target 非法" };
-  }
+  if (!Number.isFinite(a.target) || a.target <= 0) return no(0, "target 非法");
   if (!Number.isFinite(a.current) || a.current <= 0) {
-    return { value: a.target, write: true, clamped: false, deviation: 0, reason: "seed（鏈上無前價，無可比基準）" };
+    return { value: a.target, write: true, confirmed: false, deviation: 0, reason: "seed（鏈上無前價，無可比基準）" };
   }
 
   const deviation = Math.abs(a.target - a.current) / a.current;
-  if (deviation <= maxDev) {
-    return { value: a.target, write: true, clamped: false, deviation, reason: "在偏離上限內" };
+  if (deviation <= breaker) {
+    return { value: a.target, write: true, confirmed: false, deviation, reason: "在熔斷門檻內" };
   }
-  if (deviation > rejectDev) {
-    const head =
-      `偏離 ${(deviation * 100).toFixed(1)}% 超過拒寫門檻 ${(rejectDev * 100).toFixed(0)}%` +
-      `（$${a.current} → $${a.target}）`;
-    const c = confirmLargeMove({
-      current: a.current,
-      quotes: a.quotes ?? [],
-      tolerance: a.confirmTolerance,
-    });
-    const targetUp = a.target > a.current;
-    if (c.confirmed && (c.consensus > a.current) === targetUp) {
-      // 用既有 stepTowards 的步幅（含 50 bps 安全緩衝），朝多源共識價走一步。
-      const stepped8 = stepTowards(
-        toPrice8(a.current),
-        toPrice8(c.consensus),
-        BigInt(Math.round(maxDev * 10_000)),
-      );
-      const stepped = Number(stepped8) / 1e8;
-      return {
-        value: stepped,
-        write: true,
-        clamped: true,
-        confirmed: true,
-        deviation,
-        reason: `${head}，但${c.reason}，以 stepTowards 步幅逼近到 $${stepped.toFixed(2)}（下一輪繼續）`,
-      };
-    }
+
+  const head =
+    `偏離 ${(deviation * 100).toFixed(1)}% 超過熔斷門檻 ${(breaker * 100).toFixed(0)}%` +
+    `（$${a.current} → $${a.target}）`;
+  const c = confirmLargeMove({ current: a.current, quotes: a.quotes ?? [], tolerance: a.confirmTolerance });
+  if (c.confirmed && (c.consensus > a.current) === (a.target > a.current)) {
     return {
-      value: 0,
-      write: false,
-      clamped: false,
+      value: c.consensus,
+      write: true,
+      confirmed: true,
       deviation,
-      reason:
-        `${head}—— 來源可能已壞（拆股/換約/幣別），拒絕寫入；多源確認未通過：` +
-        (c.confirmed ? "共識方向與目標相反" : c.reason) +
-        `。若行情屬實，需第二個獨立來源（≤${((a.confirmTolerance ?? DEFAULT_CONFIRM_TOLERANCE) * 100).toFixed(0)}%）或人工處置`,
+      reason: `${head}，${c.reason}，寫入共識價 $${c.consensus}`,
     };
   }
-  const stepped =
-    a.target > a.current ? a.current * (1 + maxDev) : a.current * (1 - maxDev);
-  return {
-    value: stepped,
-    write: true,
-    clamped: true,
+  return no(
     deviation,
-    reason:
-      `偏離 ${(deviation * 100).toFixed(1)}% 超過上限 ${(maxDev * 100).toFixed(0)}%` +
-      `，夾到 $${stepped.toFixed(2)} 分段逼近（下一輪繼續）`,
-  };
+    `${head}—— 熔斷：拒絕寫入，價格將變舊、交易所以 maxPriceAge 停單。多源確認未通過：` +
+      (c.confirmed ? "共識方向與目標相反" : c.reason) +
+      `。若行情屬實（拆股／財報跳空），依 docs/RUNBOOK_KEEPER.md「價格熔斷」人工處置`,
+  );
+}
+
+export type MirrorPlan =
+  | { action: "write"; value: bigint }
+  | { action: "skip"; reason: string }
+  | { action: "reject"; reason: string };
+
+/**
+ * GuardedOracle 鏡射：只寫完整目標價。鏈上 maxDeviationBps 不接受完整價格時
+ * **不改寫部分步進**（那同樣是明知錯誤的價格），回 reject 由呼叫端記為 failed。
+ */
+export function planMirror(current8: bigint, target8: bigint, maxDeviationBps: bigint): MirrorPlan {
+  if (current8 === target8) return { action: "skip", reason: "已是目標值" };
+  if (!deviationAccepted(current8, target8, maxDeviationBps)) {
+    return {
+      action: "reject",
+      reason:
+        `完整價格 ${target8} 超出 GuardedOracle 上限 ${maxDeviationBps} bps（鏈上 ${current8}）；` +
+        `不寫部分步進，需人工處置（見 RUNBOOK_KEEPER.md「價格熔斷」）`,
+    };
+  }
+  return { action: "write", value: target8 };
+}
+
+/** run.ts 一輪結束後的計數。 */
+export interface RunCounters {
+  total: number;
+  available: number;
+  skipped: number;
+  rejected: number;
+  wrote: number;
+  failed: number;
+}
+
+/**
+ * 一輪結束後是否讓 job 失敗，以及對應的 ::error:: 訊息。熔斷拒寫（rejected）一定
+ * 讓 job 失敗：那是需要人看的事件，不是可以安靜略過的雜訊。
+ */
+export function runVerdict(c: RunCounters, maxDegradedRatio: number): { exitCode: 0 | 1; errors: string[] } {
+  const errors: string[] = [];
+  if (c.available > 0 && c.wrote === 0 && c.failed > 0) {
+    errors.push(`Keeper 寫入 0 筆（${c.failed} 筆失敗）。檢查簽章者權限與錢包餘額。`);
+  }
+  if (c.skipped === c.total) errors.push("所有價格來源都無效 —— 來源可能已下線。");
+  const degraded = c.skipped + c.rejected;
+  const ratio = c.total > 0 ? degraded / c.total : 0;
+  if (ratio > maxDegradedRatio) {
+    errors.push(
+      `${degraded}/${c.total} 個資產無法更新（skipped=${c.skipped} rejected=${c.rejected}，` +
+        `${(ratio * 100).toFixed(0)}% > ${(maxDegradedRatio * 100).toFixed(0)}% 門檻）—— 價格來源或熔斷出了問題。`,
+    );
+  }
+  if (c.rejected > 0) errors.push(`${c.rejected} 個資產觸發價格熔斷被拒寫，請依 RUNBOOK_KEEPER.md 人工確認。`);
+  if (c.failed > 0) errors.push(`寫入 ${c.wrote} 筆，${c.failed} 筆失敗。`);
+  return { exitCode: errors.length ? 1 : 0, errors };
 }
 
 /**
@@ -260,32 +284,6 @@ export function deviationAccepted(
   return (hi - lo) * 10_000n <= maxDeviationBps * lo;
 }
 
-/**
- * 回傳「這一輪該寫進 GuardedOracle 的價格」。
- *
- * 目標在上限內就直接寫目標；超出上限則走到上限邊緣，下一輪再往前走一段。
- * 這是死鎖的解法：先前的 keeper 每次都寫全額目標價，一旦落後超過 cap 就
- * 每次都被 `DeviationTooLarge` 打回，於是永遠追不上（線上 sBTC 卡了 9.5 天、
- * sMSFT 卡了 4.9 天，最後只能由 admin 把 cap 設成 0 手動修正）。
- *
- * safetyBps 是留給「讀取與送出之間價格又動了」的緩衝，預設 50 bps。
- */
-export function stepTowards(
-  current8: bigint,
-  target8: bigint,
-  maxDeviationBps: bigint,
-  safetyBps = 50n,
-): bigint {
-  if (maxDeviationBps === 0n || current8 === 0n) return target8;
-
-  const bps =
-    maxDeviationBps > safetyBps ? maxDeviationBps - safetyBps : maxDeviationBps;
-
-  if (target8 > current8) {
-    const max = current8 + (current8 * bps) / 10_000n;
-    return target8 <= max ? target8 : max;
-  }
-  // 向下：整數除法會往下取整，取整後可能剛好跌破上限，故 +1n 保守修正。
-  const min = (current8 * 10_000n) / (10_000n + bps) + 1n;
-  return target8 >= min ? target8 : min;
-}
+// stepTowards（分段逼近 GuardedOracle）已於 2026-09-29 移除：它會把明知不是最佳
+// 估計的部分價格寫上鏈。GuardedOracle 拒絕完整價格時改由 planMirror 回 reject，
+// 見 docs/RUNBOOK_KEEPER.md「價格熔斷」。

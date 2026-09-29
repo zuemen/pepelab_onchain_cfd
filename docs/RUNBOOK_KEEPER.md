@@ -157,14 +157,55 @@ cast call 0x32A19D04ef2ca5A7DA02Df39419729fA745749A1 \
 2026-07-27 的處置是把 `maxDeviationBps` 設成 0、寫完 11 個正確價格、再設回 1000
 (見 [ROLE_SEPARATION.md](ROLE_SEPARATION.md))。那修的是症狀。
 
-病根已由 `agent/keeper/core.ts` 的 `stepTowards` 修掉:超出上限時走到上限邊緣,
-下一輪再往前一段,兩三輪就收斂。`keeper/core.test.ts` 用上面這兩組真實數字釘住
-這個行為,並斷言每一步都能被合約的 `_deviationExceeded` 接受。
+2026-08-06 曾用 `stepTowards`「超出上限時走到上限邊緣,下一輪再往前一段」解這個
+死鎖。**2026-09-29 審查後已移除**:分段逼近會把一個明知不是最佳估計的價格帶著新
+的時間戳寫上鏈,任何人都能對著它開倉。現在 keeper 對 GuardedOracle 只寫完整價格
+(`core.ts` 的 `planMirror`);鏈上上限不接受時記為 failed、輸出 `::error::`、job
+變紅,由人依下一節「價格熔斷」處置。也就是說,死鎖不再被自動「解開」,而是被
+**大聲地停住**。
 
 **注意方向不對稱**:合約以「兩者中較小值」為分母,所以向上容許 10%、向下只容許
-9.09%。`stepTowards` 刻意複製了這個不對稱公式,以確保它送出的每一步都能被**線上
-的舊合約**接受。若日後把 `GuardedOracle` 換成對稱版並以 `AssetVaultV2.setOracle`
-遷移,必須同步檢查該函式。
+9.09%。`deviationAccepted` 刻意複製了這個不對稱公式,用來在送出前判斷完整價格
+會不會被**線上的舊合約**拒絕。若日後把 `GuardedOracle` 換成對稱版並以
+`AssetVaultV2.setOracle` 遷移,必須同步更新該函式。
+
+## 價格熔斷(keeper 拒寫大幅變動)
+
+**語意**:keeper 絕不寫入明知不是最佳估計的價格,只有「寫完整價格」或「不寫」。
+
+| 情況 | keeper 行為 |
+|---|---|
+| 單一來源變動 ≤ 20%(`KEEPER_BREAKER_DEVIATION`) | 寫入完整價格 |
+| 變動 > 20%,且 ≥2 個新鮮的獨立來源彼此差距 ≤ 2%、方向一致 | 寫入完整的共識價(中位數) |
+| 變動 > 20%,多源確認不通過 | **拒寫**:價格變舊,交易所 `maxPriceAge` 自然停單(開倉/平倉/清算 revert `StalePrice`);`::error::`、job 失敗 |
+| MockOracle 已寫,GuardedOracle 的 `maxDeviationBps` 不接受完整價格 | 不寫部分步進;記為 failed、`::error::`、job 失敗 |
+
+funding crank 步驟用 `if: ${{ !cancelled() }}`,不受喂價 job 失敗影響。
+
+**股票只有單一來源(Yahoo)**,所以拆股、財報跳空這類 >20% 的真實變動**一定**會
+熔斷,需要人工處置。加密資產有 Pyth relay + CoinGecko + Yahoo(BTC-USD/ETH-USD)
+可互相確認,通常會自動通過。
+
+### 處置步驟
+
+1. **看 log**:keeper run 的 `::error::<資產> 偏離 X% 超過熔斷門檻…` 會列出鏈上價、
+   來源價與多源確認未通過的原因。oracle-health 會在價格超過門檻後開 issue。
+2. **獨立核價**:至少兩個人工來源(交易所官網、Nasdaq/NYSE、公司公告)。同時確認
+   有沒有公司行動(拆股、合併、下市)與 ticker/幣別是否被 Yahoo 換掉。
+3. **依原因處置**:
+   - **來源壞了**(換 ticker、幣別、錯資料):不要寫價。修 `agent/keeper/feeds.ts`
+     的 `SOURCES`,走一般 PR。修好之前資產維持熔斷,交易所停單是預期結果。
+   - **拆股/合併**(單位改變):**不要寫入拆股後價格** —— 既有部位的進場價是舊單位,
+     直接寫新價會錯誤清算。先維持熔斷,由 owner 決定:(a) 讓該資產的喂價換算回舊
+     單位,或 (b) 公告後結算既有部位,再以新單位重新 seed。決定前不得手動寫價。
+   - **真實跳空**(單位不變,例如財報):由 owner 以 `admin-base-sepolia.yml`
+     (`updatePrice(bytes32,uint256)`,target = MockOracle)寫入人工核過的價格;
+     需第二人覆核 workflow 輸入。寫入後下一輪 keeper 的偏離會回到門檻內,恢復自動。
+   - **GuardedOracle 拒絕完整價格**:由 GuardedOracle 的 admin 依 2026-07-27 的做法
+     (見 [ROLE_SEPARATION.md](ROLE_SEPARATION.md))暫時調整 `maxDeviationBps`、寫入
+     完整價格、再設回原值;三筆交易都要記錄 tx hash。
+4. **驗證**:手動觸發 `oracle-health.yml`,確認該資產 `ok`、告警 issue 自動關閉;
+   下一輪 keeper 摘要行 `rejected=0 failed=0`。
 
 ## 已知未解:單一資產可能無聲漏掉一輪
 

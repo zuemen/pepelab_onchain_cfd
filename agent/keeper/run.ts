@@ -17,11 +17,10 @@ import { ethers } from "ethers";
 import {
   toPrice8,
   planUpdate,
-  stepTowards,
-  deviationAccepted,
   guardDeviation,
-  DEFAULT_MAX_DEVIATION,
-  DEFAULT_REJECT_DEVIATION,
+  planMirror,
+  runVerdict,
+  DEFAULT_BREAKER_DEVIATION,
   DEFAULT_CONFIRM_TOLERANCE,
   type ParsedFeed,
   type SourceQuote,
@@ -38,10 +37,12 @@ const SYMBOLS = [
 const DEVIATION_THRESHOLD = Number(process.env.KEEPER_DEVIATION ?? "0.001"); // 0.1%
 const HEARTBEAT_SEC = Number(process.env.KEEPER_HEARTBEAT ?? "900");         // 15 分鐘
 const DRY_RUN = process.env.DRY_RUN === "1";
-// A-5：寫進 MockOracle（交易所實際讀的那顆）的偏離上限與拒寫門檻。
-const MAX_DEVIATION = Number(process.env.KEEPER_MAX_DEVIATION ?? String(DEFAULT_MAX_DEVIATION));
-const REJECT_DEVIATION = Number(process.env.KEEPER_REJECT_DEVIATION ?? String(DEFAULT_REJECT_DEVIATION));
-// 偏離死鎖：超過拒寫門檻時，獨立來源彼此差距 ≤ 這個比例且方向一致才分段逼近。
+// A-5：寫進 MockOracle（交易所實際讀的那顆）的熔斷門檻；超過就需要多源確認，
+// 確認不過就拒寫（熔斷語意，見 core.ts guardDeviation）。
+const BREAKER_DEVIATION = Number(
+  process.env.KEEPER_BREAKER_DEVIATION ?? String(DEFAULT_BREAKER_DEVIATION),
+);
+// 多源確認：獨立來源彼此差距 ≤ 這個比例且方向一致，才寫入共識價。
 const CONFIRM_TOLERANCE = Number(
   process.env.KEEPER_CONFIRM_TOLERANCE ?? String(DEFAULT_CONFIRM_TOLERANCE),
 );
@@ -191,8 +192,8 @@ async function main(): Promise<void> {
   let failed = 0;
   let available = 0;   // 拿到合法價格的資產數
   let skipped = 0;     // 來源壞掉而跳過的資產數
-  let rejected = 0;    // 價格離譜、被偏離上限拒寫的資產數（A-5）
-  let clamped = 0;     // 被夾到偏離上限、分段逼近的資產數
+  let rejected = 0;    // 觸發價格熔斷、被拒寫的資產數（A-5）
+  let confirmed = 0;   // 超過熔斷門檻但多源確認通過、寫入共識價的資產數
 
   for (const symbol of SYMBOLS) {
     const assetId = ethers.id(symbol); // == cast keccak "$SYM"
@@ -257,12 +258,12 @@ async function main(): Promise<void> {
 
     if (!plan.write) continue;
 
-    // A-5：偏離上限。MockOracle 是交易所實際結算/清算所讀的那顆，沒有任何鏈上
-    // 保護，所以「離譜但合法」的價格必須在這裡就被擋下或夾住。
-    // 偏離超過拒寫門檻時才去湊第二個獨立來源（正常路徑不多打任何請求）：
+    // A-5：價格熔斷。MockOracle 是交易所實際結算/清算所讀的那顆，沒有任何鏈上
+    // 保護，所以「離譜但合法」的價格必須在這裡擋下 —— 只寫完整價格或不寫。
+    // 偏離超過熔斷門檻時才去湊第二個獨立來源（正常路徑不多打任何請求）：
     // relay（Pyth）、主要外部 API（CoinGecko/Yahoo）、次要外部 API（Yahoo BTC-USD…）。
     const quotes: SourceQuote[] = [{ source: feed.source, value: feed.value }];
-    if (current > 0 && Math.abs(feed.value - current) / current > REJECT_DEVIATION) {
+    if (current > 0 && Math.abs(feed.value - current) / current > BREAKER_DEVIATION) {
       if (relayed !== null) {
         const api = await fetchPrice(symbol);
         if (api.value !== null) quotes.push({ source: api.source, value: api.value });
@@ -276,8 +277,7 @@ async function main(): Promise<void> {
     const guard = guardDeviation({
       target: feed.value,
       current,
-      maxDeviation: MAX_DEVIATION,
-      rejectDeviation: REJECT_DEVIATION,
+      breakerDeviation: BREAKER_DEVIATION,
       quotes,
       confirmTolerance: CONFIRM_TOLERANCE,
     });
@@ -286,8 +286,8 @@ async function main(): Promise<void> {
       console.error(`::error::${symbol} ${guard.reason}`);
       continue;
     }
-    if (guard.clamped) {
-      clamped += 1;
+    if (guard.confirmed) {
+      confirmed += 1;
       console.log(`::warning::${symbol} ${guard.reason}`);
     }
 
@@ -320,39 +320,17 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `\navailable=${available} skipped=${skipped} rejected=${rejected} clamped=${clamped} wrote=${wrote} failed=${failed}`,
+    `\navailable=${available} skipped=${skipped} rejected=${rejected} confirmed=${confirmed} wrote=${wrote} failed=${failed}`,
   );
 
-  // 有價格可寫卻一筆都沒成功 = keeper 壞了。這一定要讓 CI 變紅。
-  if (available > 0 && wrote === 0 && failed > 0) {
-    console.error(
-      `::error::Keeper 寫入 0 筆（${failed} 筆失敗）。檢查簽章者權限與錢包餘額。`,
-    );
-    process.exit(1);
-  }
-  if (skipped === SYMBOLS.length) {
-    console.error("::error::所有價格來源都無效 —— 來源可能已下線。");
-    process.exit(1);
-  }
-  // 部分失敗也要紅：10/11 資產跳過而 CI 全綠，正是 oracle 靜默腐爛 9.5 天的原因。
-  const degraded = skipped + rejected;
-  const degradedRatio = degraded / SYMBOLS.length;
-  if (degradedRatio > MAX_DEGRADED_RATIO) {
-    console.error(
-      `::error::${degraded}/${SYMBOLS.length} 個資產無法更新` +
-        `（skipped=${skipped} rejected=${rejected}，${(degradedRatio * 100).toFixed(0)}% > ` +
-        `${(MAX_DEGRADED_RATIO * 100).toFixed(0)}% 門檻）—— 價格來源或偏離守衛出了問題。`,
-    );
-    process.exit(1);
-  }
-  if (rejected > 0) {
-    console.error(`::error::${rejected} 個資產的價格離譜被拒寫，請人工確認來源。`);
-    process.exit(1);
-  }
-  if (failed > 0) {
-    console.error(`::error::寫入 ${wrote} 筆，${failed} 筆失敗。`);
-    process.exit(1);
-  }
+  // 有價格可寫卻一筆都沒成功、全部來源無效、降級比例過高（10/11 資產跳過而 CI
+  // 全綠正是 oracle 靜默腐爛 9.5 天的原因）、熔斷拒寫、寫入失敗 —— 任一都讓 job 紅。
+  const verdict = runVerdict(
+    { total: SYMBOLS.length, available, skipped, rejected, wrote, failed },
+    MAX_DEGRADED_RATIO,
+  );
+  for (const msg of verdict.errors) console.error(`::error::${msg}`);
+  if (verdict.exitCode !== 0) process.exit(verdict.exitCode);
 }
 
 function revertInfo(e: unknown): { code?: unknown; data?: unknown } {
@@ -516,8 +494,9 @@ function _fmtReserveLine(
 }
 
 /**
- * 把價格鏡射進 GuardedOracle，超出偏離上限時走一步而不是放棄。
- * 舊 keeper 每次都寫全額目標價，落後超過上限後就永遠被 DeviationTooLarge 打回。
+ * 把完整價格鏡射進 GuardedOracle。鏈上 maxDeviationBps 不接受完整價格時**不寫部分
+ * 步進**（那是明知錯誤的價格，2026-09-29 審查移除 stepTowards），記為 failed 並
+ * 輸出 ::error::，由人依 RUNBOOK_KEEPER.md「價格熔斷」處置。
  *
  * 回 true 代表「這一輪沒有問題」（含：資產不存在、已凍結、已是目標值）；
  * 回 false 代表真的失敗 —— 呼叫端會計進 failed 讓 CI 變紅。舊版把失敗寫成
@@ -540,21 +519,19 @@ async function mirror(
       return true;
     }
 
-    const next = stepTowards(price, target8, cap);
-    if (next === price) {
-      console.log(`  → GuardedOracle 已是目標值`);
+    const plan = planMirror(price, target8, cap);
+    if (plan.action === "skip") {
+      console.log(`  → GuardedOracle ${plan.reason}`);
       return true;
     }
-    if (!deviationAccepted(price, next, cap)) {
-      // 到不了這裡；到了代表 stepTowards 與合約失去同步，必須大聲。
-      console.error(`::error::${symbol} stepTowards 產生會被拒絕的值 ${next}（cap=${cap}）`);
+    if (plan.action === "reject") {
+      console.error(`::error::${symbol} GuardedOracle ${plan.reason}`);
       return false;
     }
 
-    const tx = await guarded.updatePrice(assetId, next);
+    const tx = await guarded.updatePrice(assetId, plan.value);
     await tx.wait();
-    const partial = next !== target8 ? "（分段逼近，下一輪繼續）" : "";
-    console.log(`  → GuardedOracle ✓ ${next} ${partial}`);
+    console.log(`  → GuardedOracle ✓ ${plan.value}`);
     return true;
   } catch (e) {
     console.error(`::error::${symbol} GuardedOracle 鏡射失敗：${(e as Error).message.slice(0, 120)}`);

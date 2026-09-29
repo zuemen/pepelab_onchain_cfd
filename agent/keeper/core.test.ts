@@ -5,10 +5,11 @@ import {
   parseFeedValue,
   toPrice8,
   planUpdate,
-  stepTowards,
   deviationAccepted,
   guardDeviation,
   confirmLargeMove,
+  planMirror,
+  runVerdict,
 } from "./core.ts";
 
 // ── parseFeedValue：拒絕垃圾,不夾擠 ──────────────────────────────────────
@@ -66,103 +67,87 @@ assert.equal(deviationAccepted(100n, 91n, 1000n), true);
 assert.equal(deviationAccepted(0n, 500n, 1000n), true);     // 無前價 → 不限制
 assert.equal(deviationAccepted(100n, 999n, 0n), true);      // cap 0 → 不限制
 
-// ── stepTowards：目標在上限內就直接寫目標 ────────────────────────────────
-assert.equal(stepTowards(100_00000000n, 101_00000000n, 1000n), 101_00000000n);
+// ── guardDeviation：價格熔斷（稽核 A-5；2026-09-29 審查改為熔斷語意）──────────
+// 原則：絕不寫入明知不是最佳估計的價格 —— 只有「寫完整價格」或「不寫」。
 
-// ── stepTowards：解掉線上真實的死鎖(sBTC 向下、sMSFT 向上) ─────────────
-// sBTC：GuardedOracle 卡在 $73,468,MockOracle 為 $64,578(−12.1%,超過 10% cap)。
-const sbtcCurrent = 7346800000000n; // $73,468
-const sbtcTarget = 6457800000000n;  // $64,578
-const sbtcStep = stepTowards(sbtcCurrent, sbtcTarget, 1000n);
-assert.ok(sbtcStep < sbtcCurrent, "應該往目標方向走");
-assert.ok(sbtcStep > sbtcTarget, "一步走不到,應停在上限內");
-assert.equal(deviationAccepted(sbtcCurrent, sbtcStep, 1000n), true, "這一步必須能被合約接受");
-
-// sMSFT：卡在 $389.10,MockOracle 為 $487.46(+25.3%)。
-const msftCurrent = 38910000000n;
-const msftTarget = 48746000000n;
-const msftStep = stepTowards(msftCurrent, msftTarget, 1000n);
-assert.ok(msftStep > msftCurrent && msftStep < msftTarget);
-assert.equal(deviationAccepted(msftCurrent, msftStep, 1000n), true);
-
-// ── stepTowards：連續走幾輪必須收斂,而不是永遠卡住 ──────────────────────
-let p = sbtcCurrent;
-let rounds = 0;
-while (p !== sbtcTarget && rounds < 20) {
-  const next = stepTowards(p, sbtcTarget, 1000n);
-  assert.equal(deviationAccepted(p, next, 1000n), true, `第 ${rounds} 輪被合約拒絕`);
-  assert.notEqual(next, p, "不得原地踏步");
-  p = next;
-  rounds += 1;
-}
-assert.equal(p, sbtcTarget, "應在有限輪數內追上目標");
-assert.ok(rounds <= 5, `收斂太慢:${rounds} 輪`);
-
-// ── guardDeviation：MockOracle 的偏離上限（稽核 A-5）─────────────────────
-// 交易所讀的是沒有任何鏈上保護的 MockOracle，所以「數值合法但離譜」必須在這裡擋。
-
-// 鏈上還沒有價格 → seed，沒有可比基準，原樣寫入。
+// 鏈上還沒有價格 → seed，原樣寫入。
 {
   const g = guardDeviation({ target: 311, current: 0 });
   assert.equal(g.write, true);
   assert.equal(g.value, 311);
-  assert.equal(g.clamped, false);
 }
 
-// 正常波動（< 10%）→ 原樣寫入。
+// 必要案例：+15%（單一來源、門檻 20% 內）→ 直接寫入完整價格，不夾限。
 {
-  const g = guardDeviation({ target: 105, current: 100 });
-  assert.equal(g.write, true);
-  assert.equal(g.value, 105);
-  assert.equal(g.clamped, false);
+  const g = guardDeviation({ target: 115, current: 100, quotes: [{ source: "yahoo", value: 115 }] });
+  assert.equal(g.write, true, g.reason);
+  assert.equal(g.value, 115, "必須是完整價格，不是夾到某個邊緣");
+  assert.equal(g.confirmed, false);
 }
+// 舊版 10–50% 區間的夾限路徑已移除：−18% 也是完整寫入。
+assert.equal(guardDeviation({ target: 82, current: 100 }).value, 82);
 
-// 超過上限但未達拒寫門檻 → 夾到邊緣，分段逼近（不是放棄、也不是照寫）。
+// 必要案例：單源 +30% → 拒寫（熔斷），reason 指向 runbook。
 {
-  const up = guardDeviation({ target: 130, current: 100 });
-  assert.equal(up.write, true);
-  assert.equal(up.clamped, true);
-  assert.ok(Math.abs(up.value - 110) < 1e-9, `向上應夾到 110，得到 ${up.value}`);
-
-  const down = guardDeviation({ target: 70, current: 100 });
-  assert.equal(down.write, true);
-  assert.equal(down.clamped, true);
-  assert.ok(Math.abs(down.value - 90) < 1e-9, `向下應夾到 90，得到 ${down.value}`);
+  const g = guardDeviation({ target: 130, current: 100, quotes: [{ source: "yahoo", value: 130 }] });
+  assert.equal(g.write, false, g.reason);
+  assert.ok(g.reason.includes("熔斷") && g.reason.includes("RUNBOOK_KEEPER"), g.reason);
 }
-
-// 這就是 A-5 描述的事故形狀：拆股日 Yahoo 回 1/4 的價格（−75%），
-// 數值完全合法、parseFeedValue 擋不住，舊 keeper 會照寫並在下一輪清算所有部位。
+// 拆股日 Yahoo 回 1/4 的價格（−75%），單一來源 → 拒寫。
 {
-  const split = guardDeviation({ target: 77.75, current: 311 });
-  assert.equal(split.write, false, "拆股價必須被拒寫，而不是照寫");
-  assert.ok(split.reason.includes("拒寫"), split.reason);
+  const split = guardDeviation({ target: 77.75, current: 311, quotes: [{ source: "yahoo", value: 77.75 }] });
+  assert.equal(split.write, false);
+  assert.ok(split.reason.includes("至少需要 2 個"), split.reason);
 }
-// 反向的離譜（來源換成別的標的 → 價格翻 3 倍）同樣拒寫。
 assert.equal(guardDeviation({ target: 933, current: 311 }).write, false);
 
-// 分段逼近必須在有限輪數內收斂（不能像舊 GuardedOracle 那樣永遠追不上）。
+// 必要案例：40k→83k，多源確認通過 → 一次寫到共識價（中位數），不分段。
 {
-  let p = 100;
-  const target = 130;
-  let rounds = 0;
-  while (Math.abs(p - target) / p > 1e-9 && rounds < 20) {
-    const g = guardDeviation({ target, current: p });
-    assert.equal(g.write, true, `第 ${rounds} 輪不該被拒寫`);
-    assert.notEqual(g.value, p, "不得原地踏步");
-    p = g.value;
-    rounds += 1;
-  }
-  assert.ok(Math.abs(p - target) < 1e-6, `應收斂到目標，停在 ${p}`);
-  assert.ok(rounds <= 4, `收斂太慢：${rounds} 輪`);
+  const g = guardDeviation({
+    target: 83_100,
+    current: 40_000,
+    quotes: [{ source: "chainlink/pyth relay", value: 83_100 }, { source: "coingecko", value: 83_000 }],
+  });
+  assert.equal(g.write, true, g.reason);
+  assert.equal(g.confirmed, true);
+  assert.equal(g.value, 83_050, "兩個來源的中位數");
 }
-
+// 三個來源 → 取中位數。
+assert.equal(
+  guardDeviation({
+    target: 83_100, current: 40_000,
+    quotes: [{ source: "a", value: 83_100 }, { source: "b", value: 83_000 }, { source: "c", value: 83_900 }],
+  }).value,
+  83_100,
+);
+// 向下同理。
+assert.equal(
+  guardDeviation({ target: 100, current: 311, quotes: [{ source: "yahoo", value: 100 }, { source: "relay", value: 101 }] }).value,
+  100.5,
+);
+// 兩來源差距 > 2% → 拒寫。
+assert.equal(
+  guardDeviation({ target: 300, current: 100, quotes: [{ source: "a", value: 300 }, { source: "b", value: 320 }] }).write,
+  false,
+);
+// 共識方向與 target 相反 → 拒寫。
+assert.equal(
+  guardDeviation({ target: 300, current: 100, quotes: [{ source: "b", value: 40 }, { source: "c", value: 40.2 }] }).write,
+  false,
+);
+// 門檻與容許度可調。
+assert.equal(guardDeviation({ target: 130, current: 100, breakerDeviation: 0.35 }).write, true);
+assert.equal(
+  guardDeviation({
+    target: 300, current: 100, confirmTolerance: 0.1,
+    quotes: [{ source: "a", value: 300 }, { source: "b", value: 320 }],
+  }).value,
+  310,
+);
 // 非法 target 一律不寫。
 assert.equal(guardDeviation({ target: 0, current: 100 }).write, false);
 assert.equal(guardDeviation({ target: Number.NaN, current: 100 }).write, false);
 
-// ── 偏離死鎖：> 50% 時「多源一致確認才分段逼近」 ─────────────────────────
-// 死鎖形狀：鏈上價格本身是錯的（或真實行情一次跳超過 50%），舊邏輯每輪都拒寫，
-// 拒寫 → 不更新 → 偏離永遠 > 50% → 永遠拒寫。
 
 // confirmLargeMove：兩個獨立來源、差距 ≤ 2%、方向一致 → 確認，共識取平均。
 {
@@ -198,78 +183,30 @@ assert.equal(
   false,
 );
 
-// guardDeviation：多源確認通過 → 以 stepTowards 的步幅逼近（不是全額、不是拒寫）。
+
+// ── planMirror：GuardedOracle 只寫完整價格 ─────────────────────────────────
+// 必要案例：鏈上步進上限拒絕完整價格 → reject，不寫部分價格。
 {
-  const g = guardDeviation({
-    target: 83_100,
-    current: 40_000,
-    quotes: [{ source: "chainlink/pyth relay", value: 83_100 }, { source: "coingecko", value: 83_000 }],
-  });
-  assert.equal(g.write, true, g.reason);
-  assert.equal(g.clamped, true);
-  assert.equal(g.confirmed, true);
-  const expected = Number(stepTowards(toPrice8(40_000), toPrice8(83_050), 1000n)) / 1e8;
-  assert.equal(g.value, expected, "步幅必須與 stepTowards（10% cap、50 bps 緩衝）一致");
-  assert.ok(g.value > 40_000 && g.value <= 44_000, `一步最多 +10%，得到 ${g.value}`);
+  const p = planMirror(7346800000000n, 6457800000000n, 1000n); // sBTC −12.1%，cap 10%
+  assert.equal(p.action, "reject");
+  assert.ok(p.action === "reject" && p.reason.includes("不寫部分步進"), JSON.stringify(p));
 }
-// 向下同理。
 {
-  const g = guardDeviation({
-    target: 100,
-    current: 311,
-    quotes: [{ source: "yahoo", value: 100 }, { source: "relay", value: 101 }],
-  });
-  assert.equal(g.write, true, g.reason);
-  assert.ok(g.value < 311 && g.value >= 311 / 1.1, `一步最多 −10%，得到 ${g.value}`);
+  const p = planMirror(100_00000000n, 105_00000000n, 1000n);
+  assert.deepEqual(p, { action: "write", value: 105_00000000n });
 }
-// 單一來源（拆股日的 Yahoo）→ 維持拒寫，reason 說明缺第二來源。
+assert.equal(planMirror(100n, 100n, 1000n).action, "skip");
+assert.deepEqual(planMirror(100n, 999n, 0n), { action: "write", value: 999n }, "cap 0 → 不限制");
+
+// ── runVerdict：熔斷拒寫一定讓 job 失敗 ────────────────────────────────────
 {
-  const g = guardDeviation({ target: 77.75, current: 311, quotes: [{ source: "yahoo", value: 77.75 }] });
-  assert.equal(g.write, false);
-  assert.ok(g.reason.includes("多源確認未通過") && g.reason.includes("至少需要 2 個"), g.reason);
+  const v = runVerdict({ total: 11, available: 11, skipped: 0, rejected: 1, wrote: 10, failed: 0 }, 0.3);
+  assert.equal(v.exitCode, 1, "單源 +30% 被拒寫 → job 失敗");
+  assert.ok(v.errors.some((e) => e.includes("熔斷")));
 }
-// 兩來源差距 > 2% → 拒寫。
-assert.equal(
-  guardDeviation({
-    target: 300, current: 100,
-    quotes: [{ source: "a", value: 300 }, { source: "b", value: 320 }],
-  }).write,
-  false,
-);
-// 共識方向與 target 相反（target 說漲、其他來源一致說跌）→ 拒寫。
-{
-  const g = guardDeviation({
-    target: 300, current: 100,
-    quotes: [{ source: "b", value: 40 }, { source: "c", value: 40.2 }],
-  });
-  assert.equal(g.write, false, g.reason);
-}
-// 容許度可調。
-assert.equal(
-  guardDeviation({
-    target: 300, current: 100, confirmTolerance: 0.1,
-    quotes: [{ source: "a", value: 300 }, { source: "b", value: 320 }],
-  }).write,
-  true,
-);
-// 死鎖真的解得開：每輪都有兩個一致來源 → 有限輪數內回到正常區間並收斂。
-{
-  let p = 40_000;
-  const truth = 83_000;
-  let rounds = 0;
-  while (Math.abs(p - truth) / p > 1e-9 && rounds < 40) {
-    const g = guardDeviation({
-      target: truth,
-      current: p,
-      quotes: [{ source: "relay", value: truth }, { source: "coingecko", value: truth * 1.001 }],
-    });
-    assert.equal(g.write, true, `第 ${rounds} 輪：${g.reason}`);
-    assert.notEqual(g.value, p, "不得原地踏步");
-    p = g.value;
-    rounds += 1;
-  }
-  assert.ok(Math.abs(p - truth) / truth < 1e-6, `應收斂到 ${truth}，停在 ${p}`);
-  assert.ok(rounds <= 12, `收斂太慢：${rounds} 輪`);
-}
+assert.equal(runVerdict({ total: 11, available: 11, skipped: 0, rejected: 0, wrote: 11, failed: 0 }, 0.3).exitCode, 0);
+assert.equal(runVerdict({ total: 11, available: 11, skipped: 0, rejected: 0, wrote: 10, failed: 1 }, 0.3).exitCode, 1);
+assert.equal(runVerdict({ total: 11, available: 7, skipped: 4, rejected: 0, wrote: 7, failed: 0 }, 0.3).exitCode, 1);
+assert.equal(runVerdict({ total: 11, available: 0, skipped: 11, rejected: 0, wrote: 0, failed: 0 }, 0.3).exitCode, 1);
 
 console.log("core.test.ts ✓ all assertions passed");
