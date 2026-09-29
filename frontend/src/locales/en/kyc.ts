@@ -34,12 +34,17 @@ export const kyc: Catalog['kyc'] = {
   receipt: {
     title: 'Save the following (you will need it for review)',
     savedLocally:
-      "Your name and nationality went on-chain only as salted hashes. The salt and your raw details are saved in this browser's local storage, but clearing site data will erase them — copy them down or take a screenshot. Without the salt you cannot prove to a reviewer what the hashes contain.",
+      "Your name and nationality went on-chain only as salted hashes. The salt and the two hashes (not your name or nationality) are saved in this browser's local storage, but clearing site data will erase them — copy them down or take a screenshot. Without the salt you cannot prove to a reviewer what the hashes contain.",
     notSaved:
       "Your name and nationality went on-chain only as salted hashes. This browser could not write to local storage, so copy the salt and hashes below right now — they cannot be recovered once this dialog is closed.",
     salt: 'Salt (keep private)',
     nameHash: 'Name hash (on-chain)',
     nationalityHash: 'Nationality hash (on-chain)',
+    txHash: 'Transaction hash',
+    confirmFailed: 'The transaction was sent, but waiting for confirmation failed — it may already be on-chain. The receipt has been kept; check the transaction hash on a block explorer before resubmitting.',
+    viewMine: 'View my receipt',
+    hideMine: 'Hide receipt',
+    storedAt: 'Receipt saved in this browser at {time} (salt and hashes only, no name or nationality):',
     scheme: 'Hash scheme: keccak256(salt ‖ normalized value); normalized name "{name}", nationality code "{code}".',
   },
 

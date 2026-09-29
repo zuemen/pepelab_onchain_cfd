@@ -92,13 +92,38 @@ export function verifyKycCommitment(a: {
 }
 
 // ── 使用者端收據（localStorage）────────────────────────────────────────────
+//
+// 只存 salt 與兩個雜湊（＋定位用的 chainId／registry／user／txHash），**不存明文
+// 姓名與國籍**：同一台電腦的其他人、瀏覽器擴充套件都讀得到 localStorage，
+// 把明文放在這裡等於在本機又留一份個資。使用者出示時自己提供原始資料即可。
 
-export interface KycReceipt extends KycSubmission {
+export interface KycReceipt {
+  scheme: string
+  salt: string
+  nameHash: string
+  nationalityHash: string
   chainId: number | null
   registry: string
   user: string
   createdAt: number
   txHash: string | null
+}
+
+export function toKycReceipt(
+  s: KycSubmission,
+  meta: { chainId: number | null; registry: string; user: string; txHash: string | null; createdAt?: number },
+): KycReceipt {
+  return {
+    scheme: s.scheme,
+    salt: s.salt,
+    nameHash: s.nameHash,
+    nationalityHash: s.nationalityHash,
+    chainId: meta.chainId,
+    registry: meta.registry,
+    user: meta.user,
+    createdAt: meta.createdAt ?? Date.now(),
+    txHash: meta.txHash,
+  }
 }
 
 export const receiptKey = (chainId: number | null, registry: string, user: string) =>
@@ -120,5 +145,14 @@ export function loadKycReceipt(chainId: number | null, registry: string, user: s
     return raw ? (JSON.parse(raw) as KycReceipt) : null
   } catch {
     return null
+  }
+}
+
+/** 交易被取消或失敗（沒有送上鏈）時刪掉收據：那組 salt 不對應任何鏈上雜湊。 */
+export function removeKycReceipt(chainId: number | null, registry: string, user: string): void {
+  try {
+    localStorage.removeItem(receiptKey(chainId, registry, user))
+  } catch {
+    /* 私密模式等：沒存進去也就不用刪 */
   }
 }

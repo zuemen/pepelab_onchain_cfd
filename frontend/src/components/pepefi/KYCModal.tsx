@@ -1,12 +1,15 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { Contract } from 'ethers';
 import { t, interpolate } from 'src/locales';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
 import {
+  toKycReceipt,
   kycSubmitArgs,
+  loadKycReceipt,
   saveKycReceipt,
+  removeKycReceipt,
   buildKycSubmission,
-  type KycSubmission,
+  type KycReceipt,
 } from 'src/lib/pepefi/kycCommitment';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
@@ -52,6 +55,52 @@ interface Props {
 type TxResp = { wait(): Promise<unknown>; hash: string }
 const asTx = (tx: unknown): TxResp => tx as TxResp
 
+type ReceiptLocation = { chainId: number | null; registry: string; user: string }
+
+/** 收據在 localStorage 的定位：鏈、KYCRegistry 位址、使用者位址。拿不到就回 null。 */
+async function receiptLocation(kycRegistry: Contract): Promise<ReceiptLocation | null> {
+  try {
+    const runner = kycRegistry.runner as {
+      getAddress?: () => Promise<string>
+      provider?: { getNetwork?: () => Promise<{ chainId: bigint }> }
+    } | null;
+    if (!runner?.getAddress) return null;
+    const [user, net, registry] = await Promise.all([
+      runner.getAddress(),
+      runner.provider?.getNetwork ? runner.provider.getNetwork() : Promise.resolve(null),
+      kycRegistry.getAddress(),
+    ]);
+    return { chainId: net ? Number(net.chainId) : null, registry, user };
+  } catch {
+    return null;
+  }
+}
+
+/** 收據的三個欄位：salt 與兩個雜湊，唯讀、可選取複製。 */
+function ReceiptFields({ r }: { r: Pick<KycReceipt, 'salt' | 'nameHash' | 'nationalityHash' | 'txHash'> }) {
+  const rows: Array<[string, string]> = [
+    [t.kyc.receipt.salt, r.salt],
+    [t.kyc.receipt.nameHash, r.nameHash],
+    [t.kyc.receipt.nationalityHash, r.nationalityHash],
+  ];
+  if (r.txHash) rows.push([t.kyc.receipt.txHash, r.txHash]);
+  return (
+    <>
+      {rows.map(([label, value]) => (
+        <TextField
+          key={label}
+          label={label}
+          value={value}
+          size="small"
+          fullWidth
+          sx={{ mb: 1, '& input': { fontFamily: 'monospace', fontSize: 11 } }}
+          slotProps={{ input: { readOnly: true }, inputLabel: { shrink: true } }}
+        />
+      ))}
+    </>
+  );
+}
+
 export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPending = false }: Props) {
   const [fullName,    setFullName]    = useState('');
   const [nationality, setNationality] = useState('TW');
@@ -60,8 +109,23 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPe
   /** 這一輪送出成功 → 停在「已送出、待審核」畫面，不要直接關掉讓人以為過了。 */
   const [submitted,   setSubmitted]   = useState(false);
   /** 這一輪送出的 salt 與雜湊——只在使用者端，送出後顯示給使用者自行保存。 */
-  const [receipt,     setReceipt]     = useState<KycSubmission | null>(null);
+  const [receipt,     setReceipt]     = useState<(KycReceipt & { normalizedName: string; normalizedNationality: string }) | null>(null);
   const [receiptSaved, setReceiptSaved] = useState(false);
+  /** 交易已送出（有 hash）但確認失敗：收據要保留，請使用者自行到瀏覽器確認。 */
+  const [confirmFailed, setConfirmFailed] = useState(false);
+  /** 這台瀏覽器先前存下的收據（「查看我的收據」）。 */
+  const [storedReceipt, setStoredReceipt] = useState<KycReceipt | null>(null);
+  const [showStored,    setShowStored]    = useState(false);
+
+  useEffect(() => {
+    if (!isOpen || !kycRegistry) return;
+    let cancelled = false;
+    void receiptLocation(kycRegistry).then((loc) => {
+      if (cancelled) return;
+      setStoredReceipt(loc ? loadKycReceipt(loc.chainId, loc.registry, loc.user) : null);
+    });
+    return () => { cancelled = true; };
+  }, [isOpen, kycRegistry, submitted]);
 
   const awaitingReview = isPending || submitted;
 
@@ -70,45 +134,46 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPe
     if (!fullName.trim()) { setError(t.kyc.nameRequired); return; }
     setBusy(true);
     setError(null);
-    try {
-      // 個資不上鏈：送的是 keccak256(salt ‖ 正規化姓名) 與 keccak256(salt ‖ 國籍代碼)，
-      // 合約參數型別仍是 string（hex 字串）。salt 與原始資料只留在使用者端。
-      const submission = buildKycSubmission(fullName, nationality);
-      // 送交易「之前」先存收據：交易成功但頁面在存檔前關掉的話，salt 就永遠找不回來。
-      let saved = false;
-      const persist = async (txHash: string | null) => {
-        try {
-          const runner = kycRegistry.runner as { getAddress?: () => Promise<string>; provider?: { getNetwork?: () => Promise<{ chainId: bigint }> } } | null;
-          const user = runner?.getAddress ? await runner.getAddress() : '';
-          const net = runner?.provider?.getNetwork ? await runner.provider.getNetwork() : null;
-          saved = saveKycReceipt({
-            ...submission,
-            chainId: net ? Number(net.chainId) : null,
-            registry: await kycRegistry.getAddress(),
-            user,
-            createdAt: Date.now(),
-            txHash,
-          });
-        } catch {
-          saved = false;
-        }
-      };
-      await persist(null);
-      setReceipt(submission);
+    // 個資不上鏈：送的是 keccak256(salt ‖ 正規化姓名) 與 keccak256(salt ‖ 國籍代碼)，
+    // 合約參數型別仍是 string（hex 字串）。salt 只留在使用者端，明文連本機都不存。
+    const submission = buildKycSubmission(fullName, nationality);
+    const loc = await receiptLocation(kycRegistry);
+    const persist = (txHash: string | null): boolean =>
+      loc ? saveKycReceipt(toKycReceipt(submission, { ...loc, txHash })) : false;
+    const show = (txHash: string | null, saved: boolean) => {
+      setReceipt({
+        ...toKycReceipt(submission, { chainId: loc?.chainId ?? null, registry: loc?.registry ?? '', user: loc?.user ?? '', txHash }),
+        normalizedName: submission.normalizedName,
+        normalizedNationality: submission.normalizedNationality,
+      });
       setReceiptSaved(saved);
+    };
 
+    // 送交易「之前」先存收據：交易成功但頁面在存檔前關掉的話，salt 就永遠找不回來。
+    persist(null);
+    let txHash: string | null = null;
+    try {
       const tx = asTx(await kycRegistry.submitKYC(...kycSubmitArgs(submission)));
+      txHash = tx.hash;
+      // 一拿到 hash 就補進收據——之後 wait() 失敗，交易也可能已經上鏈。
+      const savedWithHash = persist(txHash);
       await tx.wait();
-      await persist(tx.hash);
-      setReceiptSaved(saved);
+      show(txHash, savedWithHash);
       // submitKYC 現在只 emit KYCSubmitted——使用者「還沒」通過。舊版在這裡直接
       // onClose()，畫面看起來就像驗證完成了，然後他回去下單被合約 revert
       // NotKycVerified，完全不知道發生什麼事。改成留在原地明確告知「待審核」。
       setSubmitted(true);
       onSuccess();
     } catch (e) {
-      // 交易沒成功：這組 salt 沒有對應任何鏈上雜湊，不顯示收據（本機那份下次送出會覆蓋）。
-      setReceipt(null);
+      if (txHash) {
+        // 已送出（有 hash）但確認失敗：交易可能已上鏈，收據必須保留並顯示。
+        show(txHash, persist(txHash));
+        setConfirmFailed(true);
+      } else {
+        // 使用者取消或送出前就失敗：這組 salt 不對應任何鏈上雜湊，刪掉收據。
+        if (loc) removeKycReceipt(loc.chainId, loc.registry, loc.user);
+        setReceipt(null);
+      }
       setError(prettyError(e));
     } finally {
       setBusy(false);
@@ -191,8 +256,25 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPe
           </Typography>
         )}
 
+        {/* 查看這台瀏覽器先前存下的收據（只有 salt 與雜湊，沒有明文）。 */}
+        {storedReceipt && !(receipt && (submitted || confirmFailed)) && (
+          <Box>
+            <Button size="small" variant="text" onClick={() => setShowStored((v) => !v)} sx={{ px: 0 }}>
+              {showStored ? t.kyc.receipt.hideMine : t.kyc.receipt.viewMine}
+            </Button>
+            {showStored && (
+              <Box sx={{ mt: 1 }}>
+                <Typography variant="caption" display="block" color="text.secondary" sx={{ mb: 1 }}>
+                  {interpolate(t.kyc.receipt.storedAt, { time: new Date(storedReceipt.createdAt).toLocaleString() })}
+                </Typography>
+                <ReceiptFields r={storedReceipt} />
+              </Box>
+            )}
+          </Box>
+        )}
+
         {/* 送出後：salt 與雜湊只在這裡出現一次，請使用者自行保存。 */}
-        {receipt && submitted && (
+        {receipt && (submitted || confirmFailed) && (
           <Alert severity="warning" variant="outlined">
             <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
               {t.kyc.receipt.title}
@@ -200,21 +282,12 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPe
             <Typography variant="caption" display="block" sx={{ mb: 1 }}>
               {receiptSaved ? t.kyc.receipt.savedLocally : t.kyc.receipt.notSaved}
             </Typography>
-            {[
-              [t.kyc.receipt.salt, receipt.salt],
-              [t.kyc.receipt.nameHash, receipt.nameHash],
-              [t.kyc.receipt.nationalityHash, receipt.nationalityHash],
-            ].map(([label, value]) => (
-              <TextField
-                key={label}
-                label={label}
-                value={value}
-                size="small"
-                fullWidth
-                sx={{ mb: 1, '& input': { fontFamily: 'monospace', fontSize: 11 } }}
-                slotProps={{ input: { readOnly: true }, inputLabel: { shrink: true } }}
-              />
-            ))}
+            {confirmFailed && (
+              <Typography variant="caption" display="block" color="error.main" sx={{ mb: 1 }}>
+                {t.kyc.receipt.confirmFailed}
+              </Typography>
+            )}
+            <ReceiptFields r={receipt} />
             <Typography variant="caption" display="block" color="text.secondary">
               {interpolate(t.kyc.receipt.scheme, { name: receipt.normalizedName, code: receipt.normalizedNationality })}
             </Typography>

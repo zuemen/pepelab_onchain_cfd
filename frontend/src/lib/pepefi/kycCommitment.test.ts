@@ -1,7 +1,11 @@
 import { it, expect, describe } from 'vitest'
 
 import {
+  toKycReceipt,
   kycSubmitArgs,
+  loadKycReceipt,
+  saveKycReceipt,
+  removeKycReceipt,
   generateSalt,
   normalizeName,
   isCommitmentHash,
@@ -76,5 +80,57 @@ describe('isCommitmentHash', () => {
     expect(isCommitmentHash('路人甲')).toBe(false)
     expect(isCommitmentHash('TW')).toBe(false)
     expect(isCommitmentHash(buildKycSubmission('x', 'TW', SALT).nameHash)).toBe(true)
+  })
+})
+
+describe('KYC 收據（localStorage）', () => {
+  const LOC = { chainId: 84532, registry: '0xAbC0000000000000000000000000000000000001', user: '0xDef0000000000000000000000000000000000002' }
+
+  const withFakeStorage = (fn: (store: Map<string, string>) => void) => {
+    const store = new Map<string, string>()
+    const g = globalThis as { localStorage?: unknown }
+    const prev = g.localStorage
+    g.localStorage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => { store.set(k, v) },
+      removeItem: (k: string) => { store.delete(k) },
+    }
+    try { fn(store) } finally { g.localStorage = prev }
+  }
+
+  it('只存 salt 與兩個雜湊，不存明文姓名與國籍', () => {
+    const s = buildKycSubmission('Alice Chen 陳小美', 'TW', SALT)
+    const r = toKycReceipt(s, { ...LOC, txHash: null })
+    const json = JSON.stringify(r)
+    expect(json).not.toMatch(/alice/i)
+    expect(json).not.toContain('陳小美')
+    expect(json).not.toContain('"TW"')
+    expect(Object.keys(r)).not.toContain('fullName')
+    expect(Object.keys(r)).not.toContain('normalizedName')
+    expect(r.salt).toBe(SALT)
+  })
+
+  it('存、讀、刪（交易取消時刪除）', () => {
+    withFakeStorage((store) => {
+      const r = toKycReceipt(buildKycSubmission('Alice', 'TW', SALT), { ...LOC, txHash: '0x' + '9'.repeat(64) })
+      expect(saveKycReceipt(r)).toBe(true)
+      // 位址大小寫不同也找得到同一份
+      expect(loadKycReceipt(84532, LOC.registry.toLowerCase(), LOC.user.toUpperCase().replace('0X', '0x'))).toEqual(r)
+      expect([...store.values()].join()).not.toMatch(/alice/i)
+      removeKycReceipt(84532, LOC.registry, LOC.user)
+      expect(loadKycReceipt(84532, LOC.registry, LOC.user)).toBeNull()
+    })
+  })
+
+  it('沒有 localStorage（私密模式、node）時不丟例外', () => {
+    const r = toKycReceipt(buildKycSubmission('Alice', 'TW', SALT), { ...LOC, txHash: null })
+    const g = globalThis as { localStorage?: unknown }
+    const prev = g.localStorage
+    g.localStorage = undefined
+    try {
+      expect(saveKycReceipt(r)).toBe(false)
+      expect(loadKycReceipt(84532, LOC.registry, LOC.user)).toBeNull()
+      expect(() => removeKycReceipt(84532, LOC.registry, LOC.user)).not.toThrow()
+    } finally { g.localStorage = prev }
   })
 })
