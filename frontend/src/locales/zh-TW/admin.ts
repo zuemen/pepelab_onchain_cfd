@@ -205,6 +205,11 @@ export const admin = {
     checkingAuthBody: '正在讀取鏈上的 owner() 與 verifiers()。讀不到就不放行。',
     notAuthorized: '無權限',
     notAuthorizedBody: '此頁面僅限 KYCRegistry 的 owner 或已指派的審核員存取。',
+    authFailed: '無法確認權限',
+    authFailedBody: '讀不到 KYCRegistry 的 owner()，因此無法確認你是否有審核權限。讀不到就不放行——請稍後重試。',
+    authRetry: '重試',
+    /** 線上舊版 KYCRegistry 沒有 verifiers()／pending()。 */
+    legacyRegistryNotice: '這條鏈上的 KYCRegistry 是舊版合約，沒有審核員指派（verifiers）功能，權限只以 owner() 判斷，審核員指派區塊已隱藏。',
 
     /** 進得去之後，講清楚是以哪個身分——owner 和 verifier 權限相同，但意義不同。 */
     roleOwner: '你是以 owner 身分進入',
@@ -263,6 +268,7 @@ export const admin = {
       refresh: '↺ 重新整理',
       scanRange: '掃描範圍：區塊 {from} – {to}',
       scanning: '掃描鏈上事件中…（{done}/{total}）',
+      scanningHint: '審核佇列回看 7 天，公共 RPC 單次只能查 1,000 個區塊，需要數百次查詢，可能要花上數分鐘。',
       /** 表格中姓名／國籍欄位是雜湊時的標記。 */
       hashedLabel: '雜湊',
 

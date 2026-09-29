@@ -154,7 +154,16 @@ export default function KYCModal({ isOpen, onClose, onSuccess, kycRegistry, isPe
         if (!rc) { setPrevTx('unconfirmed'); return; }
         if (rc.status === 0) { setPrevTx('clear'); return; }
         // 交易成功：鏈上仍在待審就不能重送；已核准或已撤銷才放行（撤銷後需要能重新申請）。
-        const pendingNow = (await kycRegistry.isPending(loc.user)) as boolean;
+        let pendingNow: boolean;
+        try {
+          pendingNow = (await kycRegistry.isPending(loc.user)) as boolean;
+        } catch {
+          // 線上 Base Sepolia 的舊版 KYCRegistry 沒有 isPending（missing revert data）：
+          // 那一版沒有審核佇列，submitKYC 上鏈即完成。確認合約讀得到（isVerified）就放行，
+          // 讀不到才當成查詢失敗。
+          await kycRegistry.isVerified(loc.user);
+          pendingNow = false;
+        }
         if (!cancelled) setPrevTx(pendingNow ? 'underReview' : 'clear');
       } catch {
         if (!cancelled) setPrevTx('checkFailed');

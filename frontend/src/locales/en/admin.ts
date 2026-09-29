@@ -197,6 +197,10 @@ export const admin: Catalog['admin'] = {
     checkingAuthBody: 'Reading owner() and verifiers() on-chain. Access is denied until this resolves.',
     notAuthorized: 'Not authorized',
     notAuthorizedBody: 'This page is restricted to the KYCRegistry owner or an appointed reviewer.',
+    authFailed: "Couldn't confirm permissions",
+    authFailedBody: "KYCRegistry.owner() could not be read, so we can't confirm whether you may review. Access is denied until it can be read — please retry later.",
+    authRetry: 'Retry',
+    legacyRegistryNotice: 'The KYCRegistry on this chain is a legacy contract without verifier appointment (verifiers), so access is decided by owner() only and the verifier section is hidden.',
 
     roleOwner: 'You are here as the owner',
     roleVerifier: 'You are here as an appointed reviewer',
@@ -250,6 +254,7 @@ export const admin: Catalog['admin'] = {
       refresh: '↺ Refresh',
       scanRange: 'Scanned range: block {from} – {to}',
       scanning: 'Scanning on-chain events… ({done}/{total})',
+      scanningHint: 'The queue looks back 7 days and the public RPC allows only 1,000 blocks per query, so this takes hundreds of requests and may take several minutes.',
       hashedLabel: 'hash',
 
       pendingTitle: 'Pending Applications',
