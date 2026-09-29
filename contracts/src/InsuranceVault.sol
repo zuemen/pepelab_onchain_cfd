@@ -19,9 +19,6 @@ contract InsuranceVault is ERC20, Ownable, ReentrancyGuard {
 
     address public feeRouter;
     address public exchange;
-    /// @notice CopyTracker allowed to deposit slashed trader stake (see
-    ///         `CopyTracker.unfollowAndCloseAll`). address(0) = none.
-    address public copyTracker;
     uint256 public totalAssets; // explicit tracking; never read raw ERC20 balance
 
     // ── Events ───────────────────────────────────────────────────────────────
@@ -33,7 +30,6 @@ contract InsuranceVault is ERC20, Ownable, ReentrancyGuard {
     event Recapitalized(address indexed from, uint256 amount);
     event FeeRouterSet(address indexed feeRouter);
     event ExchangeSet(address indexed exchange);
-    event CopyTrackerSet(address indexed copyTracker);
 
     // ── Errors ───────────────────────────────────────────────────────────────
 
@@ -62,11 +58,6 @@ contract InsuranceVault is ERC20, Ownable, ReentrancyGuard {
     function setExchange(address _ex) external onlyOwner {
         exchange = _ex;
         emit ExchangeSet(_ex);
-    }
-
-    function setCopyTracker(address _ct) external onlyOwner {
-        copyTracker = _ct;
-        emit CopyTrackerSet(_ct);
     }
 
     /// @notice H-4 escape hatch: inject assets WITHOUT minting shares, to restore
@@ -140,13 +131,10 @@ contract InsuranceVault is ERC20, Ownable, ReentrancyGuard {
 
     // ── Protocol entry points ─────────────────────────────────────────────────
 
-    /// @notice FeeRouter (fee share), Exchange (liquidation remainder) or the
-    ///         CopyTracker (slashed trader stake) deposits here.
+    /// @notice FeeRouter (slash share) or Exchange (liquidation remainder) deposits here.
     ///         Caller must approve this contract for `amount` USDC before calling.
     function depositFromProtocol(uint256 amount) external {
-        if (msg.sender != feeRouter && msg.sender != exchange && msg.sender != copyTracker) {
-            revert NotAuthorized();
-        }
+        if (msg.sender != feeRouter && msg.sender != exchange) revert NotAuthorized();
         usdc.safeTransferFrom(msg.sender, address(this), amount);
         totalAssets += amount;
         emit ProtocolDeposit(msg.sender, amount);

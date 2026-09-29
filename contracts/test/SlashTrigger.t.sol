@@ -41,10 +41,10 @@ contract SlashTriggerTest is Test {
 
         ts.setCopyTracker(address(ct));
         exchange.setCopyTracker(address(ct));
-        // Slashed stake goes to the InsuranceVault, never to the follower.
+        // The exchange's LP InsuranceVault exists here only to prove that a
+        // slash never reaches it (it pays out pro rata).
         vault = new InsuranceVault(address(usdc));
         vault.setExchange(address(exchange));
-        vault.setCopyTracker(address(ct));
         exchange.setInsuranceVault(address(vault));
 
         oracle.addAsset(BTC, BTC_PRICE);
@@ -133,43 +133,93 @@ contract SlashTriggerTest is Test {
         assertEq(slashed, cap, "slash capped at MAX_SLASH_BPS of stake");
     }
 
-    // ── Test 4: slash USDC goes to the InsuranceVault, not the follower ─────
-    function testSlashGoesToInsuranceVault_notFollower() public {
-        _follow(1_000e18);
-        oracle.updatePrice(BTC, 60_000e8);   // 40% drop → slash triggered
-
-        uint256 bobBefore = usdc.balanceOf(bob);
-        _unfollow();
-        assertEq(usdc.balanceOf(bob), bobBefore, "follower is not paid the slash");
-        assertGt(vault.totalAssets(), 0, "vault received it");
-    }
-
-    // ── Test 5: the vault receives exactly the slashed amount ───────────────
-    function testInsuranceVaultReceivesExactlyTheSlash() public {
+    // ── Test 4: the slash lands in the tracker's reserve, not the follower ─
+    function testSlashGoesToReserve_notFollower() public {
         _follow(1_000e18);
         // BTC 40% drop at 2x on 500: loss 400; slash = 50% = 200 (cap 250)
         oracle.updatePrice(BTC, 60_000e8);
 
-        uint256 vaultBefore = vault.totalAssets();
+        uint256 bobBefore   = usdc.balanceOf(bob);
         uint256 stakeBefore = ts.getStake(alice).amount;
         _unfollow();
         uint256 slashed = stakeBefore - ts.getStake(alice).amount;
         assertEq(slashed, 200e18);
-        assertEq(vault.totalAssets() - vaultBefore, slashed, "vault accounting == slash");
-        assertEq(usdc.balanceOf(address(ct)), 0, "nothing stranded in the tracker");
+        assertEq(usdc.balanceOf(bob), bobBefore, "follower is not paid the slash");
+        assertEq(ct.slashReserve(), slashed, "reserve == slash");
+        assertEq(usdc.balanceOf(address(ct)), slashed, "reserve is backed");
+        assertEq(vault.totalAssets(), 0, "no pro-rata pool receives it");
     }
 
-    // ── Test 5b: no vault accepting the tracker → slash skipped, not stranded
-    function testSlashSkippedWhenVaultDoesNotAcceptTracker() public {
-        vault.setCopyTracker(address(0));
+    /// Review PoC: the follower deposits into the (empty) LP vault just before
+    /// unfollowing, hoping to own 100% of a slash paid into it.
+    function testFollowerVaultDeposit_1wei_recoversNoSlash() public {
+        _followerDepositsIntoVaultThenUnfollows(1);
+    }
+
+    /// Review PoC with existing LPs: 9,000 next to 1,000 used to net 90%.
+    function testFollowerVaultDeposit_9000_recoversNoSlash() public {
+        address lp = makeAddr("lp");
+        usdc.mint(lp, 1_000e18);
+        vm.startPrank(lp);
+        usdc.approve(address(vault), type(uint256).max);
+        vault.deposit(1_000e18);
+        vm.stopPrank();
+        _followerDepositsIntoVaultThenUnfollows(9_000e18);
+    }
+
+    function _followerDepositsIntoVaultThenUnfollows(uint256 amount) internal {
         _follow(1_000e18);
         oracle.updatePrice(BTC, 60_000e8);
-        uint256 stakeBefore = ts.getStake(alice).amount;
-        vm.expectEmit(true, true, false, true, address(ct));
-        emit CopyTracker.SlashSkippedNoVault(alice, bob, 200e18);
+
+        vm.startPrank(bob);
+        usdc.approve(address(vault), type(uint256).max);
+        uint256 shares = vault.deposit(amount);
+        vm.stopPrank();
+        uint256 assetsBefore = vault.totalAssets();
+
         _unfollow();
-        assertEq(ts.getStake(alice).amount, stakeBefore);
-        assertEq(usdc.balanceOf(address(ct)), 0);
+        assertGt(ct.slashReserve(), 0, "the slash did happen");
+        assertEq(vault.totalAssets(), assetsBefore, "vault untouched by the slash");
+
+        uint256 bobBefore = usdc.balanceOf(bob);
+        vm.prank(bob);
+        vault.withdraw(shares);
+        assertLe(usdc.balanceOf(bob) - bobBefore, amount, "follower gets back at most the deposit");
+    }
+
+    // ── Test 5: owner releases the reserve; nobody else can ─────────────────
+    function testWithdrawSlashReserve_ownerOnly() public {
+        _follow(1_000e18);
+        oracle.updatePrice(BTC, 60_000e8);
+        _unfollow();
+        address treasury = makeAddr("treasury");
+
+        vm.prank(bob);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, bob));
+        ct.withdrawSlashReserve(bob, 1);
+
+        vm.expectRevert(CopyTracker.InvalidSlashWithdrawal.selector);
+        ct.withdrawSlashReserve(treasury, 200e18 + 1);
+        vm.expectRevert(CopyTracker.InvalidSlashWithdrawal.selector);
+        ct.withdrawSlashReserve(address(0), 1);
+
+        vm.expectEmit(true, false, false, true, address(ct));
+        emit CopyTracker.SlashReserveWithdrawn(treasury, 150e18);
+        ct.withdrawSlashReserve(treasury, 150e18);
+        assertEq(usdc.balanceOf(treasury), 150e18);
+        assertEq(ct.slashReserve(), 50e18);
+    }
+
+    // ── Test 5b: a slash TraderStake refuses never blocks the unfollow ───────
+    function testSlashRefused_unfollowStillCompletes() public {
+        _follow(1_000e18);
+        oracle.updatePrice(BTC, 60_000e8);
+        ts.setCopyTracker(makeAddr("elsewhere")); // TraderStake now refuses this tracker
+        vm.expectEmit(true, true, false, true, address(ct));
+        emit CopyTracker.SlashFailed(alice, bob, 200e18);
+        _unfollow();
+        assertFalse(ct.getCopyRecords(bob)[0].active);
+        assertEq(ct.slashReserve(), 0);
     }
 
     // ── Test 6: slash skipped when traderStake == address(0) ────────────────

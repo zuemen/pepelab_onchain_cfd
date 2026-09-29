@@ -44,10 +44,10 @@ contract CopyTrackerScoringTest is Test {
         ct       = new CopyTracker(address(usdc), address(exchange), address(registry), address(0), address(ts));
         ts.setCopyTracker(address(ct));
         exchange.setCopyTracker(address(ct));
-        // Slashed stake goes to the InsuranceVault, never to the follower.
+        // Slashed stake goes to the tracker's reserve, never to the follower
+        // or to this (pro-rata) LP vault.
         vault = new InsuranceVault(address(usdc));
         vault.setExchange(address(exchange));
-        vault.setCopyTracker(address(ct));
         exchange.setInsuranceVault(address(vault));
         exchange.setExecutionFee(0);
         exchange.setTradingFeeBps(0);
@@ -142,7 +142,7 @@ contract CopyTrackerScoringTest is Test {
         _unfollow();
         assertEq(ts.getStake(alice).amount, 300e18);
         assertEq(usdc.balanceOf(bob), bobUsdc, "slash is not paid to the follower");
-        assertEq(vault.totalAssets(), 200e18, "it goes to the InsuranceVault");
+        assertEq(ct.slashReserve(), 200e18, "it goes to the slash reserve");
     }
 
     function test_unfollow_flatMarketWithFees_noSlash() public {
@@ -195,7 +195,7 @@ contract CopyTrackerScoringTest is Test {
         uint256 slashed = stakeBefore - ts.getStake(alice).amount;
         assertGt(slashed, 0, "the pushed mark did trip the trigger");
         assertEq(usdc.balanceOf(bob), bobUsdc, "the follower receives nothing from it");
-        assertEq(vault.totalAssets(), slashed, "the pool does");
+        assertEq(ct.slashReserve(), slashed, "the reserve does");
     }
 
     /// Each leg is floored at −margin before summing: a BTC leg that went 200
