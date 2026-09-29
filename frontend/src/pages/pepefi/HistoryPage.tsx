@@ -13,6 +13,7 @@ import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
 import { t, interpolate } from 'src/locales'
 import { mapLimit, withRetry, RPC_CONCURRENCY } from 'src/lib/pepefi/rpcBatch'
 import {
+  UI_RETRIES,
   scanContractEvents,
   type ParsedEventLog,
   type DeferredTopicFilterLike,
@@ -654,7 +655,7 @@ export default function HistoryPage() {
       2,
       async (s) => {
         try {
-          const r = await scanContractEvents(provider, s.contract, s.filters, fromBlock, toBlock, { retries: 2 })
+          const r = await scanContractEvents(provider, s.contract, s.filters, fromBlock, toBlock, { retries: UI_RETRIES })
           return { key: s.key, events: r.events, failedChunks: r.failedChunks }
         } catch (err) {
           console.warn('[history] scan failed', s.key, err)

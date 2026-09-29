@@ -1,10 +1,17 @@
 import type { Contract, BrowserProvider } from 'ethers'
 
-import { useRef, useState, useCallback } from 'react'
+import { useRef, useState, useEffect, useCallback } from 'react'
 
 import { t, interpolate } from 'src/locales'
 import { mapLimit, withRetry, RPC_CONCURRENCY } from 'src/lib/pepefi/rpcBatch'
-import { scanFromBlock, queryLogsChunked, type ChunkProgress, type ChunkFailure } from 'src/lib/pepefi/chainLogs'
+import {
+  UI_RETRIES,
+  scanFromBlock,
+  queryLogsChunked,
+  isChunkScanAborted,
+  type ChunkProgress,
+  type ChunkFailure,
+} from 'src/lib/pepefi/chainLogs'
 import { latestSubmissionByAddress, bucketOf, type ReviewBucket } from 'src/lib/pepefi/kycQueue'
 
 // 審核佇列：見 ADR 0005（frontend/docs/adr/0005-review-queue-rebuilt-from-events.md）。
@@ -26,6 +33,8 @@ export type { ReviewBucket }
 const KYC_SCAN_WINDOW_SEC = 7 * 24 * 3600;
 /** 7 天 ÷ 2 秒 ÷ CHUNK_SIZE(800) ≈ 378 段；留一點餘裕。 */
 const KYC_SCAN_MAX_CHUNKS = 400;
+/** 378 段序列要一分半；併發 3 實測約 40 秒（同樣 7 天視窗的排行榜掃描）。 */
+const KYC_SCAN_CONCURRENCY = 3;
 
 export interface ReviewApplication {
   address:         string
@@ -71,12 +80,18 @@ export function useKYCReviewQueue(
   const [error,     setError]     = useState<string | null>(null);
 
   const runId = useRef(0);
+  // 重新整理或卸載時中止還在跑的掃描——378 段 getLogs 不該在沒人看的時候繼續打 RPC。
+  const abortRef = useRef<AbortController | null>(null);
+  useEffect(() => () => { abortRef.current?.abort(); runId.current += 1; }, []);
 
   const refetch = useCallback(async () => {
     if (!kycRegistry || !provider) return;
 
     runId.current += 1;
     const myRun = runId.current;
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
     const isStale = () => runId.current !== myRun;
 
     setLoading(true);
@@ -108,6 +123,7 @@ export function useKYCReviewQueue(
         latest,
         onChunk,
         onChunkFailed,
+        { retries: UI_RETRIES, concurrency: KYC_SCAN_CONCURRENCY, signal: ac.signal },
       ) as SubmittedLog[];
       if (isStale()) return;
 
@@ -170,6 +186,7 @@ export function useKYCReviewQueue(
         setError(interpolate(t.admin.kyc.queue.readErrorSome, { count: unreadable }));
       }
     } catch (e) {
+      if (isChunkScanAborted(e)) return;
       console.error('[useKYCReviewQueue]', e);
       if (!isStale()) setError(t.admin.kyc.queue.readErrorAll);
     } finally {

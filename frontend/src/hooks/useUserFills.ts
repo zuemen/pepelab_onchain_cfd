@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 
 import { t } from 'src/locales'
-import { scanContractEvents } from 'src/lib/pepefi/chainLogs'
+import { UI_RETRIES, scanContractEvents } from 'src/lib/pepefi/chainLogs'
 
 // 使用者在鏈上的成交紀錄（開倉 / 平倉 / 被清算）。
 //
@@ -76,7 +76,7 @@ export function useUserFills(contracts: Contracts, address: string | null): User
         ],
         fromBlock,
         current,
-        { retries: 2 },
+        { retries: UI_RETRIES },
       )
 
       const rows: Fill[] = []
