@@ -252,6 +252,7 @@ for (const target of [101, 112]) {
   const guarded = fakeGuarded(100);
   await runRound(ctx({ oracle, guarded, fetchPrice: async () => yahoo(100) }));
   assert.deepEqual(oracle.writes, [P(100)], "heartbeat 到期時同價也要重寫 Mock");
+  assert.deepEqual(guarded.writes, [P(100)], "heartbeat 到期時同價也要重寫 Guarded");
 }
 // 不一致且超過 Guarded 上限 → 拒寫，訊息要寫「兩顆已不一致」（與真的超限區分）。
 {
