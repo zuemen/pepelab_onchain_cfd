@@ -93,3 +93,11 @@ test("兩個 vercel.json 都掛上 ignoreCommand", async () => {
     assert.match(cmd, /scripts\/vercel-ignore-build\.sh \./, p);
   }
 });
+
+test("兩個 vercel.json 只讓 master 與 preview/** 建立部署（被取消的部署仍計入額度）", async () => {
+  const { readFileSync } = await import("node:fs");
+  for (const p of ["frontend/vercel.json", "agent/signal-api/vercel.json"]) {
+    const d = JSON.parse(readFileSync(p, "utf8")).git?.deploymentEnabled;
+    assert.deepEqual(d, { "**": false, master: true, "preview/**": true }, p);
+  }
+});

@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # Vercel「Ignored Build Step」：exit 0 = 跳過這次建置，exit 1 = 照常建置。
 #
-# 為什麼：每次 push 會觸發三個 Vercel 專案（兩個前端、一個 signal-api）一起建置，
-# 連只改 keeper、合約或 SDK 的 PR 也一樣。2026-09-30 Hobby 方案的建置額度被用完，
-# PR #202 合併後正式站無法部署。
+# 為什麼：2026-09-30 三個 Vercel 專案（兩個前端、一個 signal-api）的 Hobby 部署額度
+# 用完，PR #202 合併後正式站無法部署。
+#
+# 注意：被這個腳本取消的部署**仍計入每日部署額度**（Vercel 文件 Ignored Build Step 一節）。
+# 真正省額度的是 vercel.json 的 `git.deploymentEnabled`（只有 master 與 preview/** 建立
+# 部署，其他分支根本不建）。這個腳本只省建置時間與併發槽，並避免 master 上只改了別的
+# 專案時重建本專案。
 #
 # 比對基準是「這個專案在這個分支上一次成功部署的 commit」（VERCEL_GIT_PREVIOUS_SHA），
 # 不是 HEAD^：若上一次部署被額度擋下，下一次 push 即使沒動到本專案，也必須把
@@ -39,7 +43,8 @@ fi
 
 if ! git cat-file -e "${prev}^{commit}" 2>/dev/null; then
   # Vercel 預設 shallow clone；試著補抓基準 commit，抓不到就照常建置。
-  git fetch --quiet --depth=200 origin "$prev" 2>/dev/null || true
+  # 不詢問憑證、20 秒逾時：ignore step 卡住比多建置一次更糟。
+  GIT_TERMINAL_PROMPT=0 timeout 20 git fetch --quiet --depth=200 origin "$prev" 2>/dev/null || true
   if ! git cat-file -e "${prev}^{commit}" 2>/dev/null; then
     echo "build: clone 裡找不到上一次部署的 commit ${prev}"
     exit 1
