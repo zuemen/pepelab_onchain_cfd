@@ -71,7 +71,7 @@ export const terminal: Catalog['terminal'] = {
     estLiquidation: 'Est. Liquidation',
     onLiquidation: 'On liquidation',
     onLiquidationValue: 'Refunded minus penalty',
-    funding8h: 'Funding rate (8h)',
+    fundingRate: 'Funding rate ({interval})',
     tradingParams: 'Trading fee · max leverage',
     tradingParamsValue: '{fee} bps · ≤{lev}× · {source}',
     paramsSource: {
@@ -167,12 +167,19 @@ export const terminal: Catalog['terminal'] = {
   funding: {
     column: {
       asset: 'Asset',
-      rate: 'Rate (8h)',
+      rate: 'Rate ({interval})',
       longOi: 'Long OI',
       shortOi: 'Short OI',
       lastSettled: 'Last settled',
     },
     empty: 'No funding data',
+
+    intervalUnit: {
+      d: '{n}d',
+      h: '{n}h',
+      m: '{n}m',
+      s: '{n}s',
+    },
 
     /** 上次結算多久以前。四種區間各自是完整的一句話。 */
     agoNever: 'Never',

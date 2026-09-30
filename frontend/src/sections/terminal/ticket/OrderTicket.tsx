@@ -14,6 +14,7 @@ import { perpetualOpenBlock } from 'src/tenant/assetPolicy'
 import { type TradingParams } from 'src/lib/pepefi/tradingParams'
 import { estimateLiquidationPrice } from 'src/lib/pepefi/liquidation'
 import { fUsd, fNum, fToken, fromUnits } from 'src/lib/pepefi/format'
+import { formatFundingInterval } from 'src/lib/pepefi/fundingInterval'
 import { SHOW_LEVERAGE, FIXED_LEVERAGE, PERPETUALS_AUTHORIZED } from 'src/lib/pepefi/featureFlags'
 
 import { Row } from '../Atoms'
@@ -33,6 +34,7 @@ export function OrderTicket({
   curPrice,
   freeMgn,
   rate,
+  fundingInterval,
   kycBlocked,
   kycUnknown,
   kycPending,
@@ -47,6 +49,8 @@ export function OrderTicket({
   curPrice: bigint
   freeMgn: bigint
   rate: number
+  /** 鏈上 FUNDING_INTERVAL()（秒），讀不到是 null → 標籤顯示「—」（#196）。 */
+  fundingInterval: bigint | null
   kycBlocked: boolean
   /** KYC 狀態讀不到（fail-closed 擋住）。和「確定未驗證」要說不同的話。 */
   kycUnknown: boolean
@@ -287,7 +291,9 @@ export function OrderTicket({
           color={C.mut}
         />
         <Row
-          k={t.terminal.ticket.funding8h}
+          k={interpolate(t.terminal.ticket.fundingRate, {
+            interval: formatFundingInterval(fundingInterval, t.terminal.funding.intervalUnit),
+          })}
           v={`${rate >= 0 ? '+' : ''}${fNum(rate / 100, { dp: 4 })}%`}
           color={rate > 0 ? C.red : rate < 0 ? C.green : C.mut}
         />

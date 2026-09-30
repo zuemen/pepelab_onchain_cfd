@@ -27,6 +27,7 @@ export function PositionsPanel({
   address,
   positions,
   funding,
+  fundingInterval,
   staleNoticeFor,
   notify,
   onRefresh,
@@ -36,6 +37,8 @@ export function PositionsPanel({
   address: string | null
   positions: LivePos[]
   funding: FundingData
+  /** 鏈上 FUNDING_INTERVAL()（秒），null = 讀不到。 */
+  fundingInterval: bigint | null
   /** M1：平倉的 stale 擋單原因（null = 可以平）。往下傳給 PositionsTable。 */
   staleNoticeFor: (asset: string) => string | null
   notify: (msg: string, ok: boolean) => void
@@ -139,7 +142,7 @@ export function PositionsPanel({
           chainId={chainId}
         />
       )}
-      {tab === 'funding' && <FundingTable funding={funding} />}
+      {tab === 'funding' && <FundingTable funding={funding} fundingInterval={fundingInterval} />}
     </Box>
   )
 }
