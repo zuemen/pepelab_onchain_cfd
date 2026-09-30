@@ -47,7 +47,7 @@ CI（`.github/workflows/consistency.yml`）會比對位址一致性。
 | CopyTracker | `0xC9e91f7D36e910C58042164032c625427b23CCB2` | 跟單在商業版預設關閉 |
 | TraderStake | `0x01aEB530bcFc69f036309ffe55acc7eA6C5a28Fe` | |
 | KYCRegistry | `0x5D95fD9e7a5f80e5369e24783F1f98E0f952360d` | 只擋標記為 RWA 的資產 |
-| MockUSDC（保證金，測試幣） | `0x69fd695Bc7C3aFdb35ABA35cD6890C506400b035` | `mint` 無權限控管，僅限測試網 |
+| MockUSDC（保證金，測試幣） | `0x69fd695Bc7C3aFdb35ABA35cD6890C506400b035` | 已部署的是舊版，`mint` 無限制（任何人可鑄）；原始碼已限制為 owner／swapRouter，需重新部署才生效。僅限測試網 |
 | AssetVault（V1，舊路徑） | `0xC30DFe1C9EBb47197b785995aA9Cd0F5B89557A5` | 對照用；商業路徑為 V2.4 |
 
 x402 付款使用 Circle 官方測試網 USDC `0x036CbD53842c5426634e7929541eC2318f3dCF7e`（EIP-3009），

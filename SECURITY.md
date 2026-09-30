@@ -35,7 +35,7 @@ issue 裡不要描述漏洞、受影響的函式、重現步驟或交易。
 
 | 不在範圍內 | 說明 |
 |---|---|
-| 測試網代幣的價值 | MockUSDC、合成資產與 PEPE 在測試網上沒有價值；「可以領到／鑄出更多測試幣」本身不構成漏洞（例如 `MockUSDC.mint` 無權限控管是刻意的測試設計） |
+| 測試網代幣的價值 | MockUSDC、合成資產與 PEPE 在測試網上沒有價值；「可以領到／鑄出更多測試幣」本身不構成漏洞（例如已部署的舊版 `MockUSDC` 的 `mint` 無限制；原始碼已限制為 owner／swapRouter） |
 | 第三方服務 | Base Sepolia 節點、x402.org facilitator、Vercel、GitHub、Upstash、CoinGecko、Yahoo Finance、Coinbase 等服務本身的問題，請回報給各自的維護者 |
 | 已記錄的限制 | [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) 已列出的項目；若你發現其影響比文件描述更嚴重，仍歡迎回報 |
 | 社交工程、實體攻擊、阻斷服務壓測 | 不接受對維護者或基礎設施的此類測試 |
