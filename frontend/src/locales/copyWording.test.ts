@@ -18,52 +18,84 @@ const ZH = /跟單|跟隨者/;
 const EN =
   /copy[- ]?trad|copy a trader|copy this trader|copier|copied (?:position|from)|\+ copied|follower|unfollow|copy fee|copy position|copy record|social copy|copying (?:a|the|trader)/i;
 
-const ALLOWED: ReadonlyArray<{ prefix: string; why: string }> = [
-  // ── 旗標關閉時整個畫面／元件不渲染 ──
-  { prefix: 'copy.', why: '/copy/:addr 由 FeatureGate 收起' },
-  { prefix: 'rewards.', why: '/rewards 由 PEPE 獎勵旗標收起' },
-  // /stake 照常開放（配置市集發布策略的前提），所以只豁免旗標關閉時會被 stake.copyOff.* 取代的四條。
-  { prefix: 'stake.sections.reputation.subtitle', why: '旗標關閉時改用 stake.copyOff.subtitle' },
-  { prefix: 'stake.current.minimum', why: '旗標關閉時改用 stake.copyOff.minimum' },
-  { prefix: 'stake.add.description', why: '旗標關閉時改用 stake.copyOff.addDescription' },
-  { prefix: 'stake.info.slashing', why: '旗標關閉時改用 stake.copyOff.slashing' },
-  { prefix: 'marketplace.subtitle', why: '交易者排行榜副標，只在 Expert + 跟單旗標開啟時渲染' },
-  { prefix: 'marketplace.sort.', why: '同上（排行榜）' },
-  { prefix: 'marketplace.card.', why: '同上（排行榜）' },
-  { prefix: 'marketplace.footer.', why: '同上（排行榜）' },
-  { prefix: 'whale.feed.copy', why: 'CopyCta 在旗標關閉時回 null' },
-  { prefix: 'traderProfile.header.follower', why: '跟隨者數在旗標關閉時不渲染' },
-  { prefix: 'traderProfile.header.noStrategy', why: '跟單按鈕在旗標關閉時不渲染' },
-  { prefix: 'traderProfile.header.copyThisTrader', why: '同上' },
-  { prefix: 'traderProfile.stats.followers', why: '跟隨者統計卡在旗標關閉時不渲染' },
-  { prefix: 'traderProfile.stats.copiers', why: '同上' },
-  { prefix: 'traderProfile.followers.', why: '跟隨者清單在旗標關閉時不渲染' },
-  { prefix: 'traderDashboard.publish.stakeRequiredBody', why: '旗標關閉時改顯示 stakeRequiredBodyNeutral' },
-  { prefix: 'traderDashboard.earnings.claimable', why: '旗標關閉時改顯示 claimableNeutral' },
-  { prefix: 'traderDashboard.earnings.note', why: '旗標關閉時改顯示 noteNeutral' },
-  { prefix: 'landing.tagline', why: '旗標關閉時改用 landing.copyOff.*' },
-  { prefix: 'landing.features.copy', why: '跟單功能卡在旗標關閉時被濾掉' },
-  { prefix: 'landing.steps.four', why: '旗標關閉時改用 landing.copyOff.stepFour' },
-  { prefix: 'landing.markup.heroBefore', why: '旗標關閉時改用 landing.copyOff.heroBefore' },
-  { prefix: 'landing.markup.paperMid', why: '旗標關閉時改用 landing.copyOff.paperMid' },
-  { prefix: 'meta.description', why: 'vite.config.ts 在旗標關閉時改用 meta.descriptionNoCopy（index.html 不用這一條）' },
-  { prefix: 'portfolio.quickAction.copyTrader', why: '旗標關閉時改用 quickAction.marketplace' },
-  { prefix: 'portfolio.page.emptyDescription', why: '旗標關閉時改用 emptyDescriptionNoCopy（前綴也涵蓋那一條，但它本身不含跟單用語）' },
-  { prefix: 'portfolio.page.openCount', why: 'Expert 表頭；旗標關閉時改用 openCountNoCopy' },
-  { prefix: 'vault.markup.howItWorksBody', why: '旗標關閉時改用 howItWorksBodyNoCopy' },
+// 白名單一律寫**精確 key**，只有兩條「整條路由都被旗標收起」的例外用前綴（ROUTE_PREFIXES）。
+// 萬用前綴（例如 portfolio.page.）會讓同一區塊新加的跟單文案悄悄過關。
+const ROUTE_PREFIXES: ReadonlyArray<{ prefix: string; why: string }> = [
+  { prefix: 'copy.', why: '/copy/:addr 整條路由由 FeatureGate 收起' },
+  { prefix: 'rewards.', why: '/rewards 整條路由由 PEPE 獎勵旗標收起' },
+];
+
+const ALLOWED: ReadonlyArray<{ key: string; why: string }> = [
+  // ── 旗標關閉時元件不渲染，或改用替代文案 ──
+  { key: 'marketplace.subtitle', why: '交易者排行榜，只在 Expert + 跟單旗標開啟時渲染' },
+  { key: 'marketplace.sort.followers', why: '同上（排行榜）' },
+  { key: 'marketplace.card.copy', why: '同上（排行榜）' },
+  { key: 'marketplace.card.followersLabel', why: '同上（排行榜）' },
+  { key: 'marketplace.footer.followersTotal', why: '同上（排行榜）' },
+  { key: 'whale.feed.copy', why: 'CopyCta 在旗標關閉時回 null' },
+  { key: 'whale.feed.copyHint', why: '同上' },
+  { key: 'traderProfile.header.followerSingular', why: '跟隨者數在旗標關閉時不渲染' },
+  { key: 'traderProfile.header.followerPlural', why: '同上' },
+  { key: 'traderProfile.header.noStrategy', why: '跟單按鈕在旗標關閉時不渲染' },
+  { key: 'traderProfile.header.copyThisTrader', why: '同上' },
+  { key: 'traderProfile.stats.followers', why: '跟隨者統計卡在旗標關閉時不渲染' },
+  { key: 'traderProfile.stats.copiers', why: '同上' },
+  { key: 'traderProfile.followers.titleFirst', why: '跟隨者清單在旗標關閉時不渲染' },
+  { key: 'traderDashboard.publish.stakeRequiredBody', why: '旗標關閉時改顯示 stakeRequiredBodyNeutral' },
+  { key: 'traderDashboard.earnings.claimable', why: '旗標關閉時改顯示 claimableNeutral' },
+  { key: 'traderDashboard.earnings.note', why: '旗標關閉時改顯示 noteNeutral' },
+  { key: 'stake.sections.reputation.subtitle', why: '旗標關閉時改用 stake.copyOff.subtitle' },
+  { key: 'stake.current.minimum', why: '旗標關閉時改用 stake.copyOff.minimum' },
+  { key: 'stake.add.description', why: '旗標關閉時改用 stake.copyOff.addDescription' },
+  { key: 'stake.info.slashing', why: '旗標關閉時改用 stake.copyOff.slashing' },
+  { key: 'landing.tagline', why: '旗標關閉時改用 landing.copyOff.tagline' },
+  { key: 'landing.features.copyTitle', why: '跟單功能卡在旗標關閉時被濾掉' },
+  { key: 'landing.features.copyDesc', why: '同上' },
+  { key: 'landing.steps.four', why: '旗標關閉時改用 landing.copyOff.stepFour' },
+  { key: 'landing.markup.heroBefore', why: '旗標關閉時改用 landing.copyOff.heroBefore' },
+  { key: 'landing.markup.paperMid', why: '旗標關閉時改用 landing.copyOff.paperMid' },
+  { key: 'meta.description', why: 'vite.config.ts 在旗標關閉時改用 meta.descriptionNoCopy' },
+  { key: 'portfolio.quickAction.copyTrader', why: '旗標關閉時改用 quickAction.marketplace' },
+  { key: 'portfolio.page.emptyDescription', why: '旗標關閉時改用 emptyDescriptionNoCopy' },
+  { key: 'portfolio.page.openCount', why: 'Expert 表頭；旗標關閉時改用 openCountNoCopy' },
+  { key: 'vault.markup.howItWorksBody', why: '旗標關閉時改用 howItWorksBodyNoCopy' },
 
   // ── 只在使用者真的有跟單資料時出現（既有部位不能被旗標藏起來） ──
-  { prefix: 'portfolio.page.', why: '跟單部位卡與統計：只在已有跟單紀錄時顯示（copyDeskVisibility）' },
-  { prefix: 'portfolio.close.', why: '平倉欄對跟單留下的部位的說明，只在該列是跟單部位時出現' },
-  { prefix: 'portfolio.column.copiedFrom', why: '旗標關閉時只在有跟單留下的部位時才顯示此欄' },
-  { prefix: 'history.', why: '鏈上歷史事件（跟單費等），只在使用者真的有這類事件時出現' },
-  { prefix: 'traderProfile.activity.', why: '交易者的鏈上活動時間軸，只在真的有跟單事件時出現' },
-  { prefix: 'errors.', why: '合約錯誤對應，只在觸發該錯誤時出現' },
+  { key: 'portfolio.page.activeCopies', why: '跟單統計卡：copyDeskVisibility，旗標關閉時不顯示' },
+  { key: 'portfolio.page.totalCopyPnl', why: '同上' },
+  { key: 'portfolio.page.noCopyPositions', why: '同上' },
+  { key: 'portfolio.page.copyPositions', why: '跟單部位卡：只在已有跟單紀錄時顯示' },
+  { key: 'portfolio.page.notCopyingAnyone', why: '跟單部位卡的空狀態：旗標關閉時零筆不顯示整張卡' },
+  { key: 'portfolio.page.copyColumn.copiedAt', why: '跟單部位卡的欄位' },
+  { key: 'portfolio.page.copyPerformance', why: '跟單績效圖：旗標關閉時不顯示' },
+  { key: 'portfolio.page.unfollow', why: '跟單部位卡的取消按鈕（既有跟單要能取消）' },
+  { key: 'portfolio.page.unfollowedOk', why: '取消跟單成功的提示' },
+  { key: 'portfolio.close.copyManaged', why: '只在該列屬於 active 跟單紀錄時出現' },
+  { key: 'portfolio.close.leftover', why: '只在該列是跟單留下的部位時出現' },
+  { key: 'portfolio.column.copiedFrom', why: '旗標關閉時只在有跟單留下的部位時才顯示此欄' },
+  { key: 'history.eventType.copyFee', why: '鏈上歷史事件，只在使用者真的有這類事件時出現' },
+  { key: 'history.eventType.unfollow', why: '同上' },
+  { key: 'history.detail.unfollowed', why: '同上' },
+  { key: 'traderProfile.activity.timeline.kind.following', why: '交易者鏈上活動時間軸，只在真的有跟單事件時出現' },
+  { key: 'traderProfile.activity.timeline.kind.followedBy', why: '同上' },
+  { key: 'traderProfile.activity.timeline.detail.followingBefore', why: '同上' },
+  { key: 'traderProfile.activity.timeline.detail.followedByAfter', why: '同上' },
+  { key: 'errors.contract.no strategies', why: '合約錯誤對應，只在觸發該錯誤時出現' },
+  { key: 'errors.contract.TradingFeeExceedsMargin', why: '同上' },
+  { key: 'errors.contract.CopyAlreadyClaimed', why: '同上' },
+  { key: 'errors.contract.NotFollowing', why: '同上' },
+  { key: 'errors.contract.SelfCopyNotAllowed', why: '同上' },
+  { key: 'errors.reverted.copy', why: '同上（跟單獎勵領取失敗）' },
 
   // ── 非使用者畫面 ──
-  { prefix: 'admin.', why: '管理員頁（營運方自己看，描述實際的費用分潤模型）' },
-  { prefix: 'common.wallet.mockDesc', why: 'Mock Wallet 只在開發環境出現' },
-  { prefix: 'common.notification.', why: '範本通知資料，已不再渲染（只剩 _mock 引用）' },
+  { key: 'admin.treasury.claim.note', why: '管理員頁（營運方自己看，描述實際的費用分潤模型）' },
+  { key: 'admin.treasury.incentives.description', why: '同上' },
+  { key: 'admin.treasury.info.revenueModelBody', why: '同上' },
+  { key: 'common.wallet.mockDesc', why: 'Mock Wallet 只在開發環境出現' },
+  { key: 'common.notification.friendRequestAfter', why: '範本通知資料，已不再渲染（只剩 _mock 引用）' },
+  { key: 'common.notification.pairedMid', why: '同上' },
+  { key: 'common.notification.pairedAfter', why: '同上' },
+  { key: 'common.notification.whaleAlertMid', why: '同上' },
 ];
 
 function hits(catalog: unknown, re: RegExp): string[] {
@@ -81,7 +113,8 @@ function hits(catalog: unknown, re: RegExp): string[] {
   return out;
 }
 
-const isAllowed = (key: string) => ALLOWED.some(({ prefix }) => key.startsWith(prefix));
+const isAllowed = (key: string) =>
+  ALLOWED.some((a) => a.key === key) || ROUTE_PREFIXES.some(({ prefix }) => key.startsWith(prefix));
 
 describe.skipIf(FEATURE_COPY_TRADING)('跟單旗標關閉時沒有殘留的跟單文案', () => {
   it('zh-TW：每個含跟單用語的字串都在白名單（且有理由）裡', () => {
@@ -127,7 +160,8 @@ describe.skipIf(FEATURE_COPY_TRADING)('跟單旗標關閉時沒有殘留的跟�
 
   it('每一條白名單都真的用得到（避免白名單腐爛成萬用豁免）', () => {
     const all = [...hits(LOCALES['zh-TW'].catalog, ZH), ...hits(LOCALES.en.catalog, EN)];
-    const unused = ALLOWED.filter(({ prefix }) => !all.some((k) => k.startsWith(prefix))).map((a) => a.prefix);
-    expect(unused).toEqual([]);
+    const unusedKeys = ALLOWED.filter(({ key }) => !all.includes(key)).map((a) => a.key);
+    const unusedPrefixes = ROUTE_PREFIXES.filter(({ prefix }) => !all.some((k) => k.startsWith(prefix))).map((a) => a.prefix);
+    expect([...unusedKeys, ...unusedPrefixes]).toEqual([]);
   });
 });
