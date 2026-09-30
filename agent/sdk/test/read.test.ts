@@ -3,7 +3,7 @@
 //   cd agent && npx tsx sdk/test/read.test.ts
 import assert from "node:assert";
 import { baseSepolia } from "viem/chains";
-import type { Abi } from "viem";
+import { toFunctionSelector, type Abi } from "viem";
 
 import {
   AGENT_SESSION_MANAGER_ABI,
@@ -235,6 +235,54 @@ function contracts(p1: boolean, mode = 0, priceUpdatedAt?: (bn: bigint) => bigin
   const read = createReadClient({ chainId: 84532, publicClient: m.client });
   await assert.rejects(read.getMarket("sDOGE"), /未知資產/);
   ok("設定錯誤：chain 不一致、沒有 RPC、未知鏈、未知資產");
+}
+
+// 9) 審查 M3：multicall 整批被 RPC 拒絕 → 丟出，不能變成 null／supported:false
+{
+  const UPNL = toFunctionSelector("function getUnrealizedPnL(uint256)").slice(2);
+  const PAUSED = toFunctionSelector("function paused()").slice(2);
+  const hits = (p: unknown[], sel: string) => String((p[0] as { data?: string })?.data ?? "").includes(sel);
+  for (const err of [
+    { code: -32000, message: "header not found" },
+    { code: -32603, message: "header not found" },
+  ]) {
+    const m = mockChain({
+      chain: baseSepolia, latestBlock: LATEST, blockTimestamp: TS, contracts: contracts(false),
+      failRpc: (method, p) => (method === "eth_call" && hits(p, UPNL) ? err : false),
+    });
+    const read = createReadClient({ chainId: 84532, publicClient: m.client });
+    await assert.rejects(read.getAccount(USER), `multicall 第二批（uPnL）${err.code} → 丟出，不回 null`);
+    const m2 = mockChain({
+      chain: baseSepolia, latestBlock: LATEST, blockTimestamp: TS, contracts: contracts(true),
+      failRpc: (method, p) => (method === "eth_call" && hits(p, PAUSED) ? err : false),
+    });
+    await assert.rejects(createReadClient({ chainId: 84532, publicClient: m2.client }).getMarket("sBTC"), `multicall ${err.code} → 丟出`);
+  }
+  ok("M3：multicall 整批 RPC 失敗（-32000／-32603）→ 丟出，不偽裝成 revert");
+}
+
+// 10) 審查 M3：逐筆路徑 -32603 沒有 revert data 也沒寫 execution reverted → 丟出；有寫 → 算 revert
+{
+  const PAUSED = toFunctionSelector("function paused()").slice(2);
+  const hits = (p: unknown[]) => String((p[0] as { data?: string })?.data ?? "").startsWith("0x" + PAUSED);
+  const mkRead = (err: { code: number; message: string; data?: string }) =>
+    createReadClient({
+      chainId: 84532,
+      multicall: false,
+      publicClient: mockChain({
+        chain: baseSepolia, latestBlock: LATEST, blockTimestamp: TS, contracts: contracts(true),
+        failRpc: (method, p) => (method === "eth_call" && hits(p) ? err : false),
+      }).client,
+    });
+  await assert.rejects(mkRead({ code: -32603, message: "header not found" }).getMarket("sBTC"), "-32603 無 data → RPC 錯誤");
+  await assert.rejects(mkRead({ code: -32000, message: "header not found" }).getMarket("sBTC"));
+  const r1 = await mkRead({ code: -32603, message: "execution reverted" }).getMarket("sBTC");
+  assert.deepEqual(r1.paused, { supported: false, value: null }, "-32603 但明確 execution reverted → 算 revert");
+  const r2 = await mkRead({ code: -32000, message: "execution reverted" }).getMarket("sBTC");
+  assert.deepEqual(r2.paused, { supported: false, value: null }, "geth -32000 execution reverted → 算 revert");
+  const r3 = await mkRead({ code: 3, message: "execution reverted", data: "0x" }).getMarket("sBTC");
+  assert.deepEqual(r3.paused, { supported: false, value: null }, "code 3 → revert");
+  ok("M3：-32603 只有在帶 revert data 或寫明 execution reverted 時才算 revert");
 }
 
 console.log(`\n✅ sdk read.test.ts 全過（${n} 項）`);

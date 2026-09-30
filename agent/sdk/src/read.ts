@@ -8,9 +8,11 @@
 // 不送交易、不需要私鑰。
 import {
   BaseError,
+  ContractFunctionExecutionError,
   ContractFunctionRevertedError,
   ContractFunctionZeroDataError,
   ExecutionRevertedError,
+  InternalRpcError,
   createPublicClient,
   getAddress,
   http,
@@ -207,21 +209,48 @@ interface Call {
 }
 type CallResult = { ok: true; value: unknown } | { ok: false; error: unknown };
 
+const EXECUTION_REVERTED = new RegExp("execution reverted", "i");
+
+/** 錯誤鏈上任何一層的訊息是否提到 "execution reverted"。 */
+function mentionsExecutionReverted(err: BaseError): boolean {
+  let hit = false;
+  err.walk((e) => {
+    const x = e as { details?: unknown; shortMessage?: unknown; message?: unknown };
+    for (const m of [x.details, x.shortMessage, x.message]) {
+      if (typeof m === "string" && EXECUTION_REVERTED.test(m)) hit = true;
+    }
+    return false; // 走完整條鏈
+  });
+  return hit;
+}
+
 /**
  * 合約層面的失敗（revert／沒有這個函式）→ true；RPC／網路錯誤 → false。
+ *
  * 節點回報 revert 的方式不一：Base Sepolia 回 code 3，部分 geth 回 -32000 "execution reverted"
- * （viem 會把後者辨識成 ExecutionRevertedError），兩種都算。
+ * （viem 辨識成 ExecutionRevertedError），兩種都算。
+ *
+ * 例外（審查 M3）：viem 的 getContractError 會把 **-32603 InternalRpcError** 也包成
+ * ContractFunctionRevertedError，但 -32603 常常只是節點內部錯誤（例如 "header not found"）。
+ * 這種情況只有在帶 revert data、或訊息明確寫 "execution reverted" 時才算 revert。
  */
-function isContractLevelFailure(err: unknown): boolean {
+export function isContractLevelFailure(err: unknown): boolean {
   if (!(err instanceof BaseError)) return false;
-  return Boolean(
-    err.walk(
-      (e) =>
-        e instanceof ContractFunctionRevertedError ||
-        e instanceof ContractFunctionZeroDataError ||
-        e instanceof ExecutionRevertedError,
-    ),
+  if (err.walk((e) => e instanceof ContractFunctionZeroDataError)) return true;
+  const reverted = err.walk((e) => e instanceof ContractFunctionRevertedError || e instanceof ExecutionRevertedError);
+  if (!reverted) return false;
+  const internal = err.walk(
+    (e) => e instanceof InternalRpcError || (e as { code?: unknown } | null)?.code === InternalRpcError.code,
   );
+  if (!internal) return true;
+  const rev = err.walk((e) => e instanceof ContractFunctionRevertedError) as ContractFunctionRevertedError | null;
+  if (rev?.raw && rev.raw !== "0x") return true;
+  return mentionsExecutionReverted(err);
+}
+
+/** Multicall3 aggregate3 整批被 RPC 拒絕（viem 會把同一個錯誤塞給該批的每一筆）。 */
+function isMulticallChunkFailure(err: unknown): boolean {
+  return err instanceof ContractFunctionExecutionError && err.functionName === "aggregate3";
 }
 
 // ── Client ───────────────────────────────────────────────────────────────────
@@ -269,13 +298,18 @@ export function createReadClient(cfg: ReadClientConfig): PepeReadClient {
   async function batch(calls: Call[], blockNumber: bigint): Promise<CallResult[]> {
     if (calls.length === 0) return [];
     if (useMulticall) {
-      // RPC 層級的錯誤會整批丟出（不吞）；個別呼叫的 revert 以 failure 回來。
+      // allowFailure 下 viem 會把「整批 RPC 失敗」也變成每一筆的 failure（審查 M3）。
+      // 所以逐筆判斷：整批失敗或非合約層級的錯誤一律丟出，只有真正的 revert 才回 failure。
       const res = (await client.multicall({
         contracts: calls as never,
         allowFailure: true,
         blockNumber,
       })) as { status: "success" | "failure"; result?: unknown; error?: unknown }[];
-      return res.map((r) => (r.status === "success" ? { ok: true, value: r.result } : { ok: false, error: r.error }));
+      return res.map((r): CallResult => {
+        if (r.status === "success") return { ok: true, value: r.result };
+        if (isMulticallChunkFailure(r.error) || !isContractLevelFailure(r.error)) throw r.error;
+        return { ok: false, error: r.error };
+      });
     }
     return Promise.all(
       calls.map(async (c): Promise<CallResult> => {

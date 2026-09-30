@@ -41,8 +41,11 @@ export function mockChain(opts: {
   latestBlock: bigint;
   blockTimestamp: (bn: bigint) => bigint;
   contracts: ContractMocks;
-  /** 讓某些 RPC 方法丟出網路層錯誤（非 revert）。 */
-  failRpc?: (method: string) => boolean;
+  /**
+   * 讓某些 RPC 請求丟出節點錯誤（非 revert）。回 true → 一般 Error；回物件 → 以該 code／message／data
+   * 丟出（模擬 -32000 header not found、-32603 internal error 等）。
+   */
+  failRpc?: (method: string, params: unknown[]) => boolean | { code: number; message: string; data?: string };
 }): MockChain {
   const callBlockTags: string[] = [];
   const calls: string[] = [];
@@ -78,8 +81,10 @@ export function mockChain(opts: {
     transport: custom({
       async request({ method, params }: { method: string; params?: unknown }) {
         methods.push(method);
-        if (opts.failRpc?.(method)) throw new Error(`mock RPC failure: ${method}`);
         const p = (params ?? []) as unknown[];
+        const fail = opts.failRpc?.(method, p);
+        if (fail === true) throw new Error(`mock RPC failure: ${method}`);
+        if (fail) throw Object.assign(new Error(fail.message), fail);
         switch (method) {
           case "eth_chainId":
             return numberToHex(opts.chain.id);
