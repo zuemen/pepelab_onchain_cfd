@@ -9,7 +9,8 @@
 //   - **同一個區塊讀全部**：取 latest − 3 當 blockTag（公共節點在負載平衡後面，最新區塊
 //     不一定每台都有），所有 eth_call 帶同一個 blockTag，報表內各欄位彼此一致。「距今」
 //     一律以該區塊的 timestamp 為基準，回應附 asOfBlock 與 asOfBlockTime。
-//   - 暫時性錯誤（header not found、逾時、429…）重試一次；revert 不重試。
+//   - 只有 header not found／429 類錯誤重試一次；逾時與 revert 不重試。整份報表總時限
+//     20 秒，到點還沒讀完的欄位回 null＋REPORT_DEADLINE。
 //   - **欄位級降級**：任一讀取失敗只讓該欄位變 null，並在 `unavailable` 以欄位路徑
 //     記下原因代碼（CALL_REVERTED / BAD_DATA / RPC_TIMEOUT / RPC_ERROR / NOT_CONFIGURED）。
 //     絕不回錯誤原文（可能含 RPC URL / key），也絕不整個 500。
@@ -26,7 +27,23 @@ export type ReadReason =
   | "BAD_DATA"
   | "RPC_TIMEOUT"
   | "RPC_ERROR"
-  | "NOT_CONFIGURED";
+  | "NOT_CONFIGURED"
+  /** 整份報表的總時限（預設 20 秒）到了，這個欄位還沒讀完。 */
+  | "REPORT_DEADLINE";
+
+/**
+ * 可重試的錯誤（複審 Low-8）：只有「節點還沒同步到這個區塊」與「被限流」值得馬上再試一次。
+ * 逾時不重試——單筆已等了 8 秒，再等一次會讓整份報表拖到使用者放棄。
+ */
+const RETRYABLE_RE = /header not found|unknown block|block .*not found|missing trie node|\b429\b|too many requests|rate limit/i;
+export function isRetryableReadError(err: unknown): boolean {
+  const e = err as { code?: string; message?: string; shortMessage?: string; info?: { error?: { message?: string } }; error?: { message?: string } };
+  if (e?.code === "TIMEOUT") return false;
+  const text = [e?.info?.error?.message, e?.error?.message, e?.shortMessage, e?.message].filter(Boolean).join(" | ");
+  return RETRYABLE_RE.test(text);
+}
+
+export const REPORT_DEADLINE_MS = 20_000;
 
 /** 最小讀取介面：正式環境包 ethers provider，測試用假實作。 */
 export interface ExposureReader {
@@ -240,19 +257,35 @@ export async function buildExposureReport(
   reader: ExposureReader,
   t: ExposureTargets,
   nowMs: number = Date.now(),
+  opts: { deadlineMs?: number; callTimeoutMs?: number } = {},
 ): Promise<ExposureReport> {
   const unavailable: Record<string, ReadReason> = {};
   const run = limiter(CONCURRENCY);
-  // 暫時性錯誤（RPC_ERROR / RPC_TIMEOUT）重試一次；revert、BAD_DATA 不重試。
+  // 整份報表的總時限：到點還沒讀完的欄位回 null＋REPORT_DEADLINE，不讓一個慢節點拖垮整份。
+  const deadlineAt = Date.now() + (opts.deadlineMs ?? REPORT_DEADLINE_MS);
+  const callTimeout = opts.callTimeoutMs ?? CALL_TIMEOUT_MS;
+  const DEADLINE = Symbol("deadline");
+  // 只有 header-not-found／429 類重試一次；逾時、revert、BAD_DATA 不重試。
   const settle = async <T>(field: string | null, p: () => Promise<T>): Promise<Settled<T>> => {
     let reason: ReadReason = "RPC_ERROR";
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        return { ok: true, v: await run(() => withTimeout(p(), CALL_TIMEOUT_MS)) };
+        const v = await run(() => {
+          const remaining = deadlineAt - Date.now();
+          if (remaining <= 0) return Promise.reject(DEADLINE);
+          return withTimeout(p(), Math.min(callTimeout, remaining)).catch((e) => {
+            throw Date.now() >= deadlineAt ? DEADLINE : e;
+          });
+        });
+        return { ok: true, v };
       } catch (err) {
+        if (err === DEADLINE) {
+          reason = "REPORT_DEADLINE";
+          break;
+        }
         reason = classifyReadError(err);
-        if (reason !== "RPC_ERROR" && reason !== "RPC_TIMEOUT") break;
-        if (attempt === 0) await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+        if (!isRetryableReadError(err) || attempt === 1) break;
+        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
       }
     }
     if (field) unavailable[field] = reason;
@@ -439,7 +472,7 @@ function sum(xs: number[]): number {
 export function createExposureService(
   reader: ExposureReader,
   targets: ExposureTargets,
-  opts: { ttlMs?: number; degradedTtlMs?: number; now?: () => number } = {},
+  opts: { ttlMs?: number; degradedTtlMs?: number; now?: () => number; deadlineMs?: number } = {},
 ) {
   const ttl = opts.ttlMs ?? 60_000;
   const degradedTtl = opts.degradedTtlMs ?? 10_000;
@@ -464,7 +497,7 @@ export function createExposureService(
       const t = now();
       if (cached && t - cached.at < cached.ttl) return view(cached, true, t);
       if (!inflight) {
-        inflight = buildExposureReport(reader, targets, t)
+        inflight = buildExposureReport(reader, targets, t, { deadlineMs: opts.deadlineMs })
           .then((report) => {
             const transient = Object.values(report.unavailable).some((r) => r !== "NOT_CONFIGURED");
             cached = { at: now(), ttl: transient ? degradedTtl : ttl, report };

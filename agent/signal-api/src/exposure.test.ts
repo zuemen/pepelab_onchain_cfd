@@ -252,6 +252,39 @@ const ok = (m: string) => console.log(`✓ ${++n}. ${m}`);
   ok("暫時性錯誤重試一次後成功 → 欄位正常；revert 不重試");
 }
 
+// 8c) 逾時不重試；429 重試一次；整份報表總時限
+{
+  const { isRetryableReadError } = await import("./exposure.ts");
+  assert.equal(isRetryableReadError({ code: "TIMEOUT" }), false);
+  assert.equal(isRetryableReadError({ code: "SERVER_ERROR", info: { error: { message: "429 Too Many Requests" } } }), true);
+  assert.equal(isRetryableReadError({ code: "CALL_EXCEPTION", info: { error: { message: "header not found" } } }), true);
+  assert.equal(isRetryableReadError({ code: "SERVER_ERROR", message: "fetch failed" }), false);
+
+  const count: Record<string, number> = {};
+  const { reader } = fakeReader();
+  const base = reader.call;
+  reader.call = async (addr, sig, args, tag) => {
+    const name = sig.slice(0, sig.indexOf("("));
+    count[name] = (count[name] ?? 0) + 1;
+    if (name === "adlEnabled") throw { code: "TIMEOUT" };
+    if (name === "maxPriceAge" && count[name] === 1) throw { code: "SERVER_ERROR", info: { error: { message: "429 Too Many Requests" } } };
+    if (name === "FUNDING_INTERVAL") return new Promise(() => {}) as any; // 永遠不回
+    return base(addr, sig, args, tag);
+  };
+  const t0 = Date.now();
+  const r = await buildExposureReport(reader, T, BT * 1000, { deadlineMs: 400, callTimeoutMs: 10_000 });
+  const took = Date.now() - t0;
+  assert.equal(count.adlEnabled, 1, "逾時不重試");
+  assert.equal(r.unavailable["exchange.adlEnabled"], "RPC_TIMEOUT");
+  assert.equal(count.maxPriceAge, 2, "429 重試一次");
+  assert.equal(r.exchange.maxPriceAgeSec, 21600);
+  assert.equal(r.exchange.fundingIntervalSec, null);
+  assert.equal(r.unavailable["exchange.fundingIntervalSec"], "REPORT_DEADLINE");
+  assert.ok(took < 2000, `總時限生效（${took}ms）`);
+  assert.equal(r.assets.length, 2, "其他欄位照給");
+  ok("逾時不重試、429 重試一次；整份報表總時限到點 → 未完成欄位 null＋REPORT_DEADLINE");
+}
+
 // 9) 快取 60 秒＋single-flight；降級報表只快取 10 秒
 {
   let clock = 0;

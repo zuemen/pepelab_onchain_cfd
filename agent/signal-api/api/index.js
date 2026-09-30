@@ -61101,6 +61101,14 @@ async function getBenchmarks(rawDate) {
 }
 
 // src/exposure.ts
+var RETRYABLE_RE = /header not found|unknown block|block .*not found|missing trie node|\b429\b|too many requests|rate limit/i;
+function isRetryableReadError(err) {
+  const e = err;
+  if (e?.code === "TIMEOUT") return false;
+  const text = [e?.info?.error?.message, e?.error?.message, e?.shortMessage, e?.message].filter(Boolean).join(" | ");
+  return RETRYABLE_RE.test(text);
+}
+var REPORT_DEADLINE_MS = 2e4;
 function providerReader(provider3) {
   const ifaces = /* @__PURE__ */ new Map();
   const get = (sig) => {
@@ -61208,18 +61216,32 @@ function limiter(n2) {
 var isSet = (a) => !!a && a.toLowerCase() !== ZERO5;
 var fmt18 = (v) => Number(ethers_exports.formatUnits(v, 18));
 var fmt8 = (v) => Number(ethers_exports.formatUnits(v, 8));
-async function buildExposureReport(reader, t, nowMs = Date.now()) {
+async function buildExposureReport(reader, t, nowMs = Date.now(), opts = {}) {
   const unavailable = {};
   const run = limiter(CONCURRENCY);
+  const deadlineAt = Date.now() + (opts.deadlineMs ?? REPORT_DEADLINE_MS);
+  const callTimeout = opts.callTimeoutMs ?? CALL_TIMEOUT_MS;
+  const DEADLINE = Symbol("deadline");
   const settle3 = async (field, p) => {
     let reason = "RPC_ERROR";
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        return { ok: true, v: await run(() => withTimeout2(p(), CALL_TIMEOUT_MS)) };
+        const v = await run(() => {
+          const remaining = deadlineAt - Date.now();
+          if (remaining <= 0) return Promise.reject(DEADLINE);
+          return withTimeout2(p(), Math.min(callTimeout, remaining)).catch((e) => {
+            throw Date.now() >= deadlineAt ? DEADLINE : e;
+          });
+        });
+        return { ok: true, v };
       } catch (err) {
+        if (err === DEADLINE) {
+          reason = "REPORT_DEADLINE";
+          break;
+        }
         reason = classifyReadError(err);
-        if (reason !== "RPC_ERROR" && reason !== "RPC_TIMEOUT") break;
-        if (attempt === 0) await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+        if (!isRetryableReadError(err) || attempt === 1) break;
+        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
       }
     }
     if (field) unavailable[field] = reason;
@@ -61392,7 +61414,7 @@ function createExposureService(reader, targets, opts = {}) {
       const t = now();
       if (cached2 && t - cached2.at < cached2.ttl) return view(cached2, true, t);
       if (!inflight) {
-        inflight = buildExposureReport(reader, targets, t).then((report) => {
+        inflight = buildExposureReport(reader, targets, t, { deadlineMs: opts.deadlineMs }).then((report) => {
           const transient = Object.values(report.unavailable).some((r) => r !== "NOT_CONFIGURED");
           cached2 = { at: now(), ttl: transient ? degradedTtl : ttl, report };
           return cached2;
