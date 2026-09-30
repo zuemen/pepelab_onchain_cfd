@@ -315,7 +315,7 @@ footer a:hover{color:var(--lime)}
     <div class="card reveal"><div class="ic">🛡️</div><h3>Reentrancy guards</h3><p>The exchange, insurance vault, session manager and V2 token vault use <span class="mono">nonReentrant</span> on fund-moving paths. Older V1 contracts do not use SafeERC20 — a documented limitation.</p></div>
     <div class="card reveal"><div class="ic">⏱️</div><h3>Stale-price guard</h3><p><span class="mono">maxPriceAge</span> (6h on the live exchange) reverts trades on outdated oracle data.</p></div>
     <div class="card reveal"><div class="ic">🎯</div><h3>Liquidations &amp; loss absorption</h3><p>Liquidators earn <b>5%</b> of remaining collateral. Shortfalls go to the insurance vault, then auto-deleveraging, then an on-chain bad-debt event — solvency is not guaranteed.</p></div>
-    <div class="card reveal"><div class="ic">🔁</div><h3>Funding catch-up</h3><p>Funding settlement accounts for every missed 8h interval when it is next cranked.</p></div>
+    <div class="card reveal"><div class="ic">🔁</div><h3>Funding catch-up</h3><p>A settlement catches up at most 21 missed 8h intervals (7 days); intervals beyond that are waived for both longs and shorts.</p></div>
     <div class="card reveal"><div class="ic">🔐</div><h3>Bounded delegation</h3><p>Agents act only inside on-chain session limits; the account holder's key is not handed to the agent.</p></div>
     <div class="card reveal"><div class="ic">🧪</div><h3>Not audited</h3><p>Tests run in CI (Foundry, Vitest, agent suites). Tests are not an audit; pause, halt and risk-cap controls exist in source only and are not yet deployed.</p></div>
   </div>
