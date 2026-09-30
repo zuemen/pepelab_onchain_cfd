@@ -1,5 +1,5 @@
 {
-  "digest": "fa04282f4c0d8e14",
+  "digest": "897fe7dfff45c0e4",
   "files": {
     "agent/shared/src/abis.ts": "872c3136604d6584",
     "agent/shared/src/addresses.ts": "a6cb279048c58a4b",
@@ -19,7 +19,7 @@
     "agent/shared/src/signingGuard.ts": "007068f1884c5d7f",
     "agent/shared/src/vcNonce.ts": "654a96b08eb06d81",
     "agent/shared/src/verification.ts": "c7823c4dc411e59a",
-    "agent/shared/src/write.ts": "2bf63f36878ae07a",
+    "agent/shared/src/write.ts": "807a2f3276e91aec",
     "agent/shared/src/x402Client.ts": "4c45a8a83b171017",
     "agent/signal-api/src/app.ts": "1da158c421a108f0",
     "agent/signal-api/src/benchmarks.ts": "bac063beeb2f0f45",

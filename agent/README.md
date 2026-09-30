@@ -190,6 +190,14 @@ maxLeverage / expiry** 限額內開倉 → 印出 **tx hash 與 positionId**。�
 VC 過期時：MCP / x402 agent 拒絕下單（`VC_EXPIRED`）；tg-bot 不會退出，而是拒單並提示重新簽發，
 換上新檔案後下一次下單會自動重新讀取。
 
+### 平倉永遠有退路
+
+agent 端的平倉（`closePositionForSession`）在 agent 本地基礎設施故障時會**降級放行**：policy
+狀態檔壞、稽核寫不進去、VC nonce 狀態檔壞或拿不到鎖，都只做 VC 驗章＋鏈上比對，記 `degraded`
+（stderr `::error::`）後照常送出。但 **VC 本身無效或過期時，agent 仍拒絕平倉**——此時請
+**直接在鏈上用錢包平倉**：呼叫 `PerpetualExchange.closePosition(positionId)`（前端倉位頁的平倉
+按鈕就是這個），**合約不需要 VC**，只認部位 owner。
+
 ## 公開部署到 Vercel（agent-native commerce）
 
 把付費 API 公開上線，讓**任何外部 agent/CLI 帶自己的錢包付費購買**（端點即商品）。

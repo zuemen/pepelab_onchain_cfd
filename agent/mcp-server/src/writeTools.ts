@@ -262,7 +262,16 @@ export function createWriteHandlers(deps: WriteToolDeps) {
     return send(() => deps.open(params), true);
   }
 
+  /** 平倉失敗（人類主動拒絕除外）一律附上「直接在鏈上平倉」的指引。 */
   async function closePosition(params: CloseArgs): Promise<ToolReply> {
+    const r = await closePositionInner(params);
+    if (r.kind === "fail" && r.reasonCode !== "HUMAN_DECLINED" && !r.message.includes("closePosition(")) {
+      return { ...r, message: `${r.message} ${CLOSE_FALLBACK_HINT}` };
+    }
+    return r;
+  }
+
+  async function closePositionInner(params: CloseArgs): Promise<ToolReply> {
     const vcErr = parseVc(params.authVcJson);
     if (vcErr) return { kind: "fail", reasonCode: "VC_JSON_INVALID", message: vcErr };
 
@@ -319,7 +328,12 @@ const OPEN_DESC =
 
 const CLOSE_DESC =
   "【寫・需人類確認】平掉指定 session 使用者的一筆部位（會實現損益，授權要求與開倉對稱）。" +
-  "送出前以 MCP elicitation 在 client 介面向人類顯示部位摘要並詢問是否送出；人類拒絕或 client 不支援 elicitation 時不會送出。需 authVcJson。成功回傳 tx hash。";
+  "送出前以 MCP elicitation 在 client 介面向人類顯示部位摘要並詢問是否送出；人類拒絕或 client 不支援 elicitation 時不會送出。需 authVcJson。成功回傳 tx hash。" +
+  "若因 VC 無效／過期或 client 不支援 elicitation 而無法平倉：請直接在鏈上用錢包呼叫 PerpetualExchange.closePosition(positionId)——合約不需要 VC。";
+
+/** 平倉失敗時附在錯誤訊息的指引（與 write.ts 的 CLOSE_ONCHAIN_HINT 同義）。 */
+export const CLOSE_FALLBACK_HINT =
+  "若需立即平倉，請直接在鏈上用錢包呼叫 PerpetualExchange.closePosition(positionId)——合約不需要 VC。";
 
 /** 在 McpServer 上註冊兩個寫入工具。elicit 預設接 server 自己的 elicitInput。 */
 export function registerWriteTools(

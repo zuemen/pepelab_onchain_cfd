@@ -80,6 +80,7 @@ ok("人類拒絕 / 取消 → HUMAN_DECLINED，不送出");
   const r2: any = await h.closePosition(CLOSE);
   assert.equal(r1.reasonCode, "ELICITATION_UNSUPPORTED");
   assert.equal(r2.reasonCode, "ELICITATION_UNSUPPORTED");
+  assert.match(r2.message, /closePosition\(positionId\).*不需要 VC/, "平倉失敗要指引直接在鏈上平倉");
   assert.match(r1.message, /寫入已拒絕/);
   assert.equal(calls.open + calls.close, 0);
   ok("client 不支援 elicitation → 一律拒絕寫入（ELICITATION_UNSUPPORTED）並說明原因");

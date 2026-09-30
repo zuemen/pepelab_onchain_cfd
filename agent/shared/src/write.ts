@@ -214,14 +214,15 @@ function resolveSession():
 /**
  * 驗證使用者簽發的授權 VC：驗簽 + 比對「持有者=本 agent」、「sessionId 相符」、
  * 並與鏈上 session 交叉比對（issuer==session.user、agent==session.agent）。
- * 回 null 代表通過；回字串代表拒絕原因（呼叫端據此拒絕下單）。
+ * 回 null 代表通過；回 `{ degraded }` 代表平倉在降級模式通過；回字串代表拒絕原因。
  */
 async function verifyVcAgainstChain(
   vc: AuthorizationVC,
   sessionId: number,
   agentAddress: string,
   mgr: ethers.Contract,
-): Promise<string | null> {
+  action: "open" | "close",
+): Promise<string | null | { degraded: string }> {
   // v2 VC 的 domain 綁 session manager 位址：必須等於本 agent 實際呼叫的那一顆。
   const res = verifyAuthorizationVC(vc, { expectedVerifyingContract: await mgr.getAddress() });
   if (!res.valid) return `授權憑證(VC)驗證失敗（${res.reasonCode ?? "VC_INVALID"}）：${res.reason}`;
@@ -257,10 +258,35 @@ async function verifyVcAgainstChain(
 
   // nonce 一次性（v2）＋取代＋不降級（v1/v2）檢查；鏈上比對通過後才記錄，避免無效 VC
   // 污染狀態。語意見 vcNonce.ts。
-  const n = checkAndRecordVcNonce(res);
-  if (!n.ok) return `授權憑證(VC) nonce 檢查未過（${n.reasonCode}）：${n.message}`;
-  return null;
+  //
+  // 平倉降級（複審 Medium-3）：nonce 狀態檔故障或拿不到鎖，是 agent 本地基礎設施的問題，
+  // 不能因此把使用者鎖在部位裡 → 平倉時只靠上面的 VC 驗章＋鏈上比對，記 degraded 後放行。
+  // 開倉照樣拒絕。VC 本身無效／過期／被取代／重放，平倉仍然拒絕（呼叫端附上鏈上自行平倉的指引）。
+  const d = vcNonceDecision(checkAndRecordVcNonce(res), action);
+  if (d.kind === "degraded") {
+    console.error(`::error::[write] 平倉在降級模式放行：VC nonce 狀態故障（${d.code}），僅以 VC 驗章＋鏈上比對為準`);
+    return { degraded: d.code };
+  }
+  return d.kind === "reject" ? d.reason : null;
 }
+
+/**
+ * nonce 檢查結果 → 動作。nonce 狀態檔故障／拿不到鎖（基礎設施問題）時：開倉拒絕、
+ * 平倉降級放行；VC 本身的問題（重放、被取代、v2 後出示 v1）一律拒絕。
+ */
+export function vcNonceDecision(
+  n: { ok: boolean; reasonCode: string; message: string },
+  action: "open" | "close",
+): { kind: "ok" } | { kind: "degraded"; code: string } | { kind: "reject"; reason: string } {
+  if (n.ok) return { kind: "ok" };
+  const infra = n.reasonCode === "NONCE_STORE_UNREADABLE" || n.reasonCode === "NONCE_STORE_LOCK_FAILED";
+  if (infra && action === "close") return { kind: "degraded", code: n.reasonCode };
+  return { kind: "reject", reason: `授權憑證(VC) nonce 檢查未過（${n.reasonCode}）：${n.message}` };
+}
+
+/** 平倉被拒時附上的指引：使用者永遠可以不經 agent、直接在鏈上平倉。 */
+export const CLOSE_ONCHAIN_HINT =
+  "若需立即平倉，請直接在鏈上用錢包呼叫 PerpetualExchange.closePosition(positionId)——合約不需要 VC。";
 
 /**
  * 在 session 限額內為 session.user 開一筆受限部位。
@@ -313,8 +339,9 @@ export async function openPositionForSession(params: {
       params.sessionId,
       signer.address,
       mgr,
+      "open",
     );
-    if (reason) {
+    if (typeof reason === "string") {
       return reject(req, "vc", "VC_INVALID", `拒絕下單（VC 驗證未過）：${reason}`);
     }
 
@@ -543,7 +570,7 @@ export async function closePositionForSession(params: {
 
   if (!params.authVc) {
     if (!unsignedAllowed(params.allowUnsignedForTesting)) {
-      return reject(req, "vc", "VC_MISSING", NO_VC_ERROR.replace("拒絕下單", "拒絕平倉"));
+      return reject(req, "vc", "VC_MISSING", `${NO_VC_ERROR.replace("拒絕下單", "拒絕平倉")} ${CLOSE_ONCHAIN_HINT}`);
     }
     console.warn("[write] ⚠ 平倉的 VC 閘門已被明確關閉，僅限測試環境。");
   }
@@ -554,9 +581,13 @@ export async function closePositionForSession(params: {
       params.sessionId,
       signer.address,
       mgr,
+      "close",
     );
-    if (reason) {
-      return reject(req, "vc", "VC_INVALID", `拒絕平倉（VC 驗證未過）：${reason}`);
+    if (typeof reason === "string") {
+      return reject(req, "vc", "VC_INVALID", `拒絕平倉（VC 驗證未過）：${reason}。${CLOSE_ONCHAIN_HINT}`);
+    }
+    if (reason?.degraded) {
+      auditStage(req, "vc", "VC_OK_DEGRADED", true, `VC nonce 狀態故障（${reason.degraded}），平倉僅以 VC 驗章＋鏈上比對放行`);
     }
   }
 
