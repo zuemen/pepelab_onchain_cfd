@@ -12,7 +12,7 @@ import { useContracts } from 'src/hooks/useContracts';
 import { useLivePrices } from 'src/hooks/useLivePrices';
 
 import { usePepefiWallet } from 'src/layouts/pepefi';
-import { getAddresses, CHAIN_NAMES } from 'src/contracts/addresses';
+import { ASSET_IDS, getAddresses, CHAIN_NAMES } from 'src/contracts/addresses';
 import { t, interpolate } from 'src/locales';
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
@@ -32,7 +32,7 @@ import RwaAllocation from 'src/components/pepefi/dashboard/RwaAllocation';
 import { useSynthHoldings } from 'src/hooks/useSynthHoldings';
 import { SHOW_PERPETUALS, FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags';
 import { copyDeskVisibility } from 'src/lib/pepefi/copyDeskVisibility';
-import { readAssetMode, closeBlockReason, closeAvailability } from 'src/lib/pepefi/closeGuard';
+import { readAssetMode, isPriceTracked, closeBlockReason, closeAvailability, readOracleFreshness } from 'src/lib/pepefi/closeGuard';
 import { SwitchChainButton } from 'src/components/pepefi/SwitchChainButton';
 import KYCStatusCard from 'src/components/pepefi/dashboard/KYCStatusCard';
 import QuickActions from 'src/components/pepefi/dashboard/QuickActions';
@@ -427,7 +427,13 @@ export default function PortfolioPage() {
         wallet.provider ?? contracts.exchange.runner,
         row.asset
       );
-      const blocked = closeBlockReason({ freshness: livePrices[row.asset]?.freshness, assetLabel: label, assetMode: mode });
+      // useLivePrices 只輪詢 ASSET_IDS（+ PEPE）。前端資產表以外的舊部位永遠不會有
+      // 輪詢價格——那種就直接讀 oracle 算新鮮度；讀不到就放行，交給合約 revert 並顯示原因。
+      const tracked = isPriceTracked(row.asset, Object.values(ASSET_IDS));
+      const freshness = tracked
+        ? livePrices[row.asset]?.freshness
+        : await readOracleFreshness(contracts.oracle, contracts.exchange, row.asset, Math.floor(Date.now() / 1000));
+      const blocked = closeBlockReason({ freshness, assetLabel: label, assetMode: mode, tracked });
       if (blocked) { notify(blocked, false); return; }
       const tx = asTx(await contracts.exchange.closePosition(row.id));
       await tx.wait();

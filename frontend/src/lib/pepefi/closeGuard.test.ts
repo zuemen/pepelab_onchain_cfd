@@ -1,6 +1,57 @@
 import { it, expect, describe } from 'vitest'
 
-import { ASSET_MODE, closeBlockReason, closeAvailability } from './closeGuard'
+import type { Contract } from 'ethers'
+
+import {
+  ASSET_MODE,
+  isPriceTracked,
+  closeBlockReason,
+  closeAvailability,
+  readOracleFreshness,
+} from './closeGuard'
+
+const UNKNOWN_ASSET = '0x' + 'ab'.repeat(32)
+const TRACKED = ['0x6587d61b59ac1e9c9f12c71f220fb1b1740d054e81277d4466a0d348e0e266e1']
+
+describe('前端資產表以外的部位（未知 asset）不能被永久擋下平倉', () => {
+  it('isPriceTracked：大小寫不敏感；不在清單就是 false', () => {
+    expect(isPriceTracked(TRACKED[0].toUpperCase().replace('0X', '0x'), TRACKED)).toBe(true)
+    expect(isPriceTracked(UNKNOWN_ASSET, TRACKED)).toBe(false)
+  })
+
+  it('未知 asset 讀不到 oracle 價 → 放行，交給合約回報 revert 原因', () => {
+    expect(closeBlockReason({ freshness: null, assetLabel: '0xabab', assetMode: null, tracked: false })).toBeNull()
+    expect(closeBlockReason({ freshness: undefined, assetLabel: '0xabab', assetMode: null, tracked: false })).toBeNull()
+  })
+
+  it('未知 asset 讀到了過期價 → 照樣擋下並說明', () => {
+    const now = 1_800_000_000
+    const stale = classifyFreshness({ updatedAtSec: now - 99_999, nowSec: now, maxPriceAgeSec: 3600 })
+    expect(closeBlockReason({ freshness: stale, assetLabel: '0xabab', assetMode: null, tracked: false })).toContain('0xabab')
+  })
+
+  it('輪詢集合內的 asset 還沒讀到價 → 仍然擋下（輪詢遲早會讀到）', () => {
+    expect(closeBlockReason({ freshness: undefined, assetLabel: 'sBTC', assetMode: null, tracked: true })).toContain('sBTC')
+  })
+
+  it('readOracleFreshness：直接讀 oracle.getPrice 的 updatedAt 與 exchange.maxPriceAge 分級', async () => {
+    const now = 1_800_000_000
+    const oracle = { getPrice: async () => [100n, BigInt(now - 60)] } as unknown as Contract
+    const exchange = { maxPriceAge: async () => 3600n } as unknown as Contract
+    expect((await readOracleFreshness(oracle, exchange, UNKNOWN_ASSET, now))?.level).toBe('live')
+    const staleOracle = { getPrice: async () => [100n, BigInt(now - 7200)] } as unknown as Contract
+    expect((await readOracleFreshness(staleOracle, exchange, UNKNOWN_ASSET, now))?.level).toBe('stale')
+  })
+
+  it('readOracleFreshness：oracle revert（例如 GuardedOracle fail-closed）→ null，舊 exchange 沒有 maxPriceAge 用後備值', async () => {
+    const now = 1_800_000_000
+    const reverting = { getPrice: async () => { throw new Error('StalePrice') } } as unknown as Contract
+    expect(await readOracleFreshness(reverting, null, UNKNOWN_ASSET, now)).toBeNull()
+    const oracle = { getPrice: async () => [100n, BigInt(now - 60)] } as unknown as Contract
+    const oldExchange = { maxPriceAge: async () => { throw new Error('missing revert data') } } as unknown as Contract
+    expect((await readOracleFreshness(oracle, oldExchange, UNKNOWN_ASSET, now))?.level).toBe('live')
+  })
+})
 
 const TRADER = '0x1111111111111111111111111111111111111111'
 const ZERO = '0x0000000000000000000000000000000000000000'
