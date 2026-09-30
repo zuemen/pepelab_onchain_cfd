@@ -78,6 +78,25 @@ ok("單筆保證金上限：>100 拒絕、=100 放行、負數/NaN → MARGIN_IN
   ok("每日累計（每位客戶）：500 用滿 → DAILY_MARGIN_EXCEEDED；同 user 換 session 無法放大額度；別的 user / agent 不受影響；UTC 跨日歸零");
 }
 
+// 狀態清理：非當日且已超出時間窗的紀錄被刪掉；跨日但仍在窗內的保留
+{
+  const { pruneState } = S;
+  const now = Date.UTC(2026, 9, 1, 0, 5, 0); // 10/01 00:05
+  const st: any = {
+    version: 1,
+    agents: {
+      stale: { day: "2026-09-29", dailyMargin: 50, orders: [Date.UTC(2026, 8, 29, 10)], closes: [] },
+      crossMidnight: { day: "2026-09-30", dailyMargin: 20, orders: [Date.UTC(2026, 8, 30, 23, 30)], closes: [] },
+      today: { day: "2026-10-01", dailyMargin: 5, orders: [], closes: [] },
+    },
+  };
+  assert.deepEqual(Object.keys(pruneState(st, cfg, now).agents).sort(), ["crossMidnight", "today"]);
+  const after = applyReservation(st, open(), cfg, now);
+  assert.equal("stale" in after.agents, false, "寫入時順便清理");
+  assert.ok(after.agents.crossMidnight && after.agents.today);
+  ok("狀態清理：非當日且超出時間窗 → 刪除；跨日但仍在窗內、當日 → 保留；寫入時自動清理");
+}
+
 // agent 全域層：多位客戶、多個 session 合計也無法超過 agent 全域上限
 {
   let st: any = empty();

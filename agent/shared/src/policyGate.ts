@@ -305,7 +305,23 @@ function deny(reasonCode: PolicyReasonCode, message: string): PolicyDecision {
   return { allowed: false, reasonCode, message };
 }
 
-/** 放行後把本筆記進狀態（回新物件，不修改輸入）。 */
+/**
+ * 清理（複審 Low-7）：刪掉「不是今天（UTC）而且所有時間戳都已超出時間窗」的紀錄——
+ * 它們對每日額度（跨日歸零）與頻率（窗外）都不再有影響，留著只會讓狀態檔無限長大。
+ * 跨日但仍有窗內時間戳的紀錄保留（例如 00:05 時，23:30 的開倉仍計入頻率）。
+ */
+export function pruneState(state: PolicyState, cfg: PolicyConfig, nowMs: number): PolicyState {
+  const today = utcDay(nowMs);
+  const cutoff = nowMs - cfg.windowSec * 1000;
+  const agents: Record<string, AgentState> = {};
+  for (const [k, e] of Object.entries(state.agents)) {
+    const recent = [...(e.orders ?? []), ...(e.closes ?? [])].some((t) => t > cutoff);
+    if (e.day === today || recent) agents[k] = e;
+  }
+  return { version: 1, agents };
+}
+
+/** 放行後把本筆記進狀態（回新物件，不修改輸入）。順便清理過期紀錄。 */
 export function applyReservation(
   state: PolicyState,
   req: PolicyRequest,
@@ -322,7 +338,7 @@ export function applyReservation(
       closes: open ? s.closes : [...s.closes, nowMs],
     };
   };
-  const agents = { ...state.agents, [policyStateKey(req)]: bump(policyStateKey(req)) };
+  const agents = { ...pruneState(state, cfg, nowMs).agents, [policyStateKey(req)]: bump(policyStateKey(req)) };
   // 全域層只記開倉（平倉不受全域層限制）。
   if (open) agents[agentGlobalKey(req.agent)] = bump(agentGlobalKey(req.agent));
   return { version: 1, agents };
