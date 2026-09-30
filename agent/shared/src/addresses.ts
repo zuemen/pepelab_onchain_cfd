@@ -2,6 +2,7 @@
 // frontend/src/contracts/addresses.ts 是純資料模組（無 runtime 依賴），可安全 import。
 import {
   getAddresses,
+  getV2Stack,
   ASSET_IDS,
   type AssetSymbol,
   type ChainAddresses,
@@ -25,6 +26,12 @@ if (!chain) {
 }
 
 export const ADDRESSES: ChainAddresses = chain;
+
+/** V2 hardened stack（GuardedOracle / AssetVaultV2）；該鏈未部署時為 null。 */
+export const V2_ADDRESSES: { GuardedOracle: string; AssetVaultV2: string } | null = (() => {
+  const s = getV2Stack(AGENT_CHAIN_ID);
+  return s ? { GuardedOracle: s.GuardedOracle, AssetVaultV2: s.AssetVaultV2 } : null;
+})();
 export { ASSET_IDS };
 export type { AssetSymbol, ChainAddresses };
 

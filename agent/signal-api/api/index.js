@@ -6165,13 +6165,13 @@ function toBytes3(data4) {
   return data4;
 }
 function concatBytes3(...arrays) {
-  let sum = 0;
+  let sum2 = 0;
   for (let i = 0; i < arrays.length; i++) {
     const a = arrays[i];
     abytes(a);
-    sum += a.length;
+    sum2 += a.length;
   }
-  const res = new Uint8Array(sum);
+  const res = new Uint8Array(sum2);
   for (let i = 0, pad4 = 0; i < arrays.length; i++) {
     const a = arrays[i];
     res.set(a, pad4);
@@ -9324,13 +9324,13 @@ function ensureBytes2(title, hex2, expectedLength) {
   return res;
 }
 function concatBytes5(...arrays) {
-  let sum = 0;
+  let sum2 = 0;
   for (let i = 0; i < arrays.length; i++) {
     const a = arrays[i];
     abytes2(a);
-    sum += a.length;
+    sum2 += a.length;
   }
-  const res = new Uint8Array(sum);
+  const res = new Uint8Array(sum2);
   for (let i = 0, pad4 = 0; i < arrays.length; i++) {
     const a = arrays[i];
     res.set(a, pad4);
@@ -9933,7 +9933,7 @@ function pippenger(c, fieldN, points, scalars) {
   const MASK = bitMask2(windowSize);
   const buckets = new Array(Number(MASK) + 1).fill(zero);
   const lastBits = Math.floor((fieldN.BITS - 1) / windowSize) * windowSize;
-  let sum = zero;
+  let sum2 = zero;
   for (let i = lastBits; i >= 0; i -= windowSize) {
     buckets.fill(zero);
     for (let j = 0; j < slength; j++) {
@@ -9946,12 +9946,12 @@ function pippenger(c, fieldN, points, scalars) {
       sumI = sumI.add(buckets[j]);
       resI = resI.add(sumI);
     }
-    sum = sum.add(resI);
+    sum2 = sum2.add(resI);
     if (i !== 0)
       for (let j = 0; j < windowSize; j++)
-        sum = sum.double();
+        sum2 = sum2.double();
   }
-  return sum;
+  return sum2;
 }
 function validateBasic2(curve) {
   validateField2(curve.Fp);
@@ -10373,8 +10373,8 @@ function weierstrassPoints2(opts) {
     multiplyAndAddUnsafe(Q, a, b2) {
       const G = Point3.BASE;
       const mul = (P, a2) => a2 === _0n11 || a2 === _1n11 || !P.equals(G) ? P.multiplyUnsafe(a2) : P.multiply(a2);
-      const sum = mul(this, a).add(mul(Q, b2));
-      return sum.is0() ? void 0 : sum;
+      const sum2 = mul(this, a).add(mul(Q, b2));
+      return sum2.is0() ? void 0 : sum2;
     }
     // Converts Projective point to affine (x, y) coordinates.
     // Can accept precomputed Z^-1 - for example, from invertBatch.
@@ -12083,13 +12083,13 @@ function ensureBytes3(title, hex2, expectedLength) {
   return res;
 }
 function concatBytes6(...arrays) {
-  let sum = 0;
+  let sum2 = 0;
   for (let i = 0; i < arrays.length; i++) {
     const a = arrays[i];
     abytes3(a);
-    sum += a.length;
+    sum2 += a.length;
   }
-  const res = new Uint8Array(sum);
+  const res = new Uint8Array(sum2);
   for (let i = 0, pad4 = 0; i < arrays.length; i++) {
     const a = arrays[i];
     res.set(a, pad4);
@@ -15080,6 +15080,52 @@ var INITIAL_PRICES = {
   sICLN: 14n * 10n ** 8n,
   sESGU: 120n * 10n ** 8n
 };
+var V2_STACK = {
+  // ── Sepolia (11155111) — deployed 2026-07-27, comparison showcase ──────────
+  11155111: {
+    GuardedOracle: "0x32A19D04ef2ca5A7DA02Df39419729fA745749A1",
+    AssetVaultV2: "0x3a37415981F6f4fC27FA6c8C62F1d4e47115fD17",
+    tokens: {
+      sBTC: "0xeCF271592C0D64663906318f250d49c255E332Ac",
+      sETH: "0x576856E68FdE8D586EAa2E2c21e74c4D37587e8F",
+      sAAPL: "0x84C27703db71062061364E5B8E015139b2ac0163",
+      sTSLA: "0x0e8b6478038876741925A5B7A571596E6f4a695E",
+      sGOLD: "0xc97b8195cBd00fec5D3aAb103C9E313414B11a10",
+      sBOND: "0xb84C17a704F9e7d96c3aF84Df05C6a8da5c344eb",
+      sNVDA: "0xB5586Ef5bBA7DAa698a4a6745C9D46F0b3bECfeE",
+      sMSFT: "0xCB2c5c834f1f0d54E6Da1f3628B1c624aAa750cf",
+      sGOOGL: "0x42D083F0e4a60FdFe28b5E00D44f11C41Bf1763d",
+      sICLN: "0xF34cA755a315531745dDC4A85963EeFA6129F459",
+      sESGU: "0x3f89C2Fd5e7222012d563ecC67e41De02ad746e7"
+    }
+  },
+  // ── Base Sepolia (84532) — the canonical chain, hardened by #129 ───────────
+  // Base Sepolia never had a hardened vault: its mint/redeem path is still the
+  // V1 AssetVault (no fee, no reserve ratio, no pause). #129 deploys this stack
+  // alongside V1, exactly as Sepolia's was. Addresses below are filled by
+  // docs/DEPLOY_129_CUTOVER.md as each phase lands; while any is 0x0 the
+  // frontend's "not deployed" guard keeps rendering the legacy path.
+  84532: {
+    GuardedOracle: "0x8E9e59BE9589Ad88EC14F3ef6bdcc43E8B76f842",
+    AssetVaultV2: "0x916D7Fc399d9afd23BAa113E2c2Cc601341ff10a",
+    ESGRegistryV2: "0xBF5B9cD78566791d79c687A732b4ed5bc3E95dFf",
+    SustainabilityBadge: "0x0a4aE14a413a03c20ccF43E8134BfbD7bCB89820",
+    tokens: {
+      sBTC: "0x0aF44425ADC54fdBcB084611Ca82beFb91DDb1b6",
+      sETH: "0xc81Bc66656E7d32A570895B7ba8a3Fc9aa9997f1",
+      sAAPL: "0x4f36CBc3321b47327407C0eD116188A21ec4da28",
+      sTSLA: "0xD816E621849eb8849D032dc39dD37e39cd668144",
+      sGOLD: "0xd74aE712B412488Bb18F604052B232fea22270DA",
+      sBOND: "0x14496785f82F691656691486C49c3b8fB78BF770",
+      sNVDA: "0x881a8B8b4eacf7103078d6d5e81bfB4E344f3003",
+      sMSFT: "0x893a8F9Fd92110EBcAbB8855223CF184B54a7166",
+      sGOOGL: "0xaD7348198fdbb89eEeAC4E607E917DE8A91CD834",
+      sICLN: "0xcb3069C32188Fd92376d1ba53F08D733451e9175",
+      sESGU: "0x510D59b33C04164596D2601B57a154dF31914C23"
+    }
+  }
+};
+var getV2Stack = (chainId) => chainId === null ? void 0 : V2_STACK[chainId];
 
 // ../shared/src/addresses.ts
 var BASE_SEPOLIA_CHAIN_ID = 84532;
@@ -15093,6 +15139,10 @@ if (!chain) {
   );
 }
 var ADDRESSES = chain;
+var V2_ADDRESSES = (() => {
+  const s = getV2Stack(AGENT_CHAIN_ID);
+  return s ? { GuardedOracle: s.GuardedOracle, AssetVaultV2: s.AssetVaultV2 } : null;
+})();
 function assetIdOf(symbol) {
   const id2 = ASSET_IDS[symbol];
   if (!id2) {
@@ -18150,7 +18200,7 @@ function toBytes(data4) {
   return data4;
 }
 function concatBytes(...arrays) {
-  const r = new Uint8Array(arrays.reduce((sum, a) => sum + a.length, 0));
+  const r = new Uint8Array(arrays.reduce((sum2, a) => sum2 + a.length, 0));
   let pad4 = 0;
   arrays.forEach((a) => {
     if (!u8a(a))
@@ -19284,7 +19334,7 @@ function ensureBytes(title, hex2, expectedLength) {
   return res;
 }
 function concatBytes2(...arrays) {
-  const r = new Uint8Array(arrays.reduce((sum, a) => sum + a.length, 0));
+  const r = new Uint8Array(arrays.reduce((sum2, a) => sum2 + a.length, 0));
   let pad4 = 0;
   arrays.forEach((a) => {
     if (!u8a2(a))
@@ -20201,8 +20251,8 @@ function weierstrassPoints(opts) {
     multiplyAndAddUnsafe(Q, a, b2) {
       const G = Point3.BASE;
       const mul = (P, a2) => a2 === _0n5 || a2 === _1n5 || !P.equals(G) ? P.multiplyUnsafe(a2) : P.multiply(a2);
-      const sum = mul(this, a).add(mul(Q, b2));
-      return sum.is0() ? void 0 : sum;
+      const sum2 = mul(this, a).add(mul(Q, b2));
+      return sum2.is0() ? void 0 : sum2;
     }
     // Converts Projective point to affine (x, y) coordinates.
     // Can accept precomputed Z^-1 - for example, from invertBatch.
@@ -47005,13 +47055,13 @@ function toBytes4(data4) {
   return data4;
 }
 function concatBytes7(...arrays) {
-  let sum = 0;
+  let sum2 = 0;
   for (let i = 0; i < arrays.length; i++) {
     const a = arrays[i];
     abytes4(a);
-    sum += a.length;
+    sum2 += a.length;
   }
-  const res = new Uint8Array(sum);
+  const res = new Uint8Array(sum2);
   for (let i = 0, pad4 = 0; i < arrays.length; i++) {
     const a = arrays[i];
     res.set(a, pad4);
@@ -49315,7 +49365,7 @@ function pippenger2(c, fieldN, points, scalars) {
   const MASK = bitMask3(windowSize);
   const buckets = new Array(Number(MASK) + 1).fill(zero);
   const lastBits = Math.floor((fieldN.BITS - 1) / windowSize) * windowSize;
-  let sum = zero;
+  let sum2 = zero;
   for (let i = lastBits; i >= 0; i -= windowSize) {
     buckets.fill(zero);
     for (let j = 0; j < slength; j++) {
@@ -49328,12 +49378,12 @@ function pippenger2(c, fieldN, points, scalars) {
       sumI = sumI.add(buckets[j]);
       resI = resI.add(sumI);
     }
-    sum = sum.add(resI);
+    sum2 = sum2.add(resI);
     if (i !== 0)
       for (let j = 0; j < windowSize; j++)
-        sum = sum.double();
+        sum2 = sum2.double();
   }
-  return sum;
+  return sum2;
 }
 function validateBasic3(curve) {
   validateField3(curve.Fp);
@@ -49855,8 +49905,8 @@ function weierstrassPoints3(opts) {
     multiplyAndAddUnsafe(Q, a, b2) {
       const G = Point3.BASE;
       const mul = (P, a2) => a2 === _0n17 || a2 === _1n17 || !P.equals(G) ? P.multiplyUnsafe(a2) : P.multiply(a2);
-      const sum = mul(this, a).add(mul(Q, b2));
-      return sum.is0() ? void 0 : sum;
+      const sum2 = mul(this, a).add(mul(Q, b2));
+      return sum2.is0() ? void 0 : sum2;
     }
     // Converts Projective point to affine (x, y) coordinates.
     // Can accept precomputed Z^-1 - for example, from invertBatch.
@@ -60978,6 +61028,285 @@ async function getBenchmarks(rawDate) {
   };
 }
 
+// src/exposure.ts
+function providerReader(provider3) {
+  const ifaces = /* @__PURE__ */ new Map();
+  const get = (sig) => {
+    let e = ifaces.get(sig);
+    if (!e) {
+      const iface = new ethers_exports.Interface([`function ${sig}`]);
+      e = { iface, fn: iface.fragments[0] };
+      ifaces.set(sig, e);
+    }
+    return e;
+  };
+  return {
+    blockNumber: () => provider3.getBlockNumber(),
+    blockTimestamp: async (n2) => {
+      const b2 = await provider3.getBlock(n2);
+      if (!b2) throw Object.assign(new Error("block not found"), { code: "BAD_DATA" });
+      return Number(b2.timestamp);
+    },
+    call: async (to, sig, args, blockTag) => {
+      const { iface, fn } = get(sig);
+      const data4 = iface.encodeFunctionData(fn, args);
+      const ret = await provider3.call({ to, data: data4, blockTag });
+      return iface.decodeFunctionResult(fn, ret);
+    }
+  };
+}
+var ZERO4 = "0x0000000000000000000000000000000000000000";
+var MAX_UINT2562 = (1n << 256n) - 1n;
+var CALL_TIMEOUT_MS = 8e3;
+var CONCURRENCY = 6;
+var SIG = {
+  adlEnabled: "adlEnabled() view returns (bool)",
+  maxPriceAge: "maxPriceAge() view returns (uint256)",
+  fundingInterval: "FUNDING_INTERVAL() view returns (uint256)",
+  insuranceVault: "insuranceVault() view returns (address)",
+  longNotional: "globalLongNotional(bytes32) view returns (uint256)",
+  shortNotional: "globalShortNotional(bytes32) view returns (uint256)",
+  longOpenSize: "longOpenSize(bytes32) view returns (uint256)",
+  shortOpenSize: "shortOpenSize(bytes32) view returns (uint256)",
+  lastFunding: "lastFundingUpdateAt(bytes32) view returns (uint256)",
+  getPrice: "getPrice(bytes32) view returns (uint256 price, uint256 updatedAt)",
+  totalAssets: "totalAssets() view returns (uint256)",
+  usdc: "usdc() view returns (address)",
+  decimals: "decimals() view returns (uint8)",
+  reserveStatus: "reserveStatus() view returns (uint256 reserve_, uint256 liability, uint256 ratioBps, uint256 unpriced, bool stale, bool halted)",
+  reserveRatioBps: "reserveRatioBps() view returns (uint256)"
+};
+function classifyReadError(err) {
+  const code = err?.code;
+  if (code === "NOT_CONFIGURED") return "NOT_CONFIGURED";
+  if (code === "CALL_EXCEPTION") return "CALL_REVERTED";
+  if (code === "BAD_DATA") return "BAD_DATA";
+  if (code === "TIMEOUT") return "RPC_TIMEOUT";
+  return "RPC_ERROR";
+}
+function withTimeout2(p, ms) {
+  return new Promise((resolve2, reject) => {
+    const t = setTimeout(() => reject(Object.assign(new Error("timeout"), { code: "TIMEOUT" })), ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve2(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      }
+    );
+  });
+}
+function limiter(n2) {
+  let active = 0;
+  const queue2 = [];
+  const next = () => {
+    if (active >= n2) return;
+    const job = queue2.shift();
+    if (job) {
+      active++;
+      job();
+    }
+  };
+  return (fn) => new Promise((resolve2, reject) => {
+    queue2.push(() => {
+      fn().then(resolve2, reject).finally(() => {
+        active--;
+        next();
+      });
+    });
+    next();
+  });
+}
+var isSet = (a) => !!a && a.toLowerCase() !== ZERO4;
+var fmt18 = (v) => Number(ethers_exports.formatUnits(v, 18));
+var fmt8 = (v) => Number(ethers_exports.formatUnits(v, 8));
+async function buildExposureReport(reader, t, nowMs = Date.now()) {
+  const unavailable = {};
+  const run = limiter(CONCURRENCY);
+  const settle3 = async (field, p) => {
+    try {
+      return { ok: true, v: await run(() => withTimeout2(p(), CALL_TIMEOUT_MS)) };
+    } catch (err) {
+      const reason = classifyReadError(err);
+      if (field) unavailable[field] = reason;
+      return { ok: false, reason };
+    }
+  };
+  const notConfigured = (field) => {
+    unavailable[field] = "NOT_CONFIGURED";
+    return { ok: false, reason: "NOT_CONFIGURED" };
+  };
+  const bn = await settle3("asOfBlock", () => reader.blockNumber());
+  const blockTag = bn.ok ? bn.v : void 0;
+  const bts = bn.ok ? await settle3("asOfBlockTime", () => reader.blockTimestamp(bn.v)) : notConfigured("asOfBlockTime");
+  const refSec = bts.ok ? bts.v : Math.floor(nowMs / 1e3);
+  const call2 = (field, addr, sig, args = []) => isSet(addr) ? settle3(field, () => reader.call(addr, sig, args, blockTag)) : Promise.resolve(field ? notConfigured(field) : { ok: false, reason: "NOT_CONFIGURED" });
+  const firstAsset = Object.values(t.assets)[0];
+  const [adl, mpa, fi, iv, probe] = await Promise.all([
+    call2("exchange.adlEnabled", t.exchange, SIG.adlEnabled),
+    call2("exchange.maxPriceAgeSec", t.exchange, SIG.maxPriceAge),
+    call2("exchange.fundingIntervalSec", t.exchange, SIG.fundingInterval),
+    call2(null, t.exchange, SIG.insuranceVault),
+    firstAsset ? call2(null, t.exchange, SIG.longOpenSize, [firstAsset]) : Promise.resolve({ ok: false, reason: "NOT_CONFIGURED" })
+  ]);
+  const vaultAddr = iv.ok && isSet(String(iv.v[0])) ? String(iv.v[0]) : t.insuranceVaultFallback;
+  const openSizeSupported = probe.ok;
+  const vaultTotalP = call2("insuranceVault.totalAssets", vaultAddr, SIG.totalAssets);
+  const vaultDecP = (async () => {
+    const u = await call2(null, vaultAddr, SIG.usdc);
+    if (!u.ok) return { ok: false, reason: u.reason };
+    const d = await call2(null, String(u.v[0]), SIG.decimals);
+    return d.ok ? { ok: true, v: Number(d.v[0]) } : { ok: false, reason: d.reason };
+  })();
+  const rsP = call2("v2Vault.reserveStatus", t.assetVaultV2, SIG.reserveStatus);
+  const rrP = call2("v2Vault.reserveRatioBps", t.assetVaultV2, SIG.reserveRatioBps);
+  const assetPs = Object.entries(t.assets).map(async ([symbol, id2]) => {
+    const f2 = (k) => `assets.${symbol}.${k}`;
+    const [mock, guarded, lf, ln, sn, lsz, ssz] = await Promise.all([
+      call2(f2("oracle.mock"), t.mockOracle, SIG.getPrice, [id2]),
+      call2(f2("oracle.guarded"), t.guardedOracle, SIG.getPrice, [id2]),
+      call2(f2("funding.lastFundingUpdateAt"), t.exchange, SIG.lastFunding, [id2]),
+      call2(null, t.exchange, SIG.longNotional, [id2]),
+      call2(null, t.exchange, SIG.shortNotional, [id2]),
+      openSizeSupported ? call2(null, t.exchange, SIG.longOpenSize, [id2]) : Promise.resolve(null),
+      openSizeSupported ? call2(null, t.exchange, SIG.shortOpenSize, [id2]) : Promise.resolve(null)
+    ]);
+    const point = (r) => r.ok && Number(r.v[1]) > 0 ? {
+      price: fmt8(r.v[0]),
+      updatedAt: new Date(Number(r.v[1]) * 1e3).toISOString(),
+      ageSec: Math.max(0, refSec - Number(r.v[1]))
+    } : r.ok ? { price: fmt8(r.v[0]), updatedAt: null, ageSec: null } : { price: null, updatedAt: null, ageSec: null };
+    const mp = mock.ok ? mock.v[0] : null;
+    const gp = guarded.ok ? guarded.v[0] : null;
+    const agree = mp !== null && gp !== null ? mp === gp : null;
+    const deviationBps = mp !== null && gp !== null && mp > 0n ? Number((gp > mp ? gp - mp : mp - gp) * 10000n / mp) : null;
+    let method = null;
+    let longUsd = null;
+    let shortUsd = null;
+    if (lsz?.ok && ssz?.ok && mp !== null) {
+      method = "openSize\xD7markPrice";
+      longUsd = fmt18(lsz.v[0] * mp / 10n ** 8n);
+      shortUsd = fmt18(ssz.v[0] * mp / 10n ** 8n);
+    } else if (ln.ok && sn.ok) {
+      method = "globalNotional";
+      longUsd = fmt18(ln.v[0]);
+      shortUsd = fmt18(sn.v[0]);
+    } else {
+      unavailable[f2("openInterest")] = !ln.ok ? ln.reason : !sn.ok ? sn.reason : "RPC_ERROR";
+    }
+    return {
+      symbol,
+      assetId: id2,
+      openInterest: {
+        method,
+        longUsd,
+        shortUsd,
+        netUsd: longUsd !== null && shortUsd !== null ? longUsd - shortUsd : null
+      },
+      oracle: { mock: point(mock), guarded: point(guarded), agree, deviationBps },
+      // lastFundingUpdateAt == 0 ＝ 這個資產從未結算過 funding（不是讀取失敗）。
+      funding: {
+        lastFundingUpdateAt: lf.ok && Number(lf.v[0]) > 0 ? new Date(Number(lf.v[0]) * 1e3).toISOString() : null,
+        sinceSec: lf.ok && Number(lf.v[0]) > 0 ? Math.max(0, refSec - Number(lf.v[0])) : null,
+        neverSettled: lf.ok ? Number(lf.v[0]) === 0 : null
+      }
+    };
+  });
+  const [vaultTotal, vaultDec, rs, rr, assets] = await Promise.all([
+    vaultTotalP,
+    vaultDecP,
+    rsP,
+    rrP,
+    Promise.all(assetPs)
+  ]);
+  const oiKnown = assets.filter((a) => a.openInterest.longUsd !== null);
+  const notes = [
+    `\u8DDD\u4ECA\u6642\u9593\uFF08ageSec / sinceSec\uFF09\u4EE5 asOfBlock \u7684\u5340\u584A\u6642\u9593\u70BA\u57FA\u6E96${bts.ok ? "" : "\uFF08\u5340\u584A\u6642\u9593\u8B80\u4E0D\u5230\uFF0C\u6539\u7528\u4F3A\u670D\u5668\u6642\u9593\uFF09"}\u3002`,
+    openSizeSupported ? "OI \u4EE5 longOpenSize/shortOpenSize\uFF08\u90E8\u4F4D\u6578\u91CF\uFF0C18 \u4F4D\u5C0F\u6578\uFF09\xD7 MockOracle \u73FE\u50F9\u8A08\u7B97\u7684\u73FE\u503C\u540D\u76EE\u3002" : probe.reason === "CALL_REVERTED" || probe.reason === "BAD_DATA" ? "\u73FE\u884C exchange \u6C92\u6709 longOpenSize/shortOpenSize\uFF0COI \u9000\u56DE globalLong/ShortNotional\uFF08\u958B\u5009\u6642\u540D\u76EE\u52A0\u7E3D\uFF0C\u975E\u73FE\u503C\uFF09\u3002" : `longOpenSize \u63A2\u6E2C\u5931\u6557\uFF08${probe.reason}\uFF09\uFF0C\u672C\u6B21 OI \u9000\u56DE globalLong/ShortNotional\uFF08\u958B\u5009\u6642\u540D\u76EE\u52A0\u7E3D\uFF0C\u975E\u73FE\u503C\uFF09\u3002`,
+    "\u50F9\u683C\u70BA 8 \u4F4D\u5C0F\u6578 USD\uFF1Bexchange \u7D50\u7B97\u8B80\u7684\u662F MockOracle\uFF0CGuardedOracle \u70BA V2 hardened stack \u7684\u93E1\u50CF\uFF0C\u5169\u8005\u7531 keeper \u540C\u6B65\u5BEB\u5165\u3002",
+    "reserveRaw / liabilityRaw / totalAssetsRaw \u70BA\u4EE3\u5E63\u6700\u5C0F\u55AE\u4F4D\u7684\u6574\u6578\u5B57\u4E32\u3002"
+  ];
+  let reserveStatus = null;
+  if (rs.ok) {
+    const ratio = rs.v[2];
+    reserveStatus = {
+      reserveRaw: rs.v[0].toString(),
+      liabilityRaw: rs.v[1].toString(),
+      ratioBps: ratio.toString(),
+      ratioUnbounded: ratio === MAX_UINT2562,
+      unpriced: Number(rs.v[3]),
+      stale: Boolean(rs.v[4]),
+      halted: Boolean(rs.v[5])
+    };
+  }
+  if (!vaultDec.ok && vaultTotal.ok) unavailable["insuranceVault.decimals"] = vaultDec.reason;
+  return {
+    ok: true,
+    chainId: t.chainId,
+    asOfBlock: bn.ok ? bn.v : null,
+    asOfBlockTime: bts.ok ? new Date(bts.v * 1e3).toISOString() : null,
+    generatedAt: new Date(nowMs).toISOString(),
+    contracts: {
+      exchange: t.exchange,
+      mockOracle: t.mockOracle,
+      guardedOracle: t.guardedOracle,
+      insuranceVault: isSet(vaultAddr) ? vaultAddr : null,
+      assetVaultV2: t.assetVaultV2
+    },
+    exchange: {
+      adlEnabled: adl.ok ? Boolean(adl.v[0]) : null,
+      maxPriceAgeSec: mpa.ok ? Number(mpa.v[0]) : null,
+      fundingIntervalSec: fi.ok ? Number(fi.v[0]) : null
+    },
+    insuranceVault: {
+      totalAssets: vaultTotal.ok && vaultDec.ok ? Number(ethers_exports.formatUnits(vaultTotal.v[0], vaultDec.v)) : null,
+      totalAssetsRaw: vaultTotal.ok ? vaultTotal.v[0].toString() : null,
+      decimals: vaultDec.ok ? vaultDec.v : null
+    },
+    v2Vault: { reserveStatus, reserveRatioBps: rr.ok ? rr.v[0].toString() : null },
+    totals: {
+      longUsd: oiKnown.length === assets.length ? sum(assets.map((a) => a.openInterest.longUsd)) : null,
+      shortUsd: oiKnown.length === assets.length ? sum(assets.map((a) => a.openInterest.shortUsd)) : null
+    },
+    assets,
+    unavailable,
+    notes
+  };
+}
+function sum(xs) {
+  return Math.round(xs.reduce((a, b2) => a + b2, 0) * 1e6) / 1e6;
+}
+function createExposureService(reader, targets, opts = {}) {
+  const ttl = opts.ttlMs ?? 6e4;
+  const degradedTtl = opts.degradedTtlMs ?? 1e4;
+  const now = opts.now ?? Date.now;
+  let cached2 = null;
+  let inflight = null;
+  return {
+    ttlSec: Math.round(ttl / 1e3),
+    async get() {
+      const t = now();
+      if (cached2 && t - cached2.at < cached2.ttl) {
+        return { report: cached2.report, cacheHit: true, ageSec: Math.floor((t - cached2.at) / 1e3) };
+      }
+      if (!inflight) {
+        inflight = buildExposureReport(reader, targets, t).then((report2) => {
+          const degraded = Object.keys(report2.unavailable).length > 0;
+          cached2 = { at: now(), ttl: degraded ? degradedTtl : ttl, report: report2 };
+          return report2;
+        }).finally(() => {
+          inflight = null;
+        });
+      }
+      const report = await inflight;
+      return { report, cacheHit: false, ageSec: 0 };
+    }
+  };
+}
+
 // src/app.ts
 var NETWORK = process.env.X402_NETWORK ?? "base-sepolia";
 var FACILITATOR_URL = process.env.X402_FACILITATOR_URL ?? "https://x402.org/facilitator";
@@ -61144,6 +61473,17 @@ async function isRegisteredOnchain(trader) {
   registryCache.set(key, { at: Date.now(), registered });
   return registered;
 }
+function exposureTargets() {
+  return {
+    chainId: AGENT_CHAIN_ID,
+    exchange: ADDRESSES.PerpetualExchange,
+    mockOracle: ADDRESSES.MockOracle,
+    guardedOracle: V2_ADDRESSES?.GuardedOracle ?? null,
+    insuranceVaultFallback: ADDRESSES.InsuranceVault,
+    assetVaultV2: V2_ADDRESSES?.AssetVaultV2 ?? null,
+    assets: { ...ASSET_IDS }
+  };
+}
 function normalizeRequestPath(req) {
   const url = req.url;
   const start = url.indexOf("/", url.indexOf("://") + 3);
@@ -61269,6 +61609,10 @@ function createApp(opts = {}) {
           price: "free",
           desc: "\u5C0D\u7167\u6307\u6578\uFF1AS&P 500\uFF0F\u9EC3\u91D1\uFF0F\u6BD4\u7279\u5E63\uFF0C\u540C\u4E00\u4F86\u6E90\uFF08Yahoo Finance\uFF09\u3002?date=YYYY-MM-DD \u52A0\u78BC\u56DE\u8A72\u65E5\u6216\u4E4B\u524D\u6700\u8FD1\u4E00\u500B\u4EA4\u6613\u65E5\u7684\u6536\u76E4\u3002\u4E0D\u505A\u6A21\u64EC\u4FDD\u5E95\uFF0C\u4E0A\u6E38\u62FF\u4E0D\u5230\u5C31\u5728\u8A72\u6307\u6578\u7684 error \u6B04\u4F4D\u6A19\u660E\u3002"
         },
+        "GET /risk/exposure": {
+          price: "free",
+          desc: "\u66DD\u96AA\u5831\u8868\uFF08\u552F\u8B80\uFF09\uFF1A\u5404\u8CC7\u7522\u591A\u7A7A OI\u3001\u4FDD\u96AA\u91D1\u5EAB totalAssets\u3001V2 vault reserveStatus\u3001MockOracle\uFF0FGuardedOracle \u50F9\u683C\u8207\u5E74\u9F61\uFF08\u662F\u5426\u4E00\u81F4\uFF09\u3001adlEnabled / maxPriceAge / FUNDING_INTERVAL\u3001\u5404\u8CC7\u7522 lastFundingUpdateAt\u3002\u9644 asOfBlock\uFF0C60 \u79D2\u5FEB\u53D6\uFF1B\u8B80\u4E0D\u5230\u7684\u6B04\u4F4D\u70BA null \u4E26\u9644\u539F\u56E0\u4EE3\u78BC\u3002"
+        },
         "GET /agent/:did/verification": { price: "free", desc: "ERC-8126 agent \u9A57\u8B49\uFF08ETV/SCV/WAV/WV + 0\u2013100 \u98A8\u96AA\u5206\u6578\uFF0Cverifier \u7C3D\u7AE0\uFF09" },
         "POST /demo/buy-signal": { price: "free", desc: "\u8A2A\u5BA2\u8A66\u8CB7\uFF08\u514D\u8CBB\u56DE\u8A0A\u865F\uFF1B\u771F\u5BE6 70/20/10 \u5206\u6F64\u898B\u4ED8\u8CBB x402 \u7AEF\u9EDE + /revenue \u7D2F\u8A08\uFF09" }
       },
@@ -61312,6 +61656,19 @@ function createApp(opts = {}) {
         return c.json({ ok: false, error: err.message }, 400);
       }
       return c.json({ ok: false, error: internalError("benchmarks", err) }, 502);
+    }
+  });
+  const exposure = createExposureService(opts.exposureReader ?? providerReader(provider2), exposureTargets());
+  app2.get("/risk/exposure", async (c) => {
+    try {
+      const { report, cacheHit, ageSec } = await exposure.get();
+      return c.json(
+        jsonSafe({ ...report, cache: { hit: cacheHit, ageSec, ttlSec: exposure.ttlSec } }),
+        200,
+        { "Cache-Control": `public, max-age=${exposure.ttlSec}` }
+      );
+    } catch (err) {
+      return c.json({ ok: false, error: internalError("exposure", err) }, 503);
     }
   });
   app2.get("/agent/:did/verification", async (c) => {
