@@ -38904,6 +38904,7 @@ var wordlists2 = {
 // ../shared/src/signingGuard.ts
 var MAX_UINT256 = (1n << 256n) - 1n;
 var MAX_UINT160 = (1n << 160n) - 1n;
+var DEFAULT_MAX_ALLOWANCE = 1n << 128n;
 var SigningGuardError = class extends Error {
   constructor(reasonCode, detail) {
     super(`[signing-guard] ${reasonCode}: ${detail}`);
@@ -38911,50 +38912,100 @@ var SigningGuardError = class extends Error {
     this.name = "SigningGuardError";
   }
 };
-var ABI = ethers_exports.AbiCoder.defaultAbiCoder();
-var SEL_APPROVE = "0x095ea7b3";
-var SEL_PERMIT2_APPROVE = "0x87517c45";
-var SEL_PERMIT_2612 = "0xd505accf";
-var SEL_PERMIT_DAI = "0x8fcbaf0c";
-function decodeArgs(types, data4) {
+function maxAllowance(env = process.env) {
+  const raw2 = env.SIGNING_GUARD_MAX_ALLOWANCE?.trim();
+  if (!raw2) return DEFAULT_MAX_ALLOWANCE;
+  if (!/^\d+$/.test(raw2) || BigInt(raw2) <= 0n) {
+    throw new SigningGuardError("GUARD_CONFIG_INVALID", "SIGNING_GUARD_MAX_ALLOWANCE \u5FC5\u9808\u662F\u6B63\u6574\u6578\uFF08fail-closed\uFF1A\u62D2\u7D55\u6240\u6709\u6388\u6B0A\u985E\u7C3D\u7AE0\uFF09");
+  }
+  return BigInt(raw2);
+}
+function capCheck(amount, reason, what) {
+  const cap = maxAllowance();
+  const v = big(amount);
+  if (v === null) return new SigningGuardError(reason, `${what} \u984D\u5EA6\u7121\u6CD5\u89E3\u6790\uFF08fail-closed\uFF09`);
+  if (v >= cap) return new SigningGuardError(reason, `${what} \u984D\u5EA6 ${v} \u2265 \u4E0A\u9650 ${cap}`);
+  return null;
+}
+var IFACE = new ethers_exports.Interface([
+  // ERC-20
+  "function approve(address spender, uint256 amount)",
+  "function increaseAllowance(address spender, uint256 addedValue)",
+  // EIP-2612 / DAI 式 permit（兩者簽章不同，selector 不同）
+  "function permit(address owner, address spender, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s)",
+  "function permit(address holder, address spender, uint256 nonce, uint256 expiry, bool allowed, uint8 v, bytes32 r, bytes32 s)",
+  // Permit2 AllowanceTransfer
+  "function approve(address token, address spender, uint160 amount, uint48 expiration)",
+  "function permit(address owner, ((address token, uint160 amount, uint48 expiration, uint48 nonce) details, address spender, uint256 sigDeadline) permitSingle, bytes signature)",
+  "function permit(address owner, ((address token, uint160 amount, uint48 expiration, uint48 nonce)[] details, address spender, uint256 sigDeadline) permitBatch, bytes signature)"
+]);
+var sel = (sig) => IFACE.getFunction(sig).selector;
+var SEL = {
+  approve: sel("approve(address,uint256)"),
+  increaseAllowance: sel("increaseAllowance(address,uint256)"),
+  permit2612: sel("permit(address,address,uint256,uint256,uint8,bytes32,bytes32)"),
+  permitDai: sel("permit(address,address,uint256,uint256,bool,uint8,bytes32,bytes32)"),
+  permit2Approve: sel("approve(address,address,uint160,uint48)"),
+  permit2Single: sel("permit(address,((address,uint160,uint48,uint48),address,uint256),bytes)"),
+  permit2Batch: sel("permit(address,((address,uint160,uint48,uint48)[],address,uint256),bytes)")
+};
+function decodeBy(selector, data4) {
   try {
-    return ABI.decode(types, ethers_exports.dataSlice(data4, 4));
+    const fn = IFACE.getFunction(selector);
+    return IFACE.decodeFunctionData(fn, data4);
   } catch {
     return null;
   }
 }
 function checkCalldata(data4) {
   if (!data4 || data4 === "0x" || data4.length < 10) return null;
-  const sel = data4.slice(0, 10).toLowerCase();
-  if (sel === SEL_APPROVE) {
-    const a = decodeArgs(["address", "uint256"], data4);
-    if (!a) return new SigningGuardError("UNLIMITED_APPROVE_FORBIDDEN", "approve calldata \u7121\u6CD5\u89E3\u6790\uFF08fail-closed\uFF09");
-    if (a[1] === MAX_UINT256)
-      return new SigningGuardError("UNLIMITED_APPROVE_FORBIDDEN", `approve(${a[0]}, MaxUint256)`);
-    return null;
+  const s = data4.slice(0, 10).toLowerCase();
+  try {
+    const A = "UNLIMITED_APPROVE_FORBIDDEN";
+    const P = "UNLIMITED_PERMIT_FORBIDDEN";
+    const need = (r, reason, what) => r ?? new SigningGuardError(reason, `${what} calldata \u7121\u6CD5\u89E3\u6790\uFF08fail-closed\uFF09`);
+    switch (s) {
+      case SEL.approve: {
+        const a = need(decodeBy(s, data4), A, "approve");
+        return a instanceof SigningGuardError ? a : capCheck(a[1], A, `approve(${a[0]})`);
+      }
+      case SEL.increaseAllowance: {
+        const a = need(decodeBy(s, data4), A, "increaseAllowance");
+        return a instanceof SigningGuardError ? a : capCheck(a[1], A, `increaseAllowance(${a[0]})`);
+      }
+      case SEL.permit2612: {
+        const a = need(decodeBy(s, data4), P, "permit");
+        return a instanceof SigningGuardError ? a : capCheck(a[2], P, `permit(spender=${a[1]})`);
+      }
+      case SEL.permitDai: {
+        const a = need(decodeBy(s, data4), P, "DAI permit");
+        if (a instanceof SigningGuardError) return a;
+        return a[4] ? new SigningGuardError(P, `DAI permit(spender=${a[1]}, allowed=${a[4]})\uFF1D\u7121\u4E0A\u9650`) : null;
+      }
+      case SEL.permit2Approve: {
+        const a = need(decodeBy(s, data4), A, "Permit2 approve");
+        return a instanceof SigningGuardError ? a : capCheck(a[2], A, `Permit2 approve(${a[0]}, ${a[1]})`);
+      }
+      case SEL.permit2Single: {
+        const a = need(decodeBy(s, data4), P, "Permit2 permit");
+        return a instanceof SigningGuardError ? a : capCheck(a[1][0][1], P, "Permit2 permit(PermitSingle)");
+      }
+      case SEL.permit2Batch: {
+        const a = need(decodeBy(s, data4), P, "Permit2 permitBatch");
+        if (a instanceof SigningGuardError) return a;
+        for (const d of a[1][0]) {
+          const bad = capCheck(d[1], P, "Permit2 permit(PermitBatch)");
+          if (bad) return bad;
+        }
+        return null;
+      }
+      default:
+        return null;
+    }
+  } catch (err) {
+    if (err instanceof SigningGuardError) return err;
+    return new SigningGuardError("UNLIMITED_APPROVE_FORBIDDEN", "\u6388\u6B0A\u985E calldata \u6AA2\u67E5\u5931\u6557\uFF08fail-closed\uFF09");
   }
-  if (sel === SEL_PERMIT2_APPROVE) {
-    const a = decodeArgs(["address", "address", "uint160", "uint48"], data4);
-    if (!a) return new SigningGuardError("UNLIMITED_APPROVE_FORBIDDEN", "Permit2 approve calldata \u7121\u6CD5\u89E3\u6790\uFF08fail-closed\uFF09");
-    if (a[2] === MAX_UINT160)
-      return new SigningGuardError("UNLIMITED_APPROVE_FORBIDDEN", `Permit2 approve(${a[0]}, ${a[1]}, MaxUint160)`);
-    return null;
-  }
-  if (sel === SEL_PERMIT_2612) {
-    const a = decodeArgs(["address", "address", "uint256", "uint256", "uint8", "bytes32", "bytes32"], data4);
-    if (!a) return new SigningGuardError("UNLIMITED_PERMIT_FORBIDDEN", "permit calldata \u7121\u6CD5\u89E3\u6790\uFF08fail-closed\uFF09");
-    if (a[2] === MAX_UINT256)
-      return new SigningGuardError("UNLIMITED_PERMIT_FORBIDDEN", `permit(spender=${a[1]}, MaxUint256)`);
-    return null;
-  }
-  if (sel === SEL_PERMIT_DAI) {
-    const a = decodeArgs(["address", "address", "uint256", "uint256", "bool", "uint8", "bytes32", "bytes32"], data4);
-    if (!a) return new SigningGuardError("UNLIMITED_PERMIT_FORBIDDEN", "DAI permit calldata \u7121\u6CD5\u89E3\u6790\uFF08fail-closed\uFF09");
-    if (a[4] === true)
-      return new SigningGuardError("UNLIMITED_PERMIT_FORBIDDEN", `DAI permit(spender=${a[1]}, allowed=true)\uFF1D\u7121\u4E0A\u9650`);
-    return null;
-  }
-  return null;
 }
 function is7702(tx) {
   const t = tx.type;
@@ -38991,30 +39042,27 @@ function primaryTypeOf(types, explicit) {
 function assertSafeTypedData(types, value, primaryType) {
   const pt = primaryTypeOf(types, primaryType);
   if (!pt) return;
+  const P = "UNLIMITED_PERMIT_FORBIDDEN";
+  const check = (amt, what) => {
+    const bad = capCheck(amt, P, what);
+    if (bad) throw bad;
+  };
   if (pt === "Permit") {
-    if (value?.allowed === true)
-      throw new SigningGuardError("UNLIMITED_PERMIT_FORBIDDEN", "DAI \u5F0F Permit(allowed=true)\uFF1D\u7121\u4E0A\u9650\u6388\u6B0A");
-    const v = big(value?.value);
-    if (v !== null && v === MAX_UINT256)
-      throw new SigningGuardError("UNLIMITED_PERMIT_FORBIDDEN", "EIP-2612 Permit(value=MaxUint256)");
+    if (value && "allowed" in value) {
+      if (value.allowed) throw new SigningGuardError(P, `DAI \u5F0F Permit(allowed=${String(value.allowed)})\uFF1D\u7121\u4E0A\u9650\u6388\u6B0A`);
+      return;
+    }
+    check(value?.value, "EIP-2612 Permit");
     return;
   }
   if (pt === "PermitSingle" || pt === "PermitBatch") {
     const details = Array.isArray(value?.details) ? value.details : [value?.details];
-    for (const d of details) {
-      const amt = big(d?.amount);
-      if (amt !== null && amt >= MAX_UINT160)
-        throw new SigningGuardError("UNLIMITED_PERMIT_FORBIDDEN", `Permit2 ${pt}(amount=MaxUint160)`);
-    }
+    for (const d of details) check(d?.amount, `Permit2 ${pt}`);
     return;
   }
-  if (pt === "PermitTransferFrom" || pt === "PermitBatchTransferFrom" || pt === "PermitWitnessTransferFrom") {
+  if (pt === "PermitTransferFrom" || pt === "PermitBatchTransferFrom" || pt === "PermitWitnessTransferFrom" || pt === "PermitBatchWitnessTransferFrom") {
     const perms = Array.isArray(value?.permitted) ? value.permitted : [value?.permitted];
-    for (const p of perms) {
-      const amt = big(p?.amount);
-      if (amt !== null && amt === MAX_UINT256)
-        throw new SigningGuardError("UNLIMITED_PERMIT_FORBIDDEN", `Permit2 ${pt}(amount=MaxUint256)`);
-    }
+    for (const p of perms) check(p?.amount, `Permit2 ${pt}`);
   }
 }
 var GuardedWallet = class _GuardedWallet extends ethers_exports.Wallet {

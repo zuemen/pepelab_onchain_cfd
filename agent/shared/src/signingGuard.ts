@@ -5,9 +5,10 @@
 //      7702 authorization 簽章（ethers `authorize`、viem `signAuthorization`）。
 //      7702 等於把 EOA 的程式碼換掉 —— agent 金鑰一旦簽出去，委派合約就能以這個
 //      EOA 的身分做任何事，session 限額完全失效。
-//   2. **禁止無上限授權**：`approve(spender, MaxUint256)`、Permit2 `approve(…, MaxUint160, …)`、
-//      EIP-2612 `permit(…, MaxUint256, …)`、DAI 式 `permit(…, allowed=true, …)`，
-//      以及對應的 EIP-712 typed data（Permit / PermitSingle / PermitBatch）。
+//   2. **禁止無上限（實質無上限）授權**：ERC-20 `approve` / `increaseAllowance`、
+//      EIP-2612 `permit`、Permit2 `approve` / `permit(PermitSingle)` / `permit(PermitBatch)`
+//      的額度 ≥ 絕對上限（預設 2^128，SIGNING_GUARD_MAX_ALLOWANCE）一律拒絕；DAI 式
+//      `permit(…, allowed, …)` 的 allowed 為 truthy 即拒絕；對應的 EIP-712 typed data 同規則。
 //
 // 這一關與 policy gate（policyGate.ts）分工：policy gate 管「這筆單該不該下」，
 // 這裡管「這把金鑰能不能簽這種東西」。所有 agent 金鑰的簽章都經過這裡：
@@ -23,13 +24,23 @@ import { ethers } from "ethers";
 export const MAX_UINT256 = (1n << 256n) - 1n;
 export const MAX_UINT160 = (1n << 160n) - 1n;
 
+/**
+ * 授權額度的**絕對上限**（審查 Medium-2）：只擋「剛好等於 MaxUint」擋不住 MaxUint-1、
+ * 2^200 這類實質無上限的額度。approve / increaseAllowance / permit / Permit2 的額度
+ * 一律要求 `< 上限`（`>=` 上限即拒絕）。預設 2^128（遠大於任何真實交易量，
+ * 又遠小於各種「無上限」慣用值），可用 env SIGNING_GUARD_MAX_ALLOWANCE（十進位整數，
+ * 代幣最小單位）調整；設定不合法 → 所有授權類簽章一律拒絕（fail-closed）。
+ */
+export const DEFAULT_MAX_ALLOWANCE = 1n << 128n;
+
 /** 拒絕原因代碼（穩定字串，寫進稽核與錯誤）。 */
 export type SigningGuardReason =
   | "EIP7702_TX_FORBIDDEN"
   | "EIP7702_AUTHORIZATION_FORBIDDEN"
   | "RAW_HASH_SIGN_FORBIDDEN"
   | "UNLIMITED_APPROVE_FORBIDDEN"
-  | "UNLIMITED_PERMIT_FORBIDDEN";
+  | "UNLIMITED_PERMIT_FORBIDDEN"
+  | "GUARD_CONFIG_INVALID";
 
 export class SigningGuardError extends Error {
   constructor(
@@ -41,20 +52,59 @@ export class SigningGuardError extends Error {
   }
 }
 
-// ── calldata 檢查 ─────────────────────────────────────────────────────────────
-const ABI = ethers.AbiCoder.defaultAbiCoder();
-/** approve(address,uint256) — ERC-20 */
-const SEL_APPROVE = "0x095ea7b3";
-/** approve(address,address,uint160,uint48) — Permit2 */
-const SEL_PERMIT2_APPROVE = "0x87517c45";
-/** permit(address,address,uint256,uint256,uint8,bytes32,bytes32) — EIP-2612 */
-const SEL_PERMIT_2612 = "0xd505accf";
-/** permit(address,address,uint256,uint256,bool,uint8,bytes32,bytes32) — DAI 式 */
-const SEL_PERMIT_DAI = "0x8fcbaf0c";
+/** 目前的額度上限；env 不合法時丟 GUARD_CONFIG_INVALID（呼叫端一律拒絕）。 */
+export function maxAllowance(env: NodeJS.ProcessEnv = process.env): bigint {
+  const raw = env.SIGNING_GUARD_MAX_ALLOWANCE?.trim();
+  if (!raw) return DEFAULT_MAX_ALLOWANCE;
+  if (!/^\d+$/.test(raw) || BigInt(raw) <= 0n) {
+    throw new SigningGuardError("GUARD_CONFIG_INVALID", "SIGNING_GUARD_MAX_ALLOWANCE 必須是正整數（fail-closed：拒絕所有授權類簽章）");
+  }
+  return BigInt(raw);
+}
 
-function decodeArgs(types: string[], data: string): ethers.Result | null {
+function capCheck(
+  amount: unknown,
+  reason: "UNLIMITED_APPROVE_FORBIDDEN" | "UNLIMITED_PERMIT_FORBIDDEN",
+  what: string,
+): SigningGuardError | null {
+  const cap = maxAllowance();
+  const v = big(amount);
+  if (v === null) return new SigningGuardError(reason, `${what} 額度無法解析（fail-closed）`);
+  if (v >= cap) return new SigningGuardError(reason, `${what} 額度 ${v} ≥ 上限 ${cap}`);
+  return null;
+}
+
+// ── calldata 檢查 ─────────────────────────────────────────────────────────────
+const IFACE = new ethers.Interface([
+  // ERC-20
+  "function approve(address spender, uint256 amount)",
+  "function increaseAllowance(address spender, uint256 addedValue)",
+  // EIP-2612 / DAI 式 permit（兩者簽章不同，selector 不同）
+  "function permit(address owner, address spender, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s)",
+  "function permit(address holder, address spender, uint256 nonce, uint256 expiry, bool allowed, uint8 v, bytes32 r, bytes32 s)",
+  // Permit2 AllowanceTransfer
+  "function approve(address token, address spender, uint160 amount, uint48 expiration)",
+  "function permit(address owner, ((address token, uint160 amount, uint48 expiration, uint48 nonce) details, address spender, uint256 sigDeadline) permitSingle, bytes signature)",
+  "function permit(address owner, ((address token, uint160 amount, uint48 expiration, uint48 nonce)[] details, address spender, uint256 sigDeadline) permitBatch, bytes signature)",
+]);
+const sel = (sig: string) => IFACE.getFunction(sig)!.selector;
+const SEL = {
+  approve: sel("approve(address,uint256)"),
+  increaseAllowance: sel("increaseAllowance(address,uint256)"),
+  permit2612: sel("permit(address,address,uint256,uint256,uint8,bytes32,bytes32)"),
+  permitDai: sel("permit(address,address,uint256,uint256,bool,uint8,bytes32,bytes32)"),
+  permit2Approve: sel("approve(address,address,uint160,uint48)"),
+  permit2Single: sel("permit(address,((address,uint160,uint48,uint48),address,uint256),bytes)"),
+  permit2Batch: sel("permit(address,((address,uint160,uint48,uint48)[],address,uint256),bytes)"),
+};
+
+/** 被守門的 selector（測試與文件用）。 */
+export const GUARDED_SELECTORS = SEL;
+
+function decodeBy(selector: string, data: string): ethers.Result | null {
   try {
-    return ABI.decode(types, ethers.dataSlice(data, 4));
+    const fn = IFACE.getFunction(selector)!;
+    return IFACE.decodeFunctionData(fn, data);
   } catch {
     return null;
   }
@@ -67,36 +117,54 @@ function decodeArgs(types: string[], data: string): ethers.Result | null {
  */
 export function checkCalldata(data: string | null | undefined): SigningGuardError | null {
   if (!data || data === "0x" || data.length < 10) return null;
-  const sel = data.slice(0, 10).toLowerCase();
-  if (sel === SEL_APPROVE) {
-    const a = decodeArgs(["address", "uint256"], data);
-    if (!a) return new SigningGuardError("UNLIMITED_APPROVE_FORBIDDEN", "approve calldata 無法解析（fail-closed）");
-    if ((a[1] as bigint) === MAX_UINT256)
-      return new SigningGuardError("UNLIMITED_APPROVE_FORBIDDEN", `approve(${a[0]}, MaxUint256)`);
-    return null;
+  const s = data.slice(0, 10).toLowerCase();
+  try {
+    const A = "UNLIMITED_APPROVE_FORBIDDEN" as const;
+    const P = "UNLIMITED_PERMIT_FORBIDDEN" as const;
+    const need = (r: ethers.Result | null, reason: typeof A | typeof P, what: string) =>
+      r ?? new SigningGuardError(reason, `${what} calldata 無法解析（fail-closed）`);
+    switch (s) {
+      case SEL.approve: {
+        const a = need(decodeBy(s, data), A, "approve");
+        return a instanceof SigningGuardError ? a : capCheck(a[1], A, `approve(${a[0]})`);
+      }
+      case SEL.increaseAllowance: {
+        const a = need(decodeBy(s, data), A, "increaseAllowance");
+        return a instanceof SigningGuardError ? a : capCheck(a[1], A, `increaseAllowance(${a[0]})`);
+      }
+      case SEL.permit2612: {
+        const a = need(decodeBy(s, data), P, "permit");
+        return a instanceof SigningGuardError ? a : capCheck(a[2], P, `permit(spender=${a[1]})`);
+      }
+      case SEL.permitDai: {
+        const a = need(decodeBy(s, data), P, "DAI permit");
+        if (a instanceof SigningGuardError) return a;
+        return a[4] ? new SigningGuardError(P, `DAI permit(spender=${a[1]}, allowed=${a[4]})＝無上限`) : null;
+      }
+      case SEL.permit2Approve: {
+        const a = need(decodeBy(s, data), A, "Permit2 approve");
+        return a instanceof SigningGuardError ? a : capCheck(a[2], A, `Permit2 approve(${a[0]}, ${a[1]})`);
+      }
+      case SEL.permit2Single: {
+        const a = need(decodeBy(s, data), P, "Permit2 permit");
+        return a instanceof SigningGuardError ? a : capCheck(a[1][0][1], P, "Permit2 permit(PermitSingle)");
+      }
+      case SEL.permit2Batch: {
+        const a = need(decodeBy(s, data), P, "Permit2 permitBatch");
+        if (a instanceof SigningGuardError) return a;
+        for (const d of a[1][0] as ethers.Result[]) {
+          const bad = capCheck(d[1], P, "Permit2 permit(PermitBatch)");
+          if (bad) return bad;
+        }
+        return null;
+      }
+      default:
+        return null;
+    }
+  } catch (err) {
+    if (err instanceof SigningGuardError) return err;
+    return new SigningGuardError("UNLIMITED_APPROVE_FORBIDDEN", "授權類 calldata 檢查失敗（fail-closed）");
   }
-  if (sel === SEL_PERMIT2_APPROVE) {
-    const a = decodeArgs(["address", "address", "uint160", "uint48"], data);
-    if (!a) return new SigningGuardError("UNLIMITED_APPROVE_FORBIDDEN", "Permit2 approve calldata 無法解析（fail-closed）");
-    if ((a[2] as bigint) === MAX_UINT160)
-      return new SigningGuardError("UNLIMITED_APPROVE_FORBIDDEN", `Permit2 approve(${a[0]}, ${a[1]}, MaxUint160)`);
-    return null;
-  }
-  if (sel === SEL_PERMIT_2612) {
-    const a = decodeArgs(["address", "address", "uint256", "uint256", "uint8", "bytes32", "bytes32"], data);
-    if (!a) return new SigningGuardError("UNLIMITED_PERMIT_FORBIDDEN", "permit calldata 無法解析（fail-closed）");
-    if ((a[2] as bigint) === MAX_UINT256)
-      return new SigningGuardError("UNLIMITED_PERMIT_FORBIDDEN", `permit(spender=${a[1]}, MaxUint256)`);
-    return null;
-  }
-  if (sel === SEL_PERMIT_DAI) {
-    const a = decodeArgs(["address", "address", "uint256", "uint256", "bool", "uint8", "bytes32", "bytes32"], data);
-    if (!a) return new SigningGuardError("UNLIMITED_PERMIT_FORBIDDEN", "DAI permit calldata 無法解析（fail-closed）");
-    if (a[4] === true)
-      return new SigningGuardError("UNLIMITED_PERMIT_FORBIDDEN", `DAI permit(spender=${a[1]}, allowed=true)＝無上限`);
-    return null;
-  }
-  return null;
 }
 
 /** 交易型別是不是 EIP-7702（ethers 用數字 4，viem 用字串 'eip7702'）。 */
@@ -148,8 +216,8 @@ function primaryTypeOf(types: Record<string, unknown>, explicit?: string): strin
 }
 
 /**
- * typed data 守門：EIP-2612 Permit(value=MaxUint256)、DAI Permit(allowed=true)、
- * Permit2 PermitSingle / PermitBatch / PermitTransferFrom 的無上限額度一律拒絕。
+ * typed data 守門：EIP-2612 Permit（value ≥ 上限）、DAI Permit（allowed 為 truthy）、
+ * Permit2 PermitSingle / PermitBatch / PermitTransferFrom 系列（amount ≥ 上限）一律拒絕。
  * x402 用的 EIP-3009 TransferWithAuthorization 金額有限（由 maxValue 約束），不受影響。
  */
 export function assertSafeTypedData(
@@ -159,30 +227,29 @@ export function assertSafeTypedData(
 ): void {
   const pt = primaryTypeOf(types, primaryType);
   if (!pt) return;
+  const P = "UNLIMITED_PERMIT_FORBIDDEN" as const;
+  const check = (amt: unknown, what: string) => {
+    const bad = capCheck(amt, P, what);
+    if (bad) throw bad;
+  };
   if (pt === "Permit") {
-    if (value?.allowed === true)
-      throw new SigningGuardError("UNLIMITED_PERMIT_FORBIDDEN", "DAI 式 Permit(allowed=true)＝無上限授權");
-    const v = big(value?.value);
-    if (v !== null && v === MAX_UINT256)
-      throw new SigningGuardError("UNLIMITED_PERMIT_FORBIDDEN", "EIP-2612 Permit(value=MaxUint256)");
+    // DAI 式：allowed 是 bool，但簽章端可能收到 1 / "true" 之類 → truthy 就拒絕。
+    if (value && "allowed" in value) {
+      if (value.allowed) throw new SigningGuardError(P, `DAI 式 Permit(allowed=${String(value.allowed)})＝無上限授權`);
+      return;
+    }
+    check(value?.value, "EIP-2612 Permit");
     return;
   }
   if (pt === "PermitSingle" || pt === "PermitBatch") {
     const details = Array.isArray(value?.details) ? value.details : [value?.details];
-    for (const d of details) {
-      const amt = big(d?.amount);
-      if (amt !== null && amt >= MAX_UINT160)
-        throw new SigningGuardError("UNLIMITED_PERMIT_FORBIDDEN", `Permit2 ${pt}(amount=MaxUint160)`);
-    }
+    for (const d of details) check(d?.amount, `Permit2 ${pt}`);
     return;
   }
-  if (pt === "PermitTransferFrom" || pt === "PermitBatchTransferFrom" || pt === "PermitWitnessTransferFrom") {
+  if (pt === "PermitTransferFrom" || pt === "PermitBatchTransferFrom" || pt === "PermitWitnessTransferFrom" ||
+      pt === "PermitBatchWitnessTransferFrom") {
     const perms = Array.isArray(value?.permitted) ? value.permitted : [value?.permitted];
-    for (const p of perms) {
-      const amt = big(p?.amount);
-      if (amt !== null && amt === MAX_UINT256)
-        throw new SigningGuardError("UNLIMITED_PERMIT_FORBIDDEN", `Permit2 ${pt}(amount=MaxUint256)`);
-    }
+    for (const p of perms) check(p?.amount, `Permit2 ${pt}`);
   }
 }
 

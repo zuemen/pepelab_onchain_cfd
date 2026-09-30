@@ -1,5 +1,5 @@
 {
-  "digest": "ecb1a77c10c4d457",
+  "digest": "bbb0a60f418961f9",
   "files": {
     "agent/shared/src/abis.ts": "872c3136604d6584",
     "agent/shared/src/addresses.ts": "a6cb279048c58a4b",
@@ -15,7 +15,7 @@
     "agent/shared/src/policyGate.ts": "1934eca2dc085a8d",
     "agent/shared/src/provider.ts": "86d3948608af1aaf",
     "agent/shared/src/redact.ts": "36892c597bec44d0",
-    "agent/shared/src/signingGuard.ts": "73400112a5ca02e4",
+    "agent/shared/src/signingGuard.ts": "3242ddda55b40fb6",
     "agent/shared/src/vcNonce.ts": "1774fe6fe17ade3f",
     "agent/shared/src/verification.ts": "c7823c4dc411e59a",
     "agent/shared/src/write.ts": "e8560d951af85a51",

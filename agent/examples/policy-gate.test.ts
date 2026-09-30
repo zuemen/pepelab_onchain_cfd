@@ -207,6 +207,64 @@ const Z32 = ethers.ZeroHash;
   ok("type-4 / 'eip7702' / 帶 authorizationList 的交易 → EIP7702_TX_FORBIDDEN");
 }
 
+// ─────────────── 簽章守門：絕對額度上限（審查 Medium-2）───────────────
+{
+  const { DEFAULT_MAX_ALLOWANCE, GUARDED_SELECTORS } = S;
+  const CAP = DEFAULT_MAX_ALLOWANCE;
+  assert.equal(CAP, 1n << 128n);
+  const ext = new ethers.Interface([
+    "function increaseAllowance(address,uint256)",
+    "function permit(address owner, ((address token, uint160 amount, uint48 expiration, uint48 nonce) details, address spender, uint256 sigDeadline) permitSingle, bytes signature)",
+    "function permit(address owner, ((address token, uint160 amount, uint48 expiration, uint48 nonce)[] details, address spender, uint256 sigDeadline) permitBatch, bytes signature)",
+  ]);
+  const approve = (v: bigint) => erc20.encodeFunctionData("approve", [SPENDER, v]);
+  // 接近 MaxUint 與邊界
+  for (const v of [MAX_UINT256 - 1n, MAX_UINT256 / 2n, 1n << 200n, CAP]) {
+    expectGuard(() => assertSafeTransaction({ data: approve(v) }), "UNLIMITED_APPROVE_FORBIDDEN");
+  }
+  assert.doesNotThrow(() => assertSafeTransaction({ data: approve(CAP - 1n) }), "上限 -1 放行");
+  // increaseAllowance
+  expectGuard(() => assertSafeTransaction({ data: ext.encodeFunctionData("increaseAllowance", [SPENDER, MAX_UINT256 - 5n]) }), "UNLIMITED_APPROVE_FORBIDDEN");
+  assert.doesNotThrow(() => assertSafeTransaction({ data: ext.encodeFunctionData("increaseAllowance", [SPENDER, 10n ** 24n]) }));
+  // Permit2 approve：MaxUint160 - 1 仍 ≥ 2^128
+  expectGuard(() => assertSafeTransaction({ data: permit2.encodeFunctionData("approve", [SPENDER, SPENDER, MAX_UINT160 - 1n, 0]) }), "UNLIMITED_APPROVE_FORBIDDEN");
+  // Permit2 permit(PermitSingle) / permit(PermitBatch)
+  const single = (amt: bigint) =>
+    ext.encodeFunctionData("permit(address,((address,uint160,uint48,uint48),address,uint256),bytes)", [
+      AGENT, [[SPENDER, amt, 0, 0], SPENDER, 0], "0x",
+    ]);
+  const batch = (amts: bigint[]) =>
+    ext.encodeFunctionData("permit(address,((address,uint160,uint48,uint48)[],address,uint256),bytes)", [
+      AGENT, [amts.map((a) => [SPENDER, a, 0, 0]), SPENDER, 0], "0x",
+    ]);
+  assert.equal(single(1n).slice(0, 10), GUARDED_SELECTORS.permit2Single);
+  assert.equal(batch([1n]).slice(0, 10), GUARDED_SELECTORS.permit2Batch);
+  expectGuard(() => assertSafeTransaction({ data: single(MAX_UINT160 - 1n) }), "UNLIMITED_PERMIT_FORBIDDEN");
+  assert.doesNotThrow(() => assertSafeTransaction({ data: single(10n ** 20n) }));
+  expectGuard(() => assertSafeTransaction({ data: batch([1n, CAP]) }), "UNLIMITED_PERMIT_FORBIDDEN");
+  assert.doesNotThrow(() => assertSafeTransaction({ data: batch([1n, 2n]) }));
+  // EIP-2612 permit 接近上限
+  expectGuard(() => assertSafeTransaction({ data: erc20.encodeFunctionData("permit", [SPENDER, SPENDER, MAX_UINT256 - 1n, 0, 27, Z32, Z32]) }), "UNLIMITED_PERMIT_FORBIDDEN");
+  // typed data：接近上限、DAI allowed truthy
+  const permitTypes = { Permit: [{ name: "spender", type: "address" }, { name: "value", type: "uint256" }] };
+  expectGuard(() => assertSafeTypedData(permitTypes, { value: MAX_UINT256 - 1n }), "UNLIMITED_PERMIT_FORBIDDEN");
+  expectGuard(() => assertSafeTypedData(permitTypes, { value: CAP }), "UNLIMITED_PERMIT_FORBIDDEN");
+  for (const truthy of [true, 1, "true", "yes"]) {
+    expectGuard(() => assertSafeTypedData({ Permit: [] }, { allowed: truthy }, "Permit"), "UNLIMITED_PERMIT_FORBIDDEN");
+  }
+  assert.doesNotThrow(() => assertSafeTypedData({ Permit: [] }, { allowed: false }, "Permit"));
+  expectGuard(() => assertSafeTypedData({}, { details: { amount: MAX_UINT160 - 1n } }, "PermitSingle"), "UNLIMITED_PERMIT_FORBIDDEN");
+  expectGuard(() => assertSafeTypedData({}, { permitted: { amount: CAP } }, "PermitTransferFrom"), "UNLIMITED_PERMIT_FORBIDDEN");
+  // env 調整上限；不合法 → fail-closed
+  process.env.SIGNING_GUARD_MAX_ALLOWANCE = "1000";
+  expectGuard(() => assertSafeTransaction({ data: approve(1000n) }), "UNLIMITED_APPROVE_FORBIDDEN");
+  assert.doesNotThrow(() => assertSafeTransaction({ data: approve(999n) }));
+  process.env.SIGNING_GUARD_MAX_ALLOWANCE = "abc";
+  expectGuard(() => assertSafeTransaction({ data: approve(1n) }), "GUARD_CONFIG_INVALID");
+  delete process.env.SIGNING_GUARD_MAX_ALLOWANCE;
+  ok("絕對上限 2^128（>= 即拒）：接近 MaxUint 的 approve/increaseAllowance/permit/Permit2 approve・permit・permitBatch 被擋；DAI allowed truthy 被擋；env 可調、不合法 fail-closed");
+}
+
 // ─────────────── 簽章守門：typed data ───────────────
 {
   const permitTypes = { Permit: [
