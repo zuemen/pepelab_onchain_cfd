@@ -115,3 +115,70 @@ test("真實 signal-api bundle 的來源涵蓋 shared 與 frontend 合約檔", a
   assert.ok(!inputs.some((p) => p.includes("node_modules")), "node_modules 不列入");
   assert.ok(!inputs.some((p) => p.endsWith(".test.ts")), "測試檔不在 bundle 內");
 });
+
+// ── 2026-09-30：bundle 指紋涵蓋內聯的 npm 套件版本 ─────────────────────────────
+import { packageOf, packagesOf } from "./bundleFingerprint.mjs";
+
+test("packageOf：一般、scoped、巢狀 node_modules、Windows 路徑", () => {
+  assert.deepEqual(packageOf("/r/node_modules/hono/dist/index.js")?.name, "hono");
+  assert.deepEqual(packageOf("/r/node_modules/@noble/curves/esm/secp256k1.js")?.name, "@noble/curves");
+  assert.deepEqual(
+    packageOf("/r/node_modules/a/node_modules/@x/y/lib/z.js")?.name,
+    "@x/y",
+    "取最後一個 node_modules",
+  );
+  assert.equal(packageOf(String.raw`C:\r\node_modules\viem\_esm\index.js`)?.name, "viem");
+  assert.equal(packageOf("/r/src/app.ts"), null);
+});
+
+async function pkgFixture(version) {
+  return fixture({
+    "app/entry.ts": 'import { v } from "dep";\nexport default v;\n',
+    "app/node_modules/dep/package.json": JSON.stringify({ name: "dep", version, main: "index.js" }),
+    "app/node_modules/dep/index.js": "exports.v = 1;\n",
+  });
+}
+
+test("只改內聯套件的版本（程式碼不變）→ 指紋改變，且錯誤訊息點得出套件", async () => {
+  const a = await pkgFixture("1.0.0");
+  const b = await pkgFixture("1.0.1");
+  const fa = await fingerprintBundle({ entry: "entry.ts", cwd: join(a, "app"), root: a });
+  const fb = await fingerprintBundle({ entry: "entry.ts", cwd: join(b, "app"), root: b });
+  assert.notEqual(fa.digest, fb.digest);
+  assert.ok("npm:dep@1.0.0" in fa.files);
+  assert.ok("npm:dep@1.0.1" in fb.files);
+  assert.ok(!Object.keys(fa.files).some((k) => k.includes("node_modules")), "不記安裝路徑");
+});
+
+test("同一版本裝在不同位置（hoist 差異）→ 指紋相同", async () => {
+  const hoisted = await fixture({
+    "app/entry.ts": 'import { v } from "dep";\nexport default v;\n',
+    "node_modules/dep/package.json": JSON.stringify({ name: "dep", version: "2.0.0", main: "index.js" }),
+    "node_modules/dep/index.js": "exports.v = 1;\n",
+  });
+  const local = await fixture({
+    "app/entry.ts": 'import { v } from "dep";\nexport default v;\n',
+    "app/node_modules/dep/package.json": JSON.stringify({ name: "dep", version: "2.0.0", main: "index.js" }),
+    "app/node_modules/dep/index.js": "exports.v = 1;\n",
+  });
+  const fh = await fingerprintBundle({ entry: "entry.ts", cwd: join(hoisted, "app"), root: hoisted });
+  const fl = await fingerprintBundle({ entry: "entry.ts", cwd: join(local, "app"), root: local });
+  assert.equal(fh.digest, fl.digest);
+});
+
+test("真實 signal-api bundle 的套件清單包含 hono 與 viem", async () => {
+  const { files } = await fingerprintBundle();
+  const pkgs = Object.keys(files).filter((k) => k.startsWith("npm:"));
+  assert.ok(pkgs.some((k) => k.startsWith("npm:hono@")), pkgs.join(", "));
+  assert.ok(pkgs.some((k) => k.startsWith("npm:viem@")), pkgs.join(", "));
+});
+
+test("packagesOf 去重：同套件多個檔案只算一次", async () => {
+  const dir = await fixture({
+    "node_modules/dep/package.json": JSON.stringify({ name: "dep", version: "3.1.4" }),
+    "node_modules/dep/a.js": "",
+    "node_modules/dep/b.js": "",
+  });
+  const list = await packagesOf([join(dir, "node_modules/dep/a.js"), join(dir, "node_modules/dep/b.js")]);
+  assert.deepEqual(list, ["dep@3.1.4"]);
+});
