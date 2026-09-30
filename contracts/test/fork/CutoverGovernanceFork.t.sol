@@ -10,6 +10,7 @@ import "../../script/Redeploy130Hardened.s.sol";
 import "../../script/Verify130.s.sol";
 import "../../script/DeployGovernance.s.sol";
 import "../../script/HandoverToTimelock.s.sol";
+import "../../script/VerifyHandover.s.sol";
 
 /// @notice Fork simulation of the whole #130 sequence against live Base
 ///         Sepolia state: cutover → Verify130 → caps/guardian behave →
@@ -29,6 +30,7 @@ contract CutoverGovernanceForkTest is Test {
     address constant KYC_REG  = 0x5D95fD9e7a5f80E5369e24783F1f98E0f952360d;
     address constant VAULT    = 0x916D7Fc399d9afd23BAa113E2c2Cc601341ff10a;
     address constant G_ORACLE = 0x8E9e59BE9589Ad88EC14F3ef6bdcc43E8B76f842;
+    address constant ESG_V2   = 0xBF5B9cD78566791d79c687A732b4ed5bc3E95dFf;
 
     address guardian = makeAddr("guardian");
     address safe     = makeAddr("safe");
@@ -109,6 +111,9 @@ contract CutoverGovernanceForkTest is Test {
         for (uint256 i; i < owned.length; i++) assertEq(Ownable(owned[i]).owner(), address(tl));
         assertTrue(IAccessControl(VAULT).hasRole(0x00, address(tl)));
         assertTrue(IAccessControl(VAULT).hasRole(0x00, OWNER), "phase 1 keeps the deployer admin");
+        assertTrue(IAccessControl(ESG_V2).hasRole(0x00, address(tl)), "ESGRegistryV2 admin granted");
+        vm.setEnv("EXPECT_PHASE", "1");
+        new VerifyHandover().run();
 
         vm.setEnv("EXPECTED_OWNER", vm.toString(address(tl)));
         new Verify130().run();
@@ -141,6 +146,9 @@ contract CutoverGovernanceForkTest is Test {
         assertFalse(IAccessControl(G_ORACLE).hasRole(0x00, OWNER));
         assertTrue(IAccessControl(VAULT).hasRole(0x00, address(tl)));
         assertTrue(IAccessControl(G_ORACLE).hasRole(0x00, address(tl)));
+        assertFalse(IAccessControl(ESG_V2).hasRole(0x00, OWNER));
+        vm.setEnv("EXPECT_PHASE", "2");
+        new VerifyHandover().run();
         // Hot keeper role on the oracle untouched.
         assertTrue(IAccessControl(G_ORACLE).hasRole(keccak256("KEEPER_ROLE"), KEEPER));
     }

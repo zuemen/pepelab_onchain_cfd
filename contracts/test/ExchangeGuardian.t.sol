@@ -275,12 +275,14 @@ contract ExchangeGuardianTest is Test {
         }
     }
 
+    /// Guardian: strictly tighter AND never Halted — i.e. only Active ->
+    /// ReduceOnly. Halted freezes exits, so it is owner-only.
     function test_assetMode_guardianMayOnlyTighten() public {
         for (uint256 c; c < 3; ++c) {
             for (uint256 n; n < 3; ++n) {
                 _setMode(BTC, _modeAt(c));
                 vm.prank(guardian);
-                if (n > c) {
+                if (n > c && _modeAt(n) != HALTED) {
                     vm.expectEmit(true, true, false, true, address(exchange));
                     emit AssetModeSet(BTC, _modeAt(n), guardian);
                     exchange.setAssetMode(BTC, _modeAt(n));
@@ -331,10 +333,15 @@ contract ExchangeGuardianTest is Test {
         _setMode(BTC, REDUCE_ONLY);
         vm.prank(guardian);
         exchange.setAssetMode(BTC, ACTIVE);
-        // guardian right: tighten to Halted
+        // guardian right: tighten to ReduceOnly
         vm.prank(guardian);
+        exchange.setAssetMode(BTC, REDUCE_ONLY);
+        // neither role may enter Halted ...
+        vm.prank(guardian);
+        vm.expectRevert(_modeChangeError(BTC, REDUCE_ONLY, HALTED, guardian));
         exchange.setAssetMode(BTC, HALTED);
-        // neither role may lift a Halt
+        // ... nor lift one
+        _setMode(BTC, HALTED);
         vm.prank(guardian);
         vm.expectRevert(_modeChangeError(BTC, HALTED, REDUCE_ONLY, guardian));
         exchange.setAssetMode(BTC, REDUCE_ONLY);
@@ -349,8 +356,28 @@ contract ExchangeGuardianTest is Test {
     function test_assetMode_guardianCanTightenWhilePaused() public {
         exchange.pause();
         vm.prank(guardian);
+        exchange.setAssetMode(BTC, REDUCE_ONLY);
+        assertEq(uint8(exchange.assetMode(BTC)), uint8(REDUCE_ONLY));
+    }
+
+    /// The guardian's strongest per-asset brake still lets every user get
+    /// out: closes work and free margin can be withdrawn. Only the owner can
+    /// Halt (which would freeze exits).
+    function test_assetMode_guardianReduceOnlyNeverFreezesExits() public {
+        uint256 id = _open(user, BTC, true, 1_000e18);
+        vm.prank(guardian);
+        exchange.setAssetMode(BTC, REDUCE_ONLY);
+        vm.prank(guardian);
+        vm.expectRevert(_modeChangeError(BTC, REDUCE_ONLY, HALTED, guardian));
         exchange.setAssetMode(BTC, HALTED);
-        assertEq(uint8(exchange.assetMode(BTC)), uint8(HALTED));
+
+        vm.prank(user);
+        exchange.closePosition(id);
+        uint256 free = exchange.freeMargin(user);
+        assertGt(free, 0);
+        vm.prank(user);
+        exchange.withdrawMargin(free);
+        assertEq(exchange.freeMargin(user), 0);
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -745,8 +772,7 @@ contract ExchangeGuardianTest is Test {
         // Under via-IR the optimizer may re-read `block.timestamp` wherever a
         // local derived from it is used, so warps go through the cheatcode.
         _warpBy(8 hours);
-        vm.prank(guardian);
-        exchange.setAssetMode(BTC, HALTED); // settles the one elapsed interval
+        exchange.setAssetMode(BTC, HALTED); // owner; settles the one elapsed interval
         int256 longAtHalt  = exchange.cumulativeFundingIndexLong(BTC);
         int256 shortAtHalt = exchange.cumulativeFundingIndexShort(BTC);
         assertGt(longAtHalt, 0);

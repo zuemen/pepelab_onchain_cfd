@@ -160,8 +160,7 @@ contract ExchangeDowntimeTest is Test {
         _elapse(1 hours);
         exchange.pause();
         _elapse(1 hours);
-        vm.prank(guardian);
-        exchange.setAssetMode(BTC, HALTED);
+        exchange.setAssetMode(BTC, HALTED);   // owner: the guardian can no longer halt
         _elapse(2 hours);
         exchange.unpause();
         _elapse(1 hours);

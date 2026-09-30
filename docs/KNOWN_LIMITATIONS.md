@@ -44,6 +44,8 @@ was not, the reason is given rather than glossed over.
 | 24 | Portfolio margin has no account-level net liquidation | **Open** — `portfolioMarginEnabled` must stay **off** in production until implemented and audited (off on the live deployment) |
 | 25 | InsuranceVault has no virtual shares (first-depositor inflation) | **Mitigated** — zero-share deposits revert; attack profitability not removed |
 | 26 | Portfolio (cross) margin removed | **Resolved by removal** (2026-09-30) — supersedes #24; isolated margin only |
+| 27 | Guardian's per-asset brake stops at ReduceOnly; only the owner can Halt | **By design** (2026-09-30, `contracts/p1-cutover-periphery`) — a guardian key can never freeze exits |
+| 28 | After the timelock handover, recovery actions wait 48h and depend on one Safe | **By design** — losing the Safe freezes governance permanently |
 
 ---
 
@@ -821,6 +823,36 @@ positions neither shield it nor pay for it. `portfolioMarginEnabled`,
 The last implementation (with the guards described in #24) can be recovered
 from git history at commit `d4b7b9e`. Re-introducing it requires
 account-level netting and a fresh audit, and must fit the size budget.
+
+
+## 27. Guardian's per-asset brake stops at ReduceOnly (added 2026-09-30)
+
+Added on branch `contracts/p1-cutover-periphery` after the audit-level review
+of the #130 cutover. `ExchangeOpsLib.setAssetMode` now lets the guardian move
+an asset only from Active to ReduceOnly. ReduceOnly refuses new exposure but
+keeps closes, liquidations and margin withdrawals working. Halted, which also
+freezes exits, is reserved to the owner (the timelock after the handover).
+Before this change a compromised guardian key could Halt every asset and hold
+all open positions hostage until the owner intervened.
+
+The global `pause()` is unchanged: the guardian can still stop everything,
+exits included (#23). That pause is bounded (72h expiry, 24h cooldown, #22),
+while a Halt had no expiry at all. `PerpetualExchange.setAssetMode`'s NatSpec
+still describes the old guardian row. The contract body was deliberately left
+untouched because of the EIP-170 size budget (runtime 23,911 B unchanged), and
+the library's NatSpec is the authoritative matrix.
+
+## 28. Timelock governance: 48h recovery, single Safe (added 2026-09-30)
+
+Once `HandoverToTimelock` runs, every owner and admin action (`unpause`,
+lifting Halted or ReduceOnly as owner, re-pointing, `recapitalize`, vault
+upgrades) needs a Safe proposal plus the 48h `minDelay`. The fast path is
+limited to the guardian (pause, ReduceOnly) and the keeper (Active <->
+ReduceOnly). The timelock administers itself (`admin = address(0)`) and the
+deployer holds no role on it, so **if the proposer/executor Safe is lost, no
+proposal can ever be made or executed. The protocol's governance is then
+frozen permanently.** Nothing in the contracts can recover from that. See
+`docs/GOVERNANCE_HANDOVER.md` §1 for the Safe threshold requirements.
 
 ## Frontend
 

@@ -2181,8 +2181,23 @@ library ExchangeOpsLib {
 
     // ── asset mode ───────────────────────────────────────────────────────────
 
-    /// @dev See `PerpetualExchange.setAssetMode` for the permission matrix and
-    ///      the funding / downtime semantics.
+    /// @dev Permission matrix (`current` -> `mode`) — this is the
+    ///      authoritative version; it supersedes the guardian line in
+    ///      `PerpetualExchange.setAssetMode`'s NatSpec:
+    ///        owner          — any transition, including entering or lifting
+    ///                         Halted.
+    ///        guardian       — strictly tighter AND at most ReduceOnly, i.e.
+    ///                         only Active -> ReduceOnly. ReduceOnly stops new
+    ///                         exposure while closes, liquidations and margin
+    ///                         withdrawals keep working; Halted freezes exits
+    ///                         too, so it is reserved to the owner (the
+    ///                         timelock after handover). A compromised
+    ///                         guardian key can therefore never lock users'
+    ///                         funds in open positions.
+    ///        marketOperator — Active <-> ReduceOnly while neither side is
+    ///                         Halted, never loosening a guardian-locked asset.
+    ///      See `PerpetualExchange.setAssetMode` for the funding / downtime
+    ///      semantics.
     /// @return enteringHalt the caller must settle funding up to now.
     function setAssetMode(
         mapping(bytes32 => PerpetualExchange.AssetMode) storage modes,
@@ -2199,7 +2214,8 @@ library ExchangeOpsLib {
         bool locked = locks[m.asset];
 
         bool byOwner    = msg.sender == m.owner;
-        bool byGuardian = !byOwner && msg.sender == m.guardian && uint8(m.mode) > uint8(current);
+        bool byGuardian = !byOwner && msg.sender == m.guardian && uint8(m.mode) > uint8(current)
+            && m.mode != PerpetualExchange.AssetMode.Halted;
         bool byOperator = !byOwner && !byGuardian
             && msg.sender == m.marketOperator
             && current != PerpetualExchange.AssetMode.Halted

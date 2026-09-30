@@ -18,7 +18,9 @@ interface IOwnable130 {
 ///           PerpetualExchange (#130), CopyTracker (#130), InsuranceVault,
 ///           FeeRouter, TraderStake, KYCRegistry  → owner = timelock
 ///         AccessControl (two-phase, below):
-///           AssetVaultV2 proxy, GuardedOracle  → DEFAULT_ADMIN_ROLE = timelock
+///           AssetVaultV2 proxy, GuardedOracle, ESGRegistryV2  → DEFAULT_ADMIN_ROLE = timelock
+///         Optional (0x0 = skipped by default; runbook §1 says why):
+///           EsgRewardDistributor, AssetVault V1 (Ownable), SustainabilityBadge (AccessControl)
 ///
 ///         NOT moved, on purpose (SEAL: a guardian can pause, never upgrade):
 ///           - exchange `guardian` / `marketOperator`, GuardedOracle
@@ -41,11 +43,15 @@ interface IOwnable130 {
 ///         Env:
 ///           TIMELOCK            (required) the DeployGovernance output
 ///           TIMELOCK_PROPOSER   (required) the Safe; cross-checked against the timelock
+///           TIMELOCK_EXECUTOR   (required) the Safe; cross-checked against the timelock
 ///           EXCHANGE_NEW, COPYTRACKER_NEW (required) #130 outputs
 ///           INS_VAULT, FEE_ROUTER, TRADER_STAKE, KYC_REGISTRY, VAULT_PROXY,
-///           GUARDED_ORACLE      defaults = Base Sepolia; set one to 0x0…0 to skip it
+///           GUARDED_ORACLE, ESG_REGISTRY_V2  defaults = Base Sepolia; 0x0…0 skips one
+///           ESG_REWARD_DISTRIBUTOR, ASSET_VAULT_V1, SUSTAINABILITY_BADGE  default skipped
 ///           MIN_TIMELOCK_DELAY  default 24h — refuse a timelock with a shorter delay
-contract HandoverToTimelock is Script {
+/// @dev Shared by `HandoverToTimelock` and the read-only `VerifyHandover`,
+///      so both walk exactly the same target list.
+abstract contract HandoverTargets is Script {
     bytes32 internal constant ADMIN = 0x00;   // DEFAULT_ADMIN_ROLE
 
     address internal constant INS_VAULT      = 0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812;
@@ -54,11 +60,60 @@ contract HandoverToTimelock is Script {
     address internal constant KYC            = 0x5D95fD9e7a5f80E5369e24783F1f98E0f952360d;
     address internal constant VAULT_PROXY    = 0x916D7Fc399d9afd23BAa113E2c2Cc601341ff10a;
     address internal constant GUARDED_ORACLE = 0x8E9e59BE9589Ad88EC14F3ef6bdcc43E8B76f842;
-
-    address public broadcasterOverride;   // test hook, see Redeploy130Hardened
-    function setBroadcasterOverride(address a) external { broadcasterOverride = a; }
+    address internal constant ESG_REGISTRY_V2 = 0xBF5B9cD78566791d79c687A732b4ed5bc3E95dFf;
 
     struct Target { string name; address addr; }
+
+    /// @dev Optional targets default to 0x0 (= skipped) — see
+    ///      docs/GOVERNANCE_HANDOVER.md §1 for why each is held back by default.
+    function _ownableTargets() internal view returns (Target[] memory t) {
+        t = new Target[](8);
+        t[0] = Target("PerpetualExchange", vm.envAddress("EXCHANGE_NEW"));
+        t[1] = Target("CopyTracker",       vm.envAddress("COPYTRACKER_NEW"));
+        t[2] = Target("InsuranceVault",    vm.envOr("INS_VAULT", INS_VAULT));
+        t[3] = Target("FeeRouter",         vm.envOr("FEE_ROUTER", FEE_ROUTER));
+        t[4] = Target("TraderStake",       vm.envOr("TRADER_STAKE", TRADER_STK));
+        t[5] = Target("KYCRegistry",       vm.envOr("KYC_REGISTRY", KYC));
+        t[6] = Target("EsgRewardDistributor (optional)", vm.envOr("ESG_REWARD_DISTRIBUTOR", address(0)));
+        t[7] = Target("AssetVault V1 (optional)",        vm.envOr("ASSET_VAULT_V1", address(0)));
+    }
+
+    /// @dev Index 0 / 1 are read by `_reportHotRoles` — keep the order.
+    function _accessControlTargets() internal view returns (Target[] memory t) {
+        t = new Target[](4);
+        t[0] = Target("AssetVaultV2 proxy", vm.envOr("VAULT_PROXY", VAULT_PROXY));
+        t[1] = Target("GuardedOracle",      vm.envOr("GUARDED_ORACLE", GUARDED_ORACLE));
+        t[2] = Target("ESGRegistryV2",      vm.envOr("ESG_REGISTRY_V2", ESG_REGISTRY_V2));
+        t[3] = Target("SustainabilityBadge (optional)", vm.envOr("SUSTAINABILITY_BADGE", address(0)));
+    }
+
+    /// @dev One-step `transferOwnership` to a wrong address is unrecoverable,
+    ///      so the target must provably be a TimelockController with a real
+    ///      delay, our Safes as proposer AND executor, and no back door for
+    ///      the deployer.
+    function _checkTimelock(address timelock, address deployer) internal view {
+        require(timelock.code.length > 0, "TIMELOCK has no code");
+        TimelockController tl = TimelockController(payable(timelock));
+        uint256 floor = vm.envOr("MIN_TIMELOCK_DELAY", uint256(24 hours));
+        uint256 delay;
+        try tl.getMinDelay() returns (uint256 d) { delay = d; } catch { revert("TIMELOCK is not a TimelockController"); }
+        require(delay >= floor, "timelock minDelay below MIN_TIMELOCK_DELAY");
+        address proposer = vm.envAddress("TIMELOCK_PROPOSER");
+        address executor = vm.envAddress("TIMELOCK_EXECUTOR");
+        require(tl.hasRole(tl.PROPOSER_ROLE(), proposer), "TIMELOCK_PROPOSER is not a proposer on TIMELOCK");
+        require(tl.hasRole(tl.EXECUTOR_ROLE(), executor), "TIMELOCK_EXECUTOR is not an executor on TIMELOCK");
+        require(!tl.hasRole(tl.PROPOSER_ROLE(), deployer), "deployer is a timelock proposer - no real delay");
+        require(!tl.hasRole(ADMIN, deployer), "deployer administers the timelock - no real delay");
+        console.log("timelock ok  :", timelock);
+        console.log("  minDelay   :", delay);
+        console.log("  proposer   :", proposer);
+        console.log("  executor   :", executor);
+    }
+}
+
+contract HandoverToTimelock is HandoverTargets {
+    address public broadcasterOverride;   // test hook, see Redeploy130Hardened
+    function setBroadcasterOverride(address a) external { broadcasterOverride = a; }
 
     function run() external {
         address deployer = broadcasterOverride != address(0) ? broadcasterOverride : msg.sender;
@@ -73,43 +128,6 @@ contract HandoverToTimelock is Script {
 
         if (phase == 1) _phase1(deployer, timelock, owned, acl);
         else            _phase2(deployer, timelock, owned, acl);
-    }
-
-    // ── checks ─────────────────────────────────────────────────────────────
-
-    /// @dev One-step `transferOwnership` to a wrong address is unrecoverable,
-    ///      so the target must provably be a TimelockController with a real
-    ///      delay, our Safe as proposer, and no back door for the deployer.
-    function _checkTimelock(address timelock, address deployer) internal view {
-        require(timelock.code.length > 0, "TIMELOCK has no code");
-        TimelockController tl = TimelockController(payable(timelock));
-        uint256 floor = vm.envOr("MIN_TIMELOCK_DELAY", uint256(24 hours));
-        uint256 delay;
-        try tl.getMinDelay() returns (uint256 d) { delay = d; } catch { revert("TIMELOCK is not a TimelockController"); }
-        require(delay >= floor, "timelock minDelay below MIN_TIMELOCK_DELAY");
-        address proposer = vm.envAddress("TIMELOCK_PROPOSER");
-        require(tl.hasRole(tl.PROPOSER_ROLE(), proposer), "TIMELOCK_PROPOSER is not a proposer on TIMELOCK");
-        require(!tl.hasRole(tl.PROPOSER_ROLE(), deployer), "deployer is a timelock proposer - no real delay");
-        require(!tl.hasRole(ADMIN, deployer), "deployer administers the timelock - no real delay");
-        console.log("timelock ok  :", timelock);
-        console.log("  minDelay   :", delay);
-        console.log("  proposer   :", proposer);
-    }
-
-    function _ownableTargets() internal view returns (Target[] memory t) {
-        t = new Target[](6);
-        t[0] = Target("PerpetualExchange", vm.envAddress("EXCHANGE_NEW"));
-        t[1] = Target("CopyTracker",       vm.envAddress("COPYTRACKER_NEW"));
-        t[2] = Target("InsuranceVault",    vm.envOr("INS_VAULT", INS_VAULT));
-        t[3] = Target("FeeRouter",         vm.envOr("FEE_ROUTER", FEE_ROUTER));
-        t[4] = Target("TraderStake",       vm.envOr("TRADER_STAKE", TRADER_STK));
-        t[5] = Target("KYCRegistry",       vm.envOr("KYC_REGISTRY", KYC));
-    }
-
-    function _accessControlTargets() internal view returns (Target[] memory t) {
-        t = new Target[](2);
-        t[0] = Target("AssetVaultV2 proxy", vm.envOr("VAULT_PROXY", VAULT_PROXY));
-        t[1] = Target("GuardedOracle",      vm.envOr("GUARDED_ORACLE", GUARDED_ORACLE));
     }
 
     // ── phase 1: grant ───────────────────────────────────────────────────
