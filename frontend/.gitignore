@@ -13,6 +13,10 @@ node_modules
 # testing
 coverage
 
+# TypeScript incremental build info (e.g. `tsc -p tsconfig.node.json` writes
+# tsconfig.node.tsbuildinfo next to the config). Build cache, not source.
+*.tsbuildinfo
+
 # production
 .next
 .swc
