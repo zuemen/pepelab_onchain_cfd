@@ -17,7 +17,6 @@ import {
   type Abi,
   type Address,
   type Hex,
-  type PublicClient,
 } from "viem";
 
 import { classifyTradeFreshness, type TradeFreshness } from "../../shared/src/freshness.ts";
@@ -40,10 +39,24 @@ import { amount, isoOrNull, margin, NATIVE_DECIMALS, price, type Amount } from "
 
 // ── 型別 ─────────────────────────────────────────────────────────────────────
 
+/**
+ * read client 實際用到的 viem PublicClient 子集。以結構型別宣告，任何 chain 設定
+ * （包括帶 OP Stack formatter 的 baseSepolia）建立的 PublicClient 都能直接傳入。
+ */
+export interface ReadPublicClient {
+  chain?: { id: number; contracts?: { multicall3?: unknown } } | undefined;
+  getBlockNumber(args?: { cacheTime?: number }): Promise<bigint>;
+  getBlock(args: { blockNumber: bigint }): Promise<{ timestamp: bigint }>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  multicall(args: any): Promise<unknown>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  readContract(args: any): Promise<unknown>;
+}
+
 export interface ReadClientConfig {
   chainId: number;
   /** 自備的 viem PublicClient（建議：自己控制 RPC、重試與逾時）。 */
-  publicClient?: PublicClient;
+  publicClient?: ReadPublicClient;
   /** 未提供 publicClient 時，以此 RPC URL 建立 http transport。 */
   rpcUrl?: string;
   /** 只給本機 anvil／測試部署用；正式整合請不要覆寫。 */
@@ -216,7 +229,7 @@ function isContractLevelFailure(err: unknown): boolean {
 export interface PepeReadClient {
   readonly chainId: number;
   readonly addresses: SdkAddresses;
-  readonly publicClient: PublicClient;
+  readonly publicClient: ReadPublicClient;
   getBlockContext(opts?: ReadOptions): Promise<BlockContext>;
   getAccount(user: string, opts?: ReadOptions & { includeClosed?: boolean }): Promise<AccountView>;
   getPosition(positionId: bigint | number, opts?: ReadOptions): Promise<PositionView & BlockContext>;
@@ -228,7 +241,7 @@ export interface PepeReadClient {
 
 export function createReadClient(cfg: ReadClientConfig): PepeReadClient {
   const addresses = resolveAddresses(cfg.chainId, cfg.addresses);
-  let client: PublicClient;
+  let client: ReadPublicClient;
   if (cfg.publicClient) {
     const cid = cfg.publicClient.chain?.id;
     if (cid !== undefined && cid !== cfg.chainId) {
@@ -236,7 +249,7 @@ export function createReadClient(cfg: ReadClientConfig): PepeReadClient {
     }
     client = cfg.publicClient;
   } else if (cfg.rpcUrl) {
-    client = createPublicClient({ transport: http(cfg.rpcUrl) }) as PublicClient;
+    client = createPublicClient({ transport: http(cfg.rpcUrl) });
   } else {
     throw new Error("createReadClient 需要 publicClient 或 rpcUrl（SDK 不替你挑 RPC）");
   }
