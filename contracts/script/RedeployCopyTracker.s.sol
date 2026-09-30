@@ -8,6 +8,13 @@ import "../src/PerpetualExchange.sol";
 import "../src/FeeRouter.sol";
 import "../src/TraderStake.sol";
 
+/// @dev COMPATIBILITY: this CopyTracker MUST be paired with a
+///      PerpetualExchange built from the same source revision (P1 or later).
+///      Its unfollow scoring calls `exchange.closeReasonOf(id)`, which an
+///      older exchange does not have — every unfollow would revert.
+///      (`adlHaircutOf` is read inside a try and degrades to 0 on an old
+///      exchange, but `closeReasonOf` is not optional.) Point EXCHANGE_ADDR
+///      at a redeployed exchange, not the legacy one.
 contract RedeployCopyTracker is Script {
     function run() external {
         address usdc      = vm.envAddress("USDC_ADDR");

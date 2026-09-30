@@ -3,7 +3,9 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import "./PerpetualExchange.sol";
 import "./StrategyRegistry.sol";
 
@@ -16,7 +18,7 @@ interface ITraderStakeForCT {
     function stakedAmount(address trader) external view returns (uint256);
 }
 
-contract CopyTracker is ReentrancyGuard {
+contract CopyTracker is ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;   // M-4
 
     // ── Constants ────────────────────────────────────────────────────────────
@@ -57,6 +59,10 @@ contract CopyTracker is ReentrancyGuard {
     mapping(address => CopyRecord[]) public copyRecords;
     mapping(address => address[])    public followersByTrader;
 
+    /// @notice Slashed trader stake held by this contract (see
+    ///         `_slashToReserve`). Only `withdrawSlashReserve` releases it.
+    uint256 public slashReserve;
+
     // ── Events ───────────────────────────────────────────────────────────────
 
     event TraderFollowed(
@@ -78,6 +84,17 @@ contract CopyTracker is ReentrancyGuard {
     /// @notice H-5: a copied position could not be closed on unfollow (already
     ///         liquidated / deleveraged). Emitted instead of reverting.
     event PositionCloseSkipped(address indexed follower, uint256 indexed positionId);
+    /// @notice The follower closed at least one leg of this record themselves,
+    ///         so the record was released without scoring the trader.
+    event SlashScoringWaived(address indexed follower, uint256 indexed recordIdx);
+    /// @notice A slash was due but TraderStake refused it (e.g. the stake was
+    ///         withdrawn meanwhile); the unfollow completed without it.
+    event SlashFailed(address indexed trader, address indexed follower, uint256 amount);
+    /// @notice The owner moved `amount` of the slash reserve to `to`.
+    event SlashReserveWithdrawn(address indexed to, uint256 amount);
+    /// @notice The follower released a record without closing its legs and
+    ///         without scoring the trader (see `deactivateWithoutScoring`).
+    event RecordDeactivatedWithoutScoring(address indexed follower, uint256 indexed recordIdx);
 
     // ── Errors ───────────────────────────────────────────────────────────────
 
@@ -85,6 +102,10 @@ contract CopyTracker is ReentrancyGuard {
     error InvalidRecordIndex();
     error RecordAlreadyInactive();
     error TradingFeeExceedsMargin(uint256 fee, uint256 margin);
+    /// @notice A copied position could not be closed on unfollow and is still
+    ///         open (exchange paused, asset halted, stale price, ...).
+    error PositionStillOpen(uint256 positionId);
+    error InvalidSlashWithdrawal();
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
@@ -94,7 +115,7 @@ contract CopyTracker is ReentrancyGuard {
         address _registry,
         address _feeRouter,    // pass address(0) to disable copy fee
         address _traderStake   // pass address(0) to disable slashing
-    ) {
+    ) Ownable(msg.sender) {
         usdc        = IERC20(_usdc);
         exchange    = PerpetualExchange(_exchange);
         registry    = StrategyRegistry(_registry);
@@ -175,6 +196,46 @@ contract CopyTracker is ReentrancyGuard {
         emit TraderFollowed(msg.sender, trader, versionId, totalMargin);
     }
 
+    /// @notice Close every still-open leg of a copy record and, if the
+    ///         trader's strategy lost at least SLASH_TRIGGER_BPS, slash them.
+    /// @dev Scoring is taken from the exchange's own per-position records, not
+    ///      from the follower's free-margin delta. The delta used to be the
+    ///      score, and the follower controls it: closing every leg themselves
+    ///      first made the delta 0, which scored as a 100% loss and paid the
+    ///      follower half of it out of the trader's stake in a flat market.
+    ///
+    ///      Rules (all legs of the record are considered, never a subset):
+    ///        • a leg closed by the follower themselves (CloseReason.Owner)
+    ///          means the follower took discretionary control of the
+    ///          strategy: the record is released and NOT scored at all. Any
+    ///          partial scoring would let the follower choose which legs count
+    ///          (self-close the winners, let the tracker close the losers);
+    ///          waiving closes that particular lever, and it can only cost
+    ///          the follower their own remedy;
+    ///        • legs closed now by this tracker, and legs that were liquidated
+    ///          or auto-deleveraged (outcomes of the strategy, not of the
+    ///          follower's choices), are scored on their realized PnL
+    ///          (`Position.realizedPnL`, capped, before fees and funding —
+    ///          the trader is judged on the price call, not on protocol fees);
+    ///        • each leg is floored at −margin and ADL legs use their pre-haircut
+    ///          PnL (see `_scoredLegPnl`); basis = Σ margin of the scored legs.
+    ///
+    ///      Where a slash goes: into `slashReserve`, a protocol reserve held by
+    ///      this contract and released only by the owner. NEVER to the
+    ///      follower who triggered it, and NEVER into a pool that pays out
+    ///      pro rata (such as the InsuranceVault): anyone — the follower
+    ///      included — could deposit into such a pool just before unfollowing
+    ///      and take back their share of the slash (all of it into an empty
+    ///      vault). The score is still not manipulation-proof — a follower can
+    ///      push the mark against their own copied legs with an opposite
+    ///      position (the premium is capped, but at 5x it can move a leg by
+    ///      ~10% of margin) and tip a 20% loss over the 30% trigger — but no
+    ///      one can receive the slash by forcing it, so doing so only costs
+    ///      fees. Copy trading ships disabled by default in the commercial
+    ///      build.
+    ///      A leg that is still open and cannot be closed now (exchange
+    ///      paused, asset halted, stale price, tracker replaced) reverts
+    ///      `PositionStillOpen`; `deactivateWithoutScoring` is the exit.
     function unfollowAndCloseAll(uint256 recordIdx) external nonReentrant {
         CopyRecord[] storage records = copyRecords[msg.sender];
         if (recordIdx >= records.length) revert InvalidRecordIndex();
@@ -182,8 +243,9 @@ contract CopyTracker is ReentrancyGuard {
         CopyRecord storage rec = records[recordIdx];
         if (!rec.active) revert RecordAlreadyInactive();
 
-        // Track freeMargin delta to measure position returns
-        uint256 marginBefore = exchange.freeMargin(msg.sender);
+        uint256 basis;
+        int256  realized;
+        bool    followerClosed;
 
         // H-5: a position that was already liquidated (or auto-deleveraged)
         // reverts PositionAlreadyClosed. Unguarded, that single revert bricked
@@ -192,25 +254,36 @@ contract CopyTracker is ReentrancyGuard {
         // triggered could never fire. Exactly the scenario slashing exists for.
         // Failing to close an already-closed position is a no-op, not an error.
         for (uint256 i; i < rec.positionIds.length; ++i) {
-            try exchange.closePositionFor(msg.sender, rec.positionIds[i]) {
-                // closed
-            } catch {
-                emit PositionCloseSkipped(msg.sender, rec.positionIds[i]);
+            uint256 id = rec.positionIds[i];
+            if (exchange.getPosition(id).isOpen) {
+                // A still-open leg that cannot be closed now failed for a
+                // transient or structural reason (paused, halted, stale price,
+                // tracker replaced). Scoring it — or silently dropping it —
+                // would misjudge the trader, so refuse.
+                try exchange.closePositionFor(msg.sender, id) {
+                    // closed by this tracker; scored below
+                } catch {
+                    revert PositionStillOpen(id);
+                }
+            } else {
+                // H-5: already settled before this call.
+                emit PositionCloseSkipped(msg.sender, id);
+                if (exchange.closeReasonOf(id) == PerpetualExchange.CloseReason.Owner) {
+                    followerClosed = true;
+                    continue;
+                }
             }
+            PerpetualExchange.Position memory p = exchange.getPosition(id);
+            basis    += p.margin;
+            realized += _scoredLegPnl(id, p);
         }
 
-        uint256 marginAfter = exchange.freeMargin(msg.sender);
-
-        // Slash logic: if traderStake configured and loss ≥ SLASH_TRIGGER_BPS
-        if (address(traderStake) != address(0)) {
-            // Low: score the trader against the margin actually deployed on their
-            // strategy. Using the gross deposit charged the copy fee and the
-            // exchange's trading fees to the trader's track record, so every
-            // follow started life showing a loss before the market moved at all.
-            uint256 basis = rec.deployedAmount != 0 ? rec.deployedAmount : rec.initialAmount;
-            uint256 finalAmount = marginAfter >= marginBefore ? marginAfter - marginBefore : 0;
-            if (finalAmount < basis) {
-                uint256 loss    = basis - finalAmount;
+        if (followerClosed) {
+            emit SlashScoringWaived(msg.sender, recordIdx);
+        } else if (address(traderStake) != address(0) && basis != 0 && realized < 0) {
+            uint256 loss = SafeCast.toUint256(-realized);   // realized < 0 checked above
+            if (loss > basis) loss = basis;      // a follower never loses more than the margin scored
+            {
                 uint256 lossBps = loss * 10_000 / basis;
                 if (lossBps >= SLASH_TRIGGER_BPS) {
                     uint256 staked   = traderStake.stakedAmount(rec.trader);
@@ -218,17 +291,77 @@ contract CopyTracker is ReentrancyGuard {
                     uint256 slashAmt = loss * SLASH_RATIO_BPS / 10_000;
                     uint256 cap      = staked * MAX_SLASH_BPS / 10_000;
                     if (slashAmt > cap) slashAmt = cap;
-                    if (slashAmt > 0) {
-                        try traderStake.slash(rec.trader, slashAmt, msg.sender) {
-                            emit TraderSlashed(rec.trader, msg.sender, slashAmt);
-                        } catch {}
-                    }
+                    if (slashAmt > 0) _slashToReserve(rec.trader, slashAmt);
                 }
             }
         }
 
         rec.active = false;
 
+        emit TraderUnfollowed(msg.sender, rec.trader, recordIdx);
+    }
+
+    /// @dev One leg's contribution to the trader's score:
+    ///        • ADL legs are scored BEFORE the haircut (a solvency levy on the
+    ///          winner, not a result of the trader's call);
+    ///        • each leg is floored at −margin before summing, so a leg that
+    ///          went into bad debt counts as a total loss of that leg, not
+    ///          more — one blown-up leg cannot overweight the others.
+    function _scoredLegPnl(uint256 id, PerpetualExchange.Position memory p) internal view returns (int256 pnl) {
+        pnl = p.realizedPnL;
+        if (exchange.closeReasonOf(id) == PerpetualExchange.CloseReason.Deleveraged) {
+            // try: an exchange deployed before `adlHaircutOf` existed has no
+            // such getter; fall back to 0 (score net of the haircut) rather
+            // than bricking unfollow.
+            try exchange.adlHaircutOf(id) returns (uint256 haircut) {
+                pnl += SafeCast.toInt256(haircut);
+            } catch {}
+        }
+        int256 floor = -SafeCast.toInt256(p.margin);
+        if (pnl < floor) pnl = floor;
+    }
+
+    /// @dev Moves `amount` of `trader`'s stake into this contract and books it
+    ///      in `slashReserve`. A single try: the reserve is credited only if
+    ///      TraderStake's transfer succeeded, and the success branch makes no
+    ///      external call, so nothing here can revert the unfollow. A refused
+    ///      slash is reported (`SlashFailed`), never retried or reverted.
+    ///      `TraderSlashed.follower` is the account whose unfollow triggered
+    ///      the slash, not a recipient.
+    function _slashToReserve(address trader, uint256 amount) internal {
+        try traderStake.slash(trader, amount, address(this)) {
+            slashReserve += amount;
+            emit TraderSlashed(trader, msg.sender, amount);
+        } catch {
+            emit SlashFailed(trader, msg.sender, amount);
+        }
+    }
+
+    /// @notice Release slashed stake held in `slashReserve` (e.g. to a
+    ///         compensation programme or the treasury). Owner only; the
+    ///         reserve is kept out of every pro-rata pool on purpose (see
+    ///         `unfollowAndCloseAll`).
+    function withdrawSlashReserve(address to, uint256 amount) external onlyOwner nonReentrant {
+        if (to == address(0) || amount > slashReserve) revert InvalidSlashWithdrawal();
+        slashReserve -= amount;
+        usdc.safeTransfer(to, amount);
+        emit SlashReserveWithdrawn(to, amount);
+    }
+
+    /// @notice Release a copy record without closing its legs and without
+    ///         scoring the trader. The exit for a record whose legs this
+    ///         tracker cannot close (asset halted indefinitely, feed dead,
+    ///         tracker replaced by the owner): the positions stay the
+    ///         follower's own and remain closable via `exchange.closePosition`.
+    ///         Always available to the follower because it can only forgo the
+    ///         follower's own slash remedy, never harm the trader.
+    function deactivateWithoutScoring(uint256 recordIdx) external nonReentrant {
+        CopyRecord[] storage records = copyRecords[msg.sender];
+        if (recordIdx >= records.length) revert InvalidRecordIndex();
+        CopyRecord storage rec = records[recordIdx];
+        if (!rec.active) revert RecordAlreadyInactive();
+        rec.active = false;
+        emit RecordDeactivatedWithoutScoring(msg.sender, recordIdx);
         emit TraderUnfollowed(msg.sender, rec.trader, recordIdx);
     }
 

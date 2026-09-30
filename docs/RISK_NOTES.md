@@ -51,7 +51,7 @@
 ### 現況
 - `adlEnabled`：**已於 live 啟用**（owner tx `setAdlEnabled(true)`，tx `0xe61f47b9…`）。
   自動減倉償付後盾已生效——免重部署（setter 改值即可）。
-- `portfolioMarginEnabled`：**預設 false**（逐倉清算）。
+- 組合保證金（`portfolioMarginEnabled`）：**已於 2026-09-30 自合約移除**（EIP-170 大小上限與 H3 缺口，見 KNOWN_LIMITATIONS #26），只有逐倉清算。
 - `markPremiumCapBps = 0`（mark==index，PnL 用純指數價，安全；薄 OI 不會被操縱 mark）。
 - 線上償付鏈條目前為：**逐倉清算 + 保險金庫 `bailout` + ADL haircut**（三層，ADL 已開）。
 
@@ -75,13 +75,13 @@ oracle 計價的永續中，協議在多空不平衡時實質是對手方。極�
 原先「先不在 live 啟用」的決定已更新：`adlEnabled` 已用 owner tx 在 live 開啟
 （`setAdlEnabled(true)`，tx `0xe61f47b9…`），償付三層後盾全部生效。`portfolioMarginEnabled`
 仍維持 off（逐倉清算），待組合保證金壓測後再評估。`markPremiumCapBps` 維持 0。
+（2026-09-30 更新：組合保證金已自合約移除，此項不再適用。）
 
 ### 三個 live 風險旗標的安全啟用步驟（Track 2B）
 | 旗標 | 預設 | 啟用前置 | owner tx |
 |------|------|----------|----------|
 | mark vs index（`markPremiumCapBps`） | `markPremiumCapBps = 0`（mark==index，等同關閉） | 設合理 cap（如 ≤ 100 bps）；跑 `MarkPrice.t.sol` 回歸；確認 OI 失衡溢價不致誤觸清算 | `setMarkPremiumCapBps(bps)` |
 | `adlEnabled` | off | 見上「安全啟用 ADL」四步（守恆測試 `AutoDeleverage.t.sol`） | `setAdlEnabled(true)` |
-| `portfolioMarginEnabled` | off（逐倉） | 跑組合保證金 fee-asymmetry 守恆測試；fork 壓測多腿帳戶健康度 | `setPortfolioMarginEnabled(true)` |
 
 - 共同守則：**任何「讀某餘額來決策」的路徑都要有對應的總額守恆測試**（既有 `AutoDeleverage.t.sol`、
   組合保證金測試已涵蓋），啟用前在 fork/anvil 跑極端行情 e2e。

@@ -38,6 +38,9 @@ contract InsuranceVault is ERC20, Ownable, ReentrancyGuard {
     /// @notice H-4: shares exist but back zero assets, so there is no price at
     ///         which new capital can be issued shares fairly.
     error VaultInsolvent();
+    /// @notice The deposit is too small to mint a single share at the current
+    ///         share price; it would have been a gift to existing holders.
+    error ZeroShares();
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
@@ -79,6 +82,12 @@ contract InsuranceVault is ERC20, Ownable, ReentrancyGuard {
     function deposit(uint256 usdcAmount) external nonReentrant returns (uint256 shares) {
         require(usdcAmount > 0, "zero");
         shares = previewDeposit(usdcAmount);
+        // First-depositor / donation inflation: once the share price is pushed
+        // up, a small deposit rounds to 0 shares and its USDC accrues to the
+        // existing holders. Refuse it instead. (Virtual shares, which remove
+        // the attack's profitability altogether, are not implemented — see
+        // docs/KNOWN_LIMITATIONS.md.)
+        if (shares == 0) revert ZeroShares();
         totalAssets += usdcAmount;
         usdc.safeTransferFrom(msg.sender, address(this), usdcAmount);
         _mint(msg.sender, shares);

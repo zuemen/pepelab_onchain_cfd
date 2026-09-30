@@ -45,7 +45,7 @@ contract RiskParamsTest is Test {
     }
 
     function test_cannotExceedGlobalCap() public {
-        vm.expectRevert(bytes("above global cap"));
+        vm.expectRevert(PerpetualExchange.ParamOutOfRange.selector);
         exchange.setMaxLeverageFor(XAU, 6); // > MAX_LEVERAGE(5)
     }
 

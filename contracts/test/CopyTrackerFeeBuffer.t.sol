@@ -177,7 +177,7 @@ contract CopyTrackerFeeBufferTest is Test {
     // unreachable, since an unbounded fee setter was itself the vulnerability.
 
     function testSetTradingFeeBps_boundedSoFeesCannotExceedMargin() public {
-        vm.expectRevert(bytes("fee>1%"));
+        vm.expectRevert(PerpetualExchange.ParamOutOfRange.selector);
         exchange.setTradingFeeBps(2001);
 
         // The ceiling itself is accepted, and even at the ceiling a 5× copy

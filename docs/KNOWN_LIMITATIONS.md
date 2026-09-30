@@ -4,13 +4,14 @@ Written for the project report. Every item here was verified against the code on
 2026-07-27, not assumed. Where something was fixed, the fix is named; where it
 was not, the reason is given rather than glossed over.
 
-> **Status as of 2026-09-30 (`master` 37850c1):** 20 items. #1–#13 were verified
-> on 2026-07-27; #14–#20 (x402 layer) were added on 2026-09-17. PR #191 (open,
-> source only, not deployed) will add further known limitations. The status column below was not
-> re-verified item by item on 2026-09-30. Current numbers: 776 Foundry
-> test/invariant functions in `contracts/test` on `master` (944 on the PR #191
-> branch at `18c684d`; the PR is still changing), counted from source — whether all pass is whatever the latest
-> Contracts CI run says. Current deployment and what is live vs. source-only:
+> **Status as of 2026-09-30:** #1–#13 were verified on 2026-07-27; #14–#20 (x402
+> layer) were added on 2026-09-17; #21–#26 (exchange guardian/pause, caps, slash
+> reserve, portfolio-margin removal) came with PR #191, which is merged as
+> **source only, not deployed**. The status column below was not re-verified item
+> by item on 2026-09-30. Current numbers: 920 Foundry tests on `master` after
+> PR #191 (portfolio-margin-only tests were removed with the feature) — whether all
+> pass is whatever the latest Contracts CI run says. Current deployment and what is
+> live vs. source-only:
 > [`README.md`](../README.md).
 
 ## Status at a glance
@@ -37,6 +38,12 @@ was not, the reason is given rather than glossed over.
 | 18 | No latency / success-rate acceptance thresholds | **Partly measured** — facilitator + 402 challenge measured; paid path not |
 | 19 | No self-hosted facilitator; x402.org pays the settlement gas | **By design (testnet)** — no SLA, we don't control or fund its wallet and have no alert on it |
 | 20 | On-chain revenue totals cannot separate demo self-payments from external ones | **Open** — documented; needs an event scan |
+| 21 | No delisting / final-settlement function in `PerpetualExchange` | **Open** — positions on a permanently dead feed cannot close |
+| 22 | Guardian pause expiry bounds each pause, not the number of pauses | **By design** — owner rotates a misbehaving guardian |
+| 23 | Global pause blocks exits and liquidations | **By design** — deposits stay open; funding/borrow frozen; grace period after |
+| 24 | Portfolio margin has no account-level net liquidation | **Open** — `portfolioMarginEnabled` must stay **off** in production until implemented and audited (off on the live deployment) |
+| 25 | InsuranceVault has no virtual shares (first-depositor inflation) | **Mitigated** — zero-share deposits revert; attack profitability not removed |
+| 26 | Portfolio (cross) margin removed | **Resolved by removal** (2026-09-30) — supersedes #24; isolated margin only |
 
 ---
 
@@ -717,6 +724,103 @@ home-page KPI and the docs page showed `count: null` as "0 calls"; they now show
 `/revenue`: doing it honestly needs an event scan (`NEXT_STEPS.md`).
 
 ---
+
+## PerpetualExchange emergency controls (added 2026-09-29)
+
+## 21. No delisting / final-settlement function
+
+There is no function that settles every open position of an asset at a final
+price. If an asset's oracle stops updating for good, `closePosition`,
+`liquidatePosition` and (in portfolio mode) `withdrawMargin` for accounts
+holding it revert with `StalePrice` until the owner restores a feed. Setting
+the asset to `Halted` stops new damage but does not release the positions.
+Until a settlement function exists, markets being retired must be wound down
+while a keeper still refreshes their last price (the ReduceOnly flow).
+
+## 22. Guardian pause expiry bounds each pause, not the number of pauses
+
+A guardian pause lapses after `GUARDIAN_PAUSE_DURATION` (72h). The guardian
+cannot extend a running pause but can start a new one after it lapses; the
+owner removes a misbehaving guardian with `setGuardian`. The owner may take
+over a running guardian pause (it then never lapses). Owner pauses never lapse.
+
+**Update (2026-09-29, later the same day):** the chaining gap above is closed.
+After a guardian pause ends — by lapsing or by the owner lifting it — the
+guardian may not pause again for `GUARDIAN_PAUSE_COOLDOWN` (24h); the owner is
+not bound by it. A guardian acting alone can therefore freeze withdrawals for
+at most **72h 30min** at a stretch (72h pause + 30min post-pause grace), and
+every such stretch is followed by at least **23h 30min** in which withdrawals
+work. Only the owner can hold the market shut longer.
+
+**Correction (2026-09-29, review round 3):** in the current code the
+post-pause grace period DOES block withdrawals (`withdrawMargin` calls
+`_requireNoGlobalGrace`), so a guardian acting alone can freeze withdrawals
+for up to **72h 30min** at a stretch (72h pause + 30min grace), not 72h. The
+cooldown bounds each stretch but not the duty cycle: a guardian that pauses
+again the moment each 24h cooldown ends keeps the market stopped for 72 of
+every 96 hours — about **75% downtime** — indefinitely. Only the owner can
+stop that, by replacing the guardian (`setGuardian`).
+
+## 23. Global pause blocks exits and liquidations
+
+While paused, traders cannot close and underwater positions cannot be
+liquidated; only `depositMargin` stays open. Funding and borrow fees do not
+accrue over paused (or Halted) time, and liquidations, new opens and
+withdrawals wait out `LIQUIDATION_GRACE_PERIOD` (30 min) after the pause ends;
+after a Halt is lifted, liquidations and opens on that asset wait likewise.
+
+## 24. Portfolio margin has no account-level net liquidation — keep it off
+
+`setPortfolioMarginEnabled` switches the liquidation GATE to account level
+(a leg is liquidatable only when it and the whole account are underwater),
+but settlement is still per leg. When a losing leg is finally liquidated,
+its shortfall is charged only to the owner's free margin; the margin and
+unrealized profit of the owner's other open legs — which kept the account
+healthy and the loser alive — are not taken. The pool (InsuranceVault, ADL,
+bad debt) absorbs the rest, after which the owner can close the other leg and
+withdraw. An independent review reproduced this with a 1,750 USDC shortfall.
+
+Guards added on 2026-09-29 narrow the window without closing it: no new opens
+while the account is below maintenance; withdrawals only while equity stays at
+or above the SUM OF INITIAL margin; profit on ReduceOnly / Halted legs and on
+zero-price legs counts as 0 (and a zero-price leg's loss as its whole margin);
+no withdrawals while holding a Halted asset; every leg must be on a fresh feed
+for withdrawals, opens and liquidations.
+
+**Portfolio margin must remain disabled in production** until account-level
+netting (settling the whole account against its combined equity) is
+implemented and audited. It is off on the live deployment.
+
+**Update (2026-09-30):** superseded by #26 — portfolio margin has been
+removed from the contract altogether.
+
+## 25. InsuranceVault has no virtual shares
+
+The vault mints `shares = amount × supply / totalAssets` with no virtual
+shares or dead-share offset. A first depositor who mints 1 share and then
+inflates `totalAssets` (any protocol inflow counts) can make later deposits
+round down. Since 2026-09-29 a deposit that would mint **0 shares reverts**
+(`ZeroShares`), so a victim's USDC can no longer be silently absorbed; a
+deposit that rounds to a *small* number of shares still loses the rounding
+remainder to existing holders. Virtual shares (ERC-4626-style offset) would
+remove the attack's profitability and are the intended follow-up.
+
+## 26. Portfolio (cross) margin removed
+
+Portfolio margin was **removed from `PerpetualExchange` on 2026-09-30**, for
+two reasons: the contract had grown to 28,054 B of runtime code, over the
+EIP-170 limit of 24,576 B, so it could not be deployed; and the H3 gap (#24)
+could not be closed without account-level net liquidation. The mode was never
+enabled on-chain and neither the frontend nor the agent used it.
+
+Every position is now isolated: it is liquidated on its own maintenance
+requirement, can lose at most its own margin, and free margin or other
+positions neither shield it nor pay for it. `portfolioMarginEnabled`,
+`setPortfolioMarginEnabled` and `getAccountHealth` no longer exist.
+
+The last implementation (with the guards described in #24) can be recovered
+from git history at commit `d4b7b9e`. Re-introducing it requires
+account-level netting and a fresh audit, and must fit the size budget.
 
 ## Frontend
 

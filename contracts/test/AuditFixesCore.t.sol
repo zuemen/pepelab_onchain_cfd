@@ -227,19 +227,18 @@ contract AuditFixesCoreTest is Test {
         assertEq(exchange.getUserPositions(alice).length, 0);
     }
 
-    /// @dev PoC: `getAccountHealth` walked every position ever opened —
-    ///      8,947 gas clean, 1,194,968 gas after 2,000 dead entries, and with
-    ///      portfolio margin on an attacker could make an account permanently
-    ///      un-liquidatable for the price of a few hundred no-risk round trips.
-    function test_C3_accountHealthGasDoesNotGrowWithChurn() public {
+    /// @dev PoC: the per-user position list kept every position ever opened,
+    ///      so anything iterating it (then `getAccountHealth`, 8,947 gas clean vs
+    ///      1,194,968 after 2,000 dead entries) grew with churn. Portfolio margin
+    ///      and that view are gone; the list itself must still stay compact.
+    function test_C3_userPositionListDoesNotGrowWithChurn() public {
         exchange.setTradingFeeBps(0);
-        exchange.setPortfolioMarginEnabled(true);
         vm.prank(alice); exchange.depositMargin(100_000e18);
 
         vm.prank(alice); uint256 live = exchange.openPosition(BTC, true, 1_000e18, 1);
 
         uint256 g0 = gasleft();
-        exchange.getAccountHealth(alice);
+        exchange.getUserPositions(alice);
         uint256 clean = g0 - gasleft();
 
         // 400 no-risk round trips — the exact griefing pattern from the PoC.
@@ -250,7 +249,7 @@ contract AuditFixesCoreTest is Test {
         assertEq(exchange.getUserPositions(alice).length, 1, "only the live position remains");
 
         g0 = gasleft();
-        exchange.getAccountHealth(alice);
+        exchange.getUserPositions(alice);
         uint256 dirty = g0 - gasleft();
 
         // Pre-fix this grew by ~593 gas per dead entry (≈237,000 for 400).
@@ -268,7 +267,7 @@ contract AuditFixesCoreTest is Test {
         // 44,703 ceiling — 269 gas over — while forge 1.7.1 passed locally on the
         // same commit, with no contract change between them. A test that flips red
         // when the compiler moves is reporting on the toolchain, not the contract.
-        assertLt(dirty, clean + 20_000, "health cost must not scale with closed positions");
+        assertLt(dirty, clean + 20_000, "list read cost must not scale with closed positions");
         assertTrue(live == exchange.getUserPositions(alice)[0]);
     }
 
@@ -452,7 +451,7 @@ contract AuditFixesCoreTest is Test {
 
     function test_M3_tradingFeeBounded() public {
         uint256 ceiling = exchange.MAX_TRADING_FEE_BPS();
-        vm.expectRevert(bytes("fee>1%"));
+        vm.expectRevert(PerpetualExchange.ParamOutOfRange.selector);
         exchange.setTradingFeeBps(100_000);      // the audit's confiscation example
         exchange.setTradingFeeBps(ceiling);
         assertEq(exchange.TRADING_FEE_BPS(), 100);
@@ -460,31 +459,31 @@ contract AuditFixesCoreTest is Test {
 
     function test_M3_borrowFeeBounded() public {
         uint256 tooHigh = exchange.MAX_BORROW_FEE_BPS_PER_HOUR() + 1;
-        vm.expectRevert(bytes("borrow fee too high"));
+        vm.expectRevert(PerpetualExchange.ParamOutOfRange.selector);
         exchange.setBorrowFeePerHour(tooHigh);
         exchange.setBorrowFeePerHour(tooHigh - 1);   // ceiling accepted
     }
 
     function test_M3_maintenanceMarginMustStayBelow100Pct() public {
-        vm.expectRevert(bytes("bps>=100%"));
+        vm.expectRevert(PerpetualExchange.ParamOutOfRange.selector);
         exchange.setMaintenanceMarginFor(BTC, 10_000);
         exchange.setMaintenanceMarginFor(BTC, 9_999);   // ceiling accepted
     }
 
     function test_M3_maxPriceAgeBoundedOnBothSides() public {
-        vm.expectRevert(bytes("zero age"));
+        vm.expectRevert(PerpetualExchange.ParamOutOfRange.selector);
         exchange.setMaxPriceAge(0);
-        vm.expectRevert(bytes("age>7d"));
+        vm.expectRevert(PerpetualExchange.ParamOutOfRange.selector);
         exchange.setMaxPriceAge(8 days);
     }
 
     function test_M3_executionFeeBounded() public {
-        vm.expectRevert(bytes("fee>1 ether"));
+        vm.expectRevert(PerpetualExchange.ParamOutOfRange.selector);
         exchange.setExecutionFee(2 ether);
     }
 
     function test_M3_liquidationPenaltyBounded() public {
-        vm.expectRevert(bytes("penalty+reward>100%"));
+        vm.expectRevert(PerpetualExchange.ParamOutOfRange.selector);
         exchange.setLiquidationPenaltyBps(9_600);       // + 500 reward > 10000
         exchange.setLiquidationPenaltyBps(9_500);
     }

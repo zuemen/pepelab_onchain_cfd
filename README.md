@@ -78,10 +78,11 @@ Sepolia 的合約**未做金鑰輪替**（見 [`docs/RUNBOOK_KEY_ROTATION.md`](d
 - **前端**（#181、#192）：移除假價、改為誠實的鏈上讀取；KYC 改送雜湊；商業版功能旗標；CSP 與安全標頭；
   合成資產揭露。
 
-### 3.2 僅原始碼、尚未部署（PR #191，開啟中、未合併）
+### 3.2 僅原始碼、尚未部署（PR #191，已合併到 master）
 
-以下變更只存在於 PR #191 的分支，**已部署的 bytecode 沒有這些功能**。要生效必須由使用者執行 cutover
-重新部署，並同步前端 ABI。
+以下變更已在 master 的原始碼中，但**已部署的 bytecode 沒有這些功能**。要生效必須由使用者執行 cutover
+重新部署（`PerpetualExchange` 需 link 外部 library `ExchangeOpsLib`，forge script 會自動處理），
+並同步前端 ABI。
 
 - `PerpetualExchange` 的 guardian 全域暫停（72 小時自動失效、24 小時冷卻，只有 owner 能解除）。
 - 逐資產模式 Active／ReduceOnly／Halted。
@@ -89,7 +90,8 @@ Sepolia 的合約**未做金鑰輪替**（見 [`docs/RUNBOOK_KEY_ROTATION.md`](d
 - 多項核心修正（`copiedFrom` 限制、mark 溢價上限、零價格檢查延伸到讀取路徑——
   現行部署在 oracle 寫入路徑已經檢查零價格）、
   CopyTracker slash 款項改入準備金、InsuranceVault 零份額存款 revert。
-- **PR #191 移除組合保證金模式**。現行部署仍有這個模式，但為關閉狀態（`portfolioMarginEnabled = false`，逐倉）。
+- **組合保證金模式已從原始碼移除**（EIP-170 合約大小上限，以及未完成的帳戶層級清算；見 `docs/KNOWN_LIMITATIONS.md`）。
+  現行部署仍有這個模式，但為關閉狀態（`portfolioMarginEnabled = false`，逐倉）。
 
 ## 4. 商業版功能旗標（前端）
 
