@@ -21,9 +21,22 @@ describe('build-time CSP check for VITE_SIGNAL_API_URL', () => {
     expect(checkSignalApiUrl(`${DEFAULT_SIGNAL_API_URL}/`, vercel)).toBeNull();
   });
 
-  it('unset means "use the default" and passes', () => {
+  it('unset and empty string both resolve to the default (same rule as the app) and pass', () => {
     expect(checkSignalApiUrl(undefined, vercel)).toBeNull();
     expect(checkSignalApiUrl('', vercel)).toBeNull();
+  });
+
+  it('the default itself is checked too — an allow-list without it would fail the build', () => {
+    const noSignal = {
+      headers: [
+        {
+          source: '/(.*)',
+          headers: [{ key: 'Content-Security-Policy', value: "connect-src 'self' https://sepolia.base.org" }],
+        },
+      ],
+    };
+    expect(checkSignalApiUrl(undefined, noSignal)).toContain(DEFAULT_SIGNAL_API_URL);
+    expect(checkSignalApiUrl('', noSignal)).toContain(DEFAULT_SIGNAL_API_URL);
   });
 
   it('a URL outside the allow-list fails with an explanation naming the origin', () => {

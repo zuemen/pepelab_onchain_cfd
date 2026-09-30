@@ -63,7 +63,7 @@ describe('vercel.json security headers', () => {
 
   it('connect-src covers every external endpoint the app fetches', () => {
     const connect = directive('connect-src');
-    const signalDefault = read('src/lib/pepefi/signalApi.ts').match(/'(https:\/\/[^']+)'/)![1];
+    const signalDefault = read('src/lib/pepefi/signalApiUrl.ts').match(/'(https:\/\/[^']+)'/)![1];
     const coingecko = read('src/hooks/useLivePrices.ts').match(/`(https:\/\/api\.coingecko\.com)/)![1];
     const baseRpc = read('src/lib/pepefi/chains.ts').match(/rpcUrls:\s*\['(https:\/\/[^']+)'/)![1];
     for (const url of [signalDefault, coingecko, baseRpc]) {

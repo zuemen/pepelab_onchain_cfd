@@ -7,6 +7,8 @@
 //
 // 這個檔案在 Node 端（vite.config.ts）被 import，不能碰 import.meta.env。
 
+import { resolveSignalApiUrl } from './signalApiUrl';
+
 export interface VercelConfig {
   headers?: { source: string; headers: { key: string; value: string }[] }[];
 }
@@ -39,9 +41,12 @@ export function isConnectAllowed(url: string, connectSrc: readonly string[]): bo
   return connectSrc.some((src) => src.replace(/\/$/, '') === origin);
 }
 
-/** 回傳錯誤說明（null = 通過）。未設定 URL 時用程式內建的預設值，那一條由單元測試把關。 */
-export function checkSignalApiUrl(url: string | undefined, config: VercelConfig): string | null {
-  if (!url) return null;
+/**
+ * 回傳錯誤說明（null = 通過）。先用與 app 相同的 resolveSignalApiUrl 解析——未設定或
+ * 空字串都是預設部署——再檢查**實際會被打的那個網址**，預設值也一併驗。
+ */
+export function checkSignalApiUrl(raw: string | undefined, config: VercelConfig): string | null {
+  const url = resolveSignalApiUrl(raw);
   const connectSrc = connectSrcOf(config);
   if (isConnectAllowed(url, connectSrc)) return null;
   // 這是給部署的人看的 build 錯誤（終端機／CI log），不是介面顯示字串，所以不進 catalog、
