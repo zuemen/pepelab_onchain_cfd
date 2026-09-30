@@ -1,0 +1,931 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
+import "./SyntheticAssetV2.sol";
+import "./IAssetVaultV2.sol";
+import "../CarbonTiers.sol";
+// IAssetOracleV2 is declared in AssetVaultV2.sol — import rather than redeclare,
+// so both can be compiled into the same test or script.
+import { IAssetOracleV2 } from "./AssetVaultV2.sol";
+
+// IEsgRegistryForVault is declared in AssetVaultV2_4.sol - imported, not
+// redeclared, so V2.4 and V2.5 can be compiled into the same upgrade script.
+import { IEsgRegistryForVault } from "./AssetVaultV2_4.sol";
+
+
+/// @notice Upgradeable mint/redeem vault for tokenized synthetic assets.
+///
+///         Honest description of the risk model: the vault is the counterparty
+///         to every long. It is NOT fully collateralized and this contract does
+///         not make it so — that is a property of the mint-burn design. What it
+///         does is make the exposure bounded, priced, and observable:
+///           - fees accrue a buffer and pay the operator for carrying risk
+///           - a per-asset cap bounds exposure to any single market
+///           - a minimum reserve ratio stops new mints BEFORE the reserve is
+///             gone, instead of discovering it when a redeemer is denied
+///           - pause gives the operator a kill switch
+///
+///         Risk parameters are operator-configurable because the operator is a
+///         licensed institution whose risk committee — not this code — decides
+///         acceptable exposure. See docs/RISK_MODEL.md.
+///
+///         V2.3 added OBSERVABILITY, not a new source of truth: observeReserve()
+///         emits a replayable ReserveObserved, a breach latches mintingHalted,
+///         and reserveStatus() pairs the ratio with whether it can be trusted.
+///         Both sides of the ratio are still on-chain and independently
+///         verifiable — V2.3 deliberately added no off-chain attestor there.
+///
+///         V2.4 (#128, ADR-005/006) prices the MINT (spot buy). The mint fee
+///         stops being a settable scalar and is derived per-asset from the
+///         asset's witnessed carbon tier (`ESGRegistryV2.medianCarbonTier` →
+///         `CarbonTiers.paramsFor`), so buying a high-carbon asset costs
+///         visibly more than a low-carbon one, and no operator path — no
+///         per-asset, no per-user knob — can move a single asset's buy fee.
+///         The `setRiskParams` mint-fee argument and the `mintFeeBps` storage
+///         slot's public getter are gone; the slot itself is retained for
+///         layout. Redeem stays a flat settable fee: taxing a high-carbon
+///         EXIT would push the wrong way (ADR-005). Unlike the reserve ratio,
+///         the carbon registry IS an off-chain input — the fail-closed
+///         default (most conservative tier when unset or unattested) is how
+///         that trust is bounded.
+///
+///         Storage layout is byte-identical to V2.3 except `_esgRegistry`,
+///         consumed from the front of __gap (44 → 43) — the same precedent
+///         V2.3 set for `mintingHalted`. The old `mintFeeBps` public slot is
+///         kept (renamed `__deprecated_mintFeeBps`, made private) so nothing
+///         below it shifts. Verify with `forge inspect storage-layout` on
+///         both, field by field, before upgrading a live proxy.
+///
+///         V2.5 restores the audit's M-7 LAST-GOOD PRICE FALLBACK (V2.1 had
+///         it; V2.2-V2.4 dropped it), bounded in age. An asset whose live
+///         quote is stale or refused is marked to the last live quote the
+///         vault itself observed, as long as that quote is at most
+///         LAST_GOOD_MAX_AGE (6h) old; beyond that it is `unpriced`, exactly
+///         as in V2.4. Without the fallback a dead feed deletes that asset's
+///         liability, so the reserve ratio - mint's only solvency gate - reads
+///         BEST exactly when it is least knowable. Without the age bound a
+///         days-old mark would be passed off as a valuation.
+///         A fallback-marked book still reports `ratioIsStale()` and can latch
+///         a breach, but can never auto-clear one (`observeReserve` restores
+///         only on a fully live valuation).
+///         Live quotes are also capped at the same 6h (`effectiveMaxPriceAge`)
+///         whatever `maxPriceAge` says, and mint refuses while any
+///         outstanding asset is unpriced (`LiabilityUnpriced`) — a last-good
+///         mark is admitted, a missing price is not. Redeem is never gated.
+///         A closed market with a dead feed can be taken out of that mint
+///         gate by RISK_ROLE (`setUnpricedExemption`), never out of the book.
+///         Storage: two fields appended from the front of __gap (43 -> 41).
+contract AssetVaultV2_5 is
+    Initializable,
+    UUPSUpgradeable,
+    AccessControlUpgradeable,
+    PausableUpgradeable,
+    ReentrancyGuard,
+    IAssetVaultV2
+{
+    /// @dev SafeERC20 because real-world stablecoins are not uniformly
+    ///      ERC-20 compliant. Mainnet USDT's transfer returns NOTHING, so a
+    ///      `require(token.transfer(...))` against an interface declaring a
+    ///      bool return reverts on ABI decode — the transfer never happens.
+    ///      safeTransfer tolerates both the void and bool conventions.
+    using SafeERC20 for IERC20;
+
+    bytes32 public constant RISK_ROLE   = keccak256("RISK_ROLE");
+    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
+
+    uint256 public constant BPS_DENOM = 10_000;
+
+    /// @notice Hard ceiling on registered assets.
+    /// @dev The reserve-ratio check prices every asset with a non-zero balance,
+    ///      so mint() costs one oracle call per active asset. Unbounded
+    ///      registration would let that grow until mint exceeds the block gas
+    ///      limit — the operator would brick their own vault by onboarding
+    ///      markets. Bounded here, and unregisterAsset frees slots.
+    uint256 public constant MAX_REGISTERED_ASSETS = 32;
+
+    // ── storage — APPEND ONLY, never reorder (UUPS) ──────────────────────────
+    address private _usdc;
+    address private _oracle;
+
+    mapping(bytes32 => address) private _assetToken;
+
+    /// @notice USDC set aside as collected fees; excluded from the payout reserve.
+    uint256 public accruedFees;
+
+    /// @notice Token units outstanding per asset, used for the exposure cap.
+    mapping(bytes32 => uint256) private _outstanding;
+
+    /// @notice Max token units mintable per asset. 0 = asset closed to new mints.
+    mapping(bytes32 => uint256) public assetCap;
+
+    /// @dev Was `uint256 public mintFeeBps` through V2.3. V2.4 (#128, ADR-006):
+    ///      the mint fee is no longer a settable scalar — it is derived
+    ///      per-asset from the asset's witnessed carbon tier, see
+    ///      `mintFeeBpsForAsset`. The slot is RETAINED (renamed, made private)
+    ///      so every field below keeps its storage position on the in-place
+    ///      upgrade. It keeps whatever value it held pre-upgrade (the old
+    ///      default was 30) and is never read again — no getter, no setter, no
+    ///      code path touches it.
+    uint256 private __deprecated_mintFeeBps;
+    uint256 public redeemFeeBps;
+    uint256 public minReserveRatioBps;
+    uint256 public maxPriceAge;
+
+    /// @notice Asset ids ever registered, so ratio math can iterate them.
+    bytes32[] private _assetIds;
+
+    /// @notice True once an observation found the reserve ratio below
+    ///         `minReserveRatioBps`. Blocks NEW MINTS ONLY — redemption is
+    ///         never gated on it.
+    /// @dev V2.3, consumed from the front of __gap (45 → 44 slots), so the
+    ///      layout above is untouched.
+    bool public mintingHalted;
+
+    /// @notice The carbon-attestation registry the per-asset mint fee is
+    ///         derived from (`ESGRegistryV2.medianCarbonTier`). `address(0)`
+    ///         means carbon pricing is not wired on this vault yet — mint then
+    ///         falls back to the MOST CONSERVATIVE tier's fee (see
+    ///         `mintFeeBpsForAsset`), never to a cheaper default.
+    /// @dev V2.4 (#128), consumed from the front of __gap (44 → 43 slots),
+    ///      the same precedent V2.3 set for `mintingHalted` — the layout above
+    ///      is untouched. Settable by DEFAULT_ADMIN_ROLE via `setEsgRegistry`,
+    ///      on the same trust basis as `setOracle`: whoever can move this
+    ///      pointer can influence pricing, so hold that role in a multisig.
+    ///      It is a vault-wide switch, NOT a per-asset or per-user lever —
+    ///      there is deliberately no path that changes one asset's mint fee.
+    address private _esgRegistry;
+
+    /// @dev Reserved slots so a future version can add state without colliding
+    ///      with anything a new parent contract introduces. OZ 5.x parents use
+    ///      ERC-7201 namespaced storage and won't collide on their own, but this
+    ///      contract's own layout is plain — consume from the front when adding
+    ///      variables and shrink the gap by the same amount.
+    /// @notice V2.5: the last live quote the vault observed per asset, with
+    ///         the ORACLE's timestamp for it (not the block it was stored in),
+    ///         so its age is the age of the price itself.
+    /// @dev Consumed from the front of __gap (43 -> 42 slots). Packed into one
+    ///      slot per asset. Written by mint / redeem (the asset being traded)
+    ///      and by `observeReserve` (every outstanding asset with a live quote).
+    struct LastGood {
+        uint192 price;       // 8 decimals, as the oracle returns it
+        uint64  observedAt;  // oracle `updatedAt` of that quote
+    }
+    mapping(bytes32 => LastGood) private _lastGood;
+
+    /// @notice V2.5 (review M1): RISK_ROLE's per-asset opt-out from the
+    ///         mint gate's "unpriced" count, for a CLOSED market whose feed is
+    ///         gone (see `setUnpricedExemption`). Effective only while
+    ///         `assetCap[id] == 0`; re-opening the asset silently disables it.
+    /// @dev Consumed from the front of __gap (42 -> 41 slots).
+    mapping(bytes32 => bool) private _unpricedExempt;
+
+    uint256[41] private __gap;
+
+    /// @notice V2.5: a last-good price older than this is not used - the asset
+    ///         counts as `unpriced` (V2.4 behaviour).
+    uint256 public constant LAST_GOOD_MAX_AGE = 6 hours;
+
+    /// @notice An exempted asset with NO last-good price may still carry at
+    ///         most this many token units (18-dec) — 0.001 token, e.g. about
+    ///         $100 of sBTC at $100k. Below it the position is counted at 0;
+    ///         above it an exemption needs a recorded price to value it by.
+    uint256 public constant EXEMPT_DUST_UNITS = 1e15;
+
+    // ── V2.3 events ──────────────────────────────────────────────────────────
+    // Declared here rather than in IAssetVaultV2 so V2.0–V2.2's ABIs do not
+    // advertise events they can never emit.
+
+    /// @notice A timestamped snapshot of the reserve position.
+    /// @dev `ratioBps` is `type(uint256).max` when there is no liability, which
+    ///      is what `reserveRatioBps()` returns — the event mirrors the view
+    ///      rather than inventing a second convention. `unpriced > 0` means the
+    ///      liability is UNDER-counted and the ratio is therefore optimistic;
+    ///      a replay must treat those points as unknown, not as healthy.
+    event ReserveObserved(
+        uint256 reserve,
+        uint256 liability,
+        uint256 ratioBps,
+        uint256 unpriced,
+        uint256 timestamp
+    );
+
+    /// @notice Emitted on the crossing below `minReserveRatioBps`, not on every
+    ///         observation while below it.
+    event ReserveBreached(uint256 ratioBps, uint256 minRatioBps, uint256 unpriced);
+
+    /// @notice Emitted when a fully-priced observation finds the ratio back at
+    ///         or above the minimum and re-opens minting.
+    event ReserveRestored(uint256 ratioBps, uint256 minRatioBps);
+
+    /// @notice Emitted by `clearMintingHalt()` — an operator override, distinct
+    ///         from `ReserveRestored`'s automatic, fully-priced recovery.
+    event MintingHaltCleared(address indexed operator, uint256 ratioBps, uint256 unpriced);
+
+    // ── V2.4 events ──────────────────────────────────────────────────────────
+
+    /// @notice The carbon-attestation registry backing the per-asset mint fee
+    ///         changed. `address(0)` → fee falls back to the most conservative
+    ///         tier (see `mintFeeBpsForAsset`).
+    event EsgRegistrySet(address indexed oldRegistry, address indexed newRegistry);
+
+    /// @notice V2.4's replacement for `IAssetVaultV2.RiskParamsUpdated`. The
+    ///         mint fee is no longer an operator parameter (ADR-006), so the
+    ///         old event's first field would have been a permanent, misleading
+    ///         0 — this event simply omits it. V2.0–V2.2 still emit the
+    ///         four-field `RiskParamsUpdated`; V2.4 emits only this.
+    event RiskParamsChanged(uint256 redeemFeeBps, uint256 minReserveRatioBps, uint256 maxPriceAge);
+
+    // -- V2.5 events ----------------------------------------------------------
+
+    /// @notice A live quote was remembered as `assetId`'s last-good price.
+    event LastGoodPriceRecorded(bytes32 indexed assetId, uint256 price, uint256 observedAt);
+
+    /// @notice RISK_ROLE set or cleared a closed asset's unpriced exemption.
+    event UnpricedExemptionSet(bytes32 indexed assetId, bool exempt, address indexed by);
+
+    // ── errors ───────────────────────────────────────────────────────────────
+    error StalePrice(bytes32 assetId, uint256 updatedAt);
+    error NoPrice(bytes32 assetId);
+    error AssetNotRegistered(bytes32 assetId);
+    error ZeroAmount();
+    error CapExceeded(bytes32 assetId, uint256 outstanding, uint256 cap);
+    error ReserveRatioTooLow(uint256 ratioBps, uint256 minBps);
+    error VaultDry(uint256 needed, uint256 available);
+    error InvalidParam();
+    error TooManyAssets(uint256 max);
+    error AssetStillOutstanding(bytes32 assetId, uint256 outstanding);
+    /// @dev Distinct from ReserveRatioTooLow: that one is "this mint would put
+    ///      you under", this one is "the book is already under and an
+    ///      observation latched it". Anyone can clear it by observing a healthy,
+    ///      fully-priced ratio — see observeReserve().
+    error MintingHalted();
+    /// @notice V2.5: `unpriced` outstanding assets have neither a live quote
+    ///         nor a last-good mark <= 6h, so the reserve ratio is unknown.
+    ///         Blocks new mints only; redeem is never gated on it.
+    error LiabilityUnpriced(uint256 unpriced);
+    /// @notice An unpriced exemption needs the asset closed (`assetCap == 0`).
+    error ExemptionRequiresClosedAsset(bytes32 assetId, uint256 cap);
+    /// @notice An unpriced exemption needs either a recorded last-good price
+    ///         (to keep the liability in the book) or at most dust outstanding.
+    error ExemptionNeedsPrice(bytes32 assetId, uint256 outstanding);
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(address usdc_, address oracle_, address admin_) public initializer {
+        if (usdc_ == address(0) || oracle_ == address(0) || admin_ == address(0)) revert InvalidParam();
+
+        // UUPSUpgradeable is stateless in OZ 5.x and has no initializer.
+        __AccessControl_init();
+        __Pausable_init();
+
+        _usdc   = usdc_;
+        _oracle = oracle_;
+
+        _grantRole(DEFAULT_ADMIN_ROLE, admin_);
+        _grantRole(RISK_ROLE, admin_);
+        _grantRole(PAUSER_ROLE, admin_);
+
+        // Conservative defaults. The operator's risk committee overrides these.
+        // The mint fee is NOT among them any more (V2.4): it is derived from
+        // each asset's witnessed carbon tier, not configured here.
+        redeemFeeBps       = 30;      // 0.30%
+        minReserveRatioBps = 11_000;  // require 110% reserve coverage to mint
+        maxPriceAge        = 1 hours; // matches keeper cadence with headroom
+    }
+
+    function version() public pure virtual returns (string memory) {
+        return "2.5.0";
+    }
+
+    function usdc() public view returns (address) { return _usdc; }
+    function oracle() public view returns (address) { return _oracle; }
+    function esgRegistry() public view returns (address) { return _esgRegistry; }
+    function assetToken(bytes32 assetId) public view returns (address) { return _assetToken[assetId]; }
+    function exposureOf(bytes32 assetId) public view returns (uint256) { return _outstanding[assetId]; }
+
+    /// @dev M-5: re-pointing an asset id at a DIFFERENT token while units are
+    ///      still outstanding strands every holder — `redeem` burns from the new
+    ///      token, which they do not hold, while `_outstanding` keeps recording
+    ///      the old liability. `unregisterAsset` already refuses in that state;
+    ///      this closes the same hole on the way in. Same-token re-registration
+    ///      stays allowed (idempotent re-wiring).
+    function registerAsset(bytes32 assetId, address token) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (token == address(0)) revert InvalidParam();
+        address current = _assetToken[assetId];
+        if (current != address(0) && current != token) {
+            uint256 out = _outstanding[assetId];
+            if (out != 0) revert AssetStillOutstanding(assetId, out);
+        }
+        if (_assetToken[assetId] == address(0)) {
+            if (_assetIds.length >= MAX_REGISTERED_ASSETS) {
+                revert TooManyAssets(MAX_REGISTERED_ASSETS);
+            }
+            _assetIds.push(assetId);
+        }
+        _assetToken[assetId] = token;
+        emit AssetRegistered(assetId, token);
+    }
+
+    /// @notice Removes an asset, freeing a slot and taking it out of the
+    ///         reserve-ratio loop.
+    /// @dev Refuses while tokens are still outstanding — de-registering then
+    ///      would strand holders with a token the vault no longer redeems. Wind
+    ///      down with setAssetCap(id, 0) first, let holders redeem, then remove.
+    function unregisterAsset(bytes32 assetId) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (_assetToken[assetId] == address(0)) revert AssetNotRegistered(assetId);
+        uint256 out = _outstanding[assetId];
+        if (out != 0) revert AssetStillOutstanding(assetId, out);
+
+        uint256 len = _assetIds.length;
+        for (uint256 i = 0; i < len; i++) {
+            if (_assetIds[i] == assetId) {
+                _assetIds[i] = _assetIds[len - 1];
+                _assetIds.pop();
+                break;
+            }
+        }
+        delete _assetToken[assetId];
+        delete assetCap[assetId];
+        // A later re-registration under the same id is a new market: it must
+        // not inherit the old token's last-good mark or unpriced exemption.
+        delete _lastGood[assetId];
+        delete _unpricedExempt[assetId];
+
+        emit AssetUnregistered(assetId);
+    }
+
+    /// @notice Registered asset ids, so the operator can see what counts toward
+    ///         the MAX_REGISTERED_ASSETS ceiling and the ratio loop.
+    function registeredAssets() external view returns (bytes32[] memory) {
+        return _assetIds;
+    }
+
+    /// @notice Repoint the vault at a different price oracle.
+    /// @dev This is the escape hatch PerpetualExchange does not have — its
+    ///      oracle is `immutable`, so it can never move off MockOracle without
+    ///      a redeploy that would destroy every open position. Here the oracle
+    ///      is ordinary storage, so the operator can migrate to a hardened or
+    ///      decentralized feed (see GuardedOracle) with one transaction.
+    ///
+    ///      Admin-gated because it is equivalent to control of the reserve: an
+    ///      attacker who can set the oracle can set any price. Hold this role in
+    ///      a multisig behind a timelock.
+    function setOracle(address newOracle) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newOracle == address(0)) revert InvalidParam();
+        address old = _oracle;
+        _oracle = newOracle;
+        emit OracleChanged(old, newOracle);
+    }
+
+    function pause()   external onlyRole(PAUSER_ROLE) { _pause(); }
+    function unpause() external onlyRole(PAUSER_ROLE) { _unpause(); }
+
+    function _authorizeUpgrade(address) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
+
+    /// @dev VULNERABILITY #3 FIX: V1 read updatedAt and discarded it, so a dead
+    ///      keeper meant trading against a frozen quote. PerpetualExchange has
+    ///      always reverted StalePrice past maxPriceAge; this now matches it.
+    function _price(bytes32 assetId) internal view returns (uint256 price) {
+        (price, ) = _livePrice(assetId);
+    }
+
+    function _livePrice(bytes32 assetId) internal view returns (uint256 price, uint256 updatedAt) {
+        (price, updatedAt) = IAssetOracleV2(_oracle).getPrice(assetId);
+        if (price == 0) revert NoPrice(assetId);
+        if (block.timestamp > updatedAt + effectiveMaxPriceAge()) revert StalePrice(assetId, updatedAt);
+    }
+
+    /// @dev V2.5: remember a live quote (reverts like `_price` if there is none
+    ///      - callers only use it on paths that already required one).
+    function _rememberLivePrice(bytes32 assetId) internal {
+        (uint256 price, uint256 updatedAt) = _livePrice(assetId);
+        _storeLastGood(assetId, price, updatedAt);
+    }
+
+    function _storeLastGood(bytes32 assetId, uint256 price, uint256 updatedAt) internal {
+        if (price > type(uint192).max || updatedAt > type(uint64).max) return;
+        LastGood storage lg = _lastGood[assetId];
+        // Never move the mark backwards in time (an out-of-order oracle).
+        if (updatedAt < lg.observedAt) return;
+        if (lg.observedAt == updatedAt && lg.price == price) return;
+        lg.price      = uint192(price);
+        lg.observedAt = uint64(updatedAt);
+        emit LastGoodPriceRecorded(assetId, price, updatedAt);
+    }
+
+    /// @notice V2.5: the age limit actually applied to a live quote —
+    ///         `min(maxPriceAge, LAST_GOOD_MAX_AGE)`. The risk parameter
+    ///         `maxPriceAge` may be set loosely (the Base Sepolia proxy ran
+    ///         at 30 days), and a 29-day-old quote counted as "live" would
+    ///         make the 6h last-good bound meaningless. Capping it here means
+    ///         no price older than 6h ever values the book, prices a mint or
+    ///         a redeem, however `maxPriceAge` is configured.
+    function effectiveMaxPriceAge() public view returns (uint256) {
+        uint256 m = maxPriceAge;
+        return m < LAST_GOOD_MAX_AGE ? m : LAST_GOOD_MAX_AGE;
+    }
+
+    /// @notice Review M1 escape hatch. The mint gate refuses while ANY
+    ///         outstanding asset is unpriced; one dead feed with a few wei left
+    ///         outstanding (which `unregisterAsset` refuses to drop) would
+    ///         otherwise block mints of every healthy asset until a timelock
+    ///         proposal lands. RISK_ROLE may exempt such an asset, bounded so
+    ///         the exemption cannot be used to under-state a real liability:
+    ///           - only while the asset is CLOSED (`assetCap == 0`): its
+    ///             outstanding can then only shrink, and raising the cap again
+    ///             clears the exemption (re-closing needs a new decision);
+    ///           - the asset stays in the liability at its last-good price
+    ///             (any age). With no recorded price at all it may only be
+    ///             exempted while outstanding <= EXEMPT_DUST_UNITS.
+    ///         It counts as `fallbackPriced`: the ratio is flagged stale, a
+    ///         breach can latch but never auto-clear, redeem is untouched.
+    function setUnpricedExemption(bytes32 assetId, bool exempt) external onlyRole(RISK_ROLE) {
+        if (exempt) {
+            uint256 cap = assetCap[assetId];
+            if (cap != 0) revert ExemptionRequiresClosedAsset(assetId, cap);
+            uint256 out = _outstanding[assetId];
+            if (_lastGood[assetId].price == 0 && out > EXEMPT_DUST_UNITS) revert ExemptionNeedsPrice(assetId, out);
+        }
+        _unpricedExempt[assetId] = exempt;
+        emit UnpricedExemptionSet(assetId, exempt, msg.sender);
+    }
+
+    /// @notice Whether `assetId`'s exemption is in force right now (flag set,
+    ///         market closed, and valuable by a recorded price or dust-sized).
+    function isUnpricedExempt(bytes32 assetId) public view returns (bool) {
+        if (!_unpricedExempt[assetId] || assetCap[assetId] != 0) return false;
+        return _lastGood[assetId].price != 0 || _outstanding[assetId] <= EXEMPT_DUST_UNITS;
+    }
+
+    /// @notice V2.5: the remembered last-good price and whether it is still
+    ///         young enough (<= LAST_GOOD_MAX_AGE) to value the liability.
+    function lastGoodPrice(bytes32 assetId)
+        public view returns (uint256 price, uint256 observedAt, bool usable)
+    {
+        LastGood memory lg = _lastGood[assetId];
+        price      = lg.price;
+        observedAt = lg.observedAt;
+        usable     = price != 0 && block.timestamp <= observedAt + LAST_GOOD_MAX_AGE;
+    }
+
+    function previewMint(bytes32 assetId, uint256 usdcAmount)
+        public view returns (uint256 tokenOut, uint256 feePaid)
+    {
+        if (_assetToken[assetId] == address(0)) revert AssetNotRegistered(assetId);
+        uint256 price = _price(assetId);
+        feePaid  = usdcAmount * mintFeeBpsForAsset(assetId) / BPS_DENOM;
+        tokenOut = (usdcAmount - feePaid) * 1e8 / price;
+    }
+
+    /// @notice The mint fee, in bps, that applies to `assetId` right now —
+    ///         derived from the asset's witnessed carbon tier, not a stored
+    ///         scalar. Readable before minting so a buyer sees the fee their
+    ///         carbon choice carries (ADR-006, user story 2).
+    /// @dev Fail-closed in two places, both deliberate:
+    ///        - registry unset → the MOST CONSERVATIVE tier's fee, not the
+    ///          old cheap 0.30% default. "Carbon pricing isn't wired" must
+    ///          cost the buyer more, never less.
+    ///        - registry wired but the asset has no fresh attestation →
+    ///          `medianCarbonTier` returns `Tier.Unrated`, and
+    ///          `CarbonTiers.paramsFor(Tier.Unrated)` is that same
+    ///          most-conservative row.
+    ///      Redemption never consults this — a high-carbon exit is not
+    ///      penalised (ADR-005). There is no per-asset override anywhere.
+    function mintFeeBpsForAsset(bytes32 assetId) public view returns (uint256 feeBps) {
+        CarbonTiers.Tier tier = CarbonTiers.Tier.Unrated;
+        if (_esgRegistry != address(0)) {
+            (tier, , ,) = IEsgRegistryForVault(_esgRegistry).medianCarbonTier(assetId);
+        }
+        (feeBps, ,) = CarbonTiers.paramsFor(tier);
+    }
+
+    function previewRedeem(bytes32 assetId, uint256 tokenAmount)
+        public view returns (uint256 usdcOut, uint256 feePaid)
+    {
+        if (_assetToken[assetId] == address(0)) revert AssetNotRegistered(assetId);
+        uint256 price = _price(assetId);
+        uint256 gross = tokenAmount * price / 1e8;
+        feePaid = gross * redeemFeeBps / BPS_DENOM;
+        usdcOut = gross - feePaid;
+    }
+
+    /// @notice Point the vault at a carbon-attestation registry (or clear it
+    ///         with `address(0)`, which fails the mint fee closed to the most
+    ///         conservative tier).
+    /// @dev DEFAULT_ADMIN_ROLE, same trust basis as `setOracle`: whoever can
+    ///      move this pointer can influence what every mint is charged. It is
+    ///      a vault-wide switch — there is deliberately no per-asset or
+    ///      per-user variant (ADR-006). Hold this role in a multisig.
+    function setEsgRegistry(address newRegistry) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        emit EsgRegistrySet(_esgRegistry, newRegistry);
+        _esgRegistry = newRegistry;
+    }
+
+    /// @notice Operator risk knobs. Separate RISK_ROLE from upgrade authority so
+    ///         a risk committee can retune without holding upgrade power.
+    /// @dev V2.4: the mint fee is no longer here — it is derived per-asset
+    ///      from the witnessed carbon tier (`mintFeeBpsForAsset`). Removing
+    ///      the parameter, not just leaving it unused, is the point: "no path
+    ///      changes a single asset's buy fee" is a tested absence (ADR-006).
+    ///      The redeem fee stays a flat, settable scalar — a high-carbon exit
+    ///      must not cost more (ADR-005).
+    function setRiskParams(
+        uint256 redeemFeeBps_,
+        uint256 minReserveRatioBps_,
+        uint256 maxPriceAge_
+    ) external onlyRole(RISK_ROLE) {
+        // Cap the redeem fee at 10% so a compromised risk key cannot confiscate
+        // deposits on the way out.
+        if (redeemFeeBps_ > 1_000) revert InvalidParam();
+        if (maxPriceAge_ == 0) revert InvalidParam();
+        // A floor below 100% (BPS_DENOM) would make `ratioBps < minBps` (both in
+        // mint() and in observeReserve()'s breach latch) impossible to ever
+        // satisfy — ratioBps is unsigned and never negative, so
+        // minReserveRatioBps_ == 0 silently and permanently disables BOTH the
+        // mint-time check AND the whole breach/halt mechanism, with no
+        // distinguishing event. 100% is the loosest value that still means
+        // something; the useful range for a risk committee is above that,
+        // matching the 110% default.
+        if (minReserveRatioBps_ < BPS_DENOM) revert InvalidParam();
+
+        redeemFeeBps       = redeemFeeBps_;
+        minReserveRatioBps = minReserveRatioBps_;
+        maxPriceAge        = maxPriceAge_;
+
+        emit RiskParamsChanged(redeemFeeBps_, minReserveRatioBps_, maxPriceAge_);
+    }
+
+    /// @notice USDC available to pay redeemers. Excludes accrued fees, which
+    ///         belong to the operator and are not payout collateral.
+    function reserve() public view returns (uint256) {
+        uint256 bal = IERC20(_usdc).balanceOf(address(this));
+        return bal > accruedFees ? bal - accruedFees : 0;
+    }
+
+    /// @dev Skips assets with a stale or zero price rather than reverting, so
+    ///      risk dashboards stay readable during an oracle outage. A skipped
+    ///      asset understates the liability — callers must treat a stale oracle
+    ///      as "ratio unknown", which is why mint independently calls _price and
+    ///      reverts on staleness.
+    function outstandingValue() public view returns (uint256 total) {
+        (total, ) = outstandingValueDetailed();
+    }
+
+    /// @notice Liability, plus how many assets could not be priced.
+    /// @dev V2.0 called getPrice directly and skipped stale assets with a
+    ///      `continue`. That assumed an oracle which RETURNS stale data — true
+    ///      of MockOracle, false of GuardedOracle, which fails closed and
+    ///      REVERTS. Against a reverting oracle the whole loop died, so
+    ///      reserveRatioBps() and therefore mint() reverted too: one stale asset
+    ///      blocked minting every OTHER asset, and V2 stopped working entirely
+    ///      until a keeper posted again.
+    ///
+    ///      The try/catch restores the documented behaviour — skip what cannot
+    ///      be priced, keep going — for both kinds of oracle.
+    ///
+    ///      `unpriced` is returned because a skipped asset UNDERSTATES the
+    ///      liability, which makes the ratio optimistic. Callers must treat
+    ///      unpriced > 0 as "ratio unknown", not "ratio healthy". mint() still
+    ///      prices the asset being minted through _price(), so no mint is ever
+    ///      admitted on the strength of an optimistic ratio.
+    function outstandingValueDetailed()
+        public view returns (uint256 total, uint256 unpriced)
+    {
+        (total, unpriced, ) = valuationDetail();
+    }
+
+    /// @notice V2.5: liability, how many assets could not be priced at all,
+    ///         and how many were marked to their last-good price.
+    /// @dev Per outstanding asset:
+    ///        live quote fresh              -> valued live;
+    ///        stale/refused, last-good <= 6h -> valued at last-good, counted in
+    ///                                        `fallbackPriced` (an estimate);
+    ///        otherwise                     -> `unpriced`, left out of `total`
+    ///                                        (the ratio is then optimistic).
+    function valuationDetail()
+        public view returns (uint256 total, uint256 unpriced, uint256 fallbackPriced)
+    {
+        uint256 len = _assetIds.length;
+        for (uint256 i = 0; i < len; i++) {
+            bytes32 id = _assetIds[i];
+            uint256 amount = _outstanding[id];
+            if (amount == 0) continue;
+
+            bool live;
+            uint256 price;
+            try IAssetOracleV2(_oracle).getPrice(id) returns (uint256 p, uint256 updatedAt) {
+                if (p != 0 && block.timestamp <= updatedAt + effectiveMaxPriceAge()) {
+                    live = true;
+                    price = p;
+                }
+            } catch {
+                // Oracle refused to quote - stale, frozen, or unknown asset.
+            }
+            if (!live) {
+                (uint256 lgPrice, , bool usable) = lastGoodPrice(id);
+                if (usable) {
+                    price = lgPrice;
+                } else if (isUnpricedExempt(id)) {
+                    // Review M1: a closed, exempted market stays IN the
+                    // liability at its last recorded price however old it
+                    // is (0 only for dust, see EXEMPT_DUST_UNITS) — it is
+                    // exempted from blocking mints, never from the book.
+                    price = lgPrice;
+                } else {
+                    unpriced++;
+                    continue;
+                }
+                fallbackPriced++;
+            }
+            total += amount * price / 1e8;
+        }
+    }
+
+    /// @notice True when any outstanding asset could not be priced, so
+    ///         reserveRatioBps() is optimistic and should not be trusted.
+    function ratioIsStale() external view returns (bool) {
+        (, uint256 unpriced, uint256 fallbackPriced) = valuationDetail();
+        return unpriced > 0 || fallbackPriced > 0;
+    }
+
+    function reserveRatioBps() public view returns (uint256) {
+        uint256 liability = outstandingValue();
+        if (liability == 0) return type(uint256).max;
+        return reserve() * BPS_DENOM / liability;
+    }
+
+    /// @notice The reserve position and whether it can be trusted, in one read.
+    /// @dev Two calls (`reserveRatioBps()` then `ratioIsStale()`) can straddle a
+    ///      block and disagree, and a UI that shows an optimistic number without
+    ///      its caveat is worse than one that shows nothing. Returned together
+    ///      so a caller cannot accidentally take one without the other.
+    function reserveStatus()
+        external
+        view
+        returns (
+            uint256 reserve_,
+            uint256 liability,
+            uint256 ratioBps,
+            uint256 unpriced,
+            bool stale,
+            bool halted
+        )
+    {
+        uint256 fallbackPriced;
+        (reserve_, liability, ratioBps, unpriced, fallbackPriced) = _snapshot();
+        stale  = unpriced > 0 || fallbackPriced > 0;
+        halted = mintingHalted;
+    }
+
+    /// @notice Records the current reserve position on-chain and latches a
+    ///         breach. Permissionless.
+    ///
+    /// @dev PERMISSIONLESS because it asserts nothing. Every number it emits is
+    ///      derived from this contract's own storage and the oracle it already
+    ///      reads — a caller cannot influence any of them, only choose when the
+    ///      snapshot is taken. Gating it behind a role would add a key to
+    ///      protect a function that protects nothing, and would make the history
+    ///      stop the moment that key went quiet. The keeper is expected to call
+    ///      it on its existing cadence; anyone may call it in between.
+    ///
+    ///      DELIBERATELY NOT `whenNotPaused`: a paused vault is exactly when the
+    ///      reserve number matters most.
+    ///
+    ///      The breach/restore rule is asymmetric on purpose, because `unpriced`
+    ///      makes the ratio OPTIMISTIC and never pessimistic:
+    ///        - below the line while stale → still a real breach. The true ratio
+    ///          is lower than the one that already failed. Latch it.
+    ///        - at or above the line while stale → proves nothing. Stay halted.
+    ///      So staleness can only ever cost the operator new mints, never a
+    ///      holder their protection. If a specific asset's feed is permanently
+    ///      gone (not just temporarily stale) this rule can leave the vault
+    ///      halted forever with no observation able to clear it — that case
+    ///      has a separate, deliberately manual escape hatch: `clearMintingHalt()`.
+    function observeReserve()
+        external
+        returns (
+            uint256 reserve_,
+            uint256 liability,
+            uint256 ratioBps,
+            uint256 unpriced,
+            bool halted
+        )
+    {
+        _refreshLastGood();
+        uint256 fallbackPriced;
+        (reserve_, liability, ratioBps, unpriced, fallbackPriced) = _snapshot();
+        emit ReserveObserved(reserve_, liability, ratioBps, unpriced, block.timestamp);
+
+        uint256 minBps = minReserveRatioBps;
+        if (ratioBps < minBps) {
+            // Emitted on the crossing only. A keeper ticking every 15 minutes
+            // through a week-long drawdown would otherwise bury the moment it
+            // broke under hundreds of identical alerts.
+            if (!mintingHalted) {
+                mintingHalted = true;
+                emit ReserveBreached(ratioBps, minBps, unpriced);
+            }
+        } else if (unpriced == 0 && fallbackPriced == 0 && mintingHalted) {
+            // V2.5: a last-good mark is an estimate - it may latch a breach
+            // (above) but never clear one.
+            mintingHalted = false;
+            emit ReserveRestored(ratioBps, minBps);
+        }
+
+        halted = mintingHalted;
+    }
+
+    /// @notice Emergency override for `observeReserve()`'s restore condition:
+    ///         clears `mintingHalted` even while some asset remains unpriced.
+    /// @dev Exists because `unregisterAsset` refuses while an asset still has
+    ///      nonzero outstanding, so a single abandoned or delisted price feed
+    ///      with dust left outstanding could otherwise hold `mintingHalted`
+    ///      forever for every OTHER healthy asset — `observeReserve()`'s
+    ///      automatic restore requires `unpriced == 0` vault-wide precisely
+    ///      because an optimistic ratio must never self-clear a real breach,
+    ///      and that rule has no exception for "this particular staleness
+    ///      doesn't matter". This function is that exception, made explicit:
+    ///      the operator confirms it (e.g. the stale asset is capped to 0 and
+    ///      its remaining exposure is de minimis) and clears deliberately.
+    ///
+    ///      Held by RISK_ROLE — the same role that already owns every other
+    ///      risk knob on this contract (`setRiskParams`, `setAssetCap`), so
+    ///      this adds no new trust surface, only an escape hatch for a state
+    ///      the automatic path cannot reach on its own.
+    ///
+    ///      Emits `MintingHaltCleared`, not `ReserveRestored`: the latter's
+    ///      documented meaning is "a fully-priced observation found the ratio
+    ///      healthy" — reusing it here, when `unpriced` may still be nonzero,
+    ///      would let a manual override masquerade as an automatic recovery in
+    ///      the replayed history.
+    function clearMintingHalt() external onlyRole(RISK_ROLE) {
+        mintingHalted = false;
+        (, , uint256 ratioBps, uint256 unpriced, ) = _snapshot();
+        emit MintingHaltCleared(msg.sender, ratioBps, unpriced);
+    }
+
+    /// @dev V2.5: remember every outstanding asset's live quote. Never
+    ///      reverts - an asset that cannot be quoted simply keeps its old mark.
+    function _refreshLastGood() internal {
+        uint256 len = _assetIds.length;
+        for (uint256 i = 0; i < len; i++) {
+            bytes32 id = _assetIds[i];
+            if (_outstanding[id] == 0) continue;
+            try IAssetOracleV2(_oracle).getPrice(id) returns (uint256 p, uint256 updatedAt) {
+                if (p != 0 && block.timestamp <= updatedAt + effectiveMaxPriceAge()) {
+                    _storeLastGood(id, p, updatedAt);
+                }
+            } catch {}
+        }
+    }
+
+    function _snapshot()
+        internal
+        view
+        returns (uint256 reserve_, uint256 liability, uint256 ratioBps, uint256 unpriced, uint256 fallbackPriced)
+    {
+        reserve_ = reserve();
+        (liability, unpriced, fallbackPriced) = valuationDetail();
+        ratioBps = liability == 0
+            ? type(uint256).max
+            : reserve_ * BPS_DENOM / liability;
+    }
+
+    /// @notice Bounds exposure to one market. 0 closes the asset to new mints
+    ///         while leaving redemptions open.
+    ///         Re-opening an asset (cap > 0) also clears its unpriced exemption:
+    ///         closing it again needs a fresh `setUnpricedExemption` decision,
+    ///         with the dust / price check re-run against the new outstanding.
+    function setAssetCap(bytes32 assetId, uint256 cap) external onlyRole(RISK_ROLE) {
+        assetCap[assetId] = cap;
+        emit AssetCapUpdated(assetId, cap);
+        if (cap != 0 && _unpricedExempt[assetId]) {
+            _unpricedExempt[assetId] = false;
+            emit UnpricedExemptionSet(assetId, false, msg.sender);
+        }
+    }
+
+    /// @notice Pay USDC, receive tokens at the oracle price less the mint fee.
+    /// @dev Gated by the per-asset cap, the latched breach, and the reserve
+    ///      ratio.
+    function mint(bytes32 assetId, uint256 usdcAmount)
+        external whenNotPaused nonReentrant returns (uint256 tokenOut)
+    {
+        // V2.3: the latched halt, checked before anything else costs gas.
+        //
+        // This is NOT redundant with the ratio check below. That one is
+        // evaluated AFTER the incoming USDC lands, so a large enough mint can
+        // satisfy a line the book is currently under — it asks "would this mint
+        // leave us healthy", not "are we healthy". Once a breach has been
+        // observed, new issuance stops until an observation says the book
+        // recovered, which anyone can perform.
+        if (mintingHalted) revert MintingHalted();
+
+        address token = _assetToken[assetId];
+        if (token == address(0)) revert AssetNotRegistered(assetId);
+        if (usdcAmount == 0) revert ZeroAmount();
+
+        uint256 feePaid;
+        (tokenOut, feePaid) = previewMint(assetId, usdcAmount);   // reverts if stale
+        if (tokenOut == 0) revert ZeroAmount();
+        _rememberLivePrice(assetId);   // V2.5 / M-7
+
+        uint256 newOutstanding = _outstanding[assetId] + tokenOut;
+        if (newOutstanding > assetCap[assetId]) {
+            revert CapExceeded(assetId, newOutstanding, assetCap[assetId]);
+        }
+
+        _outstanding[assetId] = newOutstanding;
+        accruedFees += feePaid;
+
+        IERC20(_usdc).safeTransferFrom(msg.sender, address(this), usdcAmount);
+
+        // VULNERABILITY #2 FIX: refuse the mint if it would leave the book below
+        // the operator's minimum coverage. Checked after the transfer so the
+        // incoming USDC counts toward the ratio it must satisfy.
+        // V2.5 / M-7: the ratio must be KNOWABLE. An asset valued at its
+        // last-good mark (<= 6h) is an estimate and is admitted; an asset with
+        // no usable price at all is missing from the liability, which makes
+        // the ratio optimistic — refuse rather than mint against it.
+        (uint256 liability, uint256 unpriced, ) = valuationDetail();
+        if (unpriced > 0) revert LiabilityUnpriced(unpriced);
+        uint256 ratio = liability == 0 ? type(uint256).max : reserve() * BPS_DENOM / liability;
+        if (ratio < minReserveRatioBps) revert ReserveRatioTooLow(ratio, minReserveRatioBps);
+
+        SyntheticAssetV2(token).mint(msg.sender, tokenOut);
+        emit Minted(msg.sender, assetId, usdcAmount, tokenOut, feePaid);
+    }
+
+    /// @notice Burn tokens, receive their USDC value less the redeem fee.
+    /// @dev Deliberately NOT gated by the reserve ratio — blocking exits during
+    ///      stress is the bank run, not a defence against it. V2.3 keeps that
+    ///      intact: `mintingHalted` is checked in mint() and nowhere else, so a
+    ///      breach that stops new issuance never touches the exit.
+    function redeem(bytes32 assetId, uint256 tokenAmount)
+        external whenNotPaused nonReentrant returns (uint256 usdcOut)
+    {
+        address token = _assetToken[assetId];
+        if (token == address(0)) revert AssetNotRegistered(assetId);
+        if (tokenAmount == 0) revert ZeroAmount();
+
+        uint256 feePaid;
+        (usdcOut, feePaid) = previewRedeem(assetId, tokenAmount);
+        _rememberLivePrice(assetId);   // V2.5 / M-7
+
+        uint256 avail = reserve();
+        if (avail < usdcOut) revert VaultDry(usdcOut, avail);
+
+        // Only credit the portion of the fee the vault can actually back.
+        //
+        // Through V2.1 the full fee was credited whenever the reserve covered
+        // the NET payout, so a redeem in the window `usdcOut <= reserve < gross`
+        // booked operator revenue against money that was not there. Once
+        // accruedFees passed the balance, reserve() clamped to 0 and every later
+        // redeem reverted VaultDry on USDC the vault demonstrably held —
+        // holders frozen out by an accounting artefact. Found by
+        // invariant_reserveNeverCountsAccruedFees.
+        //
+        // The alternative fix — requiring `reserve >= gross` — would instead
+        // refuse the exit outright. Charging the operator less is the right side
+        // to err on: blocking exits under stress is the bank run, not a defence
+        // against it, and the operator should not book revenue that is not
+        // there.
+        uint256 headroom  = avail - usdcOut;
+        uint256 backedFee = feePaid <= headroom ? feePaid : headroom;
+
+        _outstanding[assetId] -= tokenAmount;
+        accruedFees += backedFee;
+
+        SyntheticAssetV2(token).burn(msg.sender, tokenAmount);
+        IERC20(_usdc).safeTransfer(msg.sender, usdcOut);
+
+        emit Redeemed(msg.sender, assetId, tokenAmount, usdcOut, backedFee);
+    }
+
+    /// @notice Operator injects payout collateral.
+    function fundVault(uint256 usdcAmount) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
+        if (usdcAmount == 0) revert ZeroAmount();
+        IERC20(_usdc).safeTransferFrom(msg.sender, address(this), usdcAmount);
+        emit VaultFunded(msg.sender, usdcAmount);
+    }
+
+    /// @notice Operator withdraws earned fees. Cannot touch payout collateral.
+    function withdrawFees(address to, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
+        if (to == address(0)) revert InvalidParam();
+        if (amount > accruedFees) revert InvalidParam();
+        accruedFees -= amount;
+        IERC20(_usdc).safeTransfer(to, amount);
+        emit FeesWithdrawn(to, amount);
+    }
+}

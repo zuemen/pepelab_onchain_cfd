@@ -106,6 +106,15 @@ contract CopyTracker is ReentrancyGuard, Ownable {
     ///         open (exchange paused, asset halted, stale price, ...).
     error PositionStillOpen(uint256 positionId);
     error InvalidSlashWithdrawal();
+    /// @notice M10: the trader's latest strategy is not the version the
+    ///         follower signed up for (it was re-published in between).
+    error StrategyVersionMismatch(uint256 expected, uint256 actual);
+    /// @notice M2: the trader is no longer eligible (stake below minimum, or
+    ///         an unstake request pending) — no NEW follows.
+    error TraderNotEligible(address trader);
+    /// @notice Ownership can be transferred (e.g. to the timelock) but never
+    ///         renounced: the slash reserve would be stranded forever.
+    error RenounceOwnershipDisabled();
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
@@ -125,11 +134,40 @@ contract CopyTracker is ReentrancyGuard, Ownable {
 
     // ── Core functions ───────────────────────────────────────────────────────
 
+    /// @notice Copy `trader`'s LATEST published strategy with `totalMargin`.
+    /// @dev M10 — front-running risk: the allocations are read at execution
+    ///      time, not when the follower looked at them. The trader (or anyone
+    ///      colluding with them) can publish a new version — different assets,
+    ///      directions, 5x leverage — in the same block, ahead of the
+    ///      follower's transaction, and this call will copy that one instead.
+    ///      Kept for backward compatibility with existing integrations; new
+    ///      callers should use `followTraderAtVersion`, which pins the version.
     function followTrader(address trader, uint256 totalMargin) external payable nonReentrant {
+        _follow(trader, totalMargin, false, 0);
+    }
+
+    /// @notice M10: `followTrader`, but reverts `StrategyVersionMismatch`
+    ///         unless the trader's latest strategy is still `expectedVersion`
+    ///         (the `versionId` the follower reviewed, from
+    ///         `registry.getLatestStrategy`). A re-publish between review and
+    ///         execution makes the follow fail instead of silently copying
+    ///         allocations the follower never saw.
+    function followTraderAtVersion(address trader, uint256 totalMargin, uint256 expectedVersion)
+        external payable nonReentrant
+    {
+        _follow(trader, totalMargin, true, expectedVersion);
+    }
+
+    function _follow(address trader, uint256 totalMargin, bool pinVersion, uint256 expectedVersion) internal {
         // 1. Fetch latest published strategy
         (StrategyRegistry.Allocation[] memory allocations, uint256 versionId) =
             registry.getLatestStrategy(trader);
         if (allocations.length == 0) revert NoStrategyPublished();
+        if (pinVersion && versionId != expectedVersion) revert StrategyVersionMismatch(expectedVersion, versionId);
+        // M2: eligibility is checked at publish AND at follow — a trader who
+        // has since asked for their stake back (or been slashed below the
+        // minimum) keeps existing followers but takes no new ones.
+        if (!registry.isEligibleTrader(trader)) revert TraderNotEligible(trader);
 
         // 2. Pull USDC from follower → CopyTracker
         usdc.safeTransferFrom(msg.sender, address(this), totalMargin);
@@ -323,18 +361,33 @@ contract CopyTracker is ReentrancyGuard, Ownable {
 
     /// @dev Moves `amount` of `trader`'s stake into this contract and books it
     ///      in `slashReserve`. A single try: the reserve is credited only if
-    ///      TraderStake's transfer succeeded, and the success branch makes no
-    ///      external call, so nothing here can revert the unfollow. A refused
-    ///      slash is reported (`SlashFailed`), never retried or reverted.
-    ///      `TraderSlashed.follower` is the account whose unfollow triggered
-    ///      the slash, not a recipient.
+    ///      TraderStake's call succeeded, and only with the USDC that actually
+    ///      ARRIVED (balance after − before), never the nominal `amount` — a
+    ///      stake contract that transfers less (fee-on-transfer token, a
+    ///      partial or no-op implementation) must not leave `slashReserve`
+    ///      promising USDC the tracker does not hold, which would make
+    ///      `withdrawSlashReserve` revert or pay out other funds. The only
+    ///      external calls on the success path are `usdc.balanceOf` reads.
+    ///      A refused slash is reported (`SlashFailed`), never retried or
+    ///      reverted. `TraderSlashed.follower` is the account whose unfollow
+    ///      triggered the slash, not a recipient.
     function _slashToReserve(address trader, uint256 amount) internal {
+        uint256 before = usdc.balanceOf(address(this));
         try traderStake.slash(trader, amount, address(this)) {
-            slashReserve += amount;
-            emit TraderSlashed(trader, msg.sender, amount);
+            uint256 afterBal = usdc.balanceOf(address(this));
+            uint256 received = afterBal > before ? afterBal - before : 0;
+            slashReserve += received;
+            emit TraderSlashed(trader, msg.sender, received);
         } catch {
             emit SlashFailed(trader, msg.sender, amount);
         }
+    }
+
+    /// @notice Disabled. Ownership may move (e.g. to the governance
+    ///         timelock), but an ownerless tracker would lock `slashReserve`
+    ///         forever — `withdrawSlashReserve` is the only way it ever leaves.
+    function renounceOwnership() public pure override {
+        revert RenounceOwnershipDisabled();
     }
 
     /// @notice Release slashed stake held in `slashReserve` (e.g. to a
