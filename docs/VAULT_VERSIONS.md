@@ -1,10 +1,33 @@
 # Vault Versions — which implementation is actually live
 
-`contracts/src/v2/` holds three vault implementations. Nothing in the source
-says which one the proxy runs, so anyone opening `AssetVaultV2.sol` first will
-read a version that carries two fixed bugs and reasonably assume it is what is
-deployed. This document is the answer, and it is read from chain rather than
+`contracts/src/v2/` holds five vault implementations (V2.0 – V2.4). Nothing in
+the source says which one a proxy runs, so anyone opening `AssetVaultV2.sol` first
+will read a version that carries two fixed bugs and reasonably assume it is what
+is deployed. This document is the answer, and it is read from chain rather than
 from memory.
+
+> **2026-09-30 update:** Base Sepolia (84532) — the primary chain — runs its own
+> proxy on **V2.4 (`2.4.0`)**; see "Live on Base Sepolia" below. The Sepolia proxy
+> is still on V2.2. The two chains are separate deployments, not upgrades of one
+> proxy.
+
+## Live on Base Sepolia
+
+| | |
+|---|---|
+| Proxy (use this address for everything) | `0x916D7Fc399d9afd23BAa113E2c2Cc601341ff10a` |
+| Implementation, per EIP-1967 slot | `0xA2D967221da278b26E0432F4A6BD231D7e0a3733` |
+| Which source that is | `src/v2/AssetVaultV2_4.sol` |
+| `version()` returns | `2.4.0` |
+| Oracle | GuardedOracle `0x8E9e59BE9589Ad88EC14F3ef6bdcc43E8B76f842` |
+| Carbon registry (`esgRegistry()`) | ESGRegistryV2 `0xBF5B9cD78566791d79c687A732b4ed5bc3E95dFf` |
+
+Read on 2026-09-30 from the EIP-1967 slot and `version()` (same two methods as
+below, with the Base Sepolia RPC). The implementation matches the
+`AssetVaultV2_4` CREATE in
+`broadcast/DeployHardenedVault129.s.sol/84532/run-latest.json`; the proxy was
+deployed directly on V2.4 by that script (#129), not upgraded from an earlier
+version.
 
 ## Live on Sepolia
 
@@ -37,13 +60,15 @@ cast call 0x3a37415981F6f4fC27FA6c8C62F1d4e47115fD17 'version()(string)' \
 Both point at the same implementation, and `0xA8a5…1ac1` matches the CREATE in
 `broadcast/UpgradeVaultToV2_2.s.sol/11155111/run-latest.json`.
 
-## The three sources
+## The sources
 
 | Source | Status | Implementation address |
 |---|---|---|
 | `AssetVaultV2.sol` | **Historical.** Two known defects. Never delete — the proxy's storage layout is defined by it. | (initial deploy) |
-| `AssetVaultV2_1.sol` | **Historical.** Fixed defect 1, still carried defect 2. | `0x35967322A5705354d858c92834bb99DCEd92a65D` |
-| `AssetVaultV2_2.sol` | **LIVE** | `0xA8a5B0e9C062e0Bb1Ab3a15788Ae823251C41ac1` |
+| `AssetVaultV2_1.sol` | **Historical.** Fixed defect 1, still carried defect 2. | `0x35967322A5705354d858c92834bb99DCEd92a65D` (Sepolia) |
+| `AssetVaultV2_2.sol` | **LIVE on Sepolia** | `0xA8a5B0e9C062e0Bb1Ab3a15788Ae823251C41ac1` (Sepolia) |
+| `AssetVaultV2_3.sol` | **Not deployed as a live implementation** (not found in any broadcast on 2026-09-30). Adds observability: `observeReserve()` emits `ReserveObserved`, a reserve-ratio breach latches `mintingHalted`, `reserveStatus()` pairs the ratio with whether it can be trusted. | — |
+| `AssetVaultV2_4.sol` | **LIVE on Base Sepolia** (`2.4.0`). Everything in V2.3, plus the mint fee derived per asset from the witnessed carbon tier (`ESGRegistryV2.medianCarbonTier`, ADR-005/006); redeem stays a flat settable fee. Storage layout identical to V2.3 except `_esgRegistry` taken from `__gap`. | `0xA2D967221da278b26E0432F4A6BD231D7e0a3733` (Base Sepolia) |
 
 They are kept as separate files rather than edited in place because a UUPS
 proxy's storage layout is a contract with its own history. Each version's layout
@@ -98,7 +123,10 @@ than re-rolling the fuzzer.
 - **Address to use everywhere is the proxy.** Implementation addresses appear
   here only so the deployed bytecode can be traced back to a source file.
 - **The invariant suite runs against `AssetVaultV2_2`**, so CI validates what is
-  actually deployed rather than the oldest source in the directory.
+  deployed on Sepolia rather than the oldest source in the directory.
+  *2026-09-30:* `test/v2/AssetVaultV2Invariant.t.sol` still targets V2.2 only;
+  V2.4 (live on Base) is covered by `test/v2/AssetVaultV2_4Upgrade.t.sol` and
+  `test/CarbonPricing.t.sol`, not by the invariant suite.
 - **Do not run the full suite with `--no-match-contract Invariant`.** The V2.2
   defect was found by exactly the tests that flag skips, and skipping them is
   how it reached a deployment in the first place.

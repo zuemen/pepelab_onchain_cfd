@@ -8,7 +8,11 @@
 2. **平倉資料滑出 7 天視窗** → `/marketplace` 的領獎台變空，顯示「還沒有交易者平倉滿 5 筆」。
    這是設計上的正確行為（TraderScore 要求視窗內平倉 ≥ 5 筆），不是 bug。
 
-正式站：<https://pepelab-onchain-cfd.vercel.app>　鏈：Base Sepolia (84532)
+正式站：<https://pepelab-onchain-cfd-djot.vercel.app>　鏈：Base Sepolia (84532)
+交易所：`0x827eA0c62a32e995927101259042F8A27D99124D`（2026-09-29 重新部署；舊的 `0xEf75…c072` 已退役）
+
+> 2026-09-30 更正：正式站網址原寫 `pepelab-onchain-cfd.vercel.app`（當日無法連線），改為 README
+> 所列的正式站；下方腳本的 exchange 位址改為現行位址。
 
 ---
 
@@ -49,7 +53,7 @@ echo "head=$HEAD  7 天視窗起點=$((HEAD - 302400))"
 python - <<'PY'
 import json, subprocess, os
 rpc = os.environ["BASE_SEPOLIA_RPC_URL"]
-EX  = "0xEf75ECA6514cE96B18382E921aC6190a0cF8c072"
+EX  = "0x827eA0c62a32e995927101259042F8A27D99124D"
 T0  = "0x7a0db93fde80eea902af70e15fa590136ec8ea44fbc9de1a71175446513213f5"
 names = {
     "0x91ade4824386af80ed003b9363f54731a2ec24ef": "ESG Master",
@@ -89,7 +93,7 @@ PY
 cd contracts
 set -a; . ./.env.roles; . ../agent/.env; set +a
 export ORACLE_OWNER_PK="$KEEPER_PK"
-export EXCHANGE_ADDR=0xEf75ECA6514cE96B18382E921aC6190a0cF8c072
+export EXCHANGE_ADDR=0x827eA0c62a32e995927101259042F8A27D99124D
 export USDC_ADDR=0x69fd695Bc7C3aFdb35ABA35cD6890C506400b035
 export ORACLE_ADDR=0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3
 forge script script/SeedWhaleCloses.s.sol --rpc-url "$BASE_SEPOLIA_RPC_URL" -vv              # 先模擬
@@ -105,7 +109,7 @@ forge script script/SeedWhaleCloses.s.sol --rpc-url "$BASE_SEPOLIA_RPC_URL" --br
 |---|---|
 | `/` | 第一張功能卡是「代幣化 RWA 現貨」；幣股金債四個指數有數字；tagline 沒有 MemeFi |
 | `/marketplace` | 載入時有「掃描鏈上事件… N/31」（約 12 秒）；領獎台三位；頁尾寫約 7 天而不是 27 小時 |
-| `/exchange` | **看不到槓桿倍數按鈕，也看不到「開倉」面板**；只剩水龍頭 / 兌換 / 保證金 |
+| `/exchange` | **看不到槓桿倍數按鈕，也看不到「開倉」面板或保證金帳戶**；只剩水龍頭 / 兌換（保證金存入在 `/terminal`，提領在 `/portfolio` 的部位頁） |
 | `/tokens` | TradingView 圖表載得出來且 symbol 是 `COINBASE:BTCUSD`；儲備率有數字；買賣按鈕在 |
 | 側邊欄 | **沒有「專業終端（進階）」**——它跟著 `VITE_SHOW_PERPETUALS` 走，預設關 |
 
@@ -135,6 +139,7 @@ forge script script/SeedWhaleCloses.s.sol --rpc-url "$BASE_SEPOLIA_RPC_URL" --br
 - RWA 配置環算的是「代幣持倉市值 ＋ 部位保證金」，但**損益欄只涵蓋部位**——現貨沒有
   鏈上成本基礎可算。只有現貨持倉時四個損益都會是「—」，那是正確結果，畫面上也有一
   行字說明。
-- 線上 `PerpetualExchange`（`0xEf75…c072`）比 `src/` 舊：它的 `getUserPositions` 是
-  append-only，平倉後 id 仍留在陣列裡。讀這個回傳值判斷「未平倉數」會得到錯的答案——
-  `SeedWhaleCloses.s.sol` 因此改成數「成功平倉幾筆」。
+- （歷史，僅適用已退役的 `0xEf75…c072`）舊 `PerpetualExchange` 比 `src/` 舊：它的
+  `getUserPositions` 是 append-only，平倉後 id 仍留在陣列裡。讀這個回傳值判斷「未平倉數」
+  會得到錯的答案——`SeedWhaleCloses.s.sol` 因此改成數「成功平倉幾筆」。現行 exchange
+  `0x827e…124D` 由現行原始碼部署，平倉時會把 id 移出陣列。

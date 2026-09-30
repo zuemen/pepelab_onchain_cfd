@@ -4,32 +4,36 @@ How the engineering skills should consume this repo's domain documentation when 
 
 ## Before exploring, read these
 
-- **`CONTEXT-MAP.md`** at the repo root — it points at one `CONTEXT.md` per context. Read each one relevant to the topic.
-- **`docs/adr/`** — system-wide decisions. Also check `<context>/docs/adr/` for context-scoped decisions.
+- **`CONTEXT-MAP.md`** at the repo root — it lists the four contexts. Only `frontend/CONTEXT.md` exists today; the other three contexts have no glossary yet.
+- **`docs/ADR-00N-*.md`** — system-wide decisions (ADR-001 … ADR-007), stored flat in `docs/`, not in a `docs/adr/` folder.
+- **`frontend/docs/adr/NNNN-*.md`** — frontend-scoped decisions (0001 … 0008).
 
-If any of these files don't exist yet, **proceed silently**. Don't flag their absence; don't suggest creating them upfront. The `/domain-modeling` skill (reached via `/grill-with-docs` and `/improve-codebase-architecture`) creates them lazily when terms or decisions actually get resolved.
+If a context has no `CONTEXT.md` or ADR folder yet, **proceed silently**. Don't flag their absence; don't suggest creating them upfront. The `/domain-modeling` skill (reached via `/grill-with-docs` and `/improve-codebase-architecture`) creates them lazily when terms or decisions actually get resolved.
 
 ## File structure
 
-This repo is multi-context — four distinct domains sit side by side with no shared root package:
+This repo is multi-context — four distinct domains sit side by side with no shared root package. What actually exists (checked 2026-09-30):
 
 ```
 /
-├── CONTEXT-MAP.md                 ← points at the four contexts below
-├── docs/adr/                      ← system-wide decisions
-├── agent/
-│   ├── CONTEXT.md
-│   └── docs/adr/                  ← agent/keeper/MCP-server-specific decisions
-├── contracts/
-│   ├── CONTEXT.md
-│   └── docs/adr/                  ← Solidity/Foundry-specific decisions
+├── CONTEXT-MAP.md                 ← lists the four contexts below
+├── docs/
+│   └── ADR-001-… ADR-007-*.md     ← system-wide decisions (flat, three-digit numbers)
+├── agent/                         ← no CONTEXT.md, no ADR folder yet
+├── contracts/                     ← no CONTEXT.md, no ADR folder yet
 ├── frontend/
 │   ├── CONTEXT.md
-│   └── docs/adr/                  ← dashboard/frontend-specific decisions
-└── web/
-    ├── CONTEXT.md
-    └── docs/adr/                  ← marketing/static-site-specific decisions
+│   └── docs/adr/0001-… 0008-*.md  ← frontend-specific decisions (four-digit numbers)
+└── web/                           ← no CONTEXT.md, no ADR folder yet
 ```
+
+**Two ADR numbering schemes coexist.** `ADR-00N` (three digits) means `docs/ADR-00N-*.md`;
+`ADR-000N` (four digits) means `frontend/docs/adr/000N-*.md`. They are independent sequences,
+so e.g. "ADR-002" and "ADR-0002" are different decisions. Some topics appear in both
+(`docs/ADR-005` ↔ `frontend/docs/adr/0007`, `docs/ADR-006` ↔ `frontend/docs/adr/0008`); when
+citing an ADR, give the full path or the digit count that identifies which series it is.
+The repo root `CLAUDE.md` still describes per-context `CONTEXT.md` files under every context;
+this file is the accurate one.
 
 ## Use the glossary's vocabulary
 
