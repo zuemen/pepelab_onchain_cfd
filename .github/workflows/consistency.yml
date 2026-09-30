@@ -41,3 +41,22 @@ jobs:
 
       - name: Check workflow addresses
         run: node scripts/check-addresses.mjs
+
+  tenant-deploy:
+    # 租戶部署設定（deploy/tenants/*.json）：不放秘密、角色分離、不與正式站或其他租戶
+    # 共用專屬位址、前端白名單 ⊆ 金庫註冊資產。只讀，不送交易。見 docs/TENANT_DEPLOYMENT.md。
+    name: tenant deploy configs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+
+      - name: Self-test
+        run: node --test scripts/check-tenant-deploy.test.mjs
+
+      - name: Check tenant deploy configs
+        run: node scripts/check-tenant-deploy.mjs

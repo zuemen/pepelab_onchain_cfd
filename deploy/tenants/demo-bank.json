@@ -1,0 +1,47 @@
+{
+  "$comment": "示範租戶 demo-bank（虛構機構）的部署設定。所有位址都是佔位值、status=template，不能也不會被用來部署。對應前端設定 frontend/src/tenant/tenants/demo-bank.json。",
+  "schemaVersion": 1,
+  "tenantId": "demo-bank",
+  "status": "template",
+  "frontendTenant": "demo-bank",
+  "network": {
+    "chainId": 84532
+  },
+  "secretsEnv": {
+    "deployerPrivateKey": "DEMO_BANK_DEPLOYER_PRIVATE_KEY",
+    "keeperPrivateKey": "DEMO_BANK_KEEPER_PRIVATE_KEY",
+    "rpcUrl": "BASE_SEPOLIA_RPC_URL"
+  },
+  "roles": {
+    "admin": "<DEMO_BANK_ADMIN_MULTISIG>",
+    "risk": "<DEMO_BANK_RISK_ADDRESS>",
+    "guardian": "<DEMO_BANK_GUARDIAN_ADDRESS>",
+    "keeper": "<DEMO_BANK_KEEPER_ADDRESS>",
+    "marketOperator": "<DEMO_BANK_MARKET_OPERATOR_ADDRESS>",
+    "treasury": "<DEMO_BANK_TREASURY_ADDRESS>"
+  },
+  "shared": {
+    "settlementToken": "<SETTLEMENT_TOKEN_ADDRESS>",
+    "priceSource": "<REFERENCE_PRICE_SOURCE_ADDRESS>"
+  },
+  "assets": {
+    "registered": ["sAAPL", "sMSFT", "sNVDA", "sGOLD", "sBOND", "sESGU", "sICLN"]
+  },
+  "fees": {
+    "status": "pending-decision",
+    "baseFeeBps": null,
+    "tenantMarkupBps": null
+  },
+  "keeper": {
+    "cron": "*/15 * * * *"
+  },
+  "deployed": {
+    "GuardedOracle": null,
+    "AssetVaultV2": null,
+    "InsuranceVault": null,
+    "FeeRouter": null,
+    "PerpetualExchange": null,
+    "AgentSessionManager": null,
+    "ESGRegistryV2": null
+  }
+}
