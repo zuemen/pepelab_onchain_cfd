@@ -102,7 +102,7 @@ export interface AssetProvenanceBodyProps {
    * idle＝顯示按鈕；loading＝查詢中；unknown＝查過但找不到起點，只說明、不顯示天數。
    * undefined＝沒有持有（或沒有 provider），整段不顯示。
    */
-  heldSinceQuery?: { status: 'idle' | 'loading' | 'unknown'; onQuery: () => void }
+  heldSinceQuery?: { status: 'idle' | 'loading' | 'unknown' | 'error'; onQuery: () => void }
   nowMs?: number
 }
 
@@ -229,6 +229,21 @@ export function AssetProvenanceBody({
             <Typography variant="caption" color="text.secondary">
               {tp.heldDaysUnknown}
             </Typography>
+          )}
+          {heldDays === null && heldSinceQuery?.status === 'error' && (
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Typography variant="caption" color="warning.main">
+                {tp.heldDaysError}
+              </Typography>
+              <Button
+                size="small"
+                variant="text"
+                onClick={heldSinceQuery.onQuery}
+                sx={{ textTransform: 'none', p: 0, minWidth: 0, fontSize: '0.75rem' }}
+              >
+                {tp.heldDaysRetry}
+              </Button>
+            </Stack>
           )}
           {heldDays !== null && (
             <Typography variant="caption" color="text.secondary">

@@ -42,8 +42,13 @@ export type HeldSinceState =
   | { status: 'idle' }
   | { status: 'loading' }
   | { status: 'found'; heldSinceSec: number }
-  /** 查過了但找不到（持有早於掃描範圍、倒推對不上、讀不到區塊時間）——不顯示天數。 */
-  | { status: 'unknown' };
+  /** 查過了但找不到（持有早於掃描範圍、倒推對不上）——不顯示天數。 */
+  | { status: 'unknown' }
+  /**
+   * 這次沒查成（某段 getLogs 或區塊時間讀取失敗）。不是「鏈上沒有」，畫面必須分開
+   * 顯示並提供重試（PR #202 第二輪審查）。不寫快取。
+   */
+  | { status: 'error' };
 
 /** 每一步往回掃幾段。持有剛開始的人通常第一步就找到。 */
 const CHUNKS_PER_STEP = 5;
@@ -97,13 +102,13 @@ export async function queryHeldSince(
     if (signal?.aborted) return { status: 'unknown' };
     const from = Math.max(floor, to - step + 1);
     const r = await deps.scan(from, to, { signal });
-    if (r.failed) return { status: 'unknown' }; // 有缺段就不可能確定起點；不快取
+    if (r.failed) return { status: 'error' }; // 有缺段就不可能確定起點；不快取
     transfers.push(...r.transfers);
     const s = streakStart(bal, t.user, transfers);
     if (s.kind === 'inconsistent') return settle(null);
     if (s.kind === 'found') {
       const ts = await deps.blockTime(s.blockNumber);
-      if (ts === null) return { status: 'unknown' }; // 讀取失敗，不快取
+      if (ts === null) return { status: 'error' }; // 讀取失敗，不快取
       return settle(ts);
     }
   }

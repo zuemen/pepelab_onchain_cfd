@@ -111,7 +111,8 @@ describe('持有天數：module-level 快取', () => {
 
   it('讀取失敗不快取——那是「這次沒查成」，不是「找不到」', async () => {
     const failing = fakeDeps({ balance: 5n, failScan: true });
-    expect(await queryHeldSince(target(), failing.deps)).toEqual({ status: 'unknown' });
+    // 讀取失敗是 error（畫面顯示重試），不是 unknown（「鏈上找不到」）。
+    expect(await queryHeldSince(target(), failing.deps)).toEqual({ status: 'error' });
     expect(peekHeldSince(target())).toEqual({ status: 'idle' });
 
     const retry = fakeDeps({ balance: 5n, mintAt: HEAD - 10 });

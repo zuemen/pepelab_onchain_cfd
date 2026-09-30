@@ -187,6 +187,8 @@ export const tokens = {
     heldDaysQuery: '查詢持有天數',
     heldDaysLoading: '正在讀取鏈上紀錄…',
     heldDaysUnknown: '最近的鏈上紀錄裡找不到這段持有的起點，因此不顯示天數。',
+    heldDaysError: '這次沒能讀完鏈上紀錄（節點暫時無回應），不代表沒有持有紀錄。',
+    heldDaysRetry: '再查一次',
     sinceLabel: '自 {date} 起見證',
 
     /** 逐檔一句話的標的說明、碳資料出處名稱、已知限制。數字與網址在 assetMeta.ts。 */

@@ -99,7 +99,7 @@ export function useHeldSince(a: {
       .catch((e: unknown) => {
         if (ctrl.signal.aborted || isChunkScanAborted(e)) return
         console.warn('[useHeldSince]', e)
-        setState({ status: 'unknown' })
+        setState({ status: 'error' })
       })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider, targetKey])
