@@ -233,15 +233,15 @@ export async function runRound(ctx: RoundCtx): Promise<RoundResult> {
     // Guarded 的現況要在判斷之前讀：兩顆要嘛都寫、要嘛都不寫，且不一致時要補寫。
     // 窄複審 2：Guarded 被凍結或讀不到 → Mock 也拒寫（fail-closed）。凍結是 guardian
     // 的人工決定，keeper 不能把它當成「少一道限制、Mock 可以照寫」。
-    let guardedState: { price8: bigint; exists: boolean } | null = null;
+    let guardedState: { price8: bigint; updatedAt: bigint; exists: boolean } | null = null;
     if (ctx.guarded) {
       try {
-        const [gp, , exists, frozen] = await ctx.guarded.peek(assetId);
+        const [gp, gAt, exists, frozen] = await ctx.guarded.peek(assetId);
         if (exists && frozen) {
           refuse(symbol, assetId, "GuardedOracle 此資產已凍結（guardian 決定）—— fail-closed，MockOracle 也不寫");
           continue;
         }
-        guardedState = { price8: gp, exists };
+        guardedState = { price8: gp, updatedAt: gAt, exists };
       } catch (e) {
         r.failed += 1;
         r.skippedSymbols.push(symbol);
@@ -305,6 +305,11 @@ export async function runRound(ctx: RoundCtx): Promise<RoundResult> {
     let mirrorPlan: MirrorPlan | null = null;
     if (guardedState?.exists) {
       mirrorPlan = planMirror(guardedState.price8, price8, ctx.guardedCap);
+      // 與 MockOracle 同理：Guarded 自己的 heartbeat 到期時，同價也要重寫，否則收盤後時間戳
+      // 凍結；Guarded 的 maxPriceAge 一旦依 U8 調回小時級，金庫每晚會 StalePrice。
+      // 以 Guarded 自己的 updatedAt 判斷，剛寫過的不重複送（避免多一筆無意義交易）。
+      const guardedHeartbeatDue = BigInt(ctx.nowSec) - guardedState.updatedAt >= BigInt(ctx.heartbeatSec);
+      if (mirrorPlan.action === "skip" && guardedHeartbeatDue) mirrorPlan = { action: "write", value: price8 };
       if (mirrorPlan.action === "reject") {
         // 多源確認通過也一樣：Guarded 會拒絕的價格，Mock 也不寫。reject 訊息區分兩種成因。
         const why =
