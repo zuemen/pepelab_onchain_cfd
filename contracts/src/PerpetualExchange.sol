@@ -214,12 +214,14 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
 
     // ── State ────────────────────────────────────────────────────────────────
 
-    mapping(uint256 => Position)      public positions;
+    /// @dev EIP-170: the auto-generated 16-field getter cost ~1 KB of
+    ///      runtime. Read positions with `getPosition(id)` (same data).
+    mapping(uint256 => Position)      internal positions;
     /// @notice OPEN positions of a user. Closed ids are swap-and-popped out (C-3),
     ///         so this list is bounded by the margin an account actually has
     ///         locked. Historical (closed) positions are recoverable from the
     ///         PositionOpened / PositionClosed event stream.
-    mapping(address => uint256[])     public userPositions;
+    mapping(address => uint256[])     internal userPositions;   // read: getUserPositions
     mapping(address => uint256)       public freeMargin;
 
     /// @dev C-3 / H-1: 1-based index of a position inside `userPositions[owner]`
@@ -282,7 +284,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     // N2: auto-deleveraging (ADL) solvency backstop. Off by default so existing
     // liquidation behaviour is untouched until explicitly enabled.
     bool                              public adlEnabled;
-    mapping(bytes32 => uint256[])     public assetPositionIds;        // per-asset index for ADL scan
+    mapping(bytes32 => uint256[])     internal assetPositionIds;        // per-asset index for ADL scan
 
     // Portfolio (cross) margin was removed on 2026-09-30 (EIP-170 size limit and
     // the unfixable H3 gap; see docs/KNOWN_LIMITATIONS.md). Every position is
@@ -592,6 +594,11 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     ///         this particular position.
     error NotPositionAgent(uint256 positionId, address caller);
     error InvalidParam();
+    /// @notice An owner setter was given a value outside its documented bound
+    ///         (replaces the per-setter revert strings to fit EIP-170).
+    error ParamOutOfRange();
+    /// @notice `withdrawExecutionFees` could not send the ETH.
+    error EthTransferFailed();
     /// @notice P1: caller is neither the guardian nor the owner.
     error NotGuardianOrOwner(address caller);
     /// @notice P1: `caller` may not move `asset` from `current` to `requested`
@@ -676,7 +683,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     }
 
     function setExecutionFee(uint256 _fee) external onlyOwner {
-        require(_fee <= MAX_EXECUTION_FEE, "fee>1 ether");
+        if (_fee > MAX_EXECUTION_FEE) revert ParamOutOfRange();
         executionFee = _fee;
         emit ExecutionFeeSet(_fee);
     }
@@ -704,7 +711,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     ///      code review found no test exercising "change this mid-lifecycle,
     ///      then close" to catch the difference on its own.
     function setTradingFeeBps(uint256 _bps) external onlyOwner {
-        require(_bps <= MAX_TRADING_FEE_BPS, "fee>1%");
+        if (_bps > MAX_TRADING_FEE_BPS) revert ParamOutOfRange();
         TRADING_FEE_BPS = _bps;
         emit TradingFeeBpsSet(_bps);
     }
@@ -715,7 +722,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     /// @dev Legacy/no-registry lever only — see `setTradingFeeBps`'s NatSpec:
     ///      the exact same caveat applies here once `esgRegistry` is wired.
     function setBorrowFeePerHour(uint256 _bps) external onlyOwner {
-        require(_bps <= MAX_BORROW_FEE_BPS_PER_HOUR, "borrow fee too high");
+        if (_bps > MAX_BORROW_FEE_BPS_PER_HOUR) revert ParamOutOfRange();
         BORROW_FEE_BPS_PER_HOUR = _bps;
         emit BorrowFeeBpsPerHourSet(_bps);
     }
@@ -731,7 +738,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     ///         the protocol penalty. Bounded so reward + penalty can never exceed
     ///         the collateral itself.
     function setLiquidationPenaltyBps(uint256 _bps) external onlyOwner {
-        require(_bps + LIQUIDATION_REWARD_BPS <= 10_000, "penalty+reward>100%");
+        if (_bps + LIQUIDATION_REWARD_BPS > 10_000) revert ParamOutOfRange();
         liquidationPenaltyBps = _bps;
         emit LiquidationPenaltyBpsSet(_bps);
     }
@@ -754,7 +761,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     /// @notice N1: set the share (bps) of the trading fee routed to the LP vault.
     ///         0 keeps the current behaviour (no routing).
     function setVaultFeeShareBps(uint256 _bps) external onlyOwner {
-        require(_bps <= 10_000, "bps>100%");
+        if (_bps > 10_000) revert ParamOutOfRange();
         vaultFeeShareBps = _bps;
         emit VaultFeeShareSet(_bps);
     }
@@ -770,7 +777,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     ///      the real, carbon-aware effective value; this function's own
     ///      getter-equivalent (`maxLeverageOf`) does not.
     function setMaxLeverageFor(bytes32 asset, uint256 maxLev) external onlyOwner {
-        require(maxLev <= MAX_LEVERAGE, "above global cap");
+        if (maxLev > MAX_LEVERAGE) revert ParamOutOfRange();
         maxLeverageOf[asset] = maxLev;
         emit MaxLeverageSet(asset, maxLev);
     }
@@ -780,7 +787,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     ///         M-3: strictly below 100% — a maintenance requirement of exactly
     ///         the full notional makes every position instantly liquidatable.
     function setMaintenanceMarginFor(bytes32 asset, uint256 bps) external onlyOwner {
-        require(bps <= MAX_MAINTENANCE_MARGIN_BPS, "bps>=100%");
+        if (bps > MAX_MAINTENANCE_MARGIN_BPS) revert ParamOutOfRange();
         maintenanceMarginBpsOf[asset] = bps;
         emit MaintenanceMarginSet(asset, bps);
     }
@@ -795,8 +802,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     ///         owner could set `type(uint256).max` and disable staleness entirely
     ///         while the getter still looked configured.
     function setMaxPriceAge(uint256 _seconds) external onlyOwner {
-        require(_seconds > 0, "zero age");
-        require(_seconds <= MAX_PRICE_AGE_LIMIT, "age>7d");
+        if (_seconds == 0 || _seconds > MAX_PRICE_AGE_LIMIT) revert ParamOutOfRange();
         maxPriceAge = _seconds;
         emit MaxPriceAgeSet(_seconds);
     }
@@ -807,7 +813,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     ///      (M-3). An unbounded value let the owner push the mark far from the
     ///      index and liquidate or enrich one side of the book at will.
     function setMarkPremiumCapBps(uint256 _bps) external onlyOwner {
-        require(_bps <= MAX_MARK_PREMIUM_CAP_BPS, "premium cap>2%");
+        if (_bps > MAX_MARK_PREMIUM_CAP_BPS) revert ParamOutOfRange();
         markPremiumCapBps = _bps;
         emit MarkPremiumCapBpsSet(_bps);
     }
@@ -1065,10 +1071,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     ///         MAX_PROFIT_CAP_BPS]. Applies to positions opened afterwards
     ///         only — see `profitCapOf`.
     function setMaxProfitBps(bytes32 asset, uint256 bps) external onlyOwner {
-        require(
-            bps == 0 || (bps >= MIN_PROFIT_CAP_BPS && bps <= MAX_PROFIT_CAP_BPS),
-            "profit cap out of range"
-        );
+        if (bps != 0 && (bps < MIN_PROFIT_CAP_BPS || bps > MAX_PROFIT_CAP_BPS)) revert ParamOutOfRange();
         maxProfitBps[asset] = bps;
         emit MaxProfitBpsSet(asset, bps);
     }
@@ -1076,7 +1079,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     function withdrawExecutionFees() external onlyOwner whenNotPaused nonReentrant {
         uint256 balance = address(this).balance;
         (bool success, ) = msg.sender.call{value: balance}("");
-        require(success, "ETH transfer failed");
+        if (!success) revert EthTransferFailed();
     }
 
     // ── Margin management ────────────────────────────────────────────────────

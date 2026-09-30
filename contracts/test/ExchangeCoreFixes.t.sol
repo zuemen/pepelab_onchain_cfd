@@ -182,16 +182,16 @@ contract ExchangeCoreFixesTest is Test {
         assertEq(max, 200);
         exchange.setMarkPremiumCapBps(max);
         assertEq(exchange.markPremiumCapBps(), max);
-        vm.expectRevert(bytes("premium cap>2%"));
+        vm.expectRevert(PerpetualExchange.ParamOutOfRange.selector);
         exchange.setMarkPremiumCapBps(max + 1);
-        vm.expectRevert(bytes("premium cap>2%"));
+        vm.expectRevert(PerpetualExchange.ParamOutOfRange.selector);
         exchange.setMarkPremiumCapBps(1_000); // the previous ceiling is now refused
         assertEq(exchange.markPremiumCapBps(), max);
     }
 
     function testFuzz_setMarkPremiumCapBps_neverAboveCeiling(uint256 bps) public {
         if (bps > exchange.MAX_MARK_PREMIUM_CAP_BPS()) {
-            vm.expectRevert(bytes("premium cap>2%"));
+            vm.expectRevert(PerpetualExchange.ParamOutOfRange.selector);
             exchange.setMarkPremiumCapBps(bps);
         } else {
             exchange.setMarkPremiumCapBps(bps);

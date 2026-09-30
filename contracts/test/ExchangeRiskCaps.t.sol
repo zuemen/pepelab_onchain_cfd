@@ -209,17 +209,17 @@ contract ExchangeRiskCapsTest is Test {
         exchange.setMaxProfitBps(BTC, hi);
         exchange.setMaxProfitBps(BTC, 0); // off
 
-        vm.expectRevert(bytes("profit cap out of range"));
+        vm.expectRevert(PerpetualExchange.ParamOutOfRange.selector);
         exchange.setMaxProfitBps(BTC, lo - 1);
-        vm.expectRevert(bytes("profit cap out of range"));
+        vm.expectRevert(PerpetualExchange.ParamOutOfRange.selector);
         exchange.setMaxProfitBps(BTC, hi + 1);
-        vm.expectRevert(bytes("profit cap out of range"));
+        vm.expectRevert(PerpetualExchange.ParamOutOfRange.selector);
         exchange.setMaxProfitBps(BTC, 1);
     }
 
     function testFuzz_setMaxProfitBps_acceptsExactlyTheDocumentedRange(uint256 bps) public {
         bool ok = bps == 0 || (bps >= exchange.MIN_PROFIT_CAP_BPS() && bps <= exchange.MAX_PROFIT_CAP_BPS());
-        if (!ok) vm.expectRevert(bytes("profit cap out of range"));
+        if (!ok) vm.expectRevert(PerpetualExchange.ParamOutOfRange.selector);
         exchange.setMaxProfitBps(BTC, bps);
         if (ok) assertEq(exchange.maxProfitBps(BTC), bps);
     }

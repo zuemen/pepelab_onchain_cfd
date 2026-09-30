@@ -451,7 +451,7 @@ contract AuditFixesCoreTest is Test {
 
     function test_M3_tradingFeeBounded() public {
         uint256 ceiling = exchange.MAX_TRADING_FEE_BPS();
-        vm.expectRevert(bytes("fee>1%"));
+        vm.expectRevert(PerpetualExchange.ParamOutOfRange.selector);
         exchange.setTradingFeeBps(100_000);      // the audit's confiscation example
         exchange.setTradingFeeBps(ceiling);
         assertEq(exchange.TRADING_FEE_BPS(), 100);
@@ -459,31 +459,31 @@ contract AuditFixesCoreTest is Test {
 
     function test_M3_borrowFeeBounded() public {
         uint256 tooHigh = exchange.MAX_BORROW_FEE_BPS_PER_HOUR() + 1;
-        vm.expectRevert(bytes("borrow fee too high"));
+        vm.expectRevert(PerpetualExchange.ParamOutOfRange.selector);
         exchange.setBorrowFeePerHour(tooHigh);
         exchange.setBorrowFeePerHour(tooHigh - 1);   // ceiling accepted
     }
 
     function test_M3_maintenanceMarginMustStayBelow100Pct() public {
-        vm.expectRevert(bytes("bps>=100%"));
+        vm.expectRevert(PerpetualExchange.ParamOutOfRange.selector);
         exchange.setMaintenanceMarginFor(BTC, 10_000);
         exchange.setMaintenanceMarginFor(BTC, 9_999);   // ceiling accepted
     }
 
     function test_M3_maxPriceAgeBoundedOnBothSides() public {
-        vm.expectRevert(bytes("zero age"));
+        vm.expectRevert(PerpetualExchange.ParamOutOfRange.selector);
         exchange.setMaxPriceAge(0);
-        vm.expectRevert(bytes("age>7d"));
+        vm.expectRevert(PerpetualExchange.ParamOutOfRange.selector);
         exchange.setMaxPriceAge(8 days);
     }
 
     function test_M3_executionFeeBounded() public {
-        vm.expectRevert(bytes("fee>1 ether"));
+        vm.expectRevert(PerpetualExchange.ParamOutOfRange.selector);
         exchange.setExecutionFee(2 ether);
     }
 
     function test_M3_liquidationPenaltyBounded() public {
-        vm.expectRevert(bytes("penalty+reward>100%"));
+        vm.expectRevert(PerpetualExchange.ParamOutOfRange.selector);
         exchange.setLiquidationPenaltyBps(9_600);       // + 500 reward > 10000
         exchange.setLiquidationPenaltyBps(9_500);
     }
