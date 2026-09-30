@@ -208,7 +208,9 @@ broadcast JSON 在 `contracts/broadcast/Redeploy130Hardened.s.sol/84532/run-late
 jq -r '.transactions[] | select(.transactionType=="CREATE") | "\(.contractName) \(.contractAddress)"' …/run-latest.json
 ```
 
-**不要從頭重跑。** 沒有設 `RESUME_*` 時，preflight 會要求 5 個共用指標全部維持 #129 的狀態，否則直接 revert（訊息是 `partial cutover detected`）：
+**不要從頭重跑，一律用 RESUME。** 沒有設 `RESUME_*` 時，preflight 會要求 5 個共用指標全部維持 #129 的狀態，否則直接 revert（訊息是 `partial cutover detected`）。但這只擋得住在第 9 步以後中斷的情況。**如果中斷在第 1–8 步**，5 個指標都還沒被動過，不帶 RESUME 重跑會通過 preflight，並部署**另一套**新合約，第一套就成了孤兒合約。這不會有資金風險（孤兒合約沒有接到任何共用合約），但會浪費 gas，也容易填錯位址。`RESUME_EXCHANGE` 也不能填成舊 exchange `0x827e…`，腳本會拒絕。
+
+5 個共用指標是：
 
 - `InsuranceVault.exchange` 和 `FeeRouter.exchange` 都指向舊 exchange
 - `FeeRouter.copyTracker` 和 `TraderStake.copyTracker` 都指向舊 CopyTracker
@@ -245,7 +247,7 @@ GUARDIAN=0x… forge script script/Redeploy130Hardened.s.sol:Redeploy130Hardened
   - fork 模擬已通過，金庫負債前後一致。
   - 這一步要在治理 phase 2 之前執行；phase 2 之後只能透過 timelock 提案。
   - 如果 exchange 採用 `ORACLE_KIND=guarded`，oracle 是 immutable，無法改指向新的 oracle，keeper 必須同時對兩個 oracle 寫價。
-  - **時間窗邊界**：窗口仍然是 tumbling，但每一次寫價同時要通過「本窗口起點」和「上一窗口起點」（上一窗口在兩個窗口長度內才算數）兩項檢查。所以單向累積移動在任何少於兩個窗口的區間內，都不會超過上限。唯一剩下的是跨窗口的來回擺動（例如先 −x 再 +x），但它無法把價格推離原點。fork 以外的單元測試 `test_boundaryDoubleMoveIsRejected` 覆蓋了這個情境。
+  - **時間窗邊界**：窗口仍然是 tumbling，但每一次寫價同時要通過「本窗口起點」和「上一窗口起點」（上一窗口在兩個窗口長度內才算數）兩項檢查。實際保證是：在約一個窗口長度的任何區間內，單向移動不超過上限，也就是「窗口尾端移滿、下一窗口開頭再移滿」的漏洞被擋下。但**相隔超過一個窗口的兩筆寫價，仍然可以各自用滿上限**（審查探針：兩筆相隔 window+1 秒）。最壞情況約是每 (window + 1 秒) 兩倍上限，而不是每個窗口一倍。來回擺動（例如先 −x 再 +x）不受窗口限制。fork 以外的單元測試 `test_boundaryDoubleMoveIsRejected` 覆蓋了這個情境。
   - **reference 必須是非 keeper 的獨立來源**，例如 Chainlink/Pyth 的 AggregatorOracleAdapter。經 reference 確認的寫價可以繞過步進上限和窗口，所以 keeper 能寫的 reference 等於沒有檢查。重部署腳本會 require `referenceSource != keeper` 而且必須有 code。
   - **寫價被窗口擋下時，guardian 的處置**（`PriceRejected(..., "window")` 或 `"window-prev"` 告警）：
     1. 先判斷是真行情還是 key 外洩。

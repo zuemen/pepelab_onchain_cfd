@@ -275,14 +275,14 @@ contract ExchangeGuardianTest is Test {
         }
     }
 
-    /// Guardian: strictly tighter AND never Halted — i.e. only Active ->
-    /// ReduceOnly. Halted freezes exits, so it is owner-only.
+    /// Guardian: into ReduceOnly only (from Active, or idempotently from
+    /// ReduceOnly), never Halted. Halted freezes exits, so it is owner-only.
     function test_assetMode_guardianMayOnlyTighten() public {
         for (uint256 c; c < 3; ++c) {
             for (uint256 n; n < 3; ++n) {
                 _setMode(BTC, _modeAt(c));
                 vm.prank(guardian);
-                if (n > c && _modeAt(n) != HALTED) {
+                if (_modeAt(n) == REDUCE_ONLY && _modeAt(c) != HALTED) {
                     vm.expectEmit(true, true, false, true, address(exchange));
                     emit AssetModeSet(BTC, _modeAt(n), guardian);
                     exchange.setAssetMode(BTC, _modeAt(n));
@@ -826,6 +826,20 @@ contract ExchangeGuardianTest is Test {
         vm.prank(operator); // idempotent / non-loosening sets are still fine
         exchange.setAssetMode(BTC, REDUCE_ONLY);
         assertTrue(exchange.guardianLocked(BTC));
+    }
+
+    /// L2: the operator made BTC ReduceOnly; the guardian re-asserts it
+    /// (idempotent) to lock it, so the operator can no longer re-open it.
+    function test_guardianLock_idempotentReduceOnlyLocksOperatorSet() public {
+        vm.prank(operator);
+        exchange.setAssetMode(BTC, REDUCE_ONLY);
+        assertFalse(exchange.guardianLocked(BTC));
+        vm.prank(guardian);
+        exchange.setAssetMode(BTC, REDUCE_ONLY);
+        assertTrue(exchange.guardianLocked(BTC));
+        vm.prank(operator);
+        vm.expectRevert(_modeChangeError(BTC, REDUCE_ONLY, ACTIVE, operator));
+        exchange.setAssetMode(BTC, ACTIVE);
     }
 
     function test_guardianLock_ownerSetClearsLock() public {

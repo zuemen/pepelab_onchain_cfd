@@ -40,6 +40,19 @@ contract CutoverGovernanceForkTest is Test {
 
     function setUp() public {
         if (block.chainid != 84532) vm.skip(true, "needs --fork-url https://sepolia.base.org");
+        // Keeper heartbeat: the live MockOracle may be more than 6h old at the
+        // fork block, which the cutover preflight rightly refuses. Re-post the
+        // current prices from the keeper (MockOracle's owner), as the runbook
+        // tells the operator to do before broadcasting.
+        address mock = 0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3;
+        string[11] memory syms = ["sBTC", "sETH", "sAAPL", "sTSLA", "sGOLD", "sBOND", "sNVDA", "sMSFT", "sGOOGL", "sICLN", "sESGU"];
+        for (uint256 i; i < 11; i++) {
+            bytes32 id = keccak256(bytes(syms[i]));
+            (uint256 p, ) = IOracle(mock).getPrice(id);
+            vm.prank(KEEPER);
+            (bool ok, ) = mock.call(abi.encodeWithSignature("updatePrice(bytes32,uint256)", id, p));
+            require(ok, "keeper heartbeat failed");
+        }
     }
 
     function _cutover() internal returns (Cutover130Base.Deployed130 memory d) {

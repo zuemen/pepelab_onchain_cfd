@@ -172,11 +172,17 @@ abstract contract Cutover130Base is Script {
         uint256 staleCount;
         for (uint256 i = 0; i < N_ASSETS; i++) {
             bytes32 id = keccak256(bytes(syms[i]));
-            (uint256 p, uint256 at) = IOracle(e.oracle).getPrice(id);
-            if (p == 0) revert(string.concat("verify130 failed: oracle has no price for ", syms[i]));
-            if (block.timestamp > at + MAX_PRICE_AGE) {
+            // try/catch: GuardedOracle REVERTS on a stale / frozen quote where
+            // MockOracle returns it — both are keeper state, not wiring.
+            try IOracle(e.oracle).getPrice(id) returns (uint256 p, uint256 at) {
+                if (p == 0) revert(string.concat("verify130 failed: oracle has no price for ", syms[i]));
+                if (block.timestamp > at + MAX_PRICE_AGE) {
+                    staleCount++;
+                    console.log(string.concat("WARN ", syms[i], " price older than 6h - dispatch the keeper"));
+                }
+            } catch {
                 staleCount++;
-                console.log(string.concat("WARN ", syms[i], " price older than 6h - dispatch the keeper"));
+                console.log(string.concat("WARN ", syms[i], " oracle refused to quote (stale/frozen?) - dispatch the keeper"));
             }
         }
         if (staleCount == 0) console.log("ok   all 11 assets priced and fresh on the exchange's oracle");

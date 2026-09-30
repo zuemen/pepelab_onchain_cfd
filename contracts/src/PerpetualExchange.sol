@@ -324,7 +324,8 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     //
     // Who may change a mode (see `setAssetMode`):
     //   owner          — any transition.
-    //   guardian       — Active -> ReduceOnly only; Halted is owner-only.
+    //   guardian       — into ReduceOnly only (from Active, or idempotently to
+    //                    lock it); Halted is owner-only.
     //   marketOperator — Active <-> ReduceOnly only; never sets or lifts Halted.
     //
     // Neither brake relaxes the oracle freshness checks; they are additive.
@@ -961,7 +962,9 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     /// @dev Permission matrix (`current` -> `mode`):
     ///        owner          — any transition, including entering or
     ///                         lifting Halted.
-    ///        guardian       — Active -> ReduceOnly only. Halted also freezes
+    ///        guardian       — into ReduceOnly only (Active -> ReduceOnly, or
+    ///                         ReduceOnly -> ReduceOnly to set the guardian
+    ///                         lock). Halted also freezes
     ///                         exits, so it is reserved to the owner; a
     ///                         compromised guardian key cannot lock users'
     ///                         funds in open positions.
@@ -2189,8 +2192,9 @@ library ExchangeOpsLib {
     ///      mirrored in `PerpetualExchange.setAssetMode`'s NatSpec:
     ///        owner          — any transition, including entering or lifting
     ///                         Halted.
-    ///        guardian       — strictly tighter AND at most ReduceOnly, i.e.
-    ///                         only Active -> ReduceOnly. ReduceOnly stops new
+    ///        guardian       — into ReduceOnly only: Active -> ReduceOnly, or
+    ///                         ReduceOnly -> ReduceOnly (idempotent; sets the
+    ///                         guardian lock). ReduceOnly stops new
     ///                         exposure while closes, liquidations and margin
     ///                         withdrawals keep working; Halted freezes exits
     ///                         too, so it is reserved to the owner (the
@@ -2217,8 +2221,13 @@ library ExchangeOpsLib {
         bool locked = locks[m.asset];
 
         bool byOwner    = msg.sender == m.owner;
-        bool byGuardian = !byOwner && msg.sender == m.guardian && uint8(m.mode) > uint8(current)
-            && m.mode != PerpetualExchange.AssetMode.Halted;
+        // Guardian: into ReduceOnly only, from Active or (idempotently) from
+        // ReduceOnly — the latter just sets `guardianLocked` on a market the
+        // operator had already made ReduceOnly, so the operator can no longer
+        // re-open it. Never Halted, never from Halted.
+        bool byGuardian = !byOwner && msg.sender == m.guardian
+            && m.mode == PerpetualExchange.AssetMode.ReduceOnly
+            && current != PerpetualExchange.AssetMode.Halted;
         bool byOperator = !byOwner && !byGuardian
             && msg.sender == m.marketOperator
             && current != PerpetualExchange.AssetMode.Halted

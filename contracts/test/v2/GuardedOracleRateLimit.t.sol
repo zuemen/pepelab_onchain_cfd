@@ -83,6 +83,20 @@ contract GuardedOracleRateLimitTest is Test {
         assertEq(prev, 100_000e8, "window 1 kept as the previous anchor");
     }
 
+    /// Documents the remaining limit (review L1): two full moves more than
+    /// one window apart are both allowed — ~2x the cap within window + 1 s.
+    function test_limit_twoFullMovesOneWindowPlusOneSecondApart() public {
+        oracle.setRiskParams(5_000, 0);          // take the per-step cap out of the picture
+        oracle.setWindowLimit(1 hours, 2_000);
+        _post(100_000e8);                        // opens window 1 at t0, anchor 100k
+        vm.warp(block.timestamp + 1 hours - 1);
+        _post(120_000e8);                        // +20% at the end of window 1
+        vm.warp(block.timestamp + 1 hours + 1);  // t0 + 2h: window 1 no longer "previous"
+        _post(144_000e8);                        // another +20%: allowed
+        (uint256 p, ) = oracle.getPrice(ID);
+        assertEq(p, 144_000e8, "+44% within window + 1 s - the documented worst case");
+    }
+
     function test_newWindowReanchorsOncePreviousHasAgedOut() public {
         oracle.setWindowLimit(1 hours, 2_000);
         _post(110_000e8);

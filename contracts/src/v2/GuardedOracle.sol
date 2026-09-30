@@ -67,13 +67,20 @@ contract GuardedOracle is AccessControl {
     ///
     ///         Windows are tumbling, but a post is checked against BOTH the
     ///         current window's anchor and the previous window's anchor while
-    ///         that one is less than two windows old. That closes the boundary
-    ///         exploit of plain tumbling windows (max at the end of window N,
-    ///         max again at the start of N+1 = 2x in seconds): a one-way walk
-    ///         is bounded by `maxWindowDeviationBps` over any span shorter
-    ///         than two windows. What remains is a round trip (−x then +x
-    ///         across a boundary), which cannot move the price away from where
-    ///         it was. Cheaper than a true sliding window (no price history).
+    ///         that one is less than two windows old. What that actually
+    ///         guarantees (no more):
+    ///           - a one-way move within any span of about ONE window is at
+    ///             most `maxWindowDeviationBps` — the plain-tumbling exploit
+    ///             (full move at the end of window N, full move again right
+    ///             after the roll) is refused;
+    ///           - two posts more than one window apart CAN each use the full
+    ///             cap (e.g. a full move near the end of window N, then another
+    ///             `windowDuration + 1` seconds later, when window N is more
+    ///             than two windows old at the roll). Worst case is therefore
+    ///             about 2x the cap per (window + 1 s), not 1x per window.
+    ///           - a round trip (−x then +x) is not limited by the window.
+    ///         A true sliding window would need price history; not worth it
+    ///         here because the step cap and guardian freeze bound the rest.
     uint256 public windowDuration;
     uint256 public maxWindowDeviationBps;
 

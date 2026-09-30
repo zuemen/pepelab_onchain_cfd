@@ -40,9 +40,13 @@ interface IEsgRegistryV2Tier130 {
 ///         contracts the broken run already deployed as
 ///         RESUME_EXCHANGE / RESUME_STRATEGY_REGISTRY / RESUME_COPY_TRACKER /
 ///         RESUME_SESSION_MANAGER (/ RESUME_TRADER_STAKE) and the script picks
-///         up where it stopped instead of minting a second exchange. Without
-///         RESUME_EXCHANGE the preflight insists on a fully untouched #129
-///         chain and refuses a partially cut-over one.
+///         up where it stopped on the SAME exchange. Without RESUME_EXCHANGE
+///         the preflight insists on a fully untouched #129 chain, so it
+///         refuses a run that died at or after step 9. A run that died at
+///         steps 1-8 left the shared pointers untouched: re-running it
+///         WITHOUT RESUME_* passes the preflight and deploys a fresh set,
+///         orphaning the first (no funds at risk, only gas and confusion) —
+///         always resume instead.
 ///
 ///         Fork simulation (no key, nothing sent):
 ///           GUARDIAN=0x… forge script script/Redeploy130Hardened.s.sol:Redeploy130Hardened \
@@ -203,31 +207,35 @@ contract Redeploy130Hardened is Cutover130Base {
         // 1. Where the shared pointers are. Fresh run: all five must still be
         //    the #129 values. Resume: each may be the #129 value OR the resumed
         //    one — anything else is a third chain and is refused.
+        address stake = _stakeSource(c, r);   // same rule as step 5
         address insEx = ISettableExchange130(INS_VAULT).exchange();
         address frEx  = ISettableExchange130(FEE_ROUTER).exchange();
         address frCt  = FeeRouter(FEE_ROUTER).copyTracker();
-        address tsCt  = TraderStake(c.traderStake).copyTracker();
+        address tsCt  = stake == address(0) ? address(0) : TraderStake(stake).copyTracker();
         bool oldSmAuth = PerpetualExchange(OLD_EXCHANGE).authorizedAgents(OLD_SESSION_MANAGER);
         if (!resume) {
             string memory partialMsg = " - partial cutover detected; re-run with RESUME_* (runbook sec.9), never from scratch";
             require(insEx == OLD_EXCHANGE, string.concat("InsuranceVault.exchange != old exchange", partialMsg));
             require(frEx == OLD_EXCHANGE, string.concat("FeeRouter.exchange != old exchange", partialMsg));
             require(frCt == OLD_COPY_TRACKER, string.concat("FeeRouter.copyTracker != old CopyTracker", partialMsg));
-            if (!c.deployNewTraderStake) {
+            if (stake != address(0)) {
                 require(tsCt == OLD_COPY_TRACKER, string.concat("TraderStake.copyTracker != old CopyTracker", partialMsg));
             }
             require(oldSmAuth, string.concat("old SessionManager already revoked on the old exchange", partialMsg));
             console.log("ok   untouched #129 chain (5 pointers)");
         } else {
+            require(r.exchange != OLD_EXCHANGE, "RESUME_EXCHANGE is the OLD exchange - pass the new one from the broken run");
             require(r.exchange.code.length > 0, "RESUME_EXCHANGE has no code");
             require(PerpetualExchange(r.exchange).owner() == deployer, "RESUME_EXCHANGE not owned by broadcaster");
             require(insEx == OLD_EXCHANGE || insEx == r.exchange, "InsuranceVault.exchange is neither old nor RESUME_EXCHANGE");
             require(frEx == OLD_EXCHANGE || frEx == r.exchange, "FeeRouter.exchange is neither old nor RESUME_EXCHANGE");
             require(frCt == OLD_COPY_TRACKER || (r.copyTracker != address(0) && frCt == r.copyTracker),
                 "FeeRouter.copyTracker is neither old nor RESUME_COPY_TRACKER");
-            if (!c.deployNewTraderStake) {
-                require(tsCt == OLD_COPY_TRACKER || (r.copyTracker != address(0) && tsCt == r.copyTracker),
-                    "TraderStake.copyTracker is neither old nor RESUME_COPY_TRACKER");
+            if (stake != address(0)) {
+                // A freshly deployed stake (RESUME_TRADER_STAKE) starts at 0.
+                require(tsCt == OLD_COPY_TRACKER || tsCt == address(0)
+                    || (r.copyTracker != address(0) && tsCt == r.copyTracker),
+                    "TraderStake.copyTracker is neither old, unset nor RESUME_COPY_TRACKER");
             }
             console.log("RESUME from exchange:", r.exchange);
         }
@@ -236,9 +244,9 @@ contract Redeploy130Hardened is Cutover130Base {
         require(ISettableExchange130(INS_VAULT).owner() == deployer, "broadcaster is not InsuranceVault.owner");
         require(ISettableExchange130(FEE_ROUTER).owner() == deployer, "broadcaster is not FeeRouter.owner");
         require(PerpetualExchange(OLD_EXCHANGE).owner() == deployer, "broadcaster is not old exchange owner");
-        if (!c.deployNewTraderStake) {
-            require(c.traderStake.code.length > 0, "TRADER_STAKE has no code");
-            require(TraderStake(c.traderStake).owner() == deployer, "broadcaster is not TraderStake.owner");
+        if (stake != address(0)) {
+            require(stake.code.length > 0, "TraderStake has no code");
+            require(TraderStake(stake).owner() == deployer, "broadcaster is not TraderStake.owner");
         }
         console.log("ok   ownership");
 
@@ -285,6 +293,15 @@ contract Redeploy130Hardened is Cutover130Base {
         } else {
             console.log("ok   0 open positions on the old exchange");
         }
+    }
+
+    /// @dev The ONE rule for which TraderStake this run uses, shared by the
+    ///      preflight and steps 5 / 10: a resumed stake, else the retained one,
+    ///      else 0 = "deploy a new one in step 5".
+    function _stakeSource(Config memory c, Deployed130 memory r) internal pure returns (address) {
+        if (r.traderStake != address(0)) return r.traderStake;
+        if (c.deployNewTraderStake) return address(0);
+        return c.traderStake;
     }
 
     function _survey() internal view returns (uint256 openCount, uint256 openMargin) {
@@ -371,9 +388,8 @@ contract Redeploy130Hardened is Cutover130Base {
         vm.startBroadcast(deployer);
 
         // ── 5. TraderStake (retained by default — it holds live stakes) ────
-        if (r.traderStake != address(0)) d.traderStake = r.traderStake;
-        else if (c.deployNewTraderStake) d.traderStake = address(new TraderStake(USDC));
-        else d.traderStake = c.traderStake;
+        d.traderStake = _stakeSource(c, r);
+        if (d.traderStake == address(0)) d.traderStake = address(new TraderStake(USDC));
         if (_halt(5)) return (d, false);
 
         // ── 6. StrategyRegistry + CopyTracker (new contracts only) ─────────
