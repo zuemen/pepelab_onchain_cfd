@@ -315,6 +315,30 @@ export function isRevertWith(data: unknown, selector: string): boolean {
   return typeof data === "string" && data.toLowerCase().startsWith(selector.toLowerCase());
 }
 
+/**
+ * keeper 摘要行（workflow 以 `^available=[0-9]+ .*failed=[0-9]+$` 擷取，算
+ * failed*100/available 對 MAX_FAIL_PCT）。
+ *
+ * 2026-09-30 事故：sBTC 來源 403 被跳過 9 小時，摘要行 `available=10 … failed=0`、
+ * job 全綠。現在「來源無效而跳過」也算失敗：
+ *   available = 有價可寫 + 來源無效（本輪應處理的資產數）
+ *   failed    = 寫入失敗 + 來源無效
+ * 內部 runVerdict 仍用原本的計數（跳過另走降級比例）。
+ */
+export function summaryLine(c: {
+  available: number;
+  skipped: number;
+  rejected: number;
+  confirmed: number;
+  wrote: number;
+  failed: number;
+}): string {
+  return (
+    `available=${c.available + c.skipped} skipped=${c.skipped} rejected=${c.rejected} ` +
+    `confirmed=${c.confirmed} wrote=${c.wrote} failed=${c.failed + c.skipped}`
+  );
+}
+
 /** run.ts 一輪結束後的計數。 */
 export interface RunCounters {
   total: number;

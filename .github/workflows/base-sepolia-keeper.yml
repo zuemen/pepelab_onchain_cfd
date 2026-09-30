@@ -138,6 +138,8 @@ jobs:
           # 只錨定真正要用的兩個欄位，中間允許 run.ts 之後再加欄位（它已經加過
           # rejected= 與 clamped=，把原本寫死整行的 pattern 打掉了）。這個門檻的
           # 目的是量測失敗率，不是驗證輸出格式；綁太死只會讓它在無關的改動下誤報。
+          # 2026-09-30 事故後：摘要行的 failed 包含「來源無效而跳過」的資產、available
+          # 包含它們（core.ts summaryLine）—— sBTC 403 被跳過 9 小時而 failed=0 的情況不再發生。
           SUMMARY=$(grep -E '^available=[0-9]+ .*failed=[0-9]+$' /tmp/keeper.log | tail -1 || true)
           if [ -z "$SUMMARY" ]; then
             echo "::error::找不到 keeper 摘要行 —— 輸出格式已改變，這個門檻已失效，請修正 workflow。"

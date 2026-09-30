@@ -10,6 +10,7 @@ import {
   confirmLargeMove,
   planMirror,
   runVerdict,
+  summaryLine,
   parseRatioEnv,
   BREAKER_RANGE,
   CONFIRM_TOLERANCE_RANGE,
@@ -251,6 +252,25 @@ assert.equal(runVerdict({ total: 11, available: 11, skipped: 0, rejected: 0, wro
 assert.equal(runVerdict({ total: 11, available: 11, skipped: 0, rejected: 0, wrote: 10, failed: 1 }, 0.3).exitCode, 1);
 assert.equal(runVerdict({ total: 11, available: 7, skipped: 4, rejected: 0, wrote: 7, failed: 0 }, 0.3).exitCode, 1);
 assert.equal(runVerdict({ total: 11, available: 0, skipped: 11, rejected: 0, wrote: 0, failed: 0 }, 0.3).exitCode, 1);
+
+// ── summaryLine：跳過也算失敗，格式與 workflow 的 grep 相容（2026-09-30 事故） ────
+{
+  const WORKFLOW_RE = /^available=[0-9]+ .*failed=[0-9]+$/;
+  const pct = (line: string) => {
+    const a = Number(line.match(/available=(\d+)/)![1]);
+    const f = Number(line.match(/failed=(\d+)/)![1]);
+    return Math.floor((f * 100) / a); // 與 workflow 的 $(( FAILED * 100 / AVAILABLE )) 相同
+  };
+  // 事故當時：10 個有價、sBTC 跳過 → 以前 failed=0（全綠），現在 failed=1、9%。
+  const incident = summaryLine({ available: 10, skipped: 1, rejected: 0, confirmed: 0, wrote: 10, failed: 0 });
+  assert.match(incident, WORKFLOW_RE);
+  assert.equal(incident, "available=11 skipped=1 rejected=0 confirmed=0 wrote=10 failed=1");
+  assert.equal(pct(incident), 9);
+  // 4/11 跳過 → 36% > MAX_FAIL_PCT 30 → workflow 讓 job 失敗。
+  assert.ok(pct(summaryLine({ available: 7, skipped: 4, rejected: 0, confirmed: 0, wrote: 7, failed: 0 })) > 30);
+  // 寫入失敗與跳過一起計。
+  assert.match(summaryLine({ available: 9, skipped: 2, rejected: 0, confirmed: 0, wrote: 8, failed: 1 }), /failed=3$/);
+}
 
 // ── 比例型環境變數驗證（審查 Low） ───────────────────────────────────────
 assert.deepEqual(parseRatioEnv("X", undefined, 0.2, 0, 1), { value: 0.2 });

@@ -16,6 +16,7 @@
 import { ethers } from "ethers";
 import {
   runVerdict,
+  summaryLine,
   isRevertWith,
   ASSET_NOT_FOUND_SELECTOR,
   DEFAULT_BREAKER_DEVIATION,
@@ -304,9 +305,9 @@ async function main(): Promise<void> {
     failed += 1;
   }
 
-  console.log(
-    `\navailable=${available} skipped=${skipped} rejected=${rejected} confirmed=${confirmed} wrote=${wrote} failed=${failed}`,
-  );
+  // 2026-09-30 事故：來源無效而跳過的資產也計入失敗率（workflow 以 failed/available
+  // 對 MAX_FAIL_PCT 判斷）。格式維持 `available=N … failed=N` 讓 workflow 的 grep 相容。
+  console.log(`\n${summaryLine({ available, skipped, rejected, confirmed, wrote, failed })}`);
 
   // 有價格可寫卻一筆都沒成功、全部來源無效、降級比例過高（10/11 資產跳過而 CI
   // 全綠正是 oracle 靜默腐爛 9.5 天的原因）、熔斷拒寫、寫入失敗 —— 任一都讓 job 紅。
