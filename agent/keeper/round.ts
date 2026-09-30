@@ -368,7 +368,10 @@ export async function runRound(ctx: RoundCtx): Promise<RoundResult> {
       log(`  → GuardedOracle ${mirrorPlan.reason}`);
     }
 
-    if (mockPrice8 === price8) {
+    // 只有「純粹為了收斂兩顆不一致」而進來時，Mock 已是目標值才可以跳過。plan.write
+    // 為真（偏離或 heartbeat 到期）時一定要重寫：交易所的 maxPriceAge 是 6 小時，
+    // 收盤後價格固定不變，不重寫時間戳就會讓股票類資產每晚被判 StalePrice。
+    if (!plan.write && mockPrice8 === price8) {
       log(`  → MockOracle 已是目標值`);
       r.wrote += 1;
       continue;

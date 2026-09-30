@@ -244,6 +244,15 @@ for (const target of [101, 112]) {
   assert.equal(oracle.writes.length, 0, "Mock 已是目標值，不重寫");
   assert.equal(oracle.state.price, guarded.state.price, "兩顆收斂");
 }
+// 反向案例（2026-09-30 修正複審）：heartbeat 到期、價格沒變 → Mock 一定要重寫刷新時間戳。
+// 收盤後股票價格固定不變；若因「已是目標值」跳過，交易所 maxPriceAge（6h）會讓它每晚 StalePrice。
+{
+  const oracle = fakeOracle(100);
+  oracle.state.at = BigInt(NOW - 3600); // 超過 heartbeat 900s
+  const guarded = fakeGuarded(100);
+  await runRound(ctx({ oracle, guarded, fetchPrice: async () => yahoo(100) }));
+  assert.deepEqual(oracle.writes, [P(100)], "heartbeat 到期時同價也要重寫 Mock");
+}
 // 不一致且超過 Guarded 上限 → 拒寫，訊息要寫「兩顆已不一致」（與真的超限區分）。
 {
   const oracle = fakeOracle(100);
