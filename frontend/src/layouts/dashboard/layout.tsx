@@ -1,5 +1,5 @@
 import type { Breakpoint } from '@mui/material/styles';
-import type { NavItemProps, NavSectionProps } from 'src/components/nav-section';
+import type { NavSectionProps } from 'src/components/nav-section';
 import type { MainSectionProps, HeaderSectionProps, LayoutSectionProps } from '../core';
 
 import { merge } from 'es-toolkit';
@@ -15,12 +15,6 @@ import { iconButtonClasses } from '@mui/material/IconButton';
 
 import { t, interpolate } from 'src/locales';
 import { useMode } from 'src/contexts/mode-context';
-// Direct module import, not the `src/_mock` barrel. Both values live in
-// _others.ts, but the barrel re-exports eleven mock modules, so pulling two
-// names from it dragged all of them — assets.ts, _job, _user, _invoice and the
-// rest — into the production entry chunk. This layout is part of the app shell,
-// so that demo fixture data was being downloaded by every real visitor.
-import { _contacts, _notifications } from 'src/_mock/_others';
 import { useWalletContext } from 'src/contexts/wallet-context';
 
 import { Logo } from 'src/components/logo';
@@ -28,8 +22,6 @@ import { useSettingsContext } from 'src/components/settings';
 import WalletButton from 'src/components/pepefi/WalletButton';
 import { PepeAvatar } from 'src/components/pepefi/PepeAvatar';
 import PaperTradingBadge from 'src/components/pepefi/PaperTradingBadge';
-
-import { useMockedUser } from 'src/auth/hooks';
 
 import { NavMobile } from './nav-mobile';
 import { VerticalDivider } from './content';
@@ -40,9 +32,7 @@ import { accountNavData } from '../nav-config-account';
 import { MenuButton } from '../components/menu-button';
 import { AccountDrawer } from '../components/account-drawer';
 import { SettingsButton } from '../components/settings-button';
-import { ContactsPopover } from '../components/contacts-popover';
 import { dashboardLayoutVars, dashboardNavColorVars } from './css-vars';
-import { NotificationsDrawer } from '../components/notifications-drawer';
 import { MainSection, layoutClasses, HeaderSection, LayoutSection } from '../core';
 import { navDataForMode, navData as dashboardNavData } from '../nav-config-dashboard';
 
@@ -72,8 +62,6 @@ export function DashboardLayout({
 
   const wallet = useWalletContext();
 
-  const { user } = useMockedUser();
-
   const settings = useSettingsContext();
 
   const navVars = dashboardNavColorVars(theme, settings.state.navColor, settings.state.navLayout);
@@ -92,8 +80,9 @@ export function DashboardLayout({
   const isNavHorizontal = settings.state.navLayout === 'horizontal';
   const isNavVertical = isNavMini || settings.state.navLayout === 'vertical';
 
-  const canDisplayItemByRole = (allowedRoles: NavItemProps['allowedRoles']): boolean =>
-    !allowedRoles?.includes(user?.role);
+  // 範本原本用一個寫死 `role: 'admin'` 的假使用者做導覽的角色過濾。導覽項目沒有
+  // 任何一個設 allowedRoles，鏈上權限（admin / KYC operator）由各 admin 頁自己讀
+  // 合約判斷，所以這裡不做角色過濾——不留一個看起來像權限、其實恆真的假判斷。
 
   // Collapsing the sidebar in simple mode without saying so would read as
   // "some of my features vanished." This turns the toggle in the header into
@@ -152,7 +141,6 @@ export function DashboardLayout({
           data={navData}
           layoutQuery={layoutQuery}
           cssVars={navVars.section}
-          checkPermissions={canDisplayItemByRole}
         />
       ) : null,
       leftArea: (
@@ -167,7 +155,6 @@ export function DashboardLayout({
             open={open}
             onClose={onClose}
             cssVars={navVars.section}
-            checkPermissions={canDisplayItemByRole}
             slots={{ bottomArea: renderSimpleModeHint() }}
           />
 
@@ -194,13 +181,8 @@ export function DashboardLayout({
           {/** @slot Searchbar */}
           <Searchbar data={navData} />
 
-
-
-          {/** @slot Notifications popover */}
-          <NotificationsDrawer data={_notifications} />
-
-          {/** @slot Contacts popover */}
-          <ContactsPopover data={_contacts} />
+          {/* 範本的通知鈴與聯絡人彈窗是寫死的假資料（_mock），已移除；平台目前沒有
+              站內通知的資料來源，交易結果由各頁的 toast 與 History 頁呈現。 */}
 
           {/** @slot Paper trading notice — always visible, hidden on xs for space */}
           <Box sx={{ display: { xs: 'none', md: 'block' } }}>
@@ -271,7 +253,6 @@ export function DashboardLayout({
       isNavMini={isNavMini}
       layoutQuery={layoutQuery}
       cssVars={navVars.section}
-      checkPermissions={canDisplayItemByRole}
       // The mini rail is icon-only and has no room for a text hint — the
       // toggle in the header is still reachable there, this is just the
       // sidebar-side reminder.

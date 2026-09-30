@@ -11,6 +11,7 @@ loadEnv();
 const FEE_ROUTER_ABI = [
   "function routeExternalRevenue(address trader, uint256 fee)",
   "function usdc() view returns (address)",
+  "function platformTreasury() view returns (address)",
 ];
 const USDC_ABI = [
   "function decimals() view returns (uint8)",
@@ -38,9 +39,10 @@ const MINTABLE_MOCK_USDC = ADDRESSES.MockUSDC;
 let wallet: ethers.Wallet | null = null;
 let feeRouter: ethers.Contract | null = null;
 let usdc: ethers.Contract | null = null;
+let provider: ethers.JsonRpcProvider | null = null;
 
 if (PK && PK.startsWith("0x") && PK.length === 66) {
-  const provider = makeProvider();
+  provider = makeProvider();
   wallet = new ethers.Wallet(PK, provider);
   feeRouter = new ethers.Contract(SETTLEMENT_ROUTER, FEE_ROUTER_ABI, wallet);
   usdc = new ethers.Contract(SETTLEMENT_TOKEN, USDC_ABI, wallet);
@@ -50,32 +52,123 @@ export function isSettlementEnabled(): boolean {
   return wallet !== null;
 }
 
-export interface SettlementResult {
-  status: "settled" | "failed";
-  tx?: string;
-  error?: string;
+/** 結算 signer 的**地址**（只給地址，私鑰不外流）。未啟用時 undefined。 */
+export function settlementSignerAddress(): string | undefined {
+  return wallet?.address;
 }
 
-// 序列化所有結算：fire-and-forget 的並發呼叫共用同一個 EOA，若同時送會撞 nonce。
-// 用 promise chain 確保一次只送一筆。
-//
-// ⚠ 誠實邊界（稽核 四·Medium）：這個 queue 是**程序內**的。Vercel 會同時跑多個
-// 實例，每個實例各有一條 queue，卻共用同一把 FEE_SETTLEMENT_PRIVATE_KEY —— 跨實例
-// 的並發仍然會撞 nonce（症狀：`replacement transaction underpriced` / `nonce too low`，
-// 結算失敗但付費者已拿到資料，故只影響分潤紀錄不影響商品交付）。真正的修法是把結算
-// 移出請求路徑（佇列 + 單一 worker）或每個實例用不同的簽章金鑰；在那之前，
-// `settleError` 會如實回傳給呼叫端，不會被吞掉。
+export function settlementRouterAddress(): string {
+  return SETTLEMENT_ROUTER;
+}
+
+/** 給 payTo/signer/treasury 安全檢查用的唯讀 provider（只用 getCode）。 */
+export function settlementProvider(): ethers.JsonRpcProvider | null {
+  return provider;
+}
+
+/** 讀 FeeRouter.platformTreasury()（immutable；20% 平台分潤的去向）。 */
+export async function readPlatformTreasury(): Promise<string> {
+  if (!feeRouter) throw new Error("settlement disabled");
+  return (await feeRouter.platformTreasury()) as string;
+}
+
+/**
+ * 結算結果。2026-09-29（P0）起多了兩種狀態：
+ *   - "unknown"：routeExternalRevenue 已簽出（可能已廣播）但沒在時限內拿到 receipt。
+ *     **絕不可自動重送**——worker 記下 tx hash，下一輪用 receipt 對帳。
+ *   - "reverted"：拿到 receipt 且 status=0。
+ * "failed" 只用在**確定沒有廣播** routeExternalRevenue 的情況（簽出前失敗，或 onSigned
+ * 記錄失敗而未廣播），可安全重試。簽出並嘗試廣播之後的任何錯誤都是 "unknown"。
+ */
+export type SettlementResult =
+  | { status: "settled"; tx: string }
+  | { status: "failed"; error: string; tx?: undefined }
+  | { status: "unknown"; tx: string; error: string }
+  | { status: "reverted"; tx: string; error: string };
+
+/** 已簽出交易的資訊：hash、nonce 與完整的已簽 raw tx（可用 `cast publish` 重播）。 */
+export interface SignedTxInfo {
+  txHash: string;
+  nonce: number;
+  rawTx: string;
+}
+
+export interface SettleHooks {
+  /**
+   * routeExternalRevenue 簽好、**廣播之前**呼叫。呼叫端必須在這裡把 hash / nonce /
+   * raw tx 持久化（worker 寫進 settle:<key>）；丟錯 → 不廣播，回 failed。
+   */
+  onSigned?: (info: SignedTxInfo) => Promise<void>;
+}
+
+/** 等 receipt 的時限。逾時 → "unknown"，不重送。 */
+const WAIT_TIMEOUT_MS = Number(process.env.SETTLEMENT_WAIT_TIMEOUT_MS ?? "90000");
+
+/** settleWith 需要的最小依賴——讓測試可以塞假 provider / 假合約。 */
+export interface SettleDeps {
+  signer: {
+    address: string;
+    populateTransaction(tx: ethers.TransactionRequest): Promise<ethers.TransactionLike<string>>;
+    signTransaction(tx: ethers.TransactionRequest): Promise<string>;
+  };
+  usdc: {
+    decimals(): Promise<bigint | number>;
+    balanceOf(a: string): Promise<bigint>;
+    allowance(o: string, s: string): Promise<bigint>;
+    approve(s: string, v: bigint): Promise<{ wait(c?: number, t?: number): Promise<unknown> }>;
+    mint(to: string, v: bigint): Promise<{ wait(c?: number, t?: number): Promise<unknown> }>;
+  };
+  feeRouter: {
+    routeExternalRevenue: { populateTransaction(trader: string, fee: bigint): Promise<ethers.ContractTransaction> };
+  };
+  provider: {
+    broadcastTransaction(signed: string): Promise<unknown>;
+    waitForTransaction(hash: string, confirms?: number, timeout?: number): Promise<{ status: number | null } | null>;
+  };
+  settlementToken: string;
+  routerAddress: string;
+  mintableToken: string;
+  waitTimeoutMs: number;
+}
+
+// 序列化所有結算：共用同一個 EOA，同時送會撞 nonce。用 promise chain 確保一次只送一筆。
+// （worker 是單一 process + workflow concurrency group，跨 process 不會並發。）
 let queue: Promise<unknown> = Promise.resolve();
 
 /**
- * 把一筆費用（USD）上鏈分潤給 trader。會自動確保 mUSDC 餘額與對 FeeRouter 的
- * 授權（不足才送交易）。多筆呼叫會自動排隊（避免 nonce 衝突）。回傳結果含 tx hash。
+ * 把一筆費用（USD）上鏈分潤給 trader。會自動確保結算 token 餘額與對 FeeRouter 的
+ * 授權（不足才送交易）。多筆呼叫會自動排隊（避免 nonce 衝突）。
  */
-export function settleRevenue(trader: string, feeUsd: number): Promise<SettlementResult> {
-  const run = queue.then(() => _settle(trader, feeUsd));
+export function settleRevenue(
+  trader: string,
+  feeUsd: number,
+  hooks: SettleHooks = {},
+): Promise<SettlementResult> {
+  const run = queue.then(() => _settle(trader, feeUsd, hooks));
   // 讓 queue 不論成敗都接續下去
   queue = run.catch(() => undefined);
   return run;
+}
+
+/** 對帳用：查 tx receipt。null = 還查不到（未上鏈／被丟棄／RPC 不同步）。 */
+export async function getReceiptStatus(txHash: string): Promise<"success" | "reverted" | null> {
+  if (!provider) throw new Error("settlement disabled");
+  const r = await provider.getTransactionReceipt(txHash);
+  if (!r) return null;
+  return r.status === 1 ? "success" : "reverted";
+}
+
+/**
+ * signer 的 nonce 狀態（審查 Medium-5）。`pending > latest` 代表 mempool 裡有這個
+ * signer 尚未上鏈的交易——此時再送新交易只會排在它後面一起卡住。
+ */
+export async function getNonceStatus(): Promise<{ latest: number; pending: number }> {
+  if (!provider || !wallet) throw new Error("settlement disabled");
+  const [latest, pending] = await Promise.all([
+    provider.getTransactionCount(wallet.address, "latest"),
+    provider.getTransactionCount(wallet.address, "pending"),
+  ]);
+  return { latest, pending };
 }
 
 // 一次性檢查：結算 token 必須 == FeeRouter 綁定的 usdc()，否則會 approve A、
@@ -101,59 +194,115 @@ async function _assertCurrencyMatch(): Promise<string | null> {
   }
 }
 
-// 註：x402 付款由 facilitator 結算到 payTo；本函式另以結算錢包餘額透過 FeeRouter
-// 補上對應金額的 70/20/10「鏈上分潤紀錄」。即分潤金額對得上、但非與該筆 x402
-// 付款原子綁定（demo 帳務）。正式可改為直接從 payTo 收款後原子路由。
-async function _settle(trader: string, feeUsd: number): Promise<SettlementResult> {
-  if (!wallet || !feeRouter || !usdc) {
+/*
+ * 2026-09-29 複審：以前這裡有一份「節點明確拒絕」的錯誤碼（NONCE_EXPIRED 等），命中就回
+ * failed、由 worker 釋放佔位重試。但 NONCE_EXPIRED（nonce too low）也可能代表「這筆
+ * 其實已經上鏈了」（例如上一輪已廣播、公共節點回落後狀態），重試就是雙付。原則：任何
+ * 可能造成雙付的判斷都不自動化——**簽出之後的廣播錯誤一律當 unknown**，交給 receipt
+ * 對帳；對帳不出來 30 分鐘後轉 STUCK 交人工。
+ */
+
+async function _settle(trader: string, feeUsd: number, hooks: SettleHooks): Promise<SettlementResult> {
+  if (!wallet || !feeRouter || !usdc || !provider) {
     return { status: "failed", error: "settlement disabled" };
   }
   const mismatch = await _assertCurrencyMatch();
   if (mismatch) return { status: "failed", error: mismatch };
+  return settleWith(
+    {
+      signer: wallet,
+      usdc: usdc as unknown as SettleDeps["usdc"],
+      feeRouter: feeRouter as unknown as SettleDeps["feeRouter"],
+      provider,
+      settlementToken: SETTLEMENT_TOKEN,
+      routerAddress: SETTLEMENT_ROUTER,
+      mintableToken: MINTABLE_MOCK_USDC,
+      waitTimeoutMs: WAIT_TIMEOUT_MS,
+    },
+    trader,
+    feeUsd,
+    hooks,
+  );
+}
+
+// 註：x402 付款由 facilitator 結算到 payTo；本函式另以結算錢包餘額透過 FeeRouter
+// 補上對應金額的 70/20/10「鏈上分潤紀錄」。即分潤金額對得上、但非與該筆 x402
+// 付款原子綁定（demo 帳務）。正式可改為直接從 payTo 收款後原子路由。
+/** 結算本體（可注入依賴，供測試）。先簽、先記、再廣播；等不到 receipt 就回 unknown。 */
+export async function settleWith(
+  d: SettleDeps,
+  trader: string,
+  feeUsd: number,
+  hooks: SettleHooks = {},
+): Promise<SettlementResult> {
+  let signed: string;
+  let info: SignedTxInfo;
   try {
     // 依結算 token 的實際小數位換算（官方 USDC=6, MockUSDC=18）。
-    const decimals = Number(await usdc.decimals());
+    const decimals = Number(await d.usdc.decimals());
     const atomic = ethers.parseUnits(feeUsd.toString(), decimals);
-    const me = wallet.address;
+    const me = d.signer.address;
 
-    // 確保餘額。只有已知的 MockUSDC 才嘗試自助鑄幣 —— 舊版對**任意** token 都無條件
-    // 先試 `mint()`（稽核 四·Low）：對真 USDC 那是一筆注定 revert 的交易（估 gas 就
-    // 會失敗、浪費 RPC 來回），對某個剛好有 `mint(address,uint256)` 的第三方合約則是
-    // 一個沒人預期會被觸發的寫呼叫。官方 USDC 只能用既有餘額（來自 x402 付款）。
-    const bal = (await usdc.balanceOf(me)) as bigint;
+    // 確保餘額。只有已知的 MockUSDC 才嘗試自助鑄幣（稽核 四·Low）。
+    const bal = (await d.usdc.balanceOf(me)) as bigint;
     if (bal < atomic) {
-      const mintable =
-        SETTLEMENT_TOKEN.toLowerCase() === MINTABLE_MOCK_USDC.toLowerCase();
+      const mintable = d.settlementToken.toLowerCase() === d.mintableToken.toLowerCase();
       if (!mintable) {
         return {
           status: "failed",
           error:
-            `結算 token 餘額不足（${SETTLEMENT_TOKEN}，非可鑄幣的 MockUSDC）。` +
+            `結算 token 餘額不足（${d.settlementToken}，非可鑄幣的 MockUSDC）。` +
             `treasury 需先收到 x402 付款的 USDC。`,
         };
       }
-      try {
-        const mintTx = await usdc.mint(me, atomic * 1000n);
-        await mintTx.wait();
-      } catch (e) {
-        return {
-          status: "failed",
-          error: `MockUSDC 鑄幣失敗：${(e as Error).message}`,
-        };
-      }
+      const mintTx = await d.usdc.mint(me, atomic * 1000n);
+      await mintTx.wait(1, d.waitTimeoutMs);
     }
 
-    // 確保授權
-    const allowance = (await usdc.allowance(me, SETTLEMENT_ROUTER)) as bigint;
+    // 確保授權（approve MaxUint256 是冪等的：重送也不會多分潤）。
+    const allowance = (await d.usdc.allowance(me, d.routerAddress)) as bigint;
     if (allowance < atomic) {
-      const apTx = await usdc.approve(SETTLEMENT_ROUTER, ethers.MaxUint256);
-      await apTx.wait();
+      const apTx = await d.usdc.approve(d.routerAddress, ethers.MaxUint256);
+      await apTx.wait(1, d.waitTimeoutMs);
     }
 
-    const tx = await feeRouter.routeExternalRevenue(trader, atomic);
-    await tx.wait();
-    return { status: "settled", tx: tx.hash };
+    // 先簽、先記 hash、再廣播：這樣就算廣播那一步網路逾時、或 process 在廣播後死掉，
+    // worker 手上都有 hash / nonce / raw tx 可以對帳或人工重播，而不是盲目重送一筆
+    // 新的（= 重複分潤）。
+    const req = await d.feeRouter.routeExternalRevenue.populateTransaction(trader, atomic);
+    const populated = await d.signer.populateTransaction(req);
+    signed = await d.signer.signTransaction(populated as ethers.TransactionRequest);
+    const parsed = ethers.Transaction.from(signed);
+    info = { txHash: parsed.hash!, nonce: parsed.nonce, rawTx: signed };
   } catch (err) {
+    // 到這裡為止 routeExternalRevenue 都還沒簽出 → 確定沒送，可安全重試。
     return { status: "failed", error: (err as Error).message };
+  }
+
+  try {
+    await hooks.onSigned?.(info);
+  } catch (err) {
+    return { status: "failed", error: `記錄 tx hash 失敗，未廣播：${(err as Error).message}` };
+  }
+
+  try {
+    await d.provider.broadcastTransaction(signed);
+  } catch (err) {
+    const code = (err as { code?: string }).code ?? "";
+    return {
+      status: "unknown",
+      tx: info.txHash,
+      error: `廣播失敗（${code || "unknown"}），結果不明、不重送：${(err as Error).message}`,
+    };
+  }
+
+  try {
+    const receipt = await d.provider.waitForTransaction(info.txHash, 1, d.waitTimeoutMs);
+    if (!receipt) return { status: "unknown", tx: info.txHash, error: "未取得 receipt" };
+    if (receipt.status === 1) return { status: "settled", tx: info.txHash };
+    return { status: "reverted", tx: info.txHash, error: "routeExternalRevenue reverted（receipt.status=0）" };
+  } catch (err) {
+    // TIMEOUT 或 RPC 錯誤：交易可能仍會上鏈。**不重送**，交給下一輪對帳。
+    return { status: "unknown", tx: info.txHash, error: `等待 receipt 失敗：${(err as Error).message}` };
   }
 }

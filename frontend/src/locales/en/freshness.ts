@@ -6,8 +6,12 @@ import type { Catalog } from '../zh-TW';
 export const freshness: Catalog['freshness'] = {
   unknownAge: 'Age unknown',
 
-  /** 模擬報價沒有鏈上年齡可言，所以給的是「這不是真價格」而不是一個時間。 */
-  mockLabel: 'Mock price',
+  /** Short price-source tag shown next to a price. 'none' = neither source readable; the UI shows '—'. */
+  priceSource: {
+    coingecko: 'CoinGecko',
+    oracle: 'On-chain oracle',
+    none: 'No price',
+  },
 
   age: {
     seconds: '{n}s ago',

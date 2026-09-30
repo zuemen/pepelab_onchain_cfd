@@ -6,6 +6,8 @@ import { usePepefiWallet } from 'src/layouts/pepefi';
 import { t, interpolate } from 'src/locales';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
 import { safeRead } from 'src/lib/pepefi/safeRead';
+import { FEATURE_PEPE_REWARDS } from 'src/lib/pepefi/featureFlags';
+import { SyntheticDisclosure } from 'src/components/pepefi/SyntheticDisclosure';
 import { STABLE_LABEL, ALT_STABLE_LABEL, X402_STABLE_LABEL } from 'src/lib/pepefi/tokenLabel';
 import {
   isOracleStale,
@@ -462,6 +464,8 @@ export default function ExchangePage() {
 
   return (
     <Container maxWidth="lg" sx={{ py: 3, display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <SyntheticDisclosure />
+
       {/* Global Transaction Overlay */}
       <Backdrop
         open={isBusy}
@@ -537,7 +541,7 @@ export default function ExchangePage() {
             <Box>
               <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>{t.exchange.faucet.title}</Typography>
               <Typography variant="caption" color="text.secondary">
-                {interpolate(t.exchange.faucet.intro, {
+                {interpolate(FEATURE_PEPE_REWARDS ? t.exchange.faucet.intro : t.exchange.faucet.introNoPepe, {
                   stable: STABLE_LABEL,
                   x402Stable: X402_STABLE_LABEL,
                 })}
@@ -597,7 +601,8 @@ export default function ExchangePage() {
               )}
             </Box>
 
-            {/* PEPE — platform token */}
+            {/* PEPE — platform token。跟著 FEATURE_PEPE_REWARDS 走（商業版預設關）。 */}
+            {FEATURE_PEPE_REWARDS && (<>
             <Box sx={{ bgcolor: 'background.neutral', borderRadius: 2, p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
               <Box>
                 <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
@@ -633,6 +638,7 @@ export default function ExchangePage() {
                 </Typography>
               </Alert>
             )}
+            </>)}
 
             <Typography variant="caption" color="text.secondary">
               {t.exchange.markup.ethBalanceBefore}<Box component="span" sx={{ fontFamily: MONO, color: 'text.primary' }}>{ethBal}</Box>{t.exchange.markup.ethBalanceAfterSpot}
@@ -661,7 +667,8 @@ export default function ExchangePage() {
       </Card>
 
       {/* Swap (ETH ↔ USDC via PepeAMM) —— #148 之後這一頁只剩水龍頭與兌換。
-          開倉與平倉走 /terminal（ticket/OrderTicket、positions/PositionsTable），
+          開倉走 /terminal（ticket/OrderTicket）；平倉在 /terminal 的 PositionsTable 或
+          /portfolio 的部位頁籤（SHOW_PERPETUALS 關閉時後者是唯一入口），
           保證金存入同樣在那裡（ticket/AccountPanel），提領在 /portfolio 的部位頁。
           這一頁不再是「交易」入口，而是「拿到測試幣、換成 USDC」那一段。 */}
       <Card

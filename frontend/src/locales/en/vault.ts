@@ -51,6 +51,9 @@ export const vault: Catalog['vault'] = {
     title: 'Recent Activity',
     emptyTitle: 'No activity yet',
     emptyDescription: 'Deposit USDC to start earning yield from protocol fees.',
+    readFailedTitle: 'Read failed',
+    readFailedDescription: "The vault's on-chain events could not be read — an empty list here does not mean there was no activity. Please refresh later.",
+    partial: 'Some block ranges could not be read; the activity below may be incomplete.',
     deposited: 'LP Deposit',
     withdrawn: 'LP Withdraw',
     protocolDeposit: 'Protocol Fee',
@@ -71,6 +74,8 @@ export const vault: Catalog['vault'] = {
     howItWorksLabel: 'How it works:',
     howItWorksBody:
       ' LPs deposit USDC and receive pIV shares. The vault earns 10% of all copy-trading and performance fees via the FeeRouter. On liquidation the vault only receives the ',
+    howItWorksBodyNoCopy:
+      ' LPs deposit USDC and receive pIV shares. The vault earns 10% of platform trading and performance fees via the FeeRouter. On liquidation the vault only receives the ',
     liquidationPenaltyLabel: 'liquidation penalty',
     howItWorksCodeWrap: ' (',
     howItWorksTail:

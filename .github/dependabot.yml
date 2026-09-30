@@ -1,0 +1,89 @@
+# Dependabot 版本更新設定。
+#
+# 目標是「有人會看的 PR」，不是「PR 數量」：被無視的更新 PR 跟沒有一樣，還會把真正
+# 的安全更新淹沒。所以：
+#   • 一律每週、固定週一早上（台北時間），集中在同一個時段處理。
+#   • minor/patch 合併成一個 group PR；major 才單獨開（需要人讀 changelog）。
+#   • open-pull-requests-limit 只限制「版本更新」PR。**安全更新（Dependabot security
+#     updates）不受這個上限影響**，需在 repo Settings → Code security 另外開啟。
+#
+# 注意：Dependabot 沒有獨立的 `yarn` ecosystem —— `npm` 會依目錄裡的 lockfile
+# 自動判斷 npm（agent/package-lock.json）或 yarn（frontend/yarn.lock）。
+version: 2
+updates:
+  # GitHub Actions：所有 action 都 pin 在 commit SHA（見各 workflow 註解），Dependabot
+  # 會同時更新 SHA 與行尾的版本註解。持有 KEEPER_PRIVATE_KEY 的 job 依賴這些 action，
+  # 所以這是最該跟上的一類，但一週一個 group PR 就夠。
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Taipei
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "ci(deps)"
+
+  # agent/：npm workspaces（shared / signal-api / mcp-server / demo-agent）共用
+  # 一份 package-lock.json，所以只設根目錄一個 entry。keeper 與 x402 結算 worker
+  # 都在這裡，major 升級（ethers、typescript…）必須人工看過，所以 major 單獨開、
+  # 全部 PR 上限 3。
+  - package-ecosystem: npm
+    directory: /agent
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Taipei
+    open-pull-requests-limit: 3
+    groups:
+      agent-minor-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "chore(agent-deps)"
+
+  # frontend/：yarn（yarn.lock）。前端依賴樹大、上游發版頻繁（wagmi / viem /
+  # walletconnect），不設 group 會一週十幾個 PR。minor/patch 合一個 PR，major 單獨開，
+  # 全部 PR 上限 3。
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Taipei
+    open-pull-requests-limit: 3
+    groups:
+      frontend-minor-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "chore(frontend-deps)"
+
+  # contracts/lib/：forge-std、openzeppelin-contracts(-upgradeable) 是 git submodule，
+  # 合約的安全修補（OZ advisory）只會從這裡進來。每週檢查一次；submodule 升級會改
+  # 已部署合約的編譯結果，必須人工讀 changelog 並跑 contracts-ci，所以上限 2、不 group。
+  #
+  # OpenZeppelin 兩個 submodule 刻意 ignore，改為人工依 release tag 升級（複審 Medium）：
+  #   • gitsubmodule 更新追的是預設分支的最新 commit，不是 release tag —— 會把未發版、
+  #     未經 audit 的 OZ master 程式碼帶進合約。
+  #   • AssetVaultV2 是 UUPS proxy，OZ upgradeable 的 storage layout 變動會毀掉既有部署；
+  #     升級前必須跑 storage layout 比對，不能交給機器人。
+  #   • OZ 的安全公告（GHSA）仍會觸發 Dependabot alerts；收到後人工 checkout 對應 tag。
+  # forge-std 只用在測試，不進部署的 bytecode，保留自動更新。
+  - package-ecosystem: gitsubmodule
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Taipei
+    open-pull-requests-limit: 2
+    ignore:
+      - dependency-name: "contracts/lib/openzeppelin-contracts"
+      - dependency-name: "contracts/lib/openzeppelin-contracts-upgradeable"
+    commit-message:
+      prefix: "chore(contracts-deps)"

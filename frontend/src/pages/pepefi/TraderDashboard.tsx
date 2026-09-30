@@ -5,6 +5,8 @@ import { useContracts } from 'src/hooks/useContracts'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { ASSET_IDS } from 'src/contracts/addresses'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
+import { validateStrategy, MIN_ALLOCATION_ASSETS, type StrategyIssue } from 'src/lib/pepefi/strategyValidation'
+import { FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags'
 import { TableSkeleton } from 'src/components/pepefi/Skeleton'
 import { ASSETS_LIST, ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
 import { getPepeAvatar } from 'src/utils/pepefi-assets'
@@ -193,15 +195,30 @@ export default function TraderDashboard() {
     setRows(prev => prev.map(r => r.uid === uid ? { ...r, ...patch } : r))
 
   // ── Derived ────────────────────────────────────────────────────────────────
-  const totalBps = rows.reduce((sum, r) => {
-    const pct = parseFloat(r.weight || '0')
-    return sum + (isNaN(pct) ? 0 : Math.round(pct * 100))
-  }, 0)
+  // 發布前驗證對齊 StrategyRegistry 的每一條 revert（≥3 檔、單檔 ≤50%、Σ=10000
+  // bps、無 0 權重、無重複）。四捨五入的差額由 validateStrategy 補到最大那檔。
+  const check = validateStrategy(rows)
+  const totalBps = check.bps.reduce((s, v) => s + v, 0)
 
-  const hasDup    = new Set(rows.map(r => r.asset)).size !== rows.length
-  const weightOk  = totalBps === 10_000
+  const hasDup    = check.issues.some(i => i.code === 'DuplicateAsset')
+  const weightOk  = !check.issues.some(i => i.code === 'InvalidWeightSum')
   const stakeOk   = eligible !== false   // null = not loaded / not deployed → allow
-  const canPublish = weightOk && !hasDup && rows.length > 0 && traderInfo?.isRegistered === true && stakeOk
+  const canPublish = check.issues.length === 0 && traderInfo?.isRegistered === true && stakeOk
+
+  const issueText = (issue: StrategyIssue): string | null => {
+    switch (issue.code) {
+      case 'TooFewAssets':
+        return interpolate(t.traderDashboard.publish.issue.tooFew, { min: MIN_ALLOCATION_ASSETS, got: issue.got })
+      case 'WeightExceedsMax':
+        return interpolate(t.traderDashboard.publish.issue.exceedsMax, { row: issue.index + 1, pct: (issue.bps / 100).toFixed(2) })
+      case 'ZeroWeight':
+        return interpolate(t.traderDashboard.publish.issue.zeroWeight, { row: issue.index + 1 })
+      default:
+        // DuplicateAsset 與 InvalidWeightSum 各自已有專屬提示（重複警告、權重進度條）。
+        return null
+    }
+  }
+  const issueLines = check.issues.map(issueText).filter((s): s is string => s !== null)
 
   // Auto-fix: distribute remainder to last row
   const autoFix = () => {
@@ -234,9 +251,9 @@ export default function TraderDashboard() {
 
   const doPublish = async () => {
     if (!contracts || !canPublish) return
-    const allocs = rows.map(r => ({
+    const allocs = rows.map((r, i) => ({
       asset:    r.asset,
-      weight:   BigInt(Math.round(parseFloat(r.weight) * 100)),
+      weight:   BigInt(check.bps[i]),
       isLong:   r.isLong,
       leverage: BigInt(r.leverage),
     }))
@@ -394,6 +411,8 @@ export default function TraderDashboard() {
           </Button>
         </Box>
 
+        {/* 信譽質押是發布策略的前提（配置市集的 Adopt 也靠它），不跟跟單旗標走；
+            只有說明文字在跟單旗標關閉時換成不提跟隨者的中性說法。 */}
         {eligible === false && (
           <Alert severity="warning" action={
             <Button
@@ -409,7 +428,9 @@ export default function TraderDashboard() {
             <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
               {t.traderDashboard.publish.stakeRequiredTitle}
             </Typography>
-            {t.traderDashboard.publish.stakeRequiredBody}
+            {FEATURE_COPY_TRADING
+              ? t.traderDashboard.publish.stakeRequiredBody
+              : t.traderDashboard.publish.stakeRequiredBodyNeutral}
           </Alert>
         )}
 
@@ -531,6 +552,16 @@ export default function TraderDashboard() {
                 {t.traderDashboard.publish.duplicateWarning}
               </Typography>
             )}
+            {issueLines.map(line => (
+              <Typography key={line} variant="caption" color="error.main">
+                {line}
+              </Typography>
+            ))}
+            {check.roundingAdjust !== 0 && weightOk && (
+              <Typography variant="caption" color="text.secondary">
+                {interpolate(t.traderDashboard.publish.issue.roundingAdjusted, { bps: Math.abs(check.roundingAdjust) })}
+              </Typography>
+            )}
 
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
               <Box sx={{ flexGrow: 1, bgcolor: 'background.neutral', borderRadius: 1, height: 8, overflow: 'hidden' }}>
@@ -611,7 +642,7 @@ export default function TraderDashboard() {
         <Card sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', bgcolor: 'background.neutral' }}>
           <Box>
             <Typography variant="caption" color="text.secondary">
-              {t.traderDashboard.earnings.claimable}
+              {FEATURE_COPY_TRADING ? t.traderDashboard.earnings.claimable : t.traderDashboard.earnings.claimableNeutral}
             </Typography>
             <Typography variant="h5" color="success.main" sx={{ fontFamily: MONO, fontWeight: 'bold', display: 'flex', alignItems: 'baseline' }}>
               {earnings === null ? '…' : (Number(earnings) / 1e18).toFixed(4)}
@@ -631,7 +662,7 @@ export default function TraderDashboard() {
         </Card>
 
         <Typography variant="caption" color="text.secondary">
-          {t.traderDashboard.earnings.note}
+          {FEATURE_COPY_TRADING ? t.traderDashboard.earnings.note : t.traderDashboard.earnings.noteNeutral}
         </Typography>
       </Card>
 

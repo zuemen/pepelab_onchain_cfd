@@ -52,6 +52,9 @@ export const vault = {
     title: '近期活動',
     emptyTitle: '尚無活動',
     emptyDescription: '存入 USDC 即可開始賺取協議手續費收益。',
+    readFailedTitle: '讀取失敗',
+    readFailedDescription: '金庫的鏈上事件讀取失敗，這裡的空白不代表沒有活動。請稍後重新整理。',
+    partial: '部分區塊範圍讀取失敗，下方活動可能不完整。',
     deposited: 'LP 存入',
     withdrawn: 'LP 提領',
     protocolDeposit: '協議手續費',
@@ -72,6 +75,9 @@ export const vault = {
     howItWorksLabel: '運作方式：',
     howItWorksBody:
       ' LP 存入 USDC 並獲得 pIV 份額。金庫透過 FeeRouter 賺取所有跟單與績效手續費的 10%。清算時金庫僅收取',
+    /** 跟單旗標關閉時的說法：收入來源講 FeeRouter 的費用，不點名跟單。 */
+    howItWorksBodyNoCopy:
+      ' LP 存入 USDC 並獲得 pIV 份額。金庫透過 FeeRouter 賺取平台交易與績效手續費的 10%。清算時金庫僅收取',
     liquidationPenaltyLabel: '清算罰金',
     howItWorksCodeWrap: '（',
     howItWorksTail:

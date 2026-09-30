@@ -64,4 +64,17 @@ export const stake = {
     backToMarketplace: '← 返回交易市集',
     traderDashboard: '交易者主頁 →',
   },
+
+  /**
+   * 跟單旗標關閉時（商業版預設）的說法。信譽質押本身照常開放——它是配置市集發布
+   * 策略的前提——只是不提跟單／跟隨者。罰沒在鏈上只由跟單流程觸發，這裡只陳述
+   * TraderStake 合約本身的規則。
+   */
+  copyOff: {
+    subtitle: '質押 {token}，換取在市集發布策略的資格並累積信譽；質押資金依鏈上罰沒規則承擔風險。',
+    minimum: '最低質押金額：{amount} {token} · 向使用你策略的人展現風險共擔',
+    addDescription:
+      '質押會讓你的資金承擔風險——在 TraderStake 合約的罰沒規則觸發時可能被扣除。作為回報，你將獲得信譽（聲譽分數）並可發布策略。',
+    slashing: '罰沒由 TraderStake 合約執行：單次最多扣除質押額的 50%，並發放給受損的一方。',
+  },
 };

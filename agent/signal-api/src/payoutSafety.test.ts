@@ -1,0 +1,431 @@
+// P0 收款地址守門（fail-closed）的離線測試。
+//   cd agent && npx tsx signal-api/src/payoutSafety.test.ts
+//
+// 全部用假 getCode 來源，不打任何 RPC、不送交易。涵蓋：
+//   - shared/assessPayoutAddress：外洩清單、EIP-7702 委派碼、正常 EOA、RPC 失敗且無快取、
+//     RPC 失敗但有快取、requireEoa 對合約 code 的判定
+//   - signal-api：payTo unsafe 時付費路由回 503 payto_unsafe，且**不發 402**；GET / 顯示狀態
+//   - settlement-worker：payoutPreflight 對 payTo / signer / platformTreasury 的判定
+import assert from "node:assert";
+
+process.env.BASE_SEPOLIA_RPC_URL ??= "http://127.0.0.1:1";
+
+const {
+  assessPayoutAddress,
+  clearPayoutSafetyCache,
+  COMPROMISED_ADDRESSES,
+  EIP7702_DELEGATION_PREFIX,
+} = await import("@pepelab/shared");
+
+const LEAKED = "0xE80A81360608C1342e66743F70a00f75d792Eb93";
+const EOA = "0x1111111111111111111111111111111111111111";
+const DELEGATED = "0x2222222222222222222222222222222222222222";
+const CONTRACT = "0x3333333333333333333333333333333333333333";
+const DELEGATION_CODE = `${EIP7702_DELEGATION_PREFIX}${"ab".repeat(20)}`;
+
+/** 假 getCode：依地址回 code；`down=true` 時模擬 RPC 失敗。記錄呼叫次數。 */
+function fakeReader(codes: Record<string, string>) {
+  const r = {
+    down: false,
+    calls: 0,
+    async getCode(addr: string): Promise<string> {
+      r.calls += 1;
+      if (r.down) throw new Error("ECONNREFUSED (fake)");
+      return codes[addr.toLowerCase()] ?? "0x";
+    },
+  };
+  return r;
+}
+const codes = {
+  [DELEGATED.toLowerCase()]: DELEGATION_CODE,
+  [CONTRACT.toLowerCase()]: "0x6080604052",
+  [LEAKED.toLowerCase()]: DELEGATION_CODE,
+};
+
+// ── 1) 外洩清單命中：不需 RPC，一律 unsafe ─────────────────────────────────
+{
+  clearPayoutSafetyCache();
+  assert.ok(COMPROMISED_ADDRESSES.includes(LEAKED.toLowerCase()), "外洩 deployer 必須在清單內");
+  const r = fakeReader(codes);
+  r.down = true; // 就算 RPC 掛了，清單命中也不該需要 RPC
+  const a = await assessPayoutAddress(r, LEAKED);
+  assert.equal(a.safe, false);
+  assert.equal(a.source, "denylist");
+  assert.match(a.reason, /^compromised/);
+  assert.equal(r.calls, 0, "清單命中不應打 RPC");
+  // 大小寫不敏感
+  assert.equal((await assessPayoutAddress(r, LEAKED.toLowerCase())).safe, false);
+  console.log("外洩清單命中 → unsafe（不打 RPC、大小寫不敏感） ✓");
+}
+
+// ── 2) EIP-7702 委派碼 → unsafe ─────────────────────────────────────────────
+{
+  clearPayoutSafetyCache();
+  const a = await assessPayoutAddress(fakeReader(codes), DELEGATED);
+  assert.equal(a.safe, false);
+  assert.match(a.reason, /^eip7702_delegated/);
+  console.log("EIP-7702 委派碼（0xef0100…）→ unsafe ✓");
+}
+
+// ── 3) 正常 EOA → safe，且結果被快取 ────────────────────────────────────────
+{
+  clearPayoutSafetyCache();
+  const r = fakeReader(codes);
+  const a = await assessPayoutAddress(r, EOA, { requireEoa: true, now: 1_000 });
+  assert.equal(a.safe, true);
+  assert.equal(a.source, "rpc");
+  const b = await assessPayoutAddress(r, EOA, { requireEoa: true, now: 1_000 + 60_000 });
+  assert.equal(b.safe, true);
+  assert.equal(b.source, "cache");
+  assert.equal(r.calls, 1, "TTL 內不應重打 RPC");
+  const c = await assessPayoutAddress(r, EOA, { requireEoa: true, now: 1_000 + 11 * 60_000 });
+  assert.equal(c.source, "rpc", "超過 10 分鐘 TTL 要重查");
+  assert.equal(r.calls, 2);
+  console.log("正常 EOA → safe；10 分鐘快取 ✓");
+}
+
+// ── 4) RPC 失敗且從未成功查過 → unsafe（fail-closed）──────────────────────
+{
+  clearPayoutSafetyCache();
+  const r = fakeReader(codes);
+  r.down = true;
+  const a = await assessPayoutAddress(r, EOA, { requireEoa: true });
+  assert.equal(a.safe, false);
+  assert.equal(a.source, "no-data");
+  assert.match(a.reason, /^rpc_unavailable/);
+  console.log("RPC 失敗且無快取 → unsafe（fail-closed） ✓");
+}
+
+// ── 5) RPC 失敗但有上次結果 → 沿用（即使已過期）─────────────────────────────
+{
+  clearPayoutSafetyCache();
+  const r = fakeReader(codes);
+  await assessPayoutAddress(r, EOA, { now: 0 });
+  await assessPayoutAddress(r, DELEGATED, { now: 0 });
+  r.down = true;
+  const ok = await assessPayoutAddress(r, EOA, { now: 60 * 60_000 });
+  assert.equal(ok.safe, true);
+  assert.equal(ok.source, "stale-cache");
+  const bad = await assessPayoutAddress(r, DELEGATED, { now: 60 * 60_000 });
+  assert.equal(bad.safe, false, "上次已知是 unsafe，RPC 失敗時仍是 unsafe");
+  // 審查 Low-7：stale 結果最多沿用 1 小時，超過就 fail-closed
+  const tooOld = await assessPayoutAddress(r, EOA, { now: 61 * 60_000 });
+  assert.equal(tooOld.safe, false, "stale 超過 1 小時 → unsafe");
+  assert.match(tooOld.reason, /^rpc_unavailable/);
+  console.log("RPC 失敗但有上次結果 → 1 小時內沿用，超過改判 unsafe ✓");
+}
+
+// ── 5b) RPC 錯誤訊息（可能含帶 key 的 URL）不可出現在 reason ────────────────
+{
+  clearPayoutSafetyCache();
+  const leaky = {
+    getCode: async () => {
+      throw new Error('could not coalesce error (info={ "requestUrl": "https://rpc.example/v2/SECRETKEY1234567890abcd" })');
+    },
+  };
+  const a = await assessPayoutAddress(leaky, EOA);
+  assert.equal(a.safe, false);
+  assert.ok(!a.reason.includes("SECRETKEY"), `reason 不可帶 RPC 錯誤原文：${a.reason}`);
+  assert.ok(!a.reason.includes("rpc.example"));
+  console.log("RPC 錯誤原文不進 reason（只給 rpc_unavailable 代碼） ✓");
+}
+
+// ── 5c) PAYOUT_DENYLIST 格式錯誤 → 啟動時警告，不默默忽略 ─────────────────────
+{
+  const { checkPayoutDenylistEnv, parsePayoutDenylist, isCompromisedAddress } = await import("@pepelab/shared");
+  process.env.PAYOUT_DENYLIST = `0x${"77".repeat(20)}, not-an-address ,0x123`;
+  const warned: string[] = [];
+  const orig = console.warn;
+  console.warn = (...a: unknown[]) => void warned.push(a.join(" "));
+  const invalid = checkPayoutDenylistEnv();
+  console.warn = orig;
+  assert.deepEqual(invalid, ["not-an-address", "0x123"]);
+  assert.ok(warned.some((w) => w.includes("PAYOUT_DENYLIST") && w.includes("not-an-address")), "要發出警告");
+  assert.deepEqual(parsePayoutDenylist().addresses, ["0x" + "77".repeat(20)]);
+  assert.equal(isCompromisedAddress("0x" + "77".repeat(20)), true, "合法項目照樣生效");
+  delete process.env.PAYOUT_DENYLIST;
+  console.log("PAYOUT_DENYLIST 格式錯誤 → 警告並列出無效項目 ✓");
+}
+
+// ── 5d) redactSecrets：秘密值、URL 的 userinfo / query 值、*_PRIVATE_KEY（含/不含 0x）──
+{
+  const { redactSecrets } = await import("@pepelab/shared");
+  const saved = { ...process.env };
+  process.env.UPSTASH_REDIS_REST_TOKEN = "tok_ABCDEFGH12345678";
+  process.env.X402_FACILITATOR_URL = "https://fac.example.com/x402?apikey=FACKEY998877&v=1";
+  process.env.SEPOLIA_RPC_URL = "https://alice:PASSW0RD55@rpc.example.org/path";
+  const pk = "ab".repeat(32);
+  process.env.TEST_DUMMY_PRIVATE_KEY = `0x${pk}`; // 測試用假值，不是任何真實金鑰
+  const s = redactSecrets(
+    `x tok_ABCDEFGH12345678 y {"requestUrl":"https://base-sepolia.g.alchemy.com/v2/abcdefghijklmnop1234"} ` +
+      `fac=https://fac.example.com/x402?apikey=FACKEY998877 rpc=https://alice:PASSW0RD55@rpc.example.org ` +
+      `k1=0x${pk} k2=${pk} k3=0x${pk.toUpperCase()}`,
+  );
+  for (const bad of ["tok_ABCDEFGH12345678", "abcdefghijklmnop1234", "FACKEY998877", "PASSW0RD55", pk, pk.toUpperCase()]) {
+    assert.ok(!s.includes(bad), `不可殘留 ${bad}：${s}`);
+  }
+  assert.ok(s.includes("https://fac.example.com/x402"), "facilitator 的公開 host/path 保留");
+  // 複審 2：path 型 key（QuickNode / Ankr / Chainstack）與任意 *_RPC_URL
+  process.env.BASE_SEPOLIA_RPC_URL = "https://nd-123.quiknode.pro/QNKEY0123456789abcdef/";
+  process.env.KEEPER_RPC_URL = "https://rpc.ankr.com/base_sepolia/ANKRKEY9876543210fedcba";
+  const s2 = redactSecrets(
+    "a https://nd-123.quiknode.pro/QNKEY0123456789abcdef/ b /QNKEY0123456789abcdef/ " +
+      "c https://rpc.ankr.com/base_sepolia/ANKRKEY9876543210fedcba",
+  );
+  for (const bad of ["QNKEY0123456789abcdef", "ANKRKEY9876543210fedcba"]) {
+    assert.ok(!s2.includes(bad), `path 型 key 不可殘留 ${bad}：${s2}`);
+  }
+  // env 有結尾斜線、log 裡沒有 → 仍要逐段遮掉 path 裡的 key
+  process.env.BASE_SEPOLIA_RPC_URL = "https://base-sepolia.chainstacklabs.com/CSKEY0123456789xyz/";
+  const s4 = redactSecrets('{"requestUrl" missing} url=https://base-sepolia.chainstacklabs.com/CSKEY0123456789xyz?x=1 end');
+  assert.ok(!s4.includes("CSKEY0123456789xyz"), `結尾斜線不同時也要遮：${s4}`);
+  // URL 解析失敗 → 整個值遮掉
+  process.env.WEIRD_RPC_URL = "not a url but SECRETVALUE42";
+  process.env.X402_FACILITATOR_URL = "::bad facilitator FACBAD777";
+  const s3 = redactSecrets("x not a url but SECRETVALUE42 y ::bad facilitator FACBAD777 z");
+  assert.ok(!s3.includes("SECRETVALUE42") && !s3.includes("FACBAD777"), s3);
+  for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k];
+  Object.assign(process.env, saved);
+  console.log("redactSecrets 遮掉 token、requestUrl、URL userinfo/query、私鑰（含/不含 0x）✓");
+}
+
+// ── 6) requireEoa：合約 code（Safe / FeeRouter）→ unsafe；不要求時 safe ─────
+{
+  clearPayoutSafetyCache();
+  const r = fakeReader(codes);
+  assert.equal((await assessPayoutAddress(r, CONTRACT)).safe, true, "treasury 可以是合約（如 Safe）");
+  const a = await assessPayoutAddress(r, CONTRACT, { requireEoa: true });
+  assert.equal(a.safe, false);
+  assert.match(a.reason, /^not_eoa/);
+  assert.equal((await assessPayoutAddress(r, "")).safe, false, "空字串 → invalid");
+  assert.equal((await assessPayoutAddress(r, "0x" + "0".repeat(40))).safe, false, "零地址 → invalid");
+  console.log("requireEoa：合約 code → not_eoa；空值/零地址 → invalid ✓");
+}
+
+// ── 7) signal-api：payTo unsafe → 付費路由 503，且不發 402 ─────────────────
+{
+  const { createApp } = await import("./app.ts");
+
+  for (const [label, payTo] of [
+    ["外洩清單", LEAKED],
+    ["EIP-7702 委派", DELEGATED],
+    ["合約（非 EOA）", CONTRACT],
+  ] as const) {
+    clearPayoutSafetyCache();
+    const app = createApp({ payTo, payoutCodeReader: fakeReader(codes) });
+    for (const path of ["/oracle/sBTC", `/signals/${EOA}`]) {
+      const res = await app.request(path);
+      assert.equal(res.status, 503, `${label} ${path} 應回 503，got ${res.status}`);
+      const j = (await res.json()) as { error: string; reason: string; accepts?: unknown };
+      assert.equal(j.error, "payto_unsafe");
+      assert.ok(j.reason.length > 0);
+      assert.equal(j.accepts, undefined, "不可帶任何付款要求");
+    }
+    const root = (await (await app.request("/")).json()) as {
+      payTo: string;
+      payToSafety: { safe: boolean; reason: string };
+    };
+    assert.equal(root.payTo, payTo);
+    assert.equal(root.payToSafety.safe, false);
+    console.log(`payTo=${label} → /oracle、/signals 皆 503 payto_unsafe、無 402；GET / 顯示 unsafe ✓`);
+  }
+
+  // 審查 High-1：大小寫、`//`、%2F、結尾斜線等變體都不能繞過守門
+  {
+    clearPayoutSafetyCache();
+    const variants = [
+      `/SIGNALS/${EOA}`,
+      `/Signals/${EOA}`,
+      `//signals/${EOA}`,
+      `/signals//${EOA}`,
+      `/signals/${EOA}/`,
+      `/signals%2F${EOA}`,
+      "/ORACLE/sBTC",
+      "//oracle/sBTC",
+      "/oracle//sBTC",
+      "/OrAcLe/sBTC/",
+      "/oracle%2FsBTC",
+    ];
+    const app = createApp({
+      payTo: LEAKED,
+      payoutCodeReader: fakeReader(codes),
+      isRegisteredTrader: async () => true,
+    });
+    for (const v of variants) {
+      const res = await app.request(v);
+      assert.equal(res.status, 503, `${v} 應 503，got ${res.status}`);
+      assert.equal(((await res.json()) as { error: string }).error, "payto_unsafe", v);
+    }
+    // 對照組：safe payTo 時，變體被正規化成同一條付費路由（402），閘門照樣生效
+    clearPayoutSafetyCache();
+    const safe = createApp({
+      payTo: EOA,
+      payoutCodeReader: fakeReader(codes),
+      isRegisteredTrader: async (t) => t.toLowerCase() === EOA.toLowerCase(),
+    });
+    assert.equal((await safe.request(`/SIGNALS/${EOA}`)).status, 402);
+    assert.equal((await safe.request("//ORACLE/sBTC")).status, 402);
+    assert.equal((await safe.request(`/SIGNALS/${DELEGATED}`)).status, 400, "registry 閘門對變體同樣生效");
+    assert.equal((await safe.request("/ORACLE/sDOGE")).status, 400, "輸入驗證對變體同樣生效");
+    // 複審 5：%2F / %2f 一次解碼後走同一條路由；解不開或解完仍含 % → 400
+    assert.equal((await safe.request(`/signals%2F${EOA}`)).status, 402, "%2F 解碼後是合法付費路由");
+    assert.equal((await safe.request(`/signals%2f${EOA}`)).status, 402, "%2f 同上");
+    assert.equal((await safe.request("/oracle%2fsBTC")).status, 402);
+    assert.equal((await safe.request(`/signals%2F${DELEGATED}`)).status, 400, "解碼後照樣經過 registry 閘門");
+    for (const bad of ["/oracle/%25zz", "/signals/%25zz", "/oracle/%zz", "/%zz"]) {
+      const r = await safe.request(bad);
+      assert.equal(r.status, 400, `${bad} 應 400，got ${r.status}`);
+      assert.equal(r.headers.get("X-PAYMENT-RESPONSE"), null);
+    }
+    // 複審 6：付費路徑上的 HEAD → 405，不執行 handler（連 registry 閘門都不會碰到）
+    let registryCalls = 0;
+    const headApp = createApp({
+      payTo: EOA,
+      payoutCodeReader: fakeReader(codes),
+      isRegisteredTrader: async () => {
+        registryCalls += 1;
+        return true;
+      },
+    });
+    for (const p of [`/signals/${EOA}`, "/oracle/sBTC", "/ORACLE/sBTC", `//signals/${EOA}`]) {
+      const r = await headApp.request(p, { method: "HEAD" });
+      assert.equal(r.status, 405, `HEAD ${p} 應 405，got ${r.status}`);
+      assert.equal(r.headers.get("Allow"), "GET");
+    }
+    assert.equal(registryCalls, 0, "HEAD 不可執行任何付費路徑的後續邏輯");
+    assert.equal((await headApp.request("/healthz", { method: "HEAD" })).status, 200, "免費端點的 HEAD 不受影響");
+    console.log("%2F/%2f → 402、%25zz → 400；付費路徑 HEAD → 405 不執行 handler ✓");
+    console.log(`路徑變體 ${variants.length} 種（大小寫 / // / %2F / 結尾 /）→ 一律 503，不發 402 ✓`);
+  }
+
+  // 審查 Medium-3：payTo 檢查的 RPC 錯誤原文不回給 client
+  {
+    clearPayoutSafetyCache();
+    const app = createApp({
+      payTo: EOA,
+      payoutCodeReader: {
+        getCode: async () => {
+          throw new Error("fail https://rpc.example/v2/SECRETKEY1234567890abcd");
+        },
+      },
+    });
+    const res = await app.request("/oracle/sBTC");
+    const text = await res.text();
+    assert.equal(res.status, 503);
+    assert.ok(!text.includes("SECRETKEY") && !text.includes("rpc.example"), text);
+    console.log("RPC 錯誤原文不外流到 503 回應 ✓");
+  }
+
+  // RPC 掛了且沒有快取 → 也是 503（fail-closed）
+  {
+    clearPayoutSafetyCache();
+    const r = fakeReader(codes);
+    r.down = true;
+    const app = createApp({ payTo: EOA, payoutCodeReader: r });
+    const res = await app.request("/oracle/sBTC");
+    assert.equal(res.status, 503);
+    console.log("payTo 檢查 RPC 失敗且無快取 → 503（fail-closed） ✓");
+  }
+
+  // 對照組：safe 的 EOA → 會走到 x402 付費牆（402）
+  {
+    clearPayoutSafetyCache();
+    const app = createApp({ payTo: EOA, payoutCodeReader: fakeReader(codes) });
+    const res = await app.request("/oracle/sBTC");
+    assert.equal(res.status, 402, `safe payTo 應發出 402，got ${res.status}`);
+    const root = (await (await app.request("/")).json()) as { payToSafety: { safe: boolean } };
+    assert.equal(root.payToSafety.safe, true);
+    console.log("對照組：safe EOA → 402 付款要求照常發出 ✓");
+  }
+}
+
+// ── 8) settlement-worker 的 payoutPreflight ────────────────────────────────
+{
+  delete process.env.FEE_SETTLEMENT_PRIVATE_KEY;
+  const { payoutPreflight } = await import("./settlement-worker.ts");
+  const base = {
+    codeReader: fakeReader(codes),
+    payTo: EOA,
+    signerAddress: EOA,
+    routerAddress: CONTRACT,
+    readPlatformTreasury: async () => CONTRACT,
+    fetchPublishedPayTo: async () => EOA,
+  };
+  clearPayoutSafetyCache();
+  assert.deepEqual((await payoutPreflight(base)).problems, [], "全部安全 → 無 problem");
+
+  // 審查 Medium-6：PAY_TO ≠ signer → problem（以前只是 warning）
+  clearPayoutSafetyCache();
+  const q1 = await payoutPreflight({ ...base, payTo: "0x" + "88".repeat(20), fetchPublishedPayTo: async () => EOA });
+  assert.ok(q1.problems.some((p) => p.includes("≠ 結算 signer")), JSON.stringify(q1.problems));
+  // 線上 signal-api 公布的 payTo ≠ signer → problem
+  clearPayoutSafetyCache();
+  const q2 = await payoutPreflight({ ...base, fetchPublishedPayTo: async () => "0x" + "88".repeat(20) });
+  assert.ok(q2.problems.some((p) => p.includes("線上 signal-api 公布的 payTo")));
+  // 讀不到線上 payTo → fail-closed
+  clearPayoutSafetyCache();
+  const q3 = await payoutPreflight({
+    ...base,
+    fetchPublishedPayTo: async () => {
+      throw new Error("ECONNREFUSED");
+    },
+  });
+  assert.ok(q3.problems.some((p) => p.includes("讀不到線上 signal-api")));
+  // 沒設 SIGNAL_API_URL → 跳過並警告
+  clearPayoutSafetyCache();
+  const q4 = await payoutPreflight({ ...base, fetchPublishedPayTo: undefined });
+  assert.deepEqual(q4.problems, []);
+  assert.ok(q4.warnings.some((w) => w.includes("SIGNAL_API_URL 未設")));
+  // 複審 9：CI（GITHUB_ACTIONS=true）沒設 SIGNAL_API_URL → problem
+  clearPayoutSafetyCache();
+  const q5 = await payoutPreflight({ ...base, fetchPublishedPayTo: undefined, requirePublishedPayTo: true });
+  assert.ok(q5.problems.some((p) => p.includes("SIGNAL_API_URL 未設")), JSON.stringify(q5.problems));
+  // 線上 GET / 被限流 429 → 重試 2 次
+  {
+    const { createServer } = await import("node:http");
+    let hits = 0;
+    const srv = createServer((_q, r) => {
+      hits += 1;
+      if (hits <= 2) return void r.writeHead(429).end("slow down");
+      r.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ payTo: EOA }));
+    });
+    await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r));
+    const url = `http://127.0.0.1:${(srv.address() as { port: number }).port}`;
+    const { fetchPublishedPayTo } = await import("./settlement-worker.ts");
+    assert.equal(await fetchPublishedPayTo(url, { delayMs: 10 }), EOA);
+    assert.equal(hits, 3, "429 兩次後第三次成功");
+    hits = -10; // 之後一直 429
+    await assert.rejects(fetchPublishedPayTo(url, { delayMs: 10 }), /429/);
+    await new Promise<void>((r) => srv.close(() => r()));
+  }
+  console.log("worker preflight：PAY_TO≠signer、線上 payTo≠signer、讀不到 → problem；未設 URL → 警告 ✓");
+
+  clearPayoutSafetyCache();
+  const p1 = await payoutPreflight({ ...base, readPlatformTreasury: async () => LEAKED });
+  assert.equal(p1.problems.length, 1);
+  assert.match(p1.problems[0]!, /platformTreasury unsafe/);
+
+  clearPayoutSafetyCache();
+  const p2 = await payoutPreflight({ ...base, payTo: LEAKED, signerAddress: LEAKED });
+  assert.ok(p2.problems.some((p) => p.startsWith("PAY_TO unsafe")));
+
+  clearPayoutSafetyCache();
+  const p3 = await payoutPreflight({ ...base, signerAddress: DELEGATED });
+  assert.ok(p3.problems.some((p) => p.startsWith("結算 signer unsafe")));
+
+  clearPayoutSafetyCache();
+  const p4 = await payoutPreflight({ ...base, payTo: undefined });
+  assert.ok(p4.problems.some((p) => p.includes("PAY_TO 未設")));
+
+  clearPayoutSafetyCache();
+  const p5 = await payoutPreflight({
+    ...base,
+    readPlatformTreasury: async () => {
+      throw new Error("rpc down");
+    },
+  });
+  assert.ok(p5.problems.some((p) => p.includes("fail-closed")), "讀不到 treasury → fail-closed");
+  console.log("worker preflight：payTo / signer / platformTreasury 任一 unsafe 或讀不到 → problem ✓");
+}
+
+console.log("payoutSafety.test.ts ✓ all assertions passed");

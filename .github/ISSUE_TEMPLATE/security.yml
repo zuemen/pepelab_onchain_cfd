@@ -1,0 +1,36 @@
+name: 安全問題（請求私密回報管道）
+description: 只用來請求私密聯絡管道。不要在這裡寫任何漏洞細節。
+title: "[security] 需要私密回報管道"
+labels: ["needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **GitHub Private Vulnerability Reporting 目前尚未開啟。** 開啟之前，這個表單就是替代管道：
+        開一個不含任何細節的 issue，要求私密聯絡管道，維護者會回覆可用的私密方式。
+
+        ## 請先閱讀 [SECURITY.md](https://github.com/zuemen/pepelab_onchain_cfd/blob/master/SECURITY.md)
+
+        - 這個表單**只**用來請求私密聯絡管道。
+        - Private Vulnerability Reporting 開啟後，請改用本 repo **Security** 分頁的 **Report a vulnerability**。
+        - **不要**在這裡描述漏洞、受影響的函式、重現步驟、交易或 PoC。公開 issue 任何人都看得到。
+        - 目前沒有漏洞獎金、沒有第三方稽核，僅限測試網。
+  - type: dropdown
+    id: area
+    attributes:
+      label: 大致範圍（不要寫細節）
+      options:
+        - contracts
+        - agent
+        - frontend
+        - CI / workflows
+        - 不確定
+    validations:
+      required: true
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: 確認
+      options:
+        - label: 我沒有在這個 issue 裡寫任何漏洞細節、重現步驟或私鑰。
+          required: true

@@ -21,6 +21,7 @@ import {
   MARKET_SYMBOLS,
   type MarketMeta,
 } from "./symbols.ts";
+import { LruCache } from "./lru.ts";
 
 // ── 型別 ─────────────────────────────────────────────────────────────────────
 
@@ -517,10 +518,41 @@ function simulate(
 
 // ── 快取 ─────────────────────────────────────────────────────────────────────
 
-// serverless 上這個 Map 只在同一個暖實例內有效，冷啟就空了——這正是它存在的
+// serverless 上這個快取只在同一個暖實例內有效，冷啟就空了——這正是它存在的
 // 理由之一：一個暖實例服務多個瀏覽器分頁時，不該每次都去打 Coinbase。
-// 大小天然有界（資產數 × 時間框 = 66 筆），不需要淘汰邏輯。
-const cache = new Map<string, { at: number; payload: CandleResponse }>();
+//
+// 2026-09-29（P0）：以前的註解說「大小天然有界（資產數 × 時間框 = 66 筆）」——
+// 不成立：鍵裡還有使用者可控的 limit（1–500）與 end（任意 unix 秒），換著參數打
+// 就能讓 Map 無上界成長。現在是有上界的 LRU，另外把 end 夾在合理範圍內。
+export const CANDLE_CACHE_MAX = Math.max(1, Number(process.env.CANDLE_CACHE_MAX ?? "500") || 500);
+const cache = new LruCache<{ at: number; payload: CandleResponse }>(CANDLE_CACHE_MAX);
+
+/** 測試／監控用：目前快取筆數。 */
+export function candleCacheSize(): number {
+  return cache.size;
+}
+
+/** end 的下限（2009-01-01 UTC）。更早的查詢一律夾到這裡——不會有資料，也不該各自佔一格快取。 */
+export const MIN_END_SEC = 1_230_768_000;
+
+/**
+ * 正規化使用者給的 end：非數字／≤0 → 沒給；晚於現在 → 等同「最新」（沒給）；
+ * 早於 MIN_END_SEC → 夾到 MIN_END_SEC。
+ */
+export function normalizeEnd(rawEnd: string | number | undefined, nowSec: number): number | undefined {
+  if (rawEnd === undefined) return undefined;
+  const n = Number(rawEnd);
+  if (!Number.isFinite(n) || n <= 0) return undefined;
+  const e = Math.floor(n);
+  if (e >= nowSec) return undefined;
+  return Math.max(e, MIN_END_SEC);
+}
+
+/** limit 夾在 [1, MAX_LIMIT]；非數字 → 預設值。 */
+export function normalizeLimit(rawLimit: string | number | undefined): number {
+  const parsed = Number(rawLimit ?? DEFAULT_LIMIT);
+  return Number.isFinite(parsed) ? Math.max(1, Math.min(Math.floor(parsed), MAX_LIMIT)) : DEFAULT_LIMIT;
+}
 
 /** TTL 跟著時間框走：1m 線每分鐘就變，1d 線五分鐘內重複抓沒有意義。 */
 /**
@@ -589,18 +621,12 @@ export async function getCandles(
 
   // 下限是 1 而不是某個「圖表至少要幾根才好看」的值：前端輪詢時只會要最後一兩根
   // 來更新當前蠟燭，硬把它撐到 10 只是白抓資料。上限才是真正要防的。
-  const parsed = Number(rawLimit ?? DEFAULT_LIMIT);
-  const limit = Number.isFinite(parsed)
-    ? Math.max(1, Math.min(Math.floor(parsed), MAX_LIMIT))
-    : DEFAULT_LIMIT;
+  const limit = normalizeLimit(rawLimit);
 
   // end 只接受正的 unix 秒數。0 / 負數 / 非數字一律當成「沒給」，不要讓一個
-  // 打錯的參數靜默地變成「查詢 1970 年」然後回一片空白。
-  const parsedEnd = Number(rawEnd);
-  const end =
-    rawEnd !== undefined && Number.isFinite(parsedEnd) && parsedEnd > 0
-      ? Math.floor(parsedEnd)
-      : undefined;
+  // 打錯的參數靜默地變成「查詢 1970 年」然後回一片空白。未來的 end 等同最新；
+  // 太早的 end 夾到 MIN_END_SEC（見 normalizeEnd）。
+  const end = normalizeEnd(rawEnd, Math.floor(Date.now() / 1000));
 
   const key = `${meta.symbol}:${interval}:${limit}:${end ?? "now"}`;
   const hit = cache.get(key);

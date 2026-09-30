@@ -23,9 +23,11 @@ import SyntheticAssetV2ABI from 'src/contracts/abi/SyntheticAssetV2.json'
 import AssetIcon from 'src/components/pepefi/AssetIcon'
 import { WhoRunsWhat, AssetProvenanceSummary } from 'src/components/pepefi/AssetProvenance'
 import { AssetDetailPanel } from 'src/components/pepefi/AssetDetailPanel'
+import { SyntheticDisclosure } from 'src/components/pepefi/SyntheticDisclosure'
 import { SHOW_PERPETUALS } from 'src/lib/pepefi/featureFlags'
 import Skeleton from 'src/components/pepefi/Skeleton'
 import { useToast } from 'src/components/pepefi/ToastProvider'
+import { explorerAddr } from 'src/lib/pepefi/explorer'
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -648,6 +650,7 @@ export default function TokenizedAssetsPage() {
         主欄放原本整頁的內容，詳情層是它的旁邊那一欄，不是蓋在上面的遮罩。 */}
     <Box sx={{ display: 'flex', gap: 3, alignItems: 'flex-start' }}>
     <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
+      <SyntheticDisclosure />
       <Box>
         <Typography variant="h4" sx={{ fontWeight: 800 }}>{mode === 'simple' ? t.tokens.titleSimple : t.tokens.title}</Typography>
         <Typography variant="body2" color="text.secondary">{t.tokens.subtitle}</Typography>
@@ -751,13 +754,20 @@ export default function TokenizedAssetsPage() {
 
             <Grid size={{ xs: 12, md: 4 }}>
               <Typography variant="caption" color="text.secondary" display="block">{t.tokens.health.guardedOracle}</Typography>
-              <Link
-                href={`https://sepolia.etherscan.io/address/${v2!.oracleAddr}`}
-                target="_blank" rel="noopener noreferrer"
-                sx={{ fontFamily: MONO, fontSize: '0.8rem', wordBreak: 'break-all' }}
-              >
-                {v2!.oracleAddr}
-              </Link>
+              {/* 依 chainId 選瀏覽器（84532 → BaseScan）；以前寫死 Etherscan，在 Base 上點下去是空頁。 */}
+              {explorerAddr(v2!.oracleAddr, wallet.chainId) ? (
+                <Link
+                  href={explorerAddr(v2!.oracleAddr, wallet.chainId)!}
+                  target="_blank" rel="noopener noreferrer"
+                  sx={{ fontFamily: MONO, fontSize: '0.8rem', wordBreak: 'break-all' }}
+                >
+                  {v2!.oracleAddr}
+                </Link>
+              ) : (
+                <Typography sx={{ fontFamily: MONO, fontSize: '0.8rem', wordBreak: 'break-all' }}>
+                  {v2!.oracleAddr}
+                </Typography>
+              )}
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
                 {t.tokens.health.guardedOracleNote}
               </Typography>

@@ -5,6 +5,7 @@
 //
 // 萃取邏輯與網路呼叫分離：extract* 是純函式，可以拿真實壞掉的回應直接測試。
 import { parseFeedValue, type ParsedFeed } from "./core.ts";
+import { extractMarketSession, type MarketSession } from "./market.ts";
 
 export type Source =
   | { kind: "coingecko"; id: string }
@@ -26,7 +27,25 @@ export const SOURCES: Record<string, Source> = {
   sESGU: { kind: "yahoo", symbol: "ESGU" },
 };
 
-export function extractCoinGecko(json: unknown, id: string): ParsedFeed {
+/**
+ * 第二個獨立來源（只在偏離超過拒寫門檻、需要多源確認時才抓，見 core.ts
+ * confirmLargeMove）。加密資產用 Yahoo 的 BTC-USD／ETH-USD 與 CoinGecko 互相印證；
+ * 股票／ETF／期貨沒有第二個獨立的免費來源（Yahoo 的 query2 不算獨立），刻意不列。
+ */
+export const SECONDARY_SOURCES: Record<string, Source> = {
+  sBTC: { kind: "yahoo", symbol: "BTC-USD" },
+  sETH: { kind: "yahoo", symbol: "ETH-USD" },
+};
+
+/**
+ * CoinGecko simple/price（帶 include_last_updated_at=true）。有 last_updated_at 時
+ * 一併回傳 quoteAgeSec —— 多源確認只接受新鮮的報價（見 core.ts confirmLargeMove）。
+ */
+export function extractCoinGecko(
+  json: unknown,
+  id: string,
+  opts: { nowSec?: number } = {},
+): ParsedFeed & { quoteAgeSec?: number } {
   if (typeof json !== "object" || json === null) {
     return { value: null, reason: "coingecko: non-object response" };
   }
@@ -34,7 +53,11 @@ export function extractCoinGecko(json: unknown, id: string): ParsedFeed {
   if (typeof entry !== "object" || entry === null) {
     return { value: null, reason: `coingecko: no entry for ${id}` };
   }
-  return parseFeedValue((entry as Record<string, unknown>).usd);
+  const parsed = parseFeedValue((entry as Record<string, unknown>).usd);
+  const t = (entry as Record<string, unknown>).last_updated_at;
+  if (typeof t !== "number" || !Number.isFinite(t) || t <= 0) return parsed;
+  const nowSec = opts.nowSec ?? Math.floor(Date.now() / 1000);
+  return { ...parsed, quoteAgeSec: Math.max(0, nowSec - t) };
 }
 
 /** Yahoo 回應的附加中繼資料（幣別 / 報價時間），讓 keeper 能誠實回報偽新鮮度。 */
@@ -45,6 +68,8 @@ export interface QuoteMeta {
   currency?: string;
   /** 報價比 warnQuoteAgeSec 還舊（例如週末的收盤價）→ 寫上鏈會造成偽新鮮度。 */
   quoteStale?: boolean;
+  /** Yahoo 的正規盤時段（休市判斷用，見 market.ts）；拿不到就沒有。 */
+  session?: MarketSession;
 }
 
 /** 報價超過這個年齡就完全不用（預設 4 天：足以涵蓋週末＋一個假日）。 */
@@ -84,6 +109,7 @@ export function extractYahoo(
     return { value: null, reason: "yahoo: no meta" };
   }
   const meta = metaRaw as Record<string, unknown>;
+  const session = extractMarketSession(json) ?? undefined;
 
   // 1) 幣別必須是 USD —— oracle 的所有價格都是 USD 8-dec。
   const currency = typeof meta.currency === "string" ? meta.currency : undefined;
@@ -110,11 +136,12 @@ export function extractYahoo(
       currency,
       quoteAgeSec,
       quoteStale: true,
+      session,
     };
   }
 
   const parsed = parseFeedValue(meta.regularMarketPrice);
-  return { ...parsed, currency, quoteAgeSec, quoteStale: quoteAgeSec > warnAge };
+  return { ...parsed, currency, quoteAgeSec, quoteStale: quoteAgeSec > warnAge, session };
 }
 
 /** 網路取價。任何失敗都回 value:null，永遠不丟例外、永遠不編造數字。 */
@@ -124,11 +151,28 @@ export async function fetchPrice(
 ): Promise<ParsedFeed & QuoteMeta & { source: string }> {
   const src = SOURCES[symbol];
   if (!src) return { value: null, reason: `unknown symbol ${symbol}`, source: "none" };
+  return fetchFromSource(src, fetchImpl);
+}
 
+/** 第二個獨立來源；沒有就回 value:null（reason 說明）。 */
+export async function fetchSecondaryPrice(
+  symbol: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<ParsedFeed & QuoteMeta & { source: string }> {
+  const src = SECONDARY_SOURCES[symbol];
+  if (!src) return { value: null, reason: `no secondary source for ${symbol}`, source: "none" };
+  return fetchFromSource(src, fetchImpl);
+}
+
+async function fetchFromSource(
+  src: Source,
+  fetchImpl: typeof fetch,
+): Promise<ParsedFeed & QuoteMeta & { source: string }> {
   try {
     if (src.kind === "coingecko") {
       const res = await fetchImpl(
-        `https://api.coingecko.com/api/v3/simple/price?ids=${src.id}&vs_currencies=usd`,
+        `https://api.coingecko.com/api/v3/simple/price?ids=${src.id}&vs_currencies=usd` +
+          `&include_last_updated_at=true`,
         { signal: AbortSignal.timeout(15_000) },
       );
       if (!res.ok) {
@@ -137,19 +181,43 @@ export async function fetchPrice(
       return { ...extractCoinGecko(await res.json(), src.id), source: "coingecko" };
     }
 
-    // Yahoo 的 chart 端點沒有瀏覽器 User-Agent 會回 401。
-    const url =
-      `https://query1.finance.yahoo.com/v8/finance/chart/` +
-      `${encodeURIComponent(src.symbol)}?interval=1d&range=1d`;
-    const res = await fetchImpl(url, {
-      headers: { "User-Agent": "Mozilla/5.0" },
-      signal: AbortSignal.timeout(15_000),
-    });
+    const res = await fetchYahooChart(src.symbol, fetchImpl);
     if (!res.ok) {
       return { value: null, reason: `yahoo HTTP ${res.status}`, source: "yahoo" };
     }
     return { ...extractYahoo(await res.json()), source: "yahoo" };
   } catch (e) {
     return { value: null, reason: `fetch failed: ${(e as Error).message}`, source: src.kind };
+  }
+}
+
+function fetchYahooChart(symbol: string, fetchImpl: typeof fetch): Promise<Response> {
+  // Yahoo 的 chart 端點沒有瀏覽器 User-Agent 會回 401。
+  const url =
+    `https://query1.finance.yahoo.com/v8/finance/chart/` +
+    `${encodeURIComponent(symbol)}?interval=1d&range=1d`;
+  return fetchImpl(url, {
+    headers: { "User-Agent": "Mozilla/5.0" },
+    signal: AbortSignal.timeout(15_000),
+  });
+}
+
+/**
+ * 只取市場時段（健檢用）。與 fetchPrice 共用同一個 Yahoo 端點，但不驗價格與報價
+ * 年齡 —— 健檢要的是「現在是否休市、最後一筆成交在何時」，報價舊正是休市的樣子。
+ * 加密資產（CoinGecko）沒有時段，回 null；任何失敗也回 null，呼叫端退回行事曆。
+ */
+export async function fetchMarketSession(
+  symbol: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<MarketSession | null> {
+  const src = SOURCES[symbol];
+  if (!src || src.kind !== "yahoo") return null;
+  try {
+    const res = await fetchYahooChart(src.symbol, fetchImpl);
+    if (!res.ok) return null;
+    return extractMarketSession(await res.json());
+  } catch {
+    return null;
   }
 }

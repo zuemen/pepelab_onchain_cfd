@@ -36,6 +36,9 @@ export const whale = {
     windowScanFailed: '掃描失敗',
     windowScanning: '掃描中…',
     scanFailedTitle: '無法掃描',
+    /** hook 的錯誤訊息（以前寫死英文）。 */
+    readError: '無法讀取鏈上活動，RPC 節點可能正在限流。',
+    scanIncomplete: '{count} 個區塊範圍讀取失敗，動態與成交量可能不完整——請重試。',
     windowLast: '最近 {span}',
 
     threshold: '鯨魚門檻',

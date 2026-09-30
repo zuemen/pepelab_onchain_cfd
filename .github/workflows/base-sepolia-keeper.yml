@@ -29,6 +29,10 @@ on:
 
 permissions:
   contents: read
+  # 複審 H2 (c)：價格熔斷時立刻開 issue／留言／恢復後關閉（keeper/alert-run.ts）。
+  # 只加 issues，不給 contents: write / actions；checkout 用 persist-credentials: false，
+  # GITHUB_TOKEN 只在告警 step 經 GH_TOKEN 取得，持有私鑰的喂價 step 拿不到。
+  issues: write
 
 # 與 admin-base-sepolia.yml 共用：同一把金鑰 + 同一條鏈 = 同一個 nonce 序列。
 concurrency:
@@ -65,6 +69,8 @@ jobs:
       # 第三方 action 一律 pin 到 commit SHA：tag 是可移動的，供應鏈攻擊只要把
       # tag 重指到惡意 commit，這個持有 KEEPER_PRIVATE_KEY 的 job 就會執行它。
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Fail fast when secrets are missing
         run: |
@@ -112,7 +118,12 @@ jobs:
       # 喂價是 liveness 關鍵路徑，用單元測試當它的前置條件，等於讓一支壞掉的
       # 測試把線上價格一起停掉。
       - name: Refresh prices
+        id: refresh
         working-directory: agent
+        env:
+          # 熔斷報告（給告警 step）與拒寫清單（給 funding crank）。
+          KEEPER_REPORT_PATH: ${{ runner.temp }}/keeper-report.json
+          KEEPER_REFUSED_PATH: ${{ runner.temp }}/keeper-refused.txt
         run: |
           set -uo pipefail
           npx tsx keeper/run.ts 2>&1 | tee /tmp/keeper.log
@@ -127,6 +138,8 @@ jobs:
           # 只錨定真正要用的兩個欄位，中間允許 run.ts 之後再加欄位（它已經加過
           # rejected= 與 clamped=，把原本寫死整行的 pattern 打掉了）。這個門檻的
           # 目的是量測失敗率，不是驗證輸出格式；綁太死只會讓它在無關的改動下誤報。
+          # 2026-09-30 事故後：摘要行的 failed 包含「來源無效而跳過」的資產、available
+          # 包含它們（core.ts summaryLine）—— sBTC 403 被跳過 9 小時而 failed=0 的情況不再發生。
           SUMMARY=$(grep -E '^available=[0-9]+ .*failed=[0-9]+$' /tmp/keeper.log | tail -1 || true)
           if [ -z "$SUMMARY" ]; then
             echo "::error::找不到 keeper 摘要行 —— 輸出格式已改變，這個門檻已失效，請修正 workflow。"
@@ -143,6 +156,20 @@ jobs:
               exit 1
             fi
           fi
+
+      # 複審 H2 (c)：熔斷時同一個 run 內立刻開 issue（已開著就留言，恢復後關閉）。
+      # 喂價 step 成功或失敗都要跑；報告不存在（run.ts 提早中止）時 alert-run 不動 issue。
+      # 告警本身失敗只發 ::warning::，不影響 job 紅綠。
+      - name: Alert on price circuit breaker
+        if: always() && (steps.refresh.outcome == 'success' || steps.refresh.outcome == 'failure')
+        working-directory: agent
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEALTH_REPORT_PATH: ${{ runner.temp }}/keeper-report.json
+          ALERT_TITLE: "[keeper] Base Sepolia 價格熔斷"
+          # 窄複審 4：連續 4 輪正常（名目 15 分鐘 × 4 ≈ 1 小時）才自動關 issue。
+          ALERT_CLOSE_AFTER: "4"
+        run: npx tsx keeper/alert-run.ts
 
       # 喂價步驟部分失敗（例如某一個資產偏離過大被拒寫）時仍要 crank funding：
       # 兩件事互相獨立，不能讓一個資產的喂價問題連帶停掉整條 funding 結算。
@@ -176,11 +203,28 @@ jobs:
           # 「replacement transaction underpriced」。實測就是這樣掛的：sBTC 成功、
           # sETH 與 sTSLA 直接撞。失敗時不遞增，因為那個 nonce 沒有被消耗。
           KEEPER_ADDR=$(cast wallet address --private-key "$KEEPER_PRIVATE_KEY")
-          NONCE=$(cast nonce "$KEEPER_ADDR" --rpc-url "$KEEPER_RPC_URL")
+          # --block pending（窄複審 6）：喂價 step 若留下還沒上鏈的交易，latest 的 nonce 會
+          # 撞上它；pending 會把 mempool 裡屬於這把金鑰的交易算進去。
+          NONCE=$(cast nonce "$KEEPER_ADDR" --block pending --rpc-url "$KEEPER_RPC_URL")
           echo "keeper=${KEEPER_ADDR} 起始 nonce=${NONCE}"
+
+          # 複審 Medium：被熔斷拒寫的資產，價格是已知錯誤的舊值 —— 不以它結算 funding。
+          # 清單由 keeper/run.ts 在 runRound 回傳後立刻寫出（一行一個 symbol，含本輪沒判斷到的資產）。
+          REFUSED_FILE="${RUNNER_TEMP}/keeper-refused.txt"
+          # 窄複審 5：清單不存在＝喂價 step 在 runRound 回傳前就中止，無從判斷哪些價格
+          # 可信 —— 不 crank，且讓這個 step 失敗（連續失敗會由 oracle-health 的 funding
+          # 延遲檢查開 issue）。
+          if [ ! -f "$REFUSED_FILE" ]; then
+            echo "::error::找不到 $REFUSED_FILE（喂價 step 未完成），本輪不 crank funding。"
+            exit 1
+          fi
 
           FAILURES=0
           for SYM in sBTC sETH sAAPL sTSLA; do
+            if grep -qx "$SYM" "$REFUSED_FILE"; then
+              echo "::warning::$SYM: 本輪價格被熔斷拒寫，跳過 settleFunding（不以錯誤舊價結算）。"
+              continue
+            fi
             KEY=$(cast keccak "$SYM")
 
             LAST=$(cast call "$EXCHANGE" "lastFundingUpdateAt(bytes32)(uint256)" "$KEY" \

@@ -1,5 +1,8 @@
 # Demo Script — On-Chain CFD Copy Trading PoC
 
+> **歷史快照（2026-06-14）**：本文件是當時的展示腳本，其後未隨部署更新；
+> 位址、流程與功能（例如跟單在商業版已預設關閉）可能已過期。現況見 [`README.md`](../README.md)。
+
 > **已上鏈 Base Sepolia (chainId 84532)** — 位址見 `docs/CAPSTONE_DELIVERABLES.md`。
 > 前端連 Base Sepolia 錢包即可走真鏈 demo；下方一鍵腳本則為本機 deterministic 版。
 > Anvil 區段（最底下）保留作純本機演練。

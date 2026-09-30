@@ -25,7 +25,7 @@ import { baseSepolia } from "viem/chains";
 import { config as dotenvConfig } from "dotenv";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { openPositionForSession } from "@pepelab/shared";
+import { openPositionForSession, resolveX402MaxValue } from "@pepelab/shared";
 import { loadVc, localVerifyVc } from "./examples/vc-gate.ts";
 
 // ── Load env from agent/.env ───────────────────────────────────────────────
@@ -41,11 +41,12 @@ const RPC =
 const CHAIN_ID = 84532; // Base Sepolia
 
 // Session Key configuration (Phase 2 — autonomous trading)
-// 2026-07-27 重新部署的實例，帶 per-session 資產白名單。舊的 0x5Ebcc64C… 沒有，
-// 所以不再當預設值 —— 預設值就是大多數人實際會跑到的設定。
+// 預設 = 現行 AgentSessionManager（綁現行 exchange 0x827eA0c62a32e995927101259042F8A27D99124D）。
+// 來源：contracts/broadcast/Redeploy129Exchange.s.sol/84532/run-latest.json；鏈上核對 exchange() 相符。
+// 舊的 0x4E7cC1B7…（綁已退役的 exchange 0xEf75…）與 0x5Ebcc64C…（無資產白名單）不再當預設。
 const SESSION_MANAGER =
   process.env.SESSION_MANAGER_ADDRESS?.trim() ||
-  "0x4E7cC1B79B72ab72531a6C790e14304370f70764";
+  "0xdF9C1E53523568709f65Afe3C4AD2E6a6D99d14B";
 const SESSION_ID = process.env.DEMO_SESSION_ID?.trim();
 const DEMO_MARGIN = Number(process.env.DEMO_MARGIN ?? "10");
 const DEMO_ASSET = process.env.DEMO_ASSET ?? "sBTC";
@@ -138,9 +139,11 @@ async function fetchPaidSignal(
   }
 
   // Wrap fetch to auto-handle 402 → sign USDC → retry
+  // 單筆付款上限明確傳入（X402_MAX_PAYMENT_USDC，預設 0.02 USDC），不吃套件預設 0.10。
   const payFetch = wrapFetchWithPayment(
     fetch,
-    walletClient as Parameters<typeof wrapFetchWithPayment>[1]
+    walletClient as Parameters<typeof wrapFetchWithPayment>[1],
+    resolveX402MaxValue(),
   );
 
   console.log("  Sending request (will auto-handle 402 challenge)...");

@@ -9,14 +9,19 @@ name: Agent CI
 # 關鍵路徑，用單元測試當它的前置條件，等於讓一支壞掉的測試把線上價格一起停掉。
 # 測試回歸應該擋的是合併，不是喂價。
 on:
+  # frontend/src/contracts/** 也要觸發：signal-api 的 Vercel bundle 內聯了
+  # addresses.ts / agentAuth.ts（esbuild metafile），agent 測試也讀那裡的 ABI JSON。
+  # 只改前端合約檔卻不跑這支，bundle:check 就永遠看不到那次漂移。
   push:
     branches: [master]
     paths:
       - 'agent/**'
+      - 'frontend/src/contracts/**'
       - '.github/workflows/agent-ci.yml'
   pull_request:
     paths:
       - 'agent/**'
+      - 'frontend/src/contracts/**'
       - '.github/workflows/agent-ci.yml'
   workflow_dispatch:
 
@@ -61,9 +66,41 @@ jobs:
       - name: Test
         run: npm test
 
-      # 擋「改了 signal-api/src/*.ts 卻忘記重新打包」。Vercel 服務的是 commit 進
+      # 擋「改了 bundle 的來源卻忘記重新打包」。Vercel 服務的是 commit 進
       # repo 的 bundle（`agent/signal-api/api/index.js`）而**沒有 build step**，
       # 所以漏打包 = 線上靜默跑舊碼，且從 PR diff 完全看不出來（稽核 §四）。
-      # bundle:check 在記憶體重打包後與已 commit 的檔案比對，不一致就 exit 1。
+      # bundle:check 用 esbuild metafile 找出 bundle 實際內聯的所有非 node_modules
+      # 來源（signal-api/src、agent/shared/src、frontend/src/contracts/addresses.ts、
+      # agentAuth.ts…），算內容指紋，與 commit 進 repo 的 api/.bundle-sources.json
+      # 比對；不一致就 exit 1 並列出是哪些檔案變了。不比對輸出位元組（跨 esbuild
+      # 版本不穩定，見 signal-api/src/bundleFingerprint.mjs）。
       - name: Bundle drift check
         run: npm run bundle:check
+
+  # oracle-health.yml 以 `npm ci --ignore-scripts` 安裝（不給依賴樹執行 install
+  # script 的機會）。這裡證明在 Linux runner 上這樣裝完 tsx／esbuild 仍能執行，
+  # 並跑一次 keeper 測試（含 health-check 的 RPC 失敗路徑），避免哪天某個依賴改成
+  # 必須靠 postinstall 才能用，健檢就在排程裡無聲壞掉（複審 Low）。
+  ignore-scripts-smoke:
+    name: npm ci --ignore-scripts smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: agent/package-lock.json
+
+      - name: Install without scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: tsx runs
+        run: npx tsx -e "console.log(1)"
+
+      - name: Keeper tests
+        run: npm run test:keeper

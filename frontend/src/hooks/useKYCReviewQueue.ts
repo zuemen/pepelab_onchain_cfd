@@ -1,10 +1,17 @@
 import type { Contract, BrowserProvider } from 'ethers'
 
-import { useRef, useState, useCallback } from 'react'
+import { useRef, useState, useEffect, useCallback } from 'react'
 
 import { t, interpolate } from 'src/locales'
 import { mapLimit, withRetry, RPC_CONCURRENCY } from 'src/lib/pepefi/rpcBatch'
-import { scanFromBlock, queryLogsChunked, type ChunkProgress, type ChunkFailure } from 'src/lib/pepefi/chainLogs'
+import {
+  UI_RETRIES,
+  scanFromBlock,
+  queryLogsChunked,
+  isChunkScanAborted,
+  type ChunkProgress,
+  type ChunkFailure,
+} from 'src/lib/pepefi/chainLogs'
 import { latestSubmissionByAddress, bucketOf, type ReviewBucket } from 'src/lib/pepefi/kycQueue'
 
 // 審核佇列：見 ADR 0005（frontend/docs/adr/0005-review-queue-rebuilt-from-events.md）。
@@ -21,6 +28,13 @@ import { latestSubmissionByAddress, bucketOf, type ReviewBucket } from 'src/lib/
 // 它們從沒呼叫過 submitKYC，第 1 步就找不到它們。
 
 export type { ReviewBucket }
+
+/** 審核佇列的回看視窗：7 天。 */
+const KYC_SCAN_WINDOW_SEC = 7 * 24 * 3600;
+/** 7 天 ÷ 2 秒 ÷ CHUNK_SIZE(800) ≈ 378 段；留一點餘裕。 */
+const KYC_SCAN_MAX_CHUNKS = 400;
+/** 378 段序列要一分半；併發 3 實測約 40 秒（同樣 7 天視窗的排行榜掃描）。 */
+const KYC_SCAN_CONCURRENCY = 3;
 
 export interface ReviewApplication {
   address:         string
@@ -66,12 +80,18 @@ export function useKYCReviewQueue(
   const [error,     setError]     = useState<string | null>(null);
 
   const runId = useRef(0);
+  // 重新整理或卸載時中止還在跑的掃描——378 段 getLogs 不該在沒人看的時候繼續打 RPC。
+  const abortRef = useRef<AbortController | null>(null);
+  useEffect(() => () => { abortRef.current?.abort(); runId.current += 1; }, []);
 
   const refetch = useCallback(async () => {
     if (!kycRegistry || !provider) return;
 
     runId.current += 1;
     const myRun = runId.current;
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
     const isStale = () => runId.current !== myRun;
 
     setLoading(true);
@@ -81,7 +101,14 @@ export function useKYCReviewQueue(
       const latest = await withRetry(() => provider.getBlockNumber());
       if (isStale()) return;
 
-      const from = scanFromBlock({ chainId, currentBlock: latest });
+      // 審核佇列刻意維持 7 天視窗（全站預設已降為 24 小時）：漏掉一段就是漏掉一位
+      // 申請人。公開節點 getLogs 上限 1,000 塊，7 天在 Base 上約 378 段，較慢但有進度條。
+      const from = scanFromBlock({
+        chainId,
+        currentBlock: latest,
+        windowSec: KYC_SCAN_WINDOW_SEC,
+        maxChunks: KYC_SCAN_MAX_CHUNKS,
+      });
       setScanRange({ from, to: latest });
 
       const onChunk: ChunkProgress = (done, total) => { if (!isStale()) setProgress({ done, total }); };
@@ -96,6 +123,7 @@ export function useKYCReviewQueue(
         latest,
         onChunk,
         onChunkFailed,
+        { retries: UI_RETRIES, concurrency: KYC_SCAN_CONCURRENCY, signal: ac.signal },
       ) as SubmittedLog[];
       if (isStale()) return;
 
@@ -158,6 +186,7 @@ export function useKYCReviewQueue(
         setError(interpolate(t.admin.kyc.queue.readErrorSome, { count: unreadable }));
       }
     } catch (e) {
+      if (isChunkScanAborted(e)) return;
       console.error('[useKYCReviewQueue]', e);
       if (!isStale()) setError(t.admin.kyc.queue.readErrorAll);
     } finally {

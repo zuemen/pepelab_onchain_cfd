@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 私密回報安全漏洞
+    url: https://github.com/zuemen/pepelab_onchain_cfd/security/policy
+    about: 安全漏洞請依 SECURITY.md 私密回報，不要開公開 issue。
+  - name: 整合與商業文件
+    url: https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INTEGRATION_GUIDE.md
+    about: 持牌機構的整合說明（草案）。

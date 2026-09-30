@@ -16,6 +16,23 @@ export const common: Catalog['common'] = {
 
     mockTitle: 'Pepe Demo Channel (Mock Web3)',
     mockDesc: 'No wallet needed — jump straight in, switch Pepe avatars, and try copy trading',
+
+    error: {
+      notDetected: 'MetaMask not detected — please install the extension.',
+      pending: 'MetaMask has a pending request — open MetaMask and approve it.',
+      rejected: 'Connection rejected — please approve in MetaMask.',
+      failed: 'Connection failed',
+    },
+
+    connectPrompt: {
+      marketplace: 'Connect wallet to browse the marketplace.',
+      stake: 'Connect wallet to manage your stake.',
+      sessions: 'Connect wallet to manage agent sessions.',
+    },
+  },
+
+  search: {
+    placeholder: 'Search…',
   },
 
   /** 確認對話框的預設按鈕文字，呼叫端可以各自覆寫。 */
@@ -54,9 +71,37 @@ export const common: Catalog['common'] = {
     },
   },
 
+  disclosure: {
+    title: 'Important disclosure: testnet research prototype — no real assets',
+    summary: 'Every asset, balance and trade on this site is simulated on a testnet and has no real-world value.',
+    prototype:
+      'This site is a research prototype deployed on the Base Sepolia testnet. All tokens, funds and trades are simulated; no real assets or money are involved.',
+    synthetic:
+      'Every synthetic token on this site — equities (e.g. sAAPL, sTSLA, sNVDA), bonds (sBOND), gold (sGOLD), crypto (sBTC, sETH) and ETFs (sICLN, sESGU) — is an under-collateralized synthetic exposure issued by the AssetVault. Each tracks its underlying through an oracle price only; the platform holds none of the underlying assets and keeps no one-to-one reserve. Holders have no shareholder, creditor or fund-holder rights (including voting, dividend or coupon rights) and no claim against any issuer or physical asset; redemption depends on the liquidity of the AssetVault.',
+    noAdvice: 'Nothing on this site constitutes investment advice, an offer, or a solicitation.',
+    expand: 'Expand',
+    collapse: 'Collapse',
+  },
+
+  switchChain: {
+    cta: 'Switch to Base Sepolia',
+    switching: 'Switching…',
+    rejected: 'The switch was cancelled in your wallet.',
+    failed: 'Your wallet could not switch networks. Switch to Base Sepolia (chainId 84532) manually in your wallet.',
+  },
+
+  featureDisabled: {
+    title: 'This feature is not enabled',
+    body: 'This deployment does not have this feature turned on. Contact the platform operator if you need it.',
+    backHome: 'Back to home',
+  },
+
   account: {
     displayNameLabel: 'Display Name',
     saveName: 'Save Name',
+    closeAria: 'Close account menu',
+    notConnected: 'Wallet not connected',
+    nicknamePlaceholder: 'Enter nickname…',
   },
 
   /**

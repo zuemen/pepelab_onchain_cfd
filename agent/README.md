@@ -88,6 +88,74 @@ forge script script/DeployX402Router.s.sol:DeployX402Router \
 合約端：`FeeRouterExternalRevenue.t.sol`（18-dec）+ `FeeRouterX402Usdc.t.sol`（6-dec）共覆蓋。
 未設 `X402_FEE_ROUTER` 則回退到 MockUSDC FeeRouter（舊行為）。
 
+### 結算 worker 只在 CI 內執行
+
+`signal-api/src/settlement-worker.ts` **只准在 GitHub Actions 內執行**（`x402-settlement-worker.yml`；
+沒有 `GITHUB_ACTIONS=true` 就拒跑、非零結束）。理由：CI job 有 20 分鐘 timeout，租約鎖
+`x402:settlement:lock`（1500 秒）不會在途中過期；本機 process 可以跑任意久，鎖一過期，CI 的 worker
+就能同時進來，兩邊一起送交易就是雙付。本機只能用只讀模式檢視佇列（不取鎖、不佔位、不簽章）：
+
+```bash
+cd agent && npx tsx signal-api/src/settlement-worker.ts --dry-run
+```
+
+> ⚠ `GITHUB_ACTIONS` 檢查只是**減速帶，不是安全邊界**——任何人都能在本機設這個環境變數。
+> 真正的邊界是：`FEE_SETTLEMENT_PRIVATE_KEY` **只存在 GitHub secrets**（本機與其他環境都不該有這把
+> 金鑰），加上 workflow 的 `concurrency` group 與 Redis 租約鎖。沒有金鑰的地方跑不了真正的結算。
+
+### 結算交易卡住（STUCK / nonce 不一致）怎麼處理
+
+worker 每一筆 `routeExternalRevenue` 都是「先簽、先把 hash / nonce / 已簽 raw tx 寫進
+`settle:<冪等鍵>`、再廣播」，而且**絕不自動重送**。會停下來交給人的情況：
+
+- log 出現 `signer 有未上鏈的交易（nonce latest=L pending=P）`：mempool 裡有這個 signer
+  還沒上鏈的交易，worker 不會再送新交易；連續超過 30 分鐘（`x402:settlement:blocked_since`）
+  job 會變紅。
+- log 出現 `nonce 查詢失敗（RPC）`：這是 RPC 問題、不是交易卡住，另外計時
+  （`x402:settlement:nonce_rpc_since`），連續超過 30 分鐘 job 變紅；請檢查 RPC 供應商。
+- 另外，worker 啟動時會取 Redis 租約鎖 `x402:settlement:lock`（1500 秒）；取不到代表另一個
+  worker 還在跑，這一輪什麼都不做（exit 0）。
+- trader 安全檢查連續查不到資料（RPC）超過 30 分鐘（`x402:settlement:nodata_since`）→ job 變紅。
+- log 出現 `::error::STUCK … tx=0x… nonce=N`：簽出超過 30 分鐘仍查不到 receipt，該筆已移進
+  `x402:settlement:dead`，`settle:<鍵>` 標成 `STUCK`，並設定**全域停機旗標**
+  `x402:settlement:halt`（不設 TTL，值記錄原因、鍵、hash、nonce、時間）。旗標存在時每一輪都
+  `::error::` 並 exit 1、不處理任何項目，直到人工清除。
+- 每個來源各有一條 processing 清單（`x402:settlement:processing:main|retry|unconfirmed`），
+  回收時依 `settle:<鍵>` 的狀態分流（已簽出 → unconfirmed 對帳；無狀態且來自 unconfirmed 或
+  舊的單一清單 → 死信）。**毒項目**（例如回收時每次都讓 Redis 指令失敗的項目）會在回收階段
+  卡住整個佇列：這是刻意的 fail-closed，job 會一直變紅，直到人工把它從 processing 清單移走。
+
+處理步驟（`$RPC` 用 Base Sepolia RPC、`$SIGNER` 是結算 signer 地址；需要 Upstash REST 權限）：
+
+1. 讀出卡住那筆的狀態：`curl -s -H "Authorization: Bearer $UPSTASH_REDIS_REST_TOKEN"
+   "$UPSTASH_REDIS_REST_URL/get/settle:<鍵>"`，取得 `txHash`、`nonce`、`rawTx`。
+2. 確認鏈上狀態：`cast receipt <txHash> --rpc-url $RPC`（有 receipt 就不是卡住，下一輪會自動對帳），
+   `cast nonce $SIGNER --rpc-url $RPC`（latest）與 `cast nonce $SIGNER --block pending --rpc-url $RPC`。
+3. 二選一，**兩者都用同一個 nonce N**，所以最多只會有一筆上鏈：
+   - **讓原交易上鏈**：`cast publish <rawTx> --rpc-url $RPC` 重播（節點丟掉時有用）；若是 gas 太低，
+     只能改走下一個選項。
+   - **取消**：送一筆同 nonce、較高手續費、0 value 給自己的交易：
+     `cast send $SIGNER --value 0 --nonce N --priority-gas-price <高於原交易> --gas-price <高於原交易>
+     --rpc-url $RPC --private-key "$FEE_SETTLEMENT_PRIVATE_KEY"`（在持有金鑰的環境執行，不要貼到聊天或 log）。
+4. 等它上鏈後：
+   - 原交易上鏈了 → **不要** `DEL settle:<鍵>`。把 `settle:<鍵>` 的 `status` 改回 `UNKNOWN`
+     （保留 txHash / nonce），再把 dead 裡那筆搬回佇列（`RPUSH x402:settlement:queue <項目>`，
+     然後 `LREM x402:settlement:dead 1 <項目>`）；下一輪對帳會標成 DONE，不會重送。
+   - 取消成功（原交易永遠不會上鏈）→ `DEL settle:<鍵>`，再用同樣方式把 dead 裡那筆搬回佇列，
+     下一輪會重新結算一次。
+   - worker **不會**自己依 nonce 推論「原交易已被替換」而重新結算（公共節點會回落後狀態，
+     猜錯就是雙付）；尚未標 STUCK 的 UNKNOWN 也一樣，只會等到 30 分鐘後轉 STUCK。取消後請照上面
+     的步驟處理，`settle:<鍵>` 裡的 txHash / nonce / rawTx 在確認前不要刪。
+5. **halt 期間超過 90 天**（`settle:<鍵>` 冪等狀態的 TTL）：狀態可能已過期消失。清除旗標**之前**，
+   先把 `x402:settlement:unconfirmed` 裡的每一筆逐一到 explorer 確認並手動處理（已上鏈的移除、
+   確定未上鏈的才搬回佇列）。worker 對「unconfirmed 裡缺少狀態的項目」一律送進死信、不重新結算，
+   但 processing / dead 裡的舊項目沒有這層保護，所以一樣要先人工處理。
+6. **清除全域停機旗標**（最後一步）。⚠ **清除前必須先確認原交易的最終狀態**：到 explorer
+   （`https://sepolia.basescan.org/tx/<txHash>`）查 hash，並確認同一個 nonce 上最終上鏈的是哪一筆；
+   第 4 步的 Redis 狀態也要照這個結果改好。**沒確認就清除，worker 可能把同一筆分潤再送一次（雙付）。**
+   確認後：`curl -s -H "Authorization: Bearer $UPSTASH_REDIS_REST_TOKEN"
+   "$UPSTASH_REDIS_REST_URL/del/x402:settlement:halt"`。先用 `--dry-run` 看一次佇列與各鍵的狀態再清。
+
 ## 「付費 → 自主下單」一鍵 demo（北極星）
 
 ```bash
@@ -120,7 +188,9 @@ maxLeverage / expiry** 限額內開倉 → 印出 **tx hash 與 positionId**。�
 2. Environment Variables（**不要 commit**）：
    `BASE_SEPOLIA_RPC_URL`、`X402_NETWORK=base-sepolia`、`X402_FACILITATOR_URL=https://x402.org/facilitator`、
    `X402_SETTLEMENT_TOKEN=0x036CbD…CF7e`、`X402_FEE_ROUTER=0x29e5732A…B57d`、
-   `PAY_TO=0xE80A…Eb93`（treasury EOA）、`FEE_SETTLEMENT_PRIVATE_KEY=0x…`（半公開測試金鑰，僅放極少量）。
+   `PAY_TO=<FEE_SETTLEMENT_PRIVATE_KEY 的 EOA 地址>`（**不可**用 Safe／合約，**不可**用 2026-08-06 稽核的外洩
+   deployer `0xE80A…Eb93`——它已被 EIP-7702 sweeper 接管，signal-api 會回 503 `payto_unsafe`）、
+   `FEE_SETTLEMENT_PRIVATE_KEY=0x…`（新產生的測試金鑰，僅放極少量）、`ORACLE_BENEFICIARY_ADDRESS`（/oracle 收入 70% 歸屬）。
 3. Deploy。`vercel.json` 已設 `installCommand: cd .. && npm install`（在 `agent/` 跑、建 `@pepelab/shared` workspace symlink）+ rewrite 全路徑到 function、`api/index.ts` 走 `@vercel/node`（Node runtime）。
 
 > **function 是預打包的自包 ESM**：`src/vercel-entry.ts` 經 `npm run bundle:vercel`（esbuild，
@@ -179,7 +249,8 @@ npm run typecheck             # tsc --noEmit（涵蓋所有 workspace）
 | `BASE_SEPOLIA_RPC_URL` | Base Sepolia RPC（讀合約狀態 + x402 結算同鏈） |
 | `X402_NETWORK` | x402 結算網路，預設 `base-sepolia` |
 | `X402_FACILITATOR_URL` | x402 facilitator，預設 `https://x402.org/facilitator` |
-| `PAY_TO` | 收款地址；留空則回退到 FeeRouter |
+| `PAY_TO` | 收款地址；**必須**是 `FEE_SETTLEMENT_PRIVATE_KEY` 的 EOA。外洩清單／EIP-7702 委派／合約（含留空時回退的 FeeRouter）一律 503 `payto_unsafe`，不發 402 |
+| `ORACLE_BENEFICIARY_ADDRESS` | `/oracle` 收入 70% 的受益人；未設則該筆收入不排入分潤 |
 | `AGENT_PRIVATE_KEY` | demo agent 自管 EOA / session key（付 x402 費用 + 經 session 下單，僅限測試錢包） |
 | `SESSION_MANAGER_ADDRESS` | `AgentSessionManager` 位址（Deploy 印出；啟用 write path） |
 | `DEMO_SESSION_ID` | demo agent 下單用的 session id（`createSession` 取得） |

@@ -3,6 +3,8 @@ import type { Contract } from 'ethers'
 import { MONO } from 'src/components/pepefi/brandKit'
 import { useRef, useState, useEffect, useCallback, type ReactNode } from 'react'
 import { useContracts } from 'src/hooks/useContracts'
+import { useV2Contracts } from 'src/hooks/useV2Contracts'
+import { isDeployed } from 'src/lib/pepefi/safeRead'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { explorerTx } from 'src/lib/pepefi/notify'
 import { TableSkeleton } from 'src/components/pepefi/Skeleton'
@@ -10,6 +12,20 @@ import EmptyState from 'src/components/pepefi/EmptyState'
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta'
 import { t, interpolate } from 'src/locales'
 import { mapLimit, withRetry, RPC_CONCURRENCY } from 'src/lib/pepefi/rpcBatch'
+import {
+  canLoadOlder,
+  coverageAfterRefresh,
+  coverageAfterLoadOlder,
+  lowestContiguousFromTop,
+  type Coverage,
+} from 'src/lib/pepefi/historyCoverage'
+import {
+  UI_RETRIES,
+  chunkRanges,
+  scanContractEvents,
+  type ParsedEventLog,
+  type DeferredTopicFilterLike,
+} from 'src/lib/pepefi/chainLogs'
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -31,12 +47,11 @@ import Link from '@mui/material/Link';
 import Tooltip from '@mui/material/Tooltip';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-// Base Sepolia blocks every ~2s, and its public RPC (sepolia.base.org) rejects
-// eth_getLogs ranges over 2000 blocks ("query exceeds max block range 2000").
-// FETCH_BLOCKS is the total lookback; CHUNK_SIZE keeps every single request
-// under that cap — queryFilterChunked() below splits the range accordingly.
+// Base Sepolia blocks every ~2s. FETCH_BLOCKS is the total lookback per
+// refresh / "load older" step; every scan goes through scanContractEvents →
+// getLogsChunked, whose CHUNK_SIZE is set from a measured node limit (the public
+// RPC rejects eth_getLogs spans over 1,000 blocks — see chainLogs.ts).
 const FETCH_BLOCKS = 9000   // ~5 h on Base Sepolia (2 s/block)
-const CHUNK_SIZE    = 1800
 
 // Events are cached client-side so history survives past the scan window — the
 // chain keeps everything forever, but a fixed lookback can only ever see the
@@ -61,8 +76,11 @@ type EventType =
   | 'MarginDeposited' | 'MarginWithdrawn'
   | 'TraderFollowed' | 'TraderUnfollowed'
   | 'CopyFee' | 'PriceUpdated' | 'Stake' | 'Slash'
+  // F3：V2 AssetVault 鑄造／贖回、PepeAMM 兌換、InsuranceVault 存入／提領。
+  // 'Swap' 是舊版 MockSwapRouter 的事件，保留但標為 legacy。
+  | 'AssetMint' | 'AssetRedeem' | 'AmmSwap' | 'VaultDeposit' | 'VaultWithdraw'
 
-type FilterKey = 'all' | 'Swap' | 'Position' | 'Margin' | 'Social' | 'Fee' | 'Price' | 'Stake'
+type FilterKey = 'all' | 'Swap' | 'Asset' | 'Vault' | 'Position' | 'Margin' | 'Social' | 'Fee' | 'Price' | 'Stake'
 
 interface ChainEvent {
   type:        EventType
@@ -78,8 +96,6 @@ interface ChainEvent {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
 // ── Merge / cache ─────────────────────────────────────────────────────────────
 
@@ -138,69 +154,123 @@ const jsonReviver = (_k: string, v: unknown) =>
 
 interface CachedHistory {
   events: ChainEvent[]
-  /** Oldest block this browser has scanned — where "load more" resumes. */
-  scannedFrom: number | null
+  /**
+   * 日誌確實讀成功過的區塊範圍（見 lib/pepefi/historyCoverage.ts）。
+   * 「載入較舊」從 coverage.from − 1 往下走。
+   */
+  coverage: Coverage | null
 }
 
+// v3（2026-09-29）：v1（無版本字串）與 v2 的快取只記一個 scannedFrom，會把失敗段或
+// 缺口當成已掃過，而且 v1 是在 getLogs 分段全數被公開節點拒絕的時期寫下的。升版讓
+// 它們全部失效，並在頁面載入時刪掉（purgeStaleHistoryCaches）。
+const CACHE_PREFIX = 'pepefi:history:'
+const CACHE_VERSION = 'v3'
 const cacheKeyFor = (chainId: number | null, tab: string, address: string | null) =>
-  `pepefi:history:${chainId ?? 0}:${tab}:${address?.toLowerCase() ?? 'all'}`
+  `${CACHE_PREFIX}${CACHE_VERSION}:${chainId ?? 0}:${tab}:${address?.toLowerCase() ?? 'all'}`
+
+/** 刪掉所有非現行版本的 History 快取（v1 無版本字串、v2）。 */
+function purgeStaleHistoryCaches() {
+  try {
+    const stale: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (k && k.startsWith(CACHE_PREFIX) && !k.startsWith(`${CACHE_PREFIX}${CACHE_VERSION}:`)) stale.push(k)
+    }
+    for (const k of stale) localStorage.removeItem(k)
+  } catch { /* private mode */ }
+}
 
 function loadCache(key: string): CachedHistory {
   try {
     const raw = localStorage.getItem(key)
-    if (!raw) return { events: [], scannedFrom: null }
+    if (!raw) return { events: [], coverage: null }
     const parsed = JSON.parse(raw, jsonReviver) as CachedHistory
-    return { events: parsed.events ?? [], scannedFrom: parsed.scannedFrom ?? null }
+    const c = parsed.coverage
+    const coverage = c && Number.isFinite(c.from) && Number.isFinite(c.to) ? { from: c.from, to: c.to } : null
+    return { events: parsed.events ?? [], coverage }
   } catch {
-    return { events: [], scannedFrom: null }   // corrupt / private mode
+    return { events: [], coverage: null }   // corrupt / private mode
   }
 }
 
-function saveCache(key: string, events: ChainEvent[], scannedFrom: number | null) {
+function saveCache(key: string, events: ChainEvent[], coverage: Coverage | null) {
   try {
-    const payload: CachedHistory = { events: events.slice(0, MAX_CACHED), scannedFrom }
+    const payload: CachedHistory = { events: events.slice(0, MAX_CACHED), coverage }
     localStorage.setItem(key, JSON.stringify(payload, jsonReplacer))
   } catch { /* quota exceeded or private mode — cache is best-effort */ }
 }
 
-/**
- * Splits [fromBlock, toBlock] into <= chunkSize windows before calling
- * contract.queryFilter — a single call spanning the whole range silently
- * fails on RPCs that cap eth_getLogs (e.g. Base Sepolia's public RPC caps at
- * 2000 blocks and throws "query exceeds max block range"). With 12 event
- * types firing chunks in parallel, the same public RPC also rate-limits
- * bursts (HTTP 429) — each chunk gets a couple of backoff retries before
- * being counted as a real failure, which is reported instead of swallowed
- * so partial data doesn't silently look like "no data".
- */
-async function queryFilterChunked(
-  contract: Contract,
-  filter: unknown,
-  fromBlock: number,
-  toBlock: number,
-  chunkSize: number,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-): Promise<{ logs: any[]; errors: string[] }> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const logs:   any[]    = []
-  const errors: string[] = []
-  for (let start = fromBlock; start <= toBlock; start += chunkSize) {
-    const end = Math.min(start + chunkSize - 1, toBlock)
-    let lastErr: unknown
-    let ok = false
-    for (let attempt = 0; attempt < 3 && !ok; attempt++) {
-      if (attempt > 0) await sleep(400 * 2 ** (attempt - 1))  // 400ms, 800ms
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        logs.push(...(await contract.queryFilter(filter as any, start, end)))
-        ok = true
-      } catch (err) {
-        lastErr = err
-      }
-    }
-    if (!ok) errors.push(lastErr instanceof Error ? lastErr.message : String(lastErr))
+// ── Event scan sources ───────────────────────────────────────────────────────
+
+/** 一個合約與要在它上面掃的事件。key 用來分派解析（不同合約可能有同名事件）。 */
+interface EventSource {
+  key: string
+  contract: Contract
+  filters: DeferredTopicFilterLike[]
+}
+
+const logBase = (log: ParsedEventLog) => ({
+  txHash: log.transactionHash,
+  logIndex: log.index,
+  blockNumber: log.blockNumber,
+})
+
+/** 把解析後的 log 轉成頁面的一列。不認得的 (source, event) 回 null。 */
+function toChainEvent(source: string, log: ParsedEventLog): ChainEvent | null {
+  const a = log.args
+  switch (`${source}:${log.eventName}`) {
+    case 'swapRouter:SwapEthToUsdc':
+      return { type: 'Swap', user: a.user, ...logBase(log), timestamp: Number(a.timestamp ?? 0),
+        details: { direction: 'ETH→USDC', ethIn: a.ethIn as bigint, usdcOut: a.usdcOut as bigint } }
+    case 'swapRouter:SwapUsdcToEth':
+      return { type: 'Swap', user: a.user, ...logBase(log), timestamp: Number(a.timestamp ?? 0),
+        details: { direction: 'USDC→ETH', usdcIn: a.usdcIn as bigint, ethOut: a.ethOut as bigint } }
+    case 'exchange:PositionOpened':
+      return { type: 'PositionOpened', user: a.owner, ...logBase(log), timestamp: 0,
+        details: { positionId: a.positionId as bigint, asset: a.asset as string, isLong: a.isLong as boolean,
+          entryPrice: a.entryPrice as bigint, margin: a.margin as bigint, leverage: a.leverage as bigint } }
+    case 'exchange:PositionClosed':
+      return { type: 'PositionClosed', user: a.owner, ...logBase(log), timestamp: 0,
+        details: { positionId: a.positionId as bigint, pnl: a.pnl as bigint, closeAmount: a.closeAmount as bigint } }
+    case 'exchange:MarginDeposited':
+      return { type: 'MarginDeposited', user: a.user, ...logBase(log), timestamp: 0, details: { amount: a.amount as bigint } }
+    case 'exchange:MarginWithdrawn':
+      return { type: 'MarginWithdrawn', user: a.user, ...logBase(log), timestamp: 0, details: { amount: a.amount as bigint } }
+    case 'copyTracker:TraderFollowed':
+      return { type: 'TraderFollowed', user: a.follower, ...logBase(log), timestamp: 0,
+        details: { trader: a.trader as string, totalMargin: a.totalMargin as bigint } }
+    case 'copyTracker:TraderUnfollowed':
+      return { type: 'TraderUnfollowed', user: a.follower, ...logBase(log), timestamp: 0, details: { trader: a.trader as string } }
+    case 'feeRouter:CopyFeeDistributed':
+      return { type: 'CopyFee', user: a.trader, ...logBase(log), timestamp: 0,
+        details: { fee: a.fee as bigint, traderShare: a.traderShare as bigint } }
+    case 'oracle:PriceUpdated':
+      return { type: 'PriceUpdated', user: undefined, ...logBase(log), timestamp: Number(a.timestamp ?? 0),
+        details: { assetId: a.assetId as string, oldPrice: a.oldPrice as bigint, newPrice: a.newPrice as bigint } }
+    case 'traderStake:Staked':
+      return { type: 'Stake', user: a.trader, ...logBase(log), timestamp: 0, details: { amount: a.amount as bigint } }
+    case 'traderStake:Slashed':
+      return { type: 'Slash', user: a.trader, ...logBase(log), timestamp: 0,
+        details: { amount: a.amount as bigint, recipient: a.recipient as string } }
+    case 'assetVaultV2:Minted':
+      return { type: 'AssetMint', user: a.user, ...logBase(log), timestamp: 0,
+        details: { assetId: a.assetId as string, usdcIn: a.usdcIn as bigint, tokenOut: a.tokenOut as bigint, fee: a.fee as bigint } }
+    case 'assetVaultV2:Redeemed':
+      return { type: 'AssetRedeem', user: a.user, ...logBase(log), timestamp: 0,
+        details: { assetId: a.assetId as string, tokenIn: a.tokenIn as bigint, usdcOut: a.usdcOut as bigint, fee: a.fee as bigint } }
+    case 'pepeAMM:Swap':
+      return { type: 'AmmSwap', user: a.user, ...logBase(log), timestamp: 0,
+        details: { ethToUsdc: a.ethToUsdc as boolean, amountIn: a.amountIn as bigint, amountOut: a.amountOut as bigint } }
+    case 'insuranceVault:Deposited':
+      return { type: 'VaultDeposit', user: a.user, ...logBase(log), timestamp: 0,
+        details: { usdcAmount: a.usdcAmount as bigint, shares: a.shares as bigint } }
+    case 'insuranceVault:Withdrawn':
+      return { type: 'VaultWithdraw', user: a.user, ...logBase(log), timestamp: 0,
+        details: { usdcAmount: a.usdcAmount as bigint, shares: a.shares as bigint } }
+    default:
+      return null
   }
-  return { logs, errors }
 }
 
 /**
@@ -329,10 +399,15 @@ const TYPE_STYLE: Record<EventType, any> = {
   PriceUpdated:     { bgcolor: 'rgba(34, 197, 94, 0.16)', color: '#22c55e', border: '1px solid', borderColor: 'rgba(34, 197, 94, 0.24)' },
   Stake:            { bgcolor: 'rgba(255, 171, 0, 0.16)', color: '#ffab00', border: '1px solid', borderColor: 'rgba(255, 171, 0, 0.24)' },
   Slash:            { bgcolor: 'rgba(255, 86, 48, 0.16)', color: '#ff5630', border: '1px solid', borderColor: 'rgba(255, 86, 48, 0.24)' },
+  AssetMint:        { bgcolor: 'rgba(34, 197, 94, 0.16)', color: '#22c55e', border: '1px solid', borderColor: 'rgba(34, 197, 94, 0.24)' },
+  AssetRedeem:      { bgcolor: 'rgba(255, 171, 0, 0.16)', color: '#ffab00', border: '1px solid', borderColor: 'rgba(255, 171, 0, 0.24)' },
+  AmmSwap:          { bgcolor: 'rgba(0, 184, 217, 0.16)', color: '#00b8d9', border: '1px solid', borderColor: 'rgba(0, 184, 217, 0.24)' },
+  VaultDeposit:     { bgcolor: 'rgba(142, 51, 255, 0.16)', color: '#8e33ff', border: '1px solid', borderColor: 'rgba(142, 51, 255, 0.24)' },
+  VaultWithdraw:    { bgcolor: 'rgba(145, 158, 171, 0.16)', color: '#919eab', border: '1px solid', borderColor: 'rgba(145, 158, 171, 0.24)' },
 }
 
 const TYPE_LABEL: Partial<Record<EventType, string>> = {
-  Swap:             t.history.eventType.swap,
+  Swap:             t.history.eventType.swapLegacy,
   PositionOpened:   t.history.eventType.opened,
   PositionClosed:   t.history.eventType.closed,
   MarginDeposited:  t.history.eventType.deposit,
@@ -343,11 +418,18 @@ const TYPE_LABEL: Partial<Record<EventType, string>> = {
   PriceUpdated:     t.history.eventType.priceUpdated,
   Stake:            t.history.eventType.stake,
   Slash:            t.history.eventType.slash,
+  AssetMint:        t.history.eventType.mint,
+  AssetRedeem:      t.history.eventType.redeem,
+  AmmSwap:          t.history.eventType.ammSwap,
+  VaultDeposit:     t.history.eventType.vaultDeposit,
+  VaultWithdraw:    t.history.eventType.vaultWithdraw,
 }
 
 const FILTERS: { key: FilterKey; label: string }[] = [
   { key: 'all',      label: t.history.filter.all },
   { key: 'Swap',     label: t.history.filter.swap },
+  { key: 'Asset',    label: t.history.filter.asset },
+  { key: 'Vault',    label: t.history.filter.vault },
   { key: 'Position', label: t.history.filter.position },
   { key: 'Margin',   label: t.history.filter.margin },
   { key: 'Social',   label: t.history.filter.social },
@@ -357,7 +439,9 @@ const FILTERS: { key: FilterKey; label: string }[] = [
 ]
 
 const FILTER_TYPES: Partial<Record<FilterKey, EventType[]>> = {
-  Swap:     ['Swap'],
+  Swap:     ['Swap', 'AmmSwap'],
+  Asset:    ['AssetMint', 'AssetRedeem'],
+  Vault:    ['VaultDeposit', 'VaultWithdraw'],
   Position: ['PositionOpened', 'PositionClosed'],
   Margin:   ['MarginDeposited', 'MarginWithdrawn'],
   Social:   ['TraderFollowed', 'TraderUnfollowed'],
@@ -429,6 +513,33 @@ function renderDetails(e: ChainEvent): ReactNode {
       return <span>{t.history.detail.slashed} <Box component="span" sx={{ color: 'error.main', fontWeight: 'semibold' }}>{f18(d.amount as bigint)}</Box> USDC → <Box component="span" sx={{ fontFamily: MONO }}>{shortAddr(recipient)}</Box></span>
     }
 
+    case 'AmmSwap':
+      return (d.ethToUsdc as boolean)
+        ? <span><Typography variant="body2" component="span" color="text.secondary">{fEth(d.amountIn as bigint)} ETH</Typography> → <Typography variant="body2" component="span" color="success.main" sx={{ fontWeight: 'semibold' }}>{f18(d.amountOut as bigint)} USDC</Typography></span>
+        : <span><Typography variant="body2" component="span" color="text.secondary">{f18(d.amountIn as bigint)} USDC</Typography> → <Typography variant="body2" component="span" color="success.main" sx={{ fontWeight: 'semibold' }}>{fEth(d.amountOut as bigint)} ETH</Typography></span>
+
+    case 'AssetMint':
+      return <span>{interpolate(t.history.detail.mint, {
+        amount: fEth(d.tokenOut as bigint),
+        asset:  ASSET_LABEL[d.assetId as string] ?? '?',
+        usdc:   f18(d.usdcIn as bigint),
+        fee:    f18(d.fee as bigint),
+      })}</span>
+
+    case 'AssetRedeem':
+      return <span>{interpolate(t.history.detail.redeem, {
+        amount: fEth(d.tokenIn as bigint),
+        asset:  ASSET_LABEL[d.assetId as string] ?? '?',
+        usdc:   f18(d.usdcOut as bigint),
+        fee:    f18(d.fee as bigint),
+      })}</span>
+
+    case 'VaultDeposit':
+      return <Box component="span" sx={{ color: 'success.main' }}>{interpolate(t.history.detail.vaultDeposit, { usdc: f18(d.usdcAmount as bigint), shares: f18(d.shares as bigint) })}</Box>
+
+    case 'VaultWithdraw':
+      return <Box component="span" sx={{ color: 'warning.main' }}>{interpolate(t.history.detail.vaultWithdraw, { usdc: f18(d.usdcAmount as bigint), shares: f18(d.shares as bigint) })}</Box>
+
     default:
       return <Typography variant="caption" color="text.secondary">{JSON.stringify(d).slice(0, 80)}</Typography>
   }
@@ -438,6 +549,7 @@ function renderDetails(e: ChainEvent): ReactNode {
 export default function HistoryPage() {
   const wallet = usePepefiWallet()
   const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId)
+  const v2 = useV2Contracts(wallet.provider, wallet.signer, wallet.chainId)
 
   const [tab,        setTab]        = useState<'mine' | 'all'>('mine')
   const [events,     setEvents]     = useState<ChainEvent[]>([])
@@ -445,8 +557,11 @@ export default function HistoryPage() {
   const [loadingMore, setLoadingMore] = useState(false)
   const [error,      setError]      = useState<string | null>(null)
   const [filterKey,  setFilterKey]  = useState<FilterKey>('all')
-  /** Oldest block scanned so far — the resume point for "load older". */
-  const [scannedFrom, setScannedFrom] = useState<number | null>(null)
+  /** 日誌確實讀成功過的區塊範圍；「載入較舊」從它的下緣往下走。 */
+  const [coverage, setCoverage] = useState<Coverage | null>(null)
+  const scannedFrom = coverage ? coverage.from : null
+
+  useEffect(() => { purgeStaleHistoryCaches() }, [])
 
   const cacheKey = cacheKeyFor(wallet.chainId, tab, tab === 'mine' ? wallet.address : null)
 
@@ -455,14 +570,14 @@ export default function HistoryPage() {
   // pre-restore values — which would reset a previous session's "load older"
   // progress back to the top window on every reload.
   const eventsRef      = useRef<ChainEvent[]>([])
-  const scannedFromRef = useRef<number | null>(null)
+  const coverageRef    = useRef<Coverage | null>(null)
 
-  const commit = useCallback((next: ChainEvent[], nextScannedFrom: number | null) => {
-    eventsRef.current      = next
-    scannedFromRef.current = nextScannedFrom
+  const commit = useCallback((next: ChainEvent[], nextCoverage: Coverage | null) => {
+    eventsRef.current   = next
+    coverageRef.current = nextCoverage
     setEvents(next)
-    setScannedFrom(nextScannedFrom)
-    saveCache(cacheKey, next, nextScannedFrom)
+    setCoverage(nextCoverage)
+    saveCache(cacheKey, next, nextCoverage)
   }, [cacheKey])
 
   // Paint whatever this browser already knows before touching the network, and
@@ -470,9 +585,9 @@ export default function HistoryPage() {
   useEffect(() => {
     const cached = loadCache(cacheKey)
     eventsRef.current      = cached.events
-    scannedFromRef.current = cached.scannedFrom
+    coverageRef.current    = cached.coverage
     setEvents(cached.events)
-    setScannedFrom(cached.scannedFrom)
+    setCoverage(cached.coverage)
   }, [cacheKey])
 
   // ── Event fetcher ───────────────────────────────────────────────────────
@@ -480,122 +595,124 @@ export default function HistoryPage() {
   const scanRange = useCallback(async (
     fromBlock: number,
     toBlock: number,
-  ): Promise<{ evs: ChainEvent[]; failedChunks: number }> => {
-    if (!contracts || !wallet.provider) return { evs: [], failedChunks: 0 }
+  ): Promise<{ evs: ChainEvent[]; failedChunks: number; contiguousLow: number | null }> => {
+    if (!contracts || !wallet.provider) return { evs: [], failedChunks: 0, contiguousLow: null }
     const uf = tab === 'mine' ? (wallet.address ?? null) : null
-    const chunked = (contract: Contract, filter: unknown) =>
-      queryFilterChunked(contract, filter, fromBlock, toBlock, CHUNK_SIZE)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const empty = Promise.resolve({ logs: [] as any[], errors: [] as string[] })
+    const provider = wallet.provider
 
-    const results = await Promise.all([
-      // [0] ETH→USDC swaps
-      chunked(contracts.swapRouter, uf ? contracts.swapRouter.filters.SwapEthToUsdc(uf) : contracts.swapRouter.filters.SwapEthToUsdc()),
-      // [1] USDC→ETH swaps
-      chunked(contracts.swapRouter, uf ? contracts.swapRouter.filters.SwapUsdcToEth(uf) : contracts.swapRouter.filters.SwapUsdcToEth()),
-      // [2] PositionOpened
-      chunked(contracts.exchange, uf ? contracts.exchange.filters.PositionOpened(null, uf) : contracts.exchange.filters.PositionOpened()),
-      // [3] PositionClosed
-      chunked(contracts.exchange, uf ? contracts.exchange.filters.PositionClosed(null, uf) : contracts.exchange.filters.PositionClosed()),
-      // [4] MarginDeposited
-      chunked(contracts.exchange, uf ? contracts.exchange.filters.MarginDeposited(uf) : contracts.exchange.filters.MarginDeposited()),
-      // [5] MarginWithdrawn
-      chunked(contracts.exchange, uf ? contracts.exchange.filters.MarginWithdrawn(uf) : contracts.exchange.filters.MarginWithdrawn()),
-      // [6] TraderFollowed (mine: as follower; all: everyone)
-      chunked(contracts.copyTracker, uf ? contracts.copyTracker.filters.TraderFollowed(uf, null) : contracts.copyTracker.filters.TraderFollowed()),
-      // [7] TraderUnfollowed (mine only)
-      uf ? chunked(contracts.copyTracker, contracts.copyTracker.filters.TraderUnfollowed(uf, null)) : empty,
-      // [8] CopyFeeDistributed (mine: as trader)
-      chunked(contracts.feeRouter, uf ? contracts.feeRouter.filters.CopyFeeDistributed(uf) : contracts.feeRouter.filters.CopyFeeDistributed()),
-      // [9] PriceUpdated (all mode only — too noisy for "mine")
-      tab === 'all' ? chunked(contracts.oracle, contracts.oracle.filters.PriceUpdated()) : empty,
-      // [10] Staked
-      chunked(contracts.traderStake, uf ? contracts.traderStake.filters.Staked(uf) : contracts.traderStake.filters.Staked()),
-      // [11] Slashed
-      chunked(contracts.traderStake, uf ? contracts.traderStake.filters.Slashed(uf, null) : contracts.traderStake.filters.Slashed()),
-    ])
+    // 每個合約一組 filter；scanContractEvents 會把「topic0 以外條件相同」的事件
+    // 合成一趟分段 getLogs（CHUNK_SIZE 依實測上限，見 chainLogs.ts）。以前 12 種
+    // 事件各自一趟、而且用自己的 1,800 塊分段——公開節點上限是 1,000 塊，每一段都
+    // 被拒，最後整頁只剩從 storage 重建的部位。
+    const sources: Array<Omit<EventSource, 'contract'> & { contract: Contract | null | undefined }> = [
+      {
+        // Legacy：舊版 MockSwapRouter（已由 PepeAMM 取代），保留以顯示歷史兌換。
+        key: 'swapRouter',
+        contract: contracts.swapRouter,
+        filters: [
+          uf ? contracts.swapRouter.filters.SwapEthToUsdc(uf) : contracts.swapRouter.filters.SwapEthToUsdc(),
+          uf ? contracts.swapRouter.filters.SwapUsdcToEth(uf) : contracts.swapRouter.filters.SwapUsdcToEth(),
+        ],
+      },
+      {
+        key: 'exchange',
+        contract: contracts.exchange,
+        filters: [
+          uf ? contracts.exchange.filters.PositionOpened(null, uf) : contracts.exchange.filters.PositionOpened(),
+          uf ? contracts.exchange.filters.PositionClosed(null, uf) : contracts.exchange.filters.PositionClosed(),
+          uf ? contracts.exchange.filters.MarginDeposited(uf) : contracts.exchange.filters.MarginDeposited(),
+          uf ? contracts.exchange.filters.MarginWithdrawn(uf) : contracts.exchange.filters.MarginWithdrawn(),
+        ],
+      },
+      {
+        key: 'copyTracker',
+        contract: contracts.copyTracker,
+        filters: [
+          // mine: as follower; all: everyone. Unfollow is mine-only.
+          uf ? contracts.copyTracker.filters.TraderFollowed(uf, null) : contracts.copyTracker.filters.TraderFollowed(),
+          ...(uf ? [contracts.copyTracker.filters.TraderUnfollowed(uf, null)] : []),
+        ],
+      },
+      {
+        key: 'feeRouter',
+        contract: contracts.feeRouter,
+        // mine: as trader
+        filters: [uf ? contracts.feeRouter.filters.CopyFeeDistributed(uf) : contracts.feeRouter.filters.CopyFeeDistributed()],
+      },
+      {
+        key: 'oracle',
+        contract: contracts.oracle,
+        // all mode only — too noisy for "mine"
+        filters: tab === 'all' ? [contracts.oracle.filters.PriceUpdated()] : [],
+      },
+      {
+        // V2 AssetVault（位址來自 addresses.ts 的 V2_STACK；該鏈沒有 V2 時為 null）。
+        // Minted/Redeemed 的 user 是第 1 個 indexed 參數。
+        key: 'assetVaultV2',
+        contract: v2?.vault,
+        filters: v2
+          ? [
+              uf ? v2.vault.filters.Minted(uf) : v2.vault.filters.Minted(),
+              uf ? v2.vault.filters.Redeemed(uf) : v2.vault.filters.Redeemed(),
+            ]
+          : [],
+      },
+      {
+        key: 'pepeAMM',
+        contract: contracts.pepeAMM,
+        filters: [uf ? contracts.pepeAMM.filters.Swap(uf) : contracts.pepeAMM.filters.Swap()],
+      },
+      {
+        key: 'insuranceVault',
+        contract: contracts.insuranceVault,
+        filters: [
+          uf ? contracts.insuranceVault.filters.Deposited(uf) : contracts.insuranceVault.filters.Deposited(),
+          uf ? contracts.insuranceVault.filters.Withdrawn(uf) : contracts.insuranceVault.filters.Withdrawn(),
+        ],
+      },
+      {
+        key: 'traderStake',
+        contract: contracts.traderStake,
+        filters: [
+          uf ? contracts.traderStake.filters.Staked(uf) : contracts.traderStake.filters.Staked(),
+          uf ? contracts.traderStake.filters.Slashed(uf, null) : contracts.traderStake.filters.Slashed(),
+        ],
+      },
+    ]
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const getLogs = (i: number): any[] => results[i].logs
-    const failedChunks = results.reduce((n, r) => n + r.errors.length, 0)
+    // 每一段只要有任何一個來源讀不到，那一段就不算覆蓋（見 historyCoverage.ts）。
+    const ranges = chunkRanges(fromBlock, toBlock)
+    const failedStarts = new Set<number>()
+
+    // 併發 2：公開 RPC 對 getLogs 的突發請求會回 429；每段另有兩次退避重試。
+    const results = await mapLimit(
+      // 位址為 0x0（該鏈未部署）的來源直接略過，不去撥 0x0。
+      sources.filter((s): s is EventSource =>
+        !!s.contract && isDeployed(String(s.contract.target)) && s.filters.length > 0),
+      2,
+      async (s) => {
+        try {
+          const r = await scanContractEvents(provider, s.contract, s.filters, fromBlock, toBlock, {
+            retries: UI_RETRIES,
+            onChunkFailed: (from) => { failedStarts.add(from) },
+          })
+          return { key: s.key, events: r.events, failedChunks: r.failedChunks }
+        } catch (err) {
+          console.warn('[history] scan failed', s.key, err)
+          // 連 topic filter 都組不出來 = 整個來源讀不到：每一段都算失敗，不能變成「沒有資料」。
+          for (const [from] of ranges) failedStarts.add(from)
+          return { key: s.key, events: [] as ParsedEventLog[], failedChunks: Math.max(1, ranges.length) }
+        }
+      },
+    )
+    const failedChunks = results.reduce((n, r) => n + r.failedChunks, 0)
 
     const evs: ChainEvent[] = []
-
-    // 0 — ETH→USDC
-    for (const log of getLogs(0)) {
-      const a = log.args
-      evs.push({ type: 'Swap', user: a.user, txHash: log.transactionHash, logIndex: log.index, blockNumber: log.blockNumber,
-        timestamp: Number(a.timestamp ?? 0),
-        details: { direction: 'ETH→USDC', ethIn: a.ethIn as bigint, usdcOut: a.usdcOut as bigint } })
-    }
-    // 1 — USDC→ETH
-    for (const log of getLogs(1)) {
-      const a = log.args
-      evs.push({ type: 'Swap', user: a.user, txHash: log.transactionHash, logIndex: log.index, blockNumber: log.blockNumber,
-        timestamp: Number(a.timestamp ?? 0),
-        details: { direction: 'USDC→ETH', usdcIn: a.usdcIn as bigint, ethOut: a.ethOut as bigint } })
-    }
-    // 2 — PositionOpened
-    for (const log of getLogs(2)) {
-      const a = log.args
-      evs.push({ type: 'PositionOpened', user: a.owner, txHash: log.transactionHash, logIndex: log.index, blockNumber: log.blockNumber, timestamp: 0,
-        details: { positionId: a.positionId as bigint, asset: a.asset as string, isLong: a.isLong as boolean,
-          entryPrice: a.entryPrice as bigint, margin: a.margin as bigint, leverage: a.leverage as bigint } })
-    }
-    // 3 — PositionClosed
-    for (const log of getLogs(3)) {
-      const a = log.args
-      evs.push({ type: 'PositionClosed', user: a.owner, txHash: log.transactionHash, logIndex: log.index, blockNumber: log.blockNumber, timestamp: 0,
-        details: { positionId: a.positionId as bigint, pnl: a.pnl as bigint, closeAmount: a.closeAmount as bigint } })
-    }
-    // 4 — MarginDeposited
-    for (const log of getLogs(4)) {
-      const a = log.args
-      evs.push({ type: 'MarginDeposited', user: a.user, txHash: log.transactionHash, logIndex: log.index, blockNumber: log.blockNumber, timestamp: 0,
-        details: { amount: a.amount as bigint } })
-    }
-    // 5 — MarginWithdrawn
-    for (const log of getLogs(5)) {
-      const a = log.args
-      evs.push({ type: 'MarginWithdrawn', user: a.user, txHash: log.transactionHash, logIndex: log.index, blockNumber: log.blockNumber, timestamp: 0,
-        details: { amount: a.amount as bigint } })
-    }
-    // 6 — TraderFollowed
-    for (const log of getLogs(6)) {
-      const a = log.args
-      evs.push({ type: 'TraderFollowed', user: a.follower, txHash: log.transactionHash, logIndex: log.index, blockNumber: log.blockNumber, timestamp: 0,
-        details: { trader: a.trader as string, totalMargin: a.totalMargin as bigint } })
-    }
-    // 7 — TraderUnfollowed
-    for (const log of getLogs(7)) {
-      const a = log.args
-      evs.push({ type: 'TraderUnfollowed', user: a.follower, txHash: log.transactionHash, logIndex: log.index, blockNumber: log.blockNumber, timestamp: 0,
-        details: { trader: a.trader as string } })
-    }
-    // 8 — CopyFeeDistributed
-    for (const log of getLogs(8)) {
-      const a = log.args
-      evs.push({ type: 'CopyFee', user: a.trader, txHash: log.transactionHash, logIndex: log.index, blockNumber: log.blockNumber, timestamp: 0,
-        details: { fee: a.fee as bigint, traderShare: a.traderShare as bigint } })
-    }
-    // 9 — PriceUpdated
-    for (const log of getLogs(9)) {
-      const a = log.args
-      evs.push({ type: 'PriceUpdated', user: undefined, txHash: log.transactionHash, logIndex: log.index, blockNumber: log.blockNumber,
-        timestamp: Number(a.timestamp ?? 0),
-        details: { assetId: a.assetId as string, oldPrice: a.oldPrice as bigint, newPrice: a.newPrice as bigint } })
-    }
-    // 10 — Staked
-    for (const log of getLogs(10)) {
-      const a = log.args
-      evs.push({ type: 'Stake', user: a.trader, txHash: log.transactionHash, logIndex: log.index, blockNumber: log.blockNumber, timestamp: 0,
-        details: { amount: a.amount as bigint } })
-    }
-    // 11 — Slashed
-    for (const log of getLogs(11)) {
-      const a = log.args
-      evs.push({ type: 'Slash', user: a.trader, txHash: log.transactionHash, logIndex: log.index, blockNumber: log.blockNumber, timestamp: 0,
-        details: { amount: a.amount as bigint, recipient: a.recipient as string } })
+    for (const r of results) {
+      for (const log of r.events) {
+        const ev = toChainEvent(r.key, log)
+        if (ev) evs.push(ev)
+      }
     }
 
     // Batch-fetch timestamps for events without embedded timestamp
@@ -613,8 +730,8 @@ export default function HistoryPage() {
       if (e.timestamp === 0) e.timestamp = blockTsMap[e.blockNumber] ?? 0
     }
 
-    return { evs, failedChunks }
-  }, [contracts, tab, wallet.address, wallet.provider])
+    return { evs, failedChunks, contiguousLow: lowestContiguousFromTop(ranges, failedStarts) }
+  }, [contracts, v2, tab, wallet.address, wallet.provider])
 
   /** Says which part is incomplete, so a gap is never mistaken for "no data". */
   const reportScanIssues = (failedChunks: number, missedPositions = 0) => {
@@ -662,22 +779,18 @@ export default function HistoryPage() {
           return { evs: [], missed: -1 }   // -1 = the index read itself failed
         })
 
-      // If the cache's newest log-derived event predates this window, the blocks
-      // in between were never scanned. Restarting `scannedFrom` at the window
-      // floor lets "load older" walk backwards through that gap. Storage rows
-      // are excluded: they carry no block number, and counting their 0 as
-      // "newest seen" would report a gap on every single refresh.
-      const prevFrom = scannedFromRef.current
-      const newestSeen = eventsRef.current.reduce((max, e) => Math.max(max, e.blockNumber), -1)
-      const hasGap   = newestSeen > 0 && newestSeen < windowStart - 1
-      const nextFrom = hasGap || prevFrom === null
-        ? windowStart
-        : Math.min(prevFrom, windowStart)
+      const prev = coverageRef.current
 
-      commit(mergeEvents(eventsRef.current, posResult.evs), nextFrom)
+      // 部位來自 storage，和日誌掃描範圍無關——先顯示，覆蓋範圍維持原值。
+      commit(mergeEvents(eventsRef.current, posResult.evs), prev)
 
-      const { evs, failedChunks } = await scanRange(windowStart, currentBlock)
-      commit(mergeEvents(eventsRef.current, evs), nextFrom)
+      const { evs, failedChunks, contiguousLow } = await scanRange(windowStart, currentBlock)
+      // 只把「從最新塊往下連續成功」的那一段算進覆蓋；與舊覆蓋不相接（隔天回訪的
+      // 缺口、失敗段）就以新的一段為準，「載入較舊」會從它的下緣往下補。
+      commit(
+        mergeEvents(eventsRef.current, evs),
+        coverageAfterRefresh(prev, { from: windowStart, to: currentBlock }, contiguousLow),
+      )
       reportScanIssues(failedChunks, posResult.missed)
     } catch (err) {
       console.error('[history]', err)
@@ -689,15 +802,16 @@ export default function HistoryPage() {
 
   /** Extends the scan one window further back, below everything seen so far. */
   const loadOlder = useCallback(async () => {
-    const from = scannedFromRef.current
-    if (!contracts || !wallet.provider || from === null || from <= 0) return
+    const prev = coverageRef.current
+    if (!contracts || !wallet.provider || !prev || !canLoadOlder(prev)) return
     setLoadingMore(true)
     setError(null)
     try {
-      const toBlock   = from - 1
+      const toBlock   = prev.from - 1
       const fromBlock = Math.max(0, toBlock - FETCH_BLOCKS + 1)
-      const { evs, failedChunks } = await scanRange(fromBlock, toBlock)
-      commit(mergeEvents(eventsRef.current, evs), fromBlock)
+      const { evs, failedChunks, contiguousLow } = await scanRange(fromBlock, toBlock)
+      // 只推到「緊貼舊下緣、連續成功」的最低塊；失敗段留在下緣之下，下次重掃。
+      commit(mergeEvents(eventsRef.current, evs), coverageAfterLoadOlder(prev, contiguousLow))
       reportScanIssues(failedChunks)
     } catch (err) {
       console.error('[history:older]', err)
@@ -807,6 +921,13 @@ export default function HistoryPage() {
           {/* Cached rows stay on screen while refreshing — only a cold load blanks out. */}
           {loading && events.length === 0 ? (
             <TableSkeleton rows={5} cols={6} />
+          ) : visible.length === 0 && error ? (
+            // 讀取失敗（或不完整）時的空白不是「沒有活動」——不能套用空狀態文案。
+            <EmptyState
+              icon="⚠️"
+              title={t.history.readFailed.title}
+              description={t.history.readFailed.description}
+            />
           ) : visible.length === 0 ? (
             <EmptyState
               icon="📜"
@@ -855,16 +976,18 @@ export default function HistoryPage() {
                         ) : '—'}
                       </TableCell>
                       <TableCell>
-                        <Chip
-                          label={TYPE_LABEL[e.type] ?? e.type}
-                          size="small"
-                          sx={{
-                            fontWeight: 'bold',
-                            minWidth: 76,
-                            justifyContent: 'center',
-                            ...TYPE_STYLE[e.type]
-                          }}
-                        />
+                        <Tooltip title={e.type === 'Swap' ? t.history.legacySwapTooltip : ''}>
+                          <Chip
+                            label={TYPE_LABEL[e.type] ?? e.type}
+                            size="small"
+                            sx={{
+                              fontWeight: 'bold',
+                              minWidth: 76,
+                              justifyContent: 'center',
+                              ...TYPE_STYLE[e.type]
+                            }}
+                          />
+                        </Tooltip>
                       </TableCell>
                       <TableCell sx={{ fontFamily: MONO, fontSize: '0.75rem', color: 'text.secondary' }}>
                         {shortAddr(e.user)}
@@ -919,7 +1042,8 @@ export default function HistoryPage() {
           >
             {loadingMore
               ? t.history.loadOlder.scanning
-              : interpolate(t.history.loadOlder.cta, {
+              // 空覆蓋（這個瀏覽器還沒有任何確定讀到的區塊）：這不是「較舊」，是從頭開始讀。
+              : interpolate(coverage !== null && coverage.from > coverage.to ? t.history.loadOlder.ctaStart : t.history.loadOlder.cta, {
                   from: Math.max(0, scannedFrom - FETCH_BLOCKS).toLocaleString(),
                   to: (scannedFrom - 1).toLocaleString(),
                 })}
@@ -935,7 +1059,7 @@ export default function HistoryPage() {
         )}{' '}
         ·{' '}
         {t.history.footer.positionsFull}
-        {scannedFrom !== null &&
+        {scannedFrom !== null && coverage !== null && coverage.from <= coverage.to &&
           ` ${interpolate(t.history.footer.scannedBackTo, { block: scannedFrom.toLocaleString() })}`}{' '}
         {t.history.footer.cacheNote}
       </Typography>

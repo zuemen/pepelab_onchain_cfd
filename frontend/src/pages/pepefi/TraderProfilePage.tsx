@@ -12,6 +12,10 @@ import { getPepeAvatar } from 'src/utils/pepefi-assets'
 import TraderRankBadge from 'src/components/pepefi/TraderRankBadge'
 import TraderActivity from 'src/components/pepefi/TraderActivity'
 import { useMode } from 'src/contexts/mode-context'
+import { FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags'
+
+// 統計卡：跟單旗標關閉時少了「跟隨者」那張，剩三張各佔三分之一。
+const STAT_SIZE = FEATURE_COPY_TRADING ? { xs: 6, md: 3 } : { xs: 12, sm: 4 }
 import { useAddressActivity } from 'src/hooks/useAddressActivity'
 
 import Box from '@mui/material/Box';
@@ -35,6 +39,7 @@ import Avatar from '@mui/material/Avatar';
 
 import { t, locale, interpolate } from 'src/locales';
 import { explorerTx, explorerName } from 'src/lib/pepefi/notify';
+import { UI_RETRIES, scanFromBlock, isChunkScanAborted, describeScanWindow, scanContractEventsStrict } from 'src/lib/pepefi/chainLogs';
 
 interface StakeInfo {
   amount:             bigint
@@ -66,7 +71,16 @@ const shortAddr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 const fmtDate = (ts: bigint) =>
   new Date(Number(ts) * 1000).toLocaleString(locale, { dateStyle: 'short', timeStyle: 'short' })
 
+/**
+ * 以位址當 key 重新掛載整頁：從 A 切到 B 時，A 的名稱、質押、信用分數、收益、
+ * 罰沒紀錄等所有欄位一次清空，不會在 B 的資料讀完前殘留 A 的財務與信用資料。
+ */
 export default function TraderProfilePage() {
+  const { address } = useParams<{ address: string }>()
+  return <TraderProfileView key={address?.toLowerCase() ?? ''} />
+}
+
+function TraderProfileView() {
   const wallet = usePepefiWallet()
   const { mode } = useMode()
   const { address: traderAddr } = useParams<{ address: string }>()
@@ -87,6 +101,12 @@ export default function TraderProfilePage() {
   const [earnings,      setEarnings]      = useState<bigint | null>(null)
   const [stratCount,    setStratCount]    = useState<number | null>(null)
   const [slashHistory,  setSlashHistory]  = useState<SlashEvent[]>([])
+  /**
+   * 罰沒事件讀取狀態。'failed' 時**絕不能**顯示成「沒有罰沒」——讀不到和沒有是兩件事。
+   * 'pending' = 還沒讀完；'ok' 時 slashBlocks = 實際掃描的塊數。
+   */
+  const [slashRead,     setSlashRead]     = useState<'pending' | 'ok' | 'failed'>('pending')
+  const [slashBlocks,   setSlashBlocks]   = useState(0)
   const [loading,       setLoading]       = useState(true)
   const [error,         setError]         = useState<string | null>(null)
 
@@ -98,6 +118,9 @@ export default function TraderProfilePage() {
 
   useEffect(() => {
     if (!contracts || !traderAddr) return
+    // 從 A 的頁面切到 B 時，A 還在飛的讀取回來後不能寫進 B 的畫面。
+    let cancelled = false
+    const alive = () => !cancelled
     setLoading(true)
     setError(null)
     const go = async () => {
@@ -106,12 +129,12 @@ export default function TraderProfilePage() {
         traderRaw = (await contracts.registry.traders(traderAddr)) as unknown as [boolean, string, bigint]
       } catch { traderRaw = null }
       if (traderRaw) {
-        setName(traderRaw[1])
-        setRegistered(traderRaw[0])
+        if (alive()) setName(traderRaw[1])
+        if (alive()) setRegistered(traderRaw[0])
       }
       try {
         const fc = await contracts.copyTracker.getFollowerCount(traderAddr)
-        setFollowers(fc as bigint)
+        if (alive()) setFollowers(fc as bigint)
       } catch { /* no follower data */ }
 
       // followersByTrader (first 10)
@@ -123,7 +146,7 @@ export default function TraderProfilePage() {
             list.push(addr as string)
           } catch { break }
         }
-        setFollowerList(list)
+        if (alive()) setFollowerList(list)
       } catch { /* no followers */ }
 
       // strategy + history
@@ -131,7 +154,7 @@ export default function TraderProfilePage() {
       try {
         count = Number((await contracts.registry.getStrategyCount(traderAddr)) as bigint)
       } catch { count = 0 }
-      setStratCount(count)
+      if (alive()) setStratCount(count)
       if (count > 0) {
         try {
           const vers = await Promise.all(
@@ -149,12 +172,12 @@ export default function TraderProfilePage() {
             }),
           )
           const sorted = [...vers].reverse()
-          setStratHistory(sorted)
-          setAllocs(sorted[0]?.allocs ?? [])
-          setHasStrategy(sorted[0]?.allocs.length > 0)
-        } catch { setHasStrategy(false) }
+          if (alive()) setStratHistory(sorted)
+          if (alive()) setAllocs(sorted[0]?.allocs ?? [])
+          if (alive()) setHasStrategy(sorted[0]?.allocs.length > 0)
+        } catch { if (alive()) setHasStrategy(false) }
       } else {
-        setHasStrategy(false)
+        if (alive()) setHasStrategy(false)
       }
 
       // stake + reputation
@@ -164,36 +187,64 @@ export default function TraderProfilePage() {
           contracts.traderStake.reputationScore(traderAddr),
           contracts.traderStake.isEligible(traderAddr),
         ])
-        setStakeInfo(si as unknown as StakeInfo)
-        setRepScore(score as bigint)
-        setEligible(elig as boolean)
+        if (alive()) setStakeInfo(si as unknown as StakeInfo)
+        if (alive()) setRepScore(score as bigint)
+        if (alive()) setEligible(elig as boolean)
       } catch { /* TraderStake not deployed */ }
 
       // fee earnings
       try {
         const raw = (await contracts.feeRouter.traderEarnings(traderAddr)) as bigint
-        setEarnings(raw)
+        if (alive()) setEarnings(raw)
       } catch { /* FeeRouter not deployed */ }
 
-      // slash history from Slashed events
-      try {
-        const filter = contracts.traderStake.filters['Slashed'](traderAddr, null)
-        const events = await contracts.traderStake.queryFilter(filter, -10000)
-        setSlashHistory(events.map((e: unknown) => {
-          const ev = e as { args: { trader: string; amount: bigint; recipient: string }; transactionHash: string }
-          return {
-            trader:    ev.args.trader,
-            amount:    ev.args.amount,
-            recipient: ev.args.recipient,
-            txHash:    ev.transactionHash,
-          }
-        }))
-      } catch { /* events not available */ }
-
-      setLoading(false)
+      if (alive()) setLoading(false)
     }
     void go()
+    return () => { cancelled = true }
   }, [contracts, traderAddr])
+
+  // 罰沒紀錄獨立一個 effect：它是幾十段 getLogs，不該拖住整頁的 loading；
+  // 換頁或卸載時以 AbortController 中止，過期結果一律丟棄。
+  useEffect(() => {
+    if (!contracts || !traderAddr) return
+    const ac = new AbortController()
+    setSlashRead('pending')
+    setSlashHistory([])
+    void (async () => {
+      try {
+        const provider = contracts.traderStake.runner?.provider
+        if (!provider) throw new Error('no provider')
+        const latest = Number(await provider.getBlockNumber())
+        if (ac.signal.aborted) return
+        const from = scanFromBlock({ chainId: wallet.chainId, currentBlock: latest })
+        // 任何一段讀不到就整個標成讀取失敗：部分結果在這裡會被讀成「沒有罰沒」。
+        const events = await scanContractEventsStrict(
+          provider,
+          contracts.traderStake,
+          [contracts.traderStake.filters.Slashed(traderAddr, null)],
+          from,
+          latest,
+          { retries: UI_RETRIES, signal: ac.signal },
+        )
+        if (ac.signal.aborted) return
+        setSlashHistory(events.map((ev) => ({
+          trader:    ev.args.trader as string,
+          amount:    ev.args.amount as bigint,
+          recipient: ev.args.recipient as string,
+          txHash:    ev.transactionHash,
+        })).reverse())
+        setSlashBlocks(latest - from + 1)
+        setSlashRead('ok')
+      } catch (err) {
+        if (ac.signal.aborted || isChunkScanAborted(err)) return
+        console.warn('[traderProfile] slash history read failed', err)
+        setSlashHistory([])
+        setSlashRead('failed')
+      }
+    })()
+    return () => ac.abort()
+  }, [contracts, traderAddr, wallet.chainId])
 
   if (!traderAddr) return <Box sx={{ p: 4 }}><Typography color="text.secondary">{t.traderProfile.invalidAddress}</Typography></Box>
 
@@ -279,12 +330,15 @@ export default function TraderProfilePage() {
                 </Box>
 
                 <Stack direction="row" spacing={2} sx={{ flexWrap: 'wrap', gap: 1, mt: 1.5, alignItems: 'center' }}>
+                  {/* 跟隨者數與跟隨者清單跟著 FEATURE_COPY_TRADING 走（商業版預設關）。 */}
+                  {FEATURE_COPY_TRADING && (
                   <Typography variant="body2" color="text.secondary">
                     <Box component="span" sx={{ fontWeight: 'bold', color: 'text.primary' }}>{String(followers)}</Box>{' '}
                     {followers === 1n
                       ? t.traderProfile.header.followerSingular
                       : t.traderProfile.header.followerPlural}
                   </Typography>
+                  )}
                   {registered && (
                     <Chip
                       label={t.traderProfile.header.registered}
@@ -307,6 +361,8 @@ export default function TraderProfilePage() {
               </Box>
             </Stack>
 
+            {/* 跟單按鈕跟著 FEATURE_COPY_TRADING 走（商業版預設關）。 */}
+            {FEATURE_COPY_TRADING && (
             <Button
               component={RouterLink}
               to={`/copy/${traderAddr}`}
@@ -318,20 +374,23 @@ export default function TraderProfilePage() {
             >
               {!hasStrategy ? t.traderProfile.header.noStrategy : t.traderProfile.header.copyThisTrader}
             </Button>
+            )}
           </Card>
 
           {/* ─── B. Stats grid (4 cards) ──────────────────────────── */}
           <Grid container spacing={2}>
-            <Grid size={{ xs: 6, md: 3 }}>
+            <Grid size={STAT_SIZE}>
               <StatCard title={t.traderProfile.stats.staked} value={stakeInfo ? f18(stakeInfo.amount) : '—'} sub="USDC" />
             </Grid>
-            <Grid size={{ xs: 6, md: 3 }}>
+            {FEATURE_COPY_TRADING && (
+            <Grid size={STAT_SIZE}>
               <StatCard title={t.traderProfile.stats.followers} value={String(followers)} sub={t.traderProfile.stats.copiers} />
             </Grid>
-            <Grid size={{ xs: 6, md: 3 }}>
+            )}
+            <Grid size={STAT_SIZE}>
               <StatCard title={t.traderProfile.stats.earnings} value={earnings !== null ? f18(earnings, 4) : '—'} sub="USDC" valueColor="success.main" />
             </Grid>
-            <Grid size={{ xs: 6, md: 3 }}>
+            <Grid size={STAT_SIZE}>
               <StatCard title={t.traderProfile.stats.strategies} value={stratCount !== null ? String(stratCount) : '—'} sub={t.traderProfile.stats.versions} />
             </Grid>
           </Grid>
@@ -475,7 +534,7 @@ export default function TraderProfilePage() {
           )}
 
           {/* ─── D. Followers ──────────────────────────────────────── */}
-          {followerList.length > 0 && (
+          {FEATURE_COPY_TRADING && followerList.length > 0 && (
             <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
                 {interpolate(t.traderProfile.followers.titleFirst, { count: followerList.length })}
@@ -500,6 +559,34 @@ export default function TraderProfilePage() {
           )}
 
           {/* ─── E. Slash History ──────────────────────────────────── */}
+          {/* 讀取失敗：明說無法確認，絕不顯示成「沒有罰沒」。合約 storage 的
+              totalSlashed 是完整的累計值（不受掃描範圍限制），讀得到就一併列出。 */}
+          {slashRead === 'pending' && (
+            <Typography variant="caption" color="text.secondary">
+              {t.traderProfile.slashHistory.loading}
+            </Typography>
+          )}
+          {slashRead === 'failed' && (
+            <Alert severity="error">
+              <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+                {t.traderProfile.slashHistory.readFailedTitle}
+              </Typography>
+              {t.traderProfile.slashHistory.readFailedBody}
+              {stakeInfo && (
+                <Box sx={{ mt: 0.5 }}>
+                  {interpolate(t.traderProfile.slashHistory.totalFromContract, { amount: f18(stakeInfo.totalSlashed) })}
+                </Box>
+              )}
+            </Alert>
+          )}
+          {slashRead === 'ok' && slashHistory.length === 0 && stakeInfo && stakeInfo.totalSlashed > 0n && (
+            <Alert severity="warning">
+              {interpolate(t.traderProfile.slashHistory.outsideWindow, {
+                span: describeScanWindow(wallet.chainId, slashBlocks),
+                amount: f18(stakeInfo.totalSlashed),
+              })}
+            </Alert>
+          )}
           {slashHistory.length > 0 && (
             <Card sx={{ p: 3, border: '1px solid', borderColor: 'error.main', bgcolor: 'rgba(255, 86, 48, 0.08)', display: 'flex', flexDirection: 'column', gap: 2 }}>
               <Typography variant="subtitle1" color="error.main" sx={{ fontWeight: 'bold' }}>

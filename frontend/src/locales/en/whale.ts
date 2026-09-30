@@ -35,6 +35,8 @@ export const whale: Catalog['whale'] = {
     windowScanFailed: 'scan failed',
     windowScanning: 'scanning…',
     scanFailedTitle: 'Could not scan',
+    readError: 'Could not read on-chain activity. The RPC node may be rate-limiting.',
+    scanIncomplete: '{count} block range(s) could not be read — the feed and volume may be incomplete. Please retry.',
     windowLast: 'last {span}',
 
     threshold: 'Whale threshold',

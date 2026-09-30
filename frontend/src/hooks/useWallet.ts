@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { BrowserProvider, type Eip1193Provider, type Signer } from 'ethers'
 
+import { t } from 'src/locales'
+import { MOCK_WALLET_ENABLED } from 'src/lib/pepefi/featureFlags'
+
 // Augment Window so TypeScript knows about window.ethereum
 declare global {
   interface Window {
@@ -65,6 +68,8 @@ export function useWallet(): WalletAPI {
   const isConnectingRef = useRef(false)
 
   const connectMock = useCallback(() => {
+    // 正式 build 沒有這個通道（見 featureFlags.ts 的 MOCK_WALLET_ENABLED）。
+    if (!MOCK_WALLET_ENABLED) return;
     localStorage.setItem('pepefi_wallet_mock', 'true');
     setState({
       address: MOCK_ADDRESS,
@@ -87,7 +92,7 @@ export function useWallet(): WalletAPI {
 
   const connect = useCallback(async () => {
     if (!window.ethereum) {
-      setState(s => ({ ...s, error: 'MetaMask not detected — please install the extension.' }))
+      setState(s => ({ ...s, error: t.common.wallet.error.notDetected }))
       return
     }
     if (isConnectingRef.current) return  // prevent duplicate eth_requestAccounts
@@ -115,9 +120,9 @@ export function useWallet(): WalletAPI {
     } catch (err) {
       const code = (err as { code?: number }).code
       const msg =
-        code === -32002 ? 'MetaMask has a pending request — open MetaMask and approve it.' :
-        code === 4001   ? 'Connection rejected — please approve in MetaMask.' :
-        err instanceof Error ? err.message : 'Connection failed'
+        code === -32002 ? t.common.wallet.error.pending :
+        code === 4001   ? t.common.wallet.error.rejected :
+        err instanceof Error ? err.message : t.common.wallet.error.failed
       setState(s => ({ ...s, isConnecting: false, error: msg }))
     } finally {
       isConnectingRef.current = false
@@ -140,6 +145,9 @@ export function useWallet(): WalletAPI {
   // pages don't bounce to the landing page before this finishes.
   useEffect(() => {
     const restore = async () => {
+      // 正式 build 不恢復 mock session：之前在開發版或舊版留下的旗標直接清掉，
+      // 否則使用者會卡在一個看不到入口、也讀不到鏈上資料的假位址。
+      if (!MOCK_WALLET_ENABLED) localStorage.removeItem('pepefi_wallet_mock');
       if (localStorage.getItem('pepefi_wallet_mock') === 'true') {
         setState({
           address: MOCK_ADDRESS,

@@ -14,12 +14,14 @@ import { useVaultBacking } from 'src/hooks/useVaultBacking'
 import { useTerminalLayout } from 'src/hooks/useTerminalLayout'
 import { useMarketActivity } from 'src/hooks/useMarketActivity'
 import { useTerminalAccount } from 'src/hooks/useTerminalAccount'
+import { useAssetTradingParams } from 'src/hooks/useAssetTradingParams'
 
 import { t } from 'src/locales'
 import { ASSET_IDS } from 'src/contracts/addresses'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { ASSET_META } from 'src/lib/pepefi/assetMeta'
 import { stalenessNotice } from 'src/lib/pepefi/priceFreshness'
+import { staticTradingParams } from 'src/lib/pepefi/tradingParams'
 import { type Interval, DEFAULT_INTERVAL } from 'src/lib/pepefi/candles'
 
 import { useToast } from 'src/components/pepefi/ToastProvider'
@@ -58,6 +60,12 @@ export function TerminalView() {
   const { isVerified: kycOk, isUnknown: kycUnknown, isPending: kycPending } = useKYC(contracts?.kycRegistry ?? null, wallet.address ?? null)
 
   const meta = ASSET_META[selAsset]
+  // 槓桿上限與費率：讀一次、統計列與下單面板共用。靜態表只在鏈上讀不到時使用。
+  const staticParams = staticTradingParams(meta, Date.now())
+  const tradingParams = useAssetTradingParams(contracts?.exchange, selAsset, {
+    maxLeverage: staticParams.maxLeverage,
+    tradingFeeBps: staticParams.tradingFeeBps,
+  })
   const kycBlocked = (meta?.regulated ?? false) && !kycOk
 
   // 指數價超過合約的 maxPriceAge 時，開倉／平倉／清算在鏈上都會 revert
@@ -78,7 +86,8 @@ export function TerminalView() {
   const activity = useMarketActivity(contracts, selAsset)
   const { assets: vaultAssets } = useVaultBacking(contracts)
 
-  const livePx = live[selAsset]?.usd
+  // null = 兩個來源都讀不到。不補任何替代數字，下游一律顯示「—」。
+  const livePx = live[selAsset]?.usd ?? undefined
 
   // 給 Activity 面板算未實現損益用。刻意用即時價（CoinGecko/live）而不是 oracle
   // index：跟下方自己持倉表的算法一致，同一個標的的損益在兩個地方不該不一樣。
@@ -154,6 +163,7 @@ export function TerminalView() {
         funding={fi}
         priceInfo={live[selAsset]}
         vaultAssets={vaultAssets}
+        tradingParams={tradingParams}
       />
 
       {/* 版面分級。欄寬一律用 minmax(0, …)：1fr 的隱含最小值是 min-content，圖表
@@ -222,6 +232,7 @@ export function TerminalView() {
             kycUnknown={kycUnknown}
             kycPending={kycPending}
             staleNotice={staleNoticeFor(selAsset)}
+            tradingParams={tradingParams}
             notify={notify}
             onFilled={account.refresh}
           />

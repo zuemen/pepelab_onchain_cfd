@@ -11,7 +11,7 @@
 2. 匯出 → 存成 `agent/examples/vc.json`（或 `AGENT_AUTH_VC_PATH` 指向處；此檔含簽章、已 gitignore）。
 3. VC 須：`issuer = did:pkh:…:0xE80A`、`credentialSubject.id = agent did`、`sessionId = 6`、限額/到期與鏈上 session #6 一致。
 
-> session id 是每個 manager 各自獨立的。新的 AgentSessionManager `0x4E7cC1B7…`（有資產白名單）目前只有 **#0**：到期 2027-07、單筆≤1000/預算3000/槓桿≤5、白名單 sBTC+sETH。`#6` 只存在於舊的 `0x5Ebcc64C…`（無資產白名單）。設 `DEMO_SESSION_ID=0`。
+> session id 是每個 manager 各自獨立的。現行 AgentSessionManager `0xdF9C1E53523568709f65Afe3C4AD2E6a6D99d14B`（綁現行 exchange `0x827eA0c62a32e995927101259042F8A27D99124D`；來源 `contracts/broadcast/Redeploy129Exchange.s.sol/84532/run-latest.json`）目前只有 **#0**（到期 2027-07）。舊的 `0x4E7cC1B7…`（綁已退役的 exchange）與 `0x5Ebcc64C…`（無資產白名單）上的 session id 在這裡無效。新建 session 用根目錄 `create-session.sh`。
 
 ## E1 — 下單一律走 VC（不可繞過）
 `x402-autonomous.ts` / `x402-loop.ts` 下單一律 `openPositionForSession({ …, authVc })`（走 `verifyAuthorizationVC` + 鏈上交叉比對）。

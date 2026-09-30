@@ -12,7 +12,13 @@
 
 export type ScreeningVerdict = 'clean' | 'needsReview'
 
-export type ScreeningReasonCode = 'unclearJurisdiction' | 'watchlistNameMatch'
+export type ScreeningReasonCode = 'unclearJurisdiction' | 'watchlistNameMatch' | 'hashedOffChainCheck'
+
+/**
+ * 新版前端只把 keccak256(salt ‖ 值) 送上鏈（見 kycCommitment.ts）。沒有使用者線下
+ * 出示的 salt，規則無從比對——這種申請一律轉人工，不能被當成「乾淨」批次核准。
+ */
+const HASH_RE = /^0x[0-9a-fA-F]{64}$/
 
 export interface ScreeningResult {
   verdict: ScreeningVerdict
@@ -42,6 +48,10 @@ const NORMALIZED_WATCHLIST = new Set(FICTIONAL_WATCHLIST_NAMES.map(normalizeName
 
 export function screenApplication(input: { fullName: string; nationality: string }): ScreeningResult {
   const reasons: ScreeningReasonCode[] = []
+
+  if (HASH_RE.test(input.fullName) || HASH_RE.test(input.nationality)) {
+    return { verdict: 'needsReview', reasons: ['hashedOffChainCheck'] }
+  }
 
   if (UNCLEAR_JURISDICTIONS.includes(input.nationality)) {
     reasons.push('unclearJurisdiction')

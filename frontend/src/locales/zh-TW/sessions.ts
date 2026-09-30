@@ -30,6 +30,9 @@ export const sessions = {
     creating: '建立中…',
     cta: '建立 Session',
     done: 'Session 已建立 ✓',
+    allowedAssets: '允許交易的標的',
+    allowedAssetsHint: 'agent 只能在這些標的上開倉（鏈上白名單，createSessionWithAssets）。至少選一檔。',
+    noAssetSelected: '請至少選擇一檔允許交易的標的。',
   },
 
   /** 瀏覽器裡產生的一次性 burner 金鑰。 */
@@ -165,6 +168,11 @@ export const sessions = {
 
     includeKeyBefore: '把我剛產生的 agent 私鑰填進 ',
     includeKeyAfter: '（含真鑰，請只在自己機器使用）',
+    /** 嵌入私鑰的風險說明：預設不嵌入，勾選前後都看得到。 */
+    includeKeyRiskTitle: '預設不嵌入私鑰',
+    includeKeyRisk:
+      '匯出的設定檔預設只放佔位字串。勾選後，下方 JSON 會含這把 agent 的明文私鑰：任何拿到這個檔案（或看到你螢幕、剪貼簿、雲端同步資料夾）的人，都能在 session 的額度與期限內以你的授權下單。只在你自己的機器上使用，不要貼進聊天、工單或版本控制；外流時請立即撤銷 session。',
+    includeKeyOnWarning: '目前的設定檔含明文私鑰。複製或下載後請妥善保管，用完即刪。',
 
     placeholderAfter:
       ' 為佔位 — 貼上你保存的 agent 私鑰即可（在本頁用「產生 agent 金鑰」產生的，可勾選自動填入）。',

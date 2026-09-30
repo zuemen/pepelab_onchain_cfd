@@ -42,6 +42,14 @@ jobs:
       BASE_SEPOLIA_RPC_URL: ${{ secrets.BASE_SEPOLIA_RPC_URL }}
       UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
       UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+      # P0 收款守門（settlement-worker.ts payoutPreflight）：PAY_TO 必須是 signer 的 EOA，
+      # X402_FEE_ROUTER 的 platformTreasury 不可是外洩／EIP-7702 委派地址。兩者都是公開
+      # 地址，用 repository variables（不是 secrets）。PAY_TO 未設 → worker fail-closed。
+      PAY_TO: ${{ vars.PAY_TO }}
+      X402_FEE_ROUTER: ${{ vars.X402_FEE_ROUTER }}
+      # 線上 signal-api 的 base URL：worker 會讀它 `GET /` 公布的 payTo，必須 = 結算 signer。
+      # CI 上是必填（GITHUB_ACTIONS=true 時未設 → preflight 失敗），下方 fail-fast 也會先檢查。
+      SIGNAL_API_URL: ${{ vars.SIGNAL_API_URL }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
@@ -53,8 +61,11 @@ jobs:
           [ -z "${BASE_SEPOLIA_RPC_URL:-}" ] && missing+=(BASE_SEPOLIA_RPC_URL)
           [ -z "${UPSTASH_REDIS_REST_URL:-}" ] && missing+=(UPSTASH_REDIS_REST_URL)
           [ -z "${UPSTASH_REDIS_REST_TOKEN:-}" ] && missing+=(UPSTASH_REDIS_REST_TOKEN)
+          [ -z "${PAY_TO:-}" ] && missing+=("PAY_TO (repository variable)")
+          [ -z "${X402_FEE_ROUTER:-}" ] && missing+=("X402_FEE_ROUTER (repository variable)")
+          [ -z "${SIGNAL_API_URL:-}" ] && missing+=("SIGNAL_API_URL (repository variable)")
           if [ "${#missing[@]}" -gt 0 ]; then
-            echo "::error::缺少 secrets：${missing[*]} —— 結算 worker 無法運作。"
+            echo "::error::缺少 secrets / repository variables：${missing[*]} —— 結算 worker 無法運作。"
             exit 1
           fi
 
@@ -87,6 +98,19 @@ jobs:
           node-version: 20
           cache: npm
           cache-dependency-path: agent/package-lock.json
+
+      # vars.X402_FEE_ROUTER 是 repository variable，靜態檢查（consistency.yml）看不到
+      # 它的值，所以在執行期比對設定來源 frontend/src/contracts/x402.ts。填成 MockOracle、
+      # V1 FeeRouter 或舊部署都會在送任何交易之前失敗。
+      - name: Assert X402_FEE_ROUTER matches frontend config
+        run: |
+          set -euo pipefail
+          EXPECTED=$(node scripts/check-addresses.mjs --print 84532 X402FeeRouter)
+          if [ "$(printf '%s' "$X402_FEE_ROUTER" | tr 'A-F' 'a-f')" != "$(printf '%s' "$EXPECTED" | tr 'A-F' 'a-f')" ]; then
+            echo "::error::vars.X402_FEE_ROUTER=$X402_FEE_ROUTER 與 frontend/src/contracts/x402.ts 的 $EXPECTED 不一致 —— 分潤會送進錯的合約。"
+            exit 1
+          fi
+          echo "X402_FEE_ROUTER=$X402_FEE_ROUTER 與設定來源一致 ✓"
 
       - name: Install agent deps
         working-directory: agent

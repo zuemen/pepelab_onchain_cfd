@@ -4,6 +4,11 @@ Everything a fresh session needs to finish the security work started 2026-07-27.
 Written so an agent with no prior context can pick it up. Addresses are real and
 verified on chain; procedures are the ones actually used, not idealised versions.
 
+> **2026-09-30:** this is a handover snapshot from 2026-07-27, mostly about the
+> Sepolia V2 stack. Current deployment and status are in [`README.md`](../README.md).
+> Statements below that contradicted each other have been corrected inline and
+> marked with the date; the rest is left as written.
+
 ---
 
 ## State as of 2026-07-27 (commit `0a3af5b`)
@@ -83,8 +88,13 @@ Steps 1–3 gate step 4. Doing 4 first breaks the price feed and cannot be undon
 > watching. All eleven assets were rewritten from live quotes. The source is now
 > Yahoo's chart endpoint (needs a browser `User-Agent` or it 401s), stooq is
 > demoted to a fallback, and the keeper covers all eleven assets instead of six.
+> *(2026-09-30 correction: stooq was subsequently removed outright, not kept as a
+> fallback — see "Stock price feed — fixed" below and `agent/keeper/feeds.ts`.)*
 
 ### 1. Move the keeper key into GitHub Actions — human, 2 minutes
+
+> *2026-09-30: done — the blockquote above records that the secret was switched
+> to `KEEPER_PK` on 2026-07-27. The steps are kept for reference.*
 
 The scheduled keeper (`.github/workflows/price-keeper.yml`, every 15 min) still
 signs with the deployer key. It needs the separated keeper key instead.
@@ -229,6 +239,15 @@ tradeoff is real enough that it should be chosen deliberately:
 Deliberately not chosen here. The second is the smaller change and the safer
 default; the first is tidier and worse.
 
+> *2026-09-30 correction: this was resolved the same day in favour of the
+> **first** option, as the blockquote at the top of "Remaining work" records —
+> MockOracle ownership was transferred to the keeper. Read-only check on
+> 2026-09-30: `owner()` of both the Base Sepolia MockOracle
+> (`0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3`) and the Sepolia MockOracle
+> (`0x17CA20A37Cf04F2f589B2573EC95f1411D29d958`) is the keeper address. The
+> "prices have stopped updating" state described above no longer holds; the
+> unbounded-price-power trade-off does, and is tracked as KNOWN_LIMITATIONS #3.*
+
 **Stock price feed — fixed.** stooq served HTML 404s on every URL variant tried
 (`stooq.com` and `stooq.pl`, with and without the `f=`/`h` params) and has not
 recovered, so it was removed outright rather than kept as a fallback that always
@@ -324,10 +343,11 @@ cast call 0x3a37415981F6f4fC27FA6c8C62F1d4e47115fD17 'paused()(bool)' \
 
 ## Related documents
 
-- `docs/VAULT_VERSIONS.md` — which of the three vault sources is actually live,
-  read from the EIP-1967 slot, and what changed between them
+- `docs/VAULT_VERSIONS.md` — which of the vault sources (V2.0–V2.4) is live on
+  each chain, read from the EIP-1967 slot, and what changed between them
 - `docs/ROLE_SEPARATION.md` — what was done, with the on-chain verification log
-- `docs/KNOWN_LIMITATIONS.md` — all 13 limitations with current status
+- `docs/KNOWN_LIMITATIONS.md` — every limitation with current status (20 items on
+  `master` as of 2026-09-30; PR #191 will add further items)
 - `docs/audit/ADERYN_TRIAGE.md` — Aderyn findings, each triaged with reasoning
 - `docs/audit/aderyn-v2-report.md` — raw Aderyn output
 - `docs/KEY_MANAGEMENT.md` — key handling procedure

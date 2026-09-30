@@ -17,21 +17,50 @@ export const kyc: Catalog['kyc'] = {
   noticeBodyAwaitingReview:
     'Your KYC application is recorded on-chain (KYCSubmitted). Regulated assets unlock once a reviewer approves it (approveKYC); until then, the contract still blocks your orders (NotKycVerified). You can close this dialog now and come back later — refresh to check the status.',
 
-  demoTitle: '⚠️ The name you enter is permanently public on-chain',
+  demoTitle: '⚠️ This is an academic demo',
   demoBody:
-    "This is an academic demo, not a real compliance flow. Once submitted, your name and nationality are written into a public smart contract — anyone can read them, and they can never be deleted. Don't enter your real name — a made-up one is fine.",
+    "This is not a real compliance flow. Your name and nationality are NOT written on-chain in plain text: the app generates a random salt and only writes keccak256(salt ‖ name) and keccak256(salt ‖ nationality) to the public contract. The salt and your raw details stay on your side; a reviewer needs you to present them off-chain to compare. A made-up name is still recommended.",
 
-  nameLabel: 'Name (use a made-up one — it goes on-chain permanently)',
+  nameLabel: 'Name (only a salted hash goes on-chain; a made-up name is recommended)',
   namePlaceholder: 'e.g. Jane Doe',
   nameRequired: 'Enter a name',
   nationalityLabel: 'Nationality',
   /** 下拉選項是「代號 — 國名」。代號是資料，國名是文字。 */
   nationalityOption: '{code} — {name}',
 
+  legacyPlaintextNotice:
+    'Note: KYC applications submitted before this update wrote the name and nationality to the public blockchain in plain text. That older data is permanently public and cannot be deleted.',
+
+  receipt: {
+    title: 'Save the following (you will need it for review)',
+    savedLocally:
+      "Your name and nationality went on-chain only as salted hashes. The salt and the two hashes (not your name or nationality) are saved in this browser's local storage, but clearing site data will erase them — copy them down or take a screenshot. Without the salt you cannot prove to a reviewer what the hashes contain.",
+    notSaved:
+      "Your name and nationality went on-chain only as salted hashes. This browser could not write to local storage, so copy the salt and hashes below right now — they cannot be recovered once this dialog is closed.",
+    salt: 'Salt (keep private)',
+    nameHash: 'Name hash (on-chain)',
+    nationalityHash: 'Nationality hash (on-chain)',
+    txHash: 'Transaction hash',
+    confirmFailed: 'The transaction was sent, but waiting for confirmation failed — it may already be on-chain. The receipt has been kept; check the transaction hash on a block explorer before resubmitting.',
+    hideMine: 'Hide receipt',
+    viewMineCount: 'View my receipts ({count})',
+    pendingStoredAt: 'Saved at {time} before sending, but no transaction hash was obtained (it may not have been sent — check a block explorer):',
+    storedAt: 'Receipt saved in this browser at {time} (salt and hashes only, no name or nationality):',
+    scheme: 'Hash scheme: keccak256(salt ‖ normalized value); normalized name "{name}", nationality code "{code}".',
+  },
+
   cancel: 'Cancel',
   close: 'Close',
   submit: 'Submit KYC Application',
   submitting: 'Submitting…',
+
+  prevTx: {
+    checking: 'Checking the status of your previous KYC transaction…',
+    unconfirmed: 'Your previous KYC transaction has no confirmed result yet, so resubmitting is disabled. Check its hash (in your receipt) on a block explorer first.',
+    underReview: 'Your previous KYC application is on-chain and awaiting review — no need to resubmit.',
+    checkFailed: "Couldn't confirm the status of your previous KYC transaction (RPC read failed); submitting is disabled to avoid a duplicate.",
+    retry: 'Retry',
+  },
 
   /** See `../zh-TW/kyc.ts` for why this is a separate key group from the modal copy. */
   status: {

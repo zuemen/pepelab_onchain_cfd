@@ -1,0 +1,977 @@
+openapi: 3.1.0
+info:
+  title: PepeFi signal-api
+  version: 0.1.0-draft
+  summary: x402 pay-per-call trading data API (Base Sepolia testnet research prototype).
+  description: |
+    草案（2026-09-30）。本規格逐一對照 `agent/signal-api/src/app.ts` 撰寫；若與程式碼不一致，以程式碼為準。
+
+    - 付費端點使用 x402 v1 `exact` scheme，結算代幣為 Base Sepolia 上的 Circle 官方測試網 USDC
+      （`0x036CbD53842c5426634e7929541eC2318f3dCF7e`，EIP-3009）。
+    - 付費端點在發出 402 之前會先做輸入驗證、收款地址守門（fail-closed）與資料可用性檢查；
+      任何一項不通過都不會要求付款（x402 沒有退費機制）。
+    - 所有 JSON 回應在送出前會遮蔽帶憑證的環境變數值。
+    - 免費端點（`/healthz` 除外）有 per-IP 節流：預設每 60 秒 60 次（`FREE_RATE_WINDOW_MS`、`FREE_RATE_MAX`）。
+      serverless 上為 per-instance 的盡力而為。付費端點不另外節流。
+    - CORS：所有來源皆可讀取；`/demo/*` 另有來源白名單（見該端點）。
+    - 2026-09-30 現況：正式部署的收款地址未通過守門，付費端點回 `503 payto_unsafe`。
+    - 本服務為測試網研究原型，不提供任何投資建議。
+    - 本機執行：在 `agent/` 下 `npm run signal-api`，預設 `http://localhost:4021`（`SIGNAL_API_PORT`）。
+    - repo 目前沒有授權條款檔案。
+servers:
+  - url: https://agent-git-master-zuemens-projects.vercel.app
+    description: Vercel deployment (region sin1), testnet
+security: []
+tags:
+  - name: free
+    description: 免費端點
+  - name: paid
+    description: x402 付費端點
+  - name: demo
+    description: 訪客試用
+paths:
+  /healthz:
+    get:
+      tags: [free]
+      operationId: healthz
+      summary: Liveness
+      description: 立即回 200，不做任何外部呼叫，不受節流。
+      responses:
+        '200':
+          description: Alive
+          content:
+            text/plain:
+              schema:
+                type: string
+                const: ok
+  /:
+    get:
+      tags: [free]
+      operationId: discover
+      summary: Service discovery
+      description: 服務目錄。每次呼叫都會執行收款地址安全檢查（結果快取）。
+      responses:
+        '200':
+          description: Service catalog
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Discovery'
+        '429':
+          $ref: '#/components/responses/FreeRateLimited'
+  /revenue:
+    get:
+      tags: [free]
+      operationId: getRevenue
+      summary: On-chain 70/20/10 revenue totals
+      description: |
+        讀取 x402 FeeRouter（環境變數 `X402_FEE_ROUTER`）的鏈上累計。未設定時回 `onChain: false`。
+        金額以 USD 計（由 `platformEarnings` 反推：總額 = 平台 × 5、trader = 平台 × 3.5、金庫 = 平台 × 0.5）。
+      parameters:
+        - name: trader
+          in: query
+          required: false
+          description: 若為合法 EVM 地址，另回傳該 trader 的 70% 累計。
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Revenue totals
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Revenue'
+        '429':
+          $ref: '#/components/responses/FreeRateLimited'
+        '502':
+          $ref: '#/components/responses/Upstream'
+  /candles/{symbol}:
+    get:
+      tags: [free]
+      operationId: getCandles
+      summary: OHLCV candles
+      description: |
+        K 線資料。`symbol` 接受 `sBTC`、省略 s 前綴且不分大小寫的 `btc`、或鏈上 bytes32 assetId。
+        來源依序降級（加密資產以 Coinbase 現貨為首選）；回應的 `source` 必須在圖表上標示。
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema:
+            type: string
+          examples:
+            symbol:
+              value: sBTC
+        - name: interval
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ['1m', '5m', '15m', '1h', '4h', '1d']
+            default: '1h'
+        - name: limit
+          in: query
+          required: false
+          description: 蠟燭根數，夾在 1–500；非數字時用預設值 300。
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 300
+        - name: end
+          in: query
+          required: false
+          description: 只回傳早於此 unix 秒數的蠟燭（往回翻頁）。0、負數或非數字視為未提供。
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Candles
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CandleResponse'
+        '400':
+          description: 未知標的或未知時間框
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/FreeRateLimited'
+        '502':
+          $ref: '#/components/responses/Upstream'
+  /benchmarks:
+    get:
+      tags: [free]
+      operationId: getBenchmarks
+      summary: Reference indices (S&P 500, US Treasury, gold, bitcoin)
+      description: |
+        來源為 Yahoo Finance（`^GSPC`、`TLT`、`GC=F`、`BTC-USD`）。不做模擬保底：單一標的失敗時，
+        只有該標的的 `ok` 為 false 並帶 `error`。
+      parameters:
+        - name: date
+          in: query
+          required: false
+          description: 回傳該日或之前最近一個交易日的收盤（`atDate`）。
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+      responses:
+        '200':
+          description: Benchmarks
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BenchmarksResponse'
+        '400':
+          description: 日期格式錯誤或不存在的日曆日
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/FreeRateLimited'
+        '502':
+          $ref: '#/components/responses/Upstream'
+  /agent/{did}/verification:
+    get:
+      tags: [free]
+      operationId: getAgentVerification
+      summary: ERC-8126-style agent verification
+      description: |
+        回傳 agent 驗證結果（ETV／SCV／WAV／WV 與 0–100 風險分數，verifier 簽章）。
+        未設定 `VERIFIER_PRIVATE_KEY` 時，每個實例使用臨時隨機 verifier，結果中會標示。
+      parameters:
+        - name: did
+          in: path
+          required: true
+          description: '`did:pkh:...` 或裸 `0x` 地址（會轉為 did:pkh）。'
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Verification result
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, verification]
+                properties:
+                  ok:
+                    type: boolean
+                    const: true
+                  verification:
+                    type: object
+                    description: 驗證結果物件；欄位由 `agent/shared/src/verification.ts` 定義。
+                    additionalProperties: true
+        '400':
+          description: DID 或地址格式錯誤
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/FreeRateLimited'
+        '502':
+          $ref: '#/components/responses/Upstream'
+  /demo/buy-signal:
+    post:
+      tags: [demo]
+      operationId: demoBuySignal
+      summary: Free demo signal (no payment, no settlement)
+      description: |
+        訪客試用：免費回傳真實的 trader 訊號，不付款、不結算。
+        帶 `Origin` 標頭的請求必須在白名單內（`CORS_ALLOWED_ORIGINS`），否則 403；
+        沒有 `Origin` 的請求不受此限。另有 per-IP 冷卻（預設 15 秒）與每個實例的總量上限（預設 50 次）。
+        body 解析有 1.5 秒逾時，逾時視為沒有 body。
+      parameters:
+        - name: trader
+          in: query
+          required: false
+          description: 與 body 的 `trader` 擇一；body 優先。
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                trader:
+                  type: string
+                  description: 要分析的 trader 地址。未提供時依序使用營運方設定的示範 trader、鏈上第一個已註冊 trader。
+      responses:
+        '200':
+          description: Demo signal
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, paymentInfo, trader, signal]
+                properties:
+                  ok:
+                    type: boolean
+                    const: true
+                  paymentInfo:
+                    type: object
+                    properties:
+                      model:
+                        type: string
+                      priceUsd:
+                        type: number
+                      asset:
+                        type: string
+                      note:
+                        type: string
+                  settlementTx:
+                    type: string
+                    description: demo 一律不結算，此欄位不會出現。
+                  settleError:
+                    type: string
+                  trader:
+                    type: string
+                  signal:
+                    $ref: '#/components/schemas/TraderPerformance'
+        '403':
+          description: Origin 不在白名單
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: '沒有可分析的 trader（`no_demo_trader`）'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: 免費端點節流、per-IP 冷卻或 demo 總量上限
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '502':
+          $ref: '#/components/responses/Upstream'
+  /signals/{trader}:
+    get:
+      tags: [paid]
+      security:
+        - x402: []
+      operationId: getSignal
+      summary: Trader performance and trade suggestion (0.01 USDC)
+      description: |
+        付費端點。付款前依序檢查（任何一項不通過都不發出 402、不扣款）：
+        1. `trader` 必須是合法、非零、且不在已知外洩清單的 EVM 地址 → 否則 400。
+        2. 收款地址守門：必須是 EOA、不在外洩清單、沒有 EIP-7702 委派、不是合約 → 否則 503 `payto_unsafe`。
+        3. `trader` 必須已在 StrategyRegistry 註冊 → 未註冊 400 `trader_not_registered`；
+           讀不到 registry 503 `registry_unavailable`。
+        之後進入 x402：沒有或無效的 `X-PAYMENT` 回 402。付款驗證成功後執行 handler，
+        handler 成功才由 facilitator 結算並帶回 `X-PAYMENT-RESPONSE`；handler 失敗回 400 且不結算。
+        HEAD 請求回 405。
+      parameters:
+        - name: trader
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^0x[0-9a-fA-F]{40}$'
+      responses:
+        '200':
+          $ref: '#/components/responses/PaidSignal'
+        '400':
+          description: 付款前的輸入驗證失敗（非法地址、零地址、`trader_compromised`、`trader_not_registered`），或付款驗證後 handler 失敗（`signals_unavailable`，不結算）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '402':
+          $ref: '#/components/responses/PaymentRequired'
+        '404':
+          $ref: '#/components/responses/PaidNotFound'
+        '405':
+          $ref: '#/components/responses/HeadNotAllowed'
+        '429':
+          $ref: '#/components/responses/FacilitatorRateLimited'
+        '502':
+          $ref: '#/components/responses/FacilitatorUnavailable'
+        '503':
+          description: '收款地址未通過守門（`payto_unsafe`，帶 `Retry-After: 600`），或 registry 無法讀取（`registry_unavailable`）'
+          headers:
+            Retry-After:
+              description: '`payto_unsafe` 時為 600'
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/PayToUnsafe'
+                  - $ref: '#/components/schemas/Error'
+  /oracle/{asset}:
+    get:
+      tags: [paid]
+      security:
+        - x402: []
+      operationId: getOracleSnapshot
+      summary: Decision-grade price snapshot (0.005 USDC)
+      description: |
+        付費端點。付款前依序檢查（任何一項不通過都不發出 402、不扣款）：
+        1. `asset` 必須是已知資產代號（分大小寫）→ 否則 400，回應附 `known` 清單。
+        2. 收款地址守門 → 不通過 503 `payto_unsafe`。
+        3. 鏈上價格若已超過交易所的 `maxPriceAge` → 503 `price_stale`（讀取失敗時不擋，交由下游處理）。
+        之後進入 x402，流程同 `/signals/{trader}`。
+        若營運方未設定 `ORACLE_BENEFICIARY_ADDRESS`（或設定無效／為已知外洩地址），回應仍為 200，
+        但 `settled: false` 並以 `settleError` 說明這筆收入不排入分潤（款項留在收款地址）。
+        HEAD 請求回 405。
+      parameters:
+        - name: asset
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [sBTC, sETH, sAAPL, sTSLA, sGOLD, sBOND, sNVDA, sMSFT, sGOOGL, sICLN, sESGU]
+      responses:
+        '200':
+          $ref: '#/components/responses/PaidOracle'
+        '400':
+          description: 缺少或未知的資產代號（付款前），或付款驗證後 handler 失敗（`oracle_unavailable`，不結算）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '402':
+          $ref: '#/components/responses/PaymentRequired'
+        '404':
+          $ref: '#/components/responses/PaidNotFound'
+        '405':
+          $ref: '#/components/responses/HeadNotAllowed'
+        '429':
+          $ref: '#/components/responses/FacilitatorRateLimited'
+        '502':
+          $ref: '#/components/responses/FacilitatorUnavailable'
+        '503':
+          description: '收款地址未通過守門（`payto_unsafe`），或鏈上價格過期（`price_stale`）'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/PayToUnsafe'
+                  - $ref: '#/components/schemas/PriceStale'
+components:
+  securitySchemes:
+    x402:
+      type: apiKey
+      in: header
+      name: X-PAYMENT
+      description: |
+        x402 付款標頭（base64 編碼、以 EIP-3009 `transferWithAuthorization` 簽署的付款授權）。
+        這不是長期 API key：每次請求依 402 回應的 `accepts` 重新簽署。未提供時回 402。
+  headers:
+    XPaymentResponse:
+      description: facilitator 結算成功的證明（base64 編碼 JSON，含結算交易）。只有結算成功才會出現。
+      schema:
+        type: string
+  responses:
+    FreeRateLimited:
+      description: 免費端點 per-IP 節流
+      headers:
+        Retry-After:
+          schema:
+            type: string
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Upstream:
+      description: 上游或內部錯誤；只回原因代碼（例如 `revenue_unavailable`），完整錯誤只寫伺服器 log
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    PaymentRequired:
+      description: |
+        需要付款。未帶 `X-PAYMENT`、付款標頭無法解析、找不到對應的付款要求、驗證失敗或結算失敗時回傳。
+        瀏覽器請求（`Accept` 含 `text/html` 且 User-Agent 含 `Mozilla`）且未帶付款時，回傳 HTML 付款頁。
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/X402PaymentRequired'
+        text/html:
+          schema:
+            type: string
+    PaidNotFound:
+      description: 請求被付費路由比對器視為付費端點，但正規化後不對應任何實際 handler；不發出 402、不扣款（`not_found`）
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    HeadNotAllowed:
+      description: 付費端點只接受 GET（`method_not_allowed`）
+      headers:
+        Allow:
+          schema:
+            type: string
+            const: GET
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    FacilitatorRateLimited:
+      description: facilitator 限流（`facilitator_rate_limited`）；未扣款，可重試
+      headers:
+        Retry-After:
+          schema:
+            type: string
+            const: '5'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/FacilitatorError'
+    FacilitatorUnavailable:
+      description: facilitator 無法連線或驗證失敗（`facilitator_unavailable`）；未扣款
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/FacilitatorError'
+    PaidSignal:
+      description: 付款成功並回傳資料
+      headers:
+        X-PAYMENT-RESPONSE:
+          $ref: '#/components/headers/XPaymentResponse'
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/PaidEnvelope'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/TraderPerformance'
+    PaidOracle:
+      description: 付款成功並回傳資料
+      headers:
+        X-PAYMENT-RESPONSE:
+          $ref: '#/components/headers/XPaymentResponse'
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/PaidEnvelope'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/OracleSnapshot'
+  schemas:
+    Error:
+      type: object
+      required: [ok, error]
+      properties:
+        ok:
+          type: boolean
+          const: false
+        error:
+          type: string
+          description: 原因代碼或說明
+        message:
+          type: string
+        note:
+          type: string
+          description: 例如「未付款：無效輸入在 x402 付費牆之前就被擋下」
+        known:
+          type: array
+          description: '`/oracle` 未知資產時列出已知代號'
+          items:
+            type: string
+      additionalProperties: true
+    PayToUnsafe:
+      type: object
+      required: [ok, error, reason, payTo]
+      properties:
+        ok:
+          type: boolean
+          const: false
+        error:
+          type: string
+          const: payto_unsafe
+        reason:
+          type: string
+        payTo:
+          type: string
+        note:
+          type: string
+    PriceStale:
+      type: object
+      required: [ok, error, asset, ageSec, maxPriceAgeSec]
+      properties:
+        ok:
+          type: boolean
+          const: false
+        error:
+          type: string
+          const: price_stale
+        message:
+          type: string
+        asset:
+          type: string
+        ageSec:
+          type: number
+        maxPriceAgeSec:
+          type: number
+    FacilitatorError:
+      type: object
+      required: [ok, error, note, facilitator]
+      properties:
+        ok:
+          type: boolean
+          const: false
+        error:
+          type: string
+          enum: [facilitator_rate_limited, facilitator_unavailable]
+        message:
+          type: string
+        note:
+          type: string
+        facilitator:
+          type: string
+          format: uri
+    X402PaymentRequired:
+      type: object
+      description: x402-hono 0.5.3 的 402 本文
+      required: [error, accepts, x402Version]
+      properties:
+        error:
+          description: 說明字串或錯誤物件
+        accepts:
+          type: array
+          items:
+            $ref: '#/components/schemas/PaymentRequirements'
+        payer:
+          type: string
+          description: 驗證失敗時可能出現
+        x402Version:
+          type: integer
+          const: 1
+    PaymentRequirements:
+      type: object
+      required: [scheme, network, maxAmountRequired, resource, payTo, maxTimeoutSeconds, asset]
+      properties:
+        scheme:
+          type: string
+          const: exact
+        network:
+          type: string
+          description: 預設 `base-sepolia`（`X402_NETWORK`）
+        maxAmountRequired:
+          type: string
+          description: 以結算代幣最小單位表示的金額（6 位小數 USDC：/signals 為 10000、/oracle 為 5000）
+        resource:
+          type: string
+        description:
+          type: string
+        mimeType:
+          type: string
+        payTo:
+          type: string
+        maxTimeoutSeconds:
+          type: integer
+          description: 宣告為 60（是否被強制取決於 facilitator，見 KNOWN_LIMITATIONS）
+        asset:
+          type: string
+          description: 結算代幣地址
+        outputSchema:
+          type: object
+          additionalProperties: true
+        extra:
+          type: object
+          description: 結算代幣的 EIP-712 name／version
+          additionalProperties: true
+    PaidEnvelope:
+      type: object
+      required: [ok, settled, data]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        settled:
+          type: boolean
+          description: true 代表分潤已排入結算佇列，**不代表已上鏈**
+        settleError:
+          type: string
+          description: 未排入佇列的原因（例如佇列未設定、入列失敗、/oracle 未設定受益人）
+        data: {}
+    Discovery:
+      type: object
+      required: [service, network, asset, payTo, payToSafety, endpoints]
+      properties:
+        service:
+          type: string
+          const: pepelab-signal-api
+        discoverable:
+          type: boolean
+        description:
+          type: string
+        network:
+          type: string
+        asset:
+          type: string
+          description: 結算代幣地址
+        payTo:
+          type: string
+        payToSafety:
+          type: object
+          properties:
+            safe:
+              type: boolean
+            reason:
+              type: string
+            source:
+              type: string
+            checkedAt:
+              type: [string, 'null']
+              format: date-time
+            note:
+              type: string
+        revenueModel:
+          type: string
+        endpoints:
+          type: object
+          additionalProperties: true
+        example:
+          type: object
+          additionalProperties: true
+    Revenue:
+      type: object
+      required: [model, onChain, totals]
+      properties:
+        model:
+          type: string
+        onChain:
+          type: boolean
+        note:
+          type: string
+        network:
+          type: string
+        settlementToken:
+          type: string
+        feeRouter:
+          type: string
+        totals:
+          type: object
+          properties:
+            count:
+              type: 'null'
+              description: 鏈上只累計金額、無事件掃描，因此一律為 null
+            countNote:
+              type: string
+            feeUsd:
+              type: number
+            traderShare:
+              type: number
+            platformShare:
+              type: number
+            vaultShare:
+              type: number
+        trader:
+          type: object
+          properties:
+            address:
+              type: string
+            traderEarningsUsdc:
+              type: number
+    Candle:
+      type: object
+      required: [t, o, h, l, c, v]
+      properties:
+        t:
+          type: integer
+          description: unix 秒
+        o:
+          type: number
+        h:
+          type: number
+        l:
+          type: number
+        c:
+          type: number
+        v:
+          type: number
+    CandleResponse:
+      type: object
+      required: [ok, symbol, underlying, interval, candles, source, disclaimer]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        symbol:
+          type: string
+        assetId:
+          type: string
+        underlying:
+          type: string
+        interval:
+          type: string
+          enum: ['1m', '5m', '15m', '1h', '4h', '1d']
+        candles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Candle'
+        source:
+          type: object
+          required: [kind, name, url, attribution, reference, fetchedAt]
+          properties:
+            kind:
+              type: string
+              enum: [exchange, delayed, simulated, none]
+            name:
+              type: string
+            url:
+              type: string
+            attribution:
+              type: string
+            reference:
+              type: string
+            fetchedAt:
+              type: number
+        degraded:
+          type: boolean
+        exhausted:
+          type: boolean
+        sourceError:
+          type: string
+        disclaimer:
+          type: string
+    BenchmarkPoint:
+      type: object
+      required: [value, at]
+      properties:
+        value:
+          type: number
+        at:
+          type: integer
+          description: 該收盤價的 unix 秒
+    BenchmarkResult:
+      type: object
+      required: [ok, key, name, symbol]
+      properties:
+        ok:
+          type: boolean
+        key:
+          type: string
+          enum: [spx, bond, gold, btc]
+        name:
+          type: string
+        symbol:
+          type: string
+        current:
+          $ref: '#/components/schemas/BenchmarkPoint'
+        previousClose:
+          $ref: '#/components/schemas/BenchmarkPoint'
+        series:
+          type: array
+          items:
+            type: object
+            properties:
+              t:
+                type: integer
+              c:
+                type: number
+        atDate:
+          allOf:
+            - $ref: '#/components/schemas/BenchmarkPoint'
+            - type: object
+              properties:
+                date:
+                  type: string
+        error:
+          type: string
+    BenchmarksResponse:
+      type: object
+      required: [ok, asOf, requestedDate, benchmarks]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        asOf:
+          type: number
+        requestedDate:
+          type: [string, 'null']
+        benchmarks:
+          type: object
+          properties:
+            spx:
+              $ref: '#/components/schemas/BenchmarkResult'
+            bond:
+              $ref: '#/components/schemas/BenchmarkResult'
+            gold:
+              $ref: '#/components/schemas/BenchmarkResult'
+            btc:
+              $ref: '#/components/schemas/BenchmarkResult'
+    TraderPerformance:
+      type: object
+      description: 定義於 `agent/shared/src/aggregate.ts`（TraderPerformance）
+      properties:
+        trader:
+          type: string
+        isRegistered:
+          type: boolean
+        displayName:
+          type: string
+        registeredAt:
+          type: [string, 'null']
+        isEligible:
+          type: boolean
+        strategyVersion:
+          type: [integer, 'null']
+        strategy:
+          type: array
+          items:
+            type: object
+            properties:
+              asset:
+                type: string
+              weightPercent:
+                type: number
+              direction:
+                type: string
+                enum: [long, short]
+              leverage:
+                type: number
+        positions:
+          type: object
+          properties:
+            total:
+              type: number
+            open:
+              type: number
+            closed:
+              type: number
+            realizedPnL:
+              type: number
+            unrealizedPnL:
+              type: number
+            netPnL:
+              type: number
+        suggestion:
+          type: array
+          items:
+            type: object
+            properties:
+              asset:
+                type: string
+              direction:
+                type: string
+                enum: [long, short]
+              leverage:
+                type: number
+              weightPercent:
+                type: number
+              fundingRatePercent:
+                type: number
+              fundingHeadwind:
+                type: boolean
+              note:
+                type: string
+    OracleSnapshot:
+      type: object
+      description: 定義於 `agent/shared/src/aggregate.ts`（OracleSnapshot）。建議欄位為規則式計算，非投資建議。
+      properties:
+        asset:
+          type: string
+        assetId:
+          type: string
+        price:
+          type: number
+          description: USD
+        updatedAt:
+          type: [string, 'null']
+        isStale:
+          type: boolean
+        ageSec:
+          type: number
+        maxPriceAgeSec:
+          type: number
+        tradableNow:
+          type: boolean
+        fundingRateBps:
+          type: number
+        fundingRatePercent:
+          type: number
+        fundingDirection:
+          type: string
+          enum: [longs_pay, shorts_pay, balanced]
+        longOpenInterest:
+          type: number
+        shortOpenInterest:
+          type: number
+        oiImbalance:
+          type: number
+        skewProxyBps:
+          type: number
+        maintenanceMarginBps:
+          type: number
+        estLiquidation:
+          type: object
+          properties:
+            long:
+              type: object
+              additionalProperties:
+                type: number
+            short:
+              type: object
+              additionalProperties:
+                type: number
+        edgeScore:
+          type: number
+        fundingComponent:
+          type: number
+        oiComponent:
+          type: number
+        recommendation:
+          type: string
+          enum: [long, short, no_trade]
+        confidence:
+          type: number
+        reason:
+          type: string

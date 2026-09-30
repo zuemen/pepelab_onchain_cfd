@@ -5,7 +5,8 @@
   "private": true,
   "main": "src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./autoload-env": "./src/autoload-env.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

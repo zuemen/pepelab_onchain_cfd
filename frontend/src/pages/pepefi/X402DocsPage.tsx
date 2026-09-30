@@ -14,7 +14,9 @@ import AccordionSummary from '@mui/material/AccordionSummary'
 import AccordionDetails from '@mui/material/AccordionDetails'
 
 import { t, interpolate } from 'src/locales'
+import { X402_FEE_ROUTER as ROUTERS } from 'src/contracts/x402'
 import { SIGNAL_API_URL, demoBuySignal } from 'src/lib/pepefi/signalApi'
+import { explorerTx, X402_SETTLEMENT_CHAIN_ID } from 'src/lib/pepefi/explorer'
 import { Mono as Num, LiveDot, PEPE, MONO, hexA } from 'src/components/pepefi/brandKit'
 
 // #154：讀者是一般使用者。前半頁只講「這是什麼、對我有什麼用、怎麼開始」，
@@ -46,9 +48,10 @@ const HOW_STEPS = [docs.how.ask, docs.how.quote, docs.how.pay]
 const FAQ = [docs.faq.spend, docs.faq.trade, docs.faq.real]
 
 const OFFICIAL_USDC = '0x036CbD53842c5426634e7929541eC2318f3dCF7e'
-const X402_FEE_ROUTER = '0x29e5732AC62254d9b92A1C7d3F38EbFA8809B57d'
+// 設定來源：src/contracts/x402.ts（scripts/check-addresses.mjs 與結算 worker 都比對同一份）。
+// 找不到對應鏈時明確顯示「未設定」，不要顯示空白（讀者會以為位址載入失敗）。
+const X402_FEE_ROUTER = ROUTERS[X402_SETTLEMENT_CHAIN_ID] ?? docs.advanced.fact.routerUnset
 const CIRCLE_FAUCET = 'https://faucet.circle.com'
-const basescanTx = (h: string) => `https://sepolia.basescan.org/tx/${h}`
 
 function Mono({ children }: { children: React.ReactNode }) {
   return (
@@ -271,7 +274,7 @@ export default function X402DocsPage() {
             {result.settlementTx && (
               <Alert severity="success" sx={{ mb: 1 }}>
                 {docs.tryBuy.settled}
-                <Link href={basescanTx(result.settlementTx)} target="_blank" rel="noopener" color="inherit" sx={{ textDecoration: 'underline' }}>
+                <Link href={explorerTx(result.settlementTx, X402_SETTLEMENT_CHAIN_ID) ?? undefined} target="_blank" rel="noopener" color="inherit" sx={{ textDecoration: 'underline' }}>
                   {docs.tryBuy.viewSettlement}
                 </Link>
               </Alert>

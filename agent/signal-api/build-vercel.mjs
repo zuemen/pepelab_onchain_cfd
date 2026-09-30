@@ -5,7 +5,7 @@
 import { build } from "esbuild";
 import { writeFile } from "node:fs/promises";
 
-import { fingerprintSources } from "./src/bundleFingerprint.mjs";
+import { fingerprintBundle } from "./src/bundleFingerprint.mjs";
 
 await build({
   entryPoints: ["src/vercel-entry.ts"],
@@ -30,9 +30,11 @@ console.log("✓ bundled api/index.js (self-contained ESM)");
 
 // 把「這份 bundle 是從哪些來源打出來的」一起寫下來。bundle:check 比對的是這個，
 // 不是重新 esbuild 一次的輸出——見 src/bundleFingerprint.mjs 開頭的說明。
-const fp = await fingerprintSources("src");
+// 來源清單 = esbuild metafile 裡所有非 node_modules 的輸入（signal-api/src、
+// agent/shared/src、frontend/src/contracts/*…），鍵以 repo 根目錄為基準。
+const fp = await fingerprintBundle();
 await writeFile(
   "api/.bundle-sources.json",
   `${JSON.stringify({ digest: fp.digest, files: fp.files }, null, 2)}\n`,
 );
-console.log(`✓ wrote api/.bundle-sources.json (${fp.digest})`);
+console.log(`✓ wrote api/.bundle-sources.json (${fp.digest}, ${Object.keys(fp.files).length} files)`);

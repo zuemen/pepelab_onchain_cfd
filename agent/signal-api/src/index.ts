@@ -14,7 +14,8 @@ const app = createApp();
 
 if (!process.env.PAY_TO?.trim()) {
   console.warn(
-    "⚠ 未設 PAY_TO，回退到 MockUSDC FeeRouter；官方 USDC 付款會卡死。請在 .env 設 PAY_TO=treasury EOA。",
+    "⚠ 未設 PAY_TO：回退值是 FeeRouter 合約，收款守門會判定 not_eoa → 付費端點一律回 503 payto_unsafe。" +
+      "請在 .env 設 PAY_TO = FEE_SETTLEMENT_PRIVATE_KEY 的 EOA 地址。",
   );
 }
 

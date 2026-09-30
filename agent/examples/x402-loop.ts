@@ -16,6 +16,7 @@ import { wrapFetchWithPayment } from "x402-fetch";
 import {
   openPositionForSession, getSession, makeProvider, makeContracts, assetIdOf,
   agentDid, appendAudit, type AuditRecord, type AuthorizationVC,
+  meteredFetch, resolveX402MaxValue, formatUsdcAtomic,
 } from "@pepelab/shared";
 import { decide, parseOracleBody } from "./x402-autonomous.ts";
 import { loadVc, localVerifyVc, fetchAgentVerification, AUDIT_PATH, type VcCheck } from "./vc-gate.ts";
@@ -23,9 +24,9 @@ import { loadVc, localVerifyVc, fetchAgentVerification, AUDIT_PATH, type VcCheck
 const API = (process.env.X402_API_URL ?? "https://agent-git-master-zuemens-projects.vercel.app").replace(/\/$/, "");
 const PK = process.env.AGENT_PRIVATE_KEY?.trim();
 const RPC = process.env.BASE_SEPOLIA_RPC_URL?.trim() || "https://sepolia.base.org";
-// session id 是每個 manager 各自獨立的。新的 AgentSessionManager
-// (0x4E7cC1B7…) 目前只有 #0：到期 2027-07、白名單 sBTC+sETH。#6 只存在於
-// 舊的 0x5Ebcc64C…（無資產白名單），兩者不可混用。
+// session id 是每個 manager 各自獨立的。現行 AgentSessionManager
+// (0xdF9C1E53523568709f65Afe3C4AD2E6a6D99d14B，綁現行 exchange）目前只有 #0（到期 2027-07）。
+// 舊的 0x4E7cC1B7… / 0x5Ebcc64C… 上的 session id 在這裡無效，不可混用。
 const SESSION_ID = Number(process.env.DEMO_SESSION_ID ?? "0");
 const ASSETS = (process.env.ASSETS ?? "sBTC,sETH").split(",").map((s) => s.trim()).filter(Boolean);
 const INTERVAL_MS = Number(process.env.INTERVAL_MIN ?? "15") * 60_000;
@@ -41,7 +42,15 @@ const MAX_SPEND_USDC = Number(process.env.LOOP_MAX_SPEND_USDC ?? "1");     // �
 const MAX_ROUNDS = Number(process.env.LOOP_MAX_ROUNDS ?? "0");            // 0 = 不限輪數
 const MAX_CONSECUTIVE_FAILURES = Number(process.env.LOOP_MAX_FAILURES ?? "5");
 
-let spentUsdc = 0;          // 已花掉的 x402 資料費（累計）
+let spentUsdc = 0;          // 已花掉的 x402 資料費（累計，**實付**金額）
+// 2026-09-29（P0）：花費上限改用實際付款金額累計。METER 包在 wrapFetchWithPayment
+// 底下，從送出的 X-PAYMENT 讀 EIP-3009 authorization.value；付款成立才累計。
+// 以前是「ORACLE_PRICE_USDC × 次數」——伺服器改價或回不同的 402，這個數字就不準。
+const METER = meteredFetch();
+// 單筆上限（X402_MAX_PAYMENT_USDC，預設 0.02）：同時用來做「下一筆付了會不會超過
+// 上限」的保守預檢——實付不可能超過它，所以預檢過了就保證不會超過 MAX_SPEND_USDC。
+const MAX_VALUE = resolveX402MaxValue();
+const MAX_VALUE_USDC = Number(formatUsdcAtomic(MAX_VALUE));
 let consecutiveFailures = 0; // 連續整輪失敗次數
 
 const link = (h?: string) => (h ? `https://sepolia.basescan.org/tx/${h}` : "");
@@ -109,14 +118,16 @@ async function runRound(ctx: RoundCtx): Promise<boolean> {
         console.log(`  ${symbol}: VC 無效，跳過（未付費）`);
         appendAudit(AUDIT_PATH, rec); anySuccess = true; continue;
       }
-      if (spentUsdc + ORACLE_PRICE_USDC > MAX_SPEND_USDC) {
+      if (spentUsdc + MAX_VALUE_USDC > MAX_SPEND_USDC) {
         rec.decision.reason = `已達累計資料費上限（${spentUsdc.toFixed(3)}/${MAX_SPEND_USDC} USDC）`;
         console.log(`  ${symbol}: 已達花費上限，跳過（未付費）`);
         appendAudit(AUDIT_PATH, rec); anySuccess = true; continue;
       }
 
       const res = await payFetch(`${API}/oracle/${symbol}`, { method: "GET" });
-      spentUsdc += ORACLE_PRICE_USDC;
+      spentUsdc = Number(formatUsdcAtomic(METER.totalPaidAtomic()));
+      const paid = METER.lastPaidAtomic();
+      rec.research.priceUsdc = paid === null ? "0" : formatUsdcAtomic(paid);
       const body = await res.json().catch(() => null);
       rec.research.settlementTx = decodePaymentTx(res) ?? null;
       const payTx = rec.research.settlementTx ?? undefined;
@@ -171,12 +182,16 @@ async function main() {
 
   const account = privateKeyToAccount(PK as Hex);
   const wallet = createWalletClient({ account, chain: baseSepolia, transport: http(RPC) }).extend(publicActions);
-  const payFetch = wrapFetchWithPayment(fetch, wallet as unknown as Parameters<typeof wrapFetchWithPayment>[1]) as unknown as typeof fetch;
+  const payFetch = wrapFetchWithPayment(
+    METER.fetch,
+    wallet as unknown as Parameters<typeof wrapFetchWithPayment>[1],
+    MAX_VALUE,
+  ) as unknown as typeof fetch;
 
   const first: any = await getSession(SESSION_ID);
   console.log(`x402-loop 上線。session #${SESSION_ID}（user ${first?.detail?.user ?? account.address}）・資產 [${ASSETS.join(", ")}]・每 ${INTERVAL_MS / 60000} 分・冷卻 ${COOLDOWN_MS / 60000} 分。`);
   console.log(
-    `上限：累計資料費 ≤ ${MAX_SPEND_USDC} USDC・` +
+    `上限：累計資料費 ≤ ${MAX_SPEND_USDC} USDC（以實付計）・單筆 ≤ ${MAX_VALUE_USDC} USDC・` +
       `輪數 ${MAX_ROUNDS > 0 ? MAX_ROUNDS : "不限"}・連續失敗 ${MAX_CONSECUTIVE_FAILURES} 次即停。稽核 → ${AUDIT_PATH}`,
   );
 

@@ -8,8 +8,11 @@
 //   write（Phase 2，經 AgentSessionManager session 限額）:
 //     - open_position           → openPositionForSession
 //     - close_position          → closePositionForSession
-// 透過 stdio 傳輸；合約讀取走 Ethereum Sepolia。寫操作需 AGENT_PRIVATE_KEY
+// 透過 stdio 傳輸；合約讀取走 Base Sepolia（chainId 84532）。寫操作需 AGENT_PRIVATE_KEY
 // （session key）+ SESSION_MANAGER_ADDRESS；缺任一時 tool 回明確錯誤、不 crash。
+// 必須是第一個 import：在 @pepelab/shared 其他模組求值（例如 addresses.ts 讀
+// AGENT_CHAIN_ID）之前先載入 agent/.env。下方的 loadEnv() 保留為冪等的保險。
+import "@pepelab/shared/autoload-env";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";

@@ -30,6 +30,8 @@ export const traderDashboard: Catalog['traderDashboard'] = {
     stakeRequiredBody:
       'You need to stake at least 100 USDC before publishing a strategy. This gives followers confidence that you have skin-in-the-game.',
     goToStake: 'Go to Trader Stake →',
+    stakeRequiredBodyNeutral:
+      'Publishing a strategy requires a trader reputation stake of at least 100 USDC, so anyone using your strategy knows you have skin in the game.',
 
     empty: 'Click "+ Add Asset" to build your strategy.',
 
@@ -47,6 +49,13 @@ export const traderDashboard: Catalog['traderDashboard'] = {
     mustReach: 'must reach',
     weightTarget: '{state} 100%',
     autoFix: 'Auto-fix to 100%',
+
+    issue: {
+      tooFew: 'A strategy needs at least {min} assets (currently {got}).',
+      exceedsMax: 'Row {row} weight {pct}% exceeds the 50% single-asset cap.',
+      zeroWeight: 'Row {row} weight cannot be 0.',
+      roundingAdjusted: 'A {bps} bps rounding difference was added to the largest weight so the total is 100.00%.',
+    },
 
     publishing: 'Publishing…',
     cta: 'Publish Strategy',
@@ -68,6 +77,8 @@ export const traderDashboard: Catalog['traderDashboard'] = {
     claimAll: 'Claim All',
     note: 'Earnings accrue when followers pay the 0.3% copy fee or close copied positions in profit (10% performance fee). Your share is 70% of each fee.',
     claimed: 'Earnings claimed ✓',
+    claimableNeutral: 'Claimable trader earnings',
+    noteNeutral: 'Trader earnings accrue in the FeeRouter under on-chain rules; your share is 70% of each fee.',
   },
 
   history: {

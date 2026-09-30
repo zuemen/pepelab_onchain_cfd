@@ -17,6 +17,26 @@ export const common = {
 
     mockTitle: 'Pepe 簡報測試通道 (模擬 Web3)',
     mockDesc: '無須錢包即可一鍵進入系統、切換 Pepe 蛙頭像與測試跟單',
+
+    /** useWallet 連線失敗的原因。 */
+    error: {
+      notDetected: '未偵測到 MetaMask，請先安裝瀏覽器擴充功能。',
+      pending: 'MetaMask 有一個尚未處理的請求，請打開 MetaMask 並核准。',
+      rejected: '連線已被拒絕，請在 MetaMask 中核准。',
+      failed: '連線失敗',
+    },
+
+    /** 需要錢包的頁面在未連線時的提示。 */
+    connectPrompt: {
+      marketplace: '連接錢包以瀏覽市集。',
+      stake: '連接錢包以管理你的質押。',
+      sessions: '連接錢包以管理 agent session。',
+    },
+  },
+
+  /** ⌘K 搜尋框。 */
+  search: {
+    placeholder: '搜尋功能…',
   },
 
   /** 確認對話框的預設按鈕文字，呼叫端可以各自覆寫。 */
@@ -55,9 +75,43 @@ export const common = {
     },
   },
 
+  /**
+   * 合成資產揭露（資產頁、交易頁、首頁）。措辭刻意保守：這是給做盡職調查的機構看的，
+   * 每一句都要能被法遵逐字檢視——不寫「安全」「保證」，也不淡化非足額抵押。
+   */
+  disclosure: {
+    title: '重要揭露：測試網研究原型，非真實資產',
+    summary: '本站所有資產、資金與交易皆為測試網模擬，不具任何真實價值。',
+    prototype:
+      '本站為部署於 Base Sepolia 測試網的研究原型，所有代幣、資金與交易皆為模擬，不涉及真實資產或金錢。',
+    synthetic:
+      '本站所有合成代幣——股票（如 sAAPL、sTSLA、sNVDA）、債券（sBOND）、黃金（sGOLD）、加密資產（sBTC、sETH）與 ETF（sICLN、sESGU）——皆為 AssetVault 發行的合成曝險，且非足額抵押：僅以預言機價格追蹤標的，平台並未持有任何標的資產，也沒有一比一的準備；持有人不具股東、債權人或基金受益人權利（包括表決權、股利或利息請求權），亦無對任何發行人或實物的求償權，贖回取決於 AssetVault 的流動性。',
+    noAdvice: '本站內容僅供技術展示與研究，不構成投資建議、要約或招攬。',
+    expand: '展開',
+    collapse: '收合',
+  },
+
+  /** 錢包在錯的鏈上時的切鏈按鈕（lib/pepefi/switchChain.ts）。 */
+  switchChain: {
+    cta: '切換到 Base Sepolia',
+    switching: '切換中…',
+    rejected: '已在錢包中取消切換。',
+    failed: '錢包無法切換網路，請在錢包中手動切到 Base Sepolia（chainId 84532）。',
+  },
+
+  /** 商業版旗標關閉時，直接打網址看到的頁面（見 lib/pepefi/featureFlags.ts）。 */
+  featureDisabled: {
+    title: '此功能未啟用',
+    body: '這個部署沒有開啟此功能。如需使用，請聯繫平台營運方。',
+    backHome: '回到首頁',
+  },
+
   account: {
     displayNameLabel: '編輯暱稱',
     saveName: '儲存變更',
+    closeAria: '關閉帳戶選單',
+    notConnected: '尚未連接錢包',
+    nicknamePlaceholder: '輸入暱稱…',
   },
 
   /**

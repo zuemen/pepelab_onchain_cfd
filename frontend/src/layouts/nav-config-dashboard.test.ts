@@ -2,6 +2,8 @@ import { it, expect, describe } from 'vitest'
 
 import { paths } from 'src/routes/paths'
 
+import { FEATURES } from 'src/lib/pepefi/featureFlags'
+
 import { navData, navDataForMode } from './nav-config-dashboard'
 
 // issue #101 — Mode 分流 11 / 11. `mode-context.test.ts` is the precedent:
@@ -24,8 +26,8 @@ describe('navDataForMode — simple', () => {
     expect(simple).toHaveLength(1)
   })
 
-  it('恰好 8 個側邊欄入口——其餘 3 個 Simple 頁面(Landing / Copy / TraderProfile)不在側邊欄', () => {
-    expect(simplePaths).toHaveLength(8)
+  it('恰好 8 個側邊欄入口(GameFi 旗標關閉時 7 個)——其餘 3 個 Simple 頁面(Landing / Copy / TraderProfile)不在側邊欄', () => {
+    expect(simplePaths).toHaveLength(FEATURES.gamefi ? 8 : 7)
   })
 
   it('投資人視角需要的入口都在', () => {
@@ -37,7 +39,7 @@ describe('navDataForMode — simple', () => {
       paths.pepefi.history,
       paths.pepefi.sessions,
       paths.pepefi.exchange,
-      paths.pepefi.pepe,
+      ...(FEATURES.gamefi ? [paths.pepefi.pepe] : []),
     ]) {
       expect(simplePaths, p).toContain(p)
     }
@@ -73,5 +75,19 @@ describe('navDataForMode — simple', () => {
     for (const p of [paths.pepefi.marketplace, paths.pepefi.esg, paths.pepefi.history, paths.pepefi.sessions]) {
       expect(simplePaths).toContain(p)
     }
+  })
+})
+
+describe('商業版旗標——關閉的功能不出現在任何模式的導覽(側邊欄、手機選單與 ⌘K 共用這份資料)', () => {
+  it('GameFi / PEPE 獎勵關閉時 /pepe、/rewards 不在 Expert 與 Simple 導覽裡', () => {
+    for (const mode of ['expert', 'simple'] as const) {
+      const all = pathsOf(navDataForMode(mode))
+      if (!FEATURES.gamefi) expect(all).not.toContain(paths.pepefi.pepe)
+      if (!FEATURES.pepeRewards) expect(all).not.toContain(paths.pepefi.rewards)
+    }
+  })
+
+  it('沒有空的導覽區塊', () => {
+    for (const section of navData) expect(section.items.length).toBeGreaterThan(0)
   })
 })

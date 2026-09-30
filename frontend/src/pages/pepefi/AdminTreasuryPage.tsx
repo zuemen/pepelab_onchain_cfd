@@ -1,6 +1,7 @@
 import { MONO } from 'src/components/pepefi/brandKit'
-import { useState, useEffect, useCallback } from 'react'
-import type { EventLog } from 'ethers'
+import { UI_RETRIES, scanFromBlock, scanContractEvents } from 'src/lib/pepefi/chainLogs'
+import { TableSkeleton } from 'src/components/pepefi/Skeleton'
+import { useRef, useState, useEffect, useCallback } from 'react'
 import { parseEther, formatEther, formatUnits } from 'ethers'
 import { useContracts } from 'src/hooks/useContracts'
 import { usePepefiWallet } from 'src/layouts/pepefi'
@@ -119,26 +120,46 @@ export default function AdminTreasuryPage() {
   }, [contracts, wallet.address, wallet.provider])
 
   // ── Fetch history ─────────────────────────────────────────────────────────
+  // 回看 scanFromBlock 的預設視窗，走分段 getLogs（公開節點單次上限 1,000 塊，
+  // 以前單發 10,000 塊必定失敗、再被 catch 吞成「尚無兌現紀錄」）。
+  const [historyFailed, setHistoryFailed] = useState(false)
+  /** 掃描進行中。載入中不能顯示「尚無兌現紀錄」。 */
+  const [historyLoading, setHistoryLoading] = useState(true)
+  const historyRun = useRef(0)
+  // 換帳號（或換鏈）時先清空：上一個帳號的兌現紀錄不能掛在新帳號底下。
+  useEffect(() => {
+    setHistory([])
+    setHistoryFailed(false)
+  }, [wallet.address, wallet.chainId])
   const fetchHistory = useCallback(async () => {
-    if (!contracts || !wallet.address || !wallet.provider) return
+    // 早退也要遞增：讓還在飛的舊掃描（例如換帳號前那一輪）回來時被丟棄。
+    historyRun.current += 1
+    const myRun = historyRun.current
+    if (!contracts || !wallet.address || !wallet.provider) { setHistoryLoading(false); return }
+    const isStale = () => myRun !== historyRun.current
+    setHistoryLoading(true)
     try {
       const current   = await wallet.provider.getBlockNumber()
-      const fromBlock = Math.max(0, current - 10000)
+      const fromBlock = scanFromBlock({ chainId: wallet.chainId, currentBlock: current })
 
-      const [claimLogs, swapLogs] = await Promise.all([
-        contracts.feeRouter.queryFilter(
-          contracts.feeRouter.filters.PlatformFeesWithdrawn(wallet.address),
-          fromBlock, 'latest',
+      const [claimScan, swapScan] = await Promise.all([
+        scanContractEvents(
+          wallet.provider,
+          contracts.feeRouter,
+          [contracts.feeRouter.filters.PlatformFeesWithdrawn(wallet.address)],
+          fromBlock, current, { retries: UI_RETRIES },
         ),
-        contracts.swapRouter.queryFilter(
-          contracts.swapRouter.filters.SwapUsdcToEth(wallet.address),
-          fromBlock, 'latest',
+        scanContractEvents(
+          wallet.provider,
+          contracts.swapRouter,
+          [contracts.swapRouter.filters.SwapUsdcToEth(wallet.address)],
+          fromBlock, current, { retries: UI_RETRIES },
         ),
       ])
 
       const records: CashOutRecord[] = []
-      for (const log of claimLogs) {
-        const args = (log as EventLog).args
+      for (const log of claimScan.events) {
+        const args = log.args
         records.push({
           type:        'claim',
           amount:      (args.amount ?? args[1] ?? 0n) as bigint,
@@ -146,8 +167,8 @@ export default function AdminTreasuryPage() {
           blockNumber: log.blockNumber,
         })
       }
-      for (const log of swapLogs) {
-        const args = (log as EventLog).args
+      for (const log of swapScan.events) {
+        const args = log.args
         records.push({
           type:        'swap',
           amount:      (args.ethOut ?? args[2] ?? 0n) as bigint,
@@ -157,11 +178,16 @@ export default function AdminTreasuryPage() {
         })
       }
       records.sort((a, b) => b.blockNumber - a.blockNumber)
+      if (isStale()) return
       setHistory(records)
+      setHistoryFailed(claimScan.failedChunks + swapScan.failedChunks > 0)
     } catch (e) {
       console.error('[history fetch]', e)
+      if (!isStale()) setHistoryFailed(true)
+    } finally {
+      if (!isStale()) setHistoryLoading(false)
     }
-  }, [contracts, wallet.address, wallet.provider])
+  }, [contracts, wallet.address, wallet.provider, wallet.chainId])
 
   // ── Fetch PEPE balances ────────────────────────────────────────────────────
   const fetchPepeBalances = useCallback(async () => {
@@ -198,7 +224,8 @@ export default function AdminTreasuryPage() {
       await tx.wait()
       notify(t.admin.treasury.claim.done, true, tx.hash)
       await fetchStats()
-      await fetchHistory()
+      // 紀錄掃描要幾十段 getLogs，不擋按鈕解鎖——背景刷新即可。
+      void fetchHistory()
     } catch (e) {
       notify(prettyError(e), false)
     } finally { setLoad('claim', false) }
@@ -228,7 +255,8 @@ export default function AdminTreasuryPage() {
       notify(interpolate(t.admin.treasury.swap.done, { amount: swapAmt, eth: ethOut }), true, tx.hash)
       setSwapAmt('')
       await fetchStats()
-      await fetchHistory()
+      // 紀錄掃描要幾十段 getLogs，不擋按鈕解鎖——背景刷新即可。
+      void fetchHistory()
     } catch (e) {
       notify(prettyError(e), false)
     } finally { setLoad('swap', false) }
@@ -539,7 +567,19 @@ export default function AdminTreasuryPage() {
           </Button>
         </Box>
 
-        {history.length === 0 ? (
+        {historyFailed && history.length > 0 && (
+          <Alert severity="warning" sx={{ mb: 2 }}>{t.admin.treasury.history.partial}</Alert>
+        )}
+        {historyLoading && history.length === 0 ? (
+          <TableSkeleton rows={3} cols={3} />
+        ) : history.length === 0 && historyFailed ? (
+          // 讀取失敗不是「尚無兌現紀錄」。
+          <EmptyState
+            icon="⚠️"
+            title={t.admin.treasury.history.readFailedTitle}
+            description={t.admin.treasury.history.readFailedDescription}
+          />
+        ) : history.length === 0 ? (
           <EmptyState
             icon="📋"
             title={t.admin.treasury.history.emptyTitle}

@@ -28,6 +28,11 @@ export interface SynthHoldings {
   /** 餘額為 0 的資產不會出現在這裡——配置圖的四類補零由 groupByAssetClass 負責。 */
   rows: HoldingRow[]
   loading: boolean
+  /**
+   * 餘額讀不到的檔數。> 0 時 rows 可能少了幾檔——淨值與「空投資組合」判斷都不能
+   * 把它當成「沒有持倉」（見 lib/pepefi/portfolio.ts 的 spotValueOf）。
+   */
+  readFailures: number
   /** 重新讀一次。買賣完成後呼叫它，配置圖才會跟著動。 */
   refresh: () => Promise<void>
 }
@@ -39,6 +44,7 @@ export function useSynthHoldings(): SynthHoldings {
 
   const [rows, setRows] = useState<HoldingRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [readFailures, setReadFailures] = useState(0)
 
   const isV2 = !!v2
 
@@ -55,10 +61,12 @@ export function useSynthHoldings(): SynthHoldings {
   const refresh = useCallback(async () => {
     if (!address || !vault || !oracle || !runner) {
       setRows([])
+      setReadFailures(0)
       setLoading(false)
       return
     }
     const symbols = symbolKey ? (symbolKey.split(',') as AssetSymbol[]) : []
+    let failures = 0
     const read = await Promise.all(
       symbols.map(async (sym): Promise<HoldingRow | null> => {
         const id = ASSET_IDS[sym]
@@ -68,14 +76,19 @@ export function useSynthHoldings(): SynthHoldings {
         // revert）不該讓整個配置圖變空，那會讓「讀不到」看起來像「沒有持倉」。
         const [priceRes, balance] = await Promise.all([
           safeRead(oracle.getPrice(id) as Promise<[bigint, bigint]>, [0n, 0n] as [bigint, bigint]),
-          safeRead(new Contract(tokenAddr, tokenAbi, runner).balanceOf(address) as Promise<bigint>, 0n),
+          safeRead<bigint | null>(new Contract(tokenAddr, tokenAbi, runner).balanceOf(address) as Promise<bigint>, null),
         ])
+        if (balance === null) {
+          failures += 1
+          return null
+        }
         if (balance === 0n) return null
         const row: HoldingRow = { asset: id, balance, price: priceRes[0] }
         return row
       }),
     )
     setRows(read.filter((r): r is HoldingRow => r !== null))
+    setReadFailures(failures)
     setLoading(false)
     // tokens/vault/oracle 都是從 chainId + 版本推出來的，symbolKey 與 isV2 已經
     // 代表它們；把物件本身放進 deps 只會讓 effect 每次 render 都重跑。
@@ -86,5 +99,5 @@ export function useSynthHoldings(): SynthHoldings {
     void refresh()
   }, [refresh])
 
-  return { rows, loading, refresh }
+  return { rows, loading, readFailures, refresh }
 }

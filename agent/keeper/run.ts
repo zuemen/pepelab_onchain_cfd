@@ -15,30 +15,58 @@
 // 完全跳過，不影響價格寫入。
 import { ethers } from "ethers";
 import {
-  toPrice8,
-  planUpdate,
-  stepTowards,
-  deviationAccepted,
-  guardDeviation,
-  DEFAULT_MAX_DEVIATION,
-  DEFAULT_REJECT_DEVIATION,
-  type ParsedFeed,
+  runVerdict,
+  summaryLine,
+  isRevertWith,
+  ASSET_NOT_FOUND_SELECTOR,
+  DEFAULT_BREAKER_DEVIATION,
+  DEFAULT_CONFIRM_TOLERANCE,
+  BREAKER_RANGE,
+  CONFIRM_TOLERANCE_RANGE,
+  DEVIATION_THRESHOLD_RANGE,
+  HEARTBEAT_RANGE,
+  DEGRADED_RATIO_RANGE,
+  parseRatioEnv,
 } from "./core.ts";
-import { fetchPrice, type QuoteMeta } from "./feeds.ts";
+import { fetchMarketSession, fetchPrice, fetchSecondaryPrice } from "./feeds.ts";
+import { runRound, type RoundResult } from "./round.ts";
+import { describeProtection, protectAsset } from "./protect.ts";
+import type { HealthReport } from "./alert.ts";
+import { writeFileSync } from "node:fs";
+import { classifyProbeError, decideAssetMode, modeName, switchesMode } from "./operator.ts";
+import type { MarketSession } from "./market.ts";
 
 const SYMBOLS = [
   "sBTC", "sETH", "sAAPL", "sTSLA", "sNVDA",
   "sMSFT", "sGOOGL", "sGOLD", "sBOND", "sICLN", "sESGU",
 ] as const;
 
-const DEVIATION_THRESHOLD = Number(process.env.KEEPER_DEVIATION ?? "0.001"); // 0.1%
-const HEARTBEAT_SEC = Number(process.env.KEEPER_HEARTBEAT ?? "900");         // 15 分鐘
+// 所有數值型環境變數都驗證是有限數且在合理範圍內，否則 exit 1（複審 Low）：
+// NaN 會讓每個比較都是 false —— 熔斷形同關閉、heartbeat 永不觸發、降級門檻失效。
+function numEnvOrDie(
+  name: string,
+  def: number,
+  range: readonly [number, number],
+  opts: { minInclusive?: boolean } = {},
+): number {
+  const r = parseRatioEnv(name, process.env[name], def, range[0], range[1], opts);
+  if (r.error !== undefined) {
+    console.error(`::error::${r.error}`);
+    process.exit(1);
+  }
+  return r.value;
+}
+const DEVIATION_THRESHOLD = numEnvOrDie("KEEPER_DEVIATION", 0.001, DEVIATION_THRESHOLD_RANGE); // 0.1%
+const HEARTBEAT_SEC = numEnvOrDie("KEEPER_HEARTBEAT", 900, HEARTBEAT_RANGE);                   // 15 分鐘
 const DRY_RUN = process.env.DRY_RUN === "1";
-// A-5：寫進 MockOracle（交易所實際讀的那顆）的偏離上限與拒寫門檻。
-const MAX_DEVIATION = Number(process.env.KEEPER_MAX_DEVIATION ?? String(DEFAULT_MAX_DEVIATION));
-const REJECT_DEVIATION = Number(process.env.KEEPER_REJECT_DEVIATION ?? String(DEFAULT_REJECT_DEVIATION));
+// A-5：寫進 MockOracle（交易所實際讀的那顆）的熔斷門檻；超過就需要多源確認，
+// 確認不過就拒寫（熔斷語意，見 core.ts guardDeviation）。實際使用時再被 GuardedOracle
+// 的上限壓低（round.ts effectiveBreaker）。
+const BREAKER_DEVIATION = numEnvOrDie("KEEPER_BREAKER_DEVIATION", DEFAULT_BREAKER_DEVIATION, BREAKER_RANGE);
+// 多源確認：獨立來源彼此差距 ≤ 這個比例且方向一致，才寫入共識價。
+const CONFIRM_TOLERANCE = numEnvOrDie("KEEPER_CONFIRM_TOLERANCE", DEFAULT_CONFIRM_TOLERANCE, CONFIRM_TOLERANCE_RANGE);
 // 部分失敗門檻：超過這個比例的資產無法更新就讓 CI 變紅（預設 30%）。
-const MAX_DEGRADED_RATIO = Number(process.env.KEEPER_MAX_DEGRADED_RATIO ?? "0.3");
+const MAX_DEGRADED_RATIO = numEnvOrDie("KEEPER_MAX_DEGRADED_RATIO", 0.3, DEGRADED_RATIO_RANGE, { minInclusive: true });
 
 const CHAIN = (process.env.KEEPER_CHAIN ?? "base-sepolia").trim();
 const CHAIN_ID = CHAIN === "sepolia" ? 11155111 : 84532;
@@ -64,6 +92,16 @@ const RELAY_SOURCE = (
   process.env.KEEPER_RELAY_SOURCE ?? process.env.RELAY_SOURCE ?? ""
 ).trim();
 
+// 選用（預設關閉）：marketOperator 休市切換，見 keeper/operator.ts。
+// 需要 exchange 已部署 setAssetMode（contracts/p1-guardian-market-modes）且 owner 已
+// setMarketOperator(keeper 地址)。線上舊 exchange 沒有這個函式 → 探測後略過並記錄。
+const MARKET_OPERATOR = process.env.KEEPER_MARKET_OPERATOR === "1";
+const EXCHANGE_ADDR = (process.env.KEEPER_EXCHANGE_ADDRESS ?? process.env.EXCHANGE ?? "").trim();
+// 選用：熔斷報告（alert.ts 的 HealthReport 形狀）與拒寫清單（一行一個 symbol，
+// funding crank 據此跳過）。workflow 設在 $RUNNER_TEMP。
+const REPORT_PATH = (process.env.KEEPER_REPORT_PATH ?? "").trim();
+const REFUSED_PATH = (process.env.KEEPER_REFUSED_PATH ?? "").trim();
+
 if (!RPC_URL) {
   console.error("::error::KEEPER_RPC_URL 未設");
   process.exit(1);
@@ -86,6 +124,14 @@ const GUARDED_ABI = [
   "function peek(bytes32 assetId) view returns (uint256 price, uint256 updatedAt, bool exists, bool frozen)",
   "function maxDeviationBps() view returns (uint256)",
 ];
+// 熔斷停單（切 ReduceOnly）與訊息用的 maxPriceAge；舊 exchange 沒有前三個函式。
+// keeper 不再凍結 GuardedOracle（窄複審 1，見 protect.ts）。
+const EXCHANGE_PROTECT_ABI = [
+  "function marketOperator() view returns (address)",
+  "function assetMode(bytes32 asset) view returns (uint8)",
+  "function setAssetMode(bytes32 asset, uint8 mode) external",
+  "function maxPriceAge() view returns (uint256)",
+];
 const AGGREGATOR_ABI = [
   "function getPrice(bytes32 assetId) view returns (uint256 price, uint256 updatedAt)",
   "function isStale(bytes32 assetId) view returns (bool)",
@@ -97,6 +143,10 @@ const VAULT_ABI = [
   "event ReserveRestored(uint256 ratioBps, uint256 minRatioBps)",
 ];
 const VAULT_IFACE = new ethers.Interface(VAULT_ABI);
+const EXCHANGE_MODE_ABI = [
+  "function assetMode(bytes32 asset) view returns (uint8)",
+  "function setAssetMode(bytes32 asset, uint8 mode) external",
+];
 
 /**
  * 從鏈上的參考聚合器讀一個價。拿不到就回 null —— 多數股票在測試網上沒有
@@ -105,13 +155,14 @@ const VAULT_IFACE = new ethers.Interface(VAULT_ABI);
 async function fetchFromRelay(
   agg: ethers.Contract | null,
   assetId: string,
-): Promise<number | null> {
+): Promise<{ price: number; updatedAt: number } | null> {
   if (!agg) return null;
   try {
     if ((await agg.isStale(assetId)) as boolean) return null;
-    const [raw] = (await agg.getPrice(assetId)) as [bigint, bigint];
+    const [raw, at] = (await agg.getPrice(assetId)) as [bigint, bigint];
     const p = Number(raw) / 1e8;
-    return Number.isFinite(p) && p > 0 ? p : null;
+    // updatedAt 給多源確認判斷新鮮度（鏈上時間戳，不是 keeper 讀取的時間）。
+    return Number.isFinite(p) && p > 0 ? { price: p, updatedAt: Number(at) } : null;
   } catch {
     return null;
   }
@@ -158,108 +209,94 @@ async function main(): Promise<void> {
       : null;
   if (relay) console.log(`relay source: ${RELAY_SOURCE}（優先於外部 API）`);
 
-  const nowSec = Math.floor(Date.now() / 1000);
-  let wrote = 0;
-  let failed = 0;
-  let available = 0;   // 拿到合法價格的資產數
-  let skipped = 0;     // 來源壞掉而跳過的資產數
-  let rejected = 0;    // 價格離譜、被偏離上限拒寫的資產數（A-5）
-  let clamped = 0;     // 被夾到偏離上限、分段逼近的資產數
-
-  for (const symbol of SYMBOLS) {
-    const assetId = ethers.id(symbol); // == cast keccak "$SYM"
-
-    // 優先中繼鏈上的去中心化聚合價；聚合器沒有這個資產的 feed（測試網上多數股票
-    // 都是如此）或自報過期時，才退回外部 API。
-    const relayed = await fetchFromRelay(relay, assetId);
-    const feed: ParsedFeed & QuoteMeta & { source: string } =
-      relayed !== null
-        ? { value: relayed, reason: "ok", source: "chainlink/pyth relay" }
-        : await fetchPrice(symbol);
-
-    if (feed.value === null) {
-      // 拒絕而不是夾擠：夾擠出來的價格讀者無法分辨真假。
-      console.log(`${symbol.padEnd(6)} 來源無效，跳過 (${feed.source}: ${feed.reason})`);
-      skipped += 1;
-      continue;
-    }
-    available += 1;
-
-    let current = 0;
-    let lastUpdated = 0;
-    try {
-      const [raw, at] = (await oracle.getPrice(assetId)) as [bigint, bigint];
-      current = Number(raw) / 1e8;
-      lastUpdated = Number(at);
-    } catch {
-      // 資產還沒被 addAsset：current 留 0，planUpdate 會判為 seed。
-    }
-
-    const plan = planUpdate({
-      target: feed.value,
-      current,
-      lastUpdatedSec: lastUpdated,
-      nowSec,
-      deviationThreshold: DEVIATION_THRESHOLD,
-      heartbeatSec: HEARTBEAT_SEC,
-    });
-
-    const ageMin = lastUpdated > 0 ? ((nowSec - lastUpdated) / 60).toFixed(1) : "n/a";
-    const quoteAge =
-      typeof feed.quoteAgeSec === "number" ? ` quote=${(feed.quoteAgeSec / 3600).toFixed(1)}h` : "";
-    console.log(
-      `${symbol.padEnd(6)} [${feed.source.padEnd(20)}] live=$${feed.value.toFixed(2).padStart(10)} ` +
-      `chain=$${current.toFixed(2).padStart(10)} age=${ageMin}m${quoteAge} → ${plan.write ? "WRITE" : "skip"} (${plan.reason})`,
-    );
-    // 偽新鮮度：報價本身很舊（週末收盤價/來源凍結），寫上鏈會讓 updatedAt 看起來
-    // 新鮮但價格是好幾天前的。價格照寫（否則週末會全部跳過），但必須說出來。
-    if (feed.quoteStale) {
-      console.log(
-        `::warning::${symbol} 來源報價已 ${((feed.quoteAgeSec ?? 0) / 3600).toFixed(1)} 小時未更新` +
-          `（可能是週末/假日收盤價）—— 鏈上 updatedAt 會顯示新鮮，但價格並非即時。`,
-      );
-    }
-
-    if (!plan.write) continue;
-
-    // A-5：偏離上限。MockOracle 是交易所實際結算/清算所讀的那顆，沒有任何鏈上
-    // 保護，所以「離譜但合法」的價格必須在這裡就被擋下或夾住。
-    const guard = guardDeviation({
-      target: feed.value,
-      current,
-      maxDeviation: MAX_DEVIATION,
-      rejectDeviation: REJECT_DEVIATION,
-    });
-    if (!guard.write) {
-      rejected += 1;
-      console.error(`::error::${symbol} ${guard.reason}`);
-      continue;
-    }
-    if (guard.clamped) {
-      clamped += 1;
-      console.log(`::warning::${symbol} ${guard.reason}`);
-    }
-
-    if (DRY_RUN) continue;
-
-    const price8 = toPrice8(guard.value);
-    try {
-      const tx = await oracle.updatePrice(assetId, price8);
-      await tx.wait();
-      wrote += 1;
-      console.log(`  → MockOracle ✓ ${tx.hash}`);
-    } catch (e) {
-      failed += 1;
-      console.error(`::error::${symbol} MockOracle 寫入失敗：${(e as Error).message.slice(0, 140)}`);
-      continue;
-    }
-
-    if (guarded && !(await mirror(guarded, assetId, symbol, price8, guardedCap))) {
-      // 鏡射失敗以前是完全靜默的 console.log。GuardedOracle 追不上就等於那條
-      // 「有保護的價格路徑」實際上是死的，必須算進 failed 並讓 CI 看得到。
-      failed += 1;
+  let exchange: ethers.Contract | null = null;
+  if (MARKET_OPERATOR) {
+    if (!ethers.isAddress(EXCHANGE_ADDR)) {
+      console.log("::warning::KEEPER_MARKET_OPERATOR=1 但 KEEPER_EXCHANGE_ADDRESS/EXCHANGE 未設，略過休市切換");
+    } else {
+      exchange = new ethers.Contract(EXCHANGE_ADDR, EXCHANGE_MODE_ABI, signer ?? provider);
+      console.log(`marketOperator: 啟用（exchange ${EXCHANGE_ADDR}）`);
     }
   }
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  const round = await runRound({
+    symbols: SYMBOLS,
+    nowSec,
+    dryRun: DRY_RUN,
+    deviationThreshold: DEVIATION_THRESHOLD,
+    heartbeatSec: HEARTBEAT_SEC,
+    breakerDeviation: BREAKER_DEVIATION,
+    confirmTolerance: CONFIRM_TOLERANCE,
+    assetIdOf: (symbol) => ethers.id(symbol), // == cast keccak "$SYM"
+    isAssetNotFound: (e) => isRevertWith(revertInfo(e).data, ASSET_NOT_FOUND_SELECTOR),
+    oracle: {
+      getPrice: async (id) => (await oracle.getPrice(id)) as [bigint, bigint],
+      updatePrice: (id, p) => oracle.updatePrice(id, p),
+    },
+    guarded: guarded
+      ? {
+          peek: async (id) => (await guarded.peek(id)) as [bigint, bigint, boolean, boolean],
+          // guarded 以 signer 建立，staticCall 的 from 就是 keeper —— role 也一併預檢。
+          checkUpdate: (id, p) => guarded.updatePrice.staticCall(id, p),
+          updatePrice: (id, p) => guarded.updatePrice(id, p),
+        }
+      : null,
+    guardedCap,
+    fetchRelay: (id) => fetchFromRelay(relay, id),
+    fetchPrice: (symbol) => fetchPrice(symbol),
+    fetchSecondary: (symbol) => fetchSecondaryPrice(symbol),
+    beforeAsset: exchange
+      ? async (symbol, id) => {
+          const r = await applyMarketMode(exchange!, id, symbol, nowSec);
+          return r === "missing" ? "stop" : r;
+        }
+      : undefined,
+  });
+  writeRefusedList(round);
+  const { available, skipped, rejected, confirmed, wrote } = round;
+  let failed = round.failed;
+
+  // 複審 H2：拒寫的資產立刻嘗試停單，做不到的部分明寫。
+  const exchangeView = ethers.isAddress(EXCHANGE_ADDR)
+    ? new ethers.Contract(EXCHANGE_ADDR, EXCHANGE_PROTECT_ABI, signer ?? provider)
+    : null;
+  let exchangeMaxAge: number | null = null;
+  if (exchangeView && round.refused.length > 0) {
+    try {
+      exchangeMaxAge = Number(await exchangeView.maxPriceAge());
+    } catch {
+      exchangeMaxAge = null;
+    }
+  }
+  const protectionNotes: string[] = [];
+  for (const ref of round.refused) {
+    const res = await protectAsset({
+      symbol: ref.symbol,
+      assetId: ref.assetId,
+      exchange: exchangeView
+        ? {
+            marketOperator: async () => (await exchangeView.marketOperator()) as string,
+            assetMode: async (id) => (await exchangeView.assetMode(id)) as bigint,
+            checkSetAssetMode: (id, mode) => exchangeView.setAssetMode.staticCall(id, mode),
+            setAssetMode: (id, mode) => exchangeView.setAssetMode(id, mode),
+          }
+        : null,
+      signerAddress: signer?.address ?? null,
+      isMissingFunction: (e) => classifyProbeError(revertInfo(e)) === "missing",
+    });
+    const { notes, exchangeStillTrading } = describeProtection(res, exchangeMaxAge);
+    for (const n of notes) {
+      if (exchangeStillTrading) console.error(`::error::${n}`);
+      else console.log(`::warning::${n}`);
+    }
+    if (res.mode === "failed") failed += 1;
+    protectionNotes.push(...notes);
+  }
+  // 窄複審 4：報告帶上交易所目前仍在保護中（非 Active）的資產；有就不自動關 issue。
+  const protectedAssets = exchangeView ? await readProtected(exchangeView) : [];
+  if (protectedAssets.length) console.log(`::warning::交易所保護中的資產：${protectedAssets.join(", ")}（解除需人工）`);
+  writeRefusal(round, protectionNotes, nowSec, exchangeMaxAge, protectedAssets);
 
   // #99: reuses the same failed-counter/exit(1) mechanism every other genuine
   // problem in this file already goes through, rather than a separate,
@@ -268,39 +305,155 @@ async function main(): Promise<void> {
     failed += 1;
   }
 
-  console.log(
-    `\navailable=${available} skipped=${skipped} rejected=${rejected} clamped=${clamped} wrote=${wrote} failed=${failed}`,
-  );
+  // 2026-09-30 事故：來源無效而跳過的資產也計入失敗率（workflow 以 failed/available
+  // 對 MAX_FAIL_PCT 判斷）。格式維持 `available=N … failed=N` 讓 workflow 的 grep 相容。
+  console.log(`\n${summaryLine({ available, skipped, rejected, confirmed, wrote, failed })}`);
 
-  // 有價格可寫卻一筆都沒成功 = keeper 壞了。這一定要讓 CI 變紅。
-  if (available > 0 && wrote === 0 && failed > 0) {
-    console.error(
-      `::error::Keeper 寫入 0 筆（${failed} 筆失敗）。檢查簽章者權限與錢包餘額。`,
-    );
-    process.exit(1);
+  // 有價格可寫卻一筆都沒成功、全部來源無效、降級比例過高（10/11 資產跳過而 CI
+  // 全綠正是 oracle 靜默腐爛 9.5 天的原因）、熔斷拒寫、寫入失敗 —— 任一都讓 job 紅。
+  const verdict = runVerdict(
+    { total: SYMBOLS.length, available, skipped, rejected, wrote, failed },
+    MAX_DEGRADED_RATIO,
+  );
+  for (const msg of verdict.errors) console.error(`::error::${msg}`);
+  if (verdict.exitCode !== 0) process.exit(verdict.exitCode);
+}
+
+/**
+ * 拒寫清單（給 funding crank）。窄複審 5：runRound 一回傳就寫，不等停單與報告 ——
+ * 後面任何一步丟例外都不能讓清單消失（清單不存在時 crank 會失敗）。
+ * 「沒判斷到」的資產（skippedSymbols：來源無效、RPC 失敗、寫入停止）也列入：
+ * 無法確認它們的價格可信，同樣不該拿來結算 funding。
+ */
+function writeRefusedList(round: RoundResult): void {
+  if (!REFUSED_PATH) return;
+  const syms = [...new Set([...round.refused.map((r) => r.symbol), ...round.skippedSymbols])];
+  try {
+    writeFileSync(REFUSED_PATH, syms.map((s) => `${s}\n`).join(""), "utf8");
+  } catch (e) {
+    console.error(`::error::寫不出拒寫清單 ${REFUSED_PATH}：${(e as Error).message}`);
   }
-  if (skipped === SYMBOLS.length) {
-    console.error("::error::所有價格來源都無效 —— 來源可能已下線。");
-    process.exit(1);
+}
+
+/**
+ * 讀每個資產在交易所的 assetMode，回傳非 Active 的（例如 "sAAPL(ReduceOnly)"）。
+ * 舊 exchange 沒有 assetMode → 回空陣列（沒有保護機制可言）；單一資產讀失敗時保守
+ * 地列為 "(unknown)"，一樣會擋住自動關閉。
+ */
+async function readProtected(exchange: ethers.Contract): Promise<string[]> {
+  const out: string[] = [];
+  for (const symbol of SYMBOLS) {
+    try {
+      const m = Number(await exchange.assetMode(ethers.id(symbol)));
+      if (m !== 0) out.push(`${symbol}(${modeName(m)})`);
+    } catch (e) {
+      if (classifyProbeError(revertInfo(e)) === "missing") return [];
+      out.push(`${symbol}(unknown)`);
+    }
   }
-  // 部分失敗也要紅：10/11 資產跳過而 CI 全綠，正是 oracle 靜默腐爛 9.5 天的原因。
-  const degraded = skipped + rejected;
-  const degradedRatio = degraded / SYMBOLS.length;
-  if (degradedRatio > MAX_DEGRADED_RATIO) {
-    console.error(
-      `::error::${degraded}/${SYMBOLS.length} 個資產無法更新` +
-        `（skipped=${skipped} rejected=${rejected}，${(degradedRatio * 100).toFixed(0)}% > ` +
-        `${(MAX_DEGRADED_RATIO * 100).toFixed(0)}% 門檻）—— 價格來源或偏離守衛出了問題。`,
-    );
-    process.exit(1);
+  return out;
+}
+
+/** 熔斷報告（給 alert-run.ts）。 */
+function writeRefusal(
+  round: RoundResult,
+  notes: string[],
+  nowSec: number,
+  exchangeMaxAge: number | null,
+  protectedAssets: string[],
+): void {
+  try {
+    if (REPORT_PATH) {
+      const report: HealthReport = {
+        kind: "breaker",
+        chain: CHAIN,
+        status: round.refused.length > 0 ? "stale" : "ok",
+        checkedAtSec: nowSec,
+        maxAgeSec: exchangeMaxAge ?? 0,
+        stale: round.refused.map((r) => r.symbol),
+        // 這一輪來源無效而沒判斷到的資產：不能證明熔斷已解除，擋住自動關閉。
+        unreadable: round.skippedSymbols,
+        notes,
+        protected: protectedAssets,
+        lines: round.refused.map((r) => `${r.symbol}: ${r.reason}`),
+      };
+      writeFileSync(REPORT_PATH, JSON.stringify(report, null, 2), "utf8");
+    }
+  } catch (e) {
+    console.log(`::warning::寫不出熔斷報告：${(e as Error).message}`);
   }
-  if (rejected > 0) {
-    console.error(`::error::${rejected} 個資產的價格離譜被拒寫，請人工確認來源。`);
-    process.exit(1);
+}
+
+function revertInfo(e: unknown): { code?: unknown; data?: unknown } {
+  const x = e as { code?: unknown; data?: unknown; info?: { error?: { data?: unknown } } };
+  return { code: x?.code, data: x?.data ?? x?.info?.error?.data };
+}
+
+/**
+ * marketOperator：讀 assetMode → decideAssetMode → staticCall 探測 → 送出。
+ *   "missing" — exchange 沒有 assetMode/setAssetMode（線上舊合約），略過並記錄；
+ *               呼叫端整輪停用，不算失敗。
+ *   "failed"  — 已確定要切換卻送不出去（權限、RPC），計入 failed 讓 CI 變紅。
+ *   "ok"      — 其他（含 skip、DRY_RUN）。
+ */
+async function applyMarketMode(
+  exchange: ethers.Contract,
+  assetId: string,
+  symbol: string,
+  nowSec: number,
+): Promise<"ok" | "missing" | "failed"> {
+  // 加密／期貨不做休市切換：連 RPC 都不打。
+  if (!switchesMode(symbol)) return "ok";
+  // 市場時段獨立取得（審查 Low），不依賴價格來源：價格改走 relay、或 Yahoo 價格因
+  // 報價過舊被拒時，feed 上都不會帶 session。拿不到就是 null → 行事曆只准收緊。
+  const session: MarketSession | null = await fetchMarketSession(symbol);
+
+  let current: number;
+  try {
+    current = Number(await exchange.assetMode(assetId));
+  } catch (e) {
+    const kind = classifyProbeError(revertInfo(e));
+    if (kind === "missing") {
+      console.log(`  → marketOperator：exchange 沒有 assetMode()（舊合約），本輪略過休市切換`);
+      return "missing";
+    }
+    console.log(`::warning::${symbol} 讀 assetMode 失敗（${kind}）：${(e as Error).message.slice(0, 100)}`);
+    return "ok";
   }
-  if (failed > 0) {
-    console.error(`::error::寫入 ${wrote} 筆，${failed} 筆失敗。`);
-    process.exit(1);
+
+  const d = decideAssetMode({ symbol, nowSec, currentMode: current, session });
+  if (d.action === "skip") {
+    console.log(`  → marketOperator ${symbol}: skip（${d.reason}）`);
+    return "ok";
+  }
+
+  try {
+    await exchange.setAssetMode.staticCall(assetId, d.mode);
+  } catch (e) {
+    // assetMode() 已讀成功 → 新 exchange，setAssetMode 必定存在；空 revert 算 denied
+    // 並記 failed，不能當成「舊合約」靜默略過。
+    const kind = classifyProbeError(revertInfo(e), { functionExists: true });
+    if (DRY_RUN && kind === "denied") {
+      // DRY_RUN 沒有 signer，staticCall 的 from 是零位址，被拒是預期的。
+      console.log(`  → marketOperator ${symbol}: 會 ${d.reason}（DRY_RUN，權限未驗證）`);
+      return "ok";
+    }
+    console.error(`::error::${symbol} setAssetMode(${modeName(d.mode)}) 預檢失敗（${kind}）：${(e as Error).message.slice(0, 140)}`);
+    return "failed";
+  }
+
+  if (DRY_RUN) {
+    console.log(`  → marketOperator ${symbol}: 會 ${d.reason}（DRY_RUN）`);
+    return "ok";
+  }
+  try {
+    const tx = await exchange.setAssetMode(assetId, d.mode);
+    await tx.wait();
+    console.log(`  → marketOperator ${symbol}: ${d.reason} ✓ ${tx.hash}`);
+    return "ok";
+  } catch (e) {
+    console.error(`::error::${symbol} setAssetMode(${modeName(d.mode)}) 失敗：${(e as Error).message.slice(0, 140)}`);
+    return "failed";
   }
 }
 
@@ -389,53 +542,6 @@ function _fmtReserveLine(
   const haltedTxt = halted === null ? "" : ` halted=${halted}`;
   return `reserve=$${(Number(reserve) / 1e18).toFixed(2)} ` +
     `liability=$${(Number(liability) / 1e18).toFixed(2)} ratio=${ratioTxt} unpriced=${unpriced}${haltedTxt}`;
-}
-
-/**
- * 把價格鏡射進 GuardedOracle，超出偏離上限時走一步而不是放棄。
- * 舊 keeper 每次都寫全額目標價，落後超過上限後就永遠被 DeviationTooLarge 打回。
- *
- * 回 true 代表「這一輪沒有問題」（含：資產不存在、已凍結、已是目標值）；
- * 回 false 代表真的失敗 —— 呼叫端會計進 failed 讓 CI 變紅。舊版把失敗寫成
- * `console.log` 完全靜默，於是「有保護的價格路徑」死掉也沒人知道。
- */
-async function mirror(
-  guarded: ethers.Contract,
-  assetId: string,
-  symbol: string,
-  target8: bigint,
-  cap: bigint,
-): Promise<boolean> {
-  try {
-    const [price, , exists, frozen] = (await guarded.peek(assetId)) as [
-      bigint, bigint, boolean, boolean,
-    ];
-    if (!exists) return true;
-    if (frozen) {
-      console.log(`  → GuardedOracle 已凍結，略過鏡射`);
-      return true;
-    }
-
-    const next = stepTowards(price, target8, cap);
-    if (next === price) {
-      console.log(`  → GuardedOracle 已是目標值`);
-      return true;
-    }
-    if (!deviationAccepted(price, next, cap)) {
-      // 到不了這裡；到了代表 stepTowards 與合約失去同步，必須大聲。
-      console.error(`::error::${symbol} stepTowards 產生會被拒絕的值 ${next}（cap=${cap}）`);
-      return false;
-    }
-
-    const tx = await guarded.updatePrice(assetId, next);
-    await tx.wait();
-    const partial = next !== target8 ? "（分段逼近，下一輪繼續）" : "";
-    console.log(`  → GuardedOracle ✓ ${next} ${partial}`);
-    return true;
-  } catch (e) {
-    console.error(`::error::${symbol} GuardedOracle 鏡射失敗：${(e as Error).message.slice(0, 120)}`);
-    return false;
-  }
 }
 
 main().catch((e) => {

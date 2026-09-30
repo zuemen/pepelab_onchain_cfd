@@ -12,4 +12,6 @@ export const meta: Catalog['meta'] = {
   title: 'PepeLab · Agent-Native Tokenized RWA',
   description:
     'PepeLab — agent-native tokenized RWA on Base. Buy equities, bonds, gold, and crypto on-chain + x402 paid signals + social copy trading.',
+  descriptionNoCopy:
+    'PepeLab — an agent-native tokenized-asset engine on Base (testnet research prototype). Mint and redeem synthetic equities, bonds, gold and crypto on-chain + x402 paid signals + bounded agent sessions.',
 };

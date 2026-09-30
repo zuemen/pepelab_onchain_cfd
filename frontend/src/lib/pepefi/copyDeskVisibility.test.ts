@@ -17,4 +17,9 @@ describe('copyDeskVisibility', () => {
     // 收入口、不收既有部位：跟 SHOW_PERPETUALS 與 Open Positions 同一條原則。
     expect(copyDeskVisibility('simple', 1)).toEqual({ records: true, stats: false, performance: false });
   });
+
+  it('商業版跟單旗標關閉時 Expert 也收掉交易桌，但既有跟單仍看得到、取消得了', () => {
+    expect(copyDeskVisibility('expert', 0, false)).toEqual({ records: false, stats: false, performance: false });
+    expect(copyDeskVisibility('expert', 3, false)).toEqual({ records: true, stats: false, performance: false });
+  });
 });

@@ -5,6 +5,9 @@
 //   - 無有效金鑰：DRY-RUN，直接讀鏈上訊號（跳過 x402 結算）仍印決策。
 //   - 無 session（缺 SESSION_MANAGER_ADDRESS / DEMO_SESSION_ID）：只讀 + 印出
 //     「本來會下的單」，不送鏈、不 crash。
+// 必須是第一個 import：在 @pepelab/shared 其他模組求值（例如 addresses.ts 讀
+// AGENT_CHAIN_ID）之前先載入 agent/.env。
+import "@pepelab/shared/autoload-env";
 import { type Hex, createWalletClient, http, publicActions } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
@@ -12,6 +15,7 @@ import { wrapFetchWithPayment } from "x402-fetch";
 import { readFileSync } from "node:fs";
 import {
   loadEnv,
+  resolveX402MaxValue,
   makeProvider,
   makeContracts,
   getOracleSnapshot,
@@ -208,9 +212,11 @@ async function paidRun() {
   // 遇 402 自動用 WalletClient 簽官方 USDC 授權（EIP-3009）並重送。
   // 轉型：x402-fetch 0.5.1 的 SignerWallet 型別與 viem 2.52 的 client 型別有版本落差
   // （執行面 isSignerWallet 只看 chain+transport，皆具備），故精準轉成其參數型別。
+  // 單筆付款上限明確傳入（X402_MAX_PAYMENT_USDC，預設 0.02 USDC），不吃套件預設 0.10。
   const payFetch = wrapFetchWithPayment(
     fetch,
     walletClient as unknown as Parameters<typeof wrapFetchWithPayment>[1],
+    resolveX402MaxValue(),
   );
 
   // 注意：payFetch 第二參數 init 不可省略——x402-fetch 在 402 重送時會讀 init，

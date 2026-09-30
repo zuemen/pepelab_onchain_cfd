@@ -8,6 +8,7 @@
 export const marketplace = {
   title: '⭐ 明星交易者排行榜',
   subtitle: '瀏覽並跟單鏈上驗證過的策略',
+  networkError: '網路錯誤——請檢查錢包連線',
 
   esgFiltered: '已篩選',
   esgAll: '全部',
@@ -33,6 +34,8 @@ export const marketplace = {
 
   /** 表格欄位標頭。金額類欄位(量、PnL、質押)沿用 card.* 裡已經有的字串,單一來源不重複定義。 */
   table: {
+    /** 掃描不完整時排名旁的標記。 */
+    provisional: '暫定',
     rank: '#',
     trader: '交易者',
     score: 'TraderScore',
@@ -60,14 +63,22 @@ export const marketplace = {
 
   /** 領獎台跟著目前排序走——這句標題是唯一提醒使用者這件事的地方。 */
   podium: {
+    hiddenIncomplete: '部分區塊範圍讀取失敗，7 日指標不完整，暫不選出領獎台。重新整理成功後才會顯示。',
     heading: '🏆 目前排序前三名',
     /** 平倉 <5 筆的人被排除在領獎台之外,人數不夠時要講清楚為什麼消失,不能悄悄空白。 */
     noneQualified: '還沒有交易者平倉滿 5 筆,暫時沒有領獎台名次——這些人仍然在下面的表格裡。',
   },
 
   loadFailed: '載入失敗：',
+  /** getAllTraders 讀取失敗——不是「沒有交易者」。 */
+  tradersReadFailed: {
+    title: '讀取失敗',
+    description: '無法從鏈上讀取交易者清單，這裡的空白不代表沒有交易者。請稍後按重新整理再試。',
+  },
+  /** 分段掃描有段落失敗：交易量／PnL 不完整，不能讀成「沒人交易」。 */
+  scanIncomplete: '{count}／{total} 個區塊範圍讀取失敗，下方交易量與 PnL 可能偏低、不完整。',
 
-  /** 排行榜掃描鏈上事件的進度。7 天視窗在 Base 上是 31 段,不講進度會像當掉。 */
+  /** 排行榜掃描鏈上事件的進度。7 天視窗在 Base 上是 379 段（併發 3 約 40 秒），不講進度會像當掉。 */
   scanProgress: '掃描鏈上事件… {done}/{total}',
 
   empty: {

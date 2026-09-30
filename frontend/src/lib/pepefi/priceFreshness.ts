@@ -7,6 +7,9 @@
 
 import { t, interpolate } from 'src/locales'
 
+/** 讀不到 exchange.maxPriceAge() 時的後備值 = Base Sepolia 上實際部署的 6 小時。 */
+export const FALLBACK_MAX_PRICE_AGE_SEC = 21600
+
 export type FreshnessLevel = 'live' | 'aging' | 'stale' | 'unknown'
 
 export interface Freshness {

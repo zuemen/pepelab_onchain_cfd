@@ -4,6 +4,15 @@ Written for the project report. Every item here was verified against the code on
 2026-07-27, not assumed. Where something was fixed, the fix is named; where it
 was not, the reason is given rather than glossed over.
 
+> **Status as of 2026-09-30 (`master` 37850c1):** 20 items. #1–#13 were verified
+> on 2026-07-27; #14–#20 (x402 layer) were added on 2026-09-17. PR #191 (open,
+> source only, not deployed) will add further known limitations. The status column below was not
+> re-verified item by item on 2026-09-30. Current numbers: 776 Foundry
+> test/invariant functions in `contracts/test` on `master` (944 on the PR #191
+> branch at `18c684d`; the PR is still changing), counted from source — whether all pass is whatever the latest
+> Contracts CI run says. Current deployment and what is live vs. source-only:
+> [`README.md`](../README.md).
+
 ## Status at a glance
 
 | # | Limitation | Status |
@@ -400,12 +409,18 @@ As of this writing the GitHub Actions workflow has the four secrets it needs
 Actions' `workflow_dispatch` API refuses to run a workflow that only exists on
 a feature branch (`HTTP 404: workflow ... not found on the default branch`),
 so the first real run will be either the first scheduled tick after this PR
-merges to `master`, or a manual dispatch right after that merge. A local run of
-`settlement-worker.ts` against the real Upstash instance and the real
-`FEE_SETTLEMENT_PRIVATE_KEY` signer did succeed (2026-09-17): it connected,
-read an empty queue, and exited 0 — the credentials work, there was just
-nothing to settle yet, since the deployed API is still running the pre-ledger
-code until this merges.
+merges to `master`, or a manual dispatch right after that merge. As of
+2026-09-29 the worker refuses to run outside GitHub Actions (`GITHUB_ACTIONS`
+must be `true`): the CI job's 20-minute timeout is what guarantees the Redis
+lease lock (1500 s) cannot expire mid-run, and a local process has no such
+bound, so a local run could overlap the CI worker and pay twice. Locally only
+`settlement-worker.ts --dry-run` is allowed, which reads the queue without
+taking the lock, claiming keys or signing. (A local run against the real
+Upstash instance on 2026-09-17, before this restriction, connected, read an
+empty queue and exited 0.) The `GITHUB_ACTIONS` check is a speed bump, not a
+security boundary — anyone can set that variable locally. The actual boundary
+is that `FEE_SETTLEMENT_PRIVATE_KEY` exists only in GitHub secrets, together
+with the workflow's concurrency group and the Redis lease lock.
 
 **Left open:**
 
@@ -849,9 +864,12 @@ and not the application. `tsc --noEmit` does cover everything.
 ## Honest positioning
 
 This is a **high-completeness academic prototype deployed to testnets**, not a
-production financial product. It has 24 contracts, 420 passing tests, CI, three
-chain deployments, a documented risk model, and an AI agent stack with VC/SSI
-authentication. It does not have an audit, a decentralized oracle, or any
+production financial product. It has 33 contract definitions under
+`contracts/src` (including mocks and superseded vault versions), 776 Foundry
+test/invariant functions (source count on 2026-09-30; the "24 contracts, 420
+passing tests" previously written here dated from mid-2026 and is superseded),
+CI, deployments on Base Sepolia and Sepolia, a documented risk model, and an AI
+agent stack with VC/SSI authentication. It does not have an audit, a decentralized oracle, or any
 regulatory authorization.
 
 Six of the eleven assets reference real securities (sAAPL, sTSLA, sNVDA, sMSFT,

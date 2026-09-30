@@ -1,0 +1,13 @@
+{
+  "chain": "base-sepolia",
+  "status": "ok",
+  "checkedAtSec": 1790910000,
+  "maxAgeSec": 18000,
+  "stale": [],
+  "closed": [],
+  "lines": [
+    "  ok  sBTC   $  64601.00 age=0.2h",
+    "  ok  sETH   $   1899.10 age=0.2h",
+    "  ok  sAAPL  $    311.00 age=0.3h"
+  ]
+}

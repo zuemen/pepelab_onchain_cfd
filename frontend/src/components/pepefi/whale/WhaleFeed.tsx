@@ -23,6 +23,7 @@ import { TableSkeleton } from 'src/components/pepefi/Skeleton'
 import { t, interpolate } from 'src/locales'
 import { MONO, PEPE } from 'src/components/pepefi/brandKit'
 import { explorerTx } from 'src/lib/pepefi/notify'
+import { FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags'
 import { timeAgo, fCompact, sideLabel, positionProfile } from 'src/lib/pepefi/whale'
 
 import WhaleTagChips from './WhaleTagChips'
@@ -51,6 +52,8 @@ const sideColor = (isLong: boolean) => (isLong ? PEPE.long : PEPE.short)
  * marketplace 之間唯一的那條線，也是兩頁職責分開之後還能互通的原因。
  */
 function CopyCta({ owner, registered }: { owner: string; registered: Map<string, RegisteredTrader> }) {
+  // 跟單入口跟著 FEATURE_COPY_TRADING 走（商業版預設關）。
+  if (!FEATURE_COPY_TRADING) return null
   if (!registered.get(owner.toLowerCase())?.registered) return null
   return (
     <Chip

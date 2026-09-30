@@ -26,6 +26,8 @@ export const traderDashboard = {
 
     stakeRequiredTitle: '發布策略需先質押',
     stakeRequiredBody: '發布策略前需先質押至少 100 USDC。這能讓跟隨者相信你也承擔風險。',
+    /** 跟單旗標關閉時的說法：不提跟隨者。 */
+    stakeRequiredBodyNeutral: '發布策略前需先完成交易員信譽質押（至少 100 USDC），讓使用你策略的人知道你也承擔風險。',
     goToStake: '前往交易者質押 →',
 
     empty: '點擊「+ 新增標的」以建立策略。',
@@ -44,6 +46,14 @@ export const traderDashboard = {
     mustReach: '需達到',
     weightTarget: '{state} 100%',
     autoFix: '自動修正為 100%',
+
+    /** 對齊 StrategyRegistry 的 revert（見 lib/pepefi/strategyValidation.ts）。 */
+    issue: {
+      tooFew: '策略至少要有 {min} 檔標的（目前 {got} 檔）。',
+      exceedsMax: '第 {row} 列權重 {pct}% 超過單一標的上限 50%。',
+      zeroWeight: '第 {row} 列權重不能為 0。',
+      roundingAdjusted: '已將四捨五入差額 {bps} bps 補到權重最大的標的，總和為 100.00%。',
+    },
 
     publishing: '發布中…',
     cta: '發布策略',
@@ -64,6 +74,9 @@ export const traderDashboard = {
     claiming: '領取中…',
     claimAll: '全部領取',
     note: '當跟隨者支付 0.3% 跟單費，或平倉獲利的跟單部位產生 10% 績效費時，即會累積收益。你可分得每筆費用的 70%。',
+    /** 跟單旗標關閉時的中性說法——既有收益仍可領取。 */
+    claimableNeutral: '可領取的交易員收益',
+    noteNeutral: '交易員收益由 FeeRouter 依鏈上規則累積，你可分得每筆費用的 70%。',
     claimed: '收益已領取 ✓',
   },
 

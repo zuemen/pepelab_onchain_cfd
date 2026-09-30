@@ -438,6 +438,10 @@ export default function AgentMonitorPage() {
               <TextField size="small" fullWidth label={t.admin.agent.revenue.urlLabel} value={revUrl} onChange={e => setRevUrl(e.target.value)} />
               <Button variant="outlined" onClick={() => void fetchRevenue()} sx={{ textTransform: 'none' }}>{t.admin.agent.revenue.fetch}</Button>
             </Stack>
+            {/* 正式站的 CSP connect-src 是白名單（vercel.json），自填的網址不在裡面就會被瀏覽器擋。 */}
+            <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
+              {t.admin.agent.revenue.cspNote}
+            </Typography>
             {revErr ? (
               <Alert severity="warning">
                 {interpolate(t.admin.agent.revenue.failed, { error: revErr })}

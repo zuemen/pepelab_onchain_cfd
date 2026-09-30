@@ -1,0 +1,71 @@
+name: Bug 回報
+description: 回報功能錯誤（安全漏洞請改用私密回報，見 SECURITY.md）
+title: "[bug] "
+labels: ["needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **安全漏洞不要開在這裡。** 可能被利用的問題請依 [SECURITY.md](https://github.com/zuemen/pepelab_onchain_cfd/blob/master/SECURITY.md) 私密回報。
+        請勿貼上任何私鑰、token、RPC 金鑰或他人的個人資料。
+  - type: dropdown
+    id: component
+    attributes:
+      label: 元件
+      options:
+        - contracts
+        - agent / signal-api（x402）
+        - agent / keeper
+        - agent / MCP server
+        - agent / Telegram bot
+        - frontend
+        - web（靜態介紹頁）
+        - 文件
+        - CI / workflows
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: 環境
+      options:
+        - Base Sepolia（84532）正式展示站
+        - Sepolia（11155111）
+        - 本機（Anvil / yarn dev / npm run）
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 發生了什麼
+      description: 實際看到的行為，含錯誤訊息或 revert 原因。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 預期行為
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 重現步驟
+      description: 最少步驟即可。若涉及交易，附上 tx hash 與合約位址。
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: commit 或部署版本
+      description: 例如 commit SHA、前端頁尾的版本資訊、或合約位址
+  - type: textarea
+    id: extra
+    attributes:
+      label: 其他資訊
+      description: 截圖、log（請先移除任何憑證）
