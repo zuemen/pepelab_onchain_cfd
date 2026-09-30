@@ -255,7 +255,8 @@ async function verifyVcAgainstChain(
     return `讀取鏈上 session 失敗：${redactSecrets((err as Error).message)}`;
   }
 
-  // v2 nonce 一次性檢查（鏈上比對通過後才記錄，避免無效 VC 污染狀態）。語意見 vcNonce.ts。
+  // nonce 一次性（v2）＋取代＋不降級（v1/v2）檢查；鏈上比對通過後才記錄，避免無效 VC
+  // 污染狀態。語意見 vcNonce.ts。
   const n = checkAndRecordVcNonce(res);
   if (!n.ok) return `授權憑證(VC) nonce 檢查未過（${n.reasonCode}）：${n.message}`;
   return null;

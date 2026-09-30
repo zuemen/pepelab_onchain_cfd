@@ -22,7 +22,8 @@
 //   v2 — domain binds `verifyingContract` (session manager), struct adds
 //        `validUntil` + `nonce`. Issued by the frontend and `issueAuthorizationVC`.
 //   v1 — legacy; verifies with a warning until LEGACY_VC_SUNSET_ISO, then rejected.
-//        Nonce replay protection does not apply to v1 (it has no nonce).
+//        v1 has no nonce, but still takes part in supersession (vcNonce.ts), and once a
+//        v2 VC was accepted for an (issuer, sessionId), v1 is refused for it.
 import { ethers } from "ethers";
 import { AGENT_CHAIN_ID } from "./addresses.ts";
 import { getSessionManagerAddress } from "./provider.ts";
@@ -184,6 +185,7 @@ export interface VerifyResult {
     | "VC_EXPIRED"
     | "VC_WRONG_VERIFYING_CONTRACT"
     | "VC_VERSION_INCONSISTENT"
+    | "VC_ISSUED_IN_FUTURE"
     | "LEGACY_VC_SUNSET";
   issuer?: string;       // recovered issuer address (== signer)
   agent?: string;        // holder agent address
@@ -201,6 +203,9 @@ export interface VerifyResult {
 }
 
 const warnedLegacy = new Set<string>();
+
+/** issuedAt 可容忍的未來時鐘誤差（秒）。 */
+export const MAX_CLOCK_SKEW_SEC = 300;
 
 /**
  * Verify an authorization VC: recover the EIP-712 signer and require it to equal
@@ -300,6 +305,17 @@ export function verifyAuthorizationVC(vc: AuthorizationVC, opts: VerifyOptions =
         valid: false,
         reasonCode: "VC_WRONG_VERIFYING_CONTRACT",
         reason: `VC 綁定的 session manager(${verifyingContract}) 非本 agent 使用的(${ethers.getAddress(opts.expectedVerifyingContract)})`,
+        ...ok,
+      };
+    }
+
+    // issuedAt 不可在未來：取代規則以 issuedAt 最新者為準，未來時間戳的 VC 會永遠「最新」、
+    // 讓使用者之後重簽的 VC 都被判成舊的。容忍 300 秒時鐘誤差。
+    if (issuedAt * 1000 > nowMs + MAX_CLOCK_SKEW_SEC * 1000) {
+      return {
+        valid: false,
+        reasonCode: "VC_ISSUED_IN_FUTURE",
+        reason: `VC issuedAt(${new Date(issuedAt * 1000).toISOString()}) 晚於現在 ${MAX_CLOCK_SKEW_SEC} 秒以上`,
         ...ok,
       };
     }

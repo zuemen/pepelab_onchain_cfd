@@ -135,11 +135,42 @@ const vc = await issue();
   assert.ok(r.warnings?.[0]?.includes(LEGACY_VC_SUNSET_ISO));
   // expectedVerifyingContract 不適用於 v1（v1 domain 沒有這個欄位）
   assert.equal(verifyAuthorizationVC(legacy, { expectedVerifyingContract: MGR }).valid, true);
-  assert.equal(checkAndRecordVcNonce(r, { statePath: path.join(TMP, "n6.json") }).reasonCode, "LEGACY_NO_NONCE");
+  assert.equal(checkAndRecordVcNonce(r, { statePath: path.join(TMP, "n6.json") }).reasonCode, "OK");
   const after = verifyAuthorizationVC(legacy, { now: Date.parse(LEGACY_VC_SUNSET_ISO) + 1000 });
   assert.equal(after.valid, false);
   assert.equal(after.reasonCode, "LEGACY_VC_SUNSET");
   ok(`v1 舊格式：驗證通過＋LEGACY_VC_V1 警告；${LEGACY_VC_SUNSET_ISO} 之後 → LEGACY_VC_SUNSET`);
+}
+
+// 6b) v1 參與取代；接受過 v2 之後拒收 v1；未來 issuedAt 拒收；latest 在 keepUntil 後清理
+{
+  const sp = path.join(TMP, "n6b.json");
+  const v1old = await issue({ legacyV1: true, issuedAt: NOW - 300 });
+  const v1new = await issue({ legacyV1: true, issuedAt: NOW - 200 });
+  assert.equal(checkAndRecordVcNonce(verifyAuthorizationVC(v1old), { statePath: sp }).reasonCode, "OK");
+  assert.equal(checkAndRecordVcNonce(verifyAuthorizationVC(v1new), { statePath: sp }).reasonCode, "OK");
+  assert.equal(checkAndRecordVcNonce(verifyAuthorizationVC(v1old), { statePath: sp }).reasonCode, "VC_SUPERSEDED", "新的 v1 取代舊的 v1");
+  assert.equal(checkAndRecordVcNonce(verifyAuthorizationVC(v1new), { statePath: sp }).reasonCode, "OK", "最新那張可重複使用");
+
+  const v2 = await issue({ issuedAt: NOW - 100 });
+  assert.equal(checkAndRecordVcNonce(verifyAuthorizationVC(v2), { statePath: sp }).reasonCode, "OK", "v1 → v2 升級");
+  assert.equal(checkAndRecordVcNonce(verifyAuthorizationVC(v1new), { statePath: sp }).reasonCode, "LEGACY_AFTER_V2");
+  const v1later = await issue({ legacyV1: true, issuedAt: NOW - 50 });
+  assert.equal(checkAndRecordVcNonce(verifyAuthorizationVC(v1later), { statePath: sp }).reasonCode, "LEGACY_AFTER_V2", "即使 v1 較新也拒收");
+  // 其他 session 不受影響
+  const other = await issue({ legacyV1: true, sessionId: 99 });
+  assert.equal(checkAndRecordVcNonce(verifyAuthorizationVC(other), { statePath: sp }).reasonCode, "OK");
+
+  const future = await issue({ issuedAt: NOW + 600 });
+  assert.equal(verifyAuthorizationVC(future).reasonCode, "VC_ISSUED_IN_FUTURE");
+  const skew = await issue({ issuedAt: NOW + 200 });
+  assert.equal(verifyAuthorizationVC(skew).valid, true, "300 秒內的時鐘誤差可接受");
+
+  // session 到期（keepUntil）之後，latest 紀錄被清掉
+  checkAndRecordVcNonce(verifyAuthorizationVC(other), { statePath: sp, now: (caps.expiry + 10) * 1000 });
+  const latest = JSON.parse(fs.readFileSync(sp, "utf8")).latest;
+  assert.deepEqual(Object.keys(latest), [`${user.address.toLowerCase()}|99`], "過了 keepUntil 的 latest 被清掉，只剩本次寫入的");
+  ok("v1 參與取代；接受過 v2 後拒收 v1（LEGACY_AFTER_V2）；issuedAt > now+300s 拒收；latest 在 keepUntil 後清理");
 }
 
 // 7) 降級攻擊：把 v2 標記拿掉冒充 v1 → 拒絕
