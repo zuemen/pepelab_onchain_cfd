@@ -324,6 +324,56 @@ for (const target of [101, 112]) {
   assert.ok(r.skippedSymbols.includes("sTSLA"));
 }
 
+// ── 審查 L3：休市切換（beforeAsset）也受「狀態未知就停手」約束 ───────────────────
+{
+  // (a) 寫價逾時之後，後面資產的 beforeAsset 不再被呼叫（它也會送交易）。
+  const calls: string[] = [];
+  const guarded = {
+    ...fakeGuarded(100),
+    updatePrice: async () => ({
+      hash: "0xslow",
+      wait: async () => {
+        throw Object.assign(new Error("timeout"), { code: "TIMEOUT" });
+      },
+    }),
+  };
+  const r = await runRound(
+    ctx({
+      symbols: ["sAAPL", "sTSLA"],
+      oracle: fakeOracle(100),
+      guarded,
+      fetchPrice: async () => yahoo(105),
+      beforeAsset: async (symbol) => {
+        calls.push(symbol);
+        return "ok";
+      },
+    }),
+  );
+  assert.equal(r.unknown, 1);
+  assert.deepEqual(calls, ["sAAPL"], "sTSLA 的休市切換沒送");
+}
+{
+  // (b) beforeAsset 自己逾時 → 記 unknown、計 failed，本輪不再送任何交易。
+  const oracle = fakeOracle(100);
+  const calls: string[] = [];
+  const r = await runRound(
+    ctx({
+      symbols: ["sAAPL", "sTSLA"],
+      oracle,
+      fetchPrice: async () => yahoo(105),
+      beforeAsset: async (symbol) => {
+        calls.push(symbol);
+        return "unknown";
+      },
+    }),
+  );
+  assert.equal(r.unknown, 1);
+  assert.equal(r.failed, 1);
+  assert.deepEqual(calls, ["sAAPL"]);
+  assert.equal(oracle.writes.length, 0, "兩個資產都沒寫");
+  assert.deepEqual(r.skippedSymbols, ["sAAPL", "sTSLA"]);
+}
+
 // ── 2026-09-30 事故：加密資產後備鏈 relay → CoinGecko → Yahoo，每層 ≤ 1h ──────────
 {
   const cg403: Feed = { value: null, reason: "coingecko HTTP 403", source: "coingecko" };
