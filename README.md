@@ -29,8 +29,7 @@
 
 唯一來源：[`frontend/src/contracts/addresses.ts`](frontend/src/contracts/addresses.ts)、
 [`frontend/src/contracts/sessionManager.ts`](frontend/src/contracts/sessionManager.ts)、
-[`frontend/src/contracts/x402.ts`](frontend/src/contracts/x402.ts)。若本表與上述檔案不一致，以檔案為準；
-CI（`.github/workflows/consistency.yml`）會比對位址一致性。
+[`frontend/src/contracts/x402.ts`](frontend/src/contracts/x402.ts)。本表是人工抄錄，若與上述檔案不一致，以檔案為準。
 
 | 合約 | 位址 | 備註 |
 |---|---|---|
