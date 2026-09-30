@@ -1,5 +1,6 @@
 <!doctype html>
-<!-- lang / title / description 都由建置時的 locale 決定，值來自 src/locales。
+<!-- lang / title / description 都由建置時的 locale 決定，值來自 src/locales；
+     favicon / theme-color 與標題裡的品牌名稱來自白標租戶設定（src/tenant/tenants/*.json）。
      這些 placeholder 由 vite.config.ts 的 pepefi-locale-html 外掛在 transformIndexHtml
      的 pre 階段換掉。分隔符刻意用 __X__ 而不是 %X%：Vite 內建的 HTML env 替換會把
      %X% 當成環境變數去找，找不到就每次 build 印一行警告。
@@ -10,8 +11,8 @@
 <html lang="__LOCALE_HTML_LANG__">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/avatars/pepe-01.png" />
-    <meta name="theme-color" content="#0A0F0B" />
+    <link rel="icon" type="__APP_FAVICON_TYPE__" href="__APP_FAVICON__" />
+    <meta name="theme-color" content="__APP_THEME_COLOR__" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="__APP_DESCRIPTION__" />
     <title>__APP_TITLE__</title>

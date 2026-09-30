@@ -2,6 +2,8 @@ import type { Theme, Direction, CommonColors, ThemeProviderProps } from '@mui/ma
 import type { ThemeCssVariables } from './types';
 import type { PaletteColorKey, PaletteColorNoChannels } from './core/palette';
 
+import { tenant } from 'src/tenant';
+
 // ----------------------------------------------------------------------
 
 export type ThemeConfig = {
@@ -44,8 +46,11 @@ export const themeConfig: ThemeConfig = {
   /** **************************************
    * Palette
    *************************************** */
+  //
+  // primary / secondary 可由白標租戶覆寫（src/tenant/tenants/<id>.json 的 theme）。
+  // 租戶沒給的色票整組沿用下面的值；default 租戶兩個都沒給，所以色票與改版前完全相同。
   palette: {
-    primary: {
+    primary: tenant.theme.primary ?? {
       lighter: '#ddf5b9',
       light: '#a8d96a',
       main: '#7cc14a',
@@ -60,7 +65,7 @@ export const themeConfig: ThemeConfig = {
       // colour that kept white text.
       contrastText: '#1C252E',
     },
-    secondary: {
+    secondary: tenant.theme.secondary ?? {
       lighter: '#FFF5CC',
       light: '#FFE566',
       main: '#FFD23D',

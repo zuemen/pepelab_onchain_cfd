@@ -4,9 +4,15 @@
 // 參數、照舊算保證金；旗標關掉的時候前端一律傳 1，等同現貨。這樣要把功能開
 // 回來是改一個環境變數，不是回頭改合約與測試。
 //
-// 值的解析規則統一：`VITE_X=1` / `true` / `on` 才算開，其餘（含未設定）都算關。
+// 值的解析規則統一：`VITE_X=1` / `true` / `on` 才算開，其餘（含未設定）用租戶的預設值。
+//
+// 白標：每個旗標的有效值 = 租戶授權（allowed）且 readFlag(env, 租戶預設)。環境變數可以
+// 把功能關掉，但打不開租戶未授權的功能。default 租戶五個旗標都是
+// { allowed: true, default: false }，結果與改版前的 readFlag(env, false) 完全相同。
+// 規則在 src/tenant/flags.ts（vite.config.ts 也要用，不能碰 import.meta.env）。
+import { tenant } from 'src/tenant';
+import { resolveFeatureFlag } from 'src/tenant/flags';
 
-// 解析規則在 flagParse.ts（vite.config.ts 也要用，不能碰 import.meta.env）。
 import { readFlag } from './flagParse';
 
 /**
@@ -16,7 +22,10 @@ import { readFlag } from './flagParse';
  * 永續終端機是進階功能；一進站就看到 5× 按鈕，會讓人以為這是炒幣平台，而那
  * 是我們最不想給的第一印象。開發或要展示永續時設 `VITE_SHOW_LEVERAGE=1`。
  */
-export const SHOW_LEVERAGE = readFlag(import.meta.env.VITE_SHOW_LEVERAGE, false);
+export const SHOW_LEVERAGE = resolveFeatureFlag(
+  tenant.features.showLeverage,
+  import.meta.env.VITE_SHOW_LEVERAGE
+);
 
 /** 旗標關閉時強制的槓桿倍數——1× 就是「保證金 = 部位大小」。 */
 export const FIXED_LEVERAGE = 1;
@@ -36,7 +45,20 @@ export const FIXED_LEVERAGE = 1;
  *
  * 合約完全沒有改動。要展示永續時設 `VITE_SHOW_PERPETUALS=1`。
  */
-export const SHOW_PERPETUALS = readFlag(import.meta.env.VITE_SHOW_PERPETUALS, false);
+export const SHOW_PERPETUALS = resolveFeatureFlag(
+  tenant.features.showPerpetuals,
+  import.meta.env.VITE_SHOW_PERPETUALS
+);
+
+/**
+ * 這個租戶有沒有被授權**新開**永續部位。
+ *
+ * 跟 SHOW_PERPETUALS 不同層：SHOW_PERPETUALS 收的是入口（路徑仍到得了）；這裡是授權
+ * ——租戶設定 `showPerpetuals.allowed=false` 的站，就算有人直接打 `/terminal`，下單面板
+ * 也不送 openPosition。平倉**不**看這個值（Portfolio 與終端機的平倉照舊可用）。
+ * default 租戶 allowed=true，行為與改版前相同。
+ */
+export const PERPETUALS_AUTHORIZED = tenant.features.showPerpetuals.allowed;
 
 // ── 商業版（B2B 白標）功能旗標 ────────────────────────────────────────────────
 //
@@ -53,13 +75,19 @@ export const SHOW_PERPETUALS = readFlag(import.meta.env.VITE_SHOW_PERPETUALS, fa
  * GameFi：Pepe 養成中心／PepeLab 扭蛋（`/pepe`、帳戶選單的藥水／坐騎／外觀）。
  * 預設 **關**。開啟：`VITE_FEATURE_GAMEFI=1`。
  */
-export const FEATURE_GAMEFI = readFlag(import.meta.env.VITE_FEATURE_GAMEFI, false);
+export const FEATURE_GAMEFI = resolveFeatureFlag(
+  tenant.features.gamefi,
+  import.meta.env.VITE_FEATURE_GAMEFI
+);
 
 /**
  * PEPE 平台幣獎勵：`/rewards`、帳戶選單的獎勵入口、Exchange 的 PEPE 水龍頭卡片。
  * 預設 **關**。開啟：`VITE_FEATURE_PEPE_REWARDS=1`。
  */
-export const FEATURE_PEPE_REWARDS = readFlag(import.meta.env.VITE_FEATURE_PEPE_REWARDS, false);
+export const FEATURE_PEPE_REWARDS = resolveFeatureFlag(
+  tenant.features.pepeRewards,
+  import.meta.env.VITE_FEATURE_PEPE_REWARDS
+);
 
 /**
  * Expert 跟單（CopyTracker 的槓桿跟單）：Expert 模式的交易者排行榜、`/copy/:addr`、
@@ -67,7 +95,10 @@ export const FEATURE_PEPE_REWARDS = readFlag(import.meta.env.VITE_FEATURE_PEPE_R
  * meta description。`/stake`（交易員信譽質押）不受影響。
  * 預設 **關**。開啟：`VITE_FEATURE_COPY_TRADING=1`。
  */
-export const FEATURE_COPY_TRADING = readFlag(import.meta.env.VITE_FEATURE_COPY_TRADING, false);
+export const FEATURE_COPY_TRADING = resolveFeatureFlag(
+  tenant.features.copyTrading,
+  import.meta.env.VITE_FEATURE_COPY_TRADING
+);
 
 export interface FeatureFlags {
   gamefi: boolean;
