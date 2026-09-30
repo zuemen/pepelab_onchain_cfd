@@ -37,6 +37,14 @@ jobs:
   settle:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # 審查 H1（PR #200）：私鑰改放 environment secret，只有引用這個 environment 的 job 拿得到；
+    # 舊分支／舊 run 上的 workflow 沒有引用它，repo 層級的同名 secret 刪除後就拿不到私鑰。
+    # environment 還沒建立或沒放這個 secret 時，secrets.X 退回 repo 層級的同名 secret，行為不變
+    # （docs.github.com「Secrets reference」：environment 層級優先）。
+    # deployment: false：只取 secrets，不在每次排程建立 deployment 紀錄。步驟見 ops/keeper-trigger/README.md。
+    environment:
+      name: settlement
+      deployment: false
     env:
       FEE_SETTLEMENT_PRIVATE_KEY: ${{ secrets.FEE_SETTLEMENT_PRIVATE_KEY }}
       BASE_SEPOLIA_RPC_URL: ${{ secrets.BASE_SEPOLIA_RPC_URL }}
