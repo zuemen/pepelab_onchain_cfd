@@ -65,7 +65,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@eslint/js": "^9.36.0",
+    "@eslint/js": "^9.39.5",
     "@types/autosuggest-highlight": "^3.2.4",
     "@types/node": "^24.5.2",
     "@types/nprogress": "^0.2.3",
@@ -74,7 +74,7 @@
     "@types/stylis": "^4.2.7",
     "@typescript-eslint/parser": "^8.70.1",
     "@vitejs/plugin-react-swc": "^4.1.0",
-    "eslint": "^9.36.0",
+    "eslint": "^9.39.5",
     "eslint-import-resolver-typescript": "^4.4.5",
     "eslint-plugin-import": "^2.32.0",
     "eslint-plugin-perfectionist": "^4.15.0",
