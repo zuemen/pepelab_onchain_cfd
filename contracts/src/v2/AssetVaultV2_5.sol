@@ -76,6 +76,10 @@ import { IEsgRegistryForVault } from "./AssetVaultV2_4.sol";
 ///         A fallback-marked book still reports `ratioIsStale()` and can latch
 ///         a breach, but can never auto-clear one (`observeReserve` restores
 ///         only on a fully live valuation).
+///         Live quotes are also capped at the same 6h (`effectiveMaxPriceAge`)
+///         whatever `maxPriceAge` says, and mint refuses while any
+///         outstanding asset is unpriced (`LiabilityUnpriced`) — a last-good
+///         mark is admitted, a missing price is not. Redeem is never gated.
 ///         Storage: one field appended from the front of __gap (43 -> 42).
 contract AssetVaultV2_5 is
     Initializable,
@@ -245,6 +249,10 @@ contract AssetVaultV2_5 is
     ///      observation latched it". Anyone can clear it by observing a healthy,
     ///      fully-priced ratio — see observeReserve().
     error MintingHalted();
+    /// @notice V2.5: `unpriced` outstanding assets have neither a live quote
+    ///         nor a last-good mark <= 6h, so the reserve ratio is unknown.
+    ///         Blocks new mints only; redeem is never gated on it.
+    error LiabilityUnpriced(uint256 unpriced);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -368,7 +376,7 @@ contract AssetVaultV2_5 is
     function _livePrice(bytes32 assetId) internal view returns (uint256 price, uint256 updatedAt) {
         (price, updatedAt) = IAssetOracleV2(_oracle).getPrice(assetId);
         if (price == 0) revert NoPrice(assetId);
-        if (block.timestamp > updatedAt + maxPriceAge) revert StalePrice(assetId, updatedAt);
+        if (block.timestamp > updatedAt + effectiveMaxPriceAge()) revert StalePrice(assetId, updatedAt);
     }
 
     /// @dev V2.5: remember a live quote (reverts like `_price` if there is none
@@ -387,6 +395,18 @@ contract AssetVaultV2_5 is
         lg.price      = uint192(price);
         lg.observedAt = uint64(updatedAt);
         emit LastGoodPriceRecorded(assetId, price, updatedAt);
+    }
+
+    /// @notice V2.5: the age limit actually applied to a live quote —
+    ///         `min(maxPriceAge, LAST_GOOD_MAX_AGE)`. The risk parameter
+    ///         `maxPriceAge` may be set loosely (the Base Sepolia proxy ran
+    ///         at 30 days), and a 29-day-old quote counted as "live" would
+    ///         make the 6h last-good bound meaningless. Capping it here means
+    ///         no price older than 6h ever values the book, prices a mint or
+    ///         a redeem, however `maxPriceAge` is configured.
+    function effectiveMaxPriceAge() public view returns (uint256) {
+        uint256 m = maxPriceAge;
+        return m < LAST_GOOD_MAX_AGE ? m : LAST_GOOD_MAX_AGE;
     }
 
     /// @notice V2.5: the remembered last-good price and whether it is still
@@ -546,7 +566,7 @@ contract AssetVaultV2_5 is
             bool live;
             uint256 price;
             try IAssetOracleV2(_oracle).getPrice(id) returns (uint256 p, uint256 updatedAt) {
-                if (p != 0 && block.timestamp <= updatedAt + maxPriceAge) {
+                if (p != 0 && block.timestamp <= updatedAt + effectiveMaxPriceAge()) {
                     live = true;
                     price = p;
                 }
@@ -697,7 +717,7 @@ contract AssetVaultV2_5 is
             bytes32 id = _assetIds[i];
             if (_outstanding[id] == 0) continue;
             try IAssetOracleV2(_oracle).getPrice(id) returns (uint256 p, uint256 updatedAt) {
-                if (p != 0 && block.timestamp <= updatedAt + maxPriceAge) {
+                if (p != 0 && block.timestamp <= updatedAt + effectiveMaxPriceAge()) {
                     _storeLastGood(id, p, updatedAt);
                 }
             } catch {}
@@ -761,7 +781,13 @@ contract AssetVaultV2_5 is
         // VULNERABILITY #2 FIX: refuse the mint if it would leave the book below
         // the operator's minimum coverage. Checked after the transfer so the
         // incoming USDC counts toward the ratio it must satisfy.
-        uint256 ratio = reserveRatioBps();
+        // V2.5 / M-7: the ratio must be KNOWABLE. An asset valued at its
+        // last-good mark (<= 6h) is an estimate and is admitted; an asset with
+        // no usable price at all is missing from the liability, which makes
+        // the ratio optimistic — refuse rather than mint against it.
+        (uint256 liability, uint256 unpriced, ) = valuationDetail();
+        if (unpriced > 0) revert LiabilityUnpriced(unpriced);
+        uint256 ratio = liability == 0 ? type(uint256).max : reserve() * BPS_DENOM / liability;
         if (ratio < minReserveRatioBps) revert ReserveRatioTooLow(ratio, minReserveRatioBps);
 
         SyntheticAssetV2(token).mint(msg.sender, tokenOut);

@@ -23,7 +23,7 @@ interface IExchangeOracleRead {
 ///         the V2 vault at it (`setOracle`, DEFAULT_ADMIN_ROLE).
 ///
 ///         Copies from the live oracle: every asset's CURRENT price (refused
-///         unless it is fresh by the vault's own maxPriceAge — `addAsset`
+///         unless younger than min(vault.maxPriceAge, 6h) — `addAsset`
 ///         stamps `updatedAt = now`, so copying a stale price would launder it
 ///         into a fresh one), maxDeviationBps, maxPriceAge, referenceSource.
 ///         Then: window limit (REQUIRED non-zero), KEEPER_ROLE → keeper,
@@ -71,7 +71,11 @@ contract RedeployGuardedOracle is Script {
         require(vault.oracle() == address(old), "vault does not read OLD_GUARDED_ORACLE");
         require(vault.hasRole(0x00, deployer), "broadcaster lacks DEFAULT_ADMIN_ROLE on the vault (after the timelock handover: propose setOracle instead)");
         require(!old.paused(), "old oracle is paused - resolve before migrating");
+        // Never re-stamp a quote older than the vault's own limit, capped at 6h
+        // (the live vault ran maxPriceAge = 30 days, which would let a
+        // days-old price be laundered into a fresh `updatedAt`).
         uint256 fresh = vault.maxPriceAge();
+        if (fresh > 21_600) fresh = 21_600;
         string[11] memory syms = _syms();
         uint256[11] memory prices;
         for (uint256 i = 0; i < 11; i++) {
@@ -94,7 +98,13 @@ contract RedeployGuardedOracle is Script {
         GuardedOracle n = new GuardedOracle(deployer);
         for (uint256 i = 0; i < 11; i++) n.addAsset(keccak256(bytes(syms[i])), prices[i]);
         n.setRiskParams(old.maxDeviationBps(), old.maxPriceAge());
-        if (old.referenceSource() != address(0)) n.setReferenceSource(old.referenceSource());
+        address refSrc = old.referenceSource();
+        if (refSrc != address(0)) {
+            // A reference the keeper can write is no cross-check at all: a
+            // confirmed post bypasses both the step cap and the window.
+            require(refSrc != keeper && refSrc.code.length > 0, "referenceSource must be an independent feed, not the keeper");
+            n.setReferenceSource(refSrc);
+        }
         n.setWindowLimit(window, winBps);
         n.grantRole(n.KEEPER_ROLE(), keeper);
         n.grantRole(n.GUARDIAN_ROLE(), guardian);

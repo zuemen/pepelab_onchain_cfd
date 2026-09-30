@@ -177,8 +177,13 @@ oracle 價格新鮮度只會發出警告，不會 revert。如果看到 `WARN �
 - 新的 CopyTracker 會一起部署：新增 `followTraderAtVersion`（M10），slash 準備金改成用 `balanceOf` 前後差額入帳，`renounceOwnership` 會 revert。
 - TraderStake M2（申請 unstake 之後就喪失資格）：只有在 TraderStake 重部署之後才會生效，見 §6。
 - 治理移交：見 [`GOVERNANCE_HANDOVER.md`](./GOVERNANCE_HANDOVER.md)。**先完成 cutover 並驗證，再移交。**
-- **V2 金庫升級到 V2_5**：這一版把 M-7 的 last-good 價格 fallback 加回來，但 last-good 超過 6 小時就視為 unpriced；一個以 last-good 估值的帳本只能觸發停鑄，不能自動解除停鑄。步驟：
-  1. 在 `contracts` 目錄執行 `bash script/check-vault-storage-layout.sh`，確認只有在尾端追加欄位：`_lastGood` 放在 slot 12，`__gap` 從 43 變成 42，結尾 slot 仍是 55。
+- **V2 金庫升級到 V2_5**：這一版把 M-7 的 last-good 價格 fallback 加回來，但 last-good 超過 6 小時就視為 unpriced；一個以 last-good 估值的帳本只能觸發停鑄，不能自動解除停鑄。另外有三點：
+  - **即時報價的有效期上限是 `min(maxPriceAge, 6h)`**（`effectiveMaxPriceAge`）。鏈上金庫的 `maxPriceAge` 原本是 30 天，會讓 6 小時的保護形同虛設。升級腳本會在同一批交易裡用 RISK_ROLE 呼叫 `setRiskParams`，把它降到 `VAULT_MAX_PRICE_AGE`（預設 21600）。
+  - **只要有任何一個資產 unpriced，mint 就 revert `LiabilityUnpriced`**。用 fallback 估值的資產照常放行；redeem 永遠不受這個限制。
+  - **前提**：所有有未償額的資產，報價都必須不到 6 小時。keeper 要照 heartbeat 刷新，否則升級腳本會拒絕執行。fork 測試 `test/fork/VaultV2_5Fork.t.sol` 驗證過：升級後 mint 和 redeem 都正常；keeper 每 5 小時刷新一次就能持續使用；超過 6 小時沒刷新，mint 會被擋；刷新後恢復。
+
+  步驟：
+  1. 在 `contracts` 目錄執行 `bash script/check-vault-storage-layout.sh`。腳本會先 `forge clean`，再用 `forge inspect … storage-layout` 比對，確認只有在尾端追加欄位：`_lastGood` 放在 slot 12，`__gap` 從 43 變成 42，結尾 slot 仍是 55。
   2. 用 fork 模擬 `forge script script/UpgradeVaultToV2_5.s.sol:UpgradeVaultToV2_5 --fork-url https://sepolia.base.org --sender 0x27C2…A585`。
   3. 人工加上 `--broadcast --slow`。
   4. 用 `jq .abi out/AssetVaultV2_5.sol/AssetVaultV2_5.json > ../frontend/src/contracts/abi/AssetVaultV2.json` 更新前端 ABI。
@@ -226,10 +231,16 @@ GUARDIAN=0x… forge script script/Redeploy130Hardened.s.sol:Redeploy130Hardened
 ## 10. 留給下一輪
 
 - **GuardedOracle 速率限制（本分支已完成原始碼與腳本，尚未部署）**：`setWindowLimit(duration, bps)` 限制一個時間窗內相對於窗口起點價格的累積偏離。窗口是 tumbling 的：跨越窗口邊界時，最壞情況是兩個窗口的量。經 reference 確認的價格可以直接通過，並把窗口起點重設為該價格。
-  - 因為 oracle 不可升級，要用 `script/RedeployGuardedOracle.s.sol`：部署新的 oracle，逐一搬移 11 檔的現價（只要有任何一檔的價格超過金庫的 maxPriceAge 就拒絕，避免舊價被重新蓋上新的時間戳），複製 risk 參數，設定窗口（1h / 2500 bps，必須非 0），授予 keeper 與 guardian 角色，最後把金庫的 `setOracle` 指向新 oracle。
+  - 因為 oracle 不可升級，要用 `script/RedeployGuardedOracle.s.sol`：部署新的 oracle，逐一搬移 11 檔的現價（只要有任何一檔的價格超過 `min(金庫 maxPriceAge, 6h)` 就拒絕，避免舊價被重新蓋上新的時間戳），複製 risk 參數，設定窗口（1h / 2500 bps，必須非 0），授予 keeper 與 guardian 角色，最後把金庫的 `setOracle` 指向新 oracle。
   - fork 模擬已通過，金庫負債前後一致。
   - 這一步要在治理 phase 2 之前執行；phase 2 之後只能透過 timelock 提案。
   - 如果 exchange 採用 `ORACLE_KIND=guarded`，oracle 是 immutable，無法改指向新的 oracle，keeper 必須同時對兩個 oracle 寫價。
+  - **時間窗邊界**：窗口仍然是 tumbling，但每一次寫價同時要通過「本窗口起點」和「上一窗口起點」（上一窗口在兩個窗口長度內才算數）兩項檢查。所以單向累積移動在任何少於兩個窗口的區間內，都不會超過上限。唯一剩下的是跨窗口的來回擺動（例如先 −x 再 +x），但它無法把價格推離原點。fork 以外的單元測試 `test_boundaryDoubleMoveIsRejected` 覆蓋了這個情境。
+  - **reference 必須是非 keeper 的獨立來源**，例如 Chainlink/Pyth 的 AggregatorOracleAdapter。經 reference 確認的寫價可以繞過步進上限和窗口，所以 keeper 能寫的 reference 等於沒有檢查。重部署腳本會 require `referenceSource != keeper` 而且必須有 code。
+  - **寫價被窗口擋下時，guardian 的處置**（`PriceRejected(..., "window")` 或 `"window-prev"` 告警）：
+    1. 先判斷是真行情還是 key 外洩。
+    2. 如果是 key 外洩：guardian `setAssetFrozen(id, true)`（讀取端 fail-closed），並撤換 keeper（由 admin 或 timelock 執行）。
+    3. 如果是真行情：接上獨立的 reference，讓確認後的價格一次到位；或者等下一個窗口，由 keeper 逐步追價。在那之前，exchange 端可以先由 guardian 把該資產設成 ReduceOnly。
 - PerpetualExchange 只剩 665 B 的空間，這一輪完全沒有動它。
 
 ## 11. 簽核

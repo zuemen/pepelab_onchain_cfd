@@ -64,14 +64,35 @@ contract GuardedOracleRateLimitTest is Test {
         oracle.updatePrice(ID, 72_900e8);        // legal −10% step, but −27.1% in the window
     }
 
-    function test_newWindowReanchorsAtCurrentPrice() public {
+    /// The plain-tumbling-window exploit: max move at the end of window N,
+    /// max again right after it rolls. The previous window's anchor still
+    /// binds, so the one-way walk stays within the cap across the boundary.
+    function test_boundaryDoubleMoveIsRejected() public {
+        oracle.setWindowLimit(1 hours, 2_000);
+        _post(110_000e8);
+        vm.warp(block.timestamp + 1 hours - 1);
+        _post(120_000e8);                        // +20% at the very end of window 1
+        vm.warp(block.timestamp + 1);            // window 2 opens, anchor 120k
+        vm.prank(keeper);
+        vm.expectRevert(abi.encodeWithSelector(
+            GuardedOracle.WindowDeviationTooLarge.selector, ID, 132_000e8, 100_000e8
+        ));
+        oracle.updatePrice(ID, 132_000e8);       // +10% vs 120k, but +32% vs the previous anchor
+        _post(118_000e8);                        // a move back inside both is fine
+        (uint256 prev, ) = oracle.previousWindowOf(ID);
+        assertEq(prev, 100_000e8, "window 1 kept as the previous anchor");
+    }
+
+    function test_newWindowReanchorsOncePreviousHasAgedOut() public {
         oracle.setWindowLimit(1 hours, 2_000);
         _post(110_000e8);
         _post(120_000e8);
-        vm.warp(block.timestamp + 1 hours);
+        vm.warp(block.timestamp + 2 hours);      // previous window now >= 2 windows old
         _post(132_000e8);                        // +10% from the new anchor 120k
         (uint256 anchor, ) = oracle.windowOf(ID);
         assertEq(anchor, 120_000e8);
+        (uint256 prev, ) = oracle.previousWindowOf(ID);
+        assertEq(prev, 0, "stale previous window dropped");
         vm.prank(keeper);
         vm.expectRevert();
         oracle.updatePrice(ID, 145_000e8);       // legal +9.8% step, +20.8% from 120k

@@ -26,7 +26,18 @@ interface IUpgradeable25 {
 ///           # timelock handover this must go through a timelock proposal instead):
 ///           forge script … --rpc-url "$BASE_SEPOLIA_RPC_URL" --private-key "$PRIVATE_KEY" --broadcast --slow -vv
 ///
-///         Env: VAULT_PROXY (default Base Sepolia 0x916D…f10a).
+///         Same broadcast, second call: `setRiskParams` (RISK_ROLE) lowers
+///         `maxPriceAge` to VAULT_MAX_PRICE_AGE (default 21600 = 6h). The live
+///         proxy ran at 30 days; V2.5 caps live quotes at 6h anyway
+///         (`effectiveMaxPriceAge`), this makes the stored parameter say so.
+///         Redeem fee and min reserve ratio are re-written unchanged.
+///
+///         Precondition: every outstanding asset has a quote younger than 6h
+///         (dispatch the keeper first) — otherwise the upgrade would turn
+///         them unpriced and block mints; the script refuses.
+///
+///         Env: VAULT_PROXY (default Base Sepolia 0x916D…f10a),
+///              VAULT_MAX_PRICE_AGE (default 21600, must be 1..21600).
 contract UpgradeVaultToV2_5 is Script {
     address internal constant BASE_SEPOLIA_VAULT = 0x916D7Fc399d9afd23BAa113E2c2Cc601341ff10a;
 
@@ -42,6 +53,9 @@ contract UpgradeVaultToV2_5 is Script {
 
         require(keccak256(bytes(v.version())) == keccak256(bytes("2.4.0")), "proxy is not on V2.4");
         require(v.hasRole(v.DEFAULT_ADMIN_ROLE(), deployer), "broadcaster lacks DEFAULT_ADMIN_ROLE on the proxy");
+        require(v.hasRole(v.RISK_ROLE(), deployer), "broadcaster lacks RISK_ROLE (needed to lower maxPriceAge in the same run)");
+        uint256 newMaxAge = vm.envOr("VAULT_MAX_PRICE_AGE", uint256(21_600));
+        require(newMaxAge > 0 && newMaxAge <= 21_600, "VAULT_MAX_PRICE_AGE must be 1..21600");
 
         // Snapshot, so the upgrade is checked rather than trusted.
         uint256 feesBefore      = v.accruedFees();
@@ -75,6 +89,7 @@ contract UpgradeVaultToV2_5 is Script {
         vm.startBroadcast(deployer);
         AssetVaultV2_5 impl = new AssetVaultV2_5();
         IUpgradeable25(proxy).upgradeToAndCall(address(impl), "");
+        AssetVaultV2_5(proxy).setRiskParams(redeemFeeBefore, minRatioBefore, newMaxAge);
         vm.stopBroadcast();
         console.log("new implementation:", address(impl));
 
@@ -86,7 +101,8 @@ contract UpgradeVaultToV2_5 is Script {
         if (n.esgRegistry()        != esgBefore)       revert StatePreservationFailed("esgRegistry");
         if (n.redeemFeeBps()       != redeemFeeBefore) revert StatePreservationFailed("redeemFeeBps");
         if (n.minReserveRatioBps() != minRatioBefore)  revert StatePreservationFailed("minReserveRatioBps");
-        if (n.maxPriceAge()        != maxAgeBefore)    revert StatePreservationFailed("maxPriceAge");
+        if (n.maxPriceAge()        != newMaxAge)       revert StatePreservationFailed("maxPriceAge (lowered)");
+        maxAgeBefore;
         if (n.mintingHalted()      != haltedBefore)    revert StatePreservationFailed("mintingHalted");
         if (n.paused()             != pausedBefore)    revert StatePreservationFailed("paused");
         if (!n.hasRole(n.DEFAULT_ADMIN_ROLE(), deployer)) revert StatePreservationFailed("admin role");
@@ -101,12 +117,14 @@ contract UpgradeVaultToV2_5 is Script {
             if (lg != 0 || at != 0) revert StatePreservationFailed("lastGood must start empty");
         }
         (uint256 liabAfter, uint256 unpricedAfter, uint256 fallbackAfter) = n.valuationDetail();
-        if (liabAfter != liabBefore || unpricedAfter != unpricedBefore || fallbackAfter != 0) {
-            revert StatePreservationFailed("valuation changed on upgrade");
+        if (unpricedAfter > unpricedBefore) {
+            revert StatePreservationFailed("an outstanding asset's price is older than 6h - dispatch the keeper, then re-run");
         }
+        if (liabAfter != liabBefore || fallbackAfter != 0) revert StatePreservationFailed("valuation changed on upgrade");
 
         console.log("=== after (V2.5) ===");
         console.log("version       :", n.version());
+        console.log("maxPriceAge   :", n.maxPriceAge(), "(effective", n.effectiveMaxPriceAge());
         console.log("liability     :", liabAfter, "(unchanged)");
         console.log("state preserved - every field and every asset matches");
         console.log("NEXT: keeper's next observeReserve() seeds the last-good marks.");

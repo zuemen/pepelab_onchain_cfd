@@ -13,8 +13,10 @@ set -euo pipefail
 OLD="${1:-AssetVaultV2_4}"
 NEW="${2:-AssetVaultV2_5}"
 
-old_json=$(forge inspect "$OLD" storageLayout --json)
-new_json=$(forge inspect "$NEW" storageLayout --json)
+# Clean first: a stale artifact would compare yesterday's layout.
+forge clean
+old_json=$(forge inspect "$OLD" storage-layout --json)
+new_json=$(forge inspect "$NEW" storage-layout --json)
 
 # label|slot|offset|type (type ids carry the contract name for structs; normalise it)
 norm() { jq -r '.storage[] | "\(.label)|\(.slot)|\(.offset)|\(.type)"' | sed -E 's/\(([A-Za-z_]+)\)[0-9]+_storage/(\1)_storage/g; s/AssetVaultV2_[0-9]+\.//g'; }

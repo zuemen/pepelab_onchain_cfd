@@ -94,6 +94,9 @@ contract AssetVaultV2_5UpgradeTest is Test {
         s.setBroadcasterOverride(admin);
         s.run();
         assertEq(AssetVaultV2_5(address(vault)).version(), "2.5.0");
+        assertEq(AssetVaultV2_5(address(vault)).maxPriceAge(), 21_600, "lowered in the same run");
+        assertEq(AssetVaultV2_5(address(vault)).redeemFeeBps(), 25, "other risk params untouched");
+        assertEq(AssetVaultV2_5(address(vault)).minReserveRatioBps(), 12_000);
     }
 
     function test_lastGoodLivesInTheOldGapFrontSlot() public {
@@ -190,5 +193,48 @@ contract AssetVaultV2_5UpgradeTest is Test {
         v.observeReserve();
         (, uint256 at2, ) = v.lastGoodPrice(AAPL);
         assertEq(at2, at1, "age is the price's age, not the observation's");
+    }
+
+    // ── review follow-ups: 6h cap on live quotes, mint refuses unpriced ─────
+
+    function test_mintRefusedWhileAnyLiabilityIsUnpriced() public {
+        AssetVaultV2_5 v = _upgrade();
+        vm.prank(alice); v.mint(BTC, 10_000e18);
+        v.observeReserve();                        // AAPL + BTC marked
+        vm.warp(block.timestamp + 6 hours + 1);    // AAPL mark expires, feed dead
+        oracle.updatePrice(BTC, 100_000e8);        // BTC feed alive
+
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(AssetVaultV2_5.LiabilityUnpriced.selector, 1));
+        v.mint(BTC, 1_000e18);
+
+        // Redeem is never gated on it.
+        uint256 bal = btc.balanceOf(alice);
+        vm.prank(alice); v.redeem(BTC, bal / 2);
+        assertEq(btc.balanceOf(alice), bal - bal / 2);
+
+        // Feed back -> mint reopens.
+        oracle.updatePrice(AAPL, 200e8);
+        vm.prank(alice); v.mint(BTC, 1_000e18);
+    }
+
+    function test_fallbackMarkedAssetDoesNotBlockMint() public {
+        AssetVaultV2_5 v = _upgrade();
+        v.observeReserve();
+        vm.warp(block.timestamp + 2 hours);        // AAPL stale but its mark is usable
+        oracle.updatePrice(BTC, 100_000e8);
+        vm.prank(alice); v.mint(BTC, 1_000e18);    // admitted on the estimate
+    }
+
+    function test_looseMaxPriceAgeIsCappedAtSixHours() public {
+        AssetVaultV2_5 v = _upgrade();
+        v.setRiskParams(25, 12_000, 30 days);      // what the live proxy ran with
+        assertEq(v.effectiveMaxPriceAge(), 6 hours);
+        vm.warp(block.timestamp + 6 hours + 1);    // no keeper post since setUp
+        vm.prank(alice);
+        vm.expectRevert();                         // StalePrice: 30 days is not honoured
+        v.mint(AAPL, 1_000e18);
+        (, uint256 unpriced, ) = v.valuationDetail();
+        assertEq(unpriced, 1, "a >6h quote never counts as live");
     }
 }

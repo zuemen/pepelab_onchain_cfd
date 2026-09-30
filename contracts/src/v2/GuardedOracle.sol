@@ -63,16 +63,25 @@ contract GuardedOracle is AccessControl {
 
     /// @notice Rate limit: within one window of `windowDuration` seconds an
     ///         asset may move at most `maxWindowDeviationBps` from the price it
-    ///         had when the window opened. 0 = off. Tumbling windows: a new one
-    ///         opens (anchored at the then-current price) on the first post
-    ///         after the previous one expired, so the worst case across a
-    ///         boundary is two windows' worth — still bounded, unlike before.
+    ///         had when the window opened. 0 = off.
+    ///
+    ///         Windows are tumbling, but a post is checked against BOTH the
+    ///         current window's anchor and the previous window's anchor while
+    ///         that one is less than two windows old. That closes the boundary
+    ///         exploit of plain tumbling windows (max at the end of window N,
+    ///         max again at the start of N+1 = 2x in seconds): a one-way walk
+    ///         is bounded by `maxWindowDeviationBps` over any span shorter
+    ///         than two windows. What remains is a round trip (−x then +x
+    ///         across a boundary), which cannot move the price away from where
+    ///         it was. Cheaper than a true sliding window (no price history).
     uint256 public windowDuration;
     uint256 public maxWindowDeviationBps;
 
     struct Window {
         uint256 anchorPrice;
         uint256 start;
+        uint256 prevAnchor;   // 0 = no recent previous window
+        uint256 prevStart;
     }
     mapping(bytes32 => Window) private _windows;
 
@@ -212,14 +221,31 @@ contract GuardedOracle is AccessControl {
             if (refConfirms) {
                 w.anchorPrice = newPrice;
                 w.start = block.timestamp;
+                w.prevAnchor = 0;
+                w.prevStart = 0;
             } else {
-                if (w.start == 0 || block.timestamp >= w.start + windowDuration) {
+                uint256 d = windowDuration;
+                if (w.start == 0 || block.timestamp >= w.start + d) {
+                    // Roll: the closing window becomes "previous" only if it
+                    // is still less than two windows old.
+                    if (w.start != 0 && block.timestamp < w.start + 2 * d) {
+                        w.prevAnchor = w.anchorPrice;
+                        w.prevStart  = w.start;
+                    } else {
+                        w.prevAnchor = 0;
+                        w.prevStart  = 0;
+                    }
                     w.anchorPrice = old;
                     w.start = block.timestamp;
                 }
                 if (_deviationExceeded(w.anchorPrice, newPrice, maxWindowDeviationBps)) {
                     emit PriceRejected(assetId, newPrice, w.anchorPrice, "window");
                     revert WindowDeviationTooLarge(assetId, newPrice, w.anchorPrice);
+                }
+                if (w.prevAnchor != 0 && block.timestamp < w.prevStart + 2 * d
+                    && _deviationExceeded(w.prevAnchor, newPrice, maxWindowDeviationBps)) {
+                    emit PriceRejected(assetId, newPrice, w.prevAnchor, "window-prev");
+                    revert WindowDeviationTooLarge(assetId, newPrice, w.prevAnchor);
                 }
             }
         }
@@ -234,6 +260,11 @@ contract GuardedOracle is AccessControl {
     function windowOf(bytes32 assetId) external view returns (uint256 anchorPrice, uint256 start) {
         Window storage w = _windows[assetId];
         return (w.anchorPrice, w.start);
+    }
+
+    function previousWindowOf(bytes32 assetId) external view returns (uint256 anchorPrice, uint256 start) {
+        Window storage w = _windows[assetId];
+        return (w.prevAnchor, w.prevStart);
     }
 
     // ── guardian ─────────────────────────────────────────────────────────────
