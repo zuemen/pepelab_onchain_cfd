@@ -29,14 +29,20 @@ name: Admin — Base Sepolia owner call
 #
 # 審查 H1（PR #200）：ops/keeper-trigger 的 Worker 持有 Actions: write 的 fine-grained
 # token，而 Actions: write 就能 dispatch 這支 workflow（以 KEEPER_PRIVATE_KEY 做
-# transferOwnership／updatePrice／mint…）。所以 job 綁 `environment: admin-approval`，
-# 由 required reviewers 人工核准後才會開始執行；Worker 的 token 沒有 Deployments
-# 權限，無法代為核准。
+# transferOwnership／updatePrice／mint…）。所以分成兩個 job：
 #
-# 引用不存在的 environment 時 GitHub 會自動建立一個「沒有任何保護規則」的同名
-# environment，job 會直接執行。所以第一個 step 以 GITHUB_TOKEN 讀這個 environment，
-# 沒有 required reviewers（或 reviewers 為空）就 fail-closed，而且私鑰只給最後一個
-# step。設定步驟見 ops/keeper-trigger/README.md。
+#   approve     綁 `environment: admin-approval`（只有 required reviewers＋branch policy，
+#               **不放 secret**）。人工核准後才開始；Worker 的 token 沒有 Deployments
+#               權限，無法代為核准。引用不存在的 environment 時 GitHub 會自動建立一個
+#               沒有保護規則的同名 environment，所以 gate step 讀它的設定，沒有 required
+#               reviewers 就 fail-closed。
+#   admin-call  needs: approve，才進 concurrency group、才從 `keeper` environment 取私鑰。
+#
+# 審查 H2（第二輪）：之前 concurrency 寫在 workflow 層級，等核准的 job 仍占住與 keeper
+# 共用的 group，keeper 排程會排隊到核准或逾時（最久 30 天）。現在 concurrency 只在
+# admin-call 的 job 層級：job 層級 concurrency 可以用 `needs` context（docs.github.com
+# 「Workflow syntax」jobs.<job_id>.concurrency），也就是在前置 job 完成後才求值、才
+# 進 group；approve 等待期間不占 group。設定步驟見 ops/keeper-trigger/README.md。
 
 on:
   workflow_dispatch:
@@ -71,34 +77,39 @@ permissions:
   # 這個端點屬於 Actions: read（docs.github.com「Permissions required for GitHub Apps」）。
   actions: read
 
-# 與 base-sepolia-keeper.yml 共用同一個 group：兩者都用 KEEPER_PRIVATE_KEY 對
-# Base Sepolia 送交易，並行會撞 nonce。2026-08-06 04:40 的 dispatch 就與排程重疊過。
-concurrency:
-  group: keeper-key-base-sepolia
-  cancel-in-progress: false
+# 注意：這裡**沒有** workflow 層級的 concurrency（審查 H2）。與 keeper 互斥只在
+# admin-call 的 job 層級。
 
 jobs:
-  admin-call:
+  approve:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    # 名稱改了要同步改下面 gate step 的 ADMIN_ENVIRONMENT。
+    timeout-minutes: 5
+    # 名稱改了要同步改下面 gate step 的 ADMIN_ENVIRONMENT。這個 environment 不放 secret。
     environment: admin-approval
-    env:
-      # 所有使用者輸入一律經 env 傳遞，絕不直接內插進 run: 的 shell 字串。
-      # 私鑰不放 job 層級：只有真正送交易的 step 拿得到。
-      TARGET:   ${{ github.event.inputs.target }}
-      FUNC:     ${{ github.event.inputs.function }}
-      ARGS:     ${{ github.event.inputs.args }}
     steps:
-      # 必須是第一個 step、在任何拿得到私鑰的 step 之前（審查 H1）。
       - name: Gate — admin-approval 必須有 required reviewers（fail-closed）
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           ADMIN_ENVIRONMENT: admin-approval
           REF: ${{ github.ref }}
+          # 審查 M4：Worker 改用專用身分（GitHub App 或 org 的 machine account）後，把名稱
+          # 設成 repo variable KEEPER_TRIGGER_ACTOR；它觸發（或重跑）的 admin run 一律拒絕。
+          # 未設定時不擋（見 ops/keeper-trigger/README.md「觸發者身分」）。
+          BLOCKED_ACTOR: ${{ vars.KEEPER_TRIGGER_ACTOR }}
+          ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
         run: |
           set -euo pipefail
+          if [ -n "${BLOCKED_ACTOR:-}" ]; then
+            b=$(printf '%s' "$BLOCKED_ACTOR" | tr '[:upper:]' '[:lower:]')
+            for who in "$ACTOR" "$TRIGGERING_ACTOR"; do
+              if [ "$(printf '%s' "$who" | tr '[:upper:]' '[:lower:]')" = "$b" ]; then
+                echo "::error::這次 run 由 keeper 觸發器帳號 $who 觸發，admin workflow 不接受。"
+                exit 1
+              fi
+            done
+          fi
           # 只准從 master 執行：其他分支上的這支 workflow 不受本 PR 之後的審查約束。
           if [ "$REF" != "refs/heads/master" ]; then
             echo "::error::admin workflow 只允許在 refs/heads/master 執行，這次是 $REF"
@@ -121,6 +132,57 @@ jobs:
             exit 1
           fi
           echo "environment「$ADMIN_ENVIRONMENT」有 $N 位 required reviewer，本次執行已經過人工核准。"
+
+  admin-call:
+    needs: approve
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # 不需要讀 environment 設定，只留 contents: read。
+    permissions:
+      contents: read
+    # 與 base-sepolia-keeper.yml 共用同一個 group：兩者都用 KEEPER_PRIVATE_KEY 對
+    # Base Sepolia 送交易，並行會撞 nonce。2026-08-06 04:40 的 dispatch 就與排程重疊過。
+    # 只放在這個 job（審查 H2）：approve 等核准時不占 group。預設 queue: single，排隊中
+    # 的 admin-call 可能被之後排進來的 keeper run 取代而取消，那就重新 dispatch。
+    concurrency:
+      group: keeper-key-base-sepolia
+      cancel-in-progress: false
+    # 私鑰從 keeper environment 取（無 reviewers、branch policy = master）；見 README。
+    environment:
+      name: keeper
+      deployment: false
+    env:
+      # 所有使用者輸入一律經 env 傳遞，絕不直接內插進 run: 的 shell 字串。
+      # 直接讀 inputs（dispatch 當下凍結的值），不經 approve 的 outputs 轉手。
+      # 私鑰不放 job 層級：只有真正送交易的 step 拿得到。
+      TARGET:   ${{ inputs.target }}
+      FUNC:     ${{ inputs.function }}
+      ARGS:     ${{ inputs.args }}
+    steps:
+      # 在任何拿得到私鑰的 step 之前。
+      - name: Guard — 只接受 master 上第一次執行
+        env:
+          REF: ${{ github.ref }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          BLOCKED_ACTOR: ${{ vars.KEEPER_TRIGGER_ACTOR }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+        run: |
+          set -euo pipefail
+          if [ "$REF" != "refs/heads/master" ]; then
+            echo "::error::admin workflow 只允許在 refs/heads/master 執行，這次是 $REF"
+            exit 1
+          fi
+          # 只重跑 admin-call（re-run failed jobs／re-run job）會沿用 approve 已成功的結果、
+          # 不再經過核准，等於重播一次已核准的呼叫（例如再 mint 一次）。要重試請重新 dispatch。
+          if [ "$RUN_ATTEMPT" != "1" ]; then
+            echo "::error::admin-call 不接受重跑（run_attempt=$RUN_ATTEMPT）；請重新 dispatch 並重新核准。"
+            exit 1
+          fi
+          lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+          if [ -n "${BLOCKED_ACTOR:-}" ] && [ "$(lower "$TRIGGERING_ACTOR")" = "$(lower "$BLOCKED_ACTOR")" ]; then
+            echo "::error::這次 run 由 keeper 觸發器帳號 $TRIGGERING_ACTOR 觸發，admin workflow 不接受。"
+            exit 1
+          fi
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
