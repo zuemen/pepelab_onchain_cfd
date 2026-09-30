@@ -39813,6 +39813,8 @@ var SLEEP = new Int32Array(new SharedArrayBuffer(4));
 var DEFAULT_POLICY = {
   maxMarginPerTrade: 100,
   maxDailyMargin: 500,
+  maxAgentDailyMargin: 2e3,
+  maxAgentOrdersPerWindow: 40,
   allowedAssets: Object.keys(ASSET_IDS),
   maxLeverage: 5,
   maxOrdersPerWindow: 10,

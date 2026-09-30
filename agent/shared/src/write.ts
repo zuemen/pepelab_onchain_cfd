@@ -122,7 +122,7 @@ export interface WriteResult {
  * agent 地址）。非 policy 階段的拒絕寫稽核失敗不改變結果（本來就拒絕），只記 stderr。
  */
 function auditStage(
-  req: PolicyRequest | (Omit<PolicyRequest, "agent"> & { agent: string | null }),
+  req: Omit<PolicyRequest, "agent" | "user"> & { agent: string | null; user?: string },
   guardStage: GuardStage,
   reasonCode: string,
   allowed: boolean,
@@ -138,6 +138,7 @@ function auditStage(
       sessionId: req.sessionId,
       agent: req.agent,
       request: {
+        user: req.user,
         symbol: req.symbol,
         isLong: req.isLong,
         marginUsdc: req.marginUsdc,
@@ -319,7 +320,7 @@ export async function openPositionForSession(params: {
   const r = resolveSession();
   if ("error" in r) return reject({ ...base, agent: null }, "config", "SIGNER_OR_MANAGER_MISSING", r.error);
   const { signer, mgr } = r;
-  const req: PolicyRequest = { ...base, agent: signer.address };
+  const req = { ...base, agent: signer.address };
 
   // A-3：VC 預設必要。缺 VC 且未明確 opt-out → 直接拒絕（不送鏈、不花 gas）。
   if (!params.authVc) {
@@ -359,9 +360,18 @@ export async function openPositionForSession(params: {
     return reject(req, "risk", "RISK_GATE_REJECTED", `拒絕下單（風險閘門）：${riskReason}`);
   }
 
+  // 額度以鏈上 session.user 為鍵（不是呼叫端自報）：送出前從鏈上讀。
+  let user: string;
+  try {
+    user = ethers.getAddress(String((await mgr.sessions(params.sessionId)).user));
+  } catch (err) {
+    return reject(req, "precheck", "SESSION_READ_FAILED", `讀取鏈上 session.user 失敗：${redactSecrets((err as Error).message)}`);
+  }
+  const preq: PolicyRequest = { ...req, user };
+
   // Policy gate：送出交易前的最後一道、**無條件**執行（沒有 opt-out 參數）。
   // 放行時會預留額度；送出前失敗要 release。
-  const gate = await enforcePolicyGate(req);
+  const gate = await enforcePolicyGate(preq);
   if (!gate.allowed) {
     return {
       ok: false,
@@ -394,15 +404,15 @@ export async function openPositionForSession(params: {
     );
     signed = await signTx(signer, unsigned);
   } catch (err) {
-    return await handlePreBroadcastError(err, req, gate.release);
+    return await handlePreBroadcastError(err, preq, gate.release);
   }
 
-  const out = await submitAndTrack(signer, signed, req, gate.release);
+  const out = await submitAndTrack(signer, signed, preq, gate.release);
   if (out.kind !== "mined") return out.result;
 
   // 從 SessionOpenedPosition 事件解出 positionId（只認本 manager 發出的）。
   const positionId = parseSessionOpenedPositionId(out.receipt.logs ?? [], await mgr.getAddress());
-  auditStage(req, "submit", "SUBMITTED", true, undefined, signed.hash);
+  auditStage(preq, "submit", "SUBMITTED", true, undefined, signed.hash);
   return {
     ok: true,
     txHash: signed.hash,
@@ -566,7 +576,7 @@ export async function closePositionForSession(params: {
   const r = resolveSession();
   if ("error" in r) return reject({ ...base, agent: null }, "config", "SIGNER_OR_MANAGER_MISSING", r.error);
   const { signer, mgr } = r;
-  const req: PolicyRequest = { ...base, agent: signer.address };
+  const req = { ...base, agent: signer.address };
 
   if (!params.authVc) {
     if (!unsignedAllowed(params.allowUnsignedForTesting)) {
@@ -592,6 +602,7 @@ export async function closePositionForSession(params: {
   }
 
   // 鏈上交叉比對：部位必須存在、仍開著、且屬於這個 session 的 user。
+  let user: string;
   try {
     const s = await mgr.sessions(params.sessionId);
     const perp = makeContracts(makeProvider()).perp;
@@ -608,6 +619,7 @@ export async function closePositionForSession(params: {
       );
     if (!pos.isOpen)
       return reject(req, "precheck", "POSITION_ALREADY_CLOSED", `position #${params.positionId} 已平倉`);
+    user = ethers.getAddress(String(s.user));
   } catch (err) {
     return reject(
       req,
@@ -618,7 +630,8 @@ export async function closePositionForSession(params: {
   }
 
   // Policy gate（平倉只套頻率上限；保證金／槓桿／資產規則只適用開倉）。
-  const gate = await enforcePolicyGate(req);
+  const preq: PolicyRequest = { ...req, user };
+  const gate = await enforcePolicyGate(preq);
   if (!gate.allowed) {
     return {
       ok: false,
@@ -637,11 +650,11 @@ export async function closePositionForSession(params: {
     );
     signed = await signTx(signer, unsigned);
   } catch (err) {
-    return await handlePreBroadcastError(err, req, gate.release);
+    return await handlePreBroadcastError(err, preq, gate.release);
   }
-  const out = await submitAndTrack(signer, signed, req, gate.release);
+  const out = await submitAndTrack(signer, signed, preq, gate.release);
   if (out.kind !== "mined") return out.result;
-  auditStage(req, "submit", "SUBMITTED", true, undefined, signed.hash);
+  auditStage(preq, "submit", "SUBMITTED", true, undefined, signed.hash);
   return {
     ok: true,
     txHash: signed.hash,

@@ -150,13 +150,17 @@ const writeDeps: Parameters<typeof registerWriteTools>[1] = {
       isOpen: Boolean(p.isOpen),
     };
   },
-  policyPreview: (req) => {
+  policyPreview: async (req) => {
     const signer = makeSigner(provider);
     if (!signer) return null;
     try {
+      // 額度以鏈上 session.user 為鍵：預檢也從鏈上讀。
+      const s = await getSession(req.sessionId);
+      const user = (s.detail as { user?: string } | undefined)?.user;
+      if (!s.ok || !user) return { allowed: false, reasonCode: "PREVIEW_FAILED", message: "讀不到鏈上 session.user" };
       const cfg = loadPolicyConfig();
       const state = readPolicyState(defaultStatePath());
-      return evaluatePolicy({ ...req, agent: signer.address }, cfg, state, Date.now());
+      return evaluatePolicy({ ...req, agent: signer.address, user }, cfg, state, Date.now());
     } catch (err) {
       return { allowed: false, reasonCode: "PREVIEW_FAILED", message: redactSecrets((err as Error).message) };
     }

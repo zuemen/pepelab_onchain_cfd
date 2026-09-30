@@ -26,6 +26,8 @@ const env = {
   VC_NONCE_STATE_PATH: noncePath,
   POLICY_MAX_DAILY_MARGIN: "100000",
   POLICY_MAX_ORDERS_PER_WINDOW: "100000",
+  POLICY_AGENT_MAX_DAILY_MARGIN: "100000",
+  POLICY_AGENT_MAX_ORDERS_PER_WINDOW: "100000",
   WORKER_ITER: String(N),
 };
 let n = 0;
@@ -112,7 +114,7 @@ ok(`並發記錄 VC nonce ${total} 筆，無遺失`);
     patch((p) => p.startsWith(sp));
     failCode = "EPERM";
     failures = -1;
-    const base = { sessionId: 1, agent: "0x" + "ab".repeat(20) };
+    const base = { sessionId: 1, agent: "0x" + "ab".repeat(20), user: "0x" + "cd".repeat(20) };
     const o = await enforcePolicyGate({ ...base, action: "open", symbol: "sBTC", isLong: true, marginUsdc: 1, leverage: 2 }, { statePath: sp, auditPath: ap, lockTimeoutMs: 150 });
     assert.deepEqual([o.allowed, o.reasonCode], [false, "STATE_LOCK_TIMEOUT"]);
     const origErr = console.error;

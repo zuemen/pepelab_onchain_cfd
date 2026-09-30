@@ -16,7 +16,7 @@ process.on("message", async (m) => {
   let nonceOk = 0;
   for (let i = 0; i < N; i++) {
     const g = await enforcePolicyGate({
-      action: "open", sessionId: 1, agent: AGENT, symbol: "sBTC", isLong: true, marginUsdc: 1, leverage: 2,
+      action: "open", sessionId: 1, agent: AGENT, user: ISSUER, symbol: "sBTC", isLong: true, marginUsdc: 1, leverage: 2,
     });
     if (g.allowed) allowed++;
     const r = checkAndRecordVcNonce({

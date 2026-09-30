@@ -153,7 +153,7 @@ export interface WriteToolDeps {
     marginUsdc?: number;
     leverage?: number;
     positionId?: number;
-  }) => PolicyPreview | null;
+  }) => PolicyPreview | null | Promise<PolicyPreview | null>;
   warn: (msg: string) => void;
 }
 
@@ -248,14 +248,14 @@ export function createWriteHandlers(deps: WriteToolDeps) {
       leverage: params.leverage,
       notionalUsdc: notional,
       estimatedFees: estimateFees(notional, fees),
-      policyPreview: deps.policyPreview({
+      policyPreview: await safe(Promise.resolve(deps.policyPreview({
         action: "open",
         sessionId: params.sessionId,
         symbol: params.asset,
         isLong: params.isLong,
         marginUsdc: params.marginUsdc,
         leverage: params.leverage,
-      }),
+      })), null),
     };
     const rejected = await confirm(summary);
     if (rejected) return rejected;
@@ -296,7 +296,7 @@ export function createWriteHandlers(deps: WriteToolDeps) {
       notionalUsdc: notional,
       isOpen: pos.isOpen,
       estimatedFees: { ...estimateFees(notional, fees), executionFeeEth: null },
-      policyPreview: deps.policyPreview({ action: "close", sessionId: params.sessionId, positionId: params.positionId }),
+      policyPreview: await safe(Promise.resolve(deps.policyPreview({ action: "close", sessionId: params.sessionId, positionId: params.positionId })), null),
     };
     const rejected = await confirm(summary);
     if (rejected) return rejected;

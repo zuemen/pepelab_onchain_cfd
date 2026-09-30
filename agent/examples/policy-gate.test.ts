@@ -25,11 +25,13 @@ const {
 } = S;
 
 const AGENT = new ethers.Wallet(AGENT_PK).address;
-const KEY = `${AGENT.toLowerCase()}|7`; // policy 狀態鍵：agent|sessionId
+const USER = ethers.getAddress("0x" + "c1".repeat(20)); // 鏈上 session.user
+const KEY = `${AGENT.toLowerCase()}|${USER.toLowerCase()}`; // 每位客戶的狀態鍵：agent|session.user
+const GKEY = `${AGENT.toLowerCase()}|*`; // agent 全域層
 const T0 = Date.UTC(2026, 8, 30, 12, 0, 0);
 const empty = () => ({ version: 1 as const, agents: {} });
 const open = (o: Partial<Parameters<typeof evaluatePolicy>[0]> = {}) => ({
-  action: "open" as const, sessionId: 7, agent: AGENT, symbol: "sBTC", isLong: true, marginUsdc: 10, leverage: 2, ...o,
+  action: "open" as const, sessionId: 7, agent: AGENT, user: USER, symbol: "sBTC", isLong: true, marginUsdc: 10, leverage: 2, ...o,
 });
 let n = 0;
 const ok = (msg: string) => console.log(`✓ ${++n}. ${msg}`);
@@ -60,14 +62,42 @@ ok("單筆保證金上限：>100 拒絕、=100 放行、負數/NaN → MARGIN_IN
   for (let i = 0; i < 5; i++) st = applyReservation(st, open({ marginUsdc: 100 }), big, T0 + i);
   assert.equal(st.agents[KEY].dailyMargin, 500);
   assert.equal(evaluatePolicy(open({ marginUsdc: 1 }), big, st, T0 + 10).reasonCode, "DAILY_MARGIN_EXCEEDED");
-  // 額度以 (agent, sessionId) 為鍵：另一個 agent、或同一 agent 的另一個 session（另一位客戶）不受影響
+  // 額度以 (agent, 鏈上 session.user) 為鍵：同一位使用者換 session 也無法放大額度
+  assert.equal(evaluatePolicy(open({ sessionId: 8, marginUsdc: 1 }), big, st, T0 + 10).reasonCode, "DAILY_MARGIN_EXCEEDED", "同一 user 的另一個 session 共用額度");
+  assert.equal(evaluatePolicy(open({ sessionId: 999, marginUsdc: 1 }), big, st, T0 + 10).reasonCode, "DAILY_MARGIN_EXCEEDED");
+  // 另一位客戶（不同 session.user）、另一個 agent 不受影響
+  assert.equal(evaluatePolicy(open({ user: "0x" + "d2".repeat(20), marginUsdc: 1 }), big, st, T0).reasonCode, "OK");
   assert.equal(evaluatePolicy(open({ agent: "0x" + "2".repeat(40), marginUsdc: 1 }), big, st, T0).reasonCode, "OK");
-  assert.equal(evaluatePolicy(open({ sessionId: 8, marginUsdc: 1 }), big, st, T0).reasonCode, "OK");
-  assert.deepEqual(Object.keys(st.agents), [KEY], "狀態鍵 = agent|sessionId");
+  assert.deepEqual(Object.keys(st.agents).sort(), [KEY, GKEY].sort(), "狀態鍵 = agent|user ＋ agent|*（全域）");
+  assert.equal(st.agents[GKEY].dailyMargin, 500, "全域層同步累計");
+  // 缺 session.user → fail-closed
+  assert.equal(evaluatePolicy(open({ user: "" }), big, empty(), T0).reasonCode, "CONFIG_INVALID");
   // 跨 UTC 日歸零
   const nextDay = Date.UTC(2026, 9, 1, 0, 0, 1);
   assert.equal(evaluatePolicy(open({ marginUsdc: 100 }), big, st, nextDay).reasonCode, "OK");
-  ok("每日累計上限：當日 500 用滿後再 1 → DAILY_MARGIN_EXCEEDED；以 agent|sessionId 為鍵，別的 agent / session 不受影響；UTC 跨日歸零");
+  ok("每日累計（每位客戶）：500 用滿 → DAILY_MARGIN_EXCEEDED；同 user 換 session 無法放大額度；別的 user / agent 不受影響；UTC 跨日歸零");
+}
+
+// agent 全域層：多位客戶、多個 session 合計也無法超過 agent 全域上限
+{
+  let st: any = empty();
+  const c = { ...cfg, maxDailyMargin: 500, maxAgentDailyMargin: 250, maxOrdersPerWindow: 100, maxAgentOrdersPerWindow: 100 };
+  const users = ["0x" + "a1".repeat(20), "0x" + "a2".repeat(20), "0x" + "a3".repeat(20)];
+  // 三位客戶、各自不同 session，每位 100 → 第三位只剩 50 → 拒絕
+  st = applyReservation(st, open({ user: users[0], sessionId: 1, marginUsdc: 100 }), c, T0);
+  st = applyReservation(st, open({ user: users[1], sessionId: 2, marginUsdc: 100 }), c, T0 + 1);
+  assert.equal(evaluatePolicy(open({ user: users[2], sessionId: 3, marginUsdc: 100 }), c, st, T0 + 2).reasonCode, "AGENT_DAILY_MARGIN_EXCEEDED");
+  assert.equal(evaluatePolicy(open({ user: users[2], sessionId: 3, marginUsdc: 50 }), c, st, T0 + 2).reasonCode, "OK");
+  // 全域頻率
+  let sr: any = empty();
+  const cr = { ...cfg, maxOrdersPerWindow: 100, maxAgentOrdersPerWindow: 3, maxDailyMargin: 10_000, maxAgentDailyMargin: 10_000 };
+  for (let i = 0; i < 3; i++) sr = applyReservation(sr, open({ user: users[i], sessionId: i }), cr, T0 + i);
+  assert.equal(evaluatePolicy(open({ user: "0x" + "a4".repeat(20), sessionId: 9 }), cr, sr, T0 + 5).reasonCode, "AGENT_RATE_LIMITED");
+  // 平倉不受全域層限制
+  assert.equal(evaluatePolicy({ action: "close", sessionId: 9, agent: AGENT, user: users[0], positionId: 1 }, cr, sr, T0 + 5).reasonCode, "OK");
+  assert.equal(DEFAULT_POLICY.maxAgentDailyMargin, 2000);
+  assert.equal(DEFAULT_POLICY.maxAgentOrdersPerWindow, 40);
+  ok("agent 全域層：多位客戶／多個 session 合計超過全域每日額度或頻率 → AGENT_DAILY_MARGIN_EXCEEDED / AGENT_RATE_LIMITED；平倉不受全域層限制");
 }
 
 {
@@ -78,7 +108,7 @@ ok("單筆保證金上限：>100 拒絕、=100 放行、負數/NaN → MARGIN_IN
   assert.equal(d.reasonCode, "RATE_LIMITED");
   assert.match(d.message, /後再試/);
   // 平倉不計入、也不受開倉的頻率限制（開倉桶已滿仍可平倉）
-  const close = { action: "close" as const, sessionId: 7, agent: AGENT, positionId: 1 };
+  const close = { action: "close" as const, sessionId: 7, agent: AGENT, user: USER, positionId: 1 };
   assert.equal(evaluatePolicy(close, c, st, T0 + 5000).reasonCode, "OK");
   const afterClose = applyReservation(st, close, c, T0 + 5000);
   assert.equal(afterClose.agents[KEY].orders.length, 3, "平倉不佔開倉的筆數");
@@ -191,7 +221,7 @@ ok("單筆保證金上限：>100 拒絕、=100 放行、負數/NaN → MARGIN_IN
   ok("狀態檔逐筆驗型別：負數/字串/null 額度、壞日期、壞時間戳、壞頂層 → STATE_UNREADABLE（開倉 fail-closed）");
 
   // 平倉：同樣的故障一律放行（OK_DEGRADED），印 ::error:: 並在稽核標記 degraded
-  const close = { action: "close" as const, sessionId: 7, agent: AGENT, positionId: 5 };
+  const close = { action: "close" as const, sessionId: 7, agent: AGENT, user: USER, positionId: 5 };
   const errs: string[] = [];
   const origErr = console.error;
   console.error = (...a: unknown[]) => { errs.push(a.map(String).join(" ")); };
@@ -229,6 +259,10 @@ ok("單筆保證金上限：>100 拒絕、=100 放行、負數/NaN → MARGIN_IN
 
 // ─────────────── write.ts 一定經過 policy gate（VC 閘、風險閘之後；簽章、廣播之前）───────────────
 {
+  // 額度以鏈上 session.user 為鍵 → write.ts 會先讀 sessions()；用假節點回答（不連真實網路）。
+  const { startFakeRpc, sessionsHandler } = await import("./fixtures/fakeRpc.ts");
+  const rpc = await startFakeRpc(sessionsHandler({ user: USER, agent: AGENT }));
+  process.env.BASE_SEPOLIA_RPC_URL = rpc.url;
   const r = await openPositionForSession({
     sessionId: 7, symbol: "sBTC", isLong: true, marginUsdc: 5000, leverage: 2, allowUnsignedForTesting: true,
   });
@@ -240,9 +274,12 @@ ok("單筆保證金上限：>100 拒絕、=100 放行、負數/NaN → MARGIN_IN
   });
   assert.equal(r2.reasonCode, "LEVERAGE_EXCEEDED");
   const recs = readAudit(process.env.POLICY_AUDIT_PATH!) as any[];
-  assert.ok(recs.some((x) => x.reasonCode === "LEVERAGE_EXCEEDED" && x.allowed === false));
-  // 實際順序：VC 閘（本例以 allowUnsignedForTesting 略過）→ 風險閘（預設關）→ policy gate → 簽章 → 廣播。
-  ok("openPositionForSession：VC 閘與風險閘之後、簽章與廣播之前被 policy gate 擋下（guardStage=policy，未送交易）");
+  assert.ok(recs.some((x) => x.reasonCode === "LEVERAGE_EXCEEDED" && x.allowed === false && x.request.user === USER), "稽核記下鏈上 session.user");
+  assert.ok(rpc.calls.every((m) => m === "eth_call"), "只有唯讀 eth_call，沒有任何交易");
+  await rpc.close();
+  process.env.BASE_SEPOLIA_RPC_URL = "http://127.0.0.1:1";
+  // 實際順序：VC 閘（本例以 allowUnsignedForTesting 略過）→ 風險閘（預設關）→ 讀鏈上 session.user → policy gate → 簽章 → 廣播。
+  ok("openPositionForSession：VC 閘與風險閘之後、簽章與廣播之前被 policy gate 擋下（guardStage=policy，未送交易；額度鍵取自鏈上 session.user）");
 }
 
 fs.rmSync(TMP, { recursive: true, force: true });

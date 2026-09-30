@@ -17,13 +17,16 @@
 //   「跨進入點（MCP、tg-bot、x402 agent）」這兩個維度，所以選本地狀態檔、UTC 日期切日。
 //   預設路徑固定在 agent/.state/（不隨 cwd 變），同一台機器上的三個進入點共用同一份額度。
 //
-// ── 額度範圍：以 `agent 地址 + sessionId` 為鍵（審查 Low-10）──
-//   一個 session＝一位使用者（持牌機構的一個客戶帳戶）對這把 agent 金鑰的一次授權。
-//   B2B 白標下同一把 agent 金鑰會同時服務多位客戶；若以 agent 為鍵，客戶 A 的交易會吃掉
-//   客戶 B 的每日額度與筆數（互相影響、也是 DoS 途徑），也對不上機構「每個客戶帳戶一組
-//   風控限額」的做法。session 只能由使用者在鏈上建立，agent 無法自己開新 session 來繞過
-//   限額，所以「每個 session 各一份」不會放大單一使用者的曝險；agent 的總曝險上限仍是
-//   所有使用者授權的 session 預算總和（鏈上強制）。
+// ── 額度範圍：兩層（複審 Medium-4）──
+//   1. **(agent, 鏈上 session.user)**：每位客戶（持牌機構的一個客戶帳戶）一組每日額度與
+//      開倉頻率。以 session.user（鏈上讀出，非呼叫端自報）為鍵，而**不是** sessionId——
+//      同一位使用者開再多 session，額度也不會倍增；B2B 白標下同一把 agent 金鑰服務多位客戶，
+//      客戶之間也不會互吃額度。
+//   2. **agent 全域**：同一把 agent 金鑰所有客戶合計的每日額度與開倉頻率上限
+//      （POLICY_AGENT_MAX_DAILY_MARGIN / POLICY_AGENT_MAX_ORDERS_PER_WINDOW）。agent 金鑰
+//      外洩或失控時，這一層限制總傷害，不論它拿到多少位使用者的授權。
+//   平倉只受「每位客戶」那層寬鬆的平倉桶限制，不受全域層限制（平倉降低風險，不應因其他
+//   客戶的活動被擋）。
 //   誠實邊界：本地檔可被有檔案權限的人刪除重置；它是縱深防禦，不是唯一防線
 //   （合約的 session 預算仍在）。同機多 process 以檔案鎖（fileLock.ts）序列化讀改寫；
 //   跨主機部署要改成共享儲存（Redis 等）。
@@ -49,6 +52,8 @@ export type PolicyReasonCode =
   | "LEVERAGE_INVALID"
   | "LEVERAGE_EXCEEDED"
   | "RATE_LIMITED"
+  | "AGENT_DAILY_MARGIN_EXCEEDED"
+  | "AGENT_RATE_LIMITED"
   | "CLOSE_RATE_LIMITED"
   | "STATE_LOCK_TIMEOUT"
   | "STATE_LOCK_FAILED"
@@ -57,8 +62,12 @@ export type PolicyReasonCode =
 export interface PolicyConfig {
   /** 單筆保證金上限（USDC，人類單位）。 */
   maxMarginPerTrade: number;
-  /** 每個 (agent 地址, sessionId) 每個 UTC 日的累計開倉保證金上限（USDC）。 */
+  /** 每個 (agent, session.user) 每個 UTC 日的累計開倉保證金上限（USDC）。 */
   maxDailyMargin: number;
+  /** agent 全域（所有客戶合計）每個 UTC 日的累計開倉保證金上限（USDC）。 */
+  maxAgentDailyMargin: number;
+  /** agent 全域（所有客戶合計）每個時間窗內的最多開倉筆數。 */
+  maxAgentOrdersPerWindow: number;
   /** 允許交易的資產代號。 */
   allowedAssets: string[];
   /** 槓桿上限（整數倍）。 */
@@ -75,12 +84,15 @@ export interface PolicyConfig {
 }
 
 /**
- * 保守預設：單筆 100、每日 500、槓桿 5x、每小時 10 筆開倉（平倉另計，每小時 60 筆）；
+ * 保守預設：單筆 100、每位客戶每日 500、槓桿 5x、每位客戶每小時 10 筆開倉（平倉另計，
+ * 每小時 60 筆）；agent 全域每日 2000、每小時 40 筆開倉。
  * 資產＝協議本身上架的清單（assetIdOf 認得的代號），未知代號在這裡就被擋。
  */
 export const DEFAULT_POLICY: PolicyConfig = {
   maxMarginPerTrade: 100,
   maxDailyMargin: 500,
+  maxAgentDailyMargin: 2000,
+  maxAgentOrdersPerWindow: 40,
   allowedAssets: Object.keys(ASSET_IDS),
   maxLeverage: 5,
   maxOrdersPerWindow: 10,
@@ -94,6 +106,8 @@ export interface PolicyRequest {
   action: PolicyAction;
   sessionId: number;
   agent: string;
+  /** 鏈上 session.user（write.ts 從鏈上讀出，不是呼叫端自報）。額度以它為鍵。 */
+  user: string;
   symbol?: string;
   isLong?: boolean;
   marginUsdc?: number;
@@ -160,6 +174,9 @@ export function loadPolicyConfig(env: NodeJS.ProcessEnv = process.env): PolicyCo
   const e = (k: string) => env[k]?.trim() || undefined;
   if (e("POLICY_MAX_MARGIN_PER_TRADE")) cfg.maxMarginPerTrade = Number(e("POLICY_MAX_MARGIN_PER_TRADE"));
   if (e("POLICY_MAX_DAILY_MARGIN")) cfg.maxDailyMargin = Number(e("POLICY_MAX_DAILY_MARGIN"));
+  if (e("POLICY_AGENT_MAX_DAILY_MARGIN")) cfg.maxAgentDailyMargin = Number(e("POLICY_AGENT_MAX_DAILY_MARGIN"));
+  if (e("POLICY_AGENT_MAX_ORDERS_PER_WINDOW"))
+    cfg.maxAgentOrdersPerWindow = Number(e("POLICY_AGENT_MAX_ORDERS_PER_WINDOW"));
   if (e("POLICY_MAX_LEVERAGE")) cfg.maxLeverage = Number(e("POLICY_MAX_LEVERAGE"));
   if (e("POLICY_MAX_ORDERS_PER_WINDOW")) cfg.maxOrdersPerWindow = Number(e("POLICY_MAX_ORDERS_PER_WINDOW"));
   if (e("POLICY_MAX_CLOSES_PER_WINDOW")) cfg.maxClosesPerWindow = Number(e("POLICY_MAX_CLOSES_PER_WINDOW"));
@@ -169,6 +186,8 @@ export function loadPolicyConfig(env: NodeJS.ProcessEnv = process.env): PolicyCo
 
   num("maxMarginPerTrade", cfg.maxMarginPerTrade);
   num("maxDailyMargin", cfg.maxDailyMargin);
+  num("maxAgentDailyMargin", cfg.maxAgentDailyMargin);
+  num("maxAgentOrdersPerWindow", cfg.maxAgentOrdersPerWindow);
   num("maxLeverage", cfg.maxLeverage);
   num("maxOrdersPerWindow", cfg.maxOrdersPerWindow);
   num("maxClosesPerWindow", cfg.maxClosesPerWindow);
@@ -185,19 +204,24 @@ export function utcDay(nowMs: number): string {
   return new Date(nowMs).toISOString().slice(0, 10);
 }
 
-/** 狀態鍵：`<agent 小寫地址>|<sessionId>`（理由見檔頭「額度範圍」）。 */
-export function policyStateKey(req: Pick<PolicyRequest, "agent" | "sessionId">): string {
-  return `${req.agent.toLowerCase()}|${req.sessionId}`;
+/** 每位客戶的狀態鍵：`<agent>|<session.user>`（皆小寫；理由見檔頭「額度範圍」）。 */
+export function policyStateKey(req: Pick<PolicyRequest, "agent" | "user">): string {
+  return `${req.agent.toLowerCase()}|${req.user.toLowerCase()}`;
 }
 
-/** 取某 (agent, session) 在 now 時的狀態（跨日歸零、清掉時間窗外的筆數）。不修改輸入。 */
+/** agent 全域層的狀態鍵：`<agent>|*`。 */
+export function agentGlobalKey(agent: string): string {
+  return `${agent.toLowerCase()}|*`;
+}
+
+/** 取某個鍵在 now 時的狀態（跨日歸零、清掉時間窗外的筆數）。不修改輸入。 */
 export function currentAgentState(
   state: PolicyState,
-  key: Pick<PolicyRequest, "agent" | "sessionId">,
+  key: string,
   cfg: PolicyConfig,
   nowMs: number,
 ): AgentState {
-  const prev = state.agents[policyStateKey(key)];
+  const prev = state.agents[key];
   const day = utcDay(nowMs);
   const cutoff = nowMs - cfg.windowSec * 1000;
   return {
@@ -218,7 +242,11 @@ export function evaluatePolicy(
   state: PolicyState,
   nowMs: number,
 ): PolicyDecision {
-  const s = currentAgentState(state, req, cfg, nowMs);
+  if (typeof req.user !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(req.user)) {
+    return deny("CONFIG_INVALID", "缺少鏈上 session.user，無法套用每位客戶的額度（fail-closed）");
+  }
+  const s = currentAgentState(state, policyStateKey(req), cfg, nowMs);
+  const g = currentAgentState(state, agentGlobalKey(req.agent), cfg, nowMs);
 
   if (req.action === "close") {
     if (s.closes.length >= cfg.maxClosesPerWindow) {
@@ -247,7 +275,12 @@ export function evaluatePolicy(
     if (s.dailyMargin + m > cfg.maxDailyMargin)
       return deny(
         "DAILY_MARGIN_EXCEEDED",
-        `今日（UTC ${s.day}）已用 ${s.dailyMargin}，加上本筆 ${m} 超過每日上限 ${cfg.maxDailyMargin}`,
+        `今日（UTC ${s.day}）此客戶已用 ${s.dailyMargin}，加上本筆 ${m} 超過每日上限 ${cfg.maxDailyMargin}`,
+      );
+    if (g.dailyMargin + m > cfg.maxAgentDailyMargin)
+      return deny(
+        "AGENT_DAILY_MARGIN_EXCEEDED",
+        `今日（UTC ${g.day}）此 agent 所有客戶合計已用 ${g.dailyMargin}，加上本筆 ${m} 超過 agent 全域每日上限 ${cfg.maxAgentDailyMargin}`,
       );
   }
 
@@ -255,7 +288,14 @@ export function evaluatePolicy(
     const retry = Math.ceil((s.orders[0] + cfg.windowSec * 1000 - nowMs) / 1000);
     return deny(
       "RATE_LIMITED",
-      `${cfg.windowSec}s 內已開倉 ${s.orders.length} 筆，達上限 ${cfg.maxOrdersPerWindow}；約 ${Math.max(retry, 1)}s 後再試`,
+      `${cfg.windowSec}s 內此客戶已開倉 ${s.orders.length} 筆，達上限 ${cfg.maxOrdersPerWindow}；約 ${Math.max(retry, 1)}s 後再試`,
+    );
+  }
+  if (g.orders.length >= cfg.maxAgentOrdersPerWindow) {
+    const retry = Math.ceil((g.orders[0] + cfg.windowSec * 1000 - nowMs) / 1000);
+    return deny(
+      "AGENT_RATE_LIMITED",
+      `${cfg.windowSec}s 內此 agent 已開倉 ${g.orders.length} 筆，達 agent 全域上限 ${cfg.maxAgentOrdersPerWindow}；約 ${Math.max(retry, 1)}s 後再試`,
     );
   }
   return { allowed: true, reasonCode: "OK", message: "policy gate 通過" };
@@ -272,15 +312,20 @@ export function applyReservation(
   cfg: PolicyConfig,
   nowMs: number,
 ): PolicyState {
-  const s = currentAgentState(state, req, cfg, nowMs);
   const open = req.action === "open";
-  const next: AgentState = {
-    day: s.day,
-    dailyMargin: s.dailyMargin + (open ? req.marginUsdc ?? 0 : 0),
-    orders: open ? [...s.orders, nowMs] : s.orders,
-    closes: open ? s.closes : [...s.closes, nowMs],
+  const bump = (key: string): AgentState => {
+    const s = currentAgentState(state, key, cfg, nowMs);
+    return {
+      day: s.day,
+      dailyMargin: s.dailyMargin + (open ? req.marginUsdc ?? 0 : 0),
+      orders: open ? [...s.orders, nowMs] : s.orders,
+      closes: open ? s.closes : [...s.closes, nowMs],
+    };
   };
-  return { version: 1, agents: { ...state.agents, [policyStateKey(req)]: next } };
+  const agents = { ...state.agents, [policyStateKey(req)]: bump(policyStateKey(req)) };
+  // 全域層只記開倉（平倉不受全域層限制）。
+  if (open) agents[agentGlobalKey(req.agent)] = bump(agentGlobalKey(req.agent));
+  return { version: 1, agents };
 }
 
 /** 釋放一筆預留（送出前就失敗時）。 */
@@ -289,16 +334,13 @@ export function releaseReservation(
   req: PolicyRequest,
   reservedAt: number,
 ): PolicyState {
-  const key = policyStateKey(req);
-  const prev = state.agents[key];
-  if (!prev) return state;
   // 只移除「一筆」同時間戳的紀錄：兩個 process 同一毫秒預留時，時間戳會重複。
   const removeOne = (xs: number[] = []) => {
     const i = xs.indexOf(reservedAt);
     return i < 0 ? xs : [...xs.slice(0, i), ...xs.slice(i + 1)];
   };
   const open = req.action === "open";
-  const next: AgentState = {
+  const undo = (prev: AgentState): AgentState => ({
     day: prev.day,
     dailyMargin:
       open && prev.day === utcDay(reservedAt)
@@ -306,8 +348,11 @@ export function releaseReservation(
         : prev.dailyMargin,
     orders: open ? removeOne(prev.orders) : prev.orders ?? [],
     closes: open ? prev.closes ?? [] : removeOne(prev.closes),
-  };
-  return { version: 1, agents: { ...state.agents, [key]: next } };
+  });
+  const agents = { ...state.agents };
+  const keys = open ? [policyStateKey(req), agentGlobalKey(req.agent)] : [policyStateKey(req)];
+  for (const k of keys) if (agents[k]) agents[k] = undo(agents[k]);
+  return { version: 1, agents };
 }
 
 // ── 狀態檔 I/O ───────────────────────────────────────────────────────────────
@@ -375,6 +420,8 @@ export interface PolicyAuditRecord {
   /** agent（session key）地址；**絕不**含私鑰。 */
   agent: string | null;
   request: {
+    /** 鏈上 session.user（額度以它為鍵）。 */
+    user?: string;
     symbol?: string;
     isLong?: boolean;
     marginUsdc?: number;
@@ -445,6 +492,7 @@ export async function enforcePolicyGate(
   const noop = async () => {};
   const isClose = req.action === "close";
   const reqFields = {
+    user: req.user,
     symbol: req.symbol,
     isLong: req.isLong,
     marginUsdc: req.marginUsdc,
