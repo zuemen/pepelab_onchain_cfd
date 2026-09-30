@@ -24,6 +24,9 @@ interface IPriceSource {
 ///             that posts must agree with
 ///           - pause, and role separation so the admin key can live in a
 ///             multisig behind a timelock while keepers stay hot
+///           - a RATE LIMIT: a cap on the cumulative move within a time window,
+///             so a compromised keeper cannot walk the price arbitrarily far by
+///             chaining many legal per-update steps (N x 10% in one block)
 ///
 ///         What it does NOT do: make prices trustless. Keepers are still trusted
 ///         parties. It converts "one key can do anything" into "one key can do
@@ -58,6 +61,21 @@ contract GuardedOracle is AccessControl {
 
     bool public paused;
 
+    /// @notice Rate limit: within one window of `windowDuration` seconds an
+    ///         asset may move at most `maxWindowDeviationBps` from the price it
+    ///         had when the window opened. 0 = off. Tumbling windows: a new one
+    ///         opens (anchored at the then-current price) on the first post
+    ///         after the previous one expired, so the worst case across a
+    ///         boundary is two windows' worth — still bounded, unlike before.
+    uint256 public windowDuration;
+    uint256 public maxWindowDeviationBps;
+
+    struct Window {
+        uint256 anchorPrice;
+        uint256 start;
+    }
+    mapping(bytes32 => Window) private _windows;
+
     event AssetAdded(bytes32 indexed assetId, uint256 price);
     event PriceUpdated(bytes32 indexed assetId, uint256 oldPrice, uint256 newPrice, address keeper);
     event PriceRejected(bytes32 indexed assetId, uint256 attempted, uint256 current, string reason);
@@ -65,6 +83,7 @@ contract GuardedOracle is AccessControl {
     event RiskParamsUpdated(uint256 maxDeviationBps, uint256 maxPriceAge);
     event ReferenceSourceSet(address source);
     event PausedSet(bool paused);
+    event WindowLimitUpdated(uint256 windowDuration, uint256 maxWindowDeviationBps);
 
     error AssetNotFound(bytes32 assetId);
     error AssetAlreadyExists(bytes32 assetId);
@@ -75,6 +94,7 @@ contract GuardedOracle is AccessControl {
     error StalePrice(bytes32 assetId, uint256 updatedAt);
     error IsPaused();
     error InvalidParam();
+    error WindowDeviationTooLarge(bytes32 assetId, uint256 attempted, uint256 windowAnchor);
 
     constructor(address admin) {
         if (admin == address(0)) revert InvalidParam();
@@ -183,9 +203,37 @@ contract GuardedOracle is AccessControl {
             revert DeviationTooLarge(assetId, newPrice, old);
         }
 
+        // Rate limit. A reference-confirmed post is a verified market move —
+        // the same reasoning that lets it bypass the step cap — so it passes
+        // and re-anchors the window at the confirmed price (otherwise a real
+        // gap would leave every later small step "too far" from a stale anchor).
+        if (maxWindowDeviationBps != 0) {
+            Window storage w = _windows[assetId];
+            if (refConfirms) {
+                w.anchorPrice = newPrice;
+                w.start = block.timestamp;
+            } else {
+                if (w.start == 0 || block.timestamp >= w.start + windowDuration) {
+                    w.anchorPrice = old;
+                    w.start = block.timestamp;
+                }
+                if (_deviationExceeded(w.anchorPrice, newPrice, maxWindowDeviationBps)) {
+                    emit PriceRejected(assetId, newPrice, w.anchorPrice, "window");
+                    revert WindowDeviationTooLarge(assetId, newPrice, w.anchorPrice);
+                }
+            }
+        }
+
         a.price = newPrice;
         a.updatedAt = block.timestamp;
         emit PriceUpdated(assetId, old, newPrice, msg.sender);
+    }
+
+    /// @notice The current rate-limit window of `assetId` (anchor price and
+    ///         start; start 0 = no window opened yet).
+    function windowOf(bytes32 assetId) external view returns (uint256 anchorPrice, uint256 start) {
+        Window storage w = _windows[assetId];
+        return (w.anchorPrice, w.start);
     }
 
     // ── guardian ─────────────────────────────────────────────────────────────
@@ -214,6 +262,16 @@ contract GuardedOracle is AccessControl {
         maxDeviationBps = maxDeviationBps_;
         maxPriceAge = maxPriceAge_;
         emit RiskParamsUpdated(maxDeviationBps_, maxPriceAge_);
+    }
+
+    /// @notice Set the rate limit. `bps == 0` turns it off. Otherwise the
+    ///         window must be 5 minutes to 7 days and the cap at most 50% (the
+    ///         same ceiling as the per-update cap).
+    function setWindowLimit(uint256 duration, uint256 bps) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (bps != 0 && (bps > 5_000 || duration < 5 minutes || duration > 7 days)) revert InvalidParam();
+        windowDuration = bps == 0 ? 0 : duration;
+        maxWindowDeviationBps = bps;
+        emit WindowLimitUpdated(windowDuration, bps);
     }
 
     /// @notice Point at a decentralized feed (e.g. AggregatorOracleAdapter) that

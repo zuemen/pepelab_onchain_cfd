@@ -70,7 +70,7 @@ RWA（其餘 8 檔）             : C_rwa = C × 50%
 | 過期行為 | 回傳舊價，由 exchange 的 6 小時 maxPriceAge 擋下 | oracle 本身設定 30 天，實際仍由 exchange 的 6 小時擋 |
 | 凍結或暫停時 | 不適用 | `getPrice` 會 revert，該資產的開倉、平倉、清算全部 revert（fail-closed） |
 | 與金庫共用 | 否 | 是。凍結一個資產會同時停掉 V2 金庫 |
-| 累積漂移 | 不適用 | 目前沒有時間窗上限：連續 10 筆更新可以把價格推到約 2.6 倍（§10） |
+| 累積漂移 | 不適用 | 鏈上現行版本沒有時間窗上限，連續 10 筆更新可以把價格推到約 2.6 倍。本分支新增速率限制（預設每小時最多 25%），但必須先重部署 oracle（§10） |
 
 **取捨：** 在測試網做 demo 時，MockOracle 比較不容易卡住。GuardedOracle 能限制 key 外洩後的損害，代價是凍結時連平倉也會被擋。想用 GuardedOracle 就設 `ORACLE_KIND=guarded`，preflight 會先確認 11 檔都能報價。Oracle 在 exchange 上是 immutable，之後要換只能再重部署一次。
 
@@ -159,7 +159,11 @@ broadcast JSON 在 `contracts/broadcast/Redeploy130Hardened.s.sol/84532/run-late
 
 ## 10. 留給下一輪
 
-- GuardedOracle 的時間窗累積偏離上限：沒有做，理由見本分支的回報。
+- **GuardedOracle 速率限制（本分支已完成原始碼與腳本，尚未部署）**：`setWindowLimit(duration, bps)` 限制一個時間窗內相對於窗口起點價格的累積偏離。窗口是 tumbling 的：跨越窗口邊界時，最壞情況是兩個窗口的量。經 reference 確認的價格可以直接通過，並把窗口起點重設為該價格。
+  - 因為 oracle 不可升級，要用 `script/RedeployGuardedOracle.s.sol`：部署新的 oracle，逐一搬移 11 檔的現價（只要有任何一檔的價格超過金庫的 maxPriceAge 就拒絕，避免舊價被重新蓋上新的時間戳），複製 risk 參數，設定窗口（1h / 2500 bps，必須非 0），授予 keeper 與 guardian 角色，最後把金庫的 `setOracle` 指向新 oracle。
+  - fork 模擬已通過，金庫負債前後一致。
+  - 這一步要在治理 phase 2 之前執行；phase 2 之後只能透過 timelock 提案。
+  - 如果 exchange 採用 `ORACLE_KIND=guarded`，oracle 是 immutable，無法改指向新的 oracle，keeper 必須同時對兩個 oracle 寫價。
 - PerpetualExchange 只剩 665 B 的空間，這一輪完全沒有動它。
 
 ## 11. 簽核
