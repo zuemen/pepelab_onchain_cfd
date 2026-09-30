@@ -1,6 +1,6 @@
 import type { AssetMeta } from 'src/lib/pepefi/assetMeta'
 
-import { useState, useEffect } from 'react'
+import { useRef, useState, useEffect } from 'react'
 
 import Box from '@mui/material/Box'
 import Alert from '@mui/material/Alert'
@@ -67,26 +67,42 @@ export function OrderTicket({
 }) {
   const [isLong, setIsLong] = useState(true)
   // 旗標關閉時鎖在 1×：畫面不露出選擇器，送單也只送 1，鏈上行為等同現貨。
-  const [lev, setLev] = useState(SHOW_LEVERAGE ? 2 : FIXED_LEVERAGE)
+  const defaultLev = SHOW_LEVERAGE ? 2 : FIXED_LEVERAGE
+  const [lev, setLev] = useState(defaultLev)
 
   // 碳分級的槓桿上限與費率。合約 openPosition 用的是 exchange 自己的
   // maxLeverageForAsset / tradingFeeBpsForAsset——上層讀那兩個 view 傳進來，讓選擇器
-  // 的上限與顯示的費率就是鏈上會用的數字；讀不到才退回碳分級靜態表並標「來源：靜態表」，
-  // 還在讀時上限先鎖 1×。
+  // 的上限與顯示的費率就是鏈上會用的數字；讀不到才退回碳分級靜態表並標「來源：靜態表」。
+  //
+  // 還在讀（pending）時上限是 1×，但**只限制可選項目與實際使用的倍數**（effLev），不改
+  // state——否則讀回之前 lev 會被夾成 1，讀回之後也回不去預設的 2×。讀回（settled）的
+  // 那一刻，把這一檔的 lev 設成 min(預設, 上限)；之後使用者自己選的倍數只在超過上限時夾住。
   const carbonMaxLev = tradingParams.maxLeverage
+  const settled = tradingParams.source !== 'pending'
+  const effLev = Math.min(lev, carbonMaxLev)
+  const settledFor = useRef<string | null>(null)
   useEffect(() => {
-    if (lev > carbonMaxLev) setLev(carbonMaxLev)
-  }, [carbonMaxLev, lev])
+    if (!settled) {
+      settledFor.current = null
+      return
+    }
+    if (settledFor.current !== selAsset) {
+      settledFor.current = selAsset
+      setLev(Math.min(defaultLev, carbonMaxLev))
+    } else if (lev > carbonMaxLev) {
+      setLev(carbonMaxLev)
+    }
+  }, [settled, selAsset, carbonMaxLev, lev, defaultLev])
   const [margin, setMargin] = useState('')
   const [busy, setBusy] = useState(false)
   const [riskOpen, setRiskOpen] = useState(true)
 
   const marginBig = tryParse(margin)
-  const notional = marginBig ? marginBig * BigInt(lev) : 0n
+  const notional = marginBig ? marginBig * BigInt(effLev) : 0n
   // 清算價和 /exchange 共用 lib/pepefi/liquidation.ts。原本這裡少算了 5.1% 的
   // 維持保證金 + 平倉費 buffer，同一個倉位在兩頁會看到兩個清算價，而且這邊的
   // 比實際更寬鬆——正好是會害人的那個方向。
-  const liq = estimateLiquidationPrice({ entryPrice: curPrice, isLong, leverage: BigInt(lev) })
+  const liq = estimateLiquidationPrice({ entryPrice: curPrice, isLong, leverage: BigInt(effLev) })
   const overFree = marginBig !== null && marginBig > freeMgn
   // 讀不到鏈上指數價（0 = 未讀到或從未寫入）時不讓送單：清算價算不出來，
   // 鏈上也會 revert。原因寫在按鈕上方，不只是把按鈕變灰。
@@ -117,7 +133,7 @@ export function OrderTicket({
     try {
       const execFee = (await contracts.exchange.executionFee()) as bigint
       const tx = asTx(
-        await contracts.exchange.openPosition(selAsset, isLong, amt, BigInt(lev), {
+        await contracts.exchange.openPosition(selAsset, isLong, amt, BigInt(effLev), {
           value: execFee,
         }),
       )
@@ -184,7 +200,7 @@ export function OrderTicket({
         </Box>
         <Box sx={{ display: 'flex', gap: 0.8 }}>
           {[1, 2, 5].filter((l) => l <= carbonMaxLev).map((l) => {
-            const on = lev === l
+            const on = effLev === l
             return (
               <Box
                 key={l}
