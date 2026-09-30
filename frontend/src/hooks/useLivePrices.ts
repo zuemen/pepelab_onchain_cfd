@@ -6,8 +6,7 @@ import { useWalletContext } from 'src/contexts/wallet-context'
 import { ASSET_IDS, getAddresses } from 'src/contracts/addresses'
 import { type LivePrice, buildLivePrices, emptyLivePrices } from 'src/lib/pepefi/livePrices'
 
-/** 讀不到 exchange.maxPriceAge() 時的後備值 = Base Sepolia 上實際部署的 6 小時。 */
-const FALLBACK_MAX_PRICE_AGE_SEC = 21600
+import { FALLBACK_MAX_PRICE_AGE_SEC } from 'src/lib/pepefi/priceFreshness'
 
 /**
  * 輪詢間隔。

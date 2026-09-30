@@ -52,6 +52,15 @@ export const landing: Catalog['landing'] = {
     four: '(Optional) Copy a trader on Marketplace, or register as one on the Trader page',
   },
 
+  copyOff: {
+    tagline: 'RWA · Tokenized Assets · Agent-Native 🐸',
+    viewMarketplace: 'Browse Marketplace',
+    stepFour: '(Optional) Browse published allocations on Marketplace, or register and publish a strategy on the Trader page',
+    heroBefore:
+      'One wallet, four asset classes: tokenized equities, bonds, gold, and crypto. On-chain mint and redeem, an allocation marketplace, benchmark comparison, plus ',
+    paperMid: ' for simulated trading, so users can try RWA investing and AI agent trading without risk. ',
+  },
+
   oracleDisclosure: 'Oracle prices are controlled by the deployer (admin) and updated live during the demo to show PnL changes',
 
   /** 首頁最上方的即時 KPI 條（HeroKpiStrip）。網路名稱、chainId 是技術識別碼，不譯。 */

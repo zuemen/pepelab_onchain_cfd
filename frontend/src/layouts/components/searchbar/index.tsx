@@ -18,6 +18,8 @@ import Dialog, { dialogClasses } from '@mui/material/Dialog';
 import MenuItem, { menuItemClasses } from '@mui/material/MenuItem';
 import InputBase, { inputBaseClasses } from '@mui/material/InputBase';
 
+import { t } from 'src/locales';
+
 import { Label } from 'src/components/label';
 import { Iconify } from 'src/components/iconify';
 import { Scrollbar } from 'src/components/scrollbar';
@@ -188,7 +190,7 @@ export function Searchbar({ data: navItems = [], sx, ...other }: SearchbarProps)
         <InputBase
           fullWidth
           autoFocus={open}
-          placeholder="Search..."
+          placeholder={t.common.search.placeholder}
           value={searchQuery}
           onChange={handleSearch}
           startAdornment={

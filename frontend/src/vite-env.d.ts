@@ -6,6 +6,11 @@ interface ImportMetaEnv {
    * 認不出來的值會退回預設並留一行 warn，見 src/locales/catalogs.ts。
    */
   readonly VITE_LOCALE?: string;
+  /** 商業版功能旗標，見 src/lib/pepefi/featureFlags.ts 與 .env.example。 */
+  readonly VITE_FEATURE_GAMEFI?: string;
+  readonly VITE_FEATURE_PEPE_REWARDS?: string;
+  readonly VITE_FEATURE_COPY_TRADING?: string;
+  readonly VITE_ENABLE_MOCK_WALLET?: string;
 }
 
 // Note: `window.ethereum` is declared once in src/hooks/useWallet.ts via

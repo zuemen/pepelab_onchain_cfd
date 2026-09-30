@@ -372,6 +372,7 @@ export const admin: Catalog['admin'] = {
     revenue: {
       title: 'x402 Revenue (70/20/10)',
       urlLabel: 'signal-api URL',
+      cspNote: 'Restricted by CSP: only allow-listed domains (connect-src in vercel.json) can be reached; any other URL will be blocked by the browser.',
       fetch: 'Fetch',
       failed: 'Failed to connect to signal-api ({error}). Run npm run signal-api first.',
       callsTotal: 'Calls / Total',

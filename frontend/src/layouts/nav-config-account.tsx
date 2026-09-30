@@ -3,6 +3,7 @@ import type { AccountDrawerProps } from './components/account-drawer';
 import { paths } from 'src/routes/paths';
 
 import { t } from 'src/locales';
+import { isPathEnabled } from 'src/lib/pepefi/featureFlags';
 
 import { Iconify } from 'src/components/iconify';
 
@@ -15,8 +16,11 @@ import { Iconify } from 'src/components/iconify';
  * **24 個 hex 字元**，根本不是合法位址，點下去只會進到一個查無此人的頁面。
  * 現在改成依連線中的錢包產生：有位址就連到自己的 profile，沒有就退回
  * `/trader` 交易員總覽（一個真實存在的路由）。
+ *
+ * 藥水／坐騎／外觀屬於 GameFi，獎勵屬於 PEPE 獎勵；商業版旗標關掉時由
+ * accountNavData 的 isPathEnabled 過濾掉，不另外寫一套判斷。
  */
-export const accountNavData = (address?: string | null): AccountDrawerProps['data'] => [
+const ALL_ACCOUNT_ITEMS = (address?: string | null): NonNullable<AccountDrawerProps['data']> => [
   {
     label: t.nav.account.profile,
     href: address ? `/trader/${address}` : '/trader',
@@ -48,6 +52,9 @@ export const accountNavData = (address?: string | null): AccountDrawerProps['dat
     icon: <Iconify icon="solar:notes-bold-duotone" />,
   },
 ];
+
+export const accountNavData = (address?: string | null): AccountDrawerProps['data'] =>
+  ALL_ACCOUNT_ITEMS(address).filter((item) => isPathEnabled(item.href));
 
 /** 舊呼叫端的相容出口（沒有錢包位址時的預設清單）。 */
 export const _account = accountNavData(null);

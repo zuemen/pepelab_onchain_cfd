@@ -19,6 +19,7 @@ export const portfolio = {
     incompleteMany: '{count} 筆餘額無法讀取——此總額不完整。',
 
     part: {
+      spot: '代幣化資產',
       wallet: '錢包',
       trading: '交易帳戶',
       staked: '已質押',
@@ -27,6 +28,7 @@ export const portfolio = {
 
     /** 某一項讀不到時的說明（Unread Balance，見 CONTEXT.md）。 */
     unread: {
+      spot: '部分代幣化資產的餘額或價格無法讀取',
       wallet: '錢包餘額無法讀取',
       trading: '交易帳戶無法讀取',
       staked: '質押金額無法讀取',
@@ -110,6 +112,8 @@ export const portfolio = {
   quickAction: {
     trade: '交易',
     copyTrader: '跟單交易者',
+    /** 跟單旗標關閉時同一顆按鈕的說法（仍連到 /marketplace 的配置市集）。 */
+    marketplace: '瀏覽配置市集',
     history: '歷史記錄',
     proTerminal: '專業交易終端',
   },
@@ -152,6 +156,17 @@ export const portfolio = {
     unrealizedPnl: '未實現損益，依預言機價格計算',
   },
 
+  /** 部位頁籤的平倉按鈕（見 lib/pepefi/closeGuard.ts）。 */
+  close: {
+    column: '操作',
+    button: '平倉',
+    closing: '平倉中…',
+    closed: '已平倉',
+    halted: '{asset} 市場目前暫停（Halted），暫時無法平倉。',
+    copyManaged: '此部位屬於進行中的跟單，請在上方「跟單部位」取消跟單以一併平倉。',
+    leftover: '此為先前跟單留下的部位，可直接平倉。',
+  },
+
   page: {
     title: '我的投資組合',
     refresh: '重新整理',
@@ -168,6 +183,10 @@ export const portfolio = {
     connectWallet: '連接錢包以查看你的投資組合。',
 
     unsupportedNetwork: '不支援的網路',
+    connectedTo: '目前連線於 ',
+    connectedToAfter: '。',
+    switchTo: '請切換到 ',
+    switchToAfter: ' 測試網。',
     unknownChain: '未知',
     chainNumber: '鏈 {id}',
 
@@ -177,6 +196,8 @@ export const portfolio = {
 
     emptyTitle: '你的投資組合是空的',
     emptyDescription: '先取得測試用 {token}，接著可以跟單交易者或自行開倉。',
+    /** 跟單旗標關閉時。 */
+    emptyDescriptionNoCopy: '先取得測試用 {token}，接著到「資產」頁買進代幣化資產，或到配置市集參考他人發布的配置。',
     emptyCta: '取得 {token}',
 
     side: {
@@ -207,6 +228,7 @@ export const portfolio = {
 
     openPositions: '未平倉部位',
     openCount: '{count} 筆未平倉 · 手動 + 跟單',
+    openCountNoCopy: '{count} 筆未平倉',
     noOpenPositions: '無未平倉部位。',
     total: '總計',
 

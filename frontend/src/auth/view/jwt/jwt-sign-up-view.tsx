@@ -49,11 +49,12 @@ export function JwtSignUpView() {
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // 範本預填的示範資料已移除——正式站不預填任何憑證。
   const defaultValues: SignUpSchemaType = {
-    firstName: 'Hello',
-    lastName: 'Friend',
-    email: 'hello@gmail.com',
-    password: '@2Minimal',
+    firstName: '',
+    lastName: '',
+    email: '',
+    password: '',
   };
 
   const methods = useForm({

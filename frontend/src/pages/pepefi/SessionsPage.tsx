@@ -32,7 +32,11 @@ import { t, locale, interpolate } from 'src/locales'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { agentDid, shortDid } from 'src/lib/pepefi/did'
 import { useToast } from 'src/components/pepefi/ToastProvider'
-import { CHAIN_NAMES } from 'src/contracts/addresses'
+import { SwitchChainButton } from 'src/components/pepefi/SwitchChainButton'
+import { ASSET_IDS, CHAIN_NAMES } from 'src/contracts/addresses'
+import { ASSETS_LIST } from 'src/lib/pepefi/assetMeta'
+import { BASE_SEPOLIA_RPC_URL } from 'src/lib/pepefi/chains'
+import { mapLimit, withRetry, RPC_CONCURRENCY } from 'src/lib/pepefi/rpcBatch'
 import {
   getSessionManager,
   getSessionManagerAddress,
@@ -105,6 +109,12 @@ export default function SessionsPage() {
   const [budget,   setBudget]   = useState('5000')
   const [maxLev,   setMaxLev]   = useState('5')
   const [hours,    setHours]    = useState('24')
+  // agent 可交易的標的白名單（createSessionWithAssets）。預設 sBTC、sETH。
+  // 合約把空陣列解讀成「全部允許」，所以 UI 要求至少選一檔——不讓一個沒勾任何
+  // 東西的表單默默變成無限制的 session。
+  const [allowedAssets, setAllowedAssets] = useState<string[]>([ASSET_IDS.sBTC, ASSET_IDS.sETH])
+  const toggleAsset = (id: string) =>
+    setAllowedAssets(prev => (prev.includes(id) ? prev.filter(a => a !== id) : [...prev, id]))
 
   // Generated agent burner key — **kept only in memory**, never persisted / sent.
   const [genKey,    setGenKey]    = useState<{ address: string; privateKey: string } | null>(null)
@@ -125,6 +135,8 @@ export default function SessionsPage() {
   // which session's export dialog is open.
   const [vcBySession, setVcBySession] = useState<Record<number, AuthorizationVC>>({})
   const [exportFor,   setExportFor]   = useState<number | null>(null)
+  // 每次開啟／關閉匯出視窗都回到「不嵌入私鑰」——勾選只對當下這一次匯出有效。
+  useEffect(() => { setIncludeKey(false) }, [exportFor])
 
   // localStorage key for this wallet's issued VCs (per chain + address).
   const vcStorageKey = useCallback(
@@ -186,7 +198,7 @@ export default function SessionsPage() {
               ? genKey.privateKey
               : t.sessions.export.privateKeyPlaceholder,
           SESSION_MANAGER_ADDRESS: getSessionManagerAddress(wallet.chainId),
-          BASE_SEPOLIA_RPC_URL: 'https://sepolia.base.org',
+          BASE_SEPOLIA_RPC_URL,
           DEMO_SESSION_ID: String(sessionId),
         },
       },
@@ -236,20 +248,22 @@ export default function SessionsPage() {
     setLoading(true)
     try {
       const next = Number(await manager.nextSessionId())
-      const mine: SessionRow[] = []
-      for (let i = 0; i < next; i++) {
-        const s = (await manager.sessions(i)) as unknown as [
+      const me = wallet.address.toLowerCase()
+      // 原本逐一 await（N 個 session = N 次來回），session 一多整頁就卡在 loading。
+      // 改成有上限的並行（RPC_CONCURRENCY，公共 RPC 同時太多會丟請求）＋暫時性失敗重試。
+      const ids = Array.from({ length: next }, (_, i) => i)
+      const rows = await mapLimit(ids, RPC_CONCURRENCY, async (i): Promise<SessionRow | null> => {
+        const s = (await withRetry(() => manager.sessions(i))) as unknown as [
           string, string, bigint, bigint, bigint, bigint, bigint, boolean,
         ]
-        if (s[0].toLowerCase() === wallet.address.toLowerCase()) {
-          mine.push({
-            id: i, user: s[0], agent: s[1],
-            maxMarginPerTrade: s[2], totalMarginBudget: s[3], spentMargin: s[4],
-            maxLeverage: s[5], expiry: s[6], revoked: s[7],
-          })
+        if (s[0].toLowerCase() !== me) return null
+        return {
+          id: i, user: s[0], agent: s[1],
+          maxMarginPerTrade: s[2], totalMarginBudget: s[3], spentMargin: s[4],
+          maxLeverage: s[5], expiry: s[6], revoked: s[7],
         }
-      }
-      setSessions(mine)
+      })
+      setSessions(rows.filter((r): r is SessionRow => r !== null))
     } catch (e) {
       notify(prettyError(e), false)
     } finally {
@@ -262,15 +276,17 @@ export default function SessionsPage() {
   // ── Create session ────────────────────────────────────────────────────────
   const createSession = async () => {
     if (!manager) return
+    if (allowedAssets.length === 0) { notify(t.sessions.create.noAssetSelected, false); return }
     try {
       const expiry = Math.floor(Date.now() / 1000) + Math.round(parseFloat(hours) * 3600)
       setBusy(p => ({ ...p, create: true }))
-      const tx = asTx(await manager.createSession(
+      const tx = asTx(await manager.createSessionWithAssets(
         agent.trim(),
         parseUnits(perTrade || '0', 18),
         parseUnits(budget || '0', 18),
         BigInt(maxLev || '0'),
         BigInt(expiry),
+        allowedAssets,
       ))
       await tx.wait()
       notify(t.sessions.create.done, true, tx.hash)
@@ -311,7 +327,7 @@ export default function SessionsPage() {
   if (!wallet.isConnected) {
     return (
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-        <Typography color="text.secondary">Connect wallet to manage agent sessions.</Typography>
+        <Typography color="text.secondary">{t.common.wallet.connectPrompt.sessions}</Typography>
       </Box>
     )
   }
@@ -350,6 +366,9 @@ export default function SessionsPage() {
           {t.sessions.markup.wrongNetBefore}<b>Base Sepolia</b>{t.sessions.markup.wrongNetMid}{' '}
           <b>{wallet.chainId !== null ? (CHAIN_NAMES[wallet.chainId] ?? `chainId ${wallet.chainId}`) : t.sessions.wrongNetwork.unknownChain}</b>
           {t.sessions.markup.wrongNetAfter}
+          <Box sx={{ mt: 1 }}>
+            <SwitchChainButton />
+          </Box>
         </Alert>
       ) : (
         <>
@@ -432,10 +451,33 @@ export default function SessionsPage() {
               </Labeled>
             </Stack>
             <Box>
+              <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>{t.sessions.create.allowedAssets}</Typography>
+              <Stack direction="row" flexWrap="wrap" useFlexGap gap={0.75} role="group" aria-label={t.sessions.create.allowedAssets}>
+                {ASSETS_LIST.map(a => {
+                  const on = allowedAssets.includes(a.id)
+                  return (
+                    <Chip
+                      key={a.id}
+                      label={a.symbol}
+                      size="small"
+                      clickable
+                      color={on ? 'primary' : 'default'}
+                      variant={on ? 'filled' : 'outlined'}
+                      aria-pressed={on}
+                      onClick={() => toggleAsset(a.id)}
+                    />
+                  )
+                })}
+              </Stack>
+              <Typography variant="caption" color={allowedAssets.length === 0 ? 'error.main' : 'text.secondary'} sx={{ display: 'block', mt: 0.5 }}>
+                {allowedAssets.length === 0 ? t.sessions.create.noAssetSelected : t.sessions.create.allowedAssetsHint}
+              </Typography>
+            </Box>
+            <Box>
               <Button
                 variant="contained"
                 onClick={() => void createSession()}
-                disabled={!agent.trim() || !!busy.create}
+                disabled={!agent.trim() || !!busy.create || allowedAssets.length === 0}
               >
                 {busy.create ? t.sessions.create.creating : t.sessions.create.cta}
               </Button>
@@ -587,6 +629,16 @@ export default function SessionsPage() {
                         <Button size="small" variant="outlined" onClick={() => void copyText(t.sessions.export.copyMcpLabel, cfgStr)} sx={{ textTransform: 'none' }}>{t.sessions.export.copy}</Button>
                         <Button size="small" variant="outlined" onClick={() => downloadJson(`pepelab-mcp-session-${sid}.json`, cfg)} sx={{ textTransform: 'none' }}>{t.sessions.export.download}</Button>
                       </Stack>
+                      {canIncludeKey && (
+                        <Alert severity={includeKey ? 'error' : 'warning'} variant="outlined" sx={{ mb: 1, py: 0.5 }}>
+                          <Typography variant="caption" sx={{ display: 'block', fontWeight: 700 }}>
+                            {includeKey ? t.sessions.markup.includeKeyOnWarning : t.sessions.markup.includeKeyRiskTitle}
+                          </Typography>
+                          <Typography variant="caption" sx={{ display: 'block' }}>
+                            {t.sessions.markup.includeKeyRisk}
+                          </Typography>
+                        </Alert>
+                      )}
                       {canIncludeKey ? (
                         <FormControlLabel
                           control={<Checkbox size="small" color="error" checked={includeKey} onChange={e => setIncludeKey(e.target.checked)} />}

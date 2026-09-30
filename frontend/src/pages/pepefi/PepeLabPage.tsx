@@ -24,6 +24,7 @@ import { ASSET_META } from 'src/lib/pepefi/assetMeta';
 import { holdingValue } from 'src/lib/pepefi/assetClass';
 import { portfolioCarbon, attestationExpired } from 'src/lib/pepefi/carbon';
 import { diversificationByValue } from 'src/lib/pepefi/diversification';
+import { FEATURE_PEPE_REWARDS } from 'src/lib/pepefi/featureFlags';
 import { BURN_ADDRESS, loadGamefiState, saveGamefiState, GAMEFI_DEFAULT_STATE } from 'src/lib/pepefi/gamefi';
 import { ACHIEVEMENTS, buildQuests, TODAY_INDEX, type AchCtx } from 'src/lib/pepefi/achievements';
 import { useToast } from 'src/components/pepefi/ToastProvider';
@@ -1114,6 +1115,7 @@ export default function PepeLabPage() {
                   ? interpolate(t.pepelab.questsTab.checkedIn, { days: streak })
                   : t.pepelab.questsTab.notCheckedIn}
               </Typography>
+              {FEATURE_PEPE_REWARDS && (
               <Button
                 component={RouterLink}
                 href={paths.pepefi.rewards}
@@ -1123,6 +1125,7 @@ export default function PepeLabPage() {
               >
                 {t.pepelab.questsTab.goToRewards}
               </Button>
+              )}
             </Card>
           </Box>
         )}

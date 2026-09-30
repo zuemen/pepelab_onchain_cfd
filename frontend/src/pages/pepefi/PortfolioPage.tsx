@@ -1,6 +1,6 @@
 import { MONO } from 'src/components/pepefi/brandKit'
 import { parseEther } from 'ethers';
-import { useState, useEffect, useCallback } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import { Link as RouterLink, useNavigate } from 'react-router';
 import {
   Line, XAxis, YAxis, Tooltip, LineChart,
@@ -12,7 +12,7 @@ import { useContracts } from 'src/hooks/useContracts';
 import { useLivePrices } from 'src/hooks/useLivePrices';
 
 import { usePepefiWallet } from 'src/layouts/pepefi';
-import { getAddresses, CHAIN_NAMES } from 'src/contracts/addresses';
+import { ASSET_IDS, getAddresses, CHAIN_NAMES } from 'src/contracts/addresses';
 import { t, interpolate } from 'src/locales';
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
@@ -22,7 +22,7 @@ import { firstBlocking, stalenessNotice } from 'src/lib/pepefi/priceFreshness';
 
 import { useMode } from 'src/contexts/mode-context';
 import { useAccountBalances } from 'src/hooks/useAccountBalances';
-import { isPortfolioProvablyEmpty, type NetWorthParts, type PortfolioEmptinessCheck } from 'src/lib/pepefi/portfolio';
+import { spotValueOf, isPortfolioProvablyEmpty, type NetWorthParts, type PortfolioEmptinessCheck } from 'src/lib/pepefi/portfolio';
 import { COLUMN_LABELS, columnLabelForMode, openPositionColumnsForMode, type OpenPositionColumnKey } from 'src/lib/pepefi/openPositionColumns';
 
 import StatCard from 'src/components/pepefi/StatCard';
@@ -30,8 +30,10 @@ import ESGBadge from 'src/components/pepefi/ESGBadge';
 import NetWorthHero from 'src/components/pepefi/dashboard/NetWorthHero';
 import RwaAllocation from 'src/components/pepefi/dashboard/RwaAllocation';
 import { useSynthHoldings } from 'src/hooks/useSynthHoldings';
-import { SHOW_PERPETUALS } from 'src/lib/pepefi/featureFlags';
+import { SHOW_PERPETUALS, FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags';
 import { copyDeskVisibility } from 'src/lib/pepefi/copyDeskVisibility';
+import { readAssetMode, isPriceTracked, closeBlockReason, closeAvailability, readOracleFreshness } from 'src/lib/pepefi/closeGuard';
+import { SwitchChainButton } from 'src/components/pepefi/SwitchChainButton';
 import KYCStatusCard from 'src/components/pepefi/dashboard/KYCStatusCard';
 import QuickActions from 'src/components/pepefi/dashboard/QuickActions';
 import PortfolioAnalysis from 'src/components/pepefi/dashboard/PortfolioAnalysis';
@@ -96,6 +98,8 @@ interface CopyRec {
   initialAmount: bigint;    // 18-dec
   copiedAt:      bigint;
   currentValue:  bigint;    // sum of getPositionValue for all positionIds
+  /** 這筆 active 跟單底下的部位——平倉按鈕據此判斷哪些部位要走「取消跟單」。 */
+  positionIds:   bigint[];
 }
 
 interface PosRow {
@@ -288,6 +292,7 @@ export default function PortfolioPage() {
             initialAmount: rec.initialAmount,
             copiedAt:      rec.copiedAt,
             currentValue:  vals.reduce((s, v) => s + v, 0n),
+            positionIds:   [...rec.positionIds],
           };
         })
       );
@@ -403,6 +408,90 @@ export default function PortfolioPage() {
     } finally { setLoad(key, false); }
   };
 
+  // 自己的部位直接在這裡平倉。SHOW_PERPETUALS 關閉時終端機沒有入口，這是使用者
+  // 唯一看得到、按得到的平倉路徑。送出前先檢查價格新鮮度與 AssetMode（新版合約
+  // 才有；舊合約讀不到就略過），兩者在鏈上都會 revert，先擋才能把原因講清楚。
+  // 雙擊防護：setLoad 是 state，要等重繪按鈕才變 disabled；同一個 tick 的第二下
+  // 會穿過去。ref 是同步的，第一下進來就先佔位，檢查失敗再放開。
+  const closingRef = useRef<Set<string>>(new Set());
+  const doClose = async (row: PosRow) => {
+    if (!contracts) return;
+    const key = `close_${String(row.id)}`;
+    if (closingRef.current.has(key)) return;
+    closingRef.current.add(key);
+    setLoad(key, true);
+    try {
+      const label = ASSET_LABEL[row.asset] ?? row.asset.slice(0, 8);
+      const mode = await readAssetMode(
+        String(contracts.exchange.target),
+        wallet.provider ?? contracts.exchange.runner,
+        row.asset
+      );
+      // useLivePrices 只輪詢 ASSET_IDS（+ PEPE）。前端資產表以外的舊部位永遠不會有
+      // 輪詢價格——那種就直接讀 oracle 算新鮮度；讀不到就放行，交給合約 revert 並顯示原因。
+      const tracked = isPriceTracked(row.asset, Object.values(ASSET_IDS));
+      const freshness = tracked
+        ? livePrices[row.asset]?.freshness
+        : await readOracleFreshness(contracts.oracle, contracts.exchange, row.asset, Math.floor(Date.now() / 1000));
+      const blocked = closeBlockReason({ freshness, assetLabel: label, assetMode: mode, tracked });
+      if (blocked) { notify(blocked, false); return; }
+      const tx = asTx(await contracts.exchange.closePosition(row.id));
+      await tx.wait();
+      notify(t.portfolio.close.closed, true, tx.hash);
+      await fetchAll();
+    } catch (e) {
+      notify(prettyError(e), false);
+    } finally {
+      closingRef.current.delete(key);
+      setLoad(key, false);
+    }
+  };
+
+  // 仍 active 的跟單紀錄底下的部位 id。跟單紀錄讀取失敗時是 null——不知道哪些
+  // 該走「取消跟單」，就一筆都不擋（見 closeAvailability）。
+  const activeCopyPositionIds: ReadonlySet<string> | null = copyRecsOk
+    ? new Set(copyRecs.flatMap(r => r.positionIds.map(String)))
+    : null;
+
+  // 「跟單來源」欄：跟單旗標關閉時，只有真的有跟單留下的部位才顯示——否則一整欄
+  // 的「—」只是在商業版畫面上介紹一個不存在的功能。
+  const showCopiedFrom =
+    FEATURE_COPY_TRADING ||
+    positions.some(p => !!p.copiedFrom && p.copiedFrom !== '0x0000000000000000000000000000000000000000');
+
+  const renderCloseCell = (row: PosRow) => {
+    const availability = closeAvailability(row, activeCopyPositionIds);
+    if (availability === 'managed') {
+      return (
+        <TableCell align="right" sx={{ maxWidth: 220 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', whiteSpace: 'normal' }}>
+            {t.portfolio.close.copyManaged}
+          </Typography>
+        </TableCell>
+      );
+    }
+    const busyNow = !!busy[`close_${String(row.id)}`];
+    return (
+      <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+        <Button
+          size="small"
+          variant="outlined"
+          color="error"
+          disabled={busyNow}
+          onClick={() => void doClose(row)}
+          sx={{ textTransform: 'none', minWidth: 64 }}
+        >
+          {busyNow ? t.portfolio.close.closing : t.portfolio.close.button}
+        </Button>
+        {availability === 'leftover' && (
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', whiteSpace: 'normal', mt: 0.5 }}>
+            {t.portfolio.close.leftover}
+          </Typography>
+        )}
+      </TableCell>
+    );
+  };
+
   const doWithdraw = async () => {
     if (!contracts) return;
     const amt = tryParse(withdrawAmt);
@@ -429,6 +518,13 @@ export default function PortfolioPage() {
   const lockedMargin = positions.reduce((s, p) => s + p.margin, 0n);
   const unrealisedPnl = positions.reduce((s, p) => s + p.unrealizedPnL, 0n);
 
+  // 現貨代幣（/tokens 買的 sGOLD、sBOND…）以 oracle 價計入淨值。讀取中當成 null
+  // （不完整），讀到餘額但缺價的那幾檔由 spotUnpriced 帶出「此總額不完整」。
+  const spot = spotValueOf(
+    synthHoldings.loading ? null : synthHoldings.rows,
+    synthHoldings.readFailures
+  );
+
   const netWorthParts: NetWorthParts = {
     walletCash:    balances.walletCash,
     freeMargin,
@@ -436,6 +532,8 @@ export default function PortfolioPage() {
     unrealisedPnl,
     staked:        balances.staked,
     vault:         balances.vault,
+    spotHoldings:  spot.value,
+    spotUnpriced:  spot.unpriced,
   };
 
   const notionalTotal = positions.reduce((s, p) => s + p.margin * p.leverage, 0n);
@@ -454,7 +552,7 @@ export default function PortfolioPage() {
   // 原本的 fallback 是畫一個點、而且畫的是自由保證金——標題寫 Performance、
   // 副標寫 initial vs current，畫面上卻是一顆跟績效無關的孤點。整張卡不顯示
   // 才是誠實的做法，跟 hero 不顯示算不出來的「今日變化」是同一個理由。
-  const copyDesk = copyDeskVisibility(mode, copyRecs.length);
+  const copyDesk = copyDeskVisibility(mode, copyRecs.length, FEATURE_COPY_TRADING);
   const showCopyPerformance = copyDesk.performance && totalInitial > 0n;
 
   const chartData = [
@@ -481,9 +579,10 @@ export default function PortfolioPage() {
         <Typography sx={{ fontSize: '2.5rem' }}>⛓️</Typography>
         <Typography variant="h6" sx={{ fontWeight: 'bold' }}>{t.portfolio.page.unsupportedNetwork}</Typography>
         <Typography variant="body2" color="text.secondary" align="center">
-          Connected to <Typography component="span" sx={{ color: 'warning.main', fontFamily: MONO }}>{name}</Typography>.<br />
-          Please switch to <Typography component="span" sx={{ color: 'primary.main', fontFamily: MONO }}>Base Sepolia</Typography> testnet.
+          {t.portfolio.page.connectedTo}<Typography component="span" sx={{ color: 'warning.main', fontFamily: MONO }}>{name}</Typography>{t.portfolio.page.connectedToAfter}<br />
+          {t.portfolio.page.switchTo}<Typography component="span" sx={{ color: 'primary.main', fontFamily: MONO }}>Base Sepolia</Typography>{t.portfolio.page.switchToAfter}
         </Typography>
+        <SwitchChainButton />
       </Box>
     );
   }
@@ -508,7 +607,7 @@ export default function PortfolioPage() {
   // 只等前者,skeleton 可能在 balances 還在讀的時候就放行——那正是後面
   // isPortfolioProvablyEmpty 拿到「還沒讀到」被誤判方向的老問題,只是換了
   // 一個更早的入口。兩邊都跑完才算真的 loaded。
-  if (!isLoaded || !balances.settled) {
+  if (!isLoaded || !balances.settled || synthHoldings.loading) {
     return (
       <Container maxWidth="lg" sx={{ py: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
         <Grid container spacing={2}>
@@ -538,6 +637,7 @@ export default function PortfolioPage() {
   // 上線過的那個 bug。任何一項是 null／還沒讀成功,就不能算是「證實是空的」，
   // 見 lib/pepefi/portfolio.ts 的 isPortfolioProvablyEmpty。
   const emptinessCheck: PortfolioEmptinessCheck = {
+    spotHoldingsCount: synthHoldings.readFailures === 0 ? synthHoldings.rows.length : null,
     copyRecordsCount: copyRecsOk   ? copyRecs.length  : null,
     positionsCount:   positionsOk  ? positions.length : null,
     freeMargin:       freeMarginOk ? freeMargin       : null,
@@ -552,7 +652,10 @@ export default function PortfolioPage() {
         <EmptyState
           icon="💼"
           title={t.portfolio.page.emptyTitle}
-          description={interpolate(t.portfolio.page.emptyDescription, { token: STABLE_LABEL })}
+          description={interpolate(
+            FEATURE_COPY_TRADING ? t.portfolio.page.emptyDescription : t.portfolio.page.emptyDescriptionNoCopy,
+            { token: STABLE_LABEL }
+          )}
           ctaText={interpolate(t.portfolio.page.emptyCta, { token: STABLE_LABEL })}
           onClick={() => navigate('/exchange')}
         />
@@ -766,7 +869,7 @@ export default function PortfolioPage() {
           <Typography variant="caption" color="text.secondary">
             {mode === 'simple'
               ? interpolate(t.portfolio.page.openCountSimple, { count: positions.length })
-              : interpolate(t.portfolio.page.openCount, { count: positions.length })}
+              : interpolate(FEATURE_COPY_TRADING ? t.portfolio.page.openCount : t.portfolio.page.openCountNoCopy, { count: positions.length })}
           </Typography>
         </Box>
 
@@ -787,12 +890,16 @@ export default function PortfolioPage() {
                       {columnLabelForMode(key, 'simple')}
                     </TableCell>
                   ))}
+                  <TableCell align="right" sx={{ color: 'text.secondary', fontWeight: 'bold', fontSize: '0.75rem', py: 1.5 }}>
+                    {t.portfolio.close.column}
+                  </TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {positions.map(row => (
                   <TableRow key={String(row.id)} sx={{ '&:hover': { bgcolor: 'action.hover' } }}>
                     {openPositionColumnsForMode('simple').map(key => renderSimplePositionCell(key, row))}
+                    {renderCloseCell(row)}
                   </TableRow>
                 ))}
               </TableBody>
@@ -805,6 +912,7 @@ export default function PortfolioPage() {
                   <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: pnlColor(positions.reduce((s, p) => s + p.unrealizedPnL, 0n)) }}>
                     {fPnL(positions.reduce((s, p) => s + p.unrealizedPnL, 0n))}
                   </TableCell>
+                  <TableCell />
                 </TableRow>
               </tfoot>
             </Table>
@@ -829,10 +937,11 @@ export default function PortfolioPage() {
                     [t.portfolio.column.liveMarket, t.portfolio.columnHint.liveMarket],
                     [t.portfolio.column.margin, ''],
                     [t.portfolio.column.leverage, ''],
-                    [t.portfolio.column.copiedFrom, ''],
+                    ...(showCopiedFrom ? [[t.portfolio.column.copiedFrom, ''] as const] : []),
                     [t.portfolio.column.unrealizedPnl, t.portfolio.columnHint.unrealizedPnl],
                     [t.portfolio.column.accruedFunding, ''],
                     [t.portfolio.column.value, ''],
+                    [t.portfolio.close.column, ''],
                   ] as const).map(([h, hint]) => (
                     <TableCell
                       key={h}
@@ -900,11 +1009,13 @@ export default function PortfolioPage() {
                     </TableCell>
                     <TableCell sx={{ fontFamily: MONO, fontSize: '0.8125rem' }}>{f18(row.margin)}</TableCell>
                     <TableCell sx={{ fontSize: '0.8125rem' }}>{String(row.leverage)}×</TableCell>
+                    {showCopiedFrom && (
                     <TableCell sx={{ fontFamily: MONO, fontSize: '0.75rem', color: 'text.secondary' }}>
                       {row.copiedFrom === '0x0000000000000000000000000000000000000000' ? (
                         <Typography component="span" variant="caption" color="text.disabled">—</Typography>
                       ) : SHORT_ADDR(row.copiedFrom)}
                     </TableCell>
+                    )}
                     <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', fontSize: '0.8125rem', color: pnlColor(row.unrealizedPnL) }}>
                       {fPnL(row.unrealizedPnL)}
                     </TableCell>
@@ -914,12 +1025,13 @@ export default function PortfolioPage() {
                     <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', fontSize: '0.8125rem', color: pnlColor(row.currentValue - row.margin) }}>
                       {f18(row.currentValue)}
                     </TableCell>
+                    {renderCloseCell(row)}
                   </TableRow>
                 ))}
               </TableBody>
               <tfoot style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
                 <TableRow sx={{ bgcolor: 'background.neutral' }}>
-                  <TableCell colSpan={8} sx={{ fontWeight: 'bold', color: 'text.primary' }}>{t.portfolio.page.total}</TableCell>
+                  <TableCell colSpan={showCopiedFrom ? 9 : 8} sx={{ fontWeight: 'bold', color: 'text.primary' }}>{t.portfolio.page.total}</TableCell>
                   <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: pnlColor(positions.reduce((s, p) => s + p.unrealizedPnL, 0n)) }}>
                     {fPnL(positions.reduce((s, p) => s + p.unrealizedPnL, 0n))}
                   </TableCell>
@@ -929,6 +1041,7 @@ export default function PortfolioPage() {
                   <TableCell sx={{ fontFamily: MONO, fontWeight: 'bold', color: 'text.primary' }}>
                     {f18(positions.reduce((s, p) => s + p.currentValue, 0n))}
                   </TableCell>
+                  <TableCell />
                 </TableRow>
               </tfoot>
             </Table>

@@ -75,6 +75,9 @@ export const vault = {
     howItWorksLabel: '運作方式：',
     howItWorksBody:
       ' LP 存入 USDC 並獲得 pIV 份額。金庫透過 FeeRouter 賺取所有跟單與績效手續費的 10%。清算時金庫僅收取',
+    /** 跟單旗標關閉時的說法：收入來源講 FeeRouter 的費用，不點名跟單。 */
+    howItWorksBodyNoCopy:
+      ' LP 存入 USDC 並獲得 pIV 份額。金庫透過 FeeRouter 賺取平台交易與績效手續費的 10%。清算時金庫僅收取',
     liquidationPenaltyLabel: '清算罰金',
     howItWorksCodeWrap: '（',
     howItWorksTail:

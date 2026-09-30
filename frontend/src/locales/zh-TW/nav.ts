@@ -33,7 +33,7 @@ export const nav = {
     potions: '魔法藥水商店',
     mounts: '尊貴坐騎',
     skins: '🎰 造型盲盒與商城',
-    staking: '跟單質押',
+    staking: '交易員信譽質押',
     rewards: '🎁 每日激勵',
   },
 };

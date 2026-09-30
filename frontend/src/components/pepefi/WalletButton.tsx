@@ -1,6 +1,7 @@
 import type { WalletAPI } from 'src/hooks/useWallet';
 
 import { t } from 'src/locales';
+import { MOCK_WALLET_ENABLED } from 'src/lib/pepefi/featureFlags';
 
 import { useLocation, useNavigate } from 'react-router';
 import { useState, useEffect } from 'react';
@@ -299,7 +300,8 @@ export default function WalletButton({ wallet }: Props) {
               </Box>
             )}
 
-            {/* 2. Mock Presentation Connection */}
+            {/* 2. Mock Presentation Connection——只在開發環境或明確設 VITE_ENABLE_MOCK_WALLET 時出現。 */}
+            {MOCK_WALLET_ENABLED && (
             <Card
               onClick={connectMock}
               sx={{
@@ -331,6 +333,7 @@ export default function WalletButton({ wallet }: Props) {
                 </Typography>
               </Box>
             </Card>
+            )}
           </Stack>
         </DialogContent>
       </Dialog>

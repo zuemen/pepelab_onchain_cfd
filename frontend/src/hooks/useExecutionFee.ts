@@ -4,8 +4,13 @@ import { useState, useEffect } from 'react'
 
 import { safeRead } from 'src/lib/pepefi/safeRead'
 
-/** 讀不到時的顯示值。和目前部署的 executionFee 一致，但只是後備。 */
-const FALLBACK_WEI = 10n ** 15n // 0.001 ETH
+/**
+ * 讀不到時的顯示值，只是後備。對齊線上 PerpetualExchange（0x827eA0c6…124D）的
+ * `executionFee()`：2026-09-29 唯讀 eth_call 讀到 100000000000000 wei = 0.0001 ETH。
+ * 原本寫 0.001 ETH，是鏈上實際值的 10 倍。
+ */
+export const FALLBACK_EXECUTION_FEE_WEI = 10n ** 14n // 0.0001 ETH
+const FALLBACK_WEI = FALLBACK_EXECUTION_FEE_WEI
 
 /**
  * PerpetualExchange.executionFee()。

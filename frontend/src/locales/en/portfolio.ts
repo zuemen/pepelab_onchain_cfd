@@ -18,6 +18,7 @@ export const portfolio: Catalog['portfolio'] = {
     incompleteMany: '{count} balances could not be read — this total is incomplete.',
 
     part: {
+      spot: 'Tokenized assets',
       wallet: 'Wallet',
       trading: 'Trading',
       staked: 'Staked',
@@ -26,6 +27,7 @@ export const portfolio: Catalog['portfolio'] = {
 
     /** 某一項讀不到時的說明（Unread Balance，見 CONTEXT.md）。 */
     unread: {
+      spot: 'Some tokenized-asset balances or prices could not be read',
       wallet: 'Wallet balance could not be read',
       trading: 'Trading account could not be read',
       staked: 'Stake could not be read',
@@ -88,6 +90,7 @@ export const portfolio: Catalog['portfolio'] = {
   quickAction: {
     trade: 'Trade',
     copyTrader: 'Copy a trader',
+    marketplace: 'Browse marketplace',
     history: 'History',
     proTerminal: 'Pro Terminal',
   },
@@ -125,6 +128,16 @@ export const portfolio: Catalog['portfolio'] = {
     unrealizedPnl: 'Unrealised, from the Oracle price',
   },
 
+  close: {
+    column: 'Actions',
+    button: 'Close',
+    closing: 'Closing…',
+    closed: 'Position closed',
+    halted: 'The {asset} market is halted; positions cannot be closed right now.',
+    copyManaged: 'This position belongs to an active copy. Unfollow the trader under Copy Positions above to close it.',
+    leftover: 'Left over from an earlier copy; you can close it directly.',
+  },
+
   page: {
     title: 'My Portfolio',
     refresh: 'Refresh',
@@ -137,6 +150,10 @@ export const portfolio: Catalog['portfolio'] = {
     connectWallet: 'Connect wallet to view your portfolio.',
 
     unsupportedNetwork: 'Unsupported Network',
+    connectedTo: 'Connected to ',
+    connectedToAfter: '.',
+    switchTo: 'Please switch to ',
+    switchToAfter: ' testnet.',
     unknownChain: 'unknown',
     chainNumber: 'Chain {id}',
 
@@ -147,6 +164,8 @@ export const portfolio: Catalog['portfolio'] = {
     emptyTitle: 'Your portfolio is empty',
     emptyDescription:
       'Start by getting test {token}, then copy a trader or open positions yourself.',
+    emptyDescriptionNoCopy:
+      'Start by getting test {token}, then buy tokenized assets on the Assets page or browse published allocations on the marketplace.',
     emptyCta: 'Get {token}',
 
     side: {
@@ -177,6 +196,7 @@ export const portfolio: Catalog['portfolio'] = {
 
     openPositions: 'Open Positions',
     openCount: '{count} open · manual + copied',
+    openCountNoCopy: '{count} open',
     noOpenPositions: 'No open positions.',
     total: 'Total',
 

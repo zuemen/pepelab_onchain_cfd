@@ -46,6 +46,8 @@ type BreakdownItem = {
   href: string;
   /** 這一項讀不到時要說的話。 */
   hint: string;
+  /** 有數字但少算了幾筆（例如現貨缺價）——數字後面加 *，滑過顯示 hint。 */
+  partial?: boolean;
 };
 
 type Props = {
@@ -62,6 +64,7 @@ export default function NetWorthHero({ parts, pnlPct, loading }: Props) {
 
   const { part, unread } = t.portfolio.netWorth;
   const breakdown: BreakdownItem[] = [
+    { label: part.spot,    value: parts.spotHoldings, href: '/tokens', hint: unread.spot, partial: (parts.spotUnpriced ?? 0) > 0 },
     { label: part.wallet,  value: parts.walletCash, href: '/exchange', hint: unread.wallet },
     { label: part.trading, value: sumOrNull(parts.freeMargin, parts.lockedMargin), href: '/exchange', hint: unread.trading },
     { label: part.staked,  value: parts.staked,     href: '/stake',    hint: unread.staked },
@@ -131,7 +134,7 @@ export default function NetWorthHero({ parts, pnlPct, loading }: Props) {
       <Box
         sx={{
           display: 'grid',
-          gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(4, 1fr)' },
+          gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(3, 1fr)', md: 'repeat(5, 1fr)' },
           gap: { xs: 2, sm: 3 },
         }}
       >
@@ -155,9 +158,9 @@ export default function NetWorthHero({ parts, pnlPct, loading }: Props) {
               <Typography
                 className="netWorthHero__value"
                 sx={{ fontWeight: 700, fontFamily: MONO, transition: 'color 0.15s' }}
-                title={item.value === null ? item.hint : undefined}
+                title={item.value === null || item.partial ? item.hint : undefined}
               >
-                {item.value === null ? '—' : fUsd(item.value)}
+                {item.value === null ? '—' : `${fUsd(item.value)}${item.partial ? '*' : ''}`}
               </Typography>
             )}
           </Link>

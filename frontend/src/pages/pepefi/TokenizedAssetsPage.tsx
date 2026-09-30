@@ -23,6 +23,7 @@ import SyntheticAssetV2ABI from 'src/contracts/abi/SyntheticAssetV2.json'
 import AssetIcon from 'src/components/pepefi/AssetIcon'
 import { WhoRunsWhat, AssetProvenanceSummary } from 'src/components/pepefi/AssetProvenance'
 import { AssetDetailPanel } from 'src/components/pepefi/AssetDetailPanel'
+import { SyntheticDisclosure } from 'src/components/pepefi/SyntheticDisclosure'
 import { SHOW_PERPETUALS } from 'src/lib/pepefi/featureFlags'
 import Skeleton from 'src/components/pepefi/Skeleton'
 import { useToast } from 'src/components/pepefi/ToastProvider'
@@ -649,6 +650,7 @@ export default function TokenizedAssetsPage() {
         主欄放原本整頁的內容，詳情層是它的旁邊那一欄，不是蓋在上面的遮罩。 */}
     <Box sx={{ display: 'flex', gap: 3, alignItems: 'flex-start' }}>
     <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
+      <SyntheticDisclosure />
       <Box>
         <Typography variant="h4" sx={{ fontWeight: 800 }}>{mode === 'simple' ? t.tokens.titleSimple : t.tokens.title}</Typography>
         <Typography variant="body2" color="text.secondary">{t.tokens.subtitle}</Typography>

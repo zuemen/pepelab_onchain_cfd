@@ -29,6 +29,9 @@ export const sessions: Catalog['sessions'] = {
     creating: 'Creating…',
     cta: 'Create Session',
     done: 'Session created ✓',
+    allowedAssets: 'Allowed assets',
+    allowedAssetsHint: 'The agent can open positions only in these assets (on-chain allow-list via createSessionWithAssets). Pick at least one.',
+    noAssetSelected: 'Select at least one allowed asset.',
   },
 
   /** 瀏覽器裡產生的一次性 burner 金鑰。 */
@@ -168,6 +171,10 @@ export const sessions: Catalog['sessions'] = {
 
     includeKeyBefore: 'Fill the agent private key I just generated into ',
     includeKeyAfter: ' (contains the real key — use only on your own machine)',
+    includeKeyRiskTitle: 'The private key is not embedded by default',
+    includeKeyRisk:
+      'The exported config contains only a placeholder by default. If you tick the box, the JSON below will contain this agent’s private key in plain text: anyone who gets the file (or sees your screen, clipboard or a cloud-synced folder) can trade under your authorization within the session’s limits and expiry. Use it only on your own machine; never paste it into chat, tickets or version control. If it leaks, revoke the session immediately.',
+    includeKeyOnWarning: 'This config now contains a plain-text private key. Store it carefully after copying or downloading, and delete it when done.',
 
     placeholderAfter:
       ' is a placeholder — paste in the agent private key you saved (the one generated on this page with "Generate agent key"; you can check the box to auto-fill it).',

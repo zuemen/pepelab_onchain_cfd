@@ -5,7 +5,7 @@ import { paths } from 'src/routes/paths';
 
 import { t } from 'src/locales';
 import { CONFIG } from 'src/global-config';
-import { SHOW_PERPETUALS } from 'src/lib/pepefi/featureFlags';
+import { isPathEnabled, SHOW_PERPETUALS } from 'src/lib/pepefi/featureFlags';
 
 import { SvgColor } from 'src/components/svg-color';
 
@@ -47,7 +47,16 @@ const ICONS = {
 
 // ----------------------------------------------------------------------
 
-export const navData: NavSectionProps['data'] = [
+/**
+ * 商業版旗標（featureFlags.ts）關掉的功能不出現在側邊欄、手機選單與 ⌘K 搜尋——
+ * 三者都吃這一份 navData，所以在這裡過濾一次就全部收齊。
+ */
+const byFeatureFlags = (data: NavSectionProps['data']): NavSectionProps['data'] =>
+  data
+    .map((section) => ({ ...section, items: section.items.filter((item) => isPathEnabled(item.path)) }))
+    .filter((section) => section.items.length > 0);
+
+export const navData: NavSectionProps['data'] = byFeatureFlags([
   /**
    * PepeLab
    */
@@ -68,7 +77,7 @@ export const navData: NavSectionProps['data'] = [
       { title: t.nav.item.pepe, path: paths.pepefi.pepe, icon: ICONS.blog },
       { title: t.nav.item.rewards, path: paths.pepefi.rewards, icon: ICONS.booking },
       // 專業終端是永續的入口,跟著 SHOW_PERPETUALS 走。收的是入口不是路徑——
-      // 直接打 /terminal 仍然到得了,既有部位照樣平得掉。
+      // 直接打 /terminal 仍然到得了;既有部位在 Portfolio「部位」頁籤就能平倉。
       ...(SHOW_PERPETUALS
         ? [{ title: t.nav.item.terminal, path: paths.pepefi.terminal, icon: ICONS.dashboard }]
         : []),
@@ -87,7 +96,7 @@ export const navData: NavSectionProps['data'] = [
       { title: t.nav.item.stake, path: paths.pepefi.stake, icon: ICONS.booking },
     ],
   },
-];
+]);
 
 // ----------------------------------------------------------------------
 // Simple 模式的側邊欄。
@@ -98,9 +107,10 @@ export const navData: NavSectionProps['data'] = [
 //
 // issue #101 — Mode 分流 11 / 11。Simple 的 11 個頁面裡，LandingPage 是
 // `/`（不在側邊欄），CopyPage 與 TraderProfilePage 是帶參數的路徑（#150 起
-// 只從 Expert 的交易者排行榜點進去），所以側邊欄上是這 8 個。被藏起來的是入口不是路徑——
-// WhaleTracker、TradeTerminal、各 Admin 頁直接打網址仍然到得了，口試時
-// Expert Mode 也照常可用。
+// 只從 Expert 的交易者排行榜點進去），所以側邊欄上是這 8 個（GameFi 旗標關閉時少
+// /pepe，是 7 個）。被藏起來的是入口不是路徑——WhaleTracker、TradeTerminal、各 Admin
+// 頁直接打網址仍然到得了。商業版旗標（featureFlags.ts 的 FEATURE_*）不同：那些是連
+// 路由一起收，已在上面的 byFeatureFlags 過濾掉。
 //
 // 照使用順序排：先看自己的資產配置（Portfolio），再逛別人發布的配置
 // （Marketplace），去買賣代幣化資產（Tokens），看碳強度與見證歧見（ESG），

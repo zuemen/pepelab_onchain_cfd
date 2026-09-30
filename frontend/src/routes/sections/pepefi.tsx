@@ -5,9 +5,11 @@ import { lazy, Suspense } from 'react';
 import { Outlet, Navigate, useOutletContext } from 'react-router';
 
 import { PepefiLayout } from 'src/layouts/pepefi';
+import { FEATURES } from 'src/lib/pepefi/featureFlags';
 import { DashboardLayout } from 'src/layouts/dashboard';
 
 import { LoadingScreen } from 'src/components/loading-screen';
+import { FeatureGate } from 'src/components/pepefi/FeatureGate';
 
 import { usePathname } from '../hooks';
 
@@ -77,7 +79,7 @@ export const pepefiRoutes: RouteObject[] = [
         element: <DashboardShell />,
         children: [
           // /dashboard 併進 /portfolio。兩頁本來都在回答「我現在怎麼樣」，
-          // 但只有 Portfolio 有動作（平倉、提領、停止跟單），Dashboard 是它的
+          // 但只有 Portfolio 有動作（部位頁籤逐筆平倉、提領、停止跟單），Dashboard 是它的
           // 唯讀分身。轉址而不是移除，舊連結與書籤才不會壞掉。
           { path: 'dashboard', element: <Navigate to="/portfolio" replace /> },
           { path: 'exchange', element: <ExchangePage /> },
@@ -88,7 +90,11 @@ export const pepefiRoutes: RouteObject[] = [
           { path: 'trader/:address', element: <TraderProfilePage /> },
           { path: 'marketplace', element: <MarketplacePage /> },
           { path: 'esg', element: <ESGPage /> },
-          { path: 'copy/:traderAddress', element: <CopyPage /> },
+          // 商業版旗標（featureFlags.ts）：關閉時連路由一起收，直接打網址看到「此功能未啟用」。
+          {
+            path: 'copy/:traderAddress',
+            element: <FeatureGate enabled={FEATURES.copyTrading}><CopyPage /></FeatureGate>,
+          },
           { path: 'portfolio', element: <PortfolioPage /> },
           { path: 'vault', element: <VaultPage /> },
           { path: 'history', element: <HistoryPage /> },
@@ -96,11 +102,17 @@ export const pepefiRoutes: RouteObject[] = [
           { path: 'admin/oracle', element: <AdminOraclePage /> },
           { path: 'admin/treasury', element: <AdminTreasuryPage /> },
           { path: 'admin/kyc', element: <AdminKYCPage /> },
-          { path: 'rewards', element: <RewardsPage /> },
+          {
+            path: 'rewards',
+            element: <FeatureGate enabled={FEATURES.pepeRewards}><RewardsPage /></FeatureGate>,
+          },
           { path: 'sessions', element: <SessionsPage /> },
           { path: 'agent-monitor', element: <AgentMonitorPage /> },
           { path: 'x402', element: <X402DocsPage /> },
-          { path: 'pepe',    element: <PepeLabPage /> },
+          {
+            path: 'pepe',
+            element: <FeatureGate enabled={FEATURES.gamefi}><PepeLabPage /></FeatureGate>,
+          },
         ],
       },
     ],

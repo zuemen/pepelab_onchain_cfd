@@ -74,6 +74,8 @@ export const vault: Catalog['vault'] = {
     howItWorksLabel: 'How it works:',
     howItWorksBody:
       ' LPs deposit USDC and receive pIV shares. The vault earns 10% of all copy-trading and performance fees via the FeeRouter. On liquidation the vault only receives the ',
+    howItWorksBodyNoCopy:
+      ' LPs deposit USDC and receive pIV shares. The vault earns 10% of platform trading and performance fees via the FeeRouter. On liquidation the vault only receives the ',
     liquidationPenaltyLabel: 'liquidation penalty',
     howItWorksCodeWrap: ' (',
     howItWorksTail:
