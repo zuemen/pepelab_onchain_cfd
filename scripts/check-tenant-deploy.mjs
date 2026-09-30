@@ -28,20 +28,32 @@ const ZERO = "0x0000000000000000000000000000000000000000";
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const ENV_NAME = /^[A-Z][A-Z0-9_]*$/;
 /**
- * 64 位十六進位＝私鑰的形狀。
- *   - 一般欄位：帶不帶 0x 都擋——設定檔的值裡不該出現任何 32-byte 十六進位。
- *   - `$comment`：只擋**不帶 0x** 的。註解裡引用部署交易的 tx hash 是正常的，而 tx hash
- *     一律以 0x 開頭；私鑰匯出時常見的是不帶 0x 的裸十六進位。這是刻意選的簡單規則，
- *     代價是帶 0x 的私鑰貼在註解裡會漏擋——所以助記詞與一般欄位的檢查不放寬。
+ * 64 位十六進位＝私鑰的形狀。帶不帶 0x 都擋——設定檔的值裡不該出現任何 32-byte 十六進位。
+ *
+ * `$comment` 唯一的例外：**緊接在 `/tx/` 之後**的 `0x`＋64 位（區塊瀏覽器的交易連結，
+ * 例如 `https://sepolia.basescan.org/tx/0x…`）。檢查前先把這種連結裡的 hash 拿掉，剩下的
+ * 照一般規則擋。舊規則是「註解裡帶 0x 的一律放行」，代價是帶 0x 的私鑰貼進註解會漏擋；
+ * 要引用部署交易請貼完整的 explorer 連結。
  */
 const HEX64_ANY = /(^|[^0-9a-fA-F])(0x)?[0-9a-fA-F]{64}([^0-9a-fA-F]|$)/;
-const HEX64_BARE = /(^|[^0-9a-fA-Fx])[0-9a-fA-F]{64}([^0-9a-fA-F]|$)/;
+const EXPLORER_TX_HASH = /\/tx\/0x[0-9a-fA-F]{64}(?![0-9a-fA-F])/g;
 /**
- * BIP-39 助記詞的形狀：連續 12 個以上、每個 3–8 個小寫字母、以單一空白分隔的英文單字
- * （12/15/18/21/24 字的助記詞都落在這個範圍）。所有欄位含 `$comment` 都檢查。
- * 一般英文句子會被大寫、標點或 a/to/of 這類短字打斷，很少連續湊滿 12 個。
+ * BIP-39 助記詞的形狀：連續 12 個以上、每個 3–8 個英文字母的單字，以空白或逗號分隔
+ * （12/15/18/21/24 字的助記詞都落在這個範圍）。大小寫不敏感——「Abandon Ability …」或
+ * 「abandon,ability,…」一樣擋。所有欄位含 `$comment` 都檢查；字串陣列會先以空白 join
+ * 再測（把助記詞拆成一字一格的陣列也擋得到）。
+ *
+ * 一般英文句子多半會被標點、a/to/of 這類短字或 9 個字母以上的長字打斷，但**不保證**：
+ * 連續 12 個 3–8 字母的單字組成的長句會被誤判（見 docs/TENANT_DEPLOYMENT.md）。
+ * 寧可誤擋一句說明，也不放過一組助記詞。
  */
-const MNEMONIC_SHAPE = /(^|[^a-z])([a-z]{3,8} ){11,}[a-z]{3,8}([^a-z]|$)/;
+const MNEMONIC_SHAPE = /(^|[^a-z])([a-z]{3,8}[\s,]+){11,}[a-z]{3,8}([^a-z]|$)/i;
+/**
+ * 不做陣列 join 助記詞檢查的路徑。assets.registered 是資產代號（sAAPL、sGOLD…，全是
+ * 字母、長度 4–6），註冊滿 12 檔就會湊成「12 個單字」；而它的每一格都另外必須是
+ * addresses.ts 已知的資產代號（下面的資產檢查），塞不進任何別的東西。
+ */
+const ARRAY_JOIN_EXEMPT = new Set(["assets.registered"]);
 /** 允許部署的鏈：Base Sepolia（現行測試網）與 Base 主網（ADR-008 的目標鏈）。 */
 export const ALLOWED_CHAIN_IDS = [84532, 8453];
 /** 鍵名看起來是秘密的欄位，只允許出現在 secretsEnv 底下（而且值只能是環境變數名稱）。 */
@@ -138,11 +150,22 @@ export function checkTenantDeploy({ file, cfg, ctx }) {
   for (const [path, key, value] of walk(cfg)) {
     const where = path.join(".");
     const isComment = path[0] === "$comment";
-    if (typeof value === "string" && (isComment ? HEX64_BARE : HEX64_ANY).test(value)) {
-      bad(`${where} 看起來是私鑰（64 位十六進位）——私鑰只能放在 secret store，設定檔只寫環境變數名稱`);
+    const hexProbe = typeof value === "string" && isComment ? value.replace(EXPLORER_TX_HASH, "/tx/") : value;
+    if (typeof hexProbe === "string" && HEX64_ANY.test(hexProbe)) {
+      bad(
+        isComment
+          ? `${where} 看起來是私鑰（64 位十六進位）——註解只能以區塊瀏覽器連結（…/tx/0x…）引用交易 hash`
+          : `${where} 看起來是私鑰（64 位十六進位）——私鑰只能放在 secret store，設定檔只寫環境變數名稱`,
+      );
     }
-    if (typeof value === "string" && MNEMONIC_SHAPE.test(value)) {
-      bad(`${where} 看起來是助記詞（連續 12 個以上的小寫英文單字）——助記詞只能放在 secret store`);
+    const wordProbe =
+      typeof value === "string"
+        ? value
+        : Array.isArray(value) && value.length > 0 && value.every((v) => typeof v === "string") && !ARRAY_JOIN_EXEMPT.has(where)
+          ? value.join(" ")
+          : null;
+    if (wordProbe !== null && MNEMONIC_SHAPE.test(wordProbe)) {
+      bad(`${where} 看起來是助記詞（連續 12 個以上的英文單字）——助記詞只能放在 secret store`);
     }
     if (path[0] !== "$comment" && typeof value === "string" && /^[a-z][a-z0-9+.-]*:\/\//i.test(value)) {
       bad(`${where} 是網址——RPC／API 網址常帶金鑰，一律放 secret store，設定檔只寫環境變數名稱`);

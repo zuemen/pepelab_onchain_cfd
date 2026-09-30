@@ -37,8 +37,15 @@
 1. 複製 `deploy/tenants/_template.json` 成 `deploy/tenants/<id>.json`，填 `tenantId` 與 `frontendTenant`（兩者必須相同，
    也與檔名相同）。`network.chainId` 只接受 84532（Base Sepolia）或 8453（Base）。
 2. `secretsEnv` 只寫**環境變數名稱**（例如 `BANK_A_DEPLOYER_PRIVATE_KEY`），值放在部署者自己的 secret store
-   或 GitHub Actions secrets。私鑰（64 位十六進位）、助記詞（連續 12 個以上小寫英文單字）、RPC 網址寫進這個檔案
-   會被檢查腳本擋下；`$comment` 裡可以引用 `0x` 開頭的 tx hash，不帶 `0x` 的 64 位十六進位一樣擋。
+   或 GitHub Actions secrets。私鑰（64 位十六進位，帶不帶 `0x` 都算）、助記詞、RPC 網址寫進這個檔案
+   會被檢查腳本擋下。
+   - `$comment` 要引用部署交易，請貼**區塊瀏覽器的交易連結**（`https://sepolia.basescan.org/tx/0x…`）：
+     只有緊接在 `/tx/` 之後的 `0x`＋64 位會放行，裸貼的 tx hash（不論帶不帶 `0x`）一律視為私鑰擋下。
+   - 助記詞的判定是「連續 12 個以上、每個 3–8 個英文字母的單字，以空白或逗號分隔」，**大小寫不敏感**，
+     所有欄位（含 `$comment`）都檢查，字串陣列會先 join 再測。
+   - ⚠️ **一般英文長句可能被誤判為助記詞**：例如 `Keeper runs every fifteen minutes using the shared oracle feed
+     plus its own wallet only` 剛好是 14 個 3–8 字母的單字，會被擋。這是刻意的取捨（寧可誤擋說明，也不放過
+     助記詞）。被擋時把說明改寫成中文、加標點、或放進 docs 而不是設定檔即可，不要放寬檢查。
 3. `roles` 先用 `<...>` 佔位值（`status: "template"`）。金鑰由持有人產生；地址確定後填入並把 `status`
    改成 `ready`。檢查腳本要求：
    - admin／keeper／guardian／risk 兩兩不同（6 組配對），keeper 不兼 treasury，部署者與 keeper 不是同一把金鑰；

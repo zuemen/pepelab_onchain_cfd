@@ -182,10 +182,23 @@ test("guardian 與 risk 不得是同一個地址", () => {
   assert.match(check(c), /roles\.guardian 與 roles\.risk 是同一個地址/);
 });
 
-test("$comment 可以引用 0x 開頭的 tx hash", () => {
+test("$comment 可以用區塊瀏覽器連結（/tx/0x…）引用 tx hash", () => {
   const c = filled();
-  c.$comment = `Phase A 部署交易 0x${"ab".repeat(32)}，見 broadcast 紀錄。`;
+  c.$comment = `Phase A 部署交易 https://sepolia.basescan.org/tx/0x${"ab".repeat(32)}，見 broadcast 紀錄。`;
   assert.equal(check(c), "");
+});
+
+test("$comment 裡不在 /tx/ 之後的 0x＋64 位十六進位一律擋", () => {
+  for (const comment of [
+    `Phase A 部署交易 0x${"ab".repeat(32)}，見 broadcast 紀錄。`, // 裸 hash——可能是帶 0x 的私鑰
+    `keeper key: 0x${"ef".repeat(32)}`,
+    `https://sepolia.basescan.org/address/0x${"ab".repeat(32)}`, // 不是 /tx/
+    `/tx/0x${"ab".repeat(32)} 之後又貼了 0x${"cd".repeat(32)}`, // 放行的只有連結裡那一段
+  ]) {
+    const c = filled();
+    c.$comment = comment;
+    assert.match(check(c), /\$comment 看起來是私鑰/, comment);
+  }
 });
 
 test("$comment 裡不帶 0x 的 64 位十六進位仍視為私鑰", () => {
@@ -204,10 +217,54 @@ test("助記詞在任何欄位（含 $comment）都擋", () => {
   assert.match(check(d), /keeper\.note 看起來是助記詞/);
 });
 
+test("助記詞偵測：逗號分隔、大寫、字串陣列都擋", () => {
+  const list = "abandon ability able about above absent absorb abstract absurd abuse access accident".split(" ");
+  const cases = {
+    逗號: list.join(","),
+    逗號加空白: list.join(", "),
+    換行與多重空白: list.join(" \n  "),
+    首字大寫: list.map((w) => w[0].toUpperCase() + w.slice(1)).join(" "),
+    全大寫: list.join(" ").toUpperCase(),
+  };
+  for (const [name, value] of Object.entries(cases)) {
+    const c = filled();
+    c.keeper.note = value;
+    assert.match(check(c), /keeper\.note 看起來是助記詞/, name);
+  }
+  const arr = filled();
+  arr.keeper.words = list; // 一字一格：每一格單看都無害，join 起來就是助記詞
+  assert.match(check(arr), /keeper\.words 看起來是助記詞/);
+  const commentArr = filled();
+  commentArr.$comment = ["備份", ...list];
+  assert.match(check(commentArr), /\$comment 看起來是助記詞/);
+});
+
+test("11 個字不算助記詞（下限是 12）", () => {
+  const c = filled();
+  c.keeper.note = "abandon ability able about above absent absorb abstract absurd abuse access";
+  assert.equal(check(c).includes("助記詞"), false);
+});
+
+test("assets.registered 滿 12 檔也不會被當成助記詞（每格都必須是已知資產代號）", () => {
+  const c = filled();
+  // 已知資產只有 11 檔，重複一檔湊成 12 格：會被「重複」擋，但不能被當成助記詞。
+  c.assets.registered = [...ctx.symbols, ctx.symbols[0]];
+  const out = check(c);
+  assert.match(out, /assets\.registered 有重複/);
+  assert.equal(out.includes("助記詞"), false, out);
+});
+
 test("一般英文說明不會被當成助記詞", () => {
   const c = filled();
   c.$comment = "Placeholder values only. Copy this file, fill in the role addresses, then run the checker.";
   assert.equal(check(c), "");
+});
+
+test("已知限制：連續 12 個 3–8 字母單字的英文長句會被誤判為助記詞", () => {
+  // 刻意記錄的誤判（docs/TENANT_DEPLOYMENT.md）：寧可擋一句說明，也不放過一組助記詞。
+  const c = filled();
+  c.$comment = "Keeper runs every fifteen minutes using the shared oracle feed plus its own wallet only";
+  assert.match(check(c), /\$comment 看起來是助記詞/);
 });
 
 test("frontendTenant 必須與 tenantId 相同", () => {
