@@ -86,10 +86,7 @@ export const pepefiRoutes: RouteObject[] = [
           { path: 'tokens', element: <TokenizedAssetsPage /> },
           { path: 'terminal', element: <TradeTerminalPage /> },
           { path: 'trader', element: <TraderDashboard /> },
-          {
-            path: 'stake',
-            element: <FeatureGate enabled={FEATURES.copyTrading}><TraderStakePage /></FeatureGate>,
-          },
+          { path: 'stake', element: <TraderStakePage /> },
           { path: 'trader/:address', element: <TraderProfilePage /> },
           { path: 'marketplace', element: <MarketplacePage /> },
           { path: 'esg', element: <ESGPage /> },

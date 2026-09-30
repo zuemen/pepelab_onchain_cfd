@@ -64,7 +64,7 @@ export const FEATURE_PEPE_REWARDS = readFlag(import.meta.env.VITE_FEATURE_PEPE_R
 /**
  * Expert 跟單（CopyTracker 的槓桿跟單）：Expert 模式的交易者排行榜、`/copy/:addr`、
  * 交易者頁與巨鯨動態上的「跟單」按鈕與跟隨者統計、首頁的跟單功能卡與文案、
- * 交易員信譽質押 `/stake`（與跟單的罰沒機制綁在一起）、meta description。
+ * meta description。`/stake`（交易員信譽質押）不受影響。
  * 預設 **關**。開啟：`VITE_FEATURE_COPY_TRADING=1`。
  */
 export const FEATURE_COPY_TRADING = readFlag(import.meta.env.VITE_FEATURE_COPY_TRADING, false);
@@ -89,9 +89,9 @@ const GATED_PREFIXES: ReadonlyArray<{ prefix: string; flag: keyof FeatureFlags }
   { prefix: '/pepe', flag: 'gamefi' },
   { prefix: '/rewards', flag: 'pepeRewards' },
   { prefix: '/copy', flag: 'copyTrading' },
-  // /stake 是交易員的信譽質押（TraderStake）：質押的意義是「策略害跟單者虧損時可被
-  // 罰沒」，和跟單綁在一起，所以跟著同一個旗標收。
-  { prefix: '/stake', flag: 'copyTrading' },
+  // /stake（交易員信譽質押）刻意**不**在這裡：它是配置市集（ADR-007 的 Adopt 無槓桿
+  // 現貨配置）發布策略的前提，屬於商業版本身，不屬於跟單。只有頁內提到跟單罰沒的
+  // 文案跟著旗標換成中性說法。
 ];
 
 /** 這條路徑在給定旗標下是否可用。比對到路徑段為止，`/pepelab` 不會被 `/pepe` 吃掉。 */

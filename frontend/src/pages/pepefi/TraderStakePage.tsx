@@ -5,6 +5,7 @@ import { parseEther } from 'ethers'
 import { useContracts } from 'src/hooks/useContracts'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { t, interpolate } from 'src/locales'
+import { FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { STABLE_LABEL } from 'src/lib/pepefi/tokenLabel'
 
@@ -32,6 +33,10 @@ interface StakeInfo {
 }
 
 const f18 = (v: bigint, d = 2) => (Number(v) / 1e18).toFixed(d)
+
+// 信譽質押本身不受跟單旗標影響（配置市集發布策略的前提）；只有提到跟單／跟隨者的
+// 說明文字在旗標關閉時換成 t.stake.copyOff 的中性說法。
+const COPY_ON = FEATURE_COPY_TRADING
 
 export default function TraderStakePage() {
   const wallet = usePepefiWallet()
@@ -160,7 +165,7 @@ export default function TraderStakePage() {
           {t.stake.sections.reputation.title}
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          {interpolate(t.stake.sections.reputation.subtitle, { token: STABLE_LABEL })}
+          {interpolate(COPY_ON ? t.stake.sections.reputation.subtitle : t.stake.copyOff.subtitle, { token: STABLE_LABEL })}
         </Typography>
       </Box>
 
@@ -248,7 +253,7 @@ export default function TraderStakePage() {
         )}
 
         <Typography variant="caption" color="text.secondary">
-          {interpolate(t.stake.current.minimum, {
+          {interpolate(COPY_ON ? t.stake.current.minimum : t.stake.copyOff.minimum, {
             amount: f18(minStake),
             token: STABLE_LABEL,
           })}
@@ -261,7 +266,7 @@ export default function TraderStakePage() {
           {interpolate(t.stake.add.title, { token: STABLE_LABEL })}
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          {t.stake.add.description}
+          {COPY_ON ? t.stake.add.description : t.stake.copyOff.addDescription}
         </Typography>
         <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
           <TextField
@@ -363,7 +368,7 @@ export default function TraderStakePage() {
           </Box>
           <Box sx={{ display: 'flex', gap: 1 }}>
             <Box component="span" sx={{ color: 'info.main', fontWeight: 'bold' }}>•</Box>
-            <Box>{t.stake.info.slashing}</Box>
+            <Box>{COPY_ON ? t.stake.info.slashing : t.stake.copyOff.slashing}</Box>
           </Box>
           <Box sx={{ display: 'flex', gap: 1 }}>
             <Box component="span" sx={{ color: 'info.main', fontWeight: 'bold' }}>•</Box>

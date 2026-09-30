@@ -68,4 +68,13 @@ export const stake: Catalog['stake'] = {
     backToMarketplace: '← Back to Marketplace',
     traderDashboard: 'Trader Dashboard →',
   },
+
+  copyOff: {
+    subtitle:
+      'Stake {token} to become eligible to publish strategies on the marketplace and build reputation; staked funds are at risk under the on-chain slashing rules.',
+    minimum: 'Minimum stake: {amount} {token} · Skin in the game for anyone using your strategy',
+    addDescription:
+      'Staking puts your capital at risk — it can be deducted when the TraderStake contract’s slashing rules are triggered. In return, you earn credibility (reputation score) and can publish strategies.',
+    slashing: 'Slashing is enforced by the TraderStake contract: at most 50% of your stake per event, paid to the affected party.',
+  },
 };

@@ -26,8 +26,8 @@ export const traderDashboard = {
 
     stakeRequiredTitle: '發布策略需先質押',
     stakeRequiredBody: '發布策略前需先質押至少 100 USDC。這能讓跟隨者相信你也承擔風險。',
-    /** 跟單旗標關閉時（交易員質押未開放）。 */
-    stakeUnavailable: '這個部署未開放交易員信譽質押，因此暫時無法發布策略。如需開通，請聯繫平台營運方。',
+    /** 跟單旗標關閉時的說法：不提跟隨者。 */
+    stakeRequiredBodyNeutral: '發布策略前需先完成交易員信譽質押（至少 100 USDC），讓使用你策略的人知道你也承擔風險。',
     goToStake: '前往交易者質押 →',
 
     empty: '點擊「+ 新增標的」以建立策略。',

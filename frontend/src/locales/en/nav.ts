@@ -31,7 +31,7 @@ export const nav: Catalog['nav'] = {
     potions: 'Potion Shop',
     mounts: 'My Mounts',
     skins: 'Pepe Skins & Gacha',
-    staking: 'Staking DeFi Yields',
+    staking: 'Trader reputation stake',
     rewards: 'PepeLab Rewards 🎁',
   },
 };

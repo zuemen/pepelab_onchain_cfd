@@ -30,8 +30,8 @@ export const traderDashboard: Catalog['traderDashboard'] = {
     stakeRequiredBody:
       'You need to stake at least 100 USDC before publishing a strategy. This gives followers confidence that you have skin-in-the-game.',
     goToStake: 'Go to Trader Stake →',
-    stakeUnavailable:
-      'Trader reputation staking is not enabled on this deployment, so strategies cannot be published yet. Contact the platform operator to enable it.',
+    stakeRequiredBodyNeutral:
+      'Publishing a strategy requires a trader reputation stake of at least 100 USDC, so anyone using your strategy knows you have skin in the game.',
 
     empty: 'Click "+ Add Asset" to build your strategy.',
 

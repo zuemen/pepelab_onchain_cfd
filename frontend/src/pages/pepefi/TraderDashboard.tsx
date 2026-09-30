@@ -411,17 +411,9 @@ export default function TraderDashboard() {
           </Button>
         </Box>
 
-        {/* 跟單旗標關閉時 /stake 不開放（信譽質押與跟單罰沒綁在一起），只說明原因、
-            不給一個會進到「此功能未啟用」的按鈕。 */}
-        {eligible === false && !FEATURE_COPY_TRADING && (
-          <Alert severity="warning">
-            <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
-              {t.traderDashboard.publish.stakeRequiredTitle}
-            </Typography>
-            {t.traderDashboard.publish.stakeUnavailable}
-          </Alert>
-        )}
-        {eligible === false && FEATURE_COPY_TRADING && (
+        {/* 信譽質押是發布策略的前提（配置市集的 Adopt 也靠它），不跟跟單旗標走；
+            只有說明文字在跟單旗標關閉時換成不提跟隨者的中性說法。 */}
+        {eligible === false && (
           <Alert severity="warning" action={
             <Button
               color="inherit"
@@ -436,7 +428,9 @@ export default function TraderDashboard() {
             <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
               {t.traderDashboard.publish.stakeRequiredTitle}
             </Typography>
-            {t.traderDashboard.publish.stakeRequiredBody}
+            {FEATURE_COPY_TRADING
+              ? t.traderDashboard.publish.stakeRequiredBody
+              : t.traderDashboard.publish.stakeRequiredBodyNeutral}
           </Alert>
         )}
 
@@ -622,7 +616,7 @@ export default function TraderDashboard() {
             {t.traderDashboard.publish.registerFirst}
           </Typography>
         )}
-        {traderInfo?.isRegistered && eligible === false && FEATURE_COPY_TRADING && (
+        {traderInfo?.isRegistered && eligible === false && (
           <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center', display: 'block' }}>
             {t.traderDashboard.publish.stakeToUnlockBefore}<Link component={RouterLink} to="/stake" color="primary.main">{t.traderDashboard.publish.stakeToUnlockLink}</Link>{t.traderDashboard.publish.stakeToUnlockAfter}
           </Typography>
