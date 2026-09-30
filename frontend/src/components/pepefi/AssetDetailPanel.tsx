@@ -32,7 +32,11 @@ import { Icon } from '@iconify/react'
 
 import AssetIcon from './AssetIcon'
 import { AssetCandleChart } from './AssetCandleChart'
-import { AssetProvenanceSummary, AssetProvenanceBody } from './AssetProvenance'
+import {
+  AssetProvenanceBody,
+  AssetProvenanceSummary,
+  type AssetProvenanceBodyProps,
+} from './AssetProvenance'
 import { AttestedTierBlock } from './AttestedCarbonTier'
 
 export interface AssetDetailPanelProps {
@@ -71,6 +75,8 @@ export interface AssetDetailPanelProps {
    * undefined＝沒有持有或讀不到——身世卡就不顯示持有天數。
    */
   heldSinceSec?: number
+  /** 見 AssetProvenanceBody 的同名 prop。 */
+  heldSinceQuery?: AssetProvenanceBodyProps['heldSinceQuery']
 }
 
 export function AssetDetailPanel({
@@ -93,6 +99,7 @@ export function AssetDetailPanel({
   attestedUnavailable,
   mintFeeBps = null,
   heldSinceSec,
+  heldSinceQuery,
 }: AssetDetailPanelProps) {
   const dl = t.tokens.dialog
   const canConfirm = mode === 'buy' ? assetRow.canBuy : assetRow.canSell
@@ -247,7 +254,7 @@ export function AssetDetailPanel({
         </>
       )}
 
-      <AssetProvenanceBody meta={meta} heldSinceSec={heldSinceSec} />
+      <AssetProvenanceBody meta={meta} heldSinceSec={heldSinceSec} heldSinceQuery={heldSinceQuery} />
     </Stack>
   )
 }

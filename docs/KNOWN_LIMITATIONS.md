@@ -954,6 +954,14 @@ glyphs. Left as is, but it is the next lever if the entry chunk needs to shrink.
 不以掃描下緣充當起點（那會是一個猜出來的數字）。要對長期持有者也顯示，需要索引器
 （signal-api 或區塊瀏覽器 API）提供完整的 Transfer 歷史。
 
+**RPC 成本與因應**（PR #202 審查 M1）：一次查詢在最壞情況（長期持有者，起點早於掃描範圍）
+要把整個範圍掃完——60 段 × 2 個 filter（轉入、轉出）≈ 110–120 次序列 getLogs，外加
+balanceOf 與 getBlockNumber，全部走使用者錢包擴充的 RPC。因此：(1) 詳情層**預設不查**，
+只顯示「查詢持有天數」按鈕，使用者按了才掃；(2) 結果放進 module-level 快取
+（`lib/pepefi/heldSinceQuery.ts`，鍵為 `chainId:token:user:balance`），**負結果也快取**，
+同一個餘額不重掃；讀取失敗與中止不寫快取，使用者可以之後再查；(3) 快取只活在這個分頁，
+重新整理頁面後會再查一次。剛買進的人通常第一步（5 段 × 2 個 filter）就找到，約 12 次請求。
+
 **The product code is not linted.** `eslint.config.mjs` ignores
 `src/pages/pepefi/**`, `src/components/pepefi/**`, `src/hooks/**` and
 `src/lib/pepefi/**` — deliberate per the comment there (ported code, original

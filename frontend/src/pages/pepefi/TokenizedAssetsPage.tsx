@@ -640,8 +640,9 @@ export default function TokenizedAssetsPage() {
   const selectedRow = selected ? displayRows.find((r) => r.symbol === selected.sym) : undefined
   const selectedMeta = selected ? ASSET_META[ASSET_IDS[selected.sym]] : undefined
   // #134 殘項：「你已持有 N 天」——從這檔代幣的鏈上 Transfer 倒推現在這段持有的起點。
-  // 只在詳情層打開、而且有持有時才讀；讀不到（含持有早於掃描範圍）就不顯示。
-  const heldSinceSec = useHeldSince({
+  // PR #202 M1：預設不掃鏈（長期持有者一次要 100 多次 getLogs），詳情層顯示按鈕，
+  // 使用者按了才查；結果有 module-level 快取。找不到就不顯示天數。
+  const held = useHeldSince({
     provider: wallet.provider,
     token: selected ? activeTokens[selected.sym] : null,
     user: wallet.address,
@@ -667,7 +668,12 @@ export default function TokenizedAssetsPage() {
       attestedLoading={!carbonTiers.loaded}
       attestedUnavailable={carbonTiers.unavailable}
       mintFeeBps={mintFeeBps}
-      heldSinceSec={heldSinceSec}
+      heldSinceSec={held.state.status === 'found' ? held.state.heldSinceSec : undefined}
+      heldSinceQuery={
+        held.query && held.state.status !== 'found'
+          ? { status: held.state.status, onQuery: held.query }
+          : undefined
+      }
       onClose={closePanel}
     />
   ) : null

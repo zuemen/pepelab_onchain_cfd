@@ -159,6 +159,9 @@ export const tokens: Catalog['tokens'] = {
 
     heldDaysLabel: "You've held",
     heldDaysValue: '{n} days',
+    heldDaysQuery: 'Check how long I have held this',
+    heldDaysLoading: 'Reading on-chain history…',
+    heldDaysUnknown: "Recent on-chain history doesn't show when this holding started, so no day count is shown.",
     sinceLabel: 'Attested since {date}',
 
     assets: {
