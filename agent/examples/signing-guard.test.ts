@@ -14,7 +14,7 @@ process.env.SESSION_MANAGER_ADDRESS = MGR;
 process.env.BASE_SEPOLIA_RPC_URL = "http://127.0.0.1:1";
 process.env.X402_MAX_PAYMENT_USDC = "0.02";
 process.env.X402_PAYTO_ALLOWLIST = "0x" + "77".repeat(20);
-for (const k of ["SIGNING_GUARD_MAX_TX_VALUE_WEI", "PAY_TO", "X402_MAX_TOTAL_SPEND_USDC", "LOOP_MAX_SPEND_USDC"]) delete process.env[k];
+for (const k of ["SIGNING_GUARD_MAX_TX_VALUE_WEI", "PAY_TO", "X402_MAX_TOTAL_SPEND_USDC", "LOOP_MAX_SPEND_USDC", "X402_MAX_VALIDITY_SEC"]) delete process.env[k];
 
 const {
   GuardedWallet, guardViemAccount, SigningGuardError, makeSigner,
@@ -187,8 +187,19 @@ const msg = (o: Record<string, unknown> = {}) => ({
   expectGuard(() => assertAllowedTypedData(DOMAIN, TWA, msg({ validBefore: 9_999_999_999n }), w.address), "PAYMENT_WINDOW_INVALID");
   expectGuard(() => assertAllowedTypedData(DOMAIN, TWA, msg({ validAfter: nowS() + 30n }), w.address), "PAYMENT_WINDOW_INVALID");
   expectGuard(() => assertAllowedTypedData(DOMAIN, TWA, msg({ validBefore: nowS() - 1n }), w.address), "PAYMENT_WINDOW_INVALID");
+  // 預設上限 300 秒（signal-api 宣告 maxTimeoutSeconds=60；x402-hono 未設定時預設 300）
+  assert.doesNotThrow(() => assertAllowedTypedData(DOMAIN, TWA, msg({ validBefore: nowS() + 300n }), w.address));
+  expectGuard(() => assertAllowedTypedData(DOMAIN, TWA, msg({ validBefore: nowS() + 302n }), w.address), "PAYMENT_WINDOW_INVALID");
+  // env X402_MAX_VALIDITY_SEC 可放寬，但最多 3600；格式錯誤 fail-closed
+  process.env.X402_MAX_VALIDITY_SEC = "3600";
   assert.doesNotThrow(() => assertAllowedTypedData(DOMAIN, TWA, msg({ validBefore: nowS() + 3600n }), w.address));
-  ok("x402：收款地址須在 X402_PAYTO_ALLOWLIST（→ PAY_TO → 第一次付款 TOFU 釘選）；validAfter ≤ now < validBefore ≤ now+3600");
+  expectGuard(() => assertAllowedTypedData(DOMAIN, TWA, msg({ validBefore: nowS() + 3602n }), w.address), "PAYMENT_WINDOW_INVALID");
+  for (const bad of ["3601", "0", "-5", "5m", "1e3"]) {
+    process.env.X402_MAX_VALIDITY_SEC = bad;
+    expectGuard(() => assertAllowedTypedData(DOMAIN, TWA, msg(), w.address), "GUARD_CONFIG_INVALID");
+  }
+  delete process.env.X402_MAX_VALIDITY_SEC;
+  ok("x402：收款地址須在 X402_PAYTO_ALLOWLIST（→ PAY_TO → 第一次付款 TOFU 釘選）；validAfter ≤ now < validBefore ≤ now+300（X402_MAX_VALIDITY_SEC 可放寬到 3600）");
 }
 {
   // 累計花費上限（共用層）

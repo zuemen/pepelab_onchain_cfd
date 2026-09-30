@@ -5,9 +5,12 @@
 //    伺服器回一張 0.10 的 402，client 就會照簽。這裡改成**明確傳入**，預設 0.02 USDC，
 //    可由 env `X402_MAX_PAYMENT_USDC` 設定。
 // 2. meteredFetch：包在 wrapFetchWithPayment 底下的 fetch，從它送出的 X-PAYMENT
-//    （EIP-3009 authorization.value）讀出**實際簽出的金額**，只有在付款確實成立時
-//    （回應帶 X-PAYMENT-RESPONSE 或 status < 400）才累計。花費上限應該用這個數字，
-//    而不是「單價常數 × 次數」——伺服器改價、或回了不同的 402，常數就不準了。
+//    （EIP-3009 authorization.value）讀出**實際簽出的金額**。三個數字：
+//      - totalSentAtomic：所有**送出過**的授權（不論回應狀態、不論 base() 是否丟錯）。
+//        授權一旦交給伺服器，validBefore 之前都可能被結算 —— 花費上限應該用這個保守值。
+//      - unsettledAtomic：其中沒有拿到 X-PAYMENT-RESPONSE（結算證明）的部分，需要對帳。
+//      - totalPaidAtomic：確定成立的付款（有 X-PAYMENT-RESPONSE 或 status < 400）。
+//    以前只有 totalPaidAtomic，付款後 502／斷線都不計，花費被低估（shared-race PoC C）。
 
 /** 預設單筆上限（USDC）。 */
 export const X402_DEFAULT_MAX_PAYMENT_USDC = "0.02";
@@ -74,22 +77,51 @@ export function paymentValueFromHeader(header: string | null | undefined): bigin
 export interface PaymentMeter {
   /** 交給 wrapFetchWithPayment 當底層 fetch。 */
   fetch: typeof globalThis.fetch;
-  /** 累計實付（atomic）。 */
+  /** 累計**已送出**的授權（atomic）：不論結果。花費上限請用這個。 */
+  totalSentAtomic(): bigint;
+  /** 已送出但沒有結算證明（X-PAYMENT-RESPONSE）的授權（atomic），含 base() 丟錯的。 */
+  unsettledAtomic(): bigint;
+  /** 累計確定成立的付款（atomic）。 */
   totalPaidAtomic(): bigint;
   /** 最近一次成立的付款金額（atomic）；最近一次請求沒有付款成立則為 null。 */
   lastPaidAtomic(): bigint | null;
 }
 
+function maxValueOrDefault(): bigint {
+  try {
+    return resolveX402MaxValue();
+  } catch {
+    return parseUsdcAtomic(X402_DEFAULT_MAX_PAYMENT_USDC);
+  }
+}
+
 /** 建一個會記錄實付金額的 fetch。 */
 export function meteredFetch(base: typeof globalThis.fetch = globalThis.fetch): PaymentMeter {
   let total = 0n;
+  let sent = 0n;
+  let unsettled = 0n;
   let last: bigint | null = null;
   const wrapped = (async (input: string | URL | Request, init?: RequestInit) => {
     const headers = new Headers(
       init?.headers ?? (input instanceof Request ? input.headers : undefined),
     );
-    const value = paymentValueFromHeader(headers.get("X-PAYMENT"));
-    const res = await base(input, init);
+    const payment = headers.get("X-PAYMENT");
+    const value = paymentValueFromHeader(payment);
+    // 帶了 X-PAYMENT 卻解不出金額：無法證明沒付錢 → 已送出／未結算以單筆上限保守計入
+    // （totalPaidAtomic 仍只計解得出金額的）。
+    const sentValue = value ?? (payment ? maxValueOrDefault() : null);
+    if (sentValue !== null) sent += sentValue; // 送出前就記：base() 丟錯也算已送出
+    let res: Response;
+    try {
+      res = await base(input, init);
+    } catch (err) {
+      if (sentValue !== null) {
+        unsettled += sentValue;
+        last = null;
+      }
+      throw err;
+    }
+    if (sentValue !== null && !res.headers.has("X-PAYMENT-RESPONSE")) unsettled += sentValue;
     if (value !== null) {
       // 帶了付款授權：回應帶 X-PAYMENT-RESPONSE（facilitator 結算成功）或成功狀態碼，
       // 就當作已付。寧可高估不可低估——這個數字是拿來擋花費上限的。
@@ -102,5 +134,11 @@ export function meteredFetch(base: typeof globalThis.fetch = globalThis.fetch): 
     }
     return res;
   }) as typeof globalThis.fetch;
-  return { fetch: wrapped, totalPaidAtomic: () => total, lastPaidAtomic: () => last };
+  return {
+    fetch: wrapped,
+    totalSentAtomic: () => sent,
+    unsettledAtomic: () => unsettled,
+    totalPaidAtomic: () => total,
+    lastPaidAtomic: () => last,
+  };
 }

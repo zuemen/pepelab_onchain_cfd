@@ -38821,27 +38821,90 @@ function assertAllowedTypedData(domain, types, message, signer, primaryType) {
   if (allow && !allow.includes(to)) {
     throw new SigningGuardError("PAYTO_NOT_ALLOWLISTED", `\u6536\u6B3E\u5730\u5740 ${to} \u4E0D\u5728 x402 payTo allowlist`);
   }
+  const maxValidity = resolveX402MaxValiditySec();
   const nowSec = BigInt(Math.floor(Date.now() / 1e3));
   const after = big(message.validAfter);
   const before = big(message.validBefore);
-  if (after === null || before === null || after > nowSec || before > nowSec + X402_MAX_VALIDITY_SEC || before <= nowSec) {
+  if (after === null || before === null || after > nowSec || before > nowSec + maxValidity || before <= nowSec) {
     throw new SigningGuardError(
       "PAYMENT_WINDOW_INVALID",
-      `\u6388\u6B0A\u6709\u6548\u671F\u4E0D\u5408\u898F\uFF08validAfter=${String(message.validAfter)}\u3001validBefore=${String(message.validBefore)}\uFF1B\u9808 validAfter \u2264 now\u3001now < validBefore \u2264 now+${X402_MAX_VALIDITY_SEC}\uFF09`
+      `\u6388\u6B0A\u6709\u6548\u671F\u4E0D\u5408\u898F\uFF08validAfter=${String(message.validAfter)}\u3001validBefore=${String(message.validBefore)}\uFF1B\u9808 validAfter \u2264 now\u3001now < validBefore \u2264 now+${maxValidity}\uFF0C\u4E0A\u9650\u898B X402_MAX_VALIDITY_SEC\uFF09`
     );
   }
   const total = resolveX402TotalSpendCap();
   if (x402Ledger.signedTotal + value > total) {
     throw new SigningGuardError(
       "SPEND_CAP_EXCEEDED",
-      `\u672C process \u5DF2\u7C3D\u51FA ${x402Ledger.signedTotal}\uFF0C\u52A0\u4E0A\u672C\u7B46 ${value} \u8D85\u904E\u7D2F\u8A08\u4E0A\u9650 ${total}\uFF08X402_MAX_TOTAL_SPEND_USDC\uFF09`
+      `\u672C process \u5DF2\u7C3D\u51FA\uFF0F\u7C3D\u7F72\u4E2D ${x402Ledger.signedTotal}\uFF0C\u52A0\u4E0A\u672C\u7B46 ${value} \u8D85\u904E\u7D2F\u8A08\u4E0A\u9650 ${total}\uFF08X402_MAX_TOTAL_SPEND_USDC\uFF09`
     );
   }
 }
 var X402_MAX_VALIDITY_SEC = 3600n;
-var x402Ledger = { signedTotal: 0n, pinnedPayTo: null };
+var X402_DEFAULT_MAX_VALIDITY_SEC = 300n;
+function resolveX402MaxValiditySec(env = process.env) {
+  const raw2 = env.X402_MAX_VALIDITY_SEC?.trim();
+  if (!raw2) return X402_DEFAULT_MAX_VALIDITY_SEC;
+  if (!/^\d+$/.test(raw2) || BigInt(raw2) <= 0n || BigInt(raw2) > X402_MAX_VALIDITY_SEC) {
+    throw new SigningGuardError(
+      "GUARD_CONFIG_INVALID",
+      `X402_MAX_VALIDITY_SEC \u5FC5\u9808\u662F 1\u2013${X402_MAX_VALIDITY_SEC} \u7684\u6574\u6578\u79D2\uFF08\u6536\u5230 ${raw2}\uFF0Cfail-closed\uFF09`
+    );
+  }
+  return BigInt(raw2);
+}
+var x402Ledger = {
+  signedTotal: 0n,
+  activeAuthorizations: 0,
+  pinnedPayTo: null,
+  pinOwner: null
+};
+function reserveX402(domain, types, message, signer, primaryType) {
+  assertAllowedTypedData(domain, types, message, signer, primaryType);
+  const value = big(message.value) ?? 0n;
+  const token = /* @__PURE__ */ Symbol("x402-reservation");
+  x402Ledger.signedTotal += value;
+  x402Ledger.activeAuthorizations += 1;
+  const tofu = !envPayToAllowlistRaw() && !x402Ledger.pinnedPayTo && typeof message.to === "string";
+  if (tofu) {
+    x402Ledger.pinnedPayTo = ethers_exports.getAddress(message.to);
+    x402Ledger.pinOwner = token;
+  }
+  let settled = false;
+  return {
+    commit() {
+      if (settled) return;
+      settled = true;
+      if (x402Ledger.pinOwner === token) x402Ledger.pinOwner = null;
+    },
+    rollback() {
+      if (settled) return;
+      settled = true;
+      x402Ledger.signedTotal -= value;
+      x402Ledger.activeAuthorizations -= 1;
+      if (x402Ledger.pinOwner === token) x402Ledger.pinOwner = null;
+      if (x402Ledger.activeAuthorizations === 0) {
+        x402Ledger.pinnedPayTo = null;
+        x402Ledger.pinOwner = null;
+      }
+    }
+  };
+}
+async function withX402Reservation(r, sign2) {
+  let sig;
+  try {
+    sig = await sign2();
+  } catch (err) {
+    r.rollback();
+    throw err;
+  }
+  r.commit();
+  return sig;
+}
+function envPayToAllowlistRaw(env = process.env) {
+  return env.X402_PAYTO_ALLOWLIST?.trim() || env.PAY_TO?.trim() || void 0;
+}
 function x402PayToAllowlist(env = process.env) {
-  const raw2 = env.X402_PAYTO_ALLOWLIST?.trim() || env.PAY_TO?.trim();
+  const raw2 = envPayToAllowlistRaw(env);
   if (raw2) {
     const list2 = raw2.split(",").map((s) => s.trim()).filter(Boolean);
     const bad = list2.filter((a) => !ethers_exports.isAddress(a));
@@ -38858,10 +38921,6 @@ function x402PayToAllowlist(env = process.env) {
   return null;
 }
 var warnedTofu = false;
-function recordX402Signed(message) {
-  x402Ledger.signedTotal += big(message.value) ?? 0n;
-  if (!x402Ledger.pinnedPayTo && typeof message.to === "string") x402Ledger.pinnedPayTo = ethers_exports.getAddress(message.to);
-}
 function assertAllowedMessage(message, signer) {
   const text = typeof message === "string" ? message : message instanceof Uint8Array ? (() => {
     try {
@@ -38884,10 +38943,8 @@ var GuardedWallet = class _GuardedWallet extends ethers_exports.Wallet {
     return super.signTransaction(tx);
   }
   async signTypedData(domain, types, value) {
-    assertAllowedTypedData(domain, types, value, this.address);
-    const sig = await super.signTypedData(domain, types, value);
-    recordX402Signed(value);
-    return sig;
+    const r = reserveX402(domain, types, value, this.address);
+    return withX402Reservation(r, () => super.signTypedData(domain, types, value));
   }
   async signMessage(message) {
     assertAllowedMessage(message, this.address);

@@ -16,7 +16,7 @@ import { wrapFetchWithPayment } from "x402-fetch";
 import {
   openPositionForSession, getSession, makeProvider, makeContracts, assetIdOf,
   agentDid, appendAudit, type AuditRecord, type AuthorizationVC,
-  meteredFetch, resolveX402MaxValue, resolveX402TotalSpendCap, formatUsdcAtomic, guardViemAccount,
+  meteredFetch, resolveX402MaxValue, resolveX402TotalSpendCap, resolveX402MaxValiditySec, formatUsdcAtomic, guardViemAccount,
 } from "@pepelab/shared";
 import { decide, parseOracleBody } from "./x402-autonomous.ts";
 import { loadVc, localVerifyVc, fetchAgentVerification, AUDIT_PATH, type VcCheck } from "./vc-gate.ts";
@@ -41,13 +41,18 @@ const ORACLE_PRICE_USDC = Number(process.env.X402_ORACLE_PRICE ?? "0.005");
 // 累計資料費上限：共用層（shared/x402Client.resolveX402TotalSpendCap，env X402_MAX_TOTAL_SPEND_USDC，
 // 舊名 LOOP_MAX_SPEND_USDC 仍可用）。簽章守門在簽出每筆 x402 授權前也會用同一個上限擋。
 const MAX_SPEND_USDC = Number(formatUsdcAtomic(resolveX402TotalSpendCap()));
+// 有效期上限（X402_MAX_VALIDITY_SEC）在啟動時就解析一次：設定錯誤立刻失敗，
+// 而不是跑到第一筆付款才被簽章守門以 GUARD_CONFIG_INVALID 擋下（#204 審查 L2）。
+resolveX402MaxValiditySec();
 const MAX_ROUNDS = Number(process.env.LOOP_MAX_ROUNDS ?? "0");            // 0 = 不限輪數
 const MAX_CONSECUTIVE_FAILURES = Number(process.env.LOOP_MAX_FAILURES ?? "5");
 
-let spentUsdc = 0;          // 已花掉的 x402 資料費（累計，**實付**金額）
+let spentUsdc = 0;          // 已送出的 x402 資料費授權（累計，保守值）
 // 2026-09-29（P0）：花費上限改用實際付款金額累計。METER 包在 wrapFetchWithPayment
-// 底下，從送出的 X-PAYMENT 讀 EIP-3009 authorization.value；付款成立才累計。
+// 底下，從送出的 X-PAYMENT 讀 EIP-3009 authorization.value。
 // 以前是「ORACLE_PRICE_USDC × 次數」——伺服器改價或回不同的 402，這個數字就不準。
+// 2026-09-30：停止條件改用 totalSentAtomic（所有送出過的授權，不論回應狀態或連線錯誤）。
+// 付款後 502／斷線時授權已交出、仍可能被結算，只算「成立的付款」會低估。
 const METER = meteredFetch();
 // 單筆上限（X402_MAX_PAYMENT_USDC，預設 0.02）：同時用來做「下一筆付了會不會超過
 // 上限」的保守預檢——實付不可能超過它，所以預檢過了就保證不會超過 MAX_SPEND_USDC。
@@ -126,8 +131,13 @@ async function runRound(ctx: RoundCtx): Promise<boolean> {
         appendAudit(AUDIT_PATH, rec); anySuccess = true; continue;
       }
 
-      const res = await payFetch(`${API}/oracle/${symbol}`, { method: "GET" });
-      spentUsdc = Number(formatUsdcAtomic(METER.totalPaidAtomic()));
+      let res: Response;
+      try {
+        res = await payFetch(`${API}/oracle/${symbol}`, { method: "GET" });
+      } finally {
+        // 不論成功或丟錯都更新：送出過的授權一律計入（保守）。
+        spentUsdc = Number(formatUsdcAtomic(METER.totalSentAtomic()));
+      }
       const paid = METER.lastPaidAtomic();
       rec.research.priceUsdc = paid === null ? "0" : formatUsdcAtomic(paid);
       const body = await res.json().catch(() => null);
@@ -193,7 +203,7 @@ async function main() {
   const first: any = await getSession(SESSION_ID);
   console.log(`x402-loop 上線。session #${SESSION_ID}（user ${first?.detail?.user ?? account.address}）・資產 [${ASSETS.join(", ")}]・每 ${INTERVAL_MS / 60000} 分・冷卻 ${COOLDOWN_MS / 60000} 分。`);
   console.log(
-    `上限：累計資料費 ≤ ${MAX_SPEND_USDC} USDC（以實付計）・單筆 ≤ ${MAX_VALUE_USDC} USDC・` +
+    `上限：累計資料費 ≤ ${MAX_SPEND_USDC} USDC（以已送出的授權計）・單筆 ≤ ${MAX_VALUE_USDC} USDC・` +
       `輪數 ${MAX_ROUNDS > 0 ? MAX_ROUNDS : "不限"}・連續失敗 ${MAX_CONSECUTIVE_FAILURES} 次即停。稽核 → ${AUDIT_PATH}`,
   );
 

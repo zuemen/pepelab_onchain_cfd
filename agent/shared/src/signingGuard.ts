@@ -17,7 +17,8 @@
 //       version / chainId / verifyingContract 必須等於官方 USDC；`from` 必須是 agent
 //       自己；`value` ≤ X402_MAX_PAYMENT_USDC（resolveX402MaxValue）；`to` 在 payTo allowlist
 //       （X402_PAYTO_ALLOWLIST → PAY_TO → 第一次付款 TOFU 釘選）；validAfter ≤ now <
-//       validBefore ≤ now+3600；本 process 累計簽出 ≤ X402_MAX_TOTAL_SPEND_USDC；
+//       validBefore ≤ now+300（env X402_MAX_VALIDITY_SEC 可放寬，最多 3600）；
+//       本 process 累計簽出 ≤ X402_MAX_TOTAL_SPEND_USDC（檢查與預留在同一個同步區段，並行安全）；
 //       types.EIP712Domain 若存在須為標準四欄，domain.chainId 只收 number/bigint。
 //       交易另要求 chainId = AGENT_CHAIN_ID（EIP-155），calldata 重新編碼須逐字相同。
 //       持有證明挑戰的時間戳須在 ±60 秒內。
@@ -264,37 +265,68 @@ export function assertAllowedTypedData(
     throw new SigningGuardError("PAYTO_NOT_ALLOWLISTED", `收款地址 ${to} 不在 x402 payTo allowlist`);
   }
 
-  // 有效期：validAfter ≤ now、validBefore ≤ now + 3600s（簽出去的授權不能長期有效）。
+  // 有效期：validAfter ≤ now、validBefore ≤ now + 上限（預設 300 秒；簽出去的授權不能長期有效）。
+  const maxValidity = resolveX402MaxValiditySec();
   const nowSec = BigInt(Math.floor(Date.now() / 1000));
   const after = big(message.validAfter);
   const before = big(message.validBefore);
-  if (after === null || before === null || after > nowSec || before > nowSec + X402_MAX_VALIDITY_SEC || before <= nowSec) {
+  if (after === null || before === null || after > nowSec || before > nowSec + maxValidity || before <= nowSec) {
     throw new SigningGuardError(
       "PAYMENT_WINDOW_INVALID",
-      `授權有效期不合規（validAfter=${String(message.validAfter)}、validBefore=${String(message.validBefore)}；須 validAfter ≤ now、now < validBefore ≤ now+${X402_MAX_VALIDITY_SEC}）`,
+      `授權有效期不合規（validAfter=${String(message.validAfter)}、validBefore=${String(message.validBefore)}；須 validAfter ≤ now、now < validBefore ≤ now+${maxValidity}，上限見 X402_MAX_VALIDITY_SEC）`,
     );
   }
 
   // 累計花費上限（所有 x402 付款流程共用：守門是它們唯一的共同咽喉點）。
+  // signedTotal 包含「進行中」的預留（見 reserveX402），所以並行簽署看得到彼此。
   const total = resolveX402TotalSpendCap();
   if (x402Ledger.signedTotal + value > total) {
     throw new SigningGuardError(
       "SPEND_CAP_EXCEEDED",
-      `本 process 已簽出 ${x402Ledger.signedTotal}，加上本筆 ${value} 超過累計上限 ${total}（X402_MAX_TOTAL_SPEND_USDC）`,
+      `本 process 已簽出／簽署中 ${x402Ledger.signedTotal}，加上本筆 ${value} 超過累計上限 ${total}（X402_MAX_TOTAL_SPEND_USDC）`,
     );
   }
 }
 
 // ── x402 共用狀態：payTo 與累計花費 ─────────────────────────────────────────
+/** 授權有效期的**硬上限**（秒）：X402_MAX_VALIDITY_SEC 環境變數最多只能放寬到這裡。 */
 export const X402_MAX_VALIDITY_SEC = 3600n;
+/**
+ * 授權有效期的預設上限（秒）。x402 client 以 validBefore = now + maxTimeoutSeconds 簽署，
+ * 我們自己的 signal-api 宣告 60 秒（x402-hono 未設定時的預設是 300），300 秒涵蓋兩者。
+ */
+export const X402_DEFAULT_MAX_VALIDITY_SEC = 300n;
+
+/** 有效期上限：env `X402_MAX_VALIDITY_SEC`（1–3600 的整數秒），預設 300。格式錯誤 fail-closed。 */
+export function resolveX402MaxValiditySec(env: NodeJS.ProcessEnv = process.env): bigint {
+  const raw = env.X402_MAX_VALIDITY_SEC?.trim();
+  if (!raw) return X402_DEFAULT_MAX_VALIDITY_SEC;
+  if (!/^\d+$/.test(raw) || BigInt(raw) <= 0n || BigInt(raw) > X402_MAX_VALIDITY_SEC) {
+    throw new SigningGuardError(
+      "GUARD_CONFIG_INVALID",
+      `X402_MAX_VALIDITY_SEC 必須是 1–${X402_MAX_VALIDITY_SEC} 的整數秒（收到 ${raw}，fail-closed）`,
+    );
+  }
+  return BigInt(raw);
+}
 
 /**
- * 本 process 已簽出的 x402 付款授權總額（atomic）。以「簽出」計、不等結算——寧可高估，
- * 這個數字是拿來擋上限的。所有走 GuardedWallet / guardViemAccount 的 x402 流程共用。
+ * 本 process 的 x402 帳本。
+ *   signedTotal          —— 已簽出 + **簽署中（已預留）** 的授權總額（atomic）。以「簽出」計、不等結算，
+ *                           寧可高估；這個數字是拿來擋上限的。
+ *   activeAuthorizations —— 已簽出 + 簽署中的授權筆數（決定 TOFU 釘選能不能撤銷）。
+ *   pinnedPayTo          —— TOFU 釘選的收款地址；pinOwner 為「釘它、且還沒簽完」的那筆預留。
+ * 所有走 GuardedWallet / guardViemAccount 的 x402 流程共用。
  * 誠實邊界：以 process 為範圍，重啟歸零；長期上限請配合外部監控。
  */
-const x402Ledger = { signedTotal: 0n, pinnedPayTo: null as string | null };
+const x402Ledger = {
+  signedTotal: 0n,
+  activeAuthorizations: 0,
+  pinnedPayTo: null as string | null,
+  pinOwner: null as symbol | null,
+};
 
+/** 已簽出 + 簽署中的 x402 授權總額（atomic）。 */
 export function x402SignedTotal(): bigint {
   return x402Ledger.signedTotal;
 }
@@ -302,7 +334,84 @@ export function x402SignedTotal(): bigint {
 /** 測試用：清掉累計與 TOFU 釘選。 */
 export function resetX402GuardStateForTesting(): void {
   x402Ledger.signedTotal = 0n;
+  x402Ledger.activeAuthorizations = 0;
   x402Ledger.pinnedPayTo = null;
+  x402Ledger.pinOwner = null;
+}
+
+export interface X402Reservation {
+  /** 簽章成功：預留轉為已簽出（不可再撤銷）。 */
+  commit(): void;
+  /** 簽章失敗：退回預留；若本筆是 TOFU 釘選者且沒有其他授權，撤銷釘選。 */
+  rollback(): void;
+}
+
+/**
+ * 檢查 + 預留，**在同一個同步區段完成**（中間沒有 await）。
+ *
+ * 以前是「assertAllowedTypedData 檢查 → await 簽章 → recordX402Signed 記帳」，檢查與記帳之間隔著
+ * await，並行的 N 筆會在彼此記帳前全部通過累計上限；TOFU 也要等簽完才釘選，並行兩筆不同收款人
+ * 都會被放行（審查 PR #201 附帶回報，shared-race PoC 重現）。現在通過檢查的當下就記入
+ * signedTotal 與 TOFU 釘選，下一筆（不論是否並行）的檢查一定看得到。
+ */
+export function reserveX402(
+  domain: Parameters<typeof assertAllowedTypedData>[0],
+  types: Record<string, unknown>,
+  message: Record<string, unknown>,
+  signer: string,
+  primaryType?: string,
+): X402Reservation {
+  assertAllowedTypedData(domain, types, message, signer, primaryType);
+  // ↓ 從這裡到 return 都是同步程式碼：與上面的檢查構成一個不可分割的區段。
+  const value = big(message.value) ?? 0n;
+  const token = Symbol("x402-reservation");
+  x402Ledger.signedTotal += value;
+  x402Ledger.activeAuthorizations += 1;
+  const tofu = !envPayToAllowlistRaw() && !x402Ledger.pinnedPayTo && typeof message.to === "string";
+  if (tofu) {
+    x402Ledger.pinnedPayTo = ethers.getAddress(message.to as string);
+    x402Ledger.pinOwner = token;
+  }
+  let settled = false;
+  return {
+    commit() {
+      if (settled) return;
+      settled = true;
+      if (x402Ledger.pinOwner === token) x402Ledger.pinOwner = null; // 釘選自此永久（本 process）
+    },
+    rollback() {
+      if (settled) return;
+      settled = true;
+      x402Ledger.signedTotal -= value;
+      x402Ledger.activeAuthorizations -= 1;
+      // activeAuthorizations 計的是「已簽出＋簽署中」（commit 不遞減）。歸零代表沒有任何
+      // 授權付給過釘選的地址，撤銷釘選一定安全——不論是哪一筆釘的。只看「本筆是否為
+      // 釘選者」會漏掉：釘選者先失敗（還有另一筆在簽）、後來那筆也失敗 → 釘選殘留，
+      // 惡意 402 的收款地址配上兩次暫時性簽章失敗就能把合法收款人鎖到重啟（#204 審查 M1）。
+      if (x402Ledger.pinOwner === token) x402Ledger.pinOwner = null;
+      if (x402Ledger.activeAuthorizations === 0) {
+        x402Ledger.pinnedPayTo = null;
+        x402Ledger.pinOwner = null;
+      }
+    },
+  };
+}
+
+/** 包住一次簽章：先預留，簽章成功 commit、失敗 rollback。 */
+async function withX402Reservation<T>(r: X402Reservation, sign: () => Promise<T>): Promise<T> {
+  let sig: T;
+  try {
+    sig = await sign();
+  } catch (err) {
+    r.rollback();
+    throw err;
+  }
+  r.commit();
+  return sig;
+}
+
+function envPayToAllowlistRaw(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  return env.X402_PAYTO_ALLOWLIST?.trim() || env.PAY_TO?.trim() || undefined;
 }
 
 /**
@@ -314,7 +423,7 @@ export function resetX402GuardStateForTesting(): void {
  *      stderr 警告一次。回傳 null＝尚未釘選（第一筆放行）。
  */
 export function x402PayToAllowlist(env: NodeJS.ProcessEnv = process.env): string[] | null {
-  const raw = env.X402_PAYTO_ALLOWLIST?.trim() || env.PAY_TO?.trim();
+  const raw = envPayToAllowlistRaw(env);
   if (raw) {
     const list = raw.split(",").map((s) => s.trim()).filter(Boolean);
     const bad = list.filter((a) => !ethers.isAddress(a));
@@ -332,11 +441,6 @@ export function x402PayToAllowlist(env: NodeJS.ProcessEnv = process.env): string
 }
 let warnedTofu = false;
 
-/** 簽章成功後登記：累計花費、TOFU 釘選收款地址。 */
-function recordX402Signed(message: Record<string, unknown>): void {
-  x402Ledger.signedTotal += big(message.value) ?? 0n;
-  if (!x402Ledger.pinnedPayTo && typeof message.to === "string") x402Ledger.pinnedPayTo = ethers.getAddress(message.to);
-}
 
 // ── (c) personal message ─────────────────────────────────────────────────────
 export function assertAllowedMessage(message: unknown, signer: string): void {
@@ -379,10 +483,8 @@ export class GuardedWallet extends ethers.Wallet {
     types: Record<string, ethers.TypedDataField[]>,
     value: Record<string, any>,
   ): Promise<string> {
-    assertAllowedTypedData(domain as any, types, value, this.address);
-    const sig = await super.signTypedData(domain, types, value);
-    recordX402Signed(value);
-    return sig;
+    const r = reserveX402(domain as any, types, value, this.address);
+    return withX402Reservation(r, () => super.signTypedData(domain, types, value));
   }
 
   override async signMessage(message: string | Uint8Array): Promise<string> {
@@ -426,10 +528,8 @@ export function guardViemAccount<A extends { type: string; address: string }>(ac
   }
   if (typeof acc.signTypedData === "function") {
     wrapped.signTypedData = async (td: any) => {
-      assertAllowedTypedData(td?.domain ?? {}, td?.types ?? {}, td?.message ?? {}, acc.address, td?.primaryType);
-      const sig = await acc.signTypedData(td);
-      recordX402Signed(td?.message ?? {});
-      return sig;
+      const r = reserveX402(td?.domain ?? {}, td?.types ?? {}, td?.message ?? {}, acc.address, td?.primaryType);
+      return withX402Reservation(r, () => acc.signTypedData(td));
     };
   }
   if (typeof acc.signMessage === "function") {
