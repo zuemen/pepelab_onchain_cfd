@@ -43,7 +43,8 @@
 | `getPosition`、`getUserPositions`、`getUnrealizedPnL`、`pendingFunding`、`getFundingRate`、`getMarkPrice`、`getAccountHealth` | 讀取 |
 | `maxLeverageForAsset`、`tradingFeeBpsForAsset`、`maintenanceMarginBpsForAsset` | 逐資產風險參數讀取 |
 
-所有會改變狀態的呼叫都會檢查價格新鮮度：價格超過 `maxPriceAge`（現行 6 小時）時 revert `StalePrice`。
+開倉、平倉、清算需要新鮮價格：價格超過 `maxPriceAge`（現行 6 小時）時 revert `StalePrice`。
+入金與提領 `freeMargin` 不需要新鮮價格。
 owner 可設定的參數（費率、逐資產槓桿上限與維持保證金、ADL、KYC registry、RWA 標記等）見原始碼的
 `onlyOwner` 函式。**現行部署沒有暫停或逐資產停單功能**；原始碼版（PR #191，未部署）才有，
 見 [`RISK_WATERFALL.md`](RISK_WATERFALL.md) 第 3 節。

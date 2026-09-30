@@ -38,7 +38,7 @@
 | Agent 交易 | `PerpetualExchange.setAgentAuthorized(sessionManager, false)` | exchange owner | 所有 agent session 無法開倉，也無法由 agent 平倉；終端客戶仍可自行平倉 |
 | 單一 session | `AgentSessionManager.revokeSession` | 該 session 的使用者 | 立即撤銷 |
 | 新曝險 | 調低逐資產槓桿上限、調整費率等 owner 參數 | exchange owner | 只能降低新部位的槓桿或提高成本，不能阻止開倉 |
-| 價格 | 停止 keeper workflow | GitHub repo 管理者 | 價格停在舊值；在 `maxPriceAge`（6 小時）內交易所**仍以舊價成交**，之後所有狀態變更（包含平倉與清算）都會 revert。**會同時凍結出場**，只在持續損失大於凍結代價時考慮 |
+| 價格 | 停止 keeper workflow | GitHub repo 管理者 | 價格停在舊值；在 `maxPriceAge`（6 小時）內交易所**仍以舊價成交**，之後開倉、平倉、清算都會 revert（這三者需要新鮮價格；入金與提領 `freeMargin` 不需要，仍可進行）。**會同時凍結平倉**，只在持續損失大於凍結代價時考慮 |
 | 價格 | 人工寫入核對過的價格（`admin-base-sepolia.yml`） | oracle 寫入金鑰 | 需第二人覆核輸入；見 [`RUNBOOK_KEEPER.md`](RUNBOOK_KEEPER.md) |
 | 代幣化金庫 | `AssetVaultV2.pause()` | `PAUSER_ROLE` | mint 與 redeem 都停止（贖回也會被凍結） |
 | 代幣化金庫 | 調低逐資產上限；準備率跌破門檻時 mint 自動鎖住 | `RISK_ROLE` | 只限制新的 mint |
