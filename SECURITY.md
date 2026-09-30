@@ -1,11 +1,17 @@
 # 安全政策（Security Policy）
 
+> **GitHub Private Vulnerability Reporting 目前尚未開啟**（2026-09-30）。開啟之前請使用下方的替代管道。
+>
 > 狀態：2026-09-30。PepeFi 是部署在 **Base Sepolia 測試網**的研究原型。
 > **目前沒有漏洞獎金（bug bounty）、沒有第三方安全稽核，僅限測試網。**
 
 ## 1. 如何回報漏洞
 
-請使用 GitHub 的 **Private Vulnerability Reporting**：
+**目前（Private Vulnerability Reporting 開啟前）的替代管道**：開一個**不含任何細節**的 issue，
+要求私密聯絡管道（可使用 security 範本）。維護者會回覆可用的私密方式。
+issue 裡不要描述漏洞、受影響的函式、重現步驟或交易。
+
+**開啟之後**，改用 GitHub 的 **Private Vulnerability Reporting**：
 
 1. 進入本 repo 的 **Security** 分頁。
 2. 點選 **Report a vulnerability**，填寫私密報告。
@@ -14,8 +20,6 @@
 
 > **維護者待辦**：Private Vulnerability Reporting 需要 repo 管理者在
 > *Settings → Code security → Private vulnerability reporting* 手動啟用。
-> 啟用前，上述按鈕不會出現；在那之前請開一個**不含任何技術細節**的 issue，
-> 只寫「需要私密回報管道」，維護者會回覆聯繫方式。
 
 報告建議包含：受影響的元件與檔案、影響說明、重現所需的最小條件、你認為的嚴重度。
 請勿附上任何私鑰或他人的個人資料。
