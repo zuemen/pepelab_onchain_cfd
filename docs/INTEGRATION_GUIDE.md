@@ -162,7 +162,7 @@ owner 可設定的參數（費率、逐資產槓桿上限與維持保證金、AD
 | 資產白名單 | `assets.enabled` | `addresses.ts` 已知資產的代號子集或 `"all"`；設定檔沒有地址欄位。只擋**新開**部位／買進／採用／agent session，**平倉與贖回永遠不受影響** |
 | 揭露 | `compliance.operatorName`、`compliance.additionalDisclosures` | 只能**追加**在平台核心揭露（測試網原型、合成且非足額抵押、非投資建議）之後，不能取代 |
 | 客服與法律 | `support.email`、`support.url`、`legal.links` | 只收 https；顯示在頁尾 |
-| 功能授權 | `features.<功能>.allowed`／`.default` | 有效值 = `allowed` 且（環境變數；沒設用 `default`）。部署面板的 `VITE_*` 旗標打不開未授權的功能。未授權永續的租戶，終端機不送開倉、不能建立 agent session |
+| 功能授權 | `features.<功能>.allowed`／`.default` | 有效值 = `allowed` 且（環境變數；沒設用 `default`）。部署面板的 `VITE_*` 旗標打不開未授權的功能。未授權永續的租戶，終端機不送開倉、不能建立 agent session。**有資產白名單（非 `"all"`）的租戶不得授權跟單**：鏈上跟單鏡射交易者的全部部位、無法依資產過濾，設定會驗證失敗 |
 
 設定檔驗證不過（未知欄位、未知資產、非 https 連結、`id` 與檔名不符等）時 build 直接失敗，
 app 載入時也會再驗證一次；認不出的 `VITE_TENANT` **不會**退回 default。

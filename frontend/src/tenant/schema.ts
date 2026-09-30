@@ -25,7 +25,7 @@ export const TENANT_SCHEMA_VERSION = 1;
 /** 租戶 id：小寫英數與連字號，同時是設定檔檔名與 `VITE_TENANT` 的值。 */
 export const TENANT_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-/** 前端會出貨的語系。與 src/locales/catalogs.ts 的 LOCALES 鍵一致（tenant.test.ts 會檢查）。 */
+/** 前端會出貨的語系。與 src/locales/catalogs.ts 的 LOCALES 鍵一致（schema.test.ts 會檢查）。 */
 export const TENANT_LOCALES = ['zh-TW', 'en'] as const;
 export type TenantLocale = (typeof TENANT_LOCALES)[number];
 
@@ -140,90 +140,105 @@ const assetSymbol = z.enum(KNOWN_ASSET_SYMBOLS as [AssetSymbol, ...AssetSymbol[]
 
 // ── 設定檔 ───────────────────────────────────────────────────────────────
 
-export const tenantSchema = z.strictObject({
-  schemaVersion: z.literal(TENANT_SCHEMA_VERSION),
-  id: z
-    .string()
-    .regex(TENANT_ID_PATTERN, { message: 'lowercase letters, digits and hyphens only' }),
+export const tenantSchema = z
+  .strictObject({
+    schemaVersion: z.literal(TENANT_SCHEMA_VERSION),
+    id: z
+      .string()
+      .regex(TENANT_ID_PATTERN, { message: 'lowercase letters, digits and hyphens only' }),
 
-  brand: z.strictObject({
-    /** 平台名稱。代入 catalog 的 `{brand}`、logo 字樣、index.html 標題。 */
-    name: safeText(40),
-    /** 品牌小圖示（通常是一個 emoji）。代入 catalog 的 `{brandMark}` 與終端機標頭。 */
-    mark: safeText(8),
-    logo: z.strictObject({
-      src: localAssetPath,
-      /** 主圖載入失敗時的備援圖。 */
-      fallbackSrc: localAssetPath,
-    }),
-    favicon: localAssetPath,
-    /** `<meta name="theme-color">`。 */
-    themeColor: hexColor,
-  }),
-
-  /** MUI 色票覆寫。省略的鍵沿用 src/theme/theme-config.ts 的預設值。 */
-  theme: z.strictObject({
-    primary: paletteColor.optional(),
-    secondary: paletteColor.optional(),
-  }),
-
-  /** `VITE_LOCALE` 沒設定時用的語系。 */
-  defaultLocale: z.enum(TENANT_LOCALES),
-
-  assets: z.strictObject({
-    /**
-     * 可以**新開**部位／買進的資產。`"all"` = addresses.ts 的全部資產（含日後新增的）；
-     * 陣列 = 明確白名單，必須非空、不重複、全部是已知資產。
-     * 不在白名單的資產：既有持倉仍顯示、仍可賣出／平倉。
-     */
-    enabled: z.union([
-      z.literal('all'),
-      z
-        .array(assetSymbol)
-        .min(1)
-        .refine((a) => new Set(a).size === a.length, { message: 'assets must not repeat' }),
-    ]),
-  }),
-
-  compliance: z.strictObject({
-    /** 營運機構名稱，顯示在揭露區塊。null = 不顯示（預設 tenant）。 */
-    operatorName: localizedText(80).nullable(),
-    /**
-     * 附加揭露條目，**只能追加**在平台核心揭露之後，不能取代或刪減核心揭露
-     * （測試網、合成曝險、非投資建議）。兩個語系條數必須相同。
-     */
-    additionalDisclosures: z
-      .strictObject({
-        'zh-TW': z.array(safeText(300)).max(5),
-        en: z
-          .array(
-            safeText(300).refine((s) => !HAN.test(s), {
-              message: 'en text must not contain Han characters',
-            })
-          )
-          .max(5),
-      })
-      .refine((d) => d['zh-TW'].length === d.en.length, {
-        message: 'both locales must have the same number of disclosures',
+    brand: z.strictObject({
+      /** 平台名稱。代入 catalog 的 `{brand}`、logo 字樣、index.html 標題。 */
+      name: safeText(40),
+      /** 品牌小圖示（通常是一個 emoji）。代入 catalog 的 `{brandMark}` 與終端機標頭。 */
+      mark: safeText(8),
+      logo: z.strictObject({
+        src: localAssetPath,
+        /** 主圖載入失敗時的備援圖。 */
+        fallbackSrc: localAssetPath,
       }),
-  }),
+      favicon: localAssetPath,
+      /** `<meta name="theme-color">`。 */
+      themeColor: hexColor,
+    }),
 
-  support: z.strictObject({
-    email: email.nullable(),
-    url: httpsUrl.nullable(),
-  }),
+    /** MUI 色票覆寫。省略的鍵沿用 src/theme/theme-config.ts 的預設值。 */
+    theme: z.strictObject({
+      primary: paletteColor.optional(),
+      secondary: paletteColor.optional(),
+    }),
 
-  legal: z.strictObject({
-    links: z.array(z.strictObject({ label: localizedText(40), href: httpsUrl })).max(6),
-  }),
+    /** `VITE_LOCALE` 沒設定時用的語系。 */
+    defaultLocale: z.enum(TENANT_LOCALES),
 
-  features: z.strictObject(
-    Object.fromEntries(FEATURE_KEYS.map((k) => [k, featurePolicy])) as Record<
-      FeatureKey,
-      typeof featurePolicy
-    >
-  ),
-});
+    assets: z.strictObject({
+      /**
+       * 可以**新開**部位／買進的資產。`"all"` = addresses.ts 的全部資產（含日後新增的）；
+       * 陣列 = 明確白名單，必須非空、不重複、全部是已知資產。
+       * 不在白名單的資產：既有持倉仍顯示、仍可賣出／平倉。
+       */
+      enabled: z.union([
+        z.literal('all'),
+        z
+          .array(assetSymbol)
+          .min(1)
+          .refine((a) => new Set(a).size === a.length, { message: 'assets must not repeat' }),
+      ]),
+    }),
+
+    compliance: z.strictObject({
+      /** 營運機構名稱，顯示在揭露區塊。null = 不顯示（預設 tenant）。 */
+      operatorName: localizedText(80).nullable(),
+      /**
+       * 附加揭露條目，**只能追加**在平台核心揭露之後，不能取代或刪減核心揭露
+       * （測試網、合成曝險、非投資建議）。兩個語系條數必須相同。
+       */
+      additionalDisclosures: z
+        .strictObject({
+          'zh-TW': z.array(safeText(300)).max(5),
+          en: z
+            .array(
+              safeText(300).refine((s) => !HAN.test(s), {
+                message: 'en text must not contain Han characters',
+              })
+            )
+            .max(5),
+        })
+        .refine((d) => d['zh-TW'].length === d.en.length, {
+          message: 'both locales must have the same number of disclosures',
+        }),
+    }),
+
+    support: z.strictObject({
+      email: email.nullable(),
+      url: httpsUrl.nullable(),
+    }),
+
+    legal: z.strictObject({
+      links: z.array(z.strictObject({ label: localizedText(40), href: httpsUrl })).max(6),
+    }),
+
+    features: z.strictObject(
+      Object.fromEntries(FEATURE_KEYS.map((k) => [k, featurePolicy])) as Record<
+        FeatureKey,
+        typeof featurePolicy
+      >
+    ),
+  })
+  // 跟單（CopyTracker.followTrader）在鏈上鏡射交易者的**全部**部位，合約沒有依資產
+  // 過濾的參數，前端也無法在送單前知道之後會鏡射哪些資產——它是白名單管不到的進場路徑。
+  // 所以只要租戶有白名單（不是 "all"），就不得授權跟單。見 ADR 0009。
+  .superRefine((cfg, ctx) => {
+    if (cfg.assets.enabled !== 'all' && cfg.features.copyTrading.allowed) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['features', 'copyTrading', 'allowed'],
+        message:
+          'copy trading mirrors every asset the trader holds and cannot be filtered on chain; ' +
+          'it must not be allowed when assets.enabled is a whitelist',
+      });
+    }
+  });
 
 export type TenantConfig = z.infer<typeof tenantSchema>;
 export type TenantPaletteColor = z.infer<typeof paletteColor>;

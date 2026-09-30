@@ -117,6 +117,24 @@ describe('tenant config validation', () => {
     );
   });
 
+  // 鏈上跟單鏡射交易者的全部部位、無法依資產過濾——有白名單就不能授權跟單。
+  it('rejects copy trading for a tenant with an asset whitelist', () => {
+    expectRejected(
+      mutated((c) => {
+        c.features.copyTrading = { allowed: true, default: false };
+      }),
+      'features.copyTrading.allowed'
+    );
+  });
+
+  it('allows copy trading only when every asset is enabled', () => {
+    const raw = mutated((c) => {
+      c.assets.enabled = 'all';
+      c.features.copyTrading = { allowed: true, default: false };
+    });
+    expect(() => parseTenant(raw, 'demo-bank')).not.toThrow();
+  });
+
   it('rejects a missing feature key', () => {
     expectRejected(
       mutated((c) => {
