@@ -150,6 +150,11 @@ const writeDeps: Parameters<typeof registerWriteTools>[1] = {
       isOpen: Boolean(p.isOpen),
     };
   },
+  readSessionUser: async (sessionId) => {
+    const s = await getSession(sessionId);
+    const user = (s.detail as { user?: string } | undefined)?.user;
+    return s.ok && user ? String(user) : null;
+  },
   policyPreview: async (req) => {
     const signer = makeSigner(provider);
     if (!signer) return null;

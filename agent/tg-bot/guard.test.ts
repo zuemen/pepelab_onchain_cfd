@@ -1,7 +1,7 @@
 // tg-bot 存取控制（白名單 / 二次確認 / 頻率限制）離線測試。
 //   cd agent && npx tsx tg-bot/guard.test.ts
 import assert from "node:assert";
-import { parseIdList, isAuthorized, ConfirmationStore, RateLimiter, classifyVcForBot } from "./guard.ts";
+import { parseIdList, isAuthorized, ConfirmationStore, RateLimiter, classifyVcForBot, chatSafe } from "./guard.ts";
 
 // ── 白名單：chat 與 from.id 都要命中 ─────────────────────────────────────────
 {
@@ -71,6 +71,21 @@ import { parseIdList, isAuthorized, ConfirmationStore, RateLimiter, classifyVcFo
   assert.equal(classifyVcForBot({ valid: false, reasonCode: "VC_BAD_SIGNATURE", reason: "sig" }, 6).status, "fatal");
   assert.equal(classifyVcForBot({ valid: true, sessionId: 7 }, 6).status, "fatal", "session 不符仍致命");
   console.log("✓ VC 過期 → 拒單並提示重新簽發（不 exit）；簽章錯誤 / session 不符 → 致命");
+}
+
+// ── chat 訊息不含本機路徑 ─────────────────────────────────────────────────────
+{
+  const s = chatSafe(
+    "讀取失敗 ENOENT: no such file, open 'C:\\Users\\alice\\agent\\vc.json'；also /home/bob/pepelab/agent/.state/x.json 與 D:/keys/vc.json",
+  );
+  assert.ok(!/alice|bob|keys/.test(s), s);
+  assert.equal((s.match(/\[本機路徑\]/g) ?? []).length, 3);
+  const url = "✅ 已開倉\nhttps://sepolia.basescan.org/tx/0xabc";
+  assert.equal(chatSafe(url), url, "URL 不受影響");
+  assert.equal(chatSafe("secret=XYZ", (t) => t.replace("XYZ", "[redacted]")), "secret=[redacted]", "同時套用 redact");
+  const vcMsg = (classifyVcForBot({ valid: false, reasonCode: "VC_EXPIRED" }, 6) as any).message;
+  assert.ok(!/AGENT_AUTH_VC_PATH|[\\/]/.test(vcMsg.replace("/sessions", "")), "過期提示不帶路徑或 env 名稱");
+  console.log("✓ chat 訊息：本機路徑（Windows / POSIX）被遮掉、URL 保留、秘密遮蔽");
 }
 
 console.log("\n✅ tg-bot guard.test.ts 全過");

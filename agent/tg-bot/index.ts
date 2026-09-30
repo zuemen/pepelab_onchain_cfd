@@ -21,8 +21,8 @@ import TelegramBot from "node-telegram-bot-api";
 
 /** sendMessage 的選項型別（隨套件版本而異，這裡取其宣告以免版本升級就編不過）。 */
 type SendMessageOptions = Parameters<TelegramBot["sendMessage"]>[2];
-import { openPositionForSession, getSession, verifyAuthorizationVC, type AuthorizationVC } from "@pepelab/shared";
-import { parseIdList, isAuthorized, ConfirmationStore, RateLimiter, classifyVcForBot } from "./guard.ts";
+import { openPositionForSession, getSession, verifyAuthorizationVC, redactSecrets, type AuthorizationVC } from "@pepelab/shared";
+import { parseIdList, isAuthorized, ConfirmationStore, RateLimiter, classifyVcForBot, chatSafe } from "./guard.ts";
 
 function req(k: string, hint = ""): string {
   const v = process.env[k]?.trim();
@@ -109,12 +109,14 @@ function loadVc(startup: boolean): void {
     parsed = JSON.parse(fs.readFileSync(VC_PATH, "utf8")) as AuthorizationVC;
   } catch (e) {
     const msg = `讀取/解析 VC 失敗(${VC_PATH})：${(e as Error).message}`;
+    // chat 看到的版本不帶路徑與原始錯誤；完整訊息只寫 console。
+    if (!startup) console.error(`✗ ${msg}`);
     if (startup) {
       console.error(`✗ ${msg}`);
       process.exit(1);
     }
     VC = null;
-    VC_PROBLEM = msg;
+    VC_PROBLEM = "授權 VC 檔無法讀取或格式錯誤，請 bot 管理者換上前端 /sessions 重新簽發的 VC 檔。";
     return;
   }
   const s = classifyVcForBot(verifyAuthorizationVC(parsed), SESSION_ID);
@@ -186,7 +188,8 @@ const HELP =
 /** 所有對外送訊都必須 await + catch：未攔截的 rejection 會殺掉 polling 程序。 */
 async function say(chatId: string, text: string, opts?: SendMessageOptions) {
   try {
-    await bot.sendMessage(chatId, text, opts);
+    // 送進 chat 的文字不含本機路徑、不含秘密（完整錯誤只寫 console）。
+    await bot.sendMessage(chatId, chatSafe(text, redactSecrets), opts);
   } catch (e) {
     console.error(`sendMessage 失敗(chat ${chatId})：${(e as Error).message}`);
   }
@@ -207,6 +210,7 @@ async function execute(chatId: string, o: Order) {
     const hash = res.txHash ?? res.hash ?? res.tx;
     await say(chatId, `✅ 已開倉\nposition #${res.positionId ?? "?"}\n${hash ? `https://sepolia.basescan.org/tx/${hash}` : "(無 tx hash)"}`);
   } catch (e) {
+    console.error("execute 失敗：", e);
     await say(chatId, `❌ 失敗：${(e as Error).message}`);
   }
 }

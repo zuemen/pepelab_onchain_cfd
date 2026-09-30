@@ -19,6 +19,8 @@ import {
   type HumanAnswer,
 } from "./writeTools.ts";
 
+const USER = "0x" + "c1".repeat(20);
+
 function makeDeps(elicit: ElicitPort, over: Partial<WriteToolDeps> = {}) {
   const calls = { open: 0, close: 0, warnings: [] as string[] };
   const deps: WriteToolDeps = {
@@ -28,6 +30,7 @@ function makeDeps(elicit: ElicitPort, over: Partial<WriteToolDeps> = {}) {
     close: async () => { calls.close++; return { ok: true, txHash: "0xdef" }; },
     readFees: async () => ({ tradingFeeBps: 10, executionFeeEth: "0.001" }),
     readPosition: async () => ({ asset: "sETH", isLong: false, marginUsdc: 20, leverage: 3, isOpen: true }),
+    readSessionUser: async () => USER,
     policyPreview: () => ({ allowed: true, reasonCode: "OK", message: "policy gate 通過" }),
     warn: (m) => calls.warnings.push(m),
     ...over,
@@ -39,7 +42,7 @@ const human = (answer: HumanAnswer | Error, asked: string[] = []): ElicitPort =>
   ask: async (m) => { asked.push(m); if (answer instanceof Error) throw answer; return answer; },
 });
 
-const VC = JSON.stringify({ proof: { proofValue: "0x00" } });
+const VC = JSON.stringify({ issuer: `did:pkh:eip155:84532:${USER}`, proof: { proofValue: "0x00" } });
 const OPEN = { sessionId: 6, asset: "sBTC", isLong: true, marginUsdc: 50, leverage: 4, authVcJson: VC };
 const CLOSE = { sessionId: 6, positionId: 42, authVcJson: VC };
 let n = 0;
@@ -54,10 +57,21 @@ const ok = (m: string) => console.log(`✓ ${++n}. ${m}`);
   assert.equal(calls.open, 1);
   assert.equal(r.data.humanConfirmed, true);
   assert.equal(asked.length, 1);
-  for (const s of ["開倉", "sBTC", "long", "50 USDC", "4x", "200 USDC", "0.2 USDC", "0.001 ETH", "policy 預檢：通過"])
+  for (const s of ["開倉", "sBTC", "long", "50 USDC", "4x", "200 USDC", "0.2 USDC", "0.001 ETH", "policy 預檢：通過", `session 使用者（鏈上）：${USER}`, `VC 簽發者：${USER}`])
     assert.ok(asked[0].includes(s), `摘要缺 ${s}：${asked[0]}`);
   assert.ok(!/confirmationCode|確認碼/.test(JSON.stringify(r)), "tool result 不可含確認碼");
   ok("人類在 client 介面接受 → 才送出；摘要含標的/方向/保證金/槓桿/名目/手續費/policy 預檢；結果無確認碼");
+}
+// 摘要標出 VC 簽發者與鏈上 session 使用者不一致
+{
+  const asked: string[] = [];
+  const { h } = makeDeps(human("decline", asked), { readSessionUser: async () => "0x" + "d2".repeat(20) });
+  await h.openPosition(OPEN);
+  assert.match(asked[0], /VC 簽發者：0x(c1){20}　⚠ 與 session 使用者不一致/);
+  const { h: h2 } = makeDeps(human("decline", asked), { readSessionUser: async () => { throw new Error("rpc"); } });
+  await h2.closePosition(CLOSE);
+  assert.match(asked[1], /session 使用者（鏈上）：\(讀不到\)/);
+  ok("elicitation 摘要含鏈上 session 使用者與 VC 簽發者，不一致時明確警示；讀不到時標示");
 }
 for (const a of ["decline", "cancel"] as const) {
   const { h, calls } = makeDeps(human(a));
@@ -140,6 +154,7 @@ async function wire(clientCaps: Record<string, unknown>, onElicit?: (msg: string
     close: async () => ({ ok: true }),
     readFees: async () => ({ tradingFeeBps: 10, executionFeeEth: "0.001" }),
     readPosition: async () => ({ asset: "sETH", isLong: false, marginUsdc: 20, leverage: 3, isOpen: true }),
+    readSessionUser: async () => USER,
     policyPreview: () => null,
     warn: () => {},
   });

@@ -144,6 +144,8 @@ export interface WriteToolDeps {
   readFees: (asset: string | null) => Promise<FeeInputs>;
   /** 讀部位（平倉摘要用）。 */
   readPosition: (positionId: number) => Promise<PositionView>;
+  /** 讀鏈上 session.user（摘要顯示「這筆是替誰下的」）；讀不到回 null。 */
+  readSessionUser: (sessionId: number) => Promise<string | null>;
   /** policy gate 預檢（不預留額度、不寫狀態）；沒有 agent 金鑰時可回 null。 */
   policyPreview: (req: {
     action: "open" | "close";
@@ -170,6 +172,29 @@ function parseVc(json: string): string | null {
   }
 }
 
+/** VC 簽發者地址（did:pkh:eip155:<chain>:<address> 的最後一段）；格式不符回 null。 */
+export function vcIssuerAddress(json: string): string | null {
+  try {
+    const iss = String((JSON.parse(json) as { issuer?: unknown }).issuer ?? "");
+    const m = /^did:pkh:eip155:\d+:(0x[0-9a-fA-F]{40})$/.exec(iss);
+    return m ? m[1] : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 摘要裡的「替誰下單」：鏈上 session.user 與 VC 簽發者，並標出兩者是否一致。 */
+async function whoFields(deps: WriteToolDeps, sessionId: number, authVcJson: string) {
+  const sessionUser = await safe(deps.readSessionUser(sessionId), null);
+  const vcIssuer = vcIssuerAddress(authVcJson);
+  return {
+    sessionUser,
+    vcIssuer,
+    vcIssuerMatchesSessionUser:
+      sessionUser && vcIssuer ? sessionUser.toLowerCase() === vcIssuer.toLowerCase() : null,
+  };
+}
+
 async function safe<T>(p: Promise<T>, fallback: T): Promise<T> {
   try {
     return await p;
@@ -184,6 +209,9 @@ function summaryText(s: Record<string, any>): string {
   return [
     `PepeFi agent 要求送出鏈上交易：${s.action === "open_position" ? "開倉" : "平倉"}`,
     `session #${s.sessionId}${s.positionId !== undefined ? `・position #${s.positionId}` : ""}`,
+    `session 使用者（鏈上）：${s.sessionUser ?? "(讀不到)"}`,
+    `VC 簽發者：${s.vcIssuer ?? "(讀不到)"}` +
+      (s.vcIssuerMatchesSessionUser === false ? "　⚠ 與 session 使用者不一致（送出時會被拒絕）" : ""),
     `標的 ${s.asset ?? "(讀不到)"}・方向 ${s.direction ?? "(讀不到)"}`,
     `保證金 ${s.marginUsdc ?? "(讀不到)"} USDC・槓桿 ${s.leverage ?? "(讀不到)"}x・名目 ${s.notionalUsdc ?? "(讀不到)"} USDC`,
     `估計交易費 ${fee.tradingFeeUsdc ?? "(讀不到)"} USDC（${fee.tradingFeeBps ?? "?"} bps）` +
@@ -242,6 +270,7 @@ export function createWriteHandlers(deps: WriteToolDeps) {
     const summary = {
       action: "open_position",
       sessionId: params.sessionId,
+      ...(await whoFields(deps, params.sessionId, params.authVcJson)),
       asset: params.asset,
       direction: params.isLong ? "long" : "short",
       marginUsdc: params.marginUsdc,
@@ -288,6 +317,7 @@ export function createWriteHandlers(deps: WriteToolDeps) {
     const summary = {
       action: "close_position",
       sessionId: params.sessionId,
+      ...(await whoFields(deps, params.sessionId, params.authVcJson)),
       positionId: params.positionId,
       asset: pos.asset,
       direction: pos.isLong === null ? null : pos.isLong ? "long" : "short",

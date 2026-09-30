@@ -98,8 +98,8 @@ export function classifyVcForBot(
       return {
         status: "expired",
         message:
-          `授權 VC 已過期（${v.reasonCode}）。請到前端 /sessions 重新簽發，並更新 AGENT_AUTH_VC_PATH ` +
-          "指向的檔案；bot 會在下一次下單時自動重新讀取。",
+          `授權 VC 已過期（${v.reasonCode}）。請到前端 /sessions 重新簽發，並請 bot 管理者換上新的 VC 檔；` +
+          "bot 會在下一次下單時自動重新讀取。",
       };
     }
     return { status: "fatal", message: `VC 驗證失敗：${v.reason ?? v.reasonCode ?? "未知原因"}（請重新在前端簽發）` };
@@ -108,6 +108,16 @@ export function classifyVcForBot(
     return { status: "fatal", message: `VC sessionId(${v.sessionId}) 與 DEMO_SESSION_ID(${expectedSessionId}) 不符` };
   }
   return { status: "ok" };
+}
+
+/**
+ * 送進 Telegram chat 的文字一律過這裡（複審 Info）：拿掉本機檔案路徑（Windows 與 POSIX
+ * 絕對路徑），並遮掉秘密。URL（https://…/tx/0x…）不受影響。完整錯誤只寫 console。
+ */
+export function chatSafe(text: string, redact: (s: string) => string = (s) => s): string {
+  return redact(text)
+    .replace(/(?<![A-Za-z0-9])[A-Za-z]:[\\/](?![\\/])[^\s"'`，。）)\]]+/g, "[本機路徑]")
+    .replace(/(?<![:\w/.])\/(?:[\w.@-]+\/)+[\w.@-]*/g, "[本機路徑]");
 }
 
 /** 每人固定視窗頻率限制。 */
