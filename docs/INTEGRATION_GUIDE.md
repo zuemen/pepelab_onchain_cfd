@@ -20,6 +20,7 @@
 | x402 結算 worker | `agent/signal-api/src/settlement-worker.ts`、`.github/workflows/x402-settlement-worker.yml` | 已上線 | 非同步執行 70/20/10 分潤 |
 | MCP server | `agent/mcp-server/` | 原始碼（stdio，本機執行） | 讓 LLM agent 以工具形式讀取與下單 |
 | Telegram bot | `agent/tg-bot/` | 原始碼 | 白名單使用者以確認碼下單的範例 |
+| TypeScript SDK `@pepelab/sdk` | `agent/sdk/` | 原始碼（workspace，未發布） | 讀鏈上狀態、建構未簽交易、型別化呼叫 signal-api、VC v2；見第 9 節 |
 | 前端 | `frontend/` | 已上線（Vercel） | 白標前端範本；租戶設定見第 6 節，功能旗標見 [`../README.md`](../README.md) |
 
 現行位址見 [`../README.md`](../README.md) 第 2 節，唯一來源是 `frontend/src/contracts/addresses.ts`、
@@ -89,6 +90,8 @@ owner 可設定的參數（費率、逐資產槓桿上限與維持保證金、AD
 | `GET /oracle/:asset` | 0.005 USDC | 價格、funding、OI 失衡、預估清算價與建議 |
 
 免費端點（`/healthz` 除外）有 per-IP 節流（預設每 60 秒 60 次，回 429）。付費端點不另外節流。
+
+型別化的 client（逾時、重試、錯誤型別、x402 付款注入）見第 9 節的 SDK。
 
 ## 4. x402 付費流程
 
@@ -200,3 +203,27 @@ app 載入時也會再驗證一次；認不出的 `VITE_TENANT` **不會**退回
 
 完整的合規責任邊界見 [`COMPLIANCE_BOUNDARY.md`](COMPLIANCE_BOUNDARY.md)，損失吸收見
 [`RISK_WATERFALL.md`](RISK_WATERFALL.md)。
+
+## 9. TypeScript SDK（`@pepelab/sdk`）
+
+位置：[`agent/sdk/`](../agent/sdk/)，完整說明見 [`agent/sdk/README.md`](../agent/sdk/README.md)。
+目前是 `agent/` 的 npm workspace（`private: true`），**尚未發布到 npm**；**規劃中**：發布方式與版本政策。
+
+| 模組 | 用途 |
+|---|---|
+| `createReadClient` | 以 viem 讀帳戶、部位、保證金、oracle 價與新鮮度（交易所 `maxPriceAge` 判準）、OI、資產模式、session；每次讀取鎖定同一個區塊，年齡與到期以區塊時間計 |
+| `build*` | 建構未簽交易 `{ to, data, value, request }`：保證金存提、開平倉、`createSessionWithAssets`、`revokeSession` 等；`request` 可直接給 viem `simulateContract` |
+| `SignalApiClient` | 第 3、4 節端點的型別化 client；型別由測試逐欄比對 [`api/openapi.yaml`](api/openapi.yaml) |
+| VC helpers | 第 5 節授權 VC 的 v2 typed data 建構、驗證（拒絕 v1）、與鏈上 session 交叉比對 |
+
+整合時的三個固定規則（SDK 以程式與測試強制）：
+
+1. **SDK 不持有任何金鑰**。交易、x402 付款授權、VC 都由客戶自己的簽署端（HSM、MPC、錢包）簽。
+   付費端點以注入的 payment client 付款，SDK 在簽署前檢查網路、幣別、收款地址白名單與單筆／累計上限
+   （預設 0.02／1 USDC，與 agent 端相同），帶付款的請求永不自動重試。
+2. **平倉永不受 SDK 限制**。平倉 builder 不讀鏈、不查資產模式、暫停、價格新鮮度、VC 或政策。
+3. **Session 的資產陣列不可為空**。合約把空陣列視為「全部資產都允許」；SDK 遇到空陣列直接拒絕。
+
+**現況（2026-09-30）**：現行部署的 `PerpetualExchange` 沒有 P1 的 `assetMode`／`paused`／OI 上限 getter，
+SDK 對這些欄位回 `supported: false`；付費端點因收款地址未通過守門回 `503 payto_unsafe`（第 4 節）。
+
