@@ -44,8 +44,9 @@ was not, the reason is given rather than glossed over.
 | 24 | Portfolio margin has no account-level net liquidation | **Open** — `portfolioMarginEnabled` must stay **off** in production until implemented and audited (off on the live deployment) |
 | 25 | InsuranceVault has no virtual shares (first-depositor inflation) | **Mitigated** — zero-share deposits revert; attack profitability not removed |
 | 26 | Portfolio (cross) margin removed | **Resolved by removal** (2026-09-30) — supersedes #24; isolated margin only |
-| 27 | Guardian's per-asset brake stops at ReduceOnly; only the owner can Halt | **By design** (2026-09-30, `contracts/p1-cutover-periphery`) — a guardian key can never freeze exits |
+| 27 | Exchange guardian's per-asset brake stops at ReduceOnly; only the owner can Halt | **By design** (2026-09-30, `contracts/p1-cutover-periphery`) — the *exchange* guardian cannot freeze exits by asset mode; the GuardedOracle guardian still can (see #27) |
 | 28 | After the timelock handover, recovery actions wait 48h and depend on one Safe | **By design** — losing the Safe freezes governance permanently |
+| 29 | V2.5 unpriced exemption values a closed dead-feed asset at an arbitrarily old price | **Accepted** — closed assets only, never below its last recorded price, dust-only without one |
 
 ---
 
@@ -828,8 +829,10 @@ account-level netting and a fresh audit, and must fit the size budget.
 ## 27. Guardian's per-asset brake stops at ReduceOnly (added 2026-09-30)
 
 Added on branch `contracts/p1-cutover-periphery` after the audit-level review
-of the #130 cutover. `ExchangeOpsLib.setAssetMode` now lets the guardian move
-an asset only from Active to ReduceOnly. ReduceOnly refuses new exposure but
+of the #130 cutover. `ExchangeOpsLib.setAssetMode` now lets the exchange
+guardian move an asset only into ReduceOnly: from Active, or idempotently from
+ReduceOnly, which sets `guardianLocked` so the market operator cannot re-open
+it (second review, L2). ReduceOnly refuses new exposure but
 keeps closes, liquidations and margin withdrawals working. Halted, which also
 freezes exits, is reserved to the owner (the timelock after the handover).
 Before this change a compromised guardian key could Halt every asset and hold
@@ -838,9 +841,28 @@ all open positions hostage until the owner intervened.
 The global `pause()` is unchanged: the guardian can still stop everything,
 exits included (#23). That pause is bounded (72h expiry, 24h cooldown, #22),
 while a Halt had no expiry at all. `PerpetualExchange.setAssetMode`'s NatSpec
-still describes the old guardian row. The contract body was deliberately left
-untouched because of the EIP-170 size budget (runtime 23,911 B unchanged), and
-the library's NatSpec is the authoritative matrix.
+was brought in line with the library in commit `26dc78a` (comments only;
+runtime still 23,911 B).
+
+**Scope of the guarantee: the exchange guardian only.** GuardedOracle's
+`GUARDIAN_ROLE` is a different key with different powers:
+`setAssetFrozen(id, true)` and `setPaused(true)` have **no expiry**, and a
+frozen or paused oracle *reverts* `getPrice`. Every consumer fails closed.
+Closes and liquidations on an exchange that reads that oracle
+(`ORACLE_KIND=guarded`), and mints and redeems on the V2 vault, all revert
+until the oracle guardian unfreezes. A compromised oracle-guardian key can
+therefore lock exits indefinitely. It cannot move a price or take funds.
+This is accepted for now, with the following response after the handover:
+
+- The timelock, as the oracle's `DEFAULT_ADMIN_ROLE`, revokes the compromised
+  holder's `GUARDIAN_ROLE` and grants it to a new key (48h).
+- The new guardian calls `setAssetFrozen(id, false)` and `setPaused(false)`.
+- Until then, the exchange's own guardian can still put affected markets into
+  ReduceOnly so no new exposure piles up behind the frozen feed.
+
+A fix would need a bounded freeze in GuardedOracle (an expiry like the
+exchange's 72h pause). That is a GuardedOracle redeploy and is left for a
+later round.
 
 ## 28. Timelock governance: 48h recovery, single Safe (added 2026-09-30)
 
@@ -853,6 +875,25 @@ deployer holds no role on it, so **if the proposer/executor Safe is lost, no
 proposal can ever be made or executed. The protocol's governance is then
 frozen permanently.** Nothing in the contracts can recover from that. See
 `docs/GOVERNANCE_HANDOVER.md` §1 for the Safe threshold requirements.
+
+
+## 29. V2.5 unpriced exemption and old prices (added 2026-09-30)
+
+The V2.5 mint gate refuses every mint while any outstanding asset has neither
+a live quote nor a last-good mark of 6h or younger. RISK_ROLE's
+`setUnpricedExemption(id, true)` is the non-timelock way out when a feed is
+permanently dead and dust keeps `unregisterAsset` refusing. It works only while
+`assetCap[id] == 0`; raising the cap switches it off. The asset stays in the
+liability at its **last recorded price, however old**, or at 0 when there is
+no recorded price and at most `EXEMPT_DUST_UNITS` (0.001 token) is
+outstanding.
+
+Residual risk, accepted: if the real price of that closed asset rose after its
+feed died, the liability is under-stated by (price rise × outstanding). This
+is bounded because the asset is closed, so outstanding can only shrink. The
+reserve ratio still counts it, and the ratio stays flagged stale, so a breach
+never auto-clears. The alternative, leaving mints of every healthy asset
+blocked behind a 48h timelock proposal, was judged worse.
 
 ## Frontend
 

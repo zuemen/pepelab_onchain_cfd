@@ -30,7 +30,14 @@
 
 **刻意維持熱錢包、不交給 timelock 的角色（依 SEAL 建議：guardian 只能暫停，不能升級）：**
 
-- exchange 的 `guardian`：只能暫停，資產模式**最多只能收緊到 ReduceOnly**，不能設成 Halted（`ExchangeOpsLib` 的權限矩陣）。ReduceOnly 會擋新開倉，但平倉、清算、提領保證金都照常運作，所以 guardian 的 key 即使外洩，也無法把使用者的資金鎖在倉位裡。Halted 只保留給 owner，也就是 timelock。
+- exchange 的 `guardian`：只能暫停，資產模式**最多只能收緊到 ReduceOnly**（從 Active 收緊，或對已經是 ReduceOnly 的資產再設一次來上鎖），不能設成 Halted（`ExchangeOpsLib` 的權限矩陣）。ReduceOnly 會擋新開倉，但平倉、清算、提領保證金都照常運作。所以**exchange 的 guardian** key 即使外洩，也無法用資產模式把資金鎖在倉位裡。Halted 只保留給 owner，也就是 timelock。
+- **例外：GuardedOracle 的 `GUARDIAN_ROLE` 不在上述保證內。** 它的 `setAssetFrozen` 和 `setPaused` 沒有到期時間，而且凍結或暫停會讓 `getPrice` revert。
+  - 影響範圍：讀這個 oracle 的 exchange（`ORACLE_KIND=guarded`）會無法平倉與清算；V2 金庫會無法 mint 與 redeem。
+  - 這把 key 外洩時，可以無限期卡住出金，但無法改價格，也無法取走資金。已列入 KNOWN_LIMITATIONS #27。
+  - 移交後的處理：
+    1. 由 timelock（oracle 的 DEFAULT_ADMIN）撤銷被盜 key 的 `GUARDIAN_ROLE`，改授予新的 key（48 小時）。
+    2. 新 guardian 呼叫 `setAssetFrozen(id, false)`／`setPaused(false)`。
+    3. 在這之前，exchange 的 guardian 可以先把受影響的市場設成 ReduceOnly。
 - exchange 的 `marketOperator`：由 keeper 擔任，只能在 Active 和 ReduceOnly 之間切換
 - GuardedOracle 的 `GUARDIAN_ROLE` 與 `KEEPER_ROLE`，以及 V2 金庫的 `PAUSER_ROLE`
 - MockOracle 的 owner（就是 keeper，它本身就是寫價那把 key）
@@ -129,7 +136,8 @@ HANDOVER_PHASE=2 forge script script/HandoverToTimelock.s.sol:HandoverToTimelock
 | `InsuranceVault.recapitalize` | 只有 timelock | **48 小時**，而且 timelock 要先持有 USDC 並 approve | 做法：USDC 轉進 timelock，然後在同一個批次提案 `approve` 加 `recapitalize` |
 | 金庫升級、`setOracle` | 只有 timelock | **48 小時** | 建議在 phase 2 之前做完 |
 | 撤換 guardian `setGuardian` | 只有 timelock | **48 小時** | guardian 被盜期間最多只能暫停 72 小時（有冷卻）或設 ReduceOnly |
-| 暫停 GuardedOracle 或凍結資產 | GuardedOracle 的 GUARDIAN_ROLE | 立即生效 | 解除凍結也由 GUARDIAN_ROLE 執行，不需要經過 timelock |
+| 暫停 GuardedOracle 或凍結資產 | GuardedOracle 的 GUARDIAN_ROLE | 立即生效，**沒有到期時間** | 解除凍結也由 GUARDIAN_ROLE 執行。這把 key 被盜時，要由 timelock 撤換角色（48 小時），期間出金可能卡住（KNOWN_LIMITATIONS #27） |
+| 金庫的資產 feed 永久失效（mint 被 `LiabilityUnpriced` 擋住） | V2 金庫的 RISK_ROLE | 立即生效 | 先 `setAssetCap(id,0)`，再 `setUnpricedExemption(id,true)`；該資產仍以最後記錄的價格計入負債（KNOWN_LIMITATIONS #29） |
 
 ## 7. fork 模擬結果（2026-09-30，Base Sepolia fork）
 
