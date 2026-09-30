@@ -284,11 +284,10 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     bool                              public adlEnabled;
     mapping(bytes32 => uint256[])     public assetPositionIds;        // per-asset index for ADL scan
 
-    // P3-2: portfolio (cross) margin. Off by default → per-position isolated
-    // liquidation (legacy). When on, a leg is liquidatable only if it is
-    // individually underwater AND the whole account is underwater, so offsetting
-    // winners protect a losing leg from being wrongly liquidated.
-    bool                              public portfolioMarginEnabled;
+    // Portfolio (cross) margin was removed on 2026-09-30 (EIP-170 size limit and
+    // the unfixable H3 gap; see docs/KNOWN_LIMITATIONS.md). Every position is
+    // isolated: it can lose at most its own margin and is liquidated on its own
+    // maintenance requirement. The last implementation is in git at d4b7b9e.
 
     /// @notice M-2: share (bps) of a liquidated position's REMAINING collateral
     ///         that is confiscated to the InsuranceVault as the liquidation
@@ -525,7 +524,6 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     event MaxLeverageSet(bytes32 indexed asset, uint256 maxLeverage);
     event MaintenanceMarginSet(bytes32 indexed asset, uint256 bps);
     event AdlEnabledSet(bool enabled);
-    event PortfolioMarginEnabledSet(bool enabled);
     event AutoDeleveraged(
         uint256 indexed liquidatedId,
         uint256 indexed counterId,
@@ -575,12 +573,6 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     /// @notice A settlement (close, liquidation or ADL) paid `paidPnl` instead
     ///         of the position's mark-to-market `rawPnl` because of its cap.
     event ProfitCapped(uint256 indexed positionId, int256 rawPnl, int256 paidPnl);
-    /// @notice H3: in portfolio mode, part of a position's shortfall was paid
-    ///         out of its owner's free margin before any pool backstop.
-    event ShortfallChargedToAccount(uint256 indexed positionId, address indexed owner, uint256 amount);
-    /// @notice Portfolio mode: the liquidator of a leg that settled below zero
-    ///         was paid out of the owner's free margin (after the shortfall).
-    event LiquidationRewardFromAccount(uint256 indexed positionId, address indexed owner, uint256 amount);
 
     // ── Errors ───────────────────────────────────────────────────────────────
 
@@ -623,11 +615,6 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     error GracePeriodActive(bytes32 asset, uint256 until);
     /// @notice P1: opening would lift this side's open interest above its cap.
     error OpenInterestCapExceeded(bytes32 asset, bool isLong, uint256 resultingOI, uint256 cap);
-    /// @notice H3: portfolio mode — the withdrawal would leave the account
-    ///         below its maintenance requirement.
-    /// @dev `maintenance` is the requirement that was not met: maintenance
-    ///      margin for opens, Σ initial margin for withdrawals.
-    error AccountUnhealthy(address owner, int256 equity, uint256 maintenance);
     /// @notice M1: only the CopyTracker may attribute a position to a leader
     ///         (`copiedFrom`), because that address is paid a performance fee.
     error CopiedFromNotAllowed(address caller);
@@ -802,25 +789,6 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     function setAdlEnabled(bool enabled) external onlyOwner {
         adlEnabled = enabled;
         emit AdlEnabledSet(enabled);
-    }
-
-    /// @notice P3-2: enable/disable account-level (portfolio) margin. Off by
-    ///         default → legacy per-position isolated liquidation.
-    /// @dev KNOWN LIMITATION — DO NOT ENABLE IN PRODUCTION. Account-level net
-    ///      liquidation is not implemented: legs are still liquidated one at a
-    ///      time, and a leg's shortfall is charged only to the owner's FREE
-    ///      margin. Another open leg's margin (or unrealized profit) that kept
-    ///      the account healthy is not taken when the losing leg settles, so
-    ///      the pool can absorb a loss the account could have covered, after
-    ///      which the owner closes the other leg and withdraws. The guards in
-    ///      place (no opens while unhealthy, withdrawals only above Σ initial
-    ///      margin, conservative valuation of non-Active / zero-price legs,
-    ///      freshness on every leg) narrow this but do not close it. Portfolio
-    ///      margin must stay off until account-level netting is implemented
-    ///      and audited. See docs/KNOWN_LIMITATIONS.md #24.
-    function setPortfolioMarginEnabled(bool enabled) external onlyOwner {
-        portfolioMarginEnabled = enabled;
-        emit PortfolioMarginEnabledSet(enabled);
     }
 
     /// @notice M-3: bounded on BOTH sides. The old setter only rejected 0, so an
@@ -1130,20 +1098,10 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         emit MarginDeposited(user, amount);
     }
 
-    /// @dev H3: in portfolio mode free margin is collateral — `_accountState`
-    ///      counts it as equity and it is what keeps an underwater leg from
-    ///      being liquidated. Withdrawing it used to be unchecked, so an account
-    ///      could let free margin shield a losing leg and then walk away with
-    ///      it, leaving the loss to the pool. A withdrawal must now leave
-    ///      account equity at or above Σ INITIAL margin of the open legs (not
-    ///      just maintenance), with every leg on a fresh price, non-Active
-    ///      legs' profit ignored, and no leg on a Halted asset. Isolated mode
-    ///      is unchanged: there free margin backs nothing.
     function withdrawMargin(uint256 amount) external whenNotPaused nonReentrant {
         _requireNoGlobalGrace();
         if (freeMargin[msg.sender] < amount) revert InsufficientFreeMargin();
         freeMargin[msg.sender] -= amount;
-        if (portfolioMarginEnabled) _requireWithdrawableAccount(msg.sender);
         usdc.safeTransfer(msg.sender, amount);
         emit MarginWithdrawn(msg.sender, amount);
     }
@@ -1254,25 +1212,9 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         // Maintenance margin: per-asset override (N3) or global 5% default.
         uint256 maintenanceMargin = notional * _maintenanceMarginBps(pos.asset) / 10000;
 
-        // Liquidation gate. Isolated (default): this position must be below its
-        // own maintenance margin. Portfolio (P3-2): that AND the whole account
-        // must be underwater, so offsetting winners protect a losing leg and a
-        // winning leg cannot be griefed. Only the GATE differs — settlement below
-        // is the same per-position, conservation-proven path in both modes.
-        if (portfolioMarginEnabled) {
-            // Same freshness policy as withdrawals: every leg of the account
-            // must be on a fresh feed before the account can be judged.
-            _requireAccountFresh(pos.owner);
-            (int256 eq, uint256 mm) = _accountState(pos.owner);
-            // Test this leg on the SAME fee-excluded basis as account equity
-            // (legEquity = margin + pnl − funding = closeAmount + fees), so the
-            // invariant "account underwater ⟹ some leg is liquidatable" always
-            // holds and accounts can never get stuck under maintenance.
-            int256 legEquity = closeAmount + totalFees;
-            if (!(legEquity <= int256(maintenanceMargin) && eq < int256(mm))) {
-                revert PositionIsHealthy();
-            }
-        } else if (closeAmount > int256(maintenanceMargin)) {
+        // Liquidation gate (isolated): this position must be at or below its
+        // own maintenance margin.
+        if (closeAmount > int256(maintenanceMargin)) {
             revert PositionIsHealthy();
         }
 
@@ -1296,26 +1238,6 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         uint256 refund;
         uint256 reward;
         uint256 toVault;
-        uint256 shortfall;
-        if (closeAmount < 0) {
-            // H3: portfolio mode charges the owner's free margin first.
-            shortfall = _chargeAccountForShortfall(positionId, pos.owner, uint256(-closeAmount));
-            // A leg that settles below zero leaves no collateral to pay the
-            // liquidator from. In portfolio mode the account's free margin
-            // backed it, so once the shortfall is fully covered the reward
-            // (LIQUIDATION_REWARD_BPS of the leg's maintenance requirement)
-            // comes from what is left of that free margin — never from the
-            // pool, and never ahead of the shortfall.
-            if (shortfall == 0 && portfolioMarginEnabled) {
-                uint256 want = maintenanceMargin * LIQUIDATION_REWARD_BPS / 10_000;
-                uint256 fm   = freeMargin[pos.owner];
-                reward = want < fm ? want : fm;
-                if (reward > 0) {
-                    freeMargin[pos.owner] = fm - reward;
-                    emit LiquidationRewardFromAccount(positionId, pos.owner, reward);
-                }
-            }
-        }
         if (closeAmount > 0) {
             // M-2: the remaining collateral is no longer swept wholesale. The
             // liquidator is paid, the protocol keeps its penalty, and the rest —
@@ -1337,16 +1259,13 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
                 usdc.forceApprove(address(insuranceVault), toVault);
                 insuranceVault.depositFromProtocol(toVault);
             }
-        } else if (reward > 0) {
-            usdc.safeTransfer(msg.sender, reward); // portfolio reward, see above
-        } else if (shortfall > 0) {
-            // N2: the position is underwater beyond its collateral (and, in
-            // portfolio mode, beyond its owner's free margin), so the protocol
-            // is short `shortfall`. Insurance fund first — draw what the vault
-            // can into the exchange's reserves to fill the hole — then
-            // auto-deleverage profitable counterparties for whatever the vault
-            // could not cover, keeping the system solvent.
-            _absorbShortfall(positionId, pos.asset, pos.isLong, shortfall);
+        } else if (closeAmount < 0) {
+            // N2: the position is underwater beyond its collateral, so the
+            // protocol is short uint(-closeAmount). Insurance fund first — draw
+            // what the vault can into the exchange's reserves to fill the hole —
+            // then auto-deleverage profitable counterparties for whatever the
+            // vault could not cover, keeping the system solvent.
+            _absorbShortfall(positionId, pos.asset, pos.isLong, uint256(-closeAmount));
         }
 
         // N2 / C-3: compact the per-asset ADL index last, so _autoDeleverage
@@ -1361,76 +1280,6 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         emit FundingRealized(positionId, fundingPayment);
         emit PositionLiquidated(positionId, pos.owner, msg.sender, pnl);
         emit PositionClosed(positionId, pos.owner, pnl, refund);
-    }
-
-    /// @dev H3: portfolio (cross) margin means the whole account backs every
-    ///      leg — that is exactly why `_accountState` counts free margin as
-    ///      equity and why an underwater leg is not liquidated while free
-    ///      margin covers it. The same free margin must therefore pay when the
-    ///      leg is finally settled below zero; previously the loss went
-    ///      straight to the InsuranceVault / ADL / bad debt while the owner
-    ///      kept the free margin that had been shielding it. Isolated mode is
-    ///      untouched: there a position can never lose more than its margin.
-    ///      Unrealized profit on the owner's OTHER open legs is not touched
-    ///      (it cannot be taken without closing them); whatever free margin
-    ///      cannot cover still goes to the normal backstops.
-    /// @return remaining the part of `shortfall` the account could not cover.
-    function _chargeAccountForShortfall(uint256 positionId, address owner, uint256 shortfall)
-        internal
-        returns (uint256 remaining)
-    {
-        remaining = shortfall;
-        if (!portfolioMarginEnabled) return remaining;
-        uint256 fm = freeMargin[owner];
-        uint256 charged = fm < remaining ? fm : remaining;
-        if (charged == 0) return remaining;
-        freeMargin[owner] = fm - charged;
-        remaining -= charged;
-        emit ShortfallChargedToAccount(positionId, owner, charged);
-    }
-
-    /// @dev Freshness policy shared by portfolio-mode withdrawals, opens and
-    ///      liquidations: every open leg's feed must be within `maxPriceAge`.
-    ///      A zero price is NOT a revert here — `_accountState` values such a
-    ///      leg conservatively — so one broken feed cannot block every account
-    ///      that holds it from being liquidated.
-    function _requireAccountFresh(address owner) internal view {
-        uint256[] storage ids = userPositions[owner];
-        uint256 n = ids.length;
-        for (uint256 i = 0; i < n; ++i) {
-            bytes32 a = positions[ids[i]].asset;
-            (, uint256 updatedAt) = oracle.getPrice(a);
-            // Same staleness rule as `_requireFresh` (hour-scale window).
-            // forge-lint: disable-next-line(block-timestamp)
-            if (block.timestamp > updatedAt + maxPriceAge) revert StalePrice(a, updatedAt);
-        }
-    }
-
-    /// @dev Portfolio mode, after a withdrawal: no leg on a Halted asset,
-    ///      every leg fresh, and conservative equity ≥ Σ initial margin.
-    function _requireWithdrawableAccount(address owner) internal view {
-        uint256[] storage ids = userPositions[owner];
-        uint256 n = ids.length;
-        if (n == 0) return;
-        uint256 initialMargin;
-        for (uint256 i = 0; i < n; ++i) {
-            Position storage p = positions[ids[i]];
-            if (assetMode[p.asset] == AssetMode.Halted) revert AssetHalted(p.asset);
-            initialMargin += p.margin;
-        }
-        _requireAccountFresh(owner);
-        (int256 eq, ) = _accountState(owner);
-        if (eq < SafeCast.toInt256(initialMargin)) revert AccountUnhealthy(owner, eq, initialMargin);
-    }
-
-    /// @dev Portfolio mode, before an open: the account must be at or above
-    ///      maintenance (fresh, conservative) — an underwater account may not
-    ///      add exposure while it waits to be liquidated.
-    function _requireHealthyForOpen(address owner) internal view {
-        if (userPositions[owner].length == 0) return;
-        _requireAccountFresh(owner);
-        (int256 eq, uint256 mm) = _accountState(owner);
-        if (eq < SafeCast.toInt256(mm)) revert AccountUnhealthy(owner, eq, mm);
     }
 
     /// @dev C-2: the single bad-debt path shared by `liquidatePosition` and
@@ -1765,9 +1614,8 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     }
 
     /// @notice The user's currently OPEN position ids.
-    /// @dev C-3: closed ids are compacted out, so this list — and the
-    ///      `_accountState` loop behind portfolio margin — is bounded by locked
-    ///      margin rather than by lifetime trade count.
+    /// @dev C-3: closed ids are compacted out, so this list is bounded by
+    ///      locked margin rather than by lifetime trade count.
     function getUserPositions(address user) external view returns (uint256[] memory) {
         return userPositions[user];
     }
@@ -1813,64 +1661,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         return tradingFeeBps;
     }
 
-    /// @notice P3-2: account-level health across all of `owner`'s open positions.
-    ///         equity      = freeMargin + Σ (margin + unrealized PnL − funding)
-    ///         maintenance = Σ (notional × maintenance-bps)
-    ///         healthy     = equity ≥ maintenance
-    ///         Mirrors the per-position close math (PnL + funding); trading/borrow
-    ///         fees are intentionally excluded from the gate — the maintenance
-    ///         buffer covers them — so portfolio mode is never stricter than
-    ///         isolated mode.
-    function getAccountHealth(address owner)
-        external
-        view
-        returns (int256 equity, uint256 maintenance, bool healthy)
-    {
-        (equity, maintenance) = _accountState(owner);
-        healthy = equity >= int256(maintenance);
-    }
-
     // ── Internal ─────────────────────────────────────────────────────────────
-
-    /// @dev Sum equity and maintenance requirement over an owner's open positions.
-    ///      Note: iterates the owner's full position list (closed ones skipped).
-    ///      Position count per account is naturally bounded by locked margin at
-    ///      the current testnet scope; a hard cap can be added before mainnet if
-    ///      churn ever makes this list large. Health uses strict `eq < mm` at the
-    ///      gate, so an account exactly at maintenance is treated as healthy.
-    function _accountState(address owner)
-        internal
-        view
-        returns (int256 equity, uint256 maintenance)
-    {
-        uint256[] storage ids = userPositions[owner];
-        equity = int256(freeMargin[owner]);
-        uint256 n = ids.length;
-        for (uint256 i = 0; i < n; ++i) {
-            Position storage p = positions[ids[i]];
-            if (!p.isOpen) continue;
-            equity      += _conservativeLegEquity(p);
-            maintenance += (p.margin * p.leverage) * _maintenanceMarginBps(p.asset) / 10000;
-        }
-    }
-
-    /// @dev A leg's contribution to account equity, never optimistic:
-    ///        • zero price (broken feed): positive PnL counts as 0 and the loss
-    ///          as the whole margin — the leg contributes only what it owes in
-    ///          funding (never reverts, so health checks and liquidations of
-    ///          other legs keep working);
-    ///        • asset not Active (ReduceOnly / Halted): profit counts as 0,
-    ///          losses in full — a market you cannot freely trade must not
-    ///          collateralize another leg;
-    ///        • otherwise margin + capped PnL − funding.
-    function _conservativeLegEquity(Position storage p) internal view returns (int256) {
-        int256 funding = _calcFunding(p);
-        (uint256 rawPrice,) = oracle.getPrice(p.asset);
-        if (rawPrice == 0) return funding > 0 ? -funding : int256(0);
-        (int256 pnl, ) = _cappedPnL(p);
-        if (pnl > 0 && assetMode[p.asset] != AssetMode.Active) pnl = 0;
-        return int256(p.margin) + pnl - funding;
-    }
 
     /// @notice True when `asset`'s feed is non-zero and within `maxPriceAge`.
     ///         Views return conservative values instead of reverting when it
@@ -2009,7 +1800,6 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         // is the single place new exposure is refused.
         _requireActive(asset);
         _requireNoGrace(asset);
-        if (portfolioMarginEnabled) _requireHealthyForOpen(owner);
         if (margin < MIN_MARGIN) revert MarginTooLow();
 
         // Read once, at open, and freeze into the position below — a later
@@ -2141,12 +1931,9 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         uint256 shortfall;
         uint256 bailoutFloor;
         if (closeAmount < 0) {
-            // H3: portfolio mode charges the owner's free margin first; only
-            // what it cannot cover reaches the pool backstops (and only then
-            // is the owner "wiped out" for the bailout-floor rule below).
-            shortfall = _chargeAccountForShortfall(positionId, pos.owner, uint256(-closeAmount));
+            shortfall = uint256(-closeAmount);
             closeAmount = 0;
-            if (shortfall > 0 && address(insuranceVault) != address(0)) {
+            if (address(insuranceVault) != address(0)) {
                 uint256 avail = insuranceVault.totalAssets();
                 uint256 floor = pos.margin * BAILOUT_FLOOR_BPS / 10_000;
                 if (avail >= shortfall + floor) bailoutFloor = floor;

@@ -27,9 +27,9 @@ contract SettableOracle {
     }
 }
 
-/// @notice P1 core fixes: portfolio-margin withdrawal health and shortfall
-///         charging (H3), copiedFrom attribution (M1), the mark-premium cap
-///         bound (M4) and zero-price settlement (M8).
+/// @notice P1 core fixes: isolated-margin settlement semantics, copiedFrom
+///         attribution (M1), the mark-premium cap bound (M4) and zero-price
+///         settlement (M8). (The H3 portfolio-margin cases went with the mode.)
 contract ExchangeCoreFixesTest is Test {
     PerpetualExchange exchange;
     MockUSDC          usdc;
@@ -42,7 +42,6 @@ contract ExchangeCoreFixesTest is Test {
     bytes32 constant ETH = keccak256("ETH");
     bytes32 constant SOL = keccak256("SOL");
 
-    event ShortfallChargedToAccount(uint256 indexed positionId, address indexed owner, uint256 amount);
     event BadDebt(uint256 indexed positionId, bytes32 indexed asset, uint256 amount);
 
     function setUp() public {
@@ -74,66 +73,9 @@ contract ExchangeCoreFixesTest is Test {
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // H3 — portfolio margin: withdrawals respect account health
+    // Isolated margin: free margin backs nothing, a shortfall never touches it
+    // (portfolio margin was removed; these pin the isolated semantics)
     // ═════════════════════════════════════════════════════════════════════════
-
-    /// Free margin shielding an underwater leg cannot be withdrawn.
-    function test_portfolio_withdrawLeavingAccountUnhealthy_reverts() public {
-        exchange.setPortfolioMarginEnabled(true);
-        _deposit(10_000e18);
-        uint256 id = _long(1_000e18);
-        oracle.updatePrice(BTC, 70_000e8); // leg -1,500 on 1,000 margin
-
-        vm.expectRevert(PerpetualExchange.PositionIsHealthy.selector);
-        exchange.liquidatePosition(id); // shielded by free margin, as designed
-
-        vm.prank(carol);
-        vm.expectRevert(abi.encodeWithSelector(
-            PerpetualExchange.AccountUnhealthy.selector, carol, int256(-500e18), uint256(1_000e18)
-        ));
-        exchange.withdrawMargin(9_000e18);
-        assertEq(exchange.freeMargin(carol), 9_000e18);
-    }
-
-    /// Exactly the excess over Σ INITIAL margin (not maintenance) is
-    /// withdrawable; one wei more is not.
-    function test_portfolio_withdrawUpToInitialMargin_succeeds() public {
-        exchange.setPortfolioMarginEnabled(true);
-        _deposit(10_000e18);
-        _long(1_000e18);
-        oracle.updatePrice(BTC, 70_000e8); // equity 9,000 - 500 = 8,500; initial margin 1,000
-
-        vm.prank(carol);
-        vm.expectRevert(abi.encodeWithSelector(
-            PerpetualExchange.AccountUnhealthy.selector, carol, int256(1_000e18 - 1), uint256(1_000e18)
-        ));
-        exchange.withdrawMargin(7_500e18 + 1);
-
-        vm.prank(carol);
-        exchange.withdrawMargin(7_500e18);
-        (, , bool healthy) = exchange.getAccountHealth(carol);
-        assertTrue(healthy);
-    }
-
-    function test_portfolio_withdrawValuesOnFreshPricesOnly() public {
-        exchange.setPortfolioMarginEnabled(true);
-        _deposit(10_000e18);
-        _long(1_000e18);
-        (, uint256 updatedAt) = oracle.getPrice(BTC);
-        vm.warp(vm.getBlockTimestamp() + exchange.maxPriceAge() + 1);
-
-        vm.prank(carol);
-        vm.expectRevert(abi.encodeWithSelector(PerpetualExchange.StalePrice.selector, BTC, updatedAt));
-        exchange.withdrawMargin(1e18);
-    }
-
-    function test_portfolio_withdrawWithNoOpenPositions_unrestricted() public {
-        exchange.setPortfolioMarginEnabled(true);
-        _deposit(10_000e18);
-        vm.warp(vm.getBlockTimestamp() + 30 days); // stale feeds are irrelevant
-        vm.prank(carol);
-        exchange.withdrawMargin(10_000e18);
-    }
 
     function test_isolated_withdrawUnchanged() public {
         _deposit(10_000e18);
@@ -142,66 +84,6 @@ contract ExchangeCoreFixesTest is Test {
         vm.prank(carol);
         exchange.withdrawMargin(9_000e18); // free margin backs nothing here
         assertEq(exchange.freeMargin(carol), 0);
-    }
-
-    // ═════════════════════════════════════════════════════════════════════════
-    // H3 — portfolio margin: shortfall is charged to free margin first
-    // ═════════════════════════════════════════════════════════════════════════
-
-    function test_portfolio_closeShortfallChargedToFreeMargin() public {
-        exchange.setPortfolioMarginEnabled(true);
-        _deposit(10_000e18);
-        uint256 id = _long(1_000e18);
-        oracle.updatePrice(BTC, 70_000e8); // close value -500
-        uint256 poolBefore = usdc.balanceOf(address(exchange));
-
-        vm.recordLogs();
-        vm.expectEmit(true, true, false, true, address(exchange));
-        emit ShortfallChargedToAccount(id, carol, 500e18);
-        vm.prank(carol);
-        exchange.closePosition(id);
-
-        assertEq(exchange.freeMargin(carol), 8_500e18);
-        _assertNoBadDebt();
-        // Nothing left the exchange: the account, not the pool, paid.
-        assertEq(usdc.balanceOf(address(exchange)), poolBefore);
-    }
-
-    function test_portfolio_liquidationShortfallChargedToFreeMarginFirst() public {
-        exchange.setPortfolioMarginEnabled(true);
-        _deposit(1_100e18);
-        uint256 id = _long(1_000e18);                 // 100 free margin left
-        oracle.updatePrice(BTC, 70_000e8);            // leg -500, equity -400 < 250
-
-        vm.expectEmit(true, true, false, true, address(exchange));
-        emit ShortfallChargedToAccount(id, carol, 100e18);
-        vm.expectEmit(true, true, false, true, address(exchange));
-        emit BadDebt(id, BTC, 400e18);                // only the remainder
-        vm.prank(liquidator);
-        exchange.liquidatePosition(id);
-
-        assertEq(exchange.freeMargin(carol), 0);
-    }
-
-    function test_portfolio_shortfallFullyCovered_skipsBailoutFloor() public {
-        InsuranceVault vault = new InsuranceVault(address(usdc));
-        vault.setExchange(address(exchange));
-        exchange.setInsuranceVault(address(vault));
-        usdc.mint(address(this), 100_000e18);
-        usdc.approve(address(vault), type(uint256).max);
-        vault.deposit(100_000e18);
-
-        exchange.setPortfolioMarginEnabled(true);
-        _deposit(10_000e18);
-        uint256 id = _long(1_000e18);
-        oracle.updatePrice(BTC, 70_000e8);
-        uint256 vaultBefore = vault.totalAssets();
-
-        vm.prank(carol);
-        exchange.closePosition(id);
-        assertEq(vault.totalAssets(), vaultBefore);   // vault not drawn at all
-        assertEq(exchange.freeMargin(carol), 8_500e18);
-        assertEq(usdc.balanceOf(carol), 90_000e18);   // no bailout floor paid
     }
 
     function test_isolated_closeShortfallDoesNotTouchFreeMargin() public {
@@ -214,13 +96,6 @@ contract ExchangeCoreFixesTest is Test {
         vm.prank(carol);
         exchange.closePosition(id);
         assertEq(exchange.freeMargin(carol), 9_000e18);
-    }
-
-    function _assertNoBadDebt() internal view {
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        for (uint256 i; i < logs.length; ++i) {
-            assertTrue(logs[i].topics[0] != BadDebt.selector, "unexpected BadDebt");
-        }
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -374,7 +249,5 @@ contract ExchangeCoreFixesTest is Test {
         assertEq(ex.getPositionValue(longId), 0);
         assertEq(ex.getPositionValue(shortId), 0);
         assertEq(ex.getMarkPrice(BTC), 0);
-        (int256 eq, , ) = ex.getAccountHealth(carol);
-        assertEq(eq, int256(ex.freeMargin(carol))); // both legs count as 0
     }
 }

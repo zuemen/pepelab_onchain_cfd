@@ -440,18 +440,6 @@ contract ExchangeGuardianTest is Test {
         exchange.liquidatePosition(id);
     }
 
-    function test_paused_liquidatePosition_portfolioMode_reverts() public {
-        exchange.setPortfolioMarginEnabled(true);
-        uint256 id = _open(user, BTC, true, 1_000e18);
-        uint256 cushion = exchange.freeMargin(user);
-        vm.prank(user);
-        exchange.withdrawMargin(cushion); // no cushion left
-        oracle.updatePrice(BTC, 80_000e8);
-        exchange.pause();
-        vm.expectRevert(PerpetualExchange.EnforcedPause.selector);
-        exchange.liquidatePosition(id);
-    }
-
     function test_paused_settleFunding_reverts() public {
         _open(user, BTC, true, 2_000e18);
         _open(other, BTC, false, 1_000e18);
@@ -499,7 +487,6 @@ contract ExchangeGuardianTest is Test {
         exchange.setMaxLeverageFor(BTC, 3);
         exchange.setMaintenanceMarginFor(BTC, 600);
         exchange.setMaxPriceAge(1 hours);
-        exchange.setPortfolioMarginEnabled(true);
         exchange.setAdlEnabled(true);
         exchange.setAssetMode(BTC, REDUCE_ONLY);
         assertEq(exchange.TRADING_FEE_BPS(), 20);
@@ -507,7 +494,6 @@ contract ExchangeGuardianTest is Test {
         assertGt(exchange.getPositionValue(id), 0);
         assertEq(exchange.getUnrealizedPnL(id), 0);
         assertEq(exchange.getMarkPrice(BTC), 100_000e18);
-        exchange.getAccountHealth(user);
         exchange.getFundingRate(BTC);
         exchange.pendingFunding(id);
         assertEq(exchange.freeMargin(user), 49_000e18);

@@ -292,34 +292,6 @@ contract ExchangeRiskCapsTest is Test {
         assertEq(exchange.getPositionValue(id), 2_000e18);
     }
 
-    /// Portfolio equity counts only the capped profit, so profit the exchange
-    /// will never pay cannot shield another leg from liquidation.
-    function test_profitCap_portfolioEquityCountsOnlyCappedProfit() public {
-        exchange.setPortfolioMarginEnabled(true);
-        exchange.setMaxProfitBps(ETH, 10_000);
-        _open(user, ETH, true, 1_000e18, 5);                   // cap 1,000
-        uint256 loser = _open(user, BTC, true, 5_000e18, 5);   // 25,000 notional
-        uint256 rest = exchange.freeMargin(user);
-        vm.prank(user);
-        exchange.withdrawMargin(rest);
-
-        oracle.updatePrice(ETH, 8_000e8);  // winner raw +5,000, capped +1,000
-        oracle.updatePrice(BTC, 81_000e8); // loser -4,750
-        (int256 eq, uint256 mm, bool healthy) = exchange.getAccountHealth(user);
-        assertEq(eq, int256(2_000e18 + 250e18)); // raw profit would have said 6,250
-        assertEq(mm, 250e18 + 1_250e18);
-        assertTrue(healthy);
-
-        // Loser -5,750: capped equity 1,250 < 1,500 maintenance. With the raw
-        // +5,000 the account would still read 5,250 and shield the leg.
-        oracle.updatePrice(BTC, 77_000e8);
-        (eq, , healthy) = exchange.getAccountHealth(user);
-        assertEq(eq, int256(1_250e18));
-        assertFalse(healthy);
-        exchange.liquidatePosition(loser);
-        assertFalse(exchange.getPosition(loser).isOpen);
-    }
-
     /// ADL haircuts the capped profit: the counterparty is paid margin + cap −
     /// haircut, and whatever the capped profit cannot absorb is BadDebt rather
     /// than being "covered" by profit that was never owed.
