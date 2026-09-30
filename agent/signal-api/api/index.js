@@ -428,218 +428,6 @@ var require_constants = __commonJS({
   }
 });
 
-// ../node_modules/node-gyp-build/node-gyp-build.js
-var require_node_gyp_build = __commonJS({
-  "../node_modules/node-gyp-build/node-gyp-build.js"(exports, module) {
-    var fs = __require("fs");
-    var path2 = __require("path");
-    var os = __require("os");
-    var runtimeRequire = typeof __webpack_require__ === "function" ? __non_webpack_require__ : __require;
-    var vars = process.config && process.config.variables || {};
-    var prebuildsOnly = !!process.env.PREBUILDS_ONLY;
-    var abi2 = process.versions.modules;
-    var runtime = isElectron() ? "electron" : isNwjs() ? "node-webkit" : "node";
-    var arch = process.env.npm_config_arch || os.arch();
-    var platform = process.env.npm_config_platform || os.platform();
-    var libc = process.env.LIBC || (isAlpine(platform) ? "musl" : "glibc");
-    var armv = process.env.ARM_VERSION || (arch === "arm64" ? "8" : vars.arm_version) || "";
-    var uv = (process.versions.uv || "").split(".")[0];
-    module.exports = load;
-    function load(dir) {
-      return runtimeRequire(load.resolve(dir));
-    }
-    load.resolve = load.path = function(dir) {
-      dir = path2.resolve(dir || ".");
-      try {
-        var name = runtimeRequire(path2.join(dir, "package.json")).name.toUpperCase().replace(/-/g, "_");
-        if (process.env[name + "_PREBUILD"]) dir = process.env[name + "_PREBUILD"];
-      } catch (err) {
-      }
-      if (!prebuildsOnly) {
-        var release = getFirst(path2.join(dir, "build/Release"), matchBuild);
-        if (release) return release;
-        var debug = getFirst(path2.join(dir, "build/Debug"), matchBuild);
-        if (debug) return debug;
-      }
-      var prebuild = resolve2(dir);
-      if (prebuild) return prebuild;
-      var nearby = resolve2(path2.dirname(process.execPath));
-      if (nearby) return nearby;
-      var target = [
-        "platform=" + platform,
-        "arch=" + arch,
-        "runtime=" + runtime,
-        "abi=" + abi2,
-        "uv=" + uv,
-        armv ? "armv=" + armv : "",
-        "libc=" + libc,
-        "node=" + process.versions.node,
-        process.versions.electron ? "electron=" + process.versions.electron : "",
-        typeof __webpack_require__ === "function" ? "webpack=true" : ""
-        // eslint-disable-line
-      ].filter(Boolean).join(" ");
-      throw new Error("No native build was found for " + target + "\n    loaded from: " + dir + "\n");
-      function resolve2(dir2) {
-        var tuples = readdirSync(path2.join(dir2, "prebuilds")).map(parseTuple);
-        var tuple = tuples.filter(matchTuple(platform, arch)).sort(compareTuples)[0];
-        if (!tuple) return;
-        var prebuilds = path2.join(dir2, "prebuilds", tuple.name);
-        var parsed = readdirSync(prebuilds).map(parseTags);
-        var candidates = parsed.filter(matchTags(runtime, abi2));
-        var winner = candidates.sort(compareTags(runtime))[0];
-        if (winner) return path2.join(prebuilds, winner.file);
-      }
-    };
-    function readdirSync(dir) {
-      try {
-        return fs.readdirSync(dir);
-      } catch (err) {
-        return [];
-      }
-    }
-    function getFirst(dir, filter) {
-      var files = readdirSync(dir).filter(filter);
-      return files[0] && path2.join(dir, files[0]);
-    }
-    function matchBuild(name) {
-      return /\.node$/.test(name);
-    }
-    function parseTuple(name) {
-      var arr = name.split("-");
-      if (arr.length !== 2) return;
-      var platform2 = arr[0];
-      var architectures = arr[1].split("+");
-      if (!platform2) return;
-      if (!architectures.length) return;
-      if (!architectures.every(Boolean)) return;
-      return { name, platform: platform2, architectures };
-    }
-    function matchTuple(platform2, arch2) {
-      return function(tuple) {
-        if (tuple == null) return false;
-        if (tuple.platform !== platform2) return false;
-        return tuple.architectures.includes(arch2);
-      };
-    }
-    function compareTuples(a, b2) {
-      return a.architectures.length - b2.architectures.length;
-    }
-    function parseTags(file) {
-      var arr = file.split(".");
-      var extension2 = arr.pop();
-      var tags = { file, specificity: 0 };
-      if (extension2 !== "node") return;
-      for (var i = 0; i < arr.length; i++) {
-        var tag = arr[i];
-        if (tag === "node" || tag === "electron" || tag === "node-webkit") {
-          tags.runtime = tag;
-        } else if (tag === "napi") {
-          tags.napi = true;
-        } else if (tag.slice(0, 3) === "abi") {
-          tags.abi = tag.slice(3);
-        } else if (tag.slice(0, 2) === "uv") {
-          tags.uv = tag.slice(2);
-        } else if (tag.slice(0, 4) === "armv") {
-          tags.armv = tag.slice(4);
-        } else if (tag === "glibc" || tag === "musl") {
-          tags.libc = tag;
-        } else {
-          continue;
-        }
-        tags.specificity++;
-      }
-      return tags;
-    }
-    function matchTags(runtime2, abi3) {
-      return function(tags) {
-        if (tags == null) return false;
-        if (tags.runtime && tags.runtime !== runtime2 && !runtimeAgnostic(tags)) return false;
-        if (tags.abi && tags.abi !== abi3 && !tags.napi) return false;
-        if (tags.uv && tags.uv !== uv) return false;
-        if (tags.armv && tags.armv !== armv) return false;
-        if (tags.libc && tags.libc !== libc) return false;
-        return true;
-      };
-    }
-    function runtimeAgnostic(tags) {
-      return tags.runtime === "node" && tags.napi;
-    }
-    function compareTags(runtime2) {
-      return function(a, b2) {
-        if (a.runtime !== b2.runtime) {
-          return a.runtime === runtime2 ? -1 : 1;
-        } else if (a.abi !== b2.abi) {
-          return a.abi ? -1 : 1;
-        } else if (a.specificity !== b2.specificity) {
-          return a.specificity > b2.specificity ? -1 : 1;
-        } else {
-          return 0;
-        }
-      };
-    }
-    function isNwjs() {
-      return !!(process.versions && process.versions.nw);
-    }
-    function isElectron() {
-      if (process.versions && process.versions.electron) return true;
-      if (process.env.ELECTRON_RUN_AS_NODE) return true;
-      return typeof window !== "undefined" && window.process && window.process.type === "renderer";
-    }
-    function isAlpine(platform2) {
-      return platform2 === "linux" && fs.existsSync("/etc/alpine-release");
-    }
-    load.parseTags = parseTags;
-    load.matchTags = matchTags;
-    load.compareTags = compareTags;
-    load.parseTuple = parseTuple;
-    load.matchTuple = matchTuple;
-    load.compareTuples = compareTuples;
-  }
-});
-
-// ../node_modules/node-gyp-build/index.js
-var require_node_gyp_build2 = __commonJS({
-  "../node_modules/node-gyp-build/index.js"(exports, module) {
-    var runtimeRequire = typeof __webpack_require__ === "function" ? __non_webpack_require__ : __require;
-    if (typeof runtimeRequire.addon === "function") {
-      module.exports = runtimeRequire.addon.bind(runtimeRequire);
-    } else {
-      module.exports = require_node_gyp_build();
-    }
-  }
-});
-
-// ../node_modules/bufferutil/fallback.js
-var require_fallback = __commonJS({
-  "../node_modules/bufferutil/fallback.js"(exports, module) {
-    "use strict";
-    var mask2 = (source, mask3, output2, offset, length) => {
-      for (var i = 0; i < length; i++) {
-        output2[offset + i] = source[i] ^ mask3[i & 3];
-      }
-    };
-    var unmask = (buffer2, mask3) => {
-      const length = buffer2.length;
-      for (var i = 0; i < length; i++) {
-        buffer2[i] ^= mask3[i & 3];
-      }
-    };
-    module.exports = { mask: mask2, unmask };
-  }
-});
-
-// ../node_modules/bufferutil/index.js
-var require_bufferutil = __commonJS({
-  "../node_modules/bufferutil/index.js"(exports, module) {
-    "use strict";
-    try {
-      module.exports = require_node_gyp_build2()(__dirname);
-    } catch (e) {
-      module.exports = require_fallback();
-    }
-  }
-});
-
 // ../node_modules/ws/lib/buffer-util.js
 var require_buffer_util = __commonJS({
   "../node_modules/ws/lib/buffer-util.js"(exports, module) {
@@ -700,7 +488,7 @@ var require_buffer_util = __commonJS({
     };
     if (!process.env.WS_NO_BUFFER_UTIL) {
       try {
-        const bufferUtil = require_bufferutil();
+        const bufferUtil = __require("bufferutil");
         module.exports.mask = function(source, mask2, output2, offset, length) {
           if (length < 48) _mask(source, mask2, output2, offset, length);
           else bufferUtil.mask(source, mask2, output2, offset, length);
@@ -1148,55 +936,6 @@ var require_permessage_deflate = __commonJS({
   }
 });
 
-// ../node_modules/utf-8-validate/fallback.js
-var require_fallback2 = __commonJS({
-  "../node_modules/utf-8-validate/fallback.js"(exports, module) {
-    "use strict";
-    function isValidUTF8(buf) {
-      const len = buf.length;
-      let i = 0;
-      while (i < len) {
-        if ((buf[i] & 128) === 0) {
-          i++;
-        } else if ((buf[i] & 224) === 192) {
-          if (i + 1 === len || (buf[i + 1] & 192) !== 128 || (buf[i] & 254) === 192) {
-            return false;
-          }
-          i += 2;
-        } else if ((buf[i] & 240) === 224) {
-          if (i + 2 >= len || (buf[i + 1] & 192) !== 128 || (buf[i + 2] & 192) !== 128 || buf[i] === 224 && (buf[i + 1] & 224) === 128 || // overlong
-          buf[i] === 237 && (buf[i + 1] & 224) === 160) {
-            return false;
-          }
-          i += 3;
-        } else if ((buf[i] & 248) === 240) {
-          if (i + 3 >= len || (buf[i + 1] & 192) !== 128 || (buf[i + 2] & 192) !== 128 || (buf[i + 3] & 192) !== 128 || buf[i] === 240 && (buf[i + 1] & 240) === 128 || // overlong
-          buf[i] === 244 && buf[i + 1] > 143 || buf[i] > 244) {
-            return false;
-          }
-          i += 4;
-        } else {
-          return false;
-        }
-      }
-      return true;
-    }
-    module.exports = isValidUTF8;
-  }
-});
-
-// ../node_modules/utf-8-validate/index.js
-var require_utf_8_validate = __commonJS({
-  "../node_modules/utf-8-validate/index.js"(exports, module) {
-    "use strict";
-    try {
-      module.exports = require_node_gyp_build2()(__dirname);
-    } catch (e) {
-      module.exports = require_fallback2();
-    }
-  }
-});
-
 // ../node_modules/ws/lib/validation.js
 var require_validation = __commonJS({
   "../node_modules/ws/lib/validation.js"(exports, module) {
@@ -1388,7 +1127,7 @@ var require_validation = __commonJS({
       };
     } else if (!process.env.WS_NO_UTF_8_VALIDATE) {
       try {
-        const isValidUTF8 = require_utf_8_validate();
+        const isValidUTF8 = __require("utf-8-validate");
         module.exports.isValidUTF8 = function(buf) {
           return buf.length < 32 ? _isValidUTF8(buf) : isValidUTF8(buf);
         };

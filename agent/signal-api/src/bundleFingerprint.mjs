@@ -85,6 +85,30 @@ export async function fingerprintFiles(root, absPaths) {
 }
 
 /**
+ * build-vercel.mjs 與指紋共用的 esbuild 選項。兩邊各抄一份的話，任何一邊加了
+ * external／alias／define 而另一邊沒加，指紋算的 import 圖就不再是真正 bundle 的
+ * import 圖。只放會影響 import 圖或輸出的選項；entry、outfile、banner 由呼叫端給。
+ *
+ * external：ws 在 try/catch 裡 require 這兩個原生加速套件（ws 官方建議外部化）。
+ * 內聯它們只會帶進找不到 .node 二進位的 loader，執行期照樣退回 JS 實作。
+ */
+export const BUILD_OPTIONS = Object.freeze({
+  bundle: true,
+  platform: "node",
+  format: "esm",
+  target: "node20",
+  external: ["bufferutil", "utf-8-validate"],
+});
+
+/**
+ * 影響 bundle 輸出、但不在 import 圖裡的建置設定檔。以內容雜湊納入指紋，
+ * 改了它們卻沒重打包時 check 會紅燈。（esbuild 本身的版本刻意不納入：那會讓
+ * 每次 dependabot 升 esbuild 都強迫重打包，而輸出差異只是工具鏈雜訊。）
+ * 同版本但 lockfile 的 integrity 改變也不偵測——npm 不允許同版本重新發布。
+ */
+export const BUILD_CONFIG_FILES = ["agent/signal-api/build-vercel.mjs", "agent/tsconfig.json", "agent/tsconfig.base.json"];
+
+/**
  * 跑一次 esbuild（write:false、metafile），回傳 entry 內聯的所有輸入檔（絕對路徑，
  * 含 node_modules）。只看 import 圖，不看輸出位元組。
  *
@@ -94,12 +118,9 @@ export async function fingerprintFiles(root, absPaths) {
 async function metafileInputs(entry, cwd) {
   const { build } = await import("esbuild");
   const r = await build({
+    ...BUILD_OPTIONS,
     entryPoints: [entry],
     absWorkingDir: resolve(cwd),
-    bundle: true,
-    platform: "node",
-    format: "esm",
-    target: "node20",
     write: false,
     metafile: true,
     outfile: "__fingerprint__.js",
@@ -176,6 +197,10 @@ export async function fingerprintBundle(opts = {}) {
   const root = opts.root ?? REPO_ROOT;
   const all = await metafileInputs(opts.entry ?? VERCEL_ENTRY, cwd);
   const { files } = await fingerprintFiles(root, all.filter((p) => !inNodeModules(p)).sort());
+  if (!opts.entry) {
+    // 只對真實的 signal-api bundle 納入建置設定檔；測試 fixture 沒有這些檔案。
+    Object.assign(files, (await fingerprintFiles(root, BUILD_CONFIG_FILES.map((f) => resolve(root, f)))).files);
+  }
   for (const pkg of await packagesOf(all)) files[`npm:${pkg}`] = "pkg";
   return { files, digest: digestOf(files) };
 }

@@ -182,3 +182,20 @@ test("packagesOf 去重：同套件多個檔案只算一次", async () => {
   const list = await packagesOf([join(dir, "node_modules/dep/a.js"), join(dir, "node_modules/dep/b.js")]);
   assert.deepEqual(list, ["dep@3.1.4"]);
 });
+
+import { BUILD_CONFIG_FILES } from "./bundleFingerprint.mjs";
+
+test("真實 bundle 指紋納入建置設定檔，且原生加速套件已外部化", async () => {
+  const { files } = await fingerprintBundle();
+  for (const f of BUILD_CONFIG_FILES) assert.ok(f in files, `缺 ${f}`);
+  const pkgs = Object.keys(files).filter((k) => k.startsWith("npm:"));
+  for (const native of ["bufferutil", "utf-8-validate", "node-gyp-build"]) {
+    assert.ok(!pkgs.some((k) => k.startsWith(`npm:${native}@`)), `${native} 不該被內聯：${pkgs.join(", ")}`);
+  }
+});
+
+test("build-vercel.mjs 用共用的 BUILD_OPTIONS，而不是自己再抄一份", async () => {
+  const src = await (await import("node:fs/promises")).readFile(join(SIGNAL_API_DIR, "build-vercel.mjs"), "utf8");
+  assert.match(src, /\.\.\.BUILD_OPTIONS/);
+  assert.doesNotMatch(src, /platform:\s*"node"/);
+});

@@ -5,14 +5,12 @@
 import { build } from "esbuild";
 import { writeFile } from "node:fs/promises";
 
-import { fingerprintBundle } from "./src/bundleFingerprint.mjs";
+import { BUILD_OPTIONS, fingerprintBundle } from "./src/bundleFingerprint.mjs";
 
 await build({
+  // 與指紋共用同一份選項（bundle/platform/format/target/external），見 BUILD_OPTIONS。
+  ...BUILD_OPTIONS,
   entryPoints: ["src/vercel-entry.ts"],
-  bundle: true,
-  platform: "node",
-  format: "esm",
-  target: "node20",
   outfile: "api/index.js",
   // ESM 下補 require/__dirname/__filename，避免某些被內聯的 CJS 依賴在執行期缺這些。
   banner: {

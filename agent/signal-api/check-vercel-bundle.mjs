@@ -43,7 +43,14 @@ try {
   process.exit(1);
 }
 
-const fresh = await fingerprintBundle();
+let fresh;
+try {
+  fresh = await fingerprintBundle();
+} catch (err) {
+  // 例如某個被內聯套件的 package.json 讀不到。仍然紅燈，但給可讀的訊息而不是 stack trace。
+  console.error(`::error::指紋計算失敗：${err?.message ?? err} —— 先確認 \`npm ci\` 成功，再${REBUILD_HINT}`);
+  process.exit(1);
+}
 
 if (fresh.digest !== manifest.digest) {
   // 指出「哪幾個檔案變了」，而不是只丟兩個對不起來的 hash——後者只能告訴你
