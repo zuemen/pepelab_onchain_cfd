@@ -58,6 +58,10 @@ contract CutoverGovernanceForkTest is Test {
         vm.setEnv("STRATEGY_REGISTRY_NEW", vm.toString(d.strategyRegistry));
         vm.setEnv("SESSION_MANAGER_NEW", vm.toString(d.sessionManager));
         vm.setEnv("EXPECTED_OWNER", vm.toString(OWNER));
+        // Exactly the runbook sec.5.4 command: the whole-USDC caps the cutover printed.
+        vm.setEnv("OI_CAP_NON_RWA_USDC", vm.toString(ex.maxLongOI(BTC) / 1e18));
+        vm.setEnv("OI_CAP_RWA_USDC", vm.toString(ex.maxLongOI(keccak256("sAAPL")) / 1e18));
+        assertEq(ex.maxLongOI(keccak256("sAAPL")) % 1e18, 0, "RWA cap is whole USDC");
         new Verify130().run();
 
         // OI cap is enforced (1,499 USDC per side on sBTC at today's insurance).
@@ -139,5 +143,49 @@ contract CutoverGovernanceForkTest is Test {
         assertTrue(IAccessControl(G_ORACLE).hasRole(0x00, address(tl)));
         // Hot keeper role on the oracle untouched.
         assertTrue(IAccessControl(G_ORACLE).hasRole(keccak256("KEEPER_ROLE"), KEEPER));
+    }
+
+    /// @dev Interrupted broadcast, then re-run. Two cut points:
+    ///      (a) after the CopyTracker exists (step 6) — nothing shared touched yet;
+    ///      (b) after InsuranceVault was re-pointed but FeeRouter was not (step 9)
+    ///          — the worst place to die. A plain re-run must refuse; a RESUME
+    ///          run must finish on the SAME exchange.
+    function test_fork_interruptedCutoverResumes() public {
+        vm.setEnv("GUARDIAN", vm.toString(guardian));
+        uint256 snap = vm.snapshotState();
+
+        for (uint256 k; k < 2; k++) {
+            uint256 cut = k == 0 ? 6 : 9;
+            vm.revertToState(snap);
+
+            Redeploy130Hardened r1 = new Redeploy130Hardened();
+            r1.setBroadcasterOverride(OWNER);
+            r1.setHaltAfterStep(cut);
+            r1.run();
+            Cutover130Base.Deployed130 memory d1;
+            (d1.exchange, d1.copyTracker, d1.strategyRegistry, d1.sessionManager, d1.traderStake) = r1.lastDeployed();
+            assertTrue(d1.exchange != address(0));
+
+            if (cut == 9) {
+                assertEq(IInsVault130(INS).exchange(), d1.exchange, "half re-pointed: vault moved");
+                assertEq(FeeRouter(FEE_R).exchange(), 0x827eA0c62a32e995927101259042F8A27D99124D, "half re-pointed: router not");
+                Redeploy130Hardened fresh = new Redeploy130Hardened();
+                fresh.setBroadcasterOverride(OWNER);
+                vm.expectRevert(bytes("InsuranceVault.exchange != old exchange - partial cutover detected; re-run with RESUME_* (runbook sec.9), never from scratch"));
+                fresh.run();
+            }
+
+            Redeploy130Hardened r2 = new Redeploy130Hardened();
+            r2.setBroadcasterOverride(OWNER);
+            r2.setResumeOverride(d1);
+            r2.run();   // ends with the full Verify130 assertion set
+            Cutover130Base.Deployed130 memory d2;
+            (d2.exchange, d2.copyTracker, d2.strategyRegistry, d2.sessionManager, d2.traderStake) = r2.lastDeployed();
+            assertEq(d2.exchange, d1.exchange, "no second exchange");
+            assertEq(d2.copyTracker, d1.copyTracker);
+            if (cut == 6) assertTrue(d2.sessionManager != address(0));
+            else assertEq(d2.sessionManager, d1.sessionManager);
+            assertEq(FeeRouter(FEE_R).copyTracker(), d1.copyTracker);
+        }
     }
 }

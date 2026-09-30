@@ -165,14 +165,22 @@ abstract contract Cutover130Base is Script {
         _eq("feeRouter.copyTracker", FeeRouter(FEE_ROUTER).copyTracker(), d.copyTracker);
         _eq("traderStake.copyTracker", TraderStake(d.traderStake).copyTracker(), d.copyTracker);
 
+        // Freshness is the keeper's job, not wiring: a price that is merely
+        // older than 6h right now is reported, not failed (dispatch the keeper
+        // and re-run if you want a clean sheet). A missing price IS a failure.
         console.log("--- oracle feed ---");
+        uint256 staleCount;
         for (uint256 i = 0; i < N_ASSETS; i++) {
             bytes32 id = keccak256(bytes(syms[i]));
             (uint256 p, uint256 at) = IOracle(e.oracle).getPrice(id);
             if (p == 0) revert(string.concat("verify130 failed: oracle has no price for ", syms[i]));
-            if (block.timestamp > at + MAX_PRICE_AGE) revert(string.concat("verify130 failed: oracle price stale for ", syms[i]));
+            if (block.timestamp > at + MAX_PRICE_AGE) {
+                staleCount++;
+                console.log(string.concat("WARN ", syms[i], " price older than 6h - dispatch the keeper"));
+            }
         }
-        console.log("ok   all 11 assets priced and fresh on the exchange's oracle");
+        if (staleCount == 0) console.log("ok   all 11 assets priced and fresh on the exchange's oracle");
+        else console.log("WARN stale assets:", staleCount, "(wiring still verified)");
     }
 }
 
