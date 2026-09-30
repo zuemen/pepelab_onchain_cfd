@@ -108,6 +108,8 @@ contract TraderStake is Ownable, ReentrancyGuard {
     ///      its owner-controlled `slashReserve` — a slash is never paid to the
     ///      follower who triggered it nor into a pro-rata pool, so nobody can
     ///      profit from forcing one (see `CopyTracker.unfollowAndCloseAll`).
+    ///      M2: `s.amount` still includes any amount under a pending unstake
+    ///      request — requested stake stays at risk until it is paid out.
     function slash(address trader, uint256 amount, address recipient) external nonReentrant {
         if (msg.sender != copyTracker) revert NotCopyTracker();
         StakeInfo storage s = stakes[trader];
@@ -122,8 +124,19 @@ contract TraderStake is Ownable, ReentrancyGuard {
     }
 
     // ── Views ────────────────────────────────────────────────────────────────
+    /// @notice M2: a trader with a pending unstake request is NOT eligible.
+    ///         Requesting an unstake announces that the stake backing the
+    ///         strategy is leaving; letting the trader keep publishing (and
+    ///         keep attracting followers) through the cooldown let them take
+    ///         new followers on a guarantee that was already being withdrawn.
+    ///         `cancelUnstake` restores eligibility.
+    /// @dev The requested amount is NOT carved out of the slashable stake:
+    ///      `slash` still reads the full `amount`, so a trader cannot shield
+    ///      stake from a slash by requesting it back first, and
+    ///      `executeUnstake` pays out only what survived the cooldown.
     function isEligible(address trader) external view returns (bool) {
-        return stakes[trader].amount >= MIN_STAKE;
+        StakeInfo storage s = stakes[trader];
+        return s.unstakeAmount == 0 && s.amount >= MIN_STAKE;
     }
 
     function getStake(address trader) external view returns (StakeInfo memory) {
