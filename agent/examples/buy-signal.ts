@@ -12,7 +12,7 @@ import { createWalletClient, http, publicActions, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
 import { wrapFetchWithPayment } from "x402-fetch";
-import { resolveX402MaxValue } from "@pepelab/shared";
+import { resolveX402MaxValue, guardViemAccount } from "@pepelab/shared";
 
 const API = (process.env.X402_API_URL ?? "http://localhost:4021").replace(/\/$/, "");
 const PK = process.env.AGENT_PRIVATE_KEY?.trim();
@@ -53,7 +53,7 @@ async function main() {
   }
 
   // 2) 建 viem WalletClient（x402-fetch 需要 chain+transport 才能簽 EIP-3009）。
-  const account = privateKeyToAccount(PK as Hex);
+  const account = guardViemAccount(privateKeyToAccount(PK as Hex)); // signingGuard
   const wallet = createWalletClient({
     account,
     chain: baseSepolia,

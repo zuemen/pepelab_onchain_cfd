@@ -6,4 +6,6 @@ dist/
 
 # Audit trail (runtime) + user-signed VC（含簽章，勿入庫）
 audit/
+# policy gate 本地狀態（每日額度／筆數）與 VC nonce 一次性紀錄
+.state/
 examples/vc.json

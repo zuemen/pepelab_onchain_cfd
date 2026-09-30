@@ -110,7 +110,7 @@ var require_package = __commonJS({
 var require_main = __commonJS({
   "../node_modules/dotenv/lib/main.js"(exports, module) {
     var fs = __require("fs");
-    var path = __require("path");
+    var path2 = __require("path");
     var os = __require("os");
     var crypto6 = __require("crypto");
     var packageJson = require_package();
@@ -226,7 +226,7 @@ var require_main = __commonJS({
           possibleVaultPath = options.path.endsWith(".vault") ? options.path : `${options.path}.vault`;
         }
       } else {
-        possibleVaultPath = path.resolve(process.cwd(), ".env.vault");
+        possibleVaultPath = path2.resolve(process.cwd(), ".env.vault");
       }
       if (fs.existsSync(possibleVaultPath)) {
         return possibleVaultPath;
@@ -234,7 +234,7 @@ var require_main = __commonJS({
       return null;
     }
     function _resolveHome(envPath) {
-      return envPath[0] === "~" ? path.join(os.homedir(), envPath.slice(1)) : envPath;
+      return envPath[0] === "~" ? path2.join(os.homedir(), envPath.slice(1)) : envPath;
     }
     function _configVault(options) {
       const debug = Boolean(options && options.debug);
@@ -251,7 +251,7 @@ var require_main = __commonJS({
       return { parsed };
     }
     function configDotenv(options) {
-      const dotenvPath = path.resolve(process.cwd(), ".env");
+      const dotenvPath = path2.resolve(process.cwd(), ".env");
       let encoding = "utf8";
       const debug = Boolean(options && options.debug);
       const quiet = options && "quiet" in options ? options.quiet : true;
@@ -275,13 +275,13 @@ var require_main = __commonJS({
       }
       let lastError;
       const parsedAll = {};
-      for (const path2 of optionPaths) {
+      for (const path3 of optionPaths) {
         try {
-          const parsed = DotenvModule.parse(fs.readFileSync(path2, { encoding }));
+          const parsed = DotenvModule.parse(fs.readFileSync(path3, { encoding }));
           DotenvModule.populate(parsedAll, parsed, options);
         } catch (e) {
           if (debug) {
-            _debug(`Failed to load ${path2} ${e.message}`);
+            _debug(`Failed to load ${path3} ${e.message}`);
           }
           lastError = e;
         }
@@ -296,7 +296,7 @@ var require_main = __commonJS({
         const shortPaths = [];
         for (const filePath of optionPaths) {
           try {
-            const relative = path.relative(process.cwd(), filePath);
+            const relative = path2.relative(process.cwd(), filePath);
             shortPaths.push(relative);
           } catch (e) {
             if (debug) {
@@ -423,7 +423,7 @@ var require_constants = __commonJS({
 var require_node_gyp_build = __commonJS({
   "../node_modules/node-gyp-build/node-gyp-build.js"(exports, module) {
     var fs = __require("fs");
-    var path = __require("path");
+    var path2 = __require("path");
     var os = __require("os");
     var runtimeRequire = typeof __webpack_require__ === "function" ? __non_webpack_require__ : __require;
     var vars = process.config && process.config.variables || {};
@@ -440,21 +440,21 @@ var require_node_gyp_build = __commonJS({
       return runtimeRequire(load.resolve(dir));
     }
     load.resolve = load.path = function(dir) {
-      dir = path.resolve(dir || ".");
+      dir = path2.resolve(dir || ".");
       try {
-        var name = runtimeRequire(path.join(dir, "package.json")).name.toUpperCase().replace(/-/g, "_");
+        var name = runtimeRequire(path2.join(dir, "package.json")).name.toUpperCase().replace(/-/g, "_");
         if (process.env[name + "_PREBUILD"]) dir = process.env[name + "_PREBUILD"];
       } catch (err) {
       }
       if (!prebuildsOnly) {
-        var release = getFirst(path.join(dir, "build/Release"), matchBuild);
+        var release = getFirst(path2.join(dir, "build/Release"), matchBuild);
         if (release) return release;
-        var debug = getFirst(path.join(dir, "build/Debug"), matchBuild);
+        var debug = getFirst(path2.join(dir, "build/Debug"), matchBuild);
         if (debug) return debug;
       }
       var prebuild = resolve2(dir);
       if (prebuild) return prebuild;
-      var nearby = resolve2(path.dirname(process.execPath));
+      var nearby = resolve2(path2.dirname(process.execPath));
       if (nearby) return nearby;
       var target = [
         "platform=" + platform,
@@ -471,14 +471,14 @@ var require_node_gyp_build = __commonJS({
       ].filter(Boolean).join(" ");
       throw new Error("No native build was found for " + target + "\n    loaded from: " + dir + "\n");
       function resolve2(dir2) {
-        var tuples = readdirSync(path.join(dir2, "prebuilds")).map(parseTuple);
+        var tuples = readdirSync(path2.join(dir2, "prebuilds")).map(parseTuple);
         var tuple = tuples.filter(matchTuple(platform, arch)).sort(compareTuples)[0];
         if (!tuple) return;
-        var prebuilds = path.join(dir2, "prebuilds", tuple.name);
+        var prebuilds = path2.join(dir2, "prebuilds", tuple.name);
         var parsed = readdirSync(prebuilds).map(parseTags);
         var candidates = parsed.filter(matchTags(runtime, abi2));
         var winner = candidates.sort(compareTags(runtime))[0];
-        if (winner) return path.join(prebuilds, winner.file);
+        if (winner) return path2.join(prebuilds, winner.file);
       }
     };
     function readdirSync(dir) {
@@ -490,7 +490,7 @@ var require_node_gyp_build = __commonJS({
     }
     function getFirst(dir, filter) {
       var files = readdirSync(dir).filter(filter);
-      return files[0] && path.join(dir, files[0]);
+      return files[0] && path2.join(dir, files[0]);
     }
     function matchBuild(name) {
       return /\.node$/.test(name);
@@ -17853,12 +17853,12 @@ var Result = class _Result extends Array {
 };
 function checkResultErrors(result) {
   const errors = [];
-  const checkErrors = function(path, object2) {
+  const checkErrors = function(path2, object2) {
     if (!Array.isArray(object2)) {
       return;
     }
     for (let key in object2) {
-      const childPath = path.slice();
+      const childPath = path2.slice();
       childPath.push(key);
       try {
         checkErrors(childPath, object2[key]);
@@ -36637,9 +36637,9 @@ var IpcSocketProvider = class extends SocketProvider {
   get socket() {
     return this.#socket;
   }
-  constructor(path, network, options) {
+  constructor(path2, network, options) {
     super(network, options);
-    this.#socket = connect(path);
+    this.#socket = connect(path2);
     this.socket.on("ready", async () => {
       try {
         await this._start();
@@ -37471,11 +37471,11 @@ function getPassword(password) {
 function spelunk(object2, _path) {
   const match2 = _path.match(/^([a-z0-9$_.-]*)(:([a-z]+))?(!)?$/i);
   assertArgument(match2 != null, "invalid path", "path", _path);
-  const path = match2[1];
+  const path2 = match2[1];
   const type = match2[3];
   const reqd = match2[4] === "!";
   let cur = object2;
-  for (const comp of path.toLowerCase().split(".")) {
+  for (const comp of path2.toLowerCase().split(".")) {
     if (Array.isArray(cur)) {
       if (!comp.match(/^[0-9]+$/)) {
         break;
@@ -37497,7 +37497,7 @@ function spelunk(object2, _path) {
       break;
     }
   }
-  assertArgument(!reqd || cur != null, "missing required value", "path", path);
+  assertArgument(!reqd || cur != null, "missing required value", "path", path2);
   if (type && cur != null) {
     if (type === "int") {
       if (typeof cur === "string" && cur.match(/^-?[0-9]+$/)) {
@@ -37522,7 +37522,7 @@ function spelunk(object2, _path) {
     if (type === typeof cur) {
       return cur;
     }
-    assertArgument(false, `wrong type found for ${type} `, "path", path);
+    assertArgument(false, `wrong type found for ${type} `, "path", path2);
   }
   return cur;
 }
@@ -37702,7 +37702,7 @@ function _encryptKeystore(key, kdf, account, options) {
   };
   if (account.mnemonic) {
     const client = options.client != null ? options.client : `ethers/${version}`;
-    const path = account.mnemonic.path || defaultPath;
+    const path2 = account.mnemonic.path || defaultPath;
     const locale = account.mnemonic.locale || "en";
     const mnemonicKey = key.slice(32, 64);
     const entropy = getBytes(account.mnemonic.entropy, "account.mnemonic.entropy");
@@ -37715,7 +37715,7 @@ function _encryptKeystore(key, kdf, account, options) {
     data4["x-ethers"] = {
       client,
       gethFilename,
-      path,
+      path: path2,
       locale,
       mnemonicCounter: hexlify(mnemonicIv).substring(2),
       mnemonicCiphertext: hexlify(mnemonicCiphertext).substring(2),
@@ -37783,11 +37783,11 @@ function ser_I(index2, chainCode, publicKey, privateKey) {
   const I = getBytes(computeHmac("sha512", chainCode, data4));
   return { IL: I.slice(0, 32), IR: I.slice(32) };
 }
-function derivePath(node, path) {
-  const components = path.split("/");
-  assertArgument(components.length > 0, "invalid path", "path", path);
+function derivePath(node, path2) {
+  const components = path2.split("/");
+  assertArgument(components.length > 0, "invalid path", "path", path2);
   if (components[0] === "m") {
-    assertArgument(node.depth === 0, `cannot derive root path (i.e. path starting with "m/") for a node at non-zero depth ${node.depth}`, "path", path);
+    assertArgument(node.depth === 0, `cannot derive root path (i.e. path starting with "m/") for a node at non-zero depth ${node.depth}`, "path", path2);
     components.shift();
   }
   let result = node;
@@ -37857,7 +37857,7 @@ var HDNodeWallet = class _HDNodeWallet extends BaseWallet {
   /**
    *  @private
    */
-  constructor(guard, signingKey, parentFingerprint, chainCode, path, index2, depth, mnemonic, provider3) {
+  constructor(guard, signingKey, parentFingerprint, chainCode, path2, index2, depth, mnemonic, provider3) {
     super(signingKey, provider3);
     assertPrivate(guard, _guard6, "HDNodeWallet");
     defineProperties(this, { publicKey: signingKey.compressedPublicKey });
@@ -37866,7 +37866,7 @@ var HDNodeWallet = class _HDNodeWallet extends BaseWallet {
       parentFingerprint,
       fingerprint,
       chainCode,
-      path,
+      path: path2,
       index: index2,
       depth
     });
@@ -37950,22 +37950,22 @@ var HDNodeWallet = class _HDNodeWallet extends BaseWallet {
   deriveChild(_index) {
     const index2 = getNumber(_index, "index");
     assertArgument(index2 <= 4294967295, "invalid index", "index", index2);
-    let path = this.path;
-    if (path) {
-      path += "/" + (index2 & ~HardenedBit);
+    let path2 = this.path;
+    if (path2) {
+      path2 += "/" + (index2 & ~HardenedBit);
       if (index2 & HardenedBit) {
-        path += "'";
+        path2 += "'";
       }
     }
     const { IR, IL } = ser_I(index2, this.chainCode, this.publicKey, this.privateKey);
     const ki = new SigningKey(toBeHex((toBigInt(IL) + BigInt(this.privateKey)) % N2, 32));
-    return new _HDNodeWallet(_guard6, ki, this.fingerprint, hexlify(IR), path, index2, this.depth + 1, this.mnemonic, this.provider);
+    return new _HDNodeWallet(_guard6, ki, this.fingerprint, hexlify(IR), path2, index2, this.depth + 1, this.mnemonic, this.provider);
   }
   /**
    *  Return the HDNode for %%path%% from this node.
    */
-  derivePath(path) {
-    return derivePath(this, path);
+  derivePath(path2) {
+    return derivePath(this, path2);
   }
   static #fromSeed(_seed, mnemonic) {
     assertArgument(isBytesLike(_seed), "invalid seed", "seed", "[REDACTED]");
@@ -38010,43 +38010,43 @@ var HDNodeWallet = class _HDNodeWallet extends BaseWallet {
   /**
    *  Creates a new random HDNode.
    */
-  static createRandom(password, path, wordlist9) {
+  static createRandom(password, path2, wordlist9) {
     if (password == null) {
       password = "";
     }
-    if (path == null) {
-      path = defaultPath2;
+    if (path2 == null) {
+      path2 = defaultPath2;
     }
     if (wordlist9 == null) {
       wordlist9 = LangEn.wordlist();
     }
     const mnemonic = Mnemonic.fromEntropy(randomBytes3(16), password, wordlist9);
-    return _HDNodeWallet.#fromSeed(mnemonic.computeSeed(), mnemonic).derivePath(path);
+    return _HDNodeWallet.#fromSeed(mnemonic.computeSeed(), mnemonic).derivePath(path2);
   }
   /**
    *  Create an HD Node from %%mnemonic%%.
    */
-  static fromMnemonic(mnemonic, path) {
-    if (!path) {
-      path = defaultPath2;
+  static fromMnemonic(mnemonic, path2) {
+    if (!path2) {
+      path2 = defaultPath2;
     }
-    return _HDNodeWallet.#fromSeed(mnemonic.computeSeed(), mnemonic).derivePath(path);
+    return _HDNodeWallet.#fromSeed(mnemonic.computeSeed(), mnemonic).derivePath(path2);
   }
   /**
    *  Creates an HD Node from a mnemonic %%phrase%%.
    */
-  static fromPhrase(phrase, password, path, wordlist9) {
+  static fromPhrase(phrase, password, path2, wordlist9) {
     if (password == null) {
       password = "";
     }
-    if (path == null) {
-      path = defaultPath2;
+    if (path2 == null) {
+      path2 = defaultPath2;
     }
     if (wordlist9 == null) {
       wordlist9 = LangEn.wordlist();
     }
     const mnemonic = Mnemonic.fromPhrase(phrase, password, wordlist9);
-    return _HDNodeWallet.#fromSeed(mnemonic.computeSeed(), mnemonic).derivePath(path);
+    return _HDNodeWallet.#fromSeed(mnemonic.computeSeed(), mnemonic).derivePath(path2);
   }
   /**
    *  Creates an HD Node from a %%seed%%.
@@ -38098,7 +38098,7 @@ var HDNodeVoidWallet = class _HDNodeVoidWallet extends VoidSigner {
   /**
    *  @private
    */
-  constructor(guard, address, publicKey, parentFingerprint, chainCode, path, index2, depth, provider3) {
+  constructor(guard, address, publicKey, parentFingerprint, chainCode, path2, index2, depth, provider3) {
     super(address, provider3);
     assertPrivate(guard, _guard6, "HDNodeVoidWallet");
     defineProperties(this, { publicKey });
@@ -38108,7 +38108,7 @@ var HDNodeVoidWallet = class _HDNodeVoidWallet extends VoidSigner {
       fingerprint,
       parentFingerprint,
       chainCode,
-      path,
+      path: path2,
       index: index2,
       depth
     });
@@ -38146,23 +38146,23 @@ var HDNodeVoidWallet = class _HDNodeVoidWallet extends VoidSigner {
   deriveChild(_index) {
     const index2 = getNumber(_index, "index");
     assertArgument(index2 <= 4294967295, "invalid index", "index", index2);
-    let path = this.path;
-    if (path) {
-      path += "/" + (index2 & ~HardenedBit);
+    let path2 = this.path;
+    if (path2) {
+      path2 += "/" + (index2 & ~HardenedBit);
       if (index2 & HardenedBit) {
-        path += "'";
+        path2 += "'";
       }
     }
     const { IR, IL } = ser_I(index2, this.chainCode, this.publicKey, null);
     const Ki = SigningKey.addPoints(IL, this.publicKey, true);
     const address = computeAddress(Ki);
-    return new _HDNodeVoidWallet(_guard6, address, Ki, this.fingerprint, hexlify(IR), path, index2, this.depth + 1, this.provider);
+    return new _HDNodeVoidWallet(_guard6, address, Ki, this.fingerprint, hexlify(IR), path2, index2, this.depth + 1, this.provider);
   }
   /**
    *  Return the signer for %%path%% from this node.
    */
-  derivePath(path) {
-    return derivePath(this, path);
+  derivePath(path2) {
+    return derivePath(this, path2);
   }
 };
 function getAccountPath(_index) {
@@ -38851,6 +38851,142 @@ var wordlists2 = {
   zh_tw: LangZh.wordlist("tw")
 };
 
+// ../shared/src/signingGuard.ts
+var MAX_UINT256 = (1n << 256n) - 1n;
+var MAX_UINT160 = (1n << 160n) - 1n;
+var SigningGuardError = class extends Error {
+  constructor(reasonCode, detail) {
+    super(`[signing-guard] ${reasonCode}: ${detail}`);
+    this.reasonCode = reasonCode;
+    this.name = "SigningGuardError";
+  }
+};
+var ABI = ethers_exports.AbiCoder.defaultAbiCoder();
+var SEL_APPROVE = "0x095ea7b3";
+var SEL_PERMIT2_APPROVE = "0x87517c45";
+var SEL_PERMIT_2612 = "0xd505accf";
+var SEL_PERMIT_DAI = "0x8fcbaf0c";
+function decodeArgs(types, data4) {
+  try {
+    return ABI.decode(types, ethers_exports.dataSlice(data4, 4));
+  } catch {
+    return null;
+  }
+}
+function checkCalldata(data4) {
+  if (!data4 || data4 === "0x" || data4.length < 10) return null;
+  const sel = data4.slice(0, 10).toLowerCase();
+  if (sel === SEL_APPROVE) {
+    const a = decodeArgs(["address", "uint256"], data4);
+    if (!a) return new SigningGuardError("UNLIMITED_APPROVE_FORBIDDEN", "approve calldata \u7121\u6CD5\u89E3\u6790\uFF08fail-closed\uFF09");
+    if (a[1] === MAX_UINT256)
+      return new SigningGuardError("UNLIMITED_APPROVE_FORBIDDEN", `approve(${a[0]}, MaxUint256)`);
+    return null;
+  }
+  if (sel === SEL_PERMIT2_APPROVE) {
+    const a = decodeArgs(["address", "address", "uint160", "uint48"], data4);
+    if (!a) return new SigningGuardError("UNLIMITED_APPROVE_FORBIDDEN", "Permit2 approve calldata \u7121\u6CD5\u89E3\u6790\uFF08fail-closed\uFF09");
+    if (a[2] === MAX_UINT160)
+      return new SigningGuardError("UNLIMITED_APPROVE_FORBIDDEN", `Permit2 approve(${a[0]}, ${a[1]}, MaxUint160)`);
+    return null;
+  }
+  if (sel === SEL_PERMIT_2612) {
+    const a = decodeArgs(["address", "address", "uint256", "uint256", "uint8", "bytes32", "bytes32"], data4);
+    if (!a) return new SigningGuardError("UNLIMITED_PERMIT_FORBIDDEN", "permit calldata \u7121\u6CD5\u89E3\u6790\uFF08fail-closed\uFF09");
+    if (a[2] === MAX_UINT256)
+      return new SigningGuardError("UNLIMITED_PERMIT_FORBIDDEN", `permit(spender=${a[1]}, MaxUint256)`);
+    return null;
+  }
+  if (sel === SEL_PERMIT_DAI) {
+    const a = decodeArgs(["address", "address", "uint256", "uint256", "bool", "uint8", "bytes32", "bytes32"], data4);
+    if (!a) return new SigningGuardError("UNLIMITED_PERMIT_FORBIDDEN", "DAI permit calldata \u7121\u6CD5\u89E3\u6790\uFF08fail-closed\uFF09");
+    if (a[4] === true)
+      return new SigningGuardError("UNLIMITED_PERMIT_FORBIDDEN", `DAI permit(spender=${a[1]}, allowed=true)\uFF1D\u7121\u4E0A\u9650`);
+    return null;
+  }
+  return null;
+}
+function is7702(tx) {
+  const t = tx.type;
+  if (t === 4 || t === 4n || t === "0x4" || t === "0x04" || t === "eip7702") return true;
+  const list2 = tx.authorizationList;
+  return Array.isArray(list2) && list2.length > 0;
+}
+function assertSafeTransaction(tx) {
+  if (is7702(tx)) {
+    throw new SigningGuardError("EIP7702_TX_FORBIDDEN", "agent \u91D1\u9470\u4E0D\u5F97\u7C3D EIP-7702\uFF08type-4 / authorizationList\uFF09\u4EA4\u6613");
+  }
+  const bad = checkCalldata(tx.data ?? null);
+  if (bad) throw bad;
+}
+function big(v) {
+  try {
+    if (typeof v === "bigint") return v;
+    if (typeof v === "number" || typeof v === "string") return BigInt(v);
+  } catch {
+  }
+  return null;
+}
+function primaryTypeOf(types, explicit) {
+  if (explicit) return explicit;
+  const names2 = Object.keys(types).filter((n2) => n2 !== "EIP712Domain");
+  try {
+    return ethers_exports.TypedDataEncoder.getPrimaryType(
+      Object.fromEntries(names2.map((n2) => [n2, types[n2]]))
+    );
+  } catch {
+    return names2[0];
+  }
+}
+function assertSafeTypedData(types, value, primaryType) {
+  const pt = primaryTypeOf(types, primaryType);
+  if (!pt) return;
+  if (pt === "Permit") {
+    if (value?.allowed === true)
+      throw new SigningGuardError("UNLIMITED_PERMIT_FORBIDDEN", "DAI \u5F0F Permit(allowed=true)\uFF1D\u7121\u4E0A\u9650\u6388\u6B0A");
+    const v = big(value?.value);
+    if (v !== null && v === MAX_UINT256)
+      throw new SigningGuardError("UNLIMITED_PERMIT_FORBIDDEN", "EIP-2612 Permit(value=MaxUint256)");
+    return;
+  }
+  if (pt === "PermitSingle" || pt === "PermitBatch") {
+    const details = Array.isArray(value?.details) ? value.details : [value?.details];
+    for (const d of details) {
+      const amt = big(d?.amount);
+      if (amt !== null && amt >= MAX_UINT160)
+        throw new SigningGuardError("UNLIMITED_PERMIT_FORBIDDEN", `Permit2 ${pt}(amount=MaxUint160)`);
+    }
+    return;
+  }
+  if (pt === "PermitTransferFrom" || pt === "PermitBatchTransferFrom" || pt === "PermitWitnessTransferFrom") {
+    const perms = Array.isArray(value?.permitted) ? value.permitted : [value?.permitted];
+    for (const p of perms) {
+      const amt = big(p?.amount);
+      if (amt !== null && amt === MAX_UINT256)
+        throw new SigningGuardError("UNLIMITED_PERMIT_FORBIDDEN", `Permit2 ${pt}(amount=MaxUint256)`);
+    }
+  }
+}
+var GuardedWallet = class _GuardedWallet extends ethers_exports.Wallet {
+  async signTransaction(tx) {
+    assertSafeTransaction(tx);
+    return super.signTransaction(tx);
+  }
+  async signTypedData(domain, types, value) {
+    assertSafeTypedData(types, value);
+    return super.signTypedData(domain, types, value);
+  }
+  async authorize(_auth) {
+    throw new SigningGuardError("EIP7702_AUTHORIZATION_FORBIDDEN", "agent \u91D1\u9470\u4E0D\u5F97\u7C3D EIP-7702 authorization");
+  }
+  authorizeSync(_auth) {
+    throw new SigningGuardError("EIP7702_AUTHORIZATION_FORBIDDEN", "agent \u91D1\u9470\u4E0D\u5F97\u7C3D EIP-7702 authorization");
+  }
+  connect(provider3) {
+    return new _GuardedWallet(this.signingKey, provider3);
+  }
+};
+
 // ../shared/src/provider.ts
 function makeProvider(rpcUrl) {
   const url = rpcUrl ?? process.env.BASE_SEPOLIA_RPC_URL ?? process.env.SEPOLIA_RPC_URL;
@@ -38892,7 +39028,7 @@ var ZERO = "0x0000000000000000000000000000000000000000";
 function makeSigner(provider3) {
   const pk = process.env.AGENT_PRIVATE_KEY?.trim();
   if (!pk || !pk.startsWith("0x") || pk.length !== 66) return null;
-  return new ethers_exports.Wallet(pk, provider3 ?? makeProvider());
+  return new GuardedWallet(pk, provider3 ?? makeProvider());
 }
 function getSessionManagerAddress() {
   return process.env.SESSION_MANAGER_ADDRESS?.trim() || ZERO;
@@ -39552,6 +39688,102 @@ async function buildAgentVerification(params) {
   };
 }
 
+// ../shared/src/policyGate.ts
+import path from "node:path";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
+var DEFAULT_POLICY = {
+  maxMarginPerTrade: 100,
+  maxDailyMargin: 500,
+  allowedAssets: Object.keys(ASSET_IDS),
+  maxLeverage: 5,
+  maxOrdersPerWindow: 10,
+  windowSec: 3600
+};
+var AGENT_ROOT = (() => {
+  try {
+    return path.resolve(path.dirname(fileURLToPath2(import.meta.url)), "..", "..");
+  } catch {
+    return process.cwd();
+  }
+})();
+var lock2 = Promise.resolve();
+
+// ../shared/src/redact.ts
+var SECRET_VALUE_ENV_KEYS = ["UPSTASH_REDIS_REST_TOKEN", "ETHERSCAN_API_KEY", "BASESCAN_API_KEY"];
+var SECRET_URL_ENV_KEYS = ["UPSTASH_REDIS_REST_URL"];
+var isSecretUrlEnv = (k) => k.endsWith("_RPC_URL") || SECRET_URL_ENV_KEYS.includes(k);
+var PUBLIC_URL_ENV_KEYS = ["X402_FACILITATOR_URL"];
+var MIN_SECRET_LEN = 6;
+function tryDecode(s) {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+}
+function secretValues() {
+  const out = [];
+  const push = (v) => {
+    if (v && v.length >= MIN_SECRET_LEN) out.push(v);
+  };
+  const pushUrlParts = (u) => {
+    for (const part of [u.username, u.password]) {
+      push(part);
+      push(tryDecode(part));
+    }
+    for (const val of u.searchParams.values()) push(val);
+  };
+  for (const k of SECRET_VALUE_ENV_KEYS) push(process.env[k]?.trim());
+  for (const k of Object.keys(process.env).filter(isSecretUrlEnv)) {
+    const v = process.env[k]?.trim();
+    if (!v) continue;
+    push(v);
+    try {
+      const u = new URL(v);
+      if (u.pathname.length > 1) {
+        push(u.pathname);
+        push(tryDecode(u.pathname));
+        for (const seg of u.pathname.split("/")) {
+          push(seg);
+          push(tryDecode(seg));
+        }
+      }
+      pushUrlParts(u);
+    } catch {
+    }
+  }
+  for (const k of PUBLIC_URL_ENV_KEYS) {
+    const v = process.env[k]?.trim();
+    if (!v) continue;
+    try {
+      pushUrlParts(new URL(v));
+    } catch {
+      push(v);
+    }
+  }
+  for (const k of Object.keys(process.env).filter((n2) => n2.endsWith("_PRIVATE_KEY"))) {
+    const v = process.env[k]?.trim();
+    if (!v) continue;
+    const bare = v.replace(/^0x/i, "");
+    push(bare);
+    push(`0x${bare}`);
+  }
+  return out.sort((a, b2) => b2.length - a.length);
+}
+function redactSecrets(text) {
+  let s = text;
+  for (const v of secretValues()) s = s.split(v).join("[redacted]");
+  for (const k of Object.keys(process.env).filter((n2) => n2.endsWith("_PRIVATE_KEY"))) {
+    const bare = process.env[k]?.trim().replace(/^0x/i, "");
+    if (bare && bare.length >= 32 && /^[0-9a-f]+$/i.test(bare)) {
+      s = s.replace(new RegExp(bare, "gi"), "[redacted]");
+    }
+  }
+  s = s.replace(/("?requestUrl"?\s*[:=]\s*\\?"?)[^"\s,}\\]+/g, "$1[redacted]");
+  s = s.replace(/(\/v[23]\/)[A-Za-z0-9_-]{16,}/g, "$1[redacted]");
+  return s;
+}
+
 // ../shared/src/write.ts
 var SESSION_MANAGER_IFACE = new ethers_exports.Interface(AGENT_SESSION_MANAGER_ABI);
 
@@ -39674,82 +39906,6 @@ async function assessPayoutAddress(provider3, addr, opts = {}) {
       reason: `rpc_unavailable\uFF1A\u7121\u6CD5\u8B80\u53D6 ${address} \u7684 code \u4E14\u5F9E\u672A\u6210\u529F\u6AA2\u67E5\u904E\uFF0Cfail-closed \u8996\u70BA\u4E0D\u5B89\u5168\u3002`
     };
   }
-}
-
-// ../shared/src/redact.ts
-var SECRET_VALUE_ENV_KEYS = ["UPSTASH_REDIS_REST_TOKEN", "ETHERSCAN_API_KEY", "BASESCAN_API_KEY"];
-var SECRET_URL_ENV_KEYS = ["UPSTASH_REDIS_REST_URL"];
-var isSecretUrlEnv = (k) => k.endsWith("_RPC_URL") || SECRET_URL_ENV_KEYS.includes(k);
-var PUBLIC_URL_ENV_KEYS = ["X402_FACILITATOR_URL"];
-var MIN_SECRET_LEN = 6;
-function tryDecode(s) {
-  try {
-    return decodeURIComponent(s);
-  } catch {
-    return s;
-  }
-}
-function secretValues() {
-  const out = [];
-  const push = (v) => {
-    if (v && v.length >= MIN_SECRET_LEN) out.push(v);
-  };
-  const pushUrlParts = (u) => {
-    for (const part of [u.username, u.password]) {
-      push(part);
-      push(tryDecode(part));
-    }
-    for (const val of u.searchParams.values()) push(val);
-  };
-  for (const k of SECRET_VALUE_ENV_KEYS) push(process.env[k]?.trim());
-  for (const k of Object.keys(process.env).filter(isSecretUrlEnv)) {
-    const v = process.env[k]?.trim();
-    if (!v) continue;
-    push(v);
-    try {
-      const u = new URL(v);
-      if (u.pathname.length > 1) {
-        push(u.pathname);
-        push(tryDecode(u.pathname));
-        for (const seg of u.pathname.split("/")) {
-          push(seg);
-          push(tryDecode(seg));
-        }
-      }
-      pushUrlParts(u);
-    } catch {
-    }
-  }
-  for (const k of PUBLIC_URL_ENV_KEYS) {
-    const v = process.env[k]?.trim();
-    if (!v) continue;
-    try {
-      pushUrlParts(new URL(v));
-    } catch {
-      push(v);
-    }
-  }
-  for (const k of Object.keys(process.env).filter((n2) => n2.endsWith("_PRIVATE_KEY"))) {
-    const v = process.env[k]?.trim();
-    if (!v) continue;
-    const bare = v.replace(/^0x/i, "");
-    push(bare);
-    push(`0x${bare}`);
-  }
-  return out.sort((a, b2) => b2.length - a.length);
-}
-function redactSecrets(text) {
-  let s = text;
-  for (const v of secretValues()) s = s.split(v).join("[redacted]");
-  for (const k of Object.keys(process.env).filter((n2) => n2.endsWith("_PRIVATE_KEY"))) {
-    const bare = process.env[k]?.trim().replace(/^0x/i, "");
-    if (bare && bare.length >= 32 && /^[0-9a-f]+$/i.test(bare)) {
-      s = s.replace(new RegExp(bare, "gi"), "[redacted]");
-    }
-  }
-  s = s.replace(/("?requestUrl"?\s*[:=]\s*\\?"?)[^"\s,}\\]+/g, "$1[redacted]");
-  s = s.replace(/(\/v[23]\/)[A-Za-z0-9_-]{16,}/g, "$1[redacted]");
-  return s;
 }
 
 // ../node_modules/hono/dist/compose.js
@@ -39897,26 +40053,26 @@ var handleParsingNestedValues = (form, key, value) => {
 };
 
 // ../node_modules/hono/dist/utils/url.js
-var splitPath = (path) => {
-  const paths = path.split("/");
+var splitPath = (path2) => {
+  const paths = path2.split("/");
   if (paths[0] === "") {
     paths.shift();
   }
   return paths;
 };
 var splitRoutingPath = (routePath) => {
-  const { groups, path } = extractGroupsFromPath(routePath);
-  const paths = splitPath(path);
+  const { groups, path: path2 } = extractGroupsFromPath(routePath);
+  const paths = splitPath(path2);
   return replaceGroupMarks(paths, groups);
 };
-var extractGroupsFromPath = (path) => {
+var extractGroupsFromPath = (path2) => {
   const groups = [];
-  path = path.replace(/\{[^}]+\}/g, (match2, index2) => {
+  path2 = path2.replace(/\{[^}]+\}/g, (match2, index2) => {
     const mark = `@${index2}`;
     groups.push([mark, match2]);
     return mark;
   });
-  return { groups, path };
+  return { groups, path: path2 };
 };
 var replaceGroupMarks = (paths, groups) => {
   for (let i = groups.length - 1; i >= 0; i--) {
@@ -39973,8 +40129,8 @@ var getPath = (request) => {
       const queryIndex = url.indexOf("?", i);
       const hashIndex = url.indexOf("#", i);
       const end = queryIndex === -1 ? hashIndex === -1 ? void 0 : hashIndex : hashIndex === -1 ? queryIndex : Math.min(queryIndex, hashIndex);
-      const path = url.slice(start, end);
-      return tryDecodeURI(path.includes("%25") ? path.replace(/%25/g, "%2525") : path);
+      const path2 = url.slice(start, end);
+      return tryDecodeURI(path2.includes("%25") ? path2.replace(/%25/g, "%2525") : path2);
     } else if (charCode === 63 || charCode === 35) {
       break;
     }
@@ -39991,11 +40147,11 @@ var mergePath = (base2, sub, ...rest) => {
   }
   return `${base2?.[0] === "/" ? "" : "/"}${base2}${sub === "/" ? "" : `${base2?.at(-1) === "/" ? "" : "/"}${sub?.[0] === "/" ? sub.slice(1) : sub}`}`;
 };
-var checkOptionalParameter = (path) => {
-  if (path.charCodeAt(path.length - 1) !== 63 || !path.includes(":")) {
+var checkOptionalParameter = (path2) => {
+  if (path2.charCodeAt(path2.length - 1) !== 63 || !path2.includes(":")) {
     return null;
   }
-  const segments = path.split("/");
+  const segments = path2.split("/");
   const results = [];
   let basePath = "";
   segments.forEach((segment) => {
@@ -40133,9 +40289,9 @@ var HonoRequest = class {
    */
   path;
   bodyCache = {};
-  constructor(request, path = "/", matchResult = [[]]) {
+  constructor(request, path2 = "/", matchResult = [[]]) {
     this.raw = request;
-    this.path = path;
+    this.path = path2;
     this.#matchResult = matchResult;
   }
   param(key) {
@@ -40906,8 +41062,8 @@ var Hono = class _Hono {
         return this;
       };
     });
-    this.on = (method, path, ...handlers) => {
-      for (const p of [path].flat()) {
+    this.on = (method, path2, ...handlers) => {
+      for (const p of [path2].flat()) {
         this.#path = p;
         for (const m of [method].flat()) {
           handlers.map((handler2) => {
@@ -40964,8 +41120,8 @@ var Hono = class _Hono {
    * app.route("/api", app2) // GET /api/user
    * ```
    */
-  route(path, app2) {
-    const subApp = this.basePath(path);
+  route(path2, app2) {
+    const subApp = this.basePath(path2);
     app2.routes.map((r) => {
       let handler2;
       if (app2.errorHandler === errorHandler) {
@@ -40991,9 +41147,9 @@ var Hono = class _Hono {
    * const api = new Hono().basePath('/api')
    * ```
    */
-  basePath(path) {
+  basePath(path2) {
     const subApp = this.#clone();
-    subApp._basePath = mergePath(this._basePath, path);
+    subApp._basePath = mergePath(this._basePath, path2);
     return subApp;
   }
   /**
@@ -41067,7 +41223,7 @@ var Hono = class _Hono {
    * })
    * ```
    */
-  mount(path, applicationHandler, options) {
+  mount(path2, applicationHandler, options) {
     let replaceRequest;
     let optionHandler;
     if (options) {
@@ -41094,7 +41250,7 @@ var Hono = class _Hono {
       return [c.env, executionContext];
     };
     replaceRequest ||= (() => {
-      const mergedPath = mergePath(this._basePath, path);
+      const mergedPath = mergePath(this._basePath, path2);
       const pathPrefixLength = mergedPath === "/" ? 0 : mergedPath.length;
       return (request) => {
         const url = new URL(request.url);
@@ -41109,19 +41265,19 @@ var Hono = class _Hono {
       }
       await next();
     };
-    this.#addRoute(METHOD_NAME_ALL, mergePath(path, "*"), handler2);
+    this.#addRoute(METHOD_NAME_ALL, mergePath(path2, "*"), handler2);
     return this;
   }
-  #addRoute(method, path, handler2, baseRoutePath) {
+  #addRoute(method, path2, handler2, baseRoutePath) {
     method = method.toUpperCase();
-    path = mergePath(this._basePath, path);
+    path2 = mergePath(this._basePath, path2);
     const r = {
       basePath: baseRoutePath !== void 0 ? mergePath(this._basePath, baseRoutePath) : this._basePath,
-      path,
+      path: path2,
       method,
       handler: handler2
     };
-    this.router.add(method, path, [handler2, r]);
+    this.router.add(method, path2, [handler2, r]);
     this.routes.push(r);
   }
   #handleError(err, c) {
@@ -41134,10 +41290,10 @@ var Hono = class _Hono {
     if (method === "HEAD") {
       return (async () => new Response(null, await this.#dispatch(request, executionCtx, env, "GET")))();
     }
-    const path = this.getPath(request, { env });
-    const matchResult = this.router.match(method, path);
+    const path2 = this.getPath(request, { env });
+    const matchResult = this.router.match(method, path2);
     const c = new Context(request, {
-      path,
+      path: path2,
       matchResult,
       env,
       executionCtx,
@@ -41237,15 +41393,15 @@ var Hono = class _Hono {
 
 // ../node_modules/hono/dist/router/reg-exp-router/matcher.js
 var emptyParam = [];
-function match(method, path) {
+function match(method, path2) {
   const matchers2 = this.buildAllMatchers();
-  const match2 = (method2, path2) => {
+  const match2 = (method2, path22) => {
     const matcher = matchers2[method2] || matchers2[METHOD_NAME_ALL];
-    const staticMatch = matcher[2][path2];
+    const staticMatch = matcher[2][path22];
     if (staticMatch) {
       return staticMatch;
     }
-    const match3 = path2.match(matcher[0]);
+    const match3 = path22.match(matcher[0]);
     if (!match3) {
       return [[], emptyParam];
     }
@@ -41253,7 +41409,7 @@ function match(method, path) {
     return [matcher[1][index2], match3];
   };
   this.match = match2;
-  return match2(method, path);
+  return match2(method, path2);
 }
 
 // ../node_modules/hono/dist/router/reg-exp-router/node.js
@@ -41370,14 +41526,14 @@ var Trie = class {
   #index = 0;
   // dynamic path -> [handler index, param assoc]; static paths are not registered
   paths = /* @__PURE__ */ Object.create(null);
-  insert(path, isStatic) {
+  insert(path2, isStatic) {
     if (isStatic) {
-      this.#root.insert(path.split(""), 0, [], this.#context, true);
+      this.#root.insert(path2.split(""), 0, [], this.#context, true);
       return;
     }
     const paramAssoc = [];
     const groups = [];
-    let markedPath = path;
+    let markedPath = path2;
     for (let i = 0; ; ) {
       let replaced = false;
       markedPath = markedPath.replace(/\{[^}]+\}/g, (m) => {
@@ -41402,7 +41558,7 @@ var Trie = class {
       }
     }
     this.#root.insert(tokens, this.#index, paramAssoc, this.#context, false);
-    this.paths[path] = [this.#index++, paramAssoc];
+    this.paths[path2] = [this.#index++, paramAssoc];
   }
   buildRegExp() {
     let regexp = this.#root.buildRegExpStr();
@@ -41429,9 +41585,9 @@ var Trie = class {
 
 // ../node_modules/hono/dist/router/reg-exp-router/router.js
 var wildcardRegExpCache = /* @__PURE__ */ Object.create(null);
-function buildWildcardRegExp(path) {
-  return wildcardRegExpCache[path] ??= new RegExp(
-    path === "*" ? "" : `^${path.replace(
+function buildWildcardRegExp(path2) {
+  return wildcardRegExpCache[path2] ??= new RegExp(
+    path2 === "*" ? "" : `^${path2.replace(
       /\/\*$|([.\\+*[^\]$()])/g,
       (_, metaChar) => metaChar ? `\\${metaChar}` : "(?:|/.*)"
     )}$`
@@ -41440,12 +41596,12 @@ function buildWildcardRegExp(path) {
 function clearWildcardRegExpCache() {
   wildcardRegExpCache = /* @__PURE__ */ Object.create(null);
 }
-function findMiddleware(middleware, path) {
+function findMiddleware(middleware, path2) {
   if (!middleware) {
     return void 0;
   }
   for (const k of Object.keys(middleware).sort((a, b2) => b2.length - a.length)) {
-    if (buildWildcardRegExp(k).test(path)) {
+    if (buildWildcardRegExp(k).test(path2)) {
       return [...middleware[k]];
     }
   }
@@ -41461,14 +41617,14 @@ var RegExpRouter = class {
     this.#routes = { [METHOD_NAME_ALL]: /* @__PURE__ */ Object.create(null) };
     this.#tries = { [METHOD_NAME_ALL]: new Trie() };
   }
-  #insertPath(method, path) {
+  #insertPath(method, path2) {
     try {
-      this.#tries[method].insert(path, !/\*|\/:/.test(path));
+      this.#tries[method].insert(path2, !/\*|\/:/.test(path2));
     } catch (e) {
-      throw e === PATH_ERROR ? new UnsupportedPathError(path) : e;
+      throw e === PATH_ERROR ? new UnsupportedPathError(path2) : e;
     }
   }
-  add(method, path, handler2) {
+  add(method, path2, handler2) {
     const middleware = this.#middleware;
     const routes = this.#routes;
     if (!middleware || !routes) {
@@ -41484,16 +41640,16 @@ var RegExpRouter = class {
         });
       });
     }
-    if (path === "/*") {
-      path = "*";
+    if (path2 === "/*") {
+      path2 = "*";
     }
-    const paramCount = (path.match(/\/:/g) || []).length;
-    if (/\*$/.test(path)) {
-      const re = buildWildcardRegExp(path);
+    const paramCount = (path2.match(/\/:/g) || []).length;
+    if (/\*$/.test(path2)) {
+      const re = buildWildcardRegExp(path2);
       Object.keys(middleware).forEach((m) => {
-        if ((method === METHOD_NAME_ALL || method === m) && !middleware[m][path]) {
-          this.#insertPath(m, path);
-          middleware[m][path] = findMiddleware(middleware[m], path) || findMiddleware(middleware[METHOD_NAME_ALL], path) || [];
+        if ((method === METHOD_NAME_ALL || method === m) && !middleware[m][path2]) {
+          this.#insertPath(m, path2);
+          middleware[m][path2] = findMiddleware(middleware[m], path2) || findMiddleware(middleware[METHOD_NAME_ALL], path2) || [];
         }
       });
       Object.keys(middleware).forEach((m) => {
@@ -41512,18 +41668,18 @@ var RegExpRouter = class {
       });
       return;
     }
-    const paths = checkOptionalParameter(path) || [path];
+    const paths = checkOptionalParameter(path2) || [path2];
     for (let i = 0, len = paths.length; i < len; i++) {
-      const path2 = paths[i];
+      const path22 = paths[i];
       Object.keys(routes).forEach((m) => {
         if (method === METHOD_NAME_ALL || method === m) {
-          if (!routes[m][path2]) {
-            this.#insertPath(m, path2);
-            routes[m][path2] = [
-              ...findMiddleware(middleware[m], path2) || findMiddleware(middleware[METHOD_NAME_ALL], path2) || []
+          if (!routes[m][path22]) {
+            this.#insertPath(m, path22);
+            routes[m][path22] = [
+              ...findMiddleware(middleware[m], path22) || findMiddleware(middleware[METHOD_NAME_ALL], path22) || []
             ];
           }
-          routes[m][path2].push([handler2, paramCount - len + i + 1]);
+          routes[m][path22].push([handler2, paramCount - len + i + 1]);
         }
       });
     }
@@ -41545,11 +41701,11 @@ var RegExpRouter = class {
     const staticMap = /* @__PURE__ */ Object.create(null);
     const handlerData = [];
     [middleware, routes].forEach((r) => {
-      for (const path in r) {
-        const handlers = r[path];
-        const pathData = trie.paths[path];
+      for (const path2 in r) {
+        const handlers = r[path2];
+        const pathData = trie.paths[path2];
         if (!pathData) {
-          staticMap[path] = [handlers.map(([h]) => [h, /* @__PURE__ */ Object.create(null)]), emptyParam];
+          staticMap[path2] = [handlers.map(([h]) => [h, /* @__PURE__ */ Object.create(null)]), emptyParam];
           continue;
         }
         const paramAssoc = pathData[1];
@@ -41593,13 +41749,13 @@ var SmartRouter = class {
   constructor(init2) {
     this.#routers = init2.routers;
   }
-  add(method, path, handler2) {
+  add(method, path2, handler2) {
     if (!this.#routes) {
       throw new Error(MESSAGE_MATCHER_IS_ALREADY_BUILT);
     }
-    this.#routes.push([method, path, handler2]);
+    this.#routes.push([method, path2, handler2]);
   }
-  match(method, path) {
+  match(method, path2) {
     if (!this.#routes) {
       throw new Error("Fatal error");
     }
@@ -41614,7 +41770,7 @@ var SmartRouter = class {
         for (let i2 = 0, len2 = routes.length; i2 < len2; i2++) {
           router.add(...routes[i2]);
         }
-        res = router.match(method, path);
+        res = router.match(method, path2);
       } catch (e) {
         if (e instanceof UnsupportedPathError) {
           continue;
@@ -41649,9 +41805,9 @@ var Node2 = class _Node2 {
   #patterns = [];
   #pattern;
   #params = emptyParams;
-  insert(method, path, handler2) {
+  insert(method, path2, handler2) {
     let curNode = this;
-    const parts = splitRoutingPath(path);
+    const parts = splitRoutingPath(path2);
     const possibleKeys = /* @__PURE__ */ new Set();
     let i = 0;
     for (const p of parts) {
@@ -41691,12 +41847,12 @@ var Node2 = class _Node2 {
       }
     }
   }
-  search(method, path) {
+  search(method, path2) {
     const handlerSets = [];
     this.#params = emptyParams;
     const curNode = this;
     let curNodes = [curNode];
-    const parts = splitPath(path);
+    const parts = splitPath(path2);
     const curNodesQueue = [];
     const len = parts.length;
     let partOffsets = null;
@@ -41738,13 +41894,13 @@ var Node2 = class _Node2 {
           if (matcher !== true) {
             if (!partOffsets) {
               partOffsets = [];
-              let offset = path[0] === "/" ? 1 : 0;
+              let offset = path2[0] === "/" ? 1 : 0;
               for (let p = 0; p < len; p++) {
                 partOffsets[p] = offset;
                 offset += parts[p].length + 1;
               }
             }
-            const restPathString = path.slice(partOffsets[i]);
+            const restPathString = path2.slice(partOffsets[i]);
             const m = matcher.exec(restPathString);
             if (m) {
               params[name] = m[0];
@@ -41804,13 +41960,13 @@ var Node2 = class _Node2 {
 var TrieRouter = class {
   name = "TrieRouter";
   #node = new Node2();
-  add(method, path, handler2) {
-    for (const result of checkOptionalParameter(path) || [path]) {
+  add(method, path2, handler2) {
+    for (const result of checkOptionalParameter(path2) || [path2]) {
       this.#node.insert(method, result, handler2);
     }
   }
-  match(method, path) {
-    return this.#node.search(method, path);
+  match(method, path2) {
+    return this.#node.search(method, path2);
   }
 };
 
@@ -55023,8 +55179,8 @@ function getErrorMap() {
 
 // ../node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
-  const { data: data4, path, errorMaps, issueData } = params;
-  const fullPath = [...path, ...issueData.path || []];
+  const { data: data4, path: path2, errorMaps, issueData } = params;
+  const fullPath = [...path2, ...issueData.path || []];
   const fullIssue = {
     ...issueData,
     path: fullPath
@@ -55140,11 +55296,11 @@ var errorUtil;
 
 // ../node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
-  constructor(parent, value, path, key) {
+  constructor(parent, value, path2, key) {
     this._cachedPath = [];
     this.parent = parent;
     this.data = value;
-    this._path = path;
+    this._path = path2;
     this._key = key;
   }
   get path() {
@@ -59365,24 +59521,24 @@ function computeRoutePatterns(routes) {
     ])
   );
   return Object.entries(normalizedRoutes).map(([pattern, routeConfig]) => {
-    const [verb, path] = pattern.includes(" ") ? pattern.split(/\s+/) : ["*", pattern];
-    if (!path) {
+    const [verb, path2] = pattern.includes(" ") ? pattern.split(/\s+/) : ["*", pattern];
+    if (!path2) {
       throw new Error(`Invalid route pattern: ${pattern}`);
     }
     return {
       verb: verb.toUpperCase(),
       pattern: new RegExp(
-        `^${path.replace(/[$()+.?^{|}]/g, "\\$&").replace(/\*/g, ".*?").replace(/\[([^\]]+)\]/g, "[^/]+").replace(/\//g, "\\/")}$`,
+        `^${path2.replace(/[$()+.?^{|}]/g, "\\$&").replace(/\*/g, ".*?").replace(/\[([^\]]+)\]/g, "[^/]+").replace(/\//g, "\\/")}$`,
         "i"
       ),
       config: routeConfig
     };
   });
 }
-function findMatchingRoute(routePatterns, path, method) {
+function findMatchingRoute(routePatterns, path2, method) {
   let normalizedPath;
   try {
-    const pathWithoutQuery = path.split(/[?#]/)[0];
+    const pathWithoutQuery = path2.split(/[?#]/)[0];
     const decodedPath = decodeURIComponent(pathWithoutQuery);
     normalizedPath = decodedPath.replace(/\\/g, "/").replace(/\/+/g, "/").replace(/(.+?)\/+$/, "$1");
   } catch {
@@ -60991,17 +61147,17 @@ async function isRegisteredOnchain(trader) {
 function normalizeRequestPath(req) {
   const url = req.url;
   const start = url.indexOf("/", url.indexOf("://") + 3);
-  let path = start === -1 ? "/" : url.slice(start);
-  path = path.split(/[?#]/)[0] ?? "/";
+  let path2 = start === -1 ? "/" : url.slice(start);
+  path2 = path2.split(/[?#]/)[0] ?? "/";
   try {
-    path = decodeURIComponent(path);
+    path2 = decodeURIComponent(path2);
   } catch {
     return INVALID_PATH;
   }
-  if (path.includes("%")) return INVALID_PATH;
-  path = path.replace(/\\/g, "/").replace(/\/{2,}/g, "/");
-  if (path.length > 1) path = path.replace(/\/+$/, "");
-  return path.replace(/^\/([^/]+)/, (_m, seg) => `/${seg.toLowerCase()}`) || "/";
+  if (path2.includes("%")) return INVALID_PATH;
+  path2 = path2.replace(/\\/g, "/").replace(/\/{2,}/g, "/");
+  if (path2.length > 1) path2 = path2.replace(/\/+$/, "");
+  return path2.replace(/^\/([^/]+)/, (_m, seg) => `/${seg.toLowerCase()}`) || "/";
 }
 var INVALID_PATH = "/__invalid_path__";
 var PAID_HANDLER_PATHS = [/^\/signals\/[^/]+$/, /^\/oracle\/[^/]+$/];

@@ -16,7 +16,7 @@ import { wrapFetchWithPayment } from "x402-fetch";
 import {
   openPositionForSession, getSession, makeProvider, makeContracts, assetIdOf,
   agentDid, appendAudit, type AuditRecord, type AuthorizationVC,
-  meteredFetch, resolveX402MaxValue, formatUsdcAtomic,
+  meteredFetch, resolveX402MaxValue, formatUsdcAtomic, guardViemAccount,
 } from "@pepelab/shared";
 import { decide, parseOracleBody } from "./x402-autonomous.ts";
 import { loadVc, localVerifyVc, fetchAgentVerification, AUDIT_PATH, type VcCheck } from "./vc-gate.ts";
@@ -180,7 +180,7 @@ async function main() {
   if (!PK || !/^0x[0-9a-fA-F]{64}$/.test(PK)) throw new Error("設 AGENT_PRIVATE_KEY=0x…（需持官方 USDC + ETH）");
   if (!process.env.SESSION_MANAGER_ADDRESS?.trim()) throw new Error("設 SESSION_MANAGER_ADDRESS");
 
-  const account = privateKeyToAccount(PK as Hex);
+  const account = guardViemAccount(privateKeyToAccount(PK as Hex)); // signingGuard
   const wallet = createWalletClient({ account, chain: baseSepolia, transport: http(RPC) }).extend(publicActions);
   const payFetch = wrapFetchWithPayment(
     METER.fetch,

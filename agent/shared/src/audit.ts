@@ -84,8 +84,14 @@ export function vcBinding(rec: Pick<AuditRecord, "issuerDid" | "agentDid" | "ses
   );
 }
 
+/** 任何可進 hash chain 的紀錄（交易決策、policy gate 寫入嘗試…）。 */
+export interface ChainedRecord {
+  prevHash?: string | null;
+  hash?: string;
+}
+
 /** 本筆紀錄的 hash（不含 `hash` 欄位本身，含 `prevHash`）。 */
-export function recordHash(rec: AuditRecord): string {
+export function recordHash(rec: ChainedRecord): string {
   const { hash: _ignored, ...rest } = rec;
   return ethers.id(canonicalJson(rest));
 }
@@ -95,6 +101,19 @@ export function lastAuditHash(filePath: string): string | null {
   const recs = readAudit(filePath);
   if (!recs.length) return null;
   return recs[recs.length - 1].hash ?? null;
+}
+
+/**
+ * 通用版 append：任何紀錄型別都用同一條 hash chain 規則（prevHash＝前一筆 hash，
+ * hash＝不含 hash 欄位的 canonical JSON 摘要），可用 `verifyAuditChain` 驗。
+ * policy gate 的寫入嘗試稽核（policyGate.ts）走這裡，寫到自己的檔案。
+ */
+export function appendChainedRecord<T extends ChainedRecord>(filePath: string, rec: T): T {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const chained: T = { ...rec, prevHash: lastAuditHash(filePath) };
+  chained.hash = recordHash(chained);
+  fs.appendFileSync(filePath, JSON.stringify(chained) + "\n", "utf8");
+  return chained;
 }
 
 /**
@@ -144,7 +163,7 @@ export interface ChainIssue {
  * 驗證整條 hash chain：每筆的 hash 必須等於重算值，且 prevHash 必須等於前一筆的
  * hash。回空陣列代表整條鏈完整（沒有事後竄改、刪除或重排）。
  */
-export function verifyAuditChain(records: AuditRecord[]): ChainIssue[] {
+export function verifyAuditChain(records: ChainedRecord[]): ChainIssue[] {
   const issues: ChainIssue[] = [];
   let prev: string | null = null;
   records.forEach((rec, i) => {

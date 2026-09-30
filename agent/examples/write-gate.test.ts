@@ -17,6 +17,15 @@ process.env.SESSION_MANAGER_ADDRESS = "0x" + "1".repeat(40);
 process.env.BASE_SEPOLIA_RPC_URL = "http://127.0.0.1:1";
 delete process.env.AGENT_ALLOW_UNSIGNED_TRADES;
 delete process.env.RISK_GATE_ENABLED;
+// policy gate 的狀態與稽核寫到暫存目錄，不污染 agent/.state 與 agent/audit。
+{
+  const { mkdtempSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "pepe-write-gate-"));
+  process.env.POLICY_STATE_PATH = join(dir, "state.json");
+  process.env.POLICY_AUDIT_PATH = join(dir, "audit.jsonl");
+}
 
 const {
   openPositionForSession,
