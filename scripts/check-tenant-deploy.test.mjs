@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { checkCrossTenant, checkTenantDeploy, envPlan, loadContext } from "./check-tenant-deploy.mjs";
+import { MUST_DIFFER, checkCrossTenant, checkTenantDeploy, envPlan, loadContext } from "./check-tenant-deploy.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -161,4 +161,68 @@ test("--print-env 只印位址類變數，不含任何秘密值", () => {
   assert.match(plan, /ADMIN_ADDRESS=0x/);
   assert.match(plan, /HANDOVER_DRY_RUN=true/);
   assert.doesNotMatch(plan, /PRIVATE_KEY=/);
+});
+
+// ── 審查修正（PR #197）─────────────────────────────────────────────────────
+
+test("admin／keeper／guardian／risk 的 6 組配對與 keeper–treasury 全部在檢查清單裡", () => {
+  const key = (a, b) => [a, b].sort().join("-");
+  const got = new Set(MUST_DIFFER.map(([a, b]) => key(a, b)));
+  const roles = ["admin", "keeper", "guardian", "risk"];
+  for (let i = 0; i < roles.length; i++) {
+    for (let j = i + 1; j < roles.length; j++) assert.ok(got.has(key(roles[i], roles[j])), key(roles[i], roles[j]));
+  }
+  assert.ok(got.has(key("keeper", "treasury")));
+  assert.equal(got.size, 7);
+});
+
+test("guardian 與 risk 不得是同一個地址", () => {
+  const c = filled();
+  c.roles.risk = c.roles.guardian;
+  assert.match(check(c), /roles\.guardian 與 roles\.risk 是同一個地址/);
+});
+
+test("$comment 可以引用 0x 開頭的 tx hash", () => {
+  const c = filled();
+  c.$comment = `Phase A 部署交易 0x${"ab".repeat(32)}，見 broadcast 紀錄。`;
+  assert.equal(check(c), "");
+});
+
+test("$comment 裡不帶 0x 的 64 位十六進位仍視為私鑰", () => {
+  const c = filled();
+  c.$comment = `備忘 ${"cd".repeat(32)}`;
+  assert.match(check(c), /\$comment 看起來是私鑰/);
+});
+
+test("助記詞在任何欄位（含 $comment）都擋", () => {
+  const words = "abandon ability able about above absent absorb abstract absurd abuse access accident";
+  const c = filled();
+  c.$comment = `keeper 備份：${words}`;
+  assert.match(check(c), /\$comment 看起來是助記詞/);
+  const d = filled();
+  d.keeper.note = `${words} account accuse achieve`;
+  assert.match(check(d), /keeper\.note 看起來是助記詞/);
+});
+
+test("一般英文說明不會被當成助記詞", () => {
+  const c = filled();
+  c.$comment = "Placeholder values only. Copy this file, fill in the role addresses, then run the checker.";
+  assert.equal(check(c), "");
+});
+
+test("frontendTenant 必須與 tenantId 相同", () => {
+  const c = filled();
+  c.frontendTenant = "default";
+  assert.match(check(c), /frontendTenant「default」必須與 tenantId「demo-bank」相同/);
+});
+
+test("chainId 只接受允許清單（84532、8453）", () => {
+  for (const chainId of [1, 11155111, 31337, "84532"]) {
+    const c = filled();
+    c.network.chainId = chainId;
+    assert.match(check(c), /network\.chainId 必須是 84532 \/ 8453 之一/, String(chainId));
+  }
+  const ok = filled();
+  ok.network.chainId = 8453;
+  assert.equal(check(ok), "");
 });

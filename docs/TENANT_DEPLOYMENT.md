@@ -34,12 +34,14 @@
 
 ## 2. 部署設定
 
-1. 複製 `deploy/tenants/_template.json` 成 `deploy/tenants/<id>.json`，填 `tenantId`、`frontendTenant`。
+1. 複製 `deploy/tenants/_template.json` 成 `deploy/tenants/<id>.json`，填 `tenantId` 與 `frontendTenant`（兩者必須相同，
+   也與檔名相同）。`network.chainId` 只接受 84532（Base Sepolia）或 8453（Base）。
 2. `secretsEnv` 只寫**環境變數名稱**（例如 `BANK_A_DEPLOYER_PRIVATE_KEY`），值放在部署者自己的 secret store
-   或 GitHub Actions secrets。私鑰、助記詞、RPC 網址寫進這個檔案會被檢查腳本擋下。
+   或 GitHub Actions secrets。私鑰（64 位十六進位）、助記詞（連續 12 個以上小寫英文單字）、RPC 網址寫進這個檔案
+   會被檢查腳本擋下；`$comment` 裡可以引用 `0x` 開頭的 tx hash，不帶 `0x` 的 64 位十六進位一樣擋。
 3. `roles` 先用 `<...>` 佔位值（`status: "template"`）。金鑰由持有人產生；地址確定後填入並把 `status`
    改成 `ready`。檢查腳本要求：
-   - admin／keeper／guardian／risk 兩兩不同，keeper 不兼 treasury，部署者與 keeper 不是同一把金鑰；
+   - admin／keeper／guardian／risk 兩兩不同（6 組配對），keeper 不兼 treasury，部署者與 keeper 不是同一把金鑰；
    - 任何專屬地址不得與現行正式站（`addresses.ts`）或其他租戶重複；
    - `ready` 以上不得留佔位值。
 4. `shared` 是允許與其他租戶共用的元件：結算幣與參考價格來源（ADR-008 的建議方案）。

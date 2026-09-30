@@ -27,8 +27,23 @@ const ADDR_EXACT = /^0x[0-9a-fA-F]{40}$/;
 const ZERO = "0x0000000000000000000000000000000000000000";
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const ENV_NAME = /^[A-Z][A-Z0-9_]*$/;
-/** 64 位十六進位（可帶 0x）＝私鑰的形狀。設定檔裡任何地方出現都視為外洩。 */
-const PRIVKEY_SHAPE = /(^|[^0-9a-fA-F])(0x)?[0-9a-fA-F]{64}([^0-9a-fA-F]|$)/;
+/**
+ * 64 位十六進位＝私鑰的形狀。
+ *   - 一般欄位：帶不帶 0x 都擋——設定檔的值裡不該出現任何 32-byte 十六進位。
+ *   - `$comment`：只擋**不帶 0x** 的。註解裡引用部署交易的 tx hash 是正常的，而 tx hash
+ *     一律以 0x 開頭；私鑰匯出時常見的是不帶 0x 的裸十六進位。這是刻意選的簡單規則，
+ *     代價是帶 0x 的私鑰貼在註解裡會漏擋——所以助記詞與一般欄位的檢查不放寬。
+ */
+const HEX64_ANY = /(^|[^0-9a-fA-F])(0x)?[0-9a-fA-F]{64}([^0-9a-fA-F]|$)/;
+const HEX64_BARE = /(^|[^0-9a-fA-Fx])[0-9a-fA-F]{64}([^0-9a-fA-F]|$)/;
+/**
+ * BIP-39 助記詞的形狀：連續 12 個以上、每個 3–8 個小寫字母、以單一空白分隔的英文單字
+ * （12/15/18/21/24 字的助記詞都落在這個範圍）。所有欄位含 `$comment` 都檢查。
+ * 一般英文句子會被大寫、標點或 a/to/of 這類短字打斷，很少連續湊滿 12 個。
+ */
+const MNEMONIC_SHAPE = /(^|[^a-z])([a-z]{3,8} ){11,}[a-z]{3,8}([^a-z]|$)/;
+/** 允許部署的鏈：Base Sepolia（現行測試網）與 Base 主網（ADR-008 的目標鏈）。 */
+export const ALLOWED_CHAIN_IDS = [84532, 8453];
 /** 鍵名看起來是秘密的欄位，只允許出現在 secretsEnv 底下（而且值只能是環境變數名稱）。 */
 const SECRET_KEY_NAME = /private|mnemonic|secret|seed|password|api_?key|auth_?token|access_?token/i;
 
@@ -45,13 +60,14 @@ export const DEPLOYED_KEYS = [
   "AgentSessionManager",
   "ESGRegistryV2",
 ];
-/** 這幾組角色必須是不同的地址（docs/DEPLOY_129_CUTOVER.md、docs/KEY_MANAGEMENT.md）。 */
+/**
+ * 這幾組角色必須是不同的地址（docs/DEPLOY_129_CUTOVER.md、docs/KEY_MANAGEMENT.md）：
+ * admin／keeper／guardian／risk 四個兩兩不同（6 組），加上 keeper 不兼 treasury。
+ * 由清單產生，不手寫配對——手寫曾漏掉 guardian–risk。
+ */
+const SEPARATED_ROLES = ["admin", "keeper", "guardian", "risk"];
 export const MUST_DIFFER = [
-  ["admin", "keeper"],
-  ["admin", "guardian"],
-  ["admin", "risk"],
-  ["keeper", "guardian"],
-  ["keeper", "risk"],
+  ...SEPARATED_ROLES.flatMap((a, i) => SEPARATED_ROLES.slice(i + 1).map((b) => [a, b])),
   ["keeper", "treasury"],
 ];
 
@@ -121,8 +137,12 @@ export function checkTenantDeploy({ file, cfg, ctx }) {
   // ── 秘密不得進設定檔 ──
   for (const [path, key, value] of walk(cfg)) {
     const where = path.join(".");
-    if (typeof value === "string" && PRIVKEY_SHAPE.test(value)) {
+    const isComment = path[0] === "$comment";
+    if (typeof value === "string" && (isComment ? HEX64_BARE : HEX64_ANY).test(value)) {
       bad(`${where} 看起來是私鑰（64 位十六進位）——私鑰只能放在 secret store，設定檔只寫環境變數名稱`);
+    }
+    if (typeof value === "string" && MNEMONIC_SHAPE.test(value)) {
+      bad(`${where} 看起來是助記詞（連續 12 個以上的小寫英文單字）——助記詞只能放在 secret store`);
     }
     if (path[0] !== "$comment" && typeof value === "string" && /^[a-z][a-z0-9+.-]*:\/\//i.test(value)) {
       bad(`${where} 是網址——RPC／API 網址常帶金鑰，一律放 secret store，設定檔只寫環境變數名稱`);
@@ -140,6 +160,9 @@ export function checkTenantDeploy({ file, cfg, ctx }) {
   } else {
     if (typeof cfg.tenantId !== "string" || !SLUG.test(cfg.tenantId)) bad("tenantId 必須是小寫英數與連字號");
     else if (cfg.tenantId !== fname) bad(`tenantId「${cfg.tenantId}」與檔名「${fname}」不一致`);
+    if (cfg.frontendTenant !== cfg.tenantId) {
+      bad(`frontendTenant「${cfg.frontendTenant}」必須與 tenantId「${cfg.tenantId}」相同——一個租戶的前端與部署設定用同一個 id`);
+    }
     if (cfg.tenantId === "default") bad("default 是現行正式站，不是用這份設定部署的新租戶");
   }
 
@@ -154,7 +177,9 @@ export function checkTenantDeploy({ file, cfg, ctx }) {
   }
 
   // ── network ──
-  if (!Number.isInteger(cfg.network?.chainId) || cfg.network.chainId <= 0) bad("network.chainId 必須是正整數");
+  if (!ALLOWED_CHAIN_IDS.includes(cfg.network?.chainId)) {
+    bad(`network.chainId 必須是 ${ALLOWED_CHAIN_IDS.join(" / ")} 之一，目前是 ${JSON.stringify(cfg.network?.chainId)}`);
+  }
 
   // ── secretsEnv：只收環境變數名稱 ──
   for (const k of SECRET_ENV_KEYS) {
