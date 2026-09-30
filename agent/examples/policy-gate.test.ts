@@ -236,7 +236,7 @@ ok("單筆保證金上限：>100 拒絕、=100 放行、負數/NaN → MARGIN_IN
   ok("開倉達頻率上限後仍可平倉");
 }
 
-// ─────────────── write.ts 一定經過 policy gate（不送鏈）───────────────
+// ─────────────── write.ts 一定經過 policy gate（VC 閘、風險閘之後；簽章、廣播之前）───────────────
 {
   const r = await openPositionForSession({
     sessionId: 7, symbol: "sBTC", isLong: true, marginUsdc: 5000, leverage: 2, allowUnsignedForTesting: true,
@@ -250,7 +250,8 @@ ok("單筆保證金上限：>100 拒絕、=100 放行、負數/NaN → MARGIN_IN
   assert.equal(r2.reasonCode, "LEVERAGE_EXCEEDED");
   const recs = readAudit(process.env.POLICY_AUDIT_PATH!) as any[];
   assert.ok(recs.some((x) => x.reasonCode === "LEVERAGE_EXCEEDED" && x.allowed === false));
-  ok("openPositionForSession 在任何 RPC 之前被 policy gate 擋下（guardStage=policy）");
+  // 實際順序：VC 閘（本例以 allowUnsignedForTesting 略過）→ 風險閘（預設關）→ policy gate → 簽章 → 廣播。
+  ok("openPositionForSession：VC 閘與風險閘之後、簽章與廣播之前被 policy gate 擋下（guardStage=policy，未送交易）");
 }
 
 // ─────────────── 簽章守門：calldata ───────────────
