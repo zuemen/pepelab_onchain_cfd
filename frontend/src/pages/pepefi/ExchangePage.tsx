@@ -510,7 +510,7 @@ export default function ExchangePage() {
 
       {/* Onboarding guide.
           #148 之後這一頁不論 SHOW_PERPETUALS 開關都沒有開倉面板(開倉在 /terminal),
-          所以只剩現貨這一條路線:領幣 → 到資產交易頁買 → 回投資組合看配置,
+          所以只剩現貨這一條路線:領幣 → 到資產頁買 → 回投資組合看配置,
           中間沒有「保證金帳戶」也沒有「開倉」。 */}
       <Alert
         severity="info"

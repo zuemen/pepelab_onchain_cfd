@@ -47,6 +47,8 @@ export function useSynthHoldings(): SynthHoldings {
   const [readFailures, setReadFailures] = useState(0)
 
   const isV2 = !!v2
+  // TODO(#132 殘項)：舊版金庫（V1）分支在 #129 關閉後可刪除，條件與 TokenizedAssetsPage
+  // 同一段註解相同（本機 Anvil 沒有 V2_STACK、V1 代幣只能在 V1 金庫贖回）。
 
   const tokens = isV2 ? v2!.tokens : getSynthTokens(wallet.chainId)
   const vault = isV2 ? v2!.vault : contracts?.assetVault

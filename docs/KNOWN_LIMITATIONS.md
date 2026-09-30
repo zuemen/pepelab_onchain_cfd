@@ -903,22 +903,32 @@ by RISK_ROLE — not just the first one.
 
 ## Frontend
 
-**Dead Minimal UI template code still reaches the production bundle.** The app is
-built on the Minimal UI template, and its demo dashboard was never removed:
-`routes/sections/dashboard.tsx` is imported by nothing (`routes/sections/index.tsx`
-mounts only `pepefiRoutes` and `authRoutes`), and `layouts/dashboard/layout.tsx`
-plus `layouts/components/account-drawer` / `account-popover` are reachable only
-through it.
+**~~Dead Minimal UI template code still reaches the production bundle.~~ 已修正（2026-09-30）。**
+原本的記載：範本的 demo dashboard（`routes/sections/dashboard.tsx`）沒有被掛載，但假使用者
+`Jaydon Frankie`、`demo@minimals.cc` 仍然出現在正式 bundle。複查時 `dashboard.tsx` 與
+`use-mocked-user.ts` 已在先前的清理中刪除，但 `dist/assets` 仍 grep 得到 `Jaydon Frankie` 與
+`minimals.cc`，實際來源是：
 
-Despite being unmounted, the template's placeholder identity is present in the
-built entry chunk — grepping `dist/assets/index-*.js` finds both
-`Jaydon Frankie` and `demo@minimals.cc`, which come from
-`auth/hooks/use-mocked-user.ts`. Rollup is not shaking the chain out. Nothing
-renders it today, but a hardcoded fake user shipping inside a financial product's
-bundle is the kind of thing a technical due-diligence reader will find, and the
-right fix is to delete the template dashboard rather than to keep pruning
-imports around it. Not attempted here because it is a large deletion that wants
-its own change and its own verification pass.
+- 語系 catalog 的 `common.notification.*`（範本通知鈴的示範文字，含 `@Jaydon Frankie`）——
+  只剩 `src/_mock/_others.ts` 引用，但 catalog 物件整份打包，所以字串照樣出貨；
+- `components/iconify/iconify.tsx` 的 console 警告帶 `https://docs.minimals.cc/icons/`；
+- `routes/paths.ts` 的 `minimalStore`（MUI 商店連結，無人使用）。
+
+注意：`layouts/dashboard/layout.tsx`（PR #197 改過品牌字串）**不是**範本專用——它是
+`routes/sections/pepefi.tsx` 的 `DashboardLayout`，也就是正式站所有 App 內頁的外殼，保留。
+
+處理方式：以 `src/main.tsx` 為起點做 import 可達性分析，刪除所有無法從 `pepefiRoutes`／`authRoutes`
+到達的範本檔案——`src/_mock/`（14 檔）、`assets/data`、`assets/icons`、`auth/components/form-{divider,
+resend-code,return-link,socials}`、`components/{custom-popover,file-thumbnail,flag-icon}`、
+`layouts/components/{language-popover,sign-in-button,workspaces-popover}`、`layouts/nav-config-workspace`、
+`sections/blank`、`theme/theme-overrides`、`utils/format-time`；移除上述三處字串；刪除 `public/assets`
+底下無任何引用的範本圖檔（`images/{mock,home,about,contact,faqs}`、`icons/{apps,components,courses,
+empty,faqs,files,glass,workspaces}`，約 6 MB）。仍無法到達、但屬於產品程式碼的
+`components/pepefi/{ErrorBoundary,WhaleAlertBanner,pepeSkinsData}`、`hooks/useWhaleAlerts` 未動。
+
+驗證：`yarn build` 後掃 `dist/` 所有文字檔，`Jaydon Frankie`、`demo@minimals.cc`、`minimals.cc`
+（以及不分大小寫的 `minimals`）皆 0 筆。entry chunk 989.87 kB（gzip 334.70 kB）→ 987.00 kB
+（gzip 333.41 kB）——假資料本來就沒被打包，出貨的只是那幾段字串，所以體積差異很小。
 
 **Entry chunk is 1,057 kB (328 kB gzipped).** Routes were already code-split;
 vendors were not, so everything landed in one file. `vite.config.ts` now splits
@@ -926,12 +936,40 @@ ethers / MUI / recharts / react into their own chunks, taking the entry from
 1,789 kB → 1,057 kB (570 → 328 kB gzip) and stopping a routine deploy from
 invalidating ~1.7 MB of otherwise-unchanged vendor cache.
 
+2026-09-30 現況：移除範本殘留後 987.00 kB（gzip 333.41 kB）；同日套用 dependabot 的 frontend
+minor/patch 升級（react 19.3、zod 4.6、es-toolkit 1.52、react-hook-form 7.89 等）後回到
+1,038.37 kB（gzip 351.28 kB）。增量來自上游套件本身，未做額外拆分。
+
 What remains is dominated by `components/iconify/icon-sets.ts` — 168 kB of source
 inlining 206 icons as raw SVG bodies (320 paths in the built chunk). That is a
 deliberate trade: icons ship with the bundle instead of being fetched from the
 Iconify CDN, which keeps the app working offline and avoids a third-party request
 on every page. Splitting it would mean lazy icon loading and a flash of missing
 glyphs. Left as is, but it is the next lever if the entry chunk needs to shrink.
+
+**「你已持有 N 天」只在這段持有始於最近約一天內時才顯示**（2026-09-30，#134 殘項）。
+詳情層的持有天數由 `hooks/useHeldSince.ts` 從代幣的鏈上 Transfer 事件倒推（`lib/pepefi/heldSince.ts`），
+掃描範圍沿用 `chainLogs.scanFromBlock`：Base Sepolia 公開節點的 getLogs 一次只收 1,000 塊，
+上限 60 段 ≈ 26.7 小時。持有早於這個範圍、任何一段讀取失敗、或倒推對不上時一律**不顯示**，
+不以掃描下緣充當起點（那會是一個猜出來的數字）。要對長期持有者也顯示，需要索引器
+（signal-api 或區塊瀏覽器 API）提供完整的 Transfer 歷史。
+
+**RPC 成本與因應**（PR #202 審查 M1）：一次查詢在最壞情況（長期持有者，起點早於掃描範圍）
+要把整個範圍掃完——60 段 × 2 個 filter（轉入、轉出）≈ 110–120 次序列 getLogs，外加
+balanceOf 與 getBlockNumber，全部走使用者錢包擴充的 RPC。因此：(1) 詳情層**預設不查**，
+只顯示「查詢持有天數」按鈕，使用者按了才掃；(2) 結果放進 module-level 快取
+（`lib/pepefi/heldSinceQuery.ts`，鍵為 `chainId:token:user:balance`），**負結果也快取**，
+同一個餘額不重掃；讀取失敗與中止不寫快取，使用者可以之後再查；(3) 快取只活在這個分頁，
+重新整理頁面後會再查一次。剛買進的人通常第一步（5 段 × 2 個 filter）就找到，約 12 次請求。
+
+**`@swc/core` 鎖在 1.13.5，`@vitejs/plugin-react-swc` 停在 4.1.x**（2026-09-30，PR #202 審查 Low-2）。
+dependabot #187 想把 plugin-react-swc 升到 4.3.3，它要求 `@swc/core` ≥1.15；實際解析到的 1.16.13
+在載入原生 binding 前會驗證 `%LOCALAPPDATA%/swc` 的 ACL，這台 Windows 開發機上因為另一個 SID
+對該目錄有替換權限而拒絕載入（`Failed to load native binding`），`vite build` 與 `yarn dev` 直接中止；
+指定 `SWC_NATIVE_BINDING_CACHE` 到專案內目錄也失敗（swc-project/swc#12442）。因此
+`frontend/package.json` 的 `resolutions` 把 `@swc/core` 鎖在已驗證可載入的 1.13.5。CI（Linux）與
+Vercel 不受這個問題影響，但鎖版是為了讓 Windows 開發機的 build 與 dev 不壞。上游修正或改走
+`@vitejs/plugin-react`（Babel）之前不要解除；解除時先在 Windows 上跑一次 `yarn build`。
 
 **The product code is not linted.** `eslint.config.mjs` ignores
 `src/pages/pepefi/**`, `src/components/pepefi/**`, `src/hooks/**` and

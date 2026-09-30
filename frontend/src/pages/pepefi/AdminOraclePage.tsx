@@ -3,6 +3,11 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useContracts } from 'src/hooks/useContracts'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { useFundingData } from 'src/hooks/useFundingData'
+import {
+  UNKNOWN_INTERVAL,
+  fundingIntervalOf,
+  formatFundingInterval,
+} from 'src/lib/pepefi/fundingInterval'
 import { Contract } from 'ethers'
 import { ASSET_IDS, BASE_SEPOLIA_ORACLE_SHOWCASE } from 'src/contracts/addresses'
 import MockOracleABI from 'src/contracts/abi/MockOracle.json'
@@ -74,7 +79,8 @@ const fImbalance = (long: bigint, short: bigint): string => {
 }
 // 倒數顯示的解析度刻意配合下面的重繪頻率（COUNTDOWN_TICK_MS）。顯示到「秒」
 // 卻只有 5 秒重繪一次，看起來會像卡住；所以超過一分鐘就只顯示分鐘。
-const fCountdown = (lastSettled: bigint, interval: bigint): string => {
+const fCountdown = (lastSettled: bigint, interval: bigint | null): string => {
+  if (interval === null) return UNKNOWN_INTERVAL
   const nextAt = Number(lastSettled + interval)
   const now    = Math.floor(Date.now() / 1000)
   const secs   = nextAt - now
@@ -332,9 +338,12 @@ export default function AdminOraclePage() {
               </Typography>
               <Typography variant="body2" color="text.secondary">
                 {interpolate(t.admin.oracle.funding.description, {
-                  interval: Object.values(fundingData)[0]
-                    ? `${Number(Object.values(fundingData)[0].interval) / 60}m`
-                    : '5m',
+                  // #196：週期一律由鏈上 FUNDING_INTERVAL() 格式化，讀不到顯示「—」，
+                  // 不再回退成寫死的 5m。
+                  interval: formatFundingInterval(
+                    fundingIntervalOf(fundingData),
+                    t.terminal.funding.intervalUnit
+                  ),
                 })}
               </Typography>
             </Box>

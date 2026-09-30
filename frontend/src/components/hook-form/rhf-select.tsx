@@ -64,7 +64,9 @@ export function RHFSelect({
           fullWidth
           error={!!error}
           helperText={error?.message ?? helperText}
-          slotProps={merge(baseSlotProps, slotProps)}
+          // es-toolkit 1.52 的 merge 是型別變更（回傳深層合併型別，與 MUI slotProps 的聯集對不上），
+          // 這裡標回宣告的型別。執行期唯一差異是陣列／物件互混時的合併方式，本處兩邊都是純物件，不會發生。
+          slotProps={merge(baseSlotProps, slotProps) as TextFieldProps['slotProps']}
           {...other}
         >
           {children}

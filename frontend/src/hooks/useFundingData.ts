@@ -23,7 +23,8 @@ export interface FundingInfo {
   shortOI:         bigint   // 18-dec notional
   lastSettled:     bigint   // unix timestamp (0 = never)
   canSettle:       boolean
-  interval:        bigint   // FUNDING_INTERVAL in seconds
+  /** FUNDING_INTERVAL（秒）；讀不到是 null——畫面顯示「—」，也不判定可結算。 */
+  interval:        bigint | null
 }
 
 export type FundingData = Record<string, FundingInfo>
@@ -35,7 +36,12 @@ export function useFundingData(exchange: Contract | null): FundingData {
     if (!exchange) return
     try {
       const now      = BigInt(Math.floor(Date.now() / 1000))
-      const interval = (await exchange.FUNDING_INTERVAL()) as bigint
+      // 週期讀不到不該讓未平倉量一起消失（同下面 allSettled 的理由）：記成 null，
+      // 標籤顯示「—」（#196），canSettle 一律 false。
+      const interval = await (exchange.FUNDING_INTERVAL() as Promise<bigint>).catch((e: unknown) => {
+        console.warn('[useFundingData] FUNDING_INTERVAL 讀取失敗', e)
+        return null
+      })
 
       // 逐個標的限流，而不是 11 個標的 × 4 個呼叫一次全部送出（= 44 個併發，
       // 落在公開 RPC 會開始丟包的區間）。每個標的內部的呼叫仍然併發，所以實際
@@ -67,7 +73,7 @@ export function useFundingData(exchange: Contract | null): FundingData {
             longOI:      longOI.value,
             shortOI:     shortOI.value,
             lastSettled: settled,
-            canSettle:   settled > 0n && now >= settled + interval,
+            canSettle:   interval !== null && settled > 0n && now >= settled + interval,
             interval,
           }]
         },

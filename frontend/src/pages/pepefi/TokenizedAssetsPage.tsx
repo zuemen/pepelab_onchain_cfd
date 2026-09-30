@@ -4,6 +4,7 @@ import { Contract, parseEther, type ContractTransactionResponse } from 'ethers'
 import { useContracts } from 'src/hooks/useContracts'
 import { useV2Contracts } from 'src/hooks/useV2Contracts'
 import { useCarbonTiers } from 'src/hooks/useCarbonTiers'
+import { useHeldSince } from 'src/hooks/useHeldSince'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { safeRead } from 'src/lib/pepefi/safeRead'
@@ -86,7 +87,7 @@ const asTx = (t: unknown) => t as ContractTransactionResponse
 // #136：哪些欄是數字/雜湊，該用等寬字體——查表而不是一長串 ===，跟
 // assetRows.ts 自己的 TIER_RANK 同一種寫法。加一欄數字欄只改這裡一處。
 const MONO_COLUMNS = new Set<AssetRowColumnKey>([
-  'tradingFee', 'price', 'balance', 'issuedOverCap', 'assetId',
+  'tradingFee', 'price', 'balance', 'issuedOverCap', 'attestationCount', 'assetId',
 ])
 
 interface Row {
@@ -137,6 +138,11 @@ export default function TokenizedAssetsPage() {
   // 做完了（沒有就回傳 null），這裡不再需要 localStorage、不再需要使用者
   // 自己挑，也就沒有「按錯鍵、餘額看起來歸零」這種陷阱。
   const isV2 = !!v2
+  // TODO(#132 殘項)：舊版金庫（V1）分支在 #129 關閉後可刪除——連同下面每一個
+  // `isV2 ? … : …` 的 V1 那一側、SyntheticAssetABI、getSynthTokens 的讀取路徑。
+  // 2026-09-30 確認：#129 仍是 OPEN；Base Sepolia 的 V2_STACK 已填位址，但本機 Anvil
+  // （31337）沒有 V2_STACK，只能走這條分支；而且 V1 代幣只能在 V1 金庫贖回。刪除前
+  // 要先確定這兩件事都已經另有安排，否則是把本機開發與 V1 持有人一起切掉。
 
   // One set of "active" handles so the logic below never branches on version.
   const activeTokens    = isV2 ? v2!.tokens : getSynthTokens(wallet.chainId)
@@ -435,6 +441,9 @@ export default function TokenizedAssetsPage() {
     balance: rows[sym]?.balance ?? 0n,
     cap: rows[sym]?.cap ?? 0n,
     issued: rows[sym]?.issued ?? 0n,
+    // #136：與詳情層見證區塊同一份資料（carbonTiers 為整張表讀一次）。讀失敗的那一筆
+    // 在 data 裡是缺的 → null → 「—」，不補 0。
+    attestationCount: carbonTiers.data[ASSET_IDS[sym]]?.count ?? null,
   }))
   // isV2 由 useV2Contracts 的 useMemo 同步跟著 chainId 變，但 health 是
   // refresh() 的非同步 effect 才會重設——兩者之間有一段 health 還沒被
@@ -572,6 +581,8 @@ export default function TokenizedAssetsPage() {
         )
       case 'priceUpdatedAt':
         return assetRow.freshness.label
+      case 'attestationCount':
+        return assetRow.attestationCount === null ? '—' : String(assetRow.attestationCount)
       case 'assetId': {
         const id = ASSET_IDS[sym]
         return <span title={id}>{shortAddr(id, 8, 6)}</span>
@@ -628,6 +639,16 @@ export default function TokenizedAssetsPage() {
   // 其餘條件渲染的既有寫法，比照 protectionsList 這個變數）。
   const selectedRow = selected ? displayRows.find((r) => r.symbol === selected.sym) : undefined
   const selectedMeta = selected ? ASSET_META[ASSET_IDS[selected.sym]] : undefined
+  // #134 殘項：「你已持有 N 天」——從這檔代幣的鏈上 Transfer 倒推現在這段持有的起點。
+  // PR #202 M1：預設不掃鏈（長期持有者一次要 100 多次 getLogs），詳情層顯示按鈕，
+  // 使用者按了才查；結果有 module-level 快取。找不到就不顯示天數。
+  const held = useHeldSince({
+    provider: wallet.provider,
+    token: selected ? activeTokens[selected.sym] : null,
+    user: wallet.address,
+    chainId: wallet.chainId,
+    balance: selectedRow?.balance,
+  })
   const detailPanel = selected && selectedRow && selectedMeta ? (
     <AssetDetailPanel
       sym={selected.sym}
@@ -647,6 +668,12 @@ export default function TokenizedAssetsPage() {
       attestedLoading={!carbonTiers.loaded}
       attestedUnavailable={carbonTiers.unavailable}
       mintFeeBps={mintFeeBps}
+      heldSinceSec={held.state.status === 'found' ? held.state.heldSinceSec : undefined}
+      heldSinceQuery={
+        held.query && held.state.status !== 'found'
+          ? { status: held.state.status, onQuery: held.query }
+          : undefined
+      }
       onClose={closePanel}
     />
   ) : null

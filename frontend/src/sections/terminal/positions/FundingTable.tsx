@@ -5,6 +5,7 @@ import Box from '@mui/material/Box'
 import { t, interpolate } from 'src/locales'
 import { ASSET_META } from 'src/lib/pepefi/assetMeta'
 import { fBps, fNum, fromUnits } from 'src/lib/pepefi/format'
+import { formatFundingInterval } from 'src/lib/pepefi/fundingInterval'
 
 import { C, monoCss, labelCss } from '../terminal-theme'
 
@@ -18,7 +19,14 @@ const ago = (unix: bigint) => {
   return interpolate(t.terminal.funding.agoHours, { n: Math.floor(secs / 3600) })
 }
 
-export function FundingTable({ funding }: { funding: FundingData }) {
+export function FundingTable({
+  funding,
+  fundingInterval,
+}: {
+  funding: FundingData
+  /** 鏈上 FUNDING_INTERVAL()（秒），讀不到是 null → 欄名顯示「—」（#196）。 */
+  fundingInterval: bigint | null
+}) {
   const rows = Object.entries(funding)
 
   if (!rows.length) {
@@ -44,7 +52,9 @@ export function FundingTable({ funding }: { funding: FundingData }) {
         >
           {[
             t.terminal.funding.column.asset,
-            t.terminal.funding.column.rate,
+            interpolate(t.terminal.funding.column.rate, {
+              interval: formatFundingInterval(fundingInterval, t.terminal.funding.intervalUnit),
+            }),
             t.terminal.funding.column.longOi,
             t.terminal.funding.column.shortOi,
             t.terminal.funding.column.lastSettled,

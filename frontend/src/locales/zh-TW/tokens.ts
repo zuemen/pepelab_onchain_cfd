@@ -100,6 +100,7 @@ export const tokens = {
       // #136：Expert 專屬欄位。
       issuedOverCap: '發行量 / 上限',
       priceUpdatedAt: '預言機更新時間',
+      attestationCount: '見證筆數',
       assetId: '資產 ID',
     },
     sort: {
@@ -182,6 +183,12 @@ export const tokens = {
 
     heldDaysLabel: '你已持有',
     heldDaysValue: '{n} 天',
+    /** PR #202 M1：持有天數要使用者按了才查（查詢要掃鏈上紀錄）。 */
+    heldDaysQuery: '查詢持有天數',
+    heldDaysLoading: '正在讀取鏈上紀錄…',
+    heldDaysUnknown: '最近的鏈上紀錄裡找不到這段持有的起點，因此不顯示天數。',
+    heldDaysError: '這次沒能讀完鏈上紀錄（節點暫時無回應），不代表沒有持有紀錄。',
+    heldDaysRetry: '再查一次',
     sinceLabel: '自 {date} 起見證',
 
     /** 逐檔一句話的標的說明、碳資料出處名稱、已知限制。數字與網址在 assetMeta.ts。 */

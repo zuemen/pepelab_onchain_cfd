@@ -22,6 +22,7 @@ import { ASSET_IDS } from 'src/contracts/addresses'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { ASSET_META } from 'src/lib/pepefi/assetMeta'
 import { stalenessNotice } from 'src/lib/pepefi/priceFreshness'
+import { fundingIntervalOf } from 'src/lib/pepefi/fundingInterval'
 import { staticTradingParams } from 'src/lib/pepefi/tradingParams'
 import { type Interval, DEFAULT_INTERVAL } from 'src/lib/pepefi/candles'
 
@@ -119,6 +120,7 @@ export function TerminalView() {
   const equity = account.freeMgn + totalPnl
   const fi = funding[selAsset]
   const rate = fi ? Number(fi.rate) : 0
+  const fundingInterval = fundingIntervalOf(funding)
 
   // 漲跌幅改由 K 線算：first.open → last.close。舊版是拿「本次載入以來累積的
   // tick」算的，一進頁面永遠是 0.00%，重整就歸零，沒有參考價值。
@@ -230,6 +232,7 @@ export function TerminalView() {
             curPrice={account.curPrice}
             freeMgn={account.freeMgn}
             rate={rate}
+            fundingInterval={fundingInterval}
             kycBlocked={kycBlocked}
             kycUnknown={kycUnknown}
             kycPending={kycPending}
@@ -258,6 +261,7 @@ export function TerminalView() {
         address={wallet.address ?? null}
         positions={livePositions}
         funding={funding}
+        fundingInterval={fundingInterval}
         staleNoticeFor={staleNoticeFor}
         notify={notify}
         onRefresh={account.refresh}

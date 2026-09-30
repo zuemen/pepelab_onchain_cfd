@@ -40,3 +40,28 @@ describe('the /exchange page vocabulary', () => {
     expect(offenders(leaky)).not.toEqual([]);
   });
 });
+
+/**
+ * #131：側邊欄的入口已經改名「資產」／"Assets"（nav.item.tokens）。其他頁面引導使用者去那一頁時
+ * 必須用同一個名字——說「到『資產交易』頁」會讓人在側邊欄找一個不存在的項目。
+ */
+describe('pointers to the /tokens page use the sidebar name (#131)', () => {
+  const OLD_NAMES = ['資產交易', 'trade assets'];
+  const stale = (catalog: typeof zhTW) =>
+    strings(catalog, 'catalog').flatMap(({ at, text }) =>
+      OLD_NAMES.filter((name) => text.toLowerCase().includes(name)).map((name) => `${at}: "${name}"`)
+    );
+
+  it('no catalog string mentions the old page name', () => {
+    expect(stale(zhTW)).toEqual([]);
+    expect(stale(en)).toEqual([]);
+  });
+
+  it('the sidebar entry is still the name the pointers use', () => {
+    expect(zhTW.nav.item.tokens).toContain('資產');
+    expect(zhTW.nav.item.tokens).not.toContain('交易');
+    expect(en.nav.item.tokens).toContain('Assets');
+    expect(zhTW.exchange.tx.faucetStable).toContain('「資產」頁');
+    expect(en.exchange.tx.faucetStable).toContain('the Assets page');
+  });
+});

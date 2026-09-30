@@ -18,6 +18,10 @@ import ESGRegistryV2ABI from 'src/contracts/abi/ESGRegistryV2.json'
  *   previewMint / previewRedeem both return a TUPLE (amount, feePaid) here,
  *   while V1 returns a single uint256. Destructuring V1's return, or failing to
  *   destructure V2's, silently yields the wrong number rather than throwing.
+ *
+ * 回傳 null 時呼叫端走舊版金庫（V1）分支（TokenizedAssetsPage、useSynthHoldings
+ * 等）。那些分支在 #129 關閉後可刪除——刪除前的兩個前提（本機 Anvil 的 V2_STACK、
+ * V1 代幣持有人的贖回路徑）寫在 TokenizedAssetsPage 的 TODO(#132 殘項)。
  */
 export function useV2Contracts(
   provider: BrowserProvider | null,
