@@ -1,0 +1,15 @@
+name = "pepelab-keeper-trigger"
+main = "worker.mjs"
+compatibility_date = "2026-09-01"
+workers_dev = false
+
+[triggers]
+crons = ["*/20 * * * *"]
+
+[vars]
+GITHUB_REPO = "zuemen/pepelab_onchain_cfd"
+WORKFLOW_FILE = "base-sepolia-keeper.yml"
+WORKFLOW_REF = "master"
+MIN_GAP_SEC = "900"
+
+# GITHUB_TOKEN 用 `npx wrangler secret put GITHUB_TOKEN` 設定，不要寫在這裡。

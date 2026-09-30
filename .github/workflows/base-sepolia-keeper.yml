@@ -24,6 +24,8 @@ on:
   schedule:
     # 名目 15 分鐘。GitHub 排程是 best-effort，實測真實間隔為 68–169 分鐘，
     # 所以下游的 maxPriceAge 必須以「約 2 小時」而不是 15 分鐘來設定。
+    # 2026-09-30 曾 4.5 小時沒跑（sBTC 因此過期）→ 另有 Cloudflare Worker 每 20 分鐘
+    # 用 workflow_dispatch 補觸發，見 ops/keeper-trigger/README.md。
     - cron: '*/15 * * * *'
   workflow_dispatch:
 
