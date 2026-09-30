@@ -384,11 +384,14 @@ export function reserveX402(
       settled = true;
       x402Ledger.signedTotal -= value;
       x402Ledger.activeAuthorizations -= 1;
-      // 只有「本筆釘的、而且目前沒有任何其他已簽／簽署中的授權」才撤銷；
-      // 否則保留（寧可多擋一個收款地址，也不讓兩個收款地址都拿到授權）。
-      if (x402Ledger.pinOwner === token) {
+      // activeAuthorizations 計的是「已簽出＋簽署中」（commit 不遞減）。歸零代表沒有任何
+      // 授權付給過釘選的地址，撤銷釘選一定安全——不論是哪一筆釘的。只看「本筆是否為
+      // 釘選者」會漏掉：釘選者先失敗（還有另一筆在簽）、後來那筆也失敗 → 釘選殘留，
+      // 惡意 402 的收款地址配上兩次暫時性簽章失敗就能把合法收款人鎖到重啟（#204 審查 M1）。
+      if (x402Ledger.pinOwner === token) x402Ledger.pinOwner = null;
+      if (x402Ledger.activeAuthorizations === 0) {
+        x402Ledger.pinnedPayTo = null;
         x402Ledger.pinOwner = null;
-        if (x402Ledger.activeAuthorizations === 0) x402Ledger.pinnedPayTo = null;
       }
     },
   };

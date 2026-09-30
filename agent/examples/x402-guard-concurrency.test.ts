@@ -45,7 +45,7 @@ const viemTd = (from: string, to: string, value?: bigint) => ({
 });
 
 /** 簽章可控的假 viem 帳戶：簽章前等一個 tick（讓並行交錯），可指定失敗。 */
-function fakeAccount(opts: { fail?: (td: any) => boolean } = {}) {
+function fakeAccount(opts: { fail?: (td: any) => boolean; before?: (td: any) => Promise<void> } = {}) {
   const real = privateKeyToAccount(generatePrivateKey());
   let calls = 0;
   const acc = {
@@ -53,6 +53,7 @@ function fakeAccount(opts: { fail?: (td: any) => boolean } = {}) {
     async signTypedData(td: any) {
       calls++;
       await new Promise((r) => setTimeout(r, 10));
+      await opts.before?.(td); // 在守門「預留之後」才等待，模擬簽署中的授權
       if (opts.fail?.(td)) throw new Error("HSM offline");
       return real.signTypedData(td);
     },
@@ -132,7 +133,26 @@ function fakeAccount(opts: { fail?: (td: any) => boolean } = {}) {
   assert.deepEqual(x402PayToAllowlist(), [A], "還有其他授權 → 不撤銷");
   await assert.rejects(mixed.acc.signTypedData(viemTd(mixed.address, B, 5_000n) as any), isGuard("PAYTO_NOT_ALLOWLISTED"));
   assert.equal(x402SignedTotal(), 5_000n, "失敗那筆已回滾金額");
-  ok("TOFU 撤銷：只有釘選那筆失敗且沒有其他授權時才撤銷；否則保留");
+
+  // #204 審查 M1：釘選者先失敗、同收款人的第二筆（仍在簽）後來也失敗 → 沒有任何授權 → 撤銷
+  resetX402GuardStateForTesting();
+  let release2: () => void = () => {};
+  const gate2 = new Promise<void>((r) => (release2 = r));
+  // 第二筆在守門內（已預留、計入 activeAuthorizations）等待，晚於第一筆失敗。
+  const both = fakeAccount({ fail: () => true, before: (td) => (td.message.value === 5_000n ? gate2 : Promise.resolve()) });
+  const q1 = quiet(() => both.acc.signTypedData(viemTd(both.address, A, 10_000n) as any));
+  const q2 = quiet(() => both.acc.signTypedData(viemTd(both.address, A, 5_000n) as any));
+  const s1 = await Promise.allSettled([q1]);
+  assert.equal(s1[0]!.status, "rejected");
+  release2();
+  const s2 = await Promise.allSettled([q2]);
+  assert.equal(s2[0]!.status, "rejected");
+  assert.equal(x402PayToAllowlist(), null, "兩筆都失敗、沒有任何授權 → 撤銷，不留殘留釘選");
+  assert.equal(x402SignedTotal(), 0n);
+  const fresh = fakeAccount();
+  await quiet(() => fresh.acc.signTypedData(viemTd(fresh.address, B) as any));
+  assert.deepEqual(x402PayToAllowlist(), [B], "合法收款人不會被殘留的釘選鎖住");
+  ok("TOFU 撤銷：只有釘選那筆失敗且沒有其他授權時才撤銷；否則保留；全部失敗一定撤銷");
 }
 
 // 5) meteredFetch：付款後 502／斷線／無法解析都計入「已送出」與 unsettled

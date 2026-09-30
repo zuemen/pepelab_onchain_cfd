@@ -38881,9 +38881,10 @@ function reserveX402(domain, types, message, signer, primaryType) {
       settled = true;
       x402Ledger.signedTotal -= value;
       x402Ledger.activeAuthorizations -= 1;
-      if (x402Ledger.pinOwner === token) {
+      if (x402Ledger.pinOwner === token) x402Ledger.pinOwner = null;
+      if (x402Ledger.activeAuthorizations === 0) {
+        x402Ledger.pinnedPayTo = null;
         x402Ledger.pinOwner = null;
-        if (x402Ledger.activeAuthorizations === 0) x402Ledger.pinnedPayTo = null;
       }
     }
   };
