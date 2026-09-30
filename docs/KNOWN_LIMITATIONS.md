@@ -962,6 +962,15 @@ balanceOf 與 getBlockNumber，全部走使用者錢包擴充的 RPC。因此：
 同一個餘額不重掃；讀取失敗與中止不寫快取，使用者可以之後再查；(3) 快取只活在這個分頁，
 重新整理頁面後會再查一次。剛買進的人通常第一步（5 段 × 2 個 filter）就找到，約 12 次請求。
 
+**`@swc/core` 鎖在 1.13.5，`@vitejs/plugin-react-swc` 停在 4.1.x**（2026-09-30，PR #202 審查 Low-2）。
+dependabot #187 想把 plugin-react-swc 升到 4.3.3，它要求 `@swc/core` ≥1.15；實際解析到的 1.16.13
+在載入原生 binding 前會驗證 `%LOCALAPPDATA%/swc` 的 ACL，這台 Windows 開發機上因為另一個 SID
+對該目錄有替換權限而拒絕載入（`Failed to load native binding`），`vite build` 與 `yarn dev` 直接中止；
+指定 `SWC_NATIVE_BINDING_CACHE` 到專案內目錄也失敗（swc-project/swc#12442）。因此
+`frontend/package.json` 的 `resolutions` 把 `@swc/core` 鎖在已驗證可載入的 1.13.5。CI（Linux）與
+Vercel 不受這個問題影響，但鎖版是為了讓 Windows 開發機的 build 與 dev 不壞。上游修正或改走
+`@vitejs/plugin-react`（Babel）之前不要解除；解除時先在 Windows 上跑一次 `yarn build`。
+
 **The product code is not linted.** `eslint.config.mjs` ignores
 `src/pages/pepefi/**`, `src/components/pepefi/**`, `src/hooks/**` and
 `src/lib/pepefi/**` — deliberate per the comment there (ported code, original

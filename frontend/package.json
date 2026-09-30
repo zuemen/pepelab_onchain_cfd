@@ -90,9 +90,10 @@
     "vitest": "^2"
   },
   "resolutions": {
-    "//": "Security pins for transitive dependencies (2026-08-06 audit, O-7). yarn-only: npm ignores this field, which is one more reason package-lock.json is not kept here.",
+    "//": "Security pins for transitive dependencies (2026-08-06 audit, O-7). yarn-only: npm ignores this field, which is one more reason package-lock.json is not kept here. @swc/core is pinned to 1.13.5 (2026-09-30): the 1.16 native binding validates the ACL of %LOCALAPPDATA%/swc and fails to load on some Windows dev machines, aborting vite build/dev (swc-project/swc#12442). See docs/KNOWN_LIMITATIONS.md.",
     "rollup": "^4.62.4",
     "yaml": "^2.9.0",
-    "cosmiconfig": "^8.3.6"
+    "cosmiconfig": "^8.3.6",
+    "@swc/core": "1.13.5"
   }
 }
