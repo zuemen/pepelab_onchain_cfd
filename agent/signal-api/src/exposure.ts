@@ -6,9 +6,10 @@
 // 資產的 lastFundingUpdateAt 與距今秒數。
 //
 // 設計：
-//   - **同一個區塊讀全部**：先取 blockNumber，所有 eth_call 帶同一個 blockTag，報表內
-//     各欄位彼此一致（不會 OI 是 N 區塊、保險金庫是 N+1 區塊）。「距今」一律以該區塊
-//     的 timestamp 為基準，回應附 asOfBlock 與 asOfBlockTime。
+//   - **同一個區塊讀全部**：取 latest − 3 當 blockTag（公共節點在負載平衡後面，最新區塊
+//     不一定每台都有），所有 eth_call 帶同一個 blockTag，報表內各欄位彼此一致。「距今」
+//     一律以該區塊的 timestamp 為基準，回應附 asOfBlock 與 asOfBlockTime。
+//   - 暫時性錯誤（header not found、逾時、429…）重試一次；revert 不重試。
 //   - **欄位級降級**：任一讀取失敗只讓該欄位變 null，並在 `unavailable` 以欄位路徑
 //     記下原因代碼（CALL_REVERTED / BAD_DATA / RPC_TIMEOUT / RPC_ERROR / NOT_CONFIGURED）。
 //     絕不回錯誤原文（可能含 RPC URL / key），也絕不整個 500。
@@ -97,15 +98,48 @@ const SIG = {
   reserveRatioBps: "reserveRatioBps() view returns (uint256)",
 } as const;
 
-/** 錯誤 → 原因代碼。只看 ethers 的 code，不碰 message。 */
+/** 節點端的暫時性錯誤（不是合約 revert）。 */
+const TRANSIENT_RE =
+  /header not found|missing trie node|unknown block|block .*not found|timeout|timed out|rate limit|too many requests|\b429\b|\b50[234]\b|ECONNRESET|ETIMEDOUT|socket hang up|fetch failed/i;
+
+/**
+ * 錯誤 → 原因代碼。錯誤原文只用來分類，不外流。
+ *
+ * 注意（審查 Medium-6）：ethers v6 會把 eth_call 的**任何** JSON-RPC 錯誤都包成
+ * CALL_EXCEPTION——包括負載平衡後面的節點還沒同步到該區塊時的 `header not found`。
+ * 所以只有「節點明說 revert」或「帶回 revert data」才算 CALL_REVERTED；
+ * 「missing revert data」＋節點錯誤是 RPC_ERROR（可重試）。
+ */
 export function classifyReadError(err: unknown): ReadReason {
-  const code = (err as { code?: string })?.code;
+  const e = err as {
+    code?: string;
+    data?: unknown;
+    reason?: unknown;
+    shortMessage?: string;
+    message?: string;
+    info?: { error?: { message?: string } };
+    error?: { message?: string };
+  };
+  const code = e?.code;
   if (code === "NOT_CONFIGURED") return "NOT_CONFIGURED";
-  if (code === "CALL_EXCEPTION") return "CALL_REVERTED";
-  if (code === "BAD_DATA") return "BAD_DATA";
   if (code === "TIMEOUT") return "RPC_TIMEOUT";
+  const inner = String(e?.info?.error?.message ?? e?.error?.message ?? "");
+  if (TRANSIENT_RE.test(inner)) return "RPC_ERROR";
+  if (code === "CALL_EXCEPTION") {
+    if (/revert/i.test(inner)) return "CALL_REVERTED";
+    if (e.data !== null && e.data !== undefined) return "CALL_REVERTED";
+    if (e.reason !== null && e.reason !== undefined) return "CALL_REVERTED";
+    const msg = String(e.shortMessage ?? e.message ?? "");
+    if (/revert/i.test(msg) && !/missing revert data/i.test(msg)) return "CALL_REVERTED";
+    return "RPC_ERROR";
+  }
+  if (code === "BAD_DATA") return "BAD_DATA";
   return "RPC_ERROR";
 }
+
+/** 讀取 blockTag 落後 latest 的區塊數（公共節點負載平衡，最新區塊不一定每台都有）。 */
+export const BLOCK_LAG = 3;
+const RETRY_DELAY_MS = 250;
 
 type Settled<T> = { ok: true; v: T } | { ok: false; reason: ReadReason };
 
@@ -209,22 +243,30 @@ export async function buildExposureReport(
 ): Promise<ExposureReport> {
   const unavailable: Record<string, ReadReason> = {};
   const run = limiter(CONCURRENCY);
+  // 暫時性錯誤（RPC_ERROR / RPC_TIMEOUT）重試一次；revert、BAD_DATA 不重試。
   const settle = async <T>(field: string | null, p: () => Promise<T>): Promise<Settled<T>> => {
-    try {
-      return { ok: true, v: await run(() => withTimeout(p(), CALL_TIMEOUT_MS)) };
-    } catch (err) {
-      const reason = classifyReadError(err);
-      if (field) unavailable[field] = reason;
-      return { ok: false, reason };
+    let reason: ReadReason = "RPC_ERROR";
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        return { ok: true, v: await run(() => withTimeout(p(), CALL_TIMEOUT_MS)) };
+      } catch (err) {
+        reason = classifyReadError(err);
+        if (reason !== "RPC_ERROR" && reason !== "RPC_TIMEOUT") break;
+        if (attempt === 0) await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+      }
     }
+    if (field) unavailable[field] = reason;
+    return { ok: false, reason };
   };
   const notConfigured = (field: string): Settled<never> => {
     unavailable[field] = "NOT_CONFIGURED";
     return { ok: false, reason: "NOT_CONFIGURED" };
   };
 
-  // 1) 區塊錨點
-  const bn = await settle("asOfBlock", () => reader.blockNumber());
+  // 1) 區塊錨點：latest − BLOCK_LAG。公共節點在負載平衡後面，剛出的區塊不一定每台都有，
+  //    釘在 latest 會隨機拿到 `header not found`。
+  const latestBn = await settle("asOfBlock", () => reader.blockNumber());
+  const bn: Settled<number> = latestBn.ok ? { ok: true, v: Math.max(0, latestBn.v - BLOCK_LAG) } : latestBn;
   const blockTag = bn.ok ? bn.v : undefined;
   const bts = bn.ok ? await settle("asOfBlockTime", () => reader.blockTimestamp(bn.v)) : notConfigured("asOfBlockTime");
   const refSec = bts.ok ? bts.v : Math.floor(nowMs / 1000);
@@ -390,8 +432,9 @@ function sum(xs: number[]): number {
 }
 
 /**
- * 60 秒快取＋single-flight。有欄位讀不到的報表只快取 10 秒（盡快重試），
- * 但仍然回給使用者（欄位級降級）。
+ * 60 秒快取＋single-flight。有欄位因**暫時性**原因讀不到（NOT_CONFIGURED 以外）的報表
+ * 只快取 10 秒（盡快重試）；NOT_CONFIGURED 是部署狀態、重讀也不會變，照常 60 秒。
+ * `get()` 回傳這一份的實際 TTL 與剩餘秒數，路由據此設定 Cache-Control，兩者一致。
  */
 export function createExposureService(
   reader: ExposureReader,
@@ -402,28 +445,37 @@ export function createExposureService(
   const degradedTtl = opts.degradedTtlMs ?? 10_000;
   const now = opts.now ?? Date.now;
   let cached: { at: number; ttl: number; report: ExposureReport } | null = null;
-  let inflight: Promise<ExposureReport> | null = null;
+  let inflight: Promise<{ at: number; ttl: number; report: ExposureReport }> | null = null;
+
+  const view = (c: { at: number; ttl: number; report: ExposureReport }, hit: boolean, t: number) => {
+    const ageMs = Math.max(0, t - c.at);
+    return {
+      report: c.report,
+      cacheHit: hit,
+      ageSec: Math.floor(ageMs / 1000),
+      ttlSec: Math.round(c.ttl / 1000),
+      /** 這一份還能被快取多久（秒），= Cache-Control max-age。 */
+      remainingSec: Math.max(0, Math.floor((c.ttl - ageMs) / 1000)),
+    };
+  };
 
   return {
-    ttlSec: Math.round(ttl / 1000),
-    async get(): Promise<{ report: ExposureReport; cacheHit: boolean; ageSec: number }> {
+    async get() {
       const t = now();
-      if (cached && t - cached.at < cached.ttl) {
-        return { report: cached.report, cacheHit: true, ageSec: Math.floor((t - cached.at) / 1000) };
-      }
+      if (cached && t - cached.at < cached.ttl) return view(cached, true, t);
       if (!inflight) {
         inflight = buildExposureReport(reader, targets, t)
           .then((report) => {
-            const degraded = Object.keys(report.unavailable).length > 0;
-            cached = { at: now(), ttl: degraded ? degradedTtl : ttl, report };
-            return report;
+            const transient = Object.values(report.unavailable).some((r) => r !== "NOT_CONFIGURED");
+            cached = { at: now(), ttl: transient ? degradedTtl : ttl, report };
+            return cached;
           })
           .finally(() => {
             inflight = null;
           });
       }
-      const report = await inflight;
-      return { report, cacheHit: false, ageSec: 0 };
+      const c = await inflight;
+      return view(c, false, now());
     },
   };
 }

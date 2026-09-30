@@ -654,11 +654,12 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
   const exposure = createExposureService(opts.exposureReader ?? providerReader(provider), exposureTargets());
   app.get("/risk/exposure", async (c) => {
     try {
-      const { report, cacheHit, ageSec } = await exposure.get();
+      const { report, cacheHit, ageSec, ttlSec, remainingSec } = await exposure.get();
+      // Cache-Control 與伺服器端這一份的實際剩餘快取時間一致（降級報表 10 秒、正常 60 秒）。
       return c.json(
-        jsonSafe({ ...report, cache: { hit: cacheHit, ageSec, ttlSec: exposure.ttlSec } }),
+        jsonSafe({ ...report, cache: { hit: cacheHit, ageSec, ttlSec, remainingSec } }),
         200,
-        { "Cache-Control": `public, max-age=${exposure.ttlSec}` },
+        { "Cache-Control": `public, max-age=${remainingSec}` },
       );
     } catch (err) {
       return c.json({ ok: false, error: internalError("exposure", err) }, 503);

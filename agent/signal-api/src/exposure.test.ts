@@ -91,7 +91,7 @@ const ok = (m: string) => console.log(`✓ ${++n}. ${m}`);
 {
   const { reader, calls } = fakeReader();
   const r = await buildExposureReport(reader, T, BT * 1000 + 5000);
-  assert.equal(r.asOfBlock, BLOCK);
+  assert.equal(r.asOfBlock, BLOCK - 3, "blockTag = latest − 3");
   assert.equal(r.asOfBlockTime, new Date(BT * 1000).toISOString());
   assert.deepEqual(r.exchange, { adlEnabled: true, maxPriceAgeSec: 21600, fundingIntervalSec: 28800 });
   assert.equal(r.contracts.insuranceVault, IV, "insuranceVault 位址從 exchange 讀");
@@ -109,8 +109,8 @@ const ok = (m: string) => console.log(`✓ ${++n}. ${m}`);
   assert.equal(btc.funding.sinceSec, 3600);
   assert.deepEqual(r.totals, { longUsd: 1700, shortUsd: 800 });
   assert.deepEqual(r.unavailable, {});
-  assert.ok(calls.every((c) => c.blockTag === BLOCK), "所有 eth_call 都釘在同一個區塊");
-  ok("完整報表：exchange 參數、保險金庫、V2 reserveStatus、OI（globalNotional 退回）、oracle 年齡、funding；所有讀取同一 blockTag");
+  assert.ok(calls.every((c) => c.blockTag === BLOCK - 3), "所有 eth_call 都釘在同一個區塊（latest − 3）");
+  ok("完整報表：exchange 參數、保險金庫、V2 reserveStatus、OI（globalNotional 退回）、oracle 年齡、funding；所有讀取同一 blockTag（latest − 3）");
 }
 
 // 2) 兩顆 oracle 不一致 → agree=false 並給偏離 bps
@@ -211,11 +211,45 @@ const ok = (m: string) => console.log(`✓ ${++n}. ${m}`);
 
 // 8) classifyReadError
 {
-  assert.equal(classifyReadError({ code: "CALL_EXCEPTION" }), "CALL_REVERTED");
+  // ethers v6 會把 eth_call 的任何節點錯誤包成 CALL_EXCEPTION：
+  const headerNotFound = {
+    code: "CALL_EXCEPTION", data: null, reason: null,
+    shortMessage: "missing revert data", message: "missing revert data (action=\"call\", data=null, reason=null…)",
+    info: { error: { code: -32000, message: "header not found" } },
+  };
+  assert.equal(classifyReadError(headerNotFound), "RPC_ERROR", "header not found 不是 revert");
+  assert.equal(classifyReadError({ ...headerNotFound, info: { error: { code: -32000, message: "some node glitch" } } }), "RPC_ERROR", "沒有 revert data 也沒說 revert → RPC_ERROR");
+  assert.equal(classifyReadError({ code: "CALL_EXCEPTION", data: "0x", info: { error: { message: "execution reverted" } } }), "CALL_REVERTED");
+  assert.equal(classifyReadError({ code: "CALL_EXCEPTION", data: "0x08c379a0" }), "CALL_REVERTED", "帶 revert data");
+  assert.equal(classifyReadError({ code: "CALL_EXCEPTION", message: "execution reverted: AssetNotFound" }), "CALL_REVERTED");
+  assert.equal(classifyReadError({ code: "SERVER_ERROR", info: { error: { message: "429 Too Many Requests" } } }), "RPC_ERROR");
   assert.equal(classifyReadError({ code: "BAD_DATA" }), "BAD_DATA");
   assert.equal(classifyReadError({ code: "TIMEOUT" }), "RPC_TIMEOUT");
   assert.equal(classifyReadError(new Error("x")), "RPC_ERROR");
-  ok("錯誤分類只看 code");
+  ok("錯誤分類：header not found / 無 revert data → RPC_ERROR；節點明說 revert 或帶 revert data → CALL_REVERTED");
+}
+
+// 8b) 暫時性錯誤重試一次；revert 不重試
+{
+  let n1 = 0;
+  const { reader } = fakeReader();
+  const base = reader.call;
+  let revertCalls = 0;
+  reader.call = async (addr, sig, args, tag) => {
+    if (sig.startsWith("adlEnabled")) {
+      n1++;
+      if (n1 === 1) throw { code: "CALL_EXCEPTION", data: null, info: { error: { message: "header not found" } } };
+      return [true] as any;
+    }
+    if (sig.startsWith("longOpenSize")) revertCalls++;
+    return base(addr, sig, args, tag);
+  };
+  const r = await buildExposureReport(reader, T, BT * 1000);
+  assert.equal(n1, 2, "第一次 header not found → 重試一次");
+  assert.equal(r.exchange.adlEnabled, true);
+  assert.equal(r.unavailable["exchange.adlEnabled"], undefined);
+  assert.equal(revertCalls, 1, "longOpenSize 探測 revert → 不重試");
+  ok("暫時性錯誤重試一次後成功 → 欄位正常；revert 不重試");
 }
 
 // 9) 快取 60 秒＋single-flight；降級報表只快取 10 秒
@@ -240,10 +274,23 @@ const ok = (m: string) => console.log(`✓ ${++n}. ${m}`);
   let clock2 = 0;
   const bad = fakeReader({ [`${E}|adlEnabled|`]: rpcDown });
   const svc2 = createExposureService(bad.reader, T, { now: () => clock2 });
-  await svc2.get();
+  const first = await svc2.get();
+  assert.deepEqual([first.ttlSec, first.remainingSec], [10, 10]);
+  clock2 = 4_000;
+  assert.equal((await svc2.get()).remainingSec, 6, "剩餘秒數隨時間遞減（= Cache-Control max-age）");
   clock2 = 10_001;
-  assert.equal((await svc2.get()).cacheHit, false, "有欄位失敗的報表 10 秒後就重讀");
-  ok("快取 60 秒、single-flight；降級報表只快取 10 秒");
+  assert.equal((await svc2.get()).cacheHit, false, "有欄位暫時性失敗的報表 10 秒後就重讀");
+
+  // NOT_CONFIGURED（部署狀態）不觸發短 TTL
+  let clock3 = 0;
+  const nc = fakeReader();
+  const svc3 = createExposureService(nc.reader, { ...T, assetVaultV2: null }, { now: () => clock3 });
+  const r3 = await svc3.get();
+  assert.equal(r3.report.unavailable["v2Vault.reserveStatus"], "NOT_CONFIGURED");
+  assert.equal(r3.ttlSec, 60);
+  clock3 = 30_000;
+  assert.equal((await svc3.get()).cacheHit, true);
+  ok("快取 60 秒、single-flight；暫時性降級只快取 10 秒；NOT_CONFIGURED 仍 60 秒；remainingSec 遞減");
 }
 
 // 10) 路由：GET /risk/exposure（免費、不經 x402）＋ per-IP 節流
@@ -257,17 +304,18 @@ const ok = (m: string) => console.log(`✓ ${++n}. ${m}`);
   const get = () => app.fetch(new Request("http://localhost/risk/exposure", { headers: { "x-forwarded-for": "9.9.9.9" } }));
   const res = await get();
   assert.equal(res.status, 200);
-  assert.match(res.headers.get("cache-control") ?? "", /max-age=60/);
   const j = (await res.json()) as any;
   assert.equal(j.ok, true);
   assert.equal(typeof j.asOfBlock, "number");
-  assert.equal(j.cache.ttlSec, 60);
+  // 假 reader 對真實位址一律 revert → 降級報表：TTL 10 秒，Cache-Control 必須一致
+  assert.equal(j.cache.ttlSec, 10);
+  assert.equal(res.headers.get("cache-control"), `public, max-age=${j.cache.remainingSec}`, "Cache-Control 與實際快取剩餘時間一致");
   assert.equal(j.assets.length, Object.keys(exposureTargets().assets).length);
   await get();
   await get();
   const limited = await get();
   assert.equal(limited.status, 429, "比照既有免費端點的 per-IP 節流");
-  ok("GET /risk/exposure → 200（不需付款）、Cache-Control、per-IP 節流 429");
+  ok("GET /risk/exposure → 200（不需付款）、Cache-Control = 實際剩餘快取秒數、per-IP 節流 429");
 }
 
 console.log(`\n✅ exposure.test.ts 全過（${n} 組）`);

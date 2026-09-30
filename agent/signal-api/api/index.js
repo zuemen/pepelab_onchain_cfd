@@ -61150,14 +61150,27 @@ var SIG = {
   reserveStatus: "reserveStatus() view returns (uint256 reserve_, uint256 liability, uint256 ratioBps, uint256 unpriced, bool stale, bool halted)",
   reserveRatioBps: "reserveRatioBps() view returns (uint256)"
 };
+var TRANSIENT_RE = /header not found|missing trie node|unknown block|block .*not found|timeout|timed out|rate limit|too many requests|\b429\b|\b50[234]\b|ECONNRESET|ETIMEDOUT|socket hang up|fetch failed/i;
 function classifyReadError(err) {
-  const code = err?.code;
+  const e = err;
+  const code = e?.code;
   if (code === "NOT_CONFIGURED") return "NOT_CONFIGURED";
-  if (code === "CALL_EXCEPTION") return "CALL_REVERTED";
-  if (code === "BAD_DATA") return "BAD_DATA";
   if (code === "TIMEOUT") return "RPC_TIMEOUT";
+  const inner2 = String(e?.info?.error?.message ?? e?.error?.message ?? "");
+  if (TRANSIENT_RE.test(inner2)) return "RPC_ERROR";
+  if (code === "CALL_EXCEPTION") {
+    if (/revert/i.test(inner2)) return "CALL_REVERTED";
+    if (e.data !== null && e.data !== void 0) return "CALL_REVERTED";
+    if (e.reason !== null && e.reason !== void 0) return "CALL_REVERTED";
+    const msg = String(e.shortMessage ?? e.message ?? "");
+    if (/revert/i.test(msg) && !/missing revert data/i.test(msg)) return "CALL_REVERTED";
+    return "RPC_ERROR";
+  }
+  if (code === "BAD_DATA") return "BAD_DATA";
   return "RPC_ERROR";
 }
+var BLOCK_LAG = 3;
+var RETRY_DELAY_MS = 250;
 function withTimeout2(p, ms) {
   return new Promise((resolve2, reject) => {
     const t = setTimeout(() => reject(Object.assign(new Error("timeout"), { code: "TIMEOUT" })), ms);
@@ -61201,19 +61214,25 @@ async function buildExposureReport(reader, t, nowMs = Date.now()) {
   const unavailable = {};
   const run = limiter(CONCURRENCY);
   const settle3 = async (field, p) => {
-    try {
-      return { ok: true, v: await run(() => withTimeout2(p(), CALL_TIMEOUT_MS)) };
-    } catch (err) {
-      const reason = classifyReadError(err);
-      if (field) unavailable[field] = reason;
-      return { ok: false, reason };
+    let reason = "RPC_ERROR";
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        return { ok: true, v: await run(() => withTimeout2(p(), CALL_TIMEOUT_MS)) };
+      } catch (err) {
+        reason = classifyReadError(err);
+        if (reason !== "RPC_ERROR" && reason !== "RPC_TIMEOUT") break;
+        if (attempt === 0) await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+      }
     }
+    if (field) unavailable[field] = reason;
+    return { ok: false, reason };
   };
   const notConfigured = (field) => {
     unavailable[field] = "NOT_CONFIGURED";
     return { ok: false, reason: "NOT_CONFIGURED" };
   };
-  const bn = await settle3("asOfBlock", () => reader.blockNumber());
+  const latestBn = await settle3("asOfBlock", () => reader.blockNumber());
+  const bn = latestBn.ok ? { ok: true, v: Math.max(0, latestBn.v - BLOCK_LAG) } : latestBn;
   const blockTag = bn.ok ? bn.v : void 0;
   const bts = bn.ok ? await settle3("asOfBlockTime", () => reader.blockTimestamp(bn.v)) : notConfigured("asOfBlockTime");
   const refSec = bts.ok ? bts.v : Math.floor(nowMs / 1e3);
@@ -61359,24 +61378,32 @@ function createExposureService(reader, targets, opts = {}) {
   const now = opts.now ?? Date.now;
   let cached2 = null;
   let inflight = null;
+  const view = (c, hit, t) => {
+    const ageMs = Math.max(0, t - c.at);
+    return {
+      report: c.report,
+      cacheHit: hit,
+      ageSec: Math.floor(ageMs / 1e3),
+      ttlSec: Math.round(c.ttl / 1e3),
+      /** 這一份還能被快取多久（秒），= Cache-Control max-age。 */
+      remainingSec: Math.max(0, Math.floor((c.ttl - ageMs) / 1e3))
+    };
+  };
   return {
-    ttlSec: Math.round(ttl / 1e3),
     async get() {
       const t = now();
-      if (cached2 && t - cached2.at < cached2.ttl) {
-        return { report: cached2.report, cacheHit: true, ageSec: Math.floor((t - cached2.at) / 1e3) };
-      }
+      if (cached2 && t - cached2.at < cached2.ttl) return view(cached2, true, t);
       if (!inflight) {
-        inflight = buildExposureReport(reader, targets, t).then((report2) => {
-          const degraded = Object.keys(report2.unavailable).length > 0;
-          cached2 = { at: now(), ttl: degraded ? degradedTtl : ttl, report: report2 };
-          return report2;
+        inflight = buildExposureReport(reader, targets, t).then((report) => {
+          const transient = Object.values(report.unavailable).some((r) => r !== "NOT_CONFIGURED");
+          cached2 = { at: now(), ttl: transient ? degradedTtl : ttl, report };
+          return cached2;
         }).finally(() => {
           inflight = null;
         });
       }
-      const report = await inflight;
-      return { report, cacheHit: false, ageSec: 0 };
+      const c = await inflight;
+      return view(c, false, now());
     }
   };
 }
@@ -61735,11 +61762,11 @@ function createApp(opts = {}) {
   const exposure = createExposureService(opts.exposureReader ?? providerReader(provider2), exposureTargets());
   app2.get("/risk/exposure", async (c) => {
     try {
-      const { report, cacheHit, ageSec } = await exposure.get();
+      const { report, cacheHit, ageSec, ttlSec, remainingSec } = await exposure.get();
       return c.json(
-        jsonSafe({ ...report, cache: { hit: cacheHit, ageSec, ttlSec: exposure.ttlSec } }),
+        jsonSafe({ ...report, cache: { hit: cacheHit, ageSec, ttlSec, remainingSec } }),
         200,
-        { "Cache-Control": `public, max-age=${exposure.ttlSec}` }
+        { "Cache-Control": `public, max-age=${remainingSec}` }
       );
     } catch (err) {
       return c.json({ ok: false, error: internalError("exposure", err) }, 503);

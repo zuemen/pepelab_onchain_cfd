@@ -180,14 +180,16 @@ paths:
       operationId: getRiskExposure
       summary: Protocol exposure report for client risk teams (read-only)
       description: |
-        免費、唯讀。所有欄位在**同一個區塊**（`asOfBlock`）讀取；`ageSec` / `sinceSec` 以該區塊時間為基準。
+        免費、唯讀。所有欄位在**同一個區塊**（`asOfBlock` = latest − 3，避開負載平衡節點尚未同步的最新區塊）讀取；
+        `ageSec` / `sinceSec` 以該區塊時間為基準。暫時性 RPC 錯誤（如 `header not found`、逾時、429）會重試一次。
         - OI：合約有 `longOpenSize` / `shortOpenSize` 時為「數量 × MockOracle 現價」（`method: openSize×markPrice`），
           否則退回 `globalLongNotional` / `globalShortNotional`（開倉時名目加總，`method: globalNotional`）。
         - Oracle：MockOracle（exchange 結算用）與 GuardedOracle（V2）兩顆的價格與年齡；`agree` 為兩者價格是否完全相同，
           任一讀不到時為 null。
         - 讀取失敗的欄位為 null，並在 `unavailable` 以欄位路徑記原因代碼
           （`CALL_REVERTED` / `BAD_DATA` / `RPC_TIMEOUT` / `RPC_ERROR` / `NOT_CONFIGURED`）；不回錯誤原文，不因單一欄位失敗而整體失敗。
-        - 快取 60 秒（有欄位失敗時 10 秒）；節流比照其他免費端點（per-IP）。
+        - 快取 60 秒；有欄位因暫時性原因讀不到時只快取 10 秒（`NOT_CONFIGURED` 不算）。
+          `Cache-Control: max-age` 等於伺服器端這一份的剩餘快取秒數（`cache.remainingSec`）。節流比照其他免費端點（per-IP）。
       responses:
         '200':
           description: Exposure report
@@ -294,7 +296,8 @@ paths:
                     properties:
                       hit: { type: boolean }
                       ageSec: { type: integer }
-                      ttlSec: { type: integer, example: 60 }
+                      ttlSec: { type: integer, example: 60, description: 這一份的快取 TTL（正常 60、暫時性降級 10） }
+                      remainingSec: { type: integer, description: 剩餘快取秒數，= Cache-Control max-age }
         '429':
           $ref: '#/components/responses/FreeRateLimited'
         '503':
