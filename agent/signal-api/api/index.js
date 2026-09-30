@@ -38901,10 +38901,24 @@ var wordlists2 = {
   zh_tw: LangZh.wordlist("tw")
 };
 
+// ../shared/src/x402Client.ts
+var X402_DEFAULT_MAX_PAYMENT_USDC = "0.02";
+var USDC_DECIMALS = 6;
+function parseUsdcAtomic(s) {
+  const t = s.trim();
+  const m = /^(\d+)(?:\.(\d{1,6}))?$/.exec(t);
+  if (!m) throw new Error(`\u4E0D\u662F\u5408\u6CD5\u7684 USDC \u91D1\u984D\uFF08\u6700\u591A 6 \u4F4D\u5C0F\u6578\uFF09\uFF1A\u300C${s}\u300D`);
+  const frac = (m[2] ?? "").padEnd(USDC_DECIMALS, "0");
+  return BigInt(m[1]) * 10n ** BigInt(USDC_DECIMALS) + BigInt(frac || "0");
+}
+function resolveX402MaxValue() {
+  const raw2 = process.env.X402_MAX_PAYMENT_USDC?.trim() || X402_DEFAULT_MAX_PAYMENT_USDC;
+  const v = parseUsdcAtomic(raw2);
+  if (v <= 0n) throw new Error(`X402_MAX_PAYMENT_USDC \u5FC5\u9808 > 0\uFF08\u6536\u5230 ${raw2}\uFF09`);
+  return v;
+}
+
 // ../shared/src/signingGuard.ts
-var MAX_UINT256 = (1n << 256n) - 1n;
-var MAX_UINT160 = (1n << 160n) - 1n;
-var DEFAULT_MAX_ALLOWANCE = 1n << 128n;
 var SigningGuardError = class extends Error {
   constructor(reasonCode, detail) {
     super(`[signing-guard] ${reasonCode}: ${detail}`);
@@ -38912,100 +38926,51 @@ var SigningGuardError = class extends Error {
     this.name = "SigningGuardError";
   }
 };
-function maxAllowance(env = process.env) {
-  const raw2 = env.SIGNING_GUARD_MAX_ALLOWANCE?.trim();
-  if (!raw2) return DEFAULT_MAX_ALLOWANCE;
-  if (!/^\d+$/.test(raw2) || BigInt(raw2) <= 0n) {
-    throw new SigningGuardError("GUARD_CONFIG_INVALID", "SIGNING_GUARD_MAX_ALLOWANCE \u5FC5\u9808\u662F\u6B63\u6574\u6578\uFF08fail-closed\uFF1A\u62D2\u7D55\u6240\u6709\u6388\u6B0A\u985E\u7C3D\u7AE0\uFF09");
+var ZERO = "0x0000000000000000000000000000000000000000";
+var OFFICIAL_USDC_DOMAINS = {
+  84532: { name: "USDC", version: "2", verifyingContract: OFFICIAL_BASE_SEPOLIA_USDC }
+};
+var DEFAULT_MAX_TX_VALUE_WEI = 10n ** 15n;
+var SESSION_MANAGER_IFACE = new ethers_exports.Interface([
+  "function openPositionForSession(uint256 sessionId, bytes32 asset, bool isLong, uint256 margin, uint256 leverage, address copiedFrom) payable returns (uint256)",
+  "function closePositionForSession(uint256 sessionId, uint256 positionId)"
+]);
+var ALLOWED_TX_SELECTORS = {
+  [SESSION_MANAGER_IFACE.getFunction("openPositionForSession").selector]: "openPositionForSession",
+  [SESSION_MANAGER_IFACE.getFunction("closePositionForSession").selector]: "closePositionForSession"
+};
+var TRANSFER_WITH_AUTHORIZATION_FIELDS = [
+  { name: "from", type: "address" },
+  { name: "to", type: "address" },
+  { name: "value", type: "uint256" },
+  { name: "validAfter", type: "uint256" },
+  { name: "validBefore", type: "uint256" },
+  { name: "nonce", type: "bytes32" }
+];
+var WV_CHALLENGE_RE = /^pepelab-wv:(0x[0-9a-fA-F]{40}):(\d{10,16})$/;
+function sessionManager(env) {
+  const a = env.SESSION_MANAGER_ADDRESS?.trim();
+  if (!a || !ethers_exports.isAddress(a) || a.toLowerCase() === ZERO) {
+    throw new SigningGuardError("GUARD_CONFIG_INVALID", "\u672A\u8A2D\u5B9A\u6709\u6548 SESSION_MANAGER_ADDRESS\uFF0C\u7121\u6CD5\u5224\u65B7\u4EA4\u6613\u767D\u540D\u55AE\uFF08fail-closed\uFF09");
+  }
+  return ethers_exports.getAddress(a);
+}
+function maxTxValue(env) {
+  const raw2 = env.SIGNING_GUARD_MAX_TX_VALUE_WEI?.trim();
+  if (!raw2) return DEFAULT_MAX_TX_VALUE_WEI;
+  if (!/^\d+$/.test(raw2)) {
+    throw new SigningGuardError("GUARD_CONFIG_INVALID", "SIGNING_GUARD_MAX_TX_VALUE_WEI \u5FC5\u9808\u662F\u975E\u8CA0\u6574\u6578\uFF08fail-closed\uFF09");
   }
   return BigInt(raw2);
 }
-function capCheck(amount, reason, what) {
-  const cap = maxAllowance();
-  const v = big(amount);
-  if (v === null) return new SigningGuardError(reason, `${what} \u984D\u5EA6\u7121\u6CD5\u89E3\u6790\uFF08fail-closed\uFF09`);
-  if (v >= cap) return new SigningGuardError(reason, `${what} \u984D\u5EA6 ${v} \u2265 \u4E0A\u9650 ${cap}`);
-  return null;
-}
-var IFACE = new ethers_exports.Interface([
-  // ERC-20
-  "function approve(address spender, uint256 amount)",
-  "function increaseAllowance(address spender, uint256 addedValue)",
-  // EIP-2612 / DAI 式 permit（兩者簽章不同，selector 不同）
-  "function permit(address owner, address spender, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s)",
-  "function permit(address holder, address spender, uint256 nonce, uint256 expiry, bool allowed, uint8 v, bytes32 r, bytes32 s)",
-  // Permit2 AllowanceTransfer
-  "function approve(address token, address spender, uint160 amount, uint48 expiration)",
-  "function permit(address owner, ((address token, uint160 amount, uint48 expiration, uint48 nonce) details, address spender, uint256 sigDeadline) permitSingle, bytes signature)",
-  "function permit(address owner, ((address token, uint160 amount, uint48 expiration, uint48 nonce)[] details, address spender, uint256 sigDeadline) permitBatch, bytes signature)"
-]);
-var sel = (sig) => IFACE.getFunction(sig).selector;
-var SEL = {
-  approve: sel("approve(address,uint256)"),
-  increaseAllowance: sel("increaseAllowance(address,uint256)"),
-  permit2612: sel("permit(address,address,uint256,uint256,uint8,bytes32,bytes32)"),
-  permitDai: sel("permit(address,address,uint256,uint256,bool,uint8,bytes32,bytes32)"),
-  permit2Approve: sel("approve(address,address,uint160,uint48)"),
-  permit2Single: sel("permit(address,((address,uint160,uint48,uint48),address,uint256),bytes)"),
-  permit2Batch: sel("permit(address,((address,uint160,uint48,uint48)[],address,uint256),bytes)")
-};
-function decodeBy(selector, data4) {
+function big(v) {
   try {
-    const fn = IFACE.getFunction(selector);
-    return IFACE.decodeFunctionData(fn, data4);
+    if (typeof v === "bigint") return v;
+    if (typeof v === "number" && Number.isSafeInteger(v)) return BigInt(v);
+    if (typeof v === "string" && /^(0x[0-9a-fA-F]+|\d+)$/.test(v)) return BigInt(v);
   } catch {
-    return null;
   }
-}
-function checkCalldata(data4) {
-  if (!data4 || data4 === "0x" || data4.length < 10) return null;
-  const s = data4.slice(0, 10).toLowerCase();
-  try {
-    const A = "UNLIMITED_APPROVE_FORBIDDEN";
-    const P = "UNLIMITED_PERMIT_FORBIDDEN";
-    const need = (r, reason, what) => r ?? new SigningGuardError(reason, `${what} calldata \u7121\u6CD5\u89E3\u6790\uFF08fail-closed\uFF09`);
-    switch (s) {
-      case SEL.approve: {
-        const a = need(decodeBy(s, data4), A, "approve");
-        return a instanceof SigningGuardError ? a : capCheck(a[1], A, `approve(${a[0]})`);
-      }
-      case SEL.increaseAllowance: {
-        const a = need(decodeBy(s, data4), A, "increaseAllowance");
-        return a instanceof SigningGuardError ? a : capCheck(a[1], A, `increaseAllowance(${a[0]})`);
-      }
-      case SEL.permit2612: {
-        const a = need(decodeBy(s, data4), P, "permit");
-        return a instanceof SigningGuardError ? a : capCheck(a[2], P, `permit(spender=${a[1]})`);
-      }
-      case SEL.permitDai: {
-        const a = need(decodeBy(s, data4), P, "DAI permit");
-        if (a instanceof SigningGuardError) return a;
-        return a[4] ? new SigningGuardError(P, `DAI permit(spender=${a[1]}, allowed=${a[4]})\uFF1D\u7121\u4E0A\u9650`) : null;
-      }
-      case SEL.permit2Approve: {
-        const a = need(decodeBy(s, data4), A, "Permit2 approve");
-        return a instanceof SigningGuardError ? a : capCheck(a[2], A, `Permit2 approve(${a[0]}, ${a[1]})`);
-      }
-      case SEL.permit2Single: {
-        const a = need(decodeBy(s, data4), P, "Permit2 permit");
-        return a instanceof SigningGuardError ? a : capCheck(a[1][0][1], P, "Permit2 permit(PermitSingle)");
-      }
-      case SEL.permit2Batch: {
-        const a = need(decodeBy(s, data4), P, "Permit2 permitBatch");
-        if (a instanceof SigningGuardError) return a;
-        for (const d of a[1][0]) {
-          const bad = capCheck(d[1], P, "Permit2 permit(PermitBatch)");
-          if (bad) return bad;
-        }
-        return null;
-      }
-      default:
-        return null;
-    }
-  } catch (err) {
-    if (err instanceof SigningGuardError) return err;
-    return new SigningGuardError("UNLIMITED_APPROVE_FORBIDDEN", "\u6388\u6B0A\u985E calldata \u6AA2\u67E5\u5931\u6557\uFF08fail-closed\uFF09");
-  }
+  return null;
 }
 function is7702(tx) {
   const t = tx.type;
@@ -39013,66 +38978,96 @@ function is7702(tx) {
   const list2 = tx.authorizationList;
   return Array.isArray(list2) && list2.length > 0;
 }
-function assertSafeTransaction(tx) {
+function assertAllowedTransaction(tx, env = process.env) {
   if (is7702(tx)) {
     throw new SigningGuardError("EIP7702_TX_FORBIDDEN", "agent \u91D1\u9470\u4E0D\u5F97\u7C3D EIP-7702\uFF08type-4 / authorizationList\uFF09\u4EA4\u6613");
   }
-  const bad = checkCalldata(tx.data ?? null);
-  if (bad) throw bad;
-}
-function big(v) {
-  try {
-    if (typeof v === "bigint") return v;
-    if (typeof v === "number" || typeof v === "string") return BigInt(v);
-  } catch {
+  const mgr = sessionManager(env);
+  const to = typeof tx.to === "string" ? tx.to : tx.to?.address;
+  if (!to || !ethers_exports.isAddress(to) || ethers_exports.getAddress(to) !== mgr) {
+    throw new SigningGuardError("TX_NOT_ALLOWLISTED", `\u4EA4\u6613\u5C0D\u8C61 ${String(to ?? "(\u5408\u7D04\u5EFA\u7ACB)")} \u4E0D\u662F session manager ${mgr}`);
   }
-  return null;
-}
-function primaryTypeOf(types, explicit) {
-  if (explicit) return explicit;
-  const names2 = Object.keys(types).filter((n2) => n2 !== "EIP712Domain");
+  const data4 = typeof tx.data === "string" ? tx.data : "";
+  const sel = data4.slice(0, 10).toLowerCase();
+  const fnName = ALLOWED_TX_SELECTORS[sel];
+  if (!fnName) throw new SigningGuardError("TX_NOT_ALLOWLISTED", `selector ${sel || "(\u7A7A)"} \u4E0D\u5728\u5141\u8A31\u6E05\u55AE`);
   try {
-    return ethers_exports.TypedDataEncoder.getPrimaryType(
-      Object.fromEntries(names2.map((n2) => [n2, types[n2]]))
-    );
+    SESSION_MANAGER_IFACE.decodeFunctionData(fnName, data4);
   } catch {
-    return names2[0];
+    throw new SigningGuardError("TX_NOT_ALLOWLISTED", `${fnName} calldata \u7121\u6CD5\u5B8C\u6574\u89E3\u78BC\uFF08fail-closed\uFF09`);
+  }
+  const value = tx.value === void 0 || tx.value === null ? 0n : big(tx.value);
+  const cap = maxTxValue(env);
+  if (value === null || value > cap) {
+    throw new SigningGuardError("TX_VALUE_TOO_HIGH", `value ${String(tx.value)} \u8D85\u904E\u4E0A\u9650 ${cap} wei`);
+  }
+  if (fnName === "closePositionForSession" && value !== 0n) {
+    throw new SigningGuardError("TX_VALUE_TOO_HIGH", "closePositionForSession \u4E0D\u61C9\u9644\u5E36 ETH");
   }
 }
-function assertSafeTypedData(types, value, primaryType) {
-  const pt = primaryTypeOf(types, primaryType);
-  if (!pt) return;
-  const P = "UNLIMITED_PERMIT_FORBIDDEN";
-  const check = (amt, what) => {
-    const bad = capCheck(amt, P, what);
-    if (bad) throw bad;
-  };
-  if (pt === "Permit") {
-    if (value && "allowed" in value) {
-      if (value.allowed) throw new SigningGuardError(P, `DAI \u5F0F Permit(allowed=${String(value.allowed)})\uFF1D\u7121\u4E0A\u9650\u6388\u6B0A`);
-      return;
+function assertAllowedTypedData(domain, types, message, signer, primaryType) {
+  const T = "TYPED_DATA_NOT_ALLOWLISTED";
+  const names2 = Object.keys(types ?? {}).filter((n2) => n2 !== "EIP712Domain");
+  if (names2.length !== 1 || names2[0] !== "TransferWithAuthorization") {
+    throw new SigningGuardError(T, `typed data \u578B\u5225 [${names2.join(", ")}] \u4E0D\u5728\u5141\u8A31\u6E05\u55AE\uFF08\u53EA\u5141\u8A31 TransferWithAuthorization\uFF09`);
+  }
+  if (primaryType !== void 0 && primaryType !== "TransferWithAuthorization") {
+    throw new SigningGuardError(T, `primaryType ${primaryType} \u4E0D\u5728\u5141\u8A31\u6E05\u55AE`);
+  }
+  const fields = types.TransferWithAuthorization;
+  const same = Array.isArray(fields) && fields.length === TRANSFER_WITH_AUTHORIZATION_FIELDS.length && fields.every((f2, i) => f2?.name === TRANSFER_WITH_AUTHORIZATION_FIELDS[i].name && f2?.type === TRANSFER_WITH_AUTHORIZATION_FIELDS[i].type);
+  if (!same) throw new SigningGuardError(T, "TransferWithAuthorization \u7684\u6B04\u4F4D\u8207 EIP-3009 \u4E0D\u7B26");
+  const keys = Object.keys(message ?? {}).sort();
+  const expected = TRANSFER_WITH_AUTHORIZATION_FIELDS.map((f2) => f2.name).sort();
+  if (keys.length !== expected.length || keys.some((k, i) => k !== expected[i])) {
+    throw new SigningGuardError(T, `message \u6B04\u4F4D [${keys.join(", ")}] \u8207\u578B\u5225\u4E0D\u4E00\u81F4`);
+  }
+  const usdc2 = OFFICIAL_USDC_DOMAINS[AGENT_CHAIN_ID];
+  if (!usdc2) throw new SigningGuardError(T, `chain ${AGENT_CHAIN_ID} \u6C92\u6709\u8A2D\u5B9A\u5B98\u65B9 USDC domain`);
+  const vc = typeof domain?.verifyingContract === "string" ? domain.verifyingContract : "";
+  const domainOk = domain?.name === usdc2.name && domain?.version === usdc2.version && big(domain?.chainId) === BigInt(AGENT_CHAIN_ID) && ethers_exports.isAddress(vc) && ethers_exports.getAddress(vc) === ethers_exports.getAddress(usdc2.verifyingContract) && domain?.salt === void 0;
+  if (!domainOk) {
+    throw new SigningGuardError(T, "domain \u4E0D\u662F\u5B98\u65B9 USDC\uFF08name / version / chainId / verifyingContract \u4E0D\u7B26\uFF09");
+  }
+  const from16 = typeof message.from === "string" ? message.from : "";
+  if (!ethers_exports.isAddress(from16) || ethers_exports.getAddress(from16) !== ethers_exports.getAddress(signer)) {
+    throw new SigningGuardError(T, "TransferWithAuthorization.from \u4E0D\u662F agent \u81EA\u5DF1");
+  }
+  const value = big(message.value);
+  const cap = resolveX402MaxValue();
+  if (value === null || value > cap) {
+    throw new SigningGuardError("PAYMENT_TOO_HIGH", `\u4ED8\u6B3E\u91D1\u984D ${String(message.value)} \u8D85\u904E\u55AE\u7B46\u4E0A\u9650 ${cap}\uFF08X402_MAX_PAYMENT_USDC\uFF09`);
+  }
+}
+function assertAllowedMessage(message, signer) {
+  const text = typeof message === "string" ? message : message instanceof Uint8Array ? (() => {
+    try {
+      return ethers_exports.toUtf8String(message);
+    } catch {
+      return "";
     }
-    check(value?.value, "EIP-2612 Permit");
-    return;
-  }
-  if (pt === "PermitSingle" || pt === "PermitBatch") {
-    const details = Array.isArray(value?.details) ? value.details : [value?.details];
-    for (const d of details) check(d?.amount, `Permit2 ${pt}`);
-    return;
-  }
-  if (pt === "PermitTransferFrom" || pt === "PermitBatchTransferFrom" || pt === "PermitWitnessTransferFrom" || pt === "PermitBatchWitnessTransferFrom") {
-    const perms = Array.isArray(value?.permitted) ? value.permitted : [value?.permitted];
-    for (const p of perms) check(p?.amount, `Permit2 ${pt}`);
+  })() : "";
+  const m = WV_CHALLENGE_RE.exec(text);
+  if (!m || ethers_exports.getAddress(m[1]) !== ethers_exports.getAddress(signer)) {
+    throw new SigningGuardError("MESSAGE_NOT_ALLOWLISTED", "\u53EA\u5141\u8A31\u7C3D ERC-8126 proof-of-possession \u6311\u6230\u5B57\u4E32\uFF08pepelab-wv:<\u81EA\u5DF1\u7684\u5730\u5740>:<\u6642\u9593\u6233>\uFF09");
   }
 }
 var GuardedWallet = class _GuardedWallet extends ethers_exports.Wallet {
   async signTransaction(tx) {
-    assertSafeTransaction(tx);
+    assertAllowedTransaction(tx);
     return super.signTransaction(tx);
   }
   async signTypedData(domain, types, value) {
-    assertSafeTypedData(types, value);
+    assertAllowedTypedData(domain, types, value, this.address);
     return super.signTypedData(domain, types, value);
+  }
+  async signMessage(message) {
+    assertAllowedMessage(message, this.address);
+    return super.signMessage(message);
+  }
+  signMessageSync(message) {
+    assertAllowedMessage(message, this.address);
+    return super.signMessageSync(message);
   }
   async authorize(_auth) {
     throw new SigningGuardError("EIP7702_AUTHORIZATION_FORBIDDEN", "agent \u91D1\u9470\u4E0D\u5F97\u7C3D EIP-7702 authorization");
@@ -39122,14 +39117,14 @@ function makeContracts(provider3) {
     )
   };
 }
-var ZERO = "0x0000000000000000000000000000000000000000";
+var ZERO2 = "0x0000000000000000000000000000000000000000";
 function makeSigner(provider3) {
   const pk = process.env.AGENT_PRIVATE_KEY?.trim();
   if (!pk || !pk.startsWith("0x") || pk.length !== 66) return null;
   return new GuardedWallet(pk, provider3 ?? makeProvider());
 }
 function getSessionManagerAddress() {
-  return process.env.SESSION_MANAGER_ADDRESS?.trim() || ZERO;
+  return process.env.SESSION_MANAGER_ADDRESS?.trim() || ZERO2;
 }
 
 // ../shared/src/format.ts
@@ -39249,7 +39244,7 @@ function enrichOracle(base2, opts = {}) {
     ...edge
   };
 }
-var ZERO2 = "0x0000000000000000000000000000000000000000";
+var ZERO3 = "0x0000000000000000000000000000000000000000";
 async function getOracleSnapshot(c, symbol) {
   const assetId = assetIdOf(symbol);
   const [priceRes, isStale, fundingBps, longOI, shortOI, maxPriceAge] = await Promise.all([
@@ -39323,7 +39318,7 @@ async function getPositionDetail(c, positionId) {
     openedAt: fmtTime(pos.openedAt),
     closedAt: fmtTime(pos.closedAt),
     isOpen: Boolean(pos.isOpen),
-    copiedFrom: copied === ZERO2 ? null : copied,
+    copiedFrom: copied === ZERO3 ? null : copied,
     realizedPnL: fmtUsdc18(pos.realizedPnL),
     unrealizedPnL: fmtUsdc18(unrealized),
     pendingFunding: fmtUsdc18(pending)
@@ -39440,7 +39435,7 @@ function parseDidPkh(did) {
 }
 
 // ../shared/src/verification.ts
-var ZERO3 = "0x0000000000000000000000000000000000000000";
+var ZERO4 = "0x0000000000000000000000000000000000000000";
 var ZERO_BYTES32 = "0x0000000000000000000000000000000000000000000000000000000000000000";
 var HTTP_TIMEOUT_MS = Number(process.env.VERIFICATION_HTTP_TIMEOUT_MS ?? "5000");
 function redact(msg, secret) {
@@ -39536,7 +39531,7 @@ function verifierValue(p) {
 async function checkETV(provider3, targets) {
   const evidence = {};
   let missing = 0;
-  const live = targets.filter((t) => t.address && t.address !== ZERO3);
+  const live = targets.filter((t) => t.address && t.address !== ZERO4);
   for (const t of live) {
     try {
       const code = await provider3.getCode(t.address);
@@ -39564,7 +39559,7 @@ async function checkSCV(provider3, targets, opts = {}) {
   const chainId = opts.chainId ?? AGENT_CHAIN_ID;
   const apiKey = opts.apiKey?.trim();
   const evidence = {};
-  const live = targets.filter((t) => t.address && t.address !== ZERO3);
+  const live = targets.filter((t) => t.address && t.address !== ZERO4);
   if (live.length === 0) {
     return {
       type: "SCV",
@@ -39681,7 +39676,7 @@ async function checkWAV(apiBaseUrl, opts = {}) {
 async function checkWV(provider3, agentAddress, opts = {}) {
   const evidence = { agentAddress };
   const checks = [];
-  const nonZero = !!agentAddress && agentAddress !== ZERO3;
+  const nonZero = !!agentAddress && agentAddress !== ZERO4;
   evidence.nonZeroAddress = nonZero;
   checks.push(nonZero);
   let isEoa = false;
@@ -39910,7 +39905,7 @@ function redactSecrets(text) {
 }
 
 // ../shared/src/write.ts
-var SESSION_MANAGER_IFACE = new ethers_exports.Interface(AGENT_SESSION_MANAGER_ABI);
+var SESSION_MANAGER_IFACE2 = new ethers_exports.Interface(AGENT_SESSION_MANAGER_ABI);
 
 // ../shared/src/payoutSafety.ts
 var COMPROMISED_ADDRESSES = [
@@ -61130,8 +61125,8 @@ function providerReader(provider3) {
     }
   };
 }
-var ZERO4 = "0x0000000000000000000000000000000000000000";
-var MAX_UINT2562 = (1n << 256n) - 1n;
+var ZERO5 = "0x0000000000000000000000000000000000000000";
+var MAX_UINT256 = (1n << 256n) - 1n;
 var CALL_TIMEOUT_MS = 8e3;
 var CONCURRENCY = 6;
 var SIG = {
@@ -61208,7 +61203,7 @@ function limiter(n2) {
     next();
   });
 }
-var isSet = (a) => !!a && a.toLowerCase() !== ZERO4;
+var isSet = (a) => !!a && a.toLowerCase() !== ZERO5;
 var fmt18 = (v) => Number(ethers_exports.formatUnits(v, 18));
 var fmt8 = (v) => Number(ethers_exports.formatUnits(v, 8));
 async function buildExposureReport(reader, t, nowMs = Date.now()) {
@@ -61330,7 +61325,7 @@ async function buildExposureReport(reader, t, nowMs = Date.now()) {
       reserveRaw: rs.v[0].toString(),
       liabilityRaw: rs.v[1].toString(),
       ratioBps: ratio.toString(),
-      ratioUnbounded: ratio === MAX_UINT2562,
+      ratioUnbounded: ratio === MAX_UINT256,
       unpriced: Number(rs.v[3]),
       stale: Boolean(rs.v[4]),
       halted: Boolean(rs.v[5])

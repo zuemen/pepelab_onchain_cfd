@@ -1,4 +1,4 @@
-// policy gate（policyGate.ts）＋ 簽章守門（signingGuard.ts）逐條單元測試。
+// policy gate（policyGate.ts）逐條單元測試。簽章白名單見 examples/signing-guard.test.ts。
 // 完全離線：不送任何交易、RPC 指向必定連不上的位址、狀態與稽核寫到暫存目錄。
 //   npx tsx examples/policy-gate.test.ts
 import assert from "node:assert";
@@ -6,7 +6,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { ethers } from "ethers";
-import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "pepe-policy-"));
 const AGENT_PK = ethers.Wallet.createRandom().privateKey;
@@ -22,9 +21,7 @@ for (const k of Object.keys(process.env)) if (k.startsWith("POLICY_") && !/STATE
 const S = await import("@pepelab/shared");
 const {
   DEFAULT_POLICY, evaluatePolicy, applyReservation, releaseReservation, loadPolicyConfig,
-  enforcePolicyGate, readAudit, verifyAuditChain,
-  assertSafeTransaction, assertSafeTypedData, checkCalldata, GuardedWallet, guardViemAccount,
-  SigningGuardError, MAX_UINT256, MAX_UINT160, makeSigner, openPositionForSession,
+  enforcePolicyGate, readAudit, verifyAuditChain, openPositionForSession,
 } = S;
 
 const AGENT = new ethers.Wallet(AGENT_PK).address;
@@ -36,12 +33,6 @@ const open = (o: Partial<Parameters<typeof evaluatePolicy>[0]> = {}) => ({
 });
 let n = 0;
 const ok = (msg: string) => console.log(`✓ ${++n}. ${msg}`);
-const expectGuard = (fn: () => unknown, code: string) => {
-  assert.throws(fn, (e: any) => e instanceof SigningGuardError && e.reasonCode === code);
-};
-const expectGuardAsync = async (p: Promise<unknown>, code: string) => {
-  await assert.rejects(p, (e: any) => e instanceof SigningGuardError && e.reasonCode === code);
-};
 
 // ─────────────── policy gate：逐條規則 ───────────────
 const cfg = { ...DEFAULT_POLICY };
@@ -252,160 +243,6 @@ ok("單筆保證金上限：>100 拒絕、=100 放行、負數/NaN → MARGIN_IN
   assert.ok(recs.some((x) => x.reasonCode === "LEVERAGE_EXCEEDED" && x.allowed === false));
   // 實際順序：VC 閘（本例以 allowUnsignedForTesting 略過）→ 風險閘（預設關）→ policy gate → 簽章 → 廣播。
   ok("openPositionForSession：VC 閘與風險閘之後、簽章與廣播之前被 policy gate 擋下（guardStage=policy，未送交易）");
-}
-
-// ─────────────── 簽章守門：calldata ───────────────
-const SPENDER = "0x" + "3".repeat(40);
-const erc20 = new ethers.Interface([
-  "function approve(address,uint256)",
-  "function permit(address,address,uint256,uint256,uint8,bytes32,bytes32)",
-]);
-const permit2 = new ethers.Interface(["function approve(address,address,uint160,uint48)"]);
-const dai = new ethers.Interface(["function permit(address,address,uint256,uint256,bool,uint8,bytes32,bytes32)"]);
-const Z32 = ethers.ZeroHash;
-{
-  expectGuard(() => assertSafeTransaction({ data: erc20.encodeFunctionData("approve", [SPENDER, MAX_UINT256]) }), "UNLIMITED_APPROVE_FORBIDDEN");
-  assert.doesNotThrow(() => assertSafeTransaction({ data: erc20.encodeFunctionData("approve", [SPENDER, 10n ** 18n]) }));
-  expectGuard(() => assertSafeTransaction({ data: "0x095ea7b3deadbeef" }), "UNLIMITED_APPROVE_FORBIDDEN");
-  ok("approve(MaxUint256) 拒絕；有限額度放行；解不開的 approve calldata fail-closed");
-
-  expectGuard(() => assertSafeTransaction({ data: permit2.encodeFunctionData("approve", [SPENDER, SPENDER, MAX_UINT160, 0]) }), "UNLIMITED_APPROVE_FORBIDDEN");
-  assert.doesNotThrow(() => assertSafeTransaction({ data: permit2.encodeFunctionData("approve", [SPENDER, SPENDER, 5n, 0]) }));
-  ok("Permit2 approve(MaxUint160) 拒絕、有限放行");
-
-  expectGuard(() => assertSafeTransaction({ data: erc20.encodeFunctionData("permit", [SPENDER, SPENDER, MAX_UINT256, 0, 27, Z32, Z32]) }), "UNLIMITED_PERMIT_FORBIDDEN");
-  assert.doesNotThrow(() => assertSafeTransaction({ data: erc20.encodeFunctionData("permit", [SPENDER, SPENDER, 1n, 0, 27, Z32, Z32]) }));
-  expectGuard(() => assertSafeTransaction({ data: dai.encodeFunctionData("permit", [SPENDER, SPENDER, 0, 0, true, 27, Z32, Z32]) }), "UNLIMITED_PERMIT_FORBIDDEN");
-  assert.equal(checkCalldata(dai.encodeFunctionData("permit", [SPENDER, SPENDER, 0, 0, false, 27, Z32, Z32])), null);
-  ok("EIP-2612 permit(MaxUint256) 與 DAI permit(allowed=true) 拒絕；有限/撤銷放行");
-
-  expectGuard(() => assertSafeTransaction({ type: 4 }), "EIP7702_TX_FORBIDDEN");
-  expectGuard(() => assertSafeTransaction({ type: "eip7702" }), "EIP7702_TX_FORBIDDEN");
-  expectGuard(() => assertSafeTransaction({ type: 2, authorizationList: [{ address: SPENDER }] }), "EIP7702_TX_FORBIDDEN");
-  assert.doesNotThrow(() => assertSafeTransaction({ type: 2, data: "0x12345678" }));
-  ok("type-4 / 'eip7702' / 帶 authorizationList 的交易 → EIP7702_TX_FORBIDDEN");
-}
-
-// ─────────────── 簽章守門：絕對額度上限（審查 Medium-2）───────────────
-{
-  const { DEFAULT_MAX_ALLOWANCE, GUARDED_SELECTORS } = S;
-  const CAP = DEFAULT_MAX_ALLOWANCE;
-  assert.equal(CAP, 1n << 128n);
-  const ext = new ethers.Interface([
-    "function increaseAllowance(address,uint256)",
-    "function permit(address owner, ((address token, uint160 amount, uint48 expiration, uint48 nonce) details, address spender, uint256 sigDeadline) permitSingle, bytes signature)",
-    "function permit(address owner, ((address token, uint160 amount, uint48 expiration, uint48 nonce)[] details, address spender, uint256 sigDeadline) permitBatch, bytes signature)",
-  ]);
-  const approve = (v: bigint) => erc20.encodeFunctionData("approve", [SPENDER, v]);
-  // 接近 MaxUint 與邊界
-  for (const v of [MAX_UINT256 - 1n, MAX_UINT256 / 2n, 1n << 200n, CAP]) {
-    expectGuard(() => assertSafeTransaction({ data: approve(v) }), "UNLIMITED_APPROVE_FORBIDDEN");
-  }
-  assert.doesNotThrow(() => assertSafeTransaction({ data: approve(CAP - 1n) }), "上限 -1 放行");
-  // increaseAllowance
-  expectGuard(() => assertSafeTransaction({ data: ext.encodeFunctionData("increaseAllowance", [SPENDER, MAX_UINT256 - 5n]) }), "UNLIMITED_APPROVE_FORBIDDEN");
-  assert.doesNotThrow(() => assertSafeTransaction({ data: ext.encodeFunctionData("increaseAllowance", [SPENDER, 10n ** 24n]) }));
-  // Permit2 approve：MaxUint160 - 1 仍 ≥ 2^128
-  expectGuard(() => assertSafeTransaction({ data: permit2.encodeFunctionData("approve", [SPENDER, SPENDER, MAX_UINT160 - 1n, 0]) }), "UNLIMITED_APPROVE_FORBIDDEN");
-  // Permit2 permit(PermitSingle) / permit(PermitBatch)
-  const single = (amt: bigint) =>
-    ext.encodeFunctionData("permit(address,((address,uint160,uint48,uint48),address,uint256),bytes)", [
-      AGENT, [[SPENDER, amt, 0, 0], SPENDER, 0], "0x",
-    ]);
-  const batch = (amts: bigint[]) =>
-    ext.encodeFunctionData("permit(address,((address,uint160,uint48,uint48)[],address,uint256),bytes)", [
-      AGENT, [amts.map((a) => [SPENDER, a, 0, 0]), SPENDER, 0], "0x",
-    ]);
-  assert.equal(single(1n).slice(0, 10), GUARDED_SELECTORS.permit2Single);
-  assert.equal(batch([1n]).slice(0, 10), GUARDED_SELECTORS.permit2Batch);
-  expectGuard(() => assertSafeTransaction({ data: single(MAX_UINT160 - 1n) }), "UNLIMITED_PERMIT_FORBIDDEN");
-  assert.doesNotThrow(() => assertSafeTransaction({ data: single(10n ** 20n) }));
-  expectGuard(() => assertSafeTransaction({ data: batch([1n, CAP]) }), "UNLIMITED_PERMIT_FORBIDDEN");
-  assert.doesNotThrow(() => assertSafeTransaction({ data: batch([1n, 2n]) }));
-  // EIP-2612 permit 接近上限
-  expectGuard(() => assertSafeTransaction({ data: erc20.encodeFunctionData("permit", [SPENDER, SPENDER, MAX_UINT256 - 1n, 0, 27, Z32, Z32]) }), "UNLIMITED_PERMIT_FORBIDDEN");
-  // typed data：接近上限、DAI allowed truthy
-  const permitTypes = { Permit: [{ name: "spender", type: "address" }, { name: "value", type: "uint256" }] };
-  expectGuard(() => assertSafeTypedData(permitTypes, { value: MAX_UINT256 - 1n }), "UNLIMITED_PERMIT_FORBIDDEN");
-  expectGuard(() => assertSafeTypedData(permitTypes, { value: CAP }), "UNLIMITED_PERMIT_FORBIDDEN");
-  for (const truthy of [true, 1, "true", "yes"]) {
-    expectGuard(() => assertSafeTypedData({ Permit: [] }, { allowed: truthy }, "Permit"), "UNLIMITED_PERMIT_FORBIDDEN");
-  }
-  assert.doesNotThrow(() => assertSafeTypedData({ Permit: [] }, { allowed: false }, "Permit"));
-  expectGuard(() => assertSafeTypedData({}, { details: { amount: MAX_UINT160 - 1n } }, "PermitSingle"), "UNLIMITED_PERMIT_FORBIDDEN");
-  expectGuard(() => assertSafeTypedData({}, { permitted: { amount: CAP } }, "PermitTransferFrom"), "UNLIMITED_PERMIT_FORBIDDEN");
-  // env 調整上限；不合法 → fail-closed
-  process.env.SIGNING_GUARD_MAX_ALLOWANCE = "1000";
-  expectGuard(() => assertSafeTransaction({ data: approve(1000n) }), "UNLIMITED_APPROVE_FORBIDDEN");
-  assert.doesNotThrow(() => assertSafeTransaction({ data: approve(999n) }));
-  process.env.SIGNING_GUARD_MAX_ALLOWANCE = "abc";
-  expectGuard(() => assertSafeTransaction({ data: approve(1n) }), "GUARD_CONFIG_INVALID");
-  delete process.env.SIGNING_GUARD_MAX_ALLOWANCE;
-  ok("絕對上限 2^128（>= 即拒）：接近 MaxUint 的 approve/increaseAllowance/permit/Permit2 approve・permit・permitBatch 被擋；DAI allowed truthy 被擋；env 可調、不合法 fail-closed");
-}
-
-// ─────────────── 簽章守門：typed data ───────────────
-{
-  const permitTypes = { Permit: [
-    { name: "owner", type: "address" }, { name: "spender", type: "address" },
-    { name: "value", type: "uint256" }, { name: "nonce", type: "uint256" }, { name: "deadline", type: "uint256" },
-  ] };
-  expectGuard(() => assertSafeTypedData(permitTypes, { value: MAX_UINT256 }), "UNLIMITED_PERMIT_FORBIDDEN");
-  expectGuard(() => assertSafeTypedData(permitTypes, { value: MAX_UINT256.toString() }), "UNLIMITED_PERMIT_FORBIDDEN");
-  assert.doesNotThrow(() => assertSafeTypedData(permitTypes, { value: 1000n }));
-  expectGuard(() => assertSafeTypedData({ Permit: [] }, { allowed: true }, "Permit"), "UNLIMITED_PERMIT_FORBIDDEN");
-  expectGuard(() => assertSafeTypedData({}, { details: { amount: MAX_UINT160 } }, "PermitSingle"), "UNLIMITED_PERMIT_FORBIDDEN");
-  expectGuard(() => assertSafeTypedData({}, { details: [{ amount: 1n }, { amount: MAX_UINT160 }] }, "PermitBatch"), "UNLIMITED_PERMIT_FORBIDDEN");
-  // x402 的 EIP-3009 TransferWithAuthorization 必須照常可簽
-  assert.doesNotThrow(() => assertSafeTypedData({ TransferWithAuthorization: [] }, { value: 5000n }, "TransferWithAuthorization"));
-  ok("typed data：Permit(MaxUint256 / allowed=true)、Permit2 PermitSingle/Batch(MaxUint160) 拒絕；x402 的 TransferWithAuthorization 放行");
-}
-
-// ─────────────── GuardedWallet（ethers）───────────────
-{
-  const signer = makeSigner(new ethers.JsonRpcProvider("http://127.0.0.1:1", 84532, { staticNetwork: true }));
-  assert.ok(signer instanceof GuardedWallet, "makeSigner 必須回 GuardedWallet");
-  const w = new GuardedWallet(AGENT_PK);
-  const baseTx = { chainId: 84532, nonce: 0, gasLimit: 21000n, maxFeePerGas: 1n, maxPriorityFeePerGas: 1n, to: SPENDER, value: 0n };
-  await expectGuardAsync(w.signTransaction({ ...baseTx, type: 4, authorizationList: [] }), "EIP7702_TX_FORBIDDEN");
-  await expectGuardAsync(w.signTransaction({ ...baseTx, type: 2, data: erc20.encodeFunctionData("approve", [SPENDER, MAX_UINT256]) }), "UNLIMITED_APPROVE_FORBIDDEN");
-  await expectGuardAsync(w.authorize({ address: SPENDER, nonce: 0, chainId: 84532 }), "EIP7702_AUTHORIZATION_FORBIDDEN");
-  expectGuard(() => w.authorizeSync({ address: SPENDER, nonce: 0, chainId: 84532 }), "EIP7702_AUTHORIZATION_FORBIDDEN");
-  const domain = { name: "USDC", version: "2", chainId: 84532, verifyingContract: SPENDER };
-  const permitTypes = { Permit: [
-    { name: "owner", type: "address" }, { name: "spender", type: "address" },
-    { name: "value", type: "uint256" }, { name: "nonce", type: "uint256" }, { name: "deadline", type: "uint256" },
-  ] };
-  await expectGuardAsync(w.signTypedData(domain, permitTypes, { owner: AGENT, spender: SPENDER, value: MAX_UINT256, nonce: 0, deadline: 1 }), "UNLIMITED_PERMIT_FORBIDDEN");
-  const good = await w.signTransaction({ ...baseTx, type: 2 });
-  assert.match(good, /^0x02/);
-  assert.ok(w.connect(null) instanceof GuardedWallet, "connect 之後仍是 GuardedWallet");
-  ok("GuardedWallet：7702 交易 / authorize / 無上限 approve / Permit typed data 被擋；一般交易照常簽；makeSigner 回 GuardedWallet");
-}
-
-// ─────────────── guardViemAccount（x402 路徑）───────────────
-{
-  const acc = guardViemAccount(privateKeyToAccount(generatePrivateKey()));
-  await expectGuardAsync(acc.signTransaction({ type: "eip7702", chainId: 84532, authorizationList: [] } as any), "EIP7702_TX_FORBIDDEN");
-  await expectGuardAsync(acc.signTransaction({ type: "eip1559", chainId: 84532, to: SPENDER as any, data: erc20.encodeFunctionData("approve", [SPENDER, MAX_UINT256]) as any }), "UNLIMITED_APPROVE_FORBIDDEN");
-  await expectGuardAsync((acc as any).signAuthorization({ address: SPENDER, chainId: 84532, nonce: 0 }), "EIP7702_AUTHORIZATION_FORBIDDEN");
-  await expectGuardAsync((acc as any).sign({ hash: Z32 }), "RAW_HASH_SIGN_FORBIDDEN");
-  await expectGuardAsync(acc.signTypedData({
-    domain: { name: "X", version: "1", chainId: 84532 }, primaryType: "Permit",
-    types: { Permit: [{ name: "spender", type: "address" }, { name: "value", type: "uint256" }] },
-    message: { spender: SPENDER, value: MAX_UINT256 },
-  } as any), "UNLIMITED_PERMIT_FORBIDDEN");
-  const sig = await acc.signTypedData({
-    domain: { name: "USDC", version: "2", chainId: 84532, verifyingContract: SPENDER as any },
-    primaryType: "TransferWithAuthorization",
-    types: { TransferWithAuthorization: [
-      { name: "from", type: "address" }, { name: "to", type: "address" }, { name: "value", type: "uint256" },
-      { name: "validAfter", type: "uint256" }, { name: "validBefore", type: "uint256" }, { name: "nonce", type: "bytes32" },
-    ] },
-    message: { from: acc.address, to: SPENDER as any, value: 5000n, validAfter: 0n, validBefore: 9999999999n, nonce: Z32 as `0x${string}` },
-  });
-  assert.match(sig, /^0x[0-9a-f]{130}$/);
-  ok("guardViemAccount：7702 交易 / signAuthorization / 裸 hash sign / 無上限 approve・Permit 被擋；x402 EIP-3009 照常簽");
 }
 
 fs.rmSync(TMP, { recursive: true, force: true });

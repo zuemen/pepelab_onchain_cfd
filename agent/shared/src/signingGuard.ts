@@ -1,45 +1,48 @@
-// 簽章守門（signing guard）—— agent 金鑰能簽什麼，在「簽之前」就擋。
+// 簽章守門（signing guard）—— **白名單**：agent 金鑰只能簽列出來的東西，其餘一律拒絕。
 //
-// 業界 agent wallet（Privy / Turnkey / Coinbase）在簽章層做的兩條硬規則，這裡照做：
-//   1. **禁止簽 EIP-7702**：type-4 交易、帶 authorizationList 的交易、以及單獨的
-//      7702 authorization 簽章（ethers `authorize`、viem `signAuthorization`）。
-//      7702 等於把 EOA 的程式碼換掉 —— agent 金鑰一旦簽出去，委派合約就能以這個
-//      EOA 的身分做任何事，session 限額完全失效。
-//   2. **禁止無上限（實質無上限）授權**：ERC-20 `approve` / `increaseAllowance`、
-//      EIP-2612 `permit`、Permit2 `approve` / `permit(PermitSingle)` / `permit(PermitBatch)`
-//      的額度 ≥ 絕對上限（預設 2^128，SIGNING_GUARD_MAX_ALLOWANCE）一律拒絕；DAI 式
-//      `permit(…, allowed, …)` 的 allowed 為 truthy 即拒絕；對應的 EIP-712 typed data 同規則。
+// 為什麼從 denylist 改成白名單（複審 High）：denylist 兩度被繞過——先是 MaxUint-1，
+// 再是 typed data 夾帶 `allowed:false` 讓 EIP-2612 Permit 走進 DAI 分支被放行（ethers
+// 簽出來的仍是無上限 permit）。「列舉危險的東西」永遠列不完；agent 金鑰實際需要簽的
+// 東西只有三種，直接只放行這三種。
 //
-// 這一關與 policy gate（policyGate.ts）分工：policy gate 管「這筆單該不該下」，
-// 這裡管「這把金鑰能不能簽這種東西」。所有 agent 金鑰的簽章都經過這裡：
-//   - ethers 路徑：`makeSigner()` 回傳 `GuardedWallet`（覆寫 signTransaction /
-//     signTypedData / authorize / authorizeSync；sendTransaction 內部會走 signTransaction）。
-//   - viem 路徑（x402 付費用的 wallet client）：`guardViemAccount(privateKeyToAccount(pk))`。
+// 白名單（盤點過所有使用 agent 金鑰的簽章點）：
+//   (a) 交易：`to` 必須是設定中的 session manager（SESSION_MANAGER_ADDRESS），selector
+//       只能是 `openPositionForSession`（write.ts 開倉）或 `closePositionForSession`
+//       （write.ts 平倉），calldata 必須能完整解碼；`value` ≤ 上限
+//       （SIGNING_GUARD_MAX_TX_VALUE_WEI，預設 0.001 ETH；開倉只附 executionFee，
+//       目前 0.0001 ETH；平倉不附 ETH）。type-4、authorizationList、合約建立一律拒絕。
+//   (b) EIP-712：只允許 x402 exact 的 USDC `TransferWithAuthorization`（EIP-3009）。
+//       以 `types`／`primaryType` 判斷型別（**不看 message 欄位**），型別欄位必須與
+//       EIP-3009 規格逐欄相同、message 的鍵必須恰好等於型別欄位；domain 的 name /
+//       version / chainId / verifyingContract 必須等於官方 USDC；`from` 必須是 agent
+//       自己；`value` ≤ X402_MAX_PAYMENT_USDC（resolveX402MaxValue）。
+//       呼叫點：x402-fetch（examples/x402-*、buy-signal、demo-agent、x402_agent.ts）。
+//   (c) EIP-191 personal message：只允許 ERC-8126 proof-of-possession 挑戰字串
+//       `pepelab-wv:<agent 地址>:<毫秒時間戳>`（verification.ts checkWV；write.ts 風險閘與
+//       MCP get_agent_verification 會帶 agent 金鑰呼叫）。personal_sign 有
+//       "\x19Ethereum Signed Message" 前綴，不可能被當成交易、permit 或 7702 authorization，
+//       且挑戰字串格式固定、不含任何授權語意。
+// 其餘全部拒絕：approve / increaseAllowance / permit / Permit2 / 任意合約呼叫 / 其他
+// typed data / 其他訊息 / 7702 authorization / 裸 hash 簽章。
 //
 // 誠實邊界：拿得到私鑰原文的程式碼永遠可以繞過任何 JS 包裝（例如直接用 signingKey.sign）。
 // 這一關防的是「agent 被 prompt injection / 惡意 402 回應 / 惡意工具參數誘導」去簽
 // 危險內容，不是防一個已經被攻陷的 process。
 import { ethers } from "ethers";
-
-export const MAX_UINT256 = (1n << 256n) - 1n;
-export const MAX_UINT160 = (1n << 160n) - 1n;
-
-/**
- * 授權額度的**絕對上限**（審查 Medium-2）：只擋「剛好等於 MaxUint」擋不住 MaxUint-1、
- * 2^200 這類實質無上限的額度。approve / increaseAllowance / permit / Permit2 的額度
- * 一律要求 `< 上限`（`>=` 上限即拒絕）。預設 2^128（遠大於任何真實交易量，
- * 又遠小於各種「無上限」慣用值），可用 env SIGNING_GUARD_MAX_ALLOWANCE（十進位整數，
- * 代幣最小單位）調整；設定不合法 → 所有授權類簽章一律拒絕（fail-closed）。
- */
-export const DEFAULT_MAX_ALLOWANCE = 1n << 128n;
+import { AGENT_CHAIN_ID } from "./addresses.ts";
+import { OFFICIAL_BASE_SEPOLIA_USDC } from "./env.ts";
+import { resolveX402MaxValue } from "./x402Client.ts";
 
 /** 拒絕原因代碼（穩定字串，寫進稽核與錯誤）。 */
 export type SigningGuardReason =
+  | "TX_NOT_ALLOWLISTED"
   | "EIP7702_TX_FORBIDDEN"
   | "EIP7702_AUTHORIZATION_FORBIDDEN"
   | "RAW_HASH_SIGN_FORBIDDEN"
-  | "UNLIMITED_APPROVE_FORBIDDEN"
-  | "UNLIMITED_PERMIT_FORBIDDEN"
+  | "TX_VALUE_TOO_HIGH"
+  | "TYPED_DATA_NOT_ALLOWLISTED"
+  | "PAYMENT_TOO_HIGH"
+  | "MESSAGE_NOT_ALLOWLISTED"
   | "GUARD_CONFIG_INVALID";
 
 export class SigningGuardError extends Error {
@@ -52,121 +55,67 @@ export class SigningGuardError extends Error {
   }
 }
 
-/** 目前的額度上限；env 不合法時丟 GUARD_CONFIG_INVALID（呼叫端一律拒絕）。 */
-export function maxAllowance(env: NodeJS.ProcessEnv = process.env): bigint {
-  const raw = env.SIGNING_GUARD_MAX_ALLOWANCE?.trim();
-  if (!raw) return DEFAULT_MAX_ALLOWANCE;
-  if (!/^\d+$/.test(raw) || BigInt(raw) <= 0n) {
-    throw new SigningGuardError("GUARD_CONFIG_INVALID", "SIGNING_GUARD_MAX_ALLOWANCE 必須是正整數（fail-closed：拒絕所有授權類簽章）");
+const ZERO = "0x0000000000000000000000000000000000000000";
+
+// ── 設定 ─────────────────────────────────────────────────────────────────────
+/** 官方 USDC 的 EIP-712 domain（x402 exact 使用）。依鏈別固定，不接受外部覆寫。 */
+export const OFFICIAL_USDC_DOMAINS: Record<number, { name: string; version: string; verifyingContract: string }> = {
+  84532: { name: "USDC", version: "2", verifyingContract: OFFICIAL_BASE_SEPOLIA_USDC },
+};
+
+export const DEFAULT_MAX_TX_VALUE_WEI = 10n ** 15n; // 0.001 ETH
+
+/** session manager 的允許 selector（逐一列出，其餘拒絕）。 */
+const SESSION_MANAGER_IFACE = new ethers.Interface([
+  "function openPositionForSession(uint256 sessionId, bytes32 asset, bool isLong, uint256 margin, uint256 leverage, address copiedFrom) payable returns (uint256)",
+  "function closePositionForSession(uint256 sessionId, uint256 positionId)",
+]);
+export const ALLOWED_TX_SELECTORS: Record<string, string> = {
+  [SESSION_MANAGER_IFACE.getFunction("openPositionForSession")!.selector]: "openPositionForSession",
+  [SESSION_MANAGER_IFACE.getFunction("closePositionForSession")!.selector]: "closePositionForSession",
+};
+
+/** EIP-3009 TransferWithAuthorization 的型別（逐欄比對）。 */
+export const TRANSFER_WITH_AUTHORIZATION_FIELDS: ReadonlyArray<{ name: string; type: string }> = [
+  { name: "from", type: "address" },
+  { name: "to", type: "address" },
+  { name: "value", type: "uint256" },
+  { name: "validAfter", type: "uint256" },
+  { name: "validBefore", type: "uint256" },
+  { name: "nonce", type: "bytes32" },
+];
+
+export const WV_CHALLENGE_RE = /^pepelab-wv:(0x[0-9a-fA-F]{40}):(\d{10,16})$/;
+
+function sessionManager(env: NodeJS.ProcessEnv): string {
+  const a = env.SESSION_MANAGER_ADDRESS?.trim();
+  if (!a || !ethers.isAddress(a) || a.toLowerCase() === ZERO) {
+    throw new SigningGuardError("GUARD_CONFIG_INVALID", "未設定有效 SESSION_MANAGER_ADDRESS，無法判斷交易白名單（fail-closed）");
+  }
+  return ethers.getAddress(a);
+}
+
+function maxTxValue(env: NodeJS.ProcessEnv): bigint {
+  const raw = env.SIGNING_GUARD_MAX_TX_VALUE_WEI?.trim();
+  if (!raw) return DEFAULT_MAX_TX_VALUE_WEI;
+  if (!/^\d+$/.test(raw)) {
+    throw new SigningGuardError("GUARD_CONFIG_INVALID", "SIGNING_GUARD_MAX_TX_VALUE_WEI 必須是非負整數（fail-closed）");
   }
   return BigInt(raw);
 }
 
-function capCheck(
-  amount: unknown,
-  reason: "UNLIMITED_APPROVE_FORBIDDEN" | "UNLIMITED_PERMIT_FORBIDDEN",
-  what: string,
-): SigningGuardError | null {
-  const cap = maxAllowance();
-  const v = big(amount);
-  if (v === null) return new SigningGuardError(reason, `${what} 額度無法解析（fail-closed）`);
-  if (v >= cap) return new SigningGuardError(reason, `${what} 額度 ${v} ≥ 上限 ${cap}`);
+function big(v: unknown): bigint | null {
+  try {
+    if (typeof v === "bigint") return v;
+    if (typeof v === "number" && Number.isSafeInteger(v)) return BigInt(v);
+    if (typeof v === "string" && /^(0x[0-9a-fA-F]+|\d+)$/.test(v)) return BigInt(v);
+  } catch {
+    /* fallthrough */
+  }
   return null;
 }
 
-// ── calldata 檢查 ─────────────────────────────────────────────────────────────
-const IFACE = new ethers.Interface([
-  // ERC-20
-  "function approve(address spender, uint256 amount)",
-  "function increaseAllowance(address spender, uint256 addedValue)",
-  // EIP-2612 / DAI 式 permit（兩者簽章不同，selector 不同）
-  "function permit(address owner, address spender, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s)",
-  "function permit(address holder, address spender, uint256 nonce, uint256 expiry, bool allowed, uint8 v, bytes32 r, bytes32 s)",
-  // Permit2 AllowanceTransfer
-  "function approve(address token, address spender, uint160 amount, uint48 expiration)",
-  "function permit(address owner, ((address token, uint160 amount, uint48 expiration, uint48 nonce) details, address spender, uint256 sigDeadline) permitSingle, bytes signature)",
-  "function permit(address owner, ((address token, uint160 amount, uint48 expiration, uint48 nonce)[] details, address spender, uint256 sigDeadline) permitBatch, bytes signature)",
-]);
-const sel = (sig: string) => IFACE.getFunction(sig)!.selector;
-const SEL = {
-  approve: sel("approve(address,uint256)"),
-  increaseAllowance: sel("increaseAllowance(address,uint256)"),
-  permit2612: sel("permit(address,address,uint256,uint256,uint8,bytes32,bytes32)"),
-  permitDai: sel("permit(address,address,uint256,uint256,bool,uint8,bytes32,bytes32)"),
-  permit2Approve: sel("approve(address,address,uint160,uint48)"),
-  permit2Single: sel("permit(address,((address,uint160,uint48,uint48),address,uint256),bytes)"),
-  permit2Batch: sel("permit(address,((address,uint160,uint48,uint48)[],address,uint256),bytes)"),
-};
-
-/** 被守門的 selector（測試與文件用）。 */
-export const GUARDED_SELECTORS = SEL;
-
-function decodeBy(selector: string, data: string): ethers.Result | null {
-  try {
-    const fn = IFACE.getFunction(selector)!;
-    return IFACE.decodeFunctionData(fn, data);
-  } catch {
-    return null;
-  }
-}
-
-/**
- * 檢查 calldata；回 null＝放行，回 reason＝拒絕。
- * 解不開的 approve/permit calldata 一律**拒絕**（fail-closed）：正常的 ABI 編碼
- * 不會解不開，解不開多半是刻意構造來繞過檢查的。
- */
-export function checkCalldata(data: string | null | undefined): SigningGuardError | null {
-  if (!data || data === "0x" || data.length < 10) return null;
-  const s = data.slice(0, 10).toLowerCase();
-  try {
-    const A = "UNLIMITED_APPROVE_FORBIDDEN" as const;
-    const P = "UNLIMITED_PERMIT_FORBIDDEN" as const;
-    const need = (r: ethers.Result | null, reason: typeof A | typeof P, what: string) =>
-      r ?? new SigningGuardError(reason, `${what} calldata 無法解析（fail-closed）`);
-    switch (s) {
-      case SEL.approve: {
-        const a = need(decodeBy(s, data), A, "approve");
-        return a instanceof SigningGuardError ? a : capCheck(a[1], A, `approve(${a[0]})`);
-      }
-      case SEL.increaseAllowance: {
-        const a = need(decodeBy(s, data), A, "increaseAllowance");
-        return a instanceof SigningGuardError ? a : capCheck(a[1], A, `increaseAllowance(${a[0]})`);
-      }
-      case SEL.permit2612: {
-        const a = need(decodeBy(s, data), P, "permit");
-        return a instanceof SigningGuardError ? a : capCheck(a[2], P, `permit(spender=${a[1]})`);
-      }
-      case SEL.permitDai: {
-        const a = need(decodeBy(s, data), P, "DAI permit");
-        if (a instanceof SigningGuardError) return a;
-        return a[4] ? new SigningGuardError(P, `DAI permit(spender=${a[1]}, allowed=${a[4]})＝無上限`) : null;
-      }
-      case SEL.permit2Approve: {
-        const a = need(decodeBy(s, data), A, "Permit2 approve");
-        return a instanceof SigningGuardError ? a : capCheck(a[2], A, `Permit2 approve(${a[0]}, ${a[1]})`);
-      }
-      case SEL.permit2Single: {
-        const a = need(decodeBy(s, data), P, "Permit2 permit");
-        return a instanceof SigningGuardError ? a : capCheck(a[1][0][1], P, "Permit2 permit(PermitSingle)");
-      }
-      case SEL.permit2Batch: {
-        const a = need(decodeBy(s, data), P, "Permit2 permitBatch");
-        if (a instanceof SigningGuardError) return a;
-        for (const d of a[1][0] as ethers.Result[]) {
-          const bad = capCheck(d[1], P, "Permit2 permit(PermitBatch)");
-          if (bad) return bad;
-        }
-        return null;
-      }
-      default:
-        return null;
-    }
-  } catch (err) {
-    if (err instanceof SigningGuardError) return err;
-    return new SigningGuardError("UNLIMITED_APPROVE_FORBIDDEN", "授權類 calldata 檢查失敗（fail-closed）");
-  }
-}
-
+// ── (a) 交易 ─────────────────────────────────────────────────────────────────
 /** 交易型別是不是 EIP-7702（ethers 用數字 4，viem 用字串 'eip7702'）。 */
 function is7702(tx: { type?: unknown; authorizationList?: unknown }): boolean {
   const t = tx.type;
@@ -175,93 +124,126 @@ function is7702(tx: { type?: unknown; authorizationList?: unknown }): boolean {
   return Array.isArray(list) && list.length > 0;
 }
 
-/**
- * 交易守門：type-4 / authorizationList / 無上限 approve / 無上限 permit 一律拒絕。
- * 通過時不回傳任何東西；拒絕時丟 `SigningGuardError`。
- */
-export function assertSafeTransaction(tx: {
-  type?: unknown;
-  authorizationList?: unknown;
-  data?: string | null;
-}): void {
+export function assertAllowedTransaction(
+  tx: { to?: unknown; data?: unknown; value?: unknown; type?: unknown; authorizationList?: unknown },
+  env: NodeJS.ProcessEnv = process.env,
+): void {
   if (is7702(tx)) {
     throw new SigningGuardError("EIP7702_TX_FORBIDDEN", "agent 金鑰不得簽 EIP-7702（type-4 / authorizationList）交易");
   }
-  const bad = checkCalldata(tx.data ?? null);
-  if (bad) throw bad;
-}
-
-// ── EIP-712 typed data 檢查 ──────────────────────────────────────────────────
-function big(v: unknown): bigint | null {
-  try {
-    if (typeof v === "bigint") return v;
-    if (typeof v === "number" || typeof v === "string") return BigInt(v);
-  } catch {
-    /* fallthrough */
+  const mgr = sessionManager(env);
+  const to = typeof tx.to === "string" ? tx.to : (tx.to as { address?: string } | null)?.address;
+  if (!to || !ethers.isAddress(to) || ethers.getAddress(to) !== mgr) {
+    throw new SigningGuardError("TX_NOT_ALLOWLISTED", `交易對象 ${String(to ?? "(合約建立)")} 不是 session manager ${mgr}`);
   }
-  return null;
-}
-
-/** 推斷 primaryType：viem 會明給；ethers 沒有 primaryType，取「沒被其他型別引用」的那個。 */
-function primaryTypeOf(types: Record<string, unknown>, explicit?: string): string | undefined {
-  if (explicit) return explicit;
-  const names = Object.keys(types).filter((n) => n !== "EIP712Domain");
+  const data = typeof tx.data === "string" ? tx.data : "";
+  const sel = data.slice(0, 10).toLowerCase();
+  const fnName = ALLOWED_TX_SELECTORS[sel];
+  if (!fnName) throw new SigningGuardError("TX_NOT_ALLOWLISTED", `selector ${sel || "(空)"} 不在允許清單`);
   try {
-    return ethers.TypedDataEncoder.getPrimaryType(
-      Object.fromEntries(names.map((n) => [n, types[n] as ethers.TypedDataField[]])),
-    );
+    SESSION_MANAGER_IFACE.decodeFunctionData(fnName, data);
   } catch {
-    return names[0];
+    throw new SigningGuardError("TX_NOT_ALLOWLISTED", `${fnName} calldata 無法完整解碼（fail-closed）`);
+  }
+  const value = tx.value === undefined || tx.value === null ? 0n : big(tx.value);
+  const cap = maxTxValue(env);
+  if (value === null || value > cap) {
+    throw new SigningGuardError("TX_VALUE_TOO_HIGH", `value ${String(tx.value)} 超過上限 ${cap} wei`);
+  }
+  if (fnName === "closePositionForSession" && value !== 0n) {
+    throw new SigningGuardError("TX_VALUE_TOO_HIGH", "closePositionForSession 不應附帶 ETH");
   }
 }
 
+// ── (b) EIP-712 ──────────────────────────────────────────────────────────────
 /**
- * typed data 守門：EIP-2612 Permit（value ≥ 上限）、DAI Permit（allowed 為 truthy）、
- * Permit2 PermitSingle / PermitBatch / PermitTransferFrom 系列（amount ≥ 上限）一律拒絕。
- * x402 用的 EIP-3009 TransferWithAuthorization 金額有限（由 maxValue 約束），不受影響。
+ * 只允許 USDC TransferWithAuthorization。判斷依據是 **types / primaryType**：
+ *   - types（去掉 EIP712Domain）必須恰好只有 TransferWithAuthorization 一個型別，且欄位
+ *     與 EIP-3009 逐欄相同；primaryType（若有給）必須是它。
+ *   - message 的鍵必須恰好等於型別欄位（多一個、少一個都拒絕）。
+ *   - domain 必須等於官方 USDC；from 必須是簽章者；value ≤ X402_MAX_PAYMENT_USDC。
  */
-export function assertSafeTypedData(
+export function assertAllowedTypedData(
+  domain: { name?: unknown; version?: unknown; chainId?: unknown; verifyingContract?: unknown; salt?: unknown },
   types: Record<string, unknown>,
-  value: Record<string, any>,
+  message: Record<string, unknown>,
+  signer: string,
   primaryType?: string,
 ): void {
-  const pt = primaryTypeOf(types, primaryType);
-  if (!pt) return;
-  const P = "UNLIMITED_PERMIT_FORBIDDEN" as const;
-  const check = (amt: unknown, what: string) => {
-    const bad = capCheck(amt, P, what);
-    if (bad) throw bad;
-  };
-  if (pt === "Permit") {
-    // DAI 式：allowed 是 bool，但簽章端可能收到 1 / "true" 之類 → truthy 就拒絕。
-    if (value && "allowed" in value) {
-      if (value.allowed) throw new SigningGuardError(P, `DAI 式 Permit(allowed=${String(value.allowed)})＝無上限授權`);
-      return;
-    }
-    check(value?.value, "EIP-2612 Permit");
-    return;
+  const T = "TYPED_DATA_NOT_ALLOWLISTED" as const;
+  const names = Object.keys(types ?? {}).filter((n) => n !== "EIP712Domain");
+  if (names.length !== 1 || names[0] !== "TransferWithAuthorization") {
+    throw new SigningGuardError(T, `typed data 型別 [${names.join(", ")}] 不在允許清單（只允許 TransferWithAuthorization）`);
   }
-  if (pt === "PermitSingle" || pt === "PermitBatch") {
-    const details = Array.isArray(value?.details) ? value.details : [value?.details];
-    for (const d of details) check(d?.amount, `Permit2 ${pt}`);
-    return;
+  if (primaryType !== undefined && primaryType !== "TransferWithAuthorization") {
+    throw new SigningGuardError(T, `primaryType ${primaryType} 不在允許清單`);
   }
-  if (pt === "PermitTransferFrom" || pt === "PermitBatchTransferFrom" || pt === "PermitWitnessTransferFrom" ||
-      pt === "PermitBatchWitnessTransferFrom") {
-    const perms = Array.isArray(value?.permitted) ? value.permitted : [value?.permitted];
-    for (const p of perms) check(p?.amount, `Permit2 ${pt}`);
+  const fields = types.TransferWithAuthorization as Array<{ name: string; type: string }>;
+  const same =
+    Array.isArray(fields) &&
+    fields.length === TRANSFER_WITH_AUTHORIZATION_FIELDS.length &&
+    fields.every((f, i) => f?.name === TRANSFER_WITH_AUTHORIZATION_FIELDS[i].name && f?.type === TRANSFER_WITH_AUTHORIZATION_FIELDS[i].type);
+  if (!same) throw new SigningGuardError(T, "TransferWithAuthorization 的欄位與 EIP-3009 不符");
+
+  const keys = Object.keys(message ?? {}).sort();
+  const expected = TRANSFER_WITH_AUTHORIZATION_FIELDS.map((f) => f.name).sort();
+  if (keys.length !== expected.length || keys.some((k, i) => k !== expected[i])) {
+    throw new SigningGuardError(T, `message 欄位 [${keys.join(", ")}] 與型別不一致`);
+  }
+
+  const usdc = OFFICIAL_USDC_DOMAINS[AGENT_CHAIN_ID];
+  if (!usdc) throw new SigningGuardError(T, `chain ${AGENT_CHAIN_ID} 沒有設定官方 USDC domain`);
+  const vc = typeof domain?.verifyingContract === "string" ? domain.verifyingContract : "";
+  const domainOk =
+    domain?.name === usdc.name &&
+    domain?.version === usdc.version &&
+    big(domain?.chainId) === BigInt(AGENT_CHAIN_ID) &&
+    ethers.isAddress(vc) &&
+    ethers.getAddress(vc) === ethers.getAddress(usdc.verifyingContract) &&
+    domain?.salt === undefined;
+  if (!domainOk) {
+    throw new SigningGuardError(T, "domain 不是官方 USDC（name / version / chainId / verifyingContract 不符）");
+  }
+  const from = typeof message.from === "string" ? message.from : "";
+  if (!ethers.isAddress(from) || ethers.getAddress(from) !== ethers.getAddress(signer)) {
+    throw new SigningGuardError(T, "TransferWithAuthorization.from 不是 agent 自己");
+  }
+  const value = big(message.value);
+  const cap = resolveX402MaxValue();
+  if (value === null || value > cap) {
+    throw new SigningGuardError("PAYMENT_TOO_HIGH", `付款金額 ${String(message.value)} 超過單筆上限 ${cap}（X402_MAX_PAYMENT_USDC）`);
+  }
+}
+
+// ── (c) personal message ─────────────────────────────────────────────────────
+export function assertAllowedMessage(message: unknown, signer: string): void {
+  const text =
+    typeof message === "string"
+      ? message
+      : message instanceof Uint8Array
+        ? (() => {
+            try {
+              return ethers.toUtf8String(message);
+            } catch {
+              return "";
+            }
+          })()
+        : "";
+  const m = WV_CHALLENGE_RE.exec(text);
+  if (!m || ethers.getAddress(m[1]) !== ethers.getAddress(signer)) {
+    throw new SigningGuardError("MESSAGE_NOT_ALLOWLISTED", "只允許簽 ERC-8126 proof-of-possession 挑戰字串（pepelab-wv:<自己的地址>:<時間戳>）");
   }
 }
 
 // ── ethers：GuardedWallet ────────────────────────────────────────────────────
 /**
- * `ethers.Wallet` 的子類：所有會產生簽章的公開方法都先過守門。
+ * `ethers.Wallet` 的子類：所有會產生簽章的公開方法都先過白名單。
  * `sendTransaction` 在 AbstractSigner 裡是 populate → `this.signTransaction` → broadcast，
  * 因此覆寫 signTransaction 就同時涵蓋 sendTransaction 與所有 `contract.fn()` 寫呼叫。
  */
 export class GuardedWallet extends ethers.Wallet {
   override async signTransaction(tx: ethers.TransactionRequest): Promise<string> {
-    assertSafeTransaction(tx as any);
+    assertAllowedTransaction(tx as any);
     return super.signTransaction(tx);
   }
 
@@ -270,8 +252,18 @@ export class GuardedWallet extends ethers.Wallet {
     types: Record<string, ethers.TypedDataField[]>,
     value: Record<string, any>,
   ): Promise<string> {
-    assertSafeTypedData(types, value);
+    assertAllowedTypedData(domain as any, types, value, this.address);
     return super.signTypedData(domain, types, value);
+  }
+
+  override async signMessage(message: string | Uint8Array): Promise<string> {
+    assertAllowedMessage(message, this.address);
+    return super.signMessage(message);
+  }
+
+  override signMessageSync(message: string | Uint8Array): string {
+    assertAllowedMessage(message, this.address);
+    return super.signMessageSync(message);
   }
 
   override async authorize(_auth: ethers.AuthorizationRequest): Promise<ethers.Authorization> {
@@ -289,11 +281,9 @@ export class GuardedWallet extends ethers.Wallet {
 
 // ── viem：guardViemAccount ──────────────────────────────────────────────────
 /**
- * 包一個 viem LocalAccount（`privateKeyToAccount(pk)` 的回傳值）：
- *   - signTransaction：先過 assertSafeTransaction
- *   - signTypedData：先過 assertSafeTypedData
- *   - signAuthorization（7702）與 sign（裸 hash 簽章，可用來簽 7702 authorization
- *     的 digest）：一律丟錯
+ * 包一個 viem LocalAccount（`privateKeyToAccount(pk)` 的回傳值），規則與 GuardedWallet 相同：
+ *   - signTransaction / signTypedData / signMessage：先過白名單
+ *   - signAuthorization（7702）與 sign（裸 hash）：一律丟錯
  * 不 import viem（shared 不依賴它），以結構型別處理，回傳型別與輸入相同。
  */
 export function guardViemAccount<A extends { type: string; address: string }>(account: A): A {
@@ -301,14 +291,21 @@ export function guardViemAccount<A extends { type: string; address: string }>(ac
   const wrapped: any = { ...acc };
   if (typeof acc.signTransaction === "function") {
     wrapped.signTransaction = async (tx: any, opts?: any) => {
-      assertSafeTransaction(tx ?? {});
+      assertAllowedTransaction(tx ?? {});
       return acc.signTransaction(tx, opts);
     };
   }
   if (typeof acc.signTypedData === "function") {
     wrapped.signTypedData = async (td: any) => {
-      assertSafeTypedData(td?.types ?? {}, td?.message ?? {}, td?.primaryType);
+      assertAllowedTypedData(td?.domain ?? {}, td?.types ?? {}, td?.message ?? {}, acc.address, td?.primaryType);
       return acc.signTypedData(td);
+    };
+  }
+  if (typeof acc.signMessage === "function") {
+    wrapped.signMessage = async (p: any) => {
+      const m = p?.message;
+      assertAllowedMessage(typeof m === "string" ? m : m?.raw instanceof Uint8Array ? m.raw : "", acc.address);
+      return acc.signMessage(p);
     };
   }
   if ("signAuthorization" in acc) {

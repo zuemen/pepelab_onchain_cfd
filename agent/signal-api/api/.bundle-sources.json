@@ -1,5 +1,5 @@
 {
-  "digest": "72ecbe6d69c66770",
+  "digest": "e780248bce6ecb52",
   "files": {
     "agent/shared/src/abis.ts": "872c3136604d6584",
     "agent/shared/src/addresses.ts": "a6cb279048c58a4b",
@@ -14,12 +14,12 @@
     "agent/shared/src/index.ts": "e2fe2469dab08694",
     "agent/shared/src/payoutSafety.ts": "d0869fc6928709f5",
     "agent/shared/src/policyGate.ts": "9a43316cf34d9850",
-    "agent/shared/src/provider.ts": "86d3948608af1aaf",
+    "agent/shared/src/provider.ts": "d09068bf80548979",
     "agent/shared/src/redact.ts": "36892c597bec44d0",
-    "agent/shared/src/signingGuard.ts": "3242ddda55b40fb6",
+    "agent/shared/src/signingGuard.ts": "007068f1884c5d7f",
     "agent/shared/src/vcNonce.ts": "322da71ffcdcbed1",
     "agent/shared/src/verification.ts": "c7823c4dc411e59a",
-    "agent/shared/src/write.ts": "4dc33f80f5d772b0",
+    "agent/shared/src/write.ts": "2bf63f36878ae07a",
     "agent/shared/src/x402Client.ts": "4c45a8a83b171017",
     "agent/signal-api/src/app.ts": "1da158c421a108f0",
     "agent/signal-api/src/benchmarks.ts": "bac063beeb2f0f45",

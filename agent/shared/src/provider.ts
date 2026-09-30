@@ -60,7 +60,8 @@ const ZERO = "0x0000000000000000000000000000000000000000";
  * 從 env 建立 agent 簽署者（自管 EOA / session key）。
  * 沒有 AGENT_PRIVATE_KEY 時回 null（呼叫端據此優雅降級，不 crash）。
  * 回傳的是 `GuardedWallet`（signingGuard.ts）：簽任何交易／typed data 前都先過守門，
- * 拒絕 EIP-7702（type-4、authorization）與無上限 approve / permit。
+ * 白名單：只能簽 session manager 的開倉／平倉交易、官方 USDC 的 x402 付款授權、
+ * ERC-8126 持有證明訊息，其餘一律拒絕（見 signingGuard.ts）。
  */
 export function makeSigner(
   provider?: ethers.JsonRpcProvider,

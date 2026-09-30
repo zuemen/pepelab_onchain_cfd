@@ -354,8 +354,8 @@ export async function openPositionForSession(params: {
     const perp = makeContracts(makeProvider()).perp;
     const fee = (await perp.executionFee()) as bigint;
 
-    // 先組好、**簽好**交易（簽章守門在 GuardedWallet.signTransaction 內執行：type-4 /
-    // 無上限 approve・permit 在這一步就丟 SigningGuardError），拿到 tx hash 再廣播。
+    // 先組好、**簽好**交易（簽章白名單在 GuardedWallet.signTransaction 內執行：非 session
+    // manager 的開倉／平倉一律丟 SigningGuardError），拿到 tx hash 再廣播。
     const unsigned = await mgr.openPositionForSession.populateTransaction(
       params.sessionId,
       assetId,
