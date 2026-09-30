@@ -36,8 +36,9 @@ export default defineConfig(({ mode, command }) => {
   const tenant = loadTenantForBuild(process.cwd(), envOf('VITE_TENANT'));
   const { brand } = tenant.config;
 
-  // 這個 build 出貨的語言：VITE_LOCALE 優先，沒設就用租戶的預設語系。
-  const locale = pickLocale(envOf('VITE_LOCALE') || tenant.config.defaultLocale);
+  // 這個 build 出貨的語言：VITE_LOCALE 優先，沒設或認不出來就用租戶的預設語系。
+  // 與 src/locales/index.ts 同一個呼叫形式，index.html 與 app 內文不會各選一個語言。
+  const locale = pickLocale(envOf('VITE_LOCALE'), tenant.config.defaultLocale);
   const { htmlLang, catalog } = LOCALES[locale];
 
   // app 內的旗標在 featureFlags.ts；index.html 在建置時就寫死了，所以 meta description 要在

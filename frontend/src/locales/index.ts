@@ -14,9 +14,9 @@ import { LOCALES, pickLocale } from './catalogs';
  *
  * 語言是**建置期**決定的（`VITE_LOCALE`），沒有 in-app 切換。要換語言是改部署設定、
  * 重新 build，不是改程式碼——同一個 commit 可以同時餵一個中文站和一個英文站。
- * `VITE_LOCALE` 沒設時用白標租戶的 defaultLocale（default 租戶是 zh-TW）。
+ * `VITE_LOCALE` 沒設或認不出來時用白標租戶的 defaultLocale（default 租戶是 zh-TW）。
  */
-export const locale = pickLocale(import.meta.env.VITE_LOCALE || tenant.defaultLocale);
+export const locale = pickLocale(import.meta.env.VITE_LOCALE, tenant.defaultLocale);
 
 /**
  * 當前語言的 catalog，平台品牌佔位符（`{brand}`、`{brandMark}`）已代換成租戶品牌。

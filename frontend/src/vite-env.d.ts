@@ -3,7 +3,7 @@
 interface ImportMetaEnv {
   /**
    * 這個 build 要出貨的語言（`zh-TW` 或 `en`），沒設就用租戶設定的 defaultLocale（default 租戶是 `zh-TW`）。
-   * 認不出來的值會退回預設並留一行 warn，見 src/locales/catalogs.ts。
+   * 認不出來的值同樣退回租戶的 defaultLocale 並留一行 warn，見 src/locales/catalogs.ts。
    */
   readonly VITE_LOCALE?: string;
   /**
