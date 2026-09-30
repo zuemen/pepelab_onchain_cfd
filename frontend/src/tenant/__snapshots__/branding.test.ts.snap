@@ -1,0 +1,63 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`default tenant is the current production site, unchanged > matches the recorded snapshot of everything a default build derives from the tenant 1`] = `
+{
+  "brand": {
+    "favicon": "/avatars/pepe-01.png",
+    "logo": {
+      "fallbackSrc": "/assets/images/pepefi/pepe_eth.jpg",
+      "src": "/avatars/pepe-01.png",
+    },
+    "mark": "🐸",
+    "name": "PepeLab",
+    "themeColor": "#0A0F0B",
+  },
+  "defaultLocale": "zh-TW",
+  "disclosure": {
+    "items": [],
+    "operatorLine": null,
+  },
+  "enabledSymbols": [
+    "sBTC",
+    "sETH",
+    "sAAPL",
+    "sTSLA",
+    "sGOLD",
+    "sBOND",
+    "sNVDA",
+    "sMSFT",
+    "sGOOGL",
+    "sICLN",
+    "sESGU",
+  ],
+  "flagsWithNoEnv": {
+    "copyTrading": false,
+    "gamefi": false,
+    "pepeRewards": false,
+    "showLeverage": false,
+    "showPerpetuals": false,
+  },
+  "footer": [],
+  "id": "default",
+  "palette": {
+    "primary": {
+      "contrastText": "#1C252E",
+      "dark": "#5a9e2f",
+      "darker": "#2e5c16",
+      "light": "#a8d96a",
+      "lighter": "#ddf5b9",
+      "main": "#7cc14a",
+    },
+    "secondary": {
+      "contrastText": "#1C252E",
+      "dark": "#CC9900",
+      "darker": "#805E00",
+      "light": "#FFE566",
+      "lighter": "#FFF5CC",
+      "main": "#FFD23D",
+    },
+  },
+  "perpetualsAuthorized": true,
+  "theme": {},
+}
+`;

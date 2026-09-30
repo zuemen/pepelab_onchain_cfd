@@ -7,7 +7,7 @@
  */
 export const nav = {
   section: {
-    pepelab: 'PepeLab',
+    pepelab: '{brand}',
     trader: '交易者',
   },
   item: {

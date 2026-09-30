@@ -4,9 +4,9 @@ import type { Catalog } from '../zh-TW';
  * 見 `../zh-TW/landing.ts`。
  */
 export const landing: Catalog['landing'] = {
-  tagline: 'RWA · Tokenized Assets · Social Copy Trading 🐸',
+  tagline: 'RWA · Tokenized Assets · Social Copy Trading {brandMark}',
   brandLine: 'agent-native tokenized RWA · on Base',
-  enterDashboard: '🐸 Enter Dashboard',
+  enterDashboard: '{brandMark} Enter Dashboard',
   viewTraders: 'View Traders',
   connectHint: 'Connect to browse every feature directly — no account required.',
 
@@ -53,7 +53,7 @@ export const landing: Catalog['landing'] = {
   },
 
   copyOff: {
-    tagline: 'RWA · Tokenized Assets · Agent-Native 🐸',
+    tagline: 'RWA · Tokenized Assets · Agent-Native {brandMark}',
     viewMarketplace: 'Browse Marketplace',
     stepFour: '(Optional) Browse published allocations on Marketplace, or register and publish a strategy on the Trader page',
     heroBefore:

@@ -1,6 +1,7 @@
 import Box from '@mui/material/Box'
 
 import { t } from 'src/locales'
+import { tenant } from 'src/tenant'
 
 import { C, monoCss } from './terminal-theme'
 
@@ -8,9 +9,9 @@ import { C, monoCss } from './terminal-theme'
 export function TerminalHeader() {
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5, flexWrap: 'wrap' }}>
-      <Box sx={{ fontSize: 18 }}>🐸</Box>
+      <Box sx={{ fontSize: 18 }}>{tenant.brand.mark}</Box>
       <Box sx={{ ...monoCss, fontWeight: 800, fontSize: 14, letterSpacing: '.18em', color: C.ink }}>
-        PEPELAB<span style={{ color: C.lime }}>·</span>TERMINAL
+        {tenant.brand.name.toUpperCase()}<span style={{ color: C.lime }}>·</span>TERMINAL
       </Box>
       <Box sx={{ ...monoCss, fontSize: 11, color: C.mut, letterSpacing: '.08em' }}>
         {t.terminal.header.tagline}

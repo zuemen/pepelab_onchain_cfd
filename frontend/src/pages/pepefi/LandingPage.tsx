@@ -1,6 +1,7 @@
 import { Link as RouterLink } from 'react-router';
 import { usePepefiWallet } from 'src/layouts/pepefi';
 import { t } from 'src/locales';
+import { tenant } from 'src/tenant';
 import WalletButton from 'src/components/pepefi/WalletButton';
 import HeroKpiStrip from 'src/components/pepefi/HeroKpiStrip';
 import { SHOW_PERPETUALS, FEATURE_COPY_TRADING } from 'src/lib/pepefi/featureFlags';
@@ -121,7 +122,7 @@ export default function LandingPage() {
           >
             {/* Left: text */}
             <Box sx={{ flex: 1, textAlign: { xs: 'center', md: 'left' } }}>
-              {/* PepeLab wordmark */}
+              {/* 品牌字樣（白標租戶的 brand.name） */}
               <Typography
                 variant="h1"
                 sx={{
@@ -133,7 +134,7 @@ export default function LandingPage() {
                   mb: 1.5,
                 }}
               >
-                PepeLab
+                {tenant.brand.name}
               </Typography>
 
               {/* Mono kicker — "on-chain terminal" cred */}
@@ -222,8 +223,8 @@ export default function LandingPage() {
               }} />
               <Box
                 component="img"
-                src="/avatars/pepe-01.png"
-                alt="PepeLab Mascot"
+                src={tenant.brand.logo.src}
+                alt={`${tenant.brand.name} Mascot`}
                 sx={{
                   width: '100%', height: '100%',
                   borderRadius: '50%',
@@ -232,7 +233,7 @@ export default function LandingPage() {
                   boxShadow: '0 0 48px rgba(124,193,74,0.5), 0 0 96px rgba(255,210,61,0.2)',
                   position: 'relative', zIndex: 1,
                 }}
-                onError={(e) => { (e.target as HTMLImageElement).src = '/assets/images/pepefi/pepe_eth.jpg'; }}
+                onError={(e) => { (e.target as HTMLImageElement).src = tenant.brand.logo.fallbackSrc; }}
               />
               {/* Gold badge overlay */}
               <Box sx={{

@@ -26,8 +26,8 @@ export const x402: Catalog['x402'] = {
 
     how: {
       heading: 'How one purchase works',
-      ask: { title: 'The assistant asks', body: 'Your assistant asks PepeLab for a piece of data, such as a trader’s next move.' },
-      quote: { title: 'PepeLab quotes a price', body: 'The service replies: "This one is $0.01, payable in Circle USDC."' },
+      ask: { title: 'The assistant asks', body: 'Your assistant asks {brand} for a piece of data, such as a trader’s next move.' },
+      quote: { title: '{brand} quotes a price', body: 'The service replies: "This one is $0.01, payable in Circle USDC."' },
       pay: {
         title: 'It pays and gets the data',
         body: 'The assistant signs a payment from its own wallet and receives the data as soon as the payment is confirmed. It takes a few seconds and nobody has to click anything.',

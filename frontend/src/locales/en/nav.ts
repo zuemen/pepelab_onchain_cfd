@@ -5,7 +5,7 @@ import type { Catalog } from '../zh-TW';
  */
 export const nav: Catalog['nav'] = {
   section: {
-    pepelab: 'PepeLab',
+    pepelab: '{brand}',
     trader: 'Trader',
   },
   item: {
