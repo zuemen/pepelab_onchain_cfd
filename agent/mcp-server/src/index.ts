@@ -8,8 +8,9 @@
 //   write（Phase 2，經 AgentSessionManager session 限額）:
 //     - open_position           → openPositionForSession
 //     - close_position          → closePositionForSession
-//     兩者預設需人類確認（writeTools.ts：先回摘要＋一次性確認碼，帶碼再呼叫才送出；
-//     MCP_WRITE_REQUIRE_CONFIRM=false 可關閉並會警告），送出時再經 policy gate。
+//     兩者預設需人類確認（writeTools.ts：送出前以 MCP elicitation 在 client 介面詢問人類，
+//     答案不經模型；client 不支援 elicitation 就拒絕寫入。MCP_WRITE_REQUIRE_CONFIRM=false
+//     可關閉並會警告），送出時再經 policy gate。
 // 透過 stdio 傳輸；合約讀取走 Base Sepolia（chainId 84532）。寫操作需 AGENT_PRIVATE_KEY
 // （session key）+ SESSION_MANAGER_ADDRESS；缺任一時 tool 回明確錯誤、不 crash。
 // 必須是第一個 import：在 @pepelab/shared 其他模組求值（例如 addresses.ts 讀
@@ -48,11 +49,9 @@ import {
 } from "@pepelab/shared";
 import {
   TOOL_ANNOTATIONS,
-  WriteConfirmStore,
-  createWriteHandlers,
+  registerWriteTools,
   writeConfirmRequired,
   CONFIRM_DISABLED_WARNING,
-  type ToolReply,
 } from "./writeTools.ts";
 
 loadEnv();
@@ -89,10 +88,6 @@ function fail(err: unknown) {
   };
 }
 
-function reply(r: ToolReply) {
-  return r.kind === "ok" ? ok(r.data) : fail(new Error(r.message));
-}
-
 // ── 寫入工具的人類確認（writeTools.ts）─────────────────────────────────────
 const REQUIRE_CONFIRM = writeConfirmRequired();
 if (!REQUIRE_CONFIRM) console.error(CONFIRM_DISABLED_WARNING);
@@ -104,9 +99,8 @@ const FEE_ABI = [
 ];
 const feeReader = new ethers.Contract(ADDRESSES.PerpetualExchange, FEE_ABI, provider);
 
-const writeHandlers = createWriteHandlers({
+const writeDeps: Parameters<typeof registerWriteTools>[1] = {
   requireConfirm: REQUIRE_CONFIRM,
-  store: new WriteConfirmStore(),
   open: (a) =>
     openPositionForSession({
       sessionId: a.sessionId,
@@ -168,7 +162,7 @@ const writeHandlers = createWriteHandlers({
     }
   },
   warn: (m) => console.error(m),
-});
+};
 
 server.tool(
   "get_trader_performance",
@@ -270,59 +264,8 @@ server.tool(
   },
 );
 
-// ── write: 經 AgentSessionManager 在 session 限額內下單 ───────────────────────
-server.tool(
-  "open_position",
-  "【寫・需人類確認】在指定 session 限額內為 session 使用者開一筆受限部位（受 per-trade cap / budget / leverage cap / expiry 與營運方 policy gate 約束）。" +
-    "**兩步流程**：第一次呼叫不送交易，回摘要（標的、方向、保證金、槓桿、估計手續費、policy 預檢）與一次性 confirmationCode（120 秒）；" +
-    "人類確認後以完全相同的參數加上 confirmationCode 再呼叫一次才會送出。**必須**帶 authVcJson（使用者簽發的授權 VC）。回傳 tx hash 與 positionId。",
-  {
-    sessionId: z.number().int().nonnegative().describe("鏈上 session id"),
-    asset: z.string().describe("資產代號，如 sBTC / sETH / sAAPL"),
-    isLong: z.boolean().describe("true=做多，false=做空"),
-    marginUsdc: z.number().positive().describe("保證金（USDC，人類單位）"),
-    leverage: z.number().int().positive().describe("槓桿（受 session.maxLeverage 約束）"),
-    // 稽核 A-3：這裡原本是 .optional()，而 write 層又是「有帶才驗」，兩個可選相乘
-    // 等於沒有授權層。現在改必填，缺 VC 連呼叫都組不起來。
-    authVcJson: z.string().min(1).describe("使用者簽發的授權 VC JSON 字串（必填）；下單前必須驗證通過"),
-    confirmationCode: z
-      .string()
-      .optional()
-      .describe("第一次呼叫取得的一次性確認碼；不帶＝只回摘要、不送交易"),
-  },
-  TOOL_ANNOTATIONS.open_position,
-  async (args) => {
-    try {
-      return reply(await writeHandlers.openPosition(args));
-    } catch (err) {
-      return fail(err);
-    }
-  },
-);
-
-server.tool(
-  "close_position",
-  "【寫・需人類確認】平掉指定 session 使用者的一筆部位（會實現損益，授權要求與開倉對稱）。" +
-    "**兩步流程**同 open_position：第一次呼叫回部位摘要與一次性 confirmationCode，帶碼再呼叫才送出。需 authVcJson。回傳 tx hash。",
-  {
-    sessionId: z.number().int().nonnegative().describe("鏈上 session id"),
-    positionId: z.number().int().nonnegative().describe("要平的倉位 ID"),
-    // 稽核 A-4：平倉會實現虧損，破壞力與開倉對稱，因此授權要求也必須對稱。
-    authVcJson: z.string().min(1).describe("使用者簽發的授權 VC JSON 字串（必填）；平倉前必須驗證通過"),
-    confirmationCode: z
-      .string()
-      .optional()
-      .describe("第一次呼叫取得的一次性確認碼；不帶＝只回摘要、不送交易"),
-  },
-  TOOL_ANNOTATIONS.close_position,
-  async (args) => {
-    try {
-      return reply(await writeHandlers.closePosition(args));
-    } catch (err) {
-      return fail(err);
-    }
-  },
-);
+// ── write: 經 AgentSessionManager 在 session 限額內下單（人類確認走 MCP elicitation）──
+registerWriteTools(server, writeDeps);
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
