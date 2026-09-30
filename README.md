@@ -41,8 +41,8 @@ CI（`.github/workflows/consistency.yml`）會比對位址一致性。
 | MockOracle | `0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3` | **交易所實際讀取的價格來源**（keeper 寫入） |
 | ESGRegistryV2 | `0xBF5B9cD78566791d79c687A732b4ed5bc3E95dFf` | 碳分級見證登錄（`addresses.ts` 的 `ESGRegistry` 欄位與 `V2_STACK.ESGRegistryV2` 為同一位址） |
 | InsuranceVault | `0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812` | 保險金庫（LP 份額 pIV） |
-| FeeRouter（交易費，MockUSDC） | `0x00f6cf0113399a7A451c7f85fe094a28092d3e0c` | 70/20/10 分潤 |
-| FeeRouter（x402，Circle USDC） | `0x29e5732AC62254d9b92A1C7d3F38EbFA8809B57d` | ⚠ treasury 仍為已外洩的舊地址，**需重新部署**（使用者待辦） |
+| FeeRouter（MockUSDC） | `0x00f6cf0113399a7A451c7f85fe094a28092d3e0c` | 分配跟單績效費與 copy fee。交易費不經過 FeeRouter，留在 exchange（`vaultFeeShareBps` = 0） |
+| FeeRouter（x402，Circle USDC） | `0x29e5732AC62254d9b92A1C7d3F38EbFA8809B57d` | 分配 x402 收入的 70/20/10（trader／平台／保險金庫）。⚠ treasury 仍為已外洩的舊地址，**需重新部署**（使用者待辦） |
 | StrategyRegistry | `0xA103de184A5C76d7b70fB4e908F252199e004b95` | |
 | CopyTracker | `0xC9e91f7D36e910C58042164032c625427b23CCB2` | 跟單在商業版預設關閉 |
 | TraderStake | `0x01aEB530bcFc69f036309ffe55acc7eA6C5a28Fe` | |
