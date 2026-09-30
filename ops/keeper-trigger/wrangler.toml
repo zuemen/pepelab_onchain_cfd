@@ -2,6 +2,12 @@ name = "pepelab-keeper-trigger"
 main = "worker.mjs"
 compatibility_date = "2026-09-01"
 workers_dev = false
+# 不產生 preview URL（*.workers.dev 的版本預覽網址）；Worker 對 HTTP 一律 404，也不需要。
+preview_urls = false
+
+# Workers Logs：cron 的 console.log 與失敗原因可在 dashboard 查（審查 M3）。
+[observability]
+enabled = true
 
 [triggers]
 crons = ["*/20 * * * *"]

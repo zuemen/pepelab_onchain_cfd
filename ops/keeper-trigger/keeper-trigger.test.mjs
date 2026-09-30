@@ -75,6 +75,22 @@ test("tick：缺 token 或 repo → 丟錯", async () => {
   await assert.rejects(tick({ GITHUB_REPO: "x/y" }, NOW), /GITHUB_TOKEN/);
 });
 
+test("scheduled：tick 失敗時 reject（Cloudflare 記成失敗的 cron），成功時 resolve", async () => {
+  const bad = fakeFetch((url, init) => (init.method === "POST" ? { status: 403, body: "forbidden" } : { status: 500 }));
+  globalThis.fetch = bad.fn;
+  await assert.rejects(worker.scheduled({}, ENV, { waitUntil: () => assert.fail("不應改用 waitUntil") }), /HTTP 403/);
+  await assert.rejects(worker.scheduled({}, { GITHUB_REPO: "x/y" }), /GITHUB_TOKEN/);
+
+  const good = fakeFetch((url, init) =>
+    init.method === "POST"
+      ? { status: 204 }
+      : { status: 200, body: JSON.stringify({ workflow_runs: [{ status: "completed", created_at: new Date(Date.now() - 3600_000).toISOString() }] }) },
+  );
+  globalThis.fetch = good.fn;
+  await worker.scheduled({}, ENV);
+  assert.equal(good.calls.filter((c) => c.method === "POST").length, 1);
+});
+
 test("HTTP 請求一律 404，公開 URL 不能觸發 keeper", async () => {
   const res = await worker.fetch(new Request("https://example.invalid/"));
   assert.equal(res.status, 404);

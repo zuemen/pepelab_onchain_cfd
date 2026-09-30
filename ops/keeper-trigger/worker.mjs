@@ -49,8 +49,10 @@ export async function tick(env, nowMs = Date.now()) {
 }
 
 export default {
-  async scheduled(_event, env, ctx) {
-    ctx.waitUntil(tick(env));
+  // 直接 await（審查 M3）：tick 丟錯時 scheduled 的 promise 會 reject，Cloudflare 才會把
+  // 這次 cron 記成失敗。改用 ctx.waitUntil 的話 handler 先回傳成功，失敗只剩 log。
+  async scheduled(_event, env) {
+    await tick(env);
   },
   // 不接受任何 HTTP 觸發：公開 URL 不該能替別人消耗 Actions 或讓 keeper 被洗版。
   async fetch() {
