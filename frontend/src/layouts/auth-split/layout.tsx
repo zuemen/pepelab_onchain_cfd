@@ -83,8 +83,8 @@ export function AuthSplitLayout({
         layoutQuery={layoutQuery}
         {...slotProps?.header}
         slots={{ ...headerSlots, ...slotProps?.header?.slots }}
-        // es-toolkit ≥1.4x 的 merge 回傳深層合併型別，與 MUI slotProps 的聯集型別對不上；執行期行為不變，
-        // 這裡標回呼叫端宣告的型別。
+        // es-toolkit 1.52 的 merge 是型別變更（回傳深層合併型別，與 MUI slotProps 的聯集對不上），
+        // 這裡標回宣告的型別。執行期唯一差異是陣列／物件互混時的合併方式，本處兩邊都是純物件，不會發生。
         slotProps={
           merge(headerSlotProps, slotProps?.header?.slotProps ?? {}) as HeaderSectionProps['slotProps']
         }
