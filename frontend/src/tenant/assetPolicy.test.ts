@@ -6,7 +6,6 @@ import { it, expect, describe } from 'vitest';
 import { ASSET_IDS } from 'src/contracts/addresses';
 import { ASSETS_LIST } from 'src/lib/pepefi/assetMeta';
 
-import {} from './schema';
 import { loadTenantForBuild } from './node';
 import {
   makeAssetPolicy,
