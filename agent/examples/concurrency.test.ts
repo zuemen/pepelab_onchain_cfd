@@ -71,12 +71,32 @@ ok(`並發記錄 VC nonce ${total} 筆，無遺失`);
   const target = path.join(TMP, "x.json");
   fs.writeFileSync(`${target}.lock`, JSON.stringify({ pid: 2 ** 22 + 12345, token: "dead", at: Date.now() }));
   assert.equal(withFileLockSync(target, () => 42), 42, "死掉的持有者 → 回收");
-  fs.writeFileSync(`${target}.lock`, JSON.stringify({ pid: process.pid, token: "live", at: Date.now() - 60_000 }));
-  assert.equal(withFileLockSync(target, () => 43), 43, "超過 staleMs → 回收");
-  fs.writeFileSync(`${target}.lock`, JSON.stringify({ pid: process.pid, token: "live", at: Date.now() }));
-  assert.throws(() => withFileLockSync(target, () => 0, { timeoutMs: 100 }), LockTimeoutError);
+  // pid 還活著：即使鎖已持有很久也不依時間回收（避免兩個 process 同時進臨界區）
+  fs.writeFileSync(`${target}.lock`, JSON.stringify({ pid: process.pid, token: "live", at: Date.now() - 60 * 60_000 }));
+  assert.throws(() => withFileLockSync(target, () => 0, { timeoutMs: 100, staleMs: 10 }), LockTimeoutError, "存活持有者不被時間回收");
   fs.unlinkSync(`${target}.lock`);
-  ok("過期鎖回收（pid 不存在 / 超過 staleMs）；有效鎖 → LockTimeoutError");
+  // 讀不到持有者資訊：mtime 過期才回收
+  fs.writeFileSync(`${target}.lock`, "garbage");
+  assert.throws(() => withFileLockSync(target, () => 0, { timeoutMs: 100, staleMs: 60_000 }), LockTimeoutError, "mtime 未過期不回收");
+  const old = new Date(Date.now() - 120_000);
+  fs.utimesSync(`${target}.lock`, old, old);
+  assert.equal(withFileLockSync(target, () => 44, { staleMs: 60_000 }), 44, "讀不到持有者且 mtime 過期 → 回收");
+  ok("鎖回收：pid 不存在才回收；pid 存活不依時間回收；讀不到持有者時依 mtime 回收");
+}
+
+// 稽核 lastHash 只讀檔尾：多筆、跨 chunk、中文訊息都正確
+{
+  const { appendChainedRecord, lastAuditHash, readLastLine } = await import("@pepelab/shared");
+  const f = path.join(TMP, "tail.jsonl");
+  let last: any = null;
+  for (let i = 0; i < 50; i++) last = appendChainedRecord(f, { i, message: `第 ${i} 筆：平倉降級放行（測試中文字元跨 chunk 邊界）` } as any);
+  assert.equal(lastAuditHash(f), last.hash);
+  assert.equal(JSON.parse(readLastLine(f, 7)!).hash, last.hash, "極小 chunk 也能正確讀出最後一行（不切壞 UTF-8）");
+  fs.appendFileSync(f, "\n\n");
+  assert.equal(JSON.parse(readLastLine(f, 5)!).hash, last.hash, "忽略結尾空行");
+  assert.deepEqual(verifyAuditChain(readAudit(f)), []);
+  assert.equal(readLastLine(path.join(TMP, "none.jsonl")), null);
+  ok("lastAuditHash 只讀檔尾：50 筆、極小 chunk、中文訊息、結尾空行皆正確");
 }
 
 // Windows 暫時性錯誤：openSync 丟 EPERM / EACCES / EBUSY → 退避重試直到逾時（複審 Medium-2）

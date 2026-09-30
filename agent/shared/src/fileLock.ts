@@ -6,9 +6,9 @@
 //
 // 做法：`<檔名>.lock` 以 O_CREAT|O_EXCL（fs "wx"）建立，內容是 {pid, token, at}。
 //   - 取得失敗（EEXIST）→ 短暫等待重試，直到 timeoutMs。
-//   - 過期鎖回收：持有者 pid 已不存在，或鎖檔超過 staleMs 未釋放（臨界區只做幾個小檔的
-//     I/O，毫秒級；10 秒必然是當掉的持有者）→ 先 rename 成暫存名（原子，只有一個回收者
-//     會成功），確認搬走的確實是剛才判定過期的那一把（token 相同）才刪；否則搬回。
+//   - 過期鎖回收：持有者 pid 已不存在，或讀不到持有者資訊且鎖檔 mtime 超過 staleMs →
+//     先 rename 成暫存名（原子，只有一個回收者會成功），確認搬走的確實是剛才判定過期的
+//     那一把（token 相同）才刪；否則搬回。pid 還活著就絕不依時間回收。
 //   - 釋放時只刪「自己的」鎖（token 相同）。
 // 臨界區都是同步 I/O，所以提供同步版本；等待用 Atomics.wait 睡眠，不空轉 CPU。
 import fs from "node:fs";
@@ -56,7 +56,10 @@ function tryReclaim(lockPath: string, staleMs: number): void {
       return; // 已經不存在
     }
   } else {
-    stale = !pidAlive(cur.pid) || Date.now() - cur.at > staleMs;
+    // 持有者 pid 還活著就**不**依時間回收（複審 Low-5）：臨界區再慢也是它的，
+    // 依時間搶鎖會讓兩個 process 同時進臨界區。只有 pid 已不存在才回收。
+    // 邊界：pid 被系統重用給另一個存活的 process 時不會回收，呼叫端會逾時（fail-closed）。
+    stale = !pidAlive(cur.pid);
   }
   if (!stale) return;
   const aside = `${lockPath}.reclaim.${process.pid}.${randomBytes(4).toString("hex")}`;

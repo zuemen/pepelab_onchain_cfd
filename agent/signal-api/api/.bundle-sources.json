@@ -1,13 +1,13 @@
 {
-  "digest": "2e115ae2b943b960",
+  "digest": "d8b2a63fe0a7caa6",
   "files": {
     "agent/shared/src/abis.ts": "872c3136604d6584",
     "agent/shared/src/addresses.ts": "a6cb279048c58a4b",
     "agent/shared/src/aggregate.ts": "1490fb0cb819656e",
     "agent/shared/src/apiResponse.ts": "99ce63d982e3c064",
-    "agent/shared/src/audit.ts": "5206296824863c4b",
+    "agent/shared/src/audit.ts": "dca1f18eb2fa7431",
     "agent/shared/src/env.ts": "358f45d49449fa52",
-    "agent/shared/src/fileLock.ts": "45f1cda9d4f53edc",
+    "agent/shared/src/fileLock.ts": "022373a02496a80b",
     "agent/shared/src/format.ts": "13f79372bcf8e599",
     "agent/shared/src/freshness.ts": "359619f944230b0d",
     "agent/shared/src/identity.ts": "62fafbd5a5dc030d",
