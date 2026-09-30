@@ -347,7 +347,7 @@ cast call 0x3a37415981F6f4fC27FA6c8C62F1d4e47115fD17 'paused()(bool)' \
   each chain, read from the EIP-1967 slot, and what changed between them
 - `docs/ROLE_SEPARATION.md` — what was done, with the on-chain verification log
 - `docs/KNOWN_LIMITATIONS.md` — every limitation with current status (20 items on
-  `master` as of 2026-09-30; PR #191 appends #21–#25)
+  `master` as of 2026-09-30; PR #191 will add further items)
 - `docs/audit/ADERYN_TRIAGE.md` — Aderyn findings, each triaged with reasoning
 - `docs/audit/aderyn-v2-report.md` — raw Aderyn output
 - `docs/KEY_MANAGEMENT.md` — key handling procedure

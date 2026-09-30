@@ -88,8 +88,8 @@
 | 保險金庫 | 存入會得到 0 份額時 revert | 固定 |
 | 跟單 slash 款項 | 改存 owner 持有的準備金，不進任何按份額分配的池子 | 固定 |
 
-組合保證金（portfolio margin）：原始碼版在該模式下會先從帳戶的 `freeMargin` 扣缺口，但**沒有帳戶層級的
-淨額清算**，PR #191 明文要求正式環境不得開啟，並規劃移除（移除是否完成以 PR 最終內容為準，本文**未驗證**）。
+組合保證金（portfolio margin）：**PR #191 移除組合保證金模式**。現行部署仍有這個模式，但為關閉狀態
+（`portfolioMarginEnabled = false`），因此本文的瀑布一律以逐倉描述。
 
 ### 3.1 誰吸收什麼（原始碼版，逐倉）
 
@@ -102,7 +102,7 @@
 | 4 | 壞帳事件 | 相同 |
 
 **已知取捨**：全域暫停期間，提領、平倉與清算都會被擋下；guardian 可以用這個機制在一段期間內凍結出金。
-細節見 [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md)（PR #191 新增的第 21–25 項）。
+PR #191 將新增對應的已知限制，合併後見 [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md)。
 
 ## 4. 營運方可用的補救手段
 
