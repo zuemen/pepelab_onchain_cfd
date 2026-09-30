@@ -119,7 +119,12 @@ mint／burn 合成資產代幣：
 - 限制曝險的機制（不是消除曝險）：
   - 最低準備率 `minReserveRatioBps`：現行 11000（110%）。低於門檻時拒絕新的 mint，**贖回不受此限**（避免擠兌）。
   - 逐資產曝險上限（`RISK_ROLE` 設定）。
-  - 準備率跌破門檻會鎖住 mint（`mintingHalted`），需 `RISK_ROLE` 解除。
+  - mint 鎖（`mintingHalted`，見 `AssetVaultV2_4.sol` 的 `observeReserve` 與 `clearMintingHalt`）：
+    - 由 `observeReserve()` 觸發：任何人呼叫時若準備率低於門檻，就鎖住 mint 並發出 `ReserveBreached`。
+    - 自動清除：之後的 `observeReserve()` 發現準備率已回到門檻以上、**且所有資產都有報價**（沒有無法定價的資產）時，
+      自動解除並發出 `ReserveRestored`。
+    - 手動逃生口：`clearMintingHalt()`（`RISK_ROLE`）可在仍有資產無法定價時強制解除，發出 `MintingHaltCleared`；
+      用於無法自動恢復的情況（例如某個資產的報價已永久停止）。
   - `PAUSER_ROLE` 可暫停。
   - mint 費率依碳分級，redeem 為固定費率。
 - 準備不足時，贖回會因金庫沒有足夠 USDC 而失敗，持有人可能無法全額取回。
