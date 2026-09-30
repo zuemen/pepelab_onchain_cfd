@@ -180,10 +180,20 @@ oracle 價格新鮮度只會發出警告，不會 revert。如果看到 `WARN �
 - **V2 金庫升級到 V2_5**：這一版把 M-7 的 last-good 價格 fallback 加回來，但 last-good 超過 6 小時就視為 unpriced；一個以 last-good 估值的帳本只能觸發停鑄，不能自動解除停鑄。另外有三點：
   - **即時報價的有效期上限是 `min(maxPriceAge, 6h)`**（`effectiveMaxPriceAge`）。鏈上金庫的 `maxPriceAge` 原本是 30 天，會讓 6 小時的保護形同虛設。升級腳本會在同一批交易裡用 RISK_ROLE 呼叫 `setRiskParams`，把它降到 `VAULT_MAX_PRICE_AGE`（預設 21600）。
   - **只要有任何一個資產 unpriced，mint 就 revert `LiabilityUnpriced`**。用 fallback 估值的資產照常放行；redeem 永遠不受這個限制。
+  - **某個資產 feed 永久失效時，怎麼解除 mint 閘門（審查 M1）**：這個閘門原本無法由 RISK_ROLE 解除，因為 `clearMintingHalt`、`setAssetCap(0)`、`unregisterAsset` 都解不開（只要還有 dust 未償，`unregisterAsset` 就會拒絕）。現在由 RISK_ROLE 依序執行：
+    1. `setAssetCap(id, 0)` 關閉該市場。
+    2. `setUnpricedExemption(id, true)`。
+
+    這個豁免有三條限制：
+    - 只在 `assetCap == 0` 時有效；cap 一調回大於 0，豁免就自動失效。
+    - 被豁免的資產**仍計入負債**，以最後一次記錄的價格計，不論那個價格多舊。
+    - 如果該資產完全沒有記錄價格，就只有未償額 ≤ `EXEMPT_DUST_UNITS`（0.001 顆）時才可以豁免。
+
+    被豁免的資產計為 fallbackPriced：儲備率仍標示為過期，已觸發的停鑄不會自動解除。redeem 不受影響。
   - **前提**：所有有未償額的資產，報價都必須不到 6 小時。keeper 要照 heartbeat 刷新，否則升級腳本會拒絕執行。fork 測試 `test/fork/VaultV2_5Fork.t.sol` 驗證過：升級後 mint 和 redeem 都正常；keeper 每 5 小時刷新一次就能持續使用；超過 6 小時沒刷新，mint 會被擋；刷新後恢復。
 
   步驟：
-  1. 在 `contracts` 目錄執行 `bash script/check-vault-storage-layout.sh`。腳本會先 `forge clean`，再用 `forge inspect … storage-layout` 比對，確認只有在尾端追加欄位：`_lastGood` 放在 slot 12，`__gap` 從 43 變成 42，結尾 slot 仍是 55。
+  1. 在 `contracts` 目錄執行 `bash script/check-vault-storage-layout.sh`。腳本會先 `forge clean`，再用 `forge inspect … storage-layout` 比對，確認只有在尾端追加欄位：`_lastGood` 放在 slot 12，`_unpricedExempt` 放在 slot 13，`__gap` 從 43 變成 41（起點 slot 14），結尾 slot 仍是 55。
   2. 用 fork 模擬 `forge script script/UpgradeVaultToV2_5.s.sol:UpgradeVaultToV2_5 --fork-url https://sepolia.base.org --sender 0x27C2…A585`。
   3. 人工加上 `--broadcast --slow`。
   4. 用 `jq .abi out/AssetVaultV2_5.sol/AssetVaultV2_5.json > ../frontend/src/contracts/abi/AssetVaultV2.json` 更新前端 ABI。

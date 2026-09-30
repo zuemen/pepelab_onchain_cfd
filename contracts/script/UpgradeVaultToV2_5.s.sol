@@ -10,8 +10,8 @@ interface IUpgradeable25 {
 }
 
 /// @notice Upgrades the AssetVault proxy from V2.4 to V2.5 (bounded M-7
-///         last-good price fallback). Storage: one appended field
-///         (`_lastGood`) taken from the front of __gap (43 -> 42) — check it
+///         last-good price fallback). Storage: two appended fields
+///         (`_lastGood`, `_unpricedExempt`) taken from the front of __gap (43 -> 41) — check it
 ///         BEFORE broadcasting with `script/check-vault-storage-layout.sh`.
 ///
 ///         No initializer: `_lastGood` starts empty, so the vault behaves

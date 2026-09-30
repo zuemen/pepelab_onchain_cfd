@@ -80,7 +80,9 @@ import { IEsgRegistryForVault } from "./AssetVaultV2_4.sol";
 ///         whatever `maxPriceAge` says, and mint refuses while any
 ///         outstanding asset is unpriced (`LiabilityUnpriced`) — a last-good
 ///         mark is admitted, a missing price is not. Redeem is never gated.
-///         Storage: one field appended from the front of __gap (43 -> 42).
+///         A closed market with a dead feed can be taken out of that mint
+///         gate by RISK_ROLE (`setUnpricedExemption`), never out of the book.
+///         Storage: two fields appended from the front of __gap (43 -> 41).
 contract AssetVaultV2_5 is
     Initializable,
     UUPSUpgradeable,
@@ -178,11 +180,24 @@ contract AssetVaultV2_5 is
     }
     mapping(bytes32 => LastGood) private _lastGood;
 
-    uint256[42] private __gap;
+    /// @notice V2.5 (review M1): RISK_ROLE's per-asset opt-out from the
+    ///         mint gate's "unpriced" count, for a CLOSED market whose feed is
+    ///         gone (see `setUnpricedExemption`). Effective only while
+    ///         `assetCap[id] == 0`; re-opening the asset silently disables it.
+    /// @dev Consumed from the front of __gap (42 -> 41 slots).
+    mapping(bytes32 => bool) private _unpricedExempt;
+
+    uint256[41] private __gap;
 
     /// @notice V2.5: a last-good price older than this is not used - the asset
     ///         counts as `unpriced` (V2.4 behaviour).
     uint256 public constant LAST_GOOD_MAX_AGE = 6 hours;
+
+    /// @notice An exempted asset with NO last-good price may still carry at
+    ///         most this many token units (18-dec) — 0.001 token, e.g. about
+    ///         $100 of sBTC at $100k. Below it the position is counted at 0;
+    ///         above it an exemption needs a recorded price to value it by.
+    uint256 public constant EXEMPT_DUST_UNITS = 1e15;
 
     // ── V2.3 events ──────────────────────────────────────────────────────────
     // Declared here rather than in IAssetVaultV2 so V2.0–V2.2's ABIs do not
@@ -233,6 +248,9 @@ contract AssetVaultV2_5 is
     /// @notice A live quote was remembered as `assetId`'s last-good price.
     event LastGoodPriceRecorded(bytes32 indexed assetId, uint256 price, uint256 observedAt);
 
+    /// @notice RISK_ROLE set or cleared a closed asset's unpriced exemption.
+    event UnpricedExemptionSet(bytes32 indexed assetId, bool exempt, address indexed by);
+
     // ── errors ───────────────────────────────────────────────────────────────
     error StalePrice(bytes32 assetId, uint256 updatedAt);
     error NoPrice(bytes32 assetId);
@@ -253,6 +271,11 @@ contract AssetVaultV2_5 is
     ///         nor a last-good mark <= 6h, so the reserve ratio is unknown.
     ///         Blocks new mints only; redeem is never gated on it.
     error LiabilityUnpriced(uint256 unpriced);
+    /// @notice An unpriced exemption needs the asset closed (`assetCap == 0`).
+    error ExemptionRequiresClosedAsset(bytes32 assetId, uint256 cap);
+    /// @notice An unpriced exemption needs either a recorded last-good price
+    ///         (to keep the liability in the book) or at most dust outstanding.
+    error ExemptionNeedsPrice(bytes32 assetId, uint256 outstanding);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -407,6 +430,38 @@ contract AssetVaultV2_5 is
     function effectiveMaxPriceAge() public view returns (uint256) {
         uint256 m = maxPriceAge;
         return m < LAST_GOOD_MAX_AGE ? m : LAST_GOOD_MAX_AGE;
+    }
+
+    /// @notice Review M1 escape hatch. The mint gate refuses while ANY
+    ///         outstanding asset is unpriced; one dead feed with a few wei left
+    ///         outstanding (which `unregisterAsset` refuses to drop) would
+    ///         otherwise block mints of every healthy asset until a timelock
+    ///         proposal lands. RISK_ROLE may exempt such an asset, bounded so
+    ///         the exemption cannot be used to under-state a real liability:
+    ///           - only while the asset is CLOSED (`assetCap == 0`): its
+    ///             outstanding can then only shrink, and raising the cap again
+    ///             switches the exemption off automatically;
+    ///           - the asset stays in the liability at its last-good price
+    ///             (any age). With no recorded price at all it may only be
+    ///             exempted while outstanding <= EXEMPT_DUST_UNITS.
+    ///         It counts as `fallbackPriced`: the ratio is flagged stale, a
+    ///         breach can latch but never auto-clear, redeem is untouched.
+    function setUnpricedExemption(bytes32 assetId, bool exempt) external onlyRole(RISK_ROLE) {
+        if (exempt) {
+            uint256 cap = assetCap[assetId];
+            if (cap != 0) revert ExemptionRequiresClosedAsset(assetId, cap);
+            uint256 out = _outstanding[assetId];
+            if (_lastGood[assetId].price == 0 && out > EXEMPT_DUST_UNITS) revert ExemptionNeedsPrice(assetId, out);
+        }
+        _unpricedExempt[assetId] = exempt;
+        emit UnpricedExemptionSet(assetId, exempt, msg.sender);
+    }
+
+    /// @notice Whether `assetId`'s exemption is in force right now (flag set,
+    ///         market closed, and valuable by a recorded price or dust-sized).
+    function isUnpricedExempt(bytes32 assetId) public view returns (bool) {
+        if (!_unpricedExempt[assetId] || assetCap[assetId] != 0) return false;
+        return _lastGood[assetId].price != 0 || _outstanding[assetId] <= EXEMPT_DUST_UNITS;
     }
 
     /// @notice V2.5: the remembered last-good price and whether it is still
@@ -575,12 +630,19 @@ contract AssetVaultV2_5 is
             }
             if (!live) {
                 (uint256 lgPrice, , bool usable) = lastGoodPrice(id);
-                if (!usable) {
+                if (usable) {
+                    price = lgPrice;
+                } else if (isUnpricedExempt(id)) {
+                    // Review M1: a closed, exempted market stays IN the
+                    // liability at its last recorded price however old it
+                    // is (0 only for dust, see EXEMPT_DUST_UNITS) — it is
+                    // exempted from blocking mints, never from the book.
+                    price = lgPrice;
+                } else {
                     unpriced++;
                     continue;
                 }
                 fallbackPriced++;
-                price = lgPrice;
             }
             total += amount * price / 1e8;
         }

@@ -105,8 +105,10 @@ contract AssetVaultV2_5UpgradeTest is Test {
         bytes32 raw = vm.load(address(v), keccak256(abi.encode(AAPL, uint256(GAP_FRONT_SLOT))));
         assertEq(uint256(uint192(uint256(raw))), 200e8, "price in the low 192 bits of mapping(slot 12)[AAPL]");
         assertEq(uint256(raw) >> 192, block.timestamp, "oracle timestamp in the high 64 bits");
-        // The shrunk gap's first slot (13) is still untouched.
+        // Slot 13 is the `_unpricedExempt` mapping root (always 0), and the
+        // shrunk gap starts at 14 — both untouched.
         assertEq(vm.load(address(v), bytes32(uint256(13))), bytes32(0));
+        assertEq(vm.load(address(v), bytes32(uint256(14))), bytes32(0));
     }
 
     // ── bounded fallback ────────────────────────────────────────────────────
@@ -236,5 +238,97 @@ contract AssetVaultV2_5UpgradeTest is Test {
         v.mint(AAPL, 1_000e18);
         (, uint256 unpriced, ) = v.valuationDetail();
         assertEq(unpriced, 1, "a >6h quote never counts as live");
+    }
+
+    // ── review M1: closed dead-feed asset can be exempted from the mint gate ─
+
+    function _deadAaplMarkedAndClosed(AssetVaultV2_5 v) internal {
+        v.observeReserve();                        // AAPL last-good = 200e8
+        vm.warp(block.timestamp + 6 hours + 1);    // AAPL feed dead, mark expired
+        oracle.updatePrice(BTC, 100_000e8);
+        v.setAssetCap(AAPL, 0);                    // market closed
+    }
+
+    /// The reviewer's probe: AAPL left with 1 wei, feed dead, cap 0,
+    /// clearMintingHalt — minting BTC was still blocked. Now RISK_ROLE can
+    /// exempt the closed asset.
+    function test_M1_probe_deadClosedDustAssetCanBeExempted() public {
+        AssetVaultV2_5 v = _upgrade();
+        uint256 bal = aapl.balanceOf(alice);
+        vm.prank(alice); v.redeem(AAPL, bal - 1); // 1 wei left, last-good recorded
+        _deadAaplMarkedAndClosed(v);
+        v.clearMintingHalt();
+
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(AssetVaultV2_5.LiabilityUnpriced.selector, 1));
+        v.mint(BTC, 1_000e18);
+
+        vm.expectEmit(true, true, false, true, address(v));
+        emit AssetVaultV2_5.UnpricedExemptionSet(AAPL, true, admin);
+        v.setUnpricedExemption(AAPL, true);
+        assertTrue(v.isUnpricedExempt(AAPL));
+        vm.prank(alice); v.mint(BTC, 1_000e18);    // unblocked
+        (, uint256 unpriced, uint256 fb) = v.valuationDetail();
+        assertEq(unpriced, 0);
+        assertEq(fb, 1, "still an estimate: flagged, cannot auto-clear a breach");
+        assertTrue(v.ratioIsStale());
+    }
+
+    function test_M1_reopeningTheAssetDisablesTheExemption() public {
+        AssetVaultV2_5 v = _upgrade();
+        _deadAaplMarkedAndClosed(v);
+        v.setUnpricedExemption(AAPL, true);
+        vm.prank(alice); v.mint(BTC, 1_000e18);
+
+        v.setAssetCap(AAPL, 1_000_000e18);         // re-open
+        assertFalse(v.isUnpricedExempt(AAPL), "cap > 0 switches it off");
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(AssetVaultV2_5.LiabilityUnpriced.selector, 1));
+        v.mint(BTC, 1_000e18);
+    }
+
+    function test_M1_exemptionRequiresClosedAsset() public {
+        AssetVaultV2_5 v = _upgrade();
+        vm.expectRevert(abi.encodeWithSelector(AssetVaultV2_5.ExemptionRequiresClosedAsset.selector, AAPL, 1_000_000e18));
+        v.setUnpricedExemption(AAPL, true);
+    }
+
+    /// 99 AAPL minted before the upgrade and never marked: no price to keep
+    /// it in the book by, and far above dust -> cannot be exempted.
+    function test_M1_largeOutstandingWithoutAnyPriceCannotBeExempted() public {
+        AssetVaultV2_5 v = _upgrade();
+        v.setAssetCap(AAPL, 0);
+        uint256 out = v.exposureOf(AAPL);
+        vm.expectRevert(abi.encodeWithSelector(AssetVaultV2_5.ExemptionNeedsPrice.selector, AAPL, out));
+        v.setUnpricedExemption(AAPL, true);
+    }
+
+    /// An exempted asset is still a liability at its last-good price, so a
+    /// mint that would over-issue against it is refused by the reserve ratio
+    /// (same numbers as test_mintGateIsNotOptimisticWhileAFeedIsDown).
+    function test_M1_exemptedLiabilityStillBindsTheReserveRatio() public {
+        AssetVaultV2_5 v = _upgrade();
+        _deadAaplMarkedAndClosed(v);
+        v.setUnpricedExemption(AAPL, true);
+        (uint256 total, , ) = v.valuationDetail();
+        assertEq(total, v.exposureOf(AAPL) * 200e8 / 1e8, "AAPL kept at its (old) last-good mark");
+
+        vm.prank(alice);
+        vm.expectRevert();                         // ReserveRatioTooLow
+        v.mint(BTC, 520_000e18);
+    }
+
+    function test_M1_onlyRiskRoleAndRedeemUnaffected() public {
+        AssetVaultV2_5 v = _upgrade();
+        vm.prank(alice); v.mint(BTC, 10_000e18);
+        _deadAaplMarkedAndClosed(v);
+
+        vm.prank(alice);
+        vm.expectRevert();                         // AccessControlUnauthorizedAccount
+        v.setUnpricedExemption(AAPL, true);
+
+        uint256 b = btc.balanceOf(alice);
+        vm.prank(alice); v.redeem(BTC, b);         // redeem never gated
+        assertEq(btc.balanceOf(alice), 0);
     }
 }
