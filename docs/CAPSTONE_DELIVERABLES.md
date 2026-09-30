@@ -1,5 +1,9 @@
 # PepeLab On-Chain CFD — Capstone Deliverables
 
+> **歷史快照（2026-08-06）**：本文件記錄 Capstone 交付當時的狀態，其後未隨部署更新；
+> 其中的位址、功能描述與定位（例如「對標 Hyperliquid」）可能已過期。
+> 現況見 [`README.md`](../README.md)（2026-09-30 起定位為 B2B 白標、測試網研究原型）。
+
 > NCCU Capstone 2026 · agent-native 永續型 CFD 協議，對標 Hyperliquid。
 > **Live on Base Sepolia (chainId 84532)** · 合約測試以 **Contracts CI**（`.github/workflows/contracts-ci.yml`）
 > 的最新 run 為準 · 前端 `yarn build` / agent build 綠。

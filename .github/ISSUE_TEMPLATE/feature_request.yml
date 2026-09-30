@@ -1,0 +1,53 @@
+name: 功能需求
+description: 提出新功能或改進
+title: "[feature] "
+labels: ["needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        PepeFi 定位為賣給持牌金融機構的 B2B 白標基礎設施，目前是測試網研究原型。
+        涉及合規的需求請一併說明是哪一方（我方或持牌客戶）的責任，參考
+        [docs/COMPLIANCE_BOUNDARY.md](https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/COMPLIANCE_BOUNDARY.md)。
+  - type: dropdown
+    id: component
+    attributes:
+      label: 元件
+      multiple: true
+      options:
+        - contracts
+        - agent / signal-api（x402）
+        - agent / keeper
+        - agent / MCP server
+        - frontend
+        - 文件
+        - 營運 / CI
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: 要解決的問題
+      description: 誰遇到什麼問題？為什麼現在的做法不夠？
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建議做法
+    validations:
+      required: true
+  - type: checkboxes
+    id: impact
+    attributes:
+      label: 可能的影響
+      options:
+        - label: 需要修改合約（需重新部署與 cutover）
+        - label: 影響資金流、風險參數或損失吸收順序
+        - label: 影響 x402 收費或分潤
+        - label: 需要新的金鑰、角色或權限
+        - label: 需要律師或客戶確認
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 考慮過的替代方案

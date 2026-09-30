@@ -4,6 +4,15 @@ Written for the project report. Every item here was verified against the code on
 2026-07-27, not assumed. Where something was fixed, the fix is named; where it
 was not, the reason is given rather than glossed over.
 
+> **Status as of 2026-09-30 (`master` 37850c1):** 20 items. #1–#13 were verified
+> on 2026-07-27; #14–#20 (x402 layer) were added on 2026-09-17. PR #191 (open,
+> source only, not deployed) will add further known limitations. The status column below was not
+> re-verified item by item on 2026-09-30. Current numbers: 776 Foundry
+> test/invariant functions in `contracts/test` on `master` (944 on the PR #191
+> branch at `18c684d`; the PR is still changing), counted from source — whether all pass is whatever the latest
+> Contracts CI run says. Current deployment and what is live vs. source-only:
+> [`README.md`](../README.md).
+
 ## Status at a glance
 
 | # | Limitation | Status |
@@ -752,9 +761,12 @@ and not the application. `tsc --noEmit` does cover everything.
 ## Honest positioning
 
 This is a **high-completeness academic prototype deployed to testnets**, not a
-production financial product. It has 24 contracts, 420 passing tests, CI, three
-chain deployments, a documented risk model, and an AI agent stack with VC/SSI
-authentication. It does not have an audit, a decentralized oracle, or any
+production financial product. It has 33 contract definitions under
+`contracts/src` (including mocks and superseded vault versions), 776 Foundry
+test/invariant functions (source count on 2026-09-30; the "24 contracts, 420
+passing tests" previously written here dated from mid-2026 and is superseded),
+CI, deployments on Base Sepolia and Sepolia, a documented risk model, and an AI
+agent stack with VC/SSI authentication. It does not have an audit, a decentralized oracle, or any
 regulatory authorization.
 
 Six of the eleven assets reference real securities (sAAPL, sTSLA, sNVDA, sMSFT,

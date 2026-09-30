@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>PepeLab — The Agent-Native Perp DEX</title>
-<meta name="description" content="PepeLab is the on-chain perpetual CFD protocol built for AI agents. x402 paid signals, on-chain copy trading, session-key delegation. Hyperliquid is fast — PepeLab is agent-native." />
+<title>PepeFi — Agent-Native Derivatives Infrastructure (Testnet Prototype)</title>
+<meta name="description" content="PepeFi (formerly PepeLab, also the demo theme): a testnet research prototype of on-chain CFD derivatives, tokenized allocations, carbon-tier pricing, bounded agent sessions and x402 pay-per-call data — designed as white-label infrastructure for licensed institutions. Base Sepolia only; not audited." />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
@@ -192,15 +192,15 @@ footer a:hover{color:var(--lime)}
 </head>
 <body>
 
-<!-- live ticker -->
+<!-- status strip (static text — no market data is shown on this page) -->
 <div class="ticker"><div class="ticker-track" id="tick"></div></div>
 
 <div class="wrap">
   <nav>
-    <div class="brand"><span class="logo"><span>P</span></span> PEPELAB</div>
+    <div class="brand"><span class="logo"><span>P</span></span> PEPEFI</div>
     <div class="nav-links">
       <a href="#agents">Agents</a>
-      <a href="#versus">vs Hyperliquid</a>
+      <a href="#versus">Comparison</a>
       <a href="#copy">Copy Trading</a>
       <a href="#secure">Security</a>
     </div>
@@ -210,35 +210,35 @@ footer a:hover{color:var(--lime)}
   <!-- HERO -->
   <header class="hero">
     <div>
-      <span class="tag reveal"><span class="dot"></span> on-chain perp CFD · agent-native</span>
-      <h1 class="reveal">The perp DEX<br>built for <span class="gr">AI agents</span>,<br>not just <span class="out">humans</span>.</h1>
-      <p class="lead reveal">PepeLab turns a perpetual CFD protocol into an <b>agent economy</b>: AI agents pay per-call with <b>x402</b> to read strategy signals, mirror top traders on-chain, and trade within <b>session-key</b> limits. Hyperliquid is fast. <b>PepeLab is agent-native.</b></p>
+      <span class="tag reveal"><span class="dot"></span> testnet research prototype · agent-native</span>
+      <h1 class="reveal">Derivatives infrastructure<br>built for <span class="gr">AI agents</span>,<br>not just <span class="out">humans</span>.</h1>
+      <p class="lead reveal">PepeFi is an on-chain CFD engine designed as <b>white-label infrastructure for licensed institutions</b>: AI agents pay per call with <b>x402</b> to read data, and trade only within <b>on-chain session limits</b> set by the account holder. It runs on the <b>Base Sepolia testnet</b> only — no real assets, no third-party audit.</p>
       <div class="cta reveal">
-        <button class="btn btn-primary" onclick="launch()">Start trading</button>
-        <a class="btn btn-ghost" href="#versus">See why we win →</a>
+        <button class="btn btn-primary" onclick="launch()">Open testnet app</button>
+        <a class="btn btn-ghost" href="#versus">How it compares →</a>
       </div>
       <div class="proof reveal">
-        <div><span class="n" data-count="259" data-suffix="">0</span><span class="l">passing contract tests</span></div>
-        <div><span class="n">70/20/10</span><span class="l">fees → trader / LP / vault</span></div>
-        <div><span class="n" data-count="5" data-suffix="×">0</span><span class="l">max leverage, hard-capped</span></div>
+        <div><span class="n">Testnet</span><span class="l">Base Sepolia (84532) only</span></div>
+        <div><span class="n">70/20/10</span><span class="l">copy-trading fees &amp; x402 revenue → trader / platform / insurance vault (trading fees stay in the exchange)</span></div>
+        <div><span class="n">5×</span><span class="l">contract max leverage (lower by carbon tier)</span></div>
       </div>
     </div>
 
-    <!-- live deck -->
+    <!-- illustrative deck (static; not live market data) -->
     <div class="deck reveal">
       <div class="deck-h">
         <div class="pair"><span class="logo" style="width:24px;height:24px"><span style="font-size:12px">P</span></span> sBTC-PERP</div>
-        <span class="chip" id="fund">funding +0.74%</span>
+        <span class="chip">illustration</span>
       </div>
       <div class="deck-body">
-        <div class="px"><span class="big" id="px">73,468.20</span><span class="chg" id="chg">+1.84%</span></div>
-        <div class="spark" id="spark"></div>
-        <div class="row"><span>Mark · Oracle</span><span class="mono" id="oracle">Chainlink / Pyth</span></div>
-        <div class="row"><span>Open interest (L/S)</span><span class="mono">5.26M / 0.01M</span></div>
-        <div class="row"><span>Max leverage</span><span class="mono">5×</span></div>
+        <div class="px"><span class="big" style="font-size:26px">How a paid agent call works</span></div>
+        <div class="row"><span>Settlement price</span><span class="mono">MockOracle · keeper-relayed</span></div>
+        <div class="row"><span>Stale-price guard</span><span class="mono">maxPriceAge 6h</span></div>
+        <div class="row"><span>Funding interval</span><span class="mono">8h</span></div>
+        <div class="row"><span>Max leverage</span><span class="mono">1–5× by carbon tier</span></div>
         <div class="agentline">
           <span class="pill">x402</span>
-          <span class="mono" id="agentlog">agent paid 0.01 USDC → signal: LONG bias, funding headwind</span>
+          <span class="mono">HTTP 402 → agent signs USDC authorization → data returned</span>
         </div>
       </div>
     </div>
@@ -247,49 +247,49 @@ footer a:hover{color:var(--lime)}
 
 <!-- STATS BAND -->
 <div class="band"><div class="wrap"><div class="stats">
-  <div class="stat reveal"><div class="n"><span data-count="259">0</span></div><div class="l">Foundry tests, 0 failed</div></div>
-  <div class="stat reveal"><div class="n">x402</div><div class="l">pay-per-call signal API</div></div>
-  <div class="stat reveal"><div class="n">MCP</div><div class="l">tools for Claude & agents</div></div>
-  <div class="stat reveal"><div class="n">100%</div><div class="l">on-chain settlement</div></div>
+  <div class="stat reveal"><div class="n">84532</div><div class="l">Base Sepolia testnet only</div></div>
+  <div class="stat reveal"><div class="n">x402</div><div class="l">pay-per-call data API</div></div>
+  <div class="stat reveal"><div class="n">7</div><div class="l">MCP tools (5 read · 2 write)</div></div>
+  <div class="stat reveal"><div class="n">On-chain</div><div class="l">trade settlement in contracts</div></div>
 </div></div></div>
 
 <!-- AGENTS -->
 <section id="agents"><div class="wrap">
   <span class="kicker reveal">The agent economy</span>
   <h2 class="h2 reveal">Machines that pay, read, and trade — autonomously.</h2>
-  <p class="sub reveal">Every layer is exposed to AI agents. They discover tools over MCP, pay per request over x402, and execute within cryptographic spend limits. No exchange does this end-to-end.</p>
+  <p class="sub reveal">AI agents discover tools over MCP, pay per request over x402, and trade only inside limits the account holder sets on-chain. All of it runs on testnet today.</p>
   <div class="grid">
-    <div class="card reveal"><div class="ic">⚡</div><h3>x402 paid signals</h3><p>Agents hit HTTP 402, sign a USDC authorization, and get a strategy signal back. Per-call micropayments — a native machine paywall, no API keys.</p><span class="tagm">GET /signals/:trader · 0.01 USDC</span></div>
-    <div class="card reveal"><div class="ic">🧩</div><h3>MCP tool layer</h3><p>The protocol is wrapped as Model Context Protocol tools. Claude and other agents call <span class="mono">get_trader_performance</span>, <span class="mono">get_funding_rate</span>, <span class="mono">get_position</span> directly.</p><span class="tagm">read-only · stdio</span></div>
-    <div class="card reveal"><div class="ic">🔑</div><h3>Session-key delegation</h3><p>Grant an agent a bounded session — per-trade cap, total budget, max leverage, expiry. It trades for you and <b>never</b> touches your main key. Revoke anytime.</p><span class="tagm">AgentSessionManager.sol</span></div>
-    <div class="card reveal"><div class="ic">💸</div><h3>Signal revenue share</h3><p>When an agent buys a trader's signal, that trader earns <b>70%</b> — routed through the same FeeRouter split as trading fees. Traders monetize their alpha to machines.</p><span class="tagm">70 / 20 / 10</span></div>
-    <div class="card reveal"><div class="ic">🛰️</div><h3>Decentralized oracles</h3><p>Drop-in Chainlink adapter for crypto, Pyth adapter for synthetic equities — same interface, zero core change. Stale-price guards on every state change.</p><span class="tagm">Chainlink · Pyth</span></div>
-    <div class="card reveal"><div class="ic">🌱</div><h3>ESG synthetic assets</h3><p>Trade tokenized equities, commodities, bonds and ESG baskets as synthetic perps — exposure Hyperliquid simply doesn't list.</p><span class="tagm">sAAPL · sGOLD · sESGU</span></div>
+    <div class="card reveal"><div class="ic">⚡</div><h3>x402 paid data</h3><p>Agents hit HTTP 402, sign a USDC authorization, and get data back. Invalid requests are rejected before any payment is requested, and the service refuses to request payment if its payout address fails a safety check.</p><span class="tagm">GET /signals/:trader · 0.01 USDC · GET /oracle/:asset · 0.005 USDC</span></div>
+    <div class="card reveal"><div class="ic">🧩</div><h3>MCP tool layer</h3><p>Seven Model Context Protocol tools: five read-only (<span class="mono">get_trader_performance</span>, <span class="mono">get_funding_rate</span>, <span class="mono">get_position</span>, <span class="mono">get_session</span>, <span class="mono">get_agent_verification</span>) and two that send transactions (<span class="mono">open_position</span>, <span class="mono">close_position</span>) within a session and a signed authorization.</p><span class="tagm">7 tools · 5 read · 2 write · stdio</span></div>
+    <div class="card reveal"><div class="ic">🔑</div><h3>Bounded agent sessions</h3><p>The account holder creates a session on-chain: per-trade margin cap, total margin budget, max leverage, expiry and an optional asset allowlist. The contract enforces them; the holder can revoke at any time.</p><span class="tagm">AgentSessionManager.sol</span></div>
+    <div class="card reveal"><div class="ic">💸</div><h3>Data revenue share</h3><p>x402 revenue is split 70 / 20 / 10 (trader / platform / insurance vault) by a separate settlement transaction after payment — queued, not atomic with the payment itself.</p><span class="tagm">70 / 20 / 10 · async settlement</span></div>
+    <div class="card reveal"><div class="ic">🛰️</div><h3>Keeper-relayed prices</h3><p>The live exchange settles on a keeper-written oracle with a circuit breaker and fallback sources — a trusted relay, not a decentralized oracle. Chainlink / Pyth adapters exist but are not wired into the live exchange.</p><span class="tagm">stale-price guard · 6h</span></div>
+    <div class="card reveal"><div class="ic">🌱</div><h3>Carbon-tier synthetic assets</h3><p>Synthetic exposure to equities, commodities, bonds and ESG baskets. Fees and leverage caps follow each asset's attested carbon tier; unrated assets fall to the most conservative tier. Synthetic exposure only — not the underlying securities.</p><span class="tagm">sAAPL · sGOLD · sESGU</span></div>
   </div>
 </div></section>
 
 <!-- VERSUS -->
 <section id="versus"><div class="wrap">
-  <span class="kicker reveal">Head to head</span>
-  <h2 class="h2 reveal">Hyperliquid optimized the order book.<br>We rebuilt the trader.</h2>
-  <p class="sub reveal">Respect where it's due — Hyperliquid is a world-class execution venue. But the next edge isn't latency, it's <b>autonomy</b>. Here's where PepeLab pulls ahead.</p>
+  <span class="kicker reveal">Context, not a scoreboard</span>
+  <h2 class="h2 reveal">Hyperliquid is a production venue.<br>This is a testnet prototype.</h2>
+  <p class="sub reveal">Hyperliquid is referenced only because readers ask. The two are at different stages and aim at different users: PepeFi is B2B infrastructure for licensed institutions, not a retail venue. For anything about Hyperliquid, rely on its own public documentation — this page does not assess it.</p>
 
   <div class="vs reveal">
     <div class="vs-head">
       <div class="feat0"></div>
-      <div class="us"><div class="nm"><span class="logo" style="width:22px;height:22px"><span style="font-size:11px">P</span></span> PepeLab</div><small>agent-native perp CFD</small></div>
-      <div class="them"><div class="nm">Hyperliquid</div><small>high-perf perp DEX</small></div>
+      <div class="us"><div class="nm"><span class="logo" style="width:22px;height:22px"><span style="font-size:11px">P</span></span> PepeFi</div><small>testnet research prototype</small></div>
+      <div class="them"><div class="nm">Hyperliquid</div><small>production perp venue</small></div>
     </div>
-    <div class="vs-row"><div class="feat">AI-agent native (x402 paywall)</div><div class="us"><span class="yes">✓</span> built-in</div><div class="them"><span class="no">✗</span> none</div></div>
-    <div class="vs-row"><div class="feat">MCP tools for LLM agents</div><div class="us"><span class="yes">✓</span> 3 tools</div><div class="them"><span class="no">✗</span></div></div>
-    <div class="vs-row"><div class="feat">On-chain copy trading</div><div class="us"><span class="yes">✓</span> 1-click mirror</div><div class="them"><span class="no">✗</span></div></div>
-    <div class="vs-row"><div class="feat">Strategy marketplace + versioning</div><div class="us"><span class="yes">✓</span></div><div class="them"><span class="no">✗</span></div></div>
-    <div class="vs-row"><div class="feat">Pay-per-signal economy</div><div class="us"><span class="yes">✓</span> USDC / call</div><div class="them"><span class="no">✗</span></div></div>
-    <div class="vs-row"><div class="feat">Session-key spend limits</div><div class="us"><span class="yes">✓</span> cap / expiry</div><div class="them"><span class="no">✗</span></div></div>
-    <div class="vs-row"><div class="feat">Synthetic equities & ESG assets</div><div class="us"><span class="yes">✓</span> sAAPL·sESGU</div><div class="them"><span class="no">✗</span> crypto only</div></div>
-    <div class="vs-row"><div class="feat">Trader earns from signal sales</div><div class="us"><span class="yes">✓</span> 70%</div><div class="them"><span class="no">✗</span></div></div>
-    <div class="vs-row"><div class="feat">Fully on-chain settlement</div><div class="us"><span class="yes">✓</span></div><div class="them"><span class="mono">✓ L1</span></div></div>
-    <div class="vs-row"><div class="feat">Liquidations &amp; funding</div><div class="us"><span class="yes">✓</span> 5% reward</div><div class="them"><span class="mono">✓</span></div></div>
+    <div class="vs-row"><div class="feat">Stage</div><div class="us">Base Sepolia testnet only; no real assets</div><div class="them">Production mainnet</div></div>
+    <div class="vs-row"><div class="feat">Execution model</div><div class="us">Oracle-priced CFD; the pool is the counterparty</div><div class="them">Order book on its own L1</div></div>
+    <div class="vs-row"><div class="feat">Target customer</div><div class="us">Licensed institutions (white-label)</div><div class="them">See its public docs</div></div>
+    <div class="vs-row"><div class="feat">Pay-per-call data (x402)</div><div class="us">Implemented on testnet</div><div class="them">Not assessed here</div></div>
+    <div class="vs-row"><div class="feat">MCP tools for LLM agents</div><div class="us">7 tools (5 read, 2 write)</div><div class="them">Not assessed here</div></div>
+    <div class="vs-row"><div class="feat">Delegated agent limits</div><div class="us">On-chain session: per-trade margin, budget, leverage, expiry, asset allowlist</div><div class="them">See its public docs</div></div>
+    <div class="vs-row"><div class="feat">Carbon-tier pricing</div><div class="us">Fees and leverage caps from attested tier (self-attested today)</div><div class="them">Not assessed here</div></div>
+    <div class="vs-row"><div class="feat">Synthetic equities &amp; ESG assets</div><div class="us">11 synthetic assets (testnet)</div><div class="them">See its public docs</div></div>
+    <div class="vs-row"><div class="feat">Liquidations &amp; funding</div><div class="us">Permissionless liquidation (5% reward); 8h funding</div><div class="them">See its public docs</div></div>
+    <div class="vs-row"><div class="feat">Third-party security audit</div><div class="us">None yet</div><div class="them">See its public disclosures</div></div>
   </div>
 </div></section>
 
@@ -297,7 +297,7 @@ footer a:hover{color:var(--lime)}
 <section id="copy"><div class="wrap">
   <span class="kicker reveal">Copy trading, on-chain</span>
   <h2 class="h2 reveal">Mirror the best. In one transaction.</h2>
-  <p class="sub reveal">Follow a trader and their strategy is replicated to your account by weight, leverage and direction — enforced by contracts, slashable if they blow up. Now agents can be followers too.</p>
+  <p class="sub reveal">Follow a trader and their strategy is replicated to your account by weight, leverage and direction — enforced by contracts, with the trader's stake slashable on large losses. <b>Leveraged copy trading is off by default in the commercial build</b> (feature flag); it remains in the codebase for evaluation.</p>
   <div class="flow">
     <div class="step reveal"><div class="num">01</div><h4>Pick a strategy</h4><p>Browse the marketplace ranked by on-chain, verifiable PnL.</p></div>
     <div class="step reveal"><div class="num">02</div><h4>Approve &amp; follow</h4><p>One click mirrors allocations — BTC 50%, ETH 30%, AAPL 20%.</p></div>
@@ -308,41 +308,41 @@ footer a:hover{color:var(--lime)}
 
 <!-- SECURITY -->
 <section id="secure"><div class="wrap">
-  <span class="kicker reveal">Hardened</span>
-  <h2 class="h2 reveal">Audited-grade by construction.</h2>
-  <p class="sub reveal">Security Round 2 shipped before features did. The autonomous-agent surface is only safe because the core is.</p>
+  <span class="kicker reveal">Security status</span>
+  <h2 class="h2 reveal">Honest about what is not done yet.</h2>
+  <p class="sub reveal">No third-party audit. The contract owner is a single key — no multisig, no timelock. What exists is internal review, static analysis and invariant tests. Details: SECURITY.md and docs/KNOWN_LIMITATIONS.md in the repository.</p>
   <div class="grid">
-    <div class="card reveal"><div class="ic">🛡️</div><h3>Reentrancy + CEI</h3><p>Every fund-moving path is <span class="mono">nonReentrant</span> with strict checks-effects-interactions ordering.</p></div>
-    <div class="card reveal"><div class="ic">⏱️</div><h3>Stale-price guard</h3><p><span class="mono">maxPriceAge</span> reverts trades on outdated oracle data — the agent's last line of defense.</p></div>
-    <div class="card reveal"><div class="ic">🎯</div><h3>Keeper-incentivized liquidations</h3><p>Liquidators earn a <b>5%</b> reward, so the protocol stays solvent without trusting altruism.</p></div>
-    <div class="card reveal"><div class="ic">🔁</div><h3>Auto funding</h3><p>Funding accrues across every missed interval — no reliance on a benevolent cranker.</p></div>
-    <div class="card reveal"><div class="ic">🔐</div><h3>Bounded delegation</h3><p>Agents act only inside session limits; the user's main key never leaves the wallet.</p></div>
-    <div class="card reveal"><div class="ic">🧪</div><h3>259 tests, 0 failing</h3><p>From funding math to multi-agent auth to oracle adapters — covered and green.</p></div>
+    <div class="card reveal"><div class="ic">🛡️</div><h3>Reentrancy guards</h3><p>The exchange, insurance vault, session manager and V2 token vault use <span class="mono">nonReentrant</span> on fund-moving paths. Older V1 contracts do not use SafeERC20 — a documented limitation.</p></div>
+    <div class="card reveal"><div class="ic">⏱️</div><h3>Stale-price guard</h3><p><span class="mono">maxPriceAge</span> (6h on the live exchange) reverts trades on outdated oracle data.</p></div>
+    <div class="card reveal"><div class="ic">🎯</div><h3>Liquidations &amp; loss absorption</h3><p>Liquidators earn <b>5%</b> of remaining collateral. Shortfalls go to the insurance vault, then auto-deleveraging, then an on-chain bad-debt event — solvency is not guaranteed.</p></div>
+    <div class="card reveal"><div class="ic">🔁</div><h3>Funding catch-up</h3><p>A settlement catches up at most 21 missed 8h intervals (7 days); intervals beyond that are waived for both longs and shorts.</p></div>
+    <div class="card reveal"><div class="ic">🔐</div><h3>Bounded delegation</h3><p>Agents act only inside on-chain session limits; the account holder's key is not handed to the agent.</p></div>
+    <div class="card reveal"><div class="ic">🧪</div><h3>Not audited</h3><p>Tests run in CI (Foundry, Vitest, agent suites). Tests are not an audit; pause, halt and risk-cap controls exist in source only and are not yet deployed.</p></div>
   </div>
 </div></section>
 
 <!-- FINAL CTA -->
 <section class="final"><div class="wrap">
   <h2 class="reveal">Trade like a human.<br><span class="gr">Scale like a machine.</span></h2>
-  <p class="reveal">The first perp DEX where your AI agent is a first-class trader — paying, reading, and executing on-chain within limits you set.</p>
-  <div class="reveal"><button class="btn btn-primary glowbtn" onclick="launch()">Launch PepeLab ↗</button></div>
+  <p class="reveal">A testnet prototype where an AI agent can pay for data and execute on-chain — only within limits the account holder sets.</p>
+  <div class="reveal"><button class="btn btn-primary glowbtn" onclick="launch()">Open testnet app ↗</button></div>
 </div></section>
 
 <footer class="wrap">
-  <div>© 2026 PEPELAB · NCCU Capstone</div>
+  <div>© 2026 PEPEFI · NCCU Capstone</div>
   <div style="display:flex;gap:22px">
-    <a href="#agents">Agents</a><a href="#versus">vs HL</a><a href="#secure">Security</a>
+    <a href="#agents">Agents</a><a href="#versus">Comparison</a><a href="#secure">Security</a>
     <a href="https://github.com/zuemen/pepelab_onchain_cfd" target="_blank" rel="noopener">GitHub ↗</a>
   </div>
 </footer>
-<div class="disc">Research prototype on testnet. Synthetic CFD exposure, not real securities. “Hyperliquid” is referenced for factual feature comparison only; not affiliated. Nothing here is financial advice.</div>
+<div class="disc">PepeFi is the product name; PepeLab is its earlier name and the demo theme. Research prototype on the Base Sepolia testnet (NCCU Capstone 2026). No real assets; synthetic CFD exposure, not real securities. No third-party security audit. Not licensed in any jurisdiction; intended as infrastructure for already-licensed institutions, who remain responsible for compliance. “Hyperliquid” is mentioned for context only; not affiliated, and this page makes no assessment of it. Nothing here is financial advice.</div>
 
 <script>
-function launch(){ window.location.href = "http://localhost:5173/"; }
+function launch(){ window.location.href = "https://pepelab-onchain-cfd-djot.vercel.app/"; }
 
-// ── live ticker ──
-const assets=[["sBTC",73468.2,1.84],["sETH",2712.5,-0.92],["sAAPL",211.4,0.71],["sGOLD",2655,0.12],["sTSLA",248.9,-1.4],["sNVDA",136.2,2.05],["sESGU",121.3,0.34],["sBOND",100.1,-0.05]];
-function tickHTML(){return assets.map(a=>{const c=a[2]>=0?"up":"down";const s=a[2]>=0?"+":"";return `<span class="tk"><b>${a[0]}</b> ${a[1].toLocaleString()} <span class="${c}">${s}${a[2]}%</span></span>`}).join("")}
+// ── status strip (static text; this page shows no prices) ──
+const notes=["Base Sepolia testnet only","No real assets","Not audited","Synthetic exposure, not securities","B2B infrastructure for licensed institutions","Owner is a single key — no multisig / timelock"];
+function tickHTML(){return notes.map(n=>`<span class="tk"><b>●</b> ${n}</span>`).join("")}
 document.getElementById("tick").innerHTML=tickHTML()+tickHTML();
 
 // ── reveal on scroll ──
@@ -352,30 +352,6 @@ document.querySelectorAll(".reveal").forEach((el,i)=>{el.style.transitionDelay=(
 // ── count up ──
 const cio=new IntersectionObserver((es)=>es.forEach(e=>{if(e.isIntersecting){const el=e.target,t=+el.dataset.count,suf=el.dataset.suffix||"";let n=0;const step=t/40;const tick=()=>{n+=step;if(n>=t){el.textContent=t+suf}else{el.textContent=Math.floor(n)+suf;requestAnimationFrame(tick)}};tick();cio.unobserve(el)}}),{threshold:.6});
 document.querySelectorAll("[data-count]").forEach(el=>cio.observe(el));
-
-// ── hero deck: sparkline + live jitter ──
-const spark=document.getElementById("spark");
-let bars=Array.from({length:36},(_,i)=>40+Math.sin(i/3)*18+Math.random()*16);
-function drawSpark(){spark.innerHTML=bars.map(h=>`<i style="height:${Math.max(8,Math.min(100,h))}%"></i>`).join("")}
-drawSpark();
-let price=73468.2;
-const pxEl=document.getElementById("px"),chgEl=document.getElementById("chg");
-const logs=[
- "agent paid 0.01 USDC → signal: LONG bias, funding headwind",
- "MCP get_funding_rate(sBTC) → +0.74% (longs pay)",
- "agent paid 0.005 USDC → oracle snapshot, price fresh ✓",
- "session #4 opened LONG 2× within 1,000 USDC cap",
- "agent skipped sETH: funding tailwind, trader PnL negative"
-];
-let li=0;
-setInterval(()=>{
-  const d=(Math.random()-0.46)*42; price=Math.max(60000,price+d);
-  pxEl.textContent=price.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
-  const up=d>=0; chgEl.style.color=up?"var(--green)":"var(--coral)";
-  chgEl.textContent=(up?"+":"")+(d/price*100*60).toFixed(2)+"%";
-  bars.push(50+ (price-73000)/40 + Math.random()*20); bars.shift(); drawSpark();
-},900);
-setInterval(()=>{li=(li+1)%logs.length;document.getElementById("agentlog").textContent=logs[li]},2600);
 </script>
 </body>
 </html>

@@ -1,5 +1,8 @@
 # Design Doc — x402 付費層 + AI Agent 自主交易整合
 
+> **歷史快照（2026-06）**：本文件是實作前的設計草稿（下方狀態仍寫「尚未實作」），其後未更新；
+> 實際實作與設計有出入。現況見 [`README.md`](../README.md)，API 規格見 [`api/openapi.yaml`](api/openapi.yaml)。
+
 **專案：** PepeLab On-Chain CFD（NCCU Capstone 2026）
 **狀態：** Draft v0.1（技術設計，尚未實作）
 **作者：** Zuemen
