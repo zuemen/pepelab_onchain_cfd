@@ -43,9 +43,11 @@ import {
   isSessionManagerDeployed,
 } from 'src/contracts/sessionManager'
 import {
-  AUTH_DOMAIN,
-  AUTH_TYPES,
-  buildAuthTypedValue,
+  authDomainV2,
+  AUTH_TYPES_V2,
+  newAuthNonce,
+  defaultValidUntil,
+  buildAuthTypedValueV2,
   assembleAuthorizationVC,
   type AuthorizationCaps,
   type AuthorizationVC,
@@ -222,10 +224,17 @@ export default function SessionsPage() {
       }
       const issuedAt = Math.floor(Date.now() / 1000)
       // 與 agent 端 verifyAuthorizationVC 共用同一組 EIP-712 schema（agentAuth.ts）。
-      const value = buildAuthTypedValue({ issuer: wallet.address, agent: s.agent, sessionId: s.id, caps, issuedAt })
-      const signature = await wallet.signer.signTypedData(AUTH_DOMAIN, AUTH_TYPES, value)
+      // v2：domain 綁 session manager 位址（verifyingContract），並簽入 validUntil 與 nonce。
+      const verifyingContract = getSessionManagerAddress(wallet.chainId)
+      const validUntil = defaultValidUntil(issuedAt, caps.expiry)
+      const nonce = newAuthNonce()
+      const value = buildAuthTypedValueV2({
+        issuer: wallet.address, agent: s.agent, sessionId: s.id, caps, issuedAt, validUntil, nonce,
+      })
+      const signature = await wallet.signer.signTypedData(authDomainV2(verifyingContract), AUTH_TYPES_V2, value)
       const vc = assembleAuthorizationVC({
         issuerAddress: wallet.address, agentAddress: s.agent, sessionId: s.id, caps, issuedAt, signature,
+        v2: { validUntil, nonce, verifyingContract },
       })
       setVcBySession(p => {
         const nextMap = { ...p, [s.id]: vc }

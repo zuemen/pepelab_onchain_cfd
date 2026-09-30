@@ -39360,6 +39360,26 @@ async function getTraderPerformance(c, trader) {
   };
 }
 
+// ../../frontend/src/contracts/agentAuth.ts
+var DEFAULT_VC_VALIDITY_SEC = 7 * 24 * 3600;
+var V1_FIELDS = [
+  { name: "issuer", type: "address" },
+  { name: "agent", type: "address" },
+  { name: "sessionId", type: "uint256" },
+  { name: "maxMarginPerTrade", type: "string" },
+  { name: "totalBudget", type: "string" },
+  { name: "maxLeverage", type: "uint256" },
+  { name: "expiry", type: "uint256" },
+  { name: "issuedAt", type: "uint256" }
+];
+var AUTH_TYPES_V2 = {
+  AgentTradingAuthorization: [
+    ...V1_FIELDS,
+    { name: "validUntil", type: "uint256" },
+    { name: "nonce", type: "bytes32" }
+  ]
+};
+
 // ../shared/src/identity.ts
 function agentDid(address, chainId = AGENT_CHAIN_ID) {
   return `did:pkh:eip155:${chainId}:${ethers_exports.getAddress(address)}`;

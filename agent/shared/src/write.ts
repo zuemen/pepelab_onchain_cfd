@@ -30,6 +30,7 @@ import {
   type PolicyRequest,
 } from "./policyGate.ts";
 import { SigningGuardError } from "./signingGuard.ts";
+import { checkAndRecordVcNonce } from "./vcNonce.ts";
 import { redactSecrets } from "./redact.ts";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
@@ -221,8 +222,9 @@ async function verifyVcAgainstChain(
   agentAddress: string,
   mgr: ethers.Contract,
 ): Promise<string | null> {
-  const res = verifyAuthorizationVC(vc);
-  if (!res.valid) return `授權憑證(VC)驗證失敗：${res.reason}`;
+  // v2 VC 的 domain 綁 session manager 位址：必須等於本 agent 實際呼叫的那一顆。
+  const res = verifyAuthorizationVC(vc, { expectedVerifyingContract: await mgr.getAddress() });
+  if (!res.valid) return `授權憑證(VC)驗證失敗（${res.reasonCode ?? "VC_INVALID"}）：${res.reason}`;
   if (res.sessionId !== sessionId)
     return `VC sessionId(${res.sessionId}) 與請求(${sessionId}) 不符`;
   if (res.agent && ethers.getAddress(res.agent) !== ethers.getAddress(agentAddress))
@@ -250,8 +252,12 @@ async function verifyVcAgainstChain(
         return `VC expiry(${c.expiry}) 與鏈上 session 到期不符`;
     }
   } catch (err) {
-    return `讀取鏈上 session 失敗：${(err as Error).message}`;
+    return `讀取鏈上 session 失敗：${redactSecrets((err as Error).message)}`;
   }
+
+  // v2 nonce 一次性檢查（鏈上比對通過後才記錄，避免無效 VC 污染狀態）。語意見 vcNonce.ts。
+  const n = checkAndRecordVcNonce(res);
+  if (!n.ok) return `授權憑證(VC) nonce 檢查未過（${n.reasonCode}）：${n.message}`;
   return null;
 }
 

@@ -5,7 +5,8 @@
 // Run:  cd agent && npx tsx examples/agent-onboarding.ts
 //
 // The frontend (SessionsPage) signs with:
-//     buildAuthTypedValue(...)  →  signer.signTypedData(AUTH_DOMAIN, AUTH_TYPES, value)  →  assembleAuthorizationVC(...)
+//     buildAuthTypedValueV2(...)  →  signer.signTypedData(authDomainV2(sessionManager), AUTH_TYPES_V2, value)
+//       →  assembleAuthorizationVC({ …, v2: { validUntil, nonce, verifyingContract } })
 // all from the SHARED module frontend/src/contracts/agentAuth.ts. Here we make
 // the identical calls with a throwaway wallet standing in for MetaMask, then run
 // the result through the agent's existing verifyAuthorizationVC.
@@ -19,15 +20,20 @@
 import assert from "node:assert";
 import { ethers } from "ethers";
 import {
-  AUTH_DOMAIN,
-  AUTH_TYPES,
-  buildAuthTypedValue,
+  authDomainV2,
+  AUTH_TYPES_V2,
+  buildAuthTypedValueV2,
+  defaultValidUntil,
+  newAuthNonce,
   assembleAuthorizationVC,
   verifyAuthorizationVC,
   agentDid,
   authDid,
   type AuthorizationCaps,
 } from "@pepelab/shared";
+
+/** Stand-in session manager address (the v2 domain's verifyingContract). */
+const SESSION_MANAGER = "0x" + "5e".repeat(20);
 
 function banner(t: string) {
   console.log("\n" + "─".repeat(64) + `\n${t}\n` + "─".repeat(64));
@@ -49,14 +55,19 @@ async function signLikeFrontend(params: {
   const issuerAddress = await params.userWallet.getAddress();
   const issuedAt = Math.floor(Date.now() / 1000);
   // ── exactly what SessionsPage does, from the shared agentAuth module ──
-  const value = buildAuthTypedValue({
+  const verifyingContract = SESSION_MANAGER;
+  const validUntil = defaultValidUntil(issuedAt, params.caps.expiry);
+  const nonce = newAuthNonce();
+  const value = buildAuthTypedValueV2({
     issuer: issuerAddress,
     agent: params.agentAddress,
     sessionId: params.sessionId,
     caps: params.caps,
     issuedAt,
+    validUntil,
+    nonce,
   });
-  const signature = await params.userWallet.signTypedData(AUTH_DOMAIN, AUTH_TYPES, value);
+  const signature = await params.userWallet.signTypedData(authDomainV2(verifyingContract), AUTH_TYPES_V2, value);
   return assembleAuthorizationVC({
     issuerAddress,
     agentAddress: params.agentAddress,
@@ -64,6 +75,7 @@ async function signLikeFrontend(params: {
     caps: params.caps,
     issuedAt,
     signature,
+    v2: { validUntil, nonce, verifyingContract },
   });
 }
 
@@ -87,9 +99,10 @@ async function main() {
   console.log(JSON.stringify(vc, null, 2));
 
   banner("② agent 端 verifyAuthorizationVC（與前端共用同一組 EIP-712 schema）");
-  const good = verifyAuthorizationVC(vc);
+  const good = verifyAuthorizationVC(vc, { expectedVerifyingContract: SESSION_MANAGER });
   console.log(good);
   assert.equal(good.valid, true, "frontend-signed VC must verify on the agent side");
+  assert.equal(good.version, 2, "frontend issues the v2 format");
   assert.equal(good.issuer!.toLowerCase(), user.address.toLowerCase());
   assert.equal(good.agent!.toLowerCase(), agent.address.toLowerCase());
   assert.equal(good.sessionId, sessionId);
