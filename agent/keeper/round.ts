@@ -19,6 +19,7 @@ import {
   type SourceQuote,
 } from "./core.ts";
 import type { QuoteMeta } from "./feeds.ts";
+import { assetClassOf } from "./market.ts";
 
 export type Feed = ParsedFeed & QuoteMeta & { source: string };
 export interface TxLike {
@@ -36,6 +37,17 @@ export interface GuardedLike {
   checkUpdate: (assetId: string, price8: bigint) => Promise<unknown>;
   updatePrice: (assetId: string, price8: bigint) => Promise<TxLike>;
 }
+
+export const RELAY_SOURCE = "chainlink/pyth relay";
+/** 加密資產後備鏈每一層的報價年齡上限（秒）。 */
+export const FRESH_QUOTE_SEC = 3600;
+/** 有價、有時間戳、≤ 1 小時、不是 stale —— 缺時間戳視為新鮮度不明，不採用。 */
+export const isFreshQuote = (f: Feed): boolean =>
+  f.value !== null &&
+  typeof f.quoteAgeSec === "number" &&
+  Number.isFinite(f.quoteAgeSec) &&
+  f.quoteAgeSec <= FRESH_QUOTE_SEC &&
+  f.quoteStale !== true;
 
 /** ethers v6 的 wait 逾時丟 code=TIMEOUT。 */
 export const isTimeout = (e: unknown): boolean => (e as { code?: unknown })?.code === "TIMEOUT";
@@ -115,16 +127,45 @@ export async function runRound(ctx: RoundCtx): Promise<RoundResult> {
 
     // 優先中繼鏈上的去中心化聚合價；聚合器沒有這個資產的 feed（測試網上多數股票
     // 都是如此）或自報過期時，才退回外部 API。
-    const relayed = await ctx.fetchRelay(assetId);
-    const feed: Feed =
-      relayed !== null
+    //
+    // 2026-09-30 事故：GitHub runner 打 CoinGecko 一律 403、sBTC 的 relay 沒有即時 feed，
+    // sBTC 9 小時沒更新而 job 全綠。加密資產改為後備鏈 relay → CoinGecko → Yahoo
+    // （BTC-USD／ETH-USD），每一層都要報價在 1 小時內才採用。股票／ETF／期貨維持
+    // 單一來源（Yahoo），週末收盤價照舊以 ::warning:: 寫入。
+    const relayRaw = await ctx.fetchRelay(assetId);
+    const relayFeed: Feed | null =
+      relayRaw !== null
         ? {
-            value: relayed.price,
+            value: relayRaw.price,
             reason: "ok",
-            source: "chainlink/pyth relay",
-            quoteAgeSec: Math.max(0, ctx.nowSec - relayed.updatedAt),
+            source: RELAY_SOURCE,
+            quoteAgeSec: Math.max(0, ctx.nowSec - relayRaw.updatedAt),
           }
-        : await ctx.fetchPrice(symbol);
+        : null;
+    // 同一輪同一上游只抓一次：主來源鏈與多源確認共用。
+    let primaryFeed: Feed | undefined;
+    let secondaryFeed: Feed | undefined;
+    const getPrimary = async () => (primaryFeed ??= await ctx.fetchPrice(symbol));
+    const getSecondary = async () => (secondaryFeed ??= await ctx.fetchSecondary(symbol));
+
+    let feed: Feed;
+    if (assetClassOf(symbol) === "crypto") {
+      const tried: string[] = [];
+      let chosen: Feed | null = null;
+      for (const next of [async () => relayFeed, getPrimary, getSecondary]) {
+        const f = await next();
+        if (!f) continue;
+        if (isFreshQuote(f)) {
+          chosen = f;
+          break;
+        }
+        tried.push(`${f.source}: ${f.value === null ? f.reason : `報價 ${f.quoteAgeSec ?? "?"}s 前（>${FRESH_QUOTE_SEC}s）`}`);
+      }
+      feed = chosen ?? { value: null, reason: `後備鏈全部無效（${tried.join("；") || "無來源"}）`, source: "fallback-chain" };
+      if (chosen && tried.length) log(`  ${symbol} 主來源後備：${tried.join("；")} → 改用 ${chosen.source}`);
+    } else {
+      feed = relayFeed ?? (await getPrimary());
+    }
 
     // 休市切換放在價格判斷之前：價格來源壞了不影響「現在是不是休市」。
     if (beforeAsset) {
@@ -135,7 +176,9 @@ export async function runRound(ctx: RoundCtx): Promise<RoundResult> {
 
     if (feed.value === null) {
       // 拒絕而不是夾擠：夾擠出來的價格讀者無法分辨真假。
-      log(`${symbol.padEnd(6)} 來源無效，跳過 (${feed.source}: ${feed.reason})`);
+      // 2026-09-30 事故：跳過以前只是 console.log，job 照樣綠 —— 現在是 ::error::、
+      // 計入失敗率、寫進拒寫清單（funding crank 不以它結算）。
+      error(`::error::${symbol.padEnd(6)} 來源無效，跳過 (${feed.source}: ${feed.reason})`);
       r.skipped += 1;
       r.skippedSymbols.push(symbol);
       continue;
@@ -233,14 +276,13 @@ export async function runRound(ctx: RoundCtx): Promise<RoundResult> {
       ageSec: f.quoteAgeSec,
       stale: f.quoteStale === true,
     });
+    // 確認票以「上游」為單位：source 用上游名（relay／coingecko／yahoo），confirmLargeMove
+    // 對同名 source 只算一票 —— Yahoo 當主來源時，它不能再替自己投確認票。
     const quotes: SourceQuote[] = [asQuote(feed, feed.source)];
     if (current > 0 && Math.abs(feed.value - current) / current > breaker) {
-      if (relayed !== null) {
-        const api = await ctx.fetchPrice(symbol);
-        if (api.value !== null) quotes.push(asQuote(api, api.source));
+      for (const f of [relayFeed, await getPrimary(), await getSecondary()]) {
+        if (f && f.value !== null && f.source !== feed.source) quotes.push(asQuote(f, f.source));
       }
-      const second = await ctx.fetchSecondary(symbol);
-      if (second.value !== null) quotes.push(asQuote(second, `${second.source}(secondary)`));
       log(
         `  多源確認：${quotes
           .map((q) => `${q.source}=$${q.value.toFixed(2)}(age ${q.ageSec ?? "?"}s${q.stale ? ",stale" : ""})`)

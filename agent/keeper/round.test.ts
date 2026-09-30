@@ -314,6 +314,77 @@ for (const target of [101, 112]) {
   assert.ok(r.skippedSymbols.includes("sTSLA"));
 }
 
+// ── 2026-09-30 事故：加密資產後備鏈 relay → CoinGecko → Yahoo，每層 ≤ 1h ──────────
+{
+  const cg403: Feed = { value: null, reason: "coingecko HTTP 403", source: "coingecko" };
+  const yBtc = (v: number, age = 60): Feed => ({ value: v, reason: "ok", source: "yahoo", quoteAgeSec: age });
+  const errors: string[] = [];
+  // 線上實況：relay 沒有 feed、CoinGecko 403 → 改用 Yahoo 寫入。
+  {
+    const oracle = fakeOracle(83_000);
+    const r = await runRound(
+      ctx({ symbols: ["sBTC"], oracle, fetchPrice: async () => cg403, fetchSecondary: async () => yBtc(83_100) }),
+    );
+    assert.deepEqual(oracle.writes, [P(83_100)], "sBTC 改用 Yahoo");
+    assert.equal(r.skipped, 0);
+  }
+  // relay 過期（2h）→ 落到 CoinGecko；CoinGecko 過期（2h）→ 落到 Yahoo。
+  {
+    const oracle = fakeOracle(83_000);
+    await runRound(
+      ctx({
+        symbols: ["sBTC"], oracle,
+        fetchRelay: async () => ({ price: 70_000, updatedAt: NOW - 7200 }),
+        fetchPrice: async () => ({ value: 83_050, reason: "ok", source: "coingecko", quoteAgeSec: 7200 }),
+        fetchSecondary: async () => yBtc(83_100),
+      }),
+    );
+    assert.deepEqual(oracle.writes, [P(83_100)], "過期的 relay 與 CoinGecko 都不採用");
+  }
+  // CoinGecko 沒有時間戳 → 新鮮度不明，不採用。
+  {
+    const oracle = fakeOracle(83_000);
+    await runRound(
+      ctx({
+        symbols: ["sBTC"], oracle,
+        fetchPrice: async () => ({ value: 83_050, reason: "ok", source: "coingecko" }),
+        fetchSecondary: async () => yBtc(83_100),
+      }),
+    );
+    assert.deepEqual(oracle.writes, [P(83_100)]);
+  }
+  // 全部無效 → 跳過，並以 ::error:: 報出、列入 skippedSymbols（拒寫清單）。
+  {
+    const oracle = fakeOracle(83_000);
+    const r = await runRound(
+      ctx({
+        symbols: ["sBTC"], oracle, error: (l) => errors.push(l),
+        fetchPrice: async () => cg403, fetchSecondary: async () => yBtc(83_100, 7200),
+      }),
+    );
+    assert.equal(oracle.writes.length, 0);
+    assert.equal(r.skipped, 1);
+    assert.deepEqual(r.skippedSymbols, ["sBTC"]);
+    assert.ok(errors.some((l) => l.startsWith("::error::sBTC") && l.includes("後備鏈全部無效")), errors.join("\n"));
+  }
+  // Yahoo 當主來源時，不能再替自己投確認票：25% 變動（> 20% 門檻）、只有 Yahoo → 拒寫。
+  {
+    const oracle = fakeOracle(83_000);
+    const r = await runRound(
+      ctx({ symbols: ["sBTC"], oracle, fetchPrice: async () => cg403, fetchSecondary: async () => yBtc(103_750) }),
+    );
+    assert.equal(oracle.writes.length, 0);
+    assert.equal(r.rejected, 1);
+    assert.ok(r.refused[0].reason.includes("只有 1 個新鮮的獨立來源"), r.refused[0].reason);
+  }
+  // 股票不受 1 小時規則影響（週末 Yahoo 收盤價照舊寫入，由 ::warning:: 標示）。
+  {
+    const oracle = fakeOracle(100);
+    await runRound(ctx({ oracle, fetchPrice: async () => ({ ...yahoo(101), quoteAgeSec: 12 * 3600, quoteStale: false }) }));
+    assert.deepEqual(oracle.writes, [P(101)]);
+  }
+}
+
 // ── effectiveBreaker ─────────────────────────────────────────────────────
 assert.equal(effectiveBreaker(0.2, 1000n, true), 0.1);
 assert.ok(Math.abs(effectiveBreaker(0.2, 1000n, false) - 1000 / 11000) < 1e-12);
