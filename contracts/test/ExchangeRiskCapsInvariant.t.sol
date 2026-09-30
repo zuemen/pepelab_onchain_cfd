@@ -63,6 +63,9 @@ contract ExchangeCapsHandler is Test {
     uint256 public takeovers;
     uint256 public lapsedUnpauseAttempts;
     uint256 public lapsesClosed;
+    /// closeLapsedPause calls that changed downtimeOf or the grace deadline
+    /// (must stay 0: closing a lapse only records what already happened).
+    uint256 public ghostLapseCloseDrift;
     uint256 public modeChanges;
     uint256 public capChanges;
     uint256 public warps;
@@ -402,7 +405,82 @@ contract ExchangeCapsHandler is Test {
             exchange.closeLapsedPause();
             return;
         }
+        _checkedCloseLapsed();
+    }
+
+    /// Closes a lapsed window and checks it was a pure bookkeeping step: the
+    /// downtime clock of every asset and the grace deadline are unchanged.
+    function _checkedCloseLapsed() internal {
+        uint256 d0 = exchange.downtimeOf(assets[0]);
+        uint256 d1 = exchange.downtimeOf(assets[1]);
+        uint256 graceEnd = _resumedAt() + exchange.LIQUIDATION_GRACE_PERIOD();
         try exchange.closeLapsedPause() { ++lapsesClosed; } catch (bytes memory reason) { _unexpected(reason); }
+        if (exchange.downtimeOf(assets[0]) != d0 || exchange.downtimeOf(assets[1]) != d1
+            || _resumedAt() + exchange.LIQUIDATION_GRACE_PERIOD() != graceEnd) {
+            ++ghostLapseCloseDrift;
+        }
+    }
+
+    // ── dedicated pause-lifecycle handlers ─────────────────────────────────
+
+    function _refreshFeeds() internal {
+        for (uint256 i; i < assets.length; ++i) {
+            (uint256 p,) = oracle.getPrice(assets[i]);
+            vm.prank(admin);
+            oracle.updatePrice(assets[i], p);
+        }
+    }
+
+    /// Brings the exchange to a state where the guardian may pause now:
+    /// not paused, and past any guardian cooldown (a lapsed window counts
+    /// from its expiry, as `pause()` would compute it).
+    function _readyForGuardianPause() internal {
+        if (exchange.paused()) {
+            vm.prank(admin);
+            exchange.unpause();
+        }
+        uint256 allowedAt = exchange.pausedAt() != 0
+            ? exchange.pauseExpiresAt() + exchange.GUARDIAN_PAUSE_COOLDOWN()
+            : exchange.guardianPauseAllowedAt();
+        if (vm.getBlockTimestamp() < allowedAt) {
+            vm.warp(allowedAt);
+            _refreshFeeds();
+        }
+    }
+
+    /// guardian pause → warp 80h (the pause lapses) → close the lapse, either
+    /// explicitly (closeLapsedPause, checked) or implicitly via the owner's
+    /// next pause() (then lifted again).
+    function lapseCycle(bool viaOwnerPause) external {
+        _readyForGuardianPause();
+        vm.prank(guardian);
+        exchange.pause();
+        vm.warp(vm.getBlockTimestamp() + 80 hours);
+        _refreshFeeds();
+        if (exchange.paused()) { _unexpected("guardian pause did not lapse"); return; }
+        if (viaOwnerPause) {
+            vm.prank(admin);
+            exchange.pause();              // closes the lapsed window first
+            ++lapsesClosed;
+            vm.prank(admin);
+            exchange.unpause();
+        } else {
+            _checkedCloseLapsed();
+        }
+        ++warps;
+    }
+
+    /// guardian pause → owner takes it over → owner lifts it.
+    function takeoverCycle() external {
+        _readyForGuardianPause();
+        vm.prank(guardian);
+        exchange.pause();
+        vm.prank(admin);
+        exchange.pause();                  // takeover
+        if (exchange.pauseExpiresAt() != 0) { _unexpected("takeover kept an expiry"); return; }
+        ++takeovers;
+        vm.prank(admin);
+        exchange.unpause();
     }
 
     function setMode(uint256 assetSeed, uint256 modeSeed) external {
@@ -563,6 +641,12 @@ contract ExchangeRiskCapsInvariantTest is Test {
         assertEq(handler.livenessFailures(), 0);
     }
 
+    /// Closing a lapsed pause only records it: downtimeOf (both assets) and
+    /// the grace deadline are the same before and after.
+    function invariant_closingALapseChangesNoClock() public view {
+        assertEq(handler.ghostLapseCloseDrift(), 0);
+    }
+
     /// No call predicted to succeed reverted, and every predicted revert
     /// carried its exact reason (enforced by vm.expectRevert in the handler).
     function invariant_noUnexpectedReverts() public view {
@@ -572,6 +656,9 @@ contract ExchangeRiskCapsInvariantTest is Test {
     /// Cross-check of the incremental ghosts against the exchange's own
     /// position records, once per run; plus coverage evidence in -vv output.
     function afterInvariant() external view {
+        // The dedicated lifecycle handlers must actually have run.
+        assertGt(handler.lapsesClosed(), 0, "no lapse closed this run");
+        assertGt(handler.takeovers(), 0, "no takeover this run");
         uint256 n = handler.allCount();
         uint256 openN;
         for (uint256 i; i < n; ++i) {
