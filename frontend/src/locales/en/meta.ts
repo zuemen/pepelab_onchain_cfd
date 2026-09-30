@@ -9,9 +9,9 @@ import type { Catalog } from '../zh-TW';
  * 而編譯通過。標在這裡才會擋，而且錯誤會指在多出來的那一行上。
  */
 export const meta: Catalog['meta'] = {
-  title: 'PepeLab · Agent-Native Tokenized RWA',
+  title: '{brand} · Agent-Native Tokenized RWA',
   description:
-    'PepeLab — agent-native tokenized RWA on Base. Buy equities, bonds, gold, and crypto on-chain + x402 paid signals + social copy trading.',
+    '{brand} — agent-native tokenized RWA on Base. Buy equities, bonds, gold, and crypto on-chain + x402 paid signals + social copy trading.',
   descriptionNoCopy:
-    'PepeLab — an agent-native tokenized-asset engine on Base (testnet research prototype). Mint and redeem synthetic equities, bonds, gold and crypto on-chain + x402 paid signals + bounded agent sessions.',
+    '{brand} — an agent-native tokenized-asset engine on Base (testnet research prototype). Mint and redeem synthetic equities, bonds, gold and crypto on-chain + x402 paid signals + bounded agent sessions.',
 };

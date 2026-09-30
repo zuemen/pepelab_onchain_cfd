@@ -9,7 +9,7 @@ export const common = {
   wallet: {
     dialogTitle: '連接帳號 / Connect Wallet',
     closeAria: '關閉錢包連線視窗',
-    intro: '選擇您的登入通道以進入 PepeLab 鏈上 RWA 平台。',
+    intro: '選擇您的登入通道以進入 {brand} 鏈上 RWA 平台。',
 
     metamaskTitle: 'MetaMask 錢包連線',
     metamaskDesc: '透過 MetaMask 瀏覽器擴充功能連線 (Base Sepolia)',
@@ -87,8 +87,22 @@ export const common = {
     synthetic:
       '本站所有合成代幣——股票（如 sAAPL、sTSLA、sNVDA）、債券（sBOND）、黃金（sGOLD）、加密資產（sBTC、sETH）與 ETF（sICLN、sESGU）——皆為 AssetVault 發行的合成曝險，且非足額抵押：僅以預言機價格追蹤標的，平台並未持有任何標的資產，也沒有一比一的準備；持有人不具股東、債權人或基金受益人權利（包括表決權、股利或利息請求權），亦無對任何發行人或實物的求償權，贖回取決於 AssetVault 的流動性。',
     noAdvice: '本站內容僅供技術展示與研究，不構成投資建議、要約或招攬。',
+    /** 白標租戶有設定營運機構時才顯示（src/tenant）。 */
+    operatedBy: '本站由{operator}營運。',
     expand: '展開',
     collapse: '收合',
+  },
+
+  /** 白標租戶相關的共用字串（src/tenant）。 */
+  tenant: {
+    /** 資產不在租戶白名單：不能新開部位／買進，既有持倉照常出場。 */
+    assetNotEnabled: '本平台未開放此資產的新交易；已持有的部位仍可賣出或平倉。',
+    /** 租戶未授權永續：直接打網址進終端機時，下單面板的說明。 */
+    perpetualsNotAuthorized: '本平台未開放永續部位的新交易；既有部位仍可在「部位」頁籤平倉。',
+    footer: {
+      support: '客服',
+      legal: '法律資訊',
+    },
   },
 
   /** 錢包在錯的鏈上時的切鏈按鈕（lib/pepefi/switchChain.ts）。 */

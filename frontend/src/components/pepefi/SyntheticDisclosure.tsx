@@ -8,7 +8,9 @@ import Button from '@mui/material/Button';
 import Collapse from '@mui/material/Collapse';
 import AlertTitle from '@mui/material/AlertTitle';
 
-import { t } from 'src/locales';
+import { tenant } from 'src/tenant';
+import { t, locale } from 'src/locales';
+import { tenantDisclosureAdditions } from 'src/tenant/disclosure';
 
 // ----------------------------------------------------------------------
 
@@ -32,6 +34,8 @@ function readCollapsed(): boolean {
 export function SyntheticDisclosure({ sx }: { sx?: SxProps<Theme> }) {
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const d = t.common.disclosure;
+  // 白標租戶的追加揭露（只能追加在核心三條之後），見 src/tenant/disclosure.ts。
+  const extra = tenantDisclosureAdditions(tenant.compliance, locale, d.operatedBy);
 
   const toggle = () => {
     const next = !collapsed;
@@ -67,11 +71,19 @@ export function SyntheticDisclosure({ sx }: { sx?: SxProps<Theme> }) {
       <Box component="span" sx={{ display: 'block' }}>
         {d.summary}
       </Box>
+      {extra.operatorLine && (
+        <Box component="span" sx={{ display: 'block', mt: 0.5 }} data-testid="tenant-operator">
+          {extra.operatorLine}
+        </Box>
+      )}
       <Collapse in={!collapsed} unmountOnExit={false}>
         <Box component="ul" sx={{ m: 0, mt: 1, pl: 2.5, '& li': { mb: 0.5 } }}>
           <li>{d.prototype}</li>
           <li>{d.synthetic}</li>
           <li>{d.noAdvice}</li>
+          {extra.items.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
         </Box>
       </Collapse>
     </Alert>

@@ -6,13 +6,15 @@ import Box from '@mui/material/Box'
 import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 
+import { assetPolicy } from 'src/tenant'
 import { t, interpolate } from 'src/locales'
 import { STABLE_LABEL } from 'src/lib/pepefi/tokenLabel'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
+import { perpetualOpenBlock } from 'src/tenant/assetPolicy'
 import { type TradingParams } from 'src/lib/pepefi/tradingParams'
 import { estimateLiquidationPrice } from 'src/lib/pepefi/liquidation'
 import { fUsd, fNum, fToken, fromUnits } from 'src/lib/pepefi/format'
-import { SHOW_LEVERAGE, FIXED_LEVERAGE } from 'src/lib/pepefi/featureFlags'
+import { SHOW_LEVERAGE, FIXED_LEVERAGE, PERPETUALS_AUTHORIZED } from 'src/lib/pepefi/featureFlags'
 
 import { Row } from '../Atoms'
 import { C, panel, monoCss, labelCss } from '../terminal-theme'
@@ -108,6 +110,10 @@ export function OrderTicket({
   // 鏈上也會 revert。原因寫在按鈕上方，不只是把按鈕變灰。
   const noPrice = curPrice <= 0n
   const staleBlocked = staleNotice !== null
+  // 白標租戶政策：未授權永續、或資產不在租戶白名單 → 不送 openPosition。只擋新開，
+  // 平倉在持倉表與 Portfolio，完全不經過這裡（src/tenant/assetPolicy.ts）。
+  const tenantBlock = perpetualOpenBlock(assetPolicy, PERPETUALS_AUTHORIZED, selAsset)
+  const tenantNotice = tenantBlock ? t.common.tenant[tenantBlock] : null
 
   const openPosition = async () => {
     if (!contracts) return
@@ -121,6 +127,10 @@ export function OrderTicket({
       return
     }
     // 按鈕已經 disabled，這裡是第二道防線：鍵盤送出或狀態剛好在重繪的空窗。
+    if (tenantNotice) {
+      notify(tenantNotice, false)
+      return
+    }
     if (staleNotice) {
       notify(staleNotice, false)
       return
@@ -307,6 +317,12 @@ export function OrderTicket({
         </Box>
       )}
 
+      {tenantNotice && (
+        <Box sx={{ ...monoCss, fontSize: 11.5, color: C.red, ...panel, borderColor: C.line2, p: 1 }}>
+          {tenantNotice}
+        </Box>
+      )}
+
       {staleNotice && (
         <Box sx={{ ...monoCss, fontSize: 11.5, color: C.red, ...panel, borderColor: C.line2, p: 1 }}>
           {staleNotice}
@@ -341,7 +357,7 @@ export function OrderTicket({
 
       <Button
         onClick={() => void openPosition()}
-        disabled={busy || !margin || overFree || kycBlocked || staleBlocked || noPrice}
+        disabled={busy || !margin || overFree || kycBlocked || staleBlocked || noPrice || !!tenantNotice}
         sx={{
           py: 1.4,
           borderRadius: '10px',

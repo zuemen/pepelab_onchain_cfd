@@ -21,6 +21,7 @@ import { Logo } from 'src/components/logo';
 import { useSettingsContext } from 'src/components/settings';
 import WalletButton from 'src/components/pepefi/WalletButton';
 import { PepeAvatar } from 'src/components/pepefi/PepeAvatar';
+import { TenantFooter } from 'src/components/pepefi/TenantFooter';
 import PaperTradingBadge from 'src/components/pepefi/PaperTradingBadge';
 
 import { NavMobile } from './nav-mobile';
@@ -266,7 +267,8 @@ export function DashboardLayout({
     />
   );
 
-  const renderFooter = () => null;
+  // 白標租戶的客服與法律連結；租戶沒設定（default 租戶）時 TenantFooter 回傳 null。
+  const renderFooter = () => <TenantFooter />;
 
   const renderMain = () => <MainSection {...slotProps?.main}>{children}</MainSection>;
 

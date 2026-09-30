@@ -12,6 +12,8 @@ import {
   ASSET_IDS, getAddresses, getSynthTokens, type AssetSymbol,
 } from 'src/contracts/addresses'
 import { t, interpolate } from 'src/locales'
+import { assetPolicy } from 'src/tenant'
+import { applyAssetWhitelist } from 'src/tenant/assetPolicy'
 import { useMode } from 'src/contexts/mode-context'
 import { ASSET_META } from 'src/lib/pepefi/assetMeta'
 import {
@@ -320,6 +322,9 @@ export default function TokenizedAssetsPage() {
 
   const doBuy = async (sym: AssetSymbol) => {
     if (!contracts || !activeVault || !activeVaultAddr) return
+    // 第二道防線：白名單外的資產按鈕已經 disabled，這裡擋鍵盤送出與重繪空窗。
+    // 只擋買進；doSell（贖回）刻意不檢查白名單。
+    if (!assetPolicy.canOpen(sym)) { notify(t.common.tenant.assetNotEnabled, false); return }
     let usdcAmt: bigint
     try { usdcAmt = parseEther(amount) } catch { notify(t.tokens.tx.badAmount, false); return }
     if (usdcAmt <= 0n) { notify(t.tokens.tx.amountTooSmall, false); return }
@@ -437,8 +442,10 @@ export default function TokenizedAssetsPage() {
   // isV2 一變就整條表達式立刻短路，不會被上一條鏈殘留的 health 值影響；
   // 這裡照抄同一個安全性質，而不是信任 health 已經被正規化過。
   const gate = isV2 ? health : { paused: null, mintingHalted: false, stale: false }
+  // 白標租戶白名單：白名單外的資產只在有持倉時出現，而且只能贖回（applyAssetWhitelist
+  // 只動 canBuy，canSell 原樣不動）。
   const displayRows = sortAssetRows(
-    buildAssetRows(assetRowInputs, gate, { nowMs: Date.now() }),
+    applyAssetWhitelist(buildAssetRows(assetRowInputs, gate, { nowMs: Date.now() }), assetPolicy),
     sortKey,
   )
 

@@ -52,5 +52,14 @@ jobs:
       - name: Build
         run: yarn build
 
+      # 白標：示範租戶也要能 build。租戶設定驗證不過（schema、資產白名單、id）會讓
+      # vite build 失敗，所以這一步同時守住 frontend/src/tenant/tenants/demo-bank.json。
+      # 正式站（default 租戶）的 build 是上面那一步。直接跑 vite build：tsc 與租戶無關，
+      # 上一步已經跑過，不必重跑。
+      - name: Build (demo-bank tenant)
+        run: npx vite build
+        env:
+          VITE_TENANT: demo-bank
+
       - name: Test
         run: yarn test

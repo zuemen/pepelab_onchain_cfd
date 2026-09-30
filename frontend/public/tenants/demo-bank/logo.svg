@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Demo Bank">
+  <circle cx="32" cy="32" r="32" fill="#0B1526"/>
+  <path d="M32 12 50 22H14Z" fill="#3366FF"/>
+  <rect x="17" y="25" width="5" height="18" fill="#84A9FF"/>
+  <rect x="29.5" y="25" width="5" height="18" fill="#84A9FF"/>
+  <rect x="42" y="25" width="5" height="18" fill="#84A9FF"/>
+  <rect x="13" y="45" width="38" height="5" fill="#3366FF"/>
+</svg>

@@ -8,7 +8,7 @@ export const common: Catalog['common'] = {
   wallet: {
     dialogTitle: 'Connect Wallet',
     closeAria: 'Close wallet connection dialog',
-    intro: 'Choose your sign-in channel to enter the PepeLab on-chain RWA platform.',
+    intro: 'Choose your sign-in channel to enter the {brand} on-chain RWA platform.',
 
     metamaskTitle: 'Connect with MetaMask',
     metamaskDesc: 'Connect via the MetaMask browser extension (Base Sepolia)',
@@ -79,8 +79,20 @@ export const common: Catalog['common'] = {
     synthetic:
       'Every synthetic token on this site — equities (e.g. sAAPL, sTSLA, sNVDA), bonds (sBOND), gold (sGOLD), crypto (sBTC, sETH) and ETFs (sICLN, sESGU) — is an under-collateralized synthetic exposure issued by the AssetVault. Each tracks its underlying through an oracle price only; the platform holds none of the underlying assets and keeps no one-to-one reserve. Holders have no shareholder, creditor or fund-holder rights (including voting, dividend or coupon rights) and no claim against any issuer or physical asset; redemption depends on the liquidity of the AssetVault.',
     noAdvice: 'Nothing on this site constitutes investment advice, an offer, or a solicitation.',
+    operatedBy: 'This site is operated by {operator}.',
     expand: 'Expand',
     collapse: 'Collapse',
+  },
+
+  tenant: {
+    assetNotEnabled:
+      'This platform does not offer new trades in this asset; existing holdings can still be sold or closed.',
+    perpetualsNotAuthorized:
+      'This platform does not offer new perpetual positions; existing positions can still be closed from the Positions tab.',
+    footer: {
+      support: 'Support',
+      legal: 'Legal',
+    },
   },
 
   switchChain: {

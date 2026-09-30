@@ -9,6 +9,8 @@ import Typography from '@mui/material/Typography';
 
 import { RouterLink } from 'src/routes/components';
 
+import { tenant } from 'src/tenant';
+
 import { logoClasses } from './classes';
 
 // ----------------------------------------------------------------------
@@ -29,10 +31,10 @@ export function Logo({
   const pepeImg = (size: number) => (
     <Box
       component="img"
-      src="/avatars/pepe-01.png"
-      alt="PepeLab"
+      src={tenant.brand.logo.src}
+      alt={tenant.brand.name}
       onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
-        e.currentTarget.src = '/assets/images/pepefi/pepe_eth.jpg';
+        e.currentTarget.src = tenant.brand.logo.fallbackSrc;
       }}
       sx={{
         width: size,
@@ -61,7 +63,7 @@ export function Logo({
           letterSpacing: '-0.5px',
         }}
       >
-        PepeLab
+        {tenant.brand.name}
       </Typography>
     </Box>
   );

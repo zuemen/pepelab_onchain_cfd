@@ -58,7 +58,7 @@ export const exchange = {
    */
   guide: {
     /** #148 起這一頁沒有開倉面板,教 CFD 只會讓人去找一個不存在的東西——只剩現貨版本。 */
-    spotTitle: '在 PepeLab 上買賣代幣化資產',
+    spotTitle: '在 {brand} 上買賣代幣化資產',
   },
 
   /** 水龍頭區塊。三種代幣共用同一組「領取中／領取 X／尚未部署」的字。 */

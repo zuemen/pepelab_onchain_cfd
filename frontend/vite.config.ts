@@ -4,7 +4,9 @@ import checker from 'vite-plugin-checker';
 import { loadEnv, defineConfig } from 'vite';
 import react from '@vitejs/plugin-react-swc';
 
-import { readFlag } from './src/lib/pepefi/flagParse';
+import { applyBrand } from './src/tenant/brand';
+import { loadTenantForBuild } from './src/tenant/node';
+import { resolveFeatureFlag } from './src/tenant/flags';
 import { checkSignalApiUrl } from './src/lib/pepefi/cspConnect';
 import { LOCALES, pickLocale } from './src/locales/catalogs';
 
@@ -12,23 +14,44 @@ import { LOCALES, pickLocale } from './src/locales/catalogs';
 
 const PORT = 8081;
 
-export default defineConfig(({ mode, command }) => {
-  // 這個 build 出貨的語言。VITE_LOCALE 可能來自 shell / Vercel 的環境變數，也可能來自
-  // .env* 檔案，兩邊都要看：app 讀的是 import.meta.env（Vite 會把兩種來源都注入），
-  // 如果這裡只看 process.env，一個寫在 .env.local 的 VITE_LOCALE 就會讓 index.html 的
-  // 標題與 lang 停在中文、而 app 內文是英文——半英半中且沒有任何錯誤訊息。
-  const locale = pickLocale(
-    process.env.VITE_LOCALE ?? loadEnv(mode, process.cwd(), 'VITE_').VITE_LOCALE
-  );
-  const { htmlLang, catalog } = LOCALES[locale];
+/** index.html 的 `<link rel="icon" type=…>`，依副檔名決定。 */
+function faviconType(file: string): string {
+  if (file.endsWith('.svg')) return 'image/svg+xml';
+  if (file.endsWith('.ico')) return 'image/x-icon';
+  if (file.endsWith('.jpg') || file.endsWith('.jpeg')) return 'image/jpeg';
+  return 'image/png';
+}
 
-  // 同一個理由，env 兩種來源都要看。app 內的旗標在 featureFlags.ts；index.html 在建置時
-  // 就寫死了，所以 meta description 要在這裡依 FEATURE_COPY_TRADING 選字串——否則商業版
-  // 的搜尋結果與分享預覽仍在介紹「社交跟單」。
+export default defineConfig(({ mode, command }) => {
+  // VITE_* 可能來自 shell / Vercel 的環境變數，也可能來自 .env* 檔案，兩邊都要看：app 讀的
+  // 是 import.meta.env（Vite 會把兩種來源都注入），如果這裡只看 process.env，一個寫在
+  // .env.local 的 VITE_LOCALE 就會讓 index.html 的標題與 lang 停在中文、而 app 內文是
+  // 英文——半英半中且沒有任何錯誤訊息。
   const fileEnv = loadEnv(mode, process.cwd(), 'VITE_');
   const envOf = (key: string): string | undefined => process.env[key] ?? fileEnv[key];
-  const copyTrading = readFlag(envOf('VITE_FEATURE_COPY_TRADING'), false);
-  const metaDescription = copyTrading ? catalog.meta.description : catalog.meta.descriptionNoCopy;
+
+  // 白標租戶（VITE_TENANT，沒設 = default）。名字對不到設定檔、或設定檔驗證不過，就在這裡
+  // 丟錯讓 build／dev server 起不來——不會退回 default 帶著別人的品牌上線。
+  // 見 frontend/docs/adr/0009-tenant-config-layer.md。
+  const tenant = loadTenantForBuild(process.cwd(), envOf('VITE_TENANT'));
+  const { brand } = tenant.config;
+
+  // 這個 build 出貨的語言：VITE_LOCALE 優先，沒設或認不出來就用租戶的預設語系。
+  // 與 src/locales/index.ts 同一個呼叫形式，index.html 與 app 內文不會各選一個語言。
+  const locale = pickLocale(envOf('VITE_LOCALE'), tenant.config.defaultLocale);
+  const { htmlLang, catalog } = LOCALES[locale];
+
+  // app 內的旗標在 featureFlags.ts；index.html 在建置時就寫死了，所以 meta description 要在
+  // 這裡依 FEATURE_COPY_TRADING 選字串——否則商業版的搜尋結果與分享預覽仍在介紹「社交跟單」。
+  // 與 app 內走同一條「租戶上限 × 環境變數」規則（src/tenant/flags.ts）。
+  const copyTrading = resolveFeatureFlag(
+    tenant.config.features.copyTrading,
+    envOf('VITE_FEATURE_COPY_TRADING')
+  );
+  const metaDescription = applyBrand(
+    copyTrading ? catalog.meta.description : catalog.meta.descriptionNoCopy,
+    brand
+  );
 
   // 正式 build：可覆寫的 signal-api 網址必須在 vercel.json 的 CSP connect-src 裡，
   // 否則瀏覽器會擋掉所有請求而 build／部署仍是綠的。對不上就讓 build 失敗。
@@ -52,8 +75,13 @@ export default defineConfig(({ mode, command }) => {
           handler: (html: string) =>
             html
               .replace('__LOCALE_HTML_LANG__', () => htmlLang)
-              .replace('__APP_TITLE__', () => catalog.meta.title)
-              .replace('__APP_DESCRIPTION__', () => metaDescription),
+              .replace('__APP_TITLE__', () => applyBrand(catalog.meta.title, brand))
+              .replace('__APP_DESCRIPTION__', () => metaDescription)
+              // 租戶的 favicon 與 theme-color。值都經過 schema 驗證（站內路徑、#RRGGBB），
+              // 不會有引號或角括號跑進 HTML。
+              .replace('__APP_FAVICON__', () => brand.favicon)
+              .replace('__APP_FAVICON_TYPE__', () => faviconType(brand.favicon))
+              .replace('__APP_THEME_COLOR__', () => brand.themeColor),
         },
       },
       checker({
@@ -71,6 +99,8 @@ export default defineConfig(({ mode, command }) => {
     ],
     resolve: {
       alias: [
+        // 只把被選中的租戶設定打進 bundle，理由見 src/tenant/node.ts。
+        { find: /^@tenant-config$/, replacement: tenant.file },
         {
           find: /^src(.+)/,
           replacement: path.resolve(process.cwd(), 'src/$1'),

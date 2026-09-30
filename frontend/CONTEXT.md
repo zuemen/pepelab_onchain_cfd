@@ -232,3 +232,17 @@ _Avoid_: pending list (that is one of its three parts), applications table
 **Mock Wallet**:
 A demo connection used for presentations. It carries an address and counts as connected, but has no chain access at all, so no balance or position can ever be read while it is in use.
 _Avoid_: test wallet, fake wallet, guest mode
+
+### White-label
+
+**Tenant (租戶)**:
+One institution the app is built for — its brand, palette, default Locale, the assets it offers, its extra disclosures and its support and legal links. Chosen when the app is built (`VITE_TENANT`, default `default`), exactly like the Locale: one build is one Tenant. The production site is the `default` Tenant and looks and behaves exactly as it did before Tenants existed. See [ADR 0009](./docs/adr/0009-tenant-config-layer.md).
+_Avoid_: customer, client, brand, theme (a Tenant carries a theme; it is not one)
+
+**Asset Whitelist**:
+The assets a Tenant lets its users *enter* — open a position, buy, adopt, delegate to an agent session. Never consulted on the way out: closing, redeeming and revoking ignore it, so an asset dropped from the list is still visible and still exitable for whoever holds it. A display-and-submit policy, not a security boundary — the contracts do not know Tenants exist.
+_Avoid_: allowed markets, listing (a listing is a contract-level registration), enabled assets as a synonym for "all tradable assets"
+
+**Authorized Feature**:
+A feature a Tenant is permitted to switch on (`allowed`). An environment variable may switch an authorized feature off, and may switch it on only if it is authorized; it can never grant one.
+_Avoid_: enabled feature (that is the resolved flag, which also depends on the environment)

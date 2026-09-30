@@ -4,10 +4,10 @@
  * 六張功能卡的標題與說明、四個上手步驟都是顯示字串，整份搬進來。
  */
 export const landing = {
-  tagline: 'RWA · 代幣化資產 · 社交跟單 🐸',
+  tagline: 'RWA · 代幣化資產 · 社交跟單 {brandMark}',
   /** logo 下面那一行。刻意不提永續——那是預設關閉的進階功能。 */
   brandLine: 'agent 原生代幣化 RWA · on Base',
-  enterDashboard: '🐸 進入 Dashboard',
+  enterDashboard: '{brandMark} 進入 Dashboard',
   viewTraders: '查看交易者',
   connectHint: '連線後可直接瀏覽所有功能，無需註冊帳號',
 
@@ -50,7 +50,7 @@ export const landing = {
 
   /** 跟單旗標關閉時（商業版預設）替換掉的字串——不介紹一個看不到的功能。 */
   copyOff: {
-    tagline: 'RWA · 代幣化資產 · Agent 原生 🐸',
+    tagline: 'RWA · 代幣化資產 · Agent 原生 {brandMark}',
     viewMarketplace: '瀏覽配置市集',
     stepFour: '（可選）到 Marketplace 瀏覽他人發布的資產配置，或在 Trader 頁登記並發布策略',
     heroBefore: '一個錢包，配置股、債、金、幣四大類代幣化資產。鏈上鑄造與贖回、配置市集、大盤對照，外加 ',

@@ -24,6 +24,21 @@ describe('pickLocale', () => {
     expect(pickLocale('fr')).toBe(DEFAULT_LOCALE);
     expect(pickLocale('zh-CN')).toBe(DEFAULT_LOCALE);
   });
+
+  // 白標：租戶的 defaultLocale 是 fallback。沒設與認不出來要走同一條路——
+  // 認不出來時退回 zh-TW 而不是租戶的語言，英文租戶就會半路變成中文站。
+  it('falls back to the tenant default locale, both when unset and when unrecognised', () => {
+    expect(pickLocale(undefined, 'en')).toBe('en');
+    expect(pickLocale('', 'en')).toBe('en');
+    expect(pickLocale('fr', 'en')).toBe('en');
+    expect(pickLocale('zh-tw', 'en')).toBe('zh-TW');
+  });
+
+  it('gives the default tenant (zh-TW) exactly the old results', () => {
+    for (const code of [undefined, '', 'en', 'EN', 'zh-TW', 'fr']) {
+      expect(pickLocale(code, 'zh-TW')).toBe(pickLocale(code));
+    }
+  });
 });
 
 describe('LOCALES', () => {

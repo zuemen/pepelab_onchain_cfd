@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "id": "demo-bank",
+  "brand": {
+    "name": "Demo Bank",
+    "mark": "🏦",
+    "logo": {
+      "src": "/tenants/demo-bank/logo.svg",
+      "fallbackSrc": "/tenants/demo-bank/logo.svg"
+    },
+    "favicon": "/tenants/demo-bank/logo.svg",
+    "themeColor": "#0B1526"
+  },
+  "theme": {
+    "primary": {
+      "lighter": "#D6E4FF",
+      "light": "#84A9FF",
+      "main": "#3366FF",
+      "dark": "#1939B7",
+      "darker": "#091A7A",
+      "contrastText": "#FFFFFF"
+    },
+    "secondary": {
+      "lighter": "#E3E8EF",
+      "light": "#B6C2D2",
+      "main": "#8A9BB3",
+      "dark": "#4A5A73",
+      "darker": "#1F2A3C",
+      "contrastText": "#1C252E"
+    }
+  },
+  "defaultLocale": "zh-TW",
+  "assets": {
+    "enabled": ["sAAPL", "sMSFT", "sNVDA", "sGOLD", "sBOND", "sESGU", "sICLN"]
+  },
+  "compliance": {
+    "operatorName": {
+      "zh-TW": "示範銀行（虛構機構，僅供白標展示）",
+      "en": "Demo Bank (a fictitious institution, for white-label demonstration only)"
+    },
+    "additionalDisclosures": {
+      "zh-TW": [
+        "本站為白標示範設定：機構名稱、客服聯絡方式與法律連結均為虛構，不代表任何真實機構。"
+      ],
+      "en": [
+        "This site is a white-label demonstration: the institution name, support contacts and legal links are fictitious and do not represent any real institution."
+      ]
+    }
+  },
+  "support": {
+    "email": "support@example.com",
+    "url": "https://example.com/support"
+  },
+  "legal": {
+    "links": [
+      { "label": { "zh-TW": "服務條款", "en": "Terms of Service" }, "href": "https://example.com/terms" },
+      { "label": { "zh-TW": "隱私權政策", "en": "Privacy Policy" }, "href": "https://example.com/privacy" },
+      { "label": { "zh-TW": "風險揭露聲明", "en": "Risk Disclosure" }, "href": "https://example.com/risk" }
+    ]
+  },
+  "features": {
+    "gamefi": { "allowed": false, "default": false },
+    "pepeRewards": { "allowed": false, "default": false },
+    "copyTrading": { "allowed": false, "default": false },
+    "showLeverage": { "allowed": false, "default": false },
+    "showPerpetuals": { "allowed": false, "default": false }
+  }
+}

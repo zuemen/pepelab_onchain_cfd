@@ -2,9 +2,16 @@ import type { AssetId } from './types'
 
 import Box from '@mui/material/Box'
 
+import { assetPolicy } from 'src/tenant'
 import { ASSETS_LIST } from 'src/lib/pepefi/assetMeta'
 
 import { C, monoCss } from './terminal-theme'
+
+/**
+ * 可選標的只列白標租戶白名單內的資產（src/tenant/assetPolicy.ts）。這裡只影響「新開
+ * 部位選哪一檔」；持倉表列的是使用者全部的部位，不受白名單影響。
+ */
+const SELECTABLE = assetPolicy.selectable(ASSETS_LIST)
 
 /** 標的分頁列。受管制標的（需 KYC）前面掛鎖頭。 */
 export function MarketSelector({
@@ -25,7 +32,7 @@ export function MarketSelector({
         '&::-webkit-scrollbar': { height: 0 },
       }}
     >
-      {ASSETS_LIST.map((a) => {
+      {SELECTABLE.map((a) => {
         const on = a.id === selAsset
         return (
           <Box

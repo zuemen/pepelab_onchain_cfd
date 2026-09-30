@@ -21,23 +21,27 @@ export type LocaleCode = keyof typeof LOCALES;
 export const DEFAULT_LOCALE: LocaleCode = 'zh-TW';
 
 /**
- * 把 `VITE_LOCALE` 的值換成我們真的有出貨的語言，認不出來就退回預設。
+ * 把 `VITE_LOCALE` 的值換成我們真的有出貨的語言，沒設或認不出來就退回 `fallback`
+ * （白標租戶的 defaultLocale；沒給就是 DEFAULT_LOCALE）。
  *
  * 大小寫不敏感是為了部署現場：`VITE_LOCALE` 是打在 Vercel 欄位裡的字串，有人會打
  * `EN`。嚴格比對的話那會靜悄悄變成一個中文站，而且只有在別人回報時才會發現。
  * 認不出來的值則會留一行 warn——寬容但不沉默。
  */
-export function pickLocale(code: string | undefined): LocaleCode {
+export function pickLocale(
+  code: string | undefined,
+  fallback: LocaleCode = DEFAULT_LOCALE
+): LocaleCode {
   if (!code) {
-    return DEFAULT_LOCALE;
+    return fallback;
   }
 
   const codes = Object.keys(LOCALES) as LocaleCode[];
   const match = codes.find((known) => known.toLowerCase() === code.toLowerCase());
 
   if (!match) {
-    console.warn(`[locales] 不認得的 VITE_LOCALE "${code}"，改用 ${DEFAULT_LOCALE}`);
-    return DEFAULT_LOCALE;
+    console.warn(`[locales] 不認得的 VITE_LOCALE "${code}"，改用 ${fallback}`);
+    return fallback;
   }
 
   return match;

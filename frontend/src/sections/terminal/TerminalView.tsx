@@ -17,6 +17,7 @@ import { useTerminalAccount } from 'src/hooks/useTerminalAccount'
 import { useAssetTradingParams } from 'src/hooks/useAssetTradingParams'
 
 import { t } from 'src/locales'
+import { assetPolicy } from 'src/tenant'
 import { ASSET_IDS } from 'src/contracts/addresses'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { ASSET_META } from 'src/lib/pepefi/assetMeta'
@@ -49,7 +50,8 @@ export function TerminalView() {
   const live = useLivePrices()
   const funding = useFundingData(contracts?.exchange ?? null)
 
-  const [selAsset, setSelAsset] = useState<AssetId>(ASSET_IDS.sBTC)
+  // 預設選白標租戶白名單的第一檔（default 租戶 = 全部資產，第一檔就是 sBTC，與改版前相同）。
+  const [selAsset, setSelAsset] = useState<AssetId>(ASSET_IDS[assetPolicy.enabledSymbols[0]])
   const [interval, setInterval] = useState<Interval>(DEFAULT_INTERVAL)
   const { notify } = useToast()
 

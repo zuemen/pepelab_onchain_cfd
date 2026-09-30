@@ -20,7 +20,7 @@
 | x402 結算 worker | `agent/signal-api/src/settlement-worker.ts`、`.github/workflows/x402-settlement-worker.yml` | 已上線 | 非同步執行 70/20/10 分潤 |
 | MCP server | `agent/mcp-server/` | 原始碼（stdio，本機執行） | 讓 LLM agent 以工具形式讀取與下單 |
 | Telegram bot | `agent/tg-bot/` | 原始碼 | 白名單使用者以確認碼下單的範例 |
-| 前端 | `frontend/` | 已上線（Vercel） | 白標前端範本；功能旗標見 [`../README.md`](../README.md) |
+| 前端 | `frontend/` | 已上線（Vercel） | 白標前端範本；租戶設定見第 6 節，功能旗標見 [`../README.md`](../README.md) |
 
 現行位址見 [`../README.md`](../README.md) 第 2 節，唯一來源是 `frontend/src/contracts/addresses.ts`、
 `frontend/src/contracts/sessionManager.ts`、`frontend/src/contracts/x402.ts`。
@@ -147,22 +147,47 @@ owner 可設定的參數（費率、逐資產槓桿上限與維持保證金、AD
 **需客戶確認**：終端客戶授權 AI agent 代為交易，是否構成客戶所在法域的全權委託或代客操作，
 以及需要的揭露與同意程序。**需律師確認**。
 
-## 6. 租戶部署模型（規劃中）
+## 6. 白標設定（前端）
 
-目前只有**單一共用部署**（所有測試網使用者共用同一組合約與 keeper）。以下是規劃的白標模型，**尚未實作**：
+前端以**租戶設定檔**產生客戶版本：`frontend/src/tenant/tenants/<id>.json`，建置時以 `VITE_TENANT=<id>` 選擇
+（沒設就是 `default`，也就是現行正式站，外觀與行為不變）。一個 build 只含一個租戶的設定。設計理由見
+[`frontend/docs/adr/0009-tenant-config-layer.md`](../frontend/docs/adr/0009-tenant-config-layer.md)，
+中性的示範租戶是 `demo-bank`（虛構機構）。
+
+| 設定 | 欄位 | 規則 |
+|---|---|---|
+| 品牌 | `brand.name`、`brand.mark`、`brand.logo`、`brand.favicon`、`brand.themeColor` | 代入介面上所有指稱平台的字串、logo、終端機標頭、瀏覽器標題；圖片只收站內路徑（CSP） |
+| 色票 | `theme.primary`、`theme.secondary` | 接到 MUI theme；沒給就沿用預設色 |
+| 語系 | `defaultLocale` | `VITE_LOCALE` 沒設時使用 |
+| 資產白名單 | `assets.enabled` | `addresses.ts` 已知資產的代號子集或 `"all"`；設定檔沒有地址欄位。只擋**新開**部位／買進／採用／agent session，**平倉與贖回永遠不受影響** |
+| 揭露 | `compliance.operatorName`、`compliance.additionalDisclosures` | 只能**追加**在平台核心揭露（測試網原型、合成且非足額抵押、非投資建議）之後，不能取代 |
+| 客服與法律 | `support.email`、`support.url`、`legal.links` | 只收 https；顯示在頁尾 |
+| 功能授權 | `features.<功能>.allowed`／`.default` | 有效值 = `allowed` 且（環境變數；沒設用 `default`）。部署面板的 `VITE_*` 旗標打不開未授權的功能。未授權永續的租戶，終端機不送開倉、不能建立 agent session。**有資產白名單（非 `"all"`）的租戶不得授權跟單**：鏈上跟單鏡射交易者的全部部位、無法依資產過濾，設定會驗證失敗 |
+
+設定檔驗證不過（未知欄位、未知資產、非 https 連結、`id` 與檔名不符等）時 build 直接失敗，
+app 載入時也會再驗證一次；認不出的 `VITE_TENANT` **不會**退回 default。
+
+**限制**：白名單與功能授權是前端與送單前的政策，**不是安全邊界**——合約不知道有租戶，任何人都能繞過
+前端直接呼叫合約。真正的隔離是每個租戶一套合約，見第 7 節。
+
+## 7. 租戶部署模型（規劃中）
+
+目前只有**單一共用部署**（所有測試網使用者共用同一組合約與 keeper）。隔離模型與決策見
+[`ADR-008-tenant-isolation.md`](ADR-008-tenant-isolation.md)（提案中），新增租戶的步驟與部署設定範本見
+[`TENANT_DEPLOYMENT.md`](TENANT_DEPLOYMENT.md)。以下是規劃的白標模型，合約層**尚未實作**：
 
 | 項目 | 規劃 | 目的 |
 |---|---|---|
 | 合約 | 每個租戶一組獨立的 exchange、保險金庫、代幣化金庫與 session manager | 資金池、損失吸收與風險參數互不影響 |
 | keeper | 每個租戶獨立的 keeper 與餵價金鑰 | 一個租戶的價格事故不影響其他租戶 |
 | 金鑰 | 每個租戶獨立的 owner、guardian、risk、keeper、結算金鑰；owner 與 guardian 規劃改為客戶控制的 multisig | 權限隔離；客戶保有治理權 |
-| 前端 | 以功能旗標與品牌設定產生客戶版本，部署在客戶的網域與雲端帳號 | 資料駐留與品牌 |
+| 前端 | 以租戶設定（第 6 節，已實作）產生客戶版本，部署在客戶的網域與雲端帳號 | 資料駐留與品牌 |
 | signal-api | 每租戶獨立部署與收款地址，區域依客戶要求 | 資料駐留、收入隔離 |
 | 資料源 | 客戶可指定授權的價格與 ESG 資料源 | 取代目前的公開免費來源 |
 
 **需客戶確認**：部署在哪條鏈（目前只有 Base Sepolia 測試網）、雲端區域、誰持有哪些金鑰。
 
-## 7. 責任分工
+## 8. 責任分工
 
 | 項目 | PepeFi（我方） | 持牌客戶 |
 |---|---|---|
