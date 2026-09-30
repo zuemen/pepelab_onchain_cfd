@@ -12,11 +12,11 @@
   "dependencies": {
     "@hono/node-server": "^1.13.7",
     "@pepelab/shared": "*",
-    "hono": "^4.6.14",
+    "hono": "^4.13.9",
     "x402": "^0.5.3",
     "x402-hono": "^0.5.0"
   },
   "devDependencies": {
-    "esbuild": "^0.24.0"
+    "esbuild": "^0.28.2"
   }
 }
