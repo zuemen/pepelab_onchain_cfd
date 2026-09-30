@@ -14,6 +14,8 @@ import {
 import { localVerifyVc } from "./vc-gate.ts";
 
 async function main() {
+  // v2 VC 的 domain 綁 session manager 位址；測試用固定假位址（不連鏈）。
+  process.env.SESSION_MANAGER_ADDRESS ||= "0x" + "5e".repeat(20);
   const user = ethers.Wallet.createRandom();   // issuer（使用者）
   const agent = ethers.Wallet.createRandom();  // holder（agent）
   const other = ethers.Wallet.createRandom();

@@ -110,7 +110,7 @@ var require_package = __commonJS({
 var require_main = __commonJS({
   "../node_modules/dotenv/lib/main.js"(exports, module) {
     var fs = __require("fs");
-    var path = __require("path");
+    var path2 = __require("path");
     var os = __require("os");
     var crypto6 = __require("crypto");
     var packageJson = require_package();
@@ -226,7 +226,7 @@ var require_main = __commonJS({
           possibleVaultPath = options.path.endsWith(".vault") ? options.path : `${options.path}.vault`;
         }
       } else {
-        possibleVaultPath = path.resolve(process.cwd(), ".env.vault");
+        possibleVaultPath = path2.resolve(process.cwd(), ".env.vault");
       }
       if (fs.existsSync(possibleVaultPath)) {
         return possibleVaultPath;
@@ -234,7 +234,7 @@ var require_main = __commonJS({
       return null;
     }
     function _resolveHome(envPath) {
-      return envPath[0] === "~" ? path.join(os.homedir(), envPath.slice(1)) : envPath;
+      return envPath[0] === "~" ? path2.join(os.homedir(), envPath.slice(1)) : envPath;
     }
     function _configVault(options) {
       const debug = Boolean(options && options.debug);
@@ -251,7 +251,7 @@ var require_main = __commonJS({
       return { parsed };
     }
     function configDotenv(options) {
-      const dotenvPath = path.resolve(process.cwd(), ".env");
+      const dotenvPath = path2.resolve(process.cwd(), ".env");
       let encoding = "utf8";
       const debug = Boolean(options && options.debug);
       const quiet = options && "quiet" in options ? options.quiet : true;
@@ -275,13 +275,13 @@ var require_main = __commonJS({
       }
       let lastError;
       const parsedAll = {};
-      for (const path2 of optionPaths) {
+      for (const path3 of optionPaths) {
         try {
-          const parsed = DotenvModule.parse(fs.readFileSync(path2, { encoding }));
+          const parsed = DotenvModule.parse(fs.readFileSync(path3, { encoding }));
           DotenvModule.populate(parsedAll, parsed, options);
         } catch (e) {
           if (debug) {
-            _debug(`Failed to load ${path2} ${e.message}`);
+            _debug(`Failed to load ${path3} ${e.message}`);
           }
           lastError = e;
         }
@@ -296,7 +296,7 @@ var require_main = __commonJS({
         const shortPaths = [];
         for (const filePath of optionPaths) {
           try {
-            const relative = path.relative(process.cwd(), filePath);
+            const relative = path2.relative(process.cwd(), filePath);
             shortPaths.push(relative);
           } catch (e) {
             if (debug) {
@@ -423,7 +423,7 @@ var require_constants = __commonJS({
 var require_node_gyp_build = __commonJS({
   "../node_modules/node-gyp-build/node-gyp-build.js"(exports, module) {
     var fs = __require("fs");
-    var path = __require("path");
+    var path2 = __require("path");
     var os = __require("os");
     var runtimeRequire = typeof __webpack_require__ === "function" ? __non_webpack_require__ : __require;
     var vars = process.config && process.config.variables || {};
@@ -440,21 +440,21 @@ var require_node_gyp_build = __commonJS({
       return runtimeRequire(load.resolve(dir));
     }
     load.resolve = load.path = function(dir) {
-      dir = path.resolve(dir || ".");
+      dir = path2.resolve(dir || ".");
       try {
-        var name = runtimeRequire(path.join(dir, "package.json")).name.toUpperCase().replace(/-/g, "_");
+        var name = runtimeRequire(path2.join(dir, "package.json")).name.toUpperCase().replace(/-/g, "_");
         if (process.env[name + "_PREBUILD"]) dir = process.env[name + "_PREBUILD"];
       } catch (err) {
       }
       if (!prebuildsOnly) {
-        var release = getFirst(path.join(dir, "build/Release"), matchBuild);
+        var release = getFirst(path2.join(dir, "build/Release"), matchBuild);
         if (release) return release;
-        var debug = getFirst(path.join(dir, "build/Debug"), matchBuild);
+        var debug = getFirst(path2.join(dir, "build/Debug"), matchBuild);
         if (debug) return debug;
       }
       var prebuild = resolve2(dir);
       if (prebuild) return prebuild;
-      var nearby = resolve2(path.dirname(process.execPath));
+      var nearby = resolve2(path2.dirname(process.execPath));
       if (nearby) return nearby;
       var target = [
         "platform=" + platform,
@@ -471,14 +471,14 @@ var require_node_gyp_build = __commonJS({
       ].filter(Boolean).join(" ");
       throw new Error("No native build was found for " + target + "\n    loaded from: " + dir + "\n");
       function resolve2(dir2) {
-        var tuples = readdirSync(path.join(dir2, "prebuilds")).map(parseTuple);
+        var tuples = readdirSync(path2.join(dir2, "prebuilds")).map(parseTuple);
         var tuple = tuples.filter(matchTuple(platform, arch)).sort(compareTuples)[0];
         if (!tuple) return;
-        var prebuilds = path.join(dir2, "prebuilds", tuple.name);
+        var prebuilds = path2.join(dir2, "prebuilds", tuple.name);
         var parsed = readdirSync(prebuilds).map(parseTags);
         var candidates = parsed.filter(matchTags(runtime, abi2));
         var winner = candidates.sort(compareTags(runtime))[0];
-        if (winner) return path.join(prebuilds, winner.file);
+        if (winner) return path2.join(prebuilds, winner.file);
       }
     };
     function readdirSync(dir) {
@@ -490,7 +490,7 @@ var require_node_gyp_build = __commonJS({
     }
     function getFirst(dir, filter) {
       var files = readdirSync(dir).filter(filter);
-      return files[0] && path.join(dir, files[0]);
+      return files[0] && path2.join(dir, files[0]);
     }
     function matchBuild(name) {
       return /\.node$/.test(name);
@@ -6165,13 +6165,13 @@ function toBytes3(data4) {
   return data4;
 }
 function concatBytes3(...arrays) {
-  let sum = 0;
+  let sum2 = 0;
   for (let i = 0; i < arrays.length; i++) {
     const a = arrays[i];
     abytes(a);
-    sum += a.length;
+    sum2 += a.length;
   }
-  const res = new Uint8Array(sum);
+  const res = new Uint8Array(sum2);
   for (let i = 0, pad4 = 0; i < arrays.length; i++) {
     const a = arrays[i];
     res.set(a, pad4);
@@ -9324,13 +9324,13 @@ function ensureBytes2(title, hex2, expectedLength) {
   return res;
 }
 function concatBytes5(...arrays) {
-  let sum = 0;
+  let sum2 = 0;
   for (let i = 0; i < arrays.length; i++) {
     const a = arrays[i];
     abytes2(a);
-    sum += a.length;
+    sum2 += a.length;
   }
-  const res = new Uint8Array(sum);
+  const res = new Uint8Array(sum2);
   for (let i = 0, pad4 = 0; i < arrays.length; i++) {
     const a = arrays[i];
     res.set(a, pad4);
@@ -9933,7 +9933,7 @@ function pippenger(c, fieldN, points, scalars) {
   const MASK = bitMask2(windowSize);
   const buckets = new Array(Number(MASK) + 1).fill(zero);
   const lastBits = Math.floor((fieldN.BITS - 1) / windowSize) * windowSize;
-  let sum = zero;
+  let sum2 = zero;
   for (let i = lastBits; i >= 0; i -= windowSize) {
     buckets.fill(zero);
     for (let j = 0; j < slength; j++) {
@@ -9946,12 +9946,12 @@ function pippenger(c, fieldN, points, scalars) {
       sumI = sumI.add(buckets[j]);
       resI = resI.add(sumI);
     }
-    sum = sum.add(resI);
+    sum2 = sum2.add(resI);
     if (i !== 0)
       for (let j = 0; j < windowSize; j++)
-        sum = sum.double();
+        sum2 = sum2.double();
   }
-  return sum;
+  return sum2;
 }
 function validateBasic2(curve) {
   validateField2(curve.Fp);
@@ -10373,8 +10373,8 @@ function weierstrassPoints2(opts) {
     multiplyAndAddUnsafe(Q, a, b2) {
       const G = Point3.BASE;
       const mul = (P, a2) => a2 === _0n11 || a2 === _1n11 || !P.equals(G) ? P.multiplyUnsafe(a2) : P.multiply(a2);
-      const sum = mul(this, a).add(mul(Q, b2));
-      return sum.is0() ? void 0 : sum;
+      const sum2 = mul(this, a).add(mul(Q, b2));
+      return sum2.is0() ? void 0 : sum2;
     }
     // Converts Projective point to affine (x, y) coordinates.
     // Can accept precomputed Z^-1 - for example, from invertBatch.
@@ -12083,13 +12083,13 @@ function ensureBytes3(title, hex2, expectedLength) {
   return res;
 }
 function concatBytes6(...arrays) {
-  let sum = 0;
+  let sum2 = 0;
   for (let i = 0; i < arrays.length; i++) {
     const a = arrays[i];
     abytes3(a);
-    sum += a.length;
+    sum2 += a.length;
   }
-  const res = new Uint8Array(sum);
+  const res = new Uint8Array(sum2);
   for (let i = 0, pad4 = 0; i < arrays.length; i++) {
     const a = arrays[i];
     res.set(a, pad4);
@@ -15080,6 +15080,52 @@ var INITIAL_PRICES = {
   sICLN: 14n * 10n ** 8n,
   sESGU: 120n * 10n ** 8n
 };
+var V2_STACK = {
+  // ── Sepolia (11155111) — deployed 2026-07-27, comparison showcase ──────────
+  11155111: {
+    GuardedOracle: "0x32A19D04ef2ca5A7DA02Df39419729fA745749A1",
+    AssetVaultV2: "0x3a37415981F6f4fC27FA6c8C62F1d4e47115fD17",
+    tokens: {
+      sBTC: "0xeCF271592C0D64663906318f250d49c255E332Ac",
+      sETH: "0x576856E68FdE8D586EAa2E2c21e74c4D37587e8F",
+      sAAPL: "0x84C27703db71062061364E5B8E015139b2ac0163",
+      sTSLA: "0x0e8b6478038876741925A5B7A571596E6f4a695E",
+      sGOLD: "0xc97b8195cBd00fec5D3aAb103C9E313414B11a10",
+      sBOND: "0xb84C17a704F9e7d96c3aF84Df05C6a8da5c344eb",
+      sNVDA: "0xB5586Ef5bBA7DAa698a4a6745C9D46F0b3bECfeE",
+      sMSFT: "0xCB2c5c834f1f0d54E6Da1f3628B1c624aAa750cf",
+      sGOOGL: "0x42D083F0e4a60FdFe28b5E00D44f11C41Bf1763d",
+      sICLN: "0xF34cA755a315531745dDC4A85963EeFA6129F459",
+      sESGU: "0x3f89C2Fd5e7222012d563ecC67e41De02ad746e7"
+    }
+  },
+  // ── Base Sepolia (84532) — the canonical chain, hardened by #129 ───────────
+  // Base Sepolia never had a hardened vault: its mint/redeem path is still the
+  // V1 AssetVault (no fee, no reserve ratio, no pause). #129 deploys this stack
+  // alongside V1, exactly as Sepolia's was. Addresses below are filled by
+  // docs/DEPLOY_129_CUTOVER.md as each phase lands; while any is 0x0 the
+  // frontend's "not deployed" guard keeps rendering the legacy path.
+  84532: {
+    GuardedOracle: "0x8E9e59BE9589Ad88EC14F3ef6bdcc43E8B76f842",
+    AssetVaultV2: "0x916D7Fc399d9afd23BAa113E2c2Cc601341ff10a",
+    ESGRegistryV2: "0xBF5B9cD78566791d79c687A732b4ed5bc3E95dFf",
+    SustainabilityBadge: "0x0a4aE14a413a03c20ccF43E8134BfbD7bCB89820",
+    tokens: {
+      sBTC: "0x0aF44425ADC54fdBcB084611Ca82beFb91DDb1b6",
+      sETH: "0xc81Bc66656E7d32A570895B7ba8a3Fc9aa9997f1",
+      sAAPL: "0x4f36CBc3321b47327407C0eD116188A21ec4da28",
+      sTSLA: "0xD816E621849eb8849D032dc39dD37e39cd668144",
+      sGOLD: "0xd74aE712B412488Bb18F604052B232fea22270DA",
+      sBOND: "0x14496785f82F691656691486C49c3b8fB78BF770",
+      sNVDA: "0x881a8B8b4eacf7103078d6d5e81bfB4E344f3003",
+      sMSFT: "0x893a8F9Fd92110EBcAbB8855223CF184B54a7166",
+      sGOOGL: "0xaD7348198fdbb89eEeAC4E607E917DE8A91CD834",
+      sICLN: "0xcb3069C32188Fd92376d1ba53F08D733451e9175",
+      sESGU: "0x510D59b33C04164596D2601B57a154dF31914C23"
+    }
+  }
+};
+var getV2Stack = (chainId) => chainId === null ? void 0 : V2_STACK[chainId];
 
 // ../shared/src/addresses.ts
 var BASE_SEPOLIA_CHAIN_ID = 84532;
@@ -15093,6 +15139,10 @@ if (!chain) {
   );
 }
 var ADDRESSES = chain;
+var V2_ADDRESSES = (() => {
+  const s = getV2Stack(AGENT_CHAIN_ID);
+  return s ? { GuardedOracle: s.GuardedOracle, AssetVaultV2: s.AssetVaultV2 } : null;
+})();
 function assetIdOf(symbol) {
   const id2 = ASSET_IDS[symbol];
   if (!id2) {
@@ -17853,12 +17903,12 @@ var Result = class _Result extends Array {
 };
 function checkResultErrors(result) {
   const errors = [];
-  const checkErrors = function(path, object2) {
+  const checkErrors = function(path2, object2) {
     if (!Array.isArray(object2)) {
       return;
     }
     for (let key in object2) {
-      const childPath = path.slice();
+      const childPath = path2.slice();
       childPath.push(key);
       try {
         checkErrors(childPath, object2[key]);
@@ -18150,7 +18200,7 @@ function toBytes(data4) {
   return data4;
 }
 function concatBytes(...arrays) {
-  const r = new Uint8Array(arrays.reduce((sum, a) => sum + a.length, 0));
+  const r = new Uint8Array(arrays.reduce((sum2, a) => sum2 + a.length, 0));
   let pad4 = 0;
   arrays.forEach((a) => {
     if (!u8a(a))
@@ -19284,7 +19334,7 @@ function ensureBytes(title, hex2, expectedLength) {
   return res;
 }
 function concatBytes2(...arrays) {
-  const r = new Uint8Array(arrays.reduce((sum, a) => sum + a.length, 0));
+  const r = new Uint8Array(arrays.reduce((sum2, a) => sum2 + a.length, 0));
   let pad4 = 0;
   arrays.forEach((a) => {
     if (!u8a2(a))
@@ -20201,8 +20251,8 @@ function weierstrassPoints(opts) {
     multiplyAndAddUnsafe(Q, a, b2) {
       const G = Point3.BASE;
       const mul = (P, a2) => a2 === _0n5 || a2 === _1n5 || !P.equals(G) ? P.multiplyUnsafe(a2) : P.multiply(a2);
-      const sum = mul(this, a).add(mul(Q, b2));
-      return sum.is0() ? void 0 : sum;
+      const sum2 = mul(this, a).add(mul(Q, b2));
+      return sum2.is0() ? void 0 : sum2;
     }
     // Converts Projective point to affine (x, y) coordinates.
     // Can accept precomputed Z^-1 - for example, from invertBatch.
@@ -36637,9 +36687,9 @@ var IpcSocketProvider = class extends SocketProvider {
   get socket() {
     return this.#socket;
   }
-  constructor(path, network, options) {
+  constructor(path2, network, options) {
     super(network, options);
-    this.#socket = connect(path);
+    this.#socket = connect(path2);
     this.socket.on("ready", async () => {
       try {
         await this._start();
@@ -37471,11 +37521,11 @@ function getPassword(password) {
 function spelunk(object2, _path) {
   const match2 = _path.match(/^([a-z0-9$_.-]*)(:([a-z]+))?(!)?$/i);
   assertArgument(match2 != null, "invalid path", "path", _path);
-  const path = match2[1];
+  const path2 = match2[1];
   const type = match2[3];
   const reqd = match2[4] === "!";
   let cur = object2;
-  for (const comp of path.toLowerCase().split(".")) {
+  for (const comp of path2.toLowerCase().split(".")) {
     if (Array.isArray(cur)) {
       if (!comp.match(/^[0-9]+$/)) {
         break;
@@ -37497,7 +37547,7 @@ function spelunk(object2, _path) {
       break;
     }
   }
-  assertArgument(!reqd || cur != null, "missing required value", "path", path);
+  assertArgument(!reqd || cur != null, "missing required value", "path", path2);
   if (type && cur != null) {
     if (type === "int") {
       if (typeof cur === "string" && cur.match(/^-?[0-9]+$/)) {
@@ -37522,7 +37572,7 @@ function spelunk(object2, _path) {
     if (type === typeof cur) {
       return cur;
     }
-    assertArgument(false, `wrong type found for ${type} `, "path", path);
+    assertArgument(false, `wrong type found for ${type} `, "path", path2);
   }
   return cur;
 }
@@ -37702,7 +37752,7 @@ function _encryptKeystore(key, kdf, account, options) {
   };
   if (account.mnemonic) {
     const client = options.client != null ? options.client : `ethers/${version}`;
-    const path = account.mnemonic.path || defaultPath;
+    const path2 = account.mnemonic.path || defaultPath;
     const locale = account.mnemonic.locale || "en";
     const mnemonicKey = key.slice(32, 64);
     const entropy = getBytes(account.mnemonic.entropy, "account.mnemonic.entropy");
@@ -37715,7 +37765,7 @@ function _encryptKeystore(key, kdf, account, options) {
     data4["x-ethers"] = {
       client,
       gethFilename,
-      path,
+      path: path2,
       locale,
       mnemonicCounter: hexlify(mnemonicIv).substring(2),
       mnemonicCiphertext: hexlify(mnemonicCiphertext).substring(2),
@@ -37783,11 +37833,11 @@ function ser_I(index2, chainCode, publicKey, privateKey) {
   const I = getBytes(computeHmac("sha512", chainCode, data4));
   return { IL: I.slice(0, 32), IR: I.slice(32) };
 }
-function derivePath(node, path) {
-  const components = path.split("/");
-  assertArgument(components.length > 0, "invalid path", "path", path);
+function derivePath(node, path2) {
+  const components = path2.split("/");
+  assertArgument(components.length > 0, "invalid path", "path", path2);
   if (components[0] === "m") {
-    assertArgument(node.depth === 0, `cannot derive root path (i.e. path starting with "m/") for a node at non-zero depth ${node.depth}`, "path", path);
+    assertArgument(node.depth === 0, `cannot derive root path (i.e. path starting with "m/") for a node at non-zero depth ${node.depth}`, "path", path2);
     components.shift();
   }
   let result = node;
@@ -37857,7 +37907,7 @@ var HDNodeWallet = class _HDNodeWallet extends BaseWallet {
   /**
    *  @private
    */
-  constructor(guard, signingKey, parentFingerprint, chainCode, path, index2, depth, mnemonic, provider3) {
+  constructor(guard, signingKey, parentFingerprint, chainCode, path2, index2, depth, mnemonic, provider3) {
     super(signingKey, provider3);
     assertPrivate(guard, _guard6, "HDNodeWallet");
     defineProperties(this, { publicKey: signingKey.compressedPublicKey });
@@ -37866,7 +37916,7 @@ var HDNodeWallet = class _HDNodeWallet extends BaseWallet {
       parentFingerprint,
       fingerprint,
       chainCode,
-      path,
+      path: path2,
       index: index2,
       depth
     });
@@ -37950,22 +38000,22 @@ var HDNodeWallet = class _HDNodeWallet extends BaseWallet {
   deriveChild(_index) {
     const index2 = getNumber(_index, "index");
     assertArgument(index2 <= 4294967295, "invalid index", "index", index2);
-    let path = this.path;
-    if (path) {
-      path += "/" + (index2 & ~HardenedBit);
+    let path2 = this.path;
+    if (path2) {
+      path2 += "/" + (index2 & ~HardenedBit);
       if (index2 & HardenedBit) {
-        path += "'";
+        path2 += "'";
       }
     }
     const { IR, IL } = ser_I(index2, this.chainCode, this.publicKey, this.privateKey);
     const ki = new SigningKey(toBeHex((toBigInt(IL) + BigInt(this.privateKey)) % N2, 32));
-    return new _HDNodeWallet(_guard6, ki, this.fingerprint, hexlify(IR), path, index2, this.depth + 1, this.mnemonic, this.provider);
+    return new _HDNodeWallet(_guard6, ki, this.fingerprint, hexlify(IR), path2, index2, this.depth + 1, this.mnemonic, this.provider);
   }
   /**
    *  Return the HDNode for %%path%% from this node.
    */
-  derivePath(path) {
-    return derivePath(this, path);
+  derivePath(path2) {
+    return derivePath(this, path2);
   }
   static #fromSeed(_seed, mnemonic) {
     assertArgument(isBytesLike(_seed), "invalid seed", "seed", "[REDACTED]");
@@ -38010,43 +38060,43 @@ var HDNodeWallet = class _HDNodeWallet extends BaseWallet {
   /**
    *  Creates a new random HDNode.
    */
-  static createRandom(password, path, wordlist9) {
+  static createRandom(password, path2, wordlist9) {
     if (password == null) {
       password = "";
     }
-    if (path == null) {
-      path = defaultPath2;
+    if (path2 == null) {
+      path2 = defaultPath2;
     }
     if (wordlist9 == null) {
       wordlist9 = LangEn.wordlist();
     }
     const mnemonic = Mnemonic.fromEntropy(randomBytes3(16), password, wordlist9);
-    return _HDNodeWallet.#fromSeed(mnemonic.computeSeed(), mnemonic).derivePath(path);
+    return _HDNodeWallet.#fromSeed(mnemonic.computeSeed(), mnemonic).derivePath(path2);
   }
   /**
    *  Create an HD Node from %%mnemonic%%.
    */
-  static fromMnemonic(mnemonic, path) {
-    if (!path) {
-      path = defaultPath2;
+  static fromMnemonic(mnemonic, path2) {
+    if (!path2) {
+      path2 = defaultPath2;
     }
-    return _HDNodeWallet.#fromSeed(mnemonic.computeSeed(), mnemonic).derivePath(path);
+    return _HDNodeWallet.#fromSeed(mnemonic.computeSeed(), mnemonic).derivePath(path2);
   }
   /**
    *  Creates an HD Node from a mnemonic %%phrase%%.
    */
-  static fromPhrase(phrase, password, path, wordlist9) {
+  static fromPhrase(phrase, password, path2, wordlist9) {
     if (password == null) {
       password = "";
     }
-    if (path == null) {
-      path = defaultPath2;
+    if (path2 == null) {
+      path2 = defaultPath2;
     }
     if (wordlist9 == null) {
       wordlist9 = LangEn.wordlist();
     }
     const mnemonic = Mnemonic.fromPhrase(phrase, password, wordlist9);
-    return _HDNodeWallet.#fromSeed(mnemonic.computeSeed(), mnemonic).derivePath(path);
+    return _HDNodeWallet.#fromSeed(mnemonic.computeSeed(), mnemonic).derivePath(path2);
   }
   /**
    *  Creates an HD Node from a %%seed%%.
@@ -38098,7 +38148,7 @@ var HDNodeVoidWallet = class _HDNodeVoidWallet extends VoidSigner {
   /**
    *  @private
    */
-  constructor(guard, address, publicKey, parentFingerprint, chainCode, path, index2, depth, provider3) {
+  constructor(guard, address, publicKey, parentFingerprint, chainCode, path2, index2, depth, provider3) {
     super(address, provider3);
     assertPrivate(guard, _guard6, "HDNodeVoidWallet");
     defineProperties(this, { publicKey });
@@ -38108,7 +38158,7 @@ var HDNodeVoidWallet = class _HDNodeVoidWallet extends VoidSigner {
       fingerprint,
       parentFingerprint,
       chainCode,
-      path,
+      path: path2,
       index: index2,
       depth
     });
@@ -38146,23 +38196,23 @@ var HDNodeVoidWallet = class _HDNodeVoidWallet extends VoidSigner {
   deriveChild(_index) {
     const index2 = getNumber(_index, "index");
     assertArgument(index2 <= 4294967295, "invalid index", "index", index2);
-    let path = this.path;
-    if (path) {
-      path += "/" + (index2 & ~HardenedBit);
+    let path2 = this.path;
+    if (path2) {
+      path2 += "/" + (index2 & ~HardenedBit);
       if (index2 & HardenedBit) {
-        path += "'";
+        path2 += "'";
       }
     }
     const { IR, IL } = ser_I(index2, this.chainCode, this.publicKey, null);
     const Ki = SigningKey.addPoints(IL, this.publicKey, true);
     const address = computeAddress(Ki);
-    return new _HDNodeVoidWallet(_guard6, address, Ki, this.fingerprint, hexlify(IR), path, index2, this.depth + 1, this.provider);
+    return new _HDNodeVoidWallet(_guard6, address, Ki, this.fingerprint, hexlify(IR), path2, index2, this.depth + 1, this.provider);
   }
   /**
    *  Return the signer for %%path%% from this node.
    */
-  derivePath(path) {
-    return derivePath(this, path);
+  derivePath(path2) {
+    return derivePath(this, path2);
   }
 };
 function getAccountPath(_index) {
@@ -38851,6 +38901,264 @@ var wordlists2 = {
   zh_tw: LangZh.wordlist("tw")
 };
 
+// ../shared/src/x402Client.ts
+var X402_DEFAULT_MAX_PAYMENT_USDC = "0.02";
+var USDC_DECIMALS = 6;
+function parseUsdcAtomic(s) {
+  const t = s.trim();
+  const m = /^(\d+)(?:\.(\d{1,6}))?$/.exec(t);
+  if (!m) throw new Error(`\u4E0D\u662F\u5408\u6CD5\u7684 USDC \u91D1\u984D\uFF08\u6700\u591A 6 \u4F4D\u5C0F\u6578\uFF09\uFF1A\u300C${s}\u300D`);
+  const frac = (m[2] ?? "").padEnd(USDC_DECIMALS, "0");
+  return BigInt(m[1]) * 10n ** BigInt(USDC_DECIMALS) + BigInt(frac || "0");
+}
+var X402_DEFAULT_MAX_TOTAL_SPEND_USDC = "1";
+function resolveX402TotalSpendCap() {
+  const raw2 = process.env.X402_MAX_TOTAL_SPEND_USDC?.trim() || process.env.LOOP_MAX_SPEND_USDC?.trim() || X402_DEFAULT_MAX_TOTAL_SPEND_USDC;
+  const v = parseUsdcAtomic(raw2);
+  if (v <= 0n) throw new Error(`X402_MAX_TOTAL_SPEND_USDC \u5FC5\u9808 > 0\uFF08\u6536\u5230 ${raw2}\uFF09`);
+  return v;
+}
+function resolveX402MaxValue() {
+  const raw2 = process.env.X402_MAX_PAYMENT_USDC?.trim() || X402_DEFAULT_MAX_PAYMENT_USDC;
+  const v = parseUsdcAtomic(raw2);
+  if (v <= 0n) throw new Error(`X402_MAX_PAYMENT_USDC \u5FC5\u9808 > 0\uFF08\u6536\u5230 ${raw2}\uFF09`);
+  return v;
+}
+
+// ../shared/src/signingGuard.ts
+var SigningGuardError = class extends Error {
+  constructor(reasonCode, detail) {
+    super(`[signing-guard] ${reasonCode}: ${detail}`);
+    this.reasonCode = reasonCode;
+    this.name = "SigningGuardError";
+  }
+};
+var ZERO = "0x0000000000000000000000000000000000000000";
+var OFFICIAL_USDC_DOMAINS = {
+  84532: { name: "USDC", version: "2", verifyingContract: OFFICIAL_BASE_SEPOLIA_USDC }
+};
+var DEFAULT_MAX_TX_VALUE_WEI = 10n ** 15n;
+var SESSION_MANAGER_IFACE = new ethers_exports.Interface([
+  "function openPositionForSession(uint256 sessionId, bytes32 asset, bool isLong, uint256 margin, uint256 leverage, address copiedFrom) payable returns (uint256)",
+  "function closePositionForSession(uint256 sessionId, uint256 positionId)"
+]);
+var ALLOWED_TX_SELECTORS = {
+  [SESSION_MANAGER_IFACE.getFunction("openPositionForSession").selector]: "openPositionForSession",
+  [SESSION_MANAGER_IFACE.getFunction("closePositionForSession").selector]: "closePositionForSession"
+};
+var TRANSFER_WITH_AUTHORIZATION_FIELDS = [
+  { name: "from", type: "address" },
+  { name: "to", type: "address" },
+  { name: "value", type: "uint256" },
+  { name: "validAfter", type: "uint256" },
+  { name: "validBefore", type: "uint256" },
+  { name: "nonce", type: "bytes32" }
+];
+var WV_CHALLENGE_RE = /^pepelab-wv:(0x[0-9a-fA-F]{40}):(\d{10,16})$/;
+var WV_MAX_SKEW_MS = 6e4;
+var EIP712_DOMAIN_FIELDS = [
+  { name: "name", type: "string" },
+  { name: "version", type: "string" },
+  { name: "chainId", type: "uint256" },
+  { name: "verifyingContract", type: "address" }
+];
+function sessionManager(env) {
+  const a = env.SESSION_MANAGER_ADDRESS?.trim();
+  if (!a || !ethers_exports.isAddress(a) || a.toLowerCase() === ZERO) {
+    throw new SigningGuardError("GUARD_CONFIG_INVALID", "\u672A\u8A2D\u5B9A\u6709\u6548 SESSION_MANAGER_ADDRESS\uFF0C\u7121\u6CD5\u5224\u65B7\u4EA4\u6613\u767D\u540D\u55AE\uFF08fail-closed\uFF09");
+  }
+  return ethers_exports.getAddress(a);
+}
+function maxTxValue(env) {
+  const raw2 = env.SIGNING_GUARD_MAX_TX_VALUE_WEI?.trim();
+  if (!raw2) return DEFAULT_MAX_TX_VALUE_WEI;
+  if (!/^\d+$/.test(raw2)) {
+    throw new SigningGuardError("GUARD_CONFIG_INVALID", "SIGNING_GUARD_MAX_TX_VALUE_WEI \u5FC5\u9808\u662F\u975E\u8CA0\u6574\u6578\uFF08fail-closed\uFF09");
+  }
+  return BigInt(raw2);
+}
+function big(v) {
+  try {
+    if (typeof v === "bigint") return v;
+    if (typeof v === "number" && Number.isSafeInteger(v)) return BigInt(v);
+    if (typeof v === "string" && /^(0x[0-9a-fA-F]+|\d+)$/.test(v)) return BigInt(v);
+  } catch {
+  }
+  return null;
+}
+function is7702(tx) {
+  const t = tx.type;
+  if (t === 4 || t === 4n || t === "0x4" || t === "0x04" || t === "eip7702") return true;
+  const list2 = tx.authorizationList;
+  return Array.isArray(list2) && list2.length > 0;
+}
+function assertAllowedTransaction(tx, env = process.env) {
+  if (is7702(tx)) {
+    throw new SigningGuardError("EIP7702_TX_FORBIDDEN", "agent \u91D1\u9470\u4E0D\u5F97\u7C3D EIP-7702\uFF08type-4 / authorizationList\uFF09\u4EA4\u6613");
+  }
+  const cid = typeof tx.chainId === "bigint" || typeof tx.chainId === "number" ? big(tx.chainId) : null;
+  if (cid === null || cid !== BigInt(AGENT_CHAIN_ID)) {
+    throw new SigningGuardError("TX_CHAIN_ID_INVALID", `\u4EA4\u6613 chainId ${String(tx.chainId ?? "(\u7F3A)")} \u5FC5\u9808\u7B49\u65BC ${AGENT_CHAIN_ID}`);
+  }
+  const mgr = sessionManager(env);
+  const to = typeof tx.to === "string" ? tx.to : tx.to?.address;
+  if (!to || !ethers_exports.isAddress(to) || ethers_exports.getAddress(to) !== mgr) {
+    throw new SigningGuardError("TX_NOT_ALLOWLISTED", `\u4EA4\u6613\u5C0D\u8C61 ${String(to ?? "(\u5408\u7D04\u5EFA\u7ACB)")} \u4E0D\u662F session manager ${mgr}`);
+  }
+  const data4 = typeof tx.data === "string" ? tx.data : "";
+  const sel = data4.slice(0, 10).toLowerCase();
+  const fnName = ALLOWED_TX_SELECTORS[sel];
+  if (!fnName) throw new SigningGuardError("TX_NOT_ALLOWLISTED", `selector ${sel || "(\u7A7A)"} \u4E0D\u5728\u5141\u8A31\u6E05\u55AE`);
+  let canonical;
+  try {
+    canonical = SESSION_MANAGER_IFACE.encodeFunctionData(fnName, SESSION_MANAGER_IFACE.decodeFunctionData(fnName, data4));
+  } catch {
+    throw new SigningGuardError("TX_NOT_ALLOWLISTED", `${fnName} calldata \u7121\u6CD5\u5B8C\u6574\u89E3\u78BC\uFF08fail-closed\uFF09`);
+  }
+  if (canonical.toLowerCase() !== data4.toLowerCase()) {
+    throw new SigningGuardError("TX_NOT_ALLOWLISTED", `${fnName} calldata \u4E0D\u662F\u6A19\u6E96\u7DE8\u78BC\uFF08\u5C3E\u7AEF\u593E\u5E36\u8CC7\u6599\u6216\u683C\u5F0F\u7570\u5E38\uFF09`);
+  }
+  const value = tx.value === void 0 || tx.value === null ? 0n : big(tx.value);
+  const cap = maxTxValue(env);
+  if (value === null || value > cap) {
+    throw new SigningGuardError("TX_VALUE_TOO_HIGH", `value ${String(tx.value)} \u8D85\u904E\u4E0A\u9650 ${cap} wei`);
+  }
+  if (fnName === "closePositionForSession" && value !== 0n) {
+    throw new SigningGuardError("TX_VALUE_TOO_HIGH", "closePositionForSession \u4E0D\u61C9\u9644\u5E36 ETH");
+  }
+}
+function assertAllowedTypedData(domain, types, message, signer, primaryType) {
+  const T = "TYPED_DATA_NOT_ALLOWLISTED";
+  if ("EIP712Domain" in (types ?? {})) {
+    const d = types.EIP712Domain;
+    const ok = Array.isArray(d) && d.length === EIP712_DOMAIN_FIELDS.length && d.every((f2, i) => f2?.name === EIP712_DOMAIN_FIELDS[i].name && f2?.type === EIP712_DOMAIN_FIELDS[i].type);
+    if (!ok) throw new SigningGuardError(T, "types.EIP712Domain \u4E0D\u662F\u6A19\u6E96\u56DB\u6B04\uFF08name, version, chainId, verifyingContract\uFF09");
+  }
+  const names2 = Object.keys(types ?? {}).filter((n2) => n2 !== "EIP712Domain");
+  if (names2.length !== 1 || names2[0] !== "TransferWithAuthorization") {
+    throw new SigningGuardError(T, `typed data \u578B\u5225 [${names2.join(", ")}] \u4E0D\u5728\u5141\u8A31\u6E05\u55AE\uFF08\u53EA\u5141\u8A31 TransferWithAuthorization\uFF09`);
+  }
+  if (primaryType !== void 0 && primaryType !== "TransferWithAuthorization") {
+    throw new SigningGuardError(T, `primaryType ${primaryType} \u4E0D\u5728\u5141\u8A31\u6E05\u55AE`);
+  }
+  const fields = types.TransferWithAuthorization;
+  const same = Array.isArray(fields) && fields.length === TRANSFER_WITH_AUTHORIZATION_FIELDS.length && fields.every((f2, i) => f2?.name === TRANSFER_WITH_AUTHORIZATION_FIELDS[i].name && f2?.type === TRANSFER_WITH_AUTHORIZATION_FIELDS[i].type);
+  if (!same) throw new SigningGuardError(T, "TransferWithAuthorization \u7684\u6B04\u4F4D\u8207 EIP-3009 \u4E0D\u7B26");
+  const keys = Object.keys(message ?? {}).sort();
+  const expected = TRANSFER_WITH_AUTHORIZATION_FIELDS.map((f2) => f2.name).sort();
+  if (keys.length !== expected.length || keys.some((k, i) => k !== expected[i])) {
+    throw new SigningGuardError(T, `message \u6B04\u4F4D [${keys.join(", ")}] \u8207\u578B\u5225\u4E0D\u4E00\u81F4`);
+  }
+  const usdc2 = OFFICIAL_USDC_DOMAINS[AGENT_CHAIN_ID];
+  if (!usdc2) throw new SigningGuardError(T, `chain ${AGENT_CHAIN_ID} \u6C92\u6709\u8A2D\u5B9A\u5B98\u65B9 USDC domain`);
+  const vc = typeof domain?.verifyingContract === "string" ? domain.verifyingContract : "";
+  const chainIdOk = (typeof domain?.chainId === "number" || typeof domain?.chainId === "bigint") && big(domain.chainId) === BigInt(AGENT_CHAIN_ID);
+  const domainOk = domain?.name === usdc2.name && domain?.version === usdc2.version && chainIdOk && ethers_exports.isAddress(vc) && ethers_exports.getAddress(vc) === ethers_exports.getAddress(usdc2.verifyingContract) && domain?.salt === void 0;
+  if (!domainOk) {
+    throw new SigningGuardError(T, "domain \u4E0D\u662F\u5B98\u65B9 USDC\uFF08name / version / chainId / verifyingContract \u4E0D\u7B26\uFF09");
+  }
+  const from16 = typeof message.from === "string" ? message.from : "";
+  if (!ethers_exports.isAddress(from16) || ethers_exports.getAddress(from16) !== ethers_exports.getAddress(signer)) {
+    throw new SigningGuardError(T, "TransferWithAuthorization.from \u4E0D\u662F agent \u81EA\u5DF1");
+  }
+  const value = big(message.value);
+  const cap = resolveX402MaxValue();
+  if (value === null || value > cap) {
+    throw new SigningGuardError("PAYMENT_TOO_HIGH", `\u4ED8\u6B3E\u91D1\u984D ${String(message.value)} \u8D85\u904E\u55AE\u7B46\u4E0A\u9650 ${cap}\uFF08X402_MAX_PAYMENT_USDC\uFF09`);
+  }
+  const to = typeof message.to === "string" && ethers_exports.isAddress(message.to) ? ethers_exports.getAddress(message.to) : null;
+  if (!to) throw new SigningGuardError("PAYTO_NOT_ALLOWLISTED", "TransferWithAuthorization.to \u4E0D\u662F\u5408\u6CD5\u5730\u5740");
+  const allow = x402PayToAllowlist();
+  if (allow && !allow.includes(to)) {
+    throw new SigningGuardError("PAYTO_NOT_ALLOWLISTED", `\u6536\u6B3E\u5730\u5740 ${to} \u4E0D\u5728 x402 payTo allowlist`);
+  }
+  const nowSec = BigInt(Math.floor(Date.now() / 1e3));
+  const after = big(message.validAfter);
+  const before = big(message.validBefore);
+  if (after === null || before === null || after > nowSec || before > nowSec + X402_MAX_VALIDITY_SEC || before <= nowSec) {
+    throw new SigningGuardError(
+      "PAYMENT_WINDOW_INVALID",
+      `\u6388\u6B0A\u6709\u6548\u671F\u4E0D\u5408\u898F\uFF08validAfter=${String(message.validAfter)}\u3001validBefore=${String(message.validBefore)}\uFF1B\u9808 validAfter \u2264 now\u3001now < validBefore \u2264 now+${X402_MAX_VALIDITY_SEC}\uFF09`
+    );
+  }
+  const total = resolveX402TotalSpendCap();
+  if (x402Ledger.signedTotal + value > total) {
+    throw new SigningGuardError(
+      "SPEND_CAP_EXCEEDED",
+      `\u672C process \u5DF2\u7C3D\u51FA ${x402Ledger.signedTotal}\uFF0C\u52A0\u4E0A\u672C\u7B46 ${value} \u8D85\u904E\u7D2F\u8A08\u4E0A\u9650 ${total}\uFF08X402_MAX_TOTAL_SPEND_USDC\uFF09`
+    );
+  }
+}
+var X402_MAX_VALIDITY_SEC = 3600n;
+var x402Ledger = { signedTotal: 0n, pinnedPayTo: null };
+function x402PayToAllowlist(env = process.env) {
+  const raw2 = env.X402_PAYTO_ALLOWLIST?.trim() || env.PAY_TO?.trim();
+  if (raw2) {
+    const list2 = raw2.split(",").map((s) => s.trim()).filter(Boolean);
+    const bad = list2.filter((a) => !ethers_exports.isAddress(a));
+    if (bad.length || !list2.length) {
+      throw new SigningGuardError("GUARD_CONFIG_INVALID", `X402_PAYTO_ALLOWLIST / PAY_TO \u542B\u975E\u6CD5\u5730\u5740\uFF08fail-closed\uFF09`);
+    }
+    return list2.map((a) => ethers_exports.getAddress(a));
+  }
+  if (x402Ledger.pinnedPayTo) return [x402Ledger.pinnedPayTo];
+  if (!warnedTofu) {
+    warnedTofu = true;
+    console.warn("[signing-guard] \u26A0 \u672A\u8A2D\u5B9A X402_PAYTO_ALLOWLIST / PAY_TO\uFF1A\u4EE5\u7B2C\u4E00\u6B21 x402 \u4ED8\u6B3E\u7684\u6536\u6B3E\u5730\u5740\u70BA\u6E96\uFF08TOFU\uFF09\uFF0C\u4E4B\u5F8C\u53EA\u5141\u8A31\u8A72\u5730\u5740\u3002");
+  }
+  return null;
+}
+var warnedTofu = false;
+function recordX402Signed(message) {
+  x402Ledger.signedTotal += big(message.value) ?? 0n;
+  if (!x402Ledger.pinnedPayTo && typeof message.to === "string") x402Ledger.pinnedPayTo = ethers_exports.getAddress(message.to);
+}
+function assertAllowedMessage(message, signer) {
+  const text = typeof message === "string" ? message : message instanceof Uint8Array ? (() => {
+    try {
+      return ethers_exports.toUtf8String(message);
+    } catch {
+      return "";
+    }
+  })() : "";
+  const m = WV_CHALLENGE_RE.exec(text);
+  if (!m || ethers_exports.getAddress(m[1]) !== ethers_exports.getAddress(signer)) {
+    throw new SigningGuardError("MESSAGE_NOT_ALLOWLISTED", "\u53EA\u5141\u8A31\u7C3D ERC-8126 proof-of-possession \u6311\u6230\u5B57\u4E32\uFF08pepelab-wv:<\u81EA\u5DF1\u7684\u5730\u5740>:<\u6642\u9593\u6233>\uFF09");
+  }
+  if (Math.abs(Number(m[2]) - Date.now()) > WV_MAX_SKEW_MS) {
+    throw new SigningGuardError("MESSAGE_NOT_ALLOWLISTED", `\u6301\u6709\u8B49\u660E\u6311\u6230\u7684\u6642\u9593\u6233\u8207\u73FE\u5728\u76F8\u5DEE\u8D85\u904E ${WV_MAX_SKEW_MS / 1e3} \u79D2`);
+  }
+}
+var GuardedWallet = class _GuardedWallet extends ethers_exports.Wallet {
+  async signTransaction(tx) {
+    assertAllowedTransaction(tx);
+    return super.signTransaction(tx);
+  }
+  async signTypedData(domain, types, value) {
+    assertAllowedTypedData(domain, types, value, this.address);
+    const sig = await super.signTypedData(domain, types, value);
+    recordX402Signed(value);
+    return sig;
+  }
+  async signMessage(message) {
+    assertAllowedMessage(message, this.address);
+    return super.signMessage(message);
+  }
+  signMessageSync(message) {
+    assertAllowedMessage(message, this.address);
+    return super.signMessageSync(message);
+  }
+  async authorize(_auth) {
+    throw new SigningGuardError("EIP7702_AUTHORIZATION_FORBIDDEN", "agent \u91D1\u9470\u4E0D\u5F97\u7C3D EIP-7702 authorization");
+  }
+  authorizeSync(_auth) {
+    throw new SigningGuardError("EIP7702_AUTHORIZATION_FORBIDDEN", "agent \u91D1\u9470\u4E0D\u5F97\u7C3D EIP-7702 authorization");
+  }
+  connect(provider3) {
+    return new _GuardedWallet(this.signingKey, provider3);
+  }
+};
+
 // ../shared/src/provider.ts
 function makeProvider(rpcUrl) {
   const url = rpcUrl ?? process.env.BASE_SEPOLIA_RPC_URL ?? process.env.SEPOLIA_RPC_URL;
@@ -38888,14 +39196,14 @@ function makeContracts(provider3) {
     )
   };
 }
-var ZERO = "0x0000000000000000000000000000000000000000";
+var ZERO2 = "0x0000000000000000000000000000000000000000";
 function makeSigner(provider3) {
   const pk = process.env.AGENT_PRIVATE_KEY?.trim();
   if (!pk || !pk.startsWith("0x") || pk.length !== 66) return null;
-  return new ethers_exports.Wallet(pk, provider3 ?? makeProvider());
+  return new GuardedWallet(pk, provider3 ?? makeProvider());
 }
 function getSessionManagerAddress() {
-  return process.env.SESSION_MANAGER_ADDRESS?.trim() || ZERO;
+  return process.env.SESSION_MANAGER_ADDRESS?.trim() || ZERO2;
 }
 
 // ../shared/src/format.ts
@@ -39015,7 +39323,7 @@ function enrichOracle(base2, opts = {}) {
     ...edge
   };
 }
-var ZERO2 = "0x0000000000000000000000000000000000000000";
+var ZERO3 = "0x0000000000000000000000000000000000000000";
 async function getOracleSnapshot(c, symbol) {
   const assetId = assetIdOf(symbol);
   const [priceRes, isStale, fundingBps, longOI, shortOI, maxPriceAge] = await Promise.all([
@@ -39089,7 +39397,7 @@ async function getPositionDetail(c, positionId) {
     openedAt: fmtTime(pos.openedAt),
     closedAt: fmtTime(pos.closedAt),
     isOpen: Boolean(pos.isOpen),
-    copiedFrom: copied === ZERO2 ? null : copied,
+    copiedFrom: copied === ZERO3 ? null : copied,
     realizedPnL: fmtUsdc18(pos.realizedPnL),
     unrealizedPnL: fmtUsdc18(unrealized),
     pendingFunding: fmtUsdc18(pending)
@@ -39174,6 +39482,27 @@ async function getTraderPerformance(c, trader) {
   };
 }
 
+// ../../frontend/src/contracts/agentAuth.ts
+var DEFAULT_VC_VALIDITY_DAYS = 30;
+var DEFAULT_VC_VALIDITY_SEC = DEFAULT_VC_VALIDITY_DAYS * 24 * 3600;
+var V1_FIELDS = [
+  { name: "issuer", type: "address" },
+  { name: "agent", type: "address" },
+  { name: "sessionId", type: "uint256" },
+  { name: "maxMarginPerTrade", type: "string" },
+  { name: "totalBudget", type: "string" },
+  { name: "maxLeverage", type: "uint256" },
+  { name: "expiry", type: "uint256" },
+  { name: "issuedAt", type: "uint256" }
+];
+var AUTH_TYPES_V2 = {
+  AgentTradingAuthorization: [
+    ...V1_FIELDS,
+    { name: "validUntil", type: "uint256" },
+    { name: "nonce", type: "bytes32" }
+  ]
+};
+
 // ../shared/src/identity.ts
 function agentDid(address, chainId = AGENT_CHAIN_ID) {
   return `did:pkh:eip155:${chainId}:${ethers_exports.getAddress(address)}`;
@@ -39185,7 +39514,7 @@ function parseDidPkh(did) {
 }
 
 // ../shared/src/verification.ts
-var ZERO3 = "0x0000000000000000000000000000000000000000";
+var ZERO4 = "0x0000000000000000000000000000000000000000";
 var ZERO_BYTES32 = "0x0000000000000000000000000000000000000000000000000000000000000000";
 var HTTP_TIMEOUT_MS = Number(process.env.VERIFICATION_HTTP_TIMEOUT_MS ?? "5000");
 function redact(msg, secret) {
@@ -39281,7 +39610,7 @@ function verifierValue(p) {
 async function checkETV(provider3, targets) {
   const evidence = {};
   let missing = 0;
-  const live = targets.filter((t) => t.address && t.address !== ZERO3);
+  const live = targets.filter((t) => t.address && t.address !== ZERO4);
   for (const t of live) {
     try {
       const code = await provider3.getCode(t.address);
@@ -39309,7 +39638,7 @@ async function checkSCV(provider3, targets, opts = {}) {
   const chainId = opts.chainId ?? AGENT_CHAIN_ID;
   const apiKey = opts.apiKey?.trim();
   const evidence = {};
-  const live = targets.filter((t) => t.address && t.address !== ZERO3);
+  const live = targets.filter((t) => t.address && t.address !== ZERO4);
   if (live.length === 0) {
     return {
       type: "SCV",
@@ -39426,7 +39755,7 @@ async function checkWAV(apiBaseUrl, opts = {}) {
 async function checkWV(provider3, agentAddress, opts = {}) {
   const evidence = { agentAddress };
   const checks = [];
-  const nonZero = !!agentAddress && agentAddress !== ZERO3;
+  const nonZero = !!agentAddress && agentAddress !== ZERO4;
   evidence.nonZeroAddress = nonZero;
   checks.push(nonZero);
   let isEoa = false;
@@ -39552,8 +39881,112 @@ async function buildAgentVerification(params) {
   };
 }
 
+// ../shared/src/policyGate.ts
+import path from "node:path";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
+
+// ../shared/src/fileLock.ts
+var SLEEP = new Int32Array(new SharedArrayBuffer(4));
+
+// ../shared/src/policyGate.ts
+var DEFAULT_POLICY = {
+  maxMarginPerTrade: 100,
+  maxDailyMargin: 500,
+  maxAgentDailyMargin: 2e3,
+  maxAgentOrdersPerWindow: 40,
+  allowedAssets: Object.keys(ASSET_IDS),
+  maxLeverage: 5,
+  maxOrdersPerWindow: 10,
+  maxClosesPerWindow: 60,
+  windowSec: 3600
+};
+var AGENT_ROOT = (() => {
+  try {
+    return path.resolve(path.dirname(fileURLToPath2(import.meta.url)), "..", "..");
+  } catch {
+    return process.cwd();
+  }
+})();
+var lock2 = Promise.resolve();
+
+// ../shared/src/redact.ts
+var SECRET_VALUE_ENV_KEYS = ["UPSTASH_REDIS_REST_TOKEN", "ETHERSCAN_API_KEY", "BASESCAN_API_KEY"];
+var SECRET_URL_ENV_KEYS = ["UPSTASH_REDIS_REST_URL"];
+var isSecretUrlEnv = (k) => k.endsWith("_RPC_URL") || SECRET_URL_ENV_KEYS.includes(k);
+var PUBLIC_URL_ENV_KEYS = ["X402_FACILITATOR_URL"];
+var MIN_SECRET_LEN = 6;
+function tryDecode(s) {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+}
+function secretValues() {
+  const out = [];
+  const push = (v) => {
+    if (v && v.length >= MIN_SECRET_LEN) out.push(v);
+  };
+  const pushUrlParts = (u) => {
+    for (const part of [u.username, u.password]) {
+      push(part);
+      push(tryDecode(part));
+    }
+    for (const val of u.searchParams.values()) push(val);
+  };
+  for (const k of SECRET_VALUE_ENV_KEYS) push(process.env[k]?.trim());
+  for (const k of Object.keys(process.env).filter(isSecretUrlEnv)) {
+    const v = process.env[k]?.trim();
+    if (!v) continue;
+    push(v);
+    try {
+      const u = new URL(v);
+      if (u.pathname.length > 1) {
+        push(u.pathname);
+        push(tryDecode(u.pathname));
+        for (const seg of u.pathname.split("/")) {
+          push(seg);
+          push(tryDecode(seg));
+        }
+      }
+      pushUrlParts(u);
+    } catch {
+    }
+  }
+  for (const k of PUBLIC_URL_ENV_KEYS) {
+    const v = process.env[k]?.trim();
+    if (!v) continue;
+    try {
+      pushUrlParts(new URL(v));
+    } catch {
+      push(v);
+    }
+  }
+  for (const k of Object.keys(process.env).filter((n2) => n2.endsWith("_PRIVATE_KEY"))) {
+    const v = process.env[k]?.trim();
+    if (!v) continue;
+    const bare = v.replace(/^0x/i, "");
+    push(bare);
+    push(`0x${bare}`);
+  }
+  return out.sort((a, b2) => b2.length - a.length);
+}
+function redactSecrets(text) {
+  let s = text;
+  for (const v of secretValues()) s = s.split(v).join("[redacted]");
+  for (const k of Object.keys(process.env).filter((n2) => n2.endsWith("_PRIVATE_KEY"))) {
+    const bare = process.env[k]?.trim().replace(/^0x/i, "");
+    if (bare && bare.length >= 32 && /^[0-9a-f]+$/i.test(bare)) {
+      s = s.replace(new RegExp(bare, "gi"), "[redacted]");
+    }
+  }
+  s = s.replace(/("?requestUrl"?\s*[:=]\s*\\?"?)[^"\s,}\\]+/g, "$1[redacted]");
+  s = s.replace(/(\/v[23]\/)[A-Za-z0-9_-]{16,}/g, "$1[redacted]");
+  return s;
+}
+
 // ../shared/src/write.ts
-var SESSION_MANAGER_IFACE = new ethers_exports.Interface(AGENT_SESSION_MANAGER_ABI);
+var SESSION_MANAGER_IFACE2 = new ethers_exports.Interface(AGENT_SESSION_MANAGER_ABI);
 
 // ../shared/src/payoutSafety.ts
 var COMPROMISED_ADDRESSES = [
@@ -39674,82 +40107,6 @@ async function assessPayoutAddress(provider3, addr, opts = {}) {
       reason: `rpc_unavailable\uFF1A\u7121\u6CD5\u8B80\u53D6 ${address} \u7684 code \u4E14\u5F9E\u672A\u6210\u529F\u6AA2\u67E5\u904E\uFF0Cfail-closed \u8996\u70BA\u4E0D\u5B89\u5168\u3002`
     };
   }
-}
-
-// ../shared/src/redact.ts
-var SECRET_VALUE_ENV_KEYS = ["UPSTASH_REDIS_REST_TOKEN", "ETHERSCAN_API_KEY", "BASESCAN_API_KEY"];
-var SECRET_URL_ENV_KEYS = ["UPSTASH_REDIS_REST_URL"];
-var isSecretUrlEnv = (k) => k.endsWith("_RPC_URL") || SECRET_URL_ENV_KEYS.includes(k);
-var PUBLIC_URL_ENV_KEYS = ["X402_FACILITATOR_URL"];
-var MIN_SECRET_LEN = 6;
-function tryDecode(s) {
-  try {
-    return decodeURIComponent(s);
-  } catch {
-    return s;
-  }
-}
-function secretValues() {
-  const out = [];
-  const push = (v) => {
-    if (v && v.length >= MIN_SECRET_LEN) out.push(v);
-  };
-  const pushUrlParts = (u) => {
-    for (const part of [u.username, u.password]) {
-      push(part);
-      push(tryDecode(part));
-    }
-    for (const val of u.searchParams.values()) push(val);
-  };
-  for (const k of SECRET_VALUE_ENV_KEYS) push(process.env[k]?.trim());
-  for (const k of Object.keys(process.env).filter(isSecretUrlEnv)) {
-    const v = process.env[k]?.trim();
-    if (!v) continue;
-    push(v);
-    try {
-      const u = new URL(v);
-      if (u.pathname.length > 1) {
-        push(u.pathname);
-        push(tryDecode(u.pathname));
-        for (const seg of u.pathname.split("/")) {
-          push(seg);
-          push(tryDecode(seg));
-        }
-      }
-      pushUrlParts(u);
-    } catch {
-    }
-  }
-  for (const k of PUBLIC_URL_ENV_KEYS) {
-    const v = process.env[k]?.trim();
-    if (!v) continue;
-    try {
-      pushUrlParts(new URL(v));
-    } catch {
-      push(v);
-    }
-  }
-  for (const k of Object.keys(process.env).filter((n2) => n2.endsWith("_PRIVATE_KEY"))) {
-    const v = process.env[k]?.trim();
-    if (!v) continue;
-    const bare = v.replace(/^0x/i, "");
-    push(bare);
-    push(`0x${bare}`);
-  }
-  return out.sort((a, b2) => b2.length - a.length);
-}
-function redactSecrets(text) {
-  let s = text;
-  for (const v of secretValues()) s = s.split(v).join("[redacted]");
-  for (const k of Object.keys(process.env).filter((n2) => n2.endsWith("_PRIVATE_KEY"))) {
-    const bare = process.env[k]?.trim().replace(/^0x/i, "");
-    if (bare && bare.length >= 32 && /^[0-9a-f]+$/i.test(bare)) {
-      s = s.replace(new RegExp(bare, "gi"), "[redacted]");
-    }
-  }
-  s = s.replace(/("?requestUrl"?\s*[:=]\s*\\?"?)[^"\s,}\\]+/g, "$1[redacted]");
-  s = s.replace(/(\/v[23]\/)[A-Za-z0-9_-]{16,}/g, "$1[redacted]");
-  return s;
 }
 
 // ../node_modules/hono/dist/compose.js
@@ -39897,26 +40254,26 @@ var handleParsingNestedValues = (form, key, value) => {
 };
 
 // ../node_modules/hono/dist/utils/url.js
-var splitPath = (path) => {
-  const paths = path.split("/");
+var splitPath = (path2) => {
+  const paths = path2.split("/");
   if (paths[0] === "") {
     paths.shift();
   }
   return paths;
 };
 var splitRoutingPath = (routePath) => {
-  const { groups, path } = extractGroupsFromPath(routePath);
-  const paths = splitPath(path);
+  const { groups, path: path2 } = extractGroupsFromPath(routePath);
+  const paths = splitPath(path2);
   return replaceGroupMarks(paths, groups);
 };
-var extractGroupsFromPath = (path) => {
+var extractGroupsFromPath = (path2) => {
   const groups = [];
-  path = path.replace(/\{[^}]+\}/g, (match2, index2) => {
+  path2 = path2.replace(/\{[^}]+\}/g, (match2, index2) => {
     const mark = `@${index2}`;
     groups.push([mark, match2]);
     return mark;
   });
-  return { groups, path };
+  return { groups, path: path2 };
 };
 var replaceGroupMarks = (paths, groups) => {
   for (let i = groups.length - 1; i >= 0; i--) {
@@ -39973,8 +40330,8 @@ var getPath = (request) => {
       const queryIndex = url.indexOf("?", i);
       const hashIndex = url.indexOf("#", i);
       const end = queryIndex === -1 ? hashIndex === -1 ? void 0 : hashIndex : hashIndex === -1 ? queryIndex : Math.min(queryIndex, hashIndex);
-      const path = url.slice(start, end);
-      return tryDecodeURI(path.includes("%25") ? path.replace(/%25/g, "%2525") : path);
+      const path2 = url.slice(start, end);
+      return tryDecodeURI(path2.includes("%25") ? path2.replace(/%25/g, "%2525") : path2);
     } else if (charCode === 63 || charCode === 35) {
       break;
     }
@@ -39991,11 +40348,11 @@ var mergePath = (base2, sub, ...rest) => {
   }
   return `${base2?.[0] === "/" ? "" : "/"}${base2}${sub === "/" ? "" : `${base2?.at(-1) === "/" ? "" : "/"}${sub?.[0] === "/" ? sub.slice(1) : sub}`}`;
 };
-var checkOptionalParameter = (path) => {
-  if (path.charCodeAt(path.length - 1) !== 63 || !path.includes(":")) {
+var checkOptionalParameter = (path2) => {
+  if (path2.charCodeAt(path2.length - 1) !== 63 || !path2.includes(":")) {
     return null;
   }
-  const segments = path.split("/");
+  const segments = path2.split("/");
   const results = [];
   let basePath = "";
   segments.forEach((segment) => {
@@ -40133,9 +40490,9 @@ var HonoRequest = class {
    */
   path;
   bodyCache = {};
-  constructor(request, path = "/", matchResult = [[]]) {
+  constructor(request, path2 = "/", matchResult = [[]]) {
     this.raw = request;
-    this.path = path;
+    this.path = path2;
     this.#matchResult = matchResult;
   }
   param(key) {
@@ -40906,8 +41263,8 @@ var Hono = class _Hono {
         return this;
       };
     });
-    this.on = (method, path, ...handlers) => {
-      for (const p of [path].flat()) {
+    this.on = (method, path2, ...handlers) => {
+      for (const p of [path2].flat()) {
         this.#path = p;
         for (const m of [method].flat()) {
           handlers.map((handler2) => {
@@ -40964,8 +41321,8 @@ var Hono = class _Hono {
    * app.route("/api", app2) // GET /api/user
    * ```
    */
-  route(path, app2) {
-    const subApp = this.basePath(path);
+  route(path2, app2) {
+    const subApp = this.basePath(path2);
     app2.routes.map((r) => {
       let handler2;
       if (app2.errorHandler === errorHandler) {
@@ -40991,9 +41348,9 @@ var Hono = class _Hono {
    * const api = new Hono().basePath('/api')
    * ```
    */
-  basePath(path) {
+  basePath(path2) {
     const subApp = this.#clone();
-    subApp._basePath = mergePath(this._basePath, path);
+    subApp._basePath = mergePath(this._basePath, path2);
     return subApp;
   }
   /**
@@ -41067,7 +41424,7 @@ var Hono = class _Hono {
    * })
    * ```
    */
-  mount(path, applicationHandler, options) {
+  mount(path2, applicationHandler, options) {
     let replaceRequest;
     let optionHandler;
     if (options) {
@@ -41094,7 +41451,7 @@ var Hono = class _Hono {
       return [c.env, executionContext];
     };
     replaceRequest ||= (() => {
-      const mergedPath = mergePath(this._basePath, path);
+      const mergedPath = mergePath(this._basePath, path2);
       const pathPrefixLength = mergedPath === "/" ? 0 : mergedPath.length;
       return (request) => {
         const url = new URL(request.url);
@@ -41109,19 +41466,19 @@ var Hono = class _Hono {
       }
       await next();
     };
-    this.#addRoute(METHOD_NAME_ALL, mergePath(path, "*"), handler2);
+    this.#addRoute(METHOD_NAME_ALL, mergePath(path2, "*"), handler2);
     return this;
   }
-  #addRoute(method, path, handler2, baseRoutePath) {
+  #addRoute(method, path2, handler2, baseRoutePath) {
     method = method.toUpperCase();
-    path = mergePath(this._basePath, path);
+    path2 = mergePath(this._basePath, path2);
     const r = {
       basePath: baseRoutePath !== void 0 ? mergePath(this._basePath, baseRoutePath) : this._basePath,
-      path,
+      path: path2,
       method,
       handler: handler2
     };
-    this.router.add(method, path, [handler2, r]);
+    this.router.add(method, path2, [handler2, r]);
     this.routes.push(r);
   }
   #handleError(err, c) {
@@ -41134,10 +41491,10 @@ var Hono = class _Hono {
     if (method === "HEAD") {
       return (async () => new Response(null, await this.#dispatch(request, executionCtx, env, "GET")))();
     }
-    const path = this.getPath(request, { env });
-    const matchResult = this.router.match(method, path);
+    const path2 = this.getPath(request, { env });
+    const matchResult = this.router.match(method, path2);
     const c = new Context(request, {
-      path,
+      path: path2,
       matchResult,
       env,
       executionCtx,
@@ -41237,15 +41594,15 @@ var Hono = class _Hono {
 
 // ../node_modules/hono/dist/router/reg-exp-router/matcher.js
 var emptyParam = [];
-function match(method, path) {
+function match(method, path2) {
   const matchers2 = this.buildAllMatchers();
-  const match2 = (method2, path2) => {
+  const match2 = (method2, path22) => {
     const matcher = matchers2[method2] || matchers2[METHOD_NAME_ALL];
-    const staticMatch = matcher[2][path2];
+    const staticMatch = matcher[2][path22];
     if (staticMatch) {
       return staticMatch;
     }
-    const match3 = path2.match(matcher[0]);
+    const match3 = path22.match(matcher[0]);
     if (!match3) {
       return [[], emptyParam];
     }
@@ -41253,7 +41610,7 @@ function match(method, path) {
     return [matcher[1][index2], match3];
   };
   this.match = match2;
-  return match2(method, path);
+  return match2(method, path2);
 }
 
 // ../node_modules/hono/dist/router/reg-exp-router/node.js
@@ -41370,14 +41727,14 @@ var Trie = class {
   #index = 0;
   // dynamic path -> [handler index, param assoc]; static paths are not registered
   paths = /* @__PURE__ */ Object.create(null);
-  insert(path, isStatic) {
+  insert(path2, isStatic) {
     if (isStatic) {
-      this.#root.insert(path.split(""), 0, [], this.#context, true);
+      this.#root.insert(path2.split(""), 0, [], this.#context, true);
       return;
     }
     const paramAssoc = [];
     const groups = [];
-    let markedPath = path;
+    let markedPath = path2;
     for (let i = 0; ; ) {
       let replaced = false;
       markedPath = markedPath.replace(/\{[^}]+\}/g, (m) => {
@@ -41402,7 +41759,7 @@ var Trie = class {
       }
     }
     this.#root.insert(tokens, this.#index, paramAssoc, this.#context, false);
-    this.paths[path] = [this.#index++, paramAssoc];
+    this.paths[path2] = [this.#index++, paramAssoc];
   }
   buildRegExp() {
     let regexp = this.#root.buildRegExpStr();
@@ -41429,9 +41786,9 @@ var Trie = class {
 
 // ../node_modules/hono/dist/router/reg-exp-router/router.js
 var wildcardRegExpCache = /* @__PURE__ */ Object.create(null);
-function buildWildcardRegExp(path) {
-  return wildcardRegExpCache[path] ??= new RegExp(
-    path === "*" ? "" : `^${path.replace(
+function buildWildcardRegExp(path2) {
+  return wildcardRegExpCache[path2] ??= new RegExp(
+    path2 === "*" ? "" : `^${path2.replace(
       /\/\*$|([.\\+*[^\]$()])/g,
       (_, metaChar) => metaChar ? `\\${metaChar}` : "(?:|/.*)"
     )}$`
@@ -41440,12 +41797,12 @@ function buildWildcardRegExp(path) {
 function clearWildcardRegExpCache() {
   wildcardRegExpCache = /* @__PURE__ */ Object.create(null);
 }
-function findMiddleware(middleware, path) {
+function findMiddleware(middleware, path2) {
   if (!middleware) {
     return void 0;
   }
   for (const k of Object.keys(middleware).sort((a, b2) => b2.length - a.length)) {
-    if (buildWildcardRegExp(k).test(path)) {
+    if (buildWildcardRegExp(k).test(path2)) {
       return [...middleware[k]];
     }
   }
@@ -41461,14 +41818,14 @@ var RegExpRouter = class {
     this.#routes = { [METHOD_NAME_ALL]: /* @__PURE__ */ Object.create(null) };
     this.#tries = { [METHOD_NAME_ALL]: new Trie() };
   }
-  #insertPath(method, path) {
+  #insertPath(method, path2) {
     try {
-      this.#tries[method].insert(path, !/\*|\/:/.test(path));
+      this.#tries[method].insert(path2, !/\*|\/:/.test(path2));
     } catch (e) {
-      throw e === PATH_ERROR ? new UnsupportedPathError(path) : e;
+      throw e === PATH_ERROR ? new UnsupportedPathError(path2) : e;
     }
   }
-  add(method, path, handler2) {
+  add(method, path2, handler2) {
     const middleware = this.#middleware;
     const routes = this.#routes;
     if (!middleware || !routes) {
@@ -41484,16 +41841,16 @@ var RegExpRouter = class {
         });
       });
     }
-    if (path === "/*") {
-      path = "*";
+    if (path2 === "/*") {
+      path2 = "*";
     }
-    const paramCount = (path.match(/\/:/g) || []).length;
-    if (/\*$/.test(path)) {
-      const re = buildWildcardRegExp(path);
+    const paramCount = (path2.match(/\/:/g) || []).length;
+    if (/\*$/.test(path2)) {
+      const re = buildWildcardRegExp(path2);
       Object.keys(middleware).forEach((m) => {
-        if ((method === METHOD_NAME_ALL || method === m) && !middleware[m][path]) {
-          this.#insertPath(m, path);
-          middleware[m][path] = findMiddleware(middleware[m], path) || findMiddleware(middleware[METHOD_NAME_ALL], path) || [];
+        if ((method === METHOD_NAME_ALL || method === m) && !middleware[m][path2]) {
+          this.#insertPath(m, path2);
+          middleware[m][path2] = findMiddleware(middleware[m], path2) || findMiddleware(middleware[METHOD_NAME_ALL], path2) || [];
         }
       });
       Object.keys(middleware).forEach((m) => {
@@ -41512,18 +41869,18 @@ var RegExpRouter = class {
       });
       return;
     }
-    const paths = checkOptionalParameter(path) || [path];
+    const paths = checkOptionalParameter(path2) || [path2];
     for (let i = 0, len = paths.length; i < len; i++) {
-      const path2 = paths[i];
+      const path22 = paths[i];
       Object.keys(routes).forEach((m) => {
         if (method === METHOD_NAME_ALL || method === m) {
-          if (!routes[m][path2]) {
-            this.#insertPath(m, path2);
-            routes[m][path2] = [
-              ...findMiddleware(middleware[m], path2) || findMiddleware(middleware[METHOD_NAME_ALL], path2) || []
+          if (!routes[m][path22]) {
+            this.#insertPath(m, path22);
+            routes[m][path22] = [
+              ...findMiddleware(middleware[m], path22) || findMiddleware(middleware[METHOD_NAME_ALL], path22) || []
             ];
           }
-          routes[m][path2].push([handler2, paramCount - len + i + 1]);
+          routes[m][path22].push([handler2, paramCount - len + i + 1]);
         }
       });
     }
@@ -41545,11 +41902,11 @@ var RegExpRouter = class {
     const staticMap = /* @__PURE__ */ Object.create(null);
     const handlerData = [];
     [middleware, routes].forEach((r) => {
-      for (const path in r) {
-        const handlers = r[path];
-        const pathData = trie.paths[path];
+      for (const path2 in r) {
+        const handlers = r[path2];
+        const pathData = trie.paths[path2];
         if (!pathData) {
-          staticMap[path] = [handlers.map(([h]) => [h, /* @__PURE__ */ Object.create(null)]), emptyParam];
+          staticMap[path2] = [handlers.map(([h]) => [h, /* @__PURE__ */ Object.create(null)]), emptyParam];
           continue;
         }
         const paramAssoc = pathData[1];
@@ -41593,13 +41950,13 @@ var SmartRouter = class {
   constructor(init2) {
     this.#routers = init2.routers;
   }
-  add(method, path, handler2) {
+  add(method, path2, handler2) {
     if (!this.#routes) {
       throw new Error(MESSAGE_MATCHER_IS_ALREADY_BUILT);
     }
-    this.#routes.push([method, path, handler2]);
+    this.#routes.push([method, path2, handler2]);
   }
-  match(method, path) {
+  match(method, path2) {
     if (!this.#routes) {
       throw new Error("Fatal error");
     }
@@ -41614,7 +41971,7 @@ var SmartRouter = class {
         for (let i2 = 0, len2 = routes.length; i2 < len2; i2++) {
           router.add(...routes[i2]);
         }
-        res = router.match(method, path);
+        res = router.match(method, path2);
       } catch (e) {
         if (e instanceof UnsupportedPathError) {
           continue;
@@ -41649,9 +42006,9 @@ var Node2 = class _Node2 {
   #patterns = [];
   #pattern;
   #params = emptyParams;
-  insert(method, path, handler2) {
+  insert(method, path2, handler2) {
     let curNode = this;
-    const parts = splitRoutingPath(path);
+    const parts = splitRoutingPath(path2);
     const possibleKeys = /* @__PURE__ */ new Set();
     let i = 0;
     for (const p of parts) {
@@ -41691,12 +42048,12 @@ var Node2 = class _Node2 {
       }
     }
   }
-  search(method, path) {
+  search(method, path2) {
     const handlerSets = [];
     this.#params = emptyParams;
     const curNode = this;
     let curNodes = [curNode];
-    const parts = splitPath(path);
+    const parts = splitPath(path2);
     const curNodesQueue = [];
     const len = parts.length;
     let partOffsets = null;
@@ -41738,13 +42095,13 @@ var Node2 = class _Node2 {
           if (matcher !== true) {
             if (!partOffsets) {
               partOffsets = [];
-              let offset = path[0] === "/" ? 1 : 0;
+              let offset = path2[0] === "/" ? 1 : 0;
               for (let p = 0; p < len; p++) {
                 partOffsets[p] = offset;
                 offset += parts[p].length + 1;
               }
             }
-            const restPathString = path.slice(partOffsets[i]);
+            const restPathString = path2.slice(partOffsets[i]);
             const m = matcher.exec(restPathString);
             if (m) {
               params[name] = m[0];
@@ -41804,13 +42161,13 @@ var Node2 = class _Node2 {
 var TrieRouter = class {
   name = "TrieRouter";
   #node = new Node2();
-  add(method, path, handler2) {
-    for (const result of checkOptionalParameter(path) || [path]) {
+  add(method, path2, handler2) {
+    for (const result of checkOptionalParameter(path2) || [path2]) {
       this.#node.insert(method, result, handler2);
     }
   }
-  match(method, path) {
-    return this.#node.search(method, path);
+  match(method, path2) {
+    return this.#node.search(method, path2);
   }
 };
 
@@ -46849,13 +47206,13 @@ function toBytes4(data4) {
   return data4;
 }
 function concatBytes7(...arrays) {
-  let sum = 0;
+  let sum2 = 0;
   for (let i = 0; i < arrays.length; i++) {
     const a = arrays[i];
     abytes4(a);
-    sum += a.length;
+    sum2 += a.length;
   }
-  const res = new Uint8Array(sum);
+  const res = new Uint8Array(sum2);
   for (let i = 0, pad4 = 0; i < arrays.length; i++) {
     const a = arrays[i];
     res.set(a, pad4);
@@ -49159,7 +49516,7 @@ function pippenger2(c, fieldN, points, scalars) {
   const MASK = bitMask3(windowSize);
   const buckets = new Array(Number(MASK) + 1).fill(zero);
   const lastBits = Math.floor((fieldN.BITS - 1) / windowSize) * windowSize;
-  let sum = zero;
+  let sum2 = zero;
   for (let i = lastBits; i >= 0; i -= windowSize) {
     buckets.fill(zero);
     for (let j = 0; j < slength; j++) {
@@ -49172,12 +49529,12 @@ function pippenger2(c, fieldN, points, scalars) {
       sumI = sumI.add(buckets[j]);
       resI = resI.add(sumI);
     }
-    sum = sum.add(resI);
+    sum2 = sum2.add(resI);
     if (i !== 0)
       for (let j = 0; j < windowSize; j++)
-        sum = sum.double();
+        sum2 = sum2.double();
   }
-  return sum;
+  return sum2;
 }
 function validateBasic3(curve) {
   validateField3(curve.Fp);
@@ -49699,8 +50056,8 @@ function weierstrassPoints3(opts) {
     multiplyAndAddUnsafe(Q, a, b2) {
       const G = Point3.BASE;
       const mul = (P, a2) => a2 === _0n17 || a2 === _1n17 || !P.equals(G) ? P.multiplyUnsafe(a2) : P.multiply(a2);
-      const sum = mul(this, a).add(mul(Q, b2));
-      return sum.is0() ? void 0 : sum;
+      const sum2 = mul(this, a).add(mul(Q, b2));
+      return sum2.is0() ? void 0 : sum2;
     }
     // Converts Projective point to affine (x, y) coordinates.
     // Can accept precomputed Z^-1 - for example, from invertBatch.
@@ -55023,8 +55380,8 @@ function getErrorMap() {
 
 // ../node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
-  const { data: data4, path, errorMaps, issueData } = params;
-  const fullPath = [...path, ...issueData.path || []];
+  const { data: data4, path: path2, errorMaps, issueData } = params;
+  const fullPath = [...path2, ...issueData.path || []];
   const fullIssue = {
     ...issueData,
     path: fullPath
@@ -55140,11 +55497,11 @@ var errorUtil;
 
 // ../node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
-  constructor(parent, value, path, key) {
+  constructor(parent, value, path2, key) {
     this._cachedPath = [];
     this.parent = parent;
     this.data = value;
-    this._path = path;
+    this._path = path2;
     this._key = key;
   }
   get path() {
@@ -59365,24 +59722,24 @@ function computeRoutePatterns(routes) {
     ])
   );
   return Object.entries(normalizedRoutes).map(([pattern, routeConfig]) => {
-    const [verb, path] = pattern.includes(" ") ? pattern.split(/\s+/) : ["*", pattern];
-    if (!path) {
+    const [verb, path2] = pattern.includes(" ") ? pattern.split(/\s+/) : ["*", pattern];
+    if (!path2) {
       throw new Error(`Invalid route pattern: ${pattern}`);
     }
     return {
       verb: verb.toUpperCase(),
       pattern: new RegExp(
-        `^${path.replace(/[$()+.?^{|}]/g, "\\$&").replace(/\*/g, ".*?").replace(/\[([^\]]+)\]/g, "[^/]+").replace(/\//g, "\\/")}$`,
+        `^${path2.replace(/[$()+.?^{|}]/g, "\\$&").replace(/\*/g, ".*?").replace(/\[([^\]]+)\]/g, "[^/]+").replace(/\//g, "\\/")}$`,
         "i"
       ),
       config: routeConfig
     };
   });
 }
-function findMatchingRoute(routePatterns, path, method) {
+function findMatchingRoute(routePatterns, path2, method) {
   let normalizedPath;
   try {
-    const pathWithoutQuery = path.split(/[?#]/)[0];
+    const pathWithoutQuery = path2.split(/[?#]/)[0];
     const decodedPath = decodeURIComponent(pathWithoutQuery);
     normalizedPath = decodedPath.replace(/\\/g, "/").replace(/\/+/g, "/").replace(/(.+?)\/+$/, "$1");
   } catch {
@@ -60822,6 +61179,334 @@ async function getBenchmarks(rawDate) {
   };
 }
 
+// src/exposure.ts
+var RETRYABLE_RE = /header not found|unknown block|block .*not found|missing trie node|\b429\b|too many requests|rate limit/i;
+function isRetryableReadError(err) {
+  const e = err;
+  if (e?.code === "TIMEOUT") return false;
+  const text = [e?.info?.error?.message, e?.error?.message, e?.shortMessage, e?.message].filter(Boolean).join(" | ");
+  return RETRYABLE_RE.test(text);
+}
+var REPORT_DEADLINE_MS = 2e4;
+function providerReader(provider3) {
+  const ifaces = /* @__PURE__ */ new Map();
+  const get = (sig) => {
+    let e = ifaces.get(sig);
+    if (!e) {
+      const iface = new ethers_exports.Interface([`function ${sig}`]);
+      e = { iface, fn: iface.fragments[0] };
+      ifaces.set(sig, e);
+    }
+    return e;
+  };
+  return {
+    blockNumber: () => provider3.getBlockNumber(),
+    blockTimestamp: async (n2) => {
+      const b2 = await provider3.getBlock(n2);
+      if (!b2) throw Object.assign(new Error("block not found"), { code: "BAD_DATA" });
+      return Number(b2.timestamp);
+    },
+    call: async (to, sig, args, blockTag) => {
+      const { iface, fn } = get(sig);
+      const data4 = iface.encodeFunctionData(fn, args);
+      const ret = await provider3.call({ to, data: data4, blockTag });
+      return iface.decodeFunctionResult(fn, ret);
+    }
+  };
+}
+var ZERO5 = "0x0000000000000000000000000000000000000000";
+var MAX_UINT256 = (1n << 256n) - 1n;
+var CALL_TIMEOUT_MS = 8e3;
+var CONCURRENCY = 6;
+var SIG = {
+  adlEnabled: "adlEnabled() view returns (bool)",
+  maxPriceAge: "maxPriceAge() view returns (uint256)",
+  fundingInterval: "FUNDING_INTERVAL() view returns (uint256)",
+  insuranceVault: "insuranceVault() view returns (address)",
+  longNotional: "globalLongNotional(bytes32) view returns (uint256)",
+  shortNotional: "globalShortNotional(bytes32) view returns (uint256)",
+  longOpenSize: "longOpenSize(bytes32) view returns (uint256)",
+  shortOpenSize: "shortOpenSize(bytes32) view returns (uint256)",
+  lastFunding: "lastFundingUpdateAt(bytes32) view returns (uint256)",
+  getPrice: "getPrice(bytes32) view returns (uint256 price, uint256 updatedAt)",
+  totalAssets: "totalAssets() view returns (uint256)",
+  usdc: "usdc() view returns (address)",
+  decimals: "decimals() view returns (uint8)",
+  reserveStatus: "reserveStatus() view returns (uint256 reserve_, uint256 liability, uint256 ratioBps, uint256 unpriced, bool stale, bool halted)",
+  reserveRatioBps: "reserveRatioBps() view returns (uint256)"
+};
+var TRANSIENT_RE = /header not found|missing trie node|unknown block|block .*not found|timeout|timed out|rate limit|too many requests|\b429\b|\b50[234]\b|ECONNRESET|ETIMEDOUT|socket hang up|fetch failed/i;
+function classifyReadError(err) {
+  const e = err;
+  const code = e?.code;
+  if (code === "NOT_CONFIGURED") return "NOT_CONFIGURED";
+  if (code === "TIMEOUT") return "RPC_TIMEOUT";
+  const inner2 = String(e?.info?.error?.message ?? e?.error?.message ?? "");
+  if (TRANSIENT_RE.test(inner2)) return "RPC_ERROR";
+  if (code === "CALL_EXCEPTION") {
+    if (/revert/i.test(inner2)) return "CALL_REVERTED";
+    if (e.data !== null && e.data !== void 0) return "CALL_REVERTED";
+    if (e.reason !== null && e.reason !== void 0) return "CALL_REVERTED";
+    const msg = String(e.shortMessage ?? e.message ?? "");
+    if (/revert/i.test(msg) && !/missing revert data/i.test(msg)) return "CALL_REVERTED";
+    return "RPC_ERROR";
+  }
+  if (code === "BAD_DATA") return "BAD_DATA";
+  return "RPC_ERROR";
+}
+var BLOCK_LAG = 3;
+var RETRY_DELAY_MS = 250;
+function withTimeout2(p, ms) {
+  return new Promise((resolve2, reject) => {
+    const t = setTimeout(() => reject(Object.assign(new Error("timeout"), { code: "TIMEOUT" })), ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve2(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      }
+    );
+  });
+}
+function limiter(n2) {
+  let active = 0;
+  const queue2 = [];
+  const next = () => {
+    if (active >= n2) return;
+    const job = queue2.shift();
+    if (job) {
+      active++;
+      job();
+    }
+  };
+  return (fn) => new Promise((resolve2, reject) => {
+    queue2.push(() => {
+      fn().then(resolve2, reject).finally(() => {
+        active--;
+        next();
+      });
+    });
+    next();
+  });
+}
+var isSet = (a) => !!a && a.toLowerCase() !== ZERO5;
+var fmt18 = (v) => Number(ethers_exports.formatUnits(v, 18));
+var fmt8 = (v) => Number(ethers_exports.formatUnits(v, 8));
+async function buildExposureReport(reader, t, nowMs = Date.now(), opts = {}) {
+  const unavailable = {};
+  const run = limiter(CONCURRENCY);
+  const deadlineAt = Date.now() + (opts.deadlineMs ?? REPORT_DEADLINE_MS);
+  const callTimeout = opts.callTimeoutMs ?? CALL_TIMEOUT_MS;
+  const DEADLINE = Symbol("deadline");
+  const settle3 = async (field, p) => {
+    let reason = "RPC_ERROR";
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const v = await run(() => {
+          const remaining = deadlineAt - Date.now();
+          if (remaining <= 0) return Promise.reject(DEADLINE);
+          return withTimeout2(p(), Math.min(callTimeout, remaining)).catch((e) => {
+            throw Date.now() >= deadlineAt ? DEADLINE : e;
+          });
+        });
+        return { ok: true, v };
+      } catch (err) {
+        if (err === DEADLINE) {
+          reason = "REPORT_DEADLINE";
+          break;
+        }
+        reason = classifyReadError(err);
+        if (!isRetryableReadError(err) || attempt === 1) break;
+        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+      }
+    }
+    if (field) unavailable[field] = reason;
+    return { ok: false, reason };
+  };
+  const notConfigured = (field) => {
+    unavailable[field] = "NOT_CONFIGURED";
+    return { ok: false, reason: "NOT_CONFIGURED" };
+  };
+  const latestBn = await settle3("asOfBlock", () => reader.blockNumber());
+  const bn = latestBn.ok ? { ok: true, v: Math.max(0, latestBn.v - BLOCK_LAG) } : latestBn;
+  const blockTag = bn.ok ? bn.v : void 0;
+  const bts = bn.ok ? await settle3("asOfBlockTime", () => reader.blockTimestamp(bn.v)) : notConfigured("asOfBlockTime");
+  const refSec = bts.ok ? bts.v : Math.floor(nowMs / 1e3);
+  const call2 = (field, addr, sig, args = []) => isSet(addr) ? settle3(field, () => reader.call(addr, sig, args, blockTag)) : Promise.resolve(field ? notConfigured(field) : { ok: false, reason: "NOT_CONFIGURED" });
+  const firstAsset = Object.values(t.assets)[0];
+  const [adl, mpa, fi, iv, probe] = await Promise.all([
+    call2("exchange.adlEnabled", t.exchange, SIG.adlEnabled),
+    call2("exchange.maxPriceAgeSec", t.exchange, SIG.maxPriceAge),
+    call2("exchange.fundingIntervalSec", t.exchange, SIG.fundingInterval),
+    call2(null, t.exchange, SIG.insuranceVault),
+    firstAsset ? call2(null, t.exchange, SIG.longOpenSize, [firstAsset]) : Promise.resolve({ ok: false, reason: "NOT_CONFIGURED" })
+  ]);
+  const vaultAddr = iv.ok && isSet(String(iv.v[0])) ? String(iv.v[0]) : t.insuranceVaultFallback;
+  const openSizeSupported = probe.ok;
+  const vaultTotalP = call2("insuranceVault.totalAssets", vaultAddr, SIG.totalAssets);
+  const vaultDecP = (async () => {
+    const u = await call2(null, vaultAddr, SIG.usdc);
+    if (!u.ok) return { ok: false, reason: u.reason };
+    const d = await call2(null, String(u.v[0]), SIG.decimals);
+    return d.ok ? { ok: true, v: Number(d.v[0]) } : { ok: false, reason: d.reason };
+  })();
+  const rsP = call2("v2Vault.reserveStatus", t.assetVaultV2, SIG.reserveStatus);
+  const rrP = call2("v2Vault.reserveRatioBps", t.assetVaultV2, SIG.reserveRatioBps);
+  const assetPs = Object.entries(t.assets).map(async ([symbol, id2]) => {
+    const f2 = (k) => `assets.${symbol}.${k}`;
+    const [mock, guarded, lf, ln, sn, lsz, ssz] = await Promise.all([
+      call2(f2("oracle.mock"), t.mockOracle, SIG.getPrice, [id2]),
+      call2(f2("oracle.guarded"), t.guardedOracle, SIG.getPrice, [id2]),
+      call2(f2("funding.lastFundingUpdateAt"), t.exchange, SIG.lastFunding, [id2]),
+      call2(null, t.exchange, SIG.longNotional, [id2]),
+      call2(null, t.exchange, SIG.shortNotional, [id2]),
+      openSizeSupported ? call2(null, t.exchange, SIG.longOpenSize, [id2]) : Promise.resolve(null),
+      openSizeSupported ? call2(null, t.exchange, SIG.shortOpenSize, [id2]) : Promise.resolve(null)
+    ]);
+    const point = (r) => r.ok && Number(r.v[1]) > 0 ? {
+      price: fmt8(r.v[0]),
+      updatedAt: new Date(Number(r.v[1]) * 1e3).toISOString(),
+      ageSec: Math.max(0, refSec - Number(r.v[1]))
+    } : r.ok ? { price: fmt8(r.v[0]), updatedAt: null, ageSec: null } : { price: null, updatedAt: null, ageSec: null };
+    const mp = mock.ok ? mock.v[0] : null;
+    const gp = guarded.ok ? guarded.v[0] : null;
+    const agree = mp !== null && gp !== null ? mp === gp : null;
+    const deviationBps = mp !== null && gp !== null && mp > 0n ? Number((gp > mp ? gp - mp : mp - gp) * 10000n / mp) : null;
+    let method = null;
+    let longUsd = null;
+    let shortUsd = null;
+    if (lsz?.ok && ssz?.ok && mp !== null) {
+      method = "openSize\xD7markPrice";
+      longUsd = fmt18(lsz.v[0] * mp / 10n ** 8n);
+      shortUsd = fmt18(ssz.v[0] * mp / 10n ** 8n);
+    } else if (ln.ok && sn.ok) {
+      method = "globalNotional";
+      longUsd = fmt18(ln.v[0]);
+      shortUsd = fmt18(sn.v[0]);
+    } else {
+      unavailable[f2("openInterest")] = !ln.ok ? ln.reason : !sn.ok ? sn.reason : "RPC_ERROR";
+    }
+    return {
+      symbol,
+      assetId: id2,
+      openInterest: {
+        method,
+        longUsd,
+        shortUsd,
+        netUsd: longUsd !== null && shortUsd !== null ? longUsd - shortUsd : null
+      },
+      oracle: { mock: point(mock), guarded: point(guarded), agree, deviationBps },
+      // lastFundingUpdateAt == 0 ＝ 這個資產從未結算過 funding（不是讀取失敗）。
+      funding: {
+        lastFundingUpdateAt: lf.ok && Number(lf.v[0]) > 0 ? new Date(Number(lf.v[0]) * 1e3).toISOString() : null,
+        sinceSec: lf.ok && Number(lf.v[0]) > 0 ? Math.max(0, refSec - Number(lf.v[0])) : null,
+        neverSettled: lf.ok ? Number(lf.v[0]) === 0 : null
+      }
+    };
+  });
+  const [vaultTotal, vaultDec, rs, rr, assets] = await Promise.all([
+    vaultTotalP,
+    vaultDecP,
+    rsP,
+    rrP,
+    Promise.all(assetPs)
+  ]);
+  const oiKnown = assets.filter((a) => a.openInterest.longUsd !== null);
+  const notes = [
+    `\u8DDD\u4ECA\u6642\u9593\uFF08ageSec / sinceSec\uFF09\u4EE5 asOfBlock \u7684\u5340\u584A\u6642\u9593\u70BA\u57FA\u6E96${bts.ok ? "" : "\uFF08\u5340\u584A\u6642\u9593\u8B80\u4E0D\u5230\uFF0C\u6539\u7528\u4F3A\u670D\u5668\u6642\u9593\uFF09"}\u3002`,
+    openSizeSupported ? "OI \u4EE5 longOpenSize/shortOpenSize\uFF08\u90E8\u4F4D\u6578\u91CF\uFF0C18 \u4F4D\u5C0F\u6578\uFF09\xD7 MockOracle \u73FE\u50F9\u8A08\u7B97\u7684\u73FE\u503C\u540D\u76EE\u3002" : probe.reason === "CALL_REVERTED" || probe.reason === "BAD_DATA" ? "\u73FE\u884C exchange \u6C92\u6709 longOpenSize/shortOpenSize\uFF0COI \u9000\u56DE globalLong/ShortNotional\uFF08\u958B\u5009\u6642\u540D\u76EE\u52A0\u7E3D\uFF0C\u975E\u73FE\u503C\uFF09\u3002" : `longOpenSize \u63A2\u6E2C\u5931\u6557\uFF08${probe.reason}\uFF09\uFF0C\u672C\u6B21 OI \u9000\u56DE globalLong/ShortNotional\uFF08\u958B\u5009\u6642\u540D\u76EE\u52A0\u7E3D\uFF0C\u975E\u73FE\u503C\uFF09\u3002`,
+    "\u50F9\u683C\u70BA 8 \u4F4D\u5C0F\u6578 USD\uFF1Bexchange \u7D50\u7B97\u8B80\u7684\u662F MockOracle\uFF0CGuardedOracle \u70BA V2 hardened stack \u7684\u93E1\u50CF\uFF0C\u5169\u8005\u7531 keeper \u540C\u6B65\u5BEB\u5165\u3002",
+    "reserveRaw / liabilityRaw / totalAssetsRaw \u70BA\u4EE3\u5E63\u6700\u5C0F\u55AE\u4F4D\u7684\u6574\u6578\u5B57\u4E32\u3002"
+  ];
+  let reserveStatus = null;
+  if (rs.ok) {
+    const ratio = rs.v[2];
+    reserveStatus = {
+      reserveRaw: rs.v[0].toString(),
+      liabilityRaw: rs.v[1].toString(),
+      ratioBps: ratio.toString(),
+      ratioUnbounded: ratio === MAX_UINT256,
+      unpriced: Number(rs.v[3]),
+      stale: Boolean(rs.v[4]),
+      halted: Boolean(rs.v[5])
+    };
+  }
+  if (!vaultDec.ok && vaultTotal.ok) unavailable["insuranceVault.decimals"] = vaultDec.reason;
+  return {
+    ok: true,
+    chainId: t.chainId,
+    asOfBlock: bn.ok ? bn.v : null,
+    asOfBlockTime: bts.ok ? new Date(bts.v * 1e3).toISOString() : null,
+    generatedAt: new Date(nowMs).toISOString(),
+    contracts: {
+      exchange: t.exchange,
+      mockOracle: t.mockOracle,
+      guardedOracle: t.guardedOracle,
+      insuranceVault: isSet(vaultAddr) ? vaultAddr : null,
+      assetVaultV2: t.assetVaultV2
+    },
+    exchange: {
+      adlEnabled: adl.ok ? Boolean(adl.v[0]) : null,
+      maxPriceAgeSec: mpa.ok ? Number(mpa.v[0]) : null,
+      fundingIntervalSec: fi.ok ? Number(fi.v[0]) : null
+    },
+    insuranceVault: {
+      totalAssets: vaultTotal.ok && vaultDec.ok ? Number(ethers_exports.formatUnits(vaultTotal.v[0], vaultDec.v)) : null,
+      totalAssetsRaw: vaultTotal.ok ? vaultTotal.v[0].toString() : null,
+      decimals: vaultDec.ok ? vaultDec.v : null
+    },
+    v2Vault: { reserveStatus, reserveRatioBps: rr.ok ? rr.v[0].toString() : null },
+    totals: {
+      longUsd: oiKnown.length === assets.length ? sum(assets.map((a) => a.openInterest.longUsd)) : null,
+      shortUsd: oiKnown.length === assets.length ? sum(assets.map((a) => a.openInterest.shortUsd)) : null
+    },
+    assets,
+    unavailable,
+    notes
+  };
+}
+function sum(xs) {
+  return Math.round(xs.reduce((a, b2) => a + b2, 0) * 1e6) / 1e6;
+}
+function createExposureService(reader, targets, opts = {}) {
+  const ttl = opts.ttlMs ?? 6e4;
+  const degradedTtl = opts.degradedTtlMs ?? 1e4;
+  const now = opts.now ?? Date.now;
+  let cached2 = null;
+  let inflight = null;
+  const view = (c, hit, t) => {
+    const ageMs = Math.max(0, t - c.at);
+    return {
+      report: c.report,
+      cacheHit: hit,
+      ageSec: Math.floor(ageMs / 1e3),
+      ttlSec: Math.round(c.ttl / 1e3),
+      /** 這一份還能被快取多久（秒），= Cache-Control max-age。 */
+      remainingSec: Math.max(0, Math.floor((c.ttl - ageMs) / 1e3))
+    };
+  };
+  return {
+    async get() {
+      const t = now();
+      if (cached2 && t - cached2.at < cached2.ttl) return view(cached2, true, t);
+      if (!inflight) {
+        inflight = buildExposureReport(reader, targets, t, { deadlineMs: opts.deadlineMs }).then((report) => {
+          const transient = Object.values(report.unavailable).some((r) => r !== "NOT_CONFIGURED");
+          cached2 = { at: now(), ttl: transient ? degradedTtl : ttl, report };
+          return cached2;
+        }).finally(() => {
+          inflight = null;
+        });
+      }
+      const c = await inflight;
+      return view(c, false, now());
+    }
+  };
+}
+
 // src/app.ts
 var NETWORK = process.env.X402_NETWORK ?? "base-sepolia";
 var FACILITATOR_URL = process.env.X402_FACILITATOR_URL ?? "https://x402.org/facilitator";
@@ -60988,20 +61673,31 @@ async function isRegisteredOnchain(trader) {
   registryCache.set(key, { at: Date.now(), registered });
   return registered;
 }
+function exposureTargets() {
+  return {
+    chainId: AGENT_CHAIN_ID,
+    exchange: ADDRESSES.PerpetualExchange,
+    mockOracle: ADDRESSES.MockOracle,
+    guardedOracle: V2_ADDRESSES?.GuardedOracle ?? null,
+    insuranceVaultFallback: ADDRESSES.InsuranceVault,
+    assetVaultV2: V2_ADDRESSES?.AssetVaultV2 ?? null,
+    assets: { ...ASSET_IDS }
+  };
+}
 function normalizeRequestPath(req) {
   const url = req.url;
   const start = url.indexOf("/", url.indexOf("://") + 3);
-  let path = start === -1 ? "/" : url.slice(start);
-  path = path.split(/[?#]/)[0] ?? "/";
+  let path2 = start === -1 ? "/" : url.slice(start);
+  path2 = path2.split(/[?#]/)[0] ?? "/";
   try {
-    path = decodeURIComponent(path);
+    path2 = decodeURIComponent(path2);
   } catch {
     return INVALID_PATH;
   }
-  if (path.includes("%")) return INVALID_PATH;
-  path = path.replace(/\\/g, "/").replace(/\/{2,}/g, "/");
-  if (path.length > 1) path = path.replace(/\/+$/, "");
-  return path.replace(/^\/([^/]+)/, (_m, seg) => `/${seg.toLowerCase()}`) || "/";
+  if (path2.includes("%")) return INVALID_PATH;
+  path2 = path2.replace(/\\/g, "/").replace(/\/{2,}/g, "/");
+  if (path2.length > 1) path2 = path2.replace(/\/+$/, "");
+  return path2.replace(/^\/([^/]+)/, (_m, seg) => `/${seg.toLowerCase()}`) || "/";
 }
 var INVALID_PATH = "/__invalid_path__";
 var PAID_HANDLER_PATHS = [/^\/signals\/[^/]+$/, /^\/oracle\/[^/]+$/];
@@ -61113,6 +61809,10 @@ function createApp(opts = {}) {
           price: "free",
           desc: "\u5C0D\u7167\u6307\u6578\uFF1AS&P 500\uFF0F\u9EC3\u91D1\uFF0F\u6BD4\u7279\u5E63\uFF0C\u540C\u4E00\u4F86\u6E90\uFF08Yahoo Finance\uFF09\u3002?date=YYYY-MM-DD \u52A0\u78BC\u56DE\u8A72\u65E5\u6216\u4E4B\u524D\u6700\u8FD1\u4E00\u500B\u4EA4\u6613\u65E5\u7684\u6536\u76E4\u3002\u4E0D\u505A\u6A21\u64EC\u4FDD\u5E95\uFF0C\u4E0A\u6E38\u62FF\u4E0D\u5230\u5C31\u5728\u8A72\u6307\u6578\u7684 error \u6B04\u4F4D\u6A19\u660E\u3002"
         },
+        "GET /risk/exposure": {
+          price: "free",
+          desc: "\u66DD\u96AA\u5831\u8868\uFF08\u552F\u8B80\uFF09\uFF1A\u5404\u8CC7\u7522\u591A\u7A7A OI\u3001\u4FDD\u96AA\u91D1\u5EAB totalAssets\u3001V2 vault reserveStatus\u3001MockOracle\uFF0FGuardedOracle \u50F9\u683C\u8207\u5E74\u9F61\uFF08\u662F\u5426\u4E00\u81F4\uFF09\u3001adlEnabled / maxPriceAge / FUNDING_INTERVAL\u3001\u5404\u8CC7\u7522 lastFundingUpdateAt\u3002\u9644 asOfBlock\uFF0C60 \u79D2\u5FEB\u53D6\uFF1B\u8B80\u4E0D\u5230\u7684\u6B04\u4F4D\u70BA null \u4E26\u9644\u539F\u56E0\u4EE3\u78BC\u3002"
+        },
         "GET /agent/:did/verification": { price: "free", desc: "ERC-8126 agent \u9A57\u8B49\uFF08ETV/SCV/WAV/WV + 0\u2013100 \u98A8\u96AA\u5206\u6578\uFF0Cverifier \u7C3D\u7AE0\uFF09" },
         "POST /demo/buy-signal": { price: "free", desc: "\u8A2A\u5BA2\u8A66\u8CB7\uFF08\u514D\u8CBB\u56DE\u8A0A\u865F\uFF1B\u771F\u5BE6 70/20/10 \u5206\u6F64\u898B\u4ED8\u8CBB x402 \u7AEF\u9EDE + /revenue \u7D2F\u8A08\uFF09" }
       },
@@ -61156,6 +61856,19 @@ function createApp(opts = {}) {
         return c.json({ ok: false, error: err.message }, 400);
       }
       return c.json({ ok: false, error: internalError("benchmarks", err) }, 502);
+    }
+  });
+  const exposure = createExposureService(opts.exposureReader ?? providerReader(provider2), exposureTargets());
+  app2.get("/risk/exposure", async (c) => {
+    try {
+      const { report, cacheHit, ageSec, ttlSec, remainingSec } = await exposure.get();
+      return c.json(
+        jsonSafe({ ...report, cache: { hit: cacheHit, ageSec, ttlSec, remainingSec } }),
+        200,
+        { "Cache-Control": `public, max-age=${remainingSec}` }
+      );
+    } catch (err) {
+      return c.json({ ok: false, error: internalError("exposure", err) }, 503);
     }
   });
   app2.get("/agent/:did/verification", async (c) => {

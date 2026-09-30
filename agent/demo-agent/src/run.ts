@@ -28,6 +28,7 @@ import {
   parseSignalsBody,
   type AuthorizationVC,
   jsonSafe,
+  guardViemAccount,
 } from "@pepelab/shared";
 
 loadEnv();
@@ -196,7 +197,8 @@ async function dryRun() {
 
 /** 真實付費路徑：經 signal-api 付 x402 費用拿訊號。 */
 async function paidRun() {
-  const account = privateKeyToAccount(PK as Hex);
+  // signingGuard：agent 金鑰不得簽 7702 / 無上限 approve・permit / 裸 hash。
+  const account = guardViemAccount(privateKeyToAccount(PK as Hex));
   // x402-fetch 第二參數需要一個帶 chain+transport 的 viem WalletClient（才能解析
   // 出 base-sepolia 的付款需求並簽 EIP-3009 transferWithAuthorization）。傳裸
   // account 會讓它抓不到 chainId。

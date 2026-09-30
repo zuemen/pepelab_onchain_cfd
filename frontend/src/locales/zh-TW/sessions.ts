@@ -84,6 +84,10 @@ export const sessions = {
     revoked: 'Session 已撤銷 ✓',
     credentialIssued: '憑證已核發 ✓',
     needsRealWallet: '需連接真實錢包以簽署 VC（mock 模式不支援簽章）',
+    vcExpires: 'VC 到期 {date}',
+    vcExpired: 'VC 已過期，請重新簽發',
+    vcValidity: 'VC 效期（天）',
+    vcValidityHint: '新簽發的憑證在這麼多天後到期，且不會晚於 session 到期（預設 {days} 天）。',
   },
 
   /** 匯出對話框。 */

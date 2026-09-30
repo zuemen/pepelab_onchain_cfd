@@ -16,6 +16,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ethers } from "ethers";
 import type { AuthorizationVC } from "./identity.ts";
+import { withFileLockSync } from "./fileLock.ts";
 
 export interface AuditRecord {
   ts: string;
@@ -84,17 +85,71 @@ export function vcBinding(rec: Pick<AuditRecord, "issuerDid" | "agentDid" | "ses
   );
 }
 
+/** 任何可進 hash chain 的紀錄（交易決策、policy gate 寫入嘗試…）。 */
+export interface ChainedRecord {
+  prevHash?: string | null;
+  hash?: string;
+}
+
 /** 本筆紀錄的 hash（不含 `hash` 欄位本身，含 `prevHash`）。 */
-export function recordHash(rec: AuditRecord): string {
+export function recordHash(rec: ChainedRecord): string {
   const { hash: _ignored, ...rest } = rec;
   return ethers.id(canonicalJson(rest));
 }
 
-/** 讀出檔案最後一筆的 hash（沒有紀錄時回 null）。 */
+/**
+ * 讀出檔案最後一筆的 hash（沒有紀錄時回 null）。
+ * 只讀檔尾（複審 Low-5）：舊版每次 append 都把整個 JSONL 讀進來 parse，稽核檔越長越慢、
+ * 而且是在鎖內做——等於把所有寫入嘗試的延遲綁在檔案大小上。
+ */
 export function lastAuditHash(filePath: string): string | null {
-  const recs = readAudit(filePath);
-  if (!recs.length) return null;
-  return recs[recs.length - 1].hash ?? null;
+  const line = readLastLine(filePath);
+  if (!line) return null;
+  return (JSON.parse(line) as ChainedRecord).hash ?? null;
+}
+
+/** 從檔尾往前讀，回最後一個非空行（檔案不存在或全空回 null）。 */
+export function readLastLine(filePath: string, chunk = 64 * 1024): string | null {
+  if (!fs.existsSync(filePath)) return null;
+  const fd = fs.openSync(filePath, "r");
+  try {
+    // 以 byte 為單位往前找換行（0x0a），最後才一次 decode——不會把多位元組的 UTF-8
+    // 字元（稽核訊息是中文）切在 chunk 邊界上。
+    let pos = fs.fstatSync(fd).size;
+    let tail = Buffer.alloc(0);
+    while (pos > 0) {
+      const len = Math.min(chunk, pos);
+      pos -= len;
+      const buf = Buffer.alloc(len);
+      fs.readSync(fd, buf, 0, len, pos);
+      tail = Buffer.concat([buf, tail]);
+      let end = tail.length;
+      while (end > 0 && (tail[end - 1] === 0x0a || tail[end - 1] === 0x0d || tail[end - 1] === 0x20)) end--;
+      if (end === 0) continue;
+      const nl = tail.lastIndexOf(0x0a, end - 1);
+      if (nl >= 0) return tail.subarray(nl + 1, end).toString("utf8");
+      if (pos === 0) return tail.subarray(0, end).toString("utf8");
+    }
+    return null;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/**
+ * 通用版 append：任何紀錄型別都用同一條 hash chain 規則（prevHash＝前一筆 hash，
+ * hash＝不含 hash 欄位的 canonical JSON 摘要），可用 `verifyAuditChain` 驗。
+ * policy gate 的寫入嘗試稽核（policyGate.ts）走這裡，寫到自己的檔案。
+ */
+export function appendChainedRecord<T extends ChainedRecord>(filePath: string, rec: T): T {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  // 讀 prevHash → 寫本筆 必須是原子的：多個 process 同時 append 會讓 hash chain 分岔。
+  return withFileLockSync(filePath, () => {
+    const chained: T = { ...rec, prevHash: lastAuditHash(filePath) };
+    chained.hash = recordHash(chained);
+    fs.appendFileSync(filePath, JSON.stringify(chained) + "\n", "utf8");
+    return chained;
+  });
 }
 
 /**
@@ -118,11 +173,13 @@ export function appendAudit(filePath: string, rec: AuditRecord): AuditRecord {
           decision: rec.decision,
         }),
     },
-    prevHash: lastAuditHash(filePath),
   };
-  chained.hash = recordHash(chained);
-  fs.appendFileSync(filePath, JSON.stringify(chained) + "\n", "utf8");
-  return chained;
+  return withFileLockSync(filePath, () => {
+    chained.prevHash = lastAuditHash(filePath);
+    chained.hash = recordHash(chained);
+    fs.appendFileSync(filePath, JSON.stringify(chained) + "\n", "utf8");
+    return chained;
+  });
 }
 
 /** 讀回所有稽核紀錄。 */
@@ -144,7 +201,7 @@ export interface ChainIssue {
  * 驗證整條 hash chain：每筆的 hash 必須等於重算值，且 prevHash 必須等於前一筆的
  * hash。回空陣列代表整條鏈完整（沒有事後竄改、刪除或重排）。
  */
-export function verifyAuditChain(records: AuditRecord[]): ChainIssue[] {
+export function verifyAuditChain(records: ChainedRecord[]): ChainIssue[] {
   const issues: ChainIssue[] = [];
   let prev: string | null = null;
   records.forEach((rec, i) => {

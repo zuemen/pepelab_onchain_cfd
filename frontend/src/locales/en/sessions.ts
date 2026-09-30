@@ -83,6 +83,10 @@ export const sessions: Catalog['sessions'] = {
     revoked: 'Session revoked ✓',
     credentialIssued: 'Credential issued ✓',
     needsRealWallet: "Connect a real wallet to sign the VC (mock mode doesn't support signing)",
+    vcExpires: 'VC expires {date}',
+    vcExpired: 'VC expired — re-issue',
+    vcValidity: 'VC validity (days)',
+    vcValidityHint: 'New credentials expire after this many days, never later than the session expiry (default {days}).',
   },
 
   /** 匯出對話框。 */

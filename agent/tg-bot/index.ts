@@ -21,8 +21,8 @@ import TelegramBot from "node-telegram-bot-api";
 
 /** sendMessage 的選項型別（隨套件版本而異，這裡取其宣告以免版本升級就編不過）。 */
 type SendMessageOptions = Parameters<TelegramBot["sendMessage"]>[2];
-import { openPositionForSession, getSession, verifyAuthorizationVC, type AuthorizationVC } from "@pepelab/shared";
-import { parseIdList, isAuthorized, ConfirmationStore, RateLimiter } from "./guard.ts";
+import { openPositionForSession, getSession, verifyAuthorizationVC, redactSecrets, type AuthorizationVC } from "@pepelab/shared";
+import { parseIdList, isAuthorized, ConfirmationStore, RateLimiter, classifyVcForBot, chatSafe } from "./guard.ts";
 
 function req(k: string, hint = ""): string {
   const v = process.env[k]?.trim();
@@ -92,30 +92,58 @@ const MAX_LEVERAGE = Number(process.env.TG_MAX_LEVERAGE ?? "5");
 const MAX_MARGIN = Number(process.env.TG_MAX_MARGIN ?? "1000");
 const MIN_MARGIN = Number(process.env.TG_MIN_MARGIN ?? "10");
 
-// A-3：VC 必要。缺檔/壞檔/驗章失敗 → 啟動失敗（不進入「靜默無授權下單」狀態）。
-const VC: AuthorizationVC = (() => {
-  const p = req(
-    "AGENT_AUTH_VC_PATH",
-    "使用者簽發的授權 VC 路徑（前端 /sessions「Issue VC」匯出）。缺它就無法把下單歸因到簽發者。",
-  );
+// A-3：VC 必要。缺檔/壞檔/驗章失敗/session 不符 → 啟動失敗（不進入「靜默無授權下單」狀態）。
+// VC **過期**不是致命錯誤：bot 照常上線但拒單，並提示重新簽發；每次下單前若目前的 VC
+// 已過期，會重新讀一次檔案（使用者換上新 VC 後不必重啟 bot）。
+const VC_PATH = req(
+  "AGENT_AUTH_VC_PATH",
+  "使用者簽發的授權 VC 路徑（前端 /sessions「Issue VC」匯出）。缺它就無法把下單歸因到簽發者。",
+);
+let VC: AuthorizationVC | null = null;
+let VC_PROBLEM: string | null = null;
+
+/** 讀檔＋驗證。startup=true 時致命錯誤直接 exit；執行期只記下問題、拒單。 */
+function loadVc(startup: boolean): void {
   let parsed: AuthorizationVC;
   try {
-    parsed = JSON.parse(fs.readFileSync(p, "utf8")) as AuthorizationVC;
+    parsed = JSON.parse(fs.readFileSync(VC_PATH, "utf8")) as AuthorizationVC;
   } catch (e) {
-    console.error(`✗ 讀取/解析 VC 失敗(${p})：${(e as Error).message}`);
+    const msg = `讀取/解析 VC 失敗(${VC_PATH})：${(e as Error).message}`;
+    // chat 看到的版本不帶路徑與原始錯誤；完整訊息只寫 console。
+    if (!startup) console.error(`✗ ${msg}`);
+    if (startup) {
+      console.error(`✗ ${msg}`);
+      process.exit(1);
+    }
+    VC = null;
+    VC_PROBLEM = "授權 VC 檔無法讀取或格式錯誤，請 bot 管理者換上前端 /sessions 重新簽發的 VC 檔。";
+    return;
+  }
+  const s = classifyVcForBot(verifyAuthorizationVC(parsed), SESSION_ID);
+  if (s.status === "fatal" && startup) {
+    console.error(`✗ ${s.message}`);
     process.exit(1);
   }
-  const v = verifyAuthorizationVC(parsed);
-  if (!v.valid) {
-    console.error(`✗ VC 驗證失敗：${v.reason}（請重新在前端簽發）`);
-    process.exit(1);
+  if (s.status === "ok") {
+    VC = parsed;
+    VC_PROBLEM = null;
+  } else {
+    VC = null;
+    VC_PROBLEM = s.message;
+    console.warn(`⚠ ${s.message}`);
   }
-  if (v.sessionId !== SESSION_ID) {
-    console.error(`✗ VC sessionId(${v.sessionId}) 與 DEMO_SESSION_ID(${SESSION_ID}) 不符`);
-    process.exit(1);
+}
+loadVc(true);
+
+/** 下單前確認 VC 仍有效；無效就重讀一次檔案。回 null＝可用，否則回拒單原因。 */
+function ensureVc(): string | null {
+  if (VC) {
+    const s = classifyVcForBot(verifyAuthorizationVC(VC), SESSION_ID);
+    if (s.status === "ok") return null;
   }
-  return parsed;
-})();
+  loadVc(false);
+  return VC ? null : VC_PROBLEM ?? "授權 VC 無法使用";
+}
 
 const ASSETS: Record<string, string> = {
   btc:"sBTC",sbtc:"sBTC",eth:"sETH",seth:"sETH",aapl:"sAAPL",saapl:"sAAPL",tsla:"sTSLA",stsla:"sTSLA",
@@ -160,7 +188,8 @@ const HELP =
 /** 所有對外送訊都必須 await + catch：未攔截的 rejection 會殺掉 polling 程序。 */
 async function say(chatId: string, text: string, opts?: SendMessageOptions) {
   try {
-    await bot.sendMessage(chatId, text, opts);
+    // 送進 chat 的文字不含本機路徑、不含秘密（完整錯誤只寫 console）。
+    await bot.sendMessage(chatId, chatSafe(text, redactSecrets), opts);
   } catch (e) {
     console.error(`sendMessage 失敗(chat ${chatId})：${(e as Error).message}`);
   }
@@ -169,16 +198,19 @@ async function say(chatId: string, text: string, opts?: SendMessageOptions) {
 bot.on("polling_error", (e) => console.error(`polling_error：${(e as Error).message}`));
 
 async function execute(chatId: string, o: Order) {
+  const vcProblem = ensureVc();
+  if (vcProblem) return void (await say(chatId, `❌ 拒單：${vcProblem}`));
   await say(chatId, `確認 → ${o.isLong ? "做多" : "做空"} ${o.symbol}　${o.leverage}x　保證金 ${o.marginUsdc} USDT\n上鏈中…⏳`);
   try {
     const res: any = await openPositionForSession({
       sessionId: SESSION_ID, symbol: o.symbol, isLong: o.isLong,
-      marginUsdc: o.marginUsdc, leverage: o.leverage, authVc: VC,
+      marginUsdc: o.marginUsdc, leverage: o.leverage, authVc: VC!,
     });
     if (!res?.ok) return void (await say(chatId, `❌ 被拒絕：${res?.error ?? "未知錯誤"}`));
     const hash = res.txHash ?? res.hash ?? res.tx;
     await say(chatId, `✅ 已開倉\nposition #${res.positionId ?? "?"}\n${hash ? `https://sepolia.basescan.org/tx/${hash}` : "(無 tx hash)"}`);
   } catch (e) {
+    console.error("execute 失敗：", e);
     await say(chatId, `❌ 失敗：${(e as Error).message}`);
   }
 }
@@ -219,6 +251,10 @@ bot.on("message", async (msg) => {
   const bounds = checkBounds(leverage!, marginUsdc!);
   if (bounds) return void (await say(chatId, `❌ 超出限額：${bounds}`));
 
+  // VC 過期：先拒單並提示重新簽發，不發確認碼。
+  const vcProblem = ensureVc();
+  if (vcProblem) return void (await say(chatId, `❌ 拒單：${vcProblem}`));
+
   const rl = limiter.hit(userId);
   if (!rl.allowed) {
     return void (await say(chatId, `❌ 下單太頻繁（每 ${RATE_WINDOW_MS / 60000} 分鐘上限 ${RATE_MAX} 筆），請 ${rl.retryAfterSec} 秒後再試。`));
@@ -233,6 +269,6 @@ bot.on("message", async (msg) => {
 });
 
 console.log(
-  `PepeLab TG agent 上線。session #${SESSION_ID}，VC 已驗證，允許 chat：${[...ALLOWED_CHATS].join(", ")}，` +
+  `PepeLab TG agent 上線。session #${SESSION_ID}，VC ${VC ? "已驗證" : `無法使用（${VC_PROBLEM}）——將拒單直到重新簽發`}，允許 chat：${[...ALLOWED_CHATS].join(", ")}，` +
     `允許 user：${[...ALLOWED_USERS].join(", ")}。`,
 );

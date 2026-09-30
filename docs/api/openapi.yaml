@@ -174,6 +174,139 @@ paths:
           $ref: '#/components/responses/FreeRateLimited'
         '502':
           $ref: '#/components/responses/Upstream'
+  /risk/exposure:
+    get:
+      tags: [free]
+      operationId: getRiskExposure
+      summary: Protocol exposure report for client risk teams (read-only)
+      description: |
+        免費、唯讀。所有欄位在**同一個區塊**（`asOfBlock` = latest − 3，避開負載平衡節點尚未同步的最新區塊）讀取；
+        `ageSec` / `sinceSec` 以該區塊時間為基準。`header not found` 與 429 會重試一次（逾時不重試）；
+        整份報表總時限 20 秒，到點仍未讀完的欄位為 null 並標 `REPORT_DEADLINE`。
+        - OI：合約有 `longOpenSize` / `shortOpenSize` 時為「數量 × MockOracle 現價」（`method: openSize×markPrice`），
+          否則退回 `globalLongNotional` / `globalShortNotional`（開倉時名目加總，`method: globalNotional`）。
+        - Oracle：MockOracle（exchange 結算用）與 GuardedOracle（V2）兩顆的價格與年齡；`agree` 為兩者價格是否完全相同，
+          任一讀不到時為 null。
+        - 讀取失敗的欄位為 null，並在 `unavailable` 以欄位路徑記原因代碼
+          （`CALL_REVERTED` / `BAD_DATA` / `RPC_TIMEOUT` / `RPC_ERROR` / `NOT_CONFIGURED` / `REPORT_DEADLINE`）；不回錯誤原文，不因單一欄位失敗而整體失敗。
+        - 快取 60 秒；有欄位因暫時性原因讀不到時只快取 10 秒（`NOT_CONFIGURED` 不算）。
+          `Cache-Control: max-age` 等於伺服器端這一份的剩餘快取秒數（`cache.remainingSec`）。節流比照其他免費端點（per-IP）。
+      responses:
+        '200':
+          description: Exposure report
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: public, max-age=60
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, chainId, asOfBlock, asOfBlockTime, generatedAt, exchange, insuranceVault, v2Vault, assets, unavailable]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  chainId: { type: integer, example: 84532 }
+                  asOfBlock: { type: integer, nullable: true }
+                  asOfBlockTime: { type: string, format: date-time, nullable: true }
+                  generatedAt: { type: string, format: date-time }
+                  contracts:
+                    type: object
+                    properties:
+                      exchange: { type: string }
+                      mockOracle: { type: string }
+                      guardedOracle: { type: string, nullable: true }
+                      insuranceVault: { type: string, nullable: true }
+                      assetVaultV2: { type: string, nullable: true }
+                  exchange:
+                    type: object
+                    properties:
+                      adlEnabled: { type: boolean, nullable: true }
+                      maxPriceAgeSec: { type: integer, nullable: true }
+                      fundingIntervalSec: { type: integer, nullable: true, description: FUNDING_INTERVAL }
+                  insuranceVault:
+                    type: object
+                    properties:
+                      totalAssets: { type: number, nullable: true }
+                      totalAssetsRaw: { type: string, nullable: true, description: 代幣最小單位整數字串 }
+                      decimals: { type: integer, nullable: true }
+                  v2Vault:
+                    type: object
+                    properties:
+                      reserveStatus:
+                        type: object
+                        nullable: true
+                        properties:
+                          reserveRaw: { type: string }
+                          liabilityRaw: { type: string }
+                          ratioBps: { type: string }
+                          ratioUnbounded: { type: boolean, description: liability 為 0 時 ratioBps = MaxUint256 }
+                          unpriced: { type: integer }
+                          stale: { type: boolean }
+                          halted: { type: boolean }
+                      reserveRatioBps: { type: string, nullable: true }
+                  totals:
+                    type: object
+                    description: 有任一資產 OI 未知時為 null（避免低估）
+                    properties:
+                      longUsd: { type: number, nullable: true }
+                      shortUsd: { type: number, nullable: true }
+                  assets:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        symbol: { type: string, example: sBTC }
+                        assetId: { type: string }
+                        openInterest:
+                          type: object
+                          properties:
+                            method: { type: string, nullable: true, enum: ['openSize×markPrice', globalNotional, null] }
+                            longUsd: { type: number, nullable: true }
+                            shortUsd: { type: number, nullable: true }
+                            netUsd: { type: number, nullable: true }
+                        oracle:
+                          type: object
+                          properties:
+                            mock: &oraclePoint
+                              type: object
+                              description: 8 位小數 USD；ageSec 以 asOfBlock 區塊時間為基準；updatedAt=0（從未寫入）時 updatedAt/ageSec 為 null
+                              properties:
+                                price: { type: number, nullable: true }
+                                updatedAt: { type: string, format: date-time, nullable: true }
+                                ageSec: { type: integer, nullable: true }
+                            guarded: *oraclePoint
+                            agree: { type: boolean, nullable: true }
+                            deviationBps: { type: integer, nullable: true }
+                        funding:
+                          type: object
+                          properties:
+                            lastFundingUpdateAt: { type: string, format: date-time, nullable: true }
+                            sinceSec: { type: integer, nullable: true }
+                            neverSettled: { type: boolean, nullable: true, description: lastFundingUpdateAt 為 0（從未結算） }
+                  unavailable:
+                    type: object
+                    description: 欄位路徑 → 原因代碼
+                    additionalProperties:
+                      type: string
+                      enum: [CALL_REVERTED, BAD_DATA, RPC_TIMEOUT, RPC_ERROR, NOT_CONFIGURED, REPORT_DEADLINE]
+                    example: { assets.sBTC.oracle.guarded: CALL_REVERTED }
+                  notes: { type: array, items: { type: string } }
+                  cache:
+                    type: object
+                    properties:
+                      hit: { type: boolean }
+                      ageSec: { type: integer }
+                      ttlSec: { type: integer, example: 60, description: 這一份的快取 TTL（正常 60、暫時性降級 10） }
+                      remainingSec: { type: integer, description: 剩餘快取秒數，= Cache-Control max-age }
+        '429':
+          $ref: '#/components/responses/FreeRateLimited'
+        '503':
+          description: 非預期的內部錯誤；只回原因代碼 `exposure_unavailable`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /agent/{did}/verification:
     get:
       tags: [free]

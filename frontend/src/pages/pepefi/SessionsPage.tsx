@@ -43,9 +43,12 @@ import {
   isSessionManagerDeployed,
 } from 'src/contracts/sessionManager'
 import {
-  AUTH_DOMAIN,
-  AUTH_TYPES,
-  buildAuthTypedValue,
+  authDomainV2,
+  AUTH_TYPES_V2,
+  newAuthNonce,
+  defaultValidUntil,
+  DEFAULT_VC_VALIDITY_DAYS,
+  buildAuthTypedValueV2,
   assembleAuthorizationVC,
   type AuthorizationCaps,
   type AuthorizationVC,
@@ -71,6 +74,9 @@ const fUsdc = (v: bigint) => Number(formatUnits(v, 18)).toLocaleString('en-US', 
 const fDate = (ts: bigint) =>
   ts === 0n ? '—' : new Date(Number(ts) * 1000).toLocaleString(locale, { dateStyle: 'short', timeStyle: 'short' })
 const short = (a: string) => `${a.slice(0, 8)}…${a.slice(-6)}`
+/** VC 實際到期時間（v2 取 validUntil，舊格式 v1 取 session expiry）。 */
+const vcExpiry = (vc: AuthorizationVC) =>
+  Number(vc.credentialSubject.validUntil ?? vc.credentialSubject.authorization.expiry)
 
 // 表單欄位：標籤置於框上方，避免 MUI 浮動標籤在有值時壓線/溢出。
 function Labeled({ label, children }: { label: string; children: ReactNode }) {
@@ -134,6 +140,8 @@ export default function SessionsPage() {
   // Onboarding: issued VCs (persisted in localStorage, keyed by wallet+chain) +
   // which session's export dialog is open.
   const [vcBySession, setVcBySession] = useState<Record<number, AuthorizationVC>>({})
+  // 新簽發 VC 的效期（天）；預設 30 天，簽發時再以 session 到期為上限。
+  const [vcValidityDays, setVcValidityDays] = useState<string>(String(DEFAULT_VC_VALIDITY_DAYS))
   const [exportFor,   setExportFor]   = useState<number | null>(null)
   // 每次開啟／關閉匯出視窗都回到「不嵌入私鑰」——勾選只對當下這一次匯出有效。
   useEffect(() => { setIncludeKey(false) }, [exportFor])
@@ -222,10 +230,17 @@ export default function SessionsPage() {
       }
       const issuedAt = Math.floor(Date.now() / 1000)
       // 與 agent 端 verifyAuthorizationVC 共用同一組 EIP-712 schema（agentAuth.ts）。
-      const value = buildAuthTypedValue({ issuer: wallet.address, agent: s.agent, sessionId: s.id, caps, issuedAt })
-      const signature = await wallet.signer.signTypedData(AUTH_DOMAIN, AUTH_TYPES, value)
+      // v2：domain 綁 session manager 位址（verifyingContract），並簽入 validUntil 與 nonce。
+      const verifyingContract = getSessionManagerAddress(wallet.chainId)
+      const validUntil = defaultValidUntil(issuedAt, caps.expiry, Number(vcValidityDays) * 86400)
+      const nonce = newAuthNonce()
+      const value = buildAuthTypedValueV2({
+        issuer: wallet.address, agent: s.agent, sessionId: s.id, caps, issuedAt, validUntil, nonce,
+      })
+      const signature = await wallet.signer.signTypedData(authDomainV2(verifyingContract), AUTH_TYPES_V2, value)
       const vc = assembleAuthorizationVC({
         issuerAddress: wallet.address, agentAddress: s.agent, sessionId: s.id, caps, issuedAt, signature,
+        v2: { validUntil, nonce, verifyingContract },
       })
       setVcBySession(p => {
         const nextMap = { ...p, [s.id]: vc }
@@ -488,9 +503,21 @@ export default function SessionsPage() {
           <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <Typography variant="h6" sx={{ fontWeight: 'bold' }}>{t.sessions.list.title}</Typography>
-              <Button variant="text" size="small" onClick={() => void fetchSessions()} sx={{ textTransform: 'none' }}>
-                {t.sessions.list.refresh}
-              </Button>
+              <Stack direction="row" spacing={1} alignItems="center">
+                <TextField
+                  size="small"
+                  type="number"
+                  label={t.sessions.list.vcValidity}
+                  value={vcValidityDays}
+                  onChange={e => setVcValidityDays(e.target.value)}
+                  inputProps={{ min: 1, step: 1 }}
+                  sx={{ width: 150 }}
+                  title={interpolate(t.sessions.list.vcValidityHint, { days: String(DEFAULT_VC_VALIDITY_DAYS) })}
+                />
+                <Button variant="text" size="small" onClick={() => void fetchSessions()} sx={{ textTransform: 'none' }}>
+                  {t.sessions.list.refresh}
+                </Button>
+              </Stack>
             </Box>
 
             {loading ? (
@@ -536,18 +563,27 @@ export default function SessionsPage() {
                           <TableCell sx={{ fontSize: '0.75rem' }}>{fDate(s.expiry)}</TableCell>
                           <TableCell><Chip size="small" label={st.label} color={st.color} variant="outlined" /></TableCell>
                           <TableCell>
-                            {vcBySession[s.id] ? (
-                              <Stack direction="row" spacing={0.5} alignItems="center">
-                                <Chip size="small" label={t.sessions.list.issued} color="success" variant="outlined" />
-                                <Button
-                                  size="small" variant="outlined" color="primary"
-                                  onClick={() => setExportFor(s.id)}
-                                  sx={{ textTransform: 'none', whiteSpace: 'nowrap' }}
-                                >
-                                  {t.sessions.list.export}
-                                </Button>
+                            {vcBySession[s.id] && vcExpiry(vcBySession[s.id]) * 1000 > Date.now() ? (
+                              <Stack spacing={0.25}>
+                                <Stack direction="row" spacing={0.5} alignItems="center">
+                                  <Chip size="small" label={t.sessions.list.issued} color="success" variant="outlined" />
+                                  <Button
+                                    size="small" variant="outlined" color="primary"
+                                    onClick={() => setExportFor(s.id)}
+                                    sx={{ textTransform: 'none', whiteSpace: 'nowrap' }}
+                                  >
+                                    {t.sessions.list.export}
+                                  </Button>
+                                </Stack>
+                                <Typography variant="caption" color="text.secondary">
+                                  {interpolate(t.sessions.list.vcExpires, { date: fDate(BigInt(vcExpiry(vcBySession[s.id]))) })}
+                                </Typography>
                               </Stack>
                             ) : (
+                              <Stack spacing={0.25} alignItems="flex-start">
+                              {vcBySession[s.id] && (
+                                <Chip size="small" label={t.sessions.list.vcExpired} color="warning" variant="outlined" />
+                              )}
                               <Button
                                 size="small" variant="outlined"
                                 onClick={() => void issueCredential(s)}
@@ -557,6 +593,7 @@ export default function SessionsPage() {
                               >
                                 {busy[`vc_${s.id}`] ? t.sessions.list.signing : t.sessions.list.issueVc}
                               </Button>
+                              </Stack>
                             )}
                           </TableCell>
                           <TableCell align="right">

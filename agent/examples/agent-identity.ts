@@ -45,6 +45,8 @@ async function main() {
     agentAddress: agent.address,
     sessionId,
     caps,
+    // v2 domain 綁 session manager 位址（demo 用固定假位址，不連鏈）。
+    verifyingContract: process.env.SESSION_MANAGER_ADDRESS?.trim() || "0x" + "5e".repeat(20),
   });
   console.log(JSON.stringify(vc, null, 2));
 

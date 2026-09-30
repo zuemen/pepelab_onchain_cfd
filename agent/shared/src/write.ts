@@ -23,6 +23,15 @@ import {
   buildAgentVerification,
   type ContractTarget,
 } from "./verification.ts";
+import {
+  enforcePolicyGate,
+  auditWriteAttempt,
+  type GuardStage,
+  type PolicyRequest,
+} from "./policyGate.ts";
+import { SigningGuardError } from "./signingGuard.ts";
+import { checkAndRecordVcNonce } from "./vcNonce.ts";
+import { redactSecrets } from "./redact.ts";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
 
@@ -102,6 +111,57 @@ export interface WriteResult {
   agent?: string;
   sessionId?: number;
   detail?: Record<string, unknown>;
+  /** 拒絕/失敗的原因代碼（穩定字串，與 policy 稽核紀錄的 reasonCode 相同）。 */
+  reasonCode?: string;
+  /** 停在哪一道閘（config / vc / policy / risk / precheck / signing / submit）。 */
+  guardStage?: GuardStage;
+}
+
+/**
+ * 每一次寫入嘗試都要留一筆結構化稽核（guardStage / reasonCode / allowed / sessionId /
+ * agent 地址）。非 policy 階段的拒絕寫稽核失敗不改變結果（本來就拒絕），只記 stderr。
+ */
+function auditStage(
+  req: Omit<PolicyRequest, "agent" | "user"> & { agent: string | null; user?: string },
+  guardStage: GuardStage,
+  reasonCode: string,
+  allowed: boolean,
+  message?: string,
+  txHash?: string | null,
+): void {
+  try {
+    auditWriteAttempt({
+      action: req.action,
+      guardStage,
+      reasonCode,
+      allowed,
+      sessionId: req.sessionId,
+      agent: req.agent,
+      request: {
+        user: req.user,
+        symbol: req.symbol,
+        isLong: req.isLong,
+        marginUsdc: req.marginUsdc,
+        leverage: req.leverage,
+        positionId: req.positionId,
+      },
+      message: message ? redactSecrets(message).slice(0, 300) : undefined,
+      txHash: txHash ?? null,
+    });
+  } catch (err) {
+    console.error(`[policy-audit] 稽核寫入失敗（${guardStage}/${reasonCode}）：${redactSecrets((err as Error).message)}`);
+  }
+}
+
+/** 產生拒絕結果並寫稽核。 */
+function reject(
+  req: Parameters<typeof auditStage>[0],
+  guardStage: GuardStage,
+  reasonCode: string,
+  error: string,
+): WriteResult {
+  auditStage(req, guardStage, reasonCode, false, error);
+  return { ok: false, error, agent: req.agent ?? undefined, reasonCode, guardStage };
 }
 
 const SESSION_MANAGER_IFACE = new ethers.Interface(AGENT_SESSION_MANAGER_ABI);
@@ -155,16 +215,18 @@ function resolveSession():
 /**
  * 驗證使用者簽發的授權 VC：驗簽 + 比對「持有者=本 agent」、「sessionId 相符」、
  * 並與鏈上 session 交叉比對（issuer==session.user、agent==session.agent）。
- * 回 null 代表通過；回字串代表拒絕原因（呼叫端據此拒絕下單）。
+ * 回 null 代表通過；回 `{ degraded }` 代表平倉在降級模式通過；回字串代表拒絕原因。
  */
 async function verifyVcAgainstChain(
   vc: AuthorizationVC,
   sessionId: number,
   agentAddress: string,
   mgr: ethers.Contract,
-): Promise<string | null> {
-  const res = verifyAuthorizationVC(vc);
-  if (!res.valid) return `授權憑證(VC)驗證失敗：${res.reason}`;
+  action: "open" | "close",
+): Promise<string | null | { degraded: string }> {
+  // v2 VC 的 domain 綁 session manager 位址：必須等於本 agent 實際呼叫的那一顆。
+  const res = verifyAuthorizationVC(vc, { expectedVerifyingContract: await mgr.getAddress() });
+  if (!res.valid) return `授權憑證(VC)驗證失敗（${res.reasonCode ?? "VC_INVALID"}）：${res.reason}`;
   if (res.sessionId !== sessionId)
     return `VC sessionId(${res.sessionId}) 與請求(${sessionId}) 不符`;
   if (res.agent && ethers.getAddress(res.agent) !== ethers.getAddress(agentAddress))
@@ -192,10 +254,40 @@ async function verifyVcAgainstChain(
         return `VC expiry(${c.expiry}) 與鏈上 session 到期不符`;
     }
   } catch (err) {
-    return `讀取鏈上 session 失敗：${(err as Error).message}`;
+    return `讀取鏈上 session 失敗：${redactSecrets((err as Error).message)}`;
   }
-  return null;
+
+  // nonce 一次性（v2）＋取代＋不降級（v1/v2）檢查；鏈上比對通過後才記錄，避免無效 VC
+  // 污染狀態。語意見 vcNonce.ts。
+  //
+  // 平倉降級（複審 Medium-3）：nonce 狀態檔故障或拿不到鎖，是 agent 本地基礎設施的問題，
+  // 不能因此把使用者鎖在部位裡 → 平倉時只靠上面的 VC 驗章＋鏈上比對，記 degraded 後放行。
+  // 開倉照樣拒絕。VC 本身無效／過期／被取代／重放，平倉仍然拒絕（呼叫端附上鏈上自行平倉的指引）。
+  const d = vcNonceDecision(checkAndRecordVcNonce(res), action);
+  if (d.kind === "degraded") {
+    console.error(`::error::[write] 平倉在降級模式放行：VC nonce 狀態故障（${d.code}），僅以 VC 驗章＋鏈上比對為準`);
+    return { degraded: d.code };
+  }
+  return d.kind === "reject" ? d.reason : null;
 }
+
+/**
+ * nonce 檢查結果 → 動作。nonce 狀態檔故障／拿不到鎖（基礎設施問題）時：開倉拒絕、
+ * 平倉降級放行；VC 本身的問題（重放、被取代、v2 後出示 v1）一律拒絕。
+ */
+export function vcNonceDecision(
+  n: { ok: boolean; reasonCode: string; message: string },
+  action: "open" | "close",
+): { kind: "ok" } | { kind: "degraded"; code: string } | { kind: "reject"; reason: string } {
+  if (n.ok) return { kind: "ok" };
+  const infra = n.reasonCode === "NONCE_STORE_UNREADABLE" || n.reasonCode === "NONCE_STORE_LOCK_FAILED";
+  if (infra && action === "close") return { kind: "degraded", code: n.reasonCode };
+  return { kind: "reject", reason: `授權憑證(VC) nonce 檢查未過（${n.reasonCode}）：${n.message}` };
+}
+
+/** 平倉被拒時附上的指引：使用者永遠可以不經 agent、直接在鏈上平倉。 */
+export const CLOSE_ONCHAIN_HINT =
+  "若需立即平倉，請直接在鏈上用錢包呼叫 PerpetualExchange.closePosition(positionId)——合約不需要 VC。";
 
 /**
  * 在 session 限額內為 session.user 開一筆受限部位。
@@ -217,14 +309,23 @@ export async function openPositionForSession(params: {
   authVc?: AuthorizationVC;
   allowUnsignedForTesting?: boolean;
 }): Promise<WriteResult> {
+  const base = {
+    action: "open" as const,
+    sessionId: params.sessionId,
+    symbol: params.symbol,
+    isLong: params.isLong,
+    marginUsdc: params.marginUsdc,
+    leverage: params.leverage,
+  };
   const r = resolveSession();
-  if ("error" in r) return { ok: false, error: r.error };
+  if ("error" in r) return reject({ ...base, agent: null }, "config", "SIGNER_OR_MANAGER_MISSING", r.error);
   const { signer, mgr } = r;
+  const req = { ...base, agent: signer.address };
 
   // A-3：VC 預設必要。缺 VC 且未明確 opt-out → 直接拒絕（不送鏈、不花 gas）。
   if (!params.authVc) {
     if (!unsignedAllowed(params.allowUnsignedForTesting)) {
-      return { ok: false, error: NO_VC_ERROR, agent: signer.address };
+      return reject(req, "vc", "VC_MISSING", NO_VC_ERROR);
     }
     console.warn(
       "[write] ⚠ VC 閘門已被明確關閉（allowUnsignedForTesting / AGENT_ALLOW_UNSIGNED_TRADES）" +
@@ -239,25 +340,49 @@ export async function openPositionForSession(params: {
       params.sessionId,
       signer.address,
       mgr,
+      "open",
     );
-    if (reason) {
-      return { ok: false, error: `拒絕下單（VC 驗證未過）：${reason}`, agent: signer.address };
+    if (typeof reason === "string") {
+      return reject(req, "vc", "VC_INVALID", `拒絕下單（VC 驗證未過）：${reason}`);
     }
 
     // caps 預檢（省 gas、錯誤更清楚）：單筆保證金 / 槓桿不得超過 VC 授權上限。
     const caps = params.authVc.credentialSubject.authorization;
     if (params.marginUsdc > Number(caps.maxMarginPerTrade))
-      return { ok: false, error: `單筆保證金 ${params.marginUsdc} 超過上限 ${caps.maxMarginPerTrade}`, agent: signer.address };
+      return reject(req, "vc", "VC_MARGIN_CAP_EXCEEDED", `單筆保證金 ${params.marginUsdc} 超過上限 ${caps.maxMarginPerTrade}`);
     if (params.leverage > Number(caps.maxLeverage))
-      return { ok: false, error: `槓桿 ${params.leverage} 超過上限 ${caps.maxLeverage}`, agent: signer.address };
+      return reject(req, "vc", "VC_LEVERAGE_CAP_EXCEEDED", `槓桿 ${params.leverage} 超過上限 ${caps.maxLeverage}`);
   }
 
   // ERC-8126 風險閘門（預設關，旗標開啟才生效）。
   const riskReason = await checkRiskGate(signer, makeProvider());
   if (riskReason) {
-    return { ok: false, error: `拒絕下單（風險閘門）：${riskReason}`, agent: signer.address };
+    return reject(req, "risk", "RISK_GATE_REJECTED", `拒絕下單（風險閘門）：${riskReason}`);
   }
 
+  // 額度以鏈上 session.user 為鍵（不是呼叫端自報）：送出前從鏈上讀。
+  let user: string;
+  try {
+    user = ethers.getAddress(String((await mgr.sessions(params.sessionId)).user));
+  } catch (err) {
+    return reject(req, "precheck", "SESSION_READ_FAILED", `讀取鏈上 session.user 失敗：${redactSecrets((err as Error).message)}`);
+  }
+  const preq: PolicyRequest = { ...req, user };
+
+  // Policy gate：送出交易前的最後一道、**無條件**執行（沒有 opt-out 參數）。
+  // 放行時會預留額度；送出前失敗要 release。
+  const gate = await enforcePolicyGate(preq);
+  if (!gate.allowed) {
+    return {
+      ok: false,
+      error: `拒絕下單（policy gate ${gate.reasonCode}）：${gate.message}`,
+      agent: signer.address,
+      reasonCode: gate.reasonCode,
+      guardStage: "policy",
+    };
+  }
+
+  let signed: SignedTx;
   try {
     const assetId = assetIdOf(params.symbol);
     const margin = ethers.parseUnits(String(params.marginUsdc), 18);
@@ -266,7 +391,9 @@ export async function openPositionForSession(params: {
     const perp = makeContracts(makeProvider()).perp;
     const fee = (await perp.executionFee()) as bigint;
 
-    const tx = await mgr.openPositionForSession(
+    // 先組好、**簽好**交易（簽章白名單在 GuardedWallet.signTransaction 內執行：非 session
+    // manager 的開倉／平倉一律丟 SigningGuardError），拿到 tx hash 再廣播。
+    const unsigned = await mgr.openPositionForSession.populateTransaction(
       params.sessionId,
       assetId,
       params.isLong,
@@ -275,30 +402,189 @@ export async function openPositionForSession(params: {
       ZERO, // copiedFrom：self-open
       { value: fee },
     );
-    const receipt = await tx.wait();
-
-    // 從 SessionOpenedPosition 事件解出 positionId（只認本 manager 發出的）。
-    const positionId = parseSessionOpenedPositionId(
-      receipt?.logs ?? [],
-      await mgr.getAddress(),
-    );
-
-    return {
-      ok: true,
-      txHash: tx.hash,
-      positionId,
-      agent: signer.address,
-      sessionId: params.sessionId,
-      detail: {
-        symbol: params.symbol,
-        isLong: params.isLong,
-        marginUsdc: params.marginUsdc,
-        leverage: params.leverage,
-      },
-    };
+    signed = await signTx(signer, unsigned);
   } catch (err) {
-    return { ok: false, error: (err as Error).message, agent: signer.address };
+    return await handlePreBroadcastError(err, preq, gate.release);
   }
+
+  const out = await submitAndTrack(signer, signed, preq, gate.release);
+  if (out.kind !== "mined") return out.result;
+
+  // 從 SessionOpenedPosition 事件解出 positionId（只認本 manager 發出的）。
+  const positionId = parseSessionOpenedPositionId(out.receipt.logs ?? [], await mgr.getAddress());
+  auditStage(preq, "submit", "SUBMITTED", true, undefined, signed.hash);
+  return {
+    ok: true,
+    txHash: signed.hash,
+    positionId,
+    agent: signer.address,
+    sessionId: params.sessionId,
+    detail: {
+      symbol: params.symbol,
+      isLong: params.isLong,
+      marginUsdc: params.marginUsdc,
+      leverage: params.leverage,
+    },
+  };
+}
+
+// ── 送出與追蹤（審查 Low-9）─────────────────────────────────────────────────
+//
+// 舊版 `await contract.fn()` 在廣播那一步丟錯時（逾時、節點 5xx…），我們不知道交易
+// 有沒有進 mempool，卻把 policy 預留還回去 → 可能「交易其實上鏈了、額度卻被退回」。
+// 現在：先簽、先記 tx hash（稽核 SIGNED），再廣播。廣播出錯時：節點**明確拒收**才返還額度；
+// 其餘情況延遲重查 hash 與 pending nonce 2–3 次，看得到就照常等收據，查不出來也不返還
+// （回 TX_STATUS_UNKNOWN）。
+
+export interface SignedTx {
+  raw: string;
+  hash: string;
+  nonce: number;
+  from: string;
+}
+
+/** 補齊 nonce / gas / fee 後簽章（GuardedWallet 會先過簽章守門）。 */
+async function signTx(signer: ethers.Wallet, unsigned: ethers.TransactionRequest): Promise<SignedTx> {
+  const pop = await signer.populateTransaction(unsigned);
+  const raw = await signer.signTransaction(pop);
+  return { raw, hash: ethers.keccak256(raw), nonce: Number(pop.nonce), from: signer.address };
+}
+
+/** submitSigned 需要的 provider 子集（測試可注入假 provider）。 */
+export interface SubmitProvider {
+  broadcastTransaction(raw: string): Promise<unknown>;
+  getTransaction(hash: string): Promise<unknown | null>;
+  getTransactionReceipt(hash: string): Promise<unknown | null>;
+  getTransactionCount(address: string, blockTag: "pending"): Promise<number>;
+  waitForTransaction(hash: string, confirms?: number, timeout?: number): Promise<ethers.TransactionReceipt | null>;
+}
+
+export type SubmitOutcome =
+  | { kind: "mined"; receipt: ethers.TransactionReceipt }
+  | { kind: "reverted"; receipt: ethers.TransactionReceipt }
+  /** 已廣播（或確認已進 mempool）但在等待時間內沒有收據。 */
+  | { kind: "pending" }
+  /** 確認沒有送出 → 可以返還額度。 */
+  | { kind: "not_sent"; error: string }
+  /** 無法判斷是否送出 → 不返還額度。 */
+  | { kind: "unknown"; error: string };
+
+/** 廣播出錯後判斷交易到底有沒有出去。 */
+export async function broadcastStatus(
+  p: SubmitProvider,
+  tx: SignedTx,
+): Promise<"sent" | "not_sent" | "unknown"> {
+  try {
+    if (await p.getTransaction(tx.hash)) return "sent";
+    if (await p.getTransactionReceipt(tx.hash)) return "sent";
+    // pending nonce 已超過這筆的 nonce：nonce 被用掉了（多半就是這筆；也可能是別筆）→ 保守視為已送出
+    if ((await p.getTransactionCount(tx.from, "pending")) > tx.nonce) return "sent";
+    return "not_sent";
+  } catch {
+    return "unknown";
+  }
+}
+
+/**
+ * 廣播錯誤是否為「節點明確拒收這筆交易」（複審 Low-6）。只有這一類才確定沒送出、可返還額度。
+ * 刻意排除：
+ *   - nonce too low / replacement transaction underpriced：這個 nonce 已被占用，很可能
+ *     就是這筆（或同 nonce 的另一筆）已在 mempool／已上鏈 → 不返還。
+ *   - insufficient funds：依指示保守處理，不返還。
+ *   - already known：節點已有這筆 → 視為已送出。
+ */
+const EXPLICIT_REJECT_RE =
+  /intrinsic gas too low|exceeds block gas limit|max fee per gas less than block base fee|fee cap less than block base fee|transaction underpriced|invalid sender|invalid chain ?id|tx type not supported|transaction type not supported|oversized data|gas limit reached|exceeds the configured cap/i;
+const NOT_REJECT_RE = /nonce too low|replacement transaction underpriced|insufficient funds|already known|known transaction/i;
+
+export function isExplicitBroadcastRejection(err: unknown): boolean {
+  const e = err as { code?: string; message?: string; shortMessage?: string; info?: { error?: { message?: string } }; error?: { message?: string } };
+  if (e?.code === "NONCE_EXPIRED" || e?.code === "REPLACEMENT_UNDERPRICED" || e?.code === "INSUFFICIENT_FUNDS") return false;
+  const text = [e?.info?.error?.message, e?.error?.message, e?.shortMessage, e?.message].filter(Boolean).join(" | ");
+  if (NOT_REJECT_RE.test(text)) return false;
+  return EXPLICIT_REJECT_RE.test(text);
+}
+
+export async function submitSigned(
+  p: SubmitProvider,
+  tx: SignedTx,
+  opts: { waitTimeoutMs?: number; recheckDelaysMs?: number[] } = {},
+): Promise<SubmitOutcome> {
+  try {
+    await p.broadcastTransaction(tx.raw);
+  } catch (err) {
+    const error = redactSecrets((err as Error)?.message ?? String(err));
+    // 節點明確拒收 → 確定沒送出，可返還。
+    if (isExplicitBroadcastRejection(err)) return { kind: "not_sent", error };
+    // 其餘（逾時、5xx、nonce 被占用…）：延遲重查 2–3 次，看得到就當已送出；
+    // 查不到也**不返還**（可能還在傳播中）。
+    let sent = false;
+    for (const delay of opts.recheckDelaysMs ?? [1000, 2000, 3000]) {
+      if (delay > 0) await new Promise((r) => setTimeout(r, delay));
+      if ((await broadcastStatus(p, tx)) === "sent") {
+        sent = true;
+        break;
+      }
+    }
+    if (!sent) return { kind: "unknown", error };
+    // sent：照常等收據
+  }
+  try {
+    const receipt = await p.waitForTransaction(tx.hash, 1, opts.waitTimeoutMs ?? 120_000);
+    if (!receipt) return { kind: "pending" };
+    return receipt.status === 0 ? { kind: "reverted", receipt } : { kind: "mined", receipt };
+  } catch {
+    return { kind: "pending" };
+  }
+}
+
+/** 送出並把非成功的結果轉成 WriteResult（含稽核與額度返還決策）。 */
+async function submitAndTrack(
+  signer: ethers.Wallet,
+  tx: SignedTx,
+  req: PolicyRequest,
+  release: () => Promise<void>,
+): Promise<{ kind: "mined"; receipt: ethers.TransactionReceipt } | { kind: "done"; result: WriteResult }> {
+  // 先把 hash 記下來：就算之後 process 當掉，稽核裡也有這筆簽出去的交易可追。
+  auditStage(req, "submit", "SIGNED", true, undefined, tx.hash);
+  const out = await submitSigned(signer.provider as unknown as SubmitProvider, tx);
+  const fail = (reasonCode: string, error: string): { kind: "done"; result: WriteResult } => {
+    auditStage(req, "submit", reasonCode, false, error, tx.hash);
+    return {
+      kind: "done",
+      result: { ok: false, error, agent: signer.address, reasonCode, guardStage: "submit", txHash: tx.hash },
+    };
+  };
+  switch (out.kind) {
+    case "mined":
+      return out;
+    case "reverted":
+      return fail("TX_REVERTED", `交易已上鏈但 revert（${tx.hash}）`);
+    case "pending":
+      return fail("TX_PENDING", `交易已送出但尚未在時限內確認，請以 tx hash 追蹤：${tx.hash}`);
+    case "not_sent":
+      await release();
+      return fail("SUBMIT_FAILED", `交易被節點明確拒收，未送出（額度已返還）：${out.error}`);
+    case "unknown":
+      return fail("TX_STATUS_UNKNOWN", `無法確認交易是否已送出，額度不返還，請以 tx hash 追蹤：${tx.hash}`);
+  }
+}
+
+/**
+ * 廣播**之前**的錯誤（組交易、估 gas、簽章守門）：交易不可能已送出 → 返還額度。
+ * 簽章守門擋下 → guardStage=signing。
+ */
+async function handlePreBroadcastError(
+  err: unknown,
+  req: PolicyRequest,
+  release: () => Promise<void>,
+): Promise<WriteResult> {
+  await release();
+  if (err instanceof SigningGuardError) {
+    return reject(req, "signing", err.reasonCode, `拒絕簽章：${err.message}`);
+  }
+  const msg = redactSecrets((err as Error)?.message ?? String(err));
+  return reject(req, "submit", "SUBMIT_FAILED", msg);
 }
 
 /**
@@ -317,13 +603,15 @@ export async function closePositionForSession(params: {
   authVc?: AuthorizationVC;
   allowUnsignedForTesting?: boolean;
 }): Promise<WriteResult> {
+  const base = { action: "close" as const, sessionId: params.sessionId, positionId: params.positionId };
   const r = resolveSession();
-  if ("error" in r) return { ok: false, error: r.error };
+  if ("error" in r) return reject({ ...base, agent: null }, "config", "SIGNER_OR_MANAGER_MISSING", r.error);
   const { signer, mgr } = r;
+  const req = { ...base, agent: signer.address };
 
   if (!params.authVc) {
     if (!unsignedAllowed(params.allowUnsignedForTesting)) {
-      return { ok: false, error: NO_VC_ERROR.replace("拒絕下單", "拒絕平倉"), agent: signer.address };
+      return reject(req, "vc", "VC_MISSING", `${NO_VC_ERROR.replace("拒絕下單", "拒絕平倉")} ${CLOSE_ONCHAIN_HINT}`);
     }
     console.warn("[write] ⚠ 平倉的 VC 閘門已被明確關閉，僅限測試環境。");
   }
@@ -334,48 +622,77 @@ export async function closePositionForSession(params: {
       params.sessionId,
       signer.address,
       mgr,
+      "close",
     );
-    if (reason) {
-      return { ok: false, error: `拒絕平倉（VC 驗證未過）：${reason}`, agent: signer.address };
+    if (typeof reason === "string") {
+      return reject(req, "vc", "VC_INVALID", `拒絕平倉（VC 驗證未過）：${reason}。${CLOSE_ONCHAIN_HINT}`);
+    }
+    if (reason?.degraded) {
+      auditStage(req, "vc", "VC_OK_DEGRADED", true, `VC nonce 狀態故障（${reason.degraded}），平倉僅以 VC 驗章＋鏈上比對放行`);
     }
   }
 
   // 鏈上交叉比對：部位必須存在、仍開著、且屬於這個 session 的 user。
+  let user: string;
   try {
     const s = await mgr.sessions(params.sessionId);
     const perp = makeContracts(makeProvider()).perp;
     const pos: any = await perp.getPosition(params.positionId);
     const owner = String(pos?.owner ?? ZERO);
     if (ethers.getAddress(owner) === ethers.getAddress(ZERO))
-      return { ok: false, error: `position #${params.positionId} 不存在`, agent: signer.address };
+      return reject(req, "precheck", "POSITION_NOT_FOUND", `position #${params.positionId} 不存在`);
     if (ethers.getAddress(owner) !== ethers.getAddress(s.user))
-      return {
-        ok: false,
-        error: `拒絕平倉：position #${params.positionId} 的 owner(${owner}) 非本 session 的 user(${s.user})`,
-        agent: signer.address,
-      };
+      return reject(
+        req,
+        "precheck",
+        "POSITION_NOT_SESSION_USER",
+        `拒絕平倉：position #${params.positionId} 的 owner(${owner}) 非本 session 的 user(${s.user})`,
+      );
     if (!pos.isOpen)
-      return { ok: false, error: `position #${params.positionId} 已平倉`, agent: signer.address };
+      return reject(req, "precheck", "POSITION_ALREADY_CLOSED", `position #${params.positionId} 已平倉`);
+    user = ethers.getAddress(String(s.user));
   } catch (err) {
-    return { ok: false, error: `平倉前的鏈上比對失敗：${(err as Error).message}`, agent: signer.address };
+    return reject(
+      req,
+      "precheck",
+      "PRECHECK_READ_FAILED",
+      `平倉前的鏈上比對失敗：${redactSecrets((err as Error).message)}`,
+    );
   }
 
+  // Policy gate（平倉只套頻率上限；保證金／槓桿／資產規則只適用開倉）。
+  const preq: PolicyRequest = { ...req, user };
+  const gate = await enforcePolicyGate(preq);
+  if (!gate.allowed) {
+    return {
+      ok: false,
+      error: `拒絕平倉（policy gate ${gate.reasonCode}）：${gate.message}`,
+      agent: signer.address,
+      reasonCode: gate.reasonCode,
+      guardStage: "policy",
+    };
+  }
+
+  let signed: SignedTx;
   try {
-    const tx = await mgr.closePositionForSession(
+    const unsigned = await mgr.closePositionForSession.populateTransaction(
       params.sessionId,
       params.positionId,
     );
-    await tx.wait();
-    return {
-      ok: true,
-      txHash: tx.hash,
-      positionId: String(params.positionId),
-      agent: signer.address,
-      sessionId: params.sessionId,
-    };
+    signed = await signTx(signer, unsigned);
   } catch (err) {
-    return { ok: false, error: (err as Error).message, agent: signer.address };
+    return await handlePreBroadcastError(err, preq, gate.release);
   }
+  const out = await submitAndTrack(signer, signed, preq, gate.release);
+  if (out.kind !== "mined") return out.result;
+  auditStage(preq, "submit", "SUBMITTED", true, undefined, signed.hash);
+  return {
+    ok: true,
+    txHash: signed.hash,
+    positionId: String(params.positionId),
+    agent: signer.address,
+    sessionId: params.sessionId,
+  };
 }
 
 /** 讀 session 設定（限額/預算/到期），給 agent 在下單前自我檢查。 */

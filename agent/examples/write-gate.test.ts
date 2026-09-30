@@ -17,6 +17,15 @@ process.env.SESSION_MANAGER_ADDRESS = "0x" + "1".repeat(40);
 process.env.BASE_SEPOLIA_RPC_URL = "http://127.0.0.1:1";
 delete process.env.AGENT_ALLOW_UNSIGNED_TRADES;
 delete process.env.RISK_GATE_ENABLED;
+// policy gate 的狀態與稽核寫到暫存目錄，不污染 agent/.state 與 agent/audit。
+{
+  const { mkdtempSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "pepe-write-gate-"));
+  process.env.POLICY_STATE_PATH = join(dir, "state.json");
+  process.env.POLICY_AUDIT_PATH = join(dir, "audit.jsonl");
+}
 
 const {
   openPositionForSession,
@@ -44,7 +53,24 @@ async function main() {
     assert.equal(r.ok, false);
     assert.ok(r.error?.includes(VC_REFUSAL), `錯誤訊息應說明缺 VC，實得：${r.error}`);
     assert.ok(r.error?.includes("拒絕平倉"), r.error);
-    console.log("✓ 平倉缺 VC → 拒絕：", r.error?.slice(0, 48) + "…");
+    assert.ok(r.error?.includes("closePosition") && r.error?.includes("不需要 VC"), "平倉被拒時要指引使用者直接在鏈上平倉");
+    console.log("✓ 平倉缺 VC → 拒絕（附鏈上自行平倉指引）：", r.error?.slice(0, 48) + "…");
+  }
+
+  // 1b) 平倉降級決策：nonce 狀態檔故障 / 拿不到鎖 → 平倉放行（degraded）、開倉拒絕；
+  //     VC 本身的問題（重放、被取代、v2 後的 v1）平倉照樣拒絕。
+  {
+    const { vcNonceDecision } = await import("@pepelab/shared");
+    for (const code of ["NONCE_STORE_UNREADABLE", "NONCE_STORE_LOCK_FAILED"]) {
+      const f = { ok: false, reasonCode: code, message: "x" };
+      assert.deepEqual(vcNonceDecision(f, "close"), { kind: "degraded", code });
+      assert.equal(vcNonceDecision(f, "open").kind, "reject");
+    }
+    for (const code of ["NONCE_REPLAYED", "VC_SUPERSEDED", "LEGACY_AFTER_V2"]) {
+      assert.equal(vcNonceDecision({ ok: false, reasonCode: code, message: "x" }, "close").kind, "reject");
+    }
+    assert.equal(vcNonceDecision({ ok: true, reasonCode: "OK", message: "" }, "close").kind, "ok");
+    console.log("✓ 平倉：nonce 狀態故障 → 降級放行；VC 本身無效 → 仍拒絕；開倉一律拒絕");
   }
 
   // 3) 明確 opt-out 才放行閘門（放行後會因為連不上 RPC 而失敗——重點是**不是**因為 VC）。

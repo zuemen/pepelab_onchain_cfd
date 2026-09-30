@@ -32,6 +32,23 @@ export function formatUsdcAtomic(v: bigint): string {
   return `${neg ? "-" : ""}${a / base}${frac ? "." + frac : ""}`;
 }
 
+/** 預設累計花費上限（USDC）。 */
+export const X402_DEFAULT_MAX_TOTAL_SPEND_USDC = "1";
+
+/**
+ * 累計花費上限（atomic），所有 x402 付款流程共用（簽章守門在簽出每筆 x402 授權前檢查）。
+ * env `X402_MAX_TOTAL_SPEND_USDC`；舊名 `LOOP_MAX_SPEND_USDC` 仍可用（向後相容）；預設 1 USDC。
+ */
+export function resolveX402TotalSpendCap(): bigint {
+  const raw =
+    process.env.X402_MAX_TOTAL_SPEND_USDC?.trim() ||
+    process.env.LOOP_MAX_SPEND_USDC?.trim() ||
+    X402_DEFAULT_MAX_TOTAL_SPEND_USDC;
+  const v = parseUsdcAtomic(raw);
+  if (v <= 0n) throw new Error(`X402_MAX_TOTAL_SPEND_USDC 必須 > 0（收到 ${raw}）`);
+  return v;
+}
+
 /** 單筆付款上限（atomic）。env `X402_MAX_PAYMENT_USDC`，預設 0.02 USDC；0 或負數拒絕。 */
 export function resolveX402MaxValue(): bigint {
   const raw = process.env.X402_MAX_PAYMENT_USDC?.trim() || X402_DEFAULT_MAX_PAYMENT_USDC;

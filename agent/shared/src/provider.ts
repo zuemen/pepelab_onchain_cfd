@@ -6,6 +6,7 @@ import {
   STRATEGY_REGISTRY_ABI,
   AGENT_SESSION_MANAGER_ABI,
 } from "./abis.ts";
+import { GuardedWallet } from "./signingGuard.ts";
 
 /** 建立指向 Base Sepolia（預設）的唯讀 provider。RPC 由 env 提供，不寫死。
  *  優先 BASE_SEPOLIA_RPC_URL；保留 SEPOLIA_RPC_URL 作回退（向後相容）。 */
@@ -58,13 +59,16 @@ const ZERO = "0x0000000000000000000000000000000000000000";
 /**
  * 從 env 建立 agent 簽署者（自管 EOA / session key）。
  * 沒有 AGENT_PRIVATE_KEY 時回 null（呼叫端據此優雅降級，不 crash）。
+ * 回傳的是 `GuardedWallet`（signingGuard.ts）：簽任何交易／typed data 前都先過守門，
+ * 白名單：只能簽 session manager 的開倉／平倉交易、官方 USDC 的 x402 付款授權、
+ * ERC-8126 持有證明訊息，其餘一律拒絕（見 signingGuard.ts）。
  */
 export function makeSigner(
   provider?: ethers.JsonRpcProvider,
 ): ethers.Wallet | null {
   const pk = process.env.AGENT_PRIVATE_KEY?.trim();
   if (!pk || !pk.startsWith("0x") || pk.length !== 66) return null;
-  return new ethers.Wallet(pk, provider ?? makeProvider());
+  return new GuardedWallet(pk, provider ?? makeProvider());
 }
 
 /**

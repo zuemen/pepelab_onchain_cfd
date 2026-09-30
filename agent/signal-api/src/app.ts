@@ -27,6 +27,8 @@ import {
   buildAgentVerification,
   resolveSettlementToken,
   ASSET_IDS,
+  AGENT_CHAIN_ID,
+  V2_ADDRESSES,
   assessPayoutAddress,
   isCompromisedAddress,
   checkPayoutDenylistEnv,
@@ -53,6 +55,12 @@ import {
 } from "./candles.ts";
 import { getBenchmarks, BadDateError } from "./benchmarks.ts";
 import { LruCache } from "./lru.ts";
+import {
+  createExposureService,
+  providerReader,
+  type ExposureReader,
+  type ExposureTargets,
+} from "./exposure.ts";
 
 const NETWORK = (process.env.X402_NETWORK ?? "base-sepolia") as Network;
 const FACILITATOR_URL =
@@ -357,6 +365,21 @@ export interface CreateAppOptions {
   payoutCodeReader?: CodeReader;
   /** 覆寫「trader 是否已註冊」的查詢（測試用；預設讀鏈上 StrategyRegistry）。 */
   isRegisteredTrader?: (trader: string) => Promise<boolean>;
+  /** 覆寫 /risk/exposure 的鏈上讀取來源（測試用；預設是 app 的 provider）。 */
+  exposureReader?: ExposureReader;
+}
+
+/** /risk/exposure 讀的合約：全部來自 addresses.ts（前端同源），不寫死。 */
+export function exposureTargets(): ExposureTargets {
+  return {
+    chainId: AGENT_CHAIN_ID,
+    exchange: ADDRESSES.PerpetualExchange,
+    mockOracle: ADDRESSES.MockOracle,
+    guardedOracle: V2_ADDRESSES?.GuardedOracle ?? null,
+    insuranceVaultFallback: ADDRESSES.InsuranceVault,
+    assetVaultV2: V2_ADDRESSES?.AssetVaultV2 ?? null,
+    assets: { ...ASSET_IDS },
+  };
 }
 
 /**
@@ -553,6 +576,13 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
             "?date=YYYY-MM-DD 加碼回該日或之前最近一個交易日的收盤。不做模擬保底，" +
             "上游拿不到就在該指數的 error 欄位標明。",
         },
+        "GET /risk/exposure": {
+          price: "free",
+          desc:
+            "曝險報表（唯讀）：各資產多空 OI、保險金庫 totalAssets、V2 vault reserveStatus、" +
+            "MockOracle／GuardedOracle 價格與年齡（是否一致）、adlEnabled / maxPriceAge / FUNDING_INTERVAL、" +
+            "各資產 lastFundingUpdateAt。附 asOfBlock，60 秒快取；讀不到的欄位為 null 並附原因代碼。",
+        },
         "GET /agent/:did/verification": { price: "free", desc: "ERC-8126 agent 驗證（ETV/SCV/WAV/WV + 0–100 風險分數，verifier 簽章）" },
         "POST /demo/buy-signal": { price: "free", desc: "訪客試買（免費回訊號；真實 70/20/10 分潤見付費 x402 端點 + /revenue 累計）" },
       },
@@ -613,6 +643,26 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
         return c.json({ ok: false, error: (err as Error).message }, 400);
       }
       return c.json({ ok: false, error: internalError("benchmarks", err) }, 502);
+    }
+  });
+
+  // ── 免費：曝險報表（客戶風控用，唯讀）─────────────────────────────────────
+  //
+  // 位置理由同 /candles：必須留在 paymentMiddleware 之前。節流走上面的免費端點
+  // per-IP 限流；報表本身 60 秒快取（single-flight），讀取失敗的欄位為 null 並在
+  // `unavailable` 附原因代碼，不回錯誤原文、不整個 500（見 exposure.ts）。
+  const exposure = createExposureService(opts.exposureReader ?? providerReader(provider), exposureTargets());
+  app.get("/risk/exposure", async (c) => {
+    try {
+      const { report, cacheHit, ageSec, ttlSec, remainingSec } = await exposure.get();
+      // Cache-Control 與伺服器端這一份的實際剩餘快取時間一致（降級報表 10 秒、正常 60 秒）。
+      return c.json(
+        jsonSafe({ ...report, cache: { hit: cacheHit, ageSec, ttlSec, remainingSec } }),
+        200,
+        { "Cache-Control": `public, max-age=${remainingSec}` },
+      );
+    } catch (err) {
+      return c.json({ ok: false, error: internalError("exposure", err) }, 503);
     }
   });
 

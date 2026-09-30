@@ -26,7 +26,7 @@ import { pathToFileURL } from "node:url";
 import {
   openPositionForSession, getSession, agentDid, appendAudit,
   parseOracleBody as parseOracle, type Recommendation, type AuditRecord,
-  resolveX402MaxValue,
+  resolveX402MaxValue, guardViemAccount,
 } from "@pepelab/shared";
 import { loadVc, localVerifyVc, fetchAgentVerification, AUDIT_PATH } from "./vc-gate.ts";
 
@@ -133,7 +133,7 @@ async function main() {
   console.log(`\n=== x402-autonomous ===  ${symbol}  maxMargin=${wantMargin}  ${wantLeverage}x  session #${SESSION_ID}`);
 
   // ① x402 付費取 enriched 資料
-  const account = privateKeyToAccount(PK as Hex);
+  const account = guardViemAccount(privateKeyToAccount(PK as Hex)); // signingGuard
   const wallet = createWalletClient({ account, chain: baseSepolia, transport: http(RPC) }).extend(publicActions);
   // 單筆付款上限明確傳入（X402_MAX_PAYMENT_USDC，預設 0.02 USDC），不吃套件預設 0.10。
   const payFetch = wrapFetchWithPayment(

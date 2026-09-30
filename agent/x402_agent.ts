@@ -25,7 +25,7 @@ import { baseSepolia } from "viem/chains";
 import { config as dotenvConfig } from "dotenv";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { openPositionForSession, resolveX402MaxValue } from "@pepelab/shared";
+import { openPositionForSession, resolveX402MaxValue, guardViemAccount } from "@pepelab/shared";
 import { loadVc, localVerifyVc } from "./examples/vc-gate.ts";
 
 // ── Load env from agent/.env ───────────────────────────────────────────────
@@ -334,7 +334,7 @@ async function main(): Promise<void> {
   }
 
   // Set up wallet
-  const account = privateKeyToAccount(PK as `0x${string}`);
+  const account = guardViemAccount(privateKeyToAccount(PK as `0x${string}`)); // signingGuard
   const walletClient = createWalletClient({
     account,
     chain: baseSepolia,
