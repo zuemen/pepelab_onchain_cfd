@@ -903,22 +903,32 @@ by RISK_ROLE — not just the first one.
 
 ## Frontend
 
-**Dead Minimal UI template code still reaches the production bundle.** The app is
-built on the Minimal UI template, and its demo dashboard was never removed:
-`routes/sections/dashboard.tsx` is imported by nothing (`routes/sections/index.tsx`
-mounts only `pepefiRoutes` and `authRoutes`), and `layouts/dashboard/layout.tsx`
-plus `layouts/components/account-drawer` / `account-popover` are reachable only
-through it.
+**~~Dead Minimal UI template code still reaches the production bundle.~~ 已修正（2026-09-30）。**
+原本的記載：範本的 demo dashboard（`routes/sections/dashboard.tsx`）沒有被掛載，但假使用者
+`Jaydon Frankie`、`demo@minimals.cc` 仍然出現在正式 bundle。複查時 `dashboard.tsx` 與
+`use-mocked-user.ts` 已在先前的清理中刪除，但 `dist/assets` 仍 grep 得到 `Jaydon Frankie` 與
+`minimals.cc`，實際來源是：
 
-Despite being unmounted, the template's placeholder identity is present in the
-built entry chunk — grepping `dist/assets/index-*.js` finds both
-`Jaydon Frankie` and `demo@minimals.cc`, which come from
-`auth/hooks/use-mocked-user.ts`. Rollup is not shaking the chain out. Nothing
-renders it today, but a hardcoded fake user shipping inside a financial product's
-bundle is the kind of thing a technical due-diligence reader will find, and the
-right fix is to delete the template dashboard rather than to keep pruning
-imports around it. Not attempted here because it is a large deletion that wants
-its own change and its own verification pass.
+- 語系 catalog 的 `common.notification.*`（範本通知鈴的示範文字，含 `@Jaydon Frankie`）——
+  只剩 `src/_mock/_others.ts` 引用，但 catalog 物件整份打包，所以字串照樣出貨；
+- `components/iconify/iconify.tsx` 的 console 警告帶 `https://docs.minimals.cc/icons/`；
+- `routes/paths.ts` 的 `minimalStore`（MUI 商店連結，無人使用）。
+
+注意：`layouts/dashboard/layout.tsx`（PR #197 改過品牌字串）**不是**範本專用——它是
+`routes/sections/pepefi.tsx` 的 `DashboardLayout`，也就是正式站所有 App 內頁的外殼，保留。
+
+處理方式：以 `src/main.tsx` 為起點做 import 可達性分析，刪除所有無法從 `pepefiRoutes`／`authRoutes`
+到達的範本檔案——`src/_mock/`（14 檔）、`assets/data`、`assets/icons`、`auth/components/form-{divider,
+resend-code,return-link,socials}`、`components/{custom-popover,file-thumbnail,flag-icon}`、
+`layouts/components/{language-popover,sign-in-button,workspaces-popover}`、`layouts/nav-config-workspace`、
+`sections/blank`、`theme/theme-overrides`、`utils/format-time`；移除上述三處字串；刪除 `public/assets`
+底下無任何引用的範本圖檔（`images/{mock,home,about,contact,faqs}`、`icons/{apps,components,courses,
+empty,faqs,files,glass,workspaces}`，約 6 MB）。仍無法到達、但屬於產品程式碼的
+`components/pepefi/{ErrorBoundary,WhaleAlertBanner,pepeSkinsData}`、`hooks/useWhaleAlerts` 未動。
+
+驗證：`yarn build` 後掃 `dist/` 所有文字檔，`Jaydon Frankie`、`demo@minimals.cc`、`minimals.cc`
+（以及不分大小寫的 `minimals`）皆 0 筆。entry chunk 989.87 kB（gzip 334.70 kB）→ 987.00 kB
+（gzip 333.41 kB）——假資料本來就沒被打包，出貨的只是那幾段字串，所以體積差異很小。
 
 **Entry chunk is 1,057 kB (328 kB gzipped).** Routes were already code-split;
 vendors were not, so everything landed in one file. `vite.config.ts` now splits
