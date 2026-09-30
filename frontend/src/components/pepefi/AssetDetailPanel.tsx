@@ -11,6 +11,7 @@ import type { AssetRow } from 'src/lib/pepefi/assetRows'
 
 import { MONO } from 'src/components/pepefi/brandKit'
 import { t, interpolate } from 'src/locales'
+import { assetPolicy } from 'src/tenant'
 import { fUsd, f18 } from 'src/lib/pepefi/format'
 
 import Box from '@mui/material/Box'
@@ -95,6 +96,9 @@ export function AssetDetailPanel({
   // 金庫出了問題，而金庫可能好好的。canSell 為 false 又 balance > 0n
   // 時,唯一剩下的可能就是金庫暫停,這個推論才是準的。
   const noBalance = assetRow.balance <= 0n
+  // 不在白標租戶白名單的資產只會因為「有持倉」出現在表上（applyAssetWhitelist），
+  // 買進關閉、贖回照常。買進被擋時要講對理由，不能說成金庫出了問題。
+  const notEnabled = !assetPolicy.canOpen(sym)
 
   return (
     // #147：父層(桌面側欄的 Card、手機 Drawer 的 paper)都是 flex column,
@@ -172,7 +176,7 @@ export function AssetDetailPanel({
           {!canConfirm && (
             <Alert severity="warning" variant="outlined">
               {mode === 'buy'
-                ? dl.buyDisabledNotice
+                ? notEnabled ? t.common.tenant.assetNotEnabled : dl.buyDisabledNotice
                 : noBalance ? dl.noBalanceNotice : dl.sellDisabledNotice}
             </Alert>
           )}

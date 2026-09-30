@@ -29,6 +29,9 @@ import TableContainer from '@mui/material/TableContainer'
 
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { t, locale, interpolate } from 'src/locales'
+import { assetPolicy } from 'src/tenant'
+import { sessionAssetsForTenant } from 'src/tenant/assetPolicy'
+import { PERPETUALS_AUTHORIZED } from 'src/lib/pepefi/featureFlags'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { agentDid, shortDid } from 'src/lib/pepefi/did'
 import { useToast } from 'src/components/pepefi/ToastProvider'
@@ -118,7 +121,12 @@ export default function SessionsPage() {
   // agent 可交易的標的白名單（createSessionWithAssets）。預設 sBTC、sETH。
   // 合約把空陣列解讀成「全部允許」，所以 UI 要求至少選一檔——不讓一個沒勾任何
   // 東西的表單默默變成無限制的 session。
-  const [allowedAssets, setAllowedAssets] = useState<string[]>([ASSET_IDS.sBTC, ASSET_IDS.sETH])
+  //
+  // 白標租戶：可勾選的只有租戶白名單內的資產；預設的 sBTC、sETH 若不在白名單，
+  // 就退成白名單第一檔（default 租戶 = 全部資產，預設值與改版前相同）。
+  const [allowedAssets, setAllowedAssets] = useState<string[]>(() =>
+    sessionAssetsForTenant(assetPolicy, [ASSET_IDS.sBTC, ASSET_IDS.sETH])
+  )
   const toggleAsset = (id: string) =>
     setAllowedAssets(prev => (prev.includes(id) ? prev.filter(a => a !== id) : [...prev, id]))
 
@@ -291,7 +299,13 @@ export default function SessionsPage() {
   // ── Create session ────────────────────────────────────────────────────────
   const createSession = async () => {
     if (!manager) return
-    if (allowedAssets.length === 0) { notify(t.sessions.create.noAssetSelected, false); return }
+    // agent session 是委任 agent 新開永續部位；租戶未授權永續就不建立。撤銷既有 session
+    // 不經過這裡，照常可用。
+    if (!PERPETUALS_AUTHORIZED) { notify(t.common.tenant.perpetualsNotAuthorized, false); return }
+    // 送出前再濾一次白名單。合約把空陣列當成「全部允許」，所以濾完是空的就**不送**，
+    // 絕不讓白名單過濾把一個受限 session 變成無限制的 session。
+    const tenantAssets = allowedAssets.filter(a => assetPolicy.canOpen(a))
+    if (tenantAssets.length === 0) { notify(t.sessions.create.noAssetSelected, false); return }
     try {
       const expiry = Math.floor(Date.now() / 1000) + Math.round(parseFloat(hours) * 3600)
       setBusy(p => ({ ...p, create: true }))
@@ -301,7 +315,7 @@ export default function SessionsPage() {
         parseUnits(budget || '0', 18),
         BigInt(maxLev || '0'),
         BigInt(expiry),
-        allowedAssets,
+        tenantAssets,
       ))
       await tx.wait()
       notify(t.sessions.create.done, true, tx.hash)
@@ -468,7 +482,7 @@ export default function SessionsPage() {
             <Box>
               <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>{t.sessions.create.allowedAssets}</Typography>
               <Stack direction="row" flexWrap="wrap" useFlexGap gap={0.75} role="group" aria-label={t.sessions.create.allowedAssets}>
-                {ASSETS_LIST.map(a => {
+                {assetPolicy.selectable(ASSETS_LIST).map(a => {
                   const on = allowedAssets.includes(a.id)
                   return (
                     <Chip
@@ -489,10 +503,15 @@ export default function SessionsPage() {
               </Typography>
             </Box>
             <Box>
+              {!PERPETUALS_AUTHORIZED && (
+                <Typography variant="caption" color="warning.main" sx={{ display: 'block', mb: 1 }}>
+                  {t.common.tenant.perpetualsNotAuthorized}
+                </Typography>
+              )}
               <Button
                 variant="contained"
                 onClick={() => void createSession()}
-                disabled={!agent.trim() || !!busy.create || allowedAssets.length === 0}
+                disabled={!agent.trim() || !!busy.create || allowedAssets.length === 0 || !PERPETUALS_AUTHORIZED}
               >
                 {busy.create ? t.sessions.create.creating : t.sessions.create.cta}
               </Button>

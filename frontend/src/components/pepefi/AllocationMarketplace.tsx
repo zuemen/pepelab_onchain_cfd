@@ -25,6 +25,7 @@ import DialogActions from '@mui/material/DialogActions';
 import { Icon } from '@iconify/react';
 
 import { t, interpolate } from 'src/locales';
+import { assetPolicy } from 'src/tenant';
 import { usePepefiWallet } from 'src/layouts/pepefi';
 import { useContracts } from 'src/hooks/useContracts';
 import { useV2Contracts } from 'src/hooks/useV2Contracts';
@@ -288,8 +289,13 @@ function AdoptDialog({ item, onClose }: { item: PublishedAllocation; onClose: ()
   }
   const plan = parsed !== null ? planAdoption(parsed, item.legs) : null;
 
+  // 白標租戶白名單：配置裡只要有一檔不在白名單，整筆採用就不送——採用是「照比例全買」，
+  // 自動略過某一檔等於悄悄改掉發布者的配置比例。
+  const tenantBlocked = item.legs.some((leg) => !assetPolicy.canOpen(leg.assetId));
+
   const blockingReason =
-    vaultGate.paused ? t.adopt.dialog.vaultPaused
+    tenantBlocked ? t.common.tenant.assetNotEnabled
+    : vaultGate.paused ? t.adopt.dialog.vaultPaused
     : vaultGate.halted ? t.adopt.dialog.mintingHalted
     : !amount ? null
     : parsed === null ? t.adopt.dialog.badAmount
@@ -300,7 +306,7 @@ function AdoptDialog({ item, onClose }: { item: PublishedAllocation; onClose: ()
   const canConfirm = !!plan?.ok && !blockingReason && !running && !result && !!contracts && !!v2;
 
   const confirm = async () => {
-    if (!plan?.ok || !contracts || !v2) return;
+    if (!plan?.ok || !contracts || !v2 || tenantBlocked) return;
     setRunning(true);
     try {
       const outcome = await runAdoption(
