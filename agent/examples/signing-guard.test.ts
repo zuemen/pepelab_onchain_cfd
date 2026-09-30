@@ -13,12 +13,13 @@ process.env.AGENT_PRIVATE_KEY = AGENT_PK;
 process.env.SESSION_MANAGER_ADDRESS = MGR;
 process.env.BASE_SEPOLIA_RPC_URL = "http://127.0.0.1:1";
 process.env.X402_MAX_PAYMENT_USDC = "0.02";
-delete process.env.SIGNING_GUARD_MAX_TX_VALUE_WEI;
+process.env.X402_PAYTO_ALLOWLIST = "0x" + "77".repeat(20);
+for (const k of ["SIGNING_GUARD_MAX_TX_VALUE_WEI", "PAY_TO", "X402_MAX_TOTAL_SPEND_USDC", "LOOP_MAX_SPEND_USDC"]) delete process.env[k];
 
 const {
   GuardedWallet, guardViemAccount, SigningGuardError, makeSigner,
   assertAllowedTransaction, assertAllowedTypedData, assertAllowedMessage,
-  OFFICIAL_BASE_SEPOLIA_USDC,
+  OFFICIAL_BASE_SEPOLIA_USDC, resetX402GuardStateForTesting, x402SignedTotal, resolveX402TotalSpendCap,
 } = await import("@pepelab/shared");
 
 let n = 0;
@@ -53,21 +54,21 @@ const base = { chainId: 84532, nonce: 0, gasLimit: 300000n, maxFeePerGas: 1n, ma
   ok("允許：session manager 的 openPositionForSession（附 executionFee）與 closePositionForSession；makeSigner 回 GuardedWallet");
 }
 {
-  expectGuard(() => assertAllowedTransaction({ to: OTHER, data: openData }), "TX_NOT_ALLOWLISTED");
-  expectGuard(() => assertAllowedTransaction({ to: USDC, data: erc20.encodeFunctionData("approve", [OTHER, 1n]) }), "TX_NOT_ALLOWLISTED");
-  expectGuard(() => assertAllowedTransaction({ to: MGR, data: erc20.encodeFunctionData("approve", [OTHER, 1n]) }), "TX_NOT_ALLOWLISTED");
-  expectGuard(() => assertAllowedTransaction({ to: MGR, data: erc20.encodeFunctionData("increaseAllowance", [OTHER, 1n]) }), "TX_NOT_ALLOWLISTED");
-  expectGuard(() => assertAllowedTransaction({ to: USDC, data: erc20.encodeFunctionData("permit", [OTHER, OTHER, 1n, 0, 27, ethers.ZeroHash, ethers.ZeroHash]) }), "TX_NOT_ALLOWLISTED");
-  expectGuard(() => assertAllowedTransaction({ to: MGR, data: mgrIface.encodeFunctionData("createSession", [OTHER, 1, 1, 1, 1]) }), "TX_NOT_ALLOWLISTED");
-  expectGuard(() => assertAllowedTransaction({ to: MGR, data: "0x" }), "TX_NOT_ALLOWLISTED");
-  expectGuard(() => assertAllowedTransaction({ to: MGR, data: openData.slice(0, 74) }), "TX_NOT_ALLOWLISTED");
-  expectGuard(() => assertAllowedTransaction({ data: openData }), "TX_NOT_ALLOWLISTED");
-  expectGuard(() => assertAllowedTransaction({ to: MGR, data: openData, value: 10n ** 16n }), "TX_VALUE_TOO_HIGH");
-  expectGuard(() => assertAllowedTransaction({ to: MGR, data: closeData, value: 1n }), "TX_VALUE_TOO_HIGH");
-  expectGuard(() => assertAllowedTransaction({ to: MGR, data: openData, type: 4 }), "EIP7702_TX_FORBIDDEN");
-  expectGuard(() => assertAllowedTransaction({ to: MGR, data: openData, type: "eip7702" }), "EIP7702_TX_FORBIDDEN");
-  expectGuard(() => assertAllowedTransaction({ to: MGR, data: openData, authorizationList: [{ address: OTHER }] }), "EIP7702_TX_FORBIDDEN");
-  expectGuard(() => assertAllowedTransaction({ to: MGR, data: openData }, { SESSION_MANAGER_ADDRESS: "" } as any), "GUARD_CONFIG_INVALID");
+  expectGuard(() => assertAllowedTransaction({ chainId: 84532, to: OTHER, data: openData }), "TX_NOT_ALLOWLISTED");
+  expectGuard(() => assertAllowedTransaction({ chainId: 84532, to: USDC, data: erc20.encodeFunctionData("approve", [OTHER, 1n]) }), "TX_NOT_ALLOWLISTED");
+  expectGuard(() => assertAllowedTransaction({ chainId: 84532, to: MGR, data: erc20.encodeFunctionData("approve", [OTHER, 1n]) }), "TX_NOT_ALLOWLISTED");
+  expectGuard(() => assertAllowedTransaction({ chainId: 84532, to: MGR, data: erc20.encodeFunctionData("increaseAllowance", [OTHER, 1n]) }), "TX_NOT_ALLOWLISTED");
+  expectGuard(() => assertAllowedTransaction({ chainId: 84532, to: USDC, data: erc20.encodeFunctionData("permit", [OTHER, OTHER, 1n, 0, 27, ethers.ZeroHash, ethers.ZeroHash]) }), "TX_NOT_ALLOWLISTED");
+  expectGuard(() => assertAllowedTransaction({ chainId: 84532, to: MGR, data: mgrIface.encodeFunctionData("createSession", [OTHER, 1, 1, 1, 1]) }), "TX_NOT_ALLOWLISTED");
+  expectGuard(() => assertAllowedTransaction({ chainId: 84532, to: MGR, data: "0x" }), "TX_NOT_ALLOWLISTED");
+  expectGuard(() => assertAllowedTransaction({ chainId: 84532, to: MGR, data: openData.slice(0, 74) }), "TX_NOT_ALLOWLISTED");
+  expectGuard(() => assertAllowedTransaction({ chainId: 84532, data: openData }), "TX_NOT_ALLOWLISTED");
+  expectGuard(() => assertAllowedTransaction({ chainId: 84532, to: MGR, data: openData, value: 10n ** 16n }), "TX_VALUE_TOO_HIGH");
+  expectGuard(() => assertAllowedTransaction({ chainId: 84532, to: MGR, data: closeData, value: 1n }), "TX_VALUE_TOO_HIGH");
+  expectGuard(() => assertAllowedTransaction({ chainId: 84532, to: MGR, data: openData, type: 4 }), "EIP7702_TX_FORBIDDEN");
+  expectGuard(() => assertAllowedTransaction({ chainId: 84532, to: MGR, data: openData, type: "eip7702" }), "EIP7702_TX_FORBIDDEN");
+  expectGuard(() => assertAllowedTransaction({ chainId: 84532, to: MGR, data: openData, authorizationList: [{ address: OTHER }] }), "EIP7702_TX_FORBIDDEN");
+  expectGuard(() => assertAllowedTransaction({ chainId: 84532, to: MGR, data: openData }, { SESSION_MANAGER_ADDRESS: "" } as any), "GUARD_CONFIG_INVALID");
   await expectGuardAsync(w.signTransaction({ ...base, to: USDC, data: erc20.encodeFunctionData("approve", [OTHER, 5n]) }), "TX_NOT_ALLOWLISTED");
   ok("拒絕：非白名單 to、approve / increaseAllowance / permit / 其他 selector、殘缺 calldata、合約建立、超額 value、平倉附 ETH、type-4 / authorizationList、未設 session manager");
 }
@@ -80,8 +81,9 @@ const TWA = {
     { name: "validAfter", type: "uint256" }, { name: "validBefore", type: "uint256" }, { name: "nonce", type: "bytes32" },
   ],
 };
+const nowS = () => BigInt(Math.floor(Date.now() / 1000));
 const msg = (o: Record<string, unknown> = {}) => ({
-  from: w.address, to: OTHER, value: 5000n, validAfter: 0n, validBefore: 9_999_999_999n, nonce: ethers.ZeroHash, ...o,
+  from: w.address, to: OTHER, value: 5000n, validAfter: nowS() - 600n, validBefore: nowS() + 60n, nonce: ethers.ZeroHash, ...o,
 });
 {
   assert.match(await w.signTypedData(DOMAIN, TWA, msg()), /^0x[0-9a-f]{130}$/);
@@ -130,6 +132,89 @@ const msg = (o: Record<string, unknown> = {}) => ({
   await expectGuardAsync(w.authorize({ address: OTHER, nonce: 0, chainId: 84532 }), "EIP7702_AUTHORIZATION_FORBIDDEN");
   expectGuard(() => w.authorizeSync({ address: OTHER, nonce: 0, chainId: 84532 }), "EIP7702_AUTHORIZATION_FORBIDDEN");
   ok("personal message 只允許 pepelab-wv:<自己>:<時間戳>；其他訊息、7702 authorize 一律拒絕");
+}
+
+// ─── 最終複審 Low：chainId、標準編碼、EIP712Domain、payTo、有效期、累計上限、持有證明時效 ───
+{
+  // 交易 chainId：必帶、必須等於 agent 鏈、只收 number/bigint
+  expectGuard(() => assertAllowedTransaction({ to: MGR, data: openData }), "TX_CHAIN_ID_INVALID");
+  expectGuard(() => assertAllowedTransaction({ chainId: 1, to: MGR, data: openData }), "TX_CHAIN_ID_INVALID");
+  expectGuard(() => assertAllowedTransaction({ chainId: "84532", to: MGR, data: openData }), "TX_CHAIN_ID_INVALID");
+  assert.doesNotThrow(() => assertAllowedTransaction({ chainId: 84532n, to: MGR, data: openData }));
+  await expectGuardAsync(w.signTransaction({ ...base, chainId: undefined as any, to: MGR, data: openData }), "TX_CHAIN_ID_INVALID");
+  // calldata 解碼再編碼必須逐字相同：尾端夾帶 bytes 拒絕；大小寫不影響
+  expectGuard(() => assertAllowedTransaction({ chainId: 84532, to: MGR, data: openData + "00" }), "TX_NOT_ALLOWLISTED");
+  expectGuard(() => assertAllowedTransaction({ chainId: 84532, to: MGR, data: closeData + "deadbeef" }), "TX_NOT_ALLOWLISTED");
+  assert.doesNotThrow(() => assertAllowedTransaction({ chainId: 84532, to: MGR, data: openData.toUpperCase().replace("0X", "0x") }));
+  ok("交易：chainId 必帶且 = 84532（字串不收）；calldata 重新編碼逐字比對，尾端夾帶 bytes 拒絕");
+}
+{
+  resetX402GuardStateForTesting();
+  const STD = [
+    { name: "name", type: "string" }, { name: "version", type: "string" },
+    { name: "chainId", type: "uint256" }, { name: "verifyingContract", type: "address" },
+  ];
+  assert.doesNotThrow(() => assertAllowedTypedData(DOMAIN, { EIP712Domain: STD, ...TWA }, msg(), w.address));
+  expectGuard(() => assertAllowedTypedData(DOMAIN, { EIP712Domain: [...STD, { name: "salt", type: "bytes32" }], ...TWA }, msg(), w.address), "TYPED_DATA_NOT_ALLOWLISTED");
+  expectGuard(() => assertAllowedTypedData(DOMAIN, { EIP712Domain: STD.map((f) => f.name === "chainId" ? { ...f, type: "uint64" } : f), ...TWA }, msg(), w.address), "TYPED_DATA_NOT_ALLOWLISTED");
+  expectGuard(() => assertAllowedTypedData(DOMAIN, { EIP712Domain: STD.slice(0, 3), ...TWA }, msg(), w.address), "TYPED_DATA_NOT_ALLOWLISTED");
+  expectGuard(() => assertAllowedTypedData({ ...DOMAIN, chainId: "84532" }, TWA, msg(), w.address), "TYPED_DATA_NOT_ALLOWLISTED");
+  assert.doesNotThrow(() => assertAllowedTypedData({ ...DOMAIN, chainId: 84532n }, TWA, msg(), w.address));
+  ok("EIP-712：types.EIP712Domain 必須是標準四欄（多欄、改型別、少欄皆拒）；domain.chainId 只收 number/bigint");
+}
+{
+  resetX402GuardStateForTesting();
+  // payTo allowlist
+  expectGuard(() => assertAllowedTypedData(DOMAIN, TWA, msg({ to: MGR }), w.address), "PAYTO_NOT_ALLOWLISTED");
+  // TOFU：沒有 allowlist / PAY_TO → 第一筆釘住收款地址，之後只允許它
+  const saved = process.env.X402_PAYTO_ALLOWLIST;
+  delete process.env.X402_PAYTO_ALLOWLIST;
+  const origWarn = console.warn;
+  console.warn = () => {};
+  try {
+    await w.signTypedData(DOMAIN, TWA, msg({ to: MGR }));
+    await w.signTypedData(DOMAIN, TWA, msg({ to: MGR }));
+    await expectGuardAsync(w.signTypedData(DOMAIN, TWA, msg({ to: OTHER })), "PAYTO_NOT_ALLOWLISTED");
+    process.env.PAY_TO = OTHER;
+    assert.doesNotThrow(() => assertAllowedTypedData(DOMAIN, TWA, msg({ to: OTHER }), w.address), "PAY_TO 優先於 TOFU");
+    delete process.env.PAY_TO;
+  } finally {
+    console.warn = origWarn;
+    process.env.X402_PAYTO_ALLOWLIST = saved;
+  }
+  // 有效期
+  expectGuard(() => assertAllowedTypedData(DOMAIN, TWA, msg({ validBefore: nowS() + 3601n }), w.address), "PAYMENT_WINDOW_INVALID");
+  expectGuard(() => assertAllowedTypedData(DOMAIN, TWA, msg({ validBefore: 9_999_999_999n }), w.address), "PAYMENT_WINDOW_INVALID");
+  expectGuard(() => assertAllowedTypedData(DOMAIN, TWA, msg({ validAfter: nowS() + 30n }), w.address), "PAYMENT_WINDOW_INVALID");
+  expectGuard(() => assertAllowedTypedData(DOMAIN, TWA, msg({ validBefore: nowS() - 1n }), w.address), "PAYMENT_WINDOW_INVALID");
+  assert.doesNotThrow(() => assertAllowedTypedData(DOMAIN, TWA, msg({ validBefore: nowS() + 3600n }), w.address));
+  ok("x402：收款地址須在 X402_PAYTO_ALLOWLIST（→ PAY_TO → 第一次付款 TOFU 釘選）；validAfter ≤ now < validBefore ≤ now+3600");
+}
+{
+  // 累計花費上限（共用層）
+  resetX402GuardStateForTesting();
+  process.env.X402_MAX_TOTAL_SPEND_USDC = "0.012";
+  await w.signTypedData(DOMAIN, TWA, msg({ value: 5000n }));
+  await w.signTypedData(DOMAIN, TWA, msg({ value: 5000n }));
+  assert.equal(x402SignedTotal(), 10_000n);
+  await expectGuardAsync(w.signTypedData(DOMAIN, TWA, msg({ value: 5000n })), "SPEND_CAP_EXCEEDED");
+  const acc = guardViemAccount(privateKeyToAccount(generatePrivateKey()));
+  await expectGuardAsync(acc.signTypedData({ domain: DOMAIN as any, types: TWA, primaryType: "TransferWithAuthorization", message: { ...msg({ value: 5000n }), from: acc.address } as any }), "SPEND_CAP_EXCEEDED");
+  delete process.env.X402_MAX_TOTAL_SPEND_USDC;
+  process.env.LOOP_MAX_SPEND_USDC = "0.5";
+  assert.equal(resolveX402TotalSpendCap(), 500_000n, "舊名 LOOP_MAX_SPEND_USDC 仍可用");
+  delete process.env.LOOP_MAX_SPEND_USDC;
+  assert.equal(resolveX402TotalSpendCap(), 1_000_000n, "預設 1 USDC");
+  resetX402GuardStateForTesting();
+  ok("累計花費上限移到共用層：ethers 與 viem 兩條路徑共用同一個帳本，超過 X402_MAX_TOTAL_SPEND_USDC → SPEND_CAP_EXCEEDED");
+}
+{
+  const stale = `pepelab-wv:${w.address}:${Date.now() - 61_000}`;
+  const future = `pepelab-wv:${w.address}:${Date.now() + 61_000}`;
+  await expectGuardAsync(w.signMessage(stale), "MESSAGE_NOT_ALLOWLISTED");
+  await expectGuardAsync(w.signMessage(future), "MESSAGE_NOT_ALLOWLISTED");
+  assert.ok(await w.signMessage(`pepelab-wv:${w.address}:${Date.now() - 30_000}`));
+  ok("持有證明挑戰時間戳須在 ±60 秒內");
 }
 
 // ─── viem：x402 付款仍可用（用 x402 套件本身產生付款 header）───

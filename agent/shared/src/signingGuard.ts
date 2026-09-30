@@ -15,7 +15,12 @@
 //       以 `types`／`primaryType` 判斷型別（**不看 message 欄位**），型別欄位必須與
 //       EIP-3009 規格逐欄相同、message 的鍵必須恰好等於型別欄位；domain 的 name /
 //       version / chainId / verifyingContract 必須等於官方 USDC；`from` 必須是 agent
-//       自己；`value` ≤ X402_MAX_PAYMENT_USDC（resolveX402MaxValue）。
+//       自己；`value` ≤ X402_MAX_PAYMENT_USDC（resolveX402MaxValue）；`to` 在 payTo allowlist
+//       （X402_PAYTO_ALLOWLIST → PAY_TO → 第一次付款 TOFU 釘選）；validAfter ≤ now <
+//       validBefore ≤ now+3600；本 process 累計簽出 ≤ X402_MAX_TOTAL_SPEND_USDC；
+//       types.EIP712Domain 若存在須為標準四欄，domain.chainId 只收 number/bigint。
+//       交易另要求 chainId = AGENT_CHAIN_ID（EIP-155），calldata 重新編碼須逐字相同。
+//       持有證明挑戰的時間戳須在 ±60 秒內。
 //       呼叫點：x402-fetch（examples/x402-*、buy-signal、demo-agent、x402_agent.ts）。
 //   (c) EIP-191 personal message：只允許 ERC-8126 proof-of-possession 挑戰字串
 //       `pepelab-wv:<agent 地址>:<毫秒時間戳>`（verification.ts checkWV；write.ts 風險閘與
@@ -31,11 +36,15 @@
 import { ethers } from "ethers";
 import { AGENT_CHAIN_ID } from "./addresses.ts";
 import { OFFICIAL_BASE_SEPOLIA_USDC } from "./env.ts";
-import { resolveX402MaxValue } from "./x402Client.ts";
+import { resolveX402MaxValue, resolveX402TotalSpendCap } from "./x402Client.ts";
 
 /** 拒絕原因代碼（穩定字串，寫進稽核與錯誤）。 */
 export type SigningGuardReason =
   | "TX_NOT_ALLOWLISTED"
+  | "TX_CHAIN_ID_INVALID"
+  | "PAYTO_NOT_ALLOWLISTED"
+  | "PAYMENT_WINDOW_INVALID"
+  | "SPEND_CAP_EXCEEDED"
   | "EIP7702_TX_FORBIDDEN"
   | "EIP7702_AUTHORIZATION_FORBIDDEN"
   | "RAW_HASH_SIGN_FORBIDDEN"
@@ -86,6 +95,16 @@ export const TRANSFER_WITH_AUTHORIZATION_FIELDS: ReadonlyArray<{ name: string; t
 ];
 
 export const WV_CHALLENGE_RE = /^pepelab-wv:(0x[0-9a-fA-F]{40}):(\d{10,16})$/;
+/** 持有證明挑戰的時間戳（毫秒）與現在的最大差距。 */
+export const WV_MAX_SKEW_MS = 60_000;
+
+/** EIP-712 標準 domain 四欄（USDC 的 domain 就是這四欄）。 */
+export const EIP712_DOMAIN_FIELDS: ReadonlyArray<{ name: string; type: string }> = [
+  { name: "name", type: "string" },
+  { name: "version", type: "string" },
+  { name: "chainId", type: "uint256" },
+  { name: "verifyingContract", type: "address" },
+];
 
 function sessionManager(env: NodeJS.ProcessEnv): string {
   const a = env.SESSION_MANAGER_ADDRESS?.trim();
@@ -125,11 +144,16 @@ function is7702(tx: { type?: unknown; authorizationList?: unknown }): boolean {
 }
 
 export function assertAllowedTransaction(
-  tx: { to?: unknown; data?: unknown; value?: unknown; type?: unknown; authorizationList?: unknown },
+  tx: { to?: unknown; data?: unknown; value?: unknown; type?: unknown; authorizationList?: unknown; chainId?: unknown },
   env: NodeJS.ProcessEnv = process.env,
 ): void {
   if (is7702(tx)) {
     throw new SigningGuardError("EIP7702_TX_FORBIDDEN", "agent 金鑰不得簽 EIP-7702（type-4 / authorizationList）交易");
+  }
+  // chainId 必須帶、且等於 agent 的鏈：沒有 chainId 的簽章沒有 EIP-155 重放保護，可以被拿到別條鏈上重播。
+  const cid = typeof tx.chainId === "bigint" || typeof tx.chainId === "number" ? big(tx.chainId) : null;
+  if (cid === null || cid !== BigInt(AGENT_CHAIN_ID)) {
+    throw new SigningGuardError("TX_CHAIN_ID_INVALID", `交易 chainId ${String(tx.chainId ?? "(缺)")} 必須等於 ${AGENT_CHAIN_ID}`);
   }
   const mgr = sessionManager(env);
   const to = typeof tx.to === "string" ? tx.to : (tx.to as { address?: string } | null)?.address;
@@ -140,10 +164,15 @@ export function assertAllowedTransaction(
   const sel = data.slice(0, 10).toLowerCase();
   const fnName = ALLOWED_TX_SELECTORS[sel];
   if (!fnName) throw new SigningGuardError("TX_NOT_ALLOWLISTED", `selector ${sel || "(空)"} 不在允許清單`);
+  // 解碼後重新編碼，必須與原 data 逐字相同：尾端夾帶任何 bytes、非標準編碼都拒絕。
+  let canonical: string;
   try {
-    SESSION_MANAGER_IFACE.decodeFunctionData(fnName, data);
+    canonical = SESSION_MANAGER_IFACE.encodeFunctionData(fnName, SESSION_MANAGER_IFACE.decodeFunctionData(fnName, data));
   } catch {
     throw new SigningGuardError("TX_NOT_ALLOWLISTED", `${fnName} calldata 無法完整解碼（fail-closed）`);
+  }
+  if (canonical.toLowerCase() !== data.toLowerCase()) {
+    throw new SigningGuardError("TX_NOT_ALLOWLISTED", `${fnName} calldata 不是標準編碼（尾端夾帶資料或格式異常）`);
   }
   const value = tx.value === undefined || tx.value === null ? 0n : big(tx.value);
   const cap = maxTxValue(env);
@@ -171,6 +200,15 @@ export function assertAllowedTypedData(
   primaryType?: string,
 ): void {
   const T = "TYPED_DATA_NOT_ALLOWLISTED" as const;
+  // types 若帶 EIP712Domain，必須逐欄等於標準四欄（名稱與型別都一致）。
+  if ("EIP712Domain" in (types ?? {})) {
+    const d = types.EIP712Domain as Array<{ name: string; type: string }>;
+    const ok =
+      Array.isArray(d) &&
+      d.length === EIP712_DOMAIN_FIELDS.length &&
+      d.every((f, i) => f?.name === EIP712_DOMAIN_FIELDS[i].name && f?.type === EIP712_DOMAIN_FIELDS[i].type);
+    if (!ok) throw new SigningGuardError(T, "types.EIP712Domain 不是標準四欄（name, version, chainId, verifyingContract）");
+  }
   const names = Object.keys(types ?? {}).filter((n) => n !== "EIP712Domain");
   if (names.length !== 1 || names[0] !== "TransferWithAuthorization") {
     throw new SigningGuardError(T, `typed data 型別 [${names.join(", ")}] 不在允許清單（只允許 TransferWithAuthorization）`);
@@ -194,10 +232,14 @@ export function assertAllowedTypedData(
   const usdc = OFFICIAL_USDC_DOMAINS[AGENT_CHAIN_ID];
   if (!usdc) throw new SigningGuardError(T, `chain ${AGENT_CHAIN_ID} 沒有設定官方 USDC domain`);
   const vc = typeof domain?.verifyingContract === "string" ? domain.verifyingContract : "";
+  // domain.chainId 只接受 number / bigint（字串可被構造成不同的編碼，不收）。
+  const chainIdOk =
+    (typeof domain?.chainId === "number" || typeof domain?.chainId === "bigint") &&
+    big(domain.chainId) === BigInt(AGENT_CHAIN_ID);
   const domainOk =
     domain?.name === usdc.name &&
     domain?.version === usdc.version &&
-    big(domain?.chainId) === BigInt(AGENT_CHAIN_ID) &&
+    chainIdOk &&
     ethers.isAddress(vc) &&
     ethers.getAddress(vc) === ethers.getAddress(usdc.verifyingContract) &&
     domain?.salt === undefined;
@@ -213,6 +255,87 @@ export function assertAllowedTypedData(
   if (value === null || value > cap) {
     throw new SigningGuardError("PAYMENT_TOO_HIGH", `付款金額 ${String(message.value)} 超過單筆上限 ${cap}（X402_MAX_PAYMENT_USDC）`);
   }
+
+  // 收款地址：必須在 allowlist（見 x402PayToAllowlist 的來源順序）。
+  const to = typeof message.to === "string" && ethers.isAddress(message.to) ? ethers.getAddress(message.to) : null;
+  if (!to) throw new SigningGuardError("PAYTO_NOT_ALLOWLISTED", "TransferWithAuthorization.to 不是合法地址");
+  const allow = x402PayToAllowlist();
+  if (allow && !allow.includes(to)) {
+    throw new SigningGuardError("PAYTO_NOT_ALLOWLISTED", `收款地址 ${to} 不在 x402 payTo allowlist`);
+  }
+
+  // 有效期：validAfter ≤ now、validBefore ≤ now + 3600s（簽出去的授權不能長期有效）。
+  const nowSec = BigInt(Math.floor(Date.now() / 1000));
+  const after = big(message.validAfter);
+  const before = big(message.validBefore);
+  if (after === null || before === null || after > nowSec || before > nowSec + X402_MAX_VALIDITY_SEC || before <= nowSec) {
+    throw new SigningGuardError(
+      "PAYMENT_WINDOW_INVALID",
+      `授權有效期不合規（validAfter=${String(message.validAfter)}、validBefore=${String(message.validBefore)}；須 validAfter ≤ now、now < validBefore ≤ now+${X402_MAX_VALIDITY_SEC}）`,
+    );
+  }
+
+  // 累計花費上限（所有 x402 付款流程共用：守門是它們唯一的共同咽喉點）。
+  const total = resolveX402TotalSpendCap();
+  if (x402Ledger.signedTotal + value > total) {
+    throw new SigningGuardError(
+      "SPEND_CAP_EXCEEDED",
+      `本 process 已簽出 ${x402Ledger.signedTotal}，加上本筆 ${value} 超過累計上限 ${total}（X402_MAX_TOTAL_SPEND_USDC）`,
+    );
+  }
+}
+
+// ── x402 共用狀態：payTo 與累計花費 ─────────────────────────────────────────
+export const X402_MAX_VALIDITY_SEC = 3600n;
+
+/**
+ * 本 process 已簽出的 x402 付款授權總額（atomic）。以「簽出」計、不等結算——寧可高估，
+ * 這個數字是拿來擋上限的。所有走 GuardedWallet / guardViemAccount 的 x402 流程共用。
+ * 誠實邊界：以 process 為範圍，重啟歸零；長期上限請配合外部監控。
+ */
+const x402Ledger = { signedTotal: 0n, pinnedPayTo: null as string | null };
+
+export function x402SignedTotal(): bigint {
+  return x402Ledger.signedTotal;
+}
+
+/** 測試用：清掉累計與 TOFU 釘選。 */
+export function resetX402GuardStateForTesting(): void {
+  x402Ledger.signedTotal = 0n;
+  x402Ledger.pinnedPayTo = null;
+}
+
+/**
+ * payTo allowlist 的來源（依序）：
+ *   1. `X402_PAYTO_ALLOWLIST`（逗號分隔地址）——正式環境請設定。
+ *   2. `PAY_TO`——與 signal-api 收款地址同一個設定（同一份 agent/.env）。
+ *   3. 都沒有：**第一次付款的收款地址為準**（trust-on-first-use）。本 process 第一筆 x402 付款
+ *      簽出後釘住它的 `to`，之後任何不同的收款地址一律拒絕；重啟後重新釘選。啟動時會在
+ *      stderr 警告一次。回傳 null＝尚未釘選（第一筆放行）。
+ */
+export function x402PayToAllowlist(env: NodeJS.ProcessEnv = process.env): string[] | null {
+  const raw = env.X402_PAYTO_ALLOWLIST?.trim() || env.PAY_TO?.trim();
+  if (raw) {
+    const list = raw.split(",").map((s) => s.trim()).filter(Boolean);
+    const bad = list.filter((a) => !ethers.isAddress(a));
+    if (bad.length || !list.length) {
+      throw new SigningGuardError("GUARD_CONFIG_INVALID", `X402_PAYTO_ALLOWLIST / PAY_TO 含非法地址（fail-closed）`);
+    }
+    return list.map((a) => ethers.getAddress(a));
+  }
+  if (x402Ledger.pinnedPayTo) return [x402Ledger.pinnedPayTo];
+  if (!warnedTofu) {
+    warnedTofu = true;
+    console.warn("[signing-guard] ⚠ 未設定 X402_PAYTO_ALLOWLIST / PAY_TO：以第一次 x402 付款的收款地址為準（TOFU），之後只允許該地址。");
+  }
+  return null;
+}
+let warnedTofu = false;
+
+/** 簽章成功後登記：累計花費、TOFU 釘選收款地址。 */
+function recordX402Signed(message: Record<string, unknown>): void {
+  x402Ledger.signedTotal += big(message.value) ?? 0n;
+  if (!x402Ledger.pinnedPayTo && typeof message.to === "string") x402Ledger.pinnedPayTo = ethers.getAddress(message.to);
 }
 
 // ── (c) personal message ─────────────────────────────────────────────────────
@@ -232,6 +355,10 @@ export function assertAllowedMessage(message: unknown, signer: string): void {
   const m = WV_CHALLENGE_RE.exec(text);
   if (!m || ethers.getAddress(m[1]) !== ethers.getAddress(signer)) {
     throw new SigningGuardError("MESSAGE_NOT_ALLOWLISTED", "只允許簽 ERC-8126 proof-of-possession 挑戰字串（pepelab-wv:<自己的地址>:<時間戳>）");
+  }
+  // 時間戳（毫秒）必須在現在 ±60 秒內：擋預先簽好、事後重放的持有證明。
+  if (Math.abs(Number(m[2]) - Date.now()) > WV_MAX_SKEW_MS) {
+    throw new SigningGuardError("MESSAGE_NOT_ALLOWLISTED", `持有證明挑戰的時間戳與現在相差超過 ${WV_MAX_SKEW_MS / 1000} 秒`);
   }
 }
 
@@ -253,7 +380,9 @@ export class GuardedWallet extends ethers.Wallet {
     value: Record<string, any>,
   ): Promise<string> {
     assertAllowedTypedData(domain as any, types, value, this.address);
-    return super.signTypedData(domain, types, value);
+    const sig = await super.signTypedData(domain, types, value);
+    recordX402Signed(value);
+    return sig;
   }
 
   override async signMessage(message: string | Uint8Array): Promise<string> {
@@ -298,7 +427,9 @@ export function guardViemAccount<A extends { type: string; address: string }>(ac
   if (typeof acc.signTypedData === "function") {
     wrapped.signTypedData = async (td: any) => {
       assertAllowedTypedData(td?.domain ?? {}, td?.types ?? {}, td?.message ?? {}, acc.address, td?.primaryType);
-      return acc.signTypedData(td);
+      const sig = await acc.signTypedData(td);
+      recordX402Signed(td?.message ?? {});
+      return sig;
     };
   }
   if (typeof acc.signMessage === "function") {

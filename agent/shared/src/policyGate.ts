@@ -242,7 +242,8 @@ export function evaluatePolicy(
   state: PolicyState,
   nowMs: number,
 ): PolicyDecision {
-  if (typeof req.user !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(req.user)) {
+  // 零地址＝鏈上沒有這個 session（mapping 預設值），不是一位客戶 → 直接拒絕。
+  if (typeof req.user !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(req.user) || /^0x0{40}$/i.test(req.user)) {
     return deny("CONFIG_INVALID", "缺少鏈上 session.user，無法套用每位客戶的額度（fail-closed）");
   }
   const s = currentAgentState(state, policyStateKey(req), cfg, nowMs);

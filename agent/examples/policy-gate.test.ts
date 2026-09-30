@@ -72,6 +72,8 @@ ok("單筆保證金上限：>100 拒絕、=100 放行、負數/NaN → MARGIN_IN
   assert.equal(st.agents[GKEY].dailyMargin, 500, "全域層同步累計");
   // 缺 session.user → fail-closed
   assert.equal(evaluatePolicy(open({ user: "" }), big, empty(), T0).reasonCode, "CONFIG_INVALID");
+  assert.equal(evaluatePolicy(open({ user: "0x" + "0".repeat(40) }), big, empty(), T0).reasonCode, "CONFIG_INVALID", "session.user 為零地址（session 不存在）→ 拒絕");
+  assert.equal(evaluatePolicy({ action: "close", sessionId: 7, agent: AGENT, user: "0x" + "0".repeat(40), positionId: 1 }, big, empty(), T0).reasonCode, "CONFIG_INVALID");
   // 跨 UTC 日歸零
   const nextDay = Date.UTC(2026, 9, 1, 0, 0, 1);
   assert.equal(evaluatePolicy(open({ marginUsdc: 100 }), big, st, nextDay).reasonCode, "OK");

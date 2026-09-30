@@ -16,7 +16,7 @@ import { wrapFetchWithPayment } from "x402-fetch";
 import {
   openPositionForSession, getSession, makeProvider, makeContracts, assetIdOf,
   agentDid, appendAudit, type AuditRecord, type AuthorizationVC,
-  meteredFetch, resolveX402MaxValue, formatUsdcAtomic, guardViemAccount,
+  meteredFetch, resolveX402MaxValue, resolveX402TotalSpendCap, formatUsdcAtomic, guardViemAccount,
 } from "@pepelab/shared";
 import { decide, parseOracleBody } from "./x402-autonomous.ts";
 import { loadVc, localVerifyVc, fetchAgentVerification, AUDIT_PATH, type VcCheck } from "./vc-gate.ts";
@@ -38,7 +38,9 @@ const ORACLE_PRICE_USDC = Number(process.env.X402_ORACLE_PRICE ?? "0.005");
 // 稽核（四·Medium）：舊版 `for(;;)` 無限迴圈、每輪對每個資產先付費再判斷要不要
 // 跳過（192 次付費/日、無累計上限、失敗也永遠重試）。以下三道閘門把「自主」限制在
 // 一個有界、可觀測的預算內。
-const MAX_SPEND_USDC = Number(process.env.LOOP_MAX_SPEND_USDC ?? "1");     // 累計資料費上限
+// 累計資料費上限：共用層（shared/x402Client.resolveX402TotalSpendCap，env X402_MAX_TOTAL_SPEND_USDC，
+// 舊名 LOOP_MAX_SPEND_USDC 仍可用）。簽章守門在簽出每筆 x402 授權前也會用同一個上限擋。
+const MAX_SPEND_USDC = Number(formatUsdcAtomic(resolveX402TotalSpendCap()));
 const MAX_ROUNDS = Number(process.env.LOOP_MAX_ROUNDS ?? "0");            // 0 = 不限輪數
 const MAX_CONSECUTIVE_FAILURES = Number(process.env.LOOP_MAX_FAILURES ?? "5");
 

@@ -38911,6 +38911,13 @@ function parseUsdcAtomic(s) {
   const frac = (m[2] ?? "").padEnd(USDC_DECIMALS, "0");
   return BigInt(m[1]) * 10n ** BigInt(USDC_DECIMALS) + BigInt(frac || "0");
 }
+var X402_DEFAULT_MAX_TOTAL_SPEND_USDC = "1";
+function resolveX402TotalSpendCap() {
+  const raw2 = process.env.X402_MAX_TOTAL_SPEND_USDC?.trim() || process.env.LOOP_MAX_SPEND_USDC?.trim() || X402_DEFAULT_MAX_TOTAL_SPEND_USDC;
+  const v = parseUsdcAtomic(raw2);
+  if (v <= 0n) throw new Error(`X402_MAX_TOTAL_SPEND_USDC \u5FC5\u9808 > 0\uFF08\u6536\u5230 ${raw2}\uFF09`);
+  return v;
+}
 function resolveX402MaxValue() {
   const raw2 = process.env.X402_MAX_PAYMENT_USDC?.trim() || X402_DEFAULT_MAX_PAYMENT_USDC;
   const v = parseUsdcAtomic(raw2);
@@ -38948,6 +38955,13 @@ var TRANSFER_WITH_AUTHORIZATION_FIELDS = [
   { name: "nonce", type: "bytes32" }
 ];
 var WV_CHALLENGE_RE = /^pepelab-wv:(0x[0-9a-fA-F]{40}):(\d{10,16})$/;
+var WV_MAX_SKEW_MS = 6e4;
+var EIP712_DOMAIN_FIELDS = [
+  { name: "name", type: "string" },
+  { name: "version", type: "string" },
+  { name: "chainId", type: "uint256" },
+  { name: "verifyingContract", type: "address" }
+];
 function sessionManager(env) {
   const a = env.SESSION_MANAGER_ADDRESS?.trim();
   if (!a || !ethers_exports.isAddress(a) || a.toLowerCase() === ZERO) {
@@ -38982,6 +38996,10 @@ function assertAllowedTransaction(tx, env = process.env) {
   if (is7702(tx)) {
     throw new SigningGuardError("EIP7702_TX_FORBIDDEN", "agent \u91D1\u9470\u4E0D\u5F97\u7C3D EIP-7702\uFF08type-4 / authorizationList\uFF09\u4EA4\u6613");
   }
+  const cid = typeof tx.chainId === "bigint" || typeof tx.chainId === "number" ? big(tx.chainId) : null;
+  if (cid === null || cid !== BigInt(AGENT_CHAIN_ID)) {
+    throw new SigningGuardError("TX_CHAIN_ID_INVALID", `\u4EA4\u6613 chainId ${String(tx.chainId ?? "(\u7F3A)")} \u5FC5\u9808\u7B49\u65BC ${AGENT_CHAIN_ID}`);
+  }
   const mgr = sessionManager(env);
   const to = typeof tx.to === "string" ? tx.to : tx.to?.address;
   if (!to || !ethers_exports.isAddress(to) || ethers_exports.getAddress(to) !== mgr) {
@@ -38991,10 +39009,14 @@ function assertAllowedTransaction(tx, env = process.env) {
   const sel = data4.slice(0, 10).toLowerCase();
   const fnName = ALLOWED_TX_SELECTORS[sel];
   if (!fnName) throw new SigningGuardError("TX_NOT_ALLOWLISTED", `selector ${sel || "(\u7A7A)"} \u4E0D\u5728\u5141\u8A31\u6E05\u55AE`);
+  let canonical;
   try {
-    SESSION_MANAGER_IFACE.decodeFunctionData(fnName, data4);
+    canonical = SESSION_MANAGER_IFACE.encodeFunctionData(fnName, SESSION_MANAGER_IFACE.decodeFunctionData(fnName, data4));
   } catch {
     throw new SigningGuardError("TX_NOT_ALLOWLISTED", `${fnName} calldata \u7121\u6CD5\u5B8C\u6574\u89E3\u78BC\uFF08fail-closed\uFF09`);
+  }
+  if (canonical.toLowerCase() !== data4.toLowerCase()) {
+    throw new SigningGuardError("TX_NOT_ALLOWLISTED", `${fnName} calldata \u4E0D\u662F\u6A19\u6E96\u7DE8\u78BC\uFF08\u5C3E\u7AEF\u593E\u5E36\u8CC7\u6599\u6216\u683C\u5F0F\u7570\u5E38\uFF09`);
   }
   const value = tx.value === void 0 || tx.value === null ? 0n : big(tx.value);
   const cap = maxTxValue(env);
@@ -39007,6 +39029,11 @@ function assertAllowedTransaction(tx, env = process.env) {
 }
 function assertAllowedTypedData(domain, types, message, signer, primaryType) {
   const T = "TYPED_DATA_NOT_ALLOWLISTED";
+  if ("EIP712Domain" in (types ?? {})) {
+    const d = types.EIP712Domain;
+    const ok = Array.isArray(d) && d.length === EIP712_DOMAIN_FIELDS.length && d.every((f2, i) => f2?.name === EIP712_DOMAIN_FIELDS[i].name && f2?.type === EIP712_DOMAIN_FIELDS[i].type);
+    if (!ok) throw new SigningGuardError(T, "types.EIP712Domain \u4E0D\u662F\u6A19\u6E96\u56DB\u6B04\uFF08name, version, chainId, verifyingContract\uFF09");
+  }
   const names2 = Object.keys(types ?? {}).filter((n2) => n2 !== "EIP712Domain");
   if (names2.length !== 1 || names2[0] !== "TransferWithAuthorization") {
     throw new SigningGuardError(T, `typed data \u578B\u5225 [${names2.join(", ")}] \u4E0D\u5728\u5141\u8A31\u6E05\u55AE\uFF08\u53EA\u5141\u8A31 TransferWithAuthorization\uFF09`);
@@ -39025,7 +39052,8 @@ function assertAllowedTypedData(domain, types, message, signer, primaryType) {
   const usdc2 = OFFICIAL_USDC_DOMAINS[AGENT_CHAIN_ID];
   if (!usdc2) throw new SigningGuardError(T, `chain ${AGENT_CHAIN_ID} \u6C92\u6709\u8A2D\u5B9A\u5B98\u65B9 USDC domain`);
   const vc = typeof domain?.verifyingContract === "string" ? domain.verifyingContract : "";
-  const domainOk = domain?.name === usdc2.name && domain?.version === usdc2.version && big(domain?.chainId) === BigInt(AGENT_CHAIN_ID) && ethers_exports.isAddress(vc) && ethers_exports.getAddress(vc) === ethers_exports.getAddress(usdc2.verifyingContract) && domain?.salt === void 0;
+  const chainIdOk = (typeof domain?.chainId === "number" || typeof domain?.chainId === "bigint") && big(domain.chainId) === BigInt(AGENT_CHAIN_ID);
+  const domainOk = domain?.name === usdc2.name && domain?.version === usdc2.version && chainIdOk && ethers_exports.isAddress(vc) && ethers_exports.getAddress(vc) === ethers_exports.getAddress(usdc2.verifyingContract) && domain?.salt === void 0;
   if (!domainOk) {
     throw new SigningGuardError(T, "domain \u4E0D\u662F\u5B98\u65B9 USDC\uFF08name / version / chainId / verifyingContract \u4E0D\u7B26\uFF09");
   }
@@ -39038,6 +39066,52 @@ function assertAllowedTypedData(domain, types, message, signer, primaryType) {
   if (value === null || value > cap) {
     throw new SigningGuardError("PAYMENT_TOO_HIGH", `\u4ED8\u6B3E\u91D1\u984D ${String(message.value)} \u8D85\u904E\u55AE\u7B46\u4E0A\u9650 ${cap}\uFF08X402_MAX_PAYMENT_USDC\uFF09`);
   }
+  const to = typeof message.to === "string" && ethers_exports.isAddress(message.to) ? ethers_exports.getAddress(message.to) : null;
+  if (!to) throw new SigningGuardError("PAYTO_NOT_ALLOWLISTED", "TransferWithAuthorization.to \u4E0D\u662F\u5408\u6CD5\u5730\u5740");
+  const allow = x402PayToAllowlist();
+  if (allow && !allow.includes(to)) {
+    throw new SigningGuardError("PAYTO_NOT_ALLOWLISTED", `\u6536\u6B3E\u5730\u5740 ${to} \u4E0D\u5728 x402 payTo allowlist`);
+  }
+  const nowSec = BigInt(Math.floor(Date.now() / 1e3));
+  const after = big(message.validAfter);
+  const before = big(message.validBefore);
+  if (after === null || before === null || after > nowSec || before > nowSec + X402_MAX_VALIDITY_SEC || before <= nowSec) {
+    throw new SigningGuardError(
+      "PAYMENT_WINDOW_INVALID",
+      `\u6388\u6B0A\u6709\u6548\u671F\u4E0D\u5408\u898F\uFF08validAfter=${String(message.validAfter)}\u3001validBefore=${String(message.validBefore)}\uFF1B\u9808 validAfter \u2264 now\u3001now < validBefore \u2264 now+${X402_MAX_VALIDITY_SEC}\uFF09`
+    );
+  }
+  const total = resolveX402TotalSpendCap();
+  if (x402Ledger.signedTotal + value > total) {
+    throw new SigningGuardError(
+      "SPEND_CAP_EXCEEDED",
+      `\u672C process \u5DF2\u7C3D\u51FA ${x402Ledger.signedTotal}\uFF0C\u52A0\u4E0A\u672C\u7B46 ${value} \u8D85\u904E\u7D2F\u8A08\u4E0A\u9650 ${total}\uFF08X402_MAX_TOTAL_SPEND_USDC\uFF09`
+    );
+  }
+}
+var X402_MAX_VALIDITY_SEC = 3600n;
+var x402Ledger = { signedTotal: 0n, pinnedPayTo: null };
+function x402PayToAllowlist(env = process.env) {
+  const raw2 = env.X402_PAYTO_ALLOWLIST?.trim() || env.PAY_TO?.trim();
+  if (raw2) {
+    const list2 = raw2.split(",").map((s) => s.trim()).filter(Boolean);
+    const bad = list2.filter((a) => !ethers_exports.isAddress(a));
+    if (bad.length || !list2.length) {
+      throw new SigningGuardError("GUARD_CONFIG_INVALID", `X402_PAYTO_ALLOWLIST / PAY_TO \u542B\u975E\u6CD5\u5730\u5740\uFF08fail-closed\uFF09`);
+    }
+    return list2.map((a) => ethers_exports.getAddress(a));
+  }
+  if (x402Ledger.pinnedPayTo) return [x402Ledger.pinnedPayTo];
+  if (!warnedTofu) {
+    warnedTofu = true;
+    console.warn("[signing-guard] \u26A0 \u672A\u8A2D\u5B9A X402_PAYTO_ALLOWLIST / PAY_TO\uFF1A\u4EE5\u7B2C\u4E00\u6B21 x402 \u4ED8\u6B3E\u7684\u6536\u6B3E\u5730\u5740\u70BA\u6E96\uFF08TOFU\uFF09\uFF0C\u4E4B\u5F8C\u53EA\u5141\u8A31\u8A72\u5730\u5740\u3002");
+  }
+  return null;
+}
+var warnedTofu = false;
+function recordX402Signed(message) {
+  x402Ledger.signedTotal += big(message.value) ?? 0n;
+  if (!x402Ledger.pinnedPayTo && typeof message.to === "string") x402Ledger.pinnedPayTo = ethers_exports.getAddress(message.to);
 }
 function assertAllowedMessage(message, signer) {
   const text = typeof message === "string" ? message : message instanceof Uint8Array ? (() => {
@@ -39051,6 +39125,9 @@ function assertAllowedMessage(message, signer) {
   if (!m || ethers_exports.getAddress(m[1]) !== ethers_exports.getAddress(signer)) {
     throw new SigningGuardError("MESSAGE_NOT_ALLOWLISTED", "\u53EA\u5141\u8A31\u7C3D ERC-8126 proof-of-possession \u6311\u6230\u5B57\u4E32\uFF08pepelab-wv:<\u81EA\u5DF1\u7684\u5730\u5740>:<\u6642\u9593\u6233>\uFF09");
   }
+  if (Math.abs(Number(m[2]) - Date.now()) > WV_MAX_SKEW_MS) {
+    throw new SigningGuardError("MESSAGE_NOT_ALLOWLISTED", `\u6301\u6709\u8B49\u660E\u6311\u6230\u7684\u6642\u9593\u6233\u8207\u73FE\u5728\u76F8\u5DEE\u8D85\u904E ${WV_MAX_SKEW_MS / 1e3} \u79D2`);
+  }
 }
 var GuardedWallet = class _GuardedWallet extends ethers_exports.Wallet {
   async signTransaction(tx) {
@@ -39059,7 +39136,9 @@ var GuardedWallet = class _GuardedWallet extends ethers_exports.Wallet {
   }
   async signTypedData(domain, types, value) {
     assertAllowedTypedData(domain, types, value, this.address);
-    return super.signTypedData(domain, types, value);
+    const sig = await super.signTypedData(domain, types, value);
+    recordX402Signed(value);
+    return sig;
   }
   async signMessage(message) {
     assertAllowedMessage(message, this.address);
