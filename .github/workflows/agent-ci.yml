@@ -17,11 +17,13 @@ on:
     paths:
       - 'agent/**'
       - 'frontend/src/contracts/**'
+      - 'frontend/tsconfig.json'
       - '.github/workflows/agent-ci.yml'
   pull_request:
     paths:
       - 'agent/**'
       - 'frontend/src/contracts/**'
+      - 'frontend/tsconfig.json'
       - '.github/workflows/agent-ci.yml'
   workflow_dispatch:
 

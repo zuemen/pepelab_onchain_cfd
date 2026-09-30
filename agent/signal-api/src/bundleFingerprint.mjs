@@ -106,7 +106,13 @@ export const BUILD_OPTIONS = Object.freeze({
  * 每次 dependabot 升 esbuild 都強迫重打包，而輸出差異只是工具鏈雜訊。）
  * 同版本但 lockfile 的 integrity 改變也不偵測——npm 不允許同版本重新發布。
  */
-export const BUILD_CONFIG_FILES = ["agent/signal-api/build-vercel.mjs", "agent/tsconfig.json", "agent/tsconfig.base.json"];
+// esbuild 對每個檔案就近取 tsconfig：內聯的 frontend/src/contracts/*.ts 套的是 frontend/tsconfig.json。
+export const BUILD_CONFIG_FILES = [
+  "agent/signal-api/build-vercel.mjs",
+  "agent/tsconfig.json",
+  "agent/tsconfig.base.json",
+  "frontend/tsconfig.json",
+];
 
 /**
  * 跑一次 esbuild（write:false、metafile），回傳 entry 內聯的所有輸入檔（絕對路徑，

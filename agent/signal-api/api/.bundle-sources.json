@@ -1,5 +1,5 @@
 {
-  "digest": "a1faf09f3b6d952c",
+  "digest": "7225b5b8fb7f1877",
   "files": {
     "agent/shared/src/abis.ts": "872c3136604d6584",
     "agent/shared/src/addresses.ts": "a6cb279048c58a4b",
@@ -36,6 +36,7 @@
     "agent/signal-api/build-vercel.mjs": "234611c856dde8a3",
     "agent/tsconfig.json": "65ac52ed92504ab3",
     "agent/tsconfig.base.json": "2a1023daf5584dee",
+    "frontend/tsconfig.json": "bd9e9828ce1339d1",
     "npm:@adraffy/ens-normalize@1.11.1": "pkg",
     "npm:@hono/node-server@1.19.17": "pkg",
     "npm:@noble/curves@1.2.0": "pkg",
