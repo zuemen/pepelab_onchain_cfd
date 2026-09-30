@@ -145,4 +145,21 @@ const decode = (abi: readonly unknown[], tx: UnsignedTx) => decodeFunctionData({
   ok("builder 只回傳未簽交易欄位");
 }
 
+// 7) 審查 L1／L2：方向必須是 boolean；approve 預設只授權本次金額，無上限須明確 opt-in
+{
+  const base = { asset: "sBTC", margin: 1n * E18, leverage: 1, executionFee: 0n };
+  for (const bad of [undefined, "true", 1, null]) {
+    assert.throws(() => buildOpenPosition(A, { ...base, isLong: bad as unknown as boolean }), /isLong 必須是 boolean/);
+    assert.throws(
+      () => buildOpenPositionForSession(A, { ...base, sessionId: 1, isLong: bad as unknown as boolean }),
+      /isLong 必須是 boolean/,
+    );
+  }
+  assert.throws(() => buildApproveMargin(A, { amount: 0n }), TxBuildError, "approve 0 沒有意義");
+  const unlimited = buildApproveMargin(A, { unlimited: true });
+  assert.deepEqual(decode(ERC20_ABI, unlimited).args, [A.perpetualExchange, 2n ** 256n - 1n]);
+  assert.throws(() => buildApproveMargin(A, { unlimited: 1 as unknown as true }), /明確為 true/);
+  ok("L1：isLong 非 boolean 丟錯（不會悄悄變做空）；L2：無上限 approve 須 { unlimited: true }");
+}
+
 console.log(`\n✅ sdk write.test.ts 全過（${n} 項）`);

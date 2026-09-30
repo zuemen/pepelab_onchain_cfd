@@ -71,7 +71,7 @@ const draft = buildAuthorizationTypedData(params);
   const shared = sharedVerify(v1, { now: Date.parse("2026-10-01T00:00:00Z") });
   console.warn = origWarn;
   assert.equal(shared.valid, true, "前提：shared 在 2026-12-31 前仍接受 v1");
-  const r = verifyAuthorizationVCv2(v1, { expectedVerifyingContract: MGR, now: Date.parse("2026-10-01T00:00:00Z") });
+  const r = verifyAuthorizationVCv2(v1, { expectedVerifyingContract: MGR, nowMs: Date.parse("2026-10-01T00:00:00Z") });
   assert.equal(r.valid, false);
   assert.equal(r.reasonCode, "VC_V1_REJECTED");
   ok("v1 VC 一律 VC_V1_REJECTED（SDK 不收舊格式）");
@@ -93,15 +93,20 @@ const draft = buildAuthorizationTypedData(params);
   const mallory = privateKeyToAccount(generatePrivateKey());
   const wrongSig = await mallory.signTypedData(draft.typedData as never);
   assert.throws(() => finalizeAuthorizationVC(draft, wrongSig), (e: unknown) => e instanceof InvalidAuthorizationError && e.result.reasonCode === "VC_BAD_SIGNATURE");
-  const vc = finalizeAuthorizationVC(draft, await user.signTypedData(draft.typedData as never));
+  const goodSig = await user.signTypedData(draft.typedData as never);
+  const vc = finalizeAuthorizationVC(draft, goodSig);
   const t = structuredClone(vc);
   t.credentialSubject.authorization.maxLeverage = 5;
   assert.equal(verifyAuthorizationVCv2(t, { expectedVerifyingContract: MGR }).reasonCode, "VC_BAD_SIGNATURE");
-  const expired = verifyAuthorizationVCv2(vc, { expectedVerifyingContract: MGR, now: (caps.expiry + 1) * 1000 });
+  const expired = verifyAuthorizationVCv2(vc, { expectedVerifyingContract: MGR, nowMs: (caps.expiry + 1) * 1000 });
   assert.equal(expired.reasonCode, "VC_EXPIRED");
+  // M4：nowMs 誤傳成「秒」會讓過期 VC 看起來有效 → 直接丟錯
+  assert.throws(() => verifyAuthorizationVCv2(vc, { expectedVerifyingContract: MGR, nowMs: caps.expiry + 1 }), /毫秒/);
+  assert.throws(() => finalizeAuthorizationVC(draft, goodSig, { nowMs: NOW }), /毫秒/);
+  assert.throws(() => verifyAuthorizationVCv2(vc, { expectedVerifyingContract: MGR, nowMs: Number.NaN }), /毫秒/);
   assert.throws(() => buildAuthorizationTypedData({ ...params, validUntil: NOW - 10, issuedAt: NOW }), /validUntil/);
   assert.throws(() => buildAuthorizationTypedData({ ...params, nonce: "0x1234" }), /bytes32/);
-  ok("簽錯人 → finalize 丟 InvalidAuthorizationError；竄改 → VC_BAD_SIGNATURE；過期 → VC_EXPIRED");
+  ok("簽錯人 → finalize 丟 InvalidAuthorizationError；竄改 → VC_BAD_SIGNATURE；過期 → VC_EXPIRED；nowMs 傳成秒 → 丟錯（審查 M4）");
 }
 
 // 6) issueAuthorizationVC（build → 呼叫端簽 → finalize）

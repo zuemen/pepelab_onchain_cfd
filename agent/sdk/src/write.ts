@@ -53,6 +53,12 @@ function uint(label: string, v: bigint | number | string, { positive = false } =
   return b;
 }
 
+/** 方向必須是真正的 boolean —— `Boolean(undefined)` 會悄悄變成做空（審查 L1）。 */
+function bool(label: string, v: unknown): boolean {
+  if (typeof v !== "boolean") throw new TxBuildError(`${label} 必須是 boolean（收到 ${typeof v}）`);
+  return v;
+}
+
 function addr(label: string, a: string, { nonZero = true } = {}): Address {
   if (!isAddress(a)) throw new TxBuildError(`${label} 不是合法地址：${a}`);
   const g = getAddress(a);
@@ -76,9 +82,17 @@ function sessionManagerOf(a: Addrs): Address {
 
 // ── 保證金 ───────────────────────────────────────────────────────────────────
 
-/** 存入保證金前的 ERC-20 approve（保證金代幣 → exchange）。amount 為 18 位小數原始值。 */
-export function buildApproveMargin(a: Addrs, p: { amount: bigint }): UnsignedTx {
-  return build(a.marginToken, ERC20_ABI as Abi, "approve", [a.perpetualExchange, uint("amount", p.amount)]);
+/**
+ * 存入保證金前的 ERC-20 approve（保證金代幣 → exchange）。
+ * 預設只授權「這次要存入的量」（amount，18 位小數原始值）。無上限授權必須明確傳
+ * `{ unlimited: true }`（exchange 或其 owner 出事時，無上限授權會讓錢包裡的全部保證金代幣暴露）。
+ */
+export function buildApproveMargin(a: Addrs, p: { amount: bigint } | { unlimited: true }): UnsignedTx {
+  if ("unlimited" in p) {
+    if (p.unlimited !== true) throw new TxBuildError("unlimited 必須明確為 true");
+    return build(a.marginToken, ERC20_ABI as Abi, "approve", [a.perpetualExchange, UINT256_MAX]);
+  }
+  return build(a.marginToken, ERC20_ABI as Abi, "approve", [a.perpetualExchange, uint("amount", p.amount, { positive: true })]);
 }
 
 /** depositMargin(amount)。需先 approve。 */
@@ -117,7 +131,7 @@ export function buildOpenPosition(a: Addrs, p: OpenPositionParams): UnsignedTx {
     a.perpetualExchange,
     PERPETUAL_EXCHANGE_ABI as Abi,
     "openPosition",
-    [toAssetId(p.asset), Boolean(p.isLong), uint("margin", p.margin, { positive: true }), uint("leverage", p.leverage, { positive: true })],
+    [toAssetId(p.asset), bool("isLong", p.isLong), uint("margin", p.margin, { positive: true }), uint("leverage", p.leverage, { positive: true })],
     uint("executionFee", p.executionFee),
   );
 }
@@ -200,7 +214,7 @@ export function buildOpenPositionForSession(
     [
       uint("sessionId", p.sessionId),
       toAssetId(p.asset),
-      Boolean(p.isLong),
+      bool("isLong", p.isLong),
       uint("margin", p.margin, { positive: true }),
       uint("leverage", p.leverage, { positive: true }),
       ZERO_ADDRESS,

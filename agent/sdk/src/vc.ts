@@ -112,8 +112,22 @@ export class InvalidAuthorizationError extends Error {
   }
 }
 
+/**
+ * `nowMs` 必須是**毫秒**（Date.now() 的單位）。小於 1e11 幾乎一定是誤傳了秒 ——
+ * 以秒當毫秒會讓「是否過期」的比較永遠不成立、過期 VC 被判為有效（審查 M4），所以直接丟錯。
+ */
+export const MIN_PLAUSIBLE_NOW_MS = 1e11;
+
+function checkNowMs(nowMs: number | undefined): number | undefined {
+  if (nowMs === undefined) return undefined;
+  if (!Number.isFinite(nowMs) || nowMs < MIN_PLAUSIBLE_NOW_MS) {
+    throw new Error(`nowMs 必須是毫秒（Date.now() 單位），收到 ${nowMs}；看起來像秒`);
+  }
+  return nowMs;
+}
+
 /** 以簽章組出 W3C VC，並立刻驗證（簽的人不是 issuer、或 typed data 被改過 → 丟錯，不回傳半成品）。 */
-export function finalizeAuthorizationVC(draft: AuthorizationDraft, signature: Hex, opts: { now?: number } = {}): AuthorizationVC {
+export function finalizeAuthorizationVC(draft: AuthorizationDraft, signature: Hex, opts: { nowMs?: number } = {}): AuthorizationVC {
   const vc = assembleAuthorizationVC({
     issuerAddress: draft.issuer,
     agentAddress: draft.agent,
@@ -123,7 +137,7 @@ export function finalizeAuthorizationVC(draft: AuthorizationDraft, signature: He
     signature,
     v2: { validUntil: draft.validUntil, nonce: draft.nonce, verifyingContract: draft.verifyingContract },
   });
-  const r = verifyAuthorizationVCv2(vc, { expectedVerifyingContract: draft.verifyingContract, now: opts.now });
+  const r = verifyAuthorizationVCv2(vc, { expectedVerifyingContract: draft.verifyingContract, nowMs: opts.nowMs });
   if (!r.valid) throw new InvalidAuthorizationError(r);
   return vc;
 }
@@ -148,7 +162,8 @@ export type SdkVerifyResult = Omit<VerifyResult, "reasonCode"> & {
  */
 export function verifyAuthorizationVCv2(
   vc: AuthorizationVC,
-  opts: { expectedVerifyingContract: string; now?: number },
+  /** nowMs：現在時間（**毫秒**），測試或以區塊時間驗證時用；省略為 Date.now()。 */
+  opts: { expectedVerifyingContract: string; nowMs?: number },
 ): SdkVerifyResult {
   if (!opts?.expectedVerifyingContract || !isAddress(opts.expectedVerifyingContract)) {
     throw new Error("verifyAuthorizationVCv2 需要 expectedVerifyingContract（AgentSessionManager 位址）");
@@ -161,7 +176,8 @@ export function verifyAuthorizationVCv2(
       version: 1,
     };
   }
-  const r = verifyAuthorizationVC(vc, { expectedVerifyingContract: opts.expectedVerifyingContract, now: opts.now });
+  const nowMs = checkNowMs(opts.nowMs);
+  const r = verifyAuthorizationVC(vc, { expectedVerifyingContract: opts.expectedVerifyingContract, now: nowMs });
   if (r.valid && r.version !== 2) {
     return { ...r, valid: false, reasonCode: "VC_V1_REJECTED", reason: "驗證結果不是 v2" };
   }
