@@ -299,11 +299,38 @@ export function releaseReservation(
 }
 
 // ── 狀態檔 I/O ───────────────────────────────────────────────────────────────
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const isTsArray = (v: unknown): v is number[] =>
+  Array.isArray(v) && v.every((t) => typeof t === "number" && Number.isFinite(t) && t >= 0);
+
+/**
+ * 讀狀態檔並**逐筆驗型別**（審查 Low-8）。任何一筆不合法 → 丟錯，呼叫端轉成
+ * STATE_UNREADABLE（開倉 fail-closed；平倉降級放行）。不做「修補後繼續」：一份被
+ * 改壞的額度紀錄（例如 dailyMargin 變成負數或字串）若被默默接受，等於把每日上限重置。
+ */
 export function readPolicyState(file: string): PolicyState {
   if (!fs.existsSync(file)) return { version: 1, agents: {} };
   const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
-  if (parsed?.version !== 1 || typeof parsed.agents !== "object" || parsed.agents === null)
+  if (
+    parsed?.version !== 1 ||
+    typeof parsed.agents !== "object" ||
+    parsed.agents === null ||
+    Array.isArray(parsed.agents)
+  )
     throw new Error("policy 狀態檔格式不符");
+  for (const [key, e] of Object.entries(parsed.agents as Record<string, any>)) {
+    const ok =
+      e !== null &&
+      typeof e === "object" &&
+      typeof e.day === "string" &&
+      DAY_RE.test(e.day) &&
+      typeof e.dailyMargin === "number" &&
+      Number.isFinite(e.dailyMargin) &&
+      e.dailyMargin >= 0 &&
+      isTsArray(e.orders) &&
+      (e.closes === undefined || isTsArray(e.closes));
+    if (!ok) throw new Error(`policy 狀態檔紀錄 ${key} 格式不符`);
+  }
   return parsed as PolicyState;
 }
 

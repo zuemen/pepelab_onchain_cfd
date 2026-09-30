@@ -167,6 +167,35 @@ ok("單筆保證金上限：>100 拒絕、=100 放行、負數/NaN → MARGIN_IN
   assert.equal(g6.reasonCode, "AUDIT_WRITE_FAILED");
   ok("開倉 fail-closed：狀態檔壞 → STATE_UNREADABLE；設定壞 → CONFIG_INVALID；稽核寫不進去 → AUDIT_WRITE_FAILED");
 
+  // 逐筆驗型別：JSON 合法但內容被改壞 → STATE_UNREADABLE（開倉拒絕）
+  const good = { day: "2026-09-30", dailyMargin: 10, orders: [T0], closes: [] };
+  const bads: unknown[] = [
+    { ...good, dailyMargin: -500 },
+    { ...good, dailyMargin: "10" },
+    { ...good, dailyMargin: null },
+    { ...good, day: "yesterday" },
+    { ...good, orders: "x" },
+    { ...good, orders: [T0, "1"] },
+    { ...good, closes: [NaN] },
+    null,
+    [],
+  ];
+  for (const [i, b] of bads.entries()) {
+    const p = path.join(TMP, `bad-${i}.json`);
+    fs.writeFileSync(p, JSON.stringify({ version: 1, agents: { x: b } }));
+    const g = await enforcePolicyGate(open(), { statePath: p, auditPath });
+    assert.equal(g.reasonCode, "STATE_UNREADABLE", `壞紀錄 #${i} 應被拒：${JSON.stringify(b)}`);
+  }
+  for (const top of [{ version: 2, agents: {} }, { version: 1, agents: [] }, { version: 1 }]) {
+    const p = path.join(TMP, "bad-top.json");
+    fs.writeFileSync(p, JSON.stringify(top));
+    assert.equal((await enforcePolicyGate(open(), { statePath: p, auditPath })).reasonCode, "STATE_UNREADABLE");
+  }
+  const okp = path.join(TMP, "legacy-no-closes.json");
+  fs.writeFileSync(okp, JSON.stringify({ version: 1, agents: { x: { day: "2026-09-30", dailyMargin: 0, orders: [] } } }));
+  assert.equal((await enforcePolicyGate(open(), { statePath: okp, auditPath })).allowed, true, "缺 closes 的舊紀錄可讀");
+  ok("狀態檔逐筆驗型別：負數/字串/null 額度、壞日期、壞時間戳、壞頂層 → STATE_UNREADABLE（開倉 fail-closed）");
+
   // 平倉：同樣的故障一律放行（OK_DEGRADED），印 ::error:: 並在稽核標記 degraded
   const close = { action: "close" as const, sessionId: 7, agent: AGENT, positionId: 5 };
   const errs: string[] = [];
