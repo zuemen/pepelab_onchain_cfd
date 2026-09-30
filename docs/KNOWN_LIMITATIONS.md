@@ -44,7 +44,7 @@ was not, the reason is given rather than glossed over.
 | 24 | Portfolio margin has no account-level net liquidation | **Open** — `portfolioMarginEnabled` must stay **off** in production until implemented and audited (off on the live deployment) |
 | 25 | InsuranceVault has no virtual shares (first-depositor inflation) | **Mitigated** — zero-share deposits revert; attack profitability not removed |
 | 26 | Portfolio (cross) margin removed | **Resolved by removal** (2026-09-30) — supersedes #24; isolated margin only |
-| 27 | Exchange guardian's per-asset brake stops at ReduceOnly; only the owner can Halt | **By design** (2026-09-30, `contracts/p1-cutover-periphery`) — the *exchange* guardian cannot freeze exits by asset mode; the GuardedOracle guardian still can (see #27) |
+| 27 | Exchange guardian's per-asset brake stops at ReduceOnly; only the owner can Halt | **By design** (2026-09-30, `contracts/p1-cutover-periphery`) — the *exchange* guardian cannot freeze exits by asset mode; the GuardedOracle guardian still can (see §27 below) |
 | 28 | After the timelock handover, recovery actions wait 48h and depend on one Safe | **By design** — losing the Safe freezes governance permanently |
 | 29 | V2.5 unpriced exemption values a closed dead-feed asset at an arbitrarily old price | **Accepted** — closed assets only, never below its last recorded price, dust-only without one |
 
@@ -883,7 +883,9 @@ The V2.5 mint gate refuses every mint while any outstanding asset has neither
 a live quote nor a last-good mark of 6h or younger. RISK_ROLE's
 `setUnpricedExemption(id, true)` is the non-timelock way out when a feed is
 permanently dead and dust keeps `unregisterAsset` refusing. It works only while
-`assetCap[id] == 0`; raising the cap switches it off. The asset stays in the
+`assetCap[id] == 0`; raising the cap clears the flag, so closing the asset
+again needs a fresh decision (re-checked against the new outstanding), and
+`unregisterAsset` deletes both the flag and the last-good mark. The asset stays in the
 liability at its **last recorded price, however old**, or at 0 when there is
 no recorded price and at most `EXEMPT_DUST_UNITS` (0.001 token) is
 outstanding.
@@ -894,6 +896,10 @@ is bounded because the asset is closed, so outstanding can only shrink. The
 reserve ratio still counts it, and the ratio stays flagged stale, so a breach
 never auto-clears. The alternative, leaving mints of every healthy asset
 blocked behind a 48h timelock proposal, was judged worse.
+
+Operational cost: while any exempted asset exists the ratio stays flagged
+stale, so **every** later breach recovery needs a manual `clearMintingHalt()`
+by RISK_ROLE — not just the first one.
 
 ## Frontend
 

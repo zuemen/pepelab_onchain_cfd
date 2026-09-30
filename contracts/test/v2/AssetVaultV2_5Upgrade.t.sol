@@ -287,6 +287,41 @@ contract AssetVaultV2_5UpgradeTest is Test {
         v.mint(BTC, 1_000e18);
     }
 
+    /// Round-3 L-A: re-opening clears the flag, so closing again does not
+    /// silently resurrect an exemption granted for a different outstanding.
+    function test_M1_reopenThenCloseNeedsAFreshExemption() public {
+        AssetVaultV2_5 v = _upgrade();
+        _deadAaplMarkedAndClosed(v);
+        v.setUnpricedExemption(AAPL, true);
+
+        vm.expectEmit(true, true, false, true, address(v));
+        emit AssetVaultV2_5.UnpricedExemptionSet(AAPL, false, admin);
+        v.setAssetCap(AAPL, 1_000_000e18);         // re-open clears the flag
+        v.setAssetCap(AAPL, 0);                    // close again
+        assertFalse(v.isUnpricedExempt(AAPL), "no automatic resurrection");
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(AssetVaultV2_5.LiabilityUnpriced.selector, 1));
+        v.mint(BTC, 1_000e18);
+
+        v.setUnpricedExemption(AAPL, true);        // explicit new decision
+        vm.prank(alice); v.mint(BTC, 1_000e18);
+    }
+
+    /// Round-3 L-A: unregistering wipes the exemption (and the last-good mark),
+    /// so a later market under the same id starts clean.
+    function test_M1_unregisterClearsExemption() public {
+        AssetVaultV2_5 v = _upgrade();
+        _deadAaplMarkedAndClosed(v);
+        v.setUnpricedExemption(AAPL, true);
+        oracle.updatePrice(AAPL, 200e8);           // redeem needs a live quote
+        uint256 bal = aapl.balanceOf(alice);
+        vm.prank(alice); v.redeem(AAPL, bal);      // outstanding -> 0
+        assertTrue(v.isUnpricedExempt(AAPL));
+
+        v.unregisterAsset(AAPL);
+        assertFalse(v.isUnpricedExempt(AAPL), "flag deleted with the market");
+    }
+
     function test_M1_exemptionRequiresClosedAsset() public {
         AssetVaultV2_5 v = _upgrade();
         vm.expectRevert(abi.encodeWithSelector(AssetVaultV2_5.ExemptionRequiresClosedAsset.selector, AAPL, 1_000_000e18));

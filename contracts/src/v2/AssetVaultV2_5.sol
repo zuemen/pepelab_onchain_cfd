@@ -357,6 +357,10 @@ contract AssetVaultV2_5 is
         }
         delete _assetToken[assetId];
         delete assetCap[assetId];
+        // A later re-registration under the same id is a new market: it must
+        // not inherit the old token's last-good mark or unpriced exemption.
+        delete _lastGood[assetId];
+        delete _unpricedExempt[assetId];
 
         emit AssetUnregistered(assetId);
     }
@@ -440,7 +444,7 @@ contract AssetVaultV2_5 is
     ///         the exemption cannot be used to under-state a real liability:
     ///           - only while the asset is CLOSED (`assetCap == 0`): its
     ///             outstanding can then only shrink, and raising the cap again
-    ///             switches the exemption off automatically;
+    ///             clears the exemption (re-closing needs a new decision);
     ///           - the asset stays in the liability at its last-good price
     ///             (any age). With no recorded price at all it may only be
     ///             exempted while outstanding <= EXEMPT_DUST_UNITS.
@@ -800,9 +804,16 @@ contract AssetVaultV2_5 is
 
     /// @notice Bounds exposure to one market. 0 closes the asset to new mints
     ///         while leaving redemptions open.
+    ///         Re-opening an asset (cap > 0) also clears its unpriced exemption:
+    ///         closing it again needs a fresh `setUnpricedExemption` decision,
+    ///         with the dust / price check re-run against the new outstanding.
     function setAssetCap(bytes32 assetId, uint256 cap) external onlyRole(RISK_ROLE) {
         assetCap[assetId] = cap;
         emit AssetCapUpdated(assetId, cap);
+        if (cap != 0 && _unpricedExempt[assetId]) {
+            _unpricedExempt[assetId] = false;
+            emit UnpricedExemptionSet(assetId, false, msg.sender);
+        }
     }
 
     /// @notice Pay USDC, receive tokens at the oracle price less the mint fee.
