@@ -45,7 +45,7 @@ ethers 與路徑別名，agent 端無法直接 import），SDK 保留一份對�
 ```ts
 import { createPublicClient, http } from "viem";
 import { baseSepolia } from "viem/chains";
-import { createReadClient, SignalApiClient } from "@pepelab/sdk";
+import { createReadClient, SignalApiClient, SIGNAL_API_TESTNET_URL } from "@pepelab/sdk";
 
 const publicClient = createPublicClient({ chain: baseSepolia, transport: http(process.env.RPC_URL) });
 const read = createReadClient({ chainId: 84532, publicClient, latestBlockLag: 3 });
@@ -53,7 +53,8 @@ const read = createReadClient({ chainId: 84532, publicClient, latestBlockLag: 3 
 const btc = await read.getMarket("sBTC");
 console.log(btc.blockNumber, btc.oracle.price.formatted, btc.oracle.freshness.fresh, btc.mode);
 
-const api = new SignalApiClient(); // 預設正式 signal-api
+// baseUrl 必填：目前只有 Vercel 分支網域（SIGNAL_API_TESTNET_URL），不是穩定網域，SDK 不拿它當預設。
+const api = new SignalApiClient({ baseUrl: SIGNAL_API_TESTNET_URL });
 const exposure = await api.getRiskExposure();
 ```
 
@@ -79,7 +80,9 @@ const s    = await read.getSession(0, at);                   // user/agent/額�
   重用 `agent/shared/src/freshness.ts`），不是 MockOracle 的 24 小時 `isStale`。
 - **P1 欄位**（`mode` = Active/ReduceOnly/Halted、`paused`、`longOpenSize`、`maxLongOI`…）：master 的合約原始碼有，
   **現行部署版沒有**。讀不到時回 `{ supported: false, value: null }`，而不是猜一個值；
-  只有「合約 revert」會被當成不支援，RPC／網路錯誤一律丟出。
+  只有「合約 revert」會被當成不支援：節點回 code 3、或 -32000／-32603 且帶 revert data 或訊息寫明
+  "execution reverted"。其餘 RPC／網路錯誤（包括 -32603 的 "header not found"，以及 Multicall 整批被
+  RPC 拒絕）一律丟出，不會悄悄變成 `supported: false` 或 `null`。
 - `openLikelyAllowed` 只是參考（價格新鮮 + Active + 未暫停），不含 KYC、槓桿、OI 上限、保證金等條件。
   **不要拿它擋平倉。**
 - `getUnrealizedPnL` 在價格過期時可能 revert；此時該部位的 `unrealizedPnL` 為 `null`，不拖垮整份帳戶讀取。
@@ -101,7 +104,9 @@ import { buildApproveMargin, buildDepositMargin, buildOpenPosition, buildClosePo
          buildCreateSessionWithAssets, buildRevokeSession } from "@pepelab/sdk";
 
 const A = read.addresses;
-const approve = buildApproveMargin(A, { amount: 100n * 10n ** 18n });
+const approve = buildApproveMargin(A, { amount: 100n * 10n ** 18n });   // 只授權本次要存入的量
+// 無上限授權必須明確 opt-in：buildApproveMargin(A, { unlimited: true })
+// （exchange 或其 owner 出事時，無上限授權會讓錢包裡全部的保證金代幣暴露）
 const deposit = buildDepositMargin(A, { amount: 100n * 10n ** 18n });
 
 const mkt  = await read.getMarket("sBTC");
@@ -129,7 +134,7 @@ const revoke = buildRevokeSession(A, { sessionId: 3 });
 import { SignalApiClient } from "@pepelab/sdk";
 
 const api = new SignalApiClient({
-  // baseUrl: 預設 https://agent-git-master-zuemens-projects.vercel.app
+  baseUrl: SIGNAL_API_TESTNET_URL,           // 必填；SDK 不預設部署網址
   timeoutMs: 15_000,
   retry: { retries: 2, baseDelayMs: 300, maxDelayMs: 5_000, maxRetryAfterSec: 10 },
 });
@@ -157,6 +162,7 @@ import { guardViemAccount } from "@pepelab/shared";  // 選用：agent 的簽章
 
 const account = guardViemAccount(yourAccount);       // 你的 HSM／MPC／本地帳戶
 const api = new SignalApiClient({
+  baseUrl: SIGNAL_API_TESTNET_URL,
   payment: {
     createPaymentHeader: ({ requirements, x402Version }) =>
       createPaymentHeader(account, x402Version, requirements as never),
@@ -164,16 +170,26 @@ const api = new SignalApiClient({
   maxPaymentAtomic: 20_000n,        // 單筆上限（USDC 6 位小數），預設 0.02 USDC
   maxTotalSpendAtomic: 1_000_000n,  // 此 client 的累計上限，預設 1 USDC
   payToAllowlist: ["0x…"],          // 建議：只付給已知的收款地址
+  // expectedNetwork / expectedAsset：預設 base-sepolia + Circle 官方 USDC。
+  // 兩者**必須同時設定**（只設一個會丟錯）—— 換網路卻沿用 Base Sepolia 的 USDC 位址，或反之，都是錯的組合。
 });
 
 const { body, payment } = await api.getOracleSnapshot("sBTC");
 console.log(body.data.recommendation, payment?.paidUsdc, payment?.settlement);
 ```
 
-流程：不帶付款先請求 → 伺服器的付款前守門（400、`payto_unsafe`、`price_stale`）直接以型別化錯誤丟出，
-不會要求你簽任何東西 → 402 時挑出 `scheme=exact`、`network=base-sepolia`、幣別 = Circle 官方 USDC、
-（若設定）`payTo` 在白名單內的要求 → 檢查單筆與累計上限 → 呼叫你的簽署端 → 從 `X-PAYMENT` 解出
-`authorization.value` 再檢查一次（簽出金額不得大於要求或上限）→ **只送一次**。
+流程：
+
+1. 不帶付款先請求。伺服器的付款前守門（400、`payto_unsafe`、`price_stale`）直接以型別化錯誤丟出，不會要求你簽任何東西。
+2. 402 時挑出 `scheme=exact`、`network=base-sepolia`、幣別 = Circle 官方 USDC、`maxTimeoutSeconds` 為 1–300 的整數、
+   （若設定）`payTo` 在白名單內的要求，並檢查單筆上限。
+3. **預留**累計額度：檢查與預留之間沒有 `await`，所以並行呼叫不會一起穿過 `maxTotalSpendAtomic`。
+4. 呼叫你的簽署端，再解開 `X-PAYMENT` 逐欄核對：`authorization.to` = `payTo`、`scheme`、`network`、`x402Version`、
+   `value` ≤ 要求與上限、`validBefore` ≤ now + `maxTimeoutSeconds` + 60 秒。任何一項不符就**不送出**，並回滾預留。
+5. 帶 `X-PAYMENT` **只送一次**。送出之後不論 2xx、4xx、5xx、逾時或斷線，都**保留記帳**（授權已交出，
+   `validBefore` 之前仍可能被結算）；沒拿到結算證明（`X-PAYMENT-RESPONSE`）的金額另記在 `unsettledAtomic()`。
+
+記帳：`spentAtomic()` = 已送出的授權總額 + 進行中的預留（保守、寧可高估）；`unsettledAtomic()` = 其中沒有結算證明、需要對帳的部分。
 
 預設上限沿用 agent 端（`agent/shared/src/x402Client.ts`）的 `X402_DEFAULT_MAX_PAYMENT_USDC` 與
 `X402_DEFAULT_MAX_TOTAL_SPEND_USDC`，但 **SDK 不讀環境變數**，一律以建構參數為準。
@@ -206,6 +222,8 @@ const check = crossCheckWithSession(r, s);              // { ok, mismatches[] }
   `agent/shared/src/identity.ts`（ethers），SDK 沒有另寫一套密碼學。測試確認 viem 簽 ↔ ethers 驗雙向相容。
 - **v1 一律拒絕**（`reasonCode: "VC_V1_REJECTED"`）。agent 端在 2026-12-31 前仍帶警告接受 v1，SDK 不接受。
 - `expectedVerifyingContract` 必填：避免把另一顆 session manager 的授權當成本部署的。
+- `verifyAuthorizationVCv2(vc, { expectedVerifyingContract, nowMs })` 的 `nowMs` 是**毫秒**（`Date.now()` 單位）。
+  小於 1e11 會直接丟錯 —— 誤傳秒數會讓「是否過期」永遠判斷為未過期。
 - **nonce 一次性不在 SDK 裡**：它需要持久狀態。驗證端必須自己記錄已用過的 nonce
   （agent 的做法見 `agent/shared/src/vcNonce.ts`）。
 
@@ -213,20 +231,22 @@ const check = crossCheckWithSession(r, s);              // { ok, mismatches[] }
 
 | 錯誤 | 何時 | 建議處理 |
 |---|---|---|
-| `PaymentRequiredError`（402） | 沒注入 payment client；或 `afterPayment: true` = 付款後驗證／結算失敗 | 注入 payment client；`afterPayment` 時先對帳再決定 |
-| `RateLimitedError`（429） | 免費端點節流、facilitator 限流 | 依 `retryAfterSec` 等待；付款後的 429 不會自動重試 |
+| `PaymentRequiredError`（402） | 沒注入 payment client；或 `afterPayment`／`paymentSent: true` = 付款後驗證／結算失敗 | 注入 payment client；`paymentSent` 時先對帳再決定 |
+| `RateLimitedError`（429） | 免費端點節流、facilitator 限流 | `paymentSent: false`：依 `retryAfterSec` 等待後重試。**`paymentSent: true`：先對帳再重送，不要依 `retryAfterSec` 直接重試**（重試會簽一張新的授權，前一張仍可能被結算 → 雙付） |
 | `PayToUnsafeError`（503） | 收款地址未通過伺服器守門 | **不要付款**；聯絡營運方 |
 | `PriceStaleError`（503） | 鏈上價格超過 `maxPriceAge` | 等 keeper 更新 |
-| `ServiceUnavailableError`（502/503） | 上游或內部錯誤 | 免費端點已自動重試；付費請求不重試 |
-| `PaymentLimitExceededError` | 要求金額超過單筆或累計上限 | 未簽、未付 |
-| `PaymentRejectedError` | 付款要求的網路／幣別／payTo 不符，或簽署端回了無法解析的 X-PAYMENT | 未付 |
-| `PaymentOutcomeUnknownError` | 已送出 X-PAYMENT 但逾時／斷線 | **款項可能已結算**；以 facilitator／鏈上紀錄對帳，SDK 不重送 |
+| `ServiceUnavailableError`（502/503） | 上游或內部錯誤 | 免費端點已自動重試；`paymentSent: true` 時先對帳再重送 |
+| `PaymentLimitExceededError` | 要求或簽出的金額超過單筆上限，或會超過累計上限 | 未送出、未付（`paymentSent: false`） |
+| `PaymentRejectedError` | 付款要求不符（網路／幣別／payTo 白名單／逾時上限），或簽出的 X-PAYMENT 與要求不一致（收款人、scheme、network、版本、validBefore）或無法解析 | 未送出、未付（`paymentSent: false`） |
+| `PaymentOutcomeUnknownError` | 已送出 X-PAYMENT 但逾時／斷線（`paymentSent: true`） | **款項可能已結算**；以 facilitator／鏈上紀錄對帳，SDK 不重送 |
 | `SignalApiTimeoutError` / `SignalApiNetworkError` | 未帶付款的請求重試用盡 | 稍後重試 |
 | `ReadCallError` | 必要的鏈上讀取 revert | 檢查位址與部署 |
 | `TxBuildError` / `EmptyAssetListError` | builder 參數不合法 | 修正參數 |
 | `InvalidAuthorizationError` | `finalizeAuthorizationVC` 驗證失敗 | 檢查簽署者 |
 
-所有 HTTP 錯誤都繼承 `SignalApiError`（`status`、`code`、`body`、`url`）。
+所有 HTTP 錯誤都繼承 `SignalApiError`（`status`、`code`、`body`、`url`、`paymentSent`）。
+**規則：`paymentSent === true` 的錯誤（任何狀態碼）都代表已簽授權已交給伺服器 —— 先對帳（`unsettledAtomic()`、
+facilitator、鏈上 USDC 轉帳紀錄）再決定是否重送。**
 
 ## 8. 安全注意事項
 
@@ -239,8 +259,10 @@ const check = crossCheckWithSession(r, s);              // { ok, mismatches[] }
 3. **Session 資產陣列不可為空**。`AgentSessionManager` 把空陣列視為「全部資產都允許」。
    `buildCreateSessionWithAssets`／`buildSetSessionAssets` 收到空陣列會丟 `EmptyAssetListError`。
    SDK 刻意不提供不限資產的 `createSession` builder。
-4. **付款上限是 client 層級、記憶體內**：`maxTotalSpendAtomic` 只在同一個 `SignalApiClient` 實例內累計，
-   程序重啟就歸零。需要跨程序的總額控管，請在你的簽署端（例如 `guardViemAccount` 的累計上限）另外做。
+4. **付款上限是 client 層級、記憶體內**：`maxTotalSpendAtomic` 只在同一個 `SignalApiClient` 實例內累計（並行安全），
+   程序重啟就歸零；多個 client 實例之間也不共用。需要跨程序或跨實例的總額控管，請在你的簽署端另外做。
+   注意：agent 端的 `guardViemAccount` 累計上限目前在**並行簽署**下可被繞過（檢查在簽署前、記帳在簽署後，中間有
+   `await`），在它修正之前不要把它當成並行情境下的唯一防線。
 5. 帶付款的請求**永不自動重試**；x402 沒有退款機制。
 6. `latestBlockLag`：公共 RPC 背後是負載平衡的多個節點，最新區塊可能尚未同步；建議設 2–3。
 7. 測試網研究原型：沒有第三方稽核，不是生產系統，不提供投資建議。
