@@ -310,7 +310,12 @@ contract CopyTracker is ReentrancyGuard, Ownable {
     function _scoredLegPnl(uint256 id, PerpetualExchange.Position memory p) internal view returns (int256 pnl) {
         pnl = p.realizedPnL;
         if (exchange.closeReasonOf(id) == PerpetualExchange.CloseReason.Deleveraged) {
-            pnl += SafeCast.toInt256(exchange.adlHaircutOf(id));
+            // try: an exchange deployed before `adlHaircutOf` existed has no
+            // such getter; fall back to 0 (score net of the haircut) rather
+            // than bricking unfollow.
+            try exchange.adlHaircutOf(id) returns (uint256 haircut) {
+                pnl += SafeCast.toInt256(haircut);
+            } catch {}
         }
         int256 floor = -SafeCast.toInt256(p.margin);
         if (pnl < floor) pnl = floor;

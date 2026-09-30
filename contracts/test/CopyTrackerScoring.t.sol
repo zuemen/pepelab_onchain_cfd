@@ -233,6 +233,31 @@ contract CopyTrackerScoringTest is Test {
         assertEq(ts.getStake(alice).amount, 500e18);
     }
 
+    /// An exchange without `adlHaircutOf` (reverting getter) must not brick
+    /// unfollow: the haircut falls back to 0 and the leg is scored net of it.
+    function test_unfollow_adlHaircutGetterMissing_fallsBackToZero() public {
+        exchange.setAdlEnabled(true);
+        address other = makeAddr("other");
+        usdc.mint(other, 10_000e18);
+        vm.startPrank(other);
+        usdc.approve(address(exchange), type(uint256).max);
+        exchange.depositMargin(10_000e18);
+        uint256 loser = exchange.openPosition(ETH, false, 1_000e18, 5);
+        vm.stopPrank();
+        oracle.updatePrice(ETH, 6_000e8);   // bob's ETH leg deleveraged, haircut 150
+        exchange.liquidatePosition(loser);
+        oracle.updatePrice(BTC, 70_000e8);  // BTC leg −300
+
+        vm.mockCallRevert(
+            address(exchange),
+            abi.encodeWithSignature("adlHaircutOf(uint256)"),
+            "no such function"
+        );
+        _unfollow();                        // −300 + 0 = 30% net of haircut → slash
+        assertEq(ts.getStake(alice).amount, 350e18);
+        assertFalse(ct.getCopyRecords(bob)[0].active);
+    }
+
     // ── exit for records the tracker cannot close ───────────────────────────
 
     function test_deactivateWithoutScoring_whenLegHalted() public {
