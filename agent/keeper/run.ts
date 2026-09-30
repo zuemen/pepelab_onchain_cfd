@@ -14,6 +14,8 @@
 // observeReserve()，把儲備率釘進可重播的 ReserveObserved 事件（#99）。不設就
 // 完全跳過，不影響價格寫入。
 import { ethers } from "ethers";
+
+import { LocalNonceSigner } from "./nonceSigner.ts";
 import {
   runVerdict,
   summaryLine,
@@ -182,14 +184,16 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const signer = DRY_RUN ? null : new ethers.Wallet(PRIVATE_KEY, provider);
+  const wallet = DRY_RUN ? null : new ethers.Wallet(PRIVATE_KEY, provider);
+  // 所有合約共用這一個 signer，nonce 在本機遞增（見 nonceSigner.ts 的事故說明）。
+  const signer = wallet ? new LocalNonceSigner(wallet) : null;
 
   // 沒油就直接停 —— 這正是 Base Sepolia keeper 靜默失敗 9.5 天的原因，
   // 當時每筆 cast send 都以 "gas required exceeds allowance (0)" 失敗，
   // 而 `|| echo` 把它吞掉，CI 依然全綠。
-  if (signer) {
-    const bal = await provider.getBalance(signer.address);
-    console.log(`keeper ${signer.address} balance=${ethers.formatEther(bal)} ETH`);
+  if (wallet) {
+    const bal = await provider.getBalance(wallet.address);
+    console.log(`keeper ${wallet.address} balance=${ethers.formatEther(bal)} ETH`);
     if (bal === 0n) {
       console.error(`::error::keeper 錢包在 ${CHAIN} 上餘額為 0，無法送出任何交易`);
       process.exit(1);
@@ -282,7 +286,7 @@ async function main(): Promise<void> {
             setAssetMode: (id, mode) => exchangeView.setAssetMode(id, mode),
           }
         : null,
-      signerAddress: signer?.address ?? null,
+      signerAddress: wallet?.address ?? null,
       isMissingFunction: (e) => classifyProbeError(revertInfo(e)) === "missing",
     });
     const { notes, exchangeStillTrading } = describeProtection(res, exchangeMaxAge);
@@ -481,7 +485,7 @@ async function applyMarketMode(
  */
 async function observeVaultReserve(
   provider: ethers.JsonRpcProvider,
-  signer: ethers.Wallet | null,
+  signer: ethers.Signer | null,
 ): Promise<boolean> {
   if (!ethers.isAddress(VAULT_ADDR)) {
     console.error(`::error::KEEPER_VAULT_ADDRESS 不是合法地址`);
