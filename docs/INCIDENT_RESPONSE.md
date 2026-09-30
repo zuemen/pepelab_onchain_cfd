@@ -48,8 +48,10 @@
 | x402 分潤 | 停用 `x402-settlement-worker.yml`；worker 在結果不明時會自行全域停機 | GitHub repo 管理者 | 分潤暫停，佇列保留 |
 | 前端 | Vercel 回滾（第 6 節）；以功能旗標關閉入口 | Vercel 專案管理者 | 只影響畫面；不能阻止任何人直接呼叫合約 |
 
-2026-09-30 唯讀查詢：Base 金庫的 `PAUSER_ROLE` 與 GuardedOracle 的 `GUARDIAN_ROLE` 不在 owner EOA 上；
-實際持有者以部署與角色分離紀錄為準（見 [`ROLE_SEPARATION.md`](ROLE_SEPARATION.md)、
+2026-09-30 唯讀查詢：Base 金庫的 `PAUSER_ROLE` 與 GuardedOracle 的 `GUARDIAN_ROLE` 不在 owner EOA 上。
+但 owner EOA 在 vault 與 GuardedOracle 都持有 `DEFAULT_ADMIN_ROLE`，在 vault 另有 `RISK_ROLE`，
+因此可以自行授予自己（或他人）`PAUSER_ROLE`／`GUARDIAN_ROLE`。這代表緊急時單一金鑰就能取得暫停權限，
+也代表單一金鑰外洩的影響範圍涵蓋上述所有角色。目前角色持有者以部署與角色分離紀錄為準（見 [`ROLE_SEPARATION.md`](ROLE_SEPARATION.md)、
 [`DEPLOY_129_CUTOVER.md`](DEPLOY_129_CUTOVER.md)），本文**未逐一驗證**。
 
 ## 4. 原始碼版（PR #191，未部署）多了什麼
