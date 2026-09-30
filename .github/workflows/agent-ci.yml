@@ -17,11 +17,13 @@ on:
     paths:
       - 'agent/**'
       - 'frontend/src/contracts/**'
+      - 'frontend/tsconfig.json'
       - '.github/workflows/agent-ci.yml'
   pull_request:
     paths:
       - 'agent/**'
       - 'frontend/src/contracts/**'
+      - 'frontend/tsconfig.json'
       - '.github/workflows/agent-ci.yml'
   workflow_dispatch:
 
@@ -71,7 +73,9 @@ jobs:
       # 所以漏打包 = 線上靜默跑舊碼，且從 PR diff 完全看不出來（稽核 §四）。
       # bundle:check 用 esbuild metafile 找出 bundle 實際內聯的所有非 node_modules
       # 來源（signal-api/src、agent/shared/src、frontend/src/contracts/addresses.ts、
-      # agentAuth.ts…），算內容指紋，與 commit 進 repo 的 api/.bundle-sources.json
+      # agentAuth.ts…），算內容指紋；另外也納入內聯的 npm 套件 name@version 與
+      # 建置設定檔（build-vercel.mjs、tsconfig），所以 dependabot 升級依賴卻沒重打包
+      # 也會紅燈。與 commit 進 repo 的 api/.bundle-sources.json
       # 比對；不一致就 exit 1 並列出是哪些檔案變了。不比對輸出位元組（跨 esbuild
       # 版本不穩定，見 signal-api/src/bundleFingerprint.mjs）。
       - name: Bundle drift check

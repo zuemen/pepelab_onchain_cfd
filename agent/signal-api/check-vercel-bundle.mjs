@@ -13,6 +13,9 @@
 // 跟我的不一樣」，而不是「你忘了重新打包」——後者才是這個檢查存在的理由。
 // 現在改成比對來源指紋。
 //
+// 2026-09-30：指紋也涵蓋 bundle 內聯的 npm 套件「名稱@版本」——dependabot 升級依賴
+// 卻沒重打包時，這裡會列出是哪個套件（例如 `npm:hono@4.13.9`）。
+//
 //   npm run bundle:check -w signal-api     # 不一致 → exit 1
 import { readFile, access } from "node:fs/promises";
 
@@ -40,7 +43,14 @@ try {
   process.exit(1);
 }
 
-const fresh = await fingerprintBundle();
+let fresh;
+try {
+  fresh = await fingerprintBundle();
+} catch (err) {
+  // 例如某個被內聯套件的 package.json 讀不到。仍然紅燈，但給可讀的訊息而不是 stack trace。
+  console.error(`::error::指紋計算失敗：${err?.message ?? err} —— 先確認 \`npm ci\` 成功，再${REBUILD_HINT}`);
+  process.exit(1);
+}
 
 if (fresh.digest !== manifest.digest) {
   // 指出「哪幾個檔案變了」，而不是只丟兩個對不起來的 hash——後者只能告訴你
@@ -59,4 +69,6 @@ if (fresh.digest !== manifest.digest) {
   process.exit(1);
 }
 
-console.log(`✓ ${OUT} 與 ${Object.keys(fresh.files).length} 個來源檔同步（${fresh.digest}）`);
+const pkgCount = Object.keys(fresh.files).filter((k) => k.startsWith("npm:")).length;
+const srcCount = Object.keys(fresh.files).length - pkgCount;
+console.log(`✓ ${OUT} 與 ${srcCount} 個來源檔、${pkgCount} 個 npm 套件同步（${fresh.digest}）`);

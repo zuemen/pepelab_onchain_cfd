@@ -11,11 +11,20 @@ var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require
   if (typeof require !== "undefined") return require.apply(this, arguments);
   throw Error('Dynamic require of "' + x + '" is not supported');
 });
-var __esm = (fn, res) => function __init() {
-  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+var __esm = (fn, res, err) => function __init() {
+  if (err) throw err[0];
+  try {
+    return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+  } catch (e) {
+    throw err = [e], e;
+  }
 };
 var __commonJS = (cb, mod4) => function __require3() {
-  return mod4 || (0, cb[__getOwnPropNames(cb)[0]])((mod4 = { exports: {} }).exports, mod4), mod4.exports;
+  try {
+    return mod4 || (0, cb[__getOwnPropNames(cb)[0]])((mod4 = { exports: {} }).exports, mod4), mod4.exports;
+  } catch (e) {
+    throw mod4 = 0, e;
+  }
 };
 var __export = (target, all) => {
   for (var name in all)
@@ -409,225 +418,13 @@ var require_constants = __commonJS({
       EMPTY_BUFFER: Buffer.alloc(0),
       GUID: "258EAFA5-E914-47DA-95CA-C5AB0DC85B11",
       hasBlob,
-      kForOnEventAttribute: Symbol("kIsForOnEventAttribute"),
-      kListener: Symbol("kListener"),
-      kStatusCode: Symbol("status-code"),
-      kWebSocket: Symbol("websocket"),
+      kForOnEventAttribute: /* @__PURE__ */ Symbol("kIsForOnEventAttribute"),
+      kListener: /* @__PURE__ */ Symbol("kListener"),
+      kStatusCode: /* @__PURE__ */ Symbol("status-code"),
+      kWebSocket: /* @__PURE__ */ Symbol("websocket"),
       NOOP: () => {
       }
     };
-  }
-});
-
-// ../node_modules/node-gyp-build/node-gyp-build.js
-var require_node_gyp_build = __commonJS({
-  "../node_modules/node-gyp-build/node-gyp-build.js"(exports, module) {
-    var fs = __require("fs");
-    var path2 = __require("path");
-    var os = __require("os");
-    var runtimeRequire = typeof __webpack_require__ === "function" ? __non_webpack_require__ : __require;
-    var vars = process.config && process.config.variables || {};
-    var prebuildsOnly = !!process.env.PREBUILDS_ONLY;
-    var abi2 = process.versions.modules;
-    var runtime = isElectron() ? "electron" : isNwjs() ? "node-webkit" : "node";
-    var arch = process.env.npm_config_arch || os.arch();
-    var platform = process.env.npm_config_platform || os.platform();
-    var libc = process.env.LIBC || (isAlpine(platform) ? "musl" : "glibc");
-    var armv = process.env.ARM_VERSION || (arch === "arm64" ? "8" : vars.arm_version) || "";
-    var uv = (process.versions.uv || "").split(".")[0];
-    module.exports = load;
-    function load(dir) {
-      return runtimeRequire(load.resolve(dir));
-    }
-    load.resolve = load.path = function(dir) {
-      dir = path2.resolve(dir || ".");
-      try {
-        var name = runtimeRequire(path2.join(dir, "package.json")).name.toUpperCase().replace(/-/g, "_");
-        if (process.env[name + "_PREBUILD"]) dir = process.env[name + "_PREBUILD"];
-      } catch (err) {
-      }
-      if (!prebuildsOnly) {
-        var release = getFirst(path2.join(dir, "build/Release"), matchBuild);
-        if (release) return release;
-        var debug = getFirst(path2.join(dir, "build/Debug"), matchBuild);
-        if (debug) return debug;
-      }
-      var prebuild = resolve2(dir);
-      if (prebuild) return prebuild;
-      var nearby = resolve2(path2.dirname(process.execPath));
-      if (nearby) return nearby;
-      var target = [
-        "platform=" + platform,
-        "arch=" + arch,
-        "runtime=" + runtime,
-        "abi=" + abi2,
-        "uv=" + uv,
-        armv ? "armv=" + armv : "",
-        "libc=" + libc,
-        "node=" + process.versions.node,
-        process.versions.electron ? "electron=" + process.versions.electron : "",
-        typeof __webpack_require__ === "function" ? "webpack=true" : ""
-        // eslint-disable-line
-      ].filter(Boolean).join(" ");
-      throw new Error("No native build was found for " + target + "\n    loaded from: " + dir + "\n");
-      function resolve2(dir2) {
-        var tuples = readdirSync(path2.join(dir2, "prebuilds")).map(parseTuple);
-        var tuple = tuples.filter(matchTuple(platform, arch)).sort(compareTuples)[0];
-        if (!tuple) return;
-        var prebuilds = path2.join(dir2, "prebuilds", tuple.name);
-        var parsed = readdirSync(prebuilds).map(parseTags);
-        var candidates = parsed.filter(matchTags(runtime, abi2));
-        var winner = candidates.sort(compareTags(runtime))[0];
-        if (winner) return path2.join(prebuilds, winner.file);
-      }
-    };
-    function readdirSync(dir) {
-      try {
-        return fs.readdirSync(dir);
-      } catch (err) {
-        return [];
-      }
-    }
-    function getFirst(dir, filter) {
-      var files = readdirSync(dir).filter(filter);
-      return files[0] && path2.join(dir, files[0]);
-    }
-    function matchBuild(name) {
-      return /\.node$/.test(name);
-    }
-    function parseTuple(name) {
-      var arr = name.split("-");
-      if (arr.length !== 2) return;
-      var platform2 = arr[0];
-      var architectures = arr[1].split("+");
-      if (!platform2) return;
-      if (!architectures.length) return;
-      if (!architectures.every(Boolean)) return;
-      return { name, platform: platform2, architectures };
-    }
-    function matchTuple(platform2, arch2) {
-      return function(tuple) {
-        if (tuple == null) return false;
-        if (tuple.platform !== platform2) return false;
-        return tuple.architectures.includes(arch2);
-      };
-    }
-    function compareTuples(a, b2) {
-      return a.architectures.length - b2.architectures.length;
-    }
-    function parseTags(file) {
-      var arr = file.split(".");
-      var extension2 = arr.pop();
-      var tags = { file, specificity: 0 };
-      if (extension2 !== "node") return;
-      for (var i = 0; i < arr.length; i++) {
-        var tag = arr[i];
-        if (tag === "node" || tag === "electron" || tag === "node-webkit") {
-          tags.runtime = tag;
-        } else if (tag === "napi") {
-          tags.napi = true;
-        } else if (tag.slice(0, 3) === "abi") {
-          tags.abi = tag.slice(3);
-        } else if (tag.slice(0, 2) === "uv") {
-          tags.uv = tag.slice(2);
-        } else if (tag.slice(0, 4) === "armv") {
-          tags.armv = tag.slice(4);
-        } else if (tag === "glibc" || tag === "musl") {
-          tags.libc = tag;
-        } else {
-          continue;
-        }
-        tags.specificity++;
-      }
-      return tags;
-    }
-    function matchTags(runtime2, abi3) {
-      return function(tags) {
-        if (tags == null) return false;
-        if (tags.runtime && tags.runtime !== runtime2 && !runtimeAgnostic(tags)) return false;
-        if (tags.abi && tags.abi !== abi3 && !tags.napi) return false;
-        if (tags.uv && tags.uv !== uv) return false;
-        if (tags.armv && tags.armv !== armv) return false;
-        if (tags.libc && tags.libc !== libc) return false;
-        return true;
-      };
-    }
-    function runtimeAgnostic(tags) {
-      return tags.runtime === "node" && tags.napi;
-    }
-    function compareTags(runtime2) {
-      return function(a, b2) {
-        if (a.runtime !== b2.runtime) {
-          return a.runtime === runtime2 ? -1 : 1;
-        } else if (a.abi !== b2.abi) {
-          return a.abi ? -1 : 1;
-        } else if (a.specificity !== b2.specificity) {
-          return a.specificity > b2.specificity ? -1 : 1;
-        } else {
-          return 0;
-        }
-      };
-    }
-    function isNwjs() {
-      return !!(process.versions && process.versions.nw);
-    }
-    function isElectron() {
-      if (process.versions && process.versions.electron) return true;
-      if (process.env.ELECTRON_RUN_AS_NODE) return true;
-      return typeof window !== "undefined" && window.process && window.process.type === "renderer";
-    }
-    function isAlpine(platform2) {
-      return platform2 === "linux" && fs.existsSync("/etc/alpine-release");
-    }
-    load.parseTags = parseTags;
-    load.matchTags = matchTags;
-    load.compareTags = compareTags;
-    load.parseTuple = parseTuple;
-    load.matchTuple = matchTuple;
-    load.compareTuples = compareTuples;
-  }
-});
-
-// ../node_modules/node-gyp-build/index.js
-var require_node_gyp_build2 = __commonJS({
-  "../node_modules/node-gyp-build/index.js"(exports, module) {
-    var runtimeRequire = typeof __webpack_require__ === "function" ? __non_webpack_require__ : __require;
-    if (typeof runtimeRequire.addon === "function") {
-      module.exports = runtimeRequire.addon.bind(runtimeRequire);
-    } else {
-      module.exports = require_node_gyp_build();
-    }
-  }
-});
-
-// ../node_modules/bufferutil/fallback.js
-var require_fallback = __commonJS({
-  "../node_modules/bufferutil/fallback.js"(exports, module) {
-    "use strict";
-    var mask2 = (source, mask3, output2, offset, length) => {
-      for (var i = 0; i < length; i++) {
-        output2[offset + i] = source[i] ^ mask3[i & 3];
-      }
-    };
-    var unmask = (buffer2, mask3) => {
-      const length = buffer2.length;
-      for (var i = 0; i < length; i++) {
-        buffer2[i] ^= mask3[i & 3];
-      }
-    };
-    module.exports = { mask: mask2, unmask };
-  }
-});
-
-// ../node_modules/bufferutil/index.js
-var require_bufferutil = __commonJS({
-  "../node_modules/bufferutil/index.js"(exports, module) {
-    "use strict";
-    try {
-      module.exports = require_node_gyp_build2()(__dirname);
-    } catch (e) {
-      module.exports = require_fallback();
-    }
   }
 });
 
@@ -691,7 +488,7 @@ var require_buffer_util = __commonJS({
     };
     if (!process.env.WS_NO_BUFFER_UTIL) {
       try {
-        const bufferUtil = require_bufferutil();
+        const bufferUtil = __require("bufferutil");
         module.exports.mask = function(source, mask2, output2, offset, length) {
           if (length < 48) _mask(source, mask2, output2, offset, length);
           else bufferUtil.mask(source, mask2, output2, offset, length);
@@ -710,8 +507,8 @@ var require_buffer_util = __commonJS({
 var require_limiter = __commonJS({
   "../node_modules/ws/lib/limiter.js"(exports, module) {
     "use strict";
-    var kDone = Symbol("kDone");
-    var kRun = Symbol("kRun");
+    var kDone = /* @__PURE__ */ Symbol("kDone");
+    var kRun = /* @__PURE__ */ Symbol("kRun");
     var Limiter = class {
       /**
        * Creates a new `Limiter`.
@@ -766,11 +563,11 @@ var require_permessage_deflate = __commonJS({
     var { kStatusCode } = require_constants();
     var FastBuffer = Buffer[Symbol.species];
     var TRAILER = Buffer.from([0, 0, 255, 255]);
-    var kPerMessageDeflate = Symbol("permessage-deflate");
-    var kTotalLength = Symbol("total-length");
-    var kCallback = Symbol("callback");
-    var kBuffers = Symbol("buffers");
-    var kError = Symbol("error");
+    var kPerMessageDeflate = /* @__PURE__ */ Symbol("permessage-deflate");
+    var kTotalLength = /* @__PURE__ */ Symbol("total-length");
+    var kCallback = /* @__PURE__ */ Symbol("callback");
+    var kBuffers = /* @__PURE__ */ Symbol("buffers");
+    var kError = /* @__PURE__ */ Symbol("error");
     var zlibLimiter;
     var PerMessageDeflate2 = class {
       /**
@@ -1139,55 +936,6 @@ var require_permessage_deflate = __commonJS({
   }
 });
 
-// ../node_modules/utf-8-validate/fallback.js
-var require_fallback2 = __commonJS({
-  "../node_modules/utf-8-validate/fallback.js"(exports, module) {
-    "use strict";
-    function isValidUTF8(buf) {
-      const len = buf.length;
-      let i = 0;
-      while (i < len) {
-        if ((buf[i] & 128) === 0) {
-          i++;
-        } else if ((buf[i] & 224) === 192) {
-          if (i + 1 === len || (buf[i + 1] & 192) !== 128 || (buf[i] & 254) === 192) {
-            return false;
-          }
-          i += 2;
-        } else if ((buf[i] & 240) === 224) {
-          if (i + 2 >= len || (buf[i + 1] & 192) !== 128 || (buf[i + 2] & 192) !== 128 || buf[i] === 224 && (buf[i + 1] & 224) === 128 || // overlong
-          buf[i] === 237 && (buf[i + 1] & 224) === 160) {
-            return false;
-          }
-          i += 3;
-        } else if ((buf[i] & 248) === 240) {
-          if (i + 3 >= len || (buf[i + 1] & 192) !== 128 || (buf[i + 2] & 192) !== 128 || (buf[i + 3] & 192) !== 128 || buf[i] === 240 && (buf[i + 1] & 240) === 128 || // overlong
-          buf[i] === 244 && buf[i + 1] > 143 || buf[i] > 244) {
-            return false;
-          }
-          i += 4;
-        } else {
-          return false;
-        }
-      }
-      return true;
-    }
-    module.exports = isValidUTF8;
-  }
-});
-
-// ../node_modules/utf-8-validate/index.js
-var require_utf_8_validate = __commonJS({
-  "../node_modules/utf-8-validate/index.js"(exports, module) {
-    "use strict";
-    try {
-      module.exports = require_node_gyp_build2()(__dirname);
-    } catch (e) {
-      module.exports = require_fallback2();
-    }
-  }
-});
-
 // ../node_modules/ws/lib/validation.js
 var require_validation = __commonJS({
   "../node_modules/ws/lib/validation.js"(exports, module) {
@@ -1379,7 +1127,7 @@ var require_validation = __commonJS({
       };
     } else if (!process.env.WS_NO_UTF_8_VALIDATE) {
       try {
-        const isValidUTF8 = require_utf_8_validate();
+        const isValidUTF8 = __require("utf-8-validate");
         module.exports.isValidUTF8 = function(buf) {
           return buf.length < 32 ? _isValidUTF8(buf) : isValidUTF8(buf);
         };
@@ -2034,7 +1782,7 @@ var require_sender = __commonJS({
     var { EMPTY_BUFFER, kWebSocket, NOOP } = require_constants();
     var { isBlob, isValidStatusCode } = require_validation();
     var { mask: applyMask, toBuffer } = require_buffer_util();
-    var kByteLength = Symbol("kByteLength");
+    var kByteLength = /* @__PURE__ */ Symbol("kByteLength");
     var maskBuffer = Buffer.alloc(4);
     var RANDOM_POOL_SIZE = 8 * 1024;
     var randomPool;
@@ -2519,14 +2267,14 @@ var require_event_target = __commonJS({
   "../node_modules/ws/lib/event-target.js"(exports, module) {
     "use strict";
     var { kForOnEventAttribute, kListener } = require_constants();
-    var kCode = Symbol("kCode");
-    var kData = Symbol("kData");
-    var kError = Symbol("kError");
-    var kMessage = Symbol("kMessage");
-    var kReason = Symbol("kReason");
-    var kTarget = Symbol("kTarget");
-    var kType = Symbol("kType");
-    var kWasClean = Symbol("kWasClean");
+    var kCode = /* @__PURE__ */ Symbol("kCode");
+    var kData = /* @__PURE__ */ Symbol("kData");
+    var kError = /* @__PURE__ */ Symbol("kError");
+    var kMessage = /* @__PURE__ */ Symbol("kMessage");
+    var kReason = /* @__PURE__ */ Symbol("kReason");
+    var kTarget = /* @__PURE__ */ Symbol("kTarget");
+    var kType = /* @__PURE__ */ Symbol("kType");
+    var kWasClean = /* @__PURE__ */ Symbol("kWasClean");
     var Event2 = class {
       /**
        * Create a new `Event`.
@@ -2928,7 +2676,7 @@ var require_websocket = __commonJS({
     } = require_event_target();
     var { format: format2, parse } = require_extension();
     var { toBuffer } = require_buffer_util();
-    var kAborted = Symbol("kAborted");
+    var kAborted = /* @__PURE__ */ Symbol("kAborted");
     var protocolVersions = [8, 13];
     var readyStates = ["CONNECTING", "OPEN", "CLOSING", "CLOSED"];
     var subprotocolRegex = /^[!#$%&'*+\-.0-9A-Z^_`|a-z~]+$/;
@@ -5330,7 +5078,7 @@ var init_size = __esm({
 var version3;
 var init_version2 = __esm({
   "../node_modules/viem/_esm/errors/version.js"() {
-    version3 = "2.55.19";
+    version3 = "2.56.9";
   }
 });
 
@@ -5866,7 +5614,7 @@ function hexToBigInt(hex2, opts = {}) {
   const value = BigInt(hex2);
   if (!signed2)
     return value;
-  const size5 = (hex2.length - 2) / 2;
+  const size5 = Math.ceil((hex2.length - 2) / 2);
   const max = (1n << BigInt(size5) * 8n - 1n) - 1n;
   if (value <= max)
     return value;
@@ -14382,7 +14130,7 @@ var newHeadersFromIncoming = (incoming) => {
   }
   return new Headers(headerRecord);
 };
-var wrapBodyStream = Symbol("wrapBodyStream");
+var wrapBodyStream = /* @__PURE__ */ Symbol("wrapBodyStream");
 var newRequestFromIncoming = (method, url, headers, incoming, abortController) => {
   const init2 = {
     method,
@@ -14430,13 +14178,13 @@ var newRequestFromIncoming = (method, url, headers, incoming, abortController) =
   }
   return new Request2(url, init2);
 };
-var getRequestCache = Symbol("getRequestCache");
-var requestCache = Symbol("requestCache");
-var incomingKey = Symbol("incomingKey");
-var urlKey = Symbol("urlKey");
-var headersKey = Symbol("headersKey");
-var abortControllerKey = Symbol("abortControllerKey");
-var getAbortController = Symbol("getAbortController");
+var getRequestCache = /* @__PURE__ */ Symbol("getRequestCache");
+var requestCache = /* @__PURE__ */ Symbol("requestCache");
+var incomingKey = /* @__PURE__ */ Symbol("incomingKey");
+var urlKey = /* @__PURE__ */ Symbol("urlKey");
+var headersKey = /* @__PURE__ */ Symbol("headersKey");
+var abortControllerKey = /* @__PURE__ */ Symbol("abortControllerKey");
+var getAbortController = /* @__PURE__ */ Symbol("getAbortController");
 var requestPrototype = {
   get method() {
     return this[incomingKey].method || "GET";
@@ -14489,7 +14237,7 @@ var requestPrototype = {
     }
   });
 });
-Object.defineProperty(requestPrototype, Symbol.for("nodejs.util.inspect.custom"), {
+Object.defineProperty(requestPrototype, /* @__PURE__ */ Symbol.for("nodejs.util.inspect.custom"), {
   value: function(depth, options, inspectFn) {
     const props = {
       method: this.method,
@@ -14538,9 +14286,9 @@ var newRequest = (incoming, defaultHostname) => {
   req[urlKey] = url.href;
   return req;
 };
-var responseCache = Symbol("responseCache");
-var getResponseCache = Symbol("getResponseCache");
-var cacheKey = Symbol("cache");
+var responseCache = /* @__PURE__ */ Symbol("responseCache");
+var getResponseCache = /* @__PURE__ */ Symbol("getResponseCache");
+var cacheKey = /* @__PURE__ */ Symbol("cache");
 var GlobalResponse = global.Response;
 var Response2 = class _Response {
   #body;
@@ -14604,7 +14352,7 @@ var Response2 = class _Response {
     }
   });
 });
-Object.defineProperty(Response2.prototype, Symbol.for("nodejs.util.inspect.custom"), {
+Object.defineProperty(Response2.prototype, /* @__PURE__ */ Symbol.for("nodejs.util.inspect.custom"), {
   value: function(depth, options, inspectFn) {
     const props = {
       status: this.status,
@@ -14685,8 +14433,8 @@ var X_ALREADY_SENT = "x-hono-already-sent";
 if (typeof global.crypto === "undefined") {
   global.crypto = crypto2;
 }
-var outgoingEnded = Symbol("outgoingEnded");
-var incomingDraining = Symbol("incomingDraining");
+var outgoingEnded = /* @__PURE__ */ Symbol("outgoingEnded");
+var incomingDraining = /* @__PURE__ */ Symbol("incomingDraining");
 var DRAIN_TIMEOUT_MS = 500;
 var MAX_DRAIN_BYTES = 64 * 1024 * 1024;
 var drainIncoming = (incoming) => {
@@ -20739,7 +20487,7 @@ var BN_28 = BigInt(28);
 var BN_35 = BigInt(35);
 var BN_N = BigInt("0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141");
 var BN_N_2 = BN_N / BN_2;
-var inspect = Symbol.for("nodejs.util.inspect.custom");
+var inspect = /* @__PURE__ */ Symbol.for("nodejs.util.inspect.custom");
 var _guard3 = {};
 function toUint256(value) {
   return zeroPadValue(toBeArray(value), 32);
@@ -21025,7 +20773,7 @@ var Signature = class _Signature {
     const _r = sig.r;
     assertError(_r != null, "missing r");
     const r = toUint256(_r);
-    const s = function(s2, yParityAndS) {
+    const s = (function(s2, yParityAndS) {
       if (s2 != null) {
         return toUint256(s2);
       }
@@ -21036,8 +20784,8 @@ var Signature = class _Signature {
         return hexlify(bytes2);
       }
       assertError(false, "missing s");
-    }(sig.s, sig.yParityAndS);
-    const { networkV, v } = function(_v, yParityAndS, yParity) {
+    })(sig.s, sig.yParityAndS);
+    const { networkV, v } = (function(_v, yParityAndS, yParity) {
       if (_v != null) {
         const v2 = getBigInt(_v);
         return {
@@ -21059,7 +20807,7 @@ var Signature = class _Signature {
         assertError(false, "invalid yParity");
       }
       assertError(false, "missing v");
-    }(sig.v, sig.yParityAndS, sig.yParity);
+    })(sig.v, sig.yParityAndS, sig.yParity);
     const result = new _Signature(_guard3, r, s, v);
     if (networkV) {
       result.#networkV = networkV;
@@ -21288,7 +21036,7 @@ function ibanChecksum(address) {
   }
   return checksum9;
 }
-var Base36 = function() {
+var Base36 = (function() {
   ;
   const result = {};
   for (let i = 0; i < 36; i++) {
@@ -21296,7 +21044,7 @@ var Base36 = function() {
     result[key] = BigInt(i);
   }
   return result;
-}();
+})();
 function fromBase36(value) {
   value = value.toLowerCase();
   let result = BN_05;
@@ -21404,7 +21152,7 @@ function n(value, width) {
 function b(value, size5) {
   return new Typed(_gaurd, `bytes${size5 ? size5 : ""}`, value, { size: size5 });
 }
-var _typedSymbol = Symbol.for("_ethers_typed");
+var _typedSymbol = /* @__PURE__ */ Symbol.for("_ethers_typed");
 var Typed = class _Typed {
   /**
    *  The type, as a Solidity-compatible type.
@@ -22603,7 +22351,7 @@ var BN_272 = BigInt(27);
 var BN_282 = BigInt(28);
 var BN_352 = BigInt(35);
 var BN_MAX_UINT = BigInt("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
-var inspect2 = Symbol.for("nodejs.util.inspect.custom");
+var inspect2 = /* @__PURE__ */ Symbol.for("nodejs.util.inspect.custom");
 var BLOB_SIZE = 4096 * 32;
 var CELL_COUNT = 128;
 function getKzgLibrary(kzg) {
@@ -25544,7 +25292,7 @@ function verifyBasicType(type) {
   return type;
 }
 var _guard4 = {};
-var internal = Symbol.for("_ethers_internal");
+var internal = /* @__PURE__ */ Symbol.for("_ethers_internal");
 var ParamTypeInternal = "_ParamTypeInternal";
 var ErrorFragmentInternal = "_ErrorInternal";
 var EventFragmentInternal = "_EventInternal";
@@ -25783,9 +25531,9 @@ var ParamType = class _ParamType {
     }
     const result = process2(this.type, value);
     if (result.then) {
-      promises.push(async function() {
+      promises.push((async function() {
         setValue(await result);
-      }());
+      })());
     } else {
       setValue(result);
     }
@@ -29171,7 +28919,7 @@ var PreparedTopicFilter = class {
     }
     const runner = getRunner(contract.runner, "resolveName");
     const resolver = canResolve(runner) ? runner : null;
-    this.#filter = async function() {
+    this.#filter = (async function() {
       const resolvedArgs = await Promise.all(fragment.inputs.map((param, index2) => {
         const arg = args[index2];
         if (arg == null) {
@@ -29188,7 +28936,7 @@ var PreparedTopicFilter = class {
         });
       }));
       return contract.interface.encodeFilterTopics(fragment, resolvedArgs);
-    }();
+    })();
   }
   getTopicFilter() {
     return this.#filter;
@@ -29418,7 +29166,7 @@ function buildWrappedEvent(contract, key) {
   });
   return method;
 }
-var internal2 = Symbol.for("_ethersInternal_contract");
+var internal2 = /* @__PURE__ */ Symbol.for("_ethersInternal_contract");
 var internalValues = /* @__PURE__ */ new WeakMap();
 function setInternal(contract, values) {
   internalValues.set(contract[internal2], values);
@@ -30635,15 +30383,15 @@ async function createUniversal(provider3) {
 // ../node_modules/ethers/lib.esm/providers/format.js
 var BN_011 = BigInt(0);
 function allowNull(format2, nullValue) {
-  return function(value) {
+  return (function(value) {
     if (value == null) {
       return nullValue;
     }
     return format2(value);
-  };
+  });
 }
 function arrayOf(format2, allowNull2) {
-  return (array) => {
+  return ((array) => {
     if (allowNull2 && array == null) {
       return null;
     }
@@ -30651,10 +30399,10 @@ function arrayOf(format2, allowNull2) {
       throw new Error("not an array");
     }
     return array.map((i) => format2(i));
-  };
+  });
 }
 function object(format2, altNames) {
-  return (value) => {
+  return ((value) => {
     const result = {};
     for (const key in format2) {
       let srcKey = key;
@@ -30677,7 +30425,7 @@ function object(format2, altNames) {
       }
     }
     return result;
-  };
+  });
 }
 function formatBoolean(value) {
   switch (value) {
@@ -30871,7 +30619,7 @@ function formatTransactionResponse(value) {
 
 // ../node_modules/ethers/lib.esm/providers/plugins-network.js
 var EnsAddress = "0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e";
-var inspect3 = Symbol.for("nodejs.util.inspect.custom");
+var inspect3 = /* @__PURE__ */ Symbol.for("nodejs.util.inspect.custom");
 var NetworkPlugin = class _NetworkPlugin {
   /**
    *  The name of the plugin.
@@ -31057,7 +30805,7 @@ var FetchUrlFeeDataNetworkPlugin = class extends NetworkPlugin {
 };
 
 // ../node_modules/ethers/lib.esm/providers/network.js
-var inspect4 = Symbol.for("nodejs.util.inspect.custom");
+var inspect4 = /* @__PURE__ */ Symbol.for("nodejs.util.inspect.custom");
 var Networks = /* @__PURE__ */ new Map();
 var Network = class _Network {
   #name;
@@ -32170,9 +31918,9 @@ var AbstractProvider = class {
       }
       const addr = resolveAddress(request[key], this);
       if (isPromise2(addr)) {
-        promises.push(async function() {
+        promises.push((async function() {
           request[key] = await addr;
-        }());
+        })());
       } else {
         request[key] = addr;
       }
@@ -32180,18 +31928,18 @@ var AbstractProvider = class {
     if (request.blockTag != null) {
       const blockTag = this._getBlockTag(request.blockTag);
       if (isPromise2(blockTag)) {
-        promises.push(async function() {
+        promises.push((async function() {
           request.blockTag = await blockTag;
-        }());
+        })());
       } else {
         request.blockTag = blockTag;
       }
     }
     if (promises.length) {
-      return async function() {
+      return (async function() {
         await Promise.all(promises);
         return request;
-      }();
+      })();
     }
     return request;
   }
@@ -32505,7 +32253,7 @@ var AbstractProvider = class {
     }
     return new Promise(async (resolve2, reject) => {
       let timer = null;
-      const listener = async (blockNumber) => {
+      const listener = (async (blockNumber) => {
         try {
           const receipt = await this.getTransactionReceipt(hash4);
           if (receipt != null) {
@@ -32522,7 +32270,7 @@ var AbstractProvider = class {
           console.log("EEE", error);
         }
         this.once("block", listener);
-      };
+      });
       if (timeout != null) {
         timer = setTimeout(() => {
           if (timer == null) {
@@ -38932,6 +38680,7 @@ var SigningGuardError = class extends Error {
     this.reasonCode = reasonCode;
     this.name = "SigningGuardError";
   }
+  reasonCode;
 };
 var ZERO = "0x0000000000000000000000000000000000000000";
 var OFFICIAL_USDC_DOMAINS = {
@@ -40168,6 +39917,8 @@ var bufferToFormData = (arrayBuffer, contentType) => {
 };
 
 // ../node_modules/hono/dist/utils/body.js
+var MAX_NESTING_DEPTH = 32;
+var MAX_NESTED_OBJECTS = 1e4;
 var isRawRequest = (request) => "headers" in request;
 var parseBody = async (request, options = /* @__PURE__ */ Object.create(null)) => {
   const { all = false, dot = false } = options;
@@ -40200,6 +39951,7 @@ async function parseFormData(request, options) {
 }
 function convertFormDataToBodyData(formData, options) {
   const form = /* @__PURE__ */ Object.create(null);
+  const nestingState = { count: 0 };
   formData.forEach((value, key) => {
     const shouldParseAllValues = options.all || key.endsWith("[]");
     if (!shouldParseAllValues) {
@@ -40212,7 +39964,7 @@ function convertFormDataToBodyData(formData, options) {
     Object.entries(form).forEach(([key, value]) => {
       const shouldParseDotValues = key.includes(".");
       if (shouldParseDotValues) {
-        handleParsingNestedValues(form, key, value);
+        handleParsingNestedValues(form, key, value, nestingState);
         delete form[key];
       }
     });
@@ -40235,22 +39987,31 @@ var handleParsingAllValues = (form, key, value) => {
     }
   }
 };
-var handleParsingNestedValues = (form, key, value) => {
+var handleParsingNestedValues = (form, key, value, state) => {
   if (/(?:^|\.)__proto__\./.test(key)) {
     return;
   }
   let nestedForm = form;
-  const keys = key.split(".");
+  const keys = key.split(".", MAX_NESTING_DEPTH + 2);
+  if (keys.length > MAX_NESTING_DEPTH + 1) {
+    throwNestingLimitExceeded();
+  }
   keys.forEach((key2, index2) => {
     if (index2 === keys.length - 1) {
       nestedForm[key2] = value;
     } else {
       if (!nestedForm[key2] || typeof nestedForm[key2] !== "object" || Array.isArray(nestedForm[key2]) || nestedForm[key2] instanceof File) {
+        if (state.count++ >= MAX_NESTED_OBJECTS) {
+          throwNestingLimitExceeded();
+        }
         nestedForm[key2] = /* @__PURE__ */ Object.create(null);
       }
       nestedForm = nestedForm[key2];
     }
   });
+};
+var throwNestingLimitExceeded = () => {
+  throw new Error("Nesting limit exceeded");
 };
 
 // ../node_modules/hono/dist/utils/url.js
@@ -40383,6 +40144,10 @@ var _decodeURI = (value) => {
   return tryDecodeURIComponent(value);
 };
 var _getQueryParam = (url, key, multiple) => {
+  const hashIndex = url.indexOf("#", 8);
+  if (hashIndex !== -1) {
+    url = url.slice(0, hashIndex);
+  }
   let encoded;
   if (!multiple && key && key.indexOf("%") === -1 && key.indexOf("+") === -1) {
     let keyIndex2 = url.indexOf("?", 8);
@@ -40499,13 +40264,13 @@ var HonoRequest = class {
     return key ? this.#getDecodedParam(key) : this.#getAllDecodedParams();
   }
   #getDecodedParam(key) {
-    const paramKey = this.#matchResult[0][this.routeIndex][1][key];
+    const paramKey = this.#matchResult[0][this.routeIndex]?.[1][key];
     const param = this.#getParamValue(paramKey);
     return param && tryDecodeURIComponent(param);
   }
   #getAllDecodedParams() {
     const decoded = {};
-    const keys = Object.keys(this.#matchResult[0][this.routeIndex][1]);
+    const keys = Object.keys(this.#matchResult[0][this.routeIndex]?.[1] ?? {});
     for (const key of keys) {
       const value = this.#getParamValue(this.#matchResult[0][this.routeIndex][1][key]);
       if (value !== void 0) {
@@ -40547,7 +40312,10 @@ var HonoRequest = class {
         if (anyCachedKey === "json") {
           body = JSON.stringify(body);
         }
-        return new Response(body)[key]();
+        const contentType = anyCachedKey === "formData" ? void 0 : raw2.headers.get("content-type");
+        return new Response(body, {
+          headers: contentType ? { "Content-Type": contentType } : void 0
+        })[key]();
       });
     }
     return bodyCache[key] = raw2[key]();
@@ -41180,7 +40948,7 @@ var Context = class {
     const locationString = String(location);
     this.header(
       "Location",
-      // Multibyes should be encoded
+      // Multibytes should be encoded
       // eslint-disable-next-line no-control-regex
       !/[^\x00-\xFF]/.test(locationString) ? locationString : encodeURI(locationString)
     );
@@ -41252,13 +41020,14 @@ var Hono = class _Hono {
     const allMethods = [...METHODS, METHOD_NAME_ALL_LOWERCASE];
     allMethods.forEach((method) => {
       this[method] = (args1, ...args) => {
+        const methodName = method.toUpperCase();
         if (typeof args1 === "string") {
           this.#path = args1;
         } else {
-          this.#addRoute(method, this.#path, args1);
+          this.#addRoute(methodName, this.#path, args1);
         }
         args.forEach((handler2) => {
-          this.#addRoute(method, this.#path, handler2);
+          this.#addRoute(methodName, this.#path, handler2);
         });
         return this;
       };
@@ -41267,9 +41036,10 @@ var Hono = class _Hono {
       for (const p of [path2].flat()) {
         this.#path = p;
         for (const m of [method].flat()) {
-          handlers.map((handler2) => {
-            this.#addRoute(m.toUpperCase(), this.#path, handler2);
-          });
+          const methodName = m.toUpperCase();
+          for (const handler2 of handlers) {
+            this.#addRoute(methodName, this.#path, handler2);
+          }
         }
       }
       return this;
@@ -41470,7 +41240,6 @@ var Hono = class _Hono {
     return this;
   }
   #addRoute(method, path2, handler2, baseRoutePath) {
-    method = method.toUpperCase();
     path2 = mergePath(this._basePath, path2);
     const r = {
       basePath: baseRoutePath !== void 0 ? mergePath(this._basePath, baseRoutePath) : this._basePath,
@@ -41592,11 +41361,14 @@ var Hono = class _Hono {
   };
 };
 
+// ../node_modules/hono/dist/router/utils.js
+var createNullObject = () => /* @__PURE__ */ Object.create(null);
+
 // ../node_modules/hono/dist/router/reg-exp-router/matcher.js
 var emptyParam = [];
 function match(method, path2) {
   const matchers2 = this.buildAllMatchers();
-  const match2 = (method2, path22) => {
+  const match2 = ((method2, path22) => {
     const matcher = matchers2[method2] || matchers2[METHOD_NAME_ALL];
     const staticMatch = matcher[2][path22];
     if (staticMatch) {
@@ -41608,7 +41380,7 @@ function match(method, path2) {
     }
     const index2 = match3.indexOf("", 1);
     return [matcher[1][index2], match3];
-  };
+  });
   this.match = match2;
   return match2(method, path2);
 }
@@ -41642,7 +41414,7 @@ var Node = class _Node {
   // handler index of a dynamic path, or -1 for a static path terminal
   #index;
   #varIndex;
-  #children = /* @__PURE__ */ Object.create(null);
+  #children = createNullObject();
   insert(tokens, index2, paramMap, context, isStatic) {
     let node = this;
     for (let i = 0, len = tokens.length; i < len; i++) {
@@ -41726,7 +41498,7 @@ var Trie = class {
   #root = new Node();
   #index = 0;
   // dynamic path -> [handler index, param assoc]; static paths are not registered
-  paths = /* @__PURE__ */ Object.create(null);
+  paths = createNullObject();
   insert(path2, isStatic) {
     if (isStatic) {
       this.#root.insert(path2.split(""), 0, [], this.#context, true);
@@ -41785,22 +41557,16 @@ var Trie = class {
 };
 
 // ../node_modules/hono/dist/router/reg-exp-router/router.js
-var wildcardRegExpCache = /* @__PURE__ */ Object.create(null);
+var wildcardRegExpCache = createNullObject();
 function buildWildcardRegExp(path2) {
   return wildcardRegExpCache[path2] ??= new RegExp(
-    path2 === "*" ? "" : `^${path2.replace(
-      /\/\*$|([.\\+*[^\]$()])/g,
-      (_, metaChar) => metaChar ? `\\${metaChar}` : "(?:|/.*)"
+    `^${path2.replace(
+      /\/:[^/{}]+(?:\{\[\^\/]\+})?(?=[/{]|$)|\/?\*$|([.\\+*[^\]$()?{}|])/g,
+      (match2, metaChar) => metaChar ? `\\${metaChar}` : match2 === "/*" ? TAIL_WILDCARD_REG_EXP_STR : match2 === "*" ? ONLY_WILDCARD_REG_EXP_STR : `/:${LABEL_REG_EXP_STR}`
     )}$`
   );
 }
-function clearWildcardRegExpCache() {
-  wildcardRegExpCache = /* @__PURE__ */ Object.create(null);
-}
 function findMiddleware(middleware, path2) {
-  if (!middleware) {
-    return void 0;
-  }
   for (const k of Object.keys(middleware).sort((a, b2) => b2.length - a.length)) {
     if (buildWildcardRegExp(k).test(path2)) {
       return [...middleware[k]];
@@ -41814,8 +41580,8 @@ var RegExpRouter = class {
   #routes;
   #tries;
   constructor() {
-    this.#middleware = { [METHOD_NAME_ALL]: /* @__PURE__ */ Object.create(null) };
-    this.#routes = { [METHOD_NAME_ALL]: /* @__PURE__ */ Object.create(null) };
+    this.#middleware = { [METHOD_NAME_ALL]: createNullObject() };
+    this.#routes = { [METHOD_NAME_ALL]: createNullObject() };
     this.#tries = { [METHOD_NAME_ALL]: new Trie() };
   }
   #insertPath(method, path2) {
@@ -41828,117 +41594,86 @@ var RegExpRouter = class {
   add(method, path2, handler2) {
     const middleware = this.#middleware;
     const routes = this.#routes;
-    if (!middleware || !routes) {
+    if (!middleware) {
       throw new Error(MESSAGE_MATCHER_IS_ALREADY_BUILT);
     }
     if (!middleware[method]) {
       this.#tries[method] = new Trie();
-      [middleware, routes].forEach((handlerMap) => {
-        handlerMap[method] = /* @__PURE__ */ Object.create(null);
-        Object.keys(handlerMap[METHOD_NAME_ALL]).forEach((p) => {
+      for (const handlerMap of [middleware, routes]) {
+        handlerMap[method] = createNullObject();
+        for (const p in handlerMap[METHOD_NAME_ALL]) {
           handlerMap[method][p] = [...handlerMap[METHOD_NAME_ALL][p]];
           this.#insertPath(method, p);
-        });
-      });
+        }
+      }
     }
     if (path2 === "/*") {
       path2 = "*";
     }
-    const paramCount = (path2.match(/\/:/g) || []).length;
+    const methods = method === METHOD_NAME_ALL ? Object.keys(middleware) : [method];
     if (/\*$/.test(path2)) {
       const re = buildWildcardRegExp(path2);
-      Object.keys(middleware).forEach((m) => {
-        if ((method === METHOD_NAME_ALL || method === m) && !middleware[m][path2]) {
+      for (const m of methods) {
+        if (!middleware[m][path2]) {
           this.#insertPath(m, path2);
           middleware[m][path2] = findMiddleware(middleware[m], path2) || findMiddleware(middleware[METHOD_NAME_ALL], path2) || [];
         }
-      });
-      Object.keys(middleware).forEach((m) => {
-        if (method === METHOD_NAME_ALL || method === m) {
-          Object.keys(middleware[m]).forEach((p) => {
-            re.test(p) && middleware[m][p].push([handler2, paramCount]);
-          });
+      }
+      for (const handlerMap of [middleware, routes]) {
+        for (const m of methods) {
+          for (const p in handlerMap[m]) {
+            re.test(p) && handlerMap[m][p].push([handler2, path2]);
+          }
         }
-      });
-      Object.keys(routes).forEach((m) => {
-        if (method === METHOD_NAME_ALL || method === m) {
-          Object.keys(routes[m]).forEach(
-            (p) => re.test(p) && routes[m][p].push([handler2, paramCount])
-          );
-        }
-      });
+      }
       return;
     }
     const paths = checkOptionalParameter(path2) || [path2];
-    for (let i = 0, len = paths.length; i < len; i++) {
-      const path22 = paths[i];
-      Object.keys(routes).forEach((m) => {
-        if (method === METHOD_NAME_ALL || method === m) {
-          if (!routes[m][path22]) {
-            this.#insertPath(m, path22);
-            routes[m][path22] = [
-              ...findMiddleware(middleware[m], path22) || findMiddleware(middleware[METHOD_NAME_ALL], path22) || []
-            ];
-          }
-          routes[m][path22].push([handler2, paramCount - len + i + 1]);
+    for (const path22 of paths) {
+      for (const m of methods) {
+        if (!routes[m][path22]) {
+          this.#insertPath(m, path22);
+          routes[m][path22] = findMiddleware(middleware[m], path22) || findMiddleware(middleware[METHOD_NAME_ALL], path22) || [];
         }
-      });
+        routes[m][path22].push([handler2, path22]);
+      }
     }
   }
   match = match;
   buildAllMatchers() {
-    const matchers2 = /* @__PURE__ */ Object.create(null);
-    Object.keys(this.#routes).concat(Object.keys(this.#middleware)).forEach((method) => {
-      matchers2[method] ||= this.#buildMatcher(method);
-    });
+    const matchers2 = createNullObject();
+    for (const method of Object.keys(this.#routes)) {
+      matchers2[method] = this.#buildMatcher(method);
+    }
     this.#middleware = this.#routes = this.#tries = void 0;
-    clearWildcardRegExpCache();
+    wildcardRegExpCache = createNullObject();
     return matchers2;
   }
   #buildMatcher(method) {
     const middleware = this.#middleware[method];
     const routes = this.#routes[method];
     const trie = this.#tries[method];
-    const staticMap = /* @__PURE__ */ Object.create(null);
+    const staticMap = createNullObject();
     const handlerData = [];
-    [middleware, routes].forEach((r) => {
+    const [regexp, indexReplacementMap, paramReplacementMap] = trie.buildRegExp();
+    for (const r of [middleware, routes]) {
       for (const path2 in r) {
         const handlers = r[path2];
         const pathData = trie.paths[path2];
         if (!pathData) {
-          staticMap[path2] = [handlers.map(([h]) => [h, /* @__PURE__ */ Object.create(null)]), emptyParam];
+          staticMap[path2] = [handlers.map(([h]) => [h, createNullObject()]), emptyParam];
           continue;
         }
-        const paramAssoc = pathData[1];
-        handlerData[pathData[0]] = handlers.map(([h, paramCount]) => {
-          const paramIndexMap = /* @__PURE__ */ Object.create(null);
-          paramCount -= 1;
-          for (; paramCount >= 0; paramCount--) {
-            const [key, value] = paramAssoc[paramCount];
-            paramIndexMap[key] = value;
-          }
-          return [h, paramIndexMap];
-        });
-      }
-    });
-    const [regexp, indexReplacementMap, paramReplacementMap] = trie.buildRegExp();
-    for (let i = 0, len = handlerData.length; i < len; i++) {
-      for (let j = 0, len2 = handlerData[i].length; j < len2; j++) {
-        const map = handlerData[i][j]?.[1];
-        if (!map) {
-          continue;
-        }
-        const keys = Object.keys(map);
-        for (let k = 0, len3 = keys.length; k < len3; k++) {
-          map[keys[k]] = paramReplacementMap[map[keys[k]]];
-        }
+        handlerData[pathData[0]] = handlers.map(([h, handlerPath]) => [
+          h,
+          trie.paths[handlerPath][1].reduceRight((map, [key], i) => {
+            map[key] = paramReplacementMap[pathData[1][i][1]];
+            return map;
+          }, createNullObject())
+        ]);
       }
     }
-    const handlerMap = [];
-    for (const i in indexReplacementMap) {
-      handlerMap[i] = handlerData[indexReplacementMap[i]];
-    }
-    return [regexp, handlerMap, staticMap];
+    return [regexp, indexReplacementMap.map((i) => handlerData[i]), staticMap];
   }
 };
 
@@ -41998,11 +41733,11 @@ var SmartRouter = class {
 };
 
 // ../node_modules/hono/dist/router/trie-router/node.js
-var emptyParams = /* @__PURE__ */ Object.create(null);
+var emptyParams = createNullObject();
 var order = 0;
 var Node2 = class _Node2 {
   #methods = [];
-  #children = /* @__PURE__ */ Object.create(null);
+  #children = createNullObject();
   #patterns = [];
   #pattern;
   #params = emptyParams;
@@ -42039,7 +41774,7 @@ var Node2 = class _Node2 {
       const m = node.#methods[i];
       const handlerSet = m[method] || m[METHOD_NAME_ALL];
       if (handlerSet) {
-        handlerSet.params = /* @__PURE__ */ Object.create(null);
+        handlerSet.params = createNullObject();
         handlerSets.push(handlerSet);
         for (let i2 = 0, len2 = handlerSet.possibleKeys.length; i2 < len2; i2++) {
           const key = handlerSet.possibleKeys[i2];
@@ -42351,7 +42086,7 @@ function createFilterRequestScope(client, { method }) {
       if (status === "success" && method === method_)
         requestMap[id2] = transport.request;
     });
-  return (id2) => requestMap[id2] || client.request;
+  return ((id2) => requestMap[id2] || client.request);
 }
 
 // ../node_modules/viem/_esm/actions/public/createContractEventFilter.js
@@ -44044,13 +43779,13 @@ function observe(observerId, callbacks, fn) {
     return unwatch;
   const emit2 = {};
   for (const key in callbacks) {
-    emit2[key] = (...args) => {
+    emit2[key] = ((...args) => {
       const listeners2 = getListeners();
       if (listeners2.length === 0)
         return;
       for (const listener of listeners2)
         listener.fns[key]?.(...args);
-    };
+    });
   }
   const cleanup = fn(emit2);
   if (typeof cleanup === "function")
@@ -44549,9 +44284,14 @@ async function sendTransaction(client, parameters) {
         to
       });
       const serializer = chain2?.serializers?.transaction;
-      const serializedTransaction = await account.signTransaction(request, {
+      const signedTransaction = await account.signTransaction(request, {
         serializer
       });
+      const transactionEnvelope = (chain2 ?? client.chain)?.serializers?.transactionEnvelope;
+      const serializedTransaction = transactionEnvelope ? await transactionEnvelope({
+        serializedTransaction: signedTransaction,
+        transaction: request
+      }) : signedTransaction;
       return await getAction(client, sendRawTransaction, "sendRawTransaction")({
         serializedTransaction
       });
@@ -46508,6 +46248,8 @@ function shouldRetry(error) {
     if (error.code === InternalRpcError.code)
       return true;
     if (error.code === 429)
+      return true;
+    if (error.code === -32007)
       return true;
     return false;
   }
@@ -50751,6 +50493,7 @@ init_Errors();
 init_Hex();
 
 // ../node_modules/ox/_esm/core/Secp256k1.js
+init_Bytes();
 init_Hex();
 function recoverAddress3(options) {
   return fromPublicKey(recoverPublicKey2(options));
@@ -50762,6 +50505,7 @@ function recoverPublicKey2(options) {
   const point = signature_.recoverPublicKey(from3(payload).substring(2));
   return from4(point);
 }
+var fromSeedDomain = fromString("ox.secp256k1.fromSeed.v1");
 
 // ../node_modules/ox/_esm/erc8010/SignatureErc8010.js
 var magicBytes = "0x8010801080108010801080108010801080108010801080108010801080108010";
@@ -50915,6 +50659,21 @@ async function getStorageAt(client, { address, blockHash, blockNumber, blockTag 
     params: [address, slot, block]
   });
   return data4;
+}
+
+// ../node_modules/viem/_esm/actions/public/getStorageValues.js
+init_formatBlockParameter();
+async function getStorageValues(client, { blockHash, blockNumber, blockTag = "latest", requireCanonical, requests }) {
+  const block = formatBlockParameter({
+    blockHash,
+    blockNumber,
+    blockTag,
+    requireCanonical
+  });
+  return client.request({
+    method: "eth_getStorageValues",
+    params: [requests, block]
+  });
 }
 
 // ../node_modules/viem/_esm/actions/public/getTransaction.js
@@ -51221,6 +50980,7 @@ async function simulateBlocks(client, parameters) {
         const { abi: abi2, args, functionName, to } = blocks[i].calls[j];
         const data4 = call2.error?.data ?? call2.returnData;
         const gasUsed = BigInt(call2.gasUsed);
+        const maxUsedGas = call2.maxUsedGas === void 0 ? void 0 : BigInt(call2.maxUsedGas);
         const logs = call2.logs?.map((log) => formatLog2(log));
         const status = call2.status === "0x1" ? "success" : "failure";
         const result2 = abi2 && status === "success" && data4 !== "0x" ? decodeFunctionResult({
@@ -51249,6 +51009,9 @@ async function simulateBlocks(client, parameters) {
           data: data4,
           gasUsed,
           logs,
+          // only present when reported by the node, so existing consumers
+          // (and snapshots) are unaffected on nodes that omit it.
+          ...maxUsedGas === void 0 ? {} : { maxUsedGas },
           status,
           ...status === "success" ? {
             result: result2
@@ -51635,6 +51398,7 @@ init_fromHex();
 init_call();
 var getBalanceCode = "0x6080604052348015600e575f80fd5b5061016d8061001c5f395ff3fe608060405234801561000f575f80fd5b5060043610610029575f3560e01c8063f8b2cb4f1461002d575b5f80fd5b610047600480360381019061004291906100db565b61005d565b604051610054919061011e565b60405180910390f35b5f8173ffffffffffffffffffffffffffffffffffffffff16319050919050565b5f80fd5b5f73ffffffffffffffffffffffffffffffffffffffff82169050919050565b5f6100aa82610081565b9050919050565b6100ba816100a0565b81146100c4575f80fd5b50565b5f813590506100d5816100b1565b92915050565b5f602082840312156100f0576100ef61007d565b5b5f6100fd848285016100c7565b91505092915050565b5f819050919050565b61011881610106565b82525050565b5f6020820190506101315f83018461010f565b9291505056fea26469706673582212203b9fe929fe995c7cf9887f0bdba8a36dd78e8b73f149b17d2d9ad7cd09d2dc6264736f6c634300081a0033";
 var staticCallCode = "0x608060405234801561000f575f5ffd5b5060043610610029575f3560e01c8063fd00430c1461002d575b5f5ffd5b6100476004803603810190610042919061012b565b610049565b005b80825f375f5f825f865afa610060573d5f5f3e3d5ffd5b3d5f5f3e3d5ff35b5f5ffd5b5f5ffd5b5f73ffffffffffffffffffffffffffffffffffffffff82169050919050565b5f61009982610070565b9050919050565b6100a98161008f565b81146100b3575f5ffd5b50565b5f813590506100c4816100a0565b92915050565b5f5ffd5b5f5ffd5b5f5ffd5b5f5f83601f8401126100eb576100ea6100ca565b5b8235905067ffffffffffffffff811115610108576101076100ce565b5b602083019150836001820283011115610124576101236100d2565b5b9250929050565b5f5f5f6040848603121561014257610141610068565b5b5f61014f868287016100b6565b935050602084013567ffffffffffffffff8111156101705761016f61006c565b5b61017c868287016100d6565b9250925050925092509256fea2646970667358221220635ed99185cacf3f2acba6921f23687c969cec2bbaf5f9ad599f507e6e105e6964736f6c63430008230033";
+var assetProbeGas = 1000000n;
 var staticCallAddressBase = 0x00000000000000000000000000000000deadbeefn;
 var transferEventSelector = getSelector2(from13("event Transfer(address indexed from, address indexed to, uint256 value)"));
 var balanceOfFunction = from14("function balanceOf(address) returns (uint256)");
@@ -51736,6 +51500,7 @@ async function simulateCalls(client, parameters) {
           {
             calls: assetAddresses.map((address) => ({
               to: staticCallAddress,
+              gas: assetProbeGas,
               data: encodeStaticCall(address, encodeData2(balanceOfFunction, [
                 account.address
               ]))
@@ -51746,6 +51511,7 @@ async function simulateCalls(client, parameters) {
           {
             calls: assetAddresses.map((address) => ({
               to: staticCallAddress,
+              gas: assetProbeGas,
               data: encodeStaticCall(address, encodeData2(decimalsFunction))
             })),
             stateOverrides: staticCallStateOverrides
@@ -51754,6 +51520,7 @@ async function simulateCalls(client, parameters) {
           {
             calls: assetAddresses.map((address) => ({
               to: staticCallAddress,
+              gas: assetProbeGas,
               data: encodeStaticCall(address, encodeData2(tokenUriFunction, [0n]))
             })),
             stateOverrides: staticCallStateOverrides
@@ -51762,6 +51529,7 @@ async function simulateCalls(client, parameters) {
           {
             calls: assetAddresses.map((address) => ({
               to: staticCallAddress,
+              gas: assetProbeGas,
               data: encodeStaticCall(address, encodeData2(symbolFunction))
             })),
             stateOverrides: staticCallStateOverrides
@@ -51859,7 +51627,7 @@ async function readBalance(client, parameters) {
         ...stateOverride ?? [],
         { address: staticCallAddress, code: staticCallCode }
       ] : stateOverride,
-      ...address ? { to: staticCallAddress } : {},
+      ...address ? { gas: assetProbeGas, to: staticCallAddress } : {},
       ...typeof blockNumber === "bigint" ? { blockNumber } : { blockTag }
     });
     return { data: result.data ?? "0x", status: "success" };
@@ -52890,7 +52658,7 @@ function parseSiweMessage(message) {
     ...statement ? { statement } : {}
   };
 }
-var prefixRegex = /^(?:(?<scheme>[a-zA-Z][a-zA-Z0-9+-.]*):\/\/)?(?<domain>[a-zA-Z0-9+-.]*(?::[0-9]{1,5})?) (?:wants you to sign in with your Ethereum account:\n)(?<address>0x[a-fA-F0-9]{40})\n\n(?:(?<statement>.*)\n\n)?/;
+var prefixRegex = /^(?:(?<scheme>[a-zA-Z][a-zA-Z0-9+\-.]*):\/\/)?(?<domain>[a-zA-Z0-9+-.]*(?::[0-9]{1,5})?) (?:wants you to sign in with your Ethereum account:\n)(?<address>0x[a-fA-F0-9]{40})\n\n(?:(?<statement>.*)\n\n)?/;
 var suffixRegex = /(?:URI: (?<uri>.+))\n(?:Version: (?<version>.+))\n(?:Chain ID: (?<chainId>\d+))\n(?:Nonce: (?<nonce>[a-zA-Z0-9]+))\n(?:Issued At: (?<issuedAt>.+))(?:\nExpiration Time: (?<expirationTime>.+))?(?:\nNot Before: (?<notBefore>.+))?(?:\nRequest ID: (?<requestId>.+))?/;
 
 // ../node_modules/viem/_esm/utils/siwe/validateSiweMessage.js
@@ -53291,9 +53059,14 @@ async function sendTransactionSync(client, parameters) {
         to
       });
       const serializer = chain2?.serializers?.transaction;
-      const serializedTransaction = await account.signTransaction(request, {
+      const signedTransaction = await account.signTransaction(request, {
         serializer
       });
+      const transactionEnvelope = (chain2 ?? client.chain)?.serializers?.transactionEnvelope;
+      const serializedTransaction = transactionEnvelope ? await transactionEnvelope({
+        serializedTransaction: signedTransaction,
+        transaction: request
+      }) : signedTransaction;
       return await getAction(client, sendRawTransactionSync, "sendRawTransactionSync")({
         serializedTransaction,
         throwOnReceiptRevert,
@@ -53591,6 +53364,7 @@ function publicActions(client) {
     fillTransaction: (args) => fillTransaction(client, args),
     getRawTransaction: (args) => getRawTransaction(client, args),
     getStorageAt: (args) => getStorageAt(client, args),
+    getStorageValues: (args) => getStorageValues(client, args),
     getTransaction: (args) => getTransaction(client, args),
     getTransactionConfirmations: (args) => getTransactionConfirmations(client, args),
     getTransactionCount: (args) => getTransactionCount(client, args),
@@ -58730,7 +58504,7 @@ ZodNaN.create = (params) => {
     ...processCreateParams(params)
   });
 };
-var BRAND = Symbol("zod_brand");
+var BRAND = /* @__PURE__ */ Symbol("zod_brand");
 var ZodBranded = class extends ZodType {
   _parse(input) {
     const { ctx } = this._processInputParams(input);
@@ -58932,14 +58706,14 @@ var ostring = () => stringType().optional();
 var onumber = () => numberType().optional();
 var oboolean = () => booleanType().optional();
 var coerce = {
-  string: (arg) => ZodString.create({ ...arg, coerce: true }),
-  number: (arg) => ZodNumber.create({ ...arg, coerce: true }),
-  boolean: (arg) => ZodBoolean.create({
+  string: ((arg) => ZodString.create({ ...arg, coerce: true })),
+  number: ((arg) => ZodNumber.create({ ...arg, coerce: true })),
+  boolean: ((arg) => ZodBoolean.create({
     ...arg,
     coerce: true
-  }),
-  bigint: (arg) => ZodBigInt.create({ ...arg, coerce: true }),
-  date: (arg) => ZodDate.create({ ...arg, coerce: true })
+  })),
+  bigint: ((arg) => ZodBigInt.create({ ...arg, coerce: true })),
+  date: ((arg) => ZodDate.create({ ...arg, coerce: true }))
 };
 var NEVER = INVALID;
 
@@ -60617,6 +60391,7 @@ var LruCache = class {
     this.max = max;
     if (!Number.isInteger(max) || max < 1) throw new Error(`LruCache max \u5FC5\u9808\u662F\u6B63\u6574\u6578\uFF08\u6536\u5230 ${max}\uFF09`);
   }
+  max;
   map = /* @__PURE__ */ new Map();
   get(key) {
     const v = this.map.get(key);
@@ -61300,7 +61075,7 @@ async function buildExposureReport(reader, t, nowMs = Date.now(), opts = {}) {
   const run = limiter(CONCURRENCY);
   const deadlineAt = Date.now() + (opts.deadlineMs ?? REPORT_DEADLINE_MS);
   const callTimeout = opts.callTimeoutMs ?? CALL_TIMEOUT_MS;
-  const DEADLINE = Symbol("deadline");
+  const DEADLINE = /* @__PURE__ */ Symbol("deadline");
   const settle3 = async (field, p) => {
     let reason = "RPC_ERROR";
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -62191,68 +61966,30 @@ export {
 /*! Bundled license information:
 
 @noble/hashes/esm/utils.js:
-  (*! noble-hashes - MIT License (c) 2022 Paul Miller (paulmillr.com) *)
-
-@noble/curves/esm/abstract/utils.js:
-  (*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) *)
-
-@noble/curves/esm/abstract/modular.js:
-  (*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) *)
-
-@noble/curves/esm/abstract/curve.js:
-  (*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) *)
-
-@noble/curves/esm/abstract/weierstrass.js:
-  (*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) *)
-
-@noble/curves/esm/_shortw_utils.js:
-  (*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) *)
-
-@noble/curves/esm/secp256k1.js:
-  (*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) *)
-
-@noble/curves/esm/abstract/utils.js:
-  (*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) *)
-
+@noble/hashes/esm/utils.js:
 @noble/hashes/esm/utils.js:
   (*! noble-hashes - MIT License (c) 2022 Paul Miller (paulmillr.com) *)
 
 @noble/curves/esm/abstract/utils.js:
-  (*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) *)
-
 @noble/curves/esm/abstract/modular.js:
-  (*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) *)
-
 @noble/curves/esm/abstract/curve.js:
-  (*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) *)
-
 @noble/curves/esm/abstract/weierstrass.js:
-  (*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) *)
-
 @noble/curves/esm/_shortw_utils.js:
-  (*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) *)
-
+@noble/curves/esm/secp256k1.js:
+@noble/curves/esm/abstract/utils.js:
+@noble/curves/esm/abstract/utils.js:
+@noble/curves/esm/abstract/modular.js:
+@noble/curves/esm/abstract/curve.js:
+@noble/curves/esm/abstract/weierstrass.js:
+@noble/curves/esm/_shortw_utils.js:
+@noble/curves/esm/secp256k1.js:
+@noble/curves/esm/abstract/modular.js:
+@noble/curves/esm/abstract/curve.js:
+@noble/curves/esm/abstract/weierstrass.js:
+@noble/curves/esm/_shortw_utils.js:
 @noble/curves/esm/secp256k1.js:
   (*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) *)
 
 aes-js/lib.esm/aes.js:
   (*! MIT License. Copyright 2015-2022 Richard Moore <me@ricmoo.com>. See LICENSE.txt. *)
-
-@noble/hashes/esm/utils.js:
-  (*! noble-hashes - MIT License (c) 2022 Paul Miller (paulmillr.com) *)
-
-@noble/curves/esm/abstract/modular.js:
-  (*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) *)
-
-@noble/curves/esm/abstract/curve.js:
-  (*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) *)
-
-@noble/curves/esm/abstract/weierstrass.js:
-  (*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) *)
-
-@noble/curves/esm/_shortw_utils.js:
-  (*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) *)
-
-@noble/curves/esm/secp256k1.js:
-  (*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) *)
 */
