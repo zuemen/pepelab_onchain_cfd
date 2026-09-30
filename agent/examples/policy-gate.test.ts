@@ -28,6 +28,7 @@ const {
 } = S;
 
 const AGENT = new ethers.Wallet(AGENT_PK).address;
+const KEY = `${AGENT.toLowerCase()}|7`; // policy 狀態鍵：agent|sessionId
 const T0 = Date.UTC(2026, 8, 30, 12, 0, 0);
 const empty = () => ({ version: 1 as const, agents: {} });
 const open = (o: Partial<Parameters<typeof evaluatePolicy>[0]> = {}) => ({
@@ -66,14 +67,16 @@ ok("單筆保證金上限：>100 拒絕、=100 放行、負數/NaN → MARGIN_IN
   let st: any = empty();
   const big = { ...cfg, maxOrdersPerWindow: 100 };
   for (let i = 0; i < 5; i++) st = applyReservation(st, open({ marginUsdc: 100 }), big, T0 + i);
-  assert.equal(st.agents[AGENT.toLowerCase()].dailyMargin, 500);
+  assert.equal(st.agents[KEY].dailyMargin, 500);
   assert.equal(evaluatePolicy(open({ marginUsdc: 1 }), big, st, T0 + 10).reasonCode, "DAILY_MARGIN_EXCEEDED");
-  // 另一個 agent 地址不受影響
+  // 額度以 (agent, sessionId) 為鍵：另一個 agent、或同一 agent 的另一個 session（另一位客戶）不受影響
   assert.equal(evaluatePolicy(open({ agent: "0x" + "2".repeat(40), marginUsdc: 1 }), big, st, T0).reasonCode, "OK");
+  assert.equal(evaluatePolicy(open({ sessionId: 8, marginUsdc: 1 }), big, st, T0).reasonCode, "OK");
+  assert.deepEqual(Object.keys(st.agents), [KEY], "狀態鍵 = agent|sessionId");
   // 跨 UTC 日歸零
   const nextDay = Date.UTC(2026, 9, 1, 0, 0, 1);
   assert.equal(evaluatePolicy(open({ marginUsdc: 100 }), big, st, nextDay).reasonCode, "OK");
-  ok("每日累計上限：當日 500 用滿後再 1 → DAILY_MARGIN_EXCEEDED；別的 agent 不受影響；UTC 跨日歸零");
+  ok("每日累計上限：當日 500 用滿後再 1 → DAILY_MARGIN_EXCEEDED；以 agent|sessionId 為鍵，別的 agent / session 不受影響；UTC 跨日歸零");
 }
 
 {
@@ -87,8 +90,8 @@ ok("單筆保證金上限：>100 拒絕、=100 放行、負數/NaN → MARGIN_IN
   const close = { action: "close" as const, sessionId: 7, agent: AGENT, positionId: 1 };
   assert.equal(evaluatePolicy(close, c, st, T0 + 5000).reasonCode, "OK");
   const afterClose = applyReservation(st, close, c, T0 + 5000);
-  assert.equal(afterClose.agents[AGENT.toLowerCase()].orders.length, 3, "平倉不佔開倉的筆數");
-  assert.equal(afterClose.agents[AGENT.toLowerCase()].dailyMargin, st.agents[AGENT.toLowerCase()].dailyMargin, "平倉不佔額度");
+  assert.equal(afterClose.agents[KEY].orders.length, 3, "平倉不佔開倉的筆數");
+  assert.equal(afterClose.agents[KEY].dailyMargin, st.agents[KEY].dailyMargin, "平倉不佔額度");
   // 平倉有自己寬鬆的桶
   let cs: any = empty();
   const cc = { ...c, maxClosesPerWindow: 2 };
@@ -104,8 +107,8 @@ ok("單筆保證金上限：>100 拒絕、=100 放行、負數/NaN → MARGIN_IN
 {
   let st: any = applyReservation(empty(), open({ marginUsdc: 40 }), cfg, T0);
   st = releaseReservation(st, open({ marginUsdc: 40 }), T0);
-  assert.equal(st.agents[AGENT.toLowerCase()].dailyMargin, 0);
-  assert.equal(st.agents[AGENT.toLowerCase()].orders.length, 0);
+  assert.equal(st.agents[KEY].dailyMargin, 0);
+  assert.equal(st.agents[KEY].orders.length, 0);
   ok("release：送出前失敗 → 額度與筆數歸還");
 }
 
@@ -138,7 +141,7 @@ ok("單筆保證金上限：>100 拒絕、=100 放行、負數/NaN → MARGIN_IN
   assert.equal(g3.reasonCode, "MARGIN_PER_TRADE_EXCEEDED");
   await g2.release();
   const st = JSON.parse(fs.readFileSync(statePath, "utf8"));
-  assert.equal(st.agents[AGENT.toLowerCase()].dailyMargin, 60, "g2 已釋放，只剩 g1 的 60");
+  assert.equal(st.agents[KEY].dailyMargin, 60, "g2 已釋放，只剩 g1 的 60");
 
   const recs = readAudit(auditPath) as any[];
   assert.equal(recs.length, 3);

@@ -12,12 +12,18 @@
 //     設定錯誤、狀態檔壞掉、稽核寫不進去 → 一律拒絕（fail-closed）。
 //
 // ── 每日累計：為什麼用本地狀態檔，而不是鏈上 session.spentMargin ──
-//   spentMargin 是「session 生命週期累計」，沒有時間維度，算不出「今天」花了多少；
-//   而且它只看單一 session —— 同一把 agent 金鑰開多個 session 就能各自用滿。鏈上的
-//   totalMarginBudget 已經是生命週期的硬上限，policy gate 要補的正是「時間窗」與
-//   「跨 session／跨進入點（MCP、tg-bot、x402 agent）」這兩個維度，所以選本地狀態檔，
-//   以 agent 地址為鍵、UTC 日期切日。預設路徑固定在 agent/.state/（不隨 cwd 變），
-//   同一台機器上的三個進入點共用同一份額度。
+//   spentMargin 是「session 生命週期累計」，沒有時間維度，算不出「今天」花了多少。
+//   鏈上的 totalMarginBudget 已經是生命週期的硬上限，policy gate 要補的是「時間窗」與
+//   「跨進入點（MCP、tg-bot、x402 agent）」這兩個維度，所以選本地狀態檔、UTC 日期切日。
+//   預設路徑固定在 agent/.state/（不隨 cwd 變），同一台機器上的三個進入點共用同一份額度。
+//
+// ── 額度範圍：以 `agent 地址 + sessionId` 為鍵（審查 Low-10）──
+//   一個 session＝一位使用者（持牌機構的一個客戶帳戶）對這把 agent 金鑰的一次授權。
+//   B2B 白標下同一把 agent 金鑰會同時服務多位客戶；若以 agent 為鍵，客戶 A 的交易會吃掉
+//   客戶 B 的每日額度與筆數（互相影響、也是 DoS 途徑），也對不上機構「每個客戶帳戶一組
+//   風控限額」的做法。session 只能由使用者在鏈上建立，agent 無法自己開新 session 來繞過
+//   限額，所以「每個 session 各一份」不會放大單一使用者的曝險；agent 的總曝險上限仍是
+//   所有使用者授權的 session 預算總和（鏈上強制）。
 //   誠實邊界：本地檔可被有檔案權限的人刪除重置；它是縱深防禦，不是唯一防線
 //   （合約的 session 預算仍在）。同機多 process 以檔案鎖（fileLock.ts）序列化讀改寫；
 //   跨主機部署要改成共享儲存（Redis 等）。
@@ -50,7 +56,7 @@ export type PolicyReasonCode =
 export interface PolicyConfig {
   /** 單筆保證金上限（USDC，人類單位）。 */
   maxMarginPerTrade: number;
-  /** 每個 agent 地址每個 UTC 日的累計開倉保證金上限（USDC）。 */
+  /** 每個 (agent 地址, sessionId) 每個 UTC 日的累計開倉保證金上限（USDC）。 */
   maxDailyMargin: number;
   /** 允許交易的資產代號。 */
   allowedAssets: string[];
@@ -178,14 +184,19 @@ export function utcDay(nowMs: number): string {
   return new Date(nowMs).toISOString().slice(0, 10);
 }
 
-/** 取某 agent 在 now 時的狀態（跨日歸零、清掉時間窗外的筆數）。不修改輸入。 */
+/** 狀態鍵：`<agent 小寫地址>|<sessionId>`（理由見檔頭「額度範圍」）。 */
+export function policyStateKey(req: Pick<PolicyRequest, "agent" | "sessionId">): string {
+  return `${req.agent.toLowerCase()}|${req.sessionId}`;
+}
+
+/** 取某 (agent, session) 在 now 時的狀態（跨日歸零、清掉時間窗外的筆數）。不修改輸入。 */
 export function currentAgentState(
   state: PolicyState,
-  agent: string,
+  key: Pick<PolicyRequest, "agent" | "sessionId">,
   cfg: PolicyConfig,
   nowMs: number,
 ): AgentState {
-  const prev = state.agents[agent.toLowerCase()];
+  const prev = state.agents[policyStateKey(key)];
   const day = utcDay(nowMs);
   const cutoff = nowMs - cfg.windowSec * 1000;
   return {
@@ -206,7 +217,7 @@ export function evaluatePolicy(
   state: PolicyState,
   nowMs: number,
 ): PolicyDecision {
-  const s = currentAgentState(state, req.agent, cfg, nowMs);
+  const s = currentAgentState(state, req, cfg, nowMs);
 
   if (req.action === "close") {
     if (s.closes.length >= cfg.maxClosesPerWindow) {
@@ -260,7 +271,7 @@ export function applyReservation(
   cfg: PolicyConfig,
   nowMs: number,
 ): PolicyState {
-  const s = currentAgentState(state, req.agent, cfg, nowMs);
+  const s = currentAgentState(state, req, cfg, nowMs);
   const open = req.action === "open";
   const next: AgentState = {
     day: s.day,
@@ -268,7 +279,7 @@ export function applyReservation(
     orders: open ? [...s.orders, nowMs] : s.orders,
     closes: open ? s.closes : [...s.closes, nowMs],
   };
-  return { version: 1, agents: { ...state.agents, [req.agent.toLowerCase()]: next } };
+  return { version: 1, agents: { ...state.agents, [policyStateKey(req)]: next } };
 }
 
 /** 釋放一筆預留（送出前就失敗時）。 */
@@ -277,7 +288,7 @@ export function releaseReservation(
   req: PolicyRequest,
   reservedAt: number,
 ): PolicyState {
-  const key = req.agent.toLowerCase();
+  const key = policyStateKey(req);
   const prev = state.agents[key];
   if (!prev) return state;
   // 只移除「一筆」同時間戳的紀錄：兩個 process 同一毫秒預留時，時間戳會重複。
