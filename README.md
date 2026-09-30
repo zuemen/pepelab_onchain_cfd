@@ -8,6 +8,7 @@
 > **現況**：本 repo 是 NCCU Capstone 2026 出身的**研究原型**，只部署在 **Base Sepolia 測試網
 > （chainId 84532）**。沒有真實資產、沒有第三方安全稽核、沒有任何監理許可，**不是生產系統**。
 
+- 名稱：產品名為 **PepeFi**。PepeLab 是早期名稱，也是 demo 主題（因此 repo、網址與部分舊文件仍使用 PepeLab）。
 - 正式展示站（測試網）：<https://pepelab-onchain-cfd-djot.vercel.app>
 - 事實基準日：2026-09-30。本文所有位址與參數以程式碼與鏈上唯讀查詢為準。
 
