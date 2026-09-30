@@ -735,6 +735,15 @@ at most **72h 30min** at a stretch (72h pause + 30min post-pause grace), and
 every such stretch is followed by at least **23h 30min** in which withdrawals
 work. Only the owner can hold the market shut longer.
 
+**Correction (2026-09-29, review round 3):** in the current code the
+post-pause grace period DOES block withdrawals (`withdrawMargin` calls
+`_requireNoGlobalGrace`), so a guardian acting alone can freeze withdrawals
+for up to **72h 30min** at a stretch (72h pause + 30min grace), not 72h. The
+cooldown bounds each stretch but not the duty cycle: a guardian that pauses
+again the moment each 24h cooldown ends keeps the market stopped for 72 of
+every 96 hours — about **75% downtime** — indefinitely. Only the owner can
+stop that, by replacing the guardian (`setGuardian`).
+
 ## 23. Global pause blocks exits and liquidations
 
 While paused, traders cannot close and underwater positions cannot be
