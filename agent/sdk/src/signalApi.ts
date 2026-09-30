@@ -8,6 +8,11 @@
 //   • 付款：SDK 不持有私鑰。付費端點由呼叫端注入 `X402PaymentClient`（通常包著 HSM／MPC／
 //     guardViemAccount 簽署端），SDK 只負責：挑選付款要求、檢查網路／幣別／收款地址、
 //     檢查單筆與累計上限（預設沿用 agent 的 0.02 USDC／1 USDC）、送出並記帳。
+//   • 記帳（審查 H1）：累計上限在呼叫簽署端**之前**以「預留」方式檢查（檢查與預留之間沒有 await，
+//     並行請求不會同時通過）；只有確定沒送出（簽署失敗、簽出內容不符）才回滾。一旦送出 X-PAYMENT，
+//     不論 2xx／4xx／5xx／逾時都保留記帳，沒有結算證明的另記在 unsettledAtomic()。
+//   • 簽出內容檢查（審查 M1）：authorization.to == payTo、scheme、network、x402Version、value、
+//     validBefore ≤ now + maxTimeoutSeconds + 60s；maxTimeoutSeconds 必須是 1–300 的整數。
 //   • 付費端點在發出 402 之前的守門錯誤（400、503 payto_unsafe、503 price_stale）一律
 //     在「簽任何東西之前」就以型別化錯誤丟出。
 import { getAddress, isAddress } from "viem";
@@ -16,7 +21,6 @@ import { OFFICIAL_BASE_SEPOLIA_USDC } from "../../shared/src/env.ts";
 import {
   formatUsdcAtomic,
   parseUsdcAtomic,
-  paymentValueFromHeader,
   X402_DEFAULT_MAX_PAYMENT_USDC,
   X402_DEFAULT_MAX_TOTAL_SPEND_USDC,
 } from "../../shared/src/x402Client.ts";
@@ -50,8 +54,16 @@ import type {
   X402PaymentRequiredBody,
 } from "./signalApiTypes.ts";
 
-export const DEFAULT_SIGNAL_API_URL = "https://agent-git-master-zuemens-projects.vercel.app";
+/**
+ * openapi.yaml 列出的測試網部署。**這是 Vercel 的分支網域，不是穩定網域**，所以 SDK 不拿它當預設值；
+ * `baseUrl` 必填。只在測試或明確知道自己要打這個部署時使用。
+ */
+export const SIGNAL_API_TESTNET_URL = "https://agent-git-master-zuemens-projects.vercel.app";
 export const DEFAULT_X402_NETWORK = "base-sepolia";
+/** 付款要求的 maxTimeoutSeconds 上限（秒）。x402 client 以 validBefore = now + maxTimeoutSeconds 簽署。 */
+export const MAX_PAYMENT_TIMEOUT_SEC = 300;
+/** 檢查簽出授權的 validBefore 時容忍的時鐘誤差（秒）。 */
+export const PAYMENT_VALIDITY_SKEW_SEC = 60;
 /** 預設單筆付款上限（atomic，6 位小數）＝ agent 的 X402_DEFAULT_MAX_PAYMENT_USDC（0.02 USDC）。 */
 export const DEFAULT_MAX_PAYMENT_ATOMIC = parseUsdcAtomic(X402_DEFAULT_MAX_PAYMENT_USDC);
 /** 預設「此 client 生命週期內」累計上限（atomic）＝ agent 的 X402_DEFAULT_MAX_TOTAL_SPEND_USDC（1 USDC）。 */
@@ -102,7 +114,8 @@ export interface RetryOptions {
 }
 
 export interface SignalApiClientConfig {
-  baseUrl?: string;
+  /** 必填。沒有穩定的正式網域之前，SDK 不替你選部署（見 SIGNAL_API_TESTNET_URL）。 */
+  baseUrl: string;
   fetch?: typeof globalThis.fetch;
   /** 每個 HTTP 請求的逾時（ms）。預設 15000。 */
   timeoutMs?: number;
@@ -113,15 +126,20 @@ export interface SignalApiClientConfig {
   maxPaymentAtomic?: bigint;
   /** 此 client 的累計上限。預設 1_000000（1 USDC）。必須 > 0。 */
   maxTotalSpendAtomic?: bigint;
-  /** 只接受這個 x402 network。預設 base-sepolia。 */
+  /**
+   * 只接受這個 x402 network。預設 base-sepolia。
+   * 與 expectedAsset **必須同時設定或同時省略**（換網路卻沿用 Base Sepolia 的 USDC 位址，或反之，都會丟錯）。
+   */
   expectedNetwork?: string;
-  /** 只接受這個結算代幣。預設 Circle 官方 Base Sepolia USDC。 */
+  /** 只接受這個結算代幣。預設 Circle 官方 Base Sepolia USDC。與 expectedNetwork 同時設定。 */
   expectedAsset?: string;
   /** 若提供，payTo 必須在清單內。 */
   payToAllowlist?: readonly string[];
   /** 測試用：可替換等待與亂數。 */
   sleep?: (ms: number) => Promise<void>;
   random?: () => number;
+  /** 測試用：現在時間（ms）。檢查 validBefore 用。 */
+  now?: () => number;
 }
 
 export interface PaymentReceipt {
@@ -175,23 +193,65 @@ function decodeSettlement(h: string | null): unknown | null {
 }
 
 /** 把非 2xx 回應轉成型別化錯誤。 */
-export function toSignalApiError(res: RawResponse, url: string, afterPayment = false): SignalApiError {
+/**
+ * 把非 2xx 回應轉成型別化錯誤。`paymentSent`（= 這個回應是帶 X-PAYMENT 的請求回來的）
+ * 會帶到每一種錯誤上，讓呼叫端知道要先對帳再重送。
+ */
+export function toSignalApiError(res: RawResponse, url: string, paymentSent = false): SignalApiError {
   const code = codeOf(res.body);
   const retryAfterSec = parseRetryAfter(res.headers.get("retry-after"));
-  if (res.status === 402) return new PaymentRequiredError({ body: res.body, url, afterPayment });
-  if (res.status === 429) return new RateLimitedError({ body: res.body, url, retryAfterSec });
+  if (res.status === 402) return new PaymentRequiredError({ body: res.body, url, afterPayment: paymentSent });
+  if (res.status === 429) return new RateLimitedError({ body: res.body, url, retryAfterSec, paymentSent });
   if (res.status === 503 && code === "payto_unsafe") {
-    return new PayToUnsafeError({ body: res.body as PayToUnsafeBody, url, retryAfterSec });
+    return new PayToUnsafeError({ body: res.body as PayToUnsafeBody, url, retryAfterSec, paymentSent });
   }
-  if (res.status === 503 && code === "price_stale") return new PriceStaleError({ body: res.body as PriceStaleBody, url });
-  if (res.status >= 500) return new ServiceUnavailableError({ status: res.status, code, body: res.body, url });
+  if (res.status === 503 && code === "price_stale") {
+    return new PriceStaleError({ body: res.body as PriceStaleBody, url, paymentSent });
+  }
+  if (res.status >= 500) return new ServiceUnavailableError({ status: res.status, code, body: res.body, url, paymentSent });
   const msg = (res.body as { message?: string } | null)?.message;
-  return new SignalApiError(`signal-api ${res.status}${code ? `（${code}）` : ""}${msg ? `：${msg}` : ""}`, {
-    status: res.status,
-    code,
-    body: res.body,
-    url,
-  });
+  return new SignalApiError(
+    `signal-api ${res.status}${code ? `（${code}）` : ""}${msg ? `：${msg}` : ""}` +
+      (paymentSent ? "；已送出付款授權，先對帳再重送" : ""),
+    { status: res.status, code, body: res.body, url, paymentSent },
+  );
+}
+
+/** X-PAYMENT（x402 v1 exact／EVM）解碼後的欄位；格式不符回 null。 */
+export interface DecodedXPayment {
+  x402Version: number;
+  scheme: string;
+  network: string;
+  authorization: { from: string; to: string; value: bigint; validAfter: bigint; validBefore: bigint; nonce: string };
+}
+
+const UINT_STRING = new RegExp("^[0-9]+$");
+
+export function decodeXPayment(header: string): DecodedXPayment | null {
+  try {
+    const j = JSON.parse(Buffer.from(header, "base64").toString("utf8")) as {
+      x402Version?: unknown;
+      scheme?: unknown;
+      network?: unknown;
+      payload?: { authorization?: Record<string, unknown> };
+    };
+    const a = j?.payload?.authorization;
+    const int = (v: unknown) => (typeof v === "string" && UINT_STRING.test(v) ? BigInt(v) : null);
+    if (!a || typeof j.x402Version !== "number" || typeof j.scheme !== "string" || typeof j.network !== "string") return null;
+    const value = int(a.value);
+    const validAfter = int(a.validAfter);
+    const validBefore = int(a.validBefore);
+    if (value === null || validAfter === null || validBefore === null) return null;
+    if (typeof a.to !== "string" || !isAddress(a.to) || typeof a.from !== "string") return null;
+    return {
+      x402Version: j.x402Version,
+      scheme: j.scheme,
+      network: j.network,
+      authorization: { from: a.from, to: a.to, value, validAfter, validBefore, nonce: String(a.nonce ?? "") },
+    };
+  } catch {
+    return null;
+  }
 }
 
 export class SignalApiClient {
@@ -207,10 +267,17 @@ export class SignalApiClient {
   private readonly payToAllowlist: Set<string> | null;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly random: () => number;
-  private spent = 0n;
+  private readonly now: () => number;
+  /** 已承諾金額：已送出的授權 + 進行中的預留（atomic）。累計上限對它檢查。 */
+  private committed = 0n;
+  /** 已送出、但沒有拿到結算證明的授權（atomic）。validBefore 之前仍可能被結算。 */
+  private unsettled = 0n;
 
-  constructor(cfg: SignalApiClientConfig = {}) {
-    this.baseUrl = (cfg.baseUrl ?? DEFAULT_SIGNAL_API_URL).replace(/\/+$/, "");
+  constructor(cfg: SignalApiClientConfig) {
+    if (!cfg?.baseUrl || !(cfg.baseUrl.startsWith("https://") || cfg.baseUrl.startsWith("http://"))) {
+      throw new Error("SignalApiClient 需要 baseUrl（http/https）；SDK 不預設部署網址");
+    }
+    this.baseUrl = cfg.baseUrl.replace(/\/+$/, "");
     this.fetchImpl = cfg.fetch ?? globalThis.fetch.bind(globalThis);
     this.timeoutMs = cfg.timeoutMs ?? 15_000;
     this.retry = {
@@ -224,6 +291,12 @@ export class SignalApiClient {
     this.maxTotalSpendAtomic = cfg.maxTotalSpendAtomic ?? DEFAULT_MAX_TOTAL_SPEND_ATOMIC;
     if (this.maxPaymentAtomic <= 0n) throw new Error("maxPaymentAtomic 必須 > 0");
     if (this.maxTotalSpendAtomic <= 0n) throw new Error("maxTotalSpendAtomic 必須 > 0");
+    if ((cfg.expectedNetwork === undefined) !== (cfg.expectedAsset === undefined)) {
+      throw new Error("expectedNetwork 與 expectedAsset 必須同時設定（或同時省略以使用 Base Sepolia 官方 USDC）");
+    }
+    if (cfg.expectedAsset !== undefined && !isAddress(cfg.expectedAsset)) {
+      throw new Error(`expectedAsset 不是合法地址：${cfg.expectedAsset}`);
+    }
     this.expectedNetwork = cfg.expectedNetwork ?? DEFAULT_X402_NETWORK;
     this.expectedAsset = (cfg.expectedAsset ?? OFFICIAL_BASE_SEPOLIA_USDC).toLowerCase();
     this.payToAllowlist = cfg.payToAllowlist
@@ -234,11 +307,20 @@ export class SignalApiClient {
       : null;
     this.sleep = cfg.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
     this.random = cfg.random ?? Math.random;
+    this.now = cfg.now ?? Date.now;
   }
 
-  /** 此 client 累計實付（atomic）。 */
+  /**
+   * 已承諾金額（atomic）＝ 所有已送出的付款授權（不論結果）＋ 進行中請求的預留。
+   * 保守計算：寧可高估。累計上限 maxTotalSpendAtomic 對這個數字檢查。
+   */
   spentAtomic(): bigint {
-    return this.spent;
+    return this.committed;
+  }
+
+  /** 已送出但沒有取得結算證明（X-PAYMENT-RESPONSE）的金額（atomic）。需要對帳。 */
+  unsettledAtomic(): bigint {
+    return this.unsettled;
   }
 
   // ── 免費端點 ───────────────────────────────────────────────────────────────
@@ -385,17 +467,53 @@ export class SignalApiClient {
         typeof r.payTo === "string" &&
         isAddress(r.payTo) &&
         (!this.payToAllowlist || this.payToAllowlist.has(r.payTo.toLowerCase())) &&
-        /^\d+$/.test(String(r.maxAmountRequired)),
+        /^\d+$/.test(String(r.maxAmountRequired)) &&
+        // x402 client 以 validBefore = now + maxTimeoutSeconds 簽署：不接受超長的授權有效期。
+        Number.isInteger(r.maxTimeoutSeconds) &&
+        r.maxTimeoutSeconds > 0 &&
+        r.maxTimeoutSeconds <= MAX_PAYMENT_TIMEOUT_SEC,
     );
     if (candidates.length === 0) {
       throw new PaymentRejectedError(
-        `402 沒有符合條件的付款要求（需要 scheme=exact、network=${this.expectedNetwork}、asset=${this.expectedAsset}` +
-          `${this.payToAllowlist ? "、payTo 在白名單內" : ""}）`,
+        `402 沒有符合條件的付款要求（需要 scheme=exact、network=${this.expectedNetwork}、asset=${this.expectedAsset}、` +
+          `0 < maxTimeoutSeconds ≤ ${MAX_PAYMENT_TIMEOUT_SEC}${this.payToAllowlist ? "、payTo 在白名單內" : ""}）`,
         accepts,
       );
     }
     // 多個符合時取最便宜的。
     return candidates.reduce((a, b) => (BigInt(b.maxAmountRequired) < BigInt(a.maxAmountRequired) ? b : a));
+  }
+
+  /**
+   * 簽出的 X-PAYMENT 必須與挑選的付款要求一致，否則不送出（簽署端被換掉、有 bug、或被誘導簽給別人）。
+   * 回傳實際簽出的金額。
+   */
+  private checkSignedPayment(header: string, req: PaymentRequirements, x402Version: number, required: bigint): bigint {
+    const d = decodeXPayment(header);
+    if (!d) throw new PaymentRejectedError("payment client 回傳的 X-PAYMENT 無法解析（需要 x402 v1 exact／EVM 格式）", [req]);
+    const reject = (why: string) => {
+      throw new PaymentRejectedError(`簽出的 X-PAYMENT 與付款要求不符：${why}`, [req]);
+    };
+    if (d.x402Version !== x402Version) reject(`x402Version ${d.x402Version} ≠ ${x402Version}`);
+    if (d.scheme !== "exact") reject(`scheme ${d.scheme} ≠ exact`);
+    if (d.network !== this.expectedNetwork || d.network !== req.network) reject(`network ${d.network} ≠ ${this.expectedNetwork}`);
+    if (d.authorization.to.toLowerCase() !== req.payTo.toLowerCase()) {
+      reject(`收款人 authorization.to ${d.authorization.to} ≠ payTo ${req.payTo}`);
+    }
+    const nowSec = BigInt(Math.floor(this.now() / 1000));
+    const latest = nowSec + BigInt(req.maxTimeoutSeconds) + BigInt(PAYMENT_VALIDITY_SKEW_SEC);
+    if (d.authorization.validBefore > latest) {
+      reject(`validBefore ${d.authorization.validBefore} 超過 now + maxTimeoutSeconds + ${PAYMENT_VALIDITY_SKEW_SEC}s（${latest}）`);
+    }
+    const signed = d.authorization.value;
+    if (signed > required || signed > this.maxPaymentAtomic) {
+      throw new PaymentLimitExceededError({
+        requiredAtomic: signed,
+        limitAtomic: required < this.maxPaymentAtomic ? required : this.maxPaymentAtomic,
+        kind: "per-request",
+      });
+    }
+    return signed;
   }
 
   private async getPaid<T>(url: string): Promise<PaidResult<T>> {
@@ -405,47 +523,44 @@ export class SignalApiClient {
     if (first.status !== 402) throw toSignalApiError(first, url);
     if (!this.payment) throw toSignalApiError(first, url);
 
-    // 2) 檢查付款要求與上限（都在簽署之前）。
+    // 2) 檢查付款要求與單筆上限。
     const body402 = first.body as X402PaymentRequiredBody;
     const req = this.selectRequirements(body402);
+    const x402Version = typeof body402.x402Version === "number" ? body402.x402Version : 1;
     const required = BigInt(req.maxAmountRequired);
     if (required > this.maxPaymentAtomic) {
       throw new PaymentLimitExceededError({ requiredAtomic: required, limitAtomic: this.maxPaymentAtomic, kind: "per-request" });
     }
-    if (this.spent + required > this.maxTotalSpendAtomic) {
-      throw new PaymentLimitExceededError({ requiredAtomic: this.spent + required, limitAtomic: this.maxTotalSpendAtomic, kind: "total" });
-    }
 
-    // 3) 呼叫端簽署。
-    const header = await this.payment.createPaymentHeader({
-      requirements: req,
-      x402Version: typeof body402.x402Version === "number" ? body402.x402Version : 1,
-      maxValueAtomic: this.maxPaymentAtomic,
-      resource: url,
-    });
-    // 縱深防禦：實際簽出的金額不得超過要求與上限（簽署端被換掉或有 bug 時擋下，不送出）。
-    const signed = paymentValueFromHeader(header);
-    if (signed === null) {
-      throw new PaymentRejectedError("payment client 回傳的 X-PAYMENT 無法解析出 authorization.value", [req]);
+    // 3) 累計上限：檢查與預留之間沒有 await（JS 單執行緒 → 並行請求不會同時通過）。
+    if (this.committed + required > this.maxTotalSpendAtomic) {
+      throw new PaymentLimitExceededError({ requiredAtomic: this.committed + required, limitAtomic: this.maxTotalSpendAtomic, kind: "total" });
     }
-    if (signed > required || signed > this.maxPaymentAtomic) {
-      throw new PaymentLimitExceededError({
-        requiredAtomic: signed,
-        limitAtomic: required < this.maxPaymentAtomic ? required : this.maxPaymentAtomic,
-        kind: "per-request",
-      });
-    }
+    this.committed += required;
 
-    // 4) 送出付款請求 —— 只送一次，永不重試。
+    // 4) 呼叫端簽署並檢查。這一段失敗 = 授權沒有送出 → 回滾預留。
+    let header: string;
+    let signed: bigint;
+    try {
+      header = await this.payment.createPaymentHeader({ requirements: req, x402Version, maxValueAtomic: this.maxPaymentAtomic, resource: url });
+      signed = this.checkSignedPayment(header, req, x402Version, required);
+    } catch (err) {
+      this.committed -= required;
+      throw err;
+    }
+    this.committed -= required - signed; // 預留調整為實際簽出的金額（≤ required）
+
+    // 5) 送出付款請求 —— 只送一次，永不重試。從這裡開始不論結果都保留記帳：
+    //    授權已交出，validBefore 之前都可能被結算。
     let paid: RawResponse;
     try {
       paid = await this.once(url, { "X-PAYMENT": header });
     } catch (err) {
+      this.unsettled += signed;
       throw new PaymentOutcomeUnknownError({ url, signedAtomic: signed, cause: err });
     }
     const settlementHeader = paid.headers.get("x-payment-response");
-    // 與 agent 的 meteredFetch 相同：有結算證明或成功狀態就記帳（寧可高估）。
-    if (settlementHeader || paid.status < 400) this.spent += signed;
+    if (!settlementHeader) this.unsettled += signed;
     if (paid.status >= 400) throw toSignalApiError(paid, url, true);
     return {
       body: paid.body as PaidEnvelope<T>,

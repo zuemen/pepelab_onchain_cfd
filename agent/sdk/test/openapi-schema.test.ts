@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 
 import {
-  DEFAULT_SIGNAL_API_URL,
+  SIGNAL_API_TESTNET_URL,
   INLINE_SCHEMA_KEYS,
   OPERATIONS,
   SCHEMA_KEYS,
@@ -76,7 +76,7 @@ function compareSchema(label: string, schema: any, keys: { all: readonly string[
 
 // 4) 其他一致性：伺服器 URL、/oracle 的資產列舉
 {
-  assert.equal(spec.servers[0].url, DEFAULT_SIGNAL_API_URL);
+  assert.equal(spec.servers[0].url, SIGNAL_API_TESTNET_URL);
   const assetEnum = spec.paths["/oracle/{asset}"].get.parameters[0].schema.enum;
   assert.deepEqual(sorted(assetEnum), sorted(ASSET_SYMBOLS));
   const req = spec.components.schemas.PaymentRequirements.properties;
