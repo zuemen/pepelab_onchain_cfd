@@ -432,8 +432,9 @@ export async function openPositionForSession(params: {
 //
 // 舊版 `await contract.fn()` 在廣播那一步丟錯時（逾時、節點 5xx…），我們不知道交易
 // 有沒有進 mempool，卻把 policy 預留還回去 → 可能「交易其實上鏈了、額度卻被退回」。
-// 現在：先簽、先記 tx hash（稽核 SIGNED），再廣播；廣播出錯時查 hash 與 pending nonce，
-// **只有確認沒送出**才返還額度，查不出來就當作可能已送出（不返還、回 TX_STATUS_UNKNOWN）。
+// 現在：先簽、先記 tx hash（稽核 SIGNED），再廣播。廣播出錯時：節點**明確拒收**才返還額度；
+// 其餘情況延遲重查 hash 與 pending nonce 2–3 次，看得到就照常等收據，查不出來也不返還
+// （回 TX_STATUS_UNKNOWN）。
 
 export interface SignedTx {
   raw: string;
@@ -484,18 +485,48 @@ export async function broadcastStatus(
   }
 }
 
+/**
+ * 廣播錯誤是否為「節點明確拒收這筆交易」（複審 Low-6）。只有這一類才確定沒送出、可返還額度。
+ * 刻意排除：
+ *   - nonce too low / replacement transaction underpriced：這個 nonce 已被占用，很可能
+ *     就是這筆（或同 nonce 的另一筆）已在 mempool／已上鏈 → 不返還。
+ *   - insufficient funds：依指示保守處理，不返還。
+ *   - already known：節點已有這筆 → 視為已送出。
+ */
+const EXPLICIT_REJECT_RE =
+  /intrinsic gas too low|exceeds block gas limit|max fee per gas less than block base fee|fee cap less than block base fee|transaction underpriced|invalid sender|invalid chain ?id|tx type not supported|transaction type not supported|oversized data|gas limit reached|exceeds the configured cap/i;
+const NOT_REJECT_RE = /nonce too low|replacement transaction underpriced|insufficient funds|already known|known transaction/i;
+
+export function isExplicitBroadcastRejection(err: unknown): boolean {
+  const e = err as { code?: string; message?: string; shortMessage?: string; info?: { error?: { message?: string } }; error?: { message?: string } };
+  if (e?.code === "NONCE_EXPIRED" || e?.code === "REPLACEMENT_UNDERPRICED" || e?.code === "INSUFFICIENT_FUNDS") return false;
+  const text = [e?.info?.error?.message, e?.error?.message, e?.shortMessage, e?.message].filter(Boolean).join(" | ");
+  if (NOT_REJECT_RE.test(text)) return false;
+  return EXPLICIT_REJECT_RE.test(text);
+}
+
 export async function submitSigned(
   p: SubmitProvider,
   tx: SignedTx,
-  opts: { waitTimeoutMs?: number } = {},
+  opts: { waitTimeoutMs?: number; recheckDelaysMs?: number[] } = {},
 ): Promise<SubmitOutcome> {
   try {
     await p.broadcastTransaction(tx.raw);
   } catch (err) {
-    const status = await broadcastStatus(p, tx);
     const error = redactSecrets((err as Error)?.message ?? String(err));
-    if (status === "not_sent") return { kind: "not_sent", error };
-    if (status === "unknown") return { kind: "unknown", error };
+    // 節點明確拒收 → 確定沒送出，可返還。
+    if (isExplicitBroadcastRejection(err)) return { kind: "not_sent", error };
+    // 其餘（逾時、5xx、nonce 被占用…）：延遲重查 2–3 次，看得到就當已送出；
+    // 查不到也**不返還**（可能還在傳播中）。
+    let sent = false;
+    for (const delay of opts.recheckDelaysMs ?? [1000, 2000, 3000]) {
+      if (delay > 0) await new Promise((r) => setTimeout(r, delay));
+      if ((await broadcastStatus(p, tx)) === "sent") {
+        sent = true;
+        break;
+      }
+    }
+    if (!sent) return { kind: "unknown", error };
     // sent：照常等收據
   }
   try {
@@ -533,7 +564,7 @@ async function submitAndTrack(
       return fail("TX_PENDING", `交易已送出但尚未在時限內確認，請以 tx hash 追蹤：${tx.hash}`);
     case "not_sent":
       await release();
-      return fail("SUBMIT_FAILED", `交易未送出（已確認 mempool 與 nonce 皆無此筆）：${out.error}`);
+      return fail("SUBMIT_FAILED", `交易被節點明確拒收，未送出（額度已返還）：${out.error}`);
     case "unknown":
       return fail("TX_STATUS_UNKNOWN", `無法確認交易是否已送出，額度不返還，請以 tx hash 追蹤：${tx.hash}`);
   }

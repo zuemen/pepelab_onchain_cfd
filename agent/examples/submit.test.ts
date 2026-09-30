@@ -1,4 +1,4 @@
-// 送出與追蹤（審查 Low-9）：廣播出錯時先確認交易是否真的沒送出，才返還 policy 額度。
+// 送出與追蹤（審查 Low-9、複審 Low-6）：只有節點明確拒收才返還 policy 額度；其餘延遲重查、查不到也不返還。
 // 假 provider，不連鏈、不送交易。
 //   npx tsx examples/submit.test.ts
 import assert from "node:assert";
@@ -47,9 +47,10 @@ const ok = (m: string) => console.log(`✓ ${++n}. ${m}`);
   assert.equal(r.kind, "reverted");
   ok("收據 status=0 → reverted（不返還額度）");
 }
+const ND = { recheckDelaysMs: [0, 0, 0] };
 {
   const p = fake({ broadcast: boom, getTx: { hash: TX.hash } });
-  const r = await submitSigned(p, TX);
+  const r = await submitSigned(p, TX, ND);
   assert.equal(r.kind, "mined", "廣播逾時但節點看得到這筆 → 照常等收據");
   assert.ok(p.calls.includes("wait"));
   ok("廣播逾時、但 getTransaction 找得到 → 視為已送出，繼續等收據");
@@ -61,15 +62,46 @@ const ok = (m: string) => console.log(`✓ ${++n}. ${m}`);
 }
 {
   const p = fake({ broadcast: boom, pendingNonce: TX.nonce });
-  const r = await submitSigned(p, TX);
-  assert.equal(r.kind, "not_sent");
+  const r = await submitSigned(p, TX, ND);
+  assert.equal(r.kind, "unknown", "逾時且重查不到 → 不返還");
+  assert.equal(p.calls.filter((c) => c === "getTransaction").length, 3, "延遲重查 3 次");
   assert.ok(!("error" in r && r.error.includes("SECRETKEY")), "錯誤原文已遮蔽");
   assert.ok(!p.calls.includes("wait"));
-  ok("廣播失敗、mempool 無此筆且 nonce 未被使用 → not_sent（才可返還額度）");
+  ok("廣播逾時、重查 3 次都查不到 → unknown（不返還額度）");
+}
+{
+  // 第 2 次重查才看到（傳播延遲）
+  let seen = 0;
+  const p = fake({ broadcast: boom });
+  p.getTransaction = async () => (++seen >= 2 ? { hash: TX.hash } : null);
+  const r = await submitSigned(p, TX, ND);
+  assert.equal(r.kind, "mined");
+  ok("重查第 2 次才看到交易 → 視為已送出並等收據");
+}
+{
+  const reject = (msg: string, code = "SERVER_ERROR") => () =>
+    Promise.reject(Object.assign(new Error(`could not coalesce error`), { code, info: { error: { code: -32000, message: msg } } }));
+  for (const m of ["intrinsic gas too low", "max fee per gas less than block base fee", "transaction underpriced", "invalid sender"]) {
+    const p = fake({ broadcast: reject(m) });
+    const r = await submitSigned(p, TX, ND);
+    assert.equal(r.kind, "not_sent", m);
+    assert.ok(!p.calls.includes("getTransaction"), "明確拒收不必重查");
+  }
+  ok("節點明確拒收（intrinsic gas too low / base fee / underpriced / invalid sender）→ not_sent（才返還額度）");
+  for (const [m, code] of [
+    ["nonce too low", "NONCE_EXPIRED"],
+    ["replacement transaction underpriced", "REPLACEMENT_UNDERPRICED"],
+    ["insufficient funds for gas * price + value", "INSUFFICIENT_FUNDS"],
+    ["already known", "SERVER_ERROR"],
+  ] as const) {
+    const r = await submitSigned(fake({ broadcast: reject(m, code) }), TX, ND);
+    assert.notEqual(r.kind, "not_sent", `${m} 不可返還額度`);
+  }
+  ok("nonce too low / replacement underpriced / insufficient funds / already known → 不視為明確拒收（不返還）");
 }
 {
   const p = fake({ broadcast: boom, pendingNonce: new Error("rpc down") });
-  const r = await submitSigned(p, TX);
+  const r = await submitSigned(p, TX, ND);
   assert.equal(r.kind, "unknown");
   ok("廣播失敗且查不出狀態 → unknown（不返還額度）");
 }
