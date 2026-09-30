@@ -114,8 +114,8 @@ owner 可設定的參數（費率、逐資產槓桿上限與維持保證金、AD
 - 正式 signal-api 的收款地址未通過守門，付費端點回 503。需要使用者更換收款設定。
 - x402 FeeRouter `0x29e5732AC62254d9b92A1C7d3F38EbFA8809B57d` 的 treasury 仍是已外洩的舊地址，
   需重新部署；在此之前結算 worker 的出金前檢查會拒跑。
-- facilitator 不強制 `maxTimeoutSeconds` 上限、公用 facilitator 的限流未知，見
-  [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md) 第 14–20 項。
+- 付款授權時效的強制、第三方 facilitator 的可用性與限流：依賴外部服務，未在我方控制內
+  （見 [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md) 的 x402 章節）。
 
 ## 5. Agent session 授權流程
 
@@ -136,8 +136,8 @@ owner 可設定的參數（費率、逐資產槓桿上限與維持保證金、AD
 - **鏈上強制**：agent 身分、到期、撤銷、單筆保證金上限、總保證金預算、槓桿上限、資產白名單、
   只能平自己開的倉、RWA 資產的 KYC（檢查的是部位持有人，即終端客戶）。限額以**保證金**計，不是名目。
 - **只在鏈下檢查**：授權 VC（`frontend/src/contracts/agentAuth.ts` 定義的 EIP-712 結構，
-  驗證在 `agent/shared/src/write.ts`）。合約**不驗 VC**。VC 預設必填，但測試旗標可以關閉。
-- **已知缺口**：VC 沒有 nonce／audience／防重放；MCP server 沒有傳輸層認證；沒有 KYA／KYT。
+  驗證在 `agent/shared/src/write.ts`）。合約**不驗 VC**。VC 預設必填。
+- **已知缺口（類別與狀態）**：授權憑證防重放：未完成；MCP 傳輸認證：未完成；KYA／KYT：未實作。
   見 [`AGENT_IDENTITY_VC_SSI.md`](AGENT_IDENTITY_VC_SSI.md) 與 [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md)。
 - AgentSessionManager 本身必須被 exchange 的 owner 授權（`setAgentAuthorized`）。撤銷這個授權會讓所有 session
   既無法開倉、也無法由 agent 平倉；終端客戶仍可用自己的錢包直接 `closePosition`。

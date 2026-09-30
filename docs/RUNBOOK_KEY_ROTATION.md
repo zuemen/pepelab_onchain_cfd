@@ -3,8 +3,8 @@
 > **狀態（2026-09-30 更正）：Base Sepolia 已於 2026-08-07 輪替；Sepolia 未輪替。**
 > Base 的執行紀錄與結果見 [`KEY_ROTATION_20260807.md`](KEY_ROTATION_20260807.md)（外洩地址不再是
 > 任何 Base 合約的 owner；新 owner 仍是單一 EOA，不是 multisig）。例外：x402 FeeRouter 的 treasury
-> 是 immutable，仍指向外洩的舊地址，需重新部署（使用者待辦，見 [`../README.md`](../README.md)）。Sepolia 的合約仍由外洩的 deployer
-> 持有（2026-09-30 唯讀核對 Sepolia `PerpetualExchange.owner()`），本文件的步驟對 Sepolia 仍然適用。
+> 是 immutable，仍指向外洩的舊地址，需重新部署（使用者待辦，見 [`../README.md`](../README.md)）。Sepolia 的合約權限尚未輪替
+> （使用者待辦），本文件的步驟對 Sepolia 仍然適用。
 > 原狀態為「未執行」，寫於 2026-08-06 輪替之前。
 >
 > 建立於 2026-08-06，依據 [`audit/AUDIT_2026-08-06.md`](audit/AUDIT_2026-08-06.md) 的 S1。

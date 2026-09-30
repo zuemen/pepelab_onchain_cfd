@@ -616,7 +616,7 @@ components:
           type: string
         maxTimeoutSeconds:
           type: integer
-          description: 宣告為 60；公用 facilitator 不強制上限
+          description: 宣告為 60（是否被強制取決於 facilitator，見 KNOWN_LIMITATIONS）
         asset:
           type: string
           description: 結算代幣地址
