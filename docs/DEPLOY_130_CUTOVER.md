@@ -140,6 +140,13 @@ forge script script/Verify130.s.sol:Verify130 --rpc-url "$BASE_SEPOLIA_RPC_URL" 
 - 新的 CopyTracker 會一起部署：新增 `followTraderAtVersion`（M10），slash 準備金改成用 `balanceOf` 前後差額入帳，`renounceOwnership` 會 revert。
 - TraderStake M2（申請 unstake 之後就喪失資格）：只有在 TraderStake 重部署之後才會生效，見 §6。
 - 治理移交：見 [`GOVERNANCE_HANDOVER.md`](./GOVERNANCE_HANDOVER.md)。**先完成 cutover 並驗證，再移交。**
+- **V2 金庫升級到 V2_5**：這一版把 M-7 的 last-good 價格 fallback 加回來，但 last-good 超過 6 小時就視為 unpriced；一個以 last-good 估值的帳本只能觸發停鑄，不能自動解除停鑄。步驟：
+  1. 在 `contracts` 目錄執行 `bash script/check-vault-storage-layout.sh`，確認只有在尾端追加欄位：`_lastGood` 放在 slot 12，`__gap` 從 43 變成 42，結尾 slot 仍是 55。
+  2. 用 fork 模擬 `forge script script/UpgradeVaultToV2_5.s.sol:UpgradeVaultToV2_5 --fork-url https://sepolia.base.org --sender 0x27C2…A585`。
+  3. 人工加上 `--broadcast --slow`。
+  4. 用 `jq .abi out/AssetVaultV2_5.sol/AssetVaultV2_5.json > ../frontend/src/contracts/abi/AssetVaultV2.json` 更新前端 ABI。
+
+  **這一步要在治理 phase 2 之前做**；phase 2 之後就只能走 timelock 提案。
 
 ## 9. 中途失敗
 
