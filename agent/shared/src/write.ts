@@ -345,7 +345,7 @@ export async function openPositionForSession(params: {
     };
   }
 
-  let broadcast = false;
+  let signed: SignedTx;
   try {
     const assetId = assetIdOf(params.symbol);
     const margin = ethers.parseUnits(String(params.marginUsdc), 18);
@@ -354,9 +354,9 @@ export async function openPositionForSession(params: {
     const perp = makeContracts(makeProvider()).perp;
     const fee = (await perp.executionFee()) as bigint;
 
-    // 簽章守門（signingGuard）在 GuardedWallet.signTransaction 內執行：
-    // type-4 / 無上限 approve / permit 在這一步就丟 SigningGuardError，不會廣播。
-    const tx = await mgr.openPositionForSession(
+    // 先組好、**簽好**交易（簽章守門在 GuardedWallet.signTransaction 內執行：type-4 /
+    // 無上限 approve・permit 在這一步就丟 SigningGuardError），拿到 tx hash 再廣播。
+    const unsigned = await mgr.openPositionForSession.populateTransaction(
       params.sessionId,
       assetId,
       params.isLong,
@@ -365,50 +365,158 @@ export async function openPositionForSession(params: {
       ZERO, // copiedFrom：self-open
       { value: fee },
     );
-    broadcast = true;
-    const receipt = await tx.wait();
-
-    // 從 SessionOpenedPosition 事件解出 positionId（只認本 manager 發出的）。
-    const positionId = parseSessionOpenedPositionId(
-      receipt?.logs ?? [],
-      await mgr.getAddress(),
-    );
-
-    auditStage(req, "submit", "SUBMITTED", true, undefined, tx.hash);
-    return {
-      ok: true,
-      txHash: tx.hash,
-      positionId,
-      agent: signer.address,
-      sessionId: params.sessionId,
-      detail: {
-        symbol: params.symbol,
-        isLong: params.isLong,
-        marginUsdc: params.marginUsdc,
-        leverage: params.leverage,
-      },
-    };
+    signed = await signTx(signer, unsigned);
   } catch (err) {
-    return await handleSendError(err, req, broadcast, gate.release);
+    return await handlePreBroadcastError(err, req, gate.release);
+  }
+
+  const out = await submitAndTrack(signer, signed, req, gate.release);
+  if (out.kind !== "mined") return out.result;
+
+  // 從 SessionOpenedPosition 事件解出 positionId（只認本 manager 發出的）。
+  const positionId = parseSessionOpenedPositionId(out.receipt.logs ?? [], await mgr.getAddress());
+  auditStage(req, "submit", "SUBMITTED", true, undefined, signed.hash);
+  return {
+    ok: true,
+    txHash: signed.hash,
+    positionId,
+    agent: signer.address,
+    sessionId: params.sessionId,
+    detail: {
+      symbol: params.symbol,
+      isLong: params.isLong,
+      marginUsdc: params.marginUsdc,
+      leverage: params.leverage,
+    },
+  };
+}
+
+// ── 送出與追蹤（審查 Low-9）─────────────────────────────────────────────────
+//
+// 舊版 `await contract.fn()` 在廣播那一步丟錯時（逾時、節點 5xx…），我們不知道交易
+// 有沒有進 mempool，卻把 policy 預留還回去 → 可能「交易其實上鏈了、額度卻被退回」。
+// 現在：先簽、先記 tx hash（稽核 SIGNED），再廣播；廣播出錯時查 hash 與 pending nonce，
+// **只有確認沒送出**才返還額度，查不出來就當作可能已送出（不返還、回 TX_STATUS_UNKNOWN）。
+
+export interface SignedTx {
+  raw: string;
+  hash: string;
+  nonce: number;
+  from: string;
+}
+
+/** 補齊 nonce / gas / fee 後簽章（GuardedWallet 會先過簽章守門）。 */
+async function signTx(signer: ethers.Wallet, unsigned: ethers.TransactionRequest): Promise<SignedTx> {
+  const pop = await signer.populateTransaction(unsigned);
+  const raw = await signer.signTransaction(pop);
+  return { raw, hash: ethers.keccak256(raw), nonce: Number(pop.nonce), from: signer.address };
+}
+
+/** submitSigned 需要的 provider 子集（測試可注入假 provider）。 */
+export interface SubmitProvider {
+  broadcastTransaction(raw: string): Promise<unknown>;
+  getTransaction(hash: string): Promise<unknown | null>;
+  getTransactionReceipt(hash: string): Promise<unknown | null>;
+  getTransactionCount(address: string, blockTag: "pending"): Promise<number>;
+  waitForTransaction(hash: string, confirms?: number, timeout?: number): Promise<ethers.TransactionReceipt | null>;
+}
+
+export type SubmitOutcome =
+  | { kind: "mined"; receipt: ethers.TransactionReceipt }
+  | { kind: "reverted"; receipt: ethers.TransactionReceipt }
+  /** 已廣播（或確認已進 mempool）但在等待時間內沒有收據。 */
+  | { kind: "pending" }
+  /** 確認沒有送出 → 可以返還額度。 */
+  | { kind: "not_sent"; error: string }
+  /** 無法判斷是否送出 → 不返還額度。 */
+  | { kind: "unknown"; error: string };
+
+/** 廣播出錯後判斷交易到底有沒有出去。 */
+export async function broadcastStatus(
+  p: SubmitProvider,
+  tx: SignedTx,
+): Promise<"sent" | "not_sent" | "unknown"> {
+  try {
+    if (await p.getTransaction(tx.hash)) return "sent";
+    if (await p.getTransactionReceipt(tx.hash)) return "sent";
+    // pending nonce 已超過這筆的 nonce：nonce 被用掉了（多半就是這筆；也可能是別筆）→ 保守視為已送出
+    if ((await p.getTransactionCount(tx.from, "pending")) > tx.nonce) return "sent";
+    return "not_sent";
+  } catch {
+    return "unknown";
+  }
+}
+
+export async function submitSigned(
+  p: SubmitProvider,
+  tx: SignedTx,
+  opts: { waitTimeoutMs?: number } = {},
+): Promise<SubmitOutcome> {
+  try {
+    await p.broadcastTransaction(tx.raw);
+  } catch (err) {
+    const status = await broadcastStatus(p, tx);
+    const error = redactSecrets((err as Error)?.message ?? String(err));
+    if (status === "not_sent") return { kind: "not_sent", error };
+    if (status === "unknown") return { kind: "unknown", error };
+    // sent：照常等收據
+  }
+  try {
+    const receipt = await p.waitForTransaction(tx.hash, 1, opts.waitTimeoutMs ?? 120_000);
+    if (!receipt) return { kind: "pending" };
+    return receipt.status === 0 ? { kind: "reverted", receipt } : { kind: "mined", receipt };
+  } catch {
+    return { kind: "pending" };
+  }
+}
+
+/** 送出並把非成功的結果轉成 WriteResult（含稽核與額度返還決策）。 */
+async function submitAndTrack(
+  signer: ethers.Wallet,
+  tx: SignedTx,
+  req: PolicyRequest,
+  release: () => Promise<void>,
+): Promise<{ kind: "mined"; receipt: ethers.TransactionReceipt } | { kind: "done"; result: WriteResult }> {
+  // 先把 hash 記下來：就算之後 process 當掉，稽核裡也有這筆簽出去的交易可追。
+  auditStage(req, "submit", "SIGNED", true, undefined, tx.hash);
+  const out = await submitSigned(signer.provider as unknown as SubmitProvider, tx);
+  const fail = (reasonCode: string, error: string): { kind: "done"; result: WriteResult } => {
+    auditStage(req, "submit", reasonCode, false, error, tx.hash);
+    return {
+      kind: "done",
+      result: { ok: false, error, agent: signer.address, reasonCode, guardStage: "submit", txHash: tx.hash },
+    };
+  };
+  switch (out.kind) {
+    case "mined":
+      return out;
+    case "reverted":
+      return fail("TX_REVERTED", `交易已上鏈但 revert（${tx.hash}）`);
+    case "pending":
+      return fail("TX_PENDING", `交易已送出但尚未在時限內確認，請以 tx hash 追蹤：${tx.hash}`);
+    case "not_sent":
+      await release();
+      return fail("SUBMIT_FAILED", `交易未送出（已確認 mempool 與 nonce 皆無此筆）：${out.error}`);
+    case "unknown":
+      return fail("TX_STATUS_UNKNOWN", `無法確認交易是否已送出，額度不返還，請以 tx hash 追蹤：${tx.hash}`);
   }
 }
 
 /**
- * 送出階段的錯誤：簽章守門擋下 → guardStage=signing；其他 → submit。
- * 還沒廣播就失敗 → 釋放 policy 預留；已廣播（revert / wait 失敗）→ 不釋放（保守）。
+ * 廣播**之前**的錯誤（組交易、估 gas、簽章守門）：交易不可能已送出 → 返還額度。
+ * 簽章守門擋下 → guardStage=signing。
  */
-async function handleSendError(
+async function handlePreBroadcastError(
   err: unknown,
   req: PolicyRequest,
-  broadcast: boolean,
   release: () => Promise<void>,
 ): Promise<WriteResult> {
-  if (!broadcast) await release();
+  await release();
   if (err instanceof SigningGuardError) {
     return reject(req, "signing", err.reasonCode, `拒絕簽章：${err.message}`);
   }
   const msg = redactSecrets((err as Error)?.message ?? String(err));
-  return reject(req, "submit", broadcast ? "TX_FAILED_AFTER_BROADCAST" : "SUBMIT_FAILED", msg);
+  return reject(req, "submit", "SUBMIT_FAILED", msg);
 }
 
 /**
@@ -490,25 +598,26 @@ export async function closePositionForSession(params: {
     };
   }
 
-  let broadcast = false;
+  let signed: SignedTx;
   try {
-    const tx = await mgr.closePositionForSession(
+    const unsigned = await mgr.closePositionForSession.populateTransaction(
       params.sessionId,
       params.positionId,
     );
-    broadcast = true;
-    await tx.wait();
-    auditStage(req, "submit", "SUBMITTED", true, undefined, tx.hash);
-    return {
-      ok: true,
-      txHash: tx.hash,
-      positionId: String(params.positionId),
-      agent: signer.address,
-      sessionId: params.sessionId,
-    };
+    signed = await signTx(signer, unsigned);
   } catch (err) {
-    return await handleSendError(err, req, broadcast, gate.release);
+    return await handlePreBroadcastError(err, req, gate.release);
   }
+  const out = await submitAndTrack(signer, signed, req, gate.release);
+  if (out.kind !== "mined") return out.result;
+  auditStage(req, "submit", "SUBMITTED", true, undefined, signed.hash);
+  return {
+    ok: true,
+    txHash: signed.hash,
+    positionId: String(params.positionId),
+    agent: signer.address,
+    sessionId: params.sessionId,
+  };
 }
 
 /** 讀 session 設定（限額/預算/到期），給 agent 在下單前自我檢查。 */
