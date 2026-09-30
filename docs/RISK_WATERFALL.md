@@ -84,7 +84,7 @@
 | 逐資產模式 | Active／**ReduceOnly**（禁止新開倉，可平倉與清算）／Halted（凍結該資產的開平倉、清算與 funding） | Active |
 | 暫停後寬限期 | 暫停或 Halted 結束後 30 分鐘內禁止清算與開倉，並凍結暫停期間的 funding 與借貸費計息 | 固定 |
 | mark 溢價上限 | 最多 200 bps | 固定上界 |
-| 零價格 | revert | 固定 |
+| 零價格 | 現行部署在寫入路徑（oracle 的 `updatePrice`）已經檢查；PR #191 把檢查延伸到讀取路徑（exchange 讀到零價格時 revert） | 固定 |
 | 保險金庫 | 存入會得到 0 份額時 revert | 固定 |
 | 跟單 slash 款項 | 改存 owner 持有的準備金，不進任何按份額分配的池子 | 固定 |
 

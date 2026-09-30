@@ -86,7 +86,8 @@ Sepolia 的合約**未做金鑰輪替**（見 [`docs/RUNBOOK_KEY_ROTATION.md`](d
 - `PerpetualExchange` 的 guardian 全域暫停（72 小時自動失效、24 小時冷卻，只有 owner 能解除）。
 - 逐資產模式 Active／ReduceOnly／Halted。
 - 逐資產 OI 上限與單筆獲利上限（預設關閉，由部署腳本設定）。
-- 多項核心修正（組合保證金提領健康度、`copiedFrom` 限制、mark 溢價上限、零價格 revert）、
+- 多項核心修正（組合保證金提領健康度、`copiedFrom` 限制、mark 溢價上限、零價格檢查延伸到讀取路徑——
+  現行部署在 oracle 寫入路徑已經檢查零價格）、
   CopyTracker slash 款項改入準備金、InsuranceVault 零份額存款 revert。
 - 組合保證金：現行部署存在但關閉（`portfolioMarginEnabled = false`）。PR #191 註明正式環境不得開啟，
   並規劃移除；移除是否已完成，以 PR #191 最終合併內容為準（本文撰寫時**未驗證**）。
