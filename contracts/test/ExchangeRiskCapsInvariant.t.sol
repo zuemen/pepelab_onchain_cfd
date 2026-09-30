@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import "forge-std/Test.sol";
 import "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import "../src/PerpetualExchange.sol";
+import "../src/PerpetualExchangeLens.sol";
 import "../src/MockUSDC.sol";
 import "../src/MockOracle.sol";
 
@@ -180,7 +181,7 @@ contract ExchangeCapsHandler is Test {
             ++ghostOpenCount[asset];
             if (isLong) { ghostLongOI[asset] += margin * leverage; ghostLongSize[asset] += size; }
             else        { ghostShortOI[asset] += margin * leverage; ghostShortSize[asset] += size; }
-            (uint256 lv, uint256 sv) = exchange.openInterestValue(asset);
+            (uint256 lv, uint256 sv) = PerpetualExchangeLens.openInterestValue(exchange, asset);
             if (cap != 0 && (isLong ? lv : sv) > cap) ++ghostOpensAboveCap;
             if (exchange.profitCapOf(id) != margin * bpsAtOpen / 10_000) ++ghostCapMismatches;
         } catch (bytes memory reason) {

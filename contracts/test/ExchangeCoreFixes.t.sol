@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
 import "../src/PerpetualExchange.sol";
+import "../src/PerpetualExchangeLens.sol";
 import "../src/CopyTracker.sol";
 import "../src/AgentSessionManager.sol";
 import "../src/StrategyRegistry.sol";
@@ -243,7 +244,7 @@ contract ExchangeCoreFixesTest is Test {
     /// and `hasValidPrice` flags it.
     function test_views_zeroPrice_reportConservativeValues() public {
         (PerpetualExchange ex, , uint256 longId, uint256 shortId) = _zeroPriceFixture();
-        assertFalse(ex.hasValidPrice(BTC));
+        assertFalse(PerpetualExchangeLens.hasValidPrice(ex, BTC));
         assertEq(ex.getUnrealizedPnL(longId), -int256(1_000e18));
         assertEq(ex.getUnrealizedPnL(shortId), -int256(1_000e18)); // no windfall either
         assertEq(ex.getPositionValue(longId), 0);

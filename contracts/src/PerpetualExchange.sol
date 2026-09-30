@@ -346,7 +346,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     ///         without the owner cannot hold the market shut indefinitely in
     ///         one pause. It bounds each pause, not their number: a guardian
     ///         that keeps re-pausing is removed by the owner (`setGuardian`).
-    uint256 public constant GUARDIAN_PAUSE_DURATION = 72 hours;
+    uint256 public constant GUARDIAN_PAUSE_DURATION = ExchangeOpsLib.GUARDIAN_PAUSE_DURATION;
 
     /// @notice After a guardian pause ends (lapses or is lifted by the owner),
     ///         the guardian may not pause again for this long; the owner is
@@ -355,7 +355,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     ///         With it, a guardian acting alone can freeze withdrawals for at
     ///         most 72h + LIQUIDATION_GRACE_PERIOD (30 min) at a stretch, and
     ///         every such stretch is followed by ≥ 23.5h of open withdrawals.
-    uint256 public constant GUARDIAN_PAUSE_COOLDOWN = 24 hours;
+    uint256 public constant GUARDIAN_PAUSE_COOLDOWN = ExchangeOpsLib.GUARDIAN_PAUSE_COOLDOWN;
 
     /// @notice After a pause ends, or an asset leaves Halted, liquidations and
     ///         new opens are refused for this long (closes and deposits work),
@@ -391,23 +391,23 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     /// @notice Start of the current pause window (0 = none open). A guardian
     ///         window stays "open" in storage after it lapses; `paused()` and
     ///         every clock below treat it as ended at `pauseExpiresAt`.
-    uint256 public pausedAt;
-    /// @notice When the current pause lapses on its own (0 = owner pause,
-    ///         no expiry).
-    uint256 public pauseExpiresAt;
-    /// @notice Total seconds of pause windows already closed.
-    uint256 public cumulativePausedTime;
-    /// @notice When the last explicitly closed pause window ended.
-    uint256 public lastResumedAt;
-    /// @notice Earliest time the guardian may pause again (see
-    ///         GUARDIAN_PAUSE_COOLDOWN). 0 = no cooldown running.
-    uint256 public guardianPauseAllowedAt;
+    ///
+    ///         Held in one struct so the pause transitions can live in
+    ///         `ExchangeOpsLib` (EIP-170); read through the getters below.
+    struct PauseClock {
+        uint256 pausedAt;               // 0 = no window open
+        uint256 pauseExpiresAt;         // 0 = owner pause, no expiry
+        uint256 cumulativePausedTime;   // seconds of closed windows
+        uint256 lastResumedAt;          // end of the last closed window
+        uint256 guardianPauseAllowedAt; // guardian cooldown end (0 = none)
+    }
+    PauseClock internal _clock;
 
     /// @notice When `asset` entered Halted (0 = not halted).
-    mapping(bytes32 => uint256) public haltedAt;
+    mapping(bytes32 => uint256) internal haltedAt;
     /// @notice Halted seconds of `asset` that did NOT overlap a global pause
     ///         (so pause + halt downtime is a union, never double-counted).
-    mapping(bytes32 => uint256) public cumulativeHaltedTime;
+    mapping(bytes32 => uint256) internal cumulativeHaltedTime;
     /// @notice When `asset` last left Halted (start of its grace period).
     mapping(bytes32 => uint256) public haltLiftedAt;
     /// @dev `_pausedTime()` when `asset` entered Halted.
@@ -417,7 +417,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     mapping(bytes32 => uint256) internal _fundingPausedSnap;
     /// @notice `_downtime(asset)` at the moment each position opened; the
     ///         borrow fee charges only for time the market was actually open.
-    mapping(uint256 => uint256) public downtimeAtOpen;
+    mapping(uint256 => uint256) internal downtimeAtOpen;
 
     // ── P1: open-interest and profit caps ────────────────────────────────────
     //
@@ -860,24 +860,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     function pause() external {
         bool byOwner = msg.sender == owner();
         if (!byOwner && msg.sender != guardian) revert NotGuardianOrOwner(msg.sender);
-
-        // A guardian window that already lapsed is closed at its expiry.
-        if (pausedAt != 0 && !paused()) _closeLapsedWindow();
-
-        if (paused()) {
-            if (!byOwner || pauseExpiresAt == 0) revert EnforcedPause();
-            pauseExpiresAt = 0; // owner takes over the guardian's pause
-            emit PauseExpiryCleared(msg.sender);
-            return;
-        }
-        // Day-scale cooldown: validator timestamp drift (seconds) is immaterial.
-        // forge-lint: disable-next-line(block-timestamp)
-        if (!byOwner && block.timestamp < guardianPauseAllowedAt) {
-            revert GuardianPauseCooldown(guardianPauseAllowedAt);
-        }
-        pausedAt       = block.timestamp;
-        pauseExpiresAt = byOwner ? 0 : block.timestamp + GUARDIAN_PAUSE_DURATION;
-        emit Paused(msg.sender);
+        ExchangeOpsLib.pause(_clock, byOwner);
     }
 
     /// @notice Resume trading. Owner only: the guardian can stop the system but
@@ -885,21 +868,33 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     ///         worst cause bounded downtime. Starts the liquidation grace
     ///         period.
     function unpause() external onlyOwner {
-        if (!paused()) revert ExpectedPause();
-        _closePauseWindow(block.timestamp);
-        emit Unpaused(msg.sender);
+        ExchangeOpsLib.unpause(_clock);
     }
 
     /// @notice True while a pause window is open and has not lapsed.
     function paused() public view returns (bool) {
-        // Hour-scale windows: validator timestamp drift (seconds) is immaterial.
-        // forge-lint: disable-next-line(block-timestamp)
-        return pausedAt != 0 && (pauseExpiresAt == 0 || block.timestamp < pauseExpiresAt);
+        return ExchangeOpsLib.isPaused(_clock);
     }
 
+    /// @notice Start of the current pause window (0 = none open). A guardian
+    ///         window stays "open" in storage after it lapses until closed.
+    function pausedAt() external view returns (uint256) { return _clock.pausedAt; }
+    /// @notice When the current pause lapses on its own (0 = owner pause).
+    function pauseExpiresAt() external view returns (uint256) { return _clock.pauseExpiresAt; }
+    /// @notice Total seconds of pause windows already closed.
+    function cumulativePausedTime() external view returns (uint256) { return _clock.cumulativePausedTime; }
+    /// @notice When the last explicitly closed pause window ended.
+    function lastResumedAt() external view returns (uint256) { return _clock.lastResumedAt; }
+    /// @notice Earliest time the guardian may pause again (0 = no cooldown).
+    function guardianPauseAllowedAt() external view returns (uint256) { return _clock.guardianPauseAllowedAt; }
+
     modifier whenNotPaused() {
-        if (paused()) revert EnforcedPause();
+        _requireNotPaused();
         _;
+    }
+
+    function _requireNotPaused() internal view {
+        if (paused()) revert EnforcedPause();
     }
 
     /// @notice Record the end of a guardian pause that lapsed on its own.
@@ -909,57 +904,36 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     ///         indexers see it. `pause()` does the same lazily if nobody
     ///         calls this first.
     function closeLapsedPause() external {
-        if (pausedAt == 0 || paused()) revert NoLapsedPause();
-        _closeLapsedWindow();
-    }
-
-    function _closeLapsedWindow() internal {
-        uint256 end = pauseExpiresAt;
-        _closePauseWindow(end);
-        emit PauseLapsed(end);
-        emit Unpaused(address(0));
-    }
-
-    function _closePauseWindow(uint256 end) internal {
-        // A window with an expiry is a guardian pause the owner did not take
-        // over: start the guardian's cooldown from its end.
-        if (pauseExpiresAt != 0) guardianPauseAllowedAt = end + GUARDIAN_PAUSE_COOLDOWN;
-        cumulativePausedTime += end - pausedAt;
-        lastResumedAt  = end;
-        pausedAt       = 0;
-        pauseExpiresAt = 0;
+        ExchangeOpsLib.closeLapsedPause(_clock);
     }
 
     /// @dev Total paused seconds up to now, including an open (or lapsed but
     ///      not yet closed) window.
-    function _pausedTime() internal view returns (uint256 t) {
-        t = cumulativePausedTime;
-        if (pausedAt != 0) {
-            uint256 end = block.timestamp;
-            if (pauseExpiresAt != 0 && end > pauseExpiresAt) end = pauseExpiresAt;
-            t += end - pausedAt;
-        }
+    function _pausedTime() internal view returns (uint256) {
+        return ExchangeOpsLib.pausedTime(_clock);
     }
 
     /// @dev Seconds `asset` has been Halted outside of any global pause.
-    function _haltedTime(bytes32 asset) internal view returns (uint256 t) {
+    /// @param pausedNow `_pausedTime()`, passed in so callers compute it once.
+    function _haltedTime(bytes32 asset, uint256 pausedNow) internal view returns (uint256 t) {
         t = cumulativeHaltedTime[asset];
         uint256 since = haltedAt[asset];
         if (since != 0) {
-            t += (block.timestamp - since) - (_pausedTime() - _haltPausedSnap[asset]);
+            t += (block.timestamp - since) - (pausedNow - _haltPausedSnap[asset]);
         }
     }
 
     /// @notice Seconds during which `asset` could not be traded (paused or
     ///         Halted, counted once when both). Monotone in time.
     function downtimeOf(bytes32 asset) public view returns (uint256) {
-        return _pausedTime() + _haltedTime(asset);
+        uint256 pausedNow = _pausedTime();
+        return pausedNow + _haltedTime(asset, pausedNow);
     }
 
     /// @dev End of the most recent pause window (explicit or lapsed).
     function _resumedAt() internal view returns (uint256) {
-        if (pausedAt != 0 && !paused()) return pauseExpiresAt;
-        return lastResumedAt;
+        if (_clock.pausedAt != 0 && !paused()) return _clock.pauseExpiresAt;
+        return _clock.lastResumedAt;
     }
 
     /// @dev Refuses liquidations and new opens during the grace period that
@@ -1003,45 +977,15 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     ///      moves), so the long/short conservation identity is untouched,
     ///      exactly like the H-2 catch-up clamp.
     function setAssetMode(bytes32 asset, AssetMode mode) external {
-        AssetMode current = assetMode[asset];
-        bool locked = guardianLocked[asset];
-
-        bool byOwner    = msg.sender == owner();
-        bool byGuardian = !byOwner && msg.sender == guardian && uint8(mode) > uint8(current);
-        bool byOperator = !byOwner && !byGuardian
-            && msg.sender == marketOperator
-            && current != AssetMode.Halted
-            && mode != AssetMode.Halted
-            // guardian lock: the operator may no longer loosen this asset
-            && (!locked || uint8(mode) >= uint8(current));
-        if (!(byOwner || byGuardian || byOperator)) {
-            revert AssetModeChangeNotAllowed(asset, current, mode, msg.sender);
-        }
-
-        if (mode == AssetMode.Halted && current != AssetMode.Halted) {
-            _pokeFunding(asset);
-            haltedAt[asset]        = block.timestamp;
-            _haltPausedSnap[asset] = _pausedTime();
-        } else if (current == AssetMode.Halted && mode != AssetMode.Halted) {
-            if (lastFundingUpdateAt[asset] != 0) {
-                lastFundingUpdateAt[asset] = block.timestamp;
-                _fundingPausedSnap[asset]  = _pausedTime();
-            }
-            cumulativeHaltedTime[asset] = _haltedTime(asset);
-            haltedAt[asset]     = 0;
-            haltLiftedAt[asset] = block.timestamp;
-        }
-
-        if (byOwner && locked) {
-            guardianLocked[asset] = false;
-            emit AssetGuardianLockSet(asset, false);
-        } else if (byGuardian && !locked) {
-            guardianLocked[asset] = true;
-            emit AssetGuardianLockSet(asset, true);
-        }
-
-        assetMode[asset] = mode;
-        emit AssetModeSet(asset, mode, msg.sender);
+        bool enteringHalt = ExchangeOpsLib.setAssetMode(
+            assetMode, guardianLocked,
+            haltedAt, _haltPausedSnap, cumulativeHaltedTime, haltLiftedAt,
+            lastFundingUpdateAt, _fundingPausedSnap,
+            ExchangeOpsLib.ModeChange(asset, mode, owner(), guardian, marketOperator, _pausedTime())
+        );
+        // Settle funding up to the halt (the transition itself never moves
+        // the funding indices, so doing this after it is equivalent).
+        if (enteringHalt) _pokeFunding(asset);
     }
 
     /// @dev New exposure (every open path) requires Active.
@@ -1117,7 +1061,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         uint256 margin,
         uint256 leverage
     ) external payable whenNotPaused nonReentrant returns (uint256 positionId) {
-        require(msg.value >= executionFee, "Insufficient execution fee");
+        _requireExecutionFee();
         positionId = _openPosition(msg.sender, asset, isLong, margin, leverage, address(0), address(0));
         // Low: refund execution-fee overpayment instead of silently keeping it.
         _refundExcessFee();
@@ -1131,7 +1075,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         uint256 leverage,
         address copiedFrom
     ) external payable whenNotPaused nonReentrant returns (uint256 positionId) {
-        require(msg.value >= executionFee, "Insufficient execution fee");
+        _requireExecutionFee();
         if (copyTracker == address(0)) revert CopyTrackerNotSet();
         if (!authorizedAgents[msg.sender]) revert NotCopyTracker();
         // M1: `copiedFrom` is paid PERFORMANCE_FEE_BPS of the position's
@@ -1177,6 +1121,10 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     ///      no receive function) simply leaves the overpayment in the exchange's
     ///      execution-fee balance, exactly as before this fix — refusing the
     ///      trade over a refund would be worse than keeping the dust.
+    function _requireExecutionFee() internal view {
+        require(msg.value >= executionFee, "Insufficient execution fee");
+    }
+
     function _refundExcessFee() internal {
         uint256 excess = msg.value - executionFee;
         if (excess == 0) return;
@@ -1584,7 +1532,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     /// @notice Open: PnL as it would settle right now (mark-to-market, clamped
     ///         to the position's profit cap if it has one). Closed: realized.
     ///         M8: on a zero price this returns −margin (the conservative
-    ///         reading) instead of reverting; see `hasValidPrice`.
+    ///         reading) instead of reverting; see `PerpetualExchangeLens.hasValidPrice`.
     function getUnrealizedPnL(uint256 positionId) external view returns (int256) {
         Position storage pos = positions[positionId];
         if (!pos.isOpen) return pos.realizedPnL;
@@ -1599,7 +1547,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     ///      and the fees the close path deducts, so the UI over-stated every
     ///      position — badly so for one that had been open for months. It now
     ///      mirrors `_closePosition`'s arithmetic exactly.
-    ///      M8: 0 on a zero price instead of reverting; see `hasValidPrice`.
+    ///      M8: 0 on a zero price instead of reverting; see `PerpetualExchangeLens.hasValidPrice`.
     function getPositionValue(uint256 positionId) external view returns (uint256) {
         Position storage pos = positions[positionId];
         if (!pos.isOpen) return 0;
@@ -1666,15 +1614,6 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
 
     // ── Internal ─────────────────────────────────────────────────────────────
 
-    /// @notice True when `asset`'s feed is non-zero and within `maxPriceAge`.
-    ///         Views return conservative values instead of reverting when it
-    ///         is not (a zero price reads as a total loss, never a gain); this
-    ///         is the flag that tells a caller which it is looking at.
-    function hasValidPrice(bytes32 asset) external view returns (bool) {
-        (uint256 rawPrice, uint256 updatedAt) = oracle.getPrice(asset);
-        // forge-lint: disable-next-line(block-timestamp)
-        return rawPrice != 0 && block.timestamp <= updatedAt + maxPriceAge;
-    }
 
     /// @notice Resolves an asset's carbon tier and the fee/leverage params
     ///         that follow from it, from a single call site every other
@@ -2027,15 +1966,6 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         else            shortOpenSize[pos.asset] -= size;
     }
 
-    /// @notice Open interest of `asset` valued at the current oracle index
-    ///         price — the quantity `maxLongOI` / `maxShortOI` bound at open.
-    ///         Returns zeros while the feed reports a zero price.
-    function openInterestValue(bytes32 asset) external view returns (uint256 longValue, uint256 shortValue) {
-        (uint256 rawPrice,) = oracle.getPrice(asset);
-        uint256 price = rawPrice * 1e10;
-        longValue  = longOpenSize[asset]  * price / 1e18;
-        shortValue = shortOpenSize[asset] * price / 1e18;
-    }
 
     /// @dev P1: mark-to-market PnL clamped to the position's frozen profit
     ///      cap. Losses are never touched. Returns the raw value alongside.
@@ -2091,7 +2021,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     ///         OI-imbalance premium, bounded by `markPremiumCapBps`. Longs-heavy
     ///         books trade at a premium to index, shorts-heavy at a discount.
     ///         Returns 0 (never reverts) when the index is 0 — the same "no
-    ///         valid price" reading `hasValidPrice` reports as false.
+    ///         valid price" reading `PerpetualExchangeLens.hasValidPrice` reports as false.
     function getMarkPrice(bytes32 asset) external view returns (uint256) {
         (uint256 rawPrice,) = oracle.getPrice(asset);
         return _markPrice(asset, rawPrice * 1e10);
@@ -2155,5 +2085,155 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
         int256 indexDiff = sideIndex - pos.entryFundingIndex;
         uint256 notional = pos.margin * pos.leverage;
         return int256(notional) * indexDiff / int256(1e18);
+    }
+}
+
+/// @notice Pause and asset-mode state transitions of `PerpetualExchange`,
+///         executed by DELEGATECALL (external library functions) so the
+///         exchange's own runtime stays under EIP-170. Everything here runs
+///         in the exchange's storage and emits from the exchange's address;
+///         `msg.sender` is the exchange's caller. Authorization of `pause`
+///         (guardian or owner) and `unpause` (owner) is checked by the
+///         exchange before it calls in; `setAssetMode` checks its own
+///         permission matrix from the addresses the exchange passes.
+library ExchangeOpsLib {
+    /// @dev Values behind the exchange's public GUARDIAN_PAUSE_* constants.
+    uint256 internal constant GUARDIAN_PAUSE_DURATION = 72 hours;
+    uint256 internal constant GUARDIAN_PAUSE_COOLDOWN = 24 hours;
+
+    struct ModeChange {
+        bytes32 asset;
+        PerpetualExchange.AssetMode mode;
+        address owner;
+        address guardian;
+        address marketOperator;
+        uint256 pausedNow;  // exchange `_pausedTime()`
+    }
+
+    // ── pause clock ──────────────────────────────────────────────────────────
+
+    function isPaused(PerpetualExchange.PauseClock storage c) internal view returns (bool) {
+        // Hour-scale windows: validator timestamp drift (seconds) is immaterial.
+        // forge-lint: disable-next-line(block-timestamp)
+        return c.pausedAt != 0 && (c.pauseExpiresAt == 0 || block.timestamp < c.pauseExpiresAt);
+    }
+
+    function pausedTime(PerpetualExchange.PauseClock storage c) internal view returns (uint256 t) {
+        t = c.cumulativePausedTime;
+        if (c.pausedAt != 0) {
+            uint256 end = block.timestamp;
+            if (c.pauseExpiresAt != 0 && end > c.pauseExpiresAt) end = c.pauseExpiresAt;
+            t += end - c.pausedAt;
+        }
+    }
+
+    /// @dev See `PerpetualExchange.pause` for the rules.
+    function pause(PerpetualExchange.PauseClock storage c, bool byOwner) external {
+        // A guardian window that already lapsed is closed at its expiry.
+        if (c.pausedAt != 0 && !isPaused(c)) _closeLapsed(c);
+
+        if (isPaused(c)) {
+            if (!byOwner || c.pauseExpiresAt == 0) revert PerpetualExchange.EnforcedPause();
+            c.pauseExpiresAt = 0; // owner takes over the guardian's pause
+            emit PerpetualExchange.PauseExpiryCleared(msg.sender);
+            return;
+        }
+        // Day-scale cooldown: validator timestamp drift (seconds) is immaterial.
+        // forge-lint: disable-next-line(block-timestamp)
+        if (!byOwner && block.timestamp < c.guardianPauseAllowedAt) {
+            revert PerpetualExchange.GuardianPauseCooldown(c.guardianPauseAllowedAt);
+        }
+        c.pausedAt       = block.timestamp;
+        c.pauseExpiresAt = byOwner ? 0 : block.timestamp + GUARDIAN_PAUSE_DURATION;
+        emit PerpetualExchange.Paused(msg.sender);
+    }
+
+    function unpause(PerpetualExchange.PauseClock storage c) external {
+        if (!isPaused(c)) revert PerpetualExchange.ExpectedPause();
+        _closeWindow(c, block.timestamp);
+        emit PerpetualExchange.Unpaused(msg.sender);
+    }
+
+    function closeLapsedPause(PerpetualExchange.PauseClock storage c) external {
+        if (c.pausedAt == 0 || isPaused(c)) revert PerpetualExchange.NoLapsedPause();
+        _closeLapsed(c);
+    }
+
+    function _closeLapsed(PerpetualExchange.PauseClock storage c) private {
+        uint256 end = c.pauseExpiresAt;
+        _closeWindow(c, end);
+        emit PerpetualExchange.PauseLapsed(end);
+        emit PerpetualExchange.Unpaused(address(0));
+    }
+
+    function _closeWindow(PerpetualExchange.PauseClock storage c, uint256 end) private {
+        // A window with an expiry is a guardian pause the owner did not take
+        // over: start the guardian's cooldown from its end.
+        if (c.pauseExpiresAt != 0) {
+            c.guardianPauseAllowedAt = end + GUARDIAN_PAUSE_COOLDOWN;
+        }
+        c.cumulativePausedTime += end - c.pausedAt;
+        c.lastResumedAt  = end;
+        c.pausedAt       = 0;
+        c.pauseExpiresAt = 0;
+    }
+
+    // ── asset mode ───────────────────────────────────────────────────────────
+
+    /// @dev See `PerpetualExchange.setAssetMode` for the permission matrix and
+    ///      the funding / downtime semantics.
+    /// @return enteringHalt the caller must settle funding up to now.
+    function setAssetMode(
+        mapping(bytes32 => PerpetualExchange.AssetMode) storage modes,
+        mapping(bytes32 => bool) storage locks,
+        mapping(bytes32 => uint256) storage haltedAt,
+        mapping(bytes32 => uint256) storage haltPausedSnap,
+        mapping(bytes32 => uint256) storage cumulativeHaltedTime,
+        mapping(bytes32 => uint256) storage haltLiftedAt,
+        mapping(bytes32 => uint256) storage lastFundingUpdateAt,
+        mapping(bytes32 => uint256) storage fundingPausedSnap,
+        ModeChange memory m
+    ) external returns (bool enteringHalt) {
+        PerpetualExchange.AssetMode current = modes[m.asset];
+        bool locked = locks[m.asset];
+
+        bool byOwner    = msg.sender == m.owner;
+        bool byGuardian = !byOwner && msg.sender == m.guardian && uint8(m.mode) > uint8(current);
+        bool byOperator = !byOwner && !byGuardian
+            && msg.sender == m.marketOperator
+            && current != PerpetualExchange.AssetMode.Halted
+            && m.mode != PerpetualExchange.AssetMode.Halted
+            // guardian lock: the operator may no longer loosen this asset
+            && (!locked || uint8(m.mode) >= uint8(current));
+        if (!(byOwner || byGuardian || byOperator)) {
+            revert PerpetualExchange.AssetModeChangeNotAllowed(m.asset, current, m.mode, msg.sender);
+        }
+
+        bytes32 a = m.asset;
+        if (m.mode == PerpetualExchange.AssetMode.Halted && current != PerpetualExchange.AssetMode.Halted) {
+            enteringHalt       = true;
+            haltedAt[a]        = block.timestamp;
+            haltPausedSnap[a]  = m.pausedNow;
+        } else if (current == PerpetualExchange.AssetMode.Halted && m.mode != PerpetualExchange.AssetMode.Halted) {
+            if (lastFundingUpdateAt[a] != 0) {
+                lastFundingUpdateAt[a] = block.timestamp;
+                fundingPausedSnap[a]   = m.pausedNow;
+            }
+            // Halted seconds that did not overlap a global pause.
+            cumulativeHaltedTime[a] += (block.timestamp - haltedAt[a]) - (m.pausedNow - haltPausedSnap[a]);
+            haltedAt[a]     = 0;
+            haltLiftedAt[a] = block.timestamp;
+        }
+
+        if (byOwner && locked) {
+            locks[a] = false;
+            emit PerpetualExchange.AssetGuardianLockSet(a, false);
+        } else if (byGuardian && !locked) {
+            locks[a] = true;
+            emit PerpetualExchange.AssetGuardianLockSet(a, true);
+        }
+
+        modes[a] = m.mode;
+        emit PerpetualExchange.AssetModeSet(a, m.mode, msg.sender);
     }
 }
