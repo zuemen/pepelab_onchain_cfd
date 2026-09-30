@@ -100,6 +100,7 @@ export const tokens = {
       // #136：Expert 專屬欄位。
       issuedOverCap: '發行量 / 上限',
       priceUpdatedAt: '預言機更新時間',
+      attestationCount: '見證筆數',
       assetId: '資產 ID',
     },
     sort: {

@@ -83,6 +83,7 @@ export const tokens: Catalog['tokens'] = {
       // #136: Expert-only columns.
       issuedOverCap: 'Issued / Cap',
       priceUpdatedAt: 'Oracle Updated',
+      attestationCount: 'Attestations',
       assetId: 'Asset ID',
     },
     sort: {

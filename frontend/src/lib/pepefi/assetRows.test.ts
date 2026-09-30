@@ -269,6 +269,21 @@ describe('buildAssetRows · 逐字傳遞給 Expert 專屬欄位用的原始資�
     expect(row.issued).toBe(120_000000000000000000n)
     expect(row.updatedAtSec).toBe(12345)
   })
+
+  it('見證筆數原樣帶過去；讀不到是 null，不是 0（0 筆＝確實沒有見證）', () => {
+    const [counted, zero, unknown] = buildAssetRows(
+      [
+        chainRow({ symbol: 'sA', attestationCount: 3 }),
+        chainRow({ symbol: 'sB', attestationCount: 0 }),
+        chainRow({ symbol: 'sC' }),
+      ],
+      OPEN_GATE,
+      { nowMs: NOW_MS },
+    )
+    expect(counted.attestationCount).toBe(3)
+    expect(zero.attestationCount).toBe(0)
+    expect(unknown.attestationCount).toBeNull()
+  })
 })
 
 describe('assetRowColumnsForMode · issue #136 Mode 分流', () => {
@@ -278,12 +293,21 @@ describe('assetRowColumnsForMode · issue #136 Mode 分流', () => {
     ])
   })
 
-  it('Expert 在 Simple 的基礎上多發行量／上限、預言機更新時間、資產 id 三欄', () => {
+  it('Expert 在 Simple 的基礎上多發行量／上限、預言機更新時間、見證筆數、資產 id 四欄', () => {
     const expert = assetRowColumnsForMode('expert')
     const simple = assetRowColumnsForMode('simple')
     for (const key of simple) expect(expert).toContain(key)
-    expect(expert).toEqual(expect.arrayContaining(['issuedOverCap', 'priceUpdatedAt', 'assetId']))
-    expect(expert.length).toBe(simple.length + 3)
+    expect(expert).toEqual(
+      expect.arrayContaining(['issuedOverCap', 'priceUpdatedAt', 'attestationCount', 'assetId'])
+    )
+    expect(expert.length).toBe(simple.length + 4)
+    // 順序照 #136 驗收條件：發行量／上限、預言機更新時間、見證筆數、資產 id。
+    expect(expert.indexOf('attestationCount')).toBe(expert.indexOf('priceUpdatedAt') + 1)
+    expect(expert.indexOf('assetId')).toBe(expert.indexOf('attestationCount') + 1)
+  })
+
+  it('見證筆數是 Expert 專屬——Simple 不出現', () => {
+    expect(assetRowColumnsForMode('simple')).not.toContain('attestationCount')
   })
 
   it('操作欄永遠排最後', () => {

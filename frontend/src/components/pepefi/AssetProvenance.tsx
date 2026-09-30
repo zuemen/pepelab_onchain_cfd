@@ -91,7 +91,10 @@ export function AssetProvenanceSummary({ tier, freshness, nowrap = false }: Asse
 
 export interface AssetProvenanceBodyProps {
   meta: AssetMeta
-  /** 這顆資產最舊未平倉部位的 openedAt（秒）——持有天數。沒有部位就不顯示。 */
+  /**
+   * 使用者現在這段持有的起點（unix 秒）——持有天數。來源是代幣的鏈上 Transfer
+   * （hooks/useHeldSince.ts）；沒有持有或讀不到就是 undefined，不顯示。
+   */
   heldSinceSec?: number
   nowMs?: number
 }

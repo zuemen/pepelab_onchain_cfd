@@ -933,6 +933,13 @@ Iconify CDN, which keeps the app working offline and avoids a third-party reques
 on every page. Splitting it would mean lazy icon loading and a flash of missing
 glyphs. Left as is, but it is the next lever if the entry chunk needs to shrink.
 
+**「你已持有 N 天」只在這段持有始於最近約一天內時才顯示**（2026-09-30，#134 殘項）。
+詳情層的持有天數由 `hooks/useHeldSince.ts` 從代幣的鏈上 Transfer 事件倒推（`lib/pepefi/heldSince.ts`），
+掃描範圍沿用 `chainLogs.scanFromBlock`：Base Sepolia 公開節點的 getLogs 一次只收 1,000 塊，
+上限 60 段 ≈ 26.7 小時。持有早於這個範圍、任何一段讀取失敗、或倒推對不上時一律**不顯示**，
+不以掃描下緣充當起點（那會是一個猜出來的數字）。要對長期持有者也顯示，需要索引器
+（signal-api 或區塊瀏覽器 API）提供完整的 Transfer 歷史。
+
 **The product code is not linted.** `eslint.config.mjs` ignores
 `src/pages/pepefi/**`, `src/components/pepefi/**`, `src/hooks/**` and
 `src/lib/pepefi/**` — deliberate per the comment there (ported code, original
