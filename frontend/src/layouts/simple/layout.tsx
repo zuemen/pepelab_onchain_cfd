@@ -70,7 +70,11 @@ export function SimpleLayout({
         layoutQuery={layoutQuery}
         {...slotProps?.header}
         slots={{ ...headerSlots, ...slotProps?.header?.slots }}
-        slotProps={merge(headerSlotProps, slotProps?.header?.slotProps ?? {})}
+        // es-toolkit ≥1.4x 的 merge 回傳深層合併型別，與 MUI slotProps 的聯集型別對不上；執行期行為不變，
+        // 這裡標回呼叫端宣告的型別。
+        slotProps={
+          merge(headerSlotProps, slotProps?.header?.slotProps ?? {}) as HeaderSectionProps['slotProps']
+        }
         sx={slotProps?.header?.sx}
       />
     );

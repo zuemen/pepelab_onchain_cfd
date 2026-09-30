@@ -936,6 +936,10 @@ ethers / MUI / recharts / react into their own chunks, taking the entry from
 1,789 kB → 1,057 kB (570 → 328 kB gzip) and stopping a routine deploy from
 invalidating ~1.7 MB of otherwise-unchanged vendor cache.
 
+2026-09-30 現況：移除範本殘留後 987.00 kB（gzip 333.41 kB）；同日套用 dependabot 的 frontend
+minor/patch 升級（react 19.3、zod 4.6、es-toolkit 1.52、react-hook-form 7.89 等）後回到
+1,038.37 kB（gzip 351.28 kB）。增量來自上游套件本身，未做額外拆分。
+
 What remains is dominated by `components/iconify/icon-sets.ts` — 168 kB of source
 inlining 206 icons as raw SVG bodies (320 paths in the built chunk). That is a
 deliberate trade: icons ship with the bundle instead of being fetched from the
