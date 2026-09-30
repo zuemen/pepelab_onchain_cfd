@@ -36,7 +36,7 @@ export const exchange = {
     swappedEthForToken: '已用 {amount} ETH 兌換約 {received} {token} ✓',
     swappedTokenForEth: '已用 {amount} {token} 兌換約 {received} ETH ✓',
 
-    faucetStable: '已領取測試 {token} ✓ — 可到「資產交易」頁買進代幣化資產',
+    faucetStable: '已領取測試 {token} ✓ — 可到「資產」頁買進代幣化資產',
     faucetAltStable: '已領取測試 {alt} ✓ — 可持有與兌換；買進資產請用 {token}',
     faucetPepe: '已領取測試 PEPE ✓',
 
@@ -137,7 +137,7 @@ export const exchange = {
    */
   markup: {
     stepBuyLabel: '買入資產：',
-    stepBuyBody: '到「資產交易」頁,用 {token} 買進代幣化的股、債、金、幣——代幣會直接進到你的錢包。',
+    stepBuyBody: '到「資產」頁,用 {token} 買進代幣化的股、債、金、幣——代幣會直接進到你的錢包。',
     stepPortfolioLabel: '看配置：',
     stepPortfolioBody: '回「投資組合」頁,四大類的佔比、市值與損益都在那裡。',
 

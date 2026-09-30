@@ -26,7 +26,7 @@ export const exchange: Catalog['exchange'] = {
     swappedEthForToken: 'Swapped {amount} ETH for ~{received} {token} ✓',
     swappedTokenForEth: 'Swapped {amount} {token} for ~{received} ETH ✓',
 
-    faucetStable: 'Claimed test {token} ✓ — buy tokenized assets with it on Trade Assets',
+    faucetStable: 'Claimed test {token} ✓ — buy tokenized assets with it on the Assets page',
     faucetAltStable: 'Claimed test {alt} ✓ — hold or swap it; use {token} to buy assets',
     faucetPepe: 'Claimed test PEPE ✓',
 
@@ -128,7 +128,7 @@ export const exchange: Catalog['exchange'] = {
    */
   markup: {
     stepBuyLabel: 'Buy assets:',
-    stepBuyBody: 'Go to Trade Assets and buy tokenized equities, bonds, gold, and crypto with {token} — the tokens land directly in your wallet.',
+    stepBuyBody: 'Go to the Assets page and buy tokenized equities, bonds, gold, and crypto with {token} — the tokens land directly in your wallet.',
     stepPortfolioLabel: 'Check your allocation:',
     stepPortfolioBody: 'Go to Portfolio — the share, value, and PnL of all four classes are there.',
 
