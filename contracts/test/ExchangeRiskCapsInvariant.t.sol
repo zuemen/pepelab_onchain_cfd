@@ -181,7 +181,7 @@ contract ExchangeCapsHandler is Test {
             ++ghostOpenCount[asset];
             if (isLong) { ghostLongOI[asset] += margin * leverage; ghostLongSize[asset] += size; }
             else        { ghostShortOI[asset] += margin * leverage; ghostShortSize[asset] += size; }
-            (uint256 lv, uint256 sv) = PerpetualExchangeLens.openInterestValue(exchange, asset);
+            (uint256 lv, uint256 sv) = PerpetualExchangeLens.openInterestValue(address(exchange), asset);
             if (cap != 0 && (isLong ? lv : sv) > cap) ++ghostOpensAboveCap;
             if (exchange.profitCapOf(id) != margin * bpsAtOpen / 10_000) ++ghostCapMismatches;
         } catch (bytes memory reason) {

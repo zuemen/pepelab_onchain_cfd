@@ -335,7 +335,7 @@ contract ExchangeRiskCapsTest is Test {
         exchange.setMaxOpenInterest(BTC, 10_000e18, 0);
         _open(user, BTC, true, 1_000e18, 5);         // size 0.05 BTC
         oracle.updatePrice(BTC, 300_000e8);
-        (uint256 longValue, ) = PerpetualExchangeLens.openInterestValue(exchange, BTC);
+        (uint256 longValue, ) = PerpetualExchangeLens.openInterestValue(address(exchange), BTC);
         assertEq(longValue, 15_000e18);
 
         // 10 × 1 at 300k = 0.0000333.. BTC; side = 0.0500333.. BTC → 15,010
@@ -357,7 +357,7 @@ contract ExchangeRiskCapsTest is Test {
 
         oracle.updatePrice(BTC, 50_000e8);            // book now worth 5,000
         _open(other, BTC, true, 1_000e18, 5);         // +5,000 → 10,000
-        (uint256 longValue, ) = PerpetualExchangeLens.openInterestValue(exchange, BTC);
+        (uint256 longValue, ) = PerpetualExchangeLens.openInterestValue(address(exchange), BTC);
         assertEq(longValue, 10_000e18);
     }
 

@@ -244,7 +244,7 @@ contract ExchangeCoreFixesTest is Test {
     /// and `hasValidPrice` flags it.
     function test_views_zeroPrice_reportConservativeValues() public {
         (PerpetualExchange ex, , uint256 longId, uint256 shortId) = _zeroPriceFixture();
-        assertFalse(PerpetualExchangeLens.hasValidPrice(ex, BTC));
+        assertFalse(PerpetualExchangeLens.hasValidPrice(address(ex), BTC));
         assertEq(ex.getUnrealizedPnL(longId), -int256(1_000e18));
         assertEq(ex.getUnrealizedPnL(shortId), -int256(1_000e18)); // no windfall either
         assertEq(ex.getPositionValue(longId), 0);
