@@ -43,7 +43,9 @@ export type PolicyReasonCode =
   | "LEVERAGE_INVALID"
   | "LEVERAGE_EXCEEDED"
   | "RATE_LIMITED"
-  | "STATE_LOCK_TIMEOUT";
+  | "CLOSE_RATE_LIMITED"
+  | "STATE_LOCK_TIMEOUT"
+  | "OK_DEGRADED";
 
 export interface PolicyConfig {
   /** 單筆保證金上限（USDC，人類單位）。 */
@@ -54,15 +56,20 @@ export interface PolicyConfig {
   allowedAssets: string[];
   /** 槓桿上限（整數倍）。 */
   maxLeverage: number;
-  /** 每個時間窗內的最多筆數（開倉與平倉合計）。 */
+  /** 每個時間窗內的最多**開倉**筆數。 */
   maxOrdersPerWindow: number;
+  /**
+   * 每個時間窗內的最多**平倉**筆數（獨立、寬鬆的桶）。平倉是降低風險的動作，
+   * 不計入、也不受開倉的頻率與額度限制；這個桶只防 agent 失控狂刷。
+   */
+  maxClosesPerWindow: number;
   /** 時間窗長度（秒）。 */
   windowSec: number;
 }
 
 /**
- * 保守預設：單筆 100、每日 500、槓桿 5x、每小時 10 筆；資產＝協議本身上架的清單
- * （assetIdOf 認得的代號），未知代號在這裡就被擋，不會進到編碼層。
+ * 保守預設：單筆 100、每日 500、槓桿 5x、每小時 10 筆開倉（平倉另計，每小時 60 筆）；
+ * 資產＝協議本身上架的清單（assetIdOf 認得的代號），未知代號在這裡就被擋。
  */
 export const DEFAULT_POLICY: PolicyConfig = {
   maxMarginPerTrade: 100,
@@ -70,6 +77,7 @@ export const DEFAULT_POLICY: PolicyConfig = {
   allowedAssets: Object.keys(ASSET_IDS),
   maxLeverage: 5,
   maxOrdersPerWindow: 10,
+  maxClosesPerWindow: 60,
   windowSec: 3600,
 };
 
@@ -91,8 +99,10 @@ export interface AgentState {
   day: string;
   /** 當日已預留／已用的開倉保證金。 */
   dailyMargin: number;
-  /** 時間窗內已放行的筆數時間戳（ms）。 */
+  /** 時間窗內已放行的**開倉**時間戳（ms）。 */
   orders: number[];
+  /** 時間窗內已放行的**平倉**時間戳（ms），獨立的桶。 */
+  closes: number[];
 }
 
 export interface PolicyState {
@@ -145,6 +155,7 @@ export function loadPolicyConfig(env: NodeJS.ProcessEnv = process.env): PolicyCo
   if (e("POLICY_MAX_DAILY_MARGIN")) cfg.maxDailyMargin = Number(e("POLICY_MAX_DAILY_MARGIN"));
   if (e("POLICY_MAX_LEVERAGE")) cfg.maxLeverage = Number(e("POLICY_MAX_LEVERAGE"));
   if (e("POLICY_MAX_ORDERS_PER_WINDOW")) cfg.maxOrdersPerWindow = Number(e("POLICY_MAX_ORDERS_PER_WINDOW"));
+  if (e("POLICY_MAX_CLOSES_PER_WINDOW")) cfg.maxClosesPerWindow = Number(e("POLICY_MAX_CLOSES_PER_WINDOW"));
   if (e("POLICY_WINDOW_SEC")) cfg.windowSec = Number(e("POLICY_WINDOW_SEC"));
   if (e("POLICY_ALLOWED_ASSETS"))
     cfg.allowedAssets = e("POLICY_ALLOWED_ASSETS")!.split(",").map((s) => s.trim()).filter(Boolean);
@@ -153,6 +164,7 @@ export function loadPolicyConfig(env: NodeJS.ProcessEnv = process.env): PolicyCo
   num("maxDailyMargin", cfg.maxDailyMargin);
   num("maxLeverage", cfg.maxLeverage);
   num("maxOrdersPerWindow", cfg.maxOrdersPerWindow);
+  num("maxClosesPerWindow", cfg.maxClosesPerWindow);
   num("windowSec", cfg.windowSec);
   if (!Array.isArray(cfg.allowedAssets) || cfg.allowedAssets.length === 0)
     throw new Error("allowedAssets 不可為空");
@@ -180,10 +192,14 @@ export function currentAgentState(
     day,
     dailyMargin: prev && prev.day === day ? prev.dailyMargin : 0,
     orders: (prev?.orders ?? []).filter((t) => t > cutoff),
+    closes: (prev?.closes ?? []).filter((t) => t > cutoff),
   };
 }
 
-/** 逐條檢查。順序：資產 → 槓桿 → 單筆 → 每日 → 頻率。 */
+/**
+ * 逐條檢查。開倉：資產 → 槓桿 → 單筆 → 每日 → 開倉頻率。
+ * 平倉：只看平倉自己的寬鬆頻率桶（不計入、不受開倉頻率與額度限制）。
+ */
 export function evaluatePolicy(
   req: PolicyRequest,
   cfg: PolicyConfig,
@@ -192,7 +208,18 @@ export function evaluatePolicy(
 ): PolicyDecision {
   const s = currentAgentState(state, req.agent, cfg, nowMs);
 
-  if (req.action === "open") {
+  if (req.action === "close") {
+    if (s.closes.length >= cfg.maxClosesPerWindow) {
+      const retry = Math.ceil((s.closes[0] + cfg.windowSec * 1000 - nowMs) / 1000);
+      return deny(
+        "CLOSE_RATE_LIMITED",
+        `${cfg.windowSec}s 內已平倉 ${s.closes.length} 筆，達平倉上限 ${cfg.maxClosesPerWindow}；約 ${Math.max(retry, 1)}s 後再試`,
+      );
+    }
+    return { allowed: true, reasonCode: "OK", message: "policy gate 通過（平倉）" };
+  }
+
+  {
     if (!req.symbol || !cfg.allowedAssets.includes(req.symbol))
       return deny("ASSET_NOT_ALLOWED", `資產 ${req.symbol ?? "(缺)"} 不在允許清單（${cfg.allowedAssets.join(", ")}）`);
     const lev = req.leverage;
@@ -216,7 +243,7 @@ export function evaluatePolicy(
     const retry = Math.ceil((s.orders[0] + cfg.windowSec * 1000 - nowMs) / 1000);
     return deny(
       "RATE_LIMITED",
-      `${cfg.windowSec}s 內已 ${s.orders.length} 筆，達上限 ${cfg.maxOrdersPerWindow}；約 ${Math.max(retry, 1)}s 後再試`,
+      `${cfg.windowSec}s 內已開倉 ${s.orders.length} 筆，達上限 ${cfg.maxOrdersPerWindow}；約 ${Math.max(retry, 1)}s 後再試`,
     );
   }
   return { allowed: true, reasonCode: "OK", message: "policy gate 通過" };
@@ -234,10 +261,12 @@ export function applyReservation(
   nowMs: number,
 ): PolicyState {
   const s = currentAgentState(state, req.agent, cfg, nowMs);
+  const open = req.action === "open";
   const next: AgentState = {
     day: s.day,
-    dailyMargin: s.dailyMargin + (req.action === "open" ? req.marginUsdc ?? 0 : 0),
-    orders: [...s.orders, nowMs],
+    dailyMargin: s.dailyMargin + (open ? req.marginUsdc ?? 0 : 0),
+    orders: open ? [...s.orders, nowMs] : s.orders,
+    closes: open ? s.closes : [...s.closes, nowMs],
   };
   return { version: 1, agents: { ...state.agents, [req.agent.toLowerCase()]: next } };
 }
@@ -251,13 +280,20 @@ export function releaseReservation(
   const key = req.agent.toLowerCase();
   const prev = state.agents[key];
   if (!prev) return state;
+  // 只移除「一筆」同時間戳的紀錄：兩個 process 同一毫秒預留時，時間戳會重複。
+  const removeOne = (xs: number[] = []) => {
+    const i = xs.indexOf(reservedAt);
+    return i < 0 ? xs : [...xs.slice(0, i), ...xs.slice(i + 1)];
+  };
+  const open = req.action === "open";
   const next: AgentState = {
     day: prev.day,
     dailyMargin:
-      req.action === "open" && prev.day === utcDay(reservedAt)
+      open && prev.day === utcDay(reservedAt)
         ? Math.max(0, prev.dailyMargin - (req.marginUsdc ?? 0))
         : prev.dailyMargin,
-    orders: prev.orders.filter((t) => t !== reservedAt),
+    orders: open ? removeOne(prev.orders) : prev.orders ?? [],
+    closes: open ? prev.closes ?? [] : removeOne(prev.closes),
   };
   return { version: 1, agents: { ...state.agents, [key]: next } };
 }
@@ -308,6 +344,8 @@ export interface PolicyAuditRecord {
   };
   /** 人類可讀說明（已過 redact 的簡短字串）。 */
   message?: string;
+  /** 平倉降級放行時，哪些基礎設施出了問題（STATE_UNREADABLE、AUDIT_WRITE_FAILED…）。 */
+  degraded?: string[];
   txHash?: string | null;
   prevHash?: string | null;
   hash?: string;
@@ -337,11 +375,20 @@ export function auditWriteAttempt(
 export interface GateResult extends PolicyDecision {
   /** 送出前就失敗時呼叫，把預留的額度與筆數還回去。放行時才有。 */
   release: () => Promise<void>;
+  /** 平倉在降級模式放行時，列出哪些基礎設施出了問題（開倉永遠不會降級放行）。 */
+  degraded?: string[];
 }
 
 /**
  * 強制 policy gate：讀設定與狀態 → 逐條檢查 → 寫稽核 → 放行則預留額度。
- * 任何內部錯誤都轉成拒絕（fail-closed）。write.ts 在送出交易前**無條件**呼叫。
+ * write.ts 在送出交易前**無條件**呼叫。
+ *
+ * 失敗語意（審查 Medium-4）：
+ *   - **開倉**：設定壞、狀態檔壞／鎖逾時、稽核寫不進去 → 一律拒絕（fail-closed）。
+ *   - **平倉**：是降低風險的動作，不能因為 agent 本地的基礎設施壞掉而把使用者鎖在
+ *     部位裡。上述情況一律**放行**（reasonCode=OK_DEGRADED），在 stderr 印 `::error::`，
+ *     並在稽核紀錄的 `degraded` 欄位標出原因（稽核本身寫不進去時，`::error::` 行帶完整
+ *     紀錄內容作為唯一留痕）。平倉只受自己寬鬆的頻率桶限制。
  */
 export async function enforcePolicyGate(
   req: PolicyRequest,
@@ -351,6 +398,41 @@ export async function enforcePolicyGate(
   const auditPath = opts.auditPath ?? defaultPolicyAuditPath();
   const now = opts.now ?? Date.now;
   const noop = async () => {};
+  const isClose = req.action === "close";
+  const reqFields = {
+    symbol: req.symbol,
+    isLong: req.isLong,
+    marginUsdc: req.marginUsdc,
+    leverage: req.leverage,
+    positionId: req.positionId,
+  };
+  const recordOf = (d: PolicyDecision, t: number, degraded: string[]) => ({
+    action: req.action,
+    guardStage: "policy" as const,
+    reasonCode: d.reasonCode,
+    allowed: d.allowed,
+    sessionId: req.sessionId,
+    agent: req.agent,
+    request: reqFields,
+    message: d.message,
+    ...(degraded.length ? { degraded } : {}),
+  });
+  const degradedClose = (degraded: string[], t: number): GateResult => {
+    const d: PolicyDecision = {
+      allowed: true,
+      reasonCode: "OK_DEGRADED",
+      message: `平倉在降級模式放行（${degraded.join(", ")}）`,
+    };
+    const rec = recordOf(d, t, degraded);
+    try {
+      auditWriteAttempt(rec, auditPath, t);
+    } catch {
+      degraded.push("AUDIT_WRITE_FAILED");
+      rec.degraded = degraded;
+    }
+    console.error(`::error::[policy-gate] ${d.message}；紀錄：${JSON.stringify(rec)}`);
+    return { ...d, degraded, release: noop };
+  };
 
   // process 內：promise 串行；process 間：statePath 的檔案鎖（fileLock.ts）。
   return serialized((): GateResult => {
@@ -358,6 +440,7 @@ export async function enforcePolicyGate(
       return withFileLockSync(statePath, () => gateLocked());
     } catch (err) {
       if (err instanceof LockTimeoutError) {
+        if (isClose) return degradedClose(["STATE_LOCK_TIMEOUT"], now());
         return { ...deny("STATE_LOCK_TIMEOUT", "取得 policy 狀態檔鎖逾時（fail-closed）"), release: noop };
       }
       throw err;
@@ -366,58 +449,53 @@ export async function enforcePolicyGate(
 
   function gateLocked(): GateResult {
     const t = now();
-    const reqFields = {
-      symbol: req.symbol,
-      isLong: req.isLong,
-      marginUsdc: req.marginUsdc,
-      leverage: req.leverage,
-      positionId: req.positionId,
-    };
-    const record = (d: PolicyDecision, stage: GuardStage) =>
-      auditWriteAttempt(
-        {
-          action: req.action,
-          guardStage: stage,
-          reasonCode: d.reasonCode,
-          allowed: d.allowed,
-          sessionId: req.sessionId,
-          agent: req.agent,
-          request: reqFields,
-          message: d.message,
-        },
-        auditPath,
-        t,
-      );
+    const degraded: string[] = [];
 
-    let decision: PolicyDecision = deny("CONFIG_INVALID", "policy 未完成評估（fail-closed）");
     let cfg: PolicyConfig | null = null;
     let state: PolicyState | null = null;
     try {
       cfg = loadPolicyConfig(opts.env ?? process.env);
     } catch (err) {
-      decision = deny("CONFIG_INVALID", `policy 設定不合法：${(err as Error).message}`);
-    }
-    if (cfg) {
-      try {
-        state = readPolicyState(statePath);
-      } catch {
-        decision = deny("STATE_UNREADABLE", "policy 狀態檔無法讀取或格式不符（fail-closed）");
+      if (!isClose) {
+        return finish(deny("CONFIG_INVALID", `policy 設定不合法：${(err as Error).message}`));
       }
+      degraded.push("CONFIG_INVALID");
+      cfg = DEFAULT_POLICY; // 平倉只用得到平倉頻率桶：退回預設值
     }
-    if (cfg && state) decision = evaluatePolicy(req, cfg, state, t);
-
-    // 稽核寫不進去 → 不放行（沒有紀錄就沒有交易）。
     try {
-      record(decision, "policy");
+      state = readPolicyState(statePath);
     } catch {
-      return { ...deny("AUDIT_WRITE_FAILED", "稽核紀錄寫入失敗（fail-closed）"), release: noop };
+      if (!isClose) return finish(deny("STATE_UNREADABLE", "policy 狀態檔無法讀取或格式不符（fail-closed）"));
+      degraded.push("STATE_UNREADABLE");
     }
-    if (!decision.allowed || !cfg || !state) return { ...decision, release: noop };
+    if (!state) return degradedClose(degraded, t);
+
+    const decision = evaluatePolicy(req, cfg, state, t);
+    const final: PolicyDecision =
+      decision.allowed && degraded.length
+        ? { allowed: true, reasonCode: "OK_DEGRADED", message: `${decision.message}（降級：${degraded.join(", ")}）` }
+        : decision;
+
+    // 稽核寫不進去：開倉不放行（沒有紀錄就沒有交易）；平倉放行但 ::error::。
+    try {
+      auditWriteAttempt(recordOf(final, t, degraded), auditPath, t);
+    } catch {
+      if (!isClose) return { ...deny("AUDIT_WRITE_FAILED", "稽核紀錄寫入失敗（fail-closed）"), release: noop };
+      if (!final.allowed) return { ...final, release: noop };
+      degraded.push("AUDIT_WRITE_FAILED");
+      console.error(`::error::[policy-gate] 平倉稽核寫入失敗，仍放行；紀錄：${JSON.stringify(recordOf(final, t, degraded))}`);
+    }
+    if (!final.allowed) return { ...final, release: noop };
 
     try {
       writePolicyState(statePath, applyReservation(state, req, cfg, t));
     } catch {
-      return { ...deny("STATE_UNREADABLE", "policy 狀態檔無法寫入（fail-closed）"), release: noop };
+      if (!isClose) return { ...deny("STATE_UNREADABLE", "policy 狀態檔無法寫入（fail-closed）"), release: noop };
+      degraded.push("STATE_WRITE_FAILED");
+      console.error("::error::[policy-gate] 平倉的頻率桶無法寫入 policy 狀態檔，仍放行");
+    }
+    if (degraded.length) {
+      console.error(`::error::[policy-gate] 平倉在降級模式放行（${degraded.join(", ")}）`);
     }
     const release = () =>
       serialized(() => {
@@ -429,6 +507,18 @@ export async function enforcePolicyGate(
           /* 釋放失敗＝多算一筆，保守方向，可接受 */
         }
       });
-    return { ...decision, release };
+    return degraded.length
+      ? { ...final, reasonCode: "OK_DEGRADED", degraded, release }
+      : { ...final, release };
+
+    /** 開倉拒絕：寫稽核（寫不進去也照樣拒絕）。 */
+    function finish(d: PolicyDecision): GateResult {
+      try {
+        auditWriteAttempt(recordOf(d, t, []), auditPath, t);
+      } catch {
+        return { ...deny("AUDIT_WRITE_FAILED", "稽核紀錄寫入失敗（fail-closed）"), release: noop };
+      }
+      return { ...d, release: noop };
+    }
   }
 }

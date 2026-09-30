@@ -39820,6 +39820,7 @@ var DEFAULT_POLICY = {
   allowedAssets: Object.keys(ASSET_IDS),
   maxLeverage: 5,
   maxOrdersPerWindow: 10,
+  maxClosesPerWindow: 60,
   windowSec: 3600
 };
 var AGENT_ROOT = (() => {

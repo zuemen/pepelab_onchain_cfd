@@ -83,12 +83,22 @@ ok("單筆保證金上限：>100 拒絕、=100 放行、負數/NaN → MARGIN_IN
   const d = evaluatePolicy(open(), c, st, T0 + 5000);
   assert.equal(d.reasonCode, "RATE_LIMITED");
   assert.match(d.message, /後再試/);
-  // 平倉也受頻率限制（但不看保證金/資產/槓桿）
-  assert.equal(evaluatePolicy({ action: "close", sessionId: 7, agent: AGENT, positionId: 1 }, c, st, T0 + 5000).reasonCode, "RATE_LIMITED");
-  assert.equal(evaluatePolicy({ action: "close", sessionId: 7, agent: AGENT, positionId: 1 }, c, empty(), T0).reasonCode, "OK");
+  // 平倉不計入、也不受開倉的頻率限制（開倉桶已滿仍可平倉）
+  const close = { action: "close" as const, sessionId: 7, agent: AGENT, positionId: 1 };
+  assert.equal(evaluatePolicy(close, c, st, T0 + 5000).reasonCode, "OK");
+  const afterClose = applyReservation(st, close, c, T0 + 5000);
+  assert.equal(afterClose.agents[AGENT.toLowerCase()].orders.length, 3, "平倉不佔開倉的筆數");
+  assert.equal(afterClose.agents[AGENT.toLowerCase()].dailyMargin, st.agents[AGENT.toLowerCase()].dailyMargin, "平倉不佔額度");
+  // 平倉有自己寬鬆的桶
+  let cs: any = empty();
+  const cc = { ...c, maxClosesPerWindow: 2 };
+  for (let i = 0; i < 2; i++) cs = applyReservation(cs, close, cc, T0 + i);
+  assert.equal(evaluatePolicy(close, cc, cs, T0 + 10).reasonCode, "CLOSE_RATE_LIMITED");
+  assert.equal(evaluatePolicy(open(), cc, cs, T0 + 10).reasonCode, "OK", "平倉桶滿不影響開倉");
+  assert.equal(DEFAULT_POLICY.maxClosesPerWindow > DEFAULT_POLICY.maxOrdersPerWindow, true, "平倉桶比開倉寬鬆");
   // 時間窗滑過後恢復
   assert.equal(evaluatePolicy(open(), c, st, T0 + 61_000).reasonCode, "OK");
-  ok("單位時間筆數上限：窗內第 4 筆 → RATE_LIMITED（開倉與平倉共用）；窗滑過後恢復");
+  ok("開倉頻率上限：窗內第 4 筆 → RATE_LIMITED；平倉不計入也不受限（獨立寬鬆桶 CLOSE_RATE_LIMITED）；窗滑過後恢復");
 }
 
 {
@@ -155,7 +165,43 @@ ok("單筆保證金上限：>100 拒絕、=100 放行、負數/NaN → MARGIN_IN
   fs.writeFileSync(blocker, "x"); // 把檔案當目錄用 → 寫稽核必失敗
   const g6 = await enforcePolicyGate(open(), { statePath: path.join(TMP, "s6.json"), auditPath: path.join(blocker, "a.jsonl") });
   assert.equal(g6.reasonCode, "AUDIT_WRITE_FAILED");
-  ok("fail-closed：狀態檔壞 → STATE_UNREADABLE；設定壞 → CONFIG_INVALID；稽核寫不進去 → AUDIT_WRITE_FAILED");
+  ok("開倉 fail-closed：狀態檔壞 → STATE_UNREADABLE；設定壞 → CONFIG_INVALID；稽核寫不進去 → AUDIT_WRITE_FAILED");
+
+  // 平倉：同樣的故障一律放行（OK_DEGRADED），印 ::error:: 並在稽核標記 degraded
+  const close = { action: "close" as const, sessionId: 7, agent: AGENT, positionId: 5 };
+  const errs: string[] = [];
+  const origErr = console.error;
+  console.error = (...a: unknown[]) => { errs.push(a.map(String).join(" ")); };
+  try {
+    const auditC = path.join(TMP, "close-audit.jsonl");
+    const c1 = await enforcePolicyGate(close, { statePath, auditPath: auditC }); // statePath 仍是壞檔
+    assert.equal(c1.allowed, true);
+    assert.equal(c1.reasonCode, "OK_DEGRADED");
+    assert.deepEqual(c1.degraded, ["STATE_UNREADABLE"]);
+    const rec = (readAudit(auditC) as any[]).at(-1);
+    assert.deepEqual([rec.allowed, rec.reasonCode, rec.degraded], [true, "OK_DEGRADED", ["STATE_UNREADABLE"]]);
+    const c2 = await enforcePolicyGate(close, { statePath: path.join(TMP, "s7.json"), auditPath: path.join(blocker, "b.jsonl") });
+    assert.equal(c2.allowed, true);
+    assert.ok(c2.degraded?.includes("AUDIT_WRITE_FAILED"));
+    const c3 = await enforcePolicyGate(close, { statePath: path.join(TMP, "s8.json"), auditPath: auditC, env: { POLICY_MAX_LEVERAGE: "0" } as any });
+    assert.equal(c3.allowed, true);
+    assert.deepEqual(c3.degraded, ["CONFIG_INVALID"]);
+  } finally {
+    console.error = origErr;
+  }
+  assert.ok(errs.filter((e) => e.startsWith("::error::")).length >= 3, "每次降級放行都有 ::error::");
+  ok("平倉 fail-open：狀態檔壞 / 稽核寫不進去 / 設定壞 → 仍放行（OK_DEGRADED），::error:: ＋ 稽核 degraded 標記");
+
+  // 開倉達頻率上限後仍可平倉（經 enforcePolicyGate）
+  const sp = path.join(TMP, "s9.json");
+  const env = { POLICY_MAX_ORDERS_PER_WINDOW: "2" } as any;
+  for (let i = 0; i < 2; i++) assert.equal((await enforcePolicyGate(open(), { statePath: sp, auditPath, env, now: () => T0 + i })).allowed, true);
+  assert.equal((await enforcePolicyGate(open(), { statePath: sp, auditPath, env, now: () => T0 + 5 })).reasonCode, "RATE_LIMITED");
+  const cl = await enforcePolicyGate(close, { statePath: sp, auditPath, env, now: () => T0 + 6 });
+  assert.equal(cl.allowed, true);
+  assert.equal(cl.reasonCode, "OK");
+  assert.equal((await enforcePolicyGate(open(), { statePath: sp, auditPath, env, now: () => T0 + 7 })).reasonCode, "RATE_LIMITED", "平倉不會把開倉額度還回去");
+  ok("開倉達頻率上限後仍可平倉");
 }
 
 // ─────────────── write.ts 一定經過 policy gate（不送鏈）───────────────
