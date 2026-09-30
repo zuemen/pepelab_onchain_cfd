@@ -1,0 +1,7 @@
+{
+  // 刻意獨立於 agent/tsconfig.json：那個檔案是 signal-api Vercel bundle 的建置設定之一
+  // （bundleFingerprint.mjs 的 BUILD_CONFIG_FILES），改它會讓 bundle:check 紅燈。
+  // agent 的 `npm run typecheck` 會另外跑 `tsc -p sdk`。
+  "extends": "../tsconfig.base.json",
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}
