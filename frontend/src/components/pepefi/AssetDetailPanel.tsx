@@ -32,7 +32,11 @@ import { Icon } from '@iconify/react'
 
 import AssetIcon from './AssetIcon'
 import { AssetCandleChart } from './AssetCandleChart'
-import { AssetProvenanceSummary, AssetProvenanceBody } from './AssetProvenance'
+import {
+  AssetProvenanceBody,
+  AssetProvenanceSummary,
+  type AssetProvenanceBodyProps,
+} from './AssetProvenance'
 import { AttestedTierBlock } from './AttestedCarbonTier'
 
 export interface AssetDetailPanelProps {
@@ -66,6 +70,13 @@ export interface AssetDetailPanelProps {
    * null = 沒讀到（舊版金庫沒這個函式,或讀取失敗）——此時費率那句話不顯示。
    */
   mintFeeBps?: number | null
+  /**
+   * 現在這段持有的起點（unix 秒），由呼叫端以 useHeldSince 從鏈上 Transfer 倒推。
+   * undefined＝沒有持有或讀不到——身世卡就不顯示持有天數。
+   */
+  heldSinceSec?: number
+  /** 見 AssetProvenanceBody 的同名 prop。 */
+  heldSinceQuery?: AssetProvenanceBodyProps['heldSinceQuery']
 }
 
 export function AssetDetailPanel({
@@ -87,6 +98,8 @@ export function AssetDetailPanel({
   attestedLoading,
   attestedUnavailable,
   mintFeeBps = null,
+  heldSinceSec,
+  heldSinceQuery,
 }: AssetDetailPanelProps) {
   const dl = t.tokens.dialog
   const canConfirm = mode === 'buy' ? assetRow.canBuy : assetRow.canSell
@@ -241,7 +254,7 @@ export function AssetDetailPanel({
         </>
       )}
 
-      <AssetProvenanceBody meta={meta} />
+      <AssetProvenanceBody meta={meta} heldSinceSec={heldSinceSec} heldSinceQuery={heldSinceQuery} />
     </Stack>
   )
 }

@@ -15,6 +15,7 @@ import Box from '@mui/material/Box'
 import Link from '@mui/material/Link'
 import Chip from '@mui/material/Chip'
 import Alert from '@mui/material/Alert'
+import Button from '@mui/material/Button'
 import Stack from '@mui/material/Stack'
 import Divider from '@mui/material/Divider'
 import Typography from '@mui/material/Typography'
@@ -91,8 +92,17 @@ export function AssetProvenanceSummary({ tier, freshness, nowrap = false }: Asse
 
 export interface AssetProvenanceBodyProps {
   meta: AssetMeta
-  /** 這顆資產最舊未平倉部位的 openedAt（秒）——持有天數。沒有部位就不顯示。 */
+  /**
+   * 使用者現在這段持有的起點（unix 秒）——持有天數。來源是代幣的鏈上 Transfer
+   * （hooks/useHeldSince.ts）；沒有持有或讀不到就是 undefined，不顯示。
+   */
   heldSinceSec?: number
+  /**
+   * 還沒有 heldSinceSec 時的查詢入口（PR #202 M1：預設不掃鏈，使用者按了才查）。
+   * idle＝顯示按鈕；loading＝查詢中；unknown＝查過但找不到起點，只說明、不顯示天數。
+   * undefined＝沒有持有（或沒有 provider），整段不顯示。
+   */
+  heldSinceQuery?: { status: 'idle' | 'loading' | 'unknown' | 'error'; onQuery: () => void }
   nowMs?: number
 }
 
@@ -100,6 +110,7 @@ export interface AssetProvenanceBodyProps {
 export function AssetProvenanceBody({
   meta,
   heldSinceSec,
+  heldSinceQuery,
   nowMs = Date.now(),
 }: AssetProvenanceBodyProps) {
   const p = meta.provenance
@@ -197,8 +208,43 @@ export function AssetProvenanceBody({
       </Box>
 
       {/* ── 時間尺度（issue #100 ④）── */}
-      {(heldDays !== null || c.observed !== '—') && (
-        <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
+      {(heldDays !== null || heldSinceQuery || c.observed !== '—') && (
+        <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap alignItems="center">
+          {heldDays === null && heldSinceQuery?.status === 'idle' && (
+            <Button
+              size="small"
+              variant="text"
+              onClick={heldSinceQuery.onQuery}
+              sx={{ textTransform: 'none', p: 0, minWidth: 0, fontSize: '0.75rem' }}
+            >
+              {tp.heldDaysQuery}
+            </Button>
+          )}
+          {heldDays === null && heldSinceQuery?.status === 'loading' && (
+            <Typography variant="caption" color="text.secondary">
+              {tp.heldDaysLoading}
+            </Typography>
+          )}
+          {heldDays === null && heldSinceQuery?.status === 'unknown' && (
+            <Typography variant="caption" color="text.secondary">
+              {tp.heldDaysUnknown}
+            </Typography>
+          )}
+          {heldDays === null && heldSinceQuery?.status === 'error' && (
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Typography variant="caption" color="warning.main">
+                {tp.heldDaysError}
+              </Typography>
+              <Button
+                size="small"
+                variant="text"
+                onClick={heldSinceQuery.onQuery}
+                sx={{ textTransform: 'none', p: 0, minWidth: 0, fontSize: '0.75rem' }}
+              >
+                {tp.heldDaysRetry}
+              </Button>
+            </Stack>
+          )}
           {heldDays !== null && (
             <Typography variant="caption" color="text.secondary">
               {tp.heldDaysLabel}{' '}

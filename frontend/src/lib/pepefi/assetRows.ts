@@ -31,6 +31,13 @@ export interface AssetRowChainData {
    */
   cap: bigint
   issued: bigint
+  /**
+   * #136：Expert 專屬的見證筆數欄。來源與詳情層的見證區塊相同——useCarbonTiers 讀的
+   * ESGRegistryV2.medianCarbonTier(...).count（目前仍新鮮的見證筆數）。
+   * null／省略＝讀不到，或這條鏈沒有見證登記；畫面顯示「—」，不補 0（0 筆是「讀到了、
+   * 確實沒有見證」，意思完全不同）。
+   */
+  attestationCount?: number | null
 }
 
 /**
@@ -69,6 +76,8 @@ export interface AssetRow {
   cap: bigint
   issued: bigint
   updatedAtSec: number
+  /** null＝讀不到或本鏈沒有見證登記，見 AssetRowChainData.attestationCount。 */
+  attestationCount: number | null
 }
 
 /**
@@ -125,6 +134,7 @@ export function buildAssetRows(
       cap: input.cap,
       issued: input.issued,
       updatedAtSec: input.updatedAtSec,
+      attestationCount: input.attestationCount ?? null,
     }
   })
 }
@@ -169,15 +179,15 @@ export function sortAssetRows(rows: readonly AssetRow[], sortKey: AssetSortKey):
 // openPositionColumnsForMode 作法——欄位是什麼、標籤在哪、哪個模式看得到,
 // 判斷全部擠進這裡,元件不必自己決定表格長什麼樣。
 //
-// Expert 多出來的三欄是工程證據（發行量／上限、預言機更新時間、資產
-// id）,Simple 不需要知道這些機制細節就能決定要不要買。見證筆數與離散度
-// （#93 user story 14）目前沒有資料來源——ESGRegistryV2 的多見證者讀取是
-// #128 才會接上的東西,frontend 現在的碳資料是單一解析後的分級,不是原始
-// 見證紀錄——所以這裡先不放這一欄，而不是塞一個編出來的數字。
+// Expert 多出來的四欄是工程證據（發行量／上限、預言機更新時間、見證筆數、
+// 資產 id）,Simple 不需要知道這些機制細節就能決定要不要買。見證筆數的資料
+// 來源與詳情層的見證區塊（AttestedTierBlock）同一份：ESGRegistryV2 的
+// medianCarbonTier(...).count，由 /tokens 為整張表讀一次（useCarbonTiers）。
+// 離散度留在詳情層——表格欄只放一個數字，離散度需要一句話解釋才讀得懂。
 
 export type AssetRowColumnKey =
   | 'asset' | 'provenance' | 'tradingFee' | 'price' | 'balance' | 'actions'
-  | 'issuedOverCap' | 'priceUpdatedAt' | 'assetId'
+  | 'issuedOverCap' | 'priceUpdatedAt' | 'attestationCount' | 'assetId'
 
 /** 資產／身世／買入費率三欄相鄰且順序固定——碳分級決定買入費率這件事,
  *  版面上必須是看得出來的因果,不是兩個各自獨立的欄位。操作欄固定排最後。 */
@@ -187,7 +197,7 @@ const SIMPLE_COLUMNS: AssetRowColumnKey[] = [
 
 const EXPERT_COLUMNS: AssetRowColumnKey[] = [
   'asset', 'provenance', 'tradingFee', 'price', 'balance',
-  'issuedOverCap', 'priceUpdatedAt', 'assetId', 'actions',
+  'issuedOverCap', 'priceUpdatedAt', 'attestationCount', 'assetId', 'actions',
 ]
 
 export function assetRowColumnsForMode(mode: Mode): AssetRowColumnKey[] {

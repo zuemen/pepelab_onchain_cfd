@@ -92,10 +92,6 @@ const ALLOWED: ReadonlyArray<{ key: string; why: string }> = [
   { key: 'admin.treasury.incentives.description', why: '同上' },
   { key: 'admin.treasury.info.revenueModelBody', why: '同上' },
   { key: 'common.wallet.mockDesc', why: 'Mock Wallet 只在開發環境出現' },
-  { key: 'common.notification.friendRequestAfter', why: '範本通知資料，已不再渲染（只剩 _mock 引用）' },
-  { key: 'common.notification.pairedMid', why: '同上' },
-  { key: 'common.notification.pairedAfter', why: '同上' },
-  { key: 'common.notification.whaleAlertMid', why: '同上' },
 ];
 
 function hits(catalog: unknown, re: RegExp): string[] {

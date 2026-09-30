@@ -80,7 +80,8 @@ export const terminal = {
     estLiquidation: '預估清算價',
     onLiquidation: '清算時',
     onLiquidationValue: '殘值退還（扣罰金）',
-    funding8h: '資金費率（8 小時）',
+    /** `{interval}` 由鏈上 FUNDING_INTERVAL() 格式化（funding.intervalUnit），讀不到是「—」。 */
+    fundingRate: '資金費率（{interval}）',
     /** 交易費與槓桿上限：優先讀 exchange 的 per-asset view，讀不到才用碳分級靜態表。 */
     tradingParams: '交易費 · 槓桿上限',
     tradingParamsValue: '{fee} bps · ≤{lev}× · {source}',
@@ -174,12 +175,20 @@ export const terminal = {
   funding: {
     column: {
       asset: '標的',
-      rate: '費率（8 小時）',
+      rate: '費率（{interval}）',
       longOi: '多方未平倉',
       shortOi: '空方未平倉',
       lastSettled: '上次結算',
     },
     empty: '無 funding 資料',
+
+    /** 結算週期的單位（#196）：秒數取能整除的最大單位，28800 → 8 小時、300 → 5 分鐘。 */
+    intervalUnit: {
+      d: '{n} 天',
+      h: '{n} 小時',
+      m: '{n} 分鐘',
+      s: '{n} 秒',
+    },
 
     /** 上次結算多久以前。四種區間各自是完整的一句話。 */
     agoNever: '從未',
