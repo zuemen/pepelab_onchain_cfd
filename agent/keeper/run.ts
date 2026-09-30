@@ -14,6 +14,8 @@
 // observeReserve()，把儲備率釘進可重播的 ReserveObserved 事件（#99）。不設就
 // 完全跳過，不影響價格寫入。
 import { ethers } from "ethers";
+
+import { LocalNonceSigner } from "./nonceSigner.ts";
 import {
   runVerdict,
   summaryLine,
@@ -29,7 +31,7 @@ import {
   parseRatioEnv,
 } from "./core.ts";
 import { fetchMarketSession, fetchPrice, fetchSecondaryPrice } from "./feeds.ts";
-import { runRound, type RoundResult } from "./round.ts";
+import { isTimeout, runRound, type RoundResult } from "./round.ts";
 import { describeProtection, protectAsset } from "./protect.ts";
 import type { HealthReport } from "./alert.ts";
 import { writeFileSync } from "node:fs";
@@ -101,6 +103,12 @@ const EXCHANGE_ADDR = (process.env.KEEPER_EXCHANGE_ADDRESS ?? process.env.EXCHAN
 // funding crank 據此跳過）。workflow 設在 $RUNNER_TEMP。
 const REPORT_PATH = (process.env.KEEPER_REPORT_PATH ?? "").trim();
 const REFUSED_PATH = (process.env.KEEPER_REFUSED_PATH ?? "").trim();
+// 選用（審查 M2）：結束時把 LocalNonceSigner 的下一個 nonce 寫到這裡，讓 workflow 的
+// funding crank 取 max(RPC pending, 這個值)，不必再相信負載平衡 RPC 的 pending nonce。
+// workflow 設在 $RUNNER_TEMP；本機沒設就不寫。
+const NONCE_PATH = (process.env.KEEPER_NONCE_PATH ?? "").trim();
+/** 休市切換與 observeReserve 等確認的上限（審查 L3），與 round.ts 的預設一致。 */
+const TX_WAIT_TIMEOUT_MS = 120_000;
 
 if (!RPC_URL) {
   console.error("::error::KEEPER_RPC_URL 未設");
@@ -182,14 +190,17 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const signer = DRY_RUN ? null : new ethers.Wallet(PRIVATE_KEY, provider);
+  const wallet = DRY_RUN ? null : new ethers.Wallet(PRIVATE_KEY, provider);
+  // 所有合約共用這一個 signer，nonce 在本機遞增（見 nonceSigner.ts 的事故說明）。
+  const signer = wallet ? new LocalNonceSigner(wallet) : null;
+  activeSigner = signer;
 
   // 沒油就直接停 —— 這正是 Base Sepolia keeper 靜默失敗 9.5 天的原因，
   // 當時每筆 cast send 都以 "gas required exceeds allowance (0)" 失敗，
   // 而 `|| echo` 把它吞掉，CI 依然全綠。
-  if (signer) {
-    const bal = await provider.getBalance(signer.address);
-    console.log(`keeper ${signer.address} balance=${ethers.formatEther(bal)} ETH`);
+  if (wallet) {
+    const bal = await provider.getBalance(wallet.address);
+    console.log(`keeper ${wallet.address} balance=${ethers.formatEther(bal)} ETH`);
     if (bal === 0n) {
       console.error(`::error::keeper 錢包在 ${CHAIN} 上餘額為 0，無法送出任何交易`);
       process.exit(1);
@@ -270,7 +281,23 @@ async function main(): Promise<void> {
     }
   }
   const protectionNotes: string[] = [];
+  // 審查 L3：本輪有等確認逾時、狀態未知的交易 → 停單與 observeReserve 都不送。
+  // 那個 nonce 可能卡在 mempool，後面的交易只會排在它後面一起逾時；也可能已上鏈，
+  // 得先人工確認。拒寫清單已含全部資產，funding crank 同樣不送。
+  const txUnknown = round.unknown > 0;
+  if (txUnknown) {
+    console.error(
+      `::error::本輪有 ${round.unknown} 筆交易等確認逾時、狀態未知 —— 停單（ReduceOnly）、` +
+        `observeReserve 與 funding crank 本輪都不送交易，請先查 explorer`,
+    );
+  }
   for (const ref of round.refused) {
+    if (txUnknown) {
+      const note = `${ref.symbol}: 本輪有狀態未知的交易，未送停單（ReduceOnly）；拒寫原因：${ref.reason}`;
+      console.error(`::error::${note}`);
+      protectionNotes.push(note);
+      continue;
+    }
     const res = await protectAsset({
       symbol: ref.symbol,
       assetId: ref.assetId,
@@ -282,7 +309,7 @@ async function main(): Promise<void> {
             setAssetMode: (id, mode) => exchangeView.setAssetMode(id, mode),
           }
         : null,
-      signerAddress: signer?.address ?? null,
+      signerAddress: wallet?.address ?? null,
       isMissingFunction: (e) => classifyProbeError(revertInfo(e)) === "missing",
     });
     const { notes, exchangeStillTrading } = describeProtection(res, exchangeMaxAge);
@@ -301,7 +328,9 @@ async function main(): Promise<void> {
   // #99: reuses the same failed-counter/exit(1) mechanism every other genuine
   // problem in this file already goes through, rather than a separate,
   // always-::warning:: path — see observeVaultReserve()'s own docstring.
-  if (VAULT_ADDR && !(await observeVaultReserve(provider, signer))) {
+  if (VAULT_ADDR && txUnknown) {
+    console.log("::warning::observeReserve() 本輪略過（有狀態未知的交易，見上）");
+  } else if (VAULT_ADDR && !(await observeVaultReserve(provider, signer))) {
     failed += 1;
   }
 
@@ -316,7 +345,28 @@ async function main(): Promise<void> {
     MAX_DEGRADED_RATIO,
   );
   for (const msg of verdict.errors) console.error(`::error::${msg}`);
+  writeNextNonce();
   if (verdict.exitCode !== 0) process.exit(verdict.exitCode);
+}
+
+/** main() 建立的 signer；結束時（含例外中止）據此寫出下一個 nonce。 */
+let activeSigner: LocalNonceSigner | null = null;
+
+/**
+ * 審查 M2：把本機追蹤的下一個 nonce 交給 funding crank。只有送過（或被拒收而對齊過）
+ * 交易時才有值；null 代表這一輪沒動到 nonce，crank 照舊只問 RPC。
+ * 失敗時不遞增的語意由 LocalNonceSigner 保證：寫出的值只算節點接受過的交易。
+ */
+function writeNextNonce(): void {
+  if (!NONCE_PATH) return;
+  const next = activeSigner?.nextNonce ?? null;
+  if (next === null) return;
+  try {
+    writeFileSync(NONCE_PATH, `${next}\n`, "utf8");
+    console.log(`next nonce ${next} → ${NONCE_PATH}`);
+  } catch (e) {
+    console.error(`::warning::寫不出 ${NONCE_PATH}：${(e as Error).message}（crank 會退回只問 RPC）`);
+  }
 }
 
 /**
@@ -327,7 +377,11 @@ async function main(): Promise<void> {
  */
 function writeRefusedList(round: RoundResult): void {
   if (!REFUSED_PATH) return;
-  const syms = [...new Set([...round.refused.map((r) => r.symbol), ...round.skippedSymbols])];
+  // 審查 L3：有狀態未知的交易 → 全部資產都列入，funding crank 本輪一筆都不送。
+  const syms =
+    round.unknown > 0
+      ? [...SYMBOLS]
+      : [...new Set([...round.refused.map((r) => r.symbol), ...round.skippedSymbols])];
   try {
     writeFileSync(REFUSED_PATH, syms.map((s) => `${s}\n`).join(""), "utf8");
   } catch (e) {
@@ -401,7 +455,7 @@ async function applyMarketMode(
   assetId: string,
   symbol: string,
   nowSec: number,
-): Promise<"ok" | "missing" | "failed"> {
+): Promise<"ok" | "missing" | "failed" | "unknown"> {
   // 加密／期貨不做休市切換：連 RPC 都不打。
   if (!switchesMode(symbol)) return "ok";
   // 市場時段獨立取得（審查 Low），不依賴價格來源：價格改走 relay、或 Yahoo 價格因
@@ -448,10 +502,15 @@ async function applyMarketMode(
   }
   try {
     const tx = await exchange.setAssetMode(assetId, d.mode);
-    await tx.wait();
+    await tx.wait(1, TX_WAIT_TIMEOUT_MS);
     console.log(`  → marketOperator ${symbol}: ${d.reason} ✓ ${tx.hash}`);
     return "ok";
   } catch (e) {
+    // 審查 L3：等確認逾時＝狀態未知，交給 round 停止本輪後續寫入。
+    if (isTimeout(e)) {
+      console.error(`::error::${symbol} setAssetMode(${modeName(d.mode)}) 等確認逾時，狀態未知`);
+      return "unknown";
+    }
     console.error(`::error::${symbol} setAssetMode(${modeName(d.mode)}) 失敗：${(e as Error).message.slice(0, 140)}`);
     return "failed";
   }
@@ -481,7 +540,7 @@ async function applyMarketMode(
  */
 async function observeVaultReserve(
   provider: ethers.JsonRpcProvider,
-  signer: ethers.Wallet | null,
+  signer: ethers.Signer | null,
 ): Promise<boolean> {
   if (!ethers.isAddress(VAULT_ADDR)) {
     console.error(`::error::KEEPER_VAULT_ADDRESS 不是合法地址`);
@@ -504,7 +563,8 @@ async function observeVaultReserve(
 
   try {
     const tx = await vault.observeReserve();
-    const receipt = await tx.wait();
+    const receipt = await tx.wait(1, TX_WAIT_TIMEOUT_MS);
+    if (!receipt) throw new Error("observeReserve 沒有收據");
     console.log(`  → observeReserve() ✓ ${tx.hash}`);
 
     let breached = false;
@@ -530,7 +590,8 @@ async function observeVaultReserve(
     }
     return true;
   } catch (e) {
-    console.error(`::error::observeReserve 失敗：${(e as Error).message.slice(0, 140)}`);
+    const what = isTimeout(e) ? "等確認逾時，狀態未知（請查 explorer）" : "失敗";
+    console.error(`::error::observeReserve ${what}：${(e as Error).message.slice(0, 140)}`);
     return false;
   }
 }
@@ -546,5 +607,6 @@ function _fmtReserveLine(
 
 main().catch((e) => {
   console.error("::error::keeper 未預期地中止：", e);
+  writeNextNonce();
   process.exit(1);
 });

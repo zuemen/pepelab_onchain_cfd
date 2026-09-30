@@ -79,8 +79,12 @@ export interface RoundCtx {
   fetchSecondary: (symbol: string) => Promise<Feed>;
   /** 鏈上 getPrice 丟的錯是否是「資產不存在」（可 seed）；其他錯誤不寫。 */
   isAssetNotFound?: (e: unknown) => boolean;
-  /** 每個資產取價後呼叫（marketOperator 休市切換）；回 "failed" 計入 failed。 */
-  beforeAsset?: (symbol: string, assetId: string) => Promise<"ok" | "failed" | "stop">;
+  /**
+   * 每個資產取價後呼叫（marketOperator 休市切換）；回 "failed" 計入 failed。
+   * 回 "unknown"（它送的交易等確認逾時）→ 計入 failed 與 unknown，本輪停止後續寫入（審查 L3）。
+   * 本輪已停止寫入後不再呼叫（它也會送交易）。
+   */
+  beforeAsset?: (symbol: string, assetId: string) => Promise<"ok" | "failed" | "stop" | "unknown">;
   log?: (line: string) => void;
   error?: (line: string) => void;
 }
@@ -168,10 +172,15 @@ export async function runRound(ctx: RoundCtx): Promise<RoundResult> {
     }
 
     // 休市切換放在價格判斷之前：價格來源壞了不影響「現在是不是休市」。
-    if (beforeAsset) {
+    // 審查 L3：已有狀態未知的交易 → 休市切換也不再送。
+    if (beforeAsset && !writesHalted) {
       const b = await beforeAsset(symbol, assetId);
       if (b === "failed") r.failed += 1;
       if (b === "stop") beforeAsset = undefined; // 例如舊 exchange：整輪不再探測
+      if (b === "unknown") {
+        r.failed += 1;
+        haltWrites(symbol, "setAssetMode", new Error("setAssetMode 等確認逾時"));
+      }
     }
 
     if (feed.value === null) {

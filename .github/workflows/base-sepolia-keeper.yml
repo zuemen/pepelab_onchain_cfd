@@ -24,6 +24,8 @@ on:
   schedule:
     # 名目 15 分鐘。GitHub 排程是 best-effort，實測真實間隔為 68–169 分鐘，
     # 所以下游的 maxPriceAge 必須以「約 2 小時」而不是 15 分鐘來設定。
+    # 2026-09-30 曾 4.5 小時沒跑（sBTC 因此過期）→ 另有 Cloudflare Worker 每 20 分鐘
+    # 用 workflow_dispatch 補觸發，見 ops/keeper-trigger/README.md。
     - cron: '*/15 * * * *'
   workflow_dispatch:
 
@@ -43,6 +45,14 @@ jobs:
   keep:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # 審查 H1（PR #200）：私鑰改放 environment secret，只有引用這個 environment 的 job 拿得到；
+    # 舊分支／舊 run 上的 workflow 沒有引用它，repo 層級的同名 secret 刪除後就拿不到私鑰。
+    # environment 還沒建立或沒放這個 secret 時，secrets.X 退回 repo 層級的同名 secret，行為不變
+    # （docs.github.com「Secrets reference」：environment 層級優先）。
+    # deployment: false：只取 secrets，不在每次排程建立 deployment 紀錄。步驟見 ops/keeper-trigger/README.md。
+    environment:
+      name: keeper
+      deployment: false
     env:
       KEEPER_CHAIN: base-sepolia
       KEEPER_RPC_URL: ${{ secrets.BASE_SEPOLIA_RPC_URL }}
@@ -124,6 +134,8 @@ jobs:
           # 熔斷報告（給告警 step）與拒寫清單（給 funding crank）。
           KEEPER_REPORT_PATH: ${{ runner.temp }}/keeper-report.json
           KEEPER_REFUSED_PATH: ${{ runner.temp }}/keeper-refused.txt
+          # 審查 M2：LocalNonceSigner 的下一個 nonce，給 funding crank 用。
+          KEEPER_NONCE_PATH: ${{ runner.temp }}/keeper-next-nonce
         run: |
           set -uo pipefail
           npx tsx keeper/run.ts 2>&1 | tee /tmp/keeper.log
@@ -205,8 +217,22 @@ jobs:
           KEEPER_ADDR=$(cast wallet address --private-key "$KEEPER_PRIVATE_KEY")
           # --block pending（窄複審 6）：喂價 step 若留下還沒上鏈的交易，latest 的 nonce 會
           # 撞上它；pending 會把 mempool 裡屬於這把金鑰的交易算進去。
-          NONCE=$(cast nonce "$KEEPER_ADDR" --block pending --rpc-url "$KEEPER_RPC_URL")
-          echo "keeper=${KEEPER_ADDR} 起始 nonce=${NONCE}"
+          RPC_NONCE=$(cast nonce "$KEEPER_ADDR" --block pending --rpc-url "$KEEPER_RPC_URL" 2>/dev/null || true)
+          # 審查 M2：負載平衡 RPC 的 pending nonce 可能落後（2026-09-30 事故的根因）。
+          # 喂價 step 把 LocalNonceSigner 的下一個 nonce 寫在這裡（只算節點接受過的交易），
+          # 取兩者較大者。檔案不存在＝喂價 step 沒送過交易，只用 RPC 值。
+          LOCAL_NONCE=""
+          NONCE_FILE="${RUNNER_TEMP}/keeper-next-nonce"
+          if [ -f "$NONCE_FILE" ]; then LOCAL_NONCE=$(tr -d '[:space:]' < "$NONCE_FILE"); fi
+          if ! [[ "$RPC_NONCE" =~ ^[0-9]+$ ]]; then RPC_NONCE=""; fi
+          if ! [[ "$LOCAL_NONCE" =~ ^[0-9]+$ ]]; then LOCAL_NONCE=""; fi
+          if [ -z "$RPC_NONCE" ] && [ -z "$LOCAL_NONCE" ]; then
+            echo "::error::讀不到 keeper 的 nonce（RPC 失敗且沒有 $NONCE_FILE）。"
+            exit 1
+          fi
+          NONCE=${RPC_NONCE:-$LOCAL_NONCE}
+          if [ -n "$LOCAL_NONCE" ] && [ "$LOCAL_NONCE" -gt "$NONCE" ]; then NONCE=$LOCAL_NONCE; fi
+          echo "keeper=${KEEPER_ADDR} 起始 nonce=${NONCE}（RPC pending=${RPC_NONCE:-?}，喂價 step=${LOCAL_NONCE:-無}）"
 
           # 複審 Medium：被熔斷拒寫的資產，價格是已知錯誤的舊值 —— 不以它結算 funding。
           # 清單由 keeper/run.ts 在 runRound 回傳後立刻寫出（一行一個 symbol，含本輪沒判斷到的資產）。
