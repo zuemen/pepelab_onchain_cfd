@@ -16,6 +16,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ethers } from "ethers";
 import type { AuthorizationVC } from "./identity.ts";
+import { withFileLockSync } from "./fileLock.ts";
 
 export interface AuditRecord {
   ts: string;
@@ -110,10 +111,13 @@ export function lastAuditHash(filePath: string): string | null {
  */
 export function appendChainedRecord<T extends ChainedRecord>(filePath: string, rec: T): T {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  const chained: T = { ...rec, prevHash: lastAuditHash(filePath) };
-  chained.hash = recordHash(chained);
-  fs.appendFileSync(filePath, JSON.stringify(chained) + "\n", "utf8");
-  return chained;
+  // 讀 prevHash → 寫本筆 必須是原子的：多個 process 同時 append 會讓 hash chain 分岔。
+  return withFileLockSync(filePath, () => {
+    const chained: T = { ...rec, prevHash: lastAuditHash(filePath) };
+    chained.hash = recordHash(chained);
+    fs.appendFileSync(filePath, JSON.stringify(chained) + "\n", "utf8");
+    return chained;
+  });
 }
 
 /**
@@ -137,11 +141,13 @@ export function appendAudit(filePath: string, rec: AuditRecord): AuditRecord {
           decision: rec.decision,
         }),
     },
-    prevHash: lastAuditHash(filePath),
   };
-  chained.hash = recordHash(chained);
-  fs.appendFileSync(filePath, JSON.stringify(chained) + "\n", "utf8");
-  return chained;
+  return withFileLockSync(filePath, () => {
+    chained.prevHash = lastAuditHash(filePath);
+    chained.hash = recordHash(chained);
+    fs.appendFileSync(filePath, JSON.stringify(chained) + "\n", "utf8");
+    return chained;
+  });
 }
 
 /** 讀回所有稽核紀錄。 */

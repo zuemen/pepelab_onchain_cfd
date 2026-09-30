@@ -13,11 +13,12 @@
 // 若檔案被刪除，記憶歸零：尚未過期的舊 VC 可能再被接受一次（然後重新記錄），
 // 影響上限＝該 VC 的 validUntil（v2 預設最多 7 天）與鏈上 session 的額度／撤銷狀態。
 // 檔案存在但讀不到或格式不符 → 拒絕（fail-closed，NONCE_STORE_UNREADABLE）。
-// 跨主機部署要改成共享儲存。
+// 同機多 process 以檔案鎖（fileLock.ts）序列化讀改寫；跨主機部署要改成共享儲存。
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { VerifyResult } from "./identity.ts";
+import { withFileLockSync } from "./fileLock.ts";
 
 export type NonceReason = "OK" | "LEGACY_NO_NONCE" | "NONCE_REPLAYED" | "VC_SUPERSEDED" | "NONCE_STORE_UNREADABLE";
 
@@ -74,7 +75,19 @@ export function checkAndRecordVcNonce(
     return { ok: true, reasonCode: "LEGACY_NO_NONCE", message: "v1 VC 沒有 nonce，未做一次性檢查" };
   }
   const file = opts.statePath ?? defaultNonceStatePath();
-  const nowSec = Math.floor((opts.now ?? Date.now()) / 1000);
+  try {
+    return withFileLockSync(file, () => checkLocked(res as VerifyResult & { nonce: string }, file, opts.now));
+  } catch {
+    return { ok: false, reasonCode: "NONCE_STORE_UNREADABLE", message: "VC nonce 狀態檔鎖取得失敗（fail-closed）" };
+  }
+}
+
+function checkLocked(
+  res: VerifyResult & { nonce: string },
+  file: string,
+  now?: number,
+): { ok: boolean; reasonCode: NonceReason; message: string } {
+  const nowSec = Math.floor((now ?? Date.now()) / 1000);
   let s: NonceState;
   try {
     s = read(file);

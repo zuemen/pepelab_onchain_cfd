@@ -19,7 +19,8 @@
 //   以 agent 地址為鍵、UTC 日期切日。預設路徑固定在 agent/.state/（不隨 cwd 變），
 //   同一台機器上的三個進入點共用同一份額度。
 //   誠實邊界：本地檔可被有檔案權限的人刪除重置；它是縱深防禦，不是唯一防線
-//   （合約的 session 預算仍在）。跨主機部署要改成共享儲存（Redis 等）。
+//   （合約的 session 預算仍在）。同機多 process 以檔案鎖（fileLock.ts）序列化讀改寫；
+//   跨主機部署要改成共享儲存（Redis 等）。
 //   計數時機：放行當下先「預留」（避免並發雙花額度），送出前失敗就釋放；已廣播的
 //   交易即使 revert 也不退回（保守）。
 import fs from "node:fs";
@@ -28,6 +29,7 @@ import { fileURLToPath } from "node:url";
 import { ethers } from "ethers";
 import { ASSET_IDS } from "./addresses.ts";
 import { appendChainedRecord } from "./audit.ts";
+import { withFileLockSync, LockTimeoutError } from "./fileLock.ts";
 
 export type PolicyReasonCode =
   | "OK"
@@ -40,7 +42,8 @@ export type PolicyReasonCode =
   | "DAILY_MARGIN_EXCEEDED"
   | "LEVERAGE_INVALID"
   | "LEVERAGE_EXCEEDED"
-  | "RATE_LIMITED";
+  | "RATE_LIMITED"
+  | "STATE_LOCK_TIMEOUT";
 
 export interface PolicyConfig {
   /** 單筆保證金上限（USDC，人類單位）。 */
@@ -275,7 +278,7 @@ function writePolicyState(file: string, state: PolicyState): void {
   fs.renameSync(tmp, file);
 }
 
-// 同一 process 內序列化讀改寫（MCP 可能並發呼叫）。跨 process 的競態見檔頭。
+// 同一 process 內序列化讀改寫（MCP 可能並發呼叫）；跨 process 由 withFileLockSync 保護。
 let lock: Promise<unknown> = Promise.resolve();
 function serialized<T>(fn: () => T | Promise<T>): Promise<T> {
   const run = lock.then(fn, fn);
@@ -349,7 +352,19 @@ export async function enforcePolicyGate(
   const now = opts.now ?? Date.now;
   const noop = async () => {};
 
-  return serialized(async (): Promise<GateResult> => {
+  // process 內：promise 串行；process 間：statePath 的檔案鎖（fileLock.ts）。
+  return serialized((): GateResult => {
+    try {
+      return withFileLockSync(statePath, () => gateLocked());
+    } catch (err) {
+      if (err instanceof LockTimeoutError) {
+        return { ...deny("STATE_LOCK_TIMEOUT", "取得 policy 狀態檔鎖逾時（fail-closed）"), release: noop };
+      }
+      throw err;
+    }
+  });
+
+  function gateLocked(): GateResult {
     const t = now();
     const reqFields = {
       symbol: req.symbol,
@@ -407,11 +422,13 @@ export async function enforcePolicyGate(
     const release = () =>
       serialized(() => {
         try {
-          writePolicyState(statePath, releaseReservation(readPolicyState(statePath), req, t));
+          withFileLockSync(statePath, () =>
+            writePolicyState(statePath, releaseReservation(readPolicyState(statePath), req, t)),
+          );
         } catch {
           /* 釋放失敗＝多算一筆，保守方向，可接受 */
         }
       });
     return { ...decision, release };
-  });
+  }
 }

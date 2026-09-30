@@ -39809,6 +39809,11 @@ async function buildAgentVerification(params) {
 // ../shared/src/policyGate.ts
 import path from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
+
+// ../shared/src/fileLock.ts
+var SLEEP = new Int32Array(new SharedArrayBuffer(4));
+
+// ../shared/src/policyGate.ts
 var DEFAULT_POLICY = {
   maxMarginPerTrade: 100,
   maxDailyMargin: 500,
