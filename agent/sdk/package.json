@@ -1,0 +1,25 @@
+{
+  "name": "@pepelab/sdk",
+  "version": "0.1.0",
+  "description": "PepeFi integration SDK for institutional clients: read client, unsigned transaction builders, typed signal-api client, VC v2 helpers.",
+  "type": "module",
+  "private": true,
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./read": "./src/read.ts",
+    "./write": "./src/write.ts",
+    "./signal-api": "./src/signalApi.ts",
+    "./vc": "./src/vc.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@pepelab/shared": "*",
+    "viem": "^2.56.9"
+  },
+  "devDependencies": {
+    "yaml": "^2.9.1"
+  }
+}
