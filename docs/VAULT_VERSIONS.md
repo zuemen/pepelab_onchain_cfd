@@ -113,7 +113,7 @@ than re-rolling the fuzzer.
 
 **線上實例尚未套用。** `0x32A19D04…49A1`(Sepolia)是已部署的不可升級合約,
 換用新版需要重新部署並以 `AssetVaultV2.setOracle` 遷移。在遷移之前,keeper 的
-`stepTowards`(`agent/keeper/core.ts`)刻意複製了**舊合約**的不對稱公式,所以
-它送出的每一步都能被線上實例接受 —— `keeper/core.test.ts` 的
-`deviationAccepted` 就是那份舊公式的複本。遷移時必須同步更新這兩處,否則 keeper
-會低估可用步幅(功能上安全,只是收斂較慢)。
+`deviationAccepted`(`agent/keeper/core.ts`)刻意複製了**舊合約**的不對稱公式,
+用來在送出前判斷完整價格會不會被拒。(2026-09-29 起 keeper 不再用 `stepTowards`
+分段逼近:被拒就記為 failed、由人處置,見 `RUNBOOK_KEEPER.md`「價格熔斷」。)
+遷移時必須同步更新 `deviationAccepted`,否則 keeper 會把可接受的價格誤判為會被拒。

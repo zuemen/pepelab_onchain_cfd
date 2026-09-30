@@ -88,8 +88,9 @@ guard」，那描述的是 master 的舊版行內 bash keeper。現況是：
 | ~~Stooq~~ | ❌ **已死** —— CI log 實證回傳 HTML 404，`parseFeedValue` 會擋下 |
 | ~~CoinGecko~~ | 不再用於喂價（前端顯示仍可能用到） |
 
-實作是單一份 `agent/keeper/run.ts`（有單元測試），偏離保護由 `core.ts` 的
-`stepTowards` 處理，不是舊的 ±45% 硬閘門。
+實作是單一份 `agent/keeper/run.ts`（有單元測試），偏離保護是 `core.ts` 的價格熔斷
+（`guardDeviation`：變動 >20% 需多源確認，否則拒寫；只寫完整價格，不寫部分步進），
+處置步驟見 `docs/RUNBOOK_KEEPER.md`「價格熔斷」。
 
 > Pyth relay 是**受信任的中繼，不是無信任的整合**：keeper 的金鑰仍可寫任何值。
 > 它拿掉的是對中心化交易所 API 的依賴，不是對 keeper 的依賴。

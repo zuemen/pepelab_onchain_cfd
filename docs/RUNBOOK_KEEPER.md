@@ -108,7 +108,11 @@ gh run watch
 GuardedOracle 是 fail-closed 的 —— 超過 `maxPriceAge` 就 revert `StalePrice`,
 連帶 `reserveRatioBps()` 與 `mint()` 一起壞掉。
 
-`GuardedOracle.maxPriceAge` 目前是 **3600 秒(1 小時)**,而 GitHub 排程的真實
+(以下是 **Sepolia** 的 GuardedOracle `0x32A1…49A1` 在 2026-08-06 的狀況。**Base** 的
+GuardedOracle `0x8E9e…f842` 的 `maxPriceAge` 是 **2592000 秒(30 天)**,2026-09-29 唯讀
+核對 —— 兩者不同,不要混用。)
+
+當時 Sepolia `GuardedOracle.maxPriceAge` 是 **3600 秒(1 小時)**,而 GitHub 排程的真實
 間隔實測是 **68–169 分鐘**(2026-08-05 的 12 次排程,平均約 90 分鐘;2026-08-06
 的實測甚至到 120 分鐘)。也就是說這不是偶發過期,而是**設定值小於實際節奏所導致
 的結構性過期** —— 即使 keeper 完全正常運作,GuardedOracle 大部分時間仍然是 stale。
@@ -157,14 +161,97 @@ cast call 0x32A19D04ef2ca5A7DA02Df39419729fA745749A1 \
 2026-07-27 的處置是把 `maxDeviationBps` 設成 0、寫完 11 個正確價格、再設回 1000
 (見 [ROLE_SEPARATION.md](ROLE_SEPARATION.md))。那修的是症狀。
 
-病根已由 `agent/keeper/core.ts` 的 `stepTowards` 修掉:超出上限時走到上限邊緣,
-下一輪再往前一段,兩三輪就收斂。`keeper/core.test.ts` 用上面這兩組真實數字釘住
-這個行為,並斷言每一步都能被合約的 `_deviationExceeded` 接受。
+2026-08-06 曾用 `stepTowards`「超出上限時走到上限邊緣,下一輪再往前一段」解這個
+死鎖。**2026-09-29 審查後已移除**:分段逼近會把一個明知不是最佳估計的價格帶著新
+的時間戳寫上鏈,任何人都能對著它開倉。現在 keeper 對 GuardedOracle 只寫完整價格
+(`core.ts` 的 `planMirror`);鏈上上限不接受時記為 failed、輸出 `::error::`、job
+變紅,由人依下一節「價格熔斷」處置。也就是說,死鎖不再被自動「解開」,而是被
+**大聲地停住**。
 
 **注意方向不對稱**:合約以「兩者中較小值」為分母,所以向上容許 10%、向下只容許
-9.09%。`stepTowards` 刻意複製了這個不對稱公式,以確保它送出的每一步都能被**線上
-的舊合約**接受。若日後把 `GuardedOracle` 換成對稱版並以 `AssetVaultV2.setOracle`
-遷移,必須同步檢查該函式。
+9.09%。`deviationAccepted` 刻意複製了這個不對稱公式,用來在送出前判斷完整價格
+會不會被**線上的舊合約**拒絕。若日後把 `GuardedOracle` 換成對稱版並以
+`AssetVaultV2.setOracle` 遷移,必須同步更新該函式。
+
+## 價格熔斷(keeper 拒寫大幅變動)
+
+**語意**:keeper 絕不寫入明知不是最佳估計的價格,只有「寫完整價格」或「不寫」。
+
+**兩顆 oracle 一起寫或一起不寫。** Base 的 GuardedOracle(`0x8E9e…f842`)沒有
+`referenceSource`,每次寫入都受 `maxDeviationBps=1000` 限制(向上 10%、向下 9.09%)。
+keeper 寫 MockOracle 之前先確認 Guarded 會接受同一個完整價格,所以**有效熔斷門檻 =
+min(`KEEPER_BREAKER_DEVIATION`, Guarded 該方向上限)**,實際上是 +10% / −9.09%。
+
+| 情況 | keeper 行為 |
+|---|---|
+| 變動 ≤ 有效門檻 | 兩顆都寫入同一個完整價格 |
+| 變動 > 有效門檻,≥2 個新鮮獨立來源彼此差距 ≤ 2%、方向一致,且 Guarded 接受 | 兩顆都寫入完整的共識價(中位數) |
+| 多源確認不通過,**或** Guarded 會拒絕完整價格(即使多源確認通過) | **兩顆都不寫**(熔斷);`::error::`、job 失敗、嘗試停單、開 issue |
+| Guarded 讀不到 | 兩顆都不寫(fail-closed);記 failed |
+| Guarded 已凍結 | 兩顆都不寫(fail-closed,凍結是 guardian 的決定);列為熔斷 |
+| Guarded 沒有此資產 | 只寫 MockOracle,但門檻**仍是** Guarded 上限(不放寬回 20%) |
+| Guarded `updatePrice` 的 staticCall 預檢 revert(paused／role／cap／reference) | 兩顆都不寫;列為熔斷 |
+| 兩顆價格不一致(例如上一輪 Mock 寫失敗) | 即使價格沒動也走補寫,讓兩顆收斂;超限時訊息寫「兩顆已不一致」 |
+
+**寫入順序**:預檢通過後**先寫 GuardedOracle,成功才寫 MockOracle**。Guarded 有上限、Mock
+沒有:Guarded 寫失敗 → Mock 不寫,兩顆仍一致;Mock 寫失敗 → 下一輪的不一致補寫自然補上。
+
+**拒寫不等於停單。** 價格停在舊值,但交易所(`0x827e…124D`)的 `maxPriceAge` 是
+**6 小時**(21600,2026-09-29 唯讀核對):在那之前,交易所仍會以已知錯誤的舊價開倉、
+平倉、清算。所以拒寫時 keeper(`agent/keeper/protect.ts`):
+
+1. 交易所支援 `setAssetMode` 且 keeper 是 `marketOperator` → 切 ReduceOnly(停止新開倉;
+   平倉與清算仍用舊價)。
+2. 開 issue「[keeper] Base Sepolia 價格熔斷」(或在已開的那張留言),內文列出第 1 步的
+   結果。做不到的部分會寫「交易所將以舊價繼續成交，直到 maxPriceAge（6h）；需人工處置」。
+
+**keeper 不凍結 GuardedOracle。** 2026-09-29 窄複審移除了 keeper 自動 `setAssetFrozen`
+的路徑:凍結後下一輪 Mock 的門檻會從 10% 放寬回 20%,保護動作反而開洞。凍結一律由
+guardian(人)決定;Guarded 被凍結時 keeper 對 Mock 也拒寫(fail-closed)。
+
+keeper 不會自動解除 ReduceOnly;解除一律人工。funding crank 會讀
+`$RUNNER_TEMP/keeper-refused.txt` 跳過被拒寫的資產(不以已知錯誤的價格結算 funding)。
+
+### 目前做不到停單 —— 建議的授權
+
+2026-09-29 鏈上核對:線上交易所(`0x827e…124D`)**沒有 `setAssetMode`**,所以第 1 步
+目前一律記錄為「做不到」,只剩告警。Base GuardedOracle 的 `maxPriceAge` 是 **30 天**
+(2592000),金庫在這段時間內也不會自己 fail-closed。
+
+**唯一建議**:完成新交易所 cutover(`contracts/p1-guardian-market-modes`)後,由 owner
+`setMarketOperator(0x540aECD37E7A7885824e7b7e996eBddfb842ef17)`。代價:keeper 可在
+Active↔ReduceOnly 間切換,碰不到 Halted,也改不了價格。**不建議**授予 keeper
+GuardedOracle 的 `GUARDIAN_ROLE`(理由見上)。在 cutover 之前,停單只能靠人工。
+
+**股票只有單一來源(Yahoo)**,所以拆股、財報跳空這類 >20% 的真實變動**一定**會
+熔斷,需要人工處置。加密資產有 Pyth relay + CoinGecko + Yahoo(BTC-USD/ETH-USD)
+可互相確認,通常會自動通過。
+
+### 處置步驟
+
+1. **看 log / issue**:keeper run 的 `::error::<資產> 偏離 X% 超過熔斷門檻…` 會列出鏈上價、
+   來源價與未通過的原因;同一輪會開「[keeper] … 價格熔斷」issue。**先判斷是否需要立刻
+   停單**:若 issue 寫「交易所將以舊價繼續成交」,由 owner/guardian 手動處置(例如 owner
+   暫停交易所或調低該資產的曝險),不要等 maxPriceAge 自己到期。
+2. **獨立核價**:至少兩個人工來源(交易所官網、Nasdaq/NYSE、公司公告)。同時確認
+   有沒有公司行動(拆股、合併、下市)與 ticker/幣別是否被 Yahoo 換掉。
+3. **依原因處置**:
+   - **來源壞了**(換 ticker、幣別、錯資料):不要寫價。修 `agent/keeper/feeds.ts`
+     的 `SOURCES`,走一般 PR。修好之前資產維持熔斷,交易所停單是預期結果。
+   - **拆股/合併**(單位改變):**不要寫入拆股後價格** —— 既有部位的進場價是舊單位,
+     直接寫新價會錯誤清算。先維持熔斷,由 owner 決定:(a) 讓該資產的喂價換算回舊
+     單位,或 (b) 公告後結算既有部位,再以新單位重新 seed。決定前不得手動寫價。
+   - **真實跳空**(單位不變,例如財報):由 owner 以 `admin-base-sepolia.yml`
+     (`updatePrice(bytes32,uint256)`,target = MockOracle)寫入人工核過的價格;
+     需第二人覆核 workflow 輸入。寫入後下一輪 keeper 的偏離會回到門檻內,恢復自動。
+   - **GuardedOracle 拒絕完整價格**:由 GuardedOracle 的 admin 依 2026-07-27 的做法
+     (見 [ROLE_SEPARATION.md](ROLE_SEPARATION.md))暫時調整 `maxDeviationBps`、寫入
+     完整價格、再設回原值;三筆交易都要記錄 tx hash。
+4. **驗證**:手動觸發 `oracle-health.yml`,確認該資產 `ok`、價格過期 issue 自動關閉;
+   「[keeper] 價格熔斷」issue 要連續 4 輪正常、且交易所沒有保護中(ReduceOnly)的資產
+   才會自動關 —— ReduceOnly 需人工解除;crank 清單缺失或 funding 延遲超過
+   2 × FUNDING_INTERVAL 另有「funding 未結算」issue;
+   下一輪 keeper 摘要行 `rejected=0 failed=0`。
 
 ## 已知未解:單一資產可能無聲漏掉一輪
 

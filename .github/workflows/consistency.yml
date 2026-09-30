@@ -1,0 +1,43 @@
+name: Consistency
+
+# 擋「workflow 寫死的合約位址與前端設定不一致」。
+#
+# 2026-09-29 發現三支 workflow（keeper／健檢／admin）仍指向舊 exchange，對一顆已經
+# 沒人用的合約正常運作、CI 全綠（#178 修正）。位址唯一真相是
+# frontend/src/contracts/addresses.ts（＋ V2_STACK、sessionManager.ts）；這支 job
+# 把 .github/workflows/*.yml 裡所有值為位址的 env 鍵與它比對，對不上就紅。
+#
+# 刻意不加 paths 過濾：檢查不到一秒、零依賴，而「只改了 addresses.ts 卻沒改
+# workflow」正是要抓的情況，過濾條件寫漏一個路徑就又回到看起來有 CI 的狀態。
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: consistency-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  addresses:
+    name: workflow ↔ addresses.ts
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+
+      # 先證明檢查本身會抓錯（fixture 含舊 exchange、錯鏈 oracle、零位址…），
+      # 再用它檢查 repo。檢查器壞成「永遠通過」時第一步就會紅。
+      - name: Self-test
+        run: node --test scripts/check-addresses.test.mjs
+
+      - name: Check workflow addresses
+        run: node scripts/check-addresses.mjs

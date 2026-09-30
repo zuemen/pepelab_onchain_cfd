@@ -76,3 +76,31 @@ jobs:
       # 版本不穩定，見 signal-api/src/bundleFingerprint.mjs）。
       - name: Bundle drift check
         run: npm run bundle:check
+
+  # oracle-health.yml 以 `npm ci --ignore-scripts` 安裝（不給依賴樹執行 install
+  # script 的機會）。這裡證明在 Linux runner 上這樣裝完 tsx／esbuild 仍能執行，
+  # 並跑一次 keeper 測試（含 health-check 的 RPC 失敗路徑），避免哪天某個依賴改成
+  # 必須靠 postinstall 才能用，健檢就在排程裡無聲壞掉（複審 Low）。
+  ignore-scripts-smoke:
+    name: npm ci --ignore-scripts smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: agent/package-lock.json
+
+      - name: Install without scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: tsx runs
+        run: npx tsx -e "console.log(1)"
+
+      - name: Keeper tests
+        run: npm run test:keeper

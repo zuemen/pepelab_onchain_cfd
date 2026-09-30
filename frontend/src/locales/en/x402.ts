@@ -115,6 +115,7 @@ export const x402: Catalog['x402'] = {
         asset: 'Asset',
         assetValue: 'Circle USDC {address} (6-dec, EIP-3009)',
         router: 'x402 router',
+        routerUnset: 'Not configured for this chain (src/contracts/x402.ts)',
         pricing: 'Pricing',
         pricingValue: 'GET /signals/:trader → $0.01 · GET /oracle/:asset → $0.005',
       },

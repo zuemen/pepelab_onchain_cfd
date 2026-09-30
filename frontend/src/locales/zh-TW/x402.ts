@@ -120,6 +120,7 @@ export const x402 = {
         asset: '資產',
         assetValue: 'Circle USDC {address} (6-dec, EIP-3009)',
         router: 'x402 分潤 router',
+        routerUnset: '此鏈未設定（src/contracts/x402.ts）',
         pricing: '定價',
         pricingValue: 'GET /signals/:trader → $0.01 · GET /oracle/:asset → $0.005',
       },
