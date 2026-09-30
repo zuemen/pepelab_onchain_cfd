@@ -58,6 +58,9 @@ jobs:
       - name: Self-test
         run: node --test scripts/check-tenant-deploy.test.mjs
 
+      - name: Check tenant deploy configs
+        run: node scripts/check-tenant-deploy.mjs
+
   keeper-trigger:
     name: keeper trigger worker
     runs-on: ubuntu-latest
@@ -71,6 +74,3 @@ jobs:
           node-version: 20
       - name: decide / tick tests
         run: node --test ops/keeper-trigger/keeper-trigger.test.mjs
-
-      - name: Check tenant deploy configs
-        run: node scripts/check-tenant-deploy.mjs
