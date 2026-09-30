@@ -324,7 +324,7 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     //
     // Who may change a mode (see `setAssetMode`):
     //   owner          — any transition.
-    //   guardian       — tighten only (Active -> ReduceOnly -> Halted).
+    //   guardian       — Active -> ReduceOnly only; Halted is owner-only.
     //   marketOperator — Active <-> ReduceOnly only; never sets or lifts Halted.
     //
     // Neither brake relaxes the oracle freshness checks; they are additive.
@@ -959,8 +959,12 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
 
     /// @notice Change `asset`'s trading mode.
     /// @dev Permission matrix (`current` -> `mode`):
-    ///        owner          — any transition, including lifting a Halt.
-    ///        guardian       — strictly tighter only (mode > current).
+    ///        owner          — any transition, including entering or
+    ///                         lifting Halted.
+    ///        guardian       — Active -> ReduceOnly only. Halted also freezes
+    ///                         exits, so it is reserved to the owner; a
+    ///                         compromised guardian key cannot lock users'
+    ///                         funds in open positions.
     ///        marketOperator — only while neither side is Halted, i.e.
     ///                         Active <-> ReduceOnly (idempotent sets allowed),
     ///                         and never loosening an asset the guardian has
@@ -2181,9 +2185,8 @@ library ExchangeOpsLib {
 
     // ── asset mode ───────────────────────────────────────────────────────────
 
-    /// @dev Permission matrix (`current` -> `mode`) — this is the
-    ///      authoritative version; it supersedes the guardian line in
-    ///      `PerpetualExchange.setAssetMode`'s NatSpec:
+    /// @dev Permission matrix (`current` -> `mode`), enforced here and
+    ///      mirrored in `PerpetualExchange.setAssetMode`'s NatSpec:
     ///        owner          — any transition, including entering or lifting
     ///                         Halted.
     ///        guardian       — strictly tighter AND at most ReduceOnly, i.e.
