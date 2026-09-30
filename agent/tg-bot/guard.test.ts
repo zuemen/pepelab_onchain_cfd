@@ -1,7 +1,7 @@
 // tg-bot 存取控制（白名單 / 二次確認 / 頻率限制）離線測試。
 //   cd agent && npx tsx tg-bot/guard.test.ts
 import assert from "node:assert";
-import { parseIdList, isAuthorized, ConfirmationStore, RateLimiter } from "./guard.ts";
+import { parseIdList, isAuthorized, ConfirmationStore, RateLimiter, classifyVcForBot } from "./guard.ts";
 
 // ── 白名單：chat 與 from.id 都要命中 ─────────────────────────────────────────
 {
@@ -59,6 +59,18 @@ import { parseIdList, isAuthorized, ConfirmationStore, RateLimiter } from "./gua
   t = 10_000;
   assert.equal(rl.hit("u").allowed, true, "視窗過後重置");
   console.log("✓ 每人頻率限制");
+}
+
+// ── VC 狀態：過期不致命（拒單＋提示），其他錯誤致命 ──────────────────────────
+{
+  assert.equal(classifyVcForBot({ valid: true, sessionId: 6 }, 6).status, "ok");
+  const exp = classifyVcForBot({ valid: false, reasonCode: "VC_EXPIRED", reason: "credential expired" }, 6);
+  assert.equal(exp.status, "expired");
+  assert.match((exp as any).message, /重新簽發/);
+  assert.equal(classifyVcForBot({ valid: false, reasonCode: "LEGACY_VC_SUNSET" }, 6).status, "expired");
+  assert.equal(classifyVcForBot({ valid: false, reasonCode: "VC_BAD_SIGNATURE", reason: "sig" }, 6).status, "fatal");
+  assert.equal(classifyVcForBot({ valid: true, sessionId: 7 }, 6).status, "fatal", "session 不符仍致命");
+  console.log("✓ VC 過期 → 拒單並提示重新簽發（不 exit）；簽章錯誤 / session 不符 → 致命");
 }
 
 console.log("\n✅ tg-bot guard.test.ts 全過");

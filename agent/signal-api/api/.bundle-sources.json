@@ -1,5 +1,5 @@
 {
-  "digest": "216cc97393610ca1",
+  "digest": "172fb6ceff14b2c0",
   "files": {
     "agent/shared/src/abis.ts": "872c3136604d6584",
     "agent/shared/src/addresses.ts": "a6cb279048c58a4b",
@@ -10,7 +10,7 @@
     "agent/shared/src/fileLock.ts": "f729e1ec4bae7a7a",
     "agent/shared/src/format.ts": "13f79372bcf8e599",
     "agent/shared/src/freshness.ts": "359619f944230b0d",
-    "agent/shared/src/identity.ts": "6cfd9e5cce527e13",
+    "agent/shared/src/identity.ts": "62fafbd5a5dc030d",
     "agent/shared/src/index.ts": "e2fe2469dab08694",
     "agent/shared/src/payoutSafety.ts": "d0869fc6928709f5",
     "agent/shared/src/policyGate.ts": "0705445894dbd869",
@@ -32,6 +32,6 @@
     "agent/signal-api/src/symbols.ts": "d47aefadcf0a34a5",
     "agent/signal-api/src/vercel-entry.ts": "1efb6cf837c1969a",
     "frontend/src/contracts/addresses.ts": "b211382e394eb012",
-    "frontend/src/contracts/agentAuth.ts": "ecfa920dfd8534fa"
+    "frontend/src/contracts/agentAuth.ts": "af3e640e78a0e544"
   }
 }

@@ -78,6 +78,38 @@ export class ConfirmationStore<T> {
   }
 }
 
+/**
+ * VC 狀態分類（tg-bot 用）。過期類（VC_EXPIRED、LEGACY_VC_SUNSET）**不是**致命錯誤：
+ * bot 繼續上線，但拒絕下單並提示使用者重新簽發——不要因為憑證到期就讓整個 bot exit
+ * （之前 exit 後沒人會注意到，使用者只會看到 bot 沒回應）。簽章錯誤、session 不符
+ * 等設定錯誤仍是致命的。
+ */
+export type VcStatus =
+  | { status: "ok" }
+  | { status: "expired"; message: string }
+  | { status: "fatal"; message: string };
+
+export function classifyVcForBot(
+  v: { valid: boolean; reason?: string; reasonCode?: string; sessionId?: number },
+  expectedSessionId: number,
+): VcStatus {
+  if (!v.valid) {
+    if (v.reasonCode === "VC_EXPIRED" || v.reasonCode === "LEGACY_VC_SUNSET") {
+      return {
+        status: "expired",
+        message:
+          `授權 VC 已過期（${v.reasonCode}）。請到前端 /sessions 重新簽發，並更新 AGENT_AUTH_VC_PATH ` +
+          "指向的檔案；bot 會在下一次下單時自動重新讀取。",
+      };
+    }
+    return { status: "fatal", message: `VC 驗證失敗：${v.reason ?? v.reasonCode ?? "未知原因"}（請重新在前端簽發）` };
+  }
+  if (v.sessionId !== expectedSessionId) {
+    return { status: "fatal", message: `VC sessionId(${v.sessionId}) 與 DEMO_SESSION_ID(${expectedSessionId}) 不符` };
+  }
+  return { status: "ok" };
+}
+
 /** 每人固定視窗頻率限制。 */
 export class RateLimiter {
   private hits = new Map<string, { count: number; resetAt: number }>();

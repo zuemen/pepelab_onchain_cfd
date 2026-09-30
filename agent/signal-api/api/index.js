@@ -39409,7 +39409,8 @@ async function getTraderPerformance(c, trader) {
 }
 
 // ../../frontend/src/contracts/agentAuth.ts
-var DEFAULT_VC_VALIDITY_SEC = 7 * 24 * 3600;
+var DEFAULT_VC_VALIDITY_DAYS = 30;
+var DEFAULT_VC_VALIDITY_SEC = DEFAULT_VC_VALIDITY_DAYS * 24 * 3600;
 var V1_FIELDS = [
   { name: "issuer", type: "address" },
   { name: "agent", type: "address" },

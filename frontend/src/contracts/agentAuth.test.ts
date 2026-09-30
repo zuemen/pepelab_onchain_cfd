@@ -40,8 +40,12 @@ describe('agentAuth v2 issuance (SessionsPage path)', () => {
     expect(verifyTypedData(authDomainV2(MGR), AUTH_TYPES_V2, value, signature)).toBe(user.address)
   })
 
-  it('validUntil never exceeds the session expiry; nonces are unique', () => {
+  it('validUntil: default 30 days, configurable, never exceeds the session expiry; nonces are unique', () => {
+    expect(DEFAULT_VC_VALIDITY_SEC).toBe(30 * 86400)
     expect(defaultValidUntil(1000, 2000)).toBe(2000)
+    expect(defaultValidUntil(0, 10 ** 10)).toBe(30 * 86400)
+    expect(defaultValidUntil(0, 10 ** 10, 3 * 86400)).toBe(3 * 86400)
+    expect(defaultValidUntil(0, 10 ** 10, 0)).toBe(30 * 86400)
     expect(newAuthNonce()).not.toBe(newAuthNonce())
   })
 })

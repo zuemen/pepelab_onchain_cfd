@@ -95,7 +95,7 @@ export type TypedDataSigner = (
 export interface IssueOptions {
   /** Session manager address for the v2 domain. Default: SESSION_MANAGER_ADDRESS env. */
   verifyingContract?: string;
-  /** Credential expiry (unix s). Default: min(issuedAt + 7d, caps.expiry). */
+  /** Credential expiry (unix s). Default: min(issuedAt + 30d, caps.expiry). */
   validUntil?: number;
   /** bytes32 nonce. Default: fresh random. */
   nonce?: string;

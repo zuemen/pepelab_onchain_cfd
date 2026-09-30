@@ -38,7 +38,8 @@ export const AUTH_VC_VERSION_LEGACY = 1
 export const LEGACY_VC_SUNSET_ISO = '2026-12-31T23:59:59Z'
 
 /** Default credential validity for new VCs (capped at the session expiry). */
-export const DEFAULT_VC_VALIDITY_SEC = 7 * 24 * 3600
+export const DEFAULT_VC_VALIDITY_DAYS = 30
+export const DEFAULT_VC_VALIDITY_SEC = DEFAULT_VC_VALIDITY_DAYS * 24 * 3600
 
 /** One EIP-712 field (matches ethers' TypedDataField / viem's typed-data field). */
 export interface TypedField {
@@ -144,9 +145,19 @@ export function newAuthNonce(): string {
   return '0x' + Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
 }
 
-/** Default validUntil: issuedAt + DEFAULT_VC_VALIDITY_SEC, never past the session expiry. */
-export const defaultValidUntil = (issuedAt: number, sessionExpiry: number): number =>
-  Math.min(issuedAt + DEFAULT_VC_VALIDITY_SEC, sessionExpiry)
+/**
+ * validUntil = issuedAt + validity (default 30 days), never past the session expiry.
+ * A non-positive / non-finite validity falls back to the default.
+ */
+export const defaultValidUntil = (
+  issuedAt: number,
+  sessionExpiry: number,
+  validitySec: number = DEFAULT_VC_VALIDITY_SEC,
+): number =>
+  Math.min(
+    issuedAt + (Number.isFinite(validitySec) && validitySec > 0 ? Math.floor(validitySec) : DEFAULT_VC_VALIDITY_SEC),
+    sessionExpiry,
+  )
 
 /**
  * Build the exact v1 (legacy) EIP-712 value tuple. Returned BigInt fields are what

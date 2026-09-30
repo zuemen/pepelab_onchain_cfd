@@ -39,7 +39,9 @@ const vc = await issue();
   assert.equal(vc.proof.eip712Domain?.verifyingContract, MGR);
   assert.match(vc.credentialSubject.nonce!, /^0x[0-9a-f]{64}$/);
   assert.ok(vc.credentialSubject.validUntil! <= caps.expiry);
-  assert.equal(vc.credentialSubject.validUntil, NOW + 7 * 86400, "預設有效期 7 天（不超過 session 到期）");
+  assert.equal(vc.credentialSubject.validUntil, NOW + 30 * 86400, "預設有效期 30 天");
+  const short = await issue({ caps: { ...caps, expiry: NOW + 10 * 86400 } });
+  assert.equal(short.credentialSubject.validUntil, NOW + 10 * 86400, "不超過 session 到期");
   const r = verifyAuthorizationVC(vc, { expectedVerifyingContract: MGR });
   assert.equal(r.valid, true, r.reason);
   assert.equal(r.version, 2);
@@ -114,7 +116,7 @@ const vc = await issue();
   const again = checkAndRecordVcNonce(verifyAuthorizationVC(older), { statePath: sp2 });
   assert.equal(again.reasonCode, "VC_SUPERSEDED");
   // 過期紀錄會被清掉
-  checkAndRecordVcNonce(verifyAuthorizationVC(newer), { statePath: sp2, now: (NOW + 8 * 86400) * 1000 });
+  checkAndRecordVcNonce(verifyAuthorizationVC(newer), { statePath: sp2, now: (NOW + 31 * 86400) * 1000 });
   const left = Object.keys(JSON.parse(fs.readFileSync(sp2, "utf8")).nonces);
   assert.deepEqual(left, [newer.credentialSubject.nonce!.toLowerCase()], "validUntil 過後的紀錄（older）被清除，只剩本次寫入的");
   // 狀態檔壞掉 → fail-closed

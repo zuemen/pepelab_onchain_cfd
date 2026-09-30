@@ -175,6 +175,21 @@ npm run demo-agent            # 終端機 2：付 x402 讀訊號 → 經 session
 maxLeverage / expiry** 限額內開倉 → 印出 **tx hash 與 positionId**。任一前置缺失
 （無 key / 無 session 位址 / 無 sessionId）即優雅退化成只讀，印「本來會下的單」、不 crash。
 
+## 部署順序：先 agent，再前端（授權 VC v2）
+
+前端 `/sessions` 從 2026-09-30 起簽發 **v2** 授權 VC（EIP-712 domain 綁 session manager 位址，
+另簽入 `validUntil` 與 `nonce`；預設效期 30 天、不超過 session 到期，可在頁面調整）。
+**舊版 agent 只認 v1，驗不過 v2**，所以升級時一定要：
+
+1. **先部署 agent**（MCP server、tg-bot、x402 agent、signal-api）——新版同時接受 v2 與 v1；
+   v1 會輸出 `LEGACY_VC_V1` 警告，**2026-12-31T23:59:59Z 之後拒收**。
+2. **再部署前端**，讓使用者開始簽發 v2。
+3. 使用者重新簽發 VC、更新 `AGENT_AUTH_VC_PATH` 指向的檔案。某個 session 一旦用過 v2，
+   agent 就不再接受該 session 的 v1。
+
+VC 過期時：MCP / x402 agent 拒絕下單（`VC_EXPIRED`）；tg-bot 不會退出，而是拒單並提示重新簽發，
+換上新檔案後下一次下單會自動重新讀取。
+
 ## 公開部署到 Vercel（agent-native commerce）
 
 把付費 API 公開上線，讓**任何外部 agent/CLI 帶自己的錢包付費購買**（端點即商品）。
