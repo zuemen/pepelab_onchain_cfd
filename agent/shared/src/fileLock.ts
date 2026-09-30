@@ -81,6 +81,13 @@ function tryReclaim(lockPath: string, staleMs: number): void {
   }
 }
 
+/**
+ * Windows 上建立／刪除檔案時常見的暫時性錯誤（複審 Medium-2）：鎖檔正被另一個 process
+ * 刪除（delete-pending）時 openSync 會丟 EPERM，防毒或索引程式短暫持有時會丟 EACCES／
+ * EBUSY。這些不是「沒權限」，是「等一下就好」—— 視同 EEXIST 退避重試，直到逾時。
+ */
+export const TRANSIENT_LOCK_ERRORS = new Set(["EPERM", "EACCES", "EBUSY"]);
+
 export interface LockOptions {
   timeoutMs?: number;
   staleMs?: number;
@@ -95,6 +102,7 @@ export function withFileLockSync<T>(target: string, fn: () => T, opts: LockOptio
   const lockPath = `${target}.lock`;
   const token = randomBytes(8).toString("hex");
   const deadline = Date.now() + timeoutMs;
+  let attempt = 0;
   for (;;) {
     try {
       const fd = fs.openSync(lockPath, "wx");
@@ -111,10 +119,15 @@ export function withFileLockSync<T>(target: string, fn: () => T, opts: LockOptio
         fs.mkdirSync(path.dirname(lockPath), { recursive: true });
         continue;
       }
-      if (code !== "EEXIST") throw e;
-      tryReclaim(lockPath, staleMs);
+      if (code === "EEXIST") {
+        tryReclaim(lockPath, staleMs);
+      } else if (!TRANSIENT_LOCK_ERRORS.has(String(code))) {
+        throw e;
+      }
+      // EEXIST（別人持有）或 Windows 的暫時性錯誤：退避重試直到逾時。
       if (Date.now() > deadline) throw new LockTimeoutError(target);
-      sleepMs(retryMs + Math.floor(Math.random() * retryMs));
+      const backoff = Math.min(retryMs * 2 ** Math.min(attempt++, 4), 50);
+      sleepMs(backoff + Math.floor(Math.random() * retryMs));
     }
   }
   try {

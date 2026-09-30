@@ -29,7 +29,8 @@ export type NonceReason =
   | "NONCE_REPLAYED"
   | "VC_SUPERSEDED"
   | "LEGACY_AFTER_V2"
-  | "NONCE_STORE_UNREADABLE";
+  | "NONCE_STORE_UNREADABLE"
+  | "NONCE_STORE_LOCK_FAILED";
 
 interface NonceEntry {
   digest: string;
@@ -104,13 +105,15 @@ export interface NonceCheck {
  */
 export function checkAndRecordVcNonce(
   res: VerifyResult,
-  opts: { statePath?: string; now?: number } = {},
+  opts: { statePath?: string; now?: number; lockTimeoutMs?: number } = {},
 ): NonceCheck {
   const file = opts.statePath ?? defaultNonceStatePath();
+  // 鎖的任何錯誤（逾時、Windows EPERM 重試到逾時、其他 I/O）統一回 NONCE_STORE_LOCK_FAILED；
+  // 由呼叫端決定：開倉拒絕、平倉降級（見 write.ts）。
   try {
-    return withFileLockSync(file, () => checkLocked(res, file, opts.now));
+    return withFileLockSync(file, () => checkLocked(res, file, opts.now), { timeoutMs: opts.lockTimeoutMs });
   } catch {
-    return { ok: false, reasonCode: "NONCE_STORE_UNREADABLE", message: "VC nonce 狀態檔鎖取得失敗（fail-closed）" };
+    return { ok: false, reasonCode: "NONCE_STORE_LOCK_FAILED", message: "VC nonce 狀態檔鎖取得失敗" };
   }
 }
 

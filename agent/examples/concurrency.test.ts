@@ -77,5 +77,65 @@ ok(`並發記錄 VC nonce ${total} 筆，無遺失`);
   ok("過期鎖回收（pid 不存在 / 超過 staleMs）；有效鎖 → LockTimeoutError");
 }
 
+// Windows 暫時性錯誤：openSync 丟 EPERM / EACCES / EBUSY → 退避重試直到逾時（複審 Medium-2）
+{
+  const { enforcePolicyGate, checkAndRecordVcNonce } = await import("@pepelab/shared");
+  const origOpen = fs.openSync;
+  let failures = 0;
+  let failCode = "EPERM";
+  const patch = (pred: (p: string) => boolean) => {
+    (fs as any).openSync = (p: fs.PathLike, ...rest: any[]) => {
+      if (String(p).endsWith(".lock") && pred(String(p)) && failures !== 0) {
+        if (failures > 0) failures--;
+        throw Object.assign(new Error(`${failCode}: operation not permitted`), { code: failCode });
+      }
+      return (origOpen as any)(p, ...rest);
+    };
+  };
+  try {
+    const target = path.join(TMP, "w.json");
+    patch(() => true);
+    for (const code of ["EPERM", "EACCES", "EBUSY"]) {
+      failCode = code;
+      failures = 3;
+      assert.equal(withFileLockSync(target, () => 7), 7, `${code} 3 次後成功取鎖`);
+    }
+    failCode = "EPERM";
+    failures = -1; // 永遠失敗
+    assert.throws(() => withFileLockSync(target, () => 0, { timeoutMs: 150 }), LockTimeoutError);
+    failCode = "EIO";
+    assert.throws(() => withFileLockSync(target, () => 0, { timeoutMs: 150 }), /EIO/, "非暫時性錯誤不重試");
+
+    // policy gate：鎖失敗 → 開倉拒絕、平倉降級放行
+    const sp = path.join(TMP, "eperm-state.json");
+    const ap = path.join(TMP, "eperm-audit.jsonl");
+    patch((p) => p.startsWith(sp));
+    failCode = "EPERM";
+    failures = -1;
+    const base = { sessionId: 1, agent: "0x" + "ab".repeat(20) };
+    const o = await enforcePolicyGate({ ...base, action: "open", symbol: "sBTC", isLong: true, marginUsdc: 1, leverage: 2 }, { statePath: sp, auditPath: ap, lockTimeoutMs: 150 });
+    assert.deepEqual([o.allowed, o.reasonCode], [false, "STATE_LOCK_TIMEOUT"]);
+    const origErr = console.error;
+    console.error = () => {};
+    const c = await enforcePolicyGate({ ...base, action: "close", positionId: 3 }, { statePath: sp, auditPath: ap, lockTimeoutMs: 150 });
+    console.error = origErr;
+    assert.deepEqual([c.allowed, c.reasonCode, c.degraded], [true, "OK_DEGRADED", ["STATE_LOCK_TIMEOUT"]]);
+    failCode = "EIO";
+    const o2 = await enforcePolicyGate({ ...base, action: "open", symbol: "sBTC", isLong: true, marginUsdc: 1, leverage: 2 }, { statePath: sp, auditPath: ap, lockTimeoutMs: 150 });
+    assert.deepEqual([o2.allowed, o2.reasonCode], [false, "STATE_LOCK_FAILED"]);
+
+    // vcNonce：鎖失敗 → NONCE_STORE_LOCK_FAILED（呼叫端決定開倉拒絕、平倉降級）
+    const np = path.join(TMP, "eperm-nonce.json");
+    patch((p) => p.startsWith(np));
+    failCode = "EPERM";
+    failures = -1;
+    const r = checkAndRecordVcNonce({ valid: true, version: 2, nonce: "0x" + "11".repeat(32), digest: "0x01", issuer: base.agent, sessionId: 1, issuedAt: 1, validUntil: 2 ** 31 }, { statePath: np, lockTimeoutMs: 150 });
+    assert.equal(r.reasonCode, "NONCE_STORE_LOCK_FAILED");
+  } finally {
+    (fs as any).openSync = origOpen;
+  }
+  ok("EPERM/EACCES/EBUSY 視為暫時性、退避重試到逾時；policy gate 鎖失敗 → 開倉拒絕、平倉降級；vcNonce → NONCE_STORE_LOCK_FAILED");
+}
+
 fs.rmSync(TMP, { recursive: true, force: true });
 console.log(`\n✅ concurrency.test.ts 全過（${n} 組）`);

@@ -51,6 +51,7 @@ export type PolicyReasonCode =
   | "RATE_LIMITED"
   | "CLOSE_RATE_LIMITED"
   | "STATE_LOCK_TIMEOUT"
+  | "STATE_LOCK_FAILED"
   | "OK_DEGRADED";
 
 export interface PolicyConfig {
@@ -430,7 +431,13 @@ export interface GateResult extends PolicyDecision {
  */
 export async function enforcePolicyGate(
   req: PolicyRequest,
-  opts: { statePath?: string; auditPath?: string; now?: () => number; env?: NodeJS.ProcessEnv } = {},
+  opts: {
+    statePath?: string;
+    auditPath?: string;
+    now?: () => number;
+    env?: NodeJS.ProcessEnv;
+    lockTimeoutMs?: number;
+  } = {},
 ): Promise<GateResult> {
   const statePath = opts.statePath ?? defaultStatePath();
   const auditPath = opts.auditPath ?? defaultPolicyAuditPath();
@@ -473,15 +480,15 @@ export async function enforcePolicyGate(
   };
 
   // process 內：promise 串行；process 間：statePath 的檔案鎖（fileLock.ts）。
+  // 鎖的任何錯誤（逾時、Windows 的 EPERM 重試到逾時、其他 I/O 錯誤）統一處理：
+  // 開倉拒絕（fail-closed）；平倉降級放行。
   return serialized((): GateResult => {
     try {
-      return withFileLockSync(statePath, () => gateLocked());
+      return withFileLockSync(statePath, () => gateLocked(), { timeoutMs: opts.lockTimeoutMs });
     } catch (err) {
-      if (err instanceof LockTimeoutError) {
-        if (isClose) return degradedClose(["STATE_LOCK_TIMEOUT"], now());
-        return { ...deny("STATE_LOCK_TIMEOUT", "取得 policy 狀態檔鎖逾時（fail-closed）"), release: noop };
-      }
-      throw err;
+      const code = err instanceof LockTimeoutError ? "STATE_LOCK_TIMEOUT" : "STATE_LOCK_FAILED";
+      if (isClose) return degradedClose([code], now());
+      return { ...deny(code, "取得 policy 狀態檔鎖失敗（fail-closed）"), release: noop };
     }
   });
 
