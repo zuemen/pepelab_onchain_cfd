@@ -6,7 +6,7 @@
 > **落地狀態（2026-06-14，已部署 Base Sepolia 84532）**
 > - **P0 ✅**：G1 多源聚合預言機、G2 RWA+KYC、G3 MCP write、G4 x402 付費下單、G6 mark-price。
 > - **G5（P1）→ Phase 2 ✅**：做市金庫（交易費分潤入 InsuranceVault）+ N2 ADL + N3 逐標的風險參數。
-> - **Phase 3 ✅**：pro 交易終端、組合保證金（cross-margin 清算 gate）、一鍵 e2e demo。
+> - **Phase 3 ✅**：pro 交易終端、組合保證金（cross-margin 清算 gate；2026-09-30 已移除，見 KNOWN_LIMITATIONS #26）、一鍵 e2e demo。
 > - **Phase 4 ✅**：全套部署到 Base Sepolia、x402 同鏈結算（跨鏈 caveat 解除）、生產級預言機展示、keeper。
 > - 合約測試全綠，數量以 **Contracts CI**（`.github/workflows/contracts-ci.yml`）
 >   的最新 run 為準；位址見 `docs/CAPSTONE_DELIVERABLES.md`。

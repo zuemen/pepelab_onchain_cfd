@@ -152,7 +152,8 @@ npm test
   refunding the owner — intentional simplification for the prototype.
 - `MockUSDC.mint` is unrestricted (test convenience); the faucet
   (1,000 mUSDC / 24h) is the intended user path.
-- ADL and portfolio margin are opt-in flags, off by default.
+- ADL is an opt-in flag, off by default. Margin is isolated only: portfolio
+  (cross) margin was removed on 2026-09-30 (see docs/KNOWN_LIMITATIONS.md #26).
 
 ## Stack
 

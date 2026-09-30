@@ -86,7 +86,7 @@ session 的單筆保證金 / 總預算 / 槓桿 / 到期 / 撤銷皆由 `AgentSe
 ## 7. 合約償付 / 預言機 / 資金費 現況（對應 docs/RISK_NOTES.md）
 
 - **ADL 已於 live 開啟**（owner tx `setAdlEnabled(true)`）：償付三層（輸家保證金 →
-  InsuranceVault → ADL haircut）全部生效。`portfolioMarginEnabled` 仍 off、
+  InsuranceVault → ADL haircut）全部生效。組合保證金已自合約移除（2026-09-30，只有逐倉）、
   `markPremiumCapBps=0`（mark==index）。
 - **資金費守恆**：正式版（新部署）已改 per-side 雙索引、多空間等額轉移；live demo
   交易所仍舊版單索引。詳見 RISK_NOTES。

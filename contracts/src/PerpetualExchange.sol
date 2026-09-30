@@ -1993,8 +1993,9 @@ contract PerpetualExchange is Ownable, ReentrancyGuard {
     ///   if short:   pnl = -pnl
     function _calcPnL(Position storage pos) internal view returns (int256) {
         (uint256 rawPrice,) = oracle.getPrice(pos.asset);
-        // M8: never value a position at a zero price — fail closed, in views
-        // and in portfolio-health checks alike (see `_requireFresh`).
+        // M8: never value a position at a zero price — fail closed (the
+        // settlement paths check first in `_requireFresh`; the views guard
+        // before calling in and return conservative values instead).
         if (rawPrice == 0) revert InvalidPrice(pos.asset);
         // Value PnL (and therefore liquidation) on the mark price, not the raw
         // index, so OI imbalance is reflected the way a real perp does.

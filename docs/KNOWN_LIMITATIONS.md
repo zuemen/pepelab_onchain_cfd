@@ -33,6 +33,7 @@ was not, the reason is given rather than glossed over.
 | 23 | Global pause blocks exits and liquidations | **By design** — deposits stay open; funding/borrow frozen; grace period after |
 | 24 | Portfolio margin has no account-level net liquidation | **Open** — `portfolioMarginEnabled` must stay **off** in production until implemented and audited (off on the live deployment) |
 | 25 | InsuranceVault has no virtual shares (first-depositor inflation) | **Mitigated** — zero-share deposits revert; attack profitability not removed |
+| 26 | Portfolio (cross) margin removed | **Resolved by removal** (2026-09-30) — supersedes #24; isolated margin only |
 
 ---
 
@@ -774,6 +775,9 @@ for withdrawals, opens and liquidations.
 netting (settling the whole account against its combined equity) is
 implemented and audited. It is off on the live deployment.
 
+**Update (2026-09-30):** superseded by #26 — portfolio margin has been
+removed from the contract altogether.
+
 ## 25. InsuranceVault has no virtual shares
 
 The vault mints `shares = amount × supply / totalAssets` with no virtual
@@ -784,6 +788,23 @@ round down. Since 2026-09-29 a deposit that would mint **0 shares reverts**
 deposit that rounds to a *small* number of shares still loses the rounding
 remainder to existing holders. Virtual shares (ERC-4626-style offset) would
 remove the attack's profitability and are the intended follow-up.
+
+## 26. Portfolio (cross) margin removed
+
+Portfolio margin was **removed from `PerpetualExchange` on 2026-09-30**, for
+two reasons: the contract had grown to 28,054 B of runtime code, over the
+EIP-170 limit of 24,576 B, so it could not be deployed; and the H3 gap (#24)
+could not be closed without account-level net liquidation. The mode was never
+enabled on-chain and neither the frontend nor the agent used it.
+
+Every position is now isolated: it is liquidated on its own maintenance
+requirement, can lose at most its own margin, and free margin or other
+positions neither shield it nor pay for it. `portfolioMarginEnabled`,
+`setPortfolioMarginEnabled` and `getAccountHealth` no longer exist.
+
+The last implementation (with the guards described in #24) can be recovered
+from git history at commit `d4b7b9e`. Re-introducing it requires
+account-level netting and a fresh audit, and must fit the size budget.
 
 ## Frontend
 
