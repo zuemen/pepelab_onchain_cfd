@@ -10,7 +10,7 @@
 | 版本 | 位置 | 狀態 |
 |---|---|---|
 | **現行部署版** | Base Sepolia exchange `0x827eA0c62a32e995927101259042F8A27D99124D`（由 `contracts/script/Redeploy129Exchange.s.sol` 部署）。「現行部署＝`master` 原始碼」**只適用於 exchange**；其他合約（例如 MockUSDC、InsuranceVault）的已部署版本可能比 `master` 舊 | 已上線 |
-| **原始碼版** | PR #191（分支 `contracts/p1-core-fixes`） | **僅原始碼**：未合併、未部署，需要使用者執行 cutover |
+| **原始碼版** | PR #191（已合併到 master） | **僅原始碼**：未部署，需要使用者執行 cutover |
 
 現行部署的相關參數（2026-09-30 鏈上讀取或部署腳本設定）：
 
@@ -103,7 +103,7 @@
 
 **已知取捨**：全域暫停期間，提領、平倉與清算都會被擋下。暫停權限的治理（持有者、期限與濫用防護）：
 原始碼版已有部分限制，治理設計未完成（待 cutover 時由客戶決定 guardian 人選）。
-PR #191 將新增對應的已知限制，合併後見 [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md)。
+對應的已知限制見 [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md)（#21–#26）。
 
 ## 4. 營運方可用的補救手段
 

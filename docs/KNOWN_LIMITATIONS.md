@@ -4,13 +4,14 @@ Written for the project report. Every item here was verified against the code on
 2026-07-27, not assumed. Where something was fixed, the fix is named; where it
 was not, the reason is given rather than glossed over.
 
-> **Status as of 2026-09-30 (`master` 37850c1):** 20 items. #1–#13 were verified
-> on 2026-07-27; #14–#20 (x402 layer) were added on 2026-09-17. PR #191 (open,
-> source only, not deployed) will add further known limitations. The status column below was not
-> re-verified item by item on 2026-09-30. Current numbers: 776 Foundry
-> test/invariant functions in `contracts/test` on `master` (944 on the PR #191
-> branch at `18c684d`; the PR is still changing), counted from source — whether all pass is whatever the latest
-> Contracts CI run says. Current deployment and what is live vs. source-only:
+> **Status as of 2026-09-30:** #1–#13 were verified on 2026-07-27; #14–#20 (x402
+> layer) were added on 2026-09-17; #21–#26 (exchange guardian/pause, caps, slash
+> reserve, portfolio-margin removal) came with PR #191, which is merged as
+> **source only, not deployed**. The status column below was not re-verified item
+> by item on 2026-09-30. Current numbers: 920 Foundry tests on `master` after
+> PR #191 (portfolio-margin-only tests were removed with the feature) — whether all
+> pass is whatever the latest Contracts CI run says. Current deployment and what is
+> live vs. source-only:
 > [`README.md`](../README.md).
 
 ## Status at a glance
