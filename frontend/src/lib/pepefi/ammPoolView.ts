@@ -18,7 +18,7 @@
 //   3. 讀失敗 → 「無法取得」；合約沒有該函式 → 不顯示該欄、改顯示說明。
 //   4. 價格衝擊的基準跟著合約實際定價方式走（v2 以 oracle 價為基準）。
 
-import { scanPush4Selectors } from './legacyExchange'
+import { scanPush4Selectors } from './selectorScan'
 
 /**
  * 要探測的 4-byte selector。測試會以 ethers 的 `id()` 逐一重算核對，並確認
