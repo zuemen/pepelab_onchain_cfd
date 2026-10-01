@@ -359,9 +359,11 @@ ok("單筆保證金上限：>100 拒絕、=100 放行、負數/NaN → MARGIN_IN
     });
   }
   // 預設退避：每次呼叫最多睡 1+2+3+4 = 10ms（持鎖期間最差 7 次 I/O ≈ 70ms ≤ 100ms）
-  const t0 = performance.now();
-  onPlatform("win32", () => void callsFor("EPERM"));
-  assert.ok(performance.now() - t0 < 60, `預設退避過長：${performance.now() - t0}ms`);
+  // 驗證「要求睡多久」而不是量牆上時間：機器忙的時候 10ms 的睡眠會被拉長，量時間會隨機失敗。
+  const slept: number[] = [];
+  assert.throws(() => retryTransientSync(() => { throw errno("EPERM"); }, { sleep: (ms) => slept.push(ms) }), (e: any) => e.code === "EPERM");
+  assert.deepEqual(slept, [1, 2, 3, 4], "預設退避 1、2、3、4ms");
+  assert.equal(slept.reduce((a, b) => a + b, 0), 10);
   ok("#212：狀態檔讀寫遇 EPERM/EBUSY（Windows 另含 EACCES）退避重試（上限 5 次、單次呼叫 ≤ 10ms 睡眠）；其他錯誤立即失敗");
 }
 

@@ -96,6 +96,8 @@ export interface TransientRetryOptions {
   attempts?: number;
   /** 退避基準（ms），第 i 次重試前睡 baseMs × i（線性）。預設 1（1、2、3、4 ms）。 */
   baseMs?: number;
+  /** 測試用：取代實際的同步睡眠，讓測試驗證「要求睡多久」而不是量牆上時間。 */
+  sleep?: (ms: number) => void;
 }
 
 /** 這個平台上哪些錯誤碼算「等一下就好」（retryTransientSync 用）。 */
@@ -125,7 +127,7 @@ export function retryTransientSync<T>(fn: () => T, opts: TransientRetryOptions =
     } catch (e) {
       const code = String((e as NodeJS.ErrnoException)?.code);
       if (!isTransientIoError(code) || i >= attempts) throw e;
-      sleepMs(baseMs * i);
+      (opts.sleep ?? sleepMs)(baseMs * i);
     }
   }
 }

@@ -1,5 +1,5 @@
 {
-  "digest": "ed9776363e156457",
+  "digest": "b7381dc7bf40fe22",
   "files": {
     "agent/shared/src/abis.ts": "872c3136604d6584",
     "agent/shared/src/addresses.ts": "a6cb279048c58a4b",
@@ -7,7 +7,7 @@
     "agent/shared/src/apiResponse.ts": "99ce63d982e3c064",
     "agent/shared/src/audit.ts": "9ce1b7e8dfb8f490",
     "agent/shared/src/env.ts": "358f45d49449fa52",
-    "agent/shared/src/fileLock.ts": "990dd25f6fdedaf3",
+    "agent/shared/src/fileLock.ts": "6d87ada57322849c",
     "agent/shared/src/format.ts": "13f79372bcf8e599",
     "agent/shared/src/freshness.ts": "359619f944230b0d",
     "agent/shared/src/identity.ts": "62fafbd5a5dc030d",
