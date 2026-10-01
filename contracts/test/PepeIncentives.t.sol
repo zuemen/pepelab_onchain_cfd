@@ -190,10 +190,20 @@ contract PepeIncentivesTest is Test {
 
     // ── A4. Daily Check-in ────────────────────────────────────────────────────
 
+    // Issues #101 / #169: a check-in credits non-transferable achievement
+    // points kept in the contract. It no longer transfers PEPE.
+
+    event DailyCheckIn(address indexed user, uint256 day, uint8 streak, uint256 points);
+
+    /// @dev The timestamp setUp warps to. A constant, so later warps cannot move
+    ///      it (with via_ir a cached `block.timestamp` is re-read at each use).
+    uint256 constant DAY0 = 365 days;
+
     function test_dailyCheckIn_happy() public {
         vm.prank(alice);
         incentives.dailyCheckIn();
-        assertEq(pepe.balanceOf(alice), 50e18);
+        assertEq(incentives.achievementPoints(alice), 50e18);
+        assertEq(pepe.balanceOf(alice), 0);
         assertEq(incentives.streak(alice), 1);
     }
 
@@ -201,11 +211,218 @@ contract PepeIncentivesTest is Test {
         vm.prank(alice);
         incentives.dailyCheckIn();
         // Advance 1 day
-        vm.warp(block.timestamp + 1 days);
+        vm.warp(DAY0 + 1 days);
         vm.prank(alice);
         incentives.dailyCheckIn();
         assertEq(incentives.streak(alice), 2);
-        assertEq(pepe.balanceOf(alice), 50e18 + 60e18); // 50 + (50+10)
+        assertEq(incentives.achievementPoints(alice), 50e18 + 60e18); // 50 + (50+10)
+        assertEq(pepe.balanceOf(alice), 0);
+    }
+
+    /// @dev The point of #169: not one PEPE leaves the contract on a check-in.
+    function test_dailyCheckIn_movesNoPepe() public {
+        uint256 pool = pepe.balanceOf(address(incentives));
+        for (uint256 d; d < 10; d++) {
+            vm.warp(DAY0 + d * 1 days);
+            vm.prank(alice);
+            incentives.dailyCheckIn();
+            vm.prank(bob);
+            incentives.dailyCheckIn();
+        }
+        assertEq(pepe.balanceOf(address(incentives)), pool);
+        assertEq(pepe.balanceOf(alice), 0);
+        assertEq(pepe.balanceOf(bob), 0);
+    }
+
+    /// @dev Points do not come out of the reward pool, so an empty pool does
+    ///      not stop a check-in (it used to revert InsufficientPool).
+    function test_dailyCheckIn_worksWithAnEmptyPool() public {
+        incentives.withdraw(pepe.balanceOf(address(incentives)));
+        assertEq(pepe.balanceOf(address(incentives)), 0);
+        vm.prank(alice);
+        incentives.dailyCheckIn();
+        assertEq(incentives.achievementPoints(alice), 50e18);
+    }
+
+    function test_dailyCheckIn_emitsThePointsCredited() public {
+        vm.expectEmit(true, false, false, true, address(incentives));
+        emit DailyCheckIn(alice, DAY0 / 1 days, 1, 50e18);
+        vm.prank(alice);
+        incentives.dailyCheckIn();
+
+        vm.warp(DAY0 + 1 days);
+        vm.expectEmit(true, false, false, true, address(incentives));
+        emit DailyCheckIn(alice, DAY0 / 1 days + 1, 2, 60e18);
+        vm.prank(alice);
+        incentives.dailyCheckIn();
+    }
+
+    /// @dev 50, +10 per consecutive day, capped at a 7-day streak (110).
+    function test_dailyCheckIn_curveCapsAtSevenDays() public {
+        uint256 expected;
+        for (uint256 d; d < 10; d++) {
+            vm.warp(DAY0 + d * 1 days);
+            vm.prank(alice);
+            incentives.dailyCheckIn();
+            uint256 s = d + 1 > 7 ? 7 : d + 1;
+            expected += 50e18 + 10e18 * (s - 1);
+            assertEq(incentives.streak(alice), s);
+            assertEq(incentives.achievementPoints(alice), expected);
+        }
+        // 50+60+70+80+90+100+110 + 3 x 110
+        assertEq(expected, 890e18);
+    }
+
+    function test_points_arePerAccountAndSumToTheTotal() public {
+        vm.prank(alice);
+        incentives.dailyCheckIn();
+        assertEq(incentives.achievementPoints(bob), 0);
+        vm.prank(bob);
+        incentives.dailyCheckIn();
+        vm.warp(DAY0 + 1 days);
+        vm.prank(alice);
+        incentives.dailyCheckIn();
+        assertEq(incentives.achievementPoints(alice), 110e18);
+        assertEq(incentives.achievementPoints(bob), 50e18);
+        assertEq(incentives.totalAchievementPoints(), 160e18);
+    }
+
+    /// @dev Non-transferable by construction: the contract exposes nothing that
+    ///      moves, approves, spends or burns points. Every ERC-20-shaped call
+    ///      fails, and the balances are untouched afterwards.
+    function test_points_cannotBeMovedBurnedOrApproved() public {
+        vm.prank(alice);
+        incentives.dailyCheckIn();
+
+        bytes[] memory calls = new bytes[](8);
+        calls[0] = abi.encodeWithSignature("transfer(address,uint256)", bob, 1e18);
+        calls[1] = abi.encodeWithSignature("transferFrom(address,address,uint256)", alice, bob, 1e18);
+        calls[2] = abi.encodeWithSignature("approve(address,uint256)", bob, 1e18);
+        calls[3] = abi.encodeWithSignature("burn(uint256)", 1e18);
+        calls[4] = abi.encodeWithSignature("burn(address,uint256)", alice, 1e18);
+        calls[5] = abi.encodeWithSignature("mint(address,uint256)", bob, 1e18);
+        calls[6] = abi.encodeWithSignature("transferPoints(address,uint256)", bob, 1e18);
+        calls[7] = abi.encodeWithSignature("spendPoints(uint256)", 1e18);
+
+        address[2] memory callers = [alice, address(this)];   // the holder, and the owner
+        for (uint256 c; c < 2; c++) {
+            for (uint256 i; i < calls.length; i++) {
+                vm.prank(callers[c]);
+                (bool ok, ) = address(incentives).call(calls[i]);
+                assertFalse(ok);
+            }
+        }
+        assertEq(incentives.achievementPoints(alice), 50e18);
+        assertEq(incentives.achievementPoints(bob), 0);
+        assertEq(incentives.totalAchievementPoints(), 50e18);
+    }
+
+    /// @dev The owner can drain the PEPE pool but has no handle on points.
+    function test_points_surviveAnOwnerWithdrawAndAPause() public {
+        vm.prank(alice);
+        incentives.dailyCheckIn();
+        incentives.withdraw(pepe.balanceOf(address(incentives)));
+        incentives.pause();
+        assertEq(incentives.achievementPoints(alice), 50e18);
+        assertEq(incentives.totalAchievementPoints(), 50e18);
+    }
+
+    function test_dailyCheckIn_revert_whenPaused() public {
+        incentives.pause();
+        vm.prank(alice);
+        vm.expectRevert();
+        incentives.dailyCheckIn();
+        assertEq(incentives.achievementPoints(alice), 0);
+
+        incentives.unpause();
+        vm.prank(alice);
+        incentives.dailyCheckIn();
+        assertEq(incentives.achievementPoints(alice), 50e18);
+    }
+
+    function test_dailyCheckIn_sameDayTwiceCreditsOnce() public {
+        vm.prank(alice);
+        incentives.dailyCheckIn();
+        vm.warp(DAY0 + 1 days - 1);                 // last second of the same UTC day
+        vm.prank(alice);
+        vm.expectRevert(PepeIncentives.AlreadyCheckedIn.selector);
+        incentives.dailyCheckIn();
+        assertEq(incentives.achievementPoints(alice), 50e18);
+    }
+
+    function test_setDailyParams_ownerOnlyAndCapAtLeastOne() public {
+        vm.prank(alice);
+        vm.expectRevert();
+        incentives.setDailyParams(1e18, 1e18, 3);
+
+        vm.expectRevert(PepeIncentives.InvalidDailyParams.selector);
+        incentives.setDailyParams(1e18, 1e18, 0);
+
+        incentives.setDailyParams(5e18, 1e18, 3);
+        for (uint256 d; d < 5; d++) {
+            vm.warp(DAY0 + d * 1 days);
+            vm.prank(alice);
+            incentives.dailyCheckIn();
+        }
+        // 5 + 6 + 7 + 7 + 7
+        assertEq(incentives.achievementPoints(alice), 32e18);
+        assertEq(incentives.streak(alice), 3);
+    }
+
+    /// @dev A cap of 255 used to overflow `streak + 1` in uint8 on day 256 and
+    ///      revert every check-in after it.
+    function test_dailyCheckIn_maxStreakCapDoesNotOverflow() public {
+        incentives.setDailyParams(1e18, 0, 255);
+        for (uint256 d; d < 260; d++) {
+            vm.warp(DAY0 + d * 1 days);
+            vm.prank(alice);
+            incentives.dailyCheckIn();
+        }
+        assertEq(incentives.streak(alice), 255);
+        assertEq(incentives.achievementPoints(alice), 260e18);
+    }
+
+    /// @dev Random gaps between check-ins against a plain model of the curve.
+    function testFuzz_dailyCheckIn_matchesTheCurve(uint256 seed) public {
+        uint256 day = DAY0 / 1 days;
+        uint256 lastDay;
+        uint256 s;
+        uint256 expected;
+        for (uint256 i; i < 40; i++) {
+            uint256 gap = uint256(keccak256(abi.encode(seed, i))) % 4;   // 0 = same day
+            day += gap;
+            vm.warp(day * 1 days + (uint256(keccak256(abi.encode(seed, i, "t"))) % 1 days));
+            vm.prank(alice);
+            if (i != 0 && gap == 0) {
+                vm.expectRevert(PepeIncentives.AlreadyCheckedIn.selector);
+                incentives.dailyCheckIn();
+                continue;
+            }
+            incentives.dailyCheckIn();
+            s = (i != 0 && day == lastDay + 1) ? (s + 1 > 7 ? 7 : s + 1) : 1;
+            lastDay = day;
+            expected += 50e18 + 10e18 * (s - 1);
+            assertEq(incentives.streak(alice), s);
+            assertEq(incentives.achievementPoints(alice), expected);
+        }
+        assertEq(incentives.totalAchievementPoints(), expected);
+        assertEq(pepe.balanceOf(alice), 0);
+    }
+
+    /// @dev The other reward paths are untouched by #169: they still pay PEPE
+    ///      and still need the pool.
+    function test_otherRewardPathsStillPayPepeFromThePool() public {
+        exch.set(900, alice, 1000e18, 5, BTC, block.timestamp);
+        vm.prank(alice);
+        incentives.claimTradeMining(900);
+        assertEq(pepe.balanceOf(alice), 25e18);
+        assertEq(incentives.achievementPoints(alice), 0);
+
+        incentives.withdraw(pepe.balanceOf(address(incentives)));
+        exch.set(901, alice, 1000e18, 5, BTC, block.timestamp);
+        vm.prank(alice);
+        vm.expectRevert(PepeIncentives.InsufficientPool.selector);
+        incentives.claimTradeMining(901);
     }
 
     function test_dailyCheckIn_revert_sameDayTwice() public {
@@ -224,6 +441,7 @@ contract PepeIncentivesTest is Test {
         vm.prank(alice);
         incentives.dailyCheckIn();
         assertEq(incentives.streak(alice), 1);
+        assertEq(incentives.achievementPoints(alice), 100e18);   // 50 + 50, no bonus
     }
 
     // ── A5. ESG Hold Reward ───────────────────────────────────────────────────

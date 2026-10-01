@@ -47,6 +47,7 @@ was not, the reason is given rather than glossed over.
 | 27 | Exchange guardian's per-asset brake stops at ReduceOnly; only the owner can Halt | **By design** (2026-09-30, `contracts/p1-cutover-periphery`) — the *exchange* guardian cannot freeze exits by asset mode. The GuardedOracle guardian's freeze and pause are **bounded in source** (2026-10-01, `contracts/oracle-freeze-expiry-checkin`: 72h expiry, 24h cooldown) but **not deployed**: the live oracle `0x8E9e…` still has no expiry (see §27 below) |
 | 28 | After the timelock handover, recovery actions wait 48h and depend on one Safe | **By design** — losing the Safe freezes governance permanently |
 | 29 | V2.5 unpriced exemption values a closed dead-feed asset at an arbitrarily old price | **Accepted** — closed assets only, never below its last recorded price, dust-only without one |
+| 30 | Daily check-in still transfers PEPE on the deployed PepeIncentives, against the #101 decision | **Fixed in source** (2026-10-01, issue #169) — check-ins credit non-transferable achievement points; **not deployed**, the live contract is unchanged |
 
 ---
 
@@ -976,6 +977,62 @@ blocked behind a 48h timelock proposal, was judged worse.
 Operational cost: while any exempted asset exists the ratio stays flagged
 stale, so **every** later breach recovery needs a manual `clearMintingHalt()`
 by RISK_ROLE — not just the first one.
+
+## 30. Daily check-in: points in source, PEPE on chain (added 2026-10-01)
+
+Issue #101 decided that the daily check-in should stop paying PEPE and credit
+non-transferable achievement points instead: anything transferable acquires a
+price, and anything with a price gets farmed. Only the wording changed at the
+time. Issue #169 recorded that `PepeIncentives.dailyCheckIn()` still called
+`pepe.safeTransfer`.
+
+Branch `contracts/oracle-freeze-expiry-checkin` changes the source:
+
+- `dailyCheckIn()` credits `achievementPoints[msg.sender]` (and
+  `totalAchievementPoints`) and transfers nothing. It no longer reads the PEPE
+  pool, so an empty pool does not stop a check-in.
+- Points are non-transferable by construction: the contract has no function
+  that moves, approves, spends, burns or owner-mints them. They only increase,
+  and only for the account that checked in.
+- Same curve and same scale as before: `dailyBase` 50e18, `dailyStreakBonus`
+  10e18 per consecutive day, capped at a 7-day streak (110e18). The
+  `DailyCheckIn` event keeps its signature; its last field is now the points
+  credited.
+- Two small hardenings in the same function: the streak is computed in
+  `uint256` (a cap of 255 used to overflow `uint8` and revert every later
+  check-in), and `setDailyParams` refuses a cap of 0.
+- The other reward paths (`claimTradeMining`, `claimTierReward`,
+  `claimCopyReward`, `claimEsgHoldReward`) are **unchanged and still pay
+  PEPE**. #101 decided only the check-in.
+
+**Not deployed.** `PepeIncentives` is not upgradeable (no proxy, immutable
+`pepe` / `exchange` / `copyTracker`), so this reaches a chain only by deploying
+a new instance and updating `addresses.ts`. A new instance starts empty:
+streaks, tier and copy claims, and mined-position flags in the old one are not
+carried over. The live Base Sepolia instance `0xEBfA…` (owner `0x858b…`, not
+the deployer; see GOVERNANCE_HANDOVER §1) still transfers PEPE on every
+check-in.
+
+Frontend: `/rewards` asks the contract which build it is
+(`probeCheckInUnit` in `frontend/src/lib/pepefi/achievements.ts` reads
+`achievementPoints`, which only the new build has). Against the live contract
+the probe answers "PEPE" and the page reads and says exactly what it did
+before; against a new instance it switches to the points wording and shows the
+balance. `/rewards` is behind `FEATURE_PEPE_REWARDS`, off by default.
+
+Still open, for a decision:
+
+- whether the four PEPE reward paths should follow the same principle;
+- whether points should ever be spendable or feed a level (the contract gives
+  them no use today);
+- the PepeLab daily-quest line already says "achievement points" for the
+  check-in while the live contract pays PEPE. It is not probed, because
+  `/pepe` is behind `FEATURE_GAMEFI` (off by default) and does not send the
+  transaction.
+
+Tests: `test/PepeIncentives.t.sol` (no PEPE moves, empty pool, curve and cap,
+no transfer/approve/burn/mint surface, pause, fuzz against a model of the
+curve) and `frontend/src/lib/pepefi/achievements.test.ts` (the probe).
 
 ## Frontend
 

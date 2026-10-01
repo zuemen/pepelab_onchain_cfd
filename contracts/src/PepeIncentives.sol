@@ -48,8 +48,20 @@ interface IESGRegistry {
 // ── PepeIncentives ────────────────────────────────────────────────────────────
 
 /// @title  PepeIncentives
-/// @notice Trade mining, tier upgrades, copy rewards, daily check-in,
-///         and ESG hold rewards powered by PEPE tokens.
+/// @notice Trade mining, tier upgrades, copy rewards and ESG hold rewards
+///         paid in PEPE, plus a daily check-in that is NOT paid in PEPE.
+///
+///         Daily check-in (issues #101 / #169): a check-in is credited as
+///         non-transferable achievement points kept in this contract's own
+///         accounting (`achievementPoints`). No token leaves the contract and
+///         there is no function that moves points between accounts or turns
+///         them into anything: anything transferable acquires a price, and
+///         anything with a price gets farmed.
+///
+///         Not upgradeable (no proxy; `pepe`, `exchange`, `copyTracker` are
+///         immutable). A change here reaches a chain only by deploying a new
+///         instance; state in an old instance (streaks, claimed flags) is not
+///         carried over.
 contract PepeIncentives is Ownable, Pausable {
     using SafeERC20 for IERC20;
 
@@ -70,13 +82,16 @@ contract PepeIncentives is Ownable, Pausable {
     error HoldTooShort();
     error EsgScoreTooLow();
     error EsgHoldAlreadyClaimed();
+    error InvalidDailyParams();
 
     // ── Events ───────────────────────────────────────────────────────────────
 
     event TradeMined(address indexed trader, uint256 indexed positionId, uint256 reward);
     event TierClaimed(address indexed trader, uint8 tier, uint256 reward);
     event CopyClaimed(address indexed follower, address indexed trader, uint256 reward);
-    event DailyCheckIn(address indexed user, uint256 day, uint8 streak, uint256 reward);
+    /// @param points Achievement points credited by this check-in (18 decimals).
+    ///               Not a token amount: nothing is transferred.
+    event DailyCheckIn(address indexed user, uint256 day, uint8 streak, uint256 points);
     event EsgHoldClaimed(address indexed trader, uint256 indexed positionId, uint256 reward);
 
     // ── State ─────────────────────────────────────────────────────────────────
@@ -100,7 +115,8 @@ contract PepeIncentives is Ownable, Pausable {
     uint256 public copyReward = 200e18;         // 200 PEPE each side
     mapping(bytes32 => bool) public copyClaimed; // keccak256(follower, trader)
 
-    // Daily check-in
+    // Daily check-in. `dailyBase` / `dailyStreakBonus` are amounts of achievement
+    // points (18 decimals, the scale they always had), not of PEPE.
     uint256 public dailyBase        = 50e18;
     uint256 public dailyStreakBonus = 10e18;
     uint8   public dailyStreakCap   = 7;
@@ -113,6 +129,16 @@ contract PepeIncentives is Ownable, Pausable {
     uint256 public esgMinHoldDays  = 30;
     uint8   public esgMinScore     = 70;
     mapping(uint256 => bool) public esgHoldClaimed;
+
+    // Achievement points (appended after the existing state).
+    //
+    /// @notice Non-transferable achievement points credited by `dailyCheckIn`,
+    ///         18 decimals. Only ever increases, and only for the account that
+    ///         checked in. There is deliberately no transfer, approve, spend,
+    ///         burn or owner-mint path.
+    mapping(address => uint256) public achievementPoints;
+    /// @notice Sum of `achievementPoints` over all accounts.
+    uint256 public totalAchievementPoints;
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
@@ -212,14 +238,21 @@ contract PepeIncentives is Ownable, Pausable {
 
     // ── Daily Check-in ────────────────────────────────────────────────────────
 
+    /// @notice Check in once per UTC day. Credits non-transferable achievement
+    ///         points to the caller: `dailyBase`, plus `dailyStreakBonus` for
+    ///         each consecutive day, up to a `dailyStreakCap`-day streak.
+    /// @dev    Issues #101 / #169: this used to `safeTransfer` PEPE. It now moves
+    ///         no token at all, so it neither needs nor checks the reward pool.
     function dailyCheckIn() external whenNotPaused {
         uint256 today = block.timestamp / 1 days;
         if (today == lastCheckIn[msg.sender]) revert AlreadyCheckedIn();
 
         uint8 currentStreak;
         if (lastCheckIn[msg.sender] > 0 && today == lastCheckIn[msg.sender] + 1) {
-            uint8 next = streak[msg.sender] + 1;
-            currentStreak = next > dailyStreakCap ? dailyStreakCap : next;
+            // uint256 arithmetic: `streak + 1` in uint8 would overflow (and
+            // revert every later check-in) once a cap of 255 is reached.
+            uint256 next = uint256(streak[msg.sender]) + 1;
+            currentStreak = next > dailyStreakCap ? dailyStreakCap : uint8(next);
         } else {
             currentStreak = 1;
         }
@@ -227,11 +260,11 @@ contract PepeIncentives is Ownable, Pausable {
         lastCheckIn[msg.sender] = today;
         streak[msg.sender]      = currentStreak;
 
-        uint256 reward = dailyBase + dailyStreakBonus * (currentStreak - 1);
-        if (pepe.balanceOf(address(this)) < reward) revert InsufficientPool();
+        uint256 points = dailyBase + dailyStreakBonus * (currentStreak - 1);
+        achievementPoints[msg.sender] += points;
+        totalAchievementPoints        += points;
 
-        pepe.safeTransfer(msg.sender, reward);
-        emit DailyCheckIn(msg.sender, today, currentStreak, reward);
+        emit DailyCheckIn(msg.sender, today, currentStreak, points);
     }
 
     // ── ESG Hold Reward ───────────────────────────────────────────────────────
@@ -273,7 +306,10 @@ contract PepeIncentives is Ownable, Pausable {
         tradeMiningCap = cap;
     }
 
+    /// @param cap Longest streak that still adds a bonus; at least 1 (a cap of
+    ///            0 would make the second consecutive check-in revert).
     function setDailyParams(uint256 base, uint256 bonus, uint8 cap) external onlyOwner {
+        if (cap == 0) revert InvalidDailyParams();
         dailyBase        = base;
         dailyStreakBonus = bonus;
         dailyStreakCap   = cap;
