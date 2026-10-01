@@ -22,6 +22,8 @@ import { firstBlocking, stalenessNotice } from 'src/lib/pepefi/priceFreshness';
 
 import { useMode } from 'src/contexts/mode-context';
 import { useAccountBalances } from 'src/hooks/useAccountBalances';
+import { useLegacyAssets } from 'src/hooks/useLegacyAssets';
+import { LegacyAssetsBanner } from 'src/components/pepefi/LegacyAssetsBanner';
 import { spotValueOf, isPortfolioProvablyEmpty, type NetWorthParts, type PortfolioEmptinessCheck } from 'src/lib/pepefi/portfolio';
 import { COLUMN_LABELS, columnLabelForMode, openPositionColumnsForMode, type OpenPositionColumnKey } from 'src/lib/pepefi/openPositionColumns';
 
@@ -226,6 +228,10 @@ export default function PortfolioPage() {
   // 錢包／質押／金庫。這一頁本來只讀 freeMargin，因為它只管交易帳戶；淨值
   // hero 從 Dashboard 併過來之後就需要另外三桶錢。
   const balances = useAccountBalances(contracts, wallet.address);
+
+  // 舊版 exchange 上的資產（重部署前留下的保證金／部位）。只有真的有東西時才在上方
+  // 顯示通往 /legacy 的提示，見 LegacyAssetsBanner。展示通道讀不到鏈，不掃。
+  const legacyAssets = useLegacyAssets(wallet.isMock ? null : wallet.provider, wallet.chainId, wallet.address);
 
   const [copyRecs,   setCopyRecs]   = useState<CopyRec[]>([]);
   const [positions,  setPositions]  = useState<PosRow[]>([]);
@@ -647,8 +653,11 @@ export default function PortfolioPage() {
   };
 
   if (isLoaded && isPortfolioProvablyEmpty(emptinessCheck)) {
+    // 新合約上是空的，不代表使用者沒有錢——資產可能全在舊合約上，那正是最需要
+    // 看到入口的人。提示放在空狀態上方。
     return (
-      <Container maxWidth="lg" sx={{ py: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+      <Container maxWidth="lg" sx={{ py: 3, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', gap: 3 }}>
+        <Box sx={{ width: '100%' }}><LegacyAssetsBanner state={legacyAssets} /></Box>
         <EmptyState
           icon="💼"
           title={t.portfolio.page.emptyTitle}
@@ -678,6 +687,8 @@ export default function PortfolioPage() {
           {t.portfolio.page.refresh}
         </Button>
       </Box>
+
+      <LegacyAssetsBanner state={legacyAssets} />
 
       {/* ── Net worth + what to do next ──────────────────────────────────────
           Merged in from the Dashboard, which answered the same question this

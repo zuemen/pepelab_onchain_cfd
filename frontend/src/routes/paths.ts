@@ -61,6 +61,7 @@ export const paths = {
     portfolio: '/portfolio',
     vault: '/vault',
     history: '/history',
+    legacy: '/legacy',
     whale: '/whale',
     adminOracle: '/admin/oracle',
     adminTreasury: '/admin/treasury',
