@@ -6,7 +6,7 @@
 
 這個 Worker 每 20 分鐘用 Cloudflare 的 cron 檢查一次 `WORKFLOW_FILES` 裡的每一支 keeper（預設 `base-sepolia-keeper.yml` 與 Ethereum Sepolia 的 `price-keeper.yml`；後者在 2026-10-01 同樣因排程節流而過期，見 #208）；某支 keeper 超過 15 分鐘沒有執行、而且目前沒有排隊或執行中的 run，才觸發它一次 `workflow_dispatch`。各支獨立判斷，一支觸發失敗不影響其他支。GitHub 排程仍然保留，兩者並存。keeper 在不需要寫價時不會送交易，多跑一次只花 Actions 分鐘數（公開 repo 免費）。
 
-Worker 本身**不持有任何鏈上金鑰**，對任何 HTTP 請求都回 404（`workers_dev = false`、`preview_urls = false`，不產生公開網址）。它唯一的憑證是一個 GitHub fine-grained token，權限為 **Actions: Read and write**。這個 token 能做的事比「觸發 keeper」多很多，下面逐項寫明。
+Worker 本身**不持有任何鏈上金鑰**，對任何 HTTP 請求都回 404（`workers_dev = false`、`preview_urls = false`，不產生公開網址）。它唯一的憑證是一個權限為 **Actions: Read and write** 的 GitHub 憑證：擁有者本人的 fine-grained PAT，或 GitHub App 的私鑰（Worker 用它換一小時的 installation token，見「改用 GitHub App」）。兩種憑證能做的事相同，都比「觸發 keeper」多很多，下面逐項寫明。
 
 ## 威脅模型：token 外洩時的最壞情況
 
@@ -31,9 +31,9 @@ Worker 本身**不持有任何鏈上金鑰**，對任何 HTTP 請求都回 404�
 > - **machine account 加 fine-grained PAT 在本 repo 行不通**。本 repo 屬於個人帳號，而 fine-grained PAT「Each token is limited to access resources owned by a single user or organization」，而且目前不支援「repositories where the user is an outside or repository collaborator」（[文件](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#fine-grained-personal-access-tokens-limitations)）。
 > - **不要改用 machine account 加 classic PAT**。classic 的 `repo` scope 會連帶給 Contents 寫入，外洩時能直接改 keeper 程式碼，比 Actions: write 危險得多。
 > - 可行的專用身分有兩種：
->   1. **GitHub App**：只給 Actions: Read and write，只安裝在本 repo。觸發者會顯示為 `<app-slug>[bot]`。**Worker 目前不支援用 App 私鑰換 installation token，需要另開 PR 實作。**
+>   1. **GitHub App**：只給 Actions: Read and write，只安裝在本 repo。觸發者會顯示為 `<app-slug>[bot]`。Worker 已支援，設定步驟見下方「改用 GitHub App」。
 >   2. **把 repo 移到 organization**：machine account 以 org 成員身分建 fine-grained PAT。
-> - 改用專用身分後，把它的名稱（例如 `pepelab-keeper[bot]`）設成 repo variable `KEEPER_TRIGGER_ACTOR`（Settings → Secrets and variables → Actions → Variables）。admin workflow 會拒絕 `github.actor` 或 `github.triggering_actor` 等於它的 run。**沒設定這個 variable 時不擋**，現在用你本人的 PAT 時也不要設，否則你自己的 admin run 也會被拒絕。
+> - 改用專用身分後，把它的名稱（例如 `pepelab-keeper[bot]`）設成 repo variable `KEEPER_TRIGGER_ACTOR`（Settings → Secrets and variables → Actions → Variables）。admin workflow 會拒絕 `github.actor` 或 `github.triggering_actor` 等於它的 run（這個檢查在人工核准**之後**才執行，見「改用 GitHub App」第 8 步的說明）。**沒設定這個 variable 時不擋**，現在用你本人的 PAT 時也不要設，否則你自己的 admin run 也會被拒絕。
 > - 專用身分不是 required reviewer，就算誤給了 Deployments 權限也不能核准。
 >
 > 在那之前仍用你本人的 PAT：你本人就是 required reviewer，所以**絕對不要給這個 token Deployments 權限**。一旦給了，外洩的 token 就能核准自己觸發的 admin 呼叫。核准時一律照第 5 步的指引，只核准你自己剛剛手動 dispatch 的 run。
@@ -56,7 +56,7 @@ Worker 本身**不持有任何鏈上金鑰**，對任何 HTTP 請求都回 404�
 2. 以 owner 身分送 admin 交易 → 由 `admin-approval` 的人工審核擋下；下面第 1–4 步做完之前，這一條**沒有真正關上**。審核時**只核准你自己剛剛手動 dispatch、而且 inputs（target／function／args）逐字核對過的 run；不認得的一律 Reject**。攻擊者可以不斷 dispatch 待核准的 run 來洗版，但它們不會占用 keeper 的 concurrency group。
 3. 在舊分支上以私鑰執行舊程式 → 第 4 步刪掉 repo 層級的私鑰 secret 之後，舊版 workflow 拿不到私鑰（`Fail fast when secrets are missing` 會讓它失敗）。
 
-發現外洩時，到 <https://github.com/settings/personal-access-tokens> 撤銷 token。接著確認 `gh workflow list --all` 裡的 workflow 都是 active，並檢查 Actions 頁有沒有預期外的 run，或等待核准的 admin run（有的話一律 Reject）。
+發現外洩時，到 <https://github.com/settings/personal-access-tokens> 撤銷 token（用 GitHub App 時改為更換私鑰或停用安裝，見「App 私鑰外洩時的差別」）。接著確認 `gh workflow list --all` 裡的 workflow 都是 active，並檢查 Actions 頁有沒有預期外的 run，或等待核准的 admin run（有的話一律 Reject）。
 
 ## 部署前必做（需要你本人操作，依序）
 
@@ -93,7 +93,7 @@ Worker 的 token **沒有** Deployments 與 Administration 權限，下列設定
    - **不認得、不是你剛剛 dispatch 的、或 inputs 對不上的一律 Reject**。
    - 失敗要重試時重新 dispatch，不要按 Re-run：`admin-call` 會拒絕重跑。
    - `admin-call` 排隊等 keeper 時，若之後又排進一個 keeper run，它可能被取消（concurrency 預設只保留一個 pending），重新 dispatch 即可。
-6. **建立 Worker 用的 token**（目前只能用你本人的 fine-grained PAT，理由見上方「觸發者身分」；`KEEPER_TRIGGER_ACTOR` 先不要設）：<https://github.com/settings/personal-access-tokens/new>
+6. **建立 Worker 用的 token**（用你本人的 fine-grained PAT；`KEEPER_TRIGGER_ACTOR` 先不要設。要讓 Worker 有自己的身分，改做下方「改用 GitHub App」，這一步與第 7 步的 `GITHUB_TOKEN` 就可以跳過）：<https://github.com/settings/personal-access-tokens/new>
    - Resource owner：`zuemen`；Repository access：Only select repositories → `pepelab_onchain_cfd`。
    - Repository permissions：**只開 Actions: Read and write**（Metadata: Read 會自動帶上）。**不要**開 Deployments、Administration、Contents、Secrets、Environments、Workflows。
    - Expiration：自訂日期，**不超過 90 天**。
@@ -106,8 +106,95 @@ Worker 的 token **沒有** Deployments 與 Administration 權限，下列設定
    npx wrangler deploy
    ```
 
+## 改用 GitHub App（讓 Worker 有自己的身分）
+
+用你本人的 PAT 時，Worker 觸發的 run 和你親手觸發的 run 在 GitHub 上是同一個人。改用 GitHub App 後，Worker 觸發的 run 會顯示為 `<app-slug>[bot]`，這時才能設定 `KEEPER_TRIGGER_ACTOR`，讓 admin workflow 拒絕 Worker（或偷到 Worker 憑證的人）觸發的 admin run。
+
+### Worker 怎麼用 App
+
+設定了 `GITHUB_APP_ID`、`GITHUB_APP_INSTALLATION_ID` 與 secret `GITHUB_APP_PRIVATE_KEY` 時（`github-app.mjs`）：
+
+1. 用私鑰簽一個 RS256 JWT：`iat` 回推 60 秒、`exp` 為 9 分鐘後、`iss` 為 App ID。GitHub 的規則是「must be signed using the `RS256` algorithm」、`iat` 建議「60 seconds in the past」、`exp`「must be no more than 10 minutes into the future」、`iss` 為「The client ID or application ID of your GitHub App」（[Generating a JSON Web Token (JWT) for a GitHub App](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-json-web-token-jwt-for-a-github-app)）。
+2. 以 `Authorization: Bearer <JWT>` 呼叫 `POST /app/installations/{installation_id}/access_tokens`，body 帶 `{"repositories": ["pepelab_onchain_cfd"], "permissions": {"actions": "write"}}`，成功回 201（[REST：Create an installation access token for an app](https://docs.github.com/en/rest/apps/apps#create-an-installation-access-token-for-an-app)、[Generating an installation access token](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-an-installation-access-token-for-a-github-app)）。文件寫明「The installation access token cannot be granted permissions that the app was not granted」，所以這兩個參數只能縮小、不能放大；就算之後有人把 App 的權限或安裝範圍調大，Worker 拿到的 token 仍然只有本 repo 的 Actions: write。
+3. installation token「will expire after 1 hour」。Worker 把它放在 isolate 的記憶體裡，到期前 5 分鐘才重新換；Cloudflare 回收 isolate 時快取跟著消失，下一次 cron 再換一個。token 不寫入任何儲存空間，也不會出現在 log。
+4. 之後列 run、dispatch 都用這個 token。`POST …/actions/workflows/{id}/dispatches` 在 App 權限表裡需要 Actions: write，installation token（IAT）可用（[Permissions required for GitHub Apps](https://docs.github.com/en/rest/authentication/permissions-required-for-github-apps#repository-permissions-for-actions)）。
+
+行為規則：
+
+- **三項要一起設定**。只設一部分、ID 格式不對、私鑰格式不對、換 token 被拒（401／403／404／422）都會讓這次 cron 失敗，**不會退回 PAT**：退回去的話 run 的觸發者會變回你本人，而且沒有人會發現。錯誤訊息不含私鑰、JWT 或 token。
+- 同時設定了 App 與 `GITHUB_TOKEN` 時用 App，並在 log 留一行 `auth: GitHub App 與 GITHUB_TOKEN 都有設定，使用 GitHub App`。
+- 三項都沒設定時，行為和以前一樣（用 `GITHUB_TOKEN`）。
+- 私鑰可以直接用 GitHub 下載的 `.pem`。那個檔案是 PKCS#1（`-----BEGIN RSA PRIVATE KEY-----`；文件：「the PEM file you download will be in `PKCS#1 RSAPrivateKey` format」，[Managing private keys for GitHub Apps](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/managing-private-keys-for-github-apps)），而 WebCrypto 只收 PKCS#8，所以 Worker 會先把它包成 PKCS#8 再匯入，不需要另外用 openssl 轉檔。已經是 PKCS#8（`-----BEGIN PRIVATE KEY-----`）的也接受。加了密碼的金鑰、EC 金鑰、公鑰一律拒絕。
+
+### 設定步驟（需要你本人操作，依序）
+
+Worker 的程式不會替你建立 App。先完成「部署前必做」第 1–5 步。
+
+1. **建立 App**：<https://github.com/settings/apps/new>（Settings → Developer settings → GitHub Apps → New GitHub App；[文件](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/registering-a-github-app)）。
+   - **GitHub App name**：例如 `pepelab-keeper`。名稱在整個 GitHub 上必須唯一、不超過 34 個字元。名稱轉成小寫、空白換成 `-` 之後就是 slug（文件舉例 `My APp Näme` 會顯示為 `my-app-name`），之後觸發者會顯示為 `<slug>[bot]`。
+   - **Homepage URL**：必填，填 `https://github.com/zuemen/pepelab_onchain_cfd`。
+   - **Callback URL** 留空；**Request user authorization (OAuth) during installation** 與 **Enable Device Flow** 都不要勾。
+   - **Webhook**：取消勾選 **Active**（Worker 不接收任何事件）。
+   - **Permissions → Repository permissions**：**只把 Actions 設為 Read and write**（Metadata: Read-only 會自動帶上）。其餘全部 No access，尤其**不要**開 Deployments、Administration、Contents、Secrets、Environments、Workflows。Organization 與 Account permissions 全部 No access。
+   - **Where can this GitHub App be installed?**：選 **Only on this account**。
+   - 按 **Create GitHub App**。
+2. **記下 App ID**：建立後停在 App 的設定頁（General），About 區塊有 **App ID**（數字）與 **Client ID**（`Iv…`）。兩個都可以當 `GITHUB_APP_ID`。同一頁的網址 `https://github.com/settings/apps/<slug>` 最後一段就是 slug。
+3. **產生私鑰**：同一頁往下到 **Private keys** → **Generate a private key**，瀏覽器會下載一個 `.pem`。GitHub 只保留公鑰，這個檔案遺失就只能重新產生。
+4. **只安裝在本 repo**：左側 **Install App** → `zuemen` 旁邊按 **Install** → 選 **Only select repositories** → 選 `pepelab_onchain_cfd` → **Install**（[文件](https://docs.github.com/en/apps/using-github-apps/installing-your-own-github-app)）。不要選 All repositories。
+5. **記下 installation ID**：安裝完成後瀏覽器停在 `https://github.com/settings/installations/<數字>`，那個數字就是 installation ID（之後也可以從 Settings → Applications → Installed GitHub Apps → 該 App 的 **Configure** 回到同一頁）。文件記載的取得方式是用 JWT 呼叫 `GET /repos/{owner}/{repo}/installation`；上面的網址是比較省事的做法，兩者的數字相同。
+6. **把三項交給 Worker**：
+
+   ```bash
+   cd ops/keeper-trigger
+   npx wrangler login
+   npx wrangler secret put GITHUB_APP_ID                 # 貼上第 2 步的 App ID
+   npx wrangler secret put GITHUB_APP_INSTALLATION_ID    # 貼上第 5 步的數字
+   npx wrangler secret put GITHUB_APP_PRIVATE_KEY < /path/to/下載的私鑰.pem
+   npx wrangler deploy
+   ```
+
+   - `wrangler secret put` 可以從 stdin 讀（[Cloudflare 文件](https://developers.cloudflare.com/workers/wrangler/commands/workers/#secret-put)：「The `put` command can also receive piped input」），多行的 PEM 用 `<` 導入最不容易貼壞。在 PowerShell 用 `Get-Content -Raw 私鑰.pem | npx wrangler secret put GITHUB_APP_PRIVATE_KEY`。
+   - 兩個 ID 不是秘密，也可以改成取消 `wrangler.toml` 裡 `[vars]` 的註解後填入並送 PR。**兩種方式擇一**：同一個名稱不要同時是 var 又是 secret。
+   - 設定完成後把私鑰檔從下載資料夾刪掉（需要保留就放進密碼管理器）。私鑰**絕對不要**寫進 `wrangler.toml` 或 commit。
+7. **確認 Worker 真的在用 App，並確認觸發者的實際名稱**：
+   - Cloudflare → Workers → `pepelab-keeper-trigger` → Logs：下一次 cron 應該有一行 `auth: GitHub App installation token（new，expires in …）`，之後兩三次是 `cached`。出現 `換 installation token 失敗：HTTP 401` 代表 App ID 與私鑰不是同一個 App；`404` 代表 installation ID 不對；`422` 代表 App 沒有安裝在本 repo 或沒有 Actions 權限。
+   - 等 Worker 觸發過一次 keeper 之後執行：
+
+     ```bash
+     gh api 'repos/zuemen/pepelab_onchain_cfd/actions/runs?event=workflow_dispatch&per_page=10' \
+       --jq '.workflow_runs[] | {name, actor: .actor.login, triggering_actor: .triggering_actor.login, created_at}'
+     ```
+
+     Worker 觸發的那幾筆，`actor` 與 `triggering_actor` 應該都是 `<slug>[bot]`（例如 `pepelab-keeper[bot]`）。**把實際看到的字串記下來**，下一步要用。
+8. **設定 `KEEPER_TRIGGER_ACTOR`**：repo → Settings → Secrets and variables → Actions → **Variables** → New repository variable，名稱 `KEEPER_TRIGGER_ACTOR`，值填第 7 步實際看到的字串（含 `[bot]`）。
+   - **一定要在第 7 步確認之後才設**。還在用你本人的 PAT 時設了它沒有作用（名稱對不上）；填成你自己的帳號則會讓你自己的 admin run 全部被拒。
+   - 它在 admin workflow 裡的作用（`.github/workflows/admin-base-sepolia.yml`）：`approve` job 的 gate step 會拒絕 `github.actor` 或 `github.triggering_actor` 等於這個值的 run，`admin-call` 的第一個 step 會再檢查一次 `github.triggering_actor`。比對不分大小寫。
+   - **這個檢查發生在人工核准之後，不是之前**。`approve` 綁了 `environment: admin-approval`，而「A job that references an environment must follow any protection rules for the environment before running」（[文件](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments)），所以 gate step 要等你按下核准才會執行。也就是說：Worker 的憑證外洩、被人拿去 dispatch admin workflow 時，那筆 run **仍然會出現在等待核准的清單裡**。改用 App 之後的差別有兩個：
+     1. 核准畫面上那筆 run 的觸發者是 `<slug>[bot]`，不是你。**觸發者不是你本人的 admin run 一律 Reject**，這是第一道。
+     2. 就算誤按了核准，gate 也會讓 run 在 `approve` 就失敗，`admin-call` 不會開始，私鑰不會被取用。這是第二道。
+   - 如果要讓這種 run 連核准畫面都到不了，需要在 `approve` 之前加一個不綁 environment、不碰任何 secret 的檢查 job（`approve` 再 `needs` 它）。目前的 workflow 沒有這個 job。
+   - 想先確認 gate 會擋：把 `KEEPER_TRIGGER_ACTOR` 暫時設成 `zuemen`，手動 dispatch 一次 admin workflow 並核准，`approve` 應該以「這次 run 由 keeper 觸發器帳號 zuemen 觸發」失敗（`admin-call` 不會執行，不會送交易），確認後把值改回 bot 的名稱。
+9. **移除 PAT**：確認連續幾次 cron 都正常後，`npx wrangler secret delete GITHUB_TOKEN`，再到 <https://github.com/settings/personal-access-tokens> 撤銷那個 PAT。只要 App 三項有設定，Worker 就不會使用 `GITHUB_TOKEN`，留著只是多一個可以外洩的憑證。
+
+### 觸發者名稱的依據與待驗證事項
+
+- 文件對 `github.actor` 的定義是「The username of the user that triggered the initial workflow run」，`github.triggering_actor` 是「The username of the user that initiated the workflow run. If the workflow run is a re-run, this value may differ from `github.actor`」（[Contexts reference](https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#github-context)）。**文件沒有明寫由 App 觸發的 `workflow_dispatch` 會是什麼字串。**
+- 實測依據（2026-10-01，以公開的 REST API `GET /repos/{owner}/{repo}/actions/runs?event=workflow_dispatch` 查詢，未觸發任何 workflow）：`microsoft/vscode` 有 94 筆 run 的 `actor.login` 與 `triggering_actor.login` 都是 `vs-code-engineering[bot]`（`type: Bot`）；`grafana/grafana` 有 16 筆是 `grafana-releases-oss[bot]`。格式是 `<app-slug>[bot]`。
+- 重跑時兩個值會分開：`vercel/next.js` 有一筆 run 的 `actor` 是 `github-actions[bot]`、`triggering_actor` 是按下 Re-run 的人。所以 Worker 觸發的 admin run 被人重跑時，`actor` 仍是 bot，`approve` 的 gate（兩個值都比對）仍然會拒絕；`admin-call` 另外拒絕任何 `run_attempt != 1`。
+- **待驗證**：本 repo 的 App 實際顯示的字串。API 的 `actor.login` 與 workflow 內的 `github.actor` 理論上是同一個值，但沒有在本 repo 實測過，所以第 7 步要求先用 `gh api` 看過再設 variable，第 8 步最後一項可以用來確認 gate 本身會擋。
+
+### App 私鑰外洩時的差別
+
+- 能做的事與上面「Actions: write 能做什麼」完全相同（App 權限表與 PAT 權限表在 Actions: write 列出的端點一致），而且只限安裝了 App 的 repo。
+- **私鑰不會到期**（「Private keys do not expire and instead need to be manually revoked」）。PAT 最多 90 天會自己失效，私鑰不會，所以更要照下面的方式輪替。
+- Worker 換 token 時會把範圍縮到本 repo＋Actions: write，但偷到私鑰的人可以要到 App 的全部權限。所以**上限由 App 本身的設定決定**：App 只能有 Actions: Read and write、只能安裝在本 repo。
+- App 不是 required reviewer，不能核准等待審核的部署。**不要給 App Deployments 權限**。
+- 處理方式：到 App 設定頁的 Private keys **先產生新私鑰、再刪除舊的**（只有一把時 GitHub 不讓你直接刪）；要立刻切斷就到 Settings → Applications → Installed GitHub Apps → 該 App 的 **Configure**，把安裝 **Suspend** 或 **Uninstall**（keeper 會退回只靠 GitHub 排程）。接著照「發現外洩時」檢查 workflow 是否都還是 active、有沒有預期外的 run。
+
 ## token 輪替
 
+- **GitHub App 私鑰**：建議每 90 天換一次。App 設定頁 → Private keys → Generate a private key → `npx wrangler secret put GITHUB_APP_PRIVATE_KEY < 新私鑰.pem`（`secret put` 會立刻部署新版本，快取的 token 也跟著清掉）→ 下一次 cron 的 log 出現 `auth: GitHub App installation token（new…）` 且沒有錯誤 → 回 App 設定頁刪除舊私鑰。一個 App 最多可以同時有 25 把私鑰，所以新舊可以並存到確認完成。
+- 以下是使用 PAT 時的輪替方式。
 - 到期前 7 天：依第 6 步建立新 token（同樣只給 Actions: Read and write、≤ 90 天），執行 `npx wrangler secret put GITHUB_TOKEN` 換上新 token。等下一次 cron 在 Logs 出現 `decide: dispatch=...` 且沒有錯誤，再到 GitHub 撤銷舊 token。
 - 懷疑外洩：先撤銷，再依上面「發現外洩時」檢查，最後換新 token。
 - 忘了輪替時，token 過期會讓 dispatch 回 401，cron 會被 Cloudflare 記成失敗（`scheduled` 直接 await，失敗會 reject）。GitHub 排程仍在跑，不會完全停擺。
@@ -120,7 +207,7 @@ Worker 的 token **沒有** Deployments 與 Administration 權限，下列設定
 
 ## 調整
 
-`wrangler.toml` 的 `[vars]`：`WORKFLOW_FILES`（逗號分隔，預設兩支 keeper；舊的單一 `WORKFLOW_FILE` 仍相容，`WORKFLOW_FILES` 優先）、`MIN_GAP_SEC`（預設 900）、`WORKFLOW_REF`（預設 master）。cron 間隔改 `[triggers] crons`。
+`wrangler.toml` 的 `[vars]`：`WORKFLOW_FILES`（逗號分隔，預設兩支 keeper；舊的單一 `WORKFLOW_FILE` 仍相容，`WORKFLOW_FILES` 優先）、`MIN_GAP_SEC`（預設 900）、`WORKFLOW_REF`（預設 master）、`GITHUB_APP_ID` 與 `GITHUB_APP_INSTALLATION_ID`（改用 GitHub App 時才設，見上方）。cron 間隔改 `[triggers] crons`。
 
 ## 測試
 

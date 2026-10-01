@@ -501,3 +501,13 @@ test("redact：遮掉 JWT、GitHub token、PEM 與指定的秘密值", () => {
   assert.doesNotMatch(out, /eyJ|ghs_|github_pat_|BEGIN|my-secret-value/);
   assert.equal(out, "a [redacted jwt] b [redacted token] c [redacted token] d [redacted pem] e [redacted]");
 });
+
+test("wrangler.toml 不含 App 私鑰，README 有 GitHub App 設定步驟", async () => {
+  const { readFileSync } = await import("node:fs");
+  const toml = readFileSync(new URL("./wrangler.toml", import.meta.url), "utf8");
+  assert.doesNotMatch(toml, /^\s*GITHUB_APP_PRIVATE_KEY\s*=/m, "私鑰只能用 wrangler secret put");
+  assert.doesNotMatch(toml, /BEGIN [A-Z ]*PRIVATE KEY/);
+  const readme = readFileSync(new URL("./README.md", import.meta.url), "utf8");
+  assert.match(readme, /wrangler secret put GITHUB_APP_PRIVATE_KEY/);
+  assert.match(readme, /KEEPER_TRIGGER_ACTOR/);
+});
