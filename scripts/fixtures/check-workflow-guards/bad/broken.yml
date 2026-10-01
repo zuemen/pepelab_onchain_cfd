@@ -1,0 +1,9 @@
+# 測試用反例 fixture：解析不了的 YAML 等於沒檢查，必須算失敗。
+name: fixture broken
+on:
+  push:
+jobs:
+  x:
+    runs-on: ubuntu-latest
+     steps:
+      - run: [unclosed

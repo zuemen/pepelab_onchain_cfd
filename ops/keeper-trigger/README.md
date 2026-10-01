@@ -215,3 +215,24 @@ Worker 的程式不會替你建立 App。先完成「部署前必做」第 1–5
 node --test ops/keeper-trigger/keeper-trigger.test.mjs
 ```
 CI（consistency.yml 的 `keeper-trigger` job）會跑這組測試。
+
+## workflow 守門的靜態檢查
+
+上面的保護（私鑰只放 environment secret、只有特定 job 綁那個 environment、admin 呼叫先經人工核准）都只是 workflow 檔裡的幾行 YAML。`scripts/check-workflow-guards.mjs` 把它們寫成檢查，consistency.yml 的 `workflow-guards` job 在每個 PR 與 master push 上執行：
+
+| 項目 | 規則 |
+|---|---|
+| (a) environment 允許清單 | 綁 `keeper` 的只能是 `base-sepolia-keeper.yml#keep`、`price-keeper.yml#update-prices`、`admin-base-sepolia.yml#admin-call`；`settlement` 只能是 `x402-settlement-worker.yml#settle`；`admin-approval` 只能是 `admin-base-sepolia.yml#approve`。字串與物件寫法都算，名稱不分大小寫。未登記的 environment、`${{ }}` 動態名稱一律拒絕 |
+| (b) admin workflow | `admin-call` 必須 `needs: approve`、沒有 job 層級的 `if`／`continue-on-error`，第一個 step 必須是 `github.ref == refs/heads/master` 與 `github.run_attempt == 1` 的守門。`approve` 必須綁 `admin-approval`、不引用任何 secret、不能被 `if`／`continue-on-error` 繞過 |
+| (c) 觸發事件 | 任何 workflow 都不可使用 `pull_request_target`／`workflow_run` |
+| (d) 私鑰 secret | 引用 `secrets.KEEPER_PRIVATE_KEY` 的 job 必須綁 `keeper`，引用 `secrets.FEE_SETTLEMENT_PRIVATE_KEY` 的必須綁 `settlement`。`secrets[...]` 動態存取、`toJSON(secrets)`、`secrets: inherit` 一律拒絕 |
+
+```bash
+npm ci --ignore-scripts --prefix scripts          # 第一次：安裝固定版本的 YAML 解析器
+node --test scripts/check-workflow-guards.test.mjs
+node scripts/check-workflow-guards.mjs
+```
+
+- **新增一個要用私鑰或綁 environment 的 job 時**，要同時改 `scripts/check-workflow-guards.mjs` 的 `ENVIRONMENTS`（刻意的摩擦：這個改動會出現在 PR diff 裡）。
+- **依賴**：只有 `yaml`，版本固定在 `scripts/package.json`（2.9.1，與 `agent/package-lock.json` 相同），`scripts/package-lock.json` 帶 sha512 integrity，CI 用 `npm ci --ignore-scripts` 安裝。不自己寫 YAML 解析器，是因為自製解析一旦和 GitHub 的解析結果不同就會被繞過；anchor／alias、重複的鍵、解析失敗的檔案一律算失敗。
+- **它檢查不到的事**：這是對 master 上 workflow 檔的靜態檢查。舊分支上的舊版 workflow、GitHub 網頁上的 environment 設定（required reviewers、branch policy、secret 放在哪一層）、守門 script 在執行時的實際行為都不在範圍內；那些仍然靠「部署前必做」的設定與 `approve` 的 fail-closed gate。

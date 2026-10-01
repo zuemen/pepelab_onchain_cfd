@@ -76,3 +76,36 @@ jobs:
           node-version: 20
       - name: decide / tick tests
         run: node --test ops/keeper-trigger/keeper-trigger.test.mjs
+
+  workflow-guards:
+    # 持有鏈上私鑰的 job 靠「私鑰只放 environment secret＋只有特定 job 綁那個 environment＋
+    # admin 呼叫先經人工核准」保護，而這些都只是 workflow 檔裡的幾行 YAML。這支檢查把規則
+    # 寫死：別的 job 綁了 keeper／settlement／admin-approval、admin-call 少了 needs: approve
+    # 或 ref／run_attempt 守門、出現 pull_request_target／workflow_run、用到私鑰的 job 沒綁
+    # environment，都會紅。規則與理由見 scripts/check-workflow-guards.mjs 開頭。
+    name: workflow guards (environment / secrets / triggers)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+
+      # 唯一的依賴是 YAML 解析器。版本固定在 scripts/package.json（yaml 2.9.1，與
+      # agent/package-lock.json 同一個版本），`npm ci` 會用 scripts/package-lock.json 的
+      # sha512 integrity 驗證下載內容；--ignore-scripts 不執行任何安裝腳本。這個 job 沒有
+      # secrets、token 只有 contents: read，checkout 也不留憑證。
+      - name: Install pinned YAML parser
+        working-directory: scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      # 先證明檢查本身會抓錯（反例 fixture 與「改一行就繞過」的情境），再檢查 repo。
+      - name: Self-test
+        run: node --test scripts/check-workflow-guards.test.mjs
+
+      - name: Check workflow guards
+        run: node scripts/check-workflow-guards.mjs

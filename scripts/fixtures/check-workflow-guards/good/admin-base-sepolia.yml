@@ -1,0 +1,48 @@
+# 測試用 fixture（不是真的 workflow；不在 .github/workflows 底下，GitHub 不會執行）。
+# 最小但合規的 admin workflow：approve 只核准、admin-call needs approve 且第一個 step 守門。
+name: fixture admin
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        required: true
+permissions:
+  contents: read
+jobs:
+  approve:
+    runs-on: ubuntu-latest
+    environment: admin-approval
+    steps:
+      - name: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BLOCKED_ACTOR: ${{ vars.KEEPER_TRIGGER_ACTOR }}
+        run: |
+          # 文字裡提到 secrets.KEEPER_PRIVATE_KEY 不算引用（不在運算式裡）。
+          echo "approved"
+  admin-call:
+    # needs 的陣列寫法也要接受
+    needs: [approve]
+    runs-on: ubuntu-latest
+    environment:
+      name: keeper
+      deployment: false
+    steps:
+      - name: guard
+        env:
+          THE_REF: ${{ github.ref }}
+          ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          if [ "$THE_REF" != "refs/heads/master" ]; then
+            echo "wrong ref"
+            exit 1
+          fi
+          if [ "${ATTEMPT}" != "1" ]; then
+            exit 1
+          fi
+      - name: send
+        env:
+          PK: ${{ secrets.KEEPER_PRIVATE_KEY }}
+          TARGET: ${{ inputs.target }}
+        run: echo "send"

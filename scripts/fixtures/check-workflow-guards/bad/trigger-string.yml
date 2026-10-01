@@ -1,0 +1,8 @@
+# 測試用反例 fixture：字串寫法的 pull_request_target。
+name: fixture trigger string
+on: pull_request_target
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo t

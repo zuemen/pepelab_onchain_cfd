@@ -1,0 +1,14 @@
+# 測試用 fixture：結算金鑰綁 settlement。
+name: fixture settlement
+on:
+  workflow_dispatch:
+jobs:
+  settle:
+    runs-on: ubuntu-latest
+    environment:
+      name: settlement
+      deployment: false
+    env:
+      FEE_SETTLEMENT_PRIVATE_KEY: ${{ secrets.FEE_SETTLEMENT_PRIVATE_KEY }}
+    steps:
+      - run: echo settle

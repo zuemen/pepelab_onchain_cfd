@@ -1,0 +1,15 @@
+# 測試用反例 fixture：mapping 寫法，兩種禁用的觸發都有；副檔名 .yaml 也要掃到。
+name: fixture trigger map
+"on":
+  push:
+    branches: [master]
+  pull_request_target:
+    types: [opened]
+  workflow_run:
+    workflows: ["Consistency"]
+    types: [completed]
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo t

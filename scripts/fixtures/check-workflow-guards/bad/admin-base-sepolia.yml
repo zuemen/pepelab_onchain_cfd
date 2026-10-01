@@ -1,0 +1,41 @@
+# 測試用反例 fixture：每一處都應該被 check-workflow-guards 擋下。
+name: fixture bad admin
+on:
+  workflow_dispatch:
+jobs:
+  approve:
+    runs-on: ubuntu-latest
+    # 綁錯 environment（沒有 required reviewers 的那個）
+    environment: keeper
+    if: github.actor == 'zuemen'
+    steps:
+      - name: gate
+        continue-on-error: true
+        env:
+          TOKEN: ${{ secrets.ADMIN_TOKEN }}
+        run: echo gate
+  admin-call:
+    # 沒有 needs: approve
+    needs: build
+    if: always()
+    runs-on: ubuntu-latest
+    environment:
+      name: keeper
+      deployment: false
+    steps:
+      - name: guard（只檢查 ref，沒有 run_attempt；exit 1 被註解掉）
+        env:
+          REF: ${{ github.ref }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          if [ "$REF" != "refs/heads/master" ]; then
+            # exit 1
+            echo "wrong ref"
+          fi
+      - env:
+          PK: ${{ secrets.KEEPER_PRIVATE_KEY }}
+        run: echo send
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo build

@@ -1,0 +1,9 @@
+{
+  "name": "pepelab-repo-scripts",
+  "private": true,
+  "description": "scripts/ 底下檢查腳本的依賴。只有 check-workflow-guards.mjs 需要（YAML 解析）；其餘腳本零依賴。",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "yaml": "2.9.1"
+  }
+}

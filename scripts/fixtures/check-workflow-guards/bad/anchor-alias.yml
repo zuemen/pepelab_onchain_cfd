@@ -1,0 +1,10 @@
+# 測試用反例 fixture：用 anchor／alias 把 environment 帶進另一個 job（檢查不支援，一律拒絕）。
+name: fixture anchor
+on:
+  push:
+jobs:
+  a: &base
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo a
+  b: *base
