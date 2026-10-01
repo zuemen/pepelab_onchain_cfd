@@ -1,5 +1,5 @@
 {
-  "$comment": "鏈上監控規則（唯一真相）。手寫欄位：id/title/kind/status/severity/description/contracts[].ref|as|abi|source/events[].sig/calls[].on|fn|expect|note、events[].notDeployed|note/amount/runbook/related/params、ignoredEvents（受監控合約會發、但刻意不監控的事件與理由）。產生欄位（node scripts/check-monitoring.mjs --write）：contracts[].address、events[].topic0|inputs、calls[].selector|expected、decimals、runbookUrl、assets、assetLabels、roleNames。CI 會檢查兩者一致、位址等於 frontend/src/contracts/**、事件存在於 ABI。不要放任何秘密。",
+  "$comment": "鏈上監控規則（唯一真相）。手寫欄位：id/title/kind/status/severity/description/contracts[].ref|as|abi|source/events[].sig/calls[].on|fn|expect|note、events[].notDeployed|note/amount/runbook/related/params、ignoredEvents（受監控合約會發、但刻意不監控的事件與理由）。產生欄位（node scripts/check-monitoring.mjs --write）：contracts[].address、events[].topic0|inputs、calls[].selector|expected、decimals、amount.balanceOf、runbookUrl、assets、assetLabels、roleNames。CI 會檢查兩者一致、位址等於 frontend/src/contracts/**、事件存在於 ABI。不要放任何秘密。",
   "version": 1,
   "deployment": {
     "id": "pepefi-base-sepolia",
@@ -64,6 +64,11 @@
       "unit": "USDC（MockUSDC）",
       "doc": "同一規則在 WITHDRAWAL_WINDOW_SEC 內累計提領的告警門檻【待使用者決定】"
     },
+    "LARGE_WITHDRAWAL_BPS": {
+      "default": "2000",
+      "unit": "bps",
+      "doc": "單筆提領／贖回佔合約「提領前餘額」達此比例即告警（20%），與絕對門檻擇一成立。絕對門檻是佔位值（2026-10-01 實測 exchange 只有 500 MockUSDC，絕對門檻 10,000 永遠不會響），這個相對門檻讓規則在任何 TVL 下都有作用"
+    },
     "WITHDRAWAL_WINDOW_SEC": {
       "default": "3600",
       "unit": "秒",
@@ -123,6 +128,11 @@
       "default": "2000",
       "unit": "bps",
       "doc": "保險金較 24 小時內高點下降超過此比例即告警（20%）"
+    },
+    "EXCHANGE_BALANCE_DROP_BPS": {
+      "default": "3000",
+      "unit": "bps",
+      "doc": "交易所持有的 MockUSDC 較 24 小時內高點下降超過此比例即告警（30%）；看的是池子被抽走的比例，拆單也算"
     },
     "RESERVE_WARN_MARGIN_BPS": {
       "default": "500",
@@ -2215,7 +2225,7 @@
       "kind": "event",
       "status": "active",
       "severity": "SEV-2",
-      "description": "單筆提領保證金達門檻，或一小時內累計達門檻（防拆單）。",
+      "description": "單筆提領保證金達絕對門檻（佔位值，待使用者決定），或達交易所當下 MockUSDC 餘額的一定比例；另有一小時累計門檻。相對門檻讓規則在 TVL 很小的測試網也有作用。",
       "contracts": [
         {
           "ref": "PerpetualExchange",
@@ -2247,7 +2257,12 @@
         "threshold": "LARGE_WITHDRAWAL_USDC",
         "windowThreshold": "LARGE_WITHDRAWAL_WINDOW_USDC",
         "windowSec": "WITHDRAWAL_WINDOW_SEC",
-        "decimals": 18
+        "relativeBps": "LARGE_WITHDRAWAL_BPS",
+        "decimals": 18,
+        "balanceOf": {
+          "token": "0x69fd695Bc7C3aFdb35ABA35cD6890C506400b035",
+          "selector": "0x70a08231"
+        }
       },
       "runbook": [
         "1. 嚴重度分級",
@@ -2299,7 +2314,12 @@
         "threshold": "INSURANCE_WITHDRAW_USDC",
         "windowThreshold": "LARGE_WITHDRAWAL_WINDOW_USDC",
         "windowSec": "WITHDRAWAL_WINDOW_SEC",
-        "decimals": 18
+        "relativeBps": "LARGE_WITHDRAWAL_BPS",
+        "decimals": 18,
+        "balanceOf": {
+          "token": "0x69fd695Bc7C3aFdb35ABA35cD6890C506400b035",
+          "selector": "0x70a08231"
+        }
       },
       "runbook": [
         "1. 嚴重度分級",
@@ -2406,7 +2426,12 @@
         "threshold": "LARGE_REDEEM_USDC",
         "windowThreshold": "LARGE_WITHDRAWAL_WINDOW_USDC",
         "windowSec": "WITHDRAWAL_WINDOW_SEC",
-        "decimals": 18
+        "relativeBps": "LARGE_WITHDRAWAL_BPS",
+        "decimals": 18,
+        "balanceOf": {
+          "token": "0x69fd695Bc7C3aFdb35ABA35cD6890C506400b035",
+          "selector": "0x70a08231"
+        }
       },
       "runbook": [
         "1. 嚴重度分級",
@@ -2700,6 +2725,45 @@
         "3. 暫停與凍結：現行部署能做什麼"
       ],
       "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼"
+    },
+    {
+      "id": "exchange-balance-drop",
+      "title": "交易所餘額大幅下降",
+      "category": "大額提領",
+      "kind": "state",
+      "check": "balanceDrop",
+      "status": "active",
+      "severity": "SEV-2",
+      "description": "每輪讀 MockUSDC.balanceOf(交易所)，與 24 小時內的高點比較；下降超過 EXCHANGE_BALANCE_DROP_BPS 即告警。單筆提領門檻擋不住拆單，這條看的是池子整體被抽走多少。高點從部署後開始累積（存在 KV）。",
+      "contracts": [
+        {
+          "ref": "MockUSDC",
+          "abi": "MockUSDC",
+          "as": "token",
+          "address": "0x69fd695Bc7C3aFdb35ABA35cD6890C506400b035"
+        },
+        {
+          "ref": "PerpetualExchange",
+          "abi": "PerpetualExchange",
+          "as": "holder",
+          "address": "0x827eA0c62a32e995927101259042F8A27D99124D"
+        }
+      ],
+      "calls": [
+        {
+          "on": "token",
+          "fn": "balanceOf(address)",
+          "selector": "0x70a08231"
+        }
+      ],
+      "token": "MockUSDC",
+      "dropBps": "EXCHANGE_BALANCE_DROP_BPS",
+      "runbook": [
+        "1. 嚴重度分級",
+        "3. 暫停與凍結：現行部署能做什麼"
+      ],
+      "decimals": 18,
+      "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#1-嚴重度分級"
     },
     {
       "id": "insurance-fund",

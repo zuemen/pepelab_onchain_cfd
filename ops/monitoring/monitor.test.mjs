@@ -32,6 +32,7 @@ function fakeWorld() {
     logs: [],
     calls: new Map(), // `${to}|${data}` 或 `${to}|${selector}` → hex 或 { revert: true }
     balances: new Map(),
+    blockTimes: new Map(), // 區塊號 → timestamp（eth_getBlockByNumber 用；log 沒帶 blockTimestamp 時才會查）
     failGetLogs: false,
     rangeLimit: null, // 節點的 eth_getLogs 區塊數上限（超過回 HTTP 413，與 sepolia.base.org 實測相同）
     getLogsHttp: null, // (from, to) => { status, body } | null：讓某些範圍回 HTTP 錯誤
@@ -43,7 +44,7 @@ function fakeWorld() {
     sent: [], // 通知通道收到的請求
   };
   w.setCall = (to, fnSig, args, ret) => {
-    const data = selector(fnSig) + args.map((a) => a.replace(/^0x/, "").padStart(64, "0")).join("");
+    const data = selector(fnSig) + args.map((a) => a.replace(/^0x/, "").toLowerCase().padStart(64, "0")).join("");
     w.calls.set(`${to.toLowerCase()}|${data}`, ret);
   };
   const handle = (req) => {
@@ -65,6 +66,11 @@ function fakeWorld() {
         const v = w.calls.get(`${to.toLowerCase()}|${data}`) ?? w.calls.get(`${to.toLowerCase()}|${data.slice(0, 10)}`);
         if (v === undefined || v?.revert) throw new Error("execution reverted");
         return v;
+      }
+      case "eth_getBlockByNumber": {
+        const bn = Number(BigInt(req.params[0]));
+        if (!w.blockTimes.has(bn)) throw new Error("block not found");
+        return { number: req.params[0], timestamp: "0x" + w.blockTimes.get(bn).toString(16) };
       }
       case "eth_getBalance":
         return "0x" + (w.balances.get(req.params[0].toLowerCase()) ?? 10n * E18).toString(16);
@@ -112,8 +118,9 @@ function fakeWorld() {
   return w;
 }
 
-function makeLog(w, { address, sig, topics = [], data = "0x", block = w.head - 5, tx = "0x" + "ab".repeat(32), logIndex = 0 }) {
+function makeLog(w, { address, sig, topics = [], data = "0x", block = w.head - 5, tx = "0x" + "ab".repeat(32), logIndex = 0, ts }) {
   w.logs.push({
+    ...(ts === undefined ? {} : { blockTimestamp: "0x" + ts.toString(16) }),
     address,
     topics: [keccak256(sig), ...topics],
     data,
@@ -485,6 +492,98 @@ test("大額提領：低於門檻不告警、達門檻告警、一小時內累�
   // 視窗過期後清空
   await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 10_600 + 3600 });
   assert.equal(state.windows["large-margin-withdrawal"].length, 0);
+});
+
+test("M6：相對門檻——單筆提領達合約提領前餘額的 20% 即告警（絕對門檻 10,000 比整個池子還大）", async () => {
+  const w = fakeWorld();
+  const cfg = only("large-margin-withdrawal");
+  const r = ruleOf("large-margin-withdrawal");
+  const ex = addrOf("large-margin-withdrawal", "PerpetualExchange");
+  const user = topicAddr("0x00000000000000000000000000000000000000ee");
+  assert.equal(r.amount.relativeBps, "LARGE_WITHDRAWAL_BPS");
+  assert.equal(r.amount.balanceOf.token, addrOf("exchange-balance-drop", "token"), "餘額讀的是 MockUSDC");
+  // 提領後交易所剩 500；本輪兩筆提領 10 與 150 → 提領前約 660。150/660 = 22.7% ≥ 20%；10/660 = 1.5%。
+  w.setCall(r.amount.balanceOf.token, "balanceOf(address)", [ex], word(500n * E18));
+  makeLog(w, { address: ex, sig: "MarginWithdrawn(address,uint256)", topics: [user], data: word(10n * E18), block: 990, logIndex: 0, ts: 9_000 });
+  makeLog(w, { address: ex, sig: "MarginWithdrawn(address,uint256)", topics: [user], data: word(150n * E18), block: 991, logIndex: 1, ts: 9_002 });
+  const r1 = await runOnce({ config: cfg, env: env0, state: { checkpoint: 980 }, fetchImpl: w.fetch, now: 10_000 });
+  assert.equal(r1.errors.length, 0, r1.errors.join());
+  const ev = r1.notes.filter((n) => n.status === "事件");
+  assert.equal(ev.length, 1);
+  assert.equal(ev[0].severity, "SEV-2");
+  assert.ok(ev[0].lines.some((l) => /金額：150（單筆門檻 10,000；佔合約提領前餘額約 22\.72%（相對門檻 20%））/.test(l)), ev[0].lines.join("\n"));
+
+  // 門檻可覆寫：50% 時不告警。
+  const r2 = await runOnce({ config: cfg, env: { ...env0, LARGE_WITHDRAWAL_BPS: "5000" }, state: { checkpoint: 980 }, fetchImpl: w.fetch, now: 10_000 });
+  assert.equal(r2.notes.filter((n) => n.status === "事件").length, 0);
+
+  // 餘額讀不到：不讓整個事件掃描失敗，退回只用絕對門檻，訊息註明。
+  w.calls.clear();
+  makeLog(w, { address: ex, sig: "MarginWithdrawn(address,uint256)", topics: [user], data: word(20_000n * E18), block: 992, logIndex: 2, ts: 9_004 });
+  const r3 = await runOnce({ config: cfg, env: env0, state: { checkpoint: 980 }, fetchImpl: w.fetch, now: 10_000 });
+  assert.equal(r3.errors.length, 0, r3.errors.join());
+  const ev3 = r3.notes.filter((n) => n.status === "事件");
+  assert.equal(ev3.length, 1);
+  assert.ok(ev3[0].lines.some((l) => /金額：20,000（單筆門檻 10,000；相對門檻未評估（讀不到合約餘額））/.test(l)));
+});
+
+test("M6：交易所餘額較 24 小時高點下降 ≥ 30% → SEV-2；回升後恢復；讀取失敗不算恢復", async () => {
+  const w = fakeWorld();
+  const cfg = only("exchange-balance-drop");
+  const token = addrOf("exchange-balance-drop", "token");
+  const ex = addrOf("exchange-balance-drop", "holder");
+  const set = (n) => w.setCall(token, "balanceOf(address)", [ex], word(BigInt(n) * E18));
+  const state = {};
+  set(1000);
+  assert.equal((await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 7200 })).notes.length, 0);
+  set(750); // -25%：未達
+  assert.equal((await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 7500 })).notes.length, 0);
+  set(650); // -35%（拆成很多小筆也一樣）
+  const r3 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 7800 });
+  assert.deepEqual(r3.notes.map((n) => [n.key, n.severity, n.status]), [["exchange-balance-drop:drop", "SEV-2", "觸發"]]);
+  assert.match(r3.notes[0].lines[0], /持有 650，24 小時內高點 1,000，下降 35\.00%（門檻 30%）/);
+  w.calls.clear();
+  const r4 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 8100 });
+  assert.match(r4.errors[0], /exchange-balance-drop: balanceOf\(PerpetualExchange\) 讀取失敗/);
+  assert.ok(state.open["exchange-balance-drop:drop"]);
+  set(900);
+  const r5 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 8400 });
+  assert.deepEqual(r5.notes.map((n) => n.status), ["恢復"]);
+  // 24 小時後舊高點過期：以新的水位為準。
+  set(600);
+  const r6 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 8400 + 25 * 3600 });
+  assert.equal(r6.notes.length, 0);
+});
+
+test("L1：累計視窗用區塊時間——落後追趕時，幾小時前的提領不算進「最近一小時」", async () => {
+  const cfg = only("large-margin-withdrawal");
+  const ex = addrOf("large-margin-withdrawal", "PerpetualExchange");
+  const user = topicAddr("0x00000000000000000000000000000000000000ee");
+  const now = 100_000;
+  const logs = (w, ts) => {
+    for (let i = 0; i < 6; i++) {
+      makeLog(w, { address: ex, sig: "MarginWithdrawn(address,uint256)", topics: [user], data: word(9_000n * E18), block: 990 + i, logIndex: i, ...(ts === null ? {} : { ts: ts + i }) });
+    }
+  };
+  // 6 × 9,000 = 54,000 ≥ 50,000，但都發生在 3 小時前（Worker 停了 3 小時後追趕）。
+  const old = fakeWorld();
+  logs(old, now - 3 * 3600);
+  const r1 = await runOnce({ config: cfg, env: env0, state: { checkpoint: 980 }, fetchImpl: old.fetch, now });
+  assert.ok(!r1.notes.some((n) => n.key === "large-margin-withdrawal:window"), "三小時前的提領不在一小時視窗內");
+  // 同樣的六筆發生在 10 分鐘內 → 累計告警。
+  const recent = fakeWorld();
+  logs(recent, now - 600);
+  const st = { checkpoint: 980 };
+  const r2 = await runOnce({ config: cfg, env: env0, state: st, fetchImpl: recent.fetch, now });
+  assert.ok(r2.notes.some((n) => n.key === "large-margin-withdrawal:window" && n.status === "觸發"));
+  assert.equal(st.windows["large-margin-withdrawal"][0][0], now - 600, "視窗裡存的是區塊時間");
+  // log 沒帶 blockTimestamp 的節點：改查 eth_getBlockByNumber。
+  const noTs = fakeWorld();
+  logs(noTs, null);
+  for (let i = 0; i < 6; i++) noTs.blockTimes.set(990 + i, now - 3 * 3600 + i);
+  const r3 = await runOnce({ config: cfg, env: env0, state: { checkpoint: 980 }, fetchImpl: noTs.fetch, now });
+  assert.equal(r3.errors.length, 0, r3.errors.join());
+  assert.ok(!r3.notes.some((n) => n.key === "large-margin-withdrawal:window"));
 });
 
 // ── state 規則 ───────────────────────────────────────────────────────────────

@@ -387,6 +387,7 @@ export async function scanEvents({ config, env, rpc, state, now }) {
   const explorer = config.network.explorer.replace(/\/$/, "");
   let cursor = from;
   let rangeError = null;
+  const balances = new Map(); // 相對門檻用的合約餘額（一輪內只讀一次）
   while (cursor <= latest && out.requests < maxRequests) {
     const to = Math.min(latest, cursor + out.range - 1);
     out.requests++;
@@ -408,7 +409,7 @@ export async function scanEvents({ config, env, rpc, state, now }) {
       break;
     }
     rangeError = null;
-    out.findings.push(...logFindings({ config, env, state, now, logs, index, explorer }));
+    out.findings.push(...(await logFindings({ config, env, state, now, logs, index, explorer, rpc, balances })));
     out.nextCheckpoint = to;
     out.scanned += to - cursor + 1;
     cursor = to + 1;
@@ -419,9 +420,19 @@ export async function scanEvents({ config, env, rpc, state, now }) {
   return out;
 }
 
-/** 把一段 eth_getLogs 的結果轉成 findings（並記入累計視窗）。 */
-function logFindings({ config, env, state, now, logs, index, explorer }) {
-  const findings = [];
+/**
+ * 把一段 eth_getLogs 的結果轉成 findings（並記入累計視窗）。
+ *
+ * 金額規則有兩個門檻，任一成立就告警：
+ *   • 絕對門檻（amount.threshold）。
+ *   • 相對門檻（amount.relativeBps，審查 M6）：單筆 ≥ 合約「提領前」餘額的某個比例。絕對門檻是
+ *     佔位值，實測比合約的全部餘額還高（exchange 只有 500 MockUSDC、門檻 10,000），等於永遠不響。
+ *     提領前餘額 ≈ 當下 balanceOf ＋ 本段同一合約的提領合計。餘額讀不到時只用絕對門檻。
+ * 累計視窗用**區塊時間**（log 的 blockTimestamp，沒有就查區塊）：落後追趕時，幾小時前的提領
+ * 不該被算進「最近一小時」（審查 L1）。
+ */
+async function logFindings({ config, env, state, now, logs, index, explorer, rpc, balances }) {
+  const entries = [];
   for (const log of logs) {
     if (log.removed) continue;
     const hits = index.get(`${lc(log.address)}|${lc(log.topics?.[0])}`) ?? [];
@@ -434,27 +445,100 @@ function logFindings({ config, env, state, now, logs, index, explorer }) {
         `區塊：${Number(BigInt(log.blockNumber))}`,
         `tx：${explorer}/tx/${log.transactionHash}`,
       ];
+      let raw;
       if (rule.amount) {
         const f = fields.find((x) => x.name === rule.amount.param);
         if (!f || f.raw === undefined) continue;
-        const dec = rule.amount.decimals;
-        const single = toUnits(param(config, env, rule.amount.threshold), dec);
-        recordWindow(state, rule, f.raw, now);
-        lines.splice(2, 0, `金額：${formatUnits(f.raw, dec)}（單筆門檻 ${formatUnits(single, dec)}）`);
-        if (f.raw < single) continue;
+        raw = f.raw;
       }
-      findings.push({ ...finding(rule, `${rule.id}:${where}`, rule.severity, rule.title, lines), once: true });
+      entries.push({ rule, contract, log, lines, raw, key: `${rule.id}:${where}` });
     }
+  }
+  const amounts = entries.filter((e) => e.rule.amount);
+  const times = await blockTimes(amounts.filter((e) => e.rule.amount.windowThreshold), rpc, now);
+  await readBalances(amounts.filter((e) => e.rule.amount.balanceOf && e.rule.amount.relativeBps), rpc, balances);
+  const sums = new Map(); // `${rule.id}|${addr}` → 本段的提領合計
+  for (const e of amounts) {
+    const k = `${e.rule.id}|${lc(e.contract.address)}`;
+    sums.set(k, (sums.get(k) ?? 0n) + e.raw);
+  }
+
+  const findings = [];
+  for (const e of entries) {
+    const a = e.rule.amount;
+    if (a) {
+      const dec = a.decimals;
+      const single = toUnits(param(config, env, a.threshold), dec);
+      recordWindow(state, e.rule, e.raw, times.get(e.log.blockNumber) ?? now);
+      let hit = e.raw >= single;
+      let rel = "";
+      if (a.relativeBps && a.balanceOf) {
+        const bps = BigInt(Math.floor(numParam(config, env, a.relativeBps)));
+        const bal = balances.get(`${lc(a.balanceOf.token)}|${lc(e.contract.address)}`);
+        if (bal === undefined || bal === null) rel = "；相對門檻未評估（讀不到合約餘額）";
+        else {
+          const before = bal + (sums.get(`${e.rule.id}|${lc(e.contract.address)}`) ?? 0n);
+          const pct = before > 0n ? (e.raw * 10000n) / before : 0n;
+          rel = `；佔合約提領前餘額約 ${(Number(pct) / 100).toFixed(2)}%（相對門檻 ${Number(bps) / 100}%）`;
+          if (before > 0n && e.raw * 10000n >= bps * before) hit = true;
+        }
+      }
+      e.lines.splice(2, 0, `金額：${formatUnits(e.raw, dec)}（單筆門檻 ${formatUnits(single, dec)}${rel}）`);
+      if (!hit) continue;
+    }
+    findings.push({ ...finding(e.rule, e.key, e.rule.severity, e.rule.title, e.lines), once: true });
   }
   return findings;
 }
 
-/** 累計視窗：同一規則在 windowSec 內的金額加總（KV 狀態，只存 [秒, 金額字串]）。 */
-function recordWindow(state, rule, amount, now) {
+/** 區塊時間（秒）：blockNumber(hex) → timestamp。優先用 log 自帶的 blockTimestamp；沒有就批次查區塊；查不到退回 now。 */
+async function blockTimes(entries, rpc, now) {
+  const out = new Map();
+  const missing = new Set();
+  for (const e of entries) {
+    if (e.log.blockTimestamp !== undefined && e.log.blockTimestamp !== null) out.set(e.log.blockNumber, Number(BigInt(e.log.blockTimestamp)));
+    else missing.add(e.log.blockNumber);
+  }
+  const need = [...missing].filter((b) => !out.has(b));
+  if (need.length) {
+    let res = [];
+    try {
+      res = await rpc.batch(need.map((b) => ({ method: "eth_getBlockByNumber", params: [b, false] })));
+    } catch {
+      /* 查不到區塊時間：用 now（最多把舊提領多算進視窗，不會漏） */
+    }
+    need.forEach((b, i) => out.set(b, res[i]?.result?.timestamp ? Number(BigInt(res[i].result.timestamp)) : now));
+  }
+  return out;
+}
+
+/** 讀「代幣在合約裡的餘額」，結果放進 balances（`${token}|${holder}` → BigInt，讀不到是 null）。 */
+async function readBalances(entries, rpc, balances) {
+  const want = new Map();
+  for (const e of entries) {
+    const k = `${lc(e.rule.amount.balanceOf.token)}|${lc(e.contract.address)}`;
+    if (!balances.has(k)) want.set(k, { token: e.rule.amount.balanceOf.token, selector: e.rule.amount.balanceOf.selector, holder: e.contract.address });
+  }
+  if (!want.size) return;
+  const list = [...want];
+  let res = [];
+  try {
+    res = await rpc.batch(list.map(([, w]) => ethCall(w.token, w.selector + encodeArg("address", w.holder))));
+  } catch {
+    /* 整批失敗：全部當作讀不到 */
+  }
+  list.forEach(([k], i) => {
+    const w = res[i]?.error || !res[i] ? [] : words(res[i].result);
+    balances.set(k, w.length ? w[0] : null);
+  });
+}
+
+/** 累計視窗：同一規則在 windowSec 內的金額加總（KV 狀態，只存 [區塊時間（秒）, 金額字串]）。 */
+function recordWindow(state, rule, amount, at) {
   if (!rule.amount?.windowThreshold) return;
   state.windows ??= {};
   const arr = (state.windows[rule.id] ??= []);
-  arr.push([now, amount.toString()]);
+  arr.push([at, amount.toString()]);
 }
 export function windowFindings({ config, env, state, now }) {
   const out = [];
@@ -478,6 +562,20 @@ export function windowFindings({ config, env, state, now }) {
 }
 
 // ── state 規則 ───────────────────────────────────────────────────────────────
+
+/**
+ * 24 小時高點：每小時一個桶、只存該小時的最大值，保留 24 個桶（KV 大小固定，高點不漏）。
+ * 記入這一輪的值後回傳高點。
+ */
+function peak24h(state, id, value, now) {
+  state.samples ??= {};
+  const hour = Math.floor(now / 3600);
+  const buckets = Object.fromEntries(Object.entries(state.samples[id] ?? {}).filter(([h]) => hour - Number(h) < 24));
+  const prev = buckets[hour] !== undefined ? BigInt(buckets[hour]) : -1n;
+  if (value > prev) buckets[hour] = value.toString();
+  state.samples[id] = buckets;
+  return Object.values(buckets).reduce((m, a) => (BigInt(a) > m ? BigInt(a) : m), 0n);
+}
 
 const checks = {
   /** 價格新鮮度：crypto 以交易所 maxPriceAge 為硬上限、ORACLE_STALE_WARN_SEC 預警；其他資產放寬（休市）。 */
@@ -583,16 +681,7 @@ const checks = {
     const dec = rule.decimals;
     const min = toUnits(param(config, env, "INSURANCE_MIN_USDC"), dec);
     const dropBps = BigInt(numParam(config, env, "INSURANCE_DROP_BPS"));
-    // 每小時一個桶、只存該小時的最大值，保留 24 個桶：KV 大小固定，高點不漏。
-    state.samples ??= {};
-    const hour = Math.floor(now / 3600);
-    const buckets = Object.fromEntries(
-      Object.entries(state.samples[rule.id] ?? {}).filter(([h]) => hour - Number(h) < 24),
-    );
-    const prev = buckets[hour] !== undefined ? BigInt(buckets[hour]) : -1n;
-    if (assets > prev) buckets[hour] = assets.toString();
-    state.samples[rule.id] = buckets;
-    const peak = Object.values(buckets).reduce((m, a) => (BigInt(a) > m ? BigInt(a) : m), 0n);
+    const peak = peak24h(state, rule.id, assets, now);
     const out = [];
     const addr = contractOf(rule, "vault").address;
     if (assets < min) {
@@ -608,6 +697,27 @@ const checks = {
       ]));
     }
     return out;
+  },
+
+  /**
+   * 合約持有的代幣餘額較 24 小時高點下降超過門檻（審查 M6）。單筆提領的絕對門檻是佔位值；
+   * 這條看的是「池子被抽走多少比例」，拆單也躲不掉。門檻參數名在 rule.dropBps。
+   */
+  async balanceDrop({ rule, config, env, rpc, state, now }) {
+    const holder = contractOf(rule, "holder");
+    const [r] = await rpc.batch([callReq(rule, "token", "balanceOf(address)", [holder.address])]);
+    const w = r.error ? [] : words(r.result);
+    if (!w.length) throw new Error(`balanceOf(${holder.ref}) 讀取失敗：${r.error ?? "空回應"}`);
+    const bal = w[0];
+    const dec = rule.decimals;
+    const dropBps = BigInt(Math.floor(numParam(config, env, rule.dropBps)));
+    const peak = peak24h(state, rule.id, bal, now);
+    if (!(peak > 0n && bal < peak && (peak - bal) * 10000n >= peak * dropBps)) return [];
+    return [finding(rule, `${rule.id}:drop`, rule.severity, rule.title, [
+      `${holder.ref} 持有 ${formatUnits(bal, dec)}，24 小時內高點 ${formatUnits(peak, dec)}，下降 ${(Number(((peak - bal) * 10000n) / peak) / 100).toFixed(2)}%（門檻 ${Number(dropBps) / 100}%）`,
+      `${holder.ref}：${holder.address}`,
+      "可能是正常的大量提領，也可能是資金被抽走：對照 MarginWithdrawn 與 owner／接線告警",
+    ])];
   },
 
   /** 代幣化金庫：儲備率對 minReserveRatioBps、mint 自動停止、暫停、定價缺口。 */

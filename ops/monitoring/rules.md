@@ -10,7 +10,7 @@
 > - 「**部署版不發此事件**」：合約已部署，但鏈上那一版不發這個事件（前端 ABI 來自 master 原始碼，比部署版新）。
 >   這些事件**現在不會響**；有對應 setter 的由「狀態」規則每輪讀 getter 比對。依據是 [`deployed.json`](deployed.json)（唯讀 RPC 抓的 runtime bytecode，CI 離線比對 topic0）。
 
-共 **52** 條規則：運作中 41 條（事件 30、狀態 9、HTTP 2），部署版不發此事件 10 條，待部署 1 條。鏈：base-sepolia（84532）。
+共 **53** 條規則：運作中 42 條（事件 30、狀態 10、HTTP 2），部署版不發此事件 10 條，待部署 1 條。鏈：base-sepolia（84532）。
 已部署 bytecode 快照：區塊 47537290（2026-10-01）。
 
 ## 總表
@@ -47,16 +47,17 @@
 | [`chainlink-adapter-config`](#chainlink-adapter-config) Chainlink adapter 的 feed 對應變更 | Oracle | 事件 | SEV-2 | 運作中 | 每一筆 | [§5](../../docs/INCIDENT_RESPONSE.md#5-keeper-熔斷處置) |
 | [`pyth-adapter-config`](#pyth-adapter-config) Pyth adapter 的 price id 對應變更 | Oracle | 事件 | SEV-2 | 運作中 | 每一筆 | [§5](../../docs/INCIDENT_RESPONSE.md#5-keeper-熔斷處置) |
 | [`exchange-bad-debt`](#exchange-bad-debt) 交易所壞帳或自動減倉 | 保險金與儲備 | 事件 | SEV-2 | 運作中 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) [§7](../../docs/INCIDENT_RESPONSE.md#7-對外溝通與客戶通報目標值可調整) |
-| [`large-margin-withdrawal`](#large-margin-withdrawal) 交易所大額提領 | 大額提領 | 事件 | SEV-2 | 運作中 | 單筆 ≥ `LARGE_WITHDRAWAL_USDC`（預設 10000 USDC（MockUSDC））；`WITHDRAWAL_WINDOW_SEC`（預設 3600 秒） 內累計 ≥ `LARGE_WITHDRAWAL_WINDOW_USDC`（預設 50000 USDC（MockUSDC））；金額 18 位小數（MockUSDC） | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
-| [`insurance-withdrawal`](#insurance-withdrawal) 保險金庫大額贖回 | 大額提領 | 事件 | SEV-2 | 運作中 | 單筆 ≥ `INSURANCE_WITHDRAW_USDC`（預設 5000 USDC（MockUSDC））；`WITHDRAWAL_WINDOW_SEC`（預設 3600 秒） 內累計 ≥ `LARGE_WITHDRAWAL_WINDOW_USDC`（預設 50000 USDC（MockUSDC））；金額 18 位小數（MockUSDC） | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
+| [`large-margin-withdrawal`](#large-margin-withdrawal) 交易所大額提領 | 大額提領 | 事件 | SEV-2 | 運作中 | 單筆 ≥ `LARGE_WITHDRAWAL_USDC`（預設 10000 USDC（MockUSDC）），或 ≥ 合約提領前餘額的 `LARGE_WITHDRAWAL_BPS`（預設 2000 bps）；`WITHDRAWAL_WINDOW_SEC`（預設 3600 秒） 內累計 ≥ `LARGE_WITHDRAWAL_WINDOW_USDC`（預設 50000 USDC（MockUSDC））；金額 18 位小數（MockUSDC） | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
+| [`insurance-withdrawal`](#insurance-withdrawal) 保險金庫大額贖回 | 大額提領 | 事件 | SEV-2 | 運作中 | 單筆 ≥ `INSURANCE_WITHDRAW_USDC`（預設 5000 USDC（MockUSDC）），或 ≥ 合約提領前餘額的 `LARGE_WITHDRAWAL_BPS`（預設 2000 bps）；`WITHDRAWAL_WINDOW_SEC`（預設 3600 秒） 內累計 ≥ `LARGE_WITHDRAWAL_WINDOW_USDC`（預設 50000 USDC（MockUSDC））；金額 18 位小數（MockUSDC） | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 | [`insurance-bailout`](#insurance-bailout) 保險金 bailout | 保險金與儲備 | 事件 | SEV-2 | 運作中 | 每一筆（`BAILOUT_MIN_USDC`（預設 0 USDC（MockUSDC）））；金額 18 位小數（MockUSDC） | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
-| [`vault-large-redeem`](#vault-large-redeem) 代幣化金庫大額 redeem | 大額提領 | 事件 | SEV-2 | 運作中 | 單筆 ≥ `LARGE_REDEEM_USDC`（預設 10000 USDC（MockUSDC））；`WITHDRAWAL_WINDOW_SEC`（預設 3600 秒） 內累計 ≥ `LARGE_WITHDRAWAL_WINDOW_USDC`（預設 50000 USDC（MockUSDC））；金額 18 位小數（MockUSDC） | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
+| [`vault-large-redeem`](#vault-large-redeem) 代幣化金庫大額 redeem | 大額提領 | 事件 | SEV-2 | 運作中 | 單筆 ≥ `LARGE_REDEEM_USDC`（預設 10000 USDC（MockUSDC）），或 ≥ 合約提領前餘額的 `LARGE_WITHDRAWAL_BPS`（預設 2000 bps）；`WITHDRAWAL_WINDOW_SEC`（預設 3600 秒） 內累計 ≥ `LARGE_WITHDRAWAL_WINDOW_USDC`（預設 50000 USDC（MockUSDC））；金額 18 位小數（MockUSDC） | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 | [`fee-withdrawals`](#fee-withdrawals) 平台手續費提領（V1 FeeRouter） | 大額提領 | 事件 | SEV-3 | 運作中 | 每一筆（`FEE_WITHDRAW_ALERT_USDC`（預設 0 USDC））；金額 18 位小數（MockUSDC） | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) |
 | [`x402-fee-withdrawals`](#x402-fee-withdrawals) x402 分潤路由手續費提領 | x402／FeeRouter 設定 | 事件 | SEV-3 | 運作中 | 每一筆（`FEE_WITHDRAW_ALERT_USDC`（預設 0 USDC））；金額 6 位小數（USDC） | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) |
 | [`vault-fees-withdrawn`](#vault-fees-withdrawn) 代幣化金庫手續費提領 | 大額提領 | 事件 | SEV-3 | 運作中 | 每一筆（`FEE_WITHDRAW_ALERT_USDC`（預設 0 USDC））；金額 18 位小數（MockUSDC） | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) |
 | [`oracle-stale`](#oracle-stale) 交易所價格過期 | Oracle | 狀態 | SEV-2 | 運作中 | 加密資產：≥ `ORACLE_STALE_WARN_SEC`（預設 14400 秒） → SEV-3；≥ 鏈上 `maxPriceAge()` → SEV-2。其他資產：≥ `NONCRYPTO_STALE_SEC`（預設 259200 秒） → SEV-3 | [§5](../../docs/INCIDENT_RESPONSE.md#5-keeper-熔斷處置) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 | [`oracle-deviation`](#oracle-deviation) 交易所價格偏離參考價 | Oracle | 狀態 | SEV-2 | 運作中 | 偏離 ≥ `ORACLE_DEVIATION_BPS`（預設 300 bps） → SEV-2；≥ `ORACLE_DEVIATION_CRIT_BPS`（預設 1000 bps） → SEV-1；參考價超過 `REFERENCE_MAX_AGE_SEC`（預設 7200 秒） 不比對；**一檔都比不到 → SEV-3「沒有可用的參考價」** | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§5](../../docs/INCIDENT_RESPONSE.md#5-keeper-熔斷處置) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 | [`guarded-oracle-paused`](#guarded-oracle-paused) GuardedOracle 暫停中 | 暫停與資產模式 | 狀態 | SEV-3 | 運作中 | `paused() == true` | [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
+| [`exchange-balance-drop`](#exchange-balance-drop) 交易所餘額大幅下降 | 大額提領 | 狀態 | SEV-2 | 運作中 | 餘額較 24 小時高點下降 ≥ `EXCHANGE_BALANCE_DROP_BPS`（預設 3000 bps） → SEV-2 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 | [`insurance-fund`](#insurance-fund) 保險金下降 | 保險金與儲備 | 狀態 | SEV-2 | 運作中 | `totalAssets()` < `INSURANCE_MIN_USDC`（預設 100 USDC（MockUSDC）），或較 24 小時高點下降 ≥ `INSURANCE_DROP_BPS`（預設 2000 bps） → SEV-2 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) [§7](../../docs/INCIDENT_RESPONSE.md#7-對外溝通與客戶通報目標值可調整) |
 | [`vault-reserve`](#vault-reserve) 代幣化金庫儲備率 | 保險金與儲備 | 狀態 | SEV-2 | 運作中 | 儲備率 < `minReserveRatioBps()` → SEV-2；< 下限 + `RESERVE_WARN_MARGIN_BPS`（預設 500 bps） → SEV-3；mint 自動停止 → SEV-2；無法定價或暫停 → SEV-3 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 | [`keeper-gas`](#keeper-gas) keeper 錢包 gas 過低 | keeper | 狀態 | SEV-3 | 運作中 | < `GAS_MIN_ETH`（預設 0.02 ETH） → SEV-3；< `GAS_CRIT_ETH`（預設 0.005 ETH） → SEV-2 | [§5](../../docs/INCIDENT_RESPONSE.md#5-keeper-熔斷處置) |
@@ -88,6 +89,7 @@
 | `MUTE_KEYS` | （空） | 告警 key（逗號分隔） | 靜音指定的告警 key（完全相同或以它為前綴的子 key），例如 x402-payto:unsafe。告警狀態照常追蹤，只是不送通知。monitor-self:* 不可靜音；SEV-1 規則不可整條靜音（CI 檢查） |
 | `LARGE_WITHDRAWAL_USDC` | `10000` | USDC（MockUSDC） | 交易所單筆提領保證金的告警門檻【待使用者決定】 |
 | `LARGE_WITHDRAWAL_WINDOW_USDC` | `50000` | USDC（MockUSDC） | 同一規則在 WITHDRAWAL_WINDOW_SEC 內累計提領的告警門檻【待使用者決定】 |
+| `LARGE_WITHDRAWAL_BPS` | `2000` | bps | 單筆提領／贖回佔合約「提領前餘額」達此比例即告警（20%），與絕對門檻擇一成立。絕對門檻是佔位值（2026-10-01 實測 exchange 只有 500 MockUSDC，絕對門檻 10,000 永遠不會響），這個相對門檻讓規則在任何 TVL 下都有作用 |
 | `WITHDRAWAL_WINDOW_SEC` | `3600` | 秒 | 累計提領的視窗長度 |
 | `INSURANCE_WITHDRAW_USDC` | `5000` | USDC（MockUSDC） | 保險金庫單筆贖回的告警門檻【待使用者決定】 |
 | `BAILOUT_MIN_USDC` | `0` | USDC（MockUSDC） | 保險金 bailout 的告警門檻；0 表示每一筆都告警 |
@@ -100,6 +102,7 @@
 | `REFERENCE_MAX_AGE_SEC` | `7200` | 秒 | 參考價本身超過此時間未更新就不拿來比對（避免拿舊的參考價誤報） |
 | `INSURANCE_MIN_USDC` | `100` | USDC（MockUSDC） | 保險金庫 totalAssets 的絕對下限【待使用者決定】；2026-10-01 唯讀查詢現值約 150 |
 | `INSURANCE_DROP_BPS` | `2000` | bps | 保險金較 24 小時內高點下降超過此比例即告警（20%） |
+| `EXCHANGE_BALANCE_DROP_BPS` | `3000` | bps | 交易所持有的 MockUSDC 較 24 小時內高點下降超過此比例即告警（30%）；看的是池子被抽走的比例，拆單也算 |
 | `RESERVE_WARN_MARGIN_BPS` | `500` | bps | 儲備率低於 minReserveRatioBps + 此值即預警 |
 | `GAS_MIN_ETH` | `0.02` | ETH | keeper 錢包 gas 餘額預警門檻【待使用者決定】 |
 | `GAS_CRIT_ETH` | `0.005` | ETH | keeper 錢包 gas 餘額嚴重門檻【待使用者決定】 |
@@ -585,14 +588,14 @@ AggregatorOracle 的來源之一（PythAdapter）某個資產改指向別的 Pyt
 
 **交易所大額提領**｜大額提領｜事件｜SEV-2｜運作中
 
-單筆提領保證金達門檻，或一小時內累計達門檻（防拆單）。
+單筆提領保證金達絕對門檻（佔位值，待使用者決定），或達交易所當下 MockUSDC 餘額的一定比例；另有一小時累計門檻。相對門檻讓規則在 TVL 很小的測試網也有作用。
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
 | PerpetualExchange（ABI `PerpetualExchange`） | addresses.ts BASE_SEPOLIA.PerpetualExchange | `0x827eA0c62a32e995927101259042F8A27D99124D` |
 
 - 事件：`MarginWithdrawn(address,uint256)`
-- 門檻：單筆 ≥ `LARGE_WITHDRAWAL_USDC`（預設 10000 USDC（MockUSDC））；`WITHDRAWAL_WINDOW_SEC`（預設 3600 秒） 內累計 ≥ `LARGE_WITHDRAWAL_WINDOW_USDC`（預設 50000 USDC（MockUSDC））；金額 18 位小數（MockUSDC）
+- 門檻：單筆 ≥ `LARGE_WITHDRAWAL_USDC`（預設 10000 USDC（MockUSDC）），或 ≥ 合約提領前餘額的 `LARGE_WITHDRAWAL_BPS`（預設 2000 bps）；`WITHDRAWAL_WINDOW_SEC`（預設 3600 秒） 內累計 ≥ `LARGE_WITHDRAWAL_WINDOW_USDC`（預設 50000 USDC（MockUSDC））；金額 18 位小數（MockUSDC）
 - 處置：[INCIDENT_RESPONSE「1. 嚴重度分級」](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級)、[INCIDENT_RESPONSE「3. 暫停與凍結：現行部署能做什麼」](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼)
 
 ### insurance-withdrawal
@@ -606,7 +609,7 @@ LP 從保險金庫贖回達門檻，或一小時內累計達門檻。保險金�
 | InsuranceVault（ABI `InsuranceVault`） | addresses.ts BASE_SEPOLIA.InsuranceVault | `0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812` |
 
 - 事件：`Withdrawn(address,uint256,uint256)`
-- 門檻：單筆 ≥ `INSURANCE_WITHDRAW_USDC`（預設 5000 USDC（MockUSDC））；`WITHDRAWAL_WINDOW_SEC`（預設 3600 秒） 內累計 ≥ `LARGE_WITHDRAWAL_WINDOW_USDC`（預設 50000 USDC（MockUSDC））；金額 18 位小數（MockUSDC）
+- 門檻：單筆 ≥ `INSURANCE_WITHDRAW_USDC`（預設 5000 USDC（MockUSDC）），或 ≥ 合約提領前餘額的 `LARGE_WITHDRAWAL_BPS`（預設 2000 bps）；`WITHDRAWAL_WINDOW_SEC`（預設 3600 秒） 內累計 ≥ `LARGE_WITHDRAWAL_WINDOW_USDC`（預設 50000 USDC（MockUSDC））；金額 18 位小數（MockUSDC）
 - 處置：[INCIDENT_RESPONSE「1. 嚴重度分級」](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級)、[INCIDENT_RESPONSE「3. 暫停與凍結：現行部署能做什麼」](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼)
 
 ### insurance-bailout
@@ -634,7 +637,7 @@ LP 從保險金庫贖回達門檻，或一小時內累計達門檻。保險金�
 | AssetVaultV2（ABI `AssetVaultV2`） | addresses.ts V2_STACK[84532].AssetVaultV2 | `0x916D7Fc399d9afd23BAa113E2c2Cc601341ff10a` |
 
 - 事件：`Redeemed(address,bytes32,uint256,uint256,uint256)`
-- 門檻：單筆 ≥ `LARGE_REDEEM_USDC`（預設 10000 USDC（MockUSDC））；`WITHDRAWAL_WINDOW_SEC`（預設 3600 秒） 內累計 ≥ `LARGE_WITHDRAWAL_WINDOW_USDC`（預設 50000 USDC（MockUSDC））；金額 18 位小數（MockUSDC）
+- 門檻：單筆 ≥ `LARGE_REDEEM_USDC`（預設 10000 USDC（MockUSDC）），或 ≥ 合約提領前餘額的 `LARGE_WITHDRAWAL_BPS`（預設 2000 bps）；`WITHDRAWAL_WINDOW_SEC`（預設 3600 秒） 內累計 ≥ `LARGE_WITHDRAWAL_WINDOW_USDC`（預設 50000 USDC（MockUSDC））；金額 18 位小數（MockUSDC）
 - 處置：[INCIDENT_RESPONSE「1. 嚴重度分級」](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級)、[INCIDENT_RESPONSE「3. 暫停與凍結：現行部署能做什麼」](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼)
 
 ### fee-withdrawals
@@ -727,6 +730,21 @@ GuardedOracle.paused() 為 true（事件規則可能因掃描中斷漏掉，狀�
 - 讀取：`oracle.paused()`
 - 門檻：`paused() == true`
 - 處置：[INCIDENT_RESPONSE「3. 暫停與凍結：現行部署能做什麼」](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼)
+
+### exchange-balance-drop
+
+**交易所餘額大幅下降**｜大額提領｜狀態｜SEV-2｜運作中
+
+每輪讀 MockUSDC.balanceOf(交易所)，與 24 小時內的高點比較；下降超過 EXCHANGE_BALANCE_DROP_BPS 即告警。單筆提領門檻擋不住拆單，這條看的是池子整體被抽走多少。高點從部署後開始累積（存在 KV）。
+
+| 合約 | 位址來源 | 位址 |
+|---|---|---|
+| MockUSDC（ABI `MockUSDC`） | addresses.ts BASE_SEPOLIA.MockUSDC | `0x69fd695Bc7C3aFdb35ABA35cD6890C506400b035` |
+| PerpetualExchange（ABI `PerpetualExchange`） | addresses.ts BASE_SEPOLIA.PerpetualExchange | `0x827eA0c62a32e995927101259042F8A27D99124D` |
+
+- 讀取：`token.balanceOf(address)`
+- 門檻：餘額較 24 小時高點下降 ≥ `EXCHANGE_BALANCE_DROP_BPS`（預設 3000 bps） → SEV-2
+- 處置：[INCIDENT_RESPONSE「1. 嚴重度分級」](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級)、[INCIDENT_RESPONSE「3. 暫停與凍結：現行部署能做什麼」](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼)
 
 ### insurance-fund
 

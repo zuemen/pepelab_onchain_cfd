@@ -124,6 +124,7 @@ export const REQUIRED_RULES = {
   "oracle-stale": ["SEV-2", "active"],
   "oracle-deviation": ["SEV-2", "active"],
   "guarded-oracle-paused": ["SEV-3", "active"],
+  "exchange-balance-drop": ["SEV-2", "active"],
   "insurance-fund": ["SEV-2", "active"],
   "vault-reserve": ["SEV-2", "active"],
   "keeper-gas": ["SEV-3", "active"],
@@ -161,6 +162,7 @@ export const PARAM_SPECS = {
   MUTE_KEYS: { type: "keys" },
   LARGE_WITHDRAWAL_USDC: { type: "decimal", max: 1e12 },
   LARGE_WITHDRAWAL_WINDOW_USDC: { type: "decimal", max: 1e12 },
+  LARGE_WITHDRAWAL_BPS: { type: "int", min: 1, max: 10_000 },
   WITHDRAWAL_WINDOW_SEC: { type: "int", min: 300, max: 86_400 },
   INSURANCE_WITHDRAW_USDC: { type: "decimal", max: 1e12 },
   BAILOUT_MIN_USDC: { type: "decimal", max: 1e12 },
@@ -173,6 +175,7 @@ export const PARAM_SPECS = {
   REFERENCE_MAX_AGE_SEC: { type: "int", min: 60, max: 604_800 },
   INSURANCE_MIN_USDC: { type: "decimal", max: 1e12 },
   INSURANCE_DROP_BPS: { type: "int", min: 1, max: 10_000 },
+  EXCHANGE_BALANCE_DROP_BPS: { type: "int", min: 1, max: 10_000 },
   RESERVE_WARN_MARGIN_BPS: { type: "int", min: 0, max: 10_000 },
   GAS_MIN_ETH: { type: "decimal", max: 1000 },
   GAS_CRIT_ETH: { type: "decimal", max: 1000 },
@@ -641,7 +644,10 @@ const strip = (cfg) => {
   for (const r of c.rules ?? []) {
     delete r.runbookUrl;
     delete r.decimals;
-    if (r.amount) delete r.amount.decimals;
+    if (r.amount) {
+      delete r.amount.decimals;
+      delete r.amount.balanceOf;
+    }
     for (const k of r.contracts ?? []) delete k.address;
     for (const e of r.events ?? []) {
       delete e.topic0;
@@ -736,7 +742,7 @@ export function generate(input, ctx) {
         const inp = rule.events?.[0]?.inputs?.find((i) => i.name === a.param);
         if (!inp) p(rule, `amount.param ${a.param} 不是事件參數`);
         else if (inp.indexed || !/^uint\d*$/.test(inp.type)) p(rule, `amount.param ${a.param} 必須是非 indexed 的 uint`);
-        for (const k of ["threshold", "windowThreshold", "windowSec"]) {
+        for (const k of ["threshold", "windowThreshold", "windowSec", "relativeBps"]) {
           if (a[k] && !cfg.params?.[a[k]]) p(rule, `amount.${k} 參照未定義的參數 ${a[k]}`);
         }
         if (!a.threshold) p(rule, "amount 規則必須有 threshold");
@@ -744,6 +750,8 @@ export function generate(input, ctx) {
         try {
           a.decimals = ctx.tokenDecimals(a.token);
           if (active) checkTokenOnChain(rule, a.token, a.decimals, ctx, p);
+          // 相對門檻：讀「該代幣在發出事件的合約裡的餘額」。
+          if (a.relativeBps) a.balanceOf = { token: ctx.tokenAddress(a.token), selector: selector("balanceOf(address)") };
         } catch (e) {
           p(rule, e.message);
         }
@@ -777,6 +785,12 @@ export function generate(input, ctx) {
         } catch (e) {
           p(rule, e.message);
         }
+      }
+      if (rule.check === "balanceDrop") {
+        if (!cfg.params?.[rule.dropBps]) p(rule, `dropBps 參照未定義的參數 ${rule.dropBps}`);
+        for (const as of ["token", "holder"]) if (!(rule.contracts ?? []).some((c) => c.as === as)) p(rule, `balanceDrop 規則需要 contracts[].as = "${as}"`);
+        const tok = (rule.contracts ?? []).find((c) => c.as === "token");
+        if (tok?.address && rule.token && lc(tok.address) !== lc(ctx.tokenAddress(rule.token) ?? "")) p(rule, `token 合約 ${tok.ref} 不是 ${rule.token}`);
       }
       for (const s of [...(rule.assets ?? []), ...(rule.cryptoAssets ?? [])]) {
         if (!ctx.assetIds[s]) p(rule, `資產 ${s} 不在 addresses.ts 的 ASSET_IDS`);
@@ -1093,16 +1107,18 @@ const THRESHOLD = {
   httpHealth: (c) => `非 200 或內容不是 \`ok\`，連續 ${pv(c, "HTTP_FAILS_BEFORE_ALERT")}`,
   x402PayTo: () => "`payTo` ≠ `EXPECTED_PAY_TO`（未設時為首次觀察值）→ SEV-1；`payToSafety.safe == false` → SEV-3",
   wiring: () => "任一 getter 的讀值 ≠ 預期位址",
+  balanceDrop: (c, r) => `餘額較 24 小時高點下降 ≥ ${pv(c, r.dropBps)} → ${r.severity}`,
 };
 function thresholdText(cfg, rule) {
   if (rule.kind === "event") {
     if (!rule.amount) return "每一筆";
     const a = rule.amount;
     let t = Number(cfg.params[a.threshold]?.default) === 0 ? `每一筆（${pv(cfg, a.threshold)}）` : `單筆 ≥ ${pv(cfg, a.threshold)}`;
+    if (a.relativeBps) t += `，或 ≥ 合約提領前餘額的 ${pv(cfg, a.relativeBps)}`;
     if (a.windowThreshold) t += `；${pv(cfg, a.windowSec)} 內累計 ≥ ${pv(cfg, a.windowThreshold)}`;
     return `${t}；金額 ${a.decimals} 位小數（${a.token}）`;
   }
-  return THRESHOLD[rule.check]?.(cfg) ?? "—";
+  return THRESHOLD[rule.check]?.(cfg, rule) ?? "—";
 }
 const anchor = (h) => `../../${IR_DOC}#${slug(h)}`;
 const relLink = (r) => {
