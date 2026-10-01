@@ -78,6 +78,7 @@ export const exchange: Catalog['exchange'] = {
   swap: {
     title: 'Swap',
     poolBadge: '● Constant-product pool · Slippage applies',
+    oracleFixedBadge: '● Oracle-priced · No slippage (older contract)',
     notDeployed: "The swap pool (PepeAMM) isn't deployed on this network. Switch to Base Sepolia.",
 
     youPay: 'You pay',
@@ -91,6 +92,15 @@ export const exchange: Catalog['exchange'] = {
     poolPrice: 'Pool price',
     oracleRef: 'Oracle ref.',
     poolReserves: 'Pool reserves',
+
+    oracleRate: 'Swap rate (oracle-priced)',
+    poolInventory: 'Pool inventory',
+    unavailable: 'Unavailable',
+    oracleFixedNote:
+      'The live PepeAMM is an older contract: it swaps at the oracle price (minus a 0.3% fee, no slippage) and is not a constant-product pool. This version has no oraclePrice() and no pool-price band, so no separate oracle reference is shown; reserves are only the inventory available to swap out and do not set the price.',
+    noOracleRefNote: 'This contract version has no oraclePrice(), so no oracle reference price is shown.',
+    unknownVersionNote:
+      'Could not identify the live contract version, so prices and price impact are hidden; the amount you receive still follows the live contract quote.',
     priceImpact: 'Price impact (includes fee)',
     minimumReceived: 'Minimum received ({tolerance}% tolerance)',
 

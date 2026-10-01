@@ -91,6 +91,8 @@ export const exchange = {
   swap: {
     title: '兌換',
     poolBadge: '● 恆定乘積池 · 有滑點',
+    /** #165：線上舊版 PepeAMM 依 oracle 報價成交，掛恆定乘積徽章是錯的。 */
+    oracleFixedBadge: '● Oracle 定價 · 無滑點（舊版合約）',
     notDeployed: '本網路未部署兌換池（PepeAMM）。請切換到 Base Sepolia。',
 
     youPay: '你支付',
@@ -104,6 +106,20 @@ export const exchange = {
     poolPrice: '池內現價',
     oracleRef: 'Oracle 參考價',
     poolReserves: '池內儲備量',
+
+    /**
+     * #165：線上 PepeAMM 是較早的版本（依 oracle 報價固定定價），它的 getPrice() 是
+     * oracle 報價而不是儲備比例。那一版用這兩條 label，不再把 oracle 價標成池內現價。
+     */
+    oracleRate: '兌換價（依 Oracle 定價）',
+    poolInventory: '池內可兌出庫存',
+    /** 讀取失敗時的那一格。不是「—」也不是 0：兩者都會被讀成一個數字。 */
+    unavailable: '無法取得',
+    oracleFixedNote:
+      '線上 PepeAMM 是舊版合約：依 Oracle 報價固定定價（扣 0.3% 手續費、無滑點），不是恆定乘積池。此版沒有 oraclePrice()，也沒有池價偏離保護，所以不另列 Oracle 參考價；儲備量只代表可兌出的庫存，不決定價格。',
+    noOracleRefNote: '這一版合約沒有 oraclePrice()，因此不顯示 Oracle 參考價。',
+    unknownVersionNote:
+      '無法確認線上合約版本，暫不顯示價格與價格衝擊；實際兌換數量仍以合約即時報價為準。',
     priceImpact: '價格衝擊（含手續費）',
     minimumReceived: '最低收到數量（{tolerance}% 容忍）',
 

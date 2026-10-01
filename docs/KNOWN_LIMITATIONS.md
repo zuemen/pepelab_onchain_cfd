@@ -971,6 +971,19 @@ dependabot #187 想把 plugin-react-swc 升到 4.3.3，它要求 `@swc/core` ≥
 Vercel 不受這個問題影響，但鎖版是為了讓 Windows 開發機的 build 與 dev 不壞。上游修正或改走
 `@vitejs/plugin-react`（Babel）之前不要解除；解除時先在 Windows 上跑一次 `yarn build`。
 
+**/exchange 兌換卡對的是舊版 PepeAMM，前端以能力探測降級**（2026-10-01，#165）。
+Base Sepolia 上的 PepeAMM（`0x93be…6d63`）bytecode 只有 16 個 selector，沒有 `oraclePrice()`、
+`maxOracleAge()`、`currentDeviationBps()`、`totalShares()`、`removeLiquidity()`——它是 commit
+`9030ff1` 的 oracle 定價版（`getPrice()` = oracle 報價 ×1e10，兌換依 oracle 價扣 0.3% 成交、無滑點、
+無 stale 檢查、無池價偏離保護），不是 `contracts/src/PepeAMM.sol`（`fdd94e4`，恆定乘積 + band）。
+前端 ABI 是新版，舊頁面因此把 oracle 價標成「池內現價」、`oraclePrice()` revert 顯示「—」、
+價格衝擊以儲備比例為基準而失真（USDC→ETH 夾成 0%，ETH→USDC 算出約 51% 的假衝擊）。
+修法（`lib/pepefi/ammPoolView.ts`）：先以 `getCode` 掃 PUSH4 selector 判斷版本，缺的函式不呼叫；
+恆定乘積版的池內現價一律由同一次讀到的儲備算出；舊版改標「兌換價（依 Oracle 定價）」與
+「池內可兌出庫存」、不列 Oracle 參考價並附說明；讀失敗顯示「無法取得」；版本不明則不顯示價格。
+要讓畫面回到「池內現價 vs Oracle 參考價」的雙欄設計，需要擁有者重新部署新版 PepeAMM 並更新
+`addresses.ts`（新版有 1h stale 檢查，keeper 更新頻率需跟上）。
+
 **The product code is not linted.** `eslint.config.mjs` ignores
 `src/pages/pepefi/**`, `src/components/pepefi/**`, `src/hooks/**` and
 `src/lib/pepefi/**` — deliberate per the comment there (ported code, original

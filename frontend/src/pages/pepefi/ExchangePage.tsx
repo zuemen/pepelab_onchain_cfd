@@ -17,6 +17,15 @@ import {
   minOutWithSlippage,
   DEFAULT_SLIPPAGE_BPS,
 } from 'src/lib/pepefi/ammQuote';
+import {
+  type Cell,
+  type PoolReads,
+  impactReference,
+  buildPoolInfoView,
+  UNKNOWN_CAPABILITIES,
+  detectAmmCapabilities,
+  type AmmCapabilities,
+} from 'src/lib/pepefi/ammPoolView';
 import { useESG } from 'src/hooks/useESG';
 import ESGBadge from 'src/components/pepefi/ESGBadge';
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta';
@@ -60,6 +69,11 @@ const asTx = (tx: unknown): TxResp => tx as TxResp;
 
 const ZERO_ADDR = '0x0000000000000000000000000000000000000000';
 
+const EMPTY_POOL_READS: PoolReads = { getPrice: null, reserves: null, oraclePrice: null };
+
+/** 讀不到 → null。和 safeRead(p, 0n) 不同：0 會被畫面當成一個真的數字。 */
+const readOrNull = <T,>(p: Promise<T>) => safeRead<T | null>(p, null);
+
 // safeRead now lives in src/lib/pepefi/safeRead.ts so every page shares one
 // implementation — this file was the only place that had the guard.
 
@@ -81,15 +95,16 @@ export default function ExchangePage() {
 
   // AMM swap (PepeAMM — deployed + funded on Base Sepolia)
   //
-  // PepeAMM 這一輪被改寫成真正的恆定乘積池：`getPrice()` 現在是**池內現價**
-  // （儲備比例），不再是 oracle 報價；oracle 報價搬到新的 `oraclePrice()`。
-  // 兩者是不同的數字，而且會分岔——把池價標成 "Oracle rate" 會直接說謊。
+  // #165：`getPrice()` 的意義取決於線上是哪一版 PepeAMM——原始碼最新版（恆定乘積）
+  // 是儲備比例，但 Base Sepolia 上跑的是更早的 oracle 定價版，getPrice() 是 oracle
+  // 報價、而且沒有 oraclePrice()。所以先從 bytecode 探測版本（ammCaps），再由
+  // ammPoolView 決定每一格顯示什麼；讀失敗一律存 null，不存 0。
   const [swapMode,  setSwapMode]  = useState<'eth-to-usdc' | 'usdc-to-eth'>('eth-to-usdc');
   const [payAmount, setPayAmount] = useState('');
-  const [ammPrice,  setAmmPrice]  = useState(0n);   // getPrice() — 池內現價
-  const [ammEth,    setAmmEth]    = useState(0n);
-  const [ammUsdc,   setAmmUsdc]   = useState(0n);
-  const [ammOracle, setAmmOracle] = useState<{ price: bigint; updatedAt: bigint }>({ price: 0n, updatedAt: 0n });
+  const [ammCaps,   setAmmCaps]   = useState<AmmCapabilities>(UNKNOWN_CAPABILITIES);
+  const [ammReads,  setAmmReads]  = useState<PoolReads>(EMPTY_POOL_READS);
+  /** oraclePrice() 的 updatedAt；只有新版合約有，舊版維持 0（＝不擋單，舊版也不檢查）。 */
+  const [ammOracleUpdatedAt, setAmmOracleUpdatedAt] = useState(0n);
   const [ammMaxAge, setAmmMaxAge] = useState(0n);   // maxOracleAge()，預設 1h
   const [receiveAmount, setReceiveAmount] = useState('');
   /** 這筆兌換相對池內中價的滑點（bps）。恆定乘積 → 金額越大越痛。 */
@@ -141,25 +156,33 @@ export default function ExchangePage() {
       // AMM reserves/price — skip when PepeAMM isn't deployed (0x0). Each read is
       // isolated so a slow/failed call can't block the page.
       if (String(contracts.pepeAMM.target) !== ZERO_ADDR) {
+        // 能力探測：缺的函式就不呼叫（呼叫只會 revert，然後被誤讀成「讀不到」）。
+        const code = await readOrNull(provider.getCode(String(contracts.pepeAMM.target)));
+        const caps = detectAmmCapabilities(code);
         const [price, reserves, oraclePx, maxAge] = await Promise.all([
-          safeRead(contracts.pepeAMM.getPrice() as Promise<bigint>, 0n),
-          safeRead(contracts.pepeAMM.getReserves() as Promise<[bigint, bigint]>, [0n, 0n] as [bigint, bigint]),
-          // oraclePrice() ＝ 舊 getPrice() 的語意（oracle 參考價 + updatedAt）。
-          // swap 會在 oracle 過期時 revert StaleOraclePrice，所以這個 updatedAt
-          // 要拿來事前擋單，而不是等使用者付完 gas 才知道。
-          safeRead(contracts.pepeAMM.oraclePrice() as unknown as Promise<[bigint, bigint]>, [0n, 0n] as [bigint, bigint]),
-          safeRead(contracts.pepeAMM.maxOracleAge() as Promise<bigint>, 0n),
+          readOrNull(contracts.pepeAMM.getPrice() as Promise<bigint>),
+          readOrNull(contracts.pepeAMM.getReserves() as Promise<[bigint, bigint]>),
+          // 新版才有 oraclePrice()（oracle 參考價 + updatedAt）。swap 會在 oracle
+          // 過期時 revert StaleOraclePrice，updatedAt 拿來事前擋單。
+          caps.hasOraclePrice
+            ? readOrNull(contracts.pepeAMM.oraclePrice() as unknown as Promise<[bigint, bigint]>)
+            : Promise.resolve(null),
+          caps.hasMaxOracleAge
+            ? safeRead(contracts.pepeAMM.maxOracleAge() as Promise<bigint>, 0n)
+            : Promise.resolve(0n),
         ]);
-        setAmmPrice(price);
-        setAmmEth(reserves[0]);
-        setAmmUsdc(reserves[1]);
-        setAmmOracle({ price: oraclePx[0], updatedAt: oraclePx[1] });
+        setAmmCaps(caps);
+        setAmmReads({
+          getPrice: price,
+          reserves: reserves ? [reserves[0], reserves[1]] : null,
+          oraclePrice: oraclePx ? oraclePx[0] : null,
+        });
+        setAmmOracleUpdatedAt(oraclePx ? oraclePx[1] : 0n);
         setAmmMaxAge(maxAge);
       } else {
-        setAmmPrice(0n);
-        setAmmEth(0n);
-        setAmmUsdc(0n);
-        setAmmOracle({ price: 0n, updatedAt: 0n });
+        setAmmCaps(UNKNOWN_CAPABILITIES);
+        setAmmReads(EMPTY_POOL_READS);
+        setAmmOracleUpdatedAt(0n);
         setAmmMaxAge(0n);
       }
 
@@ -201,12 +224,10 @@ export default function ExchangePage() {
         if (cancelled) return;
         setQuotedOut(out);
         setReceiveAmount((Number(out) / 1e18).toFixed(isEthIn ? 2 : 6));
-        setImpactBps(priceImpactBps({
-          amountIn:   parsed,
-          amountOut:  out,
-          reserveIn:  isEthIn ? ammEth : ammUsdc,
-          reserveOut: isEthIn ? ammUsdc : ammEth,
-        }));
+        // 中價基準跟著合約實際的定價方式走（#165）：舊版 oracle 定價合約若拿儲備
+        // 比例當中價，USDC→ETH 會被夾成 0%、ETH→USDC 會算出 50% 以上的假衝擊。
+        const ref = impactReference(ammCaps, isEthIn, ammReads);
+        setImpactBps(ref ? priceImpactBps({ amountIn: parsed, amountOut: out, ...ref }) : null);
       } catch {
         // quote 也會 revert（InsufficientLiquidity / InsufficientInput）——那代表
         // 這筆金額根本換不成，顯示空白比顯示一個假數字誠實。
@@ -214,14 +235,23 @@ export default function ExchangePage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [contracts?.pepeAMM, payAmount, swapMode, ammEth, ammUsdc]);
+  }, [contracts?.pepeAMM, payAmount, swapMode, ammCaps, ammReads]);
 
   // ── Transactions ────────────────────────────────────────────────────────────
   const ammDeployed = !!contracts && String(contracts.pepeAMM.target) !== ZERO_ADDR;
 
   // swap 會在 oracle 過期（> maxOracleAge，預設 1h）時 revert StaleOraclePrice。
   // 和開倉的 stale 擋單同樣的道理：能在按下去之前就知道的事，不要讓使用者付 gas 才知道。
-  const ammOracleStale = isOracleStale(ammOracle.updatedAt, ammMaxAge, Date.now() / 1000);
+  const ammOracleStale = isOracleStale(ammOracleUpdatedAt, ammMaxAge, Date.now() / 1000);
+
+  // 池子資訊區的畫面模型與說明文字（#165）。
+  const poolView = buildPoolInfoView(ammCaps, ammReads);
+  const priceText = (c: Cell) => (c.kind === 'value' ? `1 ETH = ${c.text} ${STABLE_LABEL}` : t.exchange.swap.unavailable);
+  const poolNote =
+    poolView.pricing === 'oracle-fixed' ? t.exchange.swap.oracleFixedNote
+      : poolView.pricing === 'plain-cp' ? `${t.exchange.swap.constantProductNote} ${t.exchange.swap.noOracleRefNote}`
+        : poolView.pricing === 'unknown' ? t.exchange.swap.unknownVersionNote
+          : t.exchange.swap.constantProductNote;
   const AMM_STALE_MSG = t.exchange.tx.ammStale;
 
   // ETH ↔ USDC swap via PepeAMM (constant product). minOut 一律以**當下的 quote**
@@ -685,9 +715,13 @@ export default function ExchangePage() {
       >
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 1 }}>
           <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'white' }}>{t.exchange.swap.title}</Typography>
-          {/* 池子是恆定乘積，不是 oracle 定價。舊的「● Oracle-priced」徽章
-              現在是錯的，而且錯在會讓人以為大額換匯沒有滑點。 */}
-          <Typography variant="caption" sx={{ color: 'warning.main', fontWeight: 'bold' }}>{t.exchange.swap.poolBadge}</Typography>
+          {/* 徽章跟著線上合約版本走（#165）：原始碼最新版是恆定乘積、有滑點；
+              Base Sepolia 上的舊版是 oracle 定價、無滑點。版本不明就不掛徽章。 */}
+          {poolView.pricing !== 'unknown' && (
+            <Typography variant="caption" sx={{ color: 'warning.main', fontWeight: 'bold' }}>
+              {poolView.pricing === 'oracle-fixed' ? t.exchange.swap.oracleFixedBadge : t.exchange.swap.poolBadge}
+            </Typography>
+          )}
         </Box>
 
         {!ammDeployed ? (
@@ -752,18 +786,36 @@ export default function ExchangePage() {
               </Box>
             </Box>
 
-            {/* Pool info。getPrice() 是**池內現價**（儲備比例），oraclePrice()
-                才是 oracle 參考價——兩個都顯示，因為它們分岔到超過
-                maxOracleDeviationBps 時合約就會擋下兌換。 */}
+            {/* Pool info（#165）。每一格由 ammPoolView 依合約版本決定：
+                value → 數字；unavailable → 「無法取得」；unsupported → 整列不顯示，
+                改由下方說明交代為什麼沒有。不顯示任何意義不明的數字。 */}
             <Box sx={{ px: 1, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+              {poolView.poolPrice.kind !== 'unsupported' && (
+                <Typography variant="caption" color="text.secondary">
+                  {t.exchange.swap.poolPrice}: <Box component="span" sx={{ color: 'white', fontFamily: MONO, fontWeight: 'bold' }}>{priceText(poolView.poolPrice)}</Box>
+                </Typography>
+              )}
+              {poolView.oracleRate.kind !== 'unsupported' && (
+                <Typography variant="caption" color="text.secondary">
+                  {t.exchange.swap.oracleRate}: <Box component="span" sx={{ color: 'white', fontFamily: MONO, fontWeight: 'bold' }}>{priceText(poolView.oracleRate)}</Box>
+                </Typography>
+              )}
+              {poolView.oracleRef.kind !== 'unsupported' && (
+                <Typography variant="caption" color="text.secondary">
+                  {t.exchange.swap.oracleRef}: <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>{priceText(poolView.oracleRef)}</Box>
+                </Typography>
+              )}
               <Typography variant="caption" color="text.secondary">
-                {t.exchange.swap.poolPrice}: <Box component="span" sx={{ color: 'white', fontFamily: MONO, fontWeight: 'bold' }}>1 ETH = {ammPrice > 0n ? (Number(ammPrice) / 1e18).toFixed(2) : '–'} {STABLE_LABEL}</Box>
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {t.exchange.swap.oracleRef}: <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>1 ETH = {ammOracle.price > 0n ? (Number(ammOracle.price) / 1e18).toFixed(2) : '–'} {STABLE_LABEL}</Box>
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {t.exchange.swap.poolReserves}: <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>{(Number(ammEth) / 1e18).toFixed(4)} ETH</Box> / <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>{(Number(ammUsdc) / 1e18).toFixed(2)} {STABLE_LABEL}</Box>
+                {poolView.pricing === 'oracle-fixed' ? t.exchange.swap.poolInventory : t.exchange.swap.poolReserves}:{' '}
+                {poolView.reserves.kind === 'value' ? (
+                  <>
+                    <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>{poolView.reserves.eth} ETH</Box>
+                    {' / '}
+                    <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>{poolView.reserves.usdc} {STABLE_LABEL}</Box>
+                  </>
+                ) : (
+                  <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>{t.exchange.swap.unavailable}</Box>
+                )}
               </Typography>
               {impactBps !== null && (
                 <Typography
@@ -790,7 +842,7 @@ export default function ExchangePage() {
                 </Typography>
               )}
               <Typography variant="caption" color="text.secondary">
-                {t.exchange.swap.constantProductNote}
+                {poolNote}
               </Typography>
             </Box>
 
