@@ -65,8 +65,9 @@
 |---|---|---|---|
 | `CONFIRMATIONS` | `3` | 區塊 | 只掃 head 往前這麼多塊之前的區塊，降低 reorg 造成的假告警 |
 | `INITIAL_LOOKBACK_BLOCKS` | `300` | 區塊 | 第一次執行（KV 沒有檢查點）往回掃的區塊數（Base 約 2 秒一塊，300 塊約 10 分鐘） |
-| `MAX_BLOCK_RANGE` | `2000` | 區塊 | 每輪 eth_getLogs 的最大範圍；落後時分多輪追上 |
-| `LAG_ALERT_BLOCKS` | `3000` | 區塊 | 事件掃描落後超過這個值時發監控自身告警 |
+| `MAX_BLOCK_RANGE` | `1000` | 區塊 | 每個 eth_getLogs 的最大範圍。公開 RPC（sepolia.base.org）實測上限 1,000 塊，超過回 HTTP 413／-32614；CI 限制此值 ≤ 1000。節點拒絕範圍時引擎會自動減半重試 |
+| `MAX_SCAN_REQUESTS` | `10` | 個請求 | 每輪最多幾個 eth_getLogs（含範圍減半後的重試）。落後時一輪內分多段追趕：10 × 1000 塊 ≈ 5.5 小時的積欠；受 Cloudflare 免費方案每次執行 50 個 subrequest 限制，不要調高到擠壓狀態規則與通知 |
+| `LAG_ALERT_BLOCKS` | `3000` | 區塊 | 一輪掃完後仍落後超過這個值時發監控自身告警（代表一輪追不完，或 eth_getLogs 持續失敗） |
 | `REMIND_SEC` | `21600` | 秒 | 狀態型告警持續未解除時的重複提醒間隔（6 小時） |
 | `MIN_SEVERITY` | `SEV-4` | 嚴重度 | 低於此嚴重度的通知不送（恢復通知以原嚴重度判斷） |
 | `LARGE_WITHDRAWAL_USDC` | `10000` | USDC（MockUSDC） | 交易所單筆提領保證金的告警門檻【待使用者決定】 |

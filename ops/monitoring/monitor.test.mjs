@@ -33,6 +33,9 @@ function fakeWorld() {
     calls: new Map(), // `${to}|${data}` 或 `${to}|${selector}` → hex 或 { revert: true }
     balances: new Map(),
     failGetLogs: false,
+    rangeLimit: null, // 節點的 eth_getLogs 區塊數上限（超過回 HTTP 413，與 sepolia.base.org 實測相同）
+    getLogsHttp: null, // (from, to) => { status, body } | null：讓某些範圍回 HTTP 錯誤
+    spans: [], // 每個 eth_getLogs 請求的區塊數
     http: new Map(), // url → () => ({ status, body }) 或丟錯
     sent: [], // 通知通道收到的請求
   };
@@ -69,6 +72,16 @@ function fakeWorld() {
   w.fetch = async (url, init = {}) => {
     if (url === RPC) {
       const body = JSON.parse(init.body);
+      if (!Array.isArray(body) && body.method === "eth_getLogs") {
+        const [from, to] = [Number(BigInt(body.params[0].fromBlock)), Number(BigInt(body.params[0].toBlock))];
+        w.spans.push(to - from + 1);
+        if (w.rangeLimit && to - from + 1 > w.rangeLimit) {
+          const err = { code: -32614, message: `eth_getLogs is limited to a ${w.rangeLimit.toLocaleString("en-US")} range` };
+          return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, error: err }), { status: 413 });
+        }
+        const forced = w.getLogsHttp?.(from, to);
+        if (forced) return new Response(forced.body, { status: forced.status });
+      }
       const one = (r) => {
         try {
           return { jsonrpc: "2.0", id: r.id, result: handle(r) };
@@ -194,6 +207,102 @@ test("getLogs 失敗：檢查點不前進、開「監控本身」告警；恢復
   const r2 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 400 });
   assert.ok(r2.notes.some((n) => n.status === "事件"), "失敗期間的 log 必須在恢復後補到");
   assert.ok(r2.notes.some((n) => n.key === "monitor-self:errors" && n.status === "恢復"));
+});
+
+// ── 追趕與範圍上限（審查 H1）────────────────────────────────────────────────
+
+const ownerLog = (w, block, n) =>
+  makeLog(w, {
+    address: addrOf("owner-transferred", "PerpetualExchange"),
+    sig: "OwnershipTransferred(address,address)",
+    topics: [word(0), word(n)],
+    block,
+    tx: "0x" + n.toString(16).padStart(64, "0"),
+  });
+
+test("H1：節點限 1000 塊、積欠 5000 塊 → 一輪內分段追上，每筆 log 恰好一次", async () => {
+  const w = fakeWorld();
+  w.head = 2_000_003;
+  w.rangeLimit = 1000;
+  const cfg = only("owner-transferred");
+  const latest = w.head - 3;
+  const state = { checkpoint: latest - 5000 };
+  // 每一段各放一筆，再加上段落邊界的兩筆（邊界最容易漏或重複）。
+  const blocks = [latest - 4999, latest - 4000, latest - 3999, latest - 2500, latest - 1500, latest - 1, latest];
+  blocks.forEach((b, i) => ownerLog(w, b, i + 1));
+  const r1 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 100 });
+  assert.equal(r1.errors.length, 0, r1.errors.join());
+  assert.equal(FULL.params.MAX_BLOCK_RANGE.default, "1000", "預設值不可超過公開 RPC 的上限");
+  assert.deepEqual(w.spans, [1000, 1000, 1000, 1000, 1000]);
+  assert.equal(state.checkpoint, latest, "一輪追上");
+  assert.equal(r1.notes.filter((n) => n.status === "事件").length, blocks.length);
+  assert.equal(new Set(r1.notes.map((n) => n.key)).size, blocks.length, "不重複");
+  assert.ok(!r1.notes.some((n) => n.ruleId === "monitor-self"), "追上了就不該有落後告警");
+  const r2 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 400 });
+  assert.equal(r2.notes.length, 0, "下一輪不重送");
+});
+
+test("H1：MAX_BLOCK_RANGE 設得比節點上限大 → 413／-32614 後自動減半重試，不卡死", async () => {
+  const w = fakeWorld();
+  w.head = 2_000_003;
+  w.rangeLimit = 1000;
+  const cfg = only("owner-transferred");
+  const latest = w.head - 3;
+  const state = { checkpoint: latest - 5000 };
+  ownerLog(w, latest - 4500, 1);
+  ownerLog(w, latest - 10, 2);
+  const r = await runOnce({ config: cfg, env: { ...env0, MAX_BLOCK_RANGE: "2000" }, state, fetchImpl: w.fetch, now: 100 });
+  assert.equal(r.errors.length, 0, r.errors.join());
+  assert.deepEqual(w.spans, [2000, 1000, 1000, 1000, 1000, 1000]);
+  assert.equal(state.checkpoint, latest);
+  assert.equal(r.notes.filter((n) => n.status === "事件").length, 2);
+});
+
+test("H1：積欠超過一輪額度 → 檢查點每輪前進、發落後告警、幾輪後追上並恢復", async () => {
+  const w = fakeWorld();
+  w.head = 3_000_003;
+  w.rangeLimit = 1000;
+  const cfg = only("owner-transferred");
+  const state = { checkpoint: w.head - 3 - 25_000 };
+  ownerLog(w, w.head - 3 - 100, 7); // 最新的一筆：要到追上那一輪才看得到
+  const r1 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 0 });
+  assert.equal(r1.errors.length, 0, r1.errors.join());
+  assert.equal(w.spans.length, 10, "每輪最多 MAX_SCAN_REQUESTS 個 eth_getLogs");
+  assert.equal(state.checkpoint, w.head - 3 - 15_000);
+  assert.ok(r1.notes.some((n) => n.key === "monitor-self:lag" && n.status === "觸發"));
+  await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 300 });
+  const r3 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 600 });
+  assert.equal(state.checkpoint, w.head - 3);
+  assert.ok(r3.notes.some((n) => n.status === "事件"));
+  assert.ok(r3.notes.some((n) => n.key === "monitor-self:lag" && n.status === "恢復"));
+});
+
+test("H1：中途某段失敗 → 已成功的段落保留、檢查點停在最後成功處、錯誤訊息帶 RPC 回應內文", async () => {
+  const w = fakeWorld();
+  w.head = 2_000_003;
+  w.rangeLimit = 1000;
+  const cfg = only("owner-transferred");
+  const latest = w.head - 3;
+  const state = { checkpoint: latest - 3000 };
+  ownerLog(w, latest - 2500, 1);
+  ownerLog(w, latest - 500, 2);
+  w.getLogsHttp = (from) => (from > latest - 2000 ? { status: 500, body: '{"error":"upstream exploded"}' } : null);
+  const r1 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 0 });
+  assert.equal(r1.notes.filter((n) => n.status === "事件").length, 1, "第一段的事件不可因後面失敗而丟掉");
+  assert.equal(state.checkpoint, latest - 2000);
+  assert.equal(r1.errors.length, 1);
+  assert.match(r1.errors[0], /event-scan: RPC HTTP 500：{"error":"upstream exploded"}/);
+  // 413 的內文同樣帶回來（值班的人要看得出是「範圍」而不是節點故障）。
+  w.getLogsHttp = null;
+  w.rangeLimit = 0.5; // 連 1 塊都拒絕：減半到底仍失敗
+  const r2 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 300 });
+  assert.equal(state.checkpoint, latest - 2000, "沒有任何一段成功時檢查點不動");
+  assert.match(r2.errors[0], /HTTP 413：.*eth_getLogs is limited to a/);
+  w.rangeLimit = 1000;
+  const r3 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 600 });
+  assert.equal(r3.errors.length, 0);
+  assert.equal(r3.notes.filter((n) => n.status === "事件").length, 1, "失敗期間的那一筆在恢復後補到，且只有一次");
+  assert.equal(state.checkpoint, latest);
 });
 
 test("大額提領：低於門檻不告警、達門檻告警、一小時內累計達門檻另開告警", async () => {

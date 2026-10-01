@@ -119,6 +119,33 @@ export function decodeLog(inputs, log, labels = {}) {
 
 // ── JSON-RPC ─────────────────────────────────────────────────────────────────
 
+/** RPC 失敗：status 是 HTTP 狀態（若有），code 是 JSON-RPC 錯誤碼（若有）。 */
+export class RpcError extends Error {
+  constructor(message, { status, code } = {}) {
+    super(message);
+    this.name = "RpcError";
+    this.status = status;
+    this.code = code;
+  }
+}
+/** 壓成一行並截斷（給錯誤訊息用）。 */
+const clip = (s, n) => {
+  const t = String(s ?? "").replace(/\s+/g, " ").trim();
+  return t.length > n ? `${t.slice(0, n)}…` : t;
+};
+/**
+ * 節點拒絕這個 eth_getLogs 範圍（區塊數或結果數超過上限）。縮小範圍重試就會過，
+ * 所以不算「RPC 壞了」。實測（2026-10-01，https://sepolia.base.org）：超過 1,000 塊回
+ * HTTP 413 `{"code":-32614,"message":"eth_getLogs is limited to a 1,000 range"}`。
+ * 其他節點常見的是 -32005「query returned more than 10000 results」。
+ */
+export function isRangeError(e) {
+  if (e?.status === 413 || e?.code === -32614 || e?.code === -32005) return true;
+  return /limited to a|block range|range (?:is )?too (?:large|wide)|exceeds? .*range|more than \d[\d,]* results|response size|too many results/i.test(
+    String(e?.message ?? ""),
+  );
+}
+
 async function fetchWithTimeout(fetchImpl, url, init, timeoutMs) {
   const ctl = typeof AbortController === "function" ? new AbortController() : null;
   const timer = ctl ? setTimeout(() => ctl.abort(), timeoutMs) : null;
@@ -142,12 +169,28 @@ export function makeRpc(url, fetchImpl, { timeoutMs = 15_000 } = {}) {
       { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
       timeoutMs,
     );
-    if (!res.ok) throw new Error(`RPC HTTP ${res.status}`);
+    if (!res.ok) {
+      // 帶上回應內文：公開 RPC 的 413 內文才說得出「eth_getLogs is limited to a 1,000 range」，
+      // 只記 HTTP 狀態的話，值班的人看不出是範圍、額度還是節點故障。
+      let text = "";
+      try {
+        text = await res.text();
+      } catch {
+        /* 內文讀不到就只報狀態 */
+      }
+      let code;
+      try {
+        code = JSON.parse(text)?.error?.code;
+      } catch {
+        /* 不是 JSON */
+      }
+      throw new RpcError(`RPC HTTP ${res.status}${text.trim() ? `：${clip(text, 200)}` : ""}`, { status: res.status, code });
+    }
     return res.json();
   };
   const one = async (method, params) => {
     const j = await post({ jsonrpc: "2.0", id: nextId++, method, params });
-    if (j?.error) throw new Error(`RPC ${method}: ${String(j.error.message ?? "error").slice(0, 120)}`);
+    if (j?.error) throw new RpcError(`RPC ${method}: ${clip(j.error.message ?? "error", 160)}`, { code: j.error.code });
     return j?.result;
   };
   const batch = async (reqs) => {
@@ -169,7 +212,7 @@ export function makeRpc(url, fetchImpl, { timeoutMs = 15_000 } = {}) {
     return body.map((b) => {
       const x = byId.get(b.id);
       if (!x) return { error: "RPC 回應缺少此筆" };
-      if (x.error) return { error: String(x.error.message ?? "error").slice(0, 120) };
+      if (x.error) return { error: clip(x.error.message ?? "error", 160), code: x.error.code };
       return { result: x.result };
     });
   };
@@ -209,8 +252,16 @@ const finding = (rule, key, severity, title, lines) => ({ ruleId: rule.id, key, 
 // ── event 規則 ───────────────────────────────────────────────────────────────
 
 /**
- * 掃描區塊範圍內的 log。回傳 { findings, nextCheckpoint, lagBlocks }。
- * 檢查點只在 getLogs 成功後前進；失敗時丟例外，下次從同一個區塊重掃（不漏）。
+ * 掃描「上次檢查點之後」的區塊。回傳
+ *   { findings, nextCheckpoint, lagBlocks, scanned, requests, range, initialFrom, error }。
+ *
+ * 一輪內分多段追趕：每段最多 MAX_BLOCK_RANGE 塊、最多 MAX_SCAN_REQUESTS 個 eth_getLogs
+ * （Cloudflare 免費方案每次執行只有 50 個 subrequest，要留給狀態規則與通知）。節點拒絕範圍
+ * （HTTP 413／-32614／結果數過多）時把範圍減半重試——寫死一個「剛好等於上限」的範圍，上限
+ * 一變就會永久卡死（審查 H1：預設 2000 > 公開 RPC 的 1000，落後 33 分鐘後檢查點永不前進）。
+ *
+ * 檢查點逐段前進：某一段失敗時，之前成功的段落已經算數（findings 保留、檢查點停在最後一個
+ * 成功的區塊），error 帶回失敗原因，下一輪從那裡接著掃（不漏、不重複）。
  */
 export async function scanEvents({ config, env, rpc, state, now }) {
   const rules = config.rules.filter((r) => r.kind === "event" && isActive(r));
@@ -231,21 +282,59 @@ export async function scanEvents({ config, env, rpc, state, now }) {
   const head = Number(BigInt(await rpc.call("eth_blockNumber", [])));
   const latest = head - numParam(config, env, "CONFIRMATIONS");
   const checkpoint = state.checkpoint;
-  let from = checkpoint === undefined || checkpoint === null
-    ? Math.max(0, latest - numParam(config, env, "INITIAL_LOOKBACK_BLOCKS") + 1)
-    : checkpoint + 1;
-  if (from > latest) return { findings: [], nextCheckpoint: checkpoint, lagBlocks: 0, scanned: 0 };
-  const to = Math.min(latest, from + numParam(config, env, "MAX_BLOCK_RANGE") - 1);
+  const fresh = checkpoint === undefined || checkpoint === null;
+  const from = fresh ? Math.max(0, latest - numParam(config, env, "INITIAL_LOOKBACK_BLOCKS") + 1) : checkpoint + 1;
+  const out = {
+    findings: [],
+    nextCheckpoint: checkpoint,
+    lagBlocks: 0,
+    scanned: 0,
+    requests: 0,
+    range: Math.max(1, Math.floor(numParam(config, env, "MAX_BLOCK_RANGE"))),
+    initialFrom: fresh ? from : undefined,
+    error: null,
+  };
+  if (from > latest) return out;
 
-  const logs = addresses.length
-    ? await rpc.call("eth_getLogs", [
-        { fromBlock: "0x" + from.toString(16), toBlock: "0x" + to.toString(16), address: addresses, topics: [topics] },
-      ])
-    : [];
-  if (!Array.isArray(logs)) throw new Error("eth_getLogs 回應不是陣列");
-
-  const findings = [];
+  const maxRequests = Math.max(1, Math.floor(numParam(config, env, "MAX_SCAN_REQUESTS")));
   const explorer = config.network.explorer.replace(/\/$/, "");
+  let cursor = from;
+  let rangeError = null;
+  while (cursor <= latest && out.requests < maxRequests) {
+    const to = Math.min(latest, cursor + out.range - 1);
+    out.requests++;
+    let logs;
+    try {
+      logs = addresses.length
+        ? await rpc.call("eth_getLogs", [
+            { fromBlock: "0x" + cursor.toString(16), toBlock: "0x" + to.toString(16), address: addresses, topics: [topics] },
+          ])
+        : [];
+      if (!Array.isArray(logs)) throw new Error("eth_getLogs 回應不是陣列");
+    } catch (e) {
+      if (isRangeError(e) && out.range > 1) {
+        out.range = Math.max(1, Math.floor(out.range / 2));
+        rangeError = e;
+        continue;
+      }
+      out.error = e;
+      break;
+    }
+    rangeError = null;
+    out.findings.push(...logFindings({ config, env, state, now, logs, index, explorer }));
+    out.nextCheckpoint = to;
+    out.scanned += to - cursor + 1;
+    cursor = to + 1;
+  }
+  // 範圍一路減半、額度用完仍沒有任何一段成功：這是失敗，不是「還在追」。
+  if (!out.error && rangeError && out.scanned === 0) out.error = rangeError;
+  out.lagBlocks = latest - (cursor - 1);
+  return out;
+}
+
+/** 把一段 eth_getLogs 的結果轉成 findings（並記入累計視窗）。 */
+function logFindings({ config, env, state, now, logs, index, explorer }) {
+  const findings = [];
   for (const log of logs) {
     if (log.removed) continue;
     const hits = index.get(`${lc(log.address)}|${lc(log.topics?.[0])}`) ?? [];
@@ -270,7 +359,7 @@ export async function scanEvents({ config, env, rpc, state, now }) {
       findings.push({ ...finding(rule, `${rule.id}:${where}`, rule.severity, rule.title, lines), once: true });
     }
   }
-  return { findings, nextCheckpoint: to, lagBlocks: latest - to, scanned: to - from + 1 };
+  return findings;
 }
 
 /** 累計視窗：同一規則在 windowSec 內的金額加總（KV 狀態，只存 [秒, 金額字串]）。 */
@@ -597,11 +686,12 @@ export async function runOnce({ config, env = {}, state, fetchImpl, now = Math.f
     const r = await scanEvents({ config, env, rpc, state, now });
     findings.push(...r.findings);
     state.checkpoint = r.nextCheckpoint;
-    for (const rule of config.rules.filter((x) => x.kind === "event" && isActive(x))) evaluated.add(rule.id);
-    log(`events: 掃描 ${r.scanned} 個區塊，${r.findings.length} 則，落後 ${r.lagBlocks} 塊`);
+    log(`events: 掃描 ${r.scanned} 個區塊（${r.requests} 個請求、每段 ${r.range} 塊），${r.findings.length} 則，落後 ${r.lagBlocks} 塊`);
+    if (r.error) fail("event-scan", r.error);
+    else for (const rule of config.rules.filter((x) => x.kind === "event" && isActive(x))) evaluated.add(rule.id);
     if (r.lagBlocks > numParam(config, env, "LAG_ALERT_BLOCKS")) {
       findings.push({ ruleId: "monitor-self", key: "monitor-self:lag", severity: "SEV-3", title: "監控落後", lines: [
-        `事件掃描落後 ${r.lagBlocks} 個區塊（每輪最多 ${param(config, env, "MAX_BLOCK_RANGE")}），告警會延遲`,
+        `事件掃描落後 ${r.lagBlocks} 個區塊（每輪最多 ${param(config, env, "MAX_SCAN_REQUESTS")} 個請求 × ${r.range} 塊），告警會延遲`,
       ] });
     }
   } catch (e) {
