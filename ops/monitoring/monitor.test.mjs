@@ -412,6 +412,28 @@ test("價格偏離：參考來源不支援的資產略過；3% 以上 SEV-2、10
   assert.deepEqual(notes.map((n) => [n.key, n.severity]).sort(), [["oracle-deviation:sAAPL", "SEV-1"], ["oracle-deviation:sETH", "SEV-2"]]);
 });
 
+test("M1：參考來源全部讀不到或過期 → SEV-3「沒有可用的參考價」（不空轉）；有一檔可比就解除", async () => {
+  const w = fakeWorld();
+  const cfg = only("oracle-deviation");
+  let now = 3_000_000;
+  const primary = addrOf("oracle-deviation", "primary");
+  const ref = addrOf("oracle-deviation", "reference");
+  const assets = ruleOf("oracle-deviation").assets;
+  // 現況：主 oracle 全部有價，AggregatorOracle 對每一檔 revert（NoLiveSource）；其中一檔改成「有價但過期」。
+  for (const s of assets) w.setCall(primary, "getPrice(bytes32)", [FULL.assets[s]], word(100n * 10n ** 8n, now - 60));
+  w.setCall(ref, "getPrice(bytes32)", [FULL.assets.sGOLD], word(100n * 10n ** 8n, now - 99_999));
+  const state = {};
+  const r1 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now });
+  assert.equal(r1.errors.length, 0, r1.errors.join());
+  assert.deepEqual(r1.notes.map((n) => [n.key, n.severity, n.status]), [["oracle-deviation:no-reference", "SEV-3", "觸發"]]);
+  assert.match(r1.notes[0].lines[0], /參考來源讀不到 4 檔、參考價過期 1 檔/);
+  // 參考來源恢復一檔（且沒有偏離）→ 恢復。
+  now += 300;
+  w.setCall(ref, "getPrice(bytes32)", [FULL.assets.sBTC], word(100n * 10n ** 8n, now - 60));
+  const r2 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now });
+  assert.deepEqual(r2.notes.map((n) => [n.key, n.status]), [["oracle-deviation:no-reference", "恢復"]]);
+});
+
 test("金庫儲備率、mint 停止、保險金下降、keeper gas", async () => {
   const w = fakeWorld();
   const cfg = only("vault-reserve", "insurance-fund", "keeper-gas");

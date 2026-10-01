@@ -798,7 +798,7 @@ const expectText = (call) => {
 const pv = (cfg, name) => `\`${name}\`（預設 ${cfg.params[name]?.default} ${cfg.params[name]?.unit ?? ""}）`.replace(/ ）/, "）");
 const THRESHOLD = {
   oracleStaleness: (c) => `加密資產：≥ ${pv(c, "ORACLE_STALE_WARN_SEC")} → SEV-3；≥ 鏈上 \`maxPriceAge()\` → SEV-2。其他資產：≥ ${pv(c, "NONCRYPTO_STALE_SEC")} → SEV-3`,
-  oracleDeviation: (c) => `偏離 ≥ ${pv(c, "ORACLE_DEVIATION_BPS")} → SEV-2；≥ ${pv(c, "ORACLE_DEVIATION_CRIT_BPS")} → SEV-1；參考價超過 ${pv(c, "REFERENCE_MAX_AGE_SEC")} 不比對`,
+  oracleDeviation: (c) => `偏離 ≥ ${pv(c, "ORACLE_DEVIATION_BPS")} → SEV-2；≥ ${pv(c, "ORACLE_DEVIATION_CRIT_BPS")} → SEV-1；參考價超過 ${pv(c, "REFERENCE_MAX_AGE_SEC")} 不比對；**一檔都比不到 → SEV-3「沒有可用的參考價」**`,
   guardedOraclePaused: () => "`paused() == true`",
   insuranceFund: (c) => `\`totalAssets()\` < ${pv(c, "INSURANCE_MIN_USDC")}，或較 24 小時高點下降 ≥ ${pv(c, "INSURANCE_DROP_BPS")} → SEV-2`,
   vaultReserve: (c) => `儲備率 < \`minReserveRatioBps()\` → SEV-2；< 下限 + ${pv(c, "RESERVE_WARN_MARGIN_BPS")} → SEV-3；mint 自動停止 → SEV-2；無法定價或暫停 → SEV-3`,

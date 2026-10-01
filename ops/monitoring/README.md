@@ -76,7 +76,9 @@ Worker 持有的東西只有：
 8. **驗證**：
    - Cloudflare → Workers → `pepelab-chain-monitor` → Logs：每 5 分鐘一行 `tick: findings=… notes=… sent=… pending=0 errors=0`。
    - **送一則測試告警**：在 `[vars]` 暫時加 `GAS_MIN_ETH = "1000"` 並 `npx wrangler deploy`，下一輪應收到「keeper 錢包 gas 過低」（SEV-3）；移除後再部署，下一輪應收到「恢復」。
-   - **部署當下預期會收到的告警**（2026-10-01 唯讀試跑結果）：`x402-payto:unsafe`（SEV-3）——x402 treasury 是已知待換的地址，收款守門 fail-closed（見 `frontend/src/contracts/x402.ts`）。換新 treasury 並更新 signal-api 後會自動恢復。不想每 6 小時被提醒可暫時設 `MIN_SEVERITY = "SEV-2"`。
+   - **部署當下預期會收到的告警**（2026-10-01 唯讀試跑結果）：
+     - `x402-payto:unsafe`（SEV-3）——x402 treasury 是已知待換的地址，收款守門 fail-closed（見 `frontend/src/contracts/x402.ts`）。換新 treasury 並更新 signal-api 後會自動恢復。
+     - `oracle-deviation:no-reference`（SEV-3）——參考來源 AggregatorOracle 對所有資產 revert（NoLiveSource），**價格偏離目前沒有被監控**；參考來源恢復後自動解除並開始比對。
 
 ## 第一次執行
 

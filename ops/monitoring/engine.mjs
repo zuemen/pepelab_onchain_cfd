@@ -432,7 +432,11 @@ const checks = {
     return out;
   },
 
-  /** 價格偏離：主 oracle 與參考來源（Chainlink/Pyth 聚合）相差超過門檻。參考來源不支援或過期的資產略過。 */
+  /**
+   * 價格偏離：主 oracle 與參考來源（Chainlink/Pyth 聚合）相差超過門檻。參考來源不支援或過期的資產略過；
+   * 但**一檔都比不到**時要講出來（SEV-3），否則規則空轉、看起來卻像「沒有偏離」（審查 M1：
+   * 2026-10-01 實測 AggregatorOracle 對全部資產 revert NoLiveSource）。
+   */
   async oracleDeviation({ rule, config, env, rpc, now }) {
     const reqs = [];
     for (const s of rule.assets) {
@@ -446,14 +450,17 @@ const checks = {
     const out = [];
     let compared = 0;
     let primaryErrors = 0;
+    let refUnreadable = 0;
+    let refStale = 0;
     rule.assets.forEach((sym, i) => {
       const p = res[2 * i];
       const r = res[2 * i + 1];
       if (p.error) return void primaryErrors++;
-      if (r.error) return; // 參考來源沒有這個資產的 feed：不是事故
+      if (r.error) return void refUnreadable++; // 參考來源沒有這個資產的 feed：單獨一檔不是事故
       const [pp] = words(p.result);
       const [rp, rAt] = words(r.result);
-      if (!rp || rp === 0n || now - Number(rAt) > refMaxAge) return;
+      if (!rp || rp === 0n) return void refUnreadable++;
+      if (now - Number(rAt) > refMaxAge) return void refStale++;
       compared++;
       const diff = pp > rp ? pp - rp : rp - pp;
       const bps = (diff * 10000n) / rp;
@@ -465,7 +472,14 @@ const checks = {
         ]));
       }
     });
-    if (primaryErrors * 2 > rule.assets.length) throw new Error("多數資產讀不到主 oracle 價格");
+    if (primaryErrors * 2 > rule.assets.length) throw partial("多數資產讀不到主 oracle 價格", out);
+    if (compared === 0) {
+      out.push(finding(rule, `${rule.id}:no-reference`, "SEV-3", `${rule.title}：沒有可用的參考價`, [
+        `偏離檢查沒有可用的參考價：${rule.assets.length} 檔資產裡參考來源讀不到 ${refUnreadable} 檔、參考價過期 ${refStale} 檔、主 oracle 讀不到 ${primaryErrors} 檔`,
+        "這條規則目前沒有在比對任何價格——「沒有偏離告警」不代表價格正確",
+        `參考來源：${contractOf(rule, "reference").address}`,
+      ]));
+    }
     return out;
   },
 

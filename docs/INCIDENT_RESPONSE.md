@@ -186,7 +186,7 @@ SEAL 911 是 Security Alliance（SEAL）提供的公開緊急聯絡管道，協�
 
 | 路徑 | 看什麼 | 怎麼通知 | 頻率 |
 |---|---|---|---|
-| 鏈上監控 Worker（[`ops/monitoring/`](../ops/monitoring/README.md)） | 權限與 owner 變更、暫停與資產模式、大額提領、價格過期與偏離、保險金與金庫儲備率、FeeRouter 與 x402 收款設定、keeper gas、signal-api 健康 | Telegram／Discord／webhook（依部署設定） | 每 5 分鐘 |
+| 鏈上監控 Worker（[`ops/monitoring/`](../ops/monitoring/README.md)） | 權限與 owner 變更、暫停與資產模式、大額提領、價格過期、保險金與金庫儲備率、FeeRouter 與 x402 收款設定、keeper gas、signal-api 健康 | Telegram／Discord／webhook（依部署設定） | 每 5 分鐘 |
 | GitHub Actions（`oracle-health.yml`、keeper 熔斷） | 價格過期、funding 未結算、keeper 拒寫 | 固定標題的 GitHub issue | 每 3 小時（排程常延遲） |
 
 **規則清單**：[`ops/monitoring/rules.md`](../ops/monitoring/rules.md)。每條規則列出事件或狀態、合約與位址來源、門檻、
@@ -205,4 +205,6 @@ SEAL 911 是 Security Alliance（SEAL）提供的公開緊急聯絡管道，協�
 5. **誤報**：調門檻要改 `ops/monitoring/monitors.json`（或 Worker 的 `[vars]`）並走 PR，不要在事故當下關掉整條規則。
 
 已知限制：監控是分鐘級輪詢，只能在交易上鏈後通知，不能攔截；Worker 沒有任何鏈上權限，不會自動暫停或撤權。
+**價格偏離目前沒有被監控**：規則 `oracle-deviation` 已寫好，但參考來源（AggregatorOracle）對所有資產 revert（2026-10-01 實測），
+規則會持續發 SEV-3「沒有可用的參考價」而不是靜靜空轉；參考來源恢復後自動開始比對。在那之前，價格正確性只靠 keeper 的熔斷與 `oracle-health.yml`。
 尚未部署的合約功能（全域暫停、資產模式、Timelock）的規則已寫好但標為「待部署」，cutover 後才會生效。

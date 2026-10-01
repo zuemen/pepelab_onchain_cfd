@@ -46,7 +46,7 @@
 | [`x402-fee-withdrawals`](#x402-fee-withdrawals) x402 分潤路由手續費提領 | x402／FeeRouter 設定 | 事件 | SEV-3 | 運作中 | 每一筆（`FEE_WITHDRAW_ALERT_USDC`（預設 0 USDC））；金額 6 位小數（USDC） | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) |
 | [`vault-fees-withdrawn`](#vault-fees-withdrawn) 代幣化金庫手續費提領 | 大額提領 | 事件 | SEV-3 | 運作中 | 每一筆（`FEE_WITHDRAW_ALERT_USDC`（預設 0 USDC））；金額 18 位小數（MockUSDC） | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) |
 | [`oracle-stale`](#oracle-stale) 交易所價格過期 | Oracle | 狀態 | SEV-2 | 運作中 | 加密資產：≥ `ORACLE_STALE_WARN_SEC`（預設 14400 秒） → SEV-3；≥ 鏈上 `maxPriceAge()` → SEV-2。其他資產：≥ `NONCRYPTO_STALE_SEC`（預設 259200 秒） → SEV-3 | [§5](../../docs/INCIDENT_RESPONSE.md#5-keeper-熔斷處置) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
-| [`oracle-deviation`](#oracle-deviation) 交易所價格偏離參考價 | Oracle | 狀態 | SEV-2 | 運作中 | 偏離 ≥ `ORACLE_DEVIATION_BPS`（預設 300 bps） → SEV-2；≥ `ORACLE_DEVIATION_CRIT_BPS`（預設 1000 bps） → SEV-1；參考價超過 `REFERENCE_MAX_AGE_SEC`（預設 7200 秒） 不比對 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§5](../../docs/INCIDENT_RESPONSE.md#5-keeper-熔斷處置) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
+| [`oracle-deviation`](#oracle-deviation) 交易所價格偏離參考價 | Oracle | 狀態 | SEV-2 | 運作中 | 偏離 ≥ `ORACLE_DEVIATION_BPS`（預設 300 bps） → SEV-2；≥ `ORACLE_DEVIATION_CRIT_BPS`（預設 1000 bps） → SEV-1；參考價超過 `REFERENCE_MAX_AGE_SEC`（預設 7200 秒） 不比對；**一檔都比不到 → SEV-3「沒有可用的參考價」** | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§5](../../docs/INCIDENT_RESPONSE.md#5-keeper-熔斷處置) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 | [`guarded-oracle-paused`](#guarded-oracle-paused) GuardedOracle 暫停中 | 暫停與資產模式 | 狀態 | SEV-3 | 運作中 | `paused() == true` | [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 | [`insurance-fund`](#insurance-fund) 保險金下降 | 保險金與儲備 | 狀態 | SEV-2 | 運作中 | `totalAssets()` < `INSURANCE_MIN_USDC`（預設 100 USDC（MockUSDC）），或較 24 小時高點下降 ≥ `INSURANCE_DROP_BPS`（預設 2000 bps） → SEV-2 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) [§7](../../docs/INCIDENT_RESPONSE.md#7-對外溝通與客戶通報目標值可調整) |
 | [`vault-reserve`](#vault-reserve) 代幣化金庫儲備率 | 保險金與儲備 | 狀態 | SEV-2 | 運作中 | 儲備率 < `minReserveRatioBps()` → SEV-2；< 下限 + `RESERVE_WARN_MARGIN_BPS`（預設 500 bps） → SEV-3；mint 自動停止 → SEV-2；無法定價或暫停 → SEV-3 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
@@ -555,7 +555,7 @@ AssetVaultV2 累積的 mint／redeem 手續費被提出，稽核通知。
 
 **交易所價格偏離參考價**｜Oracle｜狀態｜SEV-2｜運作中
 
-比較交易所讀的 MockOracle 與 Chainlink/Pyth 聚合價（AggregatorOracle）。參考來源沒有該資產的 feed（呼叫 revert）或參考價本身過期時略過。偏離達 ORACLE_DEVIATION_BPS 為 SEV-2，達 ORACLE_DEVIATION_CRIT_BPS 為 SEV-1。兩者皆為 8 位小數。
+比較交易所讀的 MockOracle 與 Chainlink/Pyth 聚合價（AggregatorOracle）。參考來源沒有該資產的 feed（呼叫 revert）或參考價本身過期時略過；全部略過時發 SEV-3「沒有可用的參考價」，不會靜靜空轉。偏離達 ORACLE_DEVIATION_BPS 為 SEV-2，達 ORACLE_DEVIATION_CRIT_BPS 為 SEV-1。兩者皆為 8 位小數。**現況（2026-10-01 唯讀實測）：AggregatorOracle 對這 5 檔全部 revert（NoLiveSource），所以偏離目前「沒有被監控」，部署後會持續收到這則 SEV-3，直到參考來源恢復。**
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
@@ -564,7 +564,7 @@ AssetVaultV2 累積的 mint／redeem 手續費被提出，稽核通知。
 
 - 讀取：`primary.getPrice(bytes32)`、`reference.getPrice(bytes32)`
 - 資產：sBTC、sETH、sAAPL、sTSLA、sGOLD
-- 門檻：偏離 ≥ `ORACLE_DEVIATION_BPS`（預設 300 bps） → SEV-2；≥ `ORACLE_DEVIATION_CRIT_BPS`（預設 1000 bps） → SEV-1；參考價超過 `REFERENCE_MAX_AGE_SEC`（預設 7200 秒） 不比對
+- 門檻：偏離 ≥ `ORACLE_DEVIATION_BPS`（預設 300 bps） → SEV-2；≥ `ORACLE_DEVIATION_CRIT_BPS`（預設 1000 bps） → SEV-1；參考價超過 `REFERENCE_MAX_AGE_SEC`（預設 7200 秒） 不比對；**一檔都比不到 → SEV-3「沒有可用的參考價」**
 - 處置：[INCIDENT_RESPONSE「1. 嚴重度分級」](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級)、[INCIDENT_RESPONSE「5. keeper 熔斷處置」](../../docs/INCIDENT_RESPONSE.md#5-keeper-熔斷處置)、[INCIDENT_RESPONSE「3. 暫停與凍結：現行部署能做什麼」](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼)
 - 相關：[RUNBOOK_KEEPER.md「價格熔斷(keeper 拒寫大幅變動)」](../../docs/RUNBOOK_KEEPER.md#價格熔斷keeper-拒寫大幅變動)
 

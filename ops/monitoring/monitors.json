@@ -2134,7 +2134,7 @@
       "check": "oracleDeviation",
       "status": "active",
       "severity": "SEV-2",
-      "description": "比較交易所讀的 MockOracle 與 Chainlink/Pyth 聚合價（AggregatorOracle）。參考來源沒有該資產的 feed（呼叫 revert）或參考價本身過期時略過。偏離達 ORACLE_DEVIATION_BPS 為 SEV-2，達 ORACLE_DEVIATION_CRIT_BPS 為 SEV-1。兩者皆為 8 位小數。",
+      "description": "比較交易所讀的 MockOracle 與 Chainlink/Pyth 聚合價（AggregatorOracle）。參考來源沒有該資產的 feed（呼叫 revert）或參考價本身過期時略過；全部略過時發 SEV-3「沒有可用的參考價」，不會靜靜空轉。偏離達 ORACLE_DEVIATION_BPS 為 SEV-2，達 ORACLE_DEVIATION_CRIT_BPS 為 SEV-1。兩者皆為 8 位小數。**現況（2026-10-01 唯讀實測）：AggregatorOracle 對這 5 檔全部 revert（NoLiveSource），所以偏離目前「沒有被監控」，部署後會持續收到這則 SEV-3，直到參考來源恢復。**",
       "contracts": [
         {
           "ref": "MockOracle",
