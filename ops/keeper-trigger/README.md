@@ -4,7 +4,7 @@
 
 `.github/workflows/base-sepolia-keeper.yml` 名目上每 15 分鐘跑一次，但 GitHub 排程是 best-effort：實測間隔 68–169 分鐘，2026-09-30 甚至 4.5 小時沒有執行。交易所的 `maxPriceAge` 是 6 小時，所以只要一次寫價失敗再遇上排程延遲，資產就會過期、無法交易（當天 sBTC 就是這樣）。
 
-這個 Worker 每 20 分鐘用 Cloudflare 的 cron 檢查一次；keeper 超過 15 分鐘沒有執行、而且目前沒有排隊或執行中的 run，才觸發一次 `workflow_dispatch`。GitHub 排程仍然保留，兩者並存。keeper 在不需要寫價時不會送交易，多跑一次只花 Actions 分鐘數（公開 repo 免費）。
+這個 Worker 每 20 分鐘用 Cloudflare 的 cron 檢查一次 `WORKFLOW_FILES` 裡的每一支 keeper（預設 `base-sepolia-keeper.yml` 與 Ethereum Sepolia 的 `price-keeper.yml`；後者在 2026-10-01 同樣因排程節流而過期，見 #208）；某支 keeper 超過 15 分鐘沒有執行、而且目前沒有排隊或執行中的 run，才觸發它一次 `workflow_dispatch`。各支獨立判斷，一支觸發失敗不影響其他支。GitHub 排程仍然保留，兩者並存。keeper 在不需要寫價時不會送交易，多跑一次只花 Actions 分鐘數（公開 repo 免費）。
 
 Worker 本身**不持有任何鏈上金鑰**，對任何 HTTP 請求都回 404（`workers_dev = false`、`preview_urls = false`，不產生公開網址）。它唯一的憑證是一個 GitHub fine-grained token，權限為 **Actions: Read and write**。這個 token 能做的事比「觸發 keeper」多很多，下面逐項寫明。
 
@@ -114,7 +114,7 @@ Worker 的 token **沒有** Deployments 與 Administration 權限，下列設定
 
 ## 驗證
 
-- Cloudflare dashboard → Workers → `pepelab-keeper-trigger` → Logs（`[observability]` 已開啟）：每 20 分鐘應看到一行 `decide: dispatch=...`；dispatch 失敗的 cron 會顯示為錯誤。
+- Cloudflare dashboard → Workers → `pepelab-keeper-trigger` → Logs（`[observability]` 已開啟）：每 20 分鐘每支 workflow 各一行 `[<workflow>] decide: dispatch=...`；dispatch 失敗的 cron 會顯示為錯誤。
 - GitHub → Actions → Base Sepolia Keeper：出現 `workflow_dispatch` 觸發的執行，且間隔不超過約 35 分鐘。
 - `oracle-health.yml` 的過期告警 issue 應該不再出現。
 
