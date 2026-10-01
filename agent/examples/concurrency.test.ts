@@ -29,6 +29,8 @@ const env = {
   POLICY_AGENT_MAX_DAILY_MARGIN: "100000",
   POLICY_AGENT_MAX_ORDERS_PER_WINDOW: "100000",
   WORKER_ITER: String(N),
+  // 所有 worker 共用同一個 issuedAt（見 fixtures/concurrency-worker.ts 的說明）
+  VC_ISSUED_AT: String(Math.floor(Date.now() / 1000)),
 };
 let n = 0;
 const ok = (m: string) => console.log(`✓ ${++n}. ${m}`);
@@ -40,7 +42,7 @@ await Promise.all(children.map((c) => new Promise<void>((res) => c.once("message
 const results = await Promise.all(
   children.map(
     (c) =>
-      new Promise<{ allowed: number; nonceOk: number }>((res, rej) => {
+      new Promise<{ allowed: number; nonceOk: number; nonceReasons: Record<string, number>; gateReasons: Record<string, number> }>((res, rej) => {
         c.once("message", (m) => res(m as any));
         c.once("exit", (code) => code !== 0 && rej(new Error(`worker exit ${code}`)));
         c.send("go");
@@ -49,7 +51,7 @@ const results = await Promise.all(
 );
 
 const total = WORKERS * N;
-assert.equal(results.reduce((a, r) => a + r.allowed, 0), total, "每一次預留都被放行");
+assert.equal(results.reduce((a, r) => a + r.allowed, 0), total, `每一次預留都被放行；各 worker 結果：${JSON.stringify(results.map((r) => r.gateReasons))}`);
 const st = readPolicyState(statePath);
 const a = Object.values(st.agents)[0];
 assert.equal(a.dailyMargin, total, `兩個 process 同時預留：每日累計必須是 ${total}（無 lost update），實得 ${a.dailyMargin}`);
@@ -61,7 +63,7 @@ assert.equal(recs.length, total);
 assert.deepEqual(verifyAuditChain(recs), [], "並發 append 後 hash chain 仍完整");
 ok(`並發寫稽核 ${recs.length} 筆，hash chain 完整`);
 
-assert.equal(results.reduce((a, r) => a + r.nonceOk, 0), total);
+assert.equal(results.reduce((a, r) => a + r.nonceOk, 0), total, `每一筆 nonce 都要記錄成功；各 worker 結果：${JSON.stringify(results.map((r) => r.nonceReasons))}`);
 const nonces = JSON.parse(fs.readFileSync(noncePath, "utf8")).nonces;
 assert.equal(Object.keys(nonces).length, total, "並發記錄 nonce 不遺失");
 ok(`並發記錄 VC nonce ${total} 筆，無遺失`);

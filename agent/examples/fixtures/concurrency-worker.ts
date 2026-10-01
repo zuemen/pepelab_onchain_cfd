@@ -8,23 +8,33 @@ const N = Number(process.env.WORKER_ITER ?? "20");
 const WID = process.env.WORKER_ID ?? "0";
 const AGENT = "0x" + "ab".repeat(20);
 const ISSUER = "0x" + "cd".repeat(20);
-const NOW = Math.floor(Date.now() / 1000);
+// 兩個 worker 必須出示「同一張」VC 的內容（同 issuer、同 session、同 issuedAt），只是 nonce 不同。
+// 以前各自在載入時取 Math.floor(Date.now()/1000)：兩個 process 啟動若跨過秒邊界（CI 負載高時常見），
+// 就變成同一個 session 有兩張 issuedAt 不同的 VC——依 vcNonce 的「新的取代舊的」規則，舊的那張
+// 之後全部 VC_SUPERSEDED，nonceOk 合計只剩 20（PR #205 CI 的 `20 == 40`）。那是產品規則正確運作，
+// 不是 lost update；所以 issuedAt 由父 process 決定一次、經 env 傳給所有 worker。
+const NOW = Number(process.env.VC_ISSUED_AT);
+if (!Number.isInteger(NOW) || NOW <= 0) throw new Error("concurrency-worker：缺少 VC_ISSUED_AT（由 concurrency.test.ts 傳入）");
 
 process.on("message", async (m) => {
   if (m !== "go") return;
   let allowed = 0;
   let nonceOk = 0;
+  const nonceReasons: Record<string, number> = {};
+  const gateReasons: Record<string, number> = {};
   for (let i = 0; i < N; i++) {
     const g = await enforcePolicyGate({
       action: "open", sessionId: 1, agent: AGENT, user: ISSUER, symbol: "sBTC", isLong: true, marginUsdc: 1, leverage: 2,
     });
     if (g.allowed) allowed++;
+    gateReasons[g.reasonCode] = (gateReasons[g.reasonCode] ?? 0) + 1;
     const r = checkAndRecordVcNonce({
       valid: true, version: 2, nonce: ethers.id(`w${WID}-${i}`), digest: ethers.id(`d${WID}-${i}`),
       issuer: ISSUER, sessionId: 1, issuedAt: NOW, validUntil: NOW + 3600,
     });
     if (r.ok) nonceOk++;
+    nonceReasons[r.reasonCode] = (nonceReasons[r.reasonCode] ?? 0) + 1;
   }
-  process.send!({ allowed, nonceOk }, () => process.exit(0));
+  process.send!({ allowed, nonceOk, nonceReasons, gateReasons }, () => process.exit(0));
 });
 process.send!("ready");
