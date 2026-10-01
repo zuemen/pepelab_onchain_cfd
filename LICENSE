@@ -11,10 +11,16 @@ Copyright (c) 2026 zuemen and the PepeLab contributors. All rights reserved.
 
    "Copyright Holders" means zuemen and the PepeLab contributors.
 
-2. Limited permission to view
+2. Limited permission to view and to evaluate locally
 
-   You may view and read the Software, including through the hosting
-   platform on which it is published, solely for the following purposes:
+   Solely for the purposes listed below, you may:
+
+   (i)  view and read the Software, including through the hosting platform
+        on which it is published; and
+   (ii) clone the repository to a machine under your control, build the
+        Software there, and run its test suites there.
+
+   The purposes are:
 
    (a) evaluating the Software, for example technical due diligence,
        competition judging, or security review; and
@@ -22,17 +28,24 @@ Copyright (c) 2026 zuemen and the PepeLab contributors. All rights reserved.
        coursework assessment.
 
    Copies made automatically by your browser or by the hosting platform as a
-   technical necessity of viewing are permitted for those purposes only.
+   technical necessity of viewing, and the local copies made under (ii), are
+   permitted for those purposes only.
+
+   This Section does not permit deploying the Software, or anything built
+   from it, to any publicly reachable network or to any blockchain network,
+   including test networks. A local, in-process test environment started by
+   the Software's own test suites is not a deployment.
 
 3. Rights not granted
 
-   Except for the limited permission in Section 2, no right or license is
-   granted to you, whether expressly, by implication, by estoppel or
-   otherwise. In particular, you may not, without prior written permission
-   from the Copyright Holders:
+   Except as stated in Sections 2 and 6, no right or license is granted to
+   you, whether expressly, by implication, by estoppel or otherwise. In
+   particular, you may not, without prior written permission from the
+   Copyright Holders:
 
-   (a) use, run or execute the Software for any other purpose, including any
-       production or commercial purpose;
+   (a) use, run or execute the Software, other than building it and running
+       its test suites locally as permitted by Section 2; any production or
+       commercial use is excluded in every case;
    (b) modify, adapt or translate the Software, or create derivative works
        from it;
    (c) distribute, publish, sublicense, sell, lease or otherwise make the
@@ -75,6 +88,10 @@ Copyright (c) 2026 zuemen and the PepeLab contributors. All rights reserved.
        agent/signal-api/api/index.js), are governed by their own licenses as
        recorded in the package metadata and lockfiles.
 
+   The list above is not exhaustive. Any other material in this repository
+   that originates from a third party remains the property of its respective
+   rights holder and is not licensed to you by this License.
+
 6. Files carrying their own license notice
 
    Some files in this repository carry their own license identifier (for
@@ -101,6 +118,6 @@ Copyright (c) 2026 zuemen and the PepeLab contributors. All rights reserved.
 
 10. Other permissions
 
-   Any use beyond Section 2 requires prior written permission from the
+   Any use beyond Sections 2 and 6 requires prior written permission from the
    Copyright Holders. Requests can be made through the repository in which
    the Software is published.
