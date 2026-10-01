@@ -20,7 +20,7 @@
 |---|---|---|
 | **① 鏈上合約層** | `PerpetualExchange`、`InsuranceVault`、`AssetVaultV2`（UUPS proxy）+ `SyntheticAssetV2`、`ESGRegistryV2` + `CarbonTiers`、`AgentSessionManager`、`KYCRegistry`、`StrategyRegistry`／`CopyTracker`／`TraderStake`、`FeeRouter` | 保證金、開平倉、funding、清算與損失吸收；代幣化資產 mint／redeem；以見證的碳分級決定費率與槓桿上限；agent 的限額授權；費用分潤 |
 | **② 預言機與營運層** | `MockOracle`（交易所讀取）、`GuardedOracle`（V2 金庫讀取）、keeper（`agent/keeper`，GitHub Actions）、監控與告警 workflow | 餵價、價格熔斷、來源後備、oracle 新鮮度告警、位址一致性檢查 |
-| **③ Agent 與資料服務層** | `agent/signal-api`（x402，Vercel）、x402 結算 worker、`agent/mcp-server`、`agent/tg-bot`、`agent/demo-agent` | 付費資料 API、分潤結算佇列、讓 LLM agent 在 session 限額內讀取與下單 |
+| **③ Agent 與資料服務層** | `agent/signal-api`（x402，Vercel）、x402 結算 worker、`agent/mcp-server`、`agent/tg-bot`、`agent/demo-agent`、`agent/sdk`（TypeScript SDK，workspace，未發布到 npm） | 付費資料 API、分潤結算佇列、讓 LLM agent 在 session 限額內讀取與下單、給機構整合用的型別化 client |
 | **④ 呈現層** | `frontend/`（React + Vite，Vercel）、`web/`（靜態介紹頁） | 白標前端範本、商業版功能旗標、揭露文字 |
 
 整合介面細節見 [`docs/INTEGRATION_GUIDE.md`](docs/INTEGRATION_GUIDE.md)，signal-api 規格見
@@ -76,9 +76,11 @@ Sepolia 的合約**未做金鑰輪替**（見 [`docs/RUNBOOK_KEY_ROTATION.md`](d
 - **營運**（#178、#182、#190）：keeper 指向現行 exchange、GuardedOracle 恢復餵價、keeper 熔斷與來源後備、
   位址一致性 CI、oracle 告警。處置見 [`docs/RUNBOOK_KEEPER.md`](docs/RUNBOOK_KEEPER.md)。
 - **前端**（#181、#192）：移除假價、改為誠實的鏈上讀取；KYC 改送雜湊；商業版功能旗標；CSP 與安全標頭；
-  合成資產揭露。
+  合成資產揭露。之後合併到 master 的有：白標租戶設定層（#197，見
+  [`docs/TENANT_DEPLOYMENT.md`](docs/TENANT_DEPLOYMENT.md)）、`/legacy` 舊版 exchange 資產取回頁
+  （#214，2026-10-01 合併，見 [`docs/LEGACY_EXCHANGES.md`](docs/LEGACY_EXCHANGES.md)）。
 
-### 3.2 僅原始碼、尚未部署（PR #191，已合併到 master）
+### 3.2 僅原始碼、尚未部署（PR #191、#198，已合併到 master）
 
 以下變更已在 master 的原始碼中，但**已部署的 bytecode 沒有這些功能**。要生效必須由使用者執行 cutover
 重新部署（`PerpetualExchange` 需 link 外部 library `ExchangeOpsLib`，forge script 會自動處理），
@@ -92,6 +94,9 @@ Sepolia 的合約**未做金鑰輪替**（見 [`docs/RUNBOOK_KEY_ROTATION.md`](d
   CopyTracker slash 款項改入準備金、InsuranceVault 零份額存款 revert。
 - **組合保證金模式已從原始碼移除**（EIP-170 合約大小上限，以及未完成的帳戶層級清算；見 `docs/KNOWN_LIMITATIONS.md`）。
   現行部署仍有這個模式，但為關閉狀態（`portfolioMarginEnabled = false`，逐倉）。
+- PR #198（同樣只合併原始碼）：cutover 腳本與程序（[`docs/DEPLOY_130_CUTOVER.md`](docs/DEPLOY_130_CUTOVER.md)）、
+  移交給 Timelock 的治理腳本（[`docs/GOVERNANCE_HANDOVER.md`](docs/GOVERNANCE_HANDOVER.md)）、
+  `AssetVaultV2_5`、`GuardedOracle` 的時間窗累積偏離上限。相關限制見 `docs/KNOWN_LIMITATIONS.md` #27–#29。
 
 ## 4. 商業版功能旗標（前端）
 
@@ -146,7 +151,9 @@ npm run mcp-server      # 本機啟動 MCP server（stdio）
 ```
 
 環境與工具鏈細節見 [`docs/agents/environment.md`](docs/agents/environment.md)。部署與 cutover 程序見
-[`docs/DEPLOY_129_CUTOVER.md`](docs/DEPLOY_129_CUTOVER.md)；任何廣播交易的步驟都需要持有金鑰的使用者執行。
+[`docs/DEPLOY_129_CUTOVER.md`](docs/DEPLOY_129_CUTOVER.md)（現行部署）與
+[`docs/DEPLOY_130_CUTOVER.md`](docs/DEPLOY_130_CUTOVER.md)（3.2 節原始碼的下一輪，尚未執行）；
+任何廣播交易的步驟都需要持有金鑰的使用者執行。
 
 ## 7. 文件索引
 
