@@ -28,6 +28,7 @@ export const legacy = {
     contractBalance: '合約 USDC 餘額',
     openPositions: '未平倉部位',
     noPositions: '這個合約上沒有你的未平倉部位。',
+    truncated: '你在這個合約上的部位紀錄超過 {max} 筆，此處只檢查了最新的 {max} 筆，可能還有更多部位未列出，請聯絡客服確認。',
   },
 
   withdraw: {
@@ -63,7 +64,6 @@ export const legacy = {
 
   /** 預檢失敗的原因。按鈕不會送出交易，這段文字就是使用者看到的全部說明。 */
   block: {
-    checking: '預檢中…',
     notSent: '已攔下，沒有送出：這筆交易送出必定失敗。',
     stalePrice: '預言機報價已過期（最後更新於 {age}），舊合約會拒絕平倉。報價恢復更新後即可重試。',
     stalePriceAbandoned: '預言機已很久沒有更新此標的（最後更新於 {age}），看來已停止餵價，需要營運方處理。',
@@ -97,5 +97,7 @@ export const legacy = {
     title: '你在舊版交易合約上還有資產',
     body: '{count} 個已停用的舊合約上仍有你的保證金或未平倉部位，新頁面不會顯示它們。',
     cta: '查看並取回',
+    readFailedHint: '舊版合約資料暫時讀不到，可稍後再查看。',
+    readFailedLink: '舊版合約資產',
   },
 };

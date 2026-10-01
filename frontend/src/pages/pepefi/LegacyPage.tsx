@@ -42,6 +42,7 @@ import { useToast } from 'src/components/pepefi/ToastProvider';
 import { FALLBACK_MAX_PRICE_AGE_SEC } from 'src/lib/pepefi/priceFreshness';
 import {
   ageLabel,
+  MAX_POSITION_IDS,
   encodeClose,
   needsOperator,
   scanHasAssets,
@@ -276,6 +277,12 @@ function LegacyExchangeCard({
             )}
             {!scan.withdraw.preflight.ok && <BlockNote block={scan.withdraw.preflight.block} />}
           </Stack>
+        )}
+
+        {scan.truncated && (
+          <Typography variant="caption" color="error.main">
+            {interpolate(t.legacy.card.truncated, { max: MAX_POSITION_IDS })}
+          </Typography>
         )}
 
         <Divider />

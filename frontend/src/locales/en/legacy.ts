@@ -24,6 +24,8 @@ export const legacy: Catalog['legacy'] = {
     contractBalance: 'Contract USDC balance',
     openPositions: 'Open Positions',
     noPositions: 'You have no open positions on this contract.',
+    truncated:
+      'You have more than {max} position records on this contract; only the latest {max} were checked. There may be more open positions not listed here. Please contact support to confirm.',
   },
 
   withdraw: {
@@ -61,7 +63,6 @@ export const legacy: Catalog['legacy'] = {
     'This retired contract does not check price age: the Oracle price was last updated {age}, and closing will settle at that price.',
 
   block: {
-    checking: 'Pre-checking…',
     notSent: 'Stopped before sending: this transaction would certainly fail.',
     stalePrice:
       'The Oracle price is stale (last updated {age}); the retired contract will reject the close. Try again once the price is updated.',
@@ -98,5 +99,7 @@ export const legacy: Catalog['legacy'] = {
     title: 'You still have assets on a retired trading contract',
     body: '{count} retired contract(s) still hold your margin or open positions. The current pages do not show them.',
     cta: 'Review and recover',
+    readFailedHint: 'Retired contract data could not be read right now. Please check again later.',
+    readFailedLink: 'Legacy Contract Assets',
   },
 };

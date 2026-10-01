@@ -10,7 +10,7 @@ Base Sepolia 與 Ethereum Sepolia 上，歷次重部署換下來的 PerpetualExc
 
 | 鏈 | 合約 | 使用期間 | 使用者能否自行取回 |
 |---|---|---|---|
-| Base Sepolia | `0xEf75ECA6514cE96B18382E921aC6190a0cF8c072` | 2026-06-14 → 09-04 | 可以提領；**帳上負債大於合約餘額，提領先到先得**，不足部分由營運方另行處理 |
+| Base Sepolia | `0xEf75ECA6514cE96B18382E921aC6190a0cF8c072` | 2026-06-14 → 09-04 | 可以提領；可能無法全額提領，差額由營運方處理 |
 | Base Sepolia | `0xfAEf549C687C37064cEaB5728989a839B08955cf` | 2026-09-04 → 09-10 | 多數部位可平倉與提領；少數跟單獲利部位需營運方先調整設定（見 §3） |
 | Ethereum Sepolia | 四顆 2026-05 的早期部署 | 05-06 → 05-21 | 可以；舊合約不檢查價格時效，平倉會以預言機最後一次的價格結算（頁面會警告） |
 
@@ -25,11 +25,8 @@ Base Sepolia 與 Ethereum Sepolia 上，歷次重部署換下來的 PerpetualExc
 
 ## 3. 需要營運方處理的事項
 
-1. **`0xfAEf` 的跟單獲利部位無法平倉**：舊合約的收費路由已改指向現行 exchange，獲利平倉時的分潤呼叫會被拒絕。
-   營運方對 `0xfAEf` 執行 `setFeeRouter(0x0)` 後即可平倉（已在本機 fork 驗證；代價是這兩筆的績效費不再收取，
-   不影響現行 exchange）。**不要**把收費路由改指回舊合約，那會讓現行 exchange 的獲利跟單平倉失敗。
-2. **`0xEf75` 帳上負債大於合約餘額**：舊合約沒有暫停或營運方提款功能，鏈上無法保護剩餘資金。
-   營運方應通知持有人盡快提領；若餘額不足，以合約以外的方式處理受影響的使用者。
+1. **`0xfAEf`**：部分部位需營運方先調整設定才能平倉。頁面會在那幾筆部位上說明原因並顯示客服聯絡方式。
+2. **`0xEf75`**：可能無法全額提領，差額由營運方處理。頁面只提供合約當下付得出的金額，並列出差額。
 3. **Ethereum Sepolia 舊合約**：不需要營運方操作即可提領或平倉，是否另行通知由營運方決定。
 
 ## 4. ABI 相容性的處理
@@ -39,12 +36,15 @@ Position struct 從第一版（`597eff3`，11 欄）到 2026-09 版（16 欄）*
 的位置從未變過。所有版本的 `positions` 都是 public mapping（全靜態欄位 → getter 攤平成連續 word），
 所以頁面不帶任何一版的完整 ABI，只：
 
-1. `eth_getCode` 後掃 PUSH4，確認 `freeMargin / getUserPositions / positions / withdrawMargin /
+1. `eth_getCode` 後掃 PUSH4（結果以 `chainId:address` 在模組層級快取，舊合約的 code 不會變），確認 `freeMargin / getUserPositions / positions / withdrawMargin /
    closePosition` 存在（缺任何一個讀取函式就標成 unsupported，不會誤報「沒有資產」）；
 2. `positions(id)` 回傳只切前 11 個 word 解碼；
 3. `usdc()`、`oracle()`、`maxPriceAge()` 有才讀，沒有就略過（Sepolia 早期版沒有 `maxPriceAge`）。
 
-測試以兩顆真實舊合約的 runtime bytecode（`frontend/src/lib/pepefi/__fixtures__/legacyBytecode.json`）
+探測只認 PUSH4：selector 以 `0x00` 開頭時 solc 可能改用較短的 PUSHn，這種 selector 會被漏掉、
+合約會被誤判成 unsupported（保守方向，不會誤送交易）。頁面需要的 selector 都不以 `0x00` 開頭，有測試釘住。
+
+測試以三顆真實舊合約（`0xEf75`、`0xfAEf`、Sepolia `0x00f6`）的 runtime bytecode（`frontend/src/lib/pepefi/__fixtures__/legacyBytecode.json`）
 驗證探測結果。
 
 ## 5. /legacy 頁的設計
@@ -82,6 +82,11 @@ Position struct 從第一版（`597eff3`，11 欄）到 2026-09 版（16 欄）*
 - **提領金額** = min(可用保證金, 合約 USDC 餘額)。合約付不出全額時明講差額並列入「需要營運方」。
   這是先到先得：頁面不替任何人保留額度（合約本身也沒有這種機制）。
 - 平倉預檢通過、但預言機年齡超過時效上限（合約沒有時效檢查的 Sepolia 舊版）時，顯示「將以該舊價結算」。
+- **部位數上限**：早期版本的 `getUserPositions` 只增不減（含已平倉）。每顆合約最多讀最新的 200 個 id；
+  超過時不當成「沒有」，而是標記 truncated、在頁面上說明「可能還有更多部位未列出」並列入需要營運方。
+  不選擇全部讀完，是因為那可能是上千次循序 eth_call，而超過上限的帳戶極少。
+- **讀取失敗**：整顆合約讀取失敗時退避 800ms 重試一次；仍失敗則 /legacy 顯示讀取失敗，Portfolio 只顯示
+  一行低調提示（「舊版合約資料暫時讀不到」＋連結）。確認全空時 Portfolio 什麼都不顯示。
 - 有任何需要營運方的項目時，顯示租戶設定的客服（`tenant.support.email` / `url`）；default 租戶兩者皆為
   null，頁面明講「尚未設定客服聯絡方式」而不是編造一個。並附上可複製的錢包、合約、部位編號。
 

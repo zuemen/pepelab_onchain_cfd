@@ -62,8 +62,13 @@ export type LegacyCapabilities = Record<LegacyCapability, boolean>;
  * 從 runtime bytecode 撈出所有 PUSH4 的運算元（Solidity dispatcher 用 PUSH4 比對 selector）。
  * 跳過其他 PUSHn 的資料區，否則資料裡剛好出現 0x63 會被誤當成 PUSH4。
  *
- * 這是「可能存在」的上界：PUSH4 也可能是一般常數，但一個 selector 不在這裡就一定不存在。
- * 頁面只把它當成「不在就不呼叫」的閘門，真正能不能成功仍以 eth_call 預檢為準。
+ * 這是「可能存在」的上界：PUSH4 也可能是一般常數。頁面只把它當成「不在就不呼叫」的閘門，
+ * 真正能不能成功仍以 eth_call 預檢為準。
+ *
+ * 已知限制：selector 以 0x00 開頭時，solc 可能用 PUSH3（甚至更短的 PUSHn）推入去掉前導零的
+ * 值，這裡只認 PUSH4，會漏掉那種 selector，結果是把合約誤判成 unsupported（偏保守的那一邊，
+ * 不會誤送交易）。頁面需要的 selector 沒有一個以 0x00 開頭，有測試釘住這一點；之後若新增
+ * 需要探測的函式，要先確認它的 selector。
  */
 export function scanPush4Selectors(bytecode: string): Set<string> {
   const hex = bytecode.startsWith('0x') ? bytecode.slice(2) : bytecode;
@@ -302,9 +307,21 @@ export interface LegacyExchangeScan {
   maxPriceAgeSec: number | null;
   withdraw: LegacyWithdrawPlan | null;
   positions: LegacyPositionView[];
+  /**
+   * getUserPositions 回傳的 id 超過 MAX_POSITION_IDS，只讀了最後（最新）的那一段。
+   * 截斷不能被當成「沒有」：UI 會說明可能還有部位未列出，並把它列入需要營運方。
+   */
+  truncated: boolean;
 }
 
-/** 一個使用者在一個舊合約上最多讀幾個 position id（getUserPositions 在早期版本只增不減）。 */
+/**
+ * 一個使用者在一個舊合約上最多讀幾個 position id。
+ *
+ * 早期版本的 getUserPositions 只增不減（含已平倉），理論上沒有上限；全部循序讀完可能是
+ * 上千次 eth_call。選擇「讀最後 N 個 + 標記 truncated」而不是讀完：id 依開倉順序排列，
+ * 仍未平倉的部位多半在尾端；真的超過上限的帳戶極少，交給營運方逐筆確認比讓每次開頁
+ * 都打上千次 RPC 好。
+ */
 export const MAX_POSITION_IDS = 200;
 
 export function planWithdraw(freeMargin: bigint, exchangeBalance: bigint | null): { amount: bigint; shortfall: bigint } {
@@ -362,30 +379,87 @@ const emptyScan = (exchange: LegacyExchange, status: LegacyScanStatus, capabilit
   maxPriceAgeSec: null,
   withdraw: null,
   positions: [],
+  truncated: false,
 });
+
+/**
+ * bytecode 探測結果的模組層級快取（key = `chainId:address`）。舊合約的 code 不會變，
+ * 每次開 Portfolio 都重抓 15–19 KB 的 bytecode 沒有意義。只快取「有 code」的結果；
+ * 讀取失敗或沒有 code 不進快取，下次會重試。
+ */
+const CAPABILITY_CACHE = new Map<string, LegacyCapabilities>();
+
+const cacheKey = (e: LegacyExchange) => `${e.chainId}:${e.address.toLowerCase()}`;
+
+/** 測試用：清空探測快取。 */
+export function clearLegacyCapabilityCache(): void {
+  CAPABILITY_CACHE.clear();
+}
+
+async function capabilitiesOf(
+  reader: LegacyReader,
+  exchange: LegacyExchange
+): Promise<LegacyCapabilities | 'noCode' | 'readFailed'> {
+  const hit = CAPABILITY_CACHE.get(cacheKey(exchange));
+  if (hit) return hit;
+  let code: string;
+  try {
+    code = await reader.getCode(exchange.address);
+  } catch {
+    return 'readFailed';
+  }
+  if (!code || code === '0x') return 'noCode';
+  const caps = probeCapabilities(code);
+  CAPABILITY_CACHE.set(cacheKey(exchange), caps);
+  return caps;
+}
+
+/** 讀取失敗時的重試：一次，等 backoffMs 後再試。 */
+export interface LegacyScanRetry {
+  retries?: number;
+  backoffMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /**
  * 讀一個舊合約上、`account` 的全部資產，並對每個可行動作做預檢。
  *
- * 逐筆循序呼叫而不是 Promise.all：Base Sepolia 的公開節點在同時大量 eth_call 時會
- * 丟掉一部分（見 rpcBatch.ts），而這裡的呼叫數很少，循序比較穩。
+ * 公開節點偶爾會丟掉請求；整個掃描結果是 readFailed 時，退避後重試一次（預設 800ms）。
+ * 預檢的 revert 不算讀取失敗，不會觸發重試。
  */
 export async function scanLegacyExchange(
+  reader: LegacyReader,
+  exchange: LegacyExchange,
+  account: string,
+  nowSec: number,
+  retry: LegacyScanRetry = {}
+): Promise<LegacyExchangeScan> {
+  const retries = retry.retries ?? 1;
+  const backoffMs = retry.backoffMs ?? 800;
+  const sleep = retry.sleep ?? defaultSleep;
+  let scan = await scanOnce(reader, exchange, account, nowSec);
+  for (let i = 0; i < retries && scan.status === 'readFailed'; i += 1) {
+    await sleep(backoffMs * 2 ** i);
+    scan = await scanOnce(reader, exchange, account, nowSec);
+  }
+  return scan;
+}
+
+/**
+ * 一次掃描。逐筆循序呼叫而不是 Promise.all：Base Sepolia 的公開節點在同時大量 eth_call
+ * 時會丟掉一部分（見 rpcBatch.ts），而這裡的呼叫數很少，循序比較穩。
+ */
+async function scanOnce(
   reader: LegacyReader,
   exchange: LegacyExchange,
   account: string,
   nowSec: number
 ): Promise<LegacyExchangeScan> {
   const to = exchange.address;
-  let code: string;
-  try {
-    code = await reader.getCode(to);
-  } catch {
-    return emptyScan(exchange, 'readFailed', null);
-  }
-  if (!code || code === '0x') return emptyScan(exchange, 'noCode', null);
-
-  const caps = probeCapabilities(code);
+  const caps = await capabilitiesOf(reader, exchange);
+  if (caps === 'readFailed' || caps === 'noCode') return emptyScan(exchange, caps, null);
   if (!canReadAssets(caps)) return emptyScan(exchange, 'unsupported', caps);
 
   try {
@@ -394,7 +468,8 @@ export async function scanLegacyExchange(
 
     const me = account.toLowerCase();
     const open: LegacyPositionPrefix[] = [];
-    for (const pid of [...ids].slice(0, MAX_POSITION_IDS)) {
+    const truncated = ids.length > MAX_POSITION_IDS;
+    for (const pid of [...ids].slice(-MAX_POSITION_IDS)) {
       const raw = await reader.call({ to, data: AUX.encodeFunctionData('positions', [pid]) });
       const p = decodePositionPrefix(raw);
       if (p.isOpen && p.owner.toLowerCase() === me) open.push(p);
@@ -402,7 +477,7 @@ export async function scanLegacyExchange(
 
     // 沒有任何資產就不必再讀餘額、價格或預檢。
     if (freeMargin === 0n && open.length === 0) {
-      return emptyScan(exchange, 'ok', caps);
+      return { ...emptyScan(exchange, 'ok', caps), truncated };
     }
 
     const usdc = caps.usdc ? await optional(readOne<string>(reader, to, EXCHANGE, 'usdc', [])) : null;
@@ -452,6 +527,7 @@ export async function scanLegacyExchange(
       maxPriceAgeSec: maxAge === null ? null : Number(maxAge),
       withdraw,
       positions,
+      truncated,
     };
   } catch {
     return emptyScan(exchange, 'readFailed', caps);
@@ -462,12 +538,20 @@ export async function scanLegacyExchange(
 // 顯示決策
 
 export function scanHasAssets(s: LegacyExchangeScan): boolean {
-  return s.freeMargin > 0n || s.positions.length > 0;
+  return s.freeMargin > 0n || s.positions.length > 0 || s.truncated;
 }
 
 /** Portfolio 的入口只在使用者真的有舊資產時出現。讀取中、讀取失敗、全空都不顯示。 */
 export function legacyEntryVisible(scans: readonly LegacyExchangeScan[] | null | undefined): boolean {
   return !!scans && scans.some(scanHasAssets);
+}
+
+/**
+ * Portfolio 上的低調提示：沒有可顯示的舊資產、但至少一顆舊合約讀取失敗。讀不到不等於
+ * 沒有，所以要說一聲；確認全空時仍然什麼都不顯示。
+ */
+export function legacyReadFailedHintVisible(scans: readonly LegacyExchangeScan[] | null | undefined): boolean {
+  return !!scans && !legacyEntryVisible(scans) && scans.some((s) => s.status === 'readFailed');
 }
 
 /**
@@ -482,6 +566,7 @@ export function settlesAtStalePrice(p: LegacyPositionView, maxPriceAgeSec: numbe
 /** 這個合約上是否有任何一件事需要營運方處理（用來決定要不要顯示客服聯絡區塊）。 */
 export function needsOperator(s: LegacyExchangeScan): boolean {
   if (s.status === 'unsupported' || s.status === 'noCode') return false;
+  if (s.truncated) return true;
   if (s.withdraw && (s.withdraw.shortfall > 0n || (!s.withdraw.preflight.ok && s.withdraw.preflight.block.needsOperator))) return true;
   return s.positions.some((p) => !p.close.ok && p.close.block.needsOperator);
 }
