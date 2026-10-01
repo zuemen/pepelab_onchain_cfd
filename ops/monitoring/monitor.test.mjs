@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { keccak256, selector } from "./keccak.mjs";
 import { decodeLog, formatUnits, isRangeError, isTransient, makeRpc, reconcile, runOnce, toUnits } from "./engine.mjs";
 import { channelsOf, parseMuteKeys, shouldSend } from "./notify.mjs";
-import { STATE_KEY, tick } from "./tick.mjs";
+import { BASELINES_KEY, STATE_KEY, tick } from "./tick.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const FULL = JSON.parse(readFileSync(join(here, "monitors.json"), "utf8"));
@@ -126,7 +126,7 @@ function makeLog(w, { address, sig, topics = [], data = "0x", block = w.head - 5
 
 const fakeKv = () => {
   const m = new Map();
-  return { m, get: async (k, t) => (m.has(k) ? (t === "json" ? JSON.parse(m.get(k)) : m.get(k)) : null), put: async (k, v) => void m.set(k, v) };
+  return { m, get: async (k, t) => (m.has(k) ? (t === "json" ? JSON.parse(m.get(k)) : m.get(k)) : null), put: async (k, v) => void m.set(k, v), delete: async (k) => void m.delete(k) };
 };
 
 // ── keccak ───────────────────────────────────────────────────────────────────
@@ -343,7 +343,7 @@ test("M3：x402 payTo 單次逾時不告警、不算錯誤、也不把開啟中�
   const state = {};
   const logs = [];
   const run = (now) => runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now, log: (l) => logs.push(l) });
-  assert.deepEqual((await run(1)).notes.map((n) => [n.key, n.status]), [["x402-payto:unsafe", "觸發"]]);
+  assert.deepEqual((await run(1)).notes.filter((n) => !n.key.includes(":baseline:")).map((n) => [n.key, n.status]), [["x402-payto:unsafe", "觸發"]]);
 
   mode = "timeout";
   const r2 = await run(301);
@@ -700,7 +700,8 @@ test("signal-api 健康檢查：連續兩次失敗才告警；payTo 變更 SEV-1
   w.http.set(`${API}/healthz`, () => health);
   w.http.set(`${API}/`, () => root);
   const state = {};
-  assert.equal((await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 1 })).notes.length, 0);
+  const first = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 1 });
+  assert.deepEqual(first.notes.map((n) => [n.key, n.severity, n.status]), [[`x402-payto:baseline:${A}`, "SEV-3", "事件"]], "首次觀察當基準時要講出來");
   assert.equal(state.baselines["x402-payto"], A);
 
   health = { status: 503, body: "down" };
@@ -772,14 +773,14 @@ test("tick：通道全掛 → 留在 outbox、丟錯、不打心跳；下一輪�
   makeLog(w, { address: addrOf("owner-transferred", "PerpetualExchange"), sig: "OwnershipTransferred(address,address)", topics: [word(0), word(1)] });
   const env = { ...env0, MONITOR_STATE: kv, DISCORD_WEBHOOK_URL: DISCORD("x"), HEARTBEAT_URL: "https://hc.example/p" };
   w.channelStatus = 500;
-  await assert.rejects(tick({ config: only("owner-transferred"), env, now: 1, fetchImpl: w.fetch, log: () => {} }), /1 則告警未送達/);
-  assert.equal(JSON.parse(kv.m.get(STATE_KEY)).outbox.length, 1);
+  await assert.rejects(tick({ config: only("owner-transferred"), env, now: 1, fetchImpl: w.fetch, log: () => {} }), /2 則告警未送達/);
+  assert.equal(JSON.parse(kv.m.get(STATE_KEY)).outbox.length, 2, "owner 事件＋首輪的「監控狀態重置」");
   assert.ok(!w.sent.some((s) => s.url === "https://hc.example/p"));
 
   w.channelStatus = 200;
   w.sent.length = 0;
   await tick({ config: only("owner-transferred"), env, now: 400, fetchImpl: w.fetch, log: () => {} });
-  assert.equal(w.sent.filter((s) => s.url.startsWith("https://discord.com/")).length, 1, "outbox 那則重送一次");
+  assert.equal(w.sent.filter((s) => s.url.startsWith("https://discord.com/")).length, 2, "outbox 的兩則各重送一次");
   assert.equal(JSON.parse(kv.m.get(STATE_KEY)).outbox.length, 0);
 });
 
@@ -820,6 +821,80 @@ test("M2：monitor-self 永遠送（不受 MIN_SEVERITY／MUTE_KEYS 影響）；
   assert.equal(sent.length, 1, sent.join(" | "));
   assert.match(sent[0], /SEV-3\] 觸發｜監控本身有規則讀取失敗/);
   assert.ok(logs.some((l) => /MUTE_KEYS 忽略 1 個項目/.test(l)));
+});
+
+test("M5：KV 沒有檢查點 → SEV-3「監控狀態重置，X 之前的事件未掃描」；不受 MIN_SEVERITY 影響；只發一次", async () => {
+  const w = fakeWorld();
+  const kv = fakeKv();
+  const env = { ...env0, MONITOR_STATE: kv, DISCORD_WEBHOOK_URL: DISCORD("x"), MIN_SEVERITY: "SEV-1" };
+  const sent = () => w.sent.filter((s) => s.url.startsWith("https://discord.com/")).map((s) => JSON.parse(s.init.body).content);
+  const cfg = only("owner-transferred");
+  await tick({ config: cfg, env, now: 100, fetchImpl: w.fetch, log: () => {} });
+  const from = w.head - 3 - 300 + 1;
+  assert.equal(sent().length, 1);
+  assert.match(sent()[0], /SEV-3\] 事件｜監控狀態重置/);
+  assert.ok(sent()[0].includes(`事件掃描從區塊 ${from} 重新開始，區塊 ${from} 之前的事件未掃描`), sent()[0]);
+  w.head += 150;
+  await tick({ config: cfg, env, now: 400, fetchImpl: w.fetch, log: () => {} });
+  assert.equal(sent().length, 1, "有檢查點之後不再發");
+
+  // 狀態遺失（state:v1 被刪）：這段期間的事件掃不到，必須再講一次。
+  w.head += 5000;
+  ownerLog(w, w.head - 2000, 9); // 落在遺失期間、重置後的回看範圍之外
+  await kv.delete(STATE_KEY);
+  await tick({ config: cfg, env, now: 700, fetchImpl: w.fetch, log: () => {} });
+  assert.equal(sent().length, 2);
+  assert.match(sent()[1], /監控狀態重置/);
+  assert.ok(!sent().some((t) => /合約 owner 變更/.test(t)), "那筆事件確實沒被掃到——所以才需要這則通知");
+
+  // 第一輪 RPC 就失敗：檢查點沒建立，不發「重置」；建立的那一輪才發。
+  const w2 = fakeWorld();
+  const kv2 = fakeKv();
+  w2.rpcHttp = () => ({ status: 503, body: "down" });
+  const env2 = { ...env, MONITOR_STATE: kv2 };
+  await assert.rejects(tick({ config: cfg, env: env2, now: 100, fetchImpl: w2.fetch, log: () => {}, sleep: noSleep }));
+  assert.equal(w2.sent.length, 0);
+  w2.rpcHttp = null;
+  await tick({ config: cfg, env: env2, now: 400, fetchImpl: w2.fetch, log: () => {}, sleep: noSleep });
+  assert.match(JSON.parse(w2.sent[0].init.body).content, /監控狀態重置/);
+});
+
+test("M5：基準放在獨立的 KV 鍵——只刪 baselines:v1 會重設基準，檢查點與開啟中的告警不受影響", async () => {
+  const w = fakeWorld();
+  const kv = fakeKv();
+  const A = "0x00000000000000000000000000000000000000a1";
+  const B = "0x00000000000000000000000000000000000000b2";
+  let payTo = A;
+  w.http.set(`${API}/`, () => ({ status: 200, body: { payTo, payToSafety: { safe: true } } }));
+  const env = { ...env0, MONITOR_STATE: kv, DISCORD_WEBHOOK_URL: DISCORD("x") };
+  const cfg = only("owner-transferred", "x402-payto", "keeper-gas");
+  const keeper = "0x00000000000000000000000000000000000000f1";
+  w.setCall(addrOf("keeper-gas", "oracle"), "owner()", [], word(BigInt(keeper)));
+  w.balances.set(keeper, 10n ** 15n); // gas 過低：一則開啟中的告警
+  const heads = () => w.sent.filter((s) => s.url.startsWith("https://discord.com/")).map((s) => JSON.parse(s.init.body).content.split("\n")[0]);
+  await tick({ config: cfg, env, now: 100, fetchImpl: w.fetch, log: () => {} });
+  assert.deepEqual(JSON.parse(kv.m.get(BASELINES_KEY)), { "x402-payto": A });
+  assert.equal(JSON.parse(kv.m.get(STATE_KEY)).baselines, undefined, "基準不存在 state:v1 裡");
+  assert.ok(heads().some((h) => /基準已設定/.test(h)));
+
+  payTo = B;
+  w.head += 150;
+  await tick({ config: cfg, env, now: 400, fetchImpl: w.fetch, log: () => {} });
+  assert.ok(heads().some((h) => /SEV-1\] 觸發｜x402 收款地址：收款地址變更/.test(h)));
+  const before = JSON.parse(kv.m.get(STATE_KEY));
+
+  // 預期中的變更：只刪基準。
+  await kv.delete(BASELINES_KEY);
+  w.sent.length = 0;
+  w.head += 150;
+  await tick({ config: cfg, env, now: 700, fetchImpl: w.fetch, log: () => {} });
+  const after = JSON.parse(kv.m.get(STATE_KEY));
+  assert.deepEqual(JSON.parse(kv.m.get(BASELINES_KEY)), { "x402-payto": B });
+  assert.equal(after.checkpoint, before.checkpoint + 150, "檢查點接著走，沒有重置");
+  assert.ok(after.open[`keeper-gas:${keeper}`], "其他開啟中的告警還在");
+  assert.ok(heads().some((h) => /恢復｜x402 收款地址：收款地址變更/.test(h)));
+  assert.ok(heads().some((h) => /基準已設定/.test(h)));
+  assert.ok(!heads().some((h) => /監控狀態重置/.test(h)));
 });
 
 test("pending-deploy 規則不會被載入（沒有位址、不出現在 getLogs 過濾條件）", async () => {

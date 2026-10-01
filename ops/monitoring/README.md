@@ -82,7 +82,9 @@ Worker 持有的東西只有：
 
 ## 第一次執行
 
-KV 沒有檢查點時，事件掃描從 `head - INITIAL_LOOKBACK_BLOCKS`（約 10 分鐘）開始，**不會**補掃更早的歷史。`x402-payto` 沒設 `EXPECTED_PAY_TO` 時以第一次觀察值為基準。保險金的「24 小時高點」從部署後開始累積。
+KV 沒有檢查點時，事件掃描從 `head - INITIAL_LOOKBACK_BLOCKS`（約 10 分鐘）開始，**不會**補掃更早的歷史，並送出一則 SEV-3「**監控狀態重置**：區塊 N 之前的事件未掃描」。剛部署時收到是正常的；**之後再收到代表 KV 狀態遺失或被清除**，那段期間的事件要到區塊瀏覽器人工補查。
+
+`x402-payto` 沒設 `EXPECTED_PAY_TO` 時以第一次觀察值為基準，並送出一則「基準已設定：payTo = 0x…」供確認。保險金的「24 小時高點」從部署後開始累積。
 
 ## 日常
 
@@ -93,11 +95,16 @@ KV 沒有檢查點時，事件掃描從 `head - INITIAL_LOOKBACK_BLOCKS`（約 1
   3. `--write`、PR、重新部署 Worker。`check-monitoring.mjs` 偵測到 pending 規則的事件已出現在前端 ABI 時會印 `::notice::` 提醒。
   4. 現行 exchange 的位址一旦換掉，舊位址的規則會自動跟著 `addresses.ts` 換到新位址；CI 會擋下沒跟上的設定。
 - **通道憑證輪替**：建立新 bot token／webhook → `npx wrangler secret put …` 覆寫 → 確認下一輪測試告警送達 → 撤銷舊的。
-- **清除基準**（例如預期中的 `payTo` 變更、沒設 `EXPECTED_PAY_TO` 時）：設定 `EXPECTED_PAY_TO` 為新值最簡單；或在 Cloudflare dashboard 刪除 KV 鍵 `state:v1`（所有狀態重置，事件從當下重新開始掃）。
+- **清除基準**（例如預期中的 `payTo` 變更、沒設 `EXPECTED_PAY_TO` 時）：設定 `EXPECTED_PAY_TO` 為新值最簡單。否則**只刪基準那一個鍵**：
+  ```bash
+  npx wrangler kv key delete "baselines:v1" --binding MONITOR_STATE --remote
+  ```
+  （或在 Cloudflare dashboard 的 KV 頁面刪 `baselines:v1`。）下一輪會以當下的 `payTo` 重新建立基準並送出「基準已設定」供確認。
+  **不要刪 `state:v1`**：那會連事件檢查點、開啟中的告警、累計視窗一起清掉，Worker 會從當下重新開始掃並發「監控狀態重置」，重置前還沒掃到的事件就漏了。
 
 ## 狀態與限制
 
-- KV 鍵 `state:v1`：事件檢查點、開啟中的告警、累計提領視窗、保險金每小時高點、HTTP 連續失敗次數、送不出去的 outbox（最多 100 則）。每輪讀 1 次、寫 1 次（每日 288 次寫入）。
+- KV 鍵 `state:v1`：事件檢查點、開啟中的告警、累計提領視窗、保險金每小時高點、HTTP 連續失敗次數、送不出去的 outbox（最多 100 則）。KV 鍵 `baselines:v1`：首次觀察到的基準（`payTo`）。每輪各讀 1 次；`state:v1` 每輪寫 1 次（每日 288 次寫入），`baselines:v1` 只在基準變動時寫。
 - 告警狀態機：事件型每筆送一次；狀態型首次「觸發」、嚴重度升級或超過 `REMIND_SEC`（6 小時）「持續」、條件解除「恢復」。**規則讀取失敗時不會發恢復**。
 - 所有通道都送失敗時，通知留在 outbox 下一輪重送，該次 cron 記為失敗，也不打心跳。
 - 延遲：cron 5 分鐘＋`CONFIRMATIONS`（3 塊）。落後超過 `LAG_ALERT_BLOCKS` 時發監控自身告警。

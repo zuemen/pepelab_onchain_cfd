@@ -749,12 +749,19 @@ const httpChecks = {
     const expected = String(env?.EXPECTED_PAY_TO ?? "").trim();
     state.baselines ??= {};
     const baseline = expected || state.baselines[rule.id];
-    if (!expected && !state.baselines[rule.id]) state.baselines[rule.id] = payTo; // 首次觀察即基準
+    if (!expected && !state.baselines[rule.id]) {
+      // 首次觀察即基準。講出來：KV 被清掉之後，「被改過的 payTo」會靜靜變成新的基準。
+      state.baselines[rule.id] = payTo;
+      out.push({ ...finding(rule, `${rule.id}:baseline:${lc(payTo)}`, "SEV-3", `${rule.title}：基準已設定`, [
+        `KV 沒有收款地址的基準（首次部署，或基準被清除）：以目前觀察到的 payTo ${payTo} 當作基準`,
+        "請確認這是預期的收款地址；設定 EXPECTED_PAY_TO 後就不再依賴首次觀察",
+      ]), once: true });
+    }
     if (baseline && lc(baseline) !== lc(payTo)) {
       out.push(finding(rule, `${rule.id}:changed`, "SEV-1", `${rule.title}：收款地址變更`, [
         `signal-api 的 payTo 由 ${baseline} 變成 ${payTo}`,
         expected ? "基準來自 EXPECTED_PAY_TO" : "基準來自首次觀察（建議設定 EXPECTED_PAY_TO）",
-        "若為預期變更：更新 EXPECTED_PAY_TO（或清除 KV 基準）",
+        "若為預期變更：更新 EXPECTED_PAY_TO，或只刪 KV 鍵 baselines:v1（見 README「清除基準」）",
       ]));
     }
     if (j?.payToSafety && j.payToSafety.safe === false) {
@@ -818,6 +825,7 @@ export async function runOnce({ config, env = {}, state, fetchImpl, now = Math.f
   const findings = [];
   const evaluated = new Set();
   const errors = [];
+  let initialFrom; // KV 沒有檢查點、這一輪才建立：事件掃描的起點（呼叫端據此發「狀態重置」）
   const fail = (id, e) => {
     const msg = `${id}: ${String(e?.message ?? e).slice(0, 200)}`;
     errors.push(msg);
@@ -829,6 +837,7 @@ export async function runOnce({ config, env = {}, state, fetchImpl, now = Math.f
     const r = await scanEvents({ config, env, rpc, state, now });
     findings.push(...r.findings);
     state.checkpoint = r.nextCheckpoint;
+    if (r.initialFrom !== undefined && r.nextCheckpoint !== undefined && r.nextCheckpoint !== null) initialFrom = r.initialFrom;
     log(`events: 掃描 ${r.scanned} 個區塊（${r.requests} 個請求、每段 ${r.range} 塊），${r.findings.length} 則，落後 ${r.lagBlocks} 塊`);
     if (r.error) fail("event-scan", r.error);
     else for (const rule of config.rules.filter((x) => x.kind === "event" && isActive(x))) evaluated.add(rule.id);
@@ -873,7 +882,7 @@ export async function runOnce({ config, env = {}, state, fetchImpl, now = Math.f
   }
   const notes = reconcile({ config, env, state, findings, evaluated, now });
   state.lastRunAt = now;
-  return { notes, errors, summary: { findings: findings.length, notes: notes.length, errors: errors.length, rpcRequests: rpc.stats.requests, rpcRetries: rpc.stats.retries } };
+  return { notes, errors, summary: { findings: findings.length, notes: notes.length, errors: errors.length, rpcRequests: rpc.stats.requests, rpcRetries: rpc.stats.retries, initialFrom } };
 }
 
 export const _internal = { checks, httpChecks, short };
