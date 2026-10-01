@@ -104,6 +104,9 @@ contract DeployTenantTest is TenantFixture {
         assertEq(address(ex.kyc()), d.kyc);
 
         assertEq(d.tokens.length, 11, "one token per registered asset");
+        assertEq(AssetVaultV2_5(d.assetVault).maxPriceAge(), 21_600, "vault quote-age limit = 6h");
+        assertEq(AssetVaultV2_5(d.assetVault).redeemFeeBps(), 30, "redeem fee left at the contract default");
+        assertEq(AssetVaultV2_5(d.assetVault).minReserveRatioBps(), 11_000, "reserve floor left at the contract default");
 
         // The record the run produced verifies on its own, from strings alone.
         string memory record = script.lastRecordJson();
@@ -146,6 +149,36 @@ contract DeployTenantTest is TenantFixture {
         vm.prank(trader);
         ex.openPosition{value: 1e14}(AAPL, true, 100e18, 1);
         assertEq(ex.profitCapOf(0), ex.getPosition(0).margin * 5, "profit cap frozen at 5x margin");
+    }
+
+    /// @dev The keeper reads `getPrice` before every post and refuses to write
+    ///      when that read reverts. With the oracle's own staleness check on,
+    ///      one outage longer than the limit would lock the keeper out for good.
+    function test_staleTenantOracle_stillReadable_soTheKeeperCanRecover() public {
+        (Spec memory s, , TenantBase.TenantDeployed memory d) = _tenant("bank-a");
+        assertEq(GuardedOracle(d.oracle).maxPriceAge(), 0, "oracle-level staleness check is off");
+        assertEq(GuardedOracle(d.oracle).maxDeviationBps(), 1_000);
+
+        vm.warp(block.timestamp + 3 days);   // a long keeper outage
+        (uint256 p, uint256 at) = IOracle(d.oracle).getPrice(BTC);   // must not revert
+        assertEq(p, 100e8);
+        assertLt(at, block.timestamp - 6 hours);
+
+        // The exchange still refuses the stale quote on its own...
+        usdc.mint(trader, 1_000e18);
+        vm.deal(trader, 1 ether);
+        vm.startPrank(trader);
+        usdc.approve(d.exchange, type(uint256).max);
+        PerpetualExchange(d.exchange).depositMargin(500e18);
+        vm.expectRevert(abi.encodeWithSelector(PerpetualExchange.StalePrice.selector, BTC, at));
+        PerpetualExchange(d.exchange).openPosition{value: 1e14}(BTC, true, 100e18, 1);
+        vm.stopPrank();
+
+        // ...and the keeper's next post ends the outage.
+        vm.prank(s.keeper);
+        GuardedOracle(d.oracle).updatePrice(BTC, 105e8);
+        vm.prank(trader);
+        PerpetualExchange(d.exchange).openPosition{value: 1e14}(BTC, true, 100e18, 1);
     }
 
     function test_mockOracleKind_withoutVault() public {

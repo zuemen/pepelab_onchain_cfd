@@ -51,11 +51,20 @@ abstract contract TenantBase is Script {
     ///      seed is stamped "now". A stale seed would therefore look fresh, so
     ///      the source must have been updated within this window.
     uint256 internal constant SEED_MAX_AGE = 1 hours;
-    /// @dev GuardedOracle refuses to quote past this age (its own default is
-    ///      1h, shorter than the real keeper cadence of ~2h). Equal to the
-    ///      exchange's `maxPriceAge`, so it adds no failure the exchange does
-    ///      not already have.
-    uint256 internal constant ORACLE_MAX_PRICE_AGE     = MAX_PRICE_AGE;
+    /// @dev GuardedOracle's own staleness check is switched OFF (0). Staleness
+    ///      is enforced where it matters — by the exchange (`maxPriceAge`, 6h)
+    ///      and by the vault (its own `maxPriceAge`) — each against the
+    ///      oracle's `updatedAt`. Leaving it on at the oracle is a trap: the
+    ///      keeper reads the current price through `getPrice` before every
+    ///      post (agent/keeper/round.ts) and refuses to write when that read
+    ///      reverts, so one outage longer than the limit would lock the keeper
+    ///      out of the very update that ends the staleness. The live platform
+    ///      avoids the same trap with a 30-day value.
+    uint256 internal constant ORACLE_MAX_PRICE_AGE     = 0;
+    /// @dev The vault's stored quote-age limit. Its initializer says 1h, below
+    ///      the real keeper cadence (~2h); 6h is the ceiling V2.5 enforces
+    ///      anyway and what the live vault runs.
+    uint256 internal constant VAULT_MAX_PRICE_AGE      = MAX_PRICE_AGE;
     uint256 internal constant ORACLE_MAX_DEVIATION_BPS = 1_000;   // 10% per post
 
     uint256 internal constant MIN_PROFIT_BPS = 10_000;

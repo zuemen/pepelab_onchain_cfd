@@ -288,6 +288,9 @@ contract DeployTenant is TenantBase {
             d.tokens[i] = address(t);
         }
 
+        // Only the quote-age limit is touched (see VAULT_MAX_PRICE_AGE); the
+        // redeem fee and the minimum reserve ratio keep the contract defaults.
+        vault.setRiskParams(vault.redeemFeeBps(), vault.minReserveRatioBps(), VAULT_MAX_PRICE_AGE);
         // Asset caps stay at the contract default of 0: every asset is closed
         // to minting until the tenant's risk key sets a limit.
         vault.grantRole(RISK_ROLE, c.risk);
