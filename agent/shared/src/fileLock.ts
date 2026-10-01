@@ -91,6 +91,32 @@ function tryReclaim(lockPath: string, staleMs: number): void {
  */
 export const TRANSIENT_LOCK_ERRORS = new Set(["EPERM", "EACCES", "EBUSY"]);
 
+export interface TransientRetryOptions {
+  /** 最多嘗試次數（含第一次）。預設 5。 */
+  attempts?: number;
+  /** 退避基準（ms），每次加倍。預設 5（5、10、20、40 ms）。 */
+  baseMs?: number;
+}
+
+/**
+ * 狀態檔讀寫（readFileSync、writeFileSync、renameSync）在 Windows 遇到 TRANSIENT_LOCK_ERRORS
+ * （防毒／索引程式短暫持有、delete-pending）時，做有上限的退避重試（#212）。
+ * 其他錯誤立刻丟出；重試用盡丟出最後一個錯誤 —— 呼叫端照舊 fail-closed。
+ */
+export function retryTransientSync<T>(fn: () => T, opts: TransientRetryOptions = {}): T {
+  const attempts = Math.max(1, opts.attempts ?? 5);
+  const baseMs = opts.baseMs ?? 5;
+  for (let i = 0; ; i++) {
+    try {
+      return fn();
+    } catch (e) {
+      const code = String((e as NodeJS.ErrnoException)?.code);
+      if (!TRANSIENT_LOCK_ERRORS.has(code) || i + 1 >= attempts) throw e;
+      sleepMs(baseMs * 2 ** i);
+    }
+  }
+}
+
 export interface LockOptions {
   timeoutMs?: number;
   staleMs?: number;

@@ -210,5 +210,19 @@ const vc = await issue();
   ok("openPositionForSession：VC 的 verifyingContract ≠ SESSION_MANAGER_ADDRESS → 拒絕（未觸及鏈上）");
 }
 
+// 9) #212：nonce 狀態寫不進去 → NONCE_STORE_WRITE_FAILED（不再歸到 UNREADABLE）；開倉拒絕、平倉降級
+{
+  const { vcNonceDecision } = await import("@pepelab/shared");
+  const sp = path.join(TMP, "n9.json");
+  fs.mkdirSync(`${sp}.${process.pid}.tmp`); // 暫存檔路徑是目錄 → writeFileSync 必失敗
+  const c = checkNonce(verify(vc), { statePath: sp });
+  assert.equal(c.ok, false);
+  assert.equal(c.reasonCode, "NONCE_STORE_WRITE_FAILED");
+  assert.equal(fs.existsSync(sp), false, "沒有寫入任何狀態");
+  assert.equal(vcNonceDecision(c, "open").kind, "reject");
+  assert.deepEqual(vcNonceDecision(c, "close"), { kind: "degraded", code: "NONCE_STORE_WRITE_FAILED" });
+  ok("nonce 狀態寫入失敗 → NONCE_STORE_WRITE_FAILED；開倉拒絕、平倉降級");
+}
+
 fs.rmSync(TMP, { recursive: true, force: true });
 console.log(`\n✅ vc-v2.test.ts 全過（${n} 組）`);

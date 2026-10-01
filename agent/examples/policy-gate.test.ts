@@ -278,6 +278,81 @@ ok("單筆保證金上限：>100 拒絕、=100 放行、負數/NaN → MARGIN_IN
   ok("開倉達頻率上限後仍可平倉");
 }
 
+// ─────────────── #212：狀態寫入失敗時，稽核鏈與回傳值一致 ───────────────
+{
+  const { readPolicyState, retryTransientSync } = S;
+  /** 注入寫入失敗：在 writePolicyState 的暫存檔路徑放一個目錄 → writeFileSync 必失敗（EISDIR，非暫時性）。 */
+  const blockStateWrite = (statePath: string) => fs.mkdirSync(`${statePath}.${process.pid}.tmp`, { recursive: true });
+  const close = { action: "close" as const, sessionId: 7, agent: AGENT, user: USER, positionId: 5 };
+  const origErr = console.error;
+  console.error = () => {};
+  try {
+    // 開倉：狀態寫不進去 → STATE_WRITE_FAILED；稽核只有一筆，且是 allowed=false
+    const sp = path.join(TMP, "w1.json");
+    const ap = path.join(TMP, "w1-audit.jsonl");
+    blockStateWrite(sp);
+    const g = await enforcePolicyGate(open(), { statePath: sp, auditPath: ap, now: () => T0 });
+    assert.equal(g.allowed, false);
+    assert.equal(g.reasonCode, "STATE_WRITE_FAILED", "寫入失敗不再歸到 STATE_UNREADABLE");
+    const recs = readAudit(ap) as any[];
+    assert.equal(recs.length, 1, "一個決定只留一筆稽核");
+    assert.deepEqual([recs[0].allowed, recs[0].reasonCode], [false, "STATE_WRITE_FAILED"], "稽核鏈的最終紀錄與回傳值一致");
+    assert.ok(!recs.some((r) => r.allowed), "沒有任何放行紀錄");
+    assert.deepEqual(verifyAuditChain(recs), []);
+    assert.equal(fs.existsSync(sp), false, "狀態檔沒有被寫入");
+
+    // 平倉：同樣故障 → 降級放行，稽核記 allowed=true 且 degraded 帶 STATE_WRITE_FAILED（與回傳一致）；
+    // 沒有寫進預留 → release 為 noop
+    const c = await enforcePolicyGate(close, { statePath: sp, auditPath: ap, now: () => T0 + 1 });
+    assert.equal(c.allowed, true);
+    assert.equal(c.reasonCode, "OK_DEGRADED");
+    assert.deepEqual(c.degraded, ["STATE_WRITE_FAILED"]);
+    const last = (readAudit(ap) as any[]).at(-1);
+    assert.deepEqual([last.allowed, last.reasonCode, last.degraded], [true, "OK_DEGRADED", ["STATE_WRITE_FAILED"]]);
+    await c.release();
+    assert.equal(fs.existsSync(sp), false, "release 沒有去寫狀態檔");
+
+    // 開倉：狀態寫入成功、稽核寫不進去 → AUDIT_WRITE_FAILED，且剛寫入的預留被退回（不留下沒有稽核的額度）
+    const sp2 = path.join(TMP, "w2.json");
+    const blocker = path.join(TMP, "w2-blocker");
+    fs.writeFileSync(blocker, "x");
+    const g2 = await enforcePolicyGate(open({ marginUsdc: 40 }), { statePath: sp2, auditPath: path.join(blocker, "a.jsonl"), now: () => T0 });
+    assert.equal(g2.reasonCode, "AUDIT_WRITE_FAILED");
+    const st = readPolicyState(sp2);
+    for (const k of [KEY, GKEY]) {
+      assert.equal(st.agents[k]?.dailyMargin ?? 0, 0, `${k}：預留已退回`);
+      assert.deepEqual(st.agents[k]?.orders ?? [], [], `${k}：下單時間戳已退回`);
+    }
+    // 對照：正常放行時，稽核是 allowed=true，且狀態確實記下預留
+    const sp3 = path.join(TMP, "w3.json");
+    const ap3 = path.join(TMP, "w3-audit.jsonl");
+    const g3 = await enforcePolicyGate(open({ marginUsdc: 40 }), { statePath: sp3, auditPath: ap3, now: () => T0 });
+    assert.equal(g3.allowed, true);
+    assert.equal((readAudit(ap3) as any[])[0].allowed, true);
+    assert.equal(readPolicyState(sp3).agents[KEY].dailyMargin, 40);
+  } finally {
+    console.error = origErr;
+  }
+  ok("#212：狀態寫入失敗 → 開倉 STATE_WRITE_FAILED、稽核唯一一筆 allowed=false；平倉降級且稽核標 STATE_WRITE_FAILED；稽核失敗時退回預留");
+
+  // 暫時性錯誤（EPERM／EACCES／EBUSY）有上限的退避重試；其他錯誤不重試
+  const errno = (code: string) => Object.assign(new Error(code), { code });
+  let calls = 0;
+  assert.equal(retryTransientSync(() => { if (++calls < 3) throw errno("EPERM"); return "ok"; }, { baseMs: 1 }), "ok");
+  assert.equal(calls, 3, "EPERM 兩次後成功");
+  for (const code of ["EPERM", "EACCES", "EBUSY"]) {
+    calls = 0;
+    assert.throws(() => retryTransientSync(() => { calls++; throw errno(code); }, { baseMs: 1 }), (e: any) => e.code === code);
+    assert.equal(calls, 5, `${code}：最多 5 次後放棄（仍 fail-closed）`);
+  }
+  for (const code of ["ENOENT", "EISDIR", "ENOSPC"]) {
+    calls = 0;
+    assert.throws(() => retryTransientSync(() => { calls++; throw errno(code); }, { baseMs: 1 }), (e: any) => e.code === code);
+    assert.equal(calls, 1, `${code} 不是暫時性錯誤，不重試`);
+  }
+  ok("#212：狀態檔讀寫遇 EPERM/EACCES/EBUSY 退避重試（上限 5 次）；其他錯誤立即失敗");
+}
+
 // ─────────────── write.ts 一定經過 policy gate（VC 閘、風險閘之後；簽章、廣播之前）───────────────
 {
   // 額度以鏈上 session.user 為鍵 → write.ts 會先讀 sessions()；用假節點回答（不連真實網路）。

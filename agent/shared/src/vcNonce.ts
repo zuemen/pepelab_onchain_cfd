@@ -16,13 +16,16 @@
 // **重啟後仍然有效**；三個進入點（MCP、tg-bot、x402 agent）在同一台機器共用。
 // 若檔案被刪除，記憶歸零：尚未過期的舊 VC 可能再被接受一次（然後重新記錄），
 // 影響上限＝該 VC 的 validUntil（預設見 DEFAULT_VC_VALIDITY_SEC，不超過 session 到期）與鏈上 session
-// 的額度／撤銷狀態。檔案存在但讀不到或格式不符 → 拒絕（fail-closed，NONCE_STORE_UNREADABLE）。
+// 的額度／撤銷狀態。檔案存在但讀不到或格式不符 → 拒絕（fail-closed，NONCE_STORE_UNREADABLE）；
+// 寫不進去 → NONCE_STORE_WRITE_FAILED（#212：與「讀不到」分開，便於對帳與排錯）。兩者都是基礎設施
+// 問題：開倉拒絕、平倉降級（write.ts vcNonceDecision）。讀寫遇到 Windows 暫時性錯誤
+// （EPERM／EACCES／EBUSY）先做有上限的退避重試（fileLock.ts retryTransientSync），仍失敗才回上述代碼。
 // 同機多 process 以檔案鎖（fileLock.ts）序列化讀改寫；跨主機部署要改成共享儲存。
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { VerifyResult } from "./identity.ts";
-import { withFileLockSync } from "./fileLock.ts";
+import { retryTransientSync, withFileLockSync } from "./fileLock.ts";
 
 export type NonceReason =
   | "OK"
@@ -30,6 +33,7 @@ export type NonceReason =
   | "VC_SUPERSEDED"
   | "LEGACY_AFTER_V2"
   | "NONCE_STORE_UNREADABLE"
+  | "NONCE_STORE_WRITE_FAILED"
   | "NONCE_STORE_LOCK_FAILED";
 
 interface NonceEntry {
@@ -72,7 +76,7 @@ const isStr = (v: unknown) => typeof v === "string" && v.length > 0;
 
 function read(file: string): NonceState {
   if (!fs.existsSync(file)) return { version: 2, nonces: {}, latest: {} };
-  const s = JSON.parse(fs.readFileSync(file, "utf8"));
+  const s = JSON.parse(retryTransientSync(() => fs.readFileSync(file, "utf8")));
   if (s?.version !== 2 || !s.nonces || typeof s.nonces !== "object" || !s.latest || typeof s.latest !== "object") {
     throw new Error("vc nonce 狀態檔格式不符");
   }
@@ -89,8 +93,8 @@ function read(file: string): NonceState {
 function write(file: string, s: NonceState): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(s), "utf8");
-  fs.renameSync(tmp, file);
+  retryTransientSync(() => fs.writeFileSync(tmp, JSON.stringify(s), "utf8"));
+  retryTransientSync(() => fs.renameSync(tmp, file));
 }
 
 export interface NonceCheck {
@@ -177,7 +181,7 @@ function checkLocked(res: VerifyResult, file: string, now?: number): NonceCheck 
   try {
     write(file, s);
   } catch {
-    return { ok: false, reasonCode: "NONCE_STORE_UNREADABLE", message: "VC nonce 狀態檔無法寫入（fail-closed）" };
+    return { ok: false, reasonCode: "NONCE_STORE_WRITE_FAILED", message: "VC nonce 狀態檔無法寫入（fail-closed）" };
   }
   return { ok: true, reasonCode: "OK", message: "VC 一次性／取代檢查通過" };
 }

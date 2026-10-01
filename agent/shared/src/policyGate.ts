@@ -38,12 +38,13 @@ import { fileURLToPath } from "node:url";
 import { ethers } from "ethers";
 import { ASSET_IDS } from "./addresses.ts";
 import { appendChainedRecord } from "./audit.ts";
-import { withFileLockSync, LockTimeoutError } from "./fileLock.ts";
+import { retryTransientSync, withFileLockSync, LockTimeoutError } from "./fileLock.ts";
 
 export type PolicyReasonCode =
   | "OK"
   | "CONFIG_INVALID"
   | "STATE_UNREADABLE"
+  | "STATE_WRITE_FAILED"
   | "AUDIT_WRITE_FAILED"
   | "ASSET_NOT_ALLOWED"
   | "MARGIN_INVALID"
@@ -384,7 +385,7 @@ const isTsArray = (v: unknown): v is number[] =>
  */
 export function readPolicyState(file: string): PolicyState {
   if (!fs.existsSync(file)) return { version: 1, agents: {} };
-  const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+  const parsed = JSON.parse(retryTransientSync(() => fs.readFileSync(file, "utf8")));
   if (
     parsed?.version !== 1 ||
     typeof parsed.agents !== "object" ||
@@ -411,8 +412,8 @@ export function readPolicyState(file: string): PolicyState {
 function writePolicyState(file: string, state: PolicyState): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(state), "utf8");
-  fs.renameSync(tmp, file);
+  retryTransientSync(() => fs.writeFileSync(tmp, JSON.stringify(state), "utf8"));
+  retryTransientSync(() => fs.renameSync(tmp, file));
 }
 
 // 同一 process 內序列化讀改寫（MCP 可能並發呼叫）；跨 process 由 withFileLockSync 保護。
@@ -487,7 +488,8 @@ export interface GateResult extends PolicyDecision {
  * write.ts 在送出交易前**無條件**呼叫。
  *
  * 失敗語意（審查 Medium-4）：
- *   - **開倉**：設定壞、狀態檔壞／鎖逾時、稽核寫不進去 → 一律拒絕（fail-closed）。
+ *   - **開倉**：設定壞、狀態檔壞（STATE_UNREADABLE）／寫不進去（STATE_WRITE_FAILED）／鎖逾時、
+ *     稽核寫不進去 → 一律拒絕（fail-closed）。放行時先寫狀態（預留）再寫稽核，稽核鏈只記最終決定（#212）。
  *   - **平倉**：是降低風險的動作，不能因為 agent 本地的基礎設施壞掉而把使用者鎖在
  *     部位裡。上述情況一律**放行**（reasonCode=OK_DEGRADED），在 stderr 印 `::error::`，
  *     並在稽核紀錄的 `degraded` 欄位標出原因（稽核本身寫不進去時，`::error::` 行帶完整
@@ -581,42 +583,68 @@ export async function enforcePolicyGate(
     if (!state) return degradedClose(degraded, t);
 
     const decision = evaluatePolicy(req, cfg, state, t);
-    const final: PolicyDecision =
-      decision.allowed && degraded.length
-        ? { allowed: true, reasonCode: "OK_DEGRADED", message: `${decision.message}（降級：${degraded.join(", ")}）` }
-        : decision;
+    // 政策本身拒絕：不動狀態，寫一筆拒絕稽核（開倉寫不進去也照樣拒絕；平倉同樣拒絕）。
+    if (!decision.allowed) {
+      try {
+        auditWriteAttempt(recordOf(decision, t, degraded), auditPath, t);
+      } catch {
+        if (!isClose) return { ...deny("AUDIT_WRITE_FAILED", "稽核紀錄寫入失敗（fail-closed）"), release: noop };
+      }
+      return { ...decision, release: noop };
+    }
 
-    // 稽核寫不進去：開倉不放行（沒有紀錄就沒有交易）；平倉放行但 ::error::。
+    // 順序（#212）：**先寫狀態（預留），再寫稽核**。稽核鏈只記錄「最終」決定：
+    //   - 狀態寫不進去 → 開倉的最終決定是拒絕（STATE_WRITE_FAILED），稽核記 allowed=false；
+    //     平倉照舊降級放行，degraded 帶 STATE_WRITE_FAILED。
+    //   - 以前是先記「放行」再寫狀態，寫入失敗時呼叫端收到拒絕、稽核鏈卻停在放行，兩者不一致。
+    //   不採「先記放行、失敗再補一筆拒絕」：狀態檔與稽核檔通常在同一顆磁碟，補記那一筆很可能也寫不進去，
+    //   稽核鏈仍會停在放行；而且一個決定留兩筆，對帳時要另外配對。
+    let reserved = false;
+    try {
+      writePolicyState(statePath, applyReservation(state, req, cfg, t));
+      reserved = true;
+    } catch {
+      if (!isClose) return finish(deny("STATE_WRITE_FAILED", "policy 狀態檔無法寫入（fail-closed）"));
+      degraded.push("STATE_WRITE_FAILED");
+      console.error("::error::[policy-gate] 平倉的頻率桶無法寫入 policy 狀態檔，仍放行");
+    }
+    const final: PolicyDecision = degraded.length
+      ? { allowed: true, reasonCode: "OK_DEGRADED", message: `${decision.message}（降級：${degraded.join(", ")}）` }
+      : decision;
+
+    const releaseNow = () => {
+      try {
+        withFileLockSync(statePath, () =>
+          writePolicyState(statePath, releaseReservation(readPolicyState(statePath), req, t)),
+        );
+      } catch {
+        /* 釋放失敗＝多算一筆，保守方向，可接受 */
+      }
+    };
+
+    // 稽核寫不進去：開倉不放行（沒有紀錄就沒有交易）並退回剛才的預留；平倉放行但 ::error::。
     try {
       auditWriteAttempt(recordOf(final, t, degraded), auditPath, t);
     } catch {
-      if (!isClose) return { ...deny("AUDIT_WRITE_FAILED", "稽核紀錄寫入失敗（fail-closed）"), release: noop };
-      if (!final.allowed) return { ...final, release: noop };
+      if (!isClose) {
+        // 已在 statePath 的鎖內：直接寫回，不能再取一次鎖（不可重入）。
+        if (reserved) {
+          try {
+            writePolicyState(statePath, releaseReservation(readPolicyState(statePath), req, t));
+          } catch {
+            /* 退回失敗＝多算一筆，保守方向 */
+          }
+        }
+        return { ...deny("AUDIT_WRITE_FAILED", "稽核紀錄寫入失敗（fail-closed）"), release: noop };
+      }
       degraded.push("AUDIT_WRITE_FAILED");
       console.error(`::error::[policy-gate] 平倉稽核寫入失敗，仍放行；紀錄：${JSON.stringify(recordOf(final, t, degraded))}`);
-    }
-    if (!final.allowed) return { ...final, release: noop };
-
-    try {
-      writePolicyState(statePath, applyReservation(state, req, cfg, t));
-    } catch {
-      if (!isClose) return { ...deny("STATE_UNREADABLE", "policy 狀態檔無法寫入（fail-closed）"), release: noop };
-      degraded.push("STATE_WRITE_FAILED");
-      console.error("::error::[policy-gate] 平倉的頻率桶無法寫入 policy 狀態檔，仍放行");
     }
     if (degraded.length) {
       console.error(`::error::[policy-gate] 平倉在降級模式放行（${degraded.join(", ")}）`);
     }
-    const release = () =>
-      serialized(() => {
-        try {
-          withFileLockSync(statePath, () =>
-            writePolicyState(statePath, releaseReservation(readPolicyState(statePath), req, t)),
-          );
-        } catch {
-          /* 釋放失敗＝多算一筆，保守方向，可接受 */
-        }
-      });
+    // 沒有寫進預留（平倉降級）就沒有東西可以退：release 為 noop，避免誤刪同一毫秒的另一筆紀錄。
+    const release = reserved ? () => serialized(releaseNow) : noop;
     return degraded.length
       ? { ...final, reasonCode: "OK_DEGRADED", degraded, release }
       : { ...final, release };
