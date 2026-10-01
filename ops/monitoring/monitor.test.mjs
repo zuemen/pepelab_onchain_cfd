@@ -6,9 +6,9 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { keccak256, selector } from "./keccak.mjs";
-import { decodeLog, formatUnits, isRangeError, isTransient, makeRpc, reconcile, runOnce, toUnits } from "./engine.mjs";
-import { channelsOf, parseMuteKeys, shouldSend } from "./notify.mjs";
-import { BASELINES_KEY, STATE_KEY, tick } from "./tick.mjs";
+import { decodeLog, formatUnits, isRangeError, isTransient, makeRpc, reconcile, redactUrls, runOnce, toUnits } from "./engine.mjs";
+import { channelsOf, escapeDiscord, parseMuteKeys, sendToChannel, shouldSend } from "./notify.mjs";
+import { BASELINES_KEY, CHANNEL_STUCK_ROUNDS, MAX_RESEND_PER_TICK, OUTBOX_TTL_SEC, STATE_KEY, tick } from "./tick.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const FULL = JSON.parse(readFileSync(join(here, "monitors.json"), "utf8"));
@@ -130,6 +130,9 @@ function makeLog(w, { address, sig, topics = [], data = "0x", block = w.head - 5
     removed: false,
   });
 }
+
+/** Discord 收到的內容（去掉 Markdown 跳脫，方便比對文字）。 */
+const dcText = (sent) => JSON.parse(sent.init.body).content.replace(/\\([^0-9A-Za-z\s])/g, "$1");
 
 const fakeKv = () => {
   const m = new Map();
@@ -314,7 +317,7 @@ test("M3：RPC 隔輪失敗 12 輪 → 0 則通知；連續失敗才告警一次
   let now = 2_000_000;
   let down = false;
   w.rpcHttp = () => (down ? { status: 429, body: "rate limited" } : null);
-  const sent = () => w.sent.filter((s) => s.url.startsWith("https://discord.com/")).map((s) => JSON.parse(s.init.body).content.split("\n")[0]);
+  const sent = () => w.sent.filter((s) => s.url.startsWith("https://discord.com/")).map((s) => dcText(s).split("\n")[0]);
   for (let i = 0; i < 12; i++) {
     down = i % 2 === 1;
     stubOracle(w, { now });
@@ -857,9 +860,15 @@ test("tick：三種通道的格式、HMAC 簽章、log 不含憑證、心跳", a
   assert.match(tgBody.text, /^🔴\[SEV-1\] 事件｜合約 owner 變更/);
   assert.match(tgBody.text, /處置：https:\/\/github\.com\/.*INCIDENT_RESPONSE\.md#1-嚴重度分級/);
   assert.deepEqual(JSON.parse(dc.init.body).allowed_mentions, { parse: [] });
+  assert.equal(JSON.parse(dc.init.body).flags, 4, "Discord 不展開連結預覽");
+  // webhook 簽章涵蓋時間戳（L5）：HMAC(secret, `${timestamp}.${body}`)。
   const sig = hk.init.headers["X-Pepelab-Signature"];
+  const ts = hk.init.headers["X-Pepelab-Timestamp"];
   const { createHmac } = await import("node:crypto");
-  assert.equal(sig, `sha256=${createHmac("sha256", "s3cret").update(hk.init.body).digest("hex")}`);
+  assert.equal(ts, "50");
+  assert.equal(JSON.parse(hk.init.body).sentAt, 50);
+  assert.equal(sig, `sha256=${createHmac("sha256", "s3cret").update(`50.${hk.init.body}`).digest("hex")}`);
+  assert.notEqual(sig, `sha256=${createHmac("sha256", "s3cret").update(hk.init.body).digest("hex")}`, "只簽內文的舊格式可以被無限期重放");
   assert.ok(w.sent.some((s) => s.url === "https://hc.example/ping/abc"), "整輪乾淨時打心跳");
   const all = logs.join("\n");
   for (const secret of [TG, "secretpart", "s3cret", "hc.example"]) assert.ok(!all.includes(secret), `log 洩漏 ${secret}`);
@@ -916,7 +925,7 @@ test("M2：monitor-self 永遠送（不受 MIN_SEVERITY／MUTE_KEYS 影響）；
   for (let i = 0; i < 4; i++) {
     await assert.rejects(tick({ config: only("owner-transferred", "x402-payto"), env, now: 100 + 300 * i, fetchImpl: w.fetch, log: (l) => logs.push(l), sleep: async () => {} }), /規則讀取失敗/);
   }
-  const sent = w.sent.filter((s) => s.url.startsWith("https://discord.com/")).map((s) => JSON.parse(s.init.body).content.split("\n")[0]);
+  const sent = w.sent.filter((s) => s.url.startsWith("https://discord.com/")).map((s) => dcText(s).split("\n")[0]);
   assert.equal(sent.length, 1, sent.join(" | "));
   assert.match(sent[0], /SEV-3\] 觸發｜監控本身有規則讀取失敗/);
   assert.ok(logs.some((l) => /MUTE_KEYS 忽略 1 個項目/.test(l)));
@@ -926,7 +935,7 @@ test("M5：KV 沒有檢查點 → SEV-3「監控狀態重置，X 之前的事件
   const w = fakeWorld();
   const kv = fakeKv();
   const env = { ...env0, MONITOR_STATE: kv, DISCORD_WEBHOOK_URL: DISCORD("x"), MIN_SEVERITY: "SEV-1" };
-  const sent = () => w.sent.filter((s) => s.url.startsWith("https://discord.com/")).map((s) => JSON.parse(s.init.body).content);
+  const sent = () => w.sent.filter((s) => s.url.startsWith("https://discord.com/")).map((s) => dcText(s));
   const cfg = only("owner-transferred");
   await tick({ config: cfg, env, now: 100, fetchImpl: w.fetch, log: () => {} });
   const from = w.head - 3 - 300 + 1;
@@ -955,7 +964,7 @@ test("M5：KV 沒有檢查點 → SEV-3「監控狀態重置，X 之前的事件
   assert.equal(w2.sent.length, 0);
   w2.rpcHttp = null;
   await tick({ config: cfg, env: env2, now: 400, fetchImpl: w2.fetch, log: () => {}, sleep: noSleep });
-  assert.match(JSON.parse(w2.sent[0].init.body).content, /監控狀態重置/);
+  assert.match(dcText(w2.sent[0]), /監控狀態重置/);
 });
 
 test("M5：基準放在獨立的 KV 鍵——只刪 baselines:v1 會重設基準，檢查點與開啟中的告警不受影響", async () => {
@@ -970,7 +979,7 @@ test("M5：基準放在獨立的 KV 鍵——只刪 baselines:v1 會重設基準
   const keeper = "0x00000000000000000000000000000000000000f1";
   w.setCall(addrOf("keeper-gas", "oracle"), "owner()", [], word(BigInt(keeper)));
   w.balances.set(keeper, 10n ** 15n); // gas 過低：一則開啟中的告警
-  const heads = () => w.sent.filter((s) => s.url.startsWith("https://discord.com/")).map((s) => JSON.parse(s.init.body).content.split("\n")[0]);
+  const heads = () => w.sent.filter((s) => s.url.startsWith("https://discord.com/")).map((s) => dcText(s).split("\n")[0]);
   await tick({ config: cfg, env, now: 100, fetchImpl: w.fetch, log: () => {} });
   assert.deepEqual(JSON.parse(kv.m.get(BASELINES_KEY)), { "x402-payto": A });
   assert.equal(JSON.parse(kv.m.get(STATE_KEY)).baselines, undefined, "基準不存在 state:v1 裡");
@@ -1014,4 +1023,211 @@ test("pending-deploy 規則不會被載入（沒有位址、不出現在 getLogs
   const activeTopics = new Set(FULL.rules.filter((r) => r.status === "active" && r.kind === "event").flatMap((r) => r.events.map((e) => e.topic0)));
   for (const t of pendingTopics) if (!activeTopics.has(t)) assert.ok(!filter.topics[0].includes(t), t);
   assert.ok(filter.address.every((a) => /^0x[0-9a-fA-F]{40}$/.test(a)));
+});
+
+// ── Low ──────────────────────────────────────────────────────────────────────
+
+test("L2：嚴重度降級後再升級要再通知；恢復通知以期間最高嚴重度判斷", () => {
+  const state = {};
+  const f = (sev) => [{ ruleId: "keeper-gas", key: "keeper-gas:0x1", severity: sev, title: "gas", lines: ["x"] }];
+  const ev = new Set(["keeper-gas"]);
+  const step = (sev, now) => reconcile({ config: FULL, env: {}, state, findings: sev ? f(sev) : [], evaluated: ev, now }).map((n) => [n.status, n.severity]);
+  assert.deepEqual(step("SEV-2", 0), [["觸發", "SEV-2"]]);
+  assert.deepEqual(step("SEV-3", 300), [], "降級不通知");
+  assert.equal(state.open["keeper-gas:0x1"].severity, "SEV-3", "但記下目前的嚴重度");
+  const up = reconcile({ config: FULL, env: {}, state, findings: f("SEV-2"), evaluated: ev, now: 600 });
+  assert.deepEqual(up.map((n) => [n.status, n.severity]), [["持續", "SEV-2"]], "再升回 SEV-2 要通知");
+  assert.ok(up[0].lines.includes("嚴重度由 SEV-3 升為 SEV-2"));
+  assert.deepEqual(step("SEV-2", 900), [], "同級不重複");
+  assert.deepEqual(step("SEV-3", 1200), []);
+  const rec = reconcile({ config: FULL, env: {}, state, findings: [], evaluated: ev, now: 1500 });
+  assert.equal(rec[0].status, "恢復");
+  assert.equal(rec[0].origSeverity, "SEV-2", "恢復時目前是 SEV-3，但期間到過 SEV-2：MIN_SEVERITY=SEV-2 的人也要收到恢復");
+  assert.equal(shouldSend(rec[0], "SEV-2"), true);
+});
+
+test("L3：部分資產讀不到 → 已算出的過期告警照送、算監控錯誤、不替讀不到的資產發恢復", async () => {
+  const w = fakeWorld();
+  const cfg = only("oracle-stale");
+  const r = ruleOf("oracle-stale");
+  const oracle = addrOf("oracle-stale", "oracle");
+  let now = 2_000_000;
+  const state = {};
+  stubOracle(w, { now, ages: { sBTC: 7 * 3600, sAAPL: 80 * 3600 } });
+  const r1 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now });
+  assert.deepEqual(r1.notes.map((n) => n.key).sort(), ["oracle-stale:sAAPL", "oracle-stale:sBTC"]);
+
+  // 審查 G 的情境：sBTC／sETH 過期 8 小時，其餘 9 檔讀取失敗（多數）。原本整個丟例外，SEV-2 被丟掉。
+  now += 300;
+  stubOracle(w, { now, ages: { sBTC: 8 * 3600, sETH: 8 * 3600 } });
+  for (const sym of r.assets.slice(2)) w.setCall(oracle, "getPrice(bytes32)", [FULL.assets[sym]], { revert: true });
+  const r2 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now });
+  assert.deepEqual(r2.notes.map((n) => [n.key, n.severity, n.status]), [["oracle-stale:sETH", "SEV-2", "觸發"]], "sETH 的新告警照送（sBTC 已開、未升級）");
+  assert.match(r2.errors[0], /oracle-stale: 9／11 檔資產讀不到價格：sAAPL,/);
+  assert.ok(state.open["oracle-stale:sAAPL"], "sAAPL 讀不到 ≠ sAAPL 恢復");
+
+  // 少數讀不到（1 檔）也一樣：原本會靜靜略過，並把那一檔開著的告警當成恢復。
+  now += 300;
+  stubOracle(w, { now, ages: { sBTC: 8 * 3600, sETH: 8 * 3600 } });
+  w.setCall(oracle, "getPrice(bytes32)", [FULL.assets.sAAPL], { revert: true });
+  const r3 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now });
+  assert.ok(!r3.notes.some((n) => n.status === "恢復"));
+  assert.match(r3.errors[0], /1／11 檔資產讀不到價格：sAAPL/);
+});
+
+test("L5：RPC_URL／HEARTBEAT_URL 必須是 https；錯誤訊息不帶完整 URL", async () => {
+  const w = fakeWorld();
+  const secretPath = "v2/SuperSecretKey0123456789abcdef";
+  await assert.rejects(
+    runOnce({ config: only("owner-transferred"), env: { ...env0, RPC_URL: `http://rpc.example/${secretPath}` }, state: {}, fetchImpl: w.fetch, now: 1 }),
+    (e) => /RPC_URL 必須是 https/.test(e.message) && !e.message.includes("SuperSecret") && !e.message.includes("rpc.example"),
+  );
+  await assert.rejects(runOnce({ config: only("owner-transferred"), env: { ...env0, RPC_URL: "not a url" }, state: {}, fetchImpl: w.fetch, now: 1 }), /RPC_URL 必須是 https/);
+  const kv = fakeKv();
+  await assert.rejects(
+    tick({ config: only("owner-transferred"), env: { ...env0, MONITOR_STATE: kv, DISCORD_WEBHOOK_URL: DISCORD("x"), HEARTBEAT_URL: "http://hc.example/ping/abc" }, now: 1, fetchImpl: w.fetch, log: () => {} }),
+    (e) => /HEARTBEAT_URL 必須是 https/.test(e.message) && !e.message.includes("hc.example"),
+  );
+  assert.throws(() => channelsOf({ ALERT_WEBHOOK_URL: "http://plain.example/hook/secret" }), (e) => /ALERT_WEBHOOK_URL 必須是 https/.test(e.message) && !e.message.includes("secret"));
+
+  // URL 遮蔽：路徑與查詢字串（金鑰所在）拿掉，只留協定與主機。
+  assert.equal(redactUrls(`fetch https://rpc.example/${secretPath}?k=1 failed`), "fetch https://rpc.example/… failed");
+  assert.equal(redactUrls("see https://sepolia.base.org and https://user:pw@h.example/x"), "see https://sepolia.base.org and https://h.example/…");
+  // 付費 RPC 的錯誤（內文或例外訊息回顯了完整 URL）→ 告警與 log 裡都不可以出現金鑰。
+  const paid = `https://paid.example/${secretPath}`;
+  const logs = [];
+  const fetchImpl = async (url, init) => {
+    if (url === paid) return new Response(`upstream ${paid} unavailable`, { status: 502 });
+    return w.fetch(url, init);
+  };
+  const state = {};
+  let last;
+  for (let i = 0; i < 2; i++) last = await runOnce({ config: only("owner-transferred"), env: { ...env0, RPC_URL: paid }, state, fetchImpl, now: 1 + i * 300, log: (l) => logs.push(l), sleep: noSleep });
+  const all = [...last.errors, ...last.notes.flatMap((n) => n.lines), ...logs].join("\n");
+  assert.match(all, /RPC HTTP 502：upstream https:\/\/paid\.example\/… unavailable/);
+  assert.ok(!all.includes("SuperSecret"), all);
+});
+
+test("L5：通知與心跳的 fetch 有逾時；通道例外訊息遮蔽 URL", async () => {
+  const hang = (url, init) => new Promise((_res, rej) => init.signal.addEventListener("abort", () => rej(Object.assign(new Error("This operation was aborted"), { name: "AbortError" }))));
+  const logs = [];
+  const ch = { name: "discord", url: DISCORD("tokenpart"), body: (t) => ({ content: t }) };
+  const t0 = Date.now();
+  const ok = await sendToChannel({ severity: "SEV-3" }, "x", ch, hang, { log: (l) => logs.push(l), now: 1, timeoutMs: 30 });
+  assert.equal(ok, false);
+  assert.ok(Date.now() - t0 < 2000, "不會無限期卡住");
+  assert.match(logs[0], /notify discord 例外：逾時/);
+  const boom = async (url) => {
+    throw new Error(`connect ECONNREFUSED ${url}`);
+  };
+  await sendToChannel({ severity: "SEV-3" }, "x", ch, boom, { log: (l) => logs.push(l), now: 1 });
+  assert.ok(!logs.join("\n").includes("tokenpart"), logs.join("\n"));
+
+  // 心跳卡住：tick 仍然結束（fetch 有帶 signal），而且不把 URL 寫進 log。
+  const w = fakeWorld();
+  const kv = fakeKv();
+  let hbSignal = null;
+  const fetchImpl = async (url, init) => {
+    if (url.startsWith("https://hc.example/")) {
+      hbSignal = init.signal;
+      throw new Error(`getaddrinfo ENOTFOUND ${url}`);
+    }
+    return w.fetch(url, init);
+  };
+  const tlogs = [];
+  await tick({ config: only("owner-transferred"), env: { ...env0, MONITOR_STATE: kv, DISCORD_WEBHOOK_URL: DISCORD("x"), HEARTBEAT_URL: "https://hc.example/ping/secret-uuid" }, now: 1, fetchImpl, log: (l) => tlogs.push(l) });
+  assert.ok(hbSignal, "心跳的 fetch 帶 AbortSignal（有逾時）");
+  assert.ok(tlogs.some((l) => /heartbeat 失敗/.test(l)));
+  assert.ok(!tlogs.join("\n").includes("secret-uuid"));
+});
+
+test("L5：Discord 內容跳脫 Markdown（不能做出遮罩連結、粗體、程式碼區塊），URL 保持可點", () => {
+  const evil = "reason: **urgent** [click here](https://evil.example/x) `code` ~~x~~ ||spoiler|| @everyone\n# 標題\n> 引用\n- 清單";
+  const out = escapeDiscord(evil);
+  assert.ok(!/(^|[^\\])\[click here\]\(/.test(out), out);
+  assert.ok(out.includes("\\*\\*urgent\\*\\*"));
+  assert.ok(out.includes("\\[click here\\]"));
+  assert.ok(out.includes("\\`code\\`"));
+  assert.ok(out.includes("\\~\\~x\\~\\~") && out.includes("\\|\\|spoiler\\|\\|"));
+  assert.ok(out.includes("\n\\# 標題\n\\> 引用\n\\- 清單"));
+  const url = "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#1-嚴重度分級";
+  assert.ok(escapeDiscord(`處置：${url}`).includes(url), "URL 裡的 _ 不跳脫，連結不會壞");
+  assert.ok(escapeDiscord("tx：https://sepolia.basescan.org/tx/0xabc").endsWith("https://sepolia.basescan.org/tx/0xabc"));
+});
+
+test("L6：多通道各自重送——Telegram 送到、Discord 失敗 → 只對 Discord 重送，不重複打擾 Telegram", async () => {
+  const w = fakeWorld();
+  const kv = fakeKv();
+  const env = { ...env0, MONITOR_STATE: kv, TELEGRAM_BOT_TOKEN: TG, TELEGRAM_CHAT_ID: "-1", DISCORD_WEBHOOK_URL: DISCORD("x") };
+  const cfg = only("owner-transferred");
+  let discordUp = false;
+  const orig = w.fetch;
+  w.fetch = async (url, init) => {
+    if (url.startsWith("https://discord.com/") && !discordUp) {
+      w.sent.push({ url, init, failed: true });
+      return new Response("nope", { status: 500 });
+    }
+    return orig(url, init);
+  };
+  const to = (prefix) => w.sent.filter((x) => x.url.startsWith(prefix) && !x.failed);
+  const tgHeads = () => to("https://api.telegram.org/").map((x) => JSON.parse(x.init.body).text.split("\n")[0]);
+  ownerLog(w, w.head - 5, 1);
+  await assert.rejects(tick({ config: cfg, env, now: 100, fetchImpl: w.fetch, log: () => {} }), /2 則告警未送達（discord×2；已留在 outbox 重送）/);
+  assert.equal(to("https://api.telegram.org/").length, 2, "Telegram 兩則都送到（owner 事件＋狀態重置）");
+  assert.deepEqual(JSON.parse(kv.m.get(STATE_KEY)).outbox.map((o) => o.channels), [["discord"], ["discord"]]);
+
+  // 第二輪 Discord 仍然失敗：Telegram 不會再收到那兩則。
+  w.head += 150;
+  await assert.rejects(tick({ config: cfg, env, now: 400, fetchImpl: w.fetch, log: () => {} }), /未送達/);
+  assert.equal(to("https://api.telegram.org/").length, 2, "已送達的通道不重複送");
+  assert.equal(JSON.parse(kv.m.get(STATE_KEY)).channelStuck.discord, CHANNEL_STUCK_ROUNDS);
+
+  // 第三輪：連續兩輪送不出去 → 透過 Telegram 告知「discord 送不出去」。
+  w.head += 150;
+  await assert.rejects(tick({ config: cfg, env, now: 700, fetchImpl: w.fetch, log: () => {} }), /未送達/);
+  assert.match(tgHeads().at(-1), /SEV-3\] 觸發｜告警通道 discord 送不出去/);
+
+  // Discord 恢復：積欠的全部補送到 Discord，Telegram 收到恢復。
+  discordUp = true;
+  w.head += 150;
+  await tick({ config: cfg, env, now: 1000, fetchImpl: w.fetch, log: () => {} });
+  const dc = to("https://discord.com/").map(dcText).map((t) => t.split("\n")[0]);
+  assert.ok(dc.some((h) => /合約 owner 變更/.test(h)) && dc.some((h) => /監控狀態重置/.test(h)) && dc.some((h) => /告警通道 discord 送不出去/.test(h)), dc.join(" | "));
+  assert.equal(JSON.parse(kv.m.get(STATE_KEY)).outbox.length, 0);
+  w.head += 150;
+  await tick({ config: cfg, env, now: 1300, fetchImpl: w.fetch, log: () => {} });
+  assert.match(tgHeads().at(-1), /恢復｜告警通道 discord 送不出去/);
+});
+
+test("L6：壞掉的通道不會吃光額度——新告警先送、舊的每輪重送有上限、過期丟棄、通道移除後不再等", async () => {
+  const w = fakeWorld();
+  const kv = fakeKv();
+  const cfg = only("owner-transferred");
+  const item = (i, firstAt) => ({ note: { ruleId: "owner-transferred", key: `k${i}`, severity: "SEV-1", status: "事件", title: "t", lines: [] }, text: `old-${i}`, channels: ["discord"], firstAt });
+  const now = 1_000_000;
+  const outbox = [item(0, now - OUTBOX_TTL_SEC - 10), ...Array.from({ length: 30 }, (_, i) => item(i + 1, now - 600))];
+  kv.m.set(STATE_KEY, JSON.stringify({ checkpoint: w.head - 3, outbox }));
+  ownerLog(w, w.head + 100, 5);
+  w.head += 150;
+  const envBoth = { ...env0, MONITOR_STATE: kv, TELEGRAM_BOT_TOKEN: TG, TELEGRAM_CHAT_ID: "-1", DISCORD_WEBHOOK_URL: DISCORD("x") };
+  const order = [];
+  const orig = w.fetch;
+  w.fetch = async (url, init) => {
+    if (url.startsWith("https://discord.com/")) order.push("dc:" + JSON.parse(init.body).content.split("\n")[0].slice(0, 12));
+    if (url.startsWith("https://api.telegram.org/")) order.push("tg");
+    return orig(url, init);
+  };
+  await assert.rejects(tick({ config: cfg, env: envBoth, now, fetchImpl: w.fetch, log: () => {} }), /未送達.*另丟棄 1 則/);
+  assert.equal(order[0], "tg", "新告警先送");
+  assert.ok(order[1].startsWith("dc:") && !order[1].includes("old-"), "新告警的每個通道都先於舊的重送");
+  assert.equal(order.filter((o) => o.startsWith("dc:old-")).length, MAX_RESEND_PER_TICK);
+  const st = JSON.parse(kv.m.get(STATE_KEY));
+  assert.equal(st.outbox.length, 30 - MAX_RESEND_PER_TICK);
+  assert.ok(!st.outbox.some((o) => o.text === "old-0"), "超過 24 小時的丟棄");
+
+  // 把 Discord 從設定移除：只等 Discord 的舊通知不再留著。
+  const { DISCORD_WEBHOOK_URL: _removed, ...envTg } = envBoth;
+  w.head += 150;
+  await tick({ config: cfg, env: envTg, now: now + 300, fetchImpl: w.fetch, log: () => {} });
+  assert.equal(JSON.parse(kv.m.get(STATE_KEY)).outbox.length, 0);
 });

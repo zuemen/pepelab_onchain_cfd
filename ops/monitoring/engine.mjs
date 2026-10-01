@@ -128,6 +128,26 @@ export class RpcError extends Error {
     this.code = code;
   }
 }
+/**
+ * 把文字裡的 URL 縮成「協定＋主機」。錯誤訊息會進告警與 log；含金鑰的 RPC URL、心跳 URL、webhook
+ * 的秘密都在路徑或查詢字串裡，不可以跟著錯誤訊息流出去（審查 L5）。
+ */
+export const redactUrls = (text) =>
+  String(text ?? "").replace(/\b(https?:\/\/)([^\s/"'<>?#]+)([^\s"'<>]*)/gi, (_m, scheme, host, rest) =>
+    rest && rest !== "/" ? `${scheme}${host.replace(/^[^@]*@/, "")}/…` : `${scheme}${host.replace(/^[^@]*@/, "")}${rest}`,
+  );
+/** 設定的 URL 必須是 https（明文 http 會把金鑰與告警內容送過不加密的連線）。丟錯時不帶 URL 本身。 */
+export function assertHttps(name, value) {
+  let u = null;
+  try {
+    u = new URL(String(value));
+  } catch {
+    /* 不是合法 URL */
+  }
+  if (!u || u.protocol !== "https:") throw new Error(`${name} 必須是 https:// 開頭的合法 URL`);
+  return u;
+}
+
 /** 壓成一行並截斷（給錯誤訊息用）。 */
 const clip = (s, n) => {
   const t = String(s ?? "").replace(/\s+/g, " ").trim();
@@ -161,7 +181,7 @@ export function isTransient(e) {
 
 const realSleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function fetchWithTimeout(fetchImpl, url, init, timeoutMs) {
+export async function fetchWithTimeout(fetchImpl, url, init, timeoutMs) {
   const ctl = typeof AbortController === "function" ? new AbortController() : null;
   const timer = ctl ? setTimeout(() => ctl.abort(), timeoutMs) : null;
   try {
@@ -210,7 +230,7 @@ export function makeRpc(url, fetchImpl, { timeoutMs = 15_000, retries = 2, retry
       );
     } catch (e) {
       const aborted = e?.name === "AbortError" || /abort/i.test(String(e?.message ?? ""));
-      throw Object.assign(new RpcError(aborted ? `RPC 逾時（${timeoutMs / 1000} 秒）` : `RPC 連線失敗：${clip(e?.message ?? e, 80)}`), { transient: true });
+      throw Object.assign(new RpcError(aborted ? `RPC 逾時（${timeoutMs / 1000} 秒）` : `RPC 連線失敗：${clip(redactUrls(e?.message ?? e), 80)}`), { transient: true });
     }
     if (!res.ok) {
       // 帶上回應內文：公開 RPC 的 413 內文才說得出「eth_getLogs is limited to a 1,000 range」，
@@ -227,7 +247,7 @@ export function makeRpc(url, fetchImpl, { timeoutMs = 15_000, retries = 2, retry
       } catch {
         /* 不是 JSON */
       }
-      throw new RpcError(`RPC HTTP ${res.status}${text.trim() ? `：${clip(text, 200)}` : ""}`, { status: res.status, code });
+      throw new RpcError(`RPC HTTP ${res.status}${text.trim() ? `：${clip(redactUrls(text), 200)}` : ""}`, { status: res.status, code });
     }
     try {
       return await res.json();
@@ -258,7 +278,7 @@ export function makeRpc(url, fetchImpl, { timeoutMs = 15_000, retries = 2, retry
     for (let attempt = 0; ; attempt++) {
       const j = await post({ jsonrpc: "2.0", id: nextId++, method, params });
       if (!j?.error) return j?.result;
-      const err = new RpcError(`RPC ${method}: ${clip(j.error.message ?? "error", 160)}`, { code: j.error.code });
+      const err = new RpcError(`RPC ${method}: ${clip(redactUrls(j.error.message ?? "error"), 160)}`, { code: j.error.code });
       if (!isTransient(err) || !mayRetry(attempt)) throw err;
       await sleep(BACKOFF_MS[attempt] ?? 1200);
     }
@@ -287,7 +307,7 @@ export function makeRpc(url, fetchImpl, { timeoutMs = 15_000, retries = 2, retry
         const x = byId.get(body[k].id);
         if (!x) out[i] = { error: "RPC 回應缺少此筆" };
         else if (x.error) {
-          out[i] = { error: clip(x.error.message ?? "error", 160), code: x.error.code };
+          out[i] = { error: clip(redactUrls(x.error.message ?? "error"), 160), code: x.error.code };
           if (isTransient({ code: x.error.code, message: x.error.message })) again.push(i);
         } else out[i] = { result: x.result };
       });
@@ -608,7 +628,9 @@ const checks = {
         ]));
       }
     });
-    if (unreadable.length * 2 > rule.assets.length) throw new Error(`多數資產讀不到價格：${unreadable.join(",")}`);
+    // 有資產讀不到：已算出的告警照送（partial），但整條規則不算成功評估——否則「讀不到的那一檔」
+    // 原本開著的過期告警會被當成恢復（審查 L3：原本多數讀不到時直接丟例外，連已算出的 SEV-2 也丟了）。
+    if (unreadable.length) throw partial(`${unreadable.length}／${rule.assets.length} 檔資產讀不到價格：${unreadable.join(",")}`, out);
     return out;
   },
 
@@ -652,14 +674,15 @@ const checks = {
         ]));
       }
     });
-    if (primaryErrors * 2 > rule.assets.length) throw partial("多數資產讀不到主 oracle 價格", out);
-    if (compared === 0) {
+    if (compared === 0 && primaryErrors < rule.assets.length) {
       out.push(finding(rule, `${rule.id}:no-reference`, "SEV-3", `${rule.title}：沒有可用的參考價`, [
         `偏離檢查沒有可用的參考價：${rule.assets.length} 檔資產裡參考來源讀不到 ${refUnreadable} 檔、參考價過期 ${refStale} 檔、主 oracle 讀不到 ${primaryErrors} 檔`,
         "這條規則目前沒有在比對任何價格——「沒有偏離告警」不代表價格正確",
         `參考來源：${contractOf(rule, "reference").address}`,
       ]));
     }
+    // 主 oracle 有讀不到的：已算出的偏離照送，但不算成功評估（不替沒讀到的那幾檔發恢復）。
+    if (primaryErrors) throw partial(`${primaryErrors}／${rule.assets.length} 檔資產讀不到主 oracle 價格`, out);
     return out;
   },
 
@@ -824,7 +847,8 @@ const httpChecks = {
       ok = res.status === 200 && body === (rule.expectBody ?? "ok");
       if (!ok) why = `HTTP ${res.status}，內容 ${JSON.stringify(body.slice(0, 40))}`;
     } catch (e) {
-      why = `連線失敗：${String(e.message ?? e).slice(0, 80)}`;
+      const aborted = e?.name === "AbortError" || /abort/i.test(String(e?.message ?? ""));
+      why = aborted ? "逾時" : `連線失敗：${redactUrls(e?.message ?? e).slice(0, 80)}`;
     }
     state.httpFails ??= {};
     state.httpFails[rule.id] = ok ? 0 : (state.httpFails[rule.id] ?? 0) + 1;
@@ -850,7 +874,7 @@ const httpChecks = {
       // 失敗期間這條規則不算「成功評估」，已開啟的告警不會被當成恢復。
       const n = (state.httpFails[rule.id] = (state.httpFails[rule.id] ?? 0) + 1);
       const aborted = e?.name === "AbortError" || /abort/i.test(String(e?.message ?? ""));
-      const err = new Error(`${aborted ? "GET / 逾時" : String(e?.message ?? e).slice(0, 120)}（連續 ${n} 次）`);
+      const err = new Error(`${aborted ? "GET / 逾時" : redactUrls(e?.message ?? e).slice(0, 120)}（連續 ${n} 次）`);
       if (n < numParam(config, env, "HTTP_FAILS_BEFORE_ALERT")) err.soft = true;
       throw err;
     }
@@ -889,7 +913,9 @@ const httpChecks = {
  * 把本輪 findings 與 KV 裡的開啟中告警比對，產出要送的通知。
  *   once（event）      → 每筆都送一次。
  *   condition 新出現   → 「觸發」
- *   condition 持續     → 嚴重度升級或超過 REMIND_SEC 才「持續」提醒
+ *   condition 持續     → 嚴重度比「目前」升級，或超過 REMIND_SEC，才「持續」提醒。降級不通知，但會記下
+ *                        目前的嚴重度——之後再升回去要再通知一次（審查 L2：原本記的是歷來最嚴重，
+ *                        SEV-2 → SEV-3 → SEV-2 的第二次升級不會響）
  *   condition 消失     → 只有在該規則本輪「成功評估」時才「恢復」（RPC 失敗不等於恢復）
  */
 export function reconcile({ config, env, state, findings, evaluated, now }) {
@@ -907,17 +933,24 @@ export function reconcile({ config, env, state, findings, evaluated, now }) {
     if (!prev) {
       state.open[f.key] = { ruleId: f.ruleId, severity: f.severity, since: now, lastNotified: now, title: f.title };
       notes.push({ ...f, status: "觸發" });
-    } else if (sevRank(f.severity) < sevRank(prev.severity) || now - prev.lastNotified >= remind) {
-      const since = prev.since;
-      state.open[f.key] = { ...prev, severity: worse(f.severity, prev.severity), lastNotified: now };
-      notes.push({ ...f, status: "持續", lines: [...f.lines, `自 ${new Date(since * 1000).toISOString()} 起`] });
+    } else {
+      const peak = worse(f.severity, prev.peak ?? prev.severity); // 歷來最嚴重：恢復通知用它過 MIN_SEVERITY
+      const escalated = sevRank(f.severity) < sevRank(prev.severity);
+      if (escalated || now - prev.lastNotified >= remind) {
+        state.open[f.key] = { ...prev, severity: f.severity, peak, lastNotified: now };
+        const lines = [...f.lines];
+        if (escalated) lines.push(`嚴重度由 ${prev.severity} 升為 ${f.severity}`);
+        lines.push(`自 ${new Date(prev.since * 1000).toISOString()} 起`);
+        notes.push({ ...f, status: "持續", lines });
+      } else state.open[f.key] = { ...prev, severity: f.severity, peak };
     }
   }
   for (const [key, prev] of Object.entries(state.open)) {
     if (seen.has(key) || !evaluated.has(prev.ruleId)) continue;
     delete state.open[key];
-    notes.push({ ruleId: prev.ruleId, key, severity: "SEV-4", origSeverity: prev.severity, status: "恢復", title: prev.title, lines: [
-      `持續 ${Math.round((now - prev.since) / 60)} 分鐘後恢復（原嚴重度 ${prev.severity}）`,
+    const orig = prev.peak ?? prev.severity;
+    notes.push({ ruleId: prev.ruleId, key, severity: "SEV-4", origSeverity: orig, status: "恢復", title: prev.title, lines: [
+      `持續 ${Math.round((now - prev.since) / 60)} 分鐘後恢復（期間最高嚴重度 ${orig}）`,
     ] });
   }
   return notes;
@@ -929,15 +962,17 @@ export function reconcile({ config, env, state, findings, evaluated, now }) {
  * 執行一輪監控。state 會被就地更新（呼叫端負責存回 KV）。
  * 回傳 { notes, errors, summary }：errors 是規則或掃描本身失敗的訊息（監控自己壞了）。
  */
-export async function runOnce({ config, env = {}, state, fetchImpl, now = Math.floor(Date.now() / 1000), log = () => {}, sleep }) {
+export async function runOnce({ config, env = {}, state, fetchImpl, now = Math.floor(Date.now() / 1000), log = () => {}, sleep, selfFindings = [] }) {
   const rpcUrl = String(env.RPC_URL ?? "").trim() || config.network.publicRpc;
+  assertHttps(String(env.RPC_URL ?? "").trim() ? "RPC_URL" : "network.publicRpc", rpcUrl);
+  assertHttps("SIGNAL_API_URL", param(config, env, "SIGNAL_API_URL"));
   const rpc = makeRpc(rpcUrl, fetchImpl, sleep ? { sleep } : {});
   const findings = [];
   const evaluated = new Set();
   const errors = [];
   let initialFrom; // KV 沒有檢查點、這一輪才建立：事件掃描的起點（呼叫端據此發「狀態重置」）
   const fail = (id, e) => {
-    const msg = `${id}: ${String(e?.message ?? e).slice(0, 200)}`;
+    const msg = `${id}: ${redactUrls(e?.message ?? e).slice(0, 200)}`;
     errors.push(msg);
     log(`ERROR ${msg}`);
   };
@@ -974,7 +1009,7 @@ export async function runOnce({ config, env = {}, state, fetchImpl, now = Math.f
     } catch (e) {
       if (Array.isArray(e?.findings)) findings.push(...e.findings); // 部分失敗：已算出的照送
       // 軟失敗（HTTP 單次逾時等）：不算監控錯誤，但也不算成功評估（不發恢復）。
-      if (e?.soft) log(`SOFT ${rule.id}: ${String(e.message).slice(0, 160)}`);
+      if (e?.soft) log(`SOFT ${rule.id}: ${redactUrls(e.message).slice(0, 160)}`);
       else fail(rule.id, e);
     }
   }
@@ -990,6 +1025,7 @@ export async function runOnce({ config, env = {}, state, fetchImpl, now = Math.f
       `連續 ${state.selfErrorStreak} 輪失敗；讀不到的規則在這段期間沒有被監控，也不會發恢復`,
     ] });
   }
+  findings.push(...selfFindings); // 呼叫端（tick）觀察到的監控自身問題，例如某個告警通道一直送不出去
   const notes = reconcile({ config, env, state, findings, evaluated, now });
   state.lastRunAt = now;
   return { notes, errors, summary: { findings: findings.length, notes: notes.length, errors: errors.length, rpcRequests: rpc.stats.requests, rpcRetries: rpc.stats.retries, initialFrom } };

@@ -4,9 +4,28 @@
 //   • 不需要 GitHub token，也不開 issue —— 監控不擴大 keeper-trigger 那把 Actions token 的權限，
 //     也不依賴 GitHub Actions（它正是要被監控的對象之一）。見 docs/ADR-009-monitoring.md。
 //   • 通道憑證只從 Worker secret 讀（`wrangler secret put`），**永不寫進 log**：失敗時只記通道名與 HTTP 狀態。
-//   • 訊息只含公開資訊（合約位址、tx hash、數值），純文字送出，不讓鏈上資料被解讀成格式或 @mention。
+//   • 訊息只含公開資訊（合約位址、tx hash、數值），純文字送出，不讓鏈上資料被解讀成格式或 @mention：
+//     Telegram 不設 parse_mode；Discord 沒有純文字模式，所以跳脫 Markdown 並關掉 mention 與連結預覽。
+//   • 每個通道各自送、各自重送：一個通道壞了，不影響另一個通道，也不會讓壞掉那個的訊息被丟掉。
 //   • 沒有任何通道設定時丟錯，讓 Cloudflare 把這次 cron 記成失敗，而不是無聲吞掉告警。
-import { SEVERITIES } from "./engine.mjs";
+import { SEVERITIES, assertHttps, fetchWithTimeout, redactUrls } from "./engine.mjs";
+
+/** 送一則通知的逾時（毫秒）。通道卡住時不可以把整輪 cron 拖到 Cloudflare 的牆鐘上限。 */
+export const NOTIFY_TIMEOUT_MS = 10_000;
+
+/**
+ * Discord 一律把訊息當 Markdown 渲染。跳脫格式字元，讓外部來源的文字（RPC 錯誤內文、signal-api 回應）
+ * 不能做出粗體、刪除線、程式碼區塊、劇透，或「文字是 A、連結是 B」的遮罩連結（[ ] 被跳脫就組不成）；
+ * 行首的標題、引用、清單記號也跳脫。URL 本身不動（跳脫會弄壞 tx 與處置文件的連結；URL 裡的 _
+ * 不會被當成格式）。Discord 顯示時會吃掉跳脫用的反斜線。
+ */
+export function escapeDiscord(text) {
+  const esc = (t) => t.replace(/([\\*_~`|\[\]])/g, "\\$1").replace(/^(\s*)(#{1,3}\s|>|[-+]\s|\d+\.\s)/gm, "$1\\$2");
+  return String(text)
+    .split(/(https?:\/\/[^\s<>()\[\]]+)/g)
+    .map((part, i) => (i % 2 === 1 ? part : esc(part)))
+    .join("");
+}
 
 const ICON = { "SEV-1": "🔴", "SEV-2": "🟠", "SEV-3": "🟡", "SEV-4": "⚪" };
 
@@ -39,12 +58,13 @@ export function channelsOf(env) {
     ch.push({
       name: "discord",
       url: discord,
-      body: (text) => ({ content: text.slice(0, 1900), allowed_mentions: { parse: [] } }),
+      // flags 4 = SUPPRESS_EMBEDS：不展開連結預覽。
+      body: (text) => ({ content: escapeDiscord(text).slice(0, 1900), allowed_mentions: { parse: [] }, flags: 4 }),
     });
   }
   const hook = String(env.ALERT_WEBHOOK_URL ?? "").trim();
   if (hook) {
-    if (!/^https:\/\//.test(hook)) throw new Error("ALERT_WEBHOOK_URL 必須是 https");
+    assertHttps("ALERT_WEBHOOK_URL", hook);
     ch.push({ name: "webhook", url: hook, body: null, secret: String(env.ALERT_WEBHOOK_SECRET ?? "") });
   }
   return ch;
@@ -57,36 +77,43 @@ async function hmacHex(secret, text) {
 }
 
 /**
- * 送一則通知到所有通道。回傳成功送達的通道數；全部失敗時呼叫端會把它留在 outbox 重送。
+ * 送一則通知到「一個」通道。回傳是否送達；失敗時呼叫端把它留在 outbox，只對這個通道重送。
+ *
+ * 通用 webhook 的簽章（設定 ALERT_WEBHOOK_SECRET 時）：
+ *   X-Pepelab-Timestamp: <unix 秒>
+ *   X-Pepelab-Signature: sha256=<HMAC-SHA256(secret, `${timestamp}.${body}`)>
+ * 簽章涵蓋時間戳，接收端應拒絕時間差超過 5 分鐘的請求——沒有時間戳的簽章可以被無限期重放。
  */
-export async function sendNote(note, text, channels, fetchImpl, log = () => {}) {
-  let delivered = 0;
-  for (const c of channels) {
-    try {
-      let payload;
-      const headers = { "Content-Type": "application/json" };
-      if (c.body) payload = JSON.stringify(c.body(text));
-      else {
-        payload = JSON.stringify({
-          source: "pepelab-chain-monitor",
-          severity: note.severity,
-          status: note.status,
-          ruleId: note.ruleId,
-          key: note.key,
-          title: note.title,
-          text,
-        });
-        if (c.secret) headers["X-Pepelab-Signature"] = `sha256=${await hmacHex(c.secret, payload)}`;
+export async function sendToChannel(note, text, channel, fetchImpl, { log = () => {}, now = Math.floor(Date.now() / 1000), timeoutMs = NOTIFY_TIMEOUT_MS } = {}) {
+  try {
+    let payload;
+    const headers = { "Content-Type": "application/json" };
+    if (channel.body) payload = JSON.stringify(channel.body(text));
+    else {
+      payload = JSON.stringify({
+        source: "pepelab-chain-monitor",
+        severity: note.severity,
+        status: note.status,
+        ruleId: note.ruleId,
+        key: note.key,
+        title: note.title,
+        text,
+        sentAt: now,
+      });
+      if (channel.secret) {
+        headers["X-Pepelab-Timestamp"] = String(now);
+        headers["X-Pepelab-Signature"] = `sha256=${await hmacHex(channel.secret, `${now}.${payload}`)}`;
       }
-      const res = await fetchImpl(c.url, { method: "POST", headers, body: payload });
-      if (res.ok) delivered++;
-      else log(`notify ${c.name} 失敗：HTTP ${res.status}`);
-    } catch (e) {
-      // 不印 e.message 以外的東西；fetch 的錯誤訊息不含 URL。
-      log(`notify ${c.name} 例外：${String(e?.message ?? e).slice(0, 80)}`);
     }
+    const res = await fetchWithTimeout(fetchImpl, channel.url, { method: "POST", headers, body: payload }, timeoutMs);
+    if (res.ok) return true;
+    log(`notify ${channel.name} 失敗：HTTP ${res.status}`);
+  } catch (e) {
+    // 通道 URL 本身就是憑證：錯誤訊息裡的 URL 一律遮蔽。
+    const aborted = e?.name === "AbortError" || /abort/i.test(String(e?.message ?? ""));
+    log(`notify ${channel.name} 例外：${aborted ? `逾時（${timeoutMs / 1000} 秒）` : redactUrls(e?.message ?? e).slice(0, 80)}`);
   }
-  return delivered;
+  return false;
 }
 
 /** 監控自身的告警（讀取失敗、落後、狀態重置、通道失效）。 */
