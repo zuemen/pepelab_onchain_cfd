@@ -209,6 +209,10 @@ min(`KEEPER_BREAKER_DEVIATION`, Guarded 該方向上限)**,實際上是 +10% / �
 的路徑:凍結後下一輪 Mock 的門檻會從 10% 放寬回 20%,保護動作反而開洞。凍結一律由
 guardian(人)決定;Guarded 被凍結時 keeper 對 Mock 也拒寫(fail-closed)。
 
+新版 GuardedOracle(2026-10-01 的原始碼,尚未部署)的 guardian 凍結 72 小時後自動失效。失效後
+`peek` 的 `frozen` 會回到 false,keeper 下一輪就會恢復對兩顆 oracle 寫價,不需要任何人解除。
+凍結的原因如果還沒排除,必須在 72 小時內由 admin 接手凍結(見 KNOWN_LIMITATIONS #27)。
+
 keeper 不會自動解除 ReduceOnly;解除一律人工。funding crank 會讀
 `$RUNNER_TEMP/keeper-refused.txt` 跳過被拒寫的資產(不以已知錯誤的價格結算 funding)。
 
