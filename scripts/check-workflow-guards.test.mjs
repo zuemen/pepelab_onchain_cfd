@@ -43,6 +43,23 @@ function mutate(file, from, to) {
   assert.ok(hit, `找不到 ${file}`);
   return checkWorkflows(files, YAML).problems;
 }
+/**
+ * 只在某一個 job 的區段內替換（admin workflow 的三個 job 有相同的 `if [ "$REF" … ]` 等字串，
+ * 不限定區段的話會改到別的 job 而測錯對象）。區段＝從 `\n  <job>:\n` 到下一個同層的鍵或檔尾。
+ */
+function mutateJob(file, jobId, from, to) {
+  const f = REAL.find((x) => x.name === file);
+  assert.ok(f, `找不到 ${file}`);
+  const header = `\n  ${jobId}:\n`;
+  const start = f.text.indexOf(header);
+  assert.ok(start !== -1, `${file} 裡找不到 job ${jobId}`);
+  const next = /\n  [A-Za-z0-9_-]+:\n/.exec(f.text.slice(start + header.length));
+  const end = next ? start + header.length + next.index : f.text.length;
+  const section = f.text.slice(start, end);
+  assert.ok(typeof from === "string" ? section.includes(from) : from.test(section), `${file}#${jobId} 裡找不到替換目標：${from}`);
+  const text = f.text.slice(0, start) + section.replace(from, to) + f.text.slice(end);
+  return checkWorkflows(REAL.map((x) => (x.name === file ? { name: file, text } : x)), YAML).problems;
+}
 const withExtra = (name, text) => checkWorkflows([...REAL, { name, text }], YAML).problems;
 const some = (problems, re) => assert.ok(problems.some((p) => re.test(p)), `預期有 ${re}，實際：\n${problems.join("\n") || "（沒有任何問題）"}`);
 
@@ -82,6 +99,18 @@ test("反例 fixture 必須以非零結束，並逐項列出", () => {
   assert.match(out, /rogue-environment\.yml#dynamic：environment 名稱是動態的/);
   assert.match(out, /rogue-environment\.yml#unknown：綁了未登記的 environment「production」/);
   // (b) admin
+  assert.match(out, /admin-base-sepolia\.yml：不可有 workflow 層級的 `concurrency`/);
+  assert.match(out, /admin-base-sepolia\.yml#precheck：不可綁 environment/);
+  assert.match(out, /admin-base-sepolia\.yml#precheck：不可使用任何 secret（secrets\.PRECHECK_TOKEN）/);
+  assert.match(out, /admin-base-sepolia\.yml#precheck：不可有 job 層級的 `if`/);
+  assert.match(out, /admin-base-sepolia\.yml#precheck：不可設 `continue-on-error`/);
+  assert.match(out, /admin-base-sepolia\.yml#precheck：不可設 `concurrency`/);
+  assert.match(out, /admin-base-sepolia\.yml#precheck：steps\[0\] 不可設 `continue-on-error`/);
+  assert.match(
+    out,
+    /admin-base-sepolia\.yml#precheck：守門不完整：.*缺少 ref 守門.*缺少 run_attempt 守門.*vars\.KEEPER_TRIGGER_ACTOR.*github\.actor.*github\.triggering_actor/,
+  );
+  assert.match(out, /admin-base-sepolia\.yml#approve：必須 `needs: precheck`/);
   assert.match(out, /admin-base-sepolia\.yml#approve：必須綁 environment「admin-approval」/);
   assert.match(out, /admin-base-sepolia\.yml#approve：不可使用任何 secret（secrets\.ADMIN_TOKEN）/);
   assert.match(out, /admin-base-sepolia\.yml#approve：不可有 job 層級的 `if`/);
@@ -108,7 +137,7 @@ test("反例 fixture 必須以非零結束，並逐項列出", () => {
   assert.match(out, /anchor-alias\.yml：使用了 YAML anchor／alias/);
   assert.match(out, /duplicate-key\.yml：YAML 解析失敗：Map keys must be unique/);
   assert.match(out, /broken\.yml：YAML 解析失敗/);
-  assert.match(out, /\d+ 個 workflow 守門問題（10 個檔案/);
+  assert.match(out, /\d+ 個 workflow 守門問題（10 個檔案、21 個 job）/);
 });
 
 test("目錄不存在或沒有 workflow → 結束碼 2（檢查中止，不是通過）", () => {
@@ -137,45 +166,120 @@ test("(a) 其他 job 綁 keeper／settlement／admin-approval → 擋", () => {
   );
 });
 
-test("(b) admin-call 拿掉 needs: approve、加 if、approve 改綁別的 environment 或用到 secret → 擋", () => {
-  some(mutate(ADMIN.file, "    needs: approve\n", ""), /admin-call：必須 `needs: approve`/);
-  some(mutate(ADMIN.file, "    needs: approve\n", "    needs: []\n"), /admin-call：必須 `needs: approve`/);
-  some(mutate(ADMIN.file, "    needs: approve\n", "    needs: approve\n    if: always()\n"), /admin-call：不可有 job 層級的 `if`/);
-  assert.deepEqual(mutate(ADMIN.file, "    needs: approve\n", "    needs: [approve]\n"), [], "陣列寫法合法");
+const PRE = "precheck";
+const APPROVE = "approve";
+const CALL = "admin-call";
 
-  const p = mutate(ADMIN.file, "    environment: admin-approval\n", "    environment: keeper\n");
-  some(p, /approve：必須綁 environment「admin-approval」/);
-  some(p, /approve：不在 environment「keeper」的允許清單內/);
-  some(mutate(ADMIN.file, "    environment: admin-approval\n", ""), /approve：必須綁 environment「admin-approval」/);
-  some(mutate(ADMIN.file, "    environment: admin-approval\n", "    environment: admin-approval\n    if: github.actor != 'x'\n"), /approve：不可有 job 層級的 `if`/);
+test("(b) precheck 被拿掉、被繞過或拿得到東西 → 擋", () => {
+  // 整個 job 不見（改名等同不見）；approve 仍然 needs: precheck 也沒用。
+  some(mutate(ADMIN.file, "\n  precheck:\n", "\n  precheck-old:\n"), /admin-base-sepolia\.yml#precheck：找不到 job「precheck」/);
+  // approve 不再依賴它：被 precheck 擋下的 run 仍會進入等待核准的清單。
+  some(mutateJob(ADMIN.file, APPROVE, "    needs: precheck\n", ""), /approve：必須 `needs: precheck`/);
+  some(mutateJob(ADMIN.file, APPROVE, "    needs: precheck\n", "    needs: []\n"), /approve：必須 `needs: precheck`/);
+  assert.deepEqual(mutateJob(ADMIN.file, APPROVE, "    needs: precheck\n", "    needs: [precheck]\n"), [], "陣列寫法合法");
 
-  const q = mutate(ADMIN.file, "          GH_TOKEN: ${{ github.token }}\n", "          GH_TOKEN: ${{ secrets.KEEPER_PRIVATE_KEY }}\n");
-  some(q, /approve：不可使用任何 secret（secrets\.KEEPER_PRIVATE_KEY）/);
-  some(q, /approve：引用 secrets\.KEEPER_PRIVATE_KEY 但綁的是 environment「admin-approval」/);
+  // 綁 environment：檢查會變成核准之後才執行。
+  const e = mutateJob(ADMIN.file, PRE, "    permissions: {}\n", "    permissions: {}\n    environment: admin-approval\n");
+  some(e, /precheck：不可綁 environment/);
+  some(e, /precheck：不在 environment「admin-approval」的允許清單內/);
   some(
-    mutate(ADMIN.file, "\npermissions:\n  contents: read\n", "\nenv:\n  PK: ${{ secrets.KEEPER_PRIVATE_KEY }}\n\npermissions:\n  contents: read\n"),
-    /admin-base-sepolia\.yml：workflow 層級（jobs 以外）不可引用 secret/,
+    mutateJob(ADMIN.file, PRE, "    permissions: {}\n", "    permissions: {}\n    environment:\n      name: keeper\n      deployment: false\n"),
+    /precheck：不可綁 environment/,
+  );
+  some(mutateJob(ADMIN.file, PRE, "    permissions: {}\n", "    permissions: {}\n    environment: ${{ inputs.target }}\n"), /precheck：不可綁 environment/);
+
+  // 引用 secret（任何一個都不行，不只是私鑰）。
+  some(
+    mutateJob(ADMIN.file, PRE, "          ACTOR: ${{ github.actor }}\n", "          ACTOR: ${{ github.actor }}\n          X: ${{ secrets.BASE_SEPOLIA_RPC_URL }}\n"),
+    /precheck：不可使用任何 secret（secrets\.BASE_SEPOLIA_RPC_URL）/,
+  );
+  some(
+    mutateJob(ADMIN.file, PRE, "          ACTOR: ${{ github.actor }}\n", "          ACTOR: ${{ github.actor }}\n          X: ${{ toJSON(secrets) }}\n"),
+    /precheck：不可使用任何 secret（動態／整包的 secrets 存取）/,
+  );
+
+  // 可被略過、失敗被忽略、進 concurrency group。
+  some(mutateJob(ADMIN.file, PRE, "    permissions: {}\n", "    permissions: {}\n    if: github.actor != 'x'\n"), /precheck：不可有 job 層級的 `if`/);
+  some(mutateJob(ADMIN.file, PRE, "    permissions: {}\n", "    permissions: {}\n    continue-on-error: true\n"), /precheck：不可設 `continue-on-error`/);
+  some(
+    mutateJob(ADMIN.file, PRE, "      - name: Precheck", "      - continue-on-error: true\n        name: Precheck"),
+    /precheck：steps\[0\] 不可設 `continue-on-error`/,
+  );
+  some(
+    mutateJob(ADMIN.file, PRE, "    permissions: {}\n", "    permissions: {}\n    concurrency:\n      group: keeper-key-base-sepolia\n"),
+    /precheck：不可設 `concurrency`/,
+  );
+  some(
+    mutate(ADMIN.file, "\npermissions:\n  contents: read\n", "\nconcurrency:\n  group: keeper-key-base-sepolia\n\npermissions:\n  contents: read\n"),
+    /admin-base-sepolia\.yml：不可有 workflow 層級的 `concurrency`/,
   );
 });
 
-test("(b) admin-call 的 ref／run_attempt 守門被拿掉或弱化 → 擋", () => {
-  const guard = /守門不完整/;
-  some(mutate(ADMIN.file, 'if [ "$RUN_ATTEMPT" != "1" ]; then', 'if [ "$RUN_ATTEMPT" != "99" ]; then'), /缺少 run_attempt 守門/);
-  some(mutate(ADMIN.file, "          RUN_ATTEMPT: ${{ github.run_attempt }}\n", '          RUN_ATTEMPT: "1"\n'), /缺少 run_attempt 守門/);
-  some(mutate(ADMIN.file, "          RUN_ATTEMPT: ${{ github.run_attempt }}\n", "          RUN_ATTEMPT: ${{ github.run_attempt || '1' }}\n"), /缺少 run_attempt 守門/);
-  // admin-call 的守門 step（approve 的 gate 也有同樣的 ref 檢查，所以用 admin-call 專屬的錨點）。
-  const callRef = /(RUN_ATTEMPT: \$\{\{ github\.run_attempt \}\}[\s\S]*?)if \[ "\$REF" != "refs\/heads\/master" \]; then/;
-  some(mutate(ADMIN.file, callRef, '$1if [ "$REF" != "refs/heads/main" ]; then'), /缺少 ref 守門/);
-  some(mutate(ADMIN.file, callRef, '$1if [ "$REF" == "refs/heads/master" ]; then'), /缺少 ref 守門/);
-  // exit 1 被註解掉
+test("(b) precheck 的 ref／run_attempt／觸發者檢查被拿掉或弱化 → 擋", () => {
+  some(mutateJob(ADMIN.file, PRE, 'if [ "$REF" != "refs/heads/master" ]; then', 'if [ "$REF" != "refs/heads/main" ]; then'), /precheck：守門不完整：缺少 ref 守門/);
+  some(mutateJob(ADMIN.file, PRE, 'if [ "$RUN_ATTEMPT" != "1" ]; then', 'if [ "$RUN_ATTEMPT" = "0" ]; then'), /precheck：守門不完整：缺少 run_attempt 守門/);
+  some(mutateJob(ADMIN.file, PRE, "          REF: ${{ github.ref }}\n", "          REF: refs/heads/master\n"), /precheck：守門不完整：缺少 ref 守門/);
+  some(mutateJob(ADMIN.file, PRE, /(只允許在 refs\/heads\/master 執行，這次是 \$REF"\n\s+)exit 1/, "$1exit 0"), /precheck：守門不完整：缺少 ref 守門/);
   some(
-    mutate(ADMIN.file, /(請重新 dispatch 並重新核准。"\n\s+)exit 1/, "$1# exit 1"),
-    /缺少 run_attempt 守門/,
+    mutateJob(ADMIN.file, PRE, "          BLOCKED_ACTOR: ${{ vars.KEEPER_TRIGGER_ACTOR }}\n", '          BLOCKED_ACTOR: ""\n'),
+    /precheck：守門不完整：.*沒有綁 \$\{\{ vars\.KEEPER_TRIGGER_ACTOR \}\}/,
   );
+  some(
+    mutateJob(ADMIN.file, PRE, "          TRIGGERING_ACTOR: ${{ github.triggering_actor }}\n", ""),
+    /precheck：守門不完整：.*沒有綁 \$\{\{ github\.triggering_actor \}\}/,
+  );
+  some(
+    mutateJob(ADMIN.file, PRE, "          ACTOR: ${{ github.actor }}\n", "          ACTOR: someone\n"),
+    /precheck：守門不完整：.*沒有綁 \$\{\{ github\.actor \}\}/,
+  );
+  // 守門 step 不再是第一個
+  some(mutateJob(ADMIN.file, PRE, "      - name: Precheck", "      - uses: actions/checkout@v4\n      - name: Precheck"), /precheck：守門不完整：第一個 step 必須是 `run:` 守門 step/);
+});
+
+test("(b) admin-call 拿掉 needs: approve、加 if、approve 改綁別的 environment 或用到 secret → 擋", () => {
+  some(mutateJob(ADMIN.file, CALL, "    needs: approve\n", ""), /admin-call：必須 `needs: approve`/);
+  some(mutateJob(ADMIN.file, CALL, "    needs: approve\n", "    needs: []\n"), /admin-call：必須 `needs: approve`/);
+  // 只依賴 precheck、跳過 approve：不經人工核准。
+  some(mutateJob(ADMIN.file, CALL, "    needs: approve\n", "    needs: precheck\n"), /admin-call：必須 `needs: approve`/);
+  some(mutateJob(ADMIN.file, CALL, "    needs: approve\n", "    needs: approve\n    if: always()\n"), /admin-call：不可有 job 層級的 `if`/);
+  assert.deepEqual(mutateJob(ADMIN.file, CALL, "    needs: approve\n", "    needs: [precheck, approve]\n"), [], "陣列寫法合法");
+
+  const p = mutateJob(ADMIN.file, APPROVE, "    environment: admin-approval\n", "    environment: keeper\n");
+  some(p, /approve：必須綁 environment「admin-approval」/);
+  some(p, /approve：不在 environment「keeper」的允許清單內/);
+  some(mutateJob(ADMIN.file, APPROVE, "    environment: admin-approval\n", ""), /approve：必須綁 environment「admin-approval」/);
+  some(
+    mutateJob(ADMIN.file, APPROVE, "    environment: admin-approval\n", "    environment: admin-approval\n    if: always()\n"),
+    /approve：不可有 job 層級的 `if`/,
+  );
+
+  const q = mutateJob(ADMIN.file, APPROVE, "          GH_TOKEN: ${{ github.token }}\n", "          GH_TOKEN: ${{ secrets.KEEPER_PRIVATE_KEY }}\n");
+  some(q, /approve：不可使用任何 secret（secrets\.KEEPER_PRIVATE_KEY）/);
+  some(q, /approve：引用 secrets\.KEEPER_PRIVATE_KEY 但綁的是 environment「admin-approval」/);
+  // workflow 層級引用 secret：precheck 與 approve 都會拿到。
+  const w = mutate(ADMIN.file, "\npermissions:\n  contents: read\n", "\nenv:\n  PK: ${{ secrets.KEEPER_PRIVATE_KEY }}\n\npermissions:\n  contents: read\n");
+  some(w, /admin-base-sepolia\.yml：workflow 層級（jobs 以外）不可引用 secret/);
+  some(w, /precheck：不可使用任何 secret（secrets\.KEEPER_PRIVATE_KEY）/);
+  some(w, /precheck：引用 secrets\.KEEPER_PRIVATE_KEY 但沒有綁 environment/);
+});
+
+test("(b) admin-call 的 ref／run_attempt 守門被拿掉或弱化 → 擋", () => {
+  const at = /admin-call：守門不完整/;
+  some(mutateJob(ADMIN.file, CALL, 'if [ "$RUN_ATTEMPT" != "1" ]; then', 'if [ "$RUN_ATTEMPT" != "99" ]; then'), /admin-call：守門不完整：缺少 run_attempt 守門/);
+  some(mutateJob(ADMIN.file, CALL, "          RUN_ATTEMPT: ${{ github.run_attempt }}\n", '          RUN_ATTEMPT: "1"\n'), /admin-call：守門不完整：缺少 run_attempt 守門/);
+  some(
+    mutateJob(ADMIN.file, CALL, "          RUN_ATTEMPT: ${{ github.run_attempt }}\n", "          RUN_ATTEMPT: ${{ github.run_attempt || '1' }}\n"),
+    /admin-call：守門不完整：缺少 run_attempt 守門/,
+  );
+  some(mutateJob(ADMIN.file, CALL, 'if [ "$REF" != "refs/heads/master" ]; then', 'if [ "$REF" != "refs/heads/main" ]; then'), /admin-call：守門不完整：缺少 ref 守門/);
+  some(mutateJob(ADMIN.file, CALL, 'if [ "$REF" != "refs/heads/master" ]; then', 'if [ "$REF" == "refs/heads/master" ]; then'), /admin-call：守門不完整：缺少 ref 守門/);
+  // exit 1 被註解掉
+  some(mutateJob(ADMIN.file, CALL, /(請重新 dispatch 並重新核准。"\n\s+)exit 1/, "$1# exit 1"), /admin-call：守門不完整：缺少 run_attempt 守門/);
   // 守門 step 不再是第一個、或可被略過
-  some(mutate(ADMIN.file, "      - name: Guard — 只接受 master 上第一次執行\n", "      - run: echo first\n      - name: Guard — 只接受 master 上第一次執行\n"), guard);
-  some(mutate(ADMIN.file, "      - name: Guard — 只接受 master 上第一次執行\n", "      - name: Guard — 只接受 master 上第一次執行\n        if: github.actor != 'zuemen'\n"), /守門 step 不可有 `if`/);
-  some(mutate(ADMIN.file, "      - name: Guard — 只接受 master 上第一次執行\n", "      - name: Guard — 只接受 master 上第一次執行\n        continue-on-error: true\n"), /守門 step 不可設 `continue-on-error`/);
+  const name = "      - name: Guard — 只接受 master 上第一次執行\n";
+  some(mutateJob(ADMIN.file, CALL, name, `      - run: echo first\n${name}`), at);
+  some(mutateJob(ADMIN.file, CALL, name, `${name}        if: github.actor != 'zuemen'\n`), /admin-call：守門不完整：守門 step 不可有 `if`/);
+  some(mutateJob(ADMIN.file, CALL, name, `${name}        continue-on-error: true\n`), /admin-call：守門不完整：守門 step 不可設 `continue-on-error`/);
 });
 
 test("(b) admin workflow 不見了或 job 改名 → 擋（要同步改檢查）", () => {

@@ -12,9 +12,14 @@
 // 檢查項目：
 //   (a) 綁 environment 的 job 必須在下方 ENVIRONMENTS 的允許清單內（字串與物件寫法都算，
 //       名稱不分大小寫；`${{ }}` 動態名稱一律拒絕；未登記的 environment 一律拒絕）。
-//   (b) admin-base-sepolia.yml：admin-call 必須 `needs: approve`、不可有 job 層級的 `if`／
-//       `continue-on-error`，第一個 step 必須是 ref==refs/heads/master 與 run_attempt==1 的守門；
-//       approve 必須綁 admin-approval、不引用任何 secret、不可被 `if`／`continue-on-error` 繞過。
+//   (b) admin-base-sepolia.yml 的三個 job（precheck → approve → admin-call）：
+//       precheck 不可綁 environment、不可引用任何 secret、不可有 `if`／`continue-on-error`／
+//       `concurrency`，第一個 step 必須是 ref==refs/heads/master 與 run_attempt==1 的守門，並把
+//       vars.KEEPER_TRIGGER_ACTOR、github.actor、github.triggering_actor 綁進 env（觸發者檢查）；
+//       approve 必須 `needs: precheck`、綁 admin-approval、不引用任何 secret、不可被 `if`／
+//       `continue-on-error` 繞過；
+//       admin-call 必須 `needs: approve`、不可有 job 層級的 `if`／`continue-on-error`，第一個
+//       step 同樣必須是 ref 與 run_attempt 的守門；workflow 層級不可有 `concurrency`。
 //   (c) 任何 workflow 都不可用 `pull_request_target`／`workflow_run` 觸發。
 //   (d) 引用 secrets.KEEPER_PRIVATE_KEY／FEE_SETTLEMENT_PRIVATE_KEY 的 job 必須綁對應的
 //       environment；不可用動態或整包的 secrets 存取（`secrets[...]`、`toJSON(secrets)`、
@@ -56,6 +61,7 @@ export const FORBIDDEN_TRIGGERS = ["pull_request_target", "workflow_run"];
 
 export const ADMIN = {
   file: "admin-base-sepolia.yml",
+  precheckJob: "precheck",
   approveJob: "approve",
   callJob: "admin-call",
   approvalEnvironment: "admin-approval",
@@ -197,10 +203,64 @@ function hasRejectUnless(script, varName, literal) {
   return false;
 }
 
+const needsOf = (job) => (typeof job.needs === "string" ? [job.needs] : Array.isArray(job.needs) ? job.needs : []);
+
+/**
+ * 守門 step（job 的第一個 step）缺了什麼：必須是沒有 `if`／`continue-on-error` 的 `run:` step，
+ * 在 ref 不是 master、run_attempt 不是 1 時 exit 1。回傳缺少項目的說明（空陣列＝完整）。
+ */
+function guardStepProblems(job) {
+  const first = Array.isArray(job.steps) ? job.steps[0] : null;
+  if (!isObject(first) || typeof first.run !== "string" || "uses" in first) return ["第一個 step 必須是 `run:` 守門 step"];
+  const missing = [];
+  if ("if" in first) missing.push("守門 step 不可有 `if`");
+  if (truthyFlag(first["continue-on-error"])) missing.push("守門 step 不可設 `continue-on-error`");
+  if (!envVarBoundTo(first.env, "github.ref").some((v) => hasRejectUnless(first.run, v, ADMIN.ref))) {
+    missing.push(`缺少 ref 守門（env 綁 \${{ github.ref }}，script 在不等於 "${ADMIN.ref}" 時 exit 1）`);
+  }
+  if (!envVarBoundTo(first.env, "github.run_attempt").some((v) => hasRejectUnless(first.run, v, "1"))) {
+    missing.push('缺少 run_attempt 守門（env 綁 ${{ github.run_attempt }}，script 在不等於 "1" 時 exit 1）');
+  }
+  return missing;
+}
+
 function checkAdmin(wf, topLevel, problem) {
   const jobs = isObject(wf.jobs) ? wf.jobs : {};
+  const precheck = jobs[ADMIN.precheckJob];
   const approve = jobs[ADMIN.approveJob];
   const call = jobs[ADMIN.callJob];
+
+  // 與 keeper 互斥只能放在 admin-call 的 job 層級：放在 workflow 層級的話，等核准的 run
+  // 會占住 keeper 的 concurrency group（審查 H2）。
+  if ("concurrency" in wf) problem(null, "不可有 workflow 層級的 `concurrency`（等待核准期間會卡住 keeper）");
+
+  // precheck：人工核准「之前」的檢查，必須是一個什麼都拿不到的 job。
+  if (!isObject(precheck)) {
+    problem(ADMIN.precheckJob, `找不到 job「${ADMIN.precheckJob}」（核准之前的檢查；改名或移除時要同步改 scripts/check-workflow-guards.mjs）`);
+  } else {
+    if (environmentOf(precheck).kind !== "none") {
+      problem(ADMIN.precheckJob, "不可綁 environment（綁了有 reviewers 的 environment，檢查就會變成在核准之後才執行）");
+    }
+    const refs = refsOfJob(precheck, topLevel);
+    if (refs.names.size || refs.dynamic) {
+      const what = [...refs.names].map((n) => `secrets.${n}`).concat(refs.dynamic ? ["動態／整包的 secrets 存取"] : []);
+      problem(ADMIN.precheckJob, `不可使用任何 secret（${what.join("、")}）：這個 job 在人工核准之前執行`);
+    }
+    if ("if" in precheck) problem(ADMIN.precheckJob, "不可有 job 層級的 `if`（被略過時檢查就沒有執行）");
+    if (truthyFlag(precheck["continue-on-error"])) problem(ADMIN.precheckJob, "不可設 `continue-on-error`（檢查失敗會被當成通過）");
+    if ("concurrency" in precheck) problem(ADMIN.precheckJob, "不可設 `concurrency`（不該與 keeper 互相排隊）");
+    for (const [i, step] of (Array.isArray(precheck.steps) ? precheck.steps : []).entries()) {
+      if (isObject(step) && truthyFlag(step["continue-on-error"])) {
+        problem(ADMIN.precheckJob, `steps[${i}] 不可設 \`continue-on-error\`（檢查失敗會被當成通過）`);
+      }
+    }
+    const missing = guardStepProblems(precheck);
+    const first = Array.isArray(precheck.steps) && isObject(precheck.steps[0]) ? precheck.steps[0] : {};
+    for (const expr of ["vars.KEEPER_TRIGGER_ACTOR", "github.actor", "github.triggering_actor"]) {
+      if (envVarBoundTo(first.env, expr).length === 0) missing.push(`第一個 step 的 env 沒有綁 \${{ ${expr} }}（觸發者檢查）`);
+    }
+    if (missing.length) problem(ADMIN.precheckJob, `守門不完整：${missing.join("；")}`);
+  }
 
   if (!isObject(approve)) {
     problem(ADMIN.approveJob, `找不到 job「${ADMIN.approveJob}」（人工核准的 job；改名或移除時要同步改 scripts/check-workflow-guards.mjs）`);
@@ -208,6 +268,9 @@ function checkAdmin(wf, topLevel, problem) {
     const env = environmentOf(approve);
     if (env.kind !== "static" || env.name !== ADMIN.approvalEnvironment) {
       problem(ADMIN.approveJob, `必須綁 environment「${ADMIN.approvalEnvironment}」（人工核准靠它的 required reviewers）`);
+    }
+    if (!needsOf(approve).includes(ADMIN.precheckJob)) {
+      problem(ADMIN.approveJob, `必須 \`needs: ${ADMIN.precheckJob}\`（否則被 precheck 擋下的 run 仍會進入等待核准的清單）`);
     }
     const refs = refsOfJob(approve, topLevel);
     if (refs.names.size || refs.dynamic) {
@@ -227,8 +290,7 @@ function checkAdmin(wf, topLevel, problem) {
     problem(ADMIN.callJob, `找不到 job「${ADMIN.callJob}」（改名或移除時要同步改 scripts/check-workflow-guards.mjs）`);
     return;
   }
-  const needs = typeof call.needs === "string" ? [call.needs] : Array.isArray(call.needs) ? call.needs : [];
-  if (!needs.includes(ADMIN.approveJob)) {
+  if (!needsOf(call).includes(ADMIN.approveJob)) {
     problem(ADMIN.callJob, `必須 \`needs: ${ADMIN.approveJob}\`（否則不經人工核准就拿得到私鑰）`);
   }
   if ("if" in call) {
@@ -236,22 +298,7 @@ function checkAdmin(wf, topLevel, problem) {
   }
   if (truthyFlag(call["continue-on-error"])) problem(ADMIN.callJob, "不可設 `continue-on-error`");
 
-  const first = Array.isArray(call.steps) ? call.steps[0] : null;
-  const missing = [];
-  if (!isObject(first) || typeof first.run !== "string" || "uses" in first) {
-    missing.push("第一個 step 必須是 `run:` 守門 step");
-  } else {
-    if ("if" in first) missing.push("守門 step 不可有 `if`");
-    if (truthyFlag(first["continue-on-error"])) missing.push("守門 step 不可設 `continue-on-error`");
-    const refVars = envVarBoundTo(first.env, "github.ref");
-    const attemptVars = envVarBoundTo(first.env, "github.run_attempt");
-    if (!refVars.some((v) => hasRejectUnless(first.run, v, ADMIN.ref))) {
-      missing.push(`缺少 ref 守門（env 綁 \${{ github.ref }}，script 在不等於 "${ADMIN.ref}" 時 exit 1）`);
-    }
-    if (!attemptVars.some((v) => hasRejectUnless(first.run, v, "1"))) {
-      missing.push('缺少 run_attempt 守門（env 綁 ${{ github.run_attempt }}，script 在不等於 "1" 時 exit 1）');
-    }
-  }
+  const missing = guardStepProblems(call);
   if (missing.length) problem(ADMIN.callJob, `守門不完整：${missing.join("；")}`);
 }
 

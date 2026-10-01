@@ -33,7 +33,7 @@ Worker 本身**不持有任何鏈上金鑰**，對任何 HTTP 請求都回 404�
 > - 可行的專用身分有兩種：
 >   1. **GitHub App**：只給 Actions: Read and write，只安裝在本 repo。觸發者會顯示為 `<app-slug>[bot]`。Worker 已支援，設定步驟見下方「改用 GitHub App」。
 >   2. **把 repo 移到 organization**：machine account 以 org 成員身分建 fine-grained PAT。
-> - 改用專用身分後，把它的名稱（例如 `pepelab-keeper[bot]`）設成 repo variable `KEEPER_TRIGGER_ACTOR`（Settings → Secrets and variables → Actions → Variables）。admin workflow 會拒絕 `github.actor` 或 `github.triggering_actor` 等於它的 run（這個檢查在人工核准**之後**才執行，見「改用 GitHub App」第 8 步的說明）。**沒設定這個 variable 時不擋**，現在用你本人的 PAT 時也不要設，否則你自己的 admin run 也會被拒絕。
+> - 改用專用身分後，把它的名稱（例如 `pepelab-keeper[bot]`）設成 repo variable `KEEPER_TRIGGER_ACTOR`（Settings → Secrets and variables → Actions → Variables）。admin workflow 的 `precheck` job 會在人工核准**之前**拒絕 `github.actor` 或 `github.triggering_actor` 等於它的 run，這種 run 不會進入等待核准的清單（見「改用 GitHub App」第 8 步的說明）。**沒設定這個 variable 時不擋**，現在用你本人的 PAT 時也不要設，否則你自己的 admin run 也會被拒絕。
 > - 專用身分不是 required reviewer，就算誤給了 Deployments 權限也不能核准。
 >
 > 在那之前仍用你本人的 PAT：你本人就是 required reviewer，所以**絕對不要給這個 token Deployments 權限**。一旦給了，外洩的 token 就能核准自己觸發的 admin 呼叫。核准時一律照第 5 步的指引，只核准你自己剛剛手動 dispatch 的 run。
@@ -44,7 +44,7 @@ Worker 本身**不持有任何鏈上金鑰**，對任何 HTTP 請求都回 404�
 
 | workflow | 持有的 secret | inputs | 最壞後果（token 外洩時） |
 |---|---|---|---|
-| `admin-base-sepolia.yml` | `KEEPER_PRIVATE_KEY`（MockOracle owner） | target／function（白名單含 `transferOwnership`、`updatePrice`、`addAsset`、`mint`）／args | **修正前**：攻擊者可指定 inputs，以 owner 身分轉移 MockOracle 所有權或改價格。**修正後**：拆成兩個 job。`approve` 綁 `environment: admin-approval`（不放 secret），要等 required reviewer 在 GitHub 上核准才開始，再由 gate 確認 environment 真的有 reviewers、ref 是 master、觸發者不是 `KEEPER_TRIGGER_ACTOR`。`admin-call`（`needs: approve`）才從 `keeper` environment 取私鑰、才進與 keeper 共用的 concurrency group，而且拒絕 `run_attempt != 1`：只重跑 admin-call 會沿用已核准的 approve，等於重播已核准的呼叫。等核准期間不占 group，所以待核准的 admin run（包括攻擊者 dispatch 的）不會卡住 keeper 排程（審查 H2）。**殘留風險**：舊分支上的舊版 admin workflow 沒有綁 environment。只要 repo 層級還有 `KEEPER_PRIVATE_KEY`，dispatch 到舊分支，或重跑修正前的舊 run，都繞得過審核。所以必須完成下面第 4 步，把 repo 層級的 secret 刪掉 |
+| `admin-base-sepolia.yml` | `KEEPER_PRIVATE_KEY`（MockOracle owner） | target／function（白名單含 `transferOwnership`、`updatePrice`、`addAsset`、`mint`）／args | **修正前**：攻擊者可指定 inputs，以 owner 身分轉移 MockOracle 所有權或改價格。**修正後**：拆成三個 job。`precheck` 不綁 environment、不碰任何 secret、沒有 token 權限，在核准之前檢查 ref 是 master、是第一次執行、觸發者不是 `KEEPER_TRIGGER_ACTOR`；不符就失敗，後面兩個 job 被略過，**不會產生待核准的請求**。`approve`（`needs: precheck`）綁 `environment: admin-approval`（不放 secret），要等 required reviewer 在 GitHub 上核准才開始，再由 gate 確認 environment 真的有 reviewers，並重複一次 ref 與觸發者檢查。`admin-call`（`needs: approve`）才從 `keeper` environment 取私鑰、才進與 keeper 共用的 concurrency group，而且拒絕 `run_attempt != 1`：只重跑 admin-call 會沿用已核准的 approve，等於重播已核准的呼叫。等核准期間不占 group，所以待核准的 admin run（包括攻擊者 dispatch 的）不會卡住 keeper 排程（審查 H2）。**殘留風險**：舊分支上的舊版 admin workflow 沒有綁 environment。只要 repo 層級還有 `KEEPER_PRIVATE_KEY`，dispatch 到舊分支，或重跑修正前的舊 run，都繞得過審核。所以必須完成下面第 4 步，把 repo 層級的 secret 刪掉 |
 | `base-sepolia-keeper.yml` | `KEEPER_PRIVATE_KEY`、RPC | 無 | 多跑幾次：不需要寫價時不送交易，與 admin 共用 concurrency group 而會排隊。指定舊分支時會跑舊版 keeper 程式，最壞是寫價失敗或多花測試網 gas。取消或停用它會讓價格過期 |
 | `price-keeper.yml`（Sepolia） | `KEEPER_PRIVATE_KEY`、RPC | 無 | 同上（Sepolia 鏈） |
 | `x402-settlement-worker.yml` | `FEE_SETTLEMENT_PRIVATE_KEY`、Upstash token | 無 | 佇列提早結算，本身無害。指定舊分支時會以舊版結算程式使用這把金鑰，其中包括還沒有 P0 收款守門的版本 |
@@ -53,7 +53,7 @@ Worker 本身**不持有任何鏈上金鑰**，對任何 HTTP 請求都回 404�
 
 **總結最壞情況**：
 1. 取消 keeper run 或停用 keeper → 價格超過 `maxPriceAge` 後資產停止交易。平常由 `oracle-health`（每 3 小時）開 issue 告警。但同一個 token 也能停用 `oracle-health`，所以**目前沒有不依賴 GitHub Actions 的告警**。若要補，需要一個不共用這個 token 的監控，例如另一個只讀鏈上 `updatedAt` 的 Cloudflare cron。
-2. 以 owner 身分送 admin 交易 → 由 `admin-approval` 的人工審核擋下；下面第 1–4 步做完之前，這一條**沒有真正關上**。審核時**只核准你自己剛剛手動 dispatch、而且 inputs（target／function／args）逐字核對過的 run；不認得的一律 Reject**。攻擊者可以不斷 dispatch 待核准的 run 來洗版，但它們不會占用 keeper 的 concurrency group。
+2. 以 owner 身分送 admin 交易 → 由 `admin-approval` 的人工審核擋下；下面第 1–4 步做完之前，這一條**沒有真正關上**。審核時**只核准你自己剛剛手動 dispatch、而且 inputs（target／function／args）逐字核對過的 run；不認得的一律 Reject**。還在用你本人的 PAT 時，攻擊者可以不斷 dispatch 待核准的 run 來洗版（它們不會占用 keeper 的 concurrency group）。改用 GitHub App 並設定 `KEEPER_TRIGGER_ACTOR` 之後，用 Worker 憑證 dispatch 的 admin run 在 `precheck` 就失敗，不會出現在等待核准的清單裡，也不會寄出核准通知。
 3. 在舊分支上以私鑰執行舊程式 → 第 4 步刪掉 repo 層級的私鑰 secret 之後，舊版 workflow 拿不到私鑰（`Fail fast when secrets are missing` 會讓它失敗）。
 
 發現外洩時，到 <https://github.com/settings/personal-access-tokens> 撤銷 token（用 GitHub App 時改為更換私鑰或停用安裝，見「App 私鑰外洩時的差別」）。接著確認 `gh workflow list --all` 裡的 workflow 都是 active，並檢查 Actions 頁有沒有預期外的 run，或等待核准的 admin run（有的話一律 Reject）。
@@ -91,7 +91,7 @@ Worker 的 token **沒有** Deployments 與 Administration 權限，下列設定
 5. **確認 admin gate**：`gh api repos/zuemen/pepelab_onchain_cfd/environments/admin-approval --jq '[.protection_rules[] | select(.type=="required_reviewers") | .reviewers[].reviewer.login]'` 應該回 `["zuemen"]`。之後需要用 admin workflow 時：
    - 你自己 dispatch 後，到該 run 核對頁面上的 inputs（target／function／args）與觸發者，確認是你剛剛送出的那一筆，再按 **Review deployments → Approve and deploy**。
    - **不認得、不是你剛剛 dispatch 的、或 inputs 對不上的一律 Reject**。
-   - 失敗要重試時重新 dispatch，不要按 Re-run：`admin-call` 會拒絕重跑。
+   - 失敗要重試時重新 dispatch，不要按 Re-run：`precheck` 與 `admin-call` 都會拒絕重跑（`run_attempt != 1`）。
    - `admin-call` 排隊等 keeper 時，若之後又排進一個 keeper run，它可能被取消（concurrency 預設只保留一個 pending），重新 dispatch 即可。
 6. **建立 Worker 用的 token**（用你本人的 fine-grained PAT；`KEEPER_TRIGGER_ACTOR` 先不要設。要讓 Worker 有自己的身分，改做下方「改用 GitHub App」，這一步與第 7 步的 `GITHUB_TOKEN` 就可以跳過）：<https://github.com/settings/personal-access-tokens/new>
    - Resource owner：`zuemen`；Repository access：Only select repositories → `pepelab_onchain_cfd`。
@@ -168,20 +168,24 @@ Worker 的程式不會替你建立 App。先完成「部署前必做」第 1–5
      Worker 觸發的那幾筆，`actor` 與 `triggering_actor` 應該都是 `<slug>[bot]`（例如 `pepelab-keeper[bot]`）。**把實際看到的字串記下來**，下一步要用。
 8. **設定 `KEEPER_TRIGGER_ACTOR`**：repo → Settings → Secrets and variables → Actions → **Variables** → New repository variable，名稱 `KEEPER_TRIGGER_ACTOR`，值填第 7 步實際看到的字串（含 `[bot]`）。
    - **一定要在第 7 步確認之後才設**。還在用你本人的 PAT 時設了它沒有作用（名稱對不上）；填成你自己的帳號則會讓你自己的 admin run 全部被拒。
-   - 它在 admin workflow 裡的作用（`.github/workflows/admin-base-sepolia.yml`）：`approve` job 的 gate step 會拒絕 `github.actor` 或 `github.triggering_actor` 等於這個值的 run，`admin-call` 的第一個 step 會再檢查一次 `github.triggering_actor`。比對不分大小寫。
-   - **這個檢查發生在人工核准之後，不是之前**。`approve` 綁了 `environment: admin-approval`，而「A job that references an environment must follow any protection rules for the environment before running」（[文件](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments)），所以 gate step 要等你按下核准才會執行。也就是說：Worker 的憑證外洩、被人拿去 dispatch admin workflow 時，那筆 run **仍然會出現在等待核准的清單裡**。改用 App 之後的差別有兩個：
-     1. 核准畫面上那筆 run 的觸發者是 `<slug>[bot]`，不是你。**觸發者不是你本人的 admin run 一律 Reject**，這是第一道。
-     2. 就算誤按了核准，gate 也會讓 run 在 `approve` 就失敗，`admin-call` 不會開始，私鑰不會被取用。這是第二道。
-   - 如果要讓這種 run 連核准畫面都到不了，需要在 `approve` 之前加一個不綁 environment、不碰任何 secret 的檢查 job（`approve` 再 `needs` 它）。目前的 workflow 沒有這個 job。
-   - 想先確認 gate 會擋：把 `KEEPER_TRIGGER_ACTOR` 暫時設成 `zuemen`，手動 dispatch 一次 admin workflow 並核准，`approve` 應該以「這次 run 由 keeper 觸發器帳號 zuemen 觸發」失敗（`admin-call` 不會執行，不會送交易），確認後把值改回 bot 的名稱。
+   - 它在 admin workflow 裡的作用（`.github/workflows/admin-base-sepolia.yml`），比對都不分大小寫：
+     1. **`precheck`（核准之前）**：`github.actor` 或 `github.triggering_actor` 等於這個值就失敗。`approve` 寫了 `needs: precheck`，而「If a job fails or is skipped, all jobs that need it are skipped」（[Workflow syntax：`jobs.<job_id>.needs`](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idneeds)），所以 `approve` 被略過，**這筆 run 不會進入等待核准的清單**，你不會收到核准通知，也沒有東西可以誤按。
+     2. **`approve` 的 gate（核准之後）**：同樣的檢查再做一次。
+     3. **`admin-call` 的第一個 step**：再檢查一次 `github.triggering_actor`，之後才有 step 拿得到私鑰。
+   - 為什麼需要 `precheck` 這個獨立的 job：`approve` 綁了 `environment: admin-approval`，而「A job that references an environment must follow any protection rules for the environment before running」（[文件](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments)），它自己的 step 要等你按下核准才會執行。要在核准畫面之前擋，檢查就必須放在不綁 environment 的 job。`precheck` 不綁 environment、不引用任何 secret、`permissions: {}`、不進 concurrency group。
+   - `precheck` 讀得到這個 variable：`vars` context「contains custom configuration variables set at the organization, repository, and environment levels」，而且 `jobs.<job_id>.steps.env` 可以使用 `vars`（[Contexts reference](https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#vars-context)）。**`KEEPER_TRIGGER_ACTOR` 必須設在 repo 層級**（Repository variables）：設成某個 environment 的 variable 的話，不綁 environment 的 `precheck` 讀不到，等於沒設。
+   - **它擋不到的**：用你本人的 PAT（或你的帳號）dispatch 的 run，觸發者就是你，`precheck` 分不出來，仍然靠核准時逐字核對 inputs。所以第 9 步要把 PAT 從 Worker 拿掉並撤銷。
+   - **設定後確認它真的會擋**（不需要核准、不會碰到私鑰）：把 `KEEPER_TRIGGER_ACTOR` 暫時設成 `zuemen`，手動 dispatch 一次 admin workflow。預期 `precheck` 以「這次 run 由 keeper 觸發器帳號 zuemen 觸發」失敗，`approve` 與 `admin-call` 顯示為 skipped，run 頁面上**沒有** Review deployments 按鈕。確認後把值改回 bot 的名稱，再 dispatch 一次，這次應該停在等待核准（不要核准，直接 Reject 或取消）。
 9. **移除 PAT**：確認連續幾次 cron 都正常後，`npx wrangler secret delete GITHUB_TOKEN`，再到 <https://github.com/settings/personal-access-tokens> 撤銷那個 PAT。只要 App 三項有設定，Worker 就不會使用 `GITHUB_TOKEN`，留著只是多一個可以外洩的憑證。
 
 ### 觸發者名稱的依據與待驗證事項
 
 - 文件對 `github.actor` 的定義是「The username of the user that triggered the initial workflow run」，`github.triggering_actor` 是「The username of the user that initiated the workflow run. If the workflow run is a re-run, this value may differ from `github.actor`」（[Contexts reference](https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#github-context)）。**文件沒有明寫由 App 觸發的 `workflow_dispatch` 會是什麼字串。**
 - 實測依據（2026-10-01，以公開的 REST API `GET /repos/{owner}/{repo}/actions/runs?event=workflow_dispatch` 查詢，未觸發任何 workflow）：`microsoft/vscode` 有 94 筆 run 的 `actor.login` 與 `triggering_actor.login` 都是 `vs-code-engineering[bot]`（`type: Bot`）；`grafana/grafana` 有 16 筆是 `grafana-releases-oss[bot]`。格式是 `<app-slug>[bot]`。
-- 重跑時兩個值會分開：`vercel/next.js` 有一筆 run 的 `actor` 是 `github-actions[bot]`、`triggering_actor` 是按下 Re-run 的人。所以 Worker 觸發的 admin run 被人重跑時，`actor` 仍是 bot，`approve` 的 gate（兩個值都比對）仍然會拒絕；`admin-call` 另外拒絕任何 `run_attempt != 1`。
-- **待驗證**：本 repo 的 App 實際顯示的字串。API 的 `actor.login` 與 workflow 內的 `github.actor` 理論上是同一個值，但沒有在本 repo 實測過，所以第 7 步要求先用 `gh api` 看過再設 variable，第 8 步最後一項可以用來確認 gate 本身會擋。
+- 重跑時兩個值會分開：`vercel/next.js` 有一筆 run 的 `actor` 是 `github-actions[bot]`、`triggering_actor` 是按下 Re-run 的人。所以 Worker 觸發的 admin run 被人重跑時，`actor` 仍是 bot，`precheck` 與 `approve` 的 gate（兩個值都比對）仍然會拒絕；`precheck` 與 `admin-call` 另外拒絕任何 `run_attempt != 1`。
+- **待驗證**（兩項都沒有在本 repo 實測過，因為需要實際 dispatch）：
+  1. 本 repo 的 App 實際顯示的字串。API 的 `actor.login` 與 workflow 內的 `github.actor` 理論上是同一個值，所以第 7 步要求先用 `gh api` 看過再設 variable。
+  2. `precheck` 失敗時 `approve` 不會送出核准請求。這是依文件對 `needs` 的說明推得的；`precheck` 的 script 本身已在本機以九種環境變數組合測過。第 8 步最後一項就是實際驗證的方法。
 
 ### App 私鑰外洩時的差別
 
@@ -216,6 +220,13 @@ node --test ops/keeper-trigger/keeper-trigger.test.mjs
 ```
 CI（consistency.yml 的 `keeper-trigger` job）會跑這組測試。
 
+部署前想確認 Worker 打包得起來（不需要登入、不會部署）：
+
+```bash
+cd ops/keeper-trigger
+npx wrangler@4.145.0 deploy --dry-run --outdir "$(mktemp -d)"
+```
+
 ## workflow 守門的靜態檢查
 
 上面的保護（私鑰只放 environment secret、只有特定 job 綁那個 environment、admin 呼叫先經人工核准）都只是 workflow 檔裡的幾行 YAML。`scripts/check-workflow-guards.mjs` 把它們寫成檢查，consistency.yml 的 `workflow-guards` job 在每個 PR 與 master push 上執行：
@@ -223,7 +234,7 @@ CI（consistency.yml 的 `keeper-trigger` job）會跑這組測試。
 | 項目 | 規則 |
 |---|---|
 | (a) environment 允許清單 | 綁 `keeper` 的只能是 `base-sepolia-keeper.yml#keep`、`price-keeper.yml#update-prices`、`admin-base-sepolia.yml#admin-call`；`settlement` 只能是 `x402-settlement-worker.yml#settle`；`admin-approval` 只能是 `admin-base-sepolia.yml#approve`。字串與物件寫法都算，名稱不分大小寫。未登記的 environment、`${{ }}` 動態名稱一律拒絕 |
-| (b) admin workflow | `admin-call` 必須 `needs: approve`、沒有 job 層級的 `if`／`continue-on-error`，第一個 step 必須是 `github.ref == refs/heads/master` 與 `github.run_attempt == 1` 的守門。`approve` 必須綁 `admin-approval`、不引用任何 secret、不能被 `if`／`continue-on-error` 繞過 |
+| (b) admin workflow | `precheck` 不可綁 environment、不可引用任何 secret、沒有 `if`／`continue-on-error`／`concurrency`，第一個 step 必須是 `github.ref == refs/heads/master` 與 `github.run_attempt == 1` 的守門，並把 `vars.KEEPER_TRIGGER_ACTOR`、`github.actor`、`github.triggering_actor` 綁進 env。`approve` 必須 `needs: precheck`、綁 `admin-approval`、不引用任何 secret、不能被 `if`／`continue-on-error` 繞過。`admin-call` 必須 `needs: approve`、沒有 job 層級的 `if`／`continue-on-error`，第一個 step 同樣必須是 ref 與 `run_attempt` 的守門。workflow 層級不可有 `concurrency` |
 | (c) 觸發事件 | 任何 workflow 都不可使用 `pull_request_target`／`workflow_run` |
 | (d) 私鑰 secret | 引用 `secrets.KEEPER_PRIVATE_KEY` 的 job 必須綁 `keeper`，引用 `secrets.FEE_SETTLEMENT_PRIVATE_KEY` 的必須綁 `settlement`。`secrets[...]` 動態存取、`toJSON(secrets)`、`secrets: inherit` 一律拒絕 |
 

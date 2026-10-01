@@ -29,14 +29,21 @@ name: Admin — Base Sepolia owner call
 #
 # 審查 H1（PR #200）：ops/keeper-trigger 的 Worker 持有 Actions: write 的 fine-grained
 # token，而 Actions: write 就能 dispatch 這支 workflow（以 KEEPER_PRIVATE_KEY 做
-# transferOwnership／updatePrice／mint…）。所以分成兩個 job：
+# transferOwnership／updatePrice／mint…）。所以分成三個 job：
 #
-#   approve     綁 `environment: admin-approval`（只有 required reviewers＋branch policy，
-#               **不放 secret**）。人工核准後才開始；Worker 的 token 沒有 Deployments
-#               權限，無法代為核准。引用不存在的 environment 時 GitHub 會自動建立一個
-#               沒有保護規則的同名 environment，所以 gate step 讀它的設定，沒有 required
-#               reviewers 就 fail-closed。
+#   precheck    不綁 environment、不碰任何 secret、沒有任何 token 權限。檢查 ref 是 master、
+#               是第一次執行、觸發者不是 keeper 觸發器帳號（repo variable
+#               KEEPER_TRIGGER_ACTOR）。不符就失敗，approve 隨之被略過，**這筆 run 不會
+#               出現在等待核准的清單裡**。
+#   approve     needs: precheck，綁 `environment: admin-approval`（只有 required reviewers＋
+#               branch policy，**不放 secret**）。人工核准後才開始；Worker 的憑證沒有
+#               Deployments 權限，無法代為核准。引用不存在的 environment 時 GitHub 會自動建立
+#               一個沒有保護規則的同名 environment，所以 gate step 讀它的設定，沒有 required
+#               reviewers 就 fail-closed。gate 也重複 precheck 的觸發者與 ref 檢查（第二道）。
 #   admin-call  needs: approve，才進 concurrency group、才從 `keeper` environment 取私鑰。
+#
+# 這三個 job 的結構由 scripts/check-workflow-guards.mjs 檢查（consistency.yml 的
+# workflow-guards job）；改動這裡時要同步改那支腳本。
 #
 # 審查 H2（第二輪）：之前 concurrency 寫在 workflow 層級，等核准的 job 仍占住與 keeper
 # 共用的 group，keeper 排程會排隊到核准或逾時（最久 30 天）。現在 concurrency 只在
@@ -81,7 +88,59 @@ permissions:
 # admin-call 的 job 層級。
 
 jobs:
+  # 人工核准「之前」的檢查。approve 綁了有 required reviewers 的 environment，它自己的
+  # step 要等核准後才會執行（docs.github.com「Managing environments for deployment」：
+  # A job that references an environment must follow any protection rules for the
+  # environment before running）；所以要在核准畫面之前擋下的條件放在這個不綁 environment
+  # 的 job。它失敗時 approve 會被略過（「Workflow syntax」jobs.<job_id>.needs：If a job
+  # fails or is skipped, all jobs that need it are skipped），不會產生待核准的請求。
+  #
+  # 這個 job 刻意：不綁 environment、不引用任何 secret、不給 GITHUB_TOKEN 任何權限、
+  # 不 checkout、不用任何 action、不進 concurrency group（不會卡住 keeper）。
+  # KEEPER_TRIGGER_ACTOR 是 repo 層級的 variable，不綁 environment 的 job 也讀得到
+  # （「Contexts reference」：vars context 包含 organization、repository、environment
+  # 三層的 variable，jobs.<job_id>.steps.env 可用 vars）。
+  precheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Precheck — master、第一次執行、觸發者不是 keeper 觸發器
+        env:
+          REF: ${{ github.ref }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          # 未設定時是空字串，不擋（還在用擁有者本人的 PAT 時不要設，見
+          # ops/keeper-trigger/README.md「改用 GitHub App」）。
+          BLOCKED_ACTOR: ${{ vars.KEEPER_TRIGGER_ACTOR }}
+          ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+        run: |
+          set -euo pipefail
+          # 只准從 master 執行：其他分支上的這支 workflow 不受審查約束。
+          if [ "$REF" != "refs/heads/master" ]; then
+            echo "::error::admin workflow 只允許在 refs/heads/master 執行，這次是 $REF"
+            exit 1
+          fi
+          # 重跑不重新核准（admin-call 也會拒絕）；要重試請重新 dispatch。
+          if [ "$RUN_ATTEMPT" != "1" ]; then
+            echo "::error::admin workflow 不接受重跑（run_attempt=$RUN_ATTEMPT）；請重新 dispatch。"
+            exit 1
+          fi
+          lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+          if [ -n "${BLOCKED_ACTOR:-}" ]; then
+            b=$(lower "$BLOCKED_ACTOR")
+            for who in "$ACTOR" "$TRIGGERING_ACTOR"; do
+              if [ "$(lower "$who")" = "$b" ]; then
+                echo "::error::這次 run 由 keeper 觸發器帳號 $who 觸發，admin workflow 不接受（不會送出核准請求）。"
+                exit 1
+              fi
+            done
+          fi
+          echo "precheck 通過：ref=$REF、run_attempt=$RUN_ATTEMPT、觸發者 $ACTOR／$TRIGGERING_ACTOR"
+
   approve:
+    # precheck 失敗 → 這個 job 被略過 → 不會要求核准。不可加 `if:`（例如 always()）。
+    needs: precheck
     runs-on: ubuntu-latest
     timeout-minutes: 5
     # 名稱改了要同步改下面 gate step 的 ADMIN_ENVIRONMENT。這個 environment 不放 secret。
@@ -96,6 +155,7 @@ jobs:
           # 審查 M4：Worker 改用專用身分（GitHub App 或 org 的 machine account）後，把名稱
           # 設成 repo variable KEEPER_TRIGGER_ACTOR；它觸發（或重跑）的 admin run 一律拒絕。
           # 未設定時不擋（見 ops/keeper-trigger/README.md「觸發者身分」）。
+          # precheck 已經在核准之前檢查過一次；這裡是核准之後的第二道。
           BLOCKED_ACTOR: ${{ vars.KEEPER_TRIGGER_ACTOR }}
           ACTOR: ${{ github.actor }}
           TRIGGERING_ACTOR: ${{ github.triggering_actor }}
