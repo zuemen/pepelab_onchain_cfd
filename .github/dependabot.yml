@@ -63,6 +63,24 @@ updates:
     commit-message:
       prefix: "chore(frontend-deps)"
 
+  # scripts/：npm（scripts/package-lock.json）。目前只有一個依賴——`yaml`，
+  # check-workflow-guards.mjs 用它解析 workflow（consistency.yml 的 workflow-guards job）。
+  # 版本是固定的（不帶 ^），由 lockfile 的 integrity 驗證；升級靠這裡每週開的 PR。
+  # 它與 agent/package-lock.json 的 yaml 刻意同版本，升級時兩邊一起看。上限 2。
+  - package-ecosystem: npm
+    directory: /scripts
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Taipei
+    open-pull-requests-limit: 2
+    groups:
+      scripts-minor-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "chore(scripts-deps)"
+
   # contracts/lib/：forge-std、openzeppelin-contracts(-upgradeable) 是 git submodule，
   # 合約的安全修補（OZ advisory）只會從這裡進來。每週檢查一次；submodule 升級會改
   # 已部署合約的編譯結果，必須人工讀 changelog 並跑 contracts-ci，所以上限 2、不 group。
