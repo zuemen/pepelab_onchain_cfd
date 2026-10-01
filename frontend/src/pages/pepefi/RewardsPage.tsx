@@ -22,7 +22,7 @@ import { useToast } from 'src/components/pepefi/ToastProvider';
 import { t, interpolate } from 'src/locales';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
 import { toStrictlyIncreasingIds } from 'src/lib/pepefi/positionIds';
-import { dailyRewardFor, TODAY_INDEX } from 'src/lib/pepefi/achievements';
+import { dailyRewardFor, probeCheckInUnit, TODAY_INDEX, type CheckInUnit } from 'src/lib/pepefi/achievements';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -253,6 +253,10 @@ export default function RewardsPage() {
   const [myStreak,      setMyStreak]      = useState(0);
   const [lastDay,       setLastDay]       = useState(0);
   const [checkInBusy,   setCheckInBusy]   = useState(false);
+  // 簽到發的是什麼由合約決定（#169）。預設 'pepe'：線上已部署的版本就是轉出 PEPE,
+  // 探測沒有結論（RPC 失敗）時維持上一次的說法,不因為網路抖一下就改口。
+  const [checkInUnit,   setCheckInUnit]   = useState<CheckInUnit>('pepe');
+  const [myPoints,      setMyPoints]      = useState<bigint | null>(null);
 
   const fetchCheckin = useCallback(async () => {
     if (!contracts || !wallet.address) return;
@@ -261,7 +265,17 @@ export default function RewardsPage() {
       const s      = (await contracts.pepeIncentives.streak(wallet.address)) as bigint;
       setLastDay(Number(last));
       setMyStreak(Number(s));
-    } catch { /* not deployed */ }
+    } catch { /* not deployed */ return; }
+    // 只有 lastCheckIn/streak 讀得到（合約真的在）才探測。舊版沒有
+    // achievementPoints,probe 會回 'pepe',頁面照現行讀法運作。
+    const probe = await probeCheckInUnit(
+      (addr) => contracts.pepeIncentives.achievementPoints(addr) as Promise<unknown>,
+      wallet.address,
+    );
+    if (probe) {
+      setCheckInUnit(probe.unit);
+      setMyPoints(probe.points);
+    }
   }, [contracts, wallet.address]);
 
   // The only place in the app that sends dailyCheckIn(). /dashboard and /pepe
@@ -292,6 +306,8 @@ export default function RewardsPage() {
   // ── Daily state ─────────────────────────────────────────────────────────────
   const checkedInToday = lastDay === TODAY_INDEX();
   const dailyReward = dailyRewardFor(myStreak);
+  // 同一組四句話,兩種單位各一份；選哪一份看合約,不看旗標。
+  const checkInText = checkInUnit === 'points' ? t.rewards.checkIn.points : t.rewards.checkIn;
 
   if (!wallet.isConnected) {
     return (
@@ -525,7 +541,7 @@ export default function RewardsPage() {
           <SectionCard
             title={t.rewards.checkIn.title}
             emoji="📅"
-            description={t.rewards.checkIn.description}
+            description={checkInText.description}
             status={statusFor(checkedInToday ? 0 : 1, checkedInToday ? 1 : 0, 1)}
           >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap' }}>
@@ -537,10 +553,17 @@ export default function RewardsPage() {
                     size="small"
                   />
                   <Chip
-                    label={interpolate(t.rewards.checkIn.todayReward, { reward: dailyReward })}
+                    label={interpolate(checkInText.todayReward, { reward: dailyReward })}
                     color="success"
                     size="small"
                   />
+                  {checkInUnit === 'points' && myPoints !== null && (
+                    <Chip
+                      label={interpolate(t.rewards.checkIn.points.balance, { points: fmt18(myPoints).toFixed(0) })}
+                      variant="outlined"
+                      size="small"
+                    />
+                  )}
                 </Stack>
               </Box>
               <Button
@@ -555,13 +578,13 @@ export default function RewardsPage() {
                 ) : checkedInToday ? (
                   t.rewards.checkIn.alreadyCheckedIn
                 ) : (
-                  interpolate(t.rewards.checkIn.checkIn, { reward: dailyReward })
+                  interpolate(checkInText.checkIn, { reward: dailyReward })
                 )}
               </Button>
             </Box>
             {checkedInToday && (
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-                {interpolate(t.rewards.checkIn.comeBack, { reward: dailyRewardFor(myStreak) })}
+                {interpolate(checkInText.comeBack, { reward: dailyRewardFor(myStreak) })}
               </Typography>
             )}
           </SectionCard>

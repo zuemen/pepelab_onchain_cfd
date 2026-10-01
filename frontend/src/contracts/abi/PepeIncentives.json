@@ -27,6 +27,25 @@
   },
   {
     "type": "function",
+    "name": "achievementPoints",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "claimCopyReward",
     "inputs": [
       {
@@ -552,6 +571,19 @@
   },
   {
     "type": "function",
+    "name": "totalAchievementPoints",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "tradeMiningBps",
     "inputs": [],
     "outputs": [
@@ -657,7 +689,7 @@
         "internalType": "uint8"
       },
       {
-        "name": "reward",
+        "name": "points",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -828,6 +860,11 @@
   {
     "type": "error",
     "name": "InsufficientPool",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidDailyParams",
     "inputs": []
   },
   {

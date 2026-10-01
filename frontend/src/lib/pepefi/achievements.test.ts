@@ -4,6 +4,7 @@ import {
   ACHIEVEMENTS,
   buildQuests,
   dailyRewardFor,
+  probeCheckInUnit,
   TODAY_INDEX,
   type AchCtx,
 } from './achievements'
@@ -98,6 +99,46 @@ describe('dailyRewardFor — 成就點數,不是 PEPE', () => {
     expect(dailyRewardFor(1)).toBe(60)
     expect(dailyRewardFor(6)).toBe(110)
     expect(dailyRewardFor(30)).toBe(110)
+  })
+})
+
+describe('probeCheckInUnit — 簽到發的是什麼,問合約,不靠假設', () => {
+  const ADDR = '0x000000000000000000000000000000000000dEaD'
+  const rejecting = (code?: string) => () =>
+    Promise.reject(Object.assign(new Error('boom'), code ? { code } : {}))
+
+  it('合約有 achievementPoints → 點數版,並帶回點數', async () => {
+    const seen: string[] = []
+    const read = (a: string) => { seen.push(a); return Promise.resolve(110n * 10n ** 18n) }
+    expect(await probeCheckInUnit(read, ADDR)).toEqual({ unit: 'points', points: 110n * 10n ** 18n })
+    expect(seen).toEqual([ADDR])
+  })
+
+  it('點數為 0 仍然是點數版', async () => {
+    expect(await probeCheckInUnit(() => Promise.resolve(0n), ADDR))
+      .toEqual({ unit: 'points', points: 0n })
+  })
+
+  it('線上舊版沒有這個函式(CALL_EXCEPTION / BAD_DATA)→ PEPE 版', async () => {
+    expect(await probeCheckInUnit(rejecting('CALL_EXCEPTION'), ADDR)).toEqual({ unit: 'pepe', points: null })
+    expect(await probeCheckInUnit(rejecting('BAD_DATA'), ADDR)).toEqual({ unit: 'pepe', points: null })
+  })
+
+  it('網路錯誤不下結論(null),畫面維持原本的說法', async () => {
+    expect(await probeCheckInUnit(rejecting('NETWORK_ERROR'), ADDR)).toBeNull()
+    expect(await probeCheckInUnit(rejecting('TIMEOUT'), ADDR)).toBeNull()
+    expect(await probeCheckInUnit(rejecting(), ADDR)).toBeNull()
+    expect(await probeCheckInUnit(() => Promise.reject(null), ADDR)).toBeNull()
+  })
+
+  it('ABI 裡沒有這個方法(同步丟 TypeError)也不下結論,不會讓頁面壞掉', async () => {
+    const contract = {} as { achievementPoints?: (a: string) => Promise<unknown> }
+    const read = (a: string) => contract.achievementPoints!(a)
+    expect(await probeCheckInUnit(read, ADDR)).toBeNull()
+  })
+
+  it('回傳值不是 bigint 時不當成點數版', async () => {
+    expect(await probeCheckInUnit(() => Promise.resolve('0x'), ADDR)).toBeNull()
   })
 })
 

@@ -19,12 +19,70 @@ import { t, interpolate } from 'src/locales'
 export const TODAY_INDEX = () => Math.floor(Date.now() / 1000 / 86400)
 
 /**
- * The daily check-in reward, as non-transferable achievement points (issue
- * #101 — no longer PEPE, because anything transferable acquires a price and
- * anything with a price gets farmed). 50, +10 per consecutive day, capped at
- * a 7-day streak (110).
+ * The daily check-in amount: 50, +10 per consecutive day, capped at a 7-day
+ * streak (110).
+ *
+ * WHAT it is an amount of depends on the PepeIncentives build behind the
+ * address (see `probeCheckInUnit`). Issue #101 decided it should be
+ * non-transferable achievement points — anything transferable acquires a
+ * price and anything with a price gets farmed — and issue #169 implements
+ * that in the contract source. The build deployed today still transfers PEPE,
+ * and a screen must say what the chain actually does.
  */
 export const dailyRewardFor = (streak: number) => 50 + 10 * Math.min(streak, 6)
+
+// ── What a check-in pays (capability probe) ──────────────────────────────────
+
+/**
+ * 'pepe'   — the PepeIncentives deployed today: `dailyCheckIn()` transfers PEPE.
+ * 'points' — the #169 build: `dailyCheckIn()` credits non-transferable
+ *            achievement points kept in the contract (`achievementPoints`).
+ */
+export type CheckInUnit = 'pepe' | 'points'
+
+export interface CheckInProbe {
+  unit: CheckInUnit
+  /** The wallet's achievement points (18 decimals); null on a 'pepe' build. */
+  points: bigint | null
+}
+
+/**
+ * The one read the probe needs: `achievementPoints(address)` on the
+ * PepeIncentives contract. Passed as a function so the probe does not depend
+ * on the ethers Contract type (and so a missing method throws inside the
+ * probe's own try block).
+ */
+export type ReadAchievementPoints = (address: string) => Promise<unknown>
+
+/**
+ * ethers v6 codes for "the contract answered, and it does not have this
+ * function": the call reverted with no data (CALL_EXCEPTION), or returned
+ * nothing to decode (BAD_DATA).
+ */
+const NO_SUCH_FUNCTION_CODES = new Set(['CALL_EXCEPTION', 'BAD_DATA'])
+
+/**
+ * Ask the contract which build it is, rather than assuming from the address.
+ * `achievementPoints(address)` exists only on the #169 build.
+ *
+ * Returns null when the answer is unknown (RPC down, timeout): the caller
+ * keeps whatever it showed before instead of flipping the wording on a
+ * network hiccup.
+ */
+export async function probeCheckInUnit(
+  readPoints: ReadAchievementPoints,
+  address: string,
+): Promise<CheckInProbe | null> {
+  try {
+    const points = await readPoints(address)
+    return typeof points === 'bigint' ? { unit: 'points', points } : null
+  } catch (e) {
+    const code = (e as { code?: unknown } | null)?.code
+    return typeof code === 'string' && NO_SUCH_FUNCTION_CODES.has(code)
+      ? { unit: 'pepe', points: null }
+      : null
+  }
+}
 
 // ── Achievements ──────────────────────────────────────────────────────────────
 

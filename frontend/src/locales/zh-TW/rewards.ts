@@ -83,8 +83,10 @@ export const rewards = {
     /**
      * #153：CONTEXT.md 的 Streak 詞條 `_Avoid_: login bonus, daily reward`，
      * 「今日/明日獎勵」正是被避免的講法。改成陳述「今天能領多少」這個事實,
-     * 不把連續簽到框成一套 bonus 制度。金額仍是 PEPE:合約
+     * 不把連續簽到框成一套 bonus 制度。金額仍是 PEPE:線上的合約
      * （PepeIncentives.dailyCheckIn）最後一行就是 pepe.safeTransfer,寫別的會不實。
+     * 合約換成 #169 的版本（簽到記不可轉讓的成就點數）之後,畫面改用下面的 `points`
+     * ——由 probeCheckInUnit 問合約決定,不是由這裡的字決定。
      */
     todayReward: '今日可領：{reward} PEPE',
     /** 按鈕的兩種狀態各自是完整的一句話，不是「簽到 +」加金額。 */
@@ -92,6 +94,18 @@ export const rewards = {
     checkIn: '🐸 簽到 +{reward} PEPE',
     comeBack: '明天再來！明日可領：{reward} PEPE',
     done: '簽到成功！🐸',
+
+    /**
+     * #169：合約是「簽到記成就點數」的版本時用這一組。點數記在合約裡、不可轉讓,
+     * 所以不說「領」（沒有東西進錢包）,說「記入」。
+     */
+    points: {
+      description: '每日簽到記入 50 成就點數，連續簽到每天 +10，7 天封頂 110。點數記在合約內、不可轉讓，不是 PEPE。',
+      todayReward: '今日記入：{reward} 成就點數',
+      checkIn: '🐸 簽到 +{reward} 成就點數',
+      comeBack: '明天再來！明日記入：{reward} 成就點數',
+      balance: '累計 {points} 成就點數',
+    },
   },
 
   /** 交易正在跑的時候按鈕上的字。 */
