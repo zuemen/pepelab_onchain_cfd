@@ -19,7 +19,7 @@ var __esm = (fn, res, err) => function __init() {
     throw err = [e], e;
   }
 };
-var __commonJS = (cb, mod4) => function __require3() {
+var __commonJS = (cb, mod4) => function __require4() {
   try {
     return mod4 || (0, cb[__getOwnPropNames(cb)[0]])((mod4 = { exports: {} }).exports, mod4), mod4.exports;
   } catch (e) {
@@ -59719,7 +59719,7 @@ function createNonce() {
   );
   return toHex(cryptoObj.getRandomValues(new Uint8Array(32)));
 }
-function preparePaymentHeader(from16, x402Version, paymentRequirements) {
+function preparePaymentHeader(from16, x402Version2, paymentRequirements) {
   const nonce = createNonce();
   const validAfter = BigInt(
     Math.floor(Date.now() / 1e3) - 600
@@ -59729,7 +59729,7 @@ function preparePaymentHeader(from16, x402Version, paymentRequirements) {
     Math.floor(Date.now() / 1e3 + paymentRequirements.maxTimeoutSeconds)
   ).toString();
   return {
-    x402Version,
+    x402Version: x402Version2,
     scheme: paymentRequirements.scheme,
     network: paymentRequirements.network,
     payload: {
@@ -59759,13 +59759,13 @@ async function signPaymentHeader(client, paymentRequirements, unsignedPaymentHea
     }
   };
 }
-async function createPayment(client, x402Version, paymentRequirements) {
+async function createPayment(client, x402Version2, paymentRequirements) {
   const from16 = isSignerWallet(client) ? client.account.address : client.address;
-  const unsignedPaymentHeader = preparePaymentHeader(from16, x402Version, paymentRequirements);
+  const unsignedPaymentHeader = preparePaymentHeader(from16, x402Version2, paymentRequirements);
   return signPaymentHeader(client, paymentRequirements, unsignedPaymentHeader);
 }
-async function createPaymentHeader(client, x402Version, paymentRequirements) {
-  const payment = await createPayment(client, x402Version, paymentRequirements);
+async function createPaymentHeader(client, x402Version2, paymentRequirements) {
+  const payment = await createPayment(client, x402Version2, paymentRequirements);
   return encodePayment(payment);
 }
 
@@ -60017,7 +60017,7 @@ var { verify: verify2, settle: settle2, list } = useFacilitator();
 // ../node_modules/x402-hono/dist/esm/index.mjs
 function paymentMiddleware(payTo, routes, facilitator, paywall) {
   const { verify: verify3, settle: settle3 } = useFacilitator(facilitator);
-  const x402Version = 1;
+  const x402Version2 = 1;
   const routePatterns = computeRoutePatterns(routes);
   return async function paymentMiddleware2(c, next) {
     const method = c.req.method.toUpperCase();
@@ -60101,7 +60101,7 @@ function paymentMiddleware(payTo, routes, facilitator, paywall) {
         {
           error: (errorMessages == null ? void 0 : errorMessages.paymentRequired) || "X-PAYMENT header is required",
           accepts: paymentRequirements,
-          x402Version
+          x402Version: x402Version2
         },
         402
       );
@@ -60109,13 +60109,13 @@ function paymentMiddleware(payTo, routes, facilitator, paywall) {
     let decodedPayment;
     try {
       decodedPayment = exact_exports.evm.decodePayment(payment);
-      decodedPayment.x402Version = x402Version;
+      decodedPayment.x402Version = x402Version2;
     } catch (error) {
       return c.json(
         {
           error: (errorMessages == null ? void 0 : errorMessages.invalidPayment) || (error instanceof Error ? error : new Error("Invalid or malformed payment header")),
           accepts: paymentRequirements,
-          x402Version
+          x402Version: x402Version2
         },
         402
       );
@@ -60129,7 +60129,7 @@ function paymentMiddleware(payTo, routes, facilitator, paywall) {
         {
           error: (errorMessages == null ? void 0 : errorMessages.noMatchingRequirements) || "Unable to find matching payment requirements",
           accepts: toJsonSafe(paymentRequirements),
-          x402Version
+          x402Version: x402Version2
         },
         402
       );
@@ -60141,7 +60141,7 @@ function paymentMiddleware(payTo, routes, facilitator, paywall) {
           error: (errorMessages == null ? void 0 : errorMessages.verificationFailed) || verification.invalidReason,
           accepts: paymentRequirements,
           payer: verification.payer,
-          x402Version
+          x402Version: x402Version2
         },
         402
       );
@@ -60165,7 +60165,7 @@ function paymentMiddleware(payTo, routes, facilitator, paywall) {
         {
           error: (errorMessages == null ? void 0 : errorMessages.settlementFailed) || (error instanceof Error ? error : new Error("Failed to settle payment")),
           accepts: paymentRequirements,
-          x402Version
+          x402Version: x402Version2
         },
         402
       );
@@ -60211,6 +60211,52 @@ var queue = Promise.resolve();
 
 // src/app.ts
 import { randomUUID } from "node:crypto";
+
+// src/paymentIdentifier.ts
+var PAYMENT_IDENTIFIER = "payment-identifier";
+var PAYMENT_ID_MIN_LENGTH = 16;
+var PAYMENT_ID_MAX_LENGTH = 128;
+var PAYMENT_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
+var PAYMENT_IDENTIFIER_SCHEMA = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  type: "object",
+  properties: {
+    required: { type: "boolean" },
+    id: {
+      type: "string",
+      minLength: PAYMENT_ID_MIN_LENGTH,
+      maxLength: PAYMENT_ID_MAX_LENGTH,
+      pattern: "^[a-zA-Z0-9_-]+$"
+    }
+  },
+  required: ["required"]
+};
+function isValidPaymentId(id2) {
+  return typeof id2 === "string" && id2.length >= PAYMENT_ID_MIN_LENGTH && id2.length <= PAYMENT_ID_MAX_LENGTH && PAYMENT_ID_PATTERN.test(id2);
+}
+function declarePaymentIdentifierExtension(required = false) {
+  return { info: { required }, schema: PAYMENT_IDENTIFIER_SCHEMA };
+}
+function decodeBase64Json(header) {
+  if (!header) return null;
+  try {
+    const j = JSON.parse(Buffer.from(header, "base64").toString("utf8"));
+    return j !== null && typeof j === "object" ? j : null;
+  } catch {
+    return null;
+  }
+}
+function readPaymentIdentifier(payload) {
+  const ext = payload?.extensions?.[PAYMENT_IDENTIFIER];
+  if (ext === void 0 || ext === null) return { id: null, valid: true };
+  if (typeof ext !== "object") return { id: null, valid: false };
+  const info = ext.info;
+  if (info === void 0 || info === null) return { id: null, valid: true };
+  if (typeof info !== "object") return { id: null, valid: false };
+  const id2 = info.id;
+  if (id2 === void 0) return { id: null, valid: true };
+  return isValidPaymentId(id2) ? { id: id2, valid: true } : { id: null, valid: false };
+}
 
 // src/ledger.ts
 function credentials() {
@@ -60267,7 +60313,4154 @@ function deriveIdempotencyKey(paymentResponseHeader, paymentHeader) {
   }
   return void 0;
 }
+function deriveIdempotencyKeyV2(paymentResponseHeader, paymentPayload) {
+  const isAddr = (v) => typeof v === "string" && /^0x[0-9a-fA-F]{40}$/.test(v);
+  const settle3 = decodeBase64Json(paymentResponseHeader);
+  const auth = paymentPayload?.payload?.authorization;
+  const payer = isAddr(settle3?.payer) ? settle3.payer : isAddr(auth?.from) ? auth.from : null;
+  const pid = readPaymentIdentifier(paymentPayload);
+  if (pid.valid && pid.id && payer) return `pid:${String(payer).toLowerCase()}:${pid.id}`;
+  const tx = settle3?.transaction;
+  if (typeof tx === "string" && /^0x[0-9a-fA-F]{64}$/.test(tx)) return `tx:${tx.toLowerCase()}`;
+  if (isAddr(auth?.from) && typeof auth?.nonce === "string" && auth.nonce) {
+    return `auth:${auth.from.toLowerCase()}:${auth.nonce.toLowerCase()}`;
+  }
+  return void 0;
+}
 var CONDITION_TTL_SEC = 2 * 60 * 60;
+
+// ../node_modules/@x402/core/dist/esm/chunk-N4QXZG2Z.mjs
+var NonEmptyString = external_exports.string().min(1);
+var Any = external_exports.record(external_exports.unknown());
+var OptionalAny = external_exports.record(external_exports.unknown()).optional().nullable();
+var NetworkSchemaV1 = NonEmptyString;
+var NetworkSchemaV2 = external_exports.string().min(3).refine((val) => val.includes(":"), {
+  message: "Network must be in CAIP-2 format (e.g., 'eip155:84532')"
+});
+var NetworkSchema2 = external_exports.union([NetworkSchemaV1, NetworkSchemaV2]);
+var PRINTABLE_ASCII_REGEX = /^[\x20-\x7e]+$/;
+var ResourceInfoSchema = external_exports.object({
+  url: NonEmptyString,
+  description: external_exports.string().nullish().transform((v) => v ?? void 0),
+  mimeType: external_exports.string().nullish().transform((v) => v ?? void 0),
+  serviceName: external_exports.string().min(1).max(32).regex(PRINTABLE_ASCII_REGEX).nullish().transform((v) => v ?? void 0),
+  tags: external_exports.array(external_exports.string().min(1).max(32).regex(PRINTABLE_ASCII_REGEX)).max(5).nullish().transform((v) => v ?? void 0),
+  iconUrl: external_exports.string().max(2048).nullish().transform((v) => v ?? void 0)
+});
+var PaymentRequirementsV1Schema = external_exports.object({
+  scheme: NonEmptyString,
+  network: NetworkSchemaV1,
+  maxAmountRequired: NonEmptyString,
+  resource: NonEmptyString,
+  // URL string in V1
+  description: external_exports.string(),
+  mimeType: external_exports.string().optional(),
+  outputSchema: Any.optional().nullable(),
+  payTo: NonEmptyString,
+  maxTimeoutSeconds: external_exports.number().positive(),
+  asset: NonEmptyString,
+  extra: OptionalAny
+});
+var PaymentRequiredV1Schema = external_exports.object({
+  x402Version: external_exports.literal(1),
+  error: external_exports.string().optional(),
+  accepts: external_exports.array(PaymentRequirementsV1Schema).min(1)
+});
+var PaymentPayloadV1Schema = external_exports.object({
+  x402Version: external_exports.literal(1),
+  scheme: NonEmptyString,
+  network: NetworkSchemaV1,
+  payload: Any
+});
+var PaymentRequirementsV2Schema = external_exports.object({
+  scheme: NonEmptyString,
+  network: NetworkSchemaV2,
+  amount: NonEmptyString,
+  asset: NonEmptyString,
+  payTo: NonEmptyString,
+  maxTimeoutSeconds: external_exports.number().positive(),
+  extra: OptionalAny
+});
+var PaymentRequiredV2Schema = external_exports.object({
+  x402Version: external_exports.literal(2),
+  error: external_exports.string().nullish().transform((v) => v ?? void 0),
+  resource: ResourceInfoSchema,
+  accepts: external_exports.array(PaymentRequirementsV2Schema).min(1),
+  extensions: OptionalAny
+});
+var PaymentPayloadV2Schema = external_exports.object({
+  x402Version: external_exports.literal(2),
+  resource: ResourceInfoSchema.nullish().transform((v) => v ?? void 0),
+  accepted: PaymentRequirementsV2Schema,
+  payload: Any,
+  extensions: OptionalAny
+});
+var PaymentRequirementsSchema2 = external_exports.union([
+  PaymentRequirementsV1Schema,
+  PaymentRequirementsV2Schema
+]);
+var PaymentRequiredSchema = external_exports.discriminatedUnion("x402Version", [
+  PaymentRequiredV1Schema,
+  PaymentRequiredV2Schema
+]);
+var PaymentPayloadSchema2 = external_exports.discriminatedUnion("x402Version", [
+  PaymentPayloadV1Schema,
+  PaymentPayloadV2Schema
+]);
+
+// ../node_modules/@x402/core/dist/esm/chunk-VE37GDG2.mjs
+var x402Version = 2;
+
+// ../node_modules/@x402/core/dist/esm/chunk-MA7F3CLI.mjs
+var VerifyError = class extends Error {
+  /**
+   * Creates a VerifyError from a failed verification response.
+   *
+   * @param statusCode - HTTP status code from the facilitator
+   * @param response - The verify response containing failure details
+   */
+  constructor(statusCode, response) {
+    const reason = response.invalidReason || "unknown reason";
+    const message = response.invalidMessage;
+    super(message ? `${reason}: ${message}` : reason);
+    this.name = "VerifyError";
+    this.statusCode = statusCode;
+    this.invalidReason = response.invalidReason;
+    this.invalidMessage = response.invalidMessage;
+    this.payer = response.payer;
+  }
+};
+var SettleError = class extends Error {
+  /**
+   * Creates a SettleError from a failed settlement response.
+   *
+   * @param statusCode - HTTP status code from the facilitator
+   * @param response - The settle response containing error details
+   */
+  constructor(statusCode, response) {
+    const reason = response.errorReason || "unknown reason";
+    const message = response.errorMessage;
+    super(message ? `${reason}: ${message}` : reason);
+    this.name = "SettleError";
+    this.statusCode = statusCode;
+    this.errorReason = response.errorReason;
+    this.errorMessage = response.errorMessage;
+    this.payer = response.payer;
+    this.transaction = response.transaction;
+    this.network = response.network;
+  }
+};
+var FacilitatorResponseError = class extends Error {
+  /**
+   * Creates a FacilitatorResponseError for malformed facilitator responses.
+   *
+   * @param message - The boundary error message
+   */
+  constructor(message) {
+    super(message);
+    this.name = "FacilitatorResponseError";
+  }
+};
+var FacilitatorTimeoutError = class extends FacilitatorResponseError {
+  /**
+   * Creates a FacilitatorTimeoutError.
+   *
+   * @param operation - The facilitator operation that timed out
+   * @param timeoutMs - The configured timeout in milliseconds
+   */
+  constructor(operation, timeoutMs) {
+    super(`Facilitator ${operation} request timed out after ${timeoutMs}ms`);
+    this.name = "FacilitatorTimeoutError";
+    this.operation = operation;
+    this.timeoutMs = timeoutMs;
+  }
+};
+var FacilitatorCapabilityError = class extends Error {
+  /**
+   * Creates a FacilitatorCapabilityError listing every capability problem.
+   *
+   * @param problems - Scheme/network problem lines to include in the message
+   */
+  constructor(problems) {
+    super(`x402 facilitator capability errors:
+${problems.map((e) => `  - ${e}`).join("\n")}`);
+    this.name = "FacilitatorCapabilityError";
+    this.problems = problems;
+  }
+};
+function getFacilitatorResponseError(error) {
+  let current = error;
+  while (current instanceof Error) {
+    if (current instanceof FacilitatorResponseError) {
+      return current;
+    }
+    current = current.cause;
+  }
+  return null;
+}
+
+// ../node_modules/@x402/core/dist/esm/chunk-XW2CWVLZ.mjs
+function numberToDecimalString(n2) {
+  const str = n2.toString();
+  if (!/[eE]/.test(str)) return str;
+  const [significand, exponentStr] = str.split(/[eE]/);
+  const exp = parseInt(exponentStr, 10);
+  const negative = significand.startsWith("-");
+  const abs = negative ? significand.slice(1) : significand;
+  const [intDigits, fracDigits = ""] = abs.split(".");
+  const allDigits = intDigits + fracDigits;
+  const decimalPos = intDigits.length + exp;
+  let result;
+  if (decimalPos <= 0) {
+    result = "0." + "0".repeat(-decimalPos) + allDigits;
+  } else if (decimalPos >= allDigits.length) {
+    result = allDigits + "0".repeat(decimalPos - allDigits.length);
+  } else {
+    result = allDigits.slice(0, decimalPos) + "." + allDigits.slice(decimalPos);
+  }
+  return (negative ? "-" : "") + result;
+}
+function parseMoneyString(money) {
+  const cleaned = money.replace(/^\$/, "").trim();
+  if (!/^\d+(?:\.\d+)?$/.test(cleaned) || /[eE]/.test(cleaned)) {
+    throw new Error(`Invalid money format: ${money}`);
+  }
+  return cleaned;
+}
+function parseMoney(money) {
+  if (typeof money === "number") {
+    if (!Number.isFinite(money) || money < 0) {
+      throw new Error(`Invalid money format: ${money}`);
+    }
+    return { amount: numberToDecimalString(money) };
+  }
+  const trimmed = money.trim();
+  const match2 = trimmed.match(/^\$?\s*(-?\d+(?:\.\d+)?)(?:\s+([A-Za-z][A-Za-z0-9.]*))?$/);
+  if (!match2) {
+    throw new Error(`Invalid money format: ${money}`);
+  }
+  const amount = parseMoneyString(match2[1]);
+  const rawSymbol = match2[2];
+  if (!rawSymbol || rawSymbol.toUpperCase() === "USD") {
+    return { amount };
+  }
+  return { amount, symbol: rawSymbol.toUpperCase() };
+}
+function convertToTokenAmount(decimalAmount, decimals) {
+  if (/[eE]/.test(decimalAmount)) {
+    throw new Error(
+      `Invalid amount: ${decimalAmount} \u2014 use decimal notation, not scientific notation`
+    );
+  }
+  if (!/^-?\d+\.?\d*$/.test(decimalAmount)) {
+    throw new Error(`Invalid amount: ${decimalAmount}`);
+  }
+  const [intPart, decPart = ""] = decimalAmount.split(".");
+  const paddedDec = decPart.padEnd(decimals, "0").slice(0, decimals);
+  return (intPart + paddedDec).replace(/^0+/, "") || "0";
+}
+var escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+var networkPatternToRegExp = (pattern) => {
+  const source = escapeRegExp(pattern).replace(/\\\*/g, ".*");
+  return new RegExp(`^${source}$`);
+};
+var networkMatchesPattern = (pattern, network) => {
+  return networkPatternToRegExp(pattern).test(network);
+};
+var findSchemesByNetwork = (map, network) => {
+  let implementationsByScheme = map.get(network);
+  if (!implementationsByScheme) {
+    for (const [registeredNetworkPattern, implementations] of map.entries()) {
+      if (networkMatchesPattern(registeredNetworkPattern, network)) {
+        implementationsByScheme = implementations;
+        break;
+      }
+    }
+  }
+  return implementationsByScheme;
+};
+var findByNetworkAndScheme = (map, scheme, network) => {
+  return findSchemesByNetwork(map, network)?.get(scheme);
+};
+var Base64EncodedRegex = /^[A-Za-z0-9+/]*={0,2}$/;
+function safeBase64Encode2(data4) {
+  if (typeof globalThis !== "undefined" && typeof globalThis.btoa === "function") {
+    const bytes2 = new TextEncoder().encode(data4);
+    const binaryString = Array.from(bytes2, (byte) => String.fromCharCode(byte)).join("");
+    return globalThis.btoa(binaryString);
+  }
+  return Buffer.from(data4, "utf8").toString("base64");
+}
+function safeBase64Decode2(data4) {
+  if (typeof globalThis !== "undefined" && typeof globalThis.atob === "function") {
+    const binaryString = globalThis.atob(data4);
+    const bytes2 = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes2[i] = binaryString.charCodeAt(i);
+    }
+    const decoder2 = new TextDecoder("utf-8");
+    return decoder2.decode(bytes2);
+  }
+  return Buffer.from(data4, "base64").toString("utf-8");
+}
+function deepEqual(obj1, obj2) {
+  const normalize = (obj) => {
+    if (obj === null || obj === void 0) return JSON.stringify(obj);
+    if (typeof obj !== "object") return JSON.stringify(obj);
+    if (Array.isArray(obj)) {
+      return JSON.stringify(
+        obj.map(
+          (item) => typeof item === "object" && item !== null ? JSON.parse(normalize(item)) : item
+        )
+      );
+    }
+    const sorted = {};
+    Object.keys(obj).sort().forEach((key) => {
+      const value = obj[key];
+      sorted[key] = typeof value === "object" && value !== null ? JSON.parse(normalize(value)) : value;
+    });
+    return JSON.stringify(sorted);
+  };
+  try {
+    return normalize(obj1) === normalize(obj2);
+  } catch {
+    return JSON.stringify(obj1) === JSON.stringify(obj2);
+  }
+}
+function toComparableArray(value) {
+  if (Array.isArray(value)) {
+    return value;
+  }
+  if (value === null || value === void 0 || typeof value === "object") {
+    return void 0;
+  }
+  return [value];
+}
+var ADDITIVE_ARRAY_INFO_FIELDS = {
+  "builder-code": /* @__PURE__ */ new Set(["s"])
+};
+var SERVER_OWNED_INFO_FIELDS = {
+  "builder-code": /* @__PURE__ */ new Set(["a"])
+};
+var ADDITIVE_ARRAY_MAX_LENGTHS = {
+  "builder-code": { s: 10 }
+};
+
+// ../node_modules/@x402/core/dist/esm/chunk-BJTO5JO5.mjs
+var __require3 = /* @__PURE__ */ ((x) => typeof __require !== "undefined" ? __require : typeof Proxy !== "undefined" ? new Proxy(x, {
+  get: (a, b2) => (typeof __require !== "undefined" ? __require : a)[b2]
+}) : x)(function(x) {
+  if (typeof __require !== "undefined") return __require.apply(this, arguments);
+  throw Error('Dynamic require of "' + x + '" is not supported');
+});
+
+// ../node_modules/@x402/core/dist/esm/chunk-FV2JN4FK.mjs
+var RESERVED_PAYMENT_FLOW_EXTRA_KEYS = ["paymentFlow", "assetTransferMethod"];
+function isVacantStringField(value) {
+  return value.trim() === "";
+}
+function snapshotPaymentRequirementsList(requirements) {
+  return requirements.map((req) => ({
+    ...req,
+    extra: structuredClone(req.extra)
+  }));
+}
+function assertAcceptsAllowlistedAfterExtensionEnrich(baseline, current, extensionKey) {
+  if (baseline.length !== current.length) {
+    throw new Error(
+      `[x402] extension "${extensionKey}" violated accepts mutation policy: accepts length changed (${baseline.length} \u2192 ${current.length})`
+    );
+  }
+  for (let i = 0; i < baseline.length; i++) {
+    const b2 = baseline[i];
+    const c = current[i];
+    if (b2.scheme !== c.scheme || b2.network !== c.network) {
+      throw new Error(
+        `[x402] extension "${extensionKey}" violated accepts mutation policy: scheme/network are immutable (index ${i})`
+      );
+    }
+    if (b2.maxTimeoutSeconds !== c.maxTimeoutSeconds) {
+      throw new Error(
+        `[x402] extension "${extensionKey}" violated accepts mutation policy: maxTimeoutSeconds is immutable (index ${i})`
+      );
+    }
+    for (const field of ["payTo", "amount", "asset"]) {
+      const bv = b2[field];
+      const cv = c[field];
+      if (!isVacantStringField(bv) && cv !== bv) {
+        throw new Error(
+          `[x402] extension "${extensionKey}" violated accepts mutation policy: "${field}" may only be set when the resource left it vacant (""); non-vacant values are immutable (index ${i})`
+        );
+      }
+    }
+    for (const key of Object.keys(b2.extra)) {
+      if (!Object.prototype.hasOwnProperty.call(c.extra, key)) {
+        throw new Error(
+          `[x402] extension "${extensionKey}" violated accepts mutation policy: extra["${key}"] was removed (index ${i})`
+        );
+      }
+      if (!deepEqual(c.extra[key], b2.extra[key])) {
+        throw new Error(
+          `[x402] extension "${extensionKey}" violated accepts mutation policy: extra["${key}"] may not be changed (index ${i})`
+        );
+      }
+    }
+    for (const key of RESERVED_PAYMENT_FLOW_EXTRA_KEYS) {
+      const inBaseline = Object.prototype.hasOwnProperty.call(b2.extra, key);
+      const inCurrent = Object.prototype.hasOwnProperty.call(c.extra, key);
+      if (inBaseline !== inCurrent) {
+        throw new Error(
+          `[x402] extension "${extensionKey}" violated accepts mutation policy: extra["${key}"] is protocol-reserved and immutable during enrichment (index ${i})`
+        );
+      }
+    }
+  }
+}
+function assertAcceptsAdditiveExtraAfterSchemeEnrich(baseline, current, scheme, network) {
+  if (baseline.length !== current.length) {
+    throw new Error(
+      `[x402] scheme "${scheme}" violated accepts mutation policy: accepts length changed (${baseline.length} \u2192 ${current.length})`
+    );
+  }
+  for (let i = 0; i < baseline.length; i++) {
+    const b2 = baseline[i];
+    const c = current[i];
+    const isMatchingAccept = b2.scheme === scheme && b2.network === network;
+    if (b2.scheme !== c.scheme || b2.network !== c.network) {
+      throw new Error(
+        `[x402] scheme "${scheme}" violated accepts mutation policy: scheme/network are immutable (index ${i})`
+      );
+    }
+    if (b2.maxTimeoutSeconds !== c.maxTimeoutSeconds || b2.payTo !== c.payTo || b2.amount !== c.amount || b2.asset !== c.asset) {
+      throw new Error(
+        `[x402] scheme "${scheme}" violated accepts mutation policy: payment terms are immutable (index ${i})`
+      );
+    }
+    for (const key of Object.keys(b2.extra)) {
+      if (!Object.prototype.hasOwnProperty.call(c.extra, key)) {
+        throw new Error(
+          `[x402] scheme "${scheme}" violated accepts mutation policy: extra["${key}"] was removed (index ${i})`
+        );
+      }
+      if (!deepEqual(c.extra[key], b2.extra[key])) {
+        throw new Error(
+          `[x402] scheme "${scheme}" violated accepts mutation policy: extra["${key}"] may not be changed (index ${i})`
+        );
+      }
+    }
+    if (!isMatchingAccept && Object.keys(c.extra).length !== Object.keys(b2.extra).length) {
+      throw new Error(
+        `[x402] scheme "${scheme}" violated accepts mutation policy: only matching accepts may receive new extra fields (index ${i})`
+      );
+    }
+    for (const key of RESERVED_PAYMENT_FLOW_EXTRA_KEYS) {
+      const inBaseline = Object.prototype.hasOwnProperty.call(b2.extra, key);
+      const inCurrent = Object.prototype.hasOwnProperty.call(c.extra, key);
+      if (inBaseline !== inCurrent) {
+        throw new Error(
+          `[x402] scheme "${scheme}" violated accepts mutation policy: extra["${key}"] is protocol-reserved and immutable during enrichment (index ${i})`
+        );
+      }
+    }
+  }
+}
+function snapshotSettleResponseCore(result) {
+  return {
+    success: result.success,
+    transaction: result.transaction,
+    network: result.network,
+    amount: result.amount,
+    payer: result.payer,
+    errorReason: result.errorReason,
+    errorMessage: result.errorMessage
+  };
+}
+function assertSettleResponseCoreUnchanged(before, after, extensionKey) {
+  const keys = [
+    "success",
+    "transaction",
+    "network",
+    "amount",
+    "payer",
+    "errorReason",
+    "errorMessage"
+  ];
+  for (const k of keys) {
+    if (!deepEqual(after[k], before[k])) {
+      throw new Error(
+        `[x402] extension "${extensionKey}" violated settlement mutation policy: field "${String(k)}" is immutable after facilitator settle`
+      );
+    }
+  }
+}
+function assertAdditivePayloadEnrichment(payload, enrichment, callerLabel) {
+  for (const key of Object.keys(enrichment)) {
+    if (!Object.prototype.hasOwnProperty.call(payload, key)) continue;
+    throw new Error(
+      `[x402] ${callerLabel} violated settlement payload enrichment policy: "${key}" already exists on the client payload`
+    );
+  }
+}
+function isPlainRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function assertAdditiveSettlementExtra(extra, enrichment, callerLabel) {
+  assertAdditiveRecord(extra, enrichment, callerLabel, "extra");
+}
+function mergeAdditiveSettlementExtra(extra, enrichment) {
+  return mergeAdditiveRecord(extra, enrichment);
+}
+function assertAdditiveRecord(target, enrichment, callerLabel, path2) {
+  for (const [key, enrichmentValue] of Object.entries(enrichment)) {
+    const nextPath = `${path2}["${key}"]`;
+    if (!Object.prototype.hasOwnProperty.call(target, key)) continue;
+    const targetValue = target[key];
+    if (isPlainRecord(targetValue) && isPlainRecord(enrichmentValue)) {
+      assertAdditiveRecord(targetValue, enrichmentValue, callerLabel, nextPath);
+      continue;
+    }
+    throw new Error(
+      `[x402] ${callerLabel} violated settlement response enrichment policy: ${nextPath} already exists on the settlement result`
+    );
+  }
+}
+function mergeAdditiveRecord(target, enrichment) {
+  const merged = { ...target };
+  for (const [key, enrichmentValue] of Object.entries(enrichment)) {
+    const targetValue = merged[key];
+    if (isPlainRecord(targetValue) && isPlainRecord(enrichmentValue)) {
+      merged[key] = mergeAdditiveRecord(targetValue, enrichmentValue);
+      continue;
+    }
+    merged[key] = enrichmentValue;
+  }
+  return merged;
+}
+var SDK_DEFAULT_ASSET_TRANSFER_METHOD = "default";
+var PAYMENT_FLOWS = {
+  authorization: {
+    verifyBeforeHandler: true,
+    settleBeforeHandler: false,
+    settleAfterHandler: true
+  },
+  upfront: {
+    verifyBeforeHandler: false,
+    settleBeforeHandler: true,
+    settleAfterHandler: false
+  },
+  escrow: {
+    verifyBeforeHandler: false,
+    settleBeforeHandler: true,
+    settleAfterHandler: true
+  }
+};
+function resolvePaymentFlow(scheme, requirements) {
+  const atm = typeof requirements.extra?.assetTransferMethod === "string" ? requirements.extra.assetTransferMethod : scheme.defaultAssetTransferMethod;
+  const config3 = scheme.paymentFlows[atm];
+  if (!config3) {
+    throw new Error(
+      `[x402] Scheme "${scheme.scheme}" does not support assetTransferMethod "${atm}". Supported: ${Object.keys(scheme.paymentFlows).join(", ")}.`
+    );
+  }
+  if (!config3.supported.includes(config3.default)) {
+    throw new Error(
+      `[x402] Scheme "${scheme.scheme}" paymentFlows["${atm}"].default is not in supported.`
+    );
+  }
+  const requested = requirements.extra?.paymentFlow;
+  const flow = requested === void 0 || requested === null ? config3.default : requested;
+  if (!config3.supported.includes(flow)) {
+    throw new Error(
+      `[x402] Scheme "${scheme.scheme}" assetTransferMethod "${atm}" does not support paymentFlow "${String(requested)}". Supported: ${config3.supported.join(", ")} (default: ${config3.default}).`
+    );
+  }
+  return { assetTransferMethod: atm, paymentFlow: flow };
+}
+function applyPaymentFlowWireExtra(extra, resolved) {
+  const next = { ...extra };
+  if (resolved.assetTransferMethod === SDK_DEFAULT_ASSET_TRANSFER_METHOD || next.assetTransferMethod === SDK_DEFAULT_ASSET_TRANSFER_METHOD) {
+    delete next.assetTransferMethod;
+  }
+  if (resolved.paymentFlow !== "authorization") {
+    next.paymentFlow = resolved.paymentFlow;
+  }
+  return next;
+}
+function resolvePaymentFlowPhases(flow) {
+  const phases = PAYMENT_FLOWS[flow];
+  if (!phases) {
+    throw new Error(
+      `[x402] Unknown payment flow "${flow}". Expected one of: ${Object.keys(PAYMENT_FLOWS).join(", ")}.`
+    );
+  }
+  return phases;
+}
+function resolveFailurePathSettlement(cancelSettlement, beforeHandlerSettlement, paymentPayload) {
+  if (cancelSettlement) {
+    return cancelSettlement.success ? cancelSettlement : buildFailedCancelReceipt(cancelSettlement, beforeHandlerSettlement, paymentPayload);
+  }
+  if (beforeHandlerSettlement) {
+    return beforeHandlerSettlement.result;
+  }
+  return void 0;
+}
+function buildFailedCancelReceipt(cancelSettlement, beforeHandlerSettlement, paymentPayload) {
+  const payload = paymentPayload?.payload;
+  const channelId = payload?.channelId;
+  return {
+    success: false,
+    errorReason: cancelSettlement.errorReason,
+    errorMessage: cancelSettlement.errorMessage,
+    payer: cancelSettlement.payer,
+    transaction: "",
+    network: cancelSettlement.network,
+    extensions: cancelSettlement.extensions,
+    extra: {
+      ...cancelSettlement.extra,
+      ...beforeHandlerSettlement ? {
+        depositTransaction: beforeHandlerSettlement.result.transaction,
+        depositAmount: beforeHandlerSettlement.result.amount
+      } : {},
+      ...typeof channelId === "string" && channelId ? { channelId } : {}
+    }
+  };
+}
+var DEFAULT_FACILITATOR_URL2 = "https://x402.org/facilitator";
+var DEFAULT_TIMEOUT_MS = 9e4;
+var MAX_TIMEOUT_MS = 2147483647;
+var GET_SUPPORTED_RETRIES = 3;
+var GET_SUPPORTED_RETRY_DELAY_MS = 1e3;
+var MAX_RETRY_DELAY_MS = 3e4;
+function computeRetryDelay(retryAfter, attempt) {
+  let delay = null;
+  if (retryAfter !== null) {
+    const trimmedRetryAfter = retryAfter.trim();
+    if (/^\d+$/.test(trimmedRetryAfter)) {
+      delay = Number(trimmedRetryAfter) * 1e3;
+    } else {
+      const retryDate = Date.parse(retryAfter);
+      if (!isNaN(retryDate)) {
+        delay = retryDate - Date.now();
+      }
+    }
+  }
+  if (delay === null || delay <= 0) {
+    delay = GET_SUPPORTED_RETRY_DELAY_MS * Math.pow(2, attempt);
+  }
+  return Math.min(delay, MAX_RETRY_DELAY_MS);
+}
+var verifyResponseSchema = external_exports.object({
+  isValid: external_exports.boolean(),
+  invalidReason: external_exports.string().nullish().transform((v) => v ?? void 0),
+  invalidMessage: external_exports.string().nullish().transform((v) => v ?? void 0),
+  payer: external_exports.string().nullish().transform((v) => v ?? void 0),
+  extensions: external_exports.record(external_exports.string(), external_exports.unknown()).nullish().transform((v) => v ?? void 0),
+  extra: external_exports.record(external_exports.string(), external_exports.unknown()).nullish().transform((v) => v ?? void 0)
+});
+var settleResponseSchema = external_exports.object({
+  success: external_exports.boolean(),
+  errorReason: external_exports.string().nullish().transform((v) => v ?? void 0),
+  errorMessage: external_exports.string().nullish().transform((v) => v ?? void 0),
+  payer: external_exports.string().nullish().transform((v) => v ?? void 0),
+  transaction: external_exports.string(),
+  network: external_exports.custom((value) => typeof value === "string"),
+  amount: external_exports.string().nullish().transform((v) => v ?? void 0),
+  extensions: external_exports.record(external_exports.string(), external_exports.unknown()).nullish().transform((v) => v ?? void 0),
+  extra: external_exports.record(external_exports.string(), external_exports.unknown()).nullish().transform((v) => v ?? void 0)
+});
+var supportedKindSchema = external_exports.object({
+  x402Version: external_exports.number(),
+  scheme: external_exports.string(),
+  network: external_exports.custom(
+    (value) => typeof value === "string"
+  ),
+  extra: external_exports.record(external_exports.string(), external_exports.unknown()).nullish().transform((v) => v ?? void 0)
+});
+var supportedResponseSchema = external_exports.object({
+  kinds: external_exports.array(supportedKindSchema),
+  extensions: external_exports.array(external_exports.string()).default([]),
+  signers: external_exports.record(external_exports.string(), external_exports.array(external_exports.string())).default({})
+});
+function responseExcerpt(text, limit = 200) {
+  const compact = text.trim().replace(/\s+/g, " ");
+  if (!compact) {
+    return "<empty response>";
+  }
+  if (compact.length <= limit) {
+    return compact;
+  }
+  return `${compact.slice(0, limit - 3)}...`;
+}
+function isAbortOrTimeoutError(error) {
+  let current = error;
+  for (let depth = 0; depth < 10 && current !== null && typeof current === "object"; depth++) {
+    const name = current.name;
+    if (name === "TimeoutError" || name === "AbortError") {
+      return true;
+    }
+    current = current.cause;
+  }
+  return false;
+}
+var EXTENSION_RESPONSE_LOG_FIELD_ALLOWLIST = ["status", "rejectedReason", "reason", "code"];
+function extractExtensionResponsesHeader(response) {
+  const header = response.headers.get("EXTENSION-RESPONSES");
+  if (!header) return void 0;
+  try {
+    const decoded = JSON.parse(safeBase64Decode2(header));
+    if (!decoded || typeof decoded !== "object" || Array.isArray(decoded)) {
+      return void 0;
+    }
+    return decoded;
+  } catch {
+    return void 0;
+  }
+}
+function logExtensionResponsesHeader(response, decoded) {
+  const payload = decoded ?? extractExtensionResponsesHeader(response);
+  if (!payload) return;
+  try {
+    const sanitized = {};
+    for (const [extensionKey, value] of Object.entries(payload)) {
+      const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+      const filtered = {};
+      for (const key of EXTENSION_RESPONSE_LOG_FIELD_ALLOWLIST) {
+        if (source[key] !== void 0) {
+          filtered[key] = source[key];
+        }
+      }
+      sanitized[extensionKey] = filtered;
+    }
+    console.log(`[x402] extension responses: ${JSON.stringify(sanitized)}`);
+  } catch {
+  }
+}
+function attachExtensionResponsesFromHeader(result, response) {
+  const headerExtensions = extractExtensionResponsesHeader(response);
+  logExtensionResponsesHeader(response, headerExtensions);
+  if (headerExtensions) {
+    result.extensionResponses = headerExtensions;
+  }
+  return result;
+}
+async function parseSuccessResponse(response, schema, operation) {
+  const text = await response.text();
+  let data4;
+  try {
+    data4 = JSON.parse(text);
+  } catch {
+    throw new FacilitatorResponseError(
+      `Facilitator ${operation} returned invalid JSON: ${responseExcerpt(text)}`
+    );
+  }
+  const parsed = schema.safeParse(data4);
+  if (!parsed.success) {
+    throw new FacilitatorResponseError(
+      `Facilitator ${operation} returned invalid data: ${responseExcerpt(text)}`
+    );
+  }
+  return parsed.data;
+}
+var HTTPFacilitatorClient = class {
+  /**
+   * Creates a new HTTPFacilitatorClient instance.
+   *
+   * @param config - Configuration options for the facilitator client
+   */
+  constructor(config3) {
+    this.url = (config3?.url || DEFAULT_FACILITATOR_URL2).replace(/\/+$/, "");
+    const timeoutMs = config3?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > MAX_TIMEOUT_MS) {
+      throw new RangeError(
+        `timeoutMs must be a positive integer number of milliseconds no greater than ${MAX_TIMEOUT_MS}, got ${timeoutMs}`
+      );
+    }
+    this.timeoutMs = timeoutMs;
+    this._createAuthHeaders = config3?.createAuthHeaders;
+  }
+  /**
+   * Verify a payment with the facilitator
+   *
+   * @param paymentPayload - The payment to verify
+   * @param paymentRequirements - The requirements to verify against
+   * @returns Verification response
+   */
+  async verify(paymentPayload, paymentRequirements) {
+    let headers = {
+      "Content-Type": "application/json"
+    };
+    if (this._createAuthHeaders) {
+      const authHeaders = await this.createAuthHeaders("verify");
+      headers = { ...headers, ...authHeaders.headers };
+    }
+    return this.withRequestTimeout("verify", async (signal) => {
+      const response = await fetch(`${this.url}/verify`, {
+        method: "POST",
+        headers,
+        redirect: "follow",
+        body: JSON.stringify({
+          x402Version: paymentPayload.x402Version,
+          paymentPayload: this.toJsonSafe(paymentPayload),
+          paymentRequirements: this.toJsonSafe(paymentRequirements)
+        }),
+        signal
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        let data4;
+        try {
+          data4 = JSON.parse(text);
+        } catch {
+          throw new Error(
+            `Facilitator verify failed (${response.status}): ${responseExcerpt(text)}`
+          );
+        }
+        if (typeof data4 === "object" && data4 !== null && "isValid" in data4) {
+          throw new VerifyError(response.status, data4);
+        }
+        throw new Error(
+          `Facilitator verify failed (${response.status}): ${responseExcerpt(JSON.stringify(data4))}`
+        );
+      }
+      const verifyResult = await parseSuccessResponse(response, verifyResponseSchema, "verify");
+      return attachExtensionResponsesFromHeader(verifyResult, response);
+    });
+  }
+  /**
+   * Settle a payment with the facilitator
+   *
+   * @param paymentPayload - The payment to settle
+   * @param paymentRequirements - The requirements for settlement
+   * @returns Settlement response
+   */
+  async settle(paymentPayload, paymentRequirements) {
+    let headers = {
+      "Content-Type": "application/json"
+    };
+    if (this._createAuthHeaders) {
+      const authHeaders = await this.createAuthHeaders("settle");
+      headers = { ...headers, ...authHeaders.headers };
+    }
+    return this.withRequestTimeout("settle", async (signal) => {
+      const response = await fetch(`${this.url}/settle`, {
+        method: "POST",
+        headers,
+        redirect: "follow",
+        body: JSON.stringify({
+          x402Version: paymentPayload.x402Version,
+          paymentPayload: this.toJsonSafe(paymentPayload),
+          paymentRequirements: this.toJsonSafe(paymentRequirements)
+        }),
+        signal
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        let data4;
+        try {
+          data4 = JSON.parse(text);
+        } catch {
+          throw new Error(
+            `Facilitator settle failed (${response.status}): ${responseExcerpt(text)}`
+          );
+        }
+        if (typeof data4 === "object" && data4 !== null && "success" in data4) {
+          throw new SettleError(response.status, data4);
+        }
+        throw new Error(
+          `Facilitator settle failed (${response.status}): ${responseExcerpt(JSON.stringify(data4))}`
+        );
+      }
+      const settleResult = await parseSuccessResponse(response, settleResponseSchema, "settle");
+      return attachExtensionResponsesFromHeader(settleResult, response);
+    });
+  }
+  /**
+   * Get supported payment kinds and extensions from the facilitator.
+   * Retries with exponential backoff on 429 rate limit errors.
+   *
+   * @returns Supported payment kinds and extensions
+   */
+  async getSupported() {
+    let headers = {
+      "Content-Type": "application/json"
+    };
+    if (this._createAuthHeaders) {
+      const authHeaders = await this.createAuthHeaders("supported");
+      headers = { ...headers, ...authHeaders.headers };
+    }
+    let lastError = null;
+    for (let attempt = 0; attempt < GET_SUPPORTED_RETRIES; attempt++) {
+      const outcome = await this.withRequestTimeout("supported", async (signal) => {
+        const response = await fetch(`${this.url}/supported`, {
+          method: "GET",
+          headers,
+          redirect: "follow",
+          signal
+        });
+        if (response.ok) {
+          return {
+            kind: "success",
+            value: await parseSuccessResponse(response, supportedResponseSchema, "supported")
+          };
+        }
+        const errorText = await response.text().catch((cause) => {
+          if (isAbortOrTimeoutError(cause)) {
+            throw cause;
+          }
+          return response.statusText;
+        });
+        return {
+          kind: "http-error",
+          status: response.status,
+          retryAfter: response.headers.get("Retry-After"),
+          error: new Error(
+            `Facilitator getSupported failed (${response.status}): ${responseExcerpt(errorText)}`
+          )
+        };
+      });
+      if (outcome.kind === "success") {
+        return outcome.value;
+      }
+      lastError = outcome.error;
+      if (outcome.status === 429 && attempt < GET_SUPPORTED_RETRIES - 1) {
+        const delay = computeRetryDelay(outcome.retryAfter, attempt);
+        await new Promise((resolve2) => setTimeout(resolve2, delay));
+        continue;
+      }
+      throw lastError;
+    }
+    throw lastError ?? new Error("Facilitator getSupported failed after retries");
+  }
+  /**
+   * Creates authentication headers for a specific path.
+   *
+   * @param path - The path to create authentication headers for (e.g., "verify", "settle", "supported")
+   * @returns An object containing the authentication headers for the specified path
+   */
+  async createAuthHeaders(path2) {
+    if (!this._createAuthHeaders) {
+      return { headers: {} };
+    }
+    const authHeaders = await this._createAuthHeaders();
+    const isHeaderObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+    const hasPathKey = ["verify", "settle", "supported", "bazaar"].some(
+      (key) => isHeaderObject(authHeaders[key])
+    );
+    const looksFlat = !hasPathKey && Object.values(authHeaders).some((value) => !isHeaderObject(value));
+    if (looksFlat) {
+      throw new Error(
+        'createAuthHeaders must return an object keyed by facilitator path, e.g. { verify: { Authorization: "..." }, settle: { ... }, supported: { ... } }, but received a flat headers object. See https://github.com/x402-foundation/x402/issues/2762'
+      );
+    }
+    const headersForPath = authHeaders[path2];
+    return {
+      headers: isHeaderObject(headersForPath) ? headersForPath : {}
+    };
+  }
+  /**
+   * Runs a single facilitator HTTP attempt under this client's request deadline.
+   * The provided signal must be passed to `fetch` so the deadline also covers
+   * response-body consumption.
+   *
+   * @param operation - The facilitator operation name ("verify", "settle", "supported")
+   * @param run - The attempt to execute with the deadline's AbortSignal
+   * @returns The attempt's result
+   * @throws FacilitatorTimeoutError when the deadline elapses before completion
+   */
+  async withRequestTimeout(operation, run) {
+    const signal = AbortSignal.timeout(this.timeoutMs);
+    try {
+      return await run(signal);
+    } catch (error) {
+      if (signal.aborted && isAbortOrTimeoutError(error)) {
+        throw new FacilitatorTimeoutError(operation, this.timeoutMs);
+      }
+      throw error;
+    }
+  }
+  /**
+   * Helper to convert objects to JSON-safe format.
+   * Handles BigInt and other non-JSON types.
+   *
+   * @param obj - The object to convert
+   * @returns The JSON-safe representation of the object
+   */
+  toJsonSafe(obj) {
+    return JSON.parse(
+      JSON.stringify(obj, (_, value) => typeof value === "bigint" ? value.toString() : value)
+    );
+  }
+};
+var SETTLEMENT_PENDING_REASON = "settlement_pending";
+function resolveSettlementOverrideAmount(rawAmount, requirements, decimals) {
+  const percentMatch = rawAmount.match(/^(\d+(?:\.\d{0,2})?)%$/);
+  if (percentMatch) {
+    const [intPart, decPart = ""] = percentMatch[1].split(".");
+    const scaledPercent = BigInt(intPart) * 100n + BigInt(decPart.padEnd(2, "0").slice(0, 2));
+    const base2 = BigInt(requirements.amount);
+    return (base2 * scaledPercent / 10000n).toString();
+  }
+  const dollarMatch = rawAmount.match(/^\$(\d+(?:\.\d+)?)$/);
+  if (dollarMatch) {
+    if (decimals === void 0) {
+      throw new Error(
+        `Cannot convert dollar settlement override "${rawAmount}" to atomic units: asset decimals are unknown. Pass an atomic amount or register the asset.`
+      );
+    }
+    return convertToTokenAmount(dollarMatch[1], decimals);
+  }
+  return rawAmount;
+}
+var x402ResourceServer = class {
+  /**
+   * Creates a new x402ResourceServer instance.
+   *
+   * @param facilitatorClients - Optional facilitator client(s) for payment processing
+   */
+  constructor(facilitatorClients) {
+    this.registeredServerSchemes = /* @__PURE__ */ new Map();
+    this.schemeHookAdapters = /* @__PURE__ */ new Map();
+    this.supportedResponsesMap = /* @__PURE__ */ new Map();
+    this.facilitatorClientsMap = /* @__PURE__ */ new Map();
+    this.registeredExtensions = /* @__PURE__ */ new Map();
+    this.extensionHookAdapters = /* @__PURE__ */ new Map();
+    this.beforeVerifyHooks = [];
+    this.afterVerifyHooks = [];
+    this.onVerifyFailureHooks = [];
+    this.beforeSettleHooks = [];
+    this.afterSettleHooks = [];
+    this.onSettleFailureHooks = [];
+    this.onVerifiedPaymentCanceledHooks = [];
+    if (!facilitatorClients) {
+      this.facilitatorClients = [new HTTPFacilitatorClient()];
+    } else if (Array.isArray(facilitatorClients)) {
+      this.facilitatorClients = facilitatorClients.length > 0 ? facilitatorClients : [new HTTPFacilitatorClient()];
+    } else {
+      this.facilitatorClients = [facilitatorClients];
+    }
+  }
+  /**
+   * Register a scheme/network server implementation.
+   *
+   * @param network - The network identifier
+   * @param server - The scheme/network server implementation
+   * @returns The x402ResourceServer instance for chaining
+   */
+  register(network, server) {
+    if (!this.registeredServerSchemes.has(network)) {
+      this.registeredServerSchemes.set(network, /* @__PURE__ */ new Map());
+    }
+    const serverByScheme = this.registeredServerSchemes.get(network);
+    serverByScheme.set(server.scheme, server);
+    if (!this.schemeHookAdapters.has(network)) {
+      this.schemeHookAdapters.set(network, /* @__PURE__ */ new Map());
+    }
+    const hooksByScheme = this.schemeHookAdapters.get(network);
+    const hooks = server.schemeHooks;
+    if (!hooks) {
+      hooksByScheme.delete(server.scheme);
+      return this;
+    }
+    const handles = {};
+    if (hooks.onBeforeVerify) handles.beforeVerify = hooks.onBeforeVerify;
+    if (hooks.onAfterVerify) handles.afterVerify = hooks.onAfterVerify;
+    if (hooks.onVerifyFailure) handles.onVerifyFailure = hooks.onVerifyFailure;
+    if (hooks.onBeforeSettle) handles.beforeSettle = hooks.onBeforeSettle;
+    if (hooks.onAfterSettle) handles.afterSettle = hooks.onAfterSettle;
+    if (hooks.onSettleFailure) handles.onSettleFailure = hooks.onSettleFailure;
+    if (hooks.onVerifiedPaymentCanceled) {
+      handles.onVerifiedPaymentCanceled = hooks.onVerifiedPaymentCanceled;
+    }
+    if (Object.keys(handles).length > 0) {
+      hooksByScheme.set(server.scheme, handles);
+    } else {
+      hooksByScheme.delete(server.scheme);
+    }
+    return this;
+  }
+  /**
+   * Check if a scheme is registered for a given network.
+   *
+   * @param network - The network identifier
+   * @param scheme - The payment scheme name
+   * @returns True if the scheme is registered for the network, false otherwise
+   */
+  hasRegisteredScheme(network, scheme) {
+    return !!findByNetworkAndScheme(this.registeredServerSchemes, scheme, network);
+  }
+  /**
+   * Get the registered scheme implementation for a network and scheme name.
+   *
+   * @param network - The network identifier
+   * @param scheme - The payment scheme name
+   * @returns The registered scheme, or undefined if none is registered
+   */
+  getRegisteredScheme(network, scheme) {
+    return findByNetworkAndScheme(this.registeredServerSchemes, scheme, network);
+  }
+  /**
+   * Returns the decimal precision for display of the asset in the given payment
+   * requirements. Looks up the registered scheme and delegates to getAssetDecimals
+   * when available. Falls back to 6 for display-only callers. Settlement `$…`
+   * overrides must not use this fallback — they throw when decimals are unknown.
+   *
+   * @param requirements - The payment requirements containing scheme, network, and asset
+   * @returns The number of decimal places for the asset
+   */
+  getAssetDecimalsForRequirements(requirements) {
+    const scheme = findByNetworkAndScheme(
+      this.registeredServerSchemes,
+      requirements.scheme,
+      requirements.network
+    );
+    return scheme?.getAssetDecimals?.(requirements.asset ?? "", requirements.network) ?? 6;
+  }
+  /**
+   * Registers a resource server extension (enrichment and optional verify/settle hooks).
+   * Re-registering the same key overwrites; omitting `hooks` removes adapter handles for that key.
+   *
+   * @param extension - Extension definition including `key` and optional `hooks`
+   * @returns This server instance for chaining
+   */
+  registerExtension(extension2) {
+    this.registeredExtensions.set(extension2.key, extension2);
+    const extensionKey = extension2.key;
+    const extensionHooks = extension2.hooks;
+    if (!extensionHooks) {
+      this.extensionHookAdapters.delete(extensionKey);
+      return this;
+    }
+    const handles = {};
+    const bindExtensionHookAdapter = (extensionHookKey, adapterPhase) => {
+      const impl = extensionHooks[extensionHookKey];
+      if (!impl) return;
+      handles[adapterPhase] = (async (ctx) => {
+        if (ctx.declaredExtensions[extensionKey] === void 0) return;
+        return impl(
+          ctx.declaredExtensions[extensionKey],
+          ctx
+        );
+      });
+    };
+    bindExtensionHookAdapter("onBeforeVerify", "beforeVerify");
+    bindExtensionHookAdapter("onAfterVerify", "afterVerify");
+    bindExtensionHookAdapter("onVerifyFailure", "onVerifyFailure");
+    bindExtensionHookAdapter("onBeforeSettle", "beforeSettle");
+    bindExtensionHookAdapter("onAfterSettle", "afterSettle");
+    bindExtensionHookAdapter("onSettleFailure", "onSettleFailure");
+    bindExtensionHookAdapter("onVerifiedPaymentCanceled", "onVerifiedPaymentCanceled");
+    if (Object.keys(handles).length > 0) {
+      this.extensionHookAdapters.set(extensionKey, handles);
+    } else {
+      this.extensionHookAdapters.delete(extensionKey);
+    }
+    return this;
+  }
+  /**
+   * Check if an extension is registered.
+   *
+   * @param key - The extension key
+   * @returns True if the extension is registered
+   */
+  hasExtension(key) {
+    return this.registeredExtensions.has(key);
+  }
+  /**
+   * Get all registered extensions.
+   *
+   * @returns Array of registered extensions
+   */
+  getExtensions() {
+    return Array.from(this.registeredExtensions.values());
+  }
+  /**
+   * Enriches declared extensions using registered extension hooks.
+   *
+   * @param declaredExtensions - Extensions declared on the route
+   * @param transportContext - Transport-specific context (HTTP, A2A, MCP, etc.)
+   * @returns Enriched extensions map
+   */
+  enrichExtensions(declaredExtensions, transportContext) {
+    const enriched = {};
+    for (const [key, declaration] of Object.entries(declaredExtensions)) {
+      const extension2 = this.registeredExtensions.get(key);
+      if (extension2?.enrichDeclaration) {
+        try {
+          enriched[key] = extension2.enrichDeclaration(declaration, transportContext);
+        } catch (error) {
+          this.warnExtensionHookFailure(key, "enrichDeclaration", error);
+          enriched[key] = declaration;
+        }
+      } else {
+        enriched[key] = declaration;
+      }
+    }
+    return enriched;
+  }
+  /**
+   * Register a hook to execute before payment verification.
+   * Can abort verification by returning { abort: true, reason: string }
+   *
+   * @param hook - The hook function to register
+   * @returns The x402ResourceServer instance for chaining
+   */
+  onBeforeVerify(hook) {
+    this.beforeVerifyHooks.push(hook);
+    return this;
+  }
+  /**
+   * Register a hook to execute after successful payment verification.
+   *
+   * @param hook - The hook function to register
+   * @returns The x402ResourceServer instance for chaining
+   */
+  onAfterVerify(hook) {
+    this.afterVerifyHooks.push(hook);
+    return this;
+  }
+  /**
+   * Register a hook to execute when payment verification fails.
+   * Can recover from failure by returning { recovered: true, result: VerifyResponse }
+   *
+   * @param hook - The hook function to register
+   * @returns The x402ResourceServer instance for chaining
+   */
+  onVerifyFailure(hook) {
+    this.onVerifyFailureHooks.push(hook);
+    return this;
+  }
+  /**
+   * Register a hook to execute before payment settlement.
+   * Can abort settlement by returning { abort: true, reason: string }
+   *
+   * @param hook - The hook function to register
+   * @returns The x402ResourceServer instance for chaining
+   */
+  onBeforeSettle(hook) {
+    this.beforeSettleHooks.push(hook);
+    return this;
+  }
+  /**
+   * Register a hook to execute after successful payment settlement.
+   *
+   * @param hook - The hook function to register
+   * @returns The x402ResourceServer instance for chaining
+   */
+  onAfterSettle(hook) {
+    this.afterSettleHooks.push(hook);
+    return this;
+  }
+  /**
+   * Register a hook to execute when payment settlement fails.
+   * Can recover from failure by returning { recovered: true, result: SettleResponse }
+   *
+   * @param hook - The hook function to register
+   * @returns The x402ResourceServer instance for chaining
+   */
+  onSettleFailure(hook) {
+    this.onSettleFailureHooks.push(hook);
+    return this;
+  }
+  /**
+   * Register a hook to execute when verified payment work is canceled before settlement.
+   *
+   * @param hook - The hook function to register
+   * @returns The x402ResourceServer instance for chaining
+   */
+  onVerifiedPaymentCanceled(hook) {
+    this.onVerifiedPaymentCanceledHooks.push(hook);
+    return this;
+  }
+  /**
+   * Initialize by fetching supported kinds from all facilitators
+   * Creates mappings for supported responses and facilitator clients
+   * Earlier facilitators in the array get precedence
+   */
+  async initialize() {
+    this.supportedResponsesMap.clear();
+    this.facilitatorClientsMap.clear();
+    let lastError;
+    for (const facilitatorClient of this.facilitatorClients) {
+      try {
+        const supported = await facilitatorClient.getSupported();
+        for (const kind of supported.kinds) {
+          const x402Version2 = kind.x402Version;
+          if (!this.supportedResponsesMap.has(x402Version2)) {
+            this.supportedResponsesMap.set(x402Version2, /* @__PURE__ */ new Map());
+          }
+          const responseVersionMap = this.supportedResponsesMap.get(x402Version2);
+          if (!this.facilitatorClientsMap.has(x402Version2)) {
+            this.facilitatorClientsMap.set(x402Version2, /* @__PURE__ */ new Map());
+          }
+          const clientVersionMap = this.facilitatorClientsMap.get(x402Version2);
+          if (!responseVersionMap.has(kind.network)) {
+            responseVersionMap.set(kind.network, /* @__PURE__ */ new Map());
+          }
+          const responseNetworkMap = responseVersionMap.get(kind.network);
+          if (!clientVersionMap.has(kind.network)) {
+            clientVersionMap.set(kind.network, /* @__PURE__ */ new Map());
+          }
+          const clientNetworkMap = clientVersionMap.get(kind.network);
+          if (!responseNetworkMap.has(kind.scheme)) {
+            responseNetworkMap.set(kind.scheme, supported);
+            clientNetworkMap.set(kind.scheme, facilitatorClient);
+          }
+        }
+      } catch (error) {
+        lastError = error;
+        console.warn(`Failed to fetch supported kinds from facilitator: ${error}`);
+      }
+    }
+    if (this.supportedResponsesMap.size === 0) {
+      throw lastError ? new Error(
+        "Failed to initialize: no supported payment kinds loaded from any facilitator.",
+        {
+          cause: lastError
+        }
+      ) : new Error(
+        "Failed to initialize: no supported payment kinds loaded from any facilitator."
+      );
+    }
+    this.validateFacilitatorCapabilities();
+  }
+  /**
+   * Get supported kind for a specific version, network, and scheme
+   *
+   * @param x402Version - The x402 version
+   * @param network - The network identifier
+   * @param scheme - The payment scheme
+   * @returns The supported kind or undefined if not found
+   */
+  getSupportedKind(x402Version2, network, scheme) {
+    const versionMap = this.supportedResponsesMap.get(x402Version2);
+    if (!versionMap) return void 0;
+    const supportedResponse = findByNetworkAndScheme(versionMap, scheme, network);
+    if (!supportedResponse) return void 0;
+    return supportedResponse.kinds.find(
+      (kind) => kind.x402Version === x402Version2 && kind.network === network && kind.scheme === scheme
+    );
+  }
+  /**
+   * Get facilitator extensions for a specific version, network, and scheme
+   *
+   * @param x402Version - The x402 version
+   * @param network - The network identifier
+   * @param scheme - The payment scheme
+   * @returns The facilitator extensions or empty array if not found
+   */
+  getFacilitatorExtensions(x402Version2, network, scheme) {
+    const versionMap = this.supportedResponsesMap.get(x402Version2);
+    if (!versionMap) return [];
+    const supportedResponse = findByNetworkAndScheme(versionMap, scheme, network);
+    return supportedResponse?.extensions || [];
+  }
+  /**
+   * Build payment requirements for a protected resource
+   *
+   * @param resourceConfig - Configuration for the protected resource
+   * @returns Array of payment requirements
+   */
+  async buildPaymentRequirements(resourceConfig) {
+    const requirements = [];
+    const scheme = resourceConfig.scheme;
+    const SchemeNetworkServer = findByNetworkAndScheme(
+      this.registeredServerSchemes,
+      scheme,
+      resourceConfig.network
+    );
+    if (!SchemeNetworkServer) {
+      throw new Error(
+        `No server implementation registered for ${scheme} on ${resourceConfig.network}. Make sure to call register() with a scheme server for this network.`
+      );
+    }
+    const supportedKind = this.getSupportedKind(
+      x402Version,
+      resourceConfig.network,
+      SchemeNetworkServer.scheme
+    );
+    if (!supportedKind) {
+      throw new Error(
+        `Facilitator does not support ${SchemeNetworkServer.scheme} on ${resourceConfig.network}. Make sure to call initialize() to fetch supported kinds from facilitators.`
+      );
+    }
+    const facilitatorExtensions = this.getFacilitatorExtensions(
+      x402Version,
+      resourceConfig.network,
+      SchemeNetworkServer.scheme
+    );
+    const parsedPrice = await SchemeNetworkServer.parsePrice(
+      resourceConfig.price,
+      resourceConfig.network
+    );
+    const baseRequirements = {
+      scheme: SchemeNetworkServer.scheme,
+      network: resourceConfig.network,
+      amount: parsedPrice.amount,
+      asset: parsedPrice.asset,
+      payTo: resourceConfig.payTo,
+      maxTimeoutSeconds: resourceConfig.maxTimeoutSeconds || 300,
+      // Default 5 minutes
+      extra: {
+        ...parsedPrice.extra,
+        ...resourceConfig.extra
+        // Merge user-provided extra
+      }
+    };
+    const requirement = await SchemeNetworkServer.enhancePaymentRequirements(
+      baseRequirements,
+      supportedKind,
+      facilitatorExtensions
+    );
+    const resolved = resolvePaymentFlow(SchemeNetworkServer, requirement);
+    requirement.extra = applyPaymentFlowWireExtra(requirement.extra ?? {}, resolved);
+    requirements.push(requirement);
+    return requirements;
+  }
+  /**
+   * Build payment requirements from multiple payment options
+   * This method handles resolving dynamic payTo/price functions and builds requirements for each option
+   *
+   * @param paymentOptions - Array of payment options to convert
+   * @param context - HTTP request context for resolving dynamic functions
+   * @returns Array of payment requirements (one per option)
+   */
+  async buildPaymentRequirementsFromOptions(paymentOptions, context) {
+    const allRequirements = [];
+    for (const option of paymentOptions) {
+      const resolvedPayTo = typeof option.payTo === "function" ? await option.payTo(context) : option.payTo;
+      const resolvedPrice = typeof option.price === "function" ? await option.price(context) : option.price;
+      const resourceConfig = {
+        scheme: option.scheme,
+        payTo: resolvedPayTo,
+        price: resolvedPrice,
+        network: option.network,
+        maxTimeoutSeconds: option.maxTimeoutSeconds,
+        extra: option.extra
+      };
+      const requirements = await this.buildPaymentRequirements(resourceConfig);
+      allRequirements.push(...requirements);
+    }
+    return allRequirements;
+  }
+  /**
+   * Create a payment required response
+   *
+   * @param requirements - Payment requirements
+   * @param resourceInfo - Resource information
+   * @param error - Error message
+   * @param extensions - Optional declared extensions (for per-key enrichment)
+   * @param transportContext - Optional transport-specific context (e.g., HTTP request, MCP tool context)
+   * @param paymentPayload - Optional failed payment payload for response-time scheme enrichment
+   * @returns Payment required response object
+   */
+  async createPaymentRequiredResponse(requirements, resourceInfo, error, extensions, transportContext, paymentPayload) {
+    const acceptsClone = requirements.map((req) => ({
+      ...req,
+      extra: structuredClone(req.extra)
+    }));
+    let workingAccepts = acceptsClone;
+    let baselineAccepts = snapshotPaymentRequirementsList(workingAccepts);
+    let response = {
+      x402Version: 2,
+      error,
+      resource: resourceInfo,
+      accepts: workingAccepts
+    };
+    if (extensions && Object.keys(extensions).length > 0) {
+      response.extensions = extensions;
+    }
+    for (let i = 0; i < workingAccepts.length; i++) {
+      const accept = workingAccepts[i];
+      const scheme = findByNetworkAndScheme(
+        this.registeredServerSchemes,
+        accept.scheme,
+        accept.network
+      );
+      if (!scheme?.enrichPaymentRequiredResponse) {
+        continue;
+      }
+      const context = {
+        requirements: workingAccepts,
+        paymentPayload,
+        resourceInfo,
+        error,
+        paymentRequiredResponse: response,
+        transportContext
+      };
+      const enrichedAccepts = await scheme.enrichPaymentRequiredResponse(context);
+      if (enrichedAccepts !== void 0) {
+        workingAccepts = enrichedAccepts;
+        response.accepts = workingAccepts;
+      }
+      assertAcceptsAdditiveExtraAfterSchemeEnrich(
+        baselineAccepts,
+        response.accepts,
+        accept.scheme,
+        accept.network
+      );
+      baselineAccepts = snapshotPaymentRequirementsList(response.accepts);
+    }
+    if (extensions) {
+      for (const [key, declaration] of Object.entries(extensions)) {
+        const extension2 = this.registeredExtensions.get(key);
+        if (extension2?.enrichPaymentRequiredResponse) {
+          try {
+            const context = {
+              requirements: workingAccepts,
+              resourceInfo,
+              error,
+              paymentRequiredResponse: response,
+              transportContext
+            };
+            const extensionData = await extension2.enrichPaymentRequiredResponse(
+              declaration,
+              context
+            );
+            if (extensionData !== void 0) {
+              if (!response.extensions) {
+                response.extensions = {};
+              }
+              response.extensions[key] = extensionData;
+            }
+          } catch (error2) {
+            this.warnExtensionHookFailure(key, "enrichPaymentRequiredResponse", error2);
+          }
+          assertAcceptsAllowlistedAfterExtensionEnrich(baselineAccepts, workingAccepts, key);
+          baselineAccepts = snapshotPaymentRequirementsList(workingAccepts);
+        }
+      }
+    }
+    return response;
+  }
+  /**
+   * Verifies a payment against requirements, running manual and in-use extension hooks.
+   *
+   * Resource-server `beforeVerify` hooks always run. Facilitator `/verify` runs only when
+   * the scheme's payment flow has `verifyBeforeHandler` (the `authorization` flow). For
+   * `upfront` / `escrow`, payment validity is established by settle; `afterVerify` /
+   * `onVerifyFailure` still run when a `VerifyResponse` exists (facilitator result or a
+   * beforeVerify skip).
+   *
+   * @param paymentPayload - Signed payment payload from the client
+   * @param requirements - Requirements matched to the payload
+   * @param declaredExtensions - Optional per-extension declarations for the request
+   * @param transportContext - Optional transport-specific context (e.g. HTTP, MCP)
+   * @returns Facilitator verify outcome (optionally carrying a `skipHandler` directive),
+   *   or abort/recovery as driven by hooks
+   */
+  async verifyPayment(paymentPayload, requirements, declaredExtensions, transportContext) {
+    const resolvedDeclaredExtensions = declaredExtensions ?? {};
+    const extensionKeysInUse = Object.keys(resolvedDeclaredExtensions);
+    const matchedScheme = {
+      network: requirements.network,
+      scheme: requirements.scheme
+    };
+    const context = {
+      paymentPayload,
+      requirements,
+      declaredExtensions: resolvedDeclaredExtensions,
+      transportContext
+    };
+    for (const { label, hook } of this.getLabeledHooks(
+      "beforeVerify",
+      extensionKeysInUse,
+      matchedScheme
+    )) {
+      try {
+        const result = await hook(context);
+        if (result && "abort" in result && result.abort) {
+          return {
+            isValid: false,
+            invalidReason: result.reason,
+            invalidMessage: result.message
+          };
+        }
+        if (result && "skip" in result && result.skip) {
+          return this.runAfterVerifyHooks(
+            result.result,
+            context,
+            extensionKeysInUse,
+            matchedScheme
+          );
+        }
+      } catch (error) {
+        this.warnResourceServerHookFailure("beforeVerify", label, error);
+      }
+    }
+    const { verifyBeforeHandler } = resolvePaymentFlowPhases(
+      this.getPaymentFlow(paymentPayload, requirements)
+    );
+    if (!verifyBeforeHandler) {
+      return { isValid: true };
+    }
+    try {
+      const facilitatorClient = this.getFacilitatorClient(
+        paymentPayload.x402Version,
+        requirements.network,
+        requirements.scheme
+      );
+      let verifyResult;
+      if (!facilitatorClient) {
+        let lastError;
+        for (const client of this.facilitatorClients) {
+          try {
+            verifyResult = await client.verify(paymentPayload, requirements);
+            break;
+          } catch (error) {
+            lastError = error;
+          }
+        }
+        if (!verifyResult) {
+          throw lastError || new Error(
+            `No facilitator supports ${requirements.scheme} on ${requirements.network} for v${paymentPayload.x402Version}`
+          );
+        }
+      } else {
+        verifyResult = await facilitatorClient.verify(paymentPayload, requirements);
+      }
+      return this.runAfterVerifyHooks(verifyResult, context, extensionKeysInUse, matchedScheme);
+    } catch (error) {
+      const failureContext = {
+        ...context,
+        error
+      };
+      for (const { label, hook } of this.getLabeledHooks(
+        "onVerifyFailure",
+        extensionKeysInUse,
+        matchedScheme
+      )) {
+        try {
+          const result = await hook(failureContext);
+          if (result && "recovered" in result && result.recovered) {
+            return this.runAfterVerifyHooks(
+              result.result,
+              context,
+              extensionKeysInUse,
+              matchedScheme
+            );
+          }
+        } catch (error2) {
+          this.warnResourceServerHookFailure("onVerifyFailure", label, error2);
+        }
+      }
+      throw error;
+    }
+  }
+  /**
+   * Resolve the payment flow name for a payload/requirements pair from the
+   * scheme's ATM-keyed {@link SchemeNetworkServer.paymentFlows} table.
+   *
+   * @param _payload - Client payment payload (unused; flow is requirements-driven)
+   * @param requirements - Matched payment requirements
+   * @returns Resolved payment flow name
+   */
+  getPaymentFlow(_payload, requirements) {
+    const scheme = findByNetworkAndScheme(
+      this.registeredServerSchemes,
+      requirements.scheme,
+      requirements.network
+    );
+    if (!scheme) {
+      throw new Error(
+        `[x402] No server implementation registered for scheme: ${requirements.scheme}, network: ${requirements.network}`
+      );
+    }
+    return resolvePaymentFlow(scheme, requirements).paymentFlow;
+  }
+  /**
+   * Create a failure-path cancel hook for a payment that passed pre-handler gates.
+   *
+   * @param paymentPayload - Signed payment payload from the client
+   * @param requirements - Requirements matched to the payload
+   * @param declaredExtensions - Optional per-extension declarations for the request
+   * @param transportContext - Optional transport-specific context
+   * @param settledPhases - Settle phases already completed before the handler (for settleOnCancel)
+   * @returns Dispatcher with cancel only
+   */
+  createPaymentCancellationDispatcher(paymentPayload, requirements, declaredExtensions, transportContext, settledPhases = []) {
+    const resolvedDeclaredExtensions = declaredExtensions ?? {};
+    const resolvedSettledPhases = settledPhases;
+    let cancelPromise;
+    return {
+      cancel: (options) => {
+        if (!cancelPromise) {
+          cancelPromise = this.dispatchVerifiedPaymentCanceled(
+            paymentPayload,
+            requirements,
+            resolvedDeclaredExtensions,
+            options,
+            transportContext,
+            resolvedSettledPhases
+          );
+        }
+        return cancelPromise;
+      }
+    };
+  }
+  /**
+   * Settle a verified payment
+   *
+   * @param paymentPayload - The payment payload to settle
+   * @param requirements - The payment requirements
+   * @param declaredExtensions - Optional declared extensions (for per-key enrichment)
+   * @param transportContext - Optional transport-specific context (e.g., HTTP request/response, MCP tool context)
+   * @param settlementOverrides - Optional overrides for settlement parameters (e.g., partial settlement amount)
+   * @param phase - Which settle invocation this is (defaults to `after-handler`)
+   * @returns Settlement response
+   */
+  async settlePayment(paymentPayload, requirements, declaredExtensions, transportContext, settlementOverrides, phase = "after-handler") {
+    const resolvedDeclaredExtensions = declaredExtensions ?? {};
+    const extensionKeysInUse = Object.keys(resolvedDeclaredExtensions);
+    let effectiveRequirements = requirements;
+    if (settlementOverrides?.amount !== void 0) {
+      let decimals;
+      if (/^\$\d+(?:\.\d+)?$/.test(settlementOverrides.amount)) {
+        const scheme = findByNetworkAndScheme(
+          this.registeredServerSchemes,
+          requirements.scheme,
+          requirements.network
+        );
+        decimals = scheme?.getAssetDecimals?.(
+          requirements.asset ?? "",
+          requirements.network
+        );
+      }
+      effectiveRequirements = {
+        ...requirements,
+        amount: resolveSettlementOverrideAmount(settlementOverrides.amount, requirements, decimals)
+      };
+    }
+    const context = {
+      paymentPayload,
+      requirements: effectiveRequirements,
+      declaredExtensions: resolvedDeclaredExtensions,
+      phase,
+      transportContext
+    };
+    const matchedScheme = {
+      network: effectiveRequirements.network,
+      scheme: effectiveRequirements.scheme
+    };
+    for (const { label, hook } of this.getLabeledHooks(
+      "beforeSettle",
+      extensionKeysInUse,
+      matchedScheme
+    )) {
+      try {
+        const result = await hook(context);
+        if (result && "abort" in result && result.abort) {
+          throw new SettleError(400, {
+            success: false,
+            errorReason: result.reason,
+            errorMessage: result.message,
+            transaction: "",
+            network: requirements.network
+          });
+        }
+        if (result && "skip" in result && result.skip) {
+          const settleResult = result.result;
+          const skipResultContext = {
+            ...context,
+            result: settleResult,
+            transportContext
+          };
+          for (const { label: label2, hook: hook2 } of this.getLabeledHooks(
+            "afterSettle",
+            extensionKeysInUse,
+            matchedScheme
+          )) {
+            try {
+              await hook2(skipResultContext);
+            } catch (error) {
+              this.warnResourceServerHookFailure("afterSettle", label2, error);
+            }
+          }
+          await this.enrichSettlementResponse(
+            settleResult,
+            skipResultContext,
+            resolvedDeclaredExtensions,
+            matchedScheme
+          );
+          return settleResult;
+        }
+      } catch (error) {
+        if (error instanceof SettleError) {
+          throw error;
+        }
+        this.warnResourceServerHookFailure("beforeSettle", label, error);
+      }
+    }
+    try {
+      const scheme = findByNetworkAndScheme(
+        this.registeredServerSchemes,
+        matchedScheme.scheme,
+        matchedScheme.network
+      );
+      let settlePayload = paymentPayload;
+      const payloadEnrichmentHook = scheme?.enrichSettlementPayload;
+      if (payloadEnrichmentHook) {
+        const label = `scheme "${matchedScheme.scheme}" enrichSettlementPayload`;
+        const enrichment = await payloadEnrichmentHook(context);
+        if (enrichment !== void 0) {
+          assertAdditivePayloadEnrichment(paymentPayload.payload, enrichment, label);
+          settlePayload = {
+            ...paymentPayload,
+            payload: { ...paymentPayload.payload, ...enrichment }
+          };
+        }
+      }
+      const facilitatorClient = this.getFacilitatorClient(
+        settlePayload.x402Version,
+        effectiveRequirements.network,
+        effectiveRequirements.scheme
+      );
+      let settleResult;
+      if (!facilitatorClient) {
+        let lastError;
+        for (const client of this.facilitatorClients) {
+          try {
+            settleResult = await this.settleWithPendingRetry(
+              client,
+              settlePayload,
+              effectiveRequirements
+            );
+            break;
+          } catch (error) {
+            lastError = error;
+          }
+        }
+        if (!settleResult) {
+          throw lastError || new Error(
+            `No facilitator supports ${effectiveRequirements.scheme} on ${effectiveRequirements.network} for v${settlePayload.x402Version}`
+          );
+        }
+      } else {
+        settleResult = await this.settleWithPendingRetry(
+          facilitatorClient,
+          settlePayload,
+          effectiveRequirements
+        );
+      }
+      if (!settleResult.success) {
+        const failureContext = {
+          ...context,
+          error: settleResponseToError(settleResult)
+        };
+        for (const { label, hook } of this.getLabeledHooks(
+          "onSettleFailure",
+          extensionKeysInUse,
+          matchedScheme
+        )) {
+          try {
+            const result = await hook(failureContext);
+            if (result && "recovered" in result && result.recovered) {
+              return result.result;
+            }
+          } catch (error) {
+            this.warnResourceServerHookFailure("onSettleFailure", label, error);
+          }
+        }
+        return settleResult;
+      }
+      const resultContext = {
+        ...context,
+        result: settleResult
+      };
+      for (const { label, hook } of this.getLabeledHooks(
+        "afterSettle",
+        extensionKeysInUse,
+        matchedScheme
+      )) {
+        try {
+          await hook(resultContext);
+        } catch (error) {
+          this.warnResourceServerHookFailure("afterSettle", label, error);
+        }
+      }
+      await this.enrichSettlementResponse(
+        settleResult,
+        resultContext,
+        resolvedDeclaredExtensions,
+        matchedScheme
+      );
+      return settleResult;
+    } catch (error) {
+      const failureContext = {
+        ...context,
+        error
+      };
+      for (const { label, hook } of this.getLabeledHooks(
+        "onSettleFailure",
+        extensionKeysInUse,
+        matchedScheme
+      )) {
+        try {
+          const result = await hook(failureContext);
+          if (result && "recovered" in result && result.recovered) {
+            return result.result;
+          }
+        } catch (error2) {
+          this.warnResourceServerHookFailure("onSettleFailure", label, error2);
+        }
+      }
+      throw error;
+    }
+  }
+  /**
+   * Find matching payment requirements for a payment
+   *
+   * @param availableRequirements - Array of available payment requirements
+   * @param paymentPayload - The payment payload
+   * @returns Matching payment requirements or undefined
+   */
+  /**
+   * Validates optional client extension echoes against server-advertised extension info.
+   * When the client omits extensions entirely, validation passes.
+   *
+   * @param paymentRequired - Server payment required response used for matching
+   * @param paymentPayload - Client payment payload
+   * @returns Whether echoed extension info preserves server-advertised values
+   */
+  validateExtensions(paymentRequired, paymentPayload) {
+    if (paymentPayload.x402Version !== 2) {
+      return { valid: true };
+    }
+    const serverExtensions = paymentRequired.extensions;
+    const clientExtensions = paymentPayload.extensions;
+    if (!clientExtensions || Object.keys(clientExtensions).length === 0) {
+      return { valid: true };
+    }
+    for (const [key, echoedValue] of Object.entries(clientExtensions)) {
+      const advertisedInfo = getExtensionInfo(serverExtensions?.[key]);
+      const echoedInfo = getExtensionInfo(echoedValue);
+      if (serverExtensions && Object.prototype.hasOwnProperty.call(serverExtensions, key)) {
+        const dynamicFields = this.registeredExtensions.get(key)?.dynamicInfoFields;
+        const additiveFields = ADDITIVE_ARRAY_INFO_FIELDS[key];
+        const maxLengths = ADDITIVE_ARRAY_MAX_LENGTHS[key];
+        if (!extensionInfoMatchesAdvertised(
+          omitFields(advertisedInfo, dynamicFields),
+          omitFields(echoedInfo, dynamicFields),
+          additiveFields,
+          maxLengths
+        )) {
+          return {
+            valid: false,
+            invalidReason: "extension_echo_mismatch",
+            extensionKey: key
+          };
+        }
+      }
+      const serverOwnedFields = SERVER_OWNED_INFO_FIELDS[key];
+      if (serverOwnedFields && !serverOwnedInfoFieldsMatch(advertisedInfo, echoedInfo, serverOwnedFields)) {
+        return {
+          valid: false,
+          invalidReason: "extension_echo_mismatch",
+          extensionKey: key
+        };
+      }
+    }
+    return { valid: true };
+  }
+  /**
+   * Finds the server-advertised requirement that matches a client payment payload.
+   *
+   * @param availableRequirements - Payment requirements advertised for the resource.
+   * @param paymentPayload - Signed payment payload from the client.
+   * @returns The matching requirement, or undefined when none match.
+   */
+  findMatchingRequirements(availableRequirements, paymentPayload) {
+    switch (paymentPayload.x402Version) {
+      case 2:
+        if (!paymentPayload.accepted) {
+          return void 0;
+        }
+        return availableRequirements.find((paymentRequirements) => {
+          const scheme = findByNetworkAndScheme(
+            this.registeredServerSchemes,
+            paymentRequirements.scheme,
+            paymentRequirements.network
+          );
+          return paymentRequirementsMatchAccepted(
+            paymentRequirements,
+            paymentPayload.accepted,
+            scheme?.dynamicExtraFields
+          );
+        });
+      case 1:
+        if (!paymentPayload.accepted) {
+          return void 0;
+        }
+        return availableRequirements.find(
+          (req) => req.scheme === paymentPayload.accepted.scheme && req.network === paymentPayload.accepted.network
+        );
+      default:
+        throw new Error(
+          `Unsupported x402 version: ${paymentPayload.x402Version}`
+        );
+    }
+  }
+  /**
+   * Calls `facilitatorClient.settle` once, then retries exactly once with the
+   * identical payload/requirements when the outcome is a non-terminal
+   * `settlement_pending` failure carrying a broadcast transaction hash. Sits
+   * above all scheme/network dispatch — the mechanism that actually handles
+   * the retry (via its own `PendingSettlementStore` check) reconciles against
+   * the already-broadcast transaction instead of verifying and broadcasting
+   * a second one. No mutation, backoff, or sleep: the mechanism layer owns
+   * any bounded waiting. Any other outcome (success, or a different failure
+   * reason) short-circuits after the first call. Capped at exactly one retry
+   * regardless of the second outcome, so this can never loop. Mirrors Go's
+   * `settleWithPendingRetry` (`go/server.go`).
+   *
+   * @param facilitatorClient - The facilitator client to call
+   * @param settlePayload - The (possibly enriched) settle-local payload
+   * @param effectiveRequirements - The effective payment requirements
+   * @returns The settle result, either from the first attempt or the single retry
+   */
+  async settleWithPendingRetry(facilitatorClient, settlePayload, effectiveRequirements) {
+    let result;
+    let retryable;
+    try {
+      result = await facilitatorClient.settle(settlePayload, effectiveRequirements);
+      retryable = isRetryableSettlementPendingResult(result);
+    } catch (error) {
+      if (!isRetryableSettlementPendingError(error)) {
+        throw error;
+      }
+      retryable = true;
+    }
+    if (!retryable) {
+      return result;
+    }
+    return facilitatorClient.settle(settlePayload, effectiveRequirements);
+  }
+  /**
+   * Validates that each registered scheme's configuration is compatible with the
+   * facilitator capabilities advertised for the scheme/network combinations it
+   * supports. Only schemes the facilitator actually supports are validated.
+   *
+   * @throws Error listing every capability problem when one or more schemes report one.
+   */
+  validateFacilitatorCapabilities() {
+    const configErrors = [];
+    for (const [network, schemeMap] of this.registeredServerSchemes) {
+      for (const [scheme, server] of schemeMap) {
+        if (!server.validateFacilitatorSupport) continue;
+        for (const x402Version2 of this.supportedResponsesMap.keys()) {
+          const supportedKind = this.getSupportedKind(x402Version2, network, scheme);
+          if (!supportedKind) continue;
+          const extensions = this.getFacilitatorExtensions(x402Version2, network, scheme);
+          const problem = server.validateFacilitatorSupport(
+            network,
+            supportedKind,
+            extensions
+          );
+          if (problem) configErrors.push(`${scheme} on ${network}: ${problem}`);
+        }
+      }
+    }
+    if (configErrors.length > 0) {
+      throw new FacilitatorCapabilityError(configErrors);
+    }
+  }
+  /**
+   * Logs a warning when a manual or extension adapter lifecycle hook throws.
+   *
+   * @param phase - Lifecycle phase name (e.g. `beforeVerify`)
+   * @param label - Hook source label from {@link getLabeledHooks} (manual index or extension key)
+   * @param error - Thrown value or rejection reason
+   */
+  warnResourceServerHookFailure(phase, label, error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.warn(`[x402] Resource server ${phase} hook threw (${label}): ${detail}`);
+  }
+  /**
+   * Logs a warning when a registered extension enrichment hook throws.
+   *
+   * @param extensionKey - Registered extension identifier
+   * @param hookName - Hook method name (e.g. `enrichDeclaration`)
+   * @param error - Thrown value or rejection reason
+   */
+  warnExtensionHookFailure(extensionKey, hookName, error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.warn(`[x402] extension "${extensionKey}" ${hookName} threw: ${detail}`);
+  }
+  /**
+   * Executes after-verify hooks for facilitator and hook-provided verify results.
+   *
+   * @param verifyResult - Verify response passed to after-verify hooks.
+   * @param context - Verify context shared with before-verify hooks.
+   * @param extensionKeysInUse - Declared extension keys for this request.
+   * @param matchedScheme - Scheme/network selected for this payment.
+   * @param matchedScheme.network - Matched payment network.
+   * @param matchedScheme.scheme - Matched payment scheme.
+   * @returns Verify response with any in-process skip handler directive.
+   */
+  async runAfterVerifyHooks(verifyResult, context, extensionKeysInUse, matchedScheme) {
+    const resultContext = {
+      ...context,
+      result: verifyResult
+    };
+    let skipHandler;
+    for (const { label, hook } of this.getLabeledHooks(
+      "afterVerify",
+      extensionKeysInUse,
+      matchedScheme
+    )) {
+      try {
+        const directive = await hook(resultContext);
+        if (directive && "abort" in directive && directive.abort) {
+          await this.dispatchVerifiedPaymentCanceled(
+            context.paymentPayload,
+            context.requirements,
+            context.declaredExtensions,
+            { reason: "after_verify_aborted" },
+            context.transportContext,
+            []
+          );
+          return {
+            isValid: false,
+            invalidReason: directive.reason,
+            invalidMessage: directive.message
+          };
+        }
+        if (directive && "skipHandler" in directive && directive.skipHandler) {
+          skipHandler = directive.response ?? {};
+        }
+      } catch (error) {
+        this.warnResourceServerHookFailure("afterVerify", label, error);
+      }
+    }
+    return skipHandler ? { ...verifyResult, skipHandler } : verifyResult;
+  }
+  /**
+   * Runs response enrichment after settlement lifecycle hooks complete.
+   *
+   * @param settleResult - Mutable settlement result being returned to the caller
+   * @param context - Read-only hook context for enrichment callbacks
+   * @param declaredExtensions - Extension declarations present on this payment
+   * @param matchedScheme - Scheme/network selected for this settlement
+   * @param matchedScheme.network - Matched payment network
+   * @param matchedScheme.scheme - Matched payment scheme
+   */
+  async enrichSettlementResponse(settleResult, context, declaredExtensions, matchedScheme) {
+    if (Object.keys(declaredExtensions).length > 0) {
+      const settleCoreSnapshot = snapshotSettleResponseCore(settleResult);
+      for (const [key, declaration] of Object.entries(declaredExtensions)) {
+        const extension2 = this.registeredExtensions.get(key);
+        if (!extension2?.enrichSettlementResponse) continue;
+        try {
+          const extensionData = await extension2.enrichSettlementResponse(declaration, context);
+          if (extensionData !== void 0) {
+            if (!settleResult.extensions) {
+              settleResult.extensions = {};
+            }
+            settleResult.extensions[key] = extensionData;
+          }
+        } catch (error) {
+          this.warnExtensionHookFailure(key, "enrichSettlementResponse", error);
+        }
+        assertSettleResponseCoreUnchanged(settleCoreSnapshot, settleResult, key);
+      }
+    }
+    const scheme = findByNetworkAndScheme(
+      this.registeredServerSchemes,
+      matchedScheme.scheme,
+      matchedScheme.network
+    );
+    const hook = scheme?.enrichSettlementResponse;
+    if (!hook) return;
+    const label = `scheme "${matchedScheme.scheme}" enrichSettlementResponse`;
+    try {
+      const enrichment = await hook(context);
+      if (enrichment === void 0) return;
+      assertAdditiveSettlementExtra(settleResult.extra ?? {}, enrichment, label);
+      settleResult.extra = mergeAdditiveSettlementExtra(settleResult.extra ?? {}, enrichment);
+    } catch (error) {
+      this.warnResourceServerHookFailure("enrichSettlementResponse", label, error);
+    }
+  }
+  /**
+   * Notify hooks that verified work ended before settlement.
+   * After cleanup hooks, asks the matched scheme for {@link SchemeNetworkServer.settleOnCancel}
+   * requirements and settles once when provided. Settlement errors are warned, not thrown,
+   * so transports can preserve the original application failure.
+   *
+   * @param paymentPayload - Signed payment payload from the client
+   * @param requirements - Requirements matched to the payload
+   * @param declaredExtensions - Optional per-extension declarations for the request
+   * @param options - Cancellation reason and optional diagnostics
+   * @param fallbackTransportContext - Optional transport-specific context
+   * @param settledPhases - Settle phases that already completed for this payment
+   * @returns Cancel settle response when the scheme provides settleOnCancel requirements, otherwise undefined
+   */
+  async dispatchVerifiedPaymentCanceled(paymentPayload, requirements, declaredExtensions, options, fallbackTransportContext, settledPhases = []) {
+    const extensionKeysInUse = Object.keys(declaredExtensions);
+    const matchedScheme = {
+      network: requirements.network,
+      scheme: requirements.scheme
+    };
+    const context = {
+      paymentPayload,
+      requirements,
+      declaredExtensions,
+      phase: "cancel",
+      transportContext: fallbackTransportContext,
+      reason: options.reason,
+      error: options.error,
+      responseStatus: options.responseStatus,
+      settledPhases
+    };
+    for (const { label: label2, hook } of this.getLabeledHooks(
+      "onVerifiedPaymentCanceled",
+      extensionKeysInUse,
+      matchedScheme
+    )) {
+      try {
+        await hook(context);
+      } catch (error) {
+        this.warnResourceServerHookFailure("onVerifiedPaymentCanceled", label2, error);
+      }
+    }
+    const scheme = findByNetworkAndScheme(
+      this.registeredServerSchemes,
+      matchedScheme.scheme,
+      matchedScheme.network
+    );
+    if (!scheme?.settleOnCancel || !settledPhases.includes("before-handler")) {
+      return;
+    }
+    const label = `scheme "${matchedScheme.scheme}" settleOnCancel`;
+    try {
+      const cancelRequirements = await scheme.settleOnCancel(context);
+      if (!cancelRequirements) {
+        return;
+      }
+      return await this.settlePayment(
+        paymentPayload,
+        cancelRequirements,
+        declaredExtensions,
+        fallbackTransportContext,
+        void 0,
+        "cancel"
+      );
+    } catch (error) {
+      this.warnResourceServerHookFailure("settleOnCancel", label, error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      return {
+        success: false,
+        errorReason: error instanceof SettleError ? error.errorReason ?? errorMessage : errorMessage,
+        errorMessage: error instanceof SettleError ? error.errorMessage : void 0,
+        transaction: "",
+        network: requirements.network
+      };
+    }
+  }
+  /**
+   * Manual hooks first, then the matched scheme adapter, then extension adapters for keys in use.
+   * Each entry carries a stable label for logging when a hook throws.
+   *
+   * @param phase - Hook slot (e.g. `beforeVerify`)
+   * @param extensionKeysInUse - Declared extension keys for this request
+   * @param matchedScheme - Scheme/network selected for this payment
+   * @param matchedScheme.network - Matched payment network
+   * @param matchedScheme.scheme - Matched payment scheme
+   * @returns Hooks in invocation order with source labels
+   */
+  getLabeledHooks(phase, extensionKeysInUse, matchedScheme) {
+    const manualKey = `${phase}Hooks`;
+    const manual = this[manualKey];
+    const out = [];
+    manual.forEach((hook, index2) => {
+      out.push({ label: `manual ${phase} hook #${index2}`, hook });
+    });
+    if (matchedScheme) {
+      const schemeHandles = findByNetworkAndScheme(
+        this.schemeHookAdapters,
+        matchedScheme.scheme,
+        matchedScheme.network
+      );
+      const hook = schemeHandles?.[phase];
+      if (hook !== void 0) {
+        out.push({
+          label: `scheme "${matchedScheme.scheme}" ${phase}`,
+          hook
+        });
+      }
+    }
+    const inUse = new Set(extensionKeysInUse);
+    for (const [extensionKey, adapterHandles] of this.extensionHookAdapters.entries()) {
+      if (!inUse.has(extensionKey)) continue;
+      const hook = adapterHandles[phase];
+      if (hook !== void 0) {
+        out.push({ label: `extension "${extensionKey}" ${phase}`, hook });
+      }
+    }
+    return out;
+  }
+  /**
+   * Get facilitator client for a specific version, network, and scheme
+   *
+   * @param x402Version - The x402 version
+   * @param network - The network identifier
+   * @param scheme - The payment scheme
+   * @returns The facilitator client or undefined if not found
+   */
+  getFacilitatorClient(x402Version2, network, scheme) {
+    const versionMap = this.facilitatorClientsMap.get(x402Version2);
+    if (!versionMap) return void 0;
+    return findByNetworkAndScheme(versionMap, scheme, network);
+  }
+};
+function getExtensionInfo(value) {
+  if (value !== null && typeof value === "object" && !Array.isArray(value) && Object.prototype.hasOwnProperty.call(value, "info")) {
+    return value.info;
+  }
+  return value;
+}
+function serverOwnedInfoFieldsMatch(advertised, echoed, serverOwnedFields) {
+  if (echoed === null || typeof echoed !== "object" || Array.isArray(echoed)) {
+    return true;
+  }
+  const echoedRecord = echoed;
+  const advertisedRecord = advertised !== null && typeof advertised === "object" && !Array.isArray(advertised) ? advertised : {};
+  for (const field of serverOwnedFields) {
+    if (!Object.prototype.hasOwnProperty.call(echoedRecord, field)) {
+      continue;
+    }
+    const echoedValue = echoedRecord[field];
+    if (echoedValue === void 0) {
+      continue;
+    }
+    if (!Object.prototype.hasOwnProperty.call(advertisedRecord, field) || !deepEqual(advertisedRecord[field], echoedValue)) {
+      return false;
+    }
+  }
+  return true;
+}
+function omitFields(value, fields) {
+  if (!fields || fields.length === 0) {
+    return value;
+  }
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return value;
+  }
+  const copy4 = { ...value };
+  for (const field of fields) {
+    delete copy4[field];
+  }
+  return copy4;
+}
+function extensionInfoMatchesAdvertised(advertised, echoed, additiveFields, maxLengths) {
+  return objectContainsSubset(advertised, echoed, additiveFields, maxLengths);
+}
+function isRetryableSettlementPendingResult(result) {
+  return !result.success && result.errorReason === SETTLEMENT_PENDING_REASON && !!result.transaction;
+}
+function isRetryableSettlementPendingError(error) {
+  return error instanceof SettleError && error.errorReason === SETTLEMENT_PENDING_REASON && !!error.transaction;
+}
+function settleResponseToError(result) {
+  const reason = result.errorReason || "Settlement failed";
+  return new SettleError(500, { ...result, errorReason: reason });
+}
+function paymentRequirementsMatchAccepted(required, accepted, dynamicExtraFields) {
+  const { extra: requiredExtra, ...requiredCore } = required;
+  const { extra: acceptedExtra, ...acceptedCore } = accepted;
+  if (!deepEqual(requiredCore, acceptedCore)) {
+    return false;
+  }
+  if (requiredExtra === void 0) {
+    return true;
+  }
+  return objectContainsSubset(
+    omitFields(requiredExtra, dynamicExtraFields),
+    omitFields(acceptedExtra, dynamicExtraFields)
+  );
+}
+function objectContainsSubset(expected, actual, additiveFields, maxLengths, fieldKey) {
+  if (fieldKey !== void 0 && additiveFields?.has(fieldKey) && (Array.isArray(expected) || Array.isArray(actual))) {
+    const expectedArray = toComparableArray(expected);
+    const actualArray = toComparableArray(actual);
+    if (!expectedArray || !actualArray) {
+      return false;
+    }
+    const maxLength = maxLengths?.[fieldKey];
+    if (maxLength !== void 0 && actualArray.length > maxLength) {
+      return false;
+    }
+    return expectedArray.every((expItem) => actualArray.some((actItem) => deepEqual(expItem, actItem)));
+  }
+  if (expected === null || typeof expected !== "object" || Array.isArray(expected)) {
+    return deepEqual(expected, actual);
+  }
+  if (actual === null || typeof actual !== "object" || Array.isArray(actual)) {
+    return false;
+  }
+  const actualRecord = actual;
+  return Object.entries(expected).every(([key, value]) => {
+    const hasActualKey = Object.prototype.hasOwnProperty.call(actualRecord, key);
+    if (!hasActualKey) {
+      return value === void 0;
+    }
+    return objectContainsSubset(value, actualRecord[key], additiveFields, maxLengths, key);
+  });
+}
+function decodePaymentSignatureHeader(paymentSignatureHeader) {
+  if (!Base64EncodedRegex.test(paymentSignatureHeader)) {
+    throw new Error("Invalid payment signature header");
+  }
+  return JSON.parse(safeBase64Decode2(paymentSignatureHeader));
+}
+function encodePaymentRequiredHeader(paymentRequired) {
+  return safeBase64Encode2(JSON.stringify(paymentRequired));
+}
+function encodePaymentResponseHeader(paymentResponse) {
+  const buyerFacing = { ...paymentResponse };
+  delete buyerFacing.extensionResponses;
+  return safeBase64Encode2(JSON.stringify(buyerFacing));
+}
+var SETTLEMENT_OVERRIDES_HEADER = "Settlement-Overrides";
+var PAYMENT_REQUIRED_CACHE_CONTROL = "no-store";
+function withPrivateCacheControl(value) {
+  if (!value) {
+    return "private";
+  }
+  const directives = value.split(",").map((directive) => directive.trim().toLowerCase());
+  if (directives.includes("private")) {
+    return value;
+  }
+  return `${value}, private`;
+}
+var RouteConfigurationError = class extends Error {
+  /**
+   * Creates a new RouteConfigurationError with the given validation errors.
+   *
+   * @param errors - The validation errors that caused this exception.
+   */
+  constructor(errors) {
+    const message = `x402 Route Configuration Errors:
+${errors.map((e) => `  - ${e.message}`).join("\n")}`;
+    super(message);
+    this.name = "RouteConfigurationError";
+    this.errors = errors;
+  }
+};
+var FALLBACK_PAYWALL_HTML = `<!DOCTYPE html>
+<html>
+  <head>
+    <title>Payment Required</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  </head>
+  <body>
+    <div style="max-width: 600px; margin: 50px auto; padding: 20px; font-family: system-ui, -apple-system, sans-serif;">
+      <h1>Payment Required</h1>
+      <p>This resource is protected by the x402 payment protocol.</p>
+      <p style="margin-top: 2rem; padding: 1rem; background: #fef3c7; border-radius: 0.5rem;">
+        <strong>Note to developers:</strong> install <code>@x402/paywall</code> to enable
+        the in-browser wallet connection and payment UI. Programmatic clients should read
+        the payment requirements from the 402 response headers and JSON body.
+      </p>
+    </div>
+  </body>
+</html>`;
+var x402HTTPResourceServer = class {
+  /**
+   * Creates a new x402HTTPResourceServer instance.
+   *
+   * @param ResourceServer - The core x402ResourceServer instance to use
+   * @param routes - Route configuration for payment-protected endpoints
+   * @throws RouteConfigurationError if a registered scheme does not support the
+   *         declared paymentFlow / assetTransferMethod
+   */
+  constructor(ResourceServer, routes) {
+    this.compiledRoutes = [];
+    this.protectedRequestHooks = [];
+    this.warnedMissingBeforeHandlerSettlement = false;
+    this.ResourceServer = ResourceServer;
+    this.routesConfig = routes;
+    const normalizedRoutes = typeof routes === "object" && !("accepts" in routes) ? routes : { "*": routes };
+    for (const [pattern, config3] of Object.entries(normalizedRoutes)) {
+      const parsed = this.parseRoutePattern(pattern);
+      this.compiledRoutes.push({
+        verb: parsed.verb,
+        regex: parsed.regex,
+        config: config3,
+        pattern: parsed.path
+      });
+    }
+    const paymentFlowErrors = this.validateRouteConfiguration({
+      includeMissingScheme: false,
+      includeFacilitator: false
+    });
+    if (paymentFlowErrors.length > 0) {
+      throw new RouteConfigurationError(paymentFlowErrors);
+    }
+  }
+  /**
+   * Get the underlying x402ResourceServer instance.
+   *
+   * @returns The underlying x402ResourceServer instance
+   */
+  get server() {
+    return this.ResourceServer;
+  }
+  /**
+   * Get the routes configuration.
+   *
+   * @returns The routes configuration
+   */
+  get routes() {
+    return this.routesConfig;
+  }
+  /**
+   * Initialize the HTTP resource server.
+   *
+   * This method initializes the underlying resource server (fetching facilitator support)
+   * and then validates that all route payment configurations have corresponding
+   * registered schemes and facilitator support.
+   *
+   * @throws RouteConfigurationError if any route's payment options don't have
+   *         corresponding registered schemes or facilitator support
+   *
+   * @example
+   * ```typescript
+   * const httpServer = new x402HTTPResourceServer(server, routes);
+   * await httpServer.initialize();
+   * ```
+   */
+  async initialize() {
+    await this.ResourceServer.initialize();
+    const errors = this.validateRouteConfiguration();
+    if (errors.length > 0) {
+      throw new RouteConfigurationError(errors);
+    }
+  }
+  /**
+   * Register a custom paywall provider for generating HTML
+   *
+   * @param provider - PaywallProvider instance
+   * @returns This service instance for chaining
+   */
+  registerPaywallProvider(provider3) {
+    this.paywallProvider = provider3;
+    return this;
+  }
+  /**
+   * Register a hook that runs on every request to a protected route, before payment processing.
+   * Hooks are executed in order of registration. The first hook to return a non-void result wins.
+   *
+   * @param hook - The request hook function
+   * @returns The x402HTTPResourceServer instance for chaining
+   */
+  onProtectedRequest(hook) {
+    this.protectedRequestHooks.push(hook);
+    return this;
+  }
+  /**
+   * Process HTTP request and return response instructions
+   * This is the main entry point for framework middleware
+   *
+   * @param context - HTTP request context
+   * @param paywallConfig - Optional paywall configuration
+   * @returns Process result indicating next action for middleware
+   */
+  async processHTTPRequest(context, paywallConfig) {
+    const method = context.method || context.adapter.getMethod();
+    context = { ...context, method };
+    const { adapter, path: path2 } = context;
+    const routeMatch = this.getRouteConfig(path2, method, context.decodedPath);
+    if (!routeMatch) {
+      return { type: "no-payment-required" };
+    }
+    const { config: routeConfig, pattern: routePattern } = routeMatch;
+    const enrichedContext = { ...context, routePattern };
+    for (const hook of this.getProtectedRequestHooks(routeConfig)) {
+      const result = await hook(enrichedContext, routeConfig);
+      if (result && "grantAccess" in result) {
+        return { type: "no-payment-required" };
+      }
+      if (result && "abort" in result) {
+        return {
+          type: "payment-error",
+          response: {
+            status: 403,
+            headers: { "Content-Type": "application/json" },
+            body: { error: result.reason }
+          }
+        };
+      }
+    }
+    const paymentOptions = this.normalizePaymentOptions(routeConfig);
+    const paymentPayload = this.extractPayment(adapter);
+    const resourceInfo = {
+      url: routeConfig.resource || enrichedContext.adapter.getUrl(),
+      description: routeConfig.description || "",
+      mimeType: routeConfig.mimeType || "",
+      ...routeConfig.serviceName !== void 0 && { serviceName: routeConfig.serviceName },
+      ...routeConfig.tags !== void 0 && { tags: routeConfig.tags },
+      ...routeConfig.iconUrl !== void 0 && { iconUrl: routeConfig.iconUrl }
+    };
+    let requirements = await this.ResourceServer.buildPaymentRequirementsFromOptions(
+      paymentOptions,
+      enrichedContext
+    );
+    let extensions = routeConfig.extensions;
+    if (extensions) {
+      extensions = this.ResourceServer.enrichExtensions(extensions, enrichedContext);
+    }
+    const transportContext = { request: enrichedContext };
+    const paymentRequired = await this.ResourceServer.createPaymentRequiredResponse(
+      requirements,
+      resourceInfo,
+      !paymentPayload ? "Payment required" : void 0,
+      extensions,
+      transportContext
+    );
+    if (!paymentPayload) {
+      const unpaidBody = routeConfig.unpaidResponseBody ? await routeConfig.unpaidResponseBody(enrichedContext) : void 0;
+      return {
+        type: "payment-error",
+        response: this.createHTTPResponse(
+          paymentRequired,
+          this.isWebBrowser(adapter),
+          paywallConfig,
+          routeConfig.customPaywallHtml,
+          unpaidBody
+        )
+      };
+    }
+    try {
+      const matchingRequirements = this.ResourceServer.findMatchingRequirements(
+        paymentRequired.accepts,
+        paymentPayload
+      );
+      if (!matchingRequirements) {
+        const errorResponse = await this.ResourceServer.createPaymentRequiredResponse(
+          requirements,
+          resourceInfo,
+          "No matching payment requirements",
+          extensions,
+          transportContext
+        );
+        return {
+          type: "payment-error",
+          response: this.createHTTPResponse(errorResponse, false, paywallConfig)
+        };
+      }
+      const extensionResult = this.ResourceServer.validateExtensions(
+        paymentRequired,
+        paymentPayload
+      );
+      if (!extensionResult.valid) {
+        const errorResponse = await this.ResourceServer.createPaymentRequiredResponse(
+          requirements,
+          resourceInfo,
+          extensionResult.invalidReason,
+          extensions,
+          transportContext,
+          paymentPayload
+        );
+        return {
+          type: "payment-error",
+          response: this.createHTTPResponse(errorResponse, false, paywallConfig)
+        };
+      }
+      const flow = this.ResourceServer.getPaymentFlow(paymentPayload, matchingRequirements);
+      const phases = resolvePaymentFlowPhases(flow);
+      const verifyResult = await this.ResourceServer.verifyPayment(
+        paymentPayload,
+        matchingRequirements,
+        extensions,
+        transportContext
+      );
+      if (!verifyResult.isValid) {
+        const errorResponse = await this.ResourceServer.createPaymentRequiredResponse(
+          requirements,
+          resourceInfo,
+          verifyResult.invalidReason,
+          extensions,
+          transportContext,
+          paymentPayload
+        );
+        return {
+          type: "payment-error",
+          response: this.createHTTPResponse(errorResponse, false, paywallConfig)
+        };
+      }
+      if (verifyResult.skipHandler) {
+        return await this.processSkipHandlerSettlement(
+          paymentPayload,
+          matchingRequirements,
+          extensions,
+          transportContext,
+          verifyResult.skipHandler
+        );
+      }
+      let beforeHandlerSettlement;
+      if (phases.settleBeforeHandler) {
+        const beforeSettleResult = await this.processSettlement(
+          paymentPayload,
+          matchingRequirements,
+          extensions,
+          transportContext,
+          void 0,
+          void 0,
+          "before-handler"
+        );
+        if (!beforeSettleResult.success) {
+          return { type: "payment-error", response: beforeSettleResult.response };
+        }
+        const { result, requirements: requirements2 } = (({ headers: _, requirements: requirements3, ...result2 }) => ({
+          result: result2,
+          requirements: requirements3
+        }))(beforeSettleResult);
+        beforeHandlerSettlement = {
+          phase: "before-handler",
+          flow,
+          result,
+          requirements: requirements2
+        };
+      }
+      const cancellationDispatcher = this.ResourceServer.createPaymentCancellationDispatcher(
+        paymentPayload,
+        matchingRequirements,
+        extensions,
+        transportContext,
+        beforeHandlerSettlement ? ["before-handler"] : []
+      );
+      return {
+        type: "payment-verified",
+        cancellationDispatcher,
+        beforeHandlerSettlement,
+        paymentPayload,
+        paymentRequirements: matchingRequirements,
+        declaredExtensions: extensions
+      };
+    } catch (error) {
+      if (error instanceof FacilitatorResponseError) {
+        throw error;
+      }
+      const errorResponse = await this.ResourceServer.createPaymentRequiredResponse(
+        requirements,
+        resourceInfo,
+        error instanceof Error ? error.message : "Payment verification failed",
+        extensions,
+        transportContext
+      );
+      return {
+        type: "payment-error",
+        response: this.createHTTPResponse(errorResponse, false, paywallConfig)
+      };
+    }
+  }
+  /**
+   * Process settlement after successful response
+   *
+   * @param paymentPayload - The verified payment payload
+   * @param requirements - The matching payment requirements
+   * @param declaredExtensions - Optional declared extensions (for per-key enrichment)
+   * @param transportContext - Optional HTTP transport context
+   * @param settlementOverrides - Optional settlement overrides (e.g., partial settlement amount)
+   * @param beforeHandlerSettlement - Before-handler settle from processHTTPRequest (for PAYMENT-RESPONSE echo)
+   * @param phase - Explicit settle phase; omit to derive from the payment flow
+   * @returns ProcessSettleResultResponse - SettleResponse with headers if success or errorReason if failure
+   */
+  async processSettlement(paymentPayload, requirements, declaredExtensions, transportContext, settlementOverrides, beforeHandlerSettlement, phase) {
+    if (transportContext?.request && !transportContext.request.method) {
+      transportContext = {
+        ...transportContext,
+        request: {
+          ...transportContext.request,
+          method: transportContext.request.adapter.getMethod()
+        }
+      };
+    }
+    const flow = beforeHandlerSettlement?.flow ?? this.ResourceServer.getPaymentFlow(paymentPayload, requirements);
+    const phases = resolvePaymentFlowPhases(flow);
+    if (phase !== "before-handler" && !phases.settleAfterHandler) {
+      if (beforeHandlerSettlement) {
+        return {
+          ...beforeHandlerSettlement.result,
+          success: true,
+          headers: this.createSettlementHeaders(beforeHandlerSettlement.result),
+          requirements: beforeHandlerSettlement.requirements
+        };
+      }
+      if (phases.settleBeforeHandler && !beforeHandlerSettlement) {
+        if (!this.warnedMissingBeforeHandlerSettlement) {
+          this.warnedMissingBeforeHandlerSettlement = true;
+          console.warn(
+            `[x402] Payment flow "${flow}" settles before the handler, but processSettlement was called without beforeHandlerSettlement from processHTTPRequest. Skipping after-handler settle. Pass that settle result to echo the before-handler PAYMENT-RESPONSE.`
+          );
+        }
+      }
+      return {
+        success: true,
+        transaction: "",
+        network: requirements.network,
+        headers: {},
+        requirements
+      };
+    }
+    const resolvedPhase = phase ?? "after-handler";
+    try {
+      let resolvedOverrides = settlementOverrides;
+      if (!resolvedOverrides && transportContext?.responseHeaders) {
+        const overridesKey = SETTLEMENT_OVERRIDES_HEADER.toLowerCase();
+        const rawValue = Object.entries(transportContext.responseHeaders).find(
+          ([key]) => key.toLowerCase() === overridesKey
+        )?.[1];
+        if (rawValue) {
+          try {
+            resolvedOverrides = JSON.parse(rawValue);
+          } catch {
+          }
+        }
+      }
+      const settleResponse = await this.ResourceServer.settlePayment(
+        paymentPayload,
+        requirements,
+        declaredExtensions,
+        transportContext,
+        resolvedOverrides,
+        resolvedPhase
+      );
+      if (!settleResponse.success) {
+        const errorReason = settleResponse.errorReason || "Settlement failed";
+        const failure = {
+          ...settleResponse,
+          success: false,
+          errorReason,
+          errorMessage: settleResponse.errorMessage || errorReason,
+          headers: this.createSettlementHeaders(settleResponse)
+        };
+        const response = await this.buildSettlementFailureResponse(failure, transportContext);
+        return { ...failure, response };
+      }
+      return {
+        ...settleResponse,
+        success: true,
+        headers: this.createSettlementHeaders(settleResponse),
+        requirements
+      };
+    } catch (error) {
+      if (error instanceof FacilitatorResponseError) {
+        throw error;
+      }
+      if (error instanceof SettleError) {
+        const errorReason2 = error.errorReason || error.message;
+        const settleResponse2 = {
+          success: false,
+          errorReason: errorReason2,
+          errorMessage: error.errorMessage || errorReason2,
+          payer: error.payer,
+          network: error.network,
+          transaction: error.transaction
+        };
+        const failure2 = {
+          ...settleResponse2,
+          success: false,
+          errorReason: errorReason2,
+          headers: this.createSettlementHeaders(settleResponse2)
+        };
+        const response2 = await this.buildSettlementFailureResponse(failure2, transportContext);
+        return { ...failure2, response: response2 };
+      }
+      const errorReason = error instanceof Error ? error.message : "Settlement failed";
+      const settleResponse = {
+        success: false,
+        errorReason,
+        errorMessage: errorReason,
+        network: requirements.network,
+        transaction: ""
+      };
+      const failure = {
+        ...settleResponse,
+        success: false,
+        errorReason,
+        headers: this.createSettlementHeaders(settleResponse)
+      };
+      const response = await this.buildSettlementFailureResponse(failure, transportContext);
+      return { ...failure, response };
+    }
+  }
+  /**
+   * Check if a request requires payment based on route configuration
+   *
+   * @param context - HTTP request context
+   * @returns True if the route requires payment, false otherwise
+   */
+  requiresPayment(context) {
+    const method = context.method || context.adapter.getMethod();
+    return this.getRouteConfig(context.path, method, context.decodedPath) !== void 0;
+  }
+  /**
+   * Create settlement response headers
+   *
+   * @param settleResponse - Settlement response
+   * @returns Headers to add to response
+   */
+  createSettlementHeaders(settleResponse) {
+    const encoded = encodePaymentResponseHeader(settleResponse);
+    return { "PAYMENT-RESPONSE": encoded };
+  }
+  /**
+   * Headers for echoing a completed before-handler settle onto a response.
+   * Merges `private` into Cache-Control so shared caches do not store settlement metadata.
+   *
+   * Used when the resource handler fails after payment was already committed (e.g. `upfront`).
+   *
+   * @param settlement - Completed before-handler settle
+   * @param existingCacheControl - Existing Cache-Control value, if any
+   * @returns PAYMENT-RESPONSE and Cache-Control headers
+   */
+  createCompletedSettlementHeaders(settlement, existingCacheControl) {
+    return {
+      ...this.createSettlementHeaders(settlement.result),
+      "Cache-Control": withPrivateCacheControl(existingCacheControl ?? null)
+    };
+  }
+  /**
+   * PAYMENT-RESPONSE headers when the resource handler fails after before-handler settle.
+   * Prefers cancel/refund settle when present; otherwise echoes the upfront deposit receipt.
+   *
+   * @param cancelSettlement - Result from {@link PaymentCancellationDispatcher.cancel}, if any
+   * @param beforeHandlerSettlement - Completed before-handler settle, when present
+   * @param paymentPayload - Client payment payload (for escrow deposit recovery fields)
+   * @param existingCacheControl - Existing Cache-Control value, if any
+   * @returns PAYMENT-RESPONSE and Cache-Control headers, or undefined when neither receipt applies
+   */
+  createFailurePathSettlementHeaders(cancelSettlement, beforeHandlerSettlement, paymentPayload, existingCacheControl) {
+    const receipt = resolveFailurePathSettlement(
+      cancelSettlement,
+      beforeHandlerSettlement,
+      paymentPayload
+    );
+    if (!receipt) {
+      return void 0;
+    }
+    return {
+      ...this.createSettlementHeaders(receipt),
+      "Cache-Control": withPrivateCacheControl(existingCacheControl ?? null)
+    };
+  }
+  /**
+   * Settle a verified payment that requested `skipHandler`, packaging the
+   * result as a `payment-error` HTTPProcessResult so framework adapters can
+   * write the response without invoking the route handler.
+   *
+   * - On success: status 200 + PAYMENT-RESPONSE header + configured body.
+   * - On failure: the standard 402 settlement-failure response.
+   *
+   * @param paymentPayload - Verified payment payload.
+   * @param requirements - Matched payment requirements.
+   * @param declaredExtensions - Optional declared extensions for the route.
+   * @param transportContext - Optional HTTP transport context.
+   * @param skipHandlerResponse - Optional content type + body to return on success.
+   * @returns A `payment-error` HTTPProcessResult carrying the final response.
+   */
+  async processSkipHandlerSettlement(paymentPayload, requirements, declaredExtensions, transportContext, skipHandlerResponse) {
+    const settleResult = await this.processSettlement(
+      paymentPayload,
+      requirements,
+      declaredExtensions,
+      transportContext,
+      void 0,
+      void 0,
+      "after-handler"
+    );
+    if (!settleResult.success) {
+      return { type: "payment-error", response: settleResult.response };
+    }
+    const contentType = skipHandlerResponse?.contentType ?? "application/json";
+    const body = skipHandlerResponse?.body ?? {};
+    return {
+      type: "payment-error",
+      response: {
+        status: 200,
+        headers: {
+          "Content-Type": contentType,
+          ...settleResult.headers,
+          "Cache-Control": withPrivateCacheControl(null)
+        },
+        body,
+        isHtml: contentType.includes("text/html")
+      }
+    };
+  }
+  /**
+   * Build HTTPResponseInstructions for settlement failure.
+   * Uses settlementFailedResponseBody hook if configured, otherwise defaults to empty body.
+   *
+   * @param failure - Settlement failure result with headers
+   * @param transportContext - Optional HTTP transport context for the request
+   * @returns HTTP response instructions for the 402 settlement failure response
+   */
+  async buildSettlementFailureResponse(failure, transportContext) {
+    const settlementHeaders = failure.headers;
+    const routeConfig = transportContext ? this.getRouteConfig(
+      transportContext.request.path,
+      transportContext.request.method,
+      transportContext.request.decodedPath
+    ) : void 0;
+    const customBody = routeConfig?.config.settlementFailedResponseBody ? await routeConfig.config.settlementFailedResponseBody(transportContext.request, failure) : void 0;
+    const contentType = customBody ? customBody.contentType : "application/json";
+    const body = customBody ? customBody.body : {};
+    return {
+      status: 402,
+      headers: {
+        "Content-Type": contentType,
+        ...settlementHeaders,
+        "Cache-Control": PAYMENT_REQUIRED_CACHE_CONTROL
+      },
+      body,
+      isHtml: contentType.includes("text/html")
+    };
+  }
+  /**
+   * Normalizes a RouteConfig's accepts field into an array of PaymentOptions
+   * Handles both single PaymentOption and array formats
+   *
+   * @param routeConfig - Route configuration
+   * @returns Array of payment options
+   */
+  normalizePaymentOptions(routeConfig) {
+    return Array.isArray(routeConfig.accepts) ? routeConfig.accepts : [routeConfig.accepts];
+  }
+  /**
+   * Manual request hooks run before extension transport hooks for declared extensions.
+   *
+   * @param routeConfig - Route configuration for the matched request
+   * @returns Hooks in invocation order
+   */
+  getProtectedRequestHooks(routeConfig) {
+    const hooks = [...this.protectedRequestHooks];
+    const declaredExtensions = routeConfig.extensions;
+    if (!declaredExtensions) return hooks;
+    for (const extension2 of this.ResourceServer.getExtensions()) {
+      const hook = extension2.transportHooks?.http?.onProtectedRequest;
+      if (!hook || !(extension2.key in declaredExtensions)) continue;
+      hooks.push(
+        (context, routeConfig2) => hook(declaredExtensions[extension2.key], context, routeConfig2)
+      );
+    }
+    return hooks;
+  }
+  /**
+   * Validates that all payment options in routes have corresponding registered schemes,
+   * supported paymentFlow / assetTransferMethod and facilitator support.
+   *
+   * @param options - Validation options
+   * @param options.includeMissingScheme - When true (default), report unregistered schemes
+   * @param options.includeFacilitator - When true (default), also check facilitator kinds
+   * @returns Array of validation errors (empty if all routes are valid)
+   */
+  validateRouteConfiguration(options = {}) {
+    const includeMissingScheme = options.includeMissingScheme !== false;
+    const includeFacilitator = options.includeFacilitator !== false;
+    const errors = [];
+    const normalizedRoutes = typeof this.routesConfig === "object" && !("accepts" in this.routesConfig) ? Object.entries(this.routesConfig) : [["*", this.routesConfig]];
+    for (const [pattern, config3] of normalizedRoutes) {
+      const pathPart = pattern.includes(" ") ? pattern.split(/\s+/)[1] : pattern;
+      if (pathPart && pathPart.includes("*") && config3.extensions && "bazaar" in config3.extensions) {
+        console.warn(
+          `[x402] Route "${pattern}": Wildcard (*) patterns with bazaar discovery extensions will auto-generate parameter names (var1, var2, ...). Consider using named parameters instead (e.g. /weather/:city) for better discovery metadata.`
+        );
+      }
+      const paymentOptions = this.normalizePaymentOptions(config3);
+      for (const option of paymentOptions) {
+        const schemeServer = this.ResourceServer.getRegisteredScheme(option.network, option.scheme);
+        if (!schemeServer) {
+          if (includeMissingScheme) {
+            errors.push({
+              routePattern: pattern,
+              scheme: option.scheme,
+              network: option.network,
+              reason: "missing_scheme",
+              message: `Route "${pattern}": No scheme implementation registered for "${option.scheme}" on network "${option.network}"`
+            });
+          }
+          continue;
+        }
+        const atm = typeof option.extra?.assetTransferMethod === "string" ? option.extra.assetTransferMethod : schemeServer.defaultAssetTransferMethod;
+        if (!schemeServer.paymentFlows[atm]) {
+          errors.push({
+            routePattern: pattern,
+            scheme: option.scheme,
+            network: option.network,
+            reason: "unsupported_asset_transfer_method",
+            message: `Route "${pattern}": [x402] Scheme "${schemeServer.scheme}" does not support assetTransferMethod "${atm}". Supported: ${Object.keys(schemeServer.paymentFlows).join(", ")}.`
+          });
+          continue;
+        }
+        try {
+          resolvePaymentFlow(schemeServer, {
+            scheme: option.scheme,
+            network: option.network,
+            asset: "",
+            amount: "0",
+            payTo: "",
+            maxTimeoutSeconds: 0,
+            extra: option.extra ?? {}
+          });
+        } catch (error) {
+          errors.push({
+            routePattern: pattern,
+            scheme: option.scheme,
+            network: option.network,
+            reason: "unsupported_payment_flow",
+            message: error instanceof Error ? `Route "${pattern}": ${error.message}` : `Route "${pattern}": Unsupported paymentFlow`
+          });
+        }
+        if (!includeFacilitator) {
+          continue;
+        }
+        const supportedKind = this.ResourceServer.getSupportedKind(
+          x402Version,
+          option.network,
+          option.scheme
+        );
+        if (!supportedKind) {
+          errors.push({
+            routePattern: pattern,
+            scheme: option.scheme,
+            network: option.network,
+            reason: "missing_facilitator",
+            message: `Route "${pattern}": Facilitator does not support scheme "${option.scheme}" on network "${option.network}"`
+          });
+        }
+      }
+    }
+    return errors;
+  }
+  /**
+   * Get route configuration for a request
+   *
+   * @param path - Request path
+   * @param method - HTTP method
+   * @param decodedPath - Framework decoded routing view, if distinct from path
+   * @returns Route configuration and pattern, or undefined if no match
+   */
+  getRouteConfig(path2, method, decodedPath) {
+    const upperMethod = method.toUpperCase();
+    const findMatch = (candidate) => {
+      const matchingRoute = this.compiledRoutes.find(
+        (route) => route.regex.test(candidate) && (route.verb === "*" || route.verb === upperMethod)
+      );
+      if (!matchingRoute) return void 0;
+      return { config: matchingRoute.config, pattern: matchingRoute.pattern };
+    };
+    const match2 = findMatch(this.normalizePath(path2));
+    if (match2 !== void 0) {
+      return match2;
+    }
+    if (decodedPath !== void 0 && decodedPath !== path2) {
+      return findMatch(this.normalizeDecodedPath(decodedPath));
+    }
+    return void 0;
+  }
+  /**
+   * Extract payment from HTTP headers (handles v1 and v2)
+   *
+   * @param adapter - HTTP adapter
+   * @returns Decoded payment payload or null
+   */
+  extractPayment(adapter) {
+    const header = adapter.getHeader("payment-signature") || adapter.getHeader("PAYMENT-SIGNATURE");
+    if (header) {
+      try {
+        return decodePaymentSignatureHeader(header);
+      } catch (error) {
+        console.warn("Failed to decode PAYMENT-SIGNATURE header:", error);
+      }
+    }
+    return null;
+  }
+  /**
+   * Check if request is from a web browser
+   *
+   * @param adapter - HTTP adapter
+   * @returns True if request appears to be from a browser
+   */
+  isWebBrowser(adapter) {
+    const accept = adapter.getAcceptHeader();
+    const userAgent = adapter.getUserAgent();
+    return accept.includes("text/html") && userAgent.includes("Mozilla");
+  }
+  /**
+   * Create HTTP response instructions from payment required
+   *
+   * @param paymentRequired - Payment requirements
+   * @param isWebBrowser - Whether request is from browser
+   * @param paywallConfig - Paywall configuration
+   * @param customHtml - Custom HTML template
+   * @param unpaidResponse - Optional custom response (content type and body) for unpaid API requests
+   * @returns Response instructions
+   */
+  createHTTPResponse(paymentRequired, isWebBrowser, paywallConfig, customHtml, unpaidResponse) {
+    const status = paymentRequired.error === "permit2_allowance_required" ? 412 : 402;
+    const response = this.createHTTPPaymentRequiredResponse(paymentRequired);
+    if (isWebBrowser) {
+      const html = this.generatePaywallHTML(paymentRequired, paywallConfig, customHtml);
+      return {
+        status,
+        headers: {
+          "Content-Type": "text/html",
+          ...response.headers
+        },
+        body: html,
+        isHtml: true
+      };
+    }
+    const contentType = unpaidResponse ? unpaidResponse.contentType : "application/json";
+    const body = unpaidResponse ? unpaidResponse.body : {};
+    return {
+      status,
+      headers: {
+        "Content-Type": contentType,
+        ...response.headers
+      },
+      body
+    };
+  }
+  /**
+   * Create HTTP payment required response (v1 puts in body, v2 puts in header)
+   *
+   * @param paymentRequired - Payment required object
+   * @returns Headers and body for the HTTP response
+   */
+  createHTTPPaymentRequiredResponse(paymentRequired) {
+    return {
+      headers: {
+        "PAYMENT-REQUIRED": encodePaymentRequiredHeader(paymentRequired),
+        "Cache-Control": PAYMENT_REQUIRED_CACHE_CONTROL
+      }
+    };
+  }
+  /**
+   * Parse route pattern into verb and regex
+   *
+   * @param pattern - Route pattern like "GET /api/*", "/api/[id]", or "/api/:id"
+   * @returns Parsed pattern with verb and regex
+   */
+  parseRoutePattern(pattern) {
+    const [verb, path2] = pattern.includes(" ") ? pattern.split(/\s+/) : ["*", pattern];
+    const trailingWildcard = path2.endsWith("/*");
+    const pathForRegex = trailingWildcard ? path2.slice(0, -2) : path2;
+    let regexBody = pathForRegex.replace(/\\/g, "\\\\").replace(/[$()+.?^{|}]/g, "\\$&").replace(/\*/g, ".*?").replace(/\[([^\]]+)\]/g, "[^/]+").replace(/:([a-zA-Z_][a-zA-Z0-9_]*)/g, "[^/]+").replace(/\//g, "\\/");
+    if (trailingWildcard) {
+      regexBody += "(?:/.*?)?";
+    }
+    const regex = new RegExp(
+      `^${regexBody}$`,
+      // "s" (dotAll): without it, "." can't match LF/CR/U+2028/U+2029, so a wildcard segment containing one fails to match.
+      "is"
+    );
+    return { verb: verb.toUpperCase(), regex, path: path2 };
+  }
+  /**
+   * Normalize path for matching
+   *
+   * @param path - Raw path from request
+   * @returns Normalized path
+   */
+  normalizePath(path2) {
+    const pathWithoutQuery = path2.split(/[?#]/)[0];
+    const normalized = pathWithoutQuery.split("/").map((segment) => {
+      let decoded;
+      try {
+        decoded = decodeURIComponent(segment);
+      } catch {
+        return segment;
+      }
+      return decoded.replace(/\//g, "%2F").replace(/\\/g, "%5C");
+    }).join("/");
+    return normalized.replace(/\/+/g, "/").replace(/(.+?)\/+$/, "$1");
+  }
+  /**
+   * Normalize a framework-decoded path without re-decoding percent-escapes.
+   *
+   * @param path - Framework-decoded path
+   * @returns Normalized path
+   */
+  normalizeDecodedPath(path2) {
+    const pathWithoutQuery = path2.split(/[?#]/)[0];
+    return pathWithoutQuery.replace(/\/+/g, "/").replace(/(.+?)\/+$/, "$1") || "/";
+  }
+  /**
+   * Generate paywall HTML for browser requests
+   *
+   * @param paymentRequired - Payment required response
+   * @param paywallConfig - Optional paywall configuration
+   * @param customHtml - Optional custom HTML template
+   * @returns HTML string
+   */
+  generatePaywallHTML(paymentRequired, paywallConfig, customHtml) {
+    if (customHtml) {
+      return customHtml;
+    }
+    if (this.paywallProvider) {
+      return this.paywallProvider.generateHtml(paymentRequired, paywallConfig);
+    }
+    try {
+      const paywall = __require3("@x402/paywall");
+      const displayAmount = this.getDisplayAmount(paymentRequired);
+      const resource = paymentRequired.resource;
+      return paywall.getPaywallHtml({
+        amount: displayAmount,
+        paymentRequired,
+        currentUrl: resource?.url || paywallConfig?.currentUrl || "",
+        testnet: paywallConfig?.testnet ?? true,
+        appName: paywallConfig?.appName,
+        appLogo: paywallConfig?.appLogo,
+        sessionTokenEndpoint: paywallConfig?.sessionTokenEndpoint
+      });
+    } catch {
+    }
+    return FALLBACK_PAYWALL_HTML;
+  }
+  /**
+   * Extract display amount from payment requirements.
+   * Uses the registered scheme's decimal precision for the asset, falling back to 6.
+   *
+   * @param paymentRequired - The payment required object
+   * @returns The display amount in decimal format
+   */
+  getDisplayAmount(paymentRequired) {
+    const accepts = paymentRequired.accepts;
+    if (accepts && accepts.length > 0) {
+      const firstReq = accepts[0];
+      if ("amount" in firstReq) {
+        const decimals = this.ResourceServer.getAssetDecimalsForRequirements(firstReq);
+        return parseFloat(firstReq.amount) / 10 ** decimals;
+      }
+    }
+    return 0;
+  }
+};
+
+// ../node_modules/@x402/evm/dist/esm/chunk-GPMYUGHX.mjs
+var EVM_NETWORK_CHAIN_ID_MAP = {
+  ethereum: 1,
+  sepolia: 11155111,
+  abstract: 2741,
+  "abstract-testnet": 11124,
+  "base-sepolia": 84532,
+  base: 8453,
+  "avalanche-fuji": 43113,
+  avalanche: 43114,
+  iotex: 4689,
+  sei: 1329,
+  "sei-testnet": 1328,
+  polygon: 137,
+  "polygon-amoy": 80002,
+  peaq: 3338,
+  story: 1514,
+  educhain: 41923,
+  "skale-base-sepolia": 324705682,
+  megaeth: 4326,
+  monad: 143,
+  "monad-testnet": 10143,
+  stable: 988,
+  "stable-testnet": 2201,
+  celo: 42220,
+  flare: 14
+};
+var NETWORKS = Object.keys(EVM_NETWORK_CHAIN_ID_MAP);
+
+// ../node_modules/@x402/evm/dist/esm/chunk-LQQ3M4DU.mjs
+var DEFAULT_ASSETS = {
+  "eip155:8453": [
+    {
+      asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      name: "USD Coin",
+      version: "2",
+      decimals: 6,
+      symbol: "USDC"
+    }
+  ],
+  // Base mainnet USDC
+  "eip155:84532": [
+    {
+      asset: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+      name: "USDC",
+      version: "2",
+      decimals: 6,
+      symbol: "USDC"
+    }
+  ],
+  // Base Sepolia USDC
+  "eip155:1": [
+    {
+      asset: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      name: "USD Coin",
+      version: "2",
+      decimals: 6,
+      symbol: "USDC"
+    }
+  ],
+  // Ethereum mainnet USDC
+  "eip155:43114": [
+    {
+      asset: "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E",
+      name: "USD Coin",
+      version: "2",
+      decimals: 6,
+      symbol: "USDC"
+    }
+  ],
+  // Avalanche C-Chain USDC
+  "eip155:4326": [
+    {
+      asset: "0xFAfDdbb3FC7688494971a79cc65DCa3EF82079E7",
+      name: "MegaUSD",
+      version: "1",
+      decimals: 18,
+      symbol: "MegaUSD",
+      assetTransferMethod: "permit2",
+      supportsEip2612: true
+    }
+  ],
+  // MegaETH mainnet MegaUSD (no EIP-3009, supports EIP-2612)
+  "eip155:143": [
+    {
+      asset: "0x754704Bc059F8C67012fEd69BC8A327a5aafb603",
+      name: "USDC",
+      version: "2",
+      decimals: 6,
+      symbol: "USDC"
+    }
+  ],
+  // Monad mainnet USDC
+  "eip155:10143": [
+    {
+      asset: "0x534b2f3A21130d7a60830c2Df862319e593943A3",
+      name: "USDC",
+      version: "2",
+      decimals: 6,
+      symbol: "USDC"
+    }
+  ],
+  // Monad testnet USDC
+  "eip155:988": [
+    {
+      asset: "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
+      name: "USDT0",
+      version: "1",
+      decimals: 6,
+      symbol: "USDT0"
+    }
+  ],
+  // Stable mainnet USDT0
+  "eip155:2201": [
+    {
+      asset: "0x78Cf24370174180738C5B8E352B6D14c83a6c9A9",
+      name: "USDT0",
+      version: "1",
+      decimals: 6,
+      symbol: "USDT0"
+    }
+  ],
+  // Stable testnet USDT0
+  "eip155:137": [
+    {
+      asset: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+      name: "USD Coin",
+      version: "2",
+      decimals: 6,
+      symbol: "USDC"
+    }
+  ],
+  // Polygon mainnet USDC
+  "eip155:42161": [
+    {
+      asset: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+      name: "USD Coin",
+      version: "2",
+      decimals: 6,
+      symbol: "USDC"
+    }
+  ],
+  // Arbitrum One USDC
+  "eip155:421614": [
+    {
+      asset: "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d",
+      name: "USD Coin",
+      version: "2",
+      decimals: 6,
+      symbol: "USDC"
+    }
+  ],
+  // Arbitrum Sepolia USDC
+  "eip155:31612": [
+    {
+      asset: "0xdD468A1DDc392dcdbEf6db6e34E89AA338F9F186",
+      name: "Mezo USD",
+      version: "1",
+      decimals: 18,
+      symbol: "mUSD",
+      assetTransferMethod: "permit2",
+      supportsEip2612: true
+    }
+  ],
+  // Mezo mainnet mUSD (no EIP-3009, supports EIP-2612)
+  "eip155:31611": [
+    {
+      asset: "0x118917a40FAF1CD7a13dB0Ef56C86De7973Ac503",
+      name: "Mezo USD",
+      version: "1",
+      decimals: 18,
+      symbol: "mUSD",
+      assetTransferMethod: "permit2",
+      supportsEip2612: true
+    }
+  ],
+  // Mezo Testnet mUSD (no EIP-3009, supports EIP-2612)
+  "eip155:723487": [
+    {
+      asset: "0x33ad9e4BD16B69B5BFdED37D8B5D9fF9aba014Fb",
+      name: "Stable Coin",
+      version: "1",
+      decimals: 6,
+      symbol: "SBC",
+      assetTransferMethod: "permit2",
+      supportsEip2612: true
+    }
+  ],
+  // Radius Network SBC (no EIP-3009, supports EIP-2612)
+  "eip155:72344": [
+    {
+      asset: "0x33ad9e4BD16B69B5BFdED37D8B5D9fF9aba014Fb",
+      name: "Stable Coin",
+      version: "1",
+      decimals: 6,
+      symbol: "SBC",
+      assetTransferMethod: "permit2",
+      supportsEip2612: true
+    }
+  ],
+  // Radius Testnet SBC (no EIP-3009, supports EIP-2612)
+  "eip155:36900": [
+    {
+      asset: "0x9cb8142aEBBcdc60AF7c97Af897A67A8f3CA71C2",
+      name: "USDC.e",
+      version: "2",
+      decimals: 6,
+      symbol: "USDC.e"
+    }
+  ],
+  // ADI Chain USDC.e (EIP-3009 supported)
+  "eip155:190415": [
+    {
+      asset: "0x401eCb1D350407f13ba348573E5630B83638E30D",
+      name: "Bridged USDC",
+      version: "2",
+      decimals: 6,
+      symbol: "USDC.e"
+    }
+  ],
+  // HPP mainnet USDC.e
+  "eip155:181228": [
+    {
+      asset: "0x401eCb1D350407f13ba348573E5630B83638E30D",
+      name: "Bridged USDC",
+      version: "2",
+      decimals: 6,
+      symbol: "USDC.e"
+    }
+  ],
+  // HPP Sepolia USDC.e
+  "eip155:50": [
+    {
+      asset: "0xfA2958CB79b0491CC627c1557F441eF849Ca8eb1",
+      name: "USDC",
+      version: "2",
+      decimals: 6,
+      symbol: "USDC"
+    }
+  ],
+  // XDC Network mainnet USDC (Bridged USDC Standard, EIP-3009 supported)
+  "eip155:51": [
+    {
+      asset: "0xb5AB69F7bBada22B28e79C8FFAECe55eF1c771D4",
+      name: "USDC",
+      version: "2",
+      decimals: 6,
+      symbol: "USDC"
+    }
+  ],
+  // XDC Apothem testnet USDC (Bridged USDC Standard, EIP-3009 supported)
+  "eip155:38833": [
+    {
+      asset: "0xA5b8BF902b2844dA17d4506cc827F7F1681735E7",
+      name: "USDC",
+      version: "1",
+      decimals: 6,
+      symbol: "USDC",
+      assetTransferMethod: "permit2"
+    }
+  ],
+  // Igra mainnet USDC (no EIP-3009, no EIP-2612)
+  "eip155:14": [
+    {
+      asset: "0xe7cd86e13AC4309349F30B3435a9d337750fC82D",
+      name: "USD\u20AE0",
+      version: "1",
+      decimals: 6,
+      symbol: "USDT0"
+    }
+  ],
+  // Flare mainnet USD₮0 (EIP-3009 supported)
+  "eip155:42220": [
+    {
+      asset: "0xcebA9300f2b948710d2653dD7B07f33A8B32118C",
+      name: "USDC",
+      version: "2",
+      decimals: 6,
+      symbol: "USDC"
+    },
+    {
+      asset: "0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e",
+      name: "Tether USD",
+      version: "1",
+      decimals: 6,
+      symbol: "USDT"
+    },
+    {
+      asset: "0xD2ab3C9A02DBBAB236BfEC45D1d755DF4267F771",
+      name: "Tether America USD",
+      version: "1",
+      decimals: 6,
+      symbol: "USAT"
+    }
+  ],
+  // Celo mainnet USDC, USDT, USAT (EIP-3009 supported)
+  "eip155:11142220": [
+    {
+      asset: "0x01C5C0122039549AD1493B8220cABEdD739BC44E",
+      name: "USDC",
+      version: "2",
+      decimals: 6,
+      symbol: "USDC"
+    }
+  ],
+  // Celo Sepolia testnet USDC (EIP-3009 supported)
+  "eip155:1329": [
+    {
+      asset: "0xe15fC38F6D8c56aF07bbCBe3BAf5708A2Bf42392",
+      name: "USDC",
+      version: "2",
+      decimals: 6,
+      symbol: "USDC"
+    }
+  ],
+  // Sei mainnet USDC (EIP-3009 supported)
+  "eip155:1328": [
+    {
+      asset: "0x4fCF1784B31630811181f670Aea7A7bEF803eaED",
+      name: "USDC",
+      version: "2",
+      decimals: 6,
+      symbol: "USDC"
+    }
+  ],
+  // Sei testnet USDC (EIP-3009 supported)
+  "eip155:5042": [
+    {
+      asset: "0x3600000000000000000000000000000000000000",
+      name: "USDC",
+      version: "2",
+      decimals: 6,
+      symbol: "USDC"
+    }
+  ],
+  // Arc mainnet USDC (EIP-3009 supported)
+  "eip155:5042002": [
+    {
+      asset: "0x3600000000000000000000000000000000000000",
+      name: "USDC",
+      version: "2",
+      decimals: 6,
+      symbol: "USDC"
+    }
+  ]
+  // Arc Testnet USDC (EIP-3009 supported)
+};
+function resolveNetworkKey(network) {
+  if (network in DEFAULT_ASSETS) {
+    return network;
+  }
+  const chainId = EVM_NETWORK_CHAIN_ID_MAP[network];
+  if (chainId !== void 0) {
+    return `eip155:${chainId}`;
+  }
+  return network;
+}
+var getDefaultAsset2 = (network, symbol) => {
+  const key = resolveNetworkKey(network);
+  const assets = DEFAULT_ASSETS[key];
+  if (!assets || assets.length === 0) {
+    throw new Error(`No default asset configured for network ${network}`);
+  }
+  if (!symbol) {
+    return assets[0];
+  }
+  const normalized = symbol.toUpperCase();
+  const match2 = assets.find((entry) => entry.symbol.toUpperCase() === normalized);
+  if (!match2) {
+    throw new Error(`No ${symbol} default asset configured for network ${network}`);
+  }
+  return match2;
+};
+var findDefaultAsset = (asset, network) => {
+  const key = resolveNetworkKey(network);
+  const assets = DEFAULT_ASSETS[key];
+  if (!assets) {
+    return void 0;
+  }
+  const normalized = asset.toLowerCase();
+  return assets.find((entry) => entry.asset.toLowerCase() === normalized);
+};
+
+// ../node_modules/@x402/evm/dist/esm/exact/server/index.mjs
+var ExactEvmScheme = class {
+  constructor() {
+    this.scheme = "exact";
+    this.defaultAssetTransferMethod = "eip3009";
+    this.paymentFlows = {
+      eip3009: { supported: ["authorization", "upfront"], default: "authorization" },
+      permit2: { supported: ["authorization", "upfront"], default: "authorization" }
+    };
+    this.moneyParsers = [];
+  }
+  /**
+   * Register a custom money parser in the parser chain.
+   * Multiple parsers can be registered - they will be tried in registration order.
+   * Each parser receives a decimal string (e.g., "1.50" for $1.50).
+   * If a parser returns null, the next parser in the chain will be tried.
+   * The default parser is always the final fallback.
+   *
+   * @param parser - Custom function to convert amount to AssetAmount (or null to skip)
+   * @returns The server instance for chaining
+   *
+   * @example
+   * evmServer.registerMoneyParser(async (amount, network) => {
+   *   // Custom conversion logic
+   *   if (Number(amount) > 100) {
+   *     // Use different token for large amounts
+   *     return { amount: convertToTokenAmount(String(amount), 18), asset: "0xCustomToken" };
+   *   }
+   *   return null; // Use next parser
+   * });
+   */
+  registerMoneyParser(parser) {
+    this.moneyParsers.push(parser);
+    return this;
+  }
+  /**
+   * Decimals for a known default asset, or undefined.
+   *
+   * @param asset - Asset address or symbol
+   * @param network - Target network
+   * @returns Decimals when the asset is a known default; otherwise undefined
+   */
+  getAssetDecimals(asset, network) {
+    return findDefaultAsset(asset, network)?.decimals;
+  }
+  /**
+   * Parses a price into an asset amount.
+   * If price is already an AssetAmount, returns it directly.
+   * If price is Money (string | number), parses to decimal and tries custom parsers.
+   * Falls back to default conversion if all custom parsers return null.
+   *
+   * @param price - The price to parse
+   * @param network - The network to use
+   * @returns Promise that resolves to the parsed asset amount
+   */
+  async parsePrice(price, network) {
+    if (typeof price === "object" && price !== null && "amount" in price) {
+      if (!price.asset) {
+        throw new Error(`Asset address must be specified for AssetAmount on network ${network}`);
+      }
+      return {
+        amount: price.amount,
+        asset: price.asset,
+        extra: price.extra || {}
+      };
+    }
+    const { amount, symbol } = parseMoney(price);
+    for (const parser of this.moneyParsers) {
+      const result = await parser(amount, network);
+      if (result !== null) {
+        return result;
+      }
+    }
+    return this.defaultMoneyConversion(amount, network, symbol);
+  }
+  /**
+   * Build payment requirements for this scheme/network combination
+   *
+   * @param paymentRequirements - The base payment requirements
+   * @param supportedKind - The supported kind from facilitator (unused)
+   * @param supportedKind.x402Version - The x402 version
+   * @param supportedKind.scheme - The logical payment scheme
+   * @param supportedKind.network - The network identifier in CAIP-2 format
+   * @param supportedKind.extra - Optional extra metadata regarding scheme/network implementation details
+   * @param extensionKeys - Extension keys supported by the facilitator (unused)
+   * @returns Payment requirements ready to be sent to clients
+   */
+  enhancePaymentRequirements(paymentRequirements, supportedKind, extensionKeys) {
+    void supportedKind;
+    void extensionKeys;
+    return Promise.resolve(paymentRequirements);
+  }
+  /**
+   * Converts a numeric dollar amount to an AssetAmount using the default token for the network.
+   *
+   * @param amount - The decimal amount as a string
+   * @param network - The target network
+   * @param symbol - Optional ticker from a suffixed price
+   * @returns The converted asset amount with token metadata
+   */
+  defaultMoneyConversion(amount, network, symbol) {
+    const assetInfo = getDefaultAsset2(network, symbol);
+    const tokenAmount = convertToTokenAmount(amount, assetInfo.decimals);
+    const includeEip712Domain = !assetInfo.assetTransferMethod || assetInfo.supportsEip2612;
+    return {
+      amount: tokenAmount,
+      asset: assetInfo.asset,
+      extra: {
+        ...includeEip712Domain && {
+          name: assetInfo.name,
+          version: assetInfo.version
+        },
+        ...assetInfo.assetTransferMethod && {
+          assetTransferMethod: assetInfo.assetTransferMethod
+        }
+      }
+    };
+  }
+};
+
+// src/x402v2.ts
+function resolveX402Protocol(env = process.env) {
+  const raw2 = env.X402_PROTOCOL?.trim().toLowerCase();
+  if (!raw2 || raw2 === "v1") return "v1";
+  if (raw2 === "v2" || raw2 === "both") return raw2;
+  console.error(
+    `[x402] X402_PROTOCOL="${env.X402_PROTOCOL}" \u7121\u6CD5\u8FA8\u8B58\uFF08\u53EA\u63A5\u53D7 v1\uFF5Cv2\uFF5Cboth\uFF09\u2192 \u7DAD\u6301 v1\u3002`
+  );
+  return "v1";
+}
+var V1_NETWORK_TO_CAIP2 = {
+  "base-sepolia": "eip155:84532",
+  base: "eip155:8453"
+};
+function toCaip2Network(network) {
+  const mapped = V1_NETWORK_TO_CAIP2[network];
+  if (mapped) return mapped;
+  if (/^[a-z0-9-]{3,8}:[A-Za-z0-9-]{1,64}$/.test(network)) return network;
+  throw new Error(
+    `[x402] X402_NETWORK="${network}" \u6C92\u6709\u5C0D\u61C9\u7684 CAIP-2 \u7DB2\u8DEF\uFF08v2 \u9700\u8981\uFF0C\u4F8B\u5982 eip155:84532\uFF09\u3002`
+  );
+}
+var DEFAULT_FACILITATOR_TIMEOUT_MS = 2e4;
+var DEFAULT_INIT_TIMEOUT_MS = 25e3;
+function resolveFacilitatorTimeoutMs(env = process.env) {
+  const raw2 = env.X402_FACILITATOR_TIMEOUT_MS?.trim();
+  if (!raw2) return DEFAULT_FACILITATOR_TIMEOUT_MS;
+  const n2 = Number(raw2);
+  if (!Number.isSafeInteger(n2) || n2 < 1e3 || n2 > 55e3) {
+    console.error(
+      `[x402] X402_FACILITATOR_TIMEOUT_MS="${raw2}" \u4E0D\u662F 1000\u201355000 \u7684\u6574\u6578 \u2192 \u4F7F\u7528\u9810\u8A2D ${DEFAULT_FACILITATOR_TIMEOUT_MS}\u3002`
+    );
+    return DEFAULT_FACILITATOR_TIMEOUT_MS;
+  }
+  return n2;
+}
+var RATE_LIMIT_RE = /too many requests|rate.?limit|\b429\b/i;
+var NETWORK_ERROR_RE = /fetch failed|ECONNREFUSED|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up|network error|terminated|timed out/i;
+var FACILITATOR_HTTP_ERROR_RE = /^Facilitator (verify|settle|getSupported) failed \((\d{3})\)/;
+function classifyV2FacilitatorError(err, phase) {
+  const e = err;
+  const message = typeof e?.message === "string" ? e.message : String(err);
+  if (e?.name === "VerifyError" || e?.name === "SettleError") {
+    const reason = String(e.invalidReason ?? e.errorReason ?? "");
+    if (e.statusCode === 429 || RATE_LIMIT_RE.test(reason) || RATE_LIMIT_RE.test(message)) {
+      return { status: 429, message, phase };
+    }
+    return null;
+  }
+  if (err instanceof Error && getFacilitatorResponseError(err)) return { status: 502, message, phase };
+  const http3 = FACILITATOR_HTTP_ERROR_RE.exec(message);
+  if (http3) return { status: http3[2] === "429" ? 429 : 502, message, phase };
+  if (e?.cause !== void 0 && e.cause !== err) {
+    const inner2 = classifyV2FacilitatorError(e.cause, phase);
+    if (inner2) return { ...inner2, message: `${message}\uFF08${inner2.message}\uFF09` };
+  }
+  if (NETWORK_ERROR_RE.test(message)) return { status: 502, message, phase };
+  if (/^Failed to initialize: no supported payment kinds/.test(message)) return { status: 502, message, phase };
+  return null;
+}
+function decodePaymentSignature(header) {
+  const j = decodeBase64Json(header);
+  return j && typeof j === "object" && !Array.isArray(j) ? j : null;
+}
+var HonoRequestAdapter = class {
+  /**
+   * @param probe true = 只為了取得「未付款的 402 付款要求」：隱藏 PAYMENT-SIGNATURE、
+   *              一律當成 API client（不要 HTML 付費牆）。both 模式疊加 v2 header 時使用。
+   */
+  constructor(c, probe = false) {
+    this.c = c;
+    this.probe = probe;
+  }
+  c;
+  probe;
+  getHeader(name) {
+    if (this.probe && name.toLowerCase() === "payment-signature") return void 0;
+    return this.c.req.header(name);
+  }
+  getMethod() {
+    return this.c.req.method;
+  }
+  getPath() {
+    return this.c.req.path;
+  }
+  /** 完整 URL。Vercel 上的 https 由 vercel-entry.ts 補正（402 的 resource.url 取自這裡）。 */
+  getUrl() {
+    return this.c.req.url;
+  }
+  getAcceptHeader() {
+    return this.probe ? "application/json" : this.c.req.header("Accept") || "";
+  }
+  getUserAgent() {
+    return this.c.req.header("User-Agent") || "";
+  }
+};
+function instructionsToResponse(r) {
+  const headers = new Headers(r.headers);
+  if (r.isHtml) return new Response(String(r.body ?? ""), { status: r.status, headers });
+  if (!headers.has("content-type")) headers.set("Content-Type", "application/json");
+  return new Response(JSON.stringify(r.body ?? {}), { status: r.status, headers });
+}
+function jsonError(status, body) {
+  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+}
+function withPrivate(value) {
+  if (!value) return "private";
+  return value.split(",").some((d) => d.trim().toLowerCase() === "private") ? value : `${value}, private`;
+}
+function createX402V2(opts) {
+  const network = toCaip2Network(opts.network);
+  const facilitator = opts.facilitatorClient ?? new HTTPFacilitatorClient({
+    url: opts.facilitatorUrl,
+    timeoutMs: opts.facilitatorTimeoutMs ?? resolveFacilitatorTimeoutMs()
+  });
+  const resourceServer = new x402ResourceServer(facilitator).register(network, new ExactEvmScheme());
+  const failures = /* @__PURE__ */ new WeakMap();
+  const adapterOf = (ctx) => ctx.transportContext?.request?.adapter;
+  resourceServer.onVerifyFailure(async (ctx) => {
+    const a = adapterOf(ctx);
+    if (a) failures.set(a, { error: ctx.error, phase: "verify" });
+  });
+  resourceServer.onSettleFailure(async (ctx) => {
+    const a = adapterOf(ctx);
+    if (a) failures.set(a, { error: ctx.error, phase: "settle" });
+  });
+  const routes = {};
+  for (const r of opts.routes) {
+    routes[r.pattern] = {
+      accepts: {
+        scheme: "exact",
+        network,
+        payTo: opts.payTo,
+        price: r.price,
+        maxTimeoutSeconds: opts.maxTimeoutSeconds
+      },
+      description: r.description,
+      mimeType: "application/json",
+      // 冪等：client 可帶 payment-identifier（選用）；帶了就成為結算帳本的冪等鍵（見 ledger.ts）。
+      extensions: { [PAYMENT_IDENTIFIER]: declarePaymentIdentifierExtension() }
+    };
+  }
+  const httpServer = new x402HTTPResourceServer(resourceServer, routes);
+  let initPromise = null;
+  let initialized = false;
+  const initTimeoutMs = opts.initTimeoutMs ?? DEFAULT_INIT_TIMEOUT_MS;
+  async function ensureInitialized() {
+    if (initialized) return;
+    if (!initPromise) {
+      initPromise = httpServer.initialize().then(
+        () => {
+          initialized = true;
+        },
+        (err) => {
+          initPromise = null;
+          throw err;
+        }
+      );
+      initPromise.catch(() => {
+      });
+    }
+    let timer;
+    const deadline = new Promise((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`Facilitator getSupported timed out after ${initTimeoutMs}ms`)),
+        initTimeoutMs
+      );
+    });
+    try {
+      await Promise.race([initPromise, deadline]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  const contextOf = (c, probe = false) => ({
+    adapter: new HonoRequestAdapter(c, probe),
+    path: c.req.path,
+    method: c.req.method,
+    paymentHeader: probe ? void 0 : c.req.header("payment-signature")
+  });
+  const initFailure = (err) => classifyV2FacilitatorError(err, "supported") ?? {
+    // 初始化失敗一律不發 402（發不出正確的付款要求）。認不出來的也回 502，但訊息只給代碼，
+    // 完整錯誤寫 log（可能含 facilitator URL 的憑證）。
+    status: 502,
+    message: "x402 v2 \u521D\u59CB\u5316\u5931\u6557\uFF08facilitator /supported \u6216\u8DEF\u7531\u8A2D\u5B9A\uFF09",
+    phase: "supported"
+  };
+  return {
+    network,
+    requiresPayment(c) {
+      return httpServer.requiresPayment(contextOf(c));
+    },
+    async unpaidHeaders(c) {
+      try {
+        await ensureInitialized();
+      } catch (err) {
+        console.error("[x402v2] initialize \u5931\u6557\uFF1A", err);
+        return { failure: initFailure(err) };
+      }
+      const result = await httpServer.processHTTPRequest(contextOf(c, true));
+      if (result.type !== "payment-error") return { headers: {} };
+      const { "Content-Type": _ct, "content-type": _ct2, ...rest } = result.response.headers;
+      return { headers: rest };
+    },
+    async handle(c, next) {
+      const context = contextOf(c);
+      if (!httpServer.requiresPayment(context)) return next();
+      const sigHeader = c.req.header("payment-signature");
+      if (sigHeader) {
+        const payload = decodePaymentSignature(sigHeader);
+        if (!payload) {
+          return jsonError(400, {
+            ok: false,
+            error: "invalid_payment_signature",
+            message: "PAYMENT-SIGNATURE \u4E0D\u662F base64 \u7DE8\u78BC\u7684 JSON\u3002",
+            note: "\u672A\u6263\u6B3E\uFF1A\u4ED8\u6B3E\u6388\u6B0A\u6C92\u6709\u9001\u7D66 facilitator\u3002"
+          });
+        }
+        if (payload.x402Version !== 2) {
+          return jsonError(400, {
+            ok: false,
+            error: "unsupported_x402_version",
+            message: `PAYMENT-SIGNATURE \u53EA\u63A5\u53D7 x402Version 2\uFF08\u6536\u5230 ${String(payload.x402Version)}\uFF09\uFF1Bv1 \u8ACB\u7528 X-PAYMENT\u3002`,
+            note: "\u672A\u6263\u6B3E\uFF1A\u4ED8\u6B3E\u6388\u6B0A\u6C92\u6709\u9001\u7D66 facilitator\u3002"
+          });
+        }
+        const pid = readPaymentIdentifier(payload);
+        if (!pid.valid) {
+          return jsonError(400, {
+            ok: false,
+            error: "invalid_payment_identifier",
+            message: "payment-identifier \u7684 id \u5FC5\u9808\u662F 16\u2013128 \u500B\u5B57\u5143\uFF0C\u53EA\u542B\u82F1\u6578\u3001\u5E95\u7DDA\u8207\u9023\u5B57\u865F\u3002",
+            note: "\u672A\u6263\u6B3E\uFF1A\u4ED8\u6B3E\u6388\u6B0A\u6C92\u6709\u9001\u7D66 facilitator\u3002"
+          });
+        }
+      }
+      try {
+        await ensureInitialized();
+      } catch (err) {
+        console.error("[x402v2] initialize \u5931\u6557\uFF1A", err);
+        return opts.onFacilitatorFailure(c, initFailure(err));
+      }
+      let result;
+      try {
+        result = await httpServer.processHTTPRequest(context);
+      } catch (err) {
+        const f2 = classifyV2FacilitatorError(err, "verify");
+        if (!f2) throw err;
+        return opts.onFacilitatorFailure(c, f2);
+      }
+      if (result.type === "no-payment-required") return next();
+      if (result.type === "payment-error") {
+        const failed = failures.get(context.adapter);
+        if (failed) {
+          failures.delete(context.adapter);
+          const f2 = classifyV2FacilitatorError(failed.error, failed.phase);
+          if (f2) return opts.onFacilitatorFailure(c, f2);
+          const name = failed.error?.name;
+          if (name !== "VerifyError" && name !== "SettleError") throw failed.error;
+        }
+        if (sigHeader && result.response.status === 402) {
+          const required = decodeBase64Json(result.response.headers["PAYMENT-REQUIRED"]);
+          if (typeof required?.error === "string" && RATE_LIMIT_RE.test(required.error)) {
+            return opts.onFacilitatorFailure(c, { status: 429, message: required.error, phase: "verify" });
+          }
+        }
+        return instructionsToResponse(result.response);
+      }
+      const { cancellationDispatcher, paymentPayload, paymentRequirements, declaredExtensions } = result;
+      try {
+        await next();
+      } catch (err) {
+        await cancellationDispatcher.cancel({ reason: "handler_threw", error: err });
+        throw err;
+      }
+      const handlerRes = c.res;
+      if (handlerRes.status >= 400) {
+        await cancellationDispatcher.cancel({ reason: "handler_failed", responseStatus: handlerRes.status });
+        return;
+      }
+      c.res = void 0;
+      const responseBody = Buffer.from(await handlerRes.arrayBuffer());
+      const responseHeaders = {};
+      handlerRes.headers.forEach((value, key) => {
+        responseHeaders[key] = value;
+      });
+      let settle3;
+      try {
+        settle3 = await httpServer.processSettlement(paymentPayload, paymentRequirements, declaredExtensions, {
+          request: context,
+          responseBody,
+          responseHeaders
+        });
+      } catch (err) {
+        const f2 = classifyV2FacilitatorError(err, "settle");
+        if (!f2) throw err;
+        return opts.onFacilitatorFailure(c, f2);
+      }
+      if (!settle3.success) {
+        const failed = failures.get(context.adapter);
+        if (failed) {
+          failures.delete(context.adapter);
+          const f2 = classifyV2FacilitatorError(failed.error, "settle");
+          if (f2) return opts.onFacilitatorFailure(c, f2);
+        }
+        return instructionsToResponse(settle3.response);
+      }
+      const headers = new Headers(handlerRes.headers);
+      headers.delete("transfer-encoding");
+      headers.delete("content-length");
+      headers.delete("settlement-overrides");
+      for (const [k, v] of Object.entries(settle3.headers)) headers.set(k, v);
+      headers.set("Cache-Control", withPrivate(headers.get("Cache-Control")));
+      return new Response(responseBody, { status: handlerRes.status, headers });
+    }
+  };
+}
 
 // src/onchainRevenue.ts
 var FEE_ROUTER_READ_ABI = [
@@ -61341,6 +65534,7 @@ function createExposureService(reader, targets, opts = {}) {
 var NETWORK = process.env.X402_NETWORK ?? "base-sepolia";
 var FACILITATOR_URL = process.env.X402_FACILITATOR_URL ?? "https://x402.org/facilitator";
 var PAY_TO = resolvePayTo(ADDRESSES.FeeRouter);
+var X402_PROTOCOL = resolveX402Protocol();
 var SETTLEMENT_TOKEN2 = resolveSettlementToken();
 var PRICE_SIGNALS = 0.01;
 var PRICE_ORACLE = 5e-3;
@@ -61461,9 +65655,34 @@ function classifyFacilitatorFailure(message) {
   }
   return null;
 }
-async function applyLedgerRecording(entry, res, paymentHeader) {
-  if (!entry || res.status >= 400 || !res.headers.has("X-PAYMENT-RESPONSE")) {
+function facilitatorFailureResponse(f2) {
+  const note = f2.phase === "settle" ? "\u7D50\u7B97\u7D50\u679C\u672A\u77E5\uFF1A\u4ED8\u6B3E\u6388\u6B0A\u5DF2\u4EA4\u7D66 facilitator\uFF0C\u5728 validBefore \u4E4B\u524D\u4ECD\u53EF\u80FD\u88AB\u7D50\u7B97\u3002\u8ACB\u5148\u5C0D\u5E33\uFF08\u93C8\u4E0A USDC \u8F49\u5E33\u7D00\u9304\uFF09\u518D\u6C7A\u5B9A\u662F\u5426\u91CD\u8A66\uFF1B\u4ED8\u8CBB\u8CC7\u6599\u672A\u56DE\u50B3\u3002" : f2.phase === "supported" ? "\u672A\u6263\u6B3E\u3001\u672A\u767C\u51FA\u4ED8\u6B3E\u8981\u6C42\uFF08402\uFF09\uFF1A\u7121\u6CD5\u5411 facilitator \u53D6\u5F97\u652F\u63F4\u7684\u4ED8\u6B3E\u65B9\u5F0F\uFF0C\u8ACB\u7A0D\u5F8C\u91CD\u8A66\u3002" : "\u672A\u6263\u6B3E\uFF1A\u4ED8\u6B3E\u6388\u6B0A\u5C1A\u672A\u88AB facilitator \u7D50\u7B97\uFF0C\u53EF\u7528\u540C\u4E00\u500B\u8ACB\u6C42\u91CD\u8A66\uFF08\u6703\u91CD\u65B0\u7C3D\u4E00\u5F35\u6388\u6B0A\uFF09\u3002";
+  const headers = { "Content-Type": "application/json" };
+  if (f2.status === 429) headers["Retry-After"] = String(FACILITATOR_RETRY_AFTER_SEC);
+  return new Response(
+    JSON.stringify({
+      ok: false,
+      error: f2.status === 429 ? "facilitator_rate_limited" : "facilitator_unavailable",
+      message: f2.message,
+      note,
+      facilitator: FACILITATOR_URL,
+      phase: f2.phase
+    }),
+    { status: f2.status, headers }
+  );
+}
+async function applyLedgerRecording(entry, res, paymentHeader, protocol = "v1") {
+  const proofHeader = protocol === "v2" ? "PAYMENT-RESPONSE" : "X-PAYMENT-RESPONSE";
+  if (!entry || res.status >= 400 || !res.headers.has(proofHeader)) {
     return res;
+  }
+  if (protocol === "v2") {
+    try {
+      const proof = JSON.parse(Buffer.from(res.headers.get(proofHeader), "base64").toString("utf8"));
+      if (proof?.success !== true) return res;
+    } catch {
+      return res;
+    }
   }
   let settleError;
   let queued = false;
@@ -61471,11 +65690,11 @@ async function applyLedgerRecording(entry, res, paymentHeader) {
     settleError = "settlement disabled\uFF1A\u672A\u8A2D\u5B9A UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN\uFF08\u50C5\u4FDD\u7559\u93C8\u4E0B\u5E33\u52D9 /revenue\uFF09";
   } else {
     try {
-      let idempotencyKey = deriveIdempotencyKey(res.headers.get("X-PAYMENT-RESPONSE"), paymentHeader);
+      let idempotencyKey = protocol === "v2" ? deriveIdempotencyKeyV2(res.headers.get(proofHeader), decodePaymentSignature(paymentHeader)) : deriveIdempotencyKey(res.headers.get("X-PAYMENT-RESPONSE"), paymentHeader);
       if (!idempotencyKey) {
         idempotencyKey = `req:${randomUUID()}`;
         console.warn(
-          `[ledger] \u7121\u6CD5\u5F9E X-PAYMENT-RESPONSE / X-PAYMENT \u63A8\u5C0E\u51AA\u7B49\u9375\uFF0C\u6539\u7528\u96A8\u6A5F\u9375 ${idempotencyKey}\uFF1A` + JSON.stringify(entry)
+          `[ledger] \u7121\u6CD5\u5F9E ${proofHeader} / ${protocol === "v2" ? "PAYMENT-SIGNATURE" : "X-PAYMENT"} \u63A8\u5C0E\u51AA\u7B49\u9375\uFF0C\u6539\u7528\u96A8\u6A5F\u9375 ${idempotencyKey}\uFF1A` + JSON.stringify(entry)
         );
       }
       await enqueueSettlement({ ...entry, idempotencyKey });
@@ -61569,6 +65788,20 @@ function createApp(opts = {}) {
     }
   });
   const payTo = opts.payTo ?? PAY_TO;
+  const x402Protocol = opts.x402Protocol ?? X402_PROTOCOL;
+  const x402v2 = x402Protocol === "v1" ? null : createX402V2({
+    payTo,
+    network: NETWORK,
+    facilitatorUrl: FACILITATOR_URL,
+    facilitatorClient: opts.x402FacilitatorClient,
+    maxTimeoutSeconds: MAX_TIMEOUT_SECONDS,
+    routes: Object.entries(paidRoutes()).map(([pattern, r]) => ({
+      pattern,
+      price: r.price,
+      description: r.config.description
+    })),
+    onFacilitatorFailure: (_c, f2) => facilitatorFailureResponse(f2)
+  });
   const codeReader = opts.payoutCodeReader ?? provider2;
   const checkPayTo = () => assessPayoutAddress(codeReader, payTo, { requireEoa: true });
   app2.use("*", cors({ origin: "*", allowMethods: ["GET", "POST", "OPTIONS"] }));
@@ -61649,7 +65882,21 @@ function createApp(opts = {}) {
       example: {
         curl: "curl -s <BASE_URL>/  # discover, then pay with any x402 client",
         node: "see agent/examples/buy-signal.ts (x402-fetch + viem)"
-      }
+      },
+      // 只有啟用 v2 時才出現（v1 模式的回應與遷移前相同）。
+      ...x402v2 ? {
+        x402: {
+          protocol: x402Protocol,
+          versions: x402Protocol === "both" ? [2, 1] : [2],
+          network: x402v2.network,
+          headers: {
+            v2: { required: "PAYMENT-REQUIRED", payment: "PAYMENT-SIGNATURE", response: "PAYMENT-RESPONSE" },
+            ...x402Protocol === "both" ? { v1: { required: "(402 body)", payment: "X-PAYMENT", response: "X-PAYMENT-RESPONSE" } } : {}
+          },
+          extensions: ["payment-identifier"],
+          note: "v2 \u7684\u4ED8\u6B3E\u8981\u6C42\u5728 402 \u7684 PAYMENT-REQUIRED header\uFF08base64 JSON\uFF09\uFF1Bexact\uFF0FEIP-3009\uFF08USDC transferWithAuthorization\uFF09\uFF0C\u4E0D\u63A5\u53D7 Permit2\u3002" + (x402Protocol === "both" ? "\u540C\u4E00\u500B\u8ACB\u6C42\u53EA\u80FD\u5E36\u4E00\u7A2E\u4ED8\u6B3E header\uFF08PAYMENT-SIGNATURE \u6216 X-PAYMENT\uFF09\u3002" : "X-PAYMENT\uFF08v1\uFF09\u4E0D\u518D\u88AB\u63A5\u53D7\u3002")
+        }
+      } : {}
     });
   });
   app2.get("/revenue", async (c) => {
@@ -61936,15 +66183,7 @@ function createApp(opts = {}) {
     paidRoutes(),
     { url: FACILITATOR_URL }
   );
-  app2.use(async (c, next) => {
-    if (findMatchingRoute(PAID_ROUTE_PATTERNS, rawPathOf(c), c.req.method.toUpperCase())) {
-      if (!(c.req.method === "GET" && PAID_HANDLER_PATHS.some((re) => re.test(c.req.path)))) {
-        return c.json({ ok: false, error: "not_found", note: "\u672A\u4ED8\u6B3E\uFF1A\u6C92\u6709\u5C0D\u61C9\u7684\u4ED8\u8CBB\u7AEF\u9EDE\u3002" }, 404);
-      }
-      const blocked = await payToGuard(c, async () => {
-      });
-      if (blocked) return blocked;
-    }
+  const runV1 = async (c, next) => {
     let res;
     try {
       res = await x402(c, next);
@@ -61960,11 +66199,56 @@ function createApp(opts = {}) {
       if (f2?.status === 429) c.res = c.json(f2.body, f2.status, f2.headers);
     }
     c.res = await applyLedgerRecording(c.get("ledgerEntry"), c.res, c.req.header("X-PAYMENT"));
+  };
+  const runV2 = async (c, next) => {
+    const res = await x402v2.handle(c, next);
+    if (res) c.res = res;
+    c.res = await applyLedgerRecording(c.get("ledgerEntry"), c.res, c.req.header("PAYMENT-SIGNATURE"), "v2");
+  };
+  app2.use(async (c, next) => {
+    const paidRoute = Boolean(findMatchingRoute(PAID_ROUTE_PATTERNS, rawPathOf(c), c.req.method.toUpperCase())) || Boolean(x402v2?.requiresPayment(c));
+    if (paidRoute) {
+      if (!(c.req.method === "GET" && PAID_HANDLER_PATHS.some((re) => re.test(c.req.path)))) {
+        return c.json({ ok: false, error: "not_found", note: "\u672A\u4ED8\u6B3E\uFF1A\u6C92\u6709\u5C0D\u61C9\u7684\u4ED8\u8CBB\u7AEF\u9EDE\u3002" }, 404);
+      }
+      const blocked = await payToGuard(c, async () => {
+      });
+      if (blocked) return blocked;
+    }
+    if (!x402v2) return runV1(c, next);
+    if (x402Protocol === "v2") return runV2(c, next);
+    const hasV2 = Boolean(c.req.header("PAYMENT-SIGNATURE"));
+    const hasV1 = Boolean(c.req.header("X-PAYMENT"));
+    if (paidRoute && hasV2 && hasV1) {
+      return c.json(
+        {
+          ok: false,
+          error: "ambiguous_payment_headers",
+          message: "\u540C\u4E00\u500B\u8ACB\u6C42\u540C\u6642\u5E36\u4E86 PAYMENT-SIGNATURE\uFF08v2\uFF09\u8207 X-PAYMENT\uFF08v1\uFF09\uFF1B\u8ACB\u53EA\u5E36\u4E00\u7A2E\u3002",
+          note: "\u672A\u6263\u6B3E\uFF1A\u5169\u5F35\u4ED8\u6B3E\u6388\u6B0A\u90FD\u6C92\u6709\u9001\u7D66 facilitator\u3002"
+        },
+        400
+      );
+    }
+    if (hasV2) return runV2(c, next);
+    const out = await runV1(c, next);
+    if (out) return out;
+    if (paidRoute && !hasV1 && c.res.status === 402) {
+      const v2 = await x402v2.unpaidHeaders(c);
+      if ("failure" in v2) {
+        console.error(`[x402] both\uFF1Av2 \u4ED8\u6B3E\u8981\u6C42\u7522\u751F\u5931\u6557\uFF0C\u672C\u6B21 402 \u53EA\u5BA3\u544A v1\uFF1A${v2.failure.message}`);
+      } else {
+        const res = new Response(c.res.body, c.res);
+        for (const [k, v] of Object.entries(v2.headers)) res.headers.set(k, v);
+        c.res = void 0;
+        c.res = res;
+      }
+    }
   });
   app2.get("/signals/:trader", async (c) => {
     const trader = c.req.param("trader");
     try {
-      const perf = await getTraderPerformance(contracts2, trader);
+      const perf = opts.signalReader ? await opts.signalReader(trader) : await getTraderPerformance(contracts2, trader);
       c.set("ledgerEntry", {
         trader,
         feeUsd: PRICE_SIGNALS,

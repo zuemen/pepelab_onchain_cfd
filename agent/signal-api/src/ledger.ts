@@ -20,6 +20,8 @@
 //     - 「先加後刪」：搬移時一律先寫入目的地、再從來源刪除——中途崩潰最多造成重複，
 //       重複由冪等鍵吸收；絕不會造成遺失。
 
+import { decodeBase64Json, readPaymentIdentifier } from "./paymentIdentifier.ts";
+
 function credentials(): { url: string; token: string } | null {
   const url = process.env.UPSTASH_REDIS_REST_URL?.trim();
   const token = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
@@ -144,6 +146,44 @@ export function deriveIdempotencyKey(
     if (typeof from === "string" && /^0x[0-9a-fA-F]{40}$/.test(from) && typeof nonce === "string" && nonce) {
       return `auth:${from.toLowerCase()}:${nonce.toLowerCase()}`;
     }
+  }
+  return undefined;
+}
+
+/**
+ * x402 **v2** 的冪等鍵（docs/ADR-009-x402-v2-migration.md）。v1 維持上面的 deriveIdempotencyKey。
+ *   1. `pid:<付款人>:<payment-identifier>` —— client 在 PaymentPayload.extensions 帶了合法的
+ *      payment-identifier（v2 的冪等擴充）。**一定綁付款人**：id 是 client 自己選的，不綁的話
+ *      A 可以拿 B 用過的 id 讓自己那筆的分潤被當成重複而跳過。付款人取 PAYMENT-RESPONSE.payer
+ *      （facilitator 驗過簽章的地址），沒有才用 payload.authorization.from。
+ *   2. `tx:<結算 tx hash>` —— PAYMENT-RESPONSE.transaction（與 v1 相同）。
+ *   3. `auth:<付款人>:<EIP-3009 nonce>` —— PaymentPayload.payload.authorization（與 v1 相同）。
+ *
+ * 語意（規格的定義）：同一個 id 代表同一筆邏輯上的付款。所以同一個付款人用同一個 id 付了
+ * 兩筆（例如逾時後帶同一個 id 重簽重送，兩筆都被結算）→ 只分潤一次，第二筆的款項留在 payTo
+ * 未分配。worker 看到已完成的鍵再出現會留下 log。見 docs/KNOWN_LIMITATIONS.md §16b。
+ *
+ * @param paymentResponseHeader 回應的 PAYMENT-RESPONSE（base64 JSON）。
+ * @param paymentPayload        已解碼的 PAYMENT-SIGNATURE（PaymentPayload）。
+ */
+export function deriveIdempotencyKeyV2(
+  paymentResponseHeader: string | null | undefined,
+  paymentPayload: unknown,
+): string | undefined {
+  const isAddr = (v: unknown): v is string => typeof v === "string" && /^0x[0-9a-fA-F]{40}$/.test(v);
+  const settle = decodeBase64Json(paymentResponseHeader);
+  const auth = (paymentPayload as { payload?: { authorization?: { from?: unknown; nonce?: unknown } } } | null)
+    ?.payload?.authorization;
+  const payer = isAddr(settle?.payer) ? settle!.payer : isAddr(auth?.from) ? auth!.from : null;
+
+  const pid = readPaymentIdentifier(paymentPayload);
+  if (pid.valid && pid.id && payer) return `pid:${String(payer).toLowerCase()}:${pid.id}`;
+
+  const tx = settle?.transaction;
+  if (typeof tx === "string" && /^0x[0-9a-fA-F]{64}$/.test(tx)) return `tx:${tx.toLowerCase()}`;
+
+  if (isAddr(auth?.from) && typeof auth?.nonce === "string" && auth.nonce) {
+    return `auth:${auth.from.toLowerCase()}:${auth.nonce.toLowerCase()}`;
   }
   return undefined;
 }

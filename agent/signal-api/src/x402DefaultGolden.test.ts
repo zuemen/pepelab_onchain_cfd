@@ -9,19 +9,23 @@
 // 的程式碼擷取的：狀態碼、全部回應 header（排序）、body 原文（HTML 付費牆只記 sha256 與長度）。
 // 之後只有在「刻意改變 v1 行為」時才可以用 UPDATE_GOLDEN=1 重新產生，並在 PR 說明原因。
 //
-// 完全離線：未付款的 402 不會呼叫 facilitator；RPC 指向 127.0.0.1:1（連不上，走既有的降級路徑）。
+// 完全離線：未付款的 402 不會呼叫 facilitator；RPC 指向本機假節點（一律回錯誤，走既有的降級路徑）。
+// golden 當初是以 RPC=http://127.0.0.1:1（連不上）擷取的，402 的內容與 RPC 怎麼失敗無關。
 import assert from "node:assert";
 import { createHash } from "node:crypto";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
+import { startRpcStub } from "./testing/rpcStub.ts";
+
 const HERE = dirname(fileURLToPath(import.meta.url));
+const rpc = await startRpcStub();
 const GOLDEN = join(HERE, "testing", "golden", "x402-v1-402.json");
 
 process.env.X402_NETWORK = "base-sepolia";
 process.env.X402_FACILITATOR_URL = "http://127.0.0.1:1";
-process.env.BASE_SEPOLIA_RPC_URL = "http://127.0.0.1:1";
+process.env.BASE_SEPOLIA_RPC_URL = rpc.url;
 for (const k of ["PAY_TO", "SIGNAL_API_PUBLIC_URL", "UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN"]) {
   delete process.env[k];
 }
@@ -90,7 +94,7 @@ async function capture(protocol: string | undefined): Promise<Captured[]> {
   return out;
 }
 
-const quiet = async <T>(fn: () => Promise<T>): Promise<T> => {
+const quiet = async <T>(fn: () => T | Promise<T>): Promise<T> => {
   const { warn, error } = console;
   console.warn = () => {};
   console.error = () => {};
@@ -108,6 +112,7 @@ if (process.env.UPDATE_GOLDEN === "1") {
   await mkdir(dirname(GOLDEN), { recursive: true });
   await writeFile(GOLDEN, `${JSON.stringify(unset, null, 2)}\n`);
   console.log(`✓ 已寫入 golden：${GOLDEN}（${unset.length} 組）`);
+  await rpc.close();
   process.exit(0);
 }
 
@@ -151,3 +156,4 @@ compare("X402_PROTOCOL=garbage", await quiet(() => capture("V3-typo")));
 console.log("✓ X402_PROTOCOL 設成無法辨識的值：退回 v1，與 golden 逐位元相同");
 
 console.log("\n✅ x402DefaultGolden.test.ts 全過");
+await rpc.close();
