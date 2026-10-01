@@ -11,6 +11,7 @@ import { vault } from './vault';
 import { whale } from './whale';
 import { admin } from './admin';
 import { common } from './common';
+import { legacy } from './legacy';
 import { tokens } from './tokens';
 import { errors } from './errors';
 import { history } from './history';
@@ -65,6 +66,7 @@ const zhTW = {
   history,
   traderProfile,
   traderDashboard,
+  legacy,
 };
 
 export type Catalog = typeof zhTW;

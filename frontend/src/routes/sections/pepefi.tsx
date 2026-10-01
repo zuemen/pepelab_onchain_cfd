@@ -29,6 +29,7 @@ const CopyPage          = lazy(() => import('src/pages/pepefi/CopyPage'));
 const PortfolioPage     = lazy(() => import('src/pages/pepefi/PortfolioPage'));
 const VaultPage         = lazy(() => import('src/pages/pepefi/VaultPage'));
 const HistoryPage       = lazy(() => import('src/pages/pepefi/HistoryPage'));
+const LegacyPage        = lazy(() => import('src/pages/pepefi/LegacyPage'));
 const WhaleTrackerPage  = lazy(() => import('src/pages/pepefi/WhaleTrackerPage'));
 const AdminOraclePage   = lazy(() => import('src/pages/pepefi/AdminOraclePage'));
 const AdminTreasuryPage = lazy(() => import('src/pages/pepefi/AdminTreasuryPage'));
@@ -98,6 +99,9 @@ export const pepefiRoutes: RouteObject[] = [
           { path: 'portfolio', element: <PortfolioPage /> },
           { path: 'vault', element: <VaultPage /> },
           { path: 'history', element: <HistoryPage /> },
+          // 舊版 exchange 的資產取回。不進側邊欄：入口是 Portfolio 上只在「真的有舊資產」
+          // 時才出現的提示（LegacyAssetsBanner），見 docs/LEGACY_EXCHANGES.md。
+          { path: 'legacy', element: <LegacyPage /> },
           { path: 'whale', element: <WhaleTrackerPage /> },
           { path: 'admin/oracle', element: <AdminOraclePage /> },
           { path: 'admin/treasury', element: <AdminTreasuryPage /> },
