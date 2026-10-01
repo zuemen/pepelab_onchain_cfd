@@ -1,6 +1,6 @@
 {
   "$comment": "租戶部署設定範本。複製成 deploy/tenants/<tenant-id>.json 後填寫；說明見 docs/TENANT_DEPLOYMENT.md。這個檔案只放佔位值與環境變數名稱，任何私鑰、助記詞、RPC 網址都不得寫進來（node scripts/check-tenant-deploy.mjs 會擋）。",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "tenantId": "<TENANT_ID>",
   "status": "template",
   "frontendTenant": "<TENANT_ID>",
@@ -24,6 +24,13 @@
     "settlementToken": "<SETTLEMENT_TOKEN_ADDRESS>",
     "priceSource": "<REFERENCE_PRICE_SOURCE_ADDRESS>"
   },
+  "params": {
+    "oracleKind": "guarded",
+    "oiCapNonRwaUsdc": null,
+    "oiCapRwaUsdc": null,
+    "maxProfitBps": null,
+    "deployVault": true
+  },
   "assets": {
     "registered": ["sAAPL", "sMSFT", "sGOLD", "sBOND"]
   },
@@ -34,14 +41,5 @@
   },
   "keeper": {
     "cron": "*/15 * * * *"
-  },
-  "deployed": {
-    "GuardedOracle": null,
-    "AssetVaultV2": null,
-    "InsuranceVault": null,
-    "FeeRouter": null,
-    "PerpetualExchange": null,
-    "AgentSessionManager": null,
-    "ESGRegistryV2": null
   }
 }

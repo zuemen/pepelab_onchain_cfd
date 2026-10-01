@@ -14,7 +14,14 @@
 //   node scripts/check-tenant-deploy.mjs                       # 檢查 deploy/tenants/ 全部
 //   node scripts/check-tenant-deploy.mjs deploy/tenants/x.json # 只檢查指定檔案
 //   node scripts/check-tenant-deploy.mjs --print-env deploy/tenants/x.json
-//        印出既有部署腳本要的「位址類」環境變數對照（不含任何秘密），給人工核對與 dry-run。
+//        印出 DeployTenant.s.sol 的 dry-run／驗證指令與這份設定的角色對照（不含任何秘密）。
+//   node scripts/check-tenant-deploy.mjs --print-frontend deploy/tenants/x.deployed.json
+//        由部署紀錄印出前端部署登記（frontend/src/contracts/deployments/<id>.json）的內容。
+//
+// 一個租戶在這個目錄最多兩個檔：
+//   <id>.json           部署設定（人寫）：角色、共用元件、上限、資產。DeployTenant.s.sol 的輸入。
+//   <id>.deployed.json  部署紀錄（DeployTenant.s.sol 廣播後寫出、人工複製進來）：整組合約位址。
+// 兩者必須同時成立：有紀錄 ⇔ 設定的 status 是 deployed。
 //
 // 結束碼：0 通過；1 有問題；2 檢查本身中止（檔案讀不到等）。
 import { readFileSync, readdirSync, existsSync } from "node:fs";
@@ -63,24 +70,56 @@ export const STATUSES = ["template", "ready", "deployed"];
 export const ROLE_KEYS = ["admin", "risk", "guardian", "keeper", "marketOperator", "treasury"];
 export const SECRET_ENV_KEYS = ["deployerPrivateKey", "keeperPrivateKey", "rpcUrl"];
 export const SHARED_KEYS = ["settlementToken", "priceSource"];
-export const DEPLOYED_KEYS = [
-  "GuardedOracle",
-  "AssetVaultV2",
+export const PARAM_KEYS = ["oracleKind", "oiCapNonRwaUsdc", "oiCapRwaUsdc", "maxProfitBps", "deployVault"];
+export const ORACLE_KINDS = ["guarded", "mock"];
+/** 與 PerpetualExchange 的 MIN_PROFIT_CAP_BPS / MAX_PROFIT_CAP_BPS 相同（DeployTenant 也會擋）。 */
+export const PROFIT_BPS_RANGE = [10_000, 250_000];
+/** 部署紀錄（<id>.deployed.json）的 contracts 鍵——DeployTenant.s.sol `_recordJson` 寫出的那一組。 */
+export const RECORD_CONTRACT_KEYS = [
+  "Oracle",
+  "ESGRegistryV2",
+  "KYCRegistry",
   "InsuranceVault",
   "FeeRouter",
+  "TraderStake",
   "PerpetualExchange",
+  "StrategyRegistry",
+  "CopyTracker",
   "AgentSessionManager",
-  "ESGRegistryV2",
+  "AssetVaultV2",
+  "AssetVaultV2Impl",
 ];
+/** 只有 params.deployVault 為 true 時才存在；否則紀錄裡是零位址。 */
+export const VAULT_RECORD_KEYS = ["AssetVaultV2", "AssetVaultV2Impl"];
+const RECORD_TOP_KEYS = [
+  "schemaVersion",
+  "tenantId",
+  "chainId",
+  "mode",
+  "oracleKind",
+  "deployer",
+  "owner",
+  "settlementToken",
+  "treasury",
+  "contracts",
+  "tokens",
+];
+const RECORD_SUFFIX = ".deployed.json";
+export const isRecordFile = (file) => basename(file).endsWith(RECORD_SUFFIX);
 /**
  * 這幾組角色必須是不同的地址（docs/DEPLOY_129_CUTOVER.md、docs/KEY_MANAGEMENT.md）：
- * admin／keeper／guardian／risk 四個兩兩不同（6 組），加上 keeper 不兼 treasury。
+ * admin／keeper／guardian／risk 四個兩兩不同（6 組），加上 keeper 不兼 treasury、
+ * guardian 不兼 marketOperator 也不兼 treasury（marketOperator 可以就是 keeper，正式站如此）。
  * 由清單產生，不手寫配對——手寫曾漏掉 guardian–risk。
  */
 const SEPARATED_ROLES = ["admin", "keeper", "guardian", "risk"];
 export const MUST_DIFFER = [
   ...SEPARATED_ROLES.flatMap((a, i) => SEPARATED_ROLES.slice(i + 1).map((b) => [a, b])),
   ["keeper", "treasury"],
+  // DeployTenant.s.sol 的 preflight 也擋這兩組；在這裡先擋，問題就不會等到 forge 才出現。
+  // guardian 兼 marketOperator：一把鑰匙同時能暫停與切換市場。熱錢包不收款。
+  ["guardian", "marketOperator"],
+  ["guardian", "treasury"],
 ];
 
 const TOP_KEYS = [
@@ -93,10 +132,10 @@ const TOP_KEYS = [
   "secretsEnv",
   "roles",
   "shared",
+  "params",
   "assets",
   "fees",
   "keeper",
-  "deployed",
 ];
 
 // ── 讀前端設定 ───────────────────────────────────────────────────────────
@@ -144,7 +183,7 @@ export function checkTenantDeploy({ file, cfg, ctx }) {
   const strict = status === "ready" || status === "deployed";
 
   for (const k of Object.keys(cfg)) if (!TOP_KEYS.includes(k)) bad(`未知欄位 ${k}（打錯字？）`);
-  if (cfg.schemaVersion !== 1) bad("schemaVersion 必須是 1");
+  if (cfg.schemaVersion !== 2) bad("schemaVersion 必須是 2（v2：新增 params、已部署位址改放 <id>.deployed.json）");
 
   // ── 秘密不得進設定檔 ──
   for (const [path, key, value] of walk(cfg)) {
@@ -253,6 +292,34 @@ export function checkTenantDeploy({ file, cfg, ctx }) {
   for (const k of SHARED_KEYS) addrField(`shared.${k}`, cfg.shared?.[k], { dedicated: false });
   for (const k of Object.keys(cfg.shared ?? {})) if (!SHARED_KEYS.includes(k)) bad(`shared 未知欄位 ${k}`);
 
+  // ── 部署參數（DeployTenant.s.sol 的輸入）──
+  const prm = cfg.params ?? {};
+  for (const k of Object.keys(prm)) if (!PARAM_KEYS.includes(k)) bad(`params 未知欄位 ${k}`);
+  if (!ORACLE_KINDS.includes(prm.oracleKind)) bad(`params.oracleKind 必須是 ${ORACLE_KINDS.join(" / ")}`);
+  if (typeof prm.deployVault !== "boolean") bad("params.deployVault 必須是 true 或 false");
+  if (prm.oracleKind === "mock") {
+    // MockOracle 沒有偏離上限，一把金鑰可以寫任意價格。
+    if (cfg.network?.chainId === 8453) bad("params.oracleKind=mock 不得用於 Base 主網（8453）");
+    if (prm.deployVault === true) bad("params.deployVault=true 需要 oracleKind=guarded（硬化金庫不接沒有偏離上限的 oracle）");
+  }
+  for (const k of ["oiCapNonRwaUsdc", "oiCapRwaUsdc"]) {
+    const v = prm[k];
+    if (v === null || v === undefined) {
+      if (strict) bad(`params.${k} 未填（status=${status} 不允許；0 或留空在合約上代表不設上限）`);
+    } else if (!Number.isSafeInteger(v) || v <= 0) {
+      bad(`params.${k} 必須是正整數（整數 USDC，每一邊）；0 在合約上代表不設上限`);
+    }
+  }
+  {
+    const v = prm.maxProfitBps;
+    const [lo, hi] = PROFIT_BPS_RANGE;
+    if (v === null || v === undefined) {
+      if (strict) bad(`params.maxProfitBps 未填（status=${status} 不允許）`);
+    } else if (!Number.isSafeInteger(v) || v < lo || v > hi) {
+      bad(`params.maxProfitBps 必須是 ${lo}–${hi} 的整數 bps（0＝不設上限，不允許）`);
+    }
+  }
+
   // ── 資產 ──
   const reg = cfg.assets?.registered;
   if (!Array.isArray(reg) || reg.length === 0) bad("assets.registered 必須是非空陣列");
@@ -287,15 +354,127 @@ export function checkTenantDeploy({ file, cfg, ctx }) {
     bad("keeper.cron 必須是 5 欄的 cron 字串");
   }
 
-  // ── 已部署合約 ──
-  for (const k of DEPLOYED_KEYS) {
-    const v = cfg.deployed?.[k];
-    if (status === "deployed") addrField(`deployed.${k}`, v, { dedicated: true });
-    else if (v !== null) bad(`deployed.${k}：status=${status} 時必須是 null（還沒部署）`);
-  }
-  for (const k of Object.keys(cfg.deployed ?? {})) if (!DEPLOYED_KEYS.includes(k)) bad(`deployed 未知欄位 ${k}`);
-
   return { problems, addrs };
+}
+
+/**
+ * 檢查一份部署紀錄（<id>.deployed.json）。cfg 是同一個租戶的部署設定（沒有就是 null）。
+ * 回傳形狀與 checkTenantDeploy 相同，addrs 一樣進跨租戶比對。
+ */
+export function checkDeployedRecord({ file, rec, cfg, ctx }) {
+  const problems = [];
+  const bad = (msg) => problems.push(`${file}: ${msg}`);
+  const addrs = new Map();
+  const id = basename(file).slice(0, -RECORD_SUFFIX.length);
+
+  if (!rec || typeof rec !== "object" || Array.isArray(rec)) {
+    bad("不是 JSON 物件");
+    return { problems, addrs };
+  }
+  for (const k of Object.keys(rec)) if (!RECORD_TOP_KEYS.includes(k)) bad(`未知欄位 ${k}`);
+  for (const [path, , value] of walk(rec)) {
+    if (typeof value === "string" && HEX64_ANY.test(value)) bad(`${path.join(".")} 看起來是私鑰（64 位十六進位）`);
+    if (typeof value === "string" && /^[a-z][a-z0-9+.-]*:\/\//i.test(value)) bad(`${path.join(".")} 是網址——部署紀錄只放位址`);
+  }
+  if (rec.schemaVersion !== 1) bad("schemaVersion 必須是 1");
+  if (rec.tenantId !== id) bad(`tenantId「${rec.tenantId}」與檔名「${id}」不一致`);
+  // dry-run／test 產生的位址是模擬出來的；只有真的廣播過的紀錄能進版控。
+  if (rec.mode !== "broadcast") {
+    bad(`mode=${JSON.stringify(rec.mode)}——只有 DeployTenant 廣播後寫出的紀錄（mode=broadcast）能放進 deploy/tenants/`);
+  }
+
+  const same = (a, b) => typeof a === "string" && typeof b === "string" && a.toLowerCase() === b.toLowerCase();
+  if (!cfg) {
+    bad(`找不到對應的部署設定 ${id}.json`);
+  } else {
+    if (cfg.status !== "deployed") bad(`有部署紀錄，但 ${id}.json 的 status 是 ${cfg.status}（應改成 deployed）`);
+    if (rec.chainId !== cfg.network?.chainId) bad(`chainId=${rec.chainId} 與設定的 network.chainId=${cfg.network?.chainId} 不一致`);
+    if (rec.oracleKind !== cfg.params?.oracleKind) bad(`oracleKind=${rec.oracleKind} 與設定的 params.oracleKind 不一致`);
+    if (!same(rec.settlementToken, cfg.shared?.settlementToken)) bad("settlementToken 與設定的 shared.settlementToken 不一致");
+    if (!same(rec.treasury, cfg.roles?.treasury)) bad("treasury 與設定的 roles.treasury 不一致——FeeRouter 的收款地址是 immutable");
+    // DeployTenant 的最後一步把所有權交給 admin；紀錄的 owner 不是 admin 代表移交沒發生。
+    if (!same(rec.owner, cfg.roles?.admin)) bad("owner 與設定的 roles.admin 不一致——部署應以移交給 admin 結束");
+  }
+
+  const seen = new Map();
+  const dedicated = (path, value, { allowZero = false } = {}) => {
+    if (typeof value !== "string" || !ADDR_EXACT.test(value)) {
+      bad(`${path}=${JSON.stringify(value)} 不是位址`);
+      return;
+    }
+    const low = value.toLowerCase();
+    if (low === ZERO) {
+      if (!allowZero) bad(`${path} 是零位址`);
+      return;
+    }
+    if (ctx.productionAddrs.has(low)) {
+      bad(`${path}=${value} 是現行正式站（addresses.ts）的位址——租戶的合約不得與正式站共用`);
+    }
+    if (cfg) {
+      for (const k of ROLE_KEYS) {
+        if (same(cfg.roles?.[k], value)) {
+          bad(path === "deployer" ? `deployer 與 roles.${k} 是同一個地址——部署者不得持有任何租戶角色` : `${path} 與 roles.${k} 是同一個地址`);
+        }
+      }
+      for (const k of SHARED_KEYS) {
+        if (same(cfg.shared?.[k], value)) bad(`${path} 與 shared.${k} 是同一個地址——租戶的合約不是共用元件`);
+      }
+    }
+    if (seen.has(low)) bad(`${path} 與 ${seen.get(low)} 是同一個地址——同一個租戶的各合約不得重複`);
+    else seen.set(low, path);
+    addrs.set(low, path);
+  };
+
+  dedicated("deployer", rec.deployer);
+  const wantVault = cfg?.params?.deployVault === true;
+  const contracts = rec.contracts ?? {};
+  for (const k of Object.keys(contracts)) if (!RECORD_CONTRACT_KEYS.includes(k)) bad(`contracts 未知欄位 ${k}`);
+  for (const k of RECORD_CONTRACT_KEYS) {
+    const isVaultKey = VAULT_RECORD_KEYS.includes(k);
+    dedicated(`contracts.${k}`, contracts[k], { allowZero: isVaultKey && !wantVault });
+    if (isVaultKey && !wantVault && ADDR_EXACT.test(contracts[k] ?? "") && contracts[k].toLowerCase() !== ZERO) {
+      bad(`contracts.${k}：設定的 params.deployVault 不是 true，紀錄卻有金庫位址`);
+    }
+  }
+  const tokens = rec.tokens ?? {};
+  const wantTokens = wantVault ? cfg?.assets?.registered ?? [] : [];
+  for (const sym of wantTokens) if (!(sym in tokens)) bad(`tokens 缺少 ${sym}（設定的 assets.registered 有它）`);
+  for (const [sym, addr] of Object.entries(tokens)) {
+    if (!wantTokens.includes(sym)) bad(`tokens.${sym} 不在設定的 assets.registered 裡（或這個租戶沒有金庫）`);
+    dedicated(`tokens.${sym}`, addr);
+  }
+  return { problems, addrs };
+}
+
+/** 部署紀錄 → 前端部署登記（frontend/src/contracts/deployments/<id>.json）的內容。 */
+export function frontendDeployment(rec) {
+  const c = rec.contracts ?? {};
+  const hasVault = typeof c.AssetVaultV2 === "string" && c.AssetVaultV2.toLowerCase() !== ZERO;
+  const out = {
+    schemaVersion: 1,
+    tenant: rec.tenantId,
+    kind: "dedicated",
+    chainId: rec.chainId,
+    oracleKind: rec.oracleKind,
+    contracts: {
+      SettlementToken: rec.settlementToken,
+      Oracle: c.Oracle,
+      ESGRegistryV2: c.ESGRegistryV2,
+      KYCRegistry: c.KYCRegistry,
+      InsuranceVault: c.InsuranceVault,
+      FeeRouter: c.FeeRouter,
+      TraderStake: c.TraderStake,
+      PerpetualExchange: c.PerpetualExchange,
+      StrategyRegistry: c.StrategyRegistry,
+      CopyTracker: c.CopyTracker,
+      AgentSessionManager: c.AgentSessionManager,
+    },
+  };
+  if (hasVault) {
+    out.contracts.AssetVaultV2 = c.AssetVaultV2;
+    out.tokens = { ...(rec.tokens ?? {}) };
+  }
+  return out;
 }
 
 /** 跨租戶：任何兩個租戶不得共用專屬的角色或合約地址。 */
@@ -318,31 +497,30 @@ export function checkCrossTenant(results) {
 export function envPlan(cfg) {
   const r = cfg.roles ?? {};
   const s = cfg.shared ?? {};
+  const p = cfg.params ?? {};
+  const id = cfg.tenantId;
+  const rpc = "$" + (cfg.secretsEnv?.rpcUrl ?? "RPC_ENV");
   return [
     "# 以下只是對照，不會執行任何東西。秘密（私鑰、RPC）請從 secret store 以",
     `# ${cfg.secretsEnv?.deployerPrivateKey ?? "<DEPLOYER_KEY_ENV>"} / ${cfg.secretsEnv?.rpcUrl ?? "<RPC_ENV>"} 帶入，不要寫進任何檔案。`,
     "",
-    "# Phase A — contracts/script/DeployHardenedVault129.s.sol（先不加 --broadcast 做模擬）",
-    `MOCKUSDC_ADDR=${s.settlementToken}`,
-    `MOCKORACLE_ADDR=${s.priceSource}`,
-    `ADMIN_ADDRESS=${r.admin}`,
-    `KEEPER_ADDRESS=${r.keeper}`,
-    `GUARDIAN_ADDRESS=${r.guardian}`,
-    `RISK_ADDRESS=${r.risk}`,
+    "# 1. 模擬（不帶金鑰、不送交易）— contracts/script/DeployTenant.s.sol",
+    "cd contracts",
+    `TENANT=${id} PREFLIGHT_ONLY=true forge script script/DeployTenant.s.sol:DeployTenant --fork-url "${rpc}" --sender <部署者位址> -vv`,
+    `TENANT=${id} forge script script/DeployTenant.s.sol:DeployTenant --fork-url "${rpc}" --sender <部署者位址> -vv`,
     "",
-    "# 角色移交 — contracts/script/HandoverRoles.s.sol（HANDOVER_DRY_RUN 預設就是 true）",
-    `NEW_ADMIN=${r.admin}`,
-    `NEW_KEEPER=${r.keeper}`,
-    `NEW_GUARDIAN=${r.guardian}`,
-    `NEW_RISK=${r.risk}`,
-    "HANDOVER_DRY_RUN=true",
+    "# 2. 廣播由持有部署者金鑰的人執行（docs/TENANT_DEPLOYMENT.md），不在這裡、不在 CI。",
     "",
-    "# 收費路由 — contracts/script/DeployX402Router.s.sol",
-    `TREASURY=${r.treasury}`,
+    "# 3. 廣播後讀回驗證（唯讀）",
+    `TENANT=${id} TENANT_RECORD=cache/tenants/${id}.deployed.json forge script script/VerifyTenant.s.sol:VerifyTenant --rpc-url "${rpc}" -vv`,
     "",
-    "# 永續交易所（Redeploy129Exchange.s.sol）目前把 USDC／oracle／FeeRouter 等寫成常數，",
-    "# 尚未參數化，不能直接用於新租戶——見 docs/TENANT_DEPLOYMENT.md「已知缺口」。",
-    `# marketOperator（上線後由 owner 呼叫 setMarketOperator）=${r.marketOperator}`,
+    "# 這份設定會寫上鏈的角色與參數（DeployTenant 讀的就是這個檔案，不讀環境變數）：",
+    `# admin（部署結束時的 owner）=${r.admin}`,
+    `# risk=${r.risk}  guardian=${r.guardian}  keeper=${r.keeper}`,
+    `# marketOperator=${r.marketOperator}  treasury（FeeRouter，immutable）=${r.treasury}`,
+    `# settlementToken=${s.settlementToken}  priceSource（只用來替新 oracle 取初始價）=${s.priceSource}`,
+    `# oracleKind=${p.oracleKind}  deployVault=${p.deployVault}`,
+    `# OI 上限／每邊（USDC）：非 RWA ${p.oiCapNonRwaUsdc}、RWA ${p.oiCapRwaUsdc}；maxProfitBps=${p.maxProfitBps}`,
     `# assets.registered=${(cfg.assets?.registered ?? []).join(",")}`,
   ].join("\n");
 }
@@ -367,19 +545,52 @@ export function loadContext(root) {
   return { symbols, productionAddrs, frontendTenants };
 }
 
+const readJson = (file) => {
+  try {
+    return { value: JSON.parse(readFileSync(file, "utf8")) };
+  } catch (e) {
+    return { error: `${file}: 不是合法 JSON：${e.message}` };
+  }
+};
+
 export function run({ root, files, log = console.log }) {
   const ctx = loadContext(root);
-  const results = files.map((file) => {
-    let cfg;
-    try {
-      cfg = JSON.parse(readFileSync(file, "utf8"));
-    } catch (e) {
-      return { file, problems: [`${file}: 不是合法 JSON：${e.message}`], addrs: new Map() };
-    }
-    return { file, ...checkTenantDeploy({ file, cfg, ctx }) };
+  const configFiles = files.filter((f) => !isRecordFile(f));
+  const recordFiles = files.filter(isRecordFile);
+
+  const results = configFiles.map((file) => {
+    const { value: cfg, error } = readJson(file);
+    if (error) return { file, problems: [error], addrs: new Map() };
+    return { file, cfg, ...checkTenantDeploy({ file, cfg, ctx }) };
   });
-  const problems = results.flatMap((r) => r.problems).concat(checkCrossTenant(results));
-  log(`檢查 ${files.length} 份租戶部署設定（已知資產 ${ctx.symbols.length} 檔、正式站位址 ${ctx.productionAddrs.size} 個）`);
+
+  for (const file of recordFiles) {
+    const { value: rec, error } = readJson(file);
+    if (error) {
+      results.push({ file, problems: [error], addrs: new Map() });
+      continue;
+    }
+    // 對應的設定：同一次檢查裡有就用，沒有就從紀錄旁邊讀（只檢查單一紀錄檔時）。
+    const cfgFile = join(dirname(file), `${basename(file).slice(0, -RECORD_SUFFIX.length)}.json`);
+    const hit = results.find((r) => resolve(r.file) === resolve(cfgFile));
+    const cfg = hit ? (hit.cfg ?? null) : existsSync(cfgFile) ? (readJson(cfgFile).value ?? null) : null;
+    // 以設定檔的名義進跨租戶比對：紀錄與「自己的」設定不算兩個租戶。
+    results.push({ file: cfgFile, ...checkDeployedRecord({ file, rec, cfg, ctx }) });
+  }
+
+  // status=deployed 必須有部署紀錄（位址只放在紀錄裡，設定檔沒有位址欄位可填）。
+  const problems = results.flatMap((r) => r.problems);
+  for (const r of results) {
+    if (r.cfg?.status !== "deployed") continue;
+    const recFile = join(dirname(r.file), `${basename(r.file, ".json")}${RECORD_SUFFIX}`);
+    if (!existsSync(recFile)) problems.push(`${r.file}: status=deployed 但找不到部署紀錄 ${basename(recFile)}`);
+  }
+  problems.push(...checkCrossTenant(results));
+
+  log(
+    `檢查 ${configFiles.length} 份租戶部署設定、${recordFiles.length} 份部署紀錄` +
+      `（已知資產 ${ctx.symbols.length} 檔、正式站位址 ${ctx.productionAddrs.size} 個）`,
+  );
   if (problems.length) {
     for (const p of problems) log(`::error::${p}`);
     log(`\n${problems.length} 個問題`);
@@ -399,6 +610,19 @@ function main() {
     const problems = run({ root, files: [file], log: (m) => console.error(m) });
     if (problems.length) process.exit(1);
     console.log(envPlan(JSON.parse(readFileSync(file, "utf8"))));
+    process.exit(0);
+  }
+
+  const f = args.indexOf("--print-frontend");
+  if (f >= 0) {
+    const file = resolve(args[f + 1] ?? "");
+    if (!isRecordFile(file)) {
+      console.error("::error::--print-frontend 需要一份部署紀錄（<id>.deployed.json）");
+      process.exit(2);
+    }
+    const problems = run({ root, files: [file], log: (m) => console.error(m) });
+    if (problems.length) process.exit(1);
+    console.log(JSON.stringify(frontendDeployment(JSON.parse(readFileSync(file, "utf8"))), null, 2));
     process.exit(0);
   }
 

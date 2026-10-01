@@ -8,7 +8,16 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { MUST_DIFFER, checkCrossTenant, checkTenantDeploy, envPlan, loadContext } from "./check-tenant-deploy.mjs";
+import {
+  MUST_DIFFER,
+  RECORD_CONTRACT_KEYS,
+  checkCrossTenant,
+  checkDeployedRecord,
+  checkTenantDeploy,
+  envPlan,
+  frontendDeployment,
+  loadContext,
+} from "./check-tenant-deploy.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -23,8 +32,32 @@ const filled = () => {
   c.status = "ready";
   c.roles = { admin: A(1), risk: A(2), guardian: A(3), keeper: A(4), marketOperator: A(5), treasury: A(6) };
   c.shared = { settlementToken: A(7), priceSource: A(8) };
+  c.params = { oracleKind: "guarded", oiCapNonRwaUsdc: 1000, oiCapRwaUsdc: 500, maxProfitBps: 50000, deployVault: true };
   return c;
 };
+// 一份與 filled() 對得上的部署紀錄（DeployTenant.s.sol 廣播後寫出的形狀）。
+const B = (n) => `0x${n.toString(16).padStart(40, "b")}`;
+const deployedCfg = () => {
+  const c = filled();
+  c.status = "deployed";
+  c.fees = { status: "decided", baseFeeBps: 10, tenantMarkupBps: 5 };
+  return c;
+};
+const record = (cfg = deployedCfg()) => ({
+  schemaVersion: 1,
+  tenantId: "demo-bank",
+  chainId: cfg.network.chainId,
+  mode: "broadcast",
+  oracleKind: cfg.params.oracleKind,
+  deployer: B(99),
+  owner: cfg.roles.admin,
+  settlementToken: cfg.shared.settlementToken,
+  treasury: cfg.roles.treasury,
+  contracts: Object.fromEntries(RECORD_CONTRACT_KEYS.map((k, i) => [k, B(i + 1)])),
+  tokens: Object.fromEntries(cfg.assets.registered.map((s, i) => [s, B(100 + i)])),
+});
+const checkRec = (rec, cfg = deployedCfg(), file = "demo-bank.deployed.json") =>
+  checkDeployedRecord({ file, rec, cfg, ctx }).problems.join("\n");
 const check = (cfg, file = "demo-bank.json") => checkTenantDeploy({ file, cfg, ctx }).problems.join("\n");
 
 test("repo 內的租戶部署設定全部通過", () => {
@@ -131,11 +164,220 @@ test("費率未決時數字必須是 null，且不能標成 deployed", () => {
   assert.match(check(d), /fees 仍是 pending-decision，不能標成 deployed/);
 });
 
-test("deployed 狀態要求所有合約位址都已填", () => {
+test("設定檔沒有放已部署位址的欄位（v2：位址只在 <id>.deployed.json）", () => {
   const c = filled();
-  c.status = "deployed";
-  c.fees = { status: "decided", baseFeeBps: 10, tenantMarkupBps: 5 };
-  assert.match(check(c), /deployed\.GuardedOracle 未填/);
+  c.deployed = { PerpetualExchange: A(20) };
+  assert.match(check(c), /未知欄位 deployed/);
+  const old = filled();
+  old.schemaVersion = 1;
+  assert.match(check(old), /schemaVersion 必須是 2/);
+});
+
+test("status=deployed 但沒有部署紀錄，CLI 擋下", () => {
+  const dir = mkdtempSync(join(tmpdir(), "tenant-deploy-"));
+  const file = join(dir, "demo-bank.json");
+  writeFileSync(file, JSON.stringify(deployedCfg()));
+  const r = spawnSync(process.execPath, [script, file], { encoding: "utf8" });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stdout, /status=deployed 但找不到部署紀錄 demo-bank\.deployed\.json/);
+});
+
+// ── params（DeployTenant.s.sol 的輸入）────────────────────────────────────
+
+test("params：ready 以上必須填上限，而且不能是 0（合約上 0＝不設上限）", () => {
+  for (const k of ["oiCapNonRwaUsdc", "oiCapRwaUsdc"]) {
+    const c = filled();
+    c.params[k] = null;
+    assert.match(check(c), new RegExp(`params\\.${k} 未填`), k);
+    for (const bad of [0, -5, 1.5, "1000"]) {
+      const d = filled();
+      d.params[k] = bad;
+      assert.match(check(d), new RegExp(`params\\.${k} 必須是正整數`), `${k}=${bad}`);
+    }
+  }
+  const t = structuredClone(demo);
+  assert.equal(check(t), "", "template 可以留 null");
+});
+
+test("params：maxProfitBps 必須在 10000–250000，0 不允許", () => {
+  for (const bad of [0, 9999, 250001, "50000"]) {
+    const c = filled();
+    c.params.maxProfitBps = bad;
+    assert.match(check(c), /params\.maxProfitBps 必須是 10000–250000/, String(bad));
+  }
+  const c = filled();
+  c.params.maxProfitBps = null;
+  assert.match(check(c), /params\.maxProfitBps 未填/);
+});
+
+test("params：oracleKind 只有 guarded／mock；mock 不上主網、不配金庫", () => {
+  const c = filled();
+  c.params.oracleKind = "chainlink";
+  assert.match(check(c), /params\.oracleKind 必須是 guarded \/ mock/);
+  const m = filled();
+  m.params.oracleKind = "mock";
+  assert.match(check(m), /deployVault=true 需要 oracleKind=guarded/);
+  m.params.deployVault = false;
+  assert.equal(check(m), "");
+  m.network.chainId = 8453;
+  assert.match(check(m), /oracleKind=mock 不得用於 Base 主網/);
+  const u = filled();
+  u.params.oiCapUsdc = 1;
+  u.params.deployVault = "yes";
+  const out = check(u);
+  assert.match(out, /params 未知欄位 oiCapUsdc/);
+  assert.match(out, /params\.deployVault 必須是 true 或 false/);
+});
+
+test("guardian 不得兼 marketOperator 或 treasury；marketOperator 可以就是 keeper", () => {
+  const c = filled();
+  c.roles.marketOperator = c.roles.guardian;
+  assert.match(check(c), /roles\.guardian 與 roles\.marketOperator 是同一個地址/);
+  const d = filled();
+  d.roles.treasury = d.roles.guardian;
+  assert.match(check(d), /roles\.guardian 與 roles\.treasury 是同一個地址/);
+  const ok = filled();
+  ok.roles.marketOperator = ok.roles.keeper;
+  assert.equal(check(ok), "");
+});
+
+// ── 部署紀錄（<id>.deployed.json）─────────────────────────────────────────
+
+test("部署紀錄：與設定對得上的紀錄通過", () => {
+  assert.equal(checkRec(record()), "");
+});
+
+test("部署紀錄：只收廣播過的（dry-run／test 的位址是模擬的）", () => {
+  for (const mode of ["dry-run", "test", undefined]) {
+    const r = record();
+    r.mode = mode;
+    assert.match(checkRec(r), /只有 DeployTenant 廣播後寫出的紀錄/, String(mode));
+  }
+});
+
+test("部署紀錄：同一租戶的合約位址不得重複、不得是零位址", () => {
+  const r = record();
+  r.contracts.FeeRouter = r.contracts.InsuranceVault;
+  assert.match(checkRec(r), /contracts\.FeeRouter 與 contracts\.InsuranceVault 是同一個地址/);
+  const t = record();
+  t.tokens.sAAPL = t.contracts.PerpetualExchange;
+  assert.match(checkRec(t), /tokens\.sAAPL 與 contracts\.PerpetualExchange 是同一個地址/);
+  const z = record();
+  z.contracts.PerpetualExchange = "0x0000000000000000000000000000000000000000";
+  assert.match(checkRec(z), /contracts\.PerpetualExchange 是零位址/);
+  const m = record();
+  delete m.contracts.CopyTracker;
+  assert.match(checkRec(m), /contracts\.CopyTracker=undefined 不是位址/);
+});
+
+test("部署紀錄：租戶隔離——不得出現正式站的 exchange／vault／任何合約", () => {
+  const chains = ctx.productionAddrs;
+  const prod = [...chains][0];
+  for (const k of ["PerpetualExchange", "InsuranceVault", "FeeRouter", "AssetVaultV2", "Oracle"]) {
+    const r = record();
+    r.contracts[k] = prod;
+    assert.match(checkRec(r), new RegExp(`contracts\\.${k}=.* 是現行正式站`), k);
+  }
+  const t = record();
+  t.tokens.sMSFT = prod;
+  assert.match(checkRec(t), /tokens\.sMSFT=.* 是現行正式站/);
+});
+
+test("部署紀錄：租戶的合約不是共用元件，也不是任何角色地址", () => {
+  const cfg = deployedCfg();
+  const r = record(cfg);
+  r.contracts.Oracle = cfg.shared.priceSource;
+  assert.match(checkRec(r, cfg), /contracts\.Oracle 與 shared\.priceSource 是同一個地址/);
+  const k = record(cfg);
+  k.contracts.FeeRouter = cfg.roles.treasury;
+  assert.match(checkRec(k, cfg), /contracts\.FeeRouter 與 roles\.treasury 是同一個地址/);
+  const d = record(cfg);
+  d.deployer = cfg.roles.keeper;
+  assert.match(checkRec(d, cfg), /deployer 與 roles\.keeper 是同一個地址——部署者不得持有任何租戶角色/);
+});
+
+test("部署紀錄：必須與設定一致（鏈、oracle 種類、結算幣、收款地址、owner＝admin）", () => {
+  const r = record();
+  r.chainId = 8453;
+  r.oracleKind = "mock";
+  r.settlementToken = B(200);
+  r.treasury = B(201);
+  r.owner = r.deployer;
+  const out = checkRec(r);
+  assert.match(out, /chainId=8453 與設定的 network\.chainId=84532 不一致/);
+  assert.match(out, /oracleKind=mock 與設定的 params\.oracleKind 不一致/);
+  assert.match(out, /settlementToken 與設定的 shared\.settlementToken 不一致/);
+  assert.match(out, /treasury 與設定的 roles\.treasury 不一致/);
+  assert.match(out, /owner 與設定的 roles\.admin 不一致/);
+});
+
+test("部署紀錄：設定還不是 deployed、或找不到設定，都擋", () => {
+  assert.match(checkRec(record(), filled()), /有部署紀錄，但 demo-bank\.json 的 status 是 ready/);
+  assert.match(checkRec(record(), null), /找不到對應的部署設定 demo-bank\.json/);
+  assert.match(checkRec(record(), deployedCfg(), "other.deployed.json"), /tenantId「demo-bank」與檔名「other」不一致/);
+});
+
+test("部署紀錄：金庫與代幣跟著 params.deployVault 與 assets.registered", () => {
+  const cfg = deployedCfg();
+  const r = record(cfg);
+  delete r.tokens.sAAPL;
+  r.tokens.sBTC = B(300);
+  const out = checkRec(r, cfg);
+  assert.match(out, /tokens 缺少 sAAPL/);
+  assert.match(out, /tokens\.sBTC 不在設定的 assets\.registered 裡/);
+
+  const noVault = deployedCfg();
+  noVault.params.deployVault = false;
+  assert.match(checkRec(record(noVault), noVault), /params\.deployVault 不是 true，紀錄卻有金庫位址/);
+  const zeroVault = record(noVault);
+  zeroVault.contracts.AssetVaultV2 = zeroVault.contracts.AssetVaultV2Impl = "0x0000000000000000000000000000000000000000";
+  zeroVault.tokens = {};
+  assert.equal(checkRec(zeroVault, noVault), "");
+});
+
+test("部署紀錄：私鑰形狀、網址、未知欄位都擋", () => {
+  const r = record();
+  r.note = `0x${"12".repeat(32)}`;
+  r.contracts.Extra = B(400);
+  const out = checkRec(r);
+  assert.match(out, /未知欄位 note/);
+  assert.match(out, /note 看起來是私鑰/);
+  assert.match(out, /contracts 未知欄位 Extra/);
+});
+
+test("部署紀錄：兩個租戶的合約不得相同；紀錄與自己的設定不算兩個租戶", () => {
+  const a = checkDeployedRecord({ file: "a.deployed.json", rec: { ...record(), tenantId: "a" }, cfg: deployedCfg(), ctx });
+  const b = checkDeployedRecord({ file: "b.deployed.json", rec: { ...record(), tenantId: "b" }, cfg: deployedCfg(), ctx });
+  const out = checkCrossTenant([
+    { file: "a.json", ...a },
+    { file: "b.json", ...b },
+  ]).join("\n");
+  assert.match(out, /b\.json: contracts\.PerpetualExchange=.* 與 a\.json 的 contracts\.PerpetualExchange 相同/);
+});
+
+test("CLI：設定＋紀錄放在一起通過；--print-frontend 印出前端部署登記", () => {
+  const dir = mkdtempSync(join(tmpdir(), "tenant-deploy-"));
+  const cfg = deployedCfg();
+  writeFileSync(join(dir, "demo-bank.json"), JSON.stringify(cfg));
+  const recFile = join(dir, "demo-bank.deployed.json");
+  writeFileSync(recFile, JSON.stringify(record(cfg)));
+  const all = spawnSync(process.execPath, [script, join(dir, "demo-bank.json"), recFile], { encoding: "utf8" });
+  assert.equal(all.status, 0, all.stdout + all.stderr);
+  assert.match(all.stdout, /1 份租戶部署設定、1 份部署紀錄/);
+
+  const r = spawnSync(process.execPath, [script, "--print-frontend", recFile], { encoding: "utf8" });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const fe = JSON.parse(r.stdout);
+  assert.deepEqual(fe, frontendDeployment(record(cfg)));
+  assert.equal(fe.kind, "dedicated");
+  assert.equal(fe.tenant, "demo-bank");
+  assert.equal(fe.contracts.SettlementToken, cfg.shared.settlementToken);
+  assert.equal(fe.contracts.PerpetualExchange, record(cfg).contracts.PerpetualExchange);
+  assert.equal(fe.contracts.AssetVaultV2Impl, undefined, "實作合約不是前端要用的位址");
+  assert.deepEqual(Object.keys(fe.tokens), cfg.assets.registered);
+  // 部署者、owner、收款地址都不進前端登記。
+  assert.doesNotMatch(r.stdout, new RegExp(record(cfg).deployer, "i"));
+  assert.doesNotMatch(r.stdout, new RegExp(cfg.roles.treasury, "i"));
 });
 
 test("default 不能拿來當新租戶部署", () => {
@@ -156,11 +398,16 @@ test("錯誤的設定檔讓 CLI 以非零結束", () => {
   assert.match(r.stdout, /::error::/);
 });
 
-test("--print-env 只印位址類變數，不含任何秘密值", () => {
-  const plan = envPlan(filled());
-  assert.match(plan, /ADMIN_ADDRESS=0x/);
-  assert.match(plan, /HANDOVER_DRY_RUN=true/);
+test("--print-env 印出 DeployTenant 的 dry-run 指令與角色對照，不含任何秘密值、也沒有 --broadcast", () => {
+  const cfg = filled();
+  const plan = envPlan(cfg);
+  assert.match(plan, /TENANT=demo-bank PREFLIGHT_ONLY=true forge script script\/DeployTenant\.s\.sol:DeployTenant --fork-url "\$BASE_SEPOLIA_RPC_URL"/);
+  assert.match(plan, /script\/VerifyTenant\.s\.sol:VerifyTenant/);
+  assert.match(plan, new RegExp(`admin（部署結束時的 owner）=${cfg.roles.admin}`));
+  assert.match(plan, /OI 上限／每邊（USDC）：非 RWA 1000、RWA 500；maxProfitBps=50000/);
   assert.doesNotMatch(plan, /PRIVATE_KEY=/);
+  assert.doesNotMatch(plan, /--broadcast/);
+  assert.doesNotMatch(plan, /--private-key/);
 });
 
 // ── 審查修正（PR #197）─────────────────────────────────────────────────────
@@ -173,7 +420,9 @@ test("admin／keeper／guardian／risk 的 6 組配對與 keeper–treasury 全�
     for (let j = i + 1; j < roles.length; j++) assert.ok(got.has(key(roles[i], roles[j])), key(roles[i], roles[j]));
   }
   assert.ok(got.has(key("keeper", "treasury")));
-  assert.equal(got.size, 7);
+  assert.ok(got.has(key("guardian", "marketOperator")));
+  assert.ok(got.has(key("guardian", "treasury")));
+  assert.equal(got.size, 9);
 });
 
 test("guardian 與 risk 不得是同一個地址", () => {

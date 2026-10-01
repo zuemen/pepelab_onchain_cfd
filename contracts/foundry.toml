@@ -11,6 +11,14 @@ remappings = [
     "forge-std/=lib/forge-std/src/",
 ]
 
+# ADR-008：DeployTenant／VerifyTenant 只能「讀」租戶部署設定所在的 deploy/tenants/；
+# 部署紀錄只寫進 git-ignored 的 cache/tenants/（複製到 deploy/tenants/ 是人工步驟）。
+# 除此之外腳本與測試對檔案系統沒有任何權限。
+fs_permissions = [
+    { access = "read", path = "../deploy/tenants" },
+    { access = "read-write", path = "./cache/tenants" },
+]
+
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
 
 [rpc_endpoints]
