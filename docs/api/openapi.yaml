@@ -182,7 +182,8 @@ paths:
       description: |
         免費、唯讀。所有欄位在**同一個區塊**（`asOfBlock` = latest − 3，避開負載平衡節點尚未同步的最新區塊）讀取；
         `ageSec` / `sinceSec` 以該區塊時間為基準。`header not found` 與 429 會重試一次（逾時不重試）；
-        整份報表總時限 20 秒，到點仍未讀完的欄位為 null 並標 `REPORT_DEADLINE`。
+        整份報表總時限 20 秒，到點仍未讀完的欄位為 null 並標 `REPORT_DEADLINE`。單筆讀取逾時（8 秒）標 `RPC_TIMEOUT`；
+        兩者由「該筆讀取開始時哪個上限先到期」決定（剩餘總時限 ≤ 8 秒 → `REPORT_DEADLINE`），同一情境結果固定。
         - OI：合約有 `longOpenSize` / `shortOpenSize` 時為「數量 × MockOracle 現價」（`method: openSize×markPrice`），
           否則退回 `globalLongNotional` / `globalShortNotional`（開倉時名目加總，`method: globalNotional`）。
         - Oracle：MockOracle（exchange 結算用）與 GuardedOracle（V2）兩顆的價格與年齡；`agree` 為兩者價格是否完全相同，
