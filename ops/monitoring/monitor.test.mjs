@@ -1,0 +1,459 @@
+// 監控引擎與通知的測試：用假的 JSON-RPC／HTTP（注入 fetch），不連任何網路。
+//   node --test ops/monitoring/monitor.test.mjs
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { keccak256, selector } from "./keccak.mjs";
+import { decodeLog, formatUnits, reconcile, runOnce, toUnits } from "./engine.mjs";
+import { channelsOf, shouldSend } from "./notify.mjs";
+import { STATE_KEY, tick } from "./tick.mjs";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const FULL = JSON.parse(readFileSync(join(here, "monitors.json"), "utf8"));
+const RPC = "https://rpc.test";
+const API = "https://api.test";
+const E18 = 10n ** 18n;
+
+/** 只保留指定規則的設定（其餘規則不呼叫，假鏈不需要準備它們的資料）。 */
+const only = (...ids) => ({ ...FULL, rules: FULL.rules.filter((r) => ids.includes(r.id)) });
+const ruleOf = (id) => FULL.rules.find((r) => r.id === id);
+const addrOf = (id, ref) => ruleOf(id).contracts.find((c) => c.ref === ref || c.as === ref).address;
+const env0 = { RPC_URL: RPC, SIGNAL_API_URL: API };
+
+const word = (...vals) => "0x" + vals.map((v) => BigInt(v).toString(16).padStart(64, "0")).join("");
+const topicAddr = (a) => "0x" + "0".repeat(24) + a.slice(2).toLowerCase();
+
+/** 假鏈：logs、eth_call 回應、餘額、HTTP 端點都可在測試中改。 */
+function fakeWorld() {
+  const w = {
+    head: 1000,
+    logs: [],
+    calls: new Map(), // `${to}|${data}` 或 `${to}|${selector}` → hex 或 { revert: true }
+    balances: new Map(),
+    failGetLogs: false,
+    http: new Map(), // url → () => ({ status, body }) 或丟錯
+    sent: [], // 通知通道收到的請求
+  };
+  w.setCall = (to, fnSig, args, ret) => {
+    const data = selector(fnSig) + args.map((a) => a.replace(/^0x/, "").padStart(64, "0")).join("");
+    w.calls.set(`${to.toLowerCase()}|${data}`, ret);
+  };
+  const handle = (req) => {
+    switch (req.method) {
+      case "eth_blockNumber":
+        return "0x" + w.head.toString(16);
+      case "eth_getLogs": {
+        if (w.failGetLogs) throw new Error("query returned more than 10000 results");
+        const f = req.params[0];
+        const [from, to] = [Number(BigInt(f.fromBlock)), Number(BigInt(f.toBlock))];
+        const addrs = f.address.map((a) => a.toLowerCase());
+        return w.logs.filter((l) => {
+          const bn = Number(BigInt(l.blockNumber));
+          return bn >= from && bn <= to && addrs.includes(l.address.toLowerCase()) && f.topics[0].includes(l.topics[0]);
+        });
+      }
+      case "eth_call": {
+        const { to, data } = req.params[0];
+        const v = w.calls.get(`${to.toLowerCase()}|${data}`) ?? w.calls.get(`${to.toLowerCase()}|${data.slice(0, 10)}`);
+        if (v === undefined || v?.revert) throw new Error("execution reverted");
+        return v;
+      }
+      case "eth_getBalance":
+        return "0x" + (w.balances.get(req.params[0].toLowerCase()) ?? 10n * E18).toString(16);
+      default:
+        throw new Error(`unsupported ${req.method}`);
+    }
+  };
+  w.fetch = async (url, init = {}) => {
+    if (url === RPC) {
+      const body = JSON.parse(init.body);
+      const one = (r) => {
+        try {
+          return { jsonrpc: "2.0", id: r.id, result: handle(r) };
+        } catch (e) {
+          return { jsonrpc: "2.0", id: r.id, error: { code: -32000, message: e.message } };
+        }
+      };
+      return Response.json(Array.isArray(body) ? body.map(one) : one(body));
+    }
+    if (w.http.has(url)) {
+      const r = w.http.get(url)();
+      return new Response(typeof r.body === "string" ? r.body : JSON.stringify(r.body), { status: r.status });
+    }
+    // 其他一律視為通知通道
+    w.sent.push({ url, init });
+    return new Response("ok", { status: w.channelStatus ?? 200 });
+  };
+  return w;
+}
+
+function makeLog(w, { address, sig, topics = [], data = "0x", block = w.head - 5, tx = "0x" + "ab".repeat(32), logIndex = 0 }) {
+  w.logs.push({
+    address,
+    topics: [keccak256(sig), ...topics],
+    data,
+    blockNumber: "0x" + block.toString(16),
+    transactionHash: tx,
+    logIndex: "0x" + logIndex.toString(16),
+    removed: false,
+  });
+}
+
+const fakeKv = () => {
+  const m = new Map();
+  return { m, get: async (k, t) => (m.has(k) ? (t === "json" ? JSON.parse(m.get(k)) : m.get(k)) : null), put: async (k, v) => void m.set(k, v) };
+};
+
+// ── keccak ───────────────────────────────────────────────────────────────────
+
+test("keccak256 已知向量（含跨 rate 邊界）", () => {
+  assert.equal(keccak256(""), "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470");
+  assert.equal(keccak256("Transfer(address,address,uint256)"), "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef");
+  assert.equal(keccak256("OwnershipTransferred(address,address)"), "0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0");
+  assert.equal(selector("owner()"), "0x8da5cb5b");
+  // 135／136／200 bytes（以 ethers.keccak256 交叉核對過）。
+  assert.equal(keccak256("x".repeat(135)), "0x16570bdb055e663ea1cb57ac6f09194f4bc7b7070847971fc0b86710366dc34f");
+  assert.equal(keccak256("x".repeat(136)), "0x50da8ef3747b7a7f01d08563aa11c72a2a668563fb928adc6e8d2a1ab4e36096");
+  assert.equal(keccak256("a".repeat(200)), "0x96ea54061def936c4be90b518992fdc6f12f535068a256229aca54267b4d084d");
+});
+
+test("金額換算與 log 解碼", () => {
+  assert.equal(toUnits("10000", 18), 10000n * E18);
+  assert.equal(toUnits("0.02", 18), 2n * 10n ** 16n);
+  assert.equal(formatUnits(12345678n * 10n ** 16n, 18), "123,456.78");
+  const f = decodeLog(
+    [
+      { name: "role", type: "bytes32", indexed: true },
+      { name: "account", type: "address", indexed: true },
+      { name: "note", type: "string", indexed: false },
+      { name: "pnl", type: "int256", indexed: false },
+    ],
+    { topics: ["0x0", "0x" + "0".repeat(64), topicAddr("0x1111111111111111111111111111111111111111")], data: word(64, (1n << 256n) - 5n) },
+    { ["0x" + "0".repeat(64)]: "DEFAULT_ADMIN_ROLE" },
+  );
+  assert.match(f[0].value, /^DEFAULT_ADMIN_ROLE/);
+  assert.equal(f[1].value, "0x1111111111111111111111111111111111111111");
+  assert.equal(f[2].value, "(動態型別略)");
+  assert.equal(f[3].value, "-5");
+});
+
+// ── event 規則 ───────────────────────────────────────────────────────────────
+
+test("owner 變更：SEV-1 事件、解出新舊 owner、檢查點前進、不重複告警", async () => {
+  const w = fakeWorld();
+  const cfg = only("owner-transferred");
+  const ex = addrOf("owner-transferred", "PerpetualExchange");
+  makeLog(w, {
+    address: ex,
+    sig: "OwnershipTransferred(address,address)",
+    topics: [topicAddr("0x00000000000000000000000000000000000000aa"), topicAddr("0x00000000000000000000000000000000000000bb")],
+  });
+  const state = {};
+  const r1 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 1_000_000 });
+  assert.equal(r1.errors.length, 0, r1.errors.join());
+  assert.equal(r1.notes.length, 1);
+  const n = r1.notes[0];
+  assert.equal(n.severity, "SEV-1");
+  assert.equal(n.status, "事件");
+  assert.ok(n.lines.some((l) => l.includes("newOwner=0x00000000000000000000000000000000000000bb")), n.lines.join("\n"));
+  assert.ok(n.lines.some((l) => l.includes("https://sepolia.basescan.org/tx/0x")));
+  assert.equal(state.checkpoint, w.head - 3);
+
+  const r2 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 1_000_300 });
+  assert.equal(r2.notes.length, 0, "同一筆 log 不可重複告警");
+});
+
+test("角色授予：解出角色名稱", async () => {
+  const w = fakeWorld();
+  const cfg = only("access-role-changed");
+  const minter = keccak256("MINTER_ROLE");
+  makeLog(w, {
+    address: addrOf("access-role-changed", "V2_STACK.tokens.sBTC"),
+    sig: "RoleGranted(bytes32,address,address)",
+    topics: [minter, topicAddr("0x00000000000000000000000000000000000000cc"), topicAddr("0x00000000000000000000000000000000000000dd")],
+  });
+  const { notes } = await runOnce({ config: cfg, env: env0, state: {}, fetchImpl: w.fetch, now: 1 });
+  assert.equal(notes.length, 1);
+  assert.match(notes[0].lines[1], /role=MINTER_ROLE/);
+});
+
+test("getLogs 失敗：檢查點不前進、開「監控本身」告警；恢復後補掃並發恢復通知", async () => {
+  const w = fakeWorld();
+  const cfg = only("owner-transferred");
+  const state = { checkpoint: 900 };
+  w.failGetLogs = true;
+  const r1 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 100 });
+  assert.equal(state.checkpoint, 900);
+  assert.equal(r1.errors.length, 1);
+  assert.ok(r1.notes.some((n) => n.key === "monitor-self:errors" && n.status === "觸發"));
+
+  w.failGetLogs = false;
+  makeLog(w, { address: addrOf("owner-transferred", "InsuranceVault"), sig: "OwnershipTransferred(address,address)", topics: [word(0), word(1)], block: 950 });
+  const r2 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 400 });
+  assert.ok(r2.notes.some((n) => n.status === "事件"), "失敗期間的 log 必須在恢復後補到");
+  assert.ok(r2.notes.some((n) => n.key === "monitor-self:errors" && n.status === "恢復"));
+});
+
+test("大額提領：低於門檻不告警、達門檻告警、一小時內累計達門檻另開告警", async () => {
+  const w = fakeWorld();
+  const cfg = only("large-margin-withdrawal");
+  const ex = addrOf("large-margin-withdrawal", "PerpetualExchange");
+  const user = topicAddr("0x00000000000000000000000000000000000000ee");
+  makeLog(w, { address: ex, sig: "MarginWithdrawn(address,uint256)", topics: [user], data: word(9_000n * E18), block: 990, logIndex: 0 });
+  makeLog(w, { address: ex, sig: "MarginWithdrawn(address,uint256)", topics: [user], data: word(20_000n * E18), block: 991, logIndex: 1 });
+  const state = { checkpoint: 980 };
+  const { notes } = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 10_000 });
+  const ev = notes.filter((n) => n.status === "事件");
+  assert.equal(ev.length, 1);
+  assert.ok(ev[0].lines.some((l) => l.includes("金額：20,000")));
+
+  // 拆單：再 3 筆 9000，累計 9000+20000+27000 = 56000 ≥ 50000
+  for (let i = 0; i < 3; i++) {
+    makeLog(w, { address: ex, sig: "MarginWithdrawn(address,uint256)", topics: [user], data: word(9_000n * E18), block: 998, logIndex: i });
+  }
+  w.head = 1010;
+  const r2 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 10_600 });
+  assert.ok(r2.notes.some((n) => n.key === "large-margin-withdrawal:window" && n.status === "觸發"), JSON.stringify(r2.notes));
+  // 門檻可由 Worker 變數覆寫
+  const r3 = await runOnce({ config: cfg, env: { ...env0, LARGE_WITHDRAWAL_WINDOW_USDC: "1000000" }, state, fetchImpl: w.fetch, now: 10_900 });
+  assert.ok(r3.notes.some((n) => n.key === "large-margin-withdrawal:window" && n.status === "恢復"));
+  // 視窗過期後清空
+  await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 10_600 + 3600 });
+  assert.equal(state.windows["large-margin-withdrawal"].length, 0);
+});
+
+// ── state 規則 ───────────────────────────────────────────────────────────────
+
+function stubOracle(w, { now, ages = {}, prices = {}, maxAge = 21600 }) {
+  const r = ruleOf("oracle-stale");
+  const oracle = addrOf("oracle-stale", "oracle");
+  w.setCall(addrOf("oracle-stale", "exchange"), "maxPriceAge()", [], word(maxAge));
+  for (const s of r.assets) {
+    w.setCall(oracle, "getPrice(bytes32)", [FULL.assets[s]], word(prices[s] ?? 100n * 10n ** 8n, now - (ages[s] ?? 60)));
+  }
+}
+
+test("價格過期：加密資產預警／過期分級、非加密放寬、持續提醒、恢復；RPC 失敗不算恢復", async () => {
+  const w = fakeWorld();
+  const cfg = only("oracle-stale");
+  const state = {};
+  let now = 2_000_000;
+  stubOracle(w, { now, ages: { sBTC: 5 * 3600, sETH: 7 * 3600, sAAPL: 48 * 3600 } });
+  const r1 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now });
+  const by = Object.fromEntries(r1.notes.map((n) => [n.key, n]));
+  assert.equal(by["oracle-stale:sBTC"].severity, "SEV-3");
+  assert.equal(by["oracle-stale:sETH"].severity, "SEV-2");
+  assert.equal(by["oracle-stale:sAAPL"], undefined, "股票 48 小時（週末）不告警");
+
+  // 5 分鐘後仍過期：不重複送
+  now += 300;
+  stubOracle(w, { now, ages: { sBTC: 5 * 3600 + 300, sETH: 7 * 3600 + 300 } });
+  assert.equal((await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now })).notes.length, 0);
+
+  // sBTC 升級為 SEV-2：立刻提醒
+  now += 300;
+  stubOracle(w, { now, ages: { sBTC: 6.5 * 3600, sETH: 7 * 3600 + 600 } });
+  const r3 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now });
+  assert.deepEqual(r3.notes.map((n) => [n.key, n.status, n.severity]), [["oracle-stale:sBTC", "持續", "SEV-2"]]);
+
+  // RPC 全部失敗：不能當成恢復
+  now += 300;
+  w.calls.clear();
+  const r4 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now });
+  assert.ok(r4.notes.every((n) => n.status !== "恢復" || n.ruleId === "monitor-self"));
+  assert.ok(state.open["oracle-stale:sETH"]);
+
+  // 價格恢復新鮮
+  now += 300;
+  stubOracle(w, { now });
+  const r5 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now });
+  const recovered = r5.notes.filter((n) => n.status === "恢復").map((n) => n.key).sort();
+  assert.deepEqual(recovered, ["monitor-self:errors", "oracle-stale:sBTC", "oracle-stale:sETH"]);
+});
+
+test("超過 REMIND_SEC 仍未解除 → 持續提醒", () => {
+  const state = {};
+  const f = { ruleId: "x", key: "x:1", severity: "SEV-3", title: "t", lines: [] };
+  const ev = new Set(["x"]);
+  assert.equal(reconcile({ config: FULL, env: {}, state, findings: [f], evaluated: ev, now: 0 })[0].status, "觸發");
+  assert.equal(reconcile({ config: FULL, env: {}, state, findings: [f], evaluated: ev, now: 21_599 }).length, 0);
+  assert.equal(reconcile({ config: FULL, env: {}, state, findings: [f], evaluated: ev, now: 21_600 })[0].status, "持續");
+});
+
+test("價格偏離：參考來源不支援的資產略過；3% 以上 SEV-2、10% 以上 SEV-1", async () => {
+  const w = fakeWorld();
+  const cfg = only("oracle-deviation");
+  const now = 3_000_000;
+  const primary = addrOf("oracle-deviation", "primary");
+  const ref = addrOf("oracle-deviation", "reference");
+  const p8 = (n) => BigInt(Math.round(n * 1e8));
+  const set = (sym, pp, rp, refAge = 60) => {
+    w.setCall(primary, "getPrice(bytes32)", [FULL.assets[sym]], word(p8(pp), now - 60));
+    if (rp !== null) w.setCall(ref, "getPrice(bytes32)", [FULL.assets[sym]], word(p8(rp), now - refAge));
+  };
+  set("sBTC", 50_000, 50_100); // 0.2%
+  set("sETH", 3_000, 2_880); // 4.2%
+  set("sAAPL", 200, 250); // 20%
+  set("sTSLA", 250, null); // 參考 revert
+  set("sGOLD", 2_650, 2_000, 99_999); // 參考過期
+  const { notes, errors } = await runOnce({ config: cfg, env: env0, state: {}, fetchImpl: w.fetch, now });
+  assert.equal(errors.length, 0, errors.join());
+  assert.deepEqual(notes.map((n) => [n.key, n.severity]).sort(), [["oracle-deviation:sAAPL", "SEV-1"], ["oracle-deviation:sETH", "SEV-2"]]);
+});
+
+test("金庫儲備率、mint 停止、保險金下降、keeper gas", async () => {
+  const w = fakeWorld();
+  const cfg = only("vault-reserve", "insurance-fund", "keeper-gas");
+  const vault = addrOf("vault-reserve", "vault");
+  const ins = addrOf("insurance-fund", "vault");
+  const oracle = addrOf("keeper-gas", "oracle");
+  const keeper = "0x00000000000000000000000000000000000000f1";
+  // 儲備 90、負債 100 → 90%；下限 100% → 低於下限；mint 已停止
+  w.setCall(vault, "reserveStatus()", [], word(90n * E18, 100n * E18, 9000, 0, 0, 1));
+  w.setCall(vault, "minReserveRatioBps()", [], word(10000));
+  w.setCall(vault, "paused()", [], word(0));
+  w.setCall(ins, "totalAssets()", [], word(10_000n * E18));
+  w.setCall(oracle, "owner()", [], word(BigInt(keeper)));
+  w.balances.set(keeper, 3n * 10n ** 15n); // 0.003 ETH < 0.005
+  const state = {};
+  const r1 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 7200 });
+  assert.equal(r1.errors.length, 0, r1.errors.join());
+  const keys = Object.fromEntries(r1.notes.map((n) => [n.key, n.severity]));
+  assert.equal(keys["vault-reserve:below-min"], "SEV-2");
+  assert.equal(keys["vault-reserve:halted"], "SEV-2");
+  assert.equal(keys[`keeper-gas:${keeper}`], "SEV-2");
+  assert.equal(keys["insurance-fund:min"], undefined);
+
+  // 一小時後保險金掉到 7000（-30%）→ 下降告警
+  w.setCall(ins, "totalAssets()", [], word(7_000n * E18));
+  const r2 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 7200 + 3600 });
+  assert.ok(r2.notes.some((n) => n.key === "insurance-fund:drop" && n.severity === "SEV-2"), JSON.stringify(r2.notes));
+  // 額外錢包：格式錯誤要報錯，不能默默略過
+  const r3 = await runOnce({ config: cfg, env: { ...env0, EXTRA_GAS_WALLETS: "0x123" }, state, fetchImpl: w.fetch, now: 7200 + 3700 });
+  assert.ok(r3.errors.some((e) => /EXTRA_GAS_WALLETS/.test(e)));
+});
+
+// ── http 規則 ────────────────────────────────────────────────────────────────
+
+test("signal-api 健康檢查：連續兩次失敗才告警；payTo 變更 SEV-1、守門不安全 SEV-3", async () => {
+  const w = fakeWorld();
+  const cfg = only("signal-api-health", "x402-payto");
+  const A = "0x00000000000000000000000000000000000000a1";
+  const B = "0x00000000000000000000000000000000000000b2";
+  let health = { status: 200, body: "ok" };
+  let root = { status: 200, body: { payTo: A, payToSafety: { safe: true } } };
+  w.http.set(`${API}/healthz`, () => health);
+  w.http.set(`${API}/`, () => root);
+  const state = {};
+  assert.equal((await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 1 })).notes.length, 0);
+  assert.equal(state.baselines["x402-payto"], A);
+
+  health = { status: 503, body: "down" };
+  assert.equal((await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 2 })).notes.length, 0, "單次失敗不告警");
+  const r = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 3 });
+  assert.deepEqual(r.notes.map((n) => [n.key, n.severity]), [["signal-api-health", "SEV-3"]]);
+
+  root = { status: 200, body: { payTo: B, payToSafety: { safe: false, reason: "known-leaked" } } };
+  const r2 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 4 });
+  const k = Object.fromEntries(r2.notes.map((n) => [n.key, n.severity]));
+  assert.equal(k["x402-payto:changed"], "SEV-1");
+  assert.equal(k["x402-payto:unsafe"], "SEV-3");
+  // 明確設定 EXPECTED_PAY_TO 時以它為準
+  const r3 = await runOnce({ config: cfg, env: { ...env0, EXPECTED_PAY_TO: B }, state, fetchImpl: w.fetch, now: 5 });
+  assert.ok(r3.notes.some((n) => n.key === "x402-payto:changed" && n.status === "恢復"));
+});
+
+// ── 通知與 tick ──────────────────────────────────────────────────────────────
+
+// 假憑證以拼接產生：原文不符合秘密掃描的樣式（check-monitoring.mjs 也掃本目錄的測試檔）。
+const TG = ["123456789", "AAH-fakeTokenForTestsOnly_abcdefghijklmn"].join(":");
+const DISCORD = (tail) => ["https://discord.com/api/webhooks", "1", tail].join("/");
+
+test("沒有任何通道 → 丟錯；通道設定格式錯誤 → 丟錯", async () => {
+  await assert.rejects(tick({ config: only(), env: { MONITOR_STATE: fakeKv() }, fetchImpl: fakeWorld().fetch, log: () => {} }), /沒有設定任何告警通道/);
+  assert.throws(() => channelsOf({ TELEGRAM_BOT_TOKEN: TG }), /必須同時設定/);
+  assert.throws(() => channelsOf({ DISCORD_WEBHOOK_URL: "https://evil.example/hook" }), /discord\.com/);
+  assert.throws(() => channelsOf({ ALERT_WEBHOOK_URL: "http://plain" }), /https/);
+});
+
+test("tick：三種通道的格式、HMAC 簽章、log 不含憑證、心跳", async () => {
+  const w = fakeWorld();
+  const kv = fakeKv();
+  const logs = [];
+  makeLog(w, { address: addrOf("owner-transferred", "PerpetualExchange"), sig: "OwnershipTransferred(address,address)", topics: [word(0), word(1)] });
+  const env = {
+    ...env0,
+    MONITOR_STATE: kv,
+    TELEGRAM_BOT_TOKEN: TG,
+    TELEGRAM_CHAT_ID: "-100123",
+    DISCORD_WEBHOOK_URL: DISCORD("secretpart"),
+    ALERT_WEBHOOK_URL: "https://hooks.example/alert",
+    ALERT_WEBHOOK_SECRET: "s3cret",
+    HEARTBEAT_URL: "https://hc.example/ping/abc",
+  };
+  await tick({ config: only("owner-transferred"), env, now: 50, fetchImpl: w.fetch, log: (l) => logs.push(l) });
+  const tg = w.sent.find((s) => s.url.startsWith("https://api.telegram.org/"));
+  const dc = w.sent.find((s) => s.url.startsWith("https://discord.com/"));
+  const hk = w.sent.find((s) => s.url === "https://hooks.example/alert");
+  assert.ok(tg && dc && hk, w.sent.map((s) => s.url).join());
+  const tgBody = JSON.parse(tg.init.body);
+  assert.equal(tgBody.chat_id, "-100123");
+  assert.equal(tgBody.parse_mode, undefined, "純文字送出，不讓鏈上資料被解讀成格式");
+  assert.match(tgBody.text, /^🔴\[SEV-1\] 事件｜合約 owner 變更/);
+  assert.match(tgBody.text, /處置：https:\/\/github\.com\/.*INCIDENT_RESPONSE\.md#1-嚴重度分級/);
+  assert.deepEqual(JSON.parse(dc.init.body).allowed_mentions, { parse: [] });
+  const sig = hk.init.headers["X-Pepelab-Signature"];
+  const { createHmac } = await import("node:crypto");
+  assert.equal(sig, `sha256=${createHmac("sha256", "s3cret").update(hk.init.body).digest("hex")}`);
+  assert.ok(w.sent.some((s) => s.url === "https://hc.example/ping/abc"), "整輪乾淨時打心跳");
+  const all = logs.join("\n");
+  for (const secret of [TG, "secretpart", "s3cret", "hc.example"]) assert.ok(!all.includes(secret), `log 洩漏 ${secret}`);
+  assert.ok(JSON.parse(kv.m.get(STATE_KEY)).checkpoint > 0);
+});
+
+test("tick：通道全掛 → 留在 outbox、丟錯、不打心跳；下一輪重送成功", async () => {
+  const w = fakeWorld();
+  const kv = fakeKv();
+  makeLog(w, { address: addrOf("owner-transferred", "PerpetualExchange"), sig: "OwnershipTransferred(address,address)", topics: [word(0), word(1)] });
+  const env = { ...env0, MONITOR_STATE: kv, DISCORD_WEBHOOK_URL: DISCORD("x"), HEARTBEAT_URL: "https://hc.example/p" };
+  w.channelStatus = 500;
+  await assert.rejects(tick({ config: only("owner-transferred"), env, now: 1, fetchImpl: w.fetch, log: () => {} }), /1 則告警未送達/);
+  assert.equal(JSON.parse(kv.m.get(STATE_KEY)).outbox.length, 1);
+  assert.ok(!w.sent.some((s) => s.url === "https://hc.example/p"));
+
+  w.channelStatus = 200;
+  w.sent.length = 0;
+  await tick({ config: only("owner-transferred"), env, now: 400, fetchImpl: w.fetch, log: () => {} });
+  assert.equal(w.sent.filter((s) => s.url.startsWith("https://discord.com/")).length, 1, "outbox 那則重送一次");
+  assert.equal(JSON.parse(kv.m.get(STATE_KEY)).outbox.length, 0);
+});
+
+test("MIN_SEVERITY：低於門檻不送；恢復依原嚴重度判斷", () => {
+  assert.equal(shouldSend({ severity: "SEV-3", status: "觸發" }, "SEV-2"), false);
+  assert.equal(shouldSend({ severity: "SEV-1", status: "事件" }, "SEV-2"), true);
+  assert.equal(shouldSend({ severity: "SEV-4", origSeverity: "SEV-2", status: "恢復" }, "SEV-2"), true);
+  assert.equal(shouldSend({ severity: "SEV-4", origSeverity: "SEV-3", status: "恢復" }, "SEV-2"), false);
+  assert.throws(() => shouldSend({ severity: "SEV-1", status: "事件" }, "SEV-9"), /MIN_SEVERITY/);
+});
+
+test("pending-deploy 規則不會被載入（沒有位址、不出現在 getLogs 過濾條件）", async () => {
+  const w = fakeWorld();
+  let filter;
+  const orig = w.fetch;
+  w.fetch = async (url, init) => {
+    if (url === RPC) {
+      const b = JSON.parse(init.body);
+      const g = (Array.isArray(b) ? b : [b]).find((r) => r.method === "eth_getLogs");
+      if (g) filter = g.params[0];
+    }
+    return orig(url, init);
+  };
+  const cfg = { ...FULL, rules: FULL.rules.filter((r) => r.kind === "event") };
+  await runOnce({ config: cfg, env: env0, state: {}, fetchImpl: w.fetch, now: 1 });
+  const pendingTopics = FULL.rules.filter((r) => r.status !== "active").flatMap((r) => r.events.map((e) => e.topic0));
+  const activeTopics = new Set(FULL.rules.filter((r) => r.status === "active" && r.kind === "event").flatMap((r) => r.events.map((e) => e.topic0)));
+  for (const t of pendingTopics) if (!activeTopics.has(t)) assert.ok(!filter.topics[0].includes(t), t);
+  assert.ok(filter.address.every((a) => /^0x[0-9a-fA-F]{40}$/.test(a)));
+});

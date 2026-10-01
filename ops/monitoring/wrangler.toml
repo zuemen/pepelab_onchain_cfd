@@ -1,0 +1,29 @@
+# 鏈上監控 Worker（與 ops/keeper-trigger 分開：不持有 GitHub token、不持有鏈上金鑰）。
+# 部署步驟與需要擁有者操作的部分見同目錄 README.md；決策見 docs/ADR-009-monitoring.md。
+name = "pepelab-chain-monitor"
+main = "worker.mjs"
+compatibility_date = "2026-09-01"
+workers_dev = false
+preview_urls = false
+
+[observability]
+enabled = true
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+# 告警狀態（檢查點、開啟中的告警、累計視窗、outbox）。
+# 擁有者執行 `npx wrangler kv namespace create MONITOR_STATE` 後，把回傳的 id 填到這裡。
+# namespace id 不是秘密，但每個 Cloudflare 帳號不同，所以留佔位符。
+[[kv_namespaces]]
+binding = "MONITOR_STATE"
+id = "<KV_NAMESPACE_ID>"
+
+# 公開設定；可覆寫 monitors.json 的參數預設值（鍵名必須是 monitors.json 的 params）。
+# 秘密一律用 `npx wrangler secret put <NAME>`，不要寫在這裡（CI 會擋）：
+#   TELEGRAM_BOT_TOKEN、TELEGRAM_CHAT_ID、DISCORD_WEBHOOK_URL、ALERT_WEBHOOK_URL、
+#   ALERT_WEBHOOK_SECRET、HEARTBEAT_URL、RPC_URL（含 API key 的 RPC 也算秘密）
+[vars]
+MIN_SEVERITY = "SEV-4"
+# EXPECTED_PAY_TO = "0x…"        # 【待使用者決定】signal-api 的 PAY_TO（公開地址）；未設時以首次觀察值為基準
+# EXTRA_GAS_WALLETS = "0x…,0x…"  # 【待使用者決定】x402 結算錢包等其他需要 gas 的地址
