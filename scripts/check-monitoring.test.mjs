@@ -12,6 +12,7 @@ import { selector as selectorOf } from "../ops/monitoring/keccak.mjs";
 import {
   checkConfig,
   checkDeployed,
+  checkMuteKeys,
   checkWranglerVars,
   refreshDeployed,
   run,
@@ -166,6 +167,19 @@ test("SIGNAL_API_URL 預設值必須等於 SDK 常數", () => {
   const cfg = current();
   cfg.params.SIGNAL_API_URL.default = "https://example.vercel.app";
   assert.ok(problemsOf(cfg).some((x) => /SIGNAL_API_URL 預設值必須等於/.test(x)));
+});
+
+test("M2：MUTE_KEYS 不可靜音 monitor-self、不可整條靜音 SEV-1 規則、必須指向存在的規則", () => {
+  const cfg = current();
+  assert.deepEqual(checkMuteKeys("", cfg), []);
+  assert.deepEqual(checkMuteKeys("x402-payto:unsafe, fee-withdrawals", cfg), []);
+  const p = checkMuteKeys("monitor-self:errors,owner-transferred,no-such-rule:x,bad key", cfg).join("\n");
+  assert.match(p, /monitor-self:errors：監控自身的告警不可靜音/);
+  assert.match(p, /把 SEV-1 規則 owner-transferred 整條靜音/);
+  assert.match(p, /no-such-rule:x 不是任何規則的 key/);
+  assert.match(p, /格式不對的項目 "bad key"/);
+  cfg.params.MUTE_KEYS.default = "monitor-self";
+  assert.ok(problemsOf(cfg).some((x) => /params\.MUTE_KEYS\.default 含 monitor-self：監控自身的告警不可靜音/.test(x)));
 });
 
 test("rules.md 被手改或過期 → 錯", () => {

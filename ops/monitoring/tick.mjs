@@ -1,7 +1,7 @@
 // 一輪監控的外層：讀 KV 狀態 → runOnce → 送通知（含重送 outbox）→ 存回 KV → 心跳。
 // 與 worker.mjs 分開，讓測試可以注入 config、假 KV 與假 fetch。
 import { runOnce, param } from "./engine.mjs";
-import { channelsOf, formatNote, sendNote, shouldSend } from "./notify.mjs";
+import { channelsOf, formatNote, parseMuteKeys, sendNote, shouldSend } from "./notify.mjs";
 
 export const STATE_KEY = "state:v1";
 /** 送不出去的通知最多保留幾則（超過時丟最舊的，並另發一則說明）。 */
@@ -18,9 +18,11 @@ export async function tick({ config, env, now = Math.floor(Date.now() / 1000), f
 
   const { notes, errors, summary } = await runOnce({ config, env, state, fetchImpl, now, log });
   const minSev = param(config, env, "MIN_SEVERITY");
+  const mute = parseMuteKeys(param(config, env, "MUTE_KEYS"));
+  if (mute.ignored.length) log(`MUTE_KEYS 忽略 ${mute.ignored.length} 個項目（monitor-self 不可靜音，或格式不對）`);
   const ruleById = new Map(config.rules.map((r) => [r.id, r]));
   const fresh = notes
-    .filter((n) => shouldSend(n, minSev))
+    .filter((n) => shouldSend(n, minSev, mute.keys))
     .map((n) => ({
       note: n,
       text: formatNote(n, { deploymentId: config.deployment?.id, runbookUrl: ruleById.get(n.ruleId)?.runbookUrl }),

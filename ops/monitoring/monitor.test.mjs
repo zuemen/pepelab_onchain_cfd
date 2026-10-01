@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { keccak256, selector } from "./keccak.mjs";
 import { decodeLog, formatUnits, reconcile, runOnce, toUnits } from "./engine.mjs";
-import { channelsOf, shouldSend } from "./notify.mjs";
+import { channelsOf, parseMuteKeys, shouldSend } from "./notify.mjs";
 import { STATE_KEY, tick } from "./tick.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -635,6 +635,37 @@ test("MIN_SEVERITY：低於門檻不送；恢復依原嚴重度判斷", () => {
   assert.equal(shouldSend({ severity: "SEV-4", origSeverity: "SEV-2", status: "恢復" }, "SEV-2"), true);
   assert.equal(shouldSend({ severity: "SEV-4", origSeverity: "SEV-3", status: "恢復" }, "SEV-2"), false);
   assert.throws(() => shouldSend({ severity: "SEV-1", status: "事件" }, "SEV-9"), /MIN_SEVERITY/);
+});
+
+test("M2：monitor-self 永遠送（不受 MIN_SEVERITY／MUTE_KEYS 影響）；MUTE_KEYS 只靜音指定 key", async () => {
+  const self = { ruleId: "monitor-self", key: "monitor-self:errors", severity: "SEV-3", status: "觸發" };
+  assert.equal(shouldSend(self, "SEV-1"), true);
+  assert.equal(shouldSend(self, "SEV-1", ["monitor-self", "monitor-self:errors"]), true);
+  assert.equal(shouldSend({ ...self, severity: "SEV-4", origSeverity: "SEV-3", status: "恢復" }, "SEV-1"), true);
+  assert.deepEqual(parseMuteKeys(" x402-payto:unsafe , monitor-self:errors,monitor-self, bad key ,fee-withdrawals"), {
+    keys: ["x402-payto:unsafe", "fee-withdrawals"],
+    ignored: ["monitor-self:errors", "monitor-self", "bad key"],
+  });
+  const unsafe = { ruleId: "x402-payto", key: "x402-payto:unsafe", severity: "SEV-3", status: "觸發" };
+  assert.equal(shouldSend(unsafe, "SEV-4", ["x402-payto:unsafe"]), false);
+  assert.equal(shouldSend({ ...unsafe, key: "x402-payto:changed", severity: "SEV-1" }, "SEV-4", ["x402-payto:unsafe"]), true, "同規則的其他 key 不受影響");
+  assert.equal(shouldSend({ ruleId: "fee-withdrawals", key: "fee-withdrawals:0xabc:1", severity: "SEV-3", status: "事件" }, "SEV-4", ["fee-withdrawals"]), false, "規則 id 當前綴 → 整條靜音");
+  assert.equal(shouldSend({ ruleId: "fee-withdrawals-x", key: "fee-withdrawals-x:1", severity: "SEV-3", status: "事件" }, "SEV-4", ["fee-withdrawals"]), true, "前綴以冒號為界，不誤傷名字相近的規則");
+
+  // 整輪：MIN_SEVERITY=SEV-1、又（錯誤地）把 monitor-self 列進 MUTE_KEYS，RPC 全掛 → 仍然收到監控自身告警。
+  const w = fakeWorld();
+  const kv = fakeKv();
+  w.http.set(`${API}/`, () => ({ status: 200, body: { payTo: "0x00000000000000000000000000000000000000a1", payToSafety: { safe: false, reason: "known-leaked" } } }));
+  const env = { ...env0, RPC_URL: "https://rpc.down", MONITOR_STATE: kv, DISCORD_WEBHOOK_URL: DISCORD("x"), MIN_SEVERITY: "SEV-1", MUTE_KEYS: "x402-payto:unsafe,monitor-self" };
+  w.http.set("https://rpc.down", () => ({ status: 503, body: "down" }));
+  const logs = [];
+  for (let i = 0; i < 4; i++) {
+    await assert.rejects(tick({ config: only("owner-transferred", "x402-payto"), env, now: 100 + 300 * i, fetchImpl: w.fetch, log: (l) => logs.push(l), sleep: async () => {} }), /規則讀取失敗/);
+  }
+  const sent = w.sent.filter((s) => s.url.startsWith("https://discord.com/")).map((s) => JSON.parse(s.init.body).content.split("\n")[0]);
+  assert.equal(sent.length, 1, sent.join(" | "));
+  assert.match(sent[0], /SEV-3\] 觸發｜監控本身有規則讀取失敗/);
+  assert.ok(logs.some((l) => /MUTE_KEYS 忽略 1 個項目/.test(l)));
 });
 
 test("pending-deploy 規則不會被載入（沒有位址、不出現在 getLogs 過濾條件）", async () => {

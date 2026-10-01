@@ -89,11 +89,38 @@ export async function sendNote(note, text, channels, fetchImpl, log = () => {}) 
   return delivered;
 }
 
-/** 依 MIN_SEVERITY 過濾。恢復通知以「原嚴重度」判斷：觸發時送過的，恢復時一定也送。 */
-export function shouldSend(note, minSeverity = "SEV-4") {
-  const sev = note.status === "恢復" ? (note.origSeverity ?? note.severity) : note.severity;
-  const i = SEVERITIES.indexOf(sev);
+/** 監控自身的告警（讀取失敗、落後、狀態重置、通道失效）。 */
+export const isSelfNote = (note) => note.ruleId === "monitor-self" || String(note.key ?? "").startsWith("monitor-self");
+
+/**
+ * MUTE_KEYS：逗號分隔的告警 key。一個項目靜音「完全相同的 key」與「以它為前綴的子 key」
+ * （`x402-payto:unsafe` 只靜音那一則；`fee-withdrawals` 靜音整條規則）。
+ * monitor-self 開頭的項目一律忽略——監控自身的故障不可以被靜音。回傳 { keys, ignored }。
+ */
+export function parseMuteKeys(text) {
+  const keys = [];
+  const ignored = [];
+  for (const k of String(text ?? "").split(",").map((s) => s.trim()).filter(Boolean)) {
+    if (k.startsWith("monitor-self") || !/^[a-z0-9][a-z0-9-]*(:[^\s,]+)?$/.test(k)) ignored.push(k);
+    else keys.push(k);
+  }
+  return { keys, ignored };
+}
+export const isMuted = (note, muteKeys = []) => muteKeys.some((k) => note.key === k || String(note.key ?? "").startsWith(`${k}:`));
+
+/**
+ * 這則通知要不要送。
+ *   • monitor-self:* 永遠送：不受 MIN_SEVERITY 也不受 MUTE_KEYS 影響。把嚴重度門檻調高來壓掉一則
+ *     吵人的 SEV-3，不應該連「RPC 全掛、監控瞎了」一起壓掉（審查 M2）。
+ *   • MUTE_KEYS 命中的不送（針對單一已知告警，取代「把 MIN_SEVERITY 調到 SEV-2」）。
+ *   • 其餘依 MIN_SEVERITY；恢復通知以「原嚴重度」判斷：觸發時送過的，恢復時一定也送。
+ */
+export function shouldSend(note, minSeverity = "SEV-4", muteKeys = []) {
   const min = SEVERITIES.indexOf(minSeverity);
   if (min < 0) throw new Error(`MIN_SEVERITY 不合法：${minSeverity}`);
+  if (isSelfNote(note)) return true;
+  if (isMuted(note, muteKeys)) return false;
+  const sev = note.status === "恢復" ? (note.origSeverity ?? note.severity) : note.severity;
+  const i = SEVERITIES.indexOf(sev);
   return i >= 0 && i <= min;
 }

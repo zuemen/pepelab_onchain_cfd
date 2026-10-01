@@ -33,6 +33,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseFrontendConfig } from "./check-addresses.mjs";
 import { keccak256, selector } from "../ops/monitoring/keccak.mjs";
 import { _internal as engineInternal, SEVERITIES } from "../ops/monitoring/engine.mjs";
+import { parseMuteKeys } from "../ops/monitoring/notify.mjs";
 
 const ADDR = /^0x[0-9a-fA-F]{40}$/;
 const ZERO = "0x0000000000000000000000000000000000000000";
@@ -670,16 +671,33 @@ export function generate(input, ctx) {
 
   // 參數
   const used = new Set();
-  for (const src of [engineSource(ctx.root)]) {
+  for (const src of [engineSource(ctx.root), read(ctx.root, "ops/monitoring/tick.mjs")]) {
     for (const m of src.matchAll(/(?:numParam|param)\(config, env, "([A-Z0-9_]+)"\)/g)) used.add(m[1]);
   }
-  for (const name of used) if (!cfg.params?.[name]) problems.push(`(全域)：engine.mjs 用到參數 ${name}，但 monitors.json 沒有定義`);
+  for (const name of used) if (!cfg.params?.[name]) problems.push(`(全域)：engine.mjs／tick.mjs 用到參數 ${name}，但 monitors.json 沒有定義`);
+  for (const m of checkMuteKeys(cfg.params?.MUTE_KEYS?.default, cfg)) problems.push(`(全域)：params.MUTE_KEYS.default ${m}`);
   if (cfg.params?.SIGNAL_API_URL?.default !== ctx.sdkUrl) {
     problems.push(`(全域)：SIGNAL_API_URL 預設值必須等於 agent/sdk/src/signalApi.ts 的 SIGNAL_API_TESTNET_URL（${ctx.sdkUrl}）`);
   }
   return { config: cfg, problems };
 }
 const engineSource = (root) => read(root, "ops/monitoring/engine.mjs");
+
+/**
+ * MUTE_KEYS 的值：每個項目必須指向存在的規則；monitor-self 不可靜音；SEV-1 規則不可整條靜音
+ * （只能靜音它的某個子 key，例如 x402-payto:unsafe）。回傳錯誤訊息陣列。
+ */
+export function checkMuteKeys(value, cfg) {
+  const out = [];
+  const { keys, ignored } = parseMuteKeys(value);
+  for (const k of ignored) out.push(k.startsWith("monitor-self") ? `含 ${k}：監控自身的告警不可靜音` : `含格式不對的項目 ${JSON.stringify(k)}`);
+  for (const k of keys) {
+    const rule = (cfg.rules ?? []).find((r) => r.id === k.split(":")[0]);
+    if (!rule) out.push(`的 ${k} 不是任何規則的 key`);
+    else if (k === rule.id && rule.severity === "SEV-1") out.push(`把 SEV-1 規則 ${k} 整條靜音；只能靜音它的子 key（例如 ${k}:…）`);
+  }
+  return out;
+}
 
 /** 事件簽章的 notDeployed 宣告（true = 這條規則的所有合約；陣列 = 指定的 ref）。 */
 const notDeployedRefs = (rule, ev) =>

@@ -75,7 +75,8 @@
 | `MAX_SCAN_REQUESTS` | `10` | 個請求 | 每輪最多幾個 eth_getLogs（含範圍減半後的重試）。落後時一輪內分多段追趕：10 × 1000 塊 ≈ 5.5 小時的積欠；受 Cloudflare 免費方案每次執行 50 個 subrequest 限制，不要調高到擠壓狀態規則與通知 |
 | `LAG_ALERT_BLOCKS` | `3000` | 區塊 | 一輪掃完後仍落後超過這個值時發監控自身告警（代表一輪追不完，或 eth_getLogs 持續失敗） |
 | `REMIND_SEC` | `21600` | 秒 | 狀態型告警持續未解除時的重複提醒間隔（6 小時） |
-| `MIN_SEVERITY` | `SEV-4` | 嚴重度 | 低於此嚴重度的通知不送（恢復通知以原嚴重度判斷） |
+| `MIN_SEVERITY` | `SEV-4` | 嚴重度 | 低於此嚴重度的通知不送（恢復通知以原嚴重度判斷）。monitor-self:*（監控自身故障）永遠送，不受此值影響。要壓掉單一已知告警請用 MUTE_KEYS，不要調高這個值 |
+| `MUTE_KEYS` | `` | 告警 key（逗號分隔） | 靜音指定的告警 key（完全相同或以它為前綴的子 key），例如 x402-payto:unsafe。告警狀態照常追蹤，只是不送通知。monitor-self:* 不可靜音；SEV-1 規則不可整條靜音（CI 檢查） |
 | `LARGE_WITHDRAWAL_USDC` | `10000` | USDC（MockUSDC） | 交易所單筆提領保證金的告警門檻【待使用者決定】 |
 | `LARGE_WITHDRAWAL_WINDOW_USDC` | `50000` | USDC（MockUSDC） | 同一規則在 WITHDRAWAL_WINDOW_SEC 內累計提領的告警門檻【待使用者決定】 |
 | `WITHDRAWAL_WINDOW_SEC` | `3600` | 秒 | 累計提領的視窗長度 |

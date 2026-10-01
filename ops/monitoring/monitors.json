@@ -47,7 +47,12 @@
     "MIN_SEVERITY": {
       "default": "SEV-4",
       "unit": "嚴重度",
-      "doc": "低於此嚴重度的通知不送（恢復通知以原嚴重度判斷）"
+      "doc": "低於此嚴重度的通知不送（恢復通知以原嚴重度判斷）。monitor-self:*（監控自身故障）永遠送，不受此值影響。要壓掉單一已知告警請用 MUTE_KEYS，不要調高這個值"
+    },
+    "MUTE_KEYS": {
+      "default": "",
+      "unit": "告警 key（逗號分隔）",
+      "doc": "靜音指定的告警 key（完全相同或以它為前綴的子 key），例如 x402-payto:unsafe。告警狀態照常追蹤，只是不送通知。monitor-self:* 不可靜音；SEV-1 規則不可整條靜音（CI 檢查）"
     },
     "LARGE_WITHDRAWAL_USDC": {
       "default": "10000",
