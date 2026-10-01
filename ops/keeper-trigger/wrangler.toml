@@ -14,7 +14,8 @@ crons = ["*/20 * * * *"]
 
 [vars]
 GITHUB_REPO = "zuemen/pepelab_onchain_cfd"
-WORKFLOW_FILE = "base-sepolia-keeper.yml"
+# 逗號分隔；每個 workflow 各自判斷是否補觸發。
+WORKFLOW_FILES = "base-sepolia-keeper.yml,price-keeper.yml"
 WORKFLOW_REF = "master"
 MIN_GAP_SEC = "900"
 

@@ -20,21 +20,34 @@ async function gh(env, path, init = {}) {
   return res;
 }
 
-export async function tick(env, nowMs = Date.now()) {
-  const repo = env.GITHUB_REPO;
-  const workflow = env.WORKFLOW_FILE ?? "base-sepolia-keeper.yml";
-  const ref = env.WORKFLOW_REF ?? "master";
-  const minGap = Number(env.MIN_GAP_SEC ?? 900);
-  if (!env.GITHUB_TOKEN || !repo) throw new Error("GITHUB_TOKEN / GITHUB_REPO 未設定");
+const WORKFLOW_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*\.ya?ml$/;
 
+/**
+ * 要照顧的 workflow 清單。WORKFLOW_FILES（逗號分隔）優先，舊的單一 WORKFLOW_FILE 仍可用。
+ * 檔名只接受 `name.yml`／`name.yaml`，避免把設定值拼進 API 路徑時被塞入 `../`。
+ */
+export function workflowsOf(env) {
+  const raw = env.WORKFLOW_FILES ?? env.WORKFLOW_FILE ?? "base-sepolia-keeper.yml";
+  const list = String(raw)
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (list.length === 0) throw new Error("WORKFLOW_FILES 是空的");
+  for (const w of list) {
+    if (!WORKFLOW_NAME.test(w)) throw new Error(`不合法的 workflow 檔名：${w}`);
+  }
+  return [...new Set(list)];
+}
+
+async function tickOne(env, repo, workflow, ref, minGap, nowMs) {
   const runsRes = await gh(env, `/repos/${repo}/actions/workflows/${workflow}/runs?per_page=1`);
   let latest = null;
   if (runsRes.ok) latest = (await runsRes.json()).workflow_runs?.[0] ?? null;
-  else console.log(`list runs failed: HTTP ${runsRes.status}`);
+  else console.log(`[${workflow}] list runs failed: HTTP ${runsRes.status}`);
 
   const d = decide(latest, nowMs, minGap);
-  console.log(`decide: dispatch=${d.dispatch} (${d.reason})`);
-  if (!d.dispatch) return d;
+  console.log(`[${workflow}] decide: dispatch=${d.dispatch} (${d.reason})`);
+  if (!d.dispatch) return { workflow, ...d };
 
   const res = await gh(env, `/repos/${repo}/actions/workflows/${workflow}/dispatches`, {
     method: "POST",
@@ -42,10 +55,31 @@ export async function tick(env, nowMs = Date.now()) {
     body: JSON.stringify({ ref }),
   });
   if (res.status !== 204) {
-    // 丟出讓 Cloudflare 記錄成失敗的 cron 執行（可在 dashboard 看到）。
-    throw new Error(`dispatch failed: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
+    throw new Error(`[${workflow}] dispatch failed: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
   }
-  return d;
+  return { workflow, ...d };
+}
+
+/**
+ * 每個 workflow 各自判斷、各自觸發。一個失敗不影響其他的；全部跑完後，只要有任何
+ * 失敗就丟出（讓 Cloudflare 把這次 cron 記成失敗）。
+ *
+ * 2026-10-01：Ethereum Sepolia 的 price-keeper 同樣被 GitHub 排程節流到 4–5 小時一次，
+ * oracle-health 開了過期 issue（#208）。原本只照顧 base-sepolia-keeper。
+ */
+export async function tick(env, nowMs = Date.now()) {
+  const repo = env.GITHUB_REPO;
+  const ref = env.WORKFLOW_REF ?? "master";
+  const minGap = Number(env.MIN_GAP_SEC ?? 900);
+  if (!env.GITHUB_TOKEN || !repo) throw new Error("GITHUB_TOKEN / GITHUB_REPO 未設定");
+  const workflows = workflowsOf(env);
+
+  const settled = await Promise.allSettled(
+    workflows.map((w) => tickOne(env, repo, w, ref, minGap, nowMs)),
+  );
+  const errors = settled.filter((r) => r.status === "rejected").map((r) => r.reason?.message ?? String(r.reason));
+  if (errors.length) throw new Error(errors.join("; "));
+  return settled.map((r) => r.value);
 }
 
 export default {

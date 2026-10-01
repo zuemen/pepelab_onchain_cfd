@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { decide } from "./decide.mjs";
-import worker, { tick } from "./worker.mjs";
+import worker, { tick, workflowsOf } from "./worker.mjs";
 
 const NOW = Date.parse("2026-09-30T10:00:00Z");
 const ago = (sec) => new Date(NOW - sec * 1000).toISOString();
@@ -47,8 +47,9 @@ test("tick：舊執行已完成 → POST dispatch（ref master），帶 token", 
       : { status: 200, body: JSON.stringify({ workflow_runs: [{ status: "completed", created_at: ago(3600) }] }) },
   );
   globalThis.fetch = f.fn;
-  const d = await tick(ENV, NOW);
+  const [d] = await tick(ENV, NOW);
   assert.equal(d.dispatch, true);
+  assert.equal(d.workflow, "base-sepolia-keeper.yml");
   const post = f.calls.find((c) => c.method === "POST");
   assert.match(post.url, /\/repos\/zuemen\/pepelab_onchain_cfd\/actions\/workflows\/base-sepolia-keeper\.yml\/dispatches$/);
   assert.deepEqual(JSON.parse(post.body), { ref: "master" });
@@ -94,4 +95,45 @@ test("scheduled：tick 失敗時 reject（Cloudflare 記成失敗的 cron），�
 test("HTTP 請求一律 404，公開 URL 不能觸發 keeper", async () => {
   const res = await worker.fetch(new Request("https://example.invalid/"));
   assert.equal(res.status, 404);
+});
+
+test("workflowsOf：WORKFLOW_FILES 優先、去重、拒絕不合法檔名", () => {
+  assert.deepEqual(workflowsOf({}), ["base-sepolia-keeper.yml"]);
+  assert.deepEqual(workflowsOf({ WORKFLOW_FILE: "a.yml" }), ["a.yml"]);
+  assert.deepEqual(workflowsOf({ WORKFLOW_FILES: " a.yml, b.yaml ,a.yml", WORKFLOW_FILE: "x.yml" }), ["a.yml", "b.yaml"]);
+  assert.throws(() => workflowsOf({ WORKFLOW_FILES: "../secrets.yml" }), /不合法/);
+  assert.throws(() => workflowsOf({ WORKFLOW_FILES: "..yml" }), /不合法/, "首字元必須是英數字");
+  assert.throws(() => workflowsOf({ WORKFLOW_FILES: "a.yml/dispatches?x" }), /不合法/);
+  assert.throws(() => workflowsOf({ WORKFLOW_FILES: " , " }), /空的/);
+});
+
+test("tick：多個 workflow 各自判斷——一個執行中、一個過久 → 只觸發後者", async () => {
+  const f = fakeFetch((url, init) => {
+    if (init.method === "POST") return { status: 204 };
+    const status = url.includes("base-sepolia-keeper") ? "in_progress" : "completed";
+    return { status: 200, body: JSON.stringify({ workflow_runs: [{ status, created_at: ago(5 * 3600) }] }) };
+  });
+  globalThis.fetch = f.fn;
+  const r = await tick({ ...ENV, WORKFLOW_FILES: "base-sepolia-keeper.yml,price-keeper.yml" }, NOW);
+  assert.deepEqual(r.map((x) => [x.workflow, x.dispatch]), [["base-sepolia-keeper.yml", false], ["price-keeper.yml", true]]);
+  const posts = f.calls.filter((c) => c.method === "POST");
+  assert.equal(posts.length, 1);
+  assert.match(posts[0].url, /price-keeper\.yml\/dispatches$/);
+});
+
+test("tick：一個 workflow dispatch 失敗不影響另一個，最後仍丟錯", async () => {
+  const f = fakeFetch((url, init) => {
+    if (init.method === "POST") return url.includes("price-keeper") ? { status: 500, body: "boom" } : { status: 204 };
+    return { status: 200, body: JSON.stringify({ workflow_runs: [{ status: "completed", created_at: ago(3600) }] }) };
+  });
+  globalThis.fetch = f.fn;
+  await assert.rejects(tick({ ...ENV, WORKFLOW_FILES: "base-sepolia-keeper.yml,price-keeper.yml" }, NOW), /price-keeper\.yml.*HTTP 500/);
+  const posts = f.calls.filter((c) => c.method === "POST").map((c) => c.url);
+  assert.ok(posts.some((u) => u.includes("base-sepolia-keeper")), "另一個仍有觸發");
+});
+
+test("wrangler.toml 照顧兩條鏈的 keeper", async () => {
+  const { readFileSync } = await import("node:fs");
+  const toml = readFileSync(new URL("./wrangler.toml", import.meta.url), "utf8");
+  assert.match(toml, /WORKFLOW_FILES = "base-sepolia-keeper\.yml,price-keeper\.yml"/);
 });
