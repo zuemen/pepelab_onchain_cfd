@@ -1,0 +1,106 @@
+PepeLab / PepeFi — Proprietary License (Source Available for Evaluation and
+Academic Review Only)
+
+Copyright (c) 2026 zuemen and the PepeLab contributors. All rights reserved.
+
+1. Definitions
+
+   "Software" means the source code, documentation, configuration, scripts and
+   other materials in this repository, excluding the Third-Party Components
+   described in Section 5.
+
+   "Copyright Holders" means zuemen and the PepeLab contributors.
+
+2. Limited permission to view
+
+   You may view and read the Software, including through the hosting
+   platform on which it is published, solely for the following purposes:
+
+   (a) evaluating the Software, for example technical due diligence,
+       competition judging, or security review; and
+   (b) academic review, for example thesis examination, peer review, or
+       coursework assessment.
+
+   Copies made automatically by your browser or by the hosting platform as a
+   technical necessity of viewing are permitted for those purposes only.
+
+3. Rights not granted
+
+   Except for the limited permission in Section 2, no right or license is
+   granted to you, whether expressly, by implication, by estoppel or
+   otherwise. In particular, you may not, without prior written permission
+   from the Copyright Holders:
+
+   (a) use, run or execute the Software for any other purpose, including any
+       production or commercial purpose;
+   (b) modify, adapt or translate the Software, or create derivative works
+       from it;
+   (c) distribute, publish, sublicense, sell, lease or otherwise make the
+       Software available to any third party;
+   (d) deploy the Software, including deploying any smart contract in it to
+       any blockchain network or operating any service built from it;
+   (e) use the names, logos or other marks of the project or of the
+       Copyright Holders.
+
+4. Hosting platform terms
+
+   Where the Software is published on a hosting platform, nothing in this
+   License limits the rights that the platform's own terms of service give
+   its users with respect to publicly hosted content (for example, viewing a
+   repository or forking it within that platform). Those terms do not extend
+   the permissions in Section 2.
+
+5. Third-Party Components
+
+   The repository contains or references components that are owned by third
+   parties and are licensed under their own terms. This License does not
+   apply to them and grants no rights in them:
+
+   (a) OpenZeppelin Contracts and OpenZeppelin Contracts Upgradeable
+       (contracts/lib/openzeppelin-contracts and
+       contracts/lib/openzeppelin-contracts-upgradeable, referenced as git
+       submodules): MIT License. See the LICENSE file in each directory.
+   (b) forge-std (contracts/lib/forge-std): MIT License or Apache License
+       2.0. See LICENSE-MIT and LICENSE-APACHE in that directory.
+   (c) The frontend application scaffold in frontend/ is derived from the
+       Minimal UI starter kit ("@minimal-kit/starter-vite-ts", author
+       "Minimals", as recorded in frontend/package.json). That template is
+       governed by the terms of its publisher. A copy of those terms is not
+       included in this repository.
+   (d) Font files in frontend/public/fonts (Roboto) are governed by the
+       license of their publisher. A copy of that license is not included in
+       this repository.
+   (e) Packages installed through npm or yarn, including any such packages
+       that are compiled into committed build output (for example
+       agent/signal-api/api/index.js), are governed by their own licenses as
+       recorded in the package metadata and lockfiles.
+
+6. Files carrying their own license notice
+
+   Some files in this repository carry their own license identifier (for
+   example an "SPDX-License-Identifier" header in the Solidity sources under
+   contracts/). This License does not revoke or narrow any right that has
+   already been granted under such a notice.
+
+7. No warranty
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+
+8. Limitation of liability
+
+   IN NO EVENT SHALL THE COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+   OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+   ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE VIEWING OF
+   OR OTHER DEALINGS IN THE SOFTWARE.
+
+9. Termination
+
+   The permission in Section 2 ends automatically if you breach this License.
+
+10. Other permissions
+
+   Any use beyond Section 2 requires prior written permission from the
+   Copyright Holders. Requests can be made through the repository in which
+   the Software is published.

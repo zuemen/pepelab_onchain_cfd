@@ -169,3 +169,32 @@ npm run mcp-server      # 本機啟動 MCP server（stdio）
 **不是證券、不代表任何真實資產的所有權或請求權**，也沒有任何價值。本文件不構成投資建議、
 法律意見或任何形式的要約。PepeFi 未取得任何司法管轄區的金融業務許可；任何對公眾提供的
 衍生品或代幣化資產服務，都必須由取得相應許可的機構自行評估並承擔合規責任。
+
+## 9. 授權
+
+本 repo 採**專有授權、保留所有權利**，全文見 [`LICENSE`](LICENSE)。
+
+> **這份授權文字尚待律師審閱**，目前是維護者自行擬定的暫行版本，不是法律意見。
+
+- **允許**：為了評估（例如技術盡職調查、競賽評審、安全審查）與學術審查（例如論文口試、同儕審查）而檢視原始碼。
+- **不授予**：使用、修改、散布、部署（包含把任何合約部署到任何鏈、或營運由本專案建置的服務）的權利。
+  需要這些權利請先取得著作權人的書面同意。
+- **著作權人**：zuemen 與 PepeLab 貢獻者。
+
+第三方元件依各自的授權，不適用本專案的授權：
+
+| 元件 | 位置 | 授權 | repo 內是否附授權全文 |
+|---|---|---|---|
+| OpenZeppelin Contracts、Contracts Upgradeable | `contracts/lib/openzeppelin-contracts*`（git 子模組） | MIT | 有（各目錄的 `LICENSE`） |
+| forge-std | `contracts/lib/forge-std` | MIT 或 Apache-2.0 | 有（`LICENSE-MIT`、`LICENSE-APACHE`） |
+| Minimal UI 起始範本（`@minimal-kit/starter-vite-ts`） | `frontend/` 的專案骨架 | 依範本發行者的條款 | **沒有**，授權狀態待確認 |
+| Roboto 字型 | `frontend/public/fonts/` | 依字型發行者的授權 | **沒有** |
+| npm／yarn 套件（含打包進 `agent/signal-api/api/index.js` 的部分） | lockfile 與套件中繼資料 | 各套件自己的授權 | 沒有彙整的第三方聲明檔 |
+
+**尚未釐清、需要一併交給律師的事項**：
+
+- `contracts/` 下的 Solidity 檔案（`src`、`script`、`test`）檔頭都標著 `SPDX-License-Identifier: MIT`，
+  與根目錄的專有授權不一致。`LICENSE` 第 6 條寫明本授權不撤回檔案自身聲明已經給出的權利；
+  要不要改檔頭、已公開的版本如何處理，尚未決定。
+- `LICENSE` 沒有準據法與管轄條款，著作權人也還不是法律實體。
+- 各 `package.json` 的 `license` 欄位是 `SEE LICENSE IN LICENSE`，指的是根目錄這一份。
