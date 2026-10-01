@@ -1,5 +1,5 @@
 {
-  "digest": "1ed472e372c79cc3",
+  "digest": "44cd14b7e72f610b",
   "files": {
     "agent/shared/src/abis.ts": "872c3136604d6584",
     "agent/shared/src/addresses.ts": "a6cb279048c58a4b",
@@ -16,11 +16,11 @@
     "agent/shared/src/policyGate.ts": "60be8b906af1cf59",
     "agent/shared/src/provider.ts": "d09068bf80548979",
     "agent/shared/src/redact.ts": "36892c597bec44d0",
-    "agent/shared/src/signingGuard.ts": "722c036a7325c3ad",
+    "agent/shared/src/signingGuard.ts": "94e4dfe62ddffeac",
     "agent/shared/src/vcNonce.ts": "23f0a3a39df9a8da",
     "agent/shared/src/verification.ts": "c7823c4dc411e59a",
     "agent/shared/src/write.ts": "5f3058cddbd137c7",
-    "agent/shared/src/x402Client.ts": "a0dca05c659c6b44",
+    "agent/shared/src/x402Client.ts": "8a487ecccf75c274",
     "agent/signal-api/src/app.ts": "9e93579ad071e5a9",
     "agent/signal-api/src/benchmarks.ts": "bac063beeb2f0f45",
     "agent/signal-api/src/candles.ts": "1fd61b7585fca322",
