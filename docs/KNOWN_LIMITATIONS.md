@@ -44,7 +44,7 @@ was not, the reason is given rather than glossed over.
 | 24 | Portfolio margin has no account-level net liquidation | **Open** — `portfolioMarginEnabled` must stay **off** in production until implemented and audited (off on the live deployment) |
 | 25 | InsuranceVault has no virtual shares (first-depositor inflation) | **Mitigated** — zero-share deposits revert; attack profitability not removed |
 | 26 | Portfolio (cross) margin removed | **Resolved by removal** (2026-09-30) — supersedes #24; isolated margin only |
-| 27 | Exchange guardian's per-asset brake stops at ReduceOnly; only the owner can Halt | **By design** (2026-09-30, `contracts/p1-cutover-periphery`) — the *exchange* guardian cannot freeze exits by asset mode; the GuardedOracle guardian still can (see §27 below) |
+| 27 | Exchange guardian's per-asset brake stops at ReduceOnly; only the owner can Halt | **By design** (2026-09-30, `contracts/p1-cutover-periphery`) — the *exchange* guardian cannot freeze exits by asset mode. The GuardedOracle guardian's freeze and pause are **bounded in source** (2026-10-01, `contracts/oracle-freeze-expiry-checkin`: 72h expiry, 24h cooldown) but **not deployed**: the live oracle `0x8E9e…` still has no expiry (see §27 below) |
 | 28 | After the timelock handover, recovery actions wait 48h and depend on one Safe | **By design** — losing the Safe freezes governance permanently |
 | 29 | V2.5 unpriced exemption values a closed dead-feed asset at an arbitrarily old price | **Accepted** — closed assets only, never below its last recorded price, dust-only without one |
 
@@ -860,9 +860,85 @@ This is accepted for now, with the following response after the handover:
 - Until then, the exchange's own guardian can still put affected markets into
   ReduceOnly so no new exposure piles up behind the frozen feed.
 
-A fix would need a bounded freeze in GuardedOracle (an expiry like the
-exchange's 72h pause). That is a GuardedOracle redeploy and is left for a
-later round.
+The response above describes the **live** oracle `0x8E9e…`, which is the
+build without an expiry. It stays the procedure until that oracle is replaced.
+
+### Bounded guardian halts (source only, 2026-10-01)
+
+Branch `contracts/oracle-freeze-expiry-checkin` adds the bound to
+`src/v2/GuardedOracle.sol`. GuardedOracle is not upgradeable, so it reaches a
+chain only through `script/RedeployGuardedOracle.s.sol` (new instance, vault
+`setOracle`); an exchange deployed with `ORACLE_KIND=guarded` holds its oracle
+immutable and keeps the old behaviour until that exchange is redeployed.
+Nothing has been deployed.
+
+What the new build does:
+
+- **Guardian** (`GUARDIAN_ROLE` without the admin role). A freeze or pause
+  lapses `GUARDIAN_HALT_DURATION` (72h) after its window opened, with no
+  transaction: `getPrice`, `isStale`, `peek` and `paused()` all read the halt
+  as "in force until expiry". The guardian cannot extend a halt (halting an
+  already-halted scope reverts), may lift its own halt early, and may re-halt
+  inside the same window, but the window's end never moves. After the window
+  ends the guardian waits `GUARDIAN_HALT_COOLDOWN` (24h) before it can open
+  another on that scope. The clocks belong to the scope, so several guardian
+  keys share them.
+- **Admin** (`DEFAULT_ADMIN_ROLE`, the timelock after the handover). A halt it
+  places has no expiry and only the admin can lift it. Calling the same
+  function on a running guardian halt takes it over (clears the expiry). The
+  guardian can neither lift an admin halt nor replace it with an expiring one.
+  72h is longer than the 48h timelock on purpose: a freeze that must outlast
+  the guardian window is taken over by a timelock proposal made right away.
+- **Freeze and pause share a clock where they overlap.** The pause covers
+  every asset, so a guardian freeze also answers to the pause's clock: opened
+  while a guardian pause window runs, it ends no later than that window, and
+  none opens during the pause's cooldown. Without this the two scopes could be
+  alternated to keep one asset unreadable indefinitely.
+- An account that holds both roles is treated as the admin (its halts do not
+  lapse). `GuardedOracle`'s constructor grants both to the deployer;
+  `RedeployGuardedOracle` renounces the deployer's guardian role and warns
+  when `GUARDIAN` equals the broadcaster.
+
+What a guardian acting alone can still do with the new build, per asset: hold
+it halted for at most 144h in one stretch (a 72h freeze, then a 72h pause
+opened before the freeze ends); after every guardian pause window the asset
+gets 24h with no guardian halt of any kind, and that clean day recurs at least
+every 168h. The admin revoking the role (48h) ends it sooner.
+
+What the bound does **not** give, and what it costs:
+
+- **A lapse is fail-open.** After 72h the halt is gone whether or not the
+  reason for it is. A freeze placed over a suspect price, or a pause placed
+  over a compromised keeper, must be followed by an admin takeover or by the
+  fix (revoke the keeper) inside the window.
+- **A lapse does not refresh the price.** Keepers cannot post to a frozen
+  asset or a paused oracle, so the stored price is as old as the halt.
+  `maxPriceAge` in the oracle and in each consumer still decides whether it is
+  usable until the keeper posts again; the step cap and the rate limit apply
+  to that post as usual. The live oracle's own `maxPriceAge` is 30 days, so on
+  a redeploy that copies it only the consumers' 6h limits stand between a
+  lapsed freeze and a three-day-old price. Lower the oracle's `maxPriceAge`
+  when redeploying.
+- **The cooldown is 24h without the guardian's brake on that scope.** After a
+  freeze window ends, that asset cannot be frozen by the guardian for 24h
+  (other assets can, and so can the pause unless it is in its own cooldown);
+  after a pause window ends, neither the pause nor any freeze is available to
+  the guardian for 24h. The admin can still halt (48h through the timelock),
+  and the exchange guardian's pause / ReduceOnly and the vault's `PAUSER_ROLE`
+  are separate keys with separate clocks.
+- **A freeze opened late in a pause window is short** (it ends with the
+  window) and may be too short for a timelock takeover.
+- **A lapse emits no event** (there is no transaction). Watchers read
+  `expiresAt` from `AssetFreezeStarted` / `PauseStarted`, or `freezeOf` /
+  `pauseState`.
+- After the admin lifts a guardian halt early, the guardian can halt the same
+  scope again until its original window ends. Revoke the role in the same
+  proposal if the guardian is the problem.
+
+Tests: `test/v2/GuardedOracleHaltExpiry.t.sol` (expiry and cooldown
+boundaries, admin no-expiry and takeover, cross-scope clock, interaction with
+the step cap / rate limit / reference check, a V2 vault redeem across a lapse)
+and `test/fork/RedeployGuardedOracleFork.t.sol`.
 
 ## 28. Timelock governance: 48h recovery, single Safe (added 2026-09-30)
 

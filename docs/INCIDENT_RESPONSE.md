@@ -48,6 +48,11 @@
 | x402 分潤 | 停用 `x402-settlement-worker.yml`；worker 在結果不明時會自行全域停機 | GitHub repo 管理者 | 分潤暫停，佇列保留 |
 | 前端 | Vercel 回滾（第 6 節）；以功能旗標關閉入口 | Vercel 專案管理者 | 只影響畫面；不能阻止任何人直接呼叫合約 |
 
+上表兩列 GuardedOracle 是鏈上現行版本（`0x8E9e…`）的行為：guardian 的凍結與暫停沒有期限。
+新版原始碼（2026-10-01，尚未部署，要重部署 oracle 才生效）改為 guardian 的凍結或暫停 72 小時後自動失效、
+同一範圍接著 24 小時冷卻；要維持更久必須由 admin 接手（同一個函式，admin 呼叫即無期限）。
+到期是 fail-open，且到期只移除凍結、不更新價格。規則與代價見 [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md) #27。
+
 2026-09-30 唯讀查詢：Base 金庫的 `PAUSER_ROLE` 與 GuardedOracle 的 `GUARDIAN_ROLE` 不在 owner EOA 上。
 但 owner EOA 在 vault 與 GuardedOracle 都持有 `DEFAULT_ADMIN_ROLE`，在 vault 另有 `RISK_ROLE`，
 因此可以自行授予自己（或他人）`PAUSER_ROLE`／`GUARDIAN_ROLE`。這代表緊急時單一金鑰就能取得暫停權限，

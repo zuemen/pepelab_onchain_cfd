@@ -19,8 +19,11 @@ interface IExchangeOracleRead {
 }
 
 /// @notice GuardedOracle is not upgradeable, so the rate limit (cumulative
-///         move per window) lands by deploying a new instance and re-pointing
-///         the V2 vault at it (`setOracle`, DEFAULT_ADMIN_ROLE).
+///         move per window) and the bounded guardian halts (a guardian freeze
+///         or pause lapses after 72h and is followed by a 24h cooldown; only
+///         the admin holds a halt with no expiry) land by deploying a new
+///         instance and re-pointing the V2 vault at it (`setOracle`,
+///         DEFAULT_ADMIN_ROLE).
 ///
 ///         Copies from the live oracle: every asset's CURRENT price (refused
 ///         unless younger than min(vault.maxPriceAge, 6h) — `addAsset`
@@ -31,6 +34,13 @@ interface IExchangeOracleRead {
 ///         guardian role is renounced when they differ), vault.setOracle.
 ///         DEFAULT_ADMIN stays with the deployer — hand it to the timelock with
 ///         `HandoverToTimelock` (GUARDED_ORACLE=<new>).
+///
+///         Halts are NOT copied: the preflight refuses to run while the old
+///         oracle is paused or has an asset frozen, and the new instance
+///         starts with none. GUARDIAN should not also hold DEFAULT_ADMIN_ROLE
+///         on the new oracle — an account with both is treated as the admin,
+///         so its halts would never lapse. The script warns when
+///         GUARDIAN == broadcaster.
 ///
 ///         NOT re-pointable: a PerpetualExchange deployed with
 ///         ORACLE_KIND=guarded holds the oracle immutable. If EXCHANGE_NEW is
@@ -121,15 +131,30 @@ contract RedeployGuardedOracle is Script {
         require(n.hasRole(0x00, deployer), "admin");
         require(n.maxWindowDeviationBps() == winBps && n.windowDuration() == window, "window limit");
         require(n.maxDeviationBps() == old.maxDeviationBps() && n.maxPriceAge() == old.maxPriceAge(), "risk params");
+        // Bounded guardian halts: the build being deployed must carry them,
+        // and the new instance must start with no halt in force.
+        require(n.GUARDIAN_HALT_DURATION() == 72 hours && n.GUARDIAN_HALT_COOLDOWN() == 24 hours, "guardian halt bounds");
+        require(!n.paused(), "new oracle starts paused");
+        {
+            (uint256 pauseExpiry, uint256 pauseAllowedAt) = n.guardianPauseTerms();
+            require(pauseAllowedAt == 0 && pauseExpiry == block.timestamp + 72 hours, "guardian pause terms");
+        }
         for (uint256 i = 0; i < 11; i++) {
             (uint256 p, ) = n.getPrice(keccak256(bytes(syms[i])));
             require(p == prices[i], string.concat("price mismatch ", syms[i]));
+            (, , , bool frozenNew) = n.peek(keccak256(bytes(syms[i])));
+            require(!frozenNew, string.concat("new oracle starts with ", syms[i], " frozen"));
         }
         (uint256 liabAfter, uint256 unpricedAfter) = vault.outstandingValueDetailed();
         require(liabAfter == liabBefore && unpricedAfter <= unpricedBefore, "vault valuation changed across the re-point");
 
         console.log("NEW_GUARDED_ORACLE =", newOracle);
         console.log("window         :", window, "s, max move bps:", winBps);
+        console.log("guardian halts : lapse after 72h, 24h cooldown; admin halts have no expiry");
+        if (guardian == deployer) {
+            console.log("!!! GUARDIAN == broadcaster: it also holds DEFAULT_ADMIN_ROLE, so its freezes and");
+            console.log("!!! pauses will NOT lapse. Use a separate guardian key before the timelock handover.");
+        }
         console.log("liability      :", liabAfter, "(unchanged)");
 
         address ex = vm.envOr("EXCHANGE_NEW", address(0));
@@ -138,6 +163,7 @@ contract RedeployGuardedOracle is Script {
             console.log("!!! posting to both until that exchange is redeployed.");
         }
         console.log("Next: addresses.ts V2_STACK[84532].GuardedOracle, KEEPER_GUARDED_ORACLE in agent/.env +");
-        console.log("workflows, then guardian setPaused(true) on the old oracle once the keeper has moved.");
+        console.log("workflows, then setPaused(true) on the old oracle once the keeper has moved. On an old");
+        console.log("oracle that already has bounded halts, the ADMIN must send it: a guardian pause lapses after 72h.");
     }
 }

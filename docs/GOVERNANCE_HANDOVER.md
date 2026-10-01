@@ -38,6 +38,14 @@
     1. 由 timelock（oracle 的 DEFAULT_ADMIN）撤銷被盜 key 的 `GUARDIAN_ROLE`，改授予新的 key（48 小時）。
     2. 新 guardian 呼叫 `setAssetFrozen(id, false)`／`setPaused(false)`。
     3. 在這之前，exchange 的 guardian 可以先把受影響的市場設成 ReduceOnly。
+  - **以上是鏈上現行 oracle `0x8E9e…` 的行為。** 分支 `contracts/oracle-freeze-expiry-checkin`（2026-10-01）已在原始碼把 guardian 的凍結與暫停改成有期限，**尚未部署**；GuardedOracle 不可升級，要用 `RedeployGuardedOracle.s.sol` 換一個新的 oracle 才會生效。新版的規則：
+    - guardian 的凍結或暫停在該範圍的視窗開啟 72 小時後自動失效，不需要任何交易；失效後同一範圍要等 24 小時才能再開新視窗。guardian 不能延長（已凍結時再凍結會 revert），可以提前解除自己下的凍結，在原視窗內可以再凍結，但到期時間不會往後移。
+    - timelock（DEFAULT_ADMIN）下的凍結或暫停沒有期限，只有 timelock 能解除；對 guardian 正在進行的凍結再呼叫一次同一個函式就是接手（清掉期限）。guardian 不能解除、也不能把 timelock 的凍結換成會到期的版本。
+    - 暫停涵蓋所有資產，所以 guardian 的資產凍結同時受暫停的時鐘約束：暫停視窗進行中才開的凍結，最晚和暫停一起到期；暫停的冷卻期間不能開新的凍結。
+    - 同時持有兩個角色的帳號一律視為 admin（它下的凍結不會到期）。guardian 請用獨立的 key。
+    - 這把 key 外洩時，單一資產最長連續被擋 144 小時（先凍結 72 小時、到期前再暫停 72 小時），之後至少有 24 小時完全不受 guardian 影響；timelock 在 48 小時內撤換角色就會更早結束。
+    - **到期是 fail-open。** 凍結的原因如果還沒排除（可疑價格、keeper 外洩），必須在 72 小時內由 timelock 接手凍結或完成處置。guardian 一凍結就同時送出 timelock 接手案，48 小時的延遲才趕得上。
+    - 到期只移除凍結，不會更新價格。凍結期間 keeper 無法寫價，所以到期當下的價格和凍結一樣舊，仍要等 keeper 下一次寫價，並受各合約的 `maxPriceAge` 限制。細節與代價見 KNOWN_LIMITATIONS #27。
 - exchange 的 `marketOperator`：由 keeper 擔任，只能在 Active 和 ReduceOnly 之間切換
 - GuardedOracle 的 `GUARDIAN_ROLE` 與 `KEEPER_ROLE`，以及 V2 金庫的 `PAUSER_ROLE`
 - MockOracle 的 owner（就是 keeper，它本身就是寫價那把 key）
@@ -136,7 +144,11 @@ HANDOVER_PHASE=2 forge script script/HandoverToTimelock.s.sol:HandoverToTimelock
 | `InsuranceVault.recapitalize` | 只有 timelock | **48 小時**，而且 timelock 要先持有 USDC 並 approve | 做法：USDC 轉進 timelock，然後在同一個批次提案 `approve` 加 `recapitalize` |
 | 金庫升級、`setOracle` | 只有 timelock | **48 小時** | 建議在 phase 2 之前做完 |
 | 撤換 guardian `setGuardian` | 只有 timelock | **48 小時** | guardian 被盜期間最多只能暫停 72 小時（有冷卻）或設 ReduceOnly |
-| 暫停 GuardedOracle 或凍結資產 | GuardedOracle 的 GUARDIAN_ROLE | 立即生效，**沒有到期時間** | 解除凍結也由 GUARDIAN_ROLE 執行。這把 key 被盜時，要由 timelock 撤換角色（48 小時），期間出金可能卡住（KNOWN_LIMITATIONS #27） |
+| 暫停 GuardedOracle 或凍結資產（鏈上現行 oracle `0x8E9e…`） | GuardedOracle 的 GUARDIAN_ROLE | 立即生效，**沒有到期時間** | 解除凍結也由 GUARDIAN_ROLE 執行。這把 key 被盜時，要由 timelock 撤換角色（48 小時），期間出金可能卡住（KNOWN_LIMITATIONS #27） |
+| 暫停 GuardedOracle 或凍結資產（新版 oracle，**尚未部署**） | GUARDIAN_ROLE 或 timelock | guardian 立即生效；timelock 48 小時 | guardian 下的 72 小時後自動失效，同一範圍接著有 24 小時冷卻；暫停的冷卻期間也不能凍結資產。timelock 下的沒有期限 |
+| 讓 guardian 的 oracle 凍結超過 72 小時（新版） | 只有 timelock | **48 小時** | 對同一資產再呼叫 `setAssetFrozen(id, true)`（暫停則是 `setPaused(true)`）即為接手。guardian 凍結後要立刻提案，否則趕不上 72 小時 |
+| 提前解除 guardian 的 oracle 凍結（新版） | guardian 或 timelock | guardian 立即生效；timelock 48 小時 | guardian 只能解除 guardian 下的凍結。timelock 解除後，guardian 在原視窗內仍可再凍結，要一併撤換角色 |
+| 解除 timelock 下的 oracle 凍結或暫停（新版） | 只有 timelock | **48 小時** | guardian 無權解除 |
 | 金庫的資產 feed 永久失效（mint 被 `LiabilityUnpriced` 擋住） | V2 金庫的 RISK_ROLE | 立即生效 | 先 `setAssetCap(id,0)`，再 `setUnpricedExemption(id,true)`；該資產仍以最後記錄的價格計入負債（KNOWN_LIMITATIONS #29） |
 
 ## 7. fork 模擬結果（2026-09-30，Base Sepolia fork）
