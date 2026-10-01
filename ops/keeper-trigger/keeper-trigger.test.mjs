@@ -102,6 +102,7 @@ test("workflowsOf：WORKFLOW_FILES 優先、去重、拒絕不合法檔名", () 
   assert.deepEqual(workflowsOf({ WORKFLOW_FILE: "a.yml" }), ["a.yml"]);
   assert.deepEqual(workflowsOf({ WORKFLOW_FILES: " a.yml, b.yaml ,a.yml", WORKFLOW_FILE: "x.yml" }), ["a.yml", "b.yaml"]);
   assert.throws(() => workflowsOf({ WORKFLOW_FILES: "../secrets.yml" }), /不合法/);
+  assert.throws(() => workflowsOf({ WORKFLOW_FILES: "..yml" }), /不合法/, "首字元必須是英數字");
   assert.throws(() => workflowsOf({ WORKFLOW_FILES: "a.yml/dispatches?x" }), /不合法/);
   assert.throws(() => workflowsOf({ WORKFLOW_FILES: " , " }), /空的/);
 });

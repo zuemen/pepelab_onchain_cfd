@@ -115,12 +115,12 @@ Worker 的 token **沒有** Deployments 與 Administration 權限，下列設定
 ## 驗證
 
 - Cloudflare dashboard → Workers → `pepelab-keeper-trigger` → Logs（`[observability]` 已開啟）：每 20 分鐘每支 workflow 各一行 `[<workflow>] decide: dispatch=...`；dispatch 失敗的 cron 會顯示為錯誤。
-- GitHub → Actions → Base Sepolia Keeper：出現 `workflow_dispatch` 觸發的執行，且間隔不超過約 35 分鐘。
+- GitHub → Actions → Base Sepolia Keeper 與 Oracle Price Keeper (Sepolia)：兩者都出現 `workflow_dispatch` 觸發的執行，且間隔不超過約 35 分鐘。
 - `oracle-health.yml` 的過期告警 issue 應該不再出現。
 
 ## 調整
 
-`wrangler.toml` 的 `[vars]`：`MIN_GAP_SEC`（預設 900）、`WORKFLOW_REF`（預設 master）。cron 間隔改 `[triggers] crons`。
+`wrangler.toml` 的 `[vars]`：`WORKFLOW_FILES`（逗號分隔，預設兩支 keeper；舊的單一 `WORKFLOW_FILE` 仍相容，`WORKFLOW_FILES` 優先）、`MIN_GAP_SEC`（預設 900）、`WORKFLOW_REF`（預設 master）。cron 間隔改 `[triggers] crons`。
 
 ## 測試
 

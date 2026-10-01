@@ -20,7 +20,7 @@ async function gh(env, path, init = {}) {
   return res;
 }
 
-const WORKFLOW_NAME = /^[A-Za-z0-9._-]+\.ya?ml$/;
+const WORKFLOW_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*\.ya?ml$/;
 
 /**
  * 要照顧的 workflow 清單。WORKFLOW_FILES（逗號分隔）優先，舊的單一 WORKFLOW_FILE 仍可用。
