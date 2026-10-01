@@ -9,8 +9,14 @@
 //     guardViemAccount 簽署端），SDK 只負責：挑選付款要求、檢查網路／幣別／收款地址、
 //     檢查單筆與累計上限（預設沿用 agent 的 0.02 USDC／1 USDC）、送出並記帳。
 //   • 記帳（審查 H1）：累計上限在呼叫簽署端**之前**以「預留」方式檢查（檢查與預留之間沒有 await，
-//     並行請求不會同時通過）；只有確定沒送出（簽署失敗、簽出內容不符）才回滾。一旦送出 X-PAYMENT，
+//     並行請求不會同時通過）；只有確定沒送出（簽署失敗、簽署逾時、簽出內容不符）才回滾。一旦送出 X-PAYMENT，
 //     不論 2xx／4xx／5xx／逾時都保留記帳，沒有結算證明的另記在 unsettledAtomic()。
+//     預留以付款要求的 maxAmountRequired 計（簽署前不知道實際金額），簽出較少時才調整為實際金額 ——
+//     保守：接近累計上限時，可能因預留以 maxAmountRequired 計而被擋下（#203 L-c）。
+//   • 簽署逾時（#203 L-a，選用）：paymentSignTimeoutMs 內簽署端沒回應 → 視為「未送出」、回滾預留、
+//     丟 PaymentSignTimeoutError；之後才回來的簽章一律丟棄，**絕不送出**。
+//   • 對帳釋放（#203 Info）：releaseUnsettled() 只減少 unsettledAtomic()，**不會**減少 spentAtomic()，
+//     所以不能拿來繞過累計上限。
 //   • 簽出內容檢查（審查 M1）：authorization.to == payTo、scheme、network、x402Version、value、
 //     validBefore ≤ now + maxTimeoutSeconds + 60s；maxTimeoutSeconds 必須是 1–300 的整數。
 //   • 付費端點在發出 402 之前的守門錯誤（400、503 payto_unsafe、503 price_stale）一律
@@ -29,6 +35,7 @@ import {
   PaymentOutcomeUnknownError,
   PaymentRejectedError,
   PaymentRequiredError,
+  PaymentSignTimeoutError,
   PayToUnsafeError,
   PriceStaleError,
   RateLimitedError,
@@ -99,6 +106,11 @@ export interface X402PaymentClient {
     maxValueAtomic: bigint;
     /** 請求的完整 URL。 */
     resource: string;
+    /**
+     * 只有設定 paymentSignTimeoutMs 時才會提供：逾時後 abort。實作端可以據此取消簽署；
+     * 就算不理會，逾時後回傳的簽章 SDK 也一律丟棄、不送出。
+     */
+    signal?: AbortSignal;
   }): Promise<string>;
 }
 
@@ -124,8 +136,18 @@ export interface SignalApiClientConfig {
   payment?: X402PaymentClient;
   /** 單筆上限（USDC 6 位小數原始值）。預設 20000（0.02 USDC）。必須 > 0。 */
   maxPaymentAtomic?: bigint;
-  /** 此 client 的累計上限。預設 1_000000（1 USDC）。必須 > 0。 */
+  /**
+   * 此 client 的累計上限。預設 1_000000（1 USDC）。必須 > 0。
+   * 每筆付款在簽署前以付款要求的 `maxAmountRequired` 預留（簽出較少時才調整為實際金額），
+   * 所以接近上限時可能被擋下，即使實際會簽出較少（保守設計）。
+   */
   maxTotalSpendAtomic?: bigint;
+  /**
+   * 選用：簽署端（payment.createPaymentHeader）的逾時（ms，正整數）。逾時視為「未送出」：
+   * 回滾預留、丟 PaymentSignTimeoutError；之後才回來的簽章一律丟棄、不送出。
+   * 不設定時無限等待（簽署端懸置會讓該筆預留一直佔住累計額度）。
+   */
+  paymentSignTimeoutMs?: number;
   /**
    * 只接受這個 x402 network。預設 base-sepolia。
    * 與 expectedAsset **必須同時設定或同時省略**（換網路卻沿用 Base Sepolia 的 USDC 位址，或反之，都會丟錯）。
@@ -268,6 +290,7 @@ export class SignalApiClient {
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly random: () => number;
   private readonly now: () => number;
+  private readonly paymentSignTimeoutMs: number | undefined;
   /** 已承諾金額：已送出的授權 + 進行中的預留（atomic）。累計上限對它檢查。 */
   private committed = 0n;
   /** 已送出、但沒有拿到結算證明的授權（atomic）。validBefore 之前仍可能被結算。 */
@@ -291,6 +314,13 @@ export class SignalApiClient {
     this.maxTotalSpendAtomic = cfg.maxTotalSpendAtomic ?? DEFAULT_MAX_TOTAL_SPEND_ATOMIC;
     if (this.maxPaymentAtomic <= 0n) throw new Error("maxPaymentAtomic 必須 > 0");
     if (this.maxTotalSpendAtomic <= 0n) throw new Error("maxTotalSpendAtomic 必須 > 0");
+    if (
+      cfg.paymentSignTimeoutMs !== undefined &&
+      !(Number.isSafeInteger(cfg.paymentSignTimeoutMs) && cfg.paymentSignTimeoutMs > 0)
+    ) {
+      throw new Error(`paymentSignTimeoutMs 必須是正整數（ms）：${cfg.paymentSignTimeoutMs}`);
+    }
+    this.paymentSignTimeoutMs = cfg.paymentSignTimeoutMs;
     if ((cfg.expectedNetwork === undefined) !== (cfg.expectedAsset === undefined)) {
       throw new Error("expectedNetwork 與 expectedAsset 必須同時設定（或同時省略以使用 Base Sepolia 官方 USDC）");
     }
@@ -320,6 +350,27 @@ export class SignalApiClient {
 
   /** 已送出但沒有取得結算證明（X-PAYMENT-RESPONSE）的金額（atomic）。需要對帳。 */
   unsettledAtomic(): bigint {
+    return this.unsettled;
+  }
+
+  /**
+   * 對帳後釋放：呼叫端以 facilitator／鏈上 USDC 轉帳紀錄確認某些「未結算」授權的結果
+   * （已結算，或 validBefore 已過且確定沒被結算）之後，把那部分從 unsettledAtomic() 移除。
+   *
+   * **只減少 unsettledAtomic()，不會減少 spentAtomic()**：授權已經送出過，累計上限照算，
+   * 這個 API 不能用來騰出額度。要重新取得額度，請建立新的 client（並在簽署端另做跨實例總額控管）。
+   *
+   * @param amountAtomic 要釋放的金額（atomic，> 0，且 ≤ 目前的 unsettledAtomic()）。
+   * @returns 釋放後的 unsettledAtomic()。
+   */
+  releaseUnsettled(amountAtomic: bigint): bigint {
+    if (typeof amountAtomic !== "bigint" || amountAtomic <= 0n) {
+      throw new RangeError(`releaseUnsettled：金額必須是 > 0 的 bigint（收到 ${String(amountAtomic)}）`);
+    }
+    if (amountAtomic > this.unsettled) {
+      throw new RangeError(`releaseUnsettled：${amountAtomic} 超過目前未結算金額 ${this.unsettled}`);
+    }
+    this.unsettled -= amountAtomic;
     return this.unsettled;
   }
 
@@ -516,6 +567,33 @@ export class SignalApiClient {
     return signed;
   }
 
+  /**
+   * 呼叫簽署端；設定了 paymentSignTimeoutMs 時加上逾時。逾時後 race 已經以 PaymentSignTimeoutError
+   * 結束，簽署端之後才回傳的簽章沒有任何參照會拿到它 → 被丟棄，不可能被送出。
+   */
+  private async sign(
+    payment: X402PaymentClient,
+    args: Omit<Parameters<X402PaymentClient["createPaymentHeader"]>[0], "signal">,
+  ): Promise<string> {
+    const timeoutMs = this.paymentSignTimeoutMs;
+    if (timeoutMs === undefined) return payment.createPaymentHeader(args);
+    const ac = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const signing = Promise.resolve().then(() => payment.createPaymentHeader({ ...args, signal: ac.signal }));
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        ac.abort();
+        reject(new PaymentSignTimeoutError({ url: args.resource, timeoutMs }));
+      }, timeoutMs);
+    });
+    try {
+      return await Promise.race([signing, timeout]);
+    } finally {
+      clearTimeout(timer);
+      signing.catch(() => {}); // 逾時後簽署端才失敗：不要變成 unhandled rejection
+    }
+  }
+
   private async getPaid<T>(url: string): Promise<PaidResult<T>> {
     // 1) 沒帶付款的探測：付款前的守門錯誤（400／payto_unsafe／price_stale）在這一步就會丟出。
     const first = await this.getWithRetry(url);
@@ -538,11 +616,11 @@ export class SignalApiClient {
     }
     this.committed += required;
 
-    // 4) 呼叫端簽署並檢查。這一段失敗 = 授權沒有送出 → 回滾預留。
+    // 4) 呼叫端簽署並檢查。這一段失敗（含簽署逾時）= 授權沒有送出 → 回滾預留。
     let header: string;
     let signed: bigint;
     try {
-      header = await this.payment.createPaymentHeader({ requirements: req, x402Version, maxValueAtomic: this.maxPaymentAtomic, resource: url });
+      header = await this.sign(this.payment, { requirements: req, x402Version, maxValueAtomic: this.maxPaymentAtomic, resource: url });
       signed = this.checkSignedPayment(header, req, x402Version, required);
     } catch (err) {
       this.committed -= required;

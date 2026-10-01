@@ -18,6 +18,7 @@ import {
   buildDepositMargin,
   buildOpenPosition,
   buildOpenPositionForSession,
+  buildRevokeMarginApproval,
   buildRevokeSession,
   buildSetSessionAssets,
   buildWithdrawMargin,
@@ -160,6 +161,22 @@ const decode = (abi: readonly unknown[], tx: UnsignedTx) => decodeFunctionData({
   assert.deepEqual(decode(ERC20_ABI, unlimited).args, [A.perpetualExchange, 2n ** 256n - 1n]);
   assert.throws(() => buildApproveMargin(A, { unlimited: 1 as unknown as true }), /明確為 true/);
   ok("L1：isLong 非 boolean 丟錯（不會悄悄變做空）；L2：無上限 approve 須 { unlimited: true }");
+}
+
+// 8) #203 L-b：撤銷授權用獨立 builder（approve(exchange, 0)）；amount: 0n 照舊丟錯
+{
+  const rv = buildRevokeMarginApproval(A);
+  assert.equal(rv.to, A.marginToken);
+  assert.equal(rv.value, 0n);
+  const d = decode(ERC20_ABI, rv);
+  assert.equal(d.functionName, "approve");
+  assert.deepEqual(d.args, [A.perpetualExchange, 0n], "spender = exchange、金額 0");
+  assert.equal(rv.request.functionName, "approve");
+  assert.deepEqual(rv.request.args, [A.perpetualExchange, 0n]);
+  assert.throws(() => buildApproveMargin(A, { amount: 0n }), TxBuildError, "0 仍拒絕：撤銷必須明確呼叫 buildRevokeMarginApproval");
+  assert.throws(() => buildRevokeMarginApproval({ ...A, marginToken: "0x0000000000000000000000000000000000000000" }), TxBuildError);
+  assert.throws(() => buildRevokeMarginApproval({ ...A, perpetualExchange: "0xnope" as never }), TxBuildError);
+  ok("L-b：buildRevokeMarginApproval → approve(exchange, 0)；buildApproveMargin({ amount: 0n }) 仍丟錯");
 }
 
 console.log(`\n✅ sdk write.test.ts 全過（${n} 項）`);
