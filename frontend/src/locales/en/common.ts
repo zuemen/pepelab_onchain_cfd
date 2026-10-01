@@ -67,7 +67,7 @@ export const common: Catalog['common'] = {
       primaryBefore: 'Base Sepolia (',
       primaryAfter: ')',
       after: ' — trading, agent sessions, and x402 only work there.',
-      sepoliaExtra: ' Sepolia is kept around for the tokenized-assets and V2 vault demos.',
+      sepoliaExtra: ' Sepolia is kept around as a comparison showcase for tokenized assets and the vault.',
     },
   },
 
