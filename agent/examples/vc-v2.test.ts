@@ -224,5 +224,36 @@ const vc = await issue();
   ok("nonce 狀態寫入失敗 → NONCE_STORE_WRITE_FAILED；開倉拒絕、平倉降級");
 }
 
+// 10) PR #213 Medium-1：nonce 狀態檔暫時讀不到（EPERM；Windows 上 existsSync 此時回 false）
+//     → NONCE_STORE_UNREADABLE，不能當成「沒有紀錄」而接受已被取代的舊 VC
+{
+  const sp = path.join(TMP, "n10.json");
+  const older = await issue({ issuedAt: NOW - 100 });
+  const newer = await issue({ issuedAt: NOW - 10 });
+  assert.equal(checkNonce(verify(older), { statePath: sp }).ok, true);
+  assert.equal(checkNonce(verify(newer), { statePath: sp }).ok, true);
+  assert.equal(checkNonce(verify(older), { statePath: sp }).reasonCode, "VC_SUPERSEDED", "前提：舊 VC 已被取代");
+  const before = fs.readFileSync(sp, "utf8");
+  const orig = { existsSync: fs.existsSync, readFileSync: fs.readFileSync };
+  const hit = (p: unknown) => path.resolve(String(p)) === path.resolve(sp);
+  const f = fs as any;
+  f.existsSync = (p: any) => (hit(p) ? false : orig.existsSync(p));
+  f.readFileSync = (p: any, ...a: any[]) => {
+    if (hit(p)) throw Object.assign(new Error("EPERM（模擬）"), { code: "EPERM" });
+    return (orig.readFileSync as any)(p, ...a);
+  };
+  let replay;
+  try {
+    replay = checkNonce(verify(older), { statePath: sp });
+  } finally {
+    Object.assign(fs, orig);
+  }
+  assert.equal(replay.ok, false, "修正前：existsSync=false → 空記憶 → 舊 VC 重放成功");
+  assert.equal(replay.reasonCode, "NONCE_STORE_UNREADABLE");
+  assert.equal(fs.readFileSync(sp, "utf8"), before, "nonce 記憶沒有被空狀態覆寫");
+  assert.equal(checkNonce(verify(older), { statePath: sp }).reasonCode, "VC_SUPERSEDED", "恢復後仍拒收舊 VC");
+  ok("nonce 狀態檔 EPERM → NONCE_STORE_UNREADABLE（fail-closed），記憶不被清空、舊 VC 不能重放");
+}
+
 fs.rmSync(TMP, { recursive: true, force: true });
 console.log(`\n✅ vc-v2.test.ts 全過（${n} 組）`);

@@ -38,7 +38,7 @@ import { fileURLToPath } from "node:url";
 import { ethers } from "ethers";
 import { ASSET_IDS } from "./addresses.ts";
 import { appendChainedRecord } from "./audit.ts";
-import { retryTransientSync, withFileLockSync, LockTimeoutError } from "./fileLock.ts";
+import { isNotFound, retryTransientSync, withFileLockSync, LockTimeoutError } from "./fileLock.ts";
 
 export type PolicyReasonCode =
   | "OK"
@@ -384,8 +384,16 @@ const isTsArray = (v: unknown): v is number[] =>
  * 改壞的額度紀錄（例如 dailyMargin 變成負數或字串）若被默默接受，等於把每日上限重置。
  */
 export function readPolicyState(file: string): PolicyState {
-  if (!fs.existsSync(file)) return { version: 1, agents: {} };
-  const parsed = JSON.parse(retryTransientSync(() => fs.readFileSync(file, "utf8")));
+  // 不用 fs.existsSync：它遇 EPERM／EACCES 也回 false，狀態會被當成「不存在」→ 以空狀態計算並寫回，
+  // 等於清空當日額度（開倉 fail-open；PR #213 審查 Medium-1）。只有 ENOENT 才是真的沒有。
+  let raw: string;
+  try {
+    raw = retryTransientSync(() => fs.readFileSync(file, "utf8"));
+  } catch (e) {
+    if (isNotFound(e)) return { version: 1, agents: {} };
+    throw e;
+  }
+  const parsed = JSON.parse(raw);
   if (
     parsed?.version !== 1 ||
     typeof parsed.agents !== "object" ||
@@ -554,8 +562,17 @@ export async function enforcePolicyGate(
       return withFileLockSync(statePath, () => gateLocked(), { timeoutMs: opts.lockTimeoutMs });
     } catch (err) {
       const code = err instanceof LockTimeoutError ? "STATE_LOCK_TIMEOUT" : "STATE_LOCK_FAILED";
-      if (isClose) return degradedClose([code], now());
-      return { ...deny(code, "取得 policy 狀態檔鎖失敗（fail-closed）"), release: noop };
+      const t = now();
+      if (isClose) return degradedClose([code], t);
+      // 開倉拒絕也要留稽核（PR #213 審查 Medium-2）。稽核檔有自己的鎖（appendChainedRecord），
+      // 不需要 state 鎖；寫不進去 → AUDIT_WRITE_FAILED，與 finish() 相同。
+      const d = deny(code, "取得 policy 狀態檔鎖失敗（fail-closed）");
+      try {
+        auditWriteAttempt(recordOf(d, t, []), auditPath, t);
+      } catch {
+        return { ...deny("AUDIT_WRITE_FAILED", "稽核紀錄寫入失敗（fail-closed）"), release: noop };
+      }
+      return { ...d, release: noop };
     }
   });
 

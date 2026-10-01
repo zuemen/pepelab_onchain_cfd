@@ -25,7 +25,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { VerifyResult } from "./identity.ts";
-import { retryTransientSync, withFileLockSync } from "./fileLock.ts";
+import { isNotFound, retryTransientSync, withFileLockSync } from "./fileLock.ts";
 
 export type NonceReason =
   | "OK"
@@ -75,8 +75,15 @@ const isNum = (v: unknown) => typeof v === "number" && Number.isFinite(v);
 const isStr = (v: unknown) => typeof v === "string" && v.length > 0;
 
 function read(file: string): NonceState {
-  if (!fs.existsSync(file)) return { version: 2, nonces: {}, latest: {} };
-  const s = JSON.parse(retryTransientSync(() => fs.readFileSync(file, "utf8")));
+  // 不用 fs.existsSync（遇 EPERM／EACCES 回 false → nonce 記憶被清空、舊 VC 可重放；PR #213 審查 Medium-1）。
+  let raw: string;
+  try {
+    raw = retryTransientSync(() => fs.readFileSync(file, "utf8"));
+  } catch (e) {
+    if (isNotFound(e)) return { version: 2, nonces: {}, latest: {} };
+    throw e;
+  }
+  const s = JSON.parse(raw);
   if (s?.version !== 2 || !s.nonces || typeof s.nonces !== "object" || !s.latest || typeof s.latest !== "object") {
     throw new Error("vc nonce 狀態檔格式不符");
   }
