@@ -2,13 +2,20 @@ import { id } from 'ethers'
 import { it, expect, describe } from 'vitest'
 
 import { priceImpactBps } from './ammQuote'
+import { scanPush4Selectors } from './selectorScan'
 import fixtures from './__fixtures__/ammBytecode.json'
 import {
   format18,
   AMM_SELECTORS,
+  checkInventory,
+  mergePoolReads,
   impactReference,
   reservePrice18,
+  checkOracleFixed,
+  sameCapabilities,
   buildPoolInfoView,
+  buildSwapCardView,
+  type SwapCardInput,
   UNKNOWN_CAPABILITIES,
   detectAmmCapabilities,
 } from './ammPoolView'
@@ -35,6 +42,7 @@ describe('AMM_SELECTORS', () => {
       oracle: 'oracle()',
       oraclePrice: 'oraclePrice()',
       maxOracleAge: 'maxOracleAge()',
+      totalShares: 'totalShares()',
     }
     for (const [k, sig] of Object.entries(sigs)) {
       expect(AMM_SELECTORS[k as keyof typeof AMM_SELECTORS]).toBe(id(sig).slice(0, 10))
@@ -73,6 +81,41 @@ describe('detectAmmCapabilities', () => {
     expect(detectAmmCapabilities(null)).toEqual(UNKNOWN_CAPABILITIES)
     expect(detectAmmCapabilities('0x')).toEqual(UNKNOWN_CAPABILITIES)
     expect(detectAmmCapabilities('0x6080604052')).toEqual(UNKNOWN_CAPABILITIES)
+  })
+
+  // #215 L3：oracle-fixed 不能只靠「有 oracle()、沒有 oraclePrice()」的排除法。
+  const push4 = (...sels: string[]) => `0x60806040${sels.map((s) => `63${s.slice(2)}14`).join('')}`
+
+  it('線上舊版沒有 totalShares()，新版有——這是舊版判斷的另一個依據', () => {
+    expect(scanPush4Selectors(liveCode).has(AMM_SELECTORS.totalShares)).toBe(false)
+    expect(scanPush4Selectors(v3Code).has(AMM_SELECTORS.totalShares)).toBe(true)
+  })
+
+  it('有 oracle()、沒有 oraclePrice()、也沒有 totalShares() → oracle-fixed', () => {
+    const code = push4(AMM_SELECTORS.getPrice, AMM_SELECTORS.getReserves, AMM_SELECTORS.oracle)
+    expect(detectAmmCapabilities(code).pricing).toBe('oracle-fixed')
+  })
+
+  it('有 oracle() 也有 totalShares()、卻沒有 oraclePrice()：某種有 oracle 的恆定乘積變體 → unknown，不標成 Oracle 定價', () => {
+    const code = push4(AMM_SELECTORS.getPrice, AMM_SELECTORS.getReserves, AMM_SELECTORS.oracle, AMM_SELECTORS.totalShares)
+    expect(detectAmmCapabilities(code)).toEqual(UNKNOWN_CAPABILITIES)
+  })
+})
+
+describe('checkOracleFixed（#215 L3 的執行期正向確認）', () => {
+  it('getPrice() 等於 oracle 報價 × 1e10 → confirmed（線上實測值）', () => {
+    expect(checkOracleFixed(LIVE.getPrice, 268108000000n)).toBe('confirmed')
+  })
+
+  it('兩個值都讀到卻不相等 → contradicted（例如 getPrice() 其實是儲備比例）', () => {
+    const fromReserves = reservePrice18(LIVE.ethReserve, LIVE.usdcReserve)!
+    expect(checkOracleFixed(fromReserves, 268108000000n)).toBe('contradicted')
+  })
+
+  it('任一個值讀不到或 oracle 價為 0 → unverified，不是 contradicted', () => {
+    expect(checkOracleFixed(null, 268108000000n)).toBe('unverified')
+    expect(checkOracleFixed(LIVE.getPrice, null)).toBe('unverified')
+    expect(checkOracleFixed(0n, 0n)).toBe('unverified')
   })
 })
 
@@ -196,5 +239,161 @@ describe('impactReference + priceImpactBps', () => {
     expect(impactReference(live, true, { getPrice: null, reserves: null })).toBeNull()
     expect(impactReference(detectAmmCapabilities(v3Code), true, { getPrice: E(1), reserves: null })).toBeNull()
     expect(impactReference(UNKNOWN_CAPABILITIES, true, reads)).toBeNull()
+  })
+})
+
+// ── #215 審查：庫存檢查與兌換卡畫面模型 ───────────────────────────────────────
+
+describe('checkInventory（#215 M2）', () => {
+  const live = detectAmmCapabilities(liveCode)
+  const cp = detectAmmCapabilities(v3Code)
+  const reserves = [LIVE.ethReserve, LIVE.usdcReserve] as const
+
+  it('舊版：quote 超過輸出側庫存 → exceeded（審查重現：0.2 ETH 報 542.38 USDC，庫存 382.73）', () => {
+    const quoted = 542377970000000000000n // 0.2 ETH × 0.997 × 2720.05
+    expect(checkInventory(live, true, quoted, reserves)).toEqual({
+      status: 'exceeded',
+      needed: quoted,
+      available: LIVE.usdcReserve,
+    })
+  })
+
+  it('舊版：剛好等於庫存換得成（合約是 reserve >= out），多 1 wei 就不行', () => {
+    expect(checkInventory(live, true, LIVE.usdcReserve, reserves)).toEqual({ status: 'ok' })
+    expect(checkInventory(live, true, LIVE.usdcReserve + 1n, reserves).status).toBe('exceeded')
+  })
+
+  it('USDC→ETH 看的是 ETH 那一側', () => {
+    expect(checkInventory(live, false, LIVE.quote100Usd, reserves)).toEqual({ status: 'ok' })
+    expect(checkInventory(live, false, LIVE.ethReserve + 1n, reserves)).toEqual({
+      status: 'exceeded',
+      needed: LIVE.ethReserve + 1n,
+      available: LIVE.ethReserve,
+    })
+  })
+
+  it('恆定乘積版：out >= reserve 就拒絕（合約的 InsufficientOutput 條件）', () => {
+    expect(checkInventory(cp, true, E(30_000), [E(10), E(30_000)]).status).toBe('exceeded')
+    expect(checkInventory(cp, true, E(30_000) - 1n, [E(10), E(30_000)])).toEqual({ status: 'ok' })
+  })
+
+  it('儲備讀不到 → unknown：不擋，也不說庫存足夠', () => {
+    expect(checkInventory(live, true, E(1_000_000), null)).toEqual({ status: 'unknown' })
+  })
+})
+
+describe('mergePoolReads / sameCapabilities', () => {
+  it('新讀到的值蓋掉舊值；新值是 null 的欄位保留舊值', () => {
+    const base = { getPrice: E(2681), reserves: [E(1), E(2)] as const, oraclePrice: E(3) }
+    expect(mergePoolReads(base, { getPrice: E(2720), reserves: null, oraclePrice: null })).toEqual({
+      getPrice: E(2720),
+      reserves: [E(1), E(2)],
+      oraclePrice: E(3),
+    })
+  })
+
+  it('sameCapabilities 比的是內容，不是物件', () => {
+    expect(sameCapabilities(detectAmmCapabilities(liveCode), detectAmmCapabilities(liveCode))).toBe(true)
+    expect(sameCapabilities(detectAmmCapabilities(liveCode), detectAmmCapabilities(v3Code))).toBe(false)
+    expect(sameCapabilities(UNKNOWN_CAPABILITIES, detectAmmCapabilities(liveCode))).toBe(false)
+  })
+})
+
+describe('buildSwapCardView（#215 L2／M2）', () => {
+  const live = detectAmmCapabilities(liveCode)
+  const liveReads = { getPrice: LIVE.getPrice, reserves: [LIVE.ethReserve, LIVE.usdcReserve] as const, oraclePrice: null }
+  const base: SwapCardInput = {
+    probing: false,
+    caps: live,
+    reads: liveReads,
+    isEthIn: true,
+    hasAmount: false,
+    quote: null,
+    oracleStale: false,
+    busy: false,
+  }
+  const okQuote = { isEthIn: true, out: LIVE.quote001Eth, impactBps: 30, inventory: { status: 'ok' } as const }
+
+  it('版本還在探測：說「正在確認」，每一格是 loading，不是「無法取得」', () => {
+    const v = buildSwapCardView({
+      ...base,
+      probing: true,
+      caps: UNKNOWN_CAPABILITIES,
+      reads: { getPrice: null, reserves: null, oraclePrice: null },
+    })
+    expect(v.version).toBe('loading')
+    expect(v.notes).toEqual(['checkingVersionNote'])
+    expect(v.pool.poolPrice).toEqual({ kind: 'loading' })
+    expect(v.pool.reserves).toEqual({ kind: 'loading' })
+    expect(v.pool.oracleRate).toEqual({ kind: 'unsupported' })
+    expect(v.pool.oracleRef).toEqual({ kind: 'unsupported' })
+    expect(v.badge).toBeNull()
+  })
+
+  it('探測完了但認不出來：才說「無法確認」', () => {
+    const v = buildSwapCardView({ ...base, caps: UNKNOWN_CAPABILITIES })
+    expect(v.version).toBe('unknown')
+    expect(v.notes).toEqual(['unknownVersionNote'])
+    expect(v.pool.poolPrice).toEqual({ kind: 'unavailable' })
+    expect(v.badge).toBeNull()
+  })
+
+  it('沒輸入金額 → 按鈕停用、顯示「請輸入金額」；不顯示任何報價', () => {
+    const v = buildSwapCardView(base)
+    expect(v.button).toEqual({ disabled: true, label: 'enterAmount' })
+    expect(v.receive).toBeNull()
+    expect(v.impactBps).toBeNull()
+    expect(v.minReceivedBase).toBeNull()
+  })
+
+  it('正常報價 → 顯示收到數量、衝擊、最低收到的基準；按鈕可按', () => {
+    const v = buildSwapCardView({ ...base, hasAmount: true, quote: okQuote })
+    expect(v.receive).toBe(LIVE.quote001Eth)
+    expect(v.impactBps).toBe(30)
+    expect(v.minReceivedBase).toBe(LIVE.quote001Eth)
+    expect(v.inventoryExceeded).toBeNull()
+    expect(v.button).toEqual({ disabled: false, label: 'swap' })
+  })
+
+  it('超過庫存 → 按鈕停用並標示原因；不顯示收到數量、衝擊、最低收到', () => {
+    const needed = 542377970000000000000n
+    const v = buildSwapCardView({
+      ...base,
+      hasAmount: true,
+      quote: { isEthIn: true, out: needed, impactBps: 30, inventory: { status: 'exceeded', needed, available: LIVE.usdcReserve } },
+    })
+    expect(v.button).toEqual({ disabled: true, label: 'exceedsInventory' })
+    expect(v.inventoryExceeded).toEqual({ needed, available: LIVE.usdcReserve })
+    expect(v.receive).toBeNull()
+    expect(v.impactBps).toBeNull()
+    expect(v.minReceivedBase).toBeNull()
+  })
+
+  it('另一個方向的舊報價不拿來顯示（方向切換後、新報價回來前）', () => {
+    const v = buildSwapCardView({ ...base, isEthIn: false, hasAmount: true, quote: okQuote })
+    expect(v.receive).toBeNull()
+    expect(v.impactBps).toBeNull()
+  })
+
+  it('按鈕文字的優先順序：兌換中 > oracle 過期 > 請輸入金額 > 超過庫存', () => {
+    const exceeded = {
+      isEthIn: true,
+      out: E(999),
+      impactBps: 30,
+      inventory: { status: 'exceeded', needed: E(999), available: E(1) } as const,
+    }
+    const all = { ...base, hasAmount: true, quote: exceeded, oracleStale: true, busy: true }
+    expect(buildSwapCardView(all).button.label).toBe('swapping')
+    expect(buildSwapCardView({ ...all, busy: false }).button.label).toBe('oracleStale')
+    expect(buildSwapCardView({ ...all, busy: false, oracleStale: false, hasAmount: false }).button.label).toBe('enterAmount')
+    expect(buildSwapCardView({ ...all, busy: false, oracleStale: false }).button.label).toBe('exceedsInventory')
+    for (const v of [all, { ...all, busy: false }, { ...all, busy: false, oracleStale: false }]) {
+      expect(buildSwapCardView(v).button.disabled).toBe(true)
+    }
+  })
+
+  it('quote 為 0 → 不顯示「最低收到數量」', () => {
+    const v = buildSwapCardView({ ...base, hasAmount: true, quote: { ...okQuote, out: 0n, impactBps: null } })
+    expect(v.minReceivedBase).toBeNull()
   })
 })

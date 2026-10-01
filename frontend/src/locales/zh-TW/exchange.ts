@@ -32,6 +32,13 @@ export const exchange = {
     ammStale:
       '兌換池的參考預言機報價已過期，合約會拒絕兌換（StaleOraclePrice）。請等 keeper 更新價格後再試。',
 
+    /**
+     * #215：送出前以 eth_call 模擬兌換，必定失敗就不送——包含 approve。兩句話分開，
+     * 因為「沒有送出任何交易」和「批准已經送了」對使用者是兩種不同的處境。
+     */
+    preflightBlocked: '預檢未通過，沒有送出任何交易：{reason}',
+    preflightBlockedAfterApprove: '批准已完成，但兌換預檢未通過，沒有送出兌換交易：{reason}',
+
     approving: '批准 {token} 中…',
     swappedEthForToken: '已用 {amount} ETH 兌換約 {received} {token} ✓',
     swappedTokenForEth: '已用 {amount} {token} 兌換約 {received} ETH ✓',
@@ -115,11 +122,22 @@ export const exchange = {
     poolInventory: '池內可兌出庫存',
     /** 讀取失敗時的那一格。不是「—」也不是 0：兩者都會被讀成一個數字。 */
     unavailable: '無法取得',
+    /** 還沒讀完的那一格。和「無法取得」分開：前者再等一下就有，後者是讀失敗了。 */
+    loadingValue: '讀取中…',
     oracleFixedNote:
       '線上 PepeAMM 是舊版合約：依 Oracle 報價固定定價（扣 0.3% 手續費、無滑點），不是恆定乘積池。此版沒有 oraclePrice()，也沒有池價偏離保護，所以不另列 Oracle 參考價；儲備量只代表可兌出的庫存，不決定價格。',
     noOracleRefNote: '這一版合約沒有 oraclePrice()，因此不顯示 Oracle 參考價。',
     unknownVersionNote:
       '無法確認線上合約版本，暫不顯示價格與價格衝擊；實際兌換數量仍以合約即時報價為準。',
+    /** 版本探測還沒回來時的說明——不可以先說「無法確認」。 */
+    checkingVersionNote: '正在確認線上合約版本…',
+    /**
+     * #215：舊版合約的報價不看庫存，金額一大就會報出池子付不出來的數字。按鈕上的短句，
+     * 與下面那句完整的說明。
+     */
+    exceedsInventory: '超過池內可兌出庫存',
+    exceedsInventoryDetail:
+      '這筆兌換要兌出 {needed} {token}，超過池內可兌出庫存（{available} {token}），送出一定會失敗。請減少金額。',
     priceImpact: '價格衝擊（含手續費）',
     minimumReceived: '最低收到數量（{tolerance}% 容忍）',
 

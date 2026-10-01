@@ -22,6 +22,10 @@ export const exchange: Catalog['exchange'] = {
     ammStale:
       "The swap pool's reference oracle price is stale — the contract will reject the swap (StaleOraclePrice). Wait for the keeper to update the price and try again.",
 
+    preflightBlocked: 'Pre-flight check failed — no transaction was sent: {reason}',
+    preflightBlockedAfterApprove:
+      'The approval went through, but the swap failed its pre-flight check — the swap was not sent: {reason}',
+
     approving: 'Approving {token}…',
     swappedEthForToken: 'Swapped {amount} ETH for ~{received} {token} ✓',
     swappedTokenForEth: 'Swapped {amount} {token} for ~{received} ETH ✓',
@@ -96,11 +100,16 @@ export const exchange: Catalog['exchange'] = {
     oracleRate: 'Swap rate (oracle-priced)',
     poolInventory: 'Pool inventory',
     unavailable: 'Unavailable',
+    loadingValue: 'Loading…',
     oracleFixedNote:
       'The live PepeAMM is an older contract: it swaps at the oracle price (minus a 0.3% fee, no slippage) and is not a constant-product pool. This version has no oraclePrice() and no pool-price band, so no separate oracle reference is shown; reserves are only the inventory available to swap out and do not set the price.',
     noOracleRefNote: 'This contract version has no oraclePrice(), so no oracle reference price is shown.',
     unknownVersionNote:
       'Could not identify the live contract version, so prices and price impact are hidden; the amount you receive still follows the live contract quote.',
+    checkingVersionNote: 'Checking the live contract version…',
+    exceedsInventory: 'Exceeds pool inventory',
+    exceedsInventoryDetail:
+      'This swap would pay out {needed} {token}, more than the pool has available ({available} {token}), so it is certain to fail. Reduce the amount.',
     priceImpact: 'Price impact (includes fee)',
     minimumReceived: 'Minimum received ({tolerance}% tolerance)',
 

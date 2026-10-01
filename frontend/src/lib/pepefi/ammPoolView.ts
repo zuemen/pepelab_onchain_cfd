@@ -17,6 +17,14 @@
 //   2. 池內現價一律由**同一次讀到的儲備量**算出，不可能與儲備對不上。
 //   3. 讀失敗 → 「無法取得」；合約沒有該函式 → 不顯示該欄、改顯示說明。
 //   4. 價格衝擊的基準跟著合約實際定價方式走（v2 以 oracle 價為基準）。
+//
+// #215 審查之後再加三條：
+//   5. v2 的判斷不只靠排除法：bytecode 要「有 oracle()、沒有 oraclePrice()、**也沒有
+//      totalShares()**」（有 LP 份額的就是某種恆定乘積池，不是 v2），而且執行期再以
+//      `getPrice() == oracle 報價 × 1e10` 正向確認（`checkOracleFixed`）。
+//   6. 「還沒讀完」與「無法確認」是兩種狀態、兩句話（`buildSwapCardView` 的 probing）。
+//   7. v2 的 quote 不看庫存：`quotedOut` 超過輸出側庫存時整筆換不成，畫面要直接說、
+//      按鈕要停用（`checkInventory`），而不是顯示一個換不到的數字。
 
 import { scanPush4Selectors } from './selectorScan'
 
@@ -30,6 +38,7 @@ export const AMM_SELECTORS = {
   oracle:       '0x7dc0d1d0', // oracle()
   oraclePrice:  '0x668aa824', // oraclePrice()
   maxOracleAge: '0x7c87a993', // maxOracleAge()
+  totalShares:  '0x3a98ef39', // totalShares()：有 LP 份額 → 恆定乘積池（v3），v2 沒有
 } as const
 
 export type AmmPricing = 'banded-cp' | 'oracle-fixed' | 'plain-cp' | 'unknown'
@@ -64,9 +73,33 @@ export function detectAmmCapabilities(code: string | null | undefined): AmmCapab
   const hasMaxOracleAge = has(AMM_SELECTORS.maxOracleAge)
   let pricing: AmmPricing
   if (hasOraclePrice) pricing = 'banded-cp'
-  else if (has(AMM_SELECTORS.oracle)) pricing = 'oracle-fixed'
-  else pricing = 'plain-cp'
+  else if (has(AMM_SELECTORS.oracle)) {
+    // 有 oracle() 卻沒有 oraclePrice()：v2 的特徵，但光憑這點是排除法。v2 沒有 LP 份額
+    // （addLiquidity 是 onlyOwner、不發 share）；若出現 totalShares()，那是某種我們不認得
+    // 的「有 oracle 的恆定乘積池」，getPrice() 的意義不明 → unknown，不要標成 Oracle 定價。
+    if (has(AMM_SELECTORS.totalShares)) return UNKNOWN_CAPABILITIES
+    pricing = 'oracle-fixed'
+  } else pricing = 'plain-cp'
   return { pricing, hasOraclePrice, hasMaxOracleAge }
+}
+
+/**
+ * v2（oracle-fixed）的執行期正向確認：這一版的 `getPrice()` 就是 oracle 報價（8 dec）
+ * 乘上 1e10。恆定乘積池的 `getPrice()` 是儲備比例，不會剛好等於它。
+ *
+ * - `confirmed`：兩個值都讀到、而且相等。
+ * - `contradicted`：兩個值都讀到、卻不相等 → bytecode 像 v2 但行為不是，呼叫端應降為 unknown。
+ * - `unverified`：有值讀不到 → 無法確認，維持 bytecode 的判斷（已含「沒有 totalShares()」）。
+ */
+export type OracleFixedCheck = 'confirmed' | 'contradicted' | 'unverified'
+
+export function checkOracleFixed(getPrice: bigint | null, oraclePrice8: bigint | null): OracleFixedCheck {
+  if (getPrice === null || oraclePrice8 === null || oraclePrice8 <= 0n) return 'unverified'
+  return getPrice === oraclePrice8 * 10n ** 10n ? 'confirmed' : 'contradicted'
+}
+
+export function sameCapabilities(a: AmmCapabilities, b: AmmCapabilities): boolean {
+  return a.pricing === b.pricing && a.hasOraclePrice === b.hasOraclePrice && a.hasMaxOracleAge === b.hasMaxOracleAge
 }
 
 /**
@@ -86,15 +119,17 @@ export function format18(v: bigint, decimals = 2): string {
 // ── 畫面模型 ────────────────────────────────────────────────────────────────
 
 /**
- * 一格數字的三種狀態：
+ * 一格數字的四種狀態：
  * - `value`：讀到了、而且確定是這個欄位該有的意義。
  * - `unavailable`：這版合約有這個值，但這次讀不到 → 顯示「無法取得」。
  * - `unsupported`：這版合約根本沒有這個值 → 不顯示該欄，改顯示說明。
+ * - `loading`：還沒讀完 → 顯示「讀取中…」。不可以說成「無法取得」。
  */
 export type Cell =
   | { kind: 'value'; text: string }
   | { kind: 'unavailable' }
   | { kind: 'unsupported' }
+  | { kind: 'loading' }
 
 export interface PoolReads {
   /** `getPrice()` 原始值；null = 讀取失敗。 */
@@ -114,7 +149,7 @@ export interface PoolInfoView {
   /** Oracle 參考價（v3 的 oraclePrice()）。 */
   oracleRef: Cell
   /** 儲備量；ETH 4 位、USDC 2 位小數。 */
-  reserves: { kind: 'value'; eth: string; usdc: string } | { kind: 'unavailable' }
+  reserves: { kind: 'value'; eth: string; usdc: string } | { kind: 'unavailable' } | { kind: 'loading' }
 }
 
 const UNAVAILABLE: Cell = { kind: 'unavailable' }
@@ -195,4 +230,145 @@ export function impactReference(
     return isEthIn ? { reserveIn: ONE, reserveOut: p } : { reserveIn: p, reserveOut: ONE }
   }
   return null
+}
+
+// ── 兌換卡整體的畫面模型（#215 審查）──────────────────────────────────────────
+
+/** 後讀到的值蓋掉先讀到的；`fresh` 裡的 null（沒讀或讀失敗）不蓋。 */
+export function mergePoolReads(base: PoolReads, fresh: Partial<PoolReads>): PoolReads {
+  return {
+    getPrice: fresh.getPrice ?? base.getPrice,
+    reserves: fresh.reserves ?? base.reserves,
+    oraclePrice: fresh.oraclePrice ?? base.oraclePrice,
+  }
+}
+
+/**
+ * 這筆 quote 換不換得出來——只看輸出側的庫存。
+ *
+ * v2 的 `quoteETHForUSDC` / `quoteUSDCForETH` 完全不看庫存（oracle 價 × 數量），所以
+ * 0.2 ETH 會報出 542 USDC，而池裡只有 382；swap 才 revert「insufficient … reserve in pool」。
+ * 恆定乘積版的 quote 數學上一定小於儲備，這裡只是多一道保險（合約是 `out >= reserve` 就拒絕）。
+ *
+ * 儲備讀不到 → `unknown`：不擋（送出前的 eth_call 預檢還會再擋一次），也不說「庫存足夠」。
+ */
+export type InventoryCheck =
+  | { status: 'ok' }
+  | { status: 'unknown' }
+  | { status: 'exceeded'; needed: bigint; available: bigint }
+
+export function checkInventory(
+  caps: AmmCapabilities,
+  isEthIn: boolean,
+  quotedOut: bigint,
+  reserves: readonly [bigint, bigint] | null,
+): InventoryCheck {
+  if (!reserves) return { status: 'unknown' }
+  const available = isEthIn ? reserves[1] : reserves[0]
+  const cp = caps.pricing === 'banded-cp' || caps.pricing === 'plain-cp'
+  const exceeded = cp ? quotedOut >= available : quotedOut > available
+  return exceeded ? { status: 'exceeded', needed: quotedOut, available } : { status: 'ok' }
+}
+
+/** 畫面上顯示的那一筆 quote（由 ammSwapFlow.readQuoteSnapshot 產生）。 */
+export interface QuoteView {
+  isEthIn: boolean
+  out: bigint
+  impactBps: number | null
+  inventory: InventoryCheck
+}
+
+export interface SwapCardInput {
+  /** 版本探測還沒回來。和「探測完了但認不出來」是兩回事。 */
+  probing: boolean
+  caps: AmmCapabilities
+  reads: PoolReads
+  isEthIn: boolean
+  /** 使用者輸入了大於 0 的金額。 */
+  hasAmount: boolean
+  quote: QuoteView | null
+  oracleStale: boolean
+  busy: boolean
+}
+
+/** `t.exchange.swap` 底下的 key。畫面模型只回 key，文字由頁面查 catalog。 */
+export type SwapNoteKey =
+  | 'oracleFixedNote'
+  | 'constantProductNote'
+  | 'noOracleRefNote'
+  | 'unknownVersionNote'
+  | 'checkingVersionNote'
+
+export type SwapButtonLabel = 'swapping' | 'oracleStale' | 'enterAmount' | 'exceedsInventory' | 'swap'
+
+export interface SwapCardView {
+  /** 'loading' = 還在確認版本。 */
+  version: AmmPricing | 'loading'
+  pool: PoolInfoView
+  badge: 'oracleFixedBadge' | 'poolBadge' | null
+  reservesLabel: 'poolInventory' | 'poolReserves'
+  notes: readonly SwapNoteKey[]
+  /** 「你將收到」那一格；null = 沒有可成交的數字（顯示 0，不顯示換不到的數字）。 */
+  receive: bigint | null
+  impactBps: number | null
+  /** 尚未套用滑點的 quote；null = 不顯示「最低收到數量」。 */
+  minReceivedBase: bigint | null
+  inventoryExceeded: { needed: bigint; available: bigint } | null
+  button: { disabled: boolean; label: SwapButtonLabel }
+}
+
+const LOADING: Cell = { kind: 'loading' }
+
+export function buildSwapCardView(input: SwapCardInput): SwapCardView {
+  const { probing, caps, reads, isEthIn, hasAmount, oracleStale, busy } = input
+  // 方向切換後、新 quote 回來前，舊方向的 quote 不可以拿來顯示。
+  const quote = input.quote && input.quote.isEthIn === isEthIn && hasAmount ? input.quote : null
+
+  const version: SwapCardView['version'] = probing ? 'loading' : caps.pricing
+  const pool: PoolInfoView = probing
+    ? {
+        pricing: 'unknown',
+        poolPrice: LOADING,
+        oracleRate: UNSUPPORTED,
+        oracleRef: UNSUPPORTED,
+        reserves: reads.reserves ? buildPoolInfoView(caps, reads).reserves : { kind: 'loading' },
+      }
+    : buildPoolInfoView(caps, reads)
+
+  let notes: readonly SwapNoteKey[]
+  if (version === 'loading') notes = ['checkingVersionNote']
+  else if (version === 'oracle-fixed') notes = ['oracleFixedNote']
+  else if (version === 'plain-cp') notes = ['constantProductNote', 'noOracleRefNote']
+  else if (version === 'unknown') notes = ['unknownVersionNote']
+  else notes = ['constantProductNote']
+
+  const inventoryExceeded =
+    quote && quote.inventory.status === 'exceeded'
+      ? { needed: quote.inventory.needed, available: quote.inventory.available }
+      : null
+  const tradable = quote && !inventoryExceeded ? quote : null
+
+  let label: SwapButtonLabel
+  if (busy) label = 'swapping'
+  else if (oracleStale) label = 'oracleStale'
+  else if (!hasAmount) label = 'enterAmount'
+  else if (inventoryExceeded) label = 'exceedsInventory'
+  else label = 'swap'
+
+  let badge: SwapCardView['badge'] = null
+  if (version === 'oracle-fixed') badge = 'oracleFixedBadge'
+  else if (version === 'banded-cp' || version === 'plain-cp') badge = 'poolBadge'
+
+  return {
+    version,
+    pool,
+    badge,
+    reservesLabel: version === 'oracle-fixed' ? 'poolInventory' : 'poolReserves',
+    notes,
+    receive: tradable ? tradable.out : null,
+    impactBps: tradable ? tradable.impactBps : null,
+    minReceivedBase: tradable && tradable.out > 0n ? tradable.out : null,
+    inventoryExceeded,
+    button: { disabled: label !== 'swap', label },
+  }
 }
