@@ -285,6 +285,46 @@ const ok = (m: string) => console.log(`✓ ${++n}. ${m}`);
   ok("逾時不重試、429 重試一次；整份報表總時限到點 → 未完成欄位 null＋REPORT_DEADLINE");
 }
 
+// 8d) 逾時分類必須是確定性的：由「排程當下哪個上限先到」決定，不能在計時器觸發後回頭讀時鐘
+//     （CI run 36713844423：Node 計時器走 libuv 的單調時鐘、以毫秒截斷排程，Date.now() 是牆上時鐘；
+//      計時器可能比 Date.now() 意義上的 deadline 早約 1ms 觸發 → 以前會被誤判成 RPC_TIMEOUT）。
+{
+  const realNow = Date.now;
+  const hang = (name: string) => {
+    const { reader } = fakeReader();
+    const base = reader.call;
+    reader.call = async (addr, sig, args, tag) => {
+      if (sig.startsWith(name)) return new Promise(() => {}) as any; // 永遠不回
+      return base(addr, sig, args, tag);
+    };
+    return reader;
+  };
+  try {
+    // (a) 報表總時限先到（剩餘 < 單筆逾時）：計時器觸發當下牆上時鐘「看起來」還沒到 deadline
+    //     （模擬上述毫秒截斷差，放大成 1 秒以免依賴實際排程誤差）→ 仍必須是 REPORT_DEADLINE。
+    const r1 = hang("FUNDING_INTERVAL");
+    const base1 = r1.call;
+    r1.call = async (addr, sig, args, tag) => {
+      if (sig.startsWith("FUNDING_INTERVAL")) Date.now = () => realNow() - 1_000;
+      return base1(addr, sig, args, tag);
+    };
+    const a = await buildExposureReport(r1, T, BT * 1000, { deadlineMs: 150, callTimeoutMs: 10_000 });
+    Date.now = realNow;
+    assert.equal(a.unavailable["exchange.fundingIntervalSec"], "REPORT_DEADLINE", "總時限的計時器觸發 → REPORT_DEADLINE（與觸發當下的時鐘讀數無關）");
+
+    // (b) 單筆逾時先到（單筆 < 剩餘）：計時器因事件迴圈被佔住而晚到、晚過報表 deadline
+    //     → 仍是 RPC_TIMEOUT（單筆逾時才是先到期的那個上限）。
+    const r2 = hang("FUNDING_INTERVAL");
+    const block = setTimeout(() => { const s = realNow(); while (realNow() - s < 300) {} }, 10);
+    const b = await buildExposureReport(r2, T, BT * 1000, { deadlineMs: 200, callTimeoutMs: 50 });
+    clearTimeout(block);
+    assert.equal(b.unavailable["exchange.fundingIntervalSec"], "RPC_TIMEOUT", "單筆逾時的計時器觸發 → RPC_TIMEOUT（即使實際觸發時已過報表 deadline）");
+  } finally {
+    Date.now = realNow;
+  }
+  ok("逾時分類確定性：排程時哪個上限先到期就回哪個原因代碼，不因計時器早／晚觸發而翻轉");
+}
+
 // 9) 快取 60 秒＋single-flight；降級報表只快取 10 秒
 {
   let clock = 0;

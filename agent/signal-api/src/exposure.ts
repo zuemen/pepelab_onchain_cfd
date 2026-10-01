@@ -10,7 +10,8 @@
 //     不一定每台都有），所有 eth_call 帶同一個 blockTag，報表內各欄位彼此一致。「距今」
 //     一律以該區塊的 timestamp 為基準，回應附 asOfBlock 與 asOfBlockTime。
 //   - 只有 header not found／429 類錯誤重試一次；逾時與 revert 不重試。整份報表總時限
-//     20 秒，到點還沒讀完的欄位回 null＋REPORT_DEADLINE。
+//     20 秒，到點還沒讀完的欄位回 null＋REPORT_DEADLINE。逾時原因由「排程時哪個上限先到期」
+//     決定（剩餘總時限 ≤ 單筆 8 秒 → REPORT_DEADLINE，否則 RPC_TIMEOUT），不在計時器觸發後回頭讀時鐘。
 //   - **欄位級降級**：任一讀取失敗只讓該欄位變 null，並在 `unavailable` 以欄位路徑
 //     記下原因代碼（CALL_REVERTED / BAD_DATA / RPC_TIMEOUT / RPC_ERROR / NOT_CONFIGURED）。
 //     絕不回錯誤原文（可能含 RPC URL / key），也絕不整個 500。
@@ -160,9 +161,10 @@ const RETRY_DELAY_MS = 250;
 
 type Settled<T> = { ok: true; v: T } | { ok: false; reason: ReadReason };
 
-function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+/** 在 ms 後以 onTimeout() 的值 reject；p 先 settle 就以 p 的結果為準（誰先到誰算）。 */
+function withTimeout<T>(p: Promise<T>, ms: number, onTimeout: () => unknown): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const t = setTimeout(() => reject(Object.assign(new Error("timeout"), { code: "TIMEOUT" })), ms);
+    const t = setTimeout(() => reject(onTimeout()), ms);
     p.then(
       (v) => { clearTimeout(t); resolve(v); },
       (e) => { clearTimeout(t); reject(e); },
@@ -271,11 +273,17 @@ export async function buildExposureReport(
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const v = await run(() => {
+          // 逾時分類是確定性的（CI run 36713844423 的 flaky 根因）：deadlineAt 是唯一的時限來源，
+          // 在**排程這一刻**就決定這顆計時器代表哪個上限——剩餘時限 ≤ 單筆逾時，它就是報表總時限
+          // （觸發 → REPORT_DEADLINE）；否則它是單筆逾時（觸發 → RPC_TIMEOUT）。RPC 自己先回錯誤
+          // 就照該錯誤分類。以前是計時器觸發後再用 Date.now() 跟 deadlineAt 比：Node 計時器走
+          // libuv 的單調時鐘（毫秒截斷），Date.now() 是牆上時鐘，計時器常比牆上時鐘的 deadline
+          // 早約 1ms 觸發 → 同一個情境隨機回 RPC_TIMEOUT 或 REPORT_DEADLINE（時鐘校正時差更多）。
           const remaining = deadlineAt - Date.now();
           if (remaining <= 0) return Promise.reject(DEADLINE);
-          return withTimeout(p(), Math.min(callTimeout, remaining)).catch((e) => {
-            throw Date.now() >= deadlineAt ? DEADLINE : e;
-          });
+          return remaining <= callTimeout
+            ? withTimeout(p(), remaining, () => DEADLINE)
+            : withTimeout(p(), callTimeout, () => Object.assign(new Error("timeout"), { code: "TIMEOUT" }));
         });
         return { ok: true, v };
       } catch (err) {

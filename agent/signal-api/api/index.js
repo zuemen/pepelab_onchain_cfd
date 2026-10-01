@@ -61088,9 +61088,9 @@ function classifyReadError(err) {
 }
 var BLOCK_LAG = 3;
 var RETRY_DELAY_MS = 250;
-function withTimeout2(p, ms) {
+function withTimeout2(p, ms, onTimeout) {
   return new Promise((resolve2, reject) => {
-    const t = setTimeout(() => reject(Object.assign(new Error("timeout"), { code: "TIMEOUT" })), ms);
+    const t = setTimeout(() => reject(onTimeout()), ms);
     p.then(
       (v) => {
         clearTimeout(t);
@@ -61140,9 +61140,7 @@ async function buildExposureReport(reader, t, nowMs = Date.now(), opts = {}) {
         const v = await run(() => {
           const remaining = deadlineAt - Date.now();
           if (remaining <= 0) return Promise.reject(DEADLINE);
-          return withTimeout2(p(), Math.min(callTimeout, remaining)).catch((e) => {
-            throw Date.now() >= deadlineAt ? DEADLINE : e;
-          });
+          return remaining <= callTimeout ? withTimeout2(p(), remaining, () => DEADLINE) : withTimeout2(p(), callTimeout, () => Object.assign(new Error("timeout"), { code: "TIMEOUT" }));
         });
         return { ok: true, v };
       } catch (err) {
