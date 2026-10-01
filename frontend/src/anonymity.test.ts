@@ -14,15 +14,21 @@ import { it, expect, describe } from 'vitest';
  *  - 根目錄 `README.md`
  *  - `docs/`（繳交資料會連到 repo；`docs/commercial` 與 `docs/review` 不在 repo 內，
  *    本機若有也整個跳過，不走訪、不讀取）
- *  - `frontend/dist`（如果存在；CI 是先 build 再跑測試，所以 CI 上一定會掃到）
+ *  - `frontend/dist`（本機不存在就略過；CI 是先 build 再跑測試，所以 CI 上必須掃得到檔案）
  *
- * 兩組樣式：
- *  - `SPECIFIC`：特定機構的名稱與縮寫。以 base64 存放，免得這個檔案自己變成來源。
- *    來源檔與 dist 都檢查。
+ * **這個護欄不涵蓋 git 歷史與 commit metadata。** 它只看工作目錄裡的檔案內容；舊 commit 的
+ * 內容、commit 的作者與提交者信箱、貢獻者的帳號名稱都不在掃描範圍內，要另外處理。
+ *
+ * 三組樣式：
+ *  - `SPECIFIC_SOURCE`：特定機構的名稱與縮寫，用在來源檔與 `docs/`。縮寫前後只要不是英文字母
+ *    就算命中（接底線、連字號、數字、斜線都抓）。
+ *  - `SPECIFIC_DIST`：同一組，但縮寫前後另外排除 base64 與識別字會用到的字元——打包檔裡
+ *    有壓縮後的識別字與內嵌資料，寬鬆版會誤擋。
  *  - `GENERIC`：泛稱（大學、學系、指導教授……）。只檢查展示站與介紹頁的來源檔。不檢查 dist
  *    （打包進去的第三方套件的授權聲明裡會有這些字），也不檢查 `docs/`（設計文件會引用
  *    學術來源，舊的計畫檔名也帶泛稱）。
  *
+ * 特定機構的樣式與命中樣本都以 base64 存放，免得這個檔案自己變成來源。
  * 「Capstone project」這種不帶校名的寫法是允許的。
  */
 const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
@@ -31,19 +37,30 @@ const REPO = path.resolve(FRONTEND, '..');
 const SELF = fileURLToPath(import.meta.url);
 
 const decode = (b64: string): string => Buffer.from(b64, 'base64').toString('utf8');
+const pattern = (b64: string): RegExp => new RegExp(decode(b64), 'i');
 
-const SPECIFIC: RegExp[] = [
-  'KD88IVtBLVphLXowLTkrLz1fLV0pbmNjdSg/IVtBLVphLXowLTkrLz1fLV0p',
-  'Y2hlbmdbXHMtXT9jaGk=',
-  '5pS/5rK75aSnW+WtuOWtpl0=',
-  'KD88IVvosqHooYxdKeaUv+Wkpw==',
-].map((b64) => new RegExp(decode(b64), 'i'));
+/** 縮寫以外的樣式：羅馬拼音的完整校名、中文全名、中文簡稱（只在不屬於其他詞的位置）。 */
+const SPECIFIC_COMMON: RegExp[] = [
+  'Y2hlbmdjaGkoPyFbYS16XSl8Y2hlbmdbXHMtXWNoaVxzK3VuaXY=',
+  '5pS/5rK7XHMq5aSnW+WtuOWtpl0=',
+  'KD88IVvjkIAt6b+/XSnmlL/lpKd8KD88PeWci+eri3zlsLHoroB85L6G6IeqfFvlnKjmlrzmmK/oiIflkozlj4pdKeaUv+Wkpw==',
+].map(pattern);
+
+const SPECIFIC_SOURCE: RegExp[] = [
+  pattern('KD88IVtBLVphLXpdKW5jY3UoPyFbQS1aYS16XSk='),
+  ...SPECIFIC_COMMON,
+];
+
+const SPECIFIC_DIST: RegExp[] = [
+  pattern('KD88IVtBLVphLXowLTkrLz1fLV0pbmNjdSg/IVtBLVphLXowLTkrLz1fLV0p'),
+  ...SPECIFIC_COMMON,
+];
 
 /**
- * `SPECIFIC` 每一條樣式必含的字面片段（小寫），同樣以 base64 存放。先用 `includes` 篩一次，
+ * 特定機構樣式必含的字面片段（小寫），同樣以 base64 存放。先用 `includes` 篩一次，
  * 有片段的檔案才跑正規表示式——lookbehind 在幾 MB 的打包檔上很慢。
  */
-const SPECIFIC_NEEDLES: string[] = ['bmNjdQ==', 'Y2hlbmc=', '5pS/5rK75aSn', '5pS/5aSn'].map(decode);
+const SPECIFIC_NEEDLES: string[] = ['bmNjdQ==', 'Y2hlbmc=', '5pS/5rK7', '5pS/5aSn'].map(decode);
 
 const GENERIC: RegExp[] = [
   /\buniversity\b/i,
@@ -92,7 +109,7 @@ function read(file: string): string {
 }
 
 function matches(text: string, patterns: RegExp[]): boolean {
-  if (patterns === SPECIFIC) {
+  if (patterns !== GENERIC) {
     const lower = text.toLowerCase();
     if (!SPECIFIC_NEEDLES.some((needle) => lower.includes(needle))) return false;
   }
@@ -124,21 +141,53 @@ describe('anonymous review: no institution identifiers in shipped content', () =
   });
 
   it('the specific patterns catch the forms we care about', () => {
-    const hit = (b64: string) => matches(decode(b64), SPECIFIC);
-    expect(hit('wqkgMjAyNiBQRVBFRkkgwrcgTkNDVSBDYXBzdG9uZQ==')).toBe(true);
-    expect(hit('TmF0aW9uYWwgQ2hlbmdjaGkgVW5pdmVyc2l0eQ==')).toBe(true);
-    expect(hit('bWFpbEBuY2N1LmVkdS50dw==')).toBe(true);
-    expect(hit('5ZyL56uL5pS/5rK75aSn5a24')).toBe(true);
-    expect(hit('5pS/5aSn5bCI6aGM')).toBe(true);
+    const everywhere = [
+      'wqkgMjAyNiBQRVBFRkkgwrcgTkNDVSBDYXBzdG9uZQ==',
+      'TmF0aW9uYWwgQ2hlbmdjaGkgVW5pdmVyc2l0eQ==',
+      'TmF0aW9uYWwgQ2hlbmctQ2hpIFVuaXZlcnNpdHk=',
+      'Q2hlbmcgQ2hpIFVuaXZlcnNpdHk=',
+      'bWFpbEBuY2N1LmVkdS50dw==',
+      '5ZyL56uL5pS/5rK75aSn5a24',
+      '5pS/5rK7IOWkp+WtuA==',
+      '5pS/5aSn5bCI6aGM',
+      '5bCx6K6A5pS/5aSn6LOH566h',
+      '5ZyL56uL5pS/5aSn',
+      '5L6G6Ieq5pS/5aSn55qE5ZyY6ZqK',
+      'Q2Fwc3RvbmXvvIjmlL/lpKfvvIk=',
+    ].map(decode);
+    for (const text of everywhere) {
+      expect(matches(text, SPECIFIC_SOURCE), text).toBe(true);
+      expect(matches(text, SPECIFIC_DIST), text).toBe(true);
+    }
 
-    const clean = (text: string) => !matches(text, SPECIFIC);
-    expect(clean('© 2026 PEPEFI · Capstone project')).toBe(true);
-    expect(clean('財政大臣、行政大樓')).toBe(true);
-    expect(clean('const fnccuX = 1; "abnccu9"')).toBe(true);
+    // 縮寫接底線、連字號、數字：來源檔與 docs 用的寬鬆版要抓得到。
+    const looseOnly = [
+      'TkNDVV9DYXBzdG9uZV8yMDI2',
+      'TkNDVS1DYXBzdG9uZQ==',
+      'TkNDVTIwMjY=',
+      'Z2l0aHViLmNvbS9uY2N1LWxhYg==',
+    ].map(decode);
+    for (const text of looseOnly) expect(matches(text, SPECIFIC_SOURCE), text).toBe(true);
+  });
+
+  it('the specific patterns leave ordinary text alone', () => {
+    const ordinary = [
+      '© 2026 PEPEFI · Capstone project',
+      '財政大臣、行政大樓、市政大樓、郵政大樓、施政大綱',
+      '內政大、憲政大、執政大、攝政大臣、黨政大老',
+      'Cheng chief', 'Cheng China', 'cheng-chih', 'chengchih',
+      'accuracy, unccurled, Hanccuk',
+    ];
+    for (const text of ordinary) {
+      expect(matches(text, SPECIFIC_SOURCE), text).toBe(false);
+      expect(matches(text, SPECIFIC_DIST), text).toBe(false);
+    }
+    // 打包檔裡壓縮過的識別字與內嵌資料：只有嚴格版需要放行。
+    expect(matches('const f_nccu9 = 1; "ab+nccu/9"', SPECIFIC_DIST)).toBe(false);
   });
 
   it('the generic patterns catch the forms we care about', () => {
-    const hit = (text: string) => GENERIC.some((re) => re.test(text));
+    const hit = (text: string) => matches(text, GENERIC);
     expect(hit('Some University Capstone')).toBe(true);
     expect(hit('某某大學資訊管理學系')).toBe(true);
     expect(hit('指導教授：某某')).toBe(true);
@@ -149,7 +198,7 @@ describe('anonymous review: no institution identifiers in shipped content', () =
   });
 
   it('no source file names a specific institution', () => {
-    expect(offenders(sources, SPECIFIC)).toEqual([]);
+    expect(offenders(sources, SPECIFIC_SOURCE)).toEqual([]);
   });
 
   it('no source file names a university, department or advisor', () => {
@@ -163,10 +212,15 @@ describe('anonymous review: no institution identifiers in shipped content', () =
   });
 
   it('no file under docs/ names a specific institution', () => {
-    expect(offenders(docs, SPECIFIC)).toEqual([]);
+    expect(offenders(docs, SPECIFIC_SOURCE)).toEqual([]);
+  });
+
+  it('on CI the built site is there to be scanned', () => {
+    // CI 是先 build 再跑測試。dist 掃不到檔案代表流程順序被改掉了，下一項會空過。
+    if (process.env.CI) expect(dist.length).toBeGreaterThan(0);
   });
 
   it('the built site (when present) names no specific institution', () => {
-    expect(offenders(dist, SPECIFIC)).toEqual([]);
+    expect(offenders(dist, SPECIFIC_DIST)).toEqual([]);
   });
 });

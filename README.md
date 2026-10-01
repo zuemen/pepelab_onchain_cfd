@@ -155,6 +155,10 @@ npm run mcp-server      # 本機啟動 MCP server（stdio）
 [`docs/DEPLOY_130_CUTOVER.md`](docs/DEPLOY_130_CUTOVER.md)（3.2 節原始碼的下一輪，尚未執行）；
 任何廣播交易的步驟都需要持有金鑰的使用者執行。
 
+匿名審查護欄：`frontend/src/anonymity.test.ts`（隨 `yarn test` 執行）檢查展示站來源、`web/`、`docs/`、本檔
+與 build 產物不含可辨識所屬機構的字樣。**它不涵蓋 git 歷史與 commit metadata**（舊 commit 的內容、
+作者與提交者信箱、貢獻者帳號名稱），那些要另外處理。
+
 ## 7. 文件索引
 
 | 文件 | 內容 |
