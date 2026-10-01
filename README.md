@@ -5,7 +5,7 @@
 > 有衍生品業務的銀行）。對終端客戶的合規責任（牌照、KYC／AML、適合度、槓桿上限等）
 > 由持牌客戶承擔，分工見 [`docs/COMPLIANCE_BOUNDARY.md`](docs/COMPLIANCE_BOUNDARY.md)。
 >
-> **現況**：本 repo 是 NCCU Capstone 2026 出身的**研究原型**，只部署在 **Base Sepolia 測試網
+> **現況**：本 repo 是 2026 年 Capstone 專題出身的**研究原型**，只部署在 **Base Sepolia 測試網
 > （chainId 84532）**。沒有真實資產、沒有第三方安全稽核、沒有任何監理許可，**不是生產系統**。
 
 - 名稱：產品名為 **PepeFi**。PepeLab 是早期名稱，也是 demo 主題（因此 repo、網址與部分舊文件仍使用 PepeLab）。
