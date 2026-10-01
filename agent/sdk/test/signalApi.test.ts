@@ -19,9 +19,15 @@ import {
   SignalApiError,
   SignalApiNetworkError,
   SignalApiTimeoutError,
+  decodePaymentSignature,
+  generatePaymentId,
+  isValidPaymentId,
   type PaymentRequirements,
+  type PaymentRequirementsV2,
   type SignalApiClientConfig,
   type X402PaymentClient,
+  type X402PaymentClientV2,
+  type X402PaymentRequiredV2,
 } from "../src/index.ts";
 import { OFFICIAL_BASE_SEPOLIA_USDC } from "../../shared/src/env.ts";
 
@@ -550,6 +556,349 @@ function payingFetch(paidResponse: () => Response | Error, delayMs = 20) {
   for (const bad of [0n, -1n, 5 as unknown as bigint]) assert.throws(() => api.releaseUnsettled(bad), RangeError, String(bad));
   assert.equal(api.unsettledAtomic(), 0n);
   ok("Info：releaseUnsettled 只減少 unsettledAtomic、spentAtomic 不變；釋放後仍被累計上限擋下；超額／非正數拒絕");
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// x402 v2（docs/ADR-009）：PAYMENT-REQUIRED／PAYMENT-SIGNATURE／PAYMENT-RESPONSE
+// ════════════════════════════════════════════════════════════════════════════
+const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64");
+const unb64 = (h: string | null) => JSON.parse(Buffer.from(h ?? "", "base64").toString("utf8"));
+const CAIP2 = "eip155:84532";
+const req2 = (o: Partial<PaymentRequirementsV2> = {}): PaymentRequirementsV2 => ({
+  scheme: "exact",
+  network: CAIP2,
+  amount: "5000",
+  asset: OFFICIAL_BASE_SEPOLIA_USDC,
+  payTo: PAY_TO,
+  maxTimeoutSeconds: 60,
+  extra: { name: "USDC", version: "2" },
+  ...o,
+});
+const PID_DECL = { info: { required: false }, schema: { type: "object" } };
+const required2 = (accepts: PaymentRequirementsV2[] = [req2()], withPid = true): X402PaymentRequiredV2 => ({
+  x402Version: 2,
+  error: "Payment required",
+  resource: { url: `${BASE}/oracle/sBTC`, description: "", mimeType: "application/json" },
+  accepts,
+  ...(withPid ? { extensions: { "payment-identifier": PID_DECL } } : {}),
+});
+/** v2 的 402：付款要求在 header，body 是 {}（v2 模式）或 v1 的 body（both 模式）。 */
+const r402v2 = (pr: X402PaymentRequiredV2 = required2(), v1Body?: unknown) =>
+  json(402, v1Body ?? {}, { "payment-required": b64(pr), "cache-control": "no-store" });
+interface SigOverrides {
+  x402Version?: number;
+  accepted?: Partial<PaymentRequirementsV2>;
+  to?: string;
+  value?: string;
+  validBefore?: string;
+  permit2?: boolean;
+  paymentId?: string;
+}
+/** @x402/evm exact／EIP-3009 格式的 PAYMENT-SIGNATURE（簽章為假值；SDK 不驗簽）。 */
+const paymentSignature = (accepted: PaymentRequirementsV2, o: SigOverrides = {}) =>
+  b64({
+    x402Version: o.x402Version ?? 2,
+    resource: { url: `${BASE}/oracle/sBTC` },
+    accepted: { ...accepted, ...o.accepted },
+    payload: o.permit2
+      ? { signature: "0x" + "ab".repeat(65), permit2Authorization: { permitted: { token: accepted.asset, amount: accepted.amount } } }
+      : {
+          signature: "0x" + "ab".repeat(65),
+          authorization: {
+            from: "0x" + "fe".repeat(20),
+            to: o.to ?? accepted.payTo,
+            value: o.value ?? accepted.amount,
+            validAfter: "0",
+            validBefore: o.validBefore ?? String(NOW_S + 60),
+            nonce: "0x" + "02".repeat(32),
+          },
+        },
+    ...(o.paymentId ? { extensions: { "payment-identifier": { info: { required: false, id: o.paymentId } } } } : {}),
+  });
+/** 假 v2 payment client：照 SDK 給的 requirements 產生 PAYMENT-SIGNATURE。 */
+function fakePaymentV2(o: SigOverrides = {}) {
+  const seen: Parameters<X402PaymentClientV2["createPaymentSignature"]>[0][] = [];
+  const client: X402PaymentClientV2 = {
+    async createPaymentSignature(args) {
+      seen.push(args);
+      return paymentSignature(args.requirements, o);
+    },
+  };
+  return { client, seen };
+}
+const settled2 = (over: Record<string, unknown> = {}) =>
+  b64({ success: true, transaction: "0x" + "ab".repeat(32), network: CAIP2, payer: "0x" + "fe".repeat(20), ...over });
+
+// 21) v2 正常付款流程
+{
+  const pay = fakePaymentV2();
+  const { api, calls } = mk(
+    [
+      r402v2(required2([req2({ amount: "9000", payTo: "0x9999999999999999999999999999999999999999", network: "eip155:8453" }), req2()])),
+      json(200, { ok: true, settled: true, data: { asset: "sBTC", price: 60000 } }, { "payment-response": settled2() }),
+    ],
+    { payment: pay.client },
+  );
+  const r = await api.getOracleSnapshot("sBTC");
+  assert.equal(r.body.data.price, 60000);
+  assert.equal(pay.seen.length, 1);
+  assert.equal(pay.seen[0]!.requirements.network, CAIP2, "只挑符合網路的要求（base-sepolia ↔ eip155:84532）");
+  assert.equal(pay.seen[0]!.requirements.amount, "5000");
+  assert.equal(pay.seen[0]!.paymentRequired.x402Version, 2);
+  assert.equal(pay.seen[0]!.maxValueAtomic, 20_000n);
+  assert.equal(pay.seen[0]!.resource, `${BASE}/oracle/sBTC`);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0]!.headers.get("payment-signature"), null, "第一次不帶付款");
+  assert.equal(calls[1]!.headers.get("x-payment"), null, "v2 不送 X-PAYMENT");
+  const sent = unb64(calls[1]!.headers.get("payment-signature"));
+  assert.equal(sent.x402Version, 2);
+  assert.equal(sent.payload.authorization.to, PAY_TO);
+  assert.ok(isValidPaymentId(sent.extensions["payment-identifier"].info.id), "SDK 自動帶 payment-identifier");
+  assert.equal(sent.extensions["payment-identifier"].info.required, false, "伺服器宣告的 info 原樣保留");
+  assert.deepEqual(sent.extensions["payment-identifier"].schema, PID_DECL.schema);
+  assert.equal(r.payment!.x402Version, 2);
+  assert.equal(r.payment!.paymentId, sent.extensions["payment-identifier"].info.id);
+  assert.equal(r.payment!.paidAtomic, 5000n);
+  assert.equal(r.payment!.network, CAIP2);
+  assert.equal((r.payment!.settlement as { success: boolean }).success, true);
+  assert.equal(api.spentAtomic(), 5000n);
+  assert.equal(api.unsettledAtomic(), 0n);
+  ok("v2 付款流程：讀 PAYMENT-REQUIRED → 挑選 → 呼叫端簽 → 帶 PAYMENT-SIGNATURE（含 payment-identifier）送一次 → 記帳與結算證明");
+}
+
+// 22) payment-identifier：呼叫端指定／簽署端自帶／伺服器未宣告
+{
+  assert.ok(isValidPaymentId(generatePaymentId()));
+  assert.equal(isValidPaymentId("short"), false);
+  const paidOk = () => json(200, { ok: true, settled: true, data: {} }, { "payment-response": settled2() });
+  // 呼叫端指定
+  let m = mk([r402v2(), paidOk()], { payment: fakePaymentV2().client });
+  let r = await m.api.getOracleSnapshot("sBTC", { paymentId: "order_2026-10-01_0001" });
+  assert.equal(r.payment!.paymentId, "order_2026-10-01_0001");
+  assert.equal(unb64(m.calls[1]!.headers.get("payment-signature")).extensions["payment-identifier"].info.id, "order_2026-10-01_0001");
+  // 簽署端自己帶了 id：沒有指定時沿用它；有指定時以呼叫端為準
+  m = mk([r402v2(), paidOk()], { payment: fakePaymentV2({ paymentId: "signer_supplied_id_01" }).client });
+  assert.equal((await m.api.getOracleSnapshot("sBTC")).payment!.paymentId, "signer_supplied_id_01");
+  m = mk([r402v2(), paidOk()], { payment: fakePaymentV2({ paymentId: "signer_supplied_id_01" }).client });
+  assert.equal((await m.api.getOracleSnapshot("sBTC", { paymentId: "caller_wins_0123456789" })).payment!.paymentId, "caller_wins_0123456789");
+  // 伺服器沒有宣告這個擴充：不送 id，header 原樣送出
+  const pay = fakePaymentV2();
+  m = mk([r402v2(required2([req2()], false)), paidOk()], { payment: pay.client });
+  r = await m.api.getOracleSnapshot("sBTC", { paymentId: "ignored_when_undeclared" });
+  assert.equal(r.payment!.paymentId, null);
+  assert.equal(m.calls[1]!.headers.get("payment-signature"), paymentSignature(req2()), "未宣告：簽署端的輸出原封不動送出");
+  // 格式不合：在任何請求之前就丟錯
+  m = mk([], { payment: fakePaymentV2().client });
+  await assert.rejects(m.api.getOracleSnapshot("sBTC", { paymentId: "bad id" }), TypeError);
+  assert.equal(m.calls.length, 0);
+  ok("payment-identifier：呼叫端指定 > 簽署端自帶 > SDK 產生；伺服器未宣告時不送；格式不合在送出前丟錯");
+}
+
+// 23) v2：上限、累計預留、並行
+{
+  const expectLimit = async (steps: Step[], extra: Partial<SignalApiClientConfig>, kind: string) => {
+    const { api, calls } = mk(steps, extra);
+    await assert.rejects(api.getOracleSnapshot("sBTC"), (e: unknown) => e instanceof PaymentLimitExceededError && e.kind === kind && e.paymentSent === false);
+    assert.equal(calls.length, 1, "沒有送出付款");
+    assert.equal(api.spentAtomic(), 0n);
+  };
+  await expectLimit([r402v2(required2([req2({ amount: "20001" })]))], { payment: fakePaymentV2().client }, "per-request");
+  await expectLimit([r402v2()], { payment: fakePaymentV2().client, maxTotalSpendAtomic: 4_999n }, "total");
+  await expectLimit([r402v2()], { payment: fakePaymentV2({ value: "5001" }).client }, "per-request");
+
+  // 並行 3 筆、累計上限只夠 1 筆 → 只簽出並送出 1 筆。
+  let release: () => void = () => {};
+  const gate = new Promise<void>((r) => (release = r));
+  let signs = 0;
+  const slow: X402PaymentClientV2 = {
+    async createPaymentSignature(a) {
+      signs++;
+      await gate;
+      return paymentSignature(a.requirements);
+    },
+  };
+  const { api, calls } = mk(
+    [r402v2(), r402v2(), r402v2(), json(200, { ok: true, settled: true, data: {} }, { "payment-response": settled2() })],
+    { payment: slow, maxTotalSpendAtomic: 5_000n },
+  );
+  const all = Promise.allSettled([1, 2, 3].map(() => api.getOracleSnapshot("sBTC")));
+  await new Promise((r) => setTimeout(r, 10));
+  release();
+  const res = await all;
+  assert.equal(res.filter((x) => x.status === "fulfilled").length, 1);
+  assert.equal(signs, 1, "被擋的兩筆沒有呼叫簽署端");
+  assert.equal(calls.filter((c) => c.headers.get("payment-signature")).length, 1);
+  assert.equal(api.spentAtomic(), 5_000n);
+  ok("v2：單筆上限、累計上限、簽出金額 > 要求在送出前擋下；並行 3 筆只簽出 1 筆（預留語意與 v1 相同）");
+}
+
+// 24) v2：付款要求不符 → 不簽
+{
+  const bad: [string, PaymentRequirementsV2[]][] = [
+    ["network", [req2({ network: "eip155:8453" })]],
+    ["v1 的網路名稱", [req2({ network: "base-sepolia" })]],
+    ["asset", [req2({ asset: "0x" + "88".repeat(20) })]],
+    ["scheme", [req2({ scheme: "upto" as "exact" })]],
+    ["amount 格式", [req2({ amount: "0.005" })]],
+    ["maxTimeoutSeconds", [req2({ maxTimeoutSeconds: 301 })]],
+    ["Permit2", [req2({ extra: { name: "USDC", version: "2", assetTransferMethod: "permit2" } })]],
+    ["upfront flow", [req2({ extra: { name: "USDC", version: "2", paymentFlow: "upfront" } })]],
+    ["escrow flow", [req2({ extra: { name: "USDC", version: "2", paymentFlow: "escrow" } })]],
+  ];
+  for (const [what, accepts] of bad) {
+    const pay = fakePaymentV2();
+    const { api, calls } = mk([r402v2(required2(accepts))], { payment: pay.client });
+    await assert.rejects(api.getOracleSnapshot("sBTC"), (e: unknown) => e instanceof PaymentRejectedError && e.paymentSent === false, what);
+    assert.equal(pay.seen.length, 0, `${what}：不可呼叫簽署端`);
+    assert.equal(calls.length, 1);
+  }
+  const pay = fakePaymentV2();
+  const { api } = mk([r402v2()], { payment: pay.client, payToAllowlist: ["0x9999999999999999999999999999999999999999"] });
+  await assert.rejects(api.getOracleSnapshot("sBTC"), PaymentRejectedError);
+  assert.equal(pay.seen.length, 0);
+  // 明確宣告 eip3009／authorization 的可以付。
+  const okPay = fakePaymentV2();
+  const m = mk(
+    [r402v2(required2([req2({ extra: { name: "USDC", version: "2", assetTransferMethod: "eip3009", paymentFlow: "authorization" } })])),
+     json(200, { ok: true, settled: true, data: {} }, { "payment-response": settled2() })],
+    { payment: okPay.client },
+  );
+  assert.equal((await m.api.getOracleSnapshot("sBTC")).payment!.paidAtomic, 5000n);
+  ok("v2：網路／幣別／scheme／金額格式／有效期／payTo 白名單不符，或 Permit2／upfront／escrow → PaymentRejectedError，未簽署");
+}
+
+// 25) v2：簽出內容逐欄核對
+{
+  const cases: [string, SigOverrides][] = [
+    ["x402Version", { x402Version: 1 }],
+    ["accepted.payTo", { accepted: { payTo: "0x9999999999999999999999999999999999999999" } }],
+    ["accepted.amount", { accepted: { amount: "4999" } }],
+    ["accepted.network", { accepted: { network: "eip155:8453" } }],
+    ["accepted.asset", { accepted: { asset: "0x" + "88".repeat(20) } }],
+    ["accepted.maxTimeoutSeconds", { accepted: { maxTimeoutSeconds: 300 } }],
+    ["accepted.extra Permit2", { accepted: { extra: { name: "USDC", version: "2", assetTransferMethod: "permit2" } } }],
+    ["authorization.to", { to: "0x9999999999999999999999999999999999999999" }],
+    ["validBefore", { validBefore: String(NOW_S + 60 + 61) }],
+    ["Permit2 payload", { permit2: true }],
+  ];
+  for (const [what, o] of cases) {
+    const { api, calls } = mk([r402v2()], { payment: fakePaymentV2(o).client });
+    await assert.rejects(api.getOracleSnapshot("sBTC"), (e: unknown) => e instanceof PaymentRejectedError && e.paymentSent === false, what);
+    assert.equal(calls.length, 1, `${what}：不可送出`);
+    assert.equal(api.spentAtomic(), 0n, `${what}：預留回滾`);
+  }
+  // 無法解析
+  const garbage: X402PaymentClientV2 = { createPaymentSignature: async () => "not-base64-json" };
+  const g = mk([r402v2()], { payment: garbage });
+  await assert.rejects(g.api.getOracleSnapshot("sBTC"), PaymentRejectedError);
+  assert.equal(g.api.spentAtomic(), 0n);
+  // validBefore 在容忍範圍內 → 送出；簽得比要求少 → 記實際金額
+  const m = mk(
+    [r402v2(), json(200, { ok: true, settled: true, data: {} }, { "payment-response": settled2() })],
+    { payment: fakePaymentV2({ validBefore: String(NOW_S + 60 + 60), value: "3000" }).client },
+  );
+  assert.equal((await m.api.getOracleSnapshot("sBTC")).payment!.paidAtomic, 3_000n);
+  assert.equal(m.api.spentAtomic(), 3_000n);
+  assert.ok(decodePaymentSignature(paymentSignature(req2())));
+  assert.equal(decodePaymentSignature(paymentSignature(req2(), { permit2: true })), null);
+  ok("v2：x402Version／accepted 各欄／authorization.to／validBefore／Permit2 payload 不符 → 不送出、預留回滾；簽得較少記實際金額");
+}
+
+// 26) v2：送出之後的各種結果
+{
+  const failed = b64({ success: false, errorReason: "insufficient_funds", transaction: "", network: CAIP2 });
+  // 結算被拒：402 + PAYMENT-RESPONSE success:false → 不是結算證明，記為 unsettled
+  let m = mk([r402v2(), json(402, {}, { "payment-response": failed })], { payment: fakePaymentV2().client });
+  await assert.rejects(m.api.getOracleSnapshot("sBTC"), (e: unknown) =>
+    e instanceof PaymentRequiredError && e.afterPayment && e.paymentSent && e.code === "insufficient_funds" && e.settlement?.success === false);
+  assert.deepEqual([m.api.spentAtomic(), m.api.unsettledAtomic()], [5_000n, 5_000n]);
+  assert.equal(m.calls.length, 2, "不重試");
+
+  // 驗證失敗：402 + PAYMENT-REQUIRED.error
+  m = mk([r402v2(), r402v2({ ...required2(), error: "invalid_exact_evm_payload_signature" })], { payment: fakePaymentV2().client });
+  await assert.rejects(m.api.getOracleSnapshot("sBTC"), (e: unknown) =>
+    e instanceof PaymentRequiredError && e.code === "invalid_exact_evm_payload_signature" && e.x402Version === 2 && e.acceptsV2.length === 1 && e.paymentSent);
+
+  // facilitator 502（settle 階段，結果未知）／429
+  m = mk([r402v2(), json(502, { ok: false, error: "facilitator_unavailable", note: "結算結果未知", facilitator: "https://x402.org/facilitator", phase: "settle" })], { payment: fakePaymentV2().client });
+  await assert.rejects(m.api.getOracleSnapshot("sBTC"), (e: unknown) => e instanceof ServiceUnavailableError && e.paymentSent && e.code === "facilitator_unavailable");
+  assert.equal(m.api.unsettledAtomic(), 5_000n);
+  assert.equal(m.calls.length, 2, "帶付款的請求永不重試");
+  m = mk([r402v2(), json(429, { ok: false, error: "facilitator_rate_limited" }, { "retry-after": "5" })], { payment: fakePaymentV2().client });
+  await assert.rejects(m.api.getOracleSnapshot("sBTC"), (e: unknown) => e instanceof RateLimitedError && e.paymentSent);
+  assert.equal(m.calls.length, 2);
+
+  // 網路錯誤／逾時 → PaymentOutcomeUnknownError（帶 paymentId，對帳用）
+  m = mk([r402v2(), new TypeError("socket hang up")], { payment: fakePaymentV2().client });
+  await assert.rejects(m.api.getOracleSnapshot("sBTC", { paymentId: "reconcile_me_0123456789" }), (e: unknown) =>
+    e instanceof PaymentOutcomeUnknownError && e.paymentSent && e.signedAtomic === 5_000n && e.paymentId === "reconcile_me_0123456789");
+  assert.deepEqual([m.api.spentAtomic(), m.api.unsettledAtomic()], [5_000n, 5_000n]);
+
+  // 200 但沒有 PAYMENT-RESPONSE → 資料照給，但記為 unsettled
+  m = mk([r402v2(), json(200, { ok: true, settled: false, data: {} })], { payment: fakePaymentV2().client });
+  const r = await m.api.getOracleSnapshot("sBTC");
+  assert.equal(r.payment!.settlement, null);
+  assert.equal(m.api.unsettledAtomic(), 5_000n);
+
+  // 簽署逾時（v2）→ 未送出、預留回滾
+  const hang: X402PaymentClientV2 = { createPaymentSignature: () => new Promise<string>(() => {}) };
+  m = mk([r402v2()], { payment: hang, paymentSignTimeoutMs: 20 });
+  await assert.rejects(m.api.getOracleSnapshot("sBTC"), PaymentSignTimeoutError);
+  assert.equal(m.api.spentAtomic(), 0n);
+  assert.equal(m.calls.length, 1);
+  ok("v2：結算被拒（success:false 不算結算證明）／驗證失敗／502／429／斷線 → paymentSent=true、不重試、記 unsettled；簽署逾時回滾");
+}
+
+// 27) 協定選擇
+{
+  const v1Body = { error: "X-PAYMENT header is required", accepts: [req()], x402Version: 1 };
+  const both402 = () => r402v2(required2(), v1Body);
+  const paidV1 = () => json(200, { ok: true, settled: true, data: {} }, { "x-payment-response": b64({ success: true, transaction: "0xabc" }) });
+  const paidV2 = () => json(200, { ok: true, settled: true, data: {} }, { "payment-response": settled2() });
+  const dual = () => ({ ...fakePayment("5000").client, ...fakePaymentV2().client });
+
+  // both 伺服器 + 兩種都會的簽署端 → v2 優先
+  let m = mk([both402(), paidV2()], { payment: dual() });
+  assert.equal((await m.api.getOracleSnapshot("sBTC")).payment!.x402Version, 2);
+  assert.ok(m.calls[1]!.headers.get("payment-signature"));
+  assert.equal(m.calls[1]!.headers.get("x-payment"), null, "同一個請求只帶一種付款 header");
+  // both 伺服器 + 只會 v1 的簽署端 → v1（既有客戶不用改）
+  m = mk([both402(), paidV1()], { payment: fakePayment("5000").client });
+  const r1 = await m.api.getOracleSnapshot("sBTC");
+  assert.equal(r1.payment!.x402Version, 1);
+  assert.equal(r1.payment!.paymentId, null);
+  assert.ok(m.calls[1]!.headers.get("x-payment"));
+  assert.equal(m.calls[1]!.headers.get("payment-signature"), null);
+  // x402Protocol: "v1" 強制
+  m = mk([both402(), paidV1()], { payment: dual(), x402Protocol: "v1" });
+  assert.equal((await m.api.getOracleSnapshot("sBTC")).payment!.x402Version, 1);
+  // v1 伺服器 + 兩種都會 → v1
+  m = mk([r402(), paidV1()], { payment: dual() });
+  assert.equal((await m.api.getOracleSnapshot("sBTC")).payment!.x402Version, 1);
+  // 不相容的組合：一律在簽署前丟 PaymentRejectedError
+  const rejects = async (steps: Step[], extra: Partial<SignalApiClientConfig>, re: RegExp) => {
+    const x = mk(steps, extra);
+    await assert.rejects(x.api.getOracleSnapshot("sBTC"), (e: unknown) => e instanceof PaymentRejectedError && re.test(e.message) && e.paymentSent === false);
+    assert.equal(x.calls.length, 1);
+  };
+  await rejects([r402v2()], { payment: fakePayment("5000").client }, /只提供 x402 v2/);
+  await rejects([r402()], { payment: fakePaymentV2().client }, /只實作了 v2/);
+  await rejects([r402()], { payment: dual(), x402Protocol: "v2" }, /沒有 PAYMENT-REQUIRED/);
+  await rejects([r402v2()], { payment: fakePayment("5000").client, x402Protocol: "v2" }, /沒有 createPaymentSignature/);
+  // PAYMENT-REQUIRED 不是 v2（x402Version 不對）→ 當成沒有宣告 v2
+  m = mk([json(402, v1Body, { "payment-required": b64({ x402Version: 3, accepts: [] }) }), paidV1()], { payment: dual() });
+  assert.equal((await m.api.getOracleSnapshot("sBTC")).payment!.x402Version, 1);
+  // 設定檢查
+  assert.throws(() => new SignalApiClient({ baseUrl: BASE, payment: {} as X402PaymentClient }), /createPaymentHeader/);
+  assert.throws(() => new SignalApiClient({ baseUrl: BASE, x402Protocol: "v3" as "v2" }), /x402Protocol/);
+  // expectedNetwork 以 CAIP-2 設定：v1、v2 都對得上
+  m = mk([r402(), paidV1()], { payment: dual(), expectedNetwork: CAIP2, expectedAsset: OFFICIAL_BASE_SEPOLIA_USDC });
+  assert.equal((await m.api.getOracleSnapshot("sBTC")).payment!.network, "base-sepolia");
+  // 未注入 payment client：v2 的 402 → PaymentRequiredError 帶 acceptsV2
+  m = mk([r402v2()]);
+  await assert.rejects(m.api.getOracleSnapshot("sBTC"), (e: unknown) =>
+    e instanceof PaymentRequiredError && !e.afterPayment && e.acceptsV2.length === 1 && e.accepts.length === 0 && e.x402Version === 2);
+  ok("協定選擇：auto 時伺服器宣告 v2 且簽署端支援 → v2，否則 v1；x402Protocol 可強制；不相容的組合在簽署前丟 PaymentRejectedError");
 }
 
 console.log(`\n✅ sdk signalApi.test.ts 全過（${n} 項）`);
