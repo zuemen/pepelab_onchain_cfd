@@ -38,6 +38,8 @@ jobs:
       # 再用它檢查 repo。檢查器壞成「永遠通過」時第一步就會紅。
       - name: Self-test
         run: node --test scripts/check-addresses.test.mjs
+      - name: Vercel ignored-build-step self-test
+        run: node --test scripts/vercel-ignore-build.test.mjs
 
       - name: Check workflow addresses
         run: node scripts/check-addresses.mjs

@@ -107,6 +107,13 @@ vercel promote <deployment-url-or-id>    # 修好後把新部署升為 Productio
 - 環境變數的變更（例如收款地址、功能旗標）需要重新部署才會生效；回滾到舊部署會一併使用舊部署建置時的設定，
   務必確認不會把已撤換的設定帶回來。
 - 前端的 CSP 與安全標頭在 `frontend/vercel.json`，會隨部署一起回滾。
+- **只有 master 與 `preview/**` 分支會自動部署**（`vercel.json` 的 `git.deploymentEnabled`，
+  2026-09-30 部署額度用罄後設定）。需要 PR 預覽時，把分支命名為 `preview/<名稱>`。
+- master 的 push 另有 Ignored Build Step（`scripts/vercel-ignore-build.sh`）：自上次成功部署以來本專案
+  沒有變更就跳過建置。因此**只改環境變數後要讓它生效，必須手動 Redeploy，並取消勾選
+  「Use project's Ignore Build Step」**；等下一次 push 不一定會重建。被跳過的部署仍計入每日部署額度。
+- 部署被額度擋下（`build-rate-limit`）時，額度恢復後下一次 master push 會自動補部署積欠的變更；
+  急需上線可在額度恢復後手動 Redeploy 最新的 master。
 
 ## 7. 對外溝通與客戶通報（目標值，可調整）
 

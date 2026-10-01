@@ -1,4 +1,6 @@
 {
+  "ignoreCommand": "bash ../../scripts/vercel-ignore-build.sh . ../package.json ../package-lock.json",
+  "git": { "deploymentEnabled": { "**": false, "master": true, "preview/**": true } },
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
   "installCommand": "cd .. && npm install",
