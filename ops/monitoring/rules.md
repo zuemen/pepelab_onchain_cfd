@@ -7,8 +7,11 @@
 > - 嚴重度定義與處置見 [`docs/INCIDENT_RESPONSE.md`](../../docs/INCIDENT_RESPONSE.md)。
 > - 決策與方案比較見 [`docs/ADR-009-monitoring.md`](../../docs/ADR-009-monitoring.md)；部署步驟見 [`README.md`](README.md)。
 > - 「待部署」規則的事件只存在於 master 原始碼，對應合約尚未部署；Worker 不載入，部署後改為 `active`。
+> - 「**部署版不發此事件**」：合約已部署，但鏈上那一版不發這個事件（前端 ABI 來自 master 原始碼，比部署版新）。
+>   這些事件**現在不會響**；有對應 setter 的由「狀態」規則每輪讀 getter 比對。依據是 [`deployed.json`](deployed.json)（唯讀 RPC 抓的 runtime bytecode，CI 離線比對 topic0）。
 
-共 **40** 條規則：運作中 32 條（事件 24、狀態 6、HTTP 2），待部署 8 條。鏈：base-sepolia（84532）。
+共 **43** 條規則：運作中 32 條（事件 21、狀態 9、HTTP 2），部署版不發此事件 10 條，待部署 1 條。鏈：base-sepolia（84532）。
+已部署 bytecode 快照：區塊 47536389（2026-10-01）。
 
 ## 總表
 
@@ -18,10 +21,13 @@
 | [`access-role-changed`](#access-role-changed) AccessControl 角色變更 | 權限 | 事件 | SEV-1 | 運作中 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) [§8](../../docs/INCIDENT_RESPONSE.md#8-外部協助seal-911) |
 | [`vault-upgraded`](#vault-upgraded) 代幣化金庫升級或改接 oracle | 權限 | 事件 | SEV-1 | 運作中 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) [§8](../../docs/INCIDENT_RESPONSE.md#8-外部協助seal-911) |
 | [`exchange-agent-authorization`](#exchange-agent-authorization) 交易所 agent 授權變更 | 權限 | 事件 | SEV-1 | 運作中 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
-| [`kyc-verifier-changed`](#kyc-verifier-changed) KYC 驗證者變更 | 權限 | 事件 | SEV-2 | 運作中 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
+| [`kyc-verifier-changed`](#kyc-verifier-changed) KYC 驗證者變更 | 權限 | 事件 | SEV-2 | 部署版不發此事件 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 | [`exchange-wiring-changed`](#exchange-wiring-changed) 交易所資金接線變更 | x402／FeeRouter 設定 | 事件 | SEV-1 | 運作中 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
-| [`insurance-wiring-changed`](#insurance-wiring-changed) 保險金庫接線變更 | x402／FeeRouter 設定 | 事件 | SEV-1 | 運作中 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
-| [`feerouter-config-changed`](#feerouter-config-changed) FeeRouter 設定變更（含 x402 分潤路由） | x402／FeeRouter 設定 | 事件 | SEV-2 | 運作中 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
+| [`insurance-wiring-changed`](#insurance-wiring-changed) 保險金庫接線變更 | x402／FeeRouter 設定 | 事件 | SEV-1 | 部署版不發此事件 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
+| [`feerouter-config-changed`](#feerouter-config-changed) FeeRouter 設定變更（含 x402 分潤路由） | x402／FeeRouter 設定 | 事件 | SEV-2 | 部署版不發此事件 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
+| [`insurance-wiring`](#insurance-wiring) 保險金庫接線被改 | x402／FeeRouter 設定 | 狀態 | SEV-1 | 運作中 | 任一 getter 的讀值 ≠ 預期位址 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
+| [`feerouter-wiring`](#feerouter-wiring) FeeRouter 接線被改（含 x402 分潤路由） | x402／FeeRouter 設定 | 狀態 | SEV-1 | 運作中 | 任一 getter 的讀值 ≠ 預期位址 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
+| [`core-wiring`](#core-wiring) 核心合約接線與前端設定不一致 | x402／FeeRouter 設定 | 狀態 | SEV-1 | 運作中 | 任一 getter 的讀值 ≠ 預期位址 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 | [`x402-payto`](#x402-payto) x402 收款地址 | x402／FeeRouter 設定 | HTTP | SEV-1 | 運作中 | `payTo` ≠ `EXPECTED_PAY_TO`（未設時為首次觀察值）→ SEV-1；`payToSafety.safe == false` → SEV-3 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) [§6](../../docs/INCIDENT_RESPONSE.md#6-vercel-回滾前端與-signal-api) |
 | [`exchange-risk-params`](#exchange-risk-params) 交易所風險參數變更 | 風險參數 | 事件 | SEV-3 | 運作中 | 每一筆 | [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 | [`vault-pause-changed`](#vault-pause-changed) 代幣化金庫暫停／mint 停止解除 | 暫停與資產模式 | 事件 | SEV-2 | 運作中 | 每一筆 | [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) [§7](../../docs/INCIDENT_RESPONSE.md#7-對外溝通與客戶通報目標值可調整) |
@@ -46,14 +52,14 @@
 | [`vault-reserve`](#vault-reserve) 代幣化金庫儲備率 | 保險金與儲備 | 狀態 | SEV-2 | 運作中 | 儲備率 < `minReserveRatioBps()` → SEV-2；< 下限 + `RESERVE_WARN_MARGIN_BPS`（預設 500 bps） → SEV-3；mint 自動停止 → SEV-2；無法定價或暫停 → SEV-3 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 | [`keeper-gas`](#keeper-gas) keeper 錢包 gas 過低 | keeper | 狀態 | SEV-3 | 運作中 | < `GAS_MIN_ETH`（預設 0.02 ETH） → SEV-3；< `GAS_CRIT_ETH`（預設 0.005 ETH） → SEV-2 | [§5](../../docs/INCIDENT_RESPONSE.md#5-keeper-熔斷處置) |
 | [`signal-api-health`](#signal-api-health) signal-api 健康檢查失敗 | 服務健康 | HTTP | SEV-3 | 運作中 | 非 200 或內容不是 `ok`，連續 `HTTP_FAILS_BEFORE_ALERT`（預設 2 次） | [§6](../../docs/INCIDENT_RESPONSE.md#6-vercel-回滾前端與-signal-api) |
-| [`exchange-pause`](#exchange-pause) 交易所全域暫停 | 暫停與資產模式 | 事件 | SEV-1 | 待部署 | 每一筆 | [§4](../../docs/INCIDENT_RESPONSE.md#4-原始碼版pr-191未部署多了什麼) [§7](../../docs/INCIDENT_RESPONSE.md#7-對外溝通與客戶通報目標值可調整) |
-| [`exchange-asset-mode`](#exchange-asset-mode) 交易所資產模式變更 | 暫停與資產模式 | 事件 | SEV-2 | 待部署 | 每一筆 | [§4](../../docs/INCIDENT_RESPONSE.md#4-原始碼版pr-191未部署多了什麼) [§5](../../docs/INCIDENT_RESPONSE.md#5-keeper-熔斷處置) |
-| [`exchange-guardian-roles`](#exchange-guardian-roles) 交易所 guardian／marketOperator 變更 | 權限 | 事件 | SEV-1 | 待部署 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§4](../../docs/INCIDENT_RESPONSE.md#4-原始碼版pr-191未部署多了什麼) |
-| [`exchange-exposure-caps`](#exchange-exposure-caps) 交易所 OI／獲利上限變更與觸發 | 風險參數 | 事件 | SEV-3 | 待部署 | 每一筆 | [§4](../../docs/INCIDENT_RESPONSE.md#4-原始碼版pr-191未部署多了什麼) |
+| [`exchange-pause`](#exchange-pause) 交易所全域暫停 | 暫停與資產模式 | 事件 | SEV-1 | 部署版不發此事件 | 每一筆 | [§4](../../docs/INCIDENT_RESPONSE.md#4-原始碼版pr-191未部署多了什麼) [§7](../../docs/INCIDENT_RESPONSE.md#7-對外溝通與客戶通報目標值可調整) |
+| [`exchange-asset-mode`](#exchange-asset-mode) 交易所資產模式變更 | 暫停與資產模式 | 事件 | SEV-2 | 部署版不發此事件 | 每一筆 | [§4](../../docs/INCIDENT_RESPONSE.md#4-原始碼版pr-191未部署多了什麼) [§5](../../docs/INCIDENT_RESPONSE.md#5-keeper-熔斷處置) |
+| [`exchange-guardian-roles`](#exchange-guardian-roles) 交易所 guardian／marketOperator 變更 | 權限 | 事件 | SEV-1 | 部署版不發此事件 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§4](../../docs/INCIDENT_RESPONSE.md#4-原始碼版pr-191未部署多了什麼) |
+| [`exchange-exposure-caps`](#exchange-exposure-caps) 交易所 OI／獲利上限變更與觸發 | 風險參數 | 事件 | SEV-3 | 部署版不發此事件 | 每一筆 | [§4](../../docs/INCIDENT_RESPONSE.md#4-原始碼版pr-191未部署多了什麼) |
 | [`timelock-operations`](#timelock-operations) Timelock 排程與執行 | 權限 | 事件 | SEV-2 | 待部署 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§2](../../docs/INCIDENT_RESPONSE.md#2-角色) |
-| [`vault-unpriced-exemption`](#vault-unpriced-exemption) 金庫定價豁免變更（V2.5） | 保險金與儲備 | 事件 | SEV-2 | 待部署 | 每一筆 | [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
-| [`guarded-oracle-window`](#guarded-oracle-window) GuardedOracle 時間窗偏離上限變更 | Oracle | 事件 | SEV-3 | 待部署 | 每一筆 | [§5](../../docs/INCIDENT_RESPONSE.md#5-keeper-熔斷處置) |
-| [`copytracker-slash-reserve`](#copytracker-slash-reserve) CopyTracker 罰沒準備金提領 | 大額提領 | 事件 | SEV-2 | 待部署 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) |
+| [`vault-unpriced-exemption`](#vault-unpriced-exemption) 金庫定價豁免變更（V2.5） | 保險金與儲備 | 事件 | SEV-2 | 部署版不發此事件 | 每一筆 | [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
+| [`guarded-oracle-window`](#guarded-oracle-window) GuardedOracle 時間窗偏離上限變更 | Oracle | 事件 | SEV-3 | 部署版不發此事件 | 每一筆 | [§5](../../docs/INCIDENT_RESPONSE.md#5-keeper-熔斷處置) |
+| [`copytracker-slash-reserve`](#copytracker-slash-reserve) CopyTracker 罰沒準備金提領 | 大額提領 | 事件 | SEV-2 | 部署版不發此事件 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) |
 
 「嚴重度」是規則的預設等級；狀態規則依門檻在 SEV-1～SEV-3 之間升降（見各規則）。恢復通知固定標為 SEV-4，但依原嚴重度決定是否送出。
 
@@ -141,7 +147,7 @@ Ownable 合約的 owner 被轉移。未經排程的轉移等同特權金鑰外�
 | V2_STACK.tokens.sICLN（ABI `SyntheticAssetV2`） | addresses.ts V2_STACK[84532].tokens.sICLN | `0xcb3069C32188Fd92376d1ba53F08D733451e9175` |
 | V2_STACK.tokens.sESGU（ABI `SyntheticAssetV2`） | addresses.ts V2_STACK[84532].tokens.sESGU | `0x510D59b33C04164596D2601B57a154dF31914C23` |
 
-- 事件：`RoleGranted(bytes32,address,address)`、`RoleRevoked(bytes32,address,address)`、`RoleAdminChanged(bytes32,bytes32,bytes32)`
+- 事件：`RoleGranted(bytes32,address,address)`、`RoleRevoked(bytes32,address,address)`、`RoleAdminChanged(bytes32,bytes32,bytes32)`（**部署版不發此事件**；這些合約都沒有呼叫 _setRoleAdmin，編譯器沒有把這個事件編進 bytecode；角色的 admin 無法被改）
 - 門檻：每一筆
 - 處置：[INCIDENT_RESPONSE「1. 嚴重度分級」](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級)、[INCIDENT_RESPONSE「3. 暫停與凍結：現行部署能做什麼」](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼)、[INCIDENT_RESPONSE「8. 外部協助：SEAL 911」](../../docs/INCIDENT_RESPONSE.md#8-外部協助seal-911)
 - 相關：[RUNBOOK_KEY_ROTATION.md「1.3 身分／角色」](../../docs/RUNBOOK_KEY_ROTATION.md#13-身分角色)
@@ -176,13 +182,13 @@ setAgentAuthorized：被授權的地址可以代使用者開平倉。新增未�
 
 ### kyc-verifier-changed
 
-**KYC 驗證者變更**｜權限｜事件｜SEV-2｜運作中
+**KYC 驗證者變更**｜權限｜事件｜SEV-2｜部署版不發此事件
 
-KYCRegistry 的驗證者名單變更；驗證者可以讓任意地址通過 RWA 資產的 KYC 門檻。
+KYCRegistry 的驗證者名單變更；驗證者可以讓任意地址通過 RWA 資產的 KYC 門檻。**已部署的 KYCRegistry 是舊版：沒有 setVerifier／verifiers，也不發 VerifierSet**（只有 owner 能 batchVerify，owner 變更由 owner-transferred 監控），所以部署版沒有這個攻擊面，也沒有東西可以輪詢。新版部署並更新 deployed.json 後改為 active。
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| KYCRegistry（ABI `KYCRegistry`） | addresses.ts BASE_SEPOLIA.KYCRegistry | `0x5D95fD9e7a5f80E5369e24783F1f98E0f952360d` |
+| KYCRegistry | addresses.ts BASE_SEPOLIA.KYCRegistry（`0x5D95fD9e7a5f80E5369e24783F1f98E0f952360d`）；部署版不發此事件，事件宣告於 `contracts/src/KYCRegistry.sol` | — |
 
 - 事件：`VerifierSet(address,bool)`
 - 門檻：每一筆
@@ -204,13 +210,13 @@ KYCRegistry 的驗證者名單變更；驗證者可以讓任意地址通過 RWA 
 
 ### insurance-wiring-changed
 
-**保險金庫接線變更**｜x402／FeeRouter 設定｜事件｜SEV-1｜運作中
+**保險金庫接線變更**｜x402／FeeRouter 設定｜事件｜SEV-1｜部署版不發此事件
 
-InsuranceVault 的 exchange（唯一能呼叫 bailout 的地址）或 FeeRouter 被改。
+InsuranceVault 的 exchange（唯一能呼叫 bailout 的地址）或 FeeRouter 被改。**已部署的 InsuranceVault 有 setExchange／setFeeRouter，但不發這兩個事件**（事件是 master 原始碼後來才加的），所以這條事件規則現在不會響；接線變更由狀態規則 insurance-wiring 每輪讀 getter 比對。重新部署 InsuranceVault 並更新 deployed.json 後改為 active。
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| InsuranceVault（ABI `InsuranceVault`） | addresses.ts BASE_SEPOLIA.InsuranceVault | `0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812` |
+| InsuranceVault | addresses.ts BASE_SEPOLIA.InsuranceVault（`0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812`）；部署版不發此事件，事件宣告於 `contracts/src/InsuranceVault.sol` | — |
 
 - 事件：`ExchangeSet(address)`、`FeeRouterSet(address)`
 - 門檻：每一筆
@@ -218,19 +224,78 @@ InsuranceVault 的 exchange（唯一能呼叫 bailout 的地址）或 FeeRouter 
 
 ### feerouter-config-changed
 
-**FeeRouter 設定變更（含 x402 分潤路由）**｜x402／FeeRouter 設定｜事件｜SEV-2｜運作中
+**FeeRouter 設定變更（含 x402 分潤路由）**｜x402／FeeRouter 設定｜事件｜SEV-2｜部署版不發此事件
 
-V1 FeeRouter 與 x402 FeeRouter（官方 USDC）的 exchange／copyTracker 被改。platformTreasury 與分潤比例是 immutable，鏈上能改的只有這兩個接線。
+V1 FeeRouter 與 x402 FeeRouter（官方 USDC）的 exchange／copyTracker 被改。**已部署的兩顆 FeeRouter 有 setExchange／setCopyTracker，但不發這兩個事件**，所以這條事件規則現在不會響；接線變更由狀態規則 feerouter-wiring 每輪讀 getter 比對。重新部署並更新 deployed.json 後改為 active。
+
+| 合約 | 位址來源 | 位址 |
+|---|---|---|
+| FeeRouter | addresses.ts BASE_SEPOLIA.FeeRouter（`0x00f6cf0113399a7A451c7f85fe094a28092d3e0c`）；部署版不發此事件，事件宣告於 `contracts/src/FeeRouter.sol` | — |
+| X402FeeRouter | x402.ts X402_FEE_ROUTER[84532]（`0x29e5732AC62254d9b92A1C7d3F38EbFA8809B57d`）；部署版不發此事件，事件宣告於 `contracts/src/FeeRouter.sol` | — |
+
+- 事件：`ExchangeSet(address)`、`CopyTrackerSet(address)`
+- 門檻：每一筆
+- 處置：[INCIDENT_RESPONSE「1. 嚴重度分級」](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級)、[INCIDENT_RESPONSE「3. 暫停與凍結：現行部署能做什麼」](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼)
+- 相關：[RUNBOOK_KEY_ROTATION.md「6.2 x402 payTo / platformTreasury」](../../docs/RUNBOOK_KEY_ROTATION.md#62-x402-payto--platformtreasury)
+
+### insurance-wiring
+
+**保險金庫接線被改**｜x402／FeeRouter 設定｜狀態｜SEV-1｜運作中
+
+每輪讀 InsuranceVault.exchange()（唯一能呼叫 bailout 的地址）與 feeRouter()，必須等於前端設定的 PerpetualExchange 與 FeeRouter。已部署的 InsuranceVault 的 setter 不發事件，只能靠輪詢（最長延遲一輪）。合約 cutover 時 addresses.ts 與 deployed.json 一起更新，預期值會跟著換。
+
+| 合約 | 位址來源 | 位址 |
+|---|---|---|
+| InsuranceVault（ABI `InsuranceVault`） | addresses.ts BASE_SEPOLIA.InsuranceVault | `0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812` |
+
+- 預期：`InsuranceVault.exchange()` = `PerpetualExchange`（`0x827eA0c62a32e995927101259042F8A27D99124D`）
+- 預期：`InsuranceVault.feeRouter()` = `FeeRouter`（`0x00f6cf0113399a7A451c7f85fe094a28092d3e0c`）
+- 門檻：任一 getter 的讀值 ≠ 預期位址
+- 處置：[INCIDENT_RESPONSE「1. 嚴重度分級」](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級)、[INCIDENT_RESPONSE「3. 暫停與凍結：現行部署能做什麼」](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼)
+
+### feerouter-wiring
+
+**FeeRouter 接線被改（含 x402 分潤路由）**｜x402／FeeRouter 設定｜狀態｜SEV-1｜運作中
+
+每輪讀 V1 FeeRouter 與 x402 FeeRouter 的 exchange()／copyTracker()／insuranceVault()／platformTreasury()。V1 必須指向前端設定的 PerpetualExchange／CopyTracker／InsuranceVault；x402 那顆部署時 exchange 與 copyTracker 都是零位址（只走 routeExternalRevenue），任何一個被設成非零都代表有人接上了能分配手續費的合約。已部署的 FeeRouter 的 setter 不發事件，只能靠輪詢。
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
 | FeeRouter（ABI `FeeRouter`） | addresses.ts BASE_SEPOLIA.FeeRouter | `0x00f6cf0113399a7A451c7f85fe094a28092d3e0c` |
 | X402FeeRouter（ABI `FeeRouter`） | x402.ts X402_FEE_ROUTER[84532] | `0x29e5732AC62254d9b92A1C7d3F38EbFA8809B57d` |
 
-- 事件：`ExchangeSet(address)`、`CopyTrackerSet(address)`
-- 門檻：每一筆
+- 預期：`FeeRouter.exchange()` = `PerpetualExchange`（`0x827eA0c62a32e995927101259042F8A27D99124D`）
+- 預期：`FeeRouter.copyTracker()` = `CopyTracker`（`0xC9e91f7D36e910C58042164032c625427b23CCB2`）
+- 預期：`FeeRouter.insuranceVault()` = `InsuranceVault`（`0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812`）
+- 預期：`FeeRouter.platformTreasury()` = 鏈上快照 `0xe80a81360608c1342e66743f70a00f75d792eb93`（platformTreasury 是 immutable，前端設定沒有這個位址；快照只用來確認這顆 FeeRouter 沒有被換成另一顆）
+- 預期：`X402FeeRouter.exchange()` = 零位址
+- 預期：`X402FeeRouter.copyTracker()` = 零位址
+- 預期：`X402FeeRouter.insuranceVault()` = 鏈上快照 `0xc7afe2064106a608e0e21bfbf9aff89b0ead7b9f`（x402 FeeRouter 部署時指定的保險金收款地址（immutable），前端設定沒有這個位址）
+- 預期：`X402FeeRouter.platformTreasury()` = 鏈上快照 `0xe80a81360608c1342e66743f70a00f75d792eb93`（immutable；x402.ts 註明這是待更換的 treasury，重新部署 X402FeeRouter 時位址與快照一起換）
+- 門檻：任一 getter 的讀值 ≠ 預期位址
 - 處置：[INCIDENT_RESPONSE「1. 嚴重度分級」](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級)、[INCIDENT_RESPONSE「3. 暫停與凍結：現行部署能做什麼」](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼)
-- 相關：[RUNBOOK_KEY_ROTATION.md「6.2 x402 payTo / platformTreasury」](../../docs/RUNBOOK_KEY_ROTATION.md#62-x402-payto--platformtreasury)
+
+### core-wiring
+
+**核心合約接線與前端設定不一致**｜x402／FeeRouter 設定｜狀態｜SEV-1｜運作中
+
+每輪讀交易所的 oracle()／feeRouter()／insuranceVault()／kyc()、TraderStake.copyTracker()（唯一能 slash 的地址）、AssetVaultV2 的 oracle()／esgRegistry()，必須等於前端設定。這些 setter 在部署版有事件（另有事件規則），這條是第二道：事件漏掉或 addresses.ts 與鏈上脫鉤時仍會持續告警，直到兩邊一致。
+
+| 合約 | 位址來源 | 位址 |
+|---|---|---|
+| PerpetualExchange（ABI `PerpetualExchange`） | addresses.ts BASE_SEPOLIA.PerpetualExchange | `0x827eA0c62a32e995927101259042F8A27D99124D` |
+| TraderStake（ABI `TraderStake`） | addresses.ts BASE_SEPOLIA.TraderStake | `0x01aEB530bcFc69f036309ffe55acc7eA6C5a28Fe` |
+| AssetVaultV2（ABI `AssetVaultV2`） | addresses.ts V2_STACK[84532].AssetVaultV2 | `0x916D7Fc399d9afd23BAa113E2c2Cc601341ff10a` |
+
+- 預期：`PerpetualExchange.oracle()` = `MockOracle`（`0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3`）
+- 預期：`PerpetualExchange.feeRouter()` = `FeeRouter`（`0x00f6cf0113399a7A451c7f85fe094a28092d3e0c`）
+- 預期：`PerpetualExchange.insuranceVault()` = `InsuranceVault`（`0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812`）
+- 預期：`PerpetualExchange.kyc()` = `KYCRegistry`（`0x5D95fD9e7a5f80E5369e24783F1f98E0f952360d`）
+- 預期：`TraderStake.copyTracker()` = `CopyTracker`（`0xC9e91f7D36e910C58042164032c625427b23CCB2`）
+- 預期：`AssetVaultV2.oracle()` = `GuardedOracle`（`0x8E9e59BE9589Ad88EC14F3ef6bdcc43E8B76f842`）
+- 預期：`AssetVaultV2.esgRegistry()` = `ESGRegistryV2`（`0xBF5B9cD78566791d79c687A732b4ed5bc3E95dFf`）
+- 門檻：任一 getter 的讀值 ≠ 預期位址
+- 處置：[INCIDENT_RESPONSE「1. 嚴重度分級」](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級)、[INCIDENT_RESPONSE「3. 暫停與凍結：現行部署能做什麼」](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼)
 
 ### x402-payto
 
@@ -281,7 +346,7 @@ AssetVaultV2 被 PAUSER 暫停或解除（mint 與 redeem 一起停），或 RIS
 |---|---|---|
 | AssetVaultV2（ABI `AssetVaultV2`） | addresses.ts V2_STACK[84532].AssetVaultV2 | `0x916D7Fc399d9afd23BAa113E2c2Cc601341ff10a` |
 
-- 事件：`RiskParamsUpdated(uint256,uint256,uint256,uint256)`、`RiskParamsChanged(uint256,uint256,uint256)`、`AssetCapUpdated(bytes32,uint256)`、`AssetRegistered(bytes32,address)`、`AssetUnregistered(bytes32)`
+- 事件：`RiskParamsUpdated(uint256,uint256,uint256,uint256)`（**部署版不發此事件**；部署版的實作在 setRiskParams 發的是三個參數的 RiskParamsChanged（同一條規則已涵蓋）；四個參數的版本屬於 V2.5）、`RiskParamsChanged(uint256,uint256,uint256)`、`AssetCapUpdated(bytes32,uint256)`、`AssetRegistered(bytes32,address)`、`AssetUnregistered(bytes32)`
 - 門檻：每一筆
 - 處置：[INCIDENT_RESPONSE「3. 暫停與凍結：現行部署能做什麼」](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼)
 
@@ -332,13 +397,13 @@ keeper 送出的價格超過偏離上限被拒。單次可能是真實跳空；�
 
 **交易所 oracle 設定變更**｜Oracle｜事件｜SEV-2｜運作中
 
-交易所讀的 MockOracle 的過期門檻或資產清單被改。
+交易所讀的 MockOracle 的資產清單被改（部署版的過期門檻是常數，不能改）。
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
 | MockOracle（ABI `MockOracle`） | addresses.ts BASE_SEPOLIA.MockOracle | `0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3` |
 
-- 事件：`StaleThresholdSet(uint256,uint256)`、`AssetAdded(bytes32,uint256)`
+- 事件：`StaleThresholdSet(uint256,uint256)`（**部署版不發此事件**；部署版的 MockOracle 沒有 setStaleThreshold／staleThreshold()，過期門檻是常數 STALE_THRESHOLD，無法被改）、`AssetAdded(bytes32,uint256)`
 - 門檻：每一筆
 - 處置：[INCIDENT_RESPONSE「3. 暫停與凍結：現行部署能做什麼」](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼)、[INCIDENT_RESPONSE「5. keeper 熔斷處置」](../../docs/INCIDENT_RESPONSE.md#5-keeper-熔斷處置)
 
@@ -346,13 +411,13 @@ keeper 送出的價格超過偏離上限被拒。單次可能是真實跳空；�
 
 **Chainlink/Pyth 聚合 oracle 設定變更**｜Oracle｜事件｜SEV-2｜運作中
 
-keeper 的中繼來源（AggregatorOracle）偏離上限、熔斷門檻或「允許單一來源」被改；放寬這些等於降低 keeper 拒寫錯誤價格的能力。
+keeper 的中繼來源（AggregatorOracle）偏離上限被改；放寬等於降低 keeper 拒寫錯誤價格的能力。部署版沒有熔斷門檻與「允許單一來源」這兩個參數。
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
 | AggregatorOracle（ABI `AggregatorOracleAdapter`） | addresses.ts BASE_SEPOLIA_ORACLE_SHOWCASE.AggregatorOracle | `0x8215158642350a3f329aB9597186d21f957A813D` |
 
-- 事件：`MaxDeviationBpsSet(uint256,uint256)`、`HaltDeviationBpsSet(uint256,uint256)`、`AllowSingleSourceSet(bool)`
+- 事件：`MaxDeviationBpsSet(uint256,uint256)`、`HaltDeviationBpsSet(uint256,uint256)`（**部署版不發此事件**；部署版的 AggregatorOracle 沒有 setHaltDeviationBps／haltDeviationBps()，沒有這個參數）、`AllowSingleSourceSet(bool)`（**部署版不發此事件**；部署版的 AggregatorOracle 沒有 setAllowSingleSource／allowSingleSource()，沒有這個參數）
 - 門檻：每一筆
 - 處置：[INCIDENT_RESPONSE「5. keeper 熔斷處置」](../../docs/INCIDENT_RESPONSE.md#5-keeper-熔斷處置)
 
@@ -572,13 +637,13 @@ GET {SIGNAL_API_URL}/healthz 應回 200 與 "ok"；連續 HTTP_FAILS_BEFORE_ALER
 
 ### exchange-pause
 
-**交易所全域暫停**｜暫停與資產模式｜事件｜SEV-1｜待部署
+**交易所全域暫停**｜暫停與資產模式｜事件｜SEV-1｜部署版不發此事件
 
 guardian／owner 暫停交易所、暫停自動失效、owner 清除失效時間。暫停本身就代表事故處置中。新 exchange 部署並更新 addresses.ts 與前端 ABI 後改為 active。
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| PerpetualExchange | 尚未部署；事件宣告於 `contracts/src/PerpetualExchange.sol` | — |
+| PerpetualExchange | addresses.ts BASE_SEPOLIA.PerpetualExchange（`0x827eA0c62a32e995927101259042F8A27D99124D`）；部署版不發此事件，事件宣告於 `contracts/src/PerpetualExchange.sol` | — |
 
 - 事件：`Paused(address)`、`Unpaused(address)`、`PauseLapsed(uint256)`、`PauseExpiryCleared(address)`
 - 門檻：每一筆
@@ -586,13 +651,13 @@ guardian／owner 暫停交易所、暫停自動失效、owner 清除失效時間
 
 ### exchange-asset-mode
 
-**交易所資產模式變更**｜暫停與資產模式｜事件｜SEV-2｜待部署
+**交易所資產模式變更**｜暫停與資產模式｜事件｜SEV-2｜部署版不發此事件
 
 逐資產 Active／ReduceOnly／Halted 切換與 guardian 鎖定。keeper 休市切換也會觸發，訊息帶 by 地址以區分。
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| PerpetualExchange | 尚未部署；事件宣告於 `contracts/src/PerpetualExchange.sol` | — |
+| PerpetualExchange | addresses.ts BASE_SEPOLIA.PerpetualExchange（`0x827eA0c62a32e995927101259042F8A27D99124D`）；部署版不發此事件，事件宣告於 `contracts/src/PerpetualExchange.sol` | — |
 
 - 事件：`AssetModeSet(bytes32,uint8,address)`、`AssetGuardianLockSet(bytes32,bool)`
 - 門檻：每一筆
@@ -600,13 +665,13 @@ guardian／owner 暫停交易所、暫停自動失效、owner 清除失效時間
 
 ### exchange-guardian-roles
 
-**交易所 guardian／marketOperator 變更**｜權限｜事件｜SEV-1｜待部署
+**交易所 guardian／marketOperator 變更**｜權限｜事件｜SEV-1｜部署版不發此事件
 
 能暫停交易所或切換資產模式的地址被更換。
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| PerpetualExchange | 尚未部署；事件宣告於 `contracts/src/PerpetualExchange.sol` | — |
+| PerpetualExchange | addresses.ts BASE_SEPOLIA.PerpetualExchange（`0x827eA0c62a32e995927101259042F8A27D99124D`）；部署版不發此事件，事件宣告於 `contracts/src/PerpetualExchange.sol` | — |
 
 - 事件：`GuardianSet(address)`、`MarketOperatorSet(address)`
 - 門檻：每一筆
@@ -614,13 +679,13 @@ guardian／owner 暫停交易所、暫停自動失效、owner 清除失效時間
 
 ### exchange-exposure-caps
 
-**交易所 OI／獲利上限變更與觸發**｜風險參數｜事件｜SEV-3｜待部署
+**交易所 OI／獲利上限變更與觸發**｜風險參數｜事件｜SEV-3｜部署版不發此事件
 
 OI 上限、獲利上限的設定變更，以及平倉獲利被上限截斷。
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| PerpetualExchange | 尚未部署；事件宣告於 `contracts/src/PerpetualExchange.sol` | — |
+| PerpetualExchange | addresses.ts BASE_SEPOLIA.PerpetualExchange（`0x827eA0c62a32e995927101259042F8A27D99124D`）；部署版不發此事件，事件宣告於 `contracts/src/PerpetualExchange.sol` | — |
 
 - 事件：`MaxOpenInterestSet(bytes32,uint256,uint256)`、`MaxProfitBpsSet(bytes32,uint256)`、`ProfitCapped(uint256,int256,int256)`
 - 門檻：每一筆
@@ -643,13 +708,13 @@ OI 上限、獲利上限的設定變更，以及平倉獲利被上限截斷。
 
 ### vault-unpriced-exemption
 
-**金庫定價豁免變更（V2.5）**｜保險金與儲備｜事件｜SEV-2｜待部署
+**金庫定價豁免變更（V2.5）**｜保險金與儲備｜事件｜SEV-2｜部署版不發此事件
 
 V2.5 允許把無法定價的資產豁免於儲備率計算；豁免會讓儲備率看起來比實際好。
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| AssetVaultV2 | 尚未部署；事件宣告於 `contracts/src/v2/AssetVaultV2_5.sol` | — |
+| AssetVaultV2 | addresses.ts V2_STACK[84532].AssetVaultV2（`0x916D7Fc399d9afd23BAa113E2c2Cc601341ff10a`）；部署版不發此事件，事件宣告於 `contracts/src/v2/AssetVaultV2_5.sol` | — |
 
 - 事件：`UnpricedExemptionSet(bytes32,bool,address)`
 - 門檻：每一筆
@@ -657,13 +722,13 @@ V2.5 允許把無法定價的資產豁免於儲備率計算；豁免會讓儲備
 
 ### guarded-oracle-window
 
-**GuardedOracle 時間窗偏離上限變更**｜Oracle｜事件｜SEV-3｜待部署
+**GuardedOracle 時間窗偏離上限變更**｜Oracle｜事件｜SEV-3｜部署版不發此事件
 
 原始碼版 GuardedOracle 新增的累計偏離時間窗參數被改。
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| GuardedOracle | 尚未部署；事件宣告於 `contracts/src/v2/GuardedOracle.sol` | — |
+| GuardedOracle | addresses.ts V2_STACK[84532].GuardedOracle（`0x8E9e59BE9589Ad88EC14F3ef6bdcc43E8B76f842`）；部署版不發此事件，事件宣告於 `contracts/src/v2/GuardedOracle.sol` | — |
 
 - 事件：`WindowLimitUpdated(uint256,uint256)`
 - 門檻：每一筆
@@ -671,13 +736,13 @@ V2.5 允許把無法定價的資產豁免於儲備率計算；豁免會讓儲備
 
 ### copytracker-slash-reserve
 
-**CopyTracker 罰沒準備金提領**｜大額提領｜事件｜SEV-2｜待部署
+**CopyTracker 罰沒準備金提領**｜大額提領｜事件｜SEV-2｜部署版不發此事件
 
 原始碼版 CopyTracker 的罰沒準備金被提出。
 
 | 合約 | 位址來源 | 位址 |
 |---|---|---|
-| CopyTracker | 尚未部署；事件宣告於 `contracts/src/CopyTracker.sol` | — |
+| CopyTracker | addresses.ts BASE_SEPOLIA.CopyTracker（`0xC9e91f7D36e910C58042164032c625427b23CCB2`）；部署版不發此事件，事件宣告於 `contracts/src/CopyTracker.sol` | — |
 
 - 事件：`SlashReserveWithdrawn(address,uint256)`
 - 門檻：每一筆

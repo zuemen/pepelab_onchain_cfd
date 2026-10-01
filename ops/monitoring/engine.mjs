@@ -248,6 +248,11 @@ function assetId(config, symbol) {
   return id;
 }
 const finding = (rule, key, severity, title, lines) => ({ ruleId: rule.id, key, severity, title, lines });
+/**
+ * 部分失敗：有些讀取成功、有些失敗。已經算出的 findings 照樣送（不因為別的讀取失敗而丟掉），
+ * 但這條規則不算「成功評估」——不會替本輪沒看到的告警發恢復。
+ */
+const partial = (message, findings) => Object.assign(new Error(message), { findings });
 
 // ── event 規則 ───────────────────────────────────────────────────────────────
 
@@ -543,6 +548,34 @@ const checks = {
     return out;
   },
 
+  /**
+   * 接線：getter 讀到的位址必須等於預期值（addresses.ts 的位址、零位址、或部署時的鏈上快照）。
+   * 為什麼用輪詢：已部署的 InsuranceVault／FeeRouter 的 setter **不發事件**（事件是 master 原始碼
+   * 後來才加的），事件規則永遠不會響（審查 H2）。預期值由 check-monitoring.mjs 產生並對照鏈上快照。
+   */
+  async wiring({ rule, rpc }) {
+    const calls = rule.calls ?? [];
+    const res = await rpc.batch(calls.map((c) => callReq(rule, c.on, c.fn)));
+    const out = [];
+    const failed = [];
+    calls.forEach((c, i) => {
+      const k = contractOf(rule, c.on);
+      const name = `${k.ref}.${c.fn}`;
+      const w = res[i].error ? [] : words(res[i].result);
+      if (!w.length || !c.expected) return failed.push(`${name}：${res[i].error ?? (c.expected ? "空回應" : "缺少 expected")}`);
+      const actual = wordToAddress(w[0]);
+      if (lc(actual) === lc(c.expected)) return;
+      const why = c.expect?.ref ? `前端設定的 ${c.expect.ref}` : c.expect?.zero ? "零位址" : "部署時的鏈上快照";
+      out.push(finding(rule, `${rule.id}:${name}`, rule.severity, `${rule.title}：${name}`, [
+        `${name} 現在是 ${actual}，預期 ${c.expected}（${why}）`,
+        `合約：${k.ref} ${k.address}`,
+        "部署版的 setter 不發事件，這是每輪讀 getter 比對出來的；請立即確認是否為預期變更",
+      ]));
+    });
+    if (failed.length) throw partial(`接線讀取失敗：${failed.join("；")}`, out);
+    return out;
+  },
+
   /** keeper 錢包 gas 餘額。keeper = MockOracle.owner()（不手抄位址），另可用 EXTRA_GAS_WALLETS 補。 */
   async gasBalance({ rule, config, env, rpc }) {
     const [own] = await rpc.batch([callReq(rule, "oracle", "owner()")]);
@@ -710,6 +743,7 @@ export async function runOnce({ config, env = {}, state, fetchImpl, now = Math.f
       findings.push(...(await fn({ rule, config, env, rpc, fetchImpl, state, now })));
       evaluated.add(rule.id);
     } catch (e) {
+      if (Array.isArray(e?.findings)) findings.push(...e.findings); // 部分失敗：已算出的照送
       fail(rule.id, e);
     }
   }

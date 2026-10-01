@@ -16,10 +16,16 @@
 //   6. rules.md 是 monitors.json 的渲染結果（人看的清單不會與機器設定脫鉤）。
 //   7. 設定目錄裡沒有秘密：wrangler.toml [vars] 不含憑證鍵名，任何檔案不含 bot token／webhook URL。
 //   8. 引擎用到的參數都有定義；SIGNAL_API_URL 預設值 == SDK 的 SIGNAL_API_TESTNET_URL。
+//   9. **部署版真的會發這個事件、真的有這個函式**（審查 H2）：前端 ABI 來自 master 原始碼，
+//      可能比鏈上的版本新。ops/monitoring/deployed.json 是以唯讀 RPC 抓下來的 runtime
+//      bytecode（UUPS 讀實作位址）與幾個 getter 的鏈上快照；active 事件的 topic0、state 規則的
+//      selector 必須出現在 bytecode 裡，接線規則的預期值必須等於鏈上快照。檢查本身不連網。
 //
 // 零依賴。用法：
-//   node scripts/check-monitoring.mjs            # 檢查，有問題非零結束
+//   node scripts/check-monitoring.mjs            # 檢查，有問題非零結束（不連網）
 //   node scripts/check-monitoring.mjs --write    # 依來源重新產生 monitors.json 的產生欄位與 rules.md
+//   node scripts/check-monitoring.mjs --refresh-deployed [--rpc <url>]
+//                                                # 以唯讀 RPC 重抓 deployed.json（合約重新部署、升級或加規則後）
 //   node scripts/check-monitoring.mjs --root <dir>
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
@@ -33,8 +39,17 @@ const ZERO = "0x0000000000000000000000000000000000000000";
 const KINDS = ["event", "state", "http"];
 const STATUSES = ["active", "pending-deploy"];
 const IR_DOC = "docs/INCIDENT_RESPONSE.md";
+const DEPLOYED_FILE = "ops/monitoring/deployed.json";
+/** EIP-1967 implementation slot：keccak256("eip1967.proxy.implementation") - 1。 */
+const IMPL_SLOT = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
+/** 讀代幣位址的 getter（本專案所有持有 USDC 的合約都叫 usdc()）。 */
+const TOKEN_GETTER = "usdc()";
 /** 代幣小數位：MockUSDC 沒有覆寫 decimals()（OZ ERC20 預設 18）；Circle 官方 USDC 是 6。 */
-const TOKENS = { MockUSDC: { file: "contracts/src/MockUSDC.sol", default: 18 }, USDC: { fixed: 6 } };
+const TOKENS = {
+  MockUSDC: { file: "contracts/src/MockUSDC.sol", default: 18, ref: "MockUSDC" },
+  // Circle 官方 Base Sepolia USDC；位址的單一來源是 agent/shared/src/env.ts。
+  USDC: { fixed: 6, constant: { file: "agent/shared/src/env.ts", name: "OFFICIAL_BASE_SEPOLIA_USDC" } },
+};
 /** 這些名稱只能用 `wrangler secret put` 設定，出現在 [vars] 就是把秘密寫進 repo。 */
 export const SECRET_NAMES = [
   "TELEGRAM_BOT_TOKEN",
@@ -254,9 +269,225 @@ export function loadContext(root) {
     return t.default;
   };
 
+  /** 代幣標籤 → 位址（MockUSDC 來自 addresses.ts；官方 USDC 來自 agent/shared/src/env.ts 的常數）。 */
+  const tokenAddress = (token) => {
+    const t = TOKENS[token];
+    if (!t) throw new Error(`未知的代幣 ${token}（只認得 ${Object.keys(TOKENS).join("/")}）`);
+    if (t.ref) return resolveRef(t.ref).address;
+    const m = read(root, t.constant.file).match(new RegExp(`${t.constant.name}\\s*=\\s*["'](0x[0-9a-fA-F]{40})["']`));
+    if (!m) throw new Error(`${t.constant.file} 找不到 ${t.constant.name}`);
+    return m[1];
+  };
+
   const sdkUrl = read(root, "agent/sdk/src/signalApi.ts").match(/SIGNAL_API_TESTNET_URL\s*=\s*"([^"]+)"/)?.[1] ?? null;
 
-  return { root, chains, v2Tokens, assetIds, resolveRef, abis, solEvents, roleNames, headings, tokenDecimals, sdkUrl };
+  const deployed = loadDeployed(root);
+  return { root, chains, v2Tokens, assetIds, resolveRef, abis, solEvents, roleNames, headings, tokenDecimals, tokenAddress, sdkUrl, deployed };
+}
+
+// ── 已部署 bytecode 與鏈上快照（deployed.json）────────────────────────────────
+
+const hexToBytes = (hex) => {
+  const h = hex.replace(/^0x/, "");
+  const out = new Uint8Array(h.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(h.slice(2 * i, 2 * i + 2), 16);
+  return out;
+};
+const readKey = (address, fn) => `${lc(address)}|${fn}`;
+const wordToAddr = (hex) => "0x" + String(hex).replace(/^0x/, "").padStart(64, "0").slice(24);
+
+/**
+ * 讀 deployed.json，回傳查詢介面（檔案不存在時每個查詢都回 null，由呼叫端報「需要 --refresh-deployed」）。
+ *   codeOf(addr)          → 該位址的 runtime bytecode（proxy 則接上實作的 bytecode），沒有記錄回 null
+ *   hasTopic(addr, sig)   → 事件 topic0 是否出現在 bytecode；沒有記錄回 null
+ *   hasSelector(addr, fn) → 函式 selector 是否出現在 bytecode；沒有記錄回 null
+ *   read(addr, fn)        → 該 getter 的鏈上快照（位址或數值的 32 bytes hex）；沒有記錄回 null
+ *
+ * 為什麼存完整 bytecode 而不是「PUSH32 常數清單」：線性反組譯會被資料段帶偏，實測 2026-10-01
+ * 在 PerpetualExchange.PositionClosed 與 AssetVaultV2.RoleGranted 上漏判；子字串比對沒有這個問題。
+ */
+export function loadDeployed(root) {
+  const file = join(root, DEPLOYED_FILE);
+  const data = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : null;
+  const cache = new Map();
+  const codeOf = (address) => {
+    const k = lc(address ?? "");
+    if (cache.has(k)) return cache.get(k);
+    const c = data?.contracts?.[k];
+    let code = null;
+    if (c) {
+      const own = data.codes?.[c.codeHash];
+      const impl = c.implCodeHash ? data.codes?.[c.implCodeHash] : "";
+      if (typeof own === "string" && typeof impl === "string") code = (own + impl.replace(/^0x/, "")).toLowerCase();
+    }
+    cache.set(k, code);
+    return code;
+  };
+  const hashes = new Map(); // 簽章 → keccak256（BigInt 實作慢，同一個簽章會被問很多次）
+  const hashOf = (sig) => {
+    if (!hashes.has(sig)) hashes.set(sig, keccak256(sig));
+    return hashes.get(sig);
+  };
+  const hasHex = (address, hex) => {
+    const code = codeOf(address);
+    return code === null ? null : code.includes(hex.replace(/^0x/, "").toLowerCase());
+  };
+  return {
+    data,
+    codeOf,
+    hasTopic: (address, sig) => (codeOf(address) === null ? null : hasHex(address, hashOf(sig))),
+    hasSelector: (address, fn) => (codeOf(address) === null ? null : hasHex(address, hashOf(fn).slice(0, 10))),
+    read: (address, fn) => data?.reads?.[readKey(address, fn)] ?? null,
+    implOf: (address) => data?.contracts?.[lc(address ?? "")]?.impl ?? null,
+  };
+}
+
+/**
+ * deployed.json 應該涵蓋什麼：每條規則的合約位址（pending-deploy 規則的合約若已有位址也算，
+ * 用來確認「部署版真的不發這個事件」）、接線規則的每個 getter、金額規則的代幣與小數位。
+ */
+export function deployedTargets(cfg, ctx) {
+  const addresses = new Map(); // lc(addr) → ref（僅供訊息用）
+  const reads = new Map(); // readKey → { to, fn }
+  const tokenHolders = new Map(); // lc(addr) → ref：要讀 usdc() 再讀該代幣 decimals() 的合約
+  const addrOf = (ref) => {
+    const a = ctx.resolveRef(ref).address;
+    return a && ADDR.test(a) && lc(a) !== ZERO ? a : null;
+  };
+  for (const rule of cfg.rules ?? []) {
+    for (const c of rule.contracts ?? []) {
+      const a = addrOf(c.ref);
+      if (!a) continue;
+      if (!addresses.has(lc(a))) addresses.set(lc(a), c.ref);
+      if (rule.status === "active" && (rule.amount || rule.token)) {
+        const abi = ctx.abis[c.abi];
+        if (abi?.some((x) => x.type === "function" && abiSig(x) === TOKEN_GETTER)) tokenHolders.set(lc(a), c.ref);
+      }
+    }
+    if (rule.status === "active" && rule.check === "wiring") {
+      for (const call of rule.calls ?? []) {
+        const c = (rule.contracts ?? []).find((x) => x.as === call.on);
+        const a = c && addrOf(c.ref);
+        if (a) reads.set(readKey(a, call.fn), { to: a, fn: call.fn });
+      }
+    }
+  }
+  return { addresses, reads, tokenHolders };
+}
+
+/** deployed.json 自身的完整性：雜湊對得上內容、沒有缺也沒有多。回傳 problems。 */
+export function checkDeployed(cfg, ctx) {
+  const problems = [];
+  const d = ctx.deployed.data;
+  const hint = "執行 node scripts/check-monitoring.mjs --refresh-deployed（唯讀 RPC）後再 --write";
+  if (!d) return [`${DEPLOYED_FILE} 不存在 —— ${hint}`];
+  if (d.chainId !== cfg.network?.chainId) problems.push(`${DEPLOYED_FILE} 的 chainId ${d.chainId} 不等於 network.chainId ${cfg.network?.chainId}`);
+  for (const [hash, code] of Object.entries(d.codes ?? {})) {
+    if (!/^0x([0-9a-f]{2})+$/.test(code)) problems.push(`${DEPLOYED_FILE} codes[${hash}] 不是合法的 hex bytecode`);
+    else if (keccak256(hexToBytes(code)) !== hash) problems.push(`${DEPLOYED_FILE} codes[${hash}] 的內容與雜湊不符（被手改？）—— ${hint}`);
+  }
+  const { addresses, reads, tokenHolders } = deployedTargets(cfg, ctx);
+  for (const [a, ref] of addresses) {
+    if (ctx.deployed.codeOf(a) === null) problems.push(`${DEPLOYED_FILE} 沒有 ${ref}（${a}）的 bytecode：位址換了或 fixture 過期 —— ${hint}`);
+  }
+  for (const a of Object.keys(d.contracts ?? {})) {
+    if (!addresses.has(a)) problems.push(`${DEPLOYED_FILE} 多了沒有規則在用的位址 ${a} —— ${hint}`);
+  }
+  for (const [k, r] of reads) {
+    if (d.reads?.[k] === undefined) problems.push(`${DEPLOYED_FILE} 沒有 ${r.to} ${r.fn} 的鏈上快照 —— ${hint}`);
+  }
+  for (const [a, ref] of tokenHolders) {
+    const tok = d.reads?.[readKey(a, TOKEN_GETTER)];
+    if (!tok) problems.push(`${DEPLOYED_FILE} 沒有 ${ref}.${TOKEN_GETTER} 的鏈上快照 —— ${hint}`);
+    else if (d.reads?.[readKey(wordToAddr(tok), "decimals()")] === undefined) problems.push(`${DEPLOYED_FILE} 沒有代幣 ${wordToAddr(tok)} 的 decimals() 快照 —— ${hint}`);
+  }
+  return problems;
+}
+
+/**
+ * 以唯讀 RPC 重抓 deployed.json。只用 eth_chainId／eth_blockNumber／eth_getCode／eth_getStorageAt／
+ * eth_call，全部釘在同一個區塊；不送交易、不需要任何金鑰。CI 不跑這個（CI 不連網）。
+ */
+export async function refreshDeployed({ root, rpcUrl, fetchImpl = fetch, log = console.log, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
+  const ctx = loadContext(root);
+  const cfg = JSON.parse(readFileSync(join(root, "ops/monitoring/monitors.json"), "utf8"));
+  const url = rpcUrl ?? cfg.network.publicRpc;
+  const ALLOWED = new Set(["eth_chainId", "eth_blockNumber", "eth_getCode", "eth_getStorageAt", "eth_call"]);
+  let id = 1;
+  const rpc = async (method, params) => {
+    if (!ALLOWED.has(method)) throw new Error(`refresh 不允許的 RPC 方法 ${method}`);
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const res = await fetchImpl(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: id++, method, params }) });
+      const text = await res.text();
+      let j = null;
+      try {
+        j = JSON.parse(text);
+      } catch {
+        /* 非 JSON */
+      }
+      const limited = res.status === 429 || j?.error?.code === -32007 || /limit reached|rate limit/i.test(j?.error?.message ?? "");
+      if (limited || res.status >= 500) {
+        await sleep(1500);
+        continue;
+      }
+      if (!res.ok || !j) throw new Error(`${method} HTTP ${res.status}：${text.slice(0, 160)}`);
+      return j; // { result } 或 { error }（eth_call revert）
+    }
+    throw new Error(`${method} 連續被限流或 5xx`);
+  };
+  const must = async (method, params) => {
+    const j = await rpc(method, params);
+    if (j.error) throw new Error(`${method} ${JSON.stringify(params[0]).slice(0, 80)}：${j.error.message}`);
+    return j.result;
+  };
+
+  const chainId = Number(BigInt(await must("eth_chainId", [])));
+  if (chainId !== cfg.network.chainId) throw new Error(`RPC 的 chainId ${chainId} 不是 ${cfg.network.chainId}`);
+  const block = await must("eth_blockNumber", []);
+  const out = { chainId, block: Number(BigInt(block)), fetchedAt: new Date().toISOString().slice(0, 10), contracts: {}, reads: {}, codes: {} };
+  const addCode = (code) => {
+    const hash = keccak256(hexToBytes(code));
+    out.codes[hash] = code.toLowerCase();
+    return hash;
+  };
+  const { addresses, reads, tokenHolders } = deployedTargets(cfg, ctx);
+  for (const [a, ref] of [...addresses].sort()) {
+    const code = await must("eth_getCode", [a, block]);
+    if (code === "0x") throw new Error(`${ref}（${a}）在鏈上沒有程式碼`);
+    const slot = await must("eth_getStorageAt", [a, IMPL_SLOT, block]);
+    const entry = { ref, codeHash: addCode(code), impl: null, implCodeHash: null };
+    if (BigInt(slot) !== 0n) {
+      entry.impl = wordToAddr(slot);
+      entry.implCodeHash = addCode(await must("eth_getCode", [entry.impl, block]));
+    }
+    out.contracts[a] = entry;
+    log(`  ${ref} ${a} ${(code.length - 2) / 2} bytes${entry.impl ? `（實作 ${entry.impl}）` : ""}`);
+  }
+  const call = async (to, fn) => {
+    const j = await rpc("eth_call", [{ to, data: selector(fn) }, block]);
+    if (j.error) throw new Error(`eth_call ${to} ${fn} 失敗：${j.error.message}（部署版沒有這個函式？）`);
+    out.reads[readKey(to, fn)] = j.result;
+    return j.result;
+  };
+  for (const [, r] of [...reads].sort()) await call(r.to, r.fn);
+  for (const [a] of [...tokenHolders].sort()) {
+    const tok = wordToAddr(await call(a, TOKEN_GETTER));
+    if (out.reads[readKey(tok, "decimals()")] === undefined) await call(tok, "decimals()");
+  }
+  const sorted = (o) => Object.fromEntries(Object.entries(o).sort(([x], [y]) => (x < y ? -1 : 1)));
+  const file = {
+    $comment:
+      "已部署合約的 runtime bytecode 與幾個 getter 的鏈上快照。由 node scripts/check-monitoring.mjs --refresh-deployed 以唯讀 RPC 產生，不要手改（CI 會驗 codes 的 keccak256）。用途：確認 active 事件的 topic0 與 state 規則的 selector 真的在部署版 bytecode 裡、接線規則的預期值等於鏈上實況、金額小數位等於代幣的 decimals()。合約重新部署、UUPS 升級或新增規則後要重抓。",
+    chainId: out.chainId,
+    block: out.block,
+    fetchedAt: out.fetchedAt,
+    contracts: sorted(out.contracts),
+    reads: sorted(out.reads),
+    codes: sorted(out.codes),
+  };
+  writeFileSync(join(root, DEPLOYED_FILE), JSON.stringify(file, null, 1) + "\n");
+  log(`已寫入 ${DEPLOYED_FILE}：區塊 ${out.block}，${Object.keys(out.contracts).length} 個位址、${Object.keys(out.codes).length} 份 bytecode、${Object.keys(out.reads).length} 個快照`);
+  return file;
 }
 
 // ── 產生 ─────────────────────────────────────────────────────────────────────
@@ -275,7 +506,10 @@ const strip = (cfg) => {
       delete e.topic0;
       delete e.inputs;
     }
-    for (const call of r.calls ?? []) delete call.selector;
+    for (const call of r.calls ?? []) {
+      delete call.selector;
+      delete call.expected;
+    }
   }
   return c;
 };
@@ -349,6 +583,11 @@ export function generate(input, ctx) {
           }
         }
         ev.inputs = inputs ?? [];
+        checkEventDeployed(rule, ev, ctx, p);
+      }
+      if (active && (rule.events ?? []).length && (rule.contracts ?? []).length && ctx.deployed.data) {
+        const live = rule.events.some((ev) => rule.contracts.some((c) => c.address && ctx.deployed.hasTopic(c.address, ev.sig) !== false));
+        if (!live) p(rule, "沒有任何一個事件出現在已部署的 bytecode 裡：這條規則永遠不會響，必須改成 pending-deploy（並補一條狀態規則）");
       }
       if (rule.amount) {
         const a = rule.amount;
@@ -363,6 +602,7 @@ export function generate(input, ctx) {
         if (!!a.windowThreshold !== !!a.windowSec) p(rule, "windowThreshold 與 windowSec 必須同時設定");
         try {
           a.decimals = ctx.tokenDecimals(a.token);
+          if (active) checkTokenOnChain(rule, a.token, a.decimals, ctx, p);
         } catch (e) {
           p(rule, e.message);
         }
@@ -379,14 +619,20 @@ export function generate(input, ctx) {
           continue;
         }
         const abi = ctx.abis[c.abi];
-        if (abi && !abi.some((x) => x.type === "function" && abiSig(x) === call.fn)) {
-          p(rule, `${call.fn} 不在 ${c.abi}.json 的 ABI 裡`);
-        }
+        const fnAbi = abi?.find((x) => x.type === "function" && abiSig(x) === call.fn);
+        if (abi && !fnAbi) p(rule, `${call.fn} 不在 ${c.abi}.json 的 ABI 裡`);
         call.selector = selector(call.fn);
+        if (active && c.address && ctx.deployed.hasSelector(c.address, call.fn) === false) {
+          p(rule, `${call.fn} 的 selector 不在 ${c.ref} 已部署的 bytecode 裡 —— 部署版沒有這個函式，讀取只會 revert`);
+        }
+        if (rule.check === "wiring") checkWiringCall(rule, c, call, fnAbi, ctx, p);
+        else if (call.expect) p(rule, `只有 wiring 檢查的 calls 可以有 expect（${call.fn}）`);
       }
+      if (rule.check === "wiring" && !(rule.calls ?? []).length) p(rule, "wiring 規則至少要有一個 calls");
       if (rule.token) {
         try {
           rule.decimals = ctx.tokenDecimals(rule.token);
+          if (active) checkTokenOnChain(rule, rule.token, rule.decimals, ctx, p);
         } catch (e) {
           p(rule, e.message);
         }
@@ -435,10 +681,120 @@ export function generate(input, ctx) {
 }
 const engineSource = (root) => read(root, "ops/monitoring/engine.mjs");
 
+/** 事件簽章的 notDeployed 宣告（true = 這條規則的所有合約；陣列 = 指定的 ref）。 */
+const notDeployedRefs = (rule, ev) =>
+  ev.notDeployed === true ? (rule.contracts ?? []).map((c) => c.ref) : Array.isArray(ev.notDeployed) ? ev.notDeployed : [];
+
+/**
+ * 事件 × 已部署 bytecode（審查 H2）。
+ *   active：topic0 不在 bytecode ⇒ 這個事件永遠不會響。必須由人明確標 notDeployed（並寫 note 說明
+ *           由什麼替代），rules.md 會標「部署版不發此事件」；標了卻其實會發也是錯（標記過期）。
+ *   pending-deploy：合約若已有位址，topic0 出現在 bytecode ⇒ 已經部署了，規則該改 active。
+ */
+function checkEventDeployed(rule, ev, ctx, p) {
+  if (ev.notDeployed !== undefined && ev.notDeployed !== true && !Array.isArray(ev.notDeployed)) {
+    p(rule, `${ev.sig} 的 notDeployed 必須是 true 或合約 ref 的陣列`);
+  }
+  const declared = notDeployedRefs(rule, ev);
+  const refs = (rule.contracts ?? []).map((c) => c.ref);
+  for (const r of declared) if (!refs.includes(r)) p(rule, `${ev.sig} 的 notDeployed 含不在這條規則裡的合約 ${r}`);
+  if (rule.status !== "active") {
+    if (ev.notDeployed !== undefined) p(rule, `${ev.sig}：pending-deploy 規則不需要 notDeployed`);
+    for (const c of rule.contracts ?? []) {
+      const a = ctx.resolveRef(c.ref).address;
+      if (a && ADDR.test(a) && lc(a) !== ZERO && ctx.deployed.hasTopic(a, ev.sig) === true) {
+        p(rule, `${ev.sig} 已出現在 ${c.ref} 已部署的 bytecode 裡 —— 合約已經會發這個事件，規則該改成 active`);
+      }
+    }
+    return;
+  }
+  if (declared.length && !String(ev.note ?? "").trim()) p(rule, `${ev.sig} 標了 notDeployed，必須寫 note 說明（部署版為什麼不發、由什麼替代）`);
+  for (const c of rule.contracts ?? []) {
+    if (!c.address) continue;
+    const has = ctx.deployed.hasTopic(c.address, ev.sig);
+    if (has === null) continue; // deployed.json 沒有這個位址：checkDeployed 會報
+    const marked = declared.includes(c.ref);
+    if (!has && !marked) {
+      p(rule, `${ev.sig} 的 topic0 不在 ${c.ref} 已部署的 bytecode 裡 —— 部署版不發此事件，這個告警永遠不會響。改用狀態規則，並把事件標 notDeployed 或移到 pending-deploy 規則`);
+    } else if (has && marked) {
+      p(rule, `${ev.sig} 標了 notDeployed（${c.ref}），但部署版其實會發 —— 移除標記`);
+    }
+  }
+}
+
+/** wiring 規則的每個讀取：零參數、回傳 address；預期值來自 addresses.ts、零位址或鏈上快照。 */
+function checkWiringCall(rule, c, call, fnAbi, ctx, p) {
+  if (fnAbi && (fnAbi.inputs.length !== 0 || fnAbi.outputs?.length !== 1 || fnAbi.outputs[0].type !== "address")) {
+    p(rule, `wiring 的 ${call.fn} 必須是零參數、回傳單一 address 的函式`);
+  }
+  const e = call.expect ?? {};
+  const kinds = ["ref", "zero", "snapshot"].filter((k) => e[k] !== undefined && e[k] !== false);
+  if (kinds.length !== 1) {
+    p(rule, `${call.on}.${call.fn} 的 expect 必須恰好指定 ref／zero／snapshot 其中之一`);
+    return;
+  }
+  const snap = c.address ? ctx.deployed.read(c.address, call.fn) : null;
+  const snapAddr = snap ? wordToAddr(snap) : null;
+  let expected = null;
+  if (e.ref !== undefined) {
+    const a = ctx.resolveRef(e.ref).address;
+    if (!a || !ADDR.test(a) || lc(a) === ZERO) p(rule, `${call.on}.${call.fn} 的 expect.ref ${e.ref} 在前端設定裡解析不到位址`);
+    else expected = a;
+  } else if (e.zero) expected = ZERO;
+  else {
+    if (!String(call.note ?? "").trim()) p(rule, `${call.on}.${call.fn} 用鏈上快照當預期值，必須寫 note 說明為什麼前端設定沒有這個位址`);
+    expected = snapAddr;
+  }
+  if (snapAddr && expected && lc(snapAddr) !== lc(expected)) {
+    p(rule, `${c.ref}.${call.fn} 的鏈上快照是 ${snapAddr}，但預期 ${expected}（${e.ref ?? "零位址"}）—— 鏈上接線與前端設定不一致`);
+  }
+  call.expected = expected;
+}
+
+/** 金額規則的代幣標籤必須等於合約 usdc() 的鏈上快照；小數位必須等於該代幣 decimals() 的快照。 */
+function checkTokenOnChain(rule, token, decimals, ctx, p) {
+  const want = ctx.tokenAddress(token);
+  for (const c of rule.contracts ?? []) {
+    if (!c.address) continue;
+    const abi = ctx.abis[c.abi];
+    if (!abi?.some((x) => x.type === "function" && abiSig(x) === TOKEN_GETTER)) continue;
+    const snap = ctx.deployed.read(c.address, TOKEN_GETTER);
+    if (!snap) continue; // checkDeployed 會報
+    const tok = wordToAddr(snap);
+    if (!want || lc(tok) !== lc(want)) {
+      p(rule, `token 標成 ${token}（${want}），但 ${c.ref}.${TOKEN_GETTER} 的鏈上快照是 ${tok} —— 標籤錯了，金額會差 10^12 倍`);
+      continue;
+    }
+    const d = ctx.deployed.read(tok, "decimals()");
+    if (d && Number(BigInt(d)) !== decimals) p(rule, `${token} 的 decimals() 鏈上快照是 ${Number(BigInt(d))}，設定推得 ${decimals}`);
+  }
+}
+
 // ── rules.md ─────────────────────────────────────────────────────────────────
 
 const KIND_TEXT = { event: "事件", state: "狀態", http: "HTTP" };
-const STATUS_TEXT = { active: "運作中", "pending-deploy": "待部署" };
+/**
+ * 規則狀態的人讀文字。pending-deploy 有兩種：合約還沒部署（待部署），或合約已部署、
+ * 但鏈上的版本不發這個事件（部署版不發此事件）——後者不可以被讀成「運作中」。
+ */
+const isLiveContract = (ctx, ref) => {
+  const a = ctx.resolveRef(ref).address;
+  return !!a && ADDR.test(a) && lc(a) !== ZERO;
+};
+const dormant = (rule, ctx) => rule.status !== "active" && (rule.contracts ?? []).length > 0 && rule.contracts.every((c) => isLiveContract(ctx, c.ref));
+const statusText = (rule, ctx) => (rule.status === "active" ? "運作中" : dormant(rule, ctx) ? "部署版不發此事件" : "待部署");
+const eventText = (rule, e) => {
+  const nd = notDeployedRefs(rule, e);
+  if (!nd.length) return `\`${e.sig}\``;
+  const who = nd.length === (rule.contracts ?? []).length ? "" : `：${nd.join("、")}`;
+  return `\`${e.sig}\`（**部署版不發此事件**${who}；${e.note}）`;
+};
+const expectText = (call) => {
+  const e = call.expect ?? {};
+  if (e.ref !== undefined) return `\`${e.ref}\`（\`${call.expected}\`）`;
+  if (e.zero) return "零位址";
+  return `鏈上快照 \`${call.expected}\`（${call.note}）`;
+};
 const pv = (cfg, name) => `\`${name}\`（預設 ${cfg.params[name]?.default} ${cfg.params[name]?.unit ?? ""}）`.replace(/ ）/, "）");
 const THRESHOLD = {
   oracleStaleness: (c) => `加密資產：≥ ${pv(c, "ORACLE_STALE_WARN_SEC")} → SEV-3；≥ 鏈上 \`maxPriceAge()\` → SEV-2。其他資產：≥ ${pv(c, "NONCRYPTO_STALE_SEC")} → SEV-3`,
@@ -449,6 +805,7 @@ const THRESHOLD = {
   gasBalance: (c) => `< ${pv(c, "GAS_MIN_ETH")} → SEV-3；< ${pv(c, "GAS_CRIT_ETH")} → SEV-2`,
   httpHealth: (c) => `非 200 或內容不是 \`ok\`，連續 ${pv(c, "HTTP_FAILS_BEFORE_ALERT")}`,
   x402PayTo: () => "`payTo` ≠ `EXPECTED_PAY_TO`（未設時為首次觀察值）→ SEV-1；`payToSafety.safe == false` → SEV-3",
+  wiring: () => "任一 getter 的讀值 ≠ 預期位址",
 };
 function thresholdText(cfg, rule) {
   if (rule.kind === "event") {
@@ -479,15 +836,19 @@ export function renderRulesMd(cfg, ctx) {
   L.push("> - 嚴重度定義與處置見 [`docs/INCIDENT_RESPONSE.md`](../../docs/INCIDENT_RESPONSE.md)。");
   L.push("> - 決策與方案比較見 [`docs/ADR-009-monitoring.md`](../../docs/ADR-009-monitoring.md)；部署步驟見 [`README.md`](README.md)。");
   L.push("> - 「待部署」規則的事件只存在於 master 原始碼，對應合約尚未部署；Worker 不載入，部署後改為 `active`。");
+  L.push("> - 「**部署版不發此事件**」：合約已部署，但鏈上那一版不發這個事件（前端 ABI 來自 master 原始碼，比部署版新）。");
+  L.push(">   這些事件**現在不會響**；有對應 setter 的由「狀態」規則每輪讀 getter 比對。依據是 [`deployed.json`](deployed.json)（唯讀 RPC 抓的 runtime bytecode，CI 離線比對 topic0）。");
   L.push("");
-  L.push(`共 **${rules.length}** 條規則：運作中 ${active.length} 條（事件 ${active.filter((r) => r.kind === "event").length}、狀態 ${active.filter((r) => r.kind === "state").length}、HTTP ${active.filter((r) => r.kind === "http").length}），待部署 ${rules.length - active.length} 條。鏈：${cfg.network.name}（${cfg.network.chainId}）。`);
+  const dormantCount = rules.filter((r) => dormant(r, ctx)).length;
+  L.push(`共 **${rules.length}** 條規則：運作中 ${active.length} 條（事件 ${active.filter((r) => r.kind === "event").length}、狀態 ${active.filter((r) => r.kind === "state").length}、HTTP ${active.filter((r) => r.kind === "http").length}），部署版不發此事件 ${dormantCount} 條，待部署 ${rules.length - active.length - dormantCount} 條。鏈：${cfg.network.name}（${cfg.network.chainId}）。`);
+  if (ctx.deployed.data) L.push(`已部署 bytecode 快照：區塊 ${ctx.deployed.data.block}（${ctx.deployed.data.fetchedAt}）。`);
   L.push("");
   L.push("## 總表");
   L.push("");
   L.push("| 規則 | 分類 | 類型 | 嚴重度 | 狀態 | 門檻 | 處置 |");
   L.push("|---|---|---|---|---|---|---|");
   for (const r of rules) {
-    L.push(`| [\`${r.id}\`](#${slug(r.id)}) ${r.title} | ${r.category} | ${KIND_TEXT[r.kind]} | ${r.severity} | ${STATUS_TEXT[r.status]} | ${thresholdText(cfg, r).replace(/\|/g, "\\|")} | ${r.runbook.map((h) => `[§${h.split(".")[0]}](${anchor(h)})`).join(" ")} |`);
+    L.push(`| [\`${r.id}\`](#${slug(r.id)}) ${r.title} | ${r.category} | ${KIND_TEXT[r.kind]} | ${r.severity} | ${statusText(r, ctx)} | ${thresholdText(cfg, r).replace(/\|/g, "\\|")} | ${r.runbook.map((h) => `[§${h.split(".")[0]}](${anchor(h)})`).join(" ")} |`);
   }
   L.push("");
   L.push("「嚴重度」是規則的預設等級；狀態規則依門檻在 SEV-1～SEV-3 之間升降（見各規則）。恢復通知固定標為 SEV-4，但依原嚴重度決定是否送出。");
@@ -505,7 +866,7 @@ export function renderRulesMd(cfg, ctx) {
     L.push("");
     L.push(`### ${r.id}`);
     L.push("");
-    L.push(`**${r.title}**｜${r.category}｜${KIND_TEXT[r.kind]}｜${r.severity}｜${STATUS_TEXT[r.status]}`);
+    L.push(`**${r.title}**｜${r.category}｜${KIND_TEXT[r.kind]}｜${r.severity}｜${statusText(r, ctx)}`);
     L.push("");
     L.push(r.description);
     L.push("");
@@ -513,13 +874,15 @@ export function renderRulesMd(cfg, ctx) {
       L.push("| 合約 | 位址來源 | 位址 |");
       L.push("|---|---|---|");
       for (const c of r.contracts) {
-        const src = r.status === "active" ? ctx.resolveRef(c.ref).source : `尚未部署；事件宣告於 \`${c.source}\``;
+        const src = r.status === "active" ? ctx.resolveRef(c.ref).source : isLiveContract(ctx, c.ref) ? `${ctx.resolveRef(c.ref).source}（\`${ctx.resolveRef(c.ref).address}\`）；部署版不發此事件，事件宣告於 \`${c.source}\`` : `尚未部署；事件宣告於 \`${c.source}\``;
         L.push(`| ${c.ref}${c.abi ? `（ABI \`${c.abi}\`）` : ""} | ${src} | ${c.address ? `\`${c.address}\`` : "—"} |`);
       }
       L.push("");
     }
-    if (r.events?.length) L.push(`- 事件：${r.events.map((e) => `\`${e.sig}\``).join("、")}`);
-    if (r.calls?.length) L.push(`- 讀取：${r.calls.map((c) => `\`${c.on}.${c.fn}\``).join("、")}`);
+    if (r.events?.length) L.push(`- 事件：${r.events.map((e) => eventText(r, e)).join("、")}`);
+    if (r.check === "wiring") {
+      for (const c of r.calls ?? []) L.push(`- 預期：\`${r.contracts.find((x) => x.as === c.on)?.ref}.${c.fn}\` = ${expectText(c)}`);
+    } else if (r.calls?.length) L.push(`- 讀取：${r.calls.map((c) => `\`${c.on}.${c.fn}\``).join("、")}`);
     if (r.assets?.length) L.push(`- 資產：${r.assets.join("、")}${r.cryptoAssets ? `（加密：${r.cryptoAssets.join("、")}）` : ""}`);
     if (r.kind === "http") L.push(`- 端點：\`{SIGNAL_API_URL}${r.path ?? "/"}\``);
     L.push(`- 門檻：${thresholdText(cfg, r)}`);
@@ -630,14 +993,8 @@ export function run({ root, write = false, log = console.log }) {
   if (!toml) problems.push("ops/monitoring/wrangler.toml 不存在");
   else problems.push(...checkWranglerVars(toml.text, config.params));
 
-  // pending 規則若已出現在前端 ABI，提示可以改 active（不算錯）。
-  for (const r of config.rules.filter((x) => x.status === "pending-deploy")) {
-    const role = r.contracts[0]?.ref;
-    const abi = ctx.abis[role === "AssetVaultV2" ? "AssetVaultV2" : role];
-    if (abi && r.events.every((e) => abi.some((x) => x.type === "event" && abiSig(x) === e.sig))) {
-      log(`::notice::${r.id} 的事件已出現在前端 ABI ${role}.json，確認部署後可改為 active`);
-    }
-  }
+  // 已部署 bytecode 快照本身的完整性（雜湊、涵蓋範圍）。pending 規則「事件其實已部署」由 generate 報錯。
+  problems.push(...checkDeployed(config, ctx));
 
   const active = config.rules.filter((r) => r.status === "active");
   log(`規則 ${config.rules.length} 條（運作中 ${active.length}、待部署 ${config.rules.length - active.length}），監控合約位址 ${new Set(active.flatMap((r) => r.contracts.map((c) => lc(c.address)))).size} 個`);
@@ -655,6 +1012,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const i = args.indexOf("--root");
   const root = i >= 0 ? resolve(args[i + 1]) : resolve(dirname(fileURLToPath(import.meta.url)), "..");
   try {
+    if (args.includes("--refresh-deployed")) {
+      const k = args.indexOf("--rpc");
+      await refreshDeployed({ root, rpcUrl: k >= 0 ? args[k + 1] : undefined });
+      console.log("接著執行：node scripts/check-monitoring.mjs --write && node scripts/check-monitoring.mjs");
+      process.exit(0);
+    }
     const problems = run({ root, write: args.includes("--write") });
     process.exit(problems.length ? 1 : 0);
   } catch (e) {

@@ -444,6 +444,74 @@ test("金庫儲備率、mint 停止、保險金下降、keeper gas", async () =>
   assert.ok(r3.errors.some((e) => /EXTRA_GAS_WALLETS/.test(e)));
 });
 
+// ── 接線（審查 H2：部署版 setter 不發事件，只能輪詢 getter）──────────────────
+
+function stubWiring(w, id, overrides = {}) {
+  const r = ruleOf(id);
+  for (const c of r.calls) {
+    const k = r.contracts.find((x) => x.as === c.on);
+    const key = `${k.ref}.${c.fn}`;
+    const v = key in overrides ? overrides[key] : c.expected;
+    w.setCall(k.address, c.fn, [], v === null ? { revert: true } : word(BigInt(v)));
+  }
+}
+
+test("H2：接線狀態規則——與預期一致不告警；InsuranceVault.exchange() 被改 → SEV-1；改回後恢復", async () => {
+  const w = fakeWorld();
+  const cfg = only("insurance-wiring", "feerouter-wiring", "core-wiring");
+  for (const id of ["insurance-wiring", "feerouter-wiring", "core-wiring"]) stubWiring(w, id);
+  const state = {};
+  const r1 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 1 });
+  assert.equal(r1.errors.length, 0, r1.errors.join());
+  assert.equal(r1.notes.length, 0, JSON.stringify(r1.notes));
+
+  const evil = "0x00000000000000000000000000000000000000ee";
+  stubWiring(w, "insurance-wiring", { "InsuranceVault.exchange()": evil });
+  // x402 那顆的 exchange 預期是零位址：被設成任何非零值都要響。
+  stubWiring(w, "feerouter-wiring", { "X402FeeRouter.exchange()": evil });
+  const r2 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 301 });
+  const by = Object.fromEntries(r2.notes.map((n) => [n.key, n]));
+  assert.equal(by["insurance-wiring:InsuranceVault.exchange()"].severity, "SEV-1");
+  assert.equal(by["insurance-wiring:InsuranceVault.exchange()"].status, "觸發");
+  assert.ok(by["insurance-wiring:InsuranceVault.exchange()"].lines[0].includes(evil));
+  assert.ok(by["insurance-wiring:InsuranceVault.exchange()"].lines[0].includes(addrOf("owner-transferred", "PerpetualExchange")));
+  assert.equal(by["feerouter-wiring:X402FeeRouter.exchange()"].severity, "SEV-1");
+  assert.equal(r2.notes.length, 2);
+
+  stubWiring(w, "insurance-wiring");
+  stubWiring(w, "feerouter-wiring");
+  const r3 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 601 });
+  assert.deepEqual(r3.notes.map((n) => n.status), ["恢復", "恢復"]);
+});
+
+test("H2：接線 getter 讀取失敗 → 算監控自身錯誤；其他已讀到的不一致照樣告警、不發恢復", async () => {
+  const w = fakeWorld();
+  const cfg = only("feerouter-wiring");
+  const evil = "0x00000000000000000000000000000000000000ee";
+  stubWiring(w, "feerouter-wiring", { "FeeRouter.copyTracker()": evil });
+  const state = {};
+  await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 1 });
+  assert.ok(state.open["feerouter-wiring:FeeRouter.copyTracker()"]);
+  // 下一輪：copyTracker 仍然不對，另一個 getter 讀不到。
+  stubWiring(w, "feerouter-wiring", { "FeeRouter.copyTracker()": evil, "FeeRouter.exchange()": null });
+  const r = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 301 });
+  assert.match(r.errors[0], /feerouter-wiring: 接線讀取失敗：FeeRouter\.exchange\(\)/);
+  assert.ok(state.open["feerouter-wiring:FeeRouter.copyTracker()"], "讀取失敗不可被當成恢復");
+  assert.ok(!r.notes.some((n) => n.status === "恢復"));
+});
+
+test("H2：部署版不發的事件不在 active 規則裡；現行設定的 active 事件規則都不含全數未部署的事件", () => {
+  for (const id of ["insurance-wiring-changed", "feerouter-config-changed", "kyc-verifier-changed"]) {
+    assert.equal(ruleOf(id).status, "pending-deploy", id);
+    assert.ok(ruleOf(id).contracts.every((c) => c.address === null));
+  }
+  for (const id of ["insurance-wiring", "feerouter-wiring"]) {
+    assert.equal(ruleOf(id).status, "active");
+    assert.equal(ruleOf(id).severity, "SEV-1");
+    assert.ok(ruleOf(id).calls.every((c) => /^0x[0-9a-fA-F]{40}$/.test(c.expected)), id);
+  }
+});
+
 // ── http 規則 ────────────────────────────────────────────────────────────────
 
 test("signal-api 健康檢查：連續兩次失敗才告警；payTo 變更 SEV-1、守門不安全 SEV-3", async () => {

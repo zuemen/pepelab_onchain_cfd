@@ -4,12 +4,17 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { selector as selectorOf } from "../ops/monitoring/keccak.mjs";
 import {
   checkConfig,
+  checkDeployed,
   checkWranglerVars,
+  refreshDeployed,
+  run,
   headingsOf,
   loadContext,
   parseSolEvents,
@@ -25,6 +30,39 @@ const current = () => JSON.parse(readFileSync(join(root, "ops/monitoring/monitor
 const rulesMd = readFileSync(join(root, "ops/monitoring/rules.md"), "utf8");
 const ruleOf = (cfg, id) => cfg.rules.find((r) => r.id === id);
 const problemsOf = (cfg, md = rulesMd) => checkConfig({ current: cfg, ctx, rulesMd: md }).problems;
+
+/** 把檢查器會讀的檔案複製到暫存目錄（突變測試用，不動 repo）。回傳 { dir, rd, wr, editJson, check, cleanup }。 */
+function tempRepo() {
+  const dir = mkdtempSync(join(tmpdir(), "check-monitoring-"));
+  const cp = (p) => cpSync(join(root, p), join(dir, p), { recursive: true });
+  cp("frontend/src/contracts");
+  cp("contracts/src");
+  cp("contracts/lib/openzeppelin-contracts/contracts/governance/TimelockController.sol");
+  mkdirSync(join(dir, "docs"), { recursive: true });
+  for (const f of readdirSync(join(root, "docs"))) if (f.endsWith(".md")) cpSync(join(root, "docs", f), join(dir, "docs", f));
+  cp("agent/sdk/src/signalApi.ts");
+  cp("agent/shared/src/env.ts");
+  cp("ops/monitoring");
+  cp(".gitignore");
+  const rd = (p) => readFileSync(join(dir, p), "utf8");
+  const wr = (p, s) => {
+    mkdirSync(dirname(join(dir, p)), { recursive: true });
+    writeFileSync(join(dir, p), s);
+  };
+  const editJson = (fn, p = "ops/monitoring/monitors.json") => {
+    const j = JSON.parse(rd(p));
+    fn(j);
+    wr(p, JSON.stringify(j, null, 2) + "\n");
+  };
+  const check = (write = false) => {
+    try {
+      return run({ root: dir, write, log: () => {} });
+    } catch (e) {
+      return [`中止：${e.message}`];
+    }
+  };
+  return { dir, rd, wr, editJson, check, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+}
 
 test("現行 repo 的監控設定通過", () => {
   const r = spawnSync(process.execPath, [script], { encoding: "utf8" });
@@ -200,4 +238,170 @@ test("GitHub 錨點與標題解析（code fence 內的不算）", () => {
   assert.equal(slug("6. Vercel 回滾（前端與 signal-api）"), "6-vercel-回滾前端與-signal-api");
   const h = headingsOf("# A\n```markdown\n## 不算\n```\n## B");
   assert.deepEqual([...h], ["A", "B"]);
+});
+
+// ── 已部署 bytecode（審查 H2）────────────────────────────────────────────────
+
+test("H2：active 事件的 topic0 不在已部署 bytecode → 錯；標 notDeployed（含說明）才放行", () => {
+  const cfg = current();
+  const ev = ruleOf(cfg, "mock-oracle-config").events.find((e) => e.sig.startsWith("StaleThresholdSet"));
+  assert.equal(ev.notDeployed, true, "現況：部署版的 MockOracle 不發 StaleThresholdSet");
+  delete ev.notDeployed;
+  delete ev.note;
+  const p = problemsOf(cfg).join("\n");
+  assert.match(p, /mock-oracle-config：StaleThresholdSet\(uint256,uint256\) 的 topic0 不在 MockOracle 已部署的 bytecode 裡/);
+
+  const cfg2 = current();
+  delete ruleOf(cfg2, "access-role-changed").events.find((e) => e.sig.startsWith("RoleAdminChanged")).note;
+  assert.match(problemsOf(cfg2).join("\n"), /RoleAdminChanged.*標了 notDeployed，必須寫 note/);
+});
+
+test("H2：標了 notDeployed 但部署版其實會發 → 錯（標記過期）", () => {
+  const cfg = current();
+  const ev = ruleOf(cfg, "mock-oracle-config").events.find((e) => e.sig.startsWith("AssetAdded"));
+  ev.notDeployed = true;
+  ev.note = "x";
+  assert.match(problemsOf(cfg).join("\n"), /AssetAdded\(bytes32,uint256\) 標了 notDeployed（MockOracle），但部署版其實會發/);
+});
+
+test("H2：審查發現的原狀（insurance／feerouter 接線事件規則是 active）→ 錯：部署版不發、規則永遠不會響", () => {
+  const cfg = current();
+  for (const [id, abi] of [["insurance-wiring-changed", "InsuranceVault"], ["feerouter-config-changed", "FeeRouter"]]) {
+    const r = ruleOf(cfg, id);
+    r.status = "active";
+    for (const c of r.contracts) {
+      delete c.source;
+      c.abi = abi;
+    }
+  }
+  const p = problemsOf(cfg).join("\n");
+  assert.match(p, /insurance-wiring-changed：ExchangeSet\(address\) 的 topic0 不在 InsuranceVault 已部署的 bytecode 裡/);
+  assert.match(p, /insurance-wiring-changed：沒有任何一個事件出現在已部署的 bytecode 裡/);
+  assert.match(p, /feerouter-config-changed：CopyTrackerSet\(address\) 的 topic0 不在 X402FeeRouter 已部署的 bytecode 裡/);
+});
+
+test("H2：pending-deploy 規則的事件其實已在部署版 → 錯（該改 active）", () => {
+  const cfg = current();
+  const r = ruleOf(cfg, "exchange-wiring-changed");
+  r.status = "pending-deploy";
+  for (const c of r.contracts) {
+    delete c.abi;
+    c.source = "contracts/src/PerpetualExchange.sol";
+  }
+  assert.match(problemsOf(cfg).join("\n"), /exchange-wiring-changed：FeeRouterSet\(address\) 已出現在 PerpetualExchange 已部署的 bytecode 裡/);
+});
+
+test("H2：state 規則呼叫部署版沒有的函式 → 錯（ABI 有、bytecode 沒有）", () => {
+  const cfg = current();
+  ruleOf(cfg, "oracle-stale").calls.push({ on: "oracle", fn: "staleThreshold()" });
+  assert.match(problemsOf(cfg).join("\n"), /staleThreshold\(\) 的 selector 不在 MockOracle 已部署的 bytecode 裡/);
+});
+
+test("H2：接線預期值——必須等於鏈上快照；快照型要寫說明；產生欄位不可手改", () => {
+  const cfg = current();
+  const calls = ruleOf(cfg, "feerouter-wiring").calls;
+  calls.find((c) => c.on === "feeRouter" && c.fn === "exchange()").expect = { ref: "InsuranceVault" };
+  delete calls.find((c) => c.on === "feeRouter" && c.fn === "platformTreasury()").note;
+  calls.find((c) => c.on === "x402" && c.fn === "exchange()").expect = { zero: true, ref: "PerpetualExchange" };
+  ruleOf(cfg, "insurance-wiring").calls[0].expected = "0x00000000000000000000000000000000000000ee";
+  ruleOf(cfg, "core-wiring").calls.push({ on: "exchange", fn: "maxPriceAge()", expect: { zero: true } });
+  const p = problemsOf(cfg).join("\n");
+  assert.match(p, /FeeRouter\.exchange\(\) 的鏈上快照是 0x827ea0c6.*但預期 0xB364E2e3.*鏈上接線與前端設定不一致/);
+  assert.match(p, /feeRouter\.platformTreasury\(\) 用鏈上快照當預期值，必須寫 note/);
+  assert.match(p, /x402\.exchange\(\) 的 expect 必須恰好指定/);
+  assert.match(p, /insurance-wiring\]\.calls\[0\]\.expected = "0x0000.*ee"，來源推得 "0x827eA0c6/);
+  assert.match(p, /wiring 的 maxPriceAge\(\) 必須是零參數、回傳單一 address 的函式/);
+});
+
+test("H2：代幣標籤對照鏈上 usdc() 快照（x402 那顆是官方 USDC 6 位，不是 MockUSDC 18 位）", () => {
+  const cfg = current();
+  ruleOf(cfg, "x402-fee-withdrawals").amount.token = "MockUSDC";
+  ruleOf(cfg, "fee-withdrawals").amount.token = "USDC";
+  const p = problemsOf(cfg).join("\n");
+  assert.match(p, /x402-fee-withdrawals：token 標成 MockUSDC.*X402FeeRouter\.usdc\(\) 的鏈上快照是 0x036cbd53/);
+  assert.match(p, /fee-withdrawals：token 標成 USDC.*FeeRouter\.usdc\(\) 的鏈上快照是 0x69fd695b/);
+});
+
+test("H2：deployed.json 完整性——內容被改（雜湊不符）、缺位址、多位址、缺快照都會被抓", () => {
+  assert.deepEqual(checkDeployed(current(), ctx), []);
+  const clone = () => {
+    const data = structuredClone(ctx.deployed.data);
+    return { data, ctx: { ...ctx, deployed: { ...ctx.deployed, data, codeOf: (a) => (data.contracts[a.toLowerCase()] ? "0x00" : null) } } };
+  };
+  {
+    const { data, ctx: c } = clone();
+    const h = Object.keys(data.codes)[0];
+    data.codes[h] = data.codes[h].slice(0, -2) + (data.codes[h].endsWith("00") ? "01" : "00");
+    assert.match(checkDeployed(current(), c).join("\n"), /內容與雜湊不符/);
+  }
+  {
+    const { data, ctx: c } = clone();
+    const ex = "0x827ea0c62a32e995927101259042f8a27d99124d";
+    delete data.contracts[ex];
+    data.contracts["0x00000000000000000000000000000000000000aa"] = { codeHash: Object.keys(data.codes)[0], impl: null, implCodeHash: null };
+    delete data.reads[`${ex}|usdc()`];
+    data.chainId = 1;
+    const p = checkDeployed(current(), c).join("\n");
+    assert.match(p, /沒有 PerpetualExchange（0x827ea0c6.*）的 bytecode：位址換了或 fixture 過期/);
+    assert.match(p, /多了沒有規則在用的位址 0x0000.*aa/);
+    assert.match(p, /沒有 PerpetualExchange\.usdc\(\) 的鏈上快照/);
+    assert.match(p, /chainId 1 不等於/);
+  }
+});
+
+test("H2：addresses.ts 換了位址但 deployed.json 沒重抓 → 錯（不會拿舊合約的 bytecode 當依據）", () => {
+  const t = tempRepo();
+  try {
+    assert.deepEqual(t.check(), [], "未改動的副本必須通過");
+    t.wr("frontend/src/contracts/addresses.ts", t.rd("frontend/src/contracts/addresses.ts").replaceAll("0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812", "0x1111111111111111111111111111111111111111"));
+    t.check(true); // 即使先 --write 讓 monitors.json 跟上位址
+    const p = t.check().join("\n");
+    assert.match(p, /deployed\.json 沒有 InsuranceVault（0x1111111111111111111111111111111111111111）的 bytecode/);
+  } finally {
+    t.cleanup();
+  }
+});
+
+test("H2：--refresh-deployed 只用唯讀方法、被限流會重試、結果可重現（以現有 fixture 當假鏈）", async () => {
+  const t = tempRepo();
+  try {
+    const d = ctx.deployed.data;
+    const codeAt = {};
+    for (const [a, c] of Object.entries(d.contracts)) {
+      codeAt[a] = d.codes[c.codeHash];
+      if (c.impl) codeAt[c.impl] = d.codes[c.implCodeHash];
+    }
+    const methods = new Set();
+    let limited = 0;
+    const fetchImpl = async (url, init) => {
+      assert.equal(url, "https://sepolia.base.org");
+      const b = JSON.parse(init.body);
+      methods.add(b.method);
+      if (b.method === "eth_getCode" && limited++ === 0) return new Response("{}", { status: 429 });
+      const reply = (x) => Response.json({ jsonrpc: "2.0", id: b.id, ...x });
+      const [p0, p1, p2] = b.params;
+      if (b.method === "eth_chainId") return reply({ result: "0x14a34" });
+      if (b.method === "eth_blockNumber") return reply({ result: "0x" + d.block.toString(16) });
+      const tag = b.method === "eth_getStorageAt" ? p2 : p1;
+      assert.equal(Number(BigInt(tag)), d.block, "所有讀取釘在同一個區塊");
+      if (b.method === "eth_getCode") return reply({ result: codeAt[p0.toLowerCase()] ?? "0x" });
+      if (b.method === "eth_getStorageAt") {
+        const impl = d.contracts[p0.toLowerCase()]?.impl;
+        return reply({ result: "0x" + (impl ? impl.slice(2) : "").padStart(64, "0") });
+      }
+      if (b.method === "eth_call") {
+        const hit = Object.entries(d.reads).find(([k]) => k.startsWith(p0.to.toLowerCase() + "|") && ctx.deployed.hasSelector !== undefined && selectorOf(k.split("|")[1]) === p0.data);
+        return hit ? reply({ result: hit[1] }) : reply({ error: { code: 3, message: "execution reverted" } });
+      }
+      throw new Error("unexpected " + b.method);
+    };
+    t.wr("ops/monitoring/deployed.json", "{}");
+    const out = await refreshDeployed({ root: t.dir, fetchImpl, log: () => {}, sleep: async () => {} });
+    assert.deepEqual([...methods].sort(), ["eth_blockNumber", "eth_call", "eth_chainId", "eth_getCode", "eth_getStorageAt"]);
+    assert.ok(limited > 1, "429 之後有重試");
+    assert.deepEqual({ ...out, fetchedAt: d.fetchedAt }, d, "重抓的結果與 repo 內的 fixture 相同");
+    assert.deepEqual(t.check(), []);
+  } finally {
+    t.cleanup();
+  }
 });

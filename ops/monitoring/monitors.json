@@ -1,5 +1,5 @@
 {
-  "$comment": "鏈上監控規則（唯一真相）。手寫欄位：id/title/kind/status/severity/description/contracts[].ref|as|abi|source/events[].sig/calls[].on|fn/amount/runbook/related/params。產生欄位（node scripts/check-monitoring.mjs --write）：contracts[].address、events[].topic0|inputs、calls[].selector、decimals、runbookUrl、assets、assetLabels、roleNames。CI 會檢查兩者一致、位址等於 frontend/src/contracts/**、事件存在於 ABI。不要放任何秘密。",
+  "$comment": "鏈上監控規則（唯一真相）。手寫欄位：id/title/kind/status/severity/description/contracts[].ref|as|abi|source/events[].sig/calls[].on|fn|expect|note、events[].notDeployed|note/amount/runbook/related/params。產生欄位（node scripts/check-monitoring.mjs --write）：contracts[].address、events[].topic0|inputs、calls[].selector|expected、decimals、runbookUrl、assets、assetLabels、roleNames。CI 會檢查兩者一致、位址等於 frontend/src/contracts/**、事件存在於 ABI。不要放任何秘密。",
   "version": 1,
   "deployment": {
     "id": "pepefi-base-sepolia",
@@ -369,6 +369,8 @@
         },
         {
           "sig": "RoleAdminChanged(bytes32,bytes32,bytes32)",
+          "notDeployed": true,
+          "note": "這些合約都沒有呼叫 _setRoleAdmin，編譯器沒有把這個事件編進 bytecode；角色的 admin 無法被改",
           "topic0": "0xbd79b86ffe0ab8e8776151514217cd7cacd52c909f66475c3af44e129f0b00ff",
           "inputs": [
             {
@@ -510,14 +512,14 @@
       "title": "KYC 驗證者變更",
       "category": "權限",
       "kind": "event",
-      "status": "active",
+      "status": "pending-deploy",
       "severity": "SEV-2",
-      "description": "KYCRegistry 的驗證者名單變更；驗證者可以讓任意地址通過 RWA 資產的 KYC 門檻。",
+      "description": "KYCRegistry 的驗證者名單變更；驗證者可以讓任意地址通過 RWA 資產的 KYC 門檻。**已部署的 KYCRegistry 是舊版：沒有 setVerifier／verifiers，也不發 VerifierSet**（只有 owner 能 batchVerify，owner 變更由 owner-transferred 監控），所以部署版沒有這個攻擊面，也沒有東西可以輪詢。新版部署並更新 deployed.json 後改為 active。",
       "contracts": [
         {
           "ref": "KYCRegistry",
-          "abi": "KYCRegistry",
-          "address": "0x5D95fD9e7a5f80E5369e24783F1f98E0f952360d"
+          "source": "contracts/src/KYCRegistry.sol",
+          "address": null
         }
       ],
       "events": [
@@ -616,14 +618,14 @@
       "title": "保險金庫接線變更",
       "category": "x402／FeeRouter 設定",
       "kind": "event",
-      "status": "active",
+      "status": "pending-deploy",
       "severity": "SEV-1",
-      "description": "InsuranceVault 的 exchange（唯一能呼叫 bailout 的地址）或 FeeRouter 被改。",
+      "description": "InsuranceVault 的 exchange（唯一能呼叫 bailout 的地址）或 FeeRouter 被改。**已部署的 InsuranceVault 有 setExchange／setFeeRouter，但不發這兩個事件**（事件是 master 原始碼後來才加的），所以這條事件規則現在不會響；接線變更由狀態規則 insurance-wiring 每輪讀 getter 比對。重新部署 InsuranceVault 並更新 deployed.json 後改為 active。",
       "contracts": [
         {
           "ref": "InsuranceVault",
-          "abi": "InsuranceVault",
-          "address": "0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812"
+          "source": "contracts/src/InsuranceVault.sol",
+          "address": null
         }
       ],
       "events": [
@@ -661,19 +663,19 @@
       "title": "FeeRouter 設定變更（含 x402 分潤路由）",
       "category": "x402／FeeRouter 設定",
       "kind": "event",
-      "status": "active",
+      "status": "pending-deploy",
       "severity": "SEV-2",
-      "description": "V1 FeeRouter 與 x402 FeeRouter（官方 USDC）的 exchange／copyTracker 被改。platformTreasury 與分潤比例是 immutable，鏈上能改的只有這兩個接線。",
+      "description": "V1 FeeRouter 與 x402 FeeRouter（官方 USDC）的 exchange／copyTracker 被改。**已部署的兩顆 FeeRouter 有 setExchange／setCopyTracker，但不發這兩個事件**，所以這條事件規則現在不會響；接線變更由狀態規則 feerouter-wiring 每輪讀 getter 比對。重新部署並更新 deployed.json 後改為 active。",
       "contracts": [
         {
           "ref": "FeeRouter",
-          "abi": "FeeRouter",
-          "address": "0x00f6cf0113399a7A451c7f85fe094a28092d3e0c"
+          "source": "contracts/src/FeeRouter.sol",
+          "address": null
         },
         {
           "ref": "X402FeeRouter",
-          "abi": "FeeRouter",
-          "address": "0x29e5732AC62254d9b92A1C7d3F38EbFA8809B57d"
+          "source": "contracts/src/FeeRouter.sol",
+          "address": null
         }
       ],
       "events": [
@@ -706,6 +708,255 @@
       ],
       "related": [
         "docs/RUNBOOK_KEY_ROTATION.md#6.2 x402 payTo / platformTreasury"
+      ],
+      "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#1-嚴重度分級"
+    },
+    {
+      "id": "insurance-wiring",
+      "title": "保險金庫接線被改",
+      "category": "x402／FeeRouter 設定",
+      "kind": "state",
+      "check": "wiring",
+      "status": "active",
+      "severity": "SEV-1",
+      "description": "每輪讀 InsuranceVault.exchange()（唯一能呼叫 bailout 的地址）與 feeRouter()，必須等於前端設定的 PerpetualExchange 與 FeeRouter。已部署的 InsuranceVault 的 setter 不發事件，只能靠輪詢（最長延遲一輪）。合約 cutover 時 addresses.ts 與 deployed.json 一起更新，預期值會跟著換。",
+      "contracts": [
+        {
+          "ref": "InsuranceVault",
+          "abi": "InsuranceVault",
+          "as": "insurance",
+          "address": "0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812"
+        }
+      ],
+      "calls": [
+        {
+          "on": "insurance",
+          "fn": "exchange()",
+          "expect": {
+            "ref": "PerpetualExchange"
+          },
+          "selector": "0xd2f7265a",
+          "expected": "0x827eA0c62a32e995927101259042F8A27D99124D"
+        },
+        {
+          "on": "insurance",
+          "fn": "feeRouter()",
+          "expect": {
+            "ref": "FeeRouter"
+          },
+          "selector": "0xf29ebf61",
+          "expected": "0x00f6cf0113399a7A451c7f85fe094a28092d3e0c"
+        }
+      ],
+      "runbook": [
+        "1. 嚴重度分級",
+        "3. 暫停與凍結：現行部署能做什麼"
+      ],
+      "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#1-嚴重度分級"
+    },
+    {
+      "id": "feerouter-wiring",
+      "title": "FeeRouter 接線被改（含 x402 分潤路由）",
+      "category": "x402／FeeRouter 設定",
+      "kind": "state",
+      "check": "wiring",
+      "status": "active",
+      "severity": "SEV-1",
+      "description": "每輪讀 V1 FeeRouter 與 x402 FeeRouter 的 exchange()／copyTracker()／insuranceVault()／platformTreasury()。V1 必須指向前端設定的 PerpetualExchange／CopyTracker／InsuranceVault；x402 那顆部署時 exchange 與 copyTracker 都是零位址（只走 routeExternalRevenue），任何一個被設成非零都代表有人接上了能分配手續費的合約。已部署的 FeeRouter 的 setter 不發事件，只能靠輪詢。",
+      "contracts": [
+        {
+          "ref": "FeeRouter",
+          "abi": "FeeRouter",
+          "as": "feeRouter",
+          "address": "0x00f6cf0113399a7A451c7f85fe094a28092d3e0c"
+        },
+        {
+          "ref": "X402FeeRouter",
+          "abi": "FeeRouter",
+          "as": "x402",
+          "address": "0x29e5732AC62254d9b92A1C7d3F38EbFA8809B57d"
+        }
+      ],
+      "calls": [
+        {
+          "on": "feeRouter",
+          "fn": "exchange()",
+          "expect": {
+            "ref": "PerpetualExchange"
+          },
+          "selector": "0xd2f7265a",
+          "expected": "0x827eA0c62a32e995927101259042F8A27D99124D"
+        },
+        {
+          "on": "feeRouter",
+          "fn": "copyTracker()",
+          "expect": {
+            "ref": "CopyTracker"
+          },
+          "selector": "0x49f3260b",
+          "expected": "0xC9e91f7D36e910C58042164032c625427b23CCB2"
+        },
+        {
+          "on": "feeRouter",
+          "fn": "insuranceVault()",
+          "expect": {
+            "ref": "InsuranceVault"
+          },
+          "selector": "0xe6fa0ef7",
+          "expected": "0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812"
+        },
+        {
+          "on": "feeRouter",
+          "fn": "platformTreasury()",
+          "expect": {
+            "snapshot": true
+          },
+          "note": "platformTreasury 是 immutable，前端設定沒有這個位址；快照只用來確認這顆 FeeRouter 沒有被換成另一顆",
+          "selector": "0xe138818c",
+          "expected": "0xe80a81360608c1342e66743f70a00f75d792eb93"
+        },
+        {
+          "on": "x402",
+          "fn": "exchange()",
+          "expect": {
+            "zero": true
+          },
+          "selector": "0xd2f7265a",
+          "expected": "0x0000000000000000000000000000000000000000"
+        },
+        {
+          "on": "x402",
+          "fn": "copyTracker()",
+          "expect": {
+            "zero": true
+          },
+          "selector": "0x49f3260b",
+          "expected": "0x0000000000000000000000000000000000000000"
+        },
+        {
+          "on": "x402",
+          "fn": "insuranceVault()",
+          "expect": {
+            "snapshot": true
+          },
+          "note": "x402 FeeRouter 部署時指定的保險金收款地址（immutable），前端設定沒有這個位址",
+          "selector": "0xe6fa0ef7",
+          "expected": "0xc7afe2064106a608e0e21bfbf9aff89b0ead7b9f"
+        },
+        {
+          "on": "x402",
+          "fn": "platformTreasury()",
+          "expect": {
+            "snapshot": true
+          },
+          "note": "immutable；x402.ts 註明這是待更換的 treasury，重新部署 X402FeeRouter 時位址與快照一起換",
+          "selector": "0xe138818c",
+          "expected": "0xe80a81360608c1342e66743f70a00f75d792eb93"
+        }
+      ],
+      "runbook": [
+        "1. 嚴重度分級",
+        "3. 暫停與凍結：現行部署能做什麼"
+      ],
+      "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#1-嚴重度分級"
+    },
+    {
+      "id": "core-wiring",
+      "title": "核心合約接線與前端設定不一致",
+      "category": "x402／FeeRouter 設定",
+      "kind": "state",
+      "check": "wiring",
+      "status": "active",
+      "severity": "SEV-1",
+      "description": "每輪讀交易所的 oracle()／feeRouter()／insuranceVault()／kyc()、TraderStake.copyTracker()（唯一能 slash 的地址）、AssetVaultV2 的 oracle()／esgRegistry()，必須等於前端設定。這些 setter 在部署版有事件（另有事件規則），這條是第二道：事件漏掉或 addresses.ts 與鏈上脫鉤時仍會持續告警，直到兩邊一致。",
+      "contracts": [
+        {
+          "ref": "PerpetualExchange",
+          "abi": "PerpetualExchange",
+          "as": "exchange",
+          "address": "0x827eA0c62a32e995927101259042F8A27D99124D"
+        },
+        {
+          "ref": "TraderStake",
+          "abi": "TraderStake",
+          "as": "stake",
+          "address": "0x01aEB530bcFc69f036309ffe55acc7eA6C5a28Fe"
+        },
+        {
+          "ref": "AssetVaultV2",
+          "abi": "AssetVaultV2",
+          "as": "vault",
+          "address": "0x916D7Fc399d9afd23BAa113E2c2Cc601341ff10a"
+        }
+      ],
+      "calls": [
+        {
+          "on": "exchange",
+          "fn": "oracle()",
+          "expect": {
+            "ref": "MockOracle"
+          },
+          "selector": "0x7dc0d1d0",
+          "expected": "0xeD90c4F3B48213888870C1FC8486921Cb0990Aa3"
+        },
+        {
+          "on": "exchange",
+          "fn": "feeRouter()",
+          "expect": {
+            "ref": "FeeRouter"
+          },
+          "selector": "0xf29ebf61",
+          "expected": "0x00f6cf0113399a7A451c7f85fe094a28092d3e0c"
+        },
+        {
+          "on": "exchange",
+          "fn": "insuranceVault()",
+          "expect": {
+            "ref": "InsuranceVault"
+          },
+          "selector": "0xe6fa0ef7",
+          "expected": "0xB364E2e3e1e7a2b033eF03a4ACceF42066F3D812"
+        },
+        {
+          "on": "exchange",
+          "fn": "kyc()",
+          "expect": {
+            "ref": "KYCRegistry"
+          },
+          "selector": "0x90d6b45f",
+          "expected": "0x5D95fD9e7a5f80E5369e24783F1f98E0f952360d"
+        },
+        {
+          "on": "stake",
+          "fn": "copyTracker()",
+          "expect": {
+            "ref": "CopyTracker"
+          },
+          "selector": "0x49f3260b",
+          "expected": "0xC9e91f7D36e910C58042164032c625427b23CCB2"
+        },
+        {
+          "on": "vault",
+          "fn": "oracle()",
+          "expect": {
+            "ref": "GuardedOracle"
+          },
+          "selector": "0x7dc0d1d0",
+          "expected": "0x8E9e59BE9589Ad88EC14F3ef6bdcc43E8B76f842"
+        },
+        {
+          "on": "vault",
+          "fn": "esgRegistry()",
+          "expect": {
+            "ref": "ESGRegistryV2"
+          },
+          "selector": "0x988c794c",
+          "expected": "0xBF5B9cD78566791d79c687A732b4ed5bc3E95dFf"
+        }
+      ],
+      "runbook": [
+        "1. 嚴重度分級",
+        "3. 暫停與凍結：現行部署能做什麼"
       ],
       "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#1-嚴重度分級"
     },
@@ -982,6 +1233,8 @@
       "events": [
         {
           "sig": "RiskParamsUpdated(uint256,uint256,uint256,uint256)",
+          "notDeployed": true,
+          "note": "部署版的實作在 setRiskParams 發的是三個參數的 RiskParamsChanged（同一條規則已涵蓋）；四個參數的版本屬於 V2.5",
           "topic0": "0x5d3c7b528485e17fe0314971648177a48225c729bb2270e5426ad03876eb0889",
           "inputs": [
             {
@@ -1271,7 +1524,7 @@
       "kind": "event",
       "status": "active",
       "severity": "SEV-2",
-      "description": "交易所讀的 MockOracle 的過期門檻或資產清單被改。",
+      "description": "交易所讀的 MockOracle 的資產清單被改（部署版的過期門檻是常數，不能改）。",
       "contracts": [
         {
           "ref": "MockOracle",
@@ -1282,6 +1535,8 @@
       "events": [
         {
           "sig": "StaleThresholdSet(uint256,uint256)",
+          "notDeployed": true,
+          "note": "部署版的 MockOracle 沒有 setStaleThreshold／staleThreshold()，過期門檻是常數 STALE_THRESHOLD，無法被改",
           "topic0": "0xbbdef213979afab4bc82df04484ba84bcc61c5e7b975f05e9fa44604adaff755",
           "inputs": [
             {
@@ -1326,7 +1581,7 @@
       "kind": "event",
       "status": "active",
       "severity": "SEV-2",
-      "description": "keeper 的中繼來源（AggregatorOracle）偏離上限、熔斷門檻或「允許單一來源」被改；放寬這些等於降低 keeper 拒寫錯誤價格的能力。",
+      "description": "keeper 的中繼來源（AggregatorOracle）偏離上限被改；放寬等於降低 keeper 拒寫錯誤價格的能力。部署版沒有熔斷門檻與「允許單一來源」這兩個參數。",
       "contracts": [
         {
           "ref": "AggregatorOracle",
@@ -1353,6 +1608,8 @@
         },
         {
           "sig": "HaltDeviationBpsSet(uint256,uint256)",
+          "notDeployed": true,
+          "note": "部署版的 AggregatorOracle 沒有 setHaltDeviationBps／haltDeviationBps()，沒有這個參數",
           "topic0": "0x2e2a67edfd31f540a803cefe84a91d4382f4df944336d3c2f741f09170fe66ad",
           "inputs": [
             {
@@ -1369,6 +1626,8 @@
         },
         {
           "sig": "AllowSingleSourceSet(bool)",
+          "notDeployed": true,
+          "note": "部署版的 AggregatorOracle 沒有 setAllowSingleSource／allowSingleSource()，沒有這個參數",
           "topic0": "0x7d7049cbaa00f6b20013e8d3ae937602bdcfeb1db78e85a8c00db4ba9f5e3e3d",
           "inputs": [
             {
