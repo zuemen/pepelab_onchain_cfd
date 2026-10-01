@@ -14,7 +14,9 @@
 // paymentSent：所有「帶了 X-PAYMENT 之後」產生的錯誤都是 true（包含 402／429／5xx）。
 // 此時已簽的 EIP-3009 授權已交給伺服器，在 validBefore 之前仍可能被結算 ——
 // **先對帳再決定是否重送，不要依 retryAfterSec 直接重試**（重試會簽一張新的授權，可能雙付）。
-//   SignalApiTimeoutError / SignalApiNetworkError —— 未送出付款的請求逾時／連線失敗
+//   PaymentSignTimeoutError        —— 簽署端在 paymentSignTimeoutMs 內沒有回應；預留已回滾，之後才回來的簽章一律丟棄（未送出、未付）
+//   SignalApiTimeoutError / SignalApiNetworkError —— 未送出付款的請求逾時／連線失敗（paymentSent 一律 false；
+//                                     帶付款的請求逾時／斷線改丟 PaymentOutcomeUnknownError）
 import type {
   ErrorBody,
   PaymentRequirements,
@@ -168,7 +170,27 @@ export class PaymentOutcomeUnknownError extends Error {
   }
 }
 
+export class PaymentSignTimeoutError extends Error {
+  /** 一律為 false：簽署端逾時，SDK 沒有送出任何 X-PAYMENT；之後才回來的簽章會被丟棄。 */
+  readonly paymentSent = false as const;
+  readonly url: string;
+  readonly timeoutMs: number;
+  constructor(p: { url: string; timeoutMs: number }) {
+    super(
+      `付款簽署端 ${p.timeoutMs}ms 內未回應；已回滾預留額度，之後才回傳的簽章一律丟棄、不會送出；未付款`,
+    );
+    this.name = "PaymentSignTimeoutError";
+    this.url = p.url;
+    this.timeoutMs = p.timeoutMs;
+  }
+}
+
 export class SignalApiTimeoutError extends Error {
+  /**
+   * 一律為 false：這個錯誤只會發生在沒帶 X-PAYMENT 的請求（帶付款的請求逾時改丟
+   * PaymentOutcomeUnknownError）。與 SignalApiError 一樣有這個欄位，呼叫端可以一律檢查 `e.paymentSent`。
+   */
+  readonly paymentSent = false as const;
   readonly url: string;
   readonly timeoutMs: number;
   constructor(url: string, timeoutMs: number) {
@@ -180,6 +202,8 @@ export class SignalApiTimeoutError extends Error {
 }
 
 export class SignalApiNetworkError extends Error {
+  /** 一律為 false：同 SignalApiTimeoutError（帶付款的請求斷線改丟 PaymentOutcomeUnknownError）。 */
+  readonly paymentSent = false as const;
   readonly url: string;
   constructor(url: string, cause: unknown) {
     super(`signal-api 連線失敗：${url}（${(cause as Error)?.message ?? cause}）`);

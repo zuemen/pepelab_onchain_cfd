@@ -92,7 +92,19 @@ export function buildApproveMargin(a: Addrs, p: { amount: bigint } | { unlimited
     if (p.unlimited !== true) throw new TxBuildError("unlimited 必須明確為 true");
     return build(a.marginToken, ERC20_ABI as Abi, "approve", [a.perpetualExchange, UINT256_MAX]);
   }
+  // amount 0 刻意拒絕；撤銷授權請用 buildRevokeMarginApproval（見下）。
   return build(a.marginToken, ERC20_ABI as Abi, "approve", [a.perpetualExchange, uint("amount", p.amount, { positive: true })]);
+}
+
+/**
+ * 撤銷保證金代幣對 exchange 的授權：approve(exchange, 0)（#203 L-b）。
+ *
+ * 刻意做成獨立 builder，而不是讓 `buildApproveMargin({ amount: 0n })` 通過：金額 0 多半是上游
+ * 換算或解析出錯（例如把 "0.0000001" 截成 0），悄悄變成「撤銷授權」會讓人以為存入流程正常，
+ * 實際上卻把授權清掉。撤銷是一個要明確表達的意圖，所以用名稱表達，`amount: 0n` 照舊丟錯。
+ */
+export function buildRevokeMarginApproval(a: Pick<Addrs, "perpetualExchange" | "marginToken">): UnsignedTx {
+  return build(addr("marginToken", a.marginToken), ERC20_ABI as Abi, "approve", [addr("perpetualExchange", a.perpetualExchange), 0n]);
 }
 
 /** depositMargin(amount)。需先 approve。 */
