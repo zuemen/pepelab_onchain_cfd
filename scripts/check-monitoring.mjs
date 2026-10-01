@@ -20,6 +20,10 @@
 //      可能比鏈上的版本新。ops/monitoring/deployed.json 是以唯讀 RPC 抓下來的 runtime
 //      bytecode（UUPS 讀實作位址）與幾個 getter 的鏈上快照；active 事件的 topic0、state 規則的
 //      selector 必須出現在 bytecode 裡，接線規則的預期值必須等於鏈上快照。檢查本身不連網。
+//  10. 涵蓋與下限（審查 M4）：受監控合約會發的每個事件都要有規則或明列理由的忽略（ignoredEvents）；
+//      必要規則不可被刪、降級或改成 pending（REQUIRED_RULES）；每個參數有型別與範圍
+//      （PARAM_SPECS，MAX_BLOCK_RANGE ≤ 1000）；wrangler.toml 任何位置都不得出現秘密鍵名；
+//      秘密掃描遞迴子目錄；.dev.vars／.wrangler/ 必須在 .gitignore。
 //
 // 零依賴。用法：
 //   node scripts/check-monitoring.mjs            # 檢查，有問題非零結束（不連網）
@@ -62,8 +66,126 @@ export const SECRET_NAMES = [
   "RPC_URL",
   "GITHUB_TOKEN",
 ];
-/** [vars] 允許的非參數鍵（公開資訊）。 */
-const EXTRA_VARS = ["EXTRA_GAS_WALLETS", "EXPECTED_PAY_TO"];
+/** [vars] 允許的非參數鍵（公開資訊）與它們的格式。 */
+const EXTRA_VARS = {
+  EXTRA_GAS_WALLETS: (v) => (v.split(",").every((a) => ADDR.test(a.trim())) ? null : "必須是逗號分隔的位址"),
+  EXPECTED_PAY_TO: (v) => (ADDR.test(v) ? null : "必須是一個位址"),
+};
+/** network.publicRpc 只能是不需要金鑰的公開端點；含金鑰的 RPC 一律用 Worker secret RPC_URL。 */
+export const PUBLIC_RPC_ALLOW = ["https://sepolia.base.org"];
+/** 秘密掃描略過的本機目錄／檔案（必須同時列在 .gitignore，否則會被 commit 卻沒被掃到）。 */
+const LOCAL_ONLY = [".dev.vars", ".wrangler"];
+const GITIGNORE_REQUIRED = [".dev.vars", ".wrangler/"];
+
+/**
+ * 必要規則與下限（審查 M4）：刪掉整條規則、把它改成 pending-deploy、或把嚴重度調低，
+ * 都要「同時改這張表」才過得了 CI——單改 monitors.json 再 --write 不行。
+ * 值是 [最低嚴重度, 必須的狀態]；規則可以比這裡更嚴重，pending-deploy 的可以升為 active。
+ * 新增規則時一併加進來。
+ */
+export const REQUIRED_RULES = {
+  "owner-transferred": ["SEV-1", "active"],
+  "access-role-changed": ["SEV-1", "active"],
+  "vault-upgraded": ["SEV-1", "active"],
+  "exchange-agent-authorization": ["SEV-1", "active"],
+  "traderstake-copytracker-set": ["SEV-1", "active"],
+  "kyc-verifier-changed": ["SEV-2", "pending-deploy"],
+  "exchange-wiring-changed": ["SEV-1", "active"],
+  "insurance-wiring-changed": ["SEV-1", "pending-deploy"],
+  "feerouter-config-changed": ["SEV-2", "pending-deploy"],
+  "insurance-wiring": ["SEV-1", "active"],
+  "feerouter-wiring": ["SEV-1", "active"],
+  "core-wiring": ["SEV-1", "active"],
+  "x402-payto": ["SEV-1", "active"],
+  "exchange-risk-params": ["SEV-3", "active"],
+  "exchange-funding-clamped": ["SEV-3", "active"],
+  "vault-pause-changed": ["SEV-2", "active"],
+  "pepe-incentives-pause": ["SEV-3", "active"],
+  "vault-risk-params": ["SEV-3", "active"],
+  "asset-vault-v1-assets": ["SEV-3", "active"],
+  "esg-registry-params": ["SEV-3", "active"],
+  "esg-reward-params": ["SEV-3", "active"],
+  "pepe-claim-admin": ["SEV-3", "active"],
+  "vault-reserve-breached": ["SEV-2", "active"],
+  "guarded-oracle-guardian": ["SEV-2", "active"],
+  "guarded-oracle-price-rejected": ["SEV-3", "active"],
+  "mock-oracle-config": ["SEV-2", "active"],
+  "aggregator-oracle-config": ["SEV-2", "active"],
+  "chainlink-adapter-config": ["SEV-2", "active"],
+  "pyth-adapter-config": ["SEV-2", "active"],
+  "exchange-bad-debt": ["SEV-2", "active"],
+  "large-margin-withdrawal": ["SEV-2", "active"],
+  "insurance-withdrawal": ["SEV-2", "active"],
+  "insurance-bailout": ["SEV-2", "active"],
+  "vault-large-redeem": ["SEV-2", "active"],
+  "fee-withdrawals": ["SEV-3", "active"],
+  "x402-fee-withdrawals": ["SEV-3", "active"],
+  "vault-fees-withdrawn": ["SEV-3", "active"],
+  "oracle-stale": ["SEV-2", "active"],
+  "oracle-deviation": ["SEV-2", "active"],
+  "guarded-oracle-paused": ["SEV-3", "active"],
+  "insurance-fund": ["SEV-2", "active"],
+  "vault-reserve": ["SEV-2", "active"],
+  "keeper-gas": ["SEV-3", "active"],
+  "signal-api-health": ["SEV-3", "active"],
+  "exchange-pause": ["SEV-1", "pending-deploy"],
+  "exchange-asset-mode": ["SEV-2", "pending-deploy"],
+  "exchange-guardian-roles": ["SEV-1", "pending-deploy"],
+  "exchange-exposure-caps": ["SEV-3", "pending-deploy"],
+  "timelock-operations": ["SEV-2", "pending-deploy"],
+  "vault-unpriced-exemption": ["SEV-2", "pending-deploy"],
+  "guarded-oracle-window": ["SEV-3", "pending-deploy"],
+  "copytracker-slash-reserve": ["SEV-2", "pending-deploy"],
+};
+
+/**
+ * 參數的型別與範圍（審查 M4）。monitors.json 的每個參數都要在這裡有一筆，反之亦然；預設值與
+ * wrangler.toml [vars] 的覆寫值都依此驗證。上下限寫在程式碼而不是 monitors.json：把預設值改到
+ * 離譜的數字（例如 MAX_BLOCK_RANGE 50000）不能靠同一個檔案裡順手改上限放行。
+ *   int      非負整數，min ≤ v ≤ max
+ *   decimal  非負十進位金額（可含小數），v ≤ max
+ *   severity SEV-1..SEV-4
+ *   url      https URL
+ *   keys     MUTE_KEYS 的格式（checkMuteKeys）
+ */
+export const PARAM_SPECS = {
+  CONFIRMATIONS: { type: "int", min: 0, max: 64 },
+  INITIAL_LOOKBACK_BLOCKS: { type: "int", min: 1, max: 1000 },
+  // 公開 RPC（sepolia.base.org）的 eth_getLogs 上限是 1,000 塊（2026-10-01 實測）。
+  MAX_BLOCK_RANGE: { type: "int", min: 1, max: 1000 },
+  // Cloudflare 免費方案每次執行 50 個 subrequest：事件掃描最多佔 20 個。
+  MAX_SCAN_REQUESTS: { type: "int", min: 1, max: 20 },
+  LAG_ALERT_BLOCKS: { type: "int", min: 150, max: 1_000_000 },
+  REMIND_SEC: { type: "int", min: 300, max: 604_800 },
+  MIN_SEVERITY: { type: "severity" },
+  MUTE_KEYS: { type: "keys" },
+  LARGE_WITHDRAWAL_USDC: { type: "decimal", max: 1e12 },
+  LARGE_WITHDRAWAL_WINDOW_USDC: { type: "decimal", max: 1e12 },
+  WITHDRAWAL_WINDOW_SEC: { type: "int", min: 300, max: 86_400 },
+  INSURANCE_WITHDRAW_USDC: { type: "decimal", max: 1e12 },
+  BAILOUT_MIN_USDC: { type: "decimal", max: 1e12 },
+  LARGE_REDEEM_USDC: { type: "decimal", max: 1e12 },
+  FEE_WITHDRAW_ALERT_USDC: { type: "decimal", max: 1e12 },
+  ORACLE_STALE_WARN_SEC: { type: "int", min: 300, max: 604_800 },
+  NONCRYPTO_STALE_SEC: { type: "int", min: 3600, max: 1_209_600 },
+  ORACLE_DEVIATION_BPS: { type: "int", min: 1, max: 10_000 },
+  ORACLE_DEVIATION_CRIT_BPS: { type: "int", min: 1, max: 10_000 },
+  REFERENCE_MAX_AGE_SEC: { type: "int", min: 60, max: 604_800 },
+  INSURANCE_MIN_USDC: { type: "decimal", max: 1e12 },
+  INSURANCE_DROP_BPS: { type: "int", min: 1, max: 10_000 },
+  RESERVE_WARN_MARGIN_BPS: { type: "int", min: 0, max: 10_000 },
+  GAS_MIN_ETH: { type: "decimal", max: 1000 },
+  GAS_CRIT_ETH: { type: "decimal", max: 1000 },
+  SIGNAL_API_URL: { type: "url" },
+  HTTP_FAILS_BEFORE_ALERT: { type: "int", min: 1, max: 12 },
+  SELF_ERRORS_BEFORE_ALERT: { type: "int", min: 1, max: 12 },
+};
+/** 成對的參數：左邊必須 ≤ 右邊（預警門檻不可比嚴重門檻更嚴）。 */
+const PARAM_ORDER = [
+  ["ORACLE_DEVIATION_BPS", "ORACLE_DEVIATION_CRIT_BPS"],
+  ["GAS_CRIT_ETH", "GAS_MIN_ETH"],
+  ["INITIAL_LOOKBACK_BLOCKS", "MAX_BLOCK_RANGE"],
+];
 
 // ── 小工具 ───────────────────────────────────────────────────────────────────
 
@@ -227,6 +349,24 @@ export function loadContext(root) {
   }
 
   const typeNames = solTypeNames(root);
+  // contracts/src 裡宣告過的所有事件簽章（涵蓋檢查用：找出「部署版會發、但前端 ABI 沒有」的事件）。
+  const solSigs = new Set();
+  {
+    const walk = (dir) => {
+      for (const f of readdirSync(dir)) {
+        const fp = join(dir, f);
+        if (statSync(fp).isDirectory()) walk(fp);
+        else if (f.endsWith(".sol")) {
+          try {
+            for (const e of parseSolEvents(readFileSync(fp, "utf8"), typeNames)) solSigs.add(e.sig);
+          } catch {
+            /* 解析不了的型別（struct 參數等）：略過那個檔案的事件 */
+          }
+        }
+      }
+    };
+    walk(join(root, "contracts/src"));
+  }
   const solCache = {};
   const solEvents = (path) => {
     if (!(path in solCache)) {
@@ -283,7 +423,7 @@ export function loadContext(root) {
   const sdkUrl = read(root, "agent/sdk/src/signalApi.ts").match(/SIGNAL_API_TESTNET_URL\s*=\s*"([^"]+)"/)?.[1] ?? null;
 
   const deployed = loadDeployed(root);
-  return { root, chains, v2Tokens, assetIds, resolveRef, abis, solEvents, roleNames, headings, tokenDecimals, tokenAddress, sdkUrl, deployed };
+  return { root, chains, v2Tokens, assetIds, resolveRef, abis, solEvents, roleNames, headings, tokenDecimals, tokenAddress, sdkUrl, deployed, solSigs };
 }
 
 // ── 已部署 bytecode 與鏈上快照（deployed.json）────────────────────────────────
@@ -675,13 +815,142 @@ export function generate(input, ctx) {
     for (const m of src.matchAll(/(?:numParam|param)\(config, env, "([A-Z0-9_]+)"\)/g)) used.add(m[1]);
   }
   for (const name of used) if (!cfg.params?.[name]) problems.push(`(全域)：engine.mjs／tick.mjs 用到參數 ${name}，但 monitors.json 沒有定義`);
-  for (const m of checkMuteKeys(cfg.params?.MUTE_KEYS?.default, cfg)) problems.push(`(全域)：params.MUTE_KEYS.default ${m}`);
+  problems.push(...checkParams(cfg));
+  problems.push(...checkRequired(cfg));
+  problems.push(...eventCoverage(cfg, ctx));
+  if (!PUBLIC_RPC_ALLOW.includes(cfg.network?.publicRpc)) {
+    problems.push(`(全域)：network.publicRpc 必須是不需要金鑰的公開端點（${PUBLIC_RPC_ALLOW.join("、")}）；含金鑰的 RPC 請用 Worker secret RPC_URL`);
+  }
   if (cfg.params?.SIGNAL_API_URL?.default !== ctx.sdkUrl) {
     problems.push(`(全域)：SIGNAL_API_URL 預設值必須等於 agent/sdk/src/signalApi.ts 的 SIGNAL_API_TESTNET_URL（${ctx.sdkUrl}）`);
   }
   return { config: cfg, problems };
 }
 const engineSource = (root) => read(root, "ops/monitoring/engine.mjs");
+
+/** 一個參數值是否合法；回傳錯誤文字或 null。cfg 只有 keys 型別需要（對照規則 id）。 */
+export function checkParamValue(name, value, cfg = null) {
+  const spec = PARAM_SPECS[name];
+  if (!spec) return "沒有型別定義（PARAM_SPECS）";
+  const v = String(value ?? "").trim();
+  if (spec.type === "int") {
+    if (!/^\d+$/.test(v)) return `必須是非負整數，現在是 ${JSON.stringify(v)}`;
+    const n = Number(v);
+    if (n < spec.min || n > spec.max) return `必須在 ${spec.min}–${spec.max} 之間，現在是 ${n}`;
+  } else if (spec.type === "decimal") {
+    if (!/^\d+(\.\d+)?$/.test(v)) return `必須是非負的十進位數字，現在是 ${JSON.stringify(v)}`;
+    if (Number(v) > spec.max) return `不可超過 ${spec.max}，現在是 ${v}`;
+  } else if (spec.type === "severity") {
+    if (!SEVERITIES.includes(v)) return `必須是 ${SEVERITIES.join("/")}，現在是 ${JSON.stringify(v)}`;
+  } else if (spec.type === "url") {
+    if (!/^https:\/\/[^\s/]+(\/[^\s]*)?$/.test(v)) return `必須是 https URL，現在是 ${JSON.stringify(v)}`;
+  } else if (spec.type === "keys") {
+    const bad = checkMuteKeys(v, cfg ?? { rules: [] }).filter((m) => cfg || !/不是任何規則的 key/.test(m));
+    if (bad.length) return bad.join("；");
+  }
+  return null;
+}
+
+/** 參數：每個都有型別、預設值合法、成對的門檻順序正確、沒有多餘或缺少的型別定義。 */
+function checkParams(cfg) {
+  const out = [];
+  const params = cfg.params ?? {};
+  for (const [name, def] of Object.entries(params)) {
+    if (typeof def?.default !== "string") out.push(`(全域)：params.${name}.default 必須是字串`);
+    for (const f of ["unit", "doc"]) if (!def?.[f]) out.push(`(全域)：params.${name} 缺少 ${f}`);
+    const err = checkParamValue(name, def?.default, cfg);
+    if (err) out.push(`(全域)：params.${name}.default ${err}`);
+  }
+  for (const name of Object.keys(PARAM_SPECS)) if (!params[name]) out.push(`(全域)：PARAM_SPECS 有 ${name}，但 monitors.json 沒有這個參數`);
+  for (const [lo, hi] of PARAM_ORDER) {
+    const [a, b] = [Number(params[lo]?.default), Number(params[hi]?.default)];
+    if (Number.isFinite(a) && Number.isFinite(b) && a > b) out.push(`(全域)：params.${lo}（${a}）不可大於 params.${hi}（${b}）`);
+  }
+  return out;
+}
+
+/** 必要規則：存在、狀態、嚴重度下限；每條規則都要在表裡（新增規則時一併登記）。 */
+function checkRequired(cfg) {
+  const out = [];
+  const rank = (s) => SEVERITIES.indexOf(s);
+  const byId = new Map((cfg.rules ?? []).map((r) => [r.id, r]));
+  for (const [id, [minSev, status]] of Object.entries(REQUIRED_RULES)) {
+    const r = byId.get(id);
+    if (!r) {
+      out.push(`${id}：必要規則不存在（被刪除？）—— 要移除必須同時改 scripts/check-monitoring.mjs 的 REQUIRED_RULES`);
+      continue;
+    }
+    if (status === "active" && r.status !== "active") out.push(`${id}：必要規則必須是 active，現在是 ${r.status} —— 要停用必須同時改 REQUIRED_RULES`);
+    if (rank(r.severity) < 0 || rank(r.severity) > rank(minSev)) out.push(`${id}：嚴重度 ${r.severity} 低於下限 ${minSev} —— 要降級必須同時改 REQUIRED_RULES`);
+  }
+  for (const id of byId.keys()) if (!REQUIRED_RULES[id]) out.push(`${id}：新規則還沒登記到 scripts/check-monitoring.mjs 的 REQUIRED_RULES（嚴重度下限與狀態）`);
+  return out;
+}
+
+/**
+ * 事件涵蓋（審查 M4）：受監控合約（出現在 active 規則裡的合約）的每個事件——前端 ABI 裡的，
+ * 加上「原始碼有宣告、部署版 bytecode 裡也有、但前端 ABI 沒有」的——都必須屬於下列之一：
+ *   • 某條 active 規則監控它（或在該規則裡標 notDeployed）
+ *   • 某條 pending-deploy 規則等它部署
+ *   • ignoredEvents 明列並寫理由（notDeployed: true 的項目另外要求「部署版真的沒有」，
+ *     合約換版後事件出現就會被擋下來重新分類）
+ * 這樣 ABI 新增一個 admin 事件卻沒有人決定要不要監控，CI 會紅。
+ */
+export function eventCoverage(cfg, ctx) {
+  const out = [];
+  const monitored = new Map(); // ref → { abi, address }
+  for (const r of cfg.rules ?? []) {
+    if (r.status !== "active") continue;
+    for (const c of r.contracts ?? []) if (c.abi && ctx.abis[c.abi] && !monitored.has(c.ref)) monitored.set(c.ref, { abi: c.abi, address: c.address });
+  }
+  const inRule = new Set(); // `${ref}|${sig}`
+  for (const r of cfg.rules ?? []) for (const c of r.contracts ?? []) for (const e of r.events ?? []) inRule.add(`${c.ref}|${e.sig}`);
+
+  const ignored = new Map(); // `${abi}|${sig}` → entry
+  const abisInUse = new Set([...monitored.values()].map((m) => m.abi));
+  (cfg.ignoredEvents ?? []).forEach((g, i) => {
+    const where = `ignoredEvents[${i}]（${g.abi}）`;
+    if (!String(g.reason ?? "").trim()) out.push(`(全域)：${where} 沒有寫 reason`);
+    if (!ctx.abis[g.abi]) return void out.push(`(全域)：${where} 的 ABI 不存在`);
+    if (!abisInUse.has(g.abi)) out.push(`(全域)：${where} 沒有任何 active 規則在監控這個合約，忽略清單過期`);
+    const sigs = new Set(ctx.abis[g.abi].filter((x) => x.type === "event").map(abiSig));
+    for (const sig of g.events ?? []) {
+      const k = `${g.abi}|${sig}`;
+      if (ignored.has(k)) out.push(`(全域)：${where} 的 ${sig} 重複`);
+      ignored.set(k, g);
+      if (!sigs.has(sig) && !ctx.solSigs.has(sig)) out.push(`(全域)：${where} 的 ${sig} 不在 ${g.abi}.json 的 ABI 也不在原始碼裡，忽略清單過期`);
+    }
+  });
+
+  const seenIgnored = new Set(); // 沒標 notDeployed 的忽略項目
+  const liveIgnored = new Set(); // …其中至少有一顆合約的部署版真的會發
+  for (const [ref, { abi, address }] of monitored) {
+    const abiSigs = new Set(ctx.abis[abi].filter((x) => x.type === "event").map(abiSig));
+    // 原始碼有宣告、部署版也有、但前端 ABI 沒有的事件（部署版比 ABI 舊或新時會出現）。
+    const extra = address ? [...ctx.solSigs].filter((sig) => !abiSigs.has(sig) && ctx.deployed.hasTopic(address, sig) === true) : [];
+    for (const sig of [...abiSigs, ...extra]) {
+      const g = ignored.get(`${abi}|${sig}`);
+      const ruled = inRule.has(`${ref}|${sig}`);
+      if (g && ruled) out.push(`(全域)：${sig}（${ref}）同時在規則與 ignoredEvents 裡`);
+      else if (g) {
+        const k = `${abi}|${sig}`;
+        if (!g.notDeployed && address && ctx.deployed.hasTopic(address, sig) !== false) liveIgnored.add(k);
+        if (!g.notDeployed) seenIgnored.add(k);
+        if (g.notDeployed && address && ctx.deployed.hasTopic(address, sig) === true) {
+          out.push(`(全域)：ignoredEvents 說 ${sig} 不在 ${ref} 的部署版，但已部署的 bytecode 裡有 —— 合約換版了：加規則，或改寫忽略理由`);
+        }
+      } else if (!ruled) {
+        const src = abiSigs.has(sig) ? `${abi}.json` : "部署版 bytecode（前端 ABI 沒有）";
+        out.push(`(全域)：${ref} 的事件 ${sig}（${src}）沒有任何規則、也不在 ignoredEvents —— 加一條規則，或在 monitors.json 的 ignoredEvents 寫明為什麼不監控`);
+      }
+    }
+  }
+  // 忽略理由寫的是「例行事件」，但沒有任何一顆合約的部署版會發 → 理由不對，要標 notDeployed（rules.md 才不會寫錯）。
+  for (const k of seenIgnored) {
+    if (!liveIgnored.has(k)) out.push(`(全域)：ignoredEvents 的 ${k.split("|")[1]}（${k.split("|")[0]}）不在任何部署版 bytecode 裡 —— 那一組要標 notDeployed: true`);
+  }
+  return out;
+}
 
 /**
  * MUTE_KEYS 的值：每個項目必須指向存在的規則；monitor-self 不可靜音；SEV-1 規則不可整條靜音
@@ -907,11 +1176,45 @@ export function renderRulesMd(cfg, ctx) {
     L.push(`- 處置：${r.runbook.map((h) => `[INCIDENT_RESPONSE「${h}」](${anchor(h)})`).join("、")}`);
     if (r.related?.length) L.push(`- 相關：${r.related.map(relLink).join("、")}`);
   }
+  if (cfg.ignoredEvents?.length) {
+    L.push("");
+    L.push("## 刻意不監控的事件");
+    L.push("");
+    L.push("受監控合約會發、但沒有規則的事件。每一組都要寫理由；CI 會擋下「ABI 有、卻既沒有規則也不在這張表」的事件。");
+    L.push("");
+    L.push("| 合約（ABI） | 事件 | 理由 |");
+    L.push("|---|---|---|");
+    for (const g of cfg.ignoredEvents) {
+      L.push(`| ${g.abi} | ${g.events.map((e) => `\`${e.split("(")[0]}\``).join("、")} | ${g.notDeployed ? "**部署版不發此事件**：" : ""}${g.reason} |`);
+    }
+  }
   L.push("");
   return L.join("\n");
 }
 
 // ── 秘密掃描 ─────────────────────────────────────────────────────────────────
+
+/**
+ * 這一行有沒有「路徑或查詢字串裡夾著長 token」的 URL。不認廠商樣式（QuickNode、Ankr、自架 proxy…
+ * 各有各的），只看形狀：24 個字元以上、同時含字母與數字的一段。區塊瀏覽器的 tx／address
+ * （0x 開頭的 40／64 hex）與 Markdown 錨點不算。
+ */
+export function keyedUrl(line) {
+  for (const m of line.matchAll(/https?:\/\/[^\s"'`<>)\]]+/g)) {
+    const [base, query = ""] = m[0].split("#")[0].split("?");
+    const segs = base.split("/").slice(3);
+    for (const kv of query.split("&")) {
+      const [k, v = ""] = kv.split("=");
+      if (/key|token|secret|auth/i.test(k) && v.length >= 8) return true;
+      segs.push(v);
+    }
+    for (const seg of segs) {
+      if (/^0x[0-9a-fA-F]{40}$|^0x[0-9a-fA-F]{64}$/.test(seg)) continue;
+      if (/^[A-Za-z0-9_-]{24,}$/.test(seg) && /[A-Za-z]/.test(seg) && /\d/.test(seg)) return true;
+    }
+  }
+  return false;
+}
 
 export function scanSecrets(files) {
   const problems = [];
@@ -926,30 +1229,128 @@ export function scanSecrets(files) {
   for (const { name, text } of files) {
     text.split("\n").forEach((line, i) => {
       for (const [re, what] of pats) if (re.test(line)) problems.push(`${name}:${i + 1} ${what}`);
+      if (line.includes("://") && keyedUrl(line)) problems.push(`${name}:${i + 1} URL 含疑似 API key／token 的長字串（含金鑰的 RPC 與 webhook 一律用 wrangler secret）`);
       if (/wrangler\.toml$/.test(name) && /\b0x[0-9a-fA-F]{64}\b/.test(line)) problems.push(`${name}:${i + 1} 疑似私鑰（32 bytes hex）`);
     });
   }
   return problems;
 }
 
-/** wrangler.toml 的 [vars]：不得含秘密鍵名；鍵必須是已知參數或允許的公開設定。 */
-export function checkWranglerVars(toml, params) {
-  const problems = [];
-  let section = "";
-  toml.split("\n").forEach((line, i) => {
-    const s = line.replace(/#.*$/, "").trim();
-    const h = s.match(/^\[+([^\]]+)\]+$/);
+// 夠用的 TOML 走訪：只為了找出每個「鍵 = 值」葉節點與它的完整路徑（section + dotted key + inline table）。
+const stripTomlComment = (line) => {
+  let q = null;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (q) {
+      if (ch === "\\" && q === '"') i++;
+      else if (ch === q) q = null;
+    } else if (ch === '"' || ch === "'") q = ch;
+    else if (ch === "#") return line.slice(0, i);
+  }
+  return line;
+};
+const splitTop = (text) => {
+  const out = [];
+  let depth = 0;
+  let q = null;
+  let cur = "";
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) {
+      if (ch === "\\" && q === '"') cur += text[i++];
+      else if (ch === q) q = null;
+    } else if (ch === '"' || ch === "'") q = ch;
+    else if (ch === "{" || ch === "[") depth++;
+    else if (ch === "}" || ch === "]") depth--;
+    else if (ch === "," && depth === 0) {
+      out.push(cur);
+      cur = "";
+      continue;
+    }
+    cur += text[i] ?? "";
+  }
+  if (cur.trim()) out.push(cur);
+  return out;
+};
+const tomlKeyPath = (k) => k.split(".").map((x) => x.trim().replace(/^["']|["']$/g, ""));
+const tomlScalar = (v) => {
+  const t = v.trim();
+  return /^".*"$|^'.*'$/s.test(t) ? t.slice(1, -1) : t;
+};
+/** 回傳 [{ path: [..], value, line }]：所有葉節點（值是 inline table 時往裡走）。 */
+export function tomlLeaves(text) {
+  const leaves = [];
+  let section = [];
+  const walk = (path, raw, line) => {
+    const t = raw.trim();
+    if (t.startsWith("{")) {
+      for (const part of splitTop(t.slice(1, t.lastIndexOf("}")))) {
+        const m = part.match(/^\s*([A-Za-z0-9_."'-]+)\s*=\s*([\s\S]*)$/);
+        if (m) walk(path.concat(tomlKeyPath(m[1])), m[2], line);
+      }
+    } else leaves.push({ path, value: tomlScalar(t), line });
+  };
+  text.split("\n").forEach((rawLine, i) => {
+    const line = stripTomlComment(rawLine).trim();
+    if (!line) return;
+    const h = line.match(/^\[+\s*([^\]]+?)\s*\]+$/);
     if (h) {
-      section = h[1].trim();
+      section = tomlKeyPath(h[1]);
       return;
     }
-    if (section !== "vars") return;
-    const m = s.match(/^([A-Za-z0-9_]+)\s*=/);
-    if (!m) return;
-    if (SECRET_NAMES.includes(m[1])) problems.push(`wrangler.toml:${i + 1} ${m[1]} 是秘密，必須用 \`wrangler secret put\`，不能寫在 [vars]`);
-    else if (!params[m[1]] && !EXTRA_VARS.includes(m[1])) problems.push(`wrangler.toml:${i + 1} [vars] 的 ${m[1]} 不是已知參數`);
+    const m = line.match(/^([A-Za-z0-9_."'-]+)\s*=\s*(.*)$/);
+    if (m) walk(section.concat(tomlKeyPath(m[1])), m[2], i + 1);
   });
+  return leaves;
+}
+
+/**
+ * wrangler.toml：
+ *   • 秘密鍵名不得出現在**任何位置**——[vars]、[env.<name>.vars]、inline table、dotted key 都算
+ *     （審查 M4：只看 [vars] 時，[env.production.vars] 與 `x = { ALERT_WEBHOOK_URL = … }` 都漏掉）。
+ *   • 任何 vars 表（路徑倒數第二段是 vars）的鍵必須是已知參數或允許的公開設定，值必須通過型別與範圍。
+ */
+export function checkWranglerVars(toml, params, cfg = null) {
+  const problems = [];
+  for (const { path, value, line } of tomlLeaves(toml)) {
+    const name = path[path.length - 1];
+    const where = path.slice(0, -1).join(".") || "頂層";
+    const inVars = path.length >= 2 && path[path.length - 2] === "vars";
+    if (SECRET_NAMES.includes(name)) {
+      problems.push(`wrangler.toml:${line} ${name} 是秘密，必須用 \`wrangler secret put\`，不能寫在 ${inVars ? `[${where}]` : `設定檔（${where}）`}`);
+      continue;
+    }
+    if (!inVars) continue;
+    if (EXTRA_VARS[name]) {
+      const err = EXTRA_VARS[name](value);
+      if (err) problems.push(`wrangler.toml:${line} [${where}] 的 ${name} ${err}`);
+    } else if (!params[name]) problems.push(`wrangler.toml:${line} [${where}] 的 ${name} 不是已知參數`);
+    else if (PARAM_SPECS[name]) {
+      const err = checkParamValue(name, value, cfg);
+      if (err) problems.push(`wrangler.toml:${line} [${where}] 的 ${name} ${err}`);
+    }
+  }
   return problems;
+}
+
+/** 設定目錄底下的所有檔案（遞迴；略過只存在本機、已列入 .gitignore 的項目）。 */
+export function listFiles(dir, rel = "") {
+  const out = [];
+  for (const f of readdirSync(join(dir, rel)).sort()) {
+    if (LOCAL_ONLY.includes(f) || f === "node_modules") continue;
+    const r = rel ? `${rel}/${f}` : f;
+    if (statSync(join(dir, r)).isDirectory()) out.push(...listFiles(dir, r));
+    else out.push(r);
+  }
+  return out;
+}
+
+/** .gitignore 必須擋住 wrangler 的本機秘密檔與狀態目錄（秘密掃描略過它們的前提）。 */
+export function checkGitignore(text) {
+  const lines = new Set(text.split("\n").map((l) => l.trim()));
+  return GITIGNORE_REQUIRED.filter((g) => !lines.has(g) && !lines.has(`**/${g}`)).map(
+    (g) => `.gitignore 沒有 ${g} —— wrangler 的本機秘密／狀態可能被 commit（秘密掃描也略過它們）`,
+  );
 }
 
 // ── 主程式 ───────────────────────────────────────────────────────────────────
@@ -1002,14 +1403,13 @@ export function run({ root, write = false, log = console.log }) {
     ({ config, problems } = checkConfig({ current, ctx, rulesMd: md }));
   }
 
-  // 秘密與 wrangler [vars]
-  const files = readdirSync(dir)
-    .filter((f) => statSync(join(dir, f)).isFile())
-    .map((f) => ({ name: `ops/monitoring/${f}`, text: readFileSync(join(dir, f), "utf8").replace(/\r\n/g, "\n") }));
+  // 秘密（遞迴子目錄）、wrangler.toml、.gitignore
+  const files = listFiles(dir).map((f) => ({ name: `ops/monitoring/${f}`, text: readFileSync(join(dir, f), "utf8").replace(/\r\n/g, "\n") }));
   problems.push(...scanSecrets(files));
-  const toml = files.find((f) => f.name.endsWith("wrangler.toml"));
+  const toml = files.find((f) => f.name === "ops/monitoring/wrangler.toml");
   if (!toml) problems.push("ops/monitoring/wrangler.toml 不存在");
-  else problems.push(...checkWranglerVars(toml.text, config.params));
+  else problems.push(...checkWranglerVars(toml.text, config.params, config));
+  problems.push(...checkGitignore(existsSync(join(root, ".gitignore")) ? read(root, ".gitignore") : ""));
 
   // 已部署 bytecode 快照本身的完整性（雜湊、涵蓋範圍）。pending 規則「事件其實已部署」由 generate 報錯。
   problems.push(...checkDeployed(config, ctx));

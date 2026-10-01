@@ -10,9 +10,17 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { selector as selectorOf } from "../ops/monitoring/keccak.mjs";
 import {
+  PARAM_SPECS,
+  REQUIRED_RULES,
   checkConfig,
   checkDeployed,
+  checkGitignore,
   checkMuteKeys,
+  checkParamValue,
+  eventCoverage,
+  keyedUrl,
+  listFiles,
+  tomlLeaves,
   checkWranglerVars,
   refreshDeployed,
   run,
@@ -62,7 +70,15 @@ function tempRepo() {
       return [`中止：${e.message}`];
     }
   };
-  return { dir, rd, wr, editJson, check, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+  /** 還原會被突變的部分（比重新複製整個副本快）。 */
+  const reset = () => {
+    for (const d of ["ops/monitoring", "frontend/src/contracts"]) {
+      rmSync(join(dir, d), { recursive: true, force: true });
+      cp(d);
+    }
+    cp(".gitignore");
+  };
+  return { dir, rd, wr, editJson, check, reset, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
 test("現行 repo 的監控設定通過", () => {
@@ -418,4 +434,170 @@ test("H2：--refresh-deployed 只用唯讀方法、被限流會重試、結果�
   } finally {
     t.cleanup();
   }
+});
+
+// ── 涵蓋、下限與設定檔（審查 M4）──────────────────────────────────────────────
+
+test("M4：審查的突變清單——每一項都要讓檢查器變紅", () => {
+  const t = tempRepo();
+  const addAbiEvent = (name) => {
+    const f = "frontend/src/contracts/abi/PerpetualExchange.json";
+    const j = JSON.parse(t.rd(f));
+    (Array.isArray(j) ? j : j.abi).push({ type: "event", name, inputs: [{ name: "who", type: "address", indexed: true }], anonymous: false });
+    t.wr(f, JSON.stringify(j));
+  };
+  const toml = "ops/monitoring/wrangler.toml";
+  // [名稱, 突變, 預期訊息, 突變後是否先 --write（模擬「改了手寫欄位再重新產生」）]
+  const cases = [
+    ["monitors.json 的 exchange 位址改成舊位址", () => t.editJson((j) => { j.rules[0].contracts[0].address = "0xEf75ECA6514cE96B18382E921aC6190a0cF8c072"; }), /owner-transferred\]\.contracts\[0\]\.address/],
+    ["addresses.ts 換了 exchange 位址、monitors.json 沒跟", () => t.wr("frontend/src/contracts/addresses.ts", t.rd("frontend/src/contracts/addresses.ts").replaceAll("0x827eA0c62a32e995927101259042F8A27D99124D", "0x1111111111111111111111111111111111111111")), /來源推得 "0x1111111111111111111111111111111111111111"/],
+    ["加一個 ABI 沒有的事件", () => t.editJson((j) => { j.rules.find((r) => r.id === "exchange-wiring-changed").events.push({ sig: "Paused(address)" }); }), /Paused\(address\) 不在 PerpetualExchange\.json 的 ABI 裡/],
+    ["topic0 改錯一個字元", () => t.editJson((j) => { const e = j.rules[0].events[0]; e.topic0 = e.topic0.slice(0, -1) + (e.topic0.endsWith("0") ? "1" : "0"); }), /events\[0\]\.topic0/],
+    ["selector 改錯", () => t.editJson((j) => { j.rules.find((r) => r.id === "vault-reserve").calls[0].selector = "0xdeadbeef"; }), /vault-reserve\]\.calls\[0\]\.selector/],
+    ["rules.md 手改一行", () => t.wr("ops/monitoring/rules.md", t.rd("ops/monitoring/rules.md").replace("SEV-1", "SEV-4")), /rules\.md 與 monitors\.json 不一致/],
+    ["門檻改了、rules.md 沒重產", () => t.editJson((j) => { j.params.GAS_MIN_ETH.default = "0.5"; }), /rules\.md 與 monitors\.json 不一致/],
+    ["金額小數位 18 手改成 6", () => t.editJson((j) => { j.rules.find((r) => r.id === "large-margin-withdrawal").amount.decimals = 6; }), /amount\.decimals = 6，來源推得 18/],
+    ["wrangler [vars] 寫入 bot token", () => t.wr(toml, t.rd(toml) + "\nTELEGRAM_BOT_TOKEN = \"" + ["123456789", "A".repeat(35)].join(":") + "\"\n"), /TELEGRAM_BOT_TOKEN 是秘密/],
+    ["wrangler [vars] 寫入 RPC_URL", () => t.wr(toml, t.rd(toml) + '\nRPC_URL = "https://example-rpc.invalid/abc"\n'), /RPC_URL 是秘密/],
+    // ── 以下是審查當時抓不到的 ──
+    ["[env.production.vars] 裡放秘密", () => t.wr(toml, t.rd(toml) + '\n[env.production.vars]\nALERT_WEBHOOK_SECRET = "s3cr3t-value-not-matching-any-pattern"\nTELEGRAM_CHAT_ID = "-1001234567890"\n'), /ALERT_WEBHOOK_SECRET 是秘密.*\[env\.production\.vars\]/],
+    ["inline table 裡放秘密", () => t.wr(toml, t.rd(toml).replace("[vars]", 'vars_backup = { ALERT_WEBHOOK_URL = "https://hooks.example.invalid/t/abc123secret" }\n[vars]')), /ALERT_WEBHOOK_URL 是秘密/],
+    ["publicRpc 換成含 key 的 RPC URL（不認得的廠商樣式）", () => t.editJson((j) => { j.network.publicRpc = "https://example.base-sepolia.quiknode.invalid/0123456789abcdef0123456789abcdef01234567/"; }), /network\.publicRpc 必須是不需要金鑰的公開端點/],
+    ["子目錄檔案含 Discord webhook", () => t.wr("ops/monitoring/notes/x.txt", ["https://discord.com/api/webhooks", "123456789012345678", "a".repeat(60)].join("/")), /ops\/monitoring\/notes\/x\.txt:1 疑似 Discord webhook/],
+    ["整條 owner-transferred 規則刪除", () => t.editJson((j) => { j.rules = j.rules.filter((r) => r.id !== "owner-transferred"); }), /owner-transferred：必要規則不存在/, true],
+    ["SEV-1 的 exchange-wiring-changed 改成 pending-deploy", () => t.editJson((j) => { const r = j.rules.find((x) => x.id === "exchange-wiring-changed"); r.status = "pending-deploy"; for (const c of r.contracts) { c.source = "contracts/src/PerpetualExchange.sol"; delete c.abi; } }), /exchange-wiring-changed：必要規則必須是 active/, true],
+    ["X402FeeRouter 的 token 由 USDC 改標 MockUSDC", () => t.editJson((j) => { j.rules.find((r) => r.id === "x402-fee-withdrawals").amount.token = "MockUSDC"; }), /x402-fee-withdrawals：token 標成 MockUSDC/, true],
+    ["MAX_BLOCK_RANGE 改成 50000", () => t.editJson((j) => { j.params.MAX_BLOCK_RANGE.default = "50000"; }), /MAX_BLOCK_RANGE\.default 必須在 1–1000 之間/, true],
+    ["參數預設值不是數字", () => t.editJson((j) => { j.params.LARGE_WITHDRAWAL_USDC.default = "10k"; }), /LARGE_WITHDRAWAL_USDC\.default 必須是非負的十進位數字/, true],
+    ["嚴重度降級 SEV-1 → SEV-4", () => t.editJson((j) => { j.rules[0].severity = "SEV-4"; }), /owner-transferred：嚴重度 SEV-4 低於下限 SEV-1/, true],
+    ["前端 ABI 新增 admin 事件、沒有任何規則", () => addAbiEvent("TreasurySet"), /PerpetualExchange 的事件 TreasurySet\(address\).*沒有任何規則、也不在 ignoredEvents/],
+    ["事件簽章對、但部署版 bytecode 沒有（審查當時的原狀）", () => t.editJson((j) => { const r = j.rules.find((x) => x.id === "insurance-wiring-changed"); r.status = "active"; for (const c of r.contracts) { delete c.source; c.abi = "InsuranceVault"; } }), /ExchangeSet\(address\) 的 topic0 不在 InsuranceVault 已部署的 bytecode 裡/, true],
+    // ── 追加 ──
+    [".gitignore 少了 .dev.vars", () => t.wr(".gitignore", t.rd(".gitignore").replace(/^\.dev\.vars$/m, "")), /\.gitignore 沒有 \.dev\.vars/],
+    ["wrangler [vars] 把 MAX_BLOCK_RANGE 覆寫成 5000", () => t.wr(toml, t.rd(toml) + '\nMAX_BLOCK_RANGE = "5000"\n'), /\[vars\] 的 MAX_BLOCK_RANGE 必須在 1–1000 之間/],
+    ["wrangler [vars] 靜音 monitor-self", () => t.wr(toml, t.rd(toml) + '\nMUTE_KEYS = "monitor-self:errors"\n'), /MUTE_KEYS 含 monitor-self:errors：監控自身的告警不可靜音/],
+    ["忽略清單刪掉一項（事件變成沒人管）", () => t.editJson((j) => { j.ignoredEvents[0].events.pop(); }), /沒有任何規則、也不在 ignoredEvents/],
+  ];
+  try {
+    assert.deepEqual(t.check(), [], "基準：未改動的副本必須通過");
+    for (const [name, mutate, expect, writeFirst] of cases) {
+      t.reset();
+      mutate();
+      if (writeFirst) t.check(true);
+      const problems = t.check().join("\n");
+      assert.match(problems, expect, `突變「${name}」沒有被抓到（或訊息不對）：\n${problems.slice(0, 600)}`);
+    }
+    // 審查者的原樣：ABI 新增 GuardianSet。這個事件已有 pending-deploy 規則（exchange-guardian-roles）在等，
+    // 所以不算「沒人管」；它一旦出現在部署版 bytecode，pending 規則就會被要求改成 active（見 H2 測試）。
+    t.reset();
+    addAbiEvent("GuardianSet");
+    assert.deepEqual(t.check(), []);
+  } finally {
+    t.cleanup();
+  }
+});
+
+test("M4：必要規則表涵蓋現行每一條規則，且與現況一致", () => {
+  const cfg = current();
+  assert.deepEqual(Object.keys(REQUIRED_RULES).sort(), cfg.rules.map((r) => r.id).sort());
+  for (const r of cfg.rules) {
+    const [minSev, status] = REQUIRED_RULES[r.id];
+    assert.equal(r.status, status, r.id);
+    assert.equal(r.severity, minSev, `${r.id}：表裡的下限應該等於現行嚴重度`);
+  }
+  // 新規則沒登記 → 錯
+  cfg.rules.push({ ...structuredClone(ruleOf(cfg, "keeper-gas")), id: "brand-new-rule" });
+  assert.ok(problemsOf(cfg).some((x) => /brand-new-rule：新規則還沒登記到.*REQUIRED_RULES/.test(x)));
+});
+
+test("M4：參數型別與範圍", () => {
+  const cfg = current();
+  assert.deepEqual(Object.keys(PARAM_SPECS).sort(), Object.keys(cfg.params).sort(), "每個參數都要有型別定義");
+  assert.ok(PARAM_SPECS.MAX_BLOCK_RANGE.max <= 1000, "公開 RPC 的 eth_getLogs 上限是 1,000 塊");
+  assert.equal(checkParamValue("MAX_BLOCK_RANGE", "1000"), null);
+  assert.match(checkParamValue("MAX_BLOCK_RANGE", "1001"), /1–1000/);
+  assert.match(checkParamValue("MAX_BLOCK_RANGE", "1e3"), /非負整數/);
+  assert.match(checkParamValue("CONFIRMATIONS", "-1"), /非負整數/);
+  assert.equal(checkParamValue("GAS_MIN_ETH", "0.02"), null);
+  assert.match(checkParamValue("GAS_MIN_ETH", "0,02"), /十進位/);
+  assert.match(checkParamValue("MIN_SEVERITY", "SEV-5"), /SEV-1\/SEV-2/);
+  assert.match(checkParamValue("SIGNAL_API_URL", "http://plain.example"), /https/);
+  assert.match(checkParamValue("NO_SUCH", "1"), /沒有型別定義/);
+  cfg.params.ORACLE_DEVIATION_CRIT_BPS.default = "100";
+  cfg.params.NEW_PARAM = { default: "1", unit: "x", doc: "y" };
+  delete cfg.params.REMIND_SEC.doc;
+  const p = problemsOf(cfg).join("\n");
+  assert.match(p, /params\.ORACLE_DEVIATION_BPS（300）不可大於 params\.ORACLE_DEVIATION_CRIT_BPS（100）/);
+  assert.match(p, /params\.NEW_PARAM\.default 沒有型別定義/);
+  assert.match(p, /params\.REMIND_SEC 缺少 doc/);
+});
+
+test("M4：事件涵蓋——忽略清單過期、重複、理由、notDeployed 的真假", () => {
+  assert.deepEqual(eventCoverage(current(), ctx), []);
+  const cfg = current();
+  cfg.ignoredEvents.push({ abi: "MockOracle", reason: "", events: ["AssetAdded(bytes32,uint256)", "NoSuchEvent(uint256)"] });
+  cfg.ignoredEvents.push({ abi: "CopyTracker", reason: "x", events: ["TraderFollowed(address,address,uint256,uint256)"] });
+  cfg.ignoredEvents.find((g) => g.abi === "MockOracle" && g.events[0].startsWith("PriceUpdated")).notDeployed = true;
+  delete cfg.ignoredEvents.find((g) => g.abi === "PepeAMM" && g.notDeployed).notDeployed;
+  const p = eventCoverage(cfg, ctx).join("\n");
+  assert.match(p, /ignoredEvents\[\d+\]（MockOracle） 沒有寫 reason/);
+  assert.match(p, /AssetAdded\(bytes32,uint256\)（MockOracle）同時在規則與 ignoredEvents 裡/);
+  assert.match(p, /NoSuchEvent\(uint256\) 不在 MockOracle\.json 的 ABI 也不在原始碼裡/);
+  assert.match(p, /（CopyTracker） 沒有任何 active 規則在監控這個合約/);
+  assert.match(p, /ignoredEvents 說 PriceUpdated\(bytes32,uint256,uint256,uint256\) 不在 MockOracle 的部署版，但已部署的 bytecode 裡有/);
+  assert.match(p, /MaxOracleAgeSet\(uint256,uint256\)（PepeAMM）不在任何部署版 bytecode 裡 —— 那一組要標 notDeployed/);
+});
+
+test("M4：wrangler.toml——任何位置的秘密鍵名、所有 vars 表、inline table、dotted key、值的驗證", () => {
+  const cfg = current();
+  const text = [
+    'name = "x" # 註解裡的 RPC_URL = "不算"',
+    "[vars]",
+    'MIN_SEVERITY = "SEV-3"',
+    'NOTE = "含 # 的字串不是註解"',
+    "[env.staging.vars]",
+    'HEARTBEAT_URL = "https://hc.example/abc"',
+    'MAX_BLOCK_RANGE = "2000"',
+    "[env.prod]",
+    'vars = { GAS_MIN_ETH = "0.05", DISCORD_WEBHOOK_URL = "x", nested = { GITHUB_TOKEN = "y" } }',
+    'vars.REMIND_SEC = "10"',
+    "[[kv_namespaces]]",
+    'binding = "MONITOR_STATE"',
+    'extra = { TELEGRAM_CHAT_ID = "1" }',
+  ].join("\n");
+  assert.deepEqual(
+    tomlLeaves(text).map((l) => l.path.join(".")),
+    ["name", "vars.MIN_SEVERITY", "vars.NOTE", "env.staging.vars.HEARTBEAT_URL", "env.staging.vars.MAX_BLOCK_RANGE", "env.prod.vars.GAS_MIN_ETH", "env.prod.vars.DISCORD_WEBHOOK_URL", "env.prod.vars.nested.GITHUB_TOKEN", "env.prod.vars.REMIND_SEC", "kv_namespaces.binding", "kv_namespaces.extra.TELEGRAM_CHAT_ID"],
+  );
+  assert.equal(tomlLeaves(text).find((l) => l.path.at(-1) === "NOTE").value, "含 # 的字串不是註解");
+  const p = checkWranglerVars(text, cfg.params, cfg);
+  assert.deepEqual(p.map((x) => x.replace(/^wrangler\.toml:(\d+) /, "$1 ").replace(/ 是秘密.*/, " 是秘密")), [
+    "4 [vars] 的 NOTE 不是已知參數",
+    "6 HEARTBEAT_URL 是秘密",
+    "7 [env.staging.vars] 的 MAX_BLOCK_RANGE 必須在 1–1000 之間，現在是 2000",
+    "9 DISCORD_WEBHOOK_URL 是秘密",
+    "9 GITHUB_TOKEN 是秘密",
+    "10 [env.prod.vars] 的 REMIND_SEC 必須在 300–604800 之間，現在是 10",
+    "13 TELEGRAM_CHAT_ID 是秘密",
+  ]);
+  // repo 裡的 wrangler.toml 本身乾淨
+  assert.deepEqual(checkWranglerVars(readFileSync(join(root, "ops/monitoring/wrangler.toml"), "utf8"), cfg.params, cfg), []);
+});
+
+test("M4：含金鑰的 URL（不靠廠商樣式）、遞迴列檔、.gitignore", () => {
+  assert.equal(keyedUrl("rpc = https://example.base-sepolia.quiknode.invalid/0123456789abcdef0123456789abcdef01234567/"), true);
+  assert.equal(keyedUrl("https://rpc.example/v1?apikey=abcd1234efgh"), true);
+  assert.equal(keyedUrl("https://sepolia.base.org"), false);
+  assert.equal(keyedUrl(`https://sepolia.basescan.org/tx/0x${"ab".repeat(32)}`), false, "tx hash 不是金鑰");
+  assert.equal(keyedUrl(`https://sepolia.basescan.org/address/0x${"ab".repeat(20)}`), false);
+  assert.equal(keyedUrl("https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼"), false);
+  assert.equal(scanSecrets([{ name: "ops/monitoring/sub/a.md", text: "x\nhttps://node.example/rpc/Zx9Kq2Lm8Pv4Rt6Yw1Bn3Cd5Ef7Gh0Jk" }]).length, 1);
+
+  const files = listFiles(join(root, "ops/monitoring"));
+  assert.ok(files.includes("monitors.json") && files.includes("deployed.json"));
+  assert.ok(!files.some((f) => f.includes(".wrangler") || f.endsWith(".dev.vars")));
+
+  assert.deepEqual(checkGitignore(readFileSync(join(root, ".gitignore"), "utf8")), []);
+  assert.equal(checkGitignore("node_modules/\n.env\n").length, 2);
+  assert.equal(checkGitignore("**/.dev.vars\n.wrangler/\n").length, 0);
 });

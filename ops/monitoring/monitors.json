@@ -1,5 +1,5 @@
 {
-  "$comment": "鏈上監控規則（唯一真相）。手寫欄位：id/title/kind/status/severity/description/contracts[].ref|as|abi|source/events[].sig/calls[].on|fn|expect|note、events[].notDeployed|note/amount/runbook/related/params。產生欄位（node scripts/check-monitoring.mjs --write）：contracts[].address、events[].topic0|inputs、calls[].selector|expected、decimals、runbookUrl、assets、assetLabels、roleNames。CI 會檢查兩者一致、位址等於 frontend/src/contracts/**、事件存在於 ABI。不要放任何秘密。",
+  "$comment": "鏈上監控規則（唯一真相）。手寫欄位：id/title/kind/status/severity/description/contracts[].ref|as|abi|source/events[].sig/calls[].on|fn|expect|note、events[].notDeployed|note/amount/runbook/related/params、ignoredEvents（受監控合約會發、但刻意不監控的事件與理由）。產生欄位（node scripts/check-monitoring.mjs --write）：contracts[].address、events[].topic0|inputs、calls[].selector|expected、decimals、runbookUrl、assets、assetLabels、roleNames。CI 會檢查兩者一致、位址等於 frontend/src/contracts/**、事件存在於 ABI。不要放任何秘密。",
   "version": 1,
   "deployment": {
     "id": "pepefi-base-sepolia",
@@ -163,7 +163,7 @@
       "kind": "event",
       "status": "active",
       "severity": "SEV-1",
-      "description": "Ownable 合約的 owner 被轉移。未經排程的轉移等同特權金鑰外洩或誤操作；即使是預期中的移交（例如移交 Timelock），也要人工核對新 owner。",
+      "description": "Ownable 合約的 owner 被轉移。未經排程的轉移等同特權金鑰外洩或誤操作；即使是預期中的移交（例如移交 Timelock），也要人工核對新 owner。涵蓋 Base Sepolia 上所有 Ownable 合約，含 MockUSDC／MockUSDT（owner 可以 mint 抵押品）與 Pepe 系列周邊合約。",
       "contracts": [
         {
           "ref": "PerpetualExchange",
@@ -219,6 +219,46 @@
           "ref": "AssetVault",
           "abi": "AssetVault",
           "address": "0xC30DFe1C9EBb47197b785995aA9Cd0F5B89557A5"
+        },
+        {
+          "ref": "MockUSDC",
+          "abi": "MockUSDC",
+          "address": "0x69fd695Bc7C3aFdb35ABA35cD6890C506400b035"
+        },
+        {
+          "ref": "MockUSDT",
+          "abi": "MockUSDT",
+          "address": "0x5c8A1e970D275Cc269e09A949D68693120416d78"
+        },
+        {
+          "ref": "PepeToken",
+          "abi": "PepeToken",
+          "address": "0xccd05cbdc2f7961a4c27d3633694022722786a0f"
+        },
+        {
+          "ref": "PepeAMM",
+          "abi": "PepeAMM",
+          "address": "0x93be44a81a2796d378f65ebcc8d5f8b40166ad63"
+        },
+        {
+          "ref": "PepeClaim",
+          "abi": "PepeClaim",
+          "address": "0x459d238aC61eC4A0E08608FBcd363227B860CF34"
+        },
+        {
+          "ref": "PepeStaking",
+          "abi": "PepeStaking",
+          "address": "0xC78D68cA1B217ba241c23Ebad3118c6ec0dc0D34"
+        },
+        {
+          "ref": "PepeIncentives",
+          "abi": "PepeIncentives",
+          "address": "0xEBfA1dc7dDea032ac6242cB619d982e543A23c12"
+        },
+        {
+          "ref": "EsgRewardDistributor",
+          "abi": "EsgRewardDistributor",
+          "address": "0x44a8E5195E168e5AdcCa4343Bd8B399B49D5609F"
         }
       ],
       "events": [
@@ -413,7 +453,7 @@
     },
     {
       "id": "vault-upgraded",
-      "title": "代幣化金庫升級或改接 oracle",
+      "title": "代幣化金庫升級、重新初始化或改接 oracle",
       "category": "權限",
       "kind": "event",
       "status": "active",
@@ -469,6 +509,17 @@
               "indexed": true
             }
           ]
+        },
+        {
+          "sig": "Initialized(uint64)",
+          "topic0": "0xc7f505b2f371ae2175ee4913f4499e1f2633a7b5936321eed1cdaeb6115181d2",
+          "inputs": [
+            {
+              "name": "version",
+              "type": "uint64",
+              "indexed": false
+            }
+          ]
         }
       ],
       "runbook": [
@@ -507,6 +558,40 @@
               "name": "authorized",
               "type": "bool",
               "indexed": false
+            }
+          ]
+        }
+      ],
+      "runbook": [
+        "1. 嚴重度分級",
+        "3. 暫停與凍結：現行部署能做什麼"
+      ],
+      "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#1-嚴重度分級"
+    },
+    {
+      "id": "traderstake-copytracker-set",
+      "title": "TraderStake 的 slash 權限地址變更",
+      "category": "權限",
+      "kind": "event",
+      "status": "active",
+      "severity": "SEV-1",
+      "description": "TraderStake.copyTracker 是唯一能 slash 交易員質押的地址；owner 把它改成別的地址就能把質押金轉走（上限 MAX_SLASH_BPS）。狀態規則 core-wiring 另外每輪比對 getter。",
+      "contracts": [
+        {
+          "ref": "TraderStake",
+          "abi": "TraderStake",
+          "address": "0x01aEB530bcFc69f036309ffe55acc7eA6C5a28Fe"
+        }
+      ],
+      "events": [
+        {
+          "sig": "CopyTrackerSet(address)",
+          "topic0": "0x784a563dd1eca667244c2b0d2815d35bd69d026835117e5341f742420433ca0e",
+          "inputs": [
+            {
+              "name": "ct",
+              "type": "address",
+              "indexed": true
             }
           ]
         }
@@ -1160,6 +1245,52 @@
       "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼"
     },
     {
+      "id": "exchange-funding-clamped",
+      "title": "交易所 funding 追趕被截斷",
+      "category": "風險參數",
+      "kind": "event",
+      "status": "active",
+      "severity": "SEV-3",
+      "description": "settleFunding 發現積欠的 funding 區間超過 MAX_FUNDING_CATCHUP_INTERVALS，只補算上限、其餘略過：代表 funding 已經很久沒人結算（keeper 停擺），多空之間有一段 funding 沒有被收付。",
+      "contracts": [
+        {
+          "ref": "PerpetualExchange",
+          "abi": "PerpetualExchange",
+          "address": "0x827eA0c62a32e995927101259042F8A27D99124D"
+        }
+      ],
+      "events": [
+        {
+          "sig": "FundingCatchupClamped(bytes32,uint256,uint256)",
+          "topic0": "0x06e96fbce1fac16cb8fa0f57fdbf469fc18db1e3cf15c2815aafa900eb5e3515",
+          "inputs": [
+            {
+              "name": "asset",
+              "type": "bytes32",
+              "indexed": true
+            },
+            {
+              "name": "elapsed",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "accrued",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        }
+      ],
+      "runbook": [
+        "5. keeper 熔斷處置"
+      ],
+      "related": [
+        "docs/RUNBOOK_KEEPER.md#復原程序"
+      ],
+      "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#5-keeper-熔斷處置"
+    },
+    {
       "id": "vault-pause-changed",
       "title": "代幣化金庫暫停／mint 停止解除",
       "category": "暫停與資產模式",
@@ -1222,6 +1353,50 @@
       "runbook": [
         "3. 暫停與凍結：現行部署能做什麼",
         "7. 對外溝通與客戶通報（目標值，可調整）"
+      ],
+      "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼"
+    },
+    {
+      "id": "pepe-incentives-pause",
+      "title": "PepeIncentives 暫停／解除",
+      "category": "暫停與資產模式",
+      "kind": "event",
+      "status": "active",
+      "severity": "SEV-3",
+      "description": "PepeIncentives（交易挖礦、簽到、跟單獎勵）被 owner 暫停或解除暫停。",
+      "contracts": [
+        {
+          "ref": "PepeIncentives",
+          "abi": "PepeIncentives",
+          "address": "0xEBfA1dc7dDea032ac6242cB619d982e543A23c12"
+        }
+      ],
+      "events": [
+        {
+          "sig": "Paused(address)",
+          "topic0": "0x62e78cea01bee320cd4e420270b5ea74000d11b0c9f74754ebdbfc544b05a258",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "sig": "Unpaused(address)",
+          "topic0": "0x5db9ee0a495bf2e6ff9c91a7834c1ba4fdd244a5e8aa4e537bd38aeae4b073aa",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": false
+            }
+          ]
+        }
+      ],
+      "runbook": [
+        "3. 暫停與凍結：現行部署能做什麼"
       ],
       "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼"
     },
@@ -1338,6 +1513,185 @@
         "3. 暫停與凍結：現行部署能做什麼"
       ],
       "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼"
+    },
+    {
+      "id": "asset-vault-v1-assets",
+      "title": "V1 金庫登記新資產",
+      "category": "風險參數",
+      "kind": "event",
+      "status": "active",
+      "severity": "SEV-3",
+      "description": "V1 AssetVault（Base Sepolia 的原始 mint／redeem 路徑）的 owner 登記了新的資產代幣：之後任何人都能以該資產的 oracle 價格 mint。",
+      "contracts": [
+        {
+          "ref": "AssetVault",
+          "abi": "AssetVault",
+          "address": "0xC30DFe1C9EBb47197b785995aA9Cd0F5B89557A5"
+        }
+      ],
+      "events": [
+        {
+          "sig": "AssetRegistered(bytes32,address)",
+          "topic0": "0x7b8c7b505365aa1b7f9ce04295e6da7c743d877f121b9debcf6a8a9d1806ce46",
+          "inputs": [
+            {
+              "name": "assetId",
+              "type": "bytes32",
+              "indexed": true
+            },
+            {
+              "name": "token",
+              "type": "address",
+              "indexed": false
+            }
+          ]
+        }
+      ],
+      "runbook": [
+        "3. 暫停與凍結：現行部署能做什麼"
+      ],
+      "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼"
+    },
+    {
+      "id": "esg-registry-params",
+      "title": "碳分級登錄參數變更",
+      "category": "風險參數",
+      "kind": "event",
+      "status": "active",
+      "severity": "SEV-3",
+      "description": "ESGRegistryV2 的 maxAttestationAge 被改：放寬後過期的認證仍算有效，影響金庫的 ESG 門檻與獎勵資格。",
+      "contracts": [
+        {
+          "ref": "ESGRegistryV2",
+          "abi": "ESGRegistryV2",
+          "address": "0xBF5B9cD78566791d79c687A732b4ed5bc3E95dFf"
+        }
+      ],
+      "events": [
+        {
+          "sig": "MaxAttestationAgeSet(uint256,uint256)",
+          "topic0": "0x5b681330beae9a6daa2fe64eb71b682ead1a8827cad74d42d2d3fe744ae72c29",
+          "inputs": [
+            {
+              "name": "oldValue",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "newValue",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        }
+      ],
+      "runbook": [
+        "3. 暫停與凍結：現行部署能做什麼"
+      ],
+      "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼"
+    },
+    {
+      "id": "esg-reward-params",
+      "title": "ESG 獎勵發放參數變更",
+      "category": "風險參數",
+      "kind": "event",
+      "status": "active",
+      "severity": "SEV-3",
+      "description": "EsgRewardDistributor 的最高獎勵等級或最短持有時間被改：直接影響能領多少、多快能領。",
+      "contracts": [
+        {
+          "ref": "EsgRewardDistributor",
+          "abi": "EsgRewardDistributor",
+          "address": "0x44a8E5195E168e5AdcCa4343Bd8B399B49D5609F"
+        }
+      ],
+      "events": [
+        {
+          "sig": "MaxRewardTierSet(uint8,uint8)",
+          "topic0": "0xee6604070b49429acfee5aaca68708b06366a7b5a0b2d6b9c5b56d1feb7b8865",
+          "inputs": [
+            {
+              "name": "oldValue",
+              "type": "uint8",
+              "indexed": false
+            },
+            {
+              "name": "newValue",
+              "type": "uint8",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "sig": "MinHoldSecondsSet(uint256,uint256)",
+          "topic0": "0x612a3c241eb37a84675e95fa99961f86b11ffb2a22b8b999a79cf258b2d65125",
+          "inputs": [
+            {
+              "name": "oldValue",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "newValue",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        }
+      ],
+      "runbook": [
+        "3. 暫停與凍結：現行部署能做什麼"
+      ],
+      "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼"
+    },
+    {
+      "id": "pepe-claim-admin",
+      "title": "PepeClaim 領取額度變更或 owner 提走代幣",
+      "category": "大額提領",
+      "kind": "event",
+      "status": "active",
+      "severity": "SEV-3",
+      "description": "PepeClaim 的每次領取額度被改，或 owner 把合約裡剩餘的 PEPE 提走。",
+      "contracts": [
+        {
+          "ref": "PepeClaim",
+          "abi": "PepeClaim",
+          "address": "0x459d238aC61eC4A0E08608FBcd363227B860CF34"
+        }
+      ],
+      "events": [
+        {
+          "sig": "ClaimAmountSet(uint256)",
+          "topic0": "0xd36d9c0cc3e537f57698d7fb5970e51fbc29da64ebb9f7fb85f7ca60b85bff6d",
+          "inputs": [
+            {
+              "name": "newAmount",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "sig": "Withdrawn(address,uint256)",
+          "topic0": "0x7084f5476618d8e60b11ef0d7d3f06914655adb8793e28ff7f018d4c76d505d5",
+          "inputs": [
+            {
+              "name": "to",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "amount",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        }
+      ],
+      "runbook": [
+        "1. 嚴重度分級"
+      ],
+      "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#1-嚴重度分級"
     },
     {
       "id": "vault-reserve-breached",
@@ -1643,6 +1997,136 @@
             {
               "name": "allowed",
               "type": "bool",
+              "indexed": false
+            }
+          ]
+        }
+      ],
+      "runbook": [
+        "5. keeper 熔斷處置"
+      ],
+      "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#5-keeper-熔斷處置"
+    },
+    {
+      "id": "chainlink-adapter-config",
+      "title": "Chainlink adapter 的 feed 對應變更",
+      "category": "Oracle",
+      "kind": "event",
+      "status": "active",
+      "severity": "SEV-2",
+      "description": "AggregatorOracle 的來源之一（ChainlinkAdapter）某個資產改指向別的 price feed：keeper 的中繼來源與偏離比對的參考價都會跟著變。",
+      "contracts": [
+        {
+          "ref": "ChainlinkAdapter",
+          "abi": "ChainlinkOracleAdapter",
+          "address": "0x37DC7b70899BFfB17949366a5b6a86203C428E2f"
+        }
+      ],
+      "events": [
+        {
+          "sig": "FeedSet(bytes32,address)",
+          "topic0": "0xe0f47a64acede619426f1ba39b37609054173e5424f14da9355ba41dd651f916",
+          "inputs": [
+            {
+              "name": "assetId",
+              "type": "bytes32",
+              "indexed": true
+            },
+            {
+              "name": "feed",
+              "type": "address",
+              "indexed": true
+            }
+          ]
+        },
+        {
+          "sig": "StaleThresholdSet(uint256,uint256)",
+          "notDeployed": true,
+          "note": "部署版的 ChainlinkAdapter 沒有 setStaleThreshold，過期門檻不能改",
+          "topic0": "0xbbdef213979afab4bc82df04484ba84bcc61c5e7b975f05e9fa44604adaff755",
+          "inputs": [
+            {
+              "name": "oldValue",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "newValue",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        }
+      ],
+      "runbook": [
+        "5. keeper 熔斷處置"
+      ],
+      "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#5-keeper-熔斷處置"
+    },
+    {
+      "id": "pyth-adapter-config",
+      "title": "Pyth adapter 的 price id 對應變更",
+      "category": "Oracle",
+      "kind": "event",
+      "status": "active",
+      "severity": "SEV-2",
+      "description": "AggregatorOracle 的來源之一（PythAdapter）某個資產改指向別的 Pyth price id：keeper 的中繼來源與偏離比對的參考價都會跟著變。",
+      "contracts": [
+        {
+          "ref": "PythAdapter",
+          "abi": "PythOracleAdapter",
+          "address": "0x551C0B2e75a9129fe697210223F1Ca6e64F3C6d5"
+        }
+      ],
+      "events": [
+        {
+          "sig": "PriceIdSet(bytes32,bytes32)",
+          "topic0": "0xa4f4fbe8ebea507d59b7b9430b6f5225e88386e50c9f125e0001c9984a488329",
+          "inputs": [
+            {
+              "name": "assetId",
+              "type": "bytes32",
+              "indexed": true
+            },
+            {
+              "name": "priceId",
+              "type": "bytes32",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "sig": "StaleThresholdSet(uint256,uint256)",
+          "notDeployed": true,
+          "note": "部署版的 PythAdapter 沒有 setStaleThreshold，過期門檻不能改",
+          "topic0": "0xbbdef213979afab4bc82df04484ba84bcc61c5e7b975f05e9fa44604adaff755",
+          "inputs": [
+            {
+              "name": "oldValue",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "newValue",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "sig": "MaxConfBpsSet(uint256,uint256)",
+          "notDeployed": true,
+          "note": "部署版的 PythAdapter 沒有 setMaxConfBps／maxConfBps()，沒有這個參數",
+          "topic0": "0xd6495b22e712788cbb9dd64d07e61f8170c378996d9ad33dce7e7e5878cd4055",
+          "inputs": [
+            {
+              "name": "oldValue",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "newValue",
+              "type": "uint256",
               "indexed": false
             }
           ]
@@ -2836,6 +3320,220 @@
         "1. 嚴重度分級"
       ],
       "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#1-嚴重度分級"
+    }
+  ],
+  "ignoredEvents": [
+    {
+      "abi": "PerpetualExchange",
+      "reason": "使用者自己的操作或例行結算，不是管理操作；資金面由大額提領、保險金與儲備率規則涵蓋",
+      "events": [
+        "FundingSettled(bytes32,int256,int256,int256)",
+        "MarginDeposited(address,uint256)",
+        "PerformanceFeePaid(uint256,address,uint256)",
+        "PositionClosed(uint256,address,int256,uint256)",
+        "PositionLiquidated(uint256,address,address,int256)",
+        "PositionOpened(uint256,address,bytes32,bool,uint256,uint256,uint256)",
+        "VaultFeeRouted(uint256,uint256)"
+      ]
+    },
+    {
+      "abi": "InsuranceVault",
+      "reason": "存入與份額轉移（資金流入或 LP 之間轉讓）；流出由 insurance-withdrawal、insurance-bailout 與 insurance-fund 涵蓋",
+      "events": [
+        "Approval(address,address,uint256)",
+        "Deposited(address,uint256,uint256)",
+        "ProtocolDeposit(address,uint256)",
+        "Transfer(address,address,uint256)"
+      ]
+    },
+    {
+      "abi": "InsuranceVault",
+      "notDeployed": true,
+      "reason": "部署版沒有 recapitalize()，不會發這個事件；而且是資金流入",
+      "events": [
+        "Recapitalized(address,uint256)"
+      ]
+    },
+    {
+      "abi": "FeeRouter",
+      "reason": "例行分潤與交易員自行提領自己的收益；平台手續費提領另有 fee-withdrawals／x402-fee-withdrawals",
+      "events": [
+        "CopyFeeDistributed(address,uint256,uint256,uint256,uint256)",
+        "ExternalRevenueRouted(address,address,uint256,uint256,uint256,uint256)",
+        "PerformanceFeeDistributed(address,uint256,uint256,uint256,uint256)",
+        "TraderEarningsWithdrawn(address,uint256)"
+      ]
+    },
+    {
+      "abi": "MockOracle",
+      "reason": "keeper 的例行寫價；沒有寫價由 oracle-stale 監控",
+      "events": [
+        "PriceUpdated(bytes32,uint256,uint256,uint256)"
+      ]
+    },
+    {
+      "abi": "GuardedOracle",
+      "reason": "keeper 的例行寫價；被拒絕的寫價由 guarded-oracle-price-rejected 監控",
+      "events": [
+        "PriceUpdated(bytes32,uint256,uint256,address)"
+      ]
+    },
+    {
+      "abi": "TraderStake",
+      "reason": "交易員自己的質押操作，與 CopyTracker 依協議規則執行的 slash／聲譽更新；能執行 slash 的地址由 traderstake-copytracker-set 與 core-wiring 監控",
+      "events": [
+        "ReputationUpdated(address,uint256)",
+        "Slashed(address,uint256,address)",
+        "Staked(address,uint256)",
+        "UnstakeCancelled(address)",
+        "UnstakeRequested(address,uint256,uint256)",
+        "Unstaked(address,uint256)"
+      ]
+    },
+    {
+      "abi": "KYCRegistry",
+      "reason": "owner 的例行 KYC 核准；owner 變更由 owner-transferred 監控",
+      "events": [
+        "KYCBatchVerified(uint256,uint256)",
+        "KYCVerified(address,string,uint256)"
+      ]
+    },
+    {
+      "abi": "KYCRegistry",
+      "notDeployed": true,
+      "reason": "部署版是舊的 KYCRegistry，沒有送件與撤銷流程",
+      "events": [
+        "KYCRevoked(address,uint256)",
+        "KYCSubmitted(address,string,uint256)"
+      ]
+    },
+    {
+      "abi": "AssetVault",
+      "reason": "使用者自己的操作或例行結算，不是管理操作；資金面由大額提領、保險金與儲備率規則涵蓋",
+      "events": [
+        "Minted(address,bytes32,uint256,uint256)",
+        "Redeemed(address,bytes32,uint256,uint256)",
+        "VaultFunded(address,uint256)"
+      ]
+    },
+    {
+      "abi": "AssetVaultV2",
+      "reason": "mint 與注資是資金流入，儲備觀測是例行事件；跌破下限由 vault-reserve-breached 與 vault-reserve 監控，流出由 vault-large-redeem 監控",
+      "events": [
+        "Minted(address,bytes32,uint256,uint256,uint256)",
+        "ReserveObserved(uint256,uint256,uint256,uint256,uint256)",
+        "ReserveRestored(uint256,uint256)",
+        "VaultFunded(address,uint256)"
+      ]
+    },
+    {
+      "abi": "ESGRegistryV2",
+      "reason": "attester 的例行認證；能認證的角色由 access-role-changed 監控",
+      "events": [
+        "Attested(bytes32,address,uint256,uint8,uint8,uint8,uint8,uint8,bytes32,uint256)"
+      ]
+    },
+    {
+      "abi": "SustainabilityBadge",
+      "reason": "徽章鑄造與轉移；能鑄造的角色由 access-role-changed 監控",
+      "events": [
+        "BadgeMinted(address,uint256,string)",
+        "Transfer(address,address,uint256)"
+      ]
+    },
+    {
+      "abi": "SustainabilityBadge",
+      "notDeployed": true,
+      "reason": "徽章不可轉讓，部署版沒有把授權事件編進 bytecode",
+      "events": [
+        "Approval(address,address,uint256)",
+        "ApprovalForAll(address,address,bool)"
+      ]
+    },
+    {
+      "abi": "SyntheticAssetV2",
+      "reason": "ERC-20／ERC-721 的一般轉帳與授權，量大且不是管理操作",
+      "events": [
+        "Approval(address,address,uint256)",
+        "Transfer(address,address,uint256)"
+      ]
+    },
+    {
+      "abi": "MockUSDC",
+      "reason": "ERC-20／ERC-721 的一般轉帳與授權，量大且不是管理操作（含 faucet 與 owner 的 mint；MockUSDC 是測試幣）",
+      "events": [
+        "Approval(address,address,uint256)",
+        "Transfer(address,address,uint256)"
+      ]
+    },
+    {
+      "abi": "MockUSDT",
+      "reason": "ERC-20／ERC-721 的一般轉帳與授權，量大且不是管理操作",
+      "events": [
+        "Approval(address,address,uint256)",
+        "Transfer(address,address,uint256)"
+      ]
+    },
+    {
+      "abi": "PepeToken",
+      "reason": "ERC-20／ERC-721 的一般轉帳與授權，量大且不是管理操作",
+      "events": [
+        "Approval(address,address,uint256)",
+        "Transfer(address,address,uint256)"
+      ]
+    },
+    {
+      "abi": "PepeAMM",
+      "reason": "使用者自己的操作或例行結算，不是管理操作；資金面由大額提領、保險金與儲備率規則涵蓋",
+      "events": [
+        "Swap(address,bool,uint256,uint256,uint256)"
+      ]
+    },
+    {
+      "abi": "PepeAMM",
+      "notDeployed": true,
+      "reason": "部署版的 PepeAMM 是舊版：沒有 LP 份額與 oracle 護欄參數，不會發這些事件",
+      "events": [
+        "LiquidityAdded(address,uint256,uint256,uint256)",
+        "LiquidityRemoved(address,uint256,uint256,uint256)",
+        "MaxOracleAgeSet(uint256,uint256)",
+        "MaxOracleDeviationBpsSet(uint256,uint256)"
+      ]
+    },
+    {
+      "abi": "PepeClaim",
+      "reason": "使用者自己的操作或例行結算，不是管理操作；資金面由大額提領、保險金與儲備率規則涵蓋",
+      "events": [
+        "Claimed(address,uint256)"
+      ]
+    },
+    {
+      "abi": "PepeStaking",
+      "reason": "使用者的質押操作與 owner 例行注入獎勵（資金流入）",
+      "events": [
+        "RewardNotified(uint256,uint256)",
+        "Staked(address,uint256)",
+        "Withdrawn(address,uint256)",
+        "YieldClaimed(address,uint256)"
+      ]
+    },
+    {
+      "abi": "PepeIncentives",
+      "reason": "使用者自己的操作或例行結算，不是管理操作；資金面由大額提領、保險金與儲備率規則涵蓋",
+      "events": [
+        "CopyClaimed(address,address,uint256)",
+        "DailyCheckIn(address,uint256,uint8,uint256)",
+        "EsgHoldClaimed(address,uint256,uint256)",
+        "TierClaimed(address,uint8,uint256)",
+        "TradeMined(address,uint256,uint256)"
+      ]
+    },
+    {
+      "abi": "EsgRewardDistributor",
+      "reason": "使用者自己的操作或例行結算，不是管理操作；資金面由大額提領、保險金與儲備率規則涵蓋",
+      "events": [
+        "EsgRewardClaimed(address,uint256,uint256)"
+      ]
     }
   ],
   "assets": {
