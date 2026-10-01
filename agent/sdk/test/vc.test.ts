@@ -65,7 +65,10 @@ const draft = buildAuthorizationTypedData(params);
 // 3) 拒絕 v1（即使 shared 在淘汰期限前仍會帶警告放行）
 {
   const wallet = new ethers.Wallet(generatePrivateKey());
-  const v1 = await sharedIssue({ issuer: wallet, agentAddress: agent.address, sessionId: 1, caps, legacyV1: true });
+  // 簽發與驗證時間都固定，不依賴真實時鐘：原本 issuedAt 取真實時間、驗證時間寫死
+  // 2026-10-01，從那天起 issuedAt 晚於「現在」超過容忍值 → 被當成未來簽發而拒收。
+  const V1_ISSUED = Math.floor(Date.parse("2026-09-30T00:00:00Z") / 1000);
+  const v1 = await sharedIssue({ issuer: wallet, agentAddress: agent.address, sessionId: 1, caps, legacyV1: true, issuedAt: V1_ISSUED });
   const origWarn = console.warn;
   console.warn = () => {};
   const shared = sharedVerify(v1, { now: Date.parse("2026-10-01T00:00:00Z") });
