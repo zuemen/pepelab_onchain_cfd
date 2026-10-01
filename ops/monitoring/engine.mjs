@@ -137,14 +137,29 @@ const clip = (s, n) => {
  * 節點拒絕這個 eth_getLogs 範圍（區塊數或結果數超過上限）。縮小範圍重試就會過，
  * 所以不算「RPC 壞了」。實測（2026-10-01，https://sepolia.base.org）：超過 1,000 塊回
  * HTTP 413 `{"code":-32614,"message":"eth_getLogs is limited to a 1,000 range"}`。
- * 其他節點常見的是 -32005「query returned more than 10000 results」。
+ * 其他節點常見的是 -32005「query returned more than 10000 results」（-32005 本身不算：有些節點的
+ * 限流也用這個碼，那要退避重試而不是縮小範圍）。
  */
 export function isRangeError(e) {
-  if (e?.status === 413 || e?.code === -32614 || e?.code === -32005) return true;
+  if (e?.status === 413 || e?.code === -32614) return true;
   return /limited to a|block range|range (?:is )?too (?:large|wide)|exceeds? .*range|more than \d[\d,]* results|response size|too many results/i.test(
     String(e?.message ?? ""),
   );
 }
+
+/**
+ * 暫時性失敗：限流、5xx、逾時、連線錯誤。退避後重送通常就過，不值得吵醒人（審查 M3：公開 RPC
+ * 每秒 25 個請求，超過回 HTTP 429 或逐筆的 -32007）。範圍被拒不在此列——那要縮小範圍，不是重送。
+ */
+export function isTransient(e) {
+  if (isRangeError(e)) return false;
+  if (e?.transient) return true;
+  if (e?.status === 429 || (e?.status >= 500 && e?.status <= 599)) return true;
+  if (e?.code === -32007) return true;
+  return /rate.?limit|limit reached|too many requests|request rate|timed? ?out|temporarily unavailable/i.test(String(e?.message ?? e?.error ?? ""));
+}
+
+const realSleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function fetchWithTimeout(fetchImpl, url, init, timeoutMs) {
   const ctl = typeof AbortController === "function" ? new AbortController() : null;
@@ -156,19 +171,47 @@ async function fetchWithTimeout(fetchImpl, url, init, timeoutMs) {
   }
 }
 
+/** 重試前的等待（毫秒）：第一次 400、第二次 1200。 */
+const BACKOFF_MS = [400, 1200];
+
 /**
  * RPC 用戶端。batch() 一次送多個請求（省 Worker 的 subrequest 配額）；節點不支援
  * batch（回非陣列）時退回逐筆。每個結果是 {result} 或 {error}，單筆失敗不影響其他筆。
+ *
+ *   • 暫時性失敗退避重試，每個請求最多 retries 次、整輪合計最多 retryBudget 次（subrequest 有限：
+ *     RPC 整個掛掉時不能讓每個請求都重試到底）。
+ *   • 節流：一秒內送出的呼叫數（batch 內逐筆計）不超過 callsPerSec，超過就先等。公開 RPC 的上限
+ *     是每秒 25 個，batch 裡超過的那幾筆會各自回 -32007——那幾筆也會被重送。
  */
-export function makeRpc(url, fetchImpl, { timeoutMs = 15_000 } = {}) {
+export function makeRpc(url, fetchImpl, { timeoutMs = 15_000, retries = 2, retryBudget = 6, callsPerSec = 20, sleep = realSleep, clock = Date.now } = {}) {
   let nextId = 1;
-  const post = async (body) => {
-    const res = await fetchWithTimeout(
-      fetchImpl,
-      url,
-      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
-      timeoutMs,
-    );
+  const stats = { requests: 0, retries: 0 };
+  let budget = retryBudget;
+  const stamps = []; // 最近送出的每個呼叫的時間（毫秒）
+  const pace = async (n) => {
+    const now = clock();
+    while (stamps.length && now - stamps[0] >= 1000) stamps.shift();
+    const over = Math.min(stamps.length, stamps.length + n - callsPerSec);
+    if (over > 0) {
+      await sleep(Math.max(0, stamps[over - 1] + 1000 - now) + 10);
+      stamps.splice(0, over);
+    }
+    const t = clock();
+    for (let i = 0; i < n; i++) stamps.push(t);
+  };
+  const postOnce = async (body) => {
+    let res;
+    try {
+      res = await fetchWithTimeout(
+        fetchImpl,
+        url,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
+        timeoutMs,
+      );
+    } catch (e) {
+      const aborted = e?.name === "AbortError" || /abort/i.test(String(e?.message ?? ""));
+      throw Object.assign(new RpcError(aborted ? `RPC 逾時（${timeoutMs / 1000} 秒）` : `RPC 連線失敗：${clip(e?.message ?? e, 80)}`), { transient: true });
+    }
     if (!res.ok) {
       // 帶上回應內文：公開 RPC 的 413 內文才說得出「eth_getLogs is limited to a 1,000 range」，
       // 只記 HTTP 狀態的話，值班的人看不出是範圍、額度還是節點故障。
@@ -186,37 +229,76 @@ export function makeRpc(url, fetchImpl, { timeoutMs = 15_000 } = {}) {
       }
       throw new RpcError(`RPC HTTP ${res.status}${text.trim() ? `：${clip(text, 200)}` : ""}`, { status: res.status, code });
     }
-    return res.json();
+    try {
+      return await res.json();
+    } catch {
+      throw Object.assign(new RpcError("RPC 回應不是 JSON"), { transient: true });
+    }
+  };
+  /** 可以再試一次嗎（同時扣整輪額度）。 */
+  const mayRetry = (attempt) => {
+    if (attempt >= retries || budget <= 0) return false;
+    budget--;
+    stats.retries++;
+    return true;
+  };
+  const post = async (body) => {
+    for (let attempt = 0; ; attempt++) {
+      await pace(Array.isArray(body) ? body.length : 1);
+      stats.requests++;
+      try {
+        return await postOnce(body);
+      } catch (e) {
+        if (!isTransient(e) || !mayRetry(attempt)) throw e;
+        await sleep(BACKOFF_MS[attempt] ?? 1200);
+      }
+    }
   };
   const one = async (method, params) => {
-    const j = await post({ jsonrpc: "2.0", id: nextId++, method, params });
-    if (j?.error) throw new RpcError(`RPC ${method}: ${clip(j.error.message ?? "error", 160)}`, { code: j.error.code });
-    return j?.result;
+    for (let attempt = 0; ; attempt++) {
+      const j = await post({ jsonrpc: "2.0", id: nextId++, method, params });
+      if (!j?.error) return j?.result;
+      const err = new RpcError(`RPC ${method}: ${clip(j.error.message ?? "error", 160)}`, { code: j.error.code });
+      if (!isTransient(err) || !mayRetry(attempt)) throw err;
+      await sleep(BACKOFF_MS[attempt] ?? 1200);
+    }
   };
   const batch = async (reqs) => {
     if (reqs.length === 0) return [];
-    const body = reqs.map((r) => ({ jsonrpc: "2.0", id: nextId++, method: r.method, params: r.params }));
-    const j = await post(body);
-    if (!Array.isArray(j)) {
-      const out = [];
-      for (const r of reqs) {
-        try {
-          out.push({ result: await one(r.method, r.params) });
-        } catch (e) {
-          out.push({ error: e.message });
+    const out = new Array(reqs.length).fill(null);
+    let todo = reqs.map((_, i) => i);
+    for (let attempt = 0; todo.length; attempt++) {
+      const body = todo.map((i) => ({ jsonrpc: "2.0", id: nextId++, method: reqs[i].method, params: reqs[i].params }));
+      const j = await post(body);
+      if (!Array.isArray(j)) {
+        // 節點不支援 batch：逐筆（各自有重試）。
+        for (const i of todo) {
+          try {
+            out[i] = { result: await one(reqs[i].method, reqs[i].params) };
+          } catch (e) {
+            out[i] = { error: e.message, code: e.code };
+          }
         }
+        break;
       }
-      return out;
+      const byId = new Map(j.map((x) => [x.id, x]));
+      const again = [];
+      todo.forEach((i, k) => {
+        const x = byId.get(body[k].id);
+        if (!x) out[i] = { error: "RPC 回應缺少此筆" };
+        else if (x.error) {
+          out[i] = { error: clip(x.error.message ?? "error", 160), code: x.error.code };
+          if (isTransient({ code: x.error.code, message: x.error.message })) again.push(i);
+        } else out[i] = { result: x.result };
+      });
+      // batch 裡被限流的那幾筆單獨重送（其餘已經有結果）。
+      if (!again.length || !mayRetry(attempt)) break;
+      await sleep(BACKOFF_MS[attempt] ?? 1200);
+      todo = again;
     }
-    const byId = new Map(j.map((x) => [x.id, x]));
-    return body.map((b) => {
-      const x = byId.get(b.id);
-      if (!x) return { error: "RPC 回應缺少此筆" };
-      if (x.error) return { error: clip(x.error.message ?? "error", 160), code: x.error.code };
-      return { result: x.result };
-    });
+    return out;
   };
-  return { call: one, batch };
+  return { call: one, batch, stats };
 }
 
 // ── 規則輔助 ─────────────────────────────────────────────────────────────────
@@ -644,11 +726,25 @@ const httpChecks = {
   /** GET / 的 payTo 與 payToSafety：收款地址變更或守門判定不安全。 */
   async x402PayTo({ rule, config, env, fetchImpl, state }) {
     const base = param(config, env, "SIGNAL_API_URL").replace(/\/$/, "");
-    const res = await fetchWithTimeout(fetchImpl, `${base}/`, { method: "GET" }, 10_000);
-    if (!res.ok) throw new Error(`GET / 回 HTTP ${res.status}`);
-    const j = await res.json();
-    const payTo = String(j?.payTo ?? "");
-    if (!/^0x[0-9a-fA-F]{40}$/.test(payTo)) throw new Error("GET / 沒有合法的 payTo");
+    state.httpFails ??= {};
+    let j;
+    let payTo;
+    try {
+      const res = await fetchWithTimeout(fetchImpl, `${base}/`, { method: "GET" }, 10_000);
+      if (!res.ok) throw new Error(`GET / 回 HTTP ${res.status}`);
+      j = await res.json();
+      payTo = String(j?.payTo ?? "");
+      if (!/^0x[0-9a-fA-F]{40}$/.test(payTo)) throw new Error("GET / 沒有合法的 payTo");
+    } catch (e) {
+      // 單次逾時／5xx 不直接告警（Vercel 冷啟動、短暫抖動）：連續 HTTP_FAILS_BEFORE_ALERT 次才算監控錯誤。
+      // 失敗期間這條規則不算「成功評估」，已開啟的告警不會被當成恢復。
+      const n = (state.httpFails[rule.id] = (state.httpFails[rule.id] ?? 0) + 1);
+      const aborted = e?.name === "AbortError" || /abort/i.test(String(e?.message ?? ""));
+      const err = new Error(`${aborted ? "GET / 逾時" : String(e?.message ?? e).slice(0, 120)}（連續 ${n} 次）`);
+      if (n < numParam(config, env, "HTTP_FAILS_BEFORE_ALERT")) err.soft = true;
+      throw err;
+    }
+    state.httpFails[rule.id] = 0;
     const out = [];
     const expected = String(env?.EXPECTED_PAY_TO ?? "").trim();
     state.baselines ??= {};
@@ -716,9 +812,9 @@ export function reconcile({ config, env, state, findings, evaluated, now }) {
  * 執行一輪監控。state 會被就地更新（呼叫端負責存回 KV）。
  * 回傳 { notes, errors, summary }：errors 是規則或掃描本身失敗的訊息（監控自己壞了）。
  */
-export async function runOnce({ config, env = {}, state, fetchImpl, now = Math.floor(Date.now() / 1000), log = () => {} }) {
+export async function runOnce({ config, env = {}, state, fetchImpl, now = Math.floor(Date.now() / 1000), log = () => {}, sleep }) {
   const rpcUrl = String(env.RPC_URL ?? "").trim() || config.network.publicRpc;
-  const rpc = makeRpc(rpcUrl, fetchImpl);
+  const rpc = makeRpc(rpcUrl, fetchImpl, sleep ? { sleep } : {});
   const findings = [];
   const evaluated = new Set();
   const errors = [];
@@ -758,18 +854,26 @@ export async function runOnce({ config, env = {}, state, fetchImpl, now = Math.f
       evaluated.add(rule.id);
     } catch (e) {
       if (Array.isArray(e?.findings)) findings.push(...e.findings); // 部分失敗：已算出的照送
-      fail(rule.id, e);
+      // 軟失敗（HTTP 單次逾時等）：不算監控錯誤，但也不算成功評估（不發恢復）。
+      if (e?.soft) log(`SOFT ${rule.id}: ${String(e.message).slice(0, 160)}`);
+      else fail(rule.id, e);
     }
   }
 
-  // 監控自身：有規則讀不到時開一則（恢復時自動關閉）。
+  // 監控自身：有規則讀不到「連續」SELF_ERRORS_BEFORE_ALERT 輪才開一則（恢復時自動關閉）。
+  // 單輪失敗多半是公開 RPC 的限流抖動；每次都告警會變成 觸發／恢復 交替的噪音（審查 M3：
+  // RPC 隔輪 429 時一小時 11 則）。呼叫端（tick）仍會讓該次 cron 記為失敗、不打心跳。
   evaluated.add("monitor-self");
-  if (errors.length) {
-    findings.push({ ruleId: "monitor-self", key: "monitor-self:errors", severity: "SEV-3", title: "監控本身有規則讀取失敗", lines: errors.slice(0, 8) });
+  state.selfErrorStreak = errors.length ? (state.selfErrorStreak ?? 0) + 1 : 0;
+  if (errors.length && state.selfErrorStreak >= numParam(config, env, "SELF_ERRORS_BEFORE_ALERT")) {
+    findings.push({ ruleId: "monitor-self", key: "monitor-self:errors", severity: "SEV-3", title: "監控本身有規則讀取失敗", lines: [
+      ...errors.slice(0, 8),
+      `連續 ${state.selfErrorStreak} 輪失敗；讀不到的規則在這段期間沒有被監控，也不會發恢復`,
+    ] });
   }
   const notes = reconcile({ config, env, state, findings, evaluated, now });
   state.lastRunAt = now;
-  return { notes, errors, summary: { findings: findings.length, notes: notes.length, errors: errors.length } };
+  return { notes, errors, summary: { findings: findings.length, notes: notes.length, errors: errors.length, rpcRequests: rpc.stats.requests, rpcRetries: rpc.stats.retries } };
 }
 
 export const _internal = { checks, httpChecks, short };

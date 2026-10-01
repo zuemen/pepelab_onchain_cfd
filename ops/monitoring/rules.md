@@ -76,7 +76,7 @@
 | `LAG_ALERT_BLOCKS` | `3000` | 區塊 | 一輪掃完後仍落後超過這個值時發監控自身告警（代表一輪追不完，或 eth_getLogs 持續失敗） |
 | `REMIND_SEC` | `21600` | 秒 | 狀態型告警持續未解除時的重複提醒間隔（6 小時） |
 | `MIN_SEVERITY` | `SEV-4` | 嚴重度 | 低於此嚴重度的通知不送（恢復通知以原嚴重度判斷）。monitor-self:*（監控自身故障）永遠送，不受此值影響。要壓掉單一已知告警請用 MUTE_KEYS，不要調高這個值 |
-| `MUTE_KEYS` | `` | 告警 key（逗號分隔） | 靜音指定的告警 key（完全相同或以它為前綴的子 key），例如 x402-payto:unsafe。告警狀態照常追蹤，只是不送通知。monitor-self:* 不可靜音；SEV-1 規則不可整條靜音（CI 檢查） |
+| `MUTE_KEYS` | （空） | 告警 key（逗號分隔） | 靜音指定的告警 key（完全相同或以它為前綴的子 key），例如 x402-payto:unsafe。告警狀態照常追蹤，只是不送通知。monitor-self:* 不可靜音；SEV-1 規則不可整條靜音（CI 檢查） |
 | `LARGE_WITHDRAWAL_USDC` | `10000` | USDC（MockUSDC） | 交易所單筆提領保證金的告警門檻【待使用者決定】 |
 | `LARGE_WITHDRAWAL_WINDOW_USDC` | `50000` | USDC（MockUSDC） | 同一規則在 WITHDRAWAL_WINDOW_SEC 內累計提領的告警門檻【待使用者決定】 |
 | `WITHDRAWAL_WINDOW_SEC` | `3600` | 秒 | 累計提領的視窗長度 |
@@ -95,7 +95,8 @@
 | `GAS_MIN_ETH` | `0.02` | ETH | keeper 錢包 gas 餘額預警門檻【待使用者決定】 |
 | `GAS_CRIT_ETH` | `0.005` | ETH | keeper 錢包 gas 餘額嚴重門檻【待使用者決定】 |
 | `SIGNAL_API_URL` | `https://agent-git-master-zuemens-projects.vercel.app` | URL | signal-api 的基底網址；預設值必須等於 agent/sdk/src/signalApi.ts 的 SIGNAL_API_TESTNET_URL（CI 檢查） |
-| `HTTP_FAILS_BEFORE_ALERT` | `2` | 次 | 健康檢查連續失敗幾次才告警（避免單次抖動） |
+| `HTTP_FAILS_BEFORE_ALERT` | `2` | 次 | signal-api 的健康檢查與 payTo 讀取連續失敗幾次才告警（避免單次逾時或冷啟動抖動） |
+| `SELF_ERRORS_BEFORE_ALERT` | `2` | 輪 | 有規則讀取失敗「連續」幾輪才發 monitor-self:errors（單輪失敗多半是公開 RPC 限流；RPC 本身已退避重試）。失敗的那一輪仍記為 cron 失敗、不打心跳 |
 
 ## 規則明細
 

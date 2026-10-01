@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { keccak256, selector } from "./keccak.mjs";
-import { decodeLog, formatUnits, reconcile, runOnce, toUnits } from "./engine.mjs";
+import { decodeLog, formatUnits, isRangeError, isTransient, makeRpc, reconcile, runOnce, toUnits } from "./engine.mjs";
 import { channelsOf, parseMuteKeys, shouldSend } from "./notify.mjs";
 import { STATE_KEY, tick } from "./tick.mjs";
 
@@ -36,6 +36,9 @@ function fakeWorld() {
     rangeLimit: null, // 節點的 eth_getLogs 區塊數上限（超過回 HTTP 413，與 sepolia.base.org 實測相同）
     getLogsHttp: null, // (from, to) => { status, body } | null：讓某些範圍回 HTTP 錯誤
     spans: [], // 每個 eth_getLogs 請求的區塊數
+    rpcHttp: null, // (body) => { status, body } | "throw" | "timeout" | null：整個 RPC 請求層級的故障
+    rpcPosts: 0, // 送到 RPC 的 HTTP 請求數（含重試）
+    itemError: null, // (req) => { code, message } | null：batch 內單筆的 JSON-RPC 錯誤（例如 -32007 限流）
     http: new Map(), // url → () => ({ status, body }) 或丟錯
     sent: [], // 通知通道收到的請求
   };
@@ -72,6 +75,11 @@ function fakeWorld() {
   w.fetch = async (url, init = {}) => {
     if (url === RPC) {
       const body = JSON.parse(init.body);
+      w.rpcPosts++;
+      const forcedRpc = w.rpcHttp?.(body);
+      if (forcedRpc === "throw") throw new TypeError("fetch failed");
+      if (forcedRpc === "timeout") throw Object.assign(new Error("The operation was aborted"), { name: "AbortError" });
+      if (forcedRpc) return new Response(forcedRpc.body, { status: forcedRpc.status });
       if (!Array.isArray(body) && body.method === "eth_getLogs") {
         const [from, to] = [Number(BigInt(body.params[0].fromBlock)), Number(BigInt(body.params[0].toBlock))];
         w.spans.push(to - from + 1);
@@ -83,6 +91,8 @@ function fakeWorld() {
         if (forced) return new Response(forced.body, { status: forced.status });
       }
       const one = (r) => {
+        const ie = w.itemError?.(r);
+        if (ie) return { jsonrpc: "2.0", id: r.id, error: ie };
         try {
           return { jsonrpc: "2.0", id: r.id, result: handle(r) };
         } catch (e) {
@@ -197,16 +207,160 @@ test("getLogs 失敗：檢查點不前進、開「監控本身」告警；恢復
   const cfg = only("owner-transferred");
   const state = { checkpoint: 900 };
   w.failGetLogs = true;
-  const r1 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 100 });
+  const r0 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 100 });
   assert.equal(state.checkpoint, 900);
-  assert.equal(r1.errors.length, 1);
+  assert.equal(r0.errors.length, 1);
+  assert.equal(r0.notes.length, 0, "單輪失敗不告警（M3：連續 SELF_ERRORS_BEFORE_ALERT 輪才告警）");
+  const r1 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 250 });
+  assert.equal(state.checkpoint, 900);
   assert.ok(r1.notes.some((n) => n.key === "monitor-self:errors" && n.status === "觸發"));
+  assert.ok(r1.notes[0].lines.some((l) => /連續 2 輪失敗/.test(l)));
 
   w.failGetLogs = false;
   makeLog(w, { address: addrOf("owner-transferred", "InsuranceVault"), sig: "OwnershipTransferred(address,address)", topics: [word(0), word(1)], block: 950 });
   const r2 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 400 });
   assert.ok(r2.notes.some((n) => n.status === "事件"), "失敗期間的 log 必須在恢復後補到");
   assert.ok(r2.notes.some((n) => n.key === "monitor-self:errors" && n.status === "恢復"));
+});
+
+// ── RPC 重試與抖動（審查 M3）─────────────────────────────────────────────────
+
+const noSleep = async () => {};
+
+test("M3：RPC 429／5xx／逾時／連線錯誤 → 退避重試後成功，不算錯誤；413 不重試", async () => {
+  for (const fault of [{ status: 429, body: "rate limited" }, { status: 503, body: "upstream" }, "timeout", "throw"]) {
+    const w = fakeWorld();
+    const cfg = only("owner-transferred");
+    ownerLog(w, w.head - 5, 1);
+    let n = 0;
+    w.rpcHttp = () => (n++ % 2 === 0 ? fault : null); // 每個請求第一次都失敗、重試才過
+    const waits = [];
+    const r = await runOnce({ config: cfg, env: env0, state: {}, fetchImpl: w.fetch, now: 1, sleep: async (ms) => void waits.push(ms) });
+    assert.equal(r.errors.length, 0, `${JSON.stringify(fault)}：${r.errors.join()}`);
+    assert.equal(r.notes.filter((x) => x.status === "事件").length, 1);
+    assert.equal(r.summary.rpcRetries, 2, "eth_blockNumber 與 eth_getLogs 各重試一次");
+    assert.deepEqual(waits, [400, 400]);
+  }
+  assert.equal(isTransient({ status: 413, message: "RPC HTTP 413" }), false);
+  assert.equal(isRangeError({ status: 413 }), true);
+  assert.equal(isTransient({ code: -32007, message: "25/second request limit reached" }), true);
+  assert.equal(isTransient({ code: -32000, message: "execution reverted" }), false, "revert 不是暫時性失敗，不重試");
+  assert.equal(isRangeError({ code: -32005, message: "project ID request rate exceeded" }), false, "-32005 的限流不是範圍錯誤");
+  assert.equal(isTransient({ code: -32005, message: "project ID request rate exceeded" }), true);
+});
+
+test("M3：batch 裡被限流的那幾筆（-32007）單獨重送；整輪重試額度有上限", async () => {
+  const w = fakeWorld();
+  const cfg = only("oracle-stale");
+  const now = 2_000_000;
+  stubOracle(w, { now });
+  const seen = new Map();
+  // 每一筆 getPrice 第一次都回 -32007（公開 RPC 每秒 25 個請求，batch 內逐筆計）。
+  w.itemError = (req) => {
+    if (req.method !== "eth_call" || !req.params[0].data.startsWith(selector("getPrice(bytes32)"))) return null;
+    const k = req.params[0].data;
+    seen.set(k, (seen.get(k) ?? 0) + 1);
+    return seen.get(k) === 1 ? { code: -32007, message: "25/second request limit reached - reduce calls per second" } : null;
+  };
+  const r = await runOnce({ config: cfg, env: env0, state: {}, fetchImpl: w.fetch, now, sleep: noSleep });
+  assert.equal(r.errors.length, 0, r.errors.join());
+  assert.equal(w.rpcPosts, 3, "eth_blockNumber + 原 batch + 只含被限流那幾筆的重送");
+
+  // RPC 整個掛掉：每個請求最多重試 2 次，但整輪合計最多 6 次——不會把 subrequest 配額燒光。
+  const w2 = fakeWorld();
+  w2.rpcHttp = () => ({ status: 503, body: "down" });
+  const full = { ...FULL, rules: FULL.rules.filter((x) => x.kind !== "http") };
+  const r2 = await runOnce({ config: full, env: env0, state: {}, fetchImpl: w2.fetch, now, sleep: noSleep });
+  const stateRules = full.rules.filter((x) => x.kind === "state" && x.status === "active").length;
+  assert.equal(r2.summary.rpcRetries, 6);
+  assert.equal(w2.rpcPosts, 1 + stateRules + 6, "每條規則一個請求 + 事件掃描一個 + 6 次重試");
+  assert.ok(w2.rpcPosts < 30, `RPC 全掛時一輪用了 ${w2.rpcPosts} 個 subrequest`);
+});
+
+test("M3：節流——一秒內的呼叫數不超過上限，超過就先等", async () => {
+  let t = 1_000_000;
+  const waits = [];
+  const sizes = [];
+  const rpc = makeRpc("https://rpc.test", async (_u, init) => {
+    const b = JSON.parse(init.body);
+    sizes.push(Array.isArray(b) ? b.length : 1);
+    return Response.json(Array.isArray(b) ? b.map((x) => ({ id: x.id, result: "0x1" })) : { id: b.id, result: "0x1" });
+  }, { callsPerSec: 20, clock: () => t, sleep: async (ms) => { waits.push(ms); t += ms; } });
+  const req = { method: "eth_call", params: [{ to: "0x0", data: "0x" }, "latest"] };
+  await rpc.batch(Array(12).fill(req)); // 12
+  await rpc.batch(Array(8).fill(req)); // 20：剛好
+  assert.deepEqual(waits, []);
+  await rpc.batch(Array(5).fill(req)); // 25 > 20：要等最早的 5 筆滿一秒
+  assert.equal(waits.length, 1);
+  assert.ok(waits[0] >= 1000 && waits[0] <= 1020, String(waits[0]));
+  t += 2000;
+  await rpc.call("eth_blockNumber", []); // 視窗已清空，不必等
+  assert.equal(waits.length, 1);
+  assert.deepEqual(sizes, [12, 8, 5, 1]);
+});
+
+test("M3：RPC 隔輪失敗 12 輪 → 0 則通知；連續失敗才告警一次，恢復時解除", async () => {
+  const w = fakeWorld();
+  const kv = fakeKv();
+  const env = { ...env0, MONITOR_STATE: kv, DISCORD_WEBHOOK_URL: DISCORD("x") };
+  const cfg = only("owner-transferred", "oracle-stale");
+  let now = 2_000_000;
+  let down = false;
+  w.rpcHttp = () => (down ? { status: 429, body: "rate limited" } : null);
+  const sent = () => w.sent.filter((s) => s.url.startsWith("https://discord.com/")).map((s) => JSON.parse(s.init.body).content.split("\n")[0]);
+  for (let i = 0; i < 12; i++) {
+    down = i % 2 === 1;
+    stubOracle(w, { now });
+    await tick({ config: cfg, env, now, fetchImpl: w.fetch, log: () => {}, sleep: noSleep }).catch(() => {});
+    now += 300;
+    w.head += 150;
+  }
+  // 第一輪的「監控狀態重置」（M5）不算；這裡只看抖動造成的通知。
+  assert.deepEqual(sent().filter((l) => !/狀態重置/.test(l)), [], "隔輪失敗不該有任何觸發／恢復通知");
+
+  down = true;
+  for (let i = 0; i < 3; i++) {
+    await tick({ config: cfg, env, now, fetchImpl: w.fetch, log: () => {}, sleep: noSleep }).catch(() => {});
+    now += 300;
+  }
+  assert.equal(sent().filter((l) => /監控本身有規則讀取失敗/.test(l)).length, 1, "連續失敗只告警一次（之後靠 REMIND_SEC 提醒）");
+  down = false;
+  stubOracle(w, { now });
+  await tick({ config: cfg, env, now, fetchImpl: w.fetch, log: () => {}, sleep: noSleep });
+  assert.ok(sent().some((l) => /恢復｜監控本身有規則讀取失敗/.test(l)));
+});
+
+test("M3：x402 payTo 單次逾時不告警、不算錯誤、也不把開啟中的告警當成恢復；連續失敗才算監控錯誤", async () => {
+  const w = fakeWorld();
+  const cfg = only("x402-payto");
+  const A = "0x00000000000000000000000000000000000000a1";
+  let mode = "unsafe";
+  w.http.set(`${API}/`, () => {
+    if (mode === "timeout") throw Object.assign(new Error("The operation was aborted"), { name: "AbortError" });
+    if (mode === "500") return { status: 500, body: "oops" };
+    return { status: 200, body: { payTo: A, payToSafety: { safe: mode !== "unsafe" } } };
+  });
+  const state = {};
+  const logs = [];
+  const run = (now) => runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now, log: (l) => logs.push(l) });
+  assert.deepEqual((await run(1)).notes.map((n) => [n.key, n.status]), [["x402-payto:unsafe", "觸發"]]);
+
+  mode = "timeout";
+  const r2 = await run(301);
+  assert.deepEqual(r2.errors, [], "單次逾時不算監控錯誤");
+  assert.equal(r2.notes.length, 0);
+  assert.ok(state.open["x402-payto:unsafe"], "讀不到不等於恢復");
+  assert.ok(logs.some((l) => /SOFT x402-payto: GET \/ 逾時（連續 1 次）/.test(l)));
+
+  mode = "500";
+  const r3 = await run(601);
+  assert.match(r3.errors[0], /x402-payto: GET \/ 回 HTTP 500（連續 2 次）/);
+
+  mode = "ok";
+  const r4 = await run(901);
+  assert.deepEqual(r4.errors, []);
+  assert.equal(state.httpFails["x402-payto"], 0);
+  assert.ok(r4.notes.some((n) => n.key === "x402-payto:unsafe" && n.status === "恢復"));
 });
 
 // ── 追趕與範圍上限（審查 H1）────────────────────────────────────────────────
@@ -379,7 +533,7 @@ test("價格過期：加密資產預警／過期分級、非加密放寬、持�
   stubOracle(w, { now });
   const r5 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now });
   const recovered = r5.notes.filter((n) => n.status === "恢復").map((n) => n.key).sort();
-  assert.deepEqual(recovered, ["monitor-self:errors", "oracle-stale:sBTC", "oracle-stale:sETH"]);
+  assert.deepEqual(recovered, ["oracle-stale:sBTC", "oracle-stale:sETH"], "RPC 只失敗一輪：沒開過 monitor-self，也就沒有它的恢復");
 });
 
 test("超過 REMIND_SEC 仍未解除 → 持續提醒", () => {

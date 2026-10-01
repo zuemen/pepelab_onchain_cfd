@@ -147,7 +147,12 @@
     "HTTP_FAILS_BEFORE_ALERT": {
       "default": "2",
       "unit": "次",
-      "doc": "健康檢查連續失敗幾次才告警（避免單次抖動）"
+      "doc": "signal-api 的健康檢查與 payTo 讀取連續失敗幾次才告警（避免單次逾時或冷啟動抖動）"
+    },
+    "SELF_ERRORS_BEFORE_ALERT": {
+      "default": "2",
+      "unit": "輪",
+      "doc": "有規則讀取失敗「連續」幾輪才發 monitor-self:errors（單輪失敗多半是公開 RPC 限流；RPC 本身已退避重試）。失敗的那一輪仍記為 cron 失敗、不打心跳"
     }
   },
   "rules": [

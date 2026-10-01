@@ -7,7 +7,7 @@ export const STATE_KEY = "state:v1";
 /** 送不出去的通知最多保留幾則（超過時丟最舊的，並另發一則說明）。 */
 export const MAX_OUTBOX = 100;
 
-export async function tick({ config, env, now = Math.floor(Date.now() / 1000), fetchImpl = fetch, log = console.log }) {
+export async function tick({ config, env, now = Math.floor(Date.now() / 1000), fetchImpl = fetch, log = console.log, sleep }) {
   const channels = channelsOf(env);
   if (channels.length === 0) {
     throw new Error("沒有設定任何告警通道（TELEGRAM_BOT_TOKEN+TELEGRAM_CHAT_ID、DISCORD_WEBHOOK_URL 或 ALERT_WEBHOOK_URL）");
@@ -16,7 +16,7 @@ export async function tick({ config, env, now = Math.floor(Date.now() / 1000), f
   if (!kv) throw new Error("缺少 KV binding MONITOR_STATE");
   const state = (await kv.get(STATE_KEY, "json")) ?? {};
 
-  const { notes, errors, summary } = await runOnce({ config, env, state, fetchImpl, now, log });
+  const { notes, errors, summary } = await runOnce({ config, env, state, fetchImpl, now, log, sleep });
   const minSev = param(config, env, "MIN_SEVERITY");
   const mute = parseMuteKeys(param(config, env, "MUTE_KEYS"));
   if (mute.ignored.length) log(`MUTE_KEYS 忽略 ${mute.ignored.length} 個項目（monitor-self 不可靜音，或格式不對）`);

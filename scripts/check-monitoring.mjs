@@ -877,7 +877,7 @@ export function renderRulesMd(cfg, ctx) {
   L.push("");
   L.push("| 參數 | 預設 | 單位 | 說明 |");
   L.push("|---|---|---|---|");
-  for (const [k, v] of Object.entries(cfg.params)) L.push(`| \`${k}\` | \`${v.default}\` | ${v.unit} | ${v.doc} |`);
+  for (const [k, v] of Object.entries(cfg.params)) L.push(`| \`${k}\` | ${v.default === "" ? "（空）" : `\`${v.default}\``} | ${v.unit} | ${v.doc} |`);
   L.push("");
   L.push("## 規則明細");
   for (const r of rules) {
