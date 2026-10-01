@@ -116,7 +116,26 @@ console.log("✓ meteredFetch 以實際簽出且成立的金額累計");
   // 帶了 PAYMENT-SIGNATURE 卻解不出金額（例如 Permit2）→ 以單筆上限保守計入。
   await m2.fetch("http://x/oracle/sBTC", { headers: { "PAYMENT-SIGNATURE": "not-base64-json" } });
   assert.equal(m2.totalSentAtomic(), 35_000n + 20_000n);
-  console.log("✓ meteredFetch 認得 v2 的 PAYMENT-SIGNATURE／PAYMENT-RESPONSE（success:false 不算結算；兩種 header 相加；解不出來以上限計）");
+  // globalThis.Request 被換掉（@hono/node-server 會這麼做）時，原生 Request 不再是它的 instance ——
+  // 計量不可以因此漏掉。x402-mock-e2e.ts 實際踩到過：v2 的付款整筆沒被計入。
+  {
+    const Native = globalThis.Request;
+    const nativeReq = new Native("http://x/oracle/sBTC", { headers: { "PAYMENT-SIGNATURE": sig("5000") } });
+    class Patched extends Native {}
+    globalThis.Request = Patched as typeof Request;
+    try {
+      assert.equal(nativeReq instanceof globalThis.Request, false, "前提：原生 Request 不是被換掉後的 Request 的 instance");
+      status = 200;
+      responseHeader = ok;
+      const before = m2.totalSentAtomic();
+      await m2.fetch(nativeReq);
+      assert.equal(m2.totalSentAtomic(), before + 5_000n, "仍然計入");
+      assert.equal(m2.lastPaidAtomic(), 5_000n);
+    } finally {
+      globalThis.Request = Native;
+    }
+  }
+  console.log("✓ meteredFetch 認得 v2 的 PAYMENT-SIGNATURE／PAYMENT-RESPONSE（success:false 不算結算；兩種 header 相加；解不出來以上限計；globalThis.Request 被換掉也不漏計）");
 }
 
 console.log("\n✅ x402-client.test.ts 全過");

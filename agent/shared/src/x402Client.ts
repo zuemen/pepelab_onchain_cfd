@@ -160,9 +160,14 @@ export function meteredFetch(base: typeof globalThis.fetch = globalThis.fetch): 
   let unsettled = 0n;
   let last: bigint | null = null;
   const wrapped = (async (input: string | URL | Request, init?: RequestInit) => {
-    const headers = new Headers(
-      init?.headers ?? (input instanceof Request ? input.headers : undefined),
-    );
+    // 以結構判斷「input 是不是 Request」，不用 instanceof：@hono/node-server 會把 globalThis.Request
+    // 換成自己的子類別，而 @x402/fetch（v2）送出的是 request.clone() —— 原生 Request，不是那個子類別的
+    // instance。用 instanceof 的話，同一個 process 只要起過 hono 伺服器，v2 的付款就完全不會被計量。
+    const inputHeaders =
+      typeof input === "object" && input !== null && "headers" in input
+        ? (input as { headers?: HeadersInit }).headers
+        : undefined;
+    const headers = new Headers(init?.headers ?? inputHeaders);
     // v2（PAYMENT-SIGNATURE）優先；兩個都帶時各是一張獨立的授權，金額相加（保守）。
     const payments = X402_PAYMENT_HEADERS.map((h) => headers.get(h)).filter((h): h is string => Boolean(h));
     const payment = payments[0] ?? null;
