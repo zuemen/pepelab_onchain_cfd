@@ -1,4 +1,4 @@
-// x402 v2 付費牆（docs/ADR-009-x402-v2-migration.md）。
+// x402 v2 付費牆（docs/ADR-010-x402-v2-migration.md）。
 //
 // 由環境變數 X402_PROTOCOL 啟用（v1｜v2｜both，預設 v1）。**預設模式下這個模組只被 import、
 // 不會建立任何東西、不會打任何網路**：createX402V2() 只有在 v2／both 才被呼叫，而且連
@@ -33,12 +33,7 @@ import {
 } from "@x402/core/server";
 import type { PaymentPayload } from "@x402/core/types";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
-import {
-  PAYMENT_IDENTIFIER,
-  declarePaymentIdentifierExtension,
-  decodeBase64Json,
-  readPaymentIdentifier,
-} from "./paymentIdentifier.ts";
+import { decodeBase64Json } from "./paymentIdentifier.ts";
 
 // ── 協定選擇 ─────────────────────────────────────────────────────────────────
 
@@ -76,6 +71,29 @@ export function toCaip2Network(network: string): `${string}:${string}` {
 export const DEFAULT_FACILITATOR_TIMEOUT_MS = 20_000;
 /** 第一次取得 /supported 的整體期限（ms）：上游對 429 會重試三次，最壞情況會拖過 function 上限。 */
 export const DEFAULT_INIT_TIMEOUT_MS = 25_000;
+/**
+ * /supported 失敗後的退避（負快取，ms）：這段期間內的付費請求直接沿用上一次的失敗，
+ * 不再每個請求都打一次 facilitator（facilitator 掛住時每個請求都會被拖住）。
+ */
+export const DEFAULT_INIT_BACKOFF_MS = 30_000;
+/**
+ * both 模式在**未付款**的 v1 402 上疊加 v2 header 時，等 /supported 的上限（ms）。逾時就只回
+ * v1 的 402（不帶 v2 header）——v1 client 不可以被 v2 的基礎設施拖慢。
+ */
+export const DEFAULT_UNPAID_INIT_TIMEOUT_MS = 2_500;
+
+/** facilitator 回 `settlement_pending`：結算交易已送出、尚未確認（@x402/core 會自動重試一次）。 */
+export const SETTLEMENT_PENDING_REASON = "settlement_pending";
+
+/** 可取消的計時器（測試注入用；預設是 setTimeout）。 */
+export type X402Timer = (ms: number) => { promise: Promise<void>; cancel(): void };
+const defaultTimer: X402Timer = (ms) => {
+  let id: ReturnType<typeof setTimeout> | undefined;
+  const promise = new Promise<void>((resolve) => {
+    id = setTimeout(resolve, ms);
+  });
+  return { promise, cancel: () => clearTimeout(id) };
+};
 
 export function resolveFacilitatorTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
   const raw = env.X402_FACILITATOR_TIMEOUT_MS?.trim();
@@ -98,6 +116,8 @@ export interface FacilitatorFailure {
   status: 429 | 502;
   message: string;
   phase: FacilitatorPhase;
+  /** settle 結果未知、但 facilitator 回了結算 tx hash（例如 settlement_pending）時附上，供買方對帳。 */
+  transaction?: string;
 }
 
 const RATE_LIMIT_RE = /too many requests|rate.?limit|\b429\b/i;
@@ -136,6 +156,88 @@ export function classifyV2FacilitatorError(err: unknown, phase: FacilitatorPhase
   if (/^Failed to initialize: no supported payment kinds/.test(message)) return { status: 502, message, phase };
   return null;
 }
+
+/**
+ * facilitator 的 /settle 回 HTTP 5xx、本文卻是 JSON（`success:false`）時，@x402/core 丟出的是
+ * SettleError——與「facilitator 明確拒絕結算」（200 + success:false）在 hook 裡長得一模一樣。
+ * 5xx 不是拒絕：facilitator 自己出錯，交易可能已經送出。把它換成這個錯誤，classify 才認得出
+ * 「結果未知」（訊息格式與 HTTPFacilitatorClient 對非 JSON 5xx 丟的相同）。
+ */
+export class FacilitatorSettleServerError extends Error {
+  readonly statusCode: number;
+  readonly errorReason?: string;
+  readonly transaction?: string;
+  readonly payer?: string;
+  constructor(statusCode: number, src: { errorReason?: unknown; transaction?: unknown; payer?: unknown }) {
+    const reason = typeof src.errorReason === "string" && src.errorReason ? src.errorReason : "unknown";
+    super(`Facilitator settle failed (${statusCode}): ${reason}`);
+    this.name = "FacilitatorSettleServerError";
+    this.statusCode = statusCode;
+    this.errorReason = typeof src.errorReason === "string" ? src.errorReason : undefined;
+    this.transaction = typeof src.transaction === "string" ? src.transaction : undefined;
+    this.payer = typeof src.payer === "string" ? src.payer : undefined;
+  }
+}
+
+/**
+ * 包一層 facilitator client：只改 settle 的一種錯誤（HTTP ≥ 500 的 SettleError → FacilitatorSettleServerError），
+ * 其餘原樣轉交。`settlement_pending` 不轉換，讓 @x402/core 照上游行為重試一次。
+ */
+function withSettleServerErrors(client: FacilitatorClient): FacilitatorClient {
+  return new Proxy(client, {
+    get(target, prop) {
+      const value = Reflect.get(target, prop, target) as unknown;
+      if (typeof value !== "function") return value;
+      if (prop !== "settle") return value.bind(target);
+      return async (...args: unknown[]) => {
+        try {
+          return await value.apply(target, args);
+        } catch (err) {
+          const e = err as { name?: unknown; statusCode?: unknown; errorReason?: unknown; transaction?: unknown; payer?: unknown } | null;
+          if (
+            e?.name === "SettleError" &&
+            typeof e.statusCode === "number" &&
+            e.statusCode >= 500 &&
+            e.errorReason !== SETTLEMENT_PENDING_REASON
+          ) {
+            throw new FacilitatorSettleServerError(e.statusCode, e);
+          }
+          throw err;
+        }
+      };
+    },
+  });
+}
+
+// ── 結算結果未知（對帳用）──────────────────────────────────────────────────
+
+/**
+ * 授權已交給 facilitator、但不知道有沒有上鏈的付款（逾時、斷線、5xx、回應壞掉、settlement_pending…）。
+ * 寫 log 並推進對帳佇列；**不含簽章**。
+ */
+export interface UnknownSettlementRecord {
+  /** unix 秒 */
+  at: number;
+  /** 例如 "GET /signals/0x…"。 */
+  route: string;
+  network: string;
+  asset: string;
+  payTo: string;
+  payer: string | null;
+  /** EIP-3009 nonce。 */
+  nonce: string | null;
+  /** 授權金額（atomic）。 */
+  amount: string | null;
+  validBefore: string | null;
+  /** facilitator 回了結算 tx hash 才有。 */
+  transaction: string | null;
+  /** facilitator 的 errorReason 或錯誤訊息（截斷）。 */
+  reason: string;
+}
+
+const ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
+const TX_RE = /^0x[0-9a-fA-F]{64}$/;
+const str = (v: unknown): string | null => (typeof v === "string" && v ? v : null);
 
 // ── PAYMENT-SIGNATURE 的前置檢查 ─────────────────────────────────────────────
 
@@ -205,6 +307,16 @@ export interface X402V2Options {
   initTimeoutMs?: number;
   /** facilitator 出錯時的回應（由 app.ts 提供，與 v1 的 429／502 同一個形狀）。 */
   onFacilitatorFailure: (c: Context, failure: FacilitatorFailure) => Response;
+  /** 結算結果未知時呼叫（寫對帳佇列）。丟錯只會被 log，回應仍是 502 phase=settle。 */
+  onSettlementUnknown?: (record: UnknownSettlementRecord) => Promise<void>;
+  /** /supported 失敗後的退避（ms），預設 DEFAULT_INIT_BACKOFF_MS。 */
+  initBackoffMs?: number;
+  /** both 模式未付款 402 等 /supported 的上限（ms），預設 DEFAULT_UNPAID_INIT_TIMEOUT_MS。 */
+  unpaidInitTimeoutMs?: number;
+  /** 測試用：時鐘（ms）。 */
+  now?: () => number;
+  /** 測試用：計時器。 */
+  timer?: X402Timer;
 }
 
 export interface X402V2Paywall {
@@ -239,12 +351,15 @@ function withPrivate(value: string | null): string {
 
 export function createX402V2(opts: X402V2Options): X402V2Paywall {
   const network = toCaip2Network(opts.network);
-  const facilitator: FacilitatorClient =
+  const facilitator: FacilitatorClient = withSettleServerErrors(
     opts.facilitatorClient ??
-    new HTTPFacilitatorClient({
-      url: opts.facilitatorUrl,
-      timeoutMs: opts.facilitatorTimeoutMs ?? resolveFacilitatorTimeoutMs(),
-    });
+      new HTTPFacilitatorClient({
+        url: opts.facilitatorUrl,
+        timeoutMs: opts.facilitatorTimeoutMs ?? resolveFacilitatorTimeoutMs(),
+      }),
+  );
+  const now = opts.now ?? Date.now;
+  const startTimer = opts.timer ?? defaultTimer;
   const resourceServer = new x402ResourceServer(facilitator).register(network, new ExactEvmScheme());
 
   // facilitator 呼叫丟出的原始錯誤（以這個請求的 adapter 為鍵）。@x402/core 會把非
@@ -273,42 +388,72 @@ export function createX402V2(opts: X402V2Options): X402V2Paywall {
       },
       description: r.description,
       mimeType: "application/json",
-      // 冪等：client 可帶 payment-identifier（選用）；帶了就成為結算帳本的冪等鍵（見 ledger.ts）。
-      extensions: { [PAYMENT_IDENTIFIER]: declarePaymentIdentifierExtension() },
+      // 不宣告 payment-identifier 擴充：規格要求「同 id 同內容回快取、同 id 不同內容回 409」，
+      // 我們沒有實作請求層去重。client 帶了 id 照樣收，只當中繼資料記進帳本（見 ledger.ts）。
     };
   }
   const httpServer = new x402HTTPResourceServer(resourceServer, routes);
 
   // ── 延後初始化（single-flight）：第一個付費路由請求才去拿 facilitator /supported ──
+  //   - 失敗後退避 initBackoffMs（負快取）：期間內直接沿用上一次的失敗，不再打 /supported。
+  //   - 等待有上限：付費請求 initTimeoutMs；both 模式的未付款 402 只等 unpaidInitTimeoutMs，
+  //     而且同一輪初始化已經讓一個未付款請求等到逾時之後，其他未付款請求就不再等。
   let initPromise: Promise<void> | null = null;
   let initialized = false;
+  let lastInitFailure: { at: number; error: unknown } | null = null;
+  /** 已經讓未付款請求等到逾時的那一輪初始化。 */
+  let slowInit: Promise<void> | null = null;
   const initTimeoutMs = opts.initTimeoutMs ?? DEFAULT_INIT_TIMEOUT_MS;
-  async function ensureInitialized(): Promise<void> {
-    if (initialized) return;
+  const initBackoffMs = opts.initBackoffMs ?? DEFAULT_INIT_BACKOFF_MS;
+  const unpaidInitTimeoutMs = opts.unpaidInitTimeoutMs ?? DEFAULT_UNPAID_INIT_TIMEOUT_MS;
+
+  function startInit(): Promise<void> {
     if (!initPromise) {
-      initPromise = httpServer.initialize().then(
+      const p: Promise<void> = httpServer.initialize().then(
         () => {
           initialized = true;
+          lastInitFailure = null;
         },
         (err) => {
-          initPromise = null; // 下一個請求重試
+          if (initPromise === p) initPromise = null; // 退避期過後的下一個請求重試
+          lastInitFailure = { at: now(), error: err };
           throw err;
         },
       );
       // 逾時後這個 promise 仍在背景跑；它之後才失敗時不要變成 unhandled rejection。
-      initPromise.catch(() => {});
+      p.catch(() => {});
+      initPromise = p;
     }
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const deadline = new Promise<never>((_, reject) => {
-      timer = setTimeout(
-        () => reject(new Error(`Facilitator getSupported timed out after ${initTimeoutMs}ms`)),
-        initTimeoutMs,
-      );
-    });
+    return initPromise;
+  }
+
+  async function ensureInitialized(deadlineMs: number, markSlow = false): Promise<void> {
+    if (initialized) return;
+    if (!initPromise && lastInitFailure) {
+      const waited = now() - lastInitFailure.at;
+      if (waited < initBackoffMs) {
+        const cause = lastInitFailure.error;
+        throw new Error(
+          `x402 v2 初始化失敗，退避中（${Math.ceil((initBackoffMs - waited) / 1000)} 秒後重試）：` +
+            `${(cause as { message?: string } | null)?.message ?? String(cause)}`,
+          { cause },
+        );
+      }
+    }
+    const p = startInit();
+    const t = startTimer(deadlineMs);
+    let timedOut = false;
     try {
-      await Promise.race([initPromise, deadline]);
+      await Promise.race([
+        p,
+        t.promise.then(() => {
+          timedOut = true;
+          throw new Error(`Facilitator getSupported timed out after ${deadlineMs}ms`);
+        }),
+      ]);
     } finally {
-      clearTimeout(timer);
+      t.cancel();
+      if (timedOut && markSlow && initPromise === p) slowInit = p;
     }
   }
 
@@ -336,10 +481,14 @@ export function createX402V2(opts: X402V2Options): X402V2Paywall {
     },
 
     async unpaidHeaders(c) {
+      if (!initialized && initPromise && slowInit === initPromise) {
+        // 這一輪初始化已經讓一個未付款請求等到逾時：其他未付款請求不再等。
+        return { failure: { status: 502, message: "facilitator /supported 尚未回應", phase: "supported" } };
+      }
       try {
-        await ensureInitialized();
+        await ensureInitialized(unpaidInitTimeoutMs, true);
       } catch (err) {
-        console.error("[x402v2] initialize 失敗：", err);
+        console.error(`[x402v2] initialize 失敗：${(err as { message?: string } | null)?.message ?? String(err)}`);
         return { failure: initFailure(err) };
       }
       const result = await httpServer.processHTTPRequest(contextOf(c, true));
@@ -372,19 +521,11 @@ export function createX402V2(opts: X402V2Options): X402V2Paywall {
             note: "未扣款：付款授權沒有送給 facilitator。",
           });
         }
-        const pid = readPaymentIdentifier(payload);
-        if (!pid.valid) {
-          return jsonError(400, {
-            ok: false,
-            error: "invalid_payment_identifier",
-            message: "payment-identifier 的 id 必須是 16–128 個字元，只含英數、底線與連字號。",
-            note: "未扣款：付款授權沒有送給 facilitator。",
-          });
-        }
+        // payment-identifier 不在這裡檢查：伺服器沒有宣告這個擴充，client 帶了也照收（只當中繼資料）。
       }
 
       try {
-        await ensureInitialized();
+        await ensureInitialized(initTimeoutMs);
       } catch (err) {
         console.error("[x402v2] initialize 失敗：", err);
         return opts.onFacilitatorFailure(c, initFailure(err));
@@ -444,6 +585,47 @@ export function createX402V2(opts: X402V2Options): X402V2Paywall {
       handlerRes.headers.forEach((value, key) => {
         responseHeaders[key] = value;
       });
+      // ── 結算結果未知：502 phase=settle（不是 402「請重付」）＋ log ＋ 對帳佇列 ──
+      const auth = (paymentPayload.payload as { authorization?: Record<string, unknown> } | undefined)?.authorization;
+      const settleUnknown = async (
+        message: string,
+        detail: { transaction?: unknown; payer?: unknown; reason?: unknown },
+      ): Promise<Response> => {
+        const tx = str(detail.transaction);
+        const transaction = tx && TX_RE.test(tx) ? tx : null;
+        const reportedPayer = str(detail.payer);
+        const payer = reportedPayer && ADDR_RE.test(reportedPayer) ? reportedPayer : str(auth?.from);
+        const record: UnknownSettlementRecord = {
+          at: Math.floor(now() / 1000),
+          route: `${c.req.method} ${c.req.path}`,
+          network: paymentRequirements.network,
+          asset: paymentRequirements.asset,
+          payTo: paymentRequirements.payTo,
+          payer,
+          nonce: str(auth?.nonce),
+          amount: str(auth?.value) ?? str(paymentRequirements.amount),
+          validBefore: str(auth?.validBefore),
+          transaction,
+          reason: (str(detail.reason) ?? message).slice(0, 200),
+        };
+        console.error(`[x402v2] settlement_unknown ${JSON.stringify(record)}`);
+        if (opts.onSettlementUnknown) {
+          try {
+            await opts.onSettlementUnknown(record);
+          } catch (err) {
+            console.error(
+              `[x402v2] settlement_unknown 寫入對帳佇列失敗（回應仍是 502）：${(err as { message?: string } | null)?.message ?? String(err)}`,
+            );
+          }
+        }
+        return opts.onFacilitatorFailure(c, {
+          status: 502,
+          message,
+          phase: "settle",
+          ...(transaction ? { transaction } : {}),
+        });
+      };
+
       let settle: Awaited<ReturnType<typeof httpServer.processSettlement>>;
       try {
         settle = await httpServer.processSettlement(paymentPayload, paymentRequirements, declaredExtensions, {
@@ -454,14 +636,31 @@ export function createX402V2(opts: X402V2Options): X402V2Paywall {
       } catch (err) {
         const f = classifyV2FacilitatorError(err, "settle");
         if (!f) throw err;
+        if (f.status === 502) return settleUnknown(f.message, (err ?? {}) as { transaction?: unknown; payer?: unknown });
         return opts.onFacilitatorFailure(c, f);
       }
       if (!settle.success) {
         const failed = failures.get(context.adapter);
+        failures.delete(context.adapter);
+        if (settle.errorReason === SETTLEMENT_PENDING_REASON) {
+          // facilitator 已送出結算交易、尚未確認（core 已重試一次）。回 402 會叫 client 重付 → 可能付兩次。
+          return settleUnknown("settlement_pending：facilitator 已送出結算交易，尚未確認", {
+            transaction: settle.transaction,
+            payer: settle.payer,
+            reason: settle.errorReason,
+          });
+        }
         if (failed) {
-          failures.delete(context.adapter);
           const f = classifyV2FacilitatorError(failed.error, "settle");
+          const e = failed.error as { name?: unknown; transaction?: unknown; payer?: unknown } | null;
+          const detail = { transaction: e?.transaction ?? settle.transaction, payer: e?.payer ?? settle.payer };
+          if (f?.status === 502) return settleUnknown(f.message, detail);
           if (f) return opts.onFacilitatorFailure(c, f);
+          if (e?.name !== "SettleError") {
+            // 不是 facilitator 的結構化拒絕（例如 client 端的非預期錯誤）：授權可能已送出，一樣當結果未知。
+            console.error("[x402v2] settle 失敗（無法分類）：", failed.error);
+            return settleUnknown("x402 v2 結算失敗（原因無法分類）", detail);
+          }
         }
         // 結算被 facilitator 明確拒絕：不回傳付費資源，只回 402 + PAYMENT-RESPONSE（success:false）。
         return instructionsToResponse(settle.response);

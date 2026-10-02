@@ -20,7 +20,7 @@
 //     - 「先加後刪」：搬移時一律先寫入目的地、再從來源刪除——中途崩潰最多造成重複，
 //       重複由冪等鍵吸收；絕不會造成遺失。
 
-import { decodeBase64Json, readPaymentIdentifier } from "./paymentIdentifier.ts";
+import { decodeBase64Json } from "./paymentIdentifier.ts";
 
 function credentials(): { url: string; token: string } | null {
   const url = process.env.UPSTASH_REDIS_REST_URL?.trim();
@@ -35,6 +35,12 @@ export const RETRY_KEY = "x402:settlement:retry";
 /** 已簽出、尚未確認（UNKNOWN）的項目：每輪最先對帳；還有未確認的就不送新交易。 */
 export const UNCONFIRMED_KEY = "x402:settlement:unconfirmed";
 export const DEAD_KEY = "x402:settlement:dead";
+/**
+ * x402 v2 結算結果未知的付款（facilitator 逾時、斷線、5xx、回應壞掉、settlement_pending）：
+ * 授權已交給 facilitator，但不知道有沒有上鏈，也沒有入主佇列。**worker 不讀**，供人工對帳
+ * （以 payer + nonce 或 transaction 查鏈上 USDC 轉帳；確定收到款再手動補一筆分潤）。
+ */
+export const UNKNOWN_SETTLEMENT_KEY = "x402:settlement:unknown";
 /**
  * 舊格式項目（沒有冪等鍵）以內容雜湊作鍵時，同一個雜湊第二次出現：可能是同一筆的重複，
  * 也可能是「同 trader、同金額、同一秒、同端點」的另一筆真實付款——無法分辨。
@@ -59,6 +65,11 @@ export interface LedgerEntry {
    * 沒有就 `auth:<payer>:<EIP-3009 nonce>`。舊資料沒有這欄 → worker 以內容雜湊補上。
    */
   idempotencyKey?: string;
+  /**
+   * x402 v2：client 在 PaymentPayload 帶的 payment-identifier（只是中繼資料，方便對帳）。
+   * **不參與去重**：同一個 id 的兩筆不同結算是兩筆錢，各自分潤。
+   */
+  paymentId?: string;
 }
 
 export interface RetryEntry {
@@ -117,6 +128,14 @@ export async function enqueueSettlement(entry: LedgerEntry): Promise<void> {
 }
 
 /**
+ * 把一筆「結算結果未知」的 v2 付款推進對帳佇列（UNKNOWN_SETTLEMENT_KEY）。ledger 未設定或
+ * 寫入失敗會丟錯，由呼叫端 log——不可以因此改變回給買方的狀態碼。
+ */
+export async function recordUnknownSettlement(record: object): Promise<void> {
+  await command(["RPUSH", UNKNOWN_SETTLEMENT_KEY, JSON.stringify(record)]);
+}
+
+/**
  * 從 x402 的 header 推導冪等鍵。
  *   1. X-PAYMENT-RESPONSE（base64 JSON）的 `transaction` —— facilitator 送出的 EIP-3009
  *      結算 tx hash，每筆付款唯一。
@@ -151,17 +170,13 @@ export function deriveIdempotencyKey(
 }
 
 /**
- * x402 **v2** 的冪等鍵（docs/ADR-009-x402-v2-migration.md）。v1 維持上面的 deriveIdempotencyKey。
- *   1. `pid:<付款人>:<payment-identifier>` —— client 在 PaymentPayload.extensions 帶了合法的
- *      payment-identifier（v2 的冪等擴充）。**一定綁付款人**：id 是 client 自己選的，不綁的話
- *      A 可以拿 B 用過的 id 讓自己那筆的分潤被當成重複而跳過。付款人取 PAYMENT-RESPONSE.payer
- *      （facilitator 驗過簽章的地址），沒有才用 payload.authorization.from。
- *   2. `tx:<結算 tx hash>` —— PAYMENT-RESPONSE.transaction（與 v1 相同）。
- *   3. `auth:<付款人>:<EIP-3009 nonce>` —— PaymentPayload.payload.authorization（與 v1 相同）。
+ * x402 **v2** 的冪等鍵（docs/ADR-010-x402-v2-migration.md）。v1 維持上面的 deriveIdempotencyKey。
+ *   1. `tx:<結算 tx hash>` —— PAYMENT-RESPONSE.transaction（與 v1 相同）。每筆結算唯一，
+ *      而且結算成功時一定存在，所以永遠優先。
+ *   2. `auth:<付款人>:<EIP-3009 nonce>` —— 只在沒有 tx hash 時才用（與 v1 相同）。
  *
- * 語意（規格的定義）：同一個 id 代表同一筆邏輯上的付款。所以同一個付款人用同一個 id 付了
- * 兩筆（例如逾時後帶同一個 id 重簽重送，兩筆都被結算）→ 只分潤一次，第二筆的款項留在 payTo
- * 未分配。worker 看到已完成的鍵再出現會留下 log。見 docs/KNOWN_LIMITATIONS.md §16b。
+ * client 帶的 payment-identifier **不參與**：它在簽章範圍外、由 client（或任何轉送者）自選，
+ * 拿它當鍵只會把兩筆不同的錢合併成一筆分潤。它只以 LedgerEntry.paymentId 存成中繼資料。
  *
  * @param paymentResponseHeader 回應的 PAYMENT-RESPONSE（base64 JSON）。
  * @param paymentPayload        已解碼的 PAYMENT-SIGNATURE（PaymentPayload）。
@@ -174,10 +189,6 @@ export function deriveIdempotencyKeyV2(
   const settle = decodeBase64Json(paymentResponseHeader);
   const auth = (paymentPayload as { payload?: { authorization?: { from?: unknown; nonce?: unknown } } } | null)
     ?.payload?.authorization;
-  const payer = isAddr(settle?.payer) ? settle!.payer : isAddr(auth?.from) ? auth!.from : null;
-
-  const pid = readPaymentIdentifier(paymentPayload);
-  if (pid.valid && pid.id && payer) return `pid:${String(payer).toLowerCase()}:${pid.id}`;
 
   const tx = settle?.transaction;
   if (typeof tx === "string" && /^0x[0-9a-fA-F]{64}$/.test(tx)) return `tx:${tx.toLowerCase()}`;

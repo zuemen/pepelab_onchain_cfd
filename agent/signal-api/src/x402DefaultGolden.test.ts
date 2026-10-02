@@ -1,7 +1,7 @@
 // 預設模式（未設 X402_PROTOCOL，或設成 v1）的 402 回應必須與 master 4b07f3f **逐位元相同**。
 //   cd agent && npx tsx signal-api/src/x402DefaultGolden.test.ts
 //
-// 為什麼要釘：x402 v2 遷移（docs/ADR-009）把 v2 與 v1 放在同一個付費牆後面，由環境變數
+// 為什麼要釘：x402 v2 遷移（docs/ADR-010）把 v2 與 v1 放在同一個付費牆後面，由環境變數
 // X402_PROTOCOL 切換。正式站在營運方切換之前，行為必須完全不變——402 回應是買方的
 // x402 client 逐欄解析的東西，多一個 header、少一個欄位都可能讓既有客戶付不了款。
 //

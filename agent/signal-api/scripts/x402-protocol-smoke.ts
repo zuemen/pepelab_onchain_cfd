@@ -14,7 +14,7 @@
 //   4. 免費端點（/healthz、/）在三種模式都正常；GET / 只有 v2／both 才多出 x402 欄位。
 //
 // 用的是 /oracle/sBTC 而不是 /signals/:trader：後者在 402 之前要讀鏈上 registry，假 RPC 讀不到會回
-// 503 registry_unavailable（那是對的行為，但看不到 402）。見 docs/ADR-009-x402-v2-migration.md。
+// 503 registry_unavailable（那是對的行為，但看不到 402）。見 docs/ADR-010-x402-v2-migration.md。
 import assert from "node:assert";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createRequire } from "node:module";

@@ -239,7 +239,9 @@ npx tsx examples/buy-signal.ts
 ### x402 v1／v2（`X402_PROTOCOL`）
 
 伺服器以環境變數 `X402_PROTOCOL` 決定收哪個版本：`v1`（預設，行為不變）、`both`（過渡期，同一個端點兩種都收）、`v2`。
-設計、查證到的規格事實與切換步驟見 [`docs/ADR-009-x402-v2-migration.md`](../docs/ADR-009-x402-v2-migration.md)。
+設計、查證到的規格事實與切換步驟見 [`docs/ADR-010-x402-v2-migration.md`](../docs/ADR-010-x402-v2-migration.md)。
+v2 的結算結果未知（facilitator 逾時、5xx、`settlement_pending`）回 502 `phase=settle`，同時寫一行
+`[x402v2] settlement_unknown` log 並推進 Redis 的 `x402:settlement:unknown`（人工對帳用，worker 不讀）。
 
 離線把兩個版本各跑通一次（本機假 facilitator，**不連網、不送交易、不付款**；金鑰當場隨機產生）：
 

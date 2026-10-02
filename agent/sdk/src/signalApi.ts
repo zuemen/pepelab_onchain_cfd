@@ -21,16 +21,17 @@
 //     validBefore ≤ now + maxTimeoutSeconds + 60s；maxTimeoutSeconds 必須是 1–300 的整數。
 //   • 付費端點在發出 402 之前的守門錯誤（400、503 payto_unsafe、503 price_stale）一律
 //     在「簽任何東西之前」就以型別化錯誤丟出。
-//   • x402 v2（docs/ADR-009-x402-v2-migration.md）：伺服器以 X402_PROTOCOL 決定收 v1、v2 或兩者。
+//   • x402 v2（docs/ADR-010-x402-v2-migration.md）：伺服器以 X402_PROTOCOL 決定收 v1、v2 或兩者。
 //     v2 的付款要求在 402 的 `PAYMENT-REQUIRED` header、付款用 `PAYMENT-SIGNATURE`、結算證明是
 //     `PAYMENT-RESPONSE`（**結算失敗的 402 也會帶，要看 success**）。上面每一條規則在 v2 完全相同：
 //     預留、逐欄核對（accepted 必須等於挑選的付款要求、authorization.to = payTo、金額、validBefore）、
 //     只送一次、paymentSent、unsettled。v2 另外只接受 exact／EIP-3009／authorization flow ——
 //     Permit2（extra.assetTransferMethod）、upfront／escrow（extra.paymentFlow）一律不簽。
 //     `x402Protocol: "auto"`（預設）：伺服器有宣告 v2 且簽署端有 createPaymentSignature → v2，否則 v1。
-//   • 冪等（v2）：伺服器宣告 payment-identifier 擴充時，SDK 為每次付款帶一個 id（可由呼叫端指定），
-//     回傳在 PaymentReceipt.paymentId／PaymentOutcomeUnknownError.paymentId。id 不在簽章範圍內，
-//     由 SDK 在簽署端回傳之後填入 PaymentPayload.extensions。
+//   • payment-identifier（v2，選用）：**預設不送**。呼叫端以 `paymentId` 指定時才填入
+//     PaymentPayload.extensions（id 不在簽章範圍內，由 SDK 在簽署端回傳之後填入），回傳在
+//     PaymentReceipt.paymentId／PaymentOutcomeUnknownError.paymentId，供對帳。signal-api 只把它當
+//     中繼資料記錄，**不保證以 id 去重**：每一張結算成功的授權都是一筆獨立的付款。
 import { getAddress, isAddress } from "viem";
 
 import { OFFICIAL_BASE_SEPOLIA_USDC } from "../../shared/src/env.ts";
@@ -85,7 +86,7 @@ export const X402_NETWORK_CAIP2: Readonly<Record<string, string>> = {
   "base-sepolia": "eip155:84532",
   base: "eip155:8453",
 };
-/** x402 v2 的 payment-identifier 擴充（冪等）。 */
+/** x402 v2 的 payment-identifier 擴充（client 自選的付款 id）。 */
 export const PAYMENT_IDENTIFIER = "payment-identifier";
 const PAYMENT_ID_RE = new RegExp("^[a-zA-Z0-9_-]{16,128}$");
 
@@ -94,7 +95,7 @@ export function isValidPaymentId(id: unknown): id is string {
   return typeof id === "string" && PAYMENT_ID_RE.test(id);
 }
 
-/** 產生一個 payment-identifier（`pay_` + 32 個十六進位字元）。 */
+/** 產生一個 payment-identifier（`pay_` + 32 個十六進位字元）。SDK 不會自動呼叫；需要時由呼叫端產生後傳入。 */
 export function generatePaymentId(): string {
   return `pay_${globalThis.crypto.randomUUID().replace(/-/g, "")}`;
 }
@@ -179,10 +180,11 @@ export interface X402PaymentClientV2 {
 /** 付費端點的選項。 */
 export interface PaidRequestOptions {
   /**
-   * x402 v2 的 payment-identifier（冪等鍵，16–128 個字元，英數、底線、連字號）。
-   * 省略時 SDK 自動產生。只有伺服器宣告了這個擴充才會送出；v1 沒有這個概念（忽略）。
-   * 伺服器以「付款人 + id」作為分潤帳本的冪等鍵：同一個 id 的多筆付款只分潤一次。
-   * **它不會阻止重複扣款**——重送仍會簽一張新的授權。
+   * x402 v2 的 payment-identifier（選用，16–128 個字元，英數、底線、連字號）。
+   * **省略時不送**（SDK 不自動產生）；指定時填入 PaymentPayload.extensions，v1 沒有這個概念（忽略）。
+   * 用途是對帳：回傳在 PaymentReceipt.paymentId／PaymentOutcomeUnknownError.paymentId。
+   * signal-api 只把它當中繼資料記錄，**不保證以 id 去重**——帶同一個 id 重送仍會簽一張新的授權，
+   * 結算成功就是另一筆付款。
    */
   paymentId?: string;
 }
@@ -258,7 +260,7 @@ export interface PaymentReceipt {
   settlement: unknown | null;
   /** 這筆付款使用的 x402 協定版本。 */
   x402Version: 1 | 2;
-  /** x402 v2 的 payment-identifier；v1 或伺服器未宣告這個擴充時為 null。 */
+  /** x402 v2 的 payment-identifier（呼叫端指定或簽署端自帶的）；沒有帶、或 v1 時為 null。 */
   paymentId: string | null;
 }
 
@@ -1016,12 +1018,14 @@ export class SignalApiClient {
       const checked = this.checkSignedPaymentV2(raw, req, required);
       signed = checked.signed;
       header = raw;
-      // payment-identifier：只有伺服器宣告了才帶。id 不在 EIP-712 簽章範圍內（簽章只涵蓋 authorization），
-      // 所以由 SDK 在這裡填入並重新編碼；優先序：呼叫端指定 > 簽署端自己帶的 > SDK 產生。
-      const declared = pr.extensions?.[PAYMENT_IDENTIFIER];
-      if (declared !== null && typeof declared === "object") {
-        paymentId = opts.paymentId ?? checked.decoded.paymentId ?? generatePaymentId();
-        const d = declared as { info?: Record<string, unknown> };
+      // payment-identifier：預設不送，只有呼叫端指定才填入（簽署端自己帶的原樣保留）。id 不在 EIP-712
+      // 簽章範圍內（簽章只涵蓋 authorization），所以由 SDK 在這裡填入並重新編碼。伺服器有宣告這個擴充
+      // 時保留宣告的其他欄位（照規格回顯）。
+      paymentId = checked.decoded.paymentId;
+      if (opts.paymentId !== undefined) {
+        paymentId = opts.paymentId;
+        const declared = pr.extensions?.[PAYMENT_IDENTIFIER];
+        const d = (declared !== null && typeof declared === "object" ? declared : {}) as { info?: Record<string, unknown> };
         const extensions = {
           ...((checked.decoded.raw.extensions as Record<string, unknown> | undefined) ?? {}),
           [PAYMENT_IDENTIFIER]: { ...d, info: { ...(d.info ?? {}), id: paymentId } },

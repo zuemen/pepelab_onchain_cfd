@@ -13,12 +13,12 @@
 // 四段流程（對同一個端點 GET /signals/:trader，0.01 USDC）：
 //   A. v1：x402-fetch            → X-PAYMENT           → X-PAYMENT-RESPONSE
 //   B. v2：@x402/fetch           → PAYMENT-SIGNATURE   → PAYMENT-RESPONSE
-//   C. SDK（auto → v2，帶 payment-identifier）
+//   C. SDK（auto → v2，呼叫端選用 payment-identifier：只當中繼資料，不參與去重）
 //   D. SDK（x402Protocol: "v1"）
 // 最後印出結算帳本佇列裡的四筆與各自的冪等鍵。每一步都有 assert，所以它同時是一支測試
 // （npm run test:api 會跑）。
 //
-// 見 docs/ADR-009-x402-v2-migration.md。
+// 見 docs/ADR-010-x402-v2-migration.md。
 import assert from "node:assert";
 import type { AddressInfo } from "node:net";
 import { serve } from "@hono/node-server";
@@ -83,7 +83,7 @@ const account = guardViemAccount(privateKeyToAccount(generatePrivateKey()));
 const wallet = createWalletClient({ account, chain: baseSepolia, transport: http(rpc.url) }).extend(publicActions);
 const meter = meteredFetch();
 const b64json = (h: string | null) => (h ? JSON.parse(Buffer.from(h, "base64").toString("utf8")) : null);
-const queue = () => upstash.list(QUEUE_KEY).map((s) => JSON.parse(s) as { source: string; feeUsd: number; idempotencyKey: string });
+const queue = () => upstash.list(QUEUE_KEY).map((s) => JSON.parse(s) as { source: string; feeUsd: number; idempotencyKey: string; paymentId?: string });
 
 // 未付款的 402：both 模式同時宣告 v1（body）與 v2（PAYMENT-REQUIRED header）。
 {
@@ -165,7 +165,8 @@ for (const [i, e] of q.entries()) console.log(`  ${i + 1}. source=${e.source}  f
 assert.equal(q.length, 4, "四筆付款各入列一筆");
 assert.match(q[0]!.idempotencyKey, /^tx:0x[0-9a-f]{64}$/, "A（v1）：結算 tx hash");
 assert.match(q[1]!.idempotencyKey, /^tx:0x[0-9a-f]{64}$/, "B（v2，沒帶 payment-identifier）：結算 tx hash");
-assert.equal(q[2]!.idempotencyKey, `pid:${account.address.toLowerCase()}:demo_order_0000000000000001`, "C（v2）：付款人 + payment-identifier");
+assert.match(q[2]!.idempotencyKey, /^tx:0x[0-9a-f]{64}$/, "C（v2，帶 payment-identifier）：仍是結算 tx hash");
+assert.equal(q[2]!.paymentId, "demo_order_0000000000000001", "C：payment-identifier 只存成中繼資料");
 assert.match(q[3]!.idempotencyKey, /^tx:0x[0-9a-f]{64}$/, "D（v1）：結算 tx hash");
 
 const settles = facilitator.calls.filter((c) => c.path === "/settle").map((c) => c.x402Version);

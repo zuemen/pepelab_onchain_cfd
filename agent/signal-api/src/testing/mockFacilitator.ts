@@ -9,7 +9,7 @@
 // 線路格式（v1 的 x402 0.5.3 useFacilitator 與 v2 的 @x402/core 2.28 HTTPFacilitatorClient 相同）：
 //   POST /verify、/settle  body = { x402Version, paymentPayload, paymentRequirements }
 //   GET  /supported        → { kinds, extensions, signers }
-import { createServer, type Server } from "node:http";
+import { createServer, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { ethers } from "ethers";
 
@@ -43,6 +43,16 @@ export type MockFacilitatorMode =
   | "settle_http429"
   /** /settle 回 200 + success:false（facilitator 明確拒絕）。 */
   | "settle_rejected"
+  /** /settle 回 200 + success:false、errorReason=settlement_pending、帶 tx hash（已送出、未確認）。 */
+  | "settle_pending"
+  /** /settle 回 HTTP 500，本文是 JSON success:false（facilitator 自己出錯）。 */
+  | "settle_http500_json"
+  /** /settle 回 200，本文不是合法 JSON。 */
+  | "settle_bad_json"
+  /** /settle 永遠不回應（client 端逾時）。 */
+  | "settle_hang"
+  /** /settle 直接斷線。 */
+  | "settle_destroy"
   /** /supported 回 HTTP 503。 */
   | "supported_http503";
 
@@ -142,6 +152,12 @@ export async function startMockFacilitator(): Promise<MockFacilitator> {
   const settledNonces = new Set<string>();
   const calls: MockFacilitatorCall[] = [];
   const state = { mode: "ok" as MockFacilitatorMode };
+  /** settle_hang 掛著的回應：reset／close 時一併斷開，不讓測試程序卡住。 */
+  const hanging = new Set<ServerResponse>();
+  const dropHanging = () => {
+    for (const r of hanging) r.destroy();
+    hanging.clear();
+  };
 
   const server: Server = createServer(async (req, res) => {
     const path = (req.url ?? "").split("?")[0]!;
@@ -186,8 +202,25 @@ export async function startMockFacilitator(): Promise<MockFacilitator> {
     // /settle
     if (state.mode === "settle_http503") return void res.writeHead(503).end();
     if (state.mode === "settle_http429") return void json(429, { error: "rate_limit_exceeded" });
-    const r = check(body, settledNonces);
     const network = body?.paymentRequirements?.network;
+    if (state.mode === "settle_hang") return void hanging.add(res);
+    if (state.mode === "settle_destroy") return void req.socket.destroy();
+    if (state.mode === "settle_bad_json") {
+      return void res.writeHead(200, { "Content-Type": "application/json" }).end("{not json");
+    }
+    if (state.mode === "settle_http500_json") {
+      return void json(500, { success: false, errorReason: "unexpected_settle_error", transaction: "", network });
+    }
+    const r = check(body, settledNonces);
+    if (state.mode === "settle_pending") {
+      return void json(200, {
+        success: false,
+        errorReason: "settlement_pending",
+        payer: r.payer,
+        transaction: ethers.keccak256(ethers.toUtf8Bytes(`mock-pending:${r.nonceKey}`)),
+        network,
+      });
+    }
     if (!r.ok || state.mode === "settle_rejected") {
       return void json(200, {
         success: false,
@@ -221,10 +254,16 @@ export async function startMockFacilitator(): Promise<MockFacilitator> {
     count: (p) => calls.filter((c) => c.path === p).length,
     settledNonces,
     reset() {
+      dropHanging();
       calls.length = 0;
       settledNonces.clear();
       state.mode = "ok";
     },
-    close: () => new Promise<void>((r) => server.close(() => r())),
+    close: () =>
+      new Promise<void>((r) => {
+        dropHanging();
+        server.close(() => r());
+        server.closeAllConnections();
+      }),
   };
 }

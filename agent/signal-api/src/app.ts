@@ -44,6 +44,7 @@ import {
   enqueueSettlement,
   deriveIdempotencyKey,
   deriveIdempotencyKeyV2,
+  recordUnknownSettlement,
   type LedgerEntry,
 } from "./ledger.ts";
 import {
@@ -52,8 +53,10 @@ import {
   resolveX402Protocol,
   type FacilitatorFailure,
   type X402Protocol,
+  type X402V2Options,
   type X402V2Paywall,
 } from "./x402v2.ts";
+import { readPaymentIdentifier } from "./paymentIdentifier.ts";
 import type { FacilitatorClient } from "@x402/core/server";
 import { getOnchainRevenue, isOnchainRevenueEnabled } from "./onchainRevenue.ts";
 import {
@@ -76,7 +79,7 @@ const NETWORK = (process.env.X402_NETWORK ?? "base-sepolia") as Network;
 const FACILITATOR_URL =
   process.env.X402_FACILITATOR_URL ?? "https://x402.org/facilitator";
 const PAY_TO = resolvePayTo(ADDRESSES.FeeRouter);
-// x402 協定版本（docs/ADR-009）：v1（預設，行為與遷移前逐位元相同）｜v2｜both。
+// x402 協定版本（docs/ADR-010）：v1（預設，行為與遷移前逐位元相同）｜v2｜both。
 const X402_PROTOCOL: X402Protocol = resolveX402Protocol();
 // 單一來源（shared/env.ts）。這裡與 settlement.ts 以前各有一份**不同**的預設值
 // （官方 USDC vs MockUSDC），導致 `_assertCurrencyMatch` 永遠抓不到錯配。
@@ -306,6 +309,8 @@ export function facilitatorFailureResponse(f: FacilitatorFailure): Response {
       note,
       facilitator: FACILITATOR_URL,
       phase: f.phase,
+      // 結算結果未知但 facilitator 回了結算 tx hash（例如 settlement_pending）：給買方對帳。
+      ...(f.transaction ? { transaction: f.transaction } : {}),
     }),
     { status: f.status, headers },
   );
@@ -337,8 +342,9 @@ type AppVariables = { ledgerEntry?: LedgerEntry };
  *
  * @param protocol 省略或 "v1"：上述行為（X-PAYMENT／X-PAYMENT-RESPONSE），與遷移前完全相同。
  *                 "v2"：結算證明改看 `PAYMENT-RESPONSE`（且 success 不可為 false——v2 的結算失敗
- *                 402 也帶這個 header），`paymentHeader` 是 `PAYMENT-SIGNATURE`；冪等鍵優先用
- *                 client 帶的 payment-identifier（`pid:<付款人>:<id>`），見 deriveIdempotencyKeyV2。
+ *                 402 也帶這個 header），`paymentHeader` 是 `PAYMENT-SIGNATURE`；冪等鍵一律
+ *                 `tx:<hash>` 優先（見 deriveIdempotencyKeyV2）。client 帶的 payment-identifier
+ *                 只當中繼資料存進 LedgerEntry.paymentId，不參與去重。
  */
 export async function applyLedgerRecording(
   entry: LedgerEntry | undefined,
@@ -372,9 +378,10 @@ export async function applyLedgerRecording(
       // 必須 await：serverless 不保證回應後還能背景跑，fire-and-forget 會被砍掉
       // ——跟這份檔案開頭那條舊註解講的是同一件事，只是現在等的是一次 KV 寫入
       // （通常 <150ms），不再是一筆鏈上交易的 tx.wait()（≥2 秒起跳）。
+      const v2Payload = protocol === "v2" ? decodePaymentSignature(paymentHeader) : null;
       let idempotencyKey =
         protocol === "v2"
-          ? deriveIdempotencyKeyV2(res.headers.get(proofHeader), decodePaymentSignature(paymentHeader))
+          ? deriveIdempotencyKeyV2(res.headers.get(proofHeader), v2Payload)
           : deriveIdempotencyKey(res.headers.get("X-PAYMENT-RESPONSE"), paymentHeader);
       if (!idempotencyKey) {
         idempotencyKey = `req:${randomUUID()}`;
@@ -385,7 +392,8 @@ export async function applyLedgerRecording(
             JSON.stringify(entry),
         );
       }
-      await enqueueSettlement({ ...entry, idempotencyKey });
+      const pid = v2Payload ? readPaymentIdentifier(v2Payload) : null;
+      await enqueueSettlement({ ...entry, idempotencyKey, ...(pid?.valid && pid.id ? { paymentId: pid.id } : {}) });
       queued = true;
     } catch (err) {
       settleError = "ledger_enqueue_failed：已收款但分潤紀錄未能排入佇列（已記錄於伺服器 log）";
@@ -432,6 +440,10 @@ export interface CreateAppOptions {
   x402Protocol?: X402Protocol;
   /** 覆寫 v2 的 facilitator client（測試用；預設是 X402_FACILITATOR_URL 的 HTTP client）。 */
   x402FacilitatorClient?: FacilitatorClient;
+  /** 覆寫 X402_NETWORK（測試用）。 */
+  x402Network?: string;
+  /** 覆寫 v2 付費牆的時鐘、計時器、退避與逾時（測試用）。 */
+  x402V2Timing?: Pick<X402V2Options, "now" | "timer" | "initBackoffMs" | "unpaidInitTimeoutMs" | "initTimeoutMs">;
   /** 覆寫 /signals/:trader 的資料來源（測試用；預設讀鏈上 getTraderPerformance）。 */
   signalReader?: (trader: string) => Promise<unknown>;
 }
@@ -533,22 +545,34 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
   const payTo = opts.payTo ?? PAY_TO;
   // x402 協定版本。v1（預設）時 x402v2 是 null：下面所有 v2 分支都不會執行，行為與遷移前相同。
   const x402Protocol: X402Protocol = opts.x402Protocol ?? X402_PROTOCOL;
-  const x402v2: X402V2Paywall | null =
-    x402Protocol === "v1"
-      ? null
-      : createX402V2({
-          payTo,
-          network: NETWORK,
-          facilitatorUrl: FACILITATOR_URL,
-          facilitatorClient: opts.x402FacilitatorClient,
-          maxTimeoutSeconds: MAX_TIMEOUT_SECONDS,
-          routes: Object.entries(paidRoutes()).map(([pattern, r]) => ({
-            pattern,
-            price: r.price,
-            description: r.config.description,
-          })),
-          onFacilitatorFailure: (_c, f) => facilitatorFailureResponse(f),
-        });
+  let x402v2: X402V2Paywall | null = null;
+  // v2／both 的付費牆建不起來（例如 X402_NETWORK 沒有對應的 CAIP-2）：不讓整個 app 起不來，
+  // 只讓付費端點回 503（免費端點照常），啟動時印一行錯誤。
+  let x402v2SetupError: string | null = null;
+  if (x402Protocol !== "v1") {
+    try {
+      x402v2 = createX402V2({
+        payTo,
+        network: opts.x402Network ?? NETWORK,
+        facilitatorUrl: FACILITATOR_URL,
+        facilitatorClient: opts.x402FacilitatorClient,
+        maxTimeoutSeconds: MAX_TIMEOUT_SECONDS,
+        routes: Object.entries(paidRoutes()).map(([pattern, r]) => ({
+          pattern,
+          price: r.price,
+          description: r.config.description,
+        })),
+        onFacilitatorFailure: (_c, f) => facilitatorFailureResponse(f),
+        onSettlementUnknown: (record) => recordUnknownSettlement(record),
+        ...opts.x402V2Timing,
+      });
+    } catch (err) {
+      x402v2SetupError = (err as { message?: string } | null)?.message ?? String(err);
+      console.error(
+        `[x402] X402_PROTOCOL=${x402Protocol} 但 v2 付費牆無法建立 → 付費端點一律回 503，免費端點照常：${x402v2SetupError}`,
+      );
+    }
+  }
   const codeReader: CodeReader = opts.payoutCodeReader ?? provider;
   // payTo 必須是 EOA（= FEE_SETTLEMENT_PRIVATE_KEY 的地址）：外洩清單、EIP-7702 委派、
   // 合約（含未設 PAY_TO 時回退的 FeeRouter）一律 unsafe。結果快取 10 分鐘、fail-closed。
@@ -676,6 +700,9 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
         node: "see agent/examples/buy-signal.ts (x402-fetch + viem)",
       },
       // 只有啟用 v2 時才出現（v1 模式的回應與遷移前相同）。
+      ...(x402v2SetupError
+        ? { x402: { protocol: x402Protocol, error: "x402_misconfigured" } }
+        : {}),
       ...(x402v2
         ? {
             x402: {
@@ -688,7 +715,6 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
                   ? { v1: { required: "(402 body)", payment: "X-PAYMENT", response: "X-PAYMENT-RESPONSE" } }
                   : {}),
               },
-              extensions: ["payment-identifier"],
               note:
                 "v2 的付款要求在 402 的 PAYMENT-REQUIRED header（base64 JSON）；" +
                 "exact／EIP-3009（USDC transferWithAuthorization），不接受 Permit2。" +
@@ -1137,11 +1163,22 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
       if (!(c.req.method === "GET" && PAID_HANDLER_PATHS.some((re) => re.test(c.req.path)))) {
         return c.json({ ok: false, error: "not_found", note: "未付款：沒有對應的付費端點。" }, 404);
       }
+      if (x402v2SetupError) {
+        return c.json(
+          {
+            ok: false,
+            error: "x402_misconfigured",
+            message: "x402 付費牆設定錯誤（見伺服器啟動 log），付費端點暫停服務。",
+            note: "未扣款：沒有發出付款要求。",
+          },
+          503,
+        );
+      }
       const blocked = await payToGuard(c, async () => {});
       if (blocked) return blocked;
     }
 
-    // ── 協定分流（docs/ADR-009）──────────────────────────────────────────────
+    // ── 協定分流（docs/ADR-010）──────────────────────────────────────────────
     //   v1（預設）：一律 v1，PAYMENT-SIGNATURE 被忽略 —— 與遷移前完全相同。
     //   v2        ：一律 v2，X-PAYMENT 被忽略（視同未付款，回 v2 的 402）。
     //   both      ：依付款 header 分流；兩個都帶 → 400（只會處理其中一張，另一張授權白簽）。

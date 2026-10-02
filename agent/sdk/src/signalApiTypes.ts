@@ -50,6 +50,8 @@ export interface FacilitatorErrorBody {
    * `settle` = 授權已交給 facilitator，**結果未知**（不可當成未扣款）。
    */
   phase?: "supported" | "verify" | "settle";
+  /** v2 settle 結果未知、但 facilitator 回了結算 tx hash（例如 settlement_pending）時才有，供對帳。 */
+  transaction?: string;
 }
 
 // ── x402 ─────────────────────────────────────────────────────────────────────
@@ -76,7 +78,7 @@ export interface X402PaymentRequiredBody {
   x402Version: 1;
 }
 
-// ── x402 v2（docs/ADR-009-x402-v2-migration.md）───────────────────────────────
+// ── x402 v2（docs/ADR-010-x402-v2-migration.md）───────────────────────────────
 
 export interface X402ResourceInfo {
   url: string;
@@ -119,14 +121,17 @@ export interface X402SettlementResponse {
   amount?: string;
 }
 
-/** `GET /` 在啟用 v2 時多出的區塊（X402_PROTOCOL=v2｜both）。 */
+/**
+ * `GET /` 在啟用 v2 時多出的區塊（X402_PROTOCOL=v2｜both）。v2 付費牆設定錯誤時只有
+ * `protocol` 與 `error: "x402_misconfigured"`（付費端點此時回 503）。
+ */
 export interface DiscoveryX402 {
   protocol: "v2" | "both";
-  versions: number[];
-  network: string;
-  headers: Record<string, unknown>;
-  extensions: string[];
+  versions?: number[];
+  network?: string;
+  headers?: Record<string, unknown>;
   note?: string;
+  error?: "x402_misconfigured";
 }
 
 export interface PaidEnvelope<T> {
@@ -349,7 +354,7 @@ export const SCHEMA_KEYS = {
     ["ok", "error", "asset", "ageSec", "maxPriceAgeSec"],
   ),
   FacilitatorError: schemaKeys<FacilitatorErrorBody>()(
-    ["ok", "error", "message", "note", "facilitator", "phase"],
+    ["ok", "error", "message", "note", "facilitator", "phase", "transaction"],
     ["ok", "error", "note", "facilitator"],
   ),
   X402ResourceInfo: schemaKeys<X402ResourceInfo>()(["url", "description", "mimeType"], ["url"]),
@@ -366,8 +371,8 @@ export const SCHEMA_KEYS = {
     ["success", "transaction", "network"],
   ),
   DiscoveryX402: schemaKeys<DiscoveryX402>()(
-    ["protocol", "versions", "network", "headers", "extensions", "note"],
-    ["protocol", "versions", "network", "headers", "extensions"],
+    ["protocol", "versions", "network", "headers", "note", "error"],
+    ["protocol"],
   ),
   X402PaymentRequired: schemaKeys<X402PaymentRequiredBody>()(
     ["error", "accepts", "payer", "x402Version"],

@@ -11,7 +11,7 @@
 //      - unsettledAtomic：其中沒有拿到 X-PAYMENT-RESPONSE（結算證明）的部分，需要對帳。
 //      - totalPaidAtomic：確定成立的付款（有 X-PAYMENT-RESPONSE 或 status < 400）。
 //    以前只有 totalPaidAtomic，付款後 502／斷線都不計，花費被低估（shared-race PoC C）。
-// 3. x402 v2（docs/ADR-009-x402-v2-migration.md）：付款 header 改名 PAYMENT-SIGNATURE、結算證明改名
+// 3. x402 v2（docs/ADR-010-x402-v2-migration.md）：付款 header 改名 PAYMENT-SIGNATURE、結算證明改名
 //    PAYMENT-RESPONSE。meteredFetch 兩種都認；差別是 **v2 的 PAYMENT-RESPONSE 在結算失敗的 402 也會
 //    出現（success:false）**，所以 v2 要解開看 success，不能像 v1 只看 header 有沒有。
 //    @x402/fetch 沒有 v1 的 maxValue 參數，單筆上限改由 x402Client 的 spendControls 設定——

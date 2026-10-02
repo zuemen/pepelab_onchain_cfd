@@ -189,7 +189,7 @@ export class PaymentOutcomeUnknownError extends Error {
   readonly paymentSent = true as const;
   readonly url: string;
   readonly signedAtomic: bigint | null;
-  /** x402 v2：這筆付款帶的 payment-identifier（對帳用）；v1 或伺服器未宣告時為 null。 */
+  /** x402 v2：這筆付款帶的 payment-identifier（對帳用；呼叫端指定才有）；沒帶或 v1 時為 null。 */
   readonly paymentId: string | null;
   constructor(p: { url: string; signedAtomic: bigint | null; cause: unknown; paymentId?: string | null }) {
     super(

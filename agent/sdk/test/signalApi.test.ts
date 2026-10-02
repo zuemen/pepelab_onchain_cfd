@@ -559,7 +559,7 @@ function payingFetch(paidResponse: () => Response | Error, delayMs = 20) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// x402 v2（docs/ADR-009）：PAYMENT-REQUIRED／PAYMENT-SIGNATURE／PAYMENT-RESPONSE
+// x402 v2（docs/ADR-010）：PAYMENT-REQUIRED／PAYMENT-SIGNATURE／PAYMENT-RESPONSE
 // ════════════════════════════════════════════════════════════════════════════
 const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64");
 const unb64 = (h: string | null) => JSON.parse(Buffer.from(h ?? "", "base64").toString("utf8"));
@@ -653,45 +653,54 @@ const settled2 = (over: Record<string, unknown> = {}) =>
   const sent = unb64(calls[1]!.headers.get("payment-signature"));
   assert.equal(sent.x402Version, 2);
   assert.equal(sent.payload.authorization.to, PAY_TO);
-  assert.ok(isValidPaymentId(sent.extensions["payment-identifier"].info.id), "SDK 自動帶 payment-identifier");
-  assert.equal(sent.extensions["payment-identifier"].info.required, false, "伺服器宣告的 info 原樣保留");
-  assert.deepEqual(sent.extensions["payment-identifier"].schema, PID_DECL.schema);
+  assert.equal(sent.extensions?.["payment-identifier"], undefined, "預設不送 payment-identifier（即使伺服器有宣告）");
+  assert.equal(calls[1]!.headers.get("payment-signature"), paymentSignature(pay.seen[0]!.requirements), "簽署端的輸出原封不動送出");
   assert.equal(r.payment!.x402Version, 2);
-  assert.equal(r.payment!.paymentId, sent.extensions["payment-identifier"].info.id);
+  assert.equal(r.payment!.paymentId, null);
   assert.equal(r.payment!.paidAtomic, 5000n);
   assert.equal(r.payment!.network, CAIP2);
   assert.equal((r.payment!.settlement as { success: boolean }).success, true);
   assert.equal(api.spentAtomic(), 5000n);
   assert.equal(api.unsettledAtomic(), 0n);
-  ok("v2 付款流程：讀 PAYMENT-REQUIRED → 挑選 → 呼叫端簽 → 帶 PAYMENT-SIGNATURE（含 payment-identifier）送一次 → 記帳與結算證明");
+  ok("v2 付款流程：讀 PAYMENT-REQUIRED → 挑選 → 呼叫端簽 → 帶 PAYMENT-SIGNATURE 送一次（預設不帶 payment-identifier）→ 記帳與結算證明");
 }
 
-// 22) payment-identifier：呼叫端指定／簽署端自帶／伺服器未宣告
+// 22) payment-identifier（選用）：只有呼叫端指定才送；簽署端自帶的原樣保留
 {
   assert.ok(isValidPaymentId(generatePaymentId()));
   assert.equal(isValidPaymentId("short"), false);
   const paidOk = () => json(200, { ok: true, settled: true, data: {} }, { "payment-response": settled2() });
-  // 呼叫端指定
+  // 呼叫端指定、伺服器有宣告：填入 id，宣告的其他欄位照規格回顯
   let m = mk([r402v2(), paidOk()], { payment: fakePaymentV2().client });
   let r = await m.api.getOracleSnapshot("sBTC", { paymentId: "order_2026-10-01_0001" });
   assert.equal(r.payment!.paymentId, "order_2026-10-01_0001");
-  assert.equal(unb64(m.calls[1]!.headers.get("payment-signature")).extensions["payment-identifier"].info.id, "order_2026-10-01_0001");
-  // 簽署端自己帶了 id：沒有指定時沿用它；有指定時以呼叫端為準
-  m = mk([r402v2(), paidOk()], { payment: fakePaymentV2({ paymentId: "signer_supplied_id_01" }).client });
+  let sent = unb64(m.calls[1]!.headers.get("payment-signature"));
+  assert.equal(sent.extensions["payment-identifier"].info.id, "order_2026-10-01_0001");
+  assert.equal(sent.extensions["payment-identifier"].info.required, false, "伺服器宣告的 info 原樣保留");
+  assert.deepEqual(sent.extensions["payment-identifier"].schema, PID_DECL.schema);
+  // 呼叫端指定、伺服器沒有宣告（例如 signal-api）：照樣送（只是中繼資料），不報錯
+  m = mk([r402v2(required2([req2()], false)), paidOk()], { payment: fakePaymentV2().client });
+  r = await m.api.getOracleSnapshot("sBTC", { paymentId: "order_2026-10-01_0002" });
+  assert.equal(r.payment!.paymentId, "order_2026-10-01_0002");
+  sent = unb64(m.calls[1]!.headers.get("payment-signature"));
+  assert.deepEqual(sent.extensions["payment-identifier"], { info: { id: "order_2026-10-01_0002" } });
+  // 簽署端自己帶了 id：沒有指定時原樣送出並回報；有指定時以呼叫端為準
+  const signer = fakePaymentV2({ paymentId: "signer_supplied_id_01" });
+  m = mk([r402v2(), paidOk()], { payment: signer.client });
   assert.equal((await m.api.getOracleSnapshot("sBTC")).payment!.paymentId, "signer_supplied_id_01");
+  assert.equal(m.calls[1]!.headers.get("payment-signature"), paymentSignature(req2(), { paymentId: "signer_supplied_id_01" }));
   m = mk([r402v2(), paidOk()], { payment: fakePaymentV2({ paymentId: "signer_supplied_id_01" }).client });
   assert.equal((await m.api.getOracleSnapshot("sBTC", { paymentId: "caller_wins_0123456789" })).payment!.paymentId, "caller_wins_0123456789");
-  // 伺服器沒有宣告這個擴充：不送 id，header 原樣送出
-  const pay = fakePaymentV2();
-  m = mk([r402v2(required2([req2()], false)), paidOk()], { payment: pay.client });
-  r = await m.api.getOracleSnapshot("sBTC", { paymentId: "ignored_when_undeclared" });
+  // 沒指定、伺服器也沒宣告：不送 id，header 原樣送出
+  m = mk([r402v2(required2([req2()], false)), paidOk()], { payment: fakePaymentV2().client });
+  r = await m.api.getOracleSnapshot("sBTC");
   assert.equal(r.payment!.paymentId, null);
-  assert.equal(m.calls[1]!.headers.get("payment-signature"), paymentSignature(req2()), "未宣告：簽署端的輸出原封不動送出");
+  assert.equal(m.calls[1]!.headers.get("payment-signature"), paymentSignature(req2()), "簽署端的輸出原封不動送出");
   // 格式不合：在任何請求之前就丟錯
   m = mk([], { payment: fakePaymentV2().client });
   await assert.rejects(m.api.getOracleSnapshot("sBTC", { paymentId: "bad id" }), TypeError);
   assert.equal(m.calls.length, 0);
-  ok("payment-identifier：呼叫端指定 > 簽署端自帶 > SDK 產生；伺服器未宣告時不送；格式不合在送出前丟錯");
+  ok("payment-identifier（選用）：預設不送；呼叫端指定才送（伺服器宣告與否皆可）；簽署端自帶的原樣保留、呼叫端指定優先；格式不合在送出前丟錯");
 }
 
 // 23) v2：上限、累計預留、並行

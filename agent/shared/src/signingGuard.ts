@@ -23,7 +23,7 @@
 //       交易另要求 chainId = AGENT_CHAIN_ID（EIP-155），calldata 重新編碼須逐字相同。
 //       持有證明挑戰的時間戳須在 ±60 秒內。
 //       呼叫點：x402-fetch（examples/x402-*、buy-signal、demo-agent、x402_agent.ts）。
-//       x402 v2（@x402/evm 2.28 的 exact client，docs/ADR-009）：預設仍是同一份 EIP-3009 typed data
+//       x402 v2（@x402/evm 2.28 的 exact client，docs/ADR-010）：預設仍是同一份 EIP-3009 typed data
 //       （domain 取自付款要求的 asset／extra.name／extra.version，chainId 取自 CAIP-2），差別只有
 //       validAfter 是 0（v1 是 now-600）—— 上面每一項檢查原樣適用，不需要為 v2 放寬任何東西。
 //       v2 新增的其他簽章路徑**一律拒絕**（它們都不是 TransferWithAuthorization）：
