@@ -1,5 +1,5 @@
 {
-  "digest": "db028bff1a43ff6f",
+  "digest": "1706ede300152b08",
   "files": {
     "agent/shared/src/abis.ts": "872c3136604d6584",
     "agent/shared/src/addresses.ts": "a6cb279048c58a4b",
@@ -55,7 +55,7 @@
     "npm:aes-js@4.0.0-beta.5": "pkg",
     "npm:dotenv@16.6.1": "pkg",
     "npm:ethers@6.17.0": "pkg",
-    "npm:hono@4.13.9": "pkg",
+    "npm:hono@4.13.10": "pkg",
     "npm:isows@1.0.7": "pkg",
     "npm:ox@0.14.45": "pkg",
     "npm:viem@2.56.9": "pkg",
