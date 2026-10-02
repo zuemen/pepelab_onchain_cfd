@@ -52,6 +52,7 @@ was not, the reason is given rather than glossed over.
 | 28 | After the timelock handover, recovery actions wait 48h and depend on one Safe | **By design** — losing the Safe freezes governance permanently |
 | 29 | V2.5 unpriced exemption values a closed dead-feed asset at an arbitrarily old price | **Accepted** — closed assets only, never below its last recorded price, dust-only without one |
 | 30 | Daily check-in still transfers PEPE on the deployed PepeIncentives, against the #101 decision | **Fixed in source** (2026-10-01, issue #169) — check-ins credit non-transferable achievement points; **not deployed**, the live contract is unchanged |
+| 31 | Equities, ETFs and gold can be opened against the last close while their market is closed | **Open on the live exchange** (2026-10-02) — the keeper refreshes `updatedAt` through closures so exits keep working; the ReduceOnly switch that stops opens needs the not-yet-deployed exchange. Keeper side fixed in source (w36) |
 
 ---
 
@@ -1175,6 +1176,74 @@ Tests: `test/PepeIncentives.t.sol` (no PEPE moves, empty pool, curve and cap,
 parameter bounds and event, no transfer/approve/burn/mint surface, pause, fuzz
 against a model of the curve) and `frontend/src/lib/pepefi/achievements.test.ts`
 (the probe, including -32005 / -32000 / -32603 / 429 errors).
+
+## 31. Closed-market opens at the last close (added 2026-10-02)
+
+**What happens on the live deployment.** Stocks, ETFs and gold do not trade at
+night, at weekends or on exchange holidays, so the source quote stops moving.
+The keeper still rewrites the last price every heartbeat (15 minutes, in
+practice every one to five hours given GitHub's cron delays). Both oracles
+stamp `updatedAt` with the block time of the write, not with the time of the
+source quote, and the exchange checks only `block.timestamp - updatedAt`
+against `maxPriceAge` (6 hours on Base Sepolia). The price therefore never
+looks stale during an ordinary closure, and the exchange accepts new
+positions on these assets at Friday's close all weekend.
+
+Read-only check on Base Sepolia (2026-10-02): over the weekend of
+26–27 September, 65 of 67 hourly samples of `sAAPL` on the MockOracle were
+younger than 6 hours, all at the same Friday price, and the keeper's
+`PriceUpdated` events from that weekend carry `oldPrice == newPrice`. The live
+exchange has no `assetMode()` (the call reverts), so it has no per-asset way
+to refuse opens.
+
+**Why the keeper keeps refreshing.** Letting the price go stale is not a
+fix: `closePosition` and `liquidatePosition` call `_requireFresh`, which uses
+the same `maxPriceAge` as opens. A stale closed-market price would lock every
+holder in and stop liquidations until the market reopens.
+
+**The fix, and what it needs.** The exchange source on `master` has
+per-asset modes (`Active` / `ReduceOnly` / `Halted`); ReduceOnly refuses every
+open path but keeps closes, liquidations and margin withdrawals working. The
+keeper is the `marketOperator` that switches them (`agent/keeper/operator.ts`):
+
+- Before it writes prices, it only *tightens*: an equity outside the regular
+  session (calendar or Yahoo session says closed), gold in the COMEX weekend
+  window (Friday 17:00 to Sunday 18:00 ET), or any of them whose quote has
+  not moved for more than 2 hours goes to ReduceOnly.
+- After the round it only *loosens*, and only for assets whose price passed
+  every check that round: back to Active when the session is open and the
+  quote is at most 1 hour old. Assets refused by the price breaker are not
+  loosened, so a breaker ReduceOnly is not lifted by the next market open.
+- The switch is on by default (`KEEPER_MARKET_OPERATOR=0` turns it off).
+  Against the live exchange it detects the missing function, skips, and prints
+  a `::warning::` naming the closed assets that can still be opened.
+
+This takes effect only after the new exchange is deployed and the keeper is
+set as its `marketOperator` (see `DEPLOY_130_CUTOVER.md`). Until then this
+limitation stands.
+
+**What is still not covered after the cutover.**
+
+- No exchange holiday calendar. A US holiday is caught because the quote is
+  stale: the asset went to ReduceOnly at the previous close and is not
+  loosened until a fresh quote arrives. An early close (13:00 ET) relies on
+  Yahoo's session end; if Yahoo does not reflect it, the 2-hour stale-quote
+  rule tightens the asset at about 15:00 ET.
+- Gold's daily 17:00–18:00 ET break is not switched; a COMEX holiday on a
+  weekday is caught only by the 2-hour stale-quote rule.
+- If the exchange's guardian wants a breaker ReduceOnly to stay until a human
+  lifts it, the guardian must set it (the guardian lock stops the market
+  operator from loosening it). A ReduceOnly the keeper set itself is lifted
+  automatically once the price passes the checks again during an open
+  session.
+- While an equity sits in ReduceOnly overnight, the breaker issue cannot
+  auto-close (any non-Active asset blocks it); it closes after the next open.
+- Crypto (sBTC, sETH) is never switched.
+
+Tests: `agent/keeper/operator.test.ts` (the w36 block: tighten never loosens,
+gold weekend, stale-quote rules, default on) and `agent/keeper/round.test.ts`
+(heartbeat still written while closed; `priced` excludes refused and
+unreadable assets).
 
 ## Frontend
 

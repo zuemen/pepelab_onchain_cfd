@@ -93,6 +93,18 @@ export function calendarOpen(cls: AssetClass, nowSec: number): boolean {
 }
 
 /**
+ * COMEX 週末休市窗口：週五 17:00 ET 到週日 18:00 ET（不含假日）。
+ * 與 calendarOpen("future") 的差別：每天 17:00–18:00 ET 的一小時休息不算。
+ */
+export function futureWeekendClosed(nowSec: number): boolean {
+  const { dow, min } = nyClock(nowSec);
+  if (dow === 6) return true;
+  if (dow === 5) return min >= 17 * 60;
+  if (dow === 0) return min < 18 * 60;
+  return false;
+}
+
+/**
  * 健檢用的「是否在交易時段內」—— fail-closed（審查 Medium 3）：Yahoo 與行事曆
  * **任一**說開盤就當開盤（嚴格判斷）。只有兩者都說休市（或沒有 Yahoo、行事曆說休市）
  * 才放寬。代價是美股假日會被當成開盤而告警；那是可以接受的誤報，漏報不行。

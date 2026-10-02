@@ -35,8 +35,15 @@ import { isTimeout, runRound, type RoundResult } from "./round.ts";
 import { describeProtection, protectAsset } from "./protect.ts";
 import type { HealthReport } from "./alert.ts";
 import { writeFileSync } from "node:fs";
-import { classifyProbeError, decideAssetMode, modeName, switchesMode } from "./operator.ts";
-import type { MarketSession } from "./market.ts";
+import {
+  ASSET_MODE,
+  classifyProbeError,
+  decideAssetMode,
+  marketOperatorEnabled,
+  modeName,
+  switchesMode,
+} from "./operator.ts";
+import { assetClassOf, type MarketSession } from "./market.ts";
 
 const SYMBOLS = [
   "sBTC", "sETH", "sAAPL", "sTSLA", "sNVDA",
@@ -94,10 +101,11 @@ const RELAY_SOURCE = (
   process.env.KEEPER_RELAY_SOURCE ?? process.env.RELAY_SOURCE ?? ""
 ).trim();
 
-// 選用（預設關閉）：marketOperator 休市切換，見 keeper/operator.ts。
+// marketOperator 休市切換（w36 起預設啟用；KEEPER_MARKET_OPERATOR=0 才關），見 keeper/operator.ts。
 // 需要 exchange 已部署 setAssetMode（contracts/p1-guardian-market-modes）且 owner 已
-// setMarketOperator(keeper 地址)。線上舊 exchange 沒有這個函式 → 探測後略過並記錄。
-const MARKET_OPERATOR = process.env.KEEPER_MARKET_OPERATOR === "1";
+// setMarketOperator(keeper 地址)。線上舊 exchange 沒有這個函式 → 探測後略過，並以
+// ::warning:: 列出「休市中仍可對收盤價開倉」的資產（docs/KNOWN_LIMITATIONS.md §31）。
+const MARKET_OPERATOR = marketOperatorEnabled(process.env);
 const EXCHANGE_ADDR = (process.env.KEEPER_EXCHANGE_ADDRESS ?? process.env.EXCHANGE ?? "").trim();
 // 選用：熔斷報告（alert.ts 的 HealthReport 形狀）與拒寫清單（一行一個 symbol，
 // funding crank 據此跳過）。workflow 設在 $RUNNER_TEMP。
@@ -221,9 +229,11 @@ async function main(): Promise<void> {
   if (relay) console.log(`relay source: ${RELAY_SOURCE}（優先於外部 API）`);
 
   let exchange: ethers.Contract | null = null;
+  // 本輪探測到交易所沒有 assetMode（舊合約）→ 休市切換做不到，結尾要說出來。
+  let modeUnsupported = false;
   if (MARKET_OPERATOR) {
     if (!ethers.isAddress(EXCHANGE_ADDR)) {
-      console.log("::warning::KEEPER_MARKET_OPERATOR=1 但 KEEPER_EXCHANGE_ADDRESS/EXCHANGE 未設，略過休市切換");
+      console.log("::warning::marketOperator 休市切換已啟用，但 KEEPER_EXCHANGE_ADDRESS/EXCHANGE 未設，略過休市切換");
     } else {
       exchange = new ethers.Contract(EXCHANGE_ADDR, EXCHANGE_MODE_ABI, signer ?? provider);
       console.log(`marketOperator: 啟用（exchange ${EXCHANGE_ADDR}）`);
@@ -257,9 +267,11 @@ async function main(): Promise<void> {
     fetchRelay: (id) => fetchFromRelay(relay, id),
     fetchPrice: (symbol) => fetchPrice(symbol),
     fetchSecondary: (symbol) => fetchSecondaryPrice(symbol),
+    // 收緊階段：寫價前、只會切 ReduceOnly。放寬在本輪結束後、只對 round.priced 做。
     beforeAsset: exchange
-      ? async (symbol, id) => {
-          const r = await applyMarketMode(exchange!, id, symbol, nowSec);
+      ? async (symbol, id, feed) => {
+          const r = await applyMarketMode(exchange!, id, symbol, nowSec, "tighten", feed.quoteAgeSec);
+          if (r === "missing") modeUnsupported = true;
           return r === "missing" ? "stop" : r;
         }
       : undefined,
@@ -320,6 +332,45 @@ async function main(): Promise<void> {
     if (res.mode === "failed") failed += 1;
     protectionNotes.push(...notes);
   }
+  // w36：休市切換的放寬階段 —— 只對本輪價格通過所有檢查的資產（round.priced）。
+  // 被熔斷拒寫的資產不在 priced 裡，上面剛切的 ReduceOnly 不會在這裡被解除。
+  if (exchange && !modeUnsupported) {
+    if (txUnknown) {
+      console.log("::warning::本輪有狀態未知的交易，休市切換的放寬階段略過（資產維持 ReduceOnly 較安全）");
+    } else {
+      for (const p of round.priced) {
+        if (!switchesMode(p.symbol)) continue;
+        const r = await applyMarketMode(exchange, p.assetId, p.symbol, nowSec, "loosen", p.quoteAgeSec);
+        if (r === "missing") {
+          modeUnsupported = true;
+          break;
+        }
+        if (r === "failed" || r === "unknown") failed += 1;
+        if (r === "unknown") break;
+      }
+    }
+  }
+  // w36：做不到休市停開倉時必須說出來 —— keeper 休市照常 heartbeat（出場要用），
+  // 鏈上 updatedAt 因此一直新鮮，交易所會接受以收盤價開新倉。
+  if (!exchange || modeUnsupported) {
+    const closed = SYMBOLS.filter(
+      (s) =>
+        decideAssetMode({ phase: "tighten", symbol: s, nowSec, currentMode: ASSET_MODE.Active, session: null })
+          .action === "set",
+    );
+    if (closed.length) {
+      const why = !MARKET_OPERATOR
+        ? "KEEPER_MARKET_OPERATOR=0（休市切換已關閉）"
+        : !exchange
+          ? "未設交易所位址"
+          : "線上交易所沒有 assetMode／setAssetMode（舊合約）";
+      console.log(
+        `::warning::休市中但無法切 ReduceOnly（${why}）：${closed.join(", ")} 仍可對收盤價開新倉 ——` +
+          ` heartbeat 讓鏈上 updatedAt 保持新鮮。見 docs/KNOWN_LIMITATIONS.md §31`,
+      );
+    }
+  }
+
   // 窄複審 4：報告帶上交易所目前仍在保護中（非 Active）的資產；有就不自動關 issue。
   const protectedAssets = exchangeView ? await readProtected(exchangeView) : [];
   if (protectedAssets.length) console.log(`::warning::交易所保護中的資產：${protectedAssets.join(", ")}（解除需人工）`);
@@ -444,7 +495,7 @@ function revertInfo(e: unknown): { code?: unknown; data?: unknown } {
 }
 
 /**
- * marketOperator：讀 assetMode → decideAssetMode → staticCall 探測 → 送出。
+ * marketOperator：讀 assetMode → decideAssetMode（tighten／loosen）→ staticCall 探測 → 送出。
  *   "missing" — exchange 沒有 assetMode/setAssetMode（線上舊合約），略過並記錄；
  *               呼叫端整輪停用，不算失敗。
  *   "failed"  — 已確定要切換卻送不出去（權限、RPC），計入 failed 讓 CI 變紅。
@@ -455,12 +506,11 @@ async function applyMarketMode(
   assetId: string,
   symbol: string,
   nowSec: number,
+  phase: "tighten" | "loosen",
+  quoteAgeSec: number | undefined,
 ): Promise<"ok" | "missing" | "failed" | "unknown"> {
-  // 加密／期貨不做休市切換：連 RPC 都不打。
+  // 加密資產不做休市切換：連 RPC 都不打。
   if (!switchesMode(symbol)) return "ok";
-  // 市場時段獨立取得（審查 Low），不依賴價格來源：價格改走 relay、或 Yahoo 價格因
-  // 報價過舊被拒時，feed 上都不會帶 session。拿不到就是 null → 行事曆只准收緊。
-  const session: MarketSession | null = await fetchMarketSession(symbol);
 
   let current: number;
   try {
@@ -475,7 +525,15 @@ async function applyMarketMode(
     return "ok";
   }
 
-  const d = decideAssetMode({ symbol, nowSec, currentMode: current, session });
+  // 市場時段獨立取得（審查 Low），不依賴價格來源：價格改走 relay、或 Yahoo 價格因
+  // 報價過舊被拒時，feed 上都不會帶 session。拿不到就是 null → 行事曆只准收緊。
+  // 只有 equity 用得到（期貨看週末窗口）；已是目標方向的模式也不必打 Yahoo。
+  const needSession =
+    assetClassOf(symbol) === "equity" &&
+    (phase === "tighten" ? current === ASSET_MODE.Active : current === ASSET_MODE.ReduceOnly);
+  const session: MarketSession | null = needSession ? await fetchMarketSession(symbol) : null;
+
+  const d = decideAssetMode({ phase, symbol, nowSec, currentMode: current, session, quoteAgeSec });
   if (d.action === "skip") {
     console.log(`  → marketOperator ${symbol}: skip（${d.reason}）`);
     return "ok";

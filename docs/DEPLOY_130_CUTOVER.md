@@ -167,7 +167,7 @@ oracle 價格新鮮度只會發出警告，不會 revert。如果看到 `WARN �
 | 3 | `frontend/src/contracts/sessionManager.ts` | 84532 的 `SESSION_MANAGER_ADDRESS` 改成新的 manager，同時更新註解裡的 exchange 位址 |
 | 4 | `agent/.env` 與 `.env.example` | `SESSION_MANAGER_ADDRESS` 改新 manager、`DEMO_SESSION_ID=0`、`PERP_ADDRESS` 改新 exchange。`x402_agent.ts` 和 `examples/*` 的預設位址與註解也要改 |
 | 5 | workflows | `admin-base-sepolia.yml:36`（default）、`base-sepolia-keeper.yml:51`（`EXCHANGE`）、`oracle-health.yml:36`（`KEEPER_EXCHANGE_ADDRESS`）。改完跑 `node scripts/check-addresses.mjs`，**位址一致性 CI（consistency.yml）會擋下不一致的地方** |
-| 6 | keeper | 在 `base-sepolia-keeper.yml` 設 `KEEPER_MARKET_OPERATOR: "1"`，並把 `KEEPER_EXCHANGE_ADDRESS` 設成新 exchange，由 keeper 負責 RWA 開休市的 Active/ReduceOnly 切換。keeper 地址就是 `marketOperator` |
+| 6 | keeper | 休市切換在 keeper 端預設已啟用（w36；`KEEPER_MARKET_OPERATOR=0` 才關），這一步只需把 `base-sepolia-keeper.yml` 的 `KEEPER_EXCHANGE_ADDRESS`／`EXCHANGE` 設成新 exchange，由 keeper 負責 RWA 開休市的 Active/ReduceOnly 切換。keeper 地址就是 `marketOperator`；新 exchange 上線但還沒設 `marketOperator` 時，休市那幾輪會因預檢被拒而變紅。在這一步完成前，休市時仍可對收盤價開倉（KNOWN_LIMITATIONS #31） |
 | 7 | VC | 為新的 manager 和 session 0 重新簽發 |
 | 8 | 獎勵發放 | 重部署 EsgRewardDistributor（§6） |
 | 9 | 前端 guardian 監控 | `paused()`、`pauseExpiresAt()`、`assetMode(id)` 可以直接讀取 |
