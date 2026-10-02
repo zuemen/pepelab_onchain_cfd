@@ -1,5 +1,7 @@
 import { t, interpolate } from 'src/locales'
 
+import { scanPush4Selectors } from './selectorScan'
+
 // Achievements, daily quests, and the check-in reward curve.
 //
 // These lived inline in DashboardPage and (until it was deleted) in an
@@ -19,12 +21,116 @@ import { t, interpolate } from 'src/locales'
 export const TODAY_INDEX = () => Math.floor(Date.now() / 1000 / 86400)
 
 /**
- * The daily check-in reward, as non-transferable achievement points (issue
- * #101 — no longer PEPE, because anything transferable acquires a price and
- * anything with a price gets farmed). 50, +10 per consecutive day, capped at
- * a 7-day streak (110).
+ * The daily check-in amount: 50, +10 per consecutive day, capped at a 7-day
+ * streak (110).
+ *
+ * WHAT it is an amount of depends on the PepeIncentives build behind the
+ * address (see `probeCheckInUnit`). Issue #101 decided it should be
+ * non-transferable achievement points — anything transferable acquires a
+ * price and anything with a price gets farmed — and issue #169 implements
+ * that in the contract source. The build deployed today still transfers PEPE,
+ * and a screen must say what the chain actually does.
  */
 export const dailyRewardFor = (streak: number) => 50 + 10 * Math.min(streak, 6)
+
+// ── What a check-in pays (capability probe) ──────────────────────────────────
+
+/**
+ * 'pepe'   — the PepeIncentives deployed today: `dailyCheckIn()` transfers PEPE.
+ * 'points' — the #169 build: `dailyCheckIn()` credits non-transferable
+ *            achievement points kept in the contract (`achievementPoints`).
+ */
+export type CheckInUnit = 'pepe' | 'points'
+
+/** `achievementPoints(address)` — only the #169 build has it. */
+export const ACHIEVEMENT_POINTS_SELECTOR = '0xeaf542d4'
+
+export interface CheckInProbe {
+  /** null = could not tell (keep showing what was shown before). */
+  unit: CheckInUnit | null
+  /**
+   * The wallet's achievement points (18 decimals). null on a 'pepe' build, or
+   * when the read failed (keep the last value shown).
+   */
+  points: bigint | null
+}
+
+export interface CheckInProbeDeps {
+  /**
+   * Runtime bytecode at the PepeIncentives address (ethers
+   * `contract.getDeployedCode()`): '0x…', or null / '0x' when there is none.
+   */
+  getCode: () => Promise<string | null>
+  /** `achievementPoints(wallet)`; only called once the build is known to have it. */
+  readPoints: () => Promise<unknown>
+}
+
+/**
+ * What the bytecode says, as a pure function. null when there is no code to
+ * read (wrong chain, not deployed): that is not evidence of either build.
+ */
+export function checkInUnitFromCode(code: string | null | undefined): CheckInUnit | null {
+  if (typeof code !== 'string' || code === '0x' || code.length < 4) return null
+  return scanPush4Selectors(code).has(ACHIEVEMENT_POINTS_SELECTOR) ? 'points' : 'pepe'
+}
+
+/**
+ * Ask the chain which build sits at the address, rather than assuming.
+ *
+ * Why bytecode and not a trial call: ethers v6 turns EVERY JSON-RPC error on
+ * eth_call (-32005 limit exceeded, -32000 header not found, -32603, HTTP 429)
+ * into CALL_EXCEPTION with no revert data -- exactly what calling a missing
+ * function on the old build looks like. A trial call cannot tell a flaky RPC
+ * from the old build; `eth_getCode` either returns the code or fails.
+ *
+ * Rules (PR #219 review B-F1):
+ *   - the read fails, or there is no code → unit null ("unknown"): the caller
+ *     keeps the last settled answer;
+ *   - once 'points' is settled for an address it never goes back to 'pepe'
+ *     (`previous` is the settled answer for the SAME address; pass null when
+ *     the address changed).
+ */
+export async function probeCheckInUnit(
+  deps: CheckInProbeDeps,
+  previous: CheckInUnit | null,
+): Promise<CheckInProbe> {
+  let found: CheckInUnit | null = null
+  try {
+    found = checkInUnitFromCode(await deps.getCode())
+  } catch {
+    found = null
+  }
+  const unit: CheckInUnit | null = previous === 'points' ? 'points' : (found ?? previous)
+  let points: bigint | null = null
+  if (unit === 'points') {
+    try {
+      const p = await deps.readPoints()
+      if (typeof p === 'bigint') points = p
+    } catch {
+      points = null
+    }
+  }
+  return { unit, points }
+}
+
+/**
+ * The four check-in sentences for what the chain is known to do. `null`
+ * (unknown: the probe could not read the bytecode yet) gets the neutral set:
+ * no PEPE, no points, a bare number -- either unit could be untrue
+ * (PR #219 re-review B1).
+ */
+export function checkInCopy(unit: CheckInUnit | null) {
+  if (unit === 'points') return t.rewards.checkIn.points
+  if (unit === 'pepe') return t.rewards.checkIn
+  return t.rewards.checkIn.unknown
+}
+
+/** Which "check-in reverted" text to show (`prettyError` context). */
+export function checkInErrorContext(unit: CheckInUnit | null): 'checkin' | 'checkinPoints' | 'checkinUnknown' {
+  if (unit === 'points') return 'checkinPoints'
+  if (unit === 'pepe') return 'checkin'
+  return 'checkinUnknown'
+}
 
 // ── Achievements ──────────────────────────────────────────────────────────────
 

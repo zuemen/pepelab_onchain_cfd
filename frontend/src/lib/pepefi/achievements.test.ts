@@ -1,9 +1,17 @@
-import { describe, it, expect } from 'vitest'
+import { id, JsonRpcProvider } from 'ethers'
+import { it, expect, describe, afterAll } from 'vitest'
+
+import { prettyError } from './errorMessages'
 
 import {
   ACHIEVEMENTS,
   buildQuests,
   dailyRewardFor,
+  probeCheckInUnit,
+  checkInCopy,
+  checkInErrorContext,
+  checkInUnitFromCode,
+  ACHIEVEMENT_POINTS_SELECTOR,
   TODAY_INDEX,
   type AchCtx,
 } from './achievements'
@@ -98,6 +106,128 @@ describe('dailyRewardFor — 成就點數,不是 PEPE', () => {
     expect(dailyRewardFor(1)).toBe(60)
     expect(dailyRewardFor(6)).toBe(110)
     expect(dailyRewardFor(30)).toBe(110)
+  })
+})
+
+describe('probeCheckInUnit — 簽到發的是什麼,看 bytecode,不靠試呼叫', () => {
+  // 舊版與 #169 版 runtime bytecode 的最小替身：dispatcher 以 PUSH4 比對 selector。
+  // 舊版有 lastCheckIn(0xef6fdb1c)沒有 achievementPoints(0xeaf542d4)。
+  const OLD_CODE = '0x6080604052' + '63ef6fdb1c' + '14'
+  const NEW_CODE = '0x6080604052' + '63ef6fdb1c' + '14' + '63eaf542d4' + '14'
+  const POINTS = 110n * 10n ** 18n
+  const INCENTIVES = '0xEBfA1dc7dDea032ac6242cB619d982e543A23c12'
+
+  // ethers v6 把 JSON-RPC 錯誤轉成 Error 的方式：與線上 provider 相同的 getRpcError。
+  const provider = new JsonRpcProvider('http://127.0.0.1:1', 84532, { staticNetwork: true })
+  const rpcError = (code: number, message: string, method = 'eth_getCode') =>
+    provider.getRpcError(
+      {
+        method,
+        params: method === 'eth_call' ? [{ to: INCENTIVES, data: '0xeaf542d4' }, 'latest'] : [INCENTIVES, 'latest'],
+        id: 1,
+        jsonrpc: '2.0',
+      },
+      { id: 1, error: { code, message } },
+    )
+  const RPC_ERRORS: Array<[number, string]> = [
+    [-32005, 'limit exceeded'],
+    [-32000, 'header not found'],
+    [-32603, 'Internal JSON-RPC error.'],
+    [429, 'Too Many Requests'],
+  ]
+  afterAll(() => provider.destroy())
+
+  const deps = (code: () => Promise<string | null>, points: () => Promise<unknown> = () => Promise.resolve(POINTS)) =>
+    ({ getCode: code, readPoints: points })
+
+  it('selector 常數就是 achievementPoints(address)', () => {
+    expect(id('achievementPoints(address)').slice(0, 10)).toBe(ACHIEVEMENT_POINTS_SELECTOR)
+  })
+
+  it('bytecode 含 achievementPoints → 點數版,並帶回點數', async () => {
+    expect(await probeCheckInUnit(deps(() => Promise.resolve(NEW_CODE)), null))
+      .toEqual({ unit: 'points', points: POINTS })
+  })
+
+  it('bytecode 不含 → PEPE 版,不讀點數', async () => {
+    let read = 0
+    const r = await probeCheckInUnit(deps(() => Promise.resolve(OLD_CODE), () => { read += 1; return Promise.resolve(0n) }), null)
+    expect(r).toEqual({ unit: 'pepe', points: null })
+    expect(read).toBe(0)
+  })
+
+  it('沒有合約(0x / null)→ 未知,不下結論', async () => {
+    expect((await probeCheckInUnit(deps(() => Promise.resolve('0x')), null)).unit).toBeNull()
+    expect((await probeCheckInUnit(deps(() => Promise.resolve(null)), null)).unit).toBeNull()
+    expect((await probeCheckInUnit(deps(() => Promise.resolve('0x')), 'pepe')).unit).toBe('pepe')
+  })
+
+  it('這些 RPC 錯誤在 ethers 裡都長得像「沒有這個函式」—— 正是不能用試呼叫的原因', () => {
+    for (const [code, msg] of RPC_ERRORS) {
+      const e = rpcError(code, msg, 'eth_call') as Error & { code?: string }
+      expect(e.code, String(code)).toBe('CALL_EXCEPTION')
+    }
+  })
+
+  it.each(RPC_ERRORS)('getCode 失敗(%i %s)→ 未知;已確定的結論維持不變', async (code, msg) => {
+    const failing = () => Promise.reject(rpcError(code, msg))
+    expect((await probeCheckInUnit(deps(failing), null)).unit).toBeNull()
+    expect((await probeCheckInUnit(deps(failing), 'pepe')).unit).toBe('pepe')
+    const r = await probeCheckInUnit(deps(failing), 'points')
+    expect(r.unit).toBe('points')
+    expect(r.points).toBe(POINTS)
+  })
+
+  it.each(RPC_ERRORS)('點數讀取失敗(%i %s)→ 仍是點數版,點數未知(維持畫面上的值)', async (code, msg) => {
+    const r = await probeCheckInUnit(deps(() => Promise.resolve(NEW_CODE), () => Promise.reject(rpcError(code, msg, 'eth_call'))), null)
+    expect(r).toEqual({ unit: 'points', points: null })
+  })
+
+  it('確定是點數版之後不再降級', async () => {
+    expect((await probeCheckInUnit(deps(() => Promise.resolve(OLD_CODE)), 'points')).unit).toBe('points')
+  })
+
+  it('同步丟錯、回傳非 bigint 都不會讓頁面壞掉', async () => {
+    const contract = {} as { getDeployedCode?: () => Promise<string | null> }
+    expect((await probeCheckInUnit(deps(() => contract.getDeployedCode!()), null)).unit).toBeNull()
+    expect(await probeCheckInUnit(deps(() => Promise.resolve(NEW_CODE), () => Promise.resolve('0x')), null))
+      .toEqual({ unit: 'points', points: null })
+  })
+
+  it('checkInUnitFromCode:PUSH 資料區裡的位元組不算', () => {
+    expect(checkInUnitFromCode(NEW_CODE)).toBe('points')
+    expect(checkInUnitFromCode(OLD_CODE)).toBe('pepe')
+    // 0x7f = PUSH32,後面 32 bytes 是資料,裡面恰好有 63eaf542d4
+    expect(checkInUnitFromCode('0x7f63eaf542d4' + '00'.repeat(27) + '63ef6fdb1c14')).toBe('pepe')
+  })
+})
+
+describe('checkInCopy — 合約版本未知時不說 PEPE 也不說點數（PR #219 複審 B1）', () => {
+  const texts = (o: Record<string, unknown>) =>
+    Object.values(o).filter((v): v is string => typeof v === 'string')
+
+  it('未知 → 中性文案：每一句都沒有 PEPE、成就點數、points', () => {
+    const c = checkInCopy(null)
+    const all = [c.description, c.todayReward, c.checkIn, c.comeBack]
+    for (const s of all) {
+      expect(s).not.toMatch(/PEPE/i)
+      expect(s).not.toMatch(/點數|points?/i)
+    }
+    // 數字照樣顯示，只是不帶單位
+    expect(c.checkIn).toContain('{reward}')
+  })
+
+  it('已知版本各用各的文案', () => {
+    expect(checkInCopy('pepe').checkIn).toContain('PEPE')
+    expect(checkInCopy('points').checkIn).toContain('成就點數')
+    expect(texts(checkInCopy('points'))).not.toEqual(texts(checkInCopy(null)))
+  })
+
+  it('錯誤文案的 context 對應三態；未知時的錯誤訊息也不提 PEPE 資金池', () => {
+    expect(checkInErrorContext(null)).toBe('checkinUnknown')
+    expect(checkInErrorContext('pepe')).toBe('checkin')
+    expect(checkInErrorContext('points')).toBe('checkinPoints')
+    expect(prettyError(new Error('execution reverted'), 'checkinUnknown')).not.toMatch(/PEPE/)
   })
 })
 

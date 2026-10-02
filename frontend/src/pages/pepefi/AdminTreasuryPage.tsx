@@ -5,6 +5,7 @@ import { useRef, useState, useEffect, useCallback } from 'react'
 import { parseEther, formatEther, formatUnits } from 'ethers'
 import { useContracts } from 'src/hooks/useContracts'
 import { isPlatformDeployment } from 'src/contracts/deployment'
+import { useCheckInUnit } from 'src/hooks/useCheckInUnit'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { explorerTx } from 'src/lib/pepefi/notify'
 import { t, interpolate } from 'src/locales'
@@ -74,6 +75,8 @@ interface CashOutRecord {
 export default function AdminTreasuryPage() {
   const wallet = usePepefiWallet()
   const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId)
+  // 簽到發 PEPE 還是成就點數，看合約 bytecode（#169）；文案跟著鏈上實際行為走。
+  const checkInUnit = useCheckInUnit(contracts?.pepeIncentives, wallet.chainId)
 
   const [stats,           setStats]           = useState<RevenueStats | null>(null)
   const [platformTreasury, setPlatformTreasury] = useState<string | null>(null)
@@ -511,7 +514,11 @@ export default function AdminTreasuryPage() {
         </Box>
 
         <Typography variant="caption" color="text.secondary">
-          {t.admin.treasury.incentives.description}
+          {checkInUnit === 'points'
+            ? t.admin.treasury.incentives.descriptionPoints
+            : checkInUnit === 'pepe'
+              ? t.admin.treasury.incentives.description
+              : t.admin.treasury.incentives.descriptionUnknown}
         </Typography>
 
         <Grid container spacing={2} sx={{ mt: 0.5 }}>
