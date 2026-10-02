@@ -61,7 +61,7 @@ async function main() {
   //     VC 本身的問題（重放、被取代、v2 後的 v1）平倉照樣拒絕。
   {
     const { vcNonceDecision } = await import("@pepelab/shared");
-    for (const code of ["NONCE_STORE_UNREADABLE", "NONCE_STORE_LOCK_FAILED"]) {
+    for (const code of ["NONCE_STORE_UNREADABLE", "NONCE_STORE_WRITE_FAILED", "NONCE_STORE_LOCK_FAILED"]) {
       const f = { ok: false, reasonCode: code, message: "x" };
       assert.deepEqual(vcNonceDecision(f, "close"), { kind: "degraded", code });
       assert.equal(vcNonceDecision(f, "open").kind, "reject");

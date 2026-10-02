@@ -1,0 +1,20 @@
+# 測試用 fixture：沒有私鑰的一般 workflow，各種不該誤報的寫法。
+name: fixture ci
+on: [push, pull_request]
+env:
+  # vars 與其他 context 不是 secret
+  PAY_TO: ${{ vars.PAY_TO }}
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
+    env:
+      # 不是受保護的私鑰：沒有 environment 也可以
+      RPC_URL: ${{ secrets.BASE_SEPOLIA_RPC_URL }}
+      # `inputs.secrets`、`my_secrets` 不是 secrets context
+      A: ${{ inputs.secrets }}
+      B: ${{ env.my_secrets }}
+    steps:
+      - run: |
+          # run 的文字裡寫 secrets.KEEPER_PRIVATE_KEY、environment: keeper 都只是字串
+          echo "KEEPER_PRIVATE_KEY secrets not set; environment: keeper"

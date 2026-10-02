@@ -280,7 +280,10 @@ export function vcNonceDecision(
   action: "open" | "close",
 ): { kind: "ok" } | { kind: "degraded"; code: string } | { kind: "reject"; reason: string } {
   if (n.ok) return { kind: "ok" };
-  const infra = n.reasonCode === "NONCE_STORE_UNREADABLE" || n.reasonCode === "NONCE_STORE_LOCK_FAILED";
+  const infra =
+    n.reasonCode === "NONCE_STORE_UNREADABLE" ||
+    n.reasonCode === "NONCE_STORE_WRITE_FAILED" ||
+    n.reasonCode === "NONCE_STORE_LOCK_FAILED";
   if (infra && action === "close") return { kind: "degraded", code: n.reasonCode };
   return { kind: "reject", reason: `授權憑證(VC) nonce 檢查未過（${n.reasonCode}）：${n.message}` };
 }

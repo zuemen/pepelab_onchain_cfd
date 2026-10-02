@@ -1,0 +1,17 @@
+# 測試用反例 fixture：reusable workflow 與運算式解析差異（PR #217 審查 C01／C05／C07）。
+name: fixture reusable and parser
+on:
+  push:
+jobs:
+  # 對方的 workflow 可以自己綁 environment: keeper，而且在別的 repo，檢查看不到它。
+  remote-reusable:
+    uses: someone/else/.github/workflows/w.yml@main
+  local-reusable:
+    uses: ./.github/workflows/base-sepolia-keeper.yml
+  # 字串常值裡的 `}}`：runner 會跳過單引號字串，運算式其實一直延伸到最後的 `}}`。
+  string-braces:
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          X: ${{ format('}}{0}', secrets.KEEPER_PRIVATE_KEY) }}
+        run: echo "$X"

@@ -16,7 +16,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ethers } from "ethers";
 import type { AuthorizationVC } from "./identity.ts";
-import { withFileLockSync } from "./fileLock.ts";
+import { isNotFound, retryTransientSync, withFileLockSync } from "./fileLock.ts";
 
 export interface AuditRecord {
   ts: string;
@@ -108,10 +108,20 @@ export function lastAuditHash(filePath: string): string | null {
   return (JSON.parse(line) as ChainedRecord).hash ?? null;
 }
 
-/** 從檔尾往前讀，回最後一個非空行（檔案不存在或全空回 null）。 */
+/**
+ * 從檔尾往前讀，回最後一個非空行（檔案不存在或全空回 null）。
+ * 只有 ENOENT 算「不存在」：fs.existsSync 遇 EPERM／EACCES 也回 false，會讓下一筆的 prevHash
+ * 變成 null、hash chain 分岔（PR #213 審查 Medium-1）。其他錯誤（暫時性錯誤重試用盡後）照樣丟出，
+ * 呼叫端（appendChainedRecord／appendAudit）因此寫入失敗 → fail-closed。
+ */
 export function readLastLine(filePath: string, chunk = 64 * 1024): string | null {
-  if (!fs.existsSync(filePath)) return null;
-  const fd = fs.openSync(filePath, "r");
+  let fd: number;
+  try {
+    fd = retryTransientSync(() => fs.openSync(filePath, "r"));
+  } catch (e) {
+    if (isNotFound(e)) return null;
+    throw e;
+  }
   try {
     // 以 byte 為單位往前找換行（0x0a），最後才一次 decode——不會把多位元組的 UTF-8
     // 字元（稽核訊息是中文）切在 chunk 邊界上。
@@ -184,9 +194,15 @@ export function appendAudit(filePath: string, rec: AuditRecord): AuditRecord {
 
 /** 讀回所有稽核紀錄。 */
 export function readAudit(filePath: string): AuditRecord[] {
-  if (!fs.existsSync(filePath)) return [];
-  return fs
-    .readFileSync(filePath, "utf8")
+  // 同上：讀不到（EPERM 等）時丟錯，不回空陣列 —— 否則 verifyAuditChain([]) 會把「讀不到」驗成「完整」。
+  let raw: string;
+  try {
+    raw = retryTransientSync(() => fs.readFileSync(filePath, "utf8"));
+  } catch (e) {
+    if (isNotFound(e)) return [];
+    throw e;
+  }
+  return raw
     .split("\n")
     .filter((l) => l.trim())
     .map((l) => JSON.parse(l) as AuditRecord);

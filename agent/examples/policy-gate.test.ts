@@ -278,6 +278,175 @@ ok("單筆保證金上限：>100 拒絕、=100 放行、負數/NaN → MARGIN_IN
   ok("開倉達頻率上限後仍可平倉");
 }
 
+// ─────────────── #212：狀態寫入失敗時，稽核鏈與回傳值一致 ───────────────
+{
+  const { readPolicyState, retryTransientSync } = S;
+  /** 注入寫入失敗：在 writePolicyState 的暫存檔路徑放一個目錄 → writeFileSync 必失敗（EISDIR，非暫時性）。 */
+  const blockStateWrite = (statePath: string) => fs.mkdirSync(`${statePath}.${process.pid}.tmp`, { recursive: true });
+  const close = { action: "close" as const, sessionId: 7, agent: AGENT, user: USER, positionId: 5 };
+  const origErr = console.error;
+  console.error = () => {};
+  try {
+    // 開倉：狀態寫不進去 → STATE_WRITE_FAILED；稽核只有一筆，且是 allowed=false
+    const sp = path.join(TMP, "w1.json");
+    const ap = path.join(TMP, "w1-audit.jsonl");
+    blockStateWrite(sp);
+    const g = await enforcePolicyGate(open(), { statePath: sp, auditPath: ap, now: () => T0 });
+    assert.equal(g.allowed, false);
+    assert.equal(g.reasonCode, "STATE_WRITE_FAILED", "寫入失敗不再歸到 STATE_UNREADABLE");
+    const recs = readAudit(ap) as any[];
+    assert.equal(recs.length, 1, "一個決定只留一筆稽核");
+    assert.deepEqual([recs[0].allowed, recs[0].reasonCode], [false, "STATE_WRITE_FAILED"], "稽核鏈的最終紀錄與回傳值一致");
+    assert.ok(!recs.some((r) => r.allowed), "沒有任何放行紀錄");
+    assert.deepEqual(verifyAuditChain(recs), []);
+    assert.equal(fs.existsSync(sp), false, "狀態檔沒有被寫入");
+
+    // 平倉：同樣故障 → 降級放行，稽核記 allowed=true 且 degraded 帶 STATE_WRITE_FAILED（與回傳一致）；
+    // 沒有寫進預留 → release 為 noop
+    const c = await enforcePolicyGate(close, { statePath: sp, auditPath: ap, now: () => T0 + 1 });
+    assert.equal(c.allowed, true);
+    assert.equal(c.reasonCode, "OK_DEGRADED");
+    assert.deepEqual(c.degraded, ["STATE_WRITE_FAILED"]);
+    const last = (readAudit(ap) as any[]).at(-1);
+    assert.deepEqual([last.allowed, last.reasonCode, last.degraded], [true, "OK_DEGRADED", ["STATE_WRITE_FAILED"]]);
+    await c.release();
+    assert.equal(fs.existsSync(sp), false, "release 沒有去寫狀態檔");
+
+    // 開倉：狀態寫入成功、稽核寫不進去 → AUDIT_WRITE_FAILED，且剛寫入的預留被退回（不留下沒有稽核的額度）
+    const sp2 = path.join(TMP, "w2.json");
+    const blocker = path.join(TMP, "w2-blocker");
+    fs.writeFileSync(blocker, "x");
+    const g2 = await enforcePolicyGate(open({ marginUsdc: 40 }), { statePath: sp2, auditPath: path.join(blocker, "a.jsonl"), now: () => T0 });
+    assert.equal(g2.reasonCode, "AUDIT_WRITE_FAILED");
+    const st = readPolicyState(sp2);
+    for (const k of [KEY, GKEY]) {
+      assert.equal(st.agents[k]?.dailyMargin ?? 0, 0, `${k}：預留已退回`);
+      assert.deepEqual(st.agents[k]?.orders ?? [], [], `${k}：下單時間戳已退回`);
+    }
+    // 對照：正常放行時，稽核是 allowed=true，且狀態確實記下預留
+    const sp3 = path.join(TMP, "w3.json");
+    const ap3 = path.join(TMP, "w3-audit.jsonl");
+    const g3 = await enforcePolicyGate(open({ marginUsdc: 40 }), { statePath: sp3, auditPath: ap3, now: () => T0 });
+    assert.equal(g3.allowed, true);
+    assert.equal((readAudit(ap3) as any[])[0].allowed, true);
+    assert.equal(readPolicyState(sp3).agents[KEY].dailyMargin, 40);
+  } finally {
+    console.error = origErr;
+  }
+  ok("#212：狀態寫入失敗 → 開倉 STATE_WRITE_FAILED、稽核唯一一筆 allowed=false；平倉降級且稽核標 STATE_WRITE_FAILED；稽核失敗時退回預留");
+
+  // 暫時性錯誤（EPERM／EACCES／EBUSY）有上限的退避重試；其他錯誤不重試
+  const errno = (code: string) => Object.assign(new Error(code), { code });
+  let calls = 0;
+  assert.equal(retryTransientSync(() => { if (++calls < 3) throw errno("EPERM"); return "ok"; }, { baseMs: 1 }), "ok");
+  assert.equal(calls, 3, "EPERM 兩次後成功");
+  const realPlatform = process.platform;
+  const onPlatform = (p: string, fn: () => void) => {
+    Object.defineProperty(process, "platform", { value: p, configurable: true });
+    try { fn(); } finally { Object.defineProperty(process, "platform", { value: realPlatform, configurable: true }); }
+  };
+  const callsFor = (code: string) => {
+    calls = 0;
+    assert.throws(() => retryTransientSync(() => { calls++; throw errno(code); }, { baseMs: 1 }), (e: any) => e.code === code);
+    return calls;
+  };
+  for (const plat of ["win32", "linux", "darwin"]) {
+    onPlatform(plat, () => {
+      for (const code of ["EPERM", "EBUSY"]) assert.equal(callsFor(code), 5, `${plat} ${code}：最多 5 次後放棄（仍 fail-closed）`);
+      // PR #213 審查 Low-2：EACCES 只有 Windows 是暫時性；POSIX 是永久權限錯誤，不重試
+      assert.equal(callsFor("EACCES"), plat === "win32" ? 5 : 1, `${plat} EACCES`);
+      for (const code of ["ENOENT", "EISDIR", "ENOSPC"]) assert.equal(callsFor(code), 1, `${plat} ${code} 不是暫時性錯誤，不重試`);
+    });
+  }
+  // 預設退避：每次呼叫最多睡 1+2+3+4 = 10ms（持鎖期間最差 7 次 I/O ≈ 70ms ≤ 100ms）
+  // 驗證「要求睡多久」而不是量牆上時間：機器忙的時候 10ms 的睡眠會被拉長，量時間會隨機失敗。
+  const slept: number[] = [];
+  assert.throws(() => retryTransientSync(() => { throw errno("EPERM"); }, { sleep: (ms) => slept.push(ms) }), (e: any) => e.code === "EPERM");
+  assert.deepEqual(slept, [1, 2, 3, 4], "預設退避 1、2、3、4ms");
+  assert.equal(slept.reduce((a, b) => a + b, 0), 10);
+  ok("#212：狀態檔讀寫遇 EPERM/EBUSY（Windows 另含 EACCES）退避重試（上限 5 次、單次呼叫 ≤ 10ms 睡眠）；其他錯誤立即失敗");
+}
+
+// ─────────────── PR #213 審查：existsSync fail-open（Medium-1）、鎖失敗也要留稽核（Medium-2）───────────────
+{
+  /**
+   * 模擬 Windows 上「檔案存在但暫時讀不到」：existsSync 回 false（Node 在 EPERM／EACCES 時就是這樣），
+   * readFileSync／openSync 丟 EPERM。只影響 target 這一個路徑（鎖檔、暫存檔不受影響）。
+   */
+  const failRead = (target: string) => {
+    const orig = { existsSync: fs.existsSync, readFileSync: fs.readFileSync, openSync: fs.openSync };
+    const hit = (p: unknown) => path.resolve(String(p)) === path.resolve(target);
+    const eperm = () => Object.assign(new Error(`EPERM: operation not permitted（模擬）, '${target}'`), { code: "EPERM" });
+    const f = fs as any;
+    f.existsSync = (p: any) => (hit(p) ? false : orig.existsSync(p));
+    f.readFileSync = (p: any, ...a: any[]) => { if (hit(p)) throw eperm(); return (orig.readFileSync as any)(p, ...a); };
+    f.openSync = (p: any, ...a: any[]) => { if (hit(p)) throw eperm(); return (orig.openSync as any)(p, ...a); };
+    return () => Object.assign(fs, orig);
+  };
+  const { readPolicyState } = S;
+  const close = { action: "close" as const, sessionId: 7, agent: AGENT, user: USER, positionId: 5 };
+  const origErr = console.error;
+  console.error = () => {};
+  try {
+    // M1-a：policy 狀態檔暫時讀不到 → 開倉拒絕（STATE_UNREADABLE），不會以空狀態放行並把額度歷史覆寫掉
+    const sp = path.join(TMP, "m1.json");
+    const ap = path.join(TMP, "m1-audit.jsonl");
+    const env = { POLICY_MAX_ORDERS_PER_WINDOW: "1" } as any;
+    assert.equal((await enforcePolicyGate(open(), { statePath: sp, auditPath: ap, env, now: () => T0 })).allowed, true);
+    assert.equal((await enforcePolicyGate(open(), { statePath: sp, auditPath: ap, env, now: () => T0 + 1 })).reasonCode, "RATE_LIMITED", "前提：額度已用完");
+    const before = fs.readFileSync(sp, "utf8");
+    let restore = failRead(sp);
+    let g;
+    try {
+      g = await enforcePolicyGate(open(), { statePath: sp, auditPath: ap, env, now: () => T0 + 2 });
+    } finally {
+      restore();
+    }
+    assert.equal(g.allowed, false, "讀不到狀態不能當成「沒有狀態」放行（修正前：existsSync=false → 空狀態 → 放行）");
+    assert.equal(g.reasonCode, "STATE_UNREADABLE");
+    assert.equal(fs.readFileSync(sp, "utf8"), before, "狀態檔沒有被空狀態覆寫");
+    assert.equal(readPolicyState(sp).agents[KEY].orders.length, 1);
+
+    // M1-b：稽核檔暫時讀不到 → 不能以 prevHash=null 接著寫（hash chain 分岔）；開倉 AUDIT_WRITE_FAILED
+    const nBefore = (readAudit(ap) as any[]).length;
+    restore = failRead(ap);
+    try {
+      assert.throws(() => readAudit(ap), (e: any) => e.code === "EPERM", "readAudit 讀不到時丟錯，不回空陣列");
+      g = await enforcePolicyGate(open(), { statePath: path.join(TMP, "m1b.json"), auditPath: ap, now: () => T0 });
+    } finally {
+      restore();
+    }
+    assert.equal(g.reasonCode, "AUDIT_WRITE_FAILED");
+    const recs = readAudit(ap) as any[];
+    assert.equal(recs.length, nBefore, "沒有寫入 prevHash=null 的分岔紀錄");
+    assert.deepEqual(verifyAuditChain(recs), [], "hash chain 完整");
+    assert.ok(recs.slice(1).every((r) => r.prevHash), "除第一筆外都有 prevHash");
+
+    // M2：開倉因拿不到 state 鎖被拒 → 也要寫 allowed=false 稽核；稽核寫不進去 → AUDIT_WRITE_FAILED；平倉照舊降級放行
+    const sl = path.join(TMP, "m2.json");
+    const al = path.join(TMP, "m2-audit.jsonl");
+    fs.writeFileSync(`${sl}.lock`, JSON.stringify({ pid: process.pid, token: "held", at: Date.now() })); // 存活持有者 → 一定逾時
+    const lt = await enforcePolicyGate(open(), { statePath: sl, auditPath: al, lockTimeoutMs: 30, now: () => T0 });
+    assert.equal(lt.allowed, false);
+    assert.equal(lt.reasonCode, "STATE_LOCK_TIMEOUT");
+    let last = (readAudit(al) as any[]).at(-1);
+    assert.deepEqual([last?.allowed, last?.reasonCode], [false, "STATE_LOCK_TIMEOUT"], "鎖失敗的拒絕也有稽核");
+    const blk = path.join(TMP, "m2-blocker");
+    fs.writeFileSync(blk, "x");
+    const lt2 = await enforcePolicyGate(open(), { statePath: sl, auditPath: path.join(blk, "a.jsonl"), lockTimeoutMs: 30, now: () => T0 });
+    assert.equal(lt2.reasonCode, "AUDIT_WRITE_FAILED");
+    const lc = await enforcePolicyGate(close, { statePath: sl, auditPath: al, lockTimeoutMs: 30, now: () => T0 + 1 });
+    assert.deepEqual([lc.allowed, lc.reasonCode, lc.degraded], [true, "OK_DEGRADED", ["STATE_LOCK_TIMEOUT"]]);
+    last = (readAudit(al) as any[]).at(-1);
+    assert.deepEqual([last.allowed, last.reasonCode, last.degraded], [true, "OK_DEGRADED", ["STATE_LOCK_TIMEOUT"]]);
+    assert.deepEqual(verifyAuditChain(readAudit(al) as any[]), []);
+    fs.unlinkSync(`${sl}.lock`);
+  } finally {
+    console.error = origErr;
+  }
+  ok("PR #213：狀態／稽核檔 EPERM 不再被當成不存在（開倉 STATE_UNREADABLE／AUDIT_WRITE_FAILED、chain 不分岔）；鎖失敗的開倉拒絕也寫稽核");
+}
+
 // ─────────────── write.ts 一定經過 policy gate（VC 閘、風險閘之後；簽章、廣播之前）───────────────
 {
   // 額度以鏈上 session.user 為鍵 → write.ts 會先讀 sessions()；用假節點回答（不連真實網路）。

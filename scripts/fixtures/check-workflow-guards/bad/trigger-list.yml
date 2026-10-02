@@ -1,0 +1,8 @@
+# 測試用反例 fixture：陣列寫法的 workflow_run。
+name: fixture trigger list
+on: [push, workflow_run]
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo t

@@ -91,6 +91,52 @@ function tryReclaim(lockPath: string, staleMs: number): void {
  */
 export const TRANSIENT_LOCK_ERRORS = new Set(["EPERM", "EACCES", "EBUSY"]);
 
+export interface TransientRetryOptions {
+  /** 最多嘗試次數（含第一次）。預設 5。 */
+  attempts?: number;
+  /** 退避基準（ms），第 i 次重試前睡 baseMs × i（線性）。預設 1（1、2、3、4 ms）。 */
+  baseMs?: number;
+  /** 測試用：取代實際的同步睡眠，讓測試驗證「要求睡多久」而不是量牆上時間。 */
+  sleep?: (ms: number) => void;
+}
+
+/** 這個平台上哪些錯誤碼算「等一下就好」（retryTransientSync 用）。 */
+function isTransientIoError(code: string): boolean {
+  if (code === "EPERM" || code === "EBUSY") return true;
+  // EACCES 只有 Windows 是暫時性（防毒／索引程式短暫持有、delete-pending）；
+  // POSIX 的 EACCES 是永久的權限錯誤，重試只是白等（PR #213 審查 Low-2）。
+  return code === "EACCES" && process.platform === "win32";
+}
+
+/**
+ * 狀態檔讀寫（readFileSync、writeFileSync、renameSync、openSync）在 Windows 遇到暫時性錯誤
+ * （EPERM／EBUSY；Windows 上另含 EACCES）時，做有上限的退避重試（#212）。
+ * 其他錯誤立刻丟出；重試用盡丟出最後一個錯誤 —— 呼叫端照舊 fail-closed。
+ *
+ * 持鎖時間上限：這是同步睡眠（Atomics.wait），而且通常在檔案鎖內、MCP 的 event loop 上執行，
+ * 所以退避刻意很短：預設每次呼叫最多睡 1+2+3+4 = 10ms。policy gate 持鎖期間最差的路徑
+ * （讀狀態、寫暫存、rename、稽核 openSync、稽核失敗時退回預留的讀／寫／rename）共 7 次 I/O，
+ * 最多約 70ms，≤ 100ms。
+ */
+export function retryTransientSync<T>(fn: () => T, opts: TransientRetryOptions = {}): T {
+  const attempts = Math.max(1, opts.attempts ?? 5);
+  const baseMs = opts.baseMs ?? 1;
+  for (let i = 1; ; i++) {
+    try {
+      return fn();
+    } catch (e) {
+      const code = String((e as NodeJS.ErrnoException)?.code);
+      if (!isTransientIoError(code) || i >= attempts) throw e;
+      (opts.sleep ?? sleepMs)(baseMs * i);
+    }
+  }
+}
+
+/** ENOENT（檔案不存在）判斷：取代 fs.existsSync —— existsSync 遇 EPERM／EACCES 也回 false，會把「讀不到」當成「沒有」。 */
+export function isNotFound(e: unknown): boolean {
+  return (e as NodeJS.ErrnoException)?.code === "ENOENT";
+}
+
 export interface LockOptions {
   timeoutMs?: number;
   staleMs?: number;

@@ -4,6 +4,7 @@
   "description": "PepeFi integration SDK for institutional clients: read client, unsigned transaction builders, typed signal-api client, VC v2 helpers.",
   "type": "module",
   "private": true,
+  "license": "SEE LICENSE IN LICENSE",
   "main": "src/index.ts",
   "exports": {
     ".": "./src/index.ts",

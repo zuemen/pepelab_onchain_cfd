@@ -1,0 +1,11 @@
+# 測試用反例 fixture：YAML merge key（不用 anchor 的 flow mapping 寫法；PR #217 審查 D06）。
+# 支援 merge 的解析器會把 environment: keeper 併進 job，不支援的會把 `<<` 當成普通的鍵。
+name: fixture merge key
+on:
+  push:
+jobs:
+  m:
+    runs-on: ubuntu-latest
+    <<: { environment: keeper }
+    steps:
+      - run: echo m

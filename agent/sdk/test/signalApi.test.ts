@@ -10,6 +10,7 @@ import {
   PaymentOutcomeUnknownError,
   PaymentRejectedError,
   PaymentRequiredError,
+  PaymentSignTimeoutError,
   PayToUnsafeError,
   PriceStaleError,
   RateLimitedError,
@@ -438,6 +439,117 @@ function payingFetch(paidResponse: () => Response | Error, delayMs = 20) {
   const unpaid = mk([json(503, { ok: false, error: "payto_unsafe", reason: "x", payTo: PAY_TO })], { payment: pay.client });
   await assert.rejects(unpaid.api.getOracleSnapshot("sBTC"), (e: unknown) => e instanceof PayToUnsafeError && !e.paymentSent);
   ok("M2：付款後的 429／402／400 皆 paymentSent=true（訊息提示先對帳）；付款前的為 false");
+}
+
+// ── #203 follow-up ──────────────────────────────────────────────────────────
+
+// 18) L-a：簽署端逾時 → 回滾預留；之後才回來的簽章一律丟棄、絕不送出
+{
+  // 簽署端懸置：回傳一個由測試控制何時 resolve 的 promise（模擬 HSM 遲遲不回應、之後才回）
+  let releaseLate!: (h: string) => void;
+  let seenSignal: AbortSignal | undefined;
+  let signCalls = 0;
+  const slow: X402PaymentClient = {
+    createPaymentHeader(args) {
+      signCalls++;
+      seenSignal = args.signal;
+      if (signCalls === 1) return new Promise<string>((r) => { releaseLate = r; });
+      return Promise.resolve(xPayment("5000"));
+    },
+  };
+  const f = payingFetch(() => json(200, { ok: true, settled: true, data: {} }, { "x-payment-response": "e30=" }));
+  const api = new SignalApiClient({
+    baseUrl: BASE, fetch: f.fetch, payment: slow, now: () => NOW_MS,
+    maxTotalSpendAtomic: 5_000n, // 剛好一筆：沒回滾的話第二筆會被累計上限擋下
+    paymentSignTimeoutMs: 30,
+  });
+  await assert.rejects(
+    api.getOracleSnapshot("sBTC"),
+    (e: unknown) => e instanceof PaymentSignTimeoutError && e.paymentSent === false && e.timeoutMs === 30 && /丟棄/.test(e.message),
+  );
+  assert.ok(seenSignal?.aborted, "逾時後 abort 傳給簽署端的 signal");
+  assert.equal(api.spentAtomic(), 0n, "逾時 = 未送出 → 預留回滾");
+  assert.equal(f.sent(), 0, "逾時當下沒有送出 X-PAYMENT");
+
+  // 簽署端「稍後」才回傳一張完全合法的簽章 → 必須被丟棄
+  releaseLate(xPayment("5000"));
+  await new Promise((r) => setTimeout(r, 50)); // 給任何可能的後續處理（若有 bug）足夠時間送出
+  assert.equal(f.sent(), 0, "逾時後才回來的簽章絕不送出");
+  assert.equal(api.spentAtomic(), 0n, "遲到的簽章不會被記帳");
+  assert.equal(api.unsettledAtomic(), 0n);
+
+  // 回滾後額度可再用：第二筆正常簽、送出一次
+  const r = await api.getOracleSnapshot("sBTC");
+  assert.equal(r.payment!.paidAtomic, 5_000n);
+  assert.equal(f.sent(), 1, "只有第二筆（準時簽出的）被送出");
+  assert.equal(api.spentAtomic(), 5_000n);
+
+  // 逾時後簽署端才「失敗」也不能變成 unhandled rejection
+  let rejectLate!: (e: Error) => void;
+  const failing: X402PaymentClient = { createPaymentHeader: () => new Promise<string>((_, j) => { rejectLate = j; }) };
+  const b = mk([r402()], { payment: failing, paymentSignTimeoutMs: 10 });
+  const unhandled: unknown[] = [];
+  const onUnhandled = (e: unknown) => unhandled.push(e);
+  process.on("unhandledRejection", onUnhandled);
+  await assert.rejects(b.api.getOracleSnapshot("sBTC"), PaymentSignTimeoutError);
+  rejectLate(new Error("HSM 最後還是失敗了"));
+  await new Promise((r) => setTimeout(r, 20));
+  process.off("unhandledRejection", onUnhandled);
+  assert.deepEqual(unhandled, []);
+  assert.equal(b.calls.length, 1, "沒有送出 X-PAYMENT");
+
+  // 沒設定時行為不變（不提供 signal、無限等待）；設定值必須是正整數
+  const plain = fakePayment();
+  const c = mk([r402(), json(200, { ok: true, settled: true, data: {} })], { payment: plain.client });
+  await c.api.getOracleSnapshot("sBTC");
+  assert.equal(plain.seen[0]!.signal, undefined);
+  for (const bad of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.throws(() => new SignalApiClient({ baseUrl: BASE, paymentSignTimeoutMs: bad }), /paymentSignTimeoutMs/, String(bad));
+  }
+  ok("L-a：paymentSignTimeoutMs 逾時 → PaymentSignTimeoutError、預留回滾、signal abort；遲到的簽章丟棄不送出；遲到的失敗不會 unhandled");
+}
+
+// 19) Info：SignalApiTimeoutError／SignalApiNetworkError 帶 paymentSent=false
+{
+  const t = mk(["hang", "hang", "hang"], { timeoutMs: 5 });
+  await assert.rejects(t.api.discover(), (e: unknown) => e instanceof SignalApiTimeoutError && e.paymentSent === false);
+  const net = mk([new TypeError("ECONNREFUSED"), new TypeError("ECONNREFUSED"), new TypeError("ECONNREFUSED")]);
+  await assert.rejects(net.api.discover(), (e: unknown) => e instanceof SignalApiNetworkError && e.paymentSent === false);
+  // 付款前探測逾時也是 false（尚未簽任何東西）
+  const pay = fakePayment();
+  const probe = mk(["hang", "hang", "hang"], { timeoutMs: 5, payment: pay.client });
+  await assert.rejects(probe.api.getOracleSnapshot("sBTC"), (e: unknown) => e instanceof SignalApiTimeoutError && e.paymentSent === false);
+  assert.equal(pay.seen.length, 0);
+  ok("Info：SignalApiTimeoutError／SignalApiNetworkError 的 paymentSent 一律 false（帶付款的逾時改丟 PaymentOutcomeUnknownError）");
+}
+
+// 20) Info：releaseUnsettled 只減少 unsettled，不減少 spent → 不能用來繞過累計上限
+{
+  const pay = fakePayment();
+  const f = payingFetch(() => json(502, { ok: false, error: "facilitator_unavailable", note: "", facilitator: "" }));
+  const api = new SignalApiClient({ baseUrl: BASE, fetch: f.fetch, payment: pay.client, maxTotalSpendAtomic: 10_000n, now: () => NOW_MS });
+  await assert.rejects(api.getOracleSnapshot("sBTC"), ServiceUnavailableError);
+  await assert.rejects(api.getOracleSnapshot("sBTC"), ServiceUnavailableError);
+  assert.equal(api.spentAtomic(), 10_000n);
+  assert.equal(api.unsettledAtomic(), 10_000n);
+
+  assert.equal(api.releaseUnsettled(4_000n), 6_000n, "回傳釋放後的 unsettled");
+  assert.equal(api.unsettledAtomic(), 6_000n);
+  assert.equal(api.spentAtomic(), 10_000n, "spent 不變");
+  assert.equal(api.releaseUnsettled(6_000n), 0n);
+  assert.equal(api.spentAtomic(), 10_000n, "全部對帳釋放後 spent 仍不變");
+
+  // 釋放之後仍被累計上限擋下，簽署端沒被呼叫、沒有送出
+  const signedBefore = pay.seen.length;
+  await assert.rejects(api.getOracleSnapshot("sBTC"), (e: unknown) => e instanceof PaymentLimitExceededError && e.kind === "total");
+  assert.equal(pay.seen.length, signedBefore);
+  assert.equal(f.sent(), 2);
+
+  // 不能釋放超過 unsettled、不能是 0／負數／非 bigint（防止把 unsettled 弄成負數或靜默吞錯）
+  assert.throws(() => api.releaseUnsettled(1n), RangeError, "unsettled 已是 0");
+  for (const bad of [0n, -1n, 5 as unknown as bigint]) assert.throws(() => api.releaseUnsettled(bad), RangeError, String(bad));
+  assert.equal(api.unsettledAtomic(), 0n);
+  ok("Info：releaseUnsettled 只減少 unsettledAtomic、spentAtomic 不變；釋放後仍被累計上限擋下；超額／非正數拒絕");
 }
 
 console.log(`\n✅ sdk signalApi.test.ts 全過（${n} 項）`);

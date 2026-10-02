@@ -29,7 +29,7 @@ issue 裡不要描述漏洞、受影響的函式、重現步驟或交易。
 | 範圍內 | 說明 |
 |---|---|
 | `contracts/` | Solidity 合約，包含已部署於 Base Sepolia 的合約與僅存在於原始碼的版本 |
-| `agent/` | signal-api（x402）、結算 worker、keeper、MCP server、Telegram bot、共用函式庫 |
+| `agent/` | signal-api（x402）、結算 worker、keeper、MCP server、Telegram bot、TypeScript SDK（`agent/sdk`）、共用函式庫 |
 | `frontend/` | 前端應用、建置設定與安全標頭（`frontend/vercel.json`） |
 | `.github/workflows/` | 會持有金鑰或寫入鏈上的 CI 流程 |
 

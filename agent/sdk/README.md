@@ -128,6 +128,9 @@ const revoke = buildRevokeSession(A, { sessionId: 3 });
 另有 `buildWithdrawMargin`、`buildSetSessionAssets`（同樣拒絕空陣列）、`buildOpenPositionForSession`、
 `buildClosePositionForSession`（agent 的 session key 用）。
 
+撤銷保證金授權用 `buildRevokeMarginApproval(A)`（= `approve(exchange, 0)`）。`buildApproveMargin(A, { amount: 0n })`
+**仍然丟錯**：金額 0 多半是上游換算出錯，不應悄悄變成「撤銷授權」；撤銷是要明確表達的意圖，所以用獨立的 builder。
+
 ## 5. Signal API
 
 ```ts
@@ -184,12 +187,21 @@ console.log(body.data.recommendation, payment?.paidUsdc, payment?.settlement);
 2. 402 時挑出 `scheme=exact`、`network=base-sepolia`、幣別 = Circle 官方 USDC、`maxTimeoutSeconds` 為 1–300 的整數、
    （若設定）`payTo` 在白名單內的要求，並檢查單筆上限。
 3. **預留**累計額度：檢查與預留之間沒有 `await`，所以並行呼叫不會一起穿過 `maxTotalSpendAtomic`。
+   預留金額是付款要求的 **`maxAmountRequired`**（簽署前不知道實際會簽多少），簽出較少時才調整為實際金額。
+   這是保守設計：接近累計上限時，可能因預留以 `maxAmountRequired` 計而被擋下，即使實際會簽得比較少。
 4. 呼叫你的簽署端，再解開 `X-PAYMENT` 逐欄核對：`authorization.to` = `payTo`、`scheme`、`network`、`x402Version`、
    `value` ≤ 要求與上限、`validBefore` ≤ now + `maxTimeoutSeconds` + 60 秒。任何一項不符就**不送出**，並回滾預留。
+   選用 `paymentSignTimeoutMs`：簽署端（例如 HSM）在時限內沒回應 → 視為「未送出」，回滾預留並丟
+   `PaymentSignTimeoutError`；同時 abort 傳給簽署端的 `signal`。**之後才回傳的簽章一律丟棄、絕不送出。**
+   不設定時無限等待（簽署端懸置會讓那筆預留一直佔住累計額度）。
 5. 帶 `X-PAYMENT` **只送一次**。送出之後不論 2xx、4xx、5xx、逾時或斷線，都**保留記帳**（授權已交出，
    `validBefore` 之前仍可能被結算）；沒拿到結算證明（`X-PAYMENT-RESPONSE`）的金額另記在 `unsettledAtomic()`。
 
 記帳：`spentAtomic()` = 已送出的授權總額 + 進行中的預留（保守、寧可高估）；`unsettledAtomic()` = 其中沒有結算證明、需要對帳的部分。
+
+對帳後釋放：以 facilitator／鏈上 USDC 轉帳紀錄確認某些未結算授權的結果之後（已結算，或 `validBefore` 已過且確定沒被結算），
+呼叫 `api.releaseUnsettled(amountAtomic)` 把它們從 `unsettledAtomic()` 移除。它**只減少 `unsettledAtomic()`，不會減少
+`spentAtomic()`** —— 授權已經送出過，累計上限照算，不能拿它騰出額度。金額必須 > 0 且 ≤ 目前的 `unsettledAtomic()`，否則丟 `RangeError`。
 
 預設上限沿用 agent 端（`agent/shared/src/x402Client.ts`）的 `X402_DEFAULT_MAX_PAYMENT_USDC` 與
 `X402_DEFAULT_MAX_TOTAL_SPEND_USDC`，但 **SDK 不讀環境變數**，一律以建構參數為準。
@@ -239,7 +251,8 @@ const check = crossCheckWithSession(r, s);              // { ok, mismatches[] }
 | `PaymentLimitExceededError` | 要求或簽出的金額超過單筆上限，或會超過累計上限 | 未送出、未付（`paymentSent: false`） |
 | `PaymentRejectedError` | 付款要求不符（網路／幣別／payTo 白名單／逾時上限），或簽出的 X-PAYMENT 與要求不一致（收款人、scheme、network、版本、validBefore）或無法解析 | 未送出、未付（`paymentSent: false`） |
 | `PaymentOutcomeUnknownError` | 已送出 X-PAYMENT 但逾時／斷線（`paymentSent: true`） | **款項可能已結算**；以 facilitator／鏈上紀錄對帳，SDK 不重送 |
-| `SignalApiTimeoutError` / `SignalApiNetworkError` | 未帶付款的請求重試用盡 | 稍後重試 |
+| `PaymentSignTimeoutError` | 簽署端超過 `paymentSignTimeoutMs` 沒回應（`paymentSent: false`） | 未送出、未付；預留已回滾，遲到的簽章會被丟棄。檢查簽署端後再試 |
+| `SignalApiTimeoutError` / `SignalApiNetworkError` | 未帶付款的請求重試用盡（`paymentSent: false`；帶付款的逾時／斷線是 `PaymentOutcomeUnknownError`） | 稍後重試 |
 | `ReadCallError` | 必要的鏈上讀取 revert | 檢查位址與部署 |
 | `TxBuildError` / `EmptyAssetListError` | builder 參數不合法 | 修正參數 |
 | `InvalidAuthorizationError` | `finalizeAuthorizationVC` 驗證失敗 | 檢查簽署者 |

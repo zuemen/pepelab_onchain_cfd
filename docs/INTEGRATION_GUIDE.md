@@ -84,6 +84,7 @@ owner 可設定的參數（費率、逐資產槓桿上限與維持保證金、AD
 | `GET /revenue` | 免費 | 鏈上 x402 FeeRouter 的 70/20/10 累計；可帶 `?trader=` |
 | `GET /candles/:symbol` | 免費 | K 線；`interval`（1m/5m/15m/1h/4h/1d）、`limit`（上限 500）、`end` |
 | `GET /benchmarks` | 免費 | S&P 500、公債（TLT）、黃金、比特幣對照；可帶 `?date=YYYY-MM-DD` |
+| `GET /risk/exposure` | 免費 | 給客戶風險部門的唯讀曝險報表：各資產多空 OI、保險金庫 `totalAssets`、V2 金庫 `reserveStatus`、兩顆預言機的價格與年齡；附 `asOfBlock`，60 秒快取，讀不到的欄位為 null 並附原因代碼 |
 | `GET /agent/:did/verification` | 免費 | ERC-8126 風格的 agent 驗證結果（verifier 簽章） |
 | `POST /demo/buy-signal` | 免費 | 訪客試用；不付款、不結算；有 per-IP 冷卻與總量上限 |
 | `GET /signals/:trader` | 0.01 USDC | trader 績效摘要與開倉建議 |

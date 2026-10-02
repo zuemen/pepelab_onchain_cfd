@@ -1,0 +1,14 @@
+# 測試用 fixture：environment 的字串寫法、secrets 的索引寫法與小寫。
+name: fixture price keeper
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+jobs:
+  update-prices:
+    runs-on: ubuntu-latest
+    environment: keeper
+    steps:
+      - env:
+          PK: ${{ secrets['KEEPER_PRIVATE_KEY'] }}
+          PK2: ${{ secrets.keeper_private_key }}
+        run: echo update
