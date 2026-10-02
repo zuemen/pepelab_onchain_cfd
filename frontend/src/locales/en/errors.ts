@@ -144,6 +144,9 @@ export const errors: Catalog['errors'] = {
       "Claiming the trade-mining reward failed (Reverted). Check that: 1. You are the owner of this position; 2. This position hasn't already claimed its mining reward; 3. The rewards contract has enough PEPE funded in its pool.",
     checkin:
       "Daily check-in failed (Reverted). Check that: 1. You haven't already checked in today; 2. The rewards contract's PEPE pool is funded.",
+    checkinUnknown: "Daily check-in failed (Reverted). Check that you haven't already checked in today.",
+    checkinPoints:
+      "Daily check-in failed (Reverted). Check that you haven't already checked in today. On this version a check-in records achievement points and needs no PEPE pool.",
     generic:
       'Transaction execution failed (Reverted). Common causes: not enough ETH for the execution fee, insufficient margin, or a stale on-chain price. Check your balance and parameters and try again.',
     adopt:

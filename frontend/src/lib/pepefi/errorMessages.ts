@@ -2,7 +2,7 @@ import { t } from 'src/locales'
 
 // ----------------------------------------------------------------------
 
-export function prettyError(err: unknown, context?: 'mining' | 'tier' | 'copy' | 'checkin' | 'adopt'): string {
+export function prettyError(err: unknown, context?: 'mining' | 'tier' | 'copy' | 'checkin' | 'checkinPoints' | 'checkinUnknown' | 'adopt'): string {
   if (!err) return t.errors.unknown
 
   // 合約錯誤 → 使用者看得懂的說法。訊息本身住在 catalog。
@@ -71,6 +71,13 @@ export function prettyError(err: unknown, context?: 'mining' | 'tier' | 'copy' |
     }
     if (context === 'checkin') {
       return t.errors.reverted.checkin;
+    }
+    // #169 點數版：簽到不從資金池轉 PEPE，沒有「資金池不足」這個原因。
+    if (context === 'checkinPoints') {
+      return t.errors.reverted.checkinPoints;
+    }
+    if (context === 'checkinUnknown') {
+      return t.errors.reverted.checkinUnknown;
     }
     // #149：採用配置是 Simple Mode 的現貨買進——generic 那句提到保證金，
     // 在這個流程裡講不通，也違反 Simple Mode 的詞彙規則。
