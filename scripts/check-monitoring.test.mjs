@@ -426,10 +426,11 @@ test("H2：--refresh-deployed 只用唯讀方法、被限流會重試、結果�
       throw new Error("unexpected " + b.method);
     };
     t.wr("ops/monitoring/deployed.json", "{}");
-    const out = await refreshDeployed({ root: t.dir, fetchImpl, log: () => {}, sleep: async () => {} });
+    // 日期固定成 fixture 的日期：rules.md 會印出快照日期，用「今天」會讓這個測試隔天就壞。
+    const out = await refreshDeployed({ root: t.dir, fetchImpl, log: () => {}, sleep: async () => {}, today: d.fetchedAt });
     assert.deepEqual([...methods].sort(), ["eth_blockNumber", "eth_call", "eth_chainId", "eth_getCode", "eth_getStorageAt"]);
     assert.ok(limited > 1, "429 之後有重試");
-    assert.deepEqual({ ...out, fetchedAt: d.fetchedAt }, d, "重抓的結果與 repo 內的 fixture 相同");
+    assert.deepEqual(out, d, "重抓的結果與 repo 內的 fixture 相同");
     assert.deepEqual(t.check(), []);
   } finally {
     t.cleanup();

@@ -552,7 +552,7 @@ export function checkDeployed(cfg, ctx) {
  * 以唯讀 RPC 重抓 deployed.json。只用 eth_chainId／eth_blockNumber／eth_getCode／eth_getStorageAt／
  * eth_call，全部釘在同一個區塊；不送交易、不需要任何金鑰。CI 不跑這個（CI 不連網）。
  */
-export async function refreshDeployed({ root, rpcUrl, fetchImpl = fetch, log = console.log, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
+export async function refreshDeployed({ root, rpcUrl, fetchImpl = fetch, log = console.log, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), today = new Date().toISOString().slice(0, 10) }) {
   const ctx = loadContext(root);
   const cfg = JSON.parse(readFileSync(join(root, "ops/monitoring/monitors.json"), "utf8"));
   const url = rpcUrl ?? cfg.network.publicRpc;
@@ -588,7 +588,7 @@ export async function refreshDeployed({ root, rpcUrl, fetchImpl = fetch, log = c
   const chainId = Number(BigInt(await must("eth_chainId", [])));
   if (chainId !== cfg.network.chainId) throw new Error(`RPC 的 chainId ${chainId} 不是 ${cfg.network.chainId}`);
   const block = await must("eth_blockNumber", []);
-  const out = { chainId, block: Number(BigInt(block)), fetchedAt: new Date().toISOString().slice(0, 10), contracts: {}, reads: {}, codes: {} };
+  const out = { chainId, block: Number(BigInt(block)), fetchedAt: today, contracts: {}, reads: {}, codes: {} };
   const addCode = (code) => {
     const hash = keccak256(hexToBytes(code));
     out.codes[hash] = code.toLowerCase();
