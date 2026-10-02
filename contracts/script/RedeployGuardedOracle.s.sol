@@ -28,7 +28,16 @@ interface IExchangeOracleRead {
 ///         Copies from the live oracle: every asset's CURRENT price (refused
 ///         unless younger than min(vault.maxPriceAge, 6h) — `addAsset`
 ///         stamps `updatedAt = now`, so copying a stale price would launder it
-///         into a fresh one), maxDeviationBps, maxPriceAge, referenceSource.
+///         into a fresh one), maxDeviationBps, referenceSource.
+///
+///         maxPriceAge is NOT copied: the live oracle runs 30 days, which lets
+///         a price as old as a lapsed 72h guardian freeze count as valid at
+///         this layer. The new oracle gets ORACLE_MAX_PRICE_AGE (default
+///         21600 = 6h, the exchange's and the V2.5 vault's limit), bounded to
+///         1h..30d so it can be neither "off" (0) nor shorter than the keeper's
+///         heartbeat. Every copied price must also be younger than it, so no
+///         asset is already expired -- and every read reverting -- the moment
+///         the vault is re-pointed.
 ///         Then: window limit (REQUIRED non-zero), KEEPER_ROLE → keeper,
 ///         GUARDIAN_ROLE → GUARDIAN (and the deployer's constructor-granted
 ///         guardian role is renounced when they differ), vault.setOracle.
@@ -48,8 +57,8 @@ interface IExchangeOracleRead {
 ///         has to feed both oracles until that exchange is redeployed.
 ///
 ///         Env: GUARDIAN (required), KEEPER [0x540a…ef17], WINDOW_SECONDS [3600],
-///              WINDOW_DEVIATION_BPS [2500], VAULT_PROXY [0x916D…], OLD_GUARDED_ORACLE [0x8E9e…],
-///              EXCHANGE_NEW [optional]
+///              WINDOW_DEVIATION_BPS [2500], ORACLE_MAX_PRICE_AGE [21600, 3600..2592000],
+///              VAULT_PROXY [0x916D…], OLD_GUARDED_ORACLE [0x8E9e…], EXCHANGE_NEW [optional]
 ///
 ///           forge script script/RedeployGuardedOracle.s.sol:RedeployGuardedOracle \
 ///             --fork-url https://sepolia.base.org --sender 0x27C2…A585 -vv    # simulate
@@ -61,20 +70,55 @@ contract RedeployGuardedOracle is Script {
     address public broadcasterOverride;   // test hook, see Redeploy130Hardened
     function setBroadcasterOverride(address a) external { broadcasterOverride = a; }
 
+    /// @notice Everything `run()` would otherwise read from the environment.
+    struct Params {
+        address guardian;
+        address keeper;
+        uint256 windowSeconds;
+        uint256 windowDeviationBps;
+        uint256 maxPriceAge;
+        address vault;
+        address oldOracle;
+        address exchangeNew;   // 0 = not given
+    }
+
+    /// @dev Test hook: when set, `run()` reads NO environment variable. Fork
+    ///      tests use it because `vm.setEnv` is process-wide: tests running in
+    ///      parallel, or one after another, would otherwise read each other's
+    ///      GUARDIAN / EXCHANGE_NEW.
+    Params internal _params;
+    bool internal _hasParams;
+    function setParams(Params calldata p) external { _params = p; _hasParams = true; }
+
+    function _config() internal view returns (Params memory c) {
+        if (_hasParams) return _params;
+        c.guardian = vm.envOr("GUARDIAN", address(0));
+        c.keeper = vm.envOr("KEEPER", KEEPER);
+        c.windowSeconds = vm.envOr("WINDOW_SECONDS", uint256(1 hours));
+        c.windowDeviationBps = vm.envOr("WINDOW_DEVIATION_BPS", uint256(2_500));
+        c.maxPriceAge = vm.envOr("ORACLE_MAX_PRICE_AGE", uint256(21_600));
+        c.vault = vm.envOr("VAULT_PROXY", BASE_VAULT);
+        c.oldOracle = vm.envOr("OLD_GUARDED_ORACLE", BASE_OLD_ORACLE);
+        c.exchangeNew = vm.envOr("EXCHANGE_NEW", address(0));
+    }
+
     function _syms() internal pure returns (string[11] memory s) {
         s = ["sBTC", "sETH", "sAAPL", "sTSLA", "sGOLD", "sBOND", "sNVDA", "sMSFT", "sGOOGL", "sICLN", "sESGU"];
     }
 
     function run() external returns (address newOracle) {
         address deployer = broadcasterOverride != address(0) ? broadcasterOverride : msg.sender;
-        address guardian = vm.envOr("GUARDIAN", address(0));
+        Params memory c = _config();
+        address guardian = c.guardian;
         require(guardian != address(0), "GUARDIAN env is required");
-        address keeper   = vm.envOr("KEEPER", KEEPER);
-        uint256 window   = vm.envOr("WINDOW_SECONDS", uint256(1 hours));
-        uint256 winBps   = vm.envOr("WINDOW_DEVIATION_BPS", uint256(2_500));
+        address keeper   = c.keeper;
+        uint256 window   = c.windowSeconds;
+        uint256 winBps   = c.windowDeviationBps;
         require(winBps != 0, "WINDOW_DEVIATION_BPS must be non-zero - the rate limit is the point of this redeploy");
-        address vaultAddr = vm.envOr("VAULT_PROXY", BASE_VAULT);
-        GuardedOracle old = GuardedOracle(vm.envOr("OLD_GUARDED_ORACLE", BASE_OLD_ORACLE));
+        uint256 maxAge   = c.maxPriceAge;
+        require(maxAge >= 1 hours && maxAge <= 30 days, "ORACLE_MAX_PRICE_AGE must be 3600..2592000 (0 would switch the staleness check off)");
+        address vaultAddr = c.vault;
+        GuardedOracle old = GuardedOracle(c.oldOracle);
         IVaultOracleRepoint vault = IVaultOracleRepoint(vaultAddr);
 
         // ── preflight ─────────────────────────────────────────────────────
@@ -86,6 +130,8 @@ contract RedeployGuardedOracle is Script {
         // days-old price be laundered into a fresh `updatedAt`).
         uint256 fresh = vault.maxPriceAge();
         if (fresh > 21_600) fresh = 21_600;
+        // ...and never copy a price the NEW oracle would already call stale.
+        if (fresh > maxAge) fresh = maxAge;
         string[11] memory syms = _syms();
         uint256[11] memory prices;
         for (uint256 i = 0; i < 11; i++) {
@@ -93,7 +139,7 @@ contract RedeployGuardedOracle is Script {
             require(exists, string.concat("old oracle lacks ", syms[i]));
             require(!frozen, string.concat("old oracle has ", syms[i], " frozen - resolve first"));
             require(p > 0 && block.timestamp <= at + fresh,
-                string.concat(syms[i], " price is stale by the vault's maxPriceAge - refusing to re-stamp it as fresh"));
+                string.concat(syms[i], " price is stale by min(vault maxPriceAge, 6h, ORACLE_MAX_PRICE_AGE) - refusing to re-stamp it as fresh"));
             prices[i] = p;
         }
         (uint256 liabBefore, uint256 unpricedBefore) = vault.outstandingValueDetailed();
@@ -107,7 +153,7 @@ contract RedeployGuardedOracle is Script {
         vm.startBroadcast(deployer);
         GuardedOracle n = new GuardedOracle(deployer);
         for (uint256 i = 0; i < 11; i++) n.addAsset(keccak256(bytes(syms[i])), prices[i]);
-        n.setRiskParams(old.maxDeviationBps(), old.maxPriceAge());
+        n.setRiskParams(old.maxDeviationBps(), maxAge);
         address refSrc = old.referenceSource();
         if (refSrc != address(0)) {
             // A reference the keeper can write is no cross-check at all: a
@@ -130,7 +176,7 @@ contract RedeployGuardedOracle is Script {
         require(guardian == deployer || !n.hasRole(n.GUARDIAN_ROLE(), deployer), "deployer still guardian");
         require(n.hasRole(0x00, deployer), "admin");
         require(n.maxWindowDeviationBps() == winBps && n.windowDuration() == window, "window limit");
-        require(n.maxDeviationBps() == old.maxDeviationBps() && n.maxPriceAge() == old.maxPriceAge(), "risk params");
+        require(n.maxDeviationBps() == old.maxDeviationBps() && n.maxPriceAge() == maxAge, "risk params");
         // Bounded guardian halts: the build being deployed must carry them,
         // and the new instance must start with no halt in force.
         require(n.GUARDIAN_HALT_DURATION() == 72 hours && n.GUARDIAN_HALT_COOLDOWN() == 24 hours, "guardian halt bounds");
@@ -150,6 +196,7 @@ contract RedeployGuardedOracle is Script {
 
         console.log("NEW_GUARDED_ORACLE =", newOracle);
         console.log("window         :", window, "s, max move bps:", winBps);
+        console.log("maxPriceAge    :", maxAge, "s; old oracle had", old.maxPriceAge());
         console.log("guardian halts : lapse after 72h, 24h cooldown; admin halts have no expiry");
         if (guardian == deployer) {
             console.log("!!! GUARDIAN == broadcaster: it also holds DEFAULT_ADMIN_ROLE, so its freezes and");
@@ -157,7 +204,7 @@ contract RedeployGuardedOracle is Script {
         }
         console.log("liability      :", liabAfter, "(unchanged)");
 
-        address ex = vm.envOr("EXCHANGE_NEW", address(0));
+        address ex = c.exchangeNew;
         if (ex != address(0) && IExchangeOracleRead(ex).oracle() == address(old)) {
             console.log("!!! EXCHANGE_NEW reads the OLD GuardedOracle (immutable): the keeper must keep");
             console.log("!!! posting to both until that exchange is redeployed.");

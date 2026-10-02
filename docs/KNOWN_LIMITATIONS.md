@@ -916,10 +916,12 @@ What the bound does **not** give, and what it costs:
   asset or a paused oracle, so the stored price is as old as the halt.
   `maxPriceAge` in the oracle and in each consumer still decides whether it is
   usable until the keeper posts again; the step cap and the rate limit apply
-  to that post as usual. The live oracle's own `maxPriceAge` is 30 days, so on
-  a redeploy that copies it only the consumers' 6h limits stand between a
-  lapsed freeze and a three-day-old price. Lower the oracle's `maxPriceAge`
-  when redeploying.
+  to that post as usual. The live oracle's own `maxPriceAge` is 30 days, under
+  which only the consumers' 6h limits stand between a lapsed freeze and a
+  three-day-old price. `RedeployGuardedOracle` therefore does not copy it: the
+  new oracle gets `ORACLE_MAX_PRICE_AGE` (default 21600 = 6h, bounded to
+  1h..30d, never 0), and every copied price must already be younger than that,
+  so no asset is stale the moment the vault is re-pointed.
 - **The cooldown is 24h without the guardian's brake on that scope.** After a
   freeze window ends, that asset cannot be frozen by the guardian for 24h
   (other assets can, and so can the pause unless it is in its own cooldown);

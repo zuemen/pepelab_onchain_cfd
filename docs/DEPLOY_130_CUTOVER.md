@@ -243,7 +243,7 @@ GUARDIAN=0x… forge script script/Redeploy130Hardened.s.sol:Redeploy130Hardened
 ## 10. 留給下一輪
 
 - **GuardedOracle 速率限制（本分支已完成原始碼與腳本，尚未部署）**：`setWindowLimit(duration, bps)` 限制一個時間窗內相對於窗口起點價格的累積偏離。窗口是 tumbling 的：跨越窗口邊界時，最壞情況是兩個窗口的量。經 reference 確認的價格可以直接通過，並把窗口起點重設為該價格。
-  - 因為 oracle 不可升級，要用 `script/RedeployGuardedOracle.s.sol`：部署新的 oracle，逐一搬移 11 檔的現價（只要有任何一檔的價格超過 `min(金庫 maxPriceAge, 6h)` 就拒絕，避免舊價被重新蓋上新的時間戳），複製 risk 參數，設定窗口（1h / 2500 bps，必須非 0），授予 keeper 與 guardian 角色，最後把金庫的 `setOracle` 指向新 oracle。
+  - 因為 oracle 不可升級，要用 `script/RedeployGuardedOracle.s.sol`：部署新的 oracle，逐一搬移 11 檔的現價（只要有任何一檔的價格超過 `min(金庫 maxPriceAge, 6h, ORACLE_MAX_PRICE_AGE)` 就拒絕，避免舊價被重新蓋上新的時間戳，也避免新 oracle 一上線該檔就已過期、讀取全部 revert），複製 `maxDeviationBps` 與 reference，`maxPriceAge` 改用 `ORACLE_MAX_PRICE_AGE`（預設 21600 = 6 小時，限 3600–2592000，不可為 0），設定窗口（1h / 2500 bps，必須非 0），授予 keeper 與 guardian 角色，最後把金庫的 `setOracle` 指向新 oracle。
   - fork 模擬已通過，金庫負債前後一致。
   - 這一步要在治理 phase 2 之前執行；phase 2 之後只能透過 timelock 提案。
   - 如果 exchange 採用 `ORACLE_KIND=guarded`，oracle 是 immutable，無法改指向新的 oracle，keeper 必須同時對兩個 oracle 寫價。
@@ -256,7 +256,7 @@ GUARDIAN=0x… forge script script/Redeploy130Hardened.s.sol:Redeploy130Hardened
 - **GuardedOracle 的 guardian 凍結與暫停加上期限（分支 `contracts/oracle-freeze-expiry-checkin`，2026-10-01，只有原始碼與測試，尚未部署）**：和速率限制一樣要靠 `script/RedeployGuardedOracle.s.sol` 換新的 oracle 才會生效，兩者會在同一次重部署一起上線。
   - 規則：guardian 的凍結或暫停在 72 小時後自動失效（`GUARDIAN_HALT_DURATION`），接著同一範圍有 24 小時冷卻（`GUARDIAN_HALT_COOLDOWN`），數值與 exchange 的 guardian 暫停相同。admin 下的沒有期限，也只有 admin 能解除；admin 可以接手 guardian 正在進行的凍結。暫停的時鐘同時約束資產凍結。完整規則、guardian 單獨行動時的上限與代價見 KNOWN_LIMITATIONS #27。
   - 腳本的變動：部署後讀回 `GUARDIAN_HALT_DURATION`／`GUARDIAN_HALT_COOLDOWN`，確認新 oracle 沒有暫停、11 檔都沒有凍結。凍結狀態不會搬移（舊 oracle 有暫停或凍結時 preflight 本來就拒絕執行）。`GUARDIAN` 和 broadcaster 是同一個位址時腳本會警告：同時持有 admin 與 guardian 的帳號視為 admin，它下的凍結不會到期。
-  - **重部署時請一併把 oracle 的 `maxPriceAge` 調低**（腳本目前照抄舊值，鏈上是 30 天）。凍結到期只移除凍結，不更新價格；`maxPriceAge` 太長時，到期當下那個和凍結一樣舊的價格在 oracle 這一層會被視為有效，只剩各合約自己的 6 小時上限把關。
+  - **新 oracle 的 `maxPriceAge` 預設 6 小時**（`ORACLE_MAX_PRICE_AGE`，不再照抄舊 oracle 的 30 天）。凍結到期只移除凍結，不更新價格；`maxPriceAge` 太長時，到期當下那個和凍結一樣舊的價格在 oracle 這一層會被視為有效，只剩各合約自己的 6 小時上限把關。腳本會拒絕 0（等於關掉時效檢查）與短於 1 小時的值（短於 keeper heartbeat 會讓價格週期性過期），讀回時確認 `maxPriceAge == ORACLE_MAX_PRICE_AGE`。
   - 舊 oracle 退役時要停掉寫價：鏈上現行的舊版由 guardian `setPaused(true)` 即可（沒有期限）；之後若是從新版再遷移，要由 admin 下，guardian 的暫停 72 小時就失效。
   - `ORACLE_KIND=guarded` 的 exchange 把 oracle 當 immutable，不會跟著換；它讀的 oracle 維持舊行為，直到 exchange 重部署。
   - fork 模擬：`forge test --match-path test/fork/RedeployGuardedOracleFork.t.sol --fork-url https://sepolia.base.org -vv`。
