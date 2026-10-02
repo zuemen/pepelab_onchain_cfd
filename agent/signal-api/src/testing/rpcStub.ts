@@ -13,7 +13,15 @@ export interface RpcStub {
   close(): Promise<void>;
 }
 
-export async function startRpcStub(): Promise<RpcStub> {
+export interface RpcStubOptions {
+  /**
+   * true = `eth_getCode` 一律回 "0x"（所有地址都當成沒有 code 的 EOA）、`eth_chainId` 回 Base Sepolia。
+   * 讓「真的走 provider」的收款地址守門能通過，其餘呼叫照樣回錯誤。本機啟動 src/index.ts 的冒煙測試用。
+   */
+  everyAddressIsEoa?: boolean;
+}
+
+export async function startRpcStub(opts: RpcStubOptions = {}): Promise<RpcStub> {
   let hits = 0;
   const server: Server = createServer(async (req, res) => {
     hits += 1;
@@ -25,10 +33,15 @@ export async function startRpcStub(): Promise<RpcStub> {
     } catch {
       parsed = {};
     }
-    const err = (id: unknown) => ({ jsonrpc: "2.0", id: id ?? null, error: { code: -32000, message: "rpc stub: unavailable" } });
+    const answer = (p: { id?: unknown; method?: unknown } | null) => {
+      const id = p?.id ?? null;
+      if (opts.everyAddressIsEoa && p?.method === "eth_getCode") return { jsonrpc: "2.0", id, result: "0x" };
+      if (opts.everyAddressIsEoa && p?.method === "eth_chainId") return { jsonrpc: "2.0", id, result: "0x14a34" };
+      return { jsonrpc: "2.0", id, error: { code: -32000, message: "rpc stub: unavailable" } };
+    };
     const body = Array.isArray(parsed)
-      ? parsed.map((p) => err((p as { id?: unknown })?.id))
-      : err((parsed as { id?: unknown })?.id);
+      ? parsed.map((p) => answer(p as { id?: unknown; method?: unknown }))
+      : answer(parsed as { id?: unknown; method?: unknown });
     res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify(body));
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
