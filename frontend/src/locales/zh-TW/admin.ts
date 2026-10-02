@@ -166,6 +166,8 @@ export const admin = {
       title: '🎁 PepeLab 獎勵池充值',
       description:
         '跟單獎勵、每日簽到、等級晉級與交易挖礦均由 PEPE 代幣激勵。為防止用戶領取時發生 revert InsufficientPool 錯誤，請確保此激勵合約中有足夠的 PEPE 儲備。',
+      descriptionPoints:
+        '跟單獎勵、等級晉級與交易挖礦由 PEPE 代幣激勵；這個版本的每日簽到改記不可轉讓的成就點數，不從資金池轉出 PEPE。為防止用戶領取時發生 revert InsufficientPool 錯誤，請確保此激勵合約中有足夠的 PEPE 儲備。',
       walletBalance: '我的錢包 PEPE 餘額',
       poolBalance: '激勵合約 PEPE 儲備',
       placeholder: '注資 PEPE 數量 (例如 100000)',

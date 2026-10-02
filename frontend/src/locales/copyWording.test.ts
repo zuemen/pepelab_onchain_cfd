@@ -90,6 +90,7 @@ const ALLOWED: ReadonlyArray<{ key: string; why: string }> = [
   // ── 非使用者畫面 ──
   { key: 'admin.treasury.claim.note', why: '管理員頁（營運方自己看，描述實際的費用分潤模型）' },
   { key: 'admin.treasury.incentives.description', why: '同上' },
+  { key: 'admin.treasury.incentives.descriptionPoints', why: '同上（#169 點數版的同一段說明）' },
   { key: 'admin.treasury.info.revenueModelBody', why: '同上' },
   { key: 'common.wallet.mockDesc', why: 'Mock Wallet 只在開發環境出現' },
 ];

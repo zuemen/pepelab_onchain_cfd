@@ -159,6 +159,8 @@ export const admin: Catalog['admin'] = {
       title: '🎁 PepeLab Incentives Pool Refill',
       description:
         'Copy rewards, daily check-in, tier upgrades, and trade mining are all incentivized with PEPE. Keep this incentives contract stocked with enough PEPE to avoid a revert InsufficientPool error when users claim.',
+      descriptionPoints:
+        'Copy rewards, tier upgrades, and trade mining are incentivized with PEPE. On this version the daily check-in records non-transferable achievement points and pays no PEPE from the pool. Keep this incentives contract stocked with enough PEPE to avoid a revert InsufficientPool error when users claim.',
       walletBalance: 'My Wallet PEPE Balance',
       poolBalance: 'Incentives Contract PEPE Reserve',
       placeholder: 'PEPE amount to fund (e.g. 100000)',

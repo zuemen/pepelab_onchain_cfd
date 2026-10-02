@@ -16,6 +16,7 @@ import LinearProgress from '@mui/material/LinearProgress';
 import CircularProgress from '@mui/material/CircularProgress';
 
 import { useContracts } from 'src/hooks/useContracts';
+import { settledCheckInUnit, settleCheckInUnit } from 'src/hooks/useCheckInUnit';
 import { usePepefiWallet } from 'src/layouts/pepefi';
 import PepeTokenCard from 'src/components/pepefi/PepeTokenCard';
 import { useToast } from 'src/components/pepefi/ToastProvider';
@@ -266,16 +267,26 @@ export default function RewardsPage() {
       setLastDay(Number(last));
       setMyStreak(Number(s));
     } catch { /* not deployed */ return; }
-    // 只有 lastCheckIn/streak 讀得到（合約真的在）才探測。舊版沒有
-    // achievementPoints,probe 會回 'pepe',頁面照現行讀法運作。
+    // 只有 lastCheckIn/streak 讀得到（合約真的在）才探測。看 bytecode 有沒有
+    // achievementPoints 的 selector,不靠試呼叫：RPC 錯誤在 ethers 裡和「沒有這個函式」
+    // 長得一樣（PR #219 審查 B-F1）。讀不到就維持上一次確定的說法。
+    const incentives = contracts.pepeIncentives;
+    let addr: string;
+    try { addr = await incentives.getAddress(); } catch { return; }
+    // 已確定的結論綁定合約位址（hooks/useCheckInUnit，頁面之間共用）。
+    const prev = settledCheckInUnit(addr);
     const probe = await probeCheckInUnit(
-      (addr) => contracts.pepeIncentives.achievementPoints(addr) as Promise<unknown>,
-      wallet.address,
+      {
+        getCode: () => incentives.getDeployedCode(),
+        readPoints: () => incentives.achievementPoints(wallet.address) as Promise<unknown>,
+      },
+      prev,
     );
-    if (probe) {
-      setCheckInUnit(probe.unit);
-      setMyPoints(probe.points);
-    }
+    if (probe.unit === null) return;
+    settleCheckInUnit(addr, probe.unit);
+    setCheckInUnit(probe.unit);
+    if (probe.unit === 'pepe') setMyPoints(null);
+    else if (probe.points !== null) setMyPoints(probe.points);
   }, [contracts, wallet.address]);
 
   // The only place in the app that sends dailyCheckIn(). /dashboard and /pepe
@@ -290,7 +301,7 @@ export default function RewardsPage() {
       await tx.wait();
       notify(t.rewards.checkIn.done, true);
       await fetchCheckin();
-    } catch (e) { notify(prettyError(e, 'checkin'), false); }
+    } catch (e) { notify(prettyError(e, checkInUnit === 'points' ? 'checkinPoints' : 'checkin'), false); }
     finally { setCheckInBusy(false); }
   };
 

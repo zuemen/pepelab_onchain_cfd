@@ -13,6 +13,7 @@ export const pepelab: Catalog['pepelab'] = {
 
   toast: {
     insufficientPepe: 'Not enough PEPE. Check in or trade-mine on the Rewards page to get more.',
+    insufficientPepeNoCheckIn: 'Not enough PEPE. Trade-mine on the Rewards page to get more (daily check-in now records achievement points, not PEPE).',
     txCancelled: 'The on-chain transaction was cancelled or failed — no PEPE was deducted.',
     mountLocked: "This mount unlocks at Pepe level Lv.{level} — you're currently Lv.{current}.",
     gachaInsufficientPepe: 'Not enough PEPE — one draw costs {cost} PEPE.',

@@ -18,6 +18,7 @@ import { RouterLink } from 'src/routes/components';
 
 import { useWalletContext } from 'src/contexts/wallet-context';
 import { useContracts } from 'src/hooks/useContracts';
+import { useCheckInUnit } from 'src/hooks/useCheckInUnit';
 import { useSynthHoldings } from 'src/hooks/useSynthHoldings';
 import { Iconify } from 'src/components/iconify';
 import { ASSET_META } from 'src/lib/pepefi/assetMeta';
@@ -70,6 +71,8 @@ export default function PepeLabPage() {
   const wallet = useWalletContext();
   const userAddress = wallet.address || 'mock_user';
   const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId);
+  // 簽到在點數版（#169）不發 PEPE，提示就不能叫人去簽到賺 PEPE。
+  const checkInUnit = useCheckInUnit(contracts?.pepeIncentives);
 
   const [onChainPepeBal, setOnChainPepeBal] = useState<bigint | null>(null);
 
@@ -230,7 +233,7 @@ export default function PepeLabPage() {
 
   const buyPotion = async (id: string, cost: number, xpBonus: number) => {
     if (finalPepeBal < cost) {
-      notify(t.pepelab.toast.insufficientPepe, false);
+      notify(checkInUnit === 'points' ? t.pepelab.toast.insufficientPepeNoCheckIn : t.pepelab.toast.insufficientPepe, false);
       return;
     }
 

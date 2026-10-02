@@ -1,10 +1,13 @@
-import { describe, it, expect } from 'vitest'
+import { id, JsonRpcProvider } from 'ethers'
+import { it, expect, describe, afterAll } from 'vitest'
 
 import {
   ACHIEVEMENTS,
   buildQuests,
   dailyRewardFor,
   probeCheckInUnit,
+  checkInUnitFromCode,
+  ACHIEVEMENT_POINTS_SELECTOR,
   TODAY_INDEX,
   type AchCtx,
 } from './achievements'
@@ -102,43 +105,96 @@ describe('dailyRewardFor — 成就點數,不是 PEPE', () => {
   })
 })
 
-describe('probeCheckInUnit — 簽到發的是什麼,問合約,不靠假設', () => {
-  const ADDR = '0x000000000000000000000000000000000000dEaD'
-  const rejecting = (code?: string) => () =>
-    Promise.reject(Object.assign(new Error('boom'), code ? { code } : {}))
+describe('probeCheckInUnit — 簽到發的是什麼,看 bytecode,不靠試呼叫', () => {
+  // 舊版與 #169 版 runtime bytecode 的最小替身：dispatcher 以 PUSH4 比對 selector。
+  // 舊版有 lastCheckIn(0xef6fdb1c)沒有 achievementPoints(0xeaf542d4)。
+  const OLD_CODE = '0x6080604052' + '63ef6fdb1c' + '14'
+  const NEW_CODE = '0x6080604052' + '63ef6fdb1c' + '14' + '63eaf542d4' + '14'
+  const POINTS = 110n * 10n ** 18n
+  const INCENTIVES = '0xEBfA1dc7dDea032ac6242cB619d982e543A23c12'
 
-  it('合約有 achievementPoints → 點數版,並帶回點數', async () => {
-    const seen: string[] = []
-    const read = (a: string) => { seen.push(a); return Promise.resolve(110n * 10n ** 18n) }
-    expect(await probeCheckInUnit(read, ADDR)).toEqual({ unit: 'points', points: 110n * 10n ** 18n })
-    expect(seen).toEqual([ADDR])
+  // ethers v6 把 JSON-RPC 錯誤轉成 Error 的方式：與線上 provider 相同的 getRpcError。
+  const provider = new JsonRpcProvider('http://127.0.0.1:1', 84532, { staticNetwork: true })
+  const rpcError = (code: number, message: string, method = 'eth_getCode') =>
+    provider.getRpcError(
+      {
+        method,
+        params: method === 'eth_call' ? [{ to: INCENTIVES, data: '0xeaf542d4' }, 'latest'] : [INCENTIVES, 'latest'],
+        id: 1,
+        jsonrpc: '2.0',
+      },
+      { id: 1, error: { code, message } },
+    )
+  const RPC_ERRORS: Array<[number, string]> = [
+    [-32005, 'limit exceeded'],
+    [-32000, 'header not found'],
+    [-32603, 'Internal JSON-RPC error.'],
+    [429, 'Too Many Requests'],
+  ]
+  afterAll(() => provider.destroy())
+
+  const deps = (code: () => Promise<string | null>, points: () => Promise<unknown> = () => Promise.resolve(POINTS)) =>
+    ({ getCode: code, readPoints: points })
+
+  it('selector 常數就是 achievementPoints(address)', () => {
+    expect(id('achievementPoints(address)').slice(0, 10)).toBe(ACHIEVEMENT_POINTS_SELECTOR)
   })
 
-  it('點數為 0 仍然是點數版', async () => {
-    expect(await probeCheckInUnit(() => Promise.resolve(0n), ADDR))
-      .toEqual({ unit: 'points', points: 0n })
+  it('bytecode 含 achievementPoints → 點數版,並帶回點數', async () => {
+    expect(await probeCheckInUnit(deps(() => Promise.resolve(NEW_CODE)), null))
+      .toEqual({ unit: 'points', points: POINTS })
   })
 
-  it('線上舊版沒有這個函式(CALL_EXCEPTION / BAD_DATA)→ PEPE 版', async () => {
-    expect(await probeCheckInUnit(rejecting('CALL_EXCEPTION'), ADDR)).toEqual({ unit: 'pepe', points: null })
-    expect(await probeCheckInUnit(rejecting('BAD_DATA'), ADDR)).toEqual({ unit: 'pepe', points: null })
+  it('bytecode 不含 → PEPE 版,不讀點數', async () => {
+    let read = 0
+    const r = await probeCheckInUnit(deps(() => Promise.resolve(OLD_CODE), () => { read += 1; return Promise.resolve(0n) }), null)
+    expect(r).toEqual({ unit: 'pepe', points: null })
+    expect(read).toBe(0)
   })
 
-  it('網路錯誤不下結論(null),畫面維持原本的說法', async () => {
-    expect(await probeCheckInUnit(rejecting('NETWORK_ERROR'), ADDR)).toBeNull()
-    expect(await probeCheckInUnit(rejecting('TIMEOUT'), ADDR)).toBeNull()
-    expect(await probeCheckInUnit(rejecting(), ADDR)).toBeNull()
-    expect(await probeCheckInUnit(() => Promise.reject(null), ADDR)).toBeNull()
+  it('沒有合約(0x / null)→ 未知,不下結論', async () => {
+    expect((await probeCheckInUnit(deps(() => Promise.resolve('0x')), null)).unit).toBeNull()
+    expect((await probeCheckInUnit(deps(() => Promise.resolve(null)), null)).unit).toBeNull()
+    expect((await probeCheckInUnit(deps(() => Promise.resolve('0x')), 'pepe')).unit).toBe('pepe')
   })
 
-  it('ABI 裡沒有這個方法(同步丟 TypeError)也不下結論,不會讓頁面壞掉', async () => {
-    const contract = {} as { achievementPoints?: (a: string) => Promise<unknown> }
-    const read = (a: string) => contract.achievementPoints!(a)
-    expect(await probeCheckInUnit(read, ADDR)).toBeNull()
+  it('這些 RPC 錯誤在 ethers 裡都長得像「沒有這個函式」—— 正是不能用試呼叫的原因', () => {
+    for (const [code, msg] of RPC_ERRORS) {
+      const e = rpcError(code, msg, 'eth_call') as Error & { code?: string }
+      expect(e.code, String(code)).toBe('CALL_EXCEPTION')
+    }
   })
 
-  it('回傳值不是 bigint 時不當成點數版', async () => {
-    expect(await probeCheckInUnit(() => Promise.resolve('0x'), ADDR)).toBeNull()
+  it.each(RPC_ERRORS)('getCode 失敗(%i %s)→ 未知;已確定的結論維持不變', async (code, msg) => {
+    const failing = () => Promise.reject(rpcError(code, msg))
+    expect((await probeCheckInUnit(deps(failing), null)).unit).toBeNull()
+    expect((await probeCheckInUnit(deps(failing), 'pepe')).unit).toBe('pepe')
+    const r = await probeCheckInUnit(deps(failing), 'points')
+    expect(r.unit).toBe('points')
+    expect(r.points).toBe(POINTS)
+  })
+
+  it.each(RPC_ERRORS)('點數讀取失敗(%i %s)→ 仍是點數版,點數未知(維持畫面上的值)', async (code, msg) => {
+    const r = await probeCheckInUnit(deps(() => Promise.resolve(NEW_CODE), () => Promise.reject(rpcError(code, msg, 'eth_call'))), null)
+    expect(r).toEqual({ unit: 'points', points: null })
+  })
+
+  it('確定是點數版之後不再降級', async () => {
+    expect((await probeCheckInUnit(deps(() => Promise.resolve(OLD_CODE)), 'points')).unit).toBe('points')
+  })
+
+  it('同步丟錯、回傳非 bigint 都不會讓頁面壞掉', async () => {
+    const contract = {} as { getDeployedCode?: () => Promise<string | null> }
+    expect((await probeCheckInUnit(deps(() => contract.getDeployedCode!()), null)).unit).toBeNull()
+    expect(await probeCheckInUnit(deps(() => Promise.resolve(NEW_CODE), () => Promise.resolve('0x')), null))
+      .toEqual({ unit: 'points', points: null })
+  })
+
+  it('checkInUnitFromCode:PUSH 資料區裡的位元組不算', () => {
+    expect(checkInUnitFromCode(NEW_CODE)).toBe('points')
+    expect(checkInUnitFromCode(OLD_CODE)).toBe('pepe')
+    // 0x7f = PUSH32,後面 32 bytes 是資料,裡面恰好有 63eaf542d4
+    expect(checkInUnitFromCode('0x7f63eaf542d4' + '00'.repeat(27) + '63ef6fdb1c14')).toBe('pepe')
   })
 })
 

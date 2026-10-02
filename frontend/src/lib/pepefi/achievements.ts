@@ -1,5 +1,7 @@
 import { t, interpolate } from 'src/locales'
 
+import { scanPush4Selectors } from './selectorScan'
+
 // Achievements, daily quests, and the check-in reward curve.
 //
 // These lived inline in DashboardPage and (until it was deleted) in an
@@ -40,48 +42,75 @@ export const dailyRewardFor = (streak: number) => 50 + 10 * Math.min(streak, 6)
  */
 export type CheckInUnit = 'pepe' | 'points'
 
+/** `achievementPoints(address)` — only the #169 build has it. */
+export const ACHIEVEMENT_POINTS_SELECTOR = '0xeaf542d4'
+
 export interface CheckInProbe {
-  unit: CheckInUnit
-  /** The wallet's achievement points (18 decimals); null on a 'pepe' build. */
+  /** null = could not tell (keep showing what was shown before). */
+  unit: CheckInUnit | null
+  /**
+   * The wallet's achievement points (18 decimals). null on a 'pepe' build, or
+   * when the read failed (keep the last value shown).
+   */
   points: bigint | null
 }
 
-/**
- * The one read the probe needs: `achievementPoints(address)` on the
- * PepeIncentives contract. Passed as a function so the probe does not depend
- * on the ethers Contract type (and so a missing method throws inside the
- * probe's own try block).
- */
-export type ReadAchievementPoints = (address: string) => Promise<unknown>
+export interface CheckInProbeDeps {
+  /**
+   * Runtime bytecode at the PepeIncentives address (ethers
+   * `contract.getDeployedCode()`): '0x…', or null / '0x' when there is none.
+   */
+  getCode: () => Promise<string | null>
+  /** `achievementPoints(wallet)`; only called once the build is known to have it. */
+  readPoints: () => Promise<unknown>
+}
 
 /**
- * ethers v6 codes for "the contract answered, and it does not have this
- * function": the call reverted with no data (CALL_EXCEPTION), or returned
- * nothing to decode (BAD_DATA).
+ * What the bytecode says, as a pure function. null when there is no code to
+ * read (wrong chain, not deployed): that is not evidence of either build.
  */
-const NO_SUCH_FUNCTION_CODES = new Set(['CALL_EXCEPTION', 'BAD_DATA'])
+export function checkInUnitFromCode(code: string | null | undefined): CheckInUnit | null {
+  if (typeof code !== 'string' || code === '0x' || code.length < 4) return null
+  return scanPush4Selectors(code).has(ACHIEVEMENT_POINTS_SELECTOR) ? 'points' : 'pepe'
+}
 
 /**
- * Ask the contract which build it is, rather than assuming from the address.
- * `achievementPoints(address)` exists only on the #169 build.
+ * Ask the chain which build sits at the address, rather than assuming.
  *
- * Returns null when the answer is unknown (RPC down, timeout): the caller
- * keeps whatever it showed before instead of flipping the wording on a
- * network hiccup.
+ * Why bytecode and not a trial call: ethers v6 turns EVERY JSON-RPC error on
+ * eth_call (-32005 limit exceeded, -32000 header not found, -32603, HTTP 429)
+ * into CALL_EXCEPTION with no revert data -- exactly what calling a missing
+ * function on the old build looks like. A trial call cannot tell a flaky RPC
+ * from the old build; `eth_getCode` either returns the code or fails.
+ *
+ * Rules (PR #219 review B-F1):
+ *   - the read fails, or there is no code → unit null ("unknown"): the caller
+ *     keeps the last settled answer;
+ *   - once 'points' is settled for an address it never goes back to 'pepe'
+ *     (`previous` is the settled answer for the SAME address; pass null when
+ *     the address changed).
  */
 export async function probeCheckInUnit(
-  readPoints: ReadAchievementPoints,
-  address: string,
-): Promise<CheckInProbe | null> {
+  deps: CheckInProbeDeps,
+  previous: CheckInUnit | null,
+): Promise<CheckInProbe> {
+  let found: CheckInUnit | null = null
   try {
-    const points = await readPoints(address)
-    return typeof points === 'bigint' ? { unit: 'points', points } : null
-  } catch (e) {
-    const code = (e as { code?: unknown } | null)?.code
-    return typeof code === 'string' && NO_SUCH_FUNCTION_CODES.has(code)
-      ? { unit: 'pepe', points: null }
-      : null
+    found = checkInUnitFromCode(await deps.getCode())
+  } catch {
+    found = null
   }
+  const unit: CheckInUnit | null = previous === 'points' ? 'points' : (found ?? previous)
+  let points: bigint | null = null
+  if (unit === 'points') {
+    try {
+      const p = await deps.readPoints()
+      if (typeof p === 'bigint') points = p
+    } catch {
+      points = null
+    }
+  }
+  return { unit, points }
 }
 
 // ── Achievements ──────────────────────────────────────────────────────────────
