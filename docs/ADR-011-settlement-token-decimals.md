@@ -166,7 +166,7 @@ Base 主網的原生 USDC 是 **6 位小數**。V1 合約（`PerpetualExchange`�
 |---|---|
 | `forge build --sizes` | `PerpetualExchange` **23,911 B**（不變，餘 665 B）；`WrappedUSDC18` 3,181 B；`SettlementDepositRouter` 1,688 B |
 | 全量 `forge test` | 基準（master 17ec739）1091 passed／4 skipped → 本分支 **1134 passed／0 failed／4 skipped**（＋43：單元＋fuzz 25、整合 13、不變量 5；不變量每條 256 runs × 500 depth＝128,000 次呼叫、0 revert） |
-| slither 0.11.6（`--exclude-dependencies --exclude-informational`，與 `contracts-ci.yml` 相同旗標；在只含兩支新合約、相同編譯設定的暫存複本上跑） | 新合約 **0 個 high／medium／low**。初版有兩個 medium（`divide-before-multiply`：解包的取整寫成先除後乘；`incorrect-equality`：`received == 0`），已改寫消除。只剩 informational：`pragma`、`solc-version`、`low-level-calls`（黑名單探測刻意用 `staticcall`） |
+| slither 0.11.6（`--exclude-dependencies --exclude-informational`，與 `contracts-ci.yml` 相同旗標；先在只含兩支新合約的暫存複本上跑，修正後再對整個 `contracts/` 跑一次：108 個合約、220 個既有結果，**沒有一個落在 `src/settlement/`**） | 新合約 **0 個 high／medium／low**。初版有兩個 medium（`divide-before-multiply`：解包的取整寫成先除後乘；`incorrect-equality`：`received == 0`），已改寫消除。只剩 informational：`pragma`、`solc-version`、`low-level-calls`（黑名單探測刻意用 `staticcall`） |
 | gas（`--gas-report`，測試內冷存取） | 包裝幣 `transfer` 平均約 61k（含兩次 USDC 黑名單探測）；`depositFor` 約 117k；`withdrawTo` 約 64k；router `depositMarginWithPermit` 約 215k、`depositMargin` 約 107k（一筆完成 permit＋拉款＋包裝＋存入） |
 | gas snapshot | repo 不提交 `.gas-snapshot`；CI 的 gas job 是 `forge snapshot --check || forge snapshot` 且 `continue-on-error`，照慣例不新增檔案 |
 | EIP-170 試算（§3.2） | 在 repo 外的暫存複本編譯，不進版控 |
