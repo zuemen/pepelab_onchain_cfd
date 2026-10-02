@@ -27,6 +27,7 @@ import {
   isAllowanceRevert,
   readQuoteSnapshot,
   type AmmCapsCache,
+  sendMinOut,
   type DisplayedQuote,
   scheduleAmmRefresh,
   type VisibilitySource,
@@ -392,6 +393,33 @@ describe('loadAmmSnapshot —— 版本探測（#215 L1／L2／L3）', () => {
     expect(count(amm.calls, 'oracleEthPrice8')).toBe(2)
   })
 
+  it('PR #223 L1：第一次不相等、重讀卻讀不到（unverified）→ 維持 unknown，不判成 oracle-fixed', async () => {
+    const cache: AmmCapsCache = new Map()
+    const amm = fakeAmm('v2', { price8: LIVE.price8AtLoad })
+    const oracleRead = amm.reader.oracleEthPrice8
+    let n = 0
+    amm.reader.oracleEthPrice8 = async () => {
+      n += 1
+      if (n === 1) return LIVE.price8Later // 與 getPrice 不相等
+      throw new Error('rpc timeout') // 重讀失敗
+    }
+    const snap = await loadAmmSnapshot(amm.reader, KEY, cache)
+    expect(snap.caps).toEqual(UNKNOWN_CAPABILITIES)
+    expect(cache.get(KEY)?.oracleFixedConfirmed).toBe(false)
+    // getPrice 重讀失敗也一樣。
+    amm.reader.oracleEthPrice8 = oracleRead
+    const amm2 = fakeAmm('v2', { price8: LIVE.price8AtLoad })
+    const priceRead = amm2.reader.getPrice
+    let m = 0
+    amm2.reader.getPrice = async () => {
+      m += 1
+      if (m === 1) return LIVE.price8Later * 10n ** 10n
+      throw new Error('rpc timeout')
+    }
+    expect((await loadAmmSnapshot(amm2.reader, KEY, new Map())).caps).toEqual(UNKNOWN_CAPABILITIES)
+    amm2.reader.getPrice = priceRead
+  })
+
   it('不像 PepeAMM 的 bytecode → unknown（probe=fresh，不是 failed），也不快取', async () => {
     const cache: AmmCapsCache = new Map()
     const amm = fakeAmm('v2', { code: '0x6080604052' })
@@ -641,15 +669,15 @@ describe('executeSwap —— 必定失敗就一筆交易都不送（#215 M2）',
     expect(amm.state.eth).toBe(ethBefore)
   })
 
-  it('#220：approve 之後價格變好 → 照樣成交，minOut 仍是畫面上的最低收到數量（不換成新報價的）', async () => {
+  it('#220／PR #223 M2：approve 之後價格變好 → 成交，minOut 跟著提高到即時報價 × 0.995（不停在畫面的舊底線）', async () => {
     const amm = fakeAmm('v2', { price8: LIVE.price8Later, allowance: 0n })
     const shown = amm.displayed(false, E(100))
     onApproveMined(amm, () => { amm.state.price8 = LIVE.price8AtLoad }) // ETH 變便宜 → 換到更多 ETH
     const r = await executeSwap(amm.gateway, v2caps, shown)
     const fresh = (((E(100) * 9970n) / 10_000n) * 10n ** 8n) / LIVE.price8AtLoad
     expect(fresh > shown.out).toBe(true)
-    expect(r).toMatchObject({ ok: true, quoted: fresh, minOut: minOutWithSlippage(shown.out) })
-    expect(amm.sent[1]).toEqual({ kind: 'swap', args: [E(100), minOutWithSlippage(shown.out)] })
+    expect(r).toMatchObject({ ok: true, quoted: fresh, minOut: minOutWithSlippage(fresh) })
+    expect(amm.sent[1]).toEqual({ kind: 'swap', args: [E(100), minOutWithSlippage(fresh)] })
   })
 
   it('#220：approve 之後輕微變差、仍在 0.5% 容忍內 → 成交，minOut 不變', async () => {
@@ -674,13 +702,14 @@ describe('executeSwap —— 必定失敗就一筆交易都不送（#215 M2）',
 
   it('#220：ETH→USDC（不需 approve）同樣以畫面報價的 minOut 送出；價格變差超過容忍就不送', async () => {
     const ethIn = E(1) / 100n
-    // 變好：照樣以畫面報價的 minOut 送出。
+    // 變好：成交，minOut = 即時報價 × 0.995（高於畫面的底線）。
     const up = fakeAmm('v2', { price8: LIVE.price8AtLoad })
     const shownUp = up.displayed(true, ethIn)
     up.state.price8 = LIVE.price8Later
+    const liveUp = up.displayed(true, ethIn).out
     const ok = await executeSwap(up.gateway, v2caps, shownUp)
-    expect(ok).toMatchObject({ ok: true, minOut: minOutWithSlippage(shownUp.out) })
-    expect(up.sent).toEqual([{ kind: 'swap', args: [minOutWithSlippage(shownUp.out)], value: ethIn }])
+    expect(ok).toMatchObject({ ok: true, minOut: minOutWithSlippage(liveUp) })
+    expect(up.sent).toEqual([{ kind: 'swap', args: [minOutWithSlippage(liveUp)], value: ethIn }])
     // 變差 1%：不送。
     const down = fakeAmm('v2', { price8: LIVE.price8Later })
     const shownDown = down.displayed(true, ethIn)
@@ -688,6 +717,116 @@ describe('executeSwap —— 必定失敗就一筆交易都不送（#215 M2）',
     const moved = await executeSwap(down.gateway, v2caps, shownDown)
     expect(moved).toMatchObject({ ok: false, stage: 'priceMoved', approved: false })
     expect(down.sent).toEqual([])
+  })
+
+  // ── PR #223 審查 M1／M2：minOut = max(畫面報價 × 0.995, 即時報價 × 0.995) ──────────
+
+  it('sendMinOut：取兩者 × 0.995 的較大值；兩者都太小就是 0', () => {
+    expect(sendMinOut(E(100), E(50))).toBe(minOutWithSlippage(E(100)))
+    expect(sendMinOut(E(50), E(100))).toBe(minOutWithSlippage(E(100)))
+    expect(sendMinOut(1n, E(1))).toBe(minOutWithSlippage(E(1)))
+    expect(sendMinOut(1n, 1n)).toBe(0n)
+  })
+
+  /** 讓 swap 送出的那一刻（模擬已過、上鏈之前）改動狀態：簽名期間被夾擊／價格回彈。 */
+  const beforeSwapMined = (amm: Fake, change: () => void) => {
+    const swap = amm.gateway.swap
+    amm.gateway.swap = async (e, a, m) => {
+      change()
+      return swap(e, a, m)
+    }
+  }
+
+  it('審查 d1：畫面報價是舊的、即時大幅變好（oracle −30%）→ 以即時報價 × 0.995 為 minOut 成交，容忍度不會變成 30%', async () => {
+    const amm = fakeAmm('v2', { price8: LIVE.price8Later, allowance: E(1000) })
+    const stale = amm.displayed(false, E(20))
+    amm.state.price8 = (LIVE.price8Later * 70n) / 100n
+    const live = amm.displayed(false, E(20)).out
+    const r = await executeSwap(amm.gateway, v2caps, stale)
+    expect(r).toMatchObject({ ok: true, quoted: live, minOut: minOutWithSlippage(live) })
+    expect(amm.sent).toEqual([{ kind: 'swap', args: [E(20), minOutWithSlippage(live)] }])
+    expect(minOutWithSlippage(live) > minOutWithSlippage(stale.out)).toBe(true)
+  })
+
+  it('審查 d2：同 d1，但送 swap 前一刻價格回彈到原價 → swap 被 minOut 擋下（不會只拿到即時報價的 70%）', async () => {
+    const amm = fakeAmm('v2', { price8: LIVE.price8Later, allowance: E(1000) })
+    const stale = amm.displayed(false, E(20))
+    amm.state.price8 = (LIVE.price8Later * 70n) / 100n
+    const live = amm.displayed(false, E(20)).out
+    beforeSwapMined(amm, () => { amm.state.price8 = LIVE.price8Later })
+    const ethBefore = amm.state.eth
+    await expect(executeSwap(amm.gateway, v2caps, stale)).rejects.toThrow('InsufficientOutput')
+    expect(amm.sent).toEqual([{ kind: 'swap', args: [E(20), minOutWithSlippage(live)] }])
+    expect(amm.state.eth).toBe(ethBefore) // 沒有成交
+  })
+
+  it('審查 e1：displayed.out = 1 wei（minOut 0）→ 仍以即時報價 × 0.995 送出，不是 0', async () => {
+    const amm = fakeAmm('v2', { price8: LIVE.price8Later, allowance: E(1000) })
+    const live = amm.displayed(false, E(20)).out
+    const r = await executeSwap(amm.gateway, v2caps, { isEthIn: false, amountIn: E(20), out: 1n })
+    expect(r).toMatchObject({ ok: true, minOut: minOutWithSlippage(live) })
+    expect(amm.sent).toEqual([{ kind: 'swap', args: [E(20), minOutWithSlippage(live)] }])
+  })
+
+  it('審查 e1x：displayed.out = 1 wei、送 swap 前 oracle ×10（ETH 只剩 1/10）→ swap 被擋下，不會成交', async () => {
+    const amm = fakeAmm('v2', { price8: LIVE.price8Later, allowance: E(1000) })
+    beforeSwapMined(amm, () => { amm.state.price8 = LIVE.price8Later * 10n })
+    const ethBefore = amm.state.eth
+    await expect(executeSwap(amm.gateway, v2caps, { isEthIn: false, amountIn: E(20), out: 1n })).rejects.toThrow('InsufficientOutput')
+    expect(amm.sent[0].args[1] > 0n).toBe(true)
+    expect(amm.state.eth).toBe(ethBefore)
+  })
+
+  it('審查 e3：ETH→USDC displayed.out = 1 wei、送 swap 前 oracle ÷10 → swap 被擋下', async () => {
+    const amm = fakeAmm('v2', { price8: LIVE.price8Later })
+    const live = amm.displayed(true, E(1) / 100n).out
+    beforeSwapMined(amm, () => { amm.state.price8 = LIVE.price8Later / 10n })
+    const usdcBefore = amm.state.usdc
+    await expect(executeSwap(amm.gateway, v2caps, { isEthIn: true, amountIn: E(1) / 100n, out: 1n })).rejects.toThrow('InsufficientOutput')
+    expect(amm.sent).toEqual([{ kind: 'swap', args: [minOutWithSlippage(live)], value: E(1) / 100n }])
+    expect(amm.state.usdc).toBe(usdcBefore)
+  })
+
+  it('M1：算出的 minOut 是 0（金額小到報價打 0.5% 後為 0）→ zeroMinOut，不模擬、不送任何交易', async () => {
+    const amm = fakeAmm('v2', { price8: LIVE.price8Later, allowance: 0n })
+    // 1 wei ETH → quote 0；畫面報價 1 wei → minOut 0。
+    const r = await executeSwap(amm.gateway, v2caps, { isEthIn: true, amountIn: 1n, out: 1n })
+    expect(r).toEqual({ ok: false, stage: 'zeroMinOut', quoted: 0n, approved: false })
+    expect(amm.calls).toEqual(['quote', 'getReserves'])
+    expect(amm.sent).toEqual([])
+    for (const catalog of [zhTW, en]) expect(catalog.exchange.tx.zeroMinOut).toBeTruthy()
+  })
+
+  it('模擬與 swap 用同一個 minOut（sendMin）', async () => {
+    const amm = fakeAmm('v2', { price8: LIVE.price8Later, allowance: E(1000) })
+    const stale = amm.displayed(false, E(20))
+    amm.state.price8 = (LIVE.price8Later * 90n) / 100n
+    const sims: bigint[] = []
+    const sim = amm.gateway.simulateSwap
+    amm.gateway.simulateSwap = (e, a, m) => { sims.push(m); return sim(e, a, m) }
+    const r = await executeSwap(amm.gateway, v2caps, stale)
+    expect(r.ok).toBe(true)
+    expect(sims).toEqual([amm.sent[0].args[1]])
+  })
+
+  it('重入保護：同一個 gateway 上一筆還沒結束 → 第二次呼叫回 busy、什麼都不做；結束後可以再呼叫', async () => {
+    const amm = fakeAmm('v2', { price8: LIVE.price8Later })
+    const shown = amm.displayed(true, E(1) / 100n)
+    const [a, b] = await Promise.all([
+      executeSwap(amm.gateway, v2caps, shown),
+      executeSwap(amm.gateway, v2caps, shown),
+    ])
+    expect(a.ok).toBe(true)
+    expect(b).toEqual({ ok: false, stage: 'busy', approved: false })
+    expect(amm.sent.map((x) => x.kind)).toEqual(['swap'])
+    // 第一筆結束後鎖已釋放；即使上一筆丟錯也會釋放。
+    const again = await executeSwap(amm.gateway, v2caps, amm.displayed(true, E(1) / 100n))
+    expect(again.ok).toBe(true)
+    const swap = amm.gateway.swap
+    amm.gateway.swap = () => Promise.reject(new Error('user rejected action'))
+    await expect(executeSwap(amm.gateway, v2caps, amm.displayed(true, E(1) / 100n))).rejects.toThrow('user rejected')
+    amm.gateway.swap = swap
+    expect((await executeSwap(amm.gateway, v2caps, amm.displayed(true, E(1) / 100n))).ok).toBe(true)
   })
 
   it('#220 L：USDC 餘額不足、額度也不足 → 讀 balanceOf 就停，不送 approve（審查 S6／V5）', async () => {
@@ -793,6 +932,36 @@ describe('scheduleAmmRefresh —— 背景不讀、回到前景立刻讀（#220�
     expect(n).toBe(2) // 卸載後不再讀（審查 I）
   })
 
+  it('PR #223 L3：回前景先呼叫 onResume（頁面把報價標成 pending）再重讀；回前景的重讀有節流', () => {
+    vi.useFakeTimers()
+    const doc = new FakeDoc()
+    const order: string[] = []
+    let t = 100_000
+    const stop = scheduleAmmRefresh(() => order.push('refresh'), 15_000, doc, {
+      onResume: () => order.push('resume'),
+      resumeThrottleMs: 2_000,
+      now: () => t,
+    })
+    doc.set(true)
+    doc.set(false)
+    expect(order).toEqual(['resume', 'refresh'])
+    // 1 秒內快速來回切 5 次：都在節流內，不再重讀。
+    for (let i = 0; i < 5; i++) {
+      t += 200
+      doc.set(true)
+      doc.set(false)
+    }
+    expect(order).toEqual(['resume', 'refresh'])
+    t += 2_000
+    doc.set(true)
+    doc.set(false)
+    expect(order).toEqual(['resume', 'refresh', 'resume', 'refresh'])
+    // 切到背景不觸發任何東西。
+    doc.set(true)
+    expect(order).toHaveLength(4)
+    stop()
+  })
+
   it('沒有 document（SSR／測試）→ 只有定時器', () => {
     vi.useFakeTimers()
     let n = 0
@@ -871,6 +1040,28 @@ describe('報價只認目前方向＋目前金額（#220，審查 UI G）', () =
       expect(catalog.exchange.swap.quoting).toBeTruthy()
       expect(catalog.exchange.swap.quoteUnavailable).toBeTruthy()
     }
+  })
+
+  it('PR #223 M1：報價極小（1 wei，最低收到為 0）→「金額太小」，按鈕停用、不顯示最低收到', () => {
+    const v = viewFor(
+      { isEthIn: true, amountIn: 1n, quote: { isEthIn: true, amountIn: 1n, out: 1n, impactBps: null, inventory: { status: 'ok' } } },
+      true,
+      '0.000000000000000001',
+    )
+    expect(v.button).toEqual({ disabled: true, label: 'amountTooSmall' })
+    expect(v.minReceivedBase).toBeNull()
+    expect(cardText(v, zhTW).button).toBe('金額太小')
+    expect(cardText(v, en).button).toBe('Amount too small')
+  })
+
+  it('PR #223 L3：報價放太久（超過 maxAgeMs）→ pending，按鈕停用', async () => {
+    const amm = fakeAmm('v2', { price8: LIVE.price8Later })
+    const q = await readQuoteSnapshot(amm.reader, v2caps, true, E(1))
+    const slot = { isEthIn: true, amountIn: E(1), quote: q, fetchedAt: 1_000 }
+    expect(resolveLiveQuote(slot, true, E(1), { now: 20_000, maxAgeMs: 30_000 }).status).toBe('ready')
+    expect(resolveLiveQuote(slot, true, E(1), { now: 40_000, maxAgeMs: 30_000 }).status).toBe('pending')
+    // 沒有時間戳卻要求新鮮度 → 不採用。
+    expect(resolveLiveQuote({ ...slot, fetchedAt: undefined }, true, E(1), { now: 0, maxAgeMs: 30_000 }).status).toBe('pending')
   })
 
   it('輸入不是有效金額（空、0、格式錯、超過 18 位小數）→ 請輸入金額', () => {

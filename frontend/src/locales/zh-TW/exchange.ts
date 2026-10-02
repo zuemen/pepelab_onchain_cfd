@@ -44,6 +44,8 @@ export const exchange = {
      */
     priceMoved:
       '價格已變動：目前報價 {quoted} {token}，低於你確認的最低收到數量 {minOut} {token}。沒有送出任何交易，請確認新報價後再按一次。',
+    /** 金額太小：報價打 0.5% 之後最低收到數量是 0，等於沒有滑點保護，不送。 */
+    zeroMinOut: '金額太小，最低收到數量會是 0（沒有滑點保護），沒有送出兌換交易。請提高金額。',
     priceMovedAfterApprove:
       '批准已完成，但價格已變動：目前報價 {quoted} {token}，低於你確認的最低收到數量 {minOut} {token}。沒有送出兌換交易，請確認新報價後再按一次（不必再批准）。',
 
@@ -159,6 +161,8 @@ export const exchange = {
     quoting: '取得報價中…',
     /** 這組金額的 quote 失敗（revert／逾時）：換不成，沒有可送出的最低收到數量。 */
     quoteUnavailable: '無法取得報價',
+    /** 報價小到最低收到數量是 0（沒有滑點保護），不讓送出。 */
+    amountTooSmall: '金額太小',
     ethToToken: '兌換 ETH → {token}',
     tokenToEth: '兌換 {token} → ETH',
   },

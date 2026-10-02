@@ -89,6 +89,13 @@ const EMPTY_POOL_READS: PoolReads = { getPrice: null, reserves: null, oraclePric
  */
 const AMM_REFRESH_MS = 15_000;
 
+/**
+ * 報價寫進 state 超過這麼久還沒被新的取代，就視為 pending、不拿來送出（PR #223 L3）。
+ * 前景時每 AMM_REFRESH_MS 換一次，留一輪的餘裕避免 RPC 稍慢時閃爍；分頁回前景另外由
+ * onResume 直接標成 pending。
+ */
+const QUOTE_MAX_AGE_MS = 2 * AMM_REFRESH_MS;
+
 const ORACLE_PRICE_ABI = ['function getPrice(bytes32 assetId) view returns (uint256 price, uint256 updatedAt)'];
 
 /**
@@ -173,6 +180,8 @@ export default function ExchangePage() {
   const [refreshTick, setRefreshTick] = useState(0);
 
   const [busy,         setBusy]        = useState<Record<string, boolean>>({});
+  /** 兌換進行中（同步可讀；busy state 要等下一次 render 才反映到按鈕）。 */
+  const swapInFlight = useRef(false);
 
 
   const setLoad = (k: string, v: boolean) => setBusy(p => ({ ...p, [k]: v }));
@@ -280,7 +289,8 @@ export default function ExchangePage() {
 
   // 定時重讀池子與報價（#215 M1）：頁面放著不動時，兌換價、儲備、報價與衝擊一起更新，
   // 不會出現「報價是即時的、基準卻是 20 分鐘前的」。分頁在背景時不讀；回到前景時立刻
-  // 重讀一次，不等下一次定時器（#220）。
+  // 重讀一次，不等下一次定時器（#220）；回前景時先把報價標成 pending，背景前的報價在新報價
+  // 回來前不能按（PR #223 L3）。回前景的重讀有節流。
   useEffect(() => {
     if (!ammReader) return undefined;
     return scheduleAmmRefresh(
@@ -290,6 +300,7 @@ export default function ExchangePage() {
       },
       AMM_REFRESH_MS,
       typeof document !== 'undefined' ? document : null,
+      { onResume: () => setQuote(null) },
     );
   }, [ammReader, refreshAmm]);
 
@@ -312,12 +323,12 @@ export default function ExchangePage() {
     void (async () => {
       try {
         const snap = await readQuoteSnapshot(ammReader, ammCaps, isEthIn, amountIn);
-        if (!cancelled) setQuote({ isEthIn, amountIn, quote: snap });
+        if (!cancelled) setQuote({ isEthIn, amountIn, quote: snap, fetchedAt: Date.now() });
       } catch {
         // quote 也會 revert（InsufficientLiquidity / InsufficientInput）——那代表
         // 這筆金額根本換不成，顯示空白比顯示一個假數字誠實。記下「這組金額失敗」，
         // 和「還在等報價」分開（按鈕文字不同）。
-        if (!cancelled) setQuote({ isEthIn, amountIn, quote: null });
+        if (!cancelled) setQuote({ isEthIn, amountIn, quote: null, fetchedAt: Date.now() });
       }
     })();
     return () => { cancelled = true; };
@@ -327,9 +338,10 @@ export default function ExchangePage() {
   const ammDeployed = !!contracts && String(contracts.pepeAMM.target) !== ZERO_ADDR;
   /**
    * 只認「目前方向、**目前金額**」的那筆報價（#220）。金額從 30 改成 60、60 的報價回來
-   * 之前是 pending：不顯示 30 的收到數量／衝擊／最低收到，按鈕停用。
+   * 之前是 pending：不顯示 30 的收到數量／衝擊／最低收到，按鈕停用。放太久沒換新的報價
+   * 也當 pending（PR #223 L3）。
    */
-  const live = resolveLiveQuote(quote, isEthIn, amountIn);
+  const live = resolveLiveQuote(quote, isEthIn, amountIn, { now: Date.now(), maxAgeMs: QUOTE_MAX_AGE_MS });
   const liveQuote = live.status === 'ready' ? live.quote : null;
 
   // swap 會在 oracle 過期（> maxOracleAge，預設 1h）時 revert StaleOraclePrice。
@@ -368,14 +380,22 @@ export default function ExchangePage() {
   // （#220：不再於 approve 之後換成新 quote 的 minOut）。
   //
   // #215 M2：送出任何交易（含 approve）之前，executeSwap 會先確認庫存、餘額、再以 eth_call
-  // 模擬 swap；必定失敗就一筆都不送。
+  // 模擬 swap；必定失敗就一筆都不送。實際送出的 minOut 是 max(畫面最低收到, 即時報價 × 0.995)
+  // （PR #223 M1/M2）。
+  //
+  // 連按：按鈕在 busy 時停用；busy 是 state，這裡再以 ref 擋同一輪 render 內的第二次點擊。
   const doSwap = async () => {
+    if (swapInFlight.current) return;
     if (!contracts || !wallet.address || !ammDeployed || !ammReader) return;
     if (amountIn === null) { notify(t.exchange.tx.enterValidAmount, false); return; }
-    // 畫面上沒有這組金額的報價（還在讀、或換不成）就不送——minOut 由它算出（#220）。
-    // 按鈕此時本來就是停用的，這裡是保險。
-    if (!liveQuote || liveQuote.out <= 0n) return;
-    const displayed = liveQuote;
+    // 畫面上沒有這組金額的報價（還在讀、換不成、或放太久）就不送——minOut 的底線由它算出
+    // （#220）。按下這一刻再判一次新鮮度（render 之後可能已經過了一段時間）。
+    const atPress = resolveLiveQuote(quote, isEthIn, amountIn, { now: Date.now(), maxAgeMs: QUOTE_MAX_AGE_MS });
+    if (atPress.status !== 'ready' || atPress.quote.out <= 0n) {
+      if (atPress.status === 'pending') setRefreshTick(n => n + 1);
+      return;
+    }
+    const displayed = atPress.quote;
     // 事前擋掉必定 revert 的兩種情況，不讓使用者白付 gas。
     if (ammOracleStale) { notify(AMM_STALE_MSG, false); return; }
     // 餘額不足是第三種必定失敗的情況,而且最常見。這裡用頁面上次讀到的餘額先擋一次;
@@ -409,14 +429,19 @@ export default function ExchangePage() {
           : await pool.swapUSDCForETH(amountIn, minOut)),
     };
 
+    swapInFlight.current = true;
     setLoad('swap', true);
     try {
       const result = await executeSwap(gateway, ammCaps, displayed, {
         onApproving: () => notify(interpolate(t.exchange.tx.approving, { token: STABLE_LABEL }), true),
       });
       if (!result.ok) {
-        if (result.stage === 'inventory') {
+        if (result.stage === 'busy') {
+          // 上一筆還在跑（重入保護）：什麼都沒做，不必提示。
+        } else if (result.stage === 'inventory') {
           notify(inventoryMessage(result.needed, result.available), false);
+        } else if (result.stage === 'zeroMinOut') {
+          notify(t.exchange.tx.zeroMinOut, false);
         } else if (result.stage === 'balance') {
           setUsdcBal(result.available);
           notify(interpolate(t.exchange.tx.insufficientBalance, {
@@ -436,7 +461,9 @@ export default function ExchangePage() {
             ),
             false,
           );
-          // fetchAll 連同池子一起重讀；approve 已付的 gas 也反映到餘額上。
+          // 舊報價立刻作廢（pending）：新報價回來之前按鈕停用，不能拿同一筆舊報價重按
+          // （PR #223 L2）。fetchAll 連同池子一起重讀；approve 已付的 gas 也反映到餘額上。
+          setQuote(null);
           void fetchAll();
           setRefreshTick(n => n + 1);
         } else {
@@ -470,7 +497,7 @@ export default function ExchangePage() {
       await fetchAll();
     } catch (e) {
       notify(prettyError(e), false);
-    } finally { setLoad('swap', false); }
+    } finally { swapInFlight.current = false; setLoad('swap', false); }
   };
 
   // Testnet on-ramp for the mock margin stablecoin (USDC = MockUSDC) — users can

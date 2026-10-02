@@ -26,6 +26,7 @@
 //   7. v2 的 quote 不看庫存：`quotedOut` 超過輸出側庫存時整筆換不成，畫面要直接說、
 //      按鈕要停用（`checkInventory`），而不是顯示一個換不到的數字。
 
+import { minOutWithSlippage } from './ammQuote'
 import { scanPush4Selectors } from './selectorScan'
 
 /**
@@ -288,6 +289,11 @@ export interface QuoteSlot<Q extends QuoteView = QuoteView> {
   isEthIn: boolean
   amountIn: bigint
   quote: Q | null
+  /**
+   * 這筆結果寫進 state 的時間（ms）。搭配 `resolveLiveQuote` 的 `maxAgeMs`：放太久的報價
+   * （例如分頁在背景時定時器停了）在新報價回來前視為 pending（PR #223 L3）。
+   */
+  fetchedAt?: number
 }
 
 /**
@@ -311,9 +317,14 @@ export function resolveLiveQuote<Q extends QuoteView>(
   slot: QuoteSlot<Q> | null,
   isEthIn: boolean,
   amountIn: bigint | null,
+  freshness?: { now: number; maxAgeMs: number },
 ): LiveQuote<Q> {
   if (amountIn === null || amountIn <= 0n) return { status: 'noAmount' }
   if (!slot || slot.isEthIn !== isEthIn || slot.amountIn !== amountIn) return { status: 'pending' }
+  // 太舊（或沒有時間戳卻要求新鮮度）→ 等新報價。
+  if (freshness && (slot.fetchedAt === undefined || freshness.now - slot.fetchedAt > freshness.maxAgeMs)) {
+    return { status: 'pending' }
+  }
   if (!slot.quote) return { status: 'failed' }
   // slot 與 quote 本身各帶一份方向＋金額；兩份都要對得上（防止把別筆 quote 塞進這個 slot）。
   if (slot.quote.isEthIn !== isEthIn || slot.quote.amountIn !== amountIn) return { status: 'pending' }
@@ -360,6 +371,7 @@ export type SwapButtonLabel =
   | 'enterAmount'
   | 'quoting'
   | 'quoteUnavailable'
+  | 'amountTooSmall'
   | 'exceedsInventory'
   | 'swap'
 
@@ -421,6 +433,8 @@ export function buildSwapCardView(input: SwapCardInput): SwapCardView {
   // quote 失敗，或報出 0：這筆金額換不成。executeSwap 的 minOut 由畫面上的報價算出，
   // 沒有報價就沒有可以送出的 minOut。
   else if (!quote || quote.out <= 0n) label = 'quoteUnavailable'
+  // 報價小到打 0.5% 之後最低收到是 0：minOut 0 等於沒有滑點保護，不讓送（PR #223 M1）。
+  else if (minOutWithSlippage(quote.out) <= 0n) label = 'amountTooSmall'
   else if (inventoryExceeded) label = 'exceedsInventory'
   else label = 'swap'
 
@@ -437,7 +451,7 @@ export function buildSwapCardView(input: SwapCardInput): SwapCardView {
     quotePending: live.status === 'pending' || (live.status === 'ready' && !quote),
     receive: tradable ? tradable.out : null,
     impactBps: tradable ? tradable.impactBps : null,
-    minReceivedBase: tradable && tradable.out > 0n ? tradable.out : null,
+    minReceivedBase: tradable && minOutWithSlippage(tradable.out) > 0n ? tradable.out : null,
     inventoryExceeded,
     button: { disabled: label !== 'swap', label },
   }

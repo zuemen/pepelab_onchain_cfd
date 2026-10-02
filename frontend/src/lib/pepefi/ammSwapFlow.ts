@@ -11,8 +11,9 @@
 //                           放久了會過期（oracle 每幾分鐘更新），拿它對即時 quote 算
 //                           衝擊，會重現 #165 的 0.00% ／ 假衝擊。
 //   3. `executeSwap`      ：送任何交易（含 approve）之前，先確認庫存、餘額、再以 eth_call
-//                           模擬 swap；必定失敗就一筆都不送。minOut 固定由**畫面上顯示的
-//                           那筆報價**算出（#220），價格變差就停下來讓使用者重新確認。
+//                           模擬 swap；必定失敗就一筆都不送。minOut 不低於**畫面上顯示的
+//                           最低收到數量**，也不低於即時報價 × 0.995（#220、PR #223 M1/M2）；
+//                           價格變差就停下來讓使用者重新確認。
 //   4. `scheduleAmmRefresh`：定時重讀＋分頁回到前景時立刻重讀一次（#220）。
 
 import { safeRead, withTimeout } from './safeRead'
@@ -122,8 +123,13 @@ export async function loadAmmSnapshot(
       // 第一次不相等時立刻**同時**重讀這兩個值再判一次，不讓畫面為了這個競態閃成
       // 「無法確認」一整輪（15 秒）。真的不是 oracle 定價（L3）的合約，重讀也一樣不相等。
       const [price2, oracle2] = await Promise.all([readOrNull(reader.getPrice()), readOrNull(reader.oracleEthPrice8())])
-      check = checkOracleFixed(price2, oracle2)
-      if (price2 !== null) priceRead = price2
+      const recheck = checkOracleFixed(price2, oracle2)
+      // 重讀失敗（unverified）不算翻案：已經有一次「讀到了卻不相等」，維持 contradicted
+      // （PR #223 審查 L1）。只有重讀**確認**相等才改判。
+      if (recheck === 'confirmed') {
+        check = 'confirmed'
+        if (price2 !== null) priceRead = price2
+      }
     }
     if (check === 'confirmed') confirmed = true
     else if (check === 'contradicted') caps = UNKNOWN_CAPABILITIES
@@ -231,8 +237,29 @@ export type SwapResult =
    * 要使用者看過新報價再按一次。`displayed` 是使用者確認過的報價、`quoted` 是剛讀到的。
    */
   | { ok: false; stage: 'priceMoved'; displayed: bigint; quoted: bigint; minOut: bigint; approved: boolean }
+  /**
+   * 算出來的 minOut 是 0（金額太小，報價打 0.5% 之後無條件捨去成 0）。minOut 0 等於沒有
+   * 滑點保護，不送（PR #223 審查 M1）。
+   */
+  | { ok: false; stage: 'zeroMinOut'; quoted: bigint; approved: boolean }
+  /** 同一個 gateway 已經有一筆兌換在跑（重入保護）。什麼都沒做。 */
+  | { ok: false; stage: 'busy'; approved: false }
   /** eth_call 模擬失敗。`approved` 為 false = 沒有送出任何交易。 */
   | { ok: false; stage: 'preflight'; error: unknown; approved: boolean }
+
+/**
+ * 實際送出的 minOut（PR #223 審查 M1/M2）：
+ *   max(畫面報價 × 0.995, 即時報價 × 0.995)
+ * - 不低於畫面上的「最低收到數量」——使用者確認過的底線（#220）。
+ * - 也不低於即時報價的 99.5%——畫面報價是舊的（例如分頁放在背景很久）而即時價大幅變好時，
+ *   只用畫面的底線等於容忍度變成 30%，送出前被夾擊或價格回彈就只拿到即時報價的 70%。
+ * - 畫面報價被傳成 1 wei 之類（minOut 0）也一樣有即時報價這道底線。
+ */
+export function sendMinOut(displayedOut: bigint, quoted: bigint): bigint {
+  const a = minOutWithSlippage(displayedOut)
+  const b = minOutWithSlippage(quoted)
+  return a > b ? a : b
+}
 
 /** OpenZeppelin v5 的 `ERC20InsufficientAllowance(address,uint256,uint256)`。 */
 export const ERC20_INSUFFICIENT_ALLOWANCE = '0xfb8f41b2'
@@ -264,10 +291,11 @@ export function isAllowanceRevert(err: unknown): boolean {
  *   ETH→USDC：`swapETHForUSDC(minOut, { value: ethIn })`
  *   USDC→ETH：額度不足才 `approve(amm, usdcIn)`，再 `swapUSDCForETH(usdcIn, minEthOut)`
  *
- * **minOut 固定由畫面上顯示的那筆報價算出**（`displayed.out` 打 DEFAULT_SLIPPAGE_BPS，
- * 就是畫面上的「最低收到數量」），整個流程不會換成別的數字（#220）。原本 approve 之後會
- * 重新 quote、再以新 quote 打 0.995 送出——價格在等簽名、等上鏈的期間變差時，使用者實際
- * 收到的會低於他確認過的最低收到數量，沒有提示也沒有中止。
+ * **minOut 的底線是畫面上顯示的「最低收到數量」**（`displayed.out` 打 DEFAULT_SLIPPAGE_BPS，
+ * #220）：原本 approve 之後會重新 quote、再以新 quote 打 0.995 送出——價格在等簽名、等上鏈
+ * 的期間變差時，使用者實際收到的會低於他確認過的最低收到數量，沒有提示也沒有中止。
+ * 每次讀到即時 quote 後，實際送出的是 `sendMinOut(displayed.out, quoted)`：同時不低於即時
+ * 報價的 99.5%（PR #223 M1/M2）。算出來是 0 就不送（`zeroMinOut`）。
  *
  * 送出前的檢查，全部在 approve **之前**：
  *
@@ -283,22 +311,44 @@ export function isAllowanceRevert(err: unknown): boolean {
  *      - 舊版合約的 transferFrom 排在最前面，後面會失敗的條件是庫存與 minOut（第 1 點已擋）。
  *
  * approve 上鏈之後（等錢包簽名、等上鏈的這段時間價格可能已經動了）再讀一次即時 quote：
- * 低於**同一個** minOut 就回「價格已變動」、不送 swap；接著以同一個 minOut 完整模擬，
- * 過了才送 swap。
+ * 低於畫面的最低收到數量就回「價格已變動」、不送 swap；否則以新的 `sendMinOut` 完整模擬，
+ * 過了才送 swap（模擬與 swap 用同一個數字）。
+ *
+ * 重入：同一個 gateway 物件上一筆還沒結束時再呼叫，直接回 `busy`、什麼都不做。頁面另外以
+ * busy 狀態停用按鈕、以 ref 擋連按（每次按下都會建新的 gateway，所以模組這層只是保險）。
  *
  * 使用者拒簽、RPC 斷線等「不是合約拒絕」的錯誤照舊往外丟，由呼叫端的 catch 處理。
  */
+/** 正在跑 executeSwap 的 gateway（重入保護）。WeakSet：gateway 被丟掉就自動清掉。 */
+const inFlight = new WeakSet<SwapGateway>()
+
 export async function executeSwap(
   gateway: SwapGateway,
   caps: AmmCapabilities,
   displayed: DisplayedQuote,
   hooks: { onApproving?: () => void } = {},
 ): Promise<SwapResult> {
+  if (inFlight.has(gateway)) return { ok: false, stage: 'busy', approved: false }
+  inFlight.add(gateway)
+  try {
+    return await runSwap(gateway, caps, displayed, hooks)
+  } finally {
+    inFlight.delete(gateway)
+  }
+}
+
+async function runSwap(
+  gateway: SwapGateway,
+  caps: AmmCapabilities,
+  displayed: DisplayedQuote,
+  hooks: { onApproving?: () => void },
+): Promise<SwapResult> {
   const { isEthIn, amountIn } = displayed
   if (amountIn <= 0n || displayed.out <= 0n) {
     // 呼叫端的錯：沒有報價就沒有 minOut 可送（畫面上按鈕此時是停用的）。
     throw new Error('executeSwap: displayed quote must have a positive amountIn and out')
   }
+  /** 畫面上的「最低收到數量」：即時 quote 低於它就是「價格已變動」。 */
   const minOut = minOutWithSlippage(displayed.out)
 
   const price = async (): Promise<{ quoted: bigint; inventory: InventoryCheck }> => {
@@ -308,8 +358,11 @@ export async function executeSwap(
     ])
     return { quoted, inventory: checkInventory(caps, isEthIn, quoted, reserves) }
   }
-  type Stop = Extract<SwapResult, { stage: 'inventory' | 'priceMoved' }>
-  /** 即時 quote 換不成（庫存）或低於 minOut（價格已變動）→ 停下來的結果；否則 null。 */
+  type Stop = Extract<SwapResult, { stage: 'inventory' | 'priceMoved' | 'zeroMinOut' }>
+  /**
+   * 即時 quote 換不成（庫存）、低於畫面的最低收到（價格已變動）、或算出的 minOut 是 0
+   * → 停下來的結果；否則 null。
+   */
   const stopFor = (quoted: bigint, inventory: InventoryCheck, approved: boolean): Stop | null => {
     if (inventory.status === 'exceeded') {
       return { ok: false, stage: 'inventory', needed: inventory.needed, available: inventory.available, approved }
@@ -317,12 +370,15 @@ export async function executeSwap(
     if (quoted < minOut) {
       return { ok: false, stage: 'priceMoved', displayed: displayed.out, quoted, minOut, approved }
     }
+    if (sendMinOut(displayed.out, quoted) <= 0n) return { ok: false, stage: 'zeroMinOut', quoted, approved }
     return null
   }
 
   let { quoted, inventory } = await price()
   const before = stopFor(quoted, inventory, false)
   if (before) return before
+  /** 實際送出（與模擬）的 minOut。每讀一次即時 quote 就重算。 */
+  let sendMin = sendMinOut(displayed.out, quoted)
 
   let needsApproval = false
   if (!isEthIn) {
@@ -331,7 +387,7 @@ export async function executeSwap(
     needsApproval = allowance < amountIn
   }
   try {
-    await gateway.simulateSwap(isEthIn, amountIn, minOut)
+    await gateway.simulateSwap(isEthIn, amountIn, sendMin)
   } catch (error) {
     if (!(needsApproval && isAllowanceRevert(error))) {
       return { ok: false, stage: 'preflight', error, approved: false }
@@ -346,16 +402,17 @@ export async function executeSwap(
     ;({ quoted, inventory } = await price())
     const after = stopFor(quoted, inventory, true)
     if (after) return after
+    sendMin = sendMinOut(displayed.out, quoted)
     try {
-      await gateway.simulateSwap(isEthIn, amountIn, minOut)
+      await gateway.simulateSwap(isEthIn, amountIn, sendMin)
     } catch (error) {
       return { ok: false, stage: 'preflight', error, approved: true }
     }
   }
 
-  const tx = await gateway.swap(isEthIn, amountIn, minOut)
+  const tx = await gateway.swap(isEthIn, amountIn, sendMin)
   await tx.wait()
-  return { ok: true, quoted, minOut, hash: tx.hash, approved: needsApproval }
+  return { ok: true, quoted, minOut: sendMin, hash: tx.hash, approved: needsApproval }
 }
 
 // ── 4. 定時重讀＋回到前景立刻重讀 ───────────────────────────────────────────
@@ -370,19 +427,32 @@ export interface VisibilitySource {
 /**
  * 每 `intervalMs` 呼叫一次 `refresh`；分頁在背景時跳過（不讀鏈）。分頁**回到前景時立刻**
  * 呼叫一次（#220）——原本要等下一次定時器，最多 15 秒畫面上都是背景前的舊報價。
+ *
+ * 回到前景時先呼叫 `onResume`（頁面把報價標成 pending：背景前的報價在新報價回來前不能
+ * 拿來送出，PR #223 L3），再 `refresh`。回前景觸發的重讀有節流：距離上一次回前景重讀不到
+ * `resumeThrottleMs` 就略過（快速來回切分頁不會打一串 RPC）——那時的報價本來就是剛讀的。
  * 回傳清除函式（給 useEffect 的 cleanup）。
  */
 export function scheduleAmmRefresh(
   refresh: () => void,
   intervalMs: number,
   doc: VisibilitySource | null,
+  opts: { onResume?: () => void; resumeThrottleMs?: number; now?: () => number } = {},
 ): () => void {
+  const now = opts.now ?? (() => Date.now())
+  const throttle = opts.resumeThrottleMs ?? 2_000
+  let lastResume = -Infinity
   const timer = setInterval(() => {
     if (doc?.hidden) return
     refresh()
   }, intervalMs)
   const onVisibility = () => {
-    if (doc && !doc.hidden) refresh()
+    if (!doc || doc.hidden) return
+    const t = now()
+    if (t - lastResume < throttle) return
+    lastResume = t
+    opts.onResume?.()
+    refresh()
   }
   doc?.addEventListener('visibilitychange', onVisibility)
   return () => {

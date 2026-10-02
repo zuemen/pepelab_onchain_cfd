@@ -408,6 +408,16 @@ describe('buildSwapCardView（#215 L2／M2）', () => {
     expect(v.button).toEqual({ disabled: true, label: 'quoteUnavailable' })
   })
 
+  it('PR #223 M1：quote 極小（打 0.5% 後最低收到為 0）→ 金額太小，按鈕停用、不顯示最低收到', () => {
+    for (const out of [1n]) {
+      const v = buildSwapCardView({ ...base, live: ready({ ...okQuote, out }) })
+      expect(v.button).toEqual({ disabled: true, label: 'amountTooSmall' })
+      expect(v.minReceivedBase).toBeNull()
+    }
+    // 2 wei × 0.995 = 1.99 → 1 > 0 → 可以送（合約仍以 minOut 1 保護）
+    expect(buildSwapCardView({ ...base, live: ready({ ...okQuote, out: 2n }) }).button.label).toBe('swap')
+  })
+
   it('#220：pending（金額剛改）→ 讀取中、不顯示任何數字、按鈕停用', () => {
     const v = buildSwapCardView({ ...base, live: { status: 'pending' } })
     expect(v.quotePending).toBe(true)
