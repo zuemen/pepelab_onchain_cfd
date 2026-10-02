@@ -25,6 +25,12 @@ export const exchange: Catalog['exchange'] = {
     preflightBlocked: 'Pre-flight check failed — no transaction was sent: {reason}',
     preflightBlockedAfterApprove:
       'The approval went through, but the swap failed its pre-flight check — the swap was not sent: {reason}',
+    priceMoved:
+      'The price moved: the live quote is {quoted} {token}, below the minimum received you confirmed ({minOut} {token}). No transaction was sent — review the new quote and press again.',
+    zeroMinOut:
+      'Amount too small: the minimum received would be 0 (no slippage protection), so the swap was not sent. Increase the amount.',
+    priceMovedAfterApprove:
+      'The approval went through, but the price moved: the live quote is {quoted} {token}, below the minimum received you confirmed ({minOut} {token}). The swap was not sent — review the new quote and press again (no need to approve again).',
 
     approving: 'Approving {token}…',
     swappedEthForToken: 'Swapped {amount} ETH for ~{received} {token} ✓',
@@ -119,6 +125,9 @@ export const exchange: Catalog['exchange'] = {
     swapping: 'Swapping…',
     oracleStale: '⛔ Oracle price is stale — swaps paused',
     enterAmount: 'Enter an amount',
+    quoting: 'Fetching quote…',
+    quoteUnavailable: 'Quote unavailable',
+    amountTooSmall: 'Amount too small',
     ethToToken: 'Swap ETH → {token}',
     tokenToEth: 'Swap {token} → ETH',
   },
