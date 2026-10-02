@@ -436,7 +436,8 @@ export default function ExchangePage() {
             ),
             false,
           );
-          void refreshAmm();
+          // fetchAll 連同池子一起重讀；approve 已付的 gas 也反映到餘額上。
+          void fetchAll();
           setRefreshTick(n => n + 1);
         } else {
           notify(
