@@ -37,6 +37,7 @@ was not, the reason is given rather than glossed over.
 | 14 | x402 revenue split is an on-chain tx inside the paid request | **Fixed** — ledger + single-signer batch worker; caveats below |
 | 15 | `maxTimeoutSeconds` is advertised, not enforced | **Configured** (60s); facilitator does not enforce an upper bound |
 | 16 | Public facilitator: unknown rate limit, errors surfaced as 500 | **Partly fixed** — verify-phase errors now 429/502; limit still unknown |
+| 16b | x402 v2 (`X402_PROTOCOL` = `v2` or `both`) is built but never paid against a real facilitator | **Open** — default stays v1; mock-facilitator tests only; one small real payment is the go-live check (ADR-009 §4) |
 | 17 | No KYT/KYA screening of counterparty addresses | **Open** — not implemented, budget sketched |
 | 18 | No latency / success-rate acceptance thresholds | **Partly measured** — facilitator + 402 challenge measured; paid path not |
 | 19 | No self-hosted facilitator; x402.org pays the settlement gas | **By design (testnet)** — no SLA, we don't control or fund its wallet and have no alert on it |
@@ -585,6 +586,37 @@ stub facilitator in `signal-api/src/facilitatorErrors.test.ts`, which runs in
 - **Detection is string-based.** It matches `statusText` ("Too Many Requests")
   and reason strings. If the facilitator changes wording, recognition degrades
   back to the old behaviour. The test pins the shapes we know about.
+
+## 16b. x402 v2 support is opt-in and not yet exercised against a real facilitator (added 2026-10-02)
+
+The signal-api paywall can speak x402 v2 (`PAYMENT-REQUIRED` / `PAYMENT-SIGNATURE` /
+`PAYMENT-RESPONSE`, CAIP-2 networks) behind `X402_PROTOCOL=v1|v2|both`. The
+default is `v1`, and a golden test pins the unpaid 402 to the exact bytes master
+served before the change. Design, verified spec facts and the switch-over
+procedure: [ADR-009](ADR-009-x402-v2-migration.md).
+
+- **No real v2 payment yet.** Every v2 payment test runs against a local mock
+  facilitator that verifies the EIP-712 signature but never settles on chain.
+  Before `both` or `v2` goes live, the operator must make one small payment with
+  their own test wallet and check `PAYMENT-RESPONSE.success`, the ledger entry and
+  a single revenue split.
+- **`payment-identifier` dedup can leave money unallocated.** The v2 ledger key is
+  `pid:<payer>:<id>` when the client sends a payment identifier. The spec treats
+  one id as one logical payment, so if the same payer settles two authorizations
+  under the same id (for example, re-signing after a timeout), the split runs
+  once and the second amount stays in `payTo`, unallocated. The id sits outside
+  the signature, so whoever relays the request can also change it, but the key is
+  bound to the payer, so this only affects that payer's own entries. The worker
+  logs when it sees a completed key again.
+- **`v2` mode drops v1 clients.** In `v2`, `X-PAYMENT` is ignored and old clients
+  get a v2 402 they cannot pay. Use `both` during the transition.
+- **Settle-phase errors differ by protocol.** The v1 caveat in §16 (settle-phase
+  429 reaches the buyer as a bare 402) still holds for v1. On the v2 path the
+  adapter reads the raw facilitator error and maps settle 429/503 to 429/502.
+- **Hand-written adapter.** We do not use `@x402/hono` (body reads hang on Vercel,
+  eager network calls at cold start, extra dependencies in the bundle). The adapter
+  follows `@x402/core` 2.28.0's flow step by step and must be re-checked against
+  upstream on every upgrade. The version is pinned to `~2.28.0`.
 
 ## 17. No KYT / KYA screening of counterparty addresses
 
