@@ -15,7 +15,7 @@ PR #191 已合併進 master，但只有原始碼。鏈上現行 exchange `0x827e
 - 每個資產的 OI 上限、單筆獲利上限 `maxProfitBps`
 - `closeReasonOf` 與 `adlHaircutOf`：CopyTracker 的 slash 評分要靠這兩個欄位
 
-`PerpetualExchange` 不可升級。`CopyTracker`、`StrategyRegistry`、`AgentSessionManager` 都把 exchange 位址存成 `immutable`，所以這四個合約一起重部署。`InsuranceVault` 和 `FeeRouter` 改指向新 exchange，這一步不可逆。
+`PerpetualExchange` 不可升級。`CopyTracker`、`AgentSessionManager` 把 exchange 位址存成 `immutable`；`StrategyRegistry` 沒有 exchange 參照（唯一的 immutable 是 `stakeContract`），是腳本選擇一併新建、讓新的 `CopyTracker` 綁新的 registry。所以這四個合約一起重部署。`InsuranceVault` 和 `FeeRouter` 改指向新 exchange，這一步不可逆。
 
 ## 2. 前置條件
 

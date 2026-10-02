@@ -23,7 +23,7 @@ plan-item: P3-08
 一筆部位的虧損超過保證金時，缺口由 `_absorbShortfall` 處理（`contracts/src/PerpetualExchange.sol:1247-1269`），順序是：
 
 1. 保險金庫：`bailout(min(缺口, totalAssets))`，撥回 exchange。
-2. ADL：對同資產、反方向、有獲利的部位依建立順序掃描，最多 128 筆，削減獲利（`PerpetualExchange.sol:1301`、`:133`）。
+2. ADL：對同資產、反方向、有獲利的部位依該資產的部位索引順序掃描（部位移除時以 swap-and-pop 由尾端補位，所以不是嚴格的建立順序，`PerpetualExchange.sol:1356-1359`），最多 128 筆，削減獲利（`:1301`、`:133`）。`RISK_WATERFALL.md:48` 寫的「依建立順序」是簡化說法。
 3. 仍未覆蓋的部分發 `BadDebt` 事件，沒有後續補足機制（`docs/RISK_WATERFALL.md:51-52`）。
 
 文件的結論是「現行部署版**不保證恆償付**」（`docs/RISK_WATERFALL.md:73`）。
@@ -41,7 +41,11 @@ plan-item: P3-08
 
 | 金庫 | 資金來源 | 吸收什麼 | 證據 |
 |---|---|---|---|
-| `InsuranceVault`（pIV 份額） | 任何人 `deposit`；清算罰金（剩餘抵押的 20%）；`vaultFeeShareBps` 的交易費分成（現行為 0）；FeeRouter 的 10%（跟單費、績效費、x402 收入）；owner `recapitalize`（不發份額） | 缺口風險，只經由 `bailout` | `contracts/src/InsuranceVault.sol:82`、`:73`、`:145-146`；`PerpetualExchange.sol:1216-1218`、`:1705-1713`；`contracts/src/FeeRouter.sol:24-25`、`:102-127`；`docs/RISK_WATERFALL.md:27` |
+| `InsuranceVault`（pIV 份額） | 任何人 `deposit`；清算罰金（剩餘抵押的 20%）；`vaultFeeShareBps` 的交易費分成（現行為 0）；永續 FeeRouter 的 10%（跟單費、績效費）；owner `recapitalize`（不發份額） | 缺口風險，只經由 `bailout` | `contracts/src/InsuranceVault.sol:82`、`:73`、`:145-146`；`PerpetualExchange.sol:1216-1218`、`:1705-1713`；`contracts/src/FeeRouter.sol:24-25`、`:102-115`；`docs/RISK_WATERFALL.md:27` |
+
+x402 收入**不**進這顆金庫：它走另一顆綁官方 USDC（6 位小數）的「X402 FeeRouter」，10% 進另一顆「X402 InsuranceVault」，那顆金庫不替 exchange 吸收缺口（`docs/CAPSTONE_DELIVERABLES.md:67-71`；`.github/workflows/x402-settlement-worker.yml:57` 的 `X402_FEE_ROUTER`）。
+
+清算罰金與交易費分成進金庫時，exchange 呼叫的是**同一個** `depositFromProtocol(amount)`，沒有來源標記（`PerpetualExchange.sol:1218`、`:1712`）。新金庫若不改 exchange，就無法分辨一筆入帳是罰金還是費用（§4.2）。
 | `AssetVaultV2` 家族（UUPS） | 鑄造者的 USDC＋營運方 `fundVault` | 合成資產多頭的對手方，非足額；`minReserveRatioBps` 11000 | `docs/RISK_MODEL.md:13-18`、`:36-38`；`contracts/src/v2/AssetVaultV2_4.sol:243`、`:711` |
 
 `InsuranceVault` 的幾個性質，直接決定了分層設計要改什麼：
@@ -56,7 +60,7 @@ plan-item: P3-08
 
 ### 1.4 對沖
 
-repo 裡沒有任何對沖介面。最接近的是 signal-api 的 `/risk/exposure`：只列多空 OI 與保險金 `totalAssets`，沒有淨額欄位（`agent/signal-api/src/exposure.ts:209-210`、`:237`、`:250`）；以及聚合器裡的 `skewProxyBps`（`agent/shared/src/aggregate.ts:160`）。原始碼版的 exchange 有逐資產的 `longOpenSize`／`shortOpenSize`（`PerpetualExchange.sol:454-455`），淨曝險可以從它算，但部署版沒有。
+repo 裡沒有任何對沖介面。最接近的是 signal-api 的 `/risk/exposure`：逐資產已經有 `longUsd`、`shortUsd` 與 `netUsd`（`agent/signal-api/src/exposure.ts:209-211`，`netUsd = longUsd − shortUsd`，`:394`；部署版以 `globalNotional` 計），但 `totals` 只有多空、沒有總淨額（`:250`），也沒有最壞負債與償付比；另有聚合器裡的 `skewProxyBps`（`agent/shared/src/aggregate.ts:160`）。原始碼版的 exchange 有逐資產的 `longOpenSize`／`shortOpenSize`（`PerpetualExchange.sol:454-455`），淨曝險可以從它算，但部署版沒有。
 
 ### 1.5 白標的要求
 
@@ -72,14 +76,14 @@ ADR-008 規定每個租戶一套 `InsuranceVault`，不跨租戶 bailout（`docs
 |---|---|---|
 | Ostium（RWA perp，部署在 **Arbitrum**，不是 Base） | OLP 是 senior；junior buffer 由 Ostium 關係方與策略夥伴出資，**交易者損益先由 buffer 全額吸收**，buffer 用完才輪到 OLP。贏家由金庫鏈上支付、buffer 縮小，結算時把鏈下對沖帳的對應獲利送回鏈上補 buffer。方向性部位「先在內部軋差，只把剩餘的淨 delta」交給做市商、主經紀商等機構夥伴在**鏈下**對沖 | <https://docs.ostium.com/protocol/how-ostium-works> |
 | Ostium 提款 | OLP 提款採申請後結算，通常 2–3 天 | <https://docs.ostium.com/vault/getting-started/withdraw.md> |
-| GMX v2 GM／GLV 池 | 池子是交易者的對手方（交易者獲利來自池子的價值）；每個 GM 池風險隔離，以多空各自的 `MAX_OPEN_INTEREST` 與 `MAX_POOL_AMOUNT` 設上限，另有 reserve factor 與 `MAX_PNL_FACTOR` | <https://docs.gmx.io/docs/providing-liquidity> |
+| GMX v2 GM／GLV 池 | 池子是交易者的對手方（交易者獲利來自池子的價值）；每個 GM 池風險隔離，以多空各自的 `MAX_OPEN_INTEREST`（以及不分多空的 `MAX_POOL_AMOUNT`）設上限，另有 reserve factor 與 `MAX_PNL_FACTOR` | <https://docs.gmx.io/docs/providing-liquidity> |
 | GMX v2 ADL | 待結 PnL 對池值比例超過 `MAX_PNL_FACTOR_FOR_ADL` 時強制減少獲利部位 | <https://docs.gmx.io/docs/trading/liquidations> |
 | Hyperliquid HLP | 社群所有的金庫，負責做市與清算；從最近一次存款起鎖定 4 天 | <https://hyperliquid.gitbook.io/hyperliquid-docs/hypercore/vaults/protocol-vaults> |
 | gTrade gToken | ERC-4626 金庫；抵押不足時鑄造 GNS 補庫，上限每 24 小時總供給 0.05%；提款以 3 天為一個 epoch，依抵押率等 1–3 個 epoch | <https://docs.gains.trade/liquidity-farming-pools/gtoken-vaults>、<https://docs.gains.trade/liquidity-farming-pools/gtoken-vaults/staker-faq.md> |
-| dYdX v4 | 清算 → 保險基金 → 去槓桿；隔離市場各有獨立保險基金 | <https://help.dydx.trade/en/articles/166973-contract-loss-mechanisms-on-dydx-chain> |
-| 分層 LP（Level Finance） | Senior／Mezzanine／Junior 三種 LLP，各層隔離。**損失分配公式未查證**（官方文件抓取失敗） | <https://support.level.finance/what-can-i-do-with-a-senior-mezzanine-or-junior-llp/> |
+| dYdX v4 | 兩種機制各自運作：保險基金在清算**當下**以調整清算單價格的方式補足抵押不足；帳戶餘額轉負時去槓桿立即發生，「without using the insurance fund」。隔離市場各有獨立保險基金 | <https://help.dydx.trade/en/articles/166973-contract-loss-mechanisms-on-dydx-chain> |
+| 分層 LP（Level Finance） | Senior／Mezzanine／Junior 三種 LLP。各層是否隔離、損失分配公式：**未查證**（來源頁無法讀取） | <https://support.level.finance/what-can-i-do-with-a-senior-mezzanine-or-junior-llp/> |
 
-最接近本專案的是 Ostium：同樣是 RWA 為主、同樣以 USDC 結算、同樣需要在休市時處理跳空，而它的答案是「關係方出 junior、外部 LP 出 senior、淨 delta 在鏈下對沖」。
+最接近本專案的是 Ostium：同樣以 USDC 結算、同樣有傳統資產（Ostium 的頁面列了多類資產），它的答案是「關係方出 junior、外部 LP 出 senior、淨 delta 在鏈下對沖」。Ostium 如何處理休市跳空，上述頁面沒有寫（**未查證**）；本 ADR 對休市的處理是自己的推論（§6 第 3 點、ADR-013）。
 
 ## 3. 方案比較
 
@@ -88,7 +92,7 @@ ADR-008 規定每個租戶一套 `InsuranceVault`，不跨租戶 bailout（`docs
 | 是什麼 | 只靠 OI 上限、獲利上限、ReduceOnly 限制曝險；保險金庫照舊 | 新的 `TranchedInsuranceVault` 取代 `InsuranceVault`：junior 份額（租戶自有資本）先吸收、senior 份額（外部 LP）後吸收；介面與 exchange 相容，以 `setInsuranceVault` 換上 | 金庫直接當每筆部位的對手方：交易者獲利由金庫付、虧損進金庫；exchange 只保管保證金 | 保持現在的順序，壞帳發生後由租戶的承諾資本補足（鏈上金庫或鏈下承諾） |
 | 解決缺口風險 | 部分（減少發生） | ✓，且有明確先後 | ✓ | ✓，但只在 ADL 之後 |
 | 解決淨曝險風險 | ✗ | 部分：見下方「B 的限制」 | ✓（這是它的設計目的） | ✗ |
-| 合約改動 | 無（PR #191 已有，待 cutover） | 新合約一顆＋租戶的 FeeRouter；**exchange 不動** | exchange 平倉、清算、funding 路徑都要改 | 小（一顆收款合約）或無（鏈下） |
+| 合約改動 | 無（PR #191 已有，待 cutover） | 新合約一顆＋新 FeeRouter（平台另需 CopyTracker，§4.4）；**exchange 的位元組不動**，代價是收入不能依來源分配（§4.2） | exchange 平倉、清算、funding 路徑都要改 | 小（一顆收款合約）或無（鏈下） |
 | 能否放進現行 exchange | — | 能：exchange 只呼叫三個函式，`insuranceVault` 可換 | **不能**：exchange 只剩 665 B（`docs/DEPLOY_130_CUTOVER.md:264`），要等 V3（ADR-015） | 能 |
 | 對終端客戶 | ADL 仍是第二道 | junior＋senior 都用完才 ADL | ADL 只在池子 PnL 比例過高時 | **ADL 先於租戶資本**：客戶的帳面獲利會先被削，持牌機構最難對客戶解釋的一種 |
 | 出資人報酬 | — | junior 拿較高的費用分成＋清算罰金優先；senior 拿較低、較穩的分成 | junior 拿交易者淨損失（house edge）＋費用；senior 拿固定比例 | backstop 承擔最少，報酬最低（或只是義務、無報酬） |
@@ -103,7 +107,15 @@ ADR-008 規定每個租戶一套 `InsuranceVault`，不跨租戶 bailout（`docs
 
 ## 4. 決定（建議）
 
-**採 B，作為上主網前的版本；C 進 V3（ADR-015），D 不作為預設、改為擁有者可選的附加承諾。**
+**採 B；C 是 V3 的第二階段（ADR-015）；D 不作為預設、改為擁有者可選的附加承諾。**
+
+版本對應（與 ADR-015 一致：主網只上 V3）：
+
+| 版本 | 金庫 | 用在哪裡 |
+|---|---|---|
+| V1（現行 exchange） | B：`TranchedInsuranceVault`，以 `setInsuranceVault` 換上 | 只在測試網與租戶試點；用來驗證分層會計、提領冷卻與租戶風控流程 |
+| V3 第一階段 | B：同一套分層會計，作為 V3 的持資金合約之一（ADR-015 §4.1），收入可依來源分配 | **主網上線時的版本** |
+| V3 第二階段 | C：金庫成為每筆部位的對手方 | 主網上線之後；工作量另列在 ADR-015 §5 |
 
 ### 4.1 新的損失吸收順序（逐倉、單一租戶）
 
@@ -116,18 +128,21 @@ ADR-008 規定每個租戶一套 `InsuranceVault`，不跨租戶 bailout（`docs
 | 4 | ADL | 反方向獲利部位的帳面獲利 | junior＋senior 都不足 | 掃描到的獲利總和（最多 128 筆） |
 | 5 | `BadDebt` 揭露；可選的租戶 backstop（方案 D） | 未覆蓋壞帳 | 順位 4 仍不足 | 無上限／依租戶承諾 |
 
-`bailout(amount)` 在新金庫裡先扣 junior、再扣 senior；`totalAssets()` 回傳 junior＋senior 的可用淨值（exchange 據此計算可撥金額與 bailout floor，`PerpetualExchange.sol:1886`）。
+`bailout(uint256 amount, address trader)`（`PerpetualExchange.sol:23`）在新金庫裡先扣 junior、再扣 senior，款項付給 `trader`（缺口路徑傳 exchange 自己、bailout floor 傳被爆倉的交易者，`:1260`、`:1927`）；`totalAssets()` 回傳 junior＋senior 的可用淨值（exchange 據此計算可撥金額與 bailout floor，`PerpetualExchange.sol:1886`）。
 
 ### 4.2 資金來源與報酬
 
 | | junior | senior |
 |---|---|---|
 | 出資人 | 租戶本身或其指定的關係方（做市商、自營部門）；**只限白名單地址** | 合格投資人或公開 LP（依租戶的法遵決定，可用租戶的 `KYCRegistry` 做門檻） |
-| 收入 | 清算罰金（現在 20% 進金庫，`PerpetualExchange.sol:1216-1218`）**全部**；交易費分成（`vaultFeeShareBps`）的較大比例 | 交易費分成的較小比例；FeeRouter 的 10%（若租戶決定給 senior） |
-| 分配比例 | 【待擁有者決定】。參數化為 `juniorFeeWeightBps`；建議預設讓 junior 的「收入／承擔」比例高於 senior，否則沒有人願意出 junior | 同左 |
+| 收入（V1） | exchange 經 `depositFromProtocol` 送進來的全部款項（清算罰金與交易費分成**無法區分**，§1.3）的較大比例；FeeRouter 的 10% 同理 | 同一筆入帳的較小比例 |
+| 收入（V3） | 清算罰金全部；交易費分成的較大比例（V3 的入帳函式帶來源參數） | 交易費分成的較小比例；FeeRouter 的 10%（若租戶決定給 senior） |
+| 分配比例 | 【待擁有者決定】。V1 參數化為單一的 `juniorShareBps`，不分來源；建議預設讓 junior 的「收入／承擔」比例高於 senior，否則沒有人願意出 junior | 同左 |
 | 最低規模 | junior 淨值 ≥ `juniorMinRatio × 最壞負債`（最壞負債用 §1.2 的公式從鏈上上限算）；低於此值時**自動停止新開倉**的做法需要改 exchange，V1 改由監控＋marketOperator 切 ReduceOnly | — |
 | 提領 | 申請後冷卻（建議 ≥ 7 天）＋提領後 junior 淨值不得低於最低規模；`bailout` 期間（有未結缺口時）凍結 | 申請後冷卻（參考 Ostium 2–3 天、HLP 4 天、gTrade 3–9 天）；冷卻期間份額仍承擔損失 |
 | 份額會計 | ERC-4626 式、含虛擬份額（一併修掉 #25） | 同左 |
+
+**為什麼 V1 不分來源：** 不改 exchange 而要分辨來源，唯一的辦法是在 `depositFromProtocol` 裡讀 exchange 的 `cumulativeVaultFees`（`PerpetualExchange.sol:277`，在 `:1710` 先遞增再呼叫金庫）比對差額。這依賴 exchange 內部的呼叫順序，exchange 任何一版改了順序就會靜默分錯，所以不採用。依來源分配留給 V3。
 
 **為什麼 junior 一定要有冷卻與凍結：** 現行 `InsuranceVault` 沒有鎖倉（`InsuranceVault.sol:97-105`），首損資本若能在 bailout 前一個區塊提走，順位表就只是紙上的。
 
@@ -156,7 +171,7 @@ ADR-008 規定每個租戶一套 `InsuranceVault`，不跨租戶 bailout（`docs
 ### 4.4 和現有金庫的關係
 
 - **`InsuranceVault`**：新租戶直接部署 `TranchedInsuranceVault`，不再部署舊版。平台自己（「租戶零」）的舊保險金庫：現有 pIV 持有人轉成 senior 份額（自願贖回後再存入，不做強制轉換），舊金庫保留到餘額為 0。
-- **`FeeRouter`**：它的 `insuranceVault` 是 immutable（`FeeRouter.sol:20`），換金庫時 FeeRouter 也要重新部署並改接（exchange 的 `feeRouter` 可換，`PerpetualExchange.sol:681`）。新租戶沒有這個問題。
+- **`FeeRouter`**：它的 `insuranceVault` 是 immutable（`FeeRouter.sol:20`），換金庫時 FeeRouter 也要重新部署並改接（exchange 的 `feeRouter` 可換，`PerpetualExchange.sol:681`）。但 **`CopyTracker.feeRouter` 也是 immutable**（`contracts/src/CopyTracker.sol:36`），#130 腳本也是以舊的 `FEE_ROUTER` 建構 CopyTracker（`contracts/script/Redeploy130Hardened.s.sol:408`）。只換 exchange 的 FeeRouter，跟單費（`CopyTracker.sol:177-181`）仍會流進舊 FeeRouter、再進舊金庫，舊金庫的餘額永遠不會歸零。平台要二擇一：CopyTracker 一起重部署（它還把 exchange 與 `StrategyRegistry` 存成 immutable，`:34-35`，跟單關係要遷移），或接受跟單費繼續流進舊金庫、舊金庫長期保留。新租戶從一開始就部署新金庫，沒有這個問題。
 - **`AssetVaultV2`**：不併入。它承擔的是合成資產多頭，風險形狀不同（準備率而不是保證金）。但租戶若同時開兩個產品，它的 junior 資本與 `fundVault` 的注資是**同一筆公司資本的兩個用途**，風控要合併看（§6）。
 - **ADL 與 `BadDebt`**：合約邏輯不變；只是前面多了兩層。
 
@@ -166,11 +181,12 @@ ADR-008 規定每個租戶一套 `InsuranceVault`，不跨租戶 bailout（`docs
 
 | 階段 | 內容 | 工作量 | 前置 |
 |---|---|---|---|
-| **0. 量測與揭露（不改合約）** | (1) `/risk/exposure` 加逐資產淨曝險、最壞負債、exchange 餘額 vs. 總請求權；(2) 監控新增「償付性」與「淨曝險 / 金庫淨值」兩條規則（ADR-009 的規則流程）；(3) 租戶風控報告範本（§6 的清單） | 3–5 人日 | 淨曝險要原始碼版 exchange（#130 cutover 後） |
+| **0. 量測與揭露（不改合約）** | (1) `/risk/exposure` 補上總淨額、最壞負債、exchange 餘額 vs. 總請求權（逐資產 `netUsd` 已有）；(2) 監控新增「償付性」與「淨曝險 / 金庫淨值」兩條規則（ADR-009 的規則流程）；(3) 租戶風控報告範本（§6 的清單） | 3–5 人日 | 淨曝險要原始碼版 exchange（#130 cutover 後） |
 | **1. `TranchedInsuranceVault`** | (1) 實作 `IInsuranceVaultPerp` 三個函式，`bailout` 先 junior 後 senior，支援 `bailout(floor, trader)` 直接付交易者；(2) 兩種份額、虛擬份額、提領申請與冷卻、有缺口時凍結 junior；(3) junior 白名單、senior 可接 `KYCRegistry`；(4) Timelock 才能呼叫的 `fundExchange`（用 junior 資金補 exchange 的償付缺口，處理淨曝險，見 §3「B 的限制」）；(5) 收入分配參數；(6) fuzz／invariant 測試：任何順序的 bailout、提領、存入下，junior 先歸零才動 senior | 10–15 人日 | — |
 | **2. 部署工具與租戶接線** | `DeployTenant.s.sol` 改部署新金庫；`VerifyTenant` 讀回；監控規則；`TENANT_DEPLOYMENT.md`、`RISK_WATERFALL.md` 改寫 | 3–5 人日 | 階段 1 |
-| **3. 平台（租戶零）切換** | 部署新金庫與新 FeeRouter，Timelock 排程 `setInsuranceVault`／`setFeeRouter`（48 小時），舊金庫只剩贖回 | 2 人日＋48 小時延遲 | 階段 1、Timelock 移交（P1-15） |
-| **4. V3 對手方金庫（方案 C）** | 併入 ADR-015 的 V3：金庫成為每筆部位的對手方 | 隨 V3 估計 | ADR-015 |
+| **3. 平台（租戶零，測試網 V1）切換** | 部署新金庫與新 FeeRouter，Timelock 排程 `setInsuranceVault`／`setFeeRouter`（48 小時）；CopyTracker 一起重部署並遷移跟單關係，或明文接受跟單費繼續流進舊金庫（§4.4）；舊金庫只剩贖回 | 2 人日（只換金庫與 FeeRouter）；含 CopyTracker 重部署與跟單遷移另加 3–5 人日；＋48 小時延遲 | 階段 1、Timelock 移交（P1-15） |
+| **4. V3 第一階段的分層金庫** | 同一套分層會計搬進 V3，入帳函式帶來源參數 | 計入 ADR-015 §5 階段 1–2 | ADR-015 |
+| **5. V3 第二階段：對手方金庫（方案 C）** | 金庫成為每筆部位的對手方 | 見 ADR-015 §5 的「V3 第二階段」列 | ADR-015 |
 | 外部稽核 | 新金庫是持資金合約 | **未查證**（要詢價） | 階段 1 |
 
 ## 6. 對 B2B 租戶的意義：風控部門要看什麼
@@ -206,12 +222,13 @@ ADR-008 規定每個租戶一套 `InsuranceVault`，不跨租戶 bailout（`docs
 6. **平台自己（租戶零）是否也要有 junior**：如果有，出資人是誰。
 7. **senior 單日撥款上限**：要不要設（設了會在大事故時更早進入 ADL，但給人工介入時間）。
 8. **鏈上 hedger**：維持「鏈上只看、不動錢」（建議），還是在 V3 評估鏈上對沖。
+9. **平台測試網的 CopyTracker**：換金庫時一起重部署並遷移跟單關係，還是接受跟單費繼續流進舊金庫（§4.4）。
 
 ## 9. Consequences
 
 - 每個租戶的部署多一顆持資金合約（取代舊的 `InsuranceVault`），稽核範圍增加。
 - 損失順位從「保險 → ADL → 壞帳」變成「junior → senior → ADL → 壞帳」，`RISK_WATERFALL.md`、`INTEGRATION_GUIDE.md`、租戶的風險揭露書都要改。
-- 淨曝險風險在 V1 仍然只有「監控＋人工注資」，不是自動的；這一點要寫進 `KNOWN_LIMITATIONS.md`，直到 V3 的對手方金庫上線。
+- 淨曝險風險在 V1 與 V3 第一階段仍然只有「監控＋人工注資」，不是自動的，直到 V3 第二階段的對手方金庫上線。`KNOWN_LIMITATIONS.md` 目前沒有這一條（「淨曝險沒有資本後盾」）；本 PR 依分工不改 `KNOWN_LIMITATIONS.md`，列為後續待辦，補上後兩邊交叉引用。
 - 平台不經手對沖，因此不承擔租戶的對沖損益，也不需要對沖場所的帳戶；代價是平台無法保證租戶真的有對沖。
 
 ## 10. 參考
