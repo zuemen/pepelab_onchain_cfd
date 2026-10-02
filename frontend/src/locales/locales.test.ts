@@ -141,7 +141,11 @@ function isLineException(file: string, text: string): boolean {
   return LINE_EXCEPTIONS.some((exc) => exc.file === rel && text.includes(exc.contains));
 }
 
-describe('migration ratchets', () => {
+// 這組測試同步掃整個檔案樹，Windows 開發機在負載下要 3～17 秒。vitest 2 不對同步測試計時，
+// vitest 4 會在同步測試結束後比對耗時、超過 testTimeout（預設 5 秒）就判失敗，所以在這裡明確給
+// 60 秒上限：不讓機器負載決定結果，真正卡住時仍會失敗。
+const SCAN = { timeout: 60_000 };
+describe('migration ratchets', SCAN, () => {
   it('keeps the whole source tree free of inline display strings', () => {
     const offenders = allSourceFiles().flatMap((file) =>
       findInlineDisplayStrings(fs.readFileSync(file, 'utf8'))
