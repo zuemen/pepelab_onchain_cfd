@@ -71,13 +71,18 @@ contract GuardedOracle is AccessControl {
     ///      and it has not lapsed (`_inForce`); every read and write path goes
     ///      through that, so a lapsed guardian halt stops applying by itself,
     ///      with no transaction.
+    ///
+    ///      Once a guardian halt is no longer in force (lapsed, or lifted
+    ///      early) `since` and `expiresAt` are kept as the record of when it
+    ///      ACTUALLY ran: lifting early writes the lift time into `expiresAt`.
+    ///      The cross-scope rule reads the pause's record (see "guardian").
     struct Halt {
         bool   on;
-        uint64 since;              // start of the halt now stored
-        uint64 expiresAt;          // 0 = no expiry (placed or taken over by the admin)
+        bool   pinned;             // pause only: a guardian freeze was placed while this guardian pause was in force
+        uint64 since;              // start of the latest halt
+        uint64 expiresAt;          // in force: 0 = no expiry (admin); guardian halt over: when it actually ended
         uint64 guardianWindowEnd;  // end of the latest guardian window on this scope
     }
-
     mapping(bytes32 => Halt) private _freezes;
     Halt private _pause;
 
@@ -164,6 +169,11 @@ contract GuardedOracle is AccessControl {
     error GuardianCooldown(uint256 allowedAt);
     /// @notice Only the admin can lift a halt that has no expiry.
     error NotGuardianHalt();
+    /// @notice `takeOverAssetFreeze` / `takeOverPause` found no guardian halt
+    ///         in force (it was lifted or has lapsed, or the admin already
+    ///         holds it). A queued takeover therefore never turns into a new
+    ///         halt of its own.
+    error NothingToTakeOver();
 
     constructor(address admin) {
         if (admin == address(0)) revert InvalidParam();
@@ -242,6 +252,16 @@ contract GuardedOracle is AccessControl {
     /// @notice Same as `guardianFreezeTerms`, for the pause.
     function guardianPauseTerms() external view returns (uint256 expiresAt, uint256 allowedAt) {
         return _guardianTerms(_pause, false);
+    }
+
+    /// @notice When the latest guardian pause ACTUALLY ran, once it is no
+    ///         longer in force: `end` is the lift time if it was lifted early,
+    ///         else its expiry. (0, 0) while a pause is in force, or when the
+    ///         latest pause was the admin's. This is what the cross-scope rule
+    ///         reads (see "guardian").
+    function lastGuardianPause() external view returns (uint256 start, uint256 end) {
+        if (_inForce(_pause) || _pause.expiresAt == 0) return (0, 0);
+        return (_pause.since, _pause.expiresAt);
     }
 
     // ── keeper writes ────────────────────────────────────────────────────────
@@ -380,35 +400,51 @@ contract GuardedOracle is AccessControl {
     //
     //   ADMIN (DEFAULT_ADMIN_ROLE; the timelock after the handover)
     //     - a halt it places never expires; only the admin lifts it;
-    //     - calling again on a running guardian halt takes it over (clears the
-    //       expiry);
+    //     - `takeOverAssetFreeze` / `takeOverPause` turn a RUNNING guardian
+    //       halt into one with no expiry, and revert when there is none, so a
+    //       takeover queued in the timelock cannot become a fresh halt after
+    //       the guardian lifted a false alarm;
+    //     - `setAssetFrozen(id, true)` / `setPaused(true)` mean "make sure an
+    //       admin halt with no expiry is in force": they start one, or convert
+    //       a running guardian halt, and are a no-op on the admin's own halt;
     //     - may lift any halt.
     //
     //   GUARDIAN (GUARDIAN_ROLE without the admin role; a hot key)
-    //     - a halt it places lapses at the end of the scope's guardian window,
-    //       GUARDIAN_HALT_DURATION after that window opened;
-    //     - cannot extend: halting a scope that is already halted reverts, so
-    //       it also cannot swap the admin's no-expiry halt for one that expires;
-    //     - may lift a guardian halt early (a false alarm must not cost 72h)
-    //       and re-halt inside the same window, but the window's end is fixed
-    //       when it opens: lifting and re-halting never moves it;
-    //     - after the window ends, no new window on that scope for
-    //       GUARDIAN_HALT_COOLDOWN;
-    //     - cannot lift a halt that has no expiry.
+    //     - a halt it places lapses at most GUARDIAN_HALT_DURATION after it
+    //       starts and cannot be extended: halting a scope that is already
+    //       halted reverts (so it also cannot swap the admin's no-expiry halt
+    //       for one that expires); it cannot lift a halt with no expiry;
+    //     - FREEZE: may lift its freeze early (a false alarm must not cost
+    //       72h) and re-freeze inside the same window; the window's end is
+    //       fixed when it opens. After the window ends, no new freeze window
+    //       on that asset for GUARDIAN_HALT_COOLDOWN;
+    //     - PAUSE: lifting it early CLOSES its window at the lift, so the 24h
+    //       cooldown runs from when the pause actually ended. Exception: when
+    //       a guardian freeze was placed while the pause was in force
+    //       ("pinned"), that freeze runs to the pause's original end, and so
+    //       does the pause window (no re-pause inside it; cooldown from there).
     //   The clocks belong to the scope, not to the caller: several guardian
     //   keys share them.
     //
     // The pause covers every asset, so the per-asset clocks alone would let a
     // guardian alternate "freeze X" and "pause" and keep X unreadable for
-    // good. A guardian freeze therefore also answers to the pause's clock:
-    //   - while a guardian pause window runs, a new freeze window ends no
-    //     later than the pause window;
-    //   - during the pause's cooldown no new freeze window opens.
-    // Net effect for any one asset, against a guardian acting alone: every
-    // guardian pause window is followed by 24h with no guardian halt on that
-    // asset at all, a freeze window is followed by 24h without a freeze, and
-    // no unbroken guardian halt lasts longer than 2 x GUARDIAN_HALT_DURATION
-    // (a freeze, then a pause opened before it ends).
+    // good. A guardian freeze opening a new window therefore also answers to
+    // the pause, as it ACTUALLY ran (not to a window it no longer holds):
+    //   - while a guardian pause is in force, the freeze ends no later than
+    //     the pause does (and pins it, above);
+    //   - within GUARDIAN_HALT_COOLDOWN after a guardian pause that ran for
+    //     `d` ended, the freeze is refused if this asset had a guardian freeze
+    //     window ending less than GUARDIAN_HALT_COOLDOWN before that pause
+    //     started, or if d >= GUARDIAN_HALT_DURATION; otherwise it is
+    //     shortened by `d`. A pause lifted at once (a false alarm) therefore
+    //     costs other freezes nothing;
+    //   - otherwise, and under an admin pause, the full window.
+    // Net effect for any one asset, against a guardian acting alone: no
+    // unbroken guardian halt lasts longer than 2 x GUARDIAN_HALT_DURATION
+    // (144h: a freeze, then a pause opened before it ends), and the halted
+    // stretch between two clean GUARDIAN_HALT_COOLDOWN spans is at most 168h,
+    // so a clean day starts at most 192h after the previous one did. See
+    // docs/KNOWN_LIMITATIONS.md #27.
     //
     // A lapse only removes the halt. The stored price is as old as the halt,
     // so `maxPriceAge` (here and in each consumer) still decides whether it is
@@ -428,7 +464,7 @@ contract GuardedOracle is AccessControl {
             } else if (outcome == HaltOutcome.TakenOver) {
                 emit AssetFreezeTakenOver(assetId, msg.sender);
             }
-        } else if (_lift(h)) {
+        } else if (_lift(h, false)) {
             emit AssetFrozen(assetId, false);
             emit AssetFreezeLifted(assetId, msg.sender);
         }
@@ -444,10 +480,25 @@ contract GuardedOracle is AccessControl {
             } else if (outcome == HaltOutcome.TakenOver) {
                 emit PauseTakenOver(msg.sender);
             }
-        } else if (_lift(_pause)) {
+        } else if (_lift(_pause, true)) {
             emit PausedSet(false);
             emit PauseLifted(msg.sender);
         }
+    }
+
+    /// @notice Admin only: the running guardian freeze of `assetId` no longer
+    ///         expires. Reverts `NothingToTakeOver` when no guardian freeze is
+    ///         in force, so a takeover queued in the timelock does nothing if
+    ///         the guardian has lifted it (or it lapsed) in the meantime.
+    function takeOverAssetFreeze(bytes32 assetId) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _takeOver(_freezes[assetId]);
+        emit AssetFreezeTakenOver(assetId, msg.sender);
+    }
+
+    /// @notice Admin only: same as `takeOverAssetFreeze`, for the pause.
+    function takeOverPause() external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _takeOver(_pause);
+        emit PauseTakenOver(msg.sender);
     }
 
     // ── admin ────────────────────────────────────────────────────────────────
@@ -509,25 +560,47 @@ contract GuardedOracle is AccessControl {
         returns (uint256 expiresAt, uint256 allowedAt)
     {
         uint256 end = h.guardianWindowEnd;
-        // The scope's window is still running (the halt was lifted early):
-        // same end, never a later one.
         // forge-lint: disable-next-line(block-timestamp)
-        if (block.timestamp < end) return (end, 0);
+        if (block.timestamp < end) {
+            // A freeze lifted early may re-freeze inside its window: same
+            // end, never a later one. A pause window still open here is one
+            // pinned by a freeze (see _lift): no re-pause inside it.
+            if (isAsset) return (end, 0);
+            return (0, end + GUARDIAN_HALT_COOLDOWN);
+        }
         // forge-lint: disable-next-line(block-timestamp)
         if (end != 0 && block.timestamp < end + GUARDIAN_HALT_COOLDOWN) {
             return (0, end + GUARDIAN_HALT_COOLDOWN);
         }
 
         expiresAt = block.timestamp + GUARDIAN_HALT_DURATION;
-        if (isAsset) {
-            uint256 pauseEnd = _pause.guardianWindowEnd;
-            // forge-lint: disable-next-line(block-timestamp)
-            if (block.timestamp < pauseEnd) {
-                if (pauseEnd < expiresAt) expiresAt = pauseEnd;
-            // forge-lint: disable-next-line(block-timestamp)
-            } else if (pauseEnd != 0 && block.timestamp < pauseEnd + GUARDIAN_HALT_COOLDOWN) {
-                return (0, pauseEnd + GUARDIAN_HALT_COOLDOWN);
+        if (!isAsset) return (expiresAt, 0);
+
+        // Cross-scope: the pause as it actually ran. An admin pause (no
+        // expiry) is the admin's call and does not limit the guardian here.
+        Halt storage p = _pause;
+        uint256 pEnd = p.expiresAt;
+        if (pEnd == 0) return (expiresAt, 0);
+        if (_inForce(p)) {
+            // A guardian pause is running: end with it.
+            if (pEnd < expiresAt) expiresAt = pEnd;
+            return (expiresAt, 0);
+        }
+        // forge-lint: disable-next-line(block-timestamp)
+        if (block.timestamp < pEnd + GUARDIAN_HALT_COOLDOWN) {
+            // A guardian pause ended less than a cooldown ago.
+            uint256 pStart = p.since;
+            uint256 ran = pEnd - pStart;
+            // The asset was frozen by the guardian shortly before (or during)
+            // that pause, or the pause ran its full length: the asset gets
+            // its clean day first.
+            if ((end != 0 && end + GUARDIAN_HALT_COOLDOWN > pStart) || ran >= GUARDIAN_HALT_DURATION) {
+                return (0, pEnd + GUARDIAN_HALT_COOLDOWN);
             }
+            // Otherwise shortened by how long the pause ran, so the pause and
+            // this freeze together stay inside the bounds. A pause lifted at
+            // once costs nothing.
+            expiresAt -= ran;
         }
     }
 
@@ -548,6 +621,13 @@ contract GuardedOracle is AccessControl {
         uint256 allowedAt;
         (expiresAt, allowedAt) = _guardianTerms(h, isAsset);
         if (allowedAt != 0) revert GuardianCooldown(allowedAt);
+        if (isAsset) {
+            // A freeze placed under a running guardian pause pins that
+            // pause's window to its original end (see _lift).
+            if (_pause.expiresAt != 0 && _inForce(_pause)) _pause.pinned = true;
+        } else {
+            h.pinned = false;
+        }
         h.on = true;
         h.since = uint64(block.timestamp);
         h.expiresAt = uint64(expiresAt);
@@ -556,16 +636,32 @@ contract GuardedOracle is AccessControl {
     }
 
     /// @return lifted True when a halt that was in force has been removed.
-    function _lift(Halt storage h) internal returns (bool lifted) {
+    function _lift(Halt storage h, bool isPause) internal returns (bool lifted) {
         lifted = _inForce(h);
         if (!hasRole(DEFAULT_ADMIN_ROLE, msg.sender)) {
             _checkRole(GUARDIAN_ROLE);
             if (lifted && h.expiresAt == 0) revert NotGuardianHalt();
         }
-        // Also clears the leftovers of a lapsed guardian halt. The guardian
-        // window is left alone: lifting never shortens the cooldown.
+        if (lifted) {
+            if (h.expiresAt != 0) {
+                // A guardian halt ended early: [since, now] is its record.
+                h.expiresAt = uint64(block.timestamp);
+                // A freeze window stays open (re-freeze allowed until its
+                // end). A pause window closes here, so its cooldown runs from
+                // when it actually ended -- unless a freeze placed under it
+                // still runs to the original end.
+                if (isPause && !h.pinned) h.guardianWindowEnd = uint64(block.timestamp);
+            } else {
+                // An admin halt leaves no guardian record.
+                h.since = 0;
+            }
+        }
+        // A lapsed guardian halt keeps its record; only the flag is cleared.
         h.on = false;
-        h.since = 0;
+    }
+
+    function _takeOver(Halt storage h) internal {
+        if (!_inForce(h) || h.expiresAt == 0) revert NothingToTakeOver();
         h.expiresAt = 0;
     }
 

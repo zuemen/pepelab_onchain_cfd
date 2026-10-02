@@ -272,6 +272,10 @@ contract GuardedOracleHaltExpiryTest is Test {
         assertTrue(_frozen(ID));
     }
 
+    /// @dev `setAssetFrozen(id, true)` by the admin means "an admin freeze with
+    ///      no expiry is in force afterwards": on a running guardian freeze it
+    ///      converts it. Unlike `takeOverAssetFreeze` it also STARTS one when
+    ///      nothing is in force, so it is not the call to queue as a takeover.
     function test_adminTakesOverAGuardianFreeze() public {
         _gFreeze(ID);
         vm.warp(T0 + 48 hours);
@@ -294,6 +298,95 @@ contract GuardedOracleHaltExpiryTest is Test {
 
         oracle.setAssetFrozen(ID, false);
         assertFalse(_frozen(ID));
+    }
+
+    // ── admin takeover (review finding A-F2) ─────────────────────────────────
+
+    function test_takeOverAssetFreeze_runningGuardianFreeze() public {
+        _gFreeze(ID);
+        vm.warp(T0 + 48 hours);
+        vm.expectEmit(true, true, false, true, address(oracle));
+        emit AssetFreezeTakenOver(ID, admin);
+        oracle.takeOverAssetFreeze(ID);
+        (bool inForce, uint256 since, uint256 expiresAt, ) = oracle.freezeOf(ID);
+        assertTrue(inForce);
+        assertEq(since, T0);
+        assertEq(expiresAt, 0);
+        vm.warp(T0 + 30 days);
+        assertTrue(_frozen(ID));
+        vm.prank(guardian);
+        vm.expectRevert(GuardedOracle.NotGuardianHalt.selector);
+        oracle.setAssetFrozen(ID, false);
+    }
+
+    /// @dev The timelock case: the takeover is queued right after the guardian
+    ///      freezes; the guardian then finds a false alarm and lifts. When the
+    ///      queued call runs it must not start a new freeze with no expiry.
+    function test_takeOverAssetFreeze_afterTheGuardianLiftedRevertsAndFreezesNothing() public {
+        _gFreeze(ID);
+        vm.warp(T0 + 2 hours);
+        _gLift(ID);
+        vm.warp(T0 + 2 hours + 48 hours);
+        vm.expectRevert(GuardedOracle.NothingToTakeOver.selector);
+        oracle.takeOverAssetFreeze(ID);
+        assertFalse(_frozen(ID));
+    }
+
+    function test_takeOverAssetFreeze_revertsWhenNothingToTakeOver() public {
+        // nothing ever placed
+        vm.expectRevert(GuardedOracle.NothingToTakeOver.selector);
+        oracle.takeOverAssetFreeze(ID);
+        // lapsed
+        _gFreeze(ID);
+        vm.warp(T0 + DURATION);
+        vm.expectRevert(GuardedOracle.NothingToTakeOver.selector);
+        oracle.takeOverAssetFreeze(ID);
+        // the admin's own (no expiry) freeze
+        oracle.setAssetFrozen(ID2, true);
+        vm.expectRevert(GuardedOracle.NothingToTakeOver.selector);
+        oracle.takeOverAssetFreeze(ID2);
+    }
+
+    function test_takeOverPause_runningAndLifted() public {
+        _gPause();
+        vm.warp(T0 + 1 hours);
+        _gUnpause();
+        vm.expectRevert(GuardedOracle.NothingToTakeOver.selector);
+        oracle.takeOverPause();
+        assertFalse(oracle.paused());
+
+        vm.warp(T0 + 1 hours + COOLDOWN);
+        _gPause();
+        vm.expectEmit(true, false, false, true, address(oracle));
+        emit PauseTakenOver(admin);
+        oracle.takeOverPause();
+        (bool inForce, , uint256 expiresAt, ) = oracle.pauseState();
+        assertTrue(inForce);
+        assertEq(expiresAt, 0);
+        vm.warp(T0 + 90 days);
+        assertTrue(oracle.paused());
+        vm.expectRevert(GuardedOracle.NothingToTakeOver.selector);
+        oracle.takeOverPause();
+    }
+
+    function test_takeOverIsAdminOnly() public {
+        _gFreeze(ID);
+        _gPause();
+        vm.startPrank(guardian);
+        vm.expectRevert();
+        oracle.takeOverAssetFreeze(ID);
+        vm.expectRevert();
+        oracle.takeOverPause();
+        vm.stopPrank();
+    }
+
+    /// @dev After the handover the timelock holds no GUARDIAN_ROLE.
+    function test_takeOverWorksWithoutTheGuardianRole() public {
+        oracle.renounceRole(oracle.GUARDIAN_ROLE(), admin);
+        _gFreeze(ID);
+        oracle.takeOverAssetFreeze(ID);
+        (, , uint256 expiresAt, ) = oracle.freezeOf(ID);
+        assertEq(expiresAt, 0);
     }
 
     function test_adminFreezeIsIdempotent() public {
@@ -432,15 +525,57 @@ contract GuardedOracleHaltExpiryTest is Test {
         assertEq(expiresAt, T0 + DURATION + COOLDOWN + DURATION);
     }
 
-    function test_guardianUnpauseAndRepauseKeepsTheWindowEnd() public {
+    /// @dev Lifting a guardian pause early closes its window at the lift:
+    ///      the cooldown runs from when the pause actually ended, and the next
+    ///      pause gets a full window of its own.
+    function test_guardianUnpauseClosesThePauseWindow() public {
         _gPause();
         vm.warp(T0 + 3 hours);
         _gUnpause();
         assertFalse(oracle.paused());
-        vm.warp(T0 + 70 hours);
+        (, , , uint256 windowEnd) = oracle.pauseState();
+        assertEq(windowEnd, T0 + 3 hours);
+        (uint256 s0, uint256 e0) = oracle.lastGuardianPause();
+        assertEq(s0, T0);
+        assertEq(e0, T0 + 3 hours);
+
+        vm.warp(T0 + 3 hours + COOLDOWN - 1);
+        vm.prank(guardian2);
+        vm.expectRevert(abi.encodeWithSelector(GuardedOracle.GuardianCooldown.selector, T0 + 3 hours + COOLDOWN));
+        oracle.setPaused(true);
+
+        vm.warp(T0 + 3 hours + COOLDOWN);
         _gPause();
         (, , uint256 expiresAt, ) = oracle.pauseState();
-        assertEq(expiresAt, T0 + DURATION);
+        assertEq(expiresAt, T0 + 3 hours + COOLDOWN + DURATION);
+        (s0, e0) = oracle.lastGuardianPause();
+        assertEq(s0 + e0, 0, "no record while a pause is in force");
+    }
+
+    /// @dev A freeze placed while the pause was in force runs to the pause's
+    ///      original end, so lifting that pause early does not close its
+    ///      window: no re-pause inside it, cooldown from the original end.
+    function test_pausePinnedByAFreezeKeepsItsWindowWhenLifted() public {
+        _gPause();
+        vm.warp(T0 + 1 hours);
+        _gFreeze(ID);
+        (, , uint256 fe, ) = oracle.freezeOf(ID);
+        assertEq(fe, T0 + DURATION);
+        vm.warp(T0 + 2 hours);
+        _gUnpause();
+        (, , , uint256 windowEnd) = oracle.pauseState();
+        assertEq(windowEnd, T0 + DURATION);
+
+        vm.warp(T0 + 30 hours);
+        vm.prank(guardian);
+        vm.expectRevert(abi.encodeWithSelector(GuardedOracle.GuardianCooldown.selector, T0 + DURATION + COOLDOWN));
+        oracle.setPaused(true);
+        (uint256 e, uint256 allowedAt) = oracle.guardianPauseTerms();
+        assertEq(e, 0);
+        assertEq(allowedAt, T0 + DURATION + COOLDOWN);
+
+        vm.warp(T0 + DURATION + COOLDOWN);
+        _gPause();
     }
 
     function test_adminPauseNeverExpires_guardianCannotLiftOrReplaceIt() public {
@@ -489,14 +624,57 @@ contract GuardedOracleHaltExpiryTest is Test {
         assertFalse(oracle.paused());
     }
 
-    /// @dev Same cap when the pause was lifted early: the pause WINDOW still runs.
-    function test_freezeIsCappedByAPauseWindowEvenAfterTheGuardianUnpaused() public {
+    /// @dev Review finding A-F1 (PR #219): a pause lifted early used to cap
+    ///      every freeze until the end of its 72h WINDOW, then lock all freezes
+    ///      out for a day. Now only what the pause actually ran counts: lifted
+    ///      at once, it costs a later freeze nothing.
+    function test_freezeAfterAnEarlyUnpauseCountsOnlyWhatThePauseRan() public {
         _gPause();
+        _gUnpause();                               // false alarm: ran 0s
+        vm.warp(T0 + 10 hours);
+        _gFreeze(ID2);
+        (, , uint256 e2, ) = oracle.freezeOf(ID2);
+        assertEq(e2, T0 + 10 hours + DURATION);
+        vm.warp(T0 + 30 hours);
+        _gFreeze(ID);
+        (, , uint256 expiresAt, ) = oracle.freezeOf(ID);
+        assertEq(expiresAt, T0 + 30 hours + DURATION);
+    }
+
+    /// @dev A pause that ran 20h and was lifted: within the next day a new
+    ///      freeze is 20h shorter; after that day, full length.
+    function test_freezeAfterAnEarlyUnpauseIsShortenedByThePauseLength() public {
+        _gPause();
+        vm.warp(T0 + 20 hours);
         _gUnpause();
         vm.warp(T0 + 30 hours);
         _gFreeze(ID);
         (, , uint256 expiresAt, ) = oracle.freezeOf(ID);
-        assertEq(expiresAt, T0 + DURATION);
+        assertEq(expiresAt, T0 + 30 hours + DURATION - 20 hours);
+        vm.warp(T0 + 20 hours + COOLDOWN);
+        _gFreeze(ID2);
+        (, , uint256 e2, ) = oracle.freezeOf(ID2);
+        assertEq(e2, T0 + 20 hours + COOLDOWN + DURATION);
+    }
+
+    /// @dev An asset whose guardian freeze window ended less than a day
+    ///      before a pause started gets no new freeze within a day after that
+    ///      pause, however short the pause was.
+    function test_recentlyFrozenAssetWaitsADayAfterAPause() public {
+        _gFreeze(ID);                              // window [0, 72h)
+        vm.warp(T0 + DURATION + 10 hours);
+        _gPause();
+        _gUnpause();                               // ran 0s, at 82h
+        vm.warp(T0 + DURATION + COOLDOWN);         // own cooldown over
+        vm.prank(guardian);
+        vm.expectRevert(abi.encodeWithSelector(GuardedOracle.GuardianCooldown.selector, T0 + DURATION + 10 hours + COOLDOWN));
+        oracle.setAssetFrozen(ID, true);
+        // Another asset is not affected.
+        _gFreeze(ID2);
+        (, , uint256 e2, ) = oracle.freezeOf(ID2);
+        assertEq(e2, T0 + DURATION + COOLDOWN + DURATION);
+        vm.warp(T0 + DURATION + 10 hours + COOLDOWN);
+        _gFreeze(ID);
     }
 
     function test_noNewFreezeWindowDuringThePauseCooldown() public {
@@ -563,7 +741,9 @@ contract GuardedOracleHaltExpiryTest is Test {
     /// @dev Random guardian-only strategies (freeze, pause, lift, wait) over 60
     ///      days, hour by hour. For the watched asset:
     ///        - no unbroken guardian halt longer than 2 x 72h;
-    ///        - a clean 24h (no freeze, no pause) at least every 168h;
+    ///        - a completed clean 24h (no freeze, no pause) at least every
+    ///          215h (halted stretch between clean days < 192h, see
+    ///          GuardedOracleHaltBound.t.sol for the exact-second version);
     ///        - every halt in force ends no later than 72h from now.
     function testFuzz_guardianAlone_cleanDayAlwaysRecurs(uint256 seed) public {
         _assertCleanDaysRecur(seed, Strategy.Random);
@@ -618,7 +798,7 @@ contract GuardedOracleHaltExpiryTest is Test {
             }
             if (cleanRun >= 24) { sinceCleanDay = 0; sawCleanDay = true; }
             else sinceCleanDay++;
-            assertLe(sinceCleanDay, 168 + 24, "no clean 24h within the bound");
+            assertLe(sinceCleanDay, 191 + 24, "no clean 24h within the bound");
         }
         assertTrue(sawCleanDay);
     }
@@ -869,7 +1049,8 @@ contract GuardedOracleHaltExpiryTest is Test {
         dt = bound(dt, 0, DURATION - 1);
         _gFreeze(ID);
         vm.warp(T0 + dt);
-        oracle.setAssetFrozen(ID, takeOver);
+        if (takeOver) oracle.takeOverAssetFreeze(ID);
+        else oracle.setAssetFrozen(ID, false);
         vm.warp(T0 + DURATION + 1);
         assertEq(_frozen(ID), takeOver);
     }
