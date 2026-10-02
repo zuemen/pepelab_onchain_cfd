@@ -329,7 +329,7 @@ contract DeployTenant is TenantBase {
         vm.writeJson(record, path);
         console.log("written to contracts/%s", path);
         if (m == keccak256("broadcast")) {
-            console.log("Next: VerifyTenant against the real chain (TENANT_RECORD=%s), then docs/TENANT_DEPLOYMENT.md sec.4.", path);
+            console.log("Next: VerifyTenant against the real chain (TENANT_RECORD=%s), then docs/TENANT_DEPLOYMENT.md sec.5.", path);
         } else {
             console.log("DRY RUN - these addresses are simulated. Nothing was sent.");
         }
