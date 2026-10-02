@@ -79,3 +79,36 @@ export function firstBlocking<T extends { label: string; freshness?: Freshness |
   }
   return null
 }
+
+/**
+ * 監控頁（AgentMonitorPage）每個資產的「oracle 價格是否過期」。
+ *
+ * - 平台部署（default 與示範租戶）：照舊問 oracle 的 `isStale()`，讀取失敗當成不過期——
+ *   與改版前逐字相同（priceFreshness.test.ts 釘住）。
+ * - 專屬租戶：租戶的 GuardedOracle 刻意關掉自己的過期檢查（`maxPriceAge = 0`，理由見
+ *   ADR-008），它的 `isStale()` 因此永遠回 false，30 天沒更新的價格也會顯示成新鮮（審查 F6）。
+ *   這裡不問它，改用價格的時間戳對照讀取方（租戶 exchange 與金庫）的 6 小時上限；從未寫入
+ *   （updatedAt 為 0）也算過期。
+ */
+export async function oracleRowStale(a: {
+  platform: boolean
+  updatedAtSec: number
+  nowSec: number
+  readIsStale: () => Promise<boolean>
+  maxPriceAgeSec?: number
+}): Promise<boolean> {
+  if (a.platform) {
+    try {
+      return await a.readIsStale()
+    } catch {
+      return false
+    }
+  }
+  return blocksTrading(
+    classifyFreshness({
+      updatedAtSec: a.updatedAtSec,
+      nowSec: a.nowSec,
+      maxPriceAgeSec: a.maxPriceAgeSec ?? FALLBACK_MAX_PRICE_AGE_SEC,
+    }),
+  )
+}

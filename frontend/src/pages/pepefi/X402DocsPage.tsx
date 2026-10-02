@@ -14,7 +14,7 @@ import AccordionSummary from '@mui/material/AccordionSummary'
 import AccordionDetails from '@mui/material/AccordionDetails'
 
 import { t, interpolate } from 'src/locales'
-import { X402_FEE_ROUTER as ROUTERS } from 'src/contracts/x402'
+import { x402FeeRouter } from 'src/contracts/deployment'
 import { SIGNAL_API_URL, demoBuySignal } from 'src/lib/pepefi/signalApi'
 import { explorerTx, X402_SETTLEMENT_CHAIN_ID } from 'src/lib/pepefi/explorer'
 import { Mono as Num, LiveDot, PEPE, MONO, hexA } from 'src/components/pepefi/brandKit'
@@ -48,9 +48,10 @@ const HOW_STEPS = [docs.how.ask, docs.how.quote, docs.how.pay]
 const FAQ = [docs.faq.spend, docs.faq.trade, docs.faq.real]
 
 const OFFICIAL_USDC = '0x036CbD53842c5426634e7929541eC2318f3dCF7e'
-// 設定來源：src/contracts/x402.ts（scripts/check-addresses.mjs 與結算 worker 都比對同一份）。
+// 設定來源：平台部署是 src/contracts/x402.ts（scripts/check-addresses.mjs 與結算 worker 都比對
+// 同一份）；專屬租戶是它自己部署登記裡的 X402FeeRouter（經 src/contracts/deployment）。
 // 找不到對應鏈時明確顯示「未設定」，不要顯示空白（讀者會以為位址載入失敗）。
-const X402_FEE_ROUTER = ROUTERS[X402_SETTLEMENT_CHAIN_ID] ?? docs.advanced.fact.routerUnset
+const X402_FEE_ROUTER = x402FeeRouter(X402_SETTLEMENT_CHAIN_ID) ?? docs.advanced.fact.routerUnset
 const CIRCLE_FAUCET = 'https://faucet.circle.com'
 
 function Mono({ children }: { children: React.ReactNode }) {

@@ -9,9 +9,8 @@ import { usePepefiWallet } from 'src/layouts/pepefi'
 import { prettyError } from 'src/lib/pepefi/errorMessages'
 import { safeRead } from 'src/lib/pepefi/safeRead'
 import { fUsd, fromUnits, f18 } from 'src/lib/pepefi/format'
-import {
-  ASSET_IDS, getAddresses, getSynthTokens, type AssetSymbol,
-} from 'src/contracts/addresses'
+import { ASSET_IDS, type AssetSymbol } from 'src/contracts/addresses'
+import { getAddresses, getSynthTokens } from 'src/contracts/deployment'
 import { t, interpolate } from 'src/locales'
 import { assetPolicy } from 'src/tenant'
 import { applyAssetWhitelist } from 'src/tenant/assetPolicy'

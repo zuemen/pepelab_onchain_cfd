@@ -174,11 +174,16 @@ app 載入時也會再驗證一次；認不出的 `VITE_TENANT` **不會**退回
 **限制**：白名單與功能授權是前端與送單前的政策，**不是安全邊界**——合約不知道有租戶，任何人都能繞過
 前端直接呼叫合約。真正的隔離是每個租戶一套合約，見第 7 節。
 
-## 7. 租戶部署模型（規劃中）
+## 7. 租戶部署模型（工具已備，尚無租戶部署）
 
-目前只有**單一共用部署**（所有測試網使用者共用同一組合約與 keeper）。隔離模型與決策見
-[`ADR-008-tenant-isolation.md`](ADR-008-tenant-isolation.md)（提案中），新增租戶的步驟與部署設定範本見
-[`TENANT_DEPLOYMENT.md`](TENANT_DEPLOYMENT.md)。以下是規劃的白標模型，合約層**尚未實作**：
+目前鏈上只有**單一共用部署**（所有測試網使用者共用同一組合約與 keeper）。隔離模型與決策見
+[`ADR-008-tenant-isolation.md`](ADR-008-tenant-isolation.md)（提案中），新增租戶的步驟見
+[`TENANT_DEPLOYMENT.md`](TENANT_DEPLOYMENT.md)，部署後的營運見 [`TENANT_OPERATIONS.md`](TENANT_OPERATIONS.md)。
+
+2026-10-01 的狀態：替一個租戶部署整套專屬合約的腳本（`DeployTenant.s.sol`）、部署後的讀回驗證、前端依租戶連到
+自己的合約、以及 CI 的租戶隔離檢查都已完成，並在測試與 Base Sepolia fork 上驗證過；**還沒有任何租戶真的部署**，
+收費模式也還沒定案。下表的 keeper、signal-api 與資料源仍是規劃——其中 signal-api 目前只能隔離收款，
+回應的資料仍讀平台的合約（`TENANT_OPERATIONS.md` §2.2）。
 
 | 項目 | 規劃 | 目的 |
 |---|---|---|

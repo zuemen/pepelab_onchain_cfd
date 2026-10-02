@@ -3,7 +3,7 @@ import type { Signer, BrowserProvider } from 'ethers'
 import { useMemo } from 'react'
 import { Contract } from 'ethers'
 
-import { getV2Stack, hasV2Stack } from 'src/contracts/addresses'
+import { getV2Stack, hasV2Stack } from 'src/contracts/deployment'
 import { isDeployed } from 'src/lib/pepefi/safeRead'
 import AssetVaultV2ABI  from 'src/contracts/abi/AssetVaultV2.json'
 import GuardedOracleABI from 'src/contracts/abi/GuardedOracle.json'

@@ -3,7 +3,7 @@ import type { Signer, BrowserProvider } from 'ethers'
 import { useMemo } from 'react'
 import { Contract } from 'ethers'
 
-import { getAddresses } from 'src/contracts/addresses'
+import { getAddresses } from 'src/contracts/deployment'
 import MockUSDCABI              from 'src/contracts/abi/MockUSDC.json'
 import MockUSDTABI              from 'src/contracts/abi/MockUSDT.json'
 import AssetVaultABI            from 'src/contracts/abi/AssetVault.json'

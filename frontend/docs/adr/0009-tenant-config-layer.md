@@ -44,5 +44,63 @@ status: proposed
 - 驗證錯誤訊息是英文：`src/` 底下的中文字串會被 `locales.test.ts` 的 ratchet 當成漏搬的顯示字串，而這些是給部署者看的建置錯誤。
 - 已知未收斂：約 47 處寫死的品牌綠 `rgba(124,193,74,…)` 光暈、終端機自己的 `terminal-theme` 色票，示範租戶上仍是綠色光暈。改成 CSS 變數是下一步，不影響 default 租戶。
 - `public/tenants/<id>/` 的圖檔會出現在每一個租戶的 build 產物裡（Vite 整個複製 `public/`）。logo 本來就是公開的，設定檔（上架資產、聯絡方式）不會；若之後有不能外流的素材，要改成建置期只複製被選中租戶的目錄。
-- 新增租戶 = 新增一份 JSON（加 `public/tenants/<id>/` 素材），不需改程式；`frontend-ci.yml` 會 build 示範租戶，`src/tenant/schema.test.ts` 會驗證所有租戶檔。
+- 新增租戶 = 新增一份 JSON（加 `public/tenants/<id>/` 素材，以及部署登記 `src/contracts/deployments/<id>.json`——見文末增補），不需改程式；`frontend-ci.yml` 會 build 示範租戶，`src/tenant/schema.test.ts` 會驗證所有租戶檔。
 - agent 端（signal-api、MCP server、Telegram bot）還沒有租戶概念，回應內容與收款地址仍是單一平台的。部署層的隔離見 ADR-008。
+
+## 增補（2026-10-01）：依租戶切換合約位址——部署登記，沒有登記就 fail-closed
+
+上面第 4 點與 Consequences 寫的「設定檔沒有任何放地址的欄位」不變。這份增補決定的是：**專屬租戶的站要連它自己的合約**（根目錄 [ADR-008](../../../docs/ADR-008-tenant-isolation.md) 階段 2），那些位址從哪裡來。
+
+### 決定
+
+1. **位址來自 checked-in 的部署登記，不來自租戶設定檔。** 每個租戶一份 `src/contracts/deployments/<id>.json`，與租戶設定同名。`vite.config.ts` 把 `@tenant-deployment` alias 到被選中的那一份（`vitest.config.ts` 固定指向 `default.json`），驗證在 `src/contracts/tenantDeployment.ts`（zod strict，未知欄位拒絕）。租戶設定檔是「客戶交來的資料」，部署登記是「工程端由部署紀錄產生、經過審查與 CI 對帳的資料」；兩者分開，客戶交來的設定就沒有任何辦法把使用者導向任意合約。
+2. **登記有兩種，都是明確宣告。**
+   - `kind: "platform"`：這個租戶跑在平台的現行部署上（`addresses.ts`）。`default` 是這一種；示範租戶 `demo-bank` 也是，而且 default 以外的租戶必須寫 `note` 說明理由——它與平台共用資金、保險金與暫停鍵，只適合示範。
+   - `kind: "dedicated"`：租戶自己的整組合約（`DeployTenant.s.sol` 的產出）。內容由 `node scripts/check-tenant-deploy.mjs --print-frontend deploy/tenants/<id>.deployed.json` 產生，不手打。
+3. **被選中的租戶沒有登記檔，build 就失敗（fail-closed），不退回 default 部署。** 見下方「為什麼不退回」。
+4. **default 租戶的行為逐位元不變。** `addresses.ts` 一個字都沒動（agent 端直接 import 它，signal-api 的 bundle 指紋也涵蓋它）。`platform` 的每個 getter 直接轉呼叫 `addresses.ts` 的原函式，回傳同一個物件；`tenantDeployment.test.ts` 以 `toBe` 逐一比對，並用快照釘住 default build 會連的每一個位址（三條鏈的位址表、V2 stack、V1 代幣、AgentSessionManager、x402 路由、舊合約表）。
+5. **依租戶而不同的位址只能從 `src/contracts/deployment` 拿。** `getAddresses`、`getV2Stack`、`hasV2Stack`、`getSynthTokens`、`chainMap`、`x402FeeRouter`、`legacyExchangesFor` 都從那裡 import；AgentSessionManager 照舊走 `sessionManager.ts`（它會看登記）。`src/contracts/` 以外的檔案直接從 `addresses.ts` 拿這些 getter 或表，測試（原始碼掃描）會失敗。與租戶無關的東西（`ASSET_IDS`、`CHAIN_NAMES`、`PRIMARY_CHAIN_ID`、型別）照舊從 `addresses.ts` 拿。
+6. **專屬部署只認得它自己的那條鏈。** 換到其他鏈（平台的 Sepolia、本機 Anvil）一律是「不支援的網路」，不會落到平台在那條鏈的合約。目前前端只支援 Base Sepolia（84532）的專屬部署：錢包切換、RPC、CSP、區塊瀏覽器連結都只為它設定過，登記主網部署會讓 build 失敗。
+7. **專屬部署沒有的合約是零位址，不是平台的位址。** V1 金庫與代幣、PEPE 系列、swap router 都不屬於專屬部署；既有的「未部署」守衛處理零位址。因此專屬租戶**不得授權** `gamefi` 與 `pepeRewards`（`deploymentFeatureProblems`，build 期檢查），否則頁面會對零位址發請求。
+8. **`/legacy` 的舊合約表只屬於平台部署。** 專屬部署的 `legacyExchangesFor` 一律回空陣列——那些是平台歷次重部署留下的 exchange，租戶的使用者從來沒有在上面存過錢。
+9. **租戶隔離在三個地方檢查，任何一處不過都不會出貨。**
+
+   | 時機 | 位置 | 檢查 |
+   |---|---|---|
+   | build | `vite.config.ts` → `loadTenantDeploymentForBuild` | 登記檔存在、格式、`tenant` 與選用的租戶相同、同租戶位址不重複、除結算幣外不得出現平台部署的任何位址、授權的功能有對應合約 |
+   | app 載入 | `selectedDeployment.ts`、`sessionManager.ts` | 格式與隔離再驗一次（這裡多比對平台的 AgentSessionManager）；不過就丟錯讓 app 起不來 |
+   | CI | `scripts/check-addresses.mjs`、`scripts/check-tenant-deploy.mjs`（`consistency.yml`） | 上述全部，加上：兩個租戶之間不得共用合約、每個前端租戶都有登記檔、已部署的租戶前端必須是 `dedicated` 且與部署紀錄逐欄位相同、尚未部署的租戶不得先登記成 `dedicated` |
+
+### 為什麼不退回 default 部署
+
+兩個選項的最壞情況不對稱。
+
+| | 退回 default 部署 | fail-closed（採用） |
+|---|---|---|
+| 忘了加登記檔時 | 站照常上線，品牌是 A 機構的，使用者的保證金卻進了平台共用的 exchange 與保險金；A 的 guardian 暫停鍵對它沒有作用。**沒有任何錯誤訊息**，要等對帳或事故才會發現 | build 失敗，訊息指出缺哪個檔案 |
+| 示範租戶（只換品牌） | 不必做任何事 | 要寫一份四行的 `kind: "platform"` 登記檔，並說明理由 |
+
+退回的代價是 ADR-008 整個隔離模型可以被一次疏漏靜悄悄地繞過；fail-closed 的代價是示範租戶多一個檔案。與本 ADR 第 2 點（租戶設定驗證不過就 fail-closed、絕不退回 default）是同一個理由。
+
+### Considered options（增補）
+
+**一個以租戶 id 為鍵的 `tenantDeployments.ts`，所有租戶的位址放在同一個物件。** 否決：每個租戶的 bundle 都會帶著全部租戶的 id 與合約位址。位址本來就在鏈上公開，但「平台有哪些機構客戶、各自哪一組合約」不是；這與第 1 點「bundle 裡只有被選中的那一份設定」是同一個考量。JSON 一租戶一檔也讓零依賴的 CI 腳本可以直接讀，不必解析 TypeScript。
+
+**把位址放進租戶設定檔。** 否決，理由已在第 4 點：設定檔常常來自客戶，它不該有能力決定錢往哪裡去。
+
+**直接改 `addresses.ts`，讓它依租戶回傳不同位址。** 否決：`addresses.ts` 被 agent 端 import、被 signal-api 的 Vercel bundle 內聯（改它就要重新打包），也是 `check-addresses.mjs` 解析的對象。讓它保持「平台部署的純資料」，租戶邏輯放在它外面。
+
+### Consequences（增補）
+
+- 新增專屬租戶的前端步驟：部署紀錄進 `deploy/tenants/` → `--print-frontend` 產生登記檔 → `VITE_TENANT=<id> yarn build`。見 [`docs/TENANT_DEPLOYMENT.md`](../../../docs/TENANT_DEPLOYMENT.md)。
+- 專屬租戶的 bundle 仍然含有平台部署的位址：隔離檢查要拿它們來比對，而 `addresses.ts` 是整份 import 的。它們不會被用來建立任何合約物件（`resolveDeployment` 的 dedicated 分支不讀 `CHAIN_MAP`），只是資料。若日後要連這份資料也拿掉，需要把平台位址集合改成建置期產生的雜湊清單。
+- `chainLogs.ts` 的 `DEPLOY_BLOCK_BY_CHAIN` 還是依鏈、不依租戶：專屬租戶掃事件會從平台的部署區塊開始，結果正確但比較慢。要改的話在登記檔加 `deployBlock`。
+- 專屬租戶的頁面行為沒有在真的專屬部署上逐頁點過——目前沒有任何已廣播的專屬租戶。build（以本機 fork 的模擬部署紀錄建一個暫時租戶）與單元測試都過，但「每一頁對零位址的守衛都正確」只有 default 與 Anvil 的既有覆蓋。第一個試點租戶上線前要做一次逐頁走查。
+- x402 分潤路由（官方 USDC 的 FeeRouter）不在 `DeployTenant.s.sol` 的產出裡；租戶另外部署後，把位址手動加進登記檔的 `contracts.X402FeeRouter`（CI 允許這一個欄位不在部署紀錄裡，但仍檢查它不是平台的那一顆）。
+
+### 增補（2026-10-02，PR #228 審查修正）
+
+- **共用只能顯式宣告。** 專屬登記多一個必填欄位 `shared`（目前只能是 `["contracts.SettlementToken"]` 或 `[]`）。結算幣只有在宣告共用、而且值就是平台在該鏈的結算幣時才放行；其他欄位與平台位址相同一律 fail-closed。比對對象是登記裡**自動列舉**的每一個位址，不是手寫的欄位清單（`dedicatedAddressEntries`）。
+- **退役的平台合約只在建置期比對。** `src/contracts/retiredPlatformAddresses.json` 由 `tenantDeployment.node.ts` 讀進 `parseTenantDeployment` 的 `extraPlatformAddresses`，瀏覽器 bundle 不帶這份清單（default build 的位址集合因此不變）。CI 的 `check-addresses.mjs` 另外以平台位址全集（設定檔、workflow、agent 設定）比對。
+- **專屬租戶必須有自己的 signal-api。** `VITE_SIGNAL_API_URL` 沒設或指向平台時 build 失敗（`dedicatedSignalApiProblem`），與「沒有登記就 build 失敗」是同一個理由：不悄悄退回平台。
+- **監控頁的過期判斷**：專屬租戶以 oracle 價格的時間戳對照 6 小時（`oracleRowStale`），平台部署照舊問 `isStale()`。

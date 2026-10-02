@@ -4,6 +4,7 @@ import { TableSkeleton } from 'src/components/pepefi/Skeleton'
 import { useRef, useState, useEffect, useCallback } from 'react'
 import { parseEther, formatEther, formatUnits } from 'ethers'
 import { useContracts } from 'src/hooks/useContracts'
+import { isPlatformDeployment } from 'src/contracts/deployment'
 import { useCheckInUnit } from 'src/hooks/useCheckInUnit'
 import { usePepefiWallet } from 'src/layouts/pepefi'
 import { explorerTx } from 'src/lib/pepefi/notify'
@@ -48,8 +49,11 @@ const fEth = (v: bigint) => parseFloat(formatEther(v)).toFixed(6)
  * **不再用它判斷授權**——寫死一個 EOA 等於把權限判斷跟鏈上狀態脫鉤：treasury
  * 一改，這頁就對真正的 owner 說「Not authorized」，同時對舊位址開門。
  * 這一頁本來就已經把 platformTreasury 抓回來了，只是沒拿來用。
+ *
+ * 這是**平台部署**的 treasury。專屬租戶的 FeeRouter 有自己的收款地址，讀回來之前
+ * 寧可顯示「—」，也不要在別家機構的站上印出平台的地址。
  */
-const FALLBACK_TREASURY_HINT = '0xE80A81360608C1342e66743F70a00f75d792Eb93'
+const FALLBACK_TREASURY_HINT = isPlatformDeployment ? '0xE80A81360608C1342e66743F70a00f75d792Eb93' : '—'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface RevenueStats {

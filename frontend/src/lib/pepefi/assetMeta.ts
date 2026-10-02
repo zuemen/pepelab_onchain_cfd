@@ -1,4 +1,5 @@
-import { ASSET_IDS, CHAIN_MAP } from 'src/contracts/addresses'
+import { ASSET_IDS } from 'src/contracts/addresses'
+import { chainMap } from 'src/contracts/deployment'
 
 import type { Tier } from './carbon'
 
@@ -305,7 +306,8 @@ export const ASSET_META: Record<string, AssetMeta> = {
 // admin…) — visibly duplicated, and neither one tradable since PEPE was
 // never in ASSET_IDS to begin with.
 //
-// Deriving from CHAIN_MAP means adding a new chain's PepeToken address never
+// Deriving from the deployment's chain map (CHAIN_MAP for the platform
+// deployment; a dedicated tenant has no PepeToken, so nothing is added) means adding a new chain's PepeToken address never
 // needs a second edit here, and registering it under every known chain (not
 // just whichever one happens to be connected right now) keeps portfolio /
 // dashboard lookups working when they read a position's raw asset address —
@@ -313,7 +315,7 @@ export const ASSET_META: Record<string, AssetMeta> = {
 // vary in whether PepeToken is deployed at all (zero address = not
 // deployed, skipped).
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
-for (const chain of Object.values(CHAIN_MAP)) {
+for (const chain of Object.values(chainMap)) {
   if (!chain.PepeToken || chain.PepeToken === ZERO_ADDRESS) continue
   ASSET_META[chain.PepeToken] = {
     symbol:    'PEPE',

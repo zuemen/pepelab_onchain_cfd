@@ -12,6 +12,14 @@ export default defineConfig({
         find: /^@tenant-config$/,
         replacement: fileURLToPath(new URL('./src/tenant/tenants/default.json', import.meta.url)),
       },
+      // 部署登記同樣固定成 default（＝平台的現行部署，addresses.ts）；專屬部署的解析由
+      // src/contracts/tenantDeployment.test.ts 以 fixture 直接驗證。
+      {
+        find: /^@tenant-deployment$/,
+        replacement: fileURLToPath(
+          new URL('./src/contracts/deployments/default.json', import.meta.url)
+        ),
+      },
     ],
   },
   test: {

@@ -1,0 +1,57 @@
+name: Tenant on-chain verify
+
+# 對每一個已登記的專屬租戶（frontend/src/contracts/deployments/<id>.json，kind=dedicated），
+# 以公開唯讀 RPC 的 fork 跑 contracts/script/VerifyTenant.s.sol（ADR-008、PR #228 審查 F2）。
+#
+# 檔案層的檢查（consistency.yml）只看得到位址的格式與「不與平台共用」；合約之間的綁定、
+# 所有權最後歸誰、部署者是否真的什麼都沒留下、oracle 限速與風控參數是否仍等於設定，
+# 只有讀鏈才知道。這支 job 在每個 PR 與 master 上跑，而且每天再跑一次——租戶的 admin 事後
+# 改了鏈上參數而設定檔沒跟著改，這裡會紅。
+#
+# 它是 CI 檢查，**本身不會擋合併**：要在 repo 設定 branch protection／ruleset，把
+# 「VerifyTenant (public RPC fork)」列為 required check 之後才會真的擋。目前 master 沒有設定，
+# 這是 repo 擁有者的待辦，也是第一個專屬租戶上線的前置條件（docs/TENANT_OPERATIONS.md §1.6）。
+#
+# 不需要任何 secret（只讀公開 RPC、不送交易），token 只有 contents: read。RPC 連不上時
+# job 失敗，不略過。目前沒有任何專屬租戶時，它印出「0 個」並通過。
+on:
+  push:
+    branches: [master]
+  pull_request:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tenant-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: VerifyTenant (public RPC fork)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+
+      # 與 contracts-ci.yml 同一個版本（工具鏈升版要是一個看得見的 commit）。
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.8.0
+
+      - name: Self-test
+        run: node --test scripts/verify-dedicated-tenants.test.mjs
+
+      - name: Verify every dedicated tenant on chain
+        run: node scripts/verify-dedicated-tenants.mjs

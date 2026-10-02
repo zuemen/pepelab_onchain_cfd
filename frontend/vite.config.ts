@@ -8,6 +8,10 @@ import { applyBrand } from './src/tenant/brand';
 import { loadTenantForBuild } from './src/tenant/node';
 import { resolveFeatureFlag } from './src/tenant/flags';
 import { checkSignalApiUrl } from './src/lib/pepefi/cspConnect';
+import {
+  loadTenantDeploymentForBuild,
+  dedicatedSignalApiProblem,
+} from './src/contracts/tenantDeployment.node';
 import { LOCALES, pickLocale } from './src/locales/catalogs';
 
 // ----------------------------------------------------------------------
@@ -35,6 +39,19 @@ export default defineConfig(({ mode, command }) => {
   // 見 frontend/docs/adr/0009-tenant-config-layer.md。
   const tenant = loadTenantForBuild(process.cwd(), envOf('VITE_TENANT'));
   const { brand } = tenant.config;
+
+  // 這個租戶要連哪一組合約（src/contracts/deployments/<id>.json）。沒有登記檔、登記檔
+  // 驗證不過、或專屬部署與平台共用了結算幣以外的任何位址，都在這裡讓 build 失敗——
+  // 租戶的站絕不悄悄退回平台的合約。見 ADR 0009 的增補與根目錄 ADR-008。
+  const deployment = loadTenantDeploymentForBuild(process.cwd(), tenant.id, tenant.config.features);
+  // 專屬租戶沒設自己的 signal-api 就讓 build 失敗，不退回平台的（審查 F4）。
+  const signalApiProblem = dedicatedSignalApiProblem(
+    deployment.deployment,
+    envOf('VITE_SIGNAL_API_URL')
+  );
+  if (signalApiProblem) throw new Error(`
+[tenant] ${signalApiProblem}
+`);
 
   // 這個 build 出貨的語言：VITE_LOCALE 優先，沒設或認不出來就用租戶的預設語系。
   // 與 src/locales/index.ts 同一個呼叫形式，index.html 與 app 內文不會各選一個語言。
@@ -101,6 +118,8 @@ export default defineConfig(({ mode, command }) => {
       alias: [
         // 只把被選中的租戶設定打進 bundle，理由見 src/tenant/node.ts。
         { find: /^@tenant-config$/, replacement: tenant.file },
+        // 同理：只有被選中租戶的部署登記進 bundle。
+        { find: /^@tenant-deployment$/, replacement: deployment.file },
         {
           find: /^src(.+)/,
           replacement: path.resolve(process.cwd(), 'src/$1'),

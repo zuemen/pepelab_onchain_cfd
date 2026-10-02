@@ -1,6 +1,6 @@
 {
   "$comment": "示範租戶 demo-bank（虛構機構）的部署設定。所有位址都是佔位值、status=template，不能也不會被用來部署。對應前端設定 frontend/src/tenant/tenants/demo-bank.json。",
-  "schemaVersion": 1,
+  "schemaVersion": 3,
   "tenantId": "demo-bank",
   "status": "template",
   "frontendTenant": "demo-bank",
@@ -22,7 +22,24 @@
   },
   "shared": {
     "settlementToken": "<SETTLEMENT_TOKEN_ADDRESS>",
-    "priceSource": "<REFERENCE_PRICE_SOURCE_ADDRESS>"
+    "priceSource": "<REFERENCE_PRICE_SOURCE_ADDRESS>",
+    "referenceSource": "<ORACLE_REFERENCE_SOURCE_ADDRESS>"
+  },
+  "params": {
+    "oracleKind": "guarded",
+    "oracleMaxDeviationBps": 1000,
+    "oracleWindowSeconds": 3600,
+    "oracleWindowDeviationBps": 2500,
+    "oiCapNonRwaUsdc": null,
+    "oiCapRwaUsdc": null,
+    "maxProfitBps": null,
+    "maxLeverage": null,
+    "liquidationPenaltyBps": 2000,
+    "markPremiumCapBps": 0,
+    "vaultFeeShareBps": 0,
+    "deployVault": true,
+    "vaultRedeemFeeBps": 30,
+    "vaultMinReserveRatioBps": 11000
   },
   "assets": {
     "registered": ["sAAPL", "sMSFT", "sNVDA", "sGOLD", "sBOND", "sESGU", "sICLN"]
@@ -34,14 +51,5 @@
   },
   "keeper": {
     "cron": "*/15 * * * *"
-  },
-  "deployed": {
-    "GuardedOracle": null,
-    "AssetVaultV2": null,
-    "InsuranceVault": null,
-    "FeeRouter": null,
-    "PerpetualExchange": null,
-    "AgentSessionManager": null,
-    "ESGRegistryV2": null
   }
 }

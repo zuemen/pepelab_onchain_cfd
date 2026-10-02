@@ -2,7 +2,7 @@ import type { LegacyReader, LegacyExchangeScan } from 'src/lib/pepefi/legacyExch
 
 import { useRef, useState, useEffect, useCallback } from 'react';
 
-import { legacyExchangesFor } from 'src/contracts/legacyExchanges';
+import { legacyExchangesFor } from 'src/contracts/deployment';
 import { scanLegacyExchange } from 'src/lib/pepefi/legacyExchange';
 
 // ----------------------------------------------------------------------
