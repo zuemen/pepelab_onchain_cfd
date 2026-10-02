@@ -992,21 +992,33 @@ PR #215 審查後補上的行為（`lib/pepefi/ammSwapFlow.ts`、`ammPoolView.ts
 - **衝擊基準與 quote 同一次讀取**。頁面原本只在載入時讀一次基準，放著不動 20 分鐘後 oracle 已經
   走掉，即時 quote 對上舊基準會重現 0.00%／假衝擊。現在 quote 的 effect 以 `Promise.all` 同時讀
   基準（舊版 `getPrice()`、恆定乘積版 `getReserves()`），畫面上的兌換價也用同一次讀到的值；另外
-  每 15 秒重讀一次池子與報價（分頁在背景時不讀）。基準讀不到就不顯示衝擊，不退回舊值。
+  每 15 秒重讀一次池子與報價（分頁在背景時不讀，回到前景時立刻重讀一次——#220）。基準讀不到
+  就不顯示衝擊，不退回舊值。報價以「方向＋金額」為鍵：金額改了、新報價回來之前不顯示上一個金額
+  的收到數量／衝擊／最低收到，按鈕停用（#220）。
 - **舊版合約的 quote 不看庫存**（oracle 價 × 數量），金額一大就報出池子付不出來的數字。`quotedOut`
   超過輸出側庫存時畫面顯示「超過池內可兌出庫存」、按鈕停用、不顯示收到數量。這是前端擋的，合約
   本身仍然只會在 swap 時 revert。
-- **送出前預檢**。`executeSwap` 在送任何交易（含 approve）之前先比對庫存、再以 eth_call 模擬
-  swap，必定失敗就一筆都不送。USDC→ETH 額度不足時模擬一定撞到 `ERC20InsufficientAllowance`，
-  這不算失敗：新版合約的 `transferFrom` 排在所有檢查之後（撞到它代表前面都過了），舊版排在最
-  前面、其餘會失敗的條件只有庫存。approve 上鏈後會重新 quote 並完整模擬一次才送 swap。
+- **送出前預檢**。`executeSwap` 在送任何交易（含 approve）之前先比對庫存、USDC→ETH 再讀
+  `balanceOf` 比對餘額（#220），最後以 eth_call 模擬 swap，必定失敗就一筆都不送。USDC→ETH 額度
+  不足時模擬一定撞到 `ERC20InsufficientAllowance`，這不算失敗：新版合約的 `transferFrom` 排在所有
+  檢查之後（撞到它代表前面都過了），舊版排在最前面、其餘會失敗的條件是庫存、餘額與 minOut——
+  三者都在 approve 之前另外檢查。（OZ v5 先扣額度再轉帳，所以額度不足的 revert 會遮住餘額不足；
+  #220 之前這會讓沒有 USDC 的帳號先白付一筆 approve 才失敗。）
+- **minOut 固定為畫面上的「最低收到數量」**（#220）。`executeSwap` 收的是畫面上顯示的那筆報價，
+  minOut = 該報價 × (1 − 0.5%)，整個流程不換數字。approve 之前與 approve 上鏈之後各讀一次即時
+  quote，低於這個 minOut 就回「價格已變動」、不送 swap，畫面立刻重讀新報價讓使用者重新確認；
+  ETH→USDC（不需 approve）也一樣。#220 之前 approve 後會以新 quote × 0.995 送出，價格在等簽名
+  的期間變差時，實收會低於使用者看到的最低收到數量（審查在 fork 上重現：畫面 0.007347 ETH、
+  實收 0.003692 ETH）。
   **殘餘限制**：舊版在額度不足時無法事前完整模擬（`transferFrom` 擋在最前面），所以「approve 之後
-  庫存被別人換走」仍會白付一筆 approve 的 gas——但不會再送出必定失敗的 swap。
+  庫存被別人換走」或「approve 之後價格變差」仍會白付一筆 approve 的 gas——但不會再送出必定失敗
+  或低於最低收到數量的 swap；額度已經留著，重新確認後不必再 approve。
 - **版本判斷**。成功的判斷以 chainId＋位址快取（bytecode 不會變），`getCode` 之後失敗不會把畫面
   蓋成「無法確認」；`getCode` 與其他讀取並行；還沒讀完時顯示「正在確認線上合約版本…」，與
   「無法確認」是兩句話。舊版的判斷不只靠排除法：bytecode 要沒有 `totalShares()`，執行期再確認
   `getPrice()` 等於 oracle 報價 ×1e10（AMM 自己的 `oracle()` 與 `ETH_ASSET_ID()`）；兩者都讀到卻
-  不相等時降為版本不明。
+  不相等時立刻同時重讀一次再判（oracle 剛好在兩次讀取之間更新不會閃成「無法確認」，#220），
+  仍不相等才降為版本不明。
 
 **The product code is not linted.** `eslint.config.mjs` ignores
 `src/pages/pepefi/**`, `src/components/pepefi/**`, `src/hooks/**` and
