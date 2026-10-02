@@ -1,0 +1,120 @@
+[
+  {
+    "name": "signals 未付款（https）",
+    "status": 402,
+    "headers": [
+      [
+        "access-control-allow-origin",
+        "*"
+      ],
+      [
+        "content-type",
+        "application/json"
+      ]
+    ],
+    "body": "{\"error\":\"X-PAYMENT header is required\",\"accepts\":[{\"scheme\":\"exact\",\"network\":\"base-sepolia\",\"maxAmountRequired\":\"10000\",\"resource\":\"https://signal.example/signals/0x5555555555555555555555555555555555555555\",\"description\":\"Trader 即時績效摘要 + 開倉建議\",\"mimeType\":\"application/json\",\"payTo\":\"0x4444444444444444444444444444444444444444\",\"maxTimeoutSeconds\":60,\"asset\":\"0x036CbD53842c5426634e7929541eC2318f3dCF7e\",\"outputSchema\":{\"input\":{\"type\":\"http\",\"method\":\"GET\",\"discoverable\":true}},\"extra\":{\"name\":\"USDC\",\"version\":\"2\"}}],\"x402Version\":1}",
+    "bodySha256": "110984ce10be96ceccaa8e52a10389ae40ef58b27dbbbf9432c5cd180a77169a",
+    "bodyBytes": 557
+  },
+  {
+    "name": "signals 未付款（http localhost）",
+    "status": 402,
+    "headers": [
+      [
+        "access-control-allow-origin",
+        "*"
+      ],
+      [
+        "content-type",
+        "application/json"
+      ]
+    ],
+    "body": "{\"error\":\"X-PAYMENT header is required\",\"accepts\":[{\"scheme\":\"exact\",\"network\":\"base-sepolia\",\"maxAmountRequired\":\"10000\",\"resource\":\"http://localhost:4021/signals/0x5555555555555555555555555555555555555555\",\"description\":\"Trader 即時績效摘要 + 開倉建議\",\"mimeType\":\"application/json\",\"payTo\":\"0x4444444444444444444444444444444444444444\",\"maxTimeoutSeconds\":60,\"asset\":\"0x036CbD53842c5426634e7929541eC2318f3dCF7e\",\"outputSchema\":{\"input\":{\"type\":\"http\",\"method\":\"GET\",\"discoverable\":true}},\"extra\":{\"name\":\"USDC\",\"version\":\"2\"}}],\"x402Version\":1}",
+    "bodySha256": "bcfc0f5bac896382006ebc8531ed6ec289f4550444e9ae90ac42c83186aa9a8f",
+    "bodyBytes": 556
+  },
+  {
+    "name": "oracle 未付款",
+    "status": 402,
+    "headers": [
+      [
+        "access-control-allow-origin",
+        "*"
+      ],
+      [
+        "content-type",
+        "application/json"
+      ]
+    ],
+    "body": "{\"error\":\"X-PAYMENT header is required\",\"accepts\":[{\"scheme\":\"exact\",\"network\":\"base-sepolia\",\"maxAmountRequired\":\"5000\",\"resource\":\"https://signal.example/oracle/sBTC\",\"description\":\"決策級快照：價格 + funding + OI 失衡 + 預估清算價 + edge 建議\",\"mimeType\":\"application/json\",\"payTo\":\"0x4444444444444444444444444444444444444444\",\"maxTimeoutSeconds\":60,\"asset\":\"0x036CbD53842c5426634e7929541eC2318f3dCF7e\",\"outputSchema\":{\"input\":{\"type\":\"http\",\"method\":\"GET\",\"discoverable\":true}},\"extra\":{\"name\":\"USDC\",\"version\":\"2\"}}],\"x402Version\":1}",
+    "bodySha256": "ea9b3798c75310cbef94c7d04ef2feb71d51df42dc7c2a30c4faf4400623892a",
+    "bodyBytes": 555
+  },
+  {
+    "name": "signals 未付款（帶 query）",
+    "status": 402,
+    "headers": [
+      [
+        "access-control-allow-origin",
+        "*"
+      ],
+      [
+        "content-type",
+        "application/json"
+      ]
+    ],
+    "body": "{\"error\":\"X-PAYMENT header is required\",\"accepts\":[{\"scheme\":\"exact\",\"network\":\"base-sepolia\",\"maxAmountRequired\":\"10000\",\"resource\":\"https://signal.example/signals/0x5555555555555555555555555555555555555555?x=1\",\"description\":\"Trader 即時績效摘要 + 開倉建議\",\"mimeType\":\"application/json\",\"payTo\":\"0x4444444444444444444444444444444444444444\",\"maxTimeoutSeconds\":60,\"asset\":\"0x036CbD53842c5426634e7929541eC2318f3dCF7e\",\"outputSchema\":{\"input\":{\"type\":\"http\",\"method\":\"GET\",\"discoverable\":true}},\"extra\":{\"name\":\"USDC\",\"version\":\"2\"}}],\"x402Version\":1}",
+    "bodySha256": "944ca1f78ce49bc093390083150ee91e8595a114ac19779cc93de304c133c19a",
+    "bodyBytes": 561
+  },
+  {
+    "name": "signals 瀏覽器（HTML 付費牆）",
+    "status": 402,
+    "headers": [
+      [
+        "access-control-allow-origin",
+        "*"
+      ],
+      [
+        "content-type",
+        "text/html; charset=UTF-8"
+      ]
+    ],
+    "bodySha256": "e5aa389ea20b9a99c06a147c6a2dfdb235cbbe8a2bf7180a052c929d7bec5fa0",
+    "bodyBytes": 2821006
+  },
+  {
+    "name": "signals 帶無法解析的 X-PAYMENT",
+    "status": 402,
+    "headers": [
+      [
+        "access-control-allow-origin",
+        "*"
+      ],
+      [
+        "content-type",
+        "application/json"
+      ]
+    ],
+    "body": "{\"error\":{},\"accepts\":[{\"scheme\":\"exact\",\"network\":\"base-sepolia\",\"maxAmountRequired\":\"10000\",\"resource\":\"https://signal.example/signals/0x5555555555555555555555555555555555555555\",\"description\":\"Trader 即時績效摘要 + 開倉建議\",\"mimeType\":\"application/json\",\"payTo\":\"0x4444444444444444444444444444444444444444\",\"maxTimeoutSeconds\":60,\"asset\":\"0x036CbD53842c5426634e7929541eC2318f3dCF7e\",\"outputSchema\":{\"input\":{\"type\":\"http\",\"method\":\"GET\",\"discoverable\":true}},\"extra\":{\"name\":\"USDC\",\"version\":\"2\"}}],\"x402Version\":1}",
+    "bodySha256": "017132fe05b5604146982b939d6f65b192b5e031504550960f887245aaab27e8",
+    "bodyBytes": 529
+  },
+  {
+    "name": "signals 帶 PAYMENT-SIGNATURE（v1 模式忽略）",
+    "status": 402,
+    "headers": [
+      [
+        "access-control-allow-origin",
+        "*"
+      ],
+      [
+        "content-type",
+        "application/json"
+      ]
+    ],
+    "body": "{\"error\":\"X-PAYMENT header is required\",\"accepts\":[{\"scheme\":\"exact\",\"network\":\"base-sepolia\",\"maxAmountRequired\":\"10000\",\"resource\":\"https://signal.example/signals/0x5555555555555555555555555555555555555555\",\"description\":\"Trader 即時績效摘要 + 開倉建議\",\"mimeType\":\"application/json\",\"payTo\":\"0x4444444444444444444444444444444444444444\",\"maxTimeoutSeconds\":60,\"asset\":\"0x036CbD53842c5426634e7929541eC2318f3dCF7e\",\"outputSchema\":{\"input\":{\"type\":\"http\",\"method\":\"GET\",\"discoverable\":true}},\"extra\":{\"name\":\"USDC\",\"version\":\"2\"}}],\"x402Version\":1}",
+    "bodySha256": "110984ce10be96ceccaa8e52a10389ae40ef58b27dbbbf9432c5cd180a77169a",
+    "bodyBytes": 557
+  }
+]

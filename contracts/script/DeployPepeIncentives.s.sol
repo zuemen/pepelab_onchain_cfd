@@ -22,7 +22,9 @@ import "../src/PepeIncentives.sol";
 ///
 ///   After deployment:
 ///     1. Update frontend/src/contracts/addresses.ts -> PepeIncentives
-///     2. Transfer at least 100_000 PEPE into the contract as reward pool:
+///     2. Transfer at least 100_000 PEPE into the contract as reward pool
+///        (trade mining, tier, copy and ESG-hold rewards; the daily check-in
+///        credits non-transferable achievement points and needs no pool):
 ///          cast send $PEPE_TOKEN "transfer(address,uint256)" $PEPE_INCENTIVES 100000000000000000000000 \
 ///            --rpc-url $SEPOLIA_RPC_URL --private-key $PRIVATE_KEY
 contract DeployPepeIncentives is Script {
@@ -41,6 +43,7 @@ contract DeployPepeIncentives is Script {
 
         console.log("PepeIncentives deployed:", address(incentives));
         console.log("Update addresses.ts -> PepeIncentives:", address(incentives));
-        console.log("Next: transfer 100_000 PEPE into the reward pool.");
+        console.log("Next: transfer 100_000 PEPE into the reward pool (not needed for the daily check-in,");
+        console.log("which credits non-transferable achievement points and moves no PEPE).");
     }
 }

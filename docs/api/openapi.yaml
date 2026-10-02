@@ -6,8 +6,16 @@ info:
   description: |
     草案（2026-09-30）。本規格逐一對照 `agent/signal-api/src/app.ts` 撰寫；若與程式碼不一致，以程式碼為準。
 
-    - 付費端點使用 x402 v1 `exact` scheme，結算代幣為 Base Sepolia 上的 Circle 官方測試網 USDC
+    - 付費端點使用 x402 `exact` scheme，結算代幣為 Base Sepolia 上的 Circle 官方測試網 USDC
       （`0x036CbD53842c5426634e7929541eC2318f3dCF7e`，EIP-3009）。
+    - x402 協定版本由伺服器環境變數 `X402_PROTOCOL` 決定（見 `docs/ADR-010-x402-v2-migration.md`）：
+      - `v1`（**預設**，目前正式部署）：付款要求在 402 的 JSON 本文，付款用 `X-PAYMENT`，結算證明是 `X-PAYMENT-RESPONSE`。
+      - `v2`：付款要求在 402 的 `PAYMENT-REQUIRED` header（base64 JSON，本文為 `{}`），付款用 `PAYMENT-SIGNATURE`，
+        結算證明是 `PAYMENT-RESPONSE`；網路以 CAIP-2 表示（`eip155:84532`）；`X-PAYMENT` 不再被接受。
+      - `both`：同一個端點兩種都收。未付款的 402 本文與 v1 相同，另外帶 `PAYMENT-REQUIRED` header；
+        付款時只能帶一種付款標頭（兩種都帶回 400 `ambiguous_payment_headers`）。
+      `GET /` 的 `x402` 欄位會列出目前啟用的版本（沒有這個欄位 = 只收 v1）。
+      v2 只接受 EIP-3009（`transferWithAuthorization`）；不宣告、不接受 Permit2。
     - 付費端點在發出 402 之前會先做輸入驗證、收款地址守門（fail-closed）與資料可用性檢查；
       任何一項不通過都不會要求付款（x402 沒有退費機制）。
     - 所有 JSON 回應在送出前會遮蔽帶憑證的環境變數值。
@@ -433,6 +441,7 @@ paths:
       tags: [paid]
       security:
         - x402: []
+        - x402v2: []
       operationId: getSignal
       summary: Trader performance and trade suggestion (0.01 USDC)
       description: |
@@ -444,6 +453,13 @@ paths:
         之後進入 x402：沒有或無效的 `X-PAYMENT` 回 402。付款驗證成功後執行 handler，
         handler 成功才由 facilitator 結算並帶回 `X-PAYMENT-RESPONSE`；handler 失敗回 400 且不結算。
         HEAD 請求回 405。
+        x402 v2（`X402_PROTOCOL=v2｜both`）流程相同，標頭改為 `PAYMENT-SIGNATURE`／`PAYMENT-RESPONSE`：
+        - `PAYMENT-SIGNATURE` 無法解析、或 `x402Version` 不是 2 → 400（未送 facilitator、未扣款）。
+        - `accepted` 與伺服器宣告的付款要求不符（核心欄位須相同；`extra` 須包含宣告的每個欄位且值相同）→ 402（`No matching payment requirements`，未送 facilitator）。送給 facilitator 的一律是伺服器自己的付款要求。
+        - 結算被 facilitator 明確拒絕 → 402，帶 `PAYMENT-RESPONSE`（`success: false`），不回付費資料。
+        - 結算結果未知（facilitator 逾時、斷線、5xx、回應無法解析、`settlement_pending`）→ 502 `phase: settle`，不回付費資料；有結算 tx hash 時附在 `transaction`。先對帳再決定是否重付。
+        - 伺服器**不宣告** `payment-identifier` 擴充。client 帶了 id 照樣收，只當中繼資料記錄，不以 id 去重（每一筆結算成功的授權都是一筆獨立的付款）。
+        - v2 付費牆設定錯誤（例如 `X402_NETWORK` 沒有對應的 CAIP-2）→ 503 `x402_misconfigured`（未發出付款要求、未扣款）。
       parameters:
         - name: trader
           in: path
@@ -455,7 +471,7 @@ paths:
         '200':
           $ref: '#/components/responses/PaidSignal'
         '400':
-          description: 付款前的輸入驗證失敗（非法地址、零地址、`trader_compromised`、`trader_not_registered`），或付款驗證後 handler 失敗（`signals_unavailable`，不結算）
+          description: 付款前的輸入驗證失敗（非法地址、零地址、`trader_compromised`、`trader_not_registered`），或付款驗證後 handler 失敗（`signals_unavailable`，不結算）。x402 v2／both 另有付款標頭錯誤（`invalid_payment_signature`、`unsupported_x402_version`、`ambiguous_payment_headers`），皆未扣款
           content:
             application/json:
               schema:
@@ -471,7 +487,7 @@ paths:
         '502':
           $ref: '#/components/responses/FacilitatorUnavailable'
         '503':
-          description: '收款地址未通過守門（`payto_unsafe`，帶 `Retry-After: 600`），或 registry 無法讀取（`registry_unavailable`）'
+          description: '收款地址未通過守門（`payto_unsafe`，帶 `Retry-After: 600`），或 registry 無法讀取（`registry_unavailable`）；x402 v2／both 付費牆設定錯誤時為 `x402_misconfigured`'
           headers:
             Retry-After:
               description: '`payto_unsafe` 時為 600'
@@ -488,6 +504,7 @@ paths:
       tags: [paid]
       security:
         - x402: []
+        - x402v2: []
       operationId: getOracleSnapshot
       summary: Decision-grade price snapshot (0.005 USDC)
       description: |
@@ -510,7 +527,7 @@ paths:
         '200':
           $ref: '#/components/responses/PaidOracle'
         '400':
-          description: 缺少或未知的資產代號（付款前），或付款驗證後 handler 失敗（`oracle_unavailable`，不結算）
+          description: 缺少或未知的資產代號（付款前），或付款驗證後 handler 失敗（`oracle_unavailable`，不結算）。x402 v2／both 另有付款標頭錯誤（`invalid_payment_signature`、`unsupported_x402_version`、`ambiguous_payment_headers`），皆未扣款
           content:
             application/json:
               schema:
@@ -526,13 +543,14 @@ paths:
         '502':
           $ref: '#/components/responses/FacilitatorUnavailable'
         '503':
-          description: '收款地址未通過守門（`payto_unsafe`），或鏈上價格過期（`price_stale`）'
+          description: '收款地址未通過守門（`payto_unsafe`），或鏈上價格過期（`price_stale`）；x402 v2／both 付費牆設定錯誤時為 `x402_misconfigured`（`Error`）'
           content:
             application/json:
               schema:
                 oneOf:
                   - $ref: '#/components/schemas/PayToUnsafe'
                   - $ref: '#/components/schemas/PriceStale'
+                  - $ref: '#/components/schemas/Error'
 components:
   securitySchemes:
     x402:
@@ -542,9 +560,30 @@ components:
       description: |
         x402 付款標頭（base64 編碼、以 EIP-3009 `transferWithAuthorization` 簽署的付款授權）。
         這不是長期 API key：每次請求依 402 回應的 `accepts` 重新簽署。未提供時回 402。
+        x402 **v1**；伺服器為 `X402_PROTOCOL=v1`（預設）或 `both` 時接受。
+    x402v2:
+      type: apiKey
+      in: header
+      name: PAYMENT-SIGNATURE
+      description: |
+        x402 **v2** 付款標頭：base64 編碼的 PaymentPayload（`x402Version: 2`、`accepted`、`payload`、選用的 `extensions`）。
+        `accepted` 必須與 402 的 `PAYMENT-REQUIRED` 其中一筆完全相同；`payload` 是 EIP-3009
+        `transferWithAuthorization` 的授權與簽章。伺服器為 `X402_PROTOCOL=v2` 或 `both` 時接受。
+        與 `X-PAYMENT` 二擇一，不可同時帶。
   headers:
     XPaymentResponse:
       description: facilitator 結算成功的證明（base64 編碼 JSON，含結算交易）。只有結算成功才會出現。
+      schema:
+        type: string
+    PaymentRequired:
+      description: |
+        x402 v2 的付款要求：base64 編碼的 `X402PaymentRequiredV2`。`X402_PROTOCOL=v2｜both` 時出現在 402 回應。
+      schema:
+        type: string
+    PaymentResponse:
+      description: |
+        x402 v2 的結算回執：base64 編碼的 `X402SettlementResponse`。付款成功的 200 帶 `success: true`；
+        **結算被拒的 402 也會帶（`success: false`）**，所以要解開看 `success`，不能只看這個標頭有沒有。
       schema:
         type: string
   responses:
@@ -568,10 +607,28 @@ components:
       description: |
         需要付款。未帶 `X-PAYMENT`、付款標頭無法解析、找不到對應的付款要求、驗證失敗或結算失敗時回傳。
         瀏覽器請求（`Accept` 含 `text/html` 且 User-Agent 含 `Mozilla`）且未帶付款時，回傳 HTML 付款頁。
+        依 `X402_PROTOCOL`：
+        - `v1`：本文為 `X402PaymentRequired`，沒有下列標頭。
+        - `v2`：本文為 `{}`，付款要求在 `PAYMENT-REQUIRED`；結算被拒時另帶 `PAYMENT-RESPONSE`（`success: false`）。
+        - `both`：未付款時本文為 `X402PaymentRequired`（與 v1 相同）並帶 `PAYMENT-REQUIRED`；
+          已帶付款時依該付款標頭的版本回應。
+      headers:
+        PAYMENT-REQUIRED:
+          $ref: '#/components/headers/PaymentRequired'
+        PAYMENT-RESPONSE:
+          $ref: '#/components/headers/PaymentResponse'
+        Cache-Control:
+          description: v2／both 的 402 為 `no-store`
+          schema:
+            type: string
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/X402PaymentRequired'
+            oneOf:
+              - $ref: '#/components/schemas/X402PaymentRequired'
+              - type: object
+                description: x402 v2 的 402 本文（空物件；付款要求在 `PAYMENT-REQUIRED` 標頭）
+                maxProperties: 0
         text/html:
           schema:
             type: string
@@ -593,7 +650,9 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
     FacilitatorRateLimited:
-      description: facilitator 限流（`facilitator_rate_limited`）；未扣款，可重試
+      description: |
+        facilitator 限流（`facilitator_rate_limited`）。v1 與 v2 的驗證階段：未扣款，可重試。
+        v2 的結算階段（`phase: settle`）：授權已交給 facilitator，**結果未知**，先對帳再重試。
       headers:
         Retry-After:
           schema:
@@ -604,16 +663,22 @@ components:
           schema:
             $ref: '#/components/schemas/FacilitatorError'
     FacilitatorUnavailable:
-      description: facilitator 無法連線或驗證失敗（`facilitator_unavailable`）；未扣款
+      description: |
+        facilitator 無法連線或驗證失敗（`facilitator_unavailable`）。v1 與 v2 的驗證階段：未扣款。
+        v2 另有 `phase`：`supported` = 無法取得 facilitator 支援的付款方式，未發出付款要求、未扣款；
+        `settle` = 授權已交給 facilitator 但沒有得到明確結果（逾時、斷線、5xx、回應無法解析、`settlement_pending`），
+        **結果未知**，付費資料未回傳，先對帳再決定是否重付；有結算 tx hash 時附在 `transaction`。
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/FacilitatorError'
     PaidSignal:
-      description: 付款成功並回傳資料
+      description: '付款成功並回傳資料。以 `X-PAYMENT`（v1）付款回 `X-PAYMENT-RESPONSE`；以 `PAYMENT-SIGNATURE`（v2）付款回 `PAYMENT-RESPONSE`（另帶 `Cache-Control: private`）'
       headers:
         X-PAYMENT-RESPONSE:
           $ref: '#/components/headers/XPaymentResponse'
+        PAYMENT-RESPONSE:
+          $ref: '#/components/headers/PaymentResponse'
       content:
         application/json:
           schema:
@@ -624,10 +689,12 @@ components:
                   data:
                     $ref: '#/components/schemas/TraderPerformance'
     PaidOracle:
-      description: 付款成功並回傳資料
+      description: '付款成功並回傳資料。以 `X-PAYMENT`（v1）付款回 `X-PAYMENT-RESPONSE`；以 `PAYMENT-SIGNATURE`（v2）付款回 `PAYMENT-RESPONSE`（另帶 `Cache-Control: private`）'
       headers:
         X-PAYMENT-RESPONSE:
           $ref: '#/components/headers/XPaymentResponse'
+        PAYMENT-RESPONSE:
+          $ref: '#/components/headers/PaymentResponse'
       content:
         application/json:
           schema:
@@ -710,9 +777,117 @@ components:
         facilitator:
           type: string
           format: uri
+        phase:
+          type: string
+          enum: [supported, verify, settle]
+          description: 只有 x402 v2 路徑會帶。`settle` = 授權已交給 facilitator，結果未知（不可當成未扣款）
+        transaction:
+          type: string
+          description: 只在 v2 `phase=settle` 且 facilitator 回了結算 tx hash（例如 `settlement_pending`）時出現，供對帳
+    X402ResourceInfo:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+          description: 被保護資源的完整 URL（正式部署為 https）
+        description:
+          type: string
+        mimeType:
+          type: string
+    PaymentRequirementsV2:
+      type: object
+      description: x402 v2 的付款要求（`PAYMENT-REQUIRED` 的 accepts[]）
+      required: [scheme, network, amount, asset, payTo, maxTimeoutSeconds]
+      properties:
+        scheme:
+          type: string
+          const: exact
+        network:
+          type: string
+          description: CAIP-2；預設 `eip155:84532`（由 `X402_NETWORK` 對應）
+        amount:
+          type: string
+          description: 以結算代幣最小單位表示的金額（/signals 為 10000、/oracle 為 5000）；v1 的 `maxAmountRequired`
+        asset:
+          type: string
+          description: 結算代幣地址
+        payTo:
+          type: string
+        maxTimeoutSeconds:
+          type: integer
+          description: 宣告為 60（是否被強制取決於 facilitator，見 KNOWN_LIMITATIONS §15）
+        extra:
+          type: object
+          description: 結算代幣的 EIP-712 name／version。不含 `assetTransferMethod`（= EIP-3009）與 `paymentFlow`（= authorization）
+          additionalProperties: true
+    X402PaymentRequiredV2:
+      type: object
+      description: x402 v2 的 PaymentRequired（`PAYMENT-REQUIRED` 標頭 base64 解碼後）
+      required: [x402Version, resource, accepts]
+      properties:
+        x402Version:
+          type: integer
+          const: 2
+        error:
+          type: string
+          description: 未付款時為 `Payment required`；付款被拒時為原因（例如 `No matching payment requirements`、facilitator 的 invalidReason）
+        resource:
+          $ref: '#/components/schemas/X402ResourceInfo'
+        accepts:
+          type: array
+          items:
+            $ref: '#/components/schemas/PaymentRequirementsV2'
+        extensions:
+          type: object
+          description: '伺服器宣告的擴充。signal-api 目前不宣告任何擴充（不宣告 `payment-identifier`）'
+          additionalProperties: true
+    X402SettlementResponse:
+      type: object
+      description: x402 v2 的結算回執（`PAYMENT-RESPONSE` 標頭 base64 解碼後）
+      required: [success, transaction, network]
+      properties:
+        success:
+          type: boolean
+        errorReason:
+          type: string
+        errorMessage:
+          type: string
+        payer:
+          type: string
+        transaction:
+          type: string
+          description: 結算交易 hash；失敗時為空字串
+        network:
+          type: string
+        amount:
+          type: string
+    DiscoveryX402:
+      type: object
+      description: '`GET /` 在啟用 x402 v2 時多出的區塊。v2 付費牆設定錯誤時只有 `protocol` 與 `error: x402_misconfigured`（付費端點此時回 503）'
+      required: [protocol]
+      properties:
+        protocol:
+          type: string
+          enum: [v2, both]
+        versions:
+          type: array
+          items:
+            type: integer
+        network:
+          type: string
+          description: CAIP-2
+        headers:
+          type: object
+          additionalProperties: true
+        note:
+          type: string
+        error:
+          type: string
+          const: x402_misconfigured
     X402PaymentRequired:
       type: object
-      description: x402-hono 0.5.3 的 402 本文
+      description: x402-hono 0.5.3 的 402 本文（x402 v1；`X402_PROTOCOL=v1｜both`）
       required: [error, accepts, x402Version]
       properties:
         error:
@@ -815,6 +990,8 @@ components:
         example:
           type: object
           additionalProperties: true
+        x402:
+          $ref: '#/components/schemas/DiscoveryX402'
     Revenue:
       type: object
       required: [model, onChain, totals]

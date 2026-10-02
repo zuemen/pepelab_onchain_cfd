@@ -328,7 +328,8 @@ export function renderCloseComment(report: HealthReport, runUrl?: string): strin
   if (report.kind === "breaker") {
     return [
       `已恢復：${iso(report.checkedAtSec)} 這一輪沒有資產被熔斷拒寫，自動關閉。`,
-      "若先前有凍結 GuardedOracle 或切 ReduceOnly，需人工確認後解除（keeper 不會自動解除）。",
+      "若先前有凍結 GuardedOracle 或切 ReduceOnly，需人工確認後處理（keeper 不會自動解除）。",
+      "新版 GuardedOracle 的 guardian 凍結／暫停會在 72 小時後自行失效，到期不代表原因已排除；admin 下的凍結與 ReduceOnly 不會失效。",
       ...(runUrl ? ["", `Run：${runUrl}`] : []),
       "",
       "<!-- oracle-health:stale= -->",

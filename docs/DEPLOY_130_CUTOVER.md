@@ -66,9 +66,9 @@ RWA（其餘 8 檔）             : C_rwa = C × 50%
 |---|---|---|
 | 誰能寫價 | keeper 熱錢包一把 key（它是 `owner`） | `KEEPER_ROLE`（keeper） |
 | 單次偏離上限 | **無**。key 外洩時可以寫入任意價格 | 每次最多 10%（`maxDeviationBps` 1000） |
-| 緊急處置 | 無 | guardian 可以凍結單一資產或暫停整個 oracle |
+| 緊急處置 | 無 | guardian 可以凍結單一資產或暫停整個 oracle。鏈上現行版本的凍結沒有期限；新版原始碼（尚未部署，§10）是 72 小時到期加 24 小時冷卻，只有 admin 能下沒有期限的凍結 |
 | 過期行為 | 回傳舊價，由 exchange 的 6 小時 maxPriceAge 擋下 | oracle 本身設定 30 天，實際仍由 exchange 的 6 小時擋 |
-| 凍結或暫停時 | 不適用 | `getPrice` 會 revert，該資產的開倉、平倉、清算全部 revert（fail-closed） |
+| 凍結或暫停時 | 不適用 | 凍結時 `getPrice` 會 revert，該資產的開倉、平倉、清算全部 revert（fail-closed）。暫停時 keeper 無法寫價，價格超過 `maxPriceAge` 之後讀取同樣 revert |
 | 與金庫共用 | 否 | 是。凍結一個資產會同時停掉 V2 金庫 |
 | 累積漂移 | 不適用 | 鏈上現行版本沒有時間窗上限，連續 10 筆更新可以把價格推到約 2.6 倍。本分支新增速率限制（預設每小時最多 25%），但必須先重部署 oracle（§10） |
 
@@ -243,7 +243,7 @@ GUARDIAN=0x… forge script script/Redeploy130Hardened.s.sol:Redeploy130Hardened
 ## 10. 留給下一輪
 
 - **GuardedOracle 速率限制（本分支已完成原始碼與腳本，尚未部署）**：`setWindowLimit(duration, bps)` 限制一個時間窗內相對於窗口起點價格的累積偏離。窗口是 tumbling 的：跨越窗口邊界時，最壞情況是兩個窗口的量。經 reference 確認的價格可以直接通過，並把窗口起點重設為該價格。
-  - 因為 oracle 不可升級，要用 `script/RedeployGuardedOracle.s.sol`：部署新的 oracle，逐一搬移 11 檔的現價（只要有任何一檔的價格超過 `min(金庫 maxPriceAge, 6h)` 就拒絕，避免舊價被重新蓋上新的時間戳），複製 risk 參數，設定窗口（1h / 2500 bps，必須非 0），授予 keeper 與 guardian 角色，最後把金庫的 `setOracle` 指向新 oracle。
+  - 因為 oracle 不可升級，要用 `script/RedeployGuardedOracle.s.sol`：部署新的 oracle，逐一搬移 11 檔的現價（只要有任何一檔的價格超過 `min(金庫 maxPriceAge, 6h, ORACLE_MAX_PRICE_AGE)` 就拒絕，避免舊價被重新蓋上新的時間戳，也避免新 oracle 一上線該檔就已過期、讀取全部 revert），複製 `maxDeviationBps` 與 reference，`maxPriceAge` 改用 `ORACLE_MAX_PRICE_AGE`（預設 21600 = 6 小時，限 3600–2592000，不可為 0），設定窗口（1h / 2500 bps，必須非 0），授予 keeper 與 guardian 角色，最後把金庫的 `setOracle` 指向新 oracle。
   - fork 模擬已通過，金庫負債前後一致。
   - 這一步要在治理 phase 2 之前執行；phase 2 之後只能透過 timelock 提案。
   - 如果 exchange 採用 `ORACLE_KIND=guarded`，oracle 是 immutable，無法改指向新的 oracle，keeper 必須同時對兩個 oracle 寫價。
@@ -253,6 +253,14 @@ GUARDIAN=0x… forge script script/Redeploy130Hardened.s.sol:Redeploy130Hardened
     1. 先判斷是真行情還是 key 外洩。
     2. 如果是 key 外洩：guardian `setAssetFrozen(id, true)`（讀取端 fail-closed），並撤換 keeper（由 admin 或 timelock 執行）。
     3. 如果是真行情：接上獨立的 reference，讓確認後的價格一次到位；或者等下一個窗口，由 keeper 逐步追價。在那之前，exchange 端可以先由 guardian 把該資產設成 ReduceOnly。
+- **GuardedOracle 的 guardian 凍結與暫停加上期限（分支 `contracts/oracle-freeze-expiry-checkin`，2026-10-01，只有原始碼與測試，尚未部署）**：和速率限制一樣要靠 `script/RedeployGuardedOracle.s.sol` 換新的 oracle 才會生效，兩者會在同一次重部署一起上線。
+  - 規則：guardian 的凍結或暫停在 72 小時後自動失效（`GUARDIAN_HALT_DURATION`），接著同一範圍有 24 小時冷卻（`GUARDIAN_HALT_COOLDOWN`），數值與 exchange 的 guardian 暫停相同。admin 下的沒有期限，也只有 admin 能解除；admin 以 `takeOverAssetFreeze`／`takeOverPause` 接手 guardian 正在進行的停機（沒有可接手的就 revert）。暫停提前解除即關閉視窗；資產凍結以暫停實際生效的期間為準受約束。完整規則、guardian 單獨行動時的上限與代價見 KNOWN_LIMITATIONS #27。
+  - 腳本的變動：部署後讀回 `GUARDIAN_HALT_DURATION`／`GUARDIAN_HALT_COOLDOWN`，確認新 oracle 沒有暫停、11 檔都沒有凍結。凍結狀態不會搬移（舊 oracle 有暫停或凍結時 preflight 本來就拒絕執行）。`GUARDIAN` 和 broadcaster 是同一個位址時腳本會警告：同時持有 admin 與 guardian 的帳號視為 admin，它下的凍結不會到期。
+  - **新 oracle 的 `maxPriceAge` 預設 6 小時**（`ORACLE_MAX_PRICE_AGE`，不再照抄舊 oracle 的 30 天）。凍結到期只移除凍結，不更新價格；`maxPriceAge` 太長時，到期當下那個和凍結一樣舊的價格在 oracle 這一層會被視為有效，只剩各合約自己的 6 小時上限把關。腳本會拒絕 0（等於關掉時效檢查）與短於 1 小時的值，讀回時確認 `maxPriceAge == ORACLE_MAX_PRICE_AGE`。**`ORACLE_MAX_PRICE_AGE` 必須 ≥ keeper 的 `KEEPER_HEARTBEAT` ＋ 排程延遲**（GitHub cron 實測間隔最長約 169 分鐘，見 RUNBOOK_KEEPER），否則 keeper 正常運作時價格也會週期性過期。執行腳本時帶入 keeper 實際的 `KEEPER_HEARTBEAT`（秒），腳本會檢查 `ORACLE_MAX_PRICE_AGE ≥ KEEPER_HEARTBEAT + KEEPER_SCHEDULE_SLACK`（預設 10800 = 3 小時）；沒帶時只會警告，要人工核對。預設 21600 對 keeper 預設 heartbeat 900 有足夠餘裕；keeper 的 heartbeat 上限也是 21600，那種設定不能搭 6 小時的 oracle。
+  - 舊 oracle 退役時要停掉寫價：鏈上現行的舊版由 guardian `setPaused(true)` 即可（沒有期限）；之後若是從新版再遷移，要由 admin 下，guardian 的暫停 72 小時就失效。
+  - `ORACLE_KIND=guarded` 的 exchange 把 oracle 當 immutable，不會跟著換；它讀的 oracle 維持舊行為，直到 exchange 重部署。
+  - fork 模擬：`forge test --match-path test/fork/RedeployGuardedOracleFork.t.sol --fork-url https://sepolia.base.org -vv`。
+  - guardian 的操作順序（新版）：凍結或暫停之後立刻判斷是否需要超過 72 小時；需要就馬上送 timelock 的 `takeOverAssetFreeze`／`takeOverPause` 提案（48 小時）。確認是誤報就由 guardian 自行解除（排隊中的接手案屆時會 revert，可取消）。到期後確認 keeper 已恢復寫價。
 - PerpetualExchange 只剩 665 B 的空間，這一輪完全沒有動它。
 
 ## 11. 簽核

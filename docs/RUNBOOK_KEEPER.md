@@ -119,6 +119,8 @@ GuardedOracle `0x8E9e…f842` 的 `maxPriceAge` 是 **2592000 秒(30 天)**,2026
 
 2026-08-06 02:25 UTC 實測:`getPrice` 對 sBTC / sMSFT / sAAPL 全部 revert。
 
+**通則**：GuardedOracle 的 `maxPriceAge` 必須 ≥ keeper 的 `KEEPER_HEARTBEAT` ＋ 排程最大延遲（上面實測約 169 分鐘，取 3 小時）。調高 `KEEPER_HEARTBEAT` 前先核對 oracle 的 `maxPriceAge`；重部署 oracle 時 `RedeployGuardedOracle` 會用 `KEEPER_HEARTBEAT`／`KEEPER_SCHEDULE_SLACK` 檢查這條關係（見 DEPLOY_130_CUTOVER §10）。
+
 **Step E — 把 maxPriceAge 調成符合真實節奏**(需要 admin key
 `0x2a588AeA3271B159c9188d95E0d10614711f83e3`)
 
@@ -208,6 +210,10 @@ min(`KEEPER_BREAKER_DEVIATION`, Guarded 該方向上限)**,實際上是 +10% / �
 **keeper 不凍結 GuardedOracle。** 2026-09-29 窄複審移除了 keeper 自動 `setAssetFrozen`
 的路徑:凍結後下一輪 Mock 的門檻會從 10% 放寬回 20%,保護動作反而開洞。凍結一律由
 guardian(人)決定;Guarded 被凍結時 keeper 對 Mock 也拒寫(fail-closed)。
+
+新版 GuardedOracle(2026-10-01 的原始碼,尚未部署)的 guardian 凍結 72 小時後自動失效。失效後
+`peek` 的 `frozen` 會回到 false,keeper 下一輪就會恢復對兩顆 oracle 寫價,不需要任何人解除。
+凍結的原因如果還沒排除,必須在 72 小時內由 admin 接手(`takeOverAssetFreeze(id)`／`takeOverPause()`,見 KNOWN_LIMITATIONS #27)。
 
 keeper 不會自動解除 ReduceOnly;解除一律人工。funding crank 會讀
 `$RUNNER_TEMP/keeper-refused.txt` 跳過被拒寫的資產(不以已知錯誤的價格結算 funding)。

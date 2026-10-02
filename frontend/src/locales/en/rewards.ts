@@ -81,6 +81,25 @@ export const rewards: Catalog['rewards'] = {
     checkIn: '🐸 Check in +{reward} PEPE',
     comeBack: 'Come back tomorrow! Claimable then: {reward} PEPE',
     done: 'Checked in! 🐸',
+
+    /** 見 `../zh-TW/rewards.ts`。 */
+    points: {
+      description:
+        'Each daily check-in records 50 achievement points; each consecutive day adds +10, capped at 110 after 7 days. Points are kept in the contract and cannot be transferred. They are not PEPE.',
+      todayReward: 'Recorded today: {reward} achievement points',
+      checkIn: '🐸 Check in +{reward} achievement points',
+      comeBack: 'Come back tomorrow! Recorded then: {reward} achievement points',
+      balance: '{points} achievement points so far',
+    },
+
+    /** 見 `../zh-TW/rewards.ts`。 */
+    unknown: {
+      description:
+        'Check in daily; consecutive days count for more each time. Confirming with the contract what a check-in records.',
+      todayReward: 'Today: +{reward}',
+      checkIn: '🐸 Check in +{reward}',
+      comeBack: 'Come back tomorrow!',
+    },
   },
 
   /** 交易正在跑的時候按鈕上的字。 */

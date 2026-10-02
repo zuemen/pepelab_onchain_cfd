@@ -43,8 +43,21 @@ import {
   isLedgerEnabled,
   enqueueSettlement,
   deriveIdempotencyKey,
+  deriveIdempotencyKeyV2,
+  recordUnknownSettlement,
   type LedgerEntry,
 } from "./ledger.ts";
+import {
+  createX402V2,
+  decodePaymentSignature,
+  resolveX402Protocol,
+  type FacilitatorFailure,
+  type X402Protocol,
+  type X402V2Options,
+  type X402V2Paywall,
+} from "./x402v2.ts";
+import { readPaymentIdentifier } from "./paymentIdentifier.ts";
+import type { FacilitatorClient } from "@x402/core/server";
 import { getOnchainRevenue, isOnchainRevenueEnabled } from "./onchainRevenue.ts";
 import {
   getCandles,
@@ -66,6 +79,8 @@ const NETWORK = (process.env.X402_NETWORK ?? "base-sepolia") as Network;
 const FACILITATOR_URL =
   process.env.X402_FACILITATOR_URL ?? "https://x402.org/facilitator";
 const PAY_TO = resolvePayTo(ADDRESSES.FeeRouter);
+// x402 協定版本（docs/ADR-010）：v1（預設，行為與遷移前逐位元相同）｜v2｜both。
+const X402_PROTOCOL: X402Protocol = resolveX402Protocol();
 // 單一來源（shared/env.ts）。這裡與 settlement.ts 以前各有一份**不同**的預設值
 // （官方 USDC vs MockUSDC），導致 `_assertCurrencyMatch` 永遠抓不到錯配。
 const SETTLEMENT_TOKEN = resolveSettlementToken();
@@ -271,6 +286,36 @@ export function classifyFacilitatorFailure(message: string | undefined): {
   return null;
 }
 
+/**
+ * v2 付費牆的 facilitator 失敗回應：與 v1 的 classifyFacilitatorFailure 同一組錯誤代碼與形狀，
+ * 多一個 `phase`。**settle 階段的說明不同**：授權已經交給 facilitator，逾時／斷線時無法斷言
+ * 「未扣款」——v1 的 x402-hono 在這個情況回的是一個看不出原因的 402。
+ */
+export function facilitatorFailureResponse(f: FacilitatorFailure): Response {
+  const note =
+    f.phase === "settle"
+      ? "結算結果未知：付款授權已交給 facilitator，在 validBefore 之前仍可能被結算。" +
+        "請先對帳（鏈上 USDC 轉帳紀錄）再決定是否重試；付費資料未回傳。"
+      : f.phase === "supported"
+        ? "未扣款、未發出付款要求（402）：無法向 facilitator 取得支援的付款方式，請稍後重試。"
+        : "未扣款：付款授權尚未被 facilitator 結算，可用同一個請求重試（會重新簽一張授權）。";
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (f.status === 429) headers["Retry-After"] = String(FACILITATOR_RETRY_AFTER_SEC);
+  return new Response(
+    JSON.stringify({
+      ok: false,
+      error: f.status === 429 ? "facilitator_rate_limited" : "facilitator_unavailable",
+      message: f.message,
+      note,
+      facilitator: FACILITATOR_URL,
+      phase: f.phase,
+      // 結算結果未知但 facilitator 回了結算 tx hash（例如 settlement_pending）：給買方對帳。
+      ...(f.transaction ? { transaction: f.transaction } : {}),
+    }),
+    { status: f.status, headers },
+  );
+}
+
 // Hono Context 變數：handler 用 c.set("ledgerEntry", …) 留下這筆該記多少帳，
 // 由付費牆外層的 middleware 在確認收到款後讀出來、推進結算佇列（見下）。
 type AppVariables = { ledgerEntry?: LedgerEntry };
@@ -294,14 +339,33 @@ type AppVariables = { ledgerEntry?: LedgerEntry };
  * 冪等鍵（2026-09-29 P0）：優先用 X-PAYMENT-RESPONSE 裡 facilitator 的結算 tx hash，
  * 其次 X-PAYMENT 的「付款人 + EIP-3009 nonce」；兩者都解不出來（理論上不會）才用
  * 隨機 id——至少保證 worker 端同一筆不會被送兩次。
+ *
+ * @param protocol 省略或 "v1"：上述行為（X-PAYMENT／X-PAYMENT-RESPONSE），與遷移前完全相同。
+ *                 "v2"：結算證明改看 `PAYMENT-RESPONSE`（且 success 不可為 false——v2 的結算失敗
+ *                 402 也帶這個 header），`paymentHeader` 是 `PAYMENT-SIGNATURE`；冪等鍵一律
+ *                 `tx:<hash>` 優先（見 deriveIdempotencyKeyV2）。client 帶的 payment-identifier
+ *                 只當中繼資料存進 LedgerEntry.paymentId，不參與去重。
  */
 export async function applyLedgerRecording(
   entry: LedgerEntry | undefined,
   res: Response,
   paymentHeader?: string | null,
+  protocol: "v1" | "v2" = "v1",
 ): Promise<Response> {
-  if (!entry || res.status >= 400 || !res.headers.has("X-PAYMENT-RESPONSE")) {
+  const proofHeader = protocol === "v2" ? "PAYMENT-RESPONSE" : "X-PAYMENT-RESPONSE";
+  if (!entry || res.status >= 400 || !res.headers.has(proofHeader)) {
     return res;
+  }
+  if (protocol === "v2") {
+    // 縱深防禦：v2 的 PAYMENT-RESPONSE 在結算失敗時也會出現（success:false）。
+    try {
+      const proof = JSON.parse(Buffer.from(res.headers.get(proofHeader)!, "base64").toString("utf8")) as {
+        success?: unknown;
+      };
+      if (proof?.success !== true) return res;
+    } catch {
+      return res;
+    }
   }
   let settleError: string | undefined;
   let queued = false;
@@ -314,17 +378,22 @@ export async function applyLedgerRecording(
       // 必須 await：serverless 不保證回應後還能背景跑，fire-and-forget 會被砍掉
       // ——跟這份檔案開頭那條舊註解講的是同一件事，只是現在等的是一次 KV 寫入
       // （通常 <150ms），不再是一筆鏈上交易的 tx.wait()（≥2 秒起跳）。
-      let idempotencyKey = deriveIdempotencyKey(res.headers.get("X-PAYMENT-RESPONSE"), paymentHeader);
+      const v2Payload = protocol === "v2" ? decodePaymentSignature(paymentHeader) : null;
+      let idempotencyKey =
+        protocol === "v2"
+          ? deriveIdempotencyKeyV2(res.headers.get(proofHeader), v2Payload)
+          : deriveIdempotencyKey(res.headers.get("X-PAYMENT-RESPONSE"), paymentHeader);
       if (!idempotencyKey) {
         idempotencyKey = `req:${randomUUID()}`;
         // 理論上不會發生（X-PAYMENT-RESPONSE 應帶結算 tx hash）。隨機鍵只防 worker 端
         // 重送，**無法**辨認同一筆付款的重複入列，所以要留下痕跡。
         console.warn(
-          `[ledger] 無法從 X-PAYMENT-RESPONSE / X-PAYMENT 推導冪等鍵，改用隨機鍵 ${idempotencyKey}：` +
+          `[ledger] 無法從 ${proofHeader} / ${protocol === "v2" ? "PAYMENT-SIGNATURE" : "X-PAYMENT"} 推導冪等鍵，改用隨機鍵 ${idempotencyKey}：` +
             JSON.stringify(entry),
         );
       }
-      await enqueueSettlement({ ...entry, idempotencyKey });
+      const pid = v2Payload ? readPaymentIdentifier(v2Payload) : null;
+      await enqueueSettlement({ ...entry, idempotencyKey, ...(pid?.valid && pid.id ? { paymentId: pid.id } : {}) });
       queued = true;
     } catch (err) {
       settleError = "ledger_enqueue_failed：已收款但分潤紀錄未能排入佇列（已記錄於伺服器 log）";
@@ -367,6 +436,16 @@ export interface CreateAppOptions {
   isRegisteredTrader?: (trader: string) => Promise<boolean>;
   /** 覆寫 /risk/exposure 的鏈上讀取來源（測試用；預設是 app 的 provider）。 */
   exposureReader?: ExposureReader;
+  /** 覆寫 x402 協定版本（測試用；正式環境一律走 X402_PROTOCOL env，預設 v1）。 */
+  x402Protocol?: X402Protocol;
+  /** 覆寫 v2 的 facilitator client（測試用；預設是 X402_FACILITATOR_URL 的 HTTP client）。 */
+  x402FacilitatorClient?: FacilitatorClient;
+  /** 覆寫 X402_NETWORK（測試用）。 */
+  x402Network?: string;
+  /** 覆寫 v2 付費牆的時鐘、計時器、退避與逾時（測試用）。 */
+  x402V2Timing?: Pick<X402V2Options, "now" | "timer" | "initBackoffMs" | "unpaidInitTimeoutMs" | "initTimeoutMs">;
+  /** 覆寫 /signals/:trader 的資料來源（測試用；預設讀鏈上 getTraderPerformance）。 */
+  signalReader?: (trader: string) => Promise<unknown>;
 }
 
 /** /risk/exposure 讀的合約：全部來自 addresses.ts（前端同源），不寫死。 */
@@ -464,6 +543,36 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
     }
   });
   const payTo = opts.payTo ?? PAY_TO;
+  // x402 協定版本。v1（預設）時 x402v2 是 null：下面所有 v2 分支都不會執行，行為與遷移前相同。
+  const x402Protocol: X402Protocol = opts.x402Protocol ?? X402_PROTOCOL;
+  let x402v2: X402V2Paywall | null = null;
+  // v2／both 的付費牆建不起來（例如 X402_NETWORK 沒有對應的 CAIP-2）：不讓整個 app 起不來，
+  // 只讓付費端點回 503（免費端點照常），啟動時印一行錯誤。
+  let x402v2SetupError: string | null = null;
+  if (x402Protocol !== "v1") {
+    try {
+      x402v2 = createX402V2({
+        payTo,
+        network: opts.x402Network ?? NETWORK,
+        facilitatorUrl: FACILITATOR_URL,
+        facilitatorClient: opts.x402FacilitatorClient,
+        maxTimeoutSeconds: MAX_TIMEOUT_SECONDS,
+        routes: Object.entries(paidRoutes()).map(([pattern, r]) => ({
+          pattern,
+          price: r.price,
+          description: r.config.description,
+        })),
+        onFacilitatorFailure: (_c, f) => facilitatorFailureResponse(f),
+        onSettlementUnknown: (record) => recordUnknownSettlement(record),
+        ...opts.x402V2Timing,
+      });
+    } catch (err) {
+      x402v2SetupError = (err as { message?: string } | null)?.message ?? String(err);
+      console.error(
+        `[x402] X402_PROTOCOL=${x402Protocol} 但 v2 付費牆無法建立 → 付費端點一律回 503，免費端點照常：${x402v2SetupError}`,
+      );
+    }
+  }
   const codeReader: CodeReader = opts.payoutCodeReader ?? provider;
   // payTo 必須是 EOA（= FEE_SETTLEMENT_PRIVATE_KEY 的地址）：外洩清單、EIP-7702 委派、
   // 合約（含未設 PAY_TO 時回退的 FeeRouter）一律 unsafe。結果快取 10 分鐘、fail-closed。
@@ -590,6 +699,31 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
         curl: "curl -s <BASE_URL>/  # discover, then pay with any x402 client",
         node: "see agent/examples/buy-signal.ts (x402-fetch + viem)",
       },
+      // 只有啟用 v2 時才出現（v1 模式的回應與遷移前相同）。
+      ...(x402v2SetupError
+        ? { x402: { protocol: x402Protocol, error: "x402_misconfigured" } }
+        : {}),
+      ...(x402v2
+        ? {
+            x402: {
+              protocol: x402Protocol,
+              versions: x402Protocol === "both" ? [2, 1] : [2],
+              network: x402v2.network,
+              headers: {
+                v2: { required: "PAYMENT-REQUIRED", payment: "PAYMENT-SIGNATURE", response: "PAYMENT-RESPONSE" },
+                ...(x402Protocol === "both"
+                  ? { v1: { required: "(402 body)", payment: "X-PAYMENT", response: "X-PAYMENT-RESPONSE" } }
+                  : {}),
+              },
+              note:
+                "v2 的付款要求在 402 的 PAYMENT-REQUIRED header（base64 JSON）；" +
+                "exact／EIP-3009（USDC transferWithAuthorization），不接受 Permit2。" +
+                (x402Protocol === "both"
+                  ? "同一個請求只能帶一種付款 header（PAYMENT-SIGNATURE 或 X-PAYMENT）。"
+                  : "X-PAYMENT（v1）不再被接受。"),
+            },
+          }
+        : {}),
     });
   });
 
@@ -968,19 +1102,11 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
     paidRoutes(),
     { url: FACILITATOR_URL as `${string}://${string}` },
   );
-  app.use(async (c, next) => {
-    // 縱深防禦（審查 High-1）：不論前面的路徑閘門有沒有被繞過（大小寫、`//`、
-    // %2F 編碼…），只要 x402 會把這個請求當成付費路由，就先確認 payTo 安全。
-    // 用 x402 自己的 findMatchingRoute，保證判斷與付費牆完全一致。
-    if (findMatchingRoute(PAID_ROUTE_PATTERNS, rawPathOf(c), c.req.method.toUpperCase())) {
-      // x402 認為是付費路由、但沒有對應的實際 handler（Hono 路徑對不上）→ 付款前 404，
-      // 不發 402（否則買方付了錢拿到的是 404）。
-      if (!(c.req.method === "GET" && PAID_HANDLER_PATHS.some((re) => re.test(c.req.path)))) {
-        return c.json({ ok: false, error: "not_found", note: "未付款：沒有對應的付費端點。" }, 404);
-      }
-      const blocked = await payToGuard(c, async () => {});
-      if (blocked) return blocked;
-    }
+  /**
+   * v1 付費牆（x402-hono 0.5.3）＋ facilitator 錯誤對應＋記帳。**內容與遷移前逐行相同**，
+   * 只是從 app.use 的 callback 抽成具名函式，讓 both 模式可以依付款 header 分流。
+   */
+  const runV1 = async (c: Context<{ Variables: AppVariables }>, next: Next) => {
     let res: Response | void;
     try {
       // 必須接住回傳值：付費牆在 402 時是 **return** 一個 Response，不是寫進 c.res。
@@ -1010,6 +1136,84 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
     // ——買方沒被扣款，我們就不能記一筆分潤（這正是舊版「先記帳後結算失敗」那個
     // 順序問題的修法：把「記帳」的時間點往後移到「確定收到錢」之後）。
     c.res = await applyLedgerRecording(c.get("ledgerEntry"), c.res, c.req.header("X-PAYMENT"));
+  };
+
+  /**
+   * v2 付費牆（@x402/core 2.28，見 x402v2.ts）＋記帳。facilitator 錯誤對應在 x402v2.handle 內
+   * 完成（429 facilitator_rate_limited／502 facilitator_unavailable）；記帳時間點與 v1 相同：
+   * 只有回應帶結算成功的 `PAYMENT-RESPONSE` 才入列。
+   */
+  const runV2 = async (c: Context<{ Variables: AppVariables }>, next: Next) => {
+    const res = await x402v2!.handle(c, next);
+    if (res) c.res = res;
+    c.res = await applyLedgerRecording(c.get("ledgerEntry"), c.res, c.req.header("PAYMENT-SIGNATURE"), "v2");
+  };
+
+  app.use(async (c, next) => {
+    // 縱深防禦（審查 High-1）：不論前面的路徑閘門有沒有被繞過（大小寫、`//`、
+    // %2F 編碼…），只要 x402 會把這個請求當成付費路由，就先確認 payTo 安全。
+    // 用 x402 自己的 findMatchingRoute，保證判斷與付費牆完全一致。
+    // v2 付費牆有自己的比對（以 c.req.path）；啟用時兩邊任一認定為付費路由都要過這一關。
+    const paidRoute =
+      Boolean(findMatchingRoute(PAID_ROUTE_PATTERNS, rawPathOf(c), c.req.method.toUpperCase())) ||
+      Boolean(x402v2?.requiresPayment(c));
+    if (paidRoute) {
+      // x402 認為是付費路由、但沒有對應的實際 handler（Hono 路徑對不上）→ 付款前 404，
+      // 不發 402（否則買方付了錢拿到的是 404）。
+      if (!(c.req.method === "GET" && PAID_HANDLER_PATHS.some((re) => re.test(c.req.path)))) {
+        return c.json({ ok: false, error: "not_found", note: "未付款：沒有對應的付費端點。" }, 404);
+      }
+      if (x402v2SetupError) {
+        return c.json(
+          {
+            ok: false,
+            error: "x402_misconfigured",
+            message: "x402 付費牆設定錯誤（見伺服器啟動 log），付費端點暫停服務。",
+            note: "未扣款：沒有發出付款要求。",
+          },
+          503,
+        );
+      }
+      const blocked = await payToGuard(c, async () => {});
+      if (blocked) return blocked;
+    }
+
+    // ── 協定分流（docs/ADR-010）──────────────────────────────────────────────
+    //   v1（預設）：一律 v1，PAYMENT-SIGNATURE 被忽略 —— 與遷移前完全相同。
+    //   v2        ：一律 v2，X-PAYMENT 被忽略（視同未付款，回 v2 的 402）。
+    //   both      ：依付款 header 分流；兩個都帶 → 400（只會處理其中一張，另一張授權白簽）。
+    //               都沒帶 → v1 的 402（body 不變）再疊上 v2 的 PAYMENT-REQUIRED header。
+    if (!x402v2) return runV1(c, next);
+    if (x402Protocol === "v2") return runV2(c, next);
+    const hasV2 = Boolean(c.req.header("PAYMENT-SIGNATURE"));
+    const hasV1 = Boolean(c.req.header("X-PAYMENT"));
+    if (paidRoute && hasV2 && hasV1) {
+      return c.json(
+        {
+          ok: false,
+          error: "ambiguous_payment_headers",
+          message: "同一個請求同時帶了 PAYMENT-SIGNATURE（v2）與 X-PAYMENT（v1）；請只帶一種。",
+          note: "未扣款：兩張付款授權都沒有送給 facilitator。",
+        },
+        400,
+      );
+    }
+    if (hasV2) return runV2(c, next);
+    const out = await runV1(c, next);
+    if (out) return out;
+    if (paidRoute && !hasV1 && c.res.status === 402) {
+      // 未付款的 402：v2 的付款要求放在 header（v2 client 先讀 header，v1 client 只讀 body）。
+      const v2 = await x402v2.unpaidHeaders(c);
+      if ("failure" in v2) {
+        // facilitator /supported 拿不到 → 這一次只宣告 v1（v1 client 不該被 v2 的基礎設施拖垮）。
+        console.error(`[x402] both：v2 付款要求產生失敗，本次 402 只宣告 v1：${v2.failure.message}`);
+      } else {
+        const res = new Response(c.res.body, c.res);
+        for (const [k, v] of Object.entries(v2.headers)) res.headers.set(k, v);
+        c.res = undefined as unknown as Response;
+        c.res = res;
+      }
+    }
   });
 
   // ── 付費後才會執行到這裡 ─────────────────────────────────────────────────
@@ -1020,7 +1224,9 @@ export function createApp(opts: CreateAppOptions = {}): Hono<{ Variables: AppVar
   app.get("/signals/:trader", async (c) => {
     const trader = c.req.param("trader");
     try {
-      const perf = await getTraderPerformance(contracts, trader);
+      const perf = opts.signalReader
+        ? await opts.signalReader(trader)
+        : await getTraderPerformance(contracts, trader);
       c.set("ledgerEntry", {
         trader,
         feeUsd: PRICE_SIGNALS,
