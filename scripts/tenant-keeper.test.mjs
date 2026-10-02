@@ -224,6 +224,7 @@ test("load-env：只從登記檔讀出這個租戶的位址與參數", () => {
     EXCHANGE: bankA.contracts.PerpetualExchange,
     KEEPER_EXPECTED_ADDRESS: T(77),
     KEEPER_VAULT_ADDRESS: bankA.contracts.AssetVaultV2,
+    KEEPER_ORACLE_KIND: "guarded",
     KEEPER_RELAY_SOURCE: chains["84532"].roles.AggregatorOracle,
     KEEPER_BREAKER_DEVIATION: "0.1",
     FUNDING_SYMBOLS: "sAAPL sGOLD",
@@ -250,4 +251,77 @@ test("load-env：kind=platform、未部署、id 不合、值格式不對都失�
   const cli = spawnSync(process.execPath, [join(root, "ops/tenant-keeper/load-env.mjs"), "bank-a", "--root", platform.dir], { encoding: "utf8" });
   assert.equal(cli.status, 1);
   assert.equal(cli.stdout, "");
+});
+
+test("load-env：熔斷門檻的範圍同 PARAM_RANGES（≤1000 bps）；mock oracle 不得帶參考來源", () => {
+  const wide = tenantRoot();
+  writeFileSync(
+    join(wide.dir, "deploy/tenants/bank-a.json"),
+    JSON.stringify({ ...wide.cfg, params: { oracleKind: "guarded", oracleMaxDeviationBps: 1500 } }),
+  );
+  assert.throws(() => tenantKeeperEnv(wide.dir, "bank-a"), /不在 100–1000/);
+  const mock = tenantRoot({ reg: { ...bankA, oracleKind: "mock" } });
+  writeFileSync(
+    join(mock.dir, "deploy/tenants/bank-a.json"),
+    JSON.stringify({ ...mock.cfg, params: { oracleKind: "mock" } }),
+  );
+  assert.throws(() => tenantKeeperEnv(mock.dir, "bank-a"), /shared\.referenceSource 必須是 none/);
+});
+
+// ── 範本的結構保證（複審 G3、G4、G5）────────────────────────────────────────
+test("範本：金鑰與參考來源核對失敗後，後面每一個 step 都不執行（明確條件，不靠 !cancelled()）", () => {
+  const wf = YAML.parse(renderTenantKeeper(repoTk.templateText, "bank-a"));
+  const steps = wf.jobs.keep.steps;
+  const idx = (id) => steps.findIndex((st) => st.id === id);
+  const relay = idx("relaycheck");
+  const key = idx("keycheck");
+  assert.ok(relay > 0 && key > relay, "relaycheck 必須在 keycheck 之前，兩個都要有 id");
+  // 核對之前的 step 都沒有自訂 if（失敗就停）；核對本身不得 continue-on-error。
+  for (const st of steps) assert.equal(st["continue-on-error"], undefined, st.name);
+  for (const st of steps.slice(key + 1)) {
+    if (st.if === undefined) continue; // 預設 success()：前面任何一步失敗就不執行
+    const cond = String(st.if);
+    assert.doesNotMatch(cond, /always\(\)/, `${st.name} 不得用 always()`);
+    assert.match(cond, /steps\.keycheck\.outcome == 'success'/, `${st.name} 必須明確要求 keycheck 成功`);
+    assert.match(cond, /steps\.relaycheck\.outcome == 'success'/, `${st.name} 必須明確要求 relaycheck 成功`);
+  }
+  for (const st of steps.slice(0, key)) {
+    if (st.if !== undefined) assert.fail(`${st.name}：核對之前的 step 不應有自訂 if`);
+  }
+});
+
+test("範本：私鑰只在需要它的 step 的 env；npm ci 不執行 install script；foundry 釘版本", () => {
+  const text = renderTenantKeeper(repoTk.templateText, "bank-a");
+  const wf = YAML.parse(text);
+  const job = wf.jobs.keep;
+  assert.ok(!JSON.stringify(job.env ?? {}).includes("PRIVATE_KEY"), "job 層級 env 不得有私鑰");
+  const withKey = job.steps.filter((st) => JSON.stringify(st.env ?? {}).includes("secrets.TENANT_KEEPER_PRIVATE_KEY")).map((st) => st.id ?? st.name);
+  assert.deepEqual(withKey, ["Fail fast when secrets are missing", "keycheck", "refresh", "Crank settleFunding"]);
+  // 用到 $KEEPER_PRIVATE_KEY 的 run 一定在有私鑰 env 的 step 裡。
+  for (const st of job.steps) {
+    if (String(st.run ?? "").includes("KEEPER_PRIVATE_KEY")) assert.ok(withKey.includes(st.id ?? st.name), st.name);
+  }
+  const installs = job.steps.filter((st) => /npm ci/.test(String(st.run ?? "")));
+  assert.ok(installs.length > 0);
+  for (const st of installs) assert.match(st.run, /npm ci --ignore-scripts/);
+  const foundry = job.steps.find((st) => String(st.uses ?? "").startsWith("foundry-rs/foundry-toolchain@"));
+  assert.match(String(foundry.with.version), /^v\d+\.\d+\.\d+$/);
+});
+
+test("範本：中繼的參考來源以鏈上 referenceSource() 為準，不相等就停", () => {
+  const wf = YAML.parse(renderTenantKeeper(repoTk.templateText, "bank-a"));
+  const st = wf.jobs.keep.steps.find((x) => x.id === "relaycheck");
+  assert.match(st.run, /cast call "\$KEEPER_ORACLE_ADDRESS" "referenceSource\(\)\(address\)"/);
+  assert.match(st.run, /\[ "\$GOT" != "\$WANT" \]/);
+  assert.match(st.run, /exit 1/);
+  assert.match(st.run, /set -euo pipefail/);
+});
+
+test("保留字不能當租戶 id（不會產生 keeper-keeper、keeper-settlement 這類 environment）", async () => {
+  const { RESERVED_TENANT_IDS, tenantIdOfKeeperFile } = await import("./lib/tenant-keeper.mjs");
+  for (const id of RESERVED_TENANT_IDS) {
+    assert.throws(() => renderTenantKeeper(repoTk.templateText, id), /保留字/, id);
+    assert.equal(tenantIdOfKeeperFile(`keeper-${id}.yml`), null, id);
+  }
+  assert.equal(tenantIdOfKeeperFile("keeper-bank-a.yml"), "bank-a");
 });

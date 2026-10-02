@@ -157,8 +157,8 @@ export const PINNED_WORKFLOWS = {
  * 所以新增租戶不需要改這裡。
  */
 export const TENANT_KEEPER_PINS = {
-  [TEMPLATE_FILE]: "f45e89bbc5639b20f6040a3af6a626574fc5cd38e43d63d57efebc2bb1cb5b8a",
-  [LOADER_FILE]: "639b2e4c4e4c7672198a7da2ebc8bf7191eead6a4b0fcfb48ab1dbf7d609bb62",
+  [TEMPLATE_FILE]: "b3e9a01eae4d1dbb1bedac01daac5417476e639e8587e9c53916b11346aadde4",
+  [LOADER_FILE]: "b14b917de24fed1bbb88ec7127fcc4248e66de1b0219d1bc58c1b77a4b4ca84f",
 };
 
 /**

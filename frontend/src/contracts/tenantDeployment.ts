@@ -136,8 +136,9 @@ export type DedicatedDeployment = z.infer<typeof dedicatedDeployment>;
  * `extra` 讓呼叫端補上不在這個純資料模組裡的位址：建置期（tenantDeployment.node.ts）補上
  * 退役清單 retiredPlatformAddresses.json——放在 Node 端，瀏覽器 bundle 不帶這份清單；
  * AgentSessionManager 的表在 sessionManager.ts（那個檔案 import ethers，由它自己比對）。
- * CI（scripts/check-addresses.mjs）另外以「平台位址全集」比對：設定檔、workflow、agent
- * 設定裡出現過的每一個位址，這裡是建置期與執行期的第二道。
+ * CI（scripts/check-addresses.mjs）另外以「平台位址全集」比對：repo 內所有被追蹤的文字檔裡
+ * 出現過的每一個位址（scripts/lib/platform-addresses.mjs），比這裡的集合大；這裡是建置期與
+ * 執行期的另一道，只涵蓋前端看得到的平台位址與退役清單。
  */
 export function platformAddressSet(chainId: number, extra: readonly string[] = []): Set<string> {
   const out = new Set<string>();

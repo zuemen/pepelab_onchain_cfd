@@ -17,6 +17,9 @@ remappings = [
 fs_permissions = [
     { access = "read", path = "../deploy/tenants" },
     { access = "read-write", path = "./cache/tenants" },
+    # VerifyTenant 比對鏈上 runtime bytecode 時，從編譯產物讀 immutable／library 的位置
+    # （deployedBytecode.immutableReferences／linkReferences）。只讀、只限 out/。
+    { access = "read", path = "./out" },
 ]
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

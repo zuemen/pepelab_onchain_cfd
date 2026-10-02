@@ -526,6 +526,11 @@ contract DeployTenantTest is TenantFixture {
             fail("write into deploy/tenants was allowed");
         } catch {}
         assertFalse(vm.exists("../deploy/tenants/should-not-exist.json"));
+        // out/ is readable (VerifyTenant compares runtime code with the build), never writable.
+        try vm.writeFile("out/should-not-exist.json", "{}") {
+            fail("write into out/ was allowed");
+        } catch {}
+        assertFalse(vm.exists("out/should-not-exist.json"));
     }
 
     function test_rwaClassification_matchesTheLivePlatform() public {

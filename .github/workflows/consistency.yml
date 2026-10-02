@@ -40,10 +40,13 @@ jobs:
         run: node --test scripts/check-addresses.test.mjs
       - name: Vercel ignored-build-step self-test
         run: node --test scripts/vercel-ignore-build.test.mjs
+      # 平台位址全集的來源（git ls-files 的所有文字檔）、排除清單與具名白名單。
+      - name: Platform address universe self-test
+        run: node --test scripts/platform-addresses.test.mjs
 
       # 同一支也檢查租戶部署登記（frontend/src/contracts/deployments/*.json）：位址格式、
       # 重複的 JSON 鍵、同租戶不重複；專屬租戶登記裡的**每一個**位址都不得出現在平台位址全集
-      # （平台設定檔、退役清單、workflow、agent 設定裡出現過的所有位址）或其他租戶裡，唯一例外
+      # （repo 內所有被追蹤的文字檔裡出現過的位址＋退役清單）或其他租戶裡，唯一例外
       # 是顯式宣告共用、而且就是平台那一顆的結算代幣；帶 KEEPER_TENANT 的租戶 keeper workflow
       # 只能指向該租戶自己的合約（ADR-008）。鏈上的綁定與所有權由 tenant-verify.yml 驗證。
       - name: Check workflow addresses

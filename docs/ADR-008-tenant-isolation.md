@@ -155,6 +155,9 @@ keeper 的排程可以是同一支 workflow 以租戶為 matrix 展開，但每�
 | 共用平台 `ESGRegistryV2` 的選項 | 預設（專屬）已足夠試點 | 有租戶要求時 |
 | 前端連 Base 主網的專屬部署；專屬租戶的逐頁走查 | 沒有主網部署，也沒有可瀏覽的專屬租戶 | 試點時 |
 | 事故手冊區分單一租戶與跨租戶事故 | `TENANT_OPERATIONS.md` §4 只有判斷表，沒有完整手冊 | 試點前 |
+| **master 的 required checks**（branch protection／ruleset） | CI 檢查（守門、位址、租戶設定、`VerifyTenant`、forge）目前都只是建議性質，紅燈的 PR 仍可合併；設定是 repo 層級的權限，不在 PR 範圍 | 擁有者；第一個專屬租戶上線的前置條件（`TENANT_OPERATIONS.md` §1.6 第 0 步） |
+| 租戶的 x402 結算 worker | 只有 keeper 有範本與守門支援。要比照 keeper 做範本、守門類別與改名的 secret（不可沿用 `FEE_SETTLEMENT_PRIVATE_KEY`：environment 漏放時會退回 repo 層級的平台金鑰）；不放寬 `PROTECTED_SECRETS` | 有租戶要收 x402 時（`TENANT_OPERATIONS.md` §2.1） |
+| 租戶的價格監控與告警 | 時間窗限速只是減速（預設值下 24 小時仍可推到約 169 倍），真正的界線是監控與 guardian 的反應時間 | 試點前 |
 
 ## PR #228 審查修正（2026-10-02）
 
@@ -166,7 +169,7 @@ keeper 的排程可以是同一支 workflow 以租戶為 matrix 展開，但每�
 | F2 | 「dedicated 不得與平台共用」是黑名單；結算幣可填任何地址；部署者自報 | 平台位址全集（設定檔、退役清單 `retiredPlatformAddresses.json`、workflow、agent 設定裡出現過的每一個位址，`scripts/lib/platform-addresses.mjs`）；登記裡的每一個位址欄位自動列舉比對；共用只限 `shared` 顯式宣告、白名單內（只有 `contracts.SettlementToken`）、而且就是平台那一顆；JSON 重複鍵、缺欄位、多欄位、`kind` 缺漏或拼錯都紅；租戶之間同一條規則。部署設定的 `shared.*` 也改成白名單（每一個只能是平台的指定角色）。`tenant-verify.yml` 以公開 RPC 對每個專屬租戶跑 `VerifyTenant`（沒有 secret、RPC 不通就失敗，每天也跑一次）；部署者的真實性改由 CREATE 位址推導驗證 |
 | F3 | 每租戶 keeper workflow 與守門檢查互相矛盾 | 範本＋產生器＋守門檢查的「租戶 keeper」類別（見上方「實作時的修正」），secret 改名；兩支檢查對同一份產生出來的 workflow 同時通過（測試） |
 | F4 | 專屬租戶沒設 `VITE_SIGNAL_API_URL` 時悄悄退回平台的 signal-api | `vite.config.ts` 讓專屬租戶沒設、或設成平台的網址時 build 失敗；平台與示範租戶不變 |
-| F5 | `VerifyTenant` 只驗角色與接線 | 加驗 oracle 限速與參考來源、各讀取方的 `maxPriceAge`、exchange 與金庫的風控參數（與設定逐項相等）、ERC-1967 implementation／admin slot、最終歸屬（熱錢包沒有 admin、owner 不是熱錢包）、部署者不留任何權限。每一類都有負向測試（`contracts/test/TenantHardening.t.sol`） |
+| F5 | `VerifyTenant` 只驗角色與接線 | 加驗 oracle 限速與參考來源、各讀取方的 `maxPriceAge`、exchange 與金庫的風控參數（與設定逐項相等）、ERC-1967 implementation／admin slot、最終歸屬（熱錢包沒有 admin、owner 不是熱錢包）、部署者不留任何權限。負向測試在 `contracts/test/TenantHardening.t.sol` 與 `TenantVerifyCodeAndPrivileges.t.sol`；**不是每一類都有**，沒有負向測試的類別列在下面「PR #228 複審修正」 |
 | F6 | 租戶 oracle 的 `isStale()` 永遠 false，監控頁失真 | 專屬租戶以時間戳對照 6 小時；平台部署照舊（測試釘住） |
 | F7 | OI 上限沒有上界；主網可放行 EOA admin；6 位小數的主網 USDC 不能用 | OI 上限 1–10,000,000；`ALLOW_EOA_ADMIN` 在 8453 無效；結算幣限制寫進文件，主網今天過不了共用元件白名單 |
 | F8 | 部署過程中 exchange 有開放窗口 | 建立後立刻 owner `pause()`，移交前 `unpause()`（會啟動 30 分鐘清算寬限，部署完成後 30 分鐘內不能開倉） |
@@ -180,3 +183,36 @@ keeper 的排程可以是同一支 workflow 以租戶為 matrix 展開，但每�
 - 部署者的真實性用 CREATE 位址推導驗證，不讀廣播檔（`fs_permissions` 不開放 `broadcast/`，而推導在 fork 與 CI 上都能做）。
 
 驗證（2026-10-02，都沒有廣播任何交易）：`forge test` 992 過、0 敗、3 skip（fork）；本機 anvil fork（Base Sepolia 區塊 47,569,483）只做模擬，`DeployTenant` 內建讀回與獨立的 `VerifyTenant.run()` 全部 `ok`（有／無參考來源兩種）；vitest 961 支（default 與 `VITE_TENANT=demo-bank` 各一次）；node 測試 132 支；`check-workflow-guards`、`check-addresses`、`check-tenant-deploy`、actionlint 1.7.12（含 shellcheck、含範本）全過。default build 對照 `origin/master`（3137080）的 build：非 JS 產物 269 檔只有 `index.html` 的入口 chunk 雜湊不同（換掉雜湊後逐字相同），JS 多一個 `deployment-*.js` chunk，bundle 內的位址集合只多 `BASE_SEPOLIA_ORACLE_SHOWCASE.AggregatorOracle`（與前一次比對相同）；退役清單只在建置期讀，不進 bundle。另以一個暫時的專屬租戶確認：沒設 `VITE_SIGNAL_API_URL`、或設成平台的網址，build 都失敗。
+
+## PR #228 複審修正（2026-10-02）
+
+修正複審的發現。同樣不動 `contracts/src`（`PerpetualExchange` runtime 仍是 23,911 B）。
+
+| # | 發現 | 做法 |
+|---|---|---|
+| A2／A1 | 平台位址全集漏收平台的角色 EOA（owner／admin／guardian／risk）與只出現在 `ops/monitoring`、`contracts/broadcast` 的平台合約 | 全集改成「預設全收、排除要寫理由」：`git ls-files` 列出的**所有**文字檔裡的每一個位址（含 32 位元組補零的位址），只排除租戶自己的檔案、測試 fixture、第三方 `lib/`、lockfile、產生的 bundle（`UNIVERSE_EXCLUDES`，逐條有理由）；零位址、預編譯合約、官方 USDC、Permit2、Anvil 預設帳號以具名白名單扣除（`WELL_KNOWN_NON_PLATFORM`，逐筆有理由），Anvil 預設帳號另外直接擋（私鑰公開）。全集 144 → 217 個位址。回歸測試從 `contracts/script/Verify130.s.sol` 與 `docs/ROLE_SEPARATION.md` 讀出平台的角色位址，逐一放進租戶的每個角色與部署者，全部被擋 |
+| C1 | 限速範圍比平台寬鬆；文件低估了累計幅度 | 範圍收緊為 `oracleWindowSeconds` ≥ 3600、`oracleWindowDeviationBps` ≤ 2500、`oracleMaxDeviationBps` ≤ 1000，預設＝平台值（Solidity 常數與 `PARAM_RANGES` 由測試釘成相同；keeper 的 `load-env.mjs` 也跟著改）。文件改寫成正確的界線：T 秒內最多乘 (1+W)^(⌊T/d⌋+1)，往下對稱；預設值下 1 小時 1.25 倍、6 小時約 3.05 倍、24 小時約 169 倍（正向測試把 6 小時的實際推價釘在這個界線內）。明寫限速只是減速，防線是 keeper 金鑰保護、參考來源、監控告警與 guardian 暫停 |
+| C3 | 有參考來源時的界線 | 照實寫進文件：參考價 ±`oracleMaxDeviationBps`，次數不限（上限已壓到 10%）。腳本層沒有更好的補強；把確認容忍度與單次上限拆開要改 `contracts/src` |
+| G1 | 文件建議複製平台的結算 worker | 刪除該建議；改寫成「租戶結算 worker 尚未支援」，需要時要先做範本、守門類別與改名的 secret。`PROTECTED_SECRETS` 沒有放寬 |
+| G2 | 文件與註解說 CI 檢查「成為合併條件」 | 改成如實描述：它們是 CI 檢查，要 repo 設定 required checks 才會擋合併；目前 master 沒有設定。`TENANT_OPERATIONS.md` §1.6 第 0 步列為第一個專屬租戶上線的前置條件。沒有修改任何 repo 設定 |
+| C2 | `VerifyTenant` 不比對 bytecode | 每一顆合約（含金庫實作與 exchange 連結的 library）的 runtime code 與本 repo 編譯產物逐位元組比對，只遮蔽 immutable、library 位址與結尾 metadata（理由見 `TENANT_DEPLOYMENT.md` §4）。ERC-1967 三個 slot 對每一顆檢查。複審的探針改寫成負向測試：實作多一個函式時驗證失敗 |
+| C4 | 多出來的角色持有者偵測不到；維持保證金等參數漏驗 | 兩輪：已知位址逐角色「該有才有」（每次跑）；從部署紀錄新增的 `deployBlock` 起掃角色授予事件，重建持有者集合並要求等於預期（`eth_getLogs`，跨度超過上限時印 NOTE，`TENANT_PRIVILEGE_SCAN_REQUIRED=true` 時改為失敗）。補驗 `maintenanceMarginBpsOf`（必須 0）、ESG `maxAttestationAge`；資產模式與 unpriced exemption 印 WARN |
+| A3 | signal-api 網址用字串比對 | 改成 `new URL()` 解析後比對 hostname（小寫、去尾點；port、path、query、hash、userinfo 一律不影響判斷）；CSP 的 connect-src 兩邊都用解析後的 origin |
+| G3 | 金鑰核對失敗後，後面的 step 靠副作用才停下 | 核對 step 有 `id`；之後每個帶 `if:` 的 step 明確要求核對成功，不用 `always()`；測試釘住這個結構 |
+| G4 | relay 來源取自設定檔 | 範本先以 `cast call` 讀租戶 oracle 的 `referenceSource()`，與設定不同就停 |
+| G5 | 私鑰在 job 層級 env 等 | 租戶範本：私鑰只在需要的 step、`npm ci --ignore-scripts`、foundry 釘 v1.8.0。平台 keeper workflow 是整檔釘選的，這次沒動 |
+| G6 | 租戶 id 可以是 `keeper`、`settlement` | 加保留字清單 |
+| A4 | `tokens` 的鍵沒在 CI 檢查 | `check-addresses.mjs` 要求鍵是已知資產代號 |
+| C5 | 凍結與暫停的判斷 | 凍結訊息分 guardian（附到期）與 admin（沒有到期）；有到期的暫停只 WARN、沒有到期的判失敗，exchange 與 oracle 一致 |
+| C6 | Solidity 端沒擋參考來源等於價格來源 | 加上檢查與測試 |
+
+另外：本機 anvil 演練（只廣播到本機 fork）發現 `DeployTenant` 最後的 `exchange.unpause()` 在真的廣播時 out of gas（模擬時同一個 timestamp，估出的 gas 不含寫入暫停時間），已改成固定 gas 上限 300,000。上一輪只做模擬，沒有發現。
+
+**仍沒有負向測試的類別**：金庫的 `oracle`／`esgRegistry` 被 admin 改掉；exchange 的 `adlEnabled`、`rwaAsset` 旗標；「金庫不是 token 的 minter」；主網上 owner 必須是合約（只有 preflight 有測）；unpriced exemption 生效時只 WARN；`eth_getLogs` 掃描本身只在 anvil 演練實證，CI 沒有自動化測試（單元測試用測試錄下的 log 當事件歷史）。
+
+沒有修改的地方與理由：
+
+- A5（`contracts.X402FeeRouter` 沒有鏈上驗證）：前端只顯示、沒有資金流，寫進 `TENANT_DEPLOYMENT.md`；前端要用它付款之前必須補驗證。
+- C7（部署中斷時的狀態）：已正確，不需要改。
+- 前端建置期的平台位址集合仍只有前端看得到的平台位址與退役清單，沒有改成 repo 全集：Vercel 的建置環境不保證有 git，全集由 CI 的 `check-addresses.mjs` 負責。
+- R1（平台私鑰是 repo 層級 secret、environment 沒有保護、`admin-approval` 不存在）是 repo 設定，不在 PR 範圍，由擁有者處理。

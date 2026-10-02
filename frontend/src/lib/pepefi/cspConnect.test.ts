@@ -49,5 +49,12 @@ describe('build-time CSP check for VITE_SIGNAL_API_URL', () => {
     expect(isConnectAllowed('http://agent-git-master-zuemens-projects.vercel.app', connectSrcOf(vercel))).toBe(false);
     expect(isConnectAllowed('https://sepolia.base.org:8443', connectSrcOf(vercel))).toBe(false);
     expect(isConnectAllowed('not a url', connectSrcOf(vercel))).toBe(false);
+    // 解析後的 origin（複審 A3）：大小寫、預設 port、query、尾斜線、userinfo 都正規化成同一個 origin。
+    const host = new URL(DEFAULT_SIGNAL_API_URL).host;
+    for (const u of [`https://${host.toUpperCase()}`, `https://${host}:443`, `https://${host}/?t=1`, `https://${host}/`, `https://x@${host}`]) {
+      expect(isConnectAllowed(u, connectSrcOf(vercel)), u).toBe(true);
+    }
+    expect(isConnectAllowed(`https://${host}`, [`https://${host.toUpperCase()}:443/`])).toBe(true);
+    expect(isConnectAllowed(`https://${host}`, ["'self'"])).toBe(false);
   });
 });

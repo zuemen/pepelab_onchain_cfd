@@ -30,7 +30,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { loadChains } from "./check-addresses.mjs";
 import { parseJsonStrict } from "./lib/strict-json.mjs";
-import { describeSources, platformAddressUniverse } from "./lib/platform-addresses.mjs";
+import { describeSources, platformAddressUniverse, publicKeyAccountProblem } from "./lib/platform-addresses.mjs";
 
 const ADDR_EXACT = /^0x[0-9a-fA-F]{40}$/;
 const ZERO = "0x0000000000000000000000000000000000000000";
@@ -109,14 +109,17 @@ export const ORACLE_KINDS = ["guarded", "mock"];
  * 數值參數的範圍（含兩端）。與 contracts/script/VerifyTenant.s.sol（TenantBase）的常數相同，
  * check-tenant-deploy.test.mjs 讀那個檔案逐一比對。
  *   oracle*：租戶 GuardedOracle 的單次偏移上限、時間窗長度、時間窗累計上限（審查 F1：
- *            沒有時間窗時，keeper 金鑰外洩就能在同一個區塊內把價格一路推上去）。
+ *            沒有時間窗時，keeper 金鑰外洩就能在同一個區塊內把價格一路推上去）。範圍不得比
+ *            平台自己的設定寬鬆（複審 C1）：時間窗 ≥ 3600 秒、時間窗上限 ≤ 2500 bps、單次上限
+ *            ≤ 1000 bps；預設值就是平台值（1000／3600／2500）。限速只是減速：時間窗 d 秒、
+ *            上限 W 時，T 秒內最多乘 (1+W)^(⌊T/d⌋+1)，見 docs/TENANT_OPERATIONS.md。
  *   oiCap*：每邊、整數 USDC；上界避免「實務上等於不設上限」（審查 F7）。
  *   maxProfitBps：與 PerpetualExchange 的 MIN_PROFIT_CAP_BPS / MAX_PROFIT_CAP_BPS 相同。
  */
 export const PARAM_RANGES = {
-  oracleMaxDeviationBps: [100, 2_000],
-  oracleWindowSeconds: [900, 86_400],
-  oracleWindowDeviationBps: [100, 3_000],
+  oracleMaxDeviationBps: [100, 1_000],
+  oracleWindowSeconds: [3_600, 86_400],
+  oracleWindowDeviationBps: [100, 2_500],
   oiCapNonRwaUsdc: [1, 10_000_000],
   oiCapRwaUsdc: [1, 10_000_000],
   maxProfitBps: [10_000, 250_000],
@@ -155,6 +158,7 @@ const RECORD_TOP_KEYS = [
   "tenantId",
   "chainId",
   "mode",
+  "deployBlock",
   "oracleKind",
   "deployer",
   "owner",
@@ -337,6 +341,8 @@ export function checkTenantDeploy({ file, cfg, ctx }) {
       return;
     }
     if (dedicated) {
+      const pub = publicKeyAccountProblem(path, value);
+      if (pub) bad(pub);
       if (ctx.universe.has(value.toLowerCase())) {
         bad(
           `${path}=${value} 是現行正式站（平台）用過的位址（出處：${describeSources(ctx.universe.get(value.toLowerCase()))}）` +
@@ -483,6 +489,10 @@ export function checkDeployedRecord({ file, rec, cfg, ctx }) {
   if (rec.mode !== "broadcast") {
     bad(`mode=${JSON.stringify(rec.mode)}——只有 DeployTenant 廣播後寫出的紀錄（mode=broadcast）能放進 deploy/tenants/`);
   }
+  // 部署開始前的區塊高度：VerifyTenant 從這裡起掃角色授予事件，重建每個角色的持有者集合（複審 C4）。
+  if (!Number.isSafeInteger(rec.deployBlock) || rec.deployBlock < 0) {
+    bad(`deployBlock=${JSON.stringify(rec.deployBlock)} 必須是非負整數（DeployTenant 寫入的部署起始區塊）`);
+  }
 
   const same = (a, b) => typeof a === "string" && typeof b === "string" && a.toLowerCase() === b.toLowerCase();
   if (!cfg) {
@@ -508,6 +518,8 @@ export function checkDeployedRecord({ file, rec, cfg, ctx }) {
       if (!allowZero) bad(`${path} 是零位址`);
       return;
     }
+    const pub = publicKeyAccountProblem(path, value);
+    if (pub) bad(pub);
     if (ctx.universe.has(low)) {
       bad(`${path}=${value} 是現行正式站（平台）用過的位址（出處：${describeSources(ctx.universe.get(low))}）——租戶的合約不得與正式站共用`);
     }
@@ -643,7 +655,7 @@ export function loadContext(root) {
     sessionFile: join(root, "frontend/src/contracts/sessionManager.ts"),
     x402File: join(root, "frontend/src/contracts/x402.ts"),
   });
-  // 平台位址全集：設定檔、workflow、agent 設定裡出現過的每一個位址＋退役清單（審查 F2）。
+  // 平台位址全集：repo 內所有被追蹤的文字檔裡出現過的每一個位址＋退役清單（審查 F2、複審 A1／A2）。
   const universe = platformAddressUniverse(root);
   const feDir = join(root, "frontend/src/tenant/tenants");
   const frontendTenants = Object.fromEntries(

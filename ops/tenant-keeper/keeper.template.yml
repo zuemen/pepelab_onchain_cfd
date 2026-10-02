@@ -11,7 +11,12 @@ name: Keeper (__TENANT_ID__)
 #   - 金鑰：只用 environment「keeper-__TENANT_ID__」的 secret（TENANT_KEEPER_PRIVATE_KEY、
 #     TENANT_RPC_URL）。名稱刻意與平台的 KEEPER_PRIVATE_KEY 不同：environment 沒放這個
 #     secret 時，GitHub 會退回 repo 層級的同名 secret——不同名就不可能退回平台的金鑰。
-#     另外「金鑰就是這個租戶的 keeper」由下面的步驟在送任何交易之前核對。
+#     另外「金鑰就是這個租戶的 keeper」由下面的步驟在送任何交易之前核對；核對沒通過，
+#     後面每一個 step 都不執行（每個帶 if: 的 step 都明確要求 keycheck 成功，不靠預設行為）。
+#   - 私鑰只放在需要它的 step 的 env（核對、寫價、crank），不放在 job 層級；npm ci 加
+#     --ignore-scripts，依賴樹的 install script 不會在持有私鑰的 job 裡執行；foundry 釘版本。
+#   - 參考來源（relay）：設定檔的 shared.referenceSource 必須等於租戶 oracle 鏈上的
+#     referenceSource()，不相等就停（設定檔被改、鏈上被改都一樣），不會中繼未經核對的來源。
 #   - 位址：不寫在這裡。執行期由 ops/tenant-keeper/load-env.mjs 從已審查的部署登記
 #     （frontend/src/contracts/deployments/__TENANT_ID__.json、deploy/tenants/__TENANT_ID__.json）讀出。
 #   - nonce：自己的 concurrency group，不與平台的 keeper 排隊（不同金鑰＝不同 nonce 序列）。
@@ -43,7 +48,6 @@ jobs:
       KEEPER_TENANT: __TENANT_ID__
       KEEPER_CHAIN: base-sepolia
       KEEPER_RPC_URL: ${{ secrets.TENANT_RPC_URL }}
-      KEEPER_PRIVATE_KEY: ${{ secrets.TENANT_KEEPER_PRIVATE_KEY }}
       # 部分失敗容忍度：失敗筆數 / 有價可寫筆數 超過這個百分比就讓 job 失敗。
       MAX_FAIL_PCT: "30"
     steps:
@@ -52,6 +56,8 @@ jobs:
           persist-credentials: false
 
       - name: Fail fast when secrets are missing
+        env:
+          KEEPER_PRIVATE_KEY: ${{ secrets.TENANT_KEEPER_PRIVATE_KEY }}
         run: |
           set -euo pipefail
           if [ -z "${KEEPER_RPC_URL:-}" ] || [ -z "${KEEPER_PRIVATE_KEY:-}" ]; then
@@ -76,10 +82,31 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
         with:
-          version: stable
+          version: v1.8.0
+
+      # 中繼的參考來源必須就是租戶 oracle 鏈上設定的那一個（設定為 none 時鏈上必須是零位址）。
+      - name: Relay source matches the on-chain referenceSource
+        id: relaycheck
+        run: |
+          set -euo pipefail
+          ZERO="0x$(printf '%040d' 0)"  # 範本不寫任何位址字面值
+          WANT=$(echo "${KEEPER_RELAY_SOURCE:-$ZERO}" | tr '[:upper:]' '[:lower:]')
+          if [ "$KEEPER_ORACLE_KIND" = "guarded" ]; then
+            GOT=$(cast call "$KEEPER_ORACLE_ADDRESS" "referenceSource()(address)" --rpc-url "$KEEPER_RPC_URL" | tr '[:upper:]' '[:lower:]')
+          else
+            GOT=$ZERO
+          fi
+          if ! [[ "$GOT" =~ ^0x[0-9a-f]{40}$ ]] || [ "$GOT" != "$WANT" ]; then
+            echo "::error::設定檔的 shared.referenceSource（$WANT）與租戶 oracle 鏈上的 referenceSource()（$GOT）不一致。不中繼、不送任何交易。"
+            exit 1
+          fi
+          echo "relay source $WANT = on-chain referenceSource ✓"
 
       # 送任何交易之前：金鑰推出來的地址必須就是這個租戶的 roles.keeper。
       - name: Keeper key belongs to this tenant
+        id: keycheck
+        env:
+          KEEPER_PRIVATE_KEY: ${{ secrets.TENANT_KEEPER_PRIVATE_KEY }}
         run: |
           set -euo pipefail
           ADDR=$(cast wallet address --private-key "$KEEPER_PRIVATE_KEY")
@@ -105,12 +132,13 @@ jobs:
 
       - name: Install agent deps
         working-directory: agent
-        run: npm ci --no-audit --no-fund
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Refresh prices
         id: refresh
         working-directory: agent
         env:
+          KEEPER_PRIVATE_KEY: ${{ secrets.TENANT_KEEPER_PRIVATE_KEY }}
           KEEPER_REPORT_PATH: ${{ runner.temp }}/keeper-report.json
           KEEPER_REFUSED_PATH: ${{ runner.temp }}/keeper-refused.txt
           KEEPER_NONCE_PATH: ${{ runner.temp }}/keeper-next-nonce
@@ -141,7 +169,7 @@ jobs:
           fi
 
       - name: Alert on price circuit breaker
-        if: always() && (steps.refresh.outcome == 'success' || steps.refresh.outcome == 'failure')
+        if: ${{ !cancelled() && steps.relaycheck.outcome == 'success' && steps.keycheck.outcome == 'success' && (steps.refresh.outcome == 'success' || steps.refresh.outcome == 'failure') }}
         working-directory: agent
         env:
           GH_TOKEN: ${{ github.token }}
@@ -152,7 +180,9 @@ jobs:
 
       # 只結算這個租戶註冊的資產（FUNDING_SYMBOLS 來自 deploy/tenants/__TENANT_ID__.json）。
       - name: Crank settleFunding
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.relaycheck.outcome == 'success' && steps.keycheck.outcome == 'success' }}
+        env:
+          KEEPER_PRIVATE_KEY: ${{ secrets.TENANT_KEEPER_PRIVATE_KEY }}
         run: |
           set -uo pipefail
           INTERVAL=$(cast call "$EXCHANGE" "FUNDING_INTERVAL()(uint256)" --rpc-url "$KEEPER_RPC_URL" | awk '{print $1}')

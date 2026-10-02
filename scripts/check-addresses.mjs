@@ -18,8 +18,9 @@
 // kind: dedicated＝租戶自己的整組合約）。這支腳本也檢查它們：
 //   - 格式：kind 必填、欄位不得缺也不得多（沒有預設值）、JSON 不得有重複的鍵；
 //   - 專屬部署登記裡的**每一個**位址（自動列舉，不是手寫欄位清單）都不得出現在「平台位址
-//     全集」裡（scripts/lib/platform-addresses.mjs：平台設定檔、退役清單、workflow、agent
-//     設定裡出現過的每一個位址）——共用就是共用資金、收款地址與暫停鍵；
+//     全集」裡（scripts/lib/platform-addresses.mjs：repo 內所有被追蹤的文字檔裡出現過的每一個
+//     位址＋退役清單，排除清單與白名單見該檔）——共用就是共用資金、收款地址與暫停鍵；
+//     私鑰公開的 Anvil 預設帳號也不得出現；
 //   - 唯一的例外是 `shared` 顯式宣告、而且在白名單 SHAREABLE_PATHS 內的欄位（只有結算代幣），
 //     值必須就是平台在該鏈的那一顆；
 //   - 兩個租戶之間同一條規則；同一租戶各位址不重複；
@@ -36,7 +37,7 @@ import { join, resolve, dirname, basename } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { parseJsonStrict } from "./lib/strict-json.mjs";
-import { describeSources, platformAddressUniverse } from "./lib/platform-addresses.mjs";
+import { describeSources, platformAddressUniverse, publicKeyAccountProblem } from "./lib/platform-addresses.mjs";
 
 const ADDR = /0x[0-9a-fA-F]{40}/g;
 const ADDR_EXACT = /^0x[0-9a-fA-F]{40}$/;
@@ -231,7 +232,7 @@ const keyProblems = (obj, { required, optional }, where, bad) => {
  * @returns {{ problems: string[], addrs: Map<string, {path: string, shared: boolean}> }}
  *   addrs：這個租戶的所有位址（小寫 → 欄位），給跨租戶比對。
  */
-export function checkDeployment({ file, dep, chains, universe, duplicateKeys = [] }) {
+export function checkDeployment({ file, dep, chains, universe, duplicateKeys = [], assetSymbols }) {
   const problems = [];
   const name = basename(file);
   const bad = (msg) => problems.push(`${name}: ${msg}`);
@@ -282,6 +283,8 @@ export function checkDeployment({ file, dep, chains, universe, duplicateKeys = [
   }
   for (const [k, v] of Object.entries(tokens)) {
     if (typeof v !== "string" || !ADDR_EXACT.test(v)) bad(`tokens.${k}=${JSON.stringify(v)} 不是位址`);
+    // 複審 A4：鍵必須是已知資產代號（前端的 zod 也這樣擋，這裡讓錯誤在 CI 就出現）。
+    if (assetSymbols && !assetSymbols.includes(k)) bad(`tokens 的鍵 ${k} 不是已知資產代號（addresses.ts 的 ASSET_IDS）`);
   }
 
   // 顯式宣告的共用欄位。
@@ -320,6 +323,8 @@ export function checkDeployment({ file, dep, chains, universe, duplicateKeys = [
       if (!want || want.toLowerCase() !== low) {
         bad(`${f.path}=${f.value} 宣告為共用，但不是平台在 chain ${dep.chainId} 的 ${rule.role}（${want ?? "沒有"}）——共用只限${rule.why}`);
       }
+    } else if (publicKeyAccountProblem(f.path, f.value)) {
+      bad(publicKeyAccountProblem(f.path, f.value));
     } else if (universe.has(low)) {
       bad(
         `${f.path}=${f.value} 是平台部署（default）的位址（出處：${describeSources(universe.get(low))}）——` +
@@ -342,7 +347,7 @@ export function checkDeployment({ file, dep, chains, universe, duplicateKeys = [
 }
 
 /** 讀整個登記目錄並檢查（含跨租戶與「每個前端租戶都有登記檔」）。 */
-export function checkDeployments({ dir, tenantsDir, chains, universe }) {
+export function checkDeployments({ dir, tenantsDir, chains, universe, assetSymbols }) {
   const problems = [];
   const deployments = {};
   const owner = new Map();
@@ -355,7 +360,7 @@ export function checkDeployments({ dir, tenantsDir, chains, universe }) {
       problems.push(`${f}: 不是合法 JSON：${e.message}`);
       continue;
     }
-    const r = checkDeployment({ file: f, dep: parsed.value, chains, universe, duplicateKeys: parsed.duplicates });
+    const r = checkDeployment({ file: f, dep: parsed.value, chains, universe, duplicateKeys: parsed.duplicates, assetSymbols });
     problems.push(...r.problems);
     deployments[basename(f, ".json")] = parsed.value;
     // 跨租戶：同一條規則。只有兩邊都放在顯式宣告的共用欄位（白名單）時才允許相同。
@@ -677,6 +682,15 @@ export function checkWorkflow({ file, text, chains, allowlist = ALLOWLIST, deplo
   return { problems, checked: entries.length + raw.length };
 }
 
+/** addresses.ts 的 ASSET_IDS 鍵（資產代號）。與 check-tenant-deploy.mjs 的 parseAssetSymbols 同一規則。 */
+export function assetSymbolsOf(addressesSrc) {
+  const i = addressesSrc.indexOf("export const ASSET_IDS = {");
+  if (i < 0) throw new Error("addresses.ts：找不到 ASSET_IDS");
+  const end = addressesSrc.indexOf("} as const", i);
+  if (end < 0) throw new Error("addresses.ts：ASSET_IDS 區塊沒有以 } as const 結尾");
+  return [...addressesSrc.slice(i, end).matchAll(/^\s*([A-Za-z0-9_]+)\s*:\s*"0x[0-9a-fA-F]{64}"/gm)].map((m) => m[1]);
+}
+
 export function loadChains({ addressesFile, sessionFile, x402File }) {
   return parseFrontendConfig(
     readFileSync(addressesFile, "utf8"),
@@ -725,10 +739,10 @@ export function run({
   let problems = [];
   let checked = 0;
   // 租戶部署登記先檢查：workflow 的 KEEPER_TENANT 要靠它解析。
-  // 平台位址全集（設定檔、workflow、agent 設定裡出現過的所有位址＋退役清單）。
+  // 平台位址全集（repo 內所有被追蹤的文字檔裡出現過的位址＋退役清單）。
   const universe = deploymentsDir ? platformAddressUniverse(root) : new Map();
   const reg = deploymentsDir
-    ? checkDeployments({ dir: deploymentsDir, tenantsDir, chains, universe })
+    ? checkDeployments({ dir: deploymentsDir, tenantsDir, chains, universe, assetSymbols: assetSymbolsOf(readFileSync(addressesFile, "utf8")) })
     : { problems: [], deployments: {}, checked: 0 };
   problems = problems.concat(reg.problems);
   for (const f of files) {

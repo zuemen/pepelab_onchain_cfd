@@ -16,6 +16,9 @@ import {
   retiredPlatformAddresses,
   dedicatedSignalApiProblem,
   loadTenantDeploymentForBuild,
+  PLATFORM_SIGNAL_API_URLS,
+  platformSignalApiHosts,
+  signalApiHost,
 } from './tenantDeployment.node';
 import {
   CHAIN_MAP,
@@ -449,6 +452,42 @@ describe('checked-in deployment registries', () => {
     const vite = fs.readFileSync(path.join(FRONTEND_ROOT, 'vite.config.ts'), 'utf8');
     expect(vite).toMatch(/dedicatedSignalApiProblem\(\s*deployment\.deployment,\s*envOf\('VITE_SIGNAL_API_URL'\)\s*\)/);
     expect(vite).toMatch(/if \(signalApiProblem\) throw new Error/);
+  });
+
+  it('compares the signal-api by parsed host, not by string (review A3)', () => {
+    const dedicated = parseTenantDeployment(dedicatedRaw(), 'bank-a');
+    const host = new URL(DEFAULT_SIGNAL_API_URL).host;
+    for (const variant of [
+      `https://${host.toUpperCase()}`,
+      `HTTPS://${host}`,
+      `https://${host}:443`,
+      `https://${host}:8443`,
+      `https://${host}/?t=1`,
+      `https://${host}/#x`,
+      `https://${host}/`,
+      `https://${host}//`,
+      `https://${host}/x/..`,
+      `https://${host}.`,
+      `https://${host}./`,
+      `https://x@${host}`,
+      `https://x:y@${host}/path`,
+      `  https://${host}  `,
+      `http://${host}`,
+    ]) {
+      expect(dedicatedSignalApiProblem(dedicated, variant), variant).toMatch(/points at the platform/);
+    }
+    expect(dedicatedSignalApiProblem(dedicated, 'not a url')).toMatch(/not a valid URL/);
+    expect(dedicatedSignalApiProblem(dedicated, `https://${host}.evil.example`)).toBeNull();
+    expect(dedicatedSignalApiProblem(dedicated, 'https://signal.bank-a.example/?t=1')).toBeNull();
+    expect(signalApiHost(`https://X@${host.toUpperCase()}.:443/a?b#c`)).toBe(host);
+  });
+
+  it('the platform signal-api host set covers the SDK constant (agent/sdk/src/signalApi.ts)', () => {
+    const sdk = fs.readFileSync(path.join(FRONTEND_ROOT, '..', 'agent', 'sdk', 'src', 'signalApi.ts'), 'utf8');
+    const m = /export const SIGNAL_API_TESTNET_URL\s*=\s*"([^"]+)"/.exec(sdk);
+    expect(m, 'SIGNAL_API_TESTNET_URL not found').not.toBeNull();
+    expect(platformSignalApiHosts().has(signalApiHost(m![1])!)).toBe(true);
+    expect(PLATFORM_SIGNAL_API_URLS).toContain(DEFAULT_SIGNAL_API_URL);
   });
 
   it('the agent monitor judges a dedicated tenant’s staleness by timestamp, the platform’s by isStale() (F6)', () => {

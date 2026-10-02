@@ -79,6 +79,7 @@ const record = (cfg = deployedCfg()) => ({
   tenantId: "demo-bank",
   chainId: cfg.network.chainId,
   mode: "broadcast",
+  deployBlock: 12345678,
   oracleKind: cfg.params.oracleKind,
   deployer: B(99),
   owner: cfg.roles.admin,
@@ -764,4 +765,67 @@ test("前端登記：還沒部署的租戶不能先登記成 dedicated；dedicat
     runWith({ cfg: filled(), frontend: { "demo-bank": platformReg, "ghost-bank": ghost }, coverage: true }),
     /deployments\/ghost-bank\.json: kind=dedicated，但 deploy\/tenants\/ 沒有 status=deployed 的 ghost-bank\.json/,
   );
+});
+
+// ── 複審 A2：平台的角色 EOA ─────────────────────────────────────────────────
+// 平台合約的 owner 寫在 contracts/script/Verify130.s.sol（DEPLOYER_OWNER）；DEFAULT_ADMIN／
+// GUARDIAN／PAUSER／RISK／KEEPER 寫在 docs/ROLE_SEPARATION.md 的角色表。位址從檔案讀出，不是手抄。
+const roleSeparationAddresses = () => {
+  const md = readFileSync(join(root, "docs/ROLE_SEPARATION.md"), "utf8");
+  const rows = md
+    .split(/\r?\n/)
+    .filter((l) => /^\|\s*`(DEFAULT_ADMIN_ROLE|KEEPER_ROLE|GUARDIAN_ROLE|PAUSER_ROLE|RISK_ROLE)`/.test(l));
+  assert.ok(rows.length >= 5, "docs/ROLE_SEPARATION.md 的角色表少於 5 列？");
+  return rows.map((l) => /0x[0-9a-fA-F]{40}/.exec(l)[0]);
+};
+const verify130Owner = () => {
+  const sol = readFileSync(join(root, "contracts/script/Verify130.s.sol"), "utf8");
+  const m = /address internal constant DEPLOYER_OWNER\s*=\s*(0x[0-9a-fA-F]{40})/.exec(sol);
+  assert.ok(m, "Verify130.s.sol 找不到 DEPLOYER_OWNER");
+  return m[1];
+};
+
+test("平台角色 EOA（Verify130 的 owner、ROLE_SEPARATION 角色表）不得作為租戶的任何角色", () => {
+  for (const addr of [verify130Owner(), ...roleSeparationAddresses()]) {
+    assert.ok(ctx.universe.has(addr.toLowerCase()), `${addr} 不在平台位址全集`);
+    for (const role of ["admin", "risk", "guardian", "keeper", "marketOperator", "treasury"]) {
+      const c = filled();
+      c.roles[role] = addr;
+      assert.match(check(c), new RegExp(`roles\\.${role}=${addr} 是現行正式站（平台）用過的位址`), `${role}=${addr}`);
+    }
+  }
+});
+
+test("平台角色 EOA 不得作為租戶的部署者", () => {
+  for (const addr of [verify130Owner(), ...roleSeparationAddresses()]) {
+    const r = record();
+    r.deployer = addr;
+    assert.match(checkRec(r), new RegExp(`deployer=${addr} 是現行正式站（平台）用過的位址`), addr);
+  }
+});
+
+test("Anvil 預設帳號（私鑰公開）不得作為租戶角色或部署者", () => {
+  const anvil0 = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
+  const c = filled();
+  c.roles.admin = anvil0;
+  assert.match(check(c), /roles\.admin=0xf39F.* 是 Anvil 預設帳號 #0/);
+  const r = record();
+  r.deployer = anvil0;
+  assert.match(checkRec(r), /deployer=0xf39F.* 是 Anvil 預設帳號 #0/);
+});
+
+test("全集改為掃描整個 repo 後，demo-bank（kind: platform）與 repo 內現有設定仍通過", () => {
+  assert.equal(ctx.frontendDeployments["demo-bank"].kind, "platform");
+  const r = spawnSync(process.execPath, [script], { encoding: "utf8" });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+});
+
+test("部署紀錄：deployBlock 必填、必須是非負整數（VerifyTenant 從這裡起掃角色事件）", () => {
+  assert.equal(checkRec(record()), "");
+  for (const v of [undefined, null, -1, 1.5, "123", 2 ** 60]) {
+    const r = record();
+    if (v === undefined) delete r.deployBlock;
+    else r.deployBlock = v;
+    assert.match(checkRec(r), /deployBlock=.* 必須是非負整數/, String(v));
+  }
 });

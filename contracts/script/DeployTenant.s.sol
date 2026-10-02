@@ -64,6 +64,9 @@ import "./VerifyTenant.s.sol";
 ///                             (testnet rehearsals only; ignored on Base
 ///                             mainnet, where the admin must be a contract)
 contract DeployTenant is TenantBase {
+    /// @dev See step 8 of `_execute`. On chain the call used ~75k (anvil rehearsal, 2026-10-02).
+    uint256 internal constant UNPAUSE_GAS = 300_000;
+
     // ── test hooks (a script is never deployed on chain) ────────────────────
     address public broadcasterOverride;
     function setBroadcasterOverride(address a) external { broadcasterOverride = a; }
@@ -187,6 +190,9 @@ contract DeployTenant is TenantBase {
         internal returns (TenantDeployed memory d)
     {
         d.deployer = deployer;
+        // The head before the first transaction: every event of this deployment
+        // is at or after it. VerifyTenant reads the privilege history from here.
+        d.deployBlock = vm.getBlockNumber();
         vm.startBroadcast(deployer);
 
         // 1. The tenant's own oracle, seeded from the shared source.
@@ -226,7 +232,11 @@ contract DeployTenant is TenantBase {
 
         // 8. Open the exchange (paused since step 4), then hand everything to
         //    the tenant admin. Ownable is one step.
-        PerpetualExchange(d.exchange).unpause();
+        //    Fixed gas limit: the simulation runs every step at one timestamp,
+        //    where closing the pause window writes nothing; on chain the window
+        //    has lasted a few blocks and closing it writes the paused time —
+        //    the estimate (x1.3) ran out of gas in the anvil rehearsal.
+        PerpetualExchange(d.exchange).unpause{gas: UNPAUSE_GAS}();
         _handOverOwnables(d, c.admin);
 
         vm.stopBroadcast();

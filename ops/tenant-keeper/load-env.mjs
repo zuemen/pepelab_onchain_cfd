@@ -63,12 +63,20 @@ export function tenantKeeperEnv(root, id) {
     ["KEEPER_EXPECTED_ADDRESS", addr("roles.keeper", cfg.roles?.keeper)],
   ];
   if (c.AssetVaultV2 !== undefined) out.push(["KEEPER_VAULT_ADDRESS", addr("contracts.AssetVaultV2", c.AssetVaultV2)]);
+  if (!["guarded", "mock"].includes(reg.oracleKind)) throw new Error("oracleKind 必須是 guarded 或 mock");
+  // workflow 用它決定要不要讀鏈上的 referenceSource()（MockOracle 沒有參考來源）。
+  out.push(["KEEPER_ORACLE_KIND", reg.oracleKind]);
   const ref = cfg.shared?.referenceSource;
-  if (ref !== "none") out.push(["KEEPER_RELAY_SOURCE", addr("shared.referenceSource", ref)]);
+  // 設定的值只是「預期」：workflow 的下一步把它與租戶 oracle 鏈上的 referenceSource() 比對，
+  // 不相等就停（複審 G4）。
+  if (ref !== "none") {
+    if (reg.oracleKind !== "guarded") throw new Error("oracleKind=mock 的租戶沒有參考來源，shared.referenceSource 必須是 none");
+    out.push(["KEEPER_RELAY_SOURCE", addr("shared.referenceSource", ref)]);
+  }
   if (reg.oracleKind === "guarded") {
-    // keeper 的熔斷門檻與租戶 oracle 的單次上限一致（TENANT_OPERATIONS §1.5）。
+    // keeper 的熔斷門檻與租戶 oracle 的單次上限一致（TENANT_OPERATIONS §1.5）。範圍同 PARAM_RANGES（複審 C1）。
     const bps = cfg.params?.oracleMaxDeviationBps;
-    if (!Number.isSafeInteger(bps) || bps < 100 || bps > 2000) throw new Error("params.oracleMaxDeviationBps 不在 100–2000");
+    if (!Number.isSafeInteger(bps) || bps < 100 || bps > 1000) throw new Error("params.oracleMaxDeviationBps 不在 100–1000");
     out.push(["KEEPER_BREAKER_DEVIATION", String(bps / 10_000)]);
   }
   const syms = cfg.assets?.registered;

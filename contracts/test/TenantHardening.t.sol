@@ -142,6 +142,10 @@ contract TenantHardeningTest is TenantFixture {
         s = _valid();
         s.referenceSource = makeAddr("no-code-feed");
         _refused(s, bytes("shared.referenceSource has no code on this chain"));
+        // C6: the feed that seeds the oracle cannot also be its cross-check.
+        s = _valid();
+        s.referenceSource = address(source);
+        _refused(s, bytes("shared.referenceSource must differ from shared.priceSource (a second, independent feed)"));
     }
 
     function test_mainnet_requiresReferenceSourceAndContractAdmin() public {
@@ -164,20 +168,22 @@ contract TenantHardeningTest is TenantFixture {
 
     function test_refuses_newParamsOutOfRange() public {
         Spec memory s;
+        // C1 (PR #228 review 2): never looser than the live platform's oracle
+        // (1000 bps step, 3600 s window, 2500 bps window cap).
         s = _valid(); s.oracleMaxDeviationBps = 0;
-        _refused(s, bytes("params: oracleMaxDeviationBps must be in [100, 2000] (0 = no step cap is not allowed)"));
-        s = _valid(); s.oracleMaxDeviationBps = 2_001;
-        _refused(s, bytes("params: oracleMaxDeviationBps must be in [100, 2000] (0 = no step cap is not allowed)"));
+        _refused(s, bytes("params: oracleMaxDeviationBps must be in [100, 1000] (0 = no step cap is not allowed)"));
+        s = _valid(); s.oracleMaxDeviationBps = 1_001;
+        _refused(s, bytes("params: oracleMaxDeviationBps must be in [100, 1000] (0 = no step cap is not allowed)"));
         s = _valid(); s.oracleWindowSeconds = 0;
-        _refused(s, bytes("params: oracleWindowSeconds must be in [900, 86400]"));
-        s = _valid(); s.oracleWindowSeconds = 899;
-        _refused(s, bytes("params: oracleWindowSeconds must be in [900, 86400]"));
+        _refused(s, bytes("params: oracleWindowSeconds must be in [3600, 86400]"));
+        s = _valid(); s.oracleWindowSeconds = 3_599;
+        _refused(s, bytes("params: oracleWindowSeconds must be in [3600, 86400]"));
         s = _valid(); s.oracleWindowSeconds = 86_401;
-        _refused(s, bytes("params: oracleWindowSeconds must be in [900, 86400]"));
+        _refused(s, bytes("params: oracleWindowSeconds must be in [3600, 86400]"));
         s = _valid(); s.oracleWindowDeviationBps = 0;
-        _refused(s, bytes("params: oracleWindowDeviationBps must be in [100, 3000] (0 = no rate limit is not allowed)"));
-        s = _valid(); s.oracleWindowDeviationBps = 3_001;
-        _refused(s, bytes("params: oracleWindowDeviationBps must be in [100, 3000] (0 = no rate limit is not allowed)"));
+        _refused(s, bytes("params: oracleWindowDeviationBps must be in [100, 2500] (0 = no rate limit is not allowed)"));
+        s = _valid(); s.oracleWindowDeviationBps = 2_501;
+        _refused(s, bytes("params: oracleWindowDeviationBps must be in [100, 2500] (0 = no rate limit is not allowed)"));
         s = _valid(); s.maxLeverage = 0;
         _refused(s, bytes("params: maxLeverage must be in [1, 5]"));
         s = _valid(); s.maxLeverage = 6;
@@ -317,15 +323,30 @@ contract TenantHardeningTest is TenantFixture {
         o.setReferenceSource(address(source));
         _verifyFails(s, record, bytes("verify tenant mismatch: oracle.referenceSource"));
 
+        // A pause with no expiry (the admin's) means the tenant is not open.
+        vm.revertToState(snap);
+        vm.prank(s.admin);
+        o.setPaused(true);
+        _verifyFails(s, record, bytes("verify tenant failed: oracle paused with no expiry (an admin pause; only the admin lifts it)"));
+
+        // A guardian pause lapses on its own (72h): an incident, reported, not failed.
         vm.revertToState(snap);
         vm.prank(s.guardian);
         o.setPaused(true);
-        _verifyFails(s, record, bytes("verify tenant failed: oracle not paused"));
+        assertTrue(o.paused());
+        verifier.verify(_json(s), s.id, record, s.admin);
 
-        // A frozen asset is the guardian's call: reported, not failed.
+        // A frozen asset — the guardian's (expires) or the admin's (does not) —
+        // is reported, not failed.
         vm.revertToState(snap);
         vm.prank(s.guardian);
         o.setAssetFrozen(BTC, true);
+        verifier.verify(_json(s), s.id, record, s.admin);
+        vm.prank(s.admin);
+        o.takeOverAssetFreeze(BTC);
+        (bool inForce, , uint256 freezeEnds, ) = o.freezeOf(BTC);
+        assertTrue(inForce);
+        assertEq(freezeEnds, 0, "the admin's freeze has no expiry");
         verifier.verify(_json(s), s.id, record, s.admin);
     }
 
@@ -371,6 +392,22 @@ contract TenantHardeningTest is TenantFixture {
         vm.revertToState(snap);
         vm.prank(s.admin); ex.setAgentAuthorized(d.sessionManager, false);
         _verifyFails(s, record, bytes("verify tenant failed: AgentSessionManager authorised on the exchange"));
+        // C4: the per-asset maintenance margin stays at the contract default.
+        vm.revertToState(snap);
+        vm.prank(s.admin); ex.setMaintenanceMarginFor(BTC, 900);
+        _verifyFails(s, record, bytes("verify tenant failed: maintenanceMarginBpsOf for sBTC (expected 0 = the contract default)"));
+        // C5: a pause with no expiry (the owner's) fails; the guardian's is reported.
+        vm.revertToState(snap);
+        vm.prank(s.admin); ex.pause();
+        _verifyFails(s, record, bytes("verify tenant failed: exchange paused with no expiry (an owner pause; only the owner lifts it)"));
+        vm.revertToState(snap);
+        vm.prank(s.guardian); ex.pause();
+        assertTrue(ex.paused());
+        verifier.verify(_json(s), s.id, record, s.admin);
+        // A reduce-only / halted asset is an incident decision: reported.
+        vm.revertToState(snap);
+        vm.prank(s.admin); ex.setAssetMode(BTC, PerpetualExchange.AssetMode.Halted);
+        verifier.verify(_json(s), s.id, record, s.admin);
     }
 
     function test_verify_catchesVaultDriftAndUpgrade() public {

@@ -21,6 +21,12 @@ import { parseJsonStrict } from "./strict-json.mjs";
  * 引號、空白、冒號、`${{`——代入的結果不可能改變 YAML 的結構。
  */
 export const TENANT_KEEPER_ID = /^[a-z][a-z0-9-]{1,30}$/;
+/**
+ * 不能當租戶 id 的名字（複審 G6）：會產生 keeper-keeper、keeper-settlement 這類容易與平台
+ * environment（keeper、settlement、admin-approval）混淆的名稱，或與平台／default 租戶同名。
+ */
+export const RESERVED_TENANT_IDS = ["keeper", "settlement", "admin", "admin-approval", "platform", "default"];
+const isTenantKeeperId = (id) => typeof id === "string" && TENANT_KEEPER_ID.test(id) && !RESERVED_TENANT_IDS.includes(id);
 export const PLACEHOLDER = "__TENANT_ID__";
 export const TEMPLATE_FILE = "ops/tenant-keeper/keeper.template.yml";
 export const LOADER_FILE = "ops/tenant-keeper/load-env.mjs";
@@ -32,13 +38,13 @@ export const tenantKeeperEnvironment = (id) => `keeper-${id}`;
 /** `keeper-<id>.yml` → id；不是這個形狀（或 id 格式不合）回 null。 */
 export function tenantIdOfKeeperFile(name) {
   const m = /^keeper-(.+)\.yml$/.exec(name);
-  return m && TENANT_KEEPER_ID.test(m[1]) ? m[1] : null;
+  return m && isTenantKeeperId(m[1]) ? m[1] : null;
 }
 
 /** 範本代入 id。id 格式不合就丟錯（產生器與檢查器共用這一個函式）。 */
 export function renderTenantKeeper(templateText, id) {
-  if (typeof id !== "string" || !TENANT_KEEPER_ID.test(id)) {
-    throw new Error(`租戶 id「${id}」格式不合（必須符合 ${TENANT_KEEPER_ID}）`);
+  if (!isTenantKeeperId(id)) {
+    throw new Error(`租戶 id「${id}」格式不合（必須符合 ${TENANT_KEEPER_ID}，且不是保留字 ${RESERVED_TENANT_IDS.join("、")}）`);
   }
   if (!templateText.includes(PLACEHOLDER)) throw new Error(`範本裡沒有 ${PLACEHOLDER}`);
   return templateText.split(PLACEHOLDER).join(id);

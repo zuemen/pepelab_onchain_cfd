@@ -5,8 +5,12 @@ name: Tenant on-chain verify
 #
 # 檔案層的檢查（consistency.yml）只看得到位址的格式與「不與平台共用」；合約之間的綁定、
 # 所有權最後歸誰、部署者是否真的什麼都沒留下、oracle 限速與風控參數是否仍等於設定，
-# 只有讀鏈才知道。這支 job 讓它成為合併條件，而且每天再跑一次——租戶的 admin 事後改了
-# 鏈上參數而設定檔沒跟著改，這裡會紅。
+# 只有讀鏈才知道。這支 job 在每個 PR 與 master 上跑，而且每天再跑一次——租戶的 admin 事後
+# 改了鏈上參數而設定檔沒跟著改，這裡會紅。
+#
+# 它是 CI 檢查，**本身不會擋合併**：要在 repo 設定 branch protection／ruleset，把
+# 「VerifyTenant (public RPC fork)」列為 required check 之後才會真的擋。目前 master 沒有設定，
+# 這是 repo 擁有者的待辦，也是第一個專屬租戶上線的前置條件（docs/TENANT_OPERATIONS.md §1.6）。
 #
 # 不需要任何 secret（只讀公開 RPC、不送交易），token 只有 contents: read。RPC 連不上時
 # job 失敗，不略過。目前沒有任何專屬租戶時，它印出「0 個」並通過。

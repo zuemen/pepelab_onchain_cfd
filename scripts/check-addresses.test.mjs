@@ -515,3 +515,20 @@ test("沿用平台部署的租戶（kind: platform）的 keeper 就是平台的�
     "",
   );
 });
+
+test("部署登記：tokens 的鍵必須是已知資產代號（複審 A4）", async () => {
+  const { assetSymbolsOf } = await import("./check-addresses.mjs");
+  const { parseAssetSymbols } = await import("./check-tenant-deploy.mjs");
+  const src = readFileSync(join(root, "frontend/src/contracts/addresses.ts"), "utf8");
+  const assetSymbols = assetSymbolsOf(src);
+  assert.deepEqual(assetSymbols, parseAssetSymbols(src));
+  assert.ok(assetSymbols.includes("sAAPL"));
+  const ok = dedicated();
+  assert.deepEqual(checkDeployment({ file: "bank-a.json", dep: ok, chains: chainsFull, universe, assetSymbols }).problems, []);
+  const bad = dedicated();
+  bad.tokens = { sFOO: T(40) };
+  assert.match(
+    checkDeployment({ file: "bank-a.json", dep: bad, chains: chainsFull, universe, assetSymbols }).problems.join(String.fromCharCode(10)),
+    /tokens 的鍵 sFOO 不是已知資產代號/,
+  );
+});

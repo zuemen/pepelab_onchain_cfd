@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { resolveSignalApiUrl } from '../lib/pepefi/signalApiUrl';
+import { DEFAULT_SIGNAL_API_URL } from '../lib/pepefi/signalApiUrl';
 import {
   parseTenantDeployment,
   type TenantDeployment,
@@ -35,10 +35,47 @@ export function retiredPlatformAddresses(frontendRoot: string): string[] {
 }
 
 /**
+ * 平台 signal-api 的網址。來源：前端的預設值 DEFAULT_SIGNAL_API_URL；SDK 的
+ * SIGNAL_API_TESTNET_URL（agent/sdk/src/signalApi.ts）是同一個部署，測試逐一核對它也在這裡。
+ * 平台換網域或加別名時加進來。
+ */
+export const PLATFORM_SIGNAL_API_URLS: readonly string[] = [DEFAULT_SIGNAL_API_URL];
+
+/**
+ * 網址的主機名，用來比對「是不是同一台」：`new URL()` 解析後取 hostname（URL 解析已轉小寫、
+ * 去掉 userinfo 與 port），再去掉尾端的點（`host.` 與 `host` 是同一個 DNS 名稱）。
+ * path／query／hash／port 一律不看——同一台主機換個路徑或 port 仍是平台的服務。
+ * 解析失敗回傳 null。
+ */
+export function signalApiHost(raw: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(raw.trim());
+  } catch {
+    return null;
+  }
+  const host = url.hostname.toLowerCase().replace(/\.+$/, '');
+  return host === '' ? null : host;
+}
+
+/** 平台 signal-api 的主機名集合。 */
+export function platformSignalApiHosts(): Set<string> {
+  const hosts = new Set<string>();
+  for (const u of PLATFORM_SIGNAL_API_URLS) {
+    const h = signalApiHost(u);
+    if (h) hosts.add(h);
+  }
+  return hosts;
+}
+
+/**
  * 審查 F4：專屬租戶的 build 必須明確設定自己的 signal-api。沒設時 app 會退回平台的
  * signal-api（DEFAULT_SIGNAL_API_URL），租戶的使用者就會在自己的站上看到平台 exchange 的
  * 訊號、funding 與新鮮度，再拿去租戶自己的 exchange 下單。平台與示範租戶（kind: platform）
  * 本來就連平台的 signal-api，行為不變。
+ *
+ * 複審 A3：比對解析後的主機名，不比字串——大寫、`:443`、`?t=1`、尾斜線、尾點、userinfo
+ * 這些寫法都還是平台那一台。
  */
 export function dedicatedSignalApiProblem(
   deployment: TenantDeployment,
@@ -48,8 +85,12 @@ export function dedicatedSignalApiProblem(
   if (!raw || raw.trim() === '') {
     return `tenant "${deployment.tenant}" is a dedicated deployment: set VITE_SIGNAL_API_URL to the tenant's own signal-api (leaving it unset falls back to the platform's signal-api)`;
   }
-  if (resolveSignalApiUrl(raw.trim()) === resolveSignalApiUrl(undefined)) {
-    return `tenant "${deployment.tenant}" is a dedicated deployment: VITE_SIGNAL_API_URL points at the platform's signal-api`;
+  const host = signalApiHost(raw);
+  if (host === null) {
+    return `tenant "${deployment.tenant}" is a dedicated deployment: VITE_SIGNAL_API_URL is not a valid URL`;
+  }
+  if (platformSignalApiHosts().has(host)) {
+    return `tenant "${deployment.tenant}" is a dedicated deployment: VITE_SIGNAL_API_URL points at the platform's signal-api (host ${host})`;
   }
   return null;
 }

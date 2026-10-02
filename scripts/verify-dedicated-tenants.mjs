@@ -4,8 +4,10 @@
 // 為什麼要在 CI 跑：check-addresses.mjs／check-tenant-deploy.mjs 只看檔案——位址的格式、
 // 不與平台共用、與部署紀錄一致。合約之間的綁定（sessionManager.exchange()==exchange…）、
 // 所有權最後歸誰、部署者是否真的什麼都沒留下、oracle 的限速與風控參數是否還等於設定，
-// 只有讀鏈才知道。這些由 contracts/script/VerifyTenant.s.sol 檢查；這支腳本讓它成為合併條件
-// （PR #228 審查 F2），而不是「部署的人記得跑一次」。
+// 只有讀鏈才知道。這些由 contracts/script/VerifyTenant.s.sol 檢查；這支腳本讓每個 PR 與每天
+// 的排程都自動跑一次（PR #228 審查 F2），而不是「部署的人記得跑一次」。
+// 它是 CI 檢查：只有在 repo 設定 branch protection／ruleset、把 tenant-verify 列為 required
+// check 之後才會擋合併。目前 master 沒有設定（擁有者的待辦，見 docs/TENANT_OPERATIONS.md §1.6）。
 //
 // 不需要任何 secret：只讀公開 RPC、不送交易、不帶金鑰。RPC 連不上就**失敗**（不是略過）：
 // 一個沒驗證到的租戶不能被當成驗證過。

@@ -38,7 +38,14 @@ export function isConnectAllowed(url: string, connectSrc: readonly string[]): bo
   } catch {
     return false;
   }
-  return connectSrc.some((src) => src.replace(/\/$/, '') === origin);
+  // 兩邊都用解析後的 origin 比（大小寫、預設 port、尾斜線都正規化）；`'self'` 這類關鍵字解析失敗，略過。
+  return connectSrc.some((src) => {
+    try {
+      return new URL(src).origin === origin;
+    } catch {
+      return false;
+    }
+  });
 }
 
 /**

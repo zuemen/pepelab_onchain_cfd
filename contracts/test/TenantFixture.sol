@@ -17,6 +17,28 @@ contract TenantVerifyHarness is TenantBase {
         _verifyTenant(c, d, owner);
     }
 
+    /// @dev The privilege history a test recorded: every log since the test
+    ///      last called `vm.recordLogs()` / since the previous `verify`
+    ///      (`getRecordedLogs` drains). On chain, VerifyTenant reads it with
+    ///      `eth_getLogs`; a unit test has no RPC to read from.
+    function _privilegeHistory(TenantConfig memory c, TenantDeployed memory d)
+        internal view override returns (bool, PrivilegeGrant[] memory grants)
+    {
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        (address[] memory targets, ) = _privilegeSources(c, d);
+        grants = new PrivilegeGrant[](logs.length);
+        uint256 n;
+        for (uint256 i = 0; i < logs.length; i++) {
+            bool ours;
+            for (uint256 t = 0; t < targets.length && !ours; t++) ours = logs[i].emitter == targets[t];
+            if (!ours) continue;
+            (bool ok, PrivilegeGrant memory g) = _grantOf(logs[i].emitter, logs[i].topics);
+            if (ok) grants[n++] = g;
+        }
+        assembly ("memory-safe") { mstore(grants, n) }
+        return (true, grants);
+    }
+
     function isRwa(string calldata sym) external pure returns (bool) { return _isRwa(sym); }
     function tokenName(string calldata sym) external pure returns (string memory) { return _tokenName(sym); }
     function requireSlug(string calldata id) external pure { _requireSlug(id); }

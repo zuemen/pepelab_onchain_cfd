@@ -15,7 +15,7 @@
 | 前端位址 | `addresses.ts` | `frontend/src/contracts/deployments/<id>.json`（由部署紀錄產生） | PR，CI 對帳 |
 | keeper 金鑰 | GitHub environment `keeper`（`KEEPER_PRIVATE_KEY`） | GitHub environment `keeper-<id>`（`TENANT_KEEPER_PRIVATE_KEY`、`TENANT_RPC_URL`） | 擁有者 |
 | keeper workflow | `base-sepolia-keeper.yml` | `keeper-<id>.yml`（由範本產生：`node scripts/gen-tenant-keeper.mjs <id>`） | PR，CI 逐位元比對範本 |
-| x402 收款地址 | repository variable `PAY_TO` | 租戶自己的 `PAY_TO`（租戶的 Vercel 專案與 `settlement-<id>` environment） | 擁有者 |
+| x402 收款地址 | repository variable `PAY_TO` | 租戶自己的 `PAY_TO`（租戶的 Vercel 專案）。租戶的結算 worker **尚未支援**（§2.1） | 擁有者 |
 | x402 分潤路由 | `frontend/src/contracts/x402.ts` | 登記檔的 `contracts.X402FeeRouter`（`DeployX402Router.s.sol`，`TREASURY`＝租戶的 treasury） | 持有部署者金鑰的人 |
 | signal-api | 現行 Vercel 專案 | 租戶自己的 Vercel 專案（**資料來源尚不能隔離**，見 §2.2） | 擁有者 |
 
@@ -30,11 +30,14 @@
 - 這把金鑰**只屬於這個租戶**。`scripts/check-tenant-deploy.mjs` 會擋下與平台位址全集或其他租戶重複的角色地址。
 - **金鑰外洩時的影響範圍**是這一個租戶的價格，受租戶 `GuardedOracle` 的兩道限制（`DeployTenant` 依設定寫入、`VerifyTenant` 讀回確認，CI 每天對鏈上再驗一次）：
   - 單次上限 `params.oracleMaxDeviationBps`：每一筆相對前一筆；
-  - 時間窗限速 `params.oracleWindowSeconds`／`oracleWindowDeviationBps`：一個時間窗內相對窗口起點的累計變動。合約保證的是「約一個時間窗內單向不超過上限；相隔一個多時間窗的兩筆各可用滿上限」（`GuardedOracle` 註解），也就是最壞約每（時間窗＋1 秒）兩倍上限，**不是**任意值；
-  - 有參考來源（`shared.referenceSource`）時，與參考來源一致的寫價不受上面兩道限制（那是去中心化行情確認過的變動），不一致的只能是朝參考來源收斂、且在單次上限內的一步；
+  - 時間窗限速 `params.oracleWindowSeconds`（d）／`oracleWindowDeviationBps`（W）：一個時間窗內相對窗口起點的累計變動不超過 W。時間窗是一個接一個的，**每過一個時間窗就可以再乘一次 (1+W)**，所以這是複利、不是總上限：T 秒內價格最多乘 **(1+W)^(⌊T/d⌋+1)**，往下對稱（最多乘 (1−W) 的同一次方）。
+  - 以預設值（也是範圍內最寬鬆的值：d=3600 秒、W=2500 bps、單次 1000 bps）計算，keeper 金鑰外洩後持續推價，依 PR #228 複審的最佳排程實測：**1 小時 1.25 倍、6 小時約 3.05 倍、24 小時約 169 倍**（往下：6 小時剩約 24%、24 小時剩約 0.13%）；上式給出的上界是 1.56 倍／4.77 倍／265 倍。exchange 的 `maxPriceAge` 是 6 小時，這段期間每一筆都是「新鮮」報價。
+  - 有參考來源（`shared.referenceSource`）時，界線改成「**參考價 ±單次上限，次數不限**」：落在參考價 ±`oracleMaxDeviationBps` 之內的寫價視為與參考一致，略過時間窗並重設窗口，所以 keeper 可以在同一個區塊內反覆在這個區間裡來回（預設 10% 時，從參考價 −10% 推到 +10%，約 1.22 倍，可以一直重複）；偏離參考價更多的寫價只能是朝參考價收斂、且在單次上限內的一步。Base 主網強制要有參考來源，所以主網實際的界線就是這一條。`oracleMaxDeviationBps` 的上限因此壓在 1000（10%）；把「確認容忍度」與單次上限拆成兩個參數要改 `contracts/src`，不在這次的範圍。
   - 部位端另有每檔資產的 OI 上限與 `maxProfitBps`；guardian 可以凍結資產或暫停 oracle。
 
-  只有單次上限、沒有時間窗的 oracle 不算受保護：連續多筆寫價的累計變動沒有上限（PR #228 審查 F1）。`params.oracleWindowDeviationBps` 因此不得為 0。
+  **限速只是減速，不是防線。** 它把金鑰外洩後的推價拉長成幾小時，讓人有時間反應；真正的防線是：keeper 金鑰的保護（只在 `keeper-<id>` environment、只有範本產生的 workflow 讀得到）、參考來源、價格監控與告警、guardian 暫停 oracle 或凍結資產（以及 guardian 的反應時間）。上線前這四項都要到位；目前租戶沒有健檢與告警（§1.4），這是 §5 的待辦。
+
+  只有單次上限、沒有時間窗的 oracle 不算受保護：連續多筆寫價的累計變動沒有上限（PR #228 審查 F1）。`params.oracleWindowDeviationBps` 因此不得為 0。三個參數的範圍不得比平台寬鬆（PR #228 複審 C1）：`oracleWindowSeconds` ≥ 3600、`oracleWindowDeviationBps` ≤ 2500、`oracleMaxDeviationBps` ≤ 1000；預設就是平台值。
 - keeper 地址要有 gas。workflow 的 `Warn before the tank runs dry` 步驟在餘額低於 0.02 ETH 時警告、低於 0.002 ETH 時直接失敗。
 
 ### 1.2 建立 GitHub environment `keeper-<id>`
@@ -51,7 +54,9 @@
 
 > **為什麼 secret 的名稱與平台不同。** environment 沒放某個 secret 時，`secrets.X` 會退回 repo 層級的同名 secret。租戶的 workflow 若也叫 `KEEPER_PRIVATE_KEY`，environment 漏放時拿到的就是平台的金鑰。名稱不同，就不可能退回平台的金鑰；`scripts/check-workflow-guards.mjs` 也只允許 `keeper-<id>.yml` 的 job（綁 `keeper-<id>`）引用這兩個名稱。
 >
-> 另一道：workflow 在送任何交易之前，先核對 `TENANT_KEEPER_PRIVATE_KEY` 推出的地址等於 `roles.keeper`，不等就失敗。
+> 另一道：workflow 在送任何交易之前，先核對 `TENANT_KEEPER_PRIVATE_KEY` 推出的地址等於 `roles.keeper`，不等就失敗；核對沒過時，後面每一個 step 都不執行（帶 `if:` 的 step 明確要求核對成功）。私鑰只放在需要它的 step 的 env，`npm ci` 加 `--ignore-scripts`。
+>
+> 參考來源（relay）也先核對：設定檔的 `shared.referenceSource` 必須等於租戶 oracle 鏈上的 `referenceSource()`（`"none"` 時鏈上必須是零位址），不相等就停，不會中繼一個只寫在設定檔裡的來源。
 >
 > 順序仍然是：先建 environment、先放 secret，再合併 workflow（GitHub 遇到不存在的 environment 會自動建一個沒有保護的同名 environment）。
 
@@ -107,10 +112,11 @@ keeper 程式（`agent/keeper/`）是為平台的組合寫的：exchange 讀 Moc
 
 ### 1.6 上線順序
 
+0. **前置條件（repo 擁有者，第一個專屬租戶上線前）：master 的 branch protection 或 ruleset 已啟用 required checks**，至少包含：`workflow guards`、`workflow ↔ addresses.ts`、`tenant deploy configs`、`VerifyTenant (public RPC fork)`、`forge build + test`、`npm test`。這些 CI 檢查只有被設成 required 之後才會真的擋合併；目前 master 沒有任何保護，紅燈的 PR 仍然可以合併。另外建議同時把 `KEEPER_PRIVATE_KEY`、`FEE_SETTLEMENT_PRIVATE_KEY` 從 repo 層級搬到各自的 environment，並設定 environment 的分支限制。
 1. `DeployTenant` 已廣播、`VerifyTenant` 通過、部署紀錄與前端登記已合併（[`TENANT_DEPLOYMENT.md`](TENANT_DEPLOYMENT.md)）。
 2. 擁有者建立 `keeper-<id>` environment 並放入金鑰（§1.2），替 keeper 地址補 gas。
 3. §1.5 的 `DRY_RUN` 驗證。
-4. `node scripts/gen-tenant-keeper.mjs <id>` 產生 `keeper-<id>.yml`，以 PR 新增（§1.3）；`consistency.yml` 與 `tenant-verify.yml` 綠燈才合併。
+4. `node scripts/gen-tenant-keeper.mjs <id>` 產生 `keeper-<id>.yml`，以 PR 新增（§1.3）；`consistency.yml` 與 `tenant-verify.yml` 綠燈才合併（第 0 步完成之前，這只是人工紀律，不是 CI 強制）。
 5. 擁有者手動 dispatch 一次，確認寫價成功；再把檔名加進觸發器的 `WORKFLOW_FILES`（§1.4）。
 6. `VerifyTenant` 再跑一次，最後一段應該是「every registered asset priced and fresh」而不是 WARN。
 
@@ -132,7 +138,12 @@ keeper 程式（`agent/keeper/`）是為平台的組合寫的：exchange 讀 Moc
 
 前端這一側：租戶的 Vercel 專案**必須**設 `VITE_SIGNAL_API_URL` 指向租戶的 signal-api。專屬租戶（`kind: "dedicated"`）沒設、或設成平台的 signal-api，`vite build` 直接失敗——不會悄悄退回平台的 signal-api（那會讓租戶的使用者看到平台 exchange 的訊號、funding 與新鮮度）。平台與示範租戶的行為不變。`vite build` 另外檢查這個網址在 `frontend/vercel.json` 的 CSP `connect-src` 裡，不在就讓 build 失敗——所以新增租戶的 signal-api 網域要先改 `vercel.json`。
 
-結算 worker：複製 `x402-settlement-worker.yml`，用 environment `settlement-<id>`（放租戶的 `FEE_SETTLEMENT_PRIVATE_KEY` 與 Upstash 憑證，`PAY_TO`／`X402_FEE_ROUTER`／`SIGNAL_API_URL` 改用 environment 層級的 variables），`concurrency.group` 改成 `x402-settlement-worker-<id>`。其中 `Assert X402_FEE_ROUTER matches frontend config` 那一步目前比對的是平台的 `x402.ts`，租戶的版本要改成比對登記檔的 `contracts.X402FeeRouter`。
+結算 worker：**租戶的結算 worker 目前不支援。** 目前只有 keeper 有租戶範本與守門支援（§1.3）。**不要複製平台的 `x402-settlement-worker.yml`**：守門檢查會紅燈，而且平台的結算金鑰 `FEE_SETTLEMENT_PRIVATE_KEY` 是 repo 層級的 secret——租戶的 environment 漏放同名 secret 時，GitHub 會退回 repo 層級的那一把，租戶的 worker 就會拿平台的結算金鑰簽章。需要時要先比照 keeper 做完三件事，才能上線：
+1. 範本（例如 `ops/tenant-settlement/…`），由產生器代入租戶 id、檢查器逐位元比對、範本本身釘雜湊；
+2. `scripts/check-workflow-guards.mjs` 加一個對應的守門類別（environment `settlement-<id>` 只允許範本產生的檔案綁定）；
+3. 改名的 secret（例如 `TENANT_FEE_SETTLEMENT_PRIVATE_KEY`），**不可使用**平台的 `FEE_SETTLEMENT_PRIVATE_KEY` 名稱。
+
+不要為了讓租戶的 worker 通過而放寬 `PROTECTED_SECRETS` 或 `ENVIRONMENTS`。這一項列在 ADR-008 的「未完成」。
 
 ### 2.2 今天做不到的部分：資料來源
 
@@ -195,4 +206,6 @@ SDK 原始碼裡這個參數的註解是「只給本機 anvil／測試部署用�
 - signal-api、MCP server、Telegram bot 讀租戶的合約（§2.2）。
 - SDK 直接讀部署登記的入口（§3）。
 - 平台的 keeper workflow 改成讀 JSON（§1.3 的說明）。
-- 租戶結算 workflow 的 `X402_FEE_ROUTER` 執行期比對改讀部署登記（§2.1）。
+- 租戶的 x402 結算 worker：範本、守門類別、改名的 secret（§2.1）。在那之前租戶不能自動結算 x402 收入。
+- repo 設定（擁有者）：master 的 required checks（§1.6 第 0 步）、平台私鑰搬到 environment 層級。
+- 租戶的價格監控與告警（§1.1：限速只是減速，監控與 guardian 才是防線）。
