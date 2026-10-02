@@ -4,7 +4,7 @@ status: proposed
 
 # 每個白標租戶一套合約與金鑰：共用程式碼，不共用資金、權限與事故
 
-> **實作狀態（2026-10-01）**：階段 0–2 的**工具**已完成（部署腳本、讀回驗證、前端依租戶切換位址、CI 對帳），
+> **實作狀態（2026-10-02）**：階段 0–2 的**工具**已完成（部署腳本、讀回驗證、前端依租戶切換位址、CI 對帳、營運文件），
 > 都只在測試與 fork 上跑過；**沒有任何租戶真的部署**，收費模式仍待決。逐項見文末「已完成／未完成」。
 > `status` 仍是 `proposed`：接受這份決定是擁有者的事，不是實作進度。
 
@@ -74,6 +74,17 @@ keeper 的排程可以是同一支 workflow 以租戶為 matrix 展開，但每�
 
 **租戶 oracle 自身的過期檢查是關掉的**（`maxPriceAge = 0`）。keeper 寫價前先讀 `getPrice`，讀取 revert 就拒寫；oracle 層的過期檢查開著，一次超過上限的中斷之後 keeper 就永遠寫不進去。過期由 exchange 與金庫各自依 `updatedAt` 把關（都是 6 小時）。
 
+這不會讓過期價格被接受，理由是租戶 oracle 的每一個「會動到錢」的讀者都自己檢查 `updatedAt`（2026-10-02 逐一對過 `contracts/src`）：
+
+| 讀者 | 路徑 | 過期時 |
+|---|---|---|
+| `PerpetualExchange` 開倉 | `_freshPrice`：`block.timestamp > updatedAt + maxPriceAge` 就 revert | `StalePrice`，`maxPriceAge` 由 `DeployTenant` 設成 6 小時、`VerifyTenant` 讀回 |
+| `PerpetualExchange` 平倉、`closePositionFor`、清算 | `_requireFresh`（同一條件，另拒絕零價格） | `StalePrice` |
+| `AssetVaultV2_5` mint／redeem／NAV | `effectiveMaxPriceAge()`（`min(maxPriceAge, LAST_GOOD_MAX_AGE)`），NAV 迴圈對過期資產改用 last-good 或視為不可估值 | `StalePrice`／不計入，`maxPriceAge` 設 6 小時 |
+| `PerpetualExchange.getUnrealizedPnL`／`getPositionValue`／`getMarkPrice` | view，不檢查 | 只回傳數值、不改任何狀態；需要「現在能不能成交」時用 `PerpetualExchangeLens.hasValidPrice`（依 exchange 的 `maxPriceAge`） |
+
+其餘租戶合約（`InsuranceVault`、`FeeRouter`、`TraderStake`、`CopyTracker`、`StrategyRegistry`、`AgentSessionManager`）不讀 oracle。代價只有一個：`GuardedOracle.isStale()` 在 `maxPriceAge = 0` 時永遠回 `false`，**租戶的監控不能用它判斷過期**，要用 exchange 的 `maxPriceAge` 對 `updatedAt`（`agent/keeper/health-check` 就是這樣做的）。回歸測試在 `contracts/test/DeployTenant.t.sol`：停擺 3 天後 oracle 仍可讀、exchange 自己拒絕過期價、keeper 下一筆寫價即恢復。
+
 ### 隔離的三個面向
 
 - **資金**：每租戶自己的 exchange 保證金、`InsuranceVault`、`AssetVault` 準備、`FeeRouter` treasury。沒有任何跨租戶的 bailout 或資金移轉路徑；`InsuranceVault.bailout` 只接受自己的 exchange。
@@ -113,16 +124,16 @@ keeper 的排程可以是同一支 workflow 以租戶為 matrix 展開，但每�
 - 位址有兩個來源，各管各的：`addresses.ts` 是平台部署，`frontend/src/contracts/deployments/<id>.json` 是租戶部署。前端租戶在登記成 `dedicated` 之前只能換品牌與政策，仍指向平台的合約——而且必須以一份 `kind: "platform"` 的登記明確宣告，不是預設。
 - `scripts/check-tenant-deploy.mjs` 是部署前的第一道關卡，只讀、不送交易；真正的部署仍由持有金鑰的人依 [`TENANT_DEPLOYMENT.md`](TENANT_DEPLOYMENT.md) 執行。
 
-## 已完成／未完成（2026-10-01）
+## 已完成／未完成（2026-10-02）
 
 ### 已完成（都沒有廣播任何交易）
 
 | 項目 | 位置 | 驗證 |
 |---|---|---|
-| 租戶部署腳本：讀 `deploy/tenants/<id>.json`，部署整套專屬合約，結束時移交給 admin、部署者零權限 | `contracts/script/DeployTenant.s.sol` | forge 單元測試 21 支（mock 結算幣＋MockOracle）；Base Sepolia fork 測試 2 支（與平台並存、平台狀態不變）；本機 anvil fork 模擬 143 筆交易 |
+| 租戶部署腳本：讀 `deploy/tenants/<id>.json`，部署整套專屬合約，結束時移交給 admin、部署者零權限 | `contracts/script/DeployTenant.s.sol` | forge 單元測試 21 支（mock 結算幣＋MockOracle）；Base Sepolia fork 測試 2 支（與平台並存、平台狀態不變，2026-10-02 對當日鏈上狀態重跑仍過）；本機 anvil fork 模擬 143 筆交易；全套 `forge test` 979 過、0 敗、3 skip（fork）；`PerpetualExchange` runtime 23,911 B 不變，`contracts/src` 無任何修改 |
 | 部署後唯讀讀回驗證 | `contracts/script/VerifyTenant.s.sol` | 同上；竄改紀錄、改 guardian、部署者殘留角色都會被抓到 |
 | 部署設定 schema v2（`params`：oracle 種類、OI／獲利上限、要不要金庫）與部署紀錄檢查 | `deploy/tenants/`、`scripts/check-tenant-deploy.mjs` | node 測試 50 支 |
-| 前端依租戶切換合約位址，沒有登記就 fail-closed；default 租戶逐位元不變 | `frontend/src/contracts/deployment.ts`、`deployments/<id>.json` | vitest（default 位址以快照釘住、原始碼掃描）；default、demo-bank 與一個暫時的專屬租戶三種 build |
+| 前端依租戶切換合約位址，沒有登記就 fail-closed；default 租戶逐位元不變 | `frontend/src/contracts/deployment.ts`、`deployments/<id>.json` | vitest 914 支（66 檔），`VITE_TENANT=demo-bank` 下同樣 914 支全過；其中 `tenantDeployment.test.ts` 30 支（default 的 getter 以 `toBe` 比對同一物件、位址以快照釘住、原始碼掃描）；default、demo-bank 與一個暫時的專屬租戶三種 build。2026-10-02 把 default build 與 `origin/master` 的 build 對照：非 JS 產物 269 檔只有 `index.html` 的入口 chunk 雜湊不同；bundle 內的位址集合只多一個 `BASE_SEPOLIA_ORACLE_SHOWCASE.AggregatorOracle`（隔離檢查要拿平台位址集合比對，它以資料形式進 bundle，不建立任何合約物件） |
 | CI：租戶隔離（不與平台或其他租戶共用合約）、前端登記↔部署紀錄對帳、租戶 keeper workflow 的位址／environment／concurrency | `scripts/check-addresses.mjs`、`consistency.yml` | node 測試 21 支；以真實 keeper workflow 的租戶複本驗證 |
 | 營運文件：每租戶的 keeper 金鑰與 environment、workflow、signal-api、SDK | [`TENANT_OPERATIONS.md`](TENANT_OPERATIONS.md) | — |
 
