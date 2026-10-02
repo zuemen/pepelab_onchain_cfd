@@ -218,8 +218,11 @@ SEAL 911 是 Security Alliance（SEAL）提供的公開緊急聯絡管道，協�
    有低嚴重度通知被丟棄、或關鍵通知被合併成摘要。檢查通道，並到區塊瀏覽器補查訊息列出的時間範圍。
    「（本輪 N 筆，合併為摘要）」是同一條規則一輪內的大量事件；摘要只列前幾筆，其餘要到區塊瀏覽器查。
    「（值再次變更）」：接線、實作或收款地址的告警開著時，值又被換成另一個——以新的變更重新判斷，不要當成舊告警的重複。
-9. **「UUPS 實作被升級」**（`proxy-implementation`）：鏈上的實作與 CI 依據的 `deployed.json` 不同。未經排程就是 SEV-1；預期中的升級也要重抓 `deployed.json` 並重新部署 Worker，否則 CI 的「事件在部署版裡」檢查是對舊版做的。
-10. **誤報**：調門檻要改 `ops/monitoring/monitors.json`（或 Worker 的 `[vars]`）並走 PR，不要在事故當下關掉整條規則。
+9. **新版 GuardedOracle 的停機告警**（#219 原始碼，oracle 重新部署並把規則改 active 後才會響）：「guardian 停機開始／解除」（SEV-2）帶自動失效時間 `expiresAt`；
+   到期失效時不發事件，`guarded-oracle-paused` 每輪讀 `paused()` 會看到暫停解除（資產凍結的到期沒有狀態規則，以 `expiresAt` 為準）。原因還沒排除時，依第 3 節與 GOVERNANCE_HANDOVER 在到期前由 timelock 接手；
+   懷疑 guardian 金鑰外洩時，解除停機的提案要同一批撤換 `GUARDIAN_ROLE`。「停機被 admin 接手（不再到期）」是 SEV-1：對照 timelock 排程，認不得的接手等同 admin 權限被濫用。
+10. **「UUPS 實作被升級」**（`proxy-implementation`）：鏈上的實作與 CI 依據的 `deployed.json` 不同。未經排程就是 SEV-1；預期中的升級也要重抓 `deployed.json` 並重新部署 Worker，否則 CI 的「事件在部署版裡」檢查是對舊版做的。
+11. **誤報**：調門檻要改 `ops/monitoring/monitors.json`（或 Worker 的 `[vars]`）並走 PR，不要在事故當下關掉整條規則。
    已知、已接受的單一告警用 `MUTE_KEYS` 只靜音那一個 key（只接受 `mutableKeys` 白名單）；不要用 `MIN_SEVERITY` 一次壓掉整個等級。
    SEV-1 與 `monitor-self`（監控自身故障）在任何設定下都會送出。
 

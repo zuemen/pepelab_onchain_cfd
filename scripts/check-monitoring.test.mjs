@@ -10,6 +10,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { selector as selectorOf } from "../ops/monitoring/keccak.mjs";
 import {
+  ADMIN_FN,
   MUTABLE_KEYS,
   PARAM_SPECS,
   REQUIRED_RULES,
@@ -731,4 +732,21 @@ test("L-c：--verify-deployed（每週排程）只讀、不寫檔；鏈上實作
   const diffs = await verifyDeployed({ root, fetchImpl: chain(other), log: () => {}, sleep: async () => {} });
   assert.ok(diffs.some((x) => /EIP-1967 實作 0x[0-9a-f]{40} → 0x[0-9a-f]{40}（升級了）/.test(x)), diffs.join("\n"));
   assert.equal(readFileSync(join(root, "ops/monitoring/deployed.json"), "utf8"), before, "不寫檔");
+});
+
+test("#219：新版 GuardedOracle／PepeIncentives 的事件都有分類；admin 接手函式算管理函式", () => {
+  const cfg = current();
+  const ids = new Map(cfg.rules.map((r) => [r.id, r]));
+  const sigs = (id) => ids.get(id).events.map((e) => e.sig);
+  assert.deepEqual(sigs("guarded-oracle-halt-window").sort(), ["AssetFreezeLifted(bytes32,address)", "AssetFreezeStarted(bytes32,address,uint256)", "PauseLifted(address)", "PauseStarted(address,uint256)"]);
+  assert.deepEqual(sigs("guarded-oracle-halt-takeover").sort(), ["AssetFreezeTakenOver(bytes32,address)", "PauseTakenOver(address)"]);
+  assert.equal(ids.get("guarded-oracle-halt-takeover").severity, "SEV-1");
+  assert.deepEqual(sigs("pepe-incentives-daily-params"), ["DailyParamsSet(uint256,uint256,uint8)"]);
+  for (const id of ["guarded-oracle-halt-window", "guarded-oracle-halt-takeover", "pepe-incentives-daily-params"]) assert.equal(ids.get(id).status, "pending-deploy", id);
+  const ignored = cfg.ignoredEvents.flatMap((g) => g.events);
+  assert.ok(!ignored.some((e) => e.startsWith("DailyCheckIn(")), "舊版簽到事件已不在原始碼／ABI");
+  assert.ok(cfg.ignoredEvents.some((g) => g.abi === "PepeIncentives" && g.notDeployed && g.events.includes("CheckInPointsCredited(address,uint256,uint8,uint256)")));
+  // 部署後這兩個函式會出現在部署版 bytecode，adminFunctions 就必須分類它們。
+  for (const fn of ["takeOverAssetFreeze", "takeOverPause"]) assert.ok(ADMIN_FN.test(fn), fn);
+  assert.match(cfg.adminFunctions.PepeIncentives["setDailyParams(uint256,uint256,uint8)"].reason, /pepe-incentives-daily-params/);
 });

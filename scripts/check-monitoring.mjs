@@ -147,6 +147,9 @@ export const REQUIRED_RULES = {
   "vault-unpriced-exemption": ["SEV-2", "pending-deploy", "9e6b3f9ddbb957cc04d6ed0f0be608d1220e7a98df1290f63df0c1c525893505"],
   "guarded-oracle-window": ["SEV-3", "pending-deploy", "3cb1cb7086d1f110bad42185a852f2676206856c8e653836297a0ca159c72b4e"],
   "copytracker-slash-reserve": ["SEV-2", "pending-deploy", "d28fa46a7e82c7224d01f9545d83008dce38ded17d9056e91b10744155e30bec"],
+  "guarded-oracle-halt-window": ["SEV-2", "pending-deploy", "7a7a5276534fe0a7f217266ab0b16f84a9894b4f62ccf99c41a894d3b29917d4"],
+  "guarded-oracle-halt-takeover": ["SEV-1", "pending-deploy", "e0e0c332c4162fa39ac63b1e98a63c2fd25c4b6cc9a878beabc089151c78b6f2"],
+  "pepe-incentives-daily-params": ["SEV-3", "pending-deploy", "eebc20b3321d42ec0a142221791d336c658bbcbbf1a7c95b6c12c6c30a243b92"],
 };
 
 /**
@@ -1074,7 +1077,7 @@ export function eventCoverage(cfg, ctx) {
  *   { "reason": "…" }     明列不監控的理由（使用者自己的操作、一次性設定…）。
  * 多出來的分類（ABI 沒有或部署版沒有的函式）也算錯——合約換版後要重新分類。
  */
-export const ADMIN_FN = /^(set|update|register|unregister|add|remove|grant|revoke|transferOwnership|renounce|pause|unpause|upgrade|withdraw|configure|enable|disable|freeze)/i;
+export const ADMIN_FN = /^(set|update|register|unregister|add|remove|grant|revoke|transferOwnership|renounce|pause|unpause|upgrade|withdraw|configure|enable|disable|freeze|takeOver)/i;
 export function adminFunctionCoverage(cfg, ctx) {
   const out = [];
   if (!ctx.deployed.data) return out;

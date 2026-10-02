@@ -60,7 +60,7 @@ status: proposed
 
 具體做法：
 
-- 規則唯一真相是 [`ops/monitoring/monitors.json`](../ops/monitoring/monitors.json)：56 條（運作中 45：事件 30、狀態 13、HTTP 2；不載入 11：部署版不發此事件 10、待部署 1）。位址、topic0、selector、資產 ID、角色名稱由 `node scripts/check-monitoring.mjs --write` 從前端設定與 ABI 產生，人看的 [`rules.md`](../ops/monitoring/rules.md) 也由它渲染。
+- 規則唯一真相是 [`ops/monitoring/monitors.json`](../ops/monitoring/monitors.json)：59 條（運作中 45：事件 30、狀態 13、HTTP 2；不載入 14：部署版不發此事件 13、待部署 1）。位址、topic0、selector、資產 ID、角色名稱由 `node scripts/check-monitoring.mjs --write` 從前端設定與 ABI 產生，人看的 [`rules.md`](../ops/monitoring/rules.md) 也由它渲染。
 - `consistency.yml` 新增 `monitoring` job：位址 ≠ `addresses.ts`、事件不在 ABI、topic0 對不上、處置段落不存在、`rules.md` 過期、`wrangler.toml` 任何位置有秘密鍵名或含金鑰的 URL、`.dev.vars`／`.wrangler/` 沒列進 `.gitignore`，任一項都會紅。另外強制：
   - **事件在部署版 bytecode 裡**：前端 ABI 來自 master 原始碼，可能比鏈上那一版新。[`deployed.json`](../ops/monitoring/deployed.json) 是以唯讀 RPC 釘在單一區塊抓下的 runtime bytecode（含 EIP-1967 實作）與 getter 快照；每條 active 事件規則的 topic0 必須出現在對應合約的部署版 bytecode 裡，否則就是「看起來在監控、其實永遠不會響」。部署版不發的事件（InsuranceVault／FeeRouter 的接線、KYC verifier 等）改由**接線狀態規則**輪詢 getter，原事件規則標「部署版不發此事件」。CI 不連網，只讀這份 fixture；合約重新部署或升級後以 `--refresh-deployed` 重抓。
   - **事件涵蓋**：前端 ABI 裡的 admin 類事件（owner、角色、接線、參數）要嘛有規則、要嘛列在附理由的忽略清單。

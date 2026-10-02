@@ -3452,6 +3452,143 @@
       "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#5-keeper-熔斷處置"
     },
     {
+      "id": "guarded-oracle-halt-window",
+      "title": "GuardedOracle guardian 停機開始／解除（有期限版）",
+      "category": "暫停與資產模式",
+      "kind": "event",
+      "status": "pending-deploy",
+      "severity": "SEV-2",
+      "description": "原始碼版（#219）GuardedOracle：guardian 的資產凍結或暫停開始（帶自動失效時間 expiresAt）或被解除。到期失效時不發事件——由 guarded-oracle-paused 每輪讀 paused() 看到；原因未排除時要在 expiresAt 之前由 timelock 接手（見 GOVERNANCE_HANDOVER）。",
+      "contracts": [
+        {
+          "ref": "GuardedOracle",
+          "source": "contracts/src/v2/GuardedOracle.sol",
+          "address": null
+        }
+      ],
+      "events": [
+        {
+          "sig": "AssetFreezeStarted(bytes32,address,uint256)",
+          "topic0": "0x5512295b9a717c8ff1846f0aa673e25fcdb7f082978375c1b7ab83d449cec737",
+          "inputs": [
+            {
+              "name": "assetId",
+              "type": "bytes32",
+              "indexed": true
+            },
+            {
+              "name": "by",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "expiresAt",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "sig": "AssetFreezeLifted(bytes32,address)",
+          "topic0": "0x587e19e2ece40a98bd257a253025c00c6385fd3f2eb46c1b3ef4549a2d5f1732",
+          "inputs": [
+            {
+              "name": "assetId",
+              "type": "bytes32",
+              "indexed": true
+            },
+            {
+              "name": "by",
+              "type": "address",
+              "indexed": true
+            }
+          ]
+        },
+        {
+          "sig": "PauseStarted(address,uint256)",
+          "topic0": "0x625a4747236d29738cd0a35ff766756062e397d2b13c4972bb1321df2b71d76f",
+          "inputs": [
+            {
+              "name": "by",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "expiresAt",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "sig": "PauseLifted(address)",
+          "topic0": "0x511ff39a563f418bd81aa67ea9a6e13ac767cac35945f4f96c72d9aaa5591938",
+          "inputs": [
+            {
+              "name": "by",
+              "type": "address",
+              "indexed": true
+            }
+          ]
+        }
+      ],
+      "runbook": [
+        "3. 暫停與凍結：現行部署能做什麼",
+        "5. keeper 熔斷處置"
+      ],
+      "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼"
+    },
+    {
+      "id": "guarded-oracle-halt-takeover",
+      "title": "GuardedOracle 停機被 admin 接手（不再到期）",
+      "category": "權限",
+      "kind": "event",
+      "status": "pending-deploy",
+      "severity": "SEV-1",
+      "description": "原始碼版（#219）GuardedOracle：admin（DEFAULT_ADMIN_ROLE，預期是 timelock）以 takeOverAssetFreeze／takeOverPause（或在 guardian 停機期間自己 setAssetFrozen／setPaused）接手正在生效的 guardian 停機，從此沒有期限。認不得的接手等同 admin 權限被濫用，以 SEV-1 處理。",
+      "contracts": [
+        {
+          "ref": "GuardedOracle",
+          "source": "contracts/src/v2/GuardedOracle.sol",
+          "address": null
+        }
+      ],
+      "events": [
+        {
+          "sig": "AssetFreezeTakenOver(bytes32,address)",
+          "topic0": "0x10e65c3e75181921c6c1fcaa8339e053684b0437a20feebb1995a5e262c00ce8",
+          "inputs": [
+            {
+              "name": "assetId",
+              "type": "bytes32",
+              "indexed": true
+            },
+            {
+              "name": "by",
+              "type": "address",
+              "indexed": true
+            }
+          ]
+        },
+        {
+          "sig": "PauseTakenOver(address)",
+          "topic0": "0x716d9f634c44b2ef63f0c07f686fbc7f355452d5aa749a34479bad23d2ff442c",
+          "inputs": [
+            {
+              "name": "by",
+              "type": "address",
+              "indexed": true
+            }
+          ]
+        }
+      ],
+      "runbook": [
+        "1. 嚴重度分級",
+        "3. 暫停與凍結：現行部署能做什麼"
+      ],
+      "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#1-嚴重度分級"
+    },
+    {
       "id": "copytracker-slash-reserve",
       "title": "CopyTracker 罰沒準備金提領",
       "category": "大額提領",
@@ -3488,6 +3625,49 @@
         "1. 嚴重度分級"
       ],
       "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#1-嚴重度分級"
+    },
+    {
+      "id": "pepe-incentives-daily-params",
+      "title": "PepeIncentives 簽到點數參數變更",
+      "category": "風險參數",
+      "kind": "event",
+      "status": "pending-deploy",
+      "severity": "SEV-3",
+      "description": "原始碼版（#219，點數版）PepeIncentives 的每日簽到基本點數、連續加成或連續上限被 owner 改（合約內有上限 MAX_DAILY_*）。部署版的 setDailyParams 不發事件。",
+      "contracts": [
+        {
+          "ref": "PepeIncentives",
+          "source": "contracts/src/PepeIncentives.sol",
+          "address": null
+        }
+      ],
+      "events": [
+        {
+          "sig": "DailyParamsSet(uint256,uint256,uint8)",
+          "topic0": "0x1aeafdaa3ac77c7c5d29d5394242287333ac43ee1b47ae03651be6fb8496184c",
+          "inputs": [
+            {
+              "name": "base",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "streakBonus",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "streakCap",
+              "type": "uint8",
+              "indexed": false
+            }
+          ]
+        }
+      ],
+      "runbook": [
+        "3. 暫停與凍結：現行部署能做什麼"
+      ],
+      "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼"
     }
   ],
   "ignoredEvents": [
@@ -3690,10 +3870,17 @@
       "reason": "使用者自己的操作或例行結算，不是管理操作；資金面由大額提領、保險金與儲備率規則涵蓋",
       "events": [
         "CopyClaimed(address,address,uint256)",
-        "DailyCheckIn(address,uint256,uint8,uint256)",
         "EsgHoldClaimed(address,uint256,uint256)",
         "TierClaimed(address,uint8,uint256)",
         "TradeMined(address,uint256,uint256)"
+      ]
+    },
+    {
+      "abi": "PepeIncentives",
+      "notDeployed": true,
+      "reason": "原始碼版（#219，點數版）的每日簽到：使用者自己的操作，只記不可轉讓的成就點數、不轉 PEPE。部署版是舊版（簽到發 DailyCheckIn 並轉 PEPE），沒有這個事件",
+      "events": [
+        "CheckInPointsCredited(address,uint256,uint8,uint256)"
       ]
     },
     {
@@ -3989,7 +4176,7 @@
         "reason": "獎勵參數（PEPE 測試代幣的發放額），部署版不發事件。最壞情況是獎勵被調高而加速抽乾池子——那會被 pepe-incentives-balance-drop 看到"
       },
       "setDailyParams(uint256,uint256,uint8)": {
-        "reason": "同 setCopyReward：獎勵參數，後果由 pepe-incentives-balance-drop 看到"
+        "reason": "部署版（舊版）：簽到獎勵參數（PEPE 發放額），不發事件，最壞情況是獎勵被調高而加速抽乾池子，由 pepe-incentives-balance-drop 看到。原始碼版（#219，點數版）簽到不再轉 PEPE、改發 DailyParamsSet，由 pending 規則 pepe-incentives-daily-params 涵蓋；cutover 後該規則改 active，這裡改指向它"
       },
       "setEsgParams(uint256,uint256,uint256,uint8)": {
         "reason": "同 setCopyReward：獎勵參數，後果由 pepe-incentives-balance-drop 看到"

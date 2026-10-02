@@ -10,7 +10,7 @@
 > - 「**部署版不發此事件**」：合約已部署，但鏈上那一版不發這個事件（前端 ABI 來自 master 原始碼，比部署版新）。
 >   這些事件**現在不會響**；有對應 setter 的由「狀態」規則每輪讀 getter 比對。依據是 [`deployed.json`](deployed.json)（唯讀 RPC 抓的 runtime bytecode，CI 離線比對 topic0）。
 
-共 **56** 條規則：運作中 45 條（事件 30、狀態 13、HTTP 2），部署版不發此事件 10 條，待部署 1 條。鏈：base-sepolia（84532）。
+共 **59** 條規則：運作中 45 條（事件 30、狀態 13、HTTP 2），部署版不發此事件 13 條，待部署 1 條。鏈：base-sepolia（84532）。
 已部署 bytecode 快照：區塊 47569485（2026-10-02）。
 
 ## 總表
@@ -72,7 +72,10 @@
 | [`timelock-operations`](#timelock-operations) Timelock 排程與執行 | 權限 | 事件 | SEV-2 | 待部署 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§2](../../docs/INCIDENT_RESPONSE.md#2-角色) |
 | [`vault-unpriced-exemption`](#vault-unpriced-exemption) 金庫定價豁免變更（V2.5） | 保險金與儲備 | 事件 | SEV-2 | 部署版不發此事件 | 每一筆 | [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 | [`guarded-oracle-window`](#guarded-oracle-window) GuardedOracle 時間窗偏離上限變更 | Oracle | 事件 | SEV-3 | 部署版不發此事件 | 每一筆 | [§5](../../docs/INCIDENT_RESPONSE.md#5-keeper-熔斷處置) |
+| [`guarded-oracle-halt-window`](#guarded-oracle-halt-window) GuardedOracle guardian 停機開始／解除（有期限版） | 暫停與資產模式 | 事件 | SEV-2 | 部署版不發此事件 | 每一筆 | [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) [§5](../../docs/INCIDENT_RESPONSE.md#5-keeper-熔斷處置) |
+| [`guarded-oracle-halt-takeover`](#guarded-oracle-halt-takeover) GuardedOracle 停機被 admin 接手（不再到期） | 權限 | 事件 | SEV-1 | 部署版不發此事件 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 | [`copytracker-slash-reserve`](#copytracker-slash-reserve) CopyTracker 罰沒準備金提領 | 大額提領 | 事件 | SEV-2 | 部署版不發此事件 | 每一筆 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) |
+| [`pepe-incentives-daily-params`](#pepe-incentives-daily-params) PepeIncentives 簽到點數參數變更 | 風險參數 | 事件 | SEV-3 | 部署版不發此事件 | 每一筆 | [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 
 「嚴重度」是規則的預設等級；狀態規則依門檻在 SEV-1～SEV-3 之間升降（見各規則）。恢復通知固定標為 SEV-4，但依原嚴重度決定是否送出。
 
@@ -946,6 +949,34 @@ V2.5 允許把無法定價的資產豁免於儲備率計算；豁免會讓儲備
 - 門檻：每一筆
 - 處置：[INCIDENT_RESPONSE「5. keeper 熔斷處置」](../../docs/INCIDENT_RESPONSE.md#5-keeper-熔斷處置)
 
+### guarded-oracle-halt-window
+
+**GuardedOracle guardian 停機開始／解除（有期限版）**｜暫停與資產模式｜事件｜SEV-2｜部署版不發此事件
+
+原始碼版（#219）GuardedOracle：guardian 的資產凍結或暫停開始（帶自動失效時間 expiresAt）或被解除。到期失效時不發事件——由 guarded-oracle-paused 每輪讀 paused() 看到；原因未排除時要在 expiresAt 之前由 timelock 接手（見 GOVERNANCE_HANDOVER）。
+
+| 合約 | 位址來源 | 位址 |
+|---|---|---|
+| GuardedOracle | addresses.ts V2_STACK[84532].GuardedOracle（`0x8E9e59BE9589Ad88EC14F3ef6bdcc43E8B76f842`）；部署版不發此事件，事件宣告於 `contracts/src/v2/GuardedOracle.sol` | — |
+
+- 事件：`AssetFreezeStarted(bytes32,address,uint256)`、`AssetFreezeLifted(bytes32,address)`、`PauseStarted(address,uint256)`、`PauseLifted(address)`
+- 門檻：每一筆
+- 處置：[INCIDENT_RESPONSE「3. 暫停與凍結：現行部署能做什麼」](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼)、[INCIDENT_RESPONSE「5. keeper 熔斷處置」](../../docs/INCIDENT_RESPONSE.md#5-keeper-熔斷處置)
+
+### guarded-oracle-halt-takeover
+
+**GuardedOracle 停機被 admin 接手（不再到期）**｜權限｜事件｜SEV-1｜部署版不發此事件
+
+原始碼版（#219）GuardedOracle：admin（DEFAULT_ADMIN_ROLE，預期是 timelock）以 takeOverAssetFreeze／takeOverPause（或在 guardian 停機期間自己 setAssetFrozen／setPaused）接手正在生效的 guardian 停機，從此沒有期限。認不得的接手等同 admin 權限被濫用，以 SEV-1 處理。
+
+| 合約 | 位址來源 | 位址 |
+|---|---|---|
+| GuardedOracle | addresses.ts V2_STACK[84532].GuardedOracle（`0x8E9e59BE9589Ad88EC14F3ef6bdcc43E8B76f842`）；部署版不發此事件，事件宣告於 `contracts/src/v2/GuardedOracle.sol` | — |
+
+- 事件：`AssetFreezeTakenOver(bytes32,address)`、`PauseTakenOver(address)`
+- 門檻：每一筆
+- 處置：[INCIDENT_RESPONSE「1. 嚴重度分級」](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級)、[INCIDENT_RESPONSE「3. 暫停與凍結：現行部署能做什麼」](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼)
+
 ### copytracker-slash-reserve
 
 **CopyTracker 罰沒準備金提領**｜大額提領｜事件｜SEV-2｜部署版不發此事件
@@ -959,6 +990,20 @@ V2.5 允許把無法定價的資產豁免於儲備率計算；豁免會讓儲備
 - 事件：`SlashReserveWithdrawn(address,uint256)`
 - 門檻：每一筆
 - 處置：[INCIDENT_RESPONSE「1. 嚴重度分級」](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級)
+
+### pepe-incentives-daily-params
+
+**PepeIncentives 簽到點數參數變更**｜風險參數｜事件｜SEV-3｜部署版不發此事件
+
+原始碼版（#219，點數版）PepeIncentives 的每日簽到基本點數、連續加成或連續上限被 owner 改（合約內有上限 MAX_DAILY_*）。部署版的 setDailyParams 不發事件。
+
+| 合約 | 位址來源 | 位址 |
+|---|---|---|
+| PepeIncentives | addresses.ts BASE_SEPOLIA.PepeIncentives（`0xEBfA1dc7dDea032ac6242cB619d982e543A23c12`）；部署版不發此事件，事件宣告於 `contracts/src/PepeIncentives.sol` | — |
+
+- 事件：`DailyParamsSet(uint256,uint256,uint8)`
+- 門檻：每一筆
+- 處置：[INCIDENT_RESPONSE「3. 暫停與凍結：現行部署能做什麼」](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼)
 
 ## 可靜音的告警
 
@@ -1050,7 +1095,7 @@ V2.5 允許把無法定價的資產豁免於儲備率計算；豁免會讓儲備
 | PepeIncentives | `setEsgRegistry(address)` | [`pepe-incentives-wiring`](#pepe-incentives-wiring) |
 | PepeIncentives | `withdraw(uint256)` | [`pepe-incentives-balance-drop`](#pepe-incentives-balance-drop) |
 | PepeIncentives | `setCopyReward(uint256)` | 不監控：獎勵參數（PEPE 測試代幣的發放額），部署版不發事件。最壞情況是獎勵被調高而加速抽乾池子——那會被 pepe-incentives-balance-drop 看到 |
-| PepeIncentives | `setDailyParams(uint256,uint256,uint8)` | 不監控：同 setCopyReward：獎勵參數，後果由 pepe-incentives-balance-drop 看到 |
+| PepeIncentives | `setDailyParams(uint256,uint256,uint8)` | 不監控：部署版（舊版）：簽到獎勵參數（PEPE 發放額），不發事件，最壞情況是獎勵被調高而加速抽乾池子，由 pepe-incentives-balance-drop 看到。原始碼版（#219，點數版）簽到不再轉 PEPE、改發 DailyParamsSet，由 pending 規則 pepe-incentives-daily-params 涵蓋；cutover 後該規則改 active，這裡改指向它 |
 | PepeIncentives | `setEsgParams(uint256,uint256,uint256,uint8)` | 不監控：同 setCopyReward：獎勵參數，後果由 pepe-incentives-balance-drop 看到 |
 | PepeIncentives | `setTierParams(uint256[4],uint256[4])` | 不監控：同 setCopyReward：獎勵參數，後果由 pepe-incentives-balance-drop 看到 |
 | PepeIncentives | `setTradeMining(uint256,uint256)` | 不監控：同 setCopyReward：獎勵參數，後果由 pepe-incentives-balance-drop 看到 |
@@ -1122,5 +1167,6 @@ V2.5 允許把無法定價的資產豁免於儲備率計算；豁免會讓儲備
 | PepeAMM | `LiquidityAdded`、`LiquidityRemoved`、`MaxOracleAgeSet`、`MaxOracleDeviationBpsSet` | **部署版不發此事件**：部署版的 PepeAMM 是舊版：沒有 LP 份額與 oracle 護欄參數，不會發這些事件 |
 | PepeClaim | `Claimed` | 使用者自己的操作或例行結算，不是管理操作；資金面由大額提領、保險金與儲備率規則涵蓋 |
 | PepeStaking | `RewardNotified`、`Staked`、`Withdrawn`、`YieldClaimed` | 使用者的質押操作與 owner 例行注入獎勵（資金流入） |
-| PepeIncentives | `CopyClaimed`、`DailyCheckIn`、`EsgHoldClaimed`、`TierClaimed`、`TradeMined` | 使用者自己的操作或例行結算，不是管理操作；資金面由大額提領、保險金與儲備率規則涵蓋 |
+| PepeIncentives | `CopyClaimed`、`EsgHoldClaimed`、`TierClaimed`、`TradeMined` | 使用者自己的操作或例行結算，不是管理操作；資金面由大額提領、保險金與儲備率規則涵蓋 |
+| PepeIncentives | `CheckInPointsCredited` | **部署版不發此事件**：原始碼版（#219，點數版）的每日簽到：使用者自己的操作，只記不可轉讓的成就點數、不轉 PEPE。部署版是舊版（簽到發 DailyCheckIn 並轉 PEPE），沒有這個事件 |
 | EsgRewardDistributor | `EsgRewardClaimed` | 使用者自己的操作或例行結算，不是管理操作；資金面由大額提領、保險金與儲備率規則涵蓋 |
