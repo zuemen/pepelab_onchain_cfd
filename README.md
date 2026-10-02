@@ -5,7 +5,7 @@
 > 有衍生品業務的銀行）。對終端客戶的合規責任（牌照、KYC／AML、適合度、槓桿上限等）
 > 由持牌客戶承擔，分工見 [`docs/COMPLIANCE_BOUNDARY.md`](docs/COMPLIANCE_BOUNDARY.md)。
 >
-> **現況**：本 repo 是 NCCU Capstone 2026 出身的**研究原型**，只部署在 **Base Sepolia 測試網
+> **現況**：本 repo 是 2026 年 Capstone 專題出身的**研究原型**，只部署在 **Base Sepolia 測試網
 > （chainId 84532）**。沒有真實資產、沒有第三方安全稽核、沒有任何監理許可，**不是生產系統**。
 
 - 名稱：產品名為 **PepeFi**。PepeLab 是早期名稱，也是 demo 主題（因此 repo、網址與部分舊文件仍使用 PepeLab）。
@@ -20,7 +20,7 @@
 |---|---|---|
 | **① 鏈上合約層** | `PerpetualExchange`、`InsuranceVault`、`AssetVaultV2`（UUPS proxy）+ `SyntheticAssetV2`、`ESGRegistryV2` + `CarbonTiers`、`AgentSessionManager`、`KYCRegistry`、`StrategyRegistry`／`CopyTracker`／`TraderStake`、`FeeRouter` | 保證金、開平倉、funding、清算與損失吸收；代幣化資產 mint／redeem；以見證的碳分級決定費率與槓桿上限；agent 的限額授權；費用分潤 |
 | **② 預言機與營運層** | `MockOracle`（交易所讀取）、`GuardedOracle`（V2 金庫讀取）、keeper（`agent/keeper`，GitHub Actions）、監控與告警 workflow | 餵價、價格熔斷、來源後備、oracle 新鮮度告警、位址一致性檢查 |
-| **③ Agent 與資料服務層** | `agent/signal-api`（x402，Vercel）、x402 結算 worker、`agent/mcp-server`、`agent/tg-bot`、`agent/demo-agent` | 付費資料 API、分潤結算佇列、讓 LLM agent 在 session 限額內讀取與下單 |
+| **③ Agent 與資料服務層** | `agent/signal-api`（x402，Vercel）、x402 結算 worker、`agent/mcp-server`、`agent/tg-bot`、`agent/demo-agent`、`agent/sdk`（TypeScript SDK，workspace，未發布到 npm） | 付費資料 API、分潤結算佇列、讓 LLM agent 在 session 限額內讀取與下單、給機構整合用的型別化 client |
 | **④ 呈現層** | `frontend/`（React + Vite，Vercel）、`web/`（靜態介紹頁） | 白標前端範本、商業版功能旗標、揭露文字 |
 
 整合介面細節見 [`docs/INTEGRATION_GUIDE.md`](docs/INTEGRATION_GUIDE.md)，signal-api 規格見
@@ -76,9 +76,11 @@ Sepolia 的合約**未做金鑰輪替**（見 [`docs/RUNBOOK_KEY_ROTATION.md`](d
 - **營運**（#178、#182、#190）：keeper 指向現行 exchange、GuardedOracle 恢復餵價、keeper 熔斷與來源後備、
   位址一致性 CI、oracle 告警。處置見 [`docs/RUNBOOK_KEEPER.md`](docs/RUNBOOK_KEEPER.md)。
 - **前端**（#181、#192）：移除假價、改為誠實的鏈上讀取；KYC 改送雜湊；商業版功能旗標；CSP 與安全標頭；
-  合成資產揭露。
+  合成資產揭露。之後合併到 master 的有：白標租戶設定層（#197，見
+  [`docs/TENANT_DEPLOYMENT.md`](docs/TENANT_DEPLOYMENT.md)）、`/legacy` 舊版 exchange 資產取回頁
+  （#214，2026-10-01 合併，見 [`docs/LEGACY_EXCHANGES.md`](docs/LEGACY_EXCHANGES.md)）。
 
-### 3.2 僅原始碼、尚未部署（PR #191，已合併到 master）
+### 3.2 僅原始碼、尚未部署（PR #191、#198，已合併到 master）
 
 以下變更已在 master 的原始碼中，但**已部署的 bytecode 沒有這些功能**。要生效必須由使用者執行 cutover
 重新部署（`PerpetualExchange` 需 link 外部 library `ExchangeOpsLib`，forge script 會自動處理），
@@ -92,6 +94,9 @@ Sepolia 的合約**未做金鑰輪替**（見 [`docs/RUNBOOK_KEY_ROTATION.md`](d
   CopyTracker slash 款項改入準備金、InsuranceVault 零份額存款 revert。
 - **組合保證金模式已從原始碼移除**（EIP-170 合約大小上限，以及未完成的帳戶層級清算；見 `docs/KNOWN_LIMITATIONS.md`）。
   現行部署仍有這個模式，但為關閉狀態（`portfolioMarginEnabled = false`，逐倉）。
+- PR #198（同樣只合併原始碼）：cutover 腳本與程序（[`docs/DEPLOY_130_CUTOVER.md`](docs/DEPLOY_130_CUTOVER.md)）、
+  移交給 Timelock 的治理腳本（[`docs/GOVERNANCE_HANDOVER.md`](docs/GOVERNANCE_HANDOVER.md)）、
+  `AssetVaultV2_5`、`GuardedOracle` 的時間窗累積偏離上限。相關限制見 `docs/KNOWN_LIMITATIONS.md` #27–#29。
 
 ## 4. 商業版功能旗標（前端）
 
@@ -146,7 +151,13 @@ npm run mcp-server      # 本機啟動 MCP server（stdio）
 ```
 
 環境與工具鏈細節見 [`docs/agents/environment.md`](docs/agents/environment.md)。部署與 cutover 程序見
-[`docs/DEPLOY_129_CUTOVER.md`](docs/DEPLOY_129_CUTOVER.md)；任何廣播交易的步驟都需要持有金鑰的使用者執行。
+[`docs/DEPLOY_129_CUTOVER.md`](docs/DEPLOY_129_CUTOVER.md)（現行部署）與
+[`docs/DEPLOY_130_CUTOVER.md`](docs/DEPLOY_130_CUTOVER.md)（3.2 節原始碼的下一輪，尚未執行）；
+任何廣播交易的步驟都需要持有金鑰的使用者執行。
+
+匿名審查護欄：`frontend/src/anonymity.test.ts`（隨 `yarn test` 執行）檢查展示站來源、`web/`、`docs/`、本檔
+與 build 產物不含可辨識所屬機構的字樣。**它不涵蓋 git 歷史與 commit metadata**（舊 commit 的內容、
+作者與提交者信箱、貢獻者帳號名稱），那些要另外處理。
 
 ## 7. 文件索引
 
@@ -170,3 +181,38 @@ npm run mcp-server      # 本機啟動 MCP server（stdio）
 **不是證券、不代表任何真實資產的所有權或請求權**，也沒有任何價值。本文件不構成投資建議、
 法律意見或任何形式的要約。PepeFi 未取得任何司法管轄區的金融業務許可；任何對公眾提供的
 衍生品或代幣化資產服務，都必須由取得相應許可的機構自行評估並承擔合規責任。
+
+## 9. 授權
+
+本 repo 採**專有授權、保留所有權利**，全文見 [`LICENSE`](LICENSE)。
+
+> **這份授權文字尚待律師審閱**，目前是維護者自行擬定的暫行版本，不是法律意見。
+
+- **允許**：為了評估（例如技術盡職調查、競賽評審、安全審查）與學術審查（例如論文口試、同儕審查）而檢視原始碼，
+  以及為同樣的目的在自己的機器上 clone、build、執行測試。不得部署到公開網路或任何鏈（含測試網）。
+- **不授予**：使用、修改、散布、部署（包含把任何合約部署到任何鏈、或營運由本專案建置的服務）的權利。
+  需要這些權利請先取得著作權人的書面同意。
+  例外：`contracts/` 的 Solidity 檔案檔頭標的是 MIT，見下方「尚未釐清」。
+- **著作權人**：zuemen 與 PepeLab 貢獻者。
+
+第三方元件依各自的授權，不適用本專案的授權：
+
+| 元件 | 位置 | 授權 | repo 內是否附授權全文 |
+|---|---|---|---|
+| OpenZeppelin Contracts、Contracts Upgradeable | `contracts/lib/openzeppelin-contracts*`（git 子模組） | MIT | 有（各目錄的 `LICENSE`） |
+| forge-std | `contracts/lib/forge-std` | MIT 或 Apache-2.0 | 有（`LICENSE-MIT`、`LICENSE-APACHE`） |
+| Minimal UI 起始範本（`@minimal-kit/starter-vite-ts`） | `frontend/` 的專案骨架 | 依範本發行者的條款 | **沒有**，授權狀態待確認 |
+| Roboto 字型 | `frontend/public/fonts/` | 依字型發行者的授權 | **沒有** |
+| npm／yarn 套件（含打包進 `agent/signal-api/api/index.js` 的部分） | lockfile 與套件中繼資料 | 各套件自己的授權 | 沒有彙整的第三方聲明檔 |
+
+**尚未釐清、需要一併交給律師的事項**：
+
+- `contracts/` 下的 Solidity 檔案（`src`、`script`、`test`）檔頭都標著 `SPDX-License-Identifier: MIT`，
+  與根目錄的專有授權不一致。`LICENSE` 第 6 條寫明本授權不撤回檔案自身聲明已經給出的權利；
+  要不要改檔頭、已公開的版本如何處理，尚未決定。
+- `LICENSE` 沒有準據法與管轄條款，著作權人也還不是法律實體。
+- 其他貢獻者對改採專有授權的同意：這個 repo 有不只一位貢獻者，改採專有授權、以及日後由誰給出書面同意，
+  都需要他們同意，目前還沒有取得。
+- `frontend/public` 的角色圖像與範本附帶的素材：來源與權利歸屬還沒有逐一確認。`LICENSE` 第 5 條的清單不是窮舉，
+  這些素材仍屬各自的權利人。
+- 各 `package.json` 的 `license` 欄位是 `SEE LICENSE IN LICENSE`，指的是根目錄這一份。

@@ -15,7 +15,7 @@ export interface PepeRank {
 
 /**
  * Deterministically retrieves a Pepe avatar based on on-chain reputation score.
- * Implements the professor's requirement: "等級越高的交易員，可以讓其專屬的 Pepe 頭像穿上越華麗的衣服"
+ * Implements the product requirement: "等級越高的交易員，可以讓其專屬的 Pepe 頭像穿上越華麗的衣服"
  * 
  * - Diamond (Rep >= 80): Luxurious crowns, gold suits, space helmet (pepe_10, pepe_11)
  * - Gold (Rep >= 60): Sleek suits, cool shades, luxury vibes (pepe_1, pepe_2, pepe_7)

@@ -81,6 +81,8 @@ export const errors: Catalog['errors'] = {
     EthNotAccepted:
       'Sending ETH directly to the pool is not supported — use the Swap function (swapETHForUSDC) or addLiquidity.',
     InvalidOraclePrice: 'The oracle reported an invalid price (0 or negative) — swaps are paused.',
+    'reserve in pool': 'This exceeds the pool inventory — the pool cannot pay out that much. Reduce the swap amount.',
+    'invalid oracle price': 'The oracle reported an invalid price (0 or negative) — swaps are paused.',
 
     // ── Mock tokens ──────────────────────────────────────────────────────────
     FaucetCallerMustBeEOA:
