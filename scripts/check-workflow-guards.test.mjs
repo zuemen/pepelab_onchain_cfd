@@ -10,11 +10,13 @@ import {
   ADMIN,
   ENVIRONMENTS,
   GUARD_SHA256,
+  PINNED_WORKFLOWS,
   checkWorkflows,
   currentGuardHashes,
   environmentOf,
   expressionsIn,
   expressionsInString,
+  fileDigest,
   guardDigest,
   loadYaml,
   readWorkflowDir,
@@ -53,6 +55,14 @@ function mutate(file, from, to) {
 }
 /** 只在某一個 job 的區段內替換（admin workflow 的三個守門 step 內容幾乎相同）。 */
 const mutateJob = (file, jobId, from, to) => withFile(file, inJob(REAL.find((x) => x.name === file).text, jobId, from, to));
+/** 第一層（整檔釘選）的訊息。 */
+const PIN = (file) => new RegExp(`^${file.replace(/\./g, "\\.")}：這是持有私鑰的 workflow，任何修改都要人工審過整份 diff`);
+/** 結構上合法的改動：只剩第一層的「雜湊不符」一項（任何修改都要人工審過）。 */
+const onlyPin = (problems, file, msg) =>
+  assert.ok(
+    problems.length === 1 && PIN(file).test(problems[0]),
+    `${msg}：預期只有 ${file} 的整檔雜湊不符，實際：\n${problems.join("\n") || "（沒有任何問題）"}`,
+  );
 const some = (problems, re) =>
   assert.ok(problems.some((p) => re.test(p)), `預期有 ${re}，實際：\n${problems.join("\n") || "（沒有任何問題）"}`);
 
@@ -79,7 +89,8 @@ test("允許清單裡的每個 job 都真的存在於現行 repo（清單沒有�
 test("合規的 fixture（各種不該誤報的寫法）加上現行的 admin workflow → 通過", () => {
   const good = readWorkflowDir(join(fixtures, "good"));
   assert.ok(good.length >= 4);
-  assert.deepEqual(check([...good, REAL_ADMIN]), []);
+  // good/ 是各種寫法的變形，內容當然和釘選值不同：這裡只驗第二層（結構規則）。
+  assert.deepEqual(checkWorkflows([...good, REAL_ADMIN], YAML, { pins: null }).problems, []);
 });
 
 test("反例 fixture 必須以非零結束，並逐項列出", () => {
@@ -182,8 +193,8 @@ test("(b) 守門指紋：YAML 註解不算；env、run、admin-call 的 job env 
   assert.equal(base, GUARD_SHA256[CALL]);
   const clone = () => structuredClone(wf.jobs[CALL]);
 
-  // 註解（YAML 層）不影響：在守門 step 前後、env 裡加註解，檢查仍通過。
-  assert.deepEqual(mutateJob(ADMIN.file, CALL, "          REF: ${{ github.ref }}\n", "          # 一行註解\n          REF: ${{ github.ref }}  # 行尾註解\n"), []);
+  // 註解（YAML 層）不影響守門指紋：在 env 裡加註解，只剩第一層（整檔釘選）的雜湊不符。
+  onlyPin(mutateJob(ADMIN.file, CALL, "          REF: ${{ github.ref }}\n", "          # 一行註解\n          REF: ${{ github.ref }}  # 行尾註解\n"), ADMIN.file, "註解");
 
   const j1 = clone();
   j1.steps[0].run += " ";
@@ -216,7 +227,7 @@ test("(b) precheck 被拿掉、被繞過或拿得到東西 → 擋", () => {
   some(mutate(ADMIN.file, "\n  precheck:\n", "\n  precheck-old:\n"), /admin-base-sepolia\.yml#precheck：找不到 job「precheck」/);
   some(mutateJob(ADMIN.file, APPROVE, "    needs: precheck\n", ""), /approve：必須 `needs: precheck`/);
   some(mutateJob(ADMIN.file, APPROVE, "    needs: precheck\n", "    needs: []\n"), /approve：必須 `needs: precheck`/);
-  assert.deepEqual(mutateJob(ADMIN.file, APPROVE, "    needs: precheck\n", "    needs: [precheck]\n"), [], "陣列寫法合法");
+  onlyPin(mutateJob(ADMIN.file, APPROVE, "    needs: precheck\n", "    needs: [precheck]\n"), ADMIN.file, "陣列寫法合法");
 
   const perm = "    permissions: {}\n";
   const e = mutateJob(ADMIN.file, PRE, perm, `${perm}    environment: admin-approval\n`);
@@ -245,7 +256,7 @@ test("(b) approve／admin-call 的結構被改 → 擋", () => {
   some(mutateJob(ADMIN.file, CALL, "    needs: approve\n", "    needs: []\n"), /admin-call：必須 `needs: approve`/);
   some(mutateJob(ADMIN.file, CALL, "    needs: approve\n", "    needs: precheck\n"), /admin-call：必須 `needs: approve`/, "跳過 approve");
   some(mutateJob(ADMIN.file, CALL, "    needs: approve\n", "    needs: approve\n    if: always()\n"), /admin-call：不可有這些鍵：`if`/);
-  assert.deepEqual(mutateJob(ADMIN.file, CALL, "    needs: approve\n", "    needs: [precheck, approve]\n"), [], "陣列寫法合法");
+  onlyPin(mutateJob(ADMIN.file, CALL, "    needs: approve\n", "    needs: [precheck, approve]\n"), ADMIN.file, "陣列寫法合法");
   for (const key of ["continue-on-error: true", "container: ubuntu", "strategy: {}"]) {
     some(mutateJob(ADMIN.file, CALL, "    needs: approve\n", `    needs: approve\n    ${key}\n`), new RegExp(`admin-call：不可有這些鍵：\`${key.split(":")[0]}\``));
   }
@@ -343,15 +354,91 @@ test("(f) run 不可內插 inputs／github.event；經 env 傳遞、github.event
   assert.deepEqual(withExtra("x.yml", wf('echo "inputs.name github.event.x"')), [], "運算式之外的文字不算");
 });
 
-test("PR #217 審查的 40 個繞過嘗試：以現行 workflow 重做，全部被擋，而且是以預期的理由", () => {
+test("PR #217 審查兩輪的 50 個繞過嘗試（第一輪 40＋第二輪 N 系列 10）：以現行 workflow 重做，全部被擋，而且是以預期的理由", () => {
   const cases = bypassCases(REAL);
-  assert.equal(cases.length, 40);
-  assert.equal(new Set(cases.map((c) => c.id)).size, 40);
+  assert.equal(cases.length, 50);
+  assert.equal(new Set(cases.map((c) => c.id)).size, 50);
   for (const c of cases) {
     const problems = check(c.files);
     assert.ok(problems.length > 0, `${c.id}（${c.desc}）通過了檢查＝繞過成功`);
     for (const re of c.expect) some(problems, re);
+    // 第二層（結構規則）本身也要擋；structural 為 null 的（N06：改 PATH）只有整檔釘選擋得到。
+    if (c.structural === null) continue;
+    const structural = checkWorkflows(c.files, YAML, { pins: null }).problems;
+    assert.ok(structural.length > 0, `${c.id}（${c.desc}）只靠第一層才擋得到`);
+    for (const re of c.structural) some(structural, re);
   }
+  assert.deepEqual(cases.filter((c) => c.structural === null).map((c) => c.id), ["N06"]);
+});
+
+test("第一層：PINNED_WORKFLOWS 等於現行持鑰 workflow 的整檔雜湊；--print-pins 印出同樣的值", () => {
+  assert.deepEqual(Object.keys(PINNED_WORKFLOWS).sort(), ["admin-base-sepolia.yml", "base-sepolia-keeper.yml", "price-keeper.yml", "x402-settlement-worker.yml"]);
+  for (const [name, hash] of Object.entries(PINNED_WORKFLOWS)) {
+    assert.equal(fileDigest(REAL.find((f) => f.name === name).text), hash, name);
+  }
+  const r = cli("--print-pins");
+  assert.equal(r.status, 0, r.stderr);
+  for (const [name, hash] of Object.entries(PINNED_WORKFLOWS)) assert.ok(r.stdout.includes(`${JSON.stringify(name)}: ${JSON.stringify(hash)}`), r.stdout);
+  assert.equal(r.stdout.trim().split("\n").length, 4, "只有這四支是持鑰 workflow");
+  // 結構規則單獨跑也要通過（第二層不依賴第一層）。
+  assert.deepEqual(checkWorkflows(REAL, YAML, { pins: null }).problems, []);
+});
+
+test("第一層：持鑰 workflow 的任何一個字改了都擋（註解、空白、結尾換行）；CRLF 與 BOM 不算", () => {
+  for (const name of Object.keys(PINNED_WORKFLOWS)) {
+    const text = REAL.find((f) => f.name === name).text;
+    onlyPin(withFile(name, `${text}\n`), name, `${name} 多一個結尾換行`);
+    onlyPin(withFile(name, `# x\n${text}`), name, `${name} 多一行註解`);
+    onlyPin(withFile(name, text.replace("\n", " \n")), name, `${name} 第一行多一個行尾空白`);
+    assert.deepEqual(withFile(name, text.replace(/\n/g, "\r\n")), [], `${name} CRLF`);
+    assert.deepEqual(withFile(name, `\uFEFF${text}`), [], `${name} BOM`);
+  }
+});
+
+test("第一層：新增的持鑰 workflow 不在釘選表裡 → 擋；釘選表裡的檔案不見了 → 擋", () => {
+  const job = (body) =>
+    `name: x\non:\n  schedule:\n    - cron: '0 0 * * *'\njobs:\n  j:\n    runs-on: ubuntu-latest\n${body}    steps:\n      - run: echo hi\n`;
+  const NOT_PINNED = /^new\.yml：這是持有私鑰的 workflow（引用私鑰 secret 或綁 keeper／settlement／admin-approval），但不在 PINNED_WORKFLOWS 裡/;
+  some(withExtra("new.yml", job("    environment: keeper\n")), NOT_PINNED);
+  some(withExtra("new.yml", job("    environment:\n      name: Settlement\n      deployment: false\n")), NOT_PINNED);
+  some(withExtra("new.yml", job("    environment: admin-approval\n")), NOT_PINNED);
+  some(withExtra("new.yml", job("    env:\n      K: ${{ secrets.keeper_private_key }}\n")), NOT_PINNED);
+  some(withExtra("new.yml", job("    env:\n      K: ${{ toJSON(secrets) }}\n")), NOT_PINNED);
+  assert.ok(
+    !withExtra("new.yml", job("    env:\n      K: ${{ secrets.OTHER }}\n")).some((p) => NOT_PINNED.test(p)),
+    "不持鑰的 workflow 不需要釘選",
+  );
+  for (const name of Object.keys(PINNED_WORKFLOWS)) {
+    some(check(REAL.filter((f) => f.name !== name)), new RegExp(`^${name.replace(/\./g, "\\.")}：在 PINNED_WORKFLOWS 裡但檔案不存在`));
+  }
+});
+
+test("(g) 持鑰 workflow：admin 守門以外的 step 不可有 if；run 不可有任何 ${{ }}；uses 只准釘 SHA 的允許清單", () => {
+  const structural = (name, from, to) => {
+    const f = REAL.find((x) => x.name === name);
+    assert.ok(f.text.includes(from), `${name} 找不到 ${from}`);
+    const files = REAL.map((x) => (x.name === name ? { name, text: f.text.replace(from, to) } : x));
+    return checkWorkflows(files, YAML, { pins: null }).problems;
+  };
+  const pinned = "actions/checkout@11d5960a326750d5838078e36cf38b85af677262";
+  for (const bad of [
+    "actions/checkout@v4",
+    "actions/checkout@11d5960",
+    "evil/checkout@11d5960a326750d5838078e36cf38b85af677262",
+    "./.github/actions/x",
+    "docker://alpine:3",
+  ]) {
+    some(structural("base-sepolia-keeper.yml", pinned, bad), /base-sepolia-keeper\.yml#keep：steps\[0\] 的 `uses: [^`]*` 不允許/);
+  }
+  some(
+    structural("x402-settlement-worker.yml", "      - name: Fail fast", "      - run: echo ${{ env.PAY_TO }}\n      - name: Fail fast"),
+    /x402-settlement-worker\.yml#settle：steps\[\d+\] 的 `run` 內插了/,
+  );
+  // keeper 的 `if: ${{ !cancelled() }}` 合法（只有 admin workflow 禁 if）；非持鑰 workflow 不受 (g) 限制。
+  assert.deepEqual(
+    withExtra("ci2.yml", "name: c\non: push\njobs:\n  c:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - if: always()\n        run: echo ${{ github.sha }}\n"),
+    [],
+  );
 });
 
 test("expressionsInString：找 `}}` 時跳過單引號字串（與 actions/runner 的 TemplateReader 一致）", () => {

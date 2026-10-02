@@ -9,7 +9,18 @@
 //   - 加一個 `pull_request_target` 觸發，fork 的 PR 就能在有 secrets 的情境下執行。
 // 這支腳本把這些規則寫成檢查，改動時 CI 會紅，要動規則就得同時改這裡（刻意的摩擦）。
 //
-// 檢查項目：
+// 兩層：
+//   第一層（整檔釘選）：持有私鑰的 workflow——任何 job 引用 KEEPER_PRIVATE_KEY／
+//       FEE_SETTLEMENT_PRIVATE_KEY（或動態／整包存取 secrets），或綁 keeper／settlement／
+//       admin-approval——整份檔案（去 BOM、CRLF→LF，**不去註解或空白**）的 sha256 必須等於
+//       PINNED_WORKFLOWS 的釘選值。持鑰 workflow 不在釘選表裡、釘選表裡的檔案不存在，也都失敗。
+//       審查兩輪都是「補一種寫法又冒出另一種」（continue-on-error → if: always()、
+//       inputs → env.X／toJSON(github)、守門 → 後面 step 的 uses／$GITHUB_PATH），所以改成
+//       這幾支檔「任何修改都要人工審過、同步更新雜湊」，不再靠逐條列舉危險寫法。
+//   第二層（結構規則，下面 (a)–(g)）：釘選值被更新時仍然要過的底線，也讓錯誤訊息指得出
+//       是哪一種危險改動。
+//
+// 結構規則：
 //   (a) 綁 environment 的 job 必須在下方 ENVIRONMENTS 的允許清單內（字串與物件寫法都算，
 //       名稱不分大小寫；`${{ }}` 動態名稱一律拒絕；未登記的 environment 一律拒絕）。
 //   (b) admin-base-sepolia.yml（precheck → approve → admin-call）採白名單：
@@ -37,6 +48,10 @@
 //       綁 environment，而且可能在別的 repo，這支檢查看不到它。
 //   (f) 任何 `run:` 都不可內插 `${{ inputs.… }}`／`${{ github.event.… }}`（shell injection；
 //       一律經 env 傳遞）。
+//   (g) 持有私鑰的 workflow：`run:` 內不可有任何 `${{ }}`（值一律經 step 的 env 傳入；
+//       `${{ env.X }}`、`toJSON(github)` 也是內插）；step 的 `uses:` 只能是 ALLOWED_KEYED_ACTIONS
+//       之一並釘 40 位 commit SHA（不可 docker://、本地 action、tag）；admin workflow 守門以外的
+//       step 不可有 `if`（`if: always()`／`failure()` 會在守門失敗後照樣執行）。
 //
 // YAML 解析用 npm 的 `yaml`（scripts/package.json 固定 2.9.1，package-lock.json 帶 sha512
 // integrity；CI 用 `npm ci --ignore-scripts` 安裝）。不自己寫解析器：自製的 YAML 子集解析
@@ -47,6 +62,7 @@
 //   node scripts/check-workflow-guards.mjs                       # 檢查 .github/workflows
 //   node scripts/check-workflow-guards.mjs --workflows <dir>     # 檢查指定目錄
 //   node scripts/check-workflow-guards.mjs --print-guard-hashes  # 印出現行守門 step 的 sha256
+//   node scripts/check-workflow-guards.mjs --print-pins          # 印出持鑰 workflow 整檔的 sha256
 //
 // 結束碼：0 通過；1 有問題；2 檢查本身中止（目錄讀不到、缺少 yaml 套件等）。
 import { createHash } from "node:crypto";
@@ -97,6 +113,31 @@ export const GUARD_SHA256 = {
   approve: "3bb2042cae8844217ea932bc43433279a532943595d11b9860aaa4a8cb536d50",
   "admin-call": "f9f5ce3f620addf51083a122bd3cd80af7b83c59dc761d5965524fb79ac10c64",
 };
+
+/**
+ * 第一層：持有私鑰的 workflow 整份檔案的 sha256（正規化：去 BOM、CRLF→LF；註解與空白都算）。
+ * **任何修改都要人工審過整份 diff 之後**，執行
+ *   node scripts/check-workflow-guards.mjs --print-pins
+ * 把印出來的值貼到這裡。Dependabot 升級這幾支檔裡的 action SHA 時也會紅，同樣要人工審過再
+ * 更新——這是刻意的。新增一支持鑰 workflow 時也要加進來，否則檢查失敗。
+ */
+export const PINNED_WORKFLOWS = {
+  "admin-base-sepolia.yml": "e8b89234c0bc83d584792aacf587b548634e60b44a5d38efae9fd1b8d11ba9cf",
+  "base-sepolia-keeper.yml": "cfc3d0f47dd0da306d2c8fad64b012832b0aa10c72de74b5cfb29bd078bb8bde",
+  "price-keeper.yml": "e4ff9a1801593fb6e26d09aabc67b85cc22fc1a8363a937fe0e4486584988a38",
+  "x402-settlement-worker.yml": "0bd5876fd343ed8a55c62d905e82a4431e9305658d146d9a9f2d283995b27968",
+};
+
+/** 持鑰 workflow 的 step 只能用這些 action，而且必須釘 40 位 commit SHA。 */
+export const ALLOWED_KEYED_ACTIONS = ["actions/checkout", "actions/setup-node", "foundry-rs/foundry-toolchain"];
+
+/** 綁了就算「持有私鑰」的 environment（admin-approval 本身沒有私鑰，但它是 admin 核准的關卡）。 */
+const PINNING_ENVIRONMENTS = ["keeper", "settlement", "admin-approval"];
+
+/** 整檔指紋：去 BOM、CRLF→LF，其餘一個字都不改。 */
+export function fileDigest(text) {
+  return createHash("sha256").update(text.replace(/^﻿/, "").replace(/\r\n/g, "\n")).digest("hex");
+}
 
 const ADMIN_WORKFLOW_KEYS = ["name", "on", "permissions", "jobs"];
 const ADMIN_JOB_KEYS = {
@@ -282,6 +323,11 @@ function checkAdminJob(jobId, job, problem) {
     if (isObject(step) && truthyFlag(step["continue-on-error"])) {
       problem(jobId, `steps[${i}] 不可設 \`continue-on-error\`（失敗會被當成通過）`);
     }
+    // 守門 step 的鍵另有白名單；其餘 step 一律不可有 if：`if: always()`／`failure()` 會在守門
+    // 失敗之後照樣執行（re-run failed jobs 會沿用已核准的 approve，守門是唯一擋重播的一道）。
+    if (i > 0 && isObject(step) && "if" in step) {
+      problem(jobId, `steps[${i}] 不可有 \`if\`（\`if: always()\`／\`failure()\` 會在守門失敗後照樣執行）`);
+    }
   }
   const first = steps[0];
   if (!isObject(first) || typeof first.run !== "string" || "uses" in first) {
@@ -376,7 +422,7 @@ function checkAdmin(wf, topLevel, problem) {
  * @param {object} YAML  `yaml` 套件（由呼叫端載入，方便在缺套件時給出清楚的訊息）
  * @returns {{ problems: string[], jobs: number, files: number }}
  */
-export function checkWorkflows(files, YAML) {
+export function checkWorkflows(files, YAML, { pins = PINNED_WORKFLOWS } = {}) {
   const problems = [];
   let jobCount = 0;
   let sawAdmin = false;
@@ -408,11 +454,13 @@ export function checkWorkflows(files, YAML) {
     }
 
     const keyEnvsUsed = new Set();
+    let holdsKeys = false;
     for (const [jobId, job] of Object.entries(jobs)) {
       jobCount += 1;
       const id = `${name}#${jobId}`;
       const env = environmentOf(job);
       if (env.kind === "static" && KEY_ENVIRONMENTS.includes(env.name)) keyEnvsUsed.add(env.name);
+      if (env.kind === "invalid" || (env.kind === "static" && PINNING_ENVIRONMENTS.includes(env.name))) holdsKeys = true;
 
       // (a) environment 允許清單
       if (env.kind === "invalid") {
@@ -428,6 +476,7 @@ export function checkWorkflows(files, YAML) {
 
       // (d) 私鑰 secret 必須綁對應的 environment
       const refs = refsOfJob(job, topLevel);
+      if (refs.dynamic || Object.keys(PROTECTED_SECRETS).some((s) => refs.names.has(s))) holdsKeys = true;
       if (refs.dynamic) {
         problem(jobId, "使用了動態或整包的 secrets 存取（`secrets[...]`、`toJSON(secrets)`、`secrets: inherit` 等）；請逐一寫成 secrets.<名稱>");
       }
@@ -455,6 +504,33 @@ export function checkWorkflows(files, YAML) {
       }
     }
 
+    if (holdsKeys || name === ADMIN.file) {
+      // (g) 持有私鑰的 workflow：run 不內插任何運算式、uses 只准釘 SHA 的允許清單
+      for (const [jobId, job] of Object.entries(jobs)) {
+        for (const [i, step] of (isObject(job) && Array.isArray(job.steps) ? job.steps : []).entries()) {
+          if (!isObject(step)) continue;
+          if (typeof step.run === "string" && expressionsInString(step.run).length) {
+            problem(jobId, `steps[${i}] 的 \`run\` 內插了 \${{ }}（持有私鑰的 workflow 一律經 step 的 env 傳入，包括 env.X、toJSON(github)）`);
+          }
+          if ("uses" in step) {
+            const m = typeof step.uses === "string" ? /^([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)@([0-9a-f]{40})$/.exec(step.uses.trim()) : null;
+            if (!m || !ALLOWED_KEYED_ACTIONS.includes(m[1])) {
+              problem(jobId, `steps[${i}] 的 \`uses: ${step.uses}\` 不允許（持有私鑰的 workflow 只能用 ${ALLOWED_KEYED_ACTIONS.join("、")}，並釘 40 位 commit SHA）`);
+            }
+          }
+        }
+      }
+      // 第一層：整檔釘選
+      if (pins) {
+        const digest = fileDigest(text);
+        if (!Object.hasOwn(pins, name)) {
+          problem(null, `這是持有私鑰的 workflow（引用私鑰 secret 或綁 keeper／settlement／admin-approval），但不在 PINNED_WORKFLOWS 裡。人工審過整份檔案後，把它加進 scripts/check-workflow-guards.mjs 的 PINNED_WORKFLOWS（sha256 ${digest}）`);
+        } else if (pins[name] !== digest) {
+          problem(null, `這是持有私鑰的 workflow，任何修改都要人工審過整份 diff 後更新 scripts/check-workflow-guards.mjs 的 PINNED_WORKFLOWS 雜湊（現在的 sha256 ${digest}，釘選值 ${pins[name]}；--print-pins 會印出現值）`);
+        }
+      }
+    }
+
     if (name === ADMIN.file) {
       // (b) admin workflow
       sawAdmin = true;
@@ -473,6 +549,13 @@ export function checkWorkflows(files, YAML) {
     }
   }
 
+  if (pins) {
+    for (const pinned of Object.keys(pins)) {
+      if (!files.some((f) => f.name === pinned)) {
+        problems.push(`${pinned}：在 PINNED_WORKFLOWS 裡但檔案不存在；若是刻意移除或改名，請同步改 scripts/check-workflow-guards.mjs`);
+      }
+    }
+  }
   if (!sawAdmin) {
     problems.push(`${ADMIN.file}：找不到這支 workflow；若是刻意移除或改名，請同步改 scripts/check-workflow-guards.mjs`);
   }
@@ -494,6 +577,11 @@ export async function loadYaml() {
   }
 }
 
+/** 這支檔是否持有私鑰（第一層的判斷）：以空的釘選表檢查，看它是否被要求釘選。 */
+export function holdsKeysFile(f, YAML) {
+  return checkWorkflows([f], YAML, { pins: {} }).problems.some((p) => p.includes("不在 PINNED_WORKFLOWS 裡"));
+}
+
 /** 現行 admin workflow 三個守門 step 的指紋（給 --print-guard-hashes 與測試用）。 */
 export function currentGuardHashes(files, YAML) {
   const f = files.find((x) => x.name === ADMIN.file);
@@ -512,6 +600,14 @@ async function main(argv) {
   const YAML = await loadYaml();
   const files = readWorkflowDir(dir);
   if (files.length === 0) throw new Error(`${dir} 裡沒有任何 workflow 檔`);
+  if (argv.includes("--print-pins")) {
+    for (const f of files) {
+      if (Object.hasOwn(PINNED_WORKFLOWS, f.name) || holdsKeysFile(f, YAML)) {
+        console.log(`${JSON.stringify(f.name)}: ${JSON.stringify(fileDigest(f.text))},`);
+      }
+    }
+    return 0;
+  }
   if (argv.includes("--print-guard-hashes")) {
     for (const [id, hash] of Object.entries(currentGuardHashes(files, YAML))) console.log(`${JSON.stringify(id)}: ${JSON.stringify(hash)},`);
     return 0;

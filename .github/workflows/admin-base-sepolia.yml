@@ -45,8 +45,10 @@ name: Admin — Base Sepolia owner call
 #
 # 這支 workflow 的結構由 scripts/check-workflow-guards.mjs 檢查（consistency.yml 的
 # workflow-guards job）：只能有這三個 job、每個 job 與守門 step 只能有白名單內的鍵、
-# 守門 step 的內容以 sha256 釘住、觸發事件只能是 workflow_dispatch。改動這裡時要同步
-# 改那支腳本。
+# 守門 step 的內容以 sha256 釘住、觸發事件只能是 workflow_dispatch、守門以外的 step 不可有
+# `if`、`run:` 內不可有 `${{ }}`、`uses:` 只能是釘 SHA 的允許清單。另外**整份檔案**（含註解與
+# 空白）的 sha256 也被釘在 PINNED_WORKFLOWS：任何修改（包括 Dependabot 升級 action SHA）都要
+# 人工審過整份 diff，再用 --print-pins 更新雜湊。改動這裡時要同步改那支腳本。
 #
 # 審查 H2（第二輪）：之前 concurrency 寫在 workflow 層級，等核准的 job 仍占住與 keeper
 # 共用的 group，keeper 排程會排隊到核准或逾時（最久 30 天）。現在 concurrency 只在

