@@ -45,6 +45,13 @@ export interface FacilitatorErrorBody {
   message?: string;
   note: string;
   facilitator: string;
+  /**
+   * 只有 x402 v2 路徑會帶：facilitator 是在哪一步出錯。
+   * `settle` = 授權已交給 facilitator，**結果未知**（不可當成未扣款）。
+   */
+  phase?: "supported" | "verify" | "settle";
+  /** v2 settle 結果未知、但 facilitator 回了結算 tx hash（例如 settlement_pending）時才有，供對帳。 */
+  transaction?: string;
 }
 
 // ── x402 ─────────────────────────────────────────────────────────────────────
@@ -69,6 +76,62 @@ export interface X402PaymentRequiredBody {
   accepts: PaymentRequirements[];
   payer?: string;
   x402Version: 1;
+}
+
+// ── x402 v2（docs/ADR-010-x402-v2-migration.md）───────────────────────────────
+
+export interface X402ResourceInfo {
+  url: string;
+  description?: string;
+  mimeType?: string;
+}
+
+/** v2 的付款要求（`PAYMENT-REQUIRED` header 解碼後的 accepts[]）。 */
+export interface PaymentRequirementsV2 {
+  scheme: "exact";
+  /** CAIP-2，例如 `eip155:84532`。 */
+  network: string;
+  /** 結算代幣最小單位的整數字串（v1 的 maxAmountRequired）。 */
+  amount: string;
+  asset: string;
+  payTo: string;
+  maxTimeoutSeconds: number;
+  /** 結算代幣的 EIP-712 name／version；保留鍵 assetTransferMethod、paymentFlow。 */
+  extra?: Record<string, unknown>;
+}
+
+/** `PAYMENT-REQUIRED` header（base64 JSON）解碼後的內容。 */
+export interface X402PaymentRequiredV2 {
+  x402Version: 2;
+  error?: string;
+  resource: X402ResourceInfo;
+  accepts: PaymentRequirementsV2[];
+  extensions?: Record<string, unknown>;
+}
+
+/** `PAYMENT-RESPONSE` header（base64 JSON）解碼後的內容。v2 在結算失敗的 402 也會帶（success:false）。 */
+export interface X402SettlementResponse {
+  success: boolean;
+  errorReason?: string;
+  errorMessage?: string;
+  payer?: string;
+  /** 結算交易 hash；失敗時為空字串。 */
+  transaction: string;
+  network: string;
+  amount?: string;
+}
+
+/**
+ * `GET /` 在啟用 v2 時多出的區塊（X402_PROTOCOL=v2｜both）。v2 付費牆設定錯誤時只有
+ * `protocol` 與 `error: "x402_misconfigured"`（付費端點此時回 503）。
+ */
+export interface DiscoveryX402 {
+  protocol: "v2" | "both";
+  versions?: number[];
+  network?: string;
+  headers?: Record<string, unknown>;
+  note?: string;
+  error?: "x402_misconfigured";
 }
 
 export interface PaidEnvelope<T> {
@@ -98,6 +161,8 @@ export interface Discovery {
   revenueModel?: string;
   endpoints: Record<string, unknown>;
   example?: Record<string, unknown>;
+  /** 只有伺服器啟用 x402 v2 時才有；沒有 = 只收 v1。 */
+  x402?: DiscoveryX402;
 }
 
 export interface Revenue {
@@ -289,8 +354,25 @@ export const SCHEMA_KEYS = {
     ["ok", "error", "asset", "ageSec", "maxPriceAgeSec"],
   ),
   FacilitatorError: schemaKeys<FacilitatorErrorBody>()(
-    ["ok", "error", "message", "note", "facilitator"],
+    ["ok", "error", "message", "note", "facilitator", "phase", "transaction"],
     ["ok", "error", "note", "facilitator"],
+  ),
+  X402ResourceInfo: schemaKeys<X402ResourceInfo>()(["url", "description", "mimeType"], ["url"]),
+  PaymentRequirementsV2: schemaKeys<PaymentRequirementsV2>()(
+    ["scheme", "network", "amount", "asset", "payTo", "maxTimeoutSeconds", "extra"],
+    ["scheme", "network", "amount", "asset", "payTo", "maxTimeoutSeconds"],
+  ),
+  X402PaymentRequiredV2: schemaKeys<X402PaymentRequiredV2>()(
+    ["x402Version", "error", "resource", "accepts", "extensions"],
+    ["x402Version", "resource", "accepts"],
+  ),
+  X402SettlementResponse: schemaKeys<X402SettlementResponse>()(
+    ["success", "errorReason", "errorMessage", "payer", "transaction", "network", "amount"],
+    ["success", "transaction", "network"],
+  ),
+  DiscoveryX402: schemaKeys<DiscoveryX402>()(
+    ["protocol", "versions", "network", "headers", "note", "error"],
+    ["protocol"],
   ),
   X402PaymentRequired: schemaKeys<X402PaymentRequiredBody>()(
     ["error", "accepts", "payer", "x402Version"],
@@ -302,7 +384,7 @@ export const SCHEMA_KEYS = {
   ),
   PaidEnvelope: schemaKeys<PaidEnvelope<unknown>>()(["ok", "settled", "settleError", "data"], ["ok", "settled", "data"]),
   Discovery: schemaKeys<Discovery>()(
-    ["service", "discoverable", "description", "network", "asset", "payTo", "payToSafety", "revenueModel", "endpoints", "example"],
+    ["service", "discoverable", "description", "network", "asset", "payTo", "payToSafety", "revenueModel", "endpoints", "example", "x402"],
     ["service", "network", "asset", "payTo", "payToSafety", "endpoints"],
   ),
   Revenue: schemaKeys<Revenue>()(

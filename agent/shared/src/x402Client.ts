@@ -11,6 +11,11 @@
 //      - unsettledAtomic：其中沒有拿到 X-PAYMENT-RESPONSE（結算證明）的部分，需要對帳。
 //      - totalPaidAtomic：確定成立的付款（有 X-PAYMENT-RESPONSE 或 status < 400）。
 //    以前只有 totalPaidAtomic，付款後 502／斷線都不計，花費被低估（shared-race PoC C）。
+// 3. x402 v2（docs/ADR-010-x402-v2-migration.md）：付款 header 改名 PAYMENT-SIGNATURE、結算證明改名
+//    PAYMENT-RESPONSE。meteredFetch 兩種都認；差別是 **v2 的 PAYMENT-RESPONSE 在結算失敗的 402 也會
+//    出現（success:false）**，所以 v2 要解開看 success，不能像 v1 只看 header 有沒有。
+//    @x402/fetch 沒有 v1 的 maxValue 參數，單筆上限改由 x402Client 的 spendControls 設定——
+//    見 x402V2SpendControls()；真正的最後防線仍是簽章守門（signingGuard.ts）。
 
 /** 預設單筆上限（USDC）。 */
 export const X402_DEFAULT_MAX_PAYMENT_USDC = "0.02";
@@ -60,7 +65,12 @@ export function resolveX402MaxValue(): bigint {
   return v;
 }
 
-/** 解出 X-PAYMENT header（base64 JSON）裡 EIP-3009 authorization.value；解不出來回 null。 */
+/**
+ * 解出付款 header（base64 JSON）裡 EIP-3009 authorization.value；解不出來回 null。
+ * v1 的 X-PAYMENT 與 v2 的 PAYMENT-SIGNATURE（exact／EIP-3009）都是 `payload.authorization.value`。
+ * v2 的 Permit2 payload（`payload.permit2Authorization`）刻意不解：簽章守門不放行 Permit2，
+ * 真的出現就讓呼叫端以單筆上限保守計入。
+ */
 export function paymentValueFromHeader(header: string | null | undefined): bigint | null {
   if (!header) return null;
   try {
@@ -74,12 +84,60 @@ export function paymentValueFromHeader(header: string | null | undefined): bigin
   }
 }
 
+/** v1／v2 的付款 header 與結算證明 header。 */
+export const X402_PAYMENT_HEADERS = ["PAYMENT-SIGNATURE", "X-PAYMENT"] as const;
+
+/**
+ * 回應是否帶「結算成功」的證明。
+ *   v1：X-PAYMENT-RESPONSE 只在結算成功時出現 → 有就算。
+ *   v2：PAYMENT-RESPONSE 在結算失敗時也會出現 → 必須解得開且 success === true。
+ */
+export function hasSettlementProof(headers: Headers): boolean {
+  if (headers.has("X-PAYMENT-RESPONSE")) return true;
+  const v2 = headers.get("PAYMENT-RESPONSE");
+  if (!v2) return false;
+  try {
+    const j = JSON.parse(Buffer.from(v2, "base64").toString("utf8")) as { success?: unknown };
+    return j?.success === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * @x402/core 的 x402Client spendControls（v2 client 的單筆上限）。不設的話套件預設是 **$1**。
+ * 回傳純物件（shared 不依賴 @x402/*）：`x402Client.fromConfig({ schemes, spendControls: x402V2SpendControls() })`
+ * 或 `client.setSpendControls(x402V2SpendControls())`。金額沿用 X402_MAX_PAYMENT_USDC（預設 0.02）。
+ * 沒有列 allowedAssets → 只接受該網路的預設資產（官方 USDC）。
+ */
+export function x402V2SpendControls(): { maxAmountPerPayment: string } {
+  return { maxAmountPerPayment: `$${formatUsdcAtomic(resolveX402MaxValue())}` };
+}
+
+/**
+ * @x402/core 的 payment policy：只留下 exact／EIP-3009／authorization flow 的付款要求。
+ * Permit2（extra.assetTransferMethod = "permit2"）、upto、upfront／escrow 一律濾掉——簽章守門本來就
+ * 不會簽它們，這裡只是讓 client 在選付款方式時就明確失敗，而不是走到簽章才被擋。
+ * 用法：`client.registerPolicy(x402V2Eip3009OnlyPolicy)`。
+ */
+export function x402V2Eip3009OnlyPolicy<R extends { scheme?: unknown; extra?: unknown }>(
+  _x402Version: number,
+  requirements: R[],
+): R[] {
+  return requirements.filter((r) => {
+    const extra = (r.extra ?? {}) as { assetTransferMethod?: unknown; paymentFlow?: unknown };
+    const atm = extra.assetTransferMethod ?? "eip3009";
+    const flow = extra.paymentFlow ?? "authorization";
+    return r.scheme === "exact" && atm === "eip3009" && flow === "authorization";
+  });
+}
+
 export interface PaymentMeter {
   /** 交給 wrapFetchWithPayment 當底層 fetch。 */
   fetch: typeof globalThis.fetch;
   /** 累計**已送出**的授權（atomic）：不論結果。花費上限請用這個。 */
   totalSentAtomic(): bigint;
-  /** 已送出但沒有結算證明（X-PAYMENT-RESPONSE）的授權（atomic），含 base() 丟錯的。 */
+  /** 已送出但沒有結算證明（X-PAYMENT-RESPONSE／v2 的 PAYMENT-RESPONSE success:true）的授權（atomic），含 base() 丟錯的。 */
   unsettledAtomic(): bigint;
   /** 累計確定成立的付款（atomic）。 */
   totalPaidAtomic(): bigint;
@@ -102,14 +160,22 @@ export function meteredFetch(base: typeof globalThis.fetch = globalThis.fetch): 
   let unsettled = 0n;
   let last: bigint | null = null;
   const wrapped = (async (input: string | URL | Request, init?: RequestInit) => {
-    const headers = new Headers(
-      init?.headers ?? (input instanceof Request ? input.headers : undefined),
-    );
-    const payment = headers.get("X-PAYMENT");
-    const value = paymentValueFromHeader(payment);
-    // 帶了 X-PAYMENT 卻解不出金額：無法證明沒付錢 → 已送出／未結算以單筆上限保守計入
+    // 以結構判斷「input 是不是 Request」，不用 instanceof：@hono/node-server 會把 globalThis.Request
+    // 換成自己的子類別，而 @x402/fetch（v2）送出的是 request.clone() —— 原生 Request，不是那個子類別的
+    // instance。用 instanceof 的話，同一個 process 只要起過 hono 伺服器，v2 的付款就完全不會被計量。
+    const inputHeaders =
+      typeof input === "object" && input !== null && "headers" in input
+        ? (input as { headers?: ConstructorParameters<typeof Headers>[0] }).headers
+        : undefined;
+    const headers = new Headers(init?.headers ?? inputHeaders);
+    // v2（PAYMENT-SIGNATURE）優先；兩個都帶時各是一張獨立的授權，金額相加（保守）。
+    const payments = X402_PAYMENT_HEADERS.map((h) => headers.get(h)).filter((h): h is string => Boolean(h));
+    const payment = payments[0] ?? null;
+    const values = payments.map(paymentValueFromHeader);
+    const value = values.length && values.every((v) => v !== null) ? values.reduce<bigint>((a, v) => a + v!, 0n) : null;
+    // 帶了付款 header 卻解不出金額：無法證明沒付錢 → 已送出／未結算以單筆上限保守計入
     // （totalPaidAtomic 仍只計解得出金額的）。
-    const sentValue = value ?? (payment ? maxValueOrDefault() : null);
+    const sentValue = value ?? (payment ? maxValueOrDefault() * BigInt(payments.length) : null);
     if (sentValue !== null) sent += sentValue; // 送出前就記：base() 丟錯也算已送出
     let res: Response;
     try {
@@ -121,11 +187,12 @@ export function meteredFetch(base: typeof globalThis.fetch = globalThis.fetch): 
       }
       throw err;
     }
-    if (sentValue !== null && !res.headers.has("X-PAYMENT-RESPONSE")) unsettled += sentValue;
+    const settled = hasSettlementProof(res.headers);
+    if (sentValue !== null && !settled) unsettled += sentValue;
     if (value !== null) {
-      // 帶了付款授權：回應帶 X-PAYMENT-RESPONSE（facilitator 結算成功）或成功狀態碼，
-      // 就當作已付。寧可高估不可低估——這個數字是拿來擋花費上限的。
-      if (res.headers.has("X-PAYMENT-RESPONSE") || res.status < 400) {
+      // 帶了付款授權：回應帶結算成功的證明（v1 X-PAYMENT-RESPONSE／v2 PAYMENT-RESPONSE success:true）
+      // 或成功狀態碼，就當作已付。寧可高估不可低估——這個數字是拿來擋花費上限的。
+      if (settled || res.status < 400) {
         total += value;
         last = value;
       } else {

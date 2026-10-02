@@ -6,6 +6,8 @@ import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
 import { createWalletClient, http, publicActions } from "viem";
 import { baseSepolia } from "viem/chains";
 import { createPaymentHeader } from "x402/client";
+import { x402Client } from "@x402/core/client";
+import { ExactEvmScheme } from "@x402/evm/exact/client";
 
 const MGR = ethers.getAddress("0x" + "5e".repeat(20));
 const AGENT_PK = ethers.Wallet.createRandom().privateKey;
@@ -20,6 +22,7 @@ const {
   GuardedWallet, guardViemAccount, SigningGuardError, makeSigner,
   assertAllowedTransaction, assertAllowedTypedData, assertAllowedMessage,
   OFFICIAL_BASE_SEPOLIA_USDC, resetX402GuardStateForTesting, x402SignedTotal, resolveX402TotalSpendCap,
+  x402V2SpendControls, x402V2Eip3009OnlyPolicy,
 } = await import("@pepelab/shared");
 
 let n = 0;
@@ -249,6 +252,69 @@ const msg = (o: Record<string, unknown> = {}) => ({
   await expectGuardAsync((acc as any).sign({ hash: ethers.ZeroHash }), "RAW_HASH_SIGN_FORBIDDEN");
   await expectGuardAsync(acc.signTransaction({ type: "eip1559", chainId: 84532, to: OTHER as any, data: "0x" } as any), "TX_NOT_ALLOWLISTED");
   ok("viem（x402 路徑）：x402 套件產生的 0.005 USDC 付款可簽；超額 / 非官方 USDC / Permit / 訊息 / 7702 / 裸 hash / 非白名單交易 被擋");
+}
+
+// ─── viem：x402 v2（@x402/core + @x402/evm 2.28 的官方 client）───
+{
+  resetX402GuardStateForTesting();
+  const raw = privateKeyToAccount(generatePrivateKey());
+  let signCalls = 0;
+  const counted = { ...raw, signTypedData: async (td: any) => (signCalls++, raw.signTypedData(td)) } as typeof raw;
+  const acc = guardViemAccount(counted);
+  const v2 = new x402Client().register("eip155:84532", new ExactEvmScheme(acc));
+  const required = (over: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) => ({
+    x402Version: 2,
+    resource: { url: "https://signal.example/oracle/sBTC", description: "", mimeType: "application/json" },
+    accepts: [
+      {
+        scheme: "exact", network: "eip155:84532" as const, amount: "5000", asset: USDC, payTo: OTHER,
+        maxTimeoutSeconds: 60, extra: { name: "USDC", version: "2", ...extra }, ...over,
+      },
+    ],
+  });
+  const nowSec = () => Math.floor(Date.now() / 1000);
+
+  // 允許：官方 v2 client 產生的 EIP-3009 付款（validAfter=0、validBefore=now+60）。
+  const p = (await v2.createPaymentPayload(required() as any)) as any;
+  assert.equal(p.x402Version, 2);
+  assert.equal(p.accepted.payTo, OTHER);
+  assert.equal(p.payload.authorization.to, OTHER);
+  assert.equal(p.payload.authorization.value, "5000");
+  assert.equal(p.payload.authorization.validAfter, "0");
+  assert.ok(Number(p.payload.authorization.validBefore) <= nowSec() + 61);
+  assert.equal(x402SignedTotal(), 5_000n, "v2 付款計入同一個累計");
+  assert.equal(signCalls, 1);
+
+  const rejects = async (req: any, code: string) => {
+    const before = signCalls;
+    await assert.rejects(v2.createPaymentPayload(req), (e: any) => String(e?.message ?? e).includes(code), `應為 ${code}`);
+    assert.equal(signCalls, before, `${code}：底層金鑰不可被呼叫`);
+  };
+  // 單筆上限、收款地址、有效期、非官方 USDC、domain 被換掉 —— 與 v1 相同的檢查。
+  // spendControls: false = 關掉 client 自己的上限，確認擋下來的是簽章守門。
+  v2.setSpendControls(false);
+  await rejects(required({ amount: "1000000" }), "PAYMENT_TOO_HIGH");
+  await rejects(required({ payTo: MGR }), "PAYTO_NOT_ALLOWLISTED");
+  await rejects(required({ maxTimeoutSeconds: 3600 }), "PAYMENT_WINDOW_INVALID");
+  await rejects(required({ asset: OTHER }), "TYPED_DATA_NOT_ALLOWLISTED");
+  await rejects(required({}, { name: "USD Coin" }), "TYPED_DATA_NOT_ALLOWLISTED");
+  await rejects(required({}, { version: "1" }), "TYPED_DATA_NOT_ALLOWLISTED");
+  // Permit2：v2 新增的資產轉移方式，簽的是 PermitWitnessTransferFrom —— 預設拒絕。
+  await rejects(required({}, { assetTransferMethod: "permit2" }), "TYPED_DATA_NOT_ALLOWLISTED");
+  assert.equal(x402SignedTotal(), 5_000n, "被擋下的都沒有計入");
+
+  // client 端的第一道：spendControls（預設沿用 X402_MAX_PAYMENT_USDC）與只收 EIP-3009 的 policy。
+  assert.deepEqual(x402V2SpendControls(), { maxAmountPerPayment: "$0.02" });
+  const strict = new x402Client().register("eip155:84532", new ExactEvmScheme(acc));
+  strict.setSpendControls(x402V2SpendControls());
+  strict.registerPolicy(x402V2Eip3009OnlyPolicy as any);
+  await assert.rejects(strict.createPaymentPayload(required({ amount: "20001" }) as any), /spendControls/);
+  await assert.rejects(strict.createPaymentPayload(required({}, { assetTransferMethod: "permit2" }) as any), /filtered out by policies/);
+  await assert.rejects(strict.createPaymentPayload(required({}, { paymentFlow: "upfront" }) as any), /filtered out by policies/);
+  assert.equal(x402V2Eip3009OnlyPolicy(2, [{ scheme: "upto", extra: {} }, { scheme: "exact", extra: { name: "USDC" } }]).length, 1);
+  assert.ok(await strict.createPaymentPayload(required({ amount: "20000" }) as any));
+  assert.equal(x402SignedTotal(), 25_000n);
+  ok("viem（x402 v2 路徑）：官方 v2 client 的 EIP-3009 付款可簽（validAfter=0、validBefore=now+60）；超額／非白名單收款人／有效期過長／非官方 USDC／domain 不符／Permit2 被擋且金鑰未被呼叫；spendControls 與 EIP-3009-only policy");
 }
 
 console.log(`\n✅ signing-guard.test.ts 全過（${n} 組）`);

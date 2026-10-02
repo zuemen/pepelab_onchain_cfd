@@ -23,6 +23,14 @@
 //       交易另要求 chainId = AGENT_CHAIN_ID（EIP-155），calldata 重新編碼須逐字相同。
 //       持有證明挑戰的時間戳須在 ±60 秒內。
 //       呼叫點：x402-fetch（examples/x402-*、buy-signal、demo-agent、x402_agent.ts）。
+//       x402 v2（@x402/evm 2.28 的 exact client，docs/ADR-010）：預設仍是同一份 EIP-3009 typed data
+//       （domain 取自付款要求的 asset／extra.name／extra.version，chainId 取自 CAIP-2），差別只有
+//       validAfter 是 0（v1 是 now-600）—— 上面每一項檢查原樣適用，不需要為 v2 放寬任何東西。
+//       v2 新增的其他簽章路徑**一律拒絕**（它們都不是 TransferWithAuthorization）：
+//         - Permit2（extra.assetTransferMethod = "permit2" → PermitWitnessTransferFrom）
+//         - upto scheme（Permit2 專用）、batch-settlement、auth-capture
+//         - EIP-2612 gas sponsoring 擴充（簽 Permit）、ERC-20 approval sponsoring 擴充（簽 approve 交易）
+//       伺服器（或惡意的 402）宣告這些方式時，agent 金鑰不會簽，付款失敗、沒有任何授權流出。
 //   (c) EIP-191 personal message：只允許 ERC-8126 proof-of-possession 挑戰字串
 //       `pepelab-wv:<agent 地址>:<毫秒時間戳>`（verification.ts checkWV；write.ts 風險閘與
 //       MCP get_agent_verification 會帶 agent 金鑰呼叫）。personal_sign 有
@@ -294,6 +302,7 @@ export const X402_MAX_VALIDITY_SEC = 3600n;
 /**
  * 授權有效期的預設上限（秒）。x402 client 以 validBefore = now + maxTimeoutSeconds 簽署，
  * 我們自己的 signal-api 宣告 60 秒（x402-hono 未設定時的預設是 300），300 秒涵蓋兩者。
+ * v2 的 client（@x402/evm）算法相同，伺服器未設定時的預設同樣是 300。
  */
 export const X402_DEFAULT_MAX_VALIDITY_SEC = 300n;
 
