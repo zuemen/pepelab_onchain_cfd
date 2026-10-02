@@ -11,6 +11,7 @@
 | `write` | 建構未簽交易 `{ to, data, value, request }` | **不簽、不送、不持有金鑰** |
 | `signalApi` | signal-api 的型別化 client：逾時、只對冪等 GET 重試、型別化錯誤、x402 付款由呼叫端注入 | 不持有付款私鑰 |
 | `vc` | Agent 授權 VC v2（EIP-712）的 typed data 建構、驗證、與鏈上 session 交叉比對 | 不收 v1；不做 nonce 一次性（有狀態） |
+| `vcStatus` | 授權 VC 的撤銷：簽發者簽章的狀態清單（建構 typed data、組裝、驗證）、一次性狀態判斷、可注入時鐘的狀態檢查器（ADR-016） | 不持有簽發者金鑰；不替你決定清單放哪裡 |
 
 需求：Node ≥ 20（用到 `fetch`、`AbortController`、`Buffer`、`crypto.getRandomValues`）。
 
@@ -239,6 +240,40 @@ const check = crossCheckWithSession(r, s);              // { ok, mismatches[] }
 - **nonce 一次性不在 SDK 裡**：它需要持久狀態。驗證端必須自己記錄已用過的 nonce
   （agent 的做法見 `agent/shared/src/vcNonce.ts`）。
 
+### 6.1 撤銷（狀態清單，`docs/ADR-016-vc-credential-status.md`）
+
+VC 的簽發者（使用者錢包）用**同一把金鑰、同一個 EIP-712 domain** 簽一份狀態清單；
+清單列出被撤銷的憑證 id（jti），或以 `revokedBefore` 撤銷某個時間點之前簽發的全部憑證。
+v2 VC 的 jti 就是簽進去的 `nonce`（`credentialJti(r)`），不需要新欄位，現有 v2 VC 全部適用。
+
+```ts
+import { buildStatusListTypedData, finalizeStatusList, checkCredentialStatusWithList,
+         credentialJti, createVcStatusChecker, httpStatusSource, memoryStatusStateStore } from "@pepelab/sdk";
+
+// 簽發端：撤銷一張 VC（新清單必須包含舊清單的項目，sequence 必須遞增）
+const d = buildStatusListTypedData({
+  issuer: user, verifyingContract: read.addresses.sessionManager!,
+  sequence: prev.sequence + 1, revoked: [...prev.revoked, credentialJti(r)!],
+});
+const list = finalizeStatusList(d, await walletClient.signTypedData({ account: user, ...d.typedData }));
+// 把 list 放到 <狀態清單目錄>/<issuer 小寫>.json（任何靜態主機；清單自帶簽章）
+
+// 驗證端（一次性）：自己保存接受過的最高 sequence，傳進 minSequence
+const s = checkCredentialStatusWithList(r, list, { expectedVerifyingContract: mgr, minSequence });
+if (!s.ok) throw new Error(s.reasonCode);            // VC_REVOKED、STATUS_LIST_EXPIRED、STATUS_LIST_REPLAYED…
+
+// 驗證端（常駐）：快取＋新鮮度上限＋防重放＋撤銷不復活
+const checker = createVcStatusChecker({ source: httpStatusSource(baseUrl), store: memoryStatusStateStore() });
+const st = await checker.check(r, { action: "write", verifyingContract: mgr });
+```
+
+- 寫入類動作（下單、付款、開 session）：`ok === false` 一律拒絕，包含「狀態未知」（來源不可達、清單過期、
+  驗不過、重放、被扣住）。唯讀類動作的未知狀態依 `readPolicy`（預設 `allow`，結果帶 `status: "unknown"` 與警告）。
+- 清單有效期預設 30 天、上限 90 天；過期後簽發者要重簽（sequence +1），否則寫入會被拒。
+- `httpStatusSource(baseUrl)` 先取 `<baseUrl>/index.json`（`{"type":"AgentCredentialStatusDirectory"}`），
+  確認網址真的指向清單目錄後，才把 404 當成「這個簽發者沒有清單」。
+- `check()` 請一律傳 `verifyingContract`；省略時才會退回讀 `SESSION_MANAGER_ADDRESS`。
+
 ## 7. 錯誤處理
 
 | 錯誤 | 何時 | 建議處理 |
@@ -256,6 +291,7 @@ const check = crossCheckWithSession(r, s);              // { ok, mismatches[] }
 | `ReadCallError` | 必要的鏈上讀取 revert | 檢查位址與部署 |
 | `TxBuildError` / `EmptyAssetListError` | builder 參數不合法 | 修正參數 |
 | `InvalidAuthorizationError` | `finalizeAuthorizationVC` 驗證失敗 | 檢查簽署者 |
+| `InvalidStatusListError` | `finalizeStatusList` 驗證失敗（簽的人不是 issuer、過期…） | 檢查簽署者與時間參數 |
 
 所有 HTTP 錯誤都繼承 `SignalApiError`（`status`、`code`、`body`、`url`、`paymentSent`）。
 **規則：`paymentSent === true` 的錯誤（任何狀態碼）都代表已簽授權已交給伺服器 —— 先對帳（`unsettledAtomic()`、
@@ -284,7 +320,7 @@ facilitator、鏈上 USDC 轉帳紀錄）再決定是否重送。**
 
 | 指令 | 內容 | 連網 |
 |---|---|---|
-| `npm run test:sdk` | addresses／abi／read／write／openapi-schema／signalApi／vc，外加 live（預設略過） | 否 |
+| `npm run test:sdk` | addresses／abi／read／write／openapi-schema／signalApi／vc／vcStatus，外加 live（預設略過） | 否 |
 | `npm run test:sdk:live` | 位址互相指向、11 個資產同一區塊、session／帳戶讀取、`simulateContract`（eth_call）、signal-api 免費端點、付費端點在無 payment client 下的錯誤 | 是（只讀） |
 
 `test:sdk` 已接進 `agent` 的 `npm test`；SDK 的型別檢查在 `npm run typecheck`（`tsc -p sdk`）。

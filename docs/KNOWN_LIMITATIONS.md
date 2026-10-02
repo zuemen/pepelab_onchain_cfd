@@ -52,6 +52,7 @@ was not, the reason is given rather than glossed over.
 | 28 | After the timelock handover, recovery actions wait 48h and depend on one Safe | **By design** — losing the Safe freezes governance permanently |
 | 29 | V2.5 unpriced exemption values a closed dead-feed asset at an arbitrarily old price | **Accepted** — closed assets only, never below its last recorded price, dust-only without one |
 | 30 | Daily check-in still transfers PEPE on the deployed PepeIncentives, against the #101 decision | **Fixed in source** (2026-10-01, issue #169) — check-ins credit non-transferable achievement points; **not deployed**, the live contract is unchanged |
+| 31 | Agent authorization VCs are revoked through an issuer-signed, off-chain status list; a list host can withhold a newer list | **Mitigated in source** (2026-10-02, ADR-016) — writes fail closed; withholding bounded by list expiry (≤ 90 days) and verifier memory; on-chain registry is follow-up |
 
 ---
 
@@ -1175,6 +1176,26 @@ Tests: `test/PepeIncentives.t.sol` (no PEPE moves, empty pool, curve and cap,
 parameter bounds and event, no transfer/approve/burn/mint surface, pause, fuzz
 against a model of the curve) and `frontend/src/lib/pepefi/achievements.test.ts`
 (the probe, including -32005 / -32000 / -32603 / 429 errors).
+
+## 31. VC revocation is an off-chain signed list (added 2026-10-02)
+
+Before ADR-016 an authorization VC could not be revoked on its own: the only
+options were waiting for `validUntil`, revoking the whole on-chain session, or
+re-issuing (which supersedes the old VC only on an agent that has already seen
+the new one). Now the VC's issuer (the user's wallet) signs an
+`AgentCredentialStatusList` with the same key and EIP-712 domain as the VC;
+`write.ts` checks it before every open and close, and rejects revoked VCs and
+any VC whose status cannot be fetched or verified (`VC_REVOKED`,
+`VC_STATUS_UNVERIFIED`).
+
+What it does not solve: whoever hosts the list can serve an older one or none.
+A verifier that has already seen a newer list remembers its sequence and every
+revocation in it, so it rejects the older list and never "un-revokes"; a
+verifier that has never seen it is exposed until the older list expires (default
+30 days, at most 90). Deleting the verifier state file removes that memory. An
+on-chain revocation registry, which cannot be withheld, is designed in ADR-016
+§6 but not deployed. The strongest immediate stop is still
+`AgentSessionManager.revokeSession`.
 
 ## Frontend
 

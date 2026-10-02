@@ -3,7 +3,7 @@
 // agent 不建立 VC——VC 由使用者本人在前端 /sessions 簽發，這裡只載入並出示/驗證。
 import fs from "node:fs";
 import {
-  verifyAuthorizationVC, vcId, type AuthorizationVC,
+  verifyAuthorizationVC, checkCredentialStatus, vcId, type AuthorizationVC, type CredentialStatusResult,
 } from "@pepelab/shared";
 
 export const AUDIT_PATH = process.env.AUDIT_PATH?.trim() || "audit/trades.jsonl";
@@ -41,6 +41,29 @@ export function localVerifyVc(vc: AuthorizationVC | null, agentAddress: string, 
   if (r.agent && agentAddress && r.agent.toLowerCase() !== agentAddress.toLowerCase())
     return { ok: false, reason: `VC holder(${r.agent}) ≠ 本 agent(${agentAddress})`, issuerDid, id, expiry };
   return { ok: true, reason: "VC 有效（驗章 + sessionId + holder 相符）", issuerDid, id, expiry };
+}
+
+/**
+ * localVerifyVc ＋ 撤銷狀態（ADR-016）。用在「準備下單」之前：下單是寫入，被撤銷或狀態未知一律
+ * 不准下單（fail-closed）。openPositionForSession 送單前還會再查一次；這裡讓 log 早點說清楚原因。
+ * `statusCheck` 可注入（測試用），預設為環境變數設定的檢查器。
+ */
+export async function localVerifyVcWithStatus(
+  vc: AuthorizationVC | null,
+  agentAddress: string,
+  sessionId: number,
+  statusCheck: (r: ReturnType<typeof verifyAuthorizationVC>) => Promise<CredentialStatusResult> = (r) =>
+    checkCredentialStatus(r, { action: "write" }),
+): Promise<VcCheck> {
+  const base = localVerifyVc(vc, agentAddress, sessionId);
+  if (!base.ok || !vc) return base;
+  const st = await statusCheck(verifyAuthorizationVC(vc));
+  if (st.ok && st.status !== "unknown") return { ...base, reason: `${base.reason}；撤銷狀態 ${st.reasonCode}` };
+  return {
+    ...base,
+    ok: false,
+    reason: st.status === "revoked" ? `VC 已被簽發者撤銷（${st.reasonCode}）` : `VC 撤銷狀態無法確認（${st.reasonCode}）：${st.message}`,
+  };
 }
 
 /** （E3 加分）查 agent 的 ERC-8126 可信度（免費端點，不付費）。失敗回 null。 */

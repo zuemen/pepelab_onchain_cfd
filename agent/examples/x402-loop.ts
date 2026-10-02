@@ -19,7 +19,7 @@ import {
   meteredFetch, resolveX402MaxValue, resolveX402TotalSpendCap, resolveX402MaxValiditySec, formatUsdcAtomic, guardViemAccount,
 } from "@pepelab/shared";
 import { decide, parseOracleBody } from "./x402-autonomous.ts";
-import { loadVc, localVerifyVc, fetchAgentVerification, AUDIT_PATH, type VcCheck } from "./vc-gate.ts";
+import { loadVc, localVerifyVcWithStatus, fetchAgentVerification, AUDIT_PATH, type VcCheck } from "./vc-gate.ts";
 
 const API = (process.env.X402_API_URL ?? "https://agent-git-master-zuemens-projects.vercel.app").replace(/\/$/, "");
 const PK = process.env.AGENT_PRIVATE_KEY?.trim();
@@ -234,7 +234,7 @@ async function main() {
     } else {
       // 每輪重驗 VC（可能已過期，或使用者換發了新的一張）。
       const vc = loadVc();
-      const vcChk = localVerifyVc(vc, account.address, SESSION_ID);
+      const vcChk = await localVerifyVcWithStatus(vc, account.address, SESSION_ID);
       if (!vcChk.ok) console.warn(`VC/SSI：✗ ${vcChk.reason} → 本輪只研究、拒絕下單`);
       const agentVerification = await fetchAgentVerification(API, agentDid(account.address)); // E3
       const ctx: RoundCtx = { payFetch, sessionUser, det, vc, vcChk, agentAddress: account.address, agentVerification };

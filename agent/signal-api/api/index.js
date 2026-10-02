@@ -39715,6 +39715,11 @@ var AGENT_ROOT = (() => {
 })();
 var lock2 = Promise.resolve();
 
+// ../../frontend/src/contracts/agentAuthStatus.ts
+var DEFAULT_STATUS_LIST_VALIDITY_DAYS = 30;
+var DEFAULT_STATUS_LIST_VALIDITY_SEC = DEFAULT_STATUS_LIST_VALIDITY_DAYS * 24 * 3600;
+var MAX_STATUS_LIST_VALIDITY_SEC = 90 * 24 * 3600;
+
 // ../shared/src/redact.ts
 var SECRET_VALUE_ENV_KEYS = ["UPSTASH_REDIS_REST_TOKEN", "ETHERSCAN_API_KEY", "BASESCAN_API_KEY"];
 var SECRET_URL_ENV_KEYS = ["UPSTASH_REDIS_REST_URL"];

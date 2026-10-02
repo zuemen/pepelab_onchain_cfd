@@ -11,7 +11,8 @@
     "./read": "./src/read.ts",
     "./write": "./src/write.ts",
     "./signal-api": "./src/signalApi.ts",
-    "./vc": "./src/vc.ts"
+    "./vc": "./src/vc.ts",
+    "./vc-status": "./src/vcStatus.ts"
   },
   "engines": {
     "node": ">=20"

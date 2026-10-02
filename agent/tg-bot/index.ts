@@ -21,8 +21,8 @@ import TelegramBot from "node-telegram-bot-api";
 
 /** sendMessage 的選項型別（隨套件版本而異，這裡取其宣告以免版本升級就編不過）。 */
 type SendMessageOptions = Parameters<TelegramBot["sendMessage"]>[2];
-import { openPositionForSession, getSession, verifyAuthorizationVC, redactSecrets, type AuthorizationVC } from "@pepelab/shared";
-import { parseIdList, isAuthorized, ConfirmationStore, RateLimiter, classifyVcForBot, chatSafe } from "./guard.ts";
+import { openPositionForSession, getSession, verifyAuthorizationVC, checkCredentialStatus, redactSecrets, type AuthorizationVC } from "@pepelab/shared";
+import { parseIdList, isAuthorized, ConfirmationStore, RateLimiter, classifyVcForBot, vcStatusProblemForBot, chatSafe } from "./guard.ts";
 
 function req(k: string, hint = ""): string {
   const v = process.env[k]?.trim();
@@ -136,13 +136,29 @@ function loadVc(startup: boolean): void {
 loadVc(true);
 
 /** 下單前確認 VC 仍有效；無效就重讀一次檔案。回 null＝可用，否則回拒單原因。 */
-function ensureVc(): string | null {
+function ensureVcLocal(): string | null {
   if (VC) {
     const s = classifyVcForBot(verifyAuthorizationVC(VC), SESSION_ID);
     if (s.status === "ok") return null;
   }
   loadVc(false);
   return VC ? null : VC_PROBLEM ?? "授權 VC 無法使用";
+}
+
+/**
+ * 本地驗證＋撤銷狀態（ADR-016）。下單是寫入：撤銷或狀態未知一律拒單。被撤銷時重讀一次 VC 檔
+ * （管理者可能已換上重新簽發的 VC）。write.ts 送單前還會再查一次，這裡只是讓 chat 早點看到原因、
+ * 不發確認碼。
+ */
+async function ensureVc(): Promise<string | null> {
+  const local = ensureVcLocal();
+  if (local) return local;
+  const check = async () => vcStatusProblemForBot(await checkCredentialStatus(verifyAuthorizationVC(VC!), { action: "write" }));
+  const problem = await check();
+  if (!problem) return null;
+  loadVc(false);
+  if (!VC) return VC_PROBLEM ?? problem;
+  return await check();
 }
 
 const ASSETS: Record<string, string> = {
@@ -198,7 +214,7 @@ async function say(chatId: string, text: string, opts?: SendMessageOptions) {
 bot.on("polling_error", (e) => console.error(`polling_error：${(e as Error).message}`));
 
 async function execute(chatId: string, o: Order) {
-  const vcProblem = ensureVc();
+  const vcProblem = await ensureVc();
   if (vcProblem) return void (await say(chatId, `❌ 拒單：${vcProblem}`));
   await say(chatId, `確認 → ${o.isLong ? "做多" : "做空"} ${o.symbol}　${o.leverage}x　保證金 ${o.marginUsdc} USDT\n上鏈中…⏳`);
   try {
@@ -252,7 +268,7 @@ bot.on("message", async (msg) => {
   if (bounds) return void (await say(chatId, `❌ 超出限額：${bounds}`));
 
   // VC 過期：先拒單並提示重新簽發，不發確認碼。
-  const vcProblem = ensureVc();
+  const vcProblem = await ensureVc();
   if (vcProblem) return void (await say(chatId, `❌ 拒單：${vcProblem}`));
 
   const rl = limiter.hit(userId);
