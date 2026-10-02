@@ -106,6 +106,17 @@ export const rewards = {
       comeBack: '明天再來！明日記入：{reward} 成就點數',
       balance: '累計 {points} 成就點數',
     },
+
+    /**
+     * 還不知道合約是哪一版（探測讀不到 bytecode）時用這一組：不說 PEPE、也不說點數,
+     * 數字不帶單位——寫哪一個都可能不實（PR #219 複審 B1）。
+     */
+    unknown: {
+      description: '每日簽到，連續簽到天數越多，每次記得越多。正在向合約確認這次簽到記入的內容。',
+      todayReward: '今日：+{reward}',
+      checkIn: '🐸 簽到 +{reward}',
+      comeBack: '明天再來！',
+    },
   },
 
   /** 交易正在跑的時候按鈕上的字。 */

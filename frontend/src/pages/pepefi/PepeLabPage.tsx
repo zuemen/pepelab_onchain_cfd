@@ -72,7 +72,7 @@ export default function PepeLabPage() {
   const userAddress = wallet.address || 'mock_user';
   const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId);
   // 簽到在點數版（#169）不發 PEPE，提示就不能叫人去簽到賺 PEPE。
-  const checkInUnit = useCheckInUnit(contracts?.pepeIncentives);
+  const checkInUnit = useCheckInUnit(contracts?.pepeIncentives, wallet.chainId);
 
   const [onChainPepeBal, setOnChainPepeBal] = useState<bigint | null>(null);
 
@@ -233,7 +233,14 @@ export default function PepeLabPage() {
 
   const buyPotion = async (id: string, cost: number, xpBonus: number) => {
     if (finalPepeBal < cost) {
-      notify(checkInUnit === 'points' ? t.pepelab.toast.insufficientPepeNoCheckIn : t.pepelab.toast.insufficientPepe, false);
+      notify(
+        checkInUnit === 'points'
+          ? t.pepelab.toast.insufficientPepeNoCheckIn
+          : checkInUnit === 'pepe'
+            ? t.pepelab.toast.insufficientPepe
+            : t.pepelab.toast.insufficientPepeUnknown,
+        false,
+      );
       return;
     }
 

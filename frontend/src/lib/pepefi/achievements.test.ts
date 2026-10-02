@@ -1,11 +1,15 @@
 import { id, JsonRpcProvider } from 'ethers'
 import { it, expect, describe, afterAll } from 'vitest'
 
+import { prettyError } from './errorMessages'
+
 import {
   ACHIEVEMENTS,
   buildQuests,
   dailyRewardFor,
   probeCheckInUnit,
+  checkInCopy,
+  checkInErrorContext,
   checkInUnitFromCode,
   ACHIEVEMENT_POINTS_SELECTOR,
   TODAY_INDEX,
@@ -195,6 +199,35 @@ describe('probeCheckInUnit — 簽到發的是什麼,看 bytecode,不靠試呼�
     expect(checkInUnitFromCode(OLD_CODE)).toBe('pepe')
     // 0x7f = PUSH32,後面 32 bytes 是資料,裡面恰好有 63eaf542d4
     expect(checkInUnitFromCode('0x7f63eaf542d4' + '00'.repeat(27) + '63ef6fdb1c14')).toBe('pepe')
+  })
+})
+
+describe('checkInCopy — 合約版本未知時不說 PEPE 也不說點數（PR #219 複審 B1）', () => {
+  const texts = (o: Record<string, unknown>) =>
+    Object.values(o).filter((v): v is string => typeof v === 'string')
+
+  it('未知 → 中性文案：每一句都沒有 PEPE、成就點數、points', () => {
+    const c = checkInCopy(null)
+    const all = [c.description, c.todayReward, c.checkIn, c.comeBack]
+    for (const s of all) {
+      expect(s).not.toMatch(/PEPE/i)
+      expect(s).not.toMatch(/點數|points?/i)
+    }
+    // 數字照樣顯示，只是不帶單位
+    expect(c.checkIn).toContain('{reward}')
+  })
+
+  it('已知版本各用各的文案', () => {
+    expect(checkInCopy('pepe').checkIn).toContain('PEPE')
+    expect(checkInCopy('points').checkIn).toContain('成就點數')
+    expect(texts(checkInCopy('points'))).not.toEqual(texts(checkInCopy(null)))
+  })
+
+  it('錯誤文案的 context 對應三態；未知時的錯誤訊息也不提 PEPE 資金池', () => {
+    expect(checkInErrorContext(null)).toBe('checkinUnknown')
+    expect(checkInErrorContext('pepe')).toBe('checkin')
+    expect(checkInErrorContext('points')).toBe('checkinPoints')
+    expect(prettyError(new Error('execution reverted'), 'checkinUnknown')).not.toMatch(/PEPE/)
   })
 })
 

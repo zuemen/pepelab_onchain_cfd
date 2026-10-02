@@ -72,7 +72,7 @@ export default function AdminTreasuryPage() {
   const wallet = usePepefiWallet()
   const contracts = useContracts(wallet.provider, wallet.signer, wallet.chainId)
   // 簽到發 PEPE 還是成就點數，看合約 bytecode（#169）；文案跟著鏈上實際行為走。
-  const checkInUnit = useCheckInUnit(contracts?.pepeIncentives)
+  const checkInUnit = useCheckInUnit(contracts?.pepeIncentives, wallet.chainId)
 
   const [stats,           setStats]           = useState<RevenueStats | null>(null)
   const [platformTreasury, setPlatformTreasury] = useState<string | null>(null)
@@ -512,7 +512,9 @@ export default function AdminTreasuryPage() {
         <Typography variant="caption" color="text.secondary">
           {checkInUnit === 'points'
             ? t.admin.treasury.incentives.descriptionPoints
-            : t.admin.treasury.incentives.description}
+            : checkInUnit === 'pepe'
+              ? t.admin.treasury.incentives.description
+              : t.admin.treasury.incentives.descriptionUnknown}
         </Typography>
 
         <Grid container spacing={2} sx={{ mt: 0.5 }}>

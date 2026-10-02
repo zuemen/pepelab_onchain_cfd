@@ -1,5 +1,5 @@
 import { MONO } from 'src/components/pepefi/brandKit'
-import { useState, useEffect, useCallback } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import { ethers } from 'ethers';
 
 import Box from '@mui/material/Box';
@@ -23,7 +23,7 @@ import { useToast } from 'src/components/pepefi/ToastProvider';
 import { t, interpolate } from 'src/locales';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
 import { toStrictlyIncreasingIds } from 'src/lib/pepefi/positionIds';
-import { dailyRewardFor, probeCheckInUnit, TODAY_INDEX, type CheckInUnit } from 'src/lib/pepefi/achievements';
+import { checkInCopy, checkInErrorContext, dailyRewardFor, probeCheckInUnit, TODAY_INDEX, type CheckInUnit } from 'src/lib/pepefi/achievements';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -256,25 +256,34 @@ export default function RewardsPage() {
   const [checkInBusy,   setCheckInBusy]   = useState(false);
   // 簽到發的是什麼由合約決定（#169）。預設 'pepe'：線上已部署的版本就是轉出 PEPE,
   // 探測沒有結論（RPC 失敗）時維持上一次的說法,不因為網路抖一下就改口。
-  const [checkInUnit,   setCheckInUnit]   = useState<CheckInUnit>('pepe');
+  // null = 還不知道（探測讀不到 bytecode）：畫面用中性文案，不說 PEPE 也不說點數（複審 B1）。
+  const [checkInUnit,   setCheckInUnit]   = useState<CheckInUnit | null>(null);
   const [myPoints,      setMyPoints]      = useState<bigint | null>(null);
+  const checkInKey = useRef<string | null>(null);
 
   const fetchCheckin = useCallback(async () => {
     if (!contracts || !wallet.address) return;
+    const incentives = contracts.pepeIncentives;
+    let addr: string;
+    try { addr = await incentives.getAddress(); } catch { return; }
+    // 已確定的結論綁定「鏈＋合約位址」（hooks/useCheckInUnit，頁面之間共用）。
+    // 換鏈或換位址時先回到那個鍵已知的結論（沒有就是 null＝中性文案），不沿用上一條鏈的。
+    const key = `${wallet.chainId ?? '?'}:${addr.toLowerCase()}`;
+    const prev = settledCheckInUnit(wallet.chainId, addr);
+    if (checkInKey.current !== key) {
+      checkInKey.current = key;
+      setCheckInUnit(prev);
+      setMyPoints(null);
+    }
     try {
-      const last   = (await contracts.pepeIncentives.lastCheckIn(wallet.address)) as bigint;
-      const s      = (await contracts.pepeIncentives.streak(wallet.address)) as bigint;
+      const last   = (await incentives.lastCheckIn(wallet.address)) as bigint;
+      const s      = (await incentives.streak(wallet.address)) as bigint;
       setLastDay(Number(last));
       setMyStreak(Number(s));
     } catch { /* not deployed */ return; }
     // 只有 lastCheckIn/streak 讀得到（合約真的在）才探測。看 bytecode 有沒有
     // achievementPoints 的 selector,不靠試呼叫：RPC 錯誤在 ethers 裡和「沒有這個函式」
     // 長得一樣（PR #219 審查 B-F1）。讀不到就維持上一次確定的說法。
-    const incentives = contracts.pepeIncentives;
-    let addr: string;
-    try { addr = await incentives.getAddress(); } catch { return; }
-    // 已確定的結論綁定合約位址（hooks/useCheckInUnit，頁面之間共用）。
-    const prev = settledCheckInUnit(addr);
     const probe = await probeCheckInUnit(
       {
         getCode: () => incentives.getDeployedCode(),
@@ -283,11 +292,11 @@ export default function RewardsPage() {
       prev,
     );
     if (probe.unit === null) return;
-    settleCheckInUnit(addr, probe.unit);
+    settleCheckInUnit(wallet.chainId, addr, probe.unit);
     setCheckInUnit(probe.unit);
     if (probe.unit === 'pepe') setMyPoints(null);
     else if (probe.points !== null) setMyPoints(probe.points);
-  }, [contracts, wallet.address]);
+  }, [contracts, wallet.address, wallet.chainId]);
 
   // The only place in the app that sends dailyCheckIn(). /dashboard and /pepe
   // both show the streak and both link here rather than transacting, which is
@@ -301,7 +310,7 @@ export default function RewardsPage() {
       await tx.wait();
       notify(t.rewards.checkIn.done, true);
       await fetchCheckin();
-    } catch (e) { notify(prettyError(e, checkInUnit === 'points' ? 'checkinPoints' : 'checkin'), false); }
+    } catch (e) { notify(prettyError(e, checkInErrorContext(checkInUnit)), false); }
     finally { setCheckInBusy(false); }
   };
 
@@ -318,7 +327,7 @@ export default function RewardsPage() {
   const checkedInToday = lastDay === TODAY_INDEX();
   const dailyReward = dailyRewardFor(myStreak);
   // 同一組四句話,兩種單位各一份；選哪一份看合約,不看旗標。
-  const checkInText = checkInUnit === 'points' ? t.rewards.checkIn.points : t.rewards.checkIn;
+  const checkInText = checkInCopy(checkInUnit);
 
   if (!wallet.isConnected) {
     return (

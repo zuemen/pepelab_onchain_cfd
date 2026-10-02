@@ -91,6 +91,15 @@ export const rewards: Catalog['rewards'] = {
       comeBack: 'Come back tomorrow! Recorded then: {reward} achievement points',
       balance: '{points} achievement points so far',
     },
+
+    /** 見 `../zh-TW/rewards.ts`。 */
+    unknown: {
+      description:
+        'Check in daily; consecutive days count for more each time. Confirming with the contract what a check-in records.',
+      todayReward: 'Today: +{reward}',
+      checkIn: '🐸 Check in +{reward}',
+      comeBack: 'Come back tomorrow!',
+    },
   },
 
   /** 交易正在跑的時候按鈕上的字。 */

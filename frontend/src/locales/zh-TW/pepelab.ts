@@ -12,6 +12,8 @@ export const pepelab = {
 
   toast: {
     insufficientPepe: 'PEPE 餘額不足。可到 Rewards 頁面簽到或交易挖礦取得更多。',
+    /** 還不知道簽到發不發 PEPE 時：只指向交易挖礦。 */
+    insufficientPepeUnknown: 'PEPE 餘額不足。可到 Rewards 頁面以交易挖礦取得更多。',
     insufficientPepeNoCheckIn: 'PEPE 餘額不足。可到 Rewards 頁面以交易挖礦取得更多（每日簽到改記成就點數，不發 PEPE）。',
     txCancelled: '鏈上交易已取消或扣款失敗，未扣除任何 PEPE。',
     mountLocked: '此坐騎需 Pepe 等級 Lv.{level} 解鎖，目前 Lv.{current}。',

@@ -113,6 +113,25 @@ export async function probeCheckInUnit(
   return { unit, points }
 }
 
+/**
+ * The four check-in sentences for what the chain is known to do. `null`
+ * (unknown: the probe could not read the bytecode yet) gets the neutral set:
+ * no PEPE, no points, a bare number -- either unit could be untrue
+ * (PR #219 re-review B1).
+ */
+export function checkInCopy(unit: CheckInUnit | null) {
+  if (unit === 'points') return t.rewards.checkIn.points
+  if (unit === 'pepe') return t.rewards.checkIn
+  return t.rewards.checkIn.unknown
+}
+
+/** Which "check-in reverted" text to show (`prettyError` context). */
+export function checkInErrorContext(unit: CheckInUnit | null): 'checkin' | 'checkinPoints' | 'checkinUnknown' {
+  if (unit === 'points') return 'checkinPoints'
+  if (unit === 'pepe') return 'checkin'
+  return 'checkinUnknown'
+}
+
 // ── Achievements ──────────────────────────────────────────────────────────────
 
 export interface AchCtx {

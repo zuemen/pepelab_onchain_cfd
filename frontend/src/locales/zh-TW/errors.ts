@@ -130,6 +130,8 @@ export const errors = {
       '交易挖礦獎勵領取失敗 (Reverted)。請確認：1. 您是此倉位的持有者；2. 該倉位尚未領取過挖礦獎勵；3. 激勵合約已充值足夠的 PEPE 資金池。',
     checkin:
       '每日簽到失敗 (Reverted)。請確認：1. 您今天尚未簽到過；2. 激勵合約的 PEPE 資金池已充值足夠資金。',
+    /** 還不知道合約版本時：不提資金池，也不提點數。 */
+    checkinUnknown: '每日簽到失敗 (Reverted)。請確認您今天尚未簽到過。',
     checkinPoints:
       '每日簽到失敗 (Reverted)。請確認您今天尚未簽到過。此版本的簽到記入成就點數，不需要 PEPE 資金池。',
     generic:
