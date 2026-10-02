@@ -82,7 +82,9 @@ jobs:
     # 事件存在於 ABI（pending-deploy 則存在於 Solidity 原始碼）、topic0／selector 正確、
     # 處置段落存在於 INCIDENT_RESPONSE.md、rules.md 未過期、設定目錄沒有秘密；active 事件規則的
     # topic0 存在於部署版 bytecode（離線 fixture ops/monitoring/deployed.json）、admin 事件都有規則、
-    # 必要規則未被刪除或降級、參數在範圍內（MAX_BLOCK_RANGE ≤ 1000）。
+    # 必要規則未被刪除或降級、每條規則的定義等於釘住的 sha256、參數在範圍內（MAX_BLOCK_RANGE ≤ 1000、
+    # 不可等於關掉告警）、MUTE_KEYS 只用白名單、部署版裡的管理函式都有規則或理由、UUPS proxy 有實作 slot 規則。
+    # deployed.json 是否仍是鏈上實況由每週的 monitoring-fixture.yml（唯讀連網）檢查。
     # 只讀、不連網、不部署 Worker。見 docs/ADR-009-monitoring.md。
     name: monitoring rules ↔ addresses.ts / ABI
     runs-on: ubuntu-latest

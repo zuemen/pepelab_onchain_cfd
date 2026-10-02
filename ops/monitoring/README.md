@@ -42,7 +42,12 @@ Worker 持有的東西只有：
 2. **【擁有者】建立通道**（需要你本人的帳號）：
    - Telegram：用 @BotFather 建 bot 取得 bot token；把 bot 加進接收群組，取得 chat id。
    - Discord：頻道設定 → 整合 → Webhook → 複製 URL。
-   - email：用你選定的轉寄服務建立一個接收 HTTPS POST 的端點（JSON body，含 `severity`、`status`、`ruleId`、`title`、`text`）；設定 `ALERT_WEBHOOK_SECRET` 時，請求帶 `X-Pepelab-Timestamp: <unix 秒>` 與 `X-Pepelab-Signature: sha256=<HMAC-SHA256(secret, "<timestamp>.<body>")>`；接收端驗簽並**拒絕時間差超過 5 分鐘**的請求，避免重放。
+   - email：用你選定的轉寄服務建立一個接收 HTTPS POST 的端點（JSON body，含 `id`、`severity`、`status`、`ruleId`、`key`、`title`、`text`、`occurredAt`、`firstAt`、`sentAt`）。設定 `ALERT_WEBHOOK_SECRET` 時，請求帶 `X-Pepelab-Timestamp: <unix 秒>` 與 `X-Pepelab-Signature: sha256=<HMAC-SHA256(secret, "<timestamp>.<body>")>`。接收端要：
+     1. 對**收到的原始 body bytes** 驗簽（不要先 JSON.parse 再序列化——鍵的順序或空白一變，簽章就對不上，或被迫放寬比對）；
+     2. 用**常數時間比較**（例如 Node 的 `crypto.timingSafeEqual`）比對簽章，不要用 `===`；
+     3. **拒絕時間差超過 5 分鐘**的請求；
+     4. 以 body 的 `id` **去重**：通知是 at-least-once（逾時但對方其實收到了，下一輪會重送；5 分鐘內也可能被重放），同一則通知的 `id` 不論重送幾次都相同。
+     `occurredAt` 是這則通知描述的事發生的時間（事件是區塊時間），`firstAt` 是首次發生（狀態型告警開啟的時間）。訊息內文也帶「時間：…（首次 …）」。
 3. **【擁有者】確認門檻**（ADR-009「待使用者決定」2）：編輯 `monitors.json` 的 `params.*.default`，執行
    ```bash
    node scripts/check-monitoring.mjs --write   # 重新產生 monitors.json 產生欄位與 rules.md
@@ -68,7 +73,7 @@ Worker 持有的東西只有：
    npx wrangler secret put HEARTBEAT_URL    # 選用：外部 dead-man's switch
    ```
 6. **【擁有者】填公開設定**（`wrangler.toml` 的 `[vars]`，ADR-009「待使用者決定」3）：
-   - `EXPECTED_PAY_TO`：signal-api Vercel 環境變數 `PAY_TO` 的值。不設時以第一次觀察到的 `payTo` 為基準。
+   - **`EXPECTED_PAY_TO`（必填）**：signal-api Vercel 環境變數 `PAY_TO` 的值（公開地址）。不設時以第一次觀察到的 `payTo` 為基準——那麼「payTo 被改＋KV 基準被清」只會留下一則「基準已設定」（SEV-2、不可靜音），收款地址變更的 SEV-1 下一輪就恢復了。**請先換掉目前已知不安全的 x402 treasury（見 `frontend/src/contracts/x402.ts`），再把新地址填在這裡**；目前的首次觀察值就是那個不安全的地址。
    - `EXTRA_GAS_WALLETS`：x402 結算錢包等其他需要 gas 的地址，逗號分隔。keeper 錢包不用填（執行期讀 `MockOracle.owner()`）。
 7. **【擁有者】部署**：
    ```bash
@@ -78,18 +83,20 @@ Worker 持有的東西只有：
    - Cloudflare → Workers → `pepelab-chain-monitor` → Logs：每 5 分鐘一行 `tick: findings=… notes=… sent=… pending=0 errors=0`。
    - **送一則測試告警**：在 `[vars]` 暫時加 `GAS_MIN_ETH = "1000"` 並 `npx wrangler deploy`，下一輪應收到「keeper 錢包 gas 過低」（SEV-3）；移除後再部署，下一輪應收到「恢復」。
    - **部署當下預期會收到的告警**（2026-10-01 唯讀試跑結果）：
-     - `x402-payto:unsafe`（SEV-3）——x402 treasury 是已知待換的地址，收款守門 fail-closed（見 `frontend/src/contracts/x402.ts`）。換新 treasury 並更新 signal-api 後會自動恢復。不想每 6 小時被提醒，在 `[vars]` 設 `MUTE_KEYS = "x402-payto:unsafe"`（只靜音這一則；`x402-payto:changed` 照常響）。**不要**用 `MIN_SEVERITY = "SEV-2"` 來壓——那會把所有 SEV-3 一起關掉。
+     - `x402-payto:unsafe`（SEV-3）——x402 treasury 是已知待換的地址，收款守門 fail-closed（見 `frontend/src/contracts/x402.ts`）。換新 treasury 並更新 signal-api 後會自動恢復。不想每 6 小時被提醒，在 `[vars]` 設 `MUTE_KEYS = "x402-payto:unsafe"`——這是目前**唯一**可以靜音的 key（`monitors.json` 的 `mutableKeys` 白名單，CI 與執行期都只認它）；`x402-payto:changed` 等 SEV-1 在任何設定下都會送。**不要**用 `MIN_SEVERITY = "SEV-2"` 來壓——那會把所有 SEV-3 一起關掉。
+     - `x402-payto:baseline:…`（SEV-2）——沒設 `EXPECTED_PAY_TO` 時才會有；設了就不會出現。
      - `oracle-deviation:no-reference`（SEV-3）——參考來源 AggregatorOracle 對所有資產 revert（NoLiveSource），**價格偏離目前沒有被監控**；參考來源恢復後自動解除並開始比對。
 
 ## 第一次執行
 
 KV 沒有檢查點時，事件掃描從 `head - INITIAL_LOOKBACK_BLOCKS`（約 10 分鐘）開始，**不會**補掃更早的歷史，並送出一則 SEV-3「**監控狀態重置**：區塊 N 之前的事件未掃描」。剛部署時收到是正常的；**之後再收到代表 KV 狀態遺失或被清除**，那段期間的事件要到區塊瀏覽器人工補查。
 
-`x402-payto` 沒設 `EXPECTED_PAY_TO` 時以第一次觀察值為基準，並送出一則「基準已設定：payTo = 0x…」供確認。保險金的「24 小時高點」從部署後開始累積。
+`x402-payto` 沒設 `EXPECTED_PAY_TO` 時以第一次觀察值為基準，並送出一則「基準已設定：payTo = 0x…」（SEV-2，比照 monitor-self 不可被 `MUTE_KEYS`／`MIN_SEVERITY` 擋掉）供確認；基準被重建的那一輪，原本開著的「收款地址變更」不會被當成恢復。保險金、交易所與 PepeIncentives 餘額的「24 小時高點」從部署後開始累積。
 
 ## 日常
 
-- **改規則或門檻**：改 `monitors.json` → `--write` → PR（CI 的 `monitoring` job 檢查）→ 合併後 **【擁有者】** `npx wrangler deploy`。Worker 不會自動跟著 master 更新。
+- **改規則或門檻**：改 `monitors.json` → `--write` → 改了規則內容時，CI 會要求更新 `REQUIRED_RULES` 的雜湊（**審過 diff 再貼**）→ PR（CI 的 `monitoring` job 檢查）→ 合併後 **【擁有者】** `npx wrangler deploy`。Worker 不會自動跟著 master 更新。
+- **合約升級或 `monitoring-fixture` 排程變紅**：確認是預期的變更 → `node scripts/check-monitoring.mjs --refresh-deployed` → `--write` → 審過 `deployed.json`／`monitors.json` 的 diff（新實作的 bytecode 是否仍發同樣的事件、接線預期值是否仍正確）→ PR → 重新部署 Worker（`proxy-implementation` 才會恢復）。
 - **合約 cutover 後**（新 exchange、Timelock、GuardedOracle／AssetVaultV2_5 上線）：
   1. 依 cutover 文件更新 `frontend/src/contracts/addresses.ts` 與 `abi/*.json`。
   2. 把對應的 `pending-deploy` 規則改成 `"status": "active"`，`contracts[].source` 換成 `contracts[].abi`（Timelock 需要先把位址加進前端設定）。
@@ -111,9 +118,13 @@ KV 沒有檢查點時，事件掃描從 `head - INITIAL_LOOKBACK_BLOCKS`（約 1
 - 延遲：cron 5 分鐘＋`CONFIRMATIONS`（3 塊）。落後超過 `LAG_ALERT_BLOCKS` 時發監控自身告警。
 - 事件掃描：公開 RPC 的 `eth_getLogs` 一次最多 1,000 塊（超過回 HTTP 413／-32614），所以 `MAX_BLOCK_RANGE` 上限 1,000（CI 強制）。停機後積欠的區塊**分段追趕**：每輪最多 `MAX_SCAN_REQUESTS` 段、每段一個檢查點；範圍被拒時自動減半重試，不會卡死在同一個檢查點。
 - RPC 讀取：限流（429／-32007）與 5xx 以退避重試；`monitor-self:errors` 要**連續 `SELF_ERRORS_BEFORE_ALERT` 輪**讀取失敗才告警，公開 RPC 偶發抖動不會觸發／恢復輪流洗版。部分資產讀取失敗時，已算出的告警照送，但該規則不算成功評估（不發恢復）。
-- 靜音：`MUTE_KEYS`（逗號分隔的告警 key 或規則 id）只靜音指定告警；`MIN_SEVERITY` 是全域門檻。兩者都**不會**擋掉 `monitor-self`——監控自身故障一定送出。
-- 累計提領視窗以**區塊時間**計算（不是 Worker 執行時間），停機後追趕的事件落在正確的視窗。
-- 部分事件在部署版合約裡不存在（前端 ABI 比部署版新）：這些規則在 `rules.md` 標「部署版不發此事件」，改由接線狀態規則輪詢 getter；CI 以 `deployed.json` 確認每條 active 事件規則的 topic0 都在部署版 bytecode 裡。
+- 靜音：`MUTE_KEYS` 只接受 `monitors.json` 的 `mutableKeys` 白名單（完全相同的 key，沒有前綴比對；白名單也釘在檢查器的 `MUTABLE_KEYS`，要加一項必須改程式碼並經人工審查）。白名單以外的值——包括在 Cloudflare dashboard 或 `--var` 設、不經 CI 的——執行期一律忽略，並發一則不可靜音的 `monitor-self:config`（SEV-2）。**SEV-1、`monitor-self`、「基準已設定」在任何設定下都送**；`MIN_SEVERITY` 只能設 SEV-2～SEV-4。
+- 安全上限：`LAG_ALERT_BLOCKS` ≤ 1,800、`LARGE_WITHDRAWAL_BPS` ≤ 5,000、`HTTP_FAILS_BEFORE_ALERT`／`SELF_ERRORS_BEFORE_ALERT` ≤ 6 且兩者合計讓持續故障在 6 輪（約 30 分鐘）內告警。CI 擋 `monitors.json` 與 `wrangler.toml`；不經 CI 的覆寫值在執行期被夾到上限，並發 `monitor-self:config`。
+- 累計提領視窗以**區塊時間**計算（不是 Worker 執行時間）。停機後追趕時才掃到的提領，若在發生當時的視窗內累計達門檻，另發一則一次性「（累計，過去發生）」告警，訊息標明發生時間——即時視窗看不到它們，但它們正是停機期間被拆單抽走的情境。
+- 部分事件在部署版合約裡不存在（前端 ABI 比部署版新）：這些規則在 `rules.md` 標「部署版不發此事件」，改由接線狀態規則輪詢 getter；CI 以 `deployed.json` 確認每條 active 事件規則的 topic0 都在部署版 bytecode 裡。CI 也從部署版的 **selector** 出發：受監控合約裡每個像管理操作的函式（set／withdraw／grant…），都要在 `adminFunctions` 指定涵蓋它的規則或寫明理由——不發事件的 setter（例如 PepeIncentives 的 `withdraw`、`setEsgRegistry`）由狀態規則涵蓋。
+- **接線檢查只證明「位址沒被換掉」，不證明「位址是安全的」**：預期值來自前端設定或部署當時的鏈上快照。目前 FeeRouter／X402FeeRouter 的 `platformTreasury()` 預期值、以及 x402 收款的首次基準，都等於 `frontend/src/contracts/x402.ts` 列為不安全、待換的地址；換掉之後要重抓 `deployed.json` 並更新預期值（`EXPECTED_PAY_TO`）。
+- `deployed.json` 過期偵測：Worker 每輪讀受監控 UUPS proxy 的 EIP-1967 實作 slot（規則 `proxy-implementation`），與 `deployed.json` 不同就發 SEV-1「實作被升級」（同一次升級已由 `vault-upgraded` 的 Upgraded 事件以 SEV-1 通報時降為 SEV-3，不重複叫人），直到重抓、重新部署 Worker 為止。另有每週排程的 `.github/workflows/monitoring-fixture.yml` 以公開 RPC 唯讀執行 `node scripts/check-monitoring.mjs --verify-deployed`：bytecode、實作或快照與 repo 不同就讓 job 失敗（不使用 secret、不寫檔、不 commit）。
+- 必要規則的定義都釘了 sha256（`scripts/check-monitoring.mjs` 的 `REQUIRED_RULES`）：改任何一條規則的內容——合約、讀取、預期值來源、門檻參數、事件、嚴重度、甚至說明文字——CI 都會紅並印出新雜湊，要人工確認沒有削弱監控後再更新雜湊。
 - 只監控 Base Sepolia（84532）；Ethereum Sepolia 的價格新鮮度仍由 `oracle-health.yml` 負責。
 - Cloudflare 免費方案的單次 CPU 時間有上限；規則與網路等待不算 CPU，但若 Logs 出現超出 CPU 限制的錯誤，需升級 Workers Paid 或拆分 Worker（**部署後觀察**）。
 - 白標租戶：每個租戶複製一份 `monitors.json`（`deployment.tenant` 與位址來源改成該租戶）與一個 Worker，各自的通道與 KV。產生器目前只認得正式站的前端設定；依 ADR-008 階段 2 把 `addresses.ts` 擴成依租戶後一併擴充。

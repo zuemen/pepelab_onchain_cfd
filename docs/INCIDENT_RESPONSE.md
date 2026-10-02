@@ -204,9 +204,13 @@ SEAL 911 是 Security Alliance（SEAL）提供的公開緊急聯絡管道，協�
    讀取失敗期間不會發「恢復」。持續時改用區塊瀏覽器人工確認，並檢查 Worker 的 Cloudflare Logs。
 5. **「監控狀態重置：區塊 N 之前的事件未掃描」**（SEV-3）：剛部署時是正常的；之後再收到代表 Worker 的 KV 狀態遺失或被清除，
    從上一次正常掃描到區塊 N 之間的 owner、角色、接線、提領事件要到區塊瀏覽器人工補查。
-6. **誤報**：調門檻要改 `ops/monitoring/monitors.json`（或 Worker 的 `[vars]`）並走 PR，不要在事故當下關掉整條規則。
-   已知、已接受的單一告警用 `MUTE_KEYS` 只靜音那一個 key；不要用 `MIN_SEVERITY` 一次壓掉整個等級。
-   `monitor-self`（監控自身故障）兩者都壓不掉。
+6. **「監控設定問題」**（`monitor-self:config`，SEV-2）：有人在 Worker 設了不可靜音的 `MUTE_KEYS`、`MIN_SEVERITY = SEV-1`，
+   或把門檻調到等於關掉告警。Worker 已以安全值照常運作；查 Cloudflare 的變數是誰、何時改的，認不得的變更以 SEV-1 處理（可能有人想讓告警閉嘴）。
+7. **「（累計，過去發生）」**：監控停機或落後期間的提領，發生當時的一小時內累計達門檻。訊息裡的發生時間是區塊時間；依大額提領處置，並一併檢查那段期間的其他事件。
+8. **「UUPS 實作被升級」**（`proxy-implementation`）：鏈上的實作與 CI 依據的 `deployed.json` 不同。未經排程就是 SEV-1；預期中的升級也要重抓 `deployed.json` 並重新部署 Worker，否則 CI 的「事件在部署版裡」檢查是對舊版做的。
+9. **誤報**：調門檻要改 `ops/monitoring/monitors.json`（或 Worker 的 `[vars]`）並走 PR，不要在事故當下關掉整條規則。
+   已知、已接受的單一告警用 `MUTE_KEYS` 只靜音那一個 key（只接受 `mutableKeys` 白名單）；不要用 `MIN_SEVERITY` 一次壓掉整個等級。
+   SEV-1 與 `monitor-self`（監控自身故障）在任何設定下都會送出。
 
 已知限制：監控是分鐘級輪詢，只能在交易上鏈後通知，不能攔截；Worker 沒有任何鏈上權限，不會自動暫停或撤權。
 **價格偏離目前沒有被監控**：規則 `oracle-deviation` 已寫好，但參考來源（AggregatorOracle）對所有資產 revert（2026-10-01 實測），

@@ -60,12 +60,16 @@ status: proposed
 
 具體做法：
 
-- 規則唯一真相是 [`ops/monitoring/monitors.json`](../ops/monitoring/monitors.json)：53 條（運作中 42：事件 30、狀態 10、HTTP 2；不載入 11：部署版不發此事件 10、待部署 1）。位址、topic0、selector、資產 ID、角色名稱由 `node scripts/check-monitoring.mjs --write` 從前端設定與 ABI 產生，人看的 [`rules.md`](../ops/monitoring/rules.md) 也由它渲染。
+- 規則唯一真相是 [`ops/monitoring/monitors.json`](../ops/monitoring/monitors.json)：56 條（運作中 45：事件 30、狀態 13、HTTP 2；不載入 11：部署版不發此事件 10、待部署 1）。位址、topic0、selector、資產 ID、角色名稱由 `node scripts/check-monitoring.mjs --write` 從前端設定與 ABI 產生，人看的 [`rules.md`](../ops/monitoring/rules.md) 也由它渲染。
 - `consistency.yml` 新增 `monitoring` job：位址 ≠ `addresses.ts`、事件不在 ABI、topic0 對不上、處置段落不存在、`rules.md` 過期、`wrangler.toml` 任何位置有秘密鍵名或含金鑰的 URL、`.dev.vars`／`.wrangler/` 沒列進 `.gitignore`，任一項都會紅。另外強制：
   - **事件在部署版 bytecode 裡**：前端 ABI 來自 master 原始碼，可能比鏈上那一版新。[`deployed.json`](../ops/monitoring/deployed.json) 是以唯讀 RPC 釘在單一區塊抓下的 runtime bytecode（含 EIP-1967 實作）與 getter 快照；每條 active 事件規則的 topic0 必須出現在對應合約的部署版 bytecode 裡，否則就是「看起來在監控、其實永遠不會響」。部署版不發的事件（InsuranceVault／FeeRouter 的接線、KYC verifier 等）改由**接線狀態規則**輪詢 getter，原事件規則標「部署版不發此事件」。CI 不連網，只讀這份 fixture；合約重新部署或升級後以 `--refresh-deployed` 重抓。
   - **事件涵蓋**：前端 ABI 裡的 admin 類事件（owner、角色、接線、參數）要嘛有規則、要嘛列在附理由的忽略清單。
   - **必要規則與最低嚴重度**：權限、暫停、接線、儲備等必要規則不可被刪、降級或改成 pending。
-  - **參數型別與範圍**：例如 `MAX_BLOCK_RANGE` ≤ 1,000（公開 RPC 的 `eth_getLogs` 上限，超過回 413，檢查點會永久卡死）。
+  - **參數型別與範圍**：例如 `MAX_BLOCK_RANGE` ≤ 1,000（公開 RPC 的 `eth_getLogs` 上限，超過回 413，檢查點會永久卡死）；等於關掉告警的值（`LAG_ALERT_BLOCKS` > 1,800、`LARGE_WITHDRAWAL_BPS` > 5,000、連續失敗門檻讓持續故障超過約 30 分鐘才告警、`MIN_SEVERITY = SEV-1`）也擋。Worker 執行期對不經 CI 的覆寫值同樣夾住並發 `monitor-self:config`。
+  - **規則定義釘 sha256**（複審 M-B）：只鎖嚴重度與狀態時，刪掉一個接線讀取、換掉餘額規則的持有者、拿掉相對門檻都是綠的。現在每條規則的手寫定義（排序鍵後序列化）都有雜湊釘在檢查器裡，改任何內容都要人工審過再更新雜湊。
+  - **可靜音的 key 是白名單**（複審 M-A）：`MUTE_KEYS` 只接受 `mutableKeys`（現在只有 `x402-payto:unsafe`），白名單本身也釘在檢查器裡；SEV-1 與 `monitor-self` 在執行期一律不可靜音。
+  - **管理函式涵蓋**（複審 L-d）：從部署版 bytecode 的 selector 出發，受監控合約每個像管理操作的函式都要指定涵蓋它的規則或寫明理由；不發事件的 setter 只能由狀態規則涵蓋。
+  - **fixture 過期**（複審 L-c）：Worker 每輪讀 UUPS proxy 的實作 slot 與 `deployed.json` 比對；另有每週排程的 `monitoring-fixture.yml` 唯讀重抓比對（不使用 secret、不寫檔）。
 - 尚未部署的合約功能（guardian 暫停、資產模式、Timelock…）列為 `pending-deploy`：不帶位址、Worker 不載入，但事件必須真的宣告在 master 的 Solidity 原始碼裡。cutover 後更新 `addresses.ts` 與前端 ABI，改成 `active`，ABI 檢查自動接手。
 - 每條規則對應 [`INCIDENT_RESPONSE.md`](INCIDENT_RESPONSE.md) 的處置段落；嚴重度沿用該文件的 SEV-1～4。
 - 涵蓋鏈：只有正式鏈 Base Sepolia（84532）。Ethereum Sepolia 是 legacy 展示鏈，仍只由 `oracle-health.yml` 看價格新鮮度。
@@ -80,7 +84,7 @@ status: proposed
 
 1. **告警通道**：Telegram、Discord、email（經 webhook 轉寄服務）要啟用哪些；誰接收、是否需要第二位接收者（[INCIDENT_RESPONSE §2](INCIDENT_RESPONSE.md#2-角色) 的「沒有值班輪替」缺口）。建立 bot／webhook 需要使用者本人的帳號。
 2. **金額與餘額門檻**：`LARGE_WITHDRAWAL_USDC`、`LARGE_WITHDRAWAL_WINDOW_USDC`、`INSURANCE_WITHDRAW_USDC`、`LARGE_REDEEM_USDC`、`INSURANCE_MIN_USDC`、`GAS_MIN_ETH`、`GAS_CRIT_ETH` 目前是佔位值（見 rules.md「參數」）。絕對門檻之外另有相對門檻（`LARGE_WITHDRAWAL_BPS`：單筆佔提領前餘額的比例；`EXCHANGE_BALANCE_DROP_BPS`：交易所結算幣餘額跌幅），讓規則在測試網的小額 TVL 下也會響。
-3. **`EXPECTED_PAY_TO` 與 `EXTRA_GAS_WALLETS`**：signal-api 的收款地址與 x402 結算錢包等需要 gas 的地址（公開地址，但只有使用者知道正確值）。在 x402 treasury 換新之前，`x402-payto:unsafe`（SEV-3）會在部署當下就觸發並每 6 小時提醒——要接受、還是以 `MUTE_KEYS = "x402-payto:unsafe"` 只靜音這一則（不要調 `MIN_SEVERITY`：那會關掉所有 SEV-3；`monitor-self` 兩者都擋不掉）。
+3. **`EXPECTED_PAY_TO` 與 `EXTRA_GAS_WALLETS`**：signal-api 的收款地址與 x402 結算錢包等需要 gas 的地址（公開地址，但只有使用者知道正確值）。在 x402 treasury 換新之前，`x402-payto:unsafe`（SEV-3）會在部署當下就觸發並每 6 小時提醒——要接受、還是以 `MUTE_KEYS = "x402-payto:unsafe"` 只靜音這一則（不要調 `MIN_SEVERITY`：那會關掉所有 SEV-3；`monitor-self` 與 SEV-1 兩者都擋不掉）。**`EXPECTED_PAY_TO` 視為必填**：不設時以首次觀察值為基準，而目前的首次觀察值就是 x402.ts 列為不安全、待換的地址；接線規則裡 `platformTreasury()` 的快照預期值也是同一個地址——接線檢查只證明位址沒被換掉，不證明它是安全的。
 4. **心跳服務**：是否用外部 dead-man's switch（需要另一個第三方帳號）偵測「Worker 自己停了」。不用的話，Worker 停擺只會出現在 Cloudflare 的 cron 失敗紀錄裡。
 5. **RPC**：公開 RPC（`https://sepolia.base.org`，免帳號但有速率限制）或付費 RPC（`RPC_URL` secret）。
 6. **白標**：租戶的監控由平台代管、租戶自管，或兩者都收到告警；告警回應時限是否寫進客戶契約（INCIDENT_RESPONSE §7 的目標值）。
@@ -94,7 +98,7 @@ status: proposed
 
 ## Consequences
 
-- 多一個需要維護的元件（Worker 與檢查器約 2,900 行程式，另有測試）；但它與前端設定由 CI 綁在一起，位址或 ABI 改了而監控沒跟上會直接紅燈。
+- 多一個需要維護的元件（Worker 與檢查器約 3,400 行程式，另有測試）；但它與前端設定由 CI 綁在一起，位址或 ABI 改了而監控沒跟上會直接紅燈。
 - **價格偏離目前沒有被監控**：參考來源 AggregatorOracle 對所有資產 revert（2026-10-01 唯讀實測），`oracle-deviation` 會持續發 SEV-3「沒有可用的參考價」，直到參考來源恢復。
 - 告警延遲是分鐘級，不是秒級；SEV-1 的「確認後 1 小時內通知客戶」（INCIDENT_RESPONSE §7）在這個延遲下仍可達成。
 - 新合約 cutover 的檢查表多一步：把對應的 `pending-deploy` 規則改成 `active`、`--write`、重新部署 Worker。
