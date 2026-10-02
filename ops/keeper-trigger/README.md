@@ -224,7 +224,7 @@ Worker 的程式不會替你建立 App。先完成「部署前必做」第 1–5
    - 為什麼需要 `precheck` 這個獨立的 job：`approve` 綁了 `environment: admin-approval`，而「A job that references an environment must follow any protection rules for the environment before running」（[文件](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments)），它自己的 step 要等你按下核准才會執行。要在核准畫面之前擋，檢查就必須放在不綁 environment 的 job。`precheck` 不綁 environment、不引用任何 secret、`permissions: {}`、不進 concurrency group。
    - 不再使用 repo variable `KEEPER_TRIGGER_ACTOR`（黑名單，PR #217 審查 M1 指出它在沒設、設錯層級、多空白、少寫 `[bot]` 時都會放行）。之前若設過，可以刪掉；留著也不會被讀取。
    - **它擋不到的**：用你本人的 PAT（或你的帳號）dispatch 的 run，觸發者就是你，白名單分不出來，仍然靠核准時逐字核對 inputs。所以第 9 步要把 PAT 從 Worker 拿掉並撤銷。
-   - **擋的那一側目前只在本機驗證過**：三個守門 script 已抽出來在本機 bash 以 66 種環境變數組合實跑（擁有者大小寫、前後空白與 ``、bot 名稱、擁有者的前後綴、空值、讀不到擁有者、各種 ref 與 run_attempt），結果全部符合預期。在 GitHub 上實測「非擁有者觸發的 admin run 在 `precheck` 失敗、run 頁面沒有 Review deployments 按鈕」需要用 App 的 token dispatch 一次 admin workflow，這一步沒有做，要不要做由你決定（App 的 token 只在 Worker 裡，不要為此另外匯出）。
+   - **擋的那一側目前只在本機驗證過**：三個守門 script 已抽出來在本機 bash 以 66 種環境變數組合實跑（擁有者大小寫、前後空白與 `\r`、bot 名稱、擁有者的前後綴、空值、讀不到擁有者、各種 ref 與 run_attempt），結果全部符合預期。在 GitHub 上實測「非擁有者觸發的 admin run 在 `precheck` 失敗、run 頁面沒有 Review deployments 按鈕」需要用 App 的 token dispatch 一次 admin workflow，這一步沒有做，要不要做由你決定（App 的 token 只在 Worker 裡，不要為此另外匯出）。
    - 放行的那一側可以安全確認：你本人手動 dispatch 一次 admin workflow，`precheck` 應該通過、run 停在等待核准；不要核准，直接 Reject。
 9. **移除 PAT**：確認連續幾次 cron 都正常後，`npx wrangler secret delete GITHUB_TOKEN`，再到 <https://github.com/settings/personal-access-tokens> 撤銷那個 PAT。只要 App 三項有設定，Worker 就不會使用 `GITHUB_TOKEN`，留著只是多一個可以外洩的憑證。
 
@@ -279,7 +279,15 @@ npx wrangler@4.145.0 deploy --dry-run --outdir "$(mktemp -d)"
 
 ## workflow 守門的靜態檢查
 
-上面的保護（私鑰只放 environment secret、只有特定 job 綁那個 environment、admin 呼叫先經人工核准）都只是 workflow 檔裡的幾行 YAML。`scripts/check-workflow-guards.mjs` 把它們寫成檢查，consistency.yml 的 `workflow-guards` job 在每個 PR 與 master push 上執行：
+上面的保護（私鑰只放 environment secret、只有特定 job 綁那個 environment、admin 呼叫先經人工核准）都只是 workflow 檔裡的幾行 YAML。`scripts/check-workflow-guards.mjs` 把它們寫成檢查，consistency.yml 的 `workflow-guards` job 在每個 PR 與 master push 上執行。檢查分兩層。
+
+**第一層：持有私鑰的 workflow 整檔釘選。** 任何 job 引用 `KEEPER_PRIVATE_KEY`／`FEE_SETTLEMENT_PRIVATE_KEY`（或動態、整包存取 secrets），或綁 `keeper`／`settlement`／`admin-approval` 的 workflow，整份檔案的 sha256 必須等於 `PINNED_WORKFLOWS` 的釘選值。雜湊前只做兩件事：去掉 BOM、CRLF 換成 LF。註解與空白都算，改任何一個字都會紅。檢查器會自動找出所有持鑰 workflow：新增一支卻沒加進釘選表會失敗，釘選表裡的檔案不見了也會失敗。
+
+目前釘選的是 `admin-base-sepolia.yml`、`base-sepolia-keeper.yml`、`price-keeper.yml`、`x402-settlement-worker.yml` 四支（雜湊以 `scripts/check-workflow-guards.mjs` 的 `PINNED_WORKFLOWS` 為準，這裡不重抄，免得兩邊不同步）。
+
+為什麼要整檔釘選：PR #217 的兩輪審查都是「補一種危險寫法，又冒出另一種」。第一輪補了 `continue-on-error`，第二輪就找到 `if: always()`。第一輪擋了 `${{ inputs.* }}` 內插，第二輪就找到 `${{ env.X }}` 與 `toJSON(github)`。第一輪釘住了守門 step，第二輪就找到後面 step 的 `uses: docker://` 與寫 `$GITHUB_PATH` 放假的 `cast`。這四支檔能直接動用私鑰，所以改成「任何修改都要人工審過整份 diff，再更新雜湊」，不再靠列舉危險寫法。
+
+**第二層：結構規則。** 更新釘選值時仍然要過這一層，它也讓錯誤訊息能指出是哪一種危險改動：
 
 | 項目 | 規則 |
 |---|---|
@@ -289,6 +297,7 @@ npx wrangler@4.145.0 deploy --dry-run --outdir "$(mktemp -d)"
 | (d) 私鑰 secret | 引用 `secrets.KEEPER_PRIVATE_KEY` 的 job 必須綁 `keeper`，引用 `secrets.FEE_SETTLEMENT_PRIVATE_KEY` 的必須綁 `settlement`。`secrets[...]` 動態存取、`toJSON(secrets)`、`secrets: inherit` 一律拒絕。找 `${{ }}` 的結尾時跳過單引號字串（與 actions/runner 一致），`format('}}', secrets.X)` 藏不住 |
 | (e) reusable workflow | 任何 job 都不可用 job 層級的 `uses:`（被呼叫的 workflow 可以自己綁 environment，可能在別的 repo，這支檢查看不到） |
 | (f) shell injection | 任何 `run:` 都不可內插 `${{ inputs.… }}`、`${{ github.event.… }}`，一律經 `env` 傳遞 |
+| (g) 持鑰 workflow 的 step | `run:` 內不可有任何 `${{ }}`（值一律經 step 的 `env` 傳入，`${{ env.X }}`、`toJSON(github)` 也算內插）；step 的 `uses:` 只能是釘 40 位 commit SHA 的 `actions/checkout`、`actions/setup-node`、`foundry-rs/foundry-toolchain`（不可用 `docker://`、本地 action 或 tag）；admin workflow 守門以外的 step 不可有 `if`（`if: always()`／`failure()` 會在守門失敗後照樣執行） |
 | YAML | anchor／alias、merge key（`<<`）、重複的鍵、多文件、解析失敗一律算失敗 |
 
 ```bash
@@ -297,15 +306,18 @@ node --test scripts/check-workflow-guards.test.mjs
 node scripts/check-workflow-guards.mjs
 ```
 
-- **新增一個要用私鑰或綁 environment 的 job 時**，要同時改 `scripts/check-workflow-guards.mjs` 的 `ENVIRONMENTS`（刻意的摩擦：這個改動會出現在 PR diff 裡）。
-- **改 admin workflow 的守門 step 時**（任何一個字，包括錯誤訊息），執行 `node scripts/check-workflow-guards.mjs --print-guard-hashes`，把印出的值貼進 `GUARD_SHA256`。說明請寫在 YAML 註解裡（不算進 hash）。審查時兩邊的 diff 要一起看。
-- 測試把 PR #217 審查的 40 個繞過嘗試（`scripts/fixtures/check-workflow-guards/bypass-cases.mjs`）以現行 workflow 為底重做，全部必須被擋，而且是以預期的理由。
+- **改任何一支持鑰 workflow 時**（admin、兩支 keeper、settlement，包括只改註解）：先人工審過整份 diff，再執行 `node scripts/check-workflow-guards.mjs --print-pins`，把印出的值貼進 `PINNED_WORKFLOWS`。workflow 的 diff 與雜湊的 diff 會出現在同一個 PR，審查時一起看。
+- **Dependabot**：Dependabot 升級這四支檔裡的 action SHA 時，`workflow-guards` 會紅。這是刻意的：被換掉的 action 在持有私鑰的 job 裡執行，例如 `foundry-toolchain` 可以裝一個假的 `cast`。處理方式是人工確認新 SHA 對應的 release 與 diff，再在同一個 PR 更新 `PINNED_WORKFLOWS`。其他 workflow 的 Dependabot PR 不受影響。
+- **新增一個要用私鑰或綁 environment 的 job 時**，要同時改 `scripts/check-workflow-guards.mjs` 的 `ENVIRONMENTS` 與 `PINNED_WORKFLOWS`（刻意的摩擦：這些改動會出現在 PR diff 裡）。
+- **改 admin workflow 的守門 step 時**（任何一個字，包括錯誤訊息），另外執行 `--print-guard-hashes` 更新 `GUARD_SHA256`。說明請寫在 YAML 註解裡（不算進守門指紋，但算進整檔雜湊）。
+- 測試把 PR #217 兩輪審查的 50 個繞過嘗試（第一輪 40 個、第二輪 N 系列 10 個；`scripts/fixtures/check-workflow-guards/bypass-cases.mjs`）以現行 workflow 為底重做。每一個都必須被擋，而且是以預期的理由；第二層單獨跑也要擋住，只有 N06（寫 `$GITHUB_PATH` 放假的 `cast`，純 shell 內容）是只有第一層擋得到。
 - **actionlint**：consistency.yml 的 `actionlint` job 下載固定版本（1.7.12）的 release 檔、驗 sha256 後執行，連同 runner 內建的 shellcheck 檢查 `run:`。這個 pin 不在 Dependabot 範圍內，升級時手動改 `VERSION` 與 `SHA256`。
 - **依賴**：只有 `yaml`，版本固定在 `scripts/package.json`（2.9.1，與 `agent/package-lock.json` 相同），`scripts/package-lock.json` 帶 sha512 integrity，CI 用 `npm ci --ignore-scripts` 安裝。不自己寫 YAML 解析器，是因為自製解析一旦和 GitHub 的解析結果不同就會被繞過；anchor／alias、重複的鍵、解析失敗的檔案一律算失敗。
 - **它檢查不到的事**（寫實版）：
   - **舊分支**：只檢查目前 checkout 的 workflow 檔（PR 上是合併後的結果，master push 上是 master）。遠端其他分支上的舊版 workflow 照樣可以被 dispatch，不在範圍內；擋它們的是「部署前必做」第 4 步（刪掉 repo 層級私鑰），在那之前這支檢查對「dispatch 到舊分支」完全沒有作用。
-  - **它不是必要的檢查**：master 目前沒有 branch protection 或 ruleset，`workflow-guards` 紅了也擋不住合併，也擋不住直接 push 到 master。它的作用是讓改動「被看見」，不是強制。要強制，需要你在 repo 設定把它設成 required status check（本 PR 不改 repo 設定）。
+  - **它不是必要的檢查（擁有者待辦）**：master 目前沒有 branch protection 或 ruleset，所以 `workflow-guards` 與 `actionlint` 紅了也擋不住合併，也擋不住直接 push 到 master。整檔釘選的效果只是讓改動被看見，不是強制。**建議**你在 repo 設定（Settings → Rules → Rulesets，或 Branches → Branch protection）把 `workflow guards (environment / secrets / triggers)` 與 `actionlint` 設成 master 的 required status check。本 PR 不改 repo 設定。
   - **GitHub 上的設定**：required reviewers、branch policy、secret 放在哪一層、App 的權限與安裝範圍，都不在 workflow 檔裡。`approve` 的 gate 只在執行時檢查 `admin-approval` 有沒有 required reviewers；其餘只能靠「部署前必做」第 3 步的 `gh api` 確認。
-  - **語意**：守門 step 以 sha256 釘住，所以「改了守門」一定會被看見；但釘住的內容本身是否正確，靠的是本機實跑（66 種組合）與審查，不是這支檢查。守門以外的 step（例如 Validate inputs 的白名單）只檢查結構（不可 `continue-on-error`、不可內插 inputs），不檢查內容。
-  - **runner 的行為**：檢查器用 `yaml` 套件解析，GitHub 用自己的解析器；已知的差異（anchor、merge key、多文件、`}}` 在單引號字串內）都改成直接拒絕，但不能保證沒有其他差異。
-  - **step 層級的 action**：`uses: <action>@<sha>` 的內容不檢查（只靠 SHA pin 與 Dependabot）。admin-call 的 Install Foundry（`foundry-rs/foundry-toolchain`）在守門之後、拿私鑰的 step 之前執行，它安裝的 `cast` 就是之後送交易用的程式；這個 action 若被換成惡意版本，可以裝一個假的 `cast`，在送交易的 step 拿到私鑰。這一點只靠 commit SHA pin 防護，這支檢查不檢查。
+  - **語意**：整檔釘選保證「改了就看得見」，不保證「現在釘住的內容是對的」。守門 script 的正確性靠本機實跑（66 種組合）與審查；Validate inputs 的白名單、keeper 的程式碼，這支檢查都不判斷對錯。
+  - **runner 的行為**：檢查器用 `yaml` 套件解析，GitHub 用自己的解析器。已知的差異（anchor、merge key、多文件、`}}` 在單引號字串內）都改成直接拒絕，但不能保證沒有其他差異。整檔釘選不受這一點影響，因為它比對的是原始文字。
+  - **action 本身的內容**：`uses: <action>@<sha>` 釘住的那個 commit 內容不檢查，只靠 SHA pin。admin-call 的 Install Foundry（`foundry-rs/foundry-toolchain`）在守門之後、拿私鑰的 step 之前執行，它安裝的 `cast` 就是之後送交易用的程式；這個 SHA 對應的內容若有問題，它可以在送交易的 step 拿到私鑰。action 的 `pre:` 階段也會在 job 開頭、守門之前執行。所以升級這些 SHA 時要人工審（見上面的 Dependabot 說明）。
+  - **repo 轉移到 organization**：`github.repository_owner` 會變成 org 名稱，沒有使用者等於它，三道守門會永遠失敗（fail-closed）。轉移後要改 admin workflow 的白名單寫法，並更新兩個雜湊。
