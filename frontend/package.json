@@ -88,7 +88,7 @@
     "typescript-eslint": "^8.70.1",
     "vite": "^7.3.6",
     "vite-plugin-checker": "^0.14.5",
-    "vitest": "^2"
+    "vitest": "^4.1.11"
   },
   "resolutions": {
     "//": "Security pins for transitive dependencies (2026-08-06 audit, O-7). yarn-only: npm ignores this field, which is one more reason package-lock.json is not kept here. @swc/core is pinned to 1.13.5 (2026-09-30): the 1.16 native binding validates the ACL of %LOCALAPPDATA%/swc and fails to load on some Windows dev machines, aborting vite build/dev (swc-project/swc#12442). See docs/KNOWN_LIMITATIONS.md.",
