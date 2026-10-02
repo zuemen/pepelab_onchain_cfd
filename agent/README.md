@@ -236,6 +236,22 @@ npx tsx examples/buy-signal.ts
 ```
 流程：探索 `/` →（付費端點）402（accepts: network/asset/payTo/price）→ 官方 USDC 簽 EIP-3009 → 重送帶 `X-PAYMENT` → 200 + 訊號 + `settlementTx`。
 
+### x402 v1／v2（`X402_PROTOCOL`）
+
+伺服器以環境變數 `X402_PROTOCOL` 決定收哪個版本：`v1`（預設，行為不變）、`both`（過渡期，同一個端點兩種都收）、`v2`。
+設計、查證到的規格事實與切換步驟見 [`docs/ADR-010-x402-v2-migration.md`](../docs/ADR-010-x402-v2-migration.md)。
+v2 的結算結果未知（facilitator 逾時、5xx、`settlement_pending`）回 502 `phase=settle`，同時寫一行
+`[x402v2] settlement_unknown` log 並推進 Redis 的 `x402:settlement:unknown`（人工對帳用，worker 不讀）。
+
+離線把兩個版本各跑通一次（本機假 facilitator，**不連網、不送交易、不付款**；金鑰當場隨機產生）：
+
+```bash
+npx tsx examples/x402-mock-e2e.ts
+```
+
+它起一個真的 signal-api（`both` 模式）與一個會真的驗 EIP-712 簽章的假 facilitator，依序用
+`x402-fetch`（v1）、`@x402/fetch`（v2）與 SDK 的 `SignalApiClient` 付款，最後印出結算帳本佇列與冪等鍵。
+
 ## 訪客試買（免錢包）
 
 `POST /demo/buy-signal`：免費 demo，**不付款、不結算**——只回真實訊號；`settlementTx` 永遠為空（在請求內上鏈會讓 serverless 逾時，見 `app.ts` 該路由註解）。真實 70/20/10 分潤只來自付費 x402 端點，累計見 `/revenue`。前端 `/x402` 文件頁接這支（含簡易速率限制 `DEMO_COOLDOWN_MS`，預設 15s/IP）。

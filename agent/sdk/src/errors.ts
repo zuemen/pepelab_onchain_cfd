@@ -9,8 +9,11 @@
 //   PaymentLimitExceededError      —— 要求或簽出的金額超過單筆／累計上限（未送出、未付）
 //   PaymentRejectedError           —— 付款要求不符（網路、幣別、payTo 白名單、逾時上限），或簽出的
 //                                     X-PAYMENT 與要求不一致（收款人、scheme、network、版本、validBefore）（未送出、未付）
+//                                     x402 v2 相同：PAYMENT-SIGNATURE 的 accepted／authorization 逐欄核對，
+//                                     Permit2／upfront 等非 EIP-3009 的付款方式一律拒絕
 //   PaymentOutcomeUnknownError     —— 已送出 X-PAYMENT 但沒拿到明確結果（逾時／網路錯誤）；**不會自動重試**
 //
+// 以下「X-PAYMENT」泛指付款標頭：x402 v1 是 X-PAYMENT，v2 是 PAYMENT-SIGNATURE，語意完全相同。
 // paymentSent：所有「帶了 X-PAYMENT 之後」產生的錯誤都是 true（包含 402／429／5xx）。
 // 此時已簽的 EIP-3009 授權已交給伺服器，在 validBefore 之前仍可能被結算 ——
 // **先對帳再決定是否重送，不要依 retryAfterSec 直接重試**（重試會簽一張新的授權，可能雙付）。
@@ -20,8 +23,11 @@
 import type {
   ErrorBody,
   PaymentRequirements,
+  PaymentRequirementsV2,
   PayToUnsafeBody,
   PriceStaleBody,
+  X402PaymentRequiredV2,
+  X402SettlementResponse,
 } from "./signalApiTypes.ts";
 
 export class SignalApiError extends Error {
@@ -48,17 +54,41 @@ export class PaymentRequiredError extends SignalApiError {
   readonly x402Version: number | null;
   /** true = 已經送過 X-PAYMENT 仍被 402（付款驗證或結算失敗）。 */
   readonly afterPayment: boolean;
-  constructor(p: { body: unknown; url: string; afterPayment: boolean }) {
+  /** x402 v2 的付款要求（`PAYMENT-REQUIRED` header）；伺服器沒有提供 v2 時為空陣列。 */
+  readonly acceptsV2: PaymentRequirementsV2[];
+  /** x402 v2：402 帶的 `PAYMENT-RESPONSE`（結算失敗的回執，success:false）；沒有時為 null。 */
+  readonly settlement: X402SettlementResponse | null;
+  constructor(p: {
+    body: unknown;
+    url: string;
+    afterPayment: boolean;
+    /** v2：解碼後的 PAYMENT-REQUIRED header。 */
+    paymentRequiredV2?: X402PaymentRequiredV2 | null;
+    /** v2：解碼後的 PAYMENT-RESPONSE header。 */
+    settlement?: X402SettlementResponse | null;
+  }) {
     const b = (p.body ?? {}) as { accepts?: PaymentRequirements[]; x402Version?: number; error?: unknown };
+    // 原因：v1 在 body.error；v2 在 PAYMENT-REQUIRED.error（驗證失敗）或 PAYMENT-RESPONSE.errorReason（結算失敗）。
+    const reason =
+      typeof b.error === "string"
+        ? b.error
+        : typeof p.settlement?.errorReason === "string"
+          ? p.settlement.errorReason
+          : typeof p.paymentRequiredV2?.error === "string"
+            ? p.paymentRequiredV2.error
+            : null;
     super(
       p.afterPayment
-        ? `付款後仍回 402（驗證或結算失敗）：${typeof b.error === "string" ? b.error : "unknown"}`
+        ? `付款後仍回 402（驗證或結算失敗）：${reason ?? "unknown"}`
         : "此端點需要 x402 付款；請在 SignalApiClient 注入 payment client",
-      { status: 402, code: typeof b.error === "string" ? b.error : null, body: p.body, url: p.url, paymentSent: p.afterPayment },
+      { status: 402, code: reason, body: p.body, url: p.url, paymentSent: p.afterPayment },
     );
     this.name = "PaymentRequiredError";
     this.accepts = Array.isArray(b.accepts) ? b.accepts : [];
-    this.x402Version = typeof b.x402Version === "number" ? b.x402Version : null;
+    this.acceptsV2 = Array.isArray(p.paymentRequiredV2?.accepts) ? p.paymentRequiredV2!.accepts : [];
+    this.settlement = p.settlement ?? null;
+    this.x402Version =
+      typeof b.x402Version === "number" ? b.x402Version : p.paymentRequiredV2 ? p.paymentRequiredV2.x402Version : null;
     this.afterPayment = p.afterPayment;
   }
 }
@@ -145,8 +175,9 @@ export class PaymentLimitExceededError extends Error {
 export class PaymentRejectedError extends Error {
   /** 一律為 false：在送出 X-PAYMENT 之前就擋下。 */
   readonly paymentSent = false as const;
-  readonly accepts: PaymentRequirements[];
-  constructor(message: string, accepts: PaymentRequirements[]) {
+  /** 伺服器提供的付款要求（v1 或 v2 的形狀，視當次協定而定）。 */
+  readonly accepts: (PaymentRequirements | PaymentRequirementsV2)[];
+  constructor(message: string, accepts: (PaymentRequirements | PaymentRequirementsV2)[]) {
     super(`${message}；未送出付款授權、未付款`);
     this.name = "PaymentRejectedError";
     this.accepts = accepts;
@@ -158,7 +189,9 @@ export class PaymentOutcomeUnknownError extends Error {
   readonly paymentSent = true as const;
   readonly url: string;
   readonly signedAtomic: bigint | null;
-  constructor(p: { url: string; signedAtomic: bigint | null; cause: unknown }) {
+  /** x402 v2：這筆付款帶的 payment-identifier（對帳用；呼叫端指定才有）；沒帶或 v1 時為 null。 */
+  readonly paymentId: string | null;
+  constructor(p: { url: string; signedAtomic: bigint | null; cause: unknown; paymentId?: string | null }) {
     super(
       `已送出付款授權但未取得明確結果（${(p.cause as Error)?.message ?? p.cause}）。` +
         `款項可能已結算，SDK 不會自動重試；請以 facilitator／鏈上紀錄對帳後再決定是否重送。`,
@@ -166,6 +199,7 @@ export class PaymentOutcomeUnknownError extends Error {
     this.name = "PaymentOutcomeUnknownError";
     this.url = p.url;
     this.signedAtomic = p.signedAtomic;
+    this.paymentId = p.paymentId ?? null;
     (this as { cause?: unknown }).cause = p.cause;
   }
 }
