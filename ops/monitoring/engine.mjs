@@ -14,7 +14,9 @@
 // 讀取方法只有 eth_blockNumber／eth_getLogs／eth_call／eth_getBalance／eth_getBlockByNumber／
 // eth_getStorageAt（讀 EIP-1967 實作 slot）。
 
-export const SEVERITIES = ["SEV-1", "SEV-2", "SEV-3", "SEV-4"];
+import { MAX_ALERT_DELAY_ROUNDS, MIN_SEVERITY_ALLOWED, PARAM_SPECS, SEVERITIES, envSecret, envSetting, envSettingProblems, resolveParams } from "./params.mjs";
+
+export { MAX_ALERT_DELAY_ROUNDS, MIN_SEVERITY_ALLOWED, SEVERITIES };
 const sevRank = (s) => {
   const i = SEVERITIES.indexOf(s);
   return i < 0 ? SEVERITIES.length : i;
@@ -23,82 +25,46 @@ const sevRank = (s) => {
 export const worse = (a, b) => (sevRank(a) <= sevRank(b) ? a : b);
 
 // ── 參數 ─────────────────────────────────────────────────────────────────────
+// 型別、上下限與組合限制的單一來源是 params.mjs（CI 與執行期共用，複審 M-1）。
 
-/** 參數值：Worker 環境變數優先（wrangler.toml [vars]），否則 monitors.json 的預設值。 */
+/**
+ * 參數值（字串）：Worker 環境變數優先，否則 monitors.json 的預設值；**照 PARAM_SPECS 夾值**。
+ * 只認 PARAM_SPECS 裡的名字——新增參數必須先在表裡定義上下限。
+ */
 export function param(config, env, name) {
-  const def = config.params?.[name];
-  if (!def) throw new Error(`未定義的參數 ${name}`);
-  const v = env?.[name];
-  return v === undefined || v === null || String(v).trim() === "" ? String(def.default) : String(v).trim();
+  if (!PARAM_SPECS[name]) throw new Error(`未定義的參數 ${name}（不在 params.mjs 的 PARAM_SPECS）`);
+  return String(resolveParams(config, env).values[name]);
 }
-/**
- * 安全上限（複審 L-f）：這幾個參數調到極端值等於把告警關掉（落後 23 天才告警、相對門檻 100%、
- * 連續失敗 12 輪＝1 小時才講）。CI 擋 monitors.json 與 wrangler.toml；但 Cloudflare dashboard 或
- * `wrangler deploy --var` 設的值不經 CI，所以執行期也夾住，並由 configProblems() 發 monitor-self 告警。
- */
-export const SAFETY_LIMITS = {
-  LAG_ALERT_BLOCKS: { max: 1800 }, // 1 小時（Base 每 2 秒一塊）
-  LARGE_WITHDRAWAL_BPS: { max: 5000 }, // 單筆佔餘額 50% 以上才響＝等於沒有相對門檻
-  HTTP_FAILS_BEFORE_ALERT: { max: 6 },
-  SELF_ERRORS_BEFORE_ALERT: { max: 6 },
-};
-/**
- * 持續故障最晚幾輪內要告警：x402 讀取失敗最慢要 HTTP_FAILS_BEFORE_ALERT＋SELF_ERRORS_BEFORE_ALERT−1 輪
- * 才發 monitor-self:errors。6 輪 × 5 分鐘＝30 分鐘。
- */
-export const MAX_ALERT_DELAY_ROUNDS = 6;
-/** MIN_SEVERITY 可以設的值：不可以設成「只送 SEV-1」（那會把 SEV-2 的提領、價格過期、儲備率全部關掉）。 */
-export const MIN_SEVERITY_ALLOWED = ["SEV-2", "SEV-3", "SEV-4"];
-
-const rawNum = (config, env, name) => {
-  const n = Number(param(config, env, name));
-  if (!Number.isFinite(n) || n < 0) throw new Error(`參數 ${name} 不是非負數`);
-  return n;
-};
-/** 數值參數，依 SAFETY_LIMITS 夾住（超出時 configProblems 會講出來）。 */
-const numParam = (config, env, name) => {
-  let n = rawNum(config, env, name);
-  const lim = SAFETY_LIMITS[name];
-  if (lim && n > lim.max) n = lim.max;
-  if (name === "SELF_ERRORS_BEFORE_ALERT") n = Math.max(1, Math.min(n, MAX_ALERT_DELAY_ROUNDS + 1 - numParam(config, env, "HTTP_FAILS_BEFORE_ALERT")));
-  return n;
-};
+/** 數值參數（已夾值）。 */
+export const numParam = (config, env, name) => Number(param(config, env, name));
 /** 執行期的有效 MIN_SEVERITY（SEV-1 或不合法時用 SEV-2）。 */
 export function minSeverityOf(config, env) {
-  const v = param(config, env, "MIN_SEVERITY");
-  return MIN_SEVERITY_ALLOWED.includes(v) ? v : "SEV-2";
+  return param(config, env, "MIN_SEVERITY");
 }
 /**
  * 執行期設定問題（不經 CI 的覆寫值）：回傳文字陣列。tick 把它們變成一則 monitor-self:config 告警
- * ——設定被調成「等於關掉告警」時，值班的人要知道，而且 Worker 照常以安全值運作。
+ * ——設定被調成「等於關掉告警」或格式不對時，值班的人要知道，而且 Worker 照常以夾住後的值運作。
  */
 export function configProblems(config, env) {
-  const out = [];
-  for (const [name, lim] of Object.entries(SAFETY_LIMITS)) {
-    if (!config.params?.[name]) continue;
-    let n;
-    try {
-      n = rawNum(config, env, name);
-    } catch (e) {
-      out.push(e.message);
-      continue;
-    }
-    if (n > lim.max) out.push(`${name}=${n} 超過安全上限 ${lim.max}，以 ${lim.max} 執行`);
-  }
+  const rpc = rpcUrlOf(config, env);
+  return [...resolveParams(config, env).problems, ...envSettingProblems(env), ...(rpc.problem ? [rpc.problem] : [])];
+}
+const isHttpsUrl = (v) => {
   try {
-    const h = numParam(config, env, "HTTP_FAILS_BEFORE_ALERT");
-    const sRaw = Math.min(rawNum(config, env, "SELF_ERRORS_BEFORE_ALERT"), SAFETY_LIMITS.SELF_ERRORS_BEFORE_ALERT.max);
-    if (h + sRaw - 1 > MAX_ALERT_DELAY_ROUNDS) {
-      out.push(`HTTP_FAILS_BEFORE_ALERT＋SELF_ERRORS_BEFORE_ALERT−1 = ${h + sRaw - 1} 輪，超過 ${MAX_ALERT_DELAY_ROUNDS} 輪（約 30 分鐘）；SELF_ERRORS_BEFORE_ALERT 以 ${numParam(config, env, "SELF_ERRORS_BEFORE_ALERT")} 執行`);
-    }
+    return new URL(v).protocol === "https:";
   } catch {
-    /* 上面已經回報 */
+    return false;
   }
-  if (config.params?.MIN_SEVERITY) {
-    const v = param(config, env, "MIN_SEVERITY");
-    if (!MIN_SEVERITY_ALLOWED.includes(v)) out.push(`MIN_SEVERITY=${v} 不允許（最多只能設到 SEV-2），以 SEV-2 執行`);
-  }
-  return out;
+};
+/**
+ * RPC 端點：Worker secret RPC_URL（可含 API key），沒設或格式不對時用 network.publicRpc。格式不對時
+ * 不丟錯（丟錯等於整輪停擺、SEV-1 送不出去），改用公開 RPC 並回報（不顯示值：URL 可能含金鑰）。
+ */
+export function rpcUrlOf(config, env) {
+  const v = envSecret(env, "RPC_URL");
+  if (!v) return { url: config.network.publicRpc };
+  if (isHttpsUrl(v)) return { url: v };
+  return { url: config.network.publicRpc, problem: "RPC_URL 不是 https:// 開頭的合法 URL（值不顯示），改用公開 RPC" };
 }
 /** 十進位字串（可含小數）→ 以 decimals 為單位的 BigInt。 */
 export function toUnits(text, decimals) {
@@ -693,9 +659,14 @@ export function windowFindings({ config, env, state, now, freshFrom = {}, scanTi
     let best = null;
     // 用保留前的全部紀錄：本輪新記入的提領可能早於保留界線（一輪就追完數小時的積欠）。
     const sorted = [...all].sort((x, y) => x[0] - y[0]);
+    // 「落後追趕才掃到」＝本輪新記入、但發生時間已經在即時視窗之外的提領（複審 L-1）。正常運作時
+    // 每輪掃到的都是最近幾分鐘的提領，不會有這種紀錄，所以不評估過去的爆量——原本的條件是「視窗裡
+    // 有任何一筆在即時視窗之外」，穩定的提領流量每小時會多出幾則內容不實的「過去發生」SEV-2。
+    const lateScanned = new Set(fresh.filter(([t]) => now - t >= windowSec));
+    if (!lateScanned.size) continue;
     for (const [end] of fresh) {
       const inWin = sorted.filter(([t]) => t > end - windowSec && t <= end);
-      if (!inWin.some(([t]) => now - t >= windowSec)) continue; // 整個在即時視窗裡：上面已經算過
+      if (!inWin.some((x) => lateScanned.has(x))) continue; // 視窗裡沒有「落後才掃到」的提領：即時視窗當時就看得到
       const s = inWin.reduce((acc, [, a]) => acc + BigInt(a), 0n);
       if (s >= limit && (!best || s > best.sum)) best = { start: inWin[0][0], end, sum: s, n: inWin.length };
     }
@@ -928,11 +899,11 @@ const checks = {
       const actual = wordToAddress(w[0]);
       if (lc(actual) === lc(c.expected)) return;
       const why = c.expect?.ref ? `前端設定的 ${c.expect.ref}` : c.expect?.zero ? "零位址" : "部署時的鏈上快照";
-      out.push(finding(rule, `${rule.id}:${name}`, rule.severity, `${rule.title}：${name}`, [
+      out.push({ ...finding(rule, `${rule.id}:${name}`, rule.severity, `${rule.title}：${name}`, [
         `${name} 現在是 ${actual}，預期 ${c.expected}（${why}）`,
         `合約：${k.ref} ${k.address}`,
         "部署版的 setter 不發事件，這是每輪讀 getter 比對出來的；請立即確認是否為預期變更",
-      ]));
+      ]), fingerprint: lc(actual) });
     });
     if (failed.length) throw partial(`接線讀取失敗：${failed.join("；")}`, out);
     return out;
@@ -969,7 +940,7 @@ const checks = {
           : "未經排程的升級等同合約被換掉：立即確認是否為預期變更（對照 Timelock 排程與部署紀錄）",
         "預期變更時：node scripts/check-monitoring.mjs --refresh-deployed → --write → PR → 重新部署 Worker；在那之前「事件／函式在部署版裡」的 CI 檢查是對舊版做的",
       ];
-      out.push(finding(rule, `${rule.id}:${proxy}`, byEvent ? "SEV-3" : rule.severity, byEvent ? `${rule.title}：deployed.json 過期（${c.ref}）` : `${rule.title}：${c.ref}`, lines));
+      out.push({ ...finding(rule, `${rule.id}:${proxy}`, byEvent ? "SEV-3" : rule.severity, byEvent ? `${rule.title}：deployed.json 過期（${c.ref}）` : `${rule.title}：${c.ref}`, lines), fingerprint: actual });
     });
     if (failed.length) throw partial(`實作 slot 讀取失敗：${failed.join("；")}`, out);
     return out;
@@ -980,10 +951,8 @@ const checks = {
     const [own] = await rpc.batch([callReq(rule, "oracle", "owner()")]);
     if (own.error) throw new Error(`owner() 讀取失敗：${own.error}`);
     const wallets = [{ label: "keeper（MockOracle.owner）", address: wordToAddress(words(own.result)[0]) }];
-    for (const a of String(env?.EXTRA_GAS_WALLETS ?? "").split(",").map((s) => s.trim()).filter(Boolean)) {
-      if (!/^0x[0-9a-fA-F]{40}$/.test(a)) throw new Error(`EXTRA_GAS_WALLETS 含不合法位址：${a}`);
-      wallets.push({ label: "額外錢包", address: a });
-    }
+    // 不合法的項目略過（configProblems 會講出來），不讓一個打錯的位址讓 keeper 的 gas 也不檢查。
+    for (const a of envSetting(env, "EXTRA_GAS_WALLETS").value) wallets.push({ label: "額外錢包", address: a });
     const res = await rpc.batch(wallets.map((w) => ({ method: "eth_getBalance", params: [w.address, "latest"] })));
     const warn = toUnits(param(config, env, "GAS_MIN_ETH"), 18);
     const crit = toUnits(param(config, env, "GAS_CRIT_ETH"), 18);
@@ -1050,7 +1019,7 @@ const httpChecks = {
     }
     state.httpFails[rule.id] = 0;
     const out = [];
-    const expected = String(env?.EXPECTED_PAY_TO ?? "").trim();
+    const expected = envSetting(env, "EXPECTED_PAY_TO").value;
     state.baselines ??= {};
     const baseline = expected || state.baselines[rule.id];
     let reset = false;
@@ -1070,16 +1039,16 @@ const httpChecks = {
     // 讓值班的人先看到上面那則「基準已設定」。
     const openChanged = state.open?.[`${rule.id}:changed`];
     if (reset && openChanged) {
-      out.push(finding(rule, `${rule.id}:changed`, "SEV-1", `${rule.title}：收款地址變更`, [
+      out.push({ ...finding(rule, `${rule.id}:changed`, "SEV-1", `${rule.title}：收款地址變更`, [
         `基準在變更告警開著的時候被清除，並以目前的 payTo ${payTo} 重建；先前的變更告警保持開啟一輪`,
         "請人工確認 payTo 是預期的地址；若不是，這是收款地址被換掉後又清掉基準",
-      ]));
+      ]), fingerprint: lc(payTo) });
     } else if (baseline && lc(baseline) !== lc(payTo)) {
-      out.push(finding(rule, `${rule.id}:changed`, "SEV-1", `${rule.title}：收款地址變更`, [
+      out.push({ ...finding(rule, `${rule.id}:changed`, "SEV-1", `${rule.title}：收款地址變更`, [
         `signal-api 的 payTo 由 ${baseline} 變成 ${payTo}`,
         expected ? "基準來自 EXPECTED_PAY_TO" : "基準來自首次觀察（建議設定 EXPECTED_PAY_TO）",
         "若為預期變更：更新 EXPECTED_PAY_TO，或只刪 KV 鍵 baselines:v1（見 README「清除基準」）",
-      ]));
+      ]), fingerprint: lc(payTo) });
     }
     if (j?.payToSafety && j.payToSafety.safe === false) {
       out.push(finding(rule, `${rule.id}:unsafe`, "SEV-3", `${rule.title}：收款守門判定不安全`, [
@@ -1114,19 +1083,24 @@ export function reconcile({ config, env, state, findings, evaluated, now }) {
     }
     seen.add(f.key);
     const prev = state.open[f.key];
+    const fp = f.fingerprint === undefined ? {} : { fp: f.fingerprint };
     if (!prev) {
-      state.open[f.key] = { ruleId: f.ruleId, severity: f.severity, since: now, lastNotified: now, title: f.title };
+      state.open[f.key] = { ruleId: f.ruleId, severity: f.severity, since: now, lastNotified: now, title: f.title, ...fp };
       notes.push({ ...f, status: "觸發", at: now, firstAt: now });
     } else {
       const peak = worse(f.severity, prev.peak ?? prev.severity); // 歷來最嚴重：恢復通知用它過 MIN_SEVERITY
       const escalated = sevRank(f.severity) < sevRank(prev.severity);
-      if (escalated || now - prev.lastNotified >= remind) {
-        state.open[f.key] = { ...prev, severity: f.severity, peak, lastNotified: now };
+      // 觀察值變了（複審 L-2）：告警開著時 payTo／接線／實作又被換成「另一個」值，要立刻再通知，
+      // 不等 REMIND_SEC——開著的 SEV-1 不可以變成「之後的變更都不會響」的掩護。
+      const changed = f.fingerprint !== undefined && prev.fp !== undefined && f.fingerprint !== prev.fp;
+      if (escalated || changed || now - prev.lastNotified >= remind) {
+        state.open[f.key] = { ...prev, severity: f.severity, peak, lastNotified: now, ...fp };
         const lines = [...f.lines];
+        if (changed) lines.push(f.changeNote ?? `觀察值在告警開著時再次變更：${prev.fp} → ${f.fingerprint}`);
         if (escalated) lines.push(`嚴重度由 ${prev.severity} 升為 ${f.severity}`);
         lines.push(`自 ${new Date(prev.since * 1000).toISOString()} 起`);
-        notes.push({ ...f, status: "持續", lines, at: now, firstAt: prev.since });
-      } else state.open[f.key] = { ...prev, severity: f.severity, peak };
+        notes.push({ ...f, status: "持續", lines, at: now, firstAt: prev.since, ...(changed ? { title: `${f.title}（值再次變更）` } : {}) });
+      } else state.open[f.key] = { ...prev, severity: f.severity, peak, ...fp };
     }
   }
   for (const [key, prev] of Object.entries(state.open)) {
@@ -1147,8 +1121,8 @@ export function reconcile({ config, env, state, findings, evaluated, now }) {
  * 回傳 { notes, errors, summary }：errors 是規則或掃描本身失敗的訊息（監控自己壞了）。
  */
 export async function runOnce({ config, env = {}, state, fetchImpl, now = Math.floor(Date.now() / 1000), log = () => {}, sleep, selfFindings = [] }) {
-  const rpcUrl = String(env.RPC_URL ?? "").trim() || config.network.publicRpc;
-  assertHttps(String(env.RPC_URL ?? "").trim() ? "RPC_URL" : "network.publicRpc", rpcUrl);
+  const rpcUrl = rpcUrlOf(config, env).url;
+  assertHttps("network.publicRpc", config.network.publicRpc);
   assertHttps("SIGNAL_API_URL", param(config, env, "SIGNAL_API_URL"));
   const rpc = makeRpc(rpcUrl, fetchImpl, sleep ? { sleep } : {});
   const findings = [];

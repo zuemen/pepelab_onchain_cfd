@@ -22,7 +22,8 @@
 //      selector 必須出現在 bytecode 裡，接線規則的預期值必須等於鏈上快照。檢查本身不連網。
 //  10. 涵蓋與下限（審查 M4）：受監控合約會發的每個事件都要有規則或明列理由的忽略（ignoredEvents）；
 //      必要規則不可被刪、降級或改成 pending（REQUIRED_RULES）；每個參數有型別與範圍
-//      （PARAM_SPECS，MAX_BLOCK_RANGE ≤ 1000）；wrangler.toml 任何位置都不得出現秘密鍵名；
+//      （PARAM_SPECS 在 ops/monitoring/params.mjs，執行期共用同一張表）；全域設定（參數預設值、explorer、
+//      repoBlobBase）釘雜湊、連結網域白名單；wrangler.toml 任何位置都不得出現秘密鍵名；
 //      秘密掃描遞迴子目錄；.dev.vars／.wrangler/ 必須在 .gitignore。
 //
 // 零依賴。用法：
@@ -39,14 +40,15 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseFrontendConfig } from "./check-addresses.mjs";
 import { keccak256, selector } from "../ops/monitoring/keccak.mjs";
+import { _internal as engineInternal, IMPL_SLOT } from "../ops/monitoring/engine.mjs";
 import {
-  _internal as engineInternal,
-  IMPL_SLOT,
-  MAX_ALERT_DELAY_ROUNDS,
-  MIN_SEVERITY_ALLOWED,
-  SAFETY_LIMITS,
+  ENV_SETTINGS,
+  PARAM_SPECS,
+  SECRET_ENV,
   SEVERITIES,
-} from "../ops/monitoring/engine.mjs";
+  checkParamValue as checkParamSpec,
+  paramComboProblems,
+} from "../ops/monitoring/params.mjs";
 import { parseMuteKeys } from "../ops/monitoring/notify.mjs";
 
 const ADDR = /^0x[0-9a-fA-F]{40}$/;
@@ -66,22 +68,12 @@ const TOKENS = {
   PepeToken: { file: "contracts/src/PepeToken.sol", default: 18, ref: "PepeToken", getter: "pepe()" },
 };
 const tokenGetter = (token) => TOKENS[token]?.getter ?? "usdc()";
-/** 這些名稱只能用 `wrangler secret put` 設定，出現在 [vars] 就是把秘密寫進 repo。 */
-export const SECRET_NAMES = [
-  "TELEGRAM_BOT_TOKEN",
-  "TELEGRAM_CHAT_ID",
-  "DISCORD_WEBHOOK_URL",
-  "ALERT_WEBHOOK_URL",
-  "ALERT_WEBHOOK_SECRET",
-  "HEARTBEAT_URL",
-  "RPC_URL",
-  "GITHUB_TOKEN",
-];
-/** [vars] 允許的非參數鍵（公開資訊）與它們的格式。 */
-const EXTRA_VARS = {
-  EXTRA_GAS_WALLETS: (v) => (v.split(",").every((a) => ADDR.test(a.trim())) ? null : "必須是逗號分隔的位址"),
-  EXPECTED_PAY_TO: (v) => (ADDR.test(v) ? null : "必須是一個位址"),
-};
+/** 這些名稱只能用 `wrangler secret put` 設定，出現在 [vars] 就是把秘密寫進 repo。清單的來源是 params.mjs。 */
+export const SECRET_NAMES = [...SECRET_ENV, "GITHUB_TOKEN"];
+/** [vars] 允許的非參數鍵（公開資訊）與它們的格式：與執行期同一個解析器（params.mjs 的 ENV_SETTINGS）。 */
+const EXTRA_VARS = Object.fromEntries(
+  Object.entries(ENV_SETTINGS).map(([name, spec]) => [name, (v) => (spec.parse(String(v).trim()).problem ? `格式不對：${spec.doc}` : null)]),
+);
 /** network.publicRpc 只能是不需要金鑰的公開端點；含金鑰的 RPC 一律用 Worker secret RPC_URL。 */
 export const PUBLIC_RPC_ALLOW = ["https://sepolia.base.org"];
 /** 秘密掃描略過的本機目錄／檔案（必須同時列在 .gitignore，否則會被 commit 卻沒被掃到）。 */
@@ -158,62 +150,50 @@ export const REQUIRED_RULES = {
 };
 
 /**
- * 參數的型別與範圍（審查 M4）。monitors.json 的每個參數都要在這裡有一筆，反之亦然；預設值與
- * wrangler.toml [vars] 的覆寫值都依此驗證。上下限寫在程式碼而不是 monitors.json：把預設值改到
- * 離譜的數字（例如 MAX_BLOCK_RANGE 50000）不能靠同一個檔案裡順手改上限放行。
- *   int      非負整數，min ≤ v ≤ max
- *   decimal  非負十進位金額（可含小數），v ≤ max
- *   severity SEV-1..SEV-4
- *   url      https URL
- *   keys     MUTE_KEYS 的格式（checkMuteKeys）
+ * 參數的型別與範圍（審查 M4、複審 M-1）：單一來源是 ops/monitoring/params.mjs，Worker 執行期 import
+ * 同一張表夾值。這裡 re-export 給測試與其他工具用。
  */
-export const PARAM_SPECS = {
-  CONFIRMATIONS: { type: "int", min: 0, max: 64 },
-  INITIAL_LOOKBACK_BLOCKS: { type: "int", min: 1, max: 1000 },
-  // 公開 RPC（sepolia.base.org）的 eth_getLogs 上限是 1,000 塊（2026-10-01 實測）。
-  MAX_BLOCK_RANGE: { type: "int", min: 1, max: 1000 },
-  // Cloudflare 免費方案每次執行 50 個 subrequest：事件掃描最多佔 20 個。
-  MAX_SCAN_REQUESTS: { type: "int", min: 1, max: 20 },
-  // 上限與執行期的 SAFETY_LIMITS 相同（engine.mjs）：調到更大等於把告警關掉（複審 L-f）。
-  LAG_ALERT_BLOCKS: { type: "int", min: 150, max: SAFETY_LIMITS.LAG_ALERT_BLOCKS.max },
-  REMIND_SEC: { type: "int", min: 300, max: 604_800 },
-  MIN_SEVERITY: { type: "severity", allowed: MIN_SEVERITY_ALLOWED },
-  MUTE_KEYS: { type: "keys" },
-  LARGE_WITHDRAWAL_USDC: { type: "decimal", max: 1e12 },
-  LARGE_WITHDRAWAL_WINDOW_USDC: { type: "decimal", max: 1e12 },
-  LARGE_WITHDRAWAL_BPS: { type: "int", min: 1, max: SAFETY_LIMITS.LARGE_WITHDRAWAL_BPS.max },
-  WITHDRAWAL_WINDOW_SEC: { type: "int", min: 300, max: 86_400 },
-  INSURANCE_WITHDRAW_USDC: { type: "decimal", max: 1e12 },
-  BAILOUT_MIN_USDC: { type: "decimal", max: 1e12 },
-  LARGE_REDEEM_USDC: { type: "decimal", max: 1e12 },
-  FEE_WITHDRAW_ALERT_USDC: { type: "decimal", max: 1e12 },
-  ORACLE_STALE_WARN_SEC: { type: "int", min: 300, max: 604_800 },
-  NONCRYPTO_STALE_SEC: { type: "int", min: 3600, max: 1_209_600 },
-  ORACLE_DEVIATION_BPS: { type: "int", min: 1, max: 10_000 },
-  ORACLE_DEVIATION_CRIT_BPS: { type: "int", min: 1, max: 10_000 },
-  REFERENCE_MAX_AGE_SEC: { type: "int", min: 60, max: 604_800 },
-  INSURANCE_MIN_USDC: { type: "decimal", max: 1e12 },
-  INSURANCE_DROP_BPS: { type: "int", min: 1, max: 10_000 },
-  EXCHANGE_BALANCE_DROP_BPS: { type: "int", min: 1, max: 9_000 },
-  INCENTIVES_BALANCE_DROP_BPS: { type: "int", min: 1, max: 9_000 },
-  RESERVE_WARN_MARGIN_BPS: { type: "int", min: 0, max: 10_000 },
-  GAS_MIN_ETH: { type: "decimal", max: 1000 },
-  GAS_CRIT_ETH: { type: "decimal", max: 1000 },
-  SIGNAL_API_URL: { type: "url" },
-  HTTP_FAILS_BEFORE_ALERT: { type: "int", min: 1, max: SAFETY_LIMITS.HTTP_FAILS_BEFORE_ALERT.max },
-  SELF_ERRORS_BEFORE_ALERT: { type: "int", min: 1, max: SAFETY_LIMITS.SELF_ERRORS_BEFORE_ALERT.max },
-};
+export { PARAM_SPECS, paramComboProblems };
+
 /**
- * 參數組合的限制（值是「名稱 → 數值」，已套用覆寫）。持續故障最晚 MAX_ALERT_DELAY_ROUNDS 輪
- * （約 30 分鐘）內要告警：x402 讀取失敗要 HTTP_FAILS_BEFORE_ALERT＋SELF_ERRORS_BEFORE_ALERT−1 輪。
+ * 全域設定的釘選雜湊（複審 L-3）：參數預設值、network（explorer、區塊時間…）、repoBlobBase、deployment。
+ * 規則雜湊（REQUIRED_RULES）只釘「參照哪個參數名」，不釘參數值；把 ORACLE_DEVIATION_CRIT_BPS 預設值
+ * 調到 10000、把 explorer 換成別人的網域，原本 CI 都是綠的。改了這些 → 紅，並印出新雜湊；
+ * **人工審過改動**後把新雜湊貼到這裡。
  */
-export function paramComboProblems(values) {
+export const GLOBAL_CONFIG_HASH = "019835e593e922c4581583f41e2d881965787b21953f4f5ea817fa6bf5cc6594";
+/** 告警訊息裡 tx 連結的網域（白名單）。 */
+export const EXPLORER_ALLOW = ["https://sepolia.basescan.org"];
+/** 告警訊息裡「處置」連結的前綴：只能指向本 repo。 */
+export const REPO_BLOB_PREFIX = "https://github.com/zuemen/pepelab_onchain_cfd/blob/";
+/** 全域設定裡納入雜湊的部分。 */
+export function globalConfigView(cfg) {
+  return {
+    version: cfg.version,
+    deployment: cfg.deployment,
+    network: cfg.network,
+    repoBlobBase: cfg.repoBlobBase,
+    params: Object.fromEntries(Object.entries(cfg.params ?? {}).map(([k, v]) => [k, v?.default])),
+  };
+}
+export const globalConfigHash = (cfg) => createHash("sha256").update(canonicalJson(globalConfigView(cfg))).digest("hex");
+/** 全域設定：雜湊、explorer／repo 網域白名單、區塊時間範圍。 */
+export function checkGlobalConfig(cfg) {
   const out = [];
-  const h = Number(values.HTTP_FAILS_BEFORE_ALERT);
-  const e = Number(values.SELF_ERRORS_BEFORE_ALERT);
-  if (Number.isFinite(h) && Number.isFinite(e) && h + e - 1 > MAX_ALERT_DELAY_ROUNDS) {
-    out.push(`HTTP_FAILS_BEFORE_ALERT（${h}）＋SELF_ERRORS_BEFORE_ALERT（${e}）−1 = ${h + e - 1} 輪，超過 ${MAX_ALERT_DELAY_ROUNDS} 輪（約 30 分鐘）`);
+  const h = globalConfigHash(cfg);
+  if (h !== GLOBAL_CONFIG_HASH) {
+    out.push(
+      `(全域)：全域設定（參數預設值、network、repoBlobBase、deployment）與 scripts/check-monitoring.mjs 的 GLOBAL_CONFIG_HASH 不同（現在 ${h}，釘的是 ${GLOBAL_CONFIG_HASH}）—— ` +
+        "人工審過改動（門檻有沒有被調到等於關掉告警、連結網域對不對）後，再把新雜湊更新到 GLOBAL_CONFIG_HASH",
+    );
   }
+  if (!EXPLORER_ALLOW.includes(cfg.network?.explorer)) out.push(`(全域)：network.explorer 必須是 ${EXPLORER_ALLOW.join("、")}（告警裡每個 tx 連結都用它）`);
+  if (typeof cfg.repoBlobBase !== "string" || !cfg.repoBlobBase.startsWith(REPO_BLOB_PREFIX) || !/^[A-Za-z0-9._/-]+$/.test(cfg.repoBlobBase.slice(REPO_BLOB_PREFIX.length))) {
+    out.push(`(全域)：repoBlobBase 必須以 ${REPO_BLOB_PREFIX} 開頭（告警裡的「處置」連結）`);
+  }
+  const bt = cfg.network?.blockTimeSec;
+  if (!Number.isInteger(bt) || bt < 1 || bt > 12) out.push(`(全域)：network.blockTimeSec 必須是 1–12 的整數，現在是 ${JSON.stringify(bt)}`);
+  if (cfg.deployment?.chainId !== cfg.network?.chainId) out.push("(全域)：deployment.chainId 必須等於 network.chainId");
   return out;
 }
 
@@ -223,12 +203,6 @@ export function paramComboProblems(values) {
  * 不可以是 SEV-1 的輸出、不可以是 monitor-self。
  */
 export const MUTABLE_KEYS = ["x402-payto:unsafe"];
-/** 成對的參數：左邊必須 ≤ 右邊（預警門檻不可比嚴重門檻更嚴）。 */
-const PARAM_ORDER = [
-  ["ORACLE_DEVIATION_BPS", "ORACLE_DEVIATION_CRIT_BPS"],
-  ["GAS_CRIT_ETH", "GAS_MIN_ETH"],
-  ["INITIAL_LOOKBACK_BLOCKS", "MAX_BLOCK_RANGE"],
-];
 
 // ── 小工具 ───────────────────────────────────────────────────────────────────
 
@@ -939,6 +913,7 @@ export function generate(input, ctx) {
   }
   for (const name of used) if (!cfg.params?.[name]) problems.push(`(全域)：engine.mjs／tick.mjs 用到參數 ${name}，但 monitors.json 沒有定義`);
   problems.push(...checkParams(cfg));
+  problems.push(...checkGlobalConfig(cfg));
   problems.push(...checkRequired(cfg));
   problems.push(...eventCoverage(cfg, ctx));
   problems.push(...adminFunctionCoverage(cfg, ctx));
@@ -953,25 +928,12 @@ export function generate(input, ctx) {
 }
 const engineSource = (root) => read(root, "ops/monitoring/engine.mjs");
 
-/** 一個參數值是否合法；回傳錯誤文字或 null。cfg 只有 keys 型別需要（對照規則 id）。 */
+/** 一個參數值是否合法；回傳錯誤文字或 null。範圍來自 params.mjs；keys 型別另外對照白名單（cfg）。 */
 export function checkParamValue(name, value, cfg = null) {
-  const spec = PARAM_SPECS[name];
-  if (!spec) return "沒有型別定義（PARAM_SPECS）";
-  const v = String(value ?? "").trim();
-  if (spec.type === "int") {
-    if (!/^\d+$/.test(v)) return `必須是非負整數，現在是 ${JSON.stringify(v)}`;
-    const n = Number(v);
-    if (n < spec.min || n > spec.max) return `必須在 ${spec.min}–${spec.max} 之間，現在是 ${n}`;
-  } else if (spec.type === "decimal") {
-    if (!/^\d+(\.\d+)?$/.test(v)) return `必須是非負的十進位數字，現在是 ${JSON.stringify(v)}`;
-    if (Number(v) > spec.max) return `不可超過 ${spec.max}，現在是 ${v}`;
-  } else if (spec.type === "severity") {
-    const allowed = spec.allowed ?? SEVERITIES;
-    if (!allowed.includes(v)) return `必須是 ${allowed.join("/")}，現在是 ${JSON.stringify(v)}`;
-  } else if (spec.type === "url") {
-    if (!/^https:\/\/[^\s/]+(\/[^\s]*)?$/.test(v)) return `必須是 https URL，現在是 ${JSON.stringify(v)}`;
-  } else if (spec.type === "keys") {
-    const bad = checkMuteKeys(v, cfg ?? { mutableKeys: MUTABLE_KEYS.map((key) => ({ key })) });
+  const err = checkParamSpec(name, value);
+  if (err) return err;
+  if (PARAM_SPECS[name].type === "keys") {
+    const bad = checkMuteKeys(String(value ?? "").trim(), cfg ?? { mutableKeys: MUTABLE_KEYS.map((key) => ({ key })) });
     if (bad.length) return bad.join("；");
   }
   return null;
@@ -988,10 +950,6 @@ function checkParams(cfg) {
     if (err) out.push(`(全域)：params.${name}.default ${err}`);
   }
   for (const name of Object.keys(PARAM_SPECS)) if (!params[name]) out.push(`(全域)：PARAM_SPECS 有 ${name}，但 monitors.json 沒有這個參數`);
-  for (const [lo, hi] of PARAM_ORDER) {
-    const [a, b] = [Number(params[lo]?.default), Number(params[hi]?.default)];
-    if (Number.isFinite(a) && Number.isFinite(b) && a > b) out.push(`(全域)：params.${lo}（${a}）不可大於 params.${hi}（${b}）`);
-  }
   for (const m of paramComboProblems(Object.fromEntries(Object.entries(params).map(([k, v]) => [k, v?.default])))) out.push(`(全域)：params 預設值 ${m}`);
   out.push(...checkMutableKeys(cfg));
   return out;
@@ -1350,6 +1308,13 @@ function thresholdText(cfg, rule) {
   return THRESHOLD[rule.check]?.(cfg, rule) ?? "—";
 }
 const anchor = (h) => `../../${IR_DOC}#${slug(h)}`;
+const rangeText = (spec) => {
+  if (!spec) return "—";
+  if (spec.type === "int" || spec.type === "decimal") return `${spec.min.toLocaleString("en-US")}–${spec.max.toLocaleString("en-US")}`;
+  if (spec.type === "severity") return spec.allowed.join("／");
+  if (spec.type === "url") return "https URL";
+  return "白名單（mutableKeys）";
+};
 const relLink = (r) => {
   const [doc, head] = r.split("#");
   return `[${doc.replace(/^docs\//, "")}「${head}」](../../${doc}#${slug(head)})`;
@@ -1388,10 +1353,11 @@ export function renderRulesMd(cfg, ctx) {
   L.push("## 參數（門檻）");
   L.push("");
   L.push("預設值在 `monitors.json`；可用 Worker 的 `[vars]` 覆寫（見 README）。標「待使用者決定」的是佔位值。");
+  L.push("「範圍」來自 `ops/monitoring/params.mjs`：CI 擋範圍外的預設值與 `[vars]`；Cloudflare dashboard／`--var` 設的值不經 CI，Worker 執行期照同一張表夾值並發 `monitor-self:config`。");
   L.push("");
-  L.push("| 參數 | 預設 | 單位 | 說明 |");
-  L.push("|---|---|---|---|");
-  for (const [k, v] of Object.entries(cfg.params)) L.push(`| \`${k}\` | ${v.default === "" ? "（空）" : `\`${v.default}\``} | ${v.unit} | ${v.doc} |`);
+  L.push("| 參數 | 預設 | 範圍 | 單位 | 說明 |");
+  L.push("|---|---|---|---|---|");
+  for (const [k, v] of Object.entries(cfg.params)) L.push(`| \`${k}\` | ${v.default === "" ? "（空）" : `\`${v.default}\``} | ${rangeText(PARAM_SPECS[k])} | ${v.unit} | ${v.doc} |`);
   L.push("");
   L.push("## 規則明細");
   for (const r of rules) {

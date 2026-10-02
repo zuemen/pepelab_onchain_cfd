@@ -79,40 +79,41 @@
 ## 參數（門檻）
 
 預設值在 `monitors.json`；可用 Worker 的 `[vars]` 覆寫（見 README）。標「待使用者決定」的是佔位值。
+「範圍」來自 `ops/monitoring/params.mjs`：CI 擋範圍外的預設值與 `[vars]`；Cloudflare dashboard／`--var` 設的值不經 CI，Worker 執行期照同一張表夾值並發 `monitor-self:config`。
 
-| 參數 | 預設 | 單位 | 說明 |
-|---|---|---|---|
-| `CONFIRMATIONS` | `3` | 區塊 | 只掃 head 往前這麼多塊之前的區塊，降低 reorg 造成的假告警 |
-| `INITIAL_LOOKBACK_BLOCKS` | `300` | 區塊 | 第一次執行（KV 沒有檢查點）往回掃的區塊數（Base 約 2 秒一塊，300 塊約 10 分鐘） |
-| `MAX_BLOCK_RANGE` | `1000` | 區塊 | 每個 eth_getLogs 的最大範圍。公開 RPC（sepolia.base.org）實測上限 1,000 塊，超過回 HTTP 413／-32614；CI 限制此值 ≤ 1000。節點拒絕範圍時引擎會自動減半重試 |
-| `MAX_SCAN_REQUESTS` | `10` | 個請求 | 每輪最多幾個 eth_getLogs（含範圍減半後的重試）。落後時一輪內分多段追趕：10 × 1000 塊 ≈ 5.5 小時的積欠；受 Cloudflare 免費方案每次執行 50 個 subrequest 限制，不要調高到擠壓狀態規則與通知 |
-| `LAG_ALERT_BLOCKS` | `1800` | 區塊 | 一輪掃完後仍落後超過這個值時發監控自身告警（代表一輪追不完，或 eth_getLogs 持續失敗）。1,800 塊約 1 小時；上限 1,800（CI 與執行期都夾住） |
-| `REMIND_SEC` | `21600` | 秒 | 狀態型告警持續未解除時的重複提醒間隔（6 小時） |
-| `MIN_SEVERITY` | `SEV-4` | 嚴重度 | 低於此嚴重度的通知不送（恢復通知以原嚴重度判斷）。只能設 SEV-2／SEV-3／SEV-4：SEV-1、monitor-self:*（監控自身故障）與「基準已設定」永遠送。要壓掉單一已知告警請用 MUTE_KEYS |
-| `MUTE_KEYS` | （空） | 告警 key（逗號分隔） | 靜音指定的告警 key（完全相同，沒有前綴比對）。只接受 mutableKeys 白名單（見 rules.md「可靜音的告警」）；白名單以外的值在執行期被忽略並發 monitor-self:config。SEV-1 與 monitor-self 在任何設定下都送 |
-| `LARGE_WITHDRAWAL_USDC` | `10000` | USDC（MockUSDC） | 交易所單筆提領保證金的告警門檻【待使用者決定】 |
-| `LARGE_WITHDRAWAL_WINDOW_USDC` | `50000` | USDC（MockUSDC） | 同一規則在 WITHDRAWAL_WINDOW_SEC 內累計提領的告警門檻【待使用者決定】 |
-| `LARGE_WITHDRAWAL_BPS` | `2000` | bps | 單筆提領／贖回佔合約「提領前餘額」達此比例即告警（20%），與絕對門檻擇一成立。絕對門檻是佔位值（2026-10-01 實測 exchange 只有 500 MockUSDC，絕對門檻 10,000 永遠不會響），這個相對門檻讓規則在任何 TVL 下都有作用。上限 5,000（50%）：再高等於沒有相對門檻 |
-| `WITHDRAWAL_WINDOW_SEC` | `3600` | 秒 | 累計提領的視窗長度 |
-| `INSURANCE_WITHDRAW_USDC` | `5000` | USDC（MockUSDC） | 保險金庫單筆贖回的告警門檻【待使用者決定】 |
-| `BAILOUT_MIN_USDC` | `0` | USDC（MockUSDC） | 保險金 bailout 的告警門檻；0 表示每一筆都告警 |
-| `LARGE_REDEEM_USDC` | `10000` | USDC（MockUSDC） | 代幣化金庫單筆 redeem 的告警門檻【待使用者決定】 |
-| `FEE_WITHDRAW_ALERT_USDC` | `0` | USDC | 平台手續費提領的告警門檻；0 表示每一筆都通知（稽核用） |
-| `ORACLE_STALE_WARN_SEC` | `14400` | 秒 | 加密資產價格超過此時間未更新即預警（交易所硬上限 maxPriceAge 由鏈上讀取，現行 6 小時） |
-| `NONCRYPTO_STALE_SEC` | `259200` | 秒 | 股票／ETF／商品的過期門檻（72 小時，涵蓋一般週末與連假；精確的休市判斷仍由 oracle-health.yml 負責） |
-| `ORACLE_DEVIATION_BPS` | `300` | bps | 交易所 oracle 與 Chainlink/Pyth 聚合價偏離的告警門檻（3%） |
-| `ORACLE_DEVIATION_CRIT_BPS` | `1000` | bps | 偏離達此值視為「價格明顯錯誤且交易仍在進行」，升為 SEV-1（10%） |
-| `REFERENCE_MAX_AGE_SEC` | `7200` | 秒 | 參考價本身超過此時間未更新就不拿來比對（避免拿舊的參考價誤報） |
-| `INSURANCE_MIN_USDC` | `100` | USDC（MockUSDC） | 保險金庫 totalAssets 的絕對下限【待使用者決定】；2026-10-01 唯讀查詢現值約 150 |
-| `INSURANCE_DROP_BPS` | `2000` | bps | 保險金較 24 小時內高點下降超過此比例即告警（20%） |
-| `EXCHANGE_BALANCE_DROP_BPS` | `3000` | bps | 交易所持有的 MockUSDC 較 24 小時內高點下降超過此比例即告警（30%）；看的是池子被抽走的比例，拆單也算 |
-| `INCENTIVES_BALANCE_DROP_BPS` | `3000` | bps | PepeIncentives 持有的 PEPE 較 24 小時內高點下降超過此比例即告警（30%）。部署版的 withdraw 不發事件，這是唯一看得到「獎勵池被提走」的方式 |
-| `RESERVE_WARN_MARGIN_BPS` | `500` | bps | 儲備率低於 minReserveRatioBps + 此值即預警 |
-| `GAS_MIN_ETH` | `0.02` | ETH | keeper 錢包 gas 餘額預警門檻【待使用者決定】 |
-| `GAS_CRIT_ETH` | `0.005` | ETH | keeper 錢包 gas 餘額嚴重門檻【待使用者決定】 |
-| `SIGNAL_API_URL` | `https://agent-git-master-zuemens-projects.vercel.app` | URL | signal-api 的基底網址；預設值必須等於 agent/sdk/src/signalApi.ts 的 SIGNAL_API_TESTNET_URL（CI 檢查） |
-| `HTTP_FAILS_BEFORE_ALERT` | `2` | 次 | signal-api 的健康檢查與 payTo 讀取連續失敗幾次才告警（避免單次逾時或冷啟動抖動）。上限 6；與 SELF_ERRORS_BEFORE_ALERT 合計須讓持續故障在 6 輪（約 30 分鐘）內告警 |
-| `SELF_ERRORS_BEFORE_ALERT` | `2` | 輪 | 有規則讀取失敗「連續」幾輪才發 monitor-self:errors（單輪失敗多半是公開 RPC 限流；RPC 本身已退避重試）。失敗的那一輪仍記為 cron 失敗、不打心跳。上限 6；與 HTTP_FAILS_BEFORE_ALERT 合計須讓持續故障在 6 輪（約 30 分鐘）內告警 |
+| 參數 | 預設 | 範圍 | 單位 | 說明 |
+|---|---|---|---|---|
+| `CONFIRMATIONS` | `3` | 0–64 | 區塊 | 只掃 head 往前這麼多塊之前的區塊，降低 reorg 造成的假告警。上限 64（約 2 分鐘）：再大等於把全部事件告警延後 |
+| `INITIAL_LOOKBACK_BLOCKS` | `1800` | 150–10,000 | 區塊 | KV 沒有事件檢查點（首次部署，或狀態被清除／遺失）時往回掃的區塊數（Base 約 2 秒一塊，1,800 塊約 1 小時）。下限 150（一輪 cron）：狀態遺失時不可以從「現在」開始、靜默漏掉中間的事件；同時發 monitor-self:state-reset 說明重建 |
+| `MAX_BLOCK_RANGE` | `1000` | 300–1,000 | 區塊 | 每個 eth_getLogs 的最大範圍。公開 RPC（sepolia.base.org）實測上限 1,000 塊，超過回 HTTP 413／-32614。節點拒絕範圍時引擎會自動減半重試 |
+| `MAX_SCAN_REQUESTS` | `10` | 2–20 | 個請求 | 每輪最多幾個 eth_getLogs（含範圍減半後的重試）。落後時一輪內分多段追趕：10 × 1000 塊 ≈ 5.5 小時的積欠；受 Cloudflare 免費方案每次執行 50 個 subrequest 限制，不要調高到擠壓狀態規則與通知 |
+| `LAG_ALERT_BLOCKS` | `1800` | 150–1,800 | 區塊 | 一輪掃完後仍落後超過這個值時發監控自身告警（代表一輪追不完，或 eth_getLogs 持續失敗）。1,800 塊約 1 小時 |
+| `REMIND_SEC` | `21600` | 300–86,400 | 秒 | 狀態型告警持續未解除時的重複提醒間隔（6 小時）。觀察值（payTo、接線、實作位址）在告警開著時又變成另一個值時，不等這個間隔、立即再通知 |
+| `MIN_SEVERITY` | `SEV-4` | SEV-2／SEV-3／SEV-4 | 嚴重度 | 低於此嚴重度的通知不送（恢復通知以原嚴重度判斷）。只能設 SEV-2／SEV-3／SEV-4：SEV-1、monitor-self:*（監控自身故障）與「基準已設定」永遠送。要壓掉單一已知告警請用 MUTE_KEYS |
+| `MUTE_KEYS` | （空） | 白名單（mutableKeys） | 告警 key（逗號分隔） | 靜音指定的告警 key（完全相同，沒有前綴比對）。只接受 mutableKeys 白名單（見 rules.md「可靜音的告警」）；白名單以外的值在執行期被忽略並發 monitor-self:config。SEV-1 與 monitor-self 在任何設定下都送 |
+| `LARGE_WITHDRAWAL_USDC` | `10000` | 0–1,000,000 | USDC（MockUSDC） | 交易所單筆提領保證金的告警門檻【待使用者決定】 |
+| `LARGE_WITHDRAWAL_WINDOW_USDC` | `50000` | 0–1,000,000 | USDC（MockUSDC） | 同一規則在 WITHDRAWAL_WINDOW_SEC 內累計提領的告警門檻【待使用者決定】 |
+| `LARGE_WITHDRAWAL_BPS` | `2000` | 1–5,000 | bps | 單筆提領／贖回佔合約「提領前餘額」達此比例即告警（20%），與絕對門檻擇一成立。絕對門檻是佔位值（2026-10-01 實測 exchange 只有 500 MockUSDC，絕對門檻 10,000 永遠不會響），這個相對門檻讓規則在任何 TVL 下都有作用。上限 50%：再高等於沒有相對門檻 |
+| `WITHDRAWAL_WINDOW_SEC` | `3600` | 1,800–86,400 | 秒 | 累計提領的視窗長度 |
+| `INSURANCE_WITHDRAW_USDC` | `5000` | 0–1,000,000 | USDC（MockUSDC） | 保險金庫單筆贖回的告警門檻【待使用者決定】 |
+| `BAILOUT_MIN_USDC` | `0` | 0–1,000,000 | USDC（MockUSDC） | 保險金 bailout 的告警門檻；0 表示每一筆都告警 |
+| `LARGE_REDEEM_USDC` | `10000` | 0–1,000,000 | USDC（MockUSDC） | 代幣化金庫單筆 redeem 的告警門檻【待使用者決定】 |
+| `FEE_WITHDRAW_ALERT_USDC` | `0` | 0–1,000,000 | USDC | 平台手續費提領的告警門檻；0 表示每一筆都通知（稽核用） |
+| `ORACLE_STALE_WARN_SEC` | `14400` | 300–21,600 | 秒 | 加密資產價格超過此時間未更新即預警（交易所硬上限 maxPriceAge 由鏈上讀取，現行 6 小時） |
+| `NONCRYPTO_STALE_SEC` | `259200` | 3,600–345,600 | 秒 | 股票／ETF／商品的過期門檻（72 小時，涵蓋一般週末與連假；精確的休市判斷仍由 oracle-health.yml 負責） |
+| `ORACLE_DEVIATION_BPS` | `300` | 1–1,000 | bps | 交易所 oracle 與 Chainlink/Pyth 聚合價偏離的告警門檻（3%） |
+| `ORACLE_DEVIATION_CRIT_BPS` | `1000` | 1–3,000 | bps | 偏離達此值視為「價格明顯錯誤且交易仍在進行」，升為 SEV-1（10%） |
+| `REFERENCE_MAX_AGE_SEC` | `7200` | 600–86,400 | 秒 | 參考價本身超過此時間未更新就不拿來比對（避免拿舊的參考價誤報） |
+| `INSURANCE_MIN_USDC` | `100` | 1–1,000,000 | USDC（MockUSDC） | 保險金庫 totalAssets 的絕對下限【待使用者決定】；2026-10-01 唯讀查詢現值約 150 |
+| `INSURANCE_DROP_BPS` | `2000` | 1–5,000 | bps | 保險金較 24 小時內高點下降超過此比例即告警（20%） |
+| `EXCHANGE_BALANCE_DROP_BPS` | `3000` | 1–5,000 | bps | 交易所持有的 MockUSDC 較 24 小時內高點下降超過此比例即告警（30%）；看的是池子被抽走的比例，拆單也算 |
+| `INCENTIVES_BALANCE_DROP_BPS` | `3000` | 1–5,000 | bps | PepeIncentives 持有的 PEPE 較 24 小時內高點下降超過此比例即告警（30%）。部署版的 withdraw 不發事件，這是唯一看得到「獎勵池被提走」的方式 |
+| `RESERVE_WARN_MARGIN_BPS` | `500` | 100–5,000 | bps | 儲備率低於 minReserveRatioBps + 此值即預警 |
+| `GAS_MIN_ETH` | `0.02` | 0.001–10 | ETH | keeper 錢包 gas 餘額預警門檻【待使用者決定】 |
+| `GAS_CRIT_ETH` | `0.005` | 0.001–10 | ETH | keeper 錢包 gas 餘額嚴重門檻【待使用者決定】 |
+| `SIGNAL_API_URL` | `https://agent-git-master-zuemens-projects.vercel.app` | https URL | URL | signal-api 的基底網址；預設值必須等於 agent/sdk/src/signalApi.ts 的 SIGNAL_API_TESTNET_URL（CI 檢查） |
+| `HTTP_FAILS_BEFORE_ALERT` | `2` | 1–6 | 次 | signal-api 的健康檢查與 payTo 讀取連續失敗幾次才告警（避免單次逾時或冷啟動抖動）。與 SELF_ERRORS_BEFORE_ALERT 合計須讓持續故障在 6 輪（約 30 分鐘）內告警 |
+| `SELF_ERRORS_BEFORE_ALERT` | `2` | 1–6 | 輪 | 有規則讀取失敗「連續」幾輪才發 monitor-self:errors（單輪失敗多半是公開 RPC 限流；RPC 本身已退避重試）。失敗的那一輪仍記為 cron 失敗、不打心跳。與 HTTP_FAILS_BEFORE_ALERT 合計須讓持續故障在 6 輪（約 30 分鐘）內告警 |
 
 ## 規則明細
 

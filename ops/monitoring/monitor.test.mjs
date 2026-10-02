@@ -15,13 +15,16 @@ import {
   isTransient,
   makeRpc,
   minSeverityOf,
+  param,
   reconcile,
   redactUrls,
+  rpcUrlOf,
   runOnce,
   toUnits,
 } from "./engine.mjs";
+import { PARAM_SPECS, checkParamValue, clampParam, resolveParams } from "./params.mjs";
 import { channelsOf, escapeDiscord, formatNote, noteId, parseMuteKeys, sendToChannel, shouldSend } from "./notify.mjs";
-import { BASELINES_KEY, CHANNEL_STUCK_ROUNDS, MAX_RESEND_PER_TICK, OUTBOX_TTL_SEC, STATE_KEY, tick } from "./tick.mjs";
+import { BASELINES_KEY, CHANNEL_STUCK_ROUNDS, MAX_CRITICAL_OUTBOX, MAX_OUTBOX, OUTBOX_TTL_SEC, ROUND_SUMMARY_AFTER, STATE_KEY, isCritical, orderForSend, planOutbox, roundSummaries, tick } from "./tick.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const FULL = JSON.parse(readFileSync(join(here, "monitors.json"), "utf8"));
@@ -425,15 +428,17 @@ test("H1：節點限 1000 塊、積欠 5000 塊 → 一輪內分段追上，每�
 test("H1：MAX_BLOCK_RANGE 設得比節點上限大 → 413／-32614 後自動減半重試，不卡死", async () => {
   const w = fakeWorld();
   w.head = 2_000_003;
-  w.rangeLimit = 1000;
+  w.rangeLimit = 500; // 節點的上限比 MAX_BLOCK_RANGE（1000）小
   const cfg = only("owner-transferred");
   const latest = w.head - 3;
-  const state = { checkpoint: latest - 5000 };
-  ownerLog(w, latest - 4500, 1);
+  const state = { checkpoint: latest - 2500 };
+  ownerLog(w, latest - 2400, 1);
   ownerLog(w, latest - 10, 2);
+  // 覆寫成 2000（超過 PARAM_SPECS 上限）→ 執行期夾成 1000，並講出來（複審 M-1）。
+  assert.ok(configProblems(cfg, { MAX_BLOCK_RANGE: "2000" }).some((m) => /MAX_BLOCK_RANGE=2000 超過上限 1000，以 1000 執行/.test(m)));
   const r = await runOnce({ config: cfg, env: { ...env0, MAX_BLOCK_RANGE: "2000" }, state, fetchImpl: w.fetch, now: 100 });
   assert.equal(r.errors.length, 0, r.errors.join());
-  assert.deepEqual(w.spans, [2000, 1000, 1000, 1000, 1000, 1000]);
+  assert.deepEqual(w.spans, [1000, 500, 500, 500, 500, 500]);
   assert.equal(state.checkpoint, latest);
   assert.equal(r.notes.filter((n) => n.status === "事件").length, 2);
 });
@@ -789,9 +794,14 @@ test("金庫儲備率、mint 停止、保險金下降、keeper gas", async () =>
   w.setCall(ins, "totalAssets()", [], word(7_000n * E18));
   const r2 = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 7200 + 3600 });
   assert.ok(r2.notes.some((n) => n.key === "insurance-fund:drop" && n.severity === "SEV-2"), JSON.stringify(r2.notes));
-  // 額外錢包：格式錯誤要報錯，不能默默略過
-  const r3 = await runOnce({ config: cfg, env: { ...env0, EXTRA_GAS_WALLETS: "0x123" }, state, fetchImpl: w.fetch, now: 7200 + 3700 });
-  assert.ok(r3.errors.some((e) => /EXTRA_GAS_WALLETS/.test(e)));
+  // 額外錢包：格式錯誤要講出來（monitor-self:config），但不可以讓 keeper 本身的 gas 也不檢查（複審 M-1／L-4 同一原則）。
+  const extra = "0x00000000000000000000000000000000000000f2";
+  w.balances.set(extra, 1n * 10n ** 15n);
+  const env3 = { ...env0, EXTRA_GAS_WALLETS: `0x123,${extra}` };
+  assert.ok(configProblems(cfg, env3).some((m) => /EXTRA_GAS_WALLETS 有 1 個不合法位址/.test(m)));
+  const r3 = await runOnce({ config: cfg, env: env3, state, fetchImpl: w.fetch, now: 7200 + 3700 });
+  assert.equal(r3.errors.length, 0, r3.errors.join());
+  assert.ok(r3.notes.some((n) => n.key === `keeper-gas:${extra}` && n.severity === "SEV-2"), "合法的那個照常檢查");
 });
 
 // ── 接線（審查 H2：部署版 setter 不發事件，只能輪詢 getter）──────────────────
@@ -900,11 +910,23 @@ test("signal-api 健康檢查：連續兩次失敗才告警；payTo 變更 SEV-1
 const TG = ["123456789", "AAH-fakeTokenForTestsOnly_abcdefghijklmn"].join(":");
 const DISCORD = (tail) => ["https://discord.com/api/webhooks", "1", tail].join("/");
 
-test("沒有任何通道 → 丟錯；通道設定格式錯誤 → 丟錯", async () => {
+test("沒有任何通道 → 丟錯；通道設定格式錯誤 → 只停用那個通道（L-4）；全部不可用 → 丟錯", async () => {
   await assert.rejects(tick({ config: only(), env: { MONITOR_STATE: fakeKv() }, fetchImpl: fakeWorld().fetch, log: () => {} }), /沒有設定任何告警通道/);
-  assert.throws(() => channelsOf({ TELEGRAM_BOT_TOKEN: TG }), /必須同時設定/);
-  assert.throws(() => channelsOf({ DISCORD_WEBHOOK_URL: "https://evil.example/hook" }), /discord\.com/);
-  assert.throws(() => channelsOf({ ALERT_WEBHOOK_URL: "http://plain" }), /https/);
+  const bad = (env) => channelsOf(env).problems.join("\n");
+  assert.match(bad({ TELEGRAM_BOT_TOKEN: TG }), /telegram 通道已停用：.*必須同時設定/);
+  assert.match(bad({ DISCORD_WEBHOOK_URL: "https://evil.example/hook" }), /discord 通道已停用：.*discord\.com/);
+  assert.match(bad({ ALERT_WEBHOOK_URL: "http://plain" }), /webhook 通道已停用：.*https/);
+  assert.equal(channelsOf({ DISCORD_WEBHOOK_URL: "https://evil.example/hook" }).channels.length, 0);
+  // Discord Canary／PTB 的 webhook 網址也接受。
+  for (const host of ["canary.discord.com", "ptb.discord.com", "discordapp.com"]) {
+    const r = channelsOf({ DISCORD_WEBHOOK_URL: `https://${host}/api/webhooks/1/x` });
+    assert.deepEqual([r.channels.map((c) => c.name), r.problems], [["discord"], []], host);
+  }
+  // 全部通道都不可用 → tick 丟錯（Cloudflare 看得到），訊息不帶值。
+  await assert.rejects(
+    tick({ config: only(), env: { MONITOR_STATE: fakeKv(), DISCORD_WEBHOOK_URL: "https://evil.example/hook/SECRETPART" }, fetchImpl: fakeWorld().fetch, log: () => {} }),
+    (e) => /沒有可用的告警通道：discord 通道已停用/.test(e.message) && !e.message.includes("SECRETPART"),
+  );
 });
 
 test("tick：三種通道的格式、HMAC 簽章、log 不含憑證、心跳", async () => {
@@ -1056,10 +1078,11 @@ test("M5：KV 沒有檢查點 → SEV-3「監控狀態重置，X 之前的事件
   const sent = () => w.sent.filter((s) => s.url.startsWith("https://discord.com/")).map((s) => dcText(s));
   const cfg = only("owner-transferred");
   await tick({ config: cfg, env, now: 100, fetchImpl: w.fetch, log: () => {} });
-  const from = w.head - 3 - 300 + 1;
+  const back = Number(FULL.params.INITIAL_LOOKBACK_BLOCKS.default);
+  const from = Math.max(0, w.head - 3 - back + 1);
   assert.equal(sent().length, 1);
   assert.match(sent()[0], /SEV-3\] 事件｜監控狀態重置/);
-  assert.ok(sent()[0].includes(`事件掃描從區塊 ${from} 重新開始，區塊 ${from} 之前的事件未掃描`), sent()[0]);
+  assert.ok(sent()[0].includes(`事件掃描往回看 ${back} 個區塊`) && sent()[0].includes(`從區塊 ${from} 重新開始；更早的事件未掃描`), sent()[0]);
   w.head += 150;
   await tick({ config: cfg, env, now: 400, fetchImpl: w.fetch, log: () => {} });
   assert.equal(sent().length, 1, "有檢查點之後不再發");
@@ -1202,17 +1225,30 @@ test("L3：部分資產讀不到 → 已算出的過期告警照送、算監控�
 test("L5：RPC_URL／HEARTBEAT_URL 必須是 https；錯誤訊息不帶完整 URL", async () => {
   const w = fakeWorld();
   const secretPath = "v2/SuperSecretKey0123456789abcdef";
-  await assert.rejects(
-    runOnce({ config: only("owner-transferred"), env: { ...env0, RPC_URL: `http://rpc.example/${secretPath}` }, state: {}, fetchImpl: w.fetch, now: 1 }),
-    (e) => /RPC_URL 必須是 https/.test(e.message) && !e.message.includes("SuperSecret") && !e.message.includes("rpc.example"),
-  );
-  await assert.rejects(runOnce({ config: only("owner-transferred"), env: { ...env0, RPC_URL: "not a url" }, state: {}, fetchImpl: w.fetch, now: 1 }), /RPC_URL 必須是 https/);
+  // 格式不對：不丟錯（丟錯＝整輪停擺、SEV-1 送不出去），改用公開 RPC 並以 monitor-self:config 講出來，不帶值。
+  for (const bad of [`http://rpc.example/${secretPath}`, "not a url"]) {
+    const r = rpcUrlOf(FULL, { RPC_URL: bad });
+    assert.equal(r.url, FULL.network.publicRpc);
+    const msg = configProblems(FULL, { RPC_URL: bad }).join("\n");
+    assert.match(msg, /RPC_URL 不是 https:\/\/ 開頭的合法 URL（值不顯示），改用公開 RPC/);
+    assert.ok(!msg.includes("SuperSecret") && !msg.includes("rpc.example"), msg);
+  }
   const kv = fakeKv();
-  await assert.rejects(
-    tick({ config: only("owner-transferred"), env: { ...env0, MONITOR_STATE: kv, DISCORD_WEBHOOK_URL: DISCORD("x"), HEARTBEAT_URL: "http://hc.example/ping/abc" }, now: 1, fetchImpl: w.fetch, log: () => {} }),
-    (e) => /HEARTBEAT_URL 必須是 https/.test(e.message) && !e.message.includes("hc.example"),
-  );
-  assert.throws(() => channelsOf({ ALERT_WEBHOOK_URL: "http://plain.example/hook/secret" }), (e) => /ALERT_WEBHOOK_URL 必須是 https/.test(e.message) && !e.message.includes("secret"));
+  const hbSent = [];
+  await tick({
+    config: only("owner-transferred"),
+    env: { ...env0, MONITOR_STATE: kv, DISCORD_WEBHOOK_URL: DISCORD("x"), HEARTBEAT_URL: "http://hc.example/ping/abc" },
+    now: 1,
+    fetchImpl: async (url, init) => (url.includes("hc.example") && hbSent.push(url), w.fetch(url, init)),
+    log: () => {},
+  });
+  const cfgNote = w.sent.filter((s) => s.url.startsWith("https://discord.com/")).map(dcText).find((x) => /監控設定問題/.test(x));
+  assert.match(cfgNote, /HEARTBEAT_URL 不是 https:\/\/ 開頭的合法 URL（值不顯示）：心跳已停用/);
+  assert.ok(!cfgNote.includes("hc.example"));
+  assert.equal(hbSent.length, 0, "不打不安全的心跳 URL");
+  const wh = channelsOf({ ALERT_WEBHOOK_URL: "http://plain.example/hook/secret" });
+  assert.equal(wh.channels.length, 0);
+  assert.ok(/ALERT_WEBHOOK_URL 必須是 https/.test(wh.problems[0]) && !wh.problems[0].includes("secret"));
 
   // URL 遮蔽：路徑與查詢字串（金鑰所在）拿掉，只留協定與主機。
   assert.equal(redactUrls(`fetch https://rpc.example/${secretPath}?k=1 failed`), "fetch https://rpc.example/… failed");
@@ -1296,7 +1332,7 @@ test("L6：多通道各自重送——Telegram 送到、Discord 失敗 → 只�
   const to = (prefix) => w.sent.filter((x) => x.url.startsWith(prefix) && !x.failed);
   const tgHeads = () => to("https://api.telegram.org/").map((x) => JSON.parse(x.init.body).text.split("\n")[0]);
   ownerLog(w, w.head - 5, 1);
-  await assert.rejects(tick({ config: cfg, env, now: 100, fetchImpl: w.fetch, log: () => {} }), /2 則告警未送達（discord×2；已留在 outbox 重送）/);
+  await assert.rejects(tick({ config: cfg, env, now: 100, fetchImpl: w.fetch, log: () => {} }), /2 則告警未送達（discord×2；其中關鍵 2 則；已留在 outbox 重送）/);
   assert.equal(to("https://api.telegram.org/").length, 2, "Telegram 兩則都送到（owner 事件＋狀態重置）");
   assert.deepEqual(JSON.parse(kv.m.get(STATE_KEY)).outbox.map((o) => o.channels), [["discord"], ["discord"]]);
 
@@ -1323,39 +1359,116 @@ test("L6：多通道各自重送——Telegram 送到、Discord 失敗 → 只�
   assert.match(tgHeads().at(-1), /恢復｜告警通道 discord 送不出去/);
 });
 
-test("L6／L-e：依發生時間送（舊的觸發先於新的）、舊的每輪重送有上限、過期丟棄、通道移除後不再等", async () => {
+test("L6／L-e／M-2：送出順序——SEV-1 與 monitor-self 優先、其次依發生時間；同 key 觸發先於恢復；預算先給關鍵的；過期只丟已送到別處的", async () => {
   const w = fakeWorld();
   const kv = fakeKv();
   const cfg = only("owner-transferred");
-  const item = (i, firstAt) => ({ note: { ruleId: "owner-transferred", key: `k${i}`, severity: "SEV-1", status: "事件", title: "t", lines: [] }, text: `old-${i}`, channels: ["discord"], firstAt });
   const now = 1_000_000;
-  const outbox = [item(0, now - OUTBOX_TTL_SEC - 10), ...Array.from({ length: 30 }, (_, i) => item(i + 1, now - 600))];
+  const mk = (key, severity, at, extra = {}) => ({
+    note: { ruleId: "owner-transferred", key, severity, status: "事件", title: "t", lines: [], at, ...extra },
+    text: `old-${key}`,
+    channels: ["discord"],
+    firstAt: at,
+    at,
+  });
+  const outbox = [
+    mk("low", "SEV-3", now - 900), // 非關鍵、最舊：仍排在所有關鍵通知之後
+    mk("s", "SEV-2", now - 800, { status: "觸發" }), // 同 key 的恢復是 SEV-1 → 一起提前、觸發在前
+    mk("s", "SEV-4", now - 700, { status: "恢復", origSeverity: "SEV-1" }),
+    ...Array.from({ length: 50 }, (_, i) => mk(`c${i}`, "SEV-1", now - 600)),
+    { ...mk("gone", "SEV-1", now - OUTBOX_TTL_SEC - 10), sent: ["telegram"] }, // 過期且已送到別的通道 → 不再等
+    mk("never", "SEV-1", now - OUTBOX_TTL_SEC - 10), // 過期但一個通道都沒送到 → 關鍵通知不因時間被丟
+    mk("stale3", "SEV-3", now - OUTBOX_TTL_SEC - 10), // 過期的非關鍵 → 丟棄並講出來
+  ];
   kv.m.set(STATE_KEY, JSON.stringify({ checkpoint: w.head - 3, outbox }));
   ownerLog(w, w.head + 100, 5);
   w.head += 150;
-  const envBoth = { ...env0, MONITOR_STATE: kv, TELEGRAM_BOT_TOKEN: TG, TELEGRAM_CHAT_ID: "-1", DISCORD_WEBHOOK_URL: DISCORD("x") };
+  const env = { ...env0, MONITOR_STATE: kv, DISCORD_WEBHOOK_URL: DISCORD("x") };
   const order = [];
   const orig = w.fetch;
   w.fetch = async (url, init) => {
-    if (url.startsWith("https://discord.com/")) order.push("dc:" + JSON.parse(init.body).content.split("\n")[0].slice(0, 12));
-    if (url.startsWith("https://api.telegram.org/")) order.push("tg");
+    if (url.startsWith("https://discord.com/")) order.push(dcText({ init }).split("\n")[0].slice(0, 40));
     return orig(url, init);
   };
-  await assert.rejects(tick({ config: cfg, env: envBoth, now, fetchImpl: w.fetch, log: () => {} }), /未送達.*另丟棄 1 則/);
-  const lastOld = order.map((o) => o.startsWith("dc:old-")).lastIndexOf(true);
-  assert.equal(lastOld, MAX_RESEND_PER_TICK - 1, `舊通知（發生得早）先送：${order.join(",")}`);
-  assert.equal(order[MAX_RESEND_PER_TICK], "tg", "新告警排在舊的之後");
-  assert.ok(order[MAX_RESEND_PER_TICK + 1].startsWith("dc:") && !order[MAX_RESEND_PER_TICK + 1].includes("old-"));
-  assert.equal(order.filter((o) => o.startsWith("dc:old-")).length, MAX_RESEND_PER_TICK);
+  await assert.rejects(tick({ config: cfg, env, now, fetchImpl: w.fetch, log: () => {} }), /未送達.*本輪通知預算用完.*另丟棄 1 則/);
+  assert.match(order[0], /告警 outbox 溢位/, "有丟棄時 monitor-self:outbox 排第一");
+  assert.deepEqual(order.slice(1, 4), ["old-never", "old-s", "old-s"], "關鍵的依發生時間；同 key 的觸發先於恢復");
+  assert.ok(!order.includes("old-low"), "預算用完時非關鍵的留到下一輪");
+  assert.ok(!order.includes("old-gone"));
   const st = JSON.parse(kv.m.get(STATE_KEY));
-  assert.equal(st.outbox.length, 30 - MAX_RESEND_PER_TICK);
-  assert.ok(!st.outbox.some((o) => o.text === "old-0"), "超過 24 小時的丟棄");
+  assert.ok(!st.channelStuck?.discord, "只是預算用完、沒有失敗：不算通道卡住");
+  assert.ok(st.outbox.some((o) => o.text === "old-low"));
+  assert.ok(!st.outbox.some((o) => o.text === "old-stale3"));
 
-  // 把 Discord 從設定移除：只等 Discord 的舊通知不再留著。
-  const { DISCORD_WEBHOOK_URL: _removed, ...envTg } = envBoth;
+  // 下一輪：剩下的關鍵通知先送，非關鍵的最後；全部送完。
+  order.length = 0;
   w.head += 150;
-  await tick({ config: cfg, env: envTg, now: now + 300, fetchImpl: w.fetch, log: () => {} });
+  await tick({ config: cfg, env, now: now + 300, fetchImpl: w.fetch, log: () => {} });
+  assert.equal(order.at(-1), "old-low");
   assert.equal(JSON.parse(kv.m.get(STATE_KEY)).outbox.length, 0);
+
+  // 把 Discord 從設定移除：已送到別處的不再等；一個通道都沒送到的改送現有通道（不默默丟掉）。
+  kv.m.set(STATE_KEY, JSON.stringify({ checkpoint: w.head - 3, outbox: [{ ...mk("tgok", "SEV-1", now), sent: ["telegram"] }, mk("orphan", "SEV-1", now)] }));
+  const envTg = { ...env0, MONITOR_STATE: kv, TELEGRAM_BOT_TOKEN: TG, TELEGRAM_CHAT_ID: "-1" };
+  const tg = [];
+  await tick({ config: cfg, env: envTg, now: now + 600, fetchImpl: async (url, init) => (url.startsWith("https://api.telegram.org/") && tg.push(JSON.parse(init.body).text), w.fetch(url, init)), log: () => {} });
+  assert.deepEqual(tg, ["old-orphan"]);
+  assert.equal(JSON.parse(kv.m.get(STATE_KEY)).outbox.length, 0);
+});
+
+test("M-2：planOutbox——溢位先丟最低嚴重度、最舊的；SEV-1／monitor-self 不丟，超過容量合併成摘要", () => {
+  const mk = (key, severity, at, extra = {}) => ({ note: { ruleId: "r", key, severity, status: "事件", title: key, lines: [], at, ...extra }, text: `${key}\nx`, channels: ["webhook"], firstAt: at, at });
+  const pool = [
+    ...Array.from({ length: 5 }, (_, i) => mk(`s4-${i}`, "SEV-4", 100 + i)),
+    ...Array.from({ length: 5 }, (_, i) => mk(`s3-${i}`, "SEV-3", 100 + i)),
+    ...Array.from({ length: 5 }, (_, i) => mk(`s2-${i}`, "SEV-2", 100 + i)),
+    mk("rec", "SEV-4", 50, { status: "恢復", origSeverity: "SEV-1" }), // SEV-1 的恢復算關鍵
+    ...Array.from({ length: 6 }, (_, i) => mk(`c-${i}`, "SEV-1", 200 + i)),
+    mk("monitor-self:config", "SEV-2", 300, { ruleId: "monitor-self" }),
+  ];
+  const p = planOutbox(pool, { maxOutbox: 8, maxCritical: 5 });
+  // 15 則非關鍵留 8：丟 5 則 SEV-4 與最舊的 2 則 SEV-3。
+  assert.deepEqual(p.dropped.map((i) => i.note.key).sort(), ["s3-0", "s3-1", "s4-0", "s4-1", "s4-2", "s4-3", "s4-4"]);
+  // 8 則關鍵留 5：最舊的 4 則合併成 1 則摘要（不丟）。
+  assert.deepEqual(p.merged.map((i) => i.note.key), ["rec", "c-0", "c-1", "c-2"]);
+  const keepKeys = p.keep.map((i) => i.note.key);
+  for (const k of ["c-3", "c-4", "c-5", "monitor-self:config"]) assert.ok(keepKeys.includes(k), k);
+  const digest = p.keep.find((i) => i.note.key.startsWith("monitor-self:outbox-digest:"));
+  assert.equal(digest.note.severity, "SEV-1");
+  assert.equal(digest.note.mergedCount, 4);
+  assert.ok(isCritical(digest.note));
+  assert.match(digest.text, /4 則 SEV-1／監控自身通知合併/);
+  assert.match(digest.text, /rec、c-0、c-1、c-2/);
+  // 摘要再被合併時，數量累加。
+  const p2 = planOutbox([digest, ...Array.from({ length: 5 }, (_, i) => mk(`d-${i}`, "SEV-1", 400 + i))], { maxCritical: 5 });
+  assert.equal(p2.keep.find((i) => i.note.key.startsWith("monitor-self:outbox-digest:")).note.mergedCount, 5);
+  // 預設容量：關鍵的上限比非關鍵大。
+  assert.ok(MAX_CRITICAL_OUTBOX > MAX_OUTBOX);
+});
+
+test("M-2：orderForSend——關鍵優先；同一個 key 有關鍵通知時整個 key 一起提前，觸發仍先於恢復", () => {
+  const mk = (key, severity, at, extra = {}) => ({ note: { ruleId: "r", key, severity, status: "事件", at, ...extra }, at });
+  const items = [mk("a", "SEV-3", 1), mk("k", "SEV-2", 2, { status: "觸發" }), mk("b", "SEV-1", 5), mk("k", "SEV-4", 3, { status: "恢復", origSeverity: "SEV-1" }), mk("monitor-self:x", "SEV-3", 4, { ruleId: "monitor-self" })];
+  assert.deepEqual(orderForSend(items).map((i) => `${i.note.key}@${i.at}`), ["k@2", "k@3", "monitor-self:x@4", "b@5", "a@1"]);
+});
+
+test("M-2：同一條規則一輪內的大量事件合併成一則摘要（筆數、首末時間、前幾筆明細）", () => {
+  const ev = (i) => ({ ruleId: "large-margin-withdrawal", key: `large-margin-withdrawal:0x${i}:0`, severity: "SEV-2", status: "事件", title: "大額提領", at: 1_800_000_000 + i * 60, lines: ["合約：PerpetualExchange 0xabc", `事件：MarginWithdrawn(trader=0x${i})`, `金額：10,000（單筆門檻 10,000）`, `tx：https://sepolia.basescan.org/tx/0x${i}`] });
+  const owner = { ruleId: "owner-transferred", key: "owner-transferred:0xee:0", severity: "SEV-1", status: "事件", title: "合約 owner 變更", at: 1_800_000_030, lines: [] };
+  const few = roundSummaries([owner, ...Array.from({ length: ROUND_SUMMARY_AFTER }, (_, i) => ev(i))]);
+  assert.equal(few.length, ROUND_SUMMARY_AFTER + 1, "沒超過門檻不合併");
+  const out = roundSummaries([owner, ...Array.from({ length: 120 }, (_, i) => ev(i))]);
+  assert.equal(out.length, 2);
+  assert.ok(out.includes(owner), "其他規則的通知原樣保留");
+  const s = out.find((n) => n.ruleId === "large-margin-withdrawal");
+  assert.equal(s.status, "事件");
+  assert.equal(s.severity, "SEV-2");
+  assert.match(s.title, /本輪 120 筆，合併為摘要/);
+  assert.match(s.lines[0], /本輪掃到 120 筆，發生時間 2027-01-15T08:00:00Z ～ 2027-01-15T09:59:00Z/);
+  assert.equal(s.lines.filter((l) => l.startsWith("#")).length, 5);
+  assert.match(s.lines.find((l) => l.startsWith("#1")), /MarginWithdrawn\(trader=0x0\) ｜ 金額：10,000.* ｜ tx：https:\/\/sepolia\.basescan\.org\/tx\/0x0/);
+  assert.match(s.lines.at(-1), /其餘 115 筆沒有逐筆通知/);
+  assert.equal(s.at, 1_800_000_000);
 });
 
 // ── 複審修正（M-A、L-b、L-c、L-e、L-f、Info）──────────────────────────────────
@@ -1450,9 +1563,9 @@ test("L-f：等於關掉告警的覆寫值——執行期夾住並講出來；MI
   const cfg = FULL;
   assert.deepEqual(configProblems(cfg, {}), [], "預設值沒有問題");
   const bad = configProblems(cfg, { LAG_ALERT_BLOCKS: "1000000", LARGE_WITHDRAWAL_BPS: "10000", SELF_ERRORS_BEFORE_ALERT: "12", HTTP_FAILS_BEFORE_ALERT: "6", MIN_SEVERITY: "SEV-1" });
-  assert.ok(bad.some((m) => /LAG_ALERT_BLOCKS=1000000 超過安全上限 1800/.test(m)), bad.join("\n"));
-  assert.ok(bad.some((m) => /LARGE_WITHDRAWAL_BPS=10000 超過安全上限 5000/.test(m)));
-  assert.ok(bad.some((m) => /SELF_ERRORS_BEFORE_ALERT=12 超過安全上限 6/.test(m)));
+  assert.ok(bad.some((m) => /LAG_ALERT_BLOCKS=1000000 超過上限 1800，以 1800 執行/.test(m)), bad.join("\n"));
+  assert.ok(bad.some((m) => /LARGE_WITHDRAWAL_BPS=10000 超過上限 5000/.test(m)));
+  assert.ok(bad.some((m) => /SELF_ERRORS_BEFORE_ALERT=12 超過上限 6/.test(m)));
   assert.ok(bad.some((m) => /超過 6 輪（約 30 分鐘）；SELF_ERRORS_BEFORE_ALERT 以 1 執行/.test(m)), bad.join("\n"));
   assert.ok(bad.some((m) => /MIN_SEVERITY=SEV-1 不允許/.test(m)));
   assert.equal(minSeverityOf(cfg, { MIN_SEVERITY: "SEV-1" }), "SEV-2");
@@ -1471,4 +1584,268 @@ test("Info：-32602「block range extends beyond current head」不是範圍錯�
   assert.equal(isRangeError(e), false);
   assert.equal(isTransient(e), true);
   assert.equal(isRangeError({ status: 413, code: -32614, message: "eth_getLogs is limited to a 1,000 range" }), true);
+});
+
+// ── 第三輪複審（M-1、M-2、L-1～L-4）的回歸測試：審查的 sim1～sim5 改寫 ─────────────────
+
+test("M-1：引擎只能透過 params.mjs 拿可調參數——原始碼裡沒有其他 env 讀取點；存取器只認表裡的名字", () => {
+  // 新增一個可調參數卻沒有在 PARAM_SPECS 定義上下限 → 這裡紅。
+  const here = dirname(fileURLToPath(import.meta.url));
+  const allowedDirect = new Set(["MONITOR_STATE"]); // KV binding：不是可調參數
+  for (const f of ["engine.mjs", "tick.mjs", "notify.mjs", "worker.mjs"]) {
+    const src = readFileSync(join(here, f), "utf8").replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+    for (const m of src.matchAll(/\benv\s*(\?\.|\.)\s*(\[|[A-Za-z_$][\w$]*)/g)) {
+      assert.ok(m[2] !== "[" && allowedDirect.has(m[2]), `${f}：直接讀 env.${m[2]}——可調參數要經過 param()／envSetting()／envSecret()，並在 params.mjs 定義範圍`);
+    }
+    assert.ok(!/\benv\s*\[/.test(src), `${f}：不可以用 env[...] 動態讀取`);
+    for (const m of src.matchAll(/(?:numParam|param)\(config, env, "([A-Z0-9_]+)"\)/g)) assert.ok(PARAM_SPECS[m[1]], `${f} 用到 ${m[1]}，但 PARAM_SPECS 沒有`);
+  }
+  assert.throws(() => resolveParams(FULL, {}).values && param(FULL, {}, "NO_SUCH_PARAM"), /不在 params\.mjs 的 PARAM_SPECS/);
+  // 規則裡以名稱參照的參數（threshold、dropBps…）也必須在表裡。
+  for (const r of FULL.rules) {
+    const refs = [r.amount?.threshold, r.amount?.windowThreshold, r.amount?.windowSec, r.amount?.relativeBps, r.dropBps].filter(Boolean);
+    for (const name of refs) assert.ok(PARAM_SPECS[name], `${r.id} 參照 ${name}，但 PARAM_SPECS 沒有`);
+  }
+  // monitors.json 的參數與表一一對應。
+  assert.deepEqual(Object.keys(FULL.params).sort(), Object.keys(PARAM_SPECS).sort());
+});
+
+test("M-1：每個參數照表夾值；CI 的嚴格檢查與執行期夾值對同一個值的判斷一致", () => {
+  for (const [name, spec] of Object.entries(PARAM_SPECS)) {
+    const samples = spec.type === "int" || spec.type === "decimal" ? [String(spec.min), String(spec.max), "-1", "0", "0.5", "1e3", "abc", "100000000", String(spec.max + 1)] : spec.type === "severity" ? ["SEV-1", "SEV-2", "SEV-9"] : spec.type === "url" ? ["https://a.example", "http://a.example"] : [];
+    for (const v of samples) {
+      const strict = checkParamValue(name, v) === null;
+      const c = clampParam(name, v);
+      assert.equal(strict, !c.problem && !c.invalid, `${name}=${v}：CI ${strict ? "合法" : "不合法"}，執行期 ${c.problem ?? "無問題"}`);
+      if (c.value !== undefined && (spec.type === "int" || spec.type === "decimal")) {
+        assert.ok(Number(c.value) >= spec.min && Number(c.value) <= spec.max, `${name}=${v} 夾完 ${c.value} 仍在範圍外`);
+      }
+    }
+  }
+  // 預設值本身都合法，沒有任何問題。
+  assert.deepEqual(resolveParams(FULL, {}).problems, []);
+});
+
+test("M-1（sim1）：CONFIRMATIONS／INITIAL_LOOKBACK_BLOCKS 被覆寫成極端值 → 照常掃到 SEV-1 事件，並發 monitor-self:config", async () => {
+  const cases = [
+    ["CONFIRMATIONS=1e8", { CONFIRMATIONS: "100000000" }, false],
+    ["CONFIRMATIONS=40000", { CONFIRMATIONS: "40000" }, false],
+    ["首次部署＋INITIAL_LOOKBACK_BLOCKS=0", { INITIAL_LOOKBACK_BLOCKS: "0" }, true],
+    ["首次部署＋INITIAL_LOOKBACK_BLOCKS=0.5", { INITIAL_LOOKBACK_BLOCKS: "0.5" }, true],
+    ["CONFIRMATIONS=abc", { CONFIRMATIONS: "abc" }, false],
+  ];
+  for (const [label, extra, fresh] of cases) {
+    const w = fakeWorld();
+    const kv = fakeKv();
+    if (!fresh) kv.m.set(STATE_KEY, JSON.stringify({ checkpoint: 900 }));
+    makeLog(w, { address: addrOf("owner-transferred", "PerpetualExchange"), sig: "OwnershipTransferred(address,address)", topics: [word(0xaa), word(0xbb)], block: 990 });
+    const env = { ...env0, ...extra, ALERT_WEBHOOK_URL: "https://hook.test/x", MONITOR_STATE: kv };
+    // 兩輪（CONFIRMATIONS 被夾成 64：區塊 990 要等 head ≥ 1054 才掃得到）。
+    for (let i = 0; i < 2; i++) {
+      await tick({ config: only("owner-transferred"), env, now: 1_800_000_000 + i * 300, fetchImpl: w.fetch, log: () => {} });
+      w.head += 150;
+    }
+    const got = w.sent.map((s) => JSON.parse(s.init.body));
+    assert.ok(got.some((b) => b.severity === "SEV-1" && b.key.startsWith("owner-transferred:")), `${label}：SEV-1 要送達`);
+    const cfgNote = got.find((b) => b.key === "monitor-self:config");
+    assert.ok(cfgNote, `${label}：要發 monitor-self:config`);
+    assert.match(cfgNote.text, new RegExp(Object.keys(extra)[0]), label);
+    if (fresh) assert.ok(got.some((b) => b.key.startsWith("monitor-self:state-reset:")), `${label}：狀態重建要講出來`);
+    assert.ok(JSON.parse(kv.m.get(STATE_KEY)).checkpoint >= 990, `${label}：檢查點要前進`);
+  }
+});
+
+/** 審查 sim2 的情境：webhook 通道、MarginWithdrawn 每筆 10,000、OwnershipTransferred 一筆。 */
+async function floodScenario({ floodAfter, floodBefore = 0, downRounds = 0, subreqCap = null, rounds = 4 }) {
+  const w = fakeWorld();
+  const kv = fakeKv();
+  kv.m.set(STATE_KEY, JSON.stringify({ checkpoint: 800 }));
+  const env = { ...env0, ALERT_WEBHOOK_URL: "https://hook.test/x", MONITOR_STATE: kv };
+  const ex = addrOf("owner-transferred", "PerpetualExchange");
+  let li = 0;
+  const wd = (block) => makeLog(w, { address: ex, sig: "MarginWithdrawn(address,uint256)", topics: [word(0xcc)], data: word(10_000n * E18), block, tx: "0x" + (++li).toString(16).padStart(64, "0") });
+  for (let i = 0; i < floodBefore; i++) wd(900 + (i % 40));
+  makeLog(w, { address: ex, sig: "OwnershipTransferred(address,address)", topics: [word(0xaa), word(0xbb)], block: 950, tx: "0x" + "ee".repeat(32) });
+  for (let i = 0; i < floodAfter; i++) wd(951 + (i % 40));
+  let round = 0;
+  let calls = 0;
+  const f = async (url, init) => {
+    calls++;
+    if (subreqCap && calls > subreqCap) throw new Error("Too many subrequests.");
+    if (url.startsWith("https://hook.test") && round <= downRounds) return new Response("down", { status: 503 });
+    return w.fetch(url, init);
+  };
+  let now = 1_800_000_000;
+  for (round = 1; round <= rounds; round++) {
+    calls = 0;
+    await tick({ config: only("owner-transferred", "large-margin-withdrawal"), env, now, fetchImpl: f, log: () => {} }).catch(() => {});
+    w.head += 150;
+    now += 300;
+  }
+  return w.sent.filter((s) => s.url.startsWith("https://hook.test")).map((s) => JSON.parse(s.init.body));
+}
+
+test("M-2（sim2）：通道停 1 輪＋SEV-1 之後 100／99 筆大額提領 → SEV-1 送達，提領合併成摘要", async () => {
+  for (const floodAfter of [100, 99]) {
+    const got = await floodScenario({ floodAfter, downRounds: 1 });
+    assert.equal(got.filter((b) => b.severity === "SEV-1" && b.key.startsWith("owner-transferred:")).length, 1, `floodAfter=${floodAfter}`);
+    const sum = got.filter((b) => b.key.startsWith("large-margin-withdrawal:summary:"));
+    assert.equal(sum.length, 1);
+    assert.match(sum[0].text, new RegExp(`本輪掃到 ${floodAfter} 筆`));
+  }
+});
+
+test("M-2（sim2）：正常通道、每次執行只有 50 個 subrequest，SEV-1 前後各 120 筆／前 20 後 200 筆 → SEV-1 送達", async () => {
+  for (const [floodBefore, floodAfter] of [[120, 120], [20, 200]]) {
+    const got = await floodScenario({ floodBefore, floodAfter, subreqCap: 50, rounds: 2 });
+    assert.equal(got.filter((b) => b.severity === "SEV-1" && b.key.startsWith("owner-transferred:")).length, 1, `${floodBefore}/${floodAfter}`);
+    assert.ok(got.some((b) => b.key.startsWith("large-margin-withdrawal:summary:")));
+  }
+});
+
+test("M-2：通道長時間停擺、outbox 溢位 → SEV-1 不丟（合併成摘要），低嚴重度先丟，monitor-self:outbox 排第一個送出", async () => {
+  const w = fakeWorld();
+  const kv = fakeKv();
+  const now = 1_800_000_000;
+  const mk = (key, severity, at) => ({ note: { ruleId: "r", key, severity, status: "事件", title: key, lines: [], at }, text: key, channels: ["webhook"], firstAt: at, at, sent: [] });
+  const outbox = [
+    ...Array.from({ length: 60 }, (_, i) => mk(`s4-${i}`, "SEV-4", now - 5000 + i)),
+    ...Array.from({ length: 60 }, (_, i) => mk(`s2-${i}`, "SEV-2", now - 6000 + i)),
+    ...Array.from({ length: MAX_CRITICAL_OUTBOX + 10 }, (_, i) => mk(`sev1-${i}`, "SEV-1", now - 4000 + i)),
+  ];
+  kv.m.set(STATE_KEY, JSON.stringify({ checkpoint: w.head - 3, outbox }));
+  const env = { ...env0, ALERT_WEBHOOK_URL: "https://hook.test/x", MONITOR_STATE: kv };
+  let up = false;
+  const f = async (url, init) => (url.startsWith("https://hook.test") && !up ? new Response("down", { status: 503 }) : w.fetch(url, init));
+  await assert.rejects(tick({ config: only("owner-transferred"), env, now, fetchImpl: f, log: () => {} }), /未送達.*另丟棄 20 則，合併 11 則/);
+  const st = JSON.parse(kv.m.get(STATE_KEY));
+  const keys = st.outbox.map((o) => o.note.key);
+  assert.equal(keys.filter((k) => k.startsWith("s4-")).length, 40, "先丟 SEV-4（最舊的）");
+  assert.ok(!keys.includes("s4-0") && keys.includes("s4-59"));
+  assert.equal(keys.filter((k) => k.startsWith("s2-")).length, 60, "SEV-2 一則都沒丟");
+  const sev1 = keys.filter((k) => k.startsWith("sev1-")).length;
+  const digest = st.outbox.find((o) => o.note.key.startsWith("monitor-self:outbox-digest:"));
+  assert.equal(sev1 + digest.note.mergedCount, MAX_CRITICAL_OUTBOX + 10, "SEV-1 全部還在（逐筆或在摘要裡）");
+  const notice = st.outbox.find((o) => o.note.key.startsWith("monitor-self:outbox:"));
+  assert.match(notice.text, /丟棄 20 則（SEV-4×20）、過期丟棄 0 則、合併 11 則/);
+  assert.match(notice.text, /涉及的 key：/);
+
+  // 下一輪還是停擺：outbox 通知合併成一則（不會一輪一則地堆積）。
+  await assert.rejects(tick({ config: only("owner-transferred"), env, now: now + 300, fetchImpl: f, log: () => {} }), /未送達/);
+  const st2 = JSON.parse(kv.m.get(STATE_KEY));
+  assert.equal(st2.outbox.filter((o) => o.note.key.startsWith("monitor-self:outbox:")).length, 1);
+
+  // 通道恢復：第一個送出的是 monitor-self:outbox，接著是 SEV-1 摘要。
+  up = true;
+  w.sent.length = 0;
+  await tick({ config: only("owner-transferred"), env, now: now + 600, fetchImpl: f, log: () => {} }).catch(() => {});
+  const order = w.sent.filter((s) => s.url.startsWith("https://hook.test")).map((s) => JSON.parse(s.init.body).key);
+  assert.ok(order[0].startsWith("monitor-self:outbox:"), order.slice(0, 3).join());
+  assert.ok(order[1].startsWith("monitor-self:outbox-digest:"), order.slice(0, 3).join());
+});
+
+test("L-1（sim3）：沒有落後的穩定提領流量不發 window-past；落後追趕才掃到的才發", async () => {
+  for (const [every, amount] of [[660, 9500], [420, 5900], [720, 10001]]) {
+    const w = fakeWorld();
+    const kv = fakeKv();
+    const t0 = 1_800_000_000;
+    w.head = 1000;
+    kv.m.set(STATE_KEY, JSON.stringify({ checkpoint: 996 }));
+    const ex = addrOf("large-margin-withdrawal", "PerpetualExchange");
+    w.setCall(ruleOf("large-margin-withdrawal").amount.balanceOf.token, "balanceOf(address)", [ex], word(10n ** 30n));
+    const env = { ...env0, ALERT_WEBHOOK_URL: "https://hook.test/x", MONITOR_STATE: kv };
+    const blockAt = (t) => 1000 + Math.floor((t - t0) / 2);
+    let li = 0;
+    for (let t = t0 + 60; t < t0 + 6 * 3600; t += every) {
+      makeLog(w, { address: ex, sig: "MarginWithdrawn(address,uint256)", topics: [word(0xcc)], data: word(BigInt(amount) * E18), block: blockAt(t), ts: t, tx: "0x" + (++li).toString(16).padStart(64, "0") });
+    }
+    for (let now = t0 + 300; now < t0 + 6 * 3600; now += 300) {
+      w.head = blockAt(now);
+      await tick({ config: only("large-margin-withdrawal"), env, now, fetchImpl: w.fetch, log: () => {} }).catch(() => {});
+    }
+    const keys = w.sent.map((s) => JSON.parse(s.init.body).key);
+    assert.equal(keys.filter((k) => k.includes(":window-past:")).length, 0, `每 ${every} 秒 ${amount}：${keys.filter((k) => k.includes("window-past")).join()}`);
+  }
+});
+
+test("L-2（sim4）：狀態型 SEV-1 開著時值又變成另一個值 → 立刻再通知（去重 id 含新值），值不變則不重送", async () => {
+  const A = "0x" + "a1".repeat(20);
+  const B = "0x" + "b2".repeat(20);
+  const C = "0x" + "c3".repeat(20);
+  {
+    const w = fakeWorld();
+    const kv = fakeKv();
+    kv.m.set(STATE_KEY, JSON.stringify({ checkpoint: 996 }));
+    let payTo = B;
+    w.http.set(`${API}/`, () => ({ status: 200, body: { payTo, payToSafety: { safe: true } } }));
+    const env = { ...env0, EXPECTED_PAY_TO: A, ALERT_WEBHOOK_URL: "https://hook.test/x", MONITOR_STATE: kv };
+    let now = 1_800_000_000;
+    const rounds = [];
+    for (const p of [B, B, C, C, B]) {
+      payTo = p;
+      const n0 = w.sent.length;
+      await tick({ config: only("x402-payto"), env, now, fetchImpl: w.fetch, log: () => {} });
+      rounds.push(w.sent.slice(n0).map((s) => JSON.parse(s.init.body)).filter((b) => b.key === "x402-payto:changed"));
+      now += 300;
+      w.head += 150;
+    }
+    assert.deepEqual(rounds.map((r) => r.map((b) => `${b.severity} ${b.status}`)), [["SEV-1 觸發"], [], ["SEV-1 持續"], [], ["SEV-1 持續"]]);
+    assert.match(rounds[2][0].text, /由 0xa1a1.* 變成 0xc3c3/);
+    assert.match(rounds[2][0].text, /觀察值在告警開著時再次變更：0xb2b2.* → 0xc3c3/);
+    assert.notEqual(rounds[2][0].id, rounds[4][0].id, "不同的新值 → 不同的去重 id");
+  }
+  {
+    const rule = ruleOf("core-wiring");
+    const w = fakeWorld();
+    const kv = fakeKv();
+    kv.m.set(STATE_KEY, JSON.stringify({ checkpoint: 996 }));
+    const c0 = rule.calls[0];
+    const on = rule.contracts.find((c) => c.as === c0.on);
+    for (const c of rule.calls) w.setCall(rule.contracts.find((x) => x.as === c.on).address, c.fn, [], word(BigInt(c.expected)));
+    const env = { ...env0, ALERT_WEBHOOK_URL: "https://hook.test/x", MONITOR_STATE: kv };
+    let now = 1_800_000_000;
+    const got = [];
+    for (const v of [B, B, C, C]) {
+      w.setCall(on.address, c0.fn, [], word(BigInt(v)));
+      const n0 = w.sent.length;
+      await tick({ config: only("core-wiring"), env, now, fetchImpl: w.fetch, log: () => {} });
+      got.push(w.sent.slice(n0).map((s) => JSON.parse(s.init.body)).map((b) => `${b.severity} ${b.status}`));
+      now += 300;
+      w.head += 150;
+    }
+    assert.deepEqual(got, [["SEV-1 觸發"], [], ["SEV-1 持續"], []]);
+  }
+});
+
+test("L-4（sim5）：Discord 設定格式不對（非 canary 的錯誤網域）→ 只停用 Discord，Telegram 照常送 SEV-1 與 monitor-self:config", async () => {
+  const w = fakeWorld();
+  const kv = fakeKv();
+  kv.m.set(STATE_KEY, JSON.stringify({ checkpoint: 900 }));
+  makeLog(w, { address: addrOf("owner-transferred", "PerpetualExchange"), sig: "OwnershipTransferred(address,address)", topics: [word(1), word(2)], block: 990 });
+  const env = { ...env0, TELEGRAM_BOT_TOKEN: TG, TELEGRAM_CHAT_ID: "-1", DISCORD_WEBHOOK_URL: "https://discord.example/api/webhooks/1/x", MONITOR_STATE: kv };
+  await tick({ config: only("owner-transferred"), env, now: 1_800_000_000, fetchImpl: w.fetch, log: () => {} });
+  const tg = w.sent.filter((s) => s.url.startsWith("https://api.telegram.org/")).map((s) => JSON.parse(s.init.body).text);
+  assert.ok(tg.some((t) => /SEV-1\] 事件｜合約 owner 變更/.test(t)), tg.join("\n---\n"));
+  const cfgNote = tg.find((t) => /監控設定問題/.test(t));
+  assert.match(cfgNote, /discord 通道已停用/);
+  assert.ok(!cfgNote.includes("discord.example"), "不帶值");
+  assert.equal(w.sent.filter((s) => s.url.includes("discord")).length, 0);
+  assert.ok(JSON.parse(kv.m.get(STATE_KEY)).checkpoint >= 990);
+  // sim5 原本的 canary 網址現在是合法的。
+  assert.deepEqual(channelsOf({ DISCORD_WEBHOOK_URL: "https://canary.discord.com/api/webhooks/1/x" }).problems, []);
+});
+
+test("L-2（同理）：monitor-self:config 開著時又多了一個設定問題 → 立刻再通知，內容不變則不重送", async () => {
+  const w = fakeWorld();
+  const kv = fakeKv();
+  kv.m.set(STATE_KEY, JSON.stringify({ checkpoint: w.head - 3 }));
+  const base = { ...env0, ALERT_WEBHOOK_URL: "https://hook.test/x", MONITOR_STATE: kv, MUTE_KEYS: "owner-transferred" };
+  const cfgNotes = () => w.sent.map((s) => JSON.parse(s.init.body)).filter((b) => b.key === "monitor-self:config").map((b) => b.status);
+  let now = 1_800_000_000;
+  for (const env of [base, base, { ...base, CONFIRMATIONS: "100000000" }, { ...base, CONFIRMATIONS: "100000000" }]) {
+    await tick({ config: only("owner-transferred"), env, now, fetchImpl: w.fetch, log: () => {} });
+    now += 300;
+    w.head += 150;
+  }
+  assert.deepEqual(cfgNotes(), ["觸發", "持續"]);
 });

@@ -18,17 +18,17 @@
     "CONFIRMATIONS": {
       "default": "3",
       "unit": "區塊",
-      "doc": "只掃 head 往前這麼多塊之前的區塊，降低 reorg 造成的假告警"
+      "doc": "只掃 head 往前這麼多塊之前的區塊，降低 reorg 造成的假告警。上限 64（約 2 分鐘）：再大等於把全部事件告警延後"
     },
     "INITIAL_LOOKBACK_BLOCKS": {
-      "default": "300",
+      "default": "1800",
       "unit": "區塊",
-      "doc": "第一次執行（KV 沒有檢查點）往回掃的區塊數（Base 約 2 秒一塊，300 塊約 10 分鐘）"
+      "doc": "KV 沒有事件檢查點（首次部署，或狀態被清除／遺失）時往回掃的區塊數（Base 約 2 秒一塊，1,800 塊約 1 小時）。下限 150（一輪 cron）：狀態遺失時不可以從「現在」開始、靜默漏掉中間的事件；同時發 monitor-self:state-reset 說明重建"
     },
     "MAX_BLOCK_RANGE": {
       "default": "1000",
       "unit": "區塊",
-      "doc": "每個 eth_getLogs 的最大範圍。公開 RPC（sepolia.base.org）實測上限 1,000 塊，超過回 HTTP 413／-32614；CI 限制此值 ≤ 1000。節點拒絕範圍時引擎會自動減半重試"
+      "doc": "每個 eth_getLogs 的最大範圍。公開 RPC（sepolia.base.org）實測上限 1,000 塊，超過回 HTTP 413／-32614。節點拒絕範圍時引擎會自動減半重試"
     },
     "MAX_SCAN_REQUESTS": {
       "default": "10",
@@ -38,12 +38,12 @@
     "LAG_ALERT_BLOCKS": {
       "default": "1800",
       "unit": "區塊",
-      "doc": "一輪掃完後仍落後超過這個值時發監控自身告警（代表一輪追不完，或 eth_getLogs 持續失敗）。1,800 塊約 1 小時；上限 1,800（CI 與執行期都夾住）"
+      "doc": "一輪掃完後仍落後超過這個值時發監控自身告警（代表一輪追不完，或 eth_getLogs 持續失敗）。1,800 塊約 1 小時"
     },
     "REMIND_SEC": {
       "default": "21600",
       "unit": "秒",
-      "doc": "狀態型告警持續未解除時的重複提醒間隔（6 小時）"
+      "doc": "狀態型告警持續未解除時的重複提醒間隔（6 小時）。觀察值（payTo、接線、實作位址）在告警開著時又變成另一個值時，不等這個間隔、立即再通知"
     },
     "MIN_SEVERITY": {
       "default": "SEV-4",
@@ -68,7 +68,7 @@
     "LARGE_WITHDRAWAL_BPS": {
       "default": "2000",
       "unit": "bps",
-      "doc": "單筆提領／贖回佔合約「提領前餘額」達此比例即告警（20%），與絕對門檻擇一成立。絕對門檻是佔位值（2026-10-01 實測 exchange 只有 500 MockUSDC，絕對門檻 10,000 永遠不會響），這個相對門檻讓規則在任何 TVL 下都有作用。上限 5,000（50%）：再高等於沒有相對門檻"
+      "doc": "單筆提領／贖回佔合約「提領前餘額」達此比例即告警（20%），與絕對門檻擇一成立。絕對門檻是佔位值（2026-10-01 實測 exchange 只有 500 MockUSDC，絕對門檻 10,000 永遠不會響），這個相對門檻讓規則在任何 TVL 下都有作用。上限 50%：再高等於沒有相對門檻"
     },
     "WITHDRAWAL_WINDOW_SEC": {
       "default": "3600",
@@ -163,12 +163,12 @@
     "HTTP_FAILS_BEFORE_ALERT": {
       "default": "2",
       "unit": "次",
-      "doc": "signal-api 的健康檢查與 payTo 讀取連續失敗幾次才告警（避免單次逾時或冷啟動抖動）。上限 6；與 SELF_ERRORS_BEFORE_ALERT 合計須讓持續故障在 6 輪（約 30 分鐘）內告警"
+      "doc": "signal-api 的健康檢查與 payTo 讀取連續失敗幾次才告警（避免單次逾時或冷啟動抖動）。與 SELF_ERRORS_BEFORE_ALERT 合計須讓持續故障在 6 輪（約 30 分鐘）內告警"
     },
     "SELF_ERRORS_BEFORE_ALERT": {
       "default": "2",
       "unit": "輪",
-      "doc": "有規則讀取失敗「連續」幾輪才發 monitor-self:errors（單輪失敗多半是公開 RPC 限流；RPC 本身已退避重試）。失敗的那一輪仍記為 cron 失敗、不打心跳。上限 6；與 HTTP_FAILS_BEFORE_ALERT 合計須讓持續故障在 6 輪（約 30 分鐘）內告警"
+      "doc": "有規則讀取失敗「連續」幾輪才發 monitor-self:errors（單輪失敗多半是公開 RPC 限流；RPC 本身已退避重試）。失敗的那一輪仍記為 cron 失敗、不打心跳。與 HTTP_FAILS_BEFORE_ALERT 合計須讓持續故障在 6 輪（約 30 分鐘）內告警"
     }
   },
   "rules": [

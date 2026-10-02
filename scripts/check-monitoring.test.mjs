@@ -482,14 +482,14 @@ test("M4：審查的突變清單——每一項都要讓檢查器變紅", () => 
     ["整條 owner-transferred 規則刪除", () => t.editJson((j) => { j.rules = j.rules.filter((r) => r.id !== "owner-transferred"); }), /owner-transferred：必要規則不存在/, true],
     ["SEV-1 的 exchange-wiring-changed 改成 pending-deploy", () => t.editJson((j) => { const r = j.rules.find((x) => x.id === "exchange-wiring-changed"); r.status = "pending-deploy"; for (const c of r.contracts) { c.source = "contracts/src/PerpetualExchange.sol"; delete c.abi; } }), /exchange-wiring-changed：必要規則必須是 active/, true],
     ["X402FeeRouter 的 token 由 USDC 改標 MockUSDC", () => t.editJson((j) => { j.rules.find((r) => r.id === "x402-fee-withdrawals").amount.token = "MockUSDC"; }), /x402-fee-withdrawals：token 標成 MockUSDC/, true],
-    ["MAX_BLOCK_RANGE 改成 50000", () => t.editJson((j) => { j.params.MAX_BLOCK_RANGE.default = "50000"; }), /MAX_BLOCK_RANGE\.default 必須在 1–1000 之間/, true],
+    ["MAX_BLOCK_RANGE 改成 50000", () => t.editJson((j) => { j.params.MAX_BLOCK_RANGE.default = "50000"; }), /MAX_BLOCK_RANGE\.default 必須在 300–1000 之間/, true],
     ["參數預設值不是數字", () => t.editJson((j) => { j.params.LARGE_WITHDRAWAL_USDC.default = "10k"; }), /LARGE_WITHDRAWAL_USDC\.default 必須是非負的十進位數字/, true],
     ["嚴重度降級 SEV-1 → SEV-4", () => t.editJson((j) => { j.rules[0].severity = "SEV-4"; }), /owner-transferred：嚴重度 SEV-4 低於下限 SEV-1/, true],
     ["前端 ABI 新增 admin 事件、沒有任何規則", () => addAbiEvent("TreasurySet"), /PerpetualExchange 的事件 TreasurySet\(address\).*沒有任何規則、也不在 ignoredEvents/],
     ["事件簽章對、但部署版 bytecode 沒有（審查當時的原狀）", () => t.editJson((j) => { const r = j.rules.find((x) => x.id === "insurance-wiring-changed"); r.status = "active"; for (const c of r.contracts) { delete c.source; c.abi = "InsuranceVault"; } }), /ExchangeSet\(address\) 的 topic0 不在 InsuranceVault 已部署的 bytecode 裡/, true],
     // ── 追加 ──
     [".gitignore 少了 .dev.vars", () => t.wr(".gitignore", t.rd(".gitignore").replace(/^\.dev\.vars$/m, "")), /\.gitignore 沒有 \.dev\.vars/],
-    ["wrangler [vars] 把 MAX_BLOCK_RANGE 覆寫成 5000", () => t.wr(toml, t.rd(toml) + '\nMAX_BLOCK_RANGE = "5000"\n'), /\[vars\] 的 MAX_BLOCK_RANGE 必須在 1–1000 之間/],
+    ["wrangler [vars] 把 MAX_BLOCK_RANGE 覆寫成 5000", () => t.wr(toml, t.rd(toml) + '\nMAX_BLOCK_RANGE = "5000"\n'), /\[vars\] 的 MAX_BLOCK_RANGE 必須在 300–1000 之間/],
     ["wrangler [vars] 靜音 monitor-self", () => t.wr(toml, t.rd(toml) + '\nMUTE_KEYS = "monitor-self:errors"\n'), /MUTE_KEYS 含 monitor-self:errors：監控自身的告警不可靜音/],
     ["忽略清單刪掉一項（事件變成沒人管）", () => t.editJson((j) => { j.ignoredEvents[0].events.pop(); }), /沒有任何規則、也不在 ignoredEvents/],
     // ── 複審（w17r2/mut3.mjs）──
@@ -509,6 +509,17 @@ test("M4：審查的突變清單——每一項都要讓檢查器變紅", () => 
     ["N3e [vars] LARGE_WITHDRAWAL_BPS = 10000", () => t.wr(toml, t.rd(toml) + '\nLARGE_WITHDRAWAL_BPS = "10000"\n'), /LARGE_WITHDRAWAL_BPS 必須在 1–5000 之間/],
     ["N3g [vars] HTTP 6＋SELF 2（合計 7 輪 > 6）", () => t.wr(toml, t.rd(toml) + '\nHTTP_FAILS_BEFORE_ALERT = "6"\nSELF_ERRORS_BEFORE_ALERT = "2"\n'), /wrangler\.toml \[vars\]：HTTP_FAILS_BEFORE_ALERT（6）＋SELF_ERRORS_BEFORE_ALERT（2）−1 = 7 輪/],
     ["L-d adminFunctions 少分類一個不發事件的 setter", () => t.editJson((j) => { delete j.adminFunctions.PepeIncentives["withdraw(uint256)"]; }), /PepeIncentives\.withdraw\(uint256\) 在部署版 bytecode 裡，但 adminFunctions 沒有分類/],
+    // ── 第三輪複審（w17r3/mut4.mjs，L-3）：全域參數預設值、explorer、repoBlobBase ──
+    ["P1 ORACLE_DEVIATION_BPS＝CRIT＝10000", () => t.editJson((j) => { j.params.ORACLE_DEVIATION_BPS.default = "10000"; j.params.ORACLE_DEVIATION_CRIT_BPS.default = "10000"; }), /ORACLE_DEVIATION_CRIT_BPS\.default 必須在 1–3000 之間[\s\S]*GLOBAL_CONFIG_HASH 不同/, true],
+    ["P2 GAS_MIN_ETH＝GAS_CRIT_ETH＝0", () => t.editJson((j) => { j.params.GAS_MIN_ETH.default = "0"; j.params.GAS_CRIT_ETH.default = "0"; }), /GAS_MIN_ETH\.default 必須在 0\.001–10 之間/, true],
+    ["P3 INSURANCE_MIN_USDC 0、金額門檻 1e12", () => t.editJson((j) => { j.params.INSURANCE_MIN_USDC.default = "0"; j.params.LARGE_WITHDRAWAL_USDC.default = "1000000000000"; }), /LARGE_WITHDRAWAL_USDC\.default 必須在 0–1000000 之間[\s\S]*INSURANCE_MIN_USDC\.default 必須在 1–1000000 之間/, true],
+    ["P4 INSURANCE_DROP_BPS 10000、RESERVE_WARN_MARGIN_BPS 0", () => t.editJson((j) => { j.params.INSURANCE_DROP_BPS.default = "10000"; j.params.RESERVE_WARN_MARGIN_BPS.default = "0"; }), /INSURANCE_DROP_BPS\.default 必須在 1–5000 之間[\s\S]*RESERVE_WARN_MARGIN_BPS\.default 必須在 100–5000 之間/, true],
+    ["P5 REMIND_SEC 7 天", () => t.editJson((j) => { j.params.REMIND_SEC.default = "604800"; }), /REMIND_SEC\.default 必須在 300–86400 之間/, true],
+    ["P5b 範圍內的預設值變更也要人工審（全域雜湊）", () => t.editJson((j) => { j.params.ORACLE_DEVIATION_CRIT_BPS.default = "3000"; }), /GLOBAL_CONFIG_HASH 不同/, true],
+    ["P6 [vars] ORACLE_DEVIATION_CRIT_BPS = 10000", () => t.wr(toml, t.rd(toml) + '\nORACLE_DEVIATION_CRIT_BPS = "10000"\n'), /\[vars\] 的 ORACLE_DEVIATION_CRIT_BPS 必須在 1–3000 之間/],
+    ["P7 network.explorer 換成他人網域", () => t.editJson((j) => { j.network.explorer = "https://sepolia.basescan.org.evil.example"; }), /network\.explorer 必須是 https:\/\/sepolia\.basescan\.org/, true],
+    ["P8 repoBlobBase 換成他人網域", () => t.editJson((j) => { j.repoBlobBase = "https://evil.example/blob/master"; }), /repoBlobBase 必須以 https:\/\/github\.com\/zuemen\/pepelab_onchain_cfd\/blob\/ 開頭/, true],
+    ["P9 network.blockTimeSec 改 0", () => t.editJson((j) => { j.network.blockTimeSec = 0; }), /network\.blockTimeSec 必須是 1–12 的整數/, true],
     ["L-d 不發事件的 setter 指向「部署版不發」的事件規則", () => t.editJson((j) => { j.adminFunctions.InsuranceVault["setExchange(address)"] = { rule: "insurance-wiring-changed" }; }), /InsuranceVault\.setExchange\(address\) 指向 insurance-wiring-changed，但它不是 active 規則/],
   ];
   try {
@@ -548,7 +559,7 @@ test("M4：參數型別與範圍", () => {
   assert.deepEqual(Object.keys(PARAM_SPECS).sort(), Object.keys(cfg.params).sort(), "每個參數都要有型別定義");
   assert.ok(PARAM_SPECS.MAX_BLOCK_RANGE.max <= 1000, "公開 RPC 的 eth_getLogs 上限是 1,000 塊");
   assert.equal(checkParamValue("MAX_BLOCK_RANGE", "1000"), null);
-  assert.match(checkParamValue("MAX_BLOCK_RANGE", "1001"), /1–1000/);
+  assert.match(checkParamValue("MAX_BLOCK_RANGE", "1001"), /300–1000/);
   assert.match(checkParamValue("MAX_BLOCK_RANGE", "1e3"), /非負整數/);
   assert.match(checkParamValue("CONFIRMATIONS", "-1"), /非負整數/);
   assert.equal(checkParamValue("GAS_MIN_ETH", "0.02"), null);
@@ -565,7 +576,7 @@ test("M4：參數型別與範圍", () => {
   cfg.params.NEW_PARAM = { default: "1", unit: "x", doc: "y" };
   delete cfg.params.REMIND_SEC.doc;
   const p = problemsOf(cfg).join("\n");
-  assert.match(p, /params\.ORACLE_DEVIATION_BPS（300）不可大於 params\.ORACLE_DEVIATION_CRIT_BPS（100）/);
+  assert.match(p, /params 預設值 ORACLE_DEVIATION_BPS（300）不可大於 ORACLE_DEVIATION_CRIT_BPS（100）/);
   assert.match(p, /params\.NEW_PARAM\.default 沒有型別定義/);
   assert.match(p, /params\.REMIND_SEC 缺少 doc/);
 });
@@ -612,10 +623,10 @@ test("M4：wrangler.toml——任何位置的秘密鍵名、所有 vars 表、in
   assert.deepEqual(p.map((x) => x.replace(/^wrangler\.toml:(\d+) /, "$1 ").replace(/ 是秘密.*/, " 是秘密")), [
     "4 [vars] 的 NOTE 不是已知參數",
     "6 HEARTBEAT_URL 是秘密",
-    "7 [env.staging.vars] 的 MAX_BLOCK_RANGE 必須在 1–1000 之間，現在是 2000",
+    "7 [env.staging.vars] 的 MAX_BLOCK_RANGE 必須在 300–1000 之間，現在是 2000",
     "9 DISCORD_WEBHOOK_URL 是秘密",
     "9 GITHUB_TOKEN 是秘密",
-    "10 [env.prod.vars] 的 REMIND_SEC 必須在 300–604800 之間，現在是 10",
+    "10 [env.prod.vars] 的 REMIND_SEC 必須在 300–86400 之間，現在是 10",
     "13 TELEGRAM_CHAT_ID 是秘密",
   ]);
   // repo 裡的 wrangler.toml 本身乾淨

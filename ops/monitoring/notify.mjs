@@ -7,8 +7,9 @@
 //   • 訊息只含公開資訊（合約位址、tx hash、數值），純文字送出，不讓鏈上資料被解讀成格式或 @mention：
 //     Telegram 不設 parse_mode；Discord 沒有純文字模式，所以跳脫 Markdown 並關掉 mention 與連結預覽。
 //   • 每個通道各自送、各自重送：一個通道壞了，不影響另一個通道，也不會讓壞掉那個的訊息被丟掉。
-//   • 沒有任何通道設定時丟錯，讓 Cloudflare 把這次 cron 記成失敗，而不是無聲吞掉告警。
+//   • 一個通道設定不對只停用它；沒有任何可用通道時丟錯，讓 Cloudflare 把這次 cron 記成失敗，而不是無聲吞掉告警。
 import { SEVERITIES, assertHttps, fetchWithTimeout, redactUrls } from "./engine.mjs";
+import { envSecret } from "./params.mjs";
 
 /** 送一則通知的逾時（毫秒）。通道卡住時不可以把整輪 cron 拖到 Cloudflare 的牆鐘上限。 */
 export const NOTIFY_TIMEOUT_MS = 10_000;
@@ -45,38 +46,55 @@ export function formatNote(note, { deploymentId, runbookUrl } = {}) {
   return lines.join("\n");
 }
 
-/** 依環境變數組出可用的通道。格式不對的設定直接丟錯（設定錯誤要大聲失敗）。 */
+/**
+ * 依環境變數組出可用的通道。回傳 { channels, problems }。
+ * 一個通道設定格式不對時**只停用那個通道**（複審 L-4：原本直接丟錯，Discord Canary 的 webhook 網址
+ * 就讓 Telegram 也一起停擺、SEV-1 完全送不出去）；problems 由 tick 透過其他通道以不可靜音的
+ * monitor-self:config 講出來。訊息只寫通道與原因，**不帶值**（token／webhook URL 本身就是憑證）。
+ * 全部通道都不可用時由 tick 丟錯，Cloudflare 會把這次 cron 記成失敗。
+ */
 export function channelsOf(env) {
-  const ch = [];
-  const tgToken = String(env.TELEGRAM_BOT_TOKEN ?? "").trim();
-  const tgChat = String(env.TELEGRAM_CHAT_ID ?? "").trim();
+  const channels = [];
+  const problems = [];
+  const tgToken = envSecret(env, "TELEGRAM_BOT_TOKEN");
+  const tgChat = envSecret(env, "TELEGRAM_CHAT_ID");
   if (tgToken || tgChat) {
-    if (!tgToken || !tgChat) throw new Error("TELEGRAM_BOT_TOKEN 與 TELEGRAM_CHAT_ID 必須同時設定");
-    if (!/^\d+:[A-Za-z0-9_-]+$/.test(tgToken)) throw new Error("TELEGRAM_BOT_TOKEN 格式不對");
-    ch.push({
-      name: "telegram",
-      url: `https://api.telegram.org/bot${tgToken}/sendMessage`,
-      body: (text) => ({ chat_id: tgChat, text: text.slice(0, 4000), disable_web_page_preview: true }),
-    });
-  }
-  const discord = String(env.DISCORD_WEBHOOK_URL ?? "").trim();
-  if (discord) {
-    if (!/^https:\/\/(discord\.com|discordapp\.com)\/api\/webhooks\//.test(discord)) {
-      throw new Error("DISCORD_WEBHOOK_URL 必須是 https://discord.com/api/webhooks/…");
+    if (!tgToken || !tgChat) problems.push("telegram 通道已停用：TELEGRAM_BOT_TOKEN 與 TELEGRAM_CHAT_ID 必須同時設定");
+    else if (!/^\d+:[A-Za-z0-9_-]+$/.test(tgToken)) problems.push("telegram 通道已停用：TELEGRAM_BOT_TOKEN 格式不對（應為 <數字>:<英數>）");
+    else {
+      channels.push({
+        name: "telegram",
+        url: `https://api.telegram.org/bot${tgToken}/sendMessage`,
+        body: (text) => ({ chat_id: tgChat, text: text.slice(0, 4000), disable_web_page_preview: true }),
+      });
     }
-    ch.push({
-      name: "discord",
-      url: discord,
-      // flags 4 = SUPPRESS_EMBEDS：不展開連結預覽。
-      body: (text) => ({ content: escapeDiscord(text).slice(0, 1900), allowed_mentions: { parse: [] }, flags: 4 }),
-    });
   }
-  const hook = String(env.ALERT_WEBHOOK_URL ?? "").trim();
+  const discord = envSecret(env, "DISCORD_WEBHOOK_URL");
+  if (discord) {
+    // Discord Canary／PTB 用戶端複製出來的 webhook 網址是 canary.／ptb. 子網域，一樣有效。
+    if (!/^https:\/\/((canary|ptb)\.)?(discord\.com|discordapp\.com)\/api\/webhooks\//.test(discord)) {
+      problems.push("discord 通道已停用：DISCORD_WEBHOOK_URL 必須是 https://discord.com/api/webhooks/…（或 canary.／ptb. 子網域）");
+    } else {
+      channels.push({
+        name: "discord",
+        url: discord,
+        // flags 4 = SUPPRESS_EMBEDS：不展開連結預覽。
+        body: (text) => ({ content: escapeDiscord(text).slice(0, 1900), allowed_mentions: { parse: [] }, flags: 4 }),
+      });
+    }
+  }
+  const hook = envSecret(env, "ALERT_WEBHOOK_URL");
   if (hook) {
-    assertHttps("ALERT_WEBHOOK_URL", hook);
-    ch.push({ name: "webhook", url: hook, body: null, secret: String(env.ALERT_WEBHOOK_SECRET ?? "") });
+    let ok = false;
+    try {
+      assertHttps("ALERT_WEBHOOK_URL", hook);
+      ok = true;
+    } catch (e) {
+      problems.push(`webhook 通道已停用：${e.message}`);
+    }
+    if (ok) channels.push({ name: "webhook", url: hook, body: null, secret: envSecret(env, "ALERT_WEBHOOK_SECRET") });
   }
-  return ch;
+  return { channels, problems };
 }
 
 /**
@@ -84,7 +102,8 @@ export function channelsOf(env) {
  * 通知是 at-least-once（逾時但對方其實收到了，下一輪會再送），5 分鐘的時間戳視窗內也可能被重放。
  */
 export async function noteId(note, deploymentId = "") {
-  const text = `${deploymentId}|${note.key ?? note.ruleId}|${note.status}|${note.at ?? ""}`;
+  // 狀態型告警的觀察值（複審 L-2）：開著時值又變了，那是另一則通知，id 不可以和前一則相同。
+  const text = `${deploymentId}|${note.key ?? note.ruleId}|${note.status}|${note.at ?? ""}${note.fingerprint !== undefined ? `|${note.fingerprint}` : ""}`;
   const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
   return [...new Uint8Array(d)].slice(0, 16).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
