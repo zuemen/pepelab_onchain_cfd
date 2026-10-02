@@ -1,0 +1,16 @@
+# 測試用 fixture：environment 的物件寫法（名稱大小寫不同也算同一個）。
+name: fixture keeper
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+jobs:
+  keep:
+    runs-on: ubuntu-latest
+    environment:
+      name: Keeper
+      deployment: false
+    env:
+      KEEPER_PRIVATE_KEY: ${{ secrets.KEEPER_PRIVATE_KEY }}
+    steps:
+      - run: echo keep

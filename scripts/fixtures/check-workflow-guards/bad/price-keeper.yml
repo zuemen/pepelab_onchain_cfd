@@ -1,0 +1,26 @@
+# 測試用反例 fixture：允許清單內的 job（price-keeper.yml#update-prices）被改成「不經核准、
+# 可帶參數的 admin」（PR #217 審查 E01／E05）。environment 綁得沒錯，所以 (a)、(d) 不會擋；
+# 要靠觸發事件白名單、禁止 inputs、禁止把觸發者可控的值內插進 run。
+name: fixture keeper turned admin
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  issue_comment:
+  workflow_dispatch:
+    inputs:
+      target:
+        required: false
+        default: ''
+jobs:
+  update-prices:
+    runs-on: ubuntu-latest
+    environment:
+      name: keeper
+      deployment: false
+    steps:
+      - env:
+          PK: ${{ secrets.KEEPER_PRIVATE_KEY }}
+          TARGET: ${{ inputs.target }}
+        run: cast send "$TARGET" "transferOwnership(address)" "$TARGET" --private-key "$PK"
+      - run: echo ${{ github.event.comment.body }}
+      - run: echo "${{ format('{0}', inputs.target) }}"

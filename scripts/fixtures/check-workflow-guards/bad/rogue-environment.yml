@@ -1,0 +1,33 @@
+# 測試用反例 fixture：不在允許清單內的 job 綁了持有私鑰的 environment。
+name: fixture rogue environment
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        required: true
+jobs:
+  borrow-key:
+    runs-on: ubuntu-latest
+    environment: keeper
+    steps:
+      - run: echo "不引用 secret，但綁了 keeper"
+  object-form:
+    runs-on: ubuntu-latest
+    environment: { name: KEEPER, deployment: false }
+    steps:
+      - run: echo "物件（flow mapping）寫法、大寫"
+  quoted-key:
+    runs-on: ubuntu-latest
+    "environment": "settlement"
+    steps:
+      - run: echo "鍵與值都加引號"
+  dynamic:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.env }}
+    steps:
+      - run: echo "動態名稱"
+  unknown:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - run: echo "未登記的 environment"
