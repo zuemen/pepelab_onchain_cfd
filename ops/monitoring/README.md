@@ -12,6 +12,7 @@
 |---|---|
 | `monitors.json` | 規則與參數的唯一真相。手寫欄位＋由 `node scripts/check-monitoring.mjs --write` 產生的欄位（位址、topic0、selector…） |
 | `rules.md` | 由 `monitors.json` 渲染的人讀清單，**不要手改** |
+| `deployed.json` | 以唯讀 RPC 抓下的已部署 runtime bytecode 與鏈上快照（釘在單一區塊）。CI 離線用它確認「規則監控的事件真的在部署版合約裡」；合約重新部署、升級或加規則後用 `node scripts/check-monitoring.mjs --refresh-deployed` 重抓 |
 | `engine.mjs` | 規則引擎：事件掃描、狀態檢查、HTTP 檢查、告警狀態機（觸發／持續／恢復） |
 | `notify.mjs` | 通道與訊息格式 |
 | `tick.mjs` | 一輪：KV 狀態 → 引擎 → 送通知（含 outbox 重送）→ 心跳 |
@@ -33,7 +34,7 @@ Worker 持有的東西只有：
 
 **沒有** GitHub token、**沒有**任何鏈上私鑰；不送交易、不開 issue。它與 `ops/keeper-trigger`（持有 Actions token）完全分開——keeper-trigger 的 token 外洩時能停用 keeper 與 `oracle-health.yml`，但碰不到這個 Worker。
 
-通道憑證不會出現在 log：送失敗時只記通道名與 HTTP 狀態。訊息以純文字送出（Telegram 不設 `parse_mode`、Discord `allowed_mentions` 為空），鏈上資料不會被解讀成格式或 @mention。
+通道憑證不會出現在 log：送失敗時只記通道名與 HTTP 狀態，例外訊息裡的 URL 一律遮蔽（`RPC_URL`／`HEARTBEAT_URL`／通道 URL 可能帶金鑰）。所有 URL 設定都必須是 `https://`，格式不對時大聲失敗。每次對外請求都有逾時（RPC 15 秒；通知與 HTTP 檢查 10 秒），卡住的端點不會拖垮整輪。訊息以純文字送出（Telegram 不設 `parse_mode`；Discord 沒有純文字模式，所以跳脫 Markdown、`allowed_mentions` 為空、不展開連結預覽），鏈上或外部回應的文字不會被解讀成格式、遮罩連結或 @mention。
 
 ## 部署（依序）
 
@@ -41,7 +42,7 @@ Worker 持有的東西只有：
 2. **【擁有者】建立通道**（需要你本人的帳號）：
    - Telegram：用 @BotFather 建 bot 取得 bot token；把 bot 加進接收群組，取得 chat id。
    - Discord：頻道設定 → 整合 → Webhook → 複製 URL。
-   - email：用你選定的轉寄服務建立一個接收 HTTPS POST 的端點（JSON body，含 `severity`、`status`、`ruleId`、`title`、`text`）；設定 `ALERT_WEBHOOK_SECRET` 時，請求帶 `X-Pepelab-Signature: sha256=<HMAC-SHA256(secret, body)>` 供驗證。
+   - email：用你選定的轉寄服務建立一個接收 HTTPS POST 的端點（JSON body，含 `severity`、`status`、`ruleId`、`title`、`text`）；設定 `ALERT_WEBHOOK_SECRET` 時，請求帶 `X-Pepelab-Timestamp: <unix 秒>` 與 `X-Pepelab-Signature: sha256=<HMAC-SHA256(secret, "<timestamp>.<body>")>`；接收端驗簽並**拒絕時間差超過 5 分鐘**的請求，避免重放。
 3. **【擁有者】確認門檻**（ADR-009「待使用者決定」2）：編輯 `monitors.json` 的 `params.*.default`，執行
    ```bash
    node scripts/check-monitoring.mjs --write   # 重新產生 monitors.json 產生欄位與 rules.md
@@ -106,8 +107,13 @@ KV 沒有檢查點時，事件掃描從 `head - INITIAL_LOOKBACK_BLOCKS`（約 1
 
 - KV 鍵 `state:v1`：事件檢查點、開啟中的告警、累計提領視窗、保險金每小時高點、HTTP 連續失敗次數、送不出去的 outbox（最多 100 則）。KV 鍵 `baselines:v1`：首次觀察到的基準（`payTo`）。每輪各讀 1 次；`state:v1` 每輪寫 1 次（每日 288 次寫入），`baselines:v1` 只在基準變動時寫。
 - 告警狀態機：事件型每筆送一次；狀態型首次「觸發」、嚴重度升級或超過 `REMIND_SEC`（6 小時）「持續」、條件解除「恢復」。**規則讀取失敗時不會發恢復**。
-- 所有通道都送失敗時，通知留在 outbox 下一輪重送，該次 cron 記為失敗，也不打心跳。
+- 通道各自送、各自重送：某個通道失敗時，通知只對「沒送到的那個通道」留在 outbox，下一輪重送（每輪最多 10 則、超過 24 小時丟棄並記錄；通道從設定移除後不再等它）。有通知沒送達時該次 cron 記為失敗、不打心跳；同一通道連續 `CHANNEL_STUCK_ROUNDS` 輪以上送不出去時，透過其他通道發 `monitor-self` 告警。
 - 延遲：cron 5 分鐘＋`CONFIRMATIONS`（3 塊）。落後超過 `LAG_ALERT_BLOCKS` 時發監控自身告警。
+- 事件掃描：公開 RPC 的 `eth_getLogs` 一次最多 1,000 塊（超過回 HTTP 413／-32614），所以 `MAX_BLOCK_RANGE` 上限 1,000（CI 強制）。停機後積欠的區塊**分段追趕**：每輪最多 `MAX_SCAN_REQUESTS` 段、每段一個檢查點；範圍被拒時自動減半重試，不會卡死在同一個檢查點。
+- RPC 讀取：限流（429／-32007）與 5xx 以退避重試；`monitor-self:errors` 要**連續 `SELF_ERRORS_BEFORE_ALERT` 輪**讀取失敗才告警，公開 RPC 偶發抖動不會觸發／恢復輪流洗版。部分資產讀取失敗時，已算出的告警照送，但該規則不算成功評估（不發恢復）。
+- 靜音：`MUTE_KEYS`（逗號分隔的告警 key 或規則 id）只靜音指定告警；`MIN_SEVERITY` 是全域門檻。兩者都**不會**擋掉 `monitor-self`——監控自身故障一定送出。
+- 累計提領視窗以**區塊時間**計算（不是 Worker 執行時間），停機後追趕的事件落在正確的視窗。
+- 部分事件在部署版合約裡不存在（前端 ABI 比部署版新）：這些規則在 `rules.md` 標「部署版不發此事件」，改由接線狀態規則輪詢 getter；CI 以 `deployed.json` 確認每條 active 事件規則的 topic0 都在部署版 bytecode 裡。
 - 只監控 Base Sepolia（84532）；Ethereum Sepolia 的價格新鮮度仍由 `oracle-health.yml` 負責。
 - Cloudflare 免費方案的單次 CPU 時間有上限；規則與網路等待不算 CPU，但若 Logs 出現超出 CPU 限制的錯誤，需升級 Workers Paid 或拆分 Worker（**部署後觀察**）。
 - 白標租戶：每個租戶複製一份 `monitors.json`（`deployment.tenant` 與位址來源改成該租戶）與一個 Worker，各自的通道與 KV。產生器目前只認得正式站的前端設定；依 ADR-008 階段 2 把 `addresses.ts` 擴成依租戶後一併擴充。
