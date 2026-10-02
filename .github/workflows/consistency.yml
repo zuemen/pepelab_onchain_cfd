@@ -77,6 +77,36 @@ jobs:
       - name: decide / tick tests
         run: node --test ops/keeper-trigger/keeper-trigger.test.mjs
 
+  monitoring:
+    # 鏈上監控設定（ops/monitoring/monitors.json）：位址 == frontend/src/contracts/**、
+    # 事件存在於 ABI（pending-deploy 則存在於 Solidity 原始碼）、topic0／selector 正確、
+    # 處置段落存在於 INCIDENT_RESPONSE.md、rules.md 未過期、設定目錄沒有秘密；active 事件規則的
+    # topic0 存在於部署版 bytecode（離線 fixture ops/monitoring/deployed.json）、admin 事件都有規則、
+    # 必要規則未被刪除或降級、每條規則的定義等於釘住的 sha256、參數在範圍內（MAX_BLOCK_RANGE ≤ 1000、
+    # 不可等於關掉告警）、MUTE_KEYS 只用白名單、部署版裡的管理函式都有規則或理由、UUPS proxy 有實作 slot 規則。
+    # deployed.json 是否仍是鏈上實況由每週的 monitoring-fixture.yml（唯讀連網）檢查。
+    # 只讀、不連網、不部署 Worker。見 docs/ADR-009-monitoring.md。
+    name: monitoring rules ↔ addresses.ts / ABI
+    runs-on: ubuntu-latest
+    # 檢查器自我測試含突變清單（每項複製一份 repo 跑檢查），本機約 2 分鐘。
+    timeout-minutes: 10
+    steps:
+      # submodules：Timelock 規則（pending-deploy）的事件宣告在 OpenZeppelin 原始碼裡。
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+      # 先證明檢查器會抓錯，再用它檢查 repo。
+      - name: Checker self-test
+        run: node --test scripts/check-monitoring.test.mjs
+      - name: Engine / notify tests
+        run: node --test ops/monitoring/monitor.test.mjs
+      - name: Check monitoring config
+        run: node scripts/check-monitoring.mjs
+
   workflow-guards:
     # 持有鏈上私鑰的 job 靠「私鑰只放 environment secret＋只有特定 job 綁那個 environment＋
     # admin 呼叫先經人工核准」保護，而這些都只是 workflow 檔裡的幾行 YAML。這支檢查把規則

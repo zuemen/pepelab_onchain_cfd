@@ -169,6 +169,7 @@ npm run mcp-server      # 本機啟動 MCP server（stdio）
 | [`docs/RISK_WATERFALL.md`](docs/RISK_WATERFALL.md) | 損失吸收順序（草案） |
 | [`docs/CARBON_METHODOLOGY.md`](docs/CARBON_METHODOLOGY.md) | 碳分級方法與資料品質（草案） |
 | [`docs/INCIDENT_RESPONSE.md`](docs/INCIDENT_RESPONSE.md) | 事故應變（草案） |
+| [`docs/ADR-009-monitoring.md`](docs/ADR-009-monitoring.md)、[`ops/monitoring/rules.md`](ops/monitoring/rules.md) | 鏈上監控方案決策與監控規則清單（部署見 [`ops/monitoring/README.md`](ops/monitoring/README.md)） |
 | [`docs/api/openapi.yaml`](docs/api/openapi.yaml) | signal-api 規格 |
 | [`docs/RISK_MODEL.md`](docs/RISK_MODEL.md) | 金庫風險模型 |
 | [`docs/VAULT_VERSIONS.md`](docs/VAULT_VERSIONS.md) | 金庫版本與鏈上實作對照 |

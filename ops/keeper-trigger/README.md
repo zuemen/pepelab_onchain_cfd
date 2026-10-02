@@ -66,7 +66,7 @@ Worker 本身**不持有任何鏈上金鑰**，對任何 HTTP 請求都回 404�
 | `agent-ci.yml`、`contracts-ci.yml`、`frontend-ci.yml`、`consistency.yml` | 無 | 無 | `contents: read`、沒有 secrets，後果只有 Actions 分鐘數（公開 repo 免費） |
 
 **總結最壞情況**：
-1. 取消 keeper run 或停用 keeper → 價格超過 `maxPriceAge` 後資產停止交易。平常由 `oracle-health`（每 3 小時）開 issue 告警。但同一個 token 也能停用 `oracle-health`，所以**目前沒有不依賴 GitHub Actions 的告警**。若要補，需要一個不共用這個 token 的監控，例如另一個只讀鏈上 `updatedAt` 的 Cloudflare cron。
+1. 取消 keeper run 或停用 keeper → 價格超過 `maxPriceAge` 後資產停止交易。平常由 `oracle-health`（每 3 小時）開 issue 告警。但同一個 token 也能停用 `oracle-health`，所以**目前沒有不依賴 GitHub Actions 的告警**。若要補，需要一個不共用這個 token 的監控，例如另一個只讀鏈上 `updatedAt` 的 Cloudflare cron。**2026-10-01**：這個監控已寫在 [`ops/monitoring/`](../monitoring/README.md)（獨立 Worker、不持有 GitHub token，見 [ADR-009](../../docs/ADR-009-monitoring.md)），部署後即補上這個缺口；部署前此句仍成立。
 2. 以 owner 身分送 admin 交易 → 由 `admin-approval` 的人工審核擋下；下面第 1–4 步做完之前，這一條**沒有真正關上**。審核時**只核准你自己剛剛手動 dispatch、而且 inputs（target／function／args）逐字核對過的 run；不認得的一律 Reject**。還在用你本人的 PAT 時，攻擊者可以不斷 dispatch 待核准的 run 來洗版（它們不會占用 keeper 的 concurrency group）。改用 GitHub App 之後（觸發者是 `<app-slug>[bot]`，不是擁有者本人），用 Worker 憑證 dispatch 的 admin run 在 `precheck` 就失敗，不會出現在等待核准的清單裡，也不會寄出核准通知。
 3. 在舊分支上以私鑰執行舊程式 → 第 4 步刪掉 repo 層級的私鑰 secret 之後，舊版 workflow 拿不到私鑰（`Fail fast when secrets are missing` 會讓它失敗）。
 
