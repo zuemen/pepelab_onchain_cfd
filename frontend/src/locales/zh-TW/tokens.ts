@@ -16,7 +16,7 @@ export const tokens = {
     title: '見證碳等級',
     sourceNote: '鏈上見證的中位數',
     feeNote: '這個等級決定本資產的鑄造費率：{fee}',
-    unratedNote: '未評等不是中性——它按最保守的等級定價。',
+    unratedNote: '未評等不是中性，它按最保守的等級定價。',
   },
 
   /** TradingView 外嵌圖表區。symbol 寫死,見元件註解。 */
