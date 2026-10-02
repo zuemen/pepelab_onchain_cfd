@@ -10,10 +10,18 @@ on:
     branches: [master]
     paths:
       - 'frontend/**'
+      # 匿名審查護欄（frontend/src/anonymity.test.ts）也掃這三處，改到它們時同樣要跑。
+      - 'web/**'
+      - 'README.md'
+      - 'docs/**'
       - '.github/workflows/frontend-ci.yml'
   pull_request:
     paths:
       - 'frontend/**'
+      # 匿名審查護欄（frontend/src/anonymity.test.ts）也掃這三處，改到它們時同樣要跑。
+      - 'web/**'
+      - 'README.md'
+      - 'docs/**'
       - '.github/workflows/frontend-ci.yml'
   workflow_dispatch:
 

@@ -172,4 +172,4 @@ All contract addresses are written to `frontend/src/contracts/addresses.ts` by t
 
 ---
 
-*Research prototype · NCCU Finance Management Department Capstone 2026*
+*Research prototype · Capstone project 2026*

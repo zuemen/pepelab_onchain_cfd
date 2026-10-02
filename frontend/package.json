@@ -4,6 +4,7 @@
   "version": "7.5.0",
   "description": "Vite Starter & TypeScript",
   "private": true,
+  "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "scripts": {
     "dev": "vite",

@@ -7,9 +7,12 @@ was not, the reason is given rather than glossed over.
 > **Status as of 2026-09-30:** #1–#13 were verified on 2026-07-27; #14–#20 (x402
 > layer) were added on 2026-09-17; #21–#26 (exchange guardian/pause, caps, slash
 > reserve, portfolio-margin removal) came with PR #191, which is merged as
+> **source only, not deployed**; #27–#29 (guardian asset-mode limit, timelock
+> handover, V2.5 unpriced exemption) came with PR #198, merged the same way —
 > **source only, not deployed**. The status column below was not re-verified item
 > by item on 2026-09-30. Current numbers: 920 Foundry tests on `master` after
-> PR #191 (portfolio-margin-only tests were removed with the feature) — whether all
+> PR #191 (portfolio-margin-only tests were removed with the feature); PR #198
+> reported 956 passing plus fork tests that are skipped by default — whether all
 > pass is whatever the latest Contracts CI run says. Current deployment and what is
 > live vs. source-only:
 > [`README.md`](../README.md).
@@ -44,7 +47,7 @@ was not, the reason is given rather than glossed over.
 | 24 | Portfolio margin has no account-level net liquidation | **Open** — `portfolioMarginEnabled` must stay **off** in production until implemented and audited (off on the live deployment) |
 | 25 | InsuranceVault has no virtual shares (first-depositor inflation) | **Mitigated** — zero-share deposits revert; attack profitability not removed |
 | 26 | Portfolio (cross) margin removed | **Resolved by removal** (2026-09-30) — supersedes #24; isolated margin only |
-| 27 | Exchange guardian's per-asset brake stops at ReduceOnly; only the owner can Halt | **By design** (2026-09-30, `contracts/p1-cutover-periphery`) — the *exchange* guardian cannot freeze exits by asset mode; the GuardedOracle guardian still can (see §27 below) |
+| 27 | Exchange guardian's per-asset brake stops at ReduceOnly; only the owner can Halt | **By design** (2026-09-30, PR #198, source only) — the *exchange* guardian cannot freeze exits by asset mode; the GuardedOracle guardian still can (see §27 below) |
 | 28 | After the timelock handover, recovery actions wait 48h and depend on one Safe | **By design** — losing the Safe freezes governance permanently |
 | 29 | V2.5 unpriced exemption values a closed dead-feed asset at an arbitrarily old price | **Accepted** — closed assets only, never below its last recorded price, dust-only without one |
 
@@ -828,8 +831,8 @@ account-level netting and a fresh audit, and must fit the size budget.
 
 ## 27. Guardian's per-asset brake stops at ReduceOnly (added 2026-09-30)
 
-Added on branch `contracts/p1-cutover-periphery` after the audit-level review
-of the #130 cutover. `ExchangeOpsLib.setAssetMode` now lets the exchange
+Added on branch `contracts/p1-cutover-periphery` (merged to `master` as PR #198,
+source only, not deployed) after the audit-level review of the #130 cutover. `ExchangeOpsLib.setAssetMode` now lets the exchange
 guardian move an asset only into ReduceOnly: from Active, or idempotently from
 ReduceOnly, which sets `guardianLocked` so the market operator cannot re-open
 it (second review, L2). ReduceOnly refuses new exposure but
