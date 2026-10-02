@@ -151,7 +151,7 @@ keeper 的排程可以是同一支 workflow 以租戶為 matrix 展開，但每�
 | 平台 keeper workflow 改成讀 JSON | 動到線上價格的活性路徑，只能以實際執行驗證；租戶用的是範本 | 另一個 PR |
 | 租戶 keeper 範本在真的租戶上 dispatch | 需要已部署的租戶與金鑰；範本只做過靜態檢查與 actionlint | 試點時 |
 | 租戶版 Timelock 腳本 | 沒有 Timelock 時 admin multisig 可以立即升級金庫（PR #228 審查 F9）；延遲長度是商務／法遵決定 | 擁有者決定後 |
-| Base 主網的共用元件與結算幣 | 原生 USDC 是 6 位小數，`PerpetualExchange` 要 18 位；設定檢查今天擋下所有主網設定 | 擁有者決定後 |
+| Base 主網的共用元件與結算幣 | 原生 USDC 是 6 位小數，`PerpetualExchange` 要 18 位；設定檢查今天擋下所有主網設定。建議方案與原型見 [ADR-011](ADR-011-settlement-token-decimals.md)（每租戶一顆 1:1 的 18 位包裝幣＋存入 router） | 擁有者決定後 |
 | 共用平台 `ESGRegistryV2` 的選項 | 預設（專屬）已足夠試點 | 有租戶要求時 |
 | 前端連 Base 主網的專屬部署；專屬租戶的逐頁走查 | 沒有主網部署，也沒有可瀏覽的專屬租戶 | 試點時 |
 | 事故手冊區分單一租戶與跨租戶事故 | `TENANT_OPERATIONS.md` §4 只有判斷表，沒有完整手冊 | 試點前 |
