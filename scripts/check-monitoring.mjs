@@ -30,13 +30,23 @@
 //   node scripts/check-monitoring.mjs --write    # 依來源重新產生 monitors.json 的產生欄位與 rules.md
 //   node scripts/check-monitoring.mjs --refresh-deployed [--rpc <url>]
 //                                                # 以唯讀 RPC 重抓 deployed.json（合約重新部署、升級或加規則後）
+//   node scripts/check-monitoring.mjs --verify-deployed [--rpc <url>]
+//                                                # 以唯讀 RPC 比對 deployed.json 是否仍是鏈上實況（每週排程；不寫檔）
 //   node scripts/check-monitoring.mjs --root <dir>
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseFrontendConfig } from "./check-addresses.mjs";
 import { keccak256, selector } from "../ops/monitoring/keccak.mjs";
-import { _internal as engineInternal, SEVERITIES } from "../ops/monitoring/engine.mjs";
+import {
+  _internal as engineInternal,
+  IMPL_SLOT,
+  MAX_ALERT_DELAY_ROUNDS,
+  MIN_SEVERITY_ALLOWED,
+  SAFETY_LIMITS,
+  SEVERITIES,
+} from "../ops/monitoring/engine.mjs";
 import { parseMuteKeys } from "../ops/monitoring/notify.mjs";
 
 const ADDR = /^0x[0-9a-fA-F]{40}$/;
@@ -45,16 +55,17 @@ const KINDS = ["event", "state", "http"];
 const STATUSES = ["active", "pending-deploy"];
 const IR_DOC = "docs/INCIDENT_RESPONSE.md";
 const DEPLOYED_FILE = "ops/monitoring/deployed.json";
-/** EIP-1967 implementation slot：keccak256("eip1967.proxy.implementation") - 1。 */
-const IMPL_SLOT = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
-/** 讀代幣位址的 getter（本專案所有持有 USDC 的合約都叫 usdc()）。 */
-const TOKEN_GETTER = "usdc()";
-/** 代幣小數位：MockUSDC 沒有覆寫 decimals()（OZ ERC20 預設 18）；Circle 官方 USDC 是 6。 */
+/**
+ * 代幣：小數位、位址來源，以及「持有它的合約用哪個 getter 回報它」（鏈上快照比對標籤用）。
+ * MockUSDC 沒有覆寫 decimals()（OZ ERC20 預設 18）；Circle 官方 USDC 是 6；PepeToken 預設 18。
+ */
 const TOKENS = {
-  MockUSDC: { file: "contracts/src/MockUSDC.sol", default: 18, ref: "MockUSDC" },
+  MockUSDC: { file: "contracts/src/MockUSDC.sol", default: 18, ref: "MockUSDC", getter: "usdc()" },
   // Circle 官方 Base Sepolia USDC；位址的單一來源是 agent/shared/src/env.ts。
-  USDC: { fixed: 6, constant: { file: "agent/shared/src/env.ts", name: "OFFICIAL_BASE_SEPOLIA_USDC" } },
+  USDC: { fixed: 6, constant: { file: "agent/shared/src/env.ts", name: "OFFICIAL_BASE_SEPOLIA_USDC" }, getter: "usdc()" },
+  PepeToken: { file: "contracts/src/PepeToken.sol", default: 18, ref: "PepeToken", getter: "pepe()" },
 };
+const tokenGetter = (token) => TOKENS[token]?.getter ?? "usdc()";
 /** 這些名稱只能用 `wrangler secret put` 設定，出現在 [vars] 就是把秘密寫進 repo。 */
 export const SECRET_NAMES = [
   "TELEGRAM_BOT_TOKEN",
@@ -78,65 +89,72 @@ const LOCAL_ONLY = [".dev.vars", ".wrangler"];
 const GITIGNORE_REQUIRED = [".dev.vars", ".wrangler/"];
 
 /**
- * 必要規則與下限（審查 M4）：刪掉整條規則、把它改成 pending-deploy、或把嚴重度調低，
- * 都要「同時改這張表」才過得了 CI——單改 monitors.json 再 --write 不行。
- * 值是 [最低嚴重度, 必須的狀態]；規則可以比這裡更嚴重，pending-deploy 的可以升為 active。
- * 新增規則時一併加進來。
+ * 必要規則（審查 M4、複審 M-B）：每一條規則都登記在這裡，值是 [最低嚴重度, 必須的狀態, 定義的 sha256]。
+ *   • 刪掉整條規則、改成 pending-deploy、調低嚴重度 → 紅。
+ *   • **改了規則的任何內容 → 紅**：sha256 是「手寫欄位」（去掉 --write 產生的位址、topic0、selector、
+ *     預期值…）排序鍵後序列化的雜湊。只鎖嚴重度與狀態時，把 insurance-wiring 的 exchange() 讀取刪掉、
+ *     把 exchange-balance-drop 的 holder 換成別的合約、拿掉相對門檻，CI 都是綠的（複審 N1d、N2d、N5f–h）。
+ *     產生欄位不在雜湊裡，因為它們已經逐一對照來源（addresses.ts、ABI、deployed.json）驗證。
+ * 要改：改 monitors.json → --write → 檢查器印出新雜湊 → **人工審過改動**後把新雜湊貼到這裡。
+ * 新增規則時一併登記。
  */
 export const REQUIRED_RULES = {
-  "owner-transferred": ["SEV-1", "active"],
-  "access-role-changed": ["SEV-1", "active"],
-  "vault-upgraded": ["SEV-1", "active"],
-  "exchange-agent-authorization": ["SEV-1", "active"],
-  "traderstake-copytracker-set": ["SEV-1", "active"],
-  "kyc-verifier-changed": ["SEV-2", "pending-deploy"],
-  "exchange-wiring-changed": ["SEV-1", "active"],
-  "insurance-wiring-changed": ["SEV-1", "pending-deploy"],
-  "feerouter-config-changed": ["SEV-2", "pending-deploy"],
-  "insurance-wiring": ["SEV-1", "active"],
-  "feerouter-wiring": ["SEV-1", "active"],
-  "core-wiring": ["SEV-1", "active"],
-  "x402-payto": ["SEV-1", "active"],
-  "exchange-risk-params": ["SEV-3", "active"],
-  "exchange-funding-clamped": ["SEV-3", "active"],
-  "vault-pause-changed": ["SEV-2", "active"],
-  "pepe-incentives-pause": ["SEV-3", "active"],
-  "vault-risk-params": ["SEV-3", "active"],
-  "asset-vault-v1-assets": ["SEV-3", "active"],
-  "esg-registry-params": ["SEV-3", "active"],
-  "esg-reward-params": ["SEV-3", "active"],
-  "pepe-claim-admin": ["SEV-3", "active"],
-  "vault-reserve-breached": ["SEV-2", "active"],
-  "guarded-oracle-guardian": ["SEV-2", "active"],
-  "guarded-oracle-price-rejected": ["SEV-3", "active"],
-  "mock-oracle-config": ["SEV-2", "active"],
-  "aggregator-oracle-config": ["SEV-2", "active"],
-  "chainlink-adapter-config": ["SEV-2", "active"],
-  "pyth-adapter-config": ["SEV-2", "active"],
-  "exchange-bad-debt": ["SEV-2", "active"],
-  "large-margin-withdrawal": ["SEV-2", "active"],
-  "insurance-withdrawal": ["SEV-2", "active"],
-  "insurance-bailout": ["SEV-2", "active"],
-  "vault-large-redeem": ["SEV-2", "active"],
-  "fee-withdrawals": ["SEV-3", "active"],
-  "x402-fee-withdrawals": ["SEV-3", "active"],
-  "vault-fees-withdrawn": ["SEV-3", "active"],
-  "oracle-stale": ["SEV-2", "active"],
-  "oracle-deviation": ["SEV-2", "active"],
-  "guarded-oracle-paused": ["SEV-3", "active"],
-  "exchange-balance-drop": ["SEV-2", "active"],
-  "insurance-fund": ["SEV-2", "active"],
-  "vault-reserve": ["SEV-2", "active"],
-  "keeper-gas": ["SEV-3", "active"],
-  "signal-api-health": ["SEV-3", "active"],
-  "exchange-pause": ["SEV-1", "pending-deploy"],
-  "exchange-asset-mode": ["SEV-2", "pending-deploy"],
-  "exchange-guardian-roles": ["SEV-1", "pending-deploy"],
-  "exchange-exposure-caps": ["SEV-3", "pending-deploy"],
-  "timelock-operations": ["SEV-2", "pending-deploy"],
-  "vault-unpriced-exemption": ["SEV-2", "pending-deploy"],
-  "guarded-oracle-window": ["SEV-3", "pending-deploy"],
-  "copytracker-slash-reserve": ["SEV-2", "pending-deploy"],
+  "owner-transferred": ["SEV-1", "active", "b4179173a5c8b87d675ad353fe1d9da0c970f66405fd5d29e396966432b57bd1"],
+  "access-role-changed": ["SEV-1", "active", "d679eab5c775a27b1ee4ee03187b1b316f5b915e9250ebff731f5f9f6a7d449c"],
+  "vault-upgraded": ["SEV-1", "active", "5a6c261e65b05b0b4ccca2d06f2bebe82285638a042936840ae5999be4d74d7b"],
+  "exchange-agent-authorization": ["SEV-1", "active", "7cf697df61737e236db237b1a55114a3c1eed52196fe2d8c2cdaa2335cd5ad24"],
+  "traderstake-copytracker-set": ["SEV-1", "active", "8f70b24fecc090ad1a51c8947fedb4ca7027a371d0637bfc6f55f199452bf562"],
+  "kyc-verifier-changed": ["SEV-2", "pending-deploy", "a0699690843f2dac33afdfd940dcf336151409ca2484fce32f746559a9b59856"],
+  "exchange-wiring-changed": ["SEV-1", "active", "ccb08201fca6ece947c84dc10cec73596dbd2ff0c62ce18d5513913b596e4922"],
+  "insurance-wiring-changed": ["SEV-1", "pending-deploy", "e19d5e91e842124fca33ea1c953fea7ad088744739c69d9de80be9ada5181356"],
+  "feerouter-config-changed": ["SEV-2", "pending-deploy", "90d2109a7b733053c95f50f73f74b1e289df5d9f80162bada77a8efc3fb80c4a"],
+  "insurance-wiring": ["SEV-1", "active", "25b90b1bacb9f7824292a324f30b0e38acc31f0804c5f0844c8e0d003837394f"],
+  "feerouter-wiring": ["SEV-1", "active", "eeaff5fa6b357e09352609a40f8cbba8ae5819b9a54871861f24e96d0aef739b"],
+  "core-wiring": ["SEV-1", "active", "9ca3f119fdb8ce10197000521708eb733b19ced04930976daba48a22d5f96100"],
+  "proxy-implementation": ["SEV-1", "active", "4dac4c95cf758408e8876bd33cfa59fb8b5ca54197de199039cd54b50e93198f"],
+  "pepe-incentives-wiring": ["SEV-2", "active", "9d1100819a86f3d49729e3f030b2c9cddd3e00ba0fd1b4a0a570df753741a5d8"],
+  "x402-payto": ["SEV-1", "active", "120e8c0092751a13807a6f7fdd0f9043bc87c37b46e4901609151770c0e73452"],
+  "exchange-risk-params": ["SEV-3", "active", "1c9a902b822a3af688e97329971d71f2da2b0b29597a81136580eb5c6c434259"],
+  "exchange-funding-clamped": ["SEV-3", "active", "f3a7f769cf509be28ac4e2ed86a0a704c36776522e58f8123dd6aeb5fc6b1b5b"],
+  "vault-pause-changed": ["SEV-2", "active", "05614cf07553c73bd6ce64b24d07206ce694c25d8ad0c6df1ad4cc209088bb8b"],
+  "pepe-incentives-pause": ["SEV-3", "active", "bfda7e66b8d8eb2fbc4178e6f46d17f72603bd7557a0c655865950bc1e46c015"],
+  "vault-risk-params": ["SEV-3", "active", "4afe7d0da970af2385aa6cf532c57b84ed438e202d1a907a7d23dda3865e3268"],
+  "asset-vault-v1-assets": ["SEV-3", "active", "1f00b8b650e483fef612e373af5703b9d681067a27cb14ef30865822d7dc3168"],
+  "esg-registry-params": ["SEV-3", "active", "e4f654fb13c948bdf802cd8900ed88aaec8ccad614375238cf311f4d3a737984"],
+  "esg-reward-params": ["SEV-3", "active", "ea78a3a7bbd0d6483908ede203c66556e8e8eec9dafb8a80a3b6201d3e350b66"],
+  "pepe-claim-admin": ["SEV-3", "active", "af1d202129ed24619d95faaf4e9256badbbccbc257234df48b0feb877de7f333"],
+  "vault-reserve-breached": ["SEV-2", "active", "e0ba958e802b3bc7ab8df2e4e60c37e15403c2b7af938028de60b721c0c01a25"],
+  "guarded-oracle-guardian": ["SEV-2", "active", "340ca6fefe24812ee025f9759ff00c1bbd3883bb784b351c5c95f7ee76c1a94e"],
+  "guarded-oracle-price-rejected": ["SEV-3", "active", "10732cf9d712ec8cad72ef7cbc9637b818ef1da52617537b32ecc496215f3ee9"],
+  "mock-oracle-config": ["SEV-2", "active", "bb07e053e4e3873ff1b9a8b273b6fc6fb59b8c3881c3cb5b121d36b8deeb6be3"],
+  "aggregator-oracle-config": ["SEV-2", "active", "91adce9f3f2e8a2a99f8ac3598a2de56795ef36b02785c293cf1de57bf740564"],
+  "chainlink-adapter-config": ["SEV-2", "active", "63847006c9712ee3e438b513c914242836e845a7642dcfd4e2fd073d3908cb61"],
+  "pyth-adapter-config": ["SEV-2", "active", "9a29c35fc92f3b560e62c60bae0a9ed29b16cc6ce528d618f6e06b56282f53ed"],
+  "exchange-bad-debt": ["SEV-2", "active", "70972c507a17f743b923ea598a412d32b8cc664b2743869337f34b4e117e41f5"],
+  "large-margin-withdrawal": ["SEV-2", "active", "fc9b3b0a4649918d4791b8424efdc79382a0415f26004dccd63016b6a8db94d8"],
+  "insurance-withdrawal": ["SEV-2", "active", "928d488d08becea1c8377a336f3d27dea6b24dcaf512b514d1080d31242025ff"],
+  "insurance-bailout": ["SEV-2", "active", "e3f5da0f28ea2293e366bfa61a353d63169c1abaa823df61a288461b2a8231f0"],
+  "vault-large-redeem": ["SEV-2", "active", "1588a799c70a17cd5751e4fb110d8624362d828daf718455912fdce2fd481f2c"],
+  "fee-withdrawals": ["SEV-3", "active", "4820fd911dcf975ffeb705409271c906f2b9fb9c79b9ce75a41bb77b90fe51cc"],
+  "x402-fee-withdrawals": ["SEV-3", "active", "d188cbf8044cdebe08e9d8d7a7f9d9b75f531026fc03b4cecb43dfb6b3e4e130"],
+  "vault-fees-withdrawn": ["SEV-3", "active", "0cec594f66b68246fb158181d88c1cc1201197dea6a90e5cfeda2002e3fd8320"],
+  "oracle-stale": ["SEV-2", "active", "3d4268f0295b67690356d66cd6b11ea9ad96788d05a2e3b3cd40576928ebd613"],
+  "oracle-deviation": ["SEV-2", "active", "162bb27b521d3775d6dbb6ea50176bbdd23ef206d57c99a4d863db7ca8eae7b1"],
+  "guarded-oracle-paused": ["SEV-3", "active", "d291520ceab8de75f5330c19b6159e9d8f47a00e2f8af704d64ffe8da10e4b5b"],
+  "exchange-balance-drop": ["SEV-2", "active", "e6afd7a9311f4014f737f1ea84a6bc45379bcfbf98ce3b836880e3648169624f"],
+  "pepe-incentives-balance-drop": ["SEV-2", "active", "92941bfbb135f1ad50472b0b084dbd30c3a2984ebc6deca04af41ed596e99410"],
+  "insurance-fund": ["SEV-2", "active", "8b485cfb1a22b5f9837934d8aaf89fb01fbe20738ede1a7e70032e80d789bba0"],
+  "vault-reserve": ["SEV-2", "active", "4bb5187ed6df9d7a5341cf371968a80bf7067e0bfe34b435baff954ab8c823a8"],
+  "keeper-gas": ["SEV-3", "active", "6c1973e862837b5e5e232da2931436b599276e949ad7dc024563dfc1320d30e8"],
+  "signal-api-health": ["SEV-3", "active", "1ec853ee2afd0cf3ee8bd6a9232ffb27e107bc0464f0d96d0cbdff9d0151ec69"],
+  "exchange-pause": ["SEV-1", "pending-deploy", "5fe895a21c13de8449c5f91bfaca597b67cc9d3042161da199f2023df9121afd"],
+  "exchange-asset-mode": ["SEV-2", "pending-deploy", "ed30b8f122a0263551e930d18c7204655d447f4c4131df694e4eef510116cff7"],
+  "exchange-guardian-roles": ["SEV-1", "pending-deploy", "1d91732b5d90fcfe2311ce4014517a81079034aae6117fd3ecedee03cc0e84bb"],
+  "exchange-exposure-caps": ["SEV-3", "pending-deploy", "d9b49399d08536d08944c5f32dcf84aaac2ea521f6d5835c89c17aafc613e63e"],
+  "timelock-operations": ["SEV-2", "pending-deploy", "0d275c5eae13b8ef21b4ad53512fb53b32cdff4af23b46be91298d3463107ee1"],
+  "vault-unpriced-exemption": ["SEV-2", "pending-deploy", "9e6b3f9ddbb957cc04d6ed0f0be608d1220e7a98df1290f63df0c1c525893505"],
+  "guarded-oracle-window": ["SEV-3", "pending-deploy", "3cb1cb7086d1f110bad42185a852f2676206856c8e653836297a0ca159c72b4e"],
+  "copytracker-slash-reserve": ["SEV-2", "pending-deploy", "d28fa46a7e82c7224d01f9545d83008dce38ded17d9056e91b10744155e30bec"],
 };
 
 /**
@@ -156,13 +174,14 @@ export const PARAM_SPECS = {
   MAX_BLOCK_RANGE: { type: "int", min: 1, max: 1000 },
   // Cloudflare 免費方案每次執行 50 個 subrequest：事件掃描最多佔 20 個。
   MAX_SCAN_REQUESTS: { type: "int", min: 1, max: 20 },
-  LAG_ALERT_BLOCKS: { type: "int", min: 150, max: 1_000_000 },
+  // 上限與執行期的 SAFETY_LIMITS 相同（engine.mjs）：調到更大等於把告警關掉（複審 L-f）。
+  LAG_ALERT_BLOCKS: { type: "int", min: 150, max: SAFETY_LIMITS.LAG_ALERT_BLOCKS.max },
   REMIND_SEC: { type: "int", min: 300, max: 604_800 },
-  MIN_SEVERITY: { type: "severity" },
+  MIN_SEVERITY: { type: "severity", allowed: MIN_SEVERITY_ALLOWED },
   MUTE_KEYS: { type: "keys" },
   LARGE_WITHDRAWAL_USDC: { type: "decimal", max: 1e12 },
   LARGE_WITHDRAWAL_WINDOW_USDC: { type: "decimal", max: 1e12 },
-  LARGE_WITHDRAWAL_BPS: { type: "int", min: 1, max: 10_000 },
+  LARGE_WITHDRAWAL_BPS: { type: "int", min: 1, max: SAFETY_LIMITS.LARGE_WITHDRAWAL_BPS.max },
   WITHDRAWAL_WINDOW_SEC: { type: "int", min: 300, max: 86_400 },
   INSURANCE_WITHDRAW_USDC: { type: "decimal", max: 1e12 },
   BAILOUT_MIN_USDC: { type: "decimal", max: 1e12 },
@@ -175,14 +194,35 @@ export const PARAM_SPECS = {
   REFERENCE_MAX_AGE_SEC: { type: "int", min: 60, max: 604_800 },
   INSURANCE_MIN_USDC: { type: "decimal", max: 1e12 },
   INSURANCE_DROP_BPS: { type: "int", min: 1, max: 10_000 },
-  EXCHANGE_BALANCE_DROP_BPS: { type: "int", min: 1, max: 10_000 },
+  EXCHANGE_BALANCE_DROP_BPS: { type: "int", min: 1, max: 9_000 },
+  INCENTIVES_BALANCE_DROP_BPS: { type: "int", min: 1, max: 9_000 },
   RESERVE_WARN_MARGIN_BPS: { type: "int", min: 0, max: 10_000 },
   GAS_MIN_ETH: { type: "decimal", max: 1000 },
   GAS_CRIT_ETH: { type: "decimal", max: 1000 },
   SIGNAL_API_URL: { type: "url" },
-  HTTP_FAILS_BEFORE_ALERT: { type: "int", min: 1, max: 12 },
-  SELF_ERRORS_BEFORE_ALERT: { type: "int", min: 1, max: 12 },
+  HTTP_FAILS_BEFORE_ALERT: { type: "int", min: 1, max: SAFETY_LIMITS.HTTP_FAILS_BEFORE_ALERT.max },
+  SELF_ERRORS_BEFORE_ALERT: { type: "int", min: 1, max: SAFETY_LIMITS.SELF_ERRORS_BEFORE_ALERT.max },
 };
+/**
+ * 參數組合的限制（值是「名稱 → 數值」，已套用覆寫）。持續故障最晚 MAX_ALERT_DELAY_ROUNDS 輪
+ * （約 30 分鐘）內要告警：x402 讀取失敗要 HTTP_FAILS_BEFORE_ALERT＋SELF_ERRORS_BEFORE_ALERT−1 輪。
+ */
+export function paramComboProblems(values) {
+  const out = [];
+  const h = Number(values.HTTP_FAILS_BEFORE_ALERT);
+  const e = Number(values.SELF_ERRORS_BEFORE_ALERT);
+  if (Number.isFinite(h) && Number.isFinite(e) && h + e - 1 > MAX_ALERT_DELAY_ROUNDS) {
+    out.push(`HTTP_FAILS_BEFORE_ALERT（${h}）＋SELF_ERRORS_BEFORE_ALERT（${e}）−1 = ${h + e - 1} 輪，超過 ${MAX_ALERT_DELAY_ROUNDS} 輪（約 30 分鐘）`);
+  }
+  return out;
+}
+
+/**
+ * 可以被 MUTE_KEYS 靜音的告警 key（複審 M-A）。執行期只認 monitors.json 的 mutableKeys；這裡再釘一次，
+ * 讓「把 x402-payto:changed 加進白名單」也要改檢查器（人工審過）。每一項必須是某條規則的子 key、
+ * 不可以是 SEV-1 的輸出、不可以是 monitor-self。
+ */
+export const MUTABLE_KEYS = ["x402-payto:unsafe"];
 /** 成對的參數：左邊必須 ≤ 右邊（預警門檻不可比嚴重門檻更嚴）。 */
 const PARAM_ORDER = [
   ["ORACLE_DEVIATION_BPS", "ORACLE_DEVIATION_CRIT_BPS"],
@@ -505,7 +545,8 @@ export function deployedTargets(cfg, ctx) {
       if (!addresses.has(lc(a))) addresses.set(lc(a), c.ref);
       if (rule.status === "active" && (rule.amount || rule.token)) {
         const abi = ctx.abis[c.abi];
-        if (abi?.some((x) => x.type === "function" && abiSig(x) === TOKEN_GETTER)) tokenHolders.set(lc(a), c.ref);
+        const getter = tokenGetter(rule.amount?.token ?? rule.token);
+        if (abi?.some((x) => x.type === "function" && abiSig(x) === getter)) tokenHolders.set(`${lc(a)}|${getter}`, { address: lc(a), ref: c.ref, getter });
       }
     }
     if (rule.status === "active" && rule.check === "wiring") {
@@ -540,9 +581,9 @@ export function checkDeployed(cfg, ctx) {
   for (const [k, r] of reads) {
     if (d.reads?.[k] === undefined) problems.push(`${DEPLOYED_FILE} 沒有 ${r.to} ${r.fn} 的鏈上快照 —— ${hint}`);
   }
-  for (const [a, ref] of tokenHolders) {
-    const tok = d.reads?.[readKey(a, TOKEN_GETTER)];
-    if (!tok) problems.push(`${DEPLOYED_FILE} 沒有 ${ref}.${TOKEN_GETTER} 的鏈上快照 —— ${hint}`);
+  for (const { address: a, ref, getter } of tokenHolders.values()) {
+    const tok = d.reads?.[readKey(a, getter)];
+    if (!tok) problems.push(`${DEPLOYED_FILE} 沒有 ${ref}.${getter} 的鏈上快照 —— ${hint}`);
     else if (d.reads?.[readKey(wordToAddr(tok), "decimals()")] === undefined) problems.push(`${DEPLOYED_FILE} 沒有代幣 ${wordToAddr(tok)} 的 decimals() 快照 —— ${hint}`);
   }
   return problems;
@@ -552,7 +593,7 @@ export function checkDeployed(cfg, ctx) {
  * 以唯讀 RPC 重抓 deployed.json。只用 eth_chainId／eth_blockNumber／eth_getCode／eth_getStorageAt／
  * eth_call，全部釘在同一個區塊；不送交易、不需要任何金鑰。CI 不跑這個（CI 不連網）。
  */
-export async function refreshDeployed({ root, rpcUrl, fetchImpl = fetch, log = console.log, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), today = new Date().toISOString().slice(0, 10) }) {
+export async function refreshDeployed({ root, rpcUrl, fetchImpl = fetch, log = console.log, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), today = new Date().toISOString().slice(0, 10), write = true }) {
   const ctx = loadContext(root);
   const cfg = JSON.parse(readFileSync(join(root, "ops/monitoring/monitors.json"), "utf8"));
   const url = rpcUrl ?? cfg.network.publicRpc;
@@ -614,8 +655,8 @@ export async function refreshDeployed({ root, rpcUrl, fetchImpl = fetch, log = c
     return j.result;
   };
   for (const [, r] of [...reads].sort()) await call(r.to, r.fn);
-  for (const [a] of [...tokenHolders].sort()) {
-    const tok = wordToAddr(await call(a, TOKEN_GETTER));
+  for (const [, { address: a, getter }] of [...tokenHolders].sort()) {
+    const tok = wordToAddr(await call(a, getter));
     if (out.reads[readKey(tok, "decimals()")] === undefined) await call(tok, "decimals()");
   }
   const sorted = (o) => Object.fromEntries(Object.entries(o).sort(([x], [y]) => (x < y ? -1 : 1)));
@@ -629,37 +670,89 @@ export async function refreshDeployed({ root, rpcUrl, fetchImpl = fetch, log = c
     reads: sorted(out.reads),
     codes: sorted(out.codes),
   };
-  writeFileSync(join(root, DEPLOYED_FILE), JSON.stringify(file, null, 1) + "\n");
-  log(`已寫入 ${DEPLOYED_FILE}：區塊 ${out.block}，${Object.keys(out.contracts).length} 個位址、${Object.keys(out.codes).length} 份 bytecode、${Object.keys(out.reads).length} 個快照`);
+  if (write) {
+    writeFileSync(join(root, DEPLOYED_FILE), JSON.stringify(file, null, 1) + "\n");
+    log(`已寫入 ${DEPLOYED_FILE}：區塊 ${out.block}，${Object.keys(out.contracts).length} 個位址、${Object.keys(out.codes).length} 份 bytecode、${Object.keys(out.reads).length} 個快照`);
+  }
   return file;
+}
+
+/**
+ * 每週排程用（.github/workflows/monitoring-fixture.yml，複審 L-c）：以唯讀 RPC 重抓一份到記憶體，
+ * 與 repo 內的 deployed.json 比對（不比區塊號與日期）。回傳差異文字陣列；空陣列＝fixture 仍是鏈上實況。
+ * 不寫檔、不 commit：有差異時由人重抓、審過、走 PR。
+ */
+export async function verifyDeployed(opts) {
+  const { root } = opts;
+  const file = join(root, DEPLOYED_FILE);
+  const cur = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : null;
+  if (!cur) return [`${DEPLOYED_FILE} 不存在`];
+  const fresh = await refreshDeployed({ ...opts, write: false });
+  const diffs = [];
+  if (cur.chainId !== fresh.chainId) diffs.push(`chainId ${cur.chainId} → ${fresh.chainId}`);
+  for (const a of new Set([...Object.keys(cur.contracts ?? {}), ...Object.keys(fresh.contracts ?? {})])) {
+    const x = cur.contracts?.[a];
+    const y = fresh.contracts?.[a];
+    if (!x || !y) diffs.push(`${a}：${x ? "規則已不再監控這個位址（fixture 多了）" : "fixture 沒有這個位址"}`);
+    else {
+      if (x.codeHash !== y.codeHash) diffs.push(`${y.ref} ${a}：runtime bytecode 變了（${x.codeHash.slice(0, 10)}… → ${y.codeHash.slice(0, 10)}…）`);
+      if ((x.impl ?? null) !== (y.impl ?? null)) diffs.push(`${y.ref} ${a}：EIP-1967 實作 ${x.impl} → ${y.impl}（升級了）`);
+      else if ((x.implCodeHash ?? null) !== (y.implCodeHash ?? null)) diffs.push(`${y.ref} ${a}：實作 bytecode 變了`);
+    }
+  }
+  for (const k of new Set([...Object.keys(cur.reads ?? {}), ...Object.keys(fresh.reads ?? {})])) {
+    if (cur.reads?.[k] !== fresh.reads?.[k]) diffs.push(`快照 ${k}：${cur.reads?.[k] ?? "（無）"} → ${fresh.reads?.[k] ?? "（無）"}`);
+  }
+  return diffs;
 }
 
 // ── 產生 ─────────────────────────────────────────────────────────────────────
 
+/** 去掉一條規則裡由 --write 產生的欄位（就地修改），剩下的是手寫的定義。 */
+function stripRule(r) {
+  delete r.runbookUrl;
+  delete r.decimals;
+  if (r.amount) {
+    delete r.amount.decimals;
+    delete r.amount.balanceOf;
+  }
+  for (const k of r.contracts ?? []) {
+    delete k.address;
+    delete k.impl;
+  }
+  for (const e of r.events ?? []) {
+    delete e.topic0;
+    delete e.inputs;
+  }
+  for (const call of r.calls ?? []) {
+    delete call.selector;
+    delete call.expected;
+  }
+  return r;
+}
 const strip = (cfg) => {
   const c = structuredClone(cfg);
   delete c.assets;
   delete c.assetLabels;
   delete c.roleNames;
-  for (const r of c.rules ?? []) {
-    delete r.runbookUrl;
-    delete r.decimals;
-    if (r.amount) {
-      delete r.amount.decimals;
-      delete r.amount.balanceOf;
-    }
-    for (const k of r.contracts ?? []) delete k.address;
-    for (const e of r.events ?? []) {
-      delete e.topic0;
-      delete e.inputs;
-    }
-    for (const call of r.calls ?? []) {
-      delete call.selector;
-      delete call.expected;
-    }
-  }
+  for (const r of c.rules ?? []) stripRule(r);
   return c;
 };
+
+/** 排序鍵後序列化（canonical JSON）：鍵的順序、縮排不影響結果。 */
+export function canonicalJson(v) {
+  if (Array.isArray(v)) return `[${v.map(canonicalJson).join(",")}]`;
+  if (v && typeof v === "object") {
+    return `{${Object.keys(v)
+      .filter((k) => v[k] !== undefined)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${canonicalJson(v[k])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(v);
+}
+/** 規則定義（手寫欄位）的 sha256。 */
+export const ruleHash = (rule) => createHash("sha256").update(canonicalJson(stripRule(structuredClone(rule)))).digest("hex");
 
 /**
  * 從手寫欄位與 repo 來源算出完整設定。回傳 { config, problems }：problems 是
@@ -778,6 +871,16 @@ export function generate(input, ctx) {
         else if (call.expect) p(rule, `只有 wiring 檢查的 calls 可以有 expect（${call.fn}）`);
       }
       if (rule.check === "wiring" && !(rule.calls ?? []).length) p(rule, "wiring 規則至少要有一個 calls");
+      if (rule.check === "implementation") {
+        if ((rule.calls ?? []).length) p(rule, "implementation 規則不呼叫函式（讀 EIP-1967 slot）");
+        for (const c of rule.contracts ?? []) {
+          if (c.as !== "proxy") p(rule, `${c.ref}：implementation 規則的合約必須是 as: "proxy"`);
+          if (!active || !c.address) continue;
+          const impl = ctx.deployed.implOf(c.address);
+          if (ctx.deployed.data && !impl) p(rule, `${c.ref}（${c.address}）在 deployed.json 沒有 EIP-1967 實作：不是 proxy，或 fixture 過期`);
+          c.impl = impl;
+        }
+      }
       if (rule.token) {
         try {
           rule.decimals = ctx.tokenDecimals(rule.token);
@@ -789,6 +892,12 @@ export function generate(input, ctx) {
       if (rule.check === "balanceDrop") {
         if (!cfg.params?.[rule.dropBps]) p(rule, `dropBps 參照未定義的參數 ${rule.dropBps}`);
         for (const as of ["token", "holder"]) if (!(rule.contracts ?? []).some((c) => c.as === as)) p(rule, `balanceDrop 規則需要 contracts[].as = "${as}"`);
+        // 持有者必須有回報這個代幣的 getter（快照比對代幣標籤；沒有就無從驗證讀的是不是對的代幣）。
+        const holder = (rule.contracts ?? []).find((c) => c.as === "holder");
+        const getter = tokenGetter(rule.token);
+        if (holder && !ctx.abis[holder.abi]?.some((x) => x.type === "function" && abiSig(x) === getter)) {
+          p(rule, `holder ${holder.ref} 沒有 ${getter}：無法以鏈上快照確認它持有的是 ${rule.token}`);
+        }
         const tok = (rule.contracts ?? []).find((c) => c.as === "token");
         if (tok?.address && rule.token && lc(tok.address) !== lc(ctx.tokenAddress(rule.token) ?? "")) p(rule, `token 合約 ${tok.ref} 不是 ${rule.token}`);
       }
@@ -832,6 +941,8 @@ export function generate(input, ctx) {
   problems.push(...checkParams(cfg));
   problems.push(...checkRequired(cfg));
   problems.push(...eventCoverage(cfg, ctx));
+  problems.push(...adminFunctionCoverage(cfg, ctx));
+  problems.push(...proxyCoverage(cfg, ctx));
   if (!PUBLIC_RPC_ALLOW.includes(cfg.network?.publicRpc)) {
     problems.push(`(全域)：network.publicRpc 必須是不需要金鑰的公開端點（${PUBLIC_RPC_ALLOW.join("、")}）；含金鑰的 RPC 請用 Worker secret RPC_URL`);
   }
@@ -855,11 +966,12 @@ export function checkParamValue(name, value, cfg = null) {
     if (!/^\d+(\.\d+)?$/.test(v)) return `必須是非負的十進位數字，現在是 ${JSON.stringify(v)}`;
     if (Number(v) > spec.max) return `不可超過 ${spec.max}，現在是 ${v}`;
   } else if (spec.type === "severity") {
-    if (!SEVERITIES.includes(v)) return `必須是 ${SEVERITIES.join("/")}，現在是 ${JSON.stringify(v)}`;
+    const allowed = spec.allowed ?? SEVERITIES;
+    if (!allowed.includes(v)) return `必須是 ${allowed.join("/")}，現在是 ${JSON.stringify(v)}`;
   } else if (spec.type === "url") {
     if (!/^https:\/\/[^\s/]+(\/[^\s]*)?$/.test(v)) return `必須是 https URL，現在是 ${JSON.stringify(v)}`;
   } else if (spec.type === "keys") {
-    const bad = checkMuteKeys(v, cfg ?? { rules: [] }).filter((m) => cfg || !/不是任何規則的 key/.test(m));
+    const bad = checkMuteKeys(v, cfg ?? { mutableKeys: MUTABLE_KEYS.map((key) => ({ key })) });
     if (bad.length) return bad.join("；");
   }
   return null;
@@ -880,6 +992,27 @@ function checkParams(cfg) {
     const [a, b] = [Number(params[lo]?.default), Number(params[hi]?.default)];
     if (Number.isFinite(a) && Number.isFinite(b) && a > b) out.push(`(全域)：params.${lo}（${a}）不可大於 params.${hi}（${b}）`);
   }
+  for (const m of paramComboProblems(Object.fromEntries(Object.entries(params).map(([k, v]) => [k, v?.default])))) out.push(`(全域)：params 預設值 ${m}`);
+  out.push(...checkMutableKeys(cfg));
+  return out;
+}
+
+/** monitors.json 的 mutableKeys：與 MUTABLE_KEYS 相同、每項有理由、指向存在的規則的子 key。 */
+function checkMutableKeys(cfg) {
+  const out = [];
+  const list = cfg.mutableKeys ?? [];
+  const keys = list.map((m) => m.key);
+  if (JSON.stringify([...keys].sort()) !== JSON.stringify([...MUTABLE_KEYS].sort())) {
+    out.push(`(全域)：mutableKeys（${keys.join(", ") || "空"}）與 scripts/check-monitoring.mjs 的 MUTABLE_KEYS（${MUTABLE_KEYS.join(", ")}）不同 —— 可靜音的 key 要人工審過後兩邊一起改`);
+  }
+  for (const m of list) {
+    if (!String(m.reason ?? "").trim()) out.push(`(全域)：mutableKeys 的 ${m.key} 沒有寫 reason`);
+    const [id, sub] = String(m.key ?? "").split(/:(.*)/s);
+    const rule = (cfg.rules ?? []).find((r) => r.id === id);
+    if (String(m.key).startsWith("monitor-self")) out.push(`(全域)：mutableKeys 不可以有 monitor-self（${m.key}）`);
+    else if (!rule) out.push(`(全域)：mutableKeys 的 ${m.key} 不是任何規則的 key`);
+    else if (!sub) out.push(`(全域)：mutableKeys 的 ${m.key} 是整條規則；只能列出單一子 key`);
+  }
   return out;
 }
 
@@ -888,7 +1021,7 @@ function checkRequired(cfg) {
   const out = [];
   const rank = (s) => SEVERITIES.indexOf(s);
   const byId = new Map((cfg.rules ?? []).map((r) => [r.id, r]));
-  for (const [id, [minSev, status]] of Object.entries(REQUIRED_RULES)) {
+  for (const [id, [minSev, status, pinned]] of Object.entries(REQUIRED_RULES)) {
     const r = byId.get(id);
     if (!r) {
       out.push(`${id}：必要規則不存在（被刪除？）—— 要移除必須同時改 scripts/check-monitoring.mjs 的 REQUIRED_RULES`);
@@ -896,6 +1029,13 @@ function checkRequired(cfg) {
     }
     if (status === "active" && r.status !== "active") out.push(`${id}：必要規則必須是 active，現在是 ${r.status} —— 要停用必須同時改 REQUIRED_RULES`);
     if (rank(r.severity) < 0 || rank(r.severity) > rank(minSev)) out.push(`${id}：嚴重度 ${r.severity} 低於下限 ${minSev} —— 要降級必須同時改 REQUIRED_RULES`);
+    const h = ruleHash(r);
+    if (h !== pinned) {
+      out.push(
+        `${id}：規則定義與 scripts/check-monitoring.mjs 的 REQUIRED_RULES 釘住的 sha256 不同（現在 ${h}，釘的是 ${pinned}）—— ` +
+          "任何改動（合約、讀取、預期值來源、門檻參數、事件、嚴重度、文字）都要人工審過，確認沒有削弱監控後，再把新雜湊更新到 REQUIRED_RULES",
+      );
+    }
   }
   for (const id of byId.keys()) if (!REQUIRED_RULES[id]) out.push(`${id}：新規則還沒登記到 scripts/check-monitoring.mjs 的 REQUIRED_RULES（嚴重度下限與狀態）`);
   return out;
@@ -967,18 +1107,105 @@ export function eventCoverage(cfg, ctx) {
 }
 
 /**
- * MUTE_KEYS 的值：每個項目必須指向存在的規則；monitor-self 不可靜音；SEV-1 規則不可整條靜音
- * （只能靜音它的某個子 key，例如 x402-payto:unsafe）。回傳錯誤訊息陣列。
+ * 部署版 bytecode 裡的管理函式（複審 L-d）。事件涵蓋從「ABI 裡的事件」出發，看不到**不發事件的 setter**
+ * （PepeIncentives.withdraw／setEsgRegistry…）。這裡反過來從函式出發：受監控合約的 ABI 裡、名稱像管理
+ * 操作（ADMIN_FN）、且 selector 真的在部署版 bytecode 裡的函式，都必須在 monitors.json 的 adminFunctions
+ * 裡分類——
+ *   { "rule": "<id>" | ["<id>", …] }  由這（幾）條 active 規則涵蓋。事件規則必須有至少一個事件真的在該合約的部署版裡
+ *                         （部署版不發事件的 setter 只能由狀態規則涵蓋）；規則必須包含這個合約。
+ *   { "reason": "…" }     明列不監控的理由（使用者自己的操作、一次性設定…）。
+ * 多出來的分類（ABI 沒有或部署版沒有的函式）也算錯——合約換版後要重新分類。
+ */
+export const ADMIN_FN = /^(set|update|register|unregister|add|remove|grant|revoke|transferOwnership|renounce|pause|unpause|upgrade|withdraw|configure|enable|disable|freeze)/i;
+export function adminFunctionCoverage(cfg, ctx) {
+  const out = [];
+  if (!ctx.deployed.data) return out;
+  const byAbi = new Map(); // abi → Set(address)
+  for (const r of cfg.rules ?? []) {
+    if (r.status !== "active") continue;
+    for (const c of r.contracts ?? []) {
+      if (!c.abi || !c.address || !ctx.abis[c.abi]) continue;
+      if (!byAbi.has(c.abi)) byAbi.set(c.abi, new Set());
+      byAbi.get(c.abi).add(c.address);
+    }
+  }
+  const table = cfg.adminFunctions ?? {};
+  const rules = new Map((cfg.rules ?? []).map((r) => [r.id, r]));
+  for (const [abi, addrs] of [...byAbi].sort()) {
+    const fns = ctx.abis[abi].filter((x) => x.type === "function" && x.stateMutability !== "view" && x.stateMutability !== "pure" && ADMIN_FN.test(x.name));
+    const live = new Set(fns.map(abiSig).filter((sig) => [...addrs].some((a) => ctx.deployed.hasSelector(a, sig) === true)));
+    const entries = table[abi] ?? {};
+    for (const sig of [...live].sort()) {
+      const e = entries[sig];
+      if (!e) {
+        out.push(`(全域)：${abi}.${sig} 在部署版 bytecode 裡，但 adminFunctions 沒有分類 —— 指定涵蓋它的規則（{ "rule": … }），或寫明不監控的理由（{ "reason": … }）`);
+        continue;
+      }
+      if (!!e.rule === !!e.reason) {
+        out.push(`(全域)：adminFunctions ${abi}.${sig} 必須恰好有 rule 或 reason 其中之一`);
+        continue;
+      }
+      if (e.reason) {
+        if (!String(e.reason).trim()) out.push(`(全域)：adminFunctions ${abi}.${sig} 的 reason 是空的`);
+        continue;
+      }
+      for (const id of [e.rule].flat()) {
+        const r = rules.get(id);
+        if (!r || r.status !== "active") {
+          out.push(`(全域)：adminFunctions ${abi}.${sig} 指向 ${id}，但它不是 active 規則`);
+          continue;
+        }
+        const mine = (r.contracts ?? []).filter((c) => c.abi === abi && c.address);
+        if (!mine.length) {
+          out.push(`(全域)：adminFunctions ${abi}.${sig} 指向 ${id}，但那條規則沒有監控 ${abi}`);
+          continue;
+        }
+        if (r.kind === "event" && !mine.some((c) => (r.events ?? []).some((ev) => ctx.deployed.hasTopic(c.address, ev.sig) === true))) {
+          out.push(`(全域)：adminFunctions ${abi}.${sig} 指向事件規則 ${id}，但它的事件都不在 ${abi} 的部署版裡 —— 不發事件的 setter 要由狀態規則涵蓋`);
+        }
+      }
+    }
+    for (const sig of Object.keys(entries)) {
+      if (!live.has(sig)) out.push(`(全域)：adminFunctions ${abi}.${sig} 不在 ABI 或不在部署版 bytecode 裡 —— 分類過期`);
+    }
+  }
+  for (const abi of Object.keys(table)) if (!byAbi.has(abi)) out.push(`(全域)：adminFunctions 的 ${abi} 沒有任何 active 規則在監控，分類過期`);
+  return out;
+}
+
+/** 每個受監控的 EIP-1967 proxy 都要在 implementation 規則裡（實作被換掉時 deployed.json 就過期了）。 */
+export function proxyCoverage(cfg, ctx) {
+  const out = [];
+  if (!ctx.deployed.data) return out;
+  const covered = new Set();
+  for (const r of cfg.rules ?? []) {
+    if (r.status === "active" && r.check === "implementation") for (const c of r.contracts ?? []) if (c.address) covered.add(lc(c.address));
+  }
+  const seen = new Set();
+  for (const r of cfg.rules ?? []) {
+    if (r.status !== "active") continue;
+    for (const c of r.contracts ?? []) {
+      if (!c.address || seen.has(lc(c.address))) continue;
+      seen.add(lc(c.address));
+      if (ctx.deployed.implOf(c.address) && !covered.has(lc(c.address))) {
+        out.push(`(全域)：${c.ref}（${c.address}）是 EIP-1967 proxy，但沒有 implementation 規則在讀它的實作 slot —— 實作被換掉時 CI 依據的 bytecode 會過期而不自知`);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * MUTE_KEYS 的值（monitors.json 預設與 wrangler.toml 的覆寫）：每一項都必須在 mutableKeys 白名單裡
+ * （複審 M-A：原本允許任何 SEV-1 規則的子 key，而 x402-payto:changed、insurance-wiring:… 這些子 key
+ * 就是該規則全部的 SEV-1 輸出）。執行期也只認白名單，這裡讓錯誤在 PR 就被看到。回傳錯誤訊息陣列。
  */
 export function checkMuteKeys(value, cfg) {
   const out = [];
-  const { keys, ignored } = parseMuteKeys(value);
+  const allowed = (cfg?.mutableKeys ?? []).map((m) => m.key);
+  const { rejected, ignored } = parseMuteKeys(value, allowed);
   for (const k of ignored) out.push(k.startsWith("monitor-self") ? `含 ${k}：監控自身的告警不可靜音` : `含格式不對的項目 ${JSON.stringify(k)}`);
-  for (const k of keys) {
-    const rule = (cfg.rules ?? []).find((r) => r.id === k.split(":")[0]);
-    if (!rule) out.push(`的 ${k} 不是任何規則的 key`);
-    else if (k === rule.id && rule.severity === "SEV-1") out.push(`把 SEV-1 規則 ${k} 整條靜音；只能靜音它的子 key（例如 ${k}:…）`);
-  }
+  for (const k of rejected) out.push(`的 ${k} 不在 mutableKeys 白名單（${allowed.join(", ") || "空"}）：不可靜音`);
   return out;
 }
 
@@ -1058,12 +1285,13 @@ function checkTokenOnChain(rule, token, decimals, ctx, p) {
   for (const c of rule.contracts ?? []) {
     if (!c.address) continue;
     const abi = ctx.abis[c.abi];
-    if (!abi?.some((x) => x.type === "function" && abiSig(x) === TOKEN_GETTER)) continue;
-    const snap = ctx.deployed.read(c.address, TOKEN_GETTER);
+    const getter = tokenGetter(token);
+    if (!abi?.some((x) => x.type === "function" && abiSig(x) === getter)) continue;
+    const snap = ctx.deployed.read(c.address, getter);
     if (!snap) continue; // checkDeployed 會報
     const tok = wordToAddr(snap);
     if (!want || lc(tok) !== lc(want)) {
-      p(rule, `token 標成 ${token}（${want}），但 ${c.ref}.${TOKEN_GETTER} 的鏈上快照是 ${tok} —— 標籤錯了，金額會差 10^12 倍`);
+      p(rule, `token 標成 ${token}（${want}），但 ${c.ref}.${getter} 的鏈上快照是 ${tok} —— 標籤錯了（小數位或代幣都可能不同）`);
       continue;
     }
     const d = ctx.deployed.read(tok, "decimals()");
@@ -1108,6 +1336,7 @@ const THRESHOLD = {
   x402PayTo: () => "`payTo` ≠ `EXPECTED_PAY_TO`（未設時為首次觀察值）→ SEV-1；`payToSafety.safe == false` → SEV-3",
   wiring: () => "任一 getter 的讀值 ≠ 預期位址",
   balanceDrop: (c, r) => `餘額較 24 小時高點下降 ≥ ${pv(c, r.dropBps)} → ${r.severity}`,
+  implementation: () => "EIP-1967 實作 slot ≠ deployed.json 的實作 → SEV-1（同一個新實作已由 Upgraded 事件通報時 SEV-3「deployed.json 過期」）",
 };
 function thresholdText(cfg, rule) {
   if (rule.kind === "event") {
@@ -1183,6 +1412,9 @@ export function renderRulesMd(cfg, ctx) {
       L.push("");
     }
     if (r.events?.length) L.push(`- 事件：${r.events.map((e) => eventText(r, e)).join("、")}`);
+    if (r.check === "implementation") {
+      for (const c of r.contracts ?? []) L.push(`- 預期實作：\`${c.ref}\` = \`${c.impl}\`（deployed.json）`);
+    }
     if (r.check === "wiring") {
       for (const c of r.calls ?? []) L.push(`- 預期：\`${r.contracts.find((x) => x.as === c.on)?.ref}.${c.fn}\` = ${expectText(c)}`);
     } else if (r.calls?.length) L.push(`- 讀取：${r.calls.map((c) => `\`${c.on}.${c.fn}\``).join("、")}`);
@@ -1191,6 +1423,26 @@ export function renderRulesMd(cfg, ctx) {
     L.push(`- 門檻：${thresholdText(cfg, r)}`);
     L.push(`- 處置：${r.runbook.map((h) => `[INCIDENT_RESPONSE「${h}」](${anchor(h)})`).join("、")}`);
     if (r.related?.length) L.push(`- 相關：${r.related.map(relLink).join("、")}`);
+  }
+  L.push("");
+  L.push("## 可靜音的告警");
+  L.push("");
+  L.push("`MUTE_KEYS` 只接受這張表裡的 key（完全相同，沒有前綴比對）。表以外的值在執行期被忽略，並發一則不可靜音的 `monitor-self:config`；SEV-1、`monitor-self` 與「基準已設定」在任何設定下都會送出。");
+  L.push("");
+  L.push("| key | 理由 |");
+  L.push("|---|---|");
+  for (const m of cfg.mutableKeys ?? []) L.push(`| \`${m.key}\` | ${m.reason} |`);
+  if (Object.keys(cfg.adminFunctions ?? {}).length) {
+    L.push("");
+    L.push("## 管理函式的涵蓋");
+    L.push("");
+    L.push("受監控合約的部署版 bytecode 裡、名稱像管理操作的函式（set／update／withdraw／grant…），每一個都要由某條規則涵蓋或寫明理由；CI 從部署版的 selector 出發檢查，不發事件的 setter 也看得到。由事件規則涵蓋的，該事件必須真的在部署版裡。");
+    L.push("");
+    L.push("| 合約（ABI） | 函式 | 涵蓋 |");
+    L.push("|---|---|---|");
+    for (const [abi, fns] of Object.entries(cfg.adminFunctions)) {
+      for (const [sig, e] of Object.entries(fns)) L.push(`| ${abi} | \`${sig}\` | ${e.rule ? [e.rule].flat().map((id) => `[\`${id}\`](#${slug(id)})`).join("、") : `不監控：${e.reason}`} |`);
+    }
   }
   if (cfg.ignoredEvents?.length) {
     L.push("");
@@ -1328,6 +1580,7 @@ export function tomlLeaves(text) {
  */
 export function checkWranglerVars(toml, params, cfg = null) {
   const problems = [];
+  const sections = new Map(); // vars 表 → { 參數名: 值 }（組合限制用）
   for (const { path, value, line } of tomlLeaves(toml)) {
     const name = path[path.length - 1];
     const where = path.slice(0, -1).join(".") || "頂層";
@@ -1344,8 +1597,12 @@ export function checkWranglerVars(toml, params, cfg = null) {
     else if (PARAM_SPECS[name]) {
       const err = checkParamValue(name, value, cfg);
       if (err) problems.push(`wrangler.toml:${line} [${where}] 的 ${name} ${err}`);
+      if (!sections.has(where)) sections.set(where, {});
+      sections.get(where)[name] = value;
     }
   }
+  const defaults = Object.fromEntries(Object.entries(params ?? {}).map(([k, v]) => [k, v?.default]));
+  for (const [where, vals] of sections) for (const m of paramComboProblems({ ...defaults, ...vals })) problems.push(`wrangler.toml [${where}]：${m}`);
   return problems;
 }
 
@@ -1446,6 +1703,17 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const i = args.indexOf("--root");
   const root = i >= 0 ? resolve(args[i + 1]) : resolve(dirname(fileURLToPath(import.meta.url)), "..");
   try {
+    if (args.includes("--verify-deployed")) {
+      const k = args.indexOf("--rpc");
+      const diffs = await verifyDeployed({ root, rpcUrl: k >= 0 ? args[k + 1] : undefined });
+      if (diffs.length) {
+        for (const d of diffs) console.log(`::error::deployed.json 與鏈上不一致：${d}`);
+        console.log(`\n${diffs.length} 處不一致 —— 確認是預期的變更後執行 --refresh-deployed、--write，審過 diff 再走 PR`);
+        process.exit(1);
+      }
+      console.log("deployed.json 與鏈上一致 ✓");
+      process.exit(0);
+    }
     if (args.includes("--refresh-deployed")) {
       const k = args.indexOf("--rpc");
       await refreshDeployed({ root, rpcUrl: k >= 0 ? args[k + 1] : undefined });

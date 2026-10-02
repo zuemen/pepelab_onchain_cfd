@@ -10,7 +10,8 @@
     "name": "base-sepolia",
     "chainId": 84532,
     "publicRpc": "https://sepolia.base.org",
-    "explorer": "https://sepolia.basescan.org"
+    "explorer": "https://sepolia.basescan.org",
+    "blockTimeSec": 2
   },
   "repoBlobBase": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master",
   "params": {
@@ -35,9 +36,9 @@
       "doc": "每輪最多幾個 eth_getLogs（含範圍減半後的重試）。落後時一輪內分多段追趕：10 × 1000 塊 ≈ 5.5 小時的積欠；受 Cloudflare 免費方案每次執行 50 個 subrequest 限制，不要調高到擠壓狀態規則與通知"
     },
     "LAG_ALERT_BLOCKS": {
-      "default": "3000",
+      "default": "1800",
       "unit": "區塊",
-      "doc": "一輪掃完後仍落後超過這個值時發監控自身告警（代表一輪追不完，或 eth_getLogs 持續失敗）"
+      "doc": "一輪掃完後仍落後超過這個值時發監控自身告警（代表一輪追不完，或 eth_getLogs 持續失敗）。1,800 塊約 1 小時；上限 1,800（CI 與執行期都夾住）"
     },
     "REMIND_SEC": {
       "default": "21600",
@@ -47,12 +48,12 @@
     "MIN_SEVERITY": {
       "default": "SEV-4",
       "unit": "嚴重度",
-      "doc": "低於此嚴重度的通知不送（恢復通知以原嚴重度判斷）。monitor-self:*（監控自身故障）永遠送，不受此值影響。要壓掉單一已知告警請用 MUTE_KEYS，不要調高這個值"
+      "doc": "低於此嚴重度的通知不送（恢復通知以原嚴重度判斷）。只能設 SEV-2／SEV-3／SEV-4：SEV-1、monitor-self:*（監控自身故障）與「基準已設定」永遠送。要壓掉單一已知告警請用 MUTE_KEYS"
     },
     "MUTE_KEYS": {
       "default": "",
       "unit": "告警 key（逗號分隔）",
-      "doc": "靜音指定的告警 key（完全相同或以它為前綴的子 key），例如 x402-payto:unsafe。告警狀態照常追蹤，只是不送通知。monitor-self:* 不可靜音；SEV-1 規則不可整條靜音（CI 檢查）"
+      "doc": "靜音指定的告警 key（完全相同，沒有前綴比對）。只接受 mutableKeys 白名單（見 rules.md「可靜音的告警」）；白名單以外的值在執行期被忽略並發 monitor-self:config。SEV-1 與 monitor-self 在任何設定下都送"
     },
     "LARGE_WITHDRAWAL_USDC": {
       "default": "10000",
@@ -67,7 +68,7 @@
     "LARGE_WITHDRAWAL_BPS": {
       "default": "2000",
       "unit": "bps",
-      "doc": "單筆提領／贖回佔合約「提領前餘額」達此比例即告警（20%），與絕對門檻擇一成立。絕對門檻是佔位值（2026-10-01 實測 exchange 只有 500 MockUSDC，絕對門檻 10,000 永遠不會響），這個相對門檻讓規則在任何 TVL 下都有作用"
+      "doc": "單筆提領／贖回佔合約「提領前餘額」達此比例即告警（20%），與絕對門檻擇一成立。絕對門檻是佔位值（2026-10-01 實測 exchange 只有 500 MockUSDC，絕對門檻 10,000 永遠不會響），這個相對門檻讓規則在任何 TVL 下都有作用。上限 5,000（50%）：再高等於沒有相對門檻"
     },
     "WITHDRAWAL_WINDOW_SEC": {
       "default": "3600",
@@ -134,6 +135,11 @@
       "unit": "bps",
       "doc": "交易所持有的 MockUSDC 較 24 小時內高點下降超過此比例即告警（30%）；看的是池子被抽走的比例，拆單也算"
     },
+    "INCENTIVES_BALANCE_DROP_BPS": {
+      "default": "3000",
+      "unit": "bps",
+      "doc": "PepeIncentives 持有的 PEPE 較 24 小時內高點下降超過此比例即告警（30%）。部署版的 withdraw 不發事件，這是唯一看得到「獎勵池被提走」的方式"
+    },
     "RESERVE_WARN_MARGIN_BPS": {
       "default": "500",
       "unit": "bps",
@@ -157,12 +163,12 @@
     "HTTP_FAILS_BEFORE_ALERT": {
       "default": "2",
       "unit": "次",
-      "doc": "signal-api 的健康檢查與 payTo 讀取連續失敗幾次才告警（避免單次逾時或冷啟動抖動）"
+      "doc": "signal-api 的健康檢查與 payTo 讀取連續失敗幾次才告警（避免單次逾時或冷啟動抖動）。上限 6；與 SELF_ERRORS_BEFORE_ALERT 合計須讓持續故障在 6 輪（約 30 分鐘）內告警"
     },
     "SELF_ERRORS_BEFORE_ALERT": {
       "default": "2",
       "unit": "輪",
-      "doc": "有規則讀取失敗「連續」幾輪才發 monitor-self:errors（單輪失敗多半是公開 RPC 限流；RPC 本身已退避重試）。失敗的那一輪仍記為 cron 失敗、不打心跳"
+      "doc": "有規則讀取失敗「連續」幾輪才發 monitor-self:errors（單輪失敗多半是公開 RPC 限流；RPC 本身已退避重試）。失敗的那一輪仍記為 cron 失敗、不打心跳。上限 6；與 HTTP_FAILS_BEFORE_ALERT 合計須讓持續故障在 6 輪（約 30 分鐘）內告警"
     }
   },
   "rules": [
@@ -1057,6 +1063,65 @@
           },
           "selector": "0x988c794c",
           "expected": "0xBF5B9cD78566791d79c687A732b4ed5bc3E95dFf"
+        }
+      ],
+      "runbook": [
+        "1. 嚴重度分級",
+        "3. 暫停與凍結：現行部署能做什麼"
+      ],
+      "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#1-嚴重度分級"
+    },
+    {
+      "id": "proxy-implementation",
+      "title": "UUPS 實作被升級",
+      "category": "權限",
+      "kind": "state",
+      "check": "implementation",
+      "status": "active",
+      "severity": "SEV-1",
+      "description": "每輪以 eth_getStorageAt 讀受監控 EIP-1967 proxy 的實作 slot，與 deployed.json（CI 依據的部署版 bytecode）比對。實作被換掉時，CI 的「事件／函式在部署版裡」檢查全部變成對舊版的判斷，而 CI 不連網、永遠是綠的；這條規則讓 fixture 過期在執行期被看見。與 vault-upgraded（Upgraded 事件）互補：同一次升級只發一則 SEV-1，先到的那條發 SEV-1，後到的降為 SEV-3（事件補交易細節／slot 檢查提醒重抓 deployed.json）。條件持續到 deployed.json 重抓、Worker 重新部署為止。",
+      "contracts": [
+        {
+          "ref": "AssetVaultV2",
+          "abi": "AssetVaultV2",
+          "as": "proxy",
+          "address": "0x916D7Fc399d9afd23BAa113E2c2Cc601341ff10a",
+          "impl": "0xa2d967221da278b26e0432f4a6bd231d7e0a3733"
+        }
+      ],
+      "runbook": [
+        "1. 嚴重度分級",
+        "3. 暫停與凍結：現行部署能做什麼",
+        "8. 外部協助：SEAL 911"
+      ],
+      "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#1-嚴重度分級"
+    },
+    {
+      "id": "pepe-incentives-wiring",
+      "title": "PepeIncentives 接線變更",
+      "category": "權限",
+      "kind": "state",
+      "check": "wiring",
+      "status": "active",
+      "severity": "SEV-2",
+      "description": "部署版 PepeIncentives.setEsgRegistry 不發事件（複審 L-d）：每輪讀 esgRegistry() 比對預期值。pepe()、exchange()、copyTracker() 是 immutable，不需要輪詢。",
+      "contracts": [
+        {
+          "ref": "PepeIncentives",
+          "abi": "PepeIncentives",
+          "as": "incentives",
+          "address": "0xEBfA1dc7dDea032ac6242cB619d982e543A23c12"
+        }
+      ],
+      "calls": [
+        {
+          "on": "incentives",
+          "fn": "esgRegistry()",
+          "expect": {
+            "zero": true
+          },
+          "selector": "0x988c794c",
+          "expected": "0x0000000000000000000000000000000000000000"
         }
       ],
       "runbook": [
@@ -2766,6 +2831,45 @@
       "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#1-嚴重度分級"
     },
     {
+      "id": "pepe-incentives-balance-drop",
+      "title": "PepeIncentives 獎勵池大幅下降",
+      "category": "大額提領",
+      "kind": "state",
+      "check": "balanceDrop",
+      "status": "active",
+      "severity": "SEV-2",
+      "description": "部署版 PepeIncentives.withdraw（onlyOwner）不發事件（複審 L-d）：每輪讀 PepeToken.balanceOf(PepeIncentives)，較 24 小時內高點下降超過 INCENTIVES_BALANCE_DROP_BPS 即告警。使用者領獎勵每筆很小；一次掉很多代表 owner 把池子提走（或 owner 金鑰外洩）。",
+      "contracts": [
+        {
+          "ref": "PepeToken",
+          "abi": "PepeToken",
+          "as": "token",
+          "address": "0xccd05cbdc2f7961a4c27d3633694022722786a0f"
+        },
+        {
+          "ref": "PepeIncentives",
+          "abi": "PepeIncentives",
+          "as": "holder",
+          "address": "0xEBfA1dc7dDea032ac6242cB619d982e543A23c12"
+        }
+      ],
+      "calls": [
+        {
+          "on": "token",
+          "fn": "balanceOf(address)",
+          "selector": "0x70a08231"
+        }
+      ],
+      "token": "PepeToken",
+      "dropBps": "INCENTIVES_BALANCE_DROP_BPS",
+      "runbook": [
+        "1. 嚴重度分級",
+        "3. 暫停與凍結：現行部署能做什麼"
+      ],
+      "decimals": 18,
+      "runbookUrl": "https://github.com/zuemen/pepelab_onchain_cfd/blob/master/docs/INCIDENT_RESPONSE.md#1-嚴重度分級"
+    },
+    {
       "id": "insurance-fund",
       "title": "保險金下降",
       "category": "保險金與儲備",
@@ -3600,6 +3704,450 @@
       ]
     }
   ],
+  "mutableKeys": [
+    {
+      "key": "x402-payto:unsafe",
+      "reason": "x402 treasury 是已知待換的地址，收款守門 fail-closed（付費端點回 503），部署當下就會觸發並每 6 小時提醒；SEV-3。同一條規則的 x402-payto:changed（SEV-1）不可靜音"
+    }
+  ],
+  "adminFunctions": {
+    "AggregatorOracleAdapter": {
+      "renounceOwnership()": {
+        "rule": "owner-transferred"
+      },
+      "transferOwnership(address)": {
+        "rule": "owner-transferred"
+      },
+      "setMaxDeviationBps(uint256)": {
+        "rule": "aggregator-oracle-config"
+      }
+    },
+    "AssetVault": {
+      "renounceOwnership()": {
+        "rule": "owner-transferred"
+      },
+      "transferOwnership(address)": {
+        "rule": "owner-transferred"
+      },
+      "registerAsset(bytes32,address)": {
+        "rule": "asset-vault-v1-assets"
+      }
+    },
+    "AssetVaultV2": {
+      "grantRole(bytes32,address)": {
+        "rule": "access-role-changed"
+      },
+      "renounceRole(bytes32,address)": {
+        "rule": "access-role-changed"
+      },
+      "revokeRole(bytes32,address)": {
+        "rule": "access-role-changed"
+      },
+      "pause()": {
+        "rule": "vault-pause-changed"
+      },
+      "unpause()": {
+        "rule": "vault-pause-changed"
+      },
+      "registerAsset(bytes32,address)": {
+        "rule": "vault-risk-params"
+      },
+      "unregisterAsset(bytes32)": {
+        "rule": "vault-risk-params"
+      },
+      "setAssetCap(bytes32,uint256)": {
+        "rule": "vault-risk-params"
+      },
+      "setRiskParams(uint256,uint256,uint256)": {
+        "rule": "vault-risk-params"
+      },
+      "setEsgRegistry(address)": {
+        "rule": [
+          "vault-upgraded",
+          "core-wiring"
+        ]
+      },
+      "setOracle(address)": {
+        "rule": [
+          "vault-upgraded",
+          "core-wiring"
+        ]
+      },
+      "upgradeToAndCall(address,bytes)": {
+        "rule": [
+          "vault-upgraded",
+          "proxy-implementation"
+        ]
+      },
+      "withdrawFees(address,uint256)": {
+        "rule": "vault-fees-withdrawn"
+      }
+    },
+    "ChainlinkOracleAdapter": {
+      "renounceOwnership()": {
+        "rule": "owner-transferred"
+      },
+      "transferOwnership(address)": {
+        "rule": "owner-transferred"
+      },
+      "setFeed(bytes32,address)": {
+        "rule": "chainlink-adapter-config"
+      }
+    },
+    "ESGRegistryV2": {
+      "grantRole(bytes32,address)": {
+        "rule": "access-role-changed"
+      },
+      "renounceRole(bytes32,address)": {
+        "rule": "access-role-changed"
+      },
+      "revokeRole(bytes32,address)": {
+        "rule": "access-role-changed"
+      },
+      "setMaxAttestationAge(uint256)": {
+        "rule": "esg-registry-params"
+      }
+    },
+    "EsgRewardDistributor": {
+      "renounceOwnership()": {
+        "rule": "owner-transferred"
+      },
+      "transferOwnership(address)": {
+        "rule": "owner-transferred"
+      },
+      "setMaxRewardTier(uint8)": {
+        "rule": "esg-reward-params"
+      },
+      "setMinHoldSeconds(uint256)": {
+        "rule": "esg-reward-params"
+      }
+    },
+    "FeeRouter": {
+      "renounceOwnership()": {
+        "rule": "owner-transferred"
+      },
+      "transferOwnership(address)": {
+        "rule": "owner-transferred"
+      },
+      "setCopyTracker(address)": {
+        "rule": "feerouter-wiring"
+      },
+      "setExchange(address)": {
+        "rule": "feerouter-wiring"
+      },
+      "withdrawPlatformFees()": {
+        "rule": [
+          "fee-withdrawals",
+          "x402-fee-withdrawals"
+        ]
+      },
+      "withdrawTraderEarnings()": {
+        "reason": "交易員領自己累積的跟單分潤（使用者操作，金額只到該交易員的應得額）"
+      }
+    },
+    "GuardedOracle": {
+      "grantRole(bytes32,address)": {
+        "rule": "access-role-changed"
+      },
+      "renounceRole(bytes32,address)": {
+        "rule": "access-role-changed"
+      },
+      "revokeRole(bytes32,address)": {
+        "rule": "access-role-changed"
+      },
+      "addAsset(bytes32,uint256)": {
+        "rule": "guarded-oracle-guardian"
+      },
+      "setAssetFrozen(bytes32,bool)": {
+        "rule": "guarded-oracle-guardian"
+      },
+      "setPaused(bool)": {
+        "rule": [
+          "guarded-oracle-guardian",
+          "guarded-oracle-paused"
+        ]
+      },
+      "setReferenceSource(address)": {
+        "rule": "guarded-oracle-guardian"
+      },
+      "setRiskParams(uint256,uint256)": {
+        "rule": "guarded-oracle-guardian"
+      },
+      "updatePrice(bytes32,uint256)": {
+        "reason": "keeper 例行寫價，不是設定變更；價格是否過期由 oracle-stale 看，GuardedOracle 拒收的價格由 guarded-oracle-price-rejected 看"
+      }
+    },
+    "InsuranceVault": {
+      "renounceOwnership()": {
+        "rule": "owner-transferred"
+      },
+      "transferOwnership(address)": {
+        "rule": "owner-transferred"
+      },
+      "setExchange(address)": {
+        "rule": "insurance-wiring"
+      },
+      "setFeeRouter(address)": {
+        "rule": "insurance-wiring"
+      },
+      "withdraw(uint256)": {
+        "rule": [
+          "insurance-withdrawal",
+          "insurance-fund"
+        ]
+      }
+    },
+    "KYCRegistry": {
+      "renounceOwnership()": {
+        "rule": "owner-transferred"
+      },
+      "transferOwnership(address)": {
+        "rule": "owner-transferred"
+      }
+    },
+    "MockOracle": {
+      "renounceOwnership()": {
+        "rule": "owner-transferred"
+      },
+      "transferOwnership(address)": {
+        "rule": "owner-transferred"
+      },
+      "addAsset(bytes32,uint256)": {
+        "rule": "mock-oracle-config"
+      },
+      "updatePrice(bytes32,uint256)": {
+        "reason": "keeper 例行寫價，不是設定變更；價格是否過期由 oracle-stale 看，GuardedOracle 拒收的價格由 guarded-oracle-price-rejected 看"
+      }
+    },
+    "MockUSDC": {
+      "renounceOwnership()": {
+        "rule": "owner-transferred"
+      },
+      "transferOwnership(address)": {
+        "rule": "owner-transferred"
+      },
+      "setSwapRouter(address)": {
+        "reason": "一次性：require(swapRouter == address(0))，部署版已設定，再呼叫只會 revert"
+      }
+    },
+    "MockUSDT": {
+      "renounceOwnership()": {
+        "rule": "owner-transferred"
+      },
+      "transferOwnership(address)": {
+        "rule": "owner-transferred"
+      },
+      "setSwapRouter(address)": {
+        "reason": "一次性：require(swapRouter == address(0))，部署版已設定，再呼叫只會 revert"
+      }
+    },
+    "PepeAMM": {
+      "renounceOwnership()": {
+        "rule": "owner-transferred"
+      },
+      "transferOwnership(address)": {
+        "rule": "owner-transferred"
+      },
+      "addLiquidity(uint256)": {
+        "reason": "注入流動性（資金流入），不是取出或設定變更"
+      }
+    },
+    "PepeClaim": {
+      "renounceOwnership()": {
+        "rule": "owner-transferred"
+      },
+      "transferOwnership(address)": {
+        "rule": "owner-transferred"
+      },
+      "setClaimAmount(uint256)": {
+        "rule": "pepe-claim-admin"
+      },
+      "withdraw(uint256)": {
+        "rule": "pepe-claim-admin"
+      }
+    },
+    "PepeIncentives": {
+      "renounceOwnership()": {
+        "rule": "owner-transferred"
+      },
+      "transferOwnership(address)": {
+        "rule": "owner-transferred"
+      },
+      "pause()": {
+        "rule": "pepe-incentives-pause"
+      },
+      "unpause()": {
+        "rule": "pepe-incentives-pause"
+      },
+      "setEsgRegistry(address)": {
+        "rule": "pepe-incentives-wiring"
+      },
+      "withdraw(uint256)": {
+        "rule": "pepe-incentives-balance-drop"
+      },
+      "setCopyReward(uint256)": {
+        "reason": "獎勵參數（PEPE 測試代幣的發放額），部署版不發事件。最壞情況是獎勵被調高而加速抽乾池子——那會被 pepe-incentives-balance-drop 看到"
+      },
+      "setDailyParams(uint256,uint256,uint8)": {
+        "reason": "同 setCopyReward：獎勵參數，後果由 pepe-incentives-balance-drop 看到"
+      },
+      "setEsgParams(uint256,uint256,uint256,uint8)": {
+        "reason": "同 setCopyReward：獎勵參數，後果由 pepe-incentives-balance-drop 看到"
+      },
+      "setTierParams(uint256[4],uint256[4])": {
+        "reason": "同 setCopyReward：獎勵參數，後果由 pepe-incentives-balance-drop 看到"
+      },
+      "setTradeMining(uint256,uint256)": {
+        "reason": "同 setCopyReward：獎勵參數，後果由 pepe-incentives-balance-drop 看到"
+      }
+    },
+    "PepeStaking": {
+      "renounceOwnership()": {
+        "rule": "owner-transferred"
+      },
+      "transferOwnership(address)": {
+        "rule": "owner-transferred"
+      },
+      "withdraw(uint256)": {
+        "reason": "質押者取回自己的質押（使用者操作，會發 Withdrawn）"
+      }
+    },
+    "PepeToken": {
+      "renounceOwnership()": {
+        "rule": "owner-transferred"
+      },
+      "transferOwnership(address)": {
+        "rule": "owner-transferred"
+      }
+    },
+    "PerpetualExchange": {
+      "renounceOwnership()": {
+        "rule": "owner-transferred"
+      },
+      "transferOwnership(address)": {
+        "rule": "owner-transferred"
+      },
+      "setAgentAuthorized(address,bool)": {
+        "rule": "exchange-agent-authorization"
+      },
+      "setCopyTracker(address)": {
+        "rule": "exchange-wiring-changed"
+      },
+      "setFeeRouter(address)": {
+        "rule": [
+          "exchange-wiring-changed",
+          "core-wiring"
+        ]
+      },
+      "setInsuranceVault(address)": {
+        "rule": [
+          "exchange-wiring-changed",
+          "core-wiring"
+        ]
+      },
+      "setKycRegistry(address)": {
+        "rule": [
+          "exchange-wiring-changed",
+          "core-wiring"
+        ]
+      },
+      "setAdlEnabled(bool)": {
+        "rule": "exchange-risk-params"
+      },
+      "setBorrowFeePerHour(uint256)": {
+        "rule": "exchange-risk-params"
+      },
+      "setExecutionFee(uint256)": {
+        "rule": "exchange-risk-params"
+      },
+      "setLiquidationPenaltyBps(uint256)": {
+        "rule": "exchange-risk-params"
+      },
+      "setMaintenanceMarginFor(bytes32,uint256)": {
+        "rule": "exchange-risk-params"
+      },
+      "setMarkPremiumCapBps(uint256)": {
+        "rule": "exchange-risk-params"
+      },
+      "setMaxLeverageFor(bytes32,uint256)": {
+        "rule": "exchange-risk-params"
+      },
+      "setMaxPriceAge(uint256)": {
+        "rule": "exchange-risk-params"
+      },
+      "setPortfolioMarginEnabled(bool)": {
+        "rule": "exchange-risk-params"
+      },
+      "setRwaAsset(bytes32,bool)": {
+        "rule": "exchange-risk-params"
+      },
+      "setTradingFeeBps(uint256)": {
+        "rule": "exchange-risk-params"
+      },
+      "setVaultFeeShareBps(uint256)": {
+        "rule": "exchange-risk-params"
+      },
+      "settleFunding(bytes32)": {
+        "reason": "keeper 例行結算 funding（FundingSettled）；補算被夾住時由 exchange-funding-clamped 告警"
+      },
+      "withdrawExecutionFees()": {
+        "reason": "onlyOwner 提走合約累積的 ETH 執行費（使用者為 keeper gas 預付的手續費），不是保證金或 USDC，部署版不發事件；owner 本身的變更由 owner-transferred 看"
+      },
+      "withdrawMargin(uint256)": {
+        "rule": [
+          "large-margin-withdrawal",
+          "exchange-balance-drop"
+        ]
+      }
+    },
+    "PythOracleAdapter": {
+      "renounceOwnership()": {
+        "rule": "owner-transferred"
+      },
+      "transferOwnership(address)": {
+        "rule": "owner-transferred"
+      },
+      "setPriceId(bytes32,bytes32)": {
+        "rule": "pyth-adapter-config"
+      }
+    },
+    "SustainabilityBadge": {
+      "grantRole(bytes32,address)": {
+        "rule": "access-role-changed"
+      },
+      "renounceRole(bytes32,address)": {
+        "rule": "access-role-changed"
+      },
+      "revokeRole(bytes32,address)": {
+        "rule": "access-role-changed"
+      }
+    },
+    "SyntheticAssetV2": {
+      "grantRole(bytes32,address)": {
+        "rule": "access-role-changed"
+      },
+      "renounceRole(bytes32,address)": {
+        "rule": "access-role-changed"
+      },
+      "revokeRole(bytes32,address)": {
+        "rule": "access-role-changed"
+      }
+    },
+    "TraderStake": {
+      "renounceOwnership()": {
+        "rule": "owner-transferred"
+      },
+      "transferOwnership(address)": {
+        "rule": "owner-transferred"
+      },
+      "setCopyTracker(address)": {
+        "rule": [
+          "traderstake-copytracker-set",
+          "core-wiring"
+        ]
+      }
+    }
+  },
   "assets": {
     "sBTC": "0x6587d61b59ac1e9c9f12c71f220fb1b1740d054e81277d4466a0d348e0e266e1",
     "sETH": "0x83e22e1d95f2093dd401ec5cba75bcd950cd90282356f086011849e4fbaad8a9",

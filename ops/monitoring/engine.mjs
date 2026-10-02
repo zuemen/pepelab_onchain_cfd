@@ -11,6 +11,8 @@
 //
 // 所有位址、topic0、selector、資產 ID 都是 monitors.json 裡預先算好、由
 // scripts/check-monitoring.mjs 對照 frontend/src/contracts/** 驗證過的；這裡不做雜湊。
+// 讀取方法只有 eth_blockNumber／eth_getLogs／eth_call／eth_getBalance／eth_getBlockByNumber／
+// eth_getStorageAt（讀 EIP-1967 實作 slot）。
 
 export const SEVERITIES = ["SEV-1", "SEV-2", "SEV-3", "SEV-4"];
 const sevRank = (s) => {
@@ -29,11 +31,75 @@ export function param(config, env, name) {
   const v = env?.[name];
   return v === undefined || v === null || String(v).trim() === "" ? String(def.default) : String(v).trim();
 }
-const numParam = (config, env, name) => {
+/**
+ * 安全上限（複審 L-f）：這幾個參數調到極端值等於把告警關掉（落後 23 天才告警、相對門檻 100%、
+ * 連續失敗 12 輪＝1 小時才講）。CI 擋 monitors.json 與 wrangler.toml；但 Cloudflare dashboard 或
+ * `wrangler deploy --var` 設的值不經 CI，所以執行期也夾住，並由 configProblems() 發 monitor-self 告警。
+ */
+export const SAFETY_LIMITS = {
+  LAG_ALERT_BLOCKS: { max: 1800 }, // 1 小時（Base 每 2 秒一塊）
+  LARGE_WITHDRAWAL_BPS: { max: 5000 }, // 單筆佔餘額 50% 以上才響＝等於沒有相對門檻
+  HTTP_FAILS_BEFORE_ALERT: { max: 6 },
+  SELF_ERRORS_BEFORE_ALERT: { max: 6 },
+};
+/**
+ * 持續故障最晚幾輪內要告警：x402 讀取失敗最慢要 HTTP_FAILS_BEFORE_ALERT＋SELF_ERRORS_BEFORE_ALERT−1 輪
+ * 才發 monitor-self:errors。6 輪 × 5 分鐘＝30 分鐘。
+ */
+export const MAX_ALERT_DELAY_ROUNDS = 6;
+/** MIN_SEVERITY 可以設的值：不可以設成「只送 SEV-1」（那會把 SEV-2 的提領、價格過期、儲備率全部關掉）。 */
+export const MIN_SEVERITY_ALLOWED = ["SEV-2", "SEV-3", "SEV-4"];
+
+const rawNum = (config, env, name) => {
   const n = Number(param(config, env, name));
   if (!Number.isFinite(n) || n < 0) throw new Error(`參數 ${name} 不是非負數`);
   return n;
 };
+/** 數值參數，依 SAFETY_LIMITS 夾住（超出時 configProblems 會講出來）。 */
+const numParam = (config, env, name) => {
+  let n = rawNum(config, env, name);
+  const lim = SAFETY_LIMITS[name];
+  if (lim && n > lim.max) n = lim.max;
+  if (name === "SELF_ERRORS_BEFORE_ALERT") n = Math.max(1, Math.min(n, MAX_ALERT_DELAY_ROUNDS + 1 - numParam(config, env, "HTTP_FAILS_BEFORE_ALERT")));
+  return n;
+};
+/** 執行期的有效 MIN_SEVERITY（SEV-1 或不合法時用 SEV-2）。 */
+export function minSeverityOf(config, env) {
+  const v = param(config, env, "MIN_SEVERITY");
+  return MIN_SEVERITY_ALLOWED.includes(v) ? v : "SEV-2";
+}
+/**
+ * 執行期設定問題（不經 CI 的覆寫值）：回傳文字陣列。tick 把它們變成一則 monitor-self:config 告警
+ * ——設定被調成「等於關掉告警」時，值班的人要知道，而且 Worker 照常以安全值運作。
+ */
+export function configProblems(config, env) {
+  const out = [];
+  for (const [name, lim] of Object.entries(SAFETY_LIMITS)) {
+    if (!config.params?.[name]) continue;
+    let n;
+    try {
+      n = rawNum(config, env, name);
+    } catch (e) {
+      out.push(e.message);
+      continue;
+    }
+    if (n > lim.max) out.push(`${name}=${n} 超過安全上限 ${lim.max}，以 ${lim.max} 執行`);
+  }
+  try {
+    const h = numParam(config, env, "HTTP_FAILS_BEFORE_ALERT");
+    const sRaw = Math.min(rawNum(config, env, "SELF_ERRORS_BEFORE_ALERT"), SAFETY_LIMITS.SELF_ERRORS_BEFORE_ALERT.max);
+    if (h + sRaw - 1 > MAX_ALERT_DELAY_ROUNDS) {
+      out.push(`HTTP_FAILS_BEFORE_ALERT＋SELF_ERRORS_BEFORE_ALERT−1 = ${h + sRaw - 1} 輪，超過 ${MAX_ALERT_DELAY_ROUNDS} 輪（約 30 分鐘）；SELF_ERRORS_BEFORE_ALERT 以 ${numParam(config, env, "SELF_ERRORS_BEFORE_ALERT")} 執行`);
+    }
+  } catch {
+    /* 上面已經回報 */
+  }
+  if (config.params?.MIN_SEVERITY) {
+    const v = param(config, env, "MIN_SEVERITY");
+    if (!MIN_SEVERITY_ALLOWED.includes(v)) out.push(`MIN_SEVERITY=${v} 不允許（最多只能設到 SEV-2），以 SEV-2 執行`);
+  }
+  return out;
+}
 /** 十進位字串（可含小數）→ 以 decimals 為單位的 BigInt。 */
 export function toUnits(text, decimals) {
   const m = String(text).trim().match(/^(\d+)(?:\.(\d+))?$/);
@@ -161,23 +227,33 @@ const clip = (s, n) => {
  * 限流也用這個碼，那要退避重試而不是縮小範圍）。
  */
 export function isRangeError(e) {
+  // -32602「block range extends beyond current head block」：負載平衡後面的節點落後，不是範圍太大。
+  // 縮小範圍沒有用（也浪費請求），要當成暫時性錯誤退避重試（複審 Info）。
+  if (isBeyondHead(e)) return false;
   if (e?.status === 413 || e?.code === -32614) return true;
   return /limited to a|block range|range (?:is )?too (?:large|wide)|exceeds? .*range|more than \d[\d,]* results|response size|too many results/i.test(
     String(e?.message ?? ""),
   );
 }
 
+/** 節點的 head 比我們要的 toBlock 舊（負載平衡後面有落後的節點）。 */
+export const isBeyondHead = (e) => /beyond (?:the )?current head|extends beyond|header not found|unknown block/i.test(String(e?.message ?? ""));
+
 /**
  * 暫時性失敗：限流、5xx、逾時、連線錯誤。退避後重送通常就過，不值得吵醒人（審查 M3：公開 RPC
  * 每秒 25 個請求，超過回 HTTP 429 或逐筆的 -32007）。範圍被拒不在此列——那要縮小範圍，不是重送。
  */
 export function isTransient(e) {
+  if (isBeyondHead(e)) return true;
   if (isRangeError(e)) return false;
   if (e?.transient) return true;
   if (e?.status === 429 || (e?.status >= 500 && e?.status <= 599)) return true;
   if (e?.code === -32007) return true;
   return /rate.?limit|limit reached|too many requests|request rate|timed? ?out|temporarily unavailable/i.test(String(e?.message ?? e?.error ?? ""));
 }
+
+/** EIP-1967 implementation slot：keccak256("eip1967.proxy.implementation") − 1。 */
+export const IMPL_SLOT = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
 
 const realSleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -471,7 +547,8 @@ async function logFindings({ config, env, state, now, logs, index, explorer, rpc
         if (!f || f.raw === undefined) continue;
         raw = f.raw;
       }
-      entries.push({ rule, contract, log, lines, raw, key: `${rule.id}:${where}` });
+      const at = log.blockTimestamp !== undefined && log.blockTimestamp !== null ? Number(BigInt(log.blockTimestamp)) : undefined;
+      entries.push({ rule, contract, log, lines, raw, key: `${rule.id}:${where}`, at, fields, ev });
     }
   }
   const amounts = entries.filter((e) => e.rule.amount);
@@ -506,7 +583,21 @@ async function logFindings({ config, env, state, now, logs, index, explorer, rpc
       e.lines.splice(2, 0, `金額：${formatUnits(e.raw, dec)}（單筆門檻 ${formatUnits(single, dec)}${rel}）`);
       if (!hit) continue;
     }
-    findings.push({ ...finding(e.rule, e.key, e.rule.severity, e.rule.title, e.lines), once: true });
+    const at = e.at ?? times.get(e.log.blockNumber);
+    let severity = e.rule.severity;
+    // EIP-1967 Upgraded：與 proxy-implementation（每輪讀實作 slot）互補而不重複（複審 L-c）。
+    // 同一次升級先被 slot 檢查以 SEV-1 通報過，這則只補 tx 細節（SEV-3）；反之記下來，讓 slot 檢查降級。
+    if (e.ev.sig === "Upgraded(address)") {
+      const impl = lc(e.fields.find((f) => f.type === "address")?.value ?? "");
+      const proxy = lc(e.contract.address);
+      state.upgrades ??= {};
+      const rec = state.upgrades[proxy];
+      if (rec && rec.impl === impl && rec.by === "slot") {
+        severity = "SEV-3";
+        e.lines.push("同一次升級已由 proxy-implementation（實作 slot 檢查）以 SEV-1 通報；這則補上交易細節");
+      } else state.upgrades[proxy] = { impl, by: "event", at: at ?? now };
+    }
+    findings.push({ ...finding(e.rule, e.key, severity, e.rule.title, e.lines), once: true, ...(at ? { at } : {}) });
   }
   return findings;
 }
@@ -560,22 +651,64 @@ function recordWindow(state, rule, amount, at) {
   const arr = (state.windows[rule.id] ??= []);
   arr.push([at, amount.toString()]);
 }
-export function windowFindings({ config, env, state, now }) {
+/** 累計視窗的紀錄最多保留幾筆（KV 大小固定）。 */
+export const WINDOW_MAX_ENTRIES = 500;
+const iso = (t) => new Date(t * 1000).toISOString().replace(".000Z", "Z");
+
+/**
+ * 累計提領視窗（以區塊時間計）。兩種告警：
+ *   • 即時視窗：最近 windowSec 內（相對於 now）的合計 ≥ 門檻 → 狀態型告警（觸發／持續／恢復）。
+ *   • 過去的爆量（複審 L-a）：落後追趕時才掃到的提領，發生時間早於「最近 windowSec」，即時視窗看不到它們；
+ *     L1 改用區塊時間後，「停機期間被拆單抽走」反而完全不響。所以對本輪新記入的每一筆，看「以它結尾的
+ *     windowSec 滑動視窗」——合計 ≥ 門檻、且視窗裡有即時視窗之外的提領，就發一則一次性告警，
+ *     訊息標明發生時間。即時視窗已經在響時不重複發。
+ * freshFrom：本輪掃描前各規則的紀錄筆數（之後的是本輪新記入的）。scanTime：掃描進度的區塊時間
+ * （落後時比 now 早），紀錄保留到「scanTime − windowSec」，讓跨輪的爆量也接得起來。
+ */
+export function windowFindings({ config, env, state, now, freshFrom = {}, scanTime = now }) {
   const out = [];
   for (const rule of config.rules.filter((r) => r.kind === "event" && isActive(r) && r.amount?.windowThreshold)) {
     const windowSec = numParam(config, env, rule.amount.windowSec);
-    const arr = (state.windows?.[rule.id] ?? []).filter(([t]) => now - t < windowSec);
-    if (state.windows) state.windows[rule.id] = arr;
-    const sum = arr.reduce((s, [, a]) => s + BigInt(a), 0n);
+    const all = state.windows?.[rule.id] ?? [];
+    const fresh = all.slice(freshFrom[rule.id] ?? 0);
+    const keepAfter = Math.min(now, scanTime) - windowSec;
+    let kept = all.filter(([t]) => t > keepAfter || now - t < windowSec);
+    if (kept.length > WINDOW_MAX_ENTRIES) kept = kept.slice(kept.length - WINDOW_MAX_ENTRIES);
+    if (state.windows) state.windows[rule.id] = kept;
     const dec = rule.amount.decimals;
     const limit = toUnits(param(config, env, rule.amount.windowThreshold), dec);
+    const contractsLine = `合約：${rule.contracts.map((c) => `${c.ref} ${c.address}`).join("、")}`;
+
+    const live = kept.filter(([t]) => now - t < windowSec);
+    const sum = live.reduce((s, [, a]) => s + BigInt(a), 0n);
     if (sum >= limit) {
       out.push(
         finding(rule, `${rule.id}:window`, rule.severity, `${rule.title}（累計）`, [
-          `${Math.round(windowSec / 60)} 分鐘內累計 ${formatUnits(sum, dec)}，${arr.length} 筆（門檻 ${formatUnits(limit, dec)}）`,
-          `合約：${rule.contracts.map((c) => `${c.ref} ${c.address}`).join("、")}`,
+          `${Math.round(windowSec / 60)} 分鐘內累計 ${formatUnits(sum, dec)}，${live.length} 筆（門檻 ${formatUnits(limit, dec)}）`,
+          contractsLine,
         ]),
       );
+      continue;
+    }
+    let best = null;
+    // 用保留前的全部紀錄：本輪新記入的提領可能早於保留界線（一輪就追完數小時的積欠）。
+    const sorted = [...all].sort((x, y) => x[0] - y[0]);
+    for (const [end] of fresh) {
+      const inWin = sorted.filter(([t]) => t > end - windowSec && t <= end);
+      if (!inWin.some(([t]) => now - t >= windowSec)) continue; // 整個在即時視窗裡：上面已經算過
+      const s = inWin.reduce((acc, [, a]) => acc + BigInt(a), 0n);
+      if (s >= limit && (!best || s > best.sum)) best = { start: inWin[0][0], end, sum: s, n: inWin.length };
+    }
+    if (best) {
+      out.push({
+        ...finding(rule, `${rule.id}:window-past:${best.start}-${best.end}`, rule.severity, `${rule.title}（累計，過去發生）`, [
+          `發生時間 ${iso(best.start)} ～ ${iso(best.end)}（區塊時間），${Math.round(windowSec / 60)} 分鐘內累計 ${formatUnits(best.sum, dec)}，${best.n} 筆（門檻 ${formatUnits(limit, dec)}）`,
+          `監控落後追趕時才掃到（約 ${Math.round((now - best.end) / 60)} 分鐘前）：這段期間的提領沒有即時告警`,
+          contractsLine,
+        ]),
+        once: true,
+        at: best.end,
+      });
     }
   }
   return out;
@@ -805,6 +938,43 @@ const checks = {
     return out;
   },
 
+  /**
+   * EIP-1967 proxy 的實作位址（複審 L-c）。CI 對照的部署版 bytecode（deployed.json）是某個實作的；
+   * 實作被換掉之後，CI 的「事件在部署版裡」「函式在部署版裡」全部變成對舊版的判斷，而且 CI 不連網、
+   * 永遠是綠的。這裡每輪讀實作 slot 與 deployed.json 的值比對：
+   *   • 先於 Upgraded 事件看到（或事件被漏掃）→ SEV-1「實作被升級」。
+   *   • 同一個新實作已由 vault-upgraded（Upgraded 事件）以 SEV-1 通報 → 只發 SEV-3「deployed.json 過期」，不重複叫人。
+   * 兩者互補：事件帶交易細節、也抓得到「升級又在一輪內換回來」；slot 檢查抓得到事件掃描的空窗
+   * （KV 重置、落後），並且一直開著，直到 deployed.json 重抓、Worker 重新部署為止。
+   */
+  async implementation({ rule, rpc, state, now }) {
+    const proxies = rule.contracts.filter((c) => c.as === "proxy");
+    const res = await rpc.batch(proxies.map((c) => ({ method: "eth_getStorageAt", params: [c.address, IMPL_SLOT, "latest"] })));
+    const out = [];
+    const failed = [];
+    proxies.forEach((c, i) => {
+      const w = res[i]?.error ? [] : words(res[i]?.result);
+      if (!w.length || !c.impl) return failed.push(`${c.ref}：${res[i]?.error ?? (c.impl ? "空回應" : "缺少 impl（執行 check-monitoring --write）")}`);
+      const actual = lc(wordToAddress(w[0]));
+      if (actual === lc(c.impl)) return;
+      state.upgrades ??= {};
+      const proxy = lc(c.address);
+      const rec = state.upgrades[proxy];
+      const byEvent = !!rec && rec.impl === actual && rec.by === "event";
+      if (!rec || rec.impl !== actual) state.upgrades[proxy] = { impl: actual, by: "slot", at: now };
+      const lines = [
+        `${c.ref} ${c.address} 的 EIP-1967 實作現在是 ${actual}；CI 依據的部署版（deployed.json）是 ${c.impl}`,
+        byEvent
+          ? "這次升級已由 vault-upgraded（Upgraded 事件）以 SEV-1 通報；這則提醒 CI 依據的 bytecode 已過期"
+          : "未經排程的升級等同合約被換掉：立即確認是否為預期變更（對照 Timelock 排程與部署紀錄）",
+        "預期變更時：node scripts/check-monitoring.mjs --refresh-deployed → --write → PR → 重新部署 Worker；在那之前「事件／函式在部署版裡」的 CI 檢查是對舊版做的",
+      ];
+      out.push(finding(rule, `${rule.id}:${proxy}`, byEvent ? "SEV-3" : rule.severity, byEvent ? `${rule.title}：deployed.json 過期（${c.ref}）` : `${rule.title}：${c.ref}`, lines));
+    });
+    if (failed.length) throw partial(`實作 slot 讀取失敗：${failed.join("；")}`, out);
+    return out;
+  },
+
   /** keeper 錢包 gas 餘額。keeper = MockOracle.owner()（不手抄位址），另可用 EXTRA_GAS_WALLETS 補。 */
   async gasBalance({ rule, config, env, rpc }) {
     const [own] = await rpc.batch([callReq(rule, "oracle", "owner()")]);
@@ -883,15 +1053,28 @@ const httpChecks = {
     const expected = String(env?.EXPECTED_PAY_TO ?? "").trim();
     state.baselines ??= {};
     const baseline = expected || state.baselines[rule.id];
+    let reset = false;
     if (!expected && !state.baselines[rule.id]) {
       // 首次觀察即基準。講出來：KV 被清掉之後，「被改過的 payTo」會靜靜變成新的基準。
+      // 比照 monitor-self：不可被 MUTE_KEYS／MIN_SEVERITY 擋掉，至少 SEV-2（複審 L-b：原本 SEV-3，
+      // MIN_SEVERITY=SEV-2 或靜音 x402-payto 時，「payTo 被改＋基準被刪」完全沒有通知）。
       state.baselines[rule.id] = payTo;
-      out.push({ ...finding(rule, `${rule.id}:baseline:${lc(payTo)}`, "SEV-3", `${rule.title}：基準已設定`, [
+      reset = true;
+      out.push({ ...finding(rule, `${rule.id}:baseline:${lc(payTo)}`, "SEV-2", `${rule.title}：基準已設定`, [
         `KV 沒有收款地址的基準（首次部署，或基準被清除）：以目前觀察到的 payTo ${payTo} 當作基準`,
-        "請確認這是預期的收款地址；設定 EXPECTED_PAY_TO 後就不再依賴首次觀察",
-      ]), once: true });
+        "請確認這是預期的收款地址。沒有設定 EXPECTED_PAY_TO 時，「payTo 被改＋KV 基準被刪」只會留下這一則通知——部署時請務必設定 EXPECTED_PAY_TO",
+      ]), once: true, unmutable: true });
     }
-    if (baseline && lc(baseline) !== lc(payTo)) {
+    // 基準在這一輪才（重新）建立，而原本有開著的「收款地址變更」：同一輪不可以把它當成恢復——
+    // 基準是用「被改之後的值」建的，條件消失只是因為比對對象換了（複審 L-b）。保持開啟到下一輪，
+    // 讓值班的人先看到上面那則「基準已設定」。
+    const openChanged = state.open?.[`${rule.id}:changed`];
+    if (reset && openChanged) {
+      out.push(finding(rule, `${rule.id}:changed`, "SEV-1", `${rule.title}：收款地址變更`, [
+        `基準在變更告警開著的時候被清除，並以目前的 payTo ${payTo} 重建；先前的變更告警保持開啟一輪`,
+        "請人工確認 payTo 是預期的地址；若不是，這是收款地址被換掉後又清掉基準",
+      ]));
+    } else if (baseline && lc(baseline) !== lc(payTo)) {
       out.push(finding(rule, `${rule.id}:changed`, "SEV-1", `${rule.title}：收款地址變更`, [
         `signal-api 的 payTo 由 ${baseline} 變成 ${payTo}`,
         expected ? "基準來自 EXPECTED_PAY_TO" : "基準來自首次觀察（建議設定 EXPECTED_PAY_TO）",
@@ -910,7 +1093,8 @@ const httpChecks = {
 // ── 告警狀態機 ───────────────────────────────────────────────────────────────
 
 /**
- * 把本輪 findings 與 KV 裡的開啟中告警比對，產出要送的通知。
+ * 把本輪 findings 與 KV 裡的開啟中告警比對，產出要送的通知。每則通知帶 at（這則通知描述的事發生的
+ * 時間：事件是區塊時間，狀態變化是本輪）與 firstAt（首次發生：事件同 at，狀態型是開啟的時間）。
  *   once（event）      → 每筆都送一次。
  *   condition 新出現   → 「觸發」
  *   condition 持續     → 嚴重度比「目前」升級，或超過 REMIND_SEC，才「持續」提醒。降級不通知，但會記下
@@ -925,14 +1109,14 @@ export function reconcile({ config, env, state, findings, evaluated, now }) {
   const seen = new Set();
   for (const f of findings) {
     if (f.once) {
-      notes.push({ ...f, status: "事件" });
+      notes.push({ ...f, status: "事件", at: f.at ?? now, firstAt: f.at ?? now });
       continue;
     }
     seen.add(f.key);
     const prev = state.open[f.key];
     if (!prev) {
       state.open[f.key] = { ruleId: f.ruleId, severity: f.severity, since: now, lastNotified: now, title: f.title };
-      notes.push({ ...f, status: "觸發" });
+      notes.push({ ...f, status: "觸發", at: now, firstAt: now });
     } else {
       const peak = worse(f.severity, prev.peak ?? prev.severity); // 歷來最嚴重：恢復通知用它過 MIN_SEVERITY
       const escalated = sevRank(f.severity) < sevRank(prev.severity);
@@ -941,7 +1125,7 @@ export function reconcile({ config, env, state, findings, evaluated, now }) {
         const lines = [...f.lines];
         if (escalated) lines.push(`嚴重度由 ${prev.severity} 升為 ${f.severity}`);
         lines.push(`自 ${new Date(prev.since * 1000).toISOString()} 起`);
-        notes.push({ ...f, status: "持續", lines });
+        notes.push({ ...f, status: "持續", lines, at: now, firstAt: prev.since });
       } else state.open[f.key] = { ...prev, severity: f.severity, peak };
     }
   }
@@ -949,7 +1133,7 @@ export function reconcile({ config, env, state, findings, evaluated, now }) {
     if (seen.has(key) || !evaluated.has(prev.ruleId)) continue;
     delete state.open[key];
     const orig = prev.peak ?? prev.severity;
-    notes.push({ ruleId: prev.ruleId, key, severity: "SEV-4", origSeverity: orig, status: "恢復", title: prev.title, lines: [
+    notes.push({ ruleId: prev.ruleId, key, severity: "SEV-4", origSeverity: orig, status: "恢復", title: prev.title, at: now, firstAt: prev.since, lines: [
       `持續 ${Math.round((now - prev.since) / 60)} 分鐘後恢復（期間最高嚴重度 ${orig}）`,
     ] });
   }
@@ -978,8 +1162,11 @@ export async function runOnce({ config, env = {}, state, fetchImpl, now = Math.f
   };
 
   // event
+  const freshFrom = Object.fromEntries(Object.entries(state.windows ?? {}).map(([k, v]) => [k, v.length]));
+  let scanTime = now;
   try {
     const r = await scanEvents({ config, env, rpc, state, now });
+    scanTime = now - r.lagBlocks * (config.network?.blockTimeSec ?? 2);
     findings.push(...r.findings);
     state.checkpoint = r.nextCheckpoint;
     if (r.initialFrom !== undefined && r.nextCheckpoint !== undefined && r.nextCheckpoint !== null) initialFrom = r.initialFrom;
@@ -994,7 +1181,7 @@ export async function runOnce({ config, env = {}, state, fetchImpl, now = Math.f
   } catch (e) {
     fail("event-scan", e);
   }
-  findings.push(...windowFindings({ config, env, state, now }));
+  findings.push(...windowFindings({ config, env, state, now, freshFrom, scanTime }));
 
   // state + http
   for (const rule of config.rules.filter((x) => (x.kind === "state" || x.kind === "http") && isActive(x))) {

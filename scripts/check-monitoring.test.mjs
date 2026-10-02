@@ -10,8 +10,13 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { selector as selectorOf } from "../ops/monitoring/keccak.mjs";
 import {
+  MUTABLE_KEYS,
   PARAM_SPECS,
   REQUIRED_RULES,
+  adminFunctionCoverage,
+  proxyCoverage,
+  ruleHash,
+  verifyDeployed,
   checkConfig,
   checkDeployed,
   checkGitignore,
@@ -185,17 +190,26 @@ test("SIGNAL_API_URL 預設值必須等於 SDK 常數", () => {
   assert.ok(problemsOf(cfg).some((x) => /SIGNAL_API_URL 預設值必須等於/.test(x)));
 });
 
-test("M2：MUTE_KEYS 不可靜音 monitor-self、不可整條靜音 SEV-1 規則、必須指向存在的規則", () => {
+test("M2／M-A：MUTE_KEYS 只接受 mutableKeys 白名單；白名單本身釘在檢查器裡", () => {
   const cfg = current();
+  assert.deepEqual(cfg.mutableKeys.map((m) => m.key), MUTABLE_KEYS);
   assert.deepEqual(checkMuteKeys("", cfg), []);
-  assert.deepEqual(checkMuteKeys("x402-payto:unsafe, fee-withdrawals", cfg), []);
-  const p = checkMuteKeys("monitor-self:errors,owner-transferred,no-such-rule:x,bad key", cfg).join("\n");
+  assert.deepEqual(checkMuteKeys("x402-payto:unsafe", cfg), []);
+  const p = checkMuteKeys("monitor-self:errors,owner-transferred,x402-payto:changed,insurance-wiring:InsuranceVault.exchange(),fee-withdrawals,bad key", cfg).join("\n");
   assert.match(p, /monitor-self:errors：監控自身的告警不可靜音/);
-  assert.match(p, /把 SEV-1 規則 owner-transferred 整條靜音/);
-  assert.match(p, /no-such-rule:x 不是任何規則的 key/);
+  for (const k of ["owner-transferred", "x402-payto:changed", "insurance-wiring:InsuranceVault.exchange()", "fee-withdrawals"]) {
+    assert.ok(p.includes(`的 ${k} 不在 mutableKeys 白名單`), `${k}：\n${p}`);
+  }
   assert.match(p, /格式不對的項目 "bad key"/);
   cfg.params.MUTE_KEYS.default = "monitor-self";
   assert.ok(problemsOf(cfg).some((x) => /params\.MUTE_KEYS\.default 含 monitor-self：監控自身的告警不可靜音/.test(x)));
+  // 把 SEV-1 的子 key 加進白名單：monitors.json 與檢查器不一致 → 紅。
+  const c2 = current();
+  c2.mutableKeys.push({ key: "x402-payto:changed", reason: "吵" });
+  assert.ok(problemsOf(c2).some((x) => /mutableKeys（x402-payto:unsafe, x402-payto:changed）與 scripts\/check-monitoring\.mjs 的 MUTABLE_KEYS/.test(x)));
+  const c3 = current();
+  c3.mutableKeys[0].reason = "";
+  assert.ok(problemsOf(c3).some((x) => /mutableKeys 的 x402-payto:unsafe 沒有寫 reason/.test(x)));
 });
 
 test("rules.md 被手改或過期 → 錯", () => {
@@ -478,6 +492,24 @@ test("M4：審查的突變清單——每一項都要讓檢查器變紅", () => 
     ["wrangler [vars] 把 MAX_BLOCK_RANGE 覆寫成 5000", () => t.wr(toml, t.rd(toml) + '\nMAX_BLOCK_RANGE = "5000"\n'), /\[vars\] 的 MAX_BLOCK_RANGE 必須在 1–1000 之間/],
     ["wrangler [vars] 靜音 monitor-self", () => t.wr(toml, t.rd(toml) + '\nMUTE_KEYS = "monitor-self:errors"\n'), /MUTE_KEYS 含 monitor-self:errors：監控自身的告警不可靜音/],
     ["忽略清單刪掉一項（事件變成沒人管）", () => t.editJson((j) => { j.ignoredEvents[0].events.pop(); }), /沒有任何規則、也不在 ignoredEvents/],
+    // ── 複審（w17r2/mut3.mjs）──
+    ["N1c large-margin-withdrawal 的 token 改標 MockUSDT 樣式（改手寫欄位）", () => t.editJson((j) => { j.rules.find((r) => r.id === "large-margin-withdrawal").amount.token = "USDC"; }), /large-margin-withdrawal：(規則定義與|token 標成 USDC)/, true],
+    ["N1d exchange-balance-drop 的 holder 換成 InsuranceVault", () => t.editJson((j) => { const c = j.rules.find((r) => r.id === "exchange-balance-drop").contracts.find((x) => x.as === "holder"); c.ref = "InsuranceVault"; c.abi = "InsuranceVault"; }), /exchange-balance-drop：規則定義與 scripts\/check-monitoring\.mjs 的 REQUIRED_RULES 釘住的 sha256 不同/, true],
+    ["N2d insurance-wiring 刪掉 exchange() 讀取", () => t.editJson((j) => { j.rules.find((r) => r.id === "insurance-wiring").calls.splice(0, 1); }), /insurance-wiring：規則定義與.*sha256 不同/, true],
+    ["N2c core-wiring oracle() 由 ref 改 snapshot", () => t.editJson((j) => { const c = j.rules.find((r) => r.id === "core-wiring").calls[0]; c.expect = { snapshot: true }; c.note = "x"; }), /core-wiring：規則定義與.*sha256 不同/, true],
+    ["N5f exchange-balance-drop 的 dropBps 改指 INSURANCE_DROP_BPS", () => t.editJson((j) => { j.rules.find((r) => r.id === "exchange-balance-drop").dropBps = "INSURANCE_DROP_BPS"; }), /exchange-balance-drop：規則定義與.*sha256 不同/, true],
+    ["N5g large-margin-withdrawal 拿掉相對門檻", () => t.editJson((j) => { delete j.rules.find((r) => r.id === "large-margin-withdrawal").amount.relativeBps; }), /large-margin-withdrawal：規則定義與.*sha256 不同/, true],
+    ["N5h large-margin-withdrawal 拿掉累計視窗", () => t.editJson((j) => { const a = j.rules.find((r) => r.id === "large-margin-withdrawal").amount; delete a.windowThreshold; delete a.windowSec; }), /large-margin-withdrawal：規則定義與.*sha256 不同/, true],
+    ["N4b [vars] MUTE_KEYS = x402-payto:changed", () => t.wr(toml, t.rd(toml) + '\nMUTE_KEYS = "x402-payto:changed"\n'), /MUTE_KEYS 的 x402-payto:changed 不在 mutableKeys 白名單/],
+    ["N4c [vars] MUTE_KEYS = insurance-wiring:InsuranceVault.exchange()", () => t.wr(toml, t.rd(toml) + '\nMUTE_KEYS = "insurance-wiring:InsuranceVault.exchange()"\n'), /insurance-wiring:InsuranceVault\.exchange\(\) 不在 mutableKeys 白名單/],
+    ["N4h [vars] MUTE_KEYS = insurance-wiring:（尾冒號）", () => t.wr(toml, t.rd(toml) + '\nMUTE_KEYS = "insurance-wiring:"\n'), /MUTE_KEYS 含格式不對的項目|不在 mutableKeys 白名單/],
+    ["N4i [vars] MIN_SEVERITY = SEV-1", () => t.wr(toml, t.rd(toml).replace('MIN_SEVERITY = "SEV-4"', 'MIN_SEVERITY = "SEV-1"')), /MIN_SEVERITY 必須是 SEV-2\/SEV-3\/SEV-4/],
+    ["N3b [vars] SELF_ERRORS_BEFORE_ALERT = 12", () => t.wr(toml, t.rd(toml) + '\nSELF_ERRORS_BEFORE_ALERT = "12"\n'), /SELF_ERRORS_BEFORE_ALERT 必須在 1–6 之間/],
+    ["N3d [vars] LAG_ALERT_BLOCKS = 1000000", () => t.wr(toml, t.rd(toml) + '\nLAG_ALERT_BLOCKS = "1000000"\n'), /LAG_ALERT_BLOCKS 必須在 150–1800 之間/],
+    ["N3e [vars] LARGE_WITHDRAWAL_BPS = 10000", () => t.wr(toml, t.rd(toml) + '\nLARGE_WITHDRAWAL_BPS = "10000"\n'), /LARGE_WITHDRAWAL_BPS 必須在 1–5000 之間/],
+    ["N3g [vars] HTTP 6＋SELF 2（合計 7 輪 > 6）", () => t.wr(toml, t.rd(toml) + '\nHTTP_FAILS_BEFORE_ALERT = "6"\nSELF_ERRORS_BEFORE_ALERT = "2"\n'), /wrangler\.toml \[vars\]：HTTP_FAILS_BEFORE_ALERT（6）＋SELF_ERRORS_BEFORE_ALERT（2）−1 = 7 輪/],
+    ["L-d adminFunctions 少分類一個不發事件的 setter", () => t.editJson((j) => { delete j.adminFunctions.PepeIncentives["withdraw(uint256)"]; }), /PepeIncentives\.withdraw\(uint256\) 在部署版 bytecode 裡，但 adminFunctions 沒有分類/],
+    ["L-d 不發事件的 setter 指向「部署版不發」的事件規則", () => t.editJson((j) => { j.adminFunctions.InsuranceVault["setExchange(address)"] = { rule: "insurance-wiring-changed" }; }), /InsuranceVault\.setExchange\(address\) 指向 insurance-wiring-changed，但它不是 active 規則/],
   ];
   try {
     assert.deepEqual(t.check(), [], "基準：未改動的副本必須通過");
@@ -521,7 +553,12 @@ test("M4：參數型別與範圍", () => {
   assert.match(checkParamValue("CONFIRMATIONS", "-1"), /非負整數/);
   assert.equal(checkParamValue("GAS_MIN_ETH", "0.02"), null);
   assert.match(checkParamValue("GAS_MIN_ETH", "0,02"), /十進位/);
-  assert.match(checkParamValue("MIN_SEVERITY", "SEV-5"), /SEV-1\/SEV-2/);
+  assert.match(checkParamValue("MIN_SEVERITY", "SEV-5"), /SEV-2\/SEV-3\/SEV-4/);
+  assert.match(checkParamValue("MIN_SEVERITY", "SEV-1"), /SEV-2\/SEV-3\/SEV-4/, "L-f：不可只剩 SEV-1");
+  assert.match(checkParamValue("LAG_ALERT_BLOCKS", "1000000"), /150–1800/, "L-f");
+  assert.match(checkParamValue("LARGE_WITHDRAWAL_BPS", "10000"), /1–5000/, "L-f：100% 等於關掉相對門檻");
+  assert.match(checkParamValue("SELF_ERRORS_BEFORE_ALERT", "12"), /1–6/, "L-f");
+  assert.match(checkParamValue("HTTP_FAILS_BEFORE_ALERT", "12"), /1–6/, "L-f");
   assert.match(checkParamValue("SIGNAL_API_URL", "http://plain.example"), /https/);
   assert.match(checkParamValue("NO_SUCH", "1"), /沒有型別定義/);
   cfg.params.ORACLE_DEVIATION_CRIT_BPS.default = "100";
@@ -601,4 +638,86 @@ test("M4：含金鑰的 URL（不靠廠商樣式）、遞迴列檔、.gitignore"
   assert.deepEqual(checkGitignore(readFileSync(join(root, ".gitignore"), "utf8")), []);
   assert.equal(checkGitignore("node_modules/\n.env\n").length, 2);
   assert.equal(checkGitignore("**/.dev.vars\n.wrangler/\n").length, 0);
+});
+
+// ── 複審修正 ─────────────────────────────────────────────────────────────────
+
+test("M-B：每條規則的定義都釘了 sha256；改任何內容都要同時更新檢查器（錯誤訊息印出新雜湊）", () => {
+  const cfg = current();
+  for (const r of cfg.rules) assert.equal(REQUIRED_RULES[r.id][2], ruleHash(r), r.id);
+  // 雜湊不受鍵的順序與產生欄位影響
+  const r0 = structuredClone(ruleOf(cfg, "insurance-wiring"));
+  const reordered = Object.fromEntries(Object.entries(r0).reverse());
+  delete reordered.runbookUrl;
+  for (const c of reordered.calls) delete c.expected;
+  assert.equal(ruleHash(reordered), ruleHash(r0));
+  // 只改說明文字也要人工審過
+  const c1 = current();
+  ruleOf(c1, "insurance-wiring").description += "。";
+  const p = problemsOf(c1).join("\n");
+  assert.match(p, /insurance-wiring：規則定義與 scripts\/check-monitoring\.mjs 的 REQUIRED_RULES 釘住的 sha256 不同（現在 [0-9a-f]{64}，釘的是 [0-9a-f]{64}）—— .*人工審過/);
+});
+
+test("L-d：管理函式的涵蓋——從部署版 selector 出發，不發事件的 setter 也要分類", () => {
+  assert.deepEqual(adminFunctionCoverage(current(), ctx), []);
+  const cfg = current();
+  delete cfg.adminFunctions.PepeIncentives["setEsgRegistry(address)"];
+  cfg.adminFunctions.PepeIncentives["noSuchFn()"] = { reason: "x" };
+  cfg.adminFunctions.FeeRouter["setExchange(address)"] = { rule: "fee-withdrawals", reason: "x" };
+  cfg.adminFunctions.MockOracle["addAsset(bytes32,uint256)"] = { rule: "keeper-gas" };
+  cfg.adminFunctions.NoSuchAbi = {};
+  const p = adminFunctionCoverage(cfg, ctx).join("\n");
+  assert.match(p, /PepeIncentives\.setEsgRegistry\(address\) 在部署版 bytecode 裡，但 adminFunctions 沒有分類/);
+  assert.match(p, /PepeIncentives\.noSuchFn\(\) 不在 ABI 或不在部署版 bytecode 裡/);
+  assert.match(p, /FeeRouter\.setExchange\(address\) 必須恰好有 rule 或 reason/);
+  assert.match(p, /adminFunctions 的 NoSuchAbi 沒有任何 active 規則在監控/);
+  assert.ok(!/MockOracle\.addAsset/.test(p), "keeper-gas 是監控 MockOracle 的狀態規則，算涵蓋");
+});
+
+test("L-c：每個受監控的 EIP-1967 proxy 都要有 implementation 規則；預期實作來自 deployed.json", () => {
+  const cfg = current();
+  assert.deepEqual(proxyCoverage(cfg, ctx), []);
+  const r = ruleOf(cfg, "proxy-implementation");
+  assert.equal(r.contracts[0].impl, ctx.deployed.implOf(r.contracts[0].address));
+  const c2 = current();
+  c2.rules = c2.rules.filter((x) => x.id !== "proxy-implementation");
+  assert.match(proxyCoverage(c2, ctx).join("\n"), /AssetVaultV2（0x[0-9a-fA-F]{40}）是 EIP-1967 proxy，但沒有 implementation 規則/);
+  // impl 是產生欄位：手改會被抓
+  const c3 = current();
+  ruleOf(c3, "proxy-implementation").contracts[0].impl = "0x0000000000000000000000000000000000000001";
+  assert.ok(problemsOf(c3).some((x) => /proxy-implementation\]\.contracts\[0\]\.impl/.test(x)));
+});
+
+test("L-c：--verify-deployed（每週排程）只讀、不寫檔；鏈上實作換了 → 回報差異", async () => {
+  const d = ctx.deployed.data;
+  const chain = (implOverride = null) => {
+    const codeAt = {};
+    for (const [a, c] of Object.entries(d.contracts)) {
+      codeAt[a] = d.codes[c.codeHash];
+      if (c.impl) codeAt[c.impl] = d.codes[c.implCodeHash];
+    }
+    return async (url, init) => {
+      const b = JSON.parse(init.body);
+      const reply = (x) => Response.json({ jsonrpc: "2.0", id: b.id, ...x });
+      const [p0] = b.params;
+      if (!["eth_chainId", "eth_blockNumber", "eth_getCode", "eth_getStorageAt", "eth_call"].includes(b.method)) throw new Error("不允許 " + b.method);
+      if (b.method === "eth_chainId") return reply({ result: "0x14a34" });
+      if (b.method === "eth_blockNumber") return reply({ result: "0x" + (d.block + 1000).toString(16) });
+      if (b.method === "eth_getCode") return reply({ result: codeAt[p0.toLowerCase()] ?? "0x" });
+      if (b.method === "eth_getStorageAt") {
+        let impl = d.contracts[p0.toLowerCase()]?.impl;
+        if (impl && implOverride) impl = implOverride;
+        return reply({ result: "0x" + (impl ? impl.slice(2) : "").padStart(64, "0") });
+      }
+      const hit = Object.entries(d.reads).find(([k]) => k.startsWith(p0.to.toLowerCase() + "|") && selectorOf(k.split("|")[1]) === p0.data);
+      return hit ? reply({ result: hit[1] }) : reply({ error: { code: 3, message: "execution reverted" } });
+    };
+  };
+  const before = readFileSync(join(root, "ops/monitoring/deployed.json"), "utf8");
+  assert.deepEqual(await verifyDeployed({ root, fetchImpl: chain(), log: () => {}, sleep: async () => {} }), [], "區塊號不同但內容相同 → 一致");
+  // 實作被換成另一份 bytecode（借用 PerpetualExchange 的位址當新實作）
+  const other = Object.keys(d.contracts).find((a) => !d.contracts[a].impl);
+  const diffs = await verifyDeployed({ root, fetchImpl: chain(other), log: () => {}, sleep: async () => {} });
+  assert.ok(diffs.some((x) => /EIP-1967 實作 0x[0-9a-f]{40} → 0x[0-9a-f]{40}（升級了）/.test(x)), diffs.join("\n"));
+  assert.equal(readFileSync(join(root, "ops/monitoring/deployed.json"), "utf8"), before, "不寫檔");
 });

@@ -6,8 +6,21 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { keccak256, selector } from "./keccak.mjs";
-import { decodeLog, formatUnits, isRangeError, isTransient, makeRpc, reconcile, redactUrls, runOnce, toUnits } from "./engine.mjs";
-import { channelsOf, escapeDiscord, parseMuteKeys, sendToChannel, shouldSend } from "./notify.mjs";
+import {
+  IMPL_SLOT,
+  configProblems,
+  decodeLog,
+  formatUnits,
+  isRangeError,
+  isTransient,
+  makeRpc,
+  minSeverityOf,
+  reconcile,
+  redactUrls,
+  runOnce,
+  toUnits,
+} from "./engine.mjs";
+import { channelsOf, escapeDiscord, formatNote, noteId, parseMuteKeys, sendToChannel, shouldSend } from "./notify.mjs";
 import { BASELINES_KEY, CHANNEL_STUCK_ROUNDS, MAX_RESEND_PER_TICK, OUTBOX_TTL_SEC, STATE_KEY, tick } from "./tick.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -32,6 +45,7 @@ function fakeWorld() {
     logs: [],
     calls: new Map(), // `${to}|${data}` 或 `${to}|${selector}` → hex 或 { revert: true }
     balances: new Map(),
+    storage: new Map(), // `${address}|${slot}` → 32-byte hex（eth_getStorageAt）
     blockTimes: new Map(), // 區塊號 → timestamp（eth_getBlockByNumber 用；log 沒帶 blockTimestamp 時才會查）
     failGetLogs: false,
     rangeLimit: null, // 節點的 eth_getLogs 區塊數上限（超過回 HTTP 413，與 sepolia.base.org 實測相同）
@@ -72,6 +86,8 @@ function fakeWorld() {
         if (!w.blockTimes.has(bn)) throw new Error("block not found");
         return { number: req.params[0], timestamp: "0x" + w.blockTimes.get(bn).toString(16) };
       }
+      case "eth_getStorageAt":
+        return w.storage.get(`${req.params[0].toLowerCase()}|${req.params[1].toLowerCase()}`) ?? "0x" + "0".repeat(64);
       case "eth_getBalance":
         return "0x" + (w.balances.get(req.params[0].toLowerCase()) ?? 10n * E18).toString(16);
       default:
@@ -572,7 +588,13 @@ test("L1：累計視窗用區塊時間——落後追趕時，幾小時前的提
   const old = fakeWorld();
   logs(old, now - 3 * 3600);
   const r1 = await runOnce({ config: cfg, env: env0, state: { checkpoint: 980 }, fetchImpl: old.fetch, now });
-  assert.ok(!r1.notes.some((n) => n.key === "large-margin-withdrawal:window"), "三小時前的提領不在一小時視窗內");
+  assert.ok(!r1.notes.some((n) => n.key === "large-margin-withdrawal:window"), "三小時前的提領不在「最近一小時」的即時視窗內");
+  // …但它們在發生當時的一小時內累計達門檻：複審 L-a，過去的爆量也要告警，並標明發生時間。
+  const past = r1.notes.filter((n) => n.key.startsWith("large-margin-withdrawal:window-past:"));
+  assert.equal(past.length, 1, JSON.stringify(r1.notes.map((n) => n.key)));
+  assert.equal(past[0].status, "事件");
+  assert.equal(past[0].at, now - 3 * 3600 + 5);
+  assert.match(past[0].lines[0], /發生時間 1970-01-02T00:46:40Z ～ 1970-01-02T00:46:45Z（區塊時間），60 分鐘內累計 54,000，6 筆/);
   // 同樣的六筆發生在 10 分鐘內 → 累計告警。
   const recent = fakeWorld();
   logs(recent, now - 600);
@@ -587,6 +609,56 @@ test("L1：累計視窗用區塊時間——落後追趕時，幾小時前的提
   const r3 = await runOnce({ config: cfg, env: env0, state: { checkpoint: 980 }, fetchImpl: noTs.fetch, now });
   assert.equal(r3.errors.length, 0, r3.errors.join());
   assert.ok(!r3.notes.some((n) => n.key === "large-margin-withdrawal:window"));
+  assert.ok(r3.notes.some((n) => n.key.startsWith("large-margin-withdrawal:window-past:")));
+});
+
+test("L-a：過去的爆量（複審 l1sim）——跨輪接得起來、即時視窗在響時不重複、未達門檻不響、只發一次", async () => {
+  const cfg = only("large-margin-withdrawal");
+  const ex = addrOf("large-margin-withdrawal", "PerpetualExchange");
+  const user = topicAddr("0x00000000000000000000000000000000000000ee");
+  const now = 1_800_000_000;
+  const W = (w, block, ts, amt, i) => makeLog(w, { address: ex, sig: "MarginWithdrawn(address,uint256)", topics: [user], data: word(BigInt(amt) * E18), block, logIndex: i, ts });
+  // 複審 l1sim L1b：落後 3 小時才掃到 6×9,000（30 分鐘內）→ 告警；L1a（即時）→ 即時視窗告警，不另發過去的。
+  const lag = fakeWorld();
+  lag.head = 10_000;
+  [10800, 10500, 10200, 9900, 9600, 9300].forEach((ago, i) => W(lag, 4000 + i, now - ago, 9000, i));
+  const st = { checkpoint: 3990 };
+  const r1 = await runOnce({ config: cfg, env: env0, state: st, fetchImpl: lag.fetch, now, sleep: noSleep });
+  assert.deepEqual(r1.notes.map((n) => n.key.replace(/:\d+-\d+$/, "")), ["large-margin-withdrawal:window-past"]);
+  // 下一輪沒有新提領：不重發。
+  lag.head += 150;
+  const r2 = await runOnce({ config: cfg, env: env0, state: st, fetchImpl: lag.fetch, now: now + 300, sleep: noSleep });
+  assert.equal(r2.notes.length, 0, JSON.stringify(r2.notes));
+
+  const live = fakeWorld();
+  live.head = 10_000;
+  [1800, 1500, 1200, 900, 600, 300].forEach((ago, i) => W(live, 9990 + i, now - ago, 9000, i));
+  const r3 = await runOnce({ config: cfg, env: env0, state: { checkpoint: 9980 }, fetchImpl: live.fetch, now, sleep: noSleep });
+  assert.deepEqual(r3.notes.map((n) => n.key), ["large-margin-withdrawal:window"]);
+
+  // 跨輪：落後追趕被分成兩輪，同一段爆量的前三筆在第一輪、後三筆在第二輪才掃到。
+  // 區塊時間與區塊號一致（每塊 2 秒）：第一輪結束時的掃描進度落後 now 約 9.5 小時。
+  const split = fakeWorld();
+  split.head = 20_003;
+  const tOf = (b) => now - (20_000 - b) * 2;
+  [2980, 2983, 2986].forEach((b, i) => W(split, b, tOf(b), 9000, i));
+  [2992, 2995, 2998].forEach((b, i) => W(split, b, tOf(b), 9000, i));
+  const st2 = { checkpoint: 990 };
+  const env = { ...env0, MAX_SCAN_REQUESTS: "2" };
+  const a = await runOnce({ config: cfg, env, state: st2, fetchImpl: split.fetch, now, sleep: noSleep });
+  assert.equal(st2.checkpoint, 2990);
+  assert.equal(a.notes.filter((n) => n.key.includes("window")).length, 0, "27,000 未達門檻");
+  assert.equal(st2.windows["large-margin-withdrawal"].length, 3, "前三筆留著，等下一輪接上");
+  const b = await runOnce({ config: cfg, env, state: st2, fetchImpl: split.fetch, now: now + 300, sleep: noSleep });
+  const past = b.notes.filter((n) => n.key.startsWith("large-margin-withdrawal:window-past:"));
+  assert.equal(past.length, 1, JSON.stringify(b.notes.map((n) => n.key)));
+  assert.match(past[0].lines[0], /累計 54,000，6 筆/);
+  // 拆單但沒達門檻（6×5,000）→ 不響。
+  const small = fakeWorld();
+  small.head = 10_000;
+  [10800, 10500, 10200, 9900, 9600, 9300].forEach((ago, i) => W(small, 4000 + i, now - ago, 5000, i));
+  const r4 = await runOnce({ config: cfg, env: env0, state: { checkpoint: 3990 }, fetchImpl: small.fetch, now, sleep: noSleep });
+  assert.equal(r4.notes.length, 0);
 });
 
 // ── state 規則 ───────────────────────────────────────────────────────────────
@@ -803,7 +875,8 @@ test("signal-api 健康檢查：連續兩次失敗才告警；payTo 變更 SEV-1
   w.http.set(`${API}/`, () => root);
   const state = {};
   const first = await runOnce({ config: cfg, env: env0, state, fetchImpl: w.fetch, now: 1 });
-  assert.deepEqual(first.notes.map((n) => [n.key, n.severity, n.status]), [[`x402-payto:baseline:${A}`, "SEV-3", "事件"]], "首次觀察當基準時要講出來");
+  assert.deepEqual(first.notes.map((n) => [n.key, n.severity, n.status]), [[`x402-payto:baseline:${A}`, "SEV-2", "事件"]], "首次觀察當基準時要講出來（L-b：至少 SEV-2、不可靜音）");
+  assert.equal(first.notes[0].unmutable, true);
   assert.equal(state.baselines["x402-payto"], A);
 
   health = { status: 503, body: "down" };
@@ -900,41 +973,86 @@ test("MIN_SEVERITY：低於門檻不送；恢復依原嚴重度判斷", () => {
   assert.throws(() => shouldSend({ severity: "SEV-1", status: "事件" }, "SEV-9"), /MIN_SEVERITY/);
 });
 
-test("M2：monitor-self 永遠送（不受 MIN_SEVERITY／MUTE_KEYS 影響）；MUTE_KEYS 只靜音指定 key", async () => {
+test("M2／M-A：monitor-self 與 SEV-1 永遠送；MUTE_KEYS 只認白名單、完全相同的 key", async () => {
   const self = { ruleId: "monitor-self", key: "monitor-self:errors", severity: "SEV-3", status: "觸發" };
   assert.equal(shouldSend(self, "SEV-1"), true);
   assert.equal(shouldSend(self, "SEV-1", ["monitor-self", "monitor-self:errors"]), true);
   assert.equal(shouldSend({ ...self, severity: "SEV-4", origSeverity: "SEV-3", status: "恢復" }, "SEV-1"), true);
-  assert.deepEqual(parseMuteKeys(" x402-payto:unsafe , monitor-self:errors,monitor-self, bad key ,fee-withdrawals"), {
-    keys: ["x402-payto:unsafe", "fee-withdrawals"],
+  const allowed = FULL.mutableKeys.map((m) => m.key);
+  assert.deepEqual(allowed, ["x402-payto:unsafe"]);
+  assert.deepEqual(parseMuteKeys(" x402-payto:unsafe , monitor-self:errors,monitor-self, bad key ,fee-withdrawals,x402-payto:changed", allowed), {
+    keys: ["x402-payto:unsafe"],
+    rejected: ["fee-withdrawals", "x402-payto:changed"],
     ignored: ["monitor-self:errors", "monitor-self", "bad key"],
   });
   const unsafe = { ruleId: "x402-payto", key: "x402-payto:unsafe", severity: "SEV-3", status: "觸發" };
   assert.equal(shouldSend(unsafe, "SEV-4", ["x402-payto:unsafe"]), false);
   assert.equal(shouldSend({ ...unsafe, key: "x402-payto:changed", severity: "SEV-1" }, "SEV-4", ["x402-payto:unsafe"]), true, "同規則的其他 key 不受影響");
-  assert.equal(shouldSend({ ruleId: "fee-withdrawals", key: "fee-withdrawals:0xabc:1", severity: "SEV-3", status: "事件" }, "SEV-4", ["fee-withdrawals"]), false, "規則 id 當前綴 → 整條靜音");
-  assert.equal(shouldSend({ ruleId: "fee-withdrawals-x", key: "fee-withdrawals-x:1", severity: "SEV-3", status: "事件" }, "SEV-4", ["fee-withdrawals"]), true, "前綴以冒號為界，不誤傷名字相近的規則");
+  // 複審 N4b／N4c：就算 muteKeys 裡有 SEV-1 的 key（例如繞過白名單直接呼叫），SEV-1 也照送。
+  assert.equal(shouldSend({ ruleId: "x402-payto", key: "x402-payto:changed", severity: "SEV-1", status: "觸發" }, "SEV-4", ["x402-payto:changed"]), true);
+  assert.equal(shouldSend({ ruleId: "insurance-wiring", key: "insurance-wiring:InsuranceVault.exchange()", severity: "SEV-1", status: "觸發" }, "SEV-4", ["insurance-wiring:InsuranceVault.exchange()"]), true);
+  assert.equal(shouldSend({ ruleId: "owner-transferred", key: "owner-transferred:0xabc:1", severity: "SEV-1", status: "事件" }, "SEV-4", ["owner-transferred"]), true);
+  assert.equal(shouldSend({ ruleId: "x402-payto", key: "x402-payto:changed", severity: "SEV-4", origSeverity: "SEV-1", status: "恢復" }, "SEV-4", ["x402-payto:changed"]), true, "SEV-1 的恢復也照送");
+  assert.equal(shouldSend({ ruleId: "fee-withdrawals", key: "fee-withdrawals:0xabc:1", severity: "SEV-3", status: "事件" }, "SEV-4", ["fee-withdrawals"]), true, "沒有前綴比對");
+  assert.equal(shouldSend({ ruleId: "x402-payto", key: "x402-payto:baseline:0xa1", severity: "SEV-2", status: "事件", unmutable: true }, "SEV-4", ["x402-payto:baseline:0xa1"]), true, "基準已設定不可靜音");
 
-  // 整輪：MIN_SEVERITY=SEV-1、又（錯誤地）把 monitor-self 列進 MUTE_KEYS，RPC 全掛 → 仍然收到監控自身告警。
+  // 整輪：MIN_SEVERITY=SEV-1（不允許）、又把 monitor-self 列進 MUTE_KEYS，RPC 全掛 →
+  // 第一輪就收到「監控設定問題」（不可靜音），之後收到監控自身告警。
   const w = fakeWorld();
   const kv = fakeKv();
   w.http.set(`${API}/`, () => ({ status: 200, body: { payTo: "0x00000000000000000000000000000000000000a1", payToSafety: { safe: false, reason: "known-leaked" } } }));
-  const env = { ...env0, RPC_URL: "https://rpc.down", MONITOR_STATE: kv, DISCORD_WEBHOOK_URL: DISCORD("x"), MIN_SEVERITY: "SEV-1", MUTE_KEYS: "x402-payto:unsafe,monitor-self" };
+  const env = { ...env0, RPC_URL: "https://rpc.down", MONITOR_STATE: kv, DISCORD_WEBHOOK_URL: DISCORD("x"), MIN_SEVERITY: "SEV-1", MUTE_KEYS: "x402-payto:unsafe,monitor-self", EXPECTED_PAY_TO: "0x00000000000000000000000000000000000000a1" };
   w.http.set("https://rpc.down", () => ({ status: 503, body: "down" }));
   const logs = [];
   for (let i = 0; i < 4; i++) {
     await assert.rejects(tick({ config: only("owner-transferred", "x402-payto"), env, now: 100 + 300 * i, fetchImpl: w.fetch, log: (l) => logs.push(l), sleep: async () => {} }), /規則讀取失敗/);
   }
-  const sent = w.sent.filter((s) => s.url.startsWith("https://discord.com/")).map((s) => dcText(s).split("\n")[0]);
-  assert.equal(sent.length, 1, sent.join(" | "));
-  assert.match(sent[0], /SEV-3\] 觸發｜監控本身有規則讀取失敗/);
-  assert.ok(logs.some((l) => /MUTE_KEYS 忽略 1 個項目/.test(l)));
+  const sent = w.sent.filter((s) => s.url.startsWith("https://discord.com/")).map((s) => dcText(s));
+  const heads = sent.map((t) => t.split("\n")[0]);
+  assert.deepEqual(heads.map((h) => h.replace(/^\S*\[/, "[")), ["[SEV-2] 觸發｜監控設定問題", "[SEV-3] 觸發｜監控本身有規則讀取失敗"], heads.join(" | "));
+  assert.match(sent[0], /設定了不可靜音的 key：monitor-self/);
+  assert.match(sent[0], /MIN_SEVERITY=SEV-1 不允許/);
+  assert.ok(!heads.some((h) => /收款守門/.test(h)), "白名單裡的 x402-payto:unsafe 照樣被靜音");
+  assert.ok(logs.some((l) => /設定問題/.test(l)));
+});
+
+test("M-A：執行期 MUTE_KEYS 設了不在白名單的 key（複審 m5sim 第 7、8 輪）→ 照送、並發 monitor-self:config", async () => {
+  const w = fakeWorld();
+  const kv = fakeKv();
+  const A = "0x00000000000000000000000000000000000000a1";
+  const B = "0x00000000000000000000000000000000000000b2";
+  const C = "0x00000000000000000000000000000000000000c3";
+  let payTo = A;
+  w.http.set(`${API}/`, () => ({ status: 200, body: { payTo, payToSafety: { safe: true } } }));
+  const base = { ...env0, MONITOR_STATE: kv, DISCORD_WEBHOOK_URL: DISCORD("x") };
+  const cfg = only("x402-payto");
+  const heads = () => w.sent.filter((s) => s.url.startsWith("https://discord.com/")).map((s) => dcText(s).split("\n")[0].replace(/^\S*\[/, "["));
+  await tick({ config: cfg, env: base, now: 100, fetchImpl: w.fetch, log: () => {} });
+  // 第 7 輪：dashboard 設 MUTE_KEYS=x402-payto（CI 看不到），payTo 被改＋基準被刪
+  const env = { ...base, MUTE_KEYS: "x402-payto" };
+  payTo = B;
+  await kv.delete(BASELINES_KEY);
+  w.sent.length = 0;
+  w.head += 150;
+  await tick({ config: cfg, env, now: 400, fetchImpl: w.fetch, log: () => {} });
+  assert.deepEqual(heads().sort(), ["[SEV-2] 事件｜x402 收款地址：基準已設定", "[SEV-2] 觸發｜監控設定問題"].sort(), heads().join(" | "));
+  // 第 8 輪：只改 payTo（基準在）
+  payTo = C;
+  w.sent.length = 0;
+  w.head += 150;
+  await tick({ config: cfg, env, now: 700, fetchImpl: w.fetch, log: () => {} });
+  assert.deepEqual(heads(), ["[SEV-1] 觸發｜x402 收款地址：收款地址變更"], "SEV-1 不受 MUTE_KEYS 影響");
+  // 第 9 輪：MUTE_KEYS=x402-payto:changed（舊版 CI 放行的子 key）
+  w.sent.length = 0;
+  w.head += 150;
+  await tick({ config: cfg, env: { ...base, MUTE_KEYS: "x402-payto:changed" }, now: 700 + 6 * 3600, fetchImpl: w.fetch, log: () => {} });
+  assert.ok(heads().includes("[SEV-1] 持續｜x402 收款地址：收款地址變更"), heads().join(" | "));
 });
 
 test("M5：KV 沒有檢查點 → SEV-3「監控狀態重置，X 之前的事件未掃描」；不受 MIN_SEVERITY 影響；只發一次", async () => {
   const w = fakeWorld();
   const kv = fakeKv();
-  const env = { ...env0, MONITOR_STATE: kv, DISCORD_WEBHOOK_URL: DISCORD("x"), MIN_SEVERITY: "SEV-1" };
+  const env = { ...env0, MONITOR_STATE: kv, DISCORD_WEBHOOK_URL: DISCORD("x"), MIN_SEVERITY: "SEV-2" };
   const sent = () => w.sent.filter((s) => s.url.startsWith("https://discord.com/")).map((s) => dcText(s));
   const cfg = only("owner-transferred");
   await tick({ config: cfg, env, now: 100, fetchImpl: w.fetch, log: () => {} });
@@ -1000,9 +1118,15 @@ test("M5：基準放在獨立的 KV 鍵——只刪 baselines:v1 會重設基準
   assert.deepEqual(JSON.parse(kv.m.get(BASELINES_KEY)), { "x402-payto": B });
   assert.equal(after.checkpoint, before.checkpoint + 150, "檢查點接著走，沒有重置");
   assert.ok(after.open[`keeper-gas:${keeper}`], "其他開啟中的告警還在");
-  assert.ok(heads().some((h) => /恢復｜x402 收款地址：收款地址變更/.test(h)));
-  assert.ok(heads().some((h) => /基準已設定/.test(h)));
+  assert.ok(heads().some((h) => /SEV-2\] 事件｜x402 收款地址：基準已設定/.test(h)), "基準已設定至少 SEV-2（L-b）");
+  assert.ok(!heads().some((h) => /恢復｜x402 收款地址：收款地址變更/.test(h)), "同一輪不可以把開著的 SEV-1 當成恢復（L-b）");
+  assert.ok(after.open["x402-payto:changed"], "變更告警保持開啟一輪");
   assert.ok(!heads().some((h) => /監控狀態重置/.test(h)));
+  // 下一輪才恢復。
+  w.sent.length = 0;
+  w.head += 150;
+  await tick({ config: cfg, env, now: 1000, fetchImpl: w.fetch, log: () => {} });
+  assert.ok(heads().some((h) => /恢復｜x402 收款地址：收款地址變更/.test(h)), heads().join(" | "));
 });
 
 test("pending-deploy 規則不會被載入（沒有位址、不出現在 getLogs 過濾條件）", async () => {
@@ -1199,7 +1323,7 @@ test("L6：多通道各自重送——Telegram 送到、Discord 失敗 → 只�
   assert.match(tgHeads().at(-1), /恢復｜告警通道 discord 送不出去/);
 });
 
-test("L6：壞掉的通道不會吃光額度——新告警先送、舊的每輪重送有上限、過期丟棄、通道移除後不再等", async () => {
+test("L6／L-e：依發生時間送（舊的觸發先於新的）、舊的每輪重送有上限、過期丟棄、通道移除後不再等", async () => {
   const w = fakeWorld();
   const kv = fakeKv();
   const cfg = only("owner-transferred");
@@ -1218,8 +1342,10 @@ test("L6：壞掉的通道不會吃光額度——新告警先送、舊的每輪
     return orig(url, init);
   };
   await assert.rejects(tick({ config: cfg, env: envBoth, now, fetchImpl: w.fetch, log: () => {} }), /未送達.*另丟棄 1 則/);
-  assert.equal(order[0], "tg", "新告警先送");
-  assert.ok(order[1].startsWith("dc:") && !order[1].includes("old-"), "新告警的每個通道都先於舊的重送");
+  const lastOld = order.map((o) => o.startsWith("dc:old-")).lastIndexOf(true);
+  assert.equal(lastOld, MAX_RESEND_PER_TICK - 1, `舊通知（發生得早）先送：${order.join(",")}`);
+  assert.equal(order[MAX_RESEND_PER_TICK], "tg", "新告警排在舊的之後");
+  assert.ok(order[MAX_RESEND_PER_TICK + 1].startsWith("dc:") && !order[MAX_RESEND_PER_TICK + 1].includes("old-"));
   assert.equal(order.filter((o) => o.startsWith("dc:old-")).length, MAX_RESEND_PER_TICK);
   const st = JSON.parse(kv.m.get(STATE_KEY));
   assert.equal(st.outbox.length, 30 - MAX_RESEND_PER_TICK);
@@ -1230,4 +1356,119 @@ test("L6：壞掉的通道不會吃光額度——新告警先送、舊的每輪
   w.head += 150;
   await tick({ config: cfg, env: envTg, now: now + 300, fetchImpl: w.fetch, log: () => {} });
   assert.equal(JSON.parse(kv.m.get(STATE_KEY)).outbox.length, 0);
+});
+
+// ── 複審修正（M-A、L-b、L-c、L-e、L-f、Info）──────────────────────────────────
+
+test("L-c：實作 slot ≠ deployed.json → SEV-1；先由 Upgraded 事件通報過 → SEV-3（不重複叫人）；事件晚到 → 事件降為 SEV-3", async () => {
+  const cfg = only("proxy-implementation", "vault-upgraded");
+  const rule = ruleOf("proxy-implementation");
+  const proxy = rule.contracts[0].address;
+  assert.match(rule.contracts[0].impl, /^0x[0-9a-f]{40}$/, "--write 產生預期實作");
+  const NEW = "0x00000000000000000000000000000000000000d4";
+  const setImpl = (w, a) => w.storage.set(`${proxy.toLowerCase()}|${IMPL_SLOT}`, "0x" + a.slice(2).padStart(64, "0"));
+
+  // 沒變：不響。
+  const w0 = fakeWorld();
+  setImpl(w0, rule.contracts[0].impl);
+  const r0 = await runOnce({ config: cfg, env: env0, state: { checkpoint: 990 }, fetchImpl: w0.fetch, now: 100 });
+  assert.equal(r0.errors.length, 0, r0.errors.join());
+  assert.equal(r0.notes.length, 0);
+
+  // slot 先看到（事件還在確認數之內）→ SEV-1；下一輪事件進來 → 事件降為 SEV-3。
+  const w = fakeWorld();
+  setImpl(w, NEW);
+  const st = { checkpoint: 990 };
+  const r1 = await runOnce({ config: cfg, env: env0, state: st, fetchImpl: w.fetch, now: 100 });
+  assert.deepEqual(r1.notes.map((n) => [n.key, n.severity, n.status]), [[`proxy-implementation:${proxy.toLowerCase()}`, "SEV-1", "觸發"]]);
+  makeLog(w, { address: proxy, sig: "Upgraded(address)", topics: [topicAddr(NEW)], block: w.head + 2 });
+  w.head += 150;
+  const r2 = await runOnce({ config: cfg, env: env0, state: st, fetchImpl: w.fetch, now: 400 });
+  const ev = r2.notes.find((n) => n.ruleId === "vault-upgraded");
+  assert.equal(ev.severity, "SEV-3");
+  assert.ok(ev.lines.some((l) => /已由 proxy-implementation/.test(l)));
+  assert.ok(!r2.notes.some((n) => n.ruleId === "proxy-implementation"), "slot 的告警持續開著，沒到提醒時間不重送");
+
+  // 事件先到（同一輪：事件掃描在狀態規則之前）→ 事件 SEV-1、slot 只發 SEV-3「deployed.json 過期」。
+  const w2 = fakeWorld();
+  setImpl(w2, NEW);
+  makeLog(w2, { address: proxy, sig: "Upgraded(address)", topics: [topicAddr(NEW)] });
+  const r3 = await runOnce({ config: cfg, env: env0, state: { checkpoint: 990 }, fetchImpl: w2.fetch, now: 100 });
+  const sev = Object.fromEntries(r3.notes.map((n) => [n.ruleId, n.severity]));
+  assert.deepEqual(sev, { "vault-upgraded": "SEV-1", "proxy-implementation": "SEV-3" });
+  assert.match(r3.notes.find((n) => n.ruleId === "proxy-implementation").title, /deployed\.json 過期/);
+
+  // slot 讀不到：不算恢復。
+  const w3 = fakeWorld();
+  setImpl(w3, NEW);
+  const st3 = { checkpoint: 990 };
+  await runOnce({ config: cfg, env: env0, state: st3, fetchImpl: w3.fetch, now: 100 });
+  w3.itemError = (r) => (r.method === "eth_getStorageAt" ? { code: -32000, message: "boom" } : null);
+  const r4 = await runOnce({ config: cfg, env: env0, state: st3, fetchImpl: w3.fetch, now: 400, sleep: noSleep });
+  assert.match(r4.errors.join(), /實作 slot 讀取失敗/);
+  assert.ok(!r4.notes.some((n) => n.status === "恢復"));
+});
+
+test("L-d：PepeIncentives 的獎勵池跌幅與 esgRegistry 接線（部署版 setter 不發事件）", async () => {
+  const cfg = only("pepe-incentives-balance-drop", "pepe-incentives-wiring");
+  const token = addrOf("pepe-incentives-balance-drop", "token");
+  const holder = addrOf("pepe-incentives-balance-drop", "holder");
+  const w = fakeWorld();
+  const set = (n) => w.setCall(token, "balanceOf(address)", [holder], word(BigInt(n) * E18));
+  w.setCall(holder, "esgRegistry()", [], word(0));
+  const st = {};
+  set(1_000_000);
+  const r1 = await runOnce({ config: cfg, env: env0, state: st, fetchImpl: w.fetch, now: 7200 });
+  assert.equal(r1.errors.length, 0, r1.errors.join());
+  assert.equal(r1.notes.length, 0);
+  set(100_000); // owner withdraw 把池子提走
+  w.setCall(holder, "esgRegistry()", [], word(0xbeef));
+  const r2 = await runOnce({ config: cfg, env: env0, state: st, fetchImpl: w.fetch, now: 7500 });
+  assert.deepEqual(r2.notes.map((n) => [n.ruleId, n.severity]).sort(), [["pepe-incentives-balance-drop", "SEV-2"], ["pepe-incentives-wiring", "SEV-2"]]);
+});
+
+test("L-e：訊息帶發生時間、webhook payload 帶去重 id 與首次發生時間（重送時 id 不變）", async () => {
+  const note = { ruleId: "owner-transferred", key: "owner-transferred:0xab:1", severity: "SEV-1", status: "事件", title: "合約 owner 變更", lines: ["x"], at: 1_800_000_000, firstAt: 1_800_000_000 };
+  assert.match(formatNote(note), /時間：2027-01-15T08:00:00Z/);
+  assert.match(formatNote({ ...note, status: "持續", at: 1_800_003_600 }), /時間：2027-01-15T09:00:00Z（首次 2027-01-15T08:00:00Z）/);
+  const id1 = await noteId(note, "d");
+  assert.equal(id1, await noteId(note, "d"));
+  assert.notEqual(id1, await noteId({ ...note, status: "恢復" }, "d"));
+  const got = [];
+  const ch = { name: "webhook", url: "https://hooks.example/a", body: null, secret: "" };
+  const f = async (url, init) => (got.push(JSON.parse(init.body)), new Response("ok"));
+  await sendToChannel(note, "t", ch, f, { now: 1_800_000_100, deploymentId: "d" });
+  await sendToChannel(note, "t", ch, f, { now: 1_800_000_400, deploymentId: "d" });
+  assert.equal(got[0].id, id1);
+  assert.equal(got[1].id, id1, "重送（at-least-once）時 id 相同，接收端可去重");
+  assert.equal(got[0].occurredAt, 1_800_000_000);
+  assert.equal(got[0].firstAt, 1_800_000_000);
+  assert.notEqual(got[0].sentAt, got[1].sentAt);
+});
+
+test("L-f：等於關掉告警的覆寫值——執行期夾住並講出來；MIN_SEVERITY 不可只剩 SEV-1", () => {
+  const cfg = FULL;
+  assert.deepEqual(configProblems(cfg, {}), [], "預設值沒有問題");
+  const bad = configProblems(cfg, { LAG_ALERT_BLOCKS: "1000000", LARGE_WITHDRAWAL_BPS: "10000", SELF_ERRORS_BEFORE_ALERT: "12", HTTP_FAILS_BEFORE_ALERT: "6", MIN_SEVERITY: "SEV-1" });
+  assert.ok(bad.some((m) => /LAG_ALERT_BLOCKS=1000000 超過安全上限 1800/.test(m)), bad.join("\n"));
+  assert.ok(bad.some((m) => /LARGE_WITHDRAWAL_BPS=10000 超過安全上限 5000/.test(m)));
+  assert.ok(bad.some((m) => /SELF_ERRORS_BEFORE_ALERT=12 超過安全上限 6/.test(m)));
+  assert.ok(bad.some((m) => /超過 6 輪（約 30 分鐘）；SELF_ERRORS_BEFORE_ALERT 以 1 執行/.test(m)), bad.join("\n"));
+  assert.ok(bad.some((m) => /MIN_SEVERITY=SEV-1 不允許/.test(m)));
+  assert.equal(minSeverityOf(cfg, { MIN_SEVERITY: "SEV-1" }), "SEV-2");
+  assert.equal(minSeverityOf(cfg, { MIN_SEVERITY: "SEV-3" }), "SEV-3");
+});
+
+test("L-f：LAG_ALERT_BLOCKS 被設成 1,000,000 → 仍以 1,800 告警", async () => {
+  const w = fakeWorld();
+  w.head = 100_000;
+  const r = await runOnce({ config: only("owner-transferred"), env: { ...env0, LAG_ALERT_BLOCKS: "1000000" }, state: { checkpoint: 1 }, fetchImpl: w.fetch, now: 1 });
+  assert.ok(r.notes.some((n) => n.key === "monitor-self:lag"));
+});
+
+test("Info：-32602「block range extends beyond current head」不是範圍錯誤，是要重試的暫時性錯誤", () => {
+  const e = { code: -32602, message: "block range extends beyond current head block" };
+  assert.equal(isRangeError(e), false);
+  assert.equal(isTransient(e), true);
+  assert.equal(isRangeError({ status: 413, code: -32614, message: "eth_getLogs is limited to a 1,000 range" }), true);
 });

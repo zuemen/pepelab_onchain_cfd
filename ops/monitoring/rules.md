@@ -10,8 +10,8 @@
 > - 「**部署版不發此事件**」：合約已部署，但鏈上那一版不發這個事件（前端 ABI 來自 master 原始碼，比部署版新）。
 >   這些事件**現在不會響**；有對應 setter 的由「狀態」規則每輪讀 getter 比對。依據是 [`deployed.json`](deployed.json)（唯讀 RPC 抓的 runtime bytecode，CI 離線比對 topic0）。
 
-共 **53** 條規則：運作中 42 條（事件 30、狀態 10、HTTP 2），部署版不發此事件 10 條，待部署 1 條。鏈：base-sepolia（84532）。
-已部署 bytecode 快照：區塊 47537290（2026-10-01）。
+共 **56** 條規則：運作中 45 條（事件 30、狀態 13、HTTP 2），部署版不發此事件 10 條，待部署 1 條。鏈：base-sepolia（84532）。
+已部署 bytecode 快照：區塊 47569485（2026-10-02）。
 
 ## 總表
 
@@ -29,6 +29,8 @@
 | [`insurance-wiring`](#insurance-wiring) 保險金庫接線被改 | x402／FeeRouter 設定 | 狀態 | SEV-1 | 運作中 | 任一 getter 的讀值 ≠ 預期位址 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 | [`feerouter-wiring`](#feerouter-wiring) FeeRouter 接線被改（含 x402 分潤路由） | x402／FeeRouter 設定 | 狀態 | SEV-1 | 運作中 | 任一 getter 的讀值 ≠ 預期位址 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 | [`core-wiring`](#core-wiring) 核心合約接線與前端設定不一致 | x402／FeeRouter 設定 | 狀態 | SEV-1 | 運作中 | 任一 getter 的讀值 ≠ 預期位址 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
+| [`proxy-implementation`](#proxy-implementation) UUPS 實作被升級 | 權限 | 狀態 | SEV-1 | 運作中 | EIP-1967 實作 slot ≠ deployed.json 的實作 → SEV-1（同一個新實作已由 Upgraded 事件通報時 SEV-3「deployed.json 過期」） | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) [§8](../../docs/INCIDENT_RESPONSE.md#8-外部協助seal-911) |
+| [`pepe-incentives-wiring`](#pepe-incentives-wiring) PepeIncentives 接線變更 | 權限 | 狀態 | SEV-2 | 運作中 | 任一 getter 的讀值 ≠ 預期位址 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 | [`x402-payto`](#x402-payto) x402 收款地址 | x402／FeeRouter 設定 | HTTP | SEV-1 | 運作中 | `payTo` ≠ `EXPECTED_PAY_TO`（未設時為首次觀察值）→ SEV-1；`payToSafety.safe == false` → SEV-3 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) [§6](../../docs/INCIDENT_RESPONSE.md#6-vercel-回滾前端與-signal-api) |
 | [`exchange-risk-params`](#exchange-risk-params) 交易所風險參數變更 | 風險參數 | 事件 | SEV-3 | 運作中 | 每一筆 | [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 | [`exchange-funding-clamped`](#exchange-funding-clamped) 交易所 funding 追趕被截斷 | 風險參數 | 事件 | SEV-3 | 運作中 | 每一筆 | [§5](../../docs/INCIDENT_RESPONSE.md#5-keeper-熔斷處置) |
@@ -58,6 +60,7 @@
 | [`oracle-deviation`](#oracle-deviation) 交易所價格偏離參考價 | Oracle | 狀態 | SEV-2 | 運作中 | 偏離 ≥ `ORACLE_DEVIATION_BPS`（預設 300 bps） → SEV-2；≥ `ORACLE_DEVIATION_CRIT_BPS`（預設 1000 bps） → SEV-1；參考價超過 `REFERENCE_MAX_AGE_SEC`（預設 7200 秒） 不比對；**一檔都比不到 → SEV-3「沒有可用的參考價」** | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§5](../../docs/INCIDENT_RESPONSE.md#5-keeper-熔斷處置) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 | [`guarded-oracle-paused`](#guarded-oracle-paused) GuardedOracle 暫停中 | 暫停與資產模式 | 狀態 | SEV-3 | 運作中 | `paused() == true` | [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 | [`exchange-balance-drop`](#exchange-balance-drop) 交易所餘額大幅下降 | 大額提領 | 狀態 | SEV-2 | 運作中 | 餘額較 24 小時高點下降 ≥ `EXCHANGE_BALANCE_DROP_BPS`（預設 3000 bps） → SEV-2 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
+| [`pepe-incentives-balance-drop`](#pepe-incentives-balance-drop) PepeIncentives 獎勵池大幅下降 | 大額提領 | 狀態 | SEV-2 | 運作中 | 餘額較 24 小時高點下降 ≥ `INCENTIVES_BALANCE_DROP_BPS`（預設 3000 bps） → SEV-2 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 | [`insurance-fund`](#insurance-fund) 保險金下降 | 保險金與儲備 | 狀態 | SEV-2 | 運作中 | `totalAssets()` < `INSURANCE_MIN_USDC`（預設 100 USDC（MockUSDC）），或較 24 小時高點下降 ≥ `INSURANCE_DROP_BPS`（預設 2000 bps） → SEV-2 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) [§7](../../docs/INCIDENT_RESPONSE.md#7-對外溝通與客戶通報目標值可調整) |
 | [`vault-reserve`](#vault-reserve) 代幣化金庫儲備率 | 保險金與儲備 | 狀態 | SEV-2 | 運作中 | 儲備率 < `minReserveRatioBps()` → SEV-2；< 下限 + `RESERVE_WARN_MARGIN_BPS`（預設 500 bps） → SEV-3；mint 自動停止 → SEV-2；無法定價或暫停 → SEV-3 | [§1](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級) [§3](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼) |
 | [`keeper-gas`](#keeper-gas) keeper 錢包 gas 過低 | keeper | 狀態 | SEV-3 | 運作中 | < `GAS_MIN_ETH`（預設 0.02 ETH） → SEV-3；< `GAS_CRIT_ETH`（預設 0.005 ETH） → SEV-2 | [§5](../../docs/INCIDENT_RESPONSE.md#5-keeper-熔斷處置) |
@@ -83,13 +86,13 @@
 | `INITIAL_LOOKBACK_BLOCKS` | `300` | 區塊 | 第一次執行（KV 沒有檢查點）往回掃的區塊數（Base 約 2 秒一塊，300 塊約 10 分鐘） |
 | `MAX_BLOCK_RANGE` | `1000` | 區塊 | 每個 eth_getLogs 的最大範圍。公開 RPC（sepolia.base.org）實測上限 1,000 塊，超過回 HTTP 413／-32614；CI 限制此值 ≤ 1000。節點拒絕範圍時引擎會自動減半重試 |
 | `MAX_SCAN_REQUESTS` | `10` | 個請求 | 每輪最多幾個 eth_getLogs（含範圍減半後的重試）。落後時一輪內分多段追趕：10 × 1000 塊 ≈ 5.5 小時的積欠；受 Cloudflare 免費方案每次執行 50 個 subrequest 限制，不要調高到擠壓狀態規則與通知 |
-| `LAG_ALERT_BLOCKS` | `3000` | 區塊 | 一輪掃完後仍落後超過這個值時發監控自身告警（代表一輪追不完，或 eth_getLogs 持續失敗） |
+| `LAG_ALERT_BLOCKS` | `1800` | 區塊 | 一輪掃完後仍落後超過這個值時發監控自身告警（代表一輪追不完，或 eth_getLogs 持續失敗）。1,800 塊約 1 小時；上限 1,800（CI 與執行期都夾住） |
 | `REMIND_SEC` | `21600` | 秒 | 狀態型告警持續未解除時的重複提醒間隔（6 小時） |
-| `MIN_SEVERITY` | `SEV-4` | 嚴重度 | 低於此嚴重度的通知不送（恢復通知以原嚴重度判斷）。monitor-self:*（監控自身故障）永遠送，不受此值影響。要壓掉單一已知告警請用 MUTE_KEYS，不要調高這個值 |
-| `MUTE_KEYS` | （空） | 告警 key（逗號分隔） | 靜音指定的告警 key（完全相同或以它為前綴的子 key），例如 x402-payto:unsafe。告警狀態照常追蹤，只是不送通知。monitor-self:* 不可靜音；SEV-1 規則不可整條靜音（CI 檢查） |
+| `MIN_SEVERITY` | `SEV-4` | 嚴重度 | 低於此嚴重度的通知不送（恢復通知以原嚴重度判斷）。只能設 SEV-2／SEV-3／SEV-4：SEV-1、monitor-self:*（監控自身故障）與「基準已設定」永遠送。要壓掉單一已知告警請用 MUTE_KEYS |
+| `MUTE_KEYS` | （空） | 告警 key（逗號分隔） | 靜音指定的告警 key（完全相同，沒有前綴比對）。只接受 mutableKeys 白名單（見 rules.md「可靜音的告警」）；白名單以外的值在執行期被忽略並發 monitor-self:config。SEV-1 與 monitor-self 在任何設定下都送 |
 | `LARGE_WITHDRAWAL_USDC` | `10000` | USDC（MockUSDC） | 交易所單筆提領保證金的告警門檻【待使用者決定】 |
 | `LARGE_WITHDRAWAL_WINDOW_USDC` | `50000` | USDC（MockUSDC） | 同一規則在 WITHDRAWAL_WINDOW_SEC 內累計提領的告警門檻【待使用者決定】 |
-| `LARGE_WITHDRAWAL_BPS` | `2000` | bps | 單筆提領／贖回佔合約「提領前餘額」達此比例即告警（20%），與絕對門檻擇一成立。絕對門檻是佔位值（2026-10-01 實測 exchange 只有 500 MockUSDC，絕對門檻 10,000 永遠不會響），這個相對門檻讓規則在任何 TVL 下都有作用 |
+| `LARGE_WITHDRAWAL_BPS` | `2000` | bps | 單筆提領／贖回佔合約「提領前餘額」達此比例即告警（20%），與絕對門檻擇一成立。絕對門檻是佔位值（2026-10-01 實測 exchange 只有 500 MockUSDC，絕對門檻 10,000 永遠不會響），這個相對門檻讓規則在任何 TVL 下都有作用。上限 5,000（50%）：再高等於沒有相對門檻 |
 | `WITHDRAWAL_WINDOW_SEC` | `3600` | 秒 | 累計提領的視窗長度 |
 | `INSURANCE_WITHDRAW_USDC` | `5000` | USDC（MockUSDC） | 保險金庫單筆贖回的告警門檻【待使用者決定】 |
 | `BAILOUT_MIN_USDC` | `0` | USDC（MockUSDC） | 保險金 bailout 的告警門檻；0 表示每一筆都告警 |
@@ -103,12 +106,13 @@
 | `INSURANCE_MIN_USDC` | `100` | USDC（MockUSDC） | 保險金庫 totalAssets 的絕對下限【待使用者決定】；2026-10-01 唯讀查詢現值約 150 |
 | `INSURANCE_DROP_BPS` | `2000` | bps | 保險金較 24 小時內高點下降超過此比例即告警（20%） |
 | `EXCHANGE_BALANCE_DROP_BPS` | `3000` | bps | 交易所持有的 MockUSDC 較 24 小時內高點下降超過此比例即告警（30%）；看的是池子被抽走的比例，拆單也算 |
+| `INCENTIVES_BALANCE_DROP_BPS` | `3000` | bps | PepeIncentives 持有的 PEPE 較 24 小時內高點下降超過此比例即告警（30%）。部署版的 withdraw 不發事件，這是唯一看得到「獎勵池被提走」的方式 |
 | `RESERVE_WARN_MARGIN_BPS` | `500` | bps | 儲備率低於 minReserveRatioBps + 此值即預警 |
 | `GAS_MIN_ETH` | `0.02` | ETH | keeper 錢包 gas 餘額預警門檻【待使用者決定】 |
 | `GAS_CRIT_ETH` | `0.005` | ETH | keeper 錢包 gas 餘額嚴重門檻【待使用者決定】 |
 | `SIGNAL_API_URL` | `https://agent-git-master-zuemens-projects.vercel.app` | URL | signal-api 的基底網址；預設值必須等於 agent/sdk/src/signalApi.ts 的 SIGNAL_API_TESTNET_URL（CI 檢查） |
-| `HTTP_FAILS_BEFORE_ALERT` | `2` | 次 | signal-api 的健康檢查與 payTo 讀取連續失敗幾次才告警（避免單次逾時或冷啟動抖動） |
-| `SELF_ERRORS_BEFORE_ALERT` | `2` | 輪 | 有規則讀取失敗「連續」幾輪才發 monitor-self:errors（單輪失敗多半是公開 RPC 限流；RPC 本身已退避重試）。失敗的那一輪仍記為 cron 失敗、不打心跳 |
+| `HTTP_FAILS_BEFORE_ALERT` | `2` | 次 | signal-api 的健康檢查與 payTo 讀取連續失敗幾次才告警（避免單次逾時或冷啟動抖動）。上限 6；與 SELF_ERRORS_BEFORE_ALERT 合計須讓持續故障在 6 輪（約 30 分鐘）內告警 |
+| `SELF_ERRORS_BEFORE_ALERT` | `2` | 輪 | 有規則讀取失敗「連續」幾輪才發 monitor-self:errors（單輪失敗多半是公開 RPC 限流；RPC 本身已退避重試）。失敗的那一輪仍記為 cron 失敗、不打心跳。上限 6；與 HTTP_FAILS_BEFORE_ALERT 合計須讓持續故障在 6 輪（約 30 分鐘）內告警 |
 
 ## 規則明細
 
@@ -330,6 +334,34 @@ V1 FeeRouter 與 x402 FeeRouter（官方 USDC）的 exchange／copyTracker 被�
 - 預期：`TraderStake.copyTracker()` = `CopyTracker`（`0xC9e91f7D36e910C58042164032c625427b23CCB2`）
 - 預期：`AssetVaultV2.oracle()` = `GuardedOracle`（`0x8E9e59BE9589Ad88EC14F3ef6bdcc43E8B76f842`）
 - 預期：`AssetVaultV2.esgRegistry()` = `ESGRegistryV2`（`0xBF5B9cD78566791d79c687A732b4ed5bc3E95dFf`）
+- 門檻：任一 getter 的讀值 ≠ 預期位址
+- 處置：[INCIDENT_RESPONSE「1. 嚴重度分級」](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級)、[INCIDENT_RESPONSE「3. 暫停與凍結：現行部署能做什麼」](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼)
+
+### proxy-implementation
+
+**UUPS 實作被升級**｜權限｜狀態｜SEV-1｜運作中
+
+每輪以 eth_getStorageAt 讀受監控 EIP-1967 proxy 的實作 slot，與 deployed.json（CI 依據的部署版 bytecode）比對。實作被換掉時，CI 的「事件／函式在部署版裡」檢查全部變成對舊版的判斷，而 CI 不連網、永遠是綠的；這條規則讓 fixture 過期在執行期被看見。與 vault-upgraded（Upgraded 事件）互補：同一次升級只發一則 SEV-1，先到的那條發 SEV-1，後到的降為 SEV-3（事件補交易細節／slot 檢查提醒重抓 deployed.json）。條件持續到 deployed.json 重抓、Worker 重新部署為止。
+
+| 合約 | 位址來源 | 位址 |
+|---|---|---|
+| AssetVaultV2（ABI `AssetVaultV2`） | addresses.ts V2_STACK[84532].AssetVaultV2 | `0x916D7Fc399d9afd23BAa113E2c2Cc601341ff10a` |
+
+- 預期實作：`AssetVaultV2` = `0xa2d967221da278b26e0432f4a6bd231d7e0a3733`（deployed.json）
+- 門檻：EIP-1967 實作 slot ≠ deployed.json 的實作 → SEV-1（同一個新實作已由 Upgraded 事件通報時 SEV-3「deployed.json 過期」）
+- 處置：[INCIDENT_RESPONSE「1. 嚴重度分級」](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級)、[INCIDENT_RESPONSE「3. 暫停與凍結：現行部署能做什麼」](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼)、[INCIDENT_RESPONSE「8. 外部協助：SEAL 911」](../../docs/INCIDENT_RESPONSE.md#8-外部協助seal-911)
+
+### pepe-incentives-wiring
+
+**PepeIncentives 接線變更**｜權限｜狀態｜SEV-2｜運作中
+
+部署版 PepeIncentives.setEsgRegistry 不發事件（複審 L-d）：每輪讀 esgRegistry() 比對預期值。pepe()、exchange()、copyTracker() 是 immutable，不需要輪詢。
+
+| 合約 | 位址來源 | 位址 |
+|---|---|---|
+| PepeIncentives（ABI `PepeIncentives`） | addresses.ts BASE_SEPOLIA.PepeIncentives | `0xEBfA1dc7dDea032ac6242cB619d982e543A23c12` |
+
+- 預期：`PepeIncentives.esgRegistry()` = 零位址
 - 門檻：任一 getter 的讀值 ≠ 預期位址
 - 處置：[INCIDENT_RESPONSE「1. 嚴重度分級」](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級)、[INCIDENT_RESPONSE「3. 暫停與凍結：現行部署能做什麼」](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼)
 
@@ -746,6 +778,21 @@ GuardedOracle.paused() 為 true（事件規則可能因掃描中斷漏掉，狀�
 - 門檻：餘額較 24 小時高點下降 ≥ `EXCHANGE_BALANCE_DROP_BPS`（預設 3000 bps） → SEV-2
 - 處置：[INCIDENT_RESPONSE「1. 嚴重度分級」](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級)、[INCIDENT_RESPONSE「3. 暫停與凍結：現行部署能做什麼」](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼)
 
+### pepe-incentives-balance-drop
+
+**PepeIncentives 獎勵池大幅下降**｜大額提領｜狀態｜SEV-2｜運作中
+
+部署版 PepeIncentives.withdraw（onlyOwner）不發事件（複審 L-d）：每輪讀 PepeToken.balanceOf(PepeIncentives)，較 24 小時內高點下降超過 INCENTIVES_BALANCE_DROP_BPS 即告警。使用者領獎勵每筆很小；一次掉很多代表 owner 把池子提走（或 owner 金鑰外洩）。
+
+| 合約 | 位址來源 | 位址 |
+|---|---|---|
+| PepeToken（ABI `PepeToken`） | addresses.ts BASE_SEPOLIA.PepeToken | `0xccd05cbdc2f7961a4c27d3633694022722786a0f` |
+| PepeIncentives（ABI `PepeIncentives`） | addresses.ts BASE_SEPOLIA.PepeIncentives | `0xEBfA1dc7dDea032ac6242cB619d982e543A23c12` |
+
+- 讀取：`token.balanceOf(address)`
+- 門檻：餘額較 24 小時高點下降 ≥ `INCENTIVES_BALANCE_DROP_BPS`（預設 3000 bps） → SEV-2
+- 處置：[INCIDENT_RESPONSE「1. 嚴重度分級」](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級)、[INCIDENT_RESPONSE「3. 暫停與凍結：現行部署能做什麼」](../../docs/INCIDENT_RESPONSE.md#3-暫停與凍結現行部署能做什麼)
+
 ### insurance-fund
 
 **保險金下降**｜保險金與儲備｜狀態｜SEV-2｜運作中
@@ -911,6 +958,140 @@ V2.5 允許把無法定價的資產豁免於儲備率計算；豁免會讓儲備
 - 事件：`SlashReserveWithdrawn(address,uint256)`
 - 門檻：每一筆
 - 處置：[INCIDENT_RESPONSE「1. 嚴重度分級」](../../docs/INCIDENT_RESPONSE.md#1-嚴重度分級)
+
+## 可靜音的告警
+
+`MUTE_KEYS` 只接受這張表裡的 key（完全相同，沒有前綴比對）。表以外的值在執行期被忽略，並發一則不可靜音的 `monitor-self:config`；SEV-1、`monitor-self` 與「基準已設定」在任何設定下都會送出。
+
+| key | 理由 |
+|---|---|
+| `x402-payto:unsafe` | x402 treasury 是已知待換的地址，收款守門 fail-closed（付費端點回 503），部署當下就會觸發並每 6 小時提醒；SEV-3。同一條規則的 x402-payto:changed（SEV-1）不可靜音 |
+
+## 管理函式的涵蓋
+
+受監控合約的部署版 bytecode 裡、名稱像管理操作的函式（set／update／withdraw／grant…），每一個都要由某條規則涵蓋或寫明理由；CI 從部署版的 selector 出發檢查，不發事件的 setter 也看得到。由事件規則涵蓋的，該事件必須真的在部署版裡。
+
+| 合約（ABI） | 函式 | 涵蓋 |
+|---|---|---|
+| AggregatorOracleAdapter | `renounceOwnership()` | [`owner-transferred`](#owner-transferred) |
+| AggregatorOracleAdapter | `transferOwnership(address)` | [`owner-transferred`](#owner-transferred) |
+| AggregatorOracleAdapter | `setMaxDeviationBps(uint256)` | [`aggregator-oracle-config`](#aggregator-oracle-config) |
+| AssetVault | `renounceOwnership()` | [`owner-transferred`](#owner-transferred) |
+| AssetVault | `transferOwnership(address)` | [`owner-transferred`](#owner-transferred) |
+| AssetVault | `registerAsset(bytes32,address)` | [`asset-vault-v1-assets`](#asset-vault-v1-assets) |
+| AssetVaultV2 | `grantRole(bytes32,address)` | [`access-role-changed`](#access-role-changed) |
+| AssetVaultV2 | `renounceRole(bytes32,address)` | [`access-role-changed`](#access-role-changed) |
+| AssetVaultV2 | `revokeRole(bytes32,address)` | [`access-role-changed`](#access-role-changed) |
+| AssetVaultV2 | `pause()` | [`vault-pause-changed`](#vault-pause-changed) |
+| AssetVaultV2 | `unpause()` | [`vault-pause-changed`](#vault-pause-changed) |
+| AssetVaultV2 | `registerAsset(bytes32,address)` | [`vault-risk-params`](#vault-risk-params) |
+| AssetVaultV2 | `unregisterAsset(bytes32)` | [`vault-risk-params`](#vault-risk-params) |
+| AssetVaultV2 | `setAssetCap(bytes32,uint256)` | [`vault-risk-params`](#vault-risk-params) |
+| AssetVaultV2 | `setRiskParams(uint256,uint256,uint256)` | [`vault-risk-params`](#vault-risk-params) |
+| AssetVaultV2 | `setEsgRegistry(address)` | [`vault-upgraded`](#vault-upgraded)、[`core-wiring`](#core-wiring) |
+| AssetVaultV2 | `setOracle(address)` | [`vault-upgraded`](#vault-upgraded)、[`core-wiring`](#core-wiring) |
+| AssetVaultV2 | `upgradeToAndCall(address,bytes)` | [`vault-upgraded`](#vault-upgraded)、[`proxy-implementation`](#proxy-implementation) |
+| AssetVaultV2 | `withdrawFees(address,uint256)` | [`vault-fees-withdrawn`](#vault-fees-withdrawn) |
+| ChainlinkOracleAdapter | `renounceOwnership()` | [`owner-transferred`](#owner-transferred) |
+| ChainlinkOracleAdapter | `transferOwnership(address)` | [`owner-transferred`](#owner-transferred) |
+| ChainlinkOracleAdapter | `setFeed(bytes32,address)` | [`chainlink-adapter-config`](#chainlink-adapter-config) |
+| ESGRegistryV2 | `grantRole(bytes32,address)` | [`access-role-changed`](#access-role-changed) |
+| ESGRegistryV2 | `renounceRole(bytes32,address)` | [`access-role-changed`](#access-role-changed) |
+| ESGRegistryV2 | `revokeRole(bytes32,address)` | [`access-role-changed`](#access-role-changed) |
+| ESGRegistryV2 | `setMaxAttestationAge(uint256)` | [`esg-registry-params`](#esg-registry-params) |
+| EsgRewardDistributor | `renounceOwnership()` | [`owner-transferred`](#owner-transferred) |
+| EsgRewardDistributor | `transferOwnership(address)` | [`owner-transferred`](#owner-transferred) |
+| EsgRewardDistributor | `setMaxRewardTier(uint8)` | [`esg-reward-params`](#esg-reward-params) |
+| EsgRewardDistributor | `setMinHoldSeconds(uint256)` | [`esg-reward-params`](#esg-reward-params) |
+| FeeRouter | `renounceOwnership()` | [`owner-transferred`](#owner-transferred) |
+| FeeRouter | `transferOwnership(address)` | [`owner-transferred`](#owner-transferred) |
+| FeeRouter | `setCopyTracker(address)` | [`feerouter-wiring`](#feerouter-wiring) |
+| FeeRouter | `setExchange(address)` | [`feerouter-wiring`](#feerouter-wiring) |
+| FeeRouter | `withdrawPlatformFees()` | [`fee-withdrawals`](#fee-withdrawals)、[`x402-fee-withdrawals`](#x402-fee-withdrawals) |
+| FeeRouter | `withdrawTraderEarnings()` | 不監控：交易員領自己累積的跟單分潤（使用者操作，金額只到該交易員的應得額） |
+| GuardedOracle | `grantRole(bytes32,address)` | [`access-role-changed`](#access-role-changed) |
+| GuardedOracle | `renounceRole(bytes32,address)` | [`access-role-changed`](#access-role-changed) |
+| GuardedOracle | `revokeRole(bytes32,address)` | [`access-role-changed`](#access-role-changed) |
+| GuardedOracle | `addAsset(bytes32,uint256)` | [`guarded-oracle-guardian`](#guarded-oracle-guardian) |
+| GuardedOracle | `setAssetFrozen(bytes32,bool)` | [`guarded-oracle-guardian`](#guarded-oracle-guardian) |
+| GuardedOracle | `setPaused(bool)` | [`guarded-oracle-guardian`](#guarded-oracle-guardian)、[`guarded-oracle-paused`](#guarded-oracle-paused) |
+| GuardedOracle | `setReferenceSource(address)` | [`guarded-oracle-guardian`](#guarded-oracle-guardian) |
+| GuardedOracle | `setRiskParams(uint256,uint256)` | [`guarded-oracle-guardian`](#guarded-oracle-guardian) |
+| GuardedOracle | `updatePrice(bytes32,uint256)` | 不監控：keeper 例行寫價，不是設定變更；價格是否過期由 oracle-stale 看，GuardedOracle 拒收的價格由 guarded-oracle-price-rejected 看 |
+| InsuranceVault | `renounceOwnership()` | [`owner-transferred`](#owner-transferred) |
+| InsuranceVault | `transferOwnership(address)` | [`owner-transferred`](#owner-transferred) |
+| InsuranceVault | `setExchange(address)` | [`insurance-wiring`](#insurance-wiring) |
+| InsuranceVault | `setFeeRouter(address)` | [`insurance-wiring`](#insurance-wiring) |
+| InsuranceVault | `withdraw(uint256)` | [`insurance-withdrawal`](#insurance-withdrawal)、[`insurance-fund`](#insurance-fund) |
+| KYCRegistry | `renounceOwnership()` | [`owner-transferred`](#owner-transferred) |
+| KYCRegistry | `transferOwnership(address)` | [`owner-transferred`](#owner-transferred) |
+| MockOracle | `renounceOwnership()` | [`owner-transferred`](#owner-transferred) |
+| MockOracle | `transferOwnership(address)` | [`owner-transferred`](#owner-transferred) |
+| MockOracle | `addAsset(bytes32,uint256)` | [`mock-oracle-config`](#mock-oracle-config) |
+| MockOracle | `updatePrice(bytes32,uint256)` | 不監控：keeper 例行寫價，不是設定變更；價格是否過期由 oracle-stale 看，GuardedOracle 拒收的價格由 guarded-oracle-price-rejected 看 |
+| MockUSDC | `renounceOwnership()` | [`owner-transferred`](#owner-transferred) |
+| MockUSDC | `transferOwnership(address)` | [`owner-transferred`](#owner-transferred) |
+| MockUSDC | `setSwapRouter(address)` | 不監控：一次性：require(swapRouter == address(0))，部署版已設定，再呼叫只會 revert |
+| MockUSDT | `renounceOwnership()` | [`owner-transferred`](#owner-transferred) |
+| MockUSDT | `transferOwnership(address)` | [`owner-transferred`](#owner-transferred) |
+| MockUSDT | `setSwapRouter(address)` | 不監控：一次性：require(swapRouter == address(0))，部署版已設定，再呼叫只會 revert |
+| PepeAMM | `renounceOwnership()` | [`owner-transferred`](#owner-transferred) |
+| PepeAMM | `transferOwnership(address)` | [`owner-transferred`](#owner-transferred) |
+| PepeAMM | `addLiquidity(uint256)` | 不監控：注入流動性（資金流入），不是取出或設定變更 |
+| PepeClaim | `renounceOwnership()` | [`owner-transferred`](#owner-transferred) |
+| PepeClaim | `transferOwnership(address)` | [`owner-transferred`](#owner-transferred) |
+| PepeClaim | `setClaimAmount(uint256)` | [`pepe-claim-admin`](#pepe-claim-admin) |
+| PepeClaim | `withdraw(uint256)` | [`pepe-claim-admin`](#pepe-claim-admin) |
+| PepeIncentives | `renounceOwnership()` | [`owner-transferred`](#owner-transferred) |
+| PepeIncentives | `transferOwnership(address)` | [`owner-transferred`](#owner-transferred) |
+| PepeIncentives | `pause()` | [`pepe-incentives-pause`](#pepe-incentives-pause) |
+| PepeIncentives | `unpause()` | [`pepe-incentives-pause`](#pepe-incentives-pause) |
+| PepeIncentives | `setEsgRegistry(address)` | [`pepe-incentives-wiring`](#pepe-incentives-wiring) |
+| PepeIncentives | `withdraw(uint256)` | [`pepe-incentives-balance-drop`](#pepe-incentives-balance-drop) |
+| PepeIncentives | `setCopyReward(uint256)` | 不監控：獎勵參數（PEPE 測試代幣的發放額），部署版不發事件。最壞情況是獎勵被調高而加速抽乾池子——那會被 pepe-incentives-balance-drop 看到 |
+| PepeIncentives | `setDailyParams(uint256,uint256,uint8)` | 不監控：同 setCopyReward：獎勵參數，後果由 pepe-incentives-balance-drop 看到 |
+| PepeIncentives | `setEsgParams(uint256,uint256,uint256,uint8)` | 不監控：同 setCopyReward：獎勵參數，後果由 pepe-incentives-balance-drop 看到 |
+| PepeIncentives | `setTierParams(uint256[4],uint256[4])` | 不監控：同 setCopyReward：獎勵參數，後果由 pepe-incentives-balance-drop 看到 |
+| PepeIncentives | `setTradeMining(uint256,uint256)` | 不監控：同 setCopyReward：獎勵參數，後果由 pepe-incentives-balance-drop 看到 |
+| PepeStaking | `renounceOwnership()` | [`owner-transferred`](#owner-transferred) |
+| PepeStaking | `transferOwnership(address)` | [`owner-transferred`](#owner-transferred) |
+| PepeStaking | `withdraw(uint256)` | 不監控：質押者取回自己的質押（使用者操作，會發 Withdrawn） |
+| PepeToken | `renounceOwnership()` | [`owner-transferred`](#owner-transferred) |
+| PepeToken | `transferOwnership(address)` | [`owner-transferred`](#owner-transferred) |
+| PerpetualExchange | `renounceOwnership()` | [`owner-transferred`](#owner-transferred) |
+| PerpetualExchange | `transferOwnership(address)` | [`owner-transferred`](#owner-transferred) |
+| PerpetualExchange | `setAgentAuthorized(address,bool)` | [`exchange-agent-authorization`](#exchange-agent-authorization) |
+| PerpetualExchange | `setCopyTracker(address)` | [`exchange-wiring-changed`](#exchange-wiring-changed) |
+| PerpetualExchange | `setFeeRouter(address)` | [`exchange-wiring-changed`](#exchange-wiring-changed)、[`core-wiring`](#core-wiring) |
+| PerpetualExchange | `setInsuranceVault(address)` | [`exchange-wiring-changed`](#exchange-wiring-changed)、[`core-wiring`](#core-wiring) |
+| PerpetualExchange | `setKycRegistry(address)` | [`exchange-wiring-changed`](#exchange-wiring-changed)、[`core-wiring`](#core-wiring) |
+| PerpetualExchange | `setAdlEnabled(bool)` | [`exchange-risk-params`](#exchange-risk-params) |
+| PerpetualExchange | `setBorrowFeePerHour(uint256)` | [`exchange-risk-params`](#exchange-risk-params) |
+| PerpetualExchange | `setExecutionFee(uint256)` | [`exchange-risk-params`](#exchange-risk-params) |
+| PerpetualExchange | `setLiquidationPenaltyBps(uint256)` | [`exchange-risk-params`](#exchange-risk-params) |
+| PerpetualExchange | `setMaintenanceMarginFor(bytes32,uint256)` | [`exchange-risk-params`](#exchange-risk-params) |
+| PerpetualExchange | `setMarkPremiumCapBps(uint256)` | [`exchange-risk-params`](#exchange-risk-params) |
+| PerpetualExchange | `setMaxLeverageFor(bytes32,uint256)` | [`exchange-risk-params`](#exchange-risk-params) |
+| PerpetualExchange | `setMaxPriceAge(uint256)` | [`exchange-risk-params`](#exchange-risk-params) |
+| PerpetualExchange | `setPortfolioMarginEnabled(bool)` | [`exchange-risk-params`](#exchange-risk-params) |
+| PerpetualExchange | `setRwaAsset(bytes32,bool)` | [`exchange-risk-params`](#exchange-risk-params) |
+| PerpetualExchange | `setTradingFeeBps(uint256)` | [`exchange-risk-params`](#exchange-risk-params) |
+| PerpetualExchange | `setVaultFeeShareBps(uint256)` | [`exchange-risk-params`](#exchange-risk-params) |
+| PerpetualExchange | `settleFunding(bytes32)` | 不監控：keeper 例行結算 funding（FundingSettled）；補算被夾住時由 exchange-funding-clamped 告警 |
+| PerpetualExchange | `withdrawExecutionFees()` | 不監控：onlyOwner 提走合約累積的 ETH 執行費（使用者為 keeper gas 預付的手續費），不是保證金或 USDC，部署版不發事件；owner 本身的變更由 owner-transferred 看 |
+| PerpetualExchange | `withdrawMargin(uint256)` | [`large-margin-withdrawal`](#large-margin-withdrawal)、[`exchange-balance-drop`](#exchange-balance-drop) |
+| PythOracleAdapter | `renounceOwnership()` | [`owner-transferred`](#owner-transferred) |
+| PythOracleAdapter | `transferOwnership(address)` | [`owner-transferred`](#owner-transferred) |
+| PythOracleAdapter | `setPriceId(bytes32,bytes32)` | [`pyth-adapter-config`](#pyth-adapter-config) |
+| SustainabilityBadge | `grantRole(bytes32,address)` | [`access-role-changed`](#access-role-changed) |
+| SustainabilityBadge | `renounceRole(bytes32,address)` | [`access-role-changed`](#access-role-changed) |
+| SustainabilityBadge | `revokeRole(bytes32,address)` | [`access-role-changed`](#access-role-changed) |
+| SyntheticAssetV2 | `grantRole(bytes32,address)` | [`access-role-changed`](#access-role-changed) |
+| SyntheticAssetV2 | `renounceRole(bytes32,address)` | [`access-role-changed`](#access-role-changed) |
+| SyntheticAssetV2 | `revokeRole(bytes32,address)` | [`access-role-changed`](#access-role-changed) |
+| TraderStake | `renounceOwnership()` | [`owner-transferred`](#owner-transferred) |
+| TraderStake | `transferOwnership(address)` | [`owner-transferred`](#owner-transferred) |
+| TraderStake | `setCopyTracker(address)` | [`traderstake-copytracker-set`](#traderstake-copytracker-set)、[`core-wiring`](#core-wiring) |
 
 ## 刻意不監控的事件
 

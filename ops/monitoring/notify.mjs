@@ -29,9 +29,18 @@ export function escapeDiscord(text) {
 
 const ICON = { "SEV-1": "🔴", "SEV-2": "🟠", "SEV-3": "🟡", "SEV-4": "⚪" };
 
+const isoTime = (t) => new Date(t * 1000).toISOString().replace(".000Z", "Z");
+
+/**
+ * 訊息內文。帶發生時間（UTC）：outbox 重送可能晚到最多 24 小時，沒有時間就看不出這是哪時候的事
+ * （複審 L-e）。狀態型的「持續／恢復」另外帶首次發生時間。
+ */
 export function formatNote(note, { deploymentId, runbookUrl } = {}) {
   const head = `${ICON[note.severity] ?? ""}[${note.severity}] ${note.status}｜${note.title}`;
-  const lines = [head, ...note.lines, `規則：${note.ruleId}${deploymentId ? `（${deploymentId}）` : ""}`];
+  const time = note.at
+    ? `時間：${isoTime(note.at)}${note.firstAt && note.firstAt !== note.at ? `（首次 ${isoTime(note.firstAt)}）` : ""}`
+    : null;
+  const lines = [head, ...note.lines, ...(time ? [time] : []), `規則：${note.ruleId}${deploymentId ? `（${deploymentId}）` : ""}`];
   if (runbookUrl) lines.push(`處置：${runbookUrl}`);
   return lines.join("\n");
 }
@@ -70,6 +79,16 @@ export function channelsOf(env) {
   return ch;
 }
 
+/**
+ * 去重 id：同一則通知（同一個 key、狀態、發生時間）不論重送幾次都一樣。接收端以它去重——
+ * 通知是 at-least-once（逾時但對方其實收到了，下一輪會再送），5 分鐘的時間戳視窗內也可能被重放。
+ */
+export async function noteId(note, deploymentId = "") {
+  const text = `${deploymentId}|${note.key ?? note.ruleId}|${note.status}|${note.at ?? ""}`;
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(d)].slice(0, 16).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 async function hmacHex(secret, text) {
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(text));
@@ -83,8 +102,10 @@ async function hmacHex(secret, text) {
  *   X-Pepelab-Timestamp: <unix 秒>
  *   X-Pepelab-Signature: sha256=<HMAC-SHA256(secret, `${timestamp}.${body}`)>
  * 簽章涵蓋時間戳，接收端應拒絕時間差超過 5 分鐘的請求——沒有時間戳的簽章可以被無限期重放。
+ * 接收端要對「收到的原始 body bytes」驗簽（不要先 JSON.parse 再序列化）、用常數時間比較，
+ * 並以 body 的 id 去重（見 README）。
  */
-export async function sendToChannel(note, text, channel, fetchImpl, { log = () => {}, now = Math.floor(Date.now() / 1000), timeoutMs = NOTIFY_TIMEOUT_MS } = {}) {
+export async function sendToChannel(note, text, channel, fetchImpl, { log = () => {}, now = Math.floor(Date.now() / 1000), timeoutMs = NOTIFY_TIMEOUT_MS, deploymentId = "" } = {}) {
   try {
     let payload;
     const headers = { "Content-Type": "application/json" };
@@ -92,12 +113,15 @@ export async function sendToChannel(note, text, channel, fetchImpl, { log = () =
     else {
       payload = JSON.stringify({
         source: "pepelab-chain-monitor",
+        id: await noteId(note, deploymentId),
         severity: note.severity,
         status: note.status,
         ruleId: note.ruleId,
         key: note.key,
         title: note.title,
         text,
+        occurredAt: note.at ?? null,
+        firstAt: note.firstAt ?? note.at ?? null,
         sentAt: now,
       });
       if (channel.secret) {
@@ -116,38 +140,44 @@ export async function sendToChannel(note, text, channel, fetchImpl, { log = () =
   return false;
 }
 
-/** 監控自身的告警（讀取失敗、落後、狀態重置、通道失效）。 */
+/** 監控自身的告警（讀取失敗、落後、狀態重置、通道失效、設定問題）。 */
 export const isSelfNote = (note) => note.ruleId === "monitor-self" || String(note.key ?? "").startsWith("monitor-self");
 
 /**
- * MUTE_KEYS：逗號分隔的告警 key。一個項目靜音「完全相同的 key」與「以它為前綴的子 key」
- * （`x402-payto:unsafe` 只靜音那一則；`fee-withdrawals` 靜音整條規則）。
- * monitor-self 開頭的項目一律忽略——監控自身的故障不可以被靜音。回傳 { keys, ignored }。
+ * MUTE_KEYS：逗號分隔的告警 key，**只接受 monitors.json 的 mutableKeys 白名單**（完全相同的 key，
+ * 沒有前綴比對）。複審 M-A：原本執行期不看嚴重度、也不看白名單——在 Cloudflare dashboard 設
+ * `MUTE_KEYS=owner-transferred` 就能讓 SEV-1 完全不響，CI 也放行 `x402-payto:changed` 這種
+ * 「SEV-1 規則唯一的 SEV-1 子 key」。
+ * 回傳 { keys（生效的）, rejected（不在白名單，忽略）, ignored（monitor-self 或格式不對，忽略）}。
  */
-export function parseMuteKeys(text) {
+export function parseMuteKeys(text, allowed = []) {
+  const allow = new Set(allowed);
   const keys = [];
+  const rejected = [];
   const ignored = [];
   for (const k of String(text ?? "").split(",").map((s) => s.trim()).filter(Boolean)) {
     if (k.startsWith("monitor-self") || !/^[a-z0-9][a-z0-9-]*(:[^\s,]+)?$/.test(k)) ignored.push(k);
+    else if (!allow.has(k)) rejected.push(k);
     else keys.push(k);
   }
-  return { keys, ignored };
+  return { keys, rejected, ignored };
 }
-export const isMuted = (note, muteKeys = []) => muteKeys.some((k) => note.key === k || String(note.key ?? "").startsWith(`${k}:`));
+export const isMuted = (note, muteKeys = []) => muteKeys.includes(note.key);
 
 /**
  * 這則通知要不要送。
- *   • monitor-self:* 永遠送：不受 MIN_SEVERITY 也不受 MUTE_KEYS 影響。把嚴重度門檻調高來壓掉一則
- *     吵人的 SEV-3，不應該連「RPC 全掛、監控瞎了」一起壓掉（審查 M2）。
- *   • MUTE_KEYS 命中的不送（針對單一已知告警，取代「把 MIN_SEVERITY 調到 SEV-2」）。
+ *   • monitor-self:* 與標 unmutable 的（例如 x402「基準已設定」）永遠送。
+ *   • SEV-1（觸發、持續，或原嚴重度 SEV-1 的恢復）永遠送：不受 MUTE_KEYS 影響，MIN_SEVERITY 也最多只能設到 SEV-2。
+ *   • MUTE_KEYS 命中的不送（只有白名單裡的 key 會進到 muteKeys）。
  *   • 其餘依 MIN_SEVERITY；恢復通知以「原嚴重度」判斷：觸發時送過的，恢復時一定也送。
  */
 export function shouldSend(note, minSeverity = "SEV-4", muteKeys = []) {
   const min = SEVERITIES.indexOf(minSeverity);
   if (min < 0) throw new Error(`MIN_SEVERITY 不合法：${minSeverity}`);
-  if (isSelfNote(note)) return true;
-  if (isMuted(note, muteKeys)) return false;
+  if (isSelfNote(note) || note.unmutable) return true;
   const sev = note.status === "恢復" ? (note.origSeverity ?? note.severity) : note.severity;
+  if (sev === "SEV-1") return true;
+  if (isMuted(note, muteKeys)) return false;
   const i = SEVERITIES.indexOf(sev);
-  return i >= 0 && i <= min;
+  return i >= 0 && i <= Math.max(min, 1);
 }

@@ -1,6 +1,6 @@
 // 一輪監控的外層：讀 KV 狀態 → runOnce → 送通知（含重送 outbox）→ 存回 KV → 心跳。
 // 與 worker.mjs 分開，讓測試可以注入 config、假 KV 與假 fetch。
-import { assertHttps, fetchWithTimeout, param, redactUrls, runOnce } from "./engine.mjs";
+import { assertHttps, configProblems, fetchWithTimeout, minSeverityOf, param, redactUrls, runOnce } from "./engine.mjs";
 import { NOTIFY_TIMEOUT_MS, channelsOf, formatNote, parseMuteKeys, sendToChannel, shouldSend } from "./notify.mjs";
 
 export const STATE_KEY = "state:v1";
@@ -58,6 +58,20 @@ export async function tick({ config, env, now = Math.floor(Date.now() / 1000), f
     ],
   }));
 
+  // 設定問題（不經 CI 的覆寫值）：不在白名單的 MUTE_KEYS、等於關掉告警的門檻、MIN_SEVERITY=SEV-1。
+  // Worker 以安全值照常運作，同時用 monitor-self 講出來（不可靜音）。複審 M-A、L-f。
+  const allowedMute = (config.mutableKeys ?? []).map((m) => m.key);
+  const mute = parseMuteKeys(param(config, env, "MUTE_KEYS"), allowedMute);
+  const cfgIssues = configProblems(config, env);
+  if (mute.rejected.length || mute.ignored.length) {
+    cfgIssues.unshift(
+      `設定了不可靜音的 key：${[...mute.rejected, ...mute.ignored].join(", ")}（已忽略，照常送出）；只有 monitors.json 的 mutableKeys 可以靜音：${allowedMute.join(", ") || "（無）"}`,
+    );
+  }
+  if (cfgIssues.length) {
+    selfFindings.push({ ruleId: "monitor-self", key: "monitor-self:config", severity: "SEV-2", title: "監控設定問題", lines: cfgIssues });
+  }
+
   const { notes, errors, summary } = await runOnce({ config, env, state, fetchImpl, now, log, sleep, selfFindings });
   // KV 沒有事件檢查點（首次部署，或 state:v1 被刪／遺失）：這一輪才從 head 附近重新開始掃。
   // 之前的區塊沒有被掃到，要講出來——否則狀態遺失期間的 owner／角色／接線變更會無聲漏掉。
@@ -75,9 +89,8 @@ export async function tick({ config, env, now = Math.floor(Date.now() / 1000), f
       ],
     });
   }
-  const minSev = param(config, env, "MIN_SEVERITY");
-  const mute = parseMuteKeys(param(config, env, "MUTE_KEYS"));
-  if (mute.ignored.length) log(`MUTE_KEYS 忽略 ${mute.ignored.length} 個項目（monitor-self 不可靜音，或格式不對）`);
+  const minSev = minSeverityOf(config, env);
+  if (cfgIssues.length) log(`設定問題：${cfgIssues.join(" | ").slice(0, 300)}`);
   const ruleById = new Map(config.rules.map((r) => [r.id, r]));
   const fresh = notes
     .filter((n) => shouldSend(n, minSev, mute.keys))
@@ -86,6 +99,7 @@ export async function tick({ config, env, now = Math.floor(Date.now() / 1000), f
       text: formatNote(n, { deploymentId: config.deployment?.id, runbookUrl: ruleById.get(n.ruleId)?.runbookUrl }),
       channels: [...names],
       firstAt: now,
+      at: n.at ?? now,
     }));
 
   // 送出：新通知優先（全部通道），再重送舊的（每輪有上限）。每個通道各自記帳：
@@ -100,7 +114,7 @@ export async function tick({ config, env, now = Math.floor(Date.now() / 1000), f
         still.push(n); // 這個通道本輪看起來掛了：不再浪費 subrequest，留到下一輪
         continue;
       }
-      if (await sendToChannel(item.note, item.text, byName.get(n), fetchImpl, { log, now, timeoutMs: NOTIFY_TIMEOUT_MS })) {
+      if (await sendToChannel(item.note, item.text, byName.get(n), fetchImpl, { log, now, timeoutMs: NOTIFY_TIMEOUT_MS, deploymentId: config.deployment?.id ?? "" })) {
         streak.set(n, 0);
         delivered++;
       } else {
@@ -110,8 +124,13 @@ export async function tick({ config, env, now = Math.floor(Date.now() / 1000), f
     }
     item.channels = still;
   };
-  for (const item of fresh) await deliver(item);
-  for (const item of carried.slice(0, MAX_RESEND_PER_TICK)) await deliver(item);
+  // 依「發生時間」送：通道恢復的那一輪，舊的「觸發」要先於新的「恢復」到（複審 L-e：原本新通知先送，
+  // 值班的人會先看到恢復、再看到觸發）。舊通知每輪最多重送 MAX_RESEND_PER_TICK 則；壞掉的通道
+  // 本輪失敗 CHANNEL_GIVE_UP_AFTER 次後就不再對它送，所以不會吃光新告警的額度。
+  const batch = [...carried.slice(0, MAX_RESEND_PER_TICK), ...fresh]
+    .map((item, i) => ({ item, i }))
+    .sort((x, y) => (x.item.at ?? x.item.firstAt ?? 0) - (y.item.at ?? y.item.firstAt ?? 0) || x.i - y.i);
+  for (const { item } of batch) await deliver(item);
 
   const undelivered = [...carried, ...fresh].filter((item) => item.channels.length);
   let dropped = expired;
