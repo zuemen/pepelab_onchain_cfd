@@ -32,18 +32,21 @@ name: Admin — Base Sepolia owner call
 # transferOwnership／updatePrice／mint…）。所以分成三個 job：
 #
 #   precheck    不綁 environment、不碰任何 secret、沒有任何 token 權限。檢查 ref 是 master、
-#               是第一次執行、觸發者不是 keeper 觸發器帳號（repo variable
-#               KEEPER_TRIGGER_ACTOR）。不符就失敗，approve 隨之被略過，**這筆 run 不會
-#               出現在等待核准的清單裡**。
+#               是第一次執行、觸發者（github.actor 與 github.triggering_actor）是 repo
+#               擁有者本人。不符就失敗，approve 隨之被略過，**這筆 run 不會出現在等待核准
+#               的清單裡**。
 #   approve     needs: precheck，綁 `environment: admin-approval`（只有 required reviewers＋
 #               branch policy，**不放 secret**）。人工核准後才開始；Worker 的憑證沒有
 #               Deployments 權限，無法代為核准。引用不存在的 environment 時 GitHub 會自動建立
 #               一個沒有保護規則的同名 environment，所以 gate step 讀它的設定，沒有 required
-#               reviewers 就 fail-closed。gate 也重複 precheck 的觸發者與 ref 檢查（第二道）。
-#   admin-call  needs: approve，才進 concurrency group、才從 `keeper` environment 取私鑰。
+#               reviewers 就 fail-closed。gate 也重複 precheck 的三項檢查（第二道）。
+#   admin-call  needs: approve，才進 concurrency group、才從 `keeper` environment 取私鑰；
+#               第一個 step 再做一次同樣的三項檢查，之後才有 step 拿得到私鑰。
 #
-# 這三個 job 的結構由 scripts/check-workflow-guards.mjs 檢查（consistency.yml 的
-# workflow-guards job）；改動這裡時要同步改那支腳本。
+# 這支 workflow 的結構由 scripts/check-workflow-guards.mjs 檢查（consistency.yml 的
+# workflow-guards job）：只能有這三個 job、每個 job 與守門 step 只能有白名單內的鍵、
+# 守門 step 的內容以 sha256 釘住、觸發事件只能是 workflow_dispatch。改動這裡時要同步
+# 改那支腳本。
 #
 # 審查 H2（第二輪）：之前 concurrency 寫在 workflow 層級，等核准的 job 仍占住與 keeper
 # 共用的 group，keeper 排程會排隊到核准或逾時（最久 30 天）。現在 concurrency 只在
@@ -88,6 +91,22 @@ permissions:
 # admin-call 的 job 層級。
 
 jobs:
+  # ── 三個守門 step（precheck、approve、admin-call 各自的第一個 step）──────────────────
+  # 三者都做同一組檢查，並且 fail-closed、不需要任何設定：
+  #   1. ref 必須是 refs/heads/master。
+  #   2. run_attempt 必須是 1（重跑不重新核准；要重試請重新 dispatch）。
+  #   3. github.actor 與 github.triggering_actor 都必須等於 github.repository_owner
+  #      （白名單；不分大小寫，比對前去掉前後空白與 \r）。
+  # 第 3 點取代了先前的黑名單（repo variable KEEPER_TRIGGER_ACTOR）：黑名單在沒設定、
+  # 設錯層級、多一個空白或少寫 `[bot]` 時都會放行（PR #217 審查 M1）。
+  # 注意：用擁有者本人的 PAT dispatch 時，actor 就是擁有者本人，白名單分不出來；
+  # keeper 觸發器 Worker 改用 GitHub App 之後（actor 是 `<app-slug>[bot]`），白名單才真正
+  # 把 Worker 的憑證擋在外面。見 ops/keeper-trigger/README.md。
+  #
+  # 這三個 step 的 `env`＋`run` 全文被 scripts/check-workflow-guards.mjs 以 sha256 釘住
+  # （GUARD_SHA256）。改動任何一個字都要同步更新檢查器，否則 CI 會紅——這是刻意的摩擦。
+  # 所以說明都寫在 YAML 註解裡（不算進 hash），script 內不放註解。
+
   # 人工核准「之前」的檢查。approve 綁了有 required reviewers 的 environment，它自己的
   # step 要等核准後才會執行（docs.github.com「Managing environments for deployment」：
   # A job that references an environment must follow any protection rules for the
@@ -97,45 +116,40 @@ jobs:
   #
   # 這個 job 刻意：不綁 environment、不引用任何 secret、不給 GITHUB_TOKEN 任何權限、
   # 不 checkout、不用任何 action、不進 concurrency group（不會卡住 keeper）。
-  # KEEPER_TRIGGER_ACTOR 是 repo 層級的 variable，不綁 environment 的 job 也讀得到
-  # （「Contexts reference」：vars context 包含 organization、repository、environment
-  # 三層的 variable，jobs.<job_id>.steps.env 可用 vars）。
   precheck:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
     steps:
-      - name: Precheck — master、第一次執行、觸發者不是 keeper 觸發器
+      - name: Precheck — master、第一次執行、觸發者是 repo 擁有者本人
         env:
           REF: ${{ github.ref }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
-          # 未設定時是空字串，不擋（還在用擁有者本人的 PAT 時不要設，見
-          # ops/keeper-trigger/README.md「改用 GitHub App」）。
-          BLOCKED_ACTOR: ${{ vars.KEEPER_TRIGGER_ACTOR }}
+          OWNER: ${{ github.repository_owner }}
           ACTOR: ${{ github.actor }}
           TRIGGERING_ACTOR: ${{ github.triggering_actor }}
         run: |
           set -euo pipefail
-          # 只准從 master 執行：其他分支上的這支 workflow 不受審查約束。
           if [ "$REF" != "refs/heads/master" ]; then
             echo "::error::admin workflow 只允許在 refs/heads/master 執行，這次是 $REF"
             exit 1
           fi
-          # 重跑不重新核准（admin-call 也會拒絕）；要重試請重新 dispatch。
           if [ "$RUN_ATTEMPT" != "1" ]; then
-            echo "::error::admin workflow 不接受重跑（run_attempt=$RUN_ATTEMPT）；請重新 dispatch。"
+            echo "::error::admin workflow 不接受重跑（run_attempt=$RUN_ATTEMPT）；請重新 dispatch 並重新核准。"
             exit 1
           fi
-          lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
-          if [ -n "${BLOCKED_ACTOR:-}" ]; then
-            b=$(lower "$BLOCKED_ACTOR")
-            for who in "$ACTOR" "$TRIGGERING_ACTOR"; do
-              if [ "$(lower "$who")" = "$b" ]; then
-                echo "::error::這次 run 由 keeper 觸發器帳號 $who 觸發，admin workflow 不接受（不會送出核准請求）。"
-                exit 1
-              fi
-            done
+          norm() { printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | tr '[:upper:]' '[:lower:]'; }
+          owner=$(norm "$OWNER")
+          if [ -z "$owner" ]; then
+            echo "::error::讀不到 repository owner，拒絕執行（fail-closed）"
+            exit 1
           fi
+          for who in "$ACTOR" "$TRIGGERING_ACTOR"; do
+            if [ "$(norm "$who")" != "$owner" ]; then
+              echo "::error::admin workflow 只接受 repo 擁有者 $owner 本人觸發；這次的觸發者是「$who」。"
+              exit 1
+            fi
+          done
           echo "precheck 通過：ref=$REF、run_attempt=$RUN_ATTEMPT、觸發者 $ACTOR／$TRIGGERING_ACTOR"
 
   approve:
@@ -146,35 +160,41 @@ jobs:
     # 名稱改了要同步改下面 gate step 的 ADMIN_ENVIRONMENT。這個 environment 不放 secret。
     environment: admin-approval
     steps:
-      - name: Gate — admin-approval 必須有 required reviewers（fail-closed）
+      # 核准之後的第二道：重複 precheck 的三項檢查，再確認 admin-approval 真的有 required
+      # reviewers（引用不存在的 environment 時 GitHub 會自動建立一個沒有保護規則的同名
+      # environment；那種情況下這個 job 不經核准就會開始，所以在這裡 fail-closed）。
+      - name: Gate — 重複 precheck，且 admin-approval 必須有 required reviewers（fail-closed）
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           ADMIN_ENVIRONMENT: admin-approval
           REF: ${{ github.ref }}
-          # 審查 M4：Worker 改用專用身分（GitHub App 或 org 的 machine account）後，把名稱
-          # 設成 repo variable KEEPER_TRIGGER_ACTOR；它觸發（或重跑）的 admin run 一律拒絕。
-          # 未設定時不擋（見 ops/keeper-trigger/README.md「觸發者身分」）。
-          # precheck 已經在核准之前檢查過一次；這裡是核准之後的第二道。
-          BLOCKED_ACTOR: ${{ vars.KEEPER_TRIGGER_ACTOR }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          OWNER: ${{ github.repository_owner }}
           ACTOR: ${{ github.actor }}
           TRIGGERING_ACTOR: ${{ github.triggering_actor }}
         run: |
           set -euo pipefail
-          if [ -n "${BLOCKED_ACTOR:-}" ]; then
-            b=$(printf '%s' "$BLOCKED_ACTOR" | tr '[:upper:]' '[:lower:]')
-            for who in "$ACTOR" "$TRIGGERING_ACTOR"; do
-              if [ "$(printf '%s' "$who" | tr '[:upper:]' '[:lower:]')" = "$b" ]; then
-                echo "::error::這次 run 由 keeper 觸發器帳號 $who 觸發，admin workflow 不接受。"
-                exit 1
-              fi
-            done
-          fi
-          # 只准從 master 執行：其他分支上的這支 workflow 不受本 PR 之後的審查約束。
           if [ "$REF" != "refs/heads/master" ]; then
             echo "::error::admin workflow 只允許在 refs/heads/master 執行，這次是 $REF"
             exit 1
           fi
+          if [ "$RUN_ATTEMPT" != "1" ]; then
+            echo "::error::admin workflow 不接受重跑（run_attempt=$RUN_ATTEMPT）；請重新 dispatch 並重新核准。"
+            exit 1
+          fi
+          norm() { printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | tr '[:upper:]' '[:lower:]'; }
+          owner=$(norm "$OWNER")
+          if [ -z "$owner" ]; then
+            echo "::error::讀不到 repository owner，拒絕執行（fail-closed）"
+            exit 1
+          fi
+          for who in "$ACTOR" "$TRIGGERING_ACTOR"; do
+            if [ "$(norm "$who")" != "$owner" ]; then
+              echo "::error::admin workflow 只接受 repo 擁有者 $owner 本人觸發；這次的觸發者是「$who」。"
+              exit 1
+            fi
+          done
           if ! BODY=$(curl -fsS \
                 -H "Authorization: Bearer $GH_TOKEN" \
                 -H "Accept: application/vnd.github+json" \
@@ -183,8 +203,6 @@ jobs:
             echo "::error::讀不到 environment「$ADMIN_ENVIRONMENT」的設定，拒絕執行（fail-closed）"
             exit 1
           fi
-          # protection_rules[] 中 type == required_reviewers 的 reviewers 至少一位。
-          # jq 解析失敗或欄位不存在都視為 0。
           N=$(printf '%s' "$BODY" | jq '[.protection_rules[]? | select(.type == "required_reviewers") | (.reviewers // [])[]] | length' 2>/dev/null || echo 0)
           if ! [ "${N:-0}" -gt 0 ] 2>/dev/null; then
             echo "::error::environment「$ADMIN_ENVIRONMENT」沒有設定 required reviewers（可能是被 workflow 自動建立的空 environment）。"
@@ -215,16 +233,20 @@ jobs:
       # 所有使用者輸入一律經 env 傳遞，絕不直接內插進 run: 的 shell 字串。
       # 直接讀 inputs（dispatch 當下凍結的值），不經 approve 的 outputs 轉手。
       # 私鑰不放 job 層級：只有真正送交易的 step 拿得到。
+      # 這個 env 也算進 admin-call 守門的 hash（檢查器連同 job 層級的 env 一起釘住）。
       TARGET:   ${{ inputs.target }}
       FUNC:     ${{ inputs.function }}
       ARGS:     ${{ inputs.args }}
     steps:
-      # 在任何拿得到私鑰的 step 之前。
-      - name: Guard — 只接受 master 上第一次執行
+      # 在任何拿得到私鑰的 step 之前。只重跑 admin-call（re-run failed jobs／re-run job）會
+      # 沿用 approve 已成功的結果、不再經過核准，等於重播一次已核准的呼叫（例如再 mint
+      # 一次），所以 run_attempt 不是 1 就拒絕。
+      - name: Guard — master、第一次執行、觸發者是 repo 擁有者本人
         env:
           REF: ${{ github.ref }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
-          BLOCKED_ACTOR: ${{ vars.KEEPER_TRIGGER_ACTOR }}
+          OWNER: ${{ github.repository_owner }}
+          ACTOR: ${{ github.actor }}
           TRIGGERING_ACTOR: ${{ github.triggering_actor }}
         run: |
           set -euo pipefail
@@ -232,17 +254,22 @@ jobs:
             echo "::error::admin workflow 只允許在 refs/heads/master 執行，這次是 $REF"
             exit 1
           fi
-          # 只重跑 admin-call（re-run failed jobs／re-run job）會沿用 approve 已成功的結果、
-          # 不再經過核准，等於重播一次已核准的呼叫（例如再 mint 一次）。要重試請重新 dispatch。
           if [ "$RUN_ATTEMPT" != "1" ]; then
-            echo "::error::admin-call 不接受重跑（run_attempt=$RUN_ATTEMPT）；請重新 dispatch 並重新核准。"
+            echo "::error::admin workflow 不接受重跑（run_attempt=$RUN_ATTEMPT）；請重新 dispatch 並重新核准。"
             exit 1
           fi
-          lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
-          if [ -n "${BLOCKED_ACTOR:-}" ] && [ "$(lower "$TRIGGERING_ACTOR")" = "$(lower "$BLOCKED_ACTOR")" ]; then
-            echo "::error::這次 run 由 keeper 觸發器帳號 $TRIGGERING_ACTOR 觸發，admin workflow 不接受。"
+          norm() { printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | tr '[:upper:]' '[:lower:]'; }
+          owner=$(norm "$OWNER")
+          if [ -z "$owner" ]; then
+            echo "::error::讀不到 repository owner，拒絕執行（fail-closed）"
             exit 1
           fi
+          for who in "$ACTOR" "$TRIGGERING_ACTOR"; do
+            if [ "$(norm "$who")" != "$owner" ]; then
+              echo "::error::admin workflow 只接受 repo 擁有者 $owner 本人觸發；這次的觸發者是「$who」。"
+              exit 1
+            fi
+          done
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
