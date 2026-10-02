@@ -128,6 +128,8 @@ TENANT=<id> forge script script/DeployTenant.s.sol:DeployTenant \
   讀 `deploy/tenants/`、只允許寫 `contracts/cache/tenants/`。
 
 2026-10-01 在本機 anvil fork（Base Sepolia）的實測：143 筆交易、約 4,490 萬 gas；以當時的 0.0033 gwei 計約 0.00015 ETH。
+2026-10-02 以當日的 Base Sepolia 狀態重跑 fork 測試（`forge test --match-path test/fork/DeployTenantFork.t.sol --fork-url https://sepolia.base.org`，
+只在本機 fork 上執行、不送任何交易）：2 支全過，`VerifyTenant` 的斷言全部 `ok`。
 
 ### 本機 anvil 演練（選用）
 
