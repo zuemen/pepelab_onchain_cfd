@@ -58,6 +58,8 @@ interface IExchangeOracleRead {
 ///
 ///         Env: GUARDIAN (required), KEEPER [0x540a…ef17], WINDOW_SECONDS [3600],
 ///              WINDOW_DEVIATION_BPS [2500], ORACLE_MAX_PRICE_AGE [21600, 3600..2592000],
+///              KEEPER_HEARTBEAT [optional, the keeper's value in seconds],
+///              KEEPER_SCHEDULE_SLACK [10800: worst observed gap of the GitHub cron],
 ///              VAULT_PROXY [0x916D…], OLD_GUARDED_ORACLE [0x8E9e…], EXCHANGE_NEW [optional]
 ///
 ///           forge script script/RedeployGuardedOracle.s.sol:RedeployGuardedOracle \
@@ -80,6 +82,8 @@ contract RedeployGuardedOracle is Script {
         address vault;
         address oldOracle;
         address exchangeNew;   // 0 = not given
+        uint256 keeperHeartbeat;     // 0 = not given (only warned about)
+        uint256 keeperScheduleSlack;
     }
 
     /// @dev Test hook: when set, `run()` reads NO environment variable. Fork
@@ -100,6 +104,8 @@ contract RedeployGuardedOracle is Script {
         c.vault = vm.envOr("VAULT_PROXY", BASE_VAULT);
         c.oldOracle = vm.envOr("OLD_GUARDED_ORACLE", BASE_OLD_ORACLE);
         c.exchangeNew = vm.envOr("EXCHANGE_NEW", address(0));
+        c.keeperHeartbeat = vm.envOr("KEEPER_HEARTBEAT", uint256(0));
+        c.keeperScheduleSlack = vm.envOr("KEEPER_SCHEDULE_SLACK", uint256(3 hours));
     }
 
     function _syms() internal pure returns (string[11] memory s) {
@@ -117,6 +123,14 @@ contract RedeployGuardedOracle is Script {
         require(winBps != 0, "WINDOW_DEVIATION_BPS must be non-zero - the rate limit is the point of this redeploy");
         uint256 maxAge   = c.maxPriceAge;
         require(maxAge >= 1 hours && maxAge <= 30 days, "ORACLE_MAX_PRICE_AGE must be 3600..2592000 (0 would switch the staleness check off)");
+        // A price is refreshed at the latest one heartbeat after the last post,
+        // plus however late the scheduled run fires (68-169 min measured on the
+        // GitHub cron, RUNBOOK_KEEPER). A shorter maxPriceAge goes stale on
+        // schedule even with a healthy keeper.
+        if (c.keeperHeartbeat != 0) {
+            require(maxAge >= c.keeperHeartbeat + c.keeperScheduleSlack,
+                "ORACLE_MAX_PRICE_AGE must be >= KEEPER_HEARTBEAT + KEEPER_SCHEDULE_SLACK - prices would go stale between keeper runs");
+        }
         address vaultAddr = c.vault;
         GuardedOracle old = GuardedOracle(c.oldOracle);
         IVaultOracleRepoint vault = IVaultOracleRepoint(vaultAddr);
@@ -197,6 +211,10 @@ contract RedeployGuardedOracle is Script {
         console.log("NEW_GUARDED_ORACLE =", newOracle);
         console.log("window         :", window, "s, max move bps:", winBps);
         console.log("maxPriceAge    :", maxAge, "s; old oracle had", old.maxPriceAge());
+        if (c.keeperHeartbeat == 0) {
+            console.log("!!! KEEPER_HEARTBEAT not given: check by hand that maxPriceAge >= the keeper's");
+            console.log("!!! KEEPER_HEARTBEAT + cron slack (3h measured), or prices go stale between runs.");
+        }
         console.log("guardian halts : lapse after 72h, 24h cooldown; admin halts have no expiry");
         if (guardian == deployer) {
             console.log("!!! GUARDIAN == broadcaster: it also holds DEFAULT_ADMIN_ROLE, so its freezes and");

@@ -951,6 +951,15 @@ runs per strategy, plus deterministic worst cases):
 
 The admin revoking the role (48h) ends it sooner.
 
+**These bounds hold only while the guardian acts alone.** The cross-scope rule
+reads the record of the last *guardian* pause. Any admin action on the pause --
+an admin `setPaused(true)`, or lifting a pause (including one it took over) --
+leaves no guardian record behind, so right after it the guardian's next freeze
+gets its full length again. While a guardian key is suspected, a timelock
+proposal that lifts an oracle halt (pause or freeze) must revoke the suspected
+holder's `GUARDIAN_ROLE` in the same batch; otherwise the 144h / 192h bounds do
+not apply.
+
 What the bound does **not** give, and what it costs:
 
 - **A lapse is fail-open.** After 72h the halt is gone whether or not the
@@ -978,7 +987,16 @@ What the bound does **not** give, and what it costs:
 - **A freeze placed under a pause, or within a day after a long pause, is
   short** (it ends with the pause, or is shortened by the pause's length) and
   may be too short for a timelock takeover: propose the takeover of the pause
-  as soon as it starts.
+  as soon as it starts. The call still succeeds when the result is very short
+  (down to seconds) and it still uses up that asset's freeze window: the asset
+  cannot be frozen by the guardian again for 24h after it ends. Read
+  `guardianFreezeTerms(id)` before freezing to see how long the freeze would
+  last.
+- **A freeze placed while a guardian pause is in force keeps the pause
+  unavailable until 24h after the pause's original end** (up to 96h after it
+  started), even if both are lifted minutes later: the pause was already
+  pinned when the freeze was placed, and lifting the freeze first does not undo
+  that. Per-asset freezes stay available meanwhile.
 - **A lapse emits no event** (there is no transaction). Watchers read
   `expiresAt` from `AssetFreezeStarted` / `PauseStarted`, or `freezeOf` /
   `pauseState` / `lastGuardianPause`.

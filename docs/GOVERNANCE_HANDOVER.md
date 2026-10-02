@@ -48,6 +48,7 @@
     - 暫停涵蓋所有資產，所以 guardian 的資產凍結也受暫停約束，而且以暫停**實際生效的期間**為準（`lastGuardianPause()` 可讀）：暫停生效中開的凍結最晚和暫停一起到期；暫停結束後 24 小時內開的凍結，縮短暫停實際跑了的時間（暫停跑滿 72 小時、或該資產在暫停開始前 24 小時內才剛結束 guardian 凍結，則要等這 24 小時過去）；其他時候是完整 72 小時。誤報後立刻解除的暫停不會削弱之後的凍結。
     - 同時持有兩個角色的帳號一律視為 admin（它下的凍結不會到期）。guardian 請用獨立的 key。
     - 這把 key 外洩時，單一資產最長連續被擋 144 小時（先凍結 72 小時、到期前再暫停 72 小時），之後有 24 小時完全不受 guardian 影響；兩段 24 小時乾淨期之間的被擋時間（中間不到一天的空檔也算）少於 192 小時。timelock 在 48 小時內撤換角色就會更早結束。
+    - **上述上限只在 guardian 單獨行動時成立。** 跨範圍規則讀的是最後一次 *guardian* 暫停的紀錄；timelock 對暫停的任何動作（自己 `setPaused(true)`、解除暫停，包括解除接手過的暫停）都不會留下 guardian 暫停紀錄，之後 guardian 下一次凍結又是完整長度。所以**懷疑 guardian 金鑰外洩時，解除 oracle 停機（暫停或凍結）的提案必須同一批 `revokeRole(GUARDIAN_ROLE, <被懷疑的持有者>)`**，否則上限不成立。
     - **到期是 fail-open。** 凍結的原因如果還沒排除（可疑價格、keeper 外洩），必須在 72 小時內由 timelock 接手或完成處置。guardian 一凍結就同時送出 timelock 的 `takeOverAssetFreeze` 提案（暫停則 `takeOverPause`），48 小時的延遲才趕得上。
     - 到期只移除凍結，不會更新價格。凍結期間 keeper 無法寫價，所以到期當下的價格和凍結一樣舊，仍要等 keeper 下一次寫價，並受各合約的 `maxPriceAge` 限制。細節與代價見 KNOWN_LIMITATIONS #27。
 - exchange 的 `marketOperator`：由 keeper 擔任，只能在 Active 和 ReduceOnly 之間切換
@@ -150,8 +151,9 @@ HANDOVER_PHASE=2 forge script script/HandoverToTimelock.s.sol:HandoverToTimelock
 | 撤換 guardian `setGuardian` | 只有 timelock | **48 小時** | guardian 被盜期間最多只能暫停 72 小時（有冷卻）或設 ReduceOnly |
 | 暫停 GuardedOracle 或凍結資產（鏈上現行 oracle `0x8E9e…`） | GuardedOracle 的 GUARDIAN_ROLE | 立即生效，**沒有到期時間** | 解除凍結也由 GUARDIAN_ROLE 執行。這把 key 被盜時，要由 timelock 撤換角色（48 小時），期間出金可能卡住（KNOWN_LIMITATIONS #27） |
 | 暫停 GuardedOracle 或凍結資產（新版 oracle，**尚未部署**） | GUARDIAN_ROLE 或 timelock | guardian 立即生效；timelock 48 小時 | guardian 下的 72 小時後自動失效，同一範圍接著有 24 小時冷卻（暫停提前解除時從解除時起算）；暫停結束後一天內開的凍結會縮短暫停實際跑的時間。timelock 下的沒有期限 |
-| 讓 guardian 的 oracle 凍結超過 72 小時（新版） | 只有 timelock | **48 小時** | 提案 `takeOverAssetFreeze(id)`（暫停則 `takeOverPause()`）。guardian 凍結後要立刻提案，否則趕不上 72 小時。等待期間 guardian 若判定誤報而解除，提案執行時會 revert `NothingToTakeOver`，不會變成新的無期限凍結——這是預期結果，提案可以直接取消（`cancel(id)`）或讓它失敗。不要用 `setAssetFrozen(id, true)` 當接手案：guardian 解除後它會新開一個無期限凍結 |
+| 讓 guardian 的 oracle 凍結超過 72 小時（新版） | 只有 timelock | **48 小時** | 提案 `takeOverAssetFreeze(id)`（暫停則 `takeOverPause()`）。guardian 凍結後要立刻提案，否則趕不上 72 小時。等待期間 guardian 若判定誤報而解除，提案執行時會 revert `NothingToTakeOver`，不會變成新的無期限凍結——但**這個提案必須 `cancel(id)`**：執行失敗的提案仍留在 timelock、隨時可以再執行，之後若又有一次無關的 guardian 停機，誤按執行就會把它變成無期限。不要用 `setAssetFrozen(id, true)` 當接手案：guardian 解除後它會新開一個無期限凍結 |
 | 提前解除 guardian 的 oracle 凍結（新版） | guardian 或 timelock | guardian 立即生效；timelock 48 小時 | guardian 只能解除 guardian 下的凍結。timelock 解除後，guardian 在原視窗內仍可再凍結，要一併撤換角色 |
+| 解除 oracle 暫停（新版，含接手過的） | 只有 timelock | **48 小時** | 不會留下 guardian 暫停紀錄，跨範圍規則因此失效；懷疑 guardian 金鑰時，同一批提案撤換 `GUARDIAN_ROLE` |
 | 解除 timelock 下的 oracle 凍結或暫停（新版） | 只有 timelock | **48 小時** | guardian 無權解除 |
 | 確保 oracle 無期限停機（新版，不論 guardian 狀態） | 只有 timelock | **48 小時** | `setAssetFrozen(id, true)`／`setPaused(true)`：沒有停機時新開，有 guardian 停機時轉成無期限。只在確定要無期限停機時用 |
 | 金庫的資產 feed 永久失效（mint 被 `LiabilityUnpriced` 擋住） | V2 金庫的 RISK_ROLE | 立即生效 | 先 `setAssetCap(id,0)`，再 `setUnpricedExemption(id,true)`；該資產仍以最後記錄的價格計入負債（KNOWN_LIMITATIONS #29） |

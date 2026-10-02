@@ -59,7 +59,9 @@ contract RedeployGuardedOracleForkTest is Test {
             maxPriceAge: maxAge,
             vault: VAULT,
             oldOracle: old,
-            exchangeNew: address(0)
+            exchangeNew: address(0),
+            keeperHeartbeat: 900,
+            keeperScheduleSlack: 3 hours
         });
     }
 
@@ -77,9 +79,20 @@ contract RedeployGuardedOracleForkTest is Test {
         vm.expectRevert(bytes("ORACLE_MAX_PRICE_AGE must be 3600..2592000 (0 would switch the staleness check off)"));
         s.run();
 
-        // Prices 2h old: fine for the 6h default, refused for a 1h oracle.
+        // Must cover the keeper's heartbeat plus cron slack: a 6h heartbeat
+        // (the keeper's maximum) does not fit a 6h oracle.
+        RedeployGuardedOracle.Params memory p = _params(address(old), 21_600);
+        p.keeperHeartbeat = 21_600;
+        s.setParams(p);
+        vm.expectRevert(bytes("ORACLE_MAX_PRICE_AGE must be >= KEEPER_HEARTBEAT + KEEPER_SCHEDULE_SLACK - prices would go stale between keeper runs"));
+        s.run();
+
+        // Prices 2h old: fine for the 6h default, refused for a 1h oracle
+        // (heartbeat 0 = not given, so only the copy check applies).
+        p = _params(address(old), 1 hours);
+        p.keeperHeartbeat = 0;
         vm.warp(vm.getBlockTimestamp() + 2 hours);
-        s.setParams(_params(address(old), 1 hours));
+        s.setParams(p);
         vm.expectRevert(bytes("sBTC price is stale by min(vault maxPriceAge, 6h, ORACLE_MAX_PRICE_AGE) - refusing to re-stamp it as fresh"));
         s.run();
     }
@@ -98,7 +111,9 @@ contract RedeployGuardedOracleForkTest is Test {
             maxPriceAge: 21_600,
             vault: VAULT,
             oldOracle: address(old),
-            exchangeNew: address(0)
+            exchangeNew: address(0),
+            keeperHeartbeat: 900,
+            keeperScheduleSlack: 3 hours
         }));
         GuardedOracle n = GuardedOracle(s.run());
 

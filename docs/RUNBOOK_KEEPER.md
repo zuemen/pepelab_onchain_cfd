@@ -119,6 +119,8 @@ GuardedOracle `0x8E9e…f842` 的 `maxPriceAge` 是 **2592000 秒(30 天)**,2026
 
 2026-08-06 02:25 UTC 實測:`getPrice` 對 sBTC / sMSFT / sAAPL 全部 revert。
 
+**通則**：GuardedOracle 的 `maxPriceAge` 必須 ≥ keeper 的 `KEEPER_HEARTBEAT` ＋ 排程最大延遲（上面實測約 169 分鐘，取 3 小時）。調高 `KEEPER_HEARTBEAT` 前先核對 oracle 的 `maxPriceAge`；重部署 oracle 時 `RedeployGuardedOracle` 會用 `KEEPER_HEARTBEAT`／`KEEPER_SCHEDULE_SLACK` 檢查這條關係（見 DEPLOY_130_CUTOVER §10）。
+
 **Step E — 把 maxPriceAge 調成符合真實節奏**(需要 admin key
 `0x2a588AeA3271B159c9188d95E0d10614711f83e3`)
 
