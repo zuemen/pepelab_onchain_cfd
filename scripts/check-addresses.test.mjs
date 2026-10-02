@@ -131,3 +131,277 @@ test("--print 給 workflow 做執行期斷言", () => {
   const bad = spawnSync(process.execPath, [script, "--print", "84532", "NoSuchRole"], { encoding: "utf8" });
   assert.equal(bad.status, 1);
 });
+
+// ── 租戶部署登記（ADR-008）─────────────────────────────────────────────────
+// 另開一組 import：上面的測試只需要 workflow 檢查。
+const { checkDeployment, checkDeployments, tenantChainView, DEDICATED_REQUIRED_KEYS } = await import(
+  "./check-addresses.mjs"
+);
+const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+const { tmpdir } = await import("node:os");
+
+const chainsFull = parseFrontendConfig(
+  readFileSync(join(root, "frontend/src/contracts/addresses.ts"), "utf8"),
+  readFileSync(join(root, "frontend/src/contracts/sessionManager.ts"), "utf8"),
+  readFileSync(join(root, "frontend/src/contracts/x402.ts"), "utf8"),
+  readFileSync(join(root, "frontend/src/contracts/legacyExchanges.ts"), "utf8"),
+);
+const live = chainsFull["84532"].roles;
+// 一組看起來合法、且不在 addresses.ts 裡的測試位址。
+const T = (n) => `0x${n.toString(16).padStart(40, "d")}`;
+const dedicated = (tenant = "bank-a", base = 0) => ({
+  schemaVersion: 1,
+  tenant,
+  kind: "dedicated",
+  chainId: 84532,
+  oracleKind: "guarded",
+  contracts: {
+    ...Object.fromEntries(DEDICATED_REQUIRED_KEYS.map((k, i) => [k, T(base + i + 1)])),
+    SettlementToken: live.MockUSDC,
+    AssetVaultV2: T(base + 30),
+  },
+  tokens: { sAAPL: T(base + 40), sGOLD: T(base + 41) },
+});
+const depProblems = (dep, file = `${dep.tenant}.json`) =>
+  checkDeployment({ file, dep, chains: chainsFull }).problems.join("\n");
+
+test("部署登記：repo 內的兩份（default、demo-bank）都是 platform 且通過", () => {
+  const dir = join(root, "frontend/src/contracts/deployments");
+  const r = checkDeployments({ dir, tenantsDir: join(root, "frontend/src/tenant/tenants"), chains: chainsFull });
+  assert.deepEqual(r.problems, []);
+  assert.equal(r.deployments.default.kind, "platform");
+  assert.equal(r.deployments["demo-bank"].kind, "platform");
+});
+
+test("部署登記：專屬部署只共用結算幣時通過", () => {
+  assert.equal(depProblems(dedicated()), "");
+});
+
+test("部署登記：非 default 租戶不得與平台共用 exchange／vault／收款路由／任何合約", () => {
+  const cases = [
+    ["PerpetualExchange", live.PerpetualExchange],
+    ["InsuranceVault", live.InsuranceVault],
+    ["FeeRouter", live.FeeRouter],
+    ["AssetVaultV2", live.AssetVaultV2],
+    ["AssetVaultV2", live.AssetVault],
+    ["Oracle", live.MockOracle],
+    ["Oracle", live.GuardedOracle],
+    ["AgentSessionManager", live.AgentSessionManager],
+    ["X402FeeRouter", live.X402FeeRouter],
+    ["KYCRegistry", live.KYCRegistry],
+    ["TraderStake", live.TraderStake],
+  ];
+  for (const [key, addr] of cases) {
+    const d = dedicated();
+    d.contracts[key] = addr;
+    assert.match(depProblems(d), new RegExp(`contracts\\.${key}=${addr} 是平台部署（default）的位址`), key);
+    const lower = dedicated();
+    lower.contracts[key] = addr.toLowerCase();
+    assert.match(depProblems(lower), /是平台部署（default）的位址/, `${key}（小寫）`);
+  }
+  const t = dedicated();
+  t.tokens.sAAPL = "0x4f36CBc3321b47327407C0eD116188A21ec4da28"; // 平台 V2 的 sAAPL 代幣
+  assert.match(depProblems(t), /tokens\.sAAPL=.* 是平台部署（default）的位址/);
+  const legacy = dedicated();
+  legacy.contracts.PerpetualExchange = "0xEf75ECA6514cE96B18382E921aC6190a0cF8c072";
+  assert.match(depProblems(legacy), /是平台已退役的舊 exchange/);
+});
+
+test("部署登記：同一租戶各合約不重複、不得是零位址或非位址", () => {
+  const d = dedicated();
+  d.contracts.FeeRouter = d.contracts.InsuranceVault;
+  assert.match(depProblems(d), /contracts\.FeeRouter 與 contracts\.InsuranceVault 是同一個位址/);
+  const t = dedicated();
+  t.tokens.sGOLD = t.contracts.PerpetualExchange.toUpperCase().replace("0X", "0x");
+  assert.match(depProblems(t), /tokens\.sGOLD 與 contracts\.PerpetualExchange 是同一個位址/);
+  const z = dedicated();
+  z.contracts.CopyTracker = "0x0000000000000000000000000000000000000000";
+  assert.match(depProblems(z), /contracts\.CopyTracker 是零位址/);
+  const n = dedicated();
+  n.contracts.CopyTracker = "0x1234";
+  assert.match(depProblems(n), /contracts\.CopyTracker="0x1234" 不是位址/);
+  const m = dedicated();
+  delete m.contracts.PerpetualExchange;
+  assert.match(depProblems(m), /contracts\.PerpetualExchange 未填/);
+});
+
+test("部署登記：格式——未知欄位、鏈、oracle 種類、金庫與代幣、檔名", () => {
+  const d = dedicated();
+  d.contracts.Backdoor = T(90);
+  d.rpcUrl = "x";
+  d.chainId = 8453;
+  d.oracleKind = "chainlink";
+  const out = depProblems(d);
+  assert.match(out, /contracts 未知欄位 Backdoor/);
+  assert.match(out, /未知欄位 rpcUrl/);
+  assert.match(out, /chainId 必須是 84532/);
+  assert.match(out, /oracleKind 必須是 guarded 或 mock/);
+
+  const noVault = dedicated();
+  delete noVault.contracts.AssetVaultV2;
+  assert.match(depProblems(noVault), /有 tokens 但沒有 contracts\.AssetVaultV2/);
+  const noTokens = dedicated();
+  noTokens.tokens = {};
+  assert.match(depProblems(noTokens), /有 contracts\.AssetVaultV2 但 tokens 是空的/);
+  const mock = dedicated();
+  mock.oracleKind = "mock";
+  assert.match(depProblems(mock), /AssetVaultV2 需要 oracleKind=guarded/);
+
+  assert.match(depProblems(dedicated("bank-a"), "bank-b.json"), /tenant「bank-a」與檔名「bank-b」不一致/);
+  assert.match(depProblems(dedicated("default")), /default 租戶就是平台部署/);
+  assert.match(depProblems({ schemaVersion: 1, tenant: "bank-a", kind: "shared" }), /kind 必須是 platform 或 dedicated/);
+});
+
+test("部署登記：沿用平台部署要寫理由，而且不能夾帶位址", () => {
+  assert.equal(depProblems({ schemaVersion: 1, tenant: "default", kind: "platform" }), "");
+  assert.match(depProblems({ schemaVersion: 1, tenant: "bank-a", kind: "platform" }), /必須寫 note 說明理由/);
+  assert.equal(depProblems({ schemaVersion: 1, tenant: "bank-a", kind: "platform", note: "示範" }), "");
+  assert.match(
+    depProblems({ schemaVersion: 1, tenant: "bank-a", kind: "platform", note: "x", contracts: { PerpetualExchange: T(1) } }),
+    /kind=platform 不得有欄位 contracts/,
+  );
+});
+
+test("部署登記：兩個租戶不得共用合約；每個前端租戶都要有登記檔", () => {
+  const dir = mkdtempSync(join(tmpdir(), "deployments-"));
+  const reg = join(dir, "deployments");
+  const tenants = join(dir, "tenants");
+  mkdirSync(reg);
+  mkdirSync(tenants);
+  for (const id of ["default", "bank-a", "bank-b", "bank-c"]) writeFileSync(join(tenants, `${id}.json`), "{}");
+  writeFileSync(join(reg, "default.json"), JSON.stringify({ schemaVersion: 1, tenant: "default", kind: "platform" }));
+  writeFileSync(join(reg, "bank-a.json"), JSON.stringify(dedicated("bank-a")));
+  const b = dedicated("bank-b", 100);
+  b.contracts.InsuranceVault = dedicated("bank-a").contracts.InsuranceVault;
+  writeFileSync(join(reg, "bank-b.json"), JSON.stringify(b));
+  writeFileSync(join(reg, "ghost.json"), JSON.stringify(dedicated("ghost", 200)));
+  const out = checkDeployments({ dir: reg, tenantsDir: tenants, chains: chainsFull }).problems.join("\n");
+  assert.match(out, /bank-b\.json: contracts\.InsuranceVault=.* 與 bank-a\.json 的 contracts\.InsuranceVault 相同——租戶之間不得共用合約/);
+  assert.match(out, /bank-c\.json: 前端租戶「bank-c」沒有部署登記/);
+  assert.match(out, /ghost\.json: 有部署登記，但 frontend\/src\/tenant\/tenants\/ 沒有這個租戶/);
+  // 結算幣是唯一可以共用的位址：a 與 b 都用同一顆，不算問題。
+  assert.doesNotMatch(out, /SettlementToken/);
+
+  const cli = spawnSync(process.execPath, [script, "--deployments", reg, "--tenants", tenants], { encoding: "utf8" });
+  assert.equal(cli.status, 1, cli.stdout + cli.stderr);
+  assert.match(cli.stdout, /租戶之間不得共用合約/);
+});
+
+// ── 租戶自己的 keeper workflow（KEEPER_TENANT）─────────────────────────────
+
+const bankA = dedicated("bank-a");
+const deployments = { default: { schemaVersion: 1, tenant: "default", kind: "platform" }, "bank-a": bankA };
+const tenantWorkflow = ({
+  exchange = bankA.contracts.PerpetualExchange,
+  oracle = bankA.contracts.Oracle,
+  env = "keeper-bank-a",
+  group = "keeper-key-bank-a",
+  tenant = "bank-a",
+  extra = [],
+} = {}) =>
+  [
+    "name: Tenant keeper",
+    "concurrency:",
+    `  group: ${group}`,
+    "  cancel-in-progress: false",
+    "jobs:",
+    "  keep:",
+    "    environment:",
+    `      name: ${env}`,
+    "      deployment: false",
+    "    env:",
+    "      KEEPER_CHAIN: base-sepolia",
+    `      KEEPER_TENANT: ${tenant}`,
+    "      KEEPER_PRIVATE_KEY: ${{ secrets.KEEPER_PRIVATE_KEY }}",
+    `      KEEPER_ORACLE_ADDRESS: "${oracle}"`,
+    `      EXCHANGE: "${exchange}"`,
+    `      KEEPER_RELAY_SOURCE: "${live.AggregatorOracle}"`,
+    `      KEEPER_VAULT_ADDRESS: "${bankA.contracts.AssetVaultV2}"`,
+    ...extra,
+  ].join("\n");
+const wf = (opts) =>
+  checkWorkflow({
+    file: "tenant-bank-a-keeper.yml",
+    text: tenantWorkflow(opts),
+    chains: chainsFull,
+    allowlist: [],
+    deployments,
+  }).problems.join("\n");
+
+test("租戶 keeper：位址以該租戶的部署登記比對；共用上游價格來源可以用平台的", () => {
+  assert.equal(wf(), "");
+  const view = tenantChainView(bankA, chainsFull);
+  assert.equal(view.roles.PerpetualExchange, bankA.contracts.PerpetualExchange);
+  assert.equal(view.roles.MockOracle, bankA.contracts.Oracle, "KEEPER_ORACLE_ADDRESS＝exchange 讀的那一顆");
+  assert.equal(view.roles.GuardedOracle, bankA.contracts.Oracle);
+  assert.equal(view.roles.AggregatorOracle, live.AggregatorOracle);
+});
+
+test("租戶 keeper：指向平台的 exchange／oracle 要擋", () => {
+  assert.match(
+    wf({ exchange: live.PerpetualExchange }),
+    /EXCHANGE=0x827eA0c6.* —— 租戶 bank-a 的部署登記 的 PerpetualExchange 應為/,
+  );
+  assert.match(
+    wf({ oracle: live.MockOracle }),
+    /KEEPER_ORACLE_ADDRESS=.* —— 租戶 bank-a 的部署登記 的 MockOracle 應為/,
+  );
+  const raw = wf({ extra: ["    steps:", `      - run: cast call ${live.PerpetualExchange} "x()"`] });
+  assert.match(raw, /寫死在非 env 位置，租戶 bank-a 的部署登記沒有這個位址/);
+});
+
+test("租戶 keeper：必須用自己的 environment（金鑰）與自己的 concurrency group", () => {
+  assert.match(wf({ env: "keeper" }), /environment 必須是 keeper-bank-a（租戶自己的 keeper 金鑰），目前是 keeper/);
+  assert.match(wf({ group: "keeper-key-base-sepolia" }), /concurrency group 必須含租戶 id/);
+  assert.match(wf({ tenant: "bank-x" }), /KEEPER_TENANT=bank-x —— .*沒有這個租戶的部署登記/);
+});
+
+test("租戶的唯讀 job（沒有取用 keeper 私鑰）不需要 environment，但位址照樣以租戶登記比對", () => {
+  const health = (exchange) =>
+    [
+      "name: Tenant oracle health",
+      "jobs:",
+      "  check:",
+      "    env:",
+      "      KEEPER_CHAIN: base-sepolia",
+      "      KEEPER_TENANT: bank-a",
+      `      KEEPER_ORACLE_ADDRESS: "${bankA.contracts.Oracle}"`,
+      `      KEEPER_EXCHANGE_ADDRESS: "${exchange}"`,
+    ].join("\n");
+  const check = (exchange) =>
+    checkWorkflow({ file: "tenant-bank-a-health.yml", text: health(exchange), chains: chainsFull, allowlist: [], deployments })
+      .problems.join("\n");
+  assert.equal(check(bankA.contracts.PerpetualExchange), "");
+  assert.match(check(live.PerpetualExchange), /租戶 bank-a 的部署登記 的 PerpetualExchange 應為/);
+});
+
+test("平台的 workflow 用了租戶的位址照樣擋（沒有 KEEPER_TENANT 就以平台部署比對）", () => {
+  const text = tenantWorkflow().replace("      KEEPER_TENANT: bank-a\n", "");
+  const out = checkWorkflow({
+    file: "base-sepolia-keeper.yml",
+    text,
+    chains: chainsFull,
+    allowlist: [],
+    deployments,
+  }).problems.join("\n");
+  assert.match(out, /EXCHANGE=.* —— chain 84532 的 PerpetualExchange 應為 0x827eA0c6/);
+  assert.match(out, /KEEPER_ORACLE_ADDRESS=.* —— chain 84532 的 MockOracle 應為 0xeD90c4F3/);
+});
+
+test("沿用平台部署的租戶（kind: platform）的 keeper 就是平台的位址", () => {
+  const deps = {
+    ...deployments,
+    "demo-bank": { schemaVersion: 1, tenant: "demo-bank", kind: "platform", note: "demo" },
+  };
+  const text = tenantWorkflow({
+    tenant: "demo-bank",
+    exchange: live.PerpetualExchange,
+    oracle: live.MockOracle,
+    env: "keeper",
+    group: "keeper-key-base-sepolia",
+  }).replace(bankA.contracts.AssetVaultV2, live.AssetVaultV2);
+  assert.equal(
+    checkWorkflow({ file: "x.yml", text, chains: chainsFull, allowlist: [], deployments: deps }).problems.join("\n"),
+    "",
+  );
+});

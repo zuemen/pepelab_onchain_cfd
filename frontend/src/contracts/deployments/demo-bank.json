@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "tenant": "demo-bank",
+  "kind": "platform",
+  "note": "示範租戶（虛構機構）：只展示品牌與政策層，沒有自己的合約。連的是平台的現行部署，資金、保險金與暫停鍵都與平台共用——真正的機構租戶必須是 dedicated。"
+}

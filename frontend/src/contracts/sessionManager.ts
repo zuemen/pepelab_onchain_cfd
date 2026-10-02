@@ -9,10 +9,13 @@ import { Contract } from 'ethers'
 
 import AgentSessionManagerABI from 'src/contracts/abi/AgentSessionManager.json'
 
+import { tenantDeployment, resolvedDeployment } from './selectedDeployment'
+
 const ZERO = '0x0000000000000000000000000000000000000000'
 
-// chainId → AgentSessionManager 位址（部署後填入）
-const SESSION_MANAGER_ADDRESS: Record<number, string> = {
+// chainId → AgentSessionManager 位址（部署後填入）。這是**平台部署**的表；專屬租戶的
+// AgentSessionManager 在它自己的部署登記裡（src/contracts/deployments/<id>.json）。
+export const SESSION_MANAGER_ADDRESS: Record<number, string> = {
   31337:    ZERO, // Anvil：跑 deploy-anvil.sh 後填入
   11155111: ZERO, // Sepolia：跑 deploy-sepolia.sh 後填入
   // Base Sepolia. 2026-09-29 切到綁定現行 exchange 的實例：
@@ -27,8 +30,24 @@ const SESSION_MANAGER_ADDRESS: Record<number, string> = {
   84532:    '0xdF9C1E53523568709f65Afe3C4AD2E6a6D99d14B',
 }
 
+// 租戶隔離：專屬部署的 AgentSessionManager 不得就是平台的那一顆。其餘位址在
+// selectedDeployment.ts 載入時已比對過 addresses.ts；這張表不在那個純資料模組裡，在這裡補上。
+if (tenantDeployment.kind === 'dedicated') {
+  const own = tenantDeployment.contracts.AgentSessionManager.toLowerCase()
+  if (Object.values(SESSION_MANAGER_ADDRESS).some((a) => a !== ZERO && a.toLowerCase() === own)) {
+    throw new Error(
+      `[tenant] deployment registry for "${tenantDeployment.tenant}" breaks tenant isolation: contracts.AgentSessionManager is the platform's AgentSessionManager`,
+    )
+  }
+}
+
 export function getSessionManagerAddress(chainId: number | null): string {
   if (chainId === null) return ZERO
+  // 專屬部署只有它自己那條鏈上的那一顆（其他鏈＝未部署），絕不退回平台的表：
+  // session 綁定 exchange，租戶的使用者對平台的 manager 簽名就是對別人的 exchange 授權。
+  // 平台部署（default 租戶）回 undefined，照舊查表。
+  const dedicated = resolvedDeployment.dedicatedSessionManager(chainId)
+  if (dedicated !== undefined) return dedicated
   return SESSION_MANAGER_ADDRESS[chainId] ?? ZERO
 }
 

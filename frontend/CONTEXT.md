@@ -239,6 +239,10 @@ _Avoid_: test wallet, fake wallet, guest mode
 One institution the app is built for — its brand, palette, default Locale, the assets it offers, its extra disclosures and its support and legal links. Chosen when the app is built (`VITE_TENANT`, default `default`), exactly like the Locale: one build is one Tenant. The production site is the `default` Tenant and looks and behaves exactly as it did before Tenants existed. See [ADR 0009](./docs/adr/0009-tenant-config-layer.md).
 _Avoid_: customer, client, brand, theme (a Tenant carries a theme; it is not one)
 
+**Deployment Registry (部署登記)**:
+The checked-in record of which contracts a Tenant's build talks to: `src/contracts/deployments/<id>.json`, selected at build time like the Tenant itself. Either `platform` (the Tenant runs on the platform's own deployment, `addresses.ts` — the `default` Tenant, and demo Tenants that say so explicitly) or `dedicated` (the Tenant's own full set of contracts). A Tenant with no registry does not build; it never falls back to the platform contracts. Addresses live here and only here — a Tenant's config file has no address fields. See the addendum to [ADR 0009](./docs/adr/0009-tenant-config-layer.md).
+_Avoid_: tenant addresses in the Tenant config, "default addresses" for a Tenant that has not been registered
+
 **Asset Whitelist**:
 The assets a Tenant lets its users *enter* — open a position, buy, adopt, delegate to an agent session. Never consulted on the way out: closing, redeeming and revoking ignore it, so an asset dropped from the list is still visible and still exitable for whoever holds it. A display-and-submit policy, not a security boundary — the contracts do not know Tenants exist.
 _Avoid_: allowed markets, listing (a listing is a contract-level registration), enabled assets as a synonym for "all tradable assets"

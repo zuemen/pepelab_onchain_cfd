@@ -542,7 +542,47 @@ export function loadContext(root) {
       .filter((f) => f.endsWith(".json"))
       .map((f) => [basename(f, ".json"), JSON.parse(readFileSync(join(feDir, f), "utf8"))]),
   );
-  return { symbols, productionAddrs, frontendTenants };
+  // 前端部署登記（frontend/src/contracts/deployments/<id>.json）：前端實際會連的位址。
+  // 格式與租戶隔離由 check-addresses.mjs 檢查；這裡只拿來與部署紀錄對帳。
+  const depDir = join(root, "frontend/src/contracts/deployments");
+  const frontendDeployments = {};
+  if (existsSync(depDir)) {
+    for (const f of readdirSync(depDir).filter((x) => x.endsWith(".json"))) {
+      try {
+        frontendDeployments[basename(f, ".json")] = JSON.parse(readFileSync(join(depDir, f), "utf8"));
+      } catch {
+        frontendDeployments[basename(f, ".json")] = null; // 壞掉的 JSON 由 check-addresses.mjs 報
+      }
+    }
+  }
+  return { symbols, productionAddrs, frontendTenants, frontendDeployments };
+}
+
+/**
+ * 前端部署登記必須等於部署紀錄（由 --print-frontend 產生的那一份）。唯一允許前端多出來的
+ * 欄位是 contracts.X402FeeRouter——那顆由 DeployX402Router.s.sol 另外部署，不在紀錄裡。
+ */
+export function frontendMismatches(fe, rec) {
+  const want = frontendDeployment(rec);
+  const out = [];
+  const same = (a, b) => typeof a === "string" && typeof b === "string" && a.toLowerCase() === b.toLowerCase();
+  for (const k of ["tenant", "kind", "chainId", "oracleKind"]) {
+    if (fe?.[k] !== want[k]) out.push(`${k}：前端登記是 ${JSON.stringify(fe?.[k])}，部署紀錄是 ${JSON.stringify(want[k])}`);
+  }
+  const feC = fe?.contracts ?? {};
+  for (const [k, v] of Object.entries(want.contracts)) {
+    if (!same(feC[k], v)) out.push(`contracts.${k}：前端登記是 ${feC[k] ?? "（沒有）"}，部署紀錄是 ${v}`);
+  }
+  for (const k of Object.keys(feC)) {
+    if (!(k in want.contracts) && k !== "X402FeeRouter") out.push(`contracts.${k}：部署紀錄裡沒有這個合約`);
+  }
+  const feT = fe?.tokens ?? {};
+  const wantT = want.tokens ?? {};
+  for (const [k, v] of Object.entries(wantT)) {
+    if (!same(feT[k], v)) out.push(`tokens.${k}：前端登記是 ${feT[k] ?? "（沒有）"}，部署紀錄是 ${v}`);
+  }
+  for (const k of Object.keys(feT)) if (!(k in wantT)) out.push(`tokens.${k}：部署紀錄裡沒有這個代幣`);
+  return out;
 }
 
 const readJson = (file) => {
@@ -553,8 +593,8 @@ const readJson = (file) => {
   }
 };
 
-export function run({ root, files, log = console.log }) {
-  const ctx = loadContext(root);
+export function run({ root, files, log = console.log, coverage = false, context = null }) {
+  const ctx = context ?? loadContext(root);
   const configFiles = files.filter((f) => !isRecordFile(f));
   const recordFiles = files.filter(isRecordFile);
 
@@ -575,7 +615,7 @@ export function run({ root, files, log = console.log }) {
     const hit = results.find((r) => resolve(r.file) === resolve(cfgFile));
     const cfg = hit ? (hit.cfg ?? null) : existsSync(cfgFile) ? (readJson(cfgFile).value ?? null) : null;
     // 以設定檔的名義進跨租戶比對：紀錄與「自己的」設定不算兩個租戶。
-    results.push({ file: cfgFile, ...checkDeployedRecord({ file, rec, cfg, ctx }) });
+    results.push({ file: cfgFile, rec, ...checkDeployedRecord({ file, rec, cfg, ctx }) });
   }
 
   // status=deployed 必須有部署紀錄（位址只放在紀錄裡，設定檔沒有位址欄位可填）。
@@ -586,6 +626,45 @@ export function run({ root, files, log = console.log }) {
     if (!existsSync(recFile)) problems.push(`${r.file}: status=deployed 但找不到部署紀錄 ${basename(recFile)}`);
   }
   problems.push(...checkCrossTenant(results));
+
+  // 前端部署登記 ↔ 部署設定／紀錄：前端連的必須就是這個租戶部署出來的那一組。
+  const deployedIds = new Set();
+  for (const r of results) {
+    if (!r.cfg || basename(r.file).startsWith("_")) continue;
+    const id = r.cfg.frontendTenant;
+    if (!(id in ctx.frontendTenants)) continue; // 已經報過「找不到前端租戶設定」
+    const fe = ctx.frontendDeployments[id];
+    const where = `frontend/src/contracts/deployments/${id}.json`;
+    if (!fe) {
+      problems.push(`${r.file}: 前端沒有部署登記 ${where}——這個租戶的 build 會失敗`);
+      continue;
+    }
+    if (r.cfg.status !== "deployed") {
+      if (fe.kind === "dedicated") {
+        problems.push(`${r.file}: status=${r.cfg.status}（尚未部署），但 ${where} 已經是 dedicated——前端會連到沒有部署紀錄的位址`);
+      }
+      continue;
+    }
+    deployedIds.add(id);
+    if (fe.kind !== "dedicated") {
+      problems.push(`${r.file}: status=deployed，但 ${where} 的 kind 是 ${fe.kind}——這個租戶的站仍連到平台的合約（用 --print-frontend 產生登記內容）`);
+      continue;
+    }
+    const recFile = join(dirname(r.file), `${basename(r.file, ".json")}${RECORD_SUFFIX}`);
+    const rec =
+      results.find((x) => x.rec && resolve(x.file) === resolve(r.file))?.rec ??
+      (existsSync(recFile) ? readJson(recFile).value : null);
+    if (!rec) continue; // 「找不到部署紀錄」上面已經報過
+    for (const m of frontendMismatches(fe, rec)) problems.push(`${where}: 與部署紀錄不一致 —— ${m}`);
+  }
+  // 反方向（只在檢查整個目錄時）：前端登記成 dedicated 的租戶，必須真的有已部署的設定。
+  if (coverage) {
+    for (const [id, fe] of Object.entries(ctx.frontendDeployments)) {
+      if (fe?.kind === "dedicated" && !deployedIds.has(id)) {
+        problems.push(`frontend/src/contracts/deployments/${id}.json: kind=dedicated，但 deploy/tenants/ 沒有 status=deployed 的 ${id}.json 與部署紀錄`);
+      }
+    }
+  }
 
   log(
     `檢查 ${configFiles.length} 份租戶部署設定、${recordFiles.length} 份部署紀錄` +
@@ -636,7 +715,7 @@ function main() {
     console.error("::error::沒有任何租戶部署設定可以檢查（deploy/tenants/*.json）");
     process.exit(2);
   }
-  process.exit(run({ root, files }).length ? 1 : 0);
+  process.exit(run({ root, files, coverage: args.length === 0 }).length ? 1 : 0);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

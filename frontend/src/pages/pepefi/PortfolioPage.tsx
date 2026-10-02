@@ -12,7 +12,8 @@ import { useContracts } from 'src/hooks/useContracts';
 import { useLivePrices } from 'src/hooks/useLivePrices';
 
 import { usePepefiWallet } from 'src/layouts/pepefi';
-import { ASSET_IDS, getAddresses, CHAIN_NAMES } from 'src/contracts/addresses';
+import { getAddresses } from 'src/contracts/deployment';
+import { ASSET_IDS, CHAIN_NAMES } from 'src/contracts/addresses';
 import { t, interpolate } from 'src/locales';
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta';
 import { prettyError } from 'src/lib/pepefi/errorMessages';

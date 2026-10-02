@@ -16,7 +16,9 @@ import {
   checkTenantDeploy,
   envPlan,
   frontendDeployment,
+  frontendMismatches,
   loadContext,
+  run,
 } from "./check-tenant-deploy.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -355,15 +357,19 @@ test("部署紀錄：兩個租戶的合約不得相同；紀錄與自己的設�
   assert.match(out, /b\.json: contracts\.PerpetualExchange=.* 與 a\.json 的 contracts\.PerpetualExchange 相同/);
 });
 
-test("CLI：設定＋紀錄放在一起通過；--print-frontend 印出前端部署登記", () => {
+test("CLI：設定＋紀錄一起檢查，前端登記還指向平台就擋；--print-frontend 印出前端部署登記", () => {
   const dir = mkdtempSync(join(tmpdir(), "tenant-deploy-"));
   const cfg = deployedCfg();
   writeFileSync(join(dir, "demo-bank.json"), JSON.stringify(cfg));
   const recFile = join(dir, "demo-bank.deployed.json");
   writeFileSync(recFile, JSON.stringify(record(cfg)));
+  // 設定與紀錄本身沒有問題；唯一的問題是 repo 裡 demo-bank 的前端登記仍是 kind: platform
+  //（示範租戶沒有真的部署）——已部署的租戶不能讓前端繼續連平台的合約。
   const all = spawnSync(process.execPath, [script, join(dir, "demo-bank.json"), recFile], { encoding: "utf8" });
-  assert.equal(all.status, 0, all.stdout + all.stderr);
+  assert.equal(all.status, 1, all.stdout + all.stderr);
   assert.match(all.stdout, /1 份租戶部署設定、1 份部署紀錄/);
+  assert.match(all.stdout, /status=deployed，但 frontend\/src\/contracts\/deployments\/demo-bank\.json 的 kind 是 platform/);
+  assert.match(all.stdout, /\n1 個問題/);
 
   const r = spawnSync(process.execPath, [script, "--print-frontend", recFile], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stdout + r.stderr);
@@ -531,4 +537,74 @@ test("chainId 只接受允許清單（84532、8453）", () => {
   const ok = filled();
   ok.network.chainId = 8453;
   assert.equal(check(ok), "");
+});
+
+// ── 前端部署登記 ↔ 部署紀錄 ────────────────────────────────────────────────
+
+/** 把設定（與選用的紀錄）寫進暫存目錄，以指定的前端登記跑 run()。 */
+const runWith = ({ cfg, rec, frontend, coverage = false }) => {
+  const dir = mkdtempSync(join(tmpdir(), "tenant-deploy-"));
+  const files = [join(dir, "demo-bank.json")];
+  writeFileSync(files[0], JSON.stringify(cfg));
+  if (rec) {
+    files.push(join(dir, "demo-bank.deployed.json"));
+    writeFileSync(files[1], JSON.stringify(rec));
+  }
+  const context = { ...ctx, frontendDeployments: frontend };
+  return run({ root, files, log: () => {}, coverage, context }).join("\n");
+};
+const platformReg = { schemaVersion: 1, tenant: "demo-bank", kind: "platform", note: "demo" };
+
+test("前端登記：已部署的租戶，前端必須是 dedicated 而且與部署紀錄完全相同", () => {
+  const cfg = deployedCfg();
+  const rec = record(cfg);
+  const fe = frontendDeployment(rec);
+  assert.equal(runWith({ cfg, rec, frontend: { "demo-bank": fe } }), "");
+
+  // 仍指向平台：租戶的站把使用者送進共用的 exchange。
+  assert.match(
+    runWith({ cfg, rec, frontend: { "demo-bank": platformReg } }),
+    /status=deployed，但 frontend\/src\/contracts\/deployments\/demo-bank\.json 的 kind 是 platform/,
+  );
+  // 抄錯一個位址。
+  const wrong = structuredClone(fe);
+  wrong.contracts.PerpetualExchange = B(77);
+  assert.match(
+    runWith({ cfg, rec, frontend: { "demo-bank": wrong } }),
+    /與部署紀錄不一致 —— contracts\.PerpetualExchange：前端登記是 0xb+4d，部署紀錄是 /,
+  );
+  // 沒有登記檔。
+  assert.match(runWith({ cfg, rec, frontend: {} }), /前端沒有部署登記 .*demo-bank\.json——這個租戶的 build 會失敗/);
+});
+
+test("前端登記：只有 X402FeeRouter 可以是部署紀錄以外的合約；大小寫不同不算不一致", () => {
+  const rec = record();
+  const fe = frontendDeployment(rec);
+  fe.contracts.X402FeeRouter = B(500);
+  fe.contracts.PerpetualExchange = fe.contracts.PerpetualExchange.toUpperCase().replace("0X", "0x");
+  assert.deepEqual(frontendMismatches(fe, rec), []);
+  fe.contracts.Backdoor = B(501);
+  delete fe.tokens.sAAPL;
+  fe.tokens.sBTC = B(502);
+  fe.oracleKind = "mock";
+  const out = frontendMismatches(fe, rec).join("\n");
+  assert.match(out, /contracts\.Backdoor：部署紀錄裡沒有這個合約/);
+  assert.match(out, /tokens\.sAAPL：前端登記是 （沒有）/);
+  assert.match(out, /tokens\.sBTC：部署紀錄裡沒有這個代幣/);
+  assert.match(out, /oracleKind：前端登記是 "mock"，部署紀錄是 "guarded"/);
+});
+
+test("前端登記：還沒部署的租戶不能先登記成 dedicated；dedicated 一定要有已部署的設定", () => {
+  const fe = frontendDeployment(record());
+  assert.match(
+    runWith({ cfg: filled(), frontend: { "demo-bank": fe } }),
+    /status=ready（尚未部署），但 .*demo-bank\.json 已經是 dedicated/,
+  );
+  assert.equal(runWith({ cfg: filled(), frontend: { "demo-bank": platformReg } }), "");
+  // 整個目錄的檢查：前端有一份 dedicated，deploy/tenants 卻沒有它。
+  const ghost = { ...fe, tenant: "ghost-bank" };
+  assert.match(
+    runWith({ cfg: filled(), frontend: { "demo-bank": platformReg, "ghost-bank": ghost }, coverage: true }),
+    /deployments\/ghost-bank\.json: kind=dedicated，但 deploy\/tenants\/ 沒有 status=deployed 的 ghost-bank\.json/,
+  );
 });

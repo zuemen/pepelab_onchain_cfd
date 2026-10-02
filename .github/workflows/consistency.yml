@@ -41,12 +41,16 @@ jobs:
       - name: Vercel ignored-build-step self-test
         run: node --test scripts/vercel-ignore-build.test.mjs
 
+      # 同一支也檢查租戶部署登記（frontend/src/contracts/deployments/*.json）：位址格式、
+      # 同租戶不重複、專屬租戶除結算幣外不得與平台或其他租戶共用任何合約，以及帶
+      # KEEPER_TENANT 的租戶 keeper workflow 只能指向該租戶自己的合約（ADR-008）。
       - name: Check workflow addresses
         run: node scripts/check-addresses.mjs
 
   tenant-deploy:
     # 租戶部署設定（deploy/tenants/*.json）：不放秘密、角色分離、不與正式站或其他租戶
-    # 共用專屬位址、前端白名單 ⊆ 金庫註冊資產。只讀，不送交易。見 docs/TENANT_DEPLOYMENT.md。
+    # 共用專屬位址、前端白名單 ⊆ 金庫註冊資產；部署紀錄（*.deployed.json）只收廣播過的，
+    # 而且前端部署登記必須與它逐欄位相同。只讀，不送交易。見 docs/TENANT_DEPLOYMENT.md。
     name: tenant deploy configs
     runs-on: ubuntu-latest
     timeout-minutes: 5
