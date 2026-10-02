@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@pepelab/shared": "*",
-    "viem": "^2.56.9"
+    "viem": "^2.57.0"
   },
   "devDependencies": {
     "yaml": "^2.9.1"
