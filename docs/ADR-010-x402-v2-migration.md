@@ -102,7 +102,7 @@ signal-api 的付費端點（`/signals/:trader`、`/oracle/:asset`）目前用 x
    - `GET /` 出現 `x402: { protocol: "both", versions: [2,1], network: "eip155:84532" }`；
    - 未付款打 `/oracle/sBTC`：本文與以前相同，另有 `PAYMENT-REQUIRED`；
    - **用自己的測試錢包、極小金額**以 v2 client 實付一次（這是唯一需要真錢包的步驟，本次 agent 依規定未做），確認 `PAYMENT-RESPONSE.success`、帳本入列、worker 分潤一次。
-3. 觀察一段時間（建議至少一週）：v1／v2 付款比例、facilitator 429／502 頻率、帳本是否有重複鍵 log、`x402:settlement:unknown` 是否有項目（有就人工對帳：以 payer＋nonce 或 tx hash 查鏈上 USDC 轉帳，確定收到款再補一筆分潤）。
+3. 觀察一段時間（建議至少一週）：v1／v2 付款比例、facilitator 429／502 頻率、帳本是否有重複鍵 log、`x402:settlement:unknown` 是否有項目（有就人工對帳：以 payer＋nonce 或 tx hash 查鏈上 USDC 轉帳，確定收到款後，**先查主結算佇列有沒有同一個 `tx:`／`auth:` 鍵**——買方可能拿同一張授權重試成功，那筆已經在主佇列裡，不可再補；主佇列沒有才補一筆分潤）。
 4. 外部 client（demo-agent、SDK 使用者、前端 `/x402` 文件頁）都能走 v2 後，再改 `X402_PROTOCOL=v2`。v1 client 此後會拿到 v2 的 402 而付不了款——**這是對外的破壞性變更，需要公告**。
 5. 出問題時把 `X402_PROTOCOL` 改回 `v1`（或刪掉）重新部署即可回復，不需要回滾程式。
 
@@ -138,7 +138,7 @@ signal-api 的付費端點（`/signals/:trader`、`/oracle/:asset`）目前用 x
 - **v2 從未對真 facilitator 實付過**：所有付款測試都用本機假 facilitator（會真的驗 EIP-712 簽章，但不上鏈）。依規定本次不付款、不送交易；切換步驟 2 的一次小額實付是上線前必要的驗收。
 - `both` 模式下 v2 的 `/supported` 失敗或 2.5 秒內沒回應時，該次 402 只宣告 v1（v1 client 不受影響，v2 client 會看不到 v2 選項）；失敗後 30 秒內不重試。
 - 沒有請求層冪等：帶同一個 payment-identifier 重送仍會簽一張新授權，兩筆都結算就是兩筆付款（各自分潤）。所以伺服器不宣告 payment-identifier（見 `KNOWN_LIMITATIONS.md` §16b）。
-- settle 結果未知的付款只進 `x402:settlement:unknown`，沒有自動對帳；確定上鏈的要人工補分潤。
+- settle 結果未知的付款只進 `x402:settlement:unknown`，沒有自動對帳；確定上鏈、且主佇列沒有同鍵的才人工補分潤。這個清單目前沒有去重也沒有長度上限（同一張授權在 settle 故障期間每重送一次就多一筆）。
 - 自寫 adapter 依賴 `@x402/core` 的內部流程順序；升級時必須重新對照上游 hono middleware（已精確鎖 `2.28.0`）。
 - `v2` 模式是對外破壞性變更（v1 client 付不了款）。
 

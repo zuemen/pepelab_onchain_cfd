@@ -618,8 +618,12 @@ procedure: [ADR-010](ADR-010-x402-v2-migration.md).
   structured log line (payer, nonce, amount, route, tx hash; no signature), and
   pushes the same record to `x402:settlement:unknown`. Nothing processes that list
   automatically: an operator reconciles it against on-chain USDC transfers and adds
-  the revenue split by hand for payments that did land. If the list write fails the
-  response is still 502 and the failure is logged.
+  the revenue split by hand for payments that did land. Before adding a split,
+  check the main settlement queue for the same `tx:` (or `auth:`) key: a buyer may
+  retry the same authorization after a pending result and succeed, in which case the
+  payment is already queued and must not be split twice. The list has no dedup or
+  length cap yet; one authorization resent during a settle outage adds one entry per
+  attempt. If the list write fails the response is still 502 and the failure is logged.
 - **Facilitator `/supported` outages.** v2 initialization fails closed (502
   `phase: supported` on paid routes) and is not retried for 30 seconds. In `both`
   mode an unpaid request waits at most 2.5 seconds for `/supported` before falling
