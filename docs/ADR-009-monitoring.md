@@ -65,11 +65,13 @@ status: proposed
   - **事件在部署版 bytecode 裡**：前端 ABI 來自 master 原始碼，可能比鏈上那一版新。[`deployed.json`](../ops/monitoring/deployed.json) 是以唯讀 RPC 釘在單一區塊抓下的 runtime bytecode（含 EIP-1967 實作）與 getter 快照；每條 active 事件規則的 topic0 必須出現在對應合約的部署版 bytecode 裡，否則就是「看起來在監控、其實永遠不會響」。部署版不發的事件（InsuranceVault／FeeRouter 的接線、KYC verifier 等）改由**接線狀態規則**輪詢 getter，原事件規則標「部署版不發此事件」。CI 不連網，只讀這份 fixture；合約重新部署或升級後以 `--refresh-deployed` 重抓。
   - **事件涵蓋**：前端 ABI 裡的 admin 類事件（owner、角色、接線、參數）要嘛有規則、要嘛列在附理由的忽略清單。
   - **必要規則與最低嚴重度**：權限、暫停、接線、儲備等必要規則不可被刪、降級或改成 pending。
-  - **參數型別與範圍**：例如 `MAX_BLOCK_RANGE` ≤ 1,000（公開 RPC 的 `eth_getLogs` 上限，超過回 413，檢查點會永久卡死）；等於關掉告警的值（`LAG_ALERT_BLOCKS` > 1,800、`LARGE_WITHDRAWAL_BPS` > 5,000、連續失敗門檻讓持續故障超過約 30 分鐘才告警、`MIN_SEVERITY = SEV-1`）也擋。Worker 執行期對不經 CI 的覆寫值同樣夾住並發 `monitor-self:config`。
+  - **參數型別與範圍**（複審 M-1）：每一個參數的型別、上下限與組合限制只有一個來源 `ops/monitoring/params.mjs`，CI 與 Worker 執行期都 import 它。CI 擋範圍外的 `monitors.json` 預設值與 `wrangler.toml` 覆寫值；Cloudflare dashboard 或 `--var` 設的值不經 CI，Worker 執行期對**每一個**參數照同一張表夾值（格式不對用預設值），照常運作並發不可靜音的 `monitor-self:config`（只列參數名與值，不含秘密）。範圍的原則是「範圍內的任何值都不等於關掉告警」，例如 `MAX_BLOCK_RANGE` ≤ 1,000（公開 RPC 的上限）、`CONFIRMATIONS` ≤ 64、`INITIAL_LOOKBACK_BLOCKS` ≥ 150（狀態遺失時不可以從「現在」開始）、`REMIND_SEC` ≤ 1 天、`MIN_SEVERITY` 不可設 SEV-1。引擎只能透過只認這張表的存取器讀參數；測試掃描原始碼，出現其他環境變數讀取點就紅。通道、心跳、RPC 等設定格式不對時只停用那一項（不讓整輪停擺），全部通道都不可用時 cron 記為失敗。
+  - **全域設定釘 sha256**（複審 L-3）：參數預設值、`network`、`repoBlobBase`、`deployment` 另有一個雜湊；`network.explorer` 與 `repoBlobBase` 的網域有白名單（告警裡的連結）。
   - **規則定義釘 sha256**（複審 M-B）：只鎖嚴重度與狀態時，刪掉一個接線讀取、換掉餘額規則的持有者、拿掉相對門檻都是綠的。現在每條規則的手寫定義（排序鍵後序列化）都有雜湊釘在檢查器裡，改任何內容都要人工審過再更新雜湊。
   - **可靜音的 key 是白名單**（複審 M-A）：`MUTE_KEYS` 只接受 `mutableKeys`（現在只有 `x402-payto:unsafe`），白名單本身也釘在檢查器裡；SEV-1 與 `monitor-self` 在執行期一律不可靜音。
   - **管理函式涵蓋**（複審 L-d）：從部署版 bytecode 的 selector 出發，受監控合約每個像管理操作的函式都要指定涵蓋它的規則或寫明理由；不發事件的 setter 只能由狀態規則涵蓋。
   - **fixture 過期**（複審 L-c）：Worker 每輪讀 UUPS proxy 的實作 slot 與 `deployed.json` 比對；另有每週排程的 `monitoring-fixture.yml` 唯讀重抓比對（不使用 secret、不寫檔）。
+- 通知的送達（複審 M-2）：核心不變量是「SEV-1 一定送得出去，除非通道本身壞了；通道壞了也要有人知道」。同一條規則一輪內的大量事件合併成摘要；送出時 SEV-1 與 monitor-self 優先、其次依發生時間，Cloudflare subrequest 額度先給它們；outbox 滿了先丟最低嚴重度、最舊的，SEV-1 與 monitor-self 不因容量被丟（超過容量合併成摘要）；有丟棄或合併就發不可靜音的 `monitor-self:outbox`。
 - 尚未部署的合約功能（guardian 暫停、資產模式、Timelock…）列為 `pending-deploy`：不帶位址、Worker 不載入，但事件必須真的宣告在 master 的 Solidity 原始碼裡。cutover 後更新 `addresses.ts` 與前端 ABI，改成 `active`，ABI 檢查自動接手。
 - 每條規則對應 [`INCIDENT_RESPONSE.md`](INCIDENT_RESPONSE.md) 的處置段落；嚴重度沿用該文件的 SEV-1～4。
 - 涵蓋鏈：只有正式鏈 Base Sepolia（84532）。Ethereum Sepolia 是 legacy 展示鏈，仍只由 `oracle-health.yml` 看價格新鮮度。
