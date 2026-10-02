@@ -48,6 +48,21 @@ updates:
     groups:
       agent-minor-patch:
         update-types: [minor, patch]
+    # x402-hono 刻意留在 0.5.x（2026-10-02 評估 #222，0.5.3 → 1.2.0）：
+    #   • 預設 X402_PROTOCOL=v1 的 402 回應必須與遷移前逐位元相同
+    #     （signal-api/src/x402DefaultGolden.test.ts）。1.x 只要請求帶 X-Forwarded-Proto
+    #     與 X-Forwarded-Host 就改用它們組 resource（Vercel 會帶），不再走 vercel-entry.ts
+    #     的 https 修正路徑；壞 X-PAYMENT／結算失敗的 402 error 也從 Error 物件（序列化
+    #     成 {}）改成字串；瀏覽器拿到的 paywall HTML 換成新模板。
+    #   • 1.x 自己接住 facilitator /verify 丟出的例外並回 402，app.ts 的
+    #     classifyFacilitatorFailure（503／429 分類）就接不到，facilitator 故障會變成
+    #     「請重新付款」。
+    #   • 1.x 依賴 x402 ^1，與 signal-api 直接使用的 x402 0.5.3 型別不相容（typecheck 紅）。
+    # v1 付款路徑的後續方向是 X402_PROTOCOL=v2（@x402/*，ADR-010），不是升 x402-hono。
+    # minor／patch 仍照常進 agent-minor-patch group。
+    ignore:
+      - dependency-name: "x402-hono"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "chore(agent-deps)"
 
