@@ -71,7 +71,7 @@ export const common = {
       primaryBefore: 'Base Sepolia（',
       primaryAfter: '）',
       after: ' —— 交易、agent session 與 x402 只在那裡。',
-      sepoliaExtra: '　Sepolia 保留的是代幣化資產與 V2 金庫展示。',
+      sepoliaExtra: '　Sepolia 保留的是代幣化資產與金庫的對照展示。',
     },
   },
 

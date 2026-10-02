@@ -1,0 +1,60 @@
+# 測試用反例 fixture：每一處都應該被 check-workflow-guards 擋下。
+name: fixture bad admin
+on:
+  workflow_dispatch:
+# workflow 層級的 concurrency：等核准的 run 會卡住 keeper
+concurrency:
+  group: keeper-key-base-sepolia
+  cancel-in-progress: false
+jobs:
+  precheck:
+    runs-on: ubuntu-latest
+    # 綁了 environment（檢查變成核准之後才執行）、可被略過、失敗被忽略、還拿 secret
+    environment: admin-approval
+    if: github.event_name == 'workflow_dispatch'
+    continue-on-error: true
+    concurrency:
+      group: keeper-key-base-sepolia
+    steps:
+      - name: precheck（沒有 ref／run_attempt 守門，也沒有觸發者檢查）
+        continue-on-error: true
+        env:
+          TOKEN: ${{ secrets.PRECHECK_TOKEN }}
+        run: echo precheck
+  approve:
+    # 沒有 needs: precheck
+    runs-on: ubuntu-latest
+    # 綁錯 environment（沒有 required reviewers 的那個）
+    environment: keeper
+    if: github.actor == 'zuemen'
+    steps:
+      - name: gate
+        continue-on-error: true
+        env:
+          TOKEN: ${{ secrets.ADMIN_TOKEN }}
+        run: echo gate
+  admin-call:
+    # 沒有 needs: approve
+    needs: build
+    if: always()
+    runs-on: ubuntu-latest
+    environment:
+      name: keeper
+      deployment: false
+    steps:
+      - name: guard（只檢查 ref，沒有 run_attempt；exit 1 被註解掉）
+        env:
+          REF: ${{ github.ref }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          if [ "$REF" != "refs/heads/master" ]; then
+            # exit 1
+            echo "wrong ref"
+          fi
+      - env:
+          PK: ${{ secrets.KEEPER_PRIVATE_KEY }}
+        run: echo send
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo build

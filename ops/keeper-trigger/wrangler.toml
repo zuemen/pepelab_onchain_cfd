@@ -18,5 +18,11 @@ GITHUB_REPO = "zuemen/pepelab_onchain_cfd"
 WORKFLOW_FILES = "base-sepolia-keeper.yml,price-keeper.yml"
 WORKFLOW_REF = "master"
 MIN_GAP_SEC = "900"
+# 改用 GitHub App 時取消註解並填入（兩個都是識別碼，不是秘密；步驟見 README「改用 GitHub App」）。
+# 三項（這兩個＋secret GITHUB_APP_PRIVATE_KEY）要一起設定；只設一部分 Worker 會直接失敗。
+# GITHUB_APP_ID = ""               # App ID（數字）或 Client ID
+# GITHUB_APP_INSTALLATION_ID = ""  # 安裝在本 repo 後取得的 installation ID（數字）
 
-# GITHUB_TOKEN 用 `npx wrangler secret put GITHUB_TOKEN` 設定，不要寫在這裡。
+# 憑證一律用 `npx wrangler secret put <名稱>` 設定，不要寫在這裡：
+#   GITHUB_APP_PRIVATE_KEY   GitHub App 的私鑰（.pem 原檔內容）
+#   GITHUB_TOKEN             擁有者本人的 fine-grained PAT（未設定 App 時使用）
