@@ -193,7 +193,8 @@ contract PepeIncentivesTest is Test {
     // Issues #101 / #169: a check-in credits non-transferable achievement
     // points kept in the contract. It no longer transfers PEPE.
 
-    event DailyCheckIn(address indexed user, uint256 day, uint8 streak, uint256 points);
+    event CheckInPointsCredited(address indexed user, uint256 day, uint8 streak, uint256 points);
+    event DailyParamsSet(uint256 base, uint256 streakBonus, uint8 streakCap);
 
     /// @dev The timestamp setUp warps to. A constant, so later warps cannot move
     ///      it (with via_ir a cached `block.timestamp` is re-read at each use).
@@ -244,15 +245,29 @@ contract PepeIncentivesTest is Test {
         assertEq(incentives.achievementPoints(alice), 50e18);
     }
 
+    /// @dev The old build's `DailyCheckIn(address,uint256,uint8,uint256)` meant
+    ///      PEPE transferred. The points build must not emit that topic, so an
+    ///      indexer cannot count points as PEPE.
+    function test_dailyCheckIn_doesNotEmitTheOldPepeEventTopic() public {
+        bytes32 oldTopic = keccak256("DailyCheckIn(address,uint256,uint8,uint256)");
+        vm.recordLogs();
+        vm.prank(alice);
+        incentives.dailyCheckIn();
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        assertEq(logs.length, 1);
+        assertTrue(logs[0].topics[0] != oldTopic);
+        assertEq(logs[0].topics[0], keccak256("CheckInPointsCredited(address,uint256,uint8,uint256)"));
+    }
+
     function test_dailyCheckIn_emitsThePointsCredited() public {
         vm.expectEmit(true, false, false, true, address(incentives));
-        emit DailyCheckIn(alice, DAY0 / 1 days, 1, 50e18);
+        emit CheckInPointsCredited(alice, DAY0 / 1 days, 1, 50e18);
         vm.prank(alice);
         incentives.dailyCheckIn();
 
         vm.warp(DAY0 + 1 days);
         vm.expectEmit(true, false, false, true, address(incentives));
-        emit DailyCheckIn(alice, DAY0 / 1 days + 1, 2, 60e18);
+        emit CheckInPointsCredited(alice, DAY0 / 1 days + 1, 2, 60e18);
         vm.prank(alice);
         incentives.dailyCheckIn();
     }
@@ -358,6 +373,8 @@ contract PepeIncentivesTest is Test {
         vm.expectRevert(PepeIncentives.InvalidDailyParams.selector);
         incentives.setDailyParams(1e18, 1e18, 0);
 
+        vm.expectEmit(false, false, false, true, address(incentives));
+        emit DailyParamsSet(5e18, 1e18, 3);
         incentives.setDailyParams(5e18, 1e18, 3);
         for (uint256 d; d < 5; d++) {
             vm.warp(DAY0 + d * 1 days);
@@ -369,17 +386,58 @@ contract PepeIncentivesTest is Test {
         assertEq(incentives.streak(alice), 3);
     }
 
-    /// @dev A cap of 255 used to overflow `streak + 1` in uint8 on day 256 and
-    ///      revert every check-in after it.
-    function test_dailyCheckIn_maxStreakCapDoesNotOverflow() public {
-        incentives.setDailyParams(1e18, 0, 255);
-        for (uint256 d; d < 260; d++) {
+    /// @dev Review B-F2: the owner sets the amounts, so they are bounded.
+    function test_setDailyParams_bounded() public {
+        uint256 maxBase = incentives.MAX_DAILY_BASE();
+        uint256 maxBonus = incentives.MAX_DAILY_STREAK_BONUS();
+        uint8 maxCap = incentives.MAX_DAILY_STREAK_CAP();
+        assertEq(incentives.MAX_POINTS_PER_CHECK_IN(), maxBase + maxBonus * (uint256(maxCap) - 1));
+
+        vm.expectRevert(PepeIncentives.InvalidDailyParams.selector);
+        incentives.setDailyParams(maxBase + 1, 0, 1);
+        vm.expectRevert(PepeIncentives.InvalidDailyParams.selector);
+        incentives.setDailyParams(0, maxBonus + 1, 1);
+        vm.expectRevert(PepeIncentives.InvalidDailyParams.selector);
+        incentives.setDailyParams(0, 0, maxCap + 1);
+        vm.expectRevert(PepeIncentives.InvalidDailyParams.selector);
+        incentives.setDailyParams(type(uint256).max, 0, 1);
+
+        incentives.setDailyParams(maxBase, maxBonus, maxCap);   // the edge itself is allowed
+    }
+
+    /// @dev At the bounds, a check-in credits at most MAX_POINTS_PER_CHECK_IN
+    ///      and the streak arithmetic (done in uint256) stays put at the cap.
+    function test_dailyCheckIn_atTheBounds() public {
+        incentives.setDailyParams(incentives.MAX_DAILY_BASE(), incentives.MAX_DAILY_STREAK_BONUS(), incentives.MAX_DAILY_STREAK_CAP());
+        uint256 last;
+        for (uint256 d; d < 40; d++) {
             vm.warp(DAY0 + d * 1 days);
+            uint256 before = incentives.achievementPoints(alice);
             vm.prank(alice);
             incentives.dailyCheckIn();
+            last = incentives.achievementPoints(alice) - before;
+            assertLe(last, incentives.MAX_POINTS_PER_CHECK_IN());
         }
-        assertEq(incentives.streak(alice), 255);
-        assertEq(incentives.achievementPoints(alice), 260e18);
+        assertEq(incentives.streak(alice), incentives.MAX_DAILY_STREAK_CAP());
+        assertEq(last, incentives.MAX_POINTS_PER_CHECK_IN());
+    }
+
+    /// @dev Whatever bounded parameters the owner picks, one check-in credits
+    ///      at most MAX_POINTS_PER_CHECK_IN, which keeps
+    ///      `totalAchievementPoints` (uint256) out of overflow reach.
+    function testFuzz_setDailyParams_boundedPointsPerCheckIn(uint256 base, uint256 bonus, uint8 cap) public {
+        base = bound(base, 0, incentives.MAX_DAILY_BASE());
+        bonus = bound(bonus, 0, incentives.MAX_DAILY_STREAK_BONUS());
+        cap = uint8(bound(cap, 1, incentives.MAX_DAILY_STREAK_CAP()));
+        incentives.setDailyParams(base, bonus, cap);
+        for (uint256 d; d < 35; d++) {
+            vm.warp(DAY0 + d * 1 days);
+            uint256 before = incentives.achievementPoints(alice);
+            vm.prank(alice);
+            incentives.dailyCheckIn();
+            assertLe(incentives.achievementPoints(alice) - before, incentives.MAX_POINTS_PER_CHECK_IN());
+        }
+        assertLt(incentives.MAX_POINTS_PER_CHECK_IN(), type(uint256).max / 1e50);
     }
 
     /// @dev Random gaps between check-ins against a plain model of the curve.

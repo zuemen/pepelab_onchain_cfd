@@ -58,6 +58,12 @@ interface IESGRegistry {
 ///         them into anything: anything transferable acquires a price, and
 ///         anything with a price gets farmed.
 ///
+///         The owner cannot credit points directly, but it does set the
+///         per-check-in amounts (`setDailyParams`), bounded by
+///         MAX_DAILY_BASE / MAX_DAILY_STREAK_BONUS / MAX_DAILY_STREAK_CAP and
+///         announced by `DailyParamsSet`. An owner that raises them and checks
+///         in itself gets at most MAX_POINTS_PER_CHECK_IN a day, like anyone.
+///
 ///         Not upgradeable (no proxy; `pepe`, `exchange`, `copyTracker` are
 ///         immutable). A change here reaches a chain only by deploying a new
 ///         instance; state in an old instance (streaks, claimed flags) is not
@@ -89,9 +95,13 @@ contract PepeIncentives is Ownable, Pausable {
     event TradeMined(address indexed trader, uint256 indexed positionId, uint256 reward);
     event TierClaimed(address indexed trader, uint8 tier, uint256 reward);
     event CopyClaimed(address indexed follower, address indexed trader, uint256 reward);
+    /// @notice A check-in credited achievement points. Named apart from the
+    ///         old build's `DailyCheckIn`, whose last field was a PEPE amount
+    ///         actually transferred, so an indexer cannot count these as PEPE.
     /// @param points Achievement points credited by this check-in (18 decimals).
     ///               Not a token amount: nothing is transferred.
-    event DailyCheckIn(address indexed user, uint256 day, uint8 streak, uint256 points);
+    event CheckInPointsCredited(address indexed user, uint256 day, uint8 streak, uint256 points);
+    event DailyParamsSet(uint256 base, uint256 streakBonus, uint8 streakCap);
     event EsgHoldClaimed(address indexed trader, uint256 indexed positionId, uint256 reward);
 
     // ── State ─────────────────────────────────────────────────────────────────
@@ -117,6 +127,17 @@ contract PepeIncentives is Ownable, Pausable {
 
     // Daily check-in. `dailyBase` / `dailyStreakBonus` are amounts of achievement
     // points (18 decimals, the scale they always had), not of PEPE.
+    //
+    // Bounds on `setDailyParams`. One check-in credits at most
+    // MAX_DAILY_BASE + MAX_DAILY_STREAK_BONUS * (MAX_DAILY_STREAK_CAP - 1)
+    // = 30_000e18 (3e22), so `totalAchievementPoints` (uint256, ~1.16e77)
+    // would need ~3.9e54 check-ins to overflow: it cannot be made to revert
+    // check-ins through the parameters.
+    uint256 public constant MAX_DAILY_BASE         = 1_000e18;
+    uint256 public constant MAX_DAILY_STREAK_BONUS = 1_000e18;
+    uint8   public constant MAX_DAILY_STREAK_CAP   = 30;
+    uint256 public constant MAX_POINTS_PER_CHECK_IN =
+        MAX_DAILY_BASE + MAX_DAILY_STREAK_BONUS * (uint256(MAX_DAILY_STREAK_CAP) - 1);
     uint256 public dailyBase        = 50e18;
     uint256 public dailyStreakBonus = 10e18;
     uint8   public dailyStreakCap   = 7;
@@ -134,8 +155,9 @@ contract PepeIncentives is Ownable, Pausable {
     //
     /// @notice Non-transferable achievement points credited by `dailyCheckIn`,
     ///         18 decimals. Only ever increases, and only for the account that
-    ///         checked in. There is deliberately no transfer, approve, spend,
-    ///         burn or owner-mint path.
+    ///         checked in. There is deliberately no transfer, approve, spend
+    ///         or burn path, and no direct owner credit; the owner only tunes
+    ///         the bounded per-check-in amounts (`setDailyParams`).
     mapping(address => uint256) public achievementPoints;
     /// @notice Sum of `achievementPoints` over all accounts.
     uint256 public totalAchievementPoints;
@@ -264,7 +286,7 @@ contract PepeIncentives is Ownable, Pausable {
         achievementPoints[msg.sender] += points;
         totalAchievementPoints        += points;
 
-        emit DailyCheckIn(msg.sender, today, currentStreak, points);
+        emit CheckInPointsCredited(msg.sender, today, currentStreak, points);
     }
 
     // ── ESG Hold Reward ───────────────────────────────────────────────────────
@@ -308,11 +330,18 @@ contract PepeIncentives is Ownable, Pausable {
 
     /// @param cap Longest streak that still adds a bonus; at least 1 (a cap of
     ///            0 would make the second consecutive check-in revert).
+    /// @notice Per-check-in achievement points: `base` + `bonus` per extra
+    ///         consecutive day, up to a `cap`-day streak. Bounded (see
+    ///         MAX_DAILY_*), so the owner cannot hand itself an arbitrary
+    ///         amount by checking in, nor overflow `totalAchievementPoints`.
     function setDailyParams(uint256 base, uint256 bonus, uint8 cap) external onlyOwner {
-        if (cap == 0) revert InvalidDailyParams();
+        if (cap == 0 || cap > MAX_DAILY_STREAK_CAP || base > MAX_DAILY_BASE || bonus > MAX_DAILY_STREAK_BONUS) {
+            revert InvalidDailyParams();
+        }
         dailyBase        = base;
         dailyStreakBonus = bonus;
         dailyStreakCap   = cap;
+        emit DailyParamsSet(base, bonus, cap);
     }
 
     function setCopyReward(uint256 amount) external onlyOwner {
