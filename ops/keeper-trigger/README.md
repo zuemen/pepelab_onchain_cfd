@@ -1,5 +1,17 @@
 # keeper 外部觸發器（Cloudflare Worker）
 
+## 現況（2026-10-02；合併與部署前必讀）
+
+**本文件描述的保護，在「部署前必做」第 1–4 步完成之前都不成立。** 2026-10-01 以 `gh api` 唯讀查詢的結果，四步一項都還沒做：
+
+- repo 層級仍有 `KEEPER_PRIVATE_KEY` 與 `FEE_SETTLEMENT_PRIVATE_KEY`。
+- `keeper`、`settlement` 兩個 environment 已經存在，但都是 workflow 引用時自動建立的空 environment：沒有 secret、沒有保護規則、沒有 branch policy。`admin-approval` 不存在。
+- 遠端約 95 個分支上的舊版 `admin-base-sepolia.yml` 不綁 environment、直接讀 repo 層級的 `KEEPER_PRIVATE_KEY`，其中 3 個（`fix/demo-polish`、`chore/health-fixes`、`fix/price-feed-liveness`）還把 inputs 直接內插進 shell。
+
+也就是說，現在任何有 Actions: write 的憑證只要 dispatch `ref=<舊分支>`，就能以 MockOracle owner 的身分執行任意指令；本 PR 的 `precheck`、人工核准、靜態檢查都擋不到這條路（它們只存在於 master 上的 workflow 檔）。
+
+建議順序：第 1–3 步 → 合併本 PR → **合併後立刻做第 4 步（刪掉 repo 層級的兩把私鑰）** → 才部署 Worker（第 6、7 步或「改用 GitHub App」）。第 4 步做完之前不要讓 Worker 持有任何 Actions: write 憑證。
+
 ## 為什麼要有它
 
 `.github/workflows/base-sepolia-keeper.yml` 名目上每 15 分鐘跑一次，但 GitHub 排程是 best-effort：實測間隔 68–169 分鐘，2026-09-30 甚至 4.5 小時沒有執行。交易所的 `maxPriceAge` 是 6 小時，所以只要一次寫價失敗再遇上排程延遲，資產就會過期、無法交易（當天 sBTC 就是這樣）。
@@ -33,7 +45,9 @@ Worker 本身**不持有任何鏈上金鑰**，對任何 HTTP 請求都回 404�
 > - 可行的專用身分有兩種：
 >   1. **GitHub App**：只給 Actions: Read and write，只安裝在本 repo。觸發者會顯示為 `<app-slug>[bot]`。Worker 已支援，設定步驟見下方「改用 GitHub App」。
 >   2. **把 repo 移到 organization**：machine account 以 org 成員身分建 fine-grained PAT。
-> - 改用專用身分後，把它的名稱（例如 `pepelab-keeper[bot]`）設成 repo variable `KEEPER_TRIGGER_ACTOR`（Settings → Secrets and variables → Actions → Variables）。admin workflow 的 `precheck` job 會在人工核准**之前**拒絕 `github.actor` 或 `github.triggering_actor` 等於它的 run，這種 run 不會進入等待核准的清單（見「改用 GitHub App」第 8 步的說明）。**沒設定這個 variable 時不擋**，現在用你本人的 PAT 時也不要設，否則你自己的 admin run 也會被拒絕。
+> - admin workflow 採**白名單**：`precheck`、`approve` 的 gate、`admin-call` 的第一個 step 都要求 `github.actor` 與 `github.triggering_actor` 兩者都等於 `github.repository_owner`（本 repo 是 `zuemen`；比對不分大小寫、去掉前後空白），否則失敗。這項檢查**不需要任何設定**，讀不到擁有者時也是失敗（fail-closed）。改用專用身分後，Worker（或偷到 Worker 憑證的人）dispatch 的 admin run 觸發者是 `<app-slug>[bot]`，在 `precheck`（人工核准**之前**）就失敗，不會進入等待核准的清單（見「改用 GitHub App」第 8 步）。
+>   - 先前的做法是黑名單（repo variable `KEEPER_TRIGGER_ACTOR`），沒設定、設在 environment 層級、多一個空白或少寫 `[bot]` 時都會放行（PR #217 審查 M1），已移除。這個 variable 不必再設，設了也不會被讀取。
+>   - **白名單擋不到的**：用你本人的 PAT dispatch 的 run，觸發者就是你本人，和你親手 dispatch 的分不出來。這種情況仍只靠人工核准時逐字核對 inputs。
 > - 專用身分不是 required reviewer，就算誤給了 Deployments 權限也不能核准。
 >
 > 在那之前仍用你本人的 PAT：你本人就是 required reviewer，所以**絕對不要給這個 token Deployments 權限**。一旦給了，外洩的 token 就能核准自己觸發的 admin 呼叫。核准時一律照第 5 步的指引，只核准你自己剛剛手動 dispatch 的 run。
@@ -44,7 +58,7 @@ Worker 本身**不持有任何鏈上金鑰**，對任何 HTTP 請求都回 404�
 
 | workflow | 持有的 secret | inputs | 最壞後果（token 外洩時） |
 |---|---|---|---|
-| `admin-base-sepolia.yml` | `KEEPER_PRIVATE_KEY`（MockOracle owner） | target／function（白名單含 `transferOwnership`、`updatePrice`、`addAsset`、`mint`）／args | **修正前**：攻擊者可指定 inputs，以 owner 身分轉移 MockOracle 所有權或改價格。**修正後**：拆成三個 job。`precheck` 不綁 environment、不碰任何 secret、沒有 token 權限，在核准之前檢查 ref 是 master、是第一次執行、觸發者不是 `KEEPER_TRIGGER_ACTOR`；不符就失敗，後面兩個 job 被略過，**不會產生待核准的請求**。`approve`（`needs: precheck`）綁 `environment: admin-approval`（不放 secret），要等 required reviewer 在 GitHub 上核准才開始，再由 gate 確認 environment 真的有 reviewers，並重複一次 ref 與觸發者檢查。`admin-call`（`needs: approve`）才從 `keeper` environment 取私鑰、才進與 keeper 共用的 concurrency group，而且拒絕 `run_attempt != 1`：只重跑 admin-call 會沿用已核准的 approve，等於重播已核准的呼叫。等核准期間不占 group，所以待核准的 admin run（包括攻擊者 dispatch 的）不會卡住 keeper 排程（審查 H2）。**殘留風險**：舊分支上的舊版 admin workflow 沒有綁 environment。只要 repo 層級還有 `KEEPER_PRIVATE_KEY`，dispatch 到舊分支，或重跑修正前的舊 run，都繞得過審核。所以必須完成下面第 4 步，把 repo 層級的 secret 刪掉 |
+| `admin-base-sepolia.yml` | `KEEPER_PRIVATE_KEY`（MockOracle owner） | target／function（白名單含 `transferOwnership`、`updatePrice`、`addAsset`、`mint`）／args | **修正前**：攻擊者可指定 inputs，以 owner 身分轉移 MockOracle 所有權或改價格。**修正後**：拆成三個 job。`precheck` 不綁 environment、不碰任何 secret、沒有 token 權限，在核准之前檢查 ref 是 master、是第一次執行、觸發者（`github.actor` 與 `github.triggering_actor`）是 repo 擁有者本人（`github.repository_owner`）；不符就失敗，後面兩個 job 被略過，**不會產生待核准的請求**。`approve`（`needs: precheck`）綁 `environment: admin-approval`（不放 secret），要等 required reviewer 在 GitHub 上核准才開始，再由 gate 重複 precheck 的三項檢查，並確認 environment 真的有 reviewers。`admin-call`（`needs: approve`）才從 `keeper` environment 取私鑰、才進與 keeper 共用的 concurrency group，第一個 step 再做一次同樣的三項檢查；其中拒絕 `run_attempt != 1` 的理由是：只重跑 admin-call 會沿用已核准的 approve，等於重播已核准的呼叫。等核准期間不占 group，所以待核准的 admin run（包括攻擊者 dispatch 的）不會卡住 keeper 排程（審查 H2）。**殘留風險**：舊分支上的舊版 admin workflow 沒有綁 environment。只要 repo 層級還有 `KEEPER_PRIVATE_KEY`，dispatch 到舊分支，或重跑修正前的舊 run，都繞得過審核。所以必須完成下面第 4 步，把 repo 層級的 secret 刪掉 |
 | `base-sepolia-keeper.yml` | `KEEPER_PRIVATE_KEY`、RPC | 無 | 多跑幾次：不需要寫價時不送交易，與 admin 共用 concurrency group 而會排隊。指定舊分支時會跑舊版 keeper 程式，最壞是寫價失敗或多花測試網 gas。取消或停用它會讓價格過期 |
 | `price-keeper.yml`（Sepolia） | `KEEPER_PRIVATE_KEY`、RPC | 無 | 同上（Sepolia 鏈） |
 | `x402-settlement-worker.yml` | `FEE_SETTLEMENT_PRIVATE_KEY`、Upstash token | 無 | 佇列提早結算，本身無害。指定舊分支時會以舊版結算程式使用這把金鑰，其中包括還沒有 P0 收款守門的版本 |
@@ -53,7 +67,7 @@ Worker 本身**不持有任何鏈上金鑰**，對任何 HTTP 請求都回 404�
 
 **總結最壞情況**：
 1. 取消 keeper run 或停用 keeper → 價格超過 `maxPriceAge` 後資產停止交易。平常由 `oracle-health`（每 3 小時）開 issue 告警。但同一個 token 也能停用 `oracle-health`，所以**目前沒有不依賴 GitHub Actions 的告警**。若要補，需要一個不共用這個 token 的監控，例如另一個只讀鏈上 `updatedAt` 的 Cloudflare cron。
-2. 以 owner 身分送 admin 交易 → 由 `admin-approval` 的人工審核擋下；下面第 1–4 步做完之前，這一條**沒有真正關上**。審核時**只核准你自己剛剛手動 dispatch、而且 inputs（target／function／args）逐字核對過的 run；不認得的一律 Reject**。還在用你本人的 PAT 時，攻擊者可以不斷 dispatch 待核准的 run 來洗版（它們不會占用 keeper 的 concurrency group）。改用 GitHub App 並設定 `KEEPER_TRIGGER_ACTOR` 之後，用 Worker 憑證 dispatch 的 admin run 在 `precheck` 就失敗，不會出現在等待核准的清單裡，也不會寄出核准通知。
+2. 以 owner 身分送 admin 交易 → 由 `admin-approval` 的人工審核擋下；下面第 1–4 步做完之前，這一條**沒有真正關上**。審核時**只核准你自己剛剛手動 dispatch、而且 inputs（target／function／args）逐字核對過的 run；不認得的一律 Reject**。還在用你本人的 PAT 時，攻擊者可以不斷 dispatch 待核准的 run 來洗版（它們不會占用 keeper 的 concurrency group）。改用 GitHub App 之後（觸發者是 `<app-slug>[bot]`，不是擁有者本人），用 Worker 憑證 dispatch 的 admin run 在 `precheck` 就失敗，不會出現在等待核准的清單裡，也不會寄出核准通知。
 3. 在舊分支上以私鑰執行舊程式 → 第 4 步刪掉 repo 層級的私鑰 secret 之後，舊版 workflow 拿不到私鑰（`Fail fast when secrets are missing` 會讓它失敗）。
 
 發現外洩時，到 <https://github.com/settings/personal-access-tokens> 撤銷 token（用 GitHub App 時改為更換私鑰或停用安裝，見「App 私鑰外洩時的差別」）。接著確認 `gh workflow list --all` 裡的 workflow 都是 active，並檢查 Actions 頁有沒有預期外的 run，或等待核准的 admin run（有的話一律 Reject）。
@@ -71,12 +85,29 @@ Worker 的 token **沒有** Deployments 與 Administration 權限，下列設定
    - **Deployment branches and tags**：選 Selected branches and tags，加入 `master`。
    - **不要放任何 secret**（審查 L5）：這個 environment 只負責人工核准。admin 的私鑰由 `admin-call` job 從 `keeper` environment 取；核准前沒有任何 job 拿得到私鑰。
    - Save protection rules。
-2. **建立 `keeper`**（給 `base-sepolia-keeper.yml`、`price-keeper.yml` 與 admin workflow 的 `admin-call` job）：
-   - Deployment branches 選 `master`；Environment secrets 新增 `KEEPER_PRIVATE_KEY`（值與現有 repo secret 相同）。
+2. **設定既有的 `keeper` environment**（給 `base-sepolia-keeper.yml`、`price-keeper.yml` 與 admin workflow 的 `admin-call` job）。它已經被 workflow 自動建立（空的），不要另建同名的：repo → Settings → Environments → 點 `keeper`。
+   - Environment secrets 新增 `KEEPER_PRIVATE_KEY`（值與現有 repo secret 相同）。
+   - Deployment branches and tags 選 Selected branches and tags，加入 `master`。**這一項在 `deployment: false` 下是否生效尚待實測**，見下方「branch policy 待實測」；在證實之前不要把它當成保護。
    - **不要設 required reviewers、wait timer 或任何 custom deployment protection rule**。這些 job 用 `deployment: false`：reviewers 與 wait timer 仍會生效，排程會卡在等核准或被拖慢；custom protection rule 與 `deployment: false` 不相容，會讓 job 失敗（[文件](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/control-deployments#using-environments-without-deployments)）。
-3. **建立 `settlement`**（給 `x402-settlement-worker.yml`）：Deployment branches 選 `master`；Environment secrets 新增 `FEE_SETTLEMENT_PRIVATE_KEY`。同樣不要設 reviewers、wait timer 或 custom protection rule。
-4. **PR 合併後刪掉 repo 層級的私鑰**（這一步才真正關上舊分支與舊 run 的繞道）：
-   1. 先等 `Base Sepolia Keeper` 與 `x402 Settlement Worker` 在 master 上各有一次綠燈。這時 environment secret 已經生效，因為 environment 層級優先於 repo 層級（[文件](https://docs.github.com/en/actions/reference/security/secrets)）。
+3. **設定既有的 `settlement` environment**（給 `x402-settlement-worker.yml`；同樣已被自動建立）：Environment secrets 新增 `FEE_SETTLEMENT_PRIVATE_KEY`；Deployment branches 選 `master`（同樣待實測）。不要設 reviewers、wait timer 或 custom protection rule。
+
+   設定完用 `gh` 確認（唯讀）：
+
+   ```bash
+   for e in admin-approval keeper settlement; do
+     echo "== $e"
+     gh api "repos/zuemen/pepelab_onchain_cfd/environments/$e" \
+       --jq '{protection_rules: [.protection_rules[] | {type, reviewers: [.reviewers[]?.reviewer.login]}], deployment_branch_policy}'
+     gh api "repos/zuemen/pepelab_onchain_cfd/environments/$e/deployment-branch-policies" --jq '[.branch_policies[].name]'
+     gh api "repos/zuemen/pepelab_onchain_cfd/environments/$e/secrets" --jq '[.secrets[].name]'
+   done
+   ```
+
+   預期：`admin-approval` 有 `required_reviewers`（`zuemen`）、secrets 是 `[]`；`keeper` 的 secrets 是 `["KEEPER_PRIVATE_KEY"]`、`settlement` 是 `["FEE_SETTLEMENT_PRIVATE_KEY"]`；三者的 `deployment_branch_policy` 都是 `{"protected_branches": false, "custom_branch_policies": true}`、branch policies 是 `["master"]`。
+
+   > **branch policy 待實測**：GitHub 文件〈Using environments without deployments〉只寫了 `deployment: false` 時 required reviewers 與 wait timer 仍然適用、custom protection rule 不相容，**沒有寫 deployment branch policy 是否仍然適用**。在本 repo 實測之前，請假設「其他分支上綁了 `keeper`／`settlement` 的 workflow 仍拿得到 environment secret」。實測方法（需要你本人決定是否執行，會用私鑰跑一次 keeper）：從 master 開一個只改註解的分支，dispatch 該分支上的 `price-keeper.yml`；branch policy 有效時，job 在開始前就以 “is not allowed to deploy to keeper due to environment protection rules” 失敗。真正擋住舊分支的仍是第 4 步。
+4. **PR 合併後立刻刪掉 repo 層級的私鑰**（這一步才真正關上舊分支與舊 run 的繞道）：
+   1. 先等 `Base Sepolia Keeper`、`Oracle Price Keeper (Sepolia)` 與 `x402 Settlement Worker` 在 master 上各有一次綠燈。**綠燈不能證明用的是 environment 裡的那一份**：environment 沒放 secret 時，`secrets.X` 會退回 repo 層級的同名 secret，照樣是綠的。所以同時用第 3 步後面的 `gh api …/environments/<名稱>/secrets` 確認 `keeper` 有 `KEEPER_PRIVATE_KEY`、`settlement` 有 `FEE_SETTLEMENT_PRIVATE_KEY`（environment 層級優先於 repo 層級，[文件](https://docs.github.com/en/actions/reference/security/secrets)）。真正的證明是第 4 項：刪掉 repo 層級之後仍然是綠的。
    2. 刪除前，在 master 上確認只剩已綁 environment 的 workflow 依賴這兩個 secret：
 
       ```bash
@@ -88,14 +119,30 @@ Worker 的 token **沒有** Deployments 與 Administration 權限，下列設定
       多出來的 workflow（例如之後新增的）要先綁 environment，否則刪掉 repo secret 後它會失敗。
    3. Settings → Secrets and variables → Actions → Repository secrets：刪除 `KEEPER_PRIVATE_KEY` 與 `FEE_SETTLEMENT_PRIVATE_KEY`。
    4. 下一次 keeper、price-keeper、settlement 排程仍應是綠的。若出現「缺少 … PRIVATE_KEY」，代表對應的 environment secret 沒設好，把它補進 environment（不要加回 repo 層級）。
+   5. 確認 repo 層級已經沒有私鑰：`gh api repos/zuemen/pepelab_onchain_cfd/actions/secrets --jq '[.secrets[].name]'` 不應再出現這兩個名稱。
+   6. （選做）列出仍含舊版 admin workflow 的遠端分支。以下指令只讀，不會刪任何東西；要不要刪分支由你決定。刪分支不能代替這一步：30 天內的舊 run 仍可以重跑，重跑沿用舊的 commit。
+
+      ```bash
+      git fetch origin --prune
+      git for-each-ref --format='%(refname:short)' refs/remotes/origin | grep -v '^origin$' | while read -r b; do
+        f=$(git show "$b:.github/workflows/admin-base-sepolia.yml" 2>/dev/null) || continue
+        if printf '%s\n' "$f" | grep -q 'github.repository_owner'; then continue          # 白名單版（本 PR 之後）
+        elif printf '%s\n' "$f" | grep -q 'needs: precheck'; then echo "precheck 黑名單版：$b"
+        elif printf '%s\n' "$f" | grep -q 'environment:'; then echo "approve 版（無 precheck）：$b"
+        else echo "不綁 environment（直接讀 repo 層級私鑰）：$b"
+        fi
+      done
+      ```
+
+      在 Windows 的 Git Bash 執行前先 `export MSYS_NO_PATHCONV=1`，否則 `<分支>:<路徑>` 會被改寫成 Windows 路徑而全部讀不到。2026-10-02 以本機的遠端 ref 跑的結果：93 個分支是「不綁 environment」版、15 個是「approve 版」（含合併前的 master）、1 個是本 PR 修正前的 precheck 黑名單版。第 4 步完成後，「不綁 environment」版拿不到私鑰（`Fail fast when secrets are missing` 會讓它失敗）；「approve 版」仍要經過 `admin-approval` 的人工核准，但沒有擁有者白名單，核准時照第 5 步逐字核對。
 5. **確認 admin gate**：`gh api repos/zuemen/pepelab_onchain_cfd/environments/admin-approval --jq '[.protection_rules[] | select(.type=="required_reviewers") | .reviewers[].reviewer.login]'` 應該回 `["zuemen"]`。之後需要用 admin workflow 時：
    - 你自己 dispatch 後，到該 run 核對頁面上的 inputs（target／function／args）與觸發者，確認是你剛剛送出的那一筆，再按 **Review deployments → Approve and deploy**。
    - **不認得、不是你剛剛 dispatch 的、或 inputs 對不上的一律 Reject**。
    - 失敗要重試時重新 dispatch，不要按 Re-run：`precheck` 與 `admin-call` 都會拒絕重跑（`run_attempt != 1`）。
    - `admin-call` 排隊等 keeper 時，若之後又排進一個 keeper run，它可能被取消（concurrency 預設只保留一個 pending），重新 dispatch 即可。
-6. **建立 Worker 用的 token**（用你本人的 fine-grained PAT；`KEEPER_TRIGGER_ACTOR` 先不要設。要讓 Worker 有自己的身分，改做下方「改用 GitHub App」，這一步與第 7 步的 `GITHUB_TOKEN` 就可以跳過）：<https://github.com/settings/personal-access-tokens/new>
+6. **建立 Worker 用的 token**（用你本人的 fine-grained PAT。要讓 Worker 有自己的身分，改做下方「改用 GitHub App」，這一步與第 7 步的 `GITHUB_TOKEN` 就可以跳過；建議直接用 App，因為用 PAT 時 admin workflow 的擁有者白名單分不出 Worker 與你本人）：<https://github.com/settings/personal-access-tokens/new>
    - Resource owner：`zuemen`；Repository access：Only select repositories → `pepelab_onchain_cfd`。
-   - Repository permissions：**只開 Actions: Read and write**（Metadata: Read 會自動帶上）。**不要**開 Deployments、Administration、Contents、Secrets、Environments、Workflows。
+   - Repository permissions：**只開 Actions: Read and write**（Metadata: Read 會自動帶上）。**不要**開 Deployments、Administration、Contents、Secrets、**Variables**、Environments、Workflows。Variables: write 可以改 repo variable，而 `x402-settlement-worker.yml` 用 `vars.PAY_TO`、`vars.X402_FEE_ROUTER`、`vars.SIGNAL_API_URL` 決定結算的收款與路由，改了等於改它送交易的對象。
    - Expiration：自訂日期，**不超過 90 天**。
 7. **部署 Worker**：
 
@@ -106,9 +153,11 @@ Worker 的 token **沒有** Deployments 與 Administration 權限，下列設定
    npx wrangler deploy
    ```
 
+   `wrangler secret put` **會立刻建立並部署一個新版本**（沿用目前已部署的程式碼，只換 secret）；只想上傳 secret、不想部署時用 `wrangler versions secret put`（[Cloudflare 文件〈Secrets〉](https://developers.cloudflare.com/workers/configuration/secrets/)：「wrangler secret put creates a new version of the Worker and deploys it immediately.」）。所以換 secret 不必再 `deploy`，但第一次部署、或程式碼有改時仍要 `npx wrangler deploy`。
+
 ## 改用 GitHub App（讓 Worker 有自己的身分）
 
-用你本人的 PAT 時，Worker 觸發的 run 和你親手觸發的 run 在 GitHub 上是同一個人。改用 GitHub App 後，Worker 觸發的 run 會顯示為 `<app-slug>[bot]`，這時才能設定 `KEEPER_TRIGGER_ACTOR`，讓 admin workflow 拒絕 Worker（或偷到 Worker 憑證的人）觸發的 admin run。
+用你本人的 PAT 時，Worker 觸發的 run 和你親手觸發的 run 在 GitHub 上是同一個人。改用 GitHub App 後，Worker 觸發的 run 會顯示為 `<app-slug>[bot]`，不是 repo 擁有者，admin workflow 的擁有者白名單就會拒絕 Worker（或偷到 Worker 憑證的人）觸發的 admin run，不需要另外設定。
 
 ### Worker 怎麼用 App
 
@@ -135,7 +184,7 @@ Worker 的程式不會替你建立 App。先完成「部署前必做」第 1–5
    - **Homepage URL**：必填，填 `https://github.com/zuemen/pepelab_onchain_cfd`。
    - **Callback URL** 留空；**Request user authorization (OAuth) during installation** 與 **Enable Device Flow** 都不要勾。
    - **Webhook**：取消勾選 **Active**（Worker 不接收任何事件）。
-   - **Permissions → Repository permissions**：**只把 Actions 設為 Read and write**（Metadata: Read-only 會自動帶上）。其餘全部 No access，尤其**不要**開 Deployments、Administration、Contents、Secrets、Environments、Workflows。Organization 與 Account permissions 全部 No access。
+   - **Permissions → Repository permissions**：**只把 Actions 設為 Read and write**（Metadata: Read-only 會自動帶上）。其餘全部 No access，尤其**不要**開 Deployments、Administration、Contents、Secrets、**Variables**、Environments、Workflows（Variables 的理由見「部署前必做」第 6 步）。Organization 與 Account permissions 全部 No access。
    - **Where can this GitHub App be installed?**：選 **Only on this account**。
    - 按 **Create GitHub App**。
 2. **記下 App ID**：建立後停在 App 的設定頁（General），About 區塊有 **App ID**（數字）與 **Client ID**（`Iv…`）。兩個都可以當 `GITHUB_APP_ID`。同一頁的網址 `https://github.com/settings/apps/<slug>` 最後一段就是 slug。
@@ -154,6 +203,7 @@ Worker 的程式不會替你建立 App。先完成「部署前必做」第 1–5
    ```
 
    - `wrangler secret put` 可以從 stdin 讀（[Cloudflare 文件](https://developers.cloudflare.com/workers/wrangler/commands/workers/#secret-put)：「The `put` command can also receive piped input」），多行的 PEM 用 `<` 導入最不容易貼壞。在 PowerShell 用 `Get-Content -Raw 私鑰.pem | npx wrangler secret put GITHUB_APP_PRIVATE_KEY`。
+   - 每一次 `wrangler secret put` 都會立刻部署新版本（見「部署前必做」第 7 步）。三項放到一半時剛好遇到 cron，那一次會因為「只設了一部分」而失敗（不會退回 PAT），三項都放好後就恢復；介意的話改用 `npx wrangler versions secret put` 放三項，再 `npx wrangler versions deploy` 一次部署。另外 `secret put` 沿用的是**目前已部署的程式碼**：已部署的版本若還不支援 App，要等 `npx wrangler deploy` 之後才會開始用 App。
    - 兩個 ID 不是秘密，也可以改成取消 `wrangler.toml` 裡 `[vars]` 的註解後填入並送 PR。**兩種方式擇一**：同一個名稱不要同時是 var 又是 secret。
    - 設定完成後把私鑰檔從下載資料夾刪掉（需要保留就放進密碼管理器）。私鑰**絕對不要**寫進 `wrangler.toml` 或 commit。
 7. **確認 Worker 真的在用 App，並確認觸發者的實際名稱**：
@@ -165,27 +215,27 @@ Worker 的程式不會替你建立 App。先完成「部署前必做」第 1–5
        --jq '.workflow_runs[] | {name, actor: .actor.login, triggering_actor: .triggering_actor.login, created_at}'
      ```
 
-     Worker 觸發的那幾筆，`actor` 與 `triggering_actor` 應該都是 `<slug>[bot]`（例如 `pepelab-keeper[bot]`）。**把實際看到的字串記下來**，下一步要用。
-8. **設定 `KEEPER_TRIGGER_ACTOR`**：repo → Settings → Secrets and variables → Actions → **Variables** → New repository variable，名稱 `KEEPER_TRIGGER_ACTOR`，值填第 7 步實際看到的字串（含 `[bot]`）。
-   - **一定要在第 7 步確認之後才設**。還在用你本人的 PAT 時設了它沒有作用（名稱對不上）；填成你自己的帳號則會讓你自己的 admin run 全部被拒。
-   - 它在 admin workflow 裡的作用（`.github/workflows/admin-base-sepolia.yml`），比對都不分大小寫：
-     1. **`precheck`（核准之前）**：`github.actor` 或 `github.triggering_actor` 等於這個值就失敗。`approve` 寫了 `needs: precheck`，而「If a job fails or is skipped, all jobs that need it are skipped」（[Workflow syntax：`jobs.<job_id>.needs`](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idneeds)），所以 `approve` 被略過，**這筆 run 不會進入等待核准的清單**，你不會收到核准通知，也沒有東西可以誤按。
-     2. **`approve` 的 gate（核准之後）**：同樣的檢查再做一次。
-     3. **`admin-call` 的第一個 step**：再檢查一次 `github.triggering_actor`，之後才有 step 拿得到私鑰。
+     Worker 觸發的那幾筆，`actor` 與 `triggering_actor` 應該都是 `<slug>[bot]`（例如 `pepelab-keeper[bot]`）。這只是確認 Worker 換了身分；admin workflow 的白名單比對的是擁有者，不需要這個字串。
+8. **確認 admin workflow 會擋 Worker 的身分**（不需要任何設定）：
+   - 白名單在 admin workflow（`.github/workflows/admin-base-sepolia.yml`）的三個地方各做一次，都要求 `github.actor` 與 `github.triggering_actor` 兩者都等於 `github.repository_owner`（不分大小寫、去掉前後空白），並且 ref 是 `refs/heads/master`、`run_attempt` 是 1：
+     1. **`precheck`（核准之前）**：不符就失敗。`approve` 寫了 `needs: precheck`，而「If a job fails or is skipped, all jobs that need it are skipped」（[Workflow syntax：`jobs.<job_id>.needs`](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idneeds)），所以 `approve` 被略過，**這筆 run 不會進入等待核准的清單**，你不會收到核准通知，也沒有東西可以誤按。
+     2. **`approve` 的 gate（核准之後）**：同樣的檢查再做一次，再確認 `admin-approval` 真的有 required reviewers。
+     3. **`admin-call` 的第一個 step**：再做一次，之後才有 step 拿得到私鑰。
    - 為什麼需要 `precheck` 這個獨立的 job：`approve` 綁了 `environment: admin-approval`，而「A job that references an environment must follow any protection rules for the environment before running」（[文件](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments)），它自己的 step 要等你按下核准才會執行。要在核准畫面之前擋，檢查就必須放在不綁 environment 的 job。`precheck` 不綁 environment、不引用任何 secret、`permissions: {}`、不進 concurrency group。
-   - `precheck` 讀得到這個 variable：`vars` context「contains custom configuration variables set at the organization, repository, and environment levels」，而且 `jobs.<job_id>.steps.env` 可以使用 `vars`（[Contexts reference](https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#vars-context)）。**`KEEPER_TRIGGER_ACTOR` 必須設在 repo 層級**（Repository variables）：設成某個 environment 的 variable 的話，不綁 environment 的 `precheck` 讀不到，等於沒設。
-   - **它擋不到的**：用你本人的 PAT（或你的帳號）dispatch 的 run，觸發者就是你，`precheck` 分不出來，仍然靠核准時逐字核對 inputs。所以第 9 步要把 PAT 從 Worker 拿掉並撤銷。
-   - **設定後確認它真的會擋**（不需要核准、不會碰到私鑰）：把 `KEEPER_TRIGGER_ACTOR` 暫時設成 `zuemen`，手動 dispatch 一次 admin workflow。預期 `precheck` 以「這次 run 由 keeper 觸發器帳號 zuemen 觸發」失敗，`approve` 與 `admin-call` 顯示為 skipped，run 頁面上**沒有** Review deployments 按鈕。確認後把值改回 bot 的名稱，再 dispatch 一次，這次應該停在等待核准（不要核准，直接 Reject 或取消）。
+   - 不再使用 repo variable `KEEPER_TRIGGER_ACTOR`（黑名單，PR #217 審查 M1 指出它在沒設、設錯層級、多空白、少寫 `[bot]` 時都會放行）。之前若設過，可以刪掉；留著也不會被讀取。
+   - **它擋不到的**：用你本人的 PAT（或你的帳號）dispatch 的 run，觸發者就是你，白名單分不出來，仍然靠核准時逐字核對 inputs。所以第 9 步要把 PAT 從 Worker 拿掉並撤銷。
+   - **擋的那一側目前只在本機驗證過**：三個守門 script 已抽出來在本機 bash 以 66 種環境變數組合實跑（擁有者大小寫、前後空白與 ``、bot 名稱、擁有者的前後綴、空值、讀不到擁有者、各種 ref 與 run_attempt），結果全部符合預期。在 GitHub 上實測「非擁有者觸發的 admin run 在 `precheck` 失敗、run 頁面沒有 Review deployments 按鈕」需要用 App 的 token dispatch 一次 admin workflow，這一步沒有做，要不要做由你決定（App 的 token 只在 Worker 裡，不要為此另外匯出）。
+   - 放行的那一側可以安全確認：你本人手動 dispatch 一次 admin workflow，`precheck` 應該通過、run 停在等待核准；不要核准，直接 Reject。
 9. **移除 PAT**：確認連續幾次 cron 都正常後，`npx wrangler secret delete GITHUB_TOKEN`，再到 <https://github.com/settings/personal-access-tokens> 撤銷那個 PAT。只要 App 三項有設定，Worker 就不會使用 `GITHUB_TOKEN`，留著只是多一個可以外洩的憑證。
 
 ### 觸發者名稱的依據與待驗證事項
 
 - 文件對 `github.actor` 的定義是「The username of the user that triggered the initial workflow run」，`github.triggering_actor` 是「The username of the user that initiated the workflow run. If the workflow run is a re-run, this value may differ from `github.actor`」（[Contexts reference](https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#github-context)）。**文件沒有明寫由 App 觸發的 `workflow_dispatch` 會是什麼字串。**
 - 實測依據（2026-10-01，以公開的 REST API `GET /repos/{owner}/{repo}/actions/runs?event=workflow_dispatch` 查詢，未觸發任何 workflow）：`microsoft/vscode` 有 94 筆 run 的 `actor.login` 與 `triggering_actor.login` 都是 `vs-code-engineering[bot]`（`type: Bot`）；`grafana/grafana` 有 16 筆是 `grafana-releases-oss[bot]`。格式是 `<app-slug>[bot]`。
-- 重跑時兩個值會分開：`vercel/next.js` 有一筆 run 的 `actor` 是 `github-actions[bot]`、`triggering_actor` 是按下 Re-run 的人。所以 Worker 觸發的 admin run 被人重跑時，`actor` 仍是 bot，`precheck` 與 `approve` 的 gate（兩個值都比對）仍然會拒絕；`precheck` 與 `admin-call` 另外拒絕任何 `run_attempt != 1`。
+- 重跑時兩個值會分開：`vercel/next.js` 有一筆 run 的 `actor` 是 `github-actions[bot]`、`triggering_actor` 是按下 Re-run 的人。所以 Worker 觸發的 admin run 被你重跑時，`actor` 仍是 bot，三個守門（兩個值都比對）仍然會拒絕；三個守門另外都拒絕任何 `run_attempt != 1`。
 - **待驗證**（兩項都沒有在本 repo 實測過，因為需要實際 dispatch）：
-  1. 本 repo 的 App 實際顯示的字串。API 的 `actor.login` 與 workflow 內的 `github.actor` 理論上是同一個值，所以第 7 步要求先用 `gh api` 看過再設 variable。
-  2. `precheck` 失敗時 `approve` 不會送出核准請求。這是依文件對 `needs` 的說明推得的；`precheck` 的 script 本身已在本機以九種環境變數組合測過。第 8 步最後一項就是實際驗證的方法。
+  1. 本 repo 的 App 實際顯示的字串。白名單不依賴這個字串（只要不是擁有者就擋），所以它只影響第 7 步的確認，不影響保護。
+  2. `precheck` 失敗時 `approve` 不會送出核准請求。這是依文件對 `needs` 的說明推得的；守門 script 本身已在本機以 66 種環境變數組合測過。第 8 步列出了實際驗證的方法。
 
 ### App 私鑰外洩時的差別
 
@@ -234,9 +284,12 @@ npx wrangler@4.145.0 deploy --dry-run --outdir "$(mktemp -d)"
 | 項目 | 規則 |
 |---|---|
 | (a) environment 允許清單 | 綁 `keeper` 的只能是 `base-sepolia-keeper.yml#keep`、`price-keeper.yml#update-prices`、`admin-base-sepolia.yml#admin-call`；`settlement` 只能是 `x402-settlement-worker.yml#settle`；`admin-approval` 只能是 `admin-base-sepolia.yml#approve`。字串與物件寫法都算，名稱不分大小寫。未登記的 environment、`${{ }}` 動態名稱一律拒絕 |
-| (b) admin workflow | `precheck` 不可綁 environment、不可引用任何 secret、沒有 `if`／`continue-on-error`／`concurrency`，第一個 step 必須是 `github.ref == refs/heads/master` 與 `github.run_attempt == 1` 的守門，並把 `vars.KEEPER_TRIGGER_ACTOR`、`github.actor`、`github.triggering_actor` 綁進 env。`approve` 必須 `needs: precheck`、綁 `admin-approval`、不引用任何 secret、不能被 `if`／`continue-on-error` 繞過。`admin-call` 必須 `needs: approve`、沒有 job 層級的 `if`／`continue-on-error`，第一個 step 同樣必須是 ref 與 `run_attempt` 的守門。workflow 層級不可有 `concurrency` |
-| (c) 觸發事件 | 任何 workflow 都不可使用 `pull_request_target`／`workflow_run` |
-| (d) 私鑰 secret | 引用 `secrets.KEEPER_PRIVATE_KEY` 的 job 必須綁 `keeper`，引用 `secrets.FEE_SETTLEMENT_PRIVATE_KEY` 的必須綁 `settlement`。`secrets[...]` 動態存取、`toJSON(secrets)`、`secrets: inherit` 一律拒絕 |
+| (b) admin workflow | 結構採白名單：workflow 層級只能有 `name`／`on`／`permissions`／`jobs`（沒有 `defaults`、`env`、`concurrency`），只能有 `precheck`、`approve`、`admin-call` 三個 job，每個 job 只能有列出的鍵（沒有 `if`、`continue-on-error`、`defaults`、`services`、`container`、`strategy`），`runs-on` 必須是 GitHub 代管的 ubuntu。三個 job 的第一個 step 是守門：只能有 `name`／`env`／`run`（沒有 `shell`、`if`），而且 `env`＋`run` 全文的 sha256 必須等於檢查器裡的 `GUARD_SHA256`（`admin-call` 連同 job 層級的 `env` 一起算；YAML 註解不算）。`precheck` 不可綁 environment、不可引用 secret、`permissions: {}`、只有一個 step；`approve` 必須 `needs: precheck`、以字串寫法綁 `admin-approval`、不引用 secret、只有一個 step；`admin-call` 必須 `needs: approve`，所有 step 都不可有 `continue-on-error` |
+| (c) 觸發事件 | 任何 workflow 都不可使用 `pull_request_target`／`workflow_run`。admin workflow 只能用 `workflow_dispatch`。綁 `keeper`／`settlement` 的其他 workflow 只能用 `schedule`、`workflow_dispatch`，而且 `workflow_dispatch` 不可有 `inputs`（否則允許清單內的 keeper job 可以被改成不經核准、可帶參數的 admin） |
+| (d) 私鑰 secret | 引用 `secrets.KEEPER_PRIVATE_KEY` 的 job 必須綁 `keeper`，引用 `secrets.FEE_SETTLEMENT_PRIVATE_KEY` 的必須綁 `settlement`。`secrets[...]` 動態存取、`toJSON(secrets)`、`secrets: inherit` 一律拒絕。找 `${{ }}` 的結尾時跳過單引號字串（與 actions/runner 一致），`format('}}', secrets.X)` 藏不住 |
+| (e) reusable workflow | 任何 job 都不可用 job 層級的 `uses:`（被呼叫的 workflow 可以自己綁 environment，可能在別的 repo，這支檢查看不到） |
+| (f) shell injection | 任何 `run:` 都不可內插 `${{ inputs.… }}`、`${{ github.event.… }}`，一律經 `env` 傳遞 |
+| YAML | anchor／alias、merge key（`<<`）、重複的鍵、多文件、解析失敗一律算失敗 |
 
 ```bash
 npm ci --ignore-scripts --prefix scripts          # 第一次：安裝固定版本的 YAML 解析器
@@ -245,5 +298,14 @@ node scripts/check-workflow-guards.mjs
 ```
 
 - **新增一個要用私鑰或綁 environment 的 job 時**，要同時改 `scripts/check-workflow-guards.mjs` 的 `ENVIRONMENTS`（刻意的摩擦：這個改動會出現在 PR diff 裡）。
+- **改 admin workflow 的守門 step 時**（任何一個字，包括錯誤訊息），執行 `node scripts/check-workflow-guards.mjs --print-guard-hashes`，把印出的值貼進 `GUARD_SHA256`。說明請寫在 YAML 註解裡（不算進 hash）。審查時兩邊的 diff 要一起看。
+- 測試把 PR #217 審查的 40 個繞過嘗試（`scripts/fixtures/check-workflow-guards/bypass-cases.mjs`）以現行 workflow 為底重做，全部必須被擋，而且是以預期的理由。
+- **actionlint**：consistency.yml 的 `actionlint` job 下載固定版本（1.7.12）的 release 檔、驗 sha256 後執行，連同 runner 內建的 shellcheck 檢查 `run:`。這個 pin 不在 Dependabot 範圍內，升級時手動改 `VERSION` 與 `SHA256`。
 - **依賴**：只有 `yaml`，版本固定在 `scripts/package.json`（2.9.1，與 `agent/package-lock.json` 相同），`scripts/package-lock.json` 帶 sha512 integrity，CI 用 `npm ci --ignore-scripts` 安裝。不自己寫 YAML 解析器，是因為自製解析一旦和 GitHub 的解析結果不同就會被繞過；anchor／alias、重複的鍵、解析失敗的檔案一律算失敗。
-- **它檢查不到的事**：這是對 master 上 workflow 檔的靜態檢查。舊分支上的舊版 workflow、GitHub 網頁上的 environment 設定（required reviewers、branch policy、secret 放在哪一層）、守門 script 在執行時的實際行為都不在範圍內；那些仍然靠「部署前必做」的設定與 `approve` 的 fail-closed gate。
+- **它檢查不到的事**（寫實版）：
+  - **舊分支**：只檢查目前 checkout 的 workflow 檔（PR 上是合併後的結果，master push 上是 master）。遠端其他分支上的舊版 workflow 照樣可以被 dispatch，不在範圍內；擋它們的是「部署前必做」第 4 步（刪掉 repo 層級私鑰），在那之前這支檢查對「dispatch 到舊分支」完全沒有作用。
+  - **它不是必要的檢查**：master 目前沒有 branch protection 或 ruleset，`workflow-guards` 紅了也擋不住合併，也擋不住直接 push 到 master。它的作用是讓改動「被看見」，不是強制。要強制，需要你在 repo 設定把它設成 required status check（本 PR 不改 repo 設定）。
+  - **GitHub 上的設定**：required reviewers、branch policy、secret 放在哪一層、App 的權限與安裝範圍，都不在 workflow 檔裡。`approve` 的 gate 只在執行時檢查 `admin-approval` 有沒有 required reviewers；其餘只能靠「部署前必做」第 3 步的 `gh api` 確認。
+  - **語意**：守門 step 以 sha256 釘住，所以「改了守門」一定會被看見；但釘住的內容本身是否正確，靠的是本機實跑（66 種組合）與審查，不是這支檢查。守門以外的 step（例如 Validate inputs 的白名單）只檢查結構（不可 `continue-on-error`、不可內插 inputs），不檢查內容。
+  - **runner 的行為**：檢查器用 `yaml` 套件解析，GitHub 用自己的解析器；已知的差異（anchor、merge key、多文件、`}}` 在單引號字串內）都改成直接拒絕，但不能保證沒有其他差異。
+  - **step 層級的 action**：`uses: <action>@<sha>` 的內容不檢查（只靠 SHA pin 與 Dependabot）。admin-call 的 Install Foundry（`foundry-rs/foundry-toolchain`）在守門之後、拿私鑰的 step 之前執行，它安裝的 `cast` 就是之後送交易用的程式；這個 action 若被換成惡意版本，可以裝一個假的 `cast`，在送交易的 step 拿到私鑰。這一點只靠 commit SHA pin 防護，這支檢查不檢查。

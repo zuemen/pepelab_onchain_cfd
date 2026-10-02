@@ -502,6 +502,65 @@ test("redact：遮掉 JWT、GitHub token、PEM 與指定的秘密值", () => {
   assert.equal(out, "a [redacted jwt] b [redacted token] c [redacted token] d [redacted pem] e [redacted]");
 });
 
+test("tick：fetch／res.json() 本身的例外帶著憑證時，彙整後的錯誤不含 token（App 與 PAT 都是）", async () => {
+  const PAT = "github_pat_11OWNERTOKEN_abcdefghijklmnopqrstuvwxyz";
+  const envs = [
+    ["app", { ...APP_ENV, WORKFLOW_FILES: "base-sepolia-keeper.yml,price-keeper.yml" }, `${INSTALL_TOKEN}_1`],
+    ["pat", { GITHUB_REPO: APP_ENV.GITHUB_REPO, GITHUB_TOKEN: PAT, WORKFLOW_FILES: "base-sepolia-keeper.yml,price-keeper.yml" }, PAT],
+  ];
+  for (const [kind, env, token] of envs) {
+    const log = captureLogs();
+    try {
+      // (1) fetch 丟出的例外把 request header 原樣放進訊息。
+      resetAppTokenCache();
+      const inner = appFetch();
+      globalThis.fetch = async (url, init = {}) => {
+        if (String(url).includes("/access_tokens")) return inner.fn(url, init);
+        throw new Error(`connect ECONNRESET (request headers: Authorization=${init.headers.Authorization})`);
+      };
+      await assert.rejects(tick(env, NOW), (e) => {
+        assert.match(e.message, /\[base-sepolia-keeper\.yml\] connect ECONNRESET.*; \[price-keeper\.yml\] connect ECONNRESET/, kind);
+        assert.ok(!e.message.includes(token), `${kind}：訊息不可含 token`);
+        assert.doesNotMatch(e.message, /ghs_|github_pat_/, kind);
+        return true;
+      });
+
+      // (2) list runs 回 200 但 body 不是 JSON，而且 body 裡有 token：SyntaxError 的訊息會引用 body 開頭。
+      resetAppTokenCache();
+      const f = fakeFetch((url, init) => {
+        if (url.includes("/access_tokens")) {
+          return { status: 201, body: JSON.stringify({ token: `${INSTALL_TOKEN}_1`, expires_at: new Date(NOW + 3600_000).toISOString() }) };
+        }
+        return { status: 200, body: `${init.headers.Authorization.slice(7)} <- not json` };
+      });
+      globalThis.fetch = f.fn;
+      await assert.rejects(tick(env, NOW), (e) => {
+        assert.match(e.message, /\[base-sepolia-keeper\.yml\] /, kind);
+        assert.ok(!e.message.includes(token), `${kind}：訊息不可含 token（${e.message}）`);
+        return true;
+      });
+    } finally {
+      log.restore();
+    }
+    assert.ok(!log.lines.join("\n").includes(token), `${kind}：log 不可含 token`);
+  }
+});
+
+test("PAT 模式會記一行 auth: PAT；App 三項都是空白時也一樣（不會安靜地換成 PAT）", async () => {
+  for (const env of [ENV, { ...ENV, GITHUB_APP_ID: "", GITHUB_APP_INSTALLATION_ID: " ", GITHUB_APP_PRIVATE_KEY: "" }]) {
+    resetAppTokenCache();
+    globalThis.fetch = appFetch().fn;
+    const log = captureLogs();
+    try {
+      await tick(env, NOW);
+    } finally {
+      log.restore();
+    }
+    assert.equal(log.lines.filter((l) => /^auth: PAT/.test(l)).length, 1, log.lines.join("\n"));
+    assert.ok(!log.lines.some((l) => /GitHub App installation token/.test(l)));
+  }
+});
+
 test("wrangler.toml 不含 App 私鑰，README 有 GitHub App 設定步驟", async () => {
   const { readFileSync } = await import("node:fs");
   const toml = readFileSync(new URL("./wrangler.toml", import.meta.url), "utf8");
@@ -509,5 +568,6 @@ test("wrangler.toml 不含 App 私鑰，README 有 GitHub App 設定步驟", asy
   assert.doesNotMatch(toml, /BEGIN [A-Z ]*PRIVATE KEY/);
   const readme = readFileSync(new URL("./README.md", import.meta.url), "utf8");
   assert.match(readme, /wrangler secret put GITHUB_APP_PRIVATE_KEY/);
-  assert.match(readme, /KEEPER_TRIGGER_ACTOR/);
+  assert.match(readme, /## 改用 GitHub App/);
+  assert.match(readme, /github\.repository_owner/, "README 要說明 admin workflow 的擁有者白名單");
 });

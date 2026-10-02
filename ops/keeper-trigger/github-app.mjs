@@ -51,7 +51,7 @@ export function redact(text, secrets = []) {
 
 /**
  * 讀 App 設定。三項都沒設 → null（沿用 PAT）。只設了一部分 → 丟錯：
- * 默默退回 PAT 會讓 run 的觸發者變回擁有者本人，KEEPER_TRIGGER_ACTOR 的 gate 就失去意義。
+ * 默默退回 PAT 會讓 run 的觸發者變回擁有者本人，admin workflow 的擁有者白名單就分不出 Worker。
  */
 export function appConfigOf(env) {
   const present = APP_KEYS.filter((k) => String(env[k] ?? "").trim() !== "");

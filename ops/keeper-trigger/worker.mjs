@@ -25,6 +25,8 @@ export async function resolveAuth(env, nowMs = Date.now()) {
     return { token: t.token, kind: "app" };
   }
   if (!env.GITHUB_TOKEN) throw new Error("GITHUB_TOKEN（或 GitHub App 的三項設定）未設定");
+  // 每次都記一行：log 裡看得出這次用的是哪一種憑證（App 的三項都空白時會安靜地走到這裡）。
+  console.log("auth: PAT（GITHUB_TOKEN；run 的觸發者是 token 擁有者本人）");
   return { token: env.GITHUB_TOKEN, kind: "pat" };
 }
 
@@ -105,7 +107,15 @@ export async function tick(env, nowMs = Date.now()) {
   const settled = await Promise.allSettled(
     workflows.map((w) => tickOne(auth, repo, w, ref, minGap, nowMs)),
   );
-  const errors = settled.filter((r) => r.status === "rejected").map((r) => r.reason?.message ?? String(r.reason));
+  // 彙整前再遮一次（PR #217 審查 L2）：tickOne 自己丟的錯已經遮過，但 fetch 本身的例外、
+  // res.json() 的例外是執行環境產生的訊息，有的實作會把 request header 放進去。
+  const errors = settled
+    .map((r, i) => ({ r, workflow: workflows[i] }))
+    .filter(({ r }) => r.status === "rejected")
+    .map(({ r, workflow }) => {
+      const msg = redact(r.reason?.message ?? String(r.reason), [auth.token]);
+      return msg.startsWith(`[${workflow}]`) ? msg : `[${workflow}] ${msg}`;
+    });
   if (errors.length) throw new Error(errors.join("; "));
   return settled.map((r) => r.value);
 }
