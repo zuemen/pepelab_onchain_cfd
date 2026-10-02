@@ -165,7 +165,7 @@ export function meteredFetch(base: typeof globalThis.fetch = globalThis.fetch): 
     // instance。用 instanceof 的話，同一個 process 只要起過 hono 伺服器，v2 的付款就完全不會被計量。
     const inputHeaders =
       typeof input === "object" && input !== null && "headers" in input
-        ? (input as { headers?: HeadersInit }).headers
+        ? (input as { headers?: ConstructorParameters<typeof Headers>[0] }).headers
         : undefined;
     const headers = new Headers(init?.headers ?? inputHeaders);
     // v2（PAYMENT-SIGNATURE）優先；兩個都帶時各是一張獨立的授權，金額相加（保守）。
