@@ -108,56 +108,97 @@ plan-item: D2（選項卡）
 
 ### 4.2 升級權限：兩個 Timelock、一個 Safe
 
-**分類原則**：能決定「成交價格」「資金去向」或「誰能從 Bank 轉出資金」的設定，效果等同換邏輯，一律走 7 天；只在程式碼寫死的硬上下限內調整的數值，走 48 小時；只會收緊、不會放寬的保護動作可以立即執行。硬上下限本身寫在 handler 程式碼裡，改它就是換 handler（7 天）。
+**分類原則**：能決定「成交價格」「資金去向」「誰能動使用者的資金」的設定，效果等同換邏輯，一律走 7 天；只在程式碼寫死的硬上下限內調整的數值，走 48 小時；只會收緊、不會放寬的保護動作可以立即執行，但都有到期時間（§4.3 前提 P2）。硬上下限本身寫在 handler 程式碼裡，改它就是換 handler（7 天）。
+
+**兜底規則：下表沒有列出的設定（包括日後新增的鍵），一律走 `UpgradeTimelock`（7 天）。** 要把某個設定放進 48 小時類，必須在本表新增一列並寫明它的硬上下限。
 
 | 類別 | 項目 | 經過 | 延遲 | 理由 |
 |---|---|---|---|---|
-| **換邏輯或等同換邏輯** | 授予／撤銷 CONTROLLER（換 handler、Router） | `UpgradeTimelock`（持有 RoleStore 的 ROLE_ADMIN） | **≥ 7 天**【待擁有者決定】 | 新 handler 能轉出 Bank 的資金；使用者需要看得到、來得及退出（L2BEAT Stage 1 的退出窗口是 7 天） |
-| | oracle 位址、`OracleRouter` 位址、每個資產的價格來源與 feed ID、價格精度設定、交叉比對來源 | `UpgradeTimelock` | ≥ 7 天 | 能換價格來源就能餵假價格，以「獲利」的形式把 Bank 的 USDC 轉走，效果等同取得 CONTROLLER |
-| | 新增資產（含它的價格來源） | `UpgradeTimelock` | ≥ 7 天 | 同上：新資產帶進一個新的價格來源 |
-| | 資金去向：treasury、`FeeBank` 的分配對象、保險金庫（分層金庫）位址、結算幣位址 | `UpgradeTimelock` | ≥ 7 天 | 直接決定錢流向哪裡 |
-| | 授予任何角色（GUARDIAN、KEEPER、MARKET_OPERATOR、CANCELLER 相關） | `UpgradeTimelock` | ≥ 7 天 | 授權是擴權；撤銷見下方「立即」 |
-| **硬上限內的數值** | OI 上限、獲利上限、費率（≤ 程式碼上限）、維持保證金（≥ 程式碼下限）、新鮮度與信賴區間門檻（在程式碼區間內）、funding 參數 | `ConfigTimelock` | 48 小時（沿用 P1-15） | 最大影響由程式碼裡的硬上下限界定 |
-| | 解除暫停、設 Halted、ReduceOnly → Active、下架（轉 ReduceOnly） | `ConfigTimelock` | 48 小時 | 不改變價格與資金去向 |
-| **立即（只收緊）** | 全域暫停（72 小時到期）、資產收緊到 ReduceOnly | guardian | 無 | 見 §4.3 |
-| | **撤銷**（不能授予）GUARDIAN、KEEPER、MARKET_OPERATOR | 提案者 Safe，直接對 RoleStore | 無 | 讓被盜的線上角色可以立即移除，而且這條路徑不經 Timelock、不能被取消（§4.3） |
+| **換邏輯或等同換邏輯** | 授予／撤銷 CONTROLLER（換 handler、Router） | `UpgradeTimelock`（持有 RoleStore 的 ROLE_ADMIN） | **≥ 7 天**，且受 §4.3 前提 P3 的「升級閘門」限制【延遲長度待擁有者決定】 | 新 handler 能轉出 Bank 的資金；使用者需要看得到、來得及退出（L2BEAT Stage 1 的退出窗口是 7 天） |
+| | oracle 位址、`OracleRouter` 位址、每個資產的價格來源與 feed ID、價格精度設定、交叉比對來源 | `UpgradeTimelock` | ≥ 7 天＋升級閘門 | 能換價格來源就能餵假價格，以「獲利」的形式把 Bank 的 USDC 轉走，效果等同取得 CONTROLLER |
+| | 新增資產（含它的價格來源） | `UpgradeTimelock` | ≥ 7 天＋升級閘門 | 同上：新資產帶進一個新的價格來源 |
+| | 資金去向：treasury、`FeeBank` 的分配對象、保險金庫（分層金庫）位址、結算幣位址 | `UpgradeTimelock` | ≥ 7 天＋升級閘門 | 直接決定錢流向哪裡 |
+| | **代客下單與平倉的授權**：現行 `authorizedAgents`（可以用任意使用者的 `freeMargin` 開倉、平掉自己開的倉，`PerpetualExchange.sol:673-674`、`:1077-1095`、`:1118-1123`）在 V3 的對應物——誰能經 Router 代使用者下單（`CopyTracker`、`AgentSessionManager` 等） | `UpgradeTimelock` | ≥ 7 天＋升級閘門 | 被授權者能動任何使用者的保證金 |
+| | KYC／RWA 閘門的登記合約位址（現行 `KYCRegistry`） | `UpgradeTimelock` | ≥ 7 天＋升級閘門 | 換登記合約就能讓任意地址通過，或擋下任意使用者 |
+| | 授予任何角色（GUARDIAN、KEEPER、MARKET_OPERATOR、CANCELLER 相關） | `UpgradeTimelock` | ≥ 7 天＋升級閘門 | 授權是擴權；撤銷見下方「立即」 |
+| | 關閉 `CancelGate`（§4.3） | `ConfigTimelock` | 48 小時；`CancelGate` 在合約層拒絕取消以它自己為目標的提案 | 見 §4.3 的 `CancelGate` |
+| **硬上限內的數值** | OI 上限、獲利上限、費率（≤ 程式碼上限）、維持保證金（≥ 程式碼下限）、funding 參數 | `ConfigTimelock` | 48 小時（沿用 P1-15） | 最大影響由硬上下限界定。**對既有部位不利的變更（提高維持保證金、降低獲利上限）只適用於生效後新開的部位**——比照現行獲利上限在開倉時凍結的做法（`docs/RISK_WATERFALL.md:82`） |
+| | 新鮮度與信賴區間門檻 | `ConfigTimelock` | 48 小時 | 硬上限的量級（數字待定）：開倉、平倉與清算的新鮮度上限是**分鐘級**（例如 ≤ 5 分鐘）；信賴區間上限是**數百 bps 以內**（例如 ≤ 200 bps）。現行 exchange 的 `MAX_PRICE_AGE_LIMIT` 是 7 天（`PerpetualExchange.sol:70`），這個量級不能沿用：放寬到它就能讓舊價格成交。也要有**硬下限**（例如 ≥ 30 秒），否則把門檻壓到極小就能讓所有平倉因價格「過期」而失敗、等於凍結退出 |
+| | 解除暫停、ReduceOnly → Active、下架（轉 ReduceOnly） | `ConfigTimelock` | 48 小時 | 不改變價格與資金去向 |
+| | 設 Halted、全域暫停（治理發起） | `ConfigTimelock` | 48 小時，**有到期時間與冷卻（前提 P2），並計入升級閘門（前提 P3）** | 會凍結平倉；不加限制就能拿來縮短退出窗口（§4.3） |
+| **立即（只收緊）** | 全域暫停、資產收緊到 ReduceOnly | guardian | 無；暫停 72 小時到期 | 見 §4.3 |
+| | **撤銷**（不能授予）GUARDIAN、KEEPER、MARKET_OPERATOR | 提案者 Safe，直接對 RoleStore | 無 | 讓被盜的線上角色可以立即移除；這條路徑不經 Timelock、不能被取消 |
 
 | 角色 | 由誰擔任 |
 |---|---|
 | 提案者 | 同一個 Safe（每個租戶自己的 Safe，見 §4.4）；`GOVERNANCE_HANDOVER.md` 的 Safe 要求照用：至少 2/3、分散裝置、冷備份 |
 | 執行者 | Safe 或任何人（`executor = address(0)`）【待擁有者決定】；任何人執行可避免 Safe 簽署人不在時卡住已排定的修補 |
-| 取消者 | 提案者 Safe（OZ `TimelockController` 的建構子會讓 proposers 自動取得 CANCELLER）；可選的 Security Council（§4.3）。**guardian 不是取消者** |
+| 取消者 | 提案者 Safe（OZ `TimelockController` 的建構子會讓 proposers 自動取得 CANCELLER）；可選的 Security Council（經 `CancelGate`，§4.3）。**guardian 不是取消者** |
 
 - 兩個 Timelock 都 `admin = 0`（自己管理自己），沿用 P1-15 的做法。
 - RoleStore 的 ROLE_ADMIN **只能**是 `UpgradeTimelock`；提案者 Safe 在 RoleStore 只有「撤銷」上述三種線上角色的權限。部署後的驗證腳本（比照 `VerifyHandover`）要讀回「沒有任何 EOA 持有 CONTROLLER 或 ROLE_ADMIN」「guardian 不持有任何 Timelock 角色」（GMX README 的同一條規則，加上本文的分權）。
+- **備援持有者**：撤銷是立即的，但重新授予要 7 天。所以 GUARDIAN、KEEPER、MARKET_OPERATOR 在部署時就各授予一個**平時不用的備援持有者**（V3 中三者都是可多人持有的角色）：keeper 與 marketOperator 的備援是停用中的 KMS 金鑰（ADR-014 §4.4）；guardian 的備援是一個簽署人與主 guardian 不同的小 Safe，或冷存的金鑰。撤銷被盜的主持有者後，備援立即接手。沒有備援時，這三種能力會中斷 7 天（guardian 中斷期間沒有人能立即暫停），這段空窗寫在 §4.3 的最壞情況表。
 - **沒有快速升級通道**作為預設。若擁有者要一個「緊急修補」的快速路徑，必須是更高門檻的 Safe（例如 Security Council 式的 3/5 以上）而且只能做預先定義的動作（換掉某個 handler 為「只能平倉」的版本），不能任意授予 CONTROLLER【待擁有者決定】。
 
 ### 4.3 緊急暫停與升級分權
 
+#### 設計前提（不是待決事項）
+
+7 天退出窗口只有在「這 7 天裡使用者真的能退出」時才有意義。以下四條是本設計成立的前提：
+
+- **P1｜提領不受任何暫停影響**：全域暫停、Halted、ReduceOnly、任何治理設定都不能擋 `MarginBank` 提領 `freeMargin`。現行原始碼版的全域暫停會擋提領（`docs/RISK_WATERFALL.md:104`），V3 改掉。
+- **P2｜所有會凍結平倉的限制都有到期時間**：
+  - guardian 的全域暫停：72 小時到期、24 小時冷卻（沿用 `PerpetualExchange.sol:350`、`:359`、`:2109-2110`）。
+  - 治理（`ConfigTimelock`）設的 Halted 或全域暫停：最長 7 天到期；到期後該資產（或全站）自動回到 **ReduceOnly**（可以平倉與清算），並有 72 小時冷卻，冷卻期間任何人都不能再設 Halted 或暫停。
+  - 需要長期停止的資產（例如價格來源永久中斷）用 ReduceOnly 而不是 Halted。價格來源真的沒有價格時，平倉本來就做不到，這不是治理能解決的問題。
+  - Timelock 接手 guardian 的凍結（比照 GuardedOracle 的 `takeOverPause`）也受同一條 7 天上限；GuardedOracle 現行「admin 自己下的凍結沒有期限」（`contracts/src/v2/GuardedOracle.sol:613-619`）在 V3 不沿用。
+- **P3｜升級閘門**：`UpgradeTimelock` 的任何操作，只有在「執行前連續 7 天內沒有任何全域暫停或 Halted 生效」時才能執行，否則 revert、等待。DataStore 記錄最近一次限制結束的時間，Timelock 的執行器讀它。也就是說，**退出窗口以「可平倉的時間」計算**，而不是日曆時間。guardian 的暫停也計入：被盜的 guardian 可以藉此拖延升級，但 Safe 能立即撤銷它（下表）。
+- **P4｜價格轉送是 permissionless**（ADR-013 §4.2）：撤銷 KEEPER 不能讓價格停更，任何人都可以把簽名價格帶進自己的平倉交易。殘餘風險：使用者要自己取得簽名價格，而 Pyth Hermes 需要 API key（ADR-013 §2.1），一般使用者取得的方式與費用**未查證**；平台與租戶應提供公開的取價端點，而且它不受鏈上治理控制。
+
+#### 角色
+
 | 角色 | 能做 | 不能做 |
 |---|---|---|
-| guardian（溫錢包或小 Safe） | 全域暫停、資產收緊到 ReduceOnly | 解除暫停、授予或撤銷任何角色、排程或**取消**任何提案、放寬資產模式 |
-| marketOperator（keeper；V3 改成 RoleStore 的角色，可多人持有，見 ADR-014 §4.4） | Active ↔ ReduceOnly | Halted、暫停 |
-| 提案者 Safe | 排程提案、取消提案、立即撤銷 GUARDIAN／KEEPER／MARKET_OPERATOR | 繞過 Timelock 授予任何角色 |
-| Security Council（可選，門檻更高、簽署人不同） | 經一顆 `CancelGate` 合約取消提案（`CancelGate` 持有 CANCELLER） | 排程提案、授予角色 |
-| `ConfigTimelock` | 硬上限內的參數、解除暫停、Halted | 授予 CONTROLLER、價格來源、資金去向 |
-| `UpgradeTimelock` | 授予／撤銷 CONTROLLER 與其他角色、價格來源、資金去向 | — |
+| guardian（溫錢包或小 Safe；另有備援持有者） | 全域暫停（72 小時到期）、資產收緊到 ReduceOnly | 解除暫停、授予或撤銷任何角色、排程或**取消**任何提案、放寬資產模式、擋提領 |
+| marketOperator（keeper；V3 是 RoleStore 的角色，可多人持有，見 ADR-014 §4.4） | Active ↔ ReduceOnly | Halted、暫停 |
+| 提案者 Safe | 排程提案、取消提案、立即撤銷 GUARDIAN／KEEPER／MARKET_OPERATOR | 繞過 Timelock 授予任何角色；繞過升級閘門 |
+| Security Council（可選，門檻更高、簽署人不同） | 經 `CancelGate` 取消提案 | 排程提案、授予角色、取消「關閉 `CancelGate`」的提案 |
+| `ConfigTimelock` | 硬上限內的參數、解除暫停、有到期的 Halted／暫停、關閉 `CancelGate` | 授予 CONTROLLER、價格來源、資金去向、代客授權 |
+| `UpgradeTimelock` | 授予／撤銷 CONTROLLER 與其他角色、價格來源、資金去向、代客授權 | 參數；在升級閘門關閉時執行 |
 
-- 暫停旗標、資產模式、guardian 的到期時間都存在 DataStore，**換 handler 不會重設暫停狀態**。
-- guardian 暫停沿用現在的 72 小時到期＋24 小時冷卻（`PerpetualExchange.sol:350`、`:359`、`:2109-2110`；GuardedOracle 同一模式，`contracts/src/v2/GuardedOracle.sol:51`、`:57`），超過 72 小時由 Timelock 接手（比照 GuardedOracle 的 `takeOverPause`）。
-- **為什麼 guardian 不能取消提案**：撤換 guardian 若必須經 Timelock，而 guardian 又能取消，被盜的 guardian 就能無限次取消「撤換它自己」的提案，同時每 96 小時（72 小時暫停＋24 小時冷卻）重新暫停一次——治理永久停擺。所以 guardian 不持有 CANCELLER，撤換 guardian 走提案者 Safe 的「立即撤銷」路徑，不經 Timelock、不能被取消。
-- **Security Council 的取消權也要可以被關掉**：它若被盜，同樣能無限次取消。所以它的取消權經 `CancelGate` 行使，提案者 Safe 可以**立即、單向**關閉 `CancelGate`；重新開啟或更換 Council 走 `UpgradeTimelock`（7 天）。
+- 暫停旗標、資產模式、各種限制的到期時間與「最近一次限制結束時間」都存在 DataStore，**換 handler 不會重設這些狀態**。
+- **為什麼 guardian 不能取消提案**：撤換 guardian 若必須經 Timelock，而 guardian 又能取消，被盜的 guardian 就能無限次取消「撤換它自己」的提案，同時每 96 小時（72 小時暫停＋24 小時冷卻）重新暫停一次，治理永久停擺。所以 guardian 不持有 CANCELLER，撤換 guardian 走提案者 Safe 的「立即撤銷」路徑。
+- **`CancelGate`**：Security Council 的取消權經 `CancelGate` 行使。關閉 `CancelGate` 走 `ConfigTimelock`（48 小時），而且 `CancelGate` 在合約層拒絕取消以它自己為目標的提案。取捨：
+  - 被盜的 Council 最多讓治理停擺到「關閉 `CancelGate`」生效為止（48 小時），而且無法阻止這筆關閉。
+  - 被盜的 Safe 要讓 Council 失效，也必須先等 48 小時；在這之前 Council 可以取消惡意升級與惡意的 Halted。
+  - 另一種做法是讓 Safe 可以立即關閉：對被盜 Council 的反應更快，但被盜 Safe 的第一步就能讓 Council 失效。本文建議 48 小時，列入待擁有者決定。
 
-**被盜時的最壞情況（重算）：**
+#### 被盜時的最壞情況
 
 | 被盜者 | 能做什麼 | 最壞情況 | 止損 |
 |---|---|---|---|
-| guardian | 暫停、收緊到 ReduceOnly | Safe 在冷卻結束前撤銷它：只有一次暫停；暫停在 72 小時到期，或在 Safe 提出解除暫停後 48 小時（`ConfigTimelock`）結束，取較早者。Safe 遲遲不回應：每 96 小時停機 72 小時，直到撤銷。**不能阻止治理、不能動資金**；若採本節末的「暫停不擋提領」，使用者仍可提領 `freeMargin` | Safe 立即撤銷 GUARDIAN |
-| Security Council | 取消提案 | 治理延遲到 Safe 關閉 `CancelGate` 為止；已被取消的提案要重排一次完整延遲 | Safe 立即關閉 `CancelGate` |
-| keeper／marketOperator | 轉送價格（ADR-013）、Active ↔ ReduceOnly | 延遲價格、錯誤切換 ReduceOnly（不能 Halted、不能放寬到超出 Active） | Safe 立即撤銷 |
-| 提案者 Safe | 排程任何提案、關閉 `CancelGate` | 惡意的換邏輯或換價格來源在 7 天後生效。Council 可取消，但 Safe 能先關閉 `CancelGate`；**最後的保護是 7 天退出窗口**，合約內沒有救援路徑 | 使用者在 7 天內提領；監控（ADR-009）把任何 `UpgradeTimelock` 排程列為 SEV-1 |
+| guardian | 暫停、收緊到 ReduceOnly | Safe 在冷卻結束前撤銷它：只有一次暫停，在 72 小時到期，或 Safe 提出解除暫停後 48 小時（`ConfigTimelock`）結束，取較早者。Safe 遲遲不回應：每 96 小時停機 72 小時，直到撤銷；這段期間升級閘門也一直關著（升級被拖延）。**不能動資金；提領 `freeMargin` 不受影響（P1）** | Safe 立即撤銷；備援 guardian 立即接手。沒有備援時，7 天內沒有人能立即暫停 |
+| Security Council | 經 `CancelGate` 取消提案 | 治理延遲到「關閉 `CancelGate`」生效（48 小時）；已被取消的提案要重排一次完整延遲 | Safe 經 `ConfigTimelock` 關閉 `CancelGate`，Council 無法取消這筆關閉 |
+| keeper | 轉送價格（ADR-013）。**若擁有者決定保留 keeper 寫價的資產（ADR-013 §7 第 2 點，例如 3 檔 ETF），還能在單次與時間窗上限內寫假價格** | 只轉送時：延遲價格，但轉送是 permissionless（P4），使用者可以自己帶價格。保留 keeper 寫價資產時：**這是單一角色就能動到資金的路徑**——在限速內推動價格，再對著假價格平倉獲利；最壞損失由該資產的 OI 上限與獲利上限界定（`docs/RISK_WATERFALL.md:81-82`；`PerpetualExchange.sol:425-433` 的最壞負債公式） | Safe 立即撤銷；guardian 凍結該資產；備援 keeper 接手。上主網前應把這類資產的 OI 上限壓到可承受的損失以內（ADR-013 §6 第 1 點） |
+| marketOperator | Active ↔ ReduceOnly | 錯誤切成 ReduceOnly：擋新開倉，不擋平倉與提領；不能 Halted | Safe 立即撤銷；備援接手 |
+| 提案者 Safe | 排程任何提案；立即撤銷線上角色；經 `ConfigTimelock` 設 Halted／暫停、關閉 `CancelGate`、調整硬上限內的參數 | 惡意的換邏輯或換價格來源**最快在 7 天後**生效，而且只有在之前連續 7 天沒有任何暫停或 Halted 時才能執行（P3）。用 Halted 凍結平倉來縮短退出窗口的做法無效：Halted 最長 7 天、之後強制 ReduceOnly 並冷卻 72 小時（P2），而且會讓升級閘門重新計時。參數類的傷害以硬上下限為界，對既有部位不利的變更不溯及既往（§4.2）。**最後的保護是「連續 7 個可平倉日」的退出窗口**；合約內沒有其他救援路徑 | Council 在 48 小時內可取消惡意升級與 Halted；監控（ADR-009）把任何 `UpgradeTimelock` 排程與任何治理發起的 Halted／暫停列為 SEV-1；使用者在退出窗口內平倉與提領 |
 
-- 暫停期間提領保證金是否放行：原始碼版的全域暫停會擋提領（`docs/RISK_WATERFALL.md:104`）。V3 建議**暫停不擋 `MarginBank` 的提領 `freeMargin`**，讓使用者在升級爭議期間能退出【待擁有者決定】。
+#### Safe 被盜時，使用者能否取回資金（時間軸推演）
+
+假設 t0 時 Safe 被盜，攻擊者在 t0 同時：排程 (a) 惡意換 handler（`UpgradeTimelock`）、(b) 關閉 `CancelGate`（`ConfigTimelock`）、(c) 所有資產設 Halted（`ConfigTimelock`）；並立即撤銷 guardian 與 keeper。Council 不採取行動（最壞情況）。
+
+| 時間 | 狀態 | 使用者能否取回資金 |
+|---|---|---|
+| t0 | 撤銷 guardian、keeper 立即生效；三個提案排隊；監控發 SEV-1 | **能**：可平倉（價格轉送 permissionless，P4）、可提領 `freeMargin` |
+| t0 ～ t0＋48h | Council 可取消 (a) 與 (c)，不能取消 (b) | **能**：同上 |
+| t0＋48h | (b) 生效，Council 失效；(c) 生效，所有資產 Halted | `freeMargin` **能**提領（P1）；仍在部位裡的保證金**暫時不能**平倉 |
+| t0＋48h ～ t0＋9d | Halted 最長 7 天；升級閘門因限制生效而關閉，(a) 在 t0＋7d 雖已滿延遲也不能執行 | `freeMargin` 能；部位等待 Halted 到期 |
+| t0＋9d | Halted 到期，強制 ReduceOnly、72 小時冷卻（不能再設 Halted） | **能**：平倉、清算、提領都恢復 |
+| t0＋9d ～ t0＋12d | 冷卻期；升級閘門從 t0＋9d 起重新計時 | **能** |
+| t0＋12d 之後 | 攻擊者可以再排一次 Halted（48 小時後生效，最長 7 天），閘門再次重設；或停止設限，等連續 7 個可平倉日 | 每一輪之間至少有 72 小時以上可以平倉；`freeMargin` 隨時可提領 |
+| 最早的惡意升級生效時間 | 最後一次限制結束後連續 7 天無限制。若攻擊者在 t0＋9d 之後不再設限，**不早於 t0＋16d** | 惡意 handler 生效之前，使用者已連續 7 天可以平倉與提領 |
+
+結論：在任何時間點，`freeMargin` 都能提領；仍在部位裡的保證金，最長等待約 7 天（一次治理 Halted 的上限），之後至少有 72 小時可以平倉；惡意升級生效前，一定有連續 7 個可平倉日。殘餘風險：(1) keeper 被撤銷後，使用者要自己取得簽名價格才能平倉（P4）；(2) 價格來源本身中斷時，平倉本來就做不到，與治理無關；(3) 使用者必須在窗口內實際行動，這是所有 Stage 1 類設計的共同前提。
 
 ### 4.4 和租戶隔離的關係：共用程式碼版本，各自部署、各自升級
 
@@ -190,7 +231,7 @@ V3 的資料模型（DataStore 的數值單位、`MIN_MARGIN`、價格精度）*
 | 0. 前置決定 | ADR-011（小數位數）、ADR-012（金庫）、ADR-013（oracle）定案；本 ADR 的待決事項 | — |
 | 1. 骨架 | `MarginBank`、`FeeBank`、分層金庫（ADR-012 的會計搬入 V3，入帳帶來源參數）、`DataStore`、`RoleStore`、`EventEmitter`、`Keys`、兩個 Timelock、`CancelGate`、提案者 Safe 的「只能撤銷」權限；CI 大小門檻；部署與 `Verify` 腳本（讀回 code hash、角色、無 EOA CONTROLLER、guardian 無 Timelock 角色） | 12–18 人日 |
 | 2. 移植邏輯 | 把 `PerpetualExchange` 拆成 handler；**現有 forge 測試當行為規格**（`contracts/test` 下遞迴 85 個 `.t.sol` 測試檔、約 1,086 個 `test` 函式）逐一移植 | 20–35 人日 |
-| 3. 升級演練 | fork 測試：部署新版 handler → `UpgradeTimelock` 排程 → 授權新、撤銷舊 → Bank 餘額與部位不變、暫停狀態不變、舊 handler 呼叫 revert；Council 經 `CancelGate` 取消、Safe 關閉 `CancelGate`、Safe 立即撤銷 guardian；§4.2 分類表裡每一項都確認走對的 Timelock | 5–8 人日 |
+| 3. 升級演練 | fork 測試：部署新版 handler → `UpgradeTimelock` 排程 → 授權新、撤銷舊 → Bank 餘額與部位不變、暫停狀態不變、舊 handler 呼叫 revert；Council 經 `CancelGate` 取消、`CancelGate` 拒絕取消自己的關閉提案、Safe 立即撤銷 guardian 與備援接手；升級閘門在 Halted／暫停後重新計時、治理 Halted 到期轉 ReduceOnly 與冷卻、暫停下仍可提領；§4.2 分類表裡每一項（含兜底規則）都確認走對的 Timelock | 6–9 人日 |
 | 4. 依賴者改接 | `CopyTracker`（連同它的 `StrategyRegistry` 參照）、`AgentSessionManager`、獎勵合約、keeper、signal-api、前端、監控規則（事件改由 `EventEmitter` 發） | 8–12 人日 |
 | 5. 外部稽核 | — | **未查證**（要詢價） |
 | 6. 測試網並行 | V3 以新部署上 Base Sepolia（等同一個新租戶），V1 照常；之後 V1 所有資產改 ReduceOnly，使用者自行平倉與提領（不搬部位，#130 的教訓） | 3–5 人日＋觀察期 |
@@ -208,11 +249,12 @@ V3 的資料模型（DataStore 的數值單位、`MIN_MARGIN`、價格精度）*
 3. 升級演練（§5 階段 3）在測試網實際做過一次完整的 Timelock 流程，不只是 fork 測試。
 4. 每個 handler 的大小門檻在 CI，且留有餘裕。
 5. 仍是 UUPS 的合約（AssetVault）的儲存佈局檢查在 CI。
-6. guardian 不能授予或撤銷角色、不能排程或取消提案，只能暫停與收緊；提案者 Safe 能立即撤銷 guardian，且這條路徑不經 Timelock。§4.2 分類表的每一項都走對應的 Timelock。全部由驗證腳本讀回，並在測試網演練過一次「撤銷被盜 guardian」。
-7. 租戶版 Timelock 腳本存在（ADR-008 列為未完成），租戶部署時就在 Timelock 後面，而不是部署後由租戶自行決定。
-8. Bank 的 **USDC 守恆** invariant 測試：任何 handler 序列下，每顆 Bank 的 USDC 餘額＝存入 − 提領 ± 金庫撥款與注資 ± 轉入／轉出 `FeeBank` 等**可對帳流量**的累計值，也就是沒有任何不經記帳的轉出。**這不是償付性保證**：資金池是所有部位的對手方，交易者整體淨賺時，獲利直接記進 `freeMargin` 而不發 `BadDebt`，Bank 餘額可以低於 `freeMargin` 總和（ADR-012 §1.2 的淨曝險風險；`docs/RISK_WATERFALL.md:31-33`、`:73`「不保證恆償付」）。償付性以監控（ADR-012 §5 階段 0）與 ADR-012 方案 C（本文階段 8）處理，不寫成 invariant。
-9. 外部稽核完成，報告公開。
-10. ADR-011 的結算幣小數位數已在 V3 的資料模型落實。
+6. guardian 不能授予或撤銷角色、不能排程或取消提案，只能暫停與收緊；提案者 Safe 能立即撤銷 guardian，且這條路徑不經 Timelock；GUARDIAN、KEEPER、MARKET_OPERATOR 都有已授權的備援持有者。§4.2 分類表的每一項都走對應的 Timelock，未列出者走 7 天。全部由驗證腳本讀回，並在測試網演練過一次「撤銷被盜 guardian、備援接手」。
+7. §4.3 的設計前提 P1–P4 都有 invariant 或 fork 測試：任何暫停或 Halted 下都能提領 `freeMargin`；治理設的 Halted／暫停在 7 天內到期並強制 72 小時 ReduceOnly 冷卻；升級閘門在最近 7 天內有限制時 revert；撤銷 KEEPER 後任何人仍能帶簽名價格平倉。並以測試重現 §4.3 的「Safe 被盜」時間軸。
+8. 租戶版 Timelock 腳本存在（ADR-008 列為未完成），租戶部署時就在 Timelock 後面，而不是部署後由租戶自行決定。
+9. Bank 的 **USDC 守恆** invariant：每顆 Bank 自己維護 `accountedBalance`，每次經授權的轉入或轉出（存入、提領、金庫撥款與注資、轉入／轉出 `FeeBank`）時更新；任何 handler 序列下 `balanceOf(Bank) ≥ accountedBalance`，差額只可能是有人直接轉入、未入帳的款項。foundry invariant 與監控都直接檢查這一條。**這不是償付性保證**：資金池是所有部位的對手方，交易者整體淨賺時，獲利直接記進 `freeMargin` 而不發 `BadDebt`，Bank 餘額可以低於 `freeMargin` 總和（ADR-012 §1.2 的淨曝險風險；`docs/RISK_WATERFALL.md:31-33`、`:73`「不保證恆償付」）。償付性以監控（ADR-012 §5 階段 0）與 ADR-012 方案 C（本文階段 8）處理，不寫成 invariant。
+10. 外部稽核完成，報告公開。
+11. ADR-011 的結算幣小數位數已在 V3 的資料模型落實。
 
 ## 7. 待擁有者決定
 
@@ -221,17 +263,18 @@ V3 的資料模型（DataStore 的數值單位、`MIN_MARGIN`、價格精度）*
 3. 是否要緊急升級通道；要的話，Security Council 的組成與門檻，以及它能做的預先定義動作。
 4. Timelock 的 executor：只有 Safe，還是任何人。
 5. 租戶升級：租戶可以落後幾版、多久；平台是否在租戶的 Safe 上有簽署權。
-6. 暫停期間是否放行提領 `freeMargin`。
+6. （已改為設計前提 P1，不再待決）暫停與 Halted 期間一律放行提領 `freeMargin`。仍待決的是 P2 的數字：治理 Halted 的上限（建議 7 天）與冷卻（建議 72 小時）。
 7. 主網是否等 V3，還是先以 V1 上線。
 8. AssetVault 的升級權交給 7 天還是 48 小時的 Timelock。
 9. §4.2 的分類表：是否同意「價格來源、資金去向、授予角色」一律 7 天；哪些數值參數放進 48 小時，以及各自的硬上下限。
-10. 是否設 Security Council（及其 `CancelGate`）；不設時，取消權只在提案者 Safe 手上。
+10. 是否設 Security Council（及其 `CancelGate`）；不設時，取消權只在提案者 Safe 手上。關閉 `CancelGate` 走 48 小時（建議）還是由 Safe 立即關閉（§4.3 的取捨）。
+11. 備援持有者：guardian 的備援由誰持有（另一個小 Safe 或冷存金鑰）。
 
 ## 8. Consequences
 
 - 核心等於重寫，合約數從一顆 exchange 變成十顆左右；稽核範圍與費用增加，但之後每次修補只換一顆無狀態的 handler，不必排空。
 - oracle 不再是 exchange 的 immutable，#219 這類修補只需要一次 7 天的 `UpgradeTimelock` 提案，不必排空與重部署。
-- 「能升級＝能拿走資金」的本質不變，保護改由 Timelock 延遲（換邏輯與價格來源 7 天）、退出窗口、Security Council 的取消權（若設）與公開事件提供；這些要寫進對租戶與終端使用者的揭露。
+- 「能升級＝能拿走資金」的本質不變，保護改由 Timelock 延遲（換邏輯與價格來源 7 天）、以「可平倉日」計算的退出窗口（§4.3 的 P1–P3）、Security Council 的取消權（若設）與公開事件提供；這些要寫進對租戶與終端使用者的揭露。
 - 監控（ADR-009）改成看 `EventEmitter` 與 RoleStore 的角色事件；「有人被授予 CONTROLLER」是 SEV-1。
 - 每個租戶每次升級都要走一次自己的 Timelock，營運成本隨租戶數增加。
 

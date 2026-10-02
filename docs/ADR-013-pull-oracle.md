@@ -60,7 +60,7 @@ repo 裡已有 Pyth 與 Chainlink adapter，但都只部署在 Base Sepolia 作�
 
 ### 1.5 休市
 
-商業化計畫的 P1-11 是「休市靠價格過期停單」。以下是**截至 master `17ec739` 的行為**；這個問題的修正正在另一個分支（`fix/market-hours-staleness`）進行，`KNOWN_LIMITATIONS.md` 的對應條目也由那個分支補上。在 `17ec739` 上，這條路不會在一般週末觸發：
+商業化計畫的 P1-11 是「休市靠價格過期停單」。以下是**截至 master `17ec739` 的行為**；這個問題的修正在 [PR #232](https://github.com/zuemen/pepelab_onchain_cfd/pull/232)（標題：休市改以 marketOperator 切 ReduceOnly 停開倉，保留平倉與清算；2026-10-02 狀態為 open），`KNOWN_LIMITATIONS.md` 的對應條目也由該 PR 補上。在 `17ec739` 上，這條路不會在一般週末觸發：
 
 - keeper 接受 4 天內的 Yahoo 報價，超過才拒寫（`agent/keeper/feeds.ts:76`、`:132-140`）。
 - 報價是舊的時候，keeper 只發警告、價格照寫——程式註解寫明「價格照寫（否則週末會全部跳過）」「鏈上 updatedAt 會顯示新鮮，但價格並非即時」（`agent/keeper/round.ts:233-240`）。heartbeat 每 15 分鐘以新的區塊時間重寫**最後收盤價**（`core.ts:60-62`）。鏈上的 `updatedAt` 因此一直是新的，exchange 的 6 小時過期檢查不會觸發。
@@ -215,7 +215,7 @@ repo 裡已有 Pyth 與 Chainlink adapter，但都只部署在 Base Sepolia 作�
 ## 7. 待擁有者決定
 
 1. **供應商與預算**：Pyth（美股 $5,000／月、全資產 $10,000／月，與 Core 的對應待洽詢）、Data Streams（$150／feed／月起，覆蓋待確認），或兩者並用。
-2. **3 檔 ETF**：下架、等來源，還是保留 keeper 寫價（並接受信任假設）。
+2. **3 檔 ETF**：下架、等來源，還是保留 keeper 寫價（並接受信任假設）。保留時，被盜的 keeper 能在限速內寫假價格、以獲利形式動到資金，最壞損失由該資產的 OI 與獲利上限界定（ADR-015 §4.3 最壞情況表）。
 3. **sGOLD**：改追蹤現貨 XAU/USD，還是找期貨來源。
 4. **休市時是否放行平倉**：建議全停（只放行提領）；放行平倉則要接受「以過時價格平倉」的套利風險。
 5. **各資產類別的新鮮度與信賴區間門檻**。
@@ -229,7 +229,7 @@ repo 裡已有 Pyth 與 Chainlink adapter，但都只部署在 Base Sepolia 作�
 - keeper 從「寫價者」變成「轉送者」。被盜的影響從「平台：可寫任意價格（MockOracle，KNOWN_LIMITATIONS #3）；租戶：在限速內亂寫」降為「延遲或挑選有效價格」。
 - 每月多一筆資料訂閱費，金額取決於資產組合；這要進成本模型（`docs/COST_MODEL.md`）與租戶的收費（ADR-008 的待決事項）。
 - 休市期間交易會真的停下來；週末事件改由 ADR-012 的 junior 在開盤時吸收跳空。
-- `KNOWN_LIMITATIONS.md` 與 `RISK_WATERFALL.md` 目前都沒有「休市期間以最後收盤價成交」這一條；依分工由 `fix/market-hours-staleness` 分支補上 KNOWN_LIMITATIONS，本 PR 不改，補上後兩邊交叉引用。
+- `KNOWN_LIMITATIONS.md` 與 `RISK_WATERFALL.md` 目前都沒有「休市期間以最後收盤價成交」這一條；依分工由 [PR #232](https://github.com/zuemen/pepelab_onchain_cfd/pull/232) 補上 KNOWN_LIMITATIONS，本 PR 不改，合併後兩邊交叉引用。
 - 3 檔 ETF 可能要下架，sGOLD 的定義可能要改，這是產品變更，要對使用者公告。
 - 單一主來源中斷會讓所有租戶同時停單；交叉比對只負責「發現錯誤」，不負責「代替主來源」。
 
