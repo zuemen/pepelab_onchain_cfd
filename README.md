@@ -171,6 +171,10 @@ npm run mcp-server      # 本機啟動 MCP server（stdio）
 | [`docs/CARBON_METHODOLOGY.md`](docs/CARBON_METHODOLOGY.md) | 碳分級方法與資料品質（草案） |
 | [`docs/INCIDENT_RESPONSE.md`](docs/INCIDENT_RESPONSE.md) | 事故應變（草案） |
 | [`docs/ADR-009-monitoring.md`](docs/ADR-009-monitoring.md)、[`ops/monitoring/rules.md`](ops/monitoring/rules.md) | 鏈上監控方案決策與監控規則清單（部署見 [`ops/monitoring/README.md`](ops/monitoring/README.md)） |
+| [`docs/ADR-012-junior-buffer-tranches.md`](docs/ADR-012-junior-buffer-tranches.md) | 上主網前設計（提案）：分層保險金庫（租戶 junior／外部 senior）與鏈下對沖介面 |
+| [`docs/ADR-013-pull-oracle.md`](docs/ADR-013-pull-oracle.md) | 上主網前設計（提案）：簽名 pull oracle、交叉比對、休市與新鮮度 |
+| [`docs/ADR-014-signer-custody-kms-mpc.md`](docs/ADR-014-signer-custody-kms-mpc.md) | 上主網前設計（提案）：keeper 與結算 signer 移進雲端 KMS、金鑰輪替與稽核 |
+| [`docs/ADR-015-v3-upgradeability.md`](docs/ADR-015-v3-upgradeability.md) | 上主網前設計（提案）：V3 核心可升級架構（資金合約不可變、邏輯可替換） |
 | [`docs/api/openapi.yaml`](docs/api/openapi.yaml) | signal-api 規格 |
 | [`docs/RISK_MODEL.md`](docs/RISK_MODEL.md) | 金庫風險模型 |
 | [`docs/VAULT_VERSIONS.md`](docs/VAULT_VERSIONS.md) | 金庫版本與鏈上實作對照 |
