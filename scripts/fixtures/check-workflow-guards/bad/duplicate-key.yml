@@ -1,0 +1,11 @@
+# 測試用反例 fixture：重複的鍵。不同解析器取第一個或最後一個，結果不同 → 一律拒絕。
+name: fixture duplicate key
+on:
+  push:
+jobs:
+  d:
+    runs-on: ubuntu-latest
+    environment: admin-approval
+    environment: keeper
+    steps:
+      - run: echo d
