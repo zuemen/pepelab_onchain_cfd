@@ -50,7 +50,7 @@
 
 上表兩列 GuardedOracle 是鏈上現行版本（`0x8E9e…`）的行為：guardian 的凍結與暫停沒有期限。
 新版原始碼（2026-10-01，尚未部署，要重部署 oracle 才生效）改為 guardian 的凍結或暫停 72 小時後自動失效、
-同一範圍接著 24 小時冷卻；要維持更久必須由 admin 接手（同一個函式，admin 呼叫即無期限）。
+同一範圍接著 24 小時冷卻（暫停若提前解除，冷卻從解除時起算）；要維持更久必須由 admin 接手：`takeOverAssetFreeze(id)`／`takeOverPause()`，只接手正在生效的 guardian 停機，guardian 已解除時會 revert，不會變成新的無期限停機。誤報的暫停請立刻解除：它不會削弱之後的資產凍結。
 到期是 fail-open，且到期只移除凍結、不更新價格。規則與代價見 [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md) #27。
 
 2026-09-30 唯讀查詢：Base 金庫的 `PAUSER_ROLE` 與 GuardedOracle 的 `GUARDIAN_ROLE` 不在 owner EOA 上。

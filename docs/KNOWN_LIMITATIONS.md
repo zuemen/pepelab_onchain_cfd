@@ -864,7 +864,7 @@ This is accepted for now, with the following response after the handover:
 The response above describes the **live** oracle `0x8E9e…`, which is the
 build without an expiry. It stays the procedure until that oracle is replaced.
 
-### Bounded guardian halts (source only, 2026-10-01)
+### Bounded guardian halts (source only, 2026-10-01; revised 2026-10-02)
 
 Branch `contracts/oracle-freeze-expiry-checkin` adds the bound to
 `src/v2/GuardedOracle.sol`. GuardedOracle is not upgradeable, so it reaches a
@@ -876,35 +876,77 @@ Nothing has been deployed.
 What the new build does:
 
 - **Guardian** (`GUARDIAN_ROLE` without the admin role). A freeze or pause
-  lapses `GUARDIAN_HALT_DURATION` (72h) after its window opened, with no
+  lapses at most `GUARDIAN_HALT_DURATION` (72h) after it started, with no
   transaction: `getPrice`, `isStale`, `peek` and `paused()` all read the halt
   as "in force until expiry". The guardian cannot extend a halt (halting an
-  already-halted scope reverts), may lift its own halt early, and may re-halt
-  inside the same window, but the window's end never moves. After the window
-  ends the guardian waits `GUARDIAN_HALT_COOLDOWN` (24h) before it can open
-  another on that scope. The clocks belong to the scope, so several guardian
-  keys share them.
+  already-halted scope reverts) and cannot lift an admin halt. The clocks
+  belong to the scope, so several guardian keys share them.
+  - *Freeze:* may be lifted early and re-placed inside the same window; the
+    window's end never moves. After the window ends, 24h
+    (`GUARDIAN_HALT_COOLDOWN`) before another freeze window on that asset.
+  - *Pause:* lifting it early **closes its window at the lift**, so the 24h
+    cooldown runs from when the pause actually ended and the next pause gets a
+    full window of its own. Exception: if a guardian freeze was placed while
+    the pause was in force, that freeze runs to the pause's original end and so
+    does the pause window (no re-pause inside it, cooldown from there).
 - **Admin** (`DEFAULT_ADMIN_ROLE`, the timelock after the handover). A halt it
-  places has no expiry and only the admin can lift it. Calling the same
-  function on a running guardian halt takes it over (clears the expiry). The
-  guardian can neither lift an admin halt nor replace it with an expiring one.
-  72h is longer than the 48h timelock on purpose: a freeze that must outlast
-  the guardian window is taken over by a timelock proposal made right away.
-- **Freeze and pause share a clock where they overlap.** The pause covers
-  every asset, so a guardian freeze also answers to the pause's clock: opened
-  while a guardian pause window runs, it ends no later than that window, and
-  none opens during the pause's cooldown. Without this the two scopes could be
-  alternated to keep one asset unreadable indefinitely.
+  places has no expiry and only the admin can lift it.
+  - `takeOverAssetFreeze(id)` / `takeOverPause()` turn a **running** guardian
+    halt into one with no expiry, and revert `NothingToTakeOver` when there is
+    none (lifted, lapsed, or already the admin's). This is the call to queue in
+    the timelock: if the guardian lifts a false alarm while the proposal waits,
+    executing it does nothing instead of starting a new indefinite halt.
+  - `setAssetFrozen(id, true)` / `setPaused(true)` by the admin mean "make sure
+    an admin halt with no expiry is in force": they start one when nothing is
+    in force, and also convert a running guardian halt. Use them only when an
+    indefinite halt is wanted regardless of what the guardian did meanwhile.
+  - 72h is longer than the 48h timelock on purpose: a takeover proposed right
+    after the guardian acts executes before the halt lapses.
+- **Freeze and pause share a clock where they overlap**, measured by when the
+  pause **actually** ran (`lastGuardianPause()` returns that interval). The
+  pause covers every asset, so without a shared rule the two scopes could be
+  alternated to keep one asset unreadable indefinitely. A guardian freeze that
+  opens a new window:
+  - while a guardian pause is in force: ends no later than the pause;
+  - within 24h after a guardian pause that ran for `d` ended: is shortened by
+    `d`; refused for that day if the pause ran its full 72h, or if this asset's
+    own guardian freeze window ended less than 24h before the pause started;
+  - otherwise (and under an admin pause): the full 72h.
+  A pause that is lifted at once (a false alarm, or one stolen guardian key
+  trying to burn the brakes) therefore costs later freezes nothing. An earlier
+  draft of this branch capped every freeze to the pause's 72h window even after
+  the pause was lifted, and then refused all freezes for a day after that
+  window; the PR #219 review found that any pause, even one lifted at once,
+  weakened every asset's brake for days, and the rule above replaces it.
+  Why the pause window closes on an early lift instead of staying open with
+  only the in-force time capping freezes: an open window can be re-entered,
+  so when a freeze starts nobody knows yet how long the pause will end up
+  running; a freeze given its full length in a lifted gap, with the pause
+  re-entered around it, could then outlast the 144h bound. Closing the window makes
+  the pause's record final the moment it ends, so the freeze rule can use it.
+  The cost: after lifting a pause early the guardian cannot pause again for
+  24h (it can still freeze assets, at full length after a false alarm).
 - An account that holds both roles is treated as the admin (its halts do not
   lapse). `GuardedOracle`'s constructor grants both to the deployer;
   `RedeployGuardedOracle` renounces the deployer's guardian role and warns
   when `GUARDIAN` equals the broadcaster.
 
-What a guardian acting alone can still do with the new build, per asset: hold
-it halted for at most 144h in one stretch (a 72h freeze, then a 72h pause
-opened before the freeze ends); after every guardian pause window the asset
-gets 24h with no guardian halt of any kind, and that clean day recurs at least
-every 168h. The admin revoking the role (48h) ends it sooner.
+What a guardian acting alone can still do with the new build, per asset
+(measured to the second by `test/v2/GuardedOracleHaltBound.t.sol`, 3,000 fuzz
+runs per strategy, plus deterministic worst cases):
+
+- hold it halted for at most **144h** in one unbroken stretch (a 72h freeze,
+  then a 72h pause opened before the freeze ends); then the asset gets 24h with
+  no guardian halt of any kind;
+- halted time between two clean 24h spans (short clean gaps inside it count
+  as halted) is **under 192h** (was 168h before the revision: a short pause, a
+  freeze opened just under a day after it, and a full pause opened just under
+  a day after that freeze ended can now follow one another). A completed clean
+  day therefore follows the previous one within **216h**. The previous text
+  here ("recurs at least every 168h") understated this even for the earlier
+  draft (192h start to start).
+
+The admin revoking the role (48h) ends it sooner.
 
 What the bound does **not** give, and what it costs:
 
@@ -922,26 +964,31 @@ What the bound does **not** give, and what it costs:
   new oracle gets `ORACLE_MAX_PRICE_AGE` (default 21600 = 6h, bounded to
   1h..30d, never 0), and every copied price must already be younger than that,
   so no asset is stale the moment the vault is re-pointed.
-- **The cooldown is 24h without the guardian's brake on that scope.** After a
-  freeze window ends, that asset cannot be frozen by the guardian for 24h
-  (other assets can, and so can the pause unless it is in its own cooldown);
-  after a pause window ends, neither the pause nor any freeze is available to
-  the guardian for 24h. The admin can still halt (48h through the timelock),
-  and the exchange guardian's pause / ReduceOnly and the vault's `PAUSER_ROLE`
-  are separate keys with separate clocks.
-- **A freeze opened late in a pause window is short** (it ends with the
-  window) and may be too short for a timelock takeover.
+- **Cooldowns.** After a freeze window ends, that asset cannot be frozen by the
+  guardian for 24h (other assets can). After a pause ends, the pause is not
+  available to the guardian for 24h (from the actual end; from the original
+  end when a freeze was placed under it), and new freezes in that day are
+  shortened by how long the pause ran, or refused as described above. The
+  admin can still halt (48h through the timelock), and the exchange guardian's
+  pause / ReduceOnly and the vault's `PAUSER_ROLE` are separate keys with
+  separate clocks.
+- **A freeze placed under a pause, or within a day after a long pause, is
+  short** (it ends with the pause, or is shortened by the pause's length) and
+  may be too short for a timelock takeover: propose the takeover of the pause
+  as soon as it starts.
 - **A lapse emits no event** (there is no transaction). Watchers read
   `expiresAt` from `AssetFreezeStarted` / `PauseStarted`, or `freezeOf` /
-  `pauseState`.
-- After the admin lifts a guardian halt early, the guardian can halt the same
-  scope again until its original window ends. Revoke the role in the same
+  `pauseState` / `lastGuardianPause`.
+- After the admin lifts a guardian freeze early, the guardian can freeze that
+  asset again until its original window ends. Revoke the role in the same
   proposal if the guardian is the problem.
 
 Tests: `test/v2/GuardedOracleHaltExpiry.t.sol` (expiry and cooldown
-boundaries, admin no-expiry and takeover, cross-scope clock, interaction with
-the step cap / rate limit / reference check, a V2 vault redeem across a lapse)
-and `test/fork/RedeployGuardedOracleFork.t.sol`.
+boundaries, admin no-expiry, takeover functions, cross-scope rule, interaction
+with the step cap / rate limit / reference check, a V2 vault redeem across a
+lapse), `test/v2/GuardedOracleHaltBound.t.sol` (exact-interval bounds,
+false-alarm regression, admin interleaving) and
+`test/fork/RedeployGuardedOracleFork.t.sol`.
 
 ## 28. Timelock governance: 48h recovery, single Safe (added 2026-09-30)
 
@@ -994,15 +1041,22 @@ Branch `contracts/oracle-freeze-expiry-checkin` changes the source:
   `totalAchievementPoints`) and transfers nothing. It no longer reads the PEPE
   pool, so an empty pool does not stop a check-in.
 - Points are non-transferable by construction: the contract has no function
-  that moves, approves, spends, burns or owner-mints them. They only increase,
-  and only for the account that checked in.
+  that moves, approves, spends or burns them, and none that credits them
+  directly from the owner. They only increase, and only for the account that
+  checked in. The owner does set the per-check-in amounts (`setDailyParams`),
+  now bounded: base and per-day bonus at most 1,000e18 each, streak cap at
+  most 30, so one check-in credits at most 30,000e18 (`MAX_POINTS_PER_CHECK_IN`)
+  and `totalAchievementPoints` cannot be pushed into overflow. Every change
+  emits `DailyParamsSet`.
 - Same curve and same scale as before: `dailyBase` 50e18, `dailyStreakBonus`
-  10e18 per consecutive day, capped at a 7-day streak (110e18). The
-  `DailyCheckIn` event keeps its signature; its last field is now the points
-  credited.
+  10e18 per consecutive day, capped at a 7-day streak (110e18). The event is
+  renamed `CheckInPointsCredited` (same fields): the old build's `DailyCheckIn`
+  carried a PEPE amount actually transferred, and an indexer that counts that
+  event must not count points as PEPE.
 - Two small hardenings in the same function: the streak is computed in
   `uint256` (a cap of 255 used to overflow `uint8` and revert every later
-  check-in), and `setDailyParams` refuses a cap of 0.
+  check-in), and `setDailyParams` refuses a cap of 0 or anything over the
+  bounds above.
 - The other reward paths (`claimTradeMining`, `claimTierReward`,
   `claimCopyReward`, `claimEsgHoldReward`) are **unchanged and still pay
   PEPE**. #101 decided only the check-in.
@@ -1015,12 +1069,21 @@ carried over. The live Base Sepolia instance `0xEBfA…` (owner `0x858b…`, not
 the deployer; see GOVERNANCE_HANDOVER §1) still transfers PEPE on every
 check-in.
 
-Frontend: `/rewards` asks the contract which build it is
-(`probeCheckInUnit` in `frontend/src/lib/pepefi/achievements.ts` reads
-`achievementPoints`, which only the new build has). Against the live contract
-the probe answers "PEPE" and the page reads and says exactly what it did
+Frontend: `/rewards` asks the chain which build it is
+(`probeCheckInUnit` in `frontend/src/lib/pepefi/achievements.ts`): it reads the
+contract's bytecode (`eth_getCode`) and looks for the `achievementPoints`
+selector, which only the new build has. It does not try calling the function:
+ethers v6 reports every JSON-RPC error on `eth_call` (rate limit, header not
+found, internal error, HTTP 429) the same way as a call to a missing function,
+so a flaky RPC would have flipped a points build back to "PEPE" (PR #219 review
+B-F1). A failed read is "unknown" and keeps the last settled answer for that
+contract address; once "points" is settled it is never downgraded. Against the
+live contract the probe answers "PEPE" and the page says exactly what it did
 before; against a new instance it switches to the points wording and shows the
-balance. `/rewards` is behind `FEATURE_PEPE_REWARDS`, off by default.
+balance. The same answer (`hooks/useCheckInUnit.ts`) picks the check-in error
+text, the admin pool description and the PepeLab "not enough PEPE" hint, so
+none of them tells a points build's users that check-in pays PEPE.
+`/rewards` is behind `FEATURE_PEPE_REWARDS`, off by default.
 
 Still open, for a decision:
 
@@ -1033,8 +1096,9 @@ Still open, for a decision:
   transaction.
 
 Tests: `test/PepeIncentives.t.sol` (no PEPE moves, empty pool, curve and cap,
-no transfer/approve/burn/mint surface, pause, fuzz against a model of the
-curve) and `frontend/src/lib/pepefi/achievements.test.ts` (the probe).
+parameter bounds and event, no transfer/approve/burn/mint surface, pause, fuzz
+against a model of the curve) and `frontend/src/lib/pepefi/achievements.test.ts`
+(the probe, including -32005 / -32000 / -32603 / 429 errors).
 
 ## Frontend
 
