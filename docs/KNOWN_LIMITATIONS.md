@@ -46,7 +46,7 @@ was not, the reason is given rather than glossed over.
 | 22 | Guardian pause expiry bounds each pause, not the number of pauses | **By design** — owner rotates a misbehaving guardian |
 | 23 | Global pause blocks exits and liquidations | **By design** — deposits stay open; funding/borrow frozen; grace period after |
 | 24 | Portfolio margin has no account-level net liquidation | **Open** — `portfolioMarginEnabled` must stay **off** in production until implemented and audited (off on the live deployment) |
-| 25 | InsuranceVault has no virtual shares (first-depositor inflation) | **Mitigated** — zero-share deposits revert; attack profitability not removed |
+| 25 | InsuranceVault had no virtual shares (first-depositor inflation) | **Fixed in source, not deployed** (2026-10-02, P1-05) — virtual shares + decimals offset 6; inflating the share price is unprofitable (net ≤ 1 wei) in source. The two deployed vaults are the old version until redeployed (docs/INSURANCE_VAULT_SHARES.md §5) |
 | 26 | Portfolio (cross) margin removed | **Resolved by removal** (2026-09-30) — supersedes #24; isolated margin only |
 | 27 | Exchange guardian's per-asset brake stops at ReduceOnly; only the owner can Halt | **By design** (2026-09-30, PR #198, source only) — the *exchange* guardian cannot freeze exits by asset mode. The GuardedOracle guardian's freeze and pause are **bounded in source** (2026-10-01, `contracts/oracle-freeze-expiry-checkin`: 72h expiry, 24h cooldown) but **not deployed**: the live oracle `0x8E9e…` still has no expiry (see §27 below) |
 | 28 | After the timelock handover, recovery actions wait 48h and depend on one Safe | **By design** — losing the Safe freezes governance permanently |
@@ -858,14 +858,25 @@ removed from the contract altogether.
 
 ## 25. InsuranceVault has no virtual shares
 
-The vault mints `shares = amount × supply / totalAssets` with no virtual
-shares or dead-share offset. A first depositor who mints 1 share and then
-inflates `totalAssets` (any protocol inflow counts) can make later deposits
-round down. Since 2026-09-29 a deposit that would mint **0 shares reverts**
-(`ZeroShares`), so a victim's USDC can no longer be silently absorbed; a
+**Status (2026-10-02, P1-05): fixed in source, not deployed.**
+
+*Deployed vaults (unchanged until redeployed):* the vault mints
+`shares = amount × supply / totalAssets` with no virtual shares or dead-share
+offset. A first depositor who mints 1 share and then inflates `totalAssets`
+(any protocol inflow counts) can make later deposits round down. Since
+2026-09-29 a deposit that would mint **0 shares reverts** (`ZeroShares`), but a
 deposit that rounds to a *small* number of shares still loses the rounding
-remainder to existing holders. Virtual shares (ERC-4626-style offset) would
-remove the attack's profitability and are the intended follow-up.
+remainder to existing holders.
+
+*Source (`contracts/src/InsuranceVault.sol`):* shares are priced with
+10^6 virtual shares and 1 virtual asset (the OpenZeppelin ERC-4626
+decimals-offset construction), both conversions round toward the vault, and
+share decimals become asset decimals + 6. Proven and fuzzed bounds: whoever
+raises the share price on a small supply nets at most 1 wei (≤ 0 when exiting
+first), a later depositor loses less than one share unit's price, and the
+raiser loses about 10^6 times what they can make a later depositor lose.
+Design, derivation and the migration plan (the vault is not upgradeable and
+the FeeRouters hold it immutably): `docs/INSURANCE_VAULT_SHARES.md`.
 
 ## 26. Portfolio (cross) margin removed
 

@@ -13,6 +13,12 @@ import { UI_RETRIES, scanFromBlock, scanContractEvents } from 'src/lib/pepefi/ch
 import Skeleton, { TableSkeleton } from 'src/components/pepefi/Skeleton'
 import EmptyState from 'src/components/pepefi/EmptyState'
 import { useToast } from 'src/components/pepefi/ToastProvider'
+import {
+  LEGACY_SHARE_DECIMALS,
+  estimateDepositShares,
+  estimateWithdrawAssets,
+  formatShares,
+} from 'src/lib/pepefi/vaultShares'
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -35,6 +41,8 @@ interface VaultStats {
   totalSupply:  bigint
   sharePrice:   bigint
   myShares:     bigint
+  /** pIV decimals read from the vault (18 legacy, 24 after P1-05). */
+  shareDecimals: number
   myUsdcValue:  bigint
   feesRouted:   bigint  // N1: cumulative trading fees routed to the vault
   feeShareBps:  bigint  // N1: % of trading fee routed to LPs
@@ -49,6 +57,11 @@ interface ActivityEntry {
 }
 
 const ZERO = 0n
+
+/** Parse a typed amount; anything unparsable is 0 (estimates only). */
+function parseOrZero(v: string, decimals: number): bigint {
+  try { return parseUnits(v.trim(), decimals) } catch { return ZERO }
+}
 
 function f18(v: bigint, dec = 2): string {
   return Number(formatUnits(v, 18)).toLocaleString(undefined, {
@@ -158,12 +171,15 @@ export default function VaultPage() {
     if (!vault || !wallet.address) return
     try {
       // Isolated so one unavailable view doesn't blank every vault stat.
-      const [totalAssets, totalSupply, sharePrice, myShares] = await Promise.all([
+      const [totalAssets, totalSupply, sharePrice, myShares, shareDec] = await Promise.all([
         safeRead(vault.totalAssets()    as Promise<bigint>, ZERO),
         safeRead(vault.totalSupply()    as Promise<bigint>, ZERO),
         safeRead(vault.getSharePrice()  as Promise<bigint>, ZERO),
         safeRead(vault.balanceOf(wallet.address) as Promise<bigint>, ZERO),
+        // P1-05: pIV decimals differ between vault versions; never assume 18.
+        safeRead(vault.decimals() as Promise<bigint>, BigInt(LEGACY_SHARE_DECIMALS)),
       ])
+      const shareDecimals = Number(shareDec)
       // N1: trading-fee routing stats (best-effort; older ABIs lack these).
       let feesRouted = ZERO
       let feeShareBps = ZERO
@@ -175,10 +191,9 @@ export default function VaultPage() {
           ])
         } catch { /* feature not deployed */ }
       }
-      const myUsdcValue = totalSupply > ZERO
-        ? myShares * totalAssets / totalSupply
-        : ZERO
-      setStats({ totalAssets, totalSupply, sharePrice, myShares, myUsdcValue, feesRouted, feeShareBps })
+      // Same formula and rounding as the vault's previewWithdraw.
+      const myUsdcValue = estimateWithdrawAssets(myShares, totalSupply, totalAssets, shareDecimals)
+      setStats({ totalAssets, totalSupply, sharePrice, myShares, shareDecimals, myUsdcValue, feesRouted, feeShareBps })
     } catch { /* not deployed */ }
   }, [vault, exchange, wallet.address])
 
@@ -214,7 +229,10 @@ export default function VaultPage() {
     if (!vault || !wallet.signer) return
     setBusy(true)
     try {
-      const shares = parseUnits(withdrawAmt.trim(), 18)
+      // Read decimals at submit time: a stale or missing stats object must
+      // never scale the share amount by the wrong power of ten.
+      const shareDecimals = Number(await vault.decimals())
+      const shares = parseUnits(withdrawAmt.trim(), shareDecimals)
       const tx = await vault.withdraw(shares)
       await tx.wait()
       notify(interpolate(t.vault.withdraw.done, { amount: withdrawAmt }), true, tx.hash)
@@ -262,7 +280,7 @@ export default function VaultPage() {
         {[
           { label: t.vault.stat.totalAssets, value: stats ? f18(stats.totalAssets) + ' USDC' : null },
           { label: t.vault.stat.sharePrice,  value: stats ? f18(stats.sharePrice) + ' USDC/pIV' : null },
-          { label: t.vault.stat.totalSupply, value: stats ? f18(stats.totalSupply) + ' pIV' : null },
+          { label: t.vault.stat.totalSupply, value: stats ? formatShares(stats.totalSupply, stats.shareDecimals) + ' pIV' : null },
           { label: t.vault.stat.myValue,     value: stats ? f18(stats.myUsdcValue) + ' USDC' : null },
         ].map(s => (
           <Grid size={{ xs: 6, md: 3 }} key={s.label}>
@@ -321,7 +339,7 @@ export default function VaultPage() {
                 {t.vault.position.shares}
               </Typography>
               <Typography variant="body1" sx={{ fontFamily: MONO, fontWeight: 'bold' }}>
-                {f18(stats.myShares, 4)}
+                {formatShares(stats.myShares, stats.shareDecimals, 4)}
               </Typography>
             </Box>
             <Box>
@@ -368,11 +386,14 @@ export default function VaultPage() {
             {stats && depositAmt && (
               <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
                 {interpolate(t.vault.deposit.estimate, {
-                  shares: f18(
-                    stats.totalSupply > ZERO && stats.totalAssets > ZERO
-                      ? (BigInt(Math.floor(Number(depositAmt) * 1e18)) * stats.totalSupply) /
-                          stats.totalAssets
-                      : BigInt(Math.floor(Number(depositAmt) * 1e18)),
+                  shares: formatShares(
+                    estimateDepositShares(
+                      parseOrZero(depositAmt, 18),
+                      stats.totalSupply,
+                      stats.totalAssets,
+                      stats.shareDecimals,
+                    ),
+                    stats.shareDecimals,
                     4,
                   ),
                 })}
@@ -414,10 +435,12 @@ export default function VaultPage() {
                 <Typography variant="caption" color="text.secondary" sx={{ fontFamily: MONO }}>
                   {interpolate(t.vault.withdraw.estimate, {
                     amount: f18(
-                      stats.totalSupply > ZERO
-                        ? (BigInt(Math.floor(Number(withdrawAmt) * 1e18)) * stats.totalAssets) /
-                            stats.totalSupply
-                        : 0n,
+                      estimateWithdrawAssets(
+                        parseOrZero(withdrawAmt, stats.shareDecimals),
+                        stats.totalSupply,
+                        stats.totalAssets,
+                        stats.shareDecimals,
+                      ),
                       4,
                     ),
                   })}
@@ -428,10 +451,10 @@ export default function VaultPage() {
                   size="small"
                   variant="text"
                   color="inherit"
-                  onClick={() => setWithdrawAmt(formatUnits(stats.myShares, 18))}
+                  onClick={() => setWithdrawAmt(formatUnits(stats.myShares, stats.shareDecimals))}
                   sx={{ textDecoration: 'underline', p: 0, minWidth: 0, textTransform: 'none', typography: 'caption', color: 'text.secondary', '&:hover': { color: 'text.primary', bgcolor: 'transparent' } }}
                 >
-                  {interpolate(t.vault.withdraw.max, { shares: f18(stats.myShares, 4) })}
+                  {interpolate(t.vault.withdraw.max, { shares: formatShares(stats.myShares, stats.shareDecimals, 4) })}
                 </Button>
               )}
             </Box>
