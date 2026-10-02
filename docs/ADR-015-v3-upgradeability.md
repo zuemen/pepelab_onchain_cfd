@@ -94,7 +94,7 @@ plan-item: D2（選項卡）
 | **存狀態（不可變）** | `DataStore` | 否 | 部位、參數、oracle 位址、暫停旗標、資產模式——全部以鍵值存放 |
 | | `RoleStore` | 否 | 角色（CONTROLLER、GUARDIAN、KEEPER、MARKET_OPERATOR…） |
 | | `EventEmitter` | 否 | 統一發事件，handler 換了事件位址不變（ADR-009 的監控不用改位址） |
-| **邏輯（可替換）** | `OrderHandler`（開平倉）、`LiquidationHandler`、`AdlHandler`、`FundingHandler`、`ConfigHandler`（風險參數） | 是 | 無；持有 CONTROLLER 才能寫 DataStore、從 Bank 轉出 |
+| **邏輯（可替換）** | `OrderHandler`（開倉）、`ExitHandler`（平倉、提領 `freeMargin`；撤銷受 P3 保護）、`LiquidationHandler`、`AdlHandler`、`FundingHandler`、`ConfigHandler`（風險參數） | 是 | 無；持有 CONTROLLER 才能寫 DataStore、從 Bank 轉出 |
 | | `Router`（使用者入口；`CopyTracker`、`AgentSessionManager` 改呼叫它） | 是 | 無；只把使用者的 USDC 轉進 Bank |
 | | `OracleRouter`（ADR-013 的 pull oracle 驗證） | 是 | 無 |
 | | `Reader`（view，取代 Lens） | 是 | 無 |
@@ -152,7 +152,7 @@ plan-item: D2（選項卡）
   - 治理（`ConfigTimelock`）設的 Halted 或全域暫停：最長 7 天到期；到期後該資產（或全站）自動回到 **ReduceOnly**（可以平倉與清算），並有 72 小時冷卻，冷卻期間**治理（`ConfigTimelock`）**不能再設 Halted 或暫停。guardian 的暫停不受這個冷卻限制（它自己的 72 小時到期與 24 小時冷卻照舊），以免治理限制到期後的 72 小時內沒有人能緊急暫停。冷卻以「資產＋全站」合併記錄：資產的 Halted 到期後，治理也不能立刻接上全站暫停，反之亦然。
   - 需要長期停止的資產（例如價格來源永久中斷）用 ReduceOnly 而不是 Halted。價格來源真的沒有價格時，平倉本來就做不到，這不是治理能解決的問題。
   - Timelock 接手 guardian 的凍結（比照 GuardedOracle 的 `takeOverPause`）也受同一條 7 天上限；GuardedOracle 現行「admin 自己下的凍結沒有期限」（`contracts/src/v2/GuardedOracle.sol:613-619`）在 V3 不沿用。
-- **P3｜升級閘門**：`UpgradeTimelock` 的任何操作，只有在「執行前連續 7 天內沒有任何全域暫停或 Halted 生效，**也沒有任何資產因新鮮度或信賴區間檢查失敗而連續超過 1 小時無法平倉**」時才能執行，否則 revert、等待（價格品質事件由 handler 在平倉失敗時寫入 DataStore，閘門讀取）。**例外**：只收縮權限的操作（撤銷 CONTROLLER）不受閘門與延遲限制，由提案者 Safe 立即執行，用來在漏洞被利用時先切斷有問題的 handler。DataStore 記錄最近一次限制結束的時間，Timelock 的執行器讀它。也就是說，**退出窗口以「可平倉的時間」計算**，而不是日曆時間。guardian 的暫停也計入：被盜的 guardian 可以藉此拖延升級，但 Safe 能立即撤銷它（下表）。
+- **P3｜升級閘門**：`UpgradeTimelock` 的任何操作，只有在「執行前連續 7 天內沒有任何全域暫停或 Halted 生效，**也沒有任何資產因新鮮度或信賴區間檢查失敗而連續超過 1 小時無法平倉**」時才能執行，否則 revert、等待（價格品質事件由 handler 在平倉失敗時寫入 DataStore，閘門讀取）。**例外**：提案者 Safe 可以不經閘門與延遲、立即撤銷 handler 的 CONTROLLER，用來在漏洞被利用時先切斷有問題的 handler；**但不包含退出路徑**。平倉、清算與提領 `freeMargin` 放在獨立的 `ExitHandler`（與開倉的 `OrderHandler` 分開），它的 CONTROLLER 只能經 `UpgradeTimelock`＋閘門變更。否則被盜的 Safe 可以立即撤銷退出路徑、無限期凍結所有人的資金，違反 P1。DataStore 記錄最近一次限制結束的時間，Timelock 的執行器讀它。也就是說，**退出窗口以「可平倉的時間」計算**，而不是日曆時間。guardian 的暫停也計入：被盜的 guardian 可以藉此拖延升級，但 Safe 能立即撤銷它（下表）。
 - **P4｜價格轉送是 permissionless**（ADR-013 §4.2）：撤銷 KEEPER 不能讓價格停更，任何人都可以把簽名價格帶進自己的平倉交易。殘餘風險：使用者要自己取得簽名價格，而 Pyth Hermes 需要 API key（ADR-013 §2.1），一般使用者取得的方式與費用**未查證**；平台與租戶應提供公開的取價端點，而且它不受鏈上治理控制。
 
 #### 角色
@@ -179,7 +179,8 @@ plan-item: D2（選項卡）
 
 | 情境 | 最短時間 | 說明 |
 |---|---|---|
-| 發現漏洞、先止血 | 立即 | guardian 暫停（72 小時到期）；提案者 Safe 立即撤銷有問題 handler 的 CONTROLLER（P3 例外），被撤銷的功能停止運作 |
+| 發現漏洞、先止血 | 立即 | guardian 暫停（72 小時到期）；提案者 Safe 立即撤銷有問題 handler 的 CONTROLLER（P3 例外，`ExitHandler` 除外），被撤銷的功能停止運作 |
+| 漏洞在退出路徑（`ExitHandler`）本身 | 7 天＋閘門 | 退出路徑不能被立即撤銷；止血只能靠 guardian 暫停（會計入閘門）。這是刻意的取捨：寧可修補慢，也不讓任何單一角色能無限期凍結退出 |
 | 部署修正版 handler 並授予 CONTROLLER | 7 天延遲，且需先有連續 7 天沒有暫停、Halted 或價格品質失敗 | 若止血時用了暫停，閘門從暫停結束起重新計時，所以實際最短約 7 天（未暫停）到 14 天以上（有暫停） |
 | 只調整硬上限內的參數 | 48 小時 | 例如調低 OI 上限、收緊槓桿 |
 
