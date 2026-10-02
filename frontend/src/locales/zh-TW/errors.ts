@@ -75,6 +75,9 @@ export const errors = {
     InsufficientShares: 'LP share 不足，無法移除這麼多流動性',
     EthNotAccepted: '不能直接把 ETH 轉給兌換池。請用 Swap 功能（swapETHForUSDC）或 addLiquidity',
     InvalidOraclePrice: '預言機回報的價格無效（0 或負值），兌換暫停',
+    // 線上舊版 PepeAMM（oracle 定價版）用的是 require 字串，不是 custom error。
+    'reserve in pool': '超過池內可兌出庫存，兌換池付不出這麼多。請減少兌換金額',
+    'invalid oracle price': '預言機回報的價格無效（0 或負值），兌換暫停',
 
     // ── Mock 代幣 ────────────────────────────────────────────────────────────
     FaucetCallerMustBeEOA:
