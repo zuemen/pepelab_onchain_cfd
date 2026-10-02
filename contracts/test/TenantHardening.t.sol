@@ -380,7 +380,17 @@ contract TenantHardeningTest is TenantFixture {
         vm.revertToState(snap);
         vm.prank(s.admin); ex.setVaultFeeShareBps(5_000);
         _verifyFails(s, record, bytes("verify tenant mismatch: exchange.vaultFeeShareBps"));
-        vm.revertToState(snap);
+    }
+
+    // 拆成三支：每一次 verify 都要比對整組合約的 bytecode，單支測試會逼近 forge 的
+    // 每測試 gas 上限（2^30），不同 forge 版本的 gas 計價不同（CI 釘的版本較高）。
+    function test_verify_catchesExchangeDrift_legacyFeesAndAgents() public {
+        Spec memory s = _valid();
+        (DeployTenant script, TenantBase.TenantDeployed memory d) = _deploy(s);
+        string memory record = script.lastRecordJson();
+        PerpetualExchange ex = PerpetualExchange(d.exchange);
+        uint256 snap = vm.snapshotState();
+
         vm.prank(s.admin); ex.setTradingFeeBps(20);
         _verifyFails(s, record, bytes("verify tenant mismatch: exchange.TRADING_FEE_BPS (legacy, contract default)"));
         vm.revertToState(snap);
@@ -392,8 +402,16 @@ contract TenantHardeningTest is TenantFixture {
         vm.revertToState(snap);
         vm.prank(s.admin); ex.setAgentAuthorized(d.sessionManager, false);
         _verifyFails(s, record, bytes("verify tenant failed: AgentSessionManager authorised on the exchange"));
+    }
+
+    function test_verify_catchesExchangeDrift_marginPauseAndMode() public {
+        Spec memory s = _valid();
+        (DeployTenant script, TenantBase.TenantDeployed memory d) = _deploy(s);
+        string memory record = script.lastRecordJson();
+        PerpetualExchange ex = PerpetualExchange(d.exchange);
+        uint256 snap = vm.snapshotState();
+
         // C4: the per-asset maintenance margin stays at the contract default.
-        vm.revertToState(snap);
         vm.prank(s.admin); ex.setMaintenanceMarginFor(BTC, 900);
         _verifyFails(s, record, bytes("verify tenant failed: maintenanceMarginBpsOf for sBTC (expected 0 = the contract default)"));
         // C5: a pause with no expiry (the owner's) fails; the guardian's is reported.

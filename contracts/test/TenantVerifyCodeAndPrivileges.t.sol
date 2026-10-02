@@ -198,8 +198,15 @@ contract TenantVerifyCodeAndPrivilegesTest is TenantFixture {
         vm.prank(s.admin);
         IAccessControl(d.oracle).grantRole(0x00, stranger);
         _verifyFails(s, record, bytes("verify tenant failed: unexpected DEFAULT_ADMIN_ROLE holder on Oracle"));
+    }
 
-        vm.revertToState(snap);
+    /// @dev Same as above for the token, the vault, the ESG registry and the
+    ///      exchange (split so one test stays well under forge's per-test gas cap).
+    function test_verify_fails_onAnUnexpectedHolderNamedByAGrantEvent_otherContracts() public {
+        (Spec memory s, string memory record, TenantBase.TenantDeployed memory d) = _deploy();
+        vm.recordLogs();
+        uint256 snap = vm.snapshotState();
+
         vm.prank(s.admin);
         IAccessControl(d.tokens[0]).grantRole(keccak256("MINTER_ROLE"), stranger);
         _verifyFails(s, record, bytes("verify tenant failed: unexpected MINTER_ROLE holder on token sBTC"));
