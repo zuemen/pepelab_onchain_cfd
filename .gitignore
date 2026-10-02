@@ -62,3 +62,10 @@ scripts/.deploy-102-addresses.env
 scripts/.deploy-129-addresses.env
 scripts/.tokens-129.txt
 scripts/.log-*.txt
+
+# Cloudflare Workers 本機開發（ops/keeper-trigger、ops/monitoring）：
+# .dev.vars 放本機用的秘密（等同 .env），.wrangler/ 是 wrangler 的本機狀態與快取。
+# scripts/check-monitoring.mjs 的秘密掃描略過這兩項，前提就是它們永遠不會被 commit。
+.dev.vars
+.dev.vars.*
+.wrangler/

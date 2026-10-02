@@ -1,0 +1,39 @@
+name: Monitoring fixture
+
+# 每週確認 ops/monitoring/deployed.json 仍是鏈上實況（複審 L-c）。
+#
+# monitoring job（consistency.yml）離線比對「規則的事件／函式在部署版 bytecode 裡」，依據就是
+# deployed.json。鏈上合約被升級、或 getter 的值變了，而 addresses.ts 沒動時，那個 job 永遠是綠的。
+# 這支以公開 RPC 唯讀重抓一份到記憶體比對；有差異就讓 job 失敗，由人確認、重抓、審過 diff 再走 PR。
+#
+# 唯讀：只用 eth_chainId／eth_blockNumber／eth_getCode／eth_getStorageAt／eth_call。
+# 不使用任何 secret、不綁 environment、不寫檔、不 commit、不開 issue；token 只有 contents: read。
+# Worker 自己也每輪讀 UUPS proxy 的實作 slot（規則 proxy-implementation），這支是 repo 端的第二道。
+on:
+  schedule:
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: monitoring-fixture
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: deployed.json ↔ chain (read-only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # submodules：檢查器載入設定時會讀 pending-deploy 規則的 OpenZeppelin 原始碼。
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+      - name: Verify deployed.json against Base Sepolia (public RPC)
+        run: node scripts/check-monitoring.mjs --verify-deployed
