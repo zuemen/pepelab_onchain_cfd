@@ -80,9 +80,10 @@ jobs:
   workflow-guards:
     # 持有鏈上私鑰的 job 靠「私鑰只放 environment secret＋只有特定 job 綁那個 environment＋
     # admin 呼叫先經人工核准」保護，而這些都只是 workflow 檔裡的幾行 YAML。這支檢查把規則
-    # 寫死：別的 job 綁了 keeper／settlement／admin-approval、admin-call 少了 needs: approve
-    # 或 ref／run_attempt 守門、出現 pull_request_target／workflow_run、用到私鑰的 job 沒綁
-    # environment，都會紅。規則與理由見 scripts/check-workflow-guards.mjs 開頭。
+    # 寫死：別的 job 綁了 keeper／settlement／admin-approval、admin-call 少了 needs: approve、
+    # 三個守門 step 的內容（以 sha256 釘住）被改、出現 pull_request_target／workflow_run、
+    # 持有私鑰的 workflow 多了觸發事件或 inputs、run 內插 inputs／github.event、用到私鑰的
+    # job 沒綁 environment，都會紅。規則與理由見 scripts/check-workflow-guards.mjs 開頭。
     name: workflow guards (environment / secrets / triggers)
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -109,3 +110,36 @@ jobs:
 
       - name: Check workflow guards
         run: node scripts/check-workflow-guards.mjs
+
+  actionlint:
+    # workflow 語法、運算式型別、`run:` 內的 shellcheck（ubuntu-latest 內建 shellcheck，
+    # actionlint 在 PATH 上找得到就會用）。守門檢查只看安全規則，打錯字或運算式錯誤要靠這支。
+    # 不用 marketplace action、不用 `go install`：直接下載固定版本的 release 檔並驗 sha256
+    # （值與 release 頁的 actionlint_1.7.12_checksums.txt、GitHub API 的 asset digest 相同）。
+    # 這個 pin 不在 Dependabot 範圍內，升級時要手動改 VERSION 與 SHA256。
+    name: actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Install pinned actionlint (sha256 verified)
+        env:
+          VERSION: '1.7.12'
+          SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          set -euo pipefail
+          tarball="actionlint_${VERSION}_linux_amd64.tar.gz"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/$tarball" \
+            "https://github.com/rhysd/actionlint/releases/download/v${VERSION}/${tarball}"
+          echo "${SHA256}  $RUNNER_TEMP/$tarball" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$tarball" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" -version
+
+      - name: Run actionlint
+        run: |
+          set -euo pipefail
+          shellcheck --version   # runner 映像內建；不存在就失敗，免得 shellcheck 檢查無聲消失
+          "$RUNNER_TEMP/actionlint" -color
