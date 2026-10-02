@@ -6,7 +6,10 @@ import { scanPush4Selectors } from './selectorScan'
 import fixtures from './__fixtures__/ammBytecode.json'
 import {
   format18,
+  type QuoteView,
+  type LiveQuote,
   AMM_SELECTORS,
+  parseAmountIn,
   checkInventory,
   mergePoolReads,
   impactReference,
@@ -15,6 +18,7 @@ import {
   sameCapabilities,
   buildPoolInfoView,
   buildSwapCardView,
+  resolveLiveQuote,
   type SwapCardInput,
   UNKNOWN_CAPABILITIES,
   detectAmmCapabilities,
@@ -307,12 +311,13 @@ describe('buildSwapCardView（#215 L2／M2）', () => {
     caps: live,
     reads: liveReads,
     isEthIn: true,
-    hasAmount: false,
-    quote: null,
+    live: { status: 'noAmount' },
     oracleStale: false,
     busy: false,
   }
-  const okQuote = { isEthIn: true, out: LIVE.quote001Eth, impactBps: 30, inventory: { status: 'ok' } as const }
+  const AMT = 10n ** 16n // 0.01 ETH
+  const okQuote = { isEthIn: true, amountIn: AMT, out: LIVE.quote001Eth, impactBps: 30, inventory: { status: 'ok' } as const }
+  const ready = (quote: QuoteView): LiveQuote => ({ status: 'ready', quote })
 
   it('版本還在探測：說「正在確認」，每一格是 loading，不是「無法取得」', () => {
     const v = buildSwapCardView({
@@ -347,7 +352,8 @@ describe('buildSwapCardView（#215 L2／M2）', () => {
   })
 
   it('正常報價 → 顯示收到數量、衝擊、最低收到的基準；按鈕可按', () => {
-    const v = buildSwapCardView({ ...base, hasAmount: true, quote: okQuote })
+    const v = buildSwapCardView({ ...base, live: ready(okQuote) })
+    expect(v.quotePending).toBe(false)
     expect(v.receive).toBe(LIVE.quote001Eth)
     expect(v.impactBps).toBe(30)
     expect(v.minReceivedBase).toBe(LIVE.quote001Eth)
@@ -359,8 +365,7 @@ describe('buildSwapCardView（#215 L2／M2）', () => {
     const needed = 542377970000000000000n
     const v = buildSwapCardView({
       ...base,
-      hasAmount: true,
-      quote: { isEthIn: true, out: needed, impactBps: 30, inventory: { status: 'exceeded', needed, available: LIVE.usdcReserve } },
+      live: ready({ isEthIn: true, amountIn: E(2) / 10n, out: needed, impactBps: 30, inventory: { status: 'exceeded', needed, available: LIVE.usdcReserve } }),
     })
     expect(v.button).toEqual({ disabled: true, label: 'exceedsInventory' })
     expect(v.inventoryExceeded).toEqual({ needed, available: LIVE.usdcReserve })
@@ -370,30 +375,83 @@ describe('buildSwapCardView（#215 L2／M2）', () => {
   })
 
   it('另一個方向的舊報價不拿來顯示（方向切換後、新報價回來前）', () => {
-    const v = buildSwapCardView({ ...base, isEthIn: false, hasAmount: true, quote: okQuote })
+    const v = buildSwapCardView({ ...base, isEthIn: false, live: ready(okQuote) })
     expect(v.receive).toBeNull()
     expect(v.impactBps).toBeNull()
+    expect(v.button.disabled).toBe(true)
   })
 
-  it('按鈕文字的優先順序：兌換中 > oracle 過期 > 請輸入金額 > 超過庫存', () => {
+  it('按鈕文字的優先順序：兌換中 > oracle 過期 > 請輸入金額 > 取得報價中 > 無法取得報價 > 超過庫存', () => {
     const exceeded = {
       isEthIn: true,
+      amountIn: AMT,
       out: E(999),
       impactBps: 30,
       inventory: { status: 'exceeded', needed: E(999), available: E(1) } as const,
     }
-    const all = { ...base, hasAmount: true, quote: exceeded, oracleStale: true, busy: true }
+    const all: SwapCardInput = { ...base, live: ready(exceeded), oracleStale: true, busy: true }
+    const idle = { ...all, busy: false, oracleStale: false }
     expect(buildSwapCardView(all).button.label).toBe('swapping')
     expect(buildSwapCardView({ ...all, busy: false }).button.label).toBe('oracleStale')
-    expect(buildSwapCardView({ ...all, busy: false, oracleStale: false, hasAmount: false }).button.label).toBe('enterAmount')
-    expect(buildSwapCardView({ ...all, busy: false, oracleStale: false }).button.label).toBe('exceedsInventory')
-    for (const v of [all, { ...all, busy: false }, { ...all, busy: false, oracleStale: false }]) {
+    expect(buildSwapCardView({ ...idle, live: { status: 'noAmount' } }).button.label).toBe('enterAmount')
+    expect(buildSwapCardView({ ...idle, live: { status: 'pending' } }).button.label).toBe('quoting')
+    expect(buildSwapCardView({ ...idle, live: { status: 'failed' } }).button.label).toBe('quoteUnavailable')
+    expect(buildSwapCardView(idle).button.label).toBe('exceedsInventory')
+    for (const v of [all, { ...all, busy: false }, idle, { ...idle, live: { status: 'pending' } as const }, { ...idle, live: { status: 'failed' } as const }]) {
       expect(buildSwapCardView(v).button.disabled).toBe(true)
     }
   })
 
-  it('quote 為 0 → 不顯示「最低收到數量」', () => {
-    const v = buildSwapCardView({ ...base, hasAmount: true, quote: { ...okQuote, out: 0n, impactBps: null } })
+  it('quote 為 0 → 不顯示「最低收到數量」，按鈕停用（沒有可送出的 minOut）', () => {
+    const v = buildSwapCardView({ ...base, live: ready({ ...okQuote, out: 0n, impactBps: null }) })
     expect(v.minReceivedBase).toBeNull()
+    expect(v.button).toEqual({ disabled: true, label: 'quoteUnavailable' })
+  })
+
+  it('#220：pending（金額剛改）→ 讀取中、不顯示任何數字、按鈕停用', () => {
+    const v = buildSwapCardView({ ...base, live: { status: 'pending' } })
+    expect(v.quotePending).toBe(true)
+    expect(v.receive).toBeNull()
+    expect(v.impactBps).toBeNull()
+    expect(v.minReceivedBase).toBeNull()
+    expect(v.button).toEqual({ disabled: true, label: 'quoting' })
+  })
+})
+
+describe('resolveLiveQuote／parseAmountIn（#220）', () => {
+  const q = (isEthIn: boolean, amountIn: bigint) =>
+    ({ isEthIn, amountIn, out: 1n, impactBps: null, inventory: { status: 'ok' } }) as const
+
+  it('沒有有效金額 → noAmount（不論 state 裡有什麼）', () => {
+    expect(resolveLiveQuote(null, true, null)).toEqual({ status: 'noAmount' })
+    expect(resolveLiveQuote({ isEthIn: true, amountIn: 0n, quote: q(true, 0n) }, true, 0n)).toEqual({ status: 'noAmount' })
+  })
+
+  it('沒有報價、金額不同、方向不同 → pending', () => {
+    expect(resolveLiveQuote(null, true, E(1))).toEqual({ status: 'pending' })
+    expect(resolveLiveQuote({ isEthIn: true, amountIn: E(30), quote: q(true, E(30)) }, true, E(60))).toEqual({ status: 'pending' })
+    expect(resolveLiveQuote({ isEthIn: true, amountIn: E(30), quote: q(true, E(30)) }, false, E(30))).toEqual({ status: 'pending' })
+  })
+
+  it('slot 與 quote 本身的金額對不上 → 不採用', () => {
+    expect(resolveLiveQuote({ isEthIn: true, amountIn: E(60), quote: q(true, E(30)) }, true, E(60))).toEqual({ status: 'pending' })
+  })
+
+  it('這組金額失敗 → failed；對得上 → ready', () => {
+    expect(resolveLiveQuote({ isEthIn: true, amountIn: E(1), quote: null }, true, E(1))).toEqual({ status: 'failed' })
+    const quote = q(false, E(1))
+    expect(resolveLiveQuote({ isEthIn: false, amountIn: E(1), quote }, false, E(1))).toEqual({ status: 'ready', quote })
+  })
+
+  it('parseAmountIn 與 parseEther 同一套規則，但不丟例外', () => {
+    expect(parseAmountIn('1')).toBe(E(1))
+    expect(parseAmountIn('0.01')).toBe(E(1) / 100n)
+    expect(parseAmountIn(' 30.0 ')).toBe(E(30))
+    expect(parseAmountIn('.5')).toBe(E(1) / 2n)
+    expect(parseAmountIn('5.')).toBe(E(5))
+    expect(parseAmountIn('0.000000000000000001')).toBe(1n)
+    for (const bad of ['', '0', '0.00', '.', 'abc', '1e5', '-1', '1,000', '0.0000000000000000001']) {
+      expect(parseAmountIn(bad), bad).toBeNull()
+    }
   })
 })

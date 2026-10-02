@@ -38,6 +38,14 @@ export const exchange = {
      */
     preflightBlocked: '預檢未通過，沒有送出任何交易：{reason}',
     preflightBlockedAfterApprove: '批准已完成，但兌換預檢未通過，沒有送出兌換交易：{reason}',
+    /**
+     * #220：即時報價低於畫面上顯示、使用者確認過的「最低收到數量」。不換成新價成交，
+     * 停下來讓使用者看過新報價再按一次。
+     */
+    priceMoved:
+      '價格已變動：目前報價 {quoted} {token}，低於你確認的最低收到數量 {minOut} {token}。沒有送出任何交易，請確認新報價後再按一次。',
+    priceMovedAfterApprove:
+      '批准已完成，但價格已變動：目前報價 {quoted} {token}，低於你確認的最低收到數量 {minOut} {token}。沒有送出兌換交易，請確認新報價後再按一次（不必再批准）。',
 
     approving: '批准 {token} 中…',
     swappedEthForToken: '已用 {amount} ETH 兌換約 {received} {token} ✓',
@@ -147,6 +155,10 @@ export const exchange = {
     swapping: '兌換中…',
     oracleStale: '⛔ 預言機報價過期，暫停兌換',
     enterAmount: '請輸入金額',
+    /** #220：金額或方向剛改、新報價還沒回來——按鈕停用，不拿上一個金額的報價送出。 */
+    quoting: '取得報價中…',
+    /** 這組金額的 quote 失敗（revert／逾時）：換不成，沒有可送出的最低收到數量。 */
+    quoteUnavailable: '無法取得報價',
     ethToToken: '兌換 ETH → {token}',
     tokenToEth: '兌換 {token} → ETH',
   },

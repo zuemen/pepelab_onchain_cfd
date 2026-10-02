@@ -273,9 +273,65 @@ export function checkInventory(
 /** 畫面上顯示的那一筆 quote（由 ammSwapFlow.readQuoteSnapshot 產生）。 */
 export interface QuoteView {
   isEthIn: boolean
+  /** 這筆 quote 是替哪個金額算的。與目前輸入框的金額不同，就不是「這一筆」的報價。 */
+  amountIn: bigint
   out: bigint
   impactBps: number | null
   inventory: InventoryCheck
+}
+
+/**
+ * 最近一次報價請求的結果，連同它是替**哪個方向、哪個金額**問的（#220 L）。
+ * `quote` 為 null = 這組方向＋金額的 quote 失敗（revert／逾時）。
+ */
+export interface QuoteSlot<Q extends QuoteView = QuoteView> {
+  isEthIn: boolean
+  amountIn: bigint
+  quote: Q | null
+}
+
+/**
+ * 對目前輸入而言，畫面能用的報價狀態：
+ * - `noAmount`：沒有有效金額。
+ * - `pending`：金額或方向改了，新報價還沒回來——**舊數字一律不顯示**，按鈕停用。
+ * - `failed`：這組金額的 quote 失敗（換不成）。
+ * - `ready`：報價就是替目前這組方向＋金額算的。
+ */
+export type LiveQuote<Q extends QuoteView = QuoteView> =
+  | { status: 'noAmount' }
+  | { status: 'pending' }
+  | { status: 'failed' }
+  | { status: 'ready'; quote: Q }
+
+/**
+ * #220：只認「目前方向、**目前金額**」的那筆報價。原本只比對方向，把 30 改成 60 之後、
+ * 60 的報價回來之前，畫面會顯示 30 的收到數量／衝擊／最低收到，按鈕還能按。
+ */
+export function resolveLiveQuote<Q extends QuoteView>(
+  slot: QuoteSlot<Q> | null,
+  isEthIn: boolean,
+  amountIn: bigint | null,
+): LiveQuote<Q> {
+  if (amountIn === null || amountIn <= 0n) return { status: 'noAmount' }
+  if (!slot || slot.isEthIn !== isEthIn || slot.amountIn !== amountIn) return { status: 'pending' }
+  if (!slot.quote) return { status: 'failed' }
+  // slot 與 quote 本身各帶一份方向＋金額；兩份都要對得上（防止把別筆 quote 塞進這個 slot）。
+  if (slot.quote.isEthIn !== isEthIn || slot.quote.amountIn !== amountIn) return { status: 'pending' }
+  return { status: 'ready', quote: slot.quote }
+}
+
+/**
+ * 輸入框的字串 → 18 位小數的金額。空字串、0、負數、格式不對、小數超過 18 位 → null
+ * （＝沒有有效金額）。與 `parseEther` 同一套規則，但不丟例外。
+ */
+export function parseAmountIn(text: string): bigint | null {
+  const s = text.trim()
+  const m = /^(\d*)(?:\.(\d*))?$/.exec(s)
+  if (!m || (m[1] === '' && (m[2] ?? '') === '')) return null
+  const frac = m[2] ?? ''
+  if (frac.length > 18) return null
+  const v = BigInt(m[1] || '0') * 10n ** 18n + BigInt((frac + '0'.repeat(18)).slice(0, 18) || '0')
+  return v > 0n ? v : null
 }
 
 export interface SwapCardInput {
@@ -284,9 +340,8 @@ export interface SwapCardInput {
   caps: AmmCapabilities
   reads: PoolReads
   isEthIn: boolean
-  /** 使用者輸入了大於 0 的金額。 */
-  hasAmount: boolean
-  quote: QuoteView | null
+  /** 對目前方向＋金額而言的報價狀態（`resolveLiveQuote`）。 */
+  live: LiveQuote
   oracleStale: boolean
   busy: boolean
 }
@@ -299,7 +354,14 @@ export type SwapNoteKey =
   | 'unknownVersionNote'
   | 'checkingVersionNote'
 
-export type SwapButtonLabel = 'swapping' | 'oracleStale' | 'enterAmount' | 'exceedsInventory' | 'swap'
+export type SwapButtonLabel =
+  | 'swapping'
+  | 'oracleStale'
+  | 'enterAmount'
+  | 'quoting'
+  | 'quoteUnavailable'
+  | 'exceedsInventory'
+  | 'swap'
 
 export interface SwapCardView {
   /** 'loading' = 還在確認版本。 */
@@ -308,6 +370,8 @@ export interface SwapCardView {
   badge: 'oracleFixedBadge' | 'poolBadge' | null
   reservesLabel: 'poolInventory' | 'poolReserves'
   notes: readonly SwapNoteKey[]
+  /** 新報價還沒回來（金額或方向剛改）：「你將收到」顯示讀取中，不顯示舊數字。 */
+  quotePending: boolean
   /** 「你將收到」那一格；null = 沒有可成交的數字（顯示 0，不顯示換不到的數字）。 */
   receive: bigint | null
   impactBps: number | null
@@ -320,9 +384,10 @@ export interface SwapCardView {
 const LOADING: Cell = { kind: 'loading' }
 
 export function buildSwapCardView(input: SwapCardInput): SwapCardView {
-  const { probing, caps, reads, isEthIn, hasAmount, oracleStale, busy } = input
-  // 方向切換後、新 quote 回來前，舊方向的 quote 不可以拿來顯示。
-  const quote = input.quote && input.quote.isEthIn === isEthIn && hasAmount ? input.quote : null
+  const { probing, caps, reads, isEthIn, live, oracleStale, busy } = input
+  // 方向或金額改了、新 quote 回來前，舊的 quote 不可以拿來顯示（#220）。方向再檢查一次：
+  // 呼叫端傳錯方向的 ready 也不採用。
+  const quote = live.status === 'ready' && live.quote.isEthIn === isEthIn ? live.quote : null
 
   const version: SwapCardView['version'] = probing ? 'loading' : caps.pricing
   const pool: PoolInfoView = probing
@@ -351,7 +416,11 @@ export function buildSwapCardView(input: SwapCardInput): SwapCardView {
   let label: SwapButtonLabel
   if (busy) label = 'swapping'
   else if (oracleStale) label = 'oracleStale'
-  else if (!hasAmount) label = 'enterAmount'
+  else if (live.status === 'noAmount') label = 'enterAmount'
+  else if (!quote && live.status !== 'failed') label = 'quoting'
+  // quote 失敗，或報出 0：這筆金額換不成。executeSwap 的 minOut 由畫面上的報價算出，
+  // 沒有報價就沒有可以送出的 minOut。
+  else if (!quote || quote.out <= 0n) label = 'quoteUnavailable'
   else if (inventoryExceeded) label = 'exceedsInventory'
   else label = 'swap'
 
@@ -365,6 +434,7 @@ export function buildSwapCardView(input: SwapCardInput): SwapCardView {
     badge,
     reservesLabel: version === 'oracle-fixed' ? 'poolInventory' : 'poolReserves',
     notes,
+    quotePending: live.status === 'pending' || (live.status === 'ready' && !quote),
     receive: tradable ? tradable.out : null,
     impactBps: tradable ? tradable.impactBps : null,
     minReceivedBase: tradable && tradable.out > 0n ? tradable.out : null,
