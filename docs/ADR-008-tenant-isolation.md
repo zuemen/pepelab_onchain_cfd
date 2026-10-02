@@ -69,10 +69,12 @@ keeper 的排程可以是同一支 workflow 以租戶為 matrix 展開，但每�
 
 實作時的兩個修正（2026-10-01，細節在 [`TENANT_OPERATIONS.md`](TENANT_OPERATIONS.md)）：
 
-- **金鑰隔離用 GitHub environment，不用 secret 名稱。** 每個租戶一個 `keeper-<id>` environment，裡面的 secret 仍叫 `KEEPER_PRIVATE_KEY`。environment secret 只有引用該 environment 的 job 拿得到；不同名稱的 repo 層級 secret 則任何 workflow 都拿得到。
-- **目前每個租戶複製一支 workflow，不用 matrix。** 位址放進 matrix 之後，`check-addresses.mjs` 的逐行檢查看不到哪個位址屬於哪個租戶；而且一支檔案服務所有租戶，改壞一次就全部停。CI 以 `KEEPER_TENANT: <id>` 辨認租戶的 keeper，位址改以該租戶的部署登記比對。
+- **金鑰隔離用 GitHub environment，secret 名稱也與平台不同。** 每個租戶一個 `keeper-<id>` environment，裡面放 `TENANT_KEEPER_PRIVATE_KEY`／`TENANT_RPC_URL`。environment secret 只有引用該 environment 的 job 拿得到；名稱刻意不叫 `KEEPER_PRIVATE_KEY`，因為 environment 漏放某個 secret 時 GitHub 會退回 repo 層級的同名 secret（2026-10-02 修正，PR #228 審查 F3）。
+- **每個租戶一支 workflow，但不手寫、不複製：由範本產生**（`ops/tenant-keeper/keeper.template.yml`＋`scripts/gen-tenant-keeper.mjs`，檔名 `keeper-<id>.yml`）。`check-workflow-guards.mjs` 以範本重新產生、逐位元比對，範本本身整檔釘選；新增租戶不必改任何雜湊，也不能藉租戶的 workflow 改掉守門 step。位址不寫進 workflow，執行期從部署登記讀。不用 matrix 的理由不變：一支檔案服務所有租戶，改壞一次就全部停。
 
 **租戶 oracle 自身的過期檢查是關掉的**（`maxPriceAge = 0`）。keeper 寫價前先讀 `getPrice`，讀取 revert 就拒寫；oracle 層的過期檢查開著，一次超過上限的中斷之後 keeper 就永遠寫不進去。過期由 exchange 與金庫各自依 `updatedAt` 把關（都是 6 小時）。
+
+**價格變動的界線與過期無關，由 oracle 的兩道限速負責**：單次上限（`params.oracleMaxDeviationBps`）與時間窗累計上限（`params.oracleWindowSeconds`／`oracleWindowDeviationBps`，不得為 0），可選的參考來源（`shared.referenceSource`）。2026-10-02 之前租戶 oracle 只設了單次上限，連續多筆寫價的累計變動沒有上限——平台自己的 `RedeployGuardedOracle.s.sol` 早已要求的時間窗，租戶版漏了（PR #228 審查 F1）。代價：長時間停擺後的大幅跳價，沒有參考來源時要分幾個時間窗追上；有參考來源時，與參考一致的寫價直接落地並重設時間窗。
 
 這不會讓過期價格被接受，理由是租戶 oracle 的每一個「會動到錢」的讀者都自己檢查 `updatedAt`（2026-10-02 逐一對過 `contracts/src`）：
 
@@ -83,7 +85,7 @@ keeper 的排程可以是同一支 workflow 以租戶為 matrix 展開，但每�
 | `AssetVaultV2_5` mint／redeem／NAV | `effectiveMaxPriceAge()`（`min(maxPriceAge, LAST_GOOD_MAX_AGE)`），NAV 迴圈對過期資產改用 last-good 或視為不可估值 | `StalePrice`／不計入，`maxPriceAge` 設 6 小時 |
 | `PerpetualExchange.getUnrealizedPnL`／`getPositionValue`／`getMarkPrice` | view，不檢查 | 只回傳數值、不改任何狀態；需要「現在能不能成交」時用 `PerpetualExchangeLens.hasValidPrice`（依 exchange 的 `maxPriceAge`） |
 
-其餘租戶合約（`InsuranceVault`、`FeeRouter`、`TraderStake`、`CopyTracker`、`StrategyRegistry`、`AgentSessionManager`）不讀 oracle。代價只有一個：`GuardedOracle.isStale()` 在 `maxPriceAge = 0` 時永遠回 `false`，**租戶的監控不能用它判斷過期**，要用 exchange 的 `maxPriceAge` 對 `updatedAt`（`agent/keeper/health-check` 就是這樣做的）。回歸測試在 `contracts/test/DeployTenant.t.sol`：停擺 3 天後 oracle 仍可讀、exchange 自己拒絕過期價、keeper 下一筆寫價即恢復。
+其餘租戶合約（`InsuranceVault`、`FeeRouter`、`TraderStake`、`CopyTracker`、`StrategyRegistry`、`AgentSessionManager`）不讀 oracle。代價只有一個：`GuardedOracle.isStale()` 在 `maxPriceAge = 0` 時永遠回 `false`，**租戶的監控不能用它判斷過期**，要用 exchange 的 `maxPriceAge` 對 `updatedAt`（`agent/keeper/health-check` 就是這樣做的；前端監控頁在專屬租戶上也改成這樣，平台部署照舊用 `isStale()`，PR #228 審查 F6）。回歸測試在 `contracts/test/DeployTenant.t.sol`：停擺 3 天後 oracle 仍可讀、exchange 自己拒絕過期價、keeper 下一筆寫價即恢復。
 
 ### 隔離的三個面向
 
@@ -105,7 +107,7 @@ keeper 的排程可以是同一支 workflow 以租戶為 matrix 展開，但每�
 
 1. **階段 0（完成）**：前端租戶設定層（default 租戶＝現行正式站，外觀與行為不變）、租戶部署設定範本與唯讀檢查、本 ADR。沒有任何合約或 broadcast 變動。
 2. **階段 1：部署腳本參數化（工具完成，未廣播）**。原本的想法是把 `Redeploy129Exchange.s.sol` 的常數改成讀環境變數；實際做法是另寫一支 `DeployTenant.s.sol`，直接讀 `deploy/tenants/<id>.json`——cutover 腳本的工作是「替平台換 exchange 並改指共用的保險金與 FeeRouter」，租戶需要的是「全部新部署、不碰任何既有合約」，兩者的前置檢查與不可逆點完全不同，硬塞進同一支只會兩邊都變危險。腳本沒有任何寫死的位址；`VerifyTenant.s.sol` 做部署後的唯讀讀回。keeper workflow「以租戶部署設定為輸入」的部分改成：租戶各自一支 workflow，CI 以部署登記比對位址（上方「實作時的兩個修正」）。
-3. **階段 2：前端依租戶切換位址（工具完成）；第一個試點租戶（未做）**。位址沒有擴充進 `addresses.ts`：它被 agent 端 import、被 signal-api 的 bundle 內聯，維持為「平台部署的純資料」。租戶的位址在 `frontend/src/contracts/deployments/<id>.json`（部署登記，由部署紀錄產生），建置期只把被選中的那一份打進 bundle；沒有登記檔就 build 失敗，不退回平台的合約（[frontend ADR 0009 增補](../frontend/docs/adr/0009-tenant-config-layer.md)）。前端租戶設定檔**仍然沒有地址欄位**。`consistency.yml` 檢查：登記格式、同租戶不重複、專屬租戶除結算幣外不得與平台或其他租戶共用任何位址、前端登記與部署紀錄逐欄位相同。
+3. **階段 2：前端依租戶切換位址（工具完成）；第一個試點租戶（未做）**。位址沒有擴充進 `addresses.ts`：它被 agent 端 import、被 signal-api 的 bundle 內聯，維持為「平台部署的純資料」。租戶的位址在 `frontend/src/contracts/deployments/<id>.json`（部署登記，由部署紀錄產生），建置期只把被選中的那一份打進 bundle；沒有登記檔就 build 失敗，不退回平台的合約（[frontend ADR 0009 增補](../frontend/docs/adr/0009-tenant-config-layer.md)）。前端租戶設定檔**仍然沒有地址欄位**。`consistency.yml` 檢查：登記格式（含重複的 JSON 鍵）、同租戶不重複、專屬租戶登記裡的每一個位址都不得出現在平台位址全集或其他租戶裡（唯一例外是顯式宣告共用、且就是平台那一顆的結算幣）、前端登記與部署紀錄逐欄位相同；`tenant-verify.yml` 對每個專屬租戶以公開 RPC 跑 `VerifyTenant`。
 4. **階段 3：收費模式定案與實作**（上方待決事項）。**這是第一個租戶能標成 `deployed` 的前提。**
 5. **現行正式站是「租戶零」**：它繼續用現有那套合約，不搬遷任何部位。新租戶從零開始，不存在跨套合約移轉部位的需求；若日後正式站本身要換新版合約，仍依既有的 cutover 程序（排空、重新部署），與租戶化無關。
 
@@ -146,7 +148,35 @@ keeper 的排程可以是同一支 workflow 以租戶為 matrix 展開，但每�
 | 租戶 admin multisig 的簽署人組成、Timelock 延遲與租戶版 Timelock 腳本 | 商務與法遵決定 | 擁有者 |
 | agent 端（signal-api、MCP server、Telegram bot）讀租戶的合約 | `agent/shared` 的位址在載入時綁定平台部署；要改程式並重新打包 | 下一階段 |
 | keeper 程式在只有一顆 GuardedOracle 的租戶上的實跑驗證；租戶的健檢 workflow | 需要一個已部署的租戶與金鑰 | 試點時 |
-| 平台 keeper workflow 改成讀 JSON、租戶 workflow 改用 matrix | 動到線上價格的活性路徑，只能以實際執行驗證；租戶數量少時複製更安全 | 租戶變多時，另一個 PR |
+| 平台 keeper workflow 改成讀 JSON | 動到線上價格的活性路徑，只能以實際執行驗證；租戶用的是範本 | 另一個 PR |
+| 租戶 keeper 範本在真的租戶上 dispatch | 需要已部署的租戶與金鑰；範本只做過靜態檢查與 actionlint | 試點時 |
+| 租戶版 Timelock 腳本 | 沒有 Timelock 時 admin multisig 可以立即升級金庫（PR #228 審查 F9）；延遲長度是商務／法遵決定 | 擁有者決定後 |
+| Base 主網的共用元件與結算幣 | 原生 USDC 是 6 位小數，`PerpetualExchange` 要 18 位；設定檢查今天擋下所有主網設定 | 擁有者決定後 |
 | 共用平台 `ESGRegistryV2` 的選項 | 預設（專屬）已足夠試點 | 有租戶要求時 |
 | 前端連 Base 主網的專屬部署；專屬租戶的逐頁走查 | 沒有主網部署，也沒有可瀏覽的專屬租戶 | 試點時 |
 | 事故手冊區分單一租戶與跨租戶事故 | `TENANT_OPERATIONS.md` §4 只有判斷表，沒有完整手冊 | 試點前 |
+
+## PR #228 審查修正（2026-10-02）
+
+對抗式審查（F1–F10）之後的修正。原則：不逐案補黑名單，改成結構性的檢查；`contracts/src` 不動（`PerpetualExchange` runtime 仍是 23,911 B）。
+
+| # | 發現 | 做法 |
+|---|---|---|
+| F1 | 租戶 `GuardedOracle` 只有單次上限、沒有時間窗限速 | 設定 schema v3：`params.oracleMaxDeviationBps`／`oracleWindowSeconds`／`oracleWindowDeviationBps`（都有上下限、guarded 必填、不得為 0；mock 必須是 `null`），`shared.referenceSource`（位址或 `"none"`，有就接上）。`DeployTenant` 寫入、`VerifyTenant` 讀回。回歸測試：短時間內的連續寫價，累計超過時間窗上限的那一筆以 `WindowDeviationTooLarge` 被擋，時間窗過後 keeper 可以繼續前進 |
+| F2 | 「dedicated 不得與平台共用」是黑名單；結算幣可填任何地址；部署者自報 | 平台位址全集（設定檔、退役清單 `retiredPlatformAddresses.json`、workflow、agent 設定裡出現過的每一個位址，`scripts/lib/platform-addresses.mjs`）；登記裡的每一個位址欄位自動列舉比對；共用只限 `shared` 顯式宣告、白名單內（只有 `contracts.SettlementToken`）、而且就是平台那一顆；JSON 重複鍵、缺欄位、多欄位、`kind` 缺漏或拼錯都紅；租戶之間同一條規則。部署設定的 `shared.*` 也改成白名單（每一個只能是平台的指定角色）。`tenant-verify.yml` 以公開 RPC 對每個專屬租戶跑 `VerifyTenant`（沒有 secret、RPC 不通就失敗，每天也跑一次）；部署者的真實性改由 CREATE 位址推導驗證 |
+| F3 | 每租戶 keeper workflow 與守門檢查互相矛盾 | 範本＋產生器＋守門檢查的「租戶 keeper」類別（見上方「實作時的修正」），secret 改名；兩支檢查對同一份產生出來的 workflow 同時通過（測試） |
+| F4 | 專屬租戶沒設 `VITE_SIGNAL_API_URL` 時悄悄退回平台的 signal-api | `vite.config.ts` 讓專屬租戶沒設、或設成平台的網址時 build 失敗；平台與示範租戶不變 |
+| F5 | `VerifyTenant` 只驗角色與接線 | 加驗 oracle 限速與參考來源、各讀取方的 `maxPriceAge`、exchange 與金庫的風控參數（與設定逐項相等）、ERC-1967 implementation／admin slot、最終歸屬（熱錢包沒有 admin、owner 不是熱錢包）、部署者不留任何權限。每一類都有負向測試（`contracts/test/TenantHardening.t.sol`） |
+| F6 | 租戶 oracle 的 `isStale()` 永遠 false，監控頁失真 | 專屬租戶以時間戳對照 6 小時；平台部署照舊（測試釘住） |
+| F7 | OI 上限沒有上界；主網可放行 EOA admin；6 位小數的主網 USDC 不能用 | OI 上限 1–10,000,000；`ALLOW_EOA_ADMIN` 在 8453 無效；結算幣限制寫進文件，主網今天過不了共用元件白名單 |
+| F8 | 部署過程中 exchange 有開放窗口 | 建立後立刻 owner `pause()`，移交前 `unpause()`（會啟動 30 分鐘清算寬限，部署完成後 30 分鐘內不能開倉） |
+| F9 | 租戶沒有 Timelock | 文件寫明 admin multisig 可以立即升級金庫、上線前要寫進服務條款或補 Timelock；列入未完成 |
+| F10 | 測試與 CI 覆蓋 | 不帶 selector 的 `vm.expectRevert()` 改成具體錯誤；fork 測試註明「平台未被動到」的斷言價值有限；JSON 重複鍵偵測（`scripts/lib/strict-json.mjs`）。fork 測試照舊在 CI 跳過（需要外部 RPC），`tenant-verify.yml` 補上對真實鏈的讀取 |
+
+與審查建議不同的地方：
+
+- 時間窗限速是整顆 oracle 一組參數（`GuardedOracle` 的長度與上限是全域的，狀態才是每檔資產），所以設定檔也只有一組；改成每檔不同要改 `contracts/src`。
+- 角色多一條規則：admin 不得兼 marketOperator（否則「owner 不是熱錢包」無從保證）。
+- 部署者的真實性用 CREATE 位址推導驗證，不讀廣播檔（`fs_permissions` 不開放 `broadcast/`，而推導在 fork 與 CI 上都能做）。
+
+驗證（2026-10-02，都沒有廣播任何交易）：`forge test` 992 過、0 敗、3 skip（fork）；本機 anvil fork（Base Sepolia 區塊 47,569,483）只做模擬，`DeployTenant` 內建讀回與獨立的 `VerifyTenant.run()` 全部 `ok`（有／無參考來源兩種）；vitest 961 支（default 與 `VITE_TENANT=demo-bank` 各一次）；node 測試 132 支；`check-workflow-guards`、`check-addresses`、`check-tenant-deploy`、actionlint 1.7.12（含 shellcheck、含範本）全過。default build 對照 `origin/master`（3137080）的 build：非 JS 產物 269 檔只有 `index.html` 的入口 chunk 雜湊不同（換掉雜湊後逐字相同），JS 多一個 `deployment-*.js` chunk，bundle 內的位址集合只多 `BASE_SEPOLIA_ORACLE_SHOWCASE.AggregatorOracle`（與前一次比對相同）；退役清單只在建置期讀，不進 bundle。另以一個暫時的專屬租戶確認：沒設 `VITE_SIGNAL_API_URL`、或設成平台的網址，build 都失敗。

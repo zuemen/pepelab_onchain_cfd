@@ -1,6 +1,7 @@
 # 新增一個白標租戶
 
-> 2026-10-01 更新（合約部署腳本已參數化、前端依租戶切換位址）。隔離模型與理由見
+> 2026-10-01 更新（合約部署腳本已參數化、前端依租戶切換位址）；2026-10-02 依 PR #228 審查修正
+> （設定 schema v3：oracle 限速與風控參數、共用元件白名單、平台位址全集、CI 鏈上驗證）。隔離模型與理由見
 > [`ADR-008-tenant-isolation.md`](ADR-008-tenant-isolation.md)，前端設定層見
 > [`frontend/docs/adr/0009-tenant-config-layer.md`](../frontend/docs/adr/0009-tenant-config-layer.md)，
 > 部署之後的 keeper／signal-api／SDK 見 [`TENANT_OPERATIONS.md`](TENANT_OPERATIONS.md)。
@@ -13,9 +14,9 @@
 | 檔案 | 誰寫 | 決定什麼 | 誰檢查 |
 |---|---|---|---|
 | `frontend/src/tenant/tenants/<id>.json` | 人（常常是客戶提供） | 品牌、色票、語系、資產白名單、揭露追加、客服與法律連結、功能授權。**沒有任何位址欄位** | `vite build`、`frontend/src/tenant/*.test.ts` |
-| `deploy/tenants/<id>.json` | 人 | 角色地址、結算幣與價格來源、OI 與獲利上限、oracle 種類、要不要金庫、註冊資產、收費（待決）、keeper 排程 | `node scripts/check-tenant-deploy.mjs`；`DeployTenant.s.sol` 的 preflight |
+| `deploy/tenants/<id>.json` | 人 | 角色地址、共用元件（結算幣、價格來源、參考來源）、oracle 種類與限速、exchange 與金庫的風控參數、要不要金庫、註冊資產、收費（待決）、keeper 排程 | `node scripts/check-tenant-deploy.mjs`；`DeployTenant.s.sol` 的 preflight；`VerifyTenant.s.sol` 逐項讀回 |
 | `deploy/tenants/<id>.deployed.json` | `DeployTenant.s.sol` 廣播後寫出，人工複製進來 | 這個租戶的整組合約位址 | `check-tenant-deploy.mjs`；`VerifyTenant.s.sol`（對鏈上讀回） |
-| `frontend/src/contracts/deployments/<id>.json` | 由部署紀錄產生（`--print-frontend`） | 前端要連哪一組合約 | `vite build`、`node scripts/check-addresses.mjs`、`check-tenant-deploy.mjs`（與部署紀錄對帳） |
+| `frontend/src/contracts/deployments/<id>.json` | 由部署紀錄產生（`--print-frontend`） | 前端要連哪一組合約 | `vite build`、`node scripts/check-addresses.mjs`、`check-tenant-deploy.mjs`（與部署紀錄對帳）；`dedicated` 的由 CI 的 `tenant-verify.yml` 對鏈上跑 `VerifyTenant` |
 
 `<id>` 是小寫英數與連字號，四個檔案用同一個 id。`default` 保留給現行正式站。
 
@@ -70,24 +71,52 @@
 3. `roles` 先用 `<...>` 佔位值（`status: "template"`）。金鑰由持有人產生；地址確定後填入並把 `status`
    改成 `ready`。檢查腳本與 `DeployTenant.s.sol` 的 preflight 都要求：
    - admin／keeper／guardian／risk 兩兩不同（6 組配對）；
-   - guardian 不兼 marketOperator（marketOperator 可以就是 keeper，平台如此）；
+   - guardian 不兼 marketOperator；admin 也不兼 marketOperator（marketOperator 可以就是 keeper，平台如此）；
    - 熱錢包不收款：treasury 不是 keeper、也不是 guardian；
    - **部署者不持有任何角色**（部署結束時它不留任何權限）；
-   - admin 是合約（multisig）。演練時才用 `ALLOW_EOA_ADMIN=true` 放行 EOA；
-   - 任何專屬地址不得與現行正式站（`addresses.ts`）或其他租戶重複；`ready` 以上不得留佔位值。
-4. `shared` 是允許與其他租戶共用的兩個元件：
-   - `settlementToken`：結算幣。**必須是 18 位小數**（`PerpetualExchange` 寫死 18 位，6 位小數的代幣會讓每個部位
-     的尺度錯誤且無法修正；preflight 會擋）。
-   - `priceSource`：共用的參考價格來源（`getPrice(bytes32)`）。它只在部署當下被讀一次，用來替租戶自己的 oracle
-     取初始價；之後租戶的 exchange 只讀租戶自己的 oracle。每一檔註冊資產都必須有 **1 小時內**更新過的報價。
-5. `params` 是寫上鏈的參數，`template` 可以留 `null`，`ready` 必須填：
+   - admin 是合約（multisig）。測試網演練時才用 `ALLOW_EOA_ADMIN=true` 放行 EOA；**Base 主網一律不放行**；
+   - 任何專屬地址不得出現在**平台位址全集**裡，也不得與其他租戶重複；`ready` 以上不得留佔位值。
+     平台位址全集＝`frontend/src/contracts/` 的平台設定檔（含 `legacyExchanges.ts` 與機器可讀的退役清單
+     `retiredPlatformAddresses.json`）、`.github/workflows/`、agent 設定（`agent/.env.example`、`agent/shared`、
+     `agent/sdk`）裡**出現過的每一個位址**（含註解），見 `scripts/lib/platform-addresses.mjs`。
+4. `shared` 是與平台共用的三個元件，而且是**白名單**：每一個只能是平台在同一條鏈上的指定角色
+   （`scripts/check-tenant-deploy.mjs` 的 `SHARED_ALLOWED_ROLES`），填別的位址一律擋下。
+   - `settlementToken`：結算幣，只能是平台的那一顆（Base Sepolia：`MockUSDC`）。**必須是 18 位小數**
+     （`PerpetualExchange` 寫死 18 位，6 位小數的代幣會讓每個部位的尺度錯誤且無法修正；preflight 會擋）。
+     **Base 主網的原生 USDC 是 6 位小數，不能直接當結算幣**；平台在主網還沒有任何共用元件，所以今天任何一份
+     `network.chainId: 8453` 的設定都過不了白名單——要先決定主網的結算幣（例如 18 位的包裝幣）與共用元件。
+   - `priceSource`：只在部署當下被讀一次，用來替租戶自己的 oracle 取初始價；之後租戶的 exchange 只讀租戶
+     自己的 oracle。只能是平台的 `MockOracle`／`GuardedOracle`／`AggregatorOracle`。每一檔註冊資產都必須有
+     **1 小時內**更新過的報價。
+   - `referenceSource`：租戶 `GuardedOracle` 的參考來源，或字串 `"none"`（不可省略、不可寫零位址）。
+     只能是平台的 `AggregatorOracle`／`ChainlinkAdapter`／`PythAdapter`（去中心化行情；keeper 寫得到的 oracle
+     不是獨立的參考）。參考來源確認過的寫價不受單次上限與時間窗限制，所以它不得是任何租戶角色或結算幣。
+     `"none"` 時 `VerifyTenant` 會印出「無參考來源」：keeper 的寫價只受單次上限與時間窗限制。
+     Base 主網的 guarded oracle 必須有參考來源；`oracleKind: "mock"` 必須是 `"none"`。
+5. `params` 是寫上鏈的參數（schema v3）。**每一個鍵都要寫出來，沒有預設值**；值是範圍內的整數，或 `null`。
+   `null` 只在兩種情況合法：`status: "template"`（數字還沒決定），或這個參數對這份設定不適用——
+   `oracleKind: "mock"` 的三個 oracle 參數、`deployVault: false` 的兩個金庫參數，這兩種情況**必須**是 `null`
+   （不能寫一個不存在的上限讓讀的人以為有）。範圍在 `scripts/check-tenant-deploy.mjs` 的 `PARAM_RANGES` 與
+   `contracts/script/VerifyTenant.s.sol` 的常數，兩邊由測試釘成相同；`DeployTenant` 的 preflight 與 CI 都檢查。
 
-   | 欄位 | 說明 |
-   |---|---|
-   | `oracleKind` | `"guarded"`（建議，也是主網唯一允許的）：租戶自己的 `GuardedOracle`，單次偏離上限 10%，guardian 可凍結。`"mock"`：租戶自己的 `MockOracle`，keeper 一把金鑰可寫任意價格，只限測試網，而且不能搭配金庫 |
-   | `oiCapNonRwaUsdc`／`oiCapRwaUsdc` | 每個資產每一邊的未平倉上限（整數 USDC）。**不可為 0**——合約上 0 代表不設上限。新租戶的保險金是空的，數字由租戶的風險委員會決定；平台的算法與理由見 [`DEPLOY_130_CUTOVER.md`](DEPLOY_130_CUTOVER.md) §3.1 |
-   | `maxProfitBps` | 單筆獲利上限，10000–250000（平台用 50000＝5 倍保證金）。0（不設上限）不允許 |
-   | `deployVault` | 要不要部署代幣化資產金庫（`AssetVaultV2` proxy＋每檔資產一顆代幣）。需要 `oracleKind: "guarded"` |
+   | 欄位 | 範圍 | 說明 |
+   |---|---|---|
+   | `oracleKind` | `guarded`／`mock` | `"guarded"`（建議，也是主網唯一允許的）：租戶自己的 `GuardedOracle`，有單次上限與時間窗限速，guardian 可凍結。`"mock"`：租戶自己的 `MockOracle`，**沒有任何限速**，keeper 一把金鑰可寫任意價格，只限測試網，而且不能搭配金庫 |
+   | `oracleMaxDeviationBps` | 100–2000 | 單次寫價相對前一筆的最大變動（平台 1000＝10%）。keeper workflow 的熔斷門檻也跟著它 |
+   | `oracleWindowSeconds` | 900–86400 | 限速時間窗長度（平台 3600） |
+   | `oracleWindowDeviationBps` | 100–3000 | 一個時間窗內相對窗口起點的累計最大變動（平台 2500）。**0（不限速）不允許**：只有單次上限時，連續多筆寫價的累計變動沒有上限；時間窗把累計變動限制在這個比例內（實際保證見 `GuardedOracle` 的註解：約每一個時間窗＋1 秒兩倍上限） |
+   | `oiCapNonRwaUsdc`／`oiCapRwaUsdc` | 1–10,000,000 | 每個資產每一邊的未平倉上限（整數 USDC）。**不可為 0**——合約上 0 代表不設上限；上界避免「實務上等於不設上限」。新租戶的保險金是空的，數字由租戶的風險委員會決定；平台的算法與理由見 [`DEPLOY_130_CUTOVER.md`](DEPLOY_130_CUTOVER.md) §3.1 |
+   | `maxProfitBps` | 10000–250000 | 單筆獲利上限（平台用 50000＝5 倍保證金）。0（不設上限）不允許 |
+   | `maxLeverage` | 1–5 | 每檔資產的槓桿上限（`setMaxLeverageFor`）。實際可用的是它與碳分級上限的較小者；ESG 見證人指派之前每檔都是 Unrated＝1 倍 |
+   | `liquidationPenaltyBps` | 0–5000 | 清算時沒收進保險金的比例（合約預設 2000） |
+   | `markPremiumCapBps` | 0–200 | mark 價相對 index 的溢價上限（0＝mark 等於 index，平台現況） |
+   | `vaultFeeShareBps` | 0–10000 | 交易費撥進租戶保險金的比例（0＝不撥） |
+   | `deployVault` | `true`／`false` | 要不要部署代幣化資產金庫（`AssetVaultV2` proxy＋每檔資產一顆代幣）。需要 `oracleKind: "guarded"` |
+   | `vaultRedeemFeeBps` | 0–300 | 金庫贖回費（合約預設 30）。沒有金庫時必須是 `null` |
+   | `vaultMinReserveRatioBps` | 10000–20000 | 鑄造所需的最低準備率（合約預設 11000＝110%）。沒有金庫時必須是 `null` |
+
+   `executionFee`（0.0001 ETH）、exchange 與金庫的 `maxPriceAge`（6 小時）、oracle 自己的 `maxPriceAge`（0，
+   理由見 ADR-008）是腳本常數，不是租戶設定；`VerifyTenant` 一樣逐項讀回。
 
    哪些資產是 RWA（要 KYC）**不是租戶設定**：由資產本身決定，腳本內建的分類與平台相同（測試釘住）。
 6. `assets.registered` 是這個租戶要上架的資產，必須涵蓋前端 `assets.enabled`——前端不能開一檔沒註冊的資產。
@@ -119,6 +148,9 @@ TENANT=<id> forge script script/DeployTenant.s.sol:DeployTenant \
 ```
 
 - `--sender` 是部署者的**位址**，不是金鑰。模擬不需要任何私鑰。
+- exchange 部署出來的第一件事是 owner `pause()`（沒有到期時間），KYC、RWA 旗標、上限都設好之後、移交所有權之前
+  才 `unpause()`。廣播是很多筆交易，中途被打斷時留下的是一顆暫停中的 exchange，不是一顆半設定、可以開倉的。
+  `unpause()` 會啟動合約的 30 分鐘清算寬限期：**部署完成後 30 分鐘內不能開倉**（也不會清算），這是預期行為。
 - 成功的模擬最後會印出一長串 `ok`（就是 `VerifyTenant` 的全部斷言）、一份 `mode: dry-run` 的部署紀錄、
   以及 forge 的 `SIMULATION COMPLETE`。紀錄寫到 `contracts/cache/tenants/<id>.dry-run.json`（git-ignored）。
   **dry-run 的位址是模擬出來的**，不要複製到任何地方。
@@ -128,6 +160,10 @@ TENANT=<id> forge script script/DeployTenant.s.sol:DeployTenant \
   讀 `deploy/tenants/`、只允許寫 `contracts/cache/tenants/`。
 
 2026-10-01 在本機 anvil fork（Base Sepolia）的實測：143 筆交易、約 4,490 萬 gas；以當時的 0.0033 gwei 計約 0.00015 ETH。
+2026-10-02（PR #228 審查修正後，schema v3、含參考來源與限速）在本機 anvil fork（Base Sepolia 區塊 47,569,483）
+只做模擬、不送任何交易：`DeployTenant` 內建的讀回驗證與獨立的 `VerifyTenant.run()`（讀同一份模擬狀態與
+`cache/tenants/<id>.dry-run.json`）全部 `ok`（後者 95 項）；約 4,620 萬 gas。有參考來源與 `"none"` 兩種都跑過，
+後者印出「無參考來源」的 NOTE。
 2026-10-02 以當日的 Base Sepolia 狀態重跑 fork 測試（`forge test --match-path test/fork/DeployTenantFork.t.sol --fork-url https://sepolia.base.org`，
 只在本機 fork 上執行、不送任何交易）：2 支全過，`VerifyTenant` 的斷言全部 `ok`。
 
@@ -168,9 +204,22 @@ TENANT=<id> TENANT_RECORD=cache/tenants/<id>.deployed.json \
   forge script script/VerifyTenant.s.sol:VerifyTenant --rpc-url "$BASE_SEPOLIA_RPC_URL" -vv
 ```
 
-它檢查：每顆合約有 code 且位址互不相同、也不是共用元件；exchange 的 owner／guardian／marketOperator／oracle／
-保險金／FeeRouter／KYC 接線；每檔資產的 RWA 旗標、OI 上限、獲利上限；FeeRouter 的 treasury 是租戶的；
-oracle 與金庫的角色各歸其位；**部署者不留任何角色**。價格過期只會 WARN（那是 keeper 的狀態，不是接線）。
+它檢查（任何一項不符就失敗，訊息指出是哪一項）：
+
+- 每顆合約有 code 且位址互不相同、也不是共用元件；exchange 的 owner／guardian／marketOperator／oracle／保險金／
+  FeeRouter／KYC 接線；FeeRouter 的 treasury 是租戶的；
+- **風控參數與設定逐項相等**：每檔資產的 RWA 旗標、OI 上限、獲利上限、槓桿上限；清算罰金、mark 溢價上限、
+  保險金分成；兩個舊版費率仍是合約預設（接上 ESGRegistry 之後不生效，被改了代表有人動過）；
+  exchange 與金庫的 `maxPriceAge`（6 小時）；金庫的贖回費與最低準備率；
+- **oracle**：單次上限、時間窗長度與累計上限都非零且等於設定，自身 `maxPriceAge` 是 0，參考來源等於設定，沒有暫停；
+  註冊資產在 oracle 上都有價格（過期或凍結只 WARN——那是 keeper 的狀態，不是接線）；
+- **proxy**：金庫的 ERC-1967 implementation slot 等於紀錄裡的實作、沒有 proxy admin（UUPS）。admin 事後升級到別的實作就會失敗；
+- **最終歸屬**：Ownable 的 owner、AccessControl 的 admin、guardian／keeper／risk 角色各歸其位；owner 不是任何熱錢包；
+  keeper／guardian／risk／marketOperator／treasury 在任何合約上都沒有 admin；
+- **部署者是真的**：紀錄裡的 `deployer` 是自報的欄位，所以每一顆合約都必須是這個地址以它用過的某個 nonce
+  `CREATE` 出來的（`computeCreateAddress`）。紀錄的 deployer 被改成別人時直接失敗；
+- **部署者不留任何權限**：不是任何合約的 owner、guardian、marketOperator、授權 agent、KYC verifier，在任何
+  AccessControl 合約上沒有任何角色。
 
 ## 5. 廣播之後（一個 PR）
 
@@ -188,14 +237,24 @@ oracle 與金庫的角色各歸其位；**部署者不留任何角色**。價格
      > frontend/src/contracts/deployments/<id>.json
    ```
 
-   不要手打位址。租戶另外部署了 x402 分潤路由的話，手動加一行 `contracts.X402FeeRouter`（唯一允許不在部署紀錄裡的欄位）。
+   不要手打位址。產生的登記會帶 `"shared": ["contracts.SettlementToken"]`：結算幣是唯一與平台共用的位址，
+   登記檔必須**顯式宣告**它，檢查器才放行，而且值必須就是平台在該鏈的結算幣。其餘任何欄位與平台或其他租戶相同
+   都會紅燈——檢查器自動列舉登記裡的每一個位址欄位，不靠手寫清單。
+   租戶另外部署了 x402 分潤路由的話，手動加一行 `contracts.X402FeeRouter`（唯一允許不在部署紀錄裡的欄位）。
 3. 檢查與建置：
 
    ```bash
    node scripts/check-tenant-deploy.mjs      # 部署紀錄只收 mode=broadcast；前端登記必須與紀錄逐欄位相同
-   node scripts/check-addresses.mjs          # 除結算幣外，不得與平台或其他租戶共用任何位址
-   cd frontend && VITE_TENANT=<id> yarn build
+   node scripts/check-addresses.mjs          # 不得出現平台位址全集或其他租戶的位址（顯式宣告共用的結算幣除外）
+   node scripts/verify-dedicated-tenants.mjs # 對每個 dedicated 租戶以公開 RPC 的 fork 跑 VerifyTenant
+   cd frontend && VITE_TENANT=<id> VITE_SIGNAL_API_URL=<租戶的 signal-api> yarn build
    ```
+
+   檔案層的檢查只擋得到「已知的位址」；所有權、綁定、參數要靠讀鏈。所以 CI 的 `tenant-verify.yml` 對每一個
+   `dedicated` 登記跑 `VerifyTenant`（公開唯讀 RPC、不需要 secret、RPC 連不上就失敗），這是合併條件；
+   它每天也排程跑一次——租戶 admin 事後改了鏈上參數而設定檔沒跟著改，那裡會紅。
+   專屬租戶的 build **必須**設 `VITE_SIGNAL_API_URL`，而且不能是平台的 signal-api（沒設就 build 失敗，
+   不會悄悄退回平台的；`TENANT_OPERATIONS.md` §2）。
 4. `contracts/broadcast/DeployTenant.s.sol/<chainId>/run-*.json` 是這次部署的機器可讀紀錄，照慣例進版控。
 5. 接著做營運面：keeper 的 environment 與 workflow、signal-api、SDK——[`TENANT_OPERATIONS.md`](TENANT_OPERATIONS.md)。
    **keeper 第一次寫價成功之前不要對外開放前端。**
@@ -204,7 +263,11 @@ oracle 與金庫的角色各歸其位；**部署者不留任何角色**。價格
    - 指派碳分級見證人（`ESGRegistryV2` 的 `ATTESTOR_ROLE`）。在那之前每檔資產都是 Unrated——槓桿 1 倍、費率最高那一級（fail-closed）。
    - 注入保險金（`InsuranceVault.deposit`／`recapitalize`）。新租戶的保險金是 0。
    - 金庫的每檔資產上限預設是 0（關閉鑄造），由 risk 金鑰逐檔開放，並 `fundVault` 注入兌付準備。
-   - 若要把所有權放到 Timelock 後面，由 admin 自行部署並轉移；之後跑 `VerifyTenant` 要加 `EXPECTED_OWNER=<timelock>`。
+   - 若要把所有權放到 Timelock 後面，由 admin 自行部署並轉移；之後跑 `VerifyTenant` 要加 `EXPECTED_OWNER=<timelock>`
+     （CI 的 `tenant-verify.yml` 目前以 `roles.admin` 為 owner；移到 Timelock 時要同步改設定或腳本）。
+   - **沒有 Timelock 時，admin multisig 可以立即升級金庫**（`AssetVaultV2_5._authorizeUpgrade` 只要
+     `DEFAULT_ADMIN_ROLE`）。租戶的使用者信任的是機構的 multisig，不是一段延遲；上線前要在服務條款寫清楚，
+     或先補上租戶版的 Timelock 腳本（ADR-008 的待決事項）。
 
 ## 6. 已知缺口
 
@@ -213,6 +276,8 @@ oracle 與金庫的角色各歸其位；**部署者不留任何角色**。價格
 - **前端只能連 Base Sepolia 的專屬部署**；Base 主網需要錢包切換、RPC、CSP、區塊瀏覽器連結的設定。
 - **專屬租戶的前端沒有逐頁走查過**（沒有可瀏覽的專屬部署）。見 ADR 0009 增補的 Consequences。
 - **ESGRegistryV2 只有「每租戶專屬」一種**；ADR-008 允許租戶明確選擇共用平台登錄的選項沒有實作。
-- **keeper**：租戶 workflow 要手動複製；keeper 程式在只有一顆 GuardedOracle 的租戶上沒有實跑過；租戶沒有健檢。見 `TENANT_OPERATIONS.md` §1。
+- **keeper**：租戶 workflow 由範本產生（`node scripts/gen-tenant-keeper.mjs <id>`），但 keeper 程式在只有一顆 GuardedOracle 的租戶上沒有實跑過；租戶沒有健檢。見 `TENANT_OPERATIONS.md` §1。
+- **主網**：平台在 Base 主網沒有共用元件，結算幣也還沒決定（原生 USDC 是 6 位小數，不能用）；設定檢查今天擋下所有主網設定。
+- **時間窗限速是整顆 oracle 一組參數**：`GuardedOracle` 每檔資產各有自己的時間窗狀態，但長度與上限只有一組，所以設定檔也只有一組（改成每檔不同要改 `contracts/src`）。
 - **agent 端（signal-api、MCP server、Telegram bot）讀的是平台的合約**，每租戶一個 Vercel 專案今天只能隔離收款。見 `TENANT_OPERATIONS.md` §2.2。
 - **部署中斷沒有續跑機制**（刻意：不碰共用指標，重來的代價只有 gas）。

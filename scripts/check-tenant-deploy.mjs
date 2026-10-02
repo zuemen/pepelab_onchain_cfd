@@ -29,6 +29,8 @@ import { join, resolve, dirname, basename } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { loadChains } from "./check-addresses.mjs";
+import { parseJsonStrict } from "./lib/strict-json.mjs";
+import { describeSources, platformAddressUniverse } from "./lib/platform-addresses.mjs";
 
 const ADDR_EXACT = /^0x[0-9a-fA-F]{40}$/;
 const ZERO = "0x0000000000000000000000000000000000000000";
@@ -69,11 +71,68 @@ const SECRET_KEY_NAME = /private|mnemonic|secret|seed|password|api_?key|auth_?to
 export const STATUSES = ["template", "ready", "deployed"];
 export const ROLE_KEYS = ["admin", "risk", "guardian", "keeper", "marketOperator", "treasury"];
 export const SECRET_ENV_KEYS = ["deployerPrivateKey", "keeperPrivateKey", "rpcUrl"];
-export const SHARED_KEYS = ["settlementToken", "priceSource"];
-export const PARAM_KEYS = ["oracleKind", "oiCapNonRwaUsdc", "oiCapRwaUsdc", "maxProfitBps", "deployVault"];
+export const SCHEMA_VERSION = 3;
+export const SHARED_KEYS = ["settlementToken", "priceSource", "referenceSource"];
+/**
+ * shared.* 是與平台共用的元件，所以**只能**指向平台在該鏈的這些角色（白名單，不是黑名單）：
+ *   settlementToken  結算代幣——同一條鏈上就是平台那一顆（審查 F2：先前可以填任何地址，
+ *                    包括平台的保險金份額這種 18 位 ERC20）；
+ *   priceSource      只在部署時替租戶自己的 oracle 取一次初始價；
+ *   referenceSource  租戶 GuardedOracle 的參考來源（去中心化行情），或字串 "none"。
+ * 一條鏈上沒有對應角色（例如 Base 主網還沒有平台部署）就沒有任何值能通過——那條鏈要先
+ * 定義共用元件，才能部署租戶。
+ */
+export const SHARED_ALLOWED_ROLES = {
+  settlementToken: ["MockUSDC"],
+  priceSource: ["MockOracle", "GuardedOracle", "AggregatorOracle"],
+  referenceSource: ["AggregatorOracle", "ChainlinkAdapter", "PythAdapter"],
+};
+export const NO_REFERENCE = "none";
+export const PARAM_KEYS = [
+  "oracleKind",
+  "oracleMaxDeviationBps",
+  "oracleWindowSeconds",
+  "oracleWindowDeviationBps",
+  "oiCapNonRwaUsdc",
+  "oiCapRwaUsdc",
+  "maxProfitBps",
+  "maxLeverage",
+  "liquidationPenaltyBps",
+  "markPremiumCapBps",
+  "vaultFeeShareBps",
+  "deployVault",
+  "vaultRedeemFeeBps",
+  "vaultMinReserveRatioBps",
+];
 export const ORACLE_KINDS = ["guarded", "mock"];
+/**
+ * 數值參數的範圍（含兩端）。與 contracts/script/VerifyTenant.s.sol（TenantBase）的常數相同，
+ * check-tenant-deploy.test.mjs 讀那個檔案逐一比對。
+ *   oracle*：租戶 GuardedOracle 的單次偏移上限、時間窗長度、時間窗累計上限（審查 F1：
+ *            沒有時間窗時，keeper 金鑰外洩就能在同一個區塊內把價格一路推上去）。
+ *   oiCap*：每邊、整數 USDC；上界避免「實務上等於不設上限」（審查 F7）。
+ *   maxProfitBps：與 PerpetualExchange 的 MIN_PROFIT_CAP_BPS / MAX_PROFIT_CAP_BPS 相同。
+ */
+export const PARAM_RANGES = {
+  oracleMaxDeviationBps: [100, 2_000],
+  oracleWindowSeconds: [900, 86_400],
+  oracleWindowDeviationBps: [100, 3_000],
+  oiCapNonRwaUsdc: [1, 10_000_000],
+  oiCapRwaUsdc: [1, 10_000_000],
+  maxProfitBps: [10_000, 250_000],
+  maxLeverage: [1, 5],
+  liquidationPenaltyBps: [0, 5_000],
+  markPremiumCapBps: [0, 200],
+  vaultFeeShareBps: [0, 10_000],
+  vaultRedeemFeeBps: [0, 300],
+  vaultMinReserveRatioBps: [10_000, 20_000],
+};
+/** 只有 oracleKind=guarded 才有意義（MockOracle 沒有任何限速），mock 時必須是 null。 */
+export const ORACLE_PARAM_KEYS = ["oracleMaxDeviationBps", "oracleWindowSeconds", "oracleWindowDeviationBps"];
+/** 只有 deployVault=true 才有意義，沒有金庫時必須是 null。 */
+export const VAULT_PARAM_KEYS = ["vaultRedeemFeeBps", "vaultMinReserveRatioBps"];
 /** 與 PerpetualExchange 的 MIN_PROFIT_CAP_BPS / MAX_PROFIT_CAP_BPS 相同（DeployTenant 也會擋）。 */
-export const PROFIT_BPS_RANGE = [10_000, 250_000];
+export const PROFIT_BPS_RANGE = PARAM_RANGES.maxProfitBps;
 /** 部署紀錄（<id>.deployed.json）的 contracts 鍵——DeployTenant.s.sol `_recordJson` 寫出的那一組。 */
 export const RECORD_CONTRACT_KEYS = [
   "Oracle",
@@ -120,6 +179,9 @@ export const MUST_DIFFER = [
   // guardian 兼 marketOperator：一把鑰匙同時能暫停與切換市場。熱錢包不收款。
   ["guardian", "marketOperator"],
   ["guardian", "treasury"],
+  // admin（部署結束時的 owner）是多簽；marketOperator 是熱錢包。兩者相同時 VerifyTenant 的
+  // 「owner 不是熱錢包」檢查就無從成立（DeployTenant 的 preflight 同樣擋）。
+  ["admin", "marketOperator"],
 ];
 
 const TOP_KEYS = [
@@ -183,7 +245,9 @@ export function checkTenantDeploy({ file, cfg, ctx }) {
   const strict = status === "ready" || status === "deployed";
 
   for (const k of Object.keys(cfg)) if (!TOP_KEYS.includes(k)) bad(`未知欄位 ${k}（打錯字？）`);
-  if (cfg.schemaVersion !== 2) bad("schemaVersion 必須是 2（v2：新增 params、已部署位址改放 <id>.deployed.json）");
+  if (cfg.schemaVersion !== SCHEMA_VERSION) {
+    bad(`schemaVersion 必須是 ${SCHEMA_VERSION}（v3：oracle 限速、exchange／金庫風控參數、shared.referenceSource）`);
+  }
 
   // ── 秘密不得進設定檔 ──
   for (const [path, key, value] of walk(cfg)) {
@@ -254,7 +318,8 @@ export function checkTenantDeploy({ file, cfg, ctx }) {
   }
 
   // ── 位址欄位 ──
-  const addrField = (path, value, { dedicated }) => {
+  const chain = ctx.chains?.[String(cfg.network?.chainId)];
+  const addrField = (path, value, { dedicated, allowedRoles = [] }) => {
     if (value === null || value === undefined) {
       bad(`${path} 未填`);
       return;
@@ -272,10 +337,23 @@ export function checkTenantDeploy({ file, cfg, ctx }) {
       return;
     }
     if (dedicated) {
-      if (ctx.productionAddrs.has(value.toLowerCase())) {
-        bad(`${path}=${value} 是現行正式站（addresses.ts）的位址——租戶專屬的角色與合約不得與正式站共用`);
+      if (ctx.universe.has(value.toLowerCase())) {
+        bad(
+          `${path}=${value} 是現行正式站（平台）用過的位址（出處：${describeSources(ctx.universe.get(value.toLowerCase()))}）` +
+            "——租戶專屬的角色與合約不得與正式站共用",
+        );
       }
       addrs.set(value.toLowerCase(), path);
+    } else {
+      // 共用元件：白名單。
+      const allowed = allowedRoles.map((r) => [r, chain?.roles[r]]).filter(([, a]) => a);
+      if (!allowed.some(([, a]) => a.toLowerCase() === value.toLowerCase())) {
+        bad(
+          `${path}=${value} 不是平台在 chain ${cfg.network?.chainId} 的 ${allowedRoles.join("／")}` +
+            (allowed.length ? `（${allowed.map(([r, a]) => `${r}=${a}`).join("、")}）` : "（這條鏈沒有平台的對應元件）") +
+            "——共用元件只限白名單",
+        );
+      }
     }
   };
 
@@ -289,7 +367,11 @@ export function checkTenantDeploy({ file, cfg, ctx }) {
     }
   }
 
-  for (const k of SHARED_KEYS) addrField(`shared.${k}`, cfg.shared?.[k], { dedicated: false });
+  for (const k of SHARED_KEYS) {
+    const v = cfg.shared?.[k];
+    if (k === "referenceSource" && v === NO_REFERENCE) continue;
+    addrField(`shared.${k}`, v, { dedicated: false, allowedRoles: SHARED_ALLOWED_ROLES[k] });
+  }
   for (const k of Object.keys(cfg.shared ?? {})) if (!SHARED_KEYS.includes(k)) bad(`shared 未知欄位 ${k}`);
 
   // ── 部署參數（DeployTenant.s.sol 的輸入）──
@@ -301,22 +383,41 @@ export function checkTenantDeploy({ file, cfg, ctx }) {
     // MockOracle 沒有偏離上限，一把金鑰可以寫任意價格。
     if (cfg.network?.chainId === 8453) bad("params.oracleKind=mock 不得用於 Base 主網（8453）");
     if (prm.deployVault === true) bad("params.deployVault=true 需要 oracleKind=guarded（硬化金庫不接沒有偏離上限的 oracle）");
-  }
-  for (const k of ["oiCapNonRwaUsdc", "oiCapRwaUsdc"]) {
-    const v = prm[k];
-    if (v === null || v === undefined) {
-      if (strict) bad(`params.${k} 未填（status=${status} 不允許；0 或留空在合約上代表不設上限）`);
-    } else if (!Number.isSafeInteger(v) || v <= 0) {
-      bad(`params.${k} 必須是正整數（整數 USDC，每一邊）；0 在合約上代表不設上限`);
+    if (cfg.shared?.referenceSource !== NO_REFERENCE) {
+      bad('oracleKind=mock 時 shared.referenceSource 必須是 "none"（MockOracle 不支援參考來源）');
     }
   }
-  {
-    const v = prm.maxProfitBps;
-    const [lo, hi] = PROFIT_BPS_RANGE;
-    if (v === null || v === undefined) {
-      if (strict) bad(`params.maxProfitBps 未填（status=${status} 不允許）`);
+  if (prm.oracleKind === "guarded" && cfg.network?.chainId === 8453 && cfg.shared?.referenceSource === NO_REFERENCE) {
+    bad('Base 主網的 guarded oracle 必須有參考來源（shared.referenceSource 不得是 "none"）');
+  }
+  // 數值參數：每一個鍵都必須寫出來（沒有預設值）；值要嘛是範圍內的整數，要嘛是 null。
+  //   null 只在兩種情況合法：status=template（數字還沒決定），或這個參數對這份設定不適用
+  //   （mock oracle 的限速、沒有金庫時的金庫參數）——那兩種情況**必須**是 null，
+  //   不能寫一個不存在的上限讓讀的人以為有。
+  for (const [k, [lo, hi]] of Object.entries(PARAM_RANGES)) {
+    const v = prm[k];
+    const inapplicable =
+      (ORACLE_PARAM_KEYS.includes(k) && prm.oracleKind === "mock") ||
+      (VAULT_PARAM_KEYS.includes(k) && prm.deployVault === false);
+    if (!Object.hasOwn(prm, k)) {
+      bad(`params.${k} 缺少（每個參數都要寫出來；不適用時寫 null）`);
+    } else if (inapplicable) {
+      if (v !== null) {
+        bad(
+          ORACLE_PARAM_KEYS.includes(k)
+            ? `params.${k} 必須是 null：oracleKind=mock 沒有任何限速，設定檔不能寫一個不存在的上限`
+            : `params.${k} 必須是 null：params.deployVault=false，沒有金庫`,
+        );
+      }
+    } else if (v === null) {
+      if (strict) bad(`params.${k} 未填（status=${status} 不允許）`);
     } else if (!Number.isSafeInteger(v) || v < lo || v > hi) {
-      bad(`params.maxProfitBps 必須是 ${lo}–${hi} 的整數 bps（0＝不設上限，不允許）`);
+      const why =
+        k.startsWith("oiCap") ? "整數 USDC、每一邊；0 在合約上代表不設上限" :
+        k === "maxProfitBps" ? "整數 bps；0＝不設上限，不允許" :
+        k.startsWith("oracle") ? "0＝不限速，不允許" :
+        "整數";
+      bad(`params.${k} 必須是 ${lo}–${hi} 的整數（${why}）`);
     }
   }
 
@@ -407,8 +508,8 @@ export function checkDeployedRecord({ file, rec, cfg, ctx }) {
       if (!allowZero) bad(`${path} 是零位址`);
       return;
     }
-    if (ctx.productionAddrs.has(low)) {
-      bad(`${path}=${value} 是現行正式站（addresses.ts）的位址——租戶的合約不得與正式站共用`);
+    if (ctx.universe.has(low)) {
+      bad(`${path}=${value} 是現行正式站（平台）用過的位址（出處：${describeSources(ctx.universe.get(low))}）——租戶的合約不得與正式站共用`);
     }
     if (cfg) {
       for (const k of ROLE_KEYS) {
@@ -469,6 +570,9 @@ export function frontendDeployment(rec) {
       CopyTracker: c.CopyTracker,
       AgentSessionManager: c.AgentSessionManager,
     },
+    // 結算代幣是唯一與平台共用的位址，而且一定是平台那一顆（shared.settlementToken 的白名單），
+    // 所以登記檔一律顯式宣告它（check-addresses.mjs 只放行宣告過的共用欄位）。
+    shared: ["contracts.SettlementToken"],
   };
   if (hasVault) {
     out.contracts.AssetVaultV2 = c.AssetVaultV2;
@@ -519,8 +623,12 @@ export function envPlan(cfg) {
     `# risk=${r.risk}  guardian=${r.guardian}  keeper=${r.keeper}`,
     `# marketOperator=${r.marketOperator}  treasury（FeeRouter，immutable）=${r.treasury}`,
     `# settlementToken=${s.settlementToken}  priceSource（只用來替新 oracle 取初始價）=${s.priceSource}`,
+    `# referenceSource（租戶 oracle 的參考來源）=${s.referenceSource === NO_REFERENCE ? "none（無參考來源）" : s.referenceSource}`,
     `# oracleKind=${p.oracleKind}  deployVault=${p.deployVault}`,
+    `# oracle 限速：單次 ${p.oracleMaxDeviationBps} bps、時間窗 ${p.oracleWindowSeconds} 秒內累計 ${p.oracleWindowDeviationBps} bps`,
     `# OI 上限／每邊（USDC）：非 RWA ${p.oiCapNonRwaUsdc}、RWA ${p.oiCapRwaUsdc}；maxProfitBps=${p.maxProfitBps}`,
+    `# maxLeverage=${p.maxLeverage}  liquidationPenaltyBps=${p.liquidationPenaltyBps}  markPremiumCapBps=${p.markPremiumCapBps}  vaultFeeShareBps=${p.vaultFeeShareBps}`,
+    `# 金庫：redeemFeeBps=${p.vaultRedeemFeeBps}  minReserveRatioBps=${p.vaultMinReserveRatioBps}`,
     `# assets.registered=${(cfg.assets?.registered ?? []).join(",")}`,
   ].join("\n");
 }
@@ -535,7 +643,8 @@ export function loadContext(root) {
     sessionFile: join(root, "frontend/src/contracts/sessionManager.ts"),
     x402File: join(root, "frontend/src/contracts/x402.ts"),
   });
-  const productionAddrs = new Set(Object.values(chains).flatMap((c) => [...c.known]));
+  // 平台位址全集：設定檔、workflow、agent 設定裡出現過的每一個位址＋退役清單（審查 F2）。
+  const universe = platformAddressUniverse(root);
   const feDir = join(root, "frontend/src/tenant/tenants");
   const frontendTenants = Object.fromEntries(
     readdirSync(feDir)
@@ -549,13 +658,13 @@ export function loadContext(root) {
   if (existsSync(depDir)) {
     for (const f of readdirSync(depDir).filter((x) => x.endsWith(".json"))) {
       try {
-        frontendDeployments[basename(f, ".json")] = JSON.parse(readFileSync(join(depDir, f), "utf8"));
+        frontendDeployments[basename(f, ".json")] = parseJsonStrict(readFileSync(join(depDir, f), "utf8")).value;
       } catch {
         frontendDeployments[basename(f, ".json")] = null; // 壞掉的 JSON 由 check-addresses.mjs 報
       }
     }
   }
-  return { symbols, productionAddrs, frontendTenants, frontendDeployments };
+  return { symbols, chains, universe, frontendTenants, frontendDeployments };
 }
 
 /**
@@ -568,6 +677,9 @@ export function frontendMismatches(fe, rec) {
   const same = (a, b) => typeof a === "string" && typeof b === "string" && a.toLowerCase() === b.toLowerCase();
   for (const k of ["tenant", "kind", "chainId", "oracleKind"]) {
     if (fe?.[k] !== want[k]) out.push(`${k}：前端登記是 ${JSON.stringify(fe?.[k])}，部署紀錄是 ${JSON.stringify(want[k])}`);
+  }
+  if (JSON.stringify(fe?.shared) !== JSON.stringify(want.shared)) {
+    out.push(`shared：前端登記是 ${JSON.stringify(fe?.shared)}，應為 ${JSON.stringify(want.shared)}`);
   }
   const feC = fe?.contracts ?? {};
   for (const [k, v] of Object.entries(want.contracts)) {
@@ -585,9 +697,12 @@ export function frontendMismatches(fe, rec) {
   return out;
 }
 
+/** 嚴格讀 JSON：重複的鍵算錯（JSON.parse 取最後一個值，審查者看到的可能是第一個）。 */
 const readJson = (file) => {
   try {
-    return { value: JSON.parse(readFileSync(file, "utf8")) };
+    const { value, duplicates } = parseJsonStrict(readFileSync(file, "utf8"));
+    if (duplicates.length) return { value, error: `${file}: JSON 重複的鍵 ${duplicates.join("、")}` };
+    return { value };
   } catch (e) {
     return { error: `${file}: 不是合法 JSON：${e.message}` };
   }
@@ -600,13 +715,14 @@ export function run({ root, files, log = console.log, coverage = false, context 
 
   const results = configFiles.map((file) => {
     const { value: cfg, error } = readJson(file);
-    if (error) return { file, problems: [error], addrs: new Map() };
-    return { file, cfg, ...checkTenantDeploy({ file, cfg, ctx }) };
+    if (error && cfg === undefined) return { file, problems: [error], addrs: new Map() };
+    const r = checkTenantDeploy({ file, cfg, ctx });
+    return { file, cfg, ...r, problems: error ? [error, ...r.problems] : r.problems };
   });
 
   for (const file of recordFiles) {
     const { value: rec, error } = readJson(file);
-    if (error) {
+    if (error && rec === undefined) {
       results.push({ file, problems: [error], addrs: new Map() });
       continue;
     }
@@ -615,7 +731,8 @@ export function run({ root, files, log = console.log, coverage = false, context 
     const hit = results.find((r) => resolve(r.file) === resolve(cfgFile));
     const cfg = hit ? (hit.cfg ?? null) : existsSync(cfgFile) ? (readJson(cfgFile).value ?? null) : null;
     // 以設定檔的名義進跨租戶比對：紀錄與「自己的」設定不算兩個租戶。
-    results.push({ file: cfgFile, rec, ...checkDeployedRecord({ file, rec, cfg, ctx }) });
+    const r = checkDeployedRecord({ file, rec, cfg, ctx });
+    results.push({ file: cfgFile, rec, ...r, problems: error ? [error, ...r.problems] : r.problems });
   }
 
   // status=deployed 必須有部署紀錄（位址只放在紀錄裡，設定檔沒有位址欄位可填）。
@@ -668,7 +785,7 @@ export function run({ root, files, log = console.log, coverage = false, context 
 
   log(
     `檢查 ${configFiles.length} 份租戶部署設定、${recordFiles.length} 份部署紀錄` +
-      `（已知資產 ${ctx.symbols.length} 檔、正式站位址 ${ctx.productionAddrs.size} 個）`,
+      `（已知資產 ${ctx.symbols.length} 檔、平台位址全集 ${ctx.universe.size} 個）`,
   );
   if (problems.length) {
     for (const p of problems) log(`::error::${p}`);

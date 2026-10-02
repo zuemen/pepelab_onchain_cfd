@@ -103,10 +103,24 @@ contract DeployTenantTest is TenantFixture {
         assertEq(ex.marketOperator(), s.marketOperator);
         assertEq(address(ex.kyc()), d.kyc);
 
+        // Every launch parameter comes from the config, nothing is left at a
+        // contract default by accident.
+        GuardedOracle o = GuardedOracle(d.oracle);
+        assertEq(o.maxDeviationBps(), s.oracleMaxDeviationBps, "oracle step cap from the config");
+        assertEq(o.windowDuration(), s.oracleWindowSeconds, "oracle window from the config");
+        assertEq(o.maxWindowDeviationBps(), s.oracleWindowDeviationBps, "oracle window cap from the config");
+        assertEq(o.referenceSource(), address(0), "config says none");
+        assertEq(ex.maxLeverageOf(BTC), s.maxLeverage);
+        assertEq(ex.maxLeverageOf(AAPL), s.maxLeverage);
+        assertEq(ex.liquidationPenaltyBps(), s.liquidationPenaltyBps);
+        assertEq(ex.markPremiumCapBps(), s.markPremiumCapBps);
+        assertEq(ex.vaultFeeShareBps(), s.vaultFeeShareBps);
+        assertFalse(ex.paused(), "opened before the handover");
+
         assertEq(d.tokens.length, 11, "one token per registered asset");
         assertEq(AssetVaultV2_5(d.assetVault).maxPriceAge(), 21_600, "vault quote-age limit = 6h");
-        assertEq(AssetVaultV2_5(d.assetVault).redeemFeeBps(), 30, "redeem fee left at the contract default");
-        assertEq(AssetVaultV2_5(d.assetVault).minReserveRatioBps(), 11_000, "reserve floor left at the contract default");
+        assertEq(AssetVaultV2_5(d.assetVault).redeemFeeBps(), s.vaultRedeemFeeBps, "redeem fee from the config");
+        assertEq(AssetVaultV2_5(d.assetVault).minReserveRatioBps(), s.vaultMinReserveRatioBps, "reserve floor from the config");
 
         // The record the run produced verifies on its own, from strings alone.
         string memory record = script.lastRecordJson();
@@ -122,6 +136,9 @@ contract DeployTenantTest is TenantFixture {
     function test_tenantTrades_capsAndKycGateHold() public {
         (Spec memory s, , TenantBase.TenantDeployed memory d) = _tenant("bank-a");
         PerpetualExchange ex = PerpetualExchange(d.exchange);
+        // The deploy ends by lifting its own pause, which starts the
+        // exchange's post-pause grace period: no opens for 30 minutes.
+        vm.warp(block.timestamp + 30 minutes + 1);
 
         usdc.mint(trader, 5_000e18);
         vm.deal(trader, 1 ether);
@@ -130,9 +147,11 @@ contract DeployTenantTest is TenantFixture {
         ex.depositMargin(3_000e18);
         // Empty ESGRegistryV2 → every asset Unrated → 1x, the most conservative row.
         ex.openPosition{value: 1e14}(BTC, true, 600e18, 1);
-        vm.expectRevert();   // OpenInterestCapExceeded: 600 + 600 > 1,000
+        // 600 + 600 > 1,000 per side.
+        vm.expectPartialRevert(PerpetualExchange.OpenInterestCapExceeded.selector);
         ex.openPosition{value: 1e14}(BTC, true, 600e18, 1);
-        vm.expectRevert();   // InvalidLeverage: unrated assets are 1x only
+        // Unrated assets are 1x only, whatever maxLeverage allows.
+        vm.expectRevert(PerpetualExchange.InvalidLeverage.selector);
         ex.openPosition{value: 1e14}(BTC, false, 100e18, 2);
         // RWA market: closed until the tenant's own KYC registry verifies the trader.
         vm.expectRevert(abi.encodeWithSelector(PerpetualExchange.NotKycVerified.selector, trader));
@@ -140,8 +159,8 @@ contract DeployTenantTest is TenantFixture {
         KYCRegistry(d.kyc).submitKYC("Trader", "TW");
         vm.stopPrank();
 
-        vm.prank(deployer);
-        vm.expectRevert();   // the deployer is nobody on the tenant's KYC registry
+        vm.prank(deployer);   // the deployer is nobody on the tenant's KYC registry
+        vm.expectRevert(abi.encodeWithSelector(KYCRegistry.NotVerifier.selector, deployer));
         KYCRegistry(d.kyc).approveKYC(trader);
         vm.prank(s.admin);
         KYCRegistry(d.kyc).approveKYC(trader);
@@ -157,7 +176,8 @@ contract DeployTenantTest is TenantFixture {
     function test_staleTenantOracle_stillReadable_soTheKeeperCanRecover() public {
         (Spec memory s, , TenantBase.TenantDeployed memory d) = _tenant("bank-a");
         assertEq(GuardedOracle(d.oracle).maxPriceAge(), 0, "oracle-level staleness check is off");
-        assertEq(GuardedOracle(d.oracle).maxDeviationBps(), 1_000);
+        assertEq(GuardedOracle(d.oracle).maxDeviationBps(), s.oracleMaxDeviationBps);
+        assertEq(GuardedOracle(d.oracle).maxWindowDeviationBps(), s.oracleWindowDeviationBps, "rate limit on");
 
         vm.warp(block.timestamp + 3 days);   // a long keeper outage
         (uint256 p, uint256 at) = IOracle(d.oracle).getPrice(BTC);   // must not revert
@@ -354,12 +374,22 @@ contract DeployTenantTest is TenantFixture {
     }
 
     function test_refuses_unlimitedOrOutOfRangeCaps() public {
+        bytes memory capWhy = bytes("params: OI caps must be in [1, 10000000] USDC per side (0 = unlimited is not allowed)");
         Spec memory s = _valid();
         s.oiCapNonRwaUsdc = 0;
-        _expectRefused(s, deployer, bytes("params: OI caps must be non-zero (0 = unlimited)"));
+        _expectRefused(s, deployer, capWhy);
         s = _valid();
         s.oiCapRwaUsdc = 0;
-        _expectRefused(s, deployer, bytes("params: OI caps must be non-zero (0 = unlimited)"));
+        _expectRefused(s, deployer, capWhy);
+        s = _valid();
+        s.oiCapNonRwaUsdc = 10_000_001;
+        _expectRefused(s, deployer, capWhy);
+        s = _valid();
+        s.oiCapRwaUsdc = 10_000_001;
+        _expectRefused(s, deployer, capWhy);
+        s = _valid();
+        s.oiCapNonRwaUsdc = 10_000_000;   // the bound itself is allowed
+        _deployTenant(s, deployer);
         s = _valid();
         s.maxProfitBps = 0;
         _expectRefused(s, deployer, bytes("params: maxProfitBps must be in [10000, 250000] (0 = off is not allowed)"));
@@ -382,7 +412,7 @@ contract DeployTenantTest is TenantFixture {
         s.oracleKind = "chainlink";
         _expectRefused(s, deployer, bytes("tenant config: params.oracleKind must be 'guarded' or 'mock'"));
         s = _valid();
-        s.oracleKind = "mock";   // deployVault still true
+        s.oracleKind = "mock";   // deployVault still true (the oracle limits are written as null)
         _expectRefused(s, deployer, bytes("params: deployVault requires oracleKind 'guarded'"));
     }
 

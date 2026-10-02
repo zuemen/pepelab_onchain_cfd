@@ -22,10 +22,10 @@ export const SESSION_MANAGER_ADDRESS: Record<number, string> = {
   //   0xdF9C…d14B.exchange() == 0x827eA0c62a32e995927101259042F8A27D99124D（addresses.ts
   //   的 PerpetualExchange），且該 exchange 的 authorizedAgents(0xdF9C…d14B) == true
   //   （2026-09-29 以唯讀 eth_call 對 sepolia.base.org 核對）。
-  // 前一個實例 0x4E7cC1B79B72ab72531a6C790e14304370f70764（2026-07-27 部署，帶 per-session
-  // 資產白名單）綁的是舊 exchange 0xEf75ECA6514cE96B18382E921aC6190a0cF8c072，現行 exchange
-  // 對它 authorizedAgents == false——經它開的 session 下單會被拒。它的 session 仍可在鏈上讀到。
-  // 更早的 0x5Ebcc64C712C5a26119789dCbD0753981dc518E8 沒有資產白名單。
+  // 前兩個實例（2026-07-27 部署、帶 per-session 資產白名單的那一顆綁的是舊 exchange
+  // 0xEf75ECA6514cE96B18382E921aC6190a0cF8c072，現行 exchange 對它 authorizedAgents == false；
+  // 更早的一顆沒有資產白名單）已退役，位址在機器可讀的退役清單
+  // ./retiredPlatformAddresses.json（role: AgentSessionManager）。它們的 session 仍可在鏈上讀到。
   // 新實例的 session id 從 0 重新開始。
   84532:    '0xdF9C1E53523568709f65Afe3C4AD2E6a6D99d14B',
 }

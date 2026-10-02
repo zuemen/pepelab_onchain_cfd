@@ -67,7 +67,15 @@ const platformDeployment = z.strictObject({
   note: z.string().trim().min(1).max(300).optional(),
 });
 
-/** 專屬部署裡，每個租戶各自一份的合約。SettlementToken 是唯一允許與平台共用的位址。 */
+/**
+ * 允許與平台（以及其他租戶）共用的欄位：明確白名單。登記檔必須在 `shared` 裡顯式宣告，
+ * 而且值必須就是平台在該鏈的結算代幣（同一條鏈上本來就是同一顆）。其餘任何欄位與平台或
+ * 其他租戶相同都是錯。與 scripts/check-addresses.mjs 的 SHAREABLE_PATHS 相同（那邊的測試
+ * 讀這一行比對）。
+ */
+export const SHAREABLE_PATHS = ['contracts.SettlementToken'] as const;
+
+/** 專屬部署裡，每個租戶各自一份的合約（SettlementToken 之外）。 */
 export const DEDICATED_CONTRACT_KEYS = [
   'Oracle',
   'ESGRegistryV2',
@@ -104,6 +112,8 @@ const dedicatedDeployment = z.strictObject({
     /** 選用：租戶自己的 x402 分潤路由（DeployX402Router.s.sol，綁官方 USDC）。 */
     X402FeeRouter: address.optional(),
   }),
+  /** 顯式宣告與平台共用的欄位（只能是 SHAREABLE_PATHS 裡的）。沒有預設值：一定要寫。 */
+  shared: z.array(z.enum(SHAREABLE_PATHS)),
   /** 金庫發行的合成資產代幣；有金庫才有。 */
   tokens: z.partialRecord(assetSymbol, address).optional(),
 });
@@ -119,12 +129,15 @@ export type DedicatedDeployment = z.infer<typeof dedicatedDeployment>;
 // ── 平台部署的位址集合（租戶隔離的比對對象）───────────────────────────────
 
 /**
- * 平台（default）在某條鏈上用到的所有位址，小寫。專屬部署除了結算幣以外，
+ * 平台（default）在某條鏈上用到的所有位址，小寫。專屬部署除了顯式宣告共用的結算幣以外，
  * 不得與其中任何一個相同——共用 exchange、金庫、FeeRouter 或保險金，就等於共用資金、
  * 收款地址與暫停鍵（ADR-008）。
  *
- * `extra` 讓呼叫端補上不在這個純資料模組裡的位址（AgentSessionManager 的表在
- * sessionManager.ts，那個檔案 import ethers，Node 端的 vite.config.ts 拿不到）。
+ * `extra` 讓呼叫端補上不在這個純資料模組裡的位址：建置期（tenantDeployment.node.ts）補上
+ * 退役清單 retiredPlatformAddresses.json——放在 Node 端，瀏覽器 bundle 不帶這份清單；
+ * AgentSessionManager 的表在 sessionManager.ts（那個檔案 import ethers，由它自己比對）。
+ * CI（scripts/check-addresses.mjs）另外以「平台位址全集」比對：設定檔、workflow、agent
+ * 設定裡出現過的每一個位址，這裡是建置期與執行期的第二道。
  */
 export function platformAddressSet(chainId: number, extra: readonly string[] = []): Set<string> {
   const out = new Set<string>();
@@ -148,31 +161,52 @@ export function platformAddressSet(chainId: number, extra: readonly string[] = [
   return out;
 }
 
-/** 專屬部署的所有位址：[欄位路徑, 位址]。 */
+/**
+ * 專屬部署的所有位址：[欄位路徑, 位址]。**自動列舉**整份登記的每一個字串，不靠手寫的欄位
+ * 清單——schema 之後新增的欄位一樣會被比對。
+ */
 export function dedicatedAddressEntries(d: DedicatedDeployment): [string, string][] {
   const out: [string, string][] = [];
-  for (const [k, v] of Object.entries(d.contracts)) if (v) out.push([`contracts.${k}`, v]);
-  for (const [k, v] of Object.entries(d.tokens ?? {})) if (v) out.push([`tokens.${k}`, v]);
+  const walk = (node: unknown, path: string[]) => {
+    if (typeof node === 'string') {
+      for (const m of node.matchAll(/0x[0-9a-fA-F]{40}/g)) out.push([path.join('.'), m[0]]);
+    } else if (Array.isArray(node)) {
+      node.forEach((v, i) => walk(v, path.concat(String(i))));
+    } else if (node && typeof node === 'object') {
+      for (const [k, v] of Object.entries(node)) walk(v, path.concat(k));
+    }
+  };
+  walk(d, []);
   return out;
 }
 
 /**
  * 專屬部署的結構檢查，回傳問題清單（空 = 通過）：
  *   - 同一個租戶的各合約位址不得重複；
- *   - 除了 SettlementToken，不得出現平台部署的任何位址（租戶隔離）；
+ *   - 不得出現平台部署的任何位址（租戶隔離）。唯一的例外是 `shared` 裡顯式宣告、而且在
+ *     SHAREABLE_PATHS 白名單內的欄位，它的值必須就是平台在該鏈的結算代幣；
  *   - 有金庫才有代幣、有代幣就要有金庫；金庫需要 guarded oracle。
  */
 export function dedicatedProblems(d: DedicatedDeployment, platform: ReadonlySet<string>): string[] {
   const problems: string[] = [];
   const seen = new Map<string, string>();
+  const declared = new Set<string>(d.shared);
+  if (declared.size !== d.shared.length) problems.push('shared lists the same field twice');
+  const platformToken = CHAIN_MAP[d.chainId]?.MockUSDC?.toLowerCase();
   for (const [path, value] of dedicatedAddressEntries(d)) {
     const low = value.toLowerCase();
     const prev = seen.get(low);
     if (prev) problems.push(`${path} and ${prev} are the same address`);
     else seen.set(low, path);
-    if (path !== 'contracts.SettlementToken' && platform.has(low)) {
+    if (declared.has(path)) {
+      if (low !== platformToken) {
+        problems.push(
+          `${path} (${value}) is declared shared but is not the platform's settlement token on chain ${d.chainId}`
+        );
+      }
+    } else if (platform.has(low)) {
       problems.push(
-        `${path} (${value}) is an address of the platform deployment — a dedicated tenant shares only the settlement token`
+        `${path} (${value}) is an address of the platform deployment — a dedicated tenant shares only the settlement token, and only when "shared" declares it`
       );
     }
   }

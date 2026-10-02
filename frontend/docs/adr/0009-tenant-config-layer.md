@@ -97,3 +97,10 @@ status: proposed
 - `chainLogs.ts` 的 `DEPLOY_BLOCK_BY_CHAIN` 還是依鏈、不依租戶：專屬租戶掃事件會從平台的部署區塊開始，結果正確但比較慢。要改的話在登記檔加 `deployBlock`。
 - 專屬租戶的頁面行為沒有在真的專屬部署上逐頁點過——目前沒有任何已廣播的專屬租戶。build（以本機 fork 的模擬部署紀錄建一個暫時租戶）與單元測試都過，但「每一頁對零位址的守衛都正確」只有 default 與 Anvil 的既有覆蓋。第一個試點租戶上線前要做一次逐頁走查。
 - x402 分潤路由（官方 USDC 的 FeeRouter）不在 `DeployTenant.s.sol` 的產出裡；租戶另外部署後，把位址手動加進登記檔的 `contracts.X402FeeRouter`（CI 允許這一個欄位不在部署紀錄裡，但仍檢查它不是平台的那一顆）。
+
+### 增補（2026-10-02，PR #228 審查修正）
+
+- **共用只能顯式宣告。** 專屬登記多一個必填欄位 `shared`（目前只能是 `["contracts.SettlementToken"]` 或 `[]`）。結算幣只有在宣告共用、而且值就是平台在該鏈的結算幣時才放行；其他欄位與平台位址相同一律 fail-closed。比對對象是登記裡**自動列舉**的每一個位址，不是手寫的欄位清單（`dedicatedAddressEntries`）。
+- **退役的平台合約只在建置期比對。** `src/contracts/retiredPlatformAddresses.json` 由 `tenantDeployment.node.ts` 讀進 `parseTenantDeployment` 的 `extraPlatformAddresses`，瀏覽器 bundle 不帶這份清單（default build 的位址集合因此不變）。CI 的 `check-addresses.mjs` 另外以平台位址全集（設定檔、workflow、agent 設定）比對。
+- **專屬租戶必須有自己的 signal-api。** `VITE_SIGNAL_API_URL` 沒設或指向平台時 build 失敗（`dedicatedSignalApiProblem`），與「沒有登記就 build 失敗」是同一個理由：不悄悄退回平台。
+- **監控頁的過期判斷**：專屬租戶以 oracle 價格的時間戳對照 6 小時（`oracleRowStale`），平台部署照舊問 `isStale()`。

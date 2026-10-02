@@ -16,11 +16,15 @@
 // 租戶（ADR-008）：default 以外的租戶各有一份部署登記
 // frontend/src/contracts/deployments/<id>.json（kind: platform＝沿用上面的平台部署；
 // kind: dedicated＝租戶自己的整組合約）。這支腳本也檢查它們：
-//   - 位址格式、同一租戶各合約不重複；
-//   - 專屬部署除了結算幣，不得與平台部署共用任何位址（exchange／vault／FeeRouter／
-//     保險金／x402 收款路由／舊合約…）——共用就是共用資金、收款地址與暫停鍵；
-//   - 兩個租戶之間也不得共用；
+//   - 格式：kind 必填、欄位不得缺也不得多（沒有預設值）、JSON 不得有重複的鍵；
+//   - 專屬部署登記裡的**每一個**位址（自動列舉，不是手寫欄位清單）都不得出現在「平台位址
+//     全集」裡（scripts/lib/platform-addresses.mjs：平台設定檔、退役清單、workflow、agent
+//     設定裡出現過的每一個位址）——共用就是共用資金、收款地址與暫停鍵；
+//   - 唯一的例外是 `shared` 顯式宣告、而且在白名單 SHAREABLE_PATHS 內的欄位（只有結算代幣），
+//     值必須就是平台在該鏈的那一顆；
+//   - 兩個租戶之間同一條規則；同一租戶各位址不重複；
 //   - 每個前端租戶都有登記檔（沒有就 build 失敗，這裡先擋）。
+// 鏈上的綁定、所有權與參數不在這裡：由 scripts/verify-dedicated-tenants.mjs（tenant-verify.yml）跑 VerifyTenant。
 // 帶 `KEEPER_TENANT: <id>` 的 workflow（租戶自己的 keeper）改以該租戶的登記比對位址，
 // 並要求它用自己的 environment（keeper-<id>）與自己的 concurrency group。
 //
@@ -30,6 +34,9 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve, dirname, basename } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+
+import { parseJsonStrict } from "./lib/strict-json.mjs";
+import { describeSources, platformAddressUniverse } from "./lib/platform-addresses.mjs";
 
 const ADDR = /0x[0-9a-fA-F]{40}/g;
 const ADDR_EXACT = /^0x[0-9a-fA-F]{40}$/;
@@ -92,15 +99,13 @@ function blockAfter(src, marker) {
  * roles 是可以精確比對的角色（MockOracle、PerpetualExchange…）；known 是該鏈
  * 前端認得的所有位址（含代幣），給沒有角色對應的 workflow 鍵做寬鬆比對。
  */
-export function parseFrontendConfig(addressesSrc, sessionSrc = "", x402Src = "", legacySrc = "") {
+export function parseFrontendConfig(addressesSrc, sessionSrc = "", x402Src = "") {
   const chainVar = {};
   const chainMap = braceBlock(addressesSrc, addressesSrc.indexOf("CHAIN_MAP"));
   for (const m of (chainMap ?? "").matchAll(/(\d+)\s*:\s*([A-Z_]+)/g)) chainVar[m[1]] = m[2];
 
   const chains = {};
-  // legacy：已退役的 exchange（legacyExchanges.ts）。刻意**不**併進 known——workflow 指向
-  // 舊 exchange 正是這支腳本要抓的錯；它只用來擋租戶登記重用舊合約。
-  const ensure = (id) => (chains[id] ??= { roles: {}, known: new Set(), legacy: new Set() });
+  const ensure = (id) => (chains[id] ??= { roles: {}, known: new Set() });
   const add = (id, role, addr) => {
     const c = ensure(id);
     if (role) c.roles[role] = addr;
@@ -149,17 +154,13 @@ export function parseFrontendConfig(addressesSrc, sessionSrc = "", x402Src = "",
     if (chains[m[1]]) add(m[1], "X402FeeRouter", m[2]);
   }
 
-  // legacyExchanges.ts：`chainId: 84532,` 後面接著 `address: '0x…'`。
-  for (const m of legacySrc.matchAll(/chainId:\s*(\d+)\s*,\s*address:\s*['"](0x[0-9a-fA-F]{40})['"]/g)) {
-    if (chains[m[1]]) chains[m[1]].legacy.add(m[2].toLowerCase());
-  }
   return chains;
 }
 
 // ── 租戶部署登記（frontend/src/contracts/deployments/*.json）────────────────
 
 const TENANT_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-/** 專屬部署必填的合約。SettlementToken 是唯一允許與平台（或其他租戶）共用的位址。 */
+/** 專屬部署必填的合約。 */
 export const DEDICATED_REQUIRED_KEYS = [
   "SettlementToken",
   "Oracle",
@@ -174,21 +175,70 @@ export const DEDICATED_REQUIRED_KEYS = [
   "AgentSessionManager",
 ];
 export const DEDICATED_OPTIONAL_KEYS = ["AssetVaultV2", "X402FeeRouter"];
-const SHARED_KEY = "contracts.SettlementToken";
 /** 前端目前能連的專屬部署鏈（與 frontend/src/contracts/tenantDeployment.ts 一致）。 */
 export const DEDICATED_CHAIN_IDS = [84532];
+const PLATFORM_TOP_KEYS = { required: ["schemaVersion", "tenant", "kind"], optional: ["note"] };
+const DEDICATED_TOP_KEYS = {
+  required: ["schemaVersion", "tenant", "kind", "chainId", "oracleKind", "contracts", "shared"],
+  optional: ["tokens"],
+};
 
 /**
- * 檢查一份部署登記。回傳 { problems, addrs }：addrs 是這個租戶「專屬」的位址
- * （小寫 → 欄位路徑），給跨租戶比對用。
+ * 允許與平台（以及其他租戶）共用的欄位：**明確白名單**，每一個都綁定它必須等於的平台角色。
+ * 只有結算代幣：同一條鏈上本來就是同一顆代幣。登記檔必須在 `shared` 裡顯式宣告，檢查器
+ * 才放行；沒宣告、宣告了白名單以外的欄位、或宣告了卻不是平台的那一顆，一律紅燈。
+ * 與 frontend/src/contracts/tenantDeployment.ts 的 SHAREABLE_PATHS 相同（測試釘住）。
  */
-export function checkDeployment({ file, dep, chains }) {
+export const SHAREABLE_PATHS = {
+  "contracts.SettlementToken": { role: "MockUSDC", why: "結算代幣（同一條鏈上就是平台的那一顆）" },
+};
+
+/** 走訪 JSON，回傳每一個字串葉節點：[路徑, 值]。 */
+function stringLeaves(node, path = []) {
+  if (typeof node === "string") return [[path.join("."), node]];
+  if (Array.isArray(node)) return node.flatMap((v, i) => stringLeaves(v, path.concat(String(i))));
+  if (node && typeof node === "object") return Object.entries(node).flatMap(([k, v]) => stringLeaves(v, path.concat(k)));
+  return [];
+}
+
+/**
+ * 登記檔裡所有的位址欄位，**自動列舉**：任何一個字串葉節點只要含有位址形狀的文字就算，
+ * 不看它在哪個欄位底下——新增的欄位不必改這裡就會被比對。回傳 [{ path, value, exact }]，
+ * exact＝整個值就是一個位址（否則是夾帶在其他文字裡的位址，本身就是錯）。
+ * `shared` 陣列裡是欄位路徑，不是位址，所以不會出現在結果裡。
+ */
+export function addressFields(dep) {
+  const out = [];
+  for (const [path, value] of stringLeaves(dep)) {
+    for (const h of value.matchAll(/0x[0-9a-fA-F]{40}/g)) out.push({ path, value: h[0], exact: ADDR_EXACT.test(value) });
+  }
+  return out;
+}
+
+const keyProblems = (obj, { required, optional }, where, bad) => {
+  for (const k of required) if (!Object.hasOwn(obj, k)) bad(`${where}缺少欄位 ${k}（不得省略，沒有預設值）`);
+  for (const k of Object.keys(obj)) if (!required.includes(k) && !optional.includes(k)) bad(`${where}未知欄位 ${k}`);
+};
+
+/**
+ * 檢查一份部署登記。
+ * @param {object} p
+ * @param {string} p.file        檔名（<id>.json）
+ * @param {unknown} p.dep        解析後的 JSON
+ * @param {object} p.chains      parseFrontendConfig 的結果（白名單欄位要等於的平台位址）
+ * @param {Map<string,string[]>} p.universe  平台位址全集（scripts/lib/platform-addresses.mjs）
+ * @param {string[]} [p.duplicateKeys]  strict-json 偵測到的重複鍵
+ * @returns {{ problems: string[], addrs: Map<string, {path: string, shared: boolean}> }}
+ *   addrs：這個租戶的所有位址（小寫 → 欄位），給跨租戶比對。
+ */
+export function checkDeployment({ file, dep, chains, universe, duplicateKeys = [] }) {
   const problems = [];
   const name = basename(file);
   const bad = (msg) => problems.push(`${name}: ${msg}`);
   const addrs = new Map();
   const id = basename(file, ".json");
 
+  for (const d of duplicateKeys) bad(`JSON 重複的鍵 ${d}（JSON.parse 取最後一個值，審查時看到的可能是第一個）`);
   if (!dep || typeof dep !== "object" || Array.isArray(dep)) {
     bad("不是 JSON 物件");
     return { problems, addrs };
@@ -197,13 +247,16 @@ export function checkDeployment({ file, dep, chains }) {
   if (dep.schemaVersion !== 1) bad("schemaVersion 必須是 1");
   if (dep.tenant !== id) bad(`tenant「${dep.tenant}」與檔名「${id}」不一致`);
 
+  if (!Object.hasOwn(dep, "kind")) {
+    bad("缺少 kind（platform 或 dedicated；沒有預設值）");
+    return { problems, addrs };
+  }
   if (dep.kind === "platform") {
-    for (const k of Object.keys(dep)) {
-      if (!["schemaVersion", "tenant", "kind", "note"].includes(k)) bad(`kind=platform 不得有欄位 ${k}（platform 沒有自己的位址）`);
-    }
+    keyProblems(dep, PLATFORM_TOP_KEYS, "kind=platform：", bad);
     if (id !== "default" && (typeof dep.note !== "string" || dep.note.trim() === "")) {
       bad("default 以外的租戶沿用平台部署時必須寫 note 說明理由（它與平台共用資金、保險金與暫停鍵）");
     }
+    for (const f of addressFields(dep)) bad(`kind=platform 不得有位址（${f.path} 含 ${f.value}）——platform 沒有自己的合約`);
     return { problems, addrs };
   }
   if (dep.kind !== "dedicated") {
@@ -212,75 +265,105 @@ export function checkDeployment({ file, dep, chains }) {
   }
 
   if (id === "default") bad("default 租戶就是平台部署（addresses.ts），不能是 dedicated");
-  for (const k of Object.keys(dep)) {
-    if (!["schemaVersion", "tenant", "kind", "chainId", "oracleKind", "contracts", "tokens"].includes(k)) bad(`未知欄位 ${k}`);
-  }
+  keyProblems(dep, DEDICATED_TOP_KEYS, "", bad);
   if (!DEDICATED_CHAIN_IDS.includes(dep.chainId)) {
     bad(`chainId 必須是 ${DEDICATED_CHAIN_IDS.join(" / ")}（前端目前能連的專屬部署鏈），目前是 ${JSON.stringify(dep.chainId)}`);
   }
   if (!["guarded", "mock"].includes(dep.oracleKind)) bad("oracleKind 必須是 guarded 或 mock");
 
-  const contracts = dep.contracts && typeof dep.contracts === "object" ? dep.contracts : {};
-  const tokens = dep.tokens && typeof dep.tokens === "object" ? dep.tokens : {};
-  for (const k of DEDICATED_REQUIRED_KEYS) if (!(k in contracts)) bad(`contracts.${k} 未填`);
-  for (const k of Object.keys(contracts)) {
-    if (!DEDICATED_REQUIRED_KEYS.includes(k) && !DEDICATED_OPTIONAL_KEYS.includes(k)) bad(`contracts 未知欄位 ${k}`);
+  const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+  if (Object.hasOwn(dep, "contracts") && !isObj(dep.contracts)) bad("contracts 必須是物件");
+  if (Object.hasOwn(dep, "tokens") && !isObj(dep.tokens)) bad("tokens 必須是物件");
+  const contracts = isObj(dep.contracts) ? dep.contracts : {};
+  const tokens = isObj(dep.tokens) ? dep.tokens : {};
+  keyProblems(contracts, { required: DEDICATED_REQUIRED_KEYS, optional: DEDICATED_OPTIONAL_KEYS }, "contracts ", bad);
+  for (const [k, v] of Object.entries(contracts)) {
+    if (typeof v !== "string" || !ADDR_EXACT.test(v)) bad(`contracts.${k}=${JSON.stringify(v)} 不是位址`);
+  }
+  for (const [k, v] of Object.entries(tokens)) {
+    if (typeof v !== "string" || !ADDR_EXACT.test(v)) bad(`tokens.${k}=${JSON.stringify(v)} 不是位址`);
+  }
+
+  // 顯式宣告的共用欄位。
+  const declared = new Set();
+  if (Object.hasOwn(dep, "shared")) {
+    if (!Array.isArray(dep.shared) || dep.shared.some((s) => typeof s !== "string")) {
+      bad('shared 必須是欄位路徑的陣列（例如 ["contracts.SettlementToken"]）');
+    } else {
+      for (const s of dep.shared) {
+        if (declared.has(s)) bad(`shared 重複宣告 ${s}`);
+        declared.add(s);
+        if (!Object.hasOwn(SHAREABLE_PATHS, s)) {
+          bad(`shared 宣告了 ${s}，但只有 ${Object.keys(SHAREABLE_PATHS).join("、")} 可以與平台共用`);
+        }
+      }
+    }
   }
 
   const chain = chains[String(dep.chainId)];
   const seen = new Map();
-  const entries = [
-    ...Object.entries(contracts).map(([k, v]) => [`contracts.${k}`, v]),
-    ...Object.entries(tokens).map(([k, v]) => [`tokens.${k}`, v]),
-  ];
-  for (const [path, value] of entries) {
-    if (typeof value !== "string" || !ADDR_EXACT.test(value)) {
-      bad(`${path}=${JSON.stringify(value)} 不是位址`);
-      continue;
-    }
-    const low = value.toLowerCase();
+  const fields = addressFields(dep);
+  for (const f of fields) {
+    const low = f.value.toLowerCase();
+    if (!f.exact) bad(`${f.path} 夾帶了位址 ${f.value}——位址只能是整個欄位的值`);
     if (low === ZERO) {
-      bad(`${path} 是零位址`);
+      bad(`${f.path} 是零位址`);
       continue;
     }
-    if (seen.has(low)) bad(`${path} 與 ${seen.get(low)} 是同一個位址——同一個租戶的各合約不得重複`);
-    else seen.set(low, path);
-    if (path === SHARED_KEY) continue;
-    if (chain?.known.has(low)) {
-      bad(`${path}=${value} 是平台部署（default）的位址——專屬租戶除了結算幣，不得與平台共用任何合約（租戶隔離）`);
+    if (seen.has(low)) bad(`${f.path} 與 ${seen.get(low)} 是同一個位址——同一個租戶的各合約不得重複`);
+    else seen.set(low, f.path);
+
+    const isShared = declared.has(f.path) && Object.hasOwn(SHAREABLE_PATHS, f.path);
+    if (isShared) {
+      const rule = SHAREABLE_PATHS[f.path];
+      const want = chain?.roles[rule.role];
+      if (!want || want.toLowerCase() !== low) {
+        bad(`${f.path}=${f.value} 宣告為共用，但不是平台在 chain ${dep.chainId} 的 ${rule.role}（${want ?? "沒有"}）——共用只限${rule.why}`);
+      }
+    } else if (universe.has(low)) {
+      bad(
+        `${f.path}=${f.value} 是平台部署（default）的位址（出處：${describeSources(universe.get(low))}）——` +
+          "專屬租戶不得與平台共用任何合約；結算代幣要在 shared 裡顯式宣告",
+      );
     }
-    if (chain?.legacy.has(low)) bad(`${path}=${value} 是平台已退役的舊 exchange`);
-    addrs.set(low, path);
+    addrs.set(low, { path: f.path, shared: isShared });
+  }
+  for (const s of declared) {
+    if (Object.hasOwn(SHAREABLE_PATHS, s) && !fields.some((f) => f.path === s)) {
+      bad(`shared 宣告了 ${s}，但登記裡沒有這個位址欄位`);
+    }
   }
 
   const tokenCount = Object.keys(tokens).length;
   if (contracts.AssetVaultV2 && tokenCount === 0) bad("有 contracts.AssetVaultV2 但 tokens 是空的");
-  if (!contracts.AssetVaultV2 && tokenCount > 0) bad("有 tokens 但沒有 contracts.AssetVaultV2");
+  if (!contracts.AssetVaultV2 && Object.hasOwn(dep, "tokens")) bad("有 tokens 但沒有 contracts.AssetVaultV2");
   if (contracts.AssetVaultV2 && dep.oracleKind !== "guarded") bad("contracts.AssetVaultV2 需要 oracleKind=guarded");
   return { problems, addrs };
 }
 
 /** 讀整個登記目錄並檢查（含跨租戶與「每個前端租戶都有登記檔」）。 */
-export function checkDeployments({ dir, tenantsDir, chains }) {
+export function checkDeployments({ dir, tenantsDir, chains, universe }) {
   const problems = [];
   const deployments = {};
   const owner = new Map();
   const files = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith(".json")).sort() : [];
   for (const f of files) {
-    let dep;
+    let parsed;
     try {
-      dep = JSON.parse(readFileSync(join(dir, f), "utf8"));
+      parsed = parseJsonStrict(readFileSync(join(dir, f), "utf8"));
     } catch (e) {
       problems.push(`${f}: 不是合法 JSON：${e.message}`);
       continue;
     }
-    const r = checkDeployment({ file: f, dep, chains });
+    const r = checkDeployment({ file: f, dep: parsed.value, chains, universe, duplicateKeys: parsed.duplicates });
     problems.push(...r.problems);
-    deployments[basename(f, ".json")] = dep;
-    for (const [addr, path] of r.addrs) {
+    deployments[basename(f, ".json")] = parsed.value;
+    // 跨租戶：同一條規則。只有兩邊都放在顯式宣告的共用欄位（白名單）時才允許相同。
+    for (const [addr, here] of r.addrs) {
       const prev = owner.get(addr);
-      if (prev) problems.push(`${f}: ${path}=${addr} 與 ${prev.file} 的 ${prev.path} 相同——租戶之間不得共用合約`);
-      else owner.set(addr, { file: f, path });
+      if (prev && !(prev.shared && here.shared)) {
+        problems.push(`${f}: ${here.path}=${addr} 與 ${prev.file} 的 ${prev.path} 相同——租戶之間不得共用合約`);
+      } else if (!prev) owner.set(addr, { file: f, ...here });
     }
   }
   if (tenantsDir && existsSync(tenantsDir)) {
@@ -322,7 +405,7 @@ export function tenantChainView(dep, chains) {
       known.add(a.toLowerCase());
     }
   }
-  return { roles, known, legacy: new Set() };
+  return { roles, known };
 }
 
 // ── 讀 workflow YAML（逐行、只為了抓 KEY: 0x…）──────────────────────────────
@@ -448,7 +531,7 @@ export function checkWorkflow({ file, text, chains, allowlist = ALLOWLIST, deplo
       if (/^\s*(#|$)/.test(line)) return;
       const indent = line.match(/^ */)[0].length;
       while (stack.length && stack[stack.length - 1].indent >= indent) stack.pop();
-      if (/secrets\.KEEPER_PRIVATE_KEY\b/.test(line)) keyUsers.push({ path: stack.map((s) => s.key) });
+      if (/secrets\.(TENANT_)?KEEPER_PRIVATE_KEY\b/.test(line)) keyUsers.push({ path: stack.map((s) => s.key) });
       const m = line.slice(indent).match(/^([A-Za-z0-9_-]+)\s*:\s*(.*)$/);
       if (!m) return;
       const v = m[2].replace(/\s+#.*$/, "").replace(/^["']|["']$/g, "").trim();
@@ -594,12 +677,11 @@ export function checkWorkflow({ file, text, chains, allowlist = ALLOWLIST, deplo
   return { problems, checked: entries.length + raw.length };
 }
 
-export function loadChains({ addressesFile, sessionFile, x402File, legacyFile }) {
+export function loadChains({ addressesFile, sessionFile, x402File }) {
   return parseFrontendConfig(
     readFileSync(addressesFile, "utf8"),
     sessionFile ? readFileSync(sessionFile, "utf8") : "",
     x402File ? readFileSync(x402File, "utf8") : "",
-    legacyFile && existsSync(legacyFile) ? readFileSync(legacyFile, "utf8") : "",
   );
 }
 
@@ -632,18 +714,22 @@ export function run({
   addressesFile,
   sessionFile,
   x402File,
-  legacyFile,
+  root,
   deploymentsDir,
   tenantsDir,
   envFiles = [],
   log = console.log,
 }) {
-  const chains = loadChains({ addressesFile, sessionFile, x402File, legacyFile });
+  const chains = loadChains({ addressesFile, sessionFile, x402File });
   const files = readdirSync(workflowsDir).filter((f) => /\.ya?ml$/.test(f)).sort();
   let problems = [];
   let checked = 0;
   // 租戶部署登記先檢查：workflow 的 KEEPER_TENANT 要靠它解析。
-  const reg = deploymentsDir ? checkDeployments({ dir: deploymentsDir, tenantsDir, chains }) : { problems: [], deployments: {}, checked: 0 };
+  // 平台位址全集（設定檔、workflow、agent 設定裡出現過的所有位址＋退役清單）。
+  const universe = deploymentsDir ? platformAddressUniverse(root) : new Map();
+  const reg = deploymentsDir
+    ? checkDeployments({ dir: deploymentsDir, tenantsDir, chains, universe })
+    : { problems: [], deployments: {}, checked: 0 };
   problems = problems.concat(reg.problems);
   for (const f of files) {
     const r = checkWorkflow({
@@ -666,7 +752,7 @@ export function run({
   log(`掃描 ${files.length} 支 workflow，${checked} 個位址`);
   if (deploymentsDir) {
     const kinds = Object.entries(reg.deployments).map(([id, d]) => `${id}=${d?.kind}`);
-    log(`租戶部署登記 ${reg.checked} 份（${kinds.join(", ")}）`);
+    log(`租戶部署登記 ${reg.checked} 份（${kinds.join(", ")}）；平台位址全集 ${universe.size} 個`);
   }
   if (problems.length) {
     for (const p of problems) log(`::error::${p}`);
@@ -688,7 +774,6 @@ function main() {
     addressesFile: opt("--addresses", join(root, "frontend/src/contracts/addresses.ts")),
     sessionFile: opt("--session", join(root, "frontend/src/contracts/sessionManager.ts")),
     x402File: opt("--x402", join(root, "frontend/src/contracts/x402.ts")),
-    legacyFile: opt("--legacy", join(root, "frontend/src/contracts/legacyExchanges.ts")),
   };
 
   // --print <chainId> <role>：印出設定來源裡的位址，給 workflow 做執行期斷言
@@ -710,6 +795,7 @@ function main() {
     envFiles: [opt("--env", join(root, "agent/.env.example"))],
     deploymentsDir: opt("--deployments", join(root, "frontend/src/contracts/deployments")),
     tenantsDir: opt("--tenants", join(root, "frontend/src/tenant/tenants")),
+    root,
     ...files,
   });
   process.exit(problems.length ? 1 : 0);

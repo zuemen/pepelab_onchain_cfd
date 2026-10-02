@@ -13,6 +13,7 @@ contract TenantVerifyHarness is TenantBase {
         TenantConfig memory c = _parseConfig(configJson, id);
         _validateConfig(c, address(0));
         (TenantDeployed memory d, ) = _parseRecord(recordJson, c);
+        _validateForChain(c);
         _verifyTenant(c, d, owner);
     }
 
@@ -36,11 +37,21 @@ abstract contract TenantFixture is Test {
         address treasury;
         address usdc;
         address priceSource;
+        address referenceSource;   // address(0) is written as "none"
         string  oracleKind;
+        uint256 oracleMaxDeviationBps;      // written as null for a mock oracle
+        uint256 oracleWindowSeconds;
+        uint256 oracleWindowDeviationBps;
         uint256 oiCapNonRwaUsdc;
         uint256 oiCapRwaUsdc;
         uint256 maxProfitBps;
+        uint256 maxLeverage;
+        uint256 liquidationPenaltyBps;
+        uint256 markPremiumCapBps;
+        uint256 vaultFeeShareBps;
         bool    deployVault;
+        uint256 vaultRedeemFeeBps;          // written as null without a vault
+        uint256 vaultMinReserveRatioBps;
         string  assets;   // JSON array body, e.g. "\"sBTC\",\"sETH\""
     }
 
@@ -66,16 +77,30 @@ abstract contract TenantFixture is Test {
         s.usdc = usdc;
         s.priceSource = priceSource;
         s.oracleKind = "guarded";
+        // The live platform's oracle pair (RedeployGuardedOracle.s.sol).
+        s.oracleMaxDeviationBps = 1_000;
+        s.oracleWindowSeconds = 3_600;
+        s.oracleWindowDeviationBps = 2_500;
         s.oiCapNonRwaUsdc = 1_000;
         s.oiCapRwaUsdc = 500;
         s.maxProfitBps = 50_000;
+        s.maxLeverage = 5;
+        s.liquidationPenaltyBps = 2_000;
+        s.markPremiumCapBps = 0;
+        s.vaultFeeShareBps = 0;
         s.deployVault = true;
+        s.vaultRedeemFeeBps = 30;
+        s.vaultMinReserveRatioBps = 11_000;
         s.assets = ALL_ASSETS;
     }
 
+    /// @dev v3 config. The oracle limits are written as `null` for a mock
+    ///      oracle and the vault parameters as `null` without a vault, as the
+    ///      schema requires; tests that need the other shapes edit the string
+    ///      (`vm.replace`).
     function _json(Spec memory s) internal pure returns (string memory) {
         string memory head = string.concat(
-            "{\"schemaVersion\":2,\"tenantId\":\"", s.id,
+            "{\"schemaVersion\":3,\"tenantId\":\"", s.id,
             "\",\"status\":\"", s.status,
             "\",\"frontendTenant\":\"", s.id,
             "\",\"network\":{\"chainId\":", vm.toString(s.chainId), "},"
@@ -90,16 +115,36 @@ abstract contract TenantFixture is Test {
         );
         string memory shared = string.concat(
             "\"shared\":{\"settlementToken\":\"", vm.toString(s.usdc),
-            "\",\"priceSource\":\"", vm.toString(s.priceSource), "\"},"
+            "\",\"priceSource\":\"", vm.toString(s.priceSource),
+            "\",\"referenceSource\":\"", s.referenceSource == address(0) ? "none" : vm.toString(s.referenceSource), "\"},"
         );
-        string memory params = string.concat(
+        return string.concat(head, roles, shared, _paramsJson(s), "\"assets\":{\"registered\":[", s.assets, "]}}");
+    }
+
+    function _paramsJson(Spec memory s) internal pure returns (string memory) {
+        bool guarded = keccak256(bytes(s.oracleKind)) == keccak256("guarded");
+        string memory oracle = string.concat(
             "\"params\":{\"oracleKind\":\"", s.oracleKind,
-            "\",\"oiCapNonRwaUsdc\":", vm.toString(s.oiCapNonRwaUsdc),
+            "\",\"oracleMaxDeviationBps\":", guarded ? vm.toString(s.oracleMaxDeviationBps) : "null",
+            ",\"oracleWindowSeconds\":", guarded ? vm.toString(s.oracleWindowSeconds) : "null",
+            ",\"oracleWindowDeviationBps\":", guarded ? vm.toString(s.oracleWindowDeviationBps) : "null"
+        );
+        string memory exchange = string.concat(
+            ",\"oiCapNonRwaUsdc\":", vm.toString(s.oiCapNonRwaUsdc),
             ",\"oiCapRwaUsdc\":", vm.toString(s.oiCapRwaUsdc),
             ",\"maxProfitBps\":", vm.toString(s.maxProfitBps),
-            ",\"deployVault\":", s.deployVault ? "true" : "false", "},"
+            ",\"maxLeverage\":", vm.toString(s.maxLeverage),
+            ",\"liquidationPenaltyBps\":", vm.toString(s.liquidationPenaltyBps),
+            ",\"markPremiumCapBps\":", vm.toString(s.markPremiumCapBps),
+            ",\"vaultFeeShareBps\":", vm.toString(s.vaultFeeShareBps)
         );
-        return string.concat(head, roles, shared, params, "\"assets\":{\"registered\":[", s.assets, "]}}");
+        string memory vault = string.concat(
+            ",\"deployVault\":", s.deployVault ? "true" : "false",
+            ",\"vaultRedeemFeeBps\":", s.deployVault ? vm.toString(s.vaultRedeemFeeBps) : "null",
+            ",\"vaultMinReserveRatioBps\":", s.deployVault ? vm.toString(s.vaultMinReserveRatioBps) : "null",
+            "},"
+        );
+        return string.concat(oracle, exchange, vault);
     }
 
     function _deployTenant(Spec memory s, address deployer) internal returns (DeployTenant script) {

@@ -42,8 +42,10 @@ jobs:
         run: node --test scripts/vercel-ignore-build.test.mjs
 
       # 同一支也檢查租戶部署登記（frontend/src/contracts/deployments/*.json）：位址格式、
-      # 同租戶不重複、專屬租戶除結算幣外不得與平台或其他租戶共用任何合約，以及帶
-      # KEEPER_TENANT 的租戶 keeper workflow 只能指向該租戶自己的合約（ADR-008）。
+      # 重複的 JSON 鍵、同租戶不重複；專屬租戶登記裡的**每一個**位址都不得出現在平台位址全集
+      # （平台設定檔、退役清單、workflow、agent 設定裡出現過的所有位址）或其他租戶裡，唯一例外
+      # 是顯式宣告共用、而且就是平台那一顆的結算代幣；帶 KEEPER_TENANT 的租戶 keeper workflow
+      # 只能指向該租戶自己的合約（ADR-008）。鏈上的綁定與所有權由 tenant-verify.yml 驗證。
       - name: Check workflow addresses
         run: node scripts/check-addresses.mjs
 
@@ -112,6 +114,12 @@ jobs:
       - name: Self-test
         run: node --test scripts/check-workflow-guards.test.mjs
 
+      # 租戶 keeper 類別：範本＋產生器＋位址讀取腳本；反例（多一個觸發、改一行 step、
+      # environment 不符、id 未登記、借用平台的 keeper environment），以及 check-addresses 與
+      # 這支檢查對同一份產生出來的租戶 workflow 同時通過。
+      - name: Tenant keeper self-test
+        run: node --test scripts/tenant-keeper.test.mjs
+
       - name: Check workflow guards
         run: node scripts/check-workflow-guards.mjs
 
@@ -147,3 +155,17 @@ jobs:
           set -euo pipefail
           shellcheck --version   # runner 映像內建；不存在就失敗，免得 shellcheck 檢查無聲消失
           "$RUNNER_TEMP/actionlint" -color
+
+      # 租戶 keeper 範本不在 .github/workflows 裡（還沒有任何租戶時就沒有產生出來的檔案），
+      # 以探測用 id 代入後同樣跑一次 actionlint，範本本身的語法與 shellcheck 問題才擋得到。
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+
+      - name: Run actionlint on the tenant keeper template
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/tenant-keeper/.github/workflows"
+          probe="$RUNNER_TEMP/tenant-keeper/.github/workflows/keeper-zz-template-probe.yml"
+          node scripts/gen-tenant-keeper.mjs --template-probe > "$probe"
+          "$RUNNER_TEMP/actionlint" -color "$probe"

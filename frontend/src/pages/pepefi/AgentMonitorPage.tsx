@@ -33,6 +33,8 @@ import {
   isSessionManagerDeployed,
 } from 'src/contracts/sessionManager'
 import { CHAIN_NAMES } from 'src/contracts/addresses'
+import { isPlatformDeployment } from 'src/contracts/deployment'
+import { oracleRowStale } from 'src/lib/pepefi/priceFreshness'
 import { SIGNAL_API_URL } from 'src/lib/pepefi/signalApi'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -179,9 +181,14 @@ export default function AgentMonitorPage() {
     try {
       const rows = await Promise.all(
         ASSETS_LIST.map(async (a) => {
-          const [price, _u] = (await contracts.oracle.getPrice(a.id)) as unknown as [bigint, bigint]
-          let stale = false
-          try { stale = (await contracts.oracle.isStale(a.id)) as boolean } catch { stale = false }
+          const [price, updatedAt] = (await contracts.oracle.getPrice(a.id)) as unknown as [bigint, bigint]
+          // 專屬租戶的 oracle 的 isStale() 永遠是 false（maxPriceAge = 0），改看時間戳（審查 F6）。
+          const stale = await oracleRowStale({
+            platform: isPlatformDeployment,
+            updatedAtSec: Number(updatedAt),
+            nowSec: Math.floor(Date.now() / 1000),
+            readIsStale: async () => (await contracts.oracle.isStale(a.id)) as boolean,
+          })
           return { id: a.id, symbol: a.symbol, price8: price, stale, rate: funding[a.id]?.rate ?? 0n }
         }),
       )

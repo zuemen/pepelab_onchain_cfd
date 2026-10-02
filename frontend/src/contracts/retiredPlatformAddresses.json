@@ -1,0 +1,240 @@
+{
+  "$comment": "平台（default 租戶）已退役、但仍在鏈上的合約位址。機器可讀，供 scripts/check-addresses.mjs 與 frontend/src/contracts/tenantDeployment.ts 組成「平台位址全集」：專屬租戶的部署登記不得出現其中任何一個（ADR-008）。來源：git 歷史中曾出現在 frontend/src/contracts、.github/workflows、agent 設定、但現在已不在那些檔案裡的位址，加上只留在註解裡的舊 AgentSessionManager。位址不分鏈比對。只增不刪：換掉一顆平台合約時把舊位址加進來。",
+  "schemaVersion": 1,
+  "addresses": [
+    {
+      "address": "0x4E7cC1B79B72ab72531a6C790e14304370f70764",
+      "role": "AgentSessionManager",
+      "chainId": 84532,
+      "source": "sessionManager.ts（2026-07-27 部署，綁舊 exchange 0xEf75…；2026-09-29 停用）"
+    },
+    {
+      "address": "0x5Ebcc64C712C5a26119789dCbD0753981dc518E8",
+      "role": "AgentSessionManager",
+      "chainId": 84532,
+      "source": "sessionManager.ts（沒有資產白名單的更早實例）"
+    },
+    {
+      "address": "0x042A4e1F9750CE76fb96F063acB40a4f813C0737",
+      "role": "CopyTracker",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0x191b8D2F561F977c8bF31e40a0E03fafd7c1E421",
+      "role": "CopyTracker",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
+      "role": "CopyTracker",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0x7134CfDCc806Dd9f1C39f1c8a5828bE10604fBFB",
+      "role": "CopyTracker",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0x8c35FA2967b3cC716940656a510b2aCa4e1b5b7D",
+      "role": "CopyTracker",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0x96357144fE56c5E0e33e8046bE2A63F45528b210",
+      "role": "CopyTracker",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0x285C16bf8160bD1343a9409445a4Ad4A8C5E2879",
+      "role": "ESGRegistry",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0x73310bfb9f93711e9405EB717e3426246BD58618",
+      "role": "ESGRegistry",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0x0c85923193AB6137A117E5911aAA7DF7Cb8787D7",
+      "role": "EsgRewardDistributor",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0xceD347341eF54046352E05f5fec70DD6F5D23150",
+      "role": "EsgRewardDistributor",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0x0FfA7f279fED4E19b3018A4461A8F387aA6c16C2",
+      "role": "FeeRouter",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0xBb7c02d02EFa81a44bC0fb7E0bC2F531Ee39FB2B",
+      "role": "FeeRouter",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0xE40ABfbDb4B70A3788faF0E6A04e10C4204A6eB3",
+      "role": "InsuranceVault",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0x18c35cb3D3DdC522D0b7996e01d4a5C8b9cf16f4",
+      "role": "MockOracle",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0x3f1E53C64bc644D07b8FA76baC8aEE33b96194d8",
+      "role": "MockOracle",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0x446eeaC0368Dad42fC9e3B57ECC24FAb747CDFf5",
+      "role": "MockOracle",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0x6196E77023318EE3DF0745b001161c17c2c109bF",
+      "role": "MockOracle",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+      "role": "MockOracle",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0xA27BeB4899d71A5A4966AE23f97139A6248B1FA1",
+      "role": "MockSwapRouter",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0xcDcC229A7C33FafCc5C963308eC08934F4F86985",
+      "role": "MockSwapRouter",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+      "role": "MockUSDC",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0x655D51EDE4439d66894663AD4725770381db3EBa",
+      "role": "MockUSDC",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0x7A7D35106B79919A48494BD5c827350bC179ACcF",
+      "role": "MockUSDC",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0x82c94AAE3F50F2eE31241B986366BC929b774f7a",
+      "role": "MockUSDC",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0x4cF1A7DB08BDcC59FAA2514606F1096AB85D159f",
+      "role": "PepeAMM",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0x612674Ab98589228309353FCc2f9d88Cc830CBdF",
+      "role": "PepeAMM",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0x33963D72EB305ddBb027E1aEC2785579ba685d71",
+      "role": "PepeIncentives",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+      "role": "PerpetualExchange",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0x481E650A3E6617C8E387E2e9229e725BE242BD3f",
+      "role": "StrategyRegistry",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0x54e8C43f9Eb151Bb8DD6e61d16a969C4D0e73915",
+      "role": "StrategyRegistry",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0x5f98b068480334633EdA2C1051293b325e1e5c20",
+      "role": "StrategyRegistry",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+      "role": "StrategyRegistry",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0xB92A47fb7E0AE7b87E159cCf56e98cB40f9c0539",
+      "role": "StrategyRegistry",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0xe362dE5b06e98D4c5292209EEc965aC842d36c75",
+      "role": "StrategyRegistry",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0x11D1E96aa302a93897de8e60CB00b38247Fafc78",
+      "role": "TraderStake",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0x2cBB4310Dfc62A591975f71c818EF4E3f655Bc1d",
+      "role": "TraderStake",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    },
+    {
+      "address": "0xE8D78859B61AF6CEd5318044bAd0E265f1D1CE8E",
+      "role": "TraderStake",
+      "chainId": null,
+      "source": "git 歷史（曾在平台設定檔中，現已移除）"
+    }
+  ]
+}

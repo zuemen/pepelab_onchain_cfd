@@ -30,8 +30,15 @@ import "./VerifyTenant.s.sol";
 ///           TraderStake, PerpetualExchange, StrategyRegistry, CopyTracker,
 ///           AgentSessionManager, and — when `params.deployVault` — an
 ///           AssetVaultV2 proxy with one synthetic token per registered asset.
-///         What it reuses: the settlement token and, to seed its own oracle
-///         once, the shared price source. Nothing else.
+///         What it reuses: the settlement token, the shared price source (to
+///         seed its own oracle once) and, when the config names one, a
+///         reference feed the oracle cross-checks keeper posts against.
+///         Nothing else.
+///
+///         The tenant's GuardedOracle gets BOTH limits on what one keeper key
+///         can do: a per-post step cap and a per-window rate limit (the same
+///         pair the live platform's oracle runs, RedeployGuardedOracle.s.sol).
+///         The step cap alone bounds one post, not a series of them.
 ///
 ///         UNLIKE the cutover scripts, this run touches no existing contract:
 ///         there is no irreversible step and nothing to resume. An interrupted
@@ -54,12 +61,14 @@ import "./VerifyTenant.s.sol";
 ///           TENANT            required — the id; reads deploy/tenants/<id>.json
 ///           PREFLIGHT_ONLY    true = stop after the read-only checks
 ///           ALLOW_EOA_ADMIN   true = accept a `roles.admin` with no code
-///                             (rehearsals; a real admin is a multisig)
+///                             (testnet rehearsals only; ignored on Base
+///                             mainnet, where the admin must be a contract)
 contract DeployTenant is TenantBase {
     // ── test hooks (a script is never deployed on chain) ────────────────────
     address public broadcasterOverride;
     function setBroadcasterOverride(address a) external { broadcasterOverride = a; }
-    /// @dev `ALLOW_EOA_ADMIN` without process-wide env (parallel tests).
+    /// @dev `ALLOW_EOA_ADMIN` without process-wide env (parallel tests). Has no
+    ///      effect on Base mainnet.
     bool public allowEoaAdminOverride;
     function setAllowEoaAdmin(bool v) external { allowEoaAdminOverride = v; }
 
@@ -110,16 +119,23 @@ contract DeployTenant is TenantBase {
         _validateConfig(c, deployer);
 
         // MockOracle has no deviation cap: one key writes any price. Never on mainnet.
-        require(c.guardedOracle || block.chainid != 8453, "params.oracleKind 'mock' is not allowed on Base mainnet");
+        require(c.guardedOracle || block.chainid != BASE_MAINNET, "params.oracleKind 'mock' is not allowed on Base mainnet");
+        _validateForChain(c);
 
         // A real admin is a multisig. An EOA here is one key owning the whole
-        // tenant, and after the handover there is no second chance.
-        require(c.admin.code.length > 0 || allowEoaAdminOverride || vm.envOr("ALLOW_EOA_ADMIN", false),
-            "roles.admin has no code - it must be a multisig (ALLOW_EOA_ADMIN=true only for rehearsals)");
+        // tenant, and after the handover there is no second chance. The
+        // rehearsal override does not exist on mainnet.
+        if (c.admin.code.length == 0) {
+            require(block.chainid != BASE_MAINNET, "roles.admin must be a contract on Base mainnet");
+            require(allowEoaAdminOverride || vm.envOr("ALLOW_EOA_ADMIN", false),
+                "roles.admin has no code - it must be a multisig (ALLOW_EOA_ADMIN=true only for rehearsals)");
+        }
         console.log("ok   roles separated, deployer holds none of them");
 
         // The exchange hard-codes an 18-decimal collateral token and `usdc` is
         // immutable: a 6-decimal token would mis-scale every position forever.
+        // Base mainnet's native USDC has 6 decimals and therefore CANNOT be
+        // the settlement token as is (docs/TENANT_DEPLOYMENT.md).
         require(c.usdc.code.length > 0, "shared.settlementToken has no code on this chain");
         try IERC20Metadata(c.usdc).decimals() returns (uint8 dec) {
             require(dec == 18, "shared.settlementToken must have 18 decimals (PerpetualExchange requirement)");
@@ -152,9 +168,16 @@ contract DeployTenant is TenantBase {
         console.log("marketOperator   :", c.marketOperator);
         console.log("treasury         :", c.treasury);
         console.log("oracle kind      :", c.guardedOracle ? "guarded" : "mock");
+        if (c.guardedOracle) {
+            console.log("oracle step cap bps / window s / window cap bps:", c.oracleMaxDeviationBps, c.oracleWindowSeconds, c.oracleWindowDeviationBps);
+            if (c.referenceSource != address(0)) console.log("oracle reference source :", c.referenceSource);
+            else console.log("oracle reference source : none");
+        }
         console.log("OI cap / side, crypto+gold (USDC):", c.oiCapNonRwa / 1e18);
         console.log("OI cap / side, RWA (USDC)        :", c.oiCapRwa / 1e18);
         console.log("maxProfitBps                     :", c.maxProfitBps);
+        console.log("maxLeverage (every asset)        :", c.maxLeverage);
+        console.log("liquidationPenalty / markPremiumCap / vaultFeeShare bps:", c.liquidationPenaltyBps, c.markPremiumCapBps, c.vaultFeeShareBps);
         console.log("AssetVaultV2                     :", c.deployVault ? "yes" : "no");
     }
 
@@ -201,7 +224,9 @@ contract DeployTenant is TenantBase {
         // 7. Optional tokenised-asset vault.
         if (c.deployVault) _deployVault(c, d, deployer);
 
-        // 8. Hand everything to the tenant admin. Ownable is one step.
+        // 8. Open the exchange (paused since step 4), then hand everything to
+        //    the tenant admin. Ownable is one step.
+        PerpetualExchange(d.exchange).unpause();
         _handOverOwnables(d, c.admin);
 
         vm.stopBroadcast();
@@ -209,6 +234,12 @@ contract DeployTenant is TenantBase {
 
     function _deployExchange(TenantConfig memory c, TenantDeployed memory d) internal returns (address) {
         PerpetualExchange ex = new PerpetualExchange(c.usdc, d.oracle, d.esgRegistry);
+        // A broadcast is many transactions. Until the KYC registry, the RWA
+        // flags and the caps below are in place the exchange is not what the
+        // config describes, so it stays closed: an owner pause has no expiry.
+        // The step just before the handover lifts it; an interrupted run
+        // leaves a paused exchange.
+        ex.pause();
         ex.setMaxPriceAge(MAX_PRICE_AGE);
         ex.setExecutionFee(EXECUTION_FEE);
         ex.setAdlEnabled(ADL_ENABLED);
@@ -225,7 +256,11 @@ contract DeployTenant is TenantBase {
             uint256 cap = rwa ? c.oiCapRwa : c.oiCapNonRwa;
             ex.setMaxOpenInterest(id, cap, cap);
             ex.setMaxProfitBps(id, c.maxProfitBps);
+            ex.setMaxLeverageFor(id, c.maxLeverage);
         }
+        ex.setLiquidationPenaltyBps(c.liquidationPenaltyBps);
+        ex.setMarkPremiumCapBps(c.markPremiumCapBps);
+        ex.setVaultFeeShareBps(c.vaultFeeShareBps);
         ex.setGuardian(c.guardian);
         ex.setMarketOperator(c.marketOperator);
         return address(ex);
@@ -243,7 +278,12 @@ contract DeployTenant is TenantBase {
     function _deployGuardedOracle(TenantConfig memory c, address deployer, uint256[] memory seeds) internal returns (address) {
         // Deployer is admin only long enough to seed assets and grant roles.
         GuardedOracle o = new GuardedOracle(deployer);
-        o.setRiskParams(ORACLE_MAX_DEVIATION_BPS, ORACLE_MAX_PRICE_AGE);
+        o.setRiskParams(c.oracleMaxDeviationBps, ORACLE_MAX_PRICE_AGE);
+        // The step cap bounds one post; the window bounds a series of them.
+        o.setWindowLimit(c.oracleWindowSeconds, c.oracleWindowDeviationBps);
+        // A post the reference confirms bypasses both; `_validateConfig`
+        // refused a reference that is a tenant key or the settlement token.
+        if (c.referenceSource != address(0)) o.setReferenceSource(c.referenceSource);
         for (uint256 i = 0; i < c.assets.length; i++) o.addAsset(_assetId(c.assets[i]), seeds[i]);
         o.grantRole(KEEPER_ROLE, c.keeper);
         o.grantRole(GUARDIAN_ROLE, c.guardian);
@@ -288,9 +328,9 @@ contract DeployTenant is TenantBase {
             d.tokens[i] = address(t);
         }
 
-        // Only the quote-age limit is touched (see VAULT_MAX_PRICE_AGE); the
-        // redeem fee and the minimum reserve ratio keep the contract defaults.
-        vault.setRiskParams(vault.redeemFeeBps(), vault.minReserveRatioBps(), VAULT_MAX_PRICE_AGE);
+        // Redeem fee and reserve floor from the config; quote age 6h (see
+        // VAULT_MAX_PRICE_AGE).
+        vault.setRiskParams(c.vaultRedeemFeeBps, c.vaultMinReserveRatioBps, VAULT_MAX_PRICE_AGE);
         // Asset caps stay at the contract default of 0: every asset is closed
         // to minting until the tenant's risk key sets a limit.
         vault.grantRole(RISK_ROLE, c.risk);

@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest'
 
-import { firstBlocking, blocksTrading, stalenessNotice, classifyFreshness } from './priceFreshness'
+import {
+  firstBlocking,
+  blocksTrading,
+  oracleRowStale,
+  stalenessNotice,
+  classifyFreshness,
+} from './priceFreshness'
 
 describe('classifyFreshness', () => {
   const maxPriceAgeSec = 21600 // Base Sepolia 交易所實際值：6 小時
@@ -134,5 +140,49 @@ describe('firstBlocking', () => {
 
   it('空清單回 null', () => {
     expect(firstBlocking([])).toBeNull()
+  })
+})
+
+describe('oracleRowStale（監控頁的過期欄）', () => {
+  const NOW = 1785000000
+  const DAY = 86400
+
+  it('平台部署：照舊採用 oracle.isStale()，結果與時間戳無關（default 租戶的顯示不變）', async () => {
+    const calls: string[] = []
+    const read = (v: boolean) => async () => {
+      calls.push('isStale')
+      return v
+    }
+    // 30 天前的時間戳，但平台的 isStale() 說不過期 → 顯示不過期（與改版前相同）。
+    expect(await oracleRowStale({ platform: true, updatedAtSec: NOW - 30 * DAY, nowSec: NOW, readIsStale: read(false) })).toBe(false)
+    // 剛寫入，但 isStale() 說過期 → 顯示過期。
+    expect(await oracleRowStale({ platform: true, updatedAtSec: NOW, nowSec: NOW, readIsStale: read(true) })).toBe(true)
+    expect(calls).toEqual(['isStale', 'isStale'])
+  })
+
+  it('平台部署：isStale() 讀取失敗時當成不過期（與改版前相同）', async () => {
+    const r = await oracleRowStale({
+      platform: true,
+      updatedAtSec: NOW,
+      nowSec: NOW,
+      readIsStale: async () => {
+        throw new Error('revert')
+      },
+    })
+    expect(r).toBe(false)
+  })
+
+  it('專屬租戶：不問 isStale()（它永遠回 false），以時間戳對照 6 小時', async () => {
+    const neverAsk = async () => {
+      throw new Error('dedicated tenants must not depend on isStale()')
+    }
+    const at = (ageSec: number) =>
+      oracleRowStale({ platform: false, updatedAtSec: NOW - ageSec, nowSec: NOW, readIsStale: neverAsk })
+    expect(await at(0)).toBe(false)
+    expect(await at(21600)).toBe(false)
+    expect(await at(21601)).toBe(true)
+    expect(await at(30 * DAY)).toBe(true)
+    // 從未寫入
+    expect(await oracleRowStale({ platform: false, updatedAtSec: 0, nowSec: NOW, readIsStale: neverAsk })).toBe(true)
   })
 })

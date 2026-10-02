@@ -1,6 +1,6 @@
 # 白標租戶的營運：keeper、signal-api、SDK
 
-> 2026-10-01。隔離模型見 [`ADR-008-tenant-isolation.md`](ADR-008-tenant-isolation.md)，部署步驟見
+> 2026-10-01；2026-10-02 依 PR #228 審查修正（oracle 限速、keeper workflow 改由範本產生、signal-api 與監控頁）。隔離模型見 [`ADR-008-tenant-isolation.md`](ADR-008-tenant-isolation.md)，部署步驟見
 > [`TENANT_DEPLOYMENT.md`](TENANT_DEPLOYMENT.md)。這份文件講的是**部署完成之後**，一個專屬租戶
 > 每天要靠什麼運作，以及哪些部分今天還做不到。
 >
@@ -13,8 +13,8 @@
 |---|---|---|---|
 | 合約 | `frontend/src/contracts/addresses.ts` | `deploy/tenants/<id>.deployed.json`（`DeployTenant.s.sol` 的產出） | 持有部署者金鑰的人 |
 | 前端位址 | `addresses.ts` | `frontend/src/contracts/deployments/<id>.json`（由部署紀錄產生） | PR，CI 對帳 |
-| keeper 金鑰 | GitHub environment `keeper` | GitHub environment `keeper-<id>` | 擁有者 |
-| keeper workflow | `base-sepolia-keeper.yml` | `tenant-<id>-keeper.yml`（複製） | PR，CI 把關 |
+| keeper 金鑰 | GitHub environment `keeper`（`KEEPER_PRIVATE_KEY`） | GitHub environment `keeper-<id>`（`TENANT_KEEPER_PRIVATE_KEY`、`TENANT_RPC_URL`） | 擁有者 |
+| keeper workflow | `base-sepolia-keeper.yml` | `keeper-<id>.yml`（由範本產生：`node scripts/gen-tenant-keeper.mjs <id>`） | PR，CI 逐位元比對範本 |
 | x402 收款地址 | repository variable `PAY_TO` | 租戶自己的 `PAY_TO`（租戶的 Vercel 專案與 `settlement-<id>` environment） | 擁有者 |
 | x402 分潤路由 | `frontend/src/contracts/x402.ts` | 登記檔的 `contracts.X402FeeRouter`（`DeployX402Router.s.sol`，`TREASURY`＝租戶的 treasury） | 持有部署者金鑰的人 |
 | signal-api | 現行 Vercel 專案 | 租戶自己的 Vercel 專案（**資料來源尚不能隔離**，見 §2.2） | 擁有者 |
@@ -27,94 +27,68 @@
 
 - keeper 的地址就是 `deploy/tenants/<id>.json` 的 `roles.keeper`。`DeployTenant.s.sol` 已經把租戶 oracle 的寫價權給它（guarded：`KEEPER_ROLE`；mock：`owner`），不需要再做任何授權。
 - `roles.marketOperator` 可以就是 keeper（平台如此）。它只能在 Active 與 ReduceOnly 之間切換市場。
-- 這把金鑰**只屬於這個租戶**。`scripts/check-tenant-deploy.mjs` 會擋下與平台或其他租戶重複的角色地址。金鑰外洩時的影響範圍是這一個租戶的價格，而且受租戶 oracle 的單次偏離上限（10%）限制。
+- 這把金鑰**只屬於這個租戶**。`scripts/check-tenant-deploy.mjs` 會擋下與平台位址全集或其他租戶重複的角色地址。
+- **金鑰外洩時的影響範圍**是這一個租戶的價格，受租戶 `GuardedOracle` 的兩道限制（`DeployTenant` 依設定寫入、`VerifyTenant` 讀回確認，CI 每天對鏈上再驗一次）：
+  - 單次上限 `params.oracleMaxDeviationBps`：每一筆相對前一筆；
+  - 時間窗限速 `params.oracleWindowSeconds`／`oracleWindowDeviationBps`：一個時間窗內相對窗口起點的累計變動。合約保證的是「約一個時間窗內單向不超過上限；相隔一個多時間窗的兩筆各可用滿上限」（`GuardedOracle` 註解），也就是最壞約每（時間窗＋1 秒）兩倍上限，**不是**任意值；
+  - 有參考來源（`shared.referenceSource`）時，與參考來源一致的寫價不受上面兩道限制（那是去中心化行情確認過的變動），不一致的只能是朝參考來源收斂、且在單次上限內的一步；
+  - 部位端另有每檔資產的 OI 上限與 `maxProfitBps`；guardian 可以凍結資產或暫停 oracle。
+
+  只有單次上限、沒有時間窗的 oracle 不算受保護：連續多筆寫價的累計變動沒有上限（PR #228 審查 F1）。`params.oracleWindowDeviationBps` 因此不得為 0。
 - keeper 地址要有 gas。workflow 的 `Warn before the tank runs dry` 步驟在餘額低於 0.02 ETH 時警告、低於 0.002 ETH 時直接失敗。
 
 ### 1.2 建立 GitHub environment `keeper-<id>`
 
-沿用 [`ops/keeper-trigger/README.md`](../ops/keeper-trigger/README.md)「部署前必做」第 2 步的模式，差別只有名稱與裡面放的金鑰：
+沿用 [`ops/keeper-trigger/README.md`](../ops/keeper-trigger/README.md)「部署前必做」第 2 步的模式，差別只有名稱與裡面放的 secret：
 
 1. repo → Settings → Environments → New environment → 名稱 **`keeper-<id>`**（必須是這個名稱，CI 會檢查）。
 2. Deployment branches and tags：Selected branches → `master`。
-3. Environment secrets：新增 `KEEPER_PRIVATE_KEY`，值是**這個租戶的** keeper 私鑰。租戶用自己的 RPC 時，同樣在這裡新增 `BASE_SEPOLIA_RPC_URL`；沒放就沿用 repo 層級的那一個。
+3. Environment secrets（名稱固定，值是**這個租戶的**）：
+   - `TENANT_KEEPER_PRIVATE_KEY`：租戶的 keeper 私鑰；
+   - `TENANT_RPC_URL`：租戶用的 RPC（可以與平台用同一個供應商，但放在這個 environment 裡）。
 4. **不要**設 required reviewers、wait timer 或 custom deployment protection rule：keeper job 用 `deployment: false`，reviewers 與 wait timer 會讓排程卡住，custom rule 會讓 job 直接失敗（理由與出處在上述 README）。
-5. **不要**把租戶的私鑰放在 repo 層級。environment secret 只有引用該 environment 的 job 拿得到；repo 層級的 secret 任何 workflow（含舊分支上的）都拿得到。
+5. **不要**把這兩個 secret 放在 repo 層級。
 
-> 為什麼一定要先建：workflow 引用一個不存在的 environment 時，GitHub 會自動建一個沒有任何保護、也沒有 secret 的同名 environment。那時 `secrets.KEEPER_PRIVATE_KEY` 會退回 repo 層級的同名 secret：
+> **為什麼 secret 的名稱與平台不同。** environment 沒放某個 secret 時，`secrets.X` 會退回 repo 層級的同名 secret。租戶的 workflow 若也叫 `KEEPER_PRIVATE_KEY`，environment 漏放時拿到的就是平台的金鑰。名稱不同，就不可能退回平台的金鑰；`scripts/check-workflow-guards.mjs` 也只允許 `keeper-<id>.yml` 的 job（綁 `keeper-<id>`）引用這兩個名稱。
 >
-> - repo 層級已經沒有這個 secret（`ops/keeper-trigger/README.md` 第 4 步做完之後的狀態）→ job 在 `Fail fast when secrets are missing` 失敗，沒有任何交易；
-> - repo 層級還留著 → 租戶的 job 拿到的是**平台的** keeper 金鑰。它在租戶的 oracle 上沒有任何角色，每一筆寫價都會 revert、job 變紅，不會寫錯價；但「租戶的 job 拿到了平台的金鑰」本身就不該發生。
+> 另一道：workflow 在送任何交易之前，先核對 `TENANT_KEEPER_PRIVATE_KEY` 推出的地址等於 `roles.keeper`，不等就失敗。
 >
-> 所以順序是：先建 environment、先放 secret，再合併 workflow。
+> 順序仍然是：先建 environment、先放 secret，再合併 workflow（GitHub 遇到不存在的 environment 會自動建一個沒有保護的同名 environment）。
 
-### 1.3 workflow：複製一支，不用 matrix
+### 1.3 workflow：由範本產生，不手寫、不複製
 
-**做法**：把 `.github/workflows/base-sepolia-keeper.yml` 複製成 `tenant-<id>-keeper.yml`，只改下面這些地方，其餘步驟（餘額檢查、寫價、熔斷告警、funding crank）一個字都不要動。
+每個專屬租戶的 keeper workflow 都是 **`.github/workflows/keeper-<id>.yml`**，由範本產生：
 
-| 位置 | 平台的值 | 租戶要改成 | 來源 |
-|---|---|---|---|
-| `name:` | `Base Sepolia Keeper` | `Keeper (<id>)` | — |
-| `concurrency.group` | `keeper-key-base-sepolia` | `keeper-key-<id>` | 不同金鑰＝不同 nonce 序列，不要排在平台後面 |
-| `jobs.keep.environment.name` | `keeper` | `keeper-<id>` | §1.2 |
-| `env.KEEPER_TENANT` | （沒有） | `<id>` | 讓 CI 以租戶的登記比對位址 |
-| `env.KEEPER_ORACLE_ADDRESS` | 平台的 MockOracle | 登記檔的 `contracts.Oracle` | exchange 讀的那一顆 oracle |
-| `env.EXCHANGE` | 平台的 exchange | 登記檔的 `contracts.PerpetualExchange` | — |
-| `env.KEEPER_GUARDED_ORACLE` | 平台的 GuardedOracle | **刪掉這一行** | 見 §1.5 |
-| `env.KEEPER_VAULT_ADDRESS` | 平台的金庫 | 登記檔的 `contracts.AssetVaultV2`；租戶沒有金庫就刪掉這一行 | — |
-| `env.KEEPER_RELAY_SOURCE` | `AggregatorOracle` | **不變** | 共用上游價格來源（ADR-008 方案 B） |
-| `Alert on price circuit breaker` 的 `ALERT_TITLE` | `[keeper] Base Sepolia 價格熔斷` | `[keeper] <id> 價格熔斷` | 告警 issue 以標題去重，不同租戶不能共用標題 |
-| `Crank settleFunding` 的 `for SYM in sBTC sETH sAAPL sTSLA` | 四檔 | 這個租戶 `assets.registered` 裡要結算 funding 的資產 | 清單外的資產在租戶的 exchange 上沒有部位 |
-| `on.schedule` | `*/15 * * * *` | 依 `deploy/tenants/<id>.json` 的 `keeper.cron` | — |
-
-**CI 把關**（`scripts/check-addresses.mjs`，`consistency.yml`）。帶 `KEEPER_TENANT: <id>` 的 job：
-
-- 每個位址以 `frontend/src/contracts/deployments/<id>.json` 比對，不以平台的 `addresses.ts`；`EXCHANGE` 填成平台的 exchange 會紅燈，反過來平台的 workflow 填了租戶的位址也會紅燈；
-- `run:`／`with:` 裡寫死的位址同樣只能是這個租戶的合約或共用上游價格來源；
-- 取用 `secrets.KEEPER_PRIVATE_KEY` 的 job，`environment` 必須是 `keeper-<id>`，`concurrency.group` 必須含 `<id>`（只讀的 job，例如健檢，不需要）；
-- `<id>` 必須有部署登記。登記是 `kind: "platform"` 的租戶（示範租戶）沒有自己的合約，它的 keeper 就是平台的 keeper，不需要另一支 workflow。
-
-**為什麼不用 matrix。** 寫得出來（下面是示意），但目前不建議：
-
-```yaml
-# 示意，不是 repo 裡的檔案。
-jobs:
-  keep:
-    strategy:
-      fail-fast: false            # 一個租戶失敗不能取消其他租戶那一輪
-      matrix:
-        include:
-          - tenant: bank-a
-            oracle: "0x…"
-            exchange: "0x…"
-    concurrency:
-      group: keeper-key-${{ matrix.tenant }}
-      cancel-in-progress: false
-    environment:
-      name: keeper-${{ matrix.tenant }}
-      deployment: false
-    env:
-      KEEPER_ORACLE_ADDRESS: ${{ matrix.oracle }}
-      EXCHANGE: ${{ matrix.exchange }}
+```bash
+node scripts/gen-tenant-keeper.mjs <id>          # 寫出 .github/workflows/keeper-<id>.yml
+node scripts/gen-tenant-keeper.mjs <id> --check  # 比對現有檔案
 ```
 
-1. `check-addresses.mjs` 是逐行解析，只認得 `KEY: 0x…`。位址放進 matrix 之後它看不到哪個位址屬於哪個租戶，**把關就失效了**——而「workflow 指向錯的合約卻全綠」正是這支檢查存在的理由（2026-09-29 的事故）。
-2. 一支檔案服務所有租戶，一次改壞就停掉所有租戶的價格。ADR-008 把「共用程式的缺陷」列為跨租戶事故；workflow 檔不必也變成共用的單點。
-3. 租戶的排程、funding 清單、告警標題本來就各自不同，matrix 省不了多少。
+- 範本是 [`ops/tenant-keeper/keeper.template.yml`](../ops/tenant-keeper/keeper.template.yml)，唯一的代入值是租戶 id（`^[a-z][a-z0-9-]{1,30}$`，代入 YAML 不可能改變結構）。產生器只為已登記的專屬租戶產生（`frontend/src/contracts/deployments/<id>.json` 存在且 `kind: "dedicated"`）。
+- 產生出來的檔案**不含任何位址**。執行期由 [`ops/tenant-keeper/load-env.mjs`](../ops/tenant-keeper/load-env.mjs) 從已審查的兩份登記讀出：`KEEPER_ORACLE_ADDRESS`（租戶的 Oracle）、`EXCHANGE`、`KEEPER_VAULT_ADDRESS`（有金庫時）、`KEEPER_RELAY_SOURCE`（＝`shared.referenceSource`，`"none"` 時不設）、`KEEPER_BREAKER_DEVIATION`（＝`oracleMaxDeviationBps`／10000，與 oracle 的單次上限一致）、`KEEPER_EXPECTED_ADDRESS`（`roles.keeper`）、`FUNDING_SYMBOLS`（`assets.registered`）。不是 dedicated、不是已部署、格式不對都失敗，不印任何東西。
+- 其餘步驟與平台的 `base-sepolia-keeper.yml` 相同（餘額檢查、寫價與部分失敗門檻、熔斷告警、funding crank）；自己的 `concurrency.group`（`keeper-key-<id>`），告警 issue 標題含 id。
 
-租戶數量多到複製不可行時，正確的下一步是讓 workflow 讀部署登記的 JSON（位址只有一個來源），並把 `check-addresses.mjs` 改成檢查那份 JSON；那時再換 matrix。
+**CI 把關**（`consistency.yml`）：
 
-**為什麼這次沒有把 `base-sepolia-keeper.yml` 的位址改成讀 JSON。** 技術上是小改動（加一個步驟把位址寫進 `$GITHUB_ENV`，拿掉 `env:` 裡的五行），但：
+- `scripts/check-workflow-guards.mjs` 的「租戶 keeper」類別：
+  - `keeper-<id>.yml` 的內容必須**等於範本代入 `<id>` 的結果**（檢查器自己重新產生、逐位元比對；CRLF／BOM 不算差異）。手改任何一個字（含註解）、多一個觸發事件、換掉守門 step，都會紅；
+  - 範本與 `load-env.mjs` 的整檔 sha256 釘在 `TENANT_KEEPER_PINS`。所以新增租戶**不必改任何雜湊**；要改租戶 keeper 的行為只能改範本，改範本就要人工審過後更新釘選（`--print-tenant-keeper-pins`）；
+  - environment `keeper-<id>` 只允許 `keeper-<id>.yml#keep` 綁定，而且 `<id>` 必須是已登記的專屬租戶；`TENANT_KEEPER_PRIVATE_KEY`／`TENANT_RPC_URL` 只允許那個 job 引用；借用平台的 `keeper` environment 會紅；
+  - 範本代入一個探測 id 之後，也必須通過所有結構規則（觸發只有 `schedule`／`workflow_dispatch`、`run:` 不內插、action 釘 SHA…），actionlint 也對它跑一次。
+- `scripts/check-addresses.mjs`：帶 `KEEPER_TENANT: <id>` 的 job 必須綁 `keeper-<id>`、`concurrency.group` 含 `<id>`；workflow 裡出現的任何位址都以租戶的登記比對。
+- 兩支檢查對同一份產生出來的 workflow 必須同時通過（`scripts/tenant-keeper.test.mjs` 釘住）。
 
-- 它是平台價格的活性關鍵路徑，近期已經出過幾次事故；這個改動只能靠實際執行 workflow 來驗證，而執行它就是對公開鏈送交易，這不是寫程式的人可以自己做的事；
-- 改完之後行為與現在相同，沒有任何租戶因此受益——租戶用的是複製出來的那一支；
-- 位址從 YAML 搬到 JSON 之後，現有的逐行檢查要整個改寫，才能維持同樣強度的把關。
+這次**沒有**新增任何實際的租戶 keeper workflow：目前沒有專屬租戶。
 
-所以這次只做了不碰線上 workflow 的部分：租戶 keeper 的 CI 規則。要做的話應該是一個獨立的 PR，由擁有者 dispatch 一次驗證。
+**為什麼不用 matrix。** 一支檔案服務所有租戶，一次改壞就停掉所有租戶的價格，而 ADR-008 把「共用程式的缺陷」列為跨租戶事故。範本＋逐檔比對讓每個租戶各有一支檔案（各自的排程、失敗、告警），而內容仍然只有一個來源。
+
+**平台的 `base-sepolia-keeper.yml` 沒有改成讀 JSON。** 它是平台價格的活性關鍵路徑，改動只能靠實際執行（對公開鏈送交易）驗證，而且改完行為不變、沒有租戶受益。租戶用的是範本。
 
 ### 1.4 外部觸發器與健檢
 
-- **觸發器**：GitHub 排程的實際間隔是 68–169 分鐘。要讓 [`ops/keeper-trigger`](../ops/keeper-trigger/README.md) 的 Worker 也照顧租戶的 keeper，把檔名加進 `wrangler.toml` 的 `WORKFLOW_FILES`（逗號分隔）後重新 `wrangler deploy`。各支獨立判斷，一支觸發失敗不影響其他支。
-- **健檢**：`oracle-health.yml` 目前只看平台的 oracle 與 exchange。**租戶沒有健檢**——keeper 連續失敗時不會有人被通知。試點租戶上線前要為它複製一個健檢 job（同樣帶 `KEEPER_TENANT`，CI 會比對位址），或接受「只有 keeper 自己的紅燈」這個監控水準並寫進租戶的服務條款。
+- **觸發器**：GitHub 排程的實際間隔是 68–169 分鐘（範本固定名目 15 分鐘；`deploy/tenants/<id>.json` 的 `keeper.cron` 目前只是參考值，不會代入 workflow）。要讓 [`ops/keeper-trigger`](../ops/keeper-trigger/README.md) 的 Worker 也照顧租戶的 keeper，把 `keeper-<id>.yml` 加進 `wrangler.toml` 的 `WORKFLOW_FILES`（逗號分隔）後重新 `wrangler deploy`。各支獨立判斷，一支觸發失敗不影響其他支。
+- **健檢**：`oracle-health.yml` 目前只看平台的 oracle 與 exchange。**租戶沒有健檢**——keeper 連續失敗時不會有人被通知（每天的 `tenant-verify.yml` 只驗接線與參數，價格過期只 WARN）。試點租戶上線前要為它加一個健檢（建議同樣做成範本），或接受「只有 keeper 自己的紅燈」這個監控水準並寫進租戶的服務條款。
+- **監控頁**：前端 `AgentMonitorPage` 的「過期」欄在專屬租戶上以價格時間戳對照 6 小時判斷（與 exchange、金庫一致），不問 oracle 的 `isStale()`——租戶 oracle 的 `maxPriceAge` 是 0，`isStale()` 永遠回 false。平台部署照舊用 `isStale()`。
 
 ### 1.5 keeper 程式與租戶 oracle 的相容性（上線前要驗證）
 
@@ -124,8 +98,9 @@ keeper 程式（`agent/keeper/`）是為平台的組合寫的：exchange 讀 Moc
 |---|---|---|
 | 主 oracle 的介面 | keeper 對 `KEEPER_ORACLE_ADDRESS` 呼叫 `getPrice`／`updatePrice`；GuardedOracle 兩個都有 | 把租戶的 GuardedOracle 填在 `KEEPER_ORACLE_ADDRESS` 即可 |
 | `KEEPER_GUARDED_ORACLE` | 設了就會「先寫 Guarded、成功才寫 Mock」。兩個變數填同一顆的話，每檔資產每輪寫兩次 | 不要設。代價見下一列 |
-| 熔斷門檻 | 沒設 `KEEPER_GUARDED_ORACLE` 時，keeper 不知道 oracle 的 10% 上限，只用 `KEEPER_BREAKER_DEVIATION`（預設 20%） | 10%–20% 的變動 keeper 會嘗試寫入，被 oracle 以 `DeviationTooLarge` 拒絕，算成一筆寫入失敗。結果仍是 fail-closed，但錯誤訊息不如平台的預檢清楚。可以把租戶 workflow 的 `KEEPER_BREAKER_DEVIATION` 設成 `0.1` 讓兩邊一致 |
-| 讀不到現價就不寫 | keeper 寫價前先 `getPrice`；讀取 revert 且不是 `AssetNotFound` 時拒寫（`round.ts`） | 這是 `DeployTenant` 把租戶 oracle 的 `maxPriceAge` 設成 0 的原因：否則一次超過上限的中斷之後 `getPrice` 會 `StalePrice`，keeper 就永遠寫不進去。過期仍由 exchange（6 小時）與金庫（6 小時）各自把關 |
+| 熔斷門檻 | 沒設 `KEEPER_GUARDED_ORACLE` 時，keeper 不知道 oracle 的單次上限，只用 `KEEPER_BREAKER_DEVIATION` | 範本由 `load-env.mjs` 把它設成 `oracleMaxDeviationBps`／10000，兩邊一致 |
+| 時間窗限速 | keeper 不知道 oracle 的時間窗 | 超過累計上限的寫價被 oracle 以 `WindowDeviationTooLarge` 拒絕，算成一筆寫入失敗（fail-closed）。**長時間停擺之後的大幅跳價**：沒有參考來源時，價格要分幾個時間窗才追得上（每窗最多 `oracleWindowDeviationBps`）；這段期間 exchange 會因價格過期或落後而拒單，這是限速的代價。有參考來源時，與參考一致的寫價直接落地並重設時間窗——這是建議設定 `shared.referenceSource` 的主要理由 |
+| 讀不到現價就不寫 | keeper 寫價前先 `getPrice`；讀取 revert 且不是 `AssetNotFound` 時拒寫（`round.ts`） | 這是 `DeployTenant` 把租戶 oracle 的 `maxPriceAge` 設成 0 的原因：否則一次超過上限的中斷之後 `getPrice` 會 `StalePrice`，keeper 就永遠寫不進去。過期仍由 exchange（6 小時）與金庫（6 小時）各自把關。單筆變動的界線由單次上限與時間窗負責，與 `maxPriceAge` 無關 |
 | 資產被 guardian 凍結 | `getPrice` 以 `AssetIsFrozen` revert → keeper 拒寫 | 符合預期：凍結是 guardian 的決定，解除後 keeper 自動恢復 |
 
 **上線前的驗證**（都不送交易）：在本機以 `DRY_RUN=1`、`KEEPER_ORACLE_ADDRESS=<租戶 Oracle>`、`KEEPER_RPC_URL=<RPC>` 跑一次 `npx tsx keeper/run.ts`（在 `agent/` 底下），確認 11 檔資產都讀得到現價、摘要行的 `failed=0`。之後由擁有者 dispatch 租戶的 workflow 一次，確認真的寫得進去。
@@ -135,7 +110,7 @@ keeper 程式（`agent/keeper/`）是為平台的組合寫的：exchange 讀 Moc
 1. `DeployTenant` 已廣播、`VerifyTenant` 通過、部署紀錄與前端登記已合併（[`TENANT_DEPLOYMENT.md`](TENANT_DEPLOYMENT.md)）。
 2. 擁有者建立 `keeper-<id>` environment 並放入金鑰（§1.2），替 keeper 地址補 gas。
 3. §1.5 的 `DRY_RUN` 驗證。
-4. 以 PR 新增 `tenant-<id>-keeper.yml`（§1.3）；`consistency.yml` 綠燈才合併。
+4. `node scripts/gen-tenant-keeper.mjs <id>` 產生 `keeper-<id>.yml`，以 PR 新增（§1.3）；`consistency.yml` 與 `tenant-verify.yml` 綠燈才合併。
 5. 擁有者手動 dispatch 一次，確認寫價成功；再把檔名加進觸發器的 `WORKFLOW_FILES`（§1.4）。
 6. `VerifyTenant` 再跑一次，最後一段應該是「every registered asset priced and fresh」而不是 WARN。
 
@@ -155,7 +130,7 @@ keeper 程式（`agent/keeper/`）是為平台的組合寫的：exchange 讀 Moc
 | `ORACLE_BENEFICIARY_ADDRESS` | 租戶指定 | `/oracle` 收入的 70% 受益人 |
 | `CORS_ALLOWED_ORIGINS`、`SIGNAL_API_PUBLIC_URL`、`SIGNAL_API_URL_ALLOWLIST` | 租戶的網域 | — |
 
-前端這一側：租戶的 Vercel 專案設 `VITE_SIGNAL_API_URL` 指向租戶的 signal-api。`vite build` 會檢查這個網址在 `frontend/vercel.json` 的 CSP `connect-src` 裡，不在就讓 build 失敗——所以新增租戶的 signal-api 網域要先改 `vercel.json`。
+前端這一側：租戶的 Vercel 專案**必須**設 `VITE_SIGNAL_API_URL` 指向租戶的 signal-api。專屬租戶（`kind: "dedicated"`）沒設、或設成平台的 signal-api，`vite build` 直接失敗——不會悄悄退回平台的 signal-api（那會讓租戶的使用者看到平台 exchange 的訊號、funding 與新鮮度）。平台與示範租戶的行為不變。`vite build` 另外檢查這個網址在 `frontend/vercel.json` 的 CSP `connect-src` 裡，不在就讓 build 失敗——所以新增租戶的 signal-api 網域要先改 `vercel.json`。
 
 結算 worker：複製 `x402-settlement-worker.yml`，用 environment `settlement-<id>`（放租戶的 `FEE_SETTLEMENT_PRIVATE_KEY` 與 Upstash 憑證，`PAY_TO`／`X402_FEE_ROUTER`／`SIGNAL_API_URL` 改用 environment 層級的 variables），`concurrency.group` 改成 `x402-settlement-worker-<id>`。其中 `Assert X402_FEE_ROUTER matches frontend config` 那一步目前比對的是平台的 `x402.ts`，租戶的版本要改成比對登記檔的 `contracts.X402FeeRouter`。
 
@@ -204,7 +179,8 @@ SDK 原始碼裡這個參數的註解是「只給本機 anvil／測試部署用�
 
 | 症狀 | 範圍 | 第一步 |
 |---|---|---|
-| 一個租戶的價格過期、keeper 紅燈 | 單一租戶 | 看 `tenant-<id>-keeper.yml` 的 run：gas、nonce、`DeviationTooLarge` |
+| 一個租戶的價格過期、keeper 紅燈 | 單一租戶 | 看 `keeper-<id>.yml` 的 run：金鑰核對、gas、nonce、`DeviationTooLarge`／`WindowDeviationTooLarge` |
+| `tenant-verify.yml` 紅燈 | 單一租戶 | 鏈上的所有權、接線或參數與設定不符：先確認是不是租戶 admin 有意的變更（同步改設定檔）；不是的話當成事故處理 |
 | 一個租戶的 exchange 暫停、某資產凍結 | 單一租戶 | 那是該租戶 guardian 的決定；解除暫停要該租戶的 admin |
 | 所有租戶與平台同時價格過期 | **跨租戶**：共用上游價格來源或 GitHub 排程 | 通報所有租戶；看 `AggregatorOracle`、行情 API、Actions 狀態頁 |
 | 所有租戶的 keeper 同時以同樣的錯誤失敗 | **跨租戶**：共用的 keeper 程式 | 回滾 `agent/keeper/` 的那次變更 |
@@ -214,8 +190,9 @@ SDK 原始碼裡這個參數的註解是「只給本機 anvil／測試部署用�
 ## 5. 還沒做的事
 
 - 租戶的健檢 workflow（§1.4）。
+- 租戶 keeper 範本在真的租戶上 dispatch 驗證（範本只做過靜態檢查與 actionlint）。
 - keeper 在 guarded-only 租戶上的實跑驗證，以及讓 keeper 在這種組合下也做 oracle 上限的預檢（§1.5）。
 - signal-api、MCP server、Telegram bot 讀租戶的合約（§2.2）。
 - SDK 直接讀部署登記的入口（§3）。
-- 平台的 keeper workflow 改成讀 JSON（§1.3 的說明）；租戶數量多到要用 matrix 時再做。
+- 平台的 keeper workflow 改成讀 JSON（§1.3 的說明）。
 - 租戶結算 workflow 的 `X402_FEE_ROUTER` 執行期比對改讀部署登記（§2.1）。

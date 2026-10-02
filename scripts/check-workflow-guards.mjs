@@ -19,6 +19,17 @@
 //       這幾支檔「任何修改都要人工審過、同步更新雜湊」，不再靠逐條列舉危險寫法。
 //   第二層（結構規則，下面 (a)–(g)）：釘選值被更新時仍然要過的底線，也讓錯誤訊息指得出
 //       是哪一種危險改動。
+//   租戶 keeper（ADR-008、PR #228 審查 F3）：專屬租戶的 keeper workflow 一律是
+//       `.github/workflows/keeper-<id>.yml`，由範本 ops/tenant-keeper/keeper.template.yml 代入 id
+//       產生（scripts/gen-tenant-keeper.mjs）。這一類不放進 PINNED_WORKFLOWS，改成：
+//       - 檔案內容必須**等於範本代入 id 的結果**（檢查器自己重新產生、逐位元比對）；
+//       - 範本與它執行期讀位址的 ops/tenant-keeper/load-env.mjs 整檔 sha256 釘在 TENANT_KEEPER_PINS；
+//       - id 必須是已登記的專屬租戶（frontend/src/contracts/deployments/<id>.json，kind=dedicated），
+//         格式 ^[a-z][a-z0-9-]{1,30}$（代入 YAML 不可能改變結構）；
+//       - environment「keeper-<id>」只允許 keeper-<id>.yml#keep 綁定；租戶的 secret
+//         （TENANT_KEEPER_SECRETS）只允許綁 keeper-<檔名的 id> 的 job 引用；
+//       - 範本本身代入一個探測用 id 後，也必須通過上面所有結構規則。
+//       新增租戶不必改任何雜湊；要改租戶 keeper 的行為只能改範本，而改範本就要更新釘選。
 //
 // 結構規則：
 //   (a) 綁 environment 的 job 必須在下方 ENVIRONMENTS 的允許清單內（字串與物件寫法都算，
@@ -63,12 +74,24 @@
 //   node scripts/check-workflow-guards.mjs --workflows <dir>     # 檢查指定目錄
 //   node scripts/check-workflow-guards.mjs --print-guard-hashes  # 印出現行守門 step 的 sha256
 //   node scripts/check-workflow-guards.mjs --print-pins          # 印出持鑰 workflow 整檔的 sha256
+//   node scripts/check-workflow-guards.mjs --print-tenant-keeper-pins  # 印出租戶 keeper 範本與讀位址腳本的 sha256
 //
 // 結束碼：0 通過；1 有問題；2 檢查本身中止（目錄讀不到、缺少 yaml 套件等）。
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+
+import {
+  KEEPER_JOB,
+  LOADER_FILE,
+  TEMPLATE_FILE,
+  loadTenantKeeperContext,
+  renderTenantKeeper,
+  tenantIdOfKeeperFile,
+  tenantKeeperEnvironment,
+  tenantKeeperFileName,
+} from "./lib/tenant-keeper.mjs";
 
 /**
  * environment → 允許綁它的 job（`檔名#job id`）。新增一個綁 environment 的 job 時要改這裡。
@@ -127,6 +150,26 @@ export const PINNED_WORKFLOWS = {
   "price-keeper.yml": "e4ff9a1801593fb6e26d09aabc67b85cc22fc1a8363a937fe0e4486584988a38",
   "x402-settlement-worker.yml": "0bd5876fd343ed8a55c62d905e82a4431e9305658d146d9a9f2d283995b27968",
 };
+
+/**
+ * 租戶 keeper 範本與它執行期讀位址的腳本，整檔 sha256（正規化同 fileDigest）。改了其中任何
+ * 一個字都要人工審過，再以 --print-tenant-keeper-pins 更新這裡。所有 keeper-<id>.yml 都以範本為準比對，
+ * 所以新增租戶不需要改這裡。
+ */
+export const TENANT_KEEPER_PINS = {
+  [TEMPLATE_FILE]: "f45e89bbc5639b20f6040a3af6a626574fc5cd38e43d63d57efebc2bb1cb5b8a",
+  [LOADER_FILE]: "639b2e4c4e4c7672198a7da2ebc8bf7191eead6a4b0fcfb48ab1dbf7d609bb62",
+};
+
+/**
+ * 租戶 keeper 的 secret：只能出現在 keeper-<id>.yml、而且綁的是 environment keeper-<id>。
+ * 名稱刻意與平台的 KEEPER_PRIVATE_KEY 不同：environment 沒放某個 secret 時 GitHub 會退回 repo
+ * 層級的同名 secret，不同名就不可能退回平台的金鑰。
+ */
+export const TENANT_KEEPER_SECRETS = ["TENANT_KEEPER_PRIVATE_KEY", "TENANT_RPC_URL"];
+
+/** 範本結構自我檢查用的探測 id（不會是真的租戶：真的租戶 id 不會以 zz- 開頭也沒關係，只在記憶體裡用）。 */
+const TEMPLATE_PROBE_ID = "zz-template-probe";
 
 /** 持鑰 workflow 的 step 只能用這些 action，而且必須釘 40 位 commit SHA。 */
 export const ALLOWED_KEYED_ACTIONS = ["actions/checkout", "actions/setup-node", "foundry-rs/foundry-toolchain"];
@@ -422,10 +465,14 @@ function checkAdmin(wf, topLevel, problem) {
  * @param {object} YAML  `yaml` 套件（由呼叫端載入，方便在缺套件時給出清楚的訊息）
  * @returns {{ problems: string[], jobs: number, files: number }}
  */
-export function checkWorkflows(files, YAML, { pins = PINNED_WORKFLOWS } = {}) {
+export function checkWorkflows(files, YAML, { pins = PINNED_WORKFLOWS, tenantKeeper } = {}) {
   const problems = [];
   let jobCount = 0;
   let sawAdmin = false;
+  // 租戶 keeper 的設定（範本、讀位址的腳本、已登記的專屬租戶）。沒給就從 repo 讀；
+  // `null` 只給範本自我檢查的遞迴呼叫用。
+  const tk = tenantKeeper === undefined ? loadTenantKeeperContext(REPO_ROOT) : tenantKeeper;
+  const registered = tk?.tenants ?? [];
 
   for (const { name, text } of [...files].sort((a, b) => a.name.localeCompare(b.name))) {
     const problem = (job, msg) => problems.push(job ? `${name}#${job}：${msg}` : `${name}：${msg}`);
@@ -455,16 +502,27 @@ export function checkWorkflows(files, YAML, { pins = PINNED_WORKFLOWS } = {}) {
 
     const keyEnvsUsed = new Set();
     let holdsKeys = false;
+    // 這支檔是不是租戶 keeper（keeper-<id>.yml，id 格式合法）；是的話它的 id。
+    const fileTenant = tenantIdOfKeeperFile(name);
     for (const [jobId, job] of Object.entries(jobs)) {
       jobCount += 1;
       const id = `${name}#${jobId}`;
       const env = environmentOf(job);
-      if (env.kind === "static" && KEY_ENVIRONMENTS.includes(env.name)) keyEnvsUsed.add(env.name);
-      if (env.kind === "invalid" || (env.kind === "static" && PINNING_ENVIRONMENTS.includes(env.name))) holdsKeys = true;
+      const tenantEnv = env.kind === "static" && env.name.startsWith("keeper-") && !Object.hasOwn(ENVIRONMENTS, env.name);
+      if (env.kind === "static" && (KEY_ENVIRONMENTS.includes(env.name) || tenantEnv)) keyEnvsUsed.add(env.name);
+      if (env.kind === "invalid" || (env.kind === "static" && PINNING_ENVIRONMENTS.includes(env.name)) || tenantEnv) holdsKeys = true;
 
       // (a) environment 允許清單
       if (env.kind === "invalid") {
         problem(jobId, env.why);
+      } else if (tenantEnv) {
+        // 租戶 keeper 的 environment：keeper-<已登記的專屬租戶 id>，而且只有 keeper-<id>.yml#keep 能綁。
+        const tid = env.name.slice("keeper-".length);
+        if (!registered.includes(tid)) {
+          problem(jobId, `綁了 environment「${env.name}」，但「${tid}」不是已登記的專屬租戶（frontend/src/contracts/deployments/${tid}.json 必須存在且 kind=dedicated）`);
+        } else if (name !== tenantKeeperFileName(tid) || jobId !== KEEPER_JOB) {
+          problem(jobId, `environment「${env.name}」只允許 ${tenantKeeperFileName(tid)}#${KEEPER_JOB} 綁定（由範本產生的租戶 keeper）`);
+        }
       } else if (env.kind === "static") {
         const allowed = ENVIRONMENTS[env.name];
         if (!allowed) {
@@ -486,6 +544,17 @@ export function checkWorkflows(files, YAML, { pins = PINNED_WORKFLOWS } = {}) {
           problem(jobId, `引用 secrets.${secret} 但沒有綁 environment（應綁「${wantEnv}」）`);
         } else if (env.name !== wantEnv) {
           problem(jobId, `引用 secrets.${secret} 但綁的是 environment「${env.name}」（應綁「${wantEnv}」）`);
+        }
+      }
+      // 租戶的 secret：只在 keeper-<id>.yml、綁 keeper-<同一個 id>。
+      for (const secret of TENANT_KEEPER_SECRETS) {
+        if (!refs.names.has(secret)) continue;
+        holdsKeys = true;
+        const wantEnv = fileTenant ? tenantKeeperEnvironment(fileTenant) : null;
+        if (!wantEnv) {
+          problem(jobId, `引用 secrets.${secret}（租戶 keeper 的 secret），但這支不是租戶 keeper workflow（keeper-<id>.yml，由範本產生）`);
+        } else if (env.kind !== "static" || env.name !== wantEnv) {
+          problem(jobId, `引用 secrets.${secret} 但綁的是 ${env.kind === "static" ? `environment「${env.name}」` : "（沒有 environment）"}（應綁「${wantEnv}」）`);
         }
       }
 
@@ -520,8 +589,16 @@ export function checkWorkflows(files, YAML, { pins = PINNED_WORKFLOWS } = {}) {
           }
         }
       }
-      // 第一層：整檔釘選
-      if (pins) {
+      // 第一層：整檔釘選。租戶 keeper 例外：它以範本為準（範本本身是釘選的）。
+      if (tk && fileTenant && !Object.hasOwn(pins ?? {}, name)) {
+        if (!registered.includes(fileTenant)) {
+          problem(null, `租戶 keeper workflow，但「${fileTenant}」不是已登記的專屬租戶（frontend/src/contracts/deployments/${fileTenant}.json 必須存在且 kind=dedicated）`);
+        }
+        const want = fileDigest(renderTenantKeeper(tk.templateText, fileTenant));
+        if (fileDigest(text) !== want) {
+          problem(null, `租戶 keeper workflow 的內容必須等於範本 ${TEMPLATE_FILE} 代入「${fileTenant}」的結果（node scripts/gen-tenant-keeper.mjs ${fileTenant}）；不要手改，要改就改範本`);
+        }
+      } else if (pins) {
         const digest = fileDigest(text);
         if (!Object.hasOwn(pins, name)) {
           problem(null, `這是持有私鑰的 workflow（引用私鑰 secret 或綁 keeper／settlement／admin-approval），但不在 PINNED_WORKFLOWS 裡。人工審過整份檔案後，把它加進 scripts/check-workflow-guards.mjs 的 PINNED_WORKFLOWS（sha256 ${digest}）`);
@@ -559,7 +636,37 @@ export function checkWorkflows(files, YAML, { pins = PINNED_WORKFLOWS } = {}) {
   if (!sawAdmin) {
     problems.push(`${ADMIN.file}：找不到這支 workflow；若是刻意移除或改名，請同步改 scripts/check-workflow-guards.mjs`);
   }
+  if (tk && !tk.probe) problems.push(...checkTenantKeeperTemplate(YAML, tk));
   return { problems, jobs: jobCount, files: files.length };
+}
+
+/**
+ * 租戶 keeper 範本本身：(1) 範本與讀位址的腳本整檔雜湊等於 TENANT_KEEPER_PINS；
+ * (2) 代入一個探測 id 之後，通過所有結構規則（釘選值被更新時仍然要過的底線）。
+ */
+export function checkTenantKeeperTemplate(YAML, tk, pinsOf = TENANT_KEEPER_PINS) {
+  const problems = [];
+  for (const [file, text] of [[TEMPLATE_FILE, tk.templateText], [LOADER_FILE, tk.loaderText]]) {
+    const digest = typeof text === "string" ? fileDigest(text) : null;
+    if (digest !== pinsOf[file]) {
+      problems.push(
+        `${file}：租戶 keeper 的${file === TEMPLATE_FILE ? "範本" : "位址讀取腳本"}與釘選值不符（現在的 sha256 ${digest}，釘選值 ${pinsOf[file]}）。` +
+          "人工審過整份 diff 後更新 scripts/check-workflow-guards.mjs 的 TENANT_KEEPER_PINS（--print-tenant-keeper-pins 會印出現值）",
+      );
+    }
+  }
+  if (typeof tk.templateText === "string") {
+    const probe = { name: tenantKeeperFileName(TEMPLATE_PROBE_ID), text: renderTenantKeeper(tk.templateText, TEMPLATE_PROBE_ID) };
+    const r = checkWorkflows([probe], YAML, {
+      pins: {},
+      tenantKeeper: { ...tk, tenants: [TEMPLATE_PROBE_ID], probe: true },
+    });
+    for (const p of r.problems) {
+      if (p.startsWith(`${ADMIN.file}：`)) continue; // 探測只放這一支檔，admin 當然不在
+      problems.push(`${TEMPLATE_FILE}（代入探測 id 後）：${p}`);
+    }
+  }
+  return problems;
 }
 
 export function readWorkflowDir(dir) {
@@ -579,7 +686,7 @@ export async function loadYaml() {
 
 /** 這支檔是否持有私鑰（第一層的判斷）：以空的釘選表檢查，看它是否被要求釘選。 */
 export function holdsKeysFile(f, YAML) {
-  return checkWorkflows([f], YAML, { pins: {} }).problems.some((p) => p.includes("不在 PINNED_WORKFLOWS 裡"));
+  return checkWorkflows([f], YAML, { pins: {}, tenantKeeper: null }).problems.some((p) => p.includes("不在 PINNED_WORKFLOWS 裡"));
 }
 
 /** 現行 admin workflow 三個守門 step 的指紋（給 --print-guard-hashes 與測試用）。 */
@@ -592,8 +699,10 @@ export function currentGuardHashes(files, YAML) {
   );
 }
 
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
 async function main(argv) {
-  const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+  const root = REPO_ROOT;
   const i = argv.indexOf("--workflows");
   const dir = i !== -1 && argv[i + 1] ? resolve(argv[i + 1]) : join(root, ".github/workflows");
   if (!existsSync(dir)) throw new Error(`找不到目錄：${dir}`);
@@ -602,10 +711,17 @@ async function main(argv) {
   if (files.length === 0) throw new Error(`${dir} 裡沒有任何 workflow 檔`);
   if (argv.includes("--print-pins")) {
     for (const f of files) {
+      if (tenantIdOfKeeperFile(f.name)) continue; // 租戶 keeper 以範本為準，不各自釘選
       if (Object.hasOwn(PINNED_WORKFLOWS, f.name) || holdsKeysFile(f, YAML)) {
         console.log(`${JSON.stringify(f.name)}: ${JSON.stringify(fileDigest(f.text))},`);
       }
     }
+    return 0;
+  }
+  if (argv.includes("--print-tenant-keeper-pins")) {
+    const tk = loadTenantKeeperContext(root);
+    console.log(`[TEMPLATE_FILE]: ${JSON.stringify(fileDigest(tk.templateText))},`);
+    console.log(`[LOADER_FILE]: ${JSON.stringify(fileDigest(tk.loaderText))},`);
     return 0;
   }
   if (argv.includes("--print-guard-hashes")) {

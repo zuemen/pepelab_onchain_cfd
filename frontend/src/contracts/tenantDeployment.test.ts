@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { it, expect, describe } from 'vitest';
@@ -8,7 +9,14 @@ import { X402_FEE_ROUTER } from './x402';
 import * as selected from './deployment';
 import { LEGACY_EXCHANGES, legacyExchangesFor } from './legacyExchanges';
 import { SESSION_MANAGER_ADDRESS, getSessionManagerAddress } from './sessionManager';
-import { listDeploymentIds, loadTenantDeploymentForBuild } from './tenantDeployment.node';
+import { DEFAULT_SIGNAL_API_URL } from '../lib/pepefi/signalApiUrl';
+import {
+  listDeploymentIds,
+  RETIRED_PLATFORM_FILE,
+  retiredPlatformAddresses,
+  dedicatedSignalApiProblem,
+  loadTenantDeploymentForBuild,
+} from './tenantDeployment.node';
 import {
   CHAIN_MAP,
   V2_STACK,
@@ -19,11 +27,13 @@ import {
   getSynthTokens,
 } from './addresses';
 import {
+  SHAREABLE_PATHS,
   resolveDeployment,
   platformAddressSet,
   parseTenantDeployment,
   DEDICATED_CONTRACT_KEYS,
   dedicatedChainAddresses,
+  dedicatedAddressEntries,
   deploymentFeatureProblems,
 } from './tenantDeployment';
 
@@ -55,6 +65,7 @@ const dedicatedRaw = () => ({
     AgentSessionManager: A(10),
     AssetVaultV2: A(11),
   } as Record<string, string>,
+  shared: ['contracts.SettlementToken'] as string[],
   tokens: { sAAPL: A(20), sGOLD: A(21) } as Record<string, string>,
 });
 
@@ -263,6 +274,65 @@ describe('deployment registry validation', () => {
     );
   });
 
+  it('shares the settlement token only when "shared" declares it, and only the platform’s token', () => {
+    expect(SHAREABLE_PATHS).toEqual(['contracts.SettlementToken']);
+    // 沒有宣告：平台的結算幣就是平台的位址。
+    expect(parse((r) => { r.shared = []; })).toThrow(
+      /contracts\.SettlementToken .* platform deployment[\s\S]*only when "shared" declares it/
+    );
+    // 宣告了，但值是平台的另一顆合約（18 位 ERC20 的保險金份額）。
+    expect(parse((r) => { r.contracts.SettlementToken = CHAIN_MAP[84532].InsuranceVault; })).toThrow(
+      /declared shared but is not the platform's settlement token/
+    );
+    // 宣告了，但值是任意位址。
+    expect(parse((r) => { r.contracts.SettlementToken = A(50); })).toThrow(/declared shared but is not the platform's settlement token/);
+    // 租戶自己的代幣：不宣告、也不在平台位址裡 → 可以。
+    expect(parse((r) => { r.contracts.SettlementToken = A(50); r.shared = []; })).not.toThrow();
+    // 白名單以外的欄位、缺少 shared、重複宣告。
+    expect(parse((r) => { r.shared = ['contracts.SettlementToken', 'contracts.PerpetualExchange']; })).toThrow(
+      /invalid deployment registry/
+    );
+    expect(parse((r) => { delete (r as Partial<typeof r>).shared; })).toThrow(/invalid deployment registry/);
+    expect(parse((r) => { r.shared = ['contracts.SettlementToken', 'contracts.SettlementToken']; })).toThrow(
+      /shared lists the same field twice/
+    );
+  });
+
+  it('refuses the platform’s retired contracts (machine-readable list, read at build time)', () => {
+    const retired = retiredPlatformAddresses(FRONTEND_ROOT);
+    expect(retired.length).toBeGreaterThan(30);
+    // 審查 F2：只寫在 sessionManager.ts 註解裡的舊 AgentSessionManager。
+    expect(retired.map((a) => a.toLowerCase())).toContain('0x4e7cc1b79b72ab72531a6c790e14304370f70764');
+    for (const addr of retired) {
+      const raw = dedicatedRaw();
+      raw.contracts.AgentSessionManager = addr;
+      expect(() => parseTenantDeployment(raw, 'bank-a', retired), addr).toThrow(/breaks tenant isolation/);
+    }
+  });
+
+  it('the build-time loader applies the retired list (a registry reusing a retired contract fails the build)', () => {
+    const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'tenant-root-'));
+    fs.mkdirSync(path.join(root, 'src', 'contracts', 'deployments'), { recursive: true });
+    fs.copyFileSync(path.join(FRONTEND_ROOT, RETIRED_PLATFORM_FILE), path.join(root, RETIRED_PLATFORM_FILE));
+    const raw = dedicatedRaw();
+    fs.writeFileSync(path.join(root, 'src', 'contracts', 'deployments', 'bank-a.json'), JSON.stringify(raw));
+    expect(loadTenantDeploymentForBuild(root, 'bank-a').deployment.kind).toBe('dedicated');
+    raw.contracts.AgentSessionManager = '0x4E7cC1B79B72ab72531a6C790e14304370f70764';
+    fs.writeFileSync(path.join(root, 'src', 'contracts', 'deployments', 'bank-a.json'), JSON.stringify(raw));
+    expect(() => loadTenantDeploymentForBuild(root, 'bank-a')).toThrow(
+      /contracts\.AgentSessionManager .* platform deployment/
+    );
+  });
+
+  it('enumerates every address in the registry, not a hand-written field list', () => {
+    const dep = parseTenantDeployment(dedicatedRaw(), 'bank-a');
+    if (dep.kind !== 'dedicated') throw new Error('fixture');
+    const paths = dedicatedAddressEntries(dep).map(([p]) => p).sort();
+    expect(paths).toEqual(
+      [...Object.keys(dedicatedRaw().contracts).map((k) => `contracts.${k}`), 'tokens.sAAPL', 'tokens.sGOLD'].sort()
+    );
+  });
+
   it('refuses two contracts of one tenant at the same address', () => {
     expect(parse((r) => { r.contracts.FeeRouter = r.contracts.InsuranceVault; })).toThrow(
       /contracts\.FeeRouter and contracts\.InsuranceVault are the same address/
@@ -360,6 +430,31 @@ describe('checked-in deployment registries', () => {
     const demo = loadTenantDeploymentForBuild(FRONTEND_ROOT, 'demo-bank').deployment;
     expect(demo.kind).toBe('platform');
     expect(demo.kind === 'platform' && demo.note).toBeTruthy();
+  });
+
+  it('a dedicated tenant must name its own signal-api; platform tenants are unchanged (F4)', () => {
+    const dedicated = parseTenantDeployment(dedicatedRaw(), 'bank-a');
+    expect(dedicatedSignalApiProblem(dedicated, undefined)).toMatch(/set VITE_SIGNAL_API_URL/);
+    expect(dedicatedSignalApiProblem(dedicated, '')).toMatch(/set VITE_SIGNAL_API_URL/);
+    expect(dedicatedSignalApiProblem(dedicated, '   ')).toMatch(/set VITE_SIGNAL_API_URL/);
+    expect(dedicatedSignalApiProblem(dedicated, DEFAULT_SIGNAL_API_URL)).toMatch(/points at the platform/);
+    expect(dedicatedSignalApiProblem(dedicated, `${DEFAULT_SIGNAL_API_URL}/`)).toMatch(/points at the platform/);
+    expect(dedicatedSignalApiProblem(dedicated, 'https://signal.bank-a.example')).toBeNull();
+    for (const id of ['default', 'demo-bank']) {
+      const platform = loadTenantDeploymentForBuild(FRONTEND_ROOT, id).deployment;
+      expect(dedicatedSignalApiProblem(platform, undefined), id).toBeNull();
+      expect(dedicatedSignalApiProblem(platform, DEFAULT_SIGNAL_API_URL), id).toBeNull();
+    }
+    // vite.config.ts 真的在載入部署登記之後呼叫它，並在有問題時丟錯。
+    const vite = fs.readFileSync(path.join(FRONTEND_ROOT, 'vite.config.ts'), 'utf8');
+    expect(vite).toMatch(/dedicatedSignalApiProblem\(\s*deployment\.deployment,\s*envOf\('VITE_SIGNAL_API_URL'\)\s*\)/);
+    expect(vite).toMatch(/if \(signalApiProblem\) throw new Error/);
+  });
+
+  it('the agent monitor judges a dedicated tenant’s staleness by timestamp, the platform’s by isStale() (F6)', () => {
+    const page = fs.readFileSync(path.join(FRONTEND_ROOT, 'src', 'pages', 'pepefi', 'AgentMonitorPage.tsx'), 'utf8');
+    expect(page).toMatch(/oracleRowStale\(\{\s*platform: isPlatformDeployment,/);
+    expect(page).not.toMatch(/stale = \(await contracts\.oracle\.isStale/);
   });
 
   it('a tenant without a registry fails the build instead of falling back', () => {

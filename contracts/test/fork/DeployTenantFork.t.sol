@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/access/IAccessControl.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "../../src/PerpetualExchange.sol";
 import "../../src/FeeRouter.sol";
@@ -17,6 +18,14 @@ import "../TenantFixture.sol";
 ///
 ///         The live addresses below belong in this TEST (it asserts the live
 ///         platform is left untouched); `DeployTenant` itself has none.
+///
+///         Limited value, on purpose stated: since `DeployTenant` carries no
+///         platform address at all, "the live platform did not notice" holds
+///         by construction. What this test adds over DeployTenant.t.sol is the
+///         real settlement token and price source, and the live chain's state
+///         (nonces, code at the shared addresses). It does not run in CI (it
+///         skips without a Base Sepolia fork); the per-tenant check CI does
+///         run against chain is VerifyTenant (docs/TENANT_DEPLOYMENT.md).
 ///
 ///         Skipped unless the suite itself runs on a Base Sepolia fork:
 ///           forge test --match-path test/fork/DeployTenantFork.t.sol \
@@ -137,20 +146,24 @@ contract DeployTenantForkTest is TenantFixture {
         vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, LIVE_OWNER));
         ex.setMaxProfitBps(BTC, 60_000);
         vm.prank(LIVE_KEEPER);
-        vm.expectRevert();
+        vm.expectRevert(abi.encodeWithSelector(
+            IAccessControl.AccessControlUnauthorizedAccount.selector, LIVE_KEEPER, keccak256("KEEPER_ROLE")));
         GuardedOracle(d.oracle).updatePrice(BTC, seeded);
         vm.prank(LIVE_OWNER);
         vm.expectRevert(abi.encodeWithSelector(PerpetualExchange.NotGuardianOrOwner.selector, LIVE_OWNER));
         ex.pause();
 
-        // 5. The tenant trades on its own book, with real MockUSDC.
+        // 5. The tenant trades on its own book, with real MockUSDC — once the
+        //    grace period that follows the deploy's own pause/unpause is over.
+        vm.warp(block.timestamp + 30 minutes + 1);
         deal(USDC, trader, 2_000e18);
         vm.deal(trader, 1 ether);
         vm.startPrank(trader);
         IERC20(USDC).approve(d.exchange, type(uint256).max);
         ex.depositMargin(1_500e18);
         ex.openPosition{value: 1e14}(BTC, true, 500e18, 1);
-        vm.expectRevert();   // OpenInterestCapExceeded (1,000 per side)
+        // 500 + 600 > 1,000 per side.
+        vm.expectPartialRevert(PerpetualExchange.OpenInterestCapExceeded.selector);
         ex.openPosition{value: 1e14}(BTC, true, 600e18, 1);
         vm.stopPrank();
         assertEq(ex.nextPositionId(), 1);

@@ -10,6 +10,9 @@ import { fileURLToPath } from "node:url";
 
 import {
   MUST_DIFFER,
+  PARAM_RANGES,
+  ORACLE_PARAM_KEYS,
+  VAULT_PARAM_KEYS,
   RECORD_CONTRACT_KEYS,
   checkCrossTenant,
   checkDeployedRecord,
@@ -27,14 +30,40 @@ const script = join(here, "check-tenant-deploy.mjs");
 const ctx = loadContext(root);
 const demo = JSON.parse(readFileSync(join(root, "deploy/tenants/demo-bank.json"), "utf8"));
 
-// 一組看起來合法、且不在 addresses.ts 裡的測試位址。
+// 一組看起來合法、且不在平台位址全集裡的測試位址。
 const A = (n) => `0x${n.toString(16).padStart(40, "a")}`;
+const live = ctx.chains["84532"].roles;
 const filled = () => {
   const c = structuredClone(demo);
   c.status = "ready";
   c.roles = { admin: A(1), risk: A(2), guardian: A(3), keeper: A(4), marketOperator: A(5), treasury: A(6) };
-  c.shared = { settlementToken: A(7), priceSource: A(8) };
-  c.params = { oracleKind: "guarded", oiCapNonRwaUsdc: 1000, oiCapRwaUsdc: 500, maxProfitBps: 50000, deployVault: true };
+  // 共用元件只能是平台在這條鏈的白名單角色。
+  c.shared = { settlementToken: live.MockUSDC, priceSource: live.MockOracle, referenceSource: live.AggregatorOracle };
+  c.params = {
+    oracleKind: "guarded",
+    oracleMaxDeviationBps: 1000,
+    oracleWindowSeconds: 3600,
+    oracleWindowDeviationBps: 2500,
+    oiCapNonRwaUsdc: 1000,
+    oiCapRwaUsdc: 500,
+    maxProfitBps: 50000,
+    maxLeverage: 5,
+    liquidationPenaltyBps: 2000,
+    markPremiumCapBps: 0,
+    vaultFeeShareBps: 0,
+    deployVault: true,
+    vaultRedeemFeeBps: 30,
+    vaultMinReserveRatioBps: 11000,
+  };
+  return c;
+};
+/** mock oracle、沒有金庫的合法設定（不適用的參數都是 null）。 */
+const mockNoVault = () => {
+  const c = filled();
+  c.params.oracleKind = "mock";
+  c.params.deployVault = false;
+  for (const k of [...ORACLE_PARAM_KEYS, ...VAULT_PARAM_KEYS]) c.params[k] = null;
+  c.shared.referenceSource = "none";
   return c;
 };
 // 一份與 filled() 對得上的部署紀錄（DeployTenant.s.sol 廣播後寫出的形狀）。
@@ -116,18 +145,43 @@ test("角色分離：admin/keeper/guardian/risk 兩兩不同、keeper 不能收�
   assert.match(check(d), /roles\.keeper 與 roles\.treasury 是同一個地址/);
 });
 
-test("租戶專屬角色不得使用正式站（addresses.ts）的位址", () => {
-  const prod = [...ctx.productionAddrs][0];
-  const c = filled();
-  c.roles.guardian = prod;
-  assert.match(check(c), /roles\.guardian=.* 是現行正式站/);
+test("租戶專屬角色不得使用平台位址全集裡的任何位址（含退役與只在註解裡的）", () => {
+  for (const prod of [live.PerpetualExchange, "0x4E7cC1B79B72ab72531a6C790e14304370f70764", [...ctx.universe.keys()][0]]) {
+    const c = filled();
+    c.roles.guardian = prod;
+    assert.match(check(c), /roles\.guardian=.* 是現行正式站（平台）用過的位址（出處：/, prod);
+  }
 });
 
-test("共用元件（結算幣、價格來源）可以是正式站的位址", () => {
-  const prod = [...ctx.productionAddrs][0];
-  const c = filled();
-  c.shared.priceSource = prod;
-  assert.equal(check(c), "");
+test("共用元件是白名單：結算幣只能是平台那一顆、價格來源與參考來源只能是平台的 oracle／去中心化來源", () => {
+  const ok = filled();
+  for (const role of ["MockOracle", "GuardedOracle", "AggregatorOracle"]) {
+    ok.shared.priceSource = live[role];
+    assert.equal(check(ok), "", `priceSource=${role}`);
+  }
+  for (const role of ["AggregatorOracle", "ChainlinkAdapter", "PythAdapter"]) {
+    ok.shared.referenceSource = live[role];
+    assert.equal(check(ok), "", `referenceSource=${role}`);
+  }
+  ok.shared.referenceSource = "none";
+  assert.equal(check(ok), "", "referenceSource=none（無參考來源）");
+
+  // 審查 F2：平台的保險金份額（18 位 ERC20）當結算幣。
+  const vault = filled();
+  vault.shared.settlementToken = live.InsuranceVault;
+  assert.match(check(vault), /shared\.settlementToken=.* 不是平台在 chain 84532 的 MockUSDC/);
+  const any = filled();
+  any.shared.settlementToken = A(7);
+  assert.match(check(any), /shared\.settlementToken=.* 不是平台在 chain 84532 的 MockUSDC/);
+  const src = filled();
+  src.shared.priceSource = live.PerpetualExchange;
+  assert.match(check(src), /shared\.priceSource=.* 不是平台在 chain 84532 的 MockOracle／GuardedOracle／AggregatorOracle/);
+  const ref = filled();
+  ref.shared.referenceSource = live.MockOracle; // keeper 寫得到的 oracle 不是獨立的參考來源
+  assert.match(check(ref), /shared\.referenceSource=.* 不是平台在 chain 84532 的 AggregatorOracle／ChainlinkAdapter／PythAdapter/);
+  const missing = filled();
+  delete missing.shared.referenceSource;
+  assert.match(check(missing), /shared\.referenceSource 未填/);
 });
 
 test("兩個租戶不得共用任何專屬位址", () => {
@@ -170,9 +224,11 @@ test("設定檔沒有放已部署位址的欄位（v2：位址只在 <id>.deploy
   const c = filled();
   c.deployed = { PerpetualExchange: A(20) };
   assert.match(check(c), /未知欄位 deployed/);
-  const old = filled();
-  old.schemaVersion = 1;
-  assert.match(check(old), /schemaVersion 必須是 2/);
+  for (const v of [1, 2]) {
+    const old = filled();
+    old.schemaVersion = v;
+    assert.match(check(old), /schemaVersion 必須是 3/);
+  }
 });
 
 test("status=deployed 但沒有部署紀錄，CLI 擋下", () => {
@@ -186,19 +242,66 @@ test("status=deployed 但沒有部署紀錄，CLI 擋下", () => {
 
 // ── params（DeployTenant.s.sol 的輸入）────────────────────────────────────
 
-test("params：ready 以上必須填上限，而且不能是 0（合約上 0＝不設上限）", () => {
+test("params：ready 以上必須填上限，而且不能是 0（合約上 0＝不設上限）、也不能大到等於不設", () => {
   for (const k of ["oiCapNonRwaUsdc", "oiCapRwaUsdc"]) {
     const c = filled();
     c.params[k] = null;
     assert.match(check(c), new RegExp(`params\\.${k} 未填`), k);
-    for (const bad of [0, -5, 1.5, "1000"]) {
+    for (const bad of [0, -5, 1.5, "1000", 10_000_001]) {
       const d = filled();
       d.params[k] = bad;
-      assert.match(check(d), new RegExp(`params\\.${k} 必須是正整數`), `${k}=${bad}`);
+      assert.match(check(d), new RegExp(`params\\.${k} 必須是 1–10000000 的整數（整數 USDC`), `${k}=${bad}`);
     }
   }
   const t = structuredClone(demo);
   assert.equal(check(t), "", "template 可以留 null");
+});
+
+test("params：每一個數值參數都有範圍，邊界內通過、邊界外與 0 擋下（不適用時必須是 null）", () => {
+  for (const [k, [lo, hi]] of Object.entries(PARAM_RANGES)) {
+    for (const v of [lo, hi]) {
+      const c = filled();
+      c.params[k] = v;
+      assert.equal(check(c), "", `${k}=${v}`);
+    }
+    for (const v of [lo - 1, hi + 1, 1.5, String(lo)]) {
+      const c = filled();
+      c.params[k] = v;
+      assert.match(check(c), new RegExp(`params\\.${k} 必須是 ${lo}–${hi} 的整數`), `${k}=${v}`);
+    }
+    const missing = filled();
+    delete missing.params[k];
+    assert.match(check(missing), new RegExp(`params\\.${k} 缺少`), `${k} 缺少`);
+    const nul = filled();
+    nul.params[k] = null;
+    assert.match(check(nul), new RegExp(`params\\.${k} 未填`), `${k}=null`);
+  }
+});
+
+test("params：oracle 限速（審查 F1）——guarded 必須有非零的單次與時間窗上限；mock 必須寫 null", () => {
+  for (const k of ORACLE_PARAM_KEYS) {
+    const z = filled();
+    z.params[k] = 0;
+    assert.match(check(z), new RegExp(`params\\.${k} 必須是 .*0＝不限速，不允許`), k);
+    const m = mockNoVault();
+    m.params[k] = 1000;
+    assert.match(check(m), new RegExp(`params\\.${k} 必須是 null：oracleKind=mock 沒有任何限速`), k);
+  }
+  assert.equal(check(mockNoVault()), "");
+  const ref = mockNoVault();
+  ref.shared.referenceSource = live.AggregatorOracle;
+  assert.match(check(ref), /oracleKind=mock 時 shared\.referenceSource 必須是 "none"/);
+});
+
+test("params：沒有金庫時金庫參數必須是 null；有金庫時必填", () => {
+  for (const k of VAULT_PARAM_KEYS) {
+    const c = filled();
+    c.params.deployVault = false;
+    for (const j of VAULT_PARAM_KEYS) c.params[j] = null;
+    assert.equal(check(c), "");
+    c.params[k] = 30;
+    assert.match(check(c), new RegExp(`params\\.${k} 必須是 null：params\\.deployVault=false`), k);
+  }
 });
 
 test("params：maxProfitBps 必須在 10000–250000，0 不允許", () => {
@@ -216,13 +319,15 @@ test("params：oracleKind 只有 guarded／mock；mock 不上主網、不配金�
   const c = filled();
   c.params.oracleKind = "chainlink";
   assert.match(check(c), /params\.oracleKind 必須是 guarded \/ mock/);
-  const m = filled();
-  m.params.oracleKind = "mock";
+  const m = mockNoVault();
+  m.params.deployVault = true;
+  m.params.vaultRedeemFeeBps = 30;
+  m.params.vaultMinReserveRatioBps = 11000;
   assert.match(check(m), /deployVault=true 需要 oracleKind=guarded/);
-  m.params.deployVault = false;
-  assert.equal(check(m), "");
-  m.network.chainId = 8453;
-  assert.match(check(m), /oracleKind=mock 不得用於 Base 主網/);
+  const ok = mockNoVault();
+  assert.equal(check(ok), "");
+  ok.network.chainId = 8453;
+  assert.match(check(ok), /oracleKind=mock 不得用於 Base 主網/);
   const u = filled();
   u.params.oiCapUsdc = 1;
   u.params.deployVault = "yes";
@@ -241,6 +346,9 @@ test("guardian 不得兼 marketOperator 或 treasury；marketOperator 可以就�
   const ok = filled();
   ok.roles.marketOperator = ok.roles.keeper;
   assert.equal(check(ok), "");
+  const adm = filled();
+  adm.roles.marketOperator = adm.roles.admin;
+  assert.match(check(adm), /roles\.admin 與 roles\.marketOperator 是同一個地址/);
 });
 
 // ── 部署紀錄（<id>.deployed.json）─────────────────────────────────────────
@@ -273,8 +381,7 @@ test("部署紀錄：同一租戶的合約位址不得重複、不得是零位�
 });
 
 test("部署紀錄：租戶隔離——不得出現正式站的 exchange／vault／任何合約", () => {
-  const chains = ctx.productionAddrs;
-  const prod = [...chains][0];
+  const prod = live.PerpetualExchange;
   for (const k of ["PerpetualExchange", "InsuranceVault", "FeeRouter", "AssetVaultV2", "Oracle"]) {
     const r = record();
     r.contracts[k] = prod;
@@ -428,7 +535,33 @@ test("admin／keeper／guardian／risk 的 6 組配對與 keeper–treasury 全�
   assert.ok(got.has(key("keeper", "treasury")));
   assert.ok(got.has(key("guardian", "marketOperator")));
   assert.ok(got.has(key("guardian", "treasury")));
-  assert.equal(got.size, 9);
+  assert.ok(got.has(key("admin", "marketOperator")));
+  assert.equal(got.size, 10);
+});
+
+test("PARAM_RANGES 與 VerifyTenant.s.sol（TenantBase）的常數逐一相同", () => {
+  const sol = readFileSync(join(root, "contracts/script/VerifyTenant.s.sol"), "utf8");
+  const unit = { minutes: 60, hours: 3600, days: 86400 };
+  const c = (name) => {
+    const m = new RegExp(`constant ${name}\\s*=\\s*([0-9_]+)\\s*(minutes|hours|days)?\\s*;`).exec(sol);
+    assert.ok(m, `VerifyTenant.s.sol 找不到 ${name}`);
+    return Number(m[1].replace(/_/g, "")) * (m[2] ? unit[m[2]] : 1);
+  };
+  assert.deepEqual(PARAM_RANGES, {
+    oracleMaxDeviationBps: [c("ORACLE_DEVIATION_BPS_MIN"), c("ORACLE_DEVIATION_BPS_MAX")],
+    oracleWindowSeconds: [c("ORACLE_WINDOW_SECONDS_MIN"), c("ORACLE_WINDOW_SECONDS_MAX")],
+    oracleWindowDeviationBps: [c("ORACLE_WINDOW_BPS_MIN"), c("ORACLE_WINDOW_BPS_MAX")],
+    oiCapNonRwaUsdc: [1, c("MAX_OI_CAP_USDC")],
+    oiCapRwaUsdc: [1, c("MAX_OI_CAP_USDC")],
+    maxProfitBps: [c("MIN_PROFIT_BPS"), c("MAX_PROFIT_BPS")],
+    maxLeverage: [1, c("MAX_TENANT_LEVERAGE")],
+    liquidationPenaltyBps: [0, c("MAX_LIQUIDATION_PENALTY_BPS")],
+    markPremiumCapBps: [0, c("MAX_MARK_PREMIUM_CAP_BPS")],
+    vaultFeeShareBps: [0, c("MAX_VAULT_FEE_SHARE_BPS")],
+    vaultRedeemFeeBps: [0, c("MAX_VAULT_REDEEM_FEE_BPS")],
+    vaultMinReserveRatioBps: [c("VAULT_MIN_RESERVE_BPS_MIN"), c("VAULT_MIN_RESERVE_BPS_MAX")],
+  });
+  assert.equal(c("SCHEMA_VERSION"), 3);
 });
 
 test("guardian 與 risk 不得是同一個地址", () => {
@@ -534,9 +667,31 @@ test("chainId 只接受允許清單（84532、8453）", () => {
     c.network.chainId = chainId;
     assert.match(check(c), /network\.chainId 必須是 84532 \/ 8453 之一/, String(chainId));
   }
-  const ok = filled();
-  ok.network.chainId = 8453;
-  assert.equal(check(ok), "");
+  // 8453 本身是允許的鏈；但平台在 Base 主網還沒有共用元件（結算幣、價格來源），
+  // 所以共用元件的白名單是空的，任何值都過不了——要先定義主網的共用元件才能部署。
+  const main = filled();
+  main.network.chainId = 8453;
+  const out = check(main);
+  assert.doesNotMatch(out, /network\.chainId 必須是/);
+  assert.match(out, /shared\.settlementToken=.* 不是平台在 chain 8453 的 MockUSDC（這條鏈沒有平台的對應元件）/);
+  const noRef = filled();
+  noRef.network.chainId = 8453;
+  noRef.shared.referenceSource = "none";
+  assert.match(check(noRef), /Base 主網的 guarded oracle 必須有參考來源/);
+});
+
+test("JSON 重複的鍵：設定與紀錄都擋（JSON.parse 取最後一個值，審查者看到的是第一個）", () => {
+  const dir = mkdtempSync(join(tmpdir(), "tenant-deploy-dup-"));
+  const file = join(dir, "demo-bank.json");
+  const text = JSON.stringify(filled(), null, 2).replace(
+    `"keeper": "${A(4)}",`,
+    `"keeper": "${A(4)}",\n    "keeper": "${A(1)}",`,
+  );
+  assert.match(text, /"keeper": .*\n.*"keeper": /);
+  writeFileSync(file, text);
+  const r = spawnSync(process.execPath, [script, file], { encoding: "utf8" });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stdout, /JSON 重複的鍵 roles: keeper/);
 });
 
 // ── 前端部署登記 ↔ 部署紀錄 ────────────────────────────────────────────────
@@ -587,7 +742,9 @@ test("前端登記：只有 X402FeeRouter 可以是部署紀錄以外的合約�
   delete fe.tokens.sAAPL;
   fe.tokens.sBTC = B(502);
   fe.oracleKind = "mock";
+  fe.shared = [];
   const out = frontendMismatches(fe, rec).join("\n");
+  assert.match(out, /shared：前端登記是 \[\]，應為 \["contracts\.SettlementToken"\]/);
   assert.match(out, /contracts\.Backdoor：部署紀錄裡沒有這個合約/);
   assert.match(out, /tokens\.sAAPL：前端登記是 （沒有）/);
   assert.match(out, /tokens\.sBTC：部署紀錄裡沒有這個代幣/);
