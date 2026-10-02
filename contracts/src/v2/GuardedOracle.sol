@@ -442,9 +442,11 @@ contract GuardedOracle is AccessControl {
     // Net effect for any one asset, against a guardian acting alone: no
     // unbroken guardian halt lasts longer than 2 x GUARDIAN_HALT_DURATION
     // (144h: a freeze, then a pause opened before it ends), and the halted
-    // stretch between two clean GUARDIAN_HALT_COOLDOWN spans is at most 168h,
-    // so a clean day starts at most 192h after the previous one did. See
-    // docs/KNOWN_LIMITATIONS.md #27.
+    // stretch between two clean GUARDIAN_HALT_COOLDOWN spans is under 192h,
+    // so a clean day starts at most 216h after the previous one did. These
+    // bounds hold for the guardian ACTING ALONE: an admin pause, or an admin
+    // lift of a pause, leaves no guardian pause record for the rule above to
+    // read. See docs/KNOWN_LIMITATIONS.md #27.
     //
     // A lapse only removes the halt. The stored price is as old as the halt,
     // so `maxPriceAge` (here and in each consumer) still decides whether it is
