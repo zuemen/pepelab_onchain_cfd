@@ -7,9 +7,12 @@ was not, the reason is given rather than glossed over.
 > **Status as of 2026-09-30:** #1–#13 were verified on 2026-07-27; #14–#20 (x402
 > layer) were added on 2026-09-17; #21–#26 (exchange guardian/pause, caps, slash
 > reserve, portfolio-margin removal) came with PR #191, which is merged as
+> **source only, not deployed**; #27–#29 (guardian asset-mode limit, timelock
+> handover, V2.5 unpriced exemption) came with PR #198, merged the same way —
 > **source only, not deployed**. The status column below was not re-verified item
 > by item on 2026-09-30. Current numbers: 920 Foundry tests on `master` after
-> PR #191 (portfolio-margin-only tests were removed with the feature) — whether all
+> PR #191 (portfolio-margin-only tests were removed with the feature); PR #198
+> reported 956 passing plus fork tests that are skipped by default — whether all
 > pass is whatever the latest Contracts CI run says. Current deployment and what is
 > live vs. source-only:
 > [`README.md`](../README.md).
@@ -44,7 +47,7 @@ was not, the reason is given rather than glossed over.
 | 24 | Portfolio margin has no account-level net liquidation | **Open** — `portfolioMarginEnabled` must stay **off** in production until implemented and audited (off on the live deployment) |
 | 25 | InsuranceVault has no virtual shares (first-depositor inflation) | **Mitigated** — zero-share deposits revert; attack profitability not removed |
 | 26 | Portfolio (cross) margin removed | **Resolved by removal** (2026-09-30) — supersedes #24; isolated margin only |
-| 27 | Exchange guardian's per-asset brake stops at ReduceOnly; only the owner can Halt | **By design** (2026-09-30, `contracts/p1-cutover-periphery`) — the *exchange* guardian cannot freeze exits by asset mode; the GuardedOracle guardian still can (see §27 below) |
+| 27 | Exchange guardian's per-asset brake stops at ReduceOnly; only the owner can Halt | **By design** (2026-09-30, PR #198, source only) — the *exchange* guardian cannot freeze exits by asset mode; the GuardedOracle guardian still can (see §27 below) |
 | 28 | After the timelock handover, recovery actions wait 48h and depend on one Safe | **By design** — losing the Safe freezes governance permanently |
 | 29 | V2.5 unpriced exemption values a closed dead-feed asset at an arbitrarily old price | **Accepted** — closed assets only, never below its last recorded price, dust-only without one |
 
@@ -828,8 +831,8 @@ account-level netting and a fresh audit, and must fit the size budget.
 
 ## 27. Guardian's per-asset brake stops at ReduceOnly (added 2026-09-30)
 
-Added on branch `contracts/p1-cutover-periphery` after the audit-level review
-of the #130 cutover. `ExchangeOpsLib.setAssetMode` now lets the exchange
+Added on branch `contracts/p1-cutover-periphery` (merged to `master` as PR #198,
+source only, not deployed) after the audit-level review of the #130 cutover. `ExchangeOpsLib.setAssetMode` now lets the exchange
 guardian move an asset only into ReduceOnly: from Active, or idempotently from
 ReduceOnly, which sets `guardianLocked` so the market operator cannot re-open
 it (second review, L2). ReduceOnly refuses new exposure but
@@ -970,6 +973,40 @@ dependabot #187 想把 plugin-react-swc 升到 4.3.3，它要求 `@swc/core` ≥
 `frontend/package.json` 的 `resolutions` 把 `@swc/core` 鎖在已驗證可載入的 1.13.5。CI（Linux）與
 Vercel 不受這個問題影響，但鎖版是為了讓 Windows 開發機的 build 與 dev 不壞。上游修正或改走
 `@vitejs/plugin-react`（Babel）之前不要解除；解除時先在 Windows 上跑一次 `yarn build`。
+
+**/exchange 兌換卡對的是舊版 PepeAMM，前端以能力探測降級**（2026-10-01，#165）。
+Base Sepolia 上的 PepeAMM（`0x93be…6d63`）bytecode 只有 16 個 selector，沒有 `oraclePrice()`、
+`maxOracleAge()`、`currentDeviationBps()`、`totalShares()`、`removeLiquidity()`——它是 commit
+`9030ff1` 的 oracle 定價版（`getPrice()` = oracle 報價 ×1e10，兌換依 oracle 價扣 0.3% 成交、無滑點、
+無 stale 檢查、無池價偏離保護），不是 `contracts/src/PepeAMM.sol`（`fdd94e4`，恆定乘積 + band）。
+前端 ABI 是新版，舊頁面因此把 oracle 價標成「池內現價」、`oraclePrice()` revert 顯示「—」、
+價格衝擊以儲備比例為基準而失真（USDC→ETH 夾成 0%，ETH→USDC 算出約 51% 的假衝擊）。
+修法（`lib/pepefi/ammPoolView.ts`）：先以 `getCode` 掃 PUSH4 selector 判斷版本，缺的函式不呼叫；
+恆定乘積版的池內現價一律由同一次讀到的儲備算出；舊版改標「兌換價（依 Oracle 定價）」與
+「池內可兌出庫存」、不列 Oracle 參考價並附說明；讀失敗顯示「無法取得」；版本不明則不顯示價格。
+要讓畫面回到「池內現價 vs Oracle 參考價」的雙欄設計，需要擁有者重新部署新版 PepeAMM 並更新
+`addresses.ts`（新版有 1h stale 檢查，keeper 更新頻率需跟上）。
+
+PR #215 審查後補上的行為（`lib/pepefi/ammSwapFlow.ts`、`ammPoolView.ts` 的 `buildSwapCardView`）：
+
+- **衝擊基準與 quote 同一次讀取**。頁面原本只在載入時讀一次基準，放著不動 20 分鐘後 oracle 已經
+  走掉，即時 quote 對上舊基準會重現 0.00%／假衝擊。現在 quote 的 effect 以 `Promise.all` 同時讀
+  基準（舊版 `getPrice()`、恆定乘積版 `getReserves()`），畫面上的兌換價也用同一次讀到的值；另外
+  每 15 秒重讀一次池子與報價（分頁在背景時不讀）。基準讀不到就不顯示衝擊，不退回舊值。
+- **舊版合約的 quote 不看庫存**（oracle 價 × 數量），金額一大就報出池子付不出來的數字。`quotedOut`
+  超過輸出側庫存時畫面顯示「超過池內可兌出庫存」、按鈕停用、不顯示收到數量。這是前端擋的，合約
+  本身仍然只會在 swap 時 revert。
+- **送出前預檢**。`executeSwap` 在送任何交易（含 approve）之前先比對庫存、再以 eth_call 模擬
+  swap，必定失敗就一筆都不送。USDC→ETH 額度不足時模擬一定撞到 `ERC20InsufficientAllowance`，
+  這不算失敗：新版合約的 `transferFrom` 排在所有檢查之後（撞到它代表前面都過了），舊版排在最
+  前面、其餘會失敗的條件只有庫存。approve 上鏈後會重新 quote 並完整模擬一次才送 swap。
+  **殘餘限制**：舊版在額度不足時無法事前完整模擬（`transferFrom` 擋在最前面），所以「approve 之後
+  庫存被別人換走」仍會白付一筆 approve 的 gas——但不會再送出必定失敗的 swap。
+- **版本判斷**。成功的判斷以 chainId＋位址快取（bytecode 不會變），`getCode` 之後失敗不會把畫面
+  蓋成「無法確認」；`getCode` 與其他讀取並行；還沒讀完時顯示「正在確認線上合約版本…」，與
+  「無法確認」是兩句話。舊版的判斷不只靠排除法：bytecode 要沒有 `totalShares()`，執行期再確認
+  `getPrice()` 等於 oracle 報價 ×1e10（AMM 自己的 `oracle()` 與 `ETH_ASSET_ID()`）；兩者都讀到卻
+  不相等時降為版本不明。
 
 **The product code is not linted.** `eslint.config.mjs` ignores
 `src/pages/pepefi/**`, `src/components/pepefi/**`, `src/hooks/**` and

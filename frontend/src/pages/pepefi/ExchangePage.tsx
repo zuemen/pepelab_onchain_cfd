@@ -1,6 +1,6 @@
 import { MONO } from 'src/components/pepefi/brandKit'
-import { useState, useEffect, useCallback } from 'react';
-import { parseEther } from 'ethers';
+import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
+import { Contract, parseEther, type Provider } from 'ethers';
 import { useContracts } from 'src/hooks/useContracts';
 import { usePepefiWallet } from 'src/layouts/pepefi';
 import { t, interpolate } from 'src/locales';
@@ -11,12 +11,29 @@ import { SyntheticDisclosure } from 'src/components/pepefi/SyntheticDisclosure';
 import { STABLE_LABEL, ALT_STABLE_LABEL, X402_STABLE_LABEL } from 'src/lib/pepefi/tokenLabel';
 import {
   isOracleStale,
-  priceImpactBps,
   HIGH_IMPACT_BPS,
   SEVERE_IMPACT_BPS,
   minOutWithSlippage,
   DEFAULT_SLIPPAGE_BPS,
 } from 'src/lib/pepefi/ammQuote';
+import {
+  type Cell,
+  type PoolReads,
+  mergePoolReads,
+  sameCapabilities,
+  buildSwapCardView,
+  UNKNOWN_CAPABILITIES,
+  type AmmCapabilities,
+} from 'src/lib/pepefi/ammPoolView';
+import {
+  ammCacheKey,
+  executeSwap,
+  type AmmReader,
+  loadAmmSnapshot,
+  type SwapGateway,
+  readQuoteSnapshot,
+  type QuoteSnapshot,
+} from 'src/lib/pepefi/ammSwapFlow';
 import { useESG } from 'src/hooks/useESG';
 import ESGBadge from 'src/components/pepefi/ESGBadge';
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta';
@@ -60,6 +77,54 @@ const asTx = (tx: unknown): TxResp => tx as TxResp;
 
 const ZERO_ADDR = '0x0000000000000000000000000000000000000000';
 
+const EMPTY_POOL_READS: PoolReads = { getPrice: null, reserves: null, oraclePrice: null };
+
+/**
+ * 兌換卡的池子讀數與報價每隔這麼久重讀一次。oracle 每幾分鐘更新一次；頁面若只在載入時
+ * 讀一次，放著不動 20 分鐘後畫面上的兌換價與衝擊基準都是舊的（#215 審查 M1）。
+ */
+const AMM_REFRESH_MS = 15_000;
+
+const ORACLE_PRICE_ABI = ['function getPrice(bytes32 assetId) view returns (uint256 price, uint256 updatedAt)'];
+
+/**
+ * 把 ethers 的 PepeAMM Contract 接成 ammSwapFlow 要的讀取介面。這裡不做逾時與錯誤處理
+ * （那是 ammSwapFlow 的事），每個方法失敗就 reject。
+ */
+function makeAmmReader(amm: Contract, provider: Provider): AmmReader {
+  // AMM 自己指向的 oracle 與資產代號：只讀一次；讀失敗就清掉，下次重試。
+  let oracleRef: Promise<{ oracle: Contract; assetId: string }> | null = null;
+  return {
+    getCode: () => provider.getCode(String(amm.target)),
+    getPrice: () => amm.getPrice() as Promise<bigint>,
+    getReserves: async () => {
+      const r = (await amm.getReserves()) as [bigint, bigint];
+      return [r[0], r[1]] as const;
+    },
+    oraclePrice: async () => {
+      const r = (await amm.oraclePrice()) as unknown as [bigint, bigint];
+      return [r[0], r[1]] as const;
+    },
+    maxOracleAge: () => amm.maxOracleAge() as Promise<bigint>,
+    oracleEthPrice8: async () => {
+      oracleRef ??= (async () => {
+        const [addr, assetId] = await Promise.all([amm.oracle() as Promise<string>, amm.ETH_ASSET_ID() as Promise<string>]);
+        return { oracle: new Contract(addr, ORACLE_PRICE_ABI, provider), assetId };
+      })();
+      try {
+        const { oracle, assetId } = await oracleRef;
+        const r = (await oracle.getPrice(assetId)) as [bigint, bigint];
+        return r[0];
+      } catch (e) {
+        oracleRef = null;
+        throw e;
+      }
+    },
+    quote: (isEthIn, amountIn) =>
+      (isEthIn ? amm.quoteETHForUSDC(amountIn) : amm.quoteUSDCForETH(amountIn)) as Promise<bigint>,
+  };
+}
+
 // safeRead now lives in src/lib/pepefi/safeRead.ts so every page shares one
 // implementation — this file was the only place that had the guard.
 
@@ -81,26 +146,72 @@ export default function ExchangePage() {
 
   // AMM swap (PepeAMM — deployed + funded on Base Sepolia)
   //
-  // PepeAMM 這一輪被改寫成真正的恆定乘積池：`getPrice()` 現在是**池內現價**
-  // （儲備比例），不再是 oracle 報價；oracle 報價搬到新的 `oraclePrice()`。
-  // 兩者是不同的數字，而且會分岔——把池價標成 "Oracle rate" 會直接說謊。
+  // #165：`getPrice()` 的意義取決於線上是哪一版 PepeAMM——原始碼最新版（恆定乘積）
+  // 是儲備比例，但 Base Sepolia 上跑的是更早的 oracle 定價版，getPrice() 是 oracle
+  // 報價、而且沒有 oraclePrice()。所以先從 bytecode 探測版本（ammCaps），再由
+  // ammPoolView 決定每一格顯示什麼；讀失敗一律存 null，不存 0。
   const [swapMode,  setSwapMode]  = useState<'eth-to-usdc' | 'usdc-to-eth'>('eth-to-usdc');
   const [payAmount, setPayAmount] = useState('');
-  const [ammPrice,  setAmmPrice]  = useState(0n);   // getPrice() — 池內現價
-  const [ammEth,    setAmmEth]    = useState(0n);
-  const [ammUsdc,   setAmmUsdc]   = useState(0n);
-  const [ammOracle, setAmmOracle] = useState<{ price: bigint; updatedAt: bigint }>({ price: 0n, updatedAt: 0n });
+  const [ammCaps,   setAmmCaps]   = useState<AmmCapabilities>(UNKNOWN_CAPABILITIES);
+  /** 版本探測還沒回來。true 時畫面說「正在確認」，而不是「無法確認」（#215 L2）。 */
+  const [ammProbing, setAmmProbing] = useState(true);
+  const [ammReads,  setAmmReads]  = useState<PoolReads>(EMPTY_POOL_READS);
+  /** oraclePrice() 的 updatedAt；只有新版合約有，舊版維持 0（＝不擋單，舊版也不檢查）。 */
+  const [ammOracleUpdatedAt, setAmmOracleUpdatedAt] = useState(0n);
   const [ammMaxAge, setAmmMaxAge] = useState(0n);   // maxOracleAge()，預設 1h
-  const [receiveAmount, setReceiveAmount] = useState('');
-  /** 這筆兌換相對池內中價的滑點（bps）。恆定乘積 → 金額越大越痛。 */
-  const [impactBps, setImpactBps] = useState<number | null>(null);
-  const [quotedOut, setQuotedOut] = useState<bigint | null>(null);
+  /**
+   * 目前顯示的報價，連同**與它同一次讀到**的衝擊基準、儲備與衝擊（#215 M1）。
+   * 「你將收到」、價格衝擊、最低收到數量都從這一筆算出來，不會各自停在不同時間點。
+   */
+  const [quote, setQuote] = useState<QuoteSnapshot | null>(null);
+  /** 定時器每次加一，讓報價重讀。 */
+  const [refreshTick, setRefreshTick] = useState(0);
 
   const [busy,         setBusy]        = useState<Record<string, boolean>>({});
 
 
   const setLoad = (k: string, v: boolean) => setBusy(p => ({ ...p, [k]: v }));
   const { notify } = useToast();
+
+  // ── PepeAMM 讀取 ──────────────────────────────────────────────────────────
+  const ammTarget = contracts ? String(contracts.pepeAMM.target) : ZERO_ADDR;
+  const ammReader = useMemo(
+    () => (contracts && wallet.provider && ammTarget !== ZERO_ADDR
+      ? makeAmmReader(contracts.pepeAMM, wallet.provider)
+      : null),
+    [contracts, wallet.provider, ammTarget],
+  );
+  /** 版本判斷的快取鍵：chainId＋位址。bytecode 不會變，成功判斷過就不再讀（#215 L1）。 */
+  const ammKey = ammCacheKey(wallet.chainId, ammTarget);
+  const ammLoadedFor = useRef<string | null>(null);
+  const ammLoadSeq = useRef(0);
+
+  const refreshAmm = useCallback(async () => {
+    ammLoadSeq.current += 1;
+    const seq = ammLoadSeq.current;
+    const loadingFor = `${wallet.chainId}:${ammTarget}`;
+    if (ammLoadedFor.current !== loadingFor) {
+      // 換鏈／換合約：上一個合約的版本與讀數不能留在畫面上。
+      ammLoadedFor.current = loadingFor;
+      setAmmProbing(true);
+      setAmmCaps(UNKNOWN_CAPABILITIES);
+      setAmmReads(EMPTY_POOL_READS);
+      setAmmOracleUpdatedAt(0n);
+      setAmmMaxAge(0n);
+    }
+    if (!ammReader) {
+      setAmmProbing(false);
+      return;
+    }
+    // 版本探測（getCode）與池子讀數並行；每個讀取各自隔離（8 秒逾時），不會 reject。
+    const snap = await loadAmmSnapshot(ammReader, ammKey);
+    if (seq !== ammLoadSeq.current) return;   // 有更新的一輪在跑，這一輪的結果作廢
+    setAmmCaps(prev => (sameCapabilities(prev, snap.caps) ? prev : snap.caps));
+    setAmmReads(snap.reads);
+    setAmmOracleUpdatedAt(snap.oracleUpdatedAt);
+    setAmmMaxAge(snap.maxOracleAge);
+    setAmmProbing(false);
+  }, [ammReader, ammKey, ammTarget, wallet.chainId]);
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
   // Every chain read is isolated (safeRead = per-call try/catch + 8s timeout) and
@@ -114,6 +225,10 @@ export default function ExchangePage() {
     const addr = wallet.address;
     const provider = wallet.provider;
     try {
+      // 兌換池（含版本探測）和餘額並行讀，不排在餘額後面等（#215 L2）。
+      // PepeAMM 未部署（0x0）時 refreshAmm 不會發出任何呼叫。
+      const ammLoad = refreshAmm();
+
       const [bal, eBal] = await Promise.all([
         safeRead(contracts.usdc.balanceOf(addr) as Promise<bigint>, 0n),
         safeRead(provider.getBalance(addr), 0n),
@@ -138,30 +253,9 @@ export default function ExchangePage() {
         setPepeBal(0n);
       }
 
-      // AMM reserves/price — skip when PepeAMM isn't deployed (0x0). Each read is
-      // isolated so a slow/failed call can't block the page.
-      if (String(contracts.pepeAMM.target) !== ZERO_ADDR) {
-        const [price, reserves, oraclePx, maxAge] = await Promise.all([
-          safeRead(contracts.pepeAMM.getPrice() as Promise<bigint>, 0n),
-          safeRead(contracts.pepeAMM.getReserves() as Promise<[bigint, bigint]>, [0n, 0n] as [bigint, bigint]),
-          // oraclePrice() ＝ 舊 getPrice() 的語意（oracle 參考價 + updatedAt）。
-          // swap 會在 oracle 過期時 revert StaleOraclePrice，所以這個 updatedAt
-          // 要拿來事前擋單，而不是等使用者付完 gas 才知道。
-          safeRead(contracts.pepeAMM.oraclePrice() as unknown as Promise<[bigint, bigint]>, [0n, 0n] as [bigint, bigint]),
-          safeRead(contracts.pepeAMM.maxOracleAge() as Promise<bigint>, 0n),
-        ]);
-        setAmmPrice(price);
-        setAmmEth(reserves[0]);
-        setAmmUsdc(reserves[1]);
-        setAmmOracle({ price: oraclePx[0], updatedAt: oraclePx[1] });
-        setAmmMaxAge(maxAge);
-      } else {
-        setAmmPrice(0n);
-        setAmmEth(0n);
-        setAmmUsdc(0n);
-        setAmmOracle({ price: 0n, updatedAt: 0n });
-        setAmmMaxAge(0n);
-      }
+      // AMM 版本／儲備／價格 —— 上面已經並行開讀，這裡只是等它回來。每個讀取各自
+      // 隔離，慢或失敗的呼叫不會卡住頁面。
+      await ammLoad;
 
       // 骨架撤掉的時機：餘額、水龍頭、兌換面板都備妥即可。#148 之後這一頁
       // 不再讀部位，所以沒有任何「晚點才串進來」的區塊。
@@ -169,7 +263,7 @@ export default function ExchangePage() {
     } finally {
       setPageLoading(false);
     }
-  }, [contracts, wallet.address, wallet.provider]);
+  }, [contracts, wallet.address, wallet.provider, refreshAmm]);
 
   useEffect(() => { void fetchAll() }, [fetchAll]);
 
@@ -179,57 +273,90 @@ export default function ExchangePage() {
     return () => clearTimeout(t);
   }, []);
 
-  // ── Live AMM quote (constant-product → 有滑點) ──────────────────────────────
-  // quote 現在是 x*y=k 的實際輸出，不是 oracle × 數量。除了金額之外還要把
-  // 價格衝擊算出來給使用者看，否則大額兌換會在毫無預警下吃掉好幾個百分點。
+  // 定時重讀池子與報價（#215 M1）：頁面放著不動時，兌換價、儲備、報價與衝擊一起更新，
+  // 不會出現「報價是即時的、基準卻是 20 分鐘前的」。分頁在背景時不讀。
   useEffect(() => {
-    if (!contracts?.pepeAMM || String(contracts.pepeAMM.target) === ZERO_ADDR
-        || !payAmount || parseFloat(payAmount) <= 0) {
-      setReceiveAmount('');
-      setImpactBps(null);
-      setQuotedOut(null);
-      return;
+    if (!ammReader) return undefined;
+    const timer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      void refreshAmm();
+      setRefreshTick(n => n + 1);
+    }, AMM_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [ammReader, refreshAmm]);
+
+  // ── Live AMM quote ──────────────────────────────────────────────────────────
+  // 新版合約的 quote 是 x*y=k 的實際輸出，除了金額之外還要把價格衝擊算出來給使用者看，
+  // 否則大額兌換會在毫無預警下吃掉好幾個百分點。
+  //
+  // #215 M1：衝擊的基準（舊版讀 getPrice()、恆定乘積版讀 getReserves()）在 readQuoteSnapshot
+  // 裡和 quote **同一次**讀取，不用頁面載入時存下來的 ammReads。結果存進 quote 這個
+  // 獨立的 state——這個 effect 不寫 ammReads，也不依賴它，否則會無限重跑。
+  useEffect(() => {
+    if (!ammReader || !payAmount || parseFloat(payAmount) <= 0) {
+      setQuote(null);
+      return undefined;
     }
     let cancelled = false;
     void (async () => {
       try {
-        const parsed = parseEther(payAmount);
-        const isEthIn = swapMode === 'eth-to-usdc';
-        const out = isEthIn
-          ? await contracts.pepeAMM.quoteETHForUSDC(parsed) as bigint
-          : await contracts.pepeAMM.quoteUSDCForETH(parsed) as bigint;
-        if (cancelled) return;
-        setQuotedOut(out);
-        setReceiveAmount((Number(out) / 1e18).toFixed(isEthIn ? 2 : 6));
-        setImpactBps(priceImpactBps({
-          amountIn:   parsed,
-          amountOut:  out,
-          reserveIn:  isEthIn ? ammEth : ammUsdc,
-          reserveOut: isEthIn ? ammUsdc : ammEth,
-        }));
+        const snap = await readQuoteSnapshot(ammReader, ammCaps, swapMode === 'eth-to-usdc', parseEther(payAmount));
+        if (!cancelled) setQuote(snap);
       } catch {
         // quote 也會 revert（InsufficientLiquidity / InsufficientInput）——那代表
         // 這筆金額根本換不成，顯示空白比顯示一個假數字誠實。
-        if (!cancelled) { setReceiveAmount(''); setImpactBps(null); setQuotedOut(null); }
+        if (!cancelled) setQuote(null);
       }
     })();
     return () => { cancelled = true; };
-  }, [contracts?.pepeAMM, payAmount, swapMode, ammEth, ammUsdc]);
+  }, [ammReader, payAmount, swapMode, ammCaps, refreshTick]);
 
   // ── Transactions ────────────────────────────────────────────────────────────
   const ammDeployed = !!contracts && String(contracts.pepeAMM.target) !== ZERO_ADDR;
+  const isEthIn = swapMode === 'eth-to-usdc';
+  const hasAmount = !!payAmount && parseFloat(payAmount) > 0;
+  /** 只認「目前方向、目前有輸入金額」的那筆報價。 */
+  const liveQuote = quote && quote.isEthIn === isEthIn && hasAmount ? quote : null;
 
   // swap 會在 oracle 過期（> maxOracleAge，預設 1h）時 revert StaleOraclePrice。
   // 和開倉的 stale 擋單同樣的道理：能在按下去之前就知道的事，不要讓使用者付 gas 才知道。
-  const ammOracleStale = isOracleStale(ammOracle.updatedAt, ammMaxAge, Date.now() / 1000);
+  const ammOracleStale = isOracleStale(liveQuote?.oracleUpdatedAt ?? ammOracleUpdatedAt, ammMaxAge, Date.now() / 1000);
+
+  // 兌換卡的畫面模型（#165、#215）：每一格顯示什麼、按鈕能不能按，都由 ammPoolView 決定。
+  // 有報價時，池子資訊用**和報價同一次讀到**的值，畫面上的兌換價就是衝擊的基準。
+  const card = buildSwapCardView({
+    probing: ammProbing,
+    caps: ammCaps,
+    reads: liveQuote ? mergePoolReads(ammReads, liveQuote.reads) : ammReads,
+    isEthIn,
+    hasAmount,
+    quote: liveQuote,
+    oracleStale: ammOracleStale,
+    busy: !!busy['swap'],
+  });
+  const poolView = card.pool;
+  const cellText = (c: Cell['kind']) => (c === 'loading' ? t.exchange.swap.loadingValue : t.exchange.swap.unavailable);
+  const priceText = (c: Cell) => (c.kind === 'value' ? `1 ETH = ${c.text} ${STABLE_LABEL}` : cellText(c.kind));
+  const poolNote = card.notes.map(k => t.exchange.swap[k]).join(' ');
+  const outToken = isEthIn ? STABLE_LABEL : 'ETH';
+  const outDecimals = isEthIn ? 2 : 6;
+  const inventoryMessage = (needed: bigint, available: bigint) =>
+    interpolate(t.exchange.swap.exceedsInventoryDetail, {
+      needed: f18(needed, outDecimals),
+      available: f18(available, outDecimals),
+      token: outToken,
+    });
   const AMM_STALE_MSG = t.exchange.tx.ammStale;
 
   // ETH ↔ USDC swap via PepeAMM (constant product). minOut 一律以**當下的 quote**
   // 為基準打 DEFAULT_SLIPPAGE_BPS，而不是 oracle 價——池子有滑點，拿 oracle 價
   // 打 0.5% 當底線會讓任何稍大的單子必定 revert InsufficientOutput。
   // 這 0.5% 只負責吸收「送出 → 上鏈」之間別人動過池子的那一點差。
+  //
+  // #215 M2：送出任何交易（含 approve）之前，executeSwap 會先確認庫存、再以 eth_call
+  // 模擬 swap；必定失敗就一筆都不送。送出的參數與原本相同。
   const doSwap = async () => {
-    if (!contracts || !wallet.address || !ammDeployed) return;
+    if (!contracts || !wallet.address || !ammDeployed || !ammReader) return;
     const amt = parseFloat(payAmount);
     if (!amt || amt <= 0) { notify(t.exchange.tx.enterValidAmount, false); return; }
     // 事前擋掉必定 revert 的兩種情況，不讓使用者白付 gas。
@@ -246,46 +373,58 @@ export default function ExchangePage() {
       return;
     }
     const amm = String(contracts.pepeAMM.target);
+    const owner = wallet.address;
+    const pool = contracts.pepeAMM;
+    const gateway: SwapGateway = {
+      quote: ammReader.quote,
+      getReserves: ammReader.getReserves,
+      allowance: () => contracts.usdc.allowance(owner, amm) as Promise<bigint>,
+      // eth_call（from = 使用者的 signer），不送交易。
+      simulateSwap: (ethIn, amountIn, minOut) =>
+        ethIn
+          ? pool.swapETHForUSDC.staticCall(minOut, { value: amountIn })
+          : pool.swapUSDCForETH.staticCall(amountIn, minOut),
+      approve: async (amount) => asTx(await contracts.usdc.approve(amm, amount)),
+      swap: async (ethIn, amountIn, minOut) =>
+        asTx(ethIn
+          ? await pool.swapETHForUSDC(minOut, { value: amountIn })
+          : await pool.swapUSDCForETH(amountIn, minOut)),
+    };
 
     setLoad('swap', true);
     try {
-      if (swapMode === 'eth-to-usdc') {
-        const ethIn  = parseEther(payAmount);
-        const quoted = await contracts.pepeAMM.quoteETHForUSDC(ethIn) as bigint;
-        const minOut = minOutWithSlippage(quoted);
-        const tx = asTx(await contracts.pepeAMM.swapETHForUSDC(minOut, { value: ethIn }));
-        await tx.wait();
-        notify(
-          interpolate(t.exchange.tx.swappedEthForToken, {
-            amount: payAmount,
-            received: (Number(quoted) / 1e18).toFixed(2),
-            token: STABLE_LABEL,
-          }),
-          true,
-          tx.hash
-        );
-      } else {
-        const usdcIn = parseEther(payAmount);
-        const currentAllowance = await contracts.usdc.allowance(wallet.address, amm) as bigint;
-        if (currentAllowance < usdcIn) {
-          notify(interpolate(t.exchange.tx.approving, { token: STABLE_LABEL }), true);
-          const approveTx = asTx(await contracts.usdc.approve(amm, usdcIn));
-          await approveTx.wait();
+      const result = await executeSwap(gateway, ammCaps, isEthIn, payRaw, {
+        onApproving: () => notify(interpolate(t.exchange.tx.approving, { token: STABLE_LABEL }), true),
+      });
+      if (!result.ok) {
+        if (result.stage === 'inventory') {
+          notify(inventoryMessage(result.needed, result.available), false);
+        } else {
+          notify(
+            interpolate(
+              result.approved ? t.exchange.tx.preflightBlockedAfterApprove : t.exchange.tx.preflightBlocked,
+              { reason: prettyError(result.error) },
+            ),
+            false,
+          );
         }
-        const quoted    = await contracts.pepeAMM.quoteUSDCForETH(usdcIn) as bigint;
-        const minEthOut = minOutWithSlippage(quoted);
-        const tx = asTx(await contracts.pepeAMM.swapUSDCForETH(usdcIn, minEthOut));
-        await tx.wait();
-        notify(
-          interpolate(t.exchange.tx.swappedTokenForEth, {
-            amount: payAmount,
-            token: STABLE_LABEL,
-            received: (Number(quoted) / 1e18).toFixed(6),
-          }),
-          true,
-          tx.hash
-        );
+        return;
       }
+      notify(
+        isEthIn
+          ? interpolate(t.exchange.tx.swappedEthForToken, {
+              amount: payAmount,
+              received: f18(result.quoted, 2),
+              token: STABLE_LABEL,
+            })
+          : interpolate(t.exchange.tx.swappedTokenForEth, {
+              amount: payAmount,
+              token: STABLE_LABEL,
+              received: f18(result.quoted, 6),
+            }),
+        true,
+        result.hash
+      );
       setPayAmount('');
       await new Promise(r => setTimeout(r, 1500));
       await fetchAll();
@@ -685,9 +824,13 @@ export default function ExchangePage() {
       >
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 1 }}>
           <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'white' }}>{t.exchange.swap.title}</Typography>
-          {/* 池子是恆定乘積，不是 oracle 定價。舊的「● Oracle-priced」徽章
-              現在是錯的，而且錯在會讓人以為大額換匯沒有滑點。 */}
-          <Typography variant="caption" sx={{ color: 'warning.main', fontWeight: 'bold' }}>{t.exchange.swap.poolBadge}</Typography>
+          {/* 徽章跟著線上合約版本走（#165）：原始碼最新版是恆定乘積、有滑點；
+              Base Sepolia 上的舊版是 oracle 定價、無滑點。版本不明就不掛徽章。 */}
+          {card.badge && (
+            <Typography variant="caption" sx={{ color: 'warning.main', fontWeight: 'bold' }}>
+              {t.exchange.swap[card.badge]}
+            </Typography>
+          )}
         </Box>
 
         {!ammDeployed ? (
@@ -724,7 +867,7 @@ export default function ExchangePage() {
             {/* Switch direction */}
             <Box sx={{ display: 'flex', justifyContent: 'center', my: -1.5, zIndex: 2 }}>
               <Button
-                onClick={() => { setSwapMode(m => m === 'eth-to-usdc' ? 'usdc-to-eth' : 'eth-to-usdc'); setPayAmount(''); setReceiveAmount(''); }}
+                onClick={() => { setSwapMode(m => m === 'eth-to-usdc' ? 'usdc-to-eth' : 'eth-to-usdc'); setPayAmount(''); setQuote(null); }}
                 sx={{ minWidth: 0, p: 1, bgcolor: '#131A2A', border: '4px solid #0D111C', color: 'white', borderRadius: 2, '&:hover': { bgcolor: '#1e2a45' } }}
               >
                 <Icon icon="solar:transfer-vertical-bold-duotone" width={18} />
@@ -736,7 +879,8 @@ export default function ExchangePage() {
               <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>{t.exchange.swap.youReceive}</Typography>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                 <Typography sx={{ flex: 1, fontSize: '2rem', color: 'white', fontWeight: 700, fontFamily: MONO, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {receiveAmount || '0'}
+                  {/* 換不成的金額（讀不到報價、或超過池內庫存）顯示 0，不顯示一個換不到的數字。 */}
+                  {card.receive !== null ? f18(card.receive, outDecimals) : '0'}
                 </Typography>
                 <Chip
                   label={swapMode === 'eth-to-usdc' ? STABLE_LABEL : 'ETH'}
@@ -752,52 +896,80 @@ export default function ExchangePage() {
               </Box>
             </Box>
 
-            {/* Pool info。getPrice() 是**池內現價**（儲備比例），oraclePrice()
-                才是 oracle 參考價——兩個都顯示，因為它們分岔到超過
-                maxOracleDeviationBps 時合約就會擋下兌換。 */}
+            {/* Pool info（#165）。每一格由 ammPoolView 依合約版本決定：
+                value → 數字；unavailable → 「無法取得」；unsupported → 整列不顯示，
+                改由下方說明交代為什麼沒有。不顯示任何意義不明的數字。 */}
             <Box sx={{ px: 1, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+              {poolView.poolPrice.kind !== 'unsupported' && (
+                <Typography variant="caption" color="text.secondary">
+                  {t.exchange.swap.poolPrice}: <Box component="span" sx={{ color: 'white', fontFamily: MONO, fontWeight: 'bold' }}>{priceText(poolView.poolPrice)}</Box>
+                </Typography>
+              )}
+              {poolView.oracleRate.kind !== 'unsupported' && (
+                <Typography variant="caption" color="text.secondary">
+                  {t.exchange.swap.oracleRate}: <Box component="span" sx={{ color: 'white', fontFamily: MONO, fontWeight: 'bold' }}>{priceText(poolView.oracleRate)}</Box>
+                </Typography>
+              )}
+              {poolView.oracleRef.kind !== 'unsupported' && (
+                <Typography variant="caption" color="text.secondary">
+                  {t.exchange.swap.oracleRef}: <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>{priceText(poolView.oracleRef)}</Box>
+                </Typography>
+              )}
               <Typography variant="caption" color="text.secondary">
-                {t.exchange.swap.poolPrice}: <Box component="span" sx={{ color: 'white', fontFamily: MONO, fontWeight: 'bold' }}>1 ETH = {ammPrice > 0n ? (Number(ammPrice) / 1e18).toFixed(2) : '–'} {STABLE_LABEL}</Box>
+                {t.exchange.swap[card.reservesLabel]}:{' '}
+                {poolView.reserves.kind === 'value' ? (
+                  <>
+                    <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>{poolView.reserves.eth} ETH</Box>
+                    {' / '}
+                    <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>{poolView.reserves.usdc} {STABLE_LABEL}</Box>
+                  </>
+                ) : (
+                  <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>{cellText(poolView.reserves.kind)}</Box>
+                )}
               </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {t.exchange.swap.oracleRef}: <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>1 ETH = {ammOracle.price > 0n ? (Number(ammOracle.price) / 1e18).toFixed(2) : '–'} {STABLE_LABEL}</Box>
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {t.exchange.swap.poolReserves}: <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>{(Number(ammEth) / 1e18).toFixed(4)} ETH</Box> / <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>{(Number(ammUsdc) / 1e18).toFixed(2)} {STABLE_LABEL}</Box>
-              </Typography>
-              {impactBps !== null && (
+              {card.impactBps !== null && (
                 <Typography
                   variant="caption"
                   sx={{
-                    fontWeight: impactBps >= HIGH_IMPACT_BPS ? 'bold' : 'normal',
-                    color: impactBps >= SEVERE_IMPACT_BPS
+                    fontWeight: card.impactBps >= HIGH_IMPACT_BPS ? 'bold' : 'normal',
+                    color: card.impactBps >= SEVERE_IMPACT_BPS
                       ? 'error.main'
-                      : impactBps >= HIGH_IMPACT_BPS ? 'warning.main' : 'text.secondary',
+                      : card.impactBps >= HIGH_IMPACT_BPS ? 'warning.main' : 'text.secondary',
                   }}
                 >
-                  {t.exchange.swap.priceImpact}: <Box component="span" sx={{ fontFamily: MONO }}>{(impactBps / 100).toFixed(2)}%</Box>
+                  {t.exchange.swap.priceImpact}: <Box component="span" sx={{ fontFamily: MONO }}>{(card.impactBps / 100).toFixed(2)}%</Box>
                 </Typography>
               )}
-              {quotedOut !== null && quotedOut > 0n && (
+              {card.minReceivedBase !== null && (
                 <Typography variant="caption" color="text.secondary">
                   {interpolate(t.exchange.swap.minimumReceived, {
                     tolerance: (DEFAULT_SLIPPAGE_BPS / 100).toFixed(1),
                   })}:{' '}
                   <Box component="span" sx={{ color: 'white', fontFamily: MONO }}>
-                    {(Number(minOutWithSlippage(quotedOut)) / 1e18).toFixed(swapMode === 'eth-to-usdc' ? 2 : 6)}{' '}
-                    {swapMode === 'eth-to-usdc' ? STABLE_LABEL : 'ETH'}
+                    {f18(minOutWithSlippage(card.minReceivedBase), outDecimals)}{' '}
+                    {outToken}
                   </Box>
                 </Typography>
               )}
               <Typography variant="caption" color="text.secondary">
-                {t.exchange.swap.constantProductNote}
+                {poolNote}
               </Typography>
             </Box>
 
-            {impactBps !== null && impactBps >= SEVERE_IMPACT_BPS && (
+            {/* #215 M2：舊版合約的報價不看庫存。超過輸出側庫存的金額送出必定失敗，
+                所以在這裡直接說清楚並停用按鈕，而不是顯示一個換不到的數字。 */}
+            {card.inventoryExceeded && (
               <Alert severity="error" variant="outlined" sx={{ py: 0.5 }}>
                 <Typography variant="caption">
-                  {t.exchange.markup.priceImpactBefore}<b>{(impactBps / 100).toFixed(2)}%</b>{t.exchange.markup.priceImpactAfter}<code>{t.exchange.markup.priceImpactCode}</code>{t.exchange.markup.priceImpactLine2After}
+                  ⛔ {inventoryMessage(card.inventoryExceeded.needed, card.inventoryExceeded.available)}
+                </Typography>
+              </Alert>
+            )}
+
+            {card.impactBps !== null && card.impactBps >= SEVERE_IMPACT_BPS && (
+              <Alert severity="error" variant="outlined" sx={{ py: 0.5 }}>
+                <Typography variant="caption">
+                  {t.exchange.markup.priceImpactBefore}<b>{(card.impactBps / 100).toFixed(2)}%</b>{t.exchange.markup.priceImpactAfter}<code>{t.exchange.markup.priceImpactCode}</code>{t.exchange.markup.priceImpactLine2After}
                 </Typography>
               </Alert>
             )}
@@ -812,21 +984,15 @@ export default function ExchangePage() {
               variant="contained"
               fullWidth
               onClick={() => void doSwap()}
-              disabled={busy['swap'] || !payAmount || parseFloat(payAmount) <= 0 || ammOracleStale}
+              disabled={card.button.disabled}
               sx={{ py: 1.6, borderRadius: 2, fontWeight: 'bold', fontSize: '1.05rem' }}
             >
-              {busy['swap']
-                ? t.exchange.swap.swapping
-                : ammOracleStale
-                  ? t.exchange.swap.oracleStale
-                  : !payAmount || parseFloat(payAmount) <= 0
-                    ? t.exchange.swap.enterAmount
-                    : interpolate(
-                        swapMode === 'eth-to-usdc'
-                          ? t.exchange.swap.ethToToken
-                          : t.exchange.swap.tokenToEth,
-                        { token: STABLE_LABEL },
-                      )}
+              {card.button.label === 'swap'
+                ? interpolate(
+                    isEthIn ? t.exchange.swap.ethToToken : t.exchange.swap.tokenToEth,
+                    { token: STABLE_LABEL },
+                  )
+                : t.exchange.swap[card.button.label]}
             </Button>
           </>
         )}
