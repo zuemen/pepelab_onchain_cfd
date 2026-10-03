@@ -22,6 +22,7 @@ export const terminal = {
 
   /** 行情列。每個 Stat 的 hint 都是滑鼠提示，`\n\n` 是段落分隔。 */
   stats: {
+    closeHintAria: '關閉說明',
     perpSuffix: '-PERP',
     displayPrice: '參考價格',
 
@@ -231,6 +232,9 @@ export const terminal = {
     /** 價格線上的圖例文字。 */
     lineIndex: '指數',
     lineMark: '標記價',
+
+    /** 行情 API 回的 underlying 若是「<代號> Spot」，代號不譯、Spot 改成現貨。 */
+    underlyingSpot: '{ticker} 現貨',
 
     last: '圖表最新',
     loadingOlder: '載入更早…',

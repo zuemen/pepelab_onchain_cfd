@@ -38,3 +38,8 @@ export function brandCatalog<T>(catalog: T, brand: BrandVars): T {
   };
   return walk(catalog) as T;
 }
+
+/** brand.mascot 省略視為 true：只有明確寫 false 的租戶才拿掉吉祥物元素。 */
+export function showsMascot(cfg: Pick<TenantConfig, 'brand'>): boolean {
+  return cfg.brand.mascot !== false;
+}

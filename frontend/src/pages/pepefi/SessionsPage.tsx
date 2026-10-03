@@ -98,6 +98,14 @@ function Labeled({ label, children }: { label: string; children: ReactNode }) {
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
+/** 撤銷欄釘在表格右緣：表格比容器寬時橫向捲動，撤銷鈕仍固定可見。 */
+const STICKY_ACTION_CELL = {
+  position: 'sticky',
+  right: 0,
+  zIndex: 1,
+  boxShadow: '-8px 0 8px -8px rgba(0,0,0,0.4)',
+} as const
+
 export default function SessionsPage() {
   const wallet = usePepefiWallet()
   const deployed = isSessionManagerDeployed(wallet.chainId)
@@ -362,7 +370,9 @@ export default function SessionsPage() {
   }
 
   return (
-    <Container maxWidth="md" sx={{ py: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
+    // lg 而不是 md：「我的 Session」表有九欄，md（900px）在 1440 寬會把撤銷鈕擠出表格、
+    // 表頭擠成直排。建立表單沿用同一個寬度，欄位只是變長，不影響閱讀。
+    <Container maxWidth="lg" sx={{ py: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
 
       {/* Header */}
       <Box>
@@ -544,8 +554,16 @@ export default function SessionsPage() {
             ) : sessions.length === 0 ? (
               <Typography variant="body2" color="text.secondary">{t.sessions.list.empty}</Typography>
             ) : (
-              <TableContainer>
-                <Table size="small">
+              // 窄螢幕（含 1280 寬收起側欄前）放不下九欄時改橫向捲動；最右的撤銷欄
+              // sticky 釘在右緣，捲到哪裡都看得到、點得到。表頭與數字一律不換行。
+              <TableContainer sx={{ overflowX: 'auto' }}>
+                <Table
+                  size="small"
+                  sx={{
+                    '& th, & td': { px: 1, whiteSpace: 'nowrap' },
+                    '& th:first-of-type, & td:first-of-type': { pl: 2 },
+                  }}
+                >
                   <TableHead>
                     <TableRow sx={{ bgcolor: 'background.neutral' }}>
                       {[
@@ -558,8 +576,17 @@ export default function SessionsPage() {
                         t.sessions.list.column.status,
                         t.sessions.list.column.credential,
                         '',
-                      ].map(h => (
-                        <TableCell key={h} sx={{ color: 'text.secondary', fontWeight: 'bold' }}>{h}</TableCell>
+                      ].map((h, i, all) => (
+                        <TableCell
+                          key={h}
+                          sx={{
+                            color: 'text.secondary',
+                            fontWeight: 'bold',
+                            ...(i === all.length - 1 && { ...STICKY_ACTION_CELL, bgcolor: 'background.neutral' }),
+                          }}
+                        >
+                          {h}
+                        </TableCell>
                       ))}
                     </TableRow>
                   </TableHead>
@@ -572,14 +599,14 @@ export default function SessionsPage() {
                           <TableCell sx={{ fontFamily: MONO }}>{s.id}</TableCell>
                           <TableCell sx={{ fontFamily: MONO }}>
                             {short(s.agent)}
-                            <Box component="span" sx={{ display: 'block', fontSize: 10, color: 'text.disabled' }} title={agentDid(s.agent)}>
+                            <Box component="span" sx={{ display: 'block', fontSize: 10, color: 'text.disabled', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis' }} title={agentDid(s.agent)}>
                               {shortDid(s.agent)}
                             </Box>
                           </TableCell>
                           <TableCell sx={{ fontFamily: MONO }}>{fUsdc(s.spentMargin)} / {fUsdc(s.totalMarginBudget)}</TableCell>
                           <TableCell sx={{ fontFamily: MONO }}>{fUsdc(s.maxMarginPerTrade)}</TableCell>
                           <TableCell sx={{ fontFamily: MONO }}>{Number(s.maxLeverage)}x</TableCell>
-                          <TableCell sx={{ fontSize: '0.75rem' }}>{fDate(s.expiry)}</TableCell>
+                          <TableCell sx={{ fontSize: '0.75rem', '&&': { whiteSpace: 'normal' }, minWidth: 88 }}>{fDate(s.expiry)}</TableCell>
                           <TableCell><Chip size="small" label={st.label} color={st.color} variant="outlined" /></TableCell>
                           <TableCell>
                             {vcBySession[s.id] && vcExpiry(vcBySession[s.id]) * 1000 > Date.now() ? (
@@ -615,7 +642,7 @@ export default function SessionsPage() {
                               </Stack>
                             )}
                           </TableCell>
-                          <TableCell align="right">
+                          <TableCell align="right" sx={{ ...STICKY_ACTION_CELL, bgcolor: 'background.paper' }}>
                             <Button
                               size="small" variant="outlined" color="error"
                               onClick={() => void revokeSession(s.id)}

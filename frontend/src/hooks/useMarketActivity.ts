@@ -48,6 +48,11 @@ export interface ActivityRow {
   closedAt: bigint
   realizedPnL: bigint
   isOpen: boolean
+  /**
+   * 未平倉才有：合約 `getPositionValue`（平倉可拿回的金額）。未實現損益由它減保證金
+   * 得出，跟持倉表、投資組合頁同一個定義（lib/pepefi/positionPnl.ts）。讀不到為 null。
+   */
+  positionValue?: bigint | null
 }
 
 export interface MarketActivity {
@@ -98,7 +103,25 @@ async function scanAll(contracts: Contracts): Promise<ScanResult> {
         // 重試而不是直接跳過：公開 RPC 即使在併發 6 也會零星丟包（實測掃 76 筆
         // 有 8 筆失敗；加了重試之後多數輪次歸零，但仍非保證）。靜默跳過會讓列表
         // 無聲地少幾列，看起來像「這個標的就只有這些部位」。
-        return (await withRetry(() => ex.getPosition(id))) as ActivityRow
+        const p = (await withRetry(() => ex.getPosition(id))) as ActivityRow
+        if (!p.isOpen) return p
+        // ethers 的 Result 是唯讀的 array-like，展開成一般物件才能加欄位。
+        const positionValue = await withRetry(() => ex.getPositionValue(id))
+          .then((v: unknown) => v as bigint)
+          .catch(() => null)
+        return {
+          id: p.id ?? BigInt(id),
+          asset: p.asset,
+          isLong: p.isLong,
+          entryPrice: p.entryPrice,
+          margin: p.margin,
+          leverage: p.leverage,
+          openedAt: p.openedAt,
+          closedAt: p.closedAt,
+          realizedPnL: p.realizedPnL,
+          isOpen: p.isOpen,
+          positionValue,
+        } satisfies ActivityRow
       } catch {
         missed += 1
         return null

@@ -7,7 +7,7 @@ export const portfolio: Catalog['portfolio'] = {
   netWorth: {
     title: 'Net Worth',
     unrealisedPnl: 'Unrealised PnL',
-    unrealisedPnlTooltip: 'Mark-to-market PnL on positions that are still open',
+    unrealisedPnlTooltip: 'What your open positions would net if closed now: mark-price PnL after fees and funding. Same figure as the trading terminal',
 
     /**
      * 單複數寫成兩條完整的句子。catalog 沒有複數引擎，而把 'balance' / 'balances'
@@ -125,7 +125,7 @@ export const portfolio: Catalog['portfolio'] = {
     entry: 'Price you opened at',
     oracle: 'On-chain price the contract settles against — this is what Unr. PnL uses',
     liveMarket: 'Off-chain feed. Moves before the oracle does, so a gap here is normal',
-    unrealizedPnl: 'Unrealised, from the Oracle price',
+    unrealizedPnl: 'How much more or less than your margin you would get back by closing now: mark-price PnL after the close fee, borrow fee and accrued funding (contract getPositionValue − margin)',
   },
 
   close: {

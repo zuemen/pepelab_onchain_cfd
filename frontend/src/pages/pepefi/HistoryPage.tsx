@@ -26,6 +26,7 @@ import {
   type ParsedEventLog,
   type DeferredTopicFilterLike,
 } from 'src/lib/pepefi/chainLogs'
+import { lookupWindow, estimateBlockAt, type BlockLike } from 'src/lib/pepefi/positionTxLookup'
 
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -352,6 +353,60 @@ async function fetchPositionEvents(
   return { evs, missed }
 }
 
+/** 一次最多替幾列 storage 部位補交易雜湊（最新的優先）。每列最多兩趟 getLogs。 */
+const MAX_TX_LOOKUPS = 12
+
+/**
+ * 替「從合約儲存重建、還沒有交易雜湊」的部位列補上雜湊：用 openedAt / closedAt 反推
+ * 區塊，對那個 positionId 做一次窄範圍查詢（見 lib/pepefi/positionTxLookup.ts）。
+ * 只回傳找到的列；找不到的維持「合約儲存」，等完整日誌掃描。
+ */
+async function resolveStorageTxHashes(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  exchange: any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  provider: any,
+  chainId: number | null,
+  rows: ChainEvent[],
+): Promise<ChainEvent[]> {
+  const pending = rows
+    .filter((e) => !e.txHash && e.timestamp > 0 && e.details.positionId !== undefined
+      && (e.type === 'PositionOpened' || e.type === 'PositionClosed'))
+    .sort((a, b) => b.timestamp - a.timestamp)
+    .slice(0, MAX_TX_LOOKUPS)
+  if (pending.length === 0) return []
+
+  const head = (await provider.getBlock('latest').catch(() => null)) as BlockLike | null
+  if (!head) return []
+
+  const found = await mapLimit(pending, 2, async (row): Promise<ChainEvent | null> => {
+    try {
+      const at = await estimateBlockAt(provider, row.timestamp, chainId, head)
+      if (!at) return null
+      const [from, to] = lookupWindow(at.est, at.latest)
+      const pid = row.details.positionId as bigint
+      const filter = row.type === 'PositionOpened'
+        ? exchange.filters.PositionOpened(pid)
+        : exchange.filters.PositionClosed(pid)
+      const r = await scanContractEvents(provider, exchange, [filter], from, to, {
+        retries: 1,
+        timeoutMs: 10_000,
+      })
+      for (const log of r.events) {
+        const ev = toChainEvent('exchange', log)
+        if (ev && ev.type === row.type && ev.details.positionId === pid) {
+          // storage 的時間就是該塊的時間，直接沿用，不必再查一次 getBlock。
+          return { ...ev, timestamp: row.timestamp }
+        }
+      }
+      return null
+    } catch {
+      return null
+    }
+  })
+  return found.filter((e): e is ChainEvent => e !== null)
+}
+
 const shortAddr = (addr?: string) =>
   addr ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : '—'
 
@@ -555,6 +610,9 @@ export default function HistoryPage() {
   const [events,     setEvents]     = useState<ChainEvent[]>([])
   const [loading,    setLoading]    = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
+  // 部位（storage）顯示之後 loading 就結束；後面的日誌掃描是背景同步，用另一個狀態，
+  // 不然事件都已經在表上了，右上角還一直寫「載入中…」。
+  const [scanning,   setScanning]   = useState(false)
   const [error,      setError]      = useState<string | null>(null)
   const [filterKey,  setFilterKey]  = useState<FilterKey>('all')
   /** 日誌確實讀成功過的區塊範圍；「載入較舊」從它的下緣往下走。 */
@@ -784,6 +842,15 @@ export default function HistoryPage() {
       // 部位來自 storage，和日誌掃描範圍無關——先顯示，覆蓋範圍維持原值。
       commit(mergeEvents(eventsRef.current, posResult.evs), prev)
 
+      // storage 沒有交易雜湊；完整日誌掃描要十幾段 getLogs，先對這幾個部位各做一次
+      // 窄範圍查詢把雜湊與 explorer 連結補上，「交易」欄不必一直寫「合約儲存」。
+      const hashed = await resolveStorageTxHashes(
+        contracts.exchange, wallet.provider, wallet.chainId ?? null, eventsRef.current,
+      )
+      if (hashed.length) commit(mergeEvents(eventsRef.current, hashed), prev)
+
+      setLoading(false)
+      setScanning(true)
       const { evs, failedChunks, contiguousLow } = await scanRange(windowStart, currentBlock)
       // 只把「從最新塊往下連續成功」的那一段算進覆蓋；與舊覆蓋不相接（隔天回訪的
       // 缺口、失敗段）就以新的一段為準，「載入較舊」會從它的下緣往下補。
@@ -797,8 +864,9 @@ export default function HistoryPage() {
       setError(err instanceof Error ? err.message.slice(0, 120) : t.history.fetchFailed)
     } finally {
       setLoading(false)
+      setScanning(false)
     }
-  }, [commit, contracts, scanRange, wallet.provider])
+  }, [commit, contracts, scanRange, wallet.provider, wallet.chainId])
 
   /** Extends the scan one window further back, below everything seen so far. */
   const loadOlder = useCallback(async () => {
@@ -846,10 +914,10 @@ export default function HistoryPage() {
         <Button
           variant="text"
           onClick={() => void refresh()}
-          disabled={loading || loadingMore}
+          disabled={loading || scanning || loadingMore}
           sx={{ textTransform: 'none' }}
         >
-          {loading ? t.history.loading : t.history.refresh}
+          {loading ? t.history.loading : scanning ? t.history.scanningLogs : t.history.refresh}
         </Button>
       </Box>
 
@@ -1005,9 +1073,10 @@ export default function HistoryPage() {
                             target="_blank"
                             rel="noopener noreferrer"
                             color="success.main"
-                            sx={{ fontWeight: 'bold', fontSize: '1.1rem', textDecoration: 'none' }}
+                            title={e.txHash}
+                            sx={{ fontFamily: MONO, fontSize: '0.75rem', fontWeight: 'bold', textDecoration: 'none', whiteSpace: 'nowrap' }}
                           >
-                            ↗
+                            {`${e.txHash.slice(0, 6)}…${e.txHash.slice(-4)} ↗`}
                           </Link>
                         ) : e.txHash ? (
                           <Typography variant="caption" sx={{ fontFamily: MONO, color: 'text.secondary' }}>
@@ -1037,7 +1106,7 @@ export default function HistoryPage() {
           <Button
             variant="outlined"
             onClick={() => void loadOlder()}
-            disabled={loading || loadingMore}
+            disabled={loading || scanning || loadingMore}
             sx={{ textTransform: 'none' }}
           >
             {loadingMore

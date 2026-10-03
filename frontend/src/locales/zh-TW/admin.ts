@@ -329,8 +329,19 @@ export const admin = {
     live: '即時',
     subtitle: '監控 AI agent 經濟：委派 session 的限額使用、x402 收入分潤、預言機健康度。唯讀。',
 
+    /**
+     * 償付後盾揭露。ADL 與組合保證金是合約上的旗標（adlEnabled / portfolioMarginEnabled），
+     * 狀態**一律讀鏈上**代入 {adl} / {portfolioMargin}，不寫死在文案裡：以前寫「本測試網
+     * 部署目前預設關閉」，但 Base Sepolia 上 adlEnabled() 已經是 true。
+     */
     disclosure:
-      '償付後盾揭露：ADL（自動減倉）與組合保證金已實作、由旗標控管，本測試網部署 目前預設關閉（線上跑逐倉清算 + 保險金庫 bailout）。極端行情下，在 ADL 啟用前協議 作為對手方仍有償付風險——本頁數據不代表線上償付無虞。詳見 docs/RISK_NOTES.md。',
+      '償付後盾揭露：ADL（自動減倉）與組合保證金已實作、由合約旗標控管。這條鏈上目前的狀態：ADL {adl}、組合保證金 {portfolioMargin}（由合約即時讀取）。逐倉清算與保險金庫 bailout 一律運作；保險金庫不足時，ADL 啟用中則由獲利部位自動減倉補足，未啟用則由協議作為對手方承擔償付風險——本頁數據不代表線上償付無虞。詳見 docs/RISK_NOTES.md。',
+    flagState: {
+      on: '已啟用',
+      off: '未啟用',
+      loading: '讀取中…',
+      unknown: '無法讀取',
+    },
 
     kpi: {
       chain: '鏈',

@@ -5,6 +5,7 @@ import type { FundingInfo } from 'src/hooks/useFundingData'
 import Box from '@mui/material/Box'
 
 import { t, interpolate } from 'src/locales'
+import { assetDisplayName } from 'src/lib/pepefi/assetName'
 import { fUsd, fNum, fromUnits } from 'src/lib/pepefi/format'
 import { type TradingParams, staticTradingParams } from 'src/lib/pepefi/tradingParams'
 
@@ -59,7 +60,7 @@ export function MarketStatsBar({
             <span style={{ color: C.mut, fontSize: 13 }}>{t.terminal.stats.perpSuffix}</span>
           </Box>
         </Box>
-        <Box sx={{ ...labelCss, mt: 0.3 }}>{meta?.name}</Box>
+        <Box sx={{ ...labelCss, mt: 0.3 }}>{assetDisplayName(meta)}</Box>
       </Box>
 
       <Box>

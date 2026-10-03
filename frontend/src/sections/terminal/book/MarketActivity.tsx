@@ -3,6 +3,7 @@ import type { ActivityRow } from 'src/hooks/useMarketActivity'
 import Box from '@mui/material/Box'
 
 import { t, interpolate } from 'src/locales'
+import { positionPnl } from 'src/lib/pepefi/positionPnl'
 import { fUsd, fNum, fromUnits } from 'src/lib/pepefi/format'
 
 import { C, monoCss, labelCss } from '../terminal-theme'
@@ -24,16 +25,12 @@ const hhmm = (unix: bigint) => {
  * 真正發生過的事，而且 11 個標的一致。
  */
 /**
- * 未實現損益：用當前價與進場價重算。
- *
- * 跟 TerminalView 算自己持倉的公式一致，刻意不共用抽象——那邊吃的是 LivePos，
- * 這邊吃的是鏈上原始 struct，硬套一個共同型別只會讓兩邊都變難讀。
+ * 未實現損益：合約 getPositionValue − 保證金，跟下方持倉表、投資組合頁同一個定義
+ * （lib/pepefi/positionPnl.ts）。以前用鏈下參考價自己重算，同一個部位在這裡、在持倉表、
+ * 在投資組合會是三個數字。讀不到就是 null（顯示「—」），不補 0。
  */
-function unrealised(p: ActivityRow, cur: bigint): bigint {
-  if (p.entryPrice <= 0n) return 0n
-  const size = (p.margin * p.leverage * 10n ** 18n) / p.entryPrice
-  const pnl = ((cur - p.entryPrice) * size) / 10n ** 18n
-  return p.isLong ? pnl : -pnl
+function unrealised(p: ActivityRow): bigint | null {
+  return positionPnl({ margin: p.margin, positionValue: p.positionValue ?? null, markPnl: null }).pnl
 }
 
 export function MarketActivity({
@@ -43,7 +40,6 @@ export function MarketActivity({
   truncated,
   missed,
   symbol,
-  currentPrice,
 }: {
   rows: ActivityRow[]
   loading: boolean
@@ -52,11 +48,6 @@ export function MarketActivity({
   /** 重試後仍讀不到的筆數。 */
   missed: number
   symbol?: string
-  /**
-   * 用來算未實現損益的當前價（18 dp）。拿不到就只顯示已實現的部分——寧可留白，
-   * 也不要用過期的價格算出一個看起來很確定的數字。
-   */
-  currentPrice?: bigint
 }) {
   if (error) {
     return <Msg color={C.red}>{error}</Msg>
@@ -93,8 +84,8 @@ export function MarketActivity({
       </Box>
 
       {rows.map((p) => {
-        // 未平倉 → 用當前價即時算；已平倉 → 用鏈上寫死的已實現損益。
-        const live = p.isOpen && currentPrice ? unrealised(p, currentPrice) : null
+        // 未平倉 → 合約的平倉淨額 − 保證金；已平倉 → 鏈上寫死的已實現損益。
+        const live = p.isOpen ? unrealised(p) : null
         const pnlRaw = p.isOpen ? live : p.realizedPnL
         const pnl = pnlRaw === null ? null : fromUnits(pnlRaw, 18)
         return (

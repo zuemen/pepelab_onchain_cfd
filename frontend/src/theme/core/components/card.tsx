@@ -13,7 +13,7 @@ const MuiCard: Components<Theme>['MuiCard'] = {
       // PepeLab: faint green hairline unifies every panel as an "on-chain terminal"
       // surface in dark mode. Cards that set their own border override this.
       ...theme.applyStyles('dark', {
-        border: '1px solid rgba(124, 193, 74, 0.10)',
+        border: '1px solid rgba(var(--palette-primary-mainChannel) / 0.10)',
       }),
     }),
   },

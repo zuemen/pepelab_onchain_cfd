@@ -13,6 +13,7 @@ export const terminal: Catalog['terminal'] = {
 
   /** 行情列。每個 Stat 的 hint 都是滑鼠提示，`\n\n` 是段落分隔。 */
   stats: {
+    closeHintAria: 'Close explanation',
     perpSuffix: '-PERP',
     displayPrice: 'display price',
 
@@ -222,6 +223,8 @@ export const terminal: Catalog['terminal'] = {
     /** 價格線上的圖例文字。 */
     lineIndex: 'index',
     lineMark: 'mark',
+
+    underlyingSpot: '{ticker} Spot',
 
     last: 'chart last',
     loadingOlder: 'Loading earlier…',

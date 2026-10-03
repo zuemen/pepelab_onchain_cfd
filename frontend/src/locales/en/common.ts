@@ -7,6 +7,12 @@ export const common: Catalog['common'] = {
   /** 錢包連線視窗。 */
   wallet: {
     dialogTitle: 'Connect Wallet',
+
+    connectButton: 'Connect Wallet',
+    connecting: 'Connecting…',
+    connectedTitle: 'Connected Wallet',
+    switchAccount: 'Switch Account',
+    disconnect: 'Disconnect',
     closeAria: 'Close wallet connection dialog',
     intro: 'Choose your sign-in channel to enter the {brand} on-chain RWA platform.',
 
@@ -46,6 +52,53 @@ export const common: Catalog['common'] = {
       "This platform runs on a testnet — every asset and balance is simulated, no real money involved. Equivalent to TradingView's Paper Trading mode.",
     compactLabel: 'PAPER TRADING',
     label: 'PAPER TRADING · Simulated testnet trading',
+  },
+
+  shell: {
+    logoAria: 'Go to home page',
+    openNavAria: 'Open navigation menu',
+    expandSidebarAria: 'Expand sidebar',
+    collapseSidebarAria: 'Collapse sidebar',
+    settingsAria: 'Settings button',
+    backToTopAria: 'Back to top',
+    accountAvatarAria: 'Account avatar',
+    needHelp: 'Need help?',
+
+    settings: {
+      title: 'Settings',
+      resetAll: 'Reset all',
+      close: 'Close',
+      mode: 'Mode',
+      contrast: 'Contrast',
+      rtl: 'Right to left',
+      compact: 'Compact',
+      compactTooltip: 'Dashboard only and available at large resolutions > 1600px (xl)',
+      presets: 'Presets',
+      nav: 'Nav',
+      navTooltip: 'Dashboard only',
+      layout: 'Layout',
+      color: 'Color',
+      font: 'Font',
+      fontFamily: 'Family',
+      fontSize: 'Size',
+      fontSizeAria: 'Change font size',
+      fullscreen: 'Fullscreen',
+      exitFullscreen: 'Exit',
+    },
+
+    search: {
+      enterKeywords: 'Please enter keywords',
+      notFoundTitle: 'Not found',
+      notFoundBefore: 'No results found for',
+      notFoundAfter: '.',
+      notFoundHint: 'Try checking for typos or using complete words.',
+    },
+
+    notFound: {
+      title: 'Sorry, page not found!',
+      body: 'Sorry, we couldn’t find the page you’re looking for. Perhaps you’ve mistyped the URL? Be sure to check your spelling.',
+      home: 'Go to home',
+    },
   },
 
   avatarPicker: {

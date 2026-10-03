@@ -7,6 +7,8 @@ import { setFont } from 'minimal-shared/utils';
 import Box from '@mui/material/Box';
 import Slider, { sliderClasses } from '@mui/material/Slider';
 
+import { t } from 'src/locales';
+
 import { OptionButton } from './styles';
 
 // ----------------------------------------------------------------------
@@ -84,7 +86,7 @@ export function FontSizeOptions({
       step={1}
       size="small"
       valueLabelDisplay="on"
-      aria-label="Change font size"
+      aria-label={t.common.shell.settings.fontSizeAria}
       valueLabelFormat={(val) => `${val}px`}
       value={value}
       min={options[0]}

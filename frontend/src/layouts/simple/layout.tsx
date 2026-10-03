@@ -11,6 +11,8 @@ import Alert from '@mui/material/Alert';
 import { paths } from 'src/routes/paths';
 import { RouterLink } from 'src/routes/components';
 
+import { t } from 'src/locales';
+
 import { Logo } from 'src/components/logo';
 
 import { SimpleCompactContent } from './content';
@@ -56,7 +58,7 @@ export function SimpleLayout({
             color="inherit"
             sx={{ typography: 'subtitle2' }}
           >
-            Need help?
+            {t.common.shell.needHelp}
           </Link>
 
           {/** @slot Settings button */}

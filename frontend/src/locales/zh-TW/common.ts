@@ -8,6 +8,13 @@ export const common = {
   /** 錢包連線視窗。 */
   wallet: {
     dialogTitle: '連接帳號 / Connect Wallet',
+
+    /** 錢包按鈕本身與已連線後的選單。 */
+    connectButton: '連接錢包',
+    connecting: '連線中…',
+    connectedTitle: '已連線錢包',
+    switchAccount: '切換帳號',
+    disconnect: '中斷連線',
     closeAria: '關閉錢包連線視窗',
     intro: '選擇您的登入通道以進入 {brand} 鏈上 RWA 平台。',
 
@@ -50,6 +57,58 @@ export const common = {
       '本平台運行於測試網，所有資產與資金皆為模擬，不涉及真實金錢。等同 TradingView 的 Paper Trading 模式。',
     compactLabel: '模擬交易',
     label: 'PAPER TRADING · 測試網模擬交易',
+  },
+
+  /**
+   * 版面外殼沿用自 Minimal UI 範本的元件：側邊欄開合、設定抽屜、搜尋無結果、404。
+   * 原本在元件裡寫死英文，zh-TW 建置會整段露出英文。
+   */
+  shell: {
+    logoAria: '回到首頁',
+    openNavAria: '開啟導覽選單',
+    expandSidebarAria: '展開側邊欄',
+    collapseSidebarAria: '收合側邊欄',
+    settingsAria: '顯示設定',
+    backToTopAria: '回到頁首',
+    accountAvatarAria: '帳戶頭像',
+    needHelp: '需要協助？',
+
+    settings: {
+      title: '顯示設定',
+      resetAll: '全部重設',
+      close: '關閉',
+      mode: '深色模式',
+      contrast: '高對比',
+      rtl: '由右至左',
+      compact: '緊湊版面',
+      compactTooltip: '僅限主控台頁面，且螢幕寬度大於 1600px（xl）時才有效果',
+      presets: '主題色',
+      nav: '導覽列',
+      navTooltip: '僅限主控台頁面',
+      layout: '版面',
+      color: '顏色',
+      font: '字型',
+      fontFamily: '字體',
+      fontSize: '字級',
+      fontSizeAria: '調整字級',
+      fullscreen: '全螢幕',
+      exitFullscreen: '離開全螢幕',
+    },
+
+    search: {
+      enterKeywords: '請輸入關鍵字',
+      notFoundTitle: '找不到結果',
+      /** 句中夾著使用者輸入的關鍵字（粗體），拆成前後兩段。 */
+      notFoundBefore: '找不到符合',
+      notFoundAfter: '的結果。',
+      notFoundHint: '請檢查是否有錯字，或改用完整的詞再試一次。',
+    },
+
+    notFound: {
+      title: '找不到這個頁面',
+      body: '你要找的頁面不存在，可能是網址打錯了，請再確認一次。',
+      home: '回到首頁',
+    },
   },
 
   avatarPicker: {

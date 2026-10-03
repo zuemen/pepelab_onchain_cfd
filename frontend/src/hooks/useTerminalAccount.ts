@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 
 import { safeRead } from 'src/lib/pepefi/safeRead'
-import type { AssetId, Pos, RawPos } from 'src/sections/terminal/types'
+import { type OpenPositionRead, readOpenPosition } from 'src/lib/pepefi/positionPnl'
+import type { AssetId, Pos } from 'src/sections/terminal/types'
 
 // 終端機的鏈上帳戶狀態：餘額、可用保證金、持倉，以及選中標的的 index / mark 價。
 //
@@ -22,6 +23,19 @@ export interface TerminalAccount {
   markPrice: bigint
   refresh: () => Promise<void>
 }
+
+/** 終端機持倉表要的形狀。`cur` 是合約 mark 價（持倉表的「標記價」欄），不是鏈下參考價。 */
+export const toTerminalPos = (r: OpenPositionRead): Pos => ({
+  id: r.id,
+  asset: r.asset,
+  isLong: r.isLong,
+  entryPrice: r.entryPrice,
+  margin: r.margin,
+  leverage: r.leverage,
+  pnl: r.pnl,
+  value: r.value,
+  cur: r.markPrice,
+})
 
 /** 指數價讀取失敗後的重試：10 秒起跳、每次加倍、上限 60 秒；分頁在背景時暫停。 */
 const PRICE_RETRY_BASE_MS = 10_000
@@ -67,30 +81,10 @@ export function useTerminalAccount(
       }
 
       const ids = (await contracts.exchange.getUserPositions(address)) as bigint[]
-      const rows = await Promise.all(
-        ids.map(async (id): Promise<Pos | null> => {
-          try {
-            const raw = (await contracts.exchange.getPosition(id)) as unknown as RawPos
-            if (!raw.isOpen) return null
-            const pnl = (await contracts.exchange.getUnrealizedPnL(id)) as bigint
-            const pr = (await contracts.oracle.getPrice(raw.asset)) as unknown as [bigint, bigint]
-            return {
-              id,
-              asset: raw.asset,
-              isLong: raw.isLong,
-              entryPrice: raw.entryPrice,
-              margin: raw.margin,
-              leverage: raw.leverage,
-              pnl,
-              // oracle 存 8 位小數，補到 18 位跟其他數值對齊。
-              cur: pr[0] * 10n ** 10n,
-            }
-          } catch {
-            return null
-          }
-        }),
-      )
-      setPositions(rows.filter((r): r is Pos => r !== null))
+      // 跟投資組合頁同一個讀取函式：未實現損益＝合約 getPositionValue − 保證金
+      // （mark 價、資金費、手續費都已在合約裡算好）。見 lib/pepefi/positionPnl.ts。
+      const rows = await Promise.all(ids.map((id) => readOpenPosition(contracts, id)))
+      setPositions(rows.filter((r): r is NonNullable<typeof r> => r !== null).map(toTerminalPos))
     } catch (e) {
       console.error('[useTerminalAccount]', e)
     }
