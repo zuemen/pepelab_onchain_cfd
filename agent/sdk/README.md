@@ -271,7 +271,7 @@ const st = await checker.check(r, { action: "write", verifyingContract: mgr });
   `verifyAuthorizationVCv2`、`crossCheckWithSession`、`checker.check(r, { action: "write", ... })`，任一不過就不送。
 - `checkCredentialStatusWithList` 沒傳 `minSequence` 時無法防重放與同號異文，結果會帶 warning；請保存接受過的最高 sequence。
 - 結果的 `warnings`（例如清單 7 天內到期）要顯示給使用者：清單一過期，該簽發者的寫入會全被拒。
-- 「全部撤銷」用 `revokedBefore: revokeAllCutoff(issuedAt)`（涵蓋 ≤ 300 秒的時鐘偏快），撤銷後約 5 分鐘再重簽新的 VC。
+- 「全部撤銷」用 `revokedBefore: revokeAllCutoff(issuedAt)`（涵蓋 ≤ 300 秒的時鐘偏快），撤銷後約 5–10 分鐘內重簽的 VC 也會被涵蓋，請等這段時間過後再重簽（結果的 `revokedBy` 為 `revokedBefore`）。
 - 寫入類動作（下單、付款、開 session）：`ok === false` 一律拒絕，包含「狀態未知」（來源不可達、清單過期、
   驗不過、重放、被扣住）。唯讀類動作的未知狀態依 `readPolicy`（預設 `allow`，結果帶 `status: "unknown"` 與警告）。
 - 清單有效期預設 30 天、上限 90 天；過期後簽發者要重簽（sequence +1），否則寫入會被拒。

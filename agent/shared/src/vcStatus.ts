@@ -423,11 +423,14 @@ export type StatusFetch =
   | { kind: "list"; doc: unknown }
   /** 來源明確回答「這個簽發者沒有發佈過清單」。 */
   | { kind: "none" }
-  | { kind: "unavailable"; reason: string };
+  /** setup=true：清單目錄沒有初始化（缺 index.json 標記或標記不符）——要營運方處理，不是暫時性故障。 */
+  | { kind: "unavailable"; reason: string; setup?: boolean };
 
 export interface StatusSource {
   readonly describe: string;
   fetch(issuer: string): Promise<StatusFetch>;
+  /** 啟動預檢：只確認目錄標記，**絕不建立**它（自動建立會讓 M1 的 fail-open 回來）。 */
+  preflight?(): Promise<{ ok: true } | { ok: false; reason: string }>;
 }
 
 const issuerFile = (issuer: string) => `${ethers.getAddress(issuer).toLowerCase()}.json`;
@@ -442,7 +445,11 @@ export const STATUS_DIRECTORY_MARKER = "index.json";
 /** HTTP 回應本文上限（位元組）。1000 筆 jti 的清單約 70 KB。超過 → unavailable（審查 L4）。 */
 export const MAX_STATUS_RESPONSE_BYTES = 256 * 1024;
 
-const NOT_INITIALISED_HINT = "請以 `npx tsx examples/vc-status.ts init` 建立目錄標記，或修正 VC_STATUS_DIR／VC_STATUS_URL";
+/** 初始化指令（在 agent/ 目錄執行）。只在**持久儲存**上跑一次，不要放進容器啟動腳本（審查 N3）。 */
+export const VC_STATUS_INIT_COMMAND = "npm run vc-status:init";
+const NOT_INITIALISED_HINT =
+  `請營運方在 agent/ 目錄執行 \`${VC_STATUS_INIT_COMMAND}\`（只在持久儲存上跑一次，不要放進容器啟動腳本）建立目錄標記，` +
+  "或修正 VC_STATUS_DIR／VC_STATUS_URL";
 
 function markerOk(raw: string): boolean {
   try {
@@ -462,6 +469,16 @@ function markerOk(raw: string): boolean {
 export function dirStatusSource(dir: string): StatusSource {
   return {
     describe: `dir:${dir}`,
+    preflight: async () => {
+      try {
+        const marker = retryTransientSync(() => fs.readFileSync(path.join(dir, STATUS_DIRECTORY_MARKER), "utf8"));
+        if (!markerOk(marker)) return { ok: false, reason: `${path.join(dir, STATUS_DIRECTORY_MARKER)} 內容不符；${NOT_INITIALISED_HINT}` };
+        return { ok: true };
+      } catch (e) {
+        const why = isNotFound(e) ? "目錄或 index.json 目錄標記不存在" : `目錄標記讀取失敗（${(e as NodeJS.ErrnoException).code ?? "IO"}）`;
+        return { ok: false, reason: `狀態清單目錄 ${dir} 未初始化：${why}；${NOT_INITIALISED_HINT}` };
+      }
+    },
     fetch: async (issuer) => {
       let raw: string;
       try {
@@ -475,9 +492,9 @@ export function dirStatusSource(dir: string): StatusSource {
           marker = retryTransientSync(() => fs.readFileSync(path.join(dir, STATUS_DIRECTORY_MARKER), "utf8"));
         } catch (e2) {
           const why = isNotFound(e2) ? "目錄或 index.json 目錄標記不存在" : `目錄標記讀取失敗（${(e2 as NodeJS.ErrnoException).code ?? "IO"}）`;
-          return { kind: "unavailable", reason: `狀態清單目錄未初始化：${why}；${NOT_INITIALISED_HINT}` };
+          return { kind: "unavailable", setup: true, reason: `狀態清單目錄未初始化：${why}；${NOT_INITIALISED_HINT}` };
         }
-        if (!markerOk(marker)) return { kind: "unavailable", reason: `狀態清單目錄標記不符；${NOT_INITIALISED_HINT}` };
+        if (!markerOk(marker)) return { kind: "unavailable", setup: true, reason: `狀態清單目錄標記不符；${NOT_INITIALISED_HINT}` };
         return { kind: "none" };
       }
       try {
@@ -583,6 +600,14 @@ export function httpStatusSource(baseUrl: string, opts: HttpStatusSourceOptions 
 
   return {
     describe: `http:${base}`,
+    preflight: async () => {
+      const idx = await get(`${base}/${STATUS_DIRECTORY_MARKER}`);
+      if ("error" in idx) return { ok: false, reason: `${base}/${STATUS_DIRECTORY_MARKER} 無法取得（${idx.error}）` };
+      if (idx.status !== 200 || !markerOk(idx.body)) {
+        return { ok: false, reason: `${base}/${STATUS_DIRECTORY_MARKER} 不是清單目錄標記（HTTP ${idx.status}）；${NOT_INITIALISED_HINT}` };
+      }
+      return { ok: true };
+    },
     fetch: async (issuer) => {
       const r = await get(`${base}/${issuerFile(issuer)}`);
       if ("error" in r) return { kind: "unavailable", reason: `狀態清單無法取得（${r.error}）` };
@@ -590,7 +615,7 @@ export function httpStatusSource(baseUrl: string, opts: HttpStatusSourceOptions 
         const idx = await get(`${base}/${STATUS_DIRECTORY_MARKER}`);
         if ("error" in idx) return { kind: "unavailable", reason: `狀態清單目錄標記無法取得（${idx.error}）` };
         if (idx.status !== 200 || !markerOk(idx.body)) {
-          return { kind: "unavailable", reason: `狀態清單目錄標記不符（HTTP ${idx.status}）；${NOT_INITIALISED_HINT}` };
+          return { kind: "unavailable", setup: true, reason: `狀態清單目錄標記不符（HTTP ${idx.status}）；${NOT_INITIALISED_HINT}` };
         }
         return { kind: "none" };
       }
@@ -602,6 +627,33 @@ export function httpStatusSource(baseUrl: string, opts: HttpStatusSourceOptions 
       }
     },
   };
+}
+
+/** 被撤銷的方式：jti 在清單裡，或被 revokedBefore 涵蓋。 */
+export function revokedByOf(
+  res: Pick<VerifyResult, "version" | "nonce" | "digest" | "issuedAt">,
+  view: { revokedBefore: number; revoked: readonly string[] | ReadonlySet<string> },
+): "jti" | "revokedBefore" {
+  const jti = credentialJti(res);
+  const set = view.revoked instanceof Set ? view.revoked : new Set(view.revoked as readonly string[]);
+  return jti && set.has(jti) ? "jti" : "revokedBefore";
+}
+
+/** 「全部撤銷」之後要等多久再重簽（REVOKE_ALL_LEAD_SEC 加上清單 issuedAt 可能快 MAX_CLOCK_SKEW_SEC）。 */
+export const REVOKE_ALL_REISSUE_WAIT_TEXT = "約 5–10 分鐘";
+
+function revokedMessage(
+  res: Pick<VerifyResult, "version" | "nonce" | "digest" | "issuedAt">,
+  view: { revokedBefore: number; revoked: readonly string[] | ReadonlySet<string> },
+  seq: number,
+): string {
+  if (revokedByOf(res, view) === "revokedBefore") {
+    return (
+      `授權憑證已被簽發者「全部撤銷」涵蓋（清單 sequence ${seq}，revokedBefore ${new Date(view.revokedBefore * 1000).toISOString()}）；` +
+      `全部撤銷後${REVOKE_ALL_REISSUE_WAIT_TEXT}內重簽的 VC 也會被涵蓋，請等這段時間過後再重簽`
+    );
+  }
+  return `授權憑證已被簽發者撤銷（清單 sequence ${seq}）`;
 }
 
 // ── 檢查器（快取＋新鮮度＋失敗行為）──────────────────────────────────────────
@@ -637,6 +689,10 @@ export interface CredentialStatusResult {
   /** 本次是否沿用快取的清單（未打來源）。 */
   fromCache?: boolean;
   warnings?: string[];
+  /** 清單目錄沒有初始化（營運方要執行 `npm run vc-status:init`），不是暫時性故障。 */
+  setupRequired?: boolean;
+  /** 被撤銷時：jti 在清單裡，或被 revokedBefore（「全部撤銷」）涵蓋。後者剛重簽的 VC 要等 5–10 分鐘（審查 N4）。 */
+  revokedBy?: "jti" | "revokedBefore";
 }
 
 export interface VcStatusCheckerOptions {
@@ -696,7 +752,13 @@ export function createVcStatusChecker(o: VcStatusCheckerOptions): VcStatusChecke
   async function load(key: string, issuer: string, vcAddr: string, nowMs: number): Promise<CacheEntry | CredentialStatusResult> {
     const f = await o.source.fetch(issuer);
     if (f.kind === "unavailable") {
-      return { ok: false, status: "unknown", reasonCode: "STATUS_UNAVAILABLE", message: `無法取得狀態清單：${f.reason}` };
+      return {
+        ok: false,
+        status: "unknown",
+        reasonCode: "STATUS_UNAVAILABLE",
+        message: `無法取得狀態清單：${f.reason}`,
+        ...(f.setup ? { setupRequired: true } : {}),
+      };
     }
     if (f.kind === "none") return { kind: "none", fetchedAt: nowMs };
     const v = verifyStatusList(f.doc, { now: nowMs, expectedIssuer: issuer, expectedVerifyingContract: vcAddr });
@@ -732,7 +794,15 @@ export function createVcStatusChecker(o: VcStatusCheckerOptions): VcStatusChecke
         return unknown(action, "STATUS_STATE_UNREADABLE", "VC 狀態檔無法讀取或格式不符", { jti });
       }
       if (known && isCredentialRevoked(res, known)) {
-        return { ok: false, status: "revoked", reasonCode: "VC_REVOKED", message: `授權憑證已被簽發者撤銷（清單 sequence ${known.sequence}）`, jti, listSequence: known.sequence };
+        return {
+          ok: false,
+          status: "revoked",
+          reasonCode: "VC_REVOKED",
+          message: revokedMessage(res, known, known.sequence),
+          jti,
+          listSequence: known.sequence,
+          revokedBy: revokedByOf(res, known),
+        };
       }
 
       // 2) 取得目前的清單（快取在新鮮度上限內才沿用）。
@@ -757,7 +827,7 @@ export function createVcStatusChecker(o: VcStatusCheckerOptions): VcStatusChecke
           }
           if (!("kind" in got)) {
             cache.delete(key);
-            return unknown(action, got.reasonCode, got.message, { jti });
+            return unknown(action, got.reasonCode, got.message, { jti, ...(got.setupRequired ? { setupRequired: true } : {}) });
           }
           entry = got;
           cache.set(key, entry);
@@ -805,7 +875,16 @@ export function createVcStatusChecker(o: VcStatusCheckerOptions): VcStatusChecke
       const view = merged ?? list;
       const seq = merged?.sequence ?? list.sequence;
       if (isCredentialRevoked(res, view) || isCredentialRevoked(res, list)) {
-        return { ok: false, status: "revoked", reasonCode: "VC_REVOKED", message: `授權憑證已被簽發者撤銷（清單 sequence ${seq}）`, jti, listSequence: seq };
+        const by = isCredentialRevoked(res, view) ? view : list;
+        return {
+          ok: false,
+          status: "revoked",
+          reasonCode: "VC_REVOKED",
+          message: revokedMessage(res, by, seq),
+          jti,
+          listSequence: seq,
+          revokedBy: revokedByOf(res, by),
+        };
       }
       const warn = statusListExpiryWarning(list.validUntil, nowMs);
       return {
@@ -906,6 +985,45 @@ export function defaultVcStatusChecker(): VcStatusChecker {
   });
   memo = { key, checker };
   return checker;
+}
+
+export interface VcStatusPreflight {
+  ok: boolean;
+  /** 來源描述（dir:… / http:…）。 */
+  source: string;
+  /** ok=false 時的原因（含 init 指令）。 */
+  reason?: string;
+}
+
+/**
+ * 啟動預檢（審查 N1）：依目前環境設定確認狀態清單目錄已初始化（本機目錄讀 index.json；HTTP 取一次
+ * index.json）。**只檢查、絕不建立**標記——自動建立會在沒掛 volume 的容器上造出空目錄，讓所有簽發者被當成
+ * 「沒有清單」（M1 的 fail-open）。MCP server、tg-bot 啟動時呼叫，失敗就印出 ::error:: 與 init 指令。
+ */
+export async function preflightVcStatus(): Promise<VcStatusPreflight> {
+  const url = process.env.VC_STATUS_URL?.trim() || "";
+  let source: StatusSource;
+  try {
+    source = url ? httpStatusSource(url) : dirStatusSource(defaultStatusDir());
+  } catch (e) {
+    return { ok: false, source: url, reason: `VC_STATUS_URL 設定錯誤：${(e as Error).message}` };
+  }
+  if (!source.preflight) return { ok: true, source: source.describe };
+  try {
+    const r = await source.preflight();
+    return r.ok ? { ok: true, source: source.describe } : { ok: false, source: source.describe, reason: r.reason };
+  } catch (e) {
+    return { ok: false, source: source.describe, reason: `預檢失敗：${(e as Error).message}` };
+  }
+}
+
+/** 啟動預檢的文字（給 console）。ok 時回 null。 */
+export function preflightErrorText(p: VcStatusPreflight): string | null {
+  if (p.ok) return null;
+  return (
+    `::error::[vc-status] VC 撤銷狀態來源未就緒（${p.source}）：${p.reason}。` +
+    "在修好之前，所有開倉與平倉都會被拒（VC_STATUS_UNVERIFIED）；使用者仍可直接在鏈上用錢包平倉。"
+  );
 }
 
 /** 便利函式：以預設檢查器檢查一個已驗簽的 VC。 */

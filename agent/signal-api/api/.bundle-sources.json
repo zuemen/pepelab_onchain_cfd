@@ -1,5 +1,5 @@
 {
-  "digest": "92d5ee83eb65cdd3",
+  "digest": "9b127edab5ceb890",
   "files": {
     "agent/shared/src/abis.ts": "872c3136604d6584",
     "agent/shared/src/addresses.ts": "a6cb279048c58a4b",
@@ -18,7 +18,7 @@
     "agent/shared/src/redact.ts": "36892c597bec44d0",
     "agent/shared/src/signingGuard.ts": "abf2325446761376",
     "agent/shared/src/vcNonce.ts": "23f0a3a39df9a8da",
-    "agent/shared/src/vcStatus.ts": "7e00a9f47a7848bb",
+    "agent/shared/src/vcStatus.ts": "0fb7a064cc0e0bdb",
     "agent/shared/src/verification.ts": "c7823c4dc411e59a",
     "agent/shared/src/write.ts": "14a30b298396573e",
     "agent/shared/src/x402Client.ts": "5da0cba5d9e429ee",
@@ -57,7 +57,7 @@
     "npm:aes-js@4.0.0-beta.5": "pkg",
     "npm:dotenv@16.6.1": "pkg",
     "npm:ethers@6.17.0": "pkg",
-    "npm:hono@4.13.9": "pkg",
+    "npm:hono@4.13.10": "pkg",
     "npm:isows@1.0.7": "pkg",
     "npm:ox@0.14.45": "pkg",
     "npm:viem@2.56.9": "pkg",

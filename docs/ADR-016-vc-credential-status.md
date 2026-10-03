@@ -173,12 +173,17 @@ JSON 文件（`CredentialStatusList`）帶 `issuer`（did:pkh）、上述欄位�
 - **金鑰**：與簽 VC 同一把（使用者錢包），同一個 EIP-712 domain，只是 primary type 不同。沒有新增金鑰類型，
   agent 與 SDK 都不持有它。
 - **怎麼撤銷**：
-  0. （營運方，一次）初始化驗證端的清單目錄：`npx tsx examples/vc-status.ts init`（建立 `index.json` 目錄標記）。
-     沒有標記的目錄一律視為狀態不明，**所有寫入都被拒**——這是刻意的：路徑打錯不能變成「沒有任何撤銷」。
+  0. （營運方，一次）初始化驗證端的清單目錄：在 `agent/` 執行 `npm run vc-status:init`（= `npx tsx examples/vc-status.ts init`，
+     建立 `index.json` 目錄標記）。沒有標記的目錄一律視為狀態不明，**所有寫入都被拒**——這是刻意的：路徑打錯不能變成「沒有任何撤銷」。
+     **只在持久儲存上跑一次，不要放進容器啟動腳本**（審查 N3）：沒掛 volume 的容器每次啟動都 init，會在暫存檔案系統建出
+     「有標記的空目錄」，等於重新打開 M1。MCP server 與 tg-bot 啟動時只做**預檢**（`preflightVcStatus`），缺標記就印
+     `::error::` 與 init 指令，**不會自動建立**。升級說明也寫在 `agent/README.md`、`agent/tg-bot/README.md`、`docs/DEMO_SCRIPT.md`。
   1. 取得要撤銷的 jti：`npx tsx examples/vc-status.ts jti --vc <vc.json>`（或 SDK `credentialJti`）。
      要撤銷全部就用 `--revoke-before now`，不需要 jti：它會填 `revokeAllCutoff(now)` = now + 301 秒，涵蓋時鐘偏快 ≤ 300 秒
-     的裝置剛簽的 VC（審查 L2；VC 的 issuedAt 本來就允許比驗證端快 300 秒）。代價是撤銷後約 5 分鐘內新簽的 VC 也算被撤銷，
-     請等 5 分鐘再重簽。驗證端接受的 `revokedBefore` 上限因此是清單 `issuedAt` + 301 秒。
+     的裝置剛簽的 VC（審查 L2；VC 的 issuedAt 本來就允許比驗證端快 300 秒）。代價是撤銷後約 5–10 分鐘內新簽的 VC 也算被撤銷
+     （清單的 issuedAt 本身也可以比驗證端快 300 秒，最壞約 10 分鐘），請等這段時間過後再重簽。被這樣擋下時，檢查結果的
+     `revokedBy` 是 `revokedBefore`，訊息與 tg-bot 的拒單訊息都會提醒等待（審查 N4）。驗證端接受的 `revokedBefore` 上限是清單
+     `issuedAt` + 301 秒。
   2. 產生待簽 typed data：`npx tsx examples/vc-status.ts typed-data --issuer <使用者> --from <目前清單> --revoke <jti>`
      （`--from` 沿用舊項目、sequence 自動 +1；新清單必須是累積的）。目錄裡已有這個簽發者的清單時**必須**帶 `--from`；
      第一份清單 sequence 預設 1，與 SDK 的 `prev.sequence + 1` 慣例一致（審查 L6）。整合方可改用 SDK `buildStatusListTypedData`。

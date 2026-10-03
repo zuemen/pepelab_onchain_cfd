@@ -638,5 +638,76 @@ install(u1.address, await liveList(u1, { sequence: 1, revoked: [jtiOf(revokedVc)
   ok("tg-bot 下單前檢查與 vc-gate（x402 agent／範例）：撤銷或狀態未知 → 拒單");
 }
 
+// ───────────────────────── P. 升級可見性（複審 N1、N3、N4）─────────────────────────
+{
+  // 啟動預檢：沒初始化 → 不通過、訊息含 init 指令，而且**不會**自動建立標記。
+  const good = process.env.VC_STATUS_DIR!;
+  const fresh = path.join(TMP, "never-initialised");
+  process.env.VC_STATUS_DIR = fresh;
+  try {
+    const pre = await S.preflightVcStatus();
+    assert.equal(pre.ok, false);
+    assert.match(pre.reason!, /npm run vc-status:init/);
+    assert.match(S.preflightErrorText(pre)!, /^::error::\[vc-status\].*開倉與平倉都會被拒/);
+    assert.equal(fs.existsSync(path.join(fresh, "index.json")), false, "預檢絕不自動建立標記");
+    assert.equal(fs.existsSync(fresh), false, "預檢也不建立目錄");
+    // 寫入檢查的結果帶 setupRequired，tg-bot 據此請管理者 init（不再說「恢復後再試」）。
+    const st = await S.checkCredentialStatus(verifyAuthorizationVC(keptVc), { action: "write" });
+    assert.equal(st.ok, false);
+    assert.equal(st.setupRequired, true);
+    const msg = vcStatusProblemForBot(st)!;
+    assert.match(msg, /npm run vc-status:init/);
+    assert.doesNotMatch(msg, /恢復後再試|狀態來源恢復/);
+  } finally {
+    process.env.VC_STATUS_DIR = good;
+  }
+  const ok2 = await S.preflightVcStatus();
+  assert.equal(ok2.ok, true, ok2.reason);
+  assert.equal(S.preflightErrorText(ok2), null);
+  process.env.VC_STATUS_URL = "http://127.0.0.1:1";
+  try {
+    const preH = await S.preflightVcStatus();
+    assert.equal(preH.ok, false, "HTTP 來源連不到 → 預檢不通過");
+  } finally {
+    delete process.env.VC_STATUS_URL;
+  }
+
+  // 其他「狀態不明」：chat 訊息帶出實際原因。
+  const other = vcStatusProblemForBot({ ok: false, status: "unknown", reasonCode: "STATUS_LIST_EXPIRED", message: "狀態清單已於 X 過期，請簽發者重新簽署" })!;
+  assert.match(other, /STATUS_LIST_EXPIRED/);
+  assert.match(other, /請簽發者重新簽署/);
+
+  // 全部撤銷涵蓋 → revokedBy=revokedBefore，訊息提醒等 5–10 分鐘（N4）。
+  const u = ethers.Wallet.createRandom();
+  const t = Math.floor(Date.now() / 1000) - 60;
+  const vcU = await issueAuthorizationVC({ issuer: u, agentAddress: agent.address, sessionId: 3, caps: { ...caps, expiry: t + 60 * DAY }, issuedAt: t, verifyingContract: MGR });
+  install(u.address, await issueStatusList({ issuer: u, verifyingContract: MGR, issuedAt: t + 10, sequence: 1, revokedBefore: S.revokeAllCutoff(t + 10) }));
+  const rv = await S.checkCredentialStatus(verifyAuthorizationVC(vcU), { action: "write" });
+  assert.equal(rv.reasonCode, "VC_REVOKED");
+  assert.equal(rv.revokedBy, "revokedBefore");
+  assert.match(rv.message, /5–10 分鐘/);
+  assert.match(vcStatusProblemForBot(rv)!, /5–10 分鐘/);
+  const rj = await S.checkCredentialStatus(verifyAuthorizationVC(revokedVc), { action: "write" });
+  assert.equal(rj.revokedBy, "jti");
+
+  // MCP 送出前的確認畫面帶出撤銷狀態預覽（Info I4）。
+  const asked: string[] = [];
+  const hp = createWriteHandlers({
+    requireConfirm: true,
+    elicit: { supported: () => true, ask: async (m: string) => { asked.push(m); return "decline"; } },
+    open: async () => ({ ok: true }),
+    close: async () => ({ ok: true }),
+    readFees: async () => ({ tradingFeeBps: null, executionFeeEth: null }),
+    readPosition: async () => ({ asset: null, isLong: null, marginUsdc: null, leverage: null, isOpen: null }),
+    readSessionUser: async () => null,
+    policyPreview: () => null,
+    warn: () => {},
+    vcStatusPreview: async () => ({ warnings: ["VC 狀態清單將於 X 到期"], problem: null }),
+  } as any);
+  await hp.openPosition({ sessionId: 3, asset: "sBTC", isLong: true, marginUsdc: 10, leverage: 2, authVcJson: JSON.stringify(keptVc) });
+  assert.match(asked[0], /⚠ VC 狀態清單將於 X 到期/);
+  ok("升級可見性：啟動預檢（不自動建立標記）、setupRequired → tg-bot 請管理者 init、其他原因帶出實際訊息、全部撤銷提醒 5–10 分鐘、MCP 確認畫面顯示到期預警");
+}
+
 fs.rmSync(TMP, { recursive: true, force: true });
 console.log(`\n✅ vc-status.test.ts 全過（${n} 組）`);

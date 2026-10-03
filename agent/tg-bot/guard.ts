@@ -122,12 +122,33 @@ export function vcWarningsForBot(warnings: readonly string[] | undefined): strin
  * VC 撤銷狀態（ADR-016）→ 拒單訊息。下單是寫入動作：被撤銷、狀態拿不到或驗不過一律拒單
  * （fail-closed）。回 null＝可以下單。即將到期等提醒由 vcWarningsForBot 另外顯示。
  */
-export function vcStatusProblemForBot(st: { ok: boolean; status: string; reasonCode: string }): string | null {
+export function vcStatusProblemForBot(st: {
+  ok: boolean;
+  status: string;
+  reasonCode: string;
+  message?: string;
+  setupRequired?: boolean;
+  revokedBy?: "jti" | "revokedBefore";
+}): string | null {
   if (st.ok && st.status !== "unknown") return null;
   if (st.status === "revoked") {
+    if (st.revokedBy === "revokedBefore") {
+      return (
+        `授權 VC 已被簽發者「全部撤銷」涵蓋（${st.reasonCode}）。請到前端 /sessions 重新簽發——但全部撤銷後約 5–10 分鐘內` +
+        "重簽的 VC 也會被涵蓋，請等這段時間過後再簽，並請 bot 管理者換上新的 VC 檔。"
+      );
+    }
     return `授權 VC 已被簽發者撤銷（${st.reasonCode}）。請到前端 /sessions 重新簽發，並請 bot 管理者換上新的 VC 檔。`;
   }
-  return `暫時無法確認授權 VC 的撤銷狀態（${st.reasonCode}），為安全起見拒單；狀態來源恢復或簽發者重新簽署狀態清單後再試。`;
+  if (st.setupRequired) {
+    return (
+      "VC 撤銷狀態清單目錄尚未初始化，為安全起見所有下單都會被拒。請 bot 管理者在 agent/ 目錄執行 " +
+      "`npm run vc-status:init`（只在持久儲存上跑一次），或修正 VC_STATUS_DIR／VC_STATUS_URL。"
+    );
+  }
+  // 其他「狀態不明」：把實際原因帶出來（不再只說「恢復後再試」——審查 N1）。
+  const detail = st.message ? `：${st.message}` : "";
+  return `無法確認授權 VC 的撤銷狀態（${st.reasonCode}）${detail}。為安全起見拒單；請 bot 管理者依上述原因處理（詳細錯誤見 bot 的 console）。`;
 }
 
 /**

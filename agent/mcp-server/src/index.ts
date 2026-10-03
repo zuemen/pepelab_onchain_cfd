@@ -33,6 +33,10 @@ import {
   openPositionForSession,
   closePositionForSession,
   getSession,
+  verifyAuthorizationVC,
+  checkCredentialStatus,
+  preflightVcStatus,
+  preflightErrorText,
   agentDid,
   parseDidPkh,
   buildAgentVerification,
@@ -171,6 +175,12 @@ const writeDeps: Parameters<typeof registerWriteTools>[1] = {
     }
   },
   warn: (m) => console.error(m),
+  vcStatusPreview: async (json) => {
+    const r = verifyAuthorizationVC(JSON.parse(json) as AuthorizationVC);
+    if (!r.valid) return null; // VC 本身的問題由 write.ts 回報
+    const st = await checkCredentialStatus(r, { action: "write" });
+    return { warnings: st.warnings ?? [], problem: st.ok && st.status !== "unknown" ? null : `${st.reasonCode}：${st.message}` };
+  },
 };
 
 server.tool(
@@ -275,6 +285,14 @@ server.tool(
 
 // ── write: 經 AgentSessionManager 在 session 限額內下單（人類確認走 MCP elicitation）──
 registerWriteTools(server, writeDeps);
+
+// 啟動預檢（ADR-016、審查 N1）：撤銷狀態清單目錄沒初始化時，所有 open/close 都會被拒。
+// 只檢查、不自動建立標記；訊息寫 stderr（stdout 是 MCP 協定）。
+{
+  const pre = await preflightVcStatus();
+  const text = preflightErrorText(pre);
+  console.error(text ?? `[vc-status] 撤銷狀態來源就緒：${pre.source}`);
+}
 
 const transport = new StdioServerTransport();
 await server.connect(transport);

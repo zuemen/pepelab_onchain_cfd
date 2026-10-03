@@ -21,7 +21,7 @@ import TelegramBot from "node-telegram-bot-api";
 
 /** sendMessage 的選項型別（隨套件版本而異，這裡取其宣告以免版本升級就編不過）。 */
 type SendMessageOptions = Parameters<TelegramBot["sendMessage"]>[2];
-import { openPositionForSession, getSession, verifyAuthorizationVC, checkCredentialStatus, redactSecrets, type AuthorizationVC } from "@pepelab/shared";
+import { openPositionForSession, getSession, verifyAuthorizationVC, checkCredentialStatus, preflightVcStatus, preflightErrorText, redactSecrets, type AuthorizationVC } from "@pepelab/shared";
 import { parseIdList, isAuthorized, ConfirmationStore, RateLimiter, classifyVcForBot, vcStatusProblemForBot, vcWarningsForBot, chatSafe } from "./guard.ts";
 
 function req(k: string, hint = ""): string {
@@ -135,6 +135,15 @@ function loadVc(startup: boolean): void {
 }
 loadVc(true);
 
+// 啟動預檢（ADR-016、審查 N1）：撤銷狀態清單目錄沒初始化時，所有下單都會被拒——啟動時就說清楚怎麼修。
+// 只檢查、不自動建立標記（自動建立會讓「路徑打錯＝沒有撤銷」的 fail-open 回來）。
+{
+  const pre = await preflightVcStatus();
+  const text = preflightErrorText(pre);
+  if (text) console.error(text);
+  else console.log(`VC 撤銷狀態來源就緒：${pre.source}`);
+}
+
 /** 下單前確認 VC 仍有效；無效就重讀一次檔案。回 null＝可用，否則回拒單原因。 */
 function ensureVcLocal(): string | null {
   if (VC) {
@@ -158,7 +167,10 @@ async function ensureVc(): Promise<string | null> {
   const check = async () => {
     const st = await checkCredentialStatus(verifyAuthorizationVC(VC!), { action: "write" });
     VC_WARNINGS = st.warnings ?? [];
-    return vcStatusProblemForBot(st);
+    const p = vcStatusProblemForBot(st);
+    // 完整原因（含 init 指令、來源路徑）寫 console 給管理者；chat 只看 chatSafe 過的版本。
+    if (p) console.error(`✗ VC 撤銷狀態檢查未過（${st.reasonCode}）：${st.message}`);
+    return p;
   };
   const problem = await check();
   if (!problem) return null;

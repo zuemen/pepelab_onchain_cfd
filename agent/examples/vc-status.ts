@@ -5,6 +5,8 @@
 //   npx tsx examples/vc-status.ts init [--dir <VC_STATUS_DIR>]
 //       建立清單目錄與 index.json 目錄標記。驗證端在沒有標記的目錄上一律回「狀態不明」（寫入拒絕），
 //       所以新部署必須先跑這一步——它等於營運方宣告「這裡就是權威的清單目錄，沒有檔案＝沒有清單」。
+//       也可用 `npm run vc-status:init`。**只在持久儲存上跑一次，不要放進容器啟動腳本**：沒掛 volume 時每次
+//       啟動都 init，會在暫存檔案系統建出有標記的空目錄，所有簽發者都被當成「沒有清單」（撤銷形同關閉）。
 //   npx tsx examples/vc-status.ts jti --vc <vc.json>
 //       印出憑證 id（v2＝nonce；v1＝EIP-712 digest）
 //   npx tsx examples/vc-status.ts typed-data --issuer 0x… [--from <目前清單.json>] [--sequence N]
@@ -13,7 +15,7 @@
 //       --from：沿用目前清單的撤銷項目與 revokedBefore，sequence 預設 +1（新清單必須是累積的）
 //       目錄（--dir 或 VC_STATUS_DIR）裡已有這個簽發者的清單時，必須帶 --from。沒有 --from 時 sequence 預設 1
 //       （與 SDK 的 prev.sequence + 1 慣例一致）。--revoke-before now ＝ now + 301 秒（涵蓋 VC 的時鐘誤差；
-//       撤銷後約 5 分鐘內新簽的 VC 也會被算成已撤銷，請等 5 分鐘再重簽）。
+//       撤銷後約 5–10 分鐘內新簽的 VC 也會被算成已撤銷，請等這段時間過後再重簽）。
 //   npx tsx examples/vc-status.ts assemble --typed <typed.json> --signature 0x…
 //       組裝成狀態清單 JSON 並立即驗證（簽的人不是 issuer → 失敗，不輸出半成品）
 //   npx tsx examples/vc-status.ts verify --list <list.json> [--manager 0x…]
@@ -183,6 +185,7 @@ if (cmd === "jti") {
   fs.mkdirSync(dir, { recursive: true });
   ensureMarker(dir);
   console.log(`✓ 清單目錄就緒：${path.join(dir, STATUS_DIRECTORY_MARKER)}（沒有檔案的簽發者＝沒有清單）`);
+  console.log("  提醒：這個目錄必須在持久儲存上；不要把 init 放進容器啟動腳本（沒掛 volume 時會讓撤銷形同關閉）。");
 } else if (cmd === "expiring") {
   const dir = arg("dir") ?? defaultStatusDir();
   const days = Number(arg("days") ?? 7);
