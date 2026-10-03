@@ -26,7 +26,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
 import { wrapFetchWithPayment } from "x402-fetch";
 import { openPositionForSession, resolveX402MaxValue, guardViemAccount } from "@pepelab/shared";
-import { loadVc, localVerifyVc } from "./vc-gate.ts";
+import { loadVc, localVerifyVcWithStatus } from "./vc-gate.ts";
 import { parseOracleBody } from "./x402-autonomous.ts";
 
 const API = (process.env.X402_API_URL ?? "https://agent-git-master-zuemens-projects.vercel.app").replace(/\/$/, "");
@@ -131,7 +131,7 @@ async function main() {
 
   // ── ③ session 在限額內開倉（A-3：必須帶使用者簽發的 VC）─────────────────────
   const vc = loadVc();
-  const vcChk = localVerifyVc(vc, account.address, SESSION_ID);
+  const vcChk = await localVerifyVcWithStatus(vc, account.address, SESSION_ID);
   console.log(`\nVC/SSI：${vcChk.ok ? "✓" : "✗"} ${vcChk.reason}` + (vcChk.issuerDid ? `（issuer ${vcChk.issuerDid}）` : ""));
   if (!vcChk.ok) {
     console.error("   ❌ 缺有效授權 VC（設 AGENT_AUTH_VC_PATH）→ 拒絕下單。");

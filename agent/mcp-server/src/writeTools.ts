@@ -157,6 +157,11 @@ export interface WriteToolDeps {
     positionId?: number;
   }) => PolicyPreview | null | Promise<PolicyPreview | null>;
   warn: (msg: string) => void;
+  /**
+   * VC 撤銷狀態預覽（ADR-016，選用）：送出前給人類看「清單快到期」等警告，或「送出時會被拒」的原因。
+   * 不影響是否送出——強制點仍是 write.ts。回 null＝略過。
+   */
+  vcStatusPreview?: (authVcJson: string) => Promise<{ warnings: string[]; problem: string | null } | null>;
 }
 
 export type ToolReply =
@@ -187,9 +192,11 @@ export function vcIssuerAddress(json: string): string | null {
 async function whoFields(deps: WriteToolDeps, sessionId: number, authVcJson: string) {
   const sessionUser = await safe(deps.readSessionUser(sessionId), null);
   const vcIssuer = vcIssuerAddress(authVcJson);
+  const vcStatus = deps.vcStatusPreview ? await safe(deps.vcStatusPreview(authVcJson), null) : null;
   return {
     sessionUser,
     vcIssuer,
+    vcStatus,
     vcIssuerMatchesSessionUser:
       sessionUser && vcIssuer ? sessionUser.toLowerCase() === vcIssuer.toLowerCase() : null,
   };
@@ -217,6 +224,8 @@ function summaryText(s: Record<string, any>): string {
     `估計交易費 ${fee.tradingFeeUsdc ?? "(讀不到)"} USDC（${fee.tradingFeeBps ?? "?"} bps）` +
       (fee.executionFeeEth ? `・execution fee ${fee.executionFeeEth} ETH` : ""),
     pv ? `policy 預檢：${pv.allowed ? "通過" : `不通過（${pv.reasonCode}）`}` : "policy 預檢：略過（未設 agent 金鑰）",
+    ...(s.vcStatus?.problem ? [`⚠ VC 撤銷狀態：${s.vcStatus.problem}（送出時會被拒絕）`] : []),
+    ...((s.vcStatus?.warnings ?? []) as string[]).map((w) => `⚠ ${w}`),
     "確認無誤才勾選並接受；拒絕或取消都不會送出。",
   ].join("\n");
 }

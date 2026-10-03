@@ -16,4 +16,5 @@ export * from "./redact.ts";
 export * from "./policyGate.ts";
 export * from "./signingGuard.ts";
 export * from "./vcNonce.ts";
+export * from "./vcStatus.ts";
 export * from "./fileLock.ts";

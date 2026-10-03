@@ -21,8 +21,8 @@ import TelegramBot from "node-telegram-bot-api";
 
 /** sendMessage 的選項型別（隨套件版本而異，這裡取其宣告以免版本升級就編不過）。 */
 type SendMessageOptions = Parameters<TelegramBot["sendMessage"]>[2];
-import { openPositionForSession, getSession, verifyAuthorizationVC, redactSecrets, type AuthorizationVC } from "@pepelab/shared";
-import { parseIdList, isAuthorized, ConfirmationStore, RateLimiter, classifyVcForBot, chatSafe } from "./guard.ts";
+import { openPositionForSession, getSession, verifyAuthorizationVC, checkCredentialStatus, preflightVcStatus, preflightErrorText, redactSecrets, type AuthorizationVC } from "@pepelab/shared";
+import { parseIdList, isAuthorized, ConfirmationStore, RateLimiter, classifyVcForBot, vcStatusProblemForBot, vcWarningsForBot, chatSafe } from "./guard.ts";
 
 function req(k: string, hint = ""): string {
   const v = process.env[k]?.trim();
@@ -135,14 +135,48 @@ function loadVc(startup: boolean): void {
 }
 loadVc(true);
 
+// 啟動預檢（ADR-016、審查 N1）：撤銷狀態清單目錄沒初始化時，所有下單都會被拒——啟動時就說清楚怎麼修。
+// 只檢查、不自動建立標記（自動建立會讓「路徑打錯＝沒有撤銷」的 fail-open 回來）。
+{
+  const pre = await preflightVcStatus();
+  const text = preflightErrorText(pre);
+  if (text) console.error(text);
+  else console.log(`VC 撤銷狀態來源就緒：${pre.source}`);
+}
+
 /** 下單前確認 VC 仍有效；無效就重讀一次檔案。回 null＝可用，否則回拒單原因。 */
-function ensureVc(): string | null {
+function ensureVcLocal(): string | null {
   if (VC) {
     const s = classifyVcForBot(verifyAuthorizationVC(VC), SESSION_ID);
     if (s.status === "ok") return null;
   }
   loadVc(false);
   return VC ? null : VC_PROBLEM ?? "授權 VC 無法使用";
+}
+
+/**
+ * 本地驗證＋撤銷狀態（ADR-016）。下單是寫入：撤銷或狀態未知一律拒單。被撤銷時重讀一次 VC 檔
+ * （管理者可能已換上重新簽發的 VC）。write.ts 送單前還會再查一次，這裡只是讓 chat 早點看到原因、
+ * 不發確認碼。
+ */
+let VC_WARNINGS: string[] = [];
+async function ensureVc(): Promise<string | null> {
+  VC_WARNINGS = [];
+  const local = ensureVcLocal();
+  if (local) return local;
+  const check = async () => {
+    const st = await checkCredentialStatus(verifyAuthorizationVC(VC!), { action: "write" });
+    VC_WARNINGS = st.warnings ?? [];
+    const p = vcStatusProblemForBot(st);
+    // 完整原因（含 init 指令、來源路徑）寫 console 給管理者；chat 只看 chatSafe 過的版本。
+    if (p) console.error(`✗ VC 撤銷狀態檢查未過（${st.reasonCode}）：${st.message}`);
+    return p;
+  };
+  const problem = await check();
+  if (!problem) return null;
+  loadVc(false);
+  if (!VC) return VC_PROBLEM ?? problem;
+  return await check();
 }
 
 const ASSETS: Record<string, string> = {
@@ -198,7 +232,7 @@ async function say(chatId: string, text: string, opts?: SendMessageOptions) {
 bot.on("polling_error", (e) => console.error(`polling_error：${(e as Error).message}`));
 
 async function execute(chatId: string, o: Order) {
-  const vcProblem = ensureVc();
+  const vcProblem = await ensureVc();
   if (vcProblem) return void (await say(chatId, `❌ 拒單：${vcProblem}`));
   await say(chatId, `確認 → ${o.isLong ? "做多" : "做空"} ${o.symbol}　${o.leverage}x　保證金 ${o.marginUsdc} USDT\n上鏈中…⏳`);
   try {
@@ -208,7 +242,7 @@ async function execute(chatId: string, o: Order) {
     });
     if (!res?.ok) return void (await say(chatId, `❌ 被拒絕：${res?.error ?? "未知錯誤"}`));
     const hash = res.txHash ?? res.hash ?? res.tx;
-    await say(chatId, `✅ 已開倉\nposition #${res.positionId ?? "?"}\n${hash ? `https://sepolia.basescan.org/tx/${hash}` : "(無 tx hash)"}`);
+    await say(chatId, `✅ 已開倉\nposition #${res.positionId ?? "?"}\n${hash ? `https://sepolia.basescan.org/tx/${hash}` : "(無 tx hash)"}${vcWarningsForBot(res.warnings)}`);
   } catch (e) {
     console.error("execute 失敗：", e);
     await say(chatId, `❌ 失敗：${(e as Error).message}`);
@@ -252,7 +286,7 @@ bot.on("message", async (msg) => {
   if (bounds) return void (await say(chatId, `❌ 超出限額：${bounds}`));
 
   // VC 過期：先拒單並提示重新簽發，不發確認碼。
-  const vcProblem = ensureVc();
+  const vcProblem = await ensureVc();
   if (vcProblem) return void (await say(chatId, `❌ 拒單：${vcProblem}`));
 
   const rl = limiter.hit(userId);
@@ -264,7 +298,8 @@ bot.on("message", async (msg) => {
   await say(
     chatId,
     `收到 → ${isLong ? "做多" : "做空"} ${symbol}　${leverage}x　保證金 ${marginUsdc} USDT\n` +
-      `⚠ 尚未下單。${CONFIRM_TTL_MS / 1000} 秒內回覆  /confirm ${p.code}  才會上鏈。`,
+      `⚠ 尚未下單。${CONFIRM_TTL_MS / 1000} 秒內回覆  /confirm ${p.code}  才會上鏈。` +
+      vcWarningsForBot(VC_WARNINGS),
   );
 });
 

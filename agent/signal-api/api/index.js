@@ -39318,6 +39318,7 @@ function parseDidPkh(did) {
   if (!m) throw new Error(`malformed did:pkh: ${did}`);
   return { chainId: Number(m[1]), address: ethers_exports.getAddress(m[2]) };
 }
+var MAX_CLOCK_SKEW_SEC = 300;
 
 // ../shared/src/verification.ts
 var ZERO4 = "0x0000000000000000000000000000000000000000";
@@ -39714,6 +39715,18 @@ var AGENT_ROOT = (() => {
   }
 })();
 var lock2 = Promise.resolve();
+
+// ../../frontend/src/contracts/agentAuthStatus.ts
+var DEFAULT_STATUS_LIST_VALIDITY_DAYS = 30;
+var DEFAULT_STATUS_LIST_VALIDITY_SEC = DEFAULT_STATUS_LIST_VALIDITY_DAYS * 24 * 3600;
+var MAX_STATUS_LIST_VALIDITY_SEC = 90 * 24 * 3600;
+
+// ../shared/src/vcStatus.ts
+var REVOKE_ALL_LEAD_SEC = MAX_CLOCK_SKEW_SEC + 1;
+var STATUS_LIST_EXPIRY_WARNING_SEC = 7 * 24 * 3600;
+var MAX_STATUS_RESPONSE_BYTES = 256 * 1024;
+var VC_STATUS_INIT_COMMAND = "npm run vc-status:init";
+var NOT_INITIALISED_HINT = `\u8ACB\u71DF\u904B\u65B9\u5728 agent/ \u76EE\u9304\u57F7\u884C \`${VC_STATUS_INIT_COMMAND}\`\uFF08\u53EA\u5728\u6301\u4E45\u5132\u5B58\u4E0A\u8DD1\u4E00\u6B21\uFF0C\u4E0D\u8981\u653E\u9032\u5BB9\u5668\u555F\u52D5\u8173\u672C\uFF09\u5EFA\u7ACB\u76EE\u9304\u6A19\u8A18\uFF0C\u6216\u4FEE\u6B63 VC_STATUS_DIR\uFF0FVC_STATUS_URL`;
 
 // ../shared/src/redact.ts
 var SECRET_VALUE_ENV_KEYS = ["UPSTASH_REDIS_REST_TOKEN", "ETHERSCAN_API_KEY", "BASESCAN_API_KEY"];

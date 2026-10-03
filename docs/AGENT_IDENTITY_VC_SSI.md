@@ -142,7 +142,8 @@ transport header 表達的是「這條連線是誰」，粒度是連線，不是
 
 ### 6.3 誠實邊界：沒做到的
 
-- **VC 沒有 per-request 的 nonce / audience / 防重放。** holder 綁定讓它在
+- **VC 沒有 per-request 的 nonce / audience / 防重放。**（2026-09-30 起 v2 有 credential 層級的 `nonce`／`validUntil`
+  與取代規則，2026-10-02 起可撤銷，見 §8；但仍不是 per-request。）holder 綁定讓它在
   「別的伺服器」上無效，但在**本伺服器**（持有 session key 的那一台）上，一份外洩的
   VC 在過期或 session 撤銷前可以被重複使用。實際防線是鏈上限額，不是 VC 本身。
 - **MCP server 沒有傳輸層認證。** 目前只走 stdio；依 MCP 規範，stdio 本來就不走
@@ -171,10 +172,21 @@ VC 回答「**誰**授權了這個 agent、授權範圍多大」。它**不**回
 兩者互補而非互相取代：生產化的付款路徑應該是「VC 驗授權 → KYA 驗對手方位址 →
 簽章/送出」。
 
-## 8. 範圍與後續
+## 8. 撤銷（2026-10-02，ADR-016）
+
+簽發者（使用者錢包）可以用**同一把金鑰、同一個 EIP-712 domain** 簽一份狀態清單，撤銷個別 VC（以 jti；v2 的 jti 就是
+簽進去的 `nonce`，v1 是 EIP-712 digest），或以 `revokedBefore` 撤銷某時間點之前簽發的全部 VC。下單與平倉前
+（`write.ts`）一律檢查：被撤銷、或拿不到／驗不過狀態 → 拒絕（`VC_REVOKED`／`VC_STATUS_UNVERIFIED`）。清單有
+單調 `sequence`、`issuedAt`、`validUntil`，驗證端記住最高 sequence 與看過的所有撤銷，舊清單不能讓撤銷復活。
+信任假設：清單主機無法偽造清單，但被信任回答「某簽發者有沒有清單」——從沒看過該清單的驗證端無法分辨「沒發過」與「被扣住」
+（ADR-016 §7.1）；清單過期會擋住該簽發者的開倉與平倉，要在到期前續簽。
+設計、取捨、操作步驟：[ADR-016](ADR-016-vc-credential-status.md)。
+
+## 9. 範圍與後續
 
 - 本層為**鏈下身分層**，**不改合約**（VC/SSI 不需要鏈上新方法）。
-- 鏈上錨定（ERC-8004 註冊、撤銷清單上鏈）為後續工作。
-- 前端 Agent Sessions / Agent Monitor 顯示每個 agent 的 DID 與「可發授權憑證」狀態。
+- 鏈上錨定（ERC-8004 註冊、撤銷登記上鏈）為後續工作；8004 註冊工具與 Base Sepolia registry 查證見
+  `AGENT_ECONOMY_STANDARDS.md` §3。
+- 前端 Agent Sessions / Agent Monitor 顯示每個 agent 的 DID 與「可發授權憑證」狀態；前端撤銷按鈕尚未做。
 
-_最後更新：2026-06-19（Track 3）；§6–§7 於 2026-09-17 新增。_
+_最後更新：2026-06-19（Track 3）；§6–§7 於 2026-09-17 新增；§8 撤銷於 2026-10-02 新增。_
