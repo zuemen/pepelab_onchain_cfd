@@ -445,6 +445,60 @@ for (const target of [101, 112]) {
   }
 }
 
+// ── 休市偽新鮮度（w36）：heartbeat 照寫、休市切換拿得到報價年齡、只對通過檢查的價格放寬 ──
+{
+  // 週末：Yahoo 回週五收盤價（報價 40h 前、同價）。heartbeat 仍必須重寫 —— 交易所的平倉
+  // 與清算（_requireFresh）和開倉共用同一個 maxPriceAge，停止刷新會把出場一起擋住。
+  // 停開倉改由 beforeAsset（marketOperator 切 ReduceOnly）負責，它必須拿到報價年齡。
+  const weekendQuote: Feed = { ...yahoo(100), quoteAgeSec: 40 * 3600, quoteStale: true };
+  const seen: { symbol: string; quoteAgeSec?: number }[] = [];
+  const oracle = fakeOracle(100); // updatedAt = NOW − 3600 > heartbeat 900
+  const r = await runRound(
+    ctx({
+      oracle,
+      fetchPrice: async () => weekendQuote,
+      beforeAsset: async (symbol, _id, feed) => {
+        seen.push({ symbol, quoteAgeSec: feed?.quoteAgeSec });
+        return "ok";
+      },
+    }),
+  );
+  assert.deepEqual(oracle.writes, [P(100)], "休市 heartbeat 照寫（平倉／清算靠它）");
+  assert.deepEqual(seen, [{ symbol: "sAAPL", quoteAgeSec: 40 * 3600 }], "beforeAsset 拿到報價年齡");
+  assert.deepEqual(r.priced, [{ symbol: "sAAPL", assetId: "id:sAAPL", quoteAgeSec: 40 * 3600 }]);
+}
+{
+  // priced 只列「價格通過所有檢查」的資產：被熔斷拒寫、來源無效的不列 ——
+  // run.ts 只對 priced 做放寬，所以熔斷停單（ReduceOnly）在被拒寫的那一輪不會被解除；
+  // 之後某一輪價格重新通過檢查、開盤、報價新鮮時會自動解除（guardian 上鎖的除外）。
+  const oracle = fakeOracle(100);
+  const r = await runRound(
+    ctx({
+      symbols: ["sAAPL", "sTSLA", "sNVDA", "sMSFT"],
+      oracle,
+      fetchPrice: async (s) =>
+        s === "sAAPL" ? yahoo(150) // +50% 無確認 → 拒寫
+        : s === "sTSLA" ? none // 來源無效
+        : s === "sNVDA" ? yahoo(100) // 同價、heartbeat 到期 → 寫
+        : yahoo(100),
+    }),
+  );
+  assert.deepEqual(r.refused.map((x) => x.symbol), ["sAAPL"]);
+  assert.deepEqual(r.skippedSymbols, ["sTSLA"]);
+  assert.deepEqual(r.priced.map((p) => p.symbol), ["sNVDA", "sMSFT"]);
+}
+{
+  // 同價且 heartbeat 未到期（不需寫）也算通過；Mock 寫入失敗則不算。
+  const fresh = fakeOracle(100);
+  fresh.state.at = BigInt(NOW - 60);
+  const r1 = await runRound(ctx({ oracle: fresh }));
+  assert.equal(fresh.writes.length, 0);
+  assert.deepEqual(r1.priced.map((p) => p.symbol), ["sAAPL"]);
+  const broken = fakeOracle(100, { updateThrows: new Error("nonce too low") });
+  const r2 = await runRound(ctx({ oracle: broken }));
+  assert.deepEqual(r2.priced, [], "寫入失敗 → 不放寬");
+}
+
 // ── effectiveBreaker ─────────────────────────────────────────────────────
 assert.equal(effectiveBreaker(0.2, 1000n, true), 0.1);
 assert.ok(Math.abs(effectiveBreaker(0.2, 1000n, false) - 1000 / 11000) < 1e-12);

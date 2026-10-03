@@ -104,4 +104,14 @@ for (const [sym, second] of Object.entries(SECONDARY_SOURCES)) {
   assert.notEqual(second.kind, SOURCES[sym].kind, `${sym} 的第二來源與主要來源同一家`);
 }
 
+// ── 審查 L3／複審 L-D：每個 SOURCES 資產都要明確分類 ─────────────────────────────
+// 休市切換對未分類資產當 equity（fail-safe），未分類的加密資產會在夜間與週末被停開倉、
+// CoinGecko 來源的甚至永遠放寬不了。所以新增資產時一定要寫進 ASSET_CLASS。
+{
+  const { ASSET_CLASS } = await import("./market.ts");
+  for (const [sym, src] of Object.entries(SOURCES)) {
+    assert.ok(sym in ASSET_CLASS, `${sym}（${src.kind}${"symbol" in src ? ` ${src.symbol}` : ""}）沒有在 ASSET_CLASS 分類`);
+  }
+}
+
 console.log("feeds.test.ts ✓ all assertions passed");

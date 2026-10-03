@@ -20,6 +20,13 @@ export default defineConfig({
           new URL('./src/contracts/deployments/default.json', import.meta.url)
         ),
       },
+      // `import … from 'src/…'`：對應 vite.config.ts 的同名 alias。vitest 2 的 vite-node
+      // 解析失敗時會退回「相對於專案根目錄的檔案路徑」，所以以前沒有這條也能跑；vitest 4
+      // 改用 Vite 的 module runner，沒有這個退路，缺 alias 就是 Cannot find package 'src/…'。
+      {
+        find: /^src(.+)/,
+        replacement: `${fileURLToPath(new URL('./src', import.meta.url))}$1`,
+      },
     ],
   },
   test: {
