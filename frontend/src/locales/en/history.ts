@@ -7,6 +7,7 @@ export const history: Catalog['history'] = {
   title: 'Transaction History',
   subtitle: 'On-chain auditability — decoded directly from Base Sepolia via ethers.js',
   loading: 'Loading…',
+  scanningLogs: 'Syncing chain logs…',
   refresh: '↺ Refresh',
 
   proofNote: {
@@ -79,8 +80,8 @@ export const history: Catalog['history'] = {
 
   legacySwapTooltip: 'Legacy MockSwapRouter swap (the router has been superseded by PepeAMM; kept for reference).',
   storageTooltip:
-    'Read from contract storage — permanent, but not tied to a single transaction. Verify with getPosition() on BaseScan.',
-  storageLabel: 'storage',
+    'Read from contract storage — permanent, but storage does not record which transaction wrote it. Once the matching transaction is found in the logs, this becomes its hash and a BaseScan link. You can also verify with getPosition() on BaseScan.',
+  storageLabel: 'contract storage',
 
   loadOlder: {
     scanning: 'Scanning older blocks…',

@@ -36,6 +36,7 @@ import { CHAIN_NAMES } from 'src/contracts/addresses'
 import { isPlatformDeployment } from 'src/contracts/deployment'
 import { oracleRowStale } from 'src/lib/pepefi/priceFreshness'
 import { SIGNAL_API_URL } from 'src/lib/pepefi/signalApi'
+import { type SolvencyFlags, readSolvencyFlags, solvencyDisclosure } from 'src/lib/pepefi/solvencyFlags'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface SessionRisk {
@@ -125,6 +126,8 @@ export default function AgentMonitorPage() {
   )
 
   const [sessions, setSessions] = useState<SessionRisk[]>([])
+  // ADL / 組合保證金開關：讀鏈上，揭露框不寫死狀態（見 lib/pepefi/solvencyFlags.ts）。
+  const [solvency, setSolvency] = useState<SolvencyFlags>({ adl: undefined, portfolioMargin: undefined })
   const [oracle,   setOracle]   = useState<OracleRow[]>([])
   const [vault,    setVault]    = useState<{ assets: bigint; sharePrice: bigint } | null>(null)
   const [revenue,  setRevenue]  = useState<Revenue | null>(null)
@@ -226,6 +229,12 @@ export default function AgentMonitorPage() {
   }, [revUrl])
 
   useEffect(() => { void fetchSessions() }, [fetchSessions])
+  useEffect(() => {
+    let cancelled = false
+    setSolvency({ adl: undefined, portfolioMargin: undefined })
+    void readSolvencyFlags(contracts?.exchange).then((f) => { if (!cancelled) setSolvency(f) })
+    return () => { cancelled = true }
+  }, [contracts])
   useEffect(() => { void fetchOracle() }, [fetchOracle])
   useEffect(() => { void fetchRevenue() }, [fetchRevenue])
   // 預填第一個 session 的 agent，方便一鍵驗證。
@@ -274,7 +283,7 @@ export default function AgentMonitorPage() {
       {/* Risk disclosure — be honest about live solvency backstops */}
       <Alert severity="info" variant="outlined">
         <Typography variant="caption" sx={{ display: 'block' }}>
-          {t.admin.agent.disclosure}
+          {solvencyDisclosure(solvency)}
         </Typography>
       </Alert>
 

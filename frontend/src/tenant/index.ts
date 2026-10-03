@@ -10,12 +10,16 @@
 // eslint-disable-next-line import/no-unresolved -- 建置期 alias（vite.config.ts / vitest.config.ts），型別見 tenant-config.d.ts
 import rawTenant from '@tenant-config';
 
+import { showsMascot } from './brand';
 import { makeAssetPolicy } from './assetPolicy';
 import { parseTenant, tenantIdFrom } from './schema';
 
 // ----------------------------------------------------------------------
 
 export const tenant = parseTenant(rawTenant, tenantIdFrom(import.meta.env.VITE_TENANT));
+
+/** 這個租戶顯示不顯示 PepeLab 吉祥物元素（首頁徽章、Pepe 頭像）。見 schema 的 brand.mascot。 */
+export const TENANT_SHOWS_MASCOT = showsMascot(tenant);
 
 /** 資產白名單：進場看它，出場不看它。見 assetPolicy.ts。 */
 export const assetPolicy = makeAssetPolicy(tenant);

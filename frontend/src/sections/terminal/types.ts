@@ -31,11 +31,18 @@ export interface Pos {
   entryPrice: bigint
   margin: bigint
   leverage: bigint
+  /** 未實現損益：合約 getPositionValue − 保證金（見 lib/pepefi/positionPnl.ts）。 */
   pnl: bigint
+  /** 現在平倉拿回的金額（合約 getPositionValue）。 */
+  value: bigint
+  /** 合約 mark 價，18 位小數。 */
   cur: bigint
 }
 
-/** Pos 再疊上以即時價重算的未實現損益。 */
+/**
+ * 持倉表與帳戶區吃的形狀。`livePnl` 以前是用鏈下參考價自己重算的，跟合約、跟投資組合頁
+ * 都對不起來；現在就是合約讀數 `pnl`，保留這個名字只是為了不動持倉表的介面。
+ */
 export interface LivePos extends Pos {
   livePnl: bigint
 }

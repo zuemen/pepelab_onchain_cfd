@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { it, expect, describe } from 'vitest';
@@ -17,9 +18,9 @@ import { loadTenantForBuild } from './node';
 import { tenantFooterLinks } from './footer';
 import { tenant, assetPolicy } from './index';
 import { resolveTenantFeatures } from './flags';
-import { applyBrand, brandCatalog } from './brand';
 import { tenantDisclosureAdditions } from './disclosure';
 import { TENANT_LOCALES, type TenantConfig } from './schema';
+import { applyBrand, showsMascot, brandCatalog } from './brand';
 
 // ----------------------------------------------------------------------
 
@@ -76,6 +77,52 @@ describe('disclosure additions', () => {
       LOCALES.en.catalog.common.disclosure.operatedBy
     );
     expect(en.operatorLine).toMatch(/^This site is operated by Demo Bank/);
+  });
+});
+
+describe('PepeLab brand elements do not leak into another tenant', () => {
+  // 2026-10 截圖：demo-bank 首頁的銀行 logo 右下角仍有 Pepe 青蛙徽章、背景是 PepeLab
+  // 的綠色光暈；連上錢包後頂列還有 Pepe 頭像。機構 DD 會直接看到。
+  const SRC = path.join(FRONTEND_ROOT, 'src');
+  const codeOf = (rel: string) =>
+    fs
+      .readFileSync(path.join(SRC, rel), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|[^:])\/\/.*$/gm, '$1');
+
+  it('only the default tenant shows the mascot; demo-bank opts out in its config', () => {
+    expect(showsMascot(defaultTenant)).toBe(true);
+    expect(showsMascot(demoBank)).toBe(false);
+  });
+
+  it('demo-bank’s logo and favicon are its own, not PepeLab artwork', () => {
+    for (const p of [demoBank.brand.logo.src, demoBank.brand.logo.fallbackSrc, demoBank.brand.favicon]) {
+      expect(p).toMatch(/^\/tenants\/demo-bank\//);
+      expect(p).not.toMatch(/pepe/i);
+    }
+    expect(demoBank.brand.mark).not.toBe(defaultTenant.brand.mark);
+  });
+
+  it.each(TENANT_LOCALES)('%s: the landing page and page titles never name PepeLab for demo-bank', (code) => {
+    const zh = brandCatalog(LOCALES[code].catalog, demoBank.brand);
+    const json = JSON.stringify({ landing: zh.landing, meta: zh.meta });
+    expect(json).not.toMatch(/PepeLab/i);
+    expect(json).not.toContain(defaultTenant.brand.mark);
+  });
+
+  it('the landing page takes its mascot badge and glow from the tenant, not from literals', () => {
+    const landing = codeOf('pages/pepefi/LandingPage.tsx');
+    expect(landing).not.toContain('🐸');
+    // PepeLab 綠（#7cc14a = 124,193,74）與它的深底 #0d1f12 只能經由色票變數出現。
+    expect(landing).not.toMatch(/rgba\(\s*124\s*,\s*193\s*,\s*74/);
+    expect(landing).not.toMatch(/#0d1f12/i);
+    expect(landing).toMatch(/TENANT_SHOWS_MASCOT/);
+  });
+
+  it('the account avatar falls back to a neutral mark when the tenant has no mascot', () => {
+    expect(codeOf('components/pepefi/PepeAvatar.tsx')).toMatch(
+      /TENANT_SHOWS_MASCOT\s*\?\s*<MascotAvatar[^>]*>\s*:\s*<NeutralAvatar/
+    );
   });
 });
 

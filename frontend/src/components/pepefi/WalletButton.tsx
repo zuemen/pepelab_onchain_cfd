@@ -69,7 +69,7 @@ export default function WalletButton({ wallet }: Props) {
         startIcon={<CircularProgress size={16} color="inherit" />}
         sx={{ borderRadius: 50, px: 2.5 }}
       >
-        Connecting…
+        {t.common.wallet.connecting}
       </Button>
     );
   }
@@ -135,7 +135,7 @@ export default function WalletButton({ wallet }: Props) {
         >
           <Box sx={{ px: 2, py: 1, borderBottom: '1px solid', borderColor: 'divider' }}>
             <Typography variant="caption" color="text.secondary" display="block">
-              Connected Wallet
+              {t.common.wallet.connectedTitle}
             </Typography>
             <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.primary', wordBreak: 'break-all' }}>
               {address}
@@ -149,7 +149,7 @@ export default function WalletButton({ wallet }: Props) {
             sx={{ py: 1, fontSize: '0.875rem' }}
           >
             <Icon icon="eva:swap-fill" width={18} height={18} style={{ marginRight: 8 }} />
-            Switch Account
+            {t.common.wallet.switchAccount}
           </MenuItem>
           <MenuItem
             onClick={() => {
@@ -166,7 +166,7 @@ export default function WalletButton({ wallet }: Props) {
             }}
           >
             <Icon icon="eva:log-out-fill" width={18} height={18} style={{ marginRight: 8 }} />
-            Disconnect
+            {t.common.wallet.disconnect}
           </MenuItem>
         </Menu>
       </Box>
@@ -191,7 +191,7 @@ export default function WalletButton({ wallet }: Props) {
           boxShadow: '0 8px 16px 0 rgba(0, 167, 111, 0.24)',
         }}
       >
-        Connect Wallet
+        {t.common.wallet.connectButton}
       </Button>
 
       <Dialog

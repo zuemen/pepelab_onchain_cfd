@@ -8,7 +8,7 @@ export const portfolio = {
   netWorth: {
     title: '淨資產',
     unrealisedPnl: '未實現 PnL',
-    unrealisedPnlTooltip: '未平倉部位以市價計算的 PnL',
+    unrealisedPnlTooltip: '未平倉部位現在平倉的淨損益：依合約標記價計算，已扣手續費與資金費。與交易終端機的持倉表同一個算法',
 
     /**
      * 單複數寫成兩條完整的句子。catalog 沒有複數引擎，而把 'balance' / 'balances'
@@ -151,9 +151,9 @@ export const portfolio = {
   /** 欄位的 tooltip。只有會被誤讀的欄位需要——兩個價格擺在一起且幾乎不相等。 */
   columnHint: {
     entry: '你的開倉價格',
-    oracle: '合約結算依據的鏈上價格——未實現 PnL 就是用這個價格計算',
+    oracle: '合約結算依據的鏈上價格——未實現 PnL 以這個價格（加上 OI 溢價後的標記價）計算',
     liveMarket: '鏈下報價來源，變動會早於預言機，因此出現落差是正常現象',
-    unrealizedPnl: '未實現損益，依預言機價格計算',
+    unrealizedPnl: '現在平倉會比投入的保證金多拿或少拿多少：依合約標記價計算，已扣平倉手續費、借貸費與應付資金費（合約 getPositionValue − 保證金）',
   },
 
   /** 部位頁籤的平倉按鈕（見 lib/pepefi/closeGuard.ts）。 */

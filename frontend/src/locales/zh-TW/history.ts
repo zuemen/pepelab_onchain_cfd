@@ -9,6 +9,8 @@ export const history = {
   title: '交易歷史',
   subtitle: '鏈上可稽核性——直接透過 ethers.js 從 Base Sepolia 解碼',
   loading: '載入中…',
+  /** 部位已顯示、背景還在掃較新的日誌（交易雜湊、入金、手續費等事件）。 */
+  scanningLogs: '同步鏈上日誌…',
   refresh: '↺ 重新整理',
 
   proofNote: {
@@ -83,8 +85,8 @@ export const history = {
   /** 舊版兌換（MockSwapRouter）類型標籤的說明。 */
   legacySwapTooltip: '舊版 MockSwapRouter 的兌換紀錄（該路由已由 PepeAMM 取代，保留以供查閱）。',
   storageTooltip:
-    '從合約儲存讀取——永久保存，但不對應單一交易。可用 getPosition() 在 BaseScan 上驗證。',
-  storageLabel: '儲存',
+    '這一列讀自合約儲存（永久保存），但儲存不記錄是哪一筆交易寫入的；日誌裡找到對應的交易後，這裡會換成交易雜湊與 BaseScan 連結。也可用 getPosition() 在 BaseScan 上驗證。',
+  storageLabel: '合約儲存',
 
   loadOlder: {
     scanning: '正在掃描較舊的區塊…',

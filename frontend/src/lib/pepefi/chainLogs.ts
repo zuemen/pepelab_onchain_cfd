@@ -188,10 +188,37 @@ export interface ChunkScanOptions {
   concurrency?: number
   /** 中止訊號。每一段開始前（含重試前）檢查；中止時整個掃描以 ChunkScanAbortedError 結束。 */
   signal?: AbortSignal
+  /**
+   * 單次 getLogs 最久等多久（預設 CHUNK_TIMEOUT_MS）。逾時算這一次失敗，照常重試；重試完
+   * 仍逾時就算失敗段。沒有這個上限時，一個不回應的節點（公開 RPC 偶爾會，anvil fork
+   * 轉送上游時也會）會讓整個掃描永遠不結束——歷史紀錄頁的「載入中…」就一直掛著。
+   */
+  timeoutMs?: number
+}
+
+/** 單次 getLogs 的預設逾時。公開節點正常回應在 1–3 秒內，20 秒已是明顯卡住。 */
+export const CHUNK_TIMEOUT_MS = 20_000
+
+class ChunkTimeoutError extends Error {
+  constructor(ms: number) {
+    super(`getLogs timed out after ${ms} ms`)
+    this.name = 'ChunkTimeoutError'
+  }
+}
+
+function withChunkTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  if (!(ms > 0) || !Number.isFinite(ms)) return p
+  let timer: ReturnType<typeof setTimeout> | undefined
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) => {
+      timer = setTimeout(() => reject(new ChunkTimeoutError(ms)), ms)
+    }),
+  ]).finally(() => clearTimeout(timer))
 }
 
 /** 每段查詢以外的選項（給 getLogsChunked / queryLogsChunked 這種位置參數介面用）。 */
-export type ChunkRunOptions = Pick<ChunkScanOptions, 'retries' | 'retryDelayMs' | 'concurrency' | 'signal'>
+export type ChunkRunOptions = Pick<ChunkScanOptions, 'retries' | 'retryDelayMs' | 'concurrency' | 'signal' | 'timeoutMs'>
 
 /** UI 呼叫端統一的重試次數。 */
 export const UI_RETRIES = 2
@@ -226,6 +253,7 @@ async function scanChunks<T>(
   const perRange: T[][] = new Array(ranges.length)
   const retries = Math.max(0, opts.retries ?? 0)
   const baseDelay = opts.retryDelayMs ?? 400
+  const timeoutMs = opts.timeoutMs ?? CHUNK_TIMEOUT_MS
   const checkAbort = () => {
     if (opts.signal?.aborted) throw new ChunkScanAbortedError()
   }
@@ -249,7 +277,7 @@ async function scanChunks<T>(
           checkAbort()
         }
         try {
-          perRange[i] = await fetchRange(from, to)
+          perRange[i] = await withChunkTimeout(fetchRange(from, to), timeoutMs)
           ok = true
         } catch (e) {
           lastErr = e

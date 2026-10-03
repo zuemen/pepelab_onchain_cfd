@@ -160,6 +160,12 @@ export const tenantSchema = z
       favicon: localAssetPath,
       /** `<meta name="theme-color">`。 */
       themeColor: hexColor,
+      /**
+       * 是否顯示 PepeLab 的吉祥物元素：首頁 logo 右下角的品牌小徽章、頂列與帳戶抽屜的
+       * Pepe 頭像（與頭像挑選器）。省略 = true（default 租戶就是 PepeLab 本身）。
+       * 機構租戶設 false：頭像改成不帶圖的中性識別圓，首頁不放徽章。
+       */
+      mascot: z.boolean().optional(),
     }),
 
     /** MUI 色票覆寫。省略的鍵沿用 src/theme/theme-config.ts 的預設值。 */

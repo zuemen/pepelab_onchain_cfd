@@ -17,7 +17,7 @@ import { ASSET_IDS, CHAIN_NAMES } from 'src/contracts/addresses';
 import { t, interpolate } from 'src/locales';
 import { ASSET_LABEL } from 'src/lib/pepefi/assetMeta';
 import { prettyError } from 'src/lib/pepefi/errorMessages';
-import { safeRead } from 'src/lib/pepefi/safeRead';
+import { toPortfolioRow, readOpenPosition, type PortfolioPositionRow } from 'src/lib/pepefi/positionPnl';
 import { STABLE_LABEL } from 'src/lib/pepefi/tokenLabel';
 import { firstBlocking, stalenessNotice } from 'src/lib/pepefi/priceFreshness';
 
@@ -83,17 +83,6 @@ interface RawCopyRecord {
   active:        boolean;
 }
 
-interface RawPos {
-  asset:       string;
-  isLong:      boolean;
-  isOpen:      boolean;
-  entryPrice:  bigint;
-  margin:      bigint;
-  leverage:    bigint;
-  openedAt:    bigint;
-  copiedFrom:  string;
-}
-
 interface CopyRec {
   index:         number;
   trader:        string;
@@ -105,20 +94,8 @@ interface CopyRec {
   positionIds:   bigint[];
 }
 
-interface PosRow {
-  id:            bigint;
-  asset:         string;
-  isLong:        boolean;
-  entryPrice:    bigint;    // 18-dec
-  currentPrice:  bigint;    // 18-dec
-  margin:        bigint;    // 18-dec
-  leverage:      bigint;
-  openedAt:      bigint;    // unix seconds
-  unrealizedPnL: bigint;    // signed 18-dec
-  currentValue:  bigint;    // 18-dec ≥ 0
-  copiedFrom:    string;    // address(0) for self-opened
-  accruedFunding: bigint;   // signed 18-dec
-}
+/** 見 lib/pepefi/positionPnl.ts：終端機與這頁共用同一個讀取與損益定義。 */
+type PosRow = PortfolioPositionRow;
 
 // ── Formatting ────────────────────────────────────────────────────────────────
 const f18   = (v: bigint, d = 2) => (Number(v) / 1e18).toFixed(d);
@@ -311,48 +288,13 @@ export default function PortfolioPage() {
     const positionsResult = await trackedRead((async (): Promise<PosRow[]> => {
       const posIds = (await contracts.exchange.getUserPositions(addr)) as bigint[];
 
-      // getPosition 先併發拿完，再對「還開著」的倉位併發拿細節。舊版是在
-      // 每個 map 裡先 await getPosition 再 await 四個 view，兩層都算在同一個
-      // Promise.all 底下沒錯，但 getPosition 一律要等一個完整 RTT 才開始下一批；
-      // 拆成兩階段後總延遲是 2 個 RTT 而不是 2N 個。
-      const rawPositions = await Promise.all(
-        posIds.map(id =>
-          safeRead<RawPos | null>(contracts.exchange.getPosition(id) as unknown as Promise<RawPos>, null),
-        ),
-      );
-
+      // 每個部位一個 readOpenPosition（getPosition 之後四個 view 併發，各自隔離）。
+      // 終端機的持倉表也走同一個函式，所以同一個部位兩頁的未實現損益一定一樣：
+      // 合約 getPositionValue − 保證金。見 lib/pepefi/positionPnl.ts。
       const maybeRows = await Promise.all(
-        posIds.map(async (id, i): Promise<PosRow | null> => {
-          try {
-            const raw = rawPositions[i];
-            if (!raw || !raw.isOpen) return null;
-            // Each read is isolated: a reverting view on one position must not
-            // blank the whole portfolio.
-            const [pnl, val, priceRes, funding] = await Promise.all([
-              safeRead(contracts.exchange.getUnrealizedPnL(id) as Promise<bigint>, 0n),
-              safeRead(contracts.exchange.getPositionValue(id) as Promise<bigint>, 0n),
-              safeRead(
-                contracts.oracle.getPrice(raw.asset) as Promise<[bigint, bigint]>,
-                [0n, 0n] as [bigint, bigint],
-              ),
-              safeRead(contracts.exchange.pendingFunding(id) as Promise<bigint>, 0n),
-            ]);
-            const pr = priceRes as unknown as [bigint, bigint];
-            return {
-              id,
-              asset:          raw.asset,
-              isLong:         raw.isLong,
-              entryPrice:     raw.entryPrice,
-              currentPrice:   pr[0] * 10n ** 10n,
-              margin:         raw.margin,
-              leverage:       raw.leverage,
-              openedAt:       raw.openedAt,
-              unrealizedPnL:  pnl as bigint,
-              currentValue:   val as bigint,
-              copiedFrom:     raw.copiedFrom,
-              accruedFunding: funding as bigint,
-            };
-          } catch { return null; }
+        posIds.map(async (id): Promise<PosRow | null> => {
+          const r = await readOpenPosition(contracts, id);
+          return r ? toPortfolioRow(r) : null;
         })
       );
       return maybeRows.filter((r): r is PosRow => r !== null);

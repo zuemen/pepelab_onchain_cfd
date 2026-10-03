@@ -315,7 +315,13 @@ export const admin: Catalog['admin'] = {
       'Monitor the AI agent economy: delegated session budget usage, x402 revenue split, oracle health. Read-only.',
 
     disclosure:
-      'Solvency backstop disclosure: ADL (auto-deleveraging) and cross margin are implemented and flag-gated; this testnet deployment currently has them disabled by default (production runs isolated-margin liquidation + Insurance Vault bailout). In extreme markets, the protocol carries solvency risk as counterparty before ADL is enabled — the numbers on this page do not guarantee solvency in production. See docs/RISK_NOTES.md.',
+      'Solvency backstop disclosure: ADL (auto-deleveraging) and cross margin are implemented and gated by contract flags. Current state on this chain: ADL {adl}, cross margin {portfolioMargin} (read live from the contract). Isolated-margin liquidation and the Insurance Vault bailout always run; if the vault falls short, profitable positions are auto-deleveraged when ADL is enabled, otherwise the protocol carries the solvency risk as counterparty — the numbers on this page do not guarantee solvency in production. See docs/RISK_NOTES.md.',
+    flagState: {
+      on: 'enabled',
+      off: 'disabled',
+      loading: 'loading…',
+      unknown: 'unavailable',
+    },
 
     kpi: {
       chain: 'Chain',
