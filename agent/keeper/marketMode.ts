@@ -3,7 +3,8 @@
 // 資產的分類，都能在不碰鏈的情況下測試。決策本身在 operator.ts（純函式）。
 //
 // 一輪的順序（run.ts）：
-//   prepare()                     — 讀 marketOperator()：舊合約／不是自己 → 整輪略過
+//   prepare()                     — 讀 marketOperator()：舊合約／不是自己 → 整輪略過；
+//                                   讀取失敗（重試一次仍失敗）→ 照樣收緊，只略過放寬
 //   tighten(symbol, …)            — round.ts 的 beforeAsset，寫價前，只會切 ReduceOnly
 //   （寫價、熔斷停單 protect.ts）
 //   loosenPass(round.priced)      — 只對價格通過檢查的資產，每個資產重新取時間
@@ -47,14 +48,22 @@ export interface MarketModeDeps {
   error?: (line: string) => void;
 }
 
-/** prepare() 的結果。只有 "ready" 才會做切換。 */
-export type OperatorState = "ready" | "missing" | "not-operator" | "error";
+/**
+ * prepare() 的結果。
+ *   ready       — 收緊與放寬都做。
+ *   unverified  — marketOperator() 讀不到（RPC 問題）：照樣收緊（送出前的 staticCall 預檢會擋掉
+ *                 沒有權限的情況），只略過放寬（審查 L-A）。
+ *   missing／not-operator — 都不做。
+ */
+export type OperatorState = "ready" | "unverified" | "missing" | "not-operator";
 export type ModeResult = "ok" | "failed" | "unknown";
 
 export function createMarketMode(d: MarketModeDeps) {
   const log = d.log ?? console.log;
   const error = d.error ?? console.error;
   let state: OperatorState | null = null;
+  /** 本輪收緊預檢因權限被拒的資產（呼叫端據此印「休市仍可開倉」警告）。 */
+  const deniedTighten: string[] = [];
 
   const canSwitch = (symbol: string) => switchesMode(symbol) && (d.allowed === null || d.allowed.has(symbol));
 
@@ -63,31 +72,47 @@ export function createMarketMode(d: MarketModeDeps) {
    *   missing      — 舊 exchange 沒有這個函式 → 整輪略過，呼叫端印「休市仍可開倉」警告。
    *   not-operator — 不是這把 keeper（租戶設定或部署時覆寫）→ 一條 ::warning::、整輪略過，
    *                  不逐檔記 failed（審查 L2）。DRY_RUN 沒有 signer，無從比對，視為 ready。
-   *   error        — RPC 問題：記一次 failed，本輪略過。
+   *   unverified   — RPC 問題，重試一次仍失敗：照樣收緊、略過放寬（審查 L-A：若整輪略過，
+   *                  13:00–16:00 ET 那一輪剛好失敗就會重新打開收盤空窗）。
    */
   async function prepare(): Promise<OperatorState> {
+    let op: string;
     try {
-      const op = await d.exchange.marketOperator();
-      if (d.signerAddress && op.toLowerCase() !== d.signerAddress.toLowerCase()) {
-        log(
-          `::warning::keeper（${d.signerAddress}）不是交易所的 marketOperator（${op}），本輪不做休市切換 ——` +
-            ` 休市中仍可對收盤價開倉。由 owner setMarketOperator，或設 KEEPER_MARKET_OPERATOR=0 關閉`,
-        );
-        state = "not-operator";
-      } else {
-        state = "ready";
-      }
+      op = await readOperator();
     } catch (e) {
       const kind: ProbeResult = classifyProbeError(d.revertInfo(e));
       if (kind === "missing") {
         log(`  → marketOperator：exchange 沒有 marketOperator()（舊合約），本輪略過休市切換`);
         state = "missing";
       } else {
-        error(`::error::讀 marketOperator() 失敗（${kind}）：${(e as Error).message.slice(0, 100)} —— 本輪略過休市切換`);
-        state = "error";
+        log(
+          `::warning::讀 marketOperator() 失敗（${kind}，已重試一次）：${(e as Error).message.slice(0, 100)}` +
+            ` —— 本輪照樣收緊（送出前預檢權限），略過放寬`,
+        );
+        state = "unverified";
       }
+      return state;
+    }
+    if (d.signerAddress && op.toLowerCase() !== d.signerAddress.toLowerCase()) {
+      log(
+        `::warning::keeper（${d.signerAddress}）不是交易所的 marketOperator（${op}），本輪不做休市切換 ——` +
+          ` 休市中仍可對收盤價開倉。由 owner setMarketOperator，或設 KEEPER_MARKET_OPERATOR=0 關閉`,
+      );
+      state = "not-operator";
+    } else {
+      state = "ready";
     }
     return state;
+  }
+
+  /** 讀 marketOperator()；非「舊合約」的失敗重試一次。 */
+  async function readOperator(): Promise<string> {
+    try {
+      return await d.exchange.marketOperator();
+    } catch (e) {
+      if (classifyProbeError(d.revertInfo(e)) === "missing") throw e;
+      return await d.exchange.marketOperator();
+    }
   }
 
   async function apply(
@@ -96,14 +121,20 @@ export function createMarketMode(d: MarketModeDeps) {
     phase: "tighten" | "loosen",
     feed: { quoteAgeSec?: number; sourceOk?: boolean },
   ): Promise<ModeResult> {
-    if (state !== "ready" || !canSwitch(symbol)) return "ok";
+    const active = state === "ready" || (state === "unverified" && phase === "tighten");
+    if (!active || !canSwitch(symbol)) return "ok";
 
     let current: number;
     try {
       current = Number(await d.exchange.assetMode(assetId));
     } catch (e) {
-      // marketOperator() 已讀成功 = 新合約；讀不到模式是 RPC 問題，這輪不動。
-      log(`::warning::${symbol} 讀 assetMode 失敗：${(e as Error).message.slice(0, 100)}`);
+      // 讀不到模式是 RPC 問題，這輪不動。審查 L-B：收緊階段這代表「可能該停開倉卻沒停」，
+      // 記 failed 讓 job 變紅；放寬階段不動是安全方向，只印 warning。
+      if (phase === "tighten") {
+        error(`::error::${symbol} 讀 assetMode 失敗，本輪無法收緊：${(e as Error).message.slice(0, 100)}`);
+        return "failed";
+      }
+      log(`::warning::${symbol} 讀 assetMode 失敗，本輪不放寬：${(e as Error).message.slice(0, 100)}`);
       return "ok";
     }
 
@@ -150,6 +181,13 @@ export function createMarketMode(d: MarketModeDeps) {
         log(`  → marketOperator ${symbol}: 會 ${dec.reason}（DRY_RUN，權限未驗證）`);
         return "ok";
       }
+      // 審查 L-A：收緊被拒（沒有權限，例如 marketOperator() 讀不到而 keeper 其實不是 operator）
+      // 記警告、不記 failed；呼叫端會把它列進「休市仍可開倉」的警告。
+      if (phase === "tighten" && kind === "denied") {
+        deniedTighten.push(symbol);
+        log(`::warning::${symbol} setAssetMode(${modeName(dec.mode)}) 預檢被拒（沒有權限？）：${(e as Error).message.slice(0, 140)}`);
+        return "ok";
+      }
       error(`::error::${symbol} setAssetMode(${modeName(dec.mode)}) 預檢失敗（${kind}）：${(e as Error).message.slice(0, 140)}`);
       return "failed";
     }
@@ -193,6 +231,10 @@ export function createMarketMode(d: MarketModeDeps) {
     loosenPass,
     get state() {
       return state;
+    },
+    /** 本輪收緊預檢因權限被拒的資產。 */
+    get deniedTighten(): readonly string[] {
+      return deniedTighten;
     },
   };
 }

@@ -205,6 +205,63 @@ function mm(ex: ExchangeModeLike, over: Partial<Parameters<typeof createMarketMo
   assert.deepEqual(calls.sets, ["sAAPL"]);
 }
 
+// ── 複審 L-A：marketOperator() 讀取失敗 → 重試一次；仍失敗就照樣收緊、只略過放寬 ─────────
+{
+  const RPC = Object.assign(new Error("timeout"), { code: "TIMEOUT" });
+  // 第一次失敗、重試成功 → ready。
+  {
+    const { ex } = fakeExchange();
+    let n = 0;
+    const orig = ex.marketOperator;
+    ex.marketOperator = async () => (n++ === 0 ? Promise.reject(RPC) : orig());
+    const { m } = mm(ex, { now: () => SAT });
+    assert.equal(await m.prepare(), "ready");
+    assert.equal(n, 2);
+  }
+  // 兩次都失敗 → unverified：週六仍收緊；放寬不做；不記 failed。
+  {
+    const { ex, calls } = fakeExchange({ modes: { sTSLA: 1 } });
+    ex.marketOperator = async () => Promise.reject(RPC);
+    const { m, logs } = mm(ex, { now: () => SAT });
+    assert.equal(await m.prepare(), "unverified");
+    assert.equal(await m.tighten("sAAPL", "sAAPL", { value: 100, quoteAgeSec: 60 }), "ok");
+    assert.deepEqual(calls.sets, ["sAAPL:1"], "讀不到 operator 也要收緊（修正前整輪略過）");
+    const { m: m2 } = mm(ex); // 週二盤中
+    await m2.prepare();
+    assert.equal(await m2.loosenPass([{ symbol: "sTSLA", assetId: "sTSLA", quoteAgeSec: 60 }]), 0);
+    assert.deepEqual(calls.sets, ["sAAPL:1"], "unverified 不放寬");
+    assert.ok(!logs.some((l) => l.startsWith("::error::")), logs.join("\n"));
+  }
+  // unverified 且 keeper 其實沒有權限：收緊預檢被拒 → 警告、不記 failed，列入 deniedTighten。
+  {
+    const { ex, calls } = fakeExchange();
+    ex.marketOperator = async () => Promise.reject(RPC);
+    ex.checkSetAssetMode = async () => {
+      throw DENIED;
+    };
+    const { m, logs } = mm(ex, { now: () => SAT });
+    await m.prepare();
+    assert.equal(await m.tighten("sAAPL", "sAAPL", { value: 100, quoteAgeSec: 60 }), "ok");
+    assert.deepEqual(calls.sets, []);
+    assert.deepEqual(m.deniedTighten, ["sAAPL"]);
+    assert.ok(logs.some((l) => l.startsWith("::warning::sAAPL") && l.includes("預檢被拒")), logs.join("\n"));
+  }
+}
+
+// ── 複審 L-B：收緊階段讀不到 assetMode → failed；放寬階段 → 不動、不記 failed ─────────────
+{
+  const { ex } = fakeExchange({ modes: { sTSLA: 1 } });
+  ex.assetMode = async () => {
+    throw Object.assign(new Error("429"), { code: "SERVER_ERROR" });
+  };
+  const { m } = mm(ex, { now: () => SAT });
+  await m.prepare();
+  assert.equal(await m.tighten("sAAPL", "sAAPL", { value: 100, quoteAgeSec: 60 }), "failed");
+  const { m: m2 } = mm(ex);
+  await m2.prepare();
+  assert.equal(await m2.loosenPass([{ symbol: "sTSLA", assetId: "sTSLA", quoteAgeSec: 60 }]), 0);
+}
+
 // ── M2：休市造成的 ReduceOnly 不算保護中 ─────────────────────────────────────
 {
   const SYMS = ["sBTC", "sAAPL", "sTSLA", "sNVDA", "sGOLD"];
