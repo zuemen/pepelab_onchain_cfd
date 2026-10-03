@@ -22,7 +22,7 @@
     "bundle:check": "npm run bundle:check -w signal-api",
     "//test": "稽核 2026-08-06：agent 的測試以前沒有任何一支在 CI 跑（package.json 根本沒有 test script）。以下全部離線可跑、不需金鑰、不送任何交易。",
     "test": "npm run test:keeper && npm run test:core && npm run test:agent && npm run test:api && npm run test:signal-api && npm run test:sdk",
-    "test:keeper": "tsx keeper/nonceSigner.test.ts && tsx keeper/core.test.ts && tsx keeper/feeds.test.ts && tsx keeper/alert.test.ts && tsx keeper/market.test.ts && tsx keeper/operator.test.ts && tsx keeper/health-check.test.ts && tsx keeper/round.test.ts && tsx keeper/protect.test.ts",
+    "test:keeper": "tsx keeper/nonceSigner.test.ts && tsx keeper/core.test.ts && tsx keeper/feeds.test.ts && tsx keeper/alert.test.ts && tsx keeper/market.test.ts && tsx keeper/operator.test.ts && tsx keeper/marketMode.test.ts && tsx keeper/health-check.test.ts && tsx keeper/round.test.ts && tsx keeper/protect.test.ts",
     "test:core": "tsx examples/freshness.test.ts && tsx examples/edge-policy.test.ts && tsx examples/decide.test.ts",
     "test:agent": "tsx examples/session-events.test.ts && tsx examples/audit-trail.test.ts && tsx examples/verification.test.ts && tsx examples/write-gate.test.ts && tsx examples/policy-gate.test.ts && tsx examples/signing-guard.test.ts &&tsx examples/vc-v2.test.ts && tsx examples/concurrency.test.ts && tsx examples/submit.test.ts &&tsx mcp-server/src/writeTools.test.ts && tsx examples/agent-identity.ts && tsx examples/agent-onboarding.ts",
     "test:api": "tsx examples/api-gate.test.ts && tsx examples/x402-client.test.ts && tsx examples/x402-guard-concurrency.test.ts && tsx examples/x402-mock-e2e.ts && tsx tg-bot/guard.test.ts",
@@ -40,5 +40,13 @@
   },
   "dependencies": {
     "node-telegram-bot-api": "^1.1.0"
+  },
+  "//overrides": "Dependabot #2/#3/#4/#103（2026-10-02）。弱點副本全部來自 x402@0.5.3 → wagmi → @wagmi/connectors 這棵樹；x402 只拿 wagmi 在發版時預先打包 paywall 頁面（存成字串），執行期沒有任何程序載入這棵樹，signal-api 的 Vercel bundle 也沒有內聯它們（esbuild metafile 查證）。ws@^8 只抓 8.x 副本（viem@2.23.2 的 8.18.0）；ws 7.5.11 已是 7.x 修補版，不動。uuid 給 @metamask/*，只用 v4／validate，11.x 仍有 CJS。query-string 只有 @walletconnect/utils 2.21.x 宣告、dist 從未 import，換成 9.x 才能帶到 decode-uri-component 0.5.0（7.x 會 require 它，而 0.5.0 是 ESM-only）。詳見 SECURITY_NOTES.md §8。",
+  "overrides": {
+    "ws@^8": "^8.21.0",
+    "uuid": "^11.1.1",
+    "@walletconnect/utils": {
+      "query-string": "^9.5.1"
+    }
   }
 }

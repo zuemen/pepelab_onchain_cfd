@@ -92,3 +92,40 @@ session 的單筆保證金 / 總預算 / 槓桿 / 到期 / 撤銷皆由 `AgentSe
   交易所仍舊版單索引。詳見 RISK_NOTES。
 - **去中心化預言機**：`DeployWithPyth`(Aggregator: Pyth+Chainlink) 已 dry-run 通過、
   等手動 broadcast；live 仍 MockOracle（合成資產 demo）。RWA 正式定價走 Pyth。
+
+## 8. 依賴弱點：x402 0.5.3 帶進來的錢包樹（2026-10-02，Dependabot #2／#3／#4／#103）
+
+**結論：線上 signal-api 不受影響；mcp-server、keeper、tg-bot、SDK 執行期也碰不到。**
+`agent/package.json` 的 `overrides` 只是把 lockfile 裡的副本換成修補版，避免日後有人
+真的載入這棵樹。
+
+- **來源只有一條**：`signal-api → x402@0.5.3 → wagmi@2.19.5 → @wagmi/connectors@6.2.0`，
+  底下再分到 `@walletconnect/*`、`@reown/appkit*`、`@metamask/*`。弱點副本：
+  ws 8.18.0（viem@2.23.2，在 `@walletconnect/utils` 底下）、uuid 8.3.2／9.0.1
+  （`@metamask/sdk*`、`@metamask/utils`）、`query-string@7.1.3 → decode-uri-component@0.2.2`
+  （`@walletconnect/utils` 2.21.x）。
+- **為什麼碰不到**：x402 只在發版時用 wagmi 預先打包 paywall 頁面，存成字串
+  （`PAYWALL_TEMPLATE`）。它的 dist 沒有任何 `import "wagmi"`。逐一載入 `x402/*` 各子路徑、
+  `x402-hono`、`x402-fetch`、MCP SDK、node-telegram-bot-api、`@x402/*` 並記錄實際載入的
+  檔案，弱點相關套件只出現根目錄的 ws 8.21.0（已修補，ethers／viem 使用）。esbuild
+  metafile 也證實 Vercel bundle 只內聯 `node_modules/ws`（8.21.0），沒有 wagmi、
+  walletconnect、metamask、uuid、query-string。bundle 裡的 `WalletConnect` 字樣是
+  viem 的錯誤類別名稱，以及 paywall 字串裡的 OnchainKit 程式碼。
+- **唯一的殘留**：x402-hono 0.5.3 對「沒帶 X-PAYMENT 的瀏覽器請求」會回 paywall HTML，
+  裡面那份預先打包的 MetaMask SDK 含 uuid 8.x 程式碼，在**買方瀏覽器**執行，不在伺服器。
+  它用的是 `v4()`／`validate()`，不是有弱點的「v3／v5／v6 帶 buf 參數」路徑。這份字串是
+  上游發版時產生的，overrides 改不到，只能等升 x402 或改走 v2。
+- **overrides 與相容性**：
+  - `ws@^8 → ^8.21.0`：只抓 8.x 副本，viem 2.23.2 原本鎖 8.18.0，同主版本。
+    `@walletconnect/jsonrpc-ws-connection` 的 ws 7.5.11 本身就是 7.x 的修補版
+    （#4 的 7.x 修補線；#2 只影響 8.x），所以不動，也不需要 7→8 的 API 遷移。
+  - `uuid → ^11.1.1`：@metamask/* 只用具名匯出 `v4`、`validate`，11.x 兩者都有，並且
+    同時提供 CJS（`require`）與 ESM。12 版以後是 ESM-only，所以停在 11。
+  - `@walletconnect/utils > query-string → ^9.5.1`：@walletconnect/utils 2.21.x 宣告了
+    query-string，但 dist 從未 import（2.25 已移除這個依賴）。decode-uri-component 0.5.0
+    是 ESM-only，query-string 7 用 `require()` 呼叫它會壞，所以要換成依賴 0.5.0 的
+    query-string 9，而不是只覆寫 decode-uri-component。
+- **npm 的坑**：npm 10／11／12 在「已有 lockfile + workspaces」下都不會把新加的 overrides
+  套到 workspace 的依賴上（scratch 最小重現已確認）。這次的 lockfile 是比照全新解析的
+  結果，只調整弱點相關的條目。用 npm 11 跑 `npm ls` 會誤報 `invalid`，npm 12 的
+  `npm ls` 則正確。之後若要調整這幾個 overrides，同樣要手動對照全新解析的結果。

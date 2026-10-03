@@ -80,11 +80,13 @@ export interface RoundCtx {
   /** 鏈上 getPrice 丟的錯是否是「資產不存在」（可 seed）；其他錯誤不寫。 */
   isAssetNotFound?: (e: unknown) => boolean;
   /**
-   * 每個資產取價後呼叫（marketOperator 休市切換）；回 "failed" 計入 failed。
+   * 每個資產取價後、寫價前呼叫（marketOperator 休市切換的「收緊」階段，只會切 ReduceOnly）；
+   * 第三個參數是本輪選定的來源報價（帶 quoteAgeSec），來源無效時 value 為 null。
+   * 回 "failed" 計入 failed。
    * 回 "unknown"（它送的交易等確認逾時）→ 計入 failed 與 unknown，本輪停止後續寫入（審查 L3）。
    * 本輪已停止寫入後不再呼叫（它也會送交易）。
    */
-  beforeAsset?: (symbol: string, assetId: string) => Promise<"ok" | "failed" | "stop" | "unknown">;
+  beforeAsset?: (symbol: string, assetId: string, feed: Feed) => Promise<"ok" | "failed" | "stop" | "unknown">;
   log?: (line: string) => void;
   error?: (line: string) => void;
 }
@@ -100,6 +102,13 @@ export interface RoundResult {
   skippedSymbols: string[];
   /** 等確認逾時、狀態未知的交易數（窄複審 6）。 */
   unknown: number;
+  /**
+   * 本輪價格通過所有檢查的資產（已寫入、或已是目標值不需寫；DRY_RUN 下為「會寫」）。
+   * 被熔斷拒寫、來源無效、讀寫失敗、本輪停止寫入的都不在這裡。run.ts 只對這些資產
+   * 做休市切換的「放寬」階段（w36）：熔斷停單在被拒寫的那一輪不會被解除；之後某一輪
+   * 價格重新通過檢查、且開盤、報價新鮮時才會自動解除（guardian 上鎖的除外）。
+   */
+  priced: { symbol: string; assetId: string; quoteAgeSec?: number }[];
 }
 
 export async function runRound(ctx: RoundCtx): Promise<RoundResult> {
@@ -107,7 +116,7 @@ export async function runRound(ctx: RoundCtx): Promise<RoundResult> {
   const error = ctx.error ?? console.error;
   const r: RoundResult = {
     available: 0, skipped: 0, rejected: 0, confirmed: 0, wrote: 0, failed: 0,
-    refused: [], skippedSymbols: [], unknown: 0,
+    refused: [], skippedSymbols: [], unknown: 0, priced: [],
   };
   let beforeAsset = ctx.beforeAsset;
   let writesHalted = false;
@@ -174,7 +183,7 @@ export async function runRound(ctx: RoundCtx): Promise<RoundResult> {
     // 休市切換放在價格判斷之前：價格來源壞了不影響「現在是不是休市」。
     // 審查 L3：已有狀態未知的交易 → 休市切換也不再送。
     if (beforeAsset && !writesHalted) {
-      const b = await beforeAsset(symbol, assetId);
+      const b = await beforeAsset(symbol, assetId, feed);
       if (b === "failed") r.failed += 1;
       if (b === "stop") beforeAsset = undefined; // 例如舊 exchange：整輪不再探測
       if (b === "unknown") {
@@ -193,6 +202,7 @@ export async function runRound(ctx: RoundCtx): Promise<RoundResult> {
       continue;
     }
     r.available += 1;
+    const markPriced = () => r.priced.push({ symbol, assetId, quoteAgeSec: feed.quoteAgeSec });
 
     let current = 0;
     let mockPrice8 = 0n;
@@ -231,7 +241,9 @@ export async function runRound(ctx: RoundCtx): Promise<RoundResult> {
         `chain=$${current.toFixed(2).padStart(10)} age=${ageMin}m${quoteAge} → ${plan.write ? "WRITE" : "skip"} (${plan.reason})`,
     );
     // 偽新鮮度：報價本身很舊（週末收盤價/來源凍結），寫上鏈會讓 updatedAt 看起來
-    // 新鮮但價格是好幾天前的。價格照寫（否則週末會全部跳過），但必須說出來。
+    // 新鮮但價格是好幾天前的。價格照寫 —— 交易所的平倉與清算和開倉共用同一個
+    // maxPriceAge，不寫就連出場都擋住；停開倉靠 beforeAsset 切 ReduceOnly（w36）。
+    // 但必須說出來。
     if (feed.quoteStale) {
       log(
         `::warning::${symbol} 來源報價已 ${((feed.quoteAgeSec ?? 0) / 3600).toFixed(1)} 小時未更新` +
@@ -265,7 +277,10 @@ export async function runRound(ctx: RoundCtx): Promise<RoundResult> {
     // 窄複審 3：兩顆不一致（例如上一輪 Guarded 寫成功、Mock 失敗）時，即使 planUpdate
     // 說不用寫也要走補寫，讓兩顆收斂。
     const diverged = !!guardedState?.exists && mockPrice8 > 0n && guardedState.price8 !== mockPrice8;
-    if (!plan.write && !diverged) continue;
+    if (!plan.write && !diverged) {
+      markPriced();
+      continue;
+    }
     if (diverged) {
       log(`::warning::${symbol} 兩顆 oracle 不一致（Guarded ${fmt8(guardedState!.price8)} ≠ Mock ${fmt8(mockPrice8)}），本輪補寫`);
     }
@@ -345,6 +360,7 @@ export async function runRound(ctx: RoundCtx): Promise<RoundResult> {
 
     if (ctx.dryRun) {
       if (mirrorPlan?.action === "write") log(`  → (DRY_RUN) GuardedOracle 預檢略過（沒有 signer）`);
+      markPriced();
       continue;
     }
 
@@ -388,12 +404,14 @@ export async function runRound(ctx: RoundCtx): Promise<RoundResult> {
     if (!plan.write && mockPrice8 === price8) {
       log(`  → MockOracle 已是目標值`);
       r.wrote += 1;
+      markPriced();
       continue;
     }
     try {
       const tx = await ctx.oracle.updatePrice(assetId, price8);
       await waitTx(tx);
       r.wrote += 1;
+      markPriced();
       log(`  → MockOracle ✓ ${tx.hash}`);
     } catch (e) {
       r.failed += 1;

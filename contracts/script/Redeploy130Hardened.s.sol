@@ -26,8 +26,10 @@ interface IEsgRegistryV2Tier130 {
 /// @notice #130 — cut Base Sepolia over to the PR #191 hardened
 ///         `PerpetualExchange`. Third run of the #102 / #129 chain redeploy:
 ///         the exchange is not upgradeable and `CopyTracker`,
-///         `StrategyRegistry`, `AgentSessionManager` hold it `immutable`, so
-///         all four are redeployed.
+///         `AgentSessionManager` hold it `immutable`; `StrategyRegistry` has no
+///         exchange reference (its only immutable is `stakeContract`) and is
+///         redeployed by choice so the new `CopyTracker` binds a fresh
+///         registry. All four are redeployed.
 ///
 ///         ORDER — everything before step 9 only touches contracts deployed by
 ///         this run, so aborting there leaves the live #129 chain intact.
