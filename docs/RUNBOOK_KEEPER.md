@@ -236,8 +236,8 @@ Active↔ReduceOnly 間切換,碰不到 Halted,也改不了價格。**不建議*
 GuardedOracle 的 `GUARDIAN_ROLE`(理由見上)。在 cutover 之前,停單只能靠人工。
 
 **股票只有單一來源(Yahoo)**,所以拆股、財報跳空這類 >20% 的真實變動**一定**會
-熔斷,需要人工處置。加密資產有 Pyth relay + CoinGecko + Yahoo(BTC-USD/ETH-USD)
-可互相確認,通常會自動通過。
+熔斷,需要人工處置。加密資產有 CoinGecko + Yahoo(BTC-USD/ETH-USD) 可互相確認,
+通常會自動通過(鏈上 relay 已於 2026-10-03 停用,見「relay 來源」)。
 
 ### 處置步驟
 
@@ -264,6 +264,35 @@ GuardedOracle 的 `GUARDIAN_ROLE`(理由見上)。在 cutover 之前,停單只�
    才會自動關 —— ReduceOnly 需人工解除;crank 清單缺失或 funding 延遲超過
    2 × FUNDING_INTERVAL 另有「funding 未結算」issue;
    下一輪 keeper 摘要行 `rejected=0 failed=0`。
+
+## relay 來源(`KEEPER_RELAY_SOURCE`):2026-10-03 起停用
+
+**現況**:`base-sepolia-keeper.yml` 不再設 `KEEPER_RELAY_SOURCE`(原為 AggregatorOracle
+`0x8215158642350a3f329aB9597186d21f957A813D`)。Sepolia keeper 從未設過。兩條鏈的 keeper
+都只讀外部 API(CoinGecko／Yahoo)。
+
+**為什麼移除**:
+- 三顆 adapter(ChainlinkOracleAdapter `0x37DC…`、PythOracleAdapter `0x551C…`、
+  AggregatorOracleAdapter `0x8215…`)的 owner 仍是公開外洩的舊部署者金鑰 `0xE80A…Eb93`。
+  owner 能 `setFeed`／`setPriceId` 把來源指向自己控制的合約。
+- `agent/keeper/round.ts` 有 relay 時**優先採用**,而單輪變動不超過有效熔斷門檻(Base 實際
+  +10% / −9.09%)時**不查第二來源**。每一輪又以前一輪的鏈上價為基準,所以被換掉的 feed 可以
+  一輪推幾個百分點、逐輪累積,進到現行交易所讀的 MockOracle。
+- 移除當下 Aggregator 對所有資產都 revert `NoLiveSource`,keeper 本來就退回外部 API,
+  所以**沒有功能損失**,只切斷了這條路徑。
+
+**重新啟用的前提**(全部滿足才可以把 `KEEPER_RELAY_SOURCE` 加回去):
+1. 三顆 adapter 已離開外洩金鑰(`docs/RUNBOOK_FREEZE_LEGACY.md` 的 Base 移交已執行並通過讀回),
+   而且新 owner 的金鑰保管方式已確認。
+2. keeper 的程式改成以下其中一種,並有測試涵蓋:
+   - relay 只當**確認票**,不當主來源(主來源仍是外部 API);或
+   - 不論偏離大小,relay 價都必須與**至少一個**外部來源在 `confirmTolerance` 內一致才採用,
+     不一致就退回外部來源並告警。
+3. Aggregator 對要用 relay 的資產實際回得出新鮮價格(先 `cast call ... getPrice` 確認)。
+
+**監控的影響**:`ops/monitoring` 的 `oracle-deviation` 仍以 Aggregator 當參考價。參考價目前
+不可用(全部 revert),而且在 adapter 移交前可能被外洩金鑰操控——被操控時偏離告警會「看不到」
+而不是誤報。規則暫不修改,說明見 `docs/KNOWN_LIMITATIONS.md` §2。
 
 ## 休市(股票／ETF／黃金):停開倉靠 ReduceOnly,不靠價格過期
 

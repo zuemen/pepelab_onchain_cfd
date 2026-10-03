@@ -104,10 +104,28 @@ into MockOracle, falling back to the public price APIs only for assets the
 adapters do not cover (most equities on testnet). The exchange then settles on
 Chainlink/Pyth data at one remove.
 
-Be precise about the deployment status too: **the relay has never been switched
-on in CI.** Neither keeper workflow sets `RELAY_SOURCE`, so both chains are
-currently fed from the public APIs. The code path exists and is wired; the
-configuration is not. Turning it on is a workflow env change, not a code change.
+Be precise about the deployment status too: **the relay is switched off in CI.**
+`base-sepolia-keeper.yml` did set `KEEPER_RELAY_SOURCE` to the aggregator from
+2026-08 until 2026-10-03, when it was removed; the Sepolia keeper never set it.
+Both chains are fed from the public APIs. The code path exists and is wired; the
+configuration is not. Turning it back on is a workflow env change, not a code
+change — but see the next paragraph and `docs/RUNBOOK_KEEPER.md` («relay 來源»)
+for the preconditions.
+
+**Why it was switched off, and what that means for monitoring.** The owner of the
+Chainlink, Pyth and Aggregator adapters on Base Sepolia is still the leaked
+deployer key `0xE80A…Eb93` (its private key is in public git history; see
+`docs/RUNBOOK_FREEZE_LEGACY.md`). That owner can point a feed at a contract it
+controls. The keeper preferred the relay price and does not ask for a second
+source when a move stays under the breaker threshold, so a compromised owner
+could have walked the live exchange's price a few percent per round. When the
+relay was removed the aggregator reverted `NoLiveSource` for every asset, so
+nothing was lost. The same aggregator is the reference price of the monitoring
+rule `oracle-deviation` (`ops/monitoring/monitors.json`): **that reference is
+currently unusable (every read reverts) and, until the adapters leave the leaked
+key, could be manipulated by it** — a manipulated reference would make the
+deviation alert go blind rather than fire. The rule is left as is; treat its
+silence as «not monitored», not as «no deviation».
 
 Be precise about what that is: a **trusted relay, not a trustless integration**.
 The keeper key can still write whatever it likes. It removes the dependency on a
