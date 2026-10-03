@@ -27,6 +27,8 @@
 
 - keeper 的地址就是 `deploy/tenants/<id>.json` 的 `roles.keeper`。`DeployTenant.s.sol` 已經把租戶 oracle 的寫價權給它（guarded：`KEEPER_ROLE`；mock：`owner`），不需要再做任何授權。
 - `roles.marketOperator` 可以就是 keeper（平台如此）。它只能在 Active 與 ReduceOnly 之間切換市場。
+  - keeper 的休市切換預設啟用（`KEEPER_MARKET_OPERATOR=0` 才關），只切 `FUNDING_SYMBOLS` 裡已註冊的資產。
+  - `roles.marketOperator` 不是 keeper 時，keeper 每輪印一條 `::warning::` 並略過切換，不會讓 job 變紅；休市中仍可對收盤價開倉，要由 marketOperator 那把金鑰自己切（見 RUNBOOK_KEEPER「休市」、KNOWN_LIMITATIONS #31）。
 - 這把金鑰**只屬於這個租戶**。`scripts/check-tenant-deploy.mjs` 會擋下與平台位址全集或其他租戶重複的角色地址。
 - **金鑰外洩時的影響範圍**是這一個租戶的價格，受租戶 `GuardedOracle` 的兩道限制（`DeployTenant` 依設定寫入、`VerifyTenant` 讀回確認，CI 每天對鏈上再驗一次）：
   - 單次上限 `params.oracleMaxDeviationBps`：每一筆相對前一筆；
