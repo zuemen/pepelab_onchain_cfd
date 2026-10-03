@@ -59,10 +59,10 @@ policy gate（`policyGate.ts` 在 VC 閘**之後**執行營運方規則，不看
 
 | | (a) 簽發者簽章的狀態清單（Bitstring Status List 的概念，改用 EIP-712） | (b) 鏈上撤銷登記合約 | (c) 混合：(a) 先上，(b) 之後做權威來源 |
 |---|---|---|---|
-| 信任來源 | 簽發者簽章（清單放哪裡都行，主機不需被信任） | 鏈上狀態 | 兩者 |
+| 信任來源 | 清單內容靠簽發者簽章（主機無法偽造或竄改）；但「這個簽發者**有沒有**清單」靠主機／目錄管理者誠實回答（§7.1） | 鏈上狀態 | 兩者 |
 | 需要部署 | 否 | **是**（今天不能） | (a) 部分否 |
 | 撤銷成本 | 簽一次 typed data（不花 gas） | 每次撤銷一筆交易（要 gas） | (a) 免費；(b) 自選 |
-| 新鮮度 | 取決於清單主機與快取；主機可以**扣住**新清單（只能用清單到期時間與驗證端記憶限制） | 讀鏈即最新；無法扣住（只能審查） | (b) 上線後取最新 |
+| 新鮮度 | 取決於清單主機與快取；主機可以**扣住**清單：對看過舊清單的驗證端，上限是舊清單到期；對**從沒看過**的驗證端沒有時間上限（§7.1） | 讀鏈即最新；無法扣住（只能審查） | (b) 上線後取最新 |
 | 可用性 | 主機掛了 → 寫入拒絕 | RPC 掛了 → 寫入拒絕（但寫入本來就要 RPC） | 同左 |
 | 防重放 | 需要 `sequence` ＋ 驗證端記憶 ＋ 清單到期 | 天生沒有 | — |
 | 隱私 | 每個簽發者一份清單；抓清單會透露在查哪個簽發者（簽發者位址本來就公開在鏈上 session） | 同左 | 同左 |
@@ -121,14 +121,17 @@ JSON 文件（`CredentialStatusList`）帶 `issuer`（did:pkh）、上述欄位�
 | `sequence` 高水位（每個 `${sessionManager}|${issuer}` 記最高的 sequence 與其 digest） | 送比已接受的舊的清單 → `STATUS_LIST_REPLAYED`；同 sequence 不同內容 → `STATUS_LIST_EQUIVOCATION` |
 | sticky 記憶：驗證端記下看過的**所有** revoked 與最大 `revokedBefore` | 新清單漏了舊項目、或主機改送舊清單，已撤銷的憑證也不會復活；而且**已知撤銷在來源掛掉時照樣生效** |
 | 扣住偵測：接受過某簽發者的清單之後，來源卻回「沒有清單」 | `STATUS_LIST_WITHHELD`，不當成「沒有撤銷」 |
-| HTTP 來源的目錄標記：先取 `<base>/index.json` 必須是 `{"type":"AgentCredentialStatusDirectory"}` | 網址設錯時，所有 404 被誤當「沒有撤銷」（設定錯誤變成 fail-open） |
+| 目錄標記 `index.json`（`{"type":"AgentCredentialStatusDirectory"}`）：本機目錄與 HTTP 來源**都**要求；清單檔不存在時**每次**重新確認標記；目錄不存在、標記缺失或不符 → 狀態不明（寫入拒絕） | 路徑／網址打錯、volume 沒掛上、換了部署目錄沒搬清單時，所有簽發者被誤當「沒有撤銷」（審查 M1；設定錯誤變成 fail-open） |
+| HTTP 不跟隨轉址（`redirect: "manual"`；3xx 或 `redirected` → 不明）；本文上限 256 KB | 主機或中間人用 302 轉到 404 頁面冒充「沒有清單」（審查 M2）；超大回應耗盡記憶體（審查 L4） |
+| 到期預警：清單剩不到 7 天時，檢查結果帶 `warnings` | 清單一過期該簽發者的開倉、平倉全被拒；讓人提早看到（審查 M3，§4.4） |
 | 快取新鮮度上限 `VC_STATUS_CACHE_MAX_AGE_SEC`：預設 60 秒、**硬上限 900 秒**、0＝不快取；時鐘倒退不沿用快取；快取中的清單到期一樣擋 | 撤銷發佈後最遲多久生效（在來源可用的前提下：≤ 新鮮度上限） |
 
 驗證端記憶存在 `agent/.state/vc-status-state.json`（`VC_STATUS_STATE_PATH`），MCP、tg-bot、x402 agent 同機共用，
 用 `fileLock.ts` 序列化讀改寫（與 `vcNonce.ts` 同一套）。狀態檔讀不到或格式不符 → `STATUS_STATE_UNREADABLE`。
 刪除狀態檔＝忘記高水位與 sticky 撤銷：之後只剩清單到期與主機誠實這兩道（見 §7）。
 
-**沒有清單**（來源明確回答這個簽發者沒發佈過）＝沒有撤銷。這是大多數使用者的狀態，也是現有 VC 不必任何動作就能繼續使用的原因。
+**沒有清單**（來源明確回答這個簽發者沒發佈過：有目錄標記、清單檔不存在／HTTP 直接回 404）＝沒有撤銷。這是大多數使用者的狀態，
+也是現有 VC 不必重簽就能繼續使用的原因；但**驗證端必須先有一個已初始化的清單目錄**（`vc-status init`），否則一律狀態不明、寫入拒絕。
 
 ### 4.4 失敗行為
 
@@ -144,6 +147,10 @@ JSON 文件（`CredentialStatusList`）帶 `issuer`（did:pkh）、上述欄位�
 - **唯讀預設 allow 的理由**：唯讀動作不動用使用者的錢、也不代表使用者對外做任何承諾；讀的是鏈上公開資料。
   狀態來源短暫不可用時，讓監看、顯示、研究繼續運作比較重要，而且結果明確標成 unknown，呼叫端看得到。
   營運方可以用 `deny` 收緊。已知撤銷不受這個設定影響，一律拒絕。
+- **狀態不明期間，agent 自動的保護性平倉也會停擺**（審查 I7）。使用者自己用錢包平倉不受影響。
+- **到期預警（審查 M3）**：清單剩不到 7 天（`STATUS_LIST_EXPIRY_WARNING_SEC`）時，`active` 結果帶 `warnings`。
+  write.ts 把它放進成功結果的 `warnings`（並寫 stderr），MCP 工具結果原樣帶出，tg-bot 在確認碼訊息與成交訊息後面附上，
+  demo-agent、`vc-gate`（x402 agent／範例）印出，SDK 的 `checker.check` 與 `checkCredentialStatusWithList` 也帶同一段文字。
 
 ### 4.5 每個驗證點怎麼接
 
@@ -154,7 +161,7 @@ JSON 文件（`CredentialStatusList`）帶 `issuer`（did:pkh）、上述欄位�
 | tg-bot | `ensureVc()` 改成 async：本地驗證後再查狀態（write）；被撤銷時重讀一次 VC 檔；不發確認碼。`vcStatusProblemForBot` 把結果轉成 chat 訊息 | 下單前、發確認碼前 |
 | x402 agent 與範例 | `vc-gate.ts` 新增 `localVerifyVcWithStatus`（write）；四個呼叫端改用它 | 準備下單前 |
 | demo-agent | `checkCredentialStatus(v, { action: "write" })` | 驗簽之後、下單之前 |
-| SDK | 新增 `vcStatus` 模組：`buildStatusListTypedData`／`finalizeStatusList`／`issueStatusList`、`checkCredentialStatusWithList`（無狀態，呼叫端傳 `minSequence`）、`createVcStatusChecker`＋`httpStatusSource`＋狀態儲存（常駐服務用） | 由整合方決定 |
+| SDK | **不強制**（SDK 只建交易、不送；整合方自己簽送時，必須先跑 `verifyAuthorizationVCv2`、`crossCheckWithSession`、`checker.check(..., {action:"write"})`）。新增 `vcStatus` 模組：`buildStatusListTypedData`／`finalizeStatusList`／`issueStatusList`、`checkCredentialStatusWithList`（無狀態，呼叫端傳 `minSequence`）、`createVcStatusChecker`＋`httpStatusSource`＋狀態儲存（常駐服務用） | 由整合方決定 |
 
 預檢只是讓錯誤早一點、清楚一點；**強制點只有 write.ts**，其他入口都會在送單前再經過它。
 
@@ -166,14 +173,24 @@ JSON 文件（`CredentialStatusList`）帶 `issuer`（did:pkh）、上述欄位�
 - **金鑰**：與簽 VC 同一把（使用者錢包），同一個 EIP-712 domain，只是 primary type 不同。沒有新增金鑰類型，
   agent 與 SDK 都不持有它。
 - **怎麼撤銷**：
+  0. （營運方，一次）初始化驗證端的清單目錄：`npx tsx examples/vc-status.ts init`（建立 `index.json` 目錄標記）。
+     沒有標記的目錄一律視為狀態不明，**所有寫入都被拒**——這是刻意的：路徑打錯不能變成「沒有任何撤銷」。
   1. 取得要撤銷的 jti：`npx tsx examples/vc-status.ts jti --vc <vc.json>`（或 SDK `credentialJti`）。
-     要撤銷全部就用 `--revoke-before now`，不需要 jti。
+     要撤銷全部就用 `--revoke-before now`，不需要 jti：它會填 `revokeAllCutoff(now)` = now + 301 秒，涵蓋時鐘偏快 ≤ 300 秒
+     的裝置剛簽的 VC（審查 L2；VC 的 issuedAt 本來就允許比驗證端快 300 秒）。代價是撤銷後約 5 分鐘內新簽的 VC 也算被撤銷，
+     請等 5 分鐘再重簽。驗證端接受的 `revokedBefore` 上限因此是清單 `issuedAt` + 301 秒。
   2. 產生待簽 typed data：`npx tsx examples/vc-status.ts typed-data --issuer <使用者> --from <目前清單> --revoke <jti>`
-     （`--from` 沿用舊項目、sequence 自動 +1；新清單必須是累積的）。整合方可改用 SDK `buildStatusListTypedData`。
+     （`--from` 沿用舊項目、sequence 自動 +1；新清單必須是累積的）。目錄裡已有這個簽發者的清單時**必須**帶 `--from`；
+     第一份清單 sequence 預設 1，與 SDK 的 `prev.sequence + 1` 慣例一致（審查 L6）。整合方可改用 SDK `buildStatusListTypedData`。
   3. 使用者用自己的錢包簽（`eth_signTypedData_v4`）。
   4. `assemble` 組成清單（立即驗證，簽錯人就失敗），`install` 放進驗證端的清單目錄（`VC_STATUS_DIR`，
-     會檢查 sequence 遞增並建立 `index.json` 目錄標記）。整個目錄可以原樣放上任何靜態主機，驗證端設 `VC_STATUS_URL` 即可。
-  5. 清單到期前續簽（同內容、sequence +1）。過期的清單會讓**該簽發者**的寫入被拒。
+     會檢查 sequence 遞增；新清單少了現有清單的撤銷項目時**拒絕**，除非加 `--allow-drop`；並確保有 `index.json` 目錄標記）。整個目錄可以原樣放上任何靜態主機，驗證端設 `VC_STATUS_URL` 即可。
+  5. 清單到期前續簽（同內容、sequence +1）。過期的清單會讓**該簽發者**的寫入被拒。營運方以 `vc-status expiring --days 7`
+     排程（cron）檢查目錄裡快到期的清單、通知簽發者；`ops/monitoring` 的 Worker 讀不到驗證端的本機目錄，不負責這一項。
+  6. **停用撤銷**：簽發者不能直接把清單拿掉——看過清單的驗證端會判成 `STATUS_LIST_WITHHELD` 並拒絕寫入。正確做法是簽一份
+     sequence +1 的空清單（`revoked: []`；`revokedBefore` 照舊，驗證端本來就只取最大值）並持續續簽。要真正移除，營運方必須在
+     **每一台**驗證端同時刪掉該簽發者的清單檔與狀態紀錄——這等於忘記他過去的撤銷，只有在那些被撤銷的 VC 都已過了 `validUntil`
+     （或鏈上 session 已撤銷）之後才安全。
 
 前端的「一鍵撤銷」按鈕這一版沒有做（§8）。
 
@@ -181,13 +198,19 @@ JSON 文件（`CredentialStatusList`）帶 `issuer`（did:pkh）、上述欄位�
 
 | 變數 | 預設 | 說明 |
 |---|---|---|
-| `VC_STATUS_URL` | （無） | 清單目錄的 http(s) base URL；設了就用 HTTP 來源（單次逾時 3 秒） |
-| `VC_STATUS_DIR` | `agent/.state/vc-status` | 本機清單目錄；檔名 `<issuer 小寫>.json`；目錄不存在＝沒有任何清單 |
+| `VC_STATUS_URL` | （無） | 清單目錄的 http(s) base URL；設了就用 HTTP 來源（單次逾時 3 秒、不跟隨轉址、本文 ≤ 256 KB）。主機對缺檔**必須直接回 404**：回 403（例如 S3 沒開 ListBucket）或轉址都算狀態不明，沒發過清單的簽發者寫入會全被拒（審查 L3） |
+| `VC_STATUS_DIR` | `agent/.state/vc-status` | 本機清單目錄；檔名 `<issuer 小寫>.json`；**必須**有 `index.json` 目錄標記（`vc-status init`），目錄不存在或沒有標記 → 狀態不明、寫入拒絕 |
 | `VC_STATUS_STATE_PATH` | `agent/.state/vc-status-state.json` | 驗證端記憶 |
 | `VC_STATUS_CACHE_MAX_AGE_SEC` | 60 | 快取新鮮度上限，最大 900 |
 | `VC_STATUS_READ_POLICY` | `allow` | 唯讀動作遇到 unknown 的行為 |
 
-沒有「關閉撤銷檢查」的開關。
+沒有「關閉撤銷檢查」的開關。VC 閘本身仍可用 `AGENT_ALLOW_UNSIGNED_TRADES=true` 整個關掉（只限測試；既有設計，審查 I5），
+那時不帶 VC，也就沒有撤銷檢查。
+
+多副本部署（審查 L1）：驗證端狀態（高水位、sticky 撤銷、同號異文偵測）預設是單機檔案，各實例互不相通——實例 2 可能接受
+實例 1 已拒絕的舊清單。多副本、serverless 或短暫磁碟部署時，必須在啟動時以 `setVcStatusStateStore(store)` 注入共享的
+`StatusStateStore`（`get` 讀、`accept` 以 compare-and-set 寫，例如 Upstash）。本次只提供介面與檔案／記憶體實作；
+預設檢查器建立時會在 stderr 印出來源與狀態儲存（含「單機」提示）。
 
 ## 5. 不做 signal-api 端點的理由
 
@@ -223,12 +246,39 @@ interface IAgentCredentialStatus {
 
 ## 7. 風險與限制
 
-- **主機可以扣住新清單**：對「從未看過新清單」的驗證端，最壞情況是舊清單到期前（≤ 90 天，預設 30 天）看不到新的撤銷。
-  看過的驗證端有 sticky 記憶，不受影響。這是 (b) 要補的洞。
+### 7.1 信任假設：「有沒有清單」由主機／目錄管理者回答（審查 M2）
+
+清單有簽章，主機**無法偽造或竄改**任何一份清單，也無法讓已撤銷的憑證在**看過**該清單的驗證端復活。
+但主機（或本機目錄的管理者）**被信任回答「這個簽發者有沒有發佈清單」**：
+
+- 對**從沒看過**某簽發者清單的驗證端——新上線的 agent、重建的容器、狀態檔遺失、新租戶、多副本中的另一台——
+  主機只要回 404，該簽發者就被當成「沒有撤銷」，而且**沒有時間上限**（根本沒有舊清單會到期）。
+- 對看過舊清單的驗證端，主機改送舊版會被 sequence 高水位擋下；不送則被判成扣住（`STATUS_LIST_WITHHELD`）。
+  主機只能拖到舊清單到期（≤ 90 天，預設 30 天），之後一律拒絕寫入。
+- 這一版擋掉的是**設定錯誤**造成的同類問題：目錄標記（本機與 HTTP）、HTTP 不跟隨轉址、只認直接回的 404。
+  擋不掉的是**惡意或被入侵的主機／目錄管理者**。
+
+考慮過、這一版**不採用**的補強：
+
+| 做法 | 為什麼不在這一版 |
+|---|---|
+| VC 帶 `statusRequired`（或清單的承諾值），沒有清單就拒絕 | 要改 EIP-712 struct → v3，現有 v2 VC 全部要重簽；而且首張 VC 簽發時還沒有清單，「必須有清單」會讓所有新 VC 都先被拒 |
+| 營運方簽署 `index.json`（列出有發佈清單的簽發者與其 sequence，附有效期） | 把信任從「主機」移到「營運方金鑰」，不是移除；需要新的營運方簽章金鑰類型（本任務限制不新增金鑰類型） |
+| 鏈上撤銷登記（§6） | 今天不能部署；它是真正的解：鏈上狀態不能被扣住，「沒有撤銷」也可以被驗證 |
+
+**結論**：在 §6 上線之前，撤銷清單主機與驗證端的清單目錄必須由營運方自己控管（同一個信任範圍），不能交給第三方 CDN 而不加監控；
+最強、可立即生效的停止手段仍是鏈上 `revokeSession`。
+
+### 7.2 其他
+
 - **撤銷有延遲**：清單發佈後，最遲 `VC_STATUS_CACHE_MAX_AGE_SEC`（≤ 900 秒）生效；要立即生效仍用鏈上 `revokeSession`。
-- **清單過期 → 該簽發者的寫入被拒**：一旦發佈過清單，就要在到期前續簽。這是 fail-closed 的直接後果，訊息會說明。
-- **狀態檔被刪除**：忘記高水位與 sticky 撤銷，退回只靠清單到期與主機。與 `vcNonce.ts` 的狀態檔是同一類風險，同一個目錄。
-- **單機狀態**：跨主機部署要把狀態檔換成共享儲存（`StatusStateStore` 是介面，記憶體版與檔案版都有）。
+- **清單過期 → 該簽發者的開倉、平倉全被拒**：一旦發佈過清單，就要在到期前續簽（7 天前開始有預警，§4.4；營運方以
+  `vc-status expiring` 排程檢查，§4.6）。這是 fail-closed 的直接後果。停用撤銷的正確步驟見 §4.6 第 6 點。
+- **未初始化的清單目錄 → 所有寫入被拒**：新部署必須先跑 `vc-status init`（§4.6 第 0 點）。
+- **狀態檔被刪除**：忘記高水位與 sticky 撤銷，該驗證端回到 §7.1 的「從沒看過」狀態。與 `vcNonce.ts` 的狀態檔是同一類風險。
+- **單機狀態**：多副本必須注入共享 `StatusStateStore`（§4.7）。
+- **「全部撤銷」的時鐘誤差**：`revokeAllCutoff` 涵蓋 ≤ 300 秒的時鐘偏快；偏快超過 300 秒的 VC 在簽出當下就會被 `VC_ISSUED_IN_FUTURE`
+  拒絕，但幾分鐘後變成有效時不在撤銷範圍內。
 - 清單會透露「某個簽發者撤銷過哪些 jti」。jti 是隨機值，不含 VC 內容；簽發者位址本來就公開在鏈上 session。
 
 ## 8. 沒做的事
@@ -240,9 +290,11 @@ interface IAgentCredentialStatus {
 
 ## 9. 驗證紀錄（2026-10-02）
 
-- `examples/vc-status.test.ts`：17 組（清單本身的 9 種拒絕、jti 對應、撤銷判斷、重放、同號異文、扣住、過期、
+- `examples/vc-status.test.ts`：21 組（審查修正後；清單本身的 9 種拒絕、jti 對應、撤銷判斷、重放、同號異文、扣住、過期、
   快取新鮮度與 900 秒上限（注入時鐘）、來源不可達的寫入／唯讀行為、跨 process 狀態與壞檔、本機與 HTTP 來源、
-  v1 舊憑證、write.ts 開倉與平倉、MCP 工具、tg-bot 與 vc-gate 預檢）。
+  v1 舊憑證、write.ts 開倉與平倉、MCP 工具、tg-bot 與 vc-gate 預檢；審查修正加上：目錄標記（不存在／不符／被移除）、
+  HTTP 不跟隨轉址（含真的 HTTP 伺服器 302→404）、403、本文大小上限、到期預警、`revokeAllCutoff`、共享狀態注入、
+  `VC_STATUS_DIR` 打錯時開倉與平倉被拒、MCP 工具結果帶出預警）。
 - `sdk/test/vcStatus.test.ts`：4 組（viem 簽 ↔ ethers 驗、無狀態判斷的六種拒絕、finalize 防呆、檢查器快取）。
 - `frontend/src/contracts/agentAuthStatus.test.ts`：2 組（schema 簽驗、jti 正規化）。
 - 全量（本機，Windows／Node 25）：agent `npm run typecheck`、`npm test`（含 `x402DefaultGolden.test.ts`、

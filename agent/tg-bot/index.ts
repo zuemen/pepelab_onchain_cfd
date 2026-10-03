@@ -22,7 +22,7 @@ import TelegramBot from "node-telegram-bot-api";
 /** sendMessage 的選項型別（隨套件版本而異，這裡取其宣告以免版本升級就編不過）。 */
 type SendMessageOptions = Parameters<TelegramBot["sendMessage"]>[2];
 import { openPositionForSession, getSession, verifyAuthorizationVC, checkCredentialStatus, redactSecrets, type AuthorizationVC } from "@pepelab/shared";
-import { parseIdList, isAuthorized, ConfirmationStore, RateLimiter, classifyVcForBot, vcStatusProblemForBot, chatSafe } from "./guard.ts";
+import { parseIdList, isAuthorized, ConfirmationStore, RateLimiter, classifyVcForBot, vcStatusProblemForBot, vcWarningsForBot, chatSafe } from "./guard.ts";
 
 function req(k: string, hint = ""): string {
   const v = process.env[k]?.trim();
@@ -150,10 +150,16 @@ function ensureVcLocal(): string | null {
  * （管理者可能已換上重新簽發的 VC）。write.ts 送單前還會再查一次，這裡只是讓 chat 早點看到原因、
  * 不發確認碼。
  */
+let VC_WARNINGS: string[] = [];
 async function ensureVc(): Promise<string | null> {
+  VC_WARNINGS = [];
   const local = ensureVcLocal();
   if (local) return local;
-  const check = async () => vcStatusProblemForBot(await checkCredentialStatus(verifyAuthorizationVC(VC!), { action: "write" }));
+  const check = async () => {
+    const st = await checkCredentialStatus(verifyAuthorizationVC(VC!), { action: "write" });
+    VC_WARNINGS = st.warnings ?? [];
+    return vcStatusProblemForBot(st);
+  };
   const problem = await check();
   if (!problem) return null;
   loadVc(false);
@@ -224,7 +230,7 @@ async function execute(chatId: string, o: Order) {
     });
     if (!res?.ok) return void (await say(chatId, `❌ 被拒絕：${res?.error ?? "未知錯誤"}`));
     const hash = res.txHash ?? res.hash ?? res.tx;
-    await say(chatId, `✅ 已開倉\nposition #${res.positionId ?? "?"}\n${hash ? `https://sepolia.basescan.org/tx/${hash}` : "(無 tx hash)"}`);
+    await say(chatId, `✅ 已開倉\nposition #${res.positionId ?? "?"}\n${hash ? `https://sepolia.basescan.org/tx/${hash}` : "(無 tx hash)"}${vcWarningsForBot(res.warnings)}`);
   } catch (e) {
     console.error("execute 失敗：", e);
     await say(chatId, `❌ 失敗：${(e as Error).message}`);
@@ -280,7 +286,8 @@ bot.on("message", async (msg) => {
   await say(
     chatId,
     `收到 → ${isLong ? "做多" : "做空"} ${symbol}　${leverage}x　保證金 ${marginUsdc} USDT\n` +
-      `⚠ 尚未下單。${CONFIRM_TTL_MS / 1000} 秒內回覆  /confirm ${p.code}  才會上鏈。`,
+      `⚠ 尚未下單。${CONFIRM_TTL_MS / 1000} 秒內回覆  /confirm ${p.code}  才會上鏈。` +
+      vcWarningsForBot(VC_WARNINGS),
   );
 });
 

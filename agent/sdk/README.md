@@ -267,11 +267,18 @@ const checker = createVcStatusChecker({ source: httpStatusSource(baseUrl), store
 const st = await checker.check(r, { action: "write", verifyingContract: mgr });
 ```
 
+- **SDK 不強制任何檢查**：`buildOpenPositionForSession` 等 builder 只建交易。整合方自己簽送前，必須依序跑
+  `verifyAuthorizationVCv2`、`crossCheckWithSession`、`checker.check(r, { action: "write", ... })`，任一不過就不送。
+- `checkCredentialStatusWithList` 沒傳 `minSequence` 時無法防重放與同號異文，結果會帶 warning；請保存接受過的最高 sequence。
+- 結果的 `warnings`（例如清單 7 天內到期）要顯示給使用者：清單一過期，該簽發者的寫入會全被拒。
+- 「全部撤銷」用 `revokedBefore: revokeAllCutoff(issuedAt)`（涵蓋 ≤ 300 秒的時鐘偏快），撤銷後約 5 分鐘再重簽新的 VC。
 - 寫入類動作（下單、付款、開 session）：`ok === false` 一律拒絕，包含「狀態未知」（來源不可達、清單過期、
   驗不過、重放、被扣住）。唯讀類動作的未知狀態依 `readPolicy`（預設 `allow`，結果帶 `status: "unknown"` 與警告）。
 - 清單有效期預設 30 天、上限 90 天；過期後簽發者要重簽（sequence +1），否則寫入會被拒。
-- `httpStatusSource(baseUrl)` 先取 `<baseUrl>/index.json`（`{"type":"AgentCredentialStatusDirectory"}`），
-  確認網址真的指向清單目錄後，才把 404 當成「這個簽發者沒有清單」。
+- `httpStatusSource(baseUrl)` 不跟隨轉址（3xx → 不明）；清單回 404 時再確認 `<baseUrl>/index.json`
+  （`{"type":"AgentCredentialStatusDirectory"}`），才把 404 當成「這個簽發者沒有清單」。主機對缺檔必須直接回 404（不可 403）。
+  主機**無法偽造**清單，但被信任回答「有沒有清單」：從沒看過某簽發者清單的驗證端無法分辨「沒發過」與「被扣住」（ADR-016 §7.1）。
+- 多副本服務請讓所有實例共用同一個 `StatusStateStore`（自行以 Redis 等實作 `get`／`accept`），否則高水位與 sticky 撤銷互不相通。
 - `check()` 請一律傳 `verifyingContract`；省略時才會退回讀 `SESSION_MANAGER_ADDRESS`。
 
 ## 7. 錯誤處理

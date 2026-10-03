@@ -1,5 +1,5 @@
 {
-  "digest": "d4acdbd203e50874",
+  "digest": "92d5ee83eb65cdd3",
   "files": {
     "agent/shared/src/abis.ts": "872c3136604d6584",
     "agent/shared/src/addresses.ts": "a6cb279048c58a4b",
@@ -18,9 +18,9 @@
     "agent/shared/src/redact.ts": "36892c597bec44d0",
     "agent/shared/src/signingGuard.ts": "abf2325446761376",
     "agent/shared/src/vcNonce.ts": "23f0a3a39df9a8da",
-    "agent/shared/src/vcStatus.ts": "156e784eefe4651d",
+    "agent/shared/src/vcStatus.ts": "7e00a9f47a7848bb",
     "agent/shared/src/verification.ts": "c7823c4dc411e59a",
-    "agent/shared/src/write.ts": "c2ea2342088f61e1",
+    "agent/shared/src/write.ts": "14a30b298396573e",
     "agent/shared/src/x402Client.ts": "5da0cba5d9e429ee",
     "agent/signal-api/src/app.ts": "e7f5fbc64c27424b",
     "agent/signal-api/src/benchmarks.ts": "bac063beeb2f0f45",

@@ -20,7 +20,9 @@ import {
   credentialJti,
   isCredentialRevoked,
   statusListDomain,
+  statusListExpiryWarning,
   verifyStatusList,
+  REVOKE_ALL_LEAD_SEC,
   type CredentialStatusList,
   type StatusListReason,
   type VerifiedStatusList,
@@ -35,6 +37,8 @@ export {
   credentialJti,
   isCredentialRevoked,
   verifyStatusList,
+  REVOKE_ALL_LEAD_SEC,
+  statusListExpiryWarning,
 };
 export {
   createVcStatusChecker,
@@ -42,6 +46,9 @@ export {
   memoryStatusStateStore,
   fileStatusStateStore,
   STATUS_DIRECTORY_TYPE,
+  STATUS_DIRECTORY_MARKER,
+  STATUS_LIST_EXPIRY_WARNING_SEC,
+  revokeAllCutoff,
   DEFAULT_STATUS_CACHE_MAX_AGE_SEC,
   MAX_STATUS_CACHE_MAX_AGE_SEC,
 } from "../../shared/src/vcStatus.ts";
@@ -83,7 +90,7 @@ export interface BuildStatusListParams {
   sequence: number;
   /** 撤銷的憑證 id（jti；v2 = VC 的 nonce）。新清單必須包含舊清單的項目（累積）。 */
   revoked?: string[];
-  /** 撤銷所有 issuedAt < revokedBefore 的憑證。 */
+  /** 撤銷所有 issuedAt < revokedBefore 的憑證。「全部撤銷」請用 revokeAllCutoff(issuedAt)（涵蓋 VC 的時鐘誤差）。 */
   revokedBefore?: number;
   /** 預設現在（unix 秒）。 */
   issuedAt?: number;
@@ -107,7 +114,9 @@ export function buildStatusListTypedData(p: BuildStatusListParams): StatusListDr
   }
   if (validUntil <= issuedAt) throw new Error(`validUntil(${validUntil}) 必須晚於 issuedAt(${issuedAt})`);
   if (validUntil - issuedAt > MAX_STATUS_LIST_VALIDITY_SEC) throw new Error(`清單有效期不得超過 ${MAX_STATUS_LIST_VALIDITY_SEC / 86400} 天`);
-  if (revokedBefore > issuedAt) throw new Error(`revokedBefore(${revokedBefore}) 不得晚於 issuedAt(${issuedAt})`);
+  if (revokedBefore > issuedAt + REVOKE_ALL_LEAD_SEC) {
+    throw new Error(`revokedBefore(${revokedBefore}) 不得晚於 issuedAt(${issuedAt}) + ${REVOKE_ALL_LEAD_SEC}`);
+  }
   const revoked = canonicalRevokedIds(p.revoked ?? []) as Hex[];
   if (revoked.length > MAX_STATUS_LIST_ENTRIES) throw new Error(`撤銷項目超過上限 ${MAX_STATUS_LIST_ENTRIES}`);
   const fields = { issuer, sequence: p.sequence, issuedAt, validUntil, revokedBefore, revoked };
@@ -168,6 +177,8 @@ export interface ListStatusCheck {
   reasonCode: "STATUS_ACTIVE" | "VC_REVOKED" | "VC_INVALID" | "STATUS_LIST_REPLAYED" | StatusListReason;
   message: string;
   list?: VerifiedStatusList;
+  /** 清單即將到期、沒有傳 minSequence（無法防重放）等提醒；呼叫端應顯示。 */
+  warnings?: string[];
 }
 
 /**
@@ -202,5 +213,18 @@ export function checkCredentialStatusWithList(
   if (isCredentialRevoked(verified, v.list)) {
     return { ok: false, status: "revoked", reasonCode: "VC_REVOKED", message: `憑證已被撤銷（清單 sequence ${v.list.sequence}）`, list: v.list };
   }
-  return { ok: true, status: "active", reasonCode: "STATUS_ACTIVE", message: `清單 sequence ${v.list.sequence}：未撤銷`, list: v.list };
+  const warnings: string[] = [];
+  const exp = statusListExpiryWarning(v.list.validUntil, opts.nowMs ?? Date.now());
+  if (exp) warnings.push(exp);
+  if (opts.minSequence === undefined) {
+    warnings.push("沒有傳 minSequence：無法偵測舊清單重放與同號異文；請保存接受過的最高 sequence 並傳入");
+  }
+  return {
+    ok: true,
+    status: "active",
+    reasonCode: "STATUS_ACTIVE",
+    message: `清單 sequence ${v.list.sequence}：未撤銷`,
+    list: v.list,
+    ...(warnings.length ? { warnings } : {}),
+  };
 }

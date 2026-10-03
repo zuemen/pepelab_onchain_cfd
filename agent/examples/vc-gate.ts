@@ -58,7 +58,10 @@ export async function localVerifyVcWithStatus(
   const base = localVerifyVc(vc, agentAddress, sessionId);
   if (!base.ok || !vc) return base;
   const st = await statusCheck(verifyAuthorizationVC(vc));
-  if (st.ok && st.status !== "unknown") return { ...base, reason: `${base.reason}；撤銷狀態 ${st.reasonCode}` };
+  if (st.ok && st.status !== "unknown") {
+    const warn = st.warnings?.length ? `；⚠ ${st.warnings.join("；⚠ ")}` : "";
+    return { ...base, reason: `${base.reason}；撤銷狀態 ${st.reasonCode}${warn}` };
+  }
   return {
     ...base,
     ok: false,

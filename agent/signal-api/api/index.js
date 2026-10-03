@@ -39318,6 +39318,7 @@ function parseDidPkh(did) {
   if (!m) throw new Error(`malformed did:pkh: ${did}`);
   return { chainId: Number(m[1]), address: ethers_exports.getAddress(m[2]) };
 }
+var MAX_CLOCK_SKEW_SEC = 300;
 
 // ../shared/src/verification.ts
 var ZERO4 = "0x0000000000000000000000000000000000000000";
@@ -39719,6 +39720,11 @@ var lock2 = Promise.resolve();
 var DEFAULT_STATUS_LIST_VALIDITY_DAYS = 30;
 var DEFAULT_STATUS_LIST_VALIDITY_SEC = DEFAULT_STATUS_LIST_VALIDITY_DAYS * 24 * 3600;
 var MAX_STATUS_LIST_VALIDITY_SEC = 90 * 24 * 3600;
+
+// ../shared/src/vcStatus.ts
+var REVOKE_ALL_LEAD_SEC = MAX_CLOCK_SKEW_SEC + 1;
+var STATUS_LIST_EXPIRY_WARNING_SEC = 7 * 24 * 3600;
+var MAX_STATUS_RESPONSE_BYTES = 256 * 1024;
 
 // ../shared/src/redact.ts
 var SECRET_VALUE_ENV_KEYS = ["UPSTASH_REDIS_REST_TOKEN", "ETHERSCAN_API_KEY", "BASESCAN_API_KEY"];

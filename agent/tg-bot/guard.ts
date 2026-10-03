@@ -114,6 +114,14 @@ export function classifyVcForBot(
  * VC 撤銷狀態（ADR-016）→ 拒單訊息。下單是寫入動作：被撤銷、狀態拿不到或驗不過一律拒單
  * （fail-closed）。回 null＝可以下單。不讓 bot exit：使用者重新簽發、或狀態來源恢復後就能繼續。
  */
+export function vcWarningsForBot(warnings: readonly string[] | undefined): string {
+  return warnings?.length ? `\n⚠ ${warnings.join("\n⚠ ")}` : "";
+}
+
+/**
+ * VC 撤銷狀態（ADR-016）→ 拒單訊息。下單是寫入動作：被撤銷、狀態拿不到或驗不過一律拒單
+ * （fail-closed）。回 null＝可以下單。即將到期等提醒由 vcWarningsForBot 另外顯示。
+ */
 export function vcStatusProblemForBot(st: { ok: boolean; status: string; reasonCode: string }): string | null {
   if (st.ok && st.status !== "unknown") return null;
   if (st.status === "revoked") {

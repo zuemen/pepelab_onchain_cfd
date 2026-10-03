@@ -163,6 +163,7 @@ async function executeOrSimulate(
     console.log(`🛑 授權憑證${st.status === "revoked" ? "已被簽發者撤銷" : "撤銷狀態無法確認"}（${st.reasonCode}）→ 拒絕下單：${st.message}`);
     return;
   }
+  for (const w of st.warnings ?? []) console.log(`⚠ ${w}`);
 
   console.log(`送出：${wouldBe}（session #${SESSION_ID}）…`);
   const res = await openPositionForSession({

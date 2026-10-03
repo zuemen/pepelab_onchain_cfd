@@ -52,6 +52,22 @@ const ZERO = "0x0000000000000000000000000000000000000000";
 const TYPES: Record<string, ethers.TypedDataField[]> = STATUS_LIST_TYPES;
 const isSafeUint = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
 
+/**
+ * `revokedBefore` 最多可以比清單的 issuedAt 晚這麼多秒（審查 L2）。VC 的 issuedAt 允許比驗證端時鐘快
+ * MAX_CLOCK_SKEW_SEC，所以「全部撤銷」若只寫 revokedBefore = now，時鐘偏快的裝置剛簽的 VC 會漏掉；
+ * 比較是嚴格小於，所以要多 1 秒才涵蓋 issuedAt == now + MAX_CLOCK_SKEW_SEC。代價：撤銷後這段時間內新簽的 VC
+ * 也算被撤銷——「全部撤銷」之後等 REVOKE_ALL_LEAD_SEC 秒再重簽。
+ */
+export const REVOKE_ALL_LEAD_SEC = MAX_CLOCK_SKEW_SEC + 1;
+
+/** 「撤銷到現在為止簽發的全部 VC」要填的 revokedBefore（涵蓋時鐘誤差）。 */
+export function revokeAllCutoff(issuedAtSec: number): number {
+  return issuedAtSec + REVOKE_ALL_LEAD_SEC;
+}
+
+/** 清單剩不到這麼久就到期時，檢查結果帶警告（審查 M3）。 */
+export const STATUS_LIST_EXPIRY_WARNING_SEC = 7 * 24 * 3600;
+
 // ── jti ───────────────────────────────────────────────────────────────────────
 
 /**
@@ -74,7 +90,7 @@ export interface IssueStatusListOptions {
   issuedAt?: number;
   /** 預設 issuedAt + 30 天；不得超過 issuedAt + 90 天。 */
   validUntil?: number;
-  /** 撤銷所有 issuedAt < revokedBefore 的憑證；預設 0（不用）。不得晚於 issuedAt。 */
+  /** 撤銷所有 issuedAt < revokedBefore 的憑證；預設 0（不用）。不得晚於 issuedAt + REVOKE_ALL_LEAD_SEC；「全部撤銷」用 revokeAllCutoff(issuedAt)。 */
   revokedBefore?: number;
   /** 要撤銷的憑證 id（jti）。會正規化（小寫、去重、排序）。 */
   revoked?: string[];
@@ -105,7 +121,9 @@ export async function issueStatusListWithSigner(
   if (validUntil - issuedAt > MAX_STATUS_LIST_VALIDITY_SEC) {
     throw new Error(`清單有效期不得超過 ${MAX_STATUS_LIST_VALIDITY_SEC / 86400} 天`);
   }
-  if (revokedBefore > issuedAt) throw new Error(`revokedBefore(${revokedBefore}) 不得晚於 issuedAt(${issuedAt})`);
+  if (revokedBefore > issuedAt + REVOKE_ALL_LEAD_SEC) {
+    throw new Error(`revokedBefore(${revokedBefore}) 不得晚於 issuedAt(${issuedAt}) + ${REVOKE_ALL_LEAD_SEC}`);
+  }
   if (revoked.length > MAX_STATUS_LIST_ENTRIES) throw new Error(`撤銷項目超過上限 ${MAX_STATUS_LIST_ENTRIES}`);
 
   const fields = { issuer, sequence: params.sequence, issuedAt, validUntil, revokedBefore, revoked };
@@ -214,8 +232,8 @@ export function verifyStatusList(doc: unknown, opts: VerifyStatusListOptions = {
     if (opts.expectedVerifyingContract && ethers.getAddress(opts.expectedVerifyingContract) !== verifyingContract) {
       return bad("STATUS_LIST_WRONG_DOMAIN", `清單綁定的 session manager(${verifyingContract}) 不是本驗證端使用的`);
     }
-    if (fields.validUntil <= fields.issuedAt || fields.revokedBefore > fields.issuedAt) {
-      return bad("STATUS_LIST_MALFORMED", "validUntil 必須晚於 issuedAt，revokedBefore 不得晚於 issuedAt");
+    if (fields.validUntil <= fields.issuedAt || fields.revokedBefore > fields.issuedAt + REVOKE_ALL_LEAD_SEC) {
+      return bad("STATUS_LIST_MALFORMED", `validUntil 必須晚於 issuedAt，revokedBefore 不得晚於 issuedAt + ${REVOKE_ALL_LEAD_SEC}`);
     }
     if (fields.validUntil - fields.issuedAt > MAX_STATUS_LIST_VALIDITY_SEC) {
       return bad("STATUS_LIST_VALIDITY_TOO_LONG", `清單有效期超過 ${MAX_STATUS_LIST_VALIDITY_SEC / 86400} 天`);
@@ -415,8 +433,31 @@ export interface StatusSource {
 const issuerFile = (issuer: string) => `${ethers.getAddress(issuer).toLowerCase()}.json`;
 
 /**
- * 本機目錄：`<dir>/<issuer 小寫>.json`。檔案不存在（含目錄不存在）＝沒有清單——目錄是驗證端
- * 自己的信任範圍（由營運者以 `vc-status install` 放入）。讀不到或不是 JSON → unavailable。
+ * 清單目錄的標記檔（`index.json`）：證明「這個位置確實是狀態清單目錄」。本機目錄與 HTTP 來源都要求它——
+ * 沒有標記時，打錯的路徑／網址、沒掛上的 volume、轉址到錯誤頁面，都會讓每個簽發者被當成「沒有清單」
+ * （fail-open，審查 M1）。建立方式：`npx tsx examples/vc-status.ts init`（或 install 時自動建立）。
+ */
+export const STATUS_DIRECTORY_TYPE = "AgentCredentialStatusDirectory";
+export const STATUS_DIRECTORY_MARKER = "index.json";
+/** HTTP 回應本文上限（位元組）。1000 筆 jti 的清單約 70 KB。超過 → unavailable（審查 L4）。 */
+export const MAX_STATUS_RESPONSE_BYTES = 256 * 1024;
+
+const NOT_INITIALISED_HINT = "請以 `npx tsx examples/vc-status.ts init` 建立目錄標記，或修正 VC_STATUS_DIR／VC_STATUS_URL";
+
+function markerOk(raw: string): boolean {
+  try {
+    return JSON.parse(raw)?.type === STATUS_DIRECTORY_TYPE;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 本機目錄：`<dir>/<issuer 小寫>.json`，目錄裡必須有 `index.json` 目錄標記。
+ * - 清單檔存在 → 讀出（壞 JSON → unavailable）。
+ * - 清單檔不存在：**每次**都重新確認標記（目錄被換掉或卸載時不能沿用舊的確認）。標記在且正確 → 沒有清單；
+ *   目錄不存在、標記不存在或內容不符 → unavailable（寫入拒絕）。
+ * 「沒有清單」是由目錄管理者（營運方）回答的——見 ADR-016 §7 的信任假設。
  */
 export function dirStatusSource(dir: string): StatusSource {
   return {
@@ -426,8 +467,18 @@ export function dirStatusSource(dir: string): StatusSource {
       try {
         raw = retryTransientSync(() => fs.readFileSync(path.join(dir, issuerFile(issuer)), "utf8"));
       } catch (e) {
-        if (isNotFound(e)) return { kind: "none" };
-        return { kind: "unavailable", reason: `讀取狀態清單失敗：${(e as NodeJS.ErrnoException).code ?? "IO"}` };
+        if (!isNotFound(e)) {
+          return { kind: "unavailable", reason: `讀取狀態清單失敗：${(e as NodeJS.ErrnoException).code ?? "IO"}` };
+        }
+        let marker: string;
+        try {
+          marker = retryTransientSync(() => fs.readFileSync(path.join(dir, STATUS_DIRECTORY_MARKER), "utf8"));
+        } catch (e2) {
+          const why = isNotFound(e2) ? "目錄或 index.json 目錄標記不存在" : `目錄標記讀取失敗（${(e2 as NodeJS.ErrnoException).code ?? "IO"}）`;
+          return { kind: "unavailable", reason: `狀態清單目錄未初始化：${why}；${NOT_INITIALISED_HINT}` };
+        }
+        if (!markerOk(marker)) return { kind: "unavailable", reason: `狀態清單目錄標記不符；${NOT_INITIALISED_HINT}` };
+        return { kind: "none" };
       }
       try {
         return { kind: "list", doc: JSON.parse(raw) };
@@ -438,30 +489,67 @@ export function dirStatusSource(dir: string): StatusSource {
   };
 }
 
-/** HTTP 來源的目錄標記檔：證明 base URL 真的指向一個狀態清單目錄（防設定錯誤時 404 被當成「沒有撤銷」）。 */
-export const STATUS_DIRECTORY_TYPE = "AgentCredentialStatusDirectory";
+/** 注入用的最小 fetch 回應介面（Node 內建 fetch 的 Response 相容）。 */
+export interface StatusFetchResponse {
+  status: number;
+  /** 有就檢查（`redirect: "manual"` 不被尊重時的保險）。 */
+  redirected?: boolean;
+  headers?: { get(name: string): string | null };
+  /** 有就以串流讀取並在超過上限時中止；沒有就退回 text()。 */
+  body?: { getReader(): { read(): Promise<{ done: boolean; value?: Uint8Array }>; cancel(): Promise<void> } } | null;
+  text(): Promise<string>;
+}
 
 export interface HttpStatusSourceOptions {
-  fetchImpl?: (url: string, init?: { signal?: AbortSignal; headers?: Record<string, string> }) => Promise<{
-    status: number;
-    text(): Promise<string>;
-  }>;
+  fetchImpl?: (
+    url: string,
+    init?: { signal?: AbortSignal; headers?: Record<string, string>; redirect?: "manual" | "follow" | "error" },
+  ) => Promise<StatusFetchResponse>;
   /** 單次請求逾時（毫秒），預設 3000。 */
   timeoutMs?: number;
+  /** 回應本文上限（位元組），預設 MAX_STATUS_RESPONSE_BYTES。 */
+  maxBytes?: number;
+}
+
+async function readCapped(r: StatusFetchResponse, maxBytes: number): Promise<string | null> {
+  const len = Number(r.headers?.get("content-length") ?? NaN);
+  if (Number.isFinite(len) && len > maxBytes) return null;
+  if (r.body && typeof r.body.getReader === "function") {
+    const reader = r.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => {});
+        return null;
+      }
+      chunks.push(value);
+    }
+    return Buffer.concat(chunks.map((c) => Buffer.from(c))).toString("utf8");
+  }
+  const t = await r.text();
+  return Buffer.byteLength(t, "utf8") > maxBytes ? null : t;
 }
 
 /**
- * HTTP(S) 來源：`<base>/<issuer 小寫>.json`，任何靜態主機都可以（清單自帶簽章，主機不需被信任，
- * 只影響可用性）。第一次使用先取 `<base>/index.json`，必須是
- * `{"type":"AgentCredentialStatusDirectory"}`；成功後才把 404 視為「沒有清單」。
- * 其餘狀態碼、逾時、網路錯誤 → unavailable。
+ * HTTP(S) 來源：`<base>/<issuer 小寫>.json`。清單自帶簽章，主機**無法偽造或竄改**清單，但主機
+ * **被信任回答「這個簽發者有沒有清單」**：對從沒看過該簽發者清單的驗證端，主機回 404 就會被當成
+ * 「沒有撤銷」，而且沒有時間上限（ADR-016 §7）。為了不讓設定錯誤也變成這種 fail-open：
+ * - 不跟隨轉址（`redirect: "manual"`）：任何 3xx 或 `redirected` 一律 unavailable，只有**直接**回 404 才算沒有清單；
+ * - 回 404 時，**每次**再確認 `<base>/index.json` 是 `{"type":"AgentCredentialStatusDirectory"}`（同樣不跟隨轉址）；
+ * - 本文超過 256 KB → unavailable；其餘狀態碼（含 403）、逾時、網路錯誤 → unavailable。
+ * 主機對缺檔必須直接回 404（不可回 403、不可轉址），否則沒發過清單的簽發者寫入會全被拒。
  */
 export function httpStatusSource(baseUrl: string, opts: HttpStatusSourceOptions = {}): StatusSource {
   const base = baseUrl.replace(/\/+$/, "");
   if (!/^https?:\/\//i.test(base)) throw new Error(`VC_STATUS_URL 必須是 http(s) URL：${baseUrl}`);
-  const doFetch = opts.fetchImpl ?? ((u, i) => fetch(u, i));
+  const doFetch = opts.fetchImpl ?? ((u, i) => fetch(u, i) as unknown as Promise<StatusFetchResponse>);
   const timeoutMs = opts.timeoutMs ?? 3000;
-  let directoryOk = false;
+  const maxBytes = opts.maxBytes ?? MAX_STATUS_RESPONSE_BYTES;
 
   async function get(url: string): Promise<{ status: number; body: string } | { error: string }> {
     const ac = new AbortController();
@@ -473,10 +561,15 @@ export function httpStatusSource(baseUrl: string, opts: HttpStatusSourceOptions 
         resolve({ error: "逾時" });
       }, timeoutMs);
     });
-    const attempt = (async () => {
+    const attempt = (async (): Promise<{ status: number; body: string } | { error: string }> => {
       try {
-        const r = await doFetch(url, { signal: ac.signal, headers: { accept: "application/json" } });
-        return { status: r.status, body: await r.text() };
+        const r = await doFetch(url, { signal: ac.signal, headers: { accept: "application/json" }, redirect: "manual" });
+        if (r.redirected || (r.status >= 300 && r.status < 400) || r.status === 0) {
+          return { error: `轉址（HTTP ${r.status}），不跟隨` };
+        }
+        const body = await readCapped(r, maxBytes);
+        if (body === null) return { error: `回應超過 ${maxBytes} 位元組` };
+        return { status: r.status, body };
       } catch (e) {
         return { error: ac.signal.aborted ? "逾時" : (e as Error).name || "network" };
       }
@@ -491,24 +584,17 @@ export function httpStatusSource(baseUrl: string, opts: HttpStatusSourceOptions 
   return {
     describe: `http:${base}`,
     fetch: async (issuer) => {
-      if (!directoryOk) {
-        const idx = await get(`${base}/index.json`);
-        if ("error" in idx) return { kind: "unavailable", reason: `狀態清單目錄無法連線（${idx.error}）` };
-        let t: unknown;
-        try {
-          t = JSON.parse(idx.body)?.type;
-        } catch {
-          t = undefined;
-        }
-        if (idx.status !== 200 || t !== STATUS_DIRECTORY_TYPE) {
-          return { kind: "unavailable", reason: `狀態清單目錄標記不符（HTTP ${idx.status}）` };
-        }
-        directoryOk = true;
-      }
       const r = await get(`${base}/${issuerFile(issuer)}`);
       if ("error" in r) return { kind: "unavailable", reason: `狀態清單無法取得（${r.error}）` };
-      if (r.status === 404) return { kind: "none" };
-      if (r.status !== 200) return { kind: "unavailable", reason: `狀態清單 HTTP ${r.status}` };
+      if (r.status === 404) {
+        const idx = await get(`${base}/${STATUS_DIRECTORY_MARKER}`);
+        if ("error" in idx) return { kind: "unavailable", reason: `狀態清單目錄標記無法取得（${idx.error}）` };
+        if (idx.status !== 200 || !markerOk(idx.body)) {
+          return { kind: "unavailable", reason: `狀態清單目錄標記不符（HTTP ${idx.status}）；${NOT_INITIALISED_HINT}` };
+        }
+        return { kind: "none" };
+      }
+      if (r.status !== 200) return { kind: "unavailable", reason: `狀態清單 HTTP ${r.status}（主機對缺檔必須直接回 404）` };
       try {
         return { kind: "list", doc: JSON.parse(r.body) };
       } catch {
@@ -721,6 +807,7 @@ export function createVcStatusChecker(o: VcStatusCheckerOptions): VcStatusChecke
       if (isCredentialRevoked(res, view) || isCredentialRevoked(res, list)) {
         return { ok: false, status: "revoked", reasonCode: "VC_REVOKED", message: `授權憑證已被簽發者撤銷（清單 sequence ${seq}）`, jti, listSequence: seq };
       }
+      const warn = statusListExpiryWarning(list.validUntil, nowMs);
       return {
         ok: true,
         status: "active",
@@ -730,9 +817,24 @@ export function createVcStatusChecker(o: VcStatusCheckerOptions): VcStatusChecke
         listSequence: seq,
         listValidUntil: list.validUntil,
         fromCache,
+        ...(warn ? { warnings: [warn] } : {}),
       };
     },
   };
+}
+
+/**
+ * 清單快到期的警告文字（剩不到 STATUS_LIST_EXPIRY_WARNING_SEC）；沒有就回 null。
+ * 清單一過期，這個簽發者的開倉與平倉都會被拒（fail-closed），所以要提早讓人看到。
+ */
+export function statusListExpiryWarning(validUntilSec: number, nowMs: number): string | null {
+  const left = validUntilSec * 1000 - nowMs;
+  if (left > STATUS_LIST_EXPIRY_WARNING_SEC * 1000) return null;
+  const hours = Math.max(0, Math.floor(left / 3_600_000));
+  return (
+    `VC 狀態清單將於 ${new Date(validUntilSec * 1000).toISOString()} 到期（約 ${hours} 小時後）；` +
+    "到期後此簽發者的開倉與平倉都會被拒，請簽發者在到期前續簽（同內容、sequence +1）"
+  );
 }
 
 // ── 由環境變數組出預設檢查器 ─────────────────────────────────────────────────
@@ -762,6 +864,19 @@ export function readPolicyFromEnv(env: NodeJS.ProcessEnv = process.env): ReadPol
 }
 
 let memo: { key: string; checker: VcStatusChecker } | null = null;
+let injectedStore: { id: number; store: StatusStateStore; describe: string } | null = null;
+let injectSeq = 0;
+
+/**
+ * 注入共享的驗證端狀態儲存（審查 L1）。預設是單機檔案：多副本／serverless／短暫磁碟部署時，各實例的
+ * 高水位、sticky 撤銷與同號異文偵測**互不相通**。這種部署必須在啟動時注入一個共享實作
+ * （例如以 Redis／Upstash 實作 StatusStateStore：`get` 讀、`accept` 以 compare-and-set 寫）。
+ * 傳 null 回到預設檔案。本 repo 只提供介面與檔案／記憶體實作。
+ */
+export function setVcStatusStateStore(store: StatusStateStore | null, describe = "injected"): void {
+  injectedStore = store ? { id: ++injectSeq, store, describe } : null;
+  memo = null;
+}
 
 /**
  * 依環境變數建立（並記住）預設檢查器：
@@ -778,12 +893,14 @@ export function defaultVcStatusChecker(): VcStatusChecker {
   const maxAgeRaw = process.env.VC_STATUS_CACHE_MAX_AGE_SEC?.trim();
   const maxAge = maxAgeRaw ? Number(maxAgeRaw) : DEFAULT_STATUS_CACHE_MAX_AGE_SEC;
   const readPolicy = readPolicyFromEnv();
-  const key = JSON.stringify([url, url ? "" : dir, statePath, maxAge, readPolicy]);
+  const key = JSON.stringify([url, url ? "" : dir, injectedStore ? `inj:${injectedStore.id}` : statePath, maxAge, readPolicy]);
   if (memo?.key === key) return memo.checker;
   const source = url ? httpStatusSource(url) : dirStatusSource(dir);
+  const storeDesc = injectedStore ? `共享儲存（${injectedStore.describe}）` : `單機檔案 ${statePath}（多副本部署須以 setVcStatusStateStore 注入共享儲存）`;
+  console.error(`[vc-status] 撤銷狀態來源 ${source.describe}；驗證端狀態 ${storeDesc}`);
   const checker = createVcStatusChecker({
     source,
-    store: fileStatusStateStore(statePath),
+    store: injectedStore?.store ?? fileStatusStateStore(statePath),
     cacheMaxAgeSec: Number.isFinite(maxAge) ? maxAge : DEFAULT_STATUS_CACHE_MAX_AGE_SEC,
     readPolicy,
   });

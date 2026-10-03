@@ -36,7 +36,7 @@ const {
 type StatusFetch = import("@pepelab/shared").StatusFetch;
 type VerifyResult = import("@pepelab/shared").VerifyResult;
 const { createWriteHandlers } = await import("../mcp-server/src/writeTools.ts");
-const { vcStatusProblemForBot } = await import("../tg-bot/guard.ts");
+const { vcStatusProblemForBot, vcWarningsForBot } = await import("../tg-bot/guard.ts");
 const { localVerifyVcWithStatus } = await import("./vc-gate.ts");
 
 let n = 0;
@@ -118,7 +118,7 @@ const B = await vcAt(T0 + 10);
   assert.equal((verifyStatusList(unsorted, { now }) as any).reasonCode, "STATUS_LIST_MALFORMED", "非正規排序 → 拒絕");
 
   await assert.rejects(list({ sequence: 1, validUntil: T0 + 91 * DAY }), /有效期/);
-  await assert.rejects(list({ sequence: 1, issuedAt: T0, revokedBefore: T0 + 1 }), /revokedBefore/);
+  await assert.rejects(list({ sequence: 1, issuedAt: T0, revokedBefore: T0 + 302 }), /revokedBefore/);
   ok("清單：竄改／冒用簽發者／別的部署／過期／未來時間／錯鏈／非正規排序 都被拒；有效期上限 90 天");
 }
 
@@ -308,8 +308,16 @@ const V1 = await vcAt(T0 + 20, { legacyV1: true });
 {
   const dir = path.join(TMP, "k-dir");
   const ds = dirStatusSource(dir);
-  assert.equal((await ds.fetch(user.address)).kind, "none", "目錄不存在 → none");
+  assert.equal((await ds.fetch(user.address)).kind, "unavailable", "目錄不存在 → unavailable（審查 M1：不可當成沒有清單）");
   fs.mkdirSync(dir, { recursive: true });
+  assert.equal((await ds.fetch(user.address)).kind, "unavailable", "目錄在但沒有 index.json → unavailable");
+  fs.writeFileSync(path.join(dir, "index.json"), JSON.stringify({ type: "Something" }));
+  assert.equal((await ds.fetch(user.address)).kind, "unavailable", "標記內容不符 → unavailable");
+  fs.writeFileSync(path.join(dir, "index.json"), JSON.stringify({ type: STATUS_DIRECTORY_TYPE }));
+  assert.equal((await ds.fetch(user.address)).kind, "none", "有正確標記、沒有檔案 → none");
+  fs.rmSync(path.join(dir, "index.json"));
+  assert.equal((await ds.fetch(user.address)).kind, "unavailable", "標記被移除 → 不沿用先前的確認");
+  fs.writeFileSync(path.join(dir, "index.json"), JSON.stringify({ type: STATUS_DIRECTORY_TYPE }));
   fs.writeFileSync(path.join(dir, `${user.address.toLowerCase()}.json`), "garbage");
   assert.equal((await ds.fetch(user.address)).kind, "unavailable", "壞 JSON → unavailable");
 
@@ -337,7 +345,117 @@ const V1 = await vcAt(T0 + 20, { legacyV1: true });
   routes.set(`${base}/${user.address.toLowerCase()}.json`, { status: 200, body: JSON.stringify(doc) });
   const got = await hs.fetch(user.address);
   assert.equal(got.kind, "list");
-  ok("來源：本機目錄（不存在＝沒有清單、壞檔＝不可用）；HTTP 需目錄標記、404/5xx/逾時/斷線各自對應");
+  // 403（S3 未開 ListBucket 的缺檔回應）→ unavailable（主機必須對缺檔回 404，見 ADR-016 §4.7）。
+  routes.set(`${base}/${user.address.toLowerCase()}.json`, { status: 403, body: "AccessDenied" });
+  assert.equal((await hs.fetch(user.address)).kind, "unavailable", "403 → unavailable");
+  // 轉址：3xx 與 redirected 都不跟隨、不算「沒有清單」（審查 M2）。
+  routes.set(`${base}/${user.address.toLowerCase()}.json`, { status: 302, body: "" });
+  assert.equal((await hs.fetch(user.address)).kind, "unavailable", "302 → unavailable");
+  const redirectedImpl = async (url: string, init?: any) => {
+    assert.equal(init?.redirect, "manual", "一律要求不跟隨轉址");
+    return { status: url.endsWith("index.json") ? 200 : 404, redirected: true, text: async () => JSON.stringify({ type: STATUS_DIRECTORY_TYPE }) };
+  };
+  assert.equal((await httpStatusSource(base, { fetchImpl: redirectedImpl as any }).fetch(user.address)).kind, "unavailable", "被跟隨的轉址（redirected）→ unavailable");
+  // 本文大小上限（審查 L4）：content-length 超過、或串流讀到超過，都中止。
+  const big = async () => ({ status: 200, headers: { get: (h: string) => (h === "content-length" ? String(10 * 1024 * 1024) : null) }, text: async () => { throw new Error("不該讀 body"); } });
+  assert.equal((await httpStatusSource(base, { fetchImpl: big as any }).fetch(user.address)).kind, "unavailable", "content-length 過大 → unavailable");
+  let cancelled = false;
+  const stream = async () => ({
+    status: 200,
+    body: {
+      getReader: () => {
+        let n = 0;
+        return {
+          read: async () => (n++ < 100 ? { done: false, value: new Uint8Array(8 * 1024) } : { done: true }),
+          cancel: async () => { cancelled = true; },
+        };
+      },
+    },
+    text: async () => { throw new Error("不該讀 text"); },
+  });
+  assert.equal((await httpStatusSource(base, { fetchImpl: stream as any, maxBytes: 64 * 1024 }).fetch(user.address)).kind, "unavailable", "串流超過上限 → unavailable");
+  assert.equal(cancelled, true, "超過上限就中止讀取");
+  ok("來源：本機目錄要求 index.json 標記（不存在／不符 → 不可用，每次重新確認）；HTTP 需標記、不跟隨轉址、403/5xx/逾時/斷線/過大各自對應");
+}
+
+// ───────────────────────── K2. 真的 HTTP 伺服器：302 → 404 不算沒有清單（審查 PoC P2a）─────────────────────────
+{
+  const http = await import("node:http");
+  const u = ethers.Wallet.createRandom();
+  const vcU = await issueAuthorizationVC({ issuer: u, agentAddress: agent.address, sessionId: 3, caps, issuedAt: T0, verifyingContract: MGR });
+  const rU = verifyAuthorizationVC(vcU, { now: (T0 + DAY) * 1000, expectedVerifyingContract: MGR });
+  const srv = http.createServer((rq, rs) => {
+    if (rq.url === "/index.json") { rs.writeHead(200, { "content-type": "application/json" }); return rs.end(JSON.stringify({ type: STATUS_DIRECTORY_TYPE })); }
+    if (rq.url === `/${u.address.toLowerCase()}.json`) { rs.writeHead(302, { location: "/moved-away" }); return rs.end(); }
+    rs.writeHead(404); rs.end();
+  });
+  await new Promise<void>((r) => srv.listen(0, "127.0.0.1", () => r()));
+  try {
+    const port = (srv.address() as any).port;
+    const clock = { ms: (T0 + DAY) * 1000 };
+    const ch = createVcStatusChecker({ source: httpStatusSource(`http://127.0.0.1:${port}`), store: memoryStatusStateStore(), cacheMaxAgeSec: 0, now: () => clock.ms });
+    const r1 = await ch.check(rU, { action: "write", verifyingContract: MGR });
+    assert.equal(r1.ok, false);
+    assert.equal(r1.reasonCode, "STATUS_UNAVAILABLE");
+    assert.match(r1.message, /轉址/);
+  } finally {
+    srv.close();
+  }
+  ok("真的 HTTP 伺服器：/<issuer>.json 302 → 404 → STATUS_UNAVAILABLE，寫入拒絕（不再被當成沒有清單）");
+}
+
+// ───────────────────────── K3. 到期預警（審查 M3）與「全部撤銷」的時鐘誤差（審查 L2）─────────────────────────
+{
+  const h = harness({ initial: { kind: "list", doc: await list({ sequence: 1, validUntil: T0 + 3600 + 10 * DAY }) }, maxAge: 0 });
+  let r = await h.check(B.r);
+  assert.equal(r.ok, true);
+  assert.equal(r.warnings, undefined, "剩 9 天多：不警告");
+  h.clock.ms = (T0 + 3600 + 4 * DAY) * 1000;
+  r = await h.check(B.r);
+  assert.equal(r.ok, true);
+  assert.equal(r.warnings?.length, 1, "剩 6 天：警告");
+  assert.match(r.warnings![0], /到期/);
+  assert.equal(S.statusListExpiryWarning(T0 + 8 * DAY, T0 * 1000), null);
+  assert.match(S.statusListExpiryWarning(T0 + 6 * DAY, T0 * 1000)!, /約 144 小時後/);
+
+  // 全部撤銷：revokeAllCutoff(now) 涵蓋 issuedAt == now 與時鐘偏快 ≤ 300 秒的 VC。
+  const t = T0 + 3600;
+  const fast = await vcAt(t + 240);
+  const same = await vcAt(t);
+  const edge = await vcAt(t + 300);
+  const all = await list({ sequence: 1, issuedAt: t, revokedBefore: S.revokeAllCutoff(t) });
+  const ha = harness({ initial: { kind: "list", doc: all } });
+  for (const x of [fast, same, edge]) assert.equal((await ha.check(x.r)).reasonCode, "VC_REVOKED");
+  await assert.rejects(list({ sequence: 1, issuedAt: t, revokedBefore: t + S.REVOKE_ALL_LEAD_SEC + 1 }), /revokedBefore/);
+  // 驗證端也擋：簽發者自己簽了 revokedBefore 超過 issuedAt + 301 的清單 → MALFORMED。
+  const farFields = { issuer: user.address, sequence: 2, issuedAt: t, validUntil: t + DAY, revokedBefore: t + S.REVOKE_ALL_LEAD_SEC + 1, revoked: [] as string[] };
+  const farSig = await user.signTypedData(S.statusListDomain(MGR), S.STATUS_LIST_TYPES as any, S.buildStatusListTypedValue(farFields));
+  const far = S.assembleStatusList({ ...farFields, issuerAddress: user.address, signature: farSig, verifyingContract: MGR });
+  assert.equal((verifyStatusList(far, { now: (T0 + DAY) * 1000 }) as any).reasonCode, "STATUS_LIST_MALFORMED");
+  ok("到期前 7 天起檢查結果帶警告；全部撤銷（revokeAllCutoff）涵蓋 issuedAt==now 與 ≤300 秒時鐘偏快的 VC");
+}
+
+// ───────────────────────── K4. 注入共享狀態儲存（審查 L1）─────────────────────────
+{
+  const shared = memoryStatusStateStore();
+  const statePath = process.env.VC_STATUS_STATE_PATH!;
+  S.setVcStatusStateStore(shared, "test-shared");
+  try {
+    const c1 = S.defaultVcStatusChecker();
+    assert.match(c1.describe, /dir:/);
+    // 用 A 的清單撤銷 A，再以另一個「實例」（同一個注入儲存、空快取）在來源掛掉時檢查 → 仍是撤銷。
+    const k = S.stateKey(MGR, user.address);
+    const l = await list({ sequence: 9, revoked: [A.r.nonce!] });
+    const v = verifyStatusList(l, { now: (T0 + DAY) * 1000 });
+    assert.equal(v.valid, true);
+    shared.accept(k, (v as any).list, T0);
+    const inst2 = createVcStatusChecker({ source: { describe: "down", fetch: async () => ({ kind: "unavailable", reason: "x" }) }, store: shared, now: () => (T0 + DAY) * 1000 });
+    assert.equal((await inst2.check(A.r, { action: "write", verifyingContract: MGR })).reasonCode, "VC_REVOKED");
+    assert.equal(fs.existsSync(statePath), false, "注入時不寫單機狀態檔");
+  } finally {
+    S.setVcStatusStateStore(null);
+  }
+  ok("setVcStatusStateStore：多實例共用同一份狀態（高水位、sticky 撤銷）；預設檢查器改用注入的儲存");
 }
 
 // ───────────────────────── L. v1 舊憑證 ─────────────────────────
@@ -366,6 +484,7 @@ async function liveList(issuer: ethers.HDNodeWallet, o: { sequence: number; revo
 }
 function install(issuerAddr: string, doc: unknown) {
   fs.mkdirSync(process.env.VC_STATUS_DIR!, { recursive: true });
+  fs.writeFileSync(path.join(process.env.VC_STATUS_DIR!, "index.json"), JSON.stringify({ type: STATUS_DIRECTORY_TYPE }));
   fs.writeFileSync(path.join(process.env.VC_STATUS_DIR!, `${issuerAddr.toLowerCase()}.json`), JSON.stringify(doc));
 }
 const open = (vc: any) => openPositionForSession({ sessionId: 3, symbol: "sBTC", isLong: true, marginUsdc: 10, leverage: 2, authVc: vc });
@@ -448,6 +567,26 @@ install(u1.address, await liveList(u1, { sequence: 1, revoked: [jtiOf(revokedVc)
   }
   ok("write.ts：狀態來源不可達或設定錯誤 → 開倉、平倉都 fail-closed（VC_STATUS_UNVERIFIED）");
 }
+{
+  // 審查 M1（PoC P1）：VC_STATUS_DIR 打錯字＋全新的驗證端狀態 → 以前被當成「沒有清單」放行；現在拒絕。
+  const good = process.env.VC_STATUS_DIR!;
+  const goodState = process.env.VC_STATUS_STATE_PATH!;
+  process.env.VC_STATUS_DIR = `${good}-typo`;
+  process.env.VC_STATUS_STATE_PATH = path.join(TMP, "fresh-state.json");
+  try {
+    for (const fn of [open, close]) {
+      const r: any = await fn(revokedVc);
+      assert.equal(r.reasonCode, "VC_STATUS_UNVERIFIED", r.error);
+      assert.match(r.error, /未初始化/);
+    }
+    const st = await S.checkCredentialStatus(verifyAuthorizationVC(keptVc), { action: "write" });
+    assert.equal(st.ok, false, "未撤銷的 VC 在未初始化的目錄上也拒絕寫入");
+  } finally {
+    process.env.VC_STATUS_DIR = good;
+    process.env.VC_STATUS_STATE_PATH = goodState;
+  }
+  ok("write.ts：VC_STATUS_DIR 打錯（沒有 index.json 標記）→ 開倉、平倉 VC_STATUS_UNVERIFIED（不再 fail-open）");
+}
 
 // ───────────────────────── N. MCP 寫入工具（經 write.ts）─────────────────────────
 {
@@ -469,7 +608,12 @@ install(u1.address, await liveList(u1, { sequence: 1, revoked: [jtiOf(revokedVc)
   const c: any = await h.closePosition({ sessionId: 3, positionId: 1, authVcJson: JSON.stringify(revokedVc) });
   assert.equal(c.reasonCode, "VC_REVOKED");
   assert.match(c.message, /closePosition\(/);
-  ok("MCP open_position / close_position：被撤銷的 VC → VC_REVOKED");
+  // 成功時 write.ts 帶出的 warnings（清單即將到期）會原樣出現在 MCP 工具結果裡。
+  const hw = createWriteHandlers({ ...deps, open: async () => ({ ok: true, txHash: "0x1", positionId: "1", warnings: ["VC 狀態清單將於 X 到期"] }) });
+  const ow: any = await hw.openPosition({ sessionId: 3, asset: "sBTC", isLong: true, marginUsdc: 10, leverage: 2, authVcJson: JSON.stringify(keptVc) });
+  assert.equal(ow.kind, "ok");
+  assert.deepEqual(ow.data.warnings, ["VC 狀態清單將於 X 到期"]);
+  ok("MCP open_position / close_position：被撤銷的 VC → VC_REVOKED；到期預警出現在工具結果");
 }
 
 // ───────────────────────── O. tg-bot 與 vc-gate 預檢 ─────────────────────────
@@ -481,6 +625,8 @@ install(u1.address, await liveList(u1, { sequence: 1, revoked: [jtiOf(revokedVc)
   assert.equal(live.ok, true);
   assert.equal(vcStatusProblemForBot(live), null);
   assert.match(vcStatusProblemForBot({ ok: true, status: "unknown", reasonCode: "STATUS_UNAVAILABLE" })!, /無法確認/, "unknown 一律拒單");
+  assert.equal(vcWarningsForBot(undefined), "");
+  assert.match(vcWarningsForBot(["清單將到期"]), /⚠ 清單將到期/);
 
   const g = await localVerifyVcWithStatus(revokedVc, agent.address, 3);
   assert.equal(g.ok, false);

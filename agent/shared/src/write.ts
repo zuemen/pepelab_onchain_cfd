@@ -116,6 +116,8 @@ export interface WriteResult {
   reasonCode?: string;
   /** 停在哪一道閘（config / vc / policy / risk / precheck / signing / submit）。 */
   guardStage?: GuardStage;
+  /** 不影響結果、但呼叫端應顯示的提醒（例如 VC 狀態清單即將到期，ADR-016）。 */
+  warnings?: string[];
 }
 
 /**
@@ -225,6 +227,7 @@ async function verifyVcAgainstChain(
   agentAddress: string,
   mgr: ethers.Contract,
   action: "open" | "close",
+  out: { warnings: string[] } = { warnings: [] },
 ): Promise<string | null | { degraded: string } | { status: VcStatusRejection }> {
   // v2 VC 的 domain 綁 session manager 位址：必須等於本 agent 實際呼叫的那一顆。
   const mgrAddress = await mgr.getAddress();
@@ -246,6 +249,10 @@ async function verifyVcAgainstChain(
         message: st.message,
       },
     };
+  }
+  for (const w of st.warnings ?? []) {
+    out.warnings.push(w);
+    console.warn(`[write] ⚠ ${w}`);
   }
 
   // 交叉比對鏈上 session：VC 的 issuer 必須是 session.user、agent 必須是 session.agent。
@@ -361,6 +368,7 @@ export async function openPositionForSession(params: {
   }
 
   // VC/SSI 閘門：帶了授權憑證就必須驗證通過（驗簽 + 鏈上 session 交叉比對）才下單。
+  const vcNotes = { warnings: [] as string[] };
   if (params.authVc) {
     const reason = await verifyVcAgainstChain(
       params.authVc,
@@ -368,6 +376,7 @@ export async function openPositionForSession(params: {
       signer.address,
       mgr,
       "open",
+      vcNotes,
     );
     if (typeof reason === "string") {
       return reject(req, "vc", "VC_INVALID", `拒絕下單（VC 驗證未過）：${reason}`);
@@ -455,6 +464,7 @@ export async function openPositionForSession(params: {
       marginUsdc: params.marginUsdc,
       leverage: params.leverage,
     },
+    ...(vcNotes.warnings.length ? { warnings: vcNotes.warnings } : {}),
   };
 }
 
@@ -646,6 +656,7 @@ export async function closePositionForSession(params: {
     console.warn("[write] ⚠ 平倉的 VC 閘門已被明確關閉，僅限測試環境。");
   }
 
+  const vcNotes = { warnings: [] as string[] };
   if (params.authVc) {
     const reason = await verifyVcAgainstChain(
       params.authVc,
@@ -653,6 +664,7 @@ export async function closePositionForSession(params: {
       signer.address,
       mgr,
       "close",
+      vcNotes,
     );
     if (typeof reason === "string") {
       return reject(req, "vc", "VC_INVALID", `拒絕平倉（VC 驗證未過）：${reason}。${CLOSE_ONCHAIN_HINT}`);
@@ -730,6 +742,7 @@ export async function closePositionForSession(params: {
     positionId: String(params.positionId),
     agent: signer.address,
     sessionId: params.sessionId,
+    ...(vcNotes.warnings.length ? { warnings: vcNotes.warnings } : {}),
   };
 }
 

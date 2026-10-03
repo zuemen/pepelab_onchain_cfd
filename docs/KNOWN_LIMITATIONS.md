@@ -52,7 +52,7 @@ was not, the reason is given rather than glossed over.
 | 28 | After the timelock handover, recovery actions wait 48h and depend on one Safe | **By design** — losing the Safe freezes governance permanently |
 | 29 | V2.5 unpriced exemption values a closed dead-feed asset at an arbitrarily old price | **Accepted** — closed assets only, never below its last recorded price, dust-only without one |
 | 30 | Daily check-in still transfers PEPE on the deployed PepeIncentives, against the #101 decision | **Fixed in source** (2026-10-01, issue #169) — check-ins credit non-transferable achievement points; **not deployed**, the live contract is unchanged |
-| 31 | Agent authorization VCs are revoked through an issuer-signed, off-chain status list; a list host can withhold a newer list | **Mitigated in source** (2026-10-02, ADR-016) — writes fail closed; withholding bounded by list expiry (≤ 90 days) and verifier memory; on-chain registry is follow-up |
+| 32 | Agent authorization VCs are revoked through an issuer-signed, off-chain status list; the list host is trusted to say whether an issuer *has* a list | **Mitigated in source** (2026-10-02, ADR-016) — writes fail closed; a verifier that never saw an issuer's list can be told "no list" with no time bound; an expired list blocks that issuer's opens and closes; on-chain registry is follow-up |
 
 ---
 
@@ -1177,7 +1177,7 @@ parameter bounds and event, no transfer/approve/burn/mint surface, pause, fuzz
 against a model of the curve) and `frontend/src/lib/pepefi/achievements.test.ts`
 (the probe, including -32005 / -32000 / -32603 / 429 errors).
 
-## 31. VC revocation is an off-chain signed list (added 2026-10-02)
+## 32. VC revocation is an off-chain signed list (added 2026-10-02)
 
 Before ADR-016 an authorization VC could not be revoked on its own: the only
 options were waiting for `validUntil`, revoking the whole on-chain session, or
@@ -1188,14 +1188,48 @@ the new one). Now the VC's issuer (the user's wallet) signs an
 any VC whose status cannot be fetched or verified (`VC_REVOKED`,
 `VC_STATUS_UNVERIFIED`).
 
-What it does not solve: whoever hosts the list can serve an older one or none.
-A verifier that has already seen a newer list remembers its sequence and every
-revocation in it, so it rejects the older list and never "un-revokes"; a
-verifier that has never seen it is exposed until the older list expires (default
-30 days, at most 90). Deleting the verifier state file removes that memory. An
-on-chain revocation registry, which cannot be withheld, is designed in ADR-016
-§6 but not deployed. The strongest immediate stop is still
+**Trust assumption.** The signature stops the host from forging or editing a
+list, but the host (or whoever manages the verifier's list directory) is trusted
+to answer *whether an issuer has published a list at all*:
+
+- A verifier that has **never** accepted an issuer's list — a new agent, a
+  rebuilt container, a lost state file, another replica — treats a plain 404 as
+  "no revocations", and there is **no time bound** on that.
+- A verifier that **has** seen a list remembers its sequence and every
+  revocation in it: an older list is rejected as a replay, a missing one as
+  withheld. Withholding then only works until the old list expires (default 30
+  days, at most 90), after which writes are refused.
+- Configuration mistakes no longer fail open: both the local directory and the
+  HTTP source require an `index.json` directory marker (created by
+  `vc-status init`), HTTP redirects are not followed, and only a direct 404 means
+  "no list". A missing marker means *unknown*, so every write is refused.
+
+Until the on-chain registry (ADR-016 §6) exists, the list host must be inside
+the operator's own trust boundary. The strongest immediate stop is still
 `AgentSessionManager.revokeSession`.
+
+**Expiry blocks writes.** Once an issuer publishes a list, it has to be
+re-signed (same content, sequence + 1) before it expires; an expired list makes
+every open **and close** for that issuer fail closed. Checks start carrying a
+warning 7 days before expiry (shown by MCP results, the Telegram bot, demo-agent,
+the x402 agent and the SDK). The operator is responsible for monitoring: run
+`npx tsx examples/vc-status.ts expiring --days 7` on a schedule against the
+verifier's list directory and notify the issuer. `ops/monitoring` cannot read
+that directory and does not cover this. Users can always close positions
+directly on-chain (`PerpetualExchange.closePosition` needs no VC).
+
+**How to stop using revocation.** Deleting the list does not work: a verifier
+that has seen it reports `STATUS_LIST_WITHHELD` and refuses writes. The issuer
+signs an empty list with sequence + 1 (`revokedBefore` stays as it was) and keeps
+re-signing it. Removing the issuer entirely requires deleting both the list file
+and the issuer's record in **every** verifier's state file, which forgets past
+revocations — safe only after every revoked VC has passed its `validUntil` or the
+on-chain session has been revoked.
+
+Other limits: verifier state is a single-host file by default; replicas must
+inject a shared `StatusStateStore` (`setVcStatusStateStore`). "Revoke all"
+(`revokeAllCutoff`) covers devices whose clock runs up to 300 s fast, so VCs
+signed in the ~5 minutes after it are also revoked.
 
 ## Frontend
 

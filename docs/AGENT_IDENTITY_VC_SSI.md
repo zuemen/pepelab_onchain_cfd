@@ -178,6 +178,8 @@ VC 回答「**誰**授權了這個 agent、授權範圍多大」。它**不**回
 簽進去的 `nonce`，v1 是 EIP-712 digest），或以 `revokedBefore` 撤銷某時間點之前簽發的全部 VC。下單與平倉前
 （`write.ts`）一律檢查：被撤銷、或拿不到／驗不過狀態 → 拒絕（`VC_REVOKED`／`VC_STATUS_UNVERIFIED`）。清單有
 單調 `sequence`、`issuedAt`、`validUntil`，驗證端記住最高 sequence 與看過的所有撤銷，舊清單不能讓撤銷復活。
+信任假設：清單主機無法偽造清單，但被信任回答「某簽發者有沒有清單」——從沒看過該清單的驗證端無法分辨「沒發過」與「被扣住」
+（ADR-016 §7.1）；清單過期會擋住該簽發者的開倉與平倉，要在到期前續簽。
 設計、取捨、操作步驟：[ADR-016](ADR-016-vc-credential-status.md)。
 
 ## 9. 範圍與後續
