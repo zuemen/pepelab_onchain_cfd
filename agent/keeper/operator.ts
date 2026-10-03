@@ -11,15 +11,22 @@
 //   tighten — 寫價之前、每個資產都跑：只會 Active → ReduceOnly，永遠不放寬。
 //             價格來源壞了也照跑（休市與否不靠價格）。
 //   loosen  — 寫價之後、只對本輪價格通過所有檢查的資產（round.ts 的 priced）跑：
-//             ReduceOnly → Active 需要「市場此刻真的在成交」的證據（時段開盤＋報價新鮮）。
-//             被熔斷拒寫的資產不在 priced 裡，所以熔斷停單不會被下一輪自動解除。
+//             ReduceOnly → Active 需要「市場此刻真的在成交」的證據（時段開盤＋報價新鮮），
+//             而且距離收盤還超過提前量。被熔斷拒寫的資產不在 priced 裡，所以熔斷停單
+//             **同一輪**不會被解除；之後某一輪價格重新通過所有檢查、且開盤、報價新鮮時，
+//             會自動切回 Active。要持續停單，請 guardian 上鎖（guardianLocked），keeper
+//             讀到上鎖就不嘗試放寬（run.ts／marketMode.ts）。
+//
+// 收盤提前量（審查 H1）：keeper 由 GitHub 排程觸發，實測間隔 68–169 分鐘（偶爾更久），
+// 「收盤時」不一定有一輪在跑。所以收緊看的是「此刻或 leadSec 之後是否休市」：收盤前
+// leadSec 就切 ReduceOnly，放寬也排除這段。代價是收盤前 leadSec 不能開新倉。
 //
 // 預設啟用（KEEPER_MARKET_OPERATOR=0 才關）。線上舊 exchange 沒有 assetMode／setAssetMode，
 // run.ts 會先探測、沒有就略過並以 ::warning:: 說明「休市中仍可開倉」。
 //
-// 只有純函式，可被單元測試覆蓋；鏈上呼叫在 run.ts。
+// 只有純函式，可被單元測試覆蓋；鏈上呼叫在 marketMode.ts（由 run.ts 接上）。
 import {
-  assetClassOf,
+  ASSET_CLASS,
   calendarOpen,
   futureWeekendClosed,
   isSessionOpen,
@@ -41,9 +48,28 @@ export const modeName = (m: number): string => MODE_NAME[m] ?? `unknown(${m})`;
  */
 export const MODE_SWITCH_CLASSES: readonly AssetClass[] = ["equity", "future"];
 
-export function switchesMode(symbol: string): boolean {
-  return MODE_SWITCH_CLASSES.includes(assetClassOf(symbol));
+/**
+ * 休市切換用的資產類別。審查 L3：未列在 ASSET_CLASS 的資產當 equity（會切換）——
+ * 健檢那邊「未分類當 crypto」是最嚴格的預設，但對停開倉而言 crypto 是最寬鬆的
+ * （永遠不切）。新資產忘了分類時，寧可夜間被誤切 ReduceOnly，也不要休市照常開倉。
+ */
+export function modeClassOf(symbol: string): AssetClass {
+  return ASSET_CLASS[symbol] ?? "equity";
 }
+
+export function switchesMode(symbol: string): boolean {
+  return MODE_SWITCH_CLASSES.includes(modeClassOf(symbol));
+}
+
+/**
+ * 收盤提前量預設 3 小時（KEEPER_CLOSE_LEAD_SEC 可改，範圍見 CLOSE_LEAD_RANGE）。
+ * 依據：workflow 實測的白天排程間隔是 68–169 分鐘，3 小時涵蓋這個範圍；9/25（五）
+ * 收盤前後兩輪的實際間隔是 13:23 → 16:35 ET（3.2 小時），13:23 那一輪落在 13:00 之後，
+ * 會提前收緊。外部觸發 Worker（每 20 分鐘）部署後可調低到約 45 分鐘。
+ */
+export const DEFAULT_CLOSE_LEAD_SEC = 3 * 3_600;
+/** 0（不提前）到 6.5 小時（整個正規盤）。 */
+export const CLOSE_LEAD_RANGE = [0, 23_400] as const;
 
 /** 放寬（切回 Active）時報價年齡上限：證明市場此刻在成交。假日 Yahoo 時段可能仍顯示開盤。 */
 export const LOOSEN_MAX_QUOTE_AGE_SEC = 3_600;
@@ -86,8 +112,14 @@ export function decideAssetMode(a: {
   currentMode: number | null;
   session?: MarketSession | null;
   quoteAgeSec?: number;
+  /** 收盤提前量（秒），預設 DEFAULT_CLOSE_LEAD_SEC。 */
+  leadSec?: number;
+  /** 本輪來源是否給出價格；期貨來源無效時收緊（審查 L4，fail-closed）。預設 true。 */
+  sourceOk?: boolean;
 }): ModeDecision {
-  const cls = assetClassOf(a.symbol);
+  const cls = modeClassOf(a.symbol);
+  const lead = Math.max(0, a.leadSec ?? DEFAULT_CLOSE_LEAD_SEC);
+  const soon = a.nowSec + lead;
   if (!switchesMode(a.symbol)) {
     return { action: "skip", reason: `${cls} 不做休市切換` };
   }
@@ -109,8 +141,14 @@ export function decideAssetMode(a: {
     if (cls === "equity") {
       if (!calendarOpen(cls, a.nowSec)) why = "行事曆休市";
       else if (a.session && !isSessionOpen(a.session, a.nowSec)) why = "Yahoo 時段休市";
+      else if (!calendarOpen(cls, soon)) why = `行事曆 ${h(lead)} 內收盤（提前收緊）`;
+      else if (a.session && soon >= a.session.regularEnd) why = `Yahoo 時段 ${h(lead)} 內收盤（提前收緊）`;
     } else if (futureWeekendClosed(a.nowSec)) {
       why = "期貨週末休市";
+    } else if (futureWeekendClosed(soon)) {
+      why = `期貨 ${h(lead)} 內進入週末休市（提前收緊）`;
+    } else if (a.sourceOk === false) {
+      why = "期貨來源無效（可能是交易所假日），fail-closed";
     }
     if (!why && age !== null && age > TIGHTEN_QUOTE_AGE_SEC) {
       why = `報價停滯 ${h(age)} > ${h(TIGHTEN_QUOTE_AGE_SEC)}`;
@@ -128,8 +166,13 @@ export function decideAssetMode(a: {
     if (!isSessionOpen(a.session, a.nowSec) || !calendarOpen(cls, a.nowSec)) {
       return { action: "skip", reason: "休市中，維持 ReduceOnly" };
     }
+    if (!calendarOpen(cls, soon) || soon >= a.session.regularEnd) {
+      return { action: "skip", reason: `${h(lead)} 內收盤（提前量內），維持 ReduceOnly` };
+    }
   } else if (futureWeekendClosed(a.nowSec) || !calendarOpen(cls, a.nowSec)) {
     return { action: "skip", reason: "期貨休市中，維持 ReduceOnly" };
+  } else if (futureWeekendClosed(soon)) {
+    return { action: "skip", reason: `期貨 ${h(lead)} 內進入週末休市，維持 ReduceOnly` };
   }
   if (age === null || age > LOOSEN_MAX_QUOTE_AGE_SEC) {
     return {

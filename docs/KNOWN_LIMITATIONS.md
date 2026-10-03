@@ -1207,22 +1207,47 @@ open path but keeps closes, liquidations and margin withdrawals working. The
 keeper is the `marketOperator` that switches them (`agent/keeper/operator.ts`):
 
 - Before it writes prices, it only *tightens*: an equity outside the regular
-  session (calendar or Yahoo session says closed), gold in the COMEX weekend
-  window (Friday 17:00 to Sunday 18:00 ET), or any of them whose quote has
-  not moved for more than 2 hours goes to ReduceOnly.
+  session (calendar or Yahoo session says closed) **or due to close within
+  the close lead** (default 3 hours, `KEEPER_CLOSE_LEAD_SEC`), gold in or
+  within the lead of the COMEX weekend window (Friday 17:00 to Sunday 18:00
+  ET), gold whose source returned no price, or any of them whose quote has
+  not moved for more than 2 hours goes to ReduceOnly. Unclassified assets are
+  treated as equities.
 - After the round it only *loosens*, and only for assets whose price passed
-  every check that round: back to Active when the session is open and the
-  quote is at most 1 hour old. Assets refused by the price breaker are not
-  loosened, so a breaker ReduceOnly is not lifted by the next market open.
+  every check that round: back to Active when the session is open, the close
+  is more than the lead away, the quote is at most 1 hour old and the asset
+  is not guardian-locked. The time is read again for each asset, not taken
+  from the start of the round.
+- A breaker ReduceOnly is not lifted in the round that refused the price. It
+  is lifted in a later round once the price passes every check again during
+  an open session, unless the guardian has locked it (then only the owner can
+  lift it, and the keeper does not try).
 - The switch is on by default (`KEEPER_MARKET_OPERATOR=0` turns it off).
   Against the live exchange it detects the missing function, skips, and prints
-  a `::warning::` naming the closed assets that can still be opened.
+  a `::warning::` naming the closed assets that can still be opened. It does
+  the same when the keeper is not the exchange's `marketOperator`.
+
+**Why a 3-hour close lead.** The keeper runs on GitHub's scheduler, which
+the workflow measured at 68–169 minutes between runs in the daytime; around
+the close on 25 September the gap was 3.2 hours (13:23 to 16:35 ET). Without a
+lead, the asset stays Active from the close until the next run. The cost:
+new equity positions can be opened only from 09:30 to 13:00 ET (3.5 of the
+6.5 session hours), and gold not after 14:00 ET on Fridays. When the external
+trigger Worker (every 20 minutes) is deployed, the lead can be lowered to
+about 45 minutes.
 
 This takes effect only after the new exchange is deployed and the keeper is
 set as its `marketOperator` (see `DEPLOY_130_CUTOVER.md`). Until then this
 limitation stands.
 
 **What is still not covered after the cutover.**
+
+- Residual window at the close: if no keeper run falls between "close minus
+  the lead" and the close (the gap between runs is longer than the lead), the
+  asset is still Active after the close, at the closing price, until the
+  next run. The same holds for gold before the Friday close. A run whose
+  price writes time out (state unknown) also stops tightening the remaining
+  assets for that round; the keeper then prints a warning naming them.
 
 - No exchange holiday calendar. A US holiday is caught because the quote is
   stale: the asset went to ReduceOnly at the previous close and is not
@@ -1236,14 +1261,19 @@ limitation stands.
   operator from loosening it). A ReduceOnly the keeper set itself is lifted
   automatically once the price passes the checks again during an open
   session.
-- While an equity sits in ReduceOnly overnight, the breaker issue cannot
-  auto-close (any non-Active asset blocks it); it closes after the next open.
+- A breaker ReduceOnly on an asset that is also closed is reported as
+  "closed", not "protected", so it does not hold the breaker issue open
+  overnight. If the price is still refused at the next open, the issue
+  reopens.
 - Crypto (sBTC, sETH) is never switched.
 
-Tests: `agent/keeper/operator.test.ts` (the w36 block: tighten never loosens,
-gold weekend, stale-quote rules, default on) and `agent/keeper/round.test.ts`
-(heartbeat still written while closed; `priced` excludes refused and
-unreadable assets).
+Tests: `agent/keeper/operator.test.ts` (tighten never loosens, gold weekend,
+stale-quote rules, default on, close lead, unclassified assets, gold source
+failure), `agent/keeper/marketMode.test.ts` (guardian lock, not the operator,
+tenant asset list, old exchange, per-asset clock, tighten before the price
+write, no loosening of a refused asset, closed versus protected) and
+`agent/keeper/round.test.ts` (heartbeat still written while closed; `priced`
+excludes refused and unreadable assets).
 
 ## Frontend
 

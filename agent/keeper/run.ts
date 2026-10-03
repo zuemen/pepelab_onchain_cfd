@@ -35,15 +35,8 @@ import { isTimeout, runRound, type RoundResult } from "./round.ts";
 import { describeProtection, protectAsset } from "./protect.ts";
 import type { HealthReport } from "./alert.ts";
 import { writeFileSync } from "node:fs";
-import {
-  ASSET_MODE,
-  classifyProbeError,
-  decideAssetMode,
-  marketOperatorEnabled,
-  modeName,
-  switchesMode,
-} from "./operator.ts";
-import { assetClassOf, type MarketSession } from "./market.ts";
+import { CLOSE_LEAD_RANGE, DEFAULT_CLOSE_LEAD_SEC, classifyProbeError, marketOperatorEnabled } from "./operator.ts";
+import { classifyProtected, closedForTrading, createMarketMode } from "./marketMode.ts";
 
 const SYMBOLS = [
   "sBTC", "sETH", "sAAPL", "sTSLA", "sNVDA",
@@ -106,6 +99,12 @@ const RELAY_SOURCE = (
 // setMarketOperator(keeper 地址)。線上舊 exchange 沒有這個函式 → 探測後略過，並以
 // ::warning:: 列出「休市中仍可對收盤價開倉」的資產（docs/KNOWN_LIMITATIONS.md §31）。
 const MARKET_OPERATOR = marketOperatorEnabled(process.env);
+// 審查 H1：收盤前多久就收緊（秒）。預設 3 小時，理由見 operator.ts DEFAULT_CLOSE_LEAD_SEC。
+const CLOSE_LEAD_SEC = numEnvOrDie("KEEPER_CLOSE_LEAD_SEC", DEFAULT_CLOSE_LEAD_SEC, CLOSE_LEAD_RANGE, { minInclusive: true });
+// 審查 L2：租戶 workflow 會設 FUNDING_SYMBOLS（已註冊資產，空白分隔）；只切這些資產的模式。
+const MODE_SYMBOLS: ReadonlySet<string> | null = process.env.FUNDING_SYMBOLS?.trim()
+  ? new Set(process.env.FUNDING_SYMBOLS.trim().split(/\s+/))
+  : null;
 const EXCHANGE_ADDR = (process.env.KEEPER_EXCHANGE_ADDRESS ?? process.env.EXCHANGE ?? "").trim();
 // 選用：熔斷報告（alert.ts 的 HealthReport 形狀）與拒寫清單（一行一個 symbol，
 // funding crank 據此跳過）。workflow 設在 $RUNNER_TEMP。
@@ -145,6 +144,7 @@ const GUARDED_ABI = [
 const EXCHANGE_PROTECT_ABI = [
   "function marketOperator() view returns (address)",
   "function assetMode(bytes32 asset) view returns (uint8)",
+  "function guardianLocked(bytes32 asset) view returns (bool)",
   "function setAssetMode(bytes32 asset, uint8 mode) external",
   "function maxPriceAge() view returns (uint256)",
 ];
@@ -160,7 +160,9 @@ const VAULT_ABI = [
 ];
 const VAULT_IFACE = new ethers.Interface(VAULT_ABI);
 const EXCHANGE_MODE_ABI = [
+  "function marketOperator() view returns (address)",
   "function assetMode(bytes32 asset) view returns (uint8)",
+  "function guardianLocked(bytes32 asset) view returns (bool)",
   "function setAssetMode(bytes32 asset, uint8 mode) external",
 ];
 
@@ -228,15 +230,32 @@ async function main(): Promise<void> {
       : null;
   if (relay) console.log(`relay source: ${RELAY_SOURCE}（優先於外部 API）`);
 
-  let exchange: ethers.Contract | null = null;
-  // 本輪探測到交易所沒有 assetMode（舊合約）→ 休市切換做不到，結尾要說出來。
-  let modeUnsupported = false;
+  let marketMode: ReturnType<typeof createMarketMode> | null = null;
+  let modeFailed = 0;
   if (MARKET_OPERATOR) {
     if (!ethers.isAddress(EXCHANGE_ADDR)) {
-      console.log("::warning::marketOperator 休市切換已啟用，但 KEEPER_EXCHANGE_ADDRESS/EXCHANGE 未設，略過休市切換");
+      console.log("marketOperator 休市切換：未設 KEEPER_EXCHANGE_ADDRESS/EXCHANGE，略過");
     } else {
-      exchange = new ethers.Contract(EXCHANGE_ADDR, EXCHANGE_MODE_ABI, signer ?? provider);
-      console.log(`marketOperator: 啟用（exchange ${EXCHANGE_ADDR}）`);
+      const ex = new ethers.Contract(EXCHANGE_ADDR, EXCHANGE_MODE_ABI, signer ?? provider);
+      marketMode = createMarketMode({
+        exchange: {
+          marketOperator: async () => (await ex.marketOperator()) as string,
+          assetMode: async (id) => (await ex.assetMode(id)) as bigint,
+          guardianLocked: async (id) => (await ex.guardianLocked(id)) as boolean,
+          checkSetAssetMode: (id, mode) => ex.setAssetMode.staticCall(id, mode),
+          setAssetMode: (id, mode) => ex.setAssetMode(id, mode),
+        },
+        signerAddress: wallet?.address ?? null,
+        now: () => Math.floor(Date.now() / 1000),
+        fetchSession: (symbol) => fetchMarketSession(symbol),
+        leadSec: CLOSE_LEAD_SEC,
+        allowed: MODE_SYMBOLS,
+        revertInfo,
+        isTimeout,
+        waitTimeoutMs: TX_WAIT_TIMEOUT_MS,
+      });
+      console.log(`marketOperator: 啟用（exchange ${EXCHANGE_ADDR}，收盤提前量 ${CLOSE_LEAD_SEC / 3600}h）`);
+      if ((await marketMode.prepare()) === "error") modeFailed += 1;
     }
   }
 
@@ -268,17 +287,12 @@ async function main(): Promise<void> {
     fetchPrice: (symbol) => fetchPrice(symbol),
     fetchSecondary: (symbol) => fetchSecondaryPrice(symbol),
     // 收緊階段：寫價前、只會切 ReduceOnly。放寬在本輪結束後、只對 round.priced 做。
-    beforeAsset: exchange
-      ? async (symbol, id, feed) => {
-          const r = await applyMarketMode(exchange!, id, symbol, nowSec, "tighten", feed.quoteAgeSec);
-          if (r === "missing") modeUnsupported = true;
-          return r === "missing" ? "stop" : r;
-        }
-      : undefined,
+    beforeAsset:
+      marketMode?.state === "ready" ? (symbol, id, feed) => marketMode!.tighten(symbol, id, feed) : undefined,
   });
   writeRefusedList(round);
   const { available, skipped, rejected, confirmed, wrote } = round;
-  let failed = round.failed;
+  let failed = round.failed + modeFailed;
 
   // 複審 H2：拒寫的資產立刻嘗試停單，做不到的部分明寫。
   const exchangeView = ethers.isAddress(EXCHANGE_ADDR)
@@ -332,48 +346,62 @@ async function main(): Promise<void> {
     if (res.mode === "failed") failed += 1;
     protectionNotes.push(...notes);
   }
-  // w36：休市切換的放寬階段 —— 只對本輪價格通過所有檢查的資產（round.priced）。
-  // 被熔斷拒寫的資產不在 priced 裡，上面剛切的 ReduceOnly 不會在這裡被解除。
-  if (exchange && !modeUnsupported) {
+  // w36：休市切換的放寬階段 —— 只對本輪價格通過所有檢查的資產（round.priced），每個資產
+  // 重新取時間（審查 H1）。被熔斷拒寫的資產不在 priced 裡，上面剛切的 ReduceOnly 這一輪
+  // 不會被解除；之後價格重新通過、開盤、報價新鮮時才會（guardian 上鎖的除外）。
+  if (marketMode?.state === "ready") {
     if (txUnknown) {
       console.log("::warning::本輪有狀態未知的交易，休市切換的放寬階段略過（資產維持 ReduceOnly 較安全）");
     } else {
-      for (const p of round.priced) {
-        if (!switchesMode(p.symbol)) continue;
-        const r = await applyMarketMode(exchange, p.assetId, p.symbol, nowSec, "loosen", p.quoteAgeSec);
-        if (r === "missing") {
-          modeUnsupported = true;
-          break;
-        }
-        if (r === "failed" || r === "unknown") failed += 1;
-        if (r === "unknown") break;
-      }
+      failed += await marketMode.loosenPass(round.priced);
     }
   }
   // w36：做不到休市停開倉時必須說出來 —— keeper 休市照常 heartbeat（出場要用），
-  // 鏈上 updatedAt 因此一直新鮮，交易所會接受以收盤價開新倉。
-  if (!exchange || modeUnsupported) {
-    const closed = SYMBOLS.filter(
-      (s) =>
-        decideAssetMode({ phase: "tighten", symbol: s, nowSec, currentMode: ASSET_MODE.Active, session: null })
-          .action === "set",
+  // 鏈上 updatedAt 因此一直新鮮，交易所會接受以收盤價開新倉。審查 L5：本輪有狀態未知的
+  // 交易時，後面資產的收緊沒送，也要說出來。
+  const modeSyms = SYMBOLS.filter((s) => MODE_SYMBOLS === null || MODE_SYMBOLS.has(s));
+  const closedNow = closedForTrading(modeSyms, Math.floor(Date.now() / 1000), CLOSE_LEAD_SEC);
+  if (closedNow.length && (marketMode?.state !== "ready" || txUnknown)) {
+    const why = !MARKET_OPERATOR
+      ? "KEEPER_MARKET_OPERATOR=0（休市切換已關閉）"
+      : !marketMode
+        ? "未設交易所位址"
+        : marketMode.state === "missing"
+          ? "線上交易所沒有 assetMode／setAssetMode（舊合約）"
+          : marketMode.state === "not-operator"
+            ? "keeper 不是交易所的 marketOperator"
+            : marketMode.state === "error"
+              ? "讀不到 marketOperator()"
+              : "本輪有狀態未知的交易，收緊可能沒有送出";
+    console.log(
+      `::warning::休市中（含收盤前 ${CLOSE_LEAD_SEC / 3600}h）但無法確認已切 ReduceOnly（${why}）：${closedNow.join(", ")}` +
+        ` 可能仍可對收盤價開新倉 —— heartbeat 讓鏈上 updatedAt 保持新鮮。見 docs/KNOWN_LIMITATIONS.md §31`,
     );
-    if (closed.length) {
-      const why = !MARKET_OPERATOR
-        ? "KEEPER_MARKET_OPERATOR=0（休市切換已關閉）"
-        : !exchange
-          ? "未設交易所位址"
-          : "線上交易所沒有 assetMode／setAssetMode（舊合約）";
-      console.log(
-        `::warning::休市中但無法切 ReduceOnly（${why}）：${closed.join(", ")} 仍可對收盤價開新倉 ——` +
-          ` heartbeat 讓鏈上 updatedAt 保持新鮮。見 docs/KNOWN_LIMITATIONS.md §31`,
-      );
-    }
   }
 
   // 窄複審 4：報告帶上交易所目前仍在保護中（非 Active）的資產；有就不自動關 issue。
-  const protectedAssets = exchangeView ? await readProtected(exchangeView) : [];
-  if (protectedAssets.length) console.log(`::warning::交易所保護中的資產：${protectedAssets.join(", ")}（解除需人工）`);
+  // 審查 M2：休市造成的 ReduceOnly（開盤後 keeper 會自動放寬）不算保護中。
+  const modeView = exchangeView
+    ? await classifyProtected({
+        symbols: SYMBOLS,
+        exchange: {
+          assetMode: async (id) => (await exchangeView.assetMode(id)) as bigint,
+          guardianLocked: async (id) => (await exchangeView.guardianLocked(id)) as boolean,
+        },
+        assetIdOf: (s) => ethers.id(s),
+        nowSec: Math.floor(Date.now() / 1000),
+        leadSec: CLOSE_LEAD_SEC,
+        revertInfo,
+      })
+    : { protected: [] as string[], closed: [] as string[] };
+  const protectedAssets = modeView.protected;
+  if (modeView.closed.length) console.log(`交易所休市中的資產：${modeView.closed.join(", ")}（開盤後 keeper 自動放寬）`);
+  if (protectedAssets.length) {
+    console.log(
+      `::warning::交易所保護中的資產：${protectedAssets.join(", ")}（熔斷或 guardian 造成；guardian 上鎖或 Halted 需 owner 解除，` +
+        `keeper 自己設的 ReduceOnly 在價格重新通過檢查且開盤時自動解除）`,
+    );
+  }
   writeRefusal(round, protectionNotes, nowSec, exchangeMaxAge, protectedAssets);
 
   // #99: reuses the same failed-counter/exit(1) mechanism every other genuine
@@ -440,25 +468,6 @@ function writeRefusedList(round: RoundResult): void {
   }
 }
 
-/**
- * 讀每個資產在交易所的 assetMode，回傳非 Active 的（例如 "sAAPL(ReduceOnly)"）。
- * 舊 exchange 沒有 assetMode → 回空陣列（沒有保護機制可言）；單一資產讀失敗時保守
- * 地列為 "(unknown)"，一樣會擋住自動關閉。
- */
-async function readProtected(exchange: ethers.Contract): Promise<string[]> {
-  const out: string[] = [];
-  for (const symbol of SYMBOLS) {
-    try {
-      const m = Number(await exchange.assetMode(ethers.id(symbol)));
-      if (m !== 0) out.push(`${symbol}(${modeName(m)})`);
-    } catch (e) {
-      if (classifyProbeError(revertInfo(e)) === "missing") return [];
-      out.push(`${symbol}(unknown)`);
-    }
-  }
-  return out;
-}
-
 /** 熔斷報告（給 alert-run.ts）。 */
 function writeRefusal(
   round: RoundResult,
@@ -492,86 +501,6 @@ function writeRefusal(
 function revertInfo(e: unknown): { code?: unknown; data?: unknown } {
   const x = e as { code?: unknown; data?: unknown; info?: { error?: { data?: unknown } } };
   return { code: x?.code, data: x?.data ?? x?.info?.error?.data };
-}
-
-/**
- * marketOperator：讀 assetMode → decideAssetMode（tighten／loosen）→ staticCall 探測 → 送出。
- *   "missing" — exchange 沒有 assetMode/setAssetMode（線上舊合約），略過並記錄；
- *               呼叫端整輪停用，不算失敗。
- *   "failed"  — 已確定要切換卻送不出去（權限、RPC），計入 failed 讓 CI 變紅。
- *   "ok"      — 其他（含 skip、DRY_RUN）。
- */
-async function applyMarketMode(
-  exchange: ethers.Contract,
-  assetId: string,
-  symbol: string,
-  nowSec: number,
-  phase: "tighten" | "loosen",
-  quoteAgeSec: number | undefined,
-): Promise<"ok" | "missing" | "failed" | "unknown"> {
-  // 加密資產不做休市切換：連 RPC 都不打。
-  if (!switchesMode(symbol)) return "ok";
-
-  let current: number;
-  try {
-    current = Number(await exchange.assetMode(assetId));
-  } catch (e) {
-    const kind = classifyProbeError(revertInfo(e));
-    if (kind === "missing") {
-      console.log(`  → marketOperator：exchange 沒有 assetMode()（舊合約），本輪略過休市切換`);
-      return "missing";
-    }
-    console.log(`::warning::${symbol} 讀 assetMode 失敗（${kind}）：${(e as Error).message.slice(0, 100)}`);
-    return "ok";
-  }
-
-  // 市場時段獨立取得（審查 Low），不依賴價格來源：價格改走 relay、或 Yahoo 價格因
-  // 報價過舊被拒時，feed 上都不會帶 session。拿不到就是 null → 行事曆只准收緊。
-  // 只有 equity 用得到（期貨看週末窗口）；已是目標方向的模式也不必打 Yahoo。
-  const needSession =
-    assetClassOf(symbol) === "equity" &&
-    (phase === "tighten" ? current === ASSET_MODE.Active : current === ASSET_MODE.ReduceOnly);
-  const session: MarketSession | null = needSession ? await fetchMarketSession(symbol) : null;
-
-  const d = decideAssetMode({ phase, symbol, nowSec, currentMode: current, session, quoteAgeSec });
-  if (d.action === "skip") {
-    console.log(`  → marketOperator ${symbol}: skip（${d.reason}）`);
-    return "ok";
-  }
-
-  try {
-    await exchange.setAssetMode.staticCall(assetId, d.mode);
-  } catch (e) {
-    // assetMode() 已讀成功 → 新 exchange，setAssetMode 必定存在；空 revert 算 denied
-    // 並記 failed，不能當成「舊合約」靜默略過。
-    const kind = classifyProbeError(revertInfo(e), { functionExists: true });
-    if (DRY_RUN && kind === "denied") {
-      // DRY_RUN 沒有 signer，staticCall 的 from 是零位址，被拒是預期的。
-      console.log(`  → marketOperator ${symbol}: 會 ${d.reason}（DRY_RUN，權限未驗證）`);
-      return "ok";
-    }
-    console.error(`::error::${symbol} setAssetMode(${modeName(d.mode)}) 預檢失敗（${kind}）：${(e as Error).message.slice(0, 140)}`);
-    return "failed";
-  }
-
-  if (DRY_RUN) {
-    console.log(`  → marketOperator ${symbol}: 會 ${d.reason}（DRY_RUN）`);
-    return "ok";
-  }
-  try {
-    const tx = await exchange.setAssetMode(assetId, d.mode);
-    await tx.wait(1, TX_WAIT_TIMEOUT_MS);
-    console.log(`  → marketOperator ${symbol}: ${d.reason} ✓ ${tx.hash}`);
-    return "ok";
-  } catch (e) {
-    // 審查 L3：等確認逾時＝狀態未知，交給 round 停止本輪後續寫入。
-    if (isTimeout(e)) {
-      console.error(`::error::${symbol} setAssetMode(${modeName(d.mode)}) 等確認逾時，狀態未知`);
-      return "unknown";
-    }
-    console.error(`::error::${symbol} setAssetMode(${modeName(d.mode)}) 失敗：${(e as Error).message.slice(0, 140)}`);
-    return "failed";
-  }
 }
 
 /**

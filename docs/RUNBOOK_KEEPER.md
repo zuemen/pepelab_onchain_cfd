@@ -215,10 +215,10 @@ guardian(人)決定;Guarded 被凍結時 keeper 對 Mock 也拒寫(fail-closed)�
 `peek` 的 `frozen` 會回到 false,keeper 下一輪就會恢復對兩顆 oracle 寫價,不需要任何人解除。
 凍結的原因如果還沒排除,必須在 72 小時內由 admin 接手(`takeOverAssetFreeze(id)`／`takeOverPause()`,見 KNOWN_LIMITATIONS #27)。
 
-熔斷造成的 ReduceOnly,keeper 在該資產價格**重新通過所有檢查之前**不會解除(放寬階段只處理
-本輪價格被接受的資產,見下方「休市」)。價格恢復通過、且市場開盤報價新鮮時,marketOperator
-會自動切回 Active。要人工把關,請 guardian 對該資產再設一次 ReduceOnly(設上 guardian 鎖,
-marketOperator 就不能放寬),解除時由 owner 處理。funding crank 會讀
+熔斷造成的 ReduceOnly,在被拒寫的那一輪不會解除(放寬階段只處理本輪價格被接受的資產,
+見下方「休市」)。之後某一輪價格重新通過所有檢查、市場開盤、報價新鮮時,marketOperator
+會自動切回 Active。要人工把關,請 guardian 對該資產再設一次 ReduceOnly(設上 guardian 鎖):
+keeper 放寬前會讀 `guardianLocked`,上鎖就略過、只記一行 log,不算失敗;解除由 owner 處理。funding crank 會讀
 `$RUNNER_TEMP/keeper-refused.txt` 跳過被拒寫的資產(不以已知錯誤的價格結算 funding)。
 
 ### 目前做不到停單 —— 建議的授權
@@ -279,8 +279,13 @@ GuardedOracle 的 `GUARDIAN_ROLE`(理由見上)。在 cutover 之前,停單只�
 
 | 階段 | 時機 | 只做 | 條件 |
 |---|---|---|---|
-| 收緊 | 每個資產取價後、寫價前 | Active → ReduceOnly | 股票／ETF:行事曆或 Yahoo 時段說休市;黃金:週五 17:00 到週日 18:00 ET;任何一類:報價停滯超過 2 小時 |
-| 放寬 | 本輪結束後,只對價格通過所有檢查的資產 | ReduceOnly → Active | 股票／ETF:有 Yahoo 時段且開盤、行事曆也開盤;黃金:不在週末窗口也不在每日休息;並且報價在 1 小時內 |
+| 收緊 | 每個資產取價後、寫價前 | Active → ReduceOnly | 股票／ETF:行事曆或 Yahoo 時段說休市,或收盤提前量(預設 3 小時,`KEEPER_CLOSE_LEAD_SEC`)內會收盤;黃金:週五 17:00 到週日 18:00 ET,或提前量內會進入這段,或來源沒給價;任何一類:報價停滯超過 2 小時;沒分類的資產當股票處理 |
+| 放寬 | 本輪結束後,只對價格通過所有檢查的資產,每個資產重新取時間 | ReduceOnly → Active | 股票／ETF:有 Yahoo 時段且開盤、行事曆也開盤,且距收盤超過提前量;黃金:不在週末窗口、不在每日休息、提前量內也不會進入週末;報價在 1 小時內;guardian 沒上鎖 |
+
+**收盤提前量 3 小時的理由與代價。** 白天排程實測間隔 68–169 分鐘,9/25 收盤前後兩輪間隔 3.2 小時
+(13:23 → 16:35 ET)。沒有提前量時,收盤後到下一輪之間資產仍是 Active。代價:股票只有
+09:30–13:00 ET 能開新倉;黃金週五 14:00 ET 後不能開新倉。外部觸發 Worker 部署後可把
+`KEEPER_CLOSE_LEAD_SEC` 調到約 2700(45 分鐘)。間隔超過提前量時仍有殘餘窗口(KNOWN_LIMITATIONS #31)。
 
 - 加密資產(sBTC、sETH)兩個階段都不動。
 - 黃金每天 17:00–18:00 ET 的一小時休息不切。
@@ -290,10 +295,14 @@ GuardedOracle 的 `GUARDIAN_ROLE`(理由見上)。在 cutover 之前,停單只�
   2 小時」收緊。
 - 交易所沒有 `assetMode`(線上舊合約):探測後略過,並印出
   `::warning::休市中但無法切 ReduceOnly…仍可對收盤價開新倉`。這是已知限制,不算失敗。
-- 交易所有 `assetMode` 但 keeper 不是 `marketOperator`:預檢被拒,記為 failed,job 變紅。
-  照 DEPLOY_130_CUTOVER 第 6 步設定 `setMarketOperator`。
-- 有資產在 ReduceOnly 時,熔斷 issue 不會自動關閉;股票夜間都在 ReduceOnly,所以這張 issue
-  要等開盤後才會關。
+- 交易所有 `assetMode` 但 keeper 不是 `marketOperator`:每輪開頭讀一次 `marketOperator()`,
+  不是自己就印一條 `::warning::` 並整輪略過,不記 failed。照 DEPLOY_130_CUTOVER 第 6 步設定
+  `setMarketOperator`,或設 `KEEPER_MARKET_OPERATOR=0` 關閉。
+- 租戶 workflow 有 `FUNDING_SYMBOLS` 時,只切換這些已註冊的資產。
+- 熔斷 issue 的「保護中」只算熔斷或 guardian 造成的(guardian 上鎖、Halted、或不是休市卻
+  ReduceOnly)。休市造成的 ReduceOnly 另列「休市中」,不擋 issue 關閉。
+- 本輪有交易等確認逾時(狀態未知)時,後面資產的收緊與所有放寬都不送;結尾會印出此刻
+  休市、但可能還沒切 ReduceOnly 的資產。
 
 ## 已知未解:單一資產可能無聲漏掉一輪
 

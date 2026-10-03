@@ -104,4 +104,14 @@ for (const [sym, second] of Object.entries(SECONDARY_SOURCES)) {
   assert.notEqual(second.kind, SOURCES[sym].kind, `${sym} 的第二來源與主要來源同一家`);
 }
 
+// ── 審查 L3：每個非加密報價來源都要分類（休市切換靠分類決定）──────────────────
+{
+  const { assetClassOf } = await import("./market.ts");
+  for (const [sym, src] of Object.entries(SOURCES)) {
+    if (src.kind === "yahoo" && !src.symbol.endsWith("-USD")) {
+      assert.notEqual(assetClassOf(sym), "crypto", `${sym}（${src.symbol}）沒有在 ASSET_CLASS 分類`);
+    }
+  }
+}
+
 console.log("feeds.test.ts ✓ all assertions passed");

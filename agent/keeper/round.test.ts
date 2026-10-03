@@ -469,7 +469,8 @@ for (const target of [101, 112]) {
 }
 {
   // priced 只列「價格通過所有檢查」的資產：被熔斷拒寫、來源無效的不列 ——
-  // run.ts 只對 priced 做放寬，熔斷停單（ReduceOnly）不會被下一輪自動解除。
+  // run.ts 只對 priced 做放寬，所以熔斷停單（ReduceOnly）在被拒寫的那一輪不會被解除；
+  // 之後某一輪價格重新通過檢查、開盤、報價新鮮時會自動解除（guardian 上鎖的除外）。
   const oracle = fakeOracle(100);
   const r = await runRound(
     ctx({

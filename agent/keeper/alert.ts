@@ -189,7 +189,9 @@ export function decideAlert(a: {
       };
     }
     // 窄複審 4：還有資產在保護中（交易所 ReduceOnly／Halted）就不關 —— 事故沒結束，
-    // 只是被人或 keeper 擋住了，解除是人工步驟。
+    // 只是被人或 keeper 擋住了。protected 不含休市造成的 ReduceOnly（審查 M2，見
+    // marketMode.ts classifyProtected）。guardian 上鎖與 Halted 由 owner 解除；keeper 自己
+    // 設的 ReduceOnly 在價格重新通過檢查且開盤時自動解除。
     if (report.protected?.length) {
       return {
         action: "none",

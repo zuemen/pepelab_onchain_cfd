@@ -3,16 +3,18 @@
 import assert from "node:assert";
 import {
   ASSET_MODE,
+  DEFAULT_CLOSE_LEAD_SEC,
   LOOSEN_MAX_QUOTE_AGE_SEC,
   TIGHTEN_QUOTE_AGE_SEC,
   classifyProbeError,
   decideAssetMode,
   marketOperatorEnabled,
+  modeClassOf,
   switchesMode,
 } from "./operator.ts";
 import type { MarketSession } from "./market.ts";
 
-const utc = (y: number, mo: number, d: number, h: number, mi = 0) => Date.UTC(y, mo - 1, d, h, mi) / 1000;
+const utc = (y: number, mo: number, d: number, h: number, mi = 0, s = 0) => Date.UTC(y, mo - 1, d, h, mi, s) / 1000;
 const TUE: MarketSession = {
   regularStart: utc(2026, 9, 29, 13, 30),
   regularEnd: utc(2026, 9, 29, 20, 0),
@@ -33,7 +35,7 @@ assert.equal(switchesMode("sAAPL"), true);
 assert.equal(switchesMode("sICLN"), true, "ETF 也是股票類");
 assert.equal(switchesMode("sBTC"), false);
 assert.equal(switchesMode("sGOLD"), true, "期貨週末休市也要停開倉（每日 1h 休息不切）");
-assert.equal(switchesMode("sNEW"), false, "未分類資產當 crypto，不切");
+assert.equal(switchesMode("sNEW"), true, "未分類資產當 equity，要切（審查 L3：fail-safe）");
 
 // ── 收緊階段（寫價前）：休市 → ReduceOnly ─────────────────────────────────
 {
@@ -176,6 +178,54 @@ assert.equal(marketOperatorEnabled({}), true, "未設 → 啟用");
 assert.equal(marketOperatorEnabled({ KEEPER_MARKET_OPERATOR: "1" }), true);
 for (const off of ["0", "false", "off", " OFF "]) {
   assert.equal(marketOperatorEnabled({ KEEPER_MARKET_OPERATOR: off }), false, `明確關閉：${off}`);
+}
+
+// ══ PR #232 審查（w36r）══════════════════════════════════════════════════
+
+// H1：收盤提前量（預設 DEFAULT_CLOSE_LEAD_SEC = 3h）。收盤後到下一輪 keeper 之間不能是 Active。
+{
+  assert.equal(DEFAULT_CLOSE_LEAD_SEC, 3 * 3600);
+  const at = (h: number, m = 0, s = 0) => utc(2026, 9, 29, h, m, s); // 週二（EDT = UTC−4）
+  const SESS: MarketSession = { regularStart: at(13, 30), regularEnd: at(20, 0), regularMarketTime: at(16, 50) };
+  const t = (nowSec: number, extra: object = {}) =>
+    decideAssetMode({ phase: "tighten", symbol: "sAAPL", nowSec, currentMode: ASSET_MODE.Active, session: SESS, quoteAgeSec: 30, ...extra }).action;
+  const l = (nowSec: number, extra: object = {}) =>
+    decideAssetMode({ phase: "loosen", symbol: "sAAPL", nowSec, currentMode: ASSET_MODE.ReduceOnly, session: SESS, quoteAgeSec: 30, ...extra }).action;
+  assert.equal(t(at(19, 59, 59)), "set", "15:59:59 ET（收盤前 1 秒）必須已收緊");
+  assert.equal(t(at(16, 59, 59)), "skip", "12:59:59 ET 還在提前量之外");
+  assert.equal(t(at(17, 0)), "set", "13:00 ET 進入提前量");
+  assert.equal(t(at(17, 0), { session: null }), "set", "沒有 Yahoo 時段時行事曆也會提前收緊");
+  assert.equal(l(at(14, 0)), "set", "10:00 ET 開盤、報價新鮮 → 放寬");
+  assert.equal(l(at(17, 30)), "skip", "13:30 ET 已在提前量內 → 不放寬（避免放寬後又收緊）");
+  assert.equal(l(at(19, 58)), "skip", "15:58 ET 不放寬（審查 C1）");
+  // 提早收盤（Yahoo 時段 13:00 ET 結束）：10:00 ET 起就在提前量內。
+  const EARLY: MarketSession = { ...SESS, regularEnd: at(17, 0) };
+  assert.equal(t(at(14, 0), { session: EARLY }), "set");
+  // leadSec=0 → 回到「此刻」邊界。
+  assert.equal(t(at(19, 59, 59), { leadSec: 0 }), "skip");
+  assert.equal(t(at(20, 0), { leadSec: 0 }), "set");
+  // 黃金：週五 14:00 ET 起提前收緊（17:00 進入週末休市）。
+  const fri = (h: number) => utc(2026, 10, 2, h);
+  assert.equal(decideAssetMode({ phase: "tighten", symbol: "sGOLD", nowSec: fri(17), currentMode: 0, quoteAgeSec: 30 }).action, "skip", "週五 13:00 ET");
+  assert.equal(decideAssetMode({ phase: "tighten", symbol: "sGOLD", nowSec: fri(18), currentMode: 0, quoteAgeSec: 30 }).action, "set", "週五 14:00 ET");
+  assert.equal(decideAssetMode({ phase: "loosen", symbol: "sGOLD", nowSec: fri(19), currentMode: 1, quoteAgeSec: 30 }).action, "skip");
+  // 週三黃金：每日休息前 3h 不收緊（只看週末窗口）。
+  assert.equal(decideAssetMode({ phase: "tighten", symbol: "sGOLD", nowSec: utc(2026, 9, 30, 19), currentMode: 0, quoteAgeSec: 30 }).action, "skip");
+}
+
+// L3：未分類資產當 equity（fail-safe），週六收緊。
+assert.equal(modeClassOf("sNEW"), "equity");
+assert.equal(decideAssetMode({ phase: "tighten", symbol: "sNEW", nowSec: SAT_NOON, currentMode: 0, session: null }).action, "set");
+
+// L4：黃金平日來源無效（可能是 CME 假日）→ 收緊；股票盤中來源無效不收緊（時段與行事曆已涵蓋）。
+{
+  const WED = utc(2026, 9, 30, 15, 0);
+  assert.equal(decideAssetMode({ phase: "tighten", symbol: "sGOLD", nowSec: WED, currentMode: 0, sourceOk: false }).action, "set");
+  assert.equal(decideAssetMode({ phase: "tighten", symbol: "sGOLD", nowSec: WED, currentMode: 0, sourceOk: true }).action, "skip");
+  assert.equal(
+    decideAssetMode({ phase: "tighten", symbol: "sAAPL", nowSec: TUE_MIDDAY, currentMode: 0, session: TUE, sourceOk: false }).action,
+    "skip",
+  );
 }
 
 // ── 探測錯誤分類：舊 exchange 沒有函式 → missing，略過 ────────────────────
