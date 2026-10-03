@@ -6,6 +6,41 @@ import "../../src/settlement/WrappedUSDC18.sol";
 import "../../src/MockUSDC.sol";
 import "./MockFiatUSDC6.sol";
 
+/// @dev M-1 regression: re-enters `depositFor` from the underlying's send
+///      hook (fires before balances move), so an un-guarded balance-delta
+///      mint would count the nested deposit twice.
+contract ReentrantDepositor is ISendHook {
+    WrappedUSDC18 public w;
+    HookedUSDC6 public u;
+    uint256 public inner;
+    bool entered;
+    constructor(WrappedUSDC18 w_, HookedUSDC6 u_) { w = w_; u = u_; u_.approve(address(w_), type(uint256).max); }
+    function attack(uint256 outer_, uint256 inner_) external returns (uint256) {
+        inner = inner_;
+        entered = false;
+        return w.depositFor(address(this), outer_);
+    }
+    function tokensToSend(address, address, uint256) external {
+        if (msg.sender != address(u) || entered) return;
+        entered = true;
+        w.depositFor(address(this), inner);
+    }
+}
+
+/// @dev Re-enters `withdrawTo` from the receive hook while being paid.
+contract ReentrantUnwrapper is IReceiveHook {
+    WrappedUSDC18 public w;
+    HookedUSDC6 public u;
+    bool entered;
+    constructor(WrappedUSDC18 w_, HookedUSDC6 u_) { w = w_; u = u_; }
+    function unwrap(uint256 amt) external returns (uint256) { entered = false; return w.withdrawTo(address(this), amt); }
+    function tokensReceived(address, address, uint256) external {
+        if (msg.sender != address(u) || entered) return;
+        entered = true;
+        w.withdrawTo(address(this), w.balanceOf(address(this)));
+    }
+}
+
 /// @notice ADR-011 — unit + fuzz tests for the 1:1 6→18 decimal wrapper.
 contract WrappedUSDC18Test is Test {
     MockFiatUSDC6 usdc;
@@ -20,7 +55,7 @@ contract WrappedUSDC18Test is Test {
     function setUp() public {
         usdc = new MockFiatUSDC6();
         w = new WrappedUSDC18(address(usdc), "Wrapped USDC", "USDC");
-        usdc.mint(alice, 1_000_000e6);
+        usdc.mint(alice, 1e30); // > all USDC that will ever exist; fuzz covers huge values
         vm.prank(alice);
         usdc.approve(address(w), type(uint256).max);
     }
@@ -78,11 +113,73 @@ contract WrappedUSDC18Test is Test {
         vm.stopPrank();
     }
 
-    function test_wrap_mintsOnBalanceDelta_feeOnTransfer() public {
-        usdc.setFeeBps(100); // 1% — native USDC has none; proves I1 survives one
-        uint256 minted = _wrap(alice, 100e6);
-        assertEq(minted, 99e6 * SCALE);
-        assertLe(w.totalSupply(), usdc.balanceOf(address(w)) * SCALE);
+    function test_wrap_feeOnTransfer_failsClosed() public {
+        usdc.setFeeBps(100); // 1% — native USDC has none; any non-1:1 delivery must revert
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(WrappedUSDC18.UnexpectedUnderlyingTransfer.selector, 100e6, 99e6));
+        w.depositFor(alice, 100e6);
+        assertEq(w.totalSupply(), 0);
+        assertEq(usdc.balanceOf(address(w)), 0);
+    }
+
+    // ── M-1: reentrancy through a (hypothetical) hooked underlying ───────
+
+    function _hooked() internal returns (HookedUSDC6 u, WrappedUSDC18 hw) {
+        u = new HookedUSDC6();
+        hw = new WrappedUSDC18(address(u), "W", "W");
+        // honest holders' funds that a double-mint would steal from
+        u.mint(bob, 1_000e6);
+        vm.startPrank(bob);
+        u.approve(address(hw), type(uint256).max);
+        hw.depositFor(bob, 1_000e6);
+        vm.stopPrank();
+    }
+
+    function test_reentrancy_depositHook_swallowed_noDoubleMint() public {
+        (HookedUSDC6 u, WrappedUSDC18 hw) = _hooked();
+        ReentrantDepositor a = new ReentrantDepositor(hw, u);
+        u.register(address(a));
+        u.mint(address(a), 1_000e6);
+        // token swallows the hook's revert: the nested wrap fails, the outer one stands alone
+        uint256 minted = a.attack(500e6, 500e6);
+        assertEq(minted, 500e18);
+        assertEq(hw.balanceOf(address(a)), 500e18, "no double mint");
+        assertEq(hw.totalSupply(), u.balanceOf(address(hw)) * SCALE, "I1 exact");
+        // the honest holder is still paid in full
+        vm.prank(bob);
+        assertEq(hw.withdrawTo(bob, 1_000e18), 1_000e6);
+    }
+
+    function test_reentrancy_depositHook_bubbling_reverts() public {
+        (HookedUSDC6 u, WrappedUSDC18 hw) = _hooked();
+        u.setBubble(true);
+        ReentrantDepositor a = new ReentrantDepositor(hw, u);
+        u.register(address(a));
+        u.mint(address(a), 1_000e6);
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        a.attack(500e6, 500e6);
+        assertEq(hw.balanceOf(address(a)), 0);
+        assertEq(hw.totalSupply(), u.balanceOf(address(hw)) * SCALE);
+    }
+
+    function test_reentrancy_unwrapReceiveHook_cannotExtractMore() public {
+        (HookedUSDC6 u, WrappedUSDC18 hw) = _hooked();
+        ReentrantUnwrapper r = new ReentrantUnwrapper(hw, u);
+        u.register(address(r));
+        u.mint(alice, 100e6);
+        vm.startPrank(alice);
+        u.approve(address(hw), type(uint256).max);
+        hw.depositFor(address(r), 100e6);
+        vm.stopPrank();
+        // swallowed: the nested unwrap fails, the outer pays exactly its own amount
+        assertEq(r.unwrap(40e18), 40e6);
+        assertEq(u.balanceOf(address(r)), 40e6);
+        assertEq(hw.balanceOf(address(r)), 60e18);
+        // bubbling: the whole unwrap reverts
+        u.setBubble(true);
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        r.unwrap(10e18);
+        assertEq(hw.totalSupply(), u.balanceOf(address(hw)) * SCALE);
     }
 
     function test_unwrap_exact() public {
@@ -212,6 +309,14 @@ contract WrappedUSDC18Test is Test {
         assertEq(usdc.balanceOf(address(w)), 10e6);
     }
 
+    function test_isUnderlyingBlacklisted_view() public {
+        assertFalse(w.isUnderlyingBlacklisted(bob));
+        usdc.blacklist(bob);
+        assertTrue(w.isUnderlyingBlacklisted(bob));
+        PlainUSDC6 p = new PlainUSDC6();
+        assertFalse(new WrappedUSDC18(address(p), "x", "x").isUnderlyingBlacklisted(bob));
+    }
+
     function test_blacklist_probeFailsOpen_noFunction() public {
         PlainUSDC6 p = new PlainUSDC6();
         WrappedUSDC18 pw = new WrappedUSDC18(address(p), "x", "x");
@@ -262,7 +367,7 @@ contract WrappedUSDC18Test is Test {
 
     /// wrap x, unwrap y: pays floor(y / 1e12), burns exactly that, dust < 1e12 stays.
     function testFuzz_wrapUnwrap_dustBound(uint256 x, uint256 y) public {
-        x = bound(x, 1, 1_000_000e6);
+        x = bound(x, 1, 1e30);
         _wrap(alice, x);
         y = bound(y, SCALE, x * SCALE);
         uint256 balBefore = w.balanceOf(alice);
@@ -277,7 +382,7 @@ contract WrappedUSDC18Test is Test {
 
     /// Full round trip returns exactly what went in — no loss to the user.
     function testFuzz_roundTrip_lossless(uint256 x) public {
-        x = bound(x, 1, 1_000_000e6);
+        x = bound(x, 1, 1e30);
         uint256 usdcBefore = usdc.balanceOf(alice);
         uint256 minted = _wrap(alice, x);
         vm.prank(alice);
@@ -291,7 +396,7 @@ contract WrappedUSDC18Test is Test {
     /// after everybody unwraps everything payable, the total paid never
     /// exceeds what was deposited, and the residual dust per holder is < 1e12.
     function testFuzz_arbitrarySplits_paidNeverExceedsDeposits(uint256 x, uint256 a, uint256 b) public {
-        x = bound(x, 1, 1_000_000e6);
+        x = bound(x, 1, 1e30);
         uint256 minted = _wrap(alice, x);
         a = bound(a, 0, minted);
         b = bound(b, 0, minted - a);

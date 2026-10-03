@@ -5,6 +5,7 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /// @notice ADR-011 (P3-04) — a 1:1, 18-decimal claim on a 6-decimal USDC.
 ///
@@ -30,6 +31,15 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 ///           I2  totalSupply() % SCALE == 0  (mint and burn are whole units)
 ///           I3  unwrap never pays more underlying than amount / SCALE
 ///
+///         What I1 relies on (ADR-011 §7): wrap is strictly 1:1 — if the
+///         underlying delivers anything other than exactly `underlyingAmount`
+///         (a transfer fee, a rebase on transfer) the wrap reverts; and wrap /
+///         unwrap are `nonReentrant`, so a future FiatToken with a transfer
+///         hook cannot nest a second wrap inside the first. What it CANNOT
+///         defend against: the issuer reducing this contract's balance by
+///         other means (a negative rebase, a seizure). That is trust in
+///         Circle, the same trust any USDC holder has.
+///
 ///         Circle blacklist parity: a transfer, mint or burn whose `from` or
 ///         `to` is blacklisted on the underlying USDC reverts, exactly as a
 ///         USDC transfer would. Without this, a blacklisted holder could move
@@ -42,8 +52,8 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 ///         unwrap pays the recipient) are still enforced by USDC itself.
 ///         USDC's `paused()` is NOT mirrored: wrapper units keep moving while
 ///         USDC is paused so liquidations and internal settlement continue;
-///         only wrap/unwrap stop (ADR-011 §3.2).
-contract WrappedUSDC18 is ERC20 {
+///         only wrap/unwrap stop (ADR-011 §3.1).
+contract WrappedUSDC18 is ERC20, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     /// @notice 10^(18 - 6).
@@ -61,6 +71,8 @@ contract WrappedUSDC18 is ERC20 {
     error BelowOneUnit(uint256 amount);
     /// @notice The underlying USDC reports `account` as blacklisted.
     error UnderlyingBlacklisted(address account);
+    /// @notice The underlying moved a different amount than requested.
+    error UnexpectedUnderlyingTransfer(uint256 requested, uint256 received);
 
     constructor(address underlying_, string memory name_, string memory symbol_) ERC20(name_, symbol_) {
         if (underlying_ == address(0) || underlying_.code.length == 0) revert InvalidUnderlying();
@@ -72,19 +84,22 @@ contract WrappedUSDC18 is ERC20 {
 
     /// @notice Pulls `underlyingAmount` USDC from the caller and mints the
     ///         equivalent 18-decimal amount to `account`.
-    /// @dev Mints on the balance delta, not the argument: native USDC charges
-    ///      no transfer fee today, but it is an upgradeable proxy, and minting
-    ///      on what actually arrived keeps I1 true whatever it does later.
-    function depositFor(address account, uint256 underlyingAmount) external returns (uint256 minted) {
+    /// @dev Native USDC charges no transfer fee today, but it is an
+    ///      upgradeable proxy. Two guards keep I1 if that changes: the balance
+    ///      delta must equal `underlyingAmount` exactly (a fee or any other
+    ///      short / long delivery reverts instead of being minted on), and the
+    ///      function is `nonReentrant` (a transfer hook cannot run a nested
+    ///      wrap whose deposit the outer delta would count a second time).
+    function depositFor(address account, uint256 underlyingAmount) external nonReentrant returns (uint256 minted) {
         if (underlyingAmount == 0) revert ZeroAmount();
         if (account == address(0) || account == address(this)) revert InvalidRecipient();
         uint256 before = underlying.balanceOf(address(this));
         underlying.safeTransferFrom(msg.sender, address(this), underlyingAmount);
         uint256 received = underlying.balanceOf(address(this)) - before;
-        // (A transfer that delivers nothing mints nothing; I1 holds either way.)
-        minted = received * SCALE;
+        if (received != underlyingAmount) revert UnexpectedUnderlyingTransfer(underlyingAmount, received);
+        minted = underlyingAmount * SCALE;
         _mint(account, minted);
-        emit Wrapped(msg.sender, account, received, minted);
+        emit Wrapped(msg.sender, account, underlyingAmount, minted);
     }
 
     /// @notice Burns the caller's wrapper units and pays the underlying USDC
@@ -93,7 +108,7 @@ contract WrappedUSDC18 is ERC20 {
     ///      paid out: `amount % SCALE` (< 1e-6 USDC) stays in the caller's
     ///      balance, so nothing is destroyed and nothing is overpaid. Use
     ///      `maxUnwrappable(holder)` to unwrap everything payable.
-    function withdrawTo(address recipient, uint256 amount) external returns (uint256 paid) {
+    function withdrawTo(address recipient, uint256 amount) external nonReentrant returns (uint256 paid) {
         if (recipient == address(0) || recipient == address(this)) revert InvalidRecipient();
         uint256 burned = amount - (amount % SCALE);
         if (burned == 0) revert BelowOneUnit(amount);
@@ -110,6 +125,19 @@ contract WrappedUSDC18 is ERC20 {
         return b - (b % SCALE);
     }
 
+    /// @notice True when the underlying USDC reports `account` as
+    ///         blacklisted (false if the probe is unavailable — fail-open,
+    ///         see the contract NatSpec). Lets the router refuse to credit a
+    ///         frozen account with clean money.
+    function isUnderlyingBlacklisted(address account) public view returns (bool) {
+        // `account` is only an argument to a view probe (address(0) is a valid
+        // question, answered by USDC); the call target is the immutable underlying.
+        // slither-disable-next-line missing-zero-check
+        (bool ok, bytes memory ret) =
+            address(underlying).staticcall(abi.encodeWithSignature("isBlacklisted(address)", account));
+        return ok && ret.length >= 32 && abi.decode(ret, (uint256)) != 0;
+    }
+
     /// @inheritdoc ERC20
     function decimals() public pure override returns (uint8) {
         return 18;
@@ -123,9 +151,7 @@ contract WrappedUSDC18 is ERC20 {
     }
 
     function _requireNotBlacklisted(address account) private view {
-        (bool ok, bytes memory ret) =
-            address(underlying).staticcall(abi.encodeWithSignature("isBlacklisted(address)", account));
         // Fail-open on a missing / reverting / malformed probe — see contract NatSpec.
-        if (ok && ret.length >= 32 && abi.decode(ret, (uint256)) != 0) revert UnderlyingBlacklisted(account);
+        if (isUnderlyingBlacklisted(account)) revert UnderlyingBlacklisted(account);
     }
 }

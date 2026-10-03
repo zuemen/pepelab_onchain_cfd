@@ -47,7 +47,7 @@ contract WrappedSettlementIntegrationTest is Test {
         exchange.setExecutionFee(0);
         exchange.setTradingFeeBps(0);
         exchange.setBorrowFeePerHour(0);
-        // tenant admin step: let the router credit margin (ADR-011 §3.4)
+        // tenant admin step: let the router credit margin (ADR-011 §3.1)
         exchange.setAgentAuthorized(address(router), true);
 
         // pool liquidity, in real USDC, wrapped and handed to the exchange
@@ -135,18 +135,25 @@ contract WrappedSettlementIntegrationTest is Test {
         vm.prank(user);
         exchange.closePosition(a);
 
-        oracle.updatePrice(BTC, 80_000e8); // -20% at 5x → b underwater
+        // -16% at 5x: equity 20% of margin (40) is below the 5% maintenance
+        // on notional (50) but still positive, so there IS collateral left to
+        // split between the liquidator and the insurance vault.
+        oracle.updatePrice(BTC, 84_000e8);
+        uint256 vaultBefore = w.balanceOf(address(vault));
         vm.prank(liquidator);
         exchange.liquidatePosition(b);
         assertFalse(exchange.getPosition(b).isOpen);
 
-        // liquidator was paid in wrapper units and can unwrap them
+        // both legs of the payout really happened, in wrapper units
         uint256 reward = w.balanceOf(liquidator);
-        if (reward >= SCALE) {
-            uint256 m = w.maxUnwrappable(liquidator);
-            vm.prank(liquidator);
-            w.withdrawTo(liquidator, m);
-        }
+        assertGt(reward, 0, "liquidator paid");
+        assertGt(w.balanceOf(address(vault)), vaultBefore, "insurance vault credited");
+        // and the liquidator turns the reward into USDC (sub-unit dust stays)
+        uint256 m = w.maxUnwrappable(liquidator);
+        assertGt(m, 0);
+        vm.prank(liquidator);
+        assertEq(w.withdrawTo(liquidator, m), reward / SCALE);
+        assertEq(usdc.balanceOf(liquidator), reward / SCALE);
         uint256 free = exchange.freeMargin(user);
         vm.prank(user);
         exchange.withdrawMargin(free);
@@ -288,20 +295,134 @@ contract WrappedSettlementIntegrationTest is Test {
         _assertBacked();
     }
 
-    function test_blacklistedRouterDepositForBlacklistedAccountReverts() public {
+    function test_router_depositForBlacklistedAccountReverts() public {
         address bad = makeAddr("bad");
         usdc.blacklist(bad);
         vm.startPrank(user);
         usdc.approve(address(router), 10e6);
-        // exchange credits are internal, so the wrapper cannot see `bad` here;
-        // the credit lands but `bad` can never withdraw it (parity with USDC,
-        // where a deposit-for to a blacklisted account also only freezes it).
+        // exchange credits are internal, so the wrapper alone cannot see `bad`;
+        // the router probes it and refuses to freeze clean money there
+        vm.expectRevert(abi.encodeWithSelector(SettlementDepositRouter.AccountBlacklisted.selector, bad));
         router.depositMargin(bad, 10e6);
         vm.stopPrank();
-        assertEq(exchange.freeMargin(bad), 10e18);
-        vm.prank(bad);
-        vm.expectRevert(abi.encodeWithSelector(WrappedUSDC18.UnderlyingBlacklisted.selector, bad));
+        assertEq(exchange.freeMargin(bad), 0);
+        assertEq(usdc.balanceOf(user), 10_000e6, "nothing pulled");
+    }
+
+    function test_creditMadeBeforeListing_isFrozenNotLost() public {
+        // parity with USDC: margin credited before the account was listed is
+        // frozen while listed (withdraw reverts) and released when delisted
+        _routeDeposit(10e6);
+        usdc.blacklist(user);
+        vm.prank(user);
+        vm.expectRevert(abi.encodeWithSelector(WrappedUSDC18.UnderlyingBlacklisted.selector, user));
         exchange.withdrawMargin(10e18);
+        usdc.unBlacklist(user);
+        vm.prank(user);
+        exchange.withdrawMargin(10e18);
+        assertEq(w.balanceOf(user), 10e18);
+    }
+
+    // ── L-2: the one push payment to a position owner (bailout floor) ────
+
+    function _fundInsurance(uint256 amt6) internal {
+        usdc.mint(lp, amt6);
+        vm.startPrank(lp);
+        w.depositFor(lp, amt6);
+        w.approve(address(vault), amt6 * SCALE);
+        vault.deposit(amt6 * SCALE);
+        vm.stopPrank();
+    }
+
+    function test_bailoutFloor_paidToOwner_whenNotBlacklisted() public {
+        _fundInsurance(10_000e6);
+        _routeDeposit(1_000e6);
+        vm.prank(user);
+        uint256 id = exchange.openPosition(BTC, true, 100e18, 5);
+        oracle.updatePrice(BTC, 75_000e8); // -25% at 5x: loss 125 > margin 100
+        uint256 walletBefore = w.balanceOf(user);
+        vm.prank(user);
+        exchange.closePosition(id);
+        assertFalse(exchange.getPosition(id).isOpen);
+        // floor = 10% of margin, pushed straight to the owner's wallet
+        assertEq(w.balanceOf(user) - walletBefore, 10e18);
+    }
+
+    function test_bailoutFloor_blacklistedOwner_skipped_closeStillSucceeds() public {
+        _fundInsurance(10_000e6);
+        _routeDeposit(1_000e6);
+        vm.prank(user);
+        uint256 id = exchange.openPosition(BTC, true, 100e18, 5);
+        oracle.updatePrice(BTC, 75_000e8);
+        usdc.blacklist(user);
+        uint256 vaultAssetsBefore = vault.totalAssets();
+        vm.prank(user);
+        exchange.closePosition(id); // the bailout push reverts inside and is swallowed
+        assertFalse(exchange.getPosition(id).isOpen);
+        assertEq(w.balanceOf(user), 0, "no floor paid to a frozen account");
+        // the vault paid only the shortfall (25), not the 10 floor
+        assertEq(vaultAssetsBefore - vault.totalAssets(), 25e18);
+        _assertBacked();
+    }
+
+    // ── router surface (review R3) ───────────────────────────────────────
+
+    function test_router_exposesNoAgentPath() public {
+        exchange.setCopyTracker(makeAddr("copyTracker"));
+        _routeDeposit(1_000e6);
+        bytes[] memory calls = new bytes[](5);
+        calls[0] = abi.encodeCall(PerpetualExchange.openPositionFor, (user, BTC, true, 100e18, 5, address(0)));
+        calls[1] = abi.encodeCall(PerpetualExchange.closePositionFor, (user, 0));
+        calls[2] = abi.encodeCall(PerpetualExchange.withdrawMargin, (1e18));
+        calls[3] = abi.encodeCall(PerpetualExchange.depositMarginFor, (attacker, 1e18));
+        calls[4] = "";
+        vm.startPrank(attacker);
+        for (uint256 i; i < calls.length; ++i) {
+            (bool ok, ) = address(router).call(calls[i]);
+            assertFalse(ok);
+        }
+        vm.stopPrank();
+        assertEq(exchange.freeMargin(user), 1_000e18);
+        assertEq(exchange.getUserPositions(user).length, 0);
+    }
+
+    function test_router_permitSignatureCannotBeRedirected() public {
+        uint256 deadline = block.timestamp + 1 hours;
+        (uint8 v, bytes32 r, bytes32 s) = _permitSig(userPk, user, address(router), 5_000e6, deadline);
+        // replaying the user's signature as someone else: the permit names the
+        // user, the pull is from the caller, so it fails
+        vm.prank(attacker);
+        vm.expectRevert();
+        router.depositMarginWithPermit(attacker, 5_000e6, deadline, v, r, s);
+        // consuming the permit directly, then riding the user's allowance: fails
+        vm.prank(attacker);
+        usdc.permit(user, address(router), 5_000e6, deadline, v, r, s);
+        vm.prank(attacker);
+        vm.expectRevert();
+        router.depositMargin(attacker, 5_000e6);
+        assertEq(usdc.balanceOf(user), 10_000e6);
+        assertEq(exchange.freeMargin(attacker), 0);
+    }
+
+    /// Every route credits exactly amount x 1e12 to `account` only and leaves
+    /// no balance or allowance behind on the router.
+    function testFuzz_router_holdsNothing_creditsExactly(uint256 amt, address account) public {
+        vm.assume(account != address(0));
+        amt = bound(amt, 1, 10_000e6);
+        uint256 before = exchange.freeMargin(account);
+        uint256 attackerBefore = exchange.freeMargin(attacker);
+        vm.startPrank(user);
+        usdc.approve(address(router), amt);
+        uint256 margin = router.depositMargin(account, amt);
+        vm.stopPrank();
+        assertEq(margin, amt * SCALE);
+        assertEq(exchange.freeMargin(account) - before, amt * SCALE);
+        if (account != attacker) assertEq(exchange.freeMargin(attacker), attackerBefore);
+        assertEq(usdc.balanceOf(address(router)), 0);
+        assertEq(w.balanceOf(address(router)), 0);
+        assertEq(usdc.allowance(address(router), address(w)), 0);
+        assertEq(w.allowance(address(router), address(exchange)), 0);
+        _assertBacked();
     }
 
     function test_exchangeBlacklisted_wholeTenantFrozen() public {

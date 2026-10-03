@@ -20,7 +20,7 @@ interface IMarginDepositFor {
 ///         opens `openPositionFor` / `closePositionFor` to the caller, so the
 ///         router is written to make that grant harmless: it is immutable,
 ///         ownerless, has no arbitrary-call path, and its only external call
-///         into the exchange is `depositMarginFor` (ADR-011 §3.4).
+///         into the exchange is `depositMarginFor` (ADR-011 §3.1, router row).
 ///
 ///         Exit is not routed: `withdrawMargin` pays `msg.sender`, so the user
 ///         withdraws wrapper units and calls `WrappedUSDC18.withdrawTo` (no
@@ -39,6 +39,9 @@ contract SettlementDepositRouter is ReentrancyGuard {
 
     error InvalidParam();
     error ZeroAmount();
+    /// @notice `account` is blacklisted on the underlying USDC: crediting it
+    ///         would only freeze clean money inside the exchange.
+    error AccountBlacklisted(address account);
 
     constructor(address wrapper_, address exchange_) {
         if (wrapper_ == address(0) || exchange_ == address(0)) revert InvalidParam();
@@ -74,6 +77,7 @@ contract SettlementDepositRouter is ReentrancyGuard {
     function _route(address account, uint256 usdcAmount) private returns (uint256 margin) {
         if (usdcAmount == 0) revert ZeroAmount();
         if (account == address(0)) revert InvalidParam();
+        if (wrapper.isUnderlyingBlacklisted(account)) revert AccountBlacklisted(account);
         usdc.safeTransferFrom(msg.sender, address(this), usdcAmount);
         usdc.forceApprove(address(wrapper), usdcAmount);
         margin = wrapper.depositFor(address(this), usdcAmount);

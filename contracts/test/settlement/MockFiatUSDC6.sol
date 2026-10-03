@@ -63,3 +63,37 @@ contract RevertingProbeUSDC6 is ERC20 {
     function mint(address to, uint256 amount) external { _mint(to, amount); }
     function isBlacklisted(address) external pure returns (bool) { revert("gone"); }
 }
+
+interface ISendHook { function tokensToSend(address from, address to, uint256 value) external; }
+interface IReceiveHook { function tokensReceived(address from, address to, uint256 value) external; }
+
+/// @notice TEST-ONLY: a hypothetical FiatToken upgrade with ERC-777-style
+///         transfer hooks — `tokensToSend` on a registered `from` BEFORE the
+///         balances move, `tokensReceived` on a registered `to` AFTER
+///         (registration stands in for ERC-1820 opt-in). With
+///         `bubble` false a failing hook is swallowed (the transfer still
+///         happens); with `bubble` true the hook's revert aborts the transfer.
+///         Native USDC has no hooks today; ADR-011 M-1 regression.
+contract HookedUSDC6 is ERC20 {
+    bool public bubble;
+    mapping(address => bool) public hooked;
+    constructor() ERC20("Hooked USDC", "USDC") {}
+    function register(address a) external { hooked[a] = true; }
+    function decimals() public pure override returns (uint8) { return 6; }
+    function mint(address to, uint256 a) external { _mint(to, a); }
+    function setBubble(bool b) external { bubble = b; }
+
+    function _update(address from, address to, uint256 v) internal override {
+        bool hooks = from != address(0) && to != address(0);
+        if (hooks && hooked[from]) _call(from, abi.encodeCall(ISendHook.tokensToSend, (from, to, v)));
+        super._update(from, to, v);
+        if (hooks && hooked[to]) _call(to, abi.encodeCall(IReceiveHook.tokensReceived, (from, to, v)));
+    }
+
+    function _call(address target, bytes memory data) private {
+        (bool ok, bytes memory ret) = target.call(data);
+        if (!ok && bubble) {
+            assembly { revert(add(ret, 32), mload(ret)) }
+        }
+    }
+}
