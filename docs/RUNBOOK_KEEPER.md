@@ -218,7 +218,10 @@ guardian(人)決定;Guarded 被凍結時 keeper 對 Mock 也拒寫(fail-closed)�
 熔斷造成的 ReduceOnly,在被拒寫的那一輪不會解除(放寬階段只處理本輪價格被接受的資產,
 見下方「休市」)。之後某一輪價格重新通過所有檢查、市場開盤、報價新鮮時,marketOperator
 會自動切回 Active。要人工把關,請 guardian 對該資產再設一次 ReduceOnly(設上 guardian 鎖):
-keeper 放寬前會讀 `guardianLocked`,上鎖就略過、只記一行 log,不算失敗;解除由 owner 處理。funding crank 會讀
+keeper 放寬前會讀 `guardianLocked`,上鎖就略過、只記一行 log,不算失敗;解除由 owner 處理。
+**注意:owner 呼叫 `setAssetMode` 時會清掉 guardian 鎖。** owner 自己設的 ReduceOnly 沒有鎖,
+開盤後價格通過檢查時會被 keeper 自動放寬;要長期停單,owner 設完後請 guardian 再對該資產設一次
+ReduceOnly 上鎖,或由 owner 直接設 Halted(Halted 連平倉都會擋,見 KNOWN_LIMITATIONS #23／#27)。funding crank 會讀
 `$RUNNER_TEMP/keeper-refused.txt` 跳過被拒寫的資產(不以已知錯誤的價格結算 funding)。
 
 ### 目前做不到停單 —— 建議的授權
@@ -298,6 +301,9 @@ GuardedOracle 的 `GUARDIAN_ROLE`(理由見上)。在 cutover 之前,停單只�
 - 交易所有 `assetMode` 但 keeper 不是 `marketOperator`:每輪開頭讀一次 `marketOperator()`,
   不是自己就印一條 `::warning::` 並整輪略過,不記 failed。照 DEPLOY_130_CUTOVER 第 6 步設定
   `setMarketOperator`,或設 `KEEPER_MARKET_OPERATOR=0` 關閉。
+- `marketOperator()` 讀取失敗(RPC 問題)時重試一次;仍失敗就照樣收緊(送出前的預檢會擋掉沒有
+  權限的情況,被拒只記 `::warning::`、不記 failed),只略過放寬。收緊階段讀不到某資產的
+  `assetMode` 則記 failed(該資產這一輪可能該停開倉卻沒停)。
 - 租戶 workflow 有 `FUNDING_SYMBOLS` 時,只切換這些已註冊的資產。
 - 熔斷 issue 的「保護中」只算熔斷或 guardian 造成的(guardian 上鎖、Halted、或不是休市卻
   ReduceOnly)。休市造成的 ReduceOnly 另列「休市中」,不擋 issue 關閉。

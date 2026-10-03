@@ -231,7 +231,6 @@ async function main(): Promise<void> {
   if (relay) console.log(`relay source: ${RELAY_SOURCE}（優先於外部 API）`);
 
   let marketMode: ReturnType<typeof createMarketMode> | null = null;
-  let modeFailed = 0;
   if (MARKET_OPERATOR) {
     if (!ethers.isAddress(EXCHANGE_ADDR)) {
       console.log("marketOperator 休市切換：未設 KEEPER_EXCHANGE_ADDRESS/EXCHANGE，略過");
@@ -255,7 +254,7 @@ async function main(): Promise<void> {
         waitTimeoutMs: TX_WAIT_TIMEOUT_MS,
       });
       console.log(`marketOperator: 啟用（exchange ${EXCHANGE_ADDR}，收盤提前量 ${CLOSE_LEAD_SEC / 3600}h）`);
-      if ((await marketMode.prepare()) === "error") modeFailed += 1;
+      await marketMode.prepare();
     }
   }
 
@@ -288,11 +287,13 @@ async function main(): Promise<void> {
     fetchSecondary: (symbol) => fetchSecondaryPrice(symbol),
     // 收緊階段：寫價前、只會切 ReduceOnly。放寬在本輪結束後、只對 round.priced 做。
     beforeAsset:
-      marketMode?.state === "ready" ? (symbol, id, feed) => marketMode!.tighten(symbol, id, feed) : undefined,
+      marketMode?.state === "ready" || marketMode?.state === "unverified"
+        ? (symbol, id, feed) => marketMode!.tighten(symbol, id, feed)
+        : undefined,
   });
   writeRefusedList(round);
   const { available, skipped, rejected, confirmed, wrote } = round;
-  let failed = round.failed + modeFailed;
+  let failed = round.failed;
 
   // 複審 H2：拒寫的資產立刻嘗試停單，做不到的部分明寫。
   const exchangeView = ethers.isAddress(EXCHANGE_ADDR)
@@ -361,7 +362,9 @@ async function main(): Promise<void> {
   // 交易時，後面資產的收緊沒送，也要說出來。
   const modeSyms = SYMBOLS.filter((s) => MODE_SYMBOLS === null || MODE_SYMBOLS.has(s));
   const closedNow = closedForTrading(modeSyms, Math.floor(Date.now() / 1000), CLOSE_LEAD_SEC);
-  if (closedNow.length && (marketMode?.state !== "ready" || txUnknown)) {
+  const tightenOk = marketMode?.state === "ready" || marketMode?.state === "unverified";
+  const deniedNow = closedNow.filter((s) => marketMode?.deniedTighten.includes(s));
+  if (closedNow.length && (!tightenOk || txUnknown || deniedNow.length)) {
     const why = !MARKET_OPERATOR
       ? "KEEPER_MARKET_OPERATOR=0（休市切換已關閉）"
       : !marketMode
@@ -370,11 +373,12 @@ async function main(): Promise<void> {
           ? "線上交易所沒有 assetMode／setAssetMode（舊合約）"
           : marketMode.state === "not-operator"
             ? "keeper 不是交易所的 marketOperator"
-            : marketMode.state === "error"
-              ? "讀不到 marketOperator()"
-              : "本輪有狀態未知的交易，收緊可能沒有送出";
+            : txUnknown
+              ? "本輪有狀態未知的交易，收緊可能沒有送出"
+              : "收緊預檢被拒（keeper 可能沒有 marketOperator 權限）";
     console.log(
-      `::warning::休市中（含收盤前 ${CLOSE_LEAD_SEC / 3600}h）但無法確認已切 ReduceOnly（${why}）：${closedNow.join(", ")}` +
+      `::warning::休市中（含收盤前 ${CLOSE_LEAD_SEC / 3600}h）但無法確認已切 ReduceOnly（${why}）：` +
+        `${(deniedNow.length && tightenOk && !txUnknown ? deniedNow : closedNow).join(", ")}` +
         ` 可能仍可對收盤價開新倉 —— heartbeat 讓鏈上 updatedAt 保持新鮮。見 docs/KNOWN_LIMITATIONS.md §31`,
     );
   }
