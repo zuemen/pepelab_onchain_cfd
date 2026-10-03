@@ -89,6 +89,7 @@
      （`PerpetualExchange` 寫死 18 位，6 位小數的代幣會讓每個部位的尺度錯誤且無法修正；preflight 會擋）。
      **Base 主網的原生 USDC 是 6 位小數，不能直接當結算幣**；平台在主網還沒有任何共用元件，所以今天任何一份
      `network.chainId: 8453` 的設定都過不了白名單——要先決定主網的結算幣（例如 18 位的包裝幣）與共用元件。
+     建議方案（每租戶一顆 1:1 包裝幣＋存入 router）與尚未完成的整合項目見 [ADR-011](ADR-011-settlement-token-decimals.md)。
    - `priceSource`：只在部署當下被讀一次，用來替租戶自己的 oracle 取初始價；之後租戶的 exchange 只讀租戶
      自己的 oracle。只能是平台的 `MockOracle`／`GuardedOracle`／`AggregatorOracle`。每一檔註冊資產都必須有
      **1 小時內**更新過的報價。
