@@ -190,6 +190,24 @@ maxLeverage / expiry** 限額內開倉 → 印出 **tx hash 與 positionId**。�
 VC 過期時：MCP / x402 agent 拒絕下單（`VC_EXPIRED`）；tg-bot 不會退出，而是拒單並提示重新簽發，
 換上新檔案後下一次下單會自動重新讀取。
 
+### 升級必做：初始化 VC 撤銷狀態目錄（ADR-016，只做一次）
+
+這一版起，開倉與平倉前都會檢查授權 VC 的撤銷狀態清單。**驗證端的清單目錄沒有初始化時，所有開倉與平倉一律被拒**
+（`VC_STATUS_UNVERIFIED`，訊息含「狀態清單目錄未初始化」）。合併、部署之後，在每一台跑 agent 的機器上：
+
+```bash
+cd agent
+npm run vc-status:init        # 建立 agent/.state/vc-status/index.json（或 VC_STATUS_DIR 指向的目錄）
+```
+
+- **只在持久儲存上跑一次，不要放進容器啟動腳本。** 沒掛 volume 的容器每次啟動都 init，會在暫存檔案系統建出
+  「有標記的空目錄」，所有簽發者都被當成「沒有撤銷」——撤銷形同關閉。
+- 改用 HTTP 來源（`VC_STATUS_URL`）時，主機上要有 `index.json` 目錄標記，缺檔必須直接回 404。
+- MCP server 與 tg-bot 啟動時會預檢；沒初始化會印 `::error::[vc-status] …` 與這個指令，但**不會自動建立**。
+- 使用者仍可隨時直接在鏈上用錢包平倉（`PerpetualExchange.closePosition`，合約不需要 VC）。
+- 清單快到期的檢查：`npm run vc-status:expiring`（建議排程每天跑）。細節見 `docs/ADR-016-vc-credential-status.md` §4.6。
+
+
 ### 平倉永遠有退路
 
 agent 端的平倉（`closePositionForSession`）在 agent 本地基礎設施故障時會**降級放行**：policy

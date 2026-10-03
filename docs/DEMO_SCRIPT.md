@@ -29,6 +29,10 @@ cd contracts && forge script script/DemoE2E.s.sol:DemoE2E --broadcast --rpc-url 
 **x402「付費讀訊號 → 決策」那段**是鏈下 agent 棧，見 `agent/README.md`：
 `npm run signal-api` + `npm run demo-agent`（本腳本涵蓋 agent 下單最終落地的鏈上半邊）。
 
+> **展示前必做（一次）**：agent 真的下單前，先在 `agent/` 跑 `npm run vc-status:init`（初始化 VC 撤銷狀態目錄，ADR-016）。
+> 沒做的話 demo-agent、MCP、tg-bot 的開倉與平倉都會被拒（`VC_STATUS_UNVERIFIED`，訊息「狀態清單目錄未初始化」）。
+> 只在持久儲存上跑一次，不要放進啟動腳本。
+
 前端互動式 demo 走訪見下方「五分鐘展示腳本」。
 
 ---

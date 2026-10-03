@@ -52,6 +52,8 @@ was not, the reason is given rather than glossed over.
 | 28 | After the timelock handover, recovery actions wait 48h and depend on one Safe | **By design** — losing the Safe freezes governance permanently |
 | 29 | V2.5 unpriced exemption values a closed dead-feed asset at an arbitrarily old price | **Accepted** — closed assets only, never below its last recorded price, dust-only without one |
 | 30 | Daily check-in still transfers PEPE on the deployed PepeIncentives, against the #101 decision | **Fixed in source** (2026-10-01, issue #169) — check-ins credit non-transferable achievement points; **not deployed**, the live contract is unchanged |
+| 31 | Equities, ETFs and gold can be opened against the last close while their market is closed | **Open on the live exchange** (2026-10-02) — the keeper refreshes `updatedAt` through closures so exits keep working; the ReduceOnly switch that stops opens needs the not-yet-deployed exchange. Keeper side fixed in source (w36) |
+| 32 | Agent authorization VCs are revoked through an issuer-signed, off-chain status list; the list host is trusted to say whether an issuer *has* a list | **Mitigated in source** (2026-10-02, ADR-016) — writes fail closed; a verifier that never saw an issuer's list can be told "no list" with no time bound; an expired list blocks that issuer's opens and closes; on-chain registry is follow-up |
 
 ---
 
@@ -1175,6 +1177,161 @@ Tests: `test/PepeIncentives.t.sol` (no PEPE moves, empty pool, curve and cap,
 parameter bounds and event, no transfer/approve/burn/mint surface, pause, fuzz
 against a model of the curve) and `frontend/src/lib/pepefi/achievements.test.ts`
 (the probe, including -32005 / -32000 / -32603 / 429 errors).
+
+## 31. Closed-market opens at the last close (added 2026-10-02)
+
+**What happens on the live deployment.** Stocks, ETFs and gold do not trade at
+night, at weekends or on exchange holidays, so the source quote stops moving.
+The keeper still rewrites the last price every heartbeat (15 minutes, in
+practice every one to five hours given GitHub's cron delays). Both oracles
+stamp `updatedAt` with the block time of the write, not with the time of the
+source quote, and the exchange checks only `block.timestamp - updatedAt`
+against `maxPriceAge` (6 hours on Base Sepolia). The price therefore never
+looks stale during an ordinary closure, and the exchange accepts new
+positions on these assets at Friday's close all weekend.
+
+Read-only check on Base Sepolia (2026-10-02): over the weekend of
+26–27 September, 65 of 67 hourly samples of `sAAPL` on the MockOracle were
+younger than 6 hours, all at the same Friday price, and the keeper's
+`PriceUpdated` events from that weekend carry `oldPrice == newPrice`. The live
+exchange has no `assetMode()` (the call reverts), so it has no per-asset way
+to refuse opens.
+
+**Why the keeper keeps refreshing.** Letting the price go stale is not a
+fix: `closePosition` and `liquidatePosition` call `_requireFresh`, which uses
+the same `maxPriceAge` as opens. A stale closed-market price would lock every
+holder in and stop liquidations until the market reopens.
+
+**The fix, and what it needs.** The exchange source on `master` has
+per-asset modes (`Active` / `ReduceOnly` / `Halted`); ReduceOnly refuses every
+open path but keeps closes, liquidations and margin withdrawals working. The
+keeper is the `marketOperator` that switches them (`agent/keeper/operator.ts`):
+
+- Before it writes prices, it only *tightens*: an equity outside the regular
+  session (calendar or Yahoo session says closed) **or due to close within
+  the close lead** (default 3 hours, `KEEPER_CLOSE_LEAD_SEC`), gold in or
+  within the lead of the COMEX weekend window (Friday 17:00 to Sunday 18:00
+  ET), gold whose source returned no price, or any of them whose quote has
+  not moved for more than 2 hours goes to ReduceOnly. Unclassified assets are
+  treated as equities.
+- After the round it only *loosens*, and only for assets whose price passed
+  every check that round: back to Active when the session is open, the close
+  is more than the lead away, the quote is at most 1 hour old and the asset
+  is not guardian-locked. The time is read again for each asset, not taken
+  from the start of the round.
+- A breaker ReduceOnly is not lifted in the round that refused the price. It
+  is lifted in a later round once the price passes every check again during
+  an open session, unless the guardian has locked it (then only the owner can
+  lift it, and the keeper does not try).
+- The switch is on by default (`KEEPER_MARKET_OPERATOR=0` turns it off).
+  Against the live exchange it detects the missing function, skips, and prints
+  a `::warning::` naming the closed assets that can still be opened. It does
+  the same when the keeper is not the exchange's `marketOperator`.
+
+**Why a 3-hour close lead.** The keeper runs on GitHub's scheduler, which
+the workflow measured at 68–169 minutes between runs in the daytime; around
+the close on 25 September the gap was 3.2 hours (13:23 to 16:35 ET). Without a
+lead, the asset stays Active from the close until the next run. The cost:
+new equity positions can be opened only from 09:30 to 13:00 ET (3.5 of the
+6.5 session hours), and gold not after 14:00 ET on Fridays. When the external
+trigger Worker (every 20 minutes) is deployed, the lead can be lowered to
+about 45 minutes.
+
+This takes effect only after the new exchange is deployed and the keeper is
+set as its `marketOperator` (see `DEPLOY_130_CUTOVER.md`). Until then this
+limitation stands.
+
+**What is still not covered after the cutover.**
+
+- Residual window at the close: if no keeper run falls between "close minus
+  the lead" and the close (the gap between runs is longer than the lead), the
+  asset is still Active after the close, at the closing price, until the
+  next run. The same holds for gold before the Friday close. A run whose
+  price writes time out (state unknown) also stops tightening the remaining
+  assets for that round; the keeper then prints a warning naming them.
+
+- No exchange holiday calendar. A US holiday is caught because the quote is
+  stale: the asset went to ReduceOnly at the previous close and is not
+  loosened until a fresh quote arrives. An early close (13:00 ET) relies on
+  Yahoo's session end; if Yahoo does not reflect it, the 2-hour stale-quote
+  rule tightens the asset at about 15:00 ET.
+- Gold's daily 17:00–18:00 ET break is not switched; a COMEX holiday on a
+  weekday is caught only by the 2-hour stale-quote rule.
+- If the exchange's guardian wants a breaker ReduceOnly to stay until a human
+  lifts it, the guardian must set it (the guardian lock stops the market
+  operator from loosening it). A ReduceOnly the keeper set itself is lifted
+  automatically once the price passes the checks again during an open
+  session.
+- A breaker ReduceOnly on an asset that is also closed is reported as
+  "closed", not "protected", so it does not hold the breaker issue open
+  overnight. If the price is still refused at the next open, the issue
+  reopens.
+- Crypto (sBTC, sETH) is never switched.
+
+Tests: `agent/keeper/operator.test.ts` (tighten never loosens, gold weekend,
+stale-quote rules, default on, close lead, unclassified assets, gold source
+failure), `agent/keeper/marketMode.test.ts` (guardian lock, not the operator,
+tenant asset list, old exchange, per-asset clock, tighten before the price
+write, no loosening of a refused asset, closed versus protected) and
+`agent/keeper/round.test.ts` (heartbeat still written while closed; `priced`
+excludes refused and unreadable assets).
+
+## 32. VC revocation is an off-chain signed list (added 2026-10-02)
+
+Before ADR-016 an authorization VC could not be revoked on its own: the only
+options were waiting for `validUntil`, revoking the whole on-chain session, or
+re-issuing (which supersedes the old VC only on an agent that has already seen
+the new one). Now the VC's issuer (the user's wallet) signs an
+`AgentCredentialStatusList` with the same key and EIP-712 domain as the VC;
+`write.ts` checks it before every open and close, and rejects revoked VCs and
+any VC whose status cannot be fetched or verified (`VC_REVOKED`,
+`VC_STATUS_UNVERIFIED`).
+
+**Trust assumption.** The signature stops the host from forging or editing a
+list, but the host (or whoever manages the verifier's list directory) is trusted
+to answer *whether an issuer has published a list at all*:
+
+- A verifier that has **never** accepted an issuer's list — a new agent, a
+  rebuilt container, a lost state file, another replica — treats a plain 404 as
+  "no revocations", and there is **no time bound** on that.
+- A verifier that **has** seen a list remembers its sequence and every
+  revocation in it: an older list is rejected as a replay, a missing one as
+  withheld. Withholding then only works until the old list expires (default 30
+  days, at most 90), after which writes are refused.
+- Configuration mistakes no longer fail open: both the local directory and the
+  HTTP source require an `index.json` directory marker (created by
+  `vc-status init`), HTTP redirects are not followed, and only a direct 404 means
+  "no list". A missing marker means *unknown*, so every write is refused.
+
+Until the on-chain registry (ADR-016 §6) exists, the list host must be inside
+the operator's own trust boundary. The strongest immediate stop is still
+`AgentSessionManager.revokeSession`.
+
+**Expiry blocks writes.** Once an issuer publishes a list, it has to be
+re-signed (same content, sequence + 1) before it expires; an expired list makes
+every open **and close** for that issuer fail closed. Checks start carrying a
+warning 7 days before expiry (shown by MCP results, the Telegram bot, demo-agent,
+the x402 agent and the SDK). The operator is responsible for monitoring: run
+`npx tsx examples/vc-status.ts expiring --days 7` on a schedule against the
+verifier's list directory and notify the issuer. `ops/monitoring` cannot read
+that directory and does not cover this. Users can always close positions
+directly on-chain (`PerpetualExchange.closePosition` needs no VC).
+
+**How to stop using revocation.** Deleting the list does not work: a verifier
+that has seen it reports `STATUS_LIST_WITHHELD` and refuses writes. The issuer
+signs an empty list with sequence + 1 (`revokedBefore` stays as it was) and keeps
+re-signing it. Removing the issuer entirely requires deleting both the list file
+and the issuer's record in **every** verifier's state file, which forgets past
+revocations — safe only after every revoked VC has passed its `validUntil` or the
+on-chain session has been revoked.
+
+Other limits: verifier state is a single-host file by default; replicas must
+inject a shared `StatusStateStore` (`setVcStatusStateStore`). "Revoke all"
+(`revokeAllCutoff`) covers devices whose clock runs up to 300 s fast, so VCs
+signed in the 5–10 minutes after it are also revoked; users should wait that long
+before re-issuing (the Telegram bot says so when it refuses). Before the first open
+or close after upgrading, run `npm run vc-status:init` once on persistent storage
+(never from a container entrypoint), or every write is refused.
 
 ## Frontend
 
