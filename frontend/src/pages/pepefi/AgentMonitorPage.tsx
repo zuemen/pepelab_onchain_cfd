@@ -1,6 +1,7 @@
 import { MONO, LiveDot } from 'src/components/pepefi/brandKit'
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { formatUnits } from 'ethers'
+import { redeemablePerWholeShare } from 'src/lib/pepefi/vaultShares'
 
 import { t, locale, interpolate } from 'src/locales'
 
@@ -195,11 +196,14 @@ export default function AgentMonitorPage() {
       setOracle(rows)
       // Vault solvency snapshot (best-effort; 0x0 vault → skip).
       try {
-        const [assets, sharePrice] = await Promise.all([
+        const [assets, supply, shareDecimals] = await Promise.all([
           contracts.insuranceVault.totalAssets() as Promise<bigint>,
-          contracts.insuranceVault.getSharePrice() as Promise<bigint>,
+          contracts.insuranceVault.totalSupply() as Promise<bigint>,
+          contracts.insuranceVault.decimals() as Promise<bigint>,
         ])
-        setVault({ assets, sharePrice })
+        // What one whole pIV actually redeems (previewWithdraw semantics),
+        // not getSharePrice(), which ignores the virtual shares (P1-05).
+        setVault({ assets, sharePrice: redeemablePerWholeShare(supply, assets, Number(shareDecimals)) })
       } catch { setVault(null) }
     } catch (e) {
       setErr(prettyError(e))

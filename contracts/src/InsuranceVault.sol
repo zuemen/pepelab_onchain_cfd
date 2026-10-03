@@ -22,15 +22,26 @@ import "@openzeppelin/contracts/utils/math/Math.sol";
 ///         supply is tiny is mostly captured by them and cannot be recovered
 ///         by whoever pushed it. Consequences (derivation in
 ///         docs/INSURANCE_VAULT_SHARES.md, fuzzed in InsuranceVaultShares.t.sol):
-///           - a holder's value can only be raised by a later depositor's
-///             rounding remainder, which is below one share-unit's price;
-///             raising that price costs the raiser ~10^DECIMALS_OFFSET times
-///             what a later depositor can lose, so the raiser's net is <= 1 wei;
+///           - a holder's value can only be raised by other holders'
+///             deposit/withdraw rounding remainders, each below one
+///             share-unit's price plus 1 wei; raising that price costs the
+///             raiser ~10^DECIMALS_OFFSET times what a later depositor can
+///             lose. Against a single later depositor the raiser's net is
+///             <= 1 wei; with N later deposits/withdrawals a large holder can
+///             collect up to ~N such remainders, but raising the price still
+///             loses money;
 ///           - both conversions round toward the vault, so a deposit/withdraw
 ///             round trip never returns more than was put in, in any state
 ///             (including after a bailout lowered the share price).
 ///         Shares carry `asset decimals + DECIMALS_OFFSET` decimals, so one
 ///         whole pIV is still worth ~1 USDC at launch.
+///
+///         The virtual shares behave like a permanent LP nobody controls:
+///         assets that arrive while totalSupply == 0 belong to them for good,
+///         and they take their pro-rata share of later inflows and bailouts.
+///         With `exchange == address(0)` (no bailouts) such assets can never
+///         leave the vault, so a vault must be seeded with real shares before
+///         any protocol inflow is wired to it.
 ///
 ///         `totalAssets` stays the real, explicitly tracked balance; the
 ///         virtual asset exists only inside the two conversions. The exchange
@@ -189,7 +200,9 @@ contract InsuranceVault is ERC20, Ownable, ReentrancyGuard {
     ///         18-decimal MockUSDC this is 18-decimal USDC per pIV, as before.
     ///         Returns 10^assetDecimals (1.0) when there is no supply.
     ///         What a holder can actually redeem is `previewWithdraw`, which
-    ///         also counts the virtual shares.
+    ///         also counts the virtual shares; display code should show that
+    ///         (this ratio overstates it when assets arrived at zero supply).
+    ///         On a 6-decimal asset the result is in 6-decimal units.
     function getSharePrice() external view returns (uint256) {
         uint256 supply = totalSupply();
         if (supply == 0) return 10 ** _assetDecimals;

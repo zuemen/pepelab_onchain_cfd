@@ -3,6 +3,7 @@ import type { Contract } from 'ethers';
 import { useRef, useState, useEffect, useCallback } from 'react';
 
 import { safeRead } from 'src/lib/pepefi/safeRead';
+import { estimateWithdrawAssets } from 'src/lib/pepefi/vaultShares';
 
 // 使用者的錢散在四個地方：Web3 錢包、交易所的自由保證金、TraderStake 的質押、
 // LP 保險金庫。要算淨值就得四個都讀，而這段讀取原本埋在 DashboardPage 的
@@ -91,17 +92,25 @@ export function useAccountBalances(
       setFreeMargin(marginRaw);
       setStaked(stakeRaw === null ? null : readStakeAmount(stakeRaw));
 
-      // 金庫存的是股份，要換算成 USDC：myShares × totalAssets / totalSupply。
+      // 金庫存的是股份，要換算成 USDC：用合約 previewWithdraw 的同一條公式
+      // （P1-05 之後含 virtual shares；舊金庫 decimals() 為 18 時退回
+      // myShares × totalAssets / totalSupply），也就是實際能贖回的金額。
+      // 不能只用 totalAssets / totalSupply 的比例：供給為 0 時進來的資產屬於
+      // virtual 份額，比例算法會把它算成持有人的錢。
       let vaultValue: bigint | null = null;
       try {
-        const [shares, totalAssets, totalSupply] = await Promise.all([
+        const [shares, totalAssets, totalSupply, shareDecimals] = await Promise.all([
           contracts.insuranceVault.balanceOf(address) as Promise<bigint>,
           contracts.insuranceVault.totalAssets() as Promise<bigint>,
           contracts.insuranceVault.totalSupply() as Promise<bigint>,
+          contracts.insuranceVault.decimals() as Promise<bigint>,
         ]);
-        vaultValue = BigInt(totalSupply) > 0n
-          ? (BigInt(shares) * BigInt(totalAssets)) / BigInt(totalSupply)
-          : 0n;
+        vaultValue = estimateWithdrawAssets(
+          BigInt(shares),
+          BigInt(totalSupply),
+          BigInt(totalAssets),
+          Number(shareDecimals),
+        );
       } catch {
         // 金庫在這條鏈上可能沒部署。留 null 讓 netWorthOf 標記為不完整，
         // 而不是當成「你在金庫裡有 0 元」。

@@ -67,6 +67,25 @@ export function estimateWithdrawAssets(
   return (shares * (totalAssets + 1n)) / (totalSupply + 10n ** BigInt(off))
 }
 
+/**
+ * Asset units ONE WHOLE pIV (10^shareDecimals units) redeems right now —
+ * `previewWithdraw(10^decimals())` semantics, i.e. what the contract would
+ * actually pay. Use this for the displayed share price instead of
+ * `getSharePrice()`, which divides the real totals and ignores the virtual
+ * shares: after inflows that arrived while the supply was 0 it can overstate
+ * a holder's redeemable value by orders of magnitude. 1.0 when nothing is
+ * outstanding (same as `getSharePrice()`).
+ */
+export function redeemablePerWholeShare(
+  totalSupply: bigint,
+  totalAssets: bigint,
+  shareDecimals: number,
+  assetDecimals = VAULT_ASSET_DECIMALS,
+): bigint {
+  if (totalSupply === 0n) return 10n ** BigInt(assetDecimals)
+  return estimateWithdrawAssets(10n ** BigInt(shareDecimals), totalSupply, totalAssets, shareDecimals, assetDecimals)
+}
+
 /** Format a share amount with the vault's own decimals. */
 export function formatShares(v: bigint, shareDecimals: number, digits = 2): string {
   return Number(formatUnits(v, shareDecimals)).toLocaleString(undefined, {

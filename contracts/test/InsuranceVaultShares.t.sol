@@ -194,6 +194,92 @@ contract InsuranceVaultSharesTest is Test {
         _assertSolvent();
     }
 
+    /// @dev The <= 1 wei bound is per later depositor. With many later
+    ///      round trips a large holder collects one rounding remainder per
+    ///      operation (here ~1 wei each at a normal price), which is the
+    ///      general bound: < one share unit's price + 1 wei per operation.
+    function test_manyLaterRoundTrips_holderCollectsAtMostOneRemainderEach() public {
+        uint256 cost = 1_000e18 + 333e18 + 7;
+        uint256 s = _deposit(early, 1_000e18);
+        _inflow(333e18 + 7);
+        uint256 ops;
+        for (uint256 i = 0; i < 200; i++) {
+            uint256 amt = 1e18 + i * 7_919 + 3;
+            uint256 unitPrice = _unitPriceCeil();
+            uint256 got = _deposit(later, amt);
+            vm.prank(later);
+            uint256 out = vault.withdraw(got);
+            assertLe(amt - out, unitPrice + 1, "later loss above one share unit + 1 wei");
+            ops += 2;
+        }
+        vm.prank(early);
+        uint256 earlyOut = vault.withdraw(s);
+        assertLe(earlyOut, cost + ops * (_unitPriceCeil() + 1), "holder gain above one remainder per op");
+        _assertSolvent();
+    }
+
+    /// @dev Raising the price first and then collecting remainders from many
+    ///      later round trips still loses money: each remainder is < c + 1 wei
+    ///      while raising the price to c cost ~V * c.
+    function test_manyLaterRoundTrips_afterPriceRaise_holderStillLoses() public {
+        uint256 s = _deposit(early, 1);
+        _inflow(1_000e18);
+        uint256 cost = 1 + 1_000e18;
+        for (uint256 i = 0; i < 50; i++) {
+            uint256 c = (vault.totalAssets() + 1) / (vault.totalSupply() + V);
+            uint256 amt = 10 * c + c - 1;                  // just below a share-unit multiple
+            uint256 got = _deposit(later, amt);
+            vm.prank(later);
+            vault.withdraw(got);
+        }
+        vm.prank(early);
+        uint256 earlyOut = vault.withdraw(s);
+        assertLt(earlyOut, cost, "raising the price must still lose");
+        _assertSolvent();
+    }
+
+    /// @dev Random interleavings of an early holder's deposits/withdrawals,
+    ///      protocol inflows (counted as the early holder's cost), other
+    ///      holders' deposits/withdrawals and bailouts: the early holder never
+    ///      nets more than one wei per other-holder operation, plus 1.
+    function testFuzz_interleaved_holderNetBoundedByOtherOps(uint256 seed) public {
+        uint256 paid; uint256 got; uint256 otherOps;
+        for (uint256 i = 0; i < 24; i++) {
+            uint256 r = uint256(keccak256(abi.encode(seed, i)));
+            uint256 op = r % 6;
+            uint256 amt = (r >> 8) % 1e21 + 1;
+            bool insolvent = vault.totalSupply() != 0 && vault.totalAssets() == 0;
+            if (insolvent && (op == 0 || op == 3)) continue;
+            if (op == 0) {
+                if (vault.previewDeposit(amt) == 0) continue;
+                _deposit(early, amt); paid += amt;
+            } else if (op == 1) {
+                uint256 b = vault.balanceOf(early);
+                if (b == 0) continue;
+                vm.prank(early);
+                got += vault.withdraw((r >> 80) % b + 1);
+            } else if (op == 2) {
+                uint256 d = (r >> 8) % 1e20;
+                _inflow(d); paid += d;
+            } else if (op == 3) {
+                if (vault.previewDeposit(amt) == 0) continue;
+                _deposit(later, amt); otherOps++;
+            } else if (op == 4) {
+                uint256 b = vault.balanceOf(later);
+                if (b == 0) continue;
+                vm.prank(later);
+                vault.withdraw((r >> 80) % b + 1); otherOps++;
+            } else {
+                uint256 ta = vault.totalAssets();
+                if (ta == 0) continue;
+                _bailout((r >> 8) % ta);
+            }
+        }
+        got += _withdrawAll(early);
+        assertLe(got, paid + otherOps + 1, "early holder net above otherOps + 1 wei");
+        _assertSolvent();
+    }
+
     /// @dev Tokens sent straight to the vault are not counted: the price and
     ///      every later deposit are exactly as if the transfer never happened.
     function testFuzz_directTransferDoesNotMovePrice(uint256 earlyAmt, uint256 gift, uint256 laterAmt) public {
@@ -324,6 +410,65 @@ contract InsuranceVaultSharesTest is Test {
         uint256 b = _withdrawAll(bob);
         assertLe(b, 100e18);
         assertApproxEqAbs(b, 100e18, 2);
+        _assertSolvent();
+    }
+
+    // ── zero-supply inflows and seeding (docs §3.3, §5) ─────────────────────
+
+    /// @dev Assets that arrive while totalSupply == 0 belong to the virtual
+    ///      shares for good: a later depositor redeems only what they paid,
+    ///      and on a vault with no exchange (no bailouts) nothing can ever
+    ///      take those assets out.
+    function test_inflowAtZeroSupply_staysWithVirtualShares_noExchange() public {
+        InsuranceVault x = new InsuranceVault(address(usdc));
+        x.setFeeRouter(feeRtr);                          // exchange left at 0
+        _fund(feeRtr, 1_000e18);
+        vm.prank(feeRtr);
+        usdc.approve(address(x), type(uint256).max);
+        vm.prank(feeRtr);
+        x.depositFromProtocol(1_000e18);
+
+        _fund(alice, 1_000_000e18);
+        vm.startPrank(alice);
+        usdc.approve(address(x), type(uint256).max);
+        uint256 s = x.deposit(1_000_000e18);
+        uint256 out = x.withdraw(s);
+        vm.stopPrank();
+        assertLe(out, 1_000_000e18, "depositor cannot take the zero-supply inflow");
+        assertGe(x.totalAssets(), 1_000e18, "the inflow stays in the vault");
+        assertEq(x.totalSupply(), 0);
+    }
+
+    /// @dev The same inflow after a seed deposit goes to the seed holder, and
+    ///      the seed is withdrawable: seeding before wiring any inflow is what
+    ///      the migration plan requires.
+    function test_seedBeforeInflow_seedHolderEarnsInflowAndCanExit() public {
+        uint256 s = _deposit(alice, 100e18);                // protocol seed
+        _inflow(1_000e18);
+        assertApproxEqAbs(vault.previewWithdraw(s), 1_100e18, 1e9, "seed holder owns the inflow");
+        uint256 out = _withdrawAll(alice);
+        assertApproxEqAbs(out, 1_100e18, 1e9);
+        _assertSolvent();
+    }
+
+    /// @dev Bailouts that twice leave 1 wei behind crush the share price so far
+    ///      that a large deposit's share count overflows (Math.mulDiv reverts).
+    ///      Small deposits still work and `recapitalize` restores normal sizes.
+    function test_priceCrushedTwice_largeDepositOverflows_recapitalizeRecovers() public {
+        _deposit(alice, 1_000_000e18);
+        _bailout(vault.totalAssets() - 1);
+        _deposit(bob, 1_000_000e18);
+        _bailout(vault.totalAssets() - 1);
+
+        _fund(bob, 1_000_000e18);
+        vm.prank(bob);
+        vm.expectRevert();
+        vault.deposit(1_000_000e18);
+
+        assertGt(_deposit(carol, 1e18), 0, "small deposits still work");
+        _fund(address(this), 1_000e18);
+        vault.recapitalize(1_000e18);
+        assertGt(_deposit(bob, 1_000_000e18), 0, "recapitalize restores large deposits");
         _assertSolvent();
     }
 

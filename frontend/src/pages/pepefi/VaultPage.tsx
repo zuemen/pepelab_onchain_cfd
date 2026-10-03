@@ -18,6 +18,7 @@ import {
   estimateDepositShares,
   estimateWithdrawAssets,
   formatShares,
+  redeemablePerWholeShare,
 } from 'src/lib/pepefi/vaultShares'
 
 import Box from '@mui/material/Box';
@@ -171,15 +172,18 @@ export default function VaultPage() {
     if (!vault || !wallet.address) return
     try {
       // Isolated so one unavailable view doesn't blank every vault stat.
-      const [totalAssets, totalSupply, sharePrice, myShares, shareDec] = await Promise.all([
+      const [totalAssets, totalSupply, myShares, shareDec] = await Promise.all([
         safeRead(vault.totalAssets()    as Promise<bigint>, ZERO),
         safeRead(vault.totalSupply()    as Promise<bigint>, ZERO),
-        safeRead(vault.getSharePrice()  as Promise<bigint>, ZERO),
         safeRead(vault.balanceOf(wallet.address) as Promise<bigint>, ZERO),
         // P1-05: pIV decimals differ between vault versions; never assume 18.
         safeRead(vault.decimals() as Promise<bigint>, BigInt(LEGACY_SHARE_DECIMALS)),
       ])
       const shareDecimals = Number(shareDec)
+      // Displayed price = what one whole pIV redeems (previewWithdraw
+      // semantics). getSharePrice() divides the real totals only and can
+      // overstate it when assets arrived while the supply was 0 (P1-05).
+      const sharePrice = redeemablePerWholeShare(totalSupply, totalAssets, shareDecimals)
       // N1: trading-fee routing stats (best-effort; older ABIs lack these).
       let feesRouted = ZERO
       let feeShareBps = ZERO
