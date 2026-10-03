@@ -198,7 +198,7 @@ Base 主網的原生 USDC 是 **6 位小數**。V1 合約（`PerpetualExchange`�
 | `MockUSDC.sol:9-10` | OZ 預設 18 位；`FAUCET_AMOUNT = 1_000e18` | 檢查／金額 | 測試網專用 |
 | `MockUSDT.sol:9-12` | 註解「18 decimals to match the rest of the system」；`1_000e18` | 檢查／金額 | 測試網專用 |
 | ★ `MockSwapRouter.sol:8,35,45,61,65` | `msg.value * RATE`、`usdcAmount / RATE` | 混單位 | wei × 匯率 = USDC 單位，只在 18 位成立（平台專用） |
-| ★ `PepeAMM.sol:259,288,340,343,344` | `usdcReserve * 1e18 / ethReserve`、`usdc * 1e8 / eth` 對 oracle | 混單位 | 6 位時池價與 oracle 差 1e12，偏離恆接近 100%：價帶保護失去意義，使價格遠離 oracle 方向的 swap 一律被擋（平台專用） |
+| ★ `PepeAMM.sol:259,288,340,343,344` | `usdcReserve * 1e18 / ethReserve`、`usdc * 1e8 / eth` 對 oracle | 混單位 | 6 位時池價與 oracle 差 1e12，偏離取整後固定在 10000 bps：預設價帶下**兩個方向的 swap 全部被擋**（`PriceOutOfBand`）；把 `maxOracleDeviationBps` 設到 10000 才能交易，但等於關掉價帶保護（平台專用） |
 | ★ `PepeIncentives.sol:120,186-188,220-222,310-312` | `margin*lev*bps` 直接當 PEPE 數量；等級門檻 `10_000e18` | 混單位／金額 | |
 | ★ `AssetVault.sol:48-49,56,60` | `usdcAmount * 1e8 / price`／`tokenAmount * price / 1e8` | 單位縮小 | v1；mint 與 redeem 同一比例，合成資產數量一致縮小 1e12、mint→redeem 價值守恆；L48-49 的註解（兩者都 18 位）不再成立 |
 | ★ `v2/AssetVaultV2.sol:235,243,308` | mint／redeem／liability | 單位縮小 | 同上；liability 與 reserve 同為 USDC 單位，準備率不失真 |
