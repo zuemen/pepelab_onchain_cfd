@@ -1,0 +1,3 @@
+[base] 檢查 133 顆有 code 的合約（CREATE 全掃 + 事件 + repo 位址）
+外洩地址不再持有任何 owner／pendingOwner／guardian／marketOperator／authorizedAgents／verifiers／已知角色
+platformTreasury（immutable，凍結無法處理）= 外洩地址的合約：2 顆 0x00f6cf0113399a7A451c7f85fe094a28092d3e0c 0x29e5732AC62254d9b92A1C7d3F38EbFA8809B57d
