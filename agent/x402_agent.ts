@@ -22,15 +22,12 @@
 import { createWalletClient, http, publicActions, formatUnits } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
-import { config as dotenvConfig } from "dotenv";
-import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { openPositionForSession, resolveX402MaxValue, guardViemAccount } from "@pepelab/shared";
+import { loadEnv, openPositionForSession, resolveX402MaxValue, guardViemAccount } from "@pepelab/shared";
 import { loadVc, localVerifyVcWithStatus } from "./examples/vc-gate.ts";
 
 // ── Load env from agent/.env ───────────────────────────────────────────────
-const __here = dirname(fileURLToPath(import.meta.url));
-dotenvConfig({ path: resolve(__here, ".env") });
+// 與其他進入點同一個載入點（agent/.env，選項見 shared/src/env.ts 的 dotenvLoadOptions）。
+loadEnv();
 
 // ── Configuration ──────────────────────────────────────────────────────────
 const API_URL =

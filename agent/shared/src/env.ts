@@ -2,12 +2,29 @@ import { config } from "dotenv";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
+/**
+ * 傳給 dotenv `config()` 的選項。每一項都**明確寫出**，不留給 dotenv 的預設值決定：
+ *
+ * - dotenv 17 起 `quiet` 預設 false，18 起會在 stderr 印 `◇ injected env (N) from <path>`；
+ *   keeper／CI／Vercel 的 log 不該出現任何跟 .env 有關的輸出。
+ * - dotenv 17.2 起 `config()` 會從 process.env（以及剛讀進來的 .env）讀
+ *   `DOTENV_QUIET`／`DOTENV_DEBUG`／`DOTENV_OVERRIDE`／`DOTENV_FAST`／`DOTENV_ENCODING`
+ *   （與 `DOTENV_CONFIG_*`）當預設值；程式碼有寫的選項才會蓋過它們。不寫死的話，環境裡
+ *   一個 `DOTENV_OVERRIDE=true` 就會讓 .env 蓋過已注入的 secret，`DOTENV_DEBUG=true`
+ *   會把每個 key 名印到 stdout。
+ *
+ * 這組值等於 dotenv 16.6.1 的行為：不印 log、不覆寫既有變數、UTF-8、預設 parser。
+ */
+export function dotenvLoadOptions(path: string) {
+  return { path, quiet: true, override: false, debug: false, fast: false, encoding: "utf8" } as const;
+}
+
 /** 統一從 agent/.env 載入環境變數（不論從哪個 workspace 啟動）。 */
 export function loadEnv(): void {
   // 此檔在 agent/shared/src/env.ts → 往上三層到 agent/
   const here = dirname(fileURLToPath(import.meta.url));
   const agentRoot = resolve(here, "../../");
-  config({ path: resolve(agentRoot, ".env") });
+  config(dotenvLoadOptions(resolve(agentRoot, ".env")));
 }
 
 /** 取得 PAY_TO：env 優先，否則回退到 addresses 的 FeeRouter（依專案決策）。 */
